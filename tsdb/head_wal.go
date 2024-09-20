@@ -646,9 +646,9 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 }
 
 func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, lastMmapRef chunks.ChunkDiskMapperRef) (err error) {
-	// Track number of samples, m-map markers, that referenced a series we don't know about
+	// Track number of samples, histogram samples, m-map markers, that referenced a series we don't know about
 	// for error reporting.
-	var unknownRefs, mmapMarkerUnknownRefs atomic.Uint64
+	var unknownRefs, unknownHistogramRefs, mmapMarkerUnknownRefs atomic.Uint64
 
 	lastSeq, lastOff := lastMmapRef.Unpack()
 	// Start workers that each process samples for a partition of the series ID space.
@@ -657,8 +657,9 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		concurrency = h.opts.WALReplayConcurrency
 		processors  = make([]wblSubsetProcessor, concurrency)
 
-		dec    = record.NewDecoder(syms)
-		shards = make([][]record.RefSample, concurrency)
+		dec             record.Decoder
+		shards          = make([][]record.RefSample, concurrency)
+		histogramShards = make([][]histogramRecord, concurrency)
 
 		decodedCh   = make(chan interface{}, 10)
 		decodeErr   error
@@ -670,6 +671,16 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		markersPool = sync.Pool{
 			New: func() interface{} {
 				return []record.RefMmapMarker{}
+			},
+		}
+		histogramSamplesPool = sync.Pool{
+			New: func() interface{} {
+				return []record.RefHistogramSample{}
+			},
+		}
+		floatHistogramSamplesPool = sync.Pool{
+			New: func() interface{} {
+				return []record.RefFloatHistogramSample{}
 			},
 		}
 	)
@@ -692,8 +703,9 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		processors[i].setup()
 
 		go func(wp *wblSubsetProcessor) {
-			unknown := wp.processWBLSamples(h)
+			unknown, unknownHistograms := wp.processWBLSamples(h)
 			unknownRefs.Add(unknown)
+			unknownHistogramRefs.Add(unknownHistograms)
 			wg.Done()
 		}(&processors[i])
 	}
@@ -727,6 +739,30 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 					return
 				}
 				decodedCh <- markers
+			case record.HistogramSamples:
+				hists := histogramSamplesPool.Get().([]record.RefHistogramSample)[:0]
+				hists, err = dec.HistogramSamples(rec, hists)
+				if err != nil {
+					decodeErr = &wlog.CorruptionErr{
+						Err:     fmt.Errorf("decode histograms: %w", err),
+						Segment: r.Segment(),
+						Offset:  r.Offset(),
+					}
+					return
+				}
+				decodedCh <- hists
+			case record.FloatHistogramSamples:
+				hists := floatHistogramSamplesPool.Get().([]record.RefFloatHistogramSample)[:0]
+				hists, err = dec.FloatHistogramSamples(rec, hists)
+				if err != nil {
+					decodeErr = &wlog.CorruptionErr{
+						Err:     fmt.Errorf("decode float histograms: %w", err),
+						Segment: r.Segment(),
+						Offset:  r.Offset(),
+					}
+					return
+				}
+				decodedCh <- hists
 			default:
 				// Noop.
 			}
@@ -791,6 +827,70 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 				idx := uint64(ms.ref) % uint64(concurrency)
 				processors[idx].input <- wblSubsetProcessorInputItem{mmappedSeries: ms}
 			}
+		case []record.RefHistogramSample:
+			samples := v
+			// We split up the samples into chunks of 5000 samples or less.
+			// With O(300 * #cores) in-flight sample batches, large scrapes could otherwise
+			// cause thousands of very large in flight buffers occupying large amounts
+			// of unused memory.
+			for len(samples) > 0 {
+				m := 5000
+				if len(samples) < m {
+					m = len(samples)
+				}
+				for i := 0; i < concurrency; i++ {
+					if histogramShards[i] == nil {
+						histogramShards[i] = processors[i].reuseHistogramBuf()
+					}
+				}
+				for _, sam := range samples[:m] {
+					if r, ok := multiRef[sam.Ref]; ok {
+						sam.Ref = r
+					}
+					mod := uint64(sam.Ref) % uint64(concurrency)
+					histogramShards[mod] = append(histogramShards[mod], histogramRecord{ref: sam.Ref, t: sam.T, h: sam.H})
+				}
+				for i := 0; i < concurrency; i++ {
+					if len(histogramShards[i]) > 0 {
+						processors[i].input <- wblSubsetProcessorInputItem{histogramSamples: histogramShards[i]}
+						histogramShards[i] = nil
+					}
+				}
+				samples = samples[m:]
+			}
+			histogramSamplesPool.Put(v) //nolint:staticcheck
+		case []record.RefFloatHistogramSample:
+			samples := v
+			// We split up the samples into chunks of 5000 samples or less.
+			// With O(300 * #cores) in-flight sample batches, large scrapes could otherwise
+			// cause thousands of very large in flight buffers occupying large amounts
+			// of unused memory.
+			for len(samples) > 0 {
+				m := 5000
+				if len(samples) < m {
+					m = len(samples)
+				}
+				for i := 0; i < concurrency; i++ {
+					if histogramShards[i] == nil {
+						histogramShards[i] = processors[i].reuseHistogramBuf()
+					}
+				}
+				for _, sam := range samples[:m] {
+					if r, ok := multiRef[sam.Ref]; ok {
+						sam.Ref = r
+					}
+					mod := uint64(sam.Ref) % uint64(concurrency)
+					histogramShards[mod] = append(histogramShards[mod], histogramRecord{ref: sam.Ref, t: sam.T, fh: sam.FH})
+				}
+				for i := 0; i < concurrency; i++ {
+					if len(histogramShards[i]) > 0 {
+						processors[i].input <- wblSubsetProcessorInputItem{histogramSamples: histogramShards[i]}
+						histogramShards[i] = nil
+					}
+				}
+				samples = samples[m:]
+			}
+			floatHistogramSamplesPool.Put(v) //nolint:staticcheck
 		default:
 			panic(fmt.Errorf("unexpected decodedCh type: %T", d))
 		}
@@ -833,23 +933,28 @@ func (e errLoadWbl) Unwrap() error {
 }
 
 type wblSubsetProcessor struct {
-	input  chan wblSubsetProcessorInputItem
-	output chan []record.RefSample
+	input            chan wblSubsetProcessorInputItem
+	output           chan []record.RefSample
+	histogramsOutput chan []histogramRecord
 }
 
 type wblSubsetProcessorInputItem struct {
-	mmappedSeries *memSeries
-	samples       []record.RefSample
+	mmappedSeries    *memSeries
+	samples          []record.RefSample
+	histogramSamples []histogramRecord
 }
 
 func (wp *wblSubsetProcessor) setup() {
 	wp.output = make(chan []record.RefSample, 300)
+	wp.histogramsOutput = make(chan []histogramRecord, 300)
 	wp.input = make(chan wblSubsetProcessorInputItem, 300)
 }
 
 func (wp *wblSubsetProcessor) closeAndDrain() {
 	close(wp.input)
 	for range wp.output {
+	}
+	for range wp.histogramsOutput {
 	}
 }
 
@@ -863,10 +968,21 @@ func (wp *wblSubsetProcessor) reuseBuf() []record.RefSample {
 	return nil
 }
 
+// If there is a buffer in the output chan, return it for reuse, otherwise return nil.
+func (wp *wblSubsetProcessor) reuseHistogramBuf() []histogramRecord {
+	select {
+	case buf := <-wp.histogramsOutput:
+		return buf[:0]
+	default:
+	}
+	return nil
+}
+
 // processWBLSamples adds the samples it receives to the head and passes
 // the buffer received to an output channel for reuse.
-func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (unknownRefs uint64) {
+func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (unknownRefs, unknownHistogramRefs uint64) {
 	defer close(wp.output)
+	defer close(wp.histogramsOutput)
 
 	oooCapMax := h.opts.OutOfOrderCapMax.Load()
 	// We don't check for minValidTime for ooo samples.
@@ -905,11 +1021,41 @@ func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (unknownRefs uint64) {
 		case wp.output <- in.samples:
 		default:
 		}
+		for _, s := range in.histogramSamples {
+			ms := h.series.getByID(s.ref)
+			if ms == nil {
+				unknownHistogramRefs++
+				continue
+			}
+			var chunkCreated bool
+			var ok bool
+			if s.h != nil {
+				ok, chunkCreated, _ = ms.insert(s.t, 0, s.h, nil, h.chunkDiskMapper, oooCapMax, h.logger)
+			} else {
+				ok, chunkCreated, _ = ms.insert(s.t, 0, nil, s.fh, h.chunkDiskMapper, oooCapMax, h.logger)
+			}
+			if chunkCreated {
+				h.metrics.chunksCreated.Inc()
+				h.metrics.chunks.Inc()
+			}
+			if ok {
+				if s.t > maxt {
+					maxt = s.t
+				}
+				if s.t < mint {
+					mint = s.t
+				}
+			}
+		}
+		select {
+		case wp.histogramsOutput <- in.histogramSamples:
+		default:
+		}
 	}
 
 	h.updateMinOOOMaxOOOTime(mint, maxt)
 
-	return unknownRefs
+	return unknownRefs, unknownHistogramRefs
 }
 
 const (

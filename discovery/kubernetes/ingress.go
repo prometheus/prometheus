@@ -24,7 +24,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	v1 "k8s.io/api/networking/v1"
-	"k8s.io/api/networking/v1beta1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 
@@ -127,8 +126,6 @@ func (i *Ingress) process(ctx context.Context, ch chan<- []*targetgroup.Group) b
 	switch ingress := o.(type) {
 	case *v1.Ingress:
 		ia = newIngressAdaptorFromV1(ingress)
-	case *v1beta1.Ingress:
-		ia = newIngressAdaptorFromV1beta1(ingress)
 	default:
 		level.Error(i.logger).Log("msg", "converting to Ingress object failed", "err",
 			fmt.Errorf("received unexpected object: %v", o))

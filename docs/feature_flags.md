@@ -20,14 +20,6 @@ values according to the values of the current environment variables. References
 to undefined variables are replaced by the empty string.
 The `$` character can be escaped by using `$$`.
 
-## Remote Write Receiver
-
-`--enable-feature=remote-write-receiver`
-
-The remote write receiver allows Prometheus to accept remote write requests from other Prometheus servers. More details can be found [here](storage.md#overview).
-
-Activating the remote write receiver via a feature flag is deprecated. Use `--web.enable-remote-write-receiver` instead. This feature flag will be ignored in future versions of Prometheus.
-
 ## Exemplars storage
 
 `--enable-feature=exemplar-storage`
@@ -54,30 +46,6 @@ When enabled, for each instance scrape, Prometheus stores a sample in the follow
 - `scrape_sample_limit`. The configured `sample_limit` for a target. This allows you to measure each target
   to find out how close they are to reaching the limit with `scrape_samples_post_metric_relabeling / scrape_sample_limit`. Note that `scrape_sample_limit` can be zero if there is no limit configured, which means that the query above can return `+Inf` for targets with no limit (as we divide by zero). If you want to query only for targets that do have a sample limit use this query: `scrape_samples_post_metric_relabeling / (scrape_sample_limit > 0)`.
 - `scrape_body_size_bytes`. The uncompressed size of the most recent scrape response, if successful. Scrapes failing because `body_size_limit` is exceeded report `-1`, other scrape failures report `0`.
-
-## New service discovery manager
-
-`--enable-feature=new-service-discovery-manager`
-
-When enabled, Prometheus uses a new service discovery manager that does not
-restart unchanged discoveries upon reloading. This makes reloads faster and reduces
-pressure on service discoveries' sources.
-
-Users are encouraged to test the new service discovery manager and report any
-issues upstream.
-
-In future releases, this new service discovery manager will become the default and
-this feature flag will be ignored.
-
-## Prometheus agent
-
-`--enable-feature=agent`
-
-When enabled, Prometheus runs in agent mode. The agent mode is limited to
-discovery, scrape and remote write.
-
-This is useful when you do not need to query the Prometheus data locally, but
-only from a central [remote endpoint](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage).
 
 ## Per-step stats
 
@@ -193,7 +161,7 @@ This should **only** be applied to metrics that currently produce such labels.
 `--enable-feature=otlp-write-receiver`
 
 The OTLP receiver allows Prometheus to accept [OpenTelemetry](https://opentelemetry.io/) metrics writes.
-Prometheus is best used as a Pull based system, and staleness, `up` metric, and other Pull enabled features 
+Prometheus is best used as a Pull based system, and staleness, `up` metric, and other Pull enabled features
 won't work when you push OTLP metrics.
 
 ## Experimental PromQL functions
@@ -225,6 +193,12 @@ When the `concurrent-rule-eval` feature flag is enabled, rules without any depen
 This has the potential to improve rule group evaluation latency and resource utilization at the expense of adding more concurrent query load.
 
 The number of concurrent rule evaluations can be configured with `--rules.max-concurrent-rule-evals`, which is set to `4` by default.
+
+## Serve old Prometheus UI
+
+Fall back to serving the old (Prometheus 2.x) web UI instead of the new UI. The new UI that was released as part of Prometheus 3.0 is a complete rewrite and aims to be cleaner, less cluttered, and more modern under the hood. However, it is not fully feature complete and battle-tested yet, so some users may still prefer using the old UI.
+
+`--enable-feature=old-ui`
 
 ## Metadata WAL Records
 
@@ -258,10 +232,15 @@ When enabled, Prometheus will change the way in which the `__name__` label is re
 
 This allows optionally preserving the `__name__` label via the `label_replace` and `label_join` functions, and helps prevent the "vector cannot contain metrics with the same labelset" error, which can happen when applying a regex-matcher to the `__name__` label.
 
-## UTF-8 Name Support
+## Auto Reload Config
 
-`--enable-feature=utf8-names`
+`--enable-feature=auto-reload-config`
 
-When enabled, changes the metric and label name validation scheme inside Prometheus to allow the full UTF-8 character set.
-By itself, this flag does not enable the request of UTF-8 names via content negotiation.
-Users will also have to set `metric_name_validation_scheme` in scrape configs to enable the feature either on the global config or on a per-scrape config basis.
+When enabled, Prometheus will automatically reload its configuration file at a
+specified interval. The interval is defined by the
+`--config.auto-reload-interval` flag, which defaults to `30s`.
+
+Configuration reloads are triggered by detecting changes in the checksum of the
+main configuration file or any referenced files, such as rule and scrape
+configurations. To ensure consistency and avoid issues during reloads, it's
+recommended to update these files atomically.

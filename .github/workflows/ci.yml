@@ -11,12 +11,14 @@ jobs:
     container:
       # Whenever the Go version is updated here, .promu.yml
       # should also be updated.
-      image: quay.io/prometheus/golang-builder:1.22-base
+      image: quay.io/prometheus/golang-builder:1.23-base
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
-      - uses: prometheus/promci@3cb0c3871f223bd5ce1226995bd52ffb314798b6 # v0.1.0
+      - uses: prometheus/promci@468927c440349ab56c4a1aafd453b312841503c2 # v0.4.4
       - uses: ./.github/promci/actions/setup_environment
-      - run: make GOOPTS=--tags=stringlabels GO_ONLY=1 SKIP_GOLANGCI_LINT=1
+        with:
+          enable_npm: true
+      - run: make GOOPTS=--tags=stringlabels GO_ONLY=1 SKIP_GOLANGCI_LINT=1 test-flags=""
       - run: go test --tags=stringlabels ./tsdb/ -test.tsdb-isolation=false
       - run: make -C documentation/examples/remote_storage
       - run: make -C documentation/examples
@@ -25,10 +27,10 @@ jobs:
     name: More Go tests
     runs-on: ubuntu-latest
     container:
-      image: quay.io/prometheus/golang-builder:1.22-base
+      image: quay.io/prometheus/golang-builder:1.23-base
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
-      - uses: prometheus/promci@3cb0c3871f223bd5ce1226995bd52ffb314798b6 # v0.1.0
+      - uses: prometheus/promci@468927c440349ab56c4a1aafd453b312841503c2 # v0.4.4
       - uses: ./.github/promci/actions/setup_environment
       - run: go test --tags=dedupelabels ./...
       - run: GOARCH=386 go test ./cmd/prometheus
@@ -39,9 +41,12 @@ jobs:
   test_go_oldest:
     name: Go tests with previous Go version
     runs-on: ubuntu-latest
+    env:
+      # Enforce the Go version.
+      GOTOOLCHAIN: local
     container:
       # The go version in this image should be N-1 wrt test_go.
-      image: quay.io/prometheus/golang-builder:1.21-base
+      image: quay.io/prometheus/golang-builder:1.22-base
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       - run: make build
@@ -54,11 +59,11 @@ jobs:
     # Whenever the Go version is updated here, .promu.yml
     # should also be updated.
     container:
-      image: quay.io/prometheus/golang-builder:1.22-base
+      image: quay.io/prometheus/golang-builder:1.23-base
 
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
-      - uses: prometheus/promci@3cb0c3871f223bd5ce1226995bd52ffb314798b6 # v0.1.0
+      - uses: prometheus/promci@468927c440349ab56c4a1aafd453b312841503c2 # v0.4.4
       - uses: ./.github/promci/actions/setup_environment
         with:
           enable_go: false
@@ -77,7 +82,7 @@ jobs:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       - uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5.0.2
         with:
-          go-version: 1.22.x
+          go-version: 1.23.x
       - run: |
           $TestTargets = go list ./... | Where-Object { $_ -NotMatch "(github.com/prometheus/prometheus/discovery.*|github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"}
           go test $TestTargets -vet=off -v
@@ -89,7 +94,7 @@ jobs:
     # Whenever the Go version is updated here, .promu.yml
     # should also be updated.
     container:
-      image: quay.io/prometheus/golang-builder:1.22-base
+      image: quay.io/prometheus/golang-builder:1.23-base
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       - run: go install ./cmd/promtool/.
@@ -107,6 +112,8 @@ jobs:
     if: |
       !(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v2.'))
       &&
+      !(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v3.'))
+      &&
       !(github.event_name == 'pull_request' && startsWith(github.event.pull_request.base.ref, 'release-'))
       &&
       !(github.event_name == 'push' && github.event.ref == 'refs/heads/main')
@@ -115,7 +122,7 @@ jobs:
         thread: [ 0, 1, 2 ]
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
-      - uses: prometheus/promci@3cb0c3871f223bd5ce1226995bd52ffb314798b6 # v0.1.0
+      - uses: prometheus/promci@468927c440349ab56c4a1aafd453b312841503c2 # v0.4.4
       - uses: ./.github/promci/actions/build
         with:
           promu_opts: "-p linux/amd64 -p windows/amd64 -p linux/arm64 -p darwin/amd64 -p darwin/arm64 -p linux/386"
@@ -126,6 +133,8 @@ jobs:
     runs-on: ubuntu-latest
     if: |
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v2.'))
+      ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v3.'))
       ||
       (github.event_name == 'pull_request' && startsWith(github.event.pull_request.base.ref, 'release-'))
       ||
@@ -138,7 +147,7 @@ jobs:
     # should also be updated.
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
-      - uses: prometheus/promci@3cb0c3871f223bd5ce1226995bd52ffb314798b6 # v0.1.0
+      - uses: prometheus/promci@468927c440349ab56c4a1aafd453b312841503c2 # v0.4.4
       - uses: ./.github/promci/actions/build
         with:
           parallelism: 12
@@ -165,7 +174,7 @@ jobs:
         uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5.0.2
         with:
           cache: false
-          go-version: 1.22.x
+          go-version: 1.23.x
       - name: Run goyacc and check for diff
         run: make install-goyacc check-generated-parser
   golangci:
@@ -177,7 +186,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5.0.2
         with:
-          go-version: 1.22.x
+          go-version: 1.23.x
       - name: Install snmp_exporter/generator dependencies
         run: sudo apt-get update && sudo apt-get -y install libsnmp-dev
         if: github.repository == 'prometheus/snmp_exporter'
@@ -200,7 +209,7 @@ jobs:
     if: github.event_name == 'push' && github.event.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
-      - uses: prometheus/promci@3cb0c3871f223bd5ce1226995bd52ffb314798b6 # v0.1.0
+      - uses: prometheus/promci@468927c440349ab56c4a1aafd453b312841503c2 # v0.4.4
       - uses: ./.github/promci/actions/publish_main
         with:
           docker_hub_login: ${{ secrets.docker_hub_login }}
@@ -211,10 +220,13 @@ jobs:
     name: Publish release artefacts
     runs-on: ubuntu-latest
     needs: [test_ui, test_go, test_go_more, test_go_oldest, test_windows, golangci, codeql, build_all]
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v2.')
+    if: |
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v2.'))
+      ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v3.'))
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
-      - uses: prometheus/promci@3cb0c3871f223bd5ce1226995bd52ffb314798b6 # v0.1.0
+      - uses: prometheus/promci@468927c440349ab56c4a1aafd453b312841503c2 # v0.4.4
       - uses: ./.github/promci/actions/publish_release
         with:
           docker_hub_login: ${{ secrets.docker_hub_login }}
@@ -229,9 +241,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
-      - uses: prometheus/promci@3cb0c3871f223bd5ce1226995bd52ffb314798b6 # v0.1.0
+      - uses: prometheus/promci@468927c440349ab56c4a1aafd453b312841503c2 # v0.4.4
       - name: Install nodejs
-        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
+        uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # v4.0.3
         with:
           node-version-file: "web/ui/.nvmrc"
           registry-url: "https://registry.npmjs.org"
@@ -242,17 +254,26 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-
       - name: Check libraries version
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v2.')
-        run: ./scripts/ui_release.sh --check-package "$(echo ${{ github.ref_name }}|sed s/v2/v0/)"
+        if: |
+          (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v2.'))
+          ||
+          (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v3.'))
+        run: ./scripts/ui_release.sh --check-package "$(./scripts/get_module_version.sh ${{ github.ref_name }})"
       - name: build
         run: make assets
       - name: Copy files before publishing libs
         run: ./scripts/ui_release.sh --copy
       - name: Publish dry-run libraries
-        if: "!(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v2.'))"
+        if: |
+          !(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v2.'))
+          &&
+          !(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v3.'))
         run: ./scripts/ui_release.sh --publish dry-run
       - name: Publish libraries
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v2.')
+        if: |
+          (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v2.'))
+          ||
+          (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v3.'))
         run: ./scripts/ui_release.sh --publish
         env:
           # The setup-node action writes an .npmrc file with this env variable

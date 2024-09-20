@@ -409,6 +409,7 @@ func (p *ProtobufParser) Next() (Entry, error) {
 	switch p.state {
 	case EntryInvalid:
 		p.metricPos = 0
+		p.exemplarPos = 0
 		p.fieldPos = -2
 		n, err := readDelimited(p.in[p.inPos:], p.mf)
 		p.inPos += n
@@ -485,6 +486,7 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			p.metricPos++
 			p.fieldPos = -2
 			p.fieldsDone = false
+			p.exemplarPos = 0
 			// If this is a metric family containing native
 			// histograms, we have to switch back to native
 			// histograms after parsing a classic histogram.
@@ -602,7 +604,7 @@ func readDelimited(b []byte, mf *dto.MetricFamily) (n int, err error) {
 	return totalLength, mf.Unmarshal(b[varIntLength:totalLength])
 }
 
-// formatOpenMetricsFloat works like the usual Go string formatting of a fleat
+// formatOpenMetricsFloat works like the usual Go string formatting of a float
 // but appends ".0" if the resulting number would otherwise contain neither a
 // "." nor an "e".
 func formatOpenMetricsFloat(f float64) string {

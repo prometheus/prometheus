@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -130,10 +131,18 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	sampledInterval := float64(lastT-firstT) / 1000
 	averageDurationBetweenSamples := sampledInterval / float64(numSamplesMinusOne)
 
-	// If the first/last samples are close to the boundaries of the range,
-	// extrapolate the result. This is as we expect that another sample
-	// will exist given the spacing between samples we've seen thus far,
-	// with an allowance for noise.
+	// If samples are close enough to the (lower or upper) boundary of the
+	// range, we extrapolate the rate all the way to the boundary in
+	// question. "Close enough" is defined as "up to 10% more than the
+	// average duration between samples within the range", see
+	// extrapolationThreshold below. Essentially, we are assuming a more or
+	// less regular spacing between samples, and if we don't see a sample
+	// where we would expect one, we assume the series does not cover the
+	// whole range, but starts and/or ends within the range. We still
+	// extrapolate the rate in this case, but not all the way to the
+	// boundary, but only by half of the average duration between samples
+	// (which is our guess for where the series actually starts or ends).
+
 	extrapolationThreshold := averageDurationBetweenSamples * 1.1
 	extrapolateToInterval := sampledInterval
 
@@ -341,7 +350,7 @@ func calcTrendValue(i int, tf, s0, s1, b float64) float64 {
 // data. A lower smoothing factor increases the influence of historical data. The trend factor (0 < tf < 1) affects
 // how trends in historical data will affect the current data. A higher trend factor increases the influence.
 // of trends. Algorithm taken from https://en.wikipedia.org/wiki/Exponential_smoothing titled: "Double exponential smoothing".
-func funcHoltWinters(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcDoubleExponentialSmoothing(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	samples := vals[0].(Matrix)[0]
 
 	// The smoothing factor argument.
@@ -1463,7 +1472,7 @@ func funcChanges(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelp
 }
 
 // label_replace function operates only on series; does not look at timestamps or values.
-func (ev *evaluator) evalLabelReplace(args parser.Expressions) (parser.Value, annotations.Annotations) {
+func (ev *evaluator) evalLabelReplace(ctx context.Context, args parser.Expressions) (parser.Value, annotations.Annotations) {
 	var (
 		dst      = stringFromArg(args[1])
 		repl     = stringFromArg(args[2])
@@ -1471,7 +1480,7 @@ func (ev *evaluator) evalLabelReplace(args parser.Expressions) (parser.Value, an
 		regexStr = stringFromArg(args[4])
 	)
 
-	regex, err := regexp.Compile("^(?:" + regexStr + ")$")
+	regex, err := regexp.Compile("^(?s:" + regexStr + ")$")
 	if err != nil {
 		panic(fmt.Errorf("invalid regular expression in label_replace(): %s", regexStr))
 	}
@@ -1479,7 +1488,7 @@ func (ev *evaluator) evalLabelReplace(args parser.Expressions) (parser.Value, an
 		panic(fmt.Errorf("invalid destination label name in label_replace(): %s", dst))
 	}
 
-	val, ws := ev.eval(args[0])
+	val, ws := ev.eval(ctx, args[0])
 	matrix := val.(Matrix)
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
@@ -1520,7 +1529,7 @@ func funcVector(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelpe
 }
 
 // label_join function operates only on series; does not look at timestamps or values.
-func (ev *evaluator) evalLabelJoin(args parser.Expressions) (parser.Value, annotations.Annotations) {
+func (ev *evaluator) evalLabelJoin(ctx context.Context, args parser.Expressions) (parser.Value, annotations.Annotations) {
 	var (
 		dst       = stringFromArg(args[1])
 		sep       = stringFromArg(args[2])
@@ -1537,7 +1546,7 @@ func (ev *evaluator) evalLabelJoin(args parser.Expressions) (parser.Value, annot
 		panic(fmt.Errorf("invalid destination label name in label_join(): %s", dst))
 	}
 
-	val, ws := ev.eval(args[0])
+	val, ws := ev.eval(ctx, args[0])
 	matrix := val.(Matrix)
 	srcVals := make([]string, len(srcLabels))
 	lb := labels.NewBuilder(labels.EmptyLabels())
@@ -1648,82 +1657,82 @@ func funcYear(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper)
 
 // FunctionCalls is a list of all functions supported by PromQL, including their types.
 var FunctionCalls = map[string]FunctionCall{
-	"abs":                funcAbs,
-	"absent":             funcAbsent,
-	"absent_over_time":   funcAbsentOverTime,
-	"acos":               funcAcos,
-	"acosh":              funcAcosh,
-	"asin":               funcAsin,
-	"asinh":              funcAsinh,
-	"atan":               funcAtan,
-	"atanh":              funcAtanh,
-	"avg_over_time":      funcAvgOverTime,
-	"ceil":               funcCeil,
-	"changes":            funcChanges,
-	"clamp":              funcClamp,
-	"clamp_max":          funcClampMax,
-	"clamp_min":          funcClampMin,
-	"cos":                funcCos,
-	"cosh":               funcCosh,
-	"count_over_time":    funcCountOverTime,
-	"days_in_month":      funcDaysInMonth,
-	"day_of_month":       funcDayOfMonth,
-	"day_of_week":        funcDayOfWeek,
-	"day_of_year":        funcDayOfYear,
-	"deg":                funcDeg,
-	"delta":              funcDelta,
-	"deriv":              funcDeriv,
-	"exp":                funcExp,
-	"floor":              funcFloor,
-	"histogram_avg":      funcHistogramAvg,
-	"histogram_count":    funcHistogramCount,
-	"histogram_fraction": funcHistogramFraction,
-	"histogram_quantile": funcHistogramQuantile,
-	"histogram_sum":      funcHistogramSum,
-	"histogram_stddev":   funcHistogramStdDev,
-	"histogram_stdvar":   funcHistogramStdVar,
-	"holt_winters":       funcHoltWinters,
-	"hour":               funcHour,
-	"idelta":             funcIdelta,
-	"increase":           funcIncrease,
-	"irate":              funcIrate,
-	"label_replace":      funcLabelReplace,
-	"label_join":         funcLabelJoin,
-	"ln":                 funcLn,
-	"log10":              funcLog10,
-	"log2":               funcLog2,
-	"last_over_time":     funcLastOverTime,
-	"mad_over_time":      funcMadOverTime,
-	"max_over_time":      funcMaxOverTime,
-	"min_over_time":      funcMinOverTime,
-	"minute":             funcMinute,
-	"month":              funcMonth,
-	"pi":                 funcPi,
-	"predict_linear":     funcPredictLinear,
-	"present_over_time":  funcPresentOverTime,
-	"quantile_over_time": funcQuantileOverTime,
-	"rad":                funcRad,
-	"rate":               funcRate,
-	"resets":             funcResets,
-	"round":              funcRound,
-	"scalar":             funcScalar,
-	"sgn":                funcSgn,
-	"sin":                funcSin,
-	"sinh":               funcSinh,
-	"sort":               funcSort,
-	"sort_desc":          funcSortDesc,
-	"sort_by_label":      funcSortByLabel,
-	"sort_by_label_desc": funcSortByLabelDesc,
-	"sqrt":               funcSqrt,
-	"stddev_over_time":   funcStddevOverTime,
-	"stdvar_over_time":   funcStdvarOverTime,
-	"sum_over_time":      funcSumOverTime,
-	"tan":                funcTan,
-	"tanh":               funcTanh,
-	"time":               funcTime,
-	"timestamp":          funcTimestamp,
-	"vector":             funcVector,
-	"year":               funcYear,
+	"abs":                          funcAbs,
+	"absent":                       funcAbsent,
+	"absent_over_time":             funcAbsentOverTime,
+	"acos":                         funcAcos,
+	"acosh":                        funcAcosh,
+	"asin":                         funcAsin,
+	"asinh":                        funcAsinh,
+	"atan":                         funcAtan,
+	"atanh":                        funcAtanh,
+	"avg_over_time":                funcAvgOverTime,
+	"ceil":                         funcCeil,
+	"changes":                      funcChanges,
+	"clamp":                        funcClamp,
+	"clamp_max":                    funcClampMax,
+	"clamp_min":                    funcClampMin,
+	"cos":                          funcCos,
+	"cosh":                         funcCosh,
+	"count_over_time":              funcCountOverTime,
+	"days_in_month":                funcDaysInMonth,
+	"day_of_month":                 funcDayOfMonth,
+	"day_of_week":                  funcDayOfWeek,
+	"day_of_year":                  funcDayOfYear,
+	"deg":                          funcDeg,
+	"delta":                        funcDelta,
+	"deriv":                        funcDeriv,
+	"exp":                          funcExp,
+	"floor":                        funcFloor,
+	"histogram_avg":                funcHistogramAvg,
+	"histogram_count":              funcHistogramCount,
+	"histogram_fraction":           funcHistogramFraction,
+	"histogram_quantile":           funcHistogramQuantile,
+	"histogram_sum":                funcHistogramSum,
+	"histogram_stddev":             funcHistogramStdDev,
+	"histogram_stdvar":             funcHistogramStdVar,
+	"double_exponential_smoothing": funcDoubleExponentialSmoothing,
+	"hour":                         funcHour,
+	"idelta":                       funcIdelta,
+	"increase":                     funcIncrease,
+	"irate":                        funcIrate,
+	"label_replace":                funcLabelReplace,
+	"label_join":                   funcLabelJoin,
+	"ln":                           funcLn,
+	"log10":                        funcLog10,
+	"log2":                         funcLog2,
+	"last_over_time":               funcLastOverTime,
+	"mad_over_time":                funcMadOverTime,
+	"max_over_time":                funcMaxOverTime,
+	"min_over_time":                funcMinOverTime,
+	"minute":                       funcMinute,
+	"month":                        funcMonth,
+	"pi":                           funcPi,
+	"predict_linear":               funcPredictLinear,
+	"present_over_time":            funcPresentOverTime,
+	"quantile_over_time":           funcQuantileOverTime,
+	"rad":                          funcRad,
+	"rate":                         funcRate,
+	"resets":                       funcResets,
+	"round":                        funcRound,
+	"scalar":                       funcScalar,
+	"sgn":                          funcSgn,
+	"sin":                          funcSin,
+	"sinh":                         funcSinh,
+	"sort":                         funcSort,
+	"sort_desc":                    funcSortDesc,
+	"sort_by_label":                funcSortByLabel,
+	"sort_by_label_desc":           funcSortByLabelDesc,
+	"sqrt":                         funcSqrt,
+	"stddev_over_time":             funcStddevOverTime,
+	"stdvar_over_time":             funcStdvarOverTime,
+	"sum_over_time":                funcSumOverTime,
+	"tan":                          funcTan,
+	"tanh":                         funcTanh,
+	"time":                         funcTime,
+	"timestamp":                    funcTimestamp,
+	"vector":                       funcVector,
+	"year":                         funcYear,
 }
 
 // AtModifierUnsafeFunctions are the functions whose result

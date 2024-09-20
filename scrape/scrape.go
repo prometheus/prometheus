@@ -90,6 +90,9 @@ type scrapePool struct {
 	noDefaultPort bool
 
 	metrics *scrapeMetrics
+
+	scrapeFailureLogger    log.Logger
+	scrapeFailureLoggerMtx sync.RWMutex
 }
 
 type labelLimits struct {
@@ -218,6 +221,27 @@ func (sp *scrapePool) DroppedTargetsCount() int {
 	return sp.droppedTargetsCount
 }
 
+func (sp *scrapePool) SetScrapeFailureLogger(l log.Logger) {
+	sp.scrapeFailureLoggerMtx.Lock()
+	defer sp.scrapeFailureLoggerMtx.Unlock()
+	if l != nil {
+		l = log.With(l, "job_name", sp.config.JobName)
+	}
+	sp.scrapeFailureLogger = l
+
+	sp.targetMtx.Lock()
+	defer sp.targetMtx.Unlock()
+	for _, s := range sp.loops {
+		s.setScrapeFailureLogger(sp.scrapeFailureLogger)
+	}
+}
+
+func (sp *scrapePool) getScrapeFailureLogger() log.Logger {
+	sp.scrapeFailureLoggerMtx.RLock()
+	defer sp.scrapeFailureLoggerMtx.RUnlock()
+	return sp.scrapeFailureLogger
+}
+
 // stop terminates all scrape loops and returns after they all terminated.
 func (sp *scrapePool) stop() {
 	sp.mtx.Lock()
@@ -305,9 +329,9 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 		mrc                      = sp.config.MetricRelabelConfigs
 	)
 
-	validationScheme := model.LegacyValidation
-	if sp.config.MetricNameValidationScheme == config.UTF8ValidationConfig {
-		validationScheme = model.UTF8Validation
+	validationScheme := model.UTF8Validation
+	if sp.config.MetricNameValidationScheme == config.LegacyValidationConfig {
+		validationScheme = model.LegacyValidation
 	}
 
 	sp.targetMtx.Lock()
@@ -361,6 +385,7 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 			wg.Done()
 
 			newLoop.setForcedError(forcedErr)
+			newLoop.setScrapeFailureLogger(sp.getScrapeFailureLogger())
 			newLoop.run(nil)
 		}(oldLoop, newLoop)
 
@@ -460,9 +485,9 @@ func (sp *scrapePool) sync(targets []*Target) {
 		scrapeClassicHistograms  = sp.config.ScrapeClassicHistograms
 	)
 
-	validationScheme := model.LegacyValidation
-	if sp.config.MetricNameValidationScheme == config.UTF8ValidationConfig {
-		validationScheme = model.UTF8Validation
+	validationScheme := model.UTF8Validation
+	if sp.config.MetricNameValidationScheme == config.LegacyValidationConfig {
+		validationScheme = model.LegacyValidation
 	}
 
 	sp.targetMtx.Lock()
@@ -499,10 +524,12 @@ func (sp *scrapePool) sync(targets []*Target) {
 				interval:                 interval,
 				timeout:                  timeout,
 				scrapeClassicHistograms:  scrapeClassicHistograms,
+				validationScheme:         validationScheme,
 			})
 			if err != nil {
 				l.setForcedError(err)
 			}
+			l.setScrapeFailureLogger(sp.scrapeFailureLogger)
 
 			sp.activeTargets[hash] = t
 			sp.loops[hash] = l
@@ -825,6 +852,7 @@ func (s *targetScraper) readResponse(ctx context.Context, resp *http.Response, w
 type loop interface {
 	run(errc chan<- error)
 	setForcedError(err error)
+	setScrapeFailureLogger(log.Logger)
 	stop()
 	getCache() *scrapeCache
 	disableEndOfRunStalenessMarkers()
@@ -840,6 +868,8 @@ type cacheEntry struct {
 type scrapeLoop struct {
 	scraper                  scraper
 	l                        log.Logger
+	scrapeFailureLogger      log.Logger
+	scrapeFailureLoggerMtx   sync.RWMutex
 	cache                    *scrapeCache
 	lastScrapeSize           int
 	buffers                  *pool.Pool
@@ -1223,6 +1253,15 @@ func newScrapeLoop(ctx context.Context,
 	return sl
 }
 
+func (sl *scrapeLoop) setScrapeFailureLogger(l log.Logger) {
+	sl.scrapeFailureLoggerMtx.Lock()
+	defer sl.scrapeFailureLoggerMtx.Unlock()
+	if ts, ok := sl.scraper.(fmt.Stringer); ok && l != nil {
+		l = log.With(l, "target", ts.String())
+	}
+	sl.scrapeFailureLogger = l
+}
+
 func (sl *scrapeLoop) run(errc chan<- error) {
 	if !sl.skipOffsetting {
 		select {
@@ -1366,6 +1405,11 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 		bytesRead = len(b)
 	} else {
 		level.Debug(sl.l).Log("msg", "Scrape failed", "err", scrapeErr)
+		sl.scrapeFailureLoggerMtx.RLock()
+		if sl.scrapeFailureLogger != nil {
+			sl.scrapeFailureLogger.Log("err", scrapeErr)
+		}
+		sl.scrapeFailureLoggerMtx.RUnlock()
 		if errc != nil {
 			errc <- scrapeErr
 		}
@@ -1655,12 +1699,14 @@ loop:
 		if seriesAlreadyScraped && parsedTimestamp == nil {
 			err = storage.ErrDuplicateSampleForTimestamp
 		} else {
-			if ctMs := p.CreatedTimestamp(); sl.enableCTZeroIngestion && ctMs != nil {
-				ref, err = app.AppendCTZeroSample(ref, lset, t, *ctMs)
-				if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) { // OOO is a common case, ignoring completely for now.
-					// CT is an experimental feature. For now, we don't need to fail the
-					// scrape on errors updating the created timestamp, log debug.
-					level.Debug(sl.l).Log("msg", "Error when appending CT in scrape loop", "series", string(met), "ct", *ctMs, "t", t, "err", err)
+			if sl.enableCTZeroIngestion {
+				if ctMs := p.CreatedTimestamp(); ctMs != nil {
+					ref, err = app.AppendCTZeroSample(ref, lset, t, *ctMs)
+					if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) { // OOO is a common case, ignoring completely for now.
+						// CT is an experimental feature. For now, we don't need to fail the
+						// scrape on errors updating the created timestamp, log debug.
+						level.Debug(sl.l).Log("msg", "Error when appending CT in scrape loop", "series", string(met), "ct", *ctMs, "t", t, "err", err)
+					}
 				}
 			}
 

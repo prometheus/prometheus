@@ -188,7 +188,7 @@ func matchesMatcherSets(matcherSets [][]*labels.Matcher, lbls labels.Labels) boo
 	return ok
 }
 
-// Queryable returns the group's querable.
+// Queryable returns the group's queryable.
 func (g *Group) Queryable() storage.Queryable { return g.opts.Queryable }
 
 // Context returns the group's context.

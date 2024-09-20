@@ -105,17 +105,17 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 	jFoo := labels.MustNewMatcher(labels.MatchEqual, "j", "foo")
 	jNotFoo := labels.MustNewMatcher(labels.MatchNotEqual, "j", "foo")
 
-	iStar := labels.MustNewMatcher(labels.MatchRegexp, "i", "^.*$")
-	i1Star := labels.MustNewMatcher(labels.MatchRegexp, "i", "^1.*$")
-	iStar1 := labels.MustNewMatcher(labels.MatchRegexp, "i", "^.*1$")
-	iStar1Star := labels.MustNewMatcher(labels.MatchRegexp, "i", "^.*1.*$")
-	iPlus := labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")
-	i1Plus := labels.MustNewMatcher(labels.MatchRegexp, "i", "^1.+$")
-	iEmptyRe := labels.MustNewMatcher(labels.MatchRegexp, "i", "^$")
+	iStar := labels.MustNewMatcher(labels.MatchRegexp, "i", ".*")
+	i1Star := labels.MustNewMatcher(labels.MatchRegexp, "i", "1.*")
+	iStar1 := labels.MustNewMatcher(labels.MatchRegexp, "i", ".*1")
+	iStar1Star := labels.MustNewMatcher(labels.MatchRegexp, "i", ".*1.*")
+	iPlus := labels.MustNewMatcher(labels.MatchRegexp, "i", ".+")
+	i1Plus := labels.MustNewMatcher(labels.MatchRegexp, "i", "1.+")
+	iEmptyRe := labels.MustNewMatcher(labels.MatchRegexp, "i", "")
 	iNotEmpty := labels.MustNewMatcher(labels.MatchNotEqual, "i", "")
 	iNot2 := labels.MustNewMatcher(labels.MatchNotEqual, "i", "2"+postingsBenchSuffix)
-	iNot2Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^2.*$")
-	iNotStar2Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^.*2.*$")
+	iNot2Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "2.*")
+	iNotStar2Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", ".*2.*")
 	jFooBar := labels.MustNewMatcher(labels.MatchRegexp, "j", "foo|bar")
 	jXXXYYY := labels.MustNewMatcher(labels.MatchRegexp, "j", "XXX|YYY")
 	jXplus := labels.MustNewMatcher(labels.MatchRegexp, "j", "X.+")
@@ -186,13 +186,13 @@ func benchmarkLabelValuesWithMatchers(b *testing.B, ir IndexReader) {
 	i1Plus := labels.MustNewMatcher(labels.MatchRegexp, "i", "1.+")
 	i1PostingsBenchSuffix := labels.MustNewMatcher(labels.MatchEqual, "i", "1"+postingsBenchSuffix)
 	iSuffix := labels.MustNewMatcher(labels.MatchRegexp, "i", ".+ddd")
-	iStar := labels.MustNewMatcher(labels.MatchRegexp, "i", "^.*$")
+	iStar := labels.MustNewMatcher(labels.MatchRegexp, "i", ".*")
 	jNotFoo := labels.MustNewMatcher(labels.MatchNotEqual, "j", "foo")
 	jXXXYYY := labels.MustNewMatcher(labels.MatchRegexp, "j", "XXX|YYY")
 	jXplus := labels.MustNewMatcher(labels.MatchRegexp, "j", "X.+")
 	n1 := labels.MustNewMatcher(labels.MatchEqual, "n", "1"+postingsBenchSuffix)
 	nX := labels.MustNewMatcher(labels.MatchNotEqual, "n", "X"+postingsBenchSuffix)
-	nPlus := labels.MustNewMatcher(labels.MatchRegexp, "n", "^.+$")
+	nPlus := labels.MustNewMatcher(labels.MatchRegexp, "n", ".+")
 
 	ctx := context.Background()
 
@@ -205,12 +205,12 @@ func benchmarkLabelValuesWithMatchers(b *testing.B, ir IndexReader) {
 		{`i with i="1"`, "i", []*labels.Matcher{i1}},
 		// i has 100k values.
 		{`i with n="1"`, "i", []*labels.Matcher{n1}},
-		{`i with n="^.+$"`, "i", []*labels.Matcher{nPlus}},
+		{`i with n=".+"`, "i", []*labels.Matcher{nPlus}},
 		{`i with n="1",j!="foo"`, "i", []*labels.Matcher{n1, jNotFoo}},
 		{`i with n="1",j=~"X.+"`, "i", []*labels.Matcher{n1, jXplus}},
 		{`i with n="1",j=~"XXX|YYY"`, "i", []*labels.Matcher{n1, jXXXYYY}},
 		{`i with n="X",j!="foo"`, "i", []*labels.Matcher{nX, jNotFoo}},
-		{`i with n="1",i=~"^.*$",j!="foo"`, "i", []*labels.Matcher{n1, iStar, jNotFoo}},
+		{`i with n="1",i=~".*",j!="foo"`, "i", []*labels.Matcher{n1, iStar, jNotFoo}},
 		// matchers on i itself
 		{`i with i="1aaa...ddd"`, "i", []*labels.Matcher{i1PostingsBenchSuffix}},
 		{`i with i=~"1.+"`, "i", []*labels.Matcher{i1Plus}},

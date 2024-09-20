@@ -45,6 +45,11 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
+func init() {
+	// This can be removed when the default validation scheme in common is updated.
+	model.NameValidationScheme = model.UTF8Validation
+}
+
 func TestPopulateLabels(t *testing.T) {
 	cases := []struct {
 		in            labels.Labels
@@ -511,7 +516,7 @@ scrape_configs:
 	)
 
 	opts := Options{}
-	scrapeManager, err := NewManager(&opts, nil, nil, testRegistry)
+	scrapeManager, err := NewManager(&opts, nil, nil, nil, testRegistry)
 	require.NoError(t, err)
 	newLoop := func(scrapeLoopOptions) loop {
 		ch <- struct{}{}
@@ -576,7 +581,7 @@ scrape_configs:
 func TestManagerTargetsUpdates(t *testing.T) {
 	opts := Options{}
 	testRegistry := prometheus.NewRegistry()
-	m, err := NewManager(&opts, nil, nil, testRegistry)
+	m, err := NewManager(&opts, nil, nil, nil, testRegistry)
 	require.NoError(t, err)
 
 	ts := make(chan map[string][]*targetgroup.Group)
@@ -629,7 +634,7 @@ global:
 
 	opts := Options{}
 	testRegistry := prometheus.NewRegistry()
-	scrapeManager, err := NewManager(&opts, nil, nil, testRegistry)
+	scrapeManager, err := NewManager(&opts, nil, nil, nil, testRegistry)
 	require.NoError(t, err)
 
 	// Load the first config.
@@ -706,7 +711,7 @@ scrape_configs:
 	}
 
 	opts := Options{}
-	scrapeManager, err := NewManager(&opts, nil, nil, testRegistry)
+	scrapeManager, err := NewManager(&opts, nil, nil, nil, testRegistry)
 	require.NoError(t, err)
 
 	reload(scrapeManager, cfg1)
@@ -947,7 +952,7 @@ func TestUnregisterMetrics(t *testing.T) {
 	// Check that all metrics can be unregistered, allowing a second manager to be created.
 	for i := 0; i < 2; i++ {
 		opts := Options{}
-		manager, err := NewManager(&opts, nil, nil, reg)
+		manager, err := NewManager(&opts, nil, nil, nil, reg)
 		require.NotNil(t, manager)
 		require.NoError(t, err)
 		// Unregister all metrics.
@@ -990,6 +995,7 @@ func runManagers(t *testing.T, ctx context.Context) (*discovery.Manager, *Manage
 	)
 	scrapeManager, err := NewManager(
 		&Options{DiscoveryReloadInterval: model.Duration(100 * time.Millisecond)},
+		nil,
 		nil,
 		nopAppendable{},
 		prometheus.NewRegistry(),
@@ -1268,8 +1274,8 @@ scrape_configs:
 	)
 }
 
-// TestOnlyStaleTargetsAreDropped makes sure that when a job has multiple providers, when aone of them should no,
-// longer discover targets, only the stale targets of that provier are dropped.
+// TestOnlyStaleTargetsAreDropped makes sure that when a job has multiple providers, when one of them should no
+// longer discover targets, only the stale targets of that provider are dropped.
 func TestOnlyStaleTargetsAreDropped(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
