@@ -2,7 +2,7 @@
 
 ## unreleased
 
-## 2.55.0-rc.0 / 2024-09-17
+## 2.55.0-rc.0 / 2024-09-20
 
 * [FEATURE] Support UTF-8 characters in label names - feature flag `utf8-names`. #14482, #14880, #14736, #14727
 * [FEATURE] Support config reload automatically - feature flag `auto-reload-config`. #14769
@@ -23,7 +23,7 @@
 * [ENHANCEMENT] PromQL: Use Kahan summation for better accuracy in `avg` and `avg_over_time`. #14413
 * [ENHANCEMENT] TSDB: Backward compatibility with upcoming index v3. #14934
 * [PERF] Remote-Read: Support streaming mode. #11379
-* [PERF] TSDB: Query in-order and out-of-order series together. #14354, #14693, #14714, #14831, #14874
+* [PERF] TSDB: Query in-order and out-of-order series together. #14354, #14693, #14714, #14831, #14874, #14948
 * [PERF] TSDB: Streamline reading of overlapping out-of-order head chunks. #14729
 * [BUGFIX] SD: Fix dropping targets (with feature flag `new-service-discovery-manager`). #13147
 * [BUGFIX] SD: Stop storing stale targets (with feature flag `new-service-discovery-manager`). #13622
