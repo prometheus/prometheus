@@ -28,6 +28,29 @@ func TestParseFileSuccess(t *testing.T) {
 	require.Empty(t, errs, "unexpected errors parsing file")
 }
 
+func TestParseFileSuccessWithAliases(t *testing.T) {
+	exprString := `sum without(instance) (rate(errors_total[5m]))
+/
+sum without(instance) (rate(requests_total[5m]))
+`
+	rgs, errs := ParseFile("testdata/test_aliases.yaml")
+	require.Empty(t, errs, "unexpected errors parsing file")
+	for _, rg := range rgs.Groups {
+		require.Equal(t, "HighAlert", rg.Rules[0].Alert.Value)
+		require.Equal(t, "critical", rg.Rules[0].Labels["severity"])
+		require.Equal(t, "stuff's happening with {{ $.labels.service }}", rg.Rules[0].Annotations["description"])
+
+		require.Equal(t, "new_metric", rg.Rules[1].Record.Value)
+
+		require.Equal(t, "HighAlert", rg.Rules[2].Alert.Value)
+		require.Equal(t, "critical", rg.Rules[2].Labels["severity"])
+		require.Equal(t, "stuff's happening with {{ $.labels.service }}", rg.Rules[0].Annotations["description"])
+		for _, rule := range rg.Rules {
+			require.Equal(t, exprString, rule.Expr.Value)
+		}
+	}
+}
+
 func TestParseFileFailure(t *testing.T) {
 	table := []struct {
 		filename string
