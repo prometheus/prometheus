@@ -872,6 +872,7 @@ type scrapeLoop struct {
 	scrapeFailureLoggerMtx   sync.RWMutex
 	cache                    *scrapeCache
 	lastScrapeSize           int
+	scrapeCount              uint64
 	buffers                  *pool.Pool
 	offsetSeed               uint64
 	honorTimestamps          bool
@@ -1385,6 +1386,7 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	var b []byte
 	var buf *bytes.Buffer
 	scrapeCtx, cancel := context.WithTimeout(sl.parentCtx, sl.timeout)
+	sl.scrapeCount++
 	resp, scrapeErr = sl.scraper.scrape(scrapeCtx)
 	if scrapeErr == nil {
 		b = sl.buffers.Get(sl.lastScrapeSize).([]byte)
@@ -1891,6 +1893,7 @@ var (
 	scrapeTimeoutMetricName       = []byte("scrape_timeout_seconds" + "\xff")
 	scrapeSampleLimitMetricName   = []byte("scrape_sample_limit" + "\xff")
 	scrapeBodySizeBytesMetricName = []byte("scrape_body_size_bytes" + "\xff")
+	scrapeCountMetricName         = []byte("scrape_count" + "\xff")
 )
 
 func (sl *scrapeLoop) report(app storage.Appender, start time.Time, duration time.Duration, scraped, added, seriesAdded, bytes int, scrapeErr error) (err error) {
@@ -1929,6 +1932,9 @@ func (sl *scrapeLoop) report(app storage.Appender, start time.Time, duration tim
 		if err = sl.addReportSample(app, scrapeBodySizeBytesMetricName, ts, float64(bytes), b); err != nil {
 			return
 		}
+		if err = sl.addReportSample(app, scrapeCountMetricName, ts, float64(sl.scrapeCount), b); err != nil {
+			return
+		}
 	}
 	return
 }
@@ -1962,6 +1968,9 @@ func (sl *scrapeLoop) reportStale(app storage.Appender, start time.Time) (err er
 			return
 		}
 		if err = sl.addReportSample(app, scrapeBodySizeBytesMetricName, ts, stale, b); err != nil {
+			return
+		}
+		if err = sl.addReportSample(app, scrapeCountMetricName, ts, stale, b); err != nil {
 			return
 		}
 	}
