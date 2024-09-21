@@ -351,22 +351,21 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 		nm = map[string][]storage.SeriesRef{}
 		p.m[l.Name] = nm
 	}
-	list := append(nm[l.Value], id)
-	nm[l.Value] = list
 
+	// If ordering is disabled then simply append our id.
 	if !p.ordered {
+		nm[l.Value] = append(nm[l.Value], id)
 		return
 	}
+
 	// There is no guarantee that no higher ID was inserted before as they may
 	// be generated independently before adding them to postings.
-	// We repair order violations on insert. The invariant is that the first n-1
-	// items in the list are already sorted.
-	for i := len(list) - 1; i >= 1; i-- {
-		if list[i] >= list[i-1] {
-			break
-		}
-		list[i], list[i-1] = list[i-1], list[i]
-	}
+	// We repair order violations on insert.
+	// Find the slot we need to insert our id into, grow the slice and insert our id.
+	index, _ := slices.BinarySearch(nm[l.Value], id)
+	nm[l.Value] = append(nm[l.Value], storage.SeriesRef(0))
+	copy(nm[l.Value][index+1:], nm[l.Value][index:])
+	nm[l.Value][index] = id
 }
 
 func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) Postings {
