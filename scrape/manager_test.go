@@ -16,7 +16,6 @@ package scrape
 import (
 	"context"
 	"fmt"
-	"google.golang.org/protobuf/types/known/timestamppb"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -33,6 +32,7 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/config"
