@@ -21,7 +21,6 @@ As is traditional with a beta release, we do **not** recommend users install 3.0
 * [CHANGE] Agent mode has been promoted to stable. The feature flag `agent` has been removed. To run Prometheus in Agent mode, use the new `--agent` cmdline arg instead. #14747
 * [CHANGE] Remove deprecated `remote-write-receiver`,`promql-at-modifier`, and `promql-negative-offset` feature flags. #13456, #14526
 * [CHANGE] Remove deprecated `storage.tsdb.allow-overlapping-blocks`, `alertmanager.timeout`, and `storage.tsdb.retention` flags. #14640, #14643
-* [FEATURE] Promtool: Allow additional labels to be added to blocks created from openmetrics. #14402
 * [ENHANCEMENT] Move AM discovery page from "Monitoring status" to "Server status". #14875
 * [BUGFIX] Scrape: Do not override target parameter labels with config params. #11029
 
