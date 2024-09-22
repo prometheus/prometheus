@@ -95,10 +95,8 @@ func (b *bstream) writeByte(byt byte) {
 	// Complete the last byte with the leftmost b.count bits from byt.
 	b.stream[i] |= byt >> (8 - b.count)
 
-	b.stream = append(b.stream, 0)
-	i++
 	// Write the remainder, if any.
-	b.stream[i] = byt << b.count
+	b.stream = append(b.stream, byt<<b.count)
 }
 
 // writeBits writes the nbits right-most bits of u to the stream
