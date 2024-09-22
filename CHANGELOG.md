@@ -9,32 +9,30 @@
 * [FEATURE] Scraping: Add the ability to set custom `http_headers` in config. #14817
 * [FEATURE] Scraping: Support feature flag `created-timestamp-zero-ingestion` in OpenMetrics. #14356, #14815
 * [FEATURE] Scraping: `scrape_failure_log_file` option to log failures to a file. #14734
-* [FEATURE] PromQL: Delay removal of `__name__` label - feature flag `promql-delayed-name-removal`. #14477
 * [FEATURE] OTLP receiver: Optional promotion of resource attributes to series labels. #14200
-* [FEATURE] API: Support multiple `--web.listen-address`. #14665
 * [FEATURE] Remote-Write: Support Google Cloud Monitoring authorization. #14346
 * [FEATURE] Promtool: `tsdb create-blocks` new option to add labels. #14403
 * [FEATURE] Promtool: `promtool test` adds `--junit` flag to format results. #14506
 * [ENHANCEMENT] OTLP receiver: Warn on exponential histograms with zero count and non-zero sum. #14706
 * [ENHANCEMENT] OTLP receiver: Interrupt translation on context cancellation/timeout. #14612
-* [ENHANCEMENT] PromQL: Improve detail in distributed tracing. #14816
+* [ENHANCEMENT] Remote Read client: Enable streaming remote read if the server supports it. #11379
+* [ENHANCEMENT] Remote-Write: Don't reshard if we haven't successfully sent a sample since last update. #14450
+* [ENHANCEMENT] PromQL: Delay deletion of `__name__` label to the end of the query evaluation. This is **experimental** and enabled under the feature-flag `promql-delayed-name-removal`. #14477
 * [ENHANCEMENT] PromQL: Experimental `sort_by_label` and `sort_by_label_desc` sort by all labels when label is equal. #14655
 * [ENHANCEMENT] PromQL: Clarify error message logged when Go runtime panic occurs during query evaluation. #14621
 * [ENHANCEMENT] PromQL: Use Kahan summation for better accuracy in `avg` and `avg_over_time`. #14413
+* [ENHANCEMENT] Tracing: Improve PromQL tracing, including showing the operation performed for aggregates, operators, and calls. #14816
+* [ENHANCEMENT] API: Support multiple listening addresses. #14665
 * [ENHANCEMENT] TSDB: Backward compatibility with upcoming index v3. #14934
-* [PERF] Remote-Read: Support streaming mode. #11379
 * [PERF] TSDB: Query in-order and out-of-order series together. #14354, #14693, #14714, #14831, #14874, #14948
 * [PERF] TSDB: Streamline reading of overlapping out-of-order head chunks. #14729
 * [BUGFIX] SD: Fix dropping targets (with feature flag `new-service-discovery-manager`). #13147
 * [BUGFIX] SD: Stop storing stale targets (with feature flag `new-service-discovery-manager`). #13622
-* [BUGFIX] fix(utf8): propagate validationScheme config to scraping options. #14880
-* [BUGFIX] PromQL: Experimental Native Histograms: Do not re-use spans between histograms. #14771
 * [BUGFIX] Scraping: exemplars could be dropped in protobuf scraping. #14810
 * [BUGFIX] Remote-Write: fix metadata sending for experimental Remote-Write V2. #14766
 * [BUGFIX] Remote-Write: Return 4xx not 5xx when timeseries has duplicate label. #14716
-* [BUGFIX] Experimental Native Histograms: many fixes for incorrect results, panics, warnings. #14598, #14611, #14609, #14575, #14513, #14821
+* [BUGFIX] Experimental Native Histograms: many fixes for incorrect results, panics, warnings. #14513, #14575, #14598, #14609, #14611, #14771, #14821
 * [BUGFIX] TSDB: Only count unknown record types in `record_decode_failures_total` metric. #14042
-* [ENHANCEMENT] Remote-Write: Don't reshard if we haven't successfully sent a sample since last update. #14450
 
 ## 2.54.1 / 2024-08-27
 
