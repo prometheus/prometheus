@@ -41,7 +41,7 @@ const (
 )
 
 func TestTargetLabels(t *testing.T) {
-	target := newTestTarget("example.com:80", 0, labels.FromStrings("job", "some_job", "foo", "bar"))
+	target := newTestTarget("example.com", 0, labels.FromStrings("job", "some_job", "foo", "bar"))
 	want := labels.FromStrings(model.JobLabel, "some_job", "foo", "bar")
 	b := labels.NewScratchBuilder(0)
 	got := target.Labels(&b)
@@ -67,7 +67,7 @@ func TestTargetOffset(t *testing.T) {
 
 	// Calculate offsets for 10000 different targets.
 	for i := range offsets {
-		target := newTestTarget("example.com:80", 0, labels.FromStrings(
+		target := newTestTarget("example.com", 0, labels.FromStrings(
 			"label", strconv.Itoa(i),
 		))
 		offsets[i] = target.offset(interval, offsetSeed)
@@ -348,7 +348,7 @@ func TestTargetsFromGroup(t *testing.T) {
 		ScrapeInterval: model.Duration(1 * time.Minute),
 	}
 	lb := labels.NewBuilder(labels.EmptyLabels())
-	targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: []model.LabelSet{{}, {model.AddressLabel: "localhost:9090"}}}, &cfg, false, nil, lb)
+	targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: []model.LabelSet{{}, {model.AddressLabel: "localhost:9090"}}}, &cfg, nil, lb)
 	require.Len(t, targets, 1)
 	require.Len(t, failures, 1)
 	require.EqualError(t, failures[0], expectedError)
@@ -435,7 +435,7 @@ scrape_configs:
 			lb := labels.NewBuilder(labels.EmptyLabels())
 			group := &targetgroup.Group{Targets: targets}
 			for i := 0; i < b.N; i++ {
-				tgets, _ = TargetsFromGroup(group, config.ScrapeConfigs[0], false, tgets, lb)
+				tgets, _ = TargetsFromGroup(group, config.ScrapeConfigs[0], tgets, lb)
 				if len(targets) != nTargets {
 					b.Fatalf("Expected %d targets, got %d", nTargets, len(targets))
 				}
