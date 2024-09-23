@@ -98,6 +98,7 @@ type OpenMetricsParser struct {
 	skipCTSeries bool
 	ct           int64
 	cthashset    uint64
+	peekParser   *OpenMetricsParser
 }
 
 type openMetricsParserOptions struct {
@@ -274,30 +275,41 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 		// CT is already known, fast path.
 		return &p.ct
 	}
-	// Search for the _created line for the currFamilyLsetHash using ephemeral parser until
-	// we see EOF or new metric family. We have to do it as we don't know where (and if)
-	// that CT line is.
-	// TODO(bwplotka): Make sure OM 1.1/2.0 pass CT via metadata or exemplar-like to avoid this.
-	peek := deepCopy(p)
+
+	// Lazy initialization of the deep copy of the parser.
+	if p.peekParser == nil {
+		peekCopy := deepCopy(p)
+		p.peekParser = &peekCopy
+	}
+
+	// Create a new lexer and update the deep copy with it.
+	newLexer := &openMetricsLexer{
+		b:     p.l.b,
+		i:     p.l.i,
+		start: p.l.start,
+		err:   p.l.err,
+		state: p.l.state,
+	}
+	p.peekParser.l = newLexer
+
 	for {
-		eType, err := peek.Next()
+		eType, err := p.peekParser.Next()
 		if err != nil {
 			// This means peek will give error too later on, so def no CT line found.
 			// This might result in partial scrape with wrong/missing CT, but only
 			// spec improvement would help.
-			// TODO(bwplotka): Make sure OM 1.1/2.0 pass CT via metadata or exemplar-like to avoid this.
+			// TODO: Make sure OM 1.1/2.0 pass CT via metadata or exemplar-like to avoid this.
 			p.ct = -1
 			return nil
 		}
 		if eType != EntrySeries {
 			// Assume we hit different family, no CT line found.
-
 			p.ct = -1
 			return nil
 		}
 
 		var peekedLset labels.Labels
-		peek.Metric(&peekedLset)
+		p.peekParser.Metric(&peekedLset)
 		peekedName := peekedLset.Get(model.MetricNameLabel)
 		if !strings.HasSuffix(peekedName, "_created") {
 			// Not a CT line, search more.
@@ -311,7 +323,7 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 			p.ct = -1
 			return nil
 		}
-		ct := int64(peek.val)
+		ct := int64(p.peekParser.val)
 		p.ct = ct
 		return &ct
 	}
