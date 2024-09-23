@@ -97,7 +97,7 @@ type OpenMetricsParser struct {
 
 	skipCTSeries bool
 	ct           int64
-	cthashset    uint64
+	visitedName  string
 }
 
 type openMetricsParserOptions struct {
@@ -259,6 +259,8 @@ func (p *OpenMetricsParser) Exemplar(e *exemplar.Exemplar) bool {
 func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 	if !typeRequiresCT(p.mtype) {
 		// Not a CT supported metric type, fast path.
+		p.ct = -1
+		p.visitedName = ""
 		return nil
 	}
 
@@ -269,8 +271,11 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 	)
 	p.Metric(&currLset)
 	currFamilyLsetHash, buf := currLset.HashWithoutLabels(buf, labels.MetricName, "le", "quantile")
+
 	// make sure we're on a new metric before returning
-	if currFamilyLsetHash != p.cthashset && p.cthashset != 0 && p.ct != -1 {
+	currName := currLset.Get(model.MetricNameLabel)
+	currName = findMName(currName)
+	if currName == p.visitedName && p.visitedName != "" && p.ct != -1 {
 		// CT is already known, fast path.
 		return &p.ct
 	}
@@ -296,6 +301,7 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 			p.ct = -1
 			p.l = resetLexer
 			p.skipCTSeries = true
+			p.visitedName = ""
 			return nil
 		}
 		if eType != EntrySeries {
@@ -303,6 +309,7 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 			p.ct = -1
 			p.l = resetLexer
 			p.skipCTSeries = true
+			p.visitedName = ""
 			return nil
 		}
 
@@ -321,14 +328,27 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 			p.ct = -1
 			p.l = resetLexer
 			p.skipCTSeries = true
+			p.visitedName = ""
 			return nil
 		}
 		ct := int64(p.val)
 		p.ct = ct
 		p.l = resetLexer
 		p.skipCTSeries = true
+		p.visitedName = currName
 		return &ct
 	}
+}
+
+func findMName(name string) string {
+	nameSlice := strings.Split(name, "_")
+	if len(nameSlice) > 1 {
+		switch nameSlice[len(nameSlice)-1] {
+		case "created", "count", "sum", "bucket":
+			return strings.Join(nameSlice[:len(nameSlice)-1], "_")
+		}
+	}
+	return name
 }
 
 // typeRequiresCT returns true if the metric type requires a _created timestamp.
