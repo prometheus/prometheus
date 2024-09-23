@@ -98,6 +98,7 @@ type OpenMetricsParser struct {
 	skipCTSeries bool
 	ct           int64
 	visitedName  string
+	ctHashSet    uint64
 }
 
 type openMetricsParserOptions struct {
@@ -275,7 +276,7 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 	// make sure we're on a new metric before returning
 	currName := currLset.Get(model.MetricNameLabel)
 	currName = findMName(currName)
-	if currName == p.visitedName && p.visitedName != "" && p.ct != -1 {
+	if currName == p.visitedName && currFamilyLsetHash == p.ctHashSet && p.visitedName != "" && p.ctHashSet != 0 && p.ct != -1 {
 		// CT is already known, fast path.
 		return &p.ct
 	}
@@ -302,6 +303,7 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 			p.l = resetLexer
 			p.skipCTSeries = true
 			p.visitedName = ""
+			p.ctHashSet = 0
 			return nil
 		}
 		if eType != EntrySeries {
@@ -310,6 +312,7 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 			p.l = resetLexer
 			p.skipCTSeries = true
 			p.visitedName = ""
+			p.ctHashSet = 0
 			return nil
 		}
 
@@ -329,6 +332,7 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 			p.l = resetLexer
 			p.skipCTSeries = true
 			p.visitedName = ""
+			p.ctHashSet = 0
 			return nil
 		}
 		ct := int64(p.val)
@@ -336,6 +340,7 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 		p.l = resetLexer
 		p.skipCTSeries = true
 		p.visitedName = currName
+		p.ctHashSet = currFamilyLsetHash
 		return &ct
 	}
 }
