@@ -12,12 +12,12 @@ The encoding of pages is largely borrowed from [LevelDB's/RocksDB's write ahead 
 Notable deviations are that the record fragment is encoded as:
 
 ```
-┌─────────────┬──────────┬────────────┬──────────────┐
-│ header <1b> │ len <2b> │ CRC32 <4b> │ data <bytes> │
-└─────────────┴──────────┴────────────┴──────────────┘
+┌───────────┬──────────┬────────────┬──────────────┐
+│ type <1b> │ len <2b> │ CRC32 <4b> │ data <bytes> │
+└───────────┴──────────┴────────────┴──────────────┘
 ```
 
-The initial header byte is made up of three components: a 3-bit reserved field, a 1-bit zstd compression flag, a 1-bit snappy compression flag, and a 3-bit type flag. 
+The initial type byte is made up of three components: a 3-bit reserved field, a 1-bit zstd compression flag, a 1-bit snappy compression flag, and a 3-bit type flag. 
 
 ```
 ┌─────────────────┬──────────────────┬────────────────────┬──────────────────┐
