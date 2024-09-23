@@ -171,7 +171,7 @@ type Regexp struct {
 // NewRegexp creates a new anchored Regexp and returns an error if the
 // passed-in regular expression does not compile.
 func NewRegexp(s string) (Regexp, error) {
-	regex, err := regexp.Compile("^(?:" + s + ")$")
+	regex, err := regexp.Compile("^(?s:" + s + ")$")
 	return Regexp{Regexp: regex}, err
 }
 
@@ -218,8 +218,8 @@ func (re Regexp) String() string {
 	}
 
 	str := re.Regexp.String()
-	// Trim the anchor `^(?:` prefix and `)$` suffix.
-	return str[4 : len(str)-2]
+	// Trim the anchor `^(?s:` prefix and `)$` suffix.
+	return str[5 : len(str)-2]
 }
 
 // Process returns a relabeled version of the given label set. The relabel configurations

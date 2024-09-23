@@ -32,6 +32,7 @@ import {
 } from "use-query-params";
 import { useDebouncedValue } from "@mantine/hooks";
 import { KVSearch } from "@nexucis/kvsearch";
+import { inputIconStyle } from "../styles";
 
 type AlertsPageData = {
   // How many rules are in each state across all groups.
@@ -190,7 +191,7 @@ export default function AlertsPage() {
         />
         <TextInput
           flex={1}
-          leftSection={<IconSearch size={14} />}
+          leftSection={<IconSearch style={inputIconStyle} />}
           placeholder="Filter by rule name or labels"
           value={searchFilter || ""}
           onChange={(event) =>
@@ -199,7 +200,7 @@ export default function AlertsPage() {
         ></TextInput>
       </Group>
       {alertsPageData.groups.length === 0 ? (
-        <Alert title="No rules found" icon={<IconInfoCircle size={14} />}>
+        <Alert title="No rules found" icon={<IconInfoCircle />}>
           No rules found.
         </Alert>
       ) : (
@@ -207,7 +208,7 @@ export default function AlertsPage() {
         alertsPageData.groups.length !== shownGroups.length && (
           <Alert
             title="Hiding groups with no matching rules"
-            icon={<IconInfoCircle size={14} />}
+            icon={<IconInfoCircle/>}
           >
             Hiding {alertsPageData.groups.length - shownGroups.length} empty
             groups due to filters or no rules.
@@ -326,7 +327,7 @@ export default function AlertsPage() {
                           {r.rule.alerts.length > 0 && (
                             <Table mt="lg">
                               <Table.Thead>
-                                <Table.Tr>
+                                <Table.Tr style={{whiteSpace: "nowrap"}}>
                                   <Table.Th>Alert labels</Table.Th>
                                   <Table.Th>State</Table.Th>
                                   <Table.Th>Active Since</Table.Th>

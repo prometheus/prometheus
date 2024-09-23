@@ -43,6 +43,7 @@ var (
 	ErrExemplarLabelLength         = fmt.Errorf("label length for exemplar exceeds maximum of %d UTF-8 characters", exemplar.ExemplarMaxLabelSetLength)
 	ErrExemplarsDisabled           = fmt.Errorf("exemplar storage is disabled or max exemplars is less than or equal to 0")
 	ErrNativeHistogramsDisabled    = fmt.Errorf("native histograms are disabled")
+	ErrOOONativeHistogramsDisabled = fmt.Errorf("out-of-order native histogram ingestion is disabled")
 
 	// ErrOutOfOrderCT indicates failed append of CT to the storage
 	// due to CT being older the then newer sample.
@@ -157,7 +158,7 @@ type ChunkQuerier interface {
 
 // LabelQuerier provides querying access over labels.
 type LabelQuerier interface {
-	// LabelValues returns all potential values for a label name.
+	// LabelValues returns all potential values for a label name in sorted order.
 	// It is not safe to use the strings beyond the lifetime of the querier.
 	// If matchers are specified the returned result set is reduced
 	// to label values of metrics matching the matchers.

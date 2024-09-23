@@ -47,16 +47,6 @@ When enabled, for each instance scrape, Prometheus stores a sample in the follow
   to find out how close they are to reaching the limit with `scrape_samples_post_metric_relabeling / scrape_sample_limit`. Note that `scrape_sample_limit` can be zero if there is no limit configured, which means that the query above can return `+Inf` for targets with no limit (as we divide by zero). If you want to query only for targets that do have a sample limit use this query: `scrape_samples_post_metric_relabeling / (scrape_sample_limit > 0)`.
 - `scrape_body_size_bytes`. The uncompressed size of the most recent scrape response, if successful. Scrapes failing because `body_size_limit` is exceeded report `-1`, other scrape failures report `0`.
 
-## Prometheus agent
-
-`--enable-feature=agent`
-
-When enabled, Prometheus runs in agent mode. The agent mode is limited to
-discovery, scrape and remote write.
-
-This is useful when you do not need to query the Prometheus data locally, but
-only from a central [remote endpoint](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage).
-
 ## Per-step stats
 
 `--enable-feature=promql-per-step-stats`

@@ -1,5 +1,10 @@
 # Changelog
 
+## unreleased
+
+* [CHANGE] `holt_winters` is now called `double_exponential_smoothing` and moves behind the [experimental-promql-functions feature flag](https://prometheus.io/docs/prometheus/latest/feature_flags/#experimental-promql-functions). #14930
+* [BUGFIX] PromQL: Only return "possible non-counter" annotation when `rate` returns points. #14910
+
 ## 3.0.0-beta.0 / 2024-09-05
 
 Release 3.0.0-beta.0 includes new features such as a brand new UI and UTF-8 support enabled by default. As a new major version, several breaking changes are introduced. The breaking changes are mainly around the removal of deprecated feature flags and CLI arguments, and the full list can be found below. Most users should be able to try this release out of the box without any configuration changes.

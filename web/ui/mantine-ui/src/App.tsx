@@ -2,6 +2,7 @@ import "@mantine/core/styles.css";
 import "@mantine/code-highlight/styles.css";
 import "@mantine/notifications/styles.css";
 import "@mantine/dates/styles.css";
+import "./mantine-overrides.css";
 import classes from "./App.module.css";
 import PrometheusLogo from "./images/prometheus-logo.svg";
 
@@ -67,10 +68,9 @@ import { QueryParamProvider } from "use-query-params";
 import { ReactRouter6Adapter } from "use-query-params/adapters/react-router-6";
 import ServiceDiscoveryPage from "./pages/service-discovery/ServiceDiscoveryPage";
 import AlertmanagerDiscoveryPage from "./pages/AlertmanagerDiscoveryPage";
+import { actionIconStyle, navIconStyle } from "./styles";
 
 const queryClient = new QueryClient();
-
-const navIconStyle = { width: rem(16), height: rem(16) };
 
 const mainNavPages = [
   {
@@ -322,9 +322,9 @@ function App() {
         color="gray"
         title="Documentation"
         aria-label="Documentation"
-        size={32}
+        size={rem(32)}
       >
-        <IconBook size={20} />
+        <IconBook style={actionIconStyle} />
       </ActionIcon>
     </>
   );
