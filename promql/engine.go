@@ -1457,11 +1457,12 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 	return result, warnings
 }
 
-// generateMatrix generates a Matrix between ev.startTimestamp and ev.endTimestamp (inclusive), each point spaced ev.interval apart, from vs.
+// evalVectorSelector generates a Matrix between ev.startTimestamp and ev.endTimestamp (inclusive), each point spaced ev.interval apart, from vs.
+// vs.Series has to be expanded before calling this method.
 // For every series iterator in vs.Series, the method iterates in ev.interval sized steps from ev.startTimestamp until and including ev.endTimestamp,
 // collecting every corresponding sample (obtained via ev.vectorSelectorSingle) into a Series.
 // All of the generated Series are collected into a Matrix, that gets returned.
-func (ev *evaluator) generateMatrix(ctx context.Context, vs *parser.VectorSelector) Matrix {
+func (ev *evaluator) evalVectorSelector(ctx context.Context, vs *parser.VectorSelector) Matrix {
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 
 	mat := make(Matrix, 0, len(vs.Series))
@@ -1957,7 +1958,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		if err != nil {
 			ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
 		}
-		mat := ev.generateMatrix(ctx, e)
+		mat := ev.evalVectorSelector(ctx, e)
 		return mat, ws
 
 	case *parser.MatrixSelector:
