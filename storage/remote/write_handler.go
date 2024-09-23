@@ -24,12 +24,10 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
-
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -166,14 +164,15 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if msgType == config.RemoteWriteProtoMsgV1 {
 		// PRW 1.0 flow has different proto message and no partial write handling.
-		var req prompb.WriteRequest
-		if err := proto.Unmarshal(decompressed, &req); err != nil {
+		req := prompb.WriteRequestFromVTPool()
+		defer req.ReturnToVTPool()
+		if err := req.UnmarshalVT(decompressed); err != nil {
 			// TODO(bwplotka): Add more context to responded error?
 			level.Error(h.logger).Log("msg", "Error decoding v1 remote write request", "protobuf_message", msgType, "err", err.Error())
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if err = h.write(r.Context(), &req); err != nil {
+		if err = h.write(r.Context(), req); err != nil {
 			switch {
 			case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrOutOfBounds), errors.Is(err, storage.ErrDuplicateSampleForTimestamp), errors.Is(err, storage.ErrTooOldSample):
 				// Indicated an out-of-order sample is a bad request to prevent retries.
@@ -190,15 +189,17 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Remote Write 2.x proto message handling.
-	var req writev2.Request
-	if err := proto.Unmarshal(decompressed, &req); err != nil {
+	req := writev2.RequestFromVTPool()
+	defer req.ReturnToVTPool()
+	// Timeseries as well
+	if err := req.UnmarshalVT(decompressed); err != nil {
 		// TODO(bwplotka): Add more context to responded error?
 		level.Error(h.logger).Log("msg", "Error decoding v2 remote write request", "protobuf_message", msgType, "err", err.Error())
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	respStats, errHTTPCode, err := h.writeV2(r.Context(), &req)
+	respStats, errHTTPCode, err := h.writeV2(r.Context(), req)
 
 	// Set required X-Prometheus-Remote-Write-Written-* response headers, in all cases.
 	respStats.SetHeaders(w)
@@ -284,7 +285,7 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	return nil
 }
 
-func (h *writeHandler) appendV1Samples(app storage.Appender, ss []prompb.Sample, labels labels.Labels) error {
+func (h *writeHandler) appendV1Samples(app storage.Appender, ss []*prompb.Sample, labels labels.Labels) error {
 	var ref storage.SeriesRef
 	var err error
 	for _, s := range ss {
@@ -301,7 +302,7 @@ func (h *writeHandler) appendV1Samples(app storage.Appender, ss []prompb.Sample,
 	return nil
 }
 
-func (h *writeHandler) appendV1Histograms(app storage.Appender, hh []prompb.Histogram, labels labels.Labels) error {
+func (h *writeHandler) appendV1Histograms(app storage.Appender, hh []*prompb.Histogram, labels labels.Labels) error {
 	var err error
 	for _, hp := range hh {
 		if hp.IsFloatHistogram() {

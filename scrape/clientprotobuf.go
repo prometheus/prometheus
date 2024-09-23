@@ -17,7 +17,7 @@ import (
 	"bytes"
 	"encoding/binary"
 
-	"github.com/gogo/protobuf/proto"
+	"google.golang.org/protobuf/proto"
 
 	// Intentionally using client model to simulate client in tests.
 	dto "github.com/prometheus/client_model/go"

@@ -18,6 +18,8 @@ package prometheusremotewrite
 
 import (
 	"context"
+	"fmt"
+	"google.golang.org/protobuf/proto"
 	"testing"
 	"time"
 
@@ -45,13 +47,13 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 				)
 			},
 			want: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
+				labels := []*prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test"},
 				}
 				return map[uint64]*prompb.TimeSeries{
 					timeSeriesSignature(labels): {
 						Labels: labels,
-						Samples: []prompb.Sample{
+						Samples: []*prompb.Sample{
 							{
 								Value:     1,
 								Timestamp: convertTimeStamp(pcommon.Timestamp(ts)),
@@ -100,13 +102,13 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				)
 			},
 			want: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
+				labels := []*prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test"},
 				}
 				return map[uint64]*prompb.TimeSeries{
 					timeSeriesSignature(labels): {
 						Labels: labels,
-						Samples: []prompb.Sample{
+						Samples: []*prompb.Sample{
 							{
 								Value:     1,
 								Timestamp: convertTimeStamp(ts),
@@ -128,17 +130,17 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				return m
 			},
 			want: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
+				labels := []*prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test"},
 				}
 				return map[uint64]*prompb.TimeSeries{
 					timeSeriesSignature(labels): {
 						Labels: labels,
-						Samples: []prompb.Sample{{
+						Samples: []*prompb.Sample{{
 							Value:     1,
 							Timestamp: convertTimeStamp(ts),
 						}},
-						Exemplars: []prompb.Exemplar{
+						Exemplars: []*prompb.Exemplar{
 							{Value: 2},
 						},
 					},
@@ -161,22 +163,22 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				return metric
 			},
 			want: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
+				labels := []*prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_sum"},
 				}
-				createdLabels := []prompb.Label{
+				createdLabels := []*prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_sum" + createdSuffix},
 				}
 				return map[uint64]*prompb.TimeSeries{
 					timeSeriesSignature(labels): {
 						Labels: labels,
-						Samples: []prompb.Sample{
+						Samples: []*prompb.Sample{
 							{Value: 1, Timestamp: convertTimeStamp(ts)},
 						},
 					},
 					timeSeriesSignature(createdLabels): {
 						Labels: createdLabels,
-						Samples: []prompb.Sample{
+						Samples: []*prompb.Sample{
 							{Value: float64(convertTimeStamp(ts)), Timestamp: convertTimeStamp(ts)},
 						},
 					},
@@ -197,13 +199,13 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				return metric
 			},
 			want: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
+				labels := []*prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_sum"},
 				}
 				return map[uint64]*prompb.TimeSeries{
 					timeSeriesSignature(labels): {
 						Labels: labels,
-						Samples: []prompb.Sample{
+						Samples: []*prompb.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
@@ -224,13 +226,13 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				return metric
 			},
 			want: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
+				labels := []*prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_sum"},
 				}
 				return map[uint64]*prompb.TimeSeries{
 					timeSeriesSignature(labels): {
 						Labels: labels,
-						Samples: []prompb.Sample{
+						Samples: []*prompb.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
@@ -253,8 +255,13 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				},
 				metric.Name(),
 			)
-
-			assert.Equal(t, tt.want(), converter.unique)
+			fmt.Println(tt.want())
+			fmt.Println(converter.unique)
+			expect := tt.want()
+			for k, _ := range expect {
+				assert.Equal(t, expect[k], converter.unique[k])
+				assert.True(t, proto.Equal(expect[k], converter.unique[k]))
+			}
 			assert.Empty(t, converter.conflicts)
 		})
 	}
