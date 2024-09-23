@@ -12,12 +12,20 @@ The encoding of pages is largely borrowed from [LevelDB's/RocksDB's write ahead 
 Notable deviations are that the record fragment is encoded as:
 
 ```
-┌───────────┬──────────┬────────────┬──────────────┐
-│ type <1b> │ len <2b> │ CRC32 <4b> │ data <bytes> │
-└───────────┴──────────┴────────────┴──────────────┘
+┌─────────────┬──────────┬────────────┬──────────────┐
+│ header <1b> │ len <2b> │ CRC32 <4b> │ data <bytes> │
+└─────────────┴──────────┴────────────┴──────────────┘
 ```
 
-The type flag has the following states:
+The initial header byte is made up of three components: a 3-bit reserved field, a 1-bit zstd compression flag, a 1-bit snappy compression flag, and a 3-bit type flag. 
+
+```
+┌─────────────────┬──────────────────┬────────────────────┬──────────────────┐
+│ reserved <3bit> │ zstd_flag <1bit> │ snappy_flag <1bit> │ type_flag <3bit> │
+└─────────────────┴──────────────────┴────────────────────┴──────────────────┘
+```
+
+The lowest 3 bits within this flag represent the record type as follows:
 
 * `0`: rest of page will be empty
 * `1`: a full record encoded in a single fragment
