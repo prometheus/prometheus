@@ -98,7 +98,6 @@ type OpenMetricsParser struct {
 	skipCTSeries bool
 	ct           int64
 	cthashset    uint64
-	peekParser   *OpenMetricsParser
 }
 
 type openMetricsParserOptions struct {
@@ -276,40 +275,39 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 		return &p.ct
 	}
 
-	// Lazy initialization of the deep copy of the parser.
-	if p.peekParser == nil {
-		peekCopy := deepCopy(p)
-		p.peekParser = &peekCopy
-	}
-
 	// Create a new lexer and update the deep copy with it.
-	newLexer := &openMetricsLexer{
+	resetLexer := &openMetricsLexer{
 		b:     p.l.b,
 		i:     p.l.i,
 		start: p.l.start,
 		err:   p.l.err,
 		state: p.l.state,
 	}
-	p.peekParser.l = newLexer
+
+	p.skipCTSeries = false
 
 	for {
-		eType, err := p.peekParser.Next()
+		eType, err := p.Next()
 		if err != nil {
 			// This means peek will give error too later on, so def no CT line found.
 			// This might result in partial scrape with wrong/missing CT, but only
 			// spec improvement would help.
 			// TODO: Make sure OM 1.1/2.0 pass CT via metadata or exemplar-like to avoid this.
 			p.ct = -1
+			p.l = resetLexer
+			p.skipCTSeries = true
 			return nil
 		}
 		if eType != EntrySeries {
 			// Assume we hit different family, no CT line found.
 			p.ct = -1
+			p.l = resetLexer
+			p.skipCTSeries = true
 			return nil
 		}
 
 		var peekedLset labels.Labels
-		p.peekParser.Metric(&peekedLset)
+		p.Metric(&peekedLset)
 		peekedName := peekedLset.Get(model.MetricNameLabel)
 		if !strings.HasSuffix(peekedName, "_created") {
 			// Not a CT line, search more.
@@ -321,10 +319,14 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 		if peekWithoutNameLsetHash != currFamilyLsetHash {
 			// CT line for a different series, for our series no CT.
 			p.ct = -1
+			p.l = resetLexer
+			p.skipCTSeries = true
 			return nil
 		}
-		ct := int64(p.peekParser.val)
+		ct := int64(p.val)
 		p.ct = ct
+		p.l = resetLexer
+		p.skipCTSeries = true
 		return &ct
 	}
 }
@@ -375,136 +377,6 @@ func (p *OpenMetricsParser) parseError(exp string, got token) error {
 		e = len(p.l.b)
 	}
 	return fmt.Errorf("%s, got %q (%q) while parsing: %q", exp, p.l.b[p.l.start:e], got, p.l.b[p.start:e])
-}
-
-func (p *OpenMetricsParser) quickNext() (Entry, error) {
-	var err error
-
-	p.start = p.l.i
-	p.offsets = p.offsets[:0]
-	p.eOffsets = p.eOffsets[:0]
-	p.exemplar = p.exemplar[:0]
-	p.exemplarVal = 0
-	p.hasExemplarTs = false
-
-	switch t := p.nextToken(); t {
-	case tEOFWord:
-		if t := p.nextToken(); t != tEOF {
-			return EntryInvalid, errors.New("unexpected data after # EOF")
-		}
-		return EntryInvalid, io.EOF
-	case tEOF:
-		return EntryInvalid, errors.New("data does not end with # EOF")
-	case tHelp, tType, tUnit:
-		switch t2 := p.nextToken(); t2 {
-		case tMName:
-			mStart := p.l.start
-			mEnd := p.l.i
-			if p.l.b[mStart] == '"' && p.l.b[mEnd-1] == '"' {
-				mStart++
-				mEnd--
-			}
-			p.offsets = append(p.offsets, mStart, mEnd)
-		default:
-			return EntryInvalid, p.parseError("expected metric name after "+t.String(), t2)
-		}
-		switch t2 := p.nextToken(); t2 {
-		case tText:
-			if len(p.l.buf()) > 1 {
-				p.text = p.l.buf()[1 : len(p.l.buf())-1]
-			} else {
-				p.text = []byte{}
-			}
-		default:
-			return EntryInvalid, fmt.Errorf("expected text in %s", t.String())
-		}
-		switch t {
-		case tType:
-			switch s := yoloString(p.text); s {
-			case "counter":
-				p.mtype = model.MetricTypeCounter
-			case "gauge":
-				p.mtype = model.MetricTypeGauge
-			case "histogram":
-				p.mtype = model.MetricTypeHistogram
-			case "gaugehistogram":
-				p.mtype = model.MetricTypeGaugeHistogram
-			case "summary":
-				p.mtype = model.MetricTypeSummary
-			case "info":
-				p.mtype = model.MetricTypeInfo
-			case "stateset":
-				p.mtype = model.MetricTypeStateset
-			case "unknown":
-				p.mtype = model.MetricTypeUnknown
-			default:
-				return EntryInvalid, fmt.Errorf("invalid metric type %q", s)
-			}
-		case tHelp:
-			if !utf8.Valid(p.text) {
-				return EntryInvalid, fmt.Errorf("help text %q is not a valid utf8 string", p.text)
-			}
-		}
-		switch t {
-		case tHelp:
-			return EntryHelp, nil
-		case tType:
-			return EntryType, nil
-		case tUnit:
-			m := yoloString(p.l.b[p.offsets[0]:p.offsets[1]])
-			u := yoloString(p.text)
-			if len(u) > 0 {
-				if !strings.HasSuffix(m, u) || len(m) < len(u)+1 || p.l.b[p.offsets[1]-len(u)-1] != '_' {
-					return EntryInvalid, fmt.Errorf("unit %q not a suffix of metric %q", u, m)
-				}
-			}
-			return EntryUnit, nil
-		}
-
-	case tBraceOpen:
-		// We found a brace, so make room for the eventual metric name. If these
-		// values aren't updated, then the metric name was not set inside the
-		// braces and we can return an error.
-		if len(p.offsets) == 0 {
-			p.offsets = []int{-1, -1}
-		}
-		if p.offsets, err = p.parseLVals(p.offsets, false); err != nil {
-			return EntryInvalid, err
-		}
-
-		p.series = p.l.b[p.start:p.l.i]
-		if err := p.parseSeriesEndOfLine(p.nextToken()); err != nil {
-			return EntryInvalid, err
-		}
-		if p.skipCTSeries && p.isCreatedSeries() {
-			return p.Next()
-		}
-		return EntrySeries, nil
-	case tMName:
-		p.offsets = append(p.offsets, p.start, p.l.i)
-		p.series = p.l.b[p.start:p.l.i]
-
-		t2 := p.nextToken()
-		if t2 == tBraceOpen {
-			p.offsets, err = p.parseLVals(p.offsets, false)
-			if err != nil {
-				return EntryInvalid, err
-			}
-			p.series = p.l.b[p.start:p.l.i]
-			t2 = p.nextToken()
-		}
-
-		if err := p.parseSeriesEndOfLine(t2); err != nil {
-			return EntryInvalid, err
-		}
-		if p.skipCTSeries && p.isCreatedSeries() {
-			return p.Next()
-		}
-		return EntrySeries, nil
-	default:
-		err = p.parseError("expected a valid start token", t)
-	}
-	return EntryInvalid, err
 }
 
 // Next advances the parser to the next sample.
