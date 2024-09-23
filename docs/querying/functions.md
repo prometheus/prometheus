@@ -434,20 +434,86 @@ increases are tracked consistently on a per-second basis.
 
 ## `info()`
 
-**This function has to be enabled via the [feature flag](../feature_flags.md#experimental-promql-functions) `--enable-feature=promql-experimental-functions`.**
+_The `info` function is introduced as an experiment where we try to improve UX
+around including labels from [info metrics](https://grafana.com/blog/2021/08/04/how-to-use-promql-joins-for-more-effective-queries-of-prometheus-metrics-at-scale/#info-metrics).
+The behavior of this function may change in future versions of Prometheus,
+including its removal from PromQL. info has to be enabled via the 
+[feature flag](../feature_flags.md#experimental-promql-functions) `--enable-feature=promql-experimental-functions`._
 
-For each time series in `v`, `info(v instant-vector, [data-label-selector string])` finds 
-all `target_info` series with corresponding identifying labels (`instance` and `job`),
-and adds the union of their data (i.e., non-identifying) labels to the time series.
-`target_info`'s data labels correspond to OpenTelemetry resource attributes.
-The optional second argument allows specifying through label matchers, which data labels
-should be picked. Example: `{k8s_container_name=~".+"}`. Through this argument, you can
-also specify the info series to consider, by providing a `__name__` label matcher, e.g.
-`{__name__="target_info"}`. For the time being however, only `target_info` will be considered.
-The set of time series set augmented with any matching info series labels gets returned.
+`info(v instant-vector, [data-label-selector string])` finds, for each time 
+series in v, all info series with corresponding _identifying_ labels (more on
+this later), and adds the union of their _data_ (i.e., non-identifying) labels
+to the time series. The second, optional, argument is a collection of data
+label matchers that may be used to constrain which info series to consider
+and which data labels to pick from them.
 
-In the future, `info` will recognize all info metrics, not just `target_info`, and also detect their 
-respective identifying labels.
+What we mean by identifying labels in this context is the subset that 
+identifies an info metric. The remaining info metric labels are considered
+"data" labels (i.e. non-identifying). The purpose of an info metric's 
+identifying labels is to connect it to regular (non-info) metrics. It's similar
+to foreign keys in SQL, that allow you to combine data spread across multiple
+tables. The data labels in practice encode metadata key value pairs, and are
+what one wants to add to query results (identifying labels are already 
+included).
+
+Before the `info` function, the solution to including info metric data labels
+in Prometheus queries has been to so-called "join" with the relevant info metric.
+Take the following example:
+
+```
+rate(http_server_request_duration_seconds_count[2m])
+* on (job, instance) group_left (k8s_cluster_name)
+target_info
+```
+
+The core of the query is the expression `rate(http_server_request_duration_seconds_count[2m])`.
+However, the resulting time series are joined with `target_info` (an info 
+metric) series that have the same `job` and `instance` labels (these are 
+identifying). When joining, the `k8s_cluster_name` label is picked from 
+`target_info` and added to the time series.
+
+Writing queries like the above is rather tricky, and also doesn't insulate the
+user from possible "join conflicts". Join conflicts happen temporarily when
+non-identifying labels of an info metric change, without the old version of the
+metric getting marked as stale. In order to provide a better user experience,
+we have developed the `info` function. Using `info`, the preceding example can
+instead be written like so:
+
+```
+info(
+  rate(http_server_request_duration_seconds_count[2m]),
+  {k8s_cluster_name=~".+"}
+)
+```
+
+By wrapping the core expression (`rate(http_server_request_duration_seconds_count[2m])`)
+in an `info` call, combined with the data label matcher `k8s_cluster_name=~".+"`,
+we also achieve the effect of joining the resulting time series with 
+`target_info` on the `job` and `instance` labels, and picking the 
+`k8s_cluster_name` label from the latter.
+
+If the second argument to `info` (`{k8s_cluster_name=~".+"}`) is omitted, all
+of `target_info`'s data labels are instead picked.
+
+When using `info`, join conflicts are avoided by automaticaly picking the 
+newest series.
+
+While `info` normally automatically finds info metrics, it's possible to
+restrict them by providing a `__name__` label matcher, e.g.
+`{__name__="target_info"}`.
+
+### Limitations
+
+In its current iteration, `info` defaults to considering only one info metric:
+`target_info`. It also assumes that the identifying info metric labels are
+`instance` and `job`. `info` does support other info metrics however, through
+`__name__` label matchers. E.g., one can explicitly say to consider both 
+`target_info` and `build_info` as follows:
+`{__name__=~"(target|build)_info"}`. However, the identifying labels always
+have to be `instance` and `job`.
+
+We hope to lift the above limitations at some point in the future, when 
+Prometheus is able to store metadata about info metrics.
 
 ## `irate()`
 
