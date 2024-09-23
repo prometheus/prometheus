@@ -1119,9 +1119,7 @@ func main() {
 						currentChecksum, err := config.GenerateChecksum(cfg.configFile)
 						if err != nil {
 							level.Error(logger).Log("msg", "Failed to generate checksum during configuration reload", "err", err)
-							continue
-						}
-						if currentChecksum == checksum {
+						} else if currentChecksum == checksum {
 							continue
 						}
 						level.Info(logger).Log("msg", "Configuration file change detected, reloading the configuration.")
