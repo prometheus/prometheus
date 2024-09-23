@@ -1694,7 +1694,7 @@ func (r *Reader) Postings(ctx context.Context, name string, values ...string) (P
 		if !ok {
 			return EmptyPostings(), nil
 		}
-		res := make([]Postings, 0, len(values))
+		res := make([]*bigEndianPostings, 0, len(values))
 		for _, v := range values {
 			postingsOff, ok := e[v]
 			if !ok {
@@ -1702,7 +1702,7 @@ func (r *Reader) Postings(ctx context.Context, name string, values ...string) (P
 			}
 			// Read from the postings table.
 			d := encoding.NewDecbufAt(r.b, int(postingsOff), castagnoliTable)
-			_, p, err := r.dec.Postings(d.Get())
+			_, p, err := r.dec.postingsFromDecbuf(d)
 			if err != nil {
 				return nil, fmt.Errorf("decode postings: %w", err)
 			}
@@ -1721,7 +1721,7 @@ func (r *Reader) Postings(ctx context.Context, name string, values ...string) (P
 	}
 
 	slices.Sort(values) // Values must be in order so we can step through the table on disk.
-	res := make([]Postings, 0, len(values))
+	res := make([]*bigEndianPostings, 0, len(values))
 	valueIndex := 0
 	for valueIndex < len(values) && values[valueIndex] < e[0].value {
 		// Discard values before the start.
@@ -1745,7 +1745,7 @@ func (r *Reader) Postings(ctx context.Context, name string, values ...string) (P
 				if val == value {
 					// Read from the postings table.
 					d2 := encoding.NewDecbufAt(r.b, int(postingsOff), castagnoliTable)
-					_, p, err := r.dec.Postings(d2.Get())
+					_, p, err := r.dec.postingsFromDecbuf(d2)
 					if err != nil {
 						return false, fmt.Errorf("decode postings: %w", err)
 					}
@@ -1781,12 +1781,12 @@ func (r *Reader) PostingsForLabelMatching(ctx context.Context, name string, matc
 	}
 
 	lastVal := e[len(e)-1].value
-	var its []Postings
+	var its []*bigEndianPostings
 	if err := r.traversePostingOffsets(ctx, e[0].off, func(val string, postingsOff uint64) (bool, error) {
 		if match(val) {
 			// We want this postings iterator since the value is a match
 			postingsDec := encoding.NewDecbufAt(r.b, int(postingsOff), castagnoliTable)
-			_, p, err := r.dec.PostingsFromDecbuf(postingsDec)
+			_, p, err := r.dec.postingsFromDecbuf(postingsDec)
 			if err != nil {
 				return false, fmt.Errorf("decode postings: %w", err)
 			}
@@ -1806,7 +1806,7 @@ func (r *Reader) postingsForLabelMatchingV1(ctx context.Context, name string, ma
 		return EmptyPostings()
 	}
 
-	var its []Postings
+	var its []*bigEndianPostings
 	count := 1
 	for val, offset := range e {
 		if count%checkContextEveryNIterations == 0 && ctx.Err() != nil {
@@ -1819,7 +1819,7 @@ func (r *Reader) postingsForLabelMatchingV1(ctx context.Context, name string, ma
 
 		// Read from the postings table.
 		d := encoding.NewDecbufAt(r.b, int(offset), castagnoliTable)
-		_, p, err := r.dec.PostingsFromDecbuf(d)
+		_, p, err := r.dec.postingsFromDecbuf(d)
 		if err != nil {
 			return ErrPostings(fmt.Errorf("decode postings: %w", err))
 		}
@@ -1920,11 +1920,10 @@ type Decoder struct {
 // Postings returns a postings list for b and its number of elements.
 func (dec *Decoder) Postings(b []byte) (int, Postings, error) {
 	d := encoding.Decbuf{B: b}
-	return dec.PostingsFromDecbuf(d)
+	return dec.postingsFromDecbuf(d)
 }
 
-// PostingsFromDecbuf returns a postings list for d and its number of elements.
-func (dec *Decoder) PostingsFromDecbuf(d encoding.Decbuf) (int, Postings, error) {
+func (dec *Decoder) postingsFromDecbuf(d encoding.Decbuf) (int, *bigEndianPostings, error) {
 	n := d.Be32int()
 	l := d.Get()
 	if d.Err() != nil {
