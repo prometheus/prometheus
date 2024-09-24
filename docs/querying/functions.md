@@ -432,7 +432,7 @@ by the number of seconds under the specified time range window, and should be
 used primarily for human readability.  Use `rate` in recording rules so that
 increases are tracked consistently on a per-second basis.
 
-## `info()`
+## `info()` (experimental)
 
 _The `info` function is introduced as an experiment where we try to improve UX
 around including labels from [info metrics](https://grafana.com/blog/2021/08/04/how-to-use-promql-joins-for-more-effective-queries-of-prometheus-metrics-at-scale/#info-metrics).
