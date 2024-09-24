@@ -783,3 +783,11 @@ type Label struct {
 	Name  string
 	Value string
 }
+
+type RelabelingStats struct {
+	lssAdd             int64
+	cacheDrop          int64
+	cacheKeep          int64
+	cacheRelabel       int64
+	statelessRelabeler uint64
+}

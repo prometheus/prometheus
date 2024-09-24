@@ -196,6 +196,11 @@ extern "C" void prompp_prometheus_per_shard_relabeler_input_relabeling(void* arg
     entrypoint::LssVariantPtr lss;
   };
   struct Result {
+    int64_t lss_add{0};
+    int64_t cache_drop{0};
+    int64_t cache_keep{0};
+    int64_t cache_relabel{0};
+    uint64_t stateless_relabeler{0};
     PromPP::Primitives::Go::Slice<char> error;
   };
 
@@ -204,10 +209,10 @@ extern "C" void prompp_prometheus_per_shard_relabeler_input_relabeling(void* arg
 
   try {
     std::visit(
-        [in](auto& hashdex) PROMPP_LAMBDA_INLINE {
+        [in, out](auto& hashdex) PROMPP_LAMBDA_INLINE {
           std::visit(
-              [in, &hashdex](auto& lss) PROMPP_LAMBDA_INLINE {
-                in->per_shard_relabeler->input_relabeling(lss, in->metric_limits, hashdex, in->shards_inner_series, in->shards_relabeled_series);
+              [in, out, &hashdex](auto& lss) PROMPP_LAMBDA_INLINE {
+                in->per_shard_relabeler->input_relabeling(lss, in->metric_limits, hashdex, *out, in->shards_inner_series, in->shards_relabeled_series);
               },
               *in->lss);
         },
@@ -230,6 +235,11 @@ extern "C" void prompp_prometheus_per_shard_relabeler_input_relabeling_with_stal
     PromPP::Primitives::Timestamp stale_ts;
   };
   struct Result {
+    int64_t lss_add{0};
+    int64_t cache_drop{0};
+    int64_t cache_keep{0};
+    int64_t cache_relabel{0};
+    uint64_t stateless_relabeler{0};
     PromPP::Prometheus::Relabel::SourceState source_state;
     PromPP::Primitives::Go::Slice<char> error;
   };
@@ -242,8 +252,8 @@ extern "C" void prompp_prometheus_per_shard_relabeler_input_relabeling_with_stal
         [in, out](auto& hashdex) PROMPP_LAMBDA_INLINE {
           std::visit(
               [in, out, &hashdex](auto& lss) PROMPP_LAMBDA_INLINE {
-                out->source_state = in->per_shard_relabeler->input_relabeling_with_stalenans(lss, hashdex, in->shards_inner_series, in->shards_relabeled_series,
-                                                                                             in->metric_limits, in->source_state, in->stale_ts);
+                out->source_state = in->per_shard_relabeler->input_relabeling_with_stalenans(
+                    lss, hashdex, *out, in->shards_inner_series, in->shards_relabeled_series, in->metric_limits, in->source_state, in->stale_ts);
               },
               *in->lss);
         },
