@@ -130,6 +130,7 @@ func NewReceiver(
 	})
 
 	querierMetrics := querier.NewMetrics(registerer)
+
 	storage := appender.NewQueryableStorage(block.NewBlockWriter(dataDir, block.DefaultChunkSegmentSize, registerer), registerer, querierMetrics)
 
 	var headGeneration uint64

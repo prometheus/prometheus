@@ -417,6 +417,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 			interval, timeout, err = t.intervalAndTimeout(interval, timeout)
 			s := &targetScraper{
 				Target:               t,
+				sourceStates:         relabeler.NewSourceStates(),
 				client:               sp.client,
 				timeout:              timeout,
 				bodySizeLimit:        bodySizeLimit,
