@@ -18,9 +18,12 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/go-kit/log/level"
 
 	"github.com/go-kit/log"
 	nomad "github.com/hashicorp/nomad/api"
@@ -71,6 +74,8 @@ type SDConfig struct {
 	RefreshInterval  model.Duration          `yaml:"refresh_interval"`
 	Region           string                  `yaml:"region"`
 	Server           string                  `yaml:"server"`
+	Tags             []string                `yaml:"tags"`
+	Services         []string                `yaml:"services"`
 	TagSeparator     string                  `yaml:"tag_separator,omitempty"`
 }
 
@@ -118,6 +123,9 @@ type Discovery struct {
 	server          string
 	tagSeparator    string
 	metrics         *nomadMetrics
+	services        []string
+	tags            []string
+	logger          log.Logger
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
@@ -135,8 +143,10 @@ func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.Discovere
 		server:          conf.Server,
 		tagSeparator:    conf.TagSeparator,
 		metrics:         m,
+		services:        conf.Services,
+		tags:            conf.Tags,
+		logger:          logger,
 	}
-
 	HTTPClient, err := config.NewClientFromConfig(conf.HTTPClientConfig, "nomad_sd")
 	if err != nil {
 		return nil, err
@@ -171,46 +181,80 @@ func (d *Discovery) refresh(context.Context) ([]*targetgroup.Group, error) {
 	opts := &nomad.QueryOptions{
 		AllowStale: d.allowStale,
 	}
+	tg := &targetgroup.Group{
+		Source: "Nomad",
+	}
+	serviceNames, err := d.getServiceNames()
+	if err != nil {
+		d.metrics.failuresCount.Inc()
+		return nil, fmt.Errorf("failed to get service names from nomad: %w", err)
+	}
+	if len(serviceNames) == 0 {
+		level.Debug(d.logger).Log("msg", "nomad service discovery did not return any services to be scrapped")
+		return []*targetgroup.Group{}, nil
+	}
+	for _, serviceName := range serviceNames {
+		instances, _, err := d.client.Services().Get(serviceName, opts)
+		if err != nil {
+			level.Error(d.logger).Log("msg", "nomad service discovery failed to get nomad service", "name", serviceName, "err", err.Error())
+			d.metrics.failuresCount.Inc()
+			continue
+		}
+		for _, instance := range instances {
+			if d.serviceIsMissingTags(instance.Tags) {
+				continue
+			}
+			labels := model.LabelSet{
+				nomadAddress:        model.LabelValue(instance.Address),
+				nomadDatacenter:     model.LabelValue(instance.Datacenter),
+				nomadNodeID:         model.LabelValue(instance.NodeID),
+				nomadNamespace:      model.LabelValue(instance.Namespace),
+				nomadServiceAddress: model.LabelValue(instance.Address),
+				nomadServiceID:      model.LabelValue(instance.ID),
+				nomadServicePort:    model.LabelValue(strconv.Itoa(instance.Port)),
+				nomadService:        model.LabelValue(instance.ServiceName),
+			}
+			addr := net.JoinHostPort(instance.Address, strconv.FormatInt(int64(instance.Port), 10))
+			labels[model.AddressLabel] = model.LabelValue(addr)
+			if len(instance.Tags) > 0 {
+				tags := d.tagSeparator + strings.Join(instance.Tags, d.tagSeparator) + d.tagSeparator
+				labels[nomadTags] = model.LabelValue(tags)
+			}
+			tg.Targets = append(tg.Targets, labels)
+		}
+	}
+	return []*targetgroup.Group{tg}, nil
+}
+
+func (d *Discovery) serviceIsMissingTags(actualTags []string) bool {
+	if len(d.tags) == 0 {
+		return false
+	}
+	for _, tag := range d.tags {
+		if !slices.Contains(actualTags, tag) {
+			return true
+		}
+	}
+	return false
+}
+
+func (d *Discovery) getServiceNames() ([]string, error) {
+	opts := &nomad.QueryOptions{
+		AllowStale: d.allowStale,
+	}
+	if len(d.services) > 0 {
+		return d.services, nil
+	}
 	stubs, _, err := d.client.Services().List(opts)
 	if err != nil {
 		d.metrics.failuresCount.Inc()
 		return nil, err
 	}
-
-	tg := &targetgroup.Group{
-		Source: "Nomad",
-	}
-
+	var serviceNames []string
 	for _, stub := range stubs {
 		for _, service := range stub.Services {
-			instances, _, err := d.client.Services().Get(service.ServiceName, opts)
-			if err != nil {
-				d.metrics.failuresCount.Inc()
-				return nil, fmt.Errorf("failed to fetch services: %w", err)
-			}
-
-			for _, instance := range instances {
-				labels := model.LabelSet{
-					nomadAddress:        model.LabelValue(instance.Address),
-					nomadDatacenter:     model.LabelValue(instance.Datacenter),
-					nomadNodeID:         model.LabelValue(instance.NodeID),
-					nomadNamespace:      model.LabelValue(instance.Namespace),
-					nomadServiceAddress: model.LabelValue(instance.Address),
-					nomadServiceID:      model.LabelValue(instance.ID),
-					nomadServicePort:    model.LabelValue(strconv.Itoa(instance.Port)),
-					nomadService:        model.LabelValue(instance.ServiceName),
-				}
-				addr := net.JoinHostPort(instance.Address, strconv.FormatInt(int64(instance.Port), 10))
-				labels[model.AddressLabel] = model.LabelValue(addr)
-
-				if len(instance.Tags) > 0 {
-					tags := d.tagSeparator + strings.Join(instance.Tags, d.tagSeparator) + d.tagSeparator
-					labels[nomadTags] = model.LabelValue(tags)
-				}
-
-				tg.Targets = append(tg.Targets, labels)
-			}
+			serviceNames = append(serviceNames, service.ServiceName)
 		}
 	}
-	return []*targetgroup.Group{tg}, nil
+	return serviceNames, nil
 }
