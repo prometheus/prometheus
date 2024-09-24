@@ -14,6 +14,8 @@ class QueryableEncodingBimap : public BareBones::SnugComposite::DecodingTable<Fi
  public:
   using Base = BareBones::SnugComposite::DecodingTable<Filament>;
   using Set = phmap::btree_set<typename Base::Proxy, typename Base::LessComparator, BareBones::Allocator<typename Base::Proxy>>;
+  using HashSet =
+      phmap::flat_hash_set<typename Base::Proxy, typename Base::Hasher, typename Base::EqualityComparator, BareBones::Allocator<typename Base::Proxy>>;
   using LsIdSetIterator = Set::const_iterator;
   using TrieIndexIterator = TrieIndex::Iterator;
 
@@ -33,28 +35,27 @@ class QueryableEncodingBimap : public BareBones::SnugComposite::DecodingTable<Fi
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept {
-    return trie_index_.allocated_memory() + reverse_index_.allocated_memory() + ls_id_set_allocated_memory_ + sorting_index_.allocated_memory() +
-           Base::allocated_memory();
+    return trie_index_.allocated_memory() + reverse_index_.allocated_memory() + ls_id_set_allocated_memory_ + hash_ls_id_set_allocated_memory_ +
+           sorting_index_.allocated_memory() + Base::allocated_memory();
   }
 
   template <class LabelSet>
   PROMPP_ALWAYS_INLINE uint32_t find_or_emplace(const LabelSet& label_set) noexcept {
-    auto iterator = ls_id_set_.lower_bound(label_set);
-    if (iterator != ls_id_set_.end() && (*this)[*iterator] == label_set) {
-      return *iterator;
+    return find_or_emplace(label_set, Base::hasher_(label_set));
+  }
+
+  template <class LabelSet>
+  PROMPP_ALWAYS_INLINE uint32_t find_or_emplace(const LabelSet& label_set, size_t hash) noexcept {
+    hash = phmap::phmap_mix<sizeof(size_t)>()(hash);
+    if (auto it = hash_ls_id_set_.find(label_set, hash); it != hash_ls_id_set_.end()) {
+      return *it;
     }
 
     auto ls_id = Base::items_.size();
     Base::items_.emplace_back(Base::data_, label_set);
-    iterator = ls_id_set_.emplace_hint(iterator, ls_id);
-
-    update_indexes(ls_id, iterator);
+    update_indexes(ls_id, ls_id_set_.emplace(ls_id).first);
+    hash_ls_id_set_.emplace_with_hash(hash, typename Base::Proxy(ls_id));
     return ls_id;
-  }
-
-  template <class LabelSet>
-  PROMPP_ALWAYS_INLINE uint32_t find_or_emplace(const LabelSet& label_set, [[maybe_unused]] size_t hash) noexcept {
-    return find_or_emplace(label_set);
   }
 
  protected:
@@ -69,6 +70,9 @@ class QueryableEncodingBimap : public BareBones::SnugComposite::DecodingTable<Fi
   SeriesReverseIndex reverse_index_;
   size_t ls_id_set_allocated_memory_{};
   Set ls_id_set_{{}, Base::less_comparator_, BareBones::Allocator<typename Base::Proxy>{ls_id_set_allocated_memory_}};
+  size_t hash_ls_id_set_allocated_memory_{};
+  HashSet hash_ls_id_set_{0, Base::hasher_, Base::equality_comparator_, BareBones::Allocator<typename Base::Proxy>{hash_ls_id_set_allocated_memory_}};
+
   SortingIndex<Set> sorting_index_{ls_id_set_};
 
   void update_indexes(uint32_t ls_id, Set::const_iterator ls_id_set_iterator) {
