@@ -29,7 +29,7 @@ func TestByte(t *testing.T) {
 }
 
 func TestByteCounter(t *testing.T) {
-	require.Equal(t, "system_io_bytes_total", normalizeName(createCounter("system.io", "By"), ""))
+	require.Equal(t, "system_io_bytes_total", normalizeName(createCounter("system.io", "By"), "", true))
 	require.Equal(t, "network_transmitted_bytes_total", normalizeName(createCounter("network_transmitted_bytes_total", "By"), "", true))
 }
 
