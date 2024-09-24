@@ -262,6 +262,7 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 		// Not a CT supported metric type, fast path.
 		p.ct = -1
 		p.visitedName = ""
+		p.ctHashSet = 0
 		return nil
 	}
 
@@ -275,7 +276,7 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 
 	// make sure we're on a new metric before returning
 	currName := currLset.Get(model.MetricNameLabel)
-	currName = findMName(currName)
+	currName = findBaseMetricName(currName)
 	if currName == p.visitedName && currFamilyLsetHash == p.ctHashSet && p.visitedName != "" && p.ctHashSet != 0 && p.ct != -1 {
 		// CT is already known, fast path.
 		return &p.ct
@@ -299,20 +300,12 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 			// This might result in partial scrape with wrong/missing CT, but only
 			// spec improvement would help.
 			// TODO: Make sure OM 1.1/2.0 pass CT via metadata or exemplar-like to avoid this.
-			p.ct = -1
-			p.l = resetLexer
-			p.skipCTSeries = true
-			p.visitedName = ""
-			p.ctHashSet = 0
+			p.resetCtParseValues(resetLexer)
 			return nil
 		}
 		if eType != EntrySeries {
 			// Assume we hit different family, no CT line found.
-			p.ct = -1
-			p.l = resetLexer
-			p.skipCTSeries = true
-			p.visitedName = ""
-			p.ctHashSet = 0
+			p.resetCtParseValues(resetLexer)
 			return nil
 		}
 
@@ -327,14 +320,11 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 		// We got a CT line here, but let's search if CT line is actually for our series, edge case.
 		peekWithoutNameLsetHash, _ = peekedLset.HashWithoutLabels(buf, labels.MetricName, "le", "quantile")
 		if peekWithoutNameLsetHash != currFamilyLsetHash {
-			// CT line for a different series, for our series no CT.
-			p.ct = -1
-			p.l = resetLexer
-			p.skipCTSeries = true
-			p.visitedName = ""
-			p.ctHashSet = 0
+			// Found CT line for a different series, for our series no CT.
+			p.resetCtParseValues(resetLexer)
 			return nil
 		}
+
 		ct := int64(p.val)
 		p.ct = ct
 		p.l = resetLexer
@@ -345,7 +335,19 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 	}
 }
 
-func findMName(name string) string {
+// resetCtParseValues resets the parser to the state before CreatedTimestamp() call.
+func (p *OpenMetricsParser) resetCtParseValues(resetLexer *openMetricsLexer) {
+	p.ct = -1
+	p.l = resetLexer
+	p.skipCTSeries = true
+	p.visitedName = ""
+	p.ctHashSet = 0
+}
+
+// findBaseMetricName returns the metric name without reserved suffixes such as "_created",
+// "_sum", etc. based on the OpenMetrics specification. If no suffix is found, the original
+// name is returned.
+func findBaseMetricName(name string) string {
 	nameSlice := strings.Split(name, "_")
 	if len(nameSlice) > 1 {
 		switch nameSlice[len(nameSlice)-1] {
@@ -364,30 +366,6 @@ func typeRequiresCT(t model.MetricType) bool {
 	default:
 		return false
 	}
-}
-
-// deepCopy creates a copy of a parser without re-using the slices' original memory addresses.
-func deepCopy(p *OpenMetricsParser) OpenMetricsParser {
-	newB := make([]byte, len(p.l.b))
-	copy(newB, p.l.b)
-
-	newLexer := &openMetricsLexer{
-		b:     newB,
-		i:     p.l.i,
-		start: p.l.start,
-		err:   p.l.err,
-		state: p.l.state,
-	}
-
-	newParser := OpenMetricsParser{
-		l:            newLexer,
-		builder:      p.builder,
-		mtype:        p.mtype,
-		val:          p.val,
-		skipCTSeries: false,
-		ct:           p.ct,
-	}
-	return newParser
 }
 
 // nextToken returns the next token from the openMetricsLexer.
