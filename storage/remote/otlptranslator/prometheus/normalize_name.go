@@ -85,16 +85,20 @@ var perUnitMap = map[string]string{
 // See rules at https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels,
 // https://prometheus.io/docs/practices/naming/#metric-and-label-naming
 // and https://github.com/open-telemetry/opentelemetry-specification/blob/v1.33.0/specification/compatibility/prometheus_and_openmetrics.md#otlp-metric-points-to-prometheus.
-func BuildCompliantName(metric pmetric.Metric, namespace string, addMetricSuffixes bool) string {
+func BuildCompliantName(metric pmetric.Metric, namespace string, addMetricSuffixes bool, translateDots bool) string {
 	var metricName string
 
 	// Full normalization following standard Prometheus naming conventions
 	if addMetricSuffixes {
-		return normalizeName(metric, namespace)
+		return normalizeName(metric, namespace, translateDots)
 	}
 
-	// Simple case (no full normalization, no units, etc.), we simply trim out forbidden chars
-	metricName = RemovePromForbiddenRunes(metric.Name())
+	if translateDots {
+		// Simple case (no full normalization, no units, etc.), we simply trim out forbidden chars
+		metricName = RemovePromForbiddenRunes(metric.Name())
+	} else {
+		metricName = RemovePromForbiddenRunesUtf8Allowed(metric.Name())
+	}
 
 	// Namespace?
 	if namespace != "" {
@@ -110,11 +114,18 @@ func BuildCompliantName(metric pmetric.Metric, namespace string, addMetricSuffix
 }
 
 // Build a normalized name for the specified metric
-func normalizeName(metric pmetric.Metric, namespace string) string {
-	// Split metric name into "tokens" (remove all non-alphanumerics)
+func normalizeName(metric pmetric.Metric, namespace string, translateDots bool) string {
+	// Split metric name into "tokens" (remove all non-alphanumerics and optionally dots)
+	var stripFunc func(r rune) bool
+	if translateDots {
+		stripFunc = func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }
+	} else {
+		stripFunc = func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '.' }
+	}
+
 	nameTokens := strings.FieldsFunc(
 		metric.Name(),
-		func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) },
+		stripFunc,
 	)
 
 	// Split unit at the '/' if any
@@ -242,6 +253,12 @@ func CleanUpString(s string) string {
 
 func RemovePromForbiddenRunes(s string) string {
 	return strings.Join(strings.FieldsFunc(s, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != ':' }), "_")
+}
+
+func RemovePromForbiddenRunesUtf8Allowed(s string) string {
+	return strings.Join(strings.FieldsFunc(s, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != ':' && r != '.'
+	}), "_")
 }
 
 // Retrieve the Prometheus "basic" unit corresponding to the specified "basic" unit
