@@ -241,9 +241,9 @@ type sampleRing struct {
 	delta int64
 
 	// Lookback buffers. We use iBuf for mixed samples, but one of the three
-	// concrete ones for homogenous samples. (Only one of the four bufs is
+	// concrete ones for homogeneous samples. (Only one of the four bufs is
 	// allowed to be populated!) This avoids the overhead of the interface
-	// wrapper for the happy (and by far most common) case of homogenous
+	// wrapper for the happy (and by far most common) case of homogeneous
 	// samples.
 	iBuf     []chunks.Sample
 	fBuf     []fSample
@@ -268,7 +268,7 @@ const (
 	fhBuf
 )
 
-// newSampleRing creates a new sampleRing. If you do not know the prefereed
+// newSampleRing creates a new sampleRing. If you do not know the preferred
 // value type yet, use a size of 0 (in which case the provided typ doesn't
 // matter). On the first add, a buffer of size 16 will be allocated with the
 // preferred type being the type of the first added sample.

@@ -258,7 +258,7 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
-    label: 'holt_winters',
+    label: 'double_exponential_smoothing',
     detail: 'function',
     info: 'Calculate smoothed value of input series',
     type: 'function',
@@ -542,6 +542,18 @@ export const aggregateOpTerms = [
     label: 'group',
     detail: 'aggregation',
     info: 'Group series, while setting the sample value to 1',
+    type: 'keyword',
+  },
+  {
+    label: 'limitk',
+    detail: 'aggregation',
+    info: 'Sample k elements',
+    type: 'keyword',
+  },
+  {
+    label: 'limit_ratio',
+    detail: 'aggregation',
+    info: 'Sample given ratio of elements',
     type: 'keyword',
   },
   {

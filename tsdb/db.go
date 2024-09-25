@@ -21,6 +21,7 @@ import (
 	"io"
 	"io/fs"
 	"math"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"slices"
@@ -48,7 +49,7 @@ import (
 )
 
 const (
-	// Default duration of a block in milliseconds.
+	// DefaultBlockDuration in milliseconds.
 	DefaultBlockDuration = int64(2 * time.Hour / time.Millisecond)
 
 	// Block dir suffixes to make deletion and creation operations atomic.
@@ -84,6 +85,8 @@ func DefaultOptions() *Options {
 		OutOfOrderCapMax:            DefaultOutOfOrderCapMax,
 		EnableOverlappingCompaction: true,
 		EnableSharding:              false,
+		EnableDelayedCompaction:     false,
+		CompactionDelay:             time.Duration(0),
 	}
 }
 
@@ -170,6 +173,12 @@ type Options struct {
 	// EnableNativeHistograms enables the ingestion of native histograms.
 	EnableNativeHistograms bool
 
+	// EnableOOONativeHistograms enables the ingestion of OOO native histograms.
+	// It will only take effect if EnableNativeHistograms is set to true and the
+	// OutOfOrderTimeWindow is > 0. This flag will be removed after testing of
+	// OOO Native Histogram ingestion is complete.
+	EnableOOONativeHistograms bool
+
 	// OutOfOrderTimeWindow specifies how much out of order is allowed, if any.
 	// This can change during run-time, so this value from here should only be used
 	// while initialising.
@@ -184,11 +193,17 @@ type Options struct {
 	// The reason why this flag exists is because there are various users of the TSDB
 	// that do not want vertical compaction happening on ingest time. Instead,
 	// they'd rather keep overlapping blocks and let another component do the overlapping compaction later.
-	// For Prometheus, this will always be true.
 	EnableOverlappingCompaction bool
 
 	// EnableSharding enables query sharding support in TSDB.
 	EnableSharding bool
+
+	// EnableDelayedCompaction, when set to true, assigns a random value to CompactionDelay during DB opening.
+	// When set to false, delayed compaction is disabled, unless CompactionDelay is set directly.
+	EnableDelayedCompaction bool
+	// CompactionDelay delays the start time of auto compactions.
+	// It can be increased by up to one minute if the DB does not commit too often.
+	CompactionDelay time.Duration
 
 	// NewCompactorFunc is a function that returns a TSDB compactor.
 	NewCompactorFunc NewCompactorFunc
@@ -245,6 +260,9 @@ type DB struct {
 
 	// Cancel a running compaction when a shutdown is initiated.
 	compactCancel context.CancelFunc
+
+	// timeWhenCompactionDelayStarted helps delay the compactions start time.
+	timeWhenCompactionDelayStarted time.Time
 
 	// oooWasEnabled is true if out of order support was enabled at least one time
 	// during the time TSDB was up. In which case we need to keep supporting
@@ -681,7 +699,7 @@ func (db *DBReadOnly) LastBlockID() (string, error) {
 		return "", err
 	}
 
-	max := uint64(0)
+	maxT := uint64(0)
 
 	lastBlockID := ""
 
@@ -693,8 +711,8 @@ func (db *DBReadOnly) LastBlockID() (string, error) {
 			continue // Not a block dir.
 		}
 		timestamp := ulidObj.Time()
-		if timestamp > max {
-			max = timestamp
+		if timestamp > maxT {
+			maxT = timestamp
 			lastBlockID = dirName
 		}
 	}
@@ -936,6 +954,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	headOpts.MaxExemplars.Store(opts.MaxExemplars)
 	headOpts.EnableMemorySnapshotOnShutdown = opts.EnableMemorySnapshotOnShutdown
 	headOpts.EnableNativeHistograms.Store(opts.EnableNativeHistograms)
+	headOpts.EnableOOONativeHistograms.Store(opts.EnableOOONativeHistograms)
 	headOpts.OutOfOrderTimeWindow.Store(opts.OutOfOrderTimeWindow)
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
 	headOpts.EnableSharding = opts.EnableSharding
@@ -996,6 +1015,10 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	if db.head.MinOOOTime() != int64(math.MaxInt64) {
 		// Some OOO data was replayed from the disk that needs compaction and cleanup.
 		db.oooWasEnabled.Store(true)
+	}
+
+	if opts.EnableDelayedCompaction {
+		opts.CompactionDelay = db.generateCompactionDelay()
 	}
 
 	go db.run(ctx)
@@ -1156,6 +1179,16 @@ func (db *DB) DisableNativeHistograms() {
 	db.head.DisableNativeHistograms()
 }
 
+// EnableOOONativeHistograms enables the ingestion of out-of-order native histograms.
+func (db *DB) EnableOOONativeHistograms() {
+	db.head.EnableOOONativeHistograms()
+}
+
+// DisableOOONativeHistograms disables the ingestion of out-of-order native histograms.
+func (db *DB) DisableOOONativeHistograms() {
+	db.head.DisableOOONativeHistograms()
+}
+
 // dbAppender wraps the DB's head appender and triggers compactions on commit
 // if necessary.
 type dbAppender struct {
@@ -1184,6 +1217,12 @@ func (a dbAppender) Commit() error {
 		}
 	}
 	return err
+}
+
+// waitingForCompactionDelay returns true if the DB is waiting for the Head compaction delay.
+// This doesn't guarantee that the Head is really compactable.
+func (db *DB) waitingForCompactionDelay() bool {
+	return time.Since(db.timeWhenCompactionDelayStarted) < db.opts.CompactionDelay
 }
 
 // Compact data if possible. After successful compaction blocks are reloaded
@@ -1219,7 +1258,21 @@ func (db *DB) Compact(ctx context.Context) (returnErr error) {
 			return nil
 		default:
 		}
+
 		if !db.head.compactable() {
+			// Reset the counter once the head compactions are done.
+			// This would also reset it if a manual compaction was triggered while the auto compaction was in its delay period.
+			if !db.timeWhenCompactionDelayStarted.IsZero() {
+				db.timeWhenCompactionDelayStarted = time.Time{}
+			}
+			break
+		}
+
+		if db.timeWhenCompactionDelayStarted.IsZero() {
+			// Start counting for the delay.
+			db.timeWhenCompactionDelayStarted = time.Now()
+		}
+		if db.waitingForCompactionDelay() {
 			break
 		}
 		mint := db.head.MinTime()
@@ -1295,6 +1348,9 @@ func (db *DB) CompactOOOHead(ctx context.Context) error {
 	return db.compactOOOHead(ctx)
 }
 
+// Callback for testing.
+var compactOOOHeadTestingCallback func()
+
 func (db *DB) compactOOOHead(ctx context.Context) error {
 	if !db.oooWasEnabled.Load() {
 		return nil
@@ -1302,6 +1358,11 @@ func (db *DB) compactOOOHead(ctx context.Context) error {
 	oooHead, err := NewOOOCompactionHead(ctx, db.head)
 	if err != nil {
 		return fmt.Errorf("get ooo compaction head: %w", err)
+	}
+
+	if compactOOOHeadTestingCallback != nil {
+		compactOOOHeadTestingCallback()
+		compactOOOHeadTestingCallback = nil
 	}
 
 	ulids, err := db.compactOOO(db.dir, oooHead)
@@ -1407,6 +1468,9 @@ func (db *DB) compactHead(head *RangeHead) error {
 	if err = db.head.truncateMemory(head.BlockMaxTime()); err != nil {
 		return fmt.Errorf("head memory truncate: %w", err)
 	}
+
+	db.head.RebuildSymbolTable(db.logger)
+
 	return nil
 }
 
@@ -1418,7 +1482,7 @@ func (db *DB) compactBlocks() (err error) {
 		// If we have a lot of blocks to compact the whole process might take
 		// long enough that we end up with a HEAD block that needs to be written.
 		// Check if that's the case and stop compactions early.
-		if db.head.compactable() {
+		if db.head.compactable() && !db.waitingForCompactionDelay() {
 			level.Warn(db.logger).Log("msg", "aborting block compactions to persit the head block")
 			return nil
 		}
@@ -1921,6 +1985,11 @@ func (db *DB) EnableCompactions() {
 	level.Info(db.logger).Log("msg", "Compactions enabled")
 }
 
+func (db *DB) generateCompactionDelay() time.Duration {
+	// Up to 10% of the head's chunkRange.
+	return time.Duration(rand.Int63n(db.head.chunkRange.Load()/10)) * time.Millisecond
+}
+
 // ForceHeadMMap is intended for use only in tests and benchmarks.
 func (db *DB) ForceHeadMMap() {
 	db.head.mmapHeadChunks()
@@ -1977,7 +2046,7 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 		}
 	}
 
-	blockQueriers := make([]storage.Querier, 0, len(blocks)+2) // +2 to allow for possible in-order and OOO head queriers
+	blockQueriers := make([]storage.Querier, 0, len(blocks)+1) // +1 to allow for possible head querier.
 
 	defer func() {
 		if err != nil {
@@ -1989,10 +2058,13 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 		}
 	}()
 
-	if maxt >= db.head.MinTime() {
+	overlapsOOO := overlapsClosedInterval(mint, maxt, db.head.MinOOOTime(), db.head.MaxOOOTime())
+	var headQuerier storage.Querier
+	inoMint := mint
+	if maxt >= db.head.MinTime() || overlapsOOO {
 		rh := NewRangeHead(db.head, mint, maxt)
 		var err error
-		inOrderHeadQuerier, err := db.blockQuerierFunc(rh, mint, maxt)
+		headQuerier, err = db.blockQuerierFunc(rh, mint, maxt)
 		if err != nil {
 			return nil, fmt.Errorf("open block querier for head %s: %w", rh, err)
 		}
@@ -2002,36 +2074,29 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 		// won't run into a race later since any truncation that comes after will wait on this querier if it overlaps.
 		shouldClose, getNew, newMint := db.head.IsQuerierCollidingWithTruncation(mint, maxt)
 		if shouldClose {
-			if err := inOrderHeadQuerier.Close(); err != nil {
+			if err := headQuerier.Close(); err != nil {
 				return nil, fmt.Errorf("closing head block querier %s: %w", rh, err)
 			}
-			inOrderHeadQuerier = nil
+			headQuerier = nil
 		}
 		if getNew {
 			rh := NewRangeHead(db.head, newMint, maxt)
-			inOrderHeadQuerier, err = db.blockQuerierFunc(rh, newMint, maxt)
+			headQuerier, err = db.blockQuerierFunc(rh, newMint, maxt)
 			if err != nil {
 				return nil, fmt.Errorf("open block querier for head while getting new querier %s: %w", rh, err)
 			}
-		}
-
-		if inOrderHeadQuerier != nil {
-			blockQueriers = append(blockQueriers, inOrderHeadQuerier)
+			inoMint = newMint
 		}
 	}
 
-	if overlapsClosedInterval(mint, maxt, db.head.MinOOOTime(), db.head.MaxOOOTime()) {
-		rh := NewOOORangeHead(db.head, mint, maxt, db.lastGarbageCollectedMmapRef)
-		var err error
-		outOfOrderHeadQuerier, err := db.blockQuerierFunc(rh, mint, maxt)
-		if err != nil {
-			// If BlockQuerierFunc() failed, make sure to clean up the pending read created by NewOOORangeHead.
-			rh.isoState.Close()
+	if overlapsOOO {
+		// We need to fetch from in-order and out-of-order chunks: wrap the headQuerier.
+		isoState := db.head.oooIso.TrackReadAfter(db.lastGarbageCollectedMmapRef)
+		headQuerier = NewHeadAndOOOQuerier(inoMint, mint, maxt, db.head, isoState, headQuerier)
+	}
 
-			return nil, fmt.Errorf("open block querier for ooo head %s: %w", rh, err)
-		}
-
-		blockQueriers = append(blockQueriers, outOfOrderHeadQuerier)
+	if headQuerier != nil {
+		blockQueriers = append(blockQueriers, headQuerier)
 	}
 
 	for _, b := range blocks {
@@ -2059,7 +2124,7 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 		}
 	}
 
-	blockQueriers := make([]storage.ChunkQuerier, 0, len(blocks)+2) // +2 to allow for possible in-order and OOO head queriers
+	blockQueriers := make([]storage.ChunkQuerier, 0, len(blocks)+1) // +1 to allow for possible head querier.
 
 	defer func() {
 		if err != nil {
@@ -2071,9 +2136,12 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 		}
 	}()
 
-	if maxt >= db.head.MinTime() {
+	overlapsOOO := overlapsClosedInterval(mint, maxt, db.head.MinOOOTime(), db.head.MaxOOOTime())
+	var headQuerier storage.ChunkQuerier
+	inoMint := mint
+	if maxt >= db.head.MinTime() || overlapsOOO {
 		rh := NewRangeHead(db.head, mint, maxt)
-		inOrderHeadQuerier, err := db.blockChunkQuerierFunc(rh, mint, maxt)
+		headQuerier, err = db.blockChunkQuerierFunc(rh, mint, maxt)
 		if err != nil {
 			return nil, fmt.Errorf("open querier for head %s: %w", rh, err)
 		}
@@ -2083,35 +2151,29 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 		// won't run into a race later since any truncation that comes after will wait on this querier if it overlaps.
 		shouldClose, getNew, newMint := db.head.IsQuerierCollidingWithTruncation(mint, maxt)
 		if shouldClose {
-			if err := inOrderHeadQuerier.Close(); err != nil {
+			if err := headQuerier.Close(); err != nil {
 				return nil, fmt.Errorf("closing head querier %s: %w", rh, err)
 			}
-			inOrderHeadQuerier = nil
+			headQuerier = nil
 		}
 		if getNew {
 			rh := NewRangeHead(db.head, newMint, maxt)
-			inOrderHeadQuerier, err = db.blockChunkQuerierFunc(rh, newMint, maxt)
+			headQuerier, err = db.blockChunkQuerierFunc(rh, newMint, maxt)
 			if err != nil {
 				return nil, fmt.Errorf("open querier for head while getting new querier %s: %w", rh, err)
 			}
-		}
-
-		if inOrderHeadQuerier != nil {
-			blockQueriers = append(blockQueriers, inOrderHeadQuerier)
+			inoMint = newMint
 		}
 	}
 
-	if overlapsClosedInterval(mint, maxt, db.head.MinOOOTime(), db.head.MaxOOOTime()) {
-		rh := NewOOORangeHead(db.head, mint, maxt, db.lastGarbageCollectedMmapRef)
-		outOfOrderHeadQuerier, err := db.blockChunkQuerierFunc(rh, mint, maxt)
-		if err != nil {
-			// If NewBlockQuerier() failed, make sure to clean up the pending read created by NewOOORangeHead.
-			rh.isoState.Close()
+	if overlapsOOO {
+		// We need to fetch from in-order and out-of-order chunks: wrap the headQuerier.
+		isoState := db.head.oooIso.TrackReadAfter(db.lastGarbageCollectedMmapRef)
+		headQuerier = NewHeadAndOOOChunkQuerier(inoMint, mint, maxt, db.head, isoState, headQuerier)
+	}
 
-			return nil, fmt.Errorf("open block chunk querier for ooo head %s: %w", rh, err)
-		}
-
-		blockQueriers = append(blockQueriers, outOfOrderHeadQuerier)
+	if headQuerier != nil {
+		blockQueriers = append(blockQueriers, headQuerier)
 	}
 
 	for _, b := range blocks {
@@ -2275,13 +2337,13 @@ func blockDirs(dir string) ([]string, error) {
 	return dirs, nil
 }
 
-func exponential(d, min, max time.Duration) time.Duration {
+func exponential(d, minD, maxD time.Duration) time.Duration {
 	d *= 2
-	if d < min {
-		d = min
+	if d < minD {
+		d = minD
 	}
-	if d > max {
-		d = max
+	if d > maxD {
+		d = maxD
 	}
 	return d
 }

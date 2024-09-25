@@ -30,15 +30,22 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/rules"
 )
+
+func init() {
+	// This can be removed when the default validation scheme in common is updated.
+	model.NameValidationScheme = model.UTF8Validation
+}
 
 const startupTime = 10 * time.Second
 
@@ -346,7 +353,7 @@ func getCurrentGaugeValuesFor(t *testing.T, reg prometheus.Gatherer, metricNames
 }
 
 func TestAgentSuccessfulStartup(t *testing.T) {
-	prom := exec.Command(promPath, "-test.main", "--enable-feature=agent", "--web.listen-address=0.0.0.0:0", "--config.file="+agentConfig)
+	prom := exec.Command(promPath, "-test.main", "--agent", "--web.listen-address=0.0.0.0:0", "--config.file="+agentConfig)
 	require.NoError(t, prom.Start())
 
 	actualExitStatus := 0
@@ -364,7 +371,7 @@ func TestAgentSuccessfulStartup(t *testing.T) {
 }
 
 func TestAgentFailedStartupWithServerFlag(t *testing.T) {
-	prom := exec.Command(promPath, "-test.main", "--enable-feature=agent", "--storage.tsdb.path=.", "--web.listen-address=0.0.0.0:0", "--config.file="+promConfig)
+	prom := exec.Command(promPath, "-test.main", "--agent", "--storage.tsdb.path=.", "--web.listen-address=0.0.0.0:0", "--config.file="+promConfig)
 
 	output := bytes.Buffer{}
 	prom.Stderr = &output
@@ -391,7 +398,7 @@ func TestAgentFailedStartupWithServerFlag(t *testing.T) {
 }
 
 func TestAgentFailedStartupWithInvalidConfig(t *testing.T) {
-	prom := exec.Command(promPath, "-test.main", "--enable-feature=agent", "--web.listen-address=0.0.0.0:0", "--config.file="+promConfig)
+	prom := exec.Command(promPath, "-test.main", "--agent", "--web.listen-address=0.0.0.0:0", "--config.file="+promConfig)
 	require.NoError(t, prom.Start())
 
 	actualExitStatus := 0
@@ -429,7 +436,7 @@ func TestModeSpecificFlags(t *testing.T) {
 			args := []string{"-test.main", tc.arg, t.TempDir(), "--web.listen-address=0.0.0.0:0"}
 
 			if tc.mode == "agent" {
-				args = append(args, "--enable-feature=agent", "--config.file="+agentConfig)
+				args = append(args, "--agent", "--config.file="+agentConfig)
 			} else {
 				args = append(args, "--config.file="+promConfig)
 			}
@@ -498,4 +505,66 @@ func TestDocumentation(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, string(expectedContent), generatedContent, "Generated content does not match documentation. Hint: run `make cli-documentation`.")
+}
+
+func TestRwProtoMsgFlagParser(t *testing.T) {
+	defaultOpts := config.RemoteWriteProtoMsgs{
+		config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2,
+	}
+
+	for _, tcase := range []struct {
+		args        []string
+		expected    []config.RemoteWriteProtoMsg
+		expectedErr error
+	}{
+		{
+			args:     nil,
+			expected: defaultOpts,
+		},
+		{
+			args:        []string{"--test-proto-msgs", "test"},
+			expectedErr: errors.New("unknown remote write protobuf message test, supported: prometheus.WriteRequest, io.prometheus.write.v2.Request"),
+		},
+		{
+			args:     []string{"--test-proto-msgs", "io.prometheus.write.v2.Request"},
+			expected: config.RemoteWriteProtoMsgs{config.RemoteWriteProtoMsgV2},
+		},
+		{
+			args: []string{
+				"--test-proto-msgs", "io.prometheus.write.v2.Request",
+				"--test-proto-msgs", "io.prometheus.write.v2.Request",
+			},
+			expectedErr: errors.New("duplicated io.prometheus.write.v2.Request flag value, got [io.prometheus.write.v2.Request] already"),
+		},
+		{
+			args: []string{
+				"--test-proto-msgs", "io.prometheus.write.v2.Request",
+				"--test-proto-msgs", "prometheus.WriteRequest",
+			},
+			expected: config.RemoteWriteProtoMsgs{config.RemoteWriteProtoMsgV2, config.RemoteWriteProtoMsgV1},
+		},
+		{
+			args: []string{
+				"--test-proto-msgs", "io.prometheus.write.v2.Request",
+				"--test-proto-msgs", "prometheus.WriteRequest",
+				"--test-proto-msgs", "io.prometheus.write.v2.Request",
+			},
+			expectedErr: errors.New("duplicated io.prometheus.write.v2.Request flag value, got [io.prometheus.write.v2.Request prometheus.WriteRequest] already"),
+		},
+	} {
+		t.Run(strings.Join(tcase.args, ","), func(t *testing.T) {
+			a := kingpin.New("test", "")
+			var opt []config.RemoteWriteProtoMsg
+			a.Flag("test-proto-msgs", "").Default(defaultOpts.Strings()...).SetValue(rwProtoMsgFlagValue(&opt))
+
+			_, err := a.Parse(tcase.args)
+			if tcase.expectedErr != nil {
+				require.Error(t, err)
+				require.Equal(t, tcase.expectedErr, err)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tcase.expected, opt)
+			}
+		})
+	}
 }

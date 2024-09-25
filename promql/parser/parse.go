@@ -447,6 +447,10 @@ func (p *parser) newAggregateExpr(op Item, modifier, args Node) (ret *AggregateE
 
 	desiredArgs := 1
 	if ret.Op.IsAggregatorWithParam() {
+		if !EnableExperimentalFunctions && (ret.Op == LIMITK || ret.Op == LIMIT_RATIO) {
+			p.addParseErrf(ret.PositionRange(), "limitk() and limit_ratio() are experimental and must be enabled with --enable-feature=promql-experimental-functions")
+			return
+		}
 		desiredArgs = 2
 
 		ret.Param = arguments[0]
@@ -576,6 +580,28 @@ func (p *parser) buildHistogramFromMap(desc *map[string]interface{}) *histogram.
 		}
 	}
 
+	val, ok = (*desc)["counter_reset_hint"]
+	if ok {
+		resetHint, ok := val.(Item)
+
+		if ok {
+			switch resetHint.Typ {
+			case UNKNOWN_COUNTER_RESET:
+				output.CounterResetHint = histogram.UnknownCounterReset
+			case COUNTER_RESET:
+				output.CounterResetHint = histogram.CounterReset
+			case NOT_COUNTER_RESET:
+				output.CounterResetHint = histogram.NotCounterReset
+			case GAUGE_TYPE:
+				output.CounterResetHint = histogram.GaugeType
+			default:
+				p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing counter_reset_hint: unknown value %v", resetHint.Typ)
+			}
+		} else {
+			p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing counter_reset_hint: %v", val)
+		}
+	}
+
 	buckets, spans := p.buildHistogramBucketsAndSpans(desc, "buckets", "offset")
 	output.PositiveBuckets = buckets
 	output.PositiveSpans = spans
@@ -672,7 +698,7 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 			p.addParseErrf(n.PositionRange(), "aggregation operator expected in aggregation expression but got %q", n.Op)
 		}
 		p.expectType(n.Expr, ValueTypeVector, "aggregation expression")
-		if n.Op == TOPK || n.Op == BOTTOMK || n.Op == QUANTILE {
+		if n.Op == TOPK || n.Op == BOTTOMK || n.Op == QUANTILE || n.Op == LIMITK || n.Op == LIMIT_RATIO {
 			p.expectType(n.Param, ValueTypeScalar, "aggregation parameter")
 		}
 		if n.Op == COUNT_VALUES {

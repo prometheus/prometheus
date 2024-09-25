@@ -502,7 +502,7 @@ func unreplace(s string) string {
 }
 
 func yoloString(b []byte) string {
-	return *((*string)(unsafe.Pointer(&b)))
+	return unsafe.String(unsafe.SliceData(b), len(b))
 }
 
 func parseFloat(s string) (float64, error) {

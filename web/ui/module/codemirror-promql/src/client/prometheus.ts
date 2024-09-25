@@ -11,10 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { FetchFn } from '.';
+import { FetchFn } from './index';
 import { Matcher } from '../types';
 import { labelMatchersToString } from '../parser';
-import LRUCache from 'lru-cache';
+import { LRUCache } from 'lru-cache';
 
 export interface MetricMetadata {
   type: string;
@@ -66,6 +66,7 @@ interface APIResponse<T> {
   data?: T;
   error?: string;
   warnings?: string[];
+  infos?: string[];
 }
 
 // These are status codes where the Prometheus API still returns a valid JSON body,
@@ -291,7 +292,10 @@ class Cache {
   private flags: Record<string, string>;
 
   constructor(config?: CacheConfig) {
-    const maxAge: LRUCache.LimitedByTTL = { ttl: config && config.maxAge ? config.maxAge : 5 * 60 * 1000 };
+    const maxAge = {
+      ttl: config && config.maxAge ? config.maxAge : 5 * 60 * 1000,
+      ttlAutopurge: false,
+    };
     this.completeAssociation = new LRUCache<string, Map<string, Set<string>>>(maxAge);
     this.metricMetadata = {};
     this.labelValues = new LRUCache<string, string[]>(maxAge);

@@ -23,16 +23,17 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
-func newTestEngine() *promql.Engine {
-	return promqltest.NewTestEngine(false, 0, promqltest.DefaultMaxSamplesPerQuery)
+func newTestEngine(t *testing.T) *promql.Engine {
+	return promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
 }
 
 func TestEvaluations(t *testing.T) {
-	promqltest.RunBuiltinTests(t, newTestEngine())
+	promqltest.RunBuiltinTests(t, newTestEngine(t))
 }
 
 // Run a lot of queries at the same time, to check for race conditions.
@@ -45,7 +46,9 @@ func TestConcurrentRangeQueries(t *testing.T) {
 		MaxSamples: 50000000,
 		Timeout:    100 * time.Second,
 	}
-	engine := promql.NewEngine(opts)
+	// Enable experimental functions testing
+	parser.EnableExperimentalFunctions = true
+	engine := promqltest.NewTestEngineWithOpts(t, opts)
 
 	const interval = 10000 // 10s interval.
 	// A day of data plus 10k steps.
