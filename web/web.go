@@ -322,7 +322,7 @@ func New(logger log.Logger, o *Options, receiver handler.Receiver) *Handler {
 		app = h.storage
 	}
 
-	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, app, h.exemplarStorage, factorySPr, factoryTr, factoryAr,
+	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, app, h.exemplarStorage, receiver.HeadQueryable(), factorySPr, factoryTr, factoryAr,
 		func() config.Config {
 			h.mtx.RLock()
 			defer h.mtx.RUnlock()

@@ -397,6 +397,10 @@ func (rr *Receiver) Querier(mint, maxt int64) (storage.Querier, error) {
 	//return querier.NewMultiQuerier(, nil), nil
 }
 
+func (rr *Receiver) HeadQueryable() storage.Queryable {
+	return rr.appender
+}
+
 // Shutdown safe shutdown Receiver.
 func (rr *Receiver) Shutdown(ctx context.Context) error {
 	cgogcErr := rr.cgogc.Shutdown(ctx)

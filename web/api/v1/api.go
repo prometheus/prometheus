@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"math"
 	"math/rand"
 	"net"
@@ -197,6 +198,7 @@ type API struct {
 	Queryable         storage.SampleAndChunkQueryable
 	QueryEngine       QueryEngine
 	ExemplarQueryable storage.ExemplarQueryable
+	HeadQueryable     storage.Queryable
 
 	scrapePoolsRetriever  func(context.Context) ScrapePoolsRetriever
 	targetRetriever       func(context.Context) TargetRetriever
@@ -233,6 +235,7 @@ func NewAPI(
 	q storage.SampleAndChunkQueryable,
 	ap storage.Appendable,
 	eq storage.ExemplarQueryable,
+	hq storage.Queryable,
 	spsr func(context.Context) ScrapePoolsRetriever,
 	tr func(context.Context) TargetRetriever,
 	ar func(context.Context) AlertmanagerRetriever,
@@ -260,10 +263,10 @@ func NewAPI(
 	otlpEnabled bool,
 ) *API {
 	a := &API{
-		QueryEngine:       qe,
-		Queryable:         q,
-		ExemplarQueryable: eq,
-
+		QueryEngine:           qe,
+		Queryable:             q,
+		ExemplarQueryable:     eq,
+		HeadQueryable:         hq,
 		scrapePoolsRetriever:  spsr,
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
@@ -373,6 +376,8 @@ func (api *API) Register(r *route.Router) {
 	r.Post("/query_range", wrapAgent(api.queryRange))
 	r.Get("/query_exemplars", wrapAgent(api.queryExemplars))
 	r.Post("/query_exemplars", wrapAgent(api.queryExemplars))
+	r.Get("/query_head", wrapAgent(api.queryHead))
+	r.Post("/query_head", wrapAgent(api.queryHead))
 
 	r.Get("/format_query", wrapAgent(api.formatQuery))
 	r.Post("/format_query", wrapAgent(api.formatQuery))
@@ -633,6 +638,67 @@ func (api *API) queryExemplars(r *http.Request) apiFuncResult {
 	res, err := eq.Select(timestamp.FromTime(start), timestamp.FromTime(end), selectors...)
 	if err != nil {
 		return apiFuncResult{nil, returnAPIError(err), nil, nil}
+	}
+
+	return apiFuncResult{res, nil, nil, nil}
+}
+
+func (api *API) queryHead(r *http.Request) apiFuncResult {
+	start, err := parseTime(r.FormValue("start"))
+	if err != nil {
+		return invalidParamError(err, "start")
+	}
+	end, err := parseTime(r.FormValue("end"))
+	if err != nil {
+		return invalidParamError(err, "end")
+	}
+	if end.Before(start) {
+		return invalidParamError(errors.New("end timestamp must not be before start time"), "end")
+	}
+
+	ctx := r.Context()
+	if to := r.FormValue("timeout"); to != "" {
+		var cancel context.CancelFunc
+		timeout, err := parseDuration(to)
+		if err != nil {
+			return invalidParamError(err, "timeout")
+		}
+
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+
+	metricName := r.FormValue("query")
+
+	q, err := api.HeadQueryable.Querier(start.UnixMilli(), end.UnixMilli())
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	}
+	defer func() { _ = q.Close() }()
+
+	seriesSet := q.Select(ctx, false, nil, &labels.Matcher{
+		Type:  labels.MatchEqual,
+		Name:  "__name__",
+		Value: metricName,
+	})
+
+	var samples []promql.Sample
+	for seriesSet.Next() {
+		series := seriesSet.At()
+		chunkIterator := series.Iterator(nil)
+		for chunkIterator.Next() != chunkenc.ValNone {
+			t, v := chunkIterator.At()
+			labelSet := series.Labels()
+			samples = append(samples, promql.Sample{
+				T:      t,
+				F:      v,
+				Metric: labelSet,
+			})
+		}
+	}
+
+	res := promql.Result{
+		Value: promql.Vector(samples),
 	}
 
 	return apiFuncResult{res, nil, nil, nil}
