@@ -293,10 +293,12 @@ func (p *MemPostings) EnsureOrder(numberOfConcurrentProcesses int) {
 func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}, affected map[labels.Label]struct{}) {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
+	if len(p.m) == 0 || len(deleted) == 0 {
+		return
+	}
 
 	// Deleting label names mutates p.m map, so it should be done from a single goroutine after nobody else is reading it.
-	// Adding +1 to length to account for allPostingsKey processing when MemPostings is empty.
-	deleteLabelNames := make(chan string, len(p.m)+1)
+	deleteLabelNames := make(chan string, len(p.m))
 
 	process := func(l labels.Label) {
 		orig := p.m[l.Name][l.Value]
