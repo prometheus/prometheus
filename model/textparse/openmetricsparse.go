@@ -300,12 +300,12 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 			// This might result in partial scrape with wrong/missing CT, but only
 			// spec improvement would help.
 			// TODO: Make sure OM 1.1/2.0 pass CT via metadata or exemplar-like to avoid this.
-			p.resetCtParseValues(resetLexer)
+			p.resetCTParseValues(resetLexer)
 			return nil
 		}
 		if eType != EntrySeries {
 			// Assume we hit different family, no CT line found.
-			p.resetCtParseValues(resetLexer)
+			p.resetCTParseValues(resetLexer)
 			return nil
 		}
 
@@ -321,7 +321,7 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 		peekWithoutNameLsetHash, _ = peekedLset.HashWithoutLabels(buf, labels.MetricName, "le", "quantile")
 		if peekWithoutNameLsetHash != currFamilyLsetHash {
 			// Found CT line for a different series, for our series no CT.
-			p.resetCtParseValues(resetLexer)
+			p.resetCTParseValues(resetLexer)
 			return nil
 		}
 
@@ -342,7 +342,7 @@ func (p *OpenMetricsParser) setCTParseValues(ct int64, ctHashSet uint64, visited
 }
 
 // resetCtParseValues resets the parser to the state before CreatedTimestamp method was called.
-func (p *OpenMetricsParser) resetCtParseValues(resetLexer *openMetricsLexer) {
+func (p *OpenMetricsParser) resetCTParseValues(resetLexer *openMetricsLexer) {
 	p.l = resetLexer
 	p.ct = 0
 	p.ctHashSet = 0
