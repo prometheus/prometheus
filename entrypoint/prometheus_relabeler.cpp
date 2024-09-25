@@ -1,9 +1,11 @@
 #include "prometheus_relabeler.h"
 #include "_helpers.hpp"
-#include "lss.hpp"
+#include "head/lss.h"
 
 #include "primitives/go_slice.h"
 #include "prometheus/relabeler.h"
+
+using entrypoint::head::LssVariantPtr;
 
 //
 // StatelessRelabeler
@@ -193,7 +195,7 @@ extern "C" void prompp_prometheus_per_shard_relabeler_input_relabeling(void* arg
     PromPP::Prometheus::Relabel::MetricLimits* metric_limits;
     PromPP::Prometheus::Relabel::PerShardRelabeler* per_shard_relabeler;
     HashdexVariant* hashdex;
-    entrypoint::LssVariantPtr lss;
+    LssVariantPtr lss;
   };
   struct Result {
     PromPP::Primitives::Go::Slice<char> error;
@@ -225,7 +227,7 @@ extern "C" void prompp_prometheus_per_shard_relabeler_input_relabeling_with_stal
     PromPP::Prometheus::Relabel::MetricLimits* metric_limits;
     PromPP::Prometheus::Relabel::PerShardRelabeler* per_shard_relabeler;
     HashdexVariant* hashdex;
-    entrypoint::LssVariantPtr lss;
+    LssVariantPtr lss;
     PromPP::Prometheus::Relabel::SourceState source_state;
     PromPP::Primitives::Timestamp stale_ts;
   };
@@ -260,7 +262,7 @@ extern "C" void prompp_prometheus_per_shard_relabeler_append_relabeler_series(vo
     PromPP::Prometheus::Relabel::RelabeledSeries* relabeled_series;
     PromPP::Prometheus::Relabel::RelabelerStateUpdate* relabeler_state_update;
     PromPP::Prometheus::Relabel::PerShardRelabeler* per_shard_relabeler;
-    entrypoint::LssVariantPtr lss;
+    LssVariantPtr lss;
   };
   struct Result {
     PromPP::Primitives::Go::Slice<char> error;
@@ -307,7 +309,7 @@ extern "C" void prompp_prometheus_per_shard_relabeler_output_relabeling(void* ar
     PromPP::Primitives::Go::SliceView<PromPP::Prometheus::Relabel::InnerSeries*> incoming_inner_series;
     PromPP::Primitives::Go::SliceView<PromPP::Prometheus::Relabel::InnerSeries*> encoders_inner_series;
     PromPP::Prometheus::Relabel::PerShardRelabeler* per_shard_relabeler;
-    entrypoint::LssVariantPtr lss;
+    LssVariantPtr lss;
     uint32_t generation;
   };
   struct Result {

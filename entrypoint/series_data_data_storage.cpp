@@ -1,16 +1,10 @@
 #include "series_data_data_storage.h"
 
 #include "chunk_recoder.hpp"
+#include "head/data_storage.h"
 #include "primitives/go_slice.h"
-#include "series_data/data_storage.h"
 
-namespace {
-
-using DataStoragePtr = std::unique_ptr<series_data::DataStorage>;
-
-static_assert(sizeof(DataStoragePtr) == sizeof(void*));
-
-}  // namespace
+using entrypoint::head::DataStoragePtr;
 
 extern "C" void prompp_series_data_data_storage_ctor(void* res) {
   using Result = struct {
@@ -44,7 +38,7 @@ extern "C" void prompp_series_data_chunk_recoder_ctor(void* args, void* res) {
     entrypoint::ChunkRecoderPtr chunk_recoder;
   };
 
-  new (res) Result{.chunk_recoder = std::make_unique<entrypoint::ChunkRecoder>(reinterpret_cast<Arguments*>(args)->data_storage.get())};
+  new (res) Result{.chunk_recoder = std::make_unique<entrypoint::ChunkRecoder>(static_cast<Arguments*>(args)->data_storage.get())};
 }
 
 extern "C" void prompp_series_data_chunk_recoder_recode_next_chunk(void* args, void* res) {
@@ -60,8 +54,8 @@ extern "C" void prompp_series_data_chunk_recoder_recode_next_chunk(void* args, v
     PromPP::Primitives::Go::SliceView<uint8_t> buffer;
   };
 
-  auto in = reinterpret_cast<Arguments*>(args);
-  auto out = reinterpret_cast<Result*>(res);
+  const auto in = static_cast<const Arguments*>(args);
+  const auto out = static_cast<Result*>(res);
   out->series_id = in->chunk_recoder->series_id();
   in->chunk_recoder->recode_next_chunk(*out);
   out->has_more_data = in->chunk_recoder->has_more_data();
@@ -73,5 +67,5 @@ extern "C" void prompp_series_data_chunk_recoder_dtor(void* args) {
     entrypoint::ChunkRecoderPtr chunk_recoder;
   };
 
-  reinterpret_cast<Arguments*>(args)->~Arguments();
+  static_cast<Arguments*>(args)->~Arguments();
 }

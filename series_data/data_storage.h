@@ -236,6 +236,11 @@ struct DataStorage {
     }
   }
 
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t chunk_count() const noexcept {
+    return open_chunks.size() + std::accumulate(finalized_chunks.begin(), finalized_chunks.end(), 0U,
+                                                [](uint32_t size, const auto& chunks_pair) PROMPP_LAMBDA_INLINE { return size + chunks_pair.second.count(); });
+  }
+
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept {
     size_t outdated_chunks_allocated_memory = 0;
     for (auto& [_, outdated_chunk] : outdated_chunks) {

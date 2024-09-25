@@ -6,6 +6,8 @@ Checks: >
 WarningsAsErrors: '*'
 HeaderFilterRegex: '(bare_bones|primitives|prometheus|wal|ceph|series_index)/.*'
 AnalyzeTemporaryDtors: false
+ExtraArgs:
+  - '-frelaxed-template-template-args'
 FormatStyle: file
 CheckOptions:
   modernize-loop-convert.MinConfidence: reasonable
