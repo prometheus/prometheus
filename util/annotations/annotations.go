@@ -134,6 +134,7 @@ var (
 	PromQLInfo    = errors.New("PromQL info")
 	PromQLWarning = errors.New("PromQL warning")
 
+	RangeTooShortWarning                       = fmt.Errorf("%w: range too short, some series have been dropped because the range contained too few samples to calculate an extrapolated rate", PromQLWarning)
 	InvalidRatioWarning                        = fmt.Errorf("%w: ratio value should be between -1 and 1", PromQLWarning)
 	InvalidQuantileWarning                     = fmt.Errorf("%w: quantile value should be between 0 and 1", PromQLWarning)
 	BadBucketLabelWarning                      = fmt.Errorf("%w: bucket label %q is missing or has a malformed value", PromQLWarning, model.BucketLabel)

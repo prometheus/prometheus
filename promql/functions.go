@@ -120,7 +120,9 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 			prevValue = currPoint.F
 		}
 	default:
-		// TODO: add RangeTooShortWarning
+		var newAnnos annotations.Annotations
+		newAnnos.Add(annotations.RangeTooShortWarning)
+		annos.Merge(newAnnos)
 		return enh.Out, annos
 	}
 
