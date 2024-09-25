@@ -87,4 +87,19 @@ TEST_F(QueryableEncodingBimapFixture, EmplaceLabelSetWithInvalidLabel) {
   }
 }
 
+TEST_F(QueryableEncodingBimapFixture, EmplaceDuplicatedLabelSet) {
+  // Arrange
+  const auto label_set = LabelViewSet{{"job", "cron"}, {"key", ""}, {"process", "php"}};
+  const auto label_set2 = LabelViewSet{{"job", "cron"}, {"key", ""}, {"process", "php1"}};
+
+  // Act
+  const auto ls_id1 = index_.find_or_emplace(label_set);
+  const auto existing_ls_id = index_.find_or_emplace(label_set);
+  const auto ls_id2 = index_.find_or_emplace(label_set2);
+
+  // Assert
+  EXPECT_EQ(ls_id1, existing_ls_id);
+  EXPECT_NE(ls_id1, ls_id2);
+}
+
 }  // namespace
