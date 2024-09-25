@@ -23,6 +23,7 @@ export interface GraphProps {
   range: number;
   resolution: GraphResolution;
   showExemplars: boolean;
+  anchorYAxisAtZero: boolean,
   displayMode: GraphDisplayMode;
   retriggerIdx: number;
   onSelectRange: (start: number, end: number) => void;
@@ -35,6 +36,7 @@ const Graph: FC<GraphProps> = ({
   range,
   resolution,
   showExemplars,
+  anchorYAxisAtZero,
   displayMode,
   retriggerIdx,
   onSelectRange,
@@ -181,6 +183,7 @@ const Graph: FC<GraphProps> = ({
           range={dataAndRange.range}
           width={width}
           showExemplars={showExemplars}
+          anchorYAxisAtZero={anchorYAxisAtZero}
           displayMode={displayMode}
           onSelectRange={onSelectRange}
         />
