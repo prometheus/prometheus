@@ -234,7 +234,7 @@ func TestCheckTargetConfig(t *testing.T) {
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := checkConfig(false, "testdata/"+test.file, false)
+			_, err := checkConfig(false, "testdata/"+test.file, false, newLintConfig(lintOptionNone, false, 5*time.Minute))
 			if test.err != "" {
 				require.EqualErrorf(t, err, test.err, "Expected error %q, got %q", test.err, err.Error())
 				return
@@ -319,7 +319,7 @@ func TestCheckConfigSyntax(t *testing.T) {
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := checkConfig(false, "testdata/"+test.file, test.syntaxOnly)
+			_, err := checkConfig(false, "testdata/"+test.file, test.syntaxOnly, newLintConfig(lintOptionNone, false, 5*time.Minute))
 			expectedErrMsg := test.err
 			if strings.Contains(runtime.GOOS, "windows") {
 				expectedErrMsg = test.errWindows
@@ -355,7 +355,7 @@ func TestAuthorizationConfig(t *testing.T) {
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := checkConfig(false, "testdata/"+test.file, false)
+			_, err := checkConfig(false, "testdata/"+test.file, false, newLintConfig(lintOptionNone, false, 5*time.Minute))
 			if test.err != "" {
 				require.ErrorContains(t, err, test.err, "Expected error to contain %q, got %q", test.err, err.Error())
 				return
@@ -437,7 +437,7 @@ func TestExitCodes(t *testing.T) {
 					t.Parallel()
 					args := []string{"-test.main", "check", "config", "testdata/" + c.file}
 					if lintFatal {
-						args = append(args, "--lint-fatal")
+						args = append(args, "--lint-fatal", "--lint=all")
 					}
 					tool := exec.Command(promtoolPath, args...)
 					err := tool.Run()
@@ -508,7 +508,7 @@ func TestCheckRules(t *testing.T) {
 		defer func(v *os.File) { os.Stdin = v }(os.Stdin)
 		os.Stdin = r
 
-		exitCode := CheckRules(newLintConfig(lintOptionDuplicateRules, false))
+		exitCode := CheckRules(newLintConfig(lintOptionDuplicateRules, false, 5*time.Minute))
 		require.Equal(t, successExitCode, exitCode, "")
 	})
 
@@ -530,7 +530,7 @@ func TestCheckRules(t *testing.T) {
 		defer func(v *os.File) { os.Stdin = v }(os.Stdin)
 		os.Stdin = r
 
-		exitCode := CheckRules(newLintConfig(lintOptionDuplicateRules, false))
+		exitCode := CheckRules(newLintConfig(lintOptionDuplicateRules, false, 5*time.Minute))
 		require.Equal(t, failureExitCode, exitCode, "")
 	})
 
@@ -552,27 +552,52 @@ func TestCheckRules(t *testing.T) {
 		defer func(v *os.File) { os.Stdin = v }(os.Stdin)
 		os.Stdin = r
 
-		exitCode := CheckRules(newLintConfig(lintOptionDuplicateRules, true))
+		exitCode := CheckRules(newLintConfig(lintOptionDuplicateRules, true, 5*time.Minute))
 		require.Equal(t, lintErrExitCode, exitCode, "")
 	})
+
+	for _, c := range []struct {
+		lookbackDelta  time.Duration
+		expectedErrMsg string
+	}{
+		{
+			lookbackDelta:  5 * time.Minute,
+			expectedErrMsg: "lint error Long Scrape Interval found. Data point will be marked as stale. Job: long_scrape_interval_test. Interval: 10m",
+		},
+		{
+			lookbackDelta:  20 * time.Minute,
+			expectedErrMsg: "",
+		},
+	} {
+		t.Run("config-lint-fatal", func(t *testing.T) {
+			_, err := checkConfig(false, "./testdata/prometheus-config.lint.yml", false, newLintConfig(lintOptionLongScrapeInterval, false, c.lookbackDelta))
+			var errMsg string
+			if err != nil {
+				errMsg = err.Error()
+			} else {
+				errMsg = ""
+			}
+			require.Equalf(t, c.expectedErrMsg, errMsg, "Expected error %q, got %q", c.expectedErrMsg, errMsg)
+		})
+	}
 }
 
 func TestCheckRulesWithRuleFiles(t *testing.T) {
 	t.Run("rules-good", func(t *testing.T) {
 		t.Parallel()
-		exitCode := CheckRules(newLintConfig(lintOptionDuplicateRules, false), "./testdata/rules.yml")
+		exitCode := CheckRules(newLintConfig(lintOptionDuplicateRules, false, 5*time.Minute), "./testdata/rules.yml")
 		require.Equal(t, successExitCode, exitCode, "")
 	})
 
 	t.Run("rules-bad", func(t *testing.T) {
 		t.Parallel()
-		exitCode := CheckRules(newLintConfig(lintOptionDuplicateRules, false), "./testdata/rules-bad.yml")
+		exitCode := CheckRules(newLintConfig(lintOptionDuplicateRules, false, 5*time.Minute), "./testdata/rules-bad.yml")
 		require.Equal(t, failureExitCode, exitCode, "")
 	})
 
 	t.Run("rules-lint-fatal", func(t *testing.T) {
 		t.Parallel()
-		exitCode := CheckRules(newLintConfig(lintOptionDuplicateRules, true), "./testdata/prometheus-rules.lint.yml")
+		exitCode := CheckRules(newLintConfig(lintOptionDuplicateRules, true, 5*time.Minute), "./testdata/prometheus-rules.lint.yml")
 		require.Equal(t, lintErrExitCode, exitCode, "")
 	})
 }

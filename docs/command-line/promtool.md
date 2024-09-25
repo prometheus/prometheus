@@ -177,6 +177,7 @@ Check if the rule files are valid or not.
 | --- | --- | --- |
 | <code class="text-nowrap">--lint</code> | Linting checks to apply. Available options are: all, duplicate-rules, none. Use --lint=none to disable linting | `duplicate-rules` |
 | <code class="text-nowrap">--lint-fatal</code> | Make lint errors exit with exit code 3. | `false` |
+| <code class="text-nowrap">--lint.lookback-delta</code> | The maximum lookback duration. This config is only used for rules linting checks. | `5m` |
 
 
 
