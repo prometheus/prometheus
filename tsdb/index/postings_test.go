@@ -1025,7 +1025,7 @@ func BenchmarkMemPostings_Delete(b *testing.B) {
 		return s
 	}
 
-	const total = 1e6
+	const total = 2e6
 	allSeries := [total]labels.Labels{}
 	nameValues := make([]string, 0, 100)
 	for i := 0; i < total; i++ {
