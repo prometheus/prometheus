@@ -389,7 +389,12 @@ func (rr *Receiver) Querier(mint, maxt int64) (storage.Querier, error) {
 
 	// fmt.Println("RECEIVER: Querier storage querier created")
 	// fmt.Println("RECEIVER: Querier finished, duration: ", time.Since(start))
-	return querier.NewMultiQuerier([]storage.Querier{appenderQuerier, storageQuerier}, nil), nil
+	return storage.NewMergeQuerier(
+		[]storage.Querier{appenderQuerier, storageQuerier},
+		nil,
+		storage.ChainedSeriesMerge,
+	), nil
+	//return querier.NewMultiQuerier(, nil), nil
 }
 
 // Shutdown safe shutdown Receiver.
