@@ -35,7 +35,7 @@ extern "C" {
  *
  * @param res {
  *     status struct {     // head status
- *          time {
+ *          time_interval {
  *              min int64
  *              max int64
  *          }

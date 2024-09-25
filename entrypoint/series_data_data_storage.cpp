@@ -3,6 +3,9 @@
 #include "chunk_recoder.hpp"
 #include "head/data_storage.h"
 #include "primitives/go_slice.h"
+#include "series_data/data_storage.h"
+#include "series_data/querier/querier.h"
+#include "series_data/serialization/serializer.h"
 
 using entrypoint::head::DataStoragePtr;
 
