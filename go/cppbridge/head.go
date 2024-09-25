@@ -32,6 +32,10 @@ func (ds *HeadDataStorage) Reset() {
 	seriesDataDataStorageReset(ds.dataStorage)
 }
 
+func (ds *HeadDataStorage) Pointer() uintptr {
+	return ds.dataStorage
+}
+
 // HeadEncoder is Go wrapper around series_data::Encoder.
 type HeadEncoder struct {
 	encoder     uintptr

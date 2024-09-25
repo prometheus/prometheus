@@ -146,6 +146,16 @@ class Decoder {
     }
   }
 
+  [[nodiscard]] static PROMPP_ALWAYS_INLINE int64_t get_series_min_timestamp(const DataStorage& storage, uint32_t ls_id) noexcept {
+    using enum series_data::chunk::DataChunk::Type;
+
+    if (const auto it = storage.finalized_chunks.find(ls_id); it != storage.finalized_chunks.end()) {
+      return series_data::Decoder::get_chunk_first_timestamp<kFinalized>(storage, it->second.front());
+    } else {
+      return series_data::Decoder::get_chunk_first_timestamp<kOpen>(storage, storage.open_chunks[ls_id]);
+    }
+  }
+
   template <chunk::DataChunk::Type chunk_type>
   [[nodiscard]] PROMPP_ALWAYS_INLINE static int64_t get_chunk_first_timestamp(const DataStorage& storage, const chunk::DataChunk& chunk) noexcept {
     return encoder::timestamp::TimestampDecoder::decode_first(get_stream_reader<chunk_type>(storage, chunk));
