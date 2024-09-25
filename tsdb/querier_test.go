@@ -3787,3 +3787,29 @@ func (m mockReaderOfLabels) Series(storage.SeriesRef, *labels.ScratchBuilder, *[
 func (m mockReaderOfLabels) Symbols() index.StringIter {
 	panic("Series called")
 }
+
+// TestMergeQuerierConcurrentSelectMatchers reproduces the data race bug from
+// https://github.com/prometheus/prometheus/issues/14723, when one of the queriers (blockQuerier in this case)
+// alters the passed matchers.
+func TestMergeQuerierConcurrentSelectMatchers(t *testing.T) {
+	block, err := OpenBlock(nil, createBlock(t, t.TempDir(), genSeries(1, 1, 0, 1)), nil)
+	require.NoError(t, err)
+	p, err := NewBlockQuerier(block, 0, 1)
+	require.NoError(t, err)
+
+	// A secondary querier is required to enable concurrent select; a blockQuerier is used for simplicity.
+	s, err := NewBlockQuerier(block, 0, 1)
+	require.NoError(t, err)
+
+	originalMatchers := []*labels.Matcher{
+		labels.MustNewMatcher(labels.MatchRegexp, "baz", ".*"),
+		labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
+	}
+	matchers := append([]*labels.Matcher{}, originalMatchers...)
+
+	mergedQuerier := storage.NewMergeQuerier([]storage.Querier{p}, []storage.Querier{s}, storage.ChainedSeriesMerge)
+	defer mergedQuerier.Close()
+	mergedQuerier.Select(context.Background(), false, nil, matchers...)
+
+	require.Equal(t, originalMatchers, matchers)
+}
