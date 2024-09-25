@@ -95,15 +95,17 @@ type OpenMetricsParser struct {
 	exemplarTs    int64
 	hasExemplarTs bool
 
-	skipCTSeries bool
-	ct           int64
+	// Created timestamp parsing state.
+	ct        int64
+	ctHashSet uint64
+	// visitedName is the metric name of the last visited metric when peeking ahead
+	// for _created series during the execution of the CreatedTimestamp method.
 	visitedName  string
-	ctHashSet    uint64
+	skipCTSeries bool
 }
 
 type openMetricsParserOptions struct {
 	SkipCTSeries bool
-	ct           int64
 }
 
 type OpenMetricsOption func(*openMetricsParserOptions)
@@ -118,7 +120,6 @@ type OpenMetricsOption func(*openMetricsParserOptions)
 func WithOMParserCTSeriesSkipped() OpenMetricsOption {
 	return func(o *openMetricsParserOptions) {
 		o.SkipCTSeries = true
-		o.ct = -1
 	}
 }
 
@@ -134,7 +135,6 @@ func NewOpenMetricsParser(b []byte, st *labels.SymbolTable, opts ...OpenMetricsO
 		l:            &openMetricsLexer{b: b},
 		builder:      labels.NewScratchBuilderWithSymbolTable(st, 16),
 		skipCTSeries: options.SkipCTSeries,
-		ct:           options.ct,
 	}
 
 	return parser
@@ -260,7 +260,7 @@ func (p *OpenMetricsParser) Exemplar(e *exemplar.Exemplar) bool {
 func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 	if !typeRequiresCT(p.mtype) {
 		// Not a CT supported metric type, fast path.
-		p.ct = -1
+		p.ct = 0
 		p.visitedName = ""
 		p.ctHashSet = 0
 		return nil
@@ -273,16 +273,16 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 	)
 	p.Metric(&currLset)
 	currFamilyLsetHash, buf := currLset.HashWithoutLabels(buf, labels.MetricName, "le", "quantile")
-
-	// make sure we're on a new metric before returning
 	currName := currLset.Get(model.MetricNameLabel)
 	currName = findBaseMetricName(currName)
-	if currName == p.visitedName && currFamilyLsetHash == p.ctHashSet && p.visitedName != "" && p.ctHashSet != 0 && p.ct != -1 {
+
+	// make sure we're on a new metric before returning
+	if currName == p.visitedName && currFamilyLsetHash == p.ctHashSet && p.visitedName != "" && p.ctHashSet > 0 && p.ct > 0 {
 		// CT is already known, fast path.
 		return &p.ct
 	}
 
-	// Create a new lexer and update the deep copy with it.
+	// Create a new lexer to reset the parser once this function is done executing.
 	resetLexer := &openMetricsLexer{
 		b:     p.l.b,
 		i:     p.l.i,
@@ -296,7 +296,7 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 	for {
 		eType, err := p.Next()
 		if err != nil {
-			// This means peek will give error too later on, so def no CT line found.
+			// This means p.Next() will give error too later on, so def no CT line found.
 			// This might result in partial scrape with wrong/missing CT, but only
 			// spec improvement would help.
 			// TODO: Make sure OM 1.1/2.0 pass CT via metadata or exemplar-like to avoid this.
@@ -326,33 +326,39 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 		}
 
 		ct := int64(p.val)
-		p.ct = ct
-		p.l = resetLexer
-		p.skipCTSeries = true
-		p.visitedName = currName
-		p.ctHashSet = currFamilyLsetHash
+		p.setCTParseValues(ct, currFamilyLsetHash, currName, true, resetLexer)
 		return &ct
 	}
 }
 
-// resetCtParseValues resets the parser to the state before CreatedTimestamp() call.
-func (p *OpenMetricsParser) resetCtParseValues(resetLexer *openMetricsLexer) {
-	p.ct = -1
+// setCTParseValues sets the parser to the state after CreatedTimestamp method was called and CT was found.
+// This is useful to prevent re-parsing the same series again and early return the CT value.
+func (p *OpenMetricsParser) setCTParseValues(ct int64, ctHashSet uint64, visitedName string, skipCTSeries bool, resetLexer *openMetricsLexer) {
+	p.ct = ct
 	p.l = resetLexer
-	p.skipCTSeries = true
-	p.visitedName = ""
+	p.ctHashSet = ctHashSet
+	p.visitedName = visitedName
+	p.skipCTSeries = skipCTSeries
+}
+
+// resetCtParseValues resets the parser to the state before CreatedTimestamp method was called.
+func (p *OpenMetricsParser) resetCtParseValues(resetLexer *openMetricsLexer) {
+	p.l = resetLexer
+	p.ct = 0
 	p.ctHashSet = 0
+	p.visitedName = ""
+	p.skipCTSeries = true
 }
 
 // findBaseMetricName returns the metric name without reserved suffixes such as "_created",
 // "_sum", etc. based on the OpenMetrics specification. If no suffix is found, the original
 // name is returned.
+// TODO(Maniktherana): Make sure OM 1.1/2.0 explicitly specify a list of reserved suffixes or pass CT as metadata.
 func findBaseMetricName(name string) string {
-	nameSlice := strings.Split(name, "_")
-	if len(nameSlice) > 1 {
-		switch nameSlice[len(nameSlice)-1] {
-		case "created", "count", "sum", "bucket":
-			return strings.Join(nameSlice[:len(nameSlice)-1], "_")
+	suffixes := []string{"_created", "_count", "_sum", "_bucket"}
+	for _, suffix := range suffixes {
+		if strings.HasSuffix(name, suffix) {
+			return strings.TrimSuffix(name, suffix)
 		}
 	}
 	return name
