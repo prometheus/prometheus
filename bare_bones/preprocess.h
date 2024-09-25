@@ -2,8 +2,14 @@
 
 #define PROMPP_ATTRIBUTE_INLINE __attribute__((always_inline))
 #define PROMPP_ATTRIBUTE_NOINLINE __attribute__((noinline))
+
+#ifdef NDEBUG
 #define PROMPP_ALWAYS_INLINE inline PROMPP_ATTRIBUTE_INLINE
 #define PROMPP_LAMBDA_INLINE PROMPP_ATTRIBUTE_INLINE
+#else
+#define PROMPP_ALWAYS_INLINE inline PROMPP_ATTRIBUTE_NOINLINE
+#define PROMPP_LAMBDA_INLINE PROMPP_ATTRIBUTE_NOINLINE
+#endif
 
 #define PROMPP_ATTRIBUTE_PACKED __attribute__((__packed__))
 

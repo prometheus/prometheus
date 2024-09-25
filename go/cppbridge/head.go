@@ -6,6 +6,10 @@ import (
 	"unsafe"
 )
 
+const (
+	MaxPointsInChunk = 240
+)
+
 // HeadDataStorage is Go wrapper around series_data::Data_storage.
 type HeadDataStorage struct {
 	dataStorage uintptr
@@ -27,6 +31,10 @@ func NewHeadDataStorage() *HeadDataStorage {
 // Reset - resets data storage.
 func (ds *HeadDataStorage) Reset() {
 	seriesDataDataStorageReset(ds.dataStorage)
+}
+
+func (ds *HeadDataStorage) Pointer() uintptr {
+	return ds.dataStorage
 }
 
 func (ds *HeadDataStorage) AllocatedMemory() uint64 {

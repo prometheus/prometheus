@@ -6,7 +6,7 @@
 #include "series_index/queryable_encoding_bimap.h"
 #include "series_index/trie/cedarpp_tree.h"
 
-namespace entrypoint {
+namespace entrypoint::head {
 
 enum class LssType : uint32_t {
   kEncodingBimap = 0,
@@ -45,4 +45,4 @@ inline LssVariantPtr create_lss(LssType type) {
   }
 }
 
-}  // namespace entrypoint
+}  // namespace entrypoint::head

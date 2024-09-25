@@ -1728,3 +1728,23 @@ func indexWriterWriteTableOfContents(writer uintptr, data []byte) []byte {
 
 	return res.data
 }
+
+func getHeadStatus(lss uintptr, dataStorage uintptr, status *HeadStatus) {
+	var args = struct {
+		lss         uintptr
+		dataStorage uintptr
+	}{lss, dataStorage}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_get_head_status,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(status)),
+	)
+}
+
+func freeHeadStatus(status *HeadStatus) {
+	fastcgo.UnsafeCall1(
+		C.prompp_free_head_status,
+		uintptr(unsafe.Pointer(status)),
+	)
+}

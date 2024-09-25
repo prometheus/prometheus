@@ -128,19 +128,40 @@ cc_test(
 )
 
 cc_library(
+    name = "head",
+    hdrs = glob(["head/**/*.h"]),
+    linkstatic = True,
+    deps = [
+        ":series_index",
+        ":series_data",
+    ]
+)
+
+cc_test(
+    name = "head_test",
+    srcs = glob(["head/**/*_tests.cpp"]),
+    deps = [
+        ":head",
+        "@gtest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "entrypoint",
-    srcs = glob(["entrypoint/*.cpp"]),
+    srcs = glob(
+        include=["entrypoint/**/*.cpp"],
+        exclude=["entrypoint/**/*_tests.cpp"]
+    ),
     hdrs = glob([
-        "entrypoint/*.h",
-        "entrypoint/*.hpp",
+        "entrypoint/**/*.h",
+        "entrypoint/**/*.hpp",
     ]),
     linkstatic = True,
     deps = [
         ":bare_bones",
         ":primitives",
         ":wal",
-        ":series_index",
-        ":series_data",
+        ":head",
     ] + select({
         "//bazel/toolchain:with_asan": [],
         "//conditions:default": ["@jemalloc"],

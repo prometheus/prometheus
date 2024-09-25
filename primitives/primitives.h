@@ -180,10 +180,7 @@ class BasicLabelSet {
   inline __attribute__((always_inline)) Names names() const noexcept { return Names(*this); }
 };
 
-template <class Item>
-using StdVector = std::vector<Item>;
-
-using LabelSet = BasicLabelSet<Label, StdVector>;
+using LabelSet = BasicLabelSet<Label, std::vector>;
 using LabelViewSet = BasicLabelSet<LabelView>;
 
 class Sample {

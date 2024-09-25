@@ -24,7 +24,7 @@ struct DataStorage {
         if (storage_->open_chunks.size() > ls_id) {
           open_chunk_ = &storage_->open_chunks[ls_id];
 
-          if (auto it = storage_->finalized_chunks.find(ls_id); it != storage_->finalized_chunks.end()) {
+          if (const auto it = storage_->finalized_chunks.find(ls_id); it != storage_->finalized_chunks.end()) {
             finalized_chunk_iterator_ = it->second.begin();
             finalized_chunk_end_iterator_ = it->second.end();
           }
@@ -77,7 +77,7 @@ struct DataStorage {
     }
 
     PROMPP_ALWAYS_INLINE SeriesChunkIterator operator++(int) noexcept {
-      auto it = *this;
+      const auto it = *this;
       ++*this;
       return it;
     }
@@ -111,7 +111,7 @@ struct DataStorage {
     }
 
     PROMPP_ALWAYS_INLINE ChunkIterator operator++(int) noexcept {
-      auto it = *this;
+      const auto it = *this;
       ++*this;
       return it;
     }
@@ -149,7 +149,6 @@ struct DataStorage {
     const DataStorage* storage_;
   };
 
- public:
   BareBones::Vector<chunk::DataChunk> open_chunks;
   encoder::timestamp::Encoder timestamp_encoder;
 
@@ -235,6 +234,11 @@ struct DataStorage {
     } else {
       return finalized_data_streams[stream_id];
     }
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t chunk_count() const noexcept {
+    return open_chunks.size() + std::accumulate(finalized_chunks.begin(), finalized_chunks.end(), 0U,
+                                                [](uint32_t size, const auto& chunks_pair) PROMPP_LAMBDA_INLINE { return size + chunks_pair.second.count(); });
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept {

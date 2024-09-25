@@ -318,6 +318,24 @@ TEST_F(SerializerDeserializerFixture, FinalizedAllChunkTypes) {
       decode_chunk(deserializer.create_decode_iterator(deserializer.get_chunks()[6]))));
 }
 
+TEST_F(SerializerDeserializerFixture, ChunkWithFinalizedTimestampStream) {
+  // Arrange
+  encoder_.encode(0, 100, 1.0);
+  encoder_.encode(1, 100, 1.0);
+  ChunkFinalizer::finalize(storage_, 0, storage_.open_chunks[0]);
+
+  // Act
+  serializer_.serialize({QueriedChunk{1}}, stream_);
+  const Deserializer deserializer(get_buffer());
+
+  // Assert
+  EXPECT_TRUE(std::ranges::equal(
+      SampleList{
+          {.timestamp = 100, .value = 1.0},
+      },
+      decode_chunk(deserializer.create_decode_iterator(deserializer.get_chunks()[0]))));
+}
+
 class DeserializerIteratorFixture : public SerializerDeserializerTrait, public testing::Test {
  protected:
   using DecodedChunks = std::vector<SampleList>;

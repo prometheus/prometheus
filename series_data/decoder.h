@@ -68,8 +68,7 @@ class Decoder {
   static uint8_t get_samples_count(const DataStorage& storage, const chunk::DataChunk& chunk, chunk::DataChunk::Type chunk_type) noexcept {
     using enum chunk::DataChunk::Type;
 
-    if (chunk.encoding_type == chunk::DataChunk::EncodingType::kGorilla) {
-      [[unlikely]];
+    if (chunk.encoding_type == chunk::DataChunk::EncodingType::kGorilla) [[unlikely]] {
       return encoder::BitSequenceWithItemsCount::count(chunk_type == kOpen ? storage.get_gorilla_encoder_stream<kOpen>(chunk.encoder.gorilla)
                                                                            : storage.get_gorilla_encoder_stream<kFinalized>(chunk.encoder.gorilla));
     } else {
@@ -147,14 +146,23 @@ class Decoder {
     }
   }
 
+  [[nodiscard]] static PROMPP_ALWAYS_INLINE int64_t get_series_min_timestamp(const DataStorage& storage, uint32_t ls_id) noexcept {
+    using enum series_data::chunk::DataChunk::Type;
+
+    if (const auto it = storage.finalized_chunks.find(ls_id); it != storage.finalized_chunks.end()) {
+      return series_data::Decoder::get_chunk_first_timestamp<kFinalized>(storage, it->second.front());
+    } else {
+      return series_data::Decoder::get_chunk_first_timestamp<kOpen>(storage, storage.open_chunks[ls_id]);
+    }
+  }
+
   template <chunk::DataChunk::Type chunk_type>
   [[nodiscard]] PROMPP_ALWAYS_INLINE static int64_t get_chunk_first_timestamp(const DataStorage& storage, const chunk::DataChunk& chunk) noexcept {
     return encoder::timestamp::TimestampDecoder::decode_first(get_stream_reader<chunk_type>(storage, chunk));
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE static int64_t get_open_chunk_last_timestamp(const DataStorage& storage, const chunk::DataChunk& chunk) noexcept {
-    if (chunk.encoding_type == chunk::DataChunk::EncodingType::kGorilla) {
-      [[unlikely]];
+    if (chunk.encoding_type == chunk::DataChunk::EncodingType::kGorilla) [[unlikely]] {
       return storage.gorilla_encoders[chunk.encoder.gorilla].timestamp();
     }
 
@@ -165,7 +173,7 @@ class Decoder {
                                                                                        uint32_t ls_id,
                                                                                        chunk::FinalizedChunkList::ChunksList::const_iterator chunk_it,
                                                                                        chunk::FinalizedChunkList::ChunksList::const_iterator end_it) noexcept {
-    if (auto next_chunk_it = std::next(chunk_it); next_chunk_it != end_it) {
+    if (const auto next_chunk_it = std::next(chunk_it); next_chunk_it != end_it) {
       return get_chunk_first_timestamp<chunk::DataChunk::Type::kFinalized>(storage, *next_chunk_it);
     } else {
       return get_chunk_first_timestamp<chunk::DataChunk::Type::kOpen>(storage, storage.open_chunks[ls_id]);
@@ -210,8 +218,7 @@ class Decoder {
  private:
   template <chunk::DataChunk::Type chunk_type>
   [[nodiscard]] static BareBones::BitSequenceReader get_stream_reader(const DataStorage& storage, const chunk::DataChunk& chunk) {
-    if (chunk.encoding_type != chunk::DataChunk::EncodingType::kGorilla) {
-      [[likely]];
+    if (chunk.encoding_type != chunk::DataChunk::EncodingType::kGorilla) [[likely]] {
       return storage.get_timestamp_stream<chunk_type>(chunk.timestamp_encoder_state_id).reader();
     }
 

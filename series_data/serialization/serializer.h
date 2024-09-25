@@ -53,7 +53,7 @@ class Serializer {
   }
 
   PROMPP_ALWAYS_INLINE static void write_serialized_chunks(const SerializedChunkList& chunks, std::ostream& stream) noexcept {
-    auto size_in_bytes = chunks.size() * sizeof(SerializedChunk);
+    const auto size_in_bytes = chunks.size() * sizeof(SerializedChunk);
     stream.write(reinterpret_cast<const char*>(chunks.data()), static_cast<std::streamsize>(size_in_bytes));
   }
 
@@ -61,7 +61,7 @@ class Serializer {
                                                              TimestampStreamsData& timestamp_streams_data,
                                                              uint32_t& data_size) const noexcept {
     SerializedChunkList serialized_chunks;
-    uint32_t chunks_size = queried_chunks.size();
+    const uint32_t chunks_size = queried_chunks.size();
     serialized_chunks.reserve(chunks_size);
     data_size += sizeof(SerializedChunk) * chunks_size;
 
@@ -154,14 +154,14 @@ class Serializer {
                                     SerializedChunk& serialized_chunk,
                                     uint32_t& data_size) const noexcept {
     if constexpr (chunk_type == chunk::DataChunk::Type::kOpen) {
-      if (auto it = timestamp_streams_data.stream_offsets.find(timestamp_stream_id); it != timestamp_streams_data.stream_offsets.end()) {
+      if (const auto it = timestamp_streams_data.stream_offsets.find(timestamp_stream_id); it != timestamp_streams_data.stream_offsets.end()) {
         serialized_chunk.timestamps_offset = it->second;
         return;
       }
 
       timestamp_streams_data.stream_offsets.emplace(timestamp_stream_id, data_size);
     } else {
-      if (auto it = timestamp_streams_data.finalized_stream_offsets.find(timestamp_stream_id); it != timestamp_streams_data.finalized_stream_offsets.end()) {
+      if (const auto it = timestamp_streams_data.finalized_stream_offsets.find(timestamp_stream_id); it != timestamp_streams_data.finalized_stream_offsets.end()) {
         serialized_chunk.timestamps_offset = it->second;
         return;
       }
@@ -241,12 +241,12 @@ class Serializer {
                                                    encoder::timestamp::State::Id stream_id,
                                                    std::ostream& stream) {
     if constexpr (chunk_type == chunk::DataChunk::Type::kOpen) {
-      if (auto it = timestamp_streams_data.stream_offsets.find(stream_id); it->second != TimestampStreamsData::kInvalidOffset) {
+      if (const auto it = timestamp_streams_data.stream_offsets.find(stream_id); it->second != TimestampStreamsData::kInvalidOffset) {
         write_compact_bit_sequence(storage_.get_timestamp_stream<chunk_type>(stream_id).stream, stream);
         it->second = TimestampStreamsData::kInvalidOffset;
       }
     } else {
-      if (auto it = timestamp_streams_data.finalized_stream_offsets.find(stream_id); it->second != TimestampStreamsData::kInvalidOffset) {
+      if (const auto it = timestamp_streams_data.finalized_stream_offsets.find(stream_id); it->second != TimestampStreamsData::kInvalidOffset) {
         write_compact_bit_sequence(storage_.get_timestamp_stream<chunk_type>(stream_id).stream, stream);
         it->second = TimestampStreamsData::kInvalidOffset;
       }

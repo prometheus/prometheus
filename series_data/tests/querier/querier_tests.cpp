@@ -27,41 +27,54 @@ class QuerierFixture : public testing::TestWithParam<QuerierCase> {
   DataStorage storage_;
   std::chrono::system_clock clock_;
   OutdatedSampleEncoder<decltype(clock_)> outdated_sample_encoder_{clock_};
-  Encoder<decltype(outdated_sample_encoder_)> encoder{storage_, outdated_sample_encoder_};
+  Encoder<decltype(outdated_sample_encoder_)> encoder_{storage_, outdated_sample_encoder_};
   Querier querier_{storage_};
 
   void fill_storage() {
     for (uint32_t ls_id = 0; ls_id < 2; ++ls_id) {
-      encoder.encode(ls_id, 1, 1.0);
-      encoder.encode(ls_id, 2, 1.0);
-      encoder.encode(ls_id, 3, 1.0);
-      encoder.encode(ls_id, 4, 1.0);
-      encoder.encode(ls_id, 5, 1.0);
+      encoder_.encode(ls_id, 1, 1.0);
+      encoder_.encode(ls_id, 2, 1.0);
+      encoder_.encode(ls_id, 3, 1.0);
+      encoder_.encode(ls_id, 4, 1.0);
+      encoder_.encode(ls_id, 5, 1.0);
       ChunkFinalizer::finalize(storage_, ls_id, storage_.open_chunks[ls_id]);
 
-      encoder.encode(ls_id, 6, 1.0);
-      encoder.encode(ls_id, 7, 1.0);
-      encoder.encode(ls_id, 8, 1.0);
-      encoder.encode(ls_id, 9, 1.0);
-      encoder.encode(ls_id, 10, 1.0);
+      encoder_.encode(ls_id, 6, 1.0);
+      encoder_.encode(ls_id, 7, 1.0);
+      encoder_.encode(ls_id, 8, 1.0);
+      encoder_.encode(ls_id, 9, 1.0);
+      encoder_.encode(ls_id, 10, 1.0);
       ChunkFinalizer::finalize(storage_, ls_id, storage_.open_chunks[ls_id]);
 
-      encoder.encode(ls_id, 12, 1.0);
-      encoder.encode(ls_id, 13, 1.0);
-      encoder.encode(ls_id, 14, 1.0);
+      encoder_.encode(ls_id, 12, 1.0);
+      encoder_.encode(ls_id, 13, 1.0);
+      encoder_.encode(ls_id, 14, 1.0);
     }
   }
 };
 
 TEST_F(QuerierFixture, QueryEmptyChunk) {
   // Arrange
-  encoder.encode(2, 1, 1.0);
+  encoder_.encode(2, 1, 1.0);
 
   // Act
   auto& result = querier_.query(Query{.start_timestamp_ms = 1, .end_timestamp_ms = 1, .label_set_ids = {0, 1, 2}});
 
   // Assert
   EXPECT_EQ(QueriedChunkList{QueriedChunk(2)}, result);
+}
+
+TEST_F(QuerierFixture, QueryChunkWithFinalizedTimestampStream) {
+  // Arrange
+  encoder_.encode(0, 100, 1.0);
+  encoder_.encode(1, 100, 1.0);
+  ChunkFinalizer::finalize(storage_, 0, storage_.open_chunks[0]);
+
+  // Act
+  auto& result = querier_.query(Query{.start_timestamp_ms = 1, .end_timestamp_ms = 101, .label_set_ids = {1}});
+
+  // Assert
+  EXPECT_EQ(QueriedChunkList{QueriedChunk(1)}, result);
 }
 
 TEST_P(QuerierFixture, QueryFilledChunks) {

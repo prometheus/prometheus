@@ -38,6 +38,8 @@ class FinalizedChunkList {
   [[nodiscard]] PROMPP_ALWAYS_INLINE const DataChunk& front() const noexcept { return chunks_.front(); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE ChunksList::const_iterator end() const noexcept { return chunks_.end(); }
 
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t count() const noexcept { return std::ranges::distance(*this); }
+
  private:
   ChunksList chunks_;
 };

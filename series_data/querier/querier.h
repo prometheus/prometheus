@@ -33,11 +33,11 @@ class Querier {
   }
 
   void query_finalized_chunks(PromPP::Primitives::LabelSetID ls_id, int64_t start_timestamp_ms, int64_t end_timestamp_ms) {
-    if (auto it = storage_.finalized_chunks.find(ls_id); it != storage_.finalized_chunks.end()) {
+    if (const auto it = storage_.finalized_chunks.find(ls_id); it != storage_.finalized_chunks.end()) {
       uint32_t finalized_chunk_index = 0;
       auto& finalized_chunks = it->second;
       for (auto chunk_it = finalized_chunks.begin(); chunk_it != finalized_chunks.end(); ++chunk_it, ++finalized_chunk_index) {
-        auto chunk_start_timestamp_ms = Decoder::get_chunk_first_timestamp<ChunkType::kFinalized>(storage_, *chunk_it);
+        const auto chunk_start_timestamp_ms = Decoder::get_chunk_first_timestamp<ChunkType::kFinalized>(storage_, *chunk_it);
         if (chunk_start_timestamp_ms > end_timestamp_ms) {
           return;
         }
@@ -53,7 +53,7 @@ class Querier {
   void query_opened_chunks(PromPP::Primitives::LabelSetID ls_id, int64_t start_timestamp_ms, int64_t end_timestamp_ms) {
     if (storage_.open_chunks.size() > ls_id) {
       if (auto& open_chunk = storage_.open_chunks[ls_id]; !open_chunk.is_empty()) {
-        auto chunk_start_timestamp_ms = Decoder::get_chunk_first_timestamp<ChunkType::kOpen>(storage_, open_chunk);
+        const auto chunk_start_timestamp_ms = Decoder::get_chunk_first_timestamp<ChunkType::kOpen>(storage_, open_chunk);
         if (chunk_start_timestamp_ms > end_timestamp_ms) {
           return;
         }
@@ -72,7 +72,7 @@ class Querier {
   [[nodiscard]] PROMPP_ALWAYS_INLINE int64_t get_finalized_chunk_last_timestamp(const chunk::FinalizedChunkList& finalized_chunks,
                                                                                 chunk::FinalizedChunkList::ChunksList::const_iterator chunk_it,
                                                                                 PromPP::Primitives::LabelSetID ls_id) const noexcept {
-    if (auto next_chunk_it = std::next(chunk_it); next_chunk_it != finalized_chunks.end()) {
+    if (const auto next_chunk_it = std::next(chunk_it); next_chunk_it != finalized_chunks.end()) {
       return Decoder::get_chunk_first_timestamp<ChunkType::kFinalized>(storage_, *next_chunk_it) - 1;
     }
 

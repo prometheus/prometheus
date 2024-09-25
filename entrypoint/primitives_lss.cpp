@@ -1,19 +1,22 @@
 #include "primitives_lss.h"
 
 #include "_helpers.hpp"
-#include "lss.hpp"
+#include "head/lss.h"
 #include "series_index/querier/label_names_querier.h"
 #include "series_index/querier/label_values_querier.h"
 
 using GoLabelMatchers = PromPP::Primitives::Go::SliceView<PromPP::Prometheus::LabelMatcherTrait<PromPP::Primitives::Go::String>>;
 using GoSliceOfString = PromPP::Primitives::Go::Slice<PromPP::Primitives::Go::String>;
+using entrypoint::head::LssType;
+using entrypoint::head::LssVariantPtr;
+using entrypoint::head::QueryableEncodingBimap;
 
 extern "C" void prompp_primitives_lss_ctor(void* args, void* res) {
   struct Arguments {
-    entrypoint::LssType lss_type;
+    LssType lss_type;
   };
   struct Result {
-    entrypoint::LssVariantPtr lss;
+    LssVariantPtr lss;
   };
 
   new (res) Result{.lss = create_lss(reinterpret_cast<Arguments*>(args)->lss_type)};
@@ -21,7 +24,7 @@ extern "C" void prompp_primitives_lss_ctor(void* args, void* res) {
 
 extern "C" void prompp_primitives_lss_dtor(void* args) {
   struct Arguments {
-    entrypoint::LssVariantPtr lss;
+    LssVariantPtr lss;
   };
 
   reinterpret_cast<Arguments*>(args)->~Arguments();
@@ -29,7 +32,7 @@ extern "C" void prompp_primitives_lss_dtor(void* args) {
 
 extern "C" void prompp_primitives_lss_allocated_memory(void* args, void* res) {
   struct Arguments {
-    entrypoint::LssVariantPtr lss;
+    LssVariantPtr lss;
   };
   struct Result {
     uint64_t allocated_memory;
@@ -41,7 +44,7 @@ extern "C" void prompp_primitives_lss_allocated_memory(void* args, void* res) {
 
 extern "C" void prompp_primitives_lss_find_or_emplace(void* args, void* res) {
   struct Arguments {
-    entrypoint::LssVariantPtr lss;
+    LssVariantPtr lss;
     PromPP::Primitives::Go::LabelSet label_set;
   };
   struct Result {
@@ -54,17 +57,17 @@ extern "C" void prompp_primitives_lss_find_or_emplace(void* args, void* res) {
 
 extern "C" void prompp_primitives_lss_query(void* args, void* res) {
   struct Arguments {
-    entrypoint::LssVariantPtr lss;
+    LssVariantPtr lss;
     GoLabelMatchers label_matchers;
   };
   struct Result {
     series_index::querier::QuerierStatus status;
     PromPP::Primitives::Go::Slice<uint32_t> matches;
   };
-  using Querier = series_index::querier::Querier<entrypoint::QueryableEncodingBimap, PromPP::Primitives::Go::Slice>;
+  using Querier = series_index::querier::Querier<QueryableEncodingBimap, PromPP::Primitives::Go::Slice>;
 
   auto in = reinterpret_cast<Arguments*>(args);
-  auto query_result = Querier{std::get<entrypoint::QueryableEncodingBimap>(*in->lss)}.query(in->label_matchers);
+  auto query_result = Querier{std::get<QueryableEncodingBimap>(*in->lss)}.query(in->label_matchers);
 
   new (res) Result{.status = query_result.status, .matches = std::move(query_result.series_ids)};
 }
@@ -75,7 +78,7 @@ void prompp_primitives_lss_get_label_sets(void* args, void* res) {
   using PromPP::Primitives::Go::String;
 
   struct Arguments {
-    entrypoint::LssVariantPtr lss;
+    LssVariantPtr lss;
     Slice<uint32_t> series_ids;
   };
   struct Result {
@@ -112,7 +115,7 @@ extern "C" void prompp_primitives_lss_free_label_sets(void* args) {
 
 extern "C" void prompp_primitives_lss_query_label_names(void* args, void* res) {
   struct Arguments {
-    entrypoint::LssVariantPtr lss;
+    LssVariantPtr lss;
     GoLabelMatchers label_matchers;
   };
   struct Result {
@@ -120,17 +123,17 @@ extern "C" void prompp_primitives_lss_query_label_names(void* args, void* res) {
     GoSliceOfString names;
   };
 
-  using LabelNamesQuerier = series_index::querier::LabelNamesQuerier<entrypoint::QueryableEncodingBimap>;
+  using LabelNamesQuerier = series_index::querier::LabelNamesQuerier<QueryableEncodingBimap>;
 
   auto in = reinterpret_cast<Arguments*>(args);
   auto out = new (res) Result();
-  out->status = LabelNamesQuerier{std::get<entrypoint::QueryableEncodingBimap>(*in->lss)}.query(
+  out->status = LabelNamesQuerier{std::get<QueryableEncodingBimap>(*in->lss)}.query(
       in->label_matchers, [out](std::string_view name) PROMPP_LAMBDA_INLINE { out->names.emplace_back(name); });
 }
 
 extern "C" void prompp_primitives_lss_query_label_values(void* args, void* res) {
   struct Arguments {
-    entrypoint::LssVariantPtr lss;
+    LssVariantPtr lss;
     PromPP::Primitives::Go::String label_name;
     GoLabelMatchers label_matchers;
   };
@@ -139,11 +142,11 @@ extern "C" void prompp_primitives_lss_query_label_values(void* args, void* res) 
     GoSliceOfString values;
   };
 
-  using LabelValuesQuerier = series_index::querier::LabelValuesQuerier<entrypoint::QueryableEncodingBimap>;
+  using LabelValuesQuerier = series_index::querier::LabelValuesQuerier<QueryableEncodingBimap>;
 
   auto in = reinterpret_cast<Arguments*>(args);
   auto out = new (res) Result();
-  out->status = LabelValuesQuerier{std::get<entrypoint::QueryableEncodingBimap>(*in->lss)}.query(
+  out->status = LabelValuesQuerier{std::get<QueryableEncodingBimap>(*in->lss)}.query(
       static_cast<std::string_view>(in->label_name), in->label_matchers,
       [out](std::string_view value) PROMPP_LAMBDA_INLINE { out->values.emplace_back(value); });
 }

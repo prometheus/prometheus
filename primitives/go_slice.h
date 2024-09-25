@@ -91,6 +91,8 @@ class String {
     return data_[i];
   }
 
+  PROMPP_ALWAYS_INLINE bool operator==(const String& other) const noexcept { return this->size() == other.size() && std::ranges::equal(*this, other); }
+
   explicit PROMPP_ALWAYS_INLINE operator std::string_view() const noexcept { return {data_, len_}; }
 };
 
@@ -244,7 +246,10 @@ class Slice {
   inline __attribute__((always_inline)) void clear() noexcept {
     if constexpr (!std::is_trivial<T>::value) {
       if constexpr (BareBones::IsTriviallyDestructible<T>::value) {
+        PRAGMA_DIAGNOSTIC(push)
+        PRAGMA_DIAGNOSTIC(ignored DIAGNOSTIC_CLASS_MEMACCESS)
         std::memset(data_, 0, len_ * sizeof(T));
+        PRAGMA_DIAGNOSTIC(pop)
       } else {
         for (size_t i = 0; i != len_; ++i) {
           (data_ + i)->~T();
@@ -332,6 +337,8 @@ class Slice {
     assert(i < len_);
     return data_[i];
   }
+
+  PROMPP_ALWAYS_INLINE bool operator==(const Slice<T>& other) const noexcept { return this->size() == other.size() && std::ranges::equal(*this, other); }
 
 };  // class Slice
 

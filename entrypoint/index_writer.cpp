@@ -2,7 +2,7 @@
 
 #include <memory>
 
-#include "lss.hpp"
+#include "head/lss.h"
 #include "primitives/go_slice.h"
 #include "series_index/prometheus/tsdb/index/index_writer.h"
 
@@ -21,7 +21,7 @@ static PromPP::Primitives::Go::BytesStream create_bytes_stream(PromPP::Primitive
 
 extern "C" void prompp_index_writer_ctor(void* args, void* res) {
   struct Arguments {
-    entrypoint::LssVariantPtr lss;
+    entrypoint::head::LssVariantPtr lss;
     const ChunkMetadataList* chunk_metadata_list;
   };
   struct Result {
@@ -29,7 +29,7 @@ extern "C" void prompp_index_writer_ctor(void* args, void* res) {
   };
 
   auto in = reinterpret_cast<Arguments*>(args);
-  new (res) Result{.writer = std::make_unique<IndexWriter>(std::get<entrypoint::QueryableEncodingBimap>(*in->lss), *in->chunk_metadata_list)};
+  new (res) Result{.writer = std::make_unique<IndexWriter>(std::get<entrypoint::head::QueryableEncodingBimap>(*in->lss), *in->chunk_metadata_list)};
 }
 
 extern "C" void prompp_index_writer_dtor(void* args) {
