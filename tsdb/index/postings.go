@@ -295,7 +295,8 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}, affected ma
 	defer p.mtx.Unlock()
 
 	// Deleting label names mutates p.m map, so it should be done from a single goroutine after nobody else is reading it.
-	deleteLabelNames := make(chan string, len(p.m))
+	// Adding +1 to length to account for allPostingsKey processing when MemPostings is empty.
+	deleteLabelNames := make(chan string, len(p.m)+1)
 
 	process := func(l labels.Label) {
 		orig := p.m[l.Name][l.Value]
