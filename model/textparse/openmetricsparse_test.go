@@ -17,7 +17,6 @@ import (
 	"errors"
 	"io"
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -1012,9 +1011,6 @@ func BenchmarkOMParse(b *testing.B) {
 		require.NoError(b, err)
 
 		b.Run(parserName+"/parse-ct/"+"omtestdata.txt", func(b *testing.B) {
-			if !strings.HasPrefix(parserName, "openmetrics") {
-				b.Skip()
-			}
 			b.SetBytes(int64(len(buf) / promtestdataSampleCount))
 			b.ReportAllocs()
 			b.ResetTimer()
