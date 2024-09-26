@@ -668,7 +668,21 @@ func (api *API) queryHead(r *http.Request) apiFuncResult {
 		defer cancel()
 	}
 
-	metricName := r.FormValue("query")
+	//metricName := r.FormValue("query")
+
+	expr, err := parser.ParseExpr(r.FormValue("query"))
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	}
+
+	selectors := parser.ExtractSelectors(expr)
+	if len(selectors) < 1 {
+		return apiFuncResult{nil, nil, nil, nil}
+	}
+	var matchers []*labels.Matcher
+	for _, selector := range selectors {
+		matchers = append(matchers, selector...)
+	}
 
 	q, err := api.HeadQueryable.Querier(start.UnixMilli(), end.UnixMilli())
 	if err != nil {
@@ -676,11 +690,13 @@ func (api *API) queryHead(r *http.Request) apiFuncResult {
 	}
 	defer func() { _ = q.Close() }()
 
-	seriesSet := q.Select(ctx, false, nil, &labels.Matcher{
-		Type:  labels.MatchEqual,
-		Name:  "__name__",
-		Value: metricName,
-	})
+	//seriesSet := q.Select(ctx, false, nil, &labels.Matcher{
+	//	Type:  labels.MatchEqual,
+	//	Name:  "__name__",
+	//	Value: metricName,
+	//})
+
+	seriesSet := q.Select(ctx, false, nil, matchers...)
 
 	var samples []promql.Sample
 	for seriesSet.Next() {
