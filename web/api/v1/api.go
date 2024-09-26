@@ -571,6 +571,8 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
+
+	fmt.Println("QUERY RANGE OPTIONS LOOKBACK DELTA", opts.LookbackDelta())
 	qry, err := api.QueryEngine.NewRangeQuery(ctx, api.Queryable, opts, r.FormValue("query"), start, end, step)
 	if err != nil {
 		return invalidParamError(err, "query")
