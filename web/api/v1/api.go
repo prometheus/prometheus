@@ -824,12 +824,29 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 }
 
 var (
-	// MinTime is the default timestamp used for the begin of optional time ranges.
-	// Exposed to let downstream projects to reference it.
+	// MinTime is the default timestamp used for the start of optional time ranges.
+	// Exposed to let downstream projects reference it.
+	//
+	// The offset used here (62135596801) is inspired by the difference in
+	// seconds between the Unix time zero point (1970-01-01 00:00:00 UTC)
+	// and the Go time zero point (0001-01-01 00:00:00 UTC, following the
+	// Gregorian calendar), which is 62135596800 seconds. The offset is used
+	// to avoid overflow/underflow of an int64 when converting back to
+	// "milliseconds since Unix time epoch", which is what we use as the
+	// timestamp in Prometheus. However, the offset is in fact not needed
+	// for MinTime. It was introduced here in the past by accident, and we
+	// don't want to change the (exported!) MinTime value now. The value is
+	// still low enough for all practical purposes.
 	MinTime = time.Unix(math.MinInt64/1000+62135596801, 0).UTC()
 
 	// MaxTime is the default timestamp used for the end of optional time ranges.
 	// Exposed to let downstream projects to reference it.
+	//
+	// See the note about the offset (62135596801) above, with the
+	// additional note that an offset is indeed needed in this case to avoid
+	// an overflow, but -1 would be sufficient (or alternatively, we could
+	// set the nsec argument to zero). Again, we don't want to change
+	// anything now, as the value is high enough for all practical purposes.
 	MaxTime = time.Unix(math.MaxInt64/1000-62135596801, 999999999).UTC()
 
 	minTimeFormatted = MinTime.Format(time.RFC3339Nano)
