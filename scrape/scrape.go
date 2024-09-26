@@ -1701,7 +1701,15 @@ loop:
 		} else {
 			if sl.enableCTZeroIngestion {
 				if ctMs := p.CreatedTimestamp(); ctMs != nil {
-					ref, err = app.AppendCTZeroSample(ref, lset, t, *ctMs)
+					if isHistogram && sl.enableNativeHistogramIngestion {
+						if h != nil {
+							ref, err = app.AppendHistogramCTZeroSample(ref, lset, t, *ctMs, h, nil)
+						} else {
+							ref, err = app.AppendHistogramCTZeroSample(ref, lset, t, *ctMs, nil, fh)
+						}
+					} else {
+						ref, err = app.AppendCTZeroSample(ref, lset, t, *ctMs)
+					}
 					if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) { // OOO is a common case, ignoring completely for now.
 						// CT is an experimental feature. For now, we don't need to fail the
 						// scrape on errors updating the created timestamp, log debug.
