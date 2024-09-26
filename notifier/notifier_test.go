@@ -1019,7 +1019,7 @@ func TestStop_DrainingEnabled(t *testing.T) {
 	require.Equal(t, int64(2), alertsReceived.Load())
 }
 
-func TestAlertmanagersNotDroppedDuringApplyConfig(t *testing.T) {
+func TestApplyConfig(t *testing.T) {
 	targetURL := "alertmanager:9093"
 	targetGroup := &targetgroup.Group{
 		Targets: []model.LabelSet{
@@ -1039,27 +1039,86 @@ alerting:
     - files:
       - foo.json
 `
-	// TODO: add order change test
-	// TODO: add entry removed with DS manager
-
-	err := yaml.UnmarshalStrict([]byte(s), cfg)
-	require.NoError(t, err)
+	// 1. Ensure known alertmanagers are not dropped during ApplyConfig.
+	require.NoError(t, yaml.UnmarshalStrict([]byte(s), cfg))
 	require.Len(t, cfg.AlertingConfig.AlertmanagerConfigs, 1)
 
-	yaml.Marshal(cfg.AlertingConfig.AlertmanagerConfigs)
-
-	// First apply config and reload.
-	err = n.ApplyConfig(cfg)
-	require.NoError(t, err)
+	// First, apply the config and reload.
+	require.NoError(t, n.ApplyConfig(cfg))
 	tgs := map[string][]*targetgroup.Group{"config-0": {targetGroup}}
 	n.reload(tgs)
 	require.Len(t, n.Alertmanagers(), 1)
 	require.Equal(t, alertmanagerURL, n.Alertmanagers()[0].String())
 
 	// Reapply the config.
-	err = n.ApplyConfig(cfg)
-	require.NoError(t, err)
-	// The already known alertmanagers shouldn't get dropped.
+	require.NoError(t, n.ApplyConfig(cfg))
+	// Ensure the known alertmanagers are not dropped.
 	require.Len(t, n.Alertmanagers(), 1)
 	require.Equal(t, alertmanagerURL, n.Alertmanagers()[0].String())
+
+	// 2. Ensure known alertmanagers are not dropped during ApplyConfig even when
+	// the config order changes.
+	s = `
+alerting:
+  alertmanagers:
+  - static_configs:
+  - file_sd_configs:
+    - files:
+      - foo.json
+`
+	require.NoError(t, yaml.UnmarshalStrict([]byte(s), cfg))
+	require.Len(t, cfg.AlertingConfig.AlertmanagerConfigs, 2)
+
+	require.NoError(t, n.ApplyConfig(cfg))
+	require.Len(t, n.Alertmanagers(), 1)
+	// Ensure no unnecessary alertmanagers are injected.
+	require.Empty(t, n.alertmanagers["config-0"].ams)
+	// Ensure the config order is taken into account.
+	ams := n.alertmanagers["config-1"].ams
+	require.Len(t, ams, 1)
+	require.Equal(t, alertmanagerURL, ams[0].url().String())
+
+	// 3. Ensure known alertmanagers are reused for new config with identical AlertmanagerConfig.
+	s = `
+alerting:
+  alertmanagers:
+  - file_sd_configs:
+    - files:
+      - foo.json
+  - file_sd_configs:
+    - files:
+      - foo.json
+`
+	require.NoError(t, yaml.UnmarshalStrict([]byte(s), cfg))
+	require.Len(t, cfg.AlertingConfig.AlertmanagerConfigs, 2)
+
+	require.NoError(t, n.ApplyConfig(cfg))
+	require.Len(t, n.Alertmanagers(), 2)
+	for cfgIdx := range 2 {
+		ams := n.alertmanagers[fmt.Sprintf("config-%d", cfgIdx)].ams
+		require.Len(t, ams, 1)
+		require.Equal(t, alertmanagerURL, ams[0].url().String())
+	}
+
+	// 4. Ensure known alertmanagers are reused only for identical AlertmanagerConfig.
+	s = `
+alerting:
+  alertmanagers:
+  - file_sd_configs:
+    - files:
+      - foo.json
+    path_prefix: /bar
+  - file_sd_configs:
+    - files:
+      - foo.json
+    relabel_configs:
+    - source_labels: ['__address__']
+      regex: 'doesntmatter:1234'
+      action: drop
+`
+	require.NoError(t, yaml.UnmarshalStrict([]byte(s), cfg))
+	require.Len(t, cfg.AlertingConfig.AlertmanagerConfigs, 2)
+
+	require.NoError(t, n.ApplyConfig(cfg))
+	require.Empty(t, n.Alertmanagers())
 }
