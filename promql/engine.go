@@ -2807,7 +2807,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 		if hlhs == nil && hrhs == nil {
 			return lhs + rhs, nil, true, nil
 		}
-		return 0, nil, false, annotations.NewMixedFloatsHistogramsInfo(pos)
+		return 0, nil, false, annotations.NewMixedFloatsHistogramsBinOpInfo(pos)
 	case parser.SUB:
 		if hlhs != nil && hrhs != nil {
 			res, err := hlhs.Copy().Sub(hrhs)
@@ -2819,7 +2819,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 		if hlhs == nil && hrhs == nil {
 			return lhs - rhs, nil, true, nil
 		}
-		return 0, nil, false, annotations.NewMixedFloatsHistogramsInfo(pos)
+		return 0, nil, false, annotations.NewMixedFloatsHistogramsBinOpInfo(pos)
 	case parser.MUL:
 		if hlhs != nil && hrhs == nil {
 			return 0, hlhs.Copy().Mul(rhs), true, nil
@@ -2828,7 +2828,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 			return 0, hrhs.Copy().Mul(lhs), true, nil
 		}
 		if hlhs != nil && hrhs != nil {
-			return 0, nil, false, annotations.NewMixedFloatsHistogramsInfo(pos)
+			return 0, nil, false, annotations.NewInvalidHistogramsBinOpInfo(pos)
 		}
 		return lhs * rhs, nil, true, nil
 	case parser.DIV:
@@ -2836,7 +2836,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 			return 0, hlhs.Copy().Div(rhs), true, nil
 		}
 		if hrhs != nil {
-			return 0, nil, false, annotations.NewMixedFloatsHistogramsInfo(pos)
+			return 0, nil, false, annotations.NewInvalidHistogramsBinOpInfo(pos)
 		}
 		return lhs / rhs, nil, true, nil
 	case parser.POW:

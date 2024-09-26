@@ -949,13 +949,13 @@ eval instant at 10m float_series_0*histogram_mul_div
     {} {{schema:0 count:0 sum:0 z_bucket:0 z_bucket_w:0.001 buckets:[0 0 0] n_buckets:[0 0 0]}}
 
 eval instant at 10m histogram_mul_div/0
-    {} {{schema:0 count:Inf sum:Inf z_bucket_w:0.001}}
+    {} {{schema:0 count:Inf sum:Inf z_bucket_w:0.001 z_bucket:Inf}}
 
 eval instant at 10m histogram_mul_div/float_series_0
-    {} {{schema:0 count:Inf sum:Inf z_bucket_w:0.001}}
+    {} {{schema:0 count:Inf sum:Inf z_bucket_w:0.001 z_bucket:Inf}}
 
 eval instant at 10m histogram_mul_div*0/0
-    {} {{schema:0 count:NaN sum:NaN z_bucket_w:0.001}}
+    {} {{schema:0 count:NaN sum:NaN z_bucket_w:0.001 z_bucket:NaN}}
 
 eval instant at 10m histogram_mul_div*histogram_mul_div
 

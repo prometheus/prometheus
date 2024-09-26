@@ -146,7 +146,8 @@ var (
 
 	PossibleNonCounterInfo                  = fmt.Errorf("%w: metric might not be a counter, name does not end in _total/_sum/_count/_bucket:", PromQLInfo)
 	HistogramQuantileForcedMonotonicityInfo = fmt.Errorf("%w: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name", PromQLInfo)
-	MixedFloatsHistogramsInfo               = fmt.Errorf("%w: encountered a mix of histograms and floats for", PromQLInfo)
+	MixedFloatsHistogramsBinOpInfo          = fmt.Errorf("%w: encountered a mix of histograms and floats for", PromQLInfo)
+	InvalidHistogramsBinOpInfo              = fmt.Errorf("%w: encountered two histograms for", PromQLInfo)
 )
 
 type annoErr struct {
@@ -275,12 +276,21 @@ func NewHistogramQuantileForcedMonotonicityInfo(metricName string, pos posrange.
 	}
 }
 
-// NewMixedFloatsHistogramsInfo is used when the queried series includes both
-// float samples and histogram samples for aggregators or operators that
-// produce unexpected results.
-func NewMixedFloatsHistogramsInfo(pos posrange.PositionRange) error {
+// NewMixedFloatsHistogramsBinOpInfo is used when binary operators
+// encounter a float on the one side and a histogram on the other side
+// for a binary operator that cannot combine a histogram and a float.
+func NewMixedFloatsHistogramsBinOpInfo(pos posrange.PositionRange) error {
 	return annoErr{
 		PositionRange: pos,
-		Err:           fmt.Errorf("%w the query", MixedFloatsHistogramsInfo),
+		Err:           fmt.Errorf("%w binary operator", MixedFloatsHistogramsBinOpInfo),
+	}
+}
+
+// NewInvalidHistogramsBinOpInfo is used when binary operators encounter histograms on the both side
+// for a binary operator that cannot combine two histograms.
+func NewInvalidHistogramsBinOpInfo(pos posrange.PositionRange) error {
+	return annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w binary operator", InvalidHistogramsBinOpInfo),
 	}
 }

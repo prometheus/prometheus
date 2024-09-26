@@ -402,6 +402,7 @@ func TestFloatHistogramDiv(t *testing.T) {
 				ZeroThreshold: 0.01,
 				Count:         math.Inf(1),
 				Sum:           math.Inf(1),
+				ZeroCount:     math.Inf(1),
 			},
 		},
 		{

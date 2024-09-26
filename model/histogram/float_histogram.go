@@ -309,7 +309,6 @@ func (h *FloatHistogram) Div(scalar float64) *FloatHistogram {
 		h.NegativeBuckets = nil
 		h.PositiveSpans = nil
 		h.NegativeSpans = nil
-		h.ZeroCount = 0
 		return h
 	}
 	for i := range h.PositiveBuckets {
