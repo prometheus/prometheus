@@ -217,9 +217,6 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "concurrent-rule-eval":
 				c.enableConcurrentRuleEval = true
 				level.Info(logger).Log("msg", "Experimental concurrent rule evaluation enabled.")
-			case "no-default-scrape-port":
-				c.scrape.NoDefaultPort = true
-				level.Info(logger).Log("msg", "No default port will be appended to scrape targets' addresses.")
 			case "promql-experimental-functions":
 				parser.EnableExperimentalFunctions = true
 				level.Info(logger).Log("msg", "Experimental PromQL functions enabled.")
@@ -474,7 +471,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: auto-gomemlimit, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, no-default-scrape-port, native-histograms, otlp-write-receiver, created-timestamp-zero-ingestion, concurrent-rule-eval, delayed-compaction, old-ui. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: auto-gomemlimit, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, native-histograms, otlp-write-receiver, created-timestamp-zero-ingestion, concurrent-rule-eval, delayed-compaction, old-ui. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
