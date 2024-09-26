@@ -8,9 +8,15 @@ sort_rank: 1
 
 Prometheus provides a functional query language called PromQL (Prometheus Query
 Language) that lets the user select and aggregate time series data in real
-time. The result of an expression can either be shown as a graph, viewed as
-tabular data in Prometheus's expression browser, or consumed by external
-systems via the [HTTP API](api.md).
+time. 
+
+When you send a query request to Prometheus, it can be an _instant query_, evaluated at one point in time,
+or a _range query_ at equally-spaced steps between a start and an end time. PromQL works exactly the same
+in each cases; the range query is just like an instant query run multiple times at different timestamps.
+
+In the Prometheus UI, the "Table" tab is for instant queries and the "Graph" tab is for range queries.
+
+Other programs can fetch the result of a PromQL expression via the [HTTP API](api.md).
 
 ## Examples
 
@@ -35,7 +41,7 @@ vector is the only type which can be graphed.
 _Notes about the experimental native histograms:_
 
 * Ingesting native histograms has to be enabled via a [feature
-  flag](../../feature_flags.md#native-histograms).
+  flag](../feature_flags.md#native-histograms).
 * Once native histograms have been ingested into the TSDB (and even after
   disabling the feature flag again), both instant vectors and range vectors may
   now contain samples that aren't simple floating point numbers (float samples)
@@ -81,12 +87,20 @@ Examples:
     0x8f
     -Inf
     NaN
+	
+
+As of version 2.54, float literals can also be represented using the syntax of time durations, where the time duration is converted into a float value corresponding to the number of seconds the time duration represents. This is an experimental feature and might still change.
+
+Examples:
+
+    1s # Equivalent to 1.0
+    2m # Equivalent to 120.0
+    1ms # Equivalent to 0.001
+ 
 
 ## Time series selectors
 
-Time series selectors are responsible for selecting the times series and raw or inferred sample timestamps and values.
-
-Time series *selectors* are not to be confused with higher level concept of instant and range *queries* that can execute the time series *selectors*. A higher level instant query would evaluate the given selector at one point in time, however the range query would evaluate the selector at multiple different times in between a minimum and maximum timestamp at regular steps.
+These are the basic building-blocks that instruct PromQL what data to fetch.
 
 ### Instant vector selectors
 
@@ -95,8 +109,16 @@ single sample value for each at a given timestamp (point in time).  In the simpl
 form, only a metric name is specified, which results in an instant vector
 containing elements for all time series that have this metric name.
 
+The value returned will be that of the most recent sample at or before the
+query's evaluation timestamp (in the case of an
+[instant query](api.md#instant-queries))
+or the current step within the query (in the case of a
+[range query](api.md/#range-queries)).
+The [`@` modifier](#modifier) allows overriding the timestamp relative to which
+the selection takes place. Time series are only returned if their most recent sample is less than the [lookback period](#staleness) ago.
+
 This example selects all time series that have the `http_requests_total` metric
-name:
+name, returning the most recent sample for each:
 
     http_requests_total
 
@@ -189,12 +211,12 @@ Range vector literals work like instant vector literals, except that they
 select a range of samples back from the current instant. Syntactically, a [time
 duration](#time-durations) is appended in square brackets (`[]`) at the end of
 a vector selector to specify how far back in time values should be fetched for
-each resulting range vector element. The range is a closed interval,
-i.e. samples with timestamps coinciding with either boundary of the range are
-still included in the selection.
+each resulting range vector element. The range is a left-open and right-closed interval,
+i.e. samples with timestamps coinciding with the left boundary of the range are excluded from the selection,
+while samples coinciding with the right boundary of the range are included in the selection.
 
-In this example, we select all the values we have recorded within the last 5
-minutes for all time series that have the metric name `http_requests_total` and
+In this example, we select all the values recorded less than 5m ago for all time series
+that have the metric name `http_requests_total` and
 a `job` label set to `prometheus`:
 
     http_requests_total{job="prometheus"}[5m]
@@ -223,6 +245,15 @@ Here are some examples of valid time durations:
     1h30m
     5m
     10s
+
+
+As of version 2.54, time durations can also be represented using the syntax of float literals, implying the number of seconds of the time duration. This is an experimental feature and might still change.
+
+Examples:
+
+    1.0 # Equivalent to 1s
+    0.001 # Equivalent to 1ms
+    120 # Equivalent to 2m
 
 ### Offset modifier
 
@@ -335,8 +366,9 @@ independently of the actual present time series data. This is mainly to support
 cases like aggregation (`sum`, `avg`, and so on), where multiple aggregated
 time series do not precisely align in time. Because of their independence,
 Prometheus needs to assign a value at those timestamps for each relevant time
-series. It does so by taking the newest sample before this timestamp within the lookback period.
-The lookback period is 5 minutes by default.
+series. It does so by taking the newest sample that is less than the lookback period ago.
+The lookback period is 5 minutes by default, but can be
+[set with the `--query.lookback-delta` flag](../command-line/prometheus.md)
 
 If a target scrape or rule evaluation no longer returns a sample for a time
 series that was previously present, this time series will be marked as stale.

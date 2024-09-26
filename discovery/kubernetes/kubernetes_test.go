@@ -46,7 +46,7 @@ func TestMain(m *testing.M) {
 
 // makeDiscovery creates a kubernetes.Discovery instance for testing.
 func makeDiscovery(role Role, nsDiscovery NamespaceDiscovery, objects ...runtime.Object) (*Discovery, kubernetes.Interface) {
-	return makeDiscoveryWithVersion(role, nsDiscovery, "v1.22.0", objects...)
+	return makeDiscoveryWithVersion(role, nsDiscovery, "v1.25.0", objects...)
 }
 
 // makeDiscoveryWithVersion creates a kubernetes.Discovery instance with the specified kubernetes version for testing.
@@ -154,7 +154,7 @@ func (d k8sDiscoveryTest) Run(t *testing.T) {
 
 // readResultWithTimeout reads all targetgroups from channel with timeout.
 // It merges targetgroups by source and sends the result to result channel.
-func readResultWithTimeout(t *testing.T, ctx context.Context, ch <-chan []*targetgroup.Group, max int, stopAfter time.Duration, resChan chan<- map[string]*targetgroup.Group) {
+func readResultWithTimeout(t *testing.T, ctx context.Context, ch <-chan []*targetgroup.Group, maxGroups int, stopAfter time.Duration, resChan chan<- map[string]*targetgroup.Group) {
 	res := make(map[string]*targetgroup.Group)
 	timeout := time.After(stopAfter)
 Loop:
@@ -167,7 +167,7 @@ Loop:
 				}
 				res[tg.Source] = tg
 			}
-			if len(res) == max {
+			if len(res) == maxGroups {
 				// Reached max target groups we may get, break fast.
 				break Loop
 			}
@@ -175,10 +175,10 @@ Loop:
 			// Because we use queue, an object that is created then
 			// deleted or updated may be processed only once.
 			// So possibly we may skip events, timed out here.
-			t.Logf("timed out, got %d (max: %d) items, some events are skipped", len(res), max)
+			t.Logf("timed out, got %d (max: %d) items, some events are skipped", len(res), maxGroups)
 			break Loop
 		case <-ctx.Done():
-			t.Logf("stopped, got %d (max: %d) items", len(res), max)
+			t.Logf("stopped, got %d (max: %d) items", len(res), maxGroups)
 			break Loop
 		}
 	}
@@ -282,40 +282,6 @@ func TestRetryOnError(t *testing.T) {
 		}
 		retryOnError(context.TODO(), 0, f)
 		require.Equal(t, successAt, called)
-	}
-}
-
-func TestCheckNetworkingV1Supported(t *testing.T) {
-	tests := []struct {
-		version       string
-		wantSupported bool
-		wantErr       bool
-	}{
-		{version: "v1.18.0", wantSupported: false, wantErr: false},
-		{version: "v1.18.1", wantSupported: false, wantErr: false},
-		// networking v1 is supported since Kubernetes v1.19
-		{version: "v1.19.0", wantSupported: true, wantErr: false},
-		{version: "v1.20.0-beta.2", wantSupported: true, wantErr: false},
-		// error patterns
-		{version: "", wantSupported: false, wantErr: true},
-		{version: "<>", wantSupported: false, wantErr: true},
-	}
-
-	for _, tc := range tests {
-		tc := tc
-		t.Run(tc.version, func(t *testing.T) {
-			clientset := fake.NewSimpleClientset()
-			fakeDiscovery, _ := clientset.Discovery().(*fakediscovery.FakeDiscovery)
-			fakeDiscovery.FakedServerVersion = &version.Info{GitVersion: tc.version}
-			supported, err := checkNetworkingV1Supported(clientset)
-
-			if tc.wantErr {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-			}
-			require.Equal(t, tc.wantSupported, supported)
-		})
 	}
 }
 

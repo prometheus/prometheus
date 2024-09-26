@@ -1,7 +1,7 @@
 go:
     # Whenever the Go version is updated here,
     # .github/workflows should also be updated.
-    version: 1.22
+    version: 1.23
 repository:
     path: github.com/prometheus/prometheus
 build:
@@ -28,8 +28,6 @@ tarball:
     # Whenever there are new files to include in the tarball,
     # remember to make sure the new files will be generated after `make build`.
     files:
-        - consoles
-        - console_libraries
         - documentation/examples/prometheus.yml
         - LICENSE
         - NOTICE

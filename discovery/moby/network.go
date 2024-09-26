@@ -17,7 +17,7 @@ import (
 	"context"
 	"strconv"
 
-	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 
 	"github.com/prometheus/prometheus/util/strutil"
@@ -34,7 +34,7 @@ const (
 )
 
 func getNetworksLabels(ctx context.Context, client *client.Client, labelPrefix string) (map[string]map[string]string, error) {
-	networks, err := client.NetworkList(ctx, types.NetworkListOptions{})
+	networks, err := client.NetworkList(ctx, network.ListOptions{})
 	if err != nil {
 		return nil, err
 	}

@@ -711,7 +711,7 @@ func TestHangingNotifier(t *testing.T) {
 	)
 
 	var (
-		sendTimeout = 10 * time.Millisecond
+		sendTimeout = 100 * time.Millisecond
 		sdUpdatert  = sendTimeout / 2
 
 		done = make(chan struct{})
@@ -743,7 +743,7 @@ func TestHangingNotifier(t *testing.T) {
 
 	// Initialize the discovery manager
 	// This is relevant as the updates aren't sent continually in real life, but only each updatert.
-	// The old implementation of TestHangingNotifier didn't take that into acount.
+	// The old implementation of TestHangingNotifier didn't take that into account.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	reg := prometheus.NewRegistry()
