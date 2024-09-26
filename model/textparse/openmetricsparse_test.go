@@ -1015,8 +1015,6 @@ func BenchmarkOMParse(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			total := 0
-
 			st := labels.NewSymbolTable()
 			for i := 0; i < b.N; i += promtestdataSampleCount {
 				p := parser(buf, st)
@@ -1035,7 +1033,6 @@ func BenchmarkOMParse(b *testing.B) {
 					}
 				}
 			}
-			_ = total
 		})
 	}
 }
