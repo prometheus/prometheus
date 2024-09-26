@@ -111,13 +111,13 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 					"azname-c": "azid-3",
 				},
 				instances: []*ec2.Instance{
-					&ec2.Instance{
+					{
 						InstanceId: addrS("instance-id-noprivateip"),
 					},
 				},
 			},
 			expected: []*targetgroup.Group{
-				&targetgroup.Group{
+				{
 					Source: "region-noprivateip",
 				},
 			},
@@ -135,7 +135,7 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 				},
 				ownerID: "owner-id-novpc",
 				instances: []*ec2.Instance{
-					&ec2.Instance{
+					{
 						// set every possible options and test them here
 						Architecture:      addrS("architecture-novpc"),
 						ImageId:           addrS("ami-novpc"),
@@ -151,20 +151,20 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 						State:             &ec2.InstanceState{Name: addrS("running")},
 						// test tags once and for all
 						Tags: []*ec2.Tag{
-							&ec2.Tag{Key: addrS("tag-1-key"), Value: addrS("tag-1-value")},
-							&ec2.Tag{Key: addrS("tag-2-key"), Value: addrS("tag-2-value")},
+							{Key: addrS("tag-1-key"), Value: addrS("tag-1-value")},
+							{Key: addrS("tag-2-key"), Value: addrS("tag-2-value")},
 							nil,
-							&ec2.Tag{Value: addrS("tag-4-value")},
-							&ec2.Tag{Key: addrS("tag-5-key")},
+							{Value: addrS("tag-4-value")},
+							{Key: addrS("tag-5-key")},
 						},
 					},
 				},
 			},
 			expected: []*targetgroup.Group{
-				&targetgroup.Group{
+				{
 					Source: "region-novpc",
 					Targets: []model.LabelSet{
-						model.LabelSet{
+						{
 							"__address__":                     model.LabelValue("1.2.3.4:4242"),
 							"__meta_ec2_ami":                  model.LabelValue("ami-novpc"),
 							"__meta_ec2_architecture":         model.LabelValue("architecture-novpc"),
@@ -200,7 +200,7 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 					"azname-c": "azid-3",
 				},
 				instances: []*ec2.Instance{
-					&ec2.Instance{
+					{
 						// just the minimum needed for the refresh work
 						ImageId:          addrS("ami-ipv4"),
 						InstanceId:       addrS("instance-id-ipv4"),
@@ -213,21 +213,21 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 						// network intefaces
 						NetworkInterfaces: []*ec2.InstanceNetworkInterface{
 							// interface without subnet -> should be ignored
-							&ec2.InstanceNetworkInterface{
+							{
 								Ipv6Addresses: []*ec2.InstanceIpv6Address{
-									&ec2.InstanceIpv6Address{
+									{
 										Ipv6Address:   addrS("2001:db8:1::1"),
 										IsPrimaryIpv6: addrB(true),
 									},
 								},
 							},
 							// interface with subnet, no IPv6
-							&ec2.InstanceNetworkInterface{
+							{
 								Ipv6Addresses: []*ec2.InstanceIpv6Address{},
 								SubnetId:      addrS("azid-3"),
 							},
 							// interface with another subnet, no IPv6
-							&ec2.InstanceNetworkInterface{
+							{
 								Ipv6Addresses: []*ec2.InstanceIpv6Address{},
 								SubnetId:      addrS("azid-1"),
 							},
@@ -236,10 +236,10 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 				},
 			},
 			expected: []*targetgroup.Group{
-				&targetgroup.Group{
+				{
 					Source: "region-ipv4",
 					Targets: []model.LabelSet{
-						model.LabelSet{
+						{
 							"__address__":                     model.LabelValue("5.6.7.8:4242"),
 							"__meta_ec2_ami":                  model.LabelValue("ami-ipv4"),
 							"__meta_ec2_availability_zone":    model.LabelValue("azname-c"),
@@ -270,7 +270,7 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 					"azname-c": "azid-3",
 				},
 				instances: []*ec2.Instance{
-					&ec2.Instance{
+					{
 						// just the minimum needed for the refresh work
 						ImageId:          addrS("ami-ipv6"),
 						InstanceId:       addrS("instance-id-ipv6"),
@@ -283,12 +283,12 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 						// network intefaces
 						NetworkInterfaces: []*ec2.InstanceNetworkInterface{
 							// interface without primary IPv6, index 2
-							&ec2.InstanceNetworkInterface{
+							{
 								Attachment: &ec2.InstanceNetworkInterfaceAttachment{
 									DeviceIndex: addrI(3),
 								},
 								Ipv6Addresses: []*ec2.InstanceIpv6Address{
-									&ec2.InstanceIpv6Address{
+									{
 										Ipv6Address:   addrS("2001:db8:2::1:1"),
 										IsPrimaryIpv6: addrB(false),
 									},
@@ -296,16 +296,16 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 								SubnetId: addrS("azid-2"),
 							},
 							// interface with primary IPv6, index 1
-							&ec2.InstanceNetworkInterface{
+							{
 								Attachment: &ec2.InstanceNetworkInterfaceAttachment{
 									DeviceIndex: addrI(1),
 								},
 								Ipv6Addresses: []*ec2.InstanceIpv6Address{
-									&ec2.InstanceIpv6Address{
+									{
 										Ipv6Address:   addrS("2001:db8:2::2:1"),
 										IsPrimaryIpv6: addrB(false),
 									},
-									&ec2.InstanceIpv6Address{
+									{
 										Ipv6Address:   addrS("2001:db8:2::2:2"),
 										IsPrimaryIpv6: addrB(true),
 									},
@@ -313,12 +313,12 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 								SubnetId: addrS("azid-2"),
 							},
 							// interface with primary IPv6, index 3
-							&ec2.InstanceNetworkInterface{
+							{
 								Attachment: &ec2.InstanceNetworkInterfaceAttachment{
 									DeviceIndex: addrI(3),
 								},
 								Ipv6Addresses: []*ec2.InstanceIpv6Address{
-									&ec2.InstanceIpv6Address{
+									{
 										Ipv6Address:   addrS("2001:db8:2::3:1"),
 										IsPrimaryIpv6: addrB(true),
 									},
@@ -326,7 +326,7 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 								SubnetId: addrS("azid-1"),
 							},
 							// interface without primary IPv6, index 0
-							&ec2.InstanceNetworkInterface{
+							{
 								Attachment: &ec2.InstanceNetworkInterfaceAttachment{
 									DeviceIndex: addrI(0),
 								},
@@ -338,10 +338,10 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 				},
 			},
 			expected: []*targetgroup.Group{
-				&targetgroup.Group{
+				{
 					Source: "region-ipv6",
 					Targets: []model.LabelSet{
-						model.LabelSet{
+						{
 							"__address__":                       model.LabelValue("9.10.11.12:4242"),
 							"__meta_ec2_ami":                    model.LabelValue("ami-ipv6"),
 							"__meta_ec2_availability_zone":      model.LabelValue("azname-b"),
