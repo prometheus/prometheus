@@ -91,7 +91,7 @@ type Options struct {
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption
 
-	// private options for testability.
+	// private option for testability.
 	skipOffsetting bool
 }
 
