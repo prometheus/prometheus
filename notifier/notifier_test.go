@@ -38,6 +38,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 
 	"github.com/prometheus/prometheus/config"
+	_ "github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
@@ -1016,4 +1017,49 @@ func TestStop_DrainingEnabled(t *testing.T) {
 	}
 
 	require.Equal(t, int64(2), alertsReceived.Load())
+}
+
+func TestAlertmanagersNotDroppedDuringApplyConfig(t *testing.T) {
+	targetURL := "alertmanager:9093"
+	targetGroup := &targetgroup.Group{
+		Targets: []model.LabelSet{
+			{
+				"__address__": model.LabelValue(targetURL),
+			},
+		},
+	}
+	alertmanagerURL := fmt.Sprintf("http://%s/api/v2/alerts", targetURL)
+
+	n := NewManager(&Options{}, nil)
+	cfg := &config.Config{}
+	s := `
+alerting:
+  alertmanagers:
+  - file_sd_configs:
+    - files:
+      - foo.json
+`
+	// TODO: add order change test
+	// TODO: add entry removed with DS manager
+
+	err := yaml.UnmarshalStrict([]byte(s), cfg)
+	require.NoError(t, err)
+	require.Len(t, cfg.AlertingConfig.AlertmanagerConfigs, 1)
+
+	yaml.Marshal(cfg.AlertingConfig.AlertmanagerConfigs)
+
+	// First apply config and reload.
+	err = n.ApplyConfig(cfg)
+	require.NoError(t, err)
+	tgs := map[string][]*targetgroup.Group{"config-0": {targetGroup}}
+	n.reload(tgs)
+	require.Len(t, n.Alertmanagers(), 1)
+	require.Equal(t, alertmanagerURL, n.Alertmanagers()[0].String())
+
+	// Reapply the config.
+	err = n.ApplyConfig(cfg)
+	require.NoError(t, err)
+	// The already known alertmanagers shouldn't get dropped.
+	require.Len(t, n.Alertmanagers(), 1)
+	require.Equal(t, alertmanagerURL, n.Alertmanagers()[0].String())
 }
