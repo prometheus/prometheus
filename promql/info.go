@@ -313,7 +313,7 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[i
 		return nil, nil // Short-circuit: nothing is going to match.
 	}
 
-	// All samples from the info Vectors hashed by the matching label/values.
+	// All samples from the info Vector hashed by the matching label/values.
 	if enh.infoSamplesBySig == nil {
 		enh.infoSamplesBySig = make(map[string]Sample, len(enh.Out))
 	} else {
@@ -321,12 +321,20 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[i
 	}
 
 	for i, s := range info {
+		if s.H != nil {
+			panic("info sample should be float")
+		}
+		// We encode original info sample timestamps via the float value.
+		origT := int64(s.F)
+
 		sig := infoSigs[i]
 		if existing, exists := enh.infoSamplesBySig[sig]; exists {
+			// We encode original info sample timestamps via the float value.
+			existingOrigT := int64(existing.F)
 			switch {
-			case existing.OrigT > s.OrigT:
+			case existingOrigT > origT:
 				// Keep the other info sample, since it's newer.
-			case existing.OrigT < s.OrigT:
+			case existingOrigT < origT:
 				// Keep this info sample, since it's newer.
 				enh.infoSamplesBySig[sig] = s
 			default:

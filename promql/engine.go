@@ -1469,9 +1469,6 @@ func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, of
 			if !ok {
 				continue
 			}
-			if !recordOrigT {
-				origT = 0
-			}
 
 			if h == nil {
 				ev.currentSamples++
@@ -1482,9 +1479,18 @@ func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, of
 				if ss.Floats == nil {
 					ss.Floats = reuseOrGetFPointSlices(prevSS, numSteps)
 				}
-				ss.Floats = append(ss.Floats, FPoint{F: f, T: ts, OrigT: origT})
+				val := f
+				if recordOrigT {
+					// This is an info metric, where we want to track the original sample timestamp.
+					val = float64(origT)
+				}
+				ss.Floats = append(ss.Floats, FPoint{F: val, T: ts})
 			} else {
-				point := HPoint{H: h, T: ts, OrigT: origT}
+				if recordOrigT {
+					panic("this should be an info metric, with float samples")
+				}
+
+				point := HPoint{H: h, T: ts}
 				histSize := point.size()
 				ev.currentSamples += histSize
 				ev.samplesStats.IncrementSamplesAtStep(step, int64(histSize))
