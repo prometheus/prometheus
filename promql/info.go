@@ -373,29 +373,25 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[i
 				continue
 			}
 
-			var err error
-			is.Metric.Range(func(l labels.Label) {
-				if err != nil {
-					return
-				}
+			err := is.Metric.Validate(func(l labels.Label) error {
 				if l.Name == labels.MetricName {
-					return
+					return nil
 				}
 				if _, exists := dataLabelMatchers[l.Name]; len(dataLabelMatchers) > 0 && !exists {
 					// Not among the specified data label matchers.
-					return
+					return nil
 				}
 
 				if v, exists := infoLblMap[l.Name]; exists && v != l.Value {
-					err = fmt.Errorf("conflicting label: %s", l.Name)
-					return
+					return fmt.Errorf("conflicting label: %s", l.Name)
 				}
 				if _, exists := baseLabels[l.Name]; exists {
 					// Skip labels already on the base metric.
-					return
+					return nil
 				}
 
 				infoLblMap[l.Name] = l.Value
+				return nil
 			})
 			if err != nil {
 				return nil, err
@@ -403,14 +399,7 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[i
 			seenInfoMetrics[infoName] = struct{}{}
 		}
 
-		lb.Reset()
-		for n, v := range infoLblMap {
-			lb.Add(n, v)
-		}
-		lb.Sort()
-		infoLbls := lb.Labels()
-
-		if infoLbls.Len() == 0 {
+		if len(infoLblMap) == 0 {
 			// If there's at least one data label matcher not matching the empty string,
 			// we have to ignore this series as there are no matching info series.
 			allMatchersMatchEmpty := true
@@ -431,9 +420,9 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[i
 		bs.Metric.Range(func(l labels.Label) {
 			lb.Add(l.Name, l.Value)
 		})
-		infoLbls.Range(func(l labels.Label) {
-			lb.Add(l.Name, l.Value)
-		})
+		for n, v := range infoLblMap {
+			lb.Add(n, v)
+		}
 		lb.Sort()
 
 		enh.Out = append(enh.Out, Sample{
