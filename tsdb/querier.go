@@ -364,7 +364,7 @@ func inversePostingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Ma
 	}
 
 	// If inverse matching the empty string, we just want all the values.
-	if (m.Value == "" && (m.Type == labels.MatchRegexp || m.Type == labels.MatchEqual)) || (m.Type == labels.MatchRegexp && m.Value == "^$") {
+	if m.Value == "" && (m.Type == labels.MatchRegexp || m.Type == labels.MatchEqual) {
 		it := ix.PostingsForLabelMatching(ctx, m.Name, nil)
 		return it, it.Err()
 	}
