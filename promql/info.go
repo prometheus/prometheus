@@ -216,8 +216,7 @@ func (ev *evaluator) combineWithInfoSeries(ctx context.Context, mat, infoMat Mat
 	baseVector := make(Vector, 0, len(mat))
 	infoVector := make(Vector, 0, len(infoMat))
 	enh := &EvalNodeHelper{
-		Out:          make(Vector, 0, biggestLen),
-		labelBuilder: &lb,
+		Out: make(Vector, 0, biggestLen),
 	}
 	type seriesAndTimestamp struct {
 		Series
@@ -348,7 +347,6 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[i
 		}
 	}
 
-	lb := enh.labelBuilder
 	for i, bs := range base {
 		if _, exists := ignoreSeries[i]; exists {
 			// This series should not be enriched with info metric data labels.
@@ -417,17 +415,13 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[i
 			}
 		}
 
-		lb.Reset()
-		bs.Metric.Range(func(l labels.Label) {
-			lb.Add(l.Name, l.Value)
-		})
+		enh.resetBuilder(bs.Metric)
 		for n, v := range infoLblMap {
-			lb.Add(n, v)
+			enh.lb.Set(n, v)
 		}
-		lb.Sort()
 
 		enh.Out = append(enh.Out, Sample{
-			Metric: lb.Labels(),
+			Metric: enh.lb.Labels(),
 			F:      bs.F,
 			H:      bs.H,
 		})
