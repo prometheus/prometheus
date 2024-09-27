@@ -42,7 +42,8 @@ export const NotificationsProvider: React.FC<{ children: React.ReactNode }> = ({
 
     eventSource.onerror = () => {
       eventSource.close();
-      setIsConnectionError(true);
+      // We do not call setIsConnectionError(true), we only set it to true if
+      // the fallback API does not work either.
       setShouldFetchFromAPI(true);
     };
 

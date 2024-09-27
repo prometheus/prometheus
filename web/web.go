@@ -268,7 +268,7 @@ type Options struct {
 	Notifier              *notifier.Manager
 	Version               *PrometheusVersion
 	NotificationsGetter   func() []api.Notification
-	NotificationsSub      func() (<-chan api.Notification, func())
+	NotificationsSub      func() (<-chan api.Notification, func(), bool)
 	Flags                 map[string]string
 
 	ListenAddresses            []string

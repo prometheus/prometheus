@@ -23,7 +23,7 @@ import (
 
 // TestNotificationLifecycle tests adding, modifying, and deleting notifications.
 func TestNotificationLifecycle(t *testing.T) {
-	notifs := NewNotifications(nil)
+	notifs := NewNotifications(10, nil)
 
 	// Add a notification.
 	notifs.AddNotification("Test Notification 1")
@@ -47,10 +47,11 @@ func TestNotificationLifecycle(t *testing.T) {
 
 // TestSubscriberReceivesNotifications tests that a subscriber receives notifications, including modifications and deletions.
 func TestSubscriberReceivesNotifications(t *testing.T) {
-	notifs := NewNotifications(nil)
+	notifs := NewNotifications(10, nil)
 
 	// Subscribe to notifications.
-	sub, unsubscribe := notifs.Sub()
+	sub, unsubscribe, ok := notifs.Sub()
+	require.True(t, ok)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -103,12 +104,14 @@ func TestSubscriberReceivesNotifications(t *testing.T) {
 
 // TestMultipleSubscribers tests that multiple subscribers receive notifications independently.
 func TestMultipleSubscribers(t *testing.T) {
-	notifs := NewNotifications(nil)
+	notifs := NewNotifications(10, nil)
 
 	// Subscribe two subscribers to notifications.
-	sub1, unsubscribe1 := notifs.Sub()
+	sub1, unsubscribe1, ok1 := notifs.Sub()
+	require.True(t, ok1)
 
-	sub2, unsubscribe2 := notifs.Sub()
+	sub2, unsubscribe2, ok2 := notifs.Sub()
+	require.True(t, ok2)
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -157,10 +160,11 @@ func TestMultipleSubscribers(t *testing.T) {
 
 // TestUnsubscribe tests that unsubscribing prevents further notifications from being received.
 func TestUnsubscribe(t *testing.T) {
-	notifs := NewNotifications(nil)
+	notifs := NewNotifications(10, nil)
 
 	// Subscribe to notifications.
-	sub, unsubscribe := notifs.Sub()
+	sub, unsubscribe, ok := notifs.Sub()
+	require.True(t, ok)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -189,4 +193,31 @@ func TestUnsubscribe(t *testing.T) {
 	// Only the first notification should have been received.
 	require.Len(t, receivedNotifications, 1, "Expected 1 notification before unsubscribe.")
 	require.Equal(t, "Test Notification 1", receivedNotifications[0].Text, "Unexpected notification text.")
+}
+
+// TestMaxSubscribers tests that exceeding the max subscribers limit prevents additional subscriptions.
+func TestMaxSubscribers(t *testing.T) {
+	maxSubscribers := 2
+	notifs := NewNotifications(maxSubscribers, nil)
+
+	// Subscribe the maximum number of subscribers.
+	_, unsubscribe1, ok1 := notifs.Sub()
+	require.True(t, ok1, "Expected first subscription to succeed.")
+
+	_, unsubscribe2, ok2 := notifs.Sub()
+	require.True(t, ok2, "Expected second subscription to succeed.")
+
+	// Try to subscribe more than the max allowed.
+	_, _, ok3 := notifs.Sub()
+	require.False(t, ok3, "Expected third subscription to fail due to max subscriber limit.")
+
+	// Unsubscribe one subscriber and try again.
+	unsubscribe1()
+
+	_, unsubscribe4, ok4 := notifs.Sub()
+	require.True(t, ok4, "Expected subscription to succeed after unsubscribing a subscriber.")
+
+	// Clean up the subscriptions.
+	unsubscribe2()
+	unsubscribe4()
 }

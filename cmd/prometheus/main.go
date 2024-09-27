@@ -135,24 +135,25 @@ func agentOnlyFlag(app *kingpin.Application, name, help string) *kingpin.FlagCla
 type flagConfig struct {
 	configFile string
 
-	agentStoragePath    string
-	serverStoragePath   string
-	notifier            notifier.Options
-	forGracePeriod      model.Duration
-	outageTolerance     model.Duration
-	resendDelay         model.Duration
-	maxConcurrentEvals  int64
-	web                 web.Options
-	scrape              scrape.Options
-	tsdb                tsdbOptions
-	agent               agentOptions
-	lookbackDelta       model.Duration
-	webTimeout          model.Duration
-	queryTimeout        model.Duration
-	queryConcurrency    int
-	queryMaxSamples     int
-	RemoteFlushDeadline model.Duration
-	nameEscapingScheme  string
+	agentStoragePath            string
+	serverStoragePath           string
+	notifier                    notifier.Options
+	forGracePeriod              model.Duration
+	outageTolerance             model.Duration
+	resendDelay                 model.Duration
+	maxConcurrentEvals          int64
+	web                         web.Options
+	scrape                      scrape.Options
+	tsdb                        tsdbOptions
+	agent                       agentOptions
+	lookbackDelta               model.Duration
+	webTimeout                  model.Duration
+	queryTimeout                model.Duration
+	queryConcurrency            int
+	queryMaxSamples             int
+	RemoteFlushDeadline         model.Duration
+	nameEscapingScheme          string
+	maxNotificationsSubscribers int
 
 	enableAutoReload   bool
 	autoReloadInterval model.Duration
@@ -274,17 +275,13 @@ func main() {
 		)
 	}
 
-	notifs := api.NewNotifications(prometheus.DefaultRegisterer)
-
 	cfg := flagConfig{
 		notifier: notifier.Options{
 			Registerer: prometheus.DefaultRegisterer,
 		},
 		web: web.Options{
-			Registerer:          prometheus.DefaultRegisterer,
-			Gatherer:            prometheus.DefaultGatherer,
-			NotificationsSub:    notifs.Sub,
-			NotificationsGetter: notifs.Get,
+			Registerer: prometheus.DefaultRegisterer,
+			Gatherer:   prometheus.DefaultGatherer,
 		},
 		promlogConfig: promlog.Config{},
 	}
@@ -318,6 +315,9 @@ func main() {
 
 	a.Flag("web.max-connections", "Maximum number of simultaneous connections across all listeners.").
 		Default("512").IntVar(&cfg.web.MaxConnections)
+
+	a.Flag("web.max-notifications-subscribers", "Limits the maximum number of subscribers that can concurrently receive live notifications. If the limit is reached, new subscription requests will be denied until existing connections close.").
+		Default("16").IntVar(&cfg.maxNotificationsSubscribers)
 
 	a.Flag("web.external-url",
 		"The URL under which Prometheus is externally reachable (for example, if Prometheus is served via a reverse proxy). Used for generating relative and absolute links back to Prometheus itself. If the URL has a path portion, it will be used to prefix all HTTP endpoints served by Prometheus. If omitted, relevant URL components will be derived automatically.").
@@ -499,6 +499,10 @@ func main() {
 	}
 
 	logger := promlog.New(&cfg.promlogConfig)
+
+	notifs := api.NewNotifications(cfg.maxNotificationsSubscribers, prometheus.DefaultRegisterer)
+	cfg.web.NotificationsSub = notifs.Sub
+	cfg.web.NotificationsGetter = notifs.Get
 
 	if err := cfg.setFeatureListOptions(logger); err != nil {
 		fmt.Fprintln(os.Stderr, fmt.Errorf("Error parsing feature list: %w", err))
