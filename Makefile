@@ -192,3 +192,11 @@ update-all-go-deps:
 		$(GO) get -d $$m; \
 	done
 	@cd ./documentation/examples/remote_storage/ && $(GO) mod tidy
+
+.PHONY: docker-curr-arch
+docker-curr-arch:
+	@echo ">> Building promu and crossbuilding"
+	$(MAKE) $(PROMU)
+	$(MAKE) npm_licenses
+	$(PROMU) crossbuild -p $(shell go env GOHOSTOS)/$(shell go env GOHOSTARCH)
+	$(MAKE) common-docker-$(GOHOSTARCH)
