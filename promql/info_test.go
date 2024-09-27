@@ -107,5 +107,14 @@ load 5m
 eval range from 0m to 10m step 5m info(metric)
   metric{data="info", instance="a", job="1", label="value"} 0 1 _
   metric{data="updated info", instance="a", job="1", label="value"} _ _ 2
+
+clear
+
+# Info series selector matches histogram series, info metrics should be float type.
+load 5m
+  metric{instance="a", job="1", label="value"} 0 1 2
+  histogram{instance="a", job="1"} {{schema:1 sum:3 count:22 buckets:[5 10 7]}}
+
+eval_fail range from 0m to 10m step 5m info(metric, {__name__="histogram"})
 `, engine)
 }
