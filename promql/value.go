@@ -92,8 +92,6 @@ func (s Series) String() string {
 type FPoint struct {
 	T int64
 	F float64
-	// OrigT is the original sample timestamp.
-	OrigT int64
 }
 
 func (p FPoint) String() string {
@@ -120,8 +118,6 @@ func (p FPoint) MarshalJSON() ([]byte, error) {
 type HPoint struct {
 	T int64
 	H *histogram.FloatHistogram
-	// OrigT is the original timestamp.
-	OrigT int64
 }
 
 func (p HPoint) String() string {
@@ -204,9 +200,6 @@ type Sample struct {
 	// DropName is used to indicate whether the __name__ label should be dropped
 	// as part of the query evaluation.
 	DropName bool
-
-	// OrigT is the original sample timestamp.
-	OrigT int64
 }
 
 func (s Sample) String() string {
