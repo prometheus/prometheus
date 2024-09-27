@@ -8790,7 +8790,7 @@ func TestBlockQuerierAndBlockChunkQuerier(t *testing.T) {
 		// Include blockID into series to identify which block got touched.
 		serieses := []storage.Series{storage.NewListSeries(labels.FromMap(map[string]string{"block": fmt.Sprintf("block-%d", i), labels.MetricName: "test_metric"}), []chunks.Sample{sample{t: 0, f: 1}})}
 		blockDir := createBlock(t, db.Dir(), serieses)
-		b, err := OpenBlock(db.logger, blockDir, db.chunkPool)
+		b, err := OpenBlock(db.logger, blockDir, db.chunkPool, nil)
 		require.NoError(t, err)
 
 		// Overwrite meta.json with compaction section for testing purpose.
