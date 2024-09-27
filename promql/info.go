@@ -15,6 +15,7 @@ package promql
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -322,7 +323,7 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[i
 
 	for i, s := range info {
 		if s.H != nil {
-			panic("info sample should be float")
+			ev.error(errors.New("info sample should be float"))
 		}
 		// We encode original info sample timestamps via the float value.
 		origT := int64(s.F)
