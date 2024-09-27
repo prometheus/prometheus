@@ -1704,6 +1704,10 @@ func (api *API) notificationsSSE(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Flush the response to ensure the headers are immediately and eventSource
+	// onopen is triggered client-side.
+	flusher.Flush()
+
 	for {
 		select {
 		case notification := <-notifications:
