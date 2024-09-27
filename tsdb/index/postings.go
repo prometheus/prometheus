@@ -407,11 +407,6 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 		p.mtx.RLock()
 
 		e := p.m[name]
-		if len(e) == 0 {
-			p.mtx.RUnlock()
-			return EmptyPostings()
-		}
-
 		its := make([]Postings, 0, len(e))
 		for _, refs := range e {
 			if len(refs) > 0 {
