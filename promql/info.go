@@ -359,7 +359,7 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[i
 		}
 
 		baseLabels := bs.Metric.Map()
-		infoLblMap := map[string]string{}
+		enh.resetBuilder(nil)
 
 		// For every info metric name, try to find an info series with the same signature.
 		seenInfoMetrics := map[string]struct{}{}
@@ -381,7 +381,7 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[i
 					return nil
 				}
 
-				if v, exists := infoLblMap[l.Name]; exists && v != l.Value {
+				if v := enh.lb.Get(l.Name); v != "" && v != l.Value {
 					return fmt.Errorf("conflicting label: %s", l.Name)
 				}
 				if _, exists := baseLabels[l.Name]; exists {
@@ -389,7 +389,7 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[i
 					return nil
 				}
 
-				infoLblMap[l.Name] = l.Value
+				enh.lb.Set(l.Name, l.Value)
 				return nil
 			})
 			if err != nil {
@@ -398,7 +398,8 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[i
 			seenInfoMetrics[infoName] = struct{}{}
 		}
 
-		if len(infoLblMap) == 0 {
+		infoLbls := enh.lb.Labels()
+		if infoLbls.Len() == 0 {
 			// If there's at least one data label matcher not matching the empty string,
 			// we have to ignore this series as there are no matching info series.
 			allMatchersMatchEmpty := true
@@ -416,9 +417,9 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[i
 		}
 
 		enh.resetBuilder(bs.Metric)
-		for n, v := range infoLblMap {
-			enh.lb.Set(n, v)
-		}
+		infoLbls.Range(func(l labels.Label) {
+			enh.lb.Set(l.Name, l.Value)
+		})
 
 		enh.Out = append(enh.Out, Sample{
 			Metric: enh.lb.Labels(),
