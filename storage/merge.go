@@ -155,19 +155,16 @@ func (q *mergeGenericQuerier) Select(ctx context.Context, sortSeries bool, hints
 	for _, querier := range q.queriers {
 		// copy the matchers as some queriers may alter the slice.
 		// See https://github.com/prometheus/prometheus/issues/14723
-		// matchersCopy := make([]*labels.Matcher, len(matchers))
-		// copy(matchersCopy, matchers)
+		matchersCopy := make([]*labels.Matcher, len(matchers))
+		copy(matchersCopy, matchers)
 
 		wg.Add(1)
-		go func(qr genericQuerier) {
-			// go func(qr genericQuerier, m []*labels.Matcher) {
+		go func(qr genericQuerier, m []*labels.Matcher) {
 			defer wg.Done()
 
 			// We need to sort for NewMergeSeriesSet to work.
-			// seriesSetChan <- qr.Select(ctx, true, hints, m...)
-			seriesSetChan <- qr.Select(ctx, true, hints, matchers...)
-		}(querier)
-		// }(querier, matchersCopy)
+			seriesSetChan <- qr.Select(ctx, true, hints, m...)
+		}(querier, matchersCopy)
 	}
 	go func() {
 		wg.Wait()

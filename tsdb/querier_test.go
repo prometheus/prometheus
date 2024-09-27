@@ -3794,6 +3794,9 @@ func (m mockReaderOfLabels) Symbols() index.StringIter {
 func TestMergeQuerierConcurrentSelectMatchers(t *testing.T) {
 	block, err := OpenBlock(nil, createBlock(t, t.TempDir(), genSeries(1, 1, 0, 1)), nil)
 	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, block.Close())
+	}()
 	p, err := NewBlockQuerier(block, 0, 1)
 	require.NoError(t, err)
 
@@ -3808,7 +3811,10 @@ func TestMergeQuerierConcurrentSelectMatchers(t *testing.T) {
 	matchers := append([]*labels.Matcher{}, originalMatchers...)
 
 	mergedQuerier := storage.NewMergeQuerier([]storage.Querier{p}, []storage.Querier{s}, storage.ChainedSeriesMerge)
-	defer mergedQuerier.Close()
+	defer func() {
+		require.NoError(t, mergedQuerier.Close())
+	}()
+
 	mergedQuerier.Select(context.Background(), false, nil, matchers...)
 
 	require.Equal(t, originalMatchers, matchers)
