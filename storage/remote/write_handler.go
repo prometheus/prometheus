@@ -191,7 +191,6 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Remote Write 2.x proto message handling.
 	req := writev2.RequestFromVTPool()
 	defer req.ReturnToVTPool()
-	// Timeseries as well
 	if err := req.UnmarshalVT(decompressed); err != nil {
 		// TODO(bwplotka): Add more context to responded error?
 		level.Error(h.logger).Log("msg", "Error decoding v2 remote write request", "protobuf_message", msgType, "err", err.Error())
