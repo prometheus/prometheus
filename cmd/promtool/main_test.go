@@ -553,7 +553,7 @@ func TestCheckRules(t *testing.T) {
 		},
 	} {
 		t.Run("config-lint-fatal", func(t *testing.T) {
-			_, err := checkConfig(false, "./testdata/prometheus-config.lint.yml", false, newLintConfig(lintOptionLongScrapeInterval, false, c.lookbackDelta))
+			_, err := checkConfig(false, "./testdata/prometheus-config.lint.long_scrape_interval.yml", false, newLintConfig(lintOptionLongScrapeInterval, false, c.lookbackDelta))
 			var errMsg string
 			if err != nil {
 				errMsg = err.Error()
