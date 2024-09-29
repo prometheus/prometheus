@@ -3964,8 +3964,13 @@ func readable(s string) string {
 }
 
 func TestParseExpressions(t *testing.T) {
+	// Enable experimental functions testing.
+	EnableExperimentalFunctions = true
+	t.Cleanup(func() {
+		EnableExperimentalFunctions = false
+	})
+
 	model.NameValidationScheme = model.UTF8Validation
-	Functions["info"].Experimental = false
 	for _, test := range testExpr {
 		t.Run(readable(test.input), func(t *testing.T) {
 			expr, err := ParseExpr(test.input)
