@@ -449,14 +449,19 @@ It must start and end with curly braces (`{ ... }`) and may only contain label m
 The label matchers are used to constrain which info series to consider
 and which data labels to add to `v`.
 
-What we mean by identifying labels in this context is the subset that 
-identifies an info metric. The remaining info metric labels are considered
-"data" labels (i.e. non-identifying). The purpose of an info metric's 
-identifying labels is to connect it to regular (non-info) metrics. It's similar
-to foreign keys in SQL, that allow you to combine data spread across multiple
-tables. The data labels in practice encode metadata key value pairs, and are
-what one wants to add to query results (identifying labels are already 
-included).
+Identifying labels of an info series are the subset of labels that uniquely
+identify the info series. The remaining labels are considered
+_data labels_ (also called non-identifying). (Note that Prometheus's concept
+of time series identity always includes _all_ the labels. For the sake of the `info`
+function, we “logically” define info series identity in a different way than
+in the conventional Prometheus view.) The identifying labels of an info series
+are used to join it to regular (non-info) series, i.e. those series that have
+the same labels as the identifying labels of the info series. The data labels, which are
+the ones added to the regular series by the `info` function, effectively encode 
+metadata key value pairs. (This implies that a change in the data labels 
+in the conventional Prometheus view constitutes the end of one info series and
+the beginning of a new info series, while the “logical” view of the `info` function is
+that the same info series continues to exist, just with different “data”.)
 
 Before the `info` function, the solution to including info metric data labels
 in Prometheus queries has been to so-called "join" with the relevant info metric.
