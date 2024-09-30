@@ -463,9 +463,8 @@ in the conventional Prometheus view constitutes the end of one info series and
 the beginning of a new info series, while the “logical” view of the `info` function is
 that the same info series continues to exist, just with different “data”.)
 
-Before the `info` function, the solution to including info metric data labels
-in Prometheus queries has been to so-called "join" with the relevant info metric.
-Take the following example:
+The conventional approach of adding data labels is sometimes called a “join query”,
+as illustrated by the following example:
 
 ```
 rate(http_server_request_duration_seconds_count[2m])
