@@ -496,27 +496,23 @@ info(
 )
 ```
 
-By wrapping the core expression (`rate(http_server_request_duration_seconds_count[2m])`)
-in an `info` call, combined with the data label matcher `k8s_cluster_name=~".+"`,
-we also achieve the effect of joining the resulting time series with 
-`target_info` on the `job` and `instance` labels, and picking the 
-`k8s_cluster_name` label from the latter.
+The common case of adding _all_ data labels can be achieved by
+omitting the 2nd argument of the `info` function entirely, simplifying
+the example even more:
 
-If the second argument to `info` (`{k8s_cluster_name=~".+"}`) is omitted, all
-of `target_info`'s data labels are instead picked.
+```
+info(rate(http_server_request_duration_seconds_count[2m]))
+```
 
-When using `info`, join conflicts are avoided by automaticaly picking the 
-newest series.
-
-While `info` normally automatically finds info metrics, it's possible to
+While `info` normally automatically finds all matching info series, it's possible to
 restrict them by providing a `__name__` label matcher, e.g.
 `{__name__="target_info"}`.
 
 ### Limitations
 
-In its current iteration, `info` defaults to considering only one info metric:
-`target_info`. It also assumes that the identifying info metric labels are
-`instance` and `job`. `info` does support other info metrics however, through
+In its current iteration, `info` defaults to considering only info series with
+the name `target_info`. It also assumes that the identifying info series labels are
+`instance` and `job`. `info` does support other info series names however, through
 `__name__` label matchers. E.g., one can explicitly say to consider both 
 `target_info` and `build_info` as follows:
 `{__name__=~"(target|build)_info"}`. However, the identifying labels always
