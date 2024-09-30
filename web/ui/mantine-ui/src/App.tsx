@@ -56,12 +56,11 @@ import TSDBStatusPage from "./pages/TSDBStatusPage";
 import FlagsPage from "./pages/FlagsPage";
 import ConfigPage from "./pages/ConfigPage";
 import AgentPage from "./pages/AgentPage";
-import { Suspense, useEffect } from "react";
+import { Suspense } from "react";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeSelector } from "./components/ThemeSelector";
 import { Notifications } from "@mantine/notifications";
-import { useAppDispatch } from "./state/hooks";
-import { updateSettings, useSettings } from "./state/settingsSlice";
+import { useSettings } from "./state/settingsSlice";
 import SettingsMenu from "./components/SettingsMenu";
 import ReadinessWrapper from "./components/ReadinessWrapper";
 import NotificationsProvider from "./components/NotificationsProvider";
@@ -172,37 +171,12 @@ const theme = createTheme({
   },
 });
 
-// This dynamically/generically determines the pathPrefix by stripping the first known
-// endpoint suffix from the window location path. It works out of the box for both direct
-// hosting and reverse proxy deployments with no additional configurations required.
-const getPathPrefix = (path: string) => {
-  if (path.endsWith("/")) {
-    path = path.slice(0, -1);
-  }
-
-  const pagePaths = [
-    ...mainNavPages,
-    ...allStatusPages,
-    { path: "/agent" },
-  ].map((p) => p.path);
-
-  const pagePath = pagePaths.find((p) => path.endsWith(p));
-  return path.slice(0, path.length - (pagePath || "").length);
-};
-
 const navLinkXPadding = "md";
 
 function App() {
   const [opened, { toggle }] = useDisclosure();
 
-  const pathPrefix = getPathPrefix(window.location.pathname);
-  const dispatch = useAppDispatch();
-
-  useEffect(() => {
-    dispatch(updateSettings({ pathPrefix }));
-  }, [pathPrefix, dispatch]);
-
-  const { agentMode, consolesLink } = useSettings();
+  const { agentMode, consolesLink, pathPrefix } = useSettings();
 
   const navLinks = (
     <>
