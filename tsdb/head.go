@@ -2254,6 +2254,10 @@ type memChunk struct {
 
 // len returns the length of memChunk list, including the element it was called on.
 func (mc *memChunk) len() (count int) {
+	if mc.prev == nil {
+		return 1
+	}
+
 	elem := mc
 	for elem != nil {
 		count++
@@ -2265,6 +2269,9 @@ func (mc *memChunk) len() (count int) {
 // oldest returns the oldest element on the list.
 // For single element list this will be the same memChunk oldest() was called on.
 func (mc *memChunk) oldest() (elem *memChunk) {
+	if mc.prev == nil {
+		return mc
+	}
 	elem = mc
 	for elem.prev != nil {
 		elem = elem.prev
@@ -2276,6 +2283,9 @@ func (mc *memChunk) oldest() (elem *memChunk) {
 func (mc *memChunk) atOffset(offset int) (elem *memChunk) {
 	if offset == 0 {
 		return mc
+	}
+	if offset == 1 {
+		return mc.prev
 	}
 	if offset < 0 {
 		return nil
@@ -2290,7 +2300,6 @@ func (mc *memChunk) atOffset(offset int) (elem *memChunk) {
 			break
 		}
 	}
-
 	return elem
 }
 
