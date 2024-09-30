@@ -2,7 +2,10 @@
 
 ## unreleased
 
+## 2.55.0-rc.1 / 2024-10-16
+
 * [FEATURE] PromQL: Add experimental `info` function. #14495
+* [BUGFIX] PromQL: make sort_by_label stable. #14985
 
 ## 2.55.0-rc.0 / 2024-09-20
 
@@ -25,7 +28,7 @@
 * [ENHANCEMENT] Tracing: Improve PromQL tracing, including showing the operation performed for aggregates, operators, and calls. #14816
 * [ENHANCEMENT] API: Support multiple listening addresses. #14665
 * [ENHANCEMENT] TSDB: Backward compatibility with upcoming index v3. #14934
-* [PERF] TSDB: Query in-order and out-of-order series together. #14354, #14693, #14714, #14831, #14874, #14948
+* [PERF] TSDB: Query in-order and out-of-order series together. #14354, #14693, #14714, #14831, #14874, #14948, #15120
 * [PERF] TSDB: Streamline reading of overlapping out-of-order head chunks. #14729
 * [BUGFIX] SD: Fix dropping targets (with feature flag `new-service-discovery-manager`). #13147
 * [BUGFIX] SD: Stop storing stale targets (with feature flag `new-service-discovery-manager`). #13622
