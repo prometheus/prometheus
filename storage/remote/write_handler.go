@@ -513,17 +513,10 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	converter := otlptranslator.NewPrometheusConverter()
 
-	var translateDots bool
-	if model.NameValidationScheme == model.LegacyValidation {
-		translateDots = true
-	} else {
-		translateDots = false
-	}
-
 	annots, err := converter.FromMetrics(r.Context(), req.Metrics(), otlptranslator.Settings{
 		AddMetricSuffixes:         true,
 		PromoteResourceAttributes: otlpCfg.PromoteResourceAttributes,
-		TranslateDots:             translateDots,
+		AllowUTF8:                 (model.NameValidationScheme == model.UTF8Validation) && otlpCfg.AllowUTF8,
 	})
 	if err != nil {
 		level.Warn(h.logger).Log("msg", "Error translating OTLP metrics to Prometheus write request", "err", err)

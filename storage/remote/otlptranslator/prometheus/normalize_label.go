@@ -28,20 +28,22 @@ import (
 // Labels that start with non-letter rune will be prefixed with "key_".
 //
 // An exception is made for double-underscores which are allowed.
-func NormalizeLabel(label string) string {
+func NormalizeLabel(label string, allowUTF8 bool) string {
 	// Trivial case
 	if len(label) == 0 {
 		return label
 	}
 
-	// Replace all non-alphanumeric runes with underscores
-	label = strings.Map(sanitizeRune, label)
+	if !allowUTF8 {
+		// Replace all non-alphanumeric runes with underscores
+		label = strings.Map(sanitizeRune, label)
 
-	// If label starts with a number, prepend with "key_"
-	if unicode.IsDigit(rune(label[0])) {
-		label = "key_" + label
-	} else if strings.HasPrefix(label, "_") && !strings.HasPrefix(label, "__") {
-		label = "key" + label
+		// If label starts with a number, prepend with "key_"
+		if unicode.IsDigit(rune(label[0])) {
+			label = "key_" + label
+		} else if strings.HasPrefix(label, "_") && !strings.HasPrefix(label, "__") {
+			label = "key" + label
+		}
 	}
 
 	return label
