@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"net"
 	"net/url"
 	"strings"
 	"sync"
@@ -214,7 +215,6 @@ func (t *Target) URL() *url.URL {
 			return
 		}
 		ks := l.Name[len(model.ParamLabelPrefix):]
-
 		if len(params[ks]) > 0 {
 			params[ks][0] = l.Value
 		} else {
@@ -222,10 +222,20 @@ func (t *Target) URL() *url.URL {
 		}
 	})
 
+	scheme := t.labels.Get(model.SchemeLabel)
+	host := t.labels.Get(model.AddressLabel)
+	path := t.labels.Get(model.MetricsPathLabel)
+
+	if hostWithoutPort, port, err := net.SplitHostPort(host); err == nil {
+		if (scheme == "http" && port == "80") || (scheme == "https" && port == "443") {
+			host = hostWithoutPort // Strip the port
+		}
+	}
+
 	return &url.URL{
-		Scheme:   t.labels.Get(model.SchemeLabel),
-		Host:     t.labels.Get(model.AddressLabel),
-		Path:     t.labels.Get(model.MetricsPathLabel),
+		Scheme:   scheme,
+		Host:     host,
+		Path:     path,
 		RawQuery: params.Encode(),
 	}
 }
