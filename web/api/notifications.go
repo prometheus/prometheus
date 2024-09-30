@@ -34,9 +34,10 @@ type Notification struct {
 // Notifications stores a list of Notification objects.
 // It also manages live subscribers that receive notifications via channels.
 type Notifications struct {
-	mu            sync.Mutex
-	notifications []Notification
-	subscribers   map[chan Notification]struct{} // Active subscribers.
+	mu             sync.Mutex
+	notifications  []Notification
+	subscribers    map[chan Notification]struct{} // Active subscribers.
+	maxSubscribers int
 
 	subscriberGauge      prometheus.Gauge
 	notificationsSent    prometheus.Counter
@@ -44,9 +45,10 @@ type Notifications struct {
 }
 
 // NewNotifications creates a new Notifications instance.
-func NewNotifications(reg prometheus.Registerer) *Notifications {
+func NewNotifications(maxSubscribers int, reg prometheus.Registerer) *Notifications {
 	n := &Notifications{
-		subscribers: make(map[chan Notification]struct{}),
+		subscribers:    make(map[chan Notification]struct{}),
+		maxSubscribers: maxSubscribers,
 		subscriberGauge: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: "prometheus",
 			Subsystem: "api",
@@ -147,10 +149,16 @@ func (n *Notifications) Get() []Notification {
 // Sub allows a client to subscribe to live notifications.
 // It returns a channel where the subscriber will receive notifications and a function to unsubscribe.
 // Each subscriber has its own goroutine to handle notifications and prevent blocking.
-func (n *Notifications) Sub() (<-chan Notification, func()) {
+func (n *Notifications) Sub() (<-chan Notification, func(), bool) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	if len(n.subscribers) >= n.maxSubscribers {
+		return nil, nil, false
+	}
+
 	ch := make(chan Notification, 10) // Buffered channel to prevent blocking.
 
-	n.mu.Lock()
 	// Add the new subscriber to the list.
 	n.subscribers[ch] = struct{}{}
 	n.subscriberGauge.Set(float64(len(n.subscribers)))
@@ -159,7 +167,6 @@ func (n *Notifications) Sub() (<-chan Notification, func()) {
 	for _, notification := range n.notifications {
 		ch <- notification
 	}
-	n.mu.Unlock()
 
 	// Unsubscribe function to remove the channel from subscribers.
 	unsubscribe := func() {
@@ -172,5 +179,5 @@ func (n *Notifications) Sub() (<-chan Notification, func()) {
 		n.subscriberGauge.Set(float64(len(n.subscribers)))
 	}
 
-	return ch, unsubscribe
+	return ch, unsubscribe, true
 }

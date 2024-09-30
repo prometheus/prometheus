@@ -215,7 +215,7 @@ type API struct {
 	isAgent             bool
 	statsRenderer       StatsRenderer
 	notificationsGetter func() []api.Notification
-	notificationsSub    func() (<-chan api.Notification, func())
+	notificationsSub    func() (<-chan api.Notification, func(), bool)
 
 	remoteWriteHandler http.Handler
 	remoteReadHandler  http.Handler
@@ -250,7 +250,7 @@ func NewAPI(
 	runtimeInfo func() (RuntimeInfo, error),
 	buildInfo *PrometheusVersion,
 	notificationsGetter func() []api.Notification,
-	notificationsSub func() (<-chan api.Notification, func()),
+	notificationsSub func() (<-chan api.Notification, func(), bool),
 	gatherer prometheus.Gatherer,
 	registerer prometheus.Registerer,
 	statsRenderer StatsRenderer,
@@ -1690,7 +1690,11 @@ func (api *API) notificationsSSE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 
 	// Subscribe to notifications.
-	notifications, unsubscribe := api.notificationsSub()
+	notifications, unsubscribe, ok := api.notificationsSub()
+	if !ok {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	defer unsubscribe()
 
 	// Set up a flusher to push the response to the client.
@@ -1699,6 +1703,10 @@ func (api *API) notificationsSSE(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
 		return
 	}
+
+	// Flush the response to ensure the headers are immediately and eventSource
+	// onopen is triggered client-side.
+	flusher.Flush()
 
 	for {
 		select {
