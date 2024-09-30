@@ -168,6 +168,7 @@ var expectedConf = &Config{
 		PromoteResourceAttributes: []string{
 			"k8s.cluster.name", "k8s.job.name", "k8s.namespace.name",
 		},
+		TranslationStrategy: UnderscoreEscapingWithSuffixes,
 	},
 
 	RemoteReadConfigs: []*RemoteReadConfig{
