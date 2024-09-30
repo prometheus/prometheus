@@ -467,9 +467,9 @@ The conventional approach of adding data labels is sometimes called a “join qu
 as illustrated by the following example:
 
 ```
-rate(http_server_request_duration_seconds_count[2m])
+  rate(http_server_request_duration_seconds_count[2m])
 * on (job, instance) group_left (k8s_cluster_name)
-target_info
+  target_info
 ```
 
 The core of the query is the expression `rate(http_server_request_duration_seconds_count[2m])`.
