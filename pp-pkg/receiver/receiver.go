@@ -372,6 +372,10 @@ func (rr *Receiver) Run(_ context.Context) (err error) {
 	return nil
 }
 
+func (rr *Receiver) HeadStatus(limit int) relabeler.HeadStatus {
+	return rr.appender.HeadStatus(limit)
+}
+
 func (rr *Receiver) Querier(mint, maxt int64) (storage.Querier, error) {
 	// fmt.Println("RECEIVER: Querier")
 	// start := time.Now()

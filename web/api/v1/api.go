@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/prometheus/prometheus/pp/go/relabeler"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"math"
 	"math/rand"
@@ -192,6 +193,10 @@ type QueryOpts interface {
 	LookbackDelta() time.Duration
 }
 
+type HeadStatusGetter interface {
+	HeadStatus(limit int) relabeler.HeadStatus
+}
+
 // API can register a set of endpoints in a router and handle
 // them using the provided storage and query engine.
 type API struct {
@@ -199,6 +204,7 @@ type API struct {
 	QueryEngine       QueryEngine
 	ExemplarQueryable storage.ExemplarQueryable
 	HeadQueryable     storage.Queryable
+	headStatusGetter  HeadStatusGetter
 
 	scrapePoolsRetriever  func(context.Context) ScrapePoolsRetriever
 	targetRetriever       func(context.Context) TargetRetriever
@@ -236,6 +242,7 @@ func NewAPI(
 	ap storage.Appendable,
 	eq storage.ExemplarQueryable,
 	hq storage.Queryable,
+	headStatusGetter HeadStatusGetter,
 	spsr func(context.Context) ScrapePoolsRetriever,
 	tr func(context.Context) TargetRetriever,
 	ar func(context.Context) AlertmanagerRetriever,
@@ -267,6 +274,7 @@ func NewAPI(
 		Queryable:             q,
 		ExemplarQueryable:     eq,
 		HeadQueryable:         hq,
+		headStatusGetter:      headStatusGetter,
 		scrapePoolsRetriever:  spsr,
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
@@ -401,7 +409,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/runtimeinfo", wrap(api.serveRuntimeInfo))
 	r.Get("/status/buildinfo", wrap(api.serveBuildInfo))
 	r.Get("/status/flags", wrap(api.serveFlags))
-	r.Get("/status/tsdb", wrapAgent(api.serveTSDBStatus))
+	r.Get("/status/tsdb", wrapAgent(api.serveHeadStatus))
 	r.Get("/status/walreplay", api.serveWALReplayStatus)
 	r.Post("/read", api.ready(api.remoteRead))
 	// r.Post("/write", api.ready(api.remoteWrite))
@@ -1647,6 +1655,18 @@ func TSDBStatsFromIndexStats(stats []index.Stat) []TSDBStat {
 		result = append(result, item)
 	}
 	return result
+}
+
+func (api *API) serveHeadStatus(r *http.Request) apiFuncResult {
+	limit := 10
+	if s := r.FormValue("limit"); s != "" {
+		var err error
+		if limit, err = strconv.Atoi(s); err != nil || limit < 1 {
+			return apiFuncResult{nil, &apiError{errorBadData, errors.New("limit must be a positive number")}, nil, nil}
+		}
+	}
+
+	return apiFuncResult{api.headStatusGetter.HeadStatus(limit), nil, nil, nil}
 }
 
 func (api *API) serveTSDBStatus(r *http.Request) apiFuncResult {

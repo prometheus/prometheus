@@ -16,6 +16,7 @@ type Receiver interface {
 	AppendHashdex(ctx context.Context, hashdex cppbridge.ShardedData, relabelerID string) error
 	RelabelerIDIsExist(relabelerID string) bool
 	HeadQueryable() storage.Queryable
+	HeadStatus(limit int) relabeler.HeadStatus
 }
 
 // StreamProcessor interface.
