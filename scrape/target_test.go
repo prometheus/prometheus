@@ -643,3 +643,154 @@ func TestMaxSchemaAppender(t *testing.T) {
 		}
 	}
 }
+
+func TestTarget_URL(t *testing.T) {
+	tests := []struct {
+		name        string
+		target      *Target
+		expectedURL string
+	}{
+		{
+			name: "IPv4 address with http and port 80",
+			target: &Target{
+				params: map[string][]string{},
+				labels: labels.FromMap(map[string]string{
+					model.SchemeLabel:      "http",
+					model.AddressLabel:     "192.168.1.1:80",
+					model.MetricsPathLabel: "/metrics",
+				}),
+			},
+			expectedURL: "http://192.168.1.1/metrics",
+		},
+		{
+			name: "IPv4 address with https and port 443",
+			target: &Target{
+				params: map[string][]string{},
+				labels: labels.FromMap(map[string]string{
+					model.SchemeLabel:      "https",
+					model.AddressLabel:     "192.168.1.1:443",
+					model.MetricsPathLabel: "/metrics",
+				}),
+			},
+			expectedURL: "https://192.168.1.1/metrics",
+		},
+		{
+			name: "IPv4 address with http and non-default port",
+			target: &Target{
+				params: map[string][]string{},
+				labels: labels.FromMap(map[string]string{
+					model.SchemeLabel:      "http",
+					model.AddressLabel:     "192.168.1.1:8080",
+					model.MetricsPathLabel: "/metrics",
+				}),
+			},
+			expectedURL: "http://192.168.1.1:8080/metrics",
+		},
+		{
+			name: "IPv4 address with https and non-default port",
+			target: &Target{
+				params: map[string][]string{},
+				labels: labels.FromMap(map[string]string{
+					model.SchemeLabel:      "http",
+					model.AddressLabel:     "192.168.1.1:8443",
+					model.MetricsPathLabel: "/metrics",
+				}),
+			},
+			expectedURL: "http://192.168.1.1:8443/metrics",
+		},
+		{
+			name: "IPv6 address with http and port 80",
+			target: &Target{
+				params: map[string][]string{},
+				labels: labels.FromMap(map[string]string{
+					model.SchemeLabel:      "http",
+					model.AddressLabel:     "[2001:db8::1]:80",
+					model.MetricsPathLabel: "/metrics",
+				}),
+			},
+			expectedURL: "http://2001:db8::1/metrics",
+		},
+		{
+			name: "IPv6 address with https and port 80",
+			target: &Target{
+				params: map[string][]string{},
+				labels: labels.FromMap(map[string]string{
+					model.SchemeLabel:      "https",
+					model.AddressLabel:     "[2001:db8::1]:80",
+					model.MetricsPathLabel: "/metrics",
+				}),
+			},
+			expectedURL: "https://[2001:db8::1]:80/metrics",
+		},
+		{
+			name: "IPv6 address with https and port 443",
+			target: &Target{
+				params: map[string][]string{},
+				labels: labels.FromMap(map[string]string{
+					model.SchemeLabel:      "https",
+					model.AddressLabel:     "[2001:db8::1]:443",
+					model.MetricsPathLabel: "/metrics",
+				}),
+			},
+			expectedURL: "https://2001:db8::1/metrics",
+		},
+		{
+			name: "IPv6 address with http and non-default port",
+			target: &Target{
+				params: map[string][]string{},
+				labels: labels.FromMap(map[string]string{
+					model.SchemeLabel:      "http",
+					model.AddressLabel:     "[2001:db8::1]:8080",
+					model.MetricsPathLabel: "/metrics",
+				}),
+			},
+			expectedURL: "http://[2001:db8::1]:8080/metrics",
+		},
+		{
+			name: "IPv4 address without a port",
+			target: &Target{
+				params: map[string][]string{},
+				labels: labels.FromMap(map[string]string{
+					model.SchemeLabel:      "http",
+					model.AddressLabel:     "192.168.1.1",
+					model.MetricsPathLabel: "/metrics",
+				}),
+			},
+			expectedURL: "http://192.168.1.1/metrics",
+		},
+		{
+			name: "IPv6 address without a port",
+			target: &Target{
+				params: map[string][]string{},
+				labels: labels.FromMap(map[string]string{
+					model.SchemeLabel:      "http",
+					model.AddressLabel:     "[2001:db8::1]",
+					model.MetricsPathLabel: "/metrics",
+				}),
+			},
+			expectedURL: "http://[2001:db8::1]/metrics",
+		},
+		{
+			name: "IPv4 with additional params",
+			target: &Target{
+				params: map[string][]string{
+					"key1": {"value1"},
+					"key2": {"value2"},
+				},
+				labels: labels.FromMap(map[string]string{
+					model.SchemeLabel:      "http",
+					model.AddressLabel:     "192.168.1.1:8080",
+					model.MetricsPathLabel: "/metrics",
+				}),
+			},
+			expectedURL: "http://192.168.1.1:8080/metrics?key1=value1&key2=value2",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actualURL := tt.target.URL()
+			require.Equal(t, tt.expectedURL, actualURL.String())
+		})
+	}
+}
