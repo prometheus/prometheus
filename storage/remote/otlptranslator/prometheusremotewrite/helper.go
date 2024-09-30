@@ -157,7 +157,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 	// map ensures no duplicate label names.
 	l := make(map[string]string, maxLabelCount)
 	for _, label := range labels {
-		var finalKey = prometheustranslator.NormalizeLabel(label.Name)
+		var finalKey = prometheustranslator.NormalizeLabel(label.Name, settings.AllowUTF8)
 		if existingValue, alreadyExists := l[finalKey]; alreadyExists {
 			l[finalKey] = existingValue + ";" + label.Value
 		} else {
@@ -166,7 +166,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 	}
 
 	for _, lbl := range promotedAttrs {
-		normalized := prometheustranslator.NormalizeLabel(lbl.Name)
+		normalized := prometheustranslator.NormalizeLabel(lbl.Name, settings.AllowUTF8)
 		if _, exists := l[normalized]; !exists {
 			l[normalized] = lbl.Value
 		}
@@ -205,7 +205,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 		}
 		// internal labels should be maintained
 		if !(len(name) > 4 && name[:2] == "__" && name[len(name)-2:] == "__") {
-			name = prometheustranslator.NormalizeLabel(name)
+			name = prometheustranslator.NormalizeLabel(name, settings.AllowUTF8)
 		}
 		l[name] = extras[i+1]
 	}
