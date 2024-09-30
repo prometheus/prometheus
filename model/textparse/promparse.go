@@ -163,7 +163,18 @@ type PromParser struct {
 	// Subsequently, p.offsets is a pair of pair of offsets for the positions
 	// of the label name and value start and end characters.
 	offsets []int
+
+
+	err error
+	state int
+	exposedMetricType ExposedMetricType
 }
+
+const (
+	stateStart = iota
+	stateFoundMetric
+	stateError
+)
 
 // NewPromParser returns a new parser of the byte slice.
 func NewPromParser(b []byte, st *labels.SymbolTable) Parser {
@@ -172,6 +183,30 @@ func NewPromParser(b []byte, st *labels.SymbolTable) Parser {
 		builder: labels.NewScratchBuilderWithSymbolTable(st, 16),
 	}
 }
+
+func (p *PromParser) Next(v *ExposedValues, d Dropper) (ExposedMetricType, error) {
+	for p.err == nil && p.state != stateFoundMetric {
+		p.state = p.evalState()
+	}
+	if p.err != nil {
+		return ExposedMetricTypeInvalid, p.err
+	}
+	return p.exposedMetricType, nil
+}
+
+func (p *PromParser) evalState() int {
+	switch p.state {
+	case stateStart:
+		switch t := p.nextToken(); t {
+		case tEOF:
+			p.err = io.EOF
+			return stateError
+		case tLinebreak:
+			// Allow full blank lines.
+			return p.Next()
+	}
+}
+/*
 
 // Series returns the bytes of the series, the timestamp if set, and the value
 // of the current sample.
@@ -512,3 +547,4 @@ func parseFloat(s string) (float64, error) {
 	}
 	return strconv.ParseFloat(s, 64)
 }
+*/

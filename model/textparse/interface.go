@@ -16,8 +16,6 @@ package textparse
 import (
 	"mime"
 
-	"github.com/prometheus/common/model"
-
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -26,54 +24,12 @@ import (
 // Parser parses samples from a byte slice of samples in the official
 // Prometheus and OpenMetrics text exposition formats.
 type Parser interface {
-	// Series returns the bytes of a series with a simple float64 as a
-	// value, the timestamp if set, and the value of the current sample.
-	Series() ([]byte, *int64, float64)
+	Next(v *ExposedValues, d DropperCache) (ExposedMetricType, error)
+}
 
-	// Histogram returns the bytes of a series with a sparse histogram as a
-	// value, the timestamp if set, and the histogram in the current sample.
-	// Depending on the parsed input, the function returns an (integer) Histogram
-	// or a FloatHistogram, with the respective other return value being nil.
-	Histogram() ([]byte, *int64, *histogram.Histogram, *histogram.FloatHistogram)
-
-	// Help returns the metric name and help text in the current entry.
-	// Must only be called after Next returned a help entry.
-	// The returned byte slices become invalid after the next call to Next.
-	Help() ([]byte, []byte)
-
-	// Type returns the metric name and type in the current entry.
-	// Must only be called after Next returned a type entry.
-	// The returned byte slices become invalid after the next call to Next.
-	Type() ([]byte, model.MetricType)
-
-	// Unit returns the metric name and unit in the current entry.
-	// Must only be called after Next returned a unit entry.
-	// The returned byte slices become invalid after the next call to Next.
-	Unit() ([]byte, []byte)
-
-	// Comment returns the text of the current comment.
-	// Must only be called after Next returned a comment entry.
-	// The returned byte slice becomes invalid after the next call to Next.
-	Comment() []byte
-
-	// Metric writes the labels of the current sample into the passed labels.
-	// It returns the string from which the metric was parsed.
-	Metric(l *labels.Labels) string
-
-	// Exemplar writes the exemplar of the current sample into the passed
-	// exemplar. It can be called repeatedly to retrieve multiple exemplars
-	// for the same sample. It returns false once all exemplars are
-	// retrieved (including the case where no exemplars exist at all).
-	Exemplar(l *exemplar.Exemplar) bool
-
-	// CreatedTimestamp returns the created timestamp (in milliseconds) for the
-	// current sample. It returns nil if it is unknown e.g. if it wasn't set,
-	// if the scrape protocol or metric type does not support created timestamps.
-	CreatedTimestamp() *int64
-
-	// Next advances the parser to the next sample.
-	// It returns (EntryInvalid, io.EOF) if no samples were read.
-	Next() (Entry, error)
+type DropperCache interface {
+	Get(rawSeriesId []byte) (isDropped, isKnown bool)
+	Set(rawSeriesId []byte, lbls labels.Labels) (isDropped bool)
 }
 
 // New returns a new parser of the byte slice.
@@ -99,15 +55,81 @@ func New(b []byte, contentType string, parseClassicHistograms bool, st *labels.S
 	}
 }
 
-// Entry represents the type of a parsed entry.
-type Entry int
+type EntryType int
 
 const (
-	EntryInvalid   Entry = -1
-	EntryType      Entry = 0
-	EntryHelp      Entry = 1
-	EntrySeries    Entry = 2 // EntrySeries marks a series with a simple float64 as value.
-	EntryComment   Entry = 3
-	EntryUnit      Entry = 4
-	EntryHistogram Entry = 5 // EntryHistogram marks a series with a native histogram as a value.
+	EntryMetricFamily EntryType = iota
 )
+
+type ExposedMetricType int
+const (
+	ExposedMetricTypeInvalid ExposedMetricType = iota
+	ExposedMetricTypeUnknown
+	ExposedMetricTypeCounter
+	ExposedMetricTypeGauge
+	ExposedMetricTypeHistogram
+	ExposedMetricTypeGaugeHistogram
+	ExposedMetricTypeSummary
+)
+
+// ExposedValues holds the values of a metric, the purpose is to group the values in one place and reuse the memory as much as possible.
+type ExposedValues struct {
+	flags ExposureFlags
+	timestamp int64
+	createdTimestamp int64
+	sum    float64  // For Counter value, Gauge value, Histogram Sum, Summary Sum and Unknown value.
+	count  float64	// For Histogram Count, Summary Count.
+
+  counts []ExposedBoundaryCount   // For classic histogram bucket counts (cumulative) and summary quantile values.
+
+	h  *histogram.Histogram  // For native histogram. There is no hasH as this is a pointer that can be nil.
+	fh *histogram.FloatHistogram  // For native float histogram. There is no hasFH as this is a pointer that can be nil.
+	// For native histograms and eventually summaries.
+	exemplars []exemplar.Exemplar
+
+	help string
+	unit string
+}
+
+type ExposedBoundaryCount struct {
+	store bool // Whether to store this bucket count value (according to relabel drop rules).
+	boundary float64
+	count uint64
+	hasExemplar bool
+	exemplar exemplar.Exemplar
+}
+
+type ExposureFlags uint64
+
+const (
+	ExposureFlagHasTimestamp = 1 << iota
+	ExposureFlagHasCreatedTimestamp
+	ExposureFlagHasSum
+	ExposureFlagStoreSum
+	ExposureFlagHasCount
+	ExposureFlagStoreCount
+	ExposureFlagHasHelp
+	ExposureFlagHasUnit
+
+	// No need to have flag for native histograms, we can just check if h or fh is nil.
+)
+
+// Reset values to zero, reuse memory if possible.
+// For native histograms, the commit will use the value so we need to reset to nil.
+func (v *ExposedValues) Reset() {
+	v.flags = 0
+	v.h = nil
+	v.fh = nil
+	v.counts = v.counts[:0]
+	v.exemplars = v.exemplars[:0]
+}
+
+func (v *ExposedValues) SetTimestamp(t int64) {
+	v.timestamp = t
+	v.flags |= ExposureFlagHasTimestamp
+}
+
+func (v *ExposedValues) SetCreatedTimestamp(t int64) {
+	v.createdTimestamp = t
+	v.flags |= ExposureFlagHasCreatedTimestamp
+}
