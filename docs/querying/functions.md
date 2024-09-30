@@ -440,12 +440,14 @@ The behavior of this function may change in future versions of Prometheus,
 including its removal from PromQL. info has to be enabled via the 
 [feature flag](../feature_flags.md#experimental-promql-functions) `--enable-feature=promql-experimental-functions`._
 
-`info(v instant-vector, [data-label-selector string])` finds, for each time 
-series in v, all info series with corresponding _identifying_ labels (more on
+`info(v instant-vector, [data-label-selector instant-vector])` finds, for each time 
+series in `v`, all info series with matching _identifying_ labels (more on
 this later), and adds the union of their _data_ (i.e., non-identifying) labels
-to the time series. The second, optional, argument is a collection of data
-label matchers that may be used to constrain which info series to consider
-and which data labels to pick from them.
+to the time series. The second argument `data-label-selector` is optional.
+It is not a real instant vector, but uses a subset of its syntax.
+It must start and end with curly braces (`{ ... }`) and may only contain label matchers.
+The label matchers are used to constrain which info series to consider
+and which data labels to add to `v`.
 
 What we mean by identifying labels in this context is the subset that 
 identifies an info metric. The remaining info metric labels are considered
