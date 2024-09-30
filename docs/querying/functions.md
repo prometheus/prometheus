@@ -434,10 +434,10 @@ increases are tracked consistently on a per-second basis.
 
 ## `info()` (experimental)
 
-_The `info` function is introduced as an experiment where we try to improve UX
+_The `info` function is an experiment to improve UX
 around including labels from [info metrics](https://grafana.com/blog/2021/08/04/how-to-use-promql-joins-for-more-effective-queries-of-prometheus-metrics-at-scale/#info-metrics).
 The behavior of this function may change in future versions of Prometheus,
-including its removal from PromQL. info has to be enabled via the 
+including its removal from PromQL. `info` has to be enabled via the 
 [feature flag](../feature_flags.md#experimental-promql-functions) `--enable-feature=promql-experimental-functions`._
 
 `info(v instant-vector, [data-label-selector instant-vector])` finds, for each time 
@@ -473,17 +473,21 @@ as illustrated by the following example:
 ```
 
 The core of the query is the expression `rate(http_server_request_duration_seconds_count[2m])`.
-However, the resulting time series are joined with `target_info` (an info 
-metric) series that have the same `job` and `instance` labels (these are 
-identifying). When joining, the `k8s_cluster_name` label is picked from 
-`target_info` and added to the time series.
+But to add data labels from an info metric, the user has to use elaborate
+(and not very obvious) syntax to specify which info metric to use (`target_info`), what the
+identifying labels are (`on (job, instance)`), and which data labels to add
+(`group_left (k8s_cluster_name)`).
 
-Writing queries like the above is rather tricky, and also doesn't insulate the
-user from possible "join conflicts". Join conflicts happen temporarily when
-non-identifying labels of an info metric change, without the old version of the
-metric getting marked as stale. In order to provide a better user experience,
-we have developed the `info` function. Using `info`, the preceding example can
-instead be written like so:
+This query is not only verbose and hard to write, it might also run into an “identity crisis”:
+If any of the data labels of `target_info` changes, Prometheus sees that as a change of series
+(as alluded to above, Prometheus just has no native concept of non-identifying labels).
+If the old `target_info` series is not properly marked as stale (which can happen with certain ingestion paths),
+the query above will fail for up to 5m (the lookback delta) because it will find a conflicting 
+match with both the old and the new version of `target_info`.
+
+The `info` function not only resolves this conflict in favor of the newer series, it also simplifies the syntax
+because it knows about the available info series and what their identifying labels are. The example query
+looks like this with the `info` function:
 
 ```
 info(
@@ -518,8 +522,10 @@ In its current iteration, `info` defaults to considering only one info metric:
 `{__name__=~"(target|build)_info"}`. However, the identifying labels always
 have to be `instance` and `job`.
 
-We hope to lift the above limitations at some point in the future, when 
-Prometheus is able to store metadata about info metrics.
+These limitations are partially defeating the purpose of the `info` function.
+At the current stage, this is an experiment to find out how useful the approach
+turns out to be in practice. A final version of the `info` function will indeed
+consider all matching info series and with their appropriate identifying labels.
 
 ## `irate()`
 
