@@ -626,6 +626,9 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			if chunkCreated {
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()
+				h.seriesForMMapLock.Lock()
+				h.seriesForMMap = append(h.seriesForMMap, ms)
+				h.seriesForMMapLock.Unlock()
 			}
 			if s.t > maxt {
 				maxt = s.t
@@ -1007,6 +1010,9 @@ func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (unknownRefs, unknownHi
 			if chunkCreated {
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()
+				h.seriesForMMapLock.Lock()
+				h.seriesForMMap = append(h.seriesForMMap, ms)
+				h.seriesForMMapLock.Unlock()
 			}
 			if ok {
 				if s.T < mint {
