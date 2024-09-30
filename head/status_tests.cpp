@@ -29,7 +29,7 @@ class StatusFixture : public ::testing::Test {
 
   [[nodiscard]] Status get_status() const {
     Status status;
-    StatusGetter<QueryableEncodingBimap, Status, kTopItemsCount>{lss_, storage_}.get(status);
+    StatusGetter<QueryableEncodingBimap, Status>{lss_, storage_, kTopItemsCount}.get(status);
     return status;
   }
 };

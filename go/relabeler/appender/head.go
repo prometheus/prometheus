@@ -67,6 +67,10 @@ func (h *RotatableHead) WriteMetrics() {
 	h.head.WriteMetrics()
 }
 
+func (h *RotatableHead) Status(limit int) relabeler.HeadStatus {
+	return h.head.Status(limit)
+}
+
 // Close - relabeler.Head interface implementation.
 func (h *RotatableHead) Close() error {
 	return h.head.Close()

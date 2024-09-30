@@ -1729,11 +1729,12 @@ func indexWriterWriteTableOfContents(writer uintptr, data []byte) []byte {
 	return res.data
 }
 
-func getHeadStatus(lss uintptr, dataStorage uintptr, status *HeadStatus) {
+func getHeadStatus(lss uintptr, dataStorage uintptr, status *HeadStatus, limit int) {
 	var args = struct {
 		lss         uintptr
 		dataStorage uintptr
-	}{lss, dataStorage}
+		limit       int
+	}{lss, dataStorage, limit}
 
 	fastcgo.UnsafeCall2(
 		C.prompp_get_head_status,

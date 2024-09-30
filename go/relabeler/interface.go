@@ -52,6 +52,7 @@ type Head interface {
 	Finalize()
 	Reconfigure(inputRelabelerConfigs []*config.InputRelabelerConfig, numberOfShards uint16) error
 	WriteMetrics()
+	Status(limit int) HeadStatus
 	Rotate() error
 	Close() error
 }
@@ -137,4 +138,28 @@ func (rc *LoggedAtomicReferenceCounter) Value() int64 {
 	value := rc.value.Load()
 	// fmt.Println(rc.prefix, ": Reference Counter: value: ", value)
 	return value
+}
+
+// HeadStatus holds information about all shards.
+type HeadStatus struct {
+	HeadStats                   HeadStats  `json:"headStats"`
+	SeriesCountByMetricName     []HeadStat `json:"seriesCountByMetricName"`
+	LabelValueCountByLabelName  []HeadStat `json:"labelValueCountByLabelName"`
+	MemoryInBytesByLabelName    []HeadStat `json:"memoryInBytesByLabelName"`
+	SeriesCountByLabelValuePair []HeadStat `json:"seriesCountByLabelValuePair"`
+}
+
+// HeadStat holds the information about individual cardinality.
+type HeadStat struct {
+	Name  string `json:"name"`
+	Value uint64 `json:"value"`
+}
+
+// HeadStats has information about the head.
+type HeadStats struct {
+	NumSeries     uint64 `json:"numSeries"`
+	NumLabelPairs int    `json:"numLabelPairs"`
+	ChunkCount    int64  `json:"chunkCount"`
+	MinTime       int64  `json:"minTime"`
+	MaxTime       int64  `json:"maxTime"`
 }

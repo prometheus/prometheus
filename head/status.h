@@ -45,12 +45,16 @@ struct Status {
   bool operator==(const Status&) const noexcept = default;
 };
 
-template <class Element, size_t Count>
+template <class Element>
 class TopItems {
  public:
-  static_assert(Count > 0);
+  using Elements = std::vector<Element>;
 
-  using Elements = std::array<Element, Count>;
+  explicit TopItems(size_t limit) {
+    assert(limit > 0);
+    elements_.resize(limit);
+    min_element_ = &elements_.front();
+  }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE const Element& min_element() const noexcept { return *min_element_; }
   [[nodiscard]] PROMPP_ALWAYS_INLINE const Elements& elements() const noexcept { return elements_; }
@@ -59,7 +63,7 @@ class TopItems {
   PROMPP_ALWAYS_INLINE void add(uint32_t count, ElementConstructor&& element_constructor) noexcept {
     if (count > min_element_->count) {
       *min_element_ = std::forward<ElementConstructor>(element_constructor)();
-      min_element_ = std::ranges::min_element(elements_, [](const Element& lhs, const Element& rhs) PROMPP_LAMBDA_INLINE { return lhs.count < rhs.count; });
+      min_element_ = &*std::ranges::min_element(elements_, [](const Element& lhs, const Element& rhs) PROMPP_LAMBDA_INLINE { return lhs.count < rhs.count; });
     }
   }
 
@@ -68,19 +72,31 @@ class TopItems {
     min_element_ = &elements_.back();
   }
 
+  PROMPP_ALWAYS_INLINE size_t size() const noexcept {
+    return elements_.size();
+  }
+
  private:
-  Elements elements_{};
-  Element* min_element_{&elements_.front()};
+  Elements elements_;
+  Element* min_element_;
 };
 
-template <class Lss, class Status, size_t TopItemsCount>
+template <class Lss, class Status>
 class StatusGetter {
  public:
-  StatusGetter(const Lss& lss, const series_data::DataStorage& data_storage) : lss_(lss), data_storage_(data_storage) { fill(); }
+  StatusGetter(const Lss& lss, const series_data::DataStorage& data_storage, size_t limit) :
+    lss_(lss),
+    data_storage_(data_storage),
+     top_label_value_count_by_name_{limit},
+     top_series_count_by_metric_name_{limit},
+     top_memory_in_bytes_by_label_name_{limit},
+     top_series_count_by_label_value_pair_{limit} {
+   fill();
+  }
 
   void get(Status& status) {
     static constexpr auto fill_top_items = [](const auto& top_items, auto& destination) PROMPP_LAMBDA_INLINE {
-      destination.reserve(TopItemsCount);
+      destination.reserve(top_items.size());
       std::ranges::copy_if(top_items.elements(), std::back_inserter(destination), [&](const auto& item) PROMPP_LAMBDA_INLINE { return item.count > 0; });
     };
 
@@ -98,17 +114,18 @@ class StatusGetter {
  private:
   using StringType = typename Status::String;
 
-  using TopLabelValueCountByLabelName = TopItems<StringCountItem<StringType>, TopItemsCount>;
-  using TopSeriesCountByMetricName = TopItems<StringCountItem<StringType>, TopItemsCount>;
-  using TopMemoryInBytesByLabelName = TopItems<StringCountItem<StringType>, TopItemsCount>;
-  using TopSeriesCountByLabelValuePair = TopItems<StringPairCountItem<StringType>, TopItemsCount>;
+  using TopLabelValueCountByLabelName = TopItems<StringCountItem<StringType>>;
+  using TopSeriesCountByMetricName = TopItems<StringCountItem<StringType>>;
+  using TopMemoryInBytesByLabelName = TopItems<StringCountItem<StringType>>;
+  using TopSeriesCountByLabelValuePair = TopItems<StringPairCountItem<StringType>>;
 
   const Lss& lss_;
   const series_data::DataStorage& data_storage_;
-  TopLabelValueCountByLabelName top_label_value_count_by_name_{};
-  TopSeriesCountByMetricName top_series_count_by_metric_name_{};
-  TopMemoryInBytesByLabelName top_memory_in_bytes_by_label_name_{};
-  TopSeriesCountByLabelValuePair top_series_count_by_label_value_pair_{};
+
+  TopLabelValueCountByLabelName top_label_value_count_by_name_;
+  TopSeriesCountByMetricName top_series_count_by_metric_name_;
+  TopMemoryInBytesByLabelName top_memory_in_bytes_by_label_name_;
+  TopSeriesCountByLabelValuePair top_series_count_by_label_value_pair_;
   TimeInterval min_max_timestamp_{};
   uint32_t label_count_{};
 

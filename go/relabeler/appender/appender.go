@@ -72,6 +72,12 @@ func (qa *QueryableAppender) WriteMetrics() {
 	qa.distributor.WriteMetrics(qa.head)
 }
 
+func (qa *QueryableAppender) HeadStatus(limit int) relabeler.HeadStatus {
+	qa.lock.Lock()
+	defer qa.lock.Unlock()
+	return qa.head.Status(limit)
+}
+
 func (qa *QueryableAppender) Rotate() error {
 	qa.lock.Lock()
 	defer qa.lock.Unlock()

@@ -14,14 +14,13 @@ extern "C" void prompp_get_head_status(void* args, void* res) {
   struct Arguments {
     LssVariantPtr lss;
     DataStoragePtr data_storage;
+    size_t limit;
   };
-
-  static constexpr size_t kTopItemsCount = 10;
 
   const auto in = static_cast<const Arguments*>(args);
   const auto& lss = std::get<entrypoint::head::QueryableEncodingBimap>(*in->lss);
 
-  head::StatusGetter<entrypoint::head::QueryableEncodingBimap, Status, kTopItemsCount>{lss, *in->data_storage}.get(*static_cast<Status*>(res));
+  head::StatusGetter<entrypoint::head::QueryableEncodingBimap, Status>{lss, *in->data_storage, in->limit}.get(*static_cast<Status*>(res));
 }
 
 void prompp_free_head_status(void* args) {

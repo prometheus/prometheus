@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"runtime"
-	"runtime/debug"
+	"sort"
 	"sync"
 
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
@@ -173,7 +174,6 @@ func (h *Head) Reconfigure(inputRelabelerConfigs []*config.InputRelabelerConfig,
 
 func (h *Head) WriteMetrics() {
 	_ = h.ForEachShard(func(shard relabeler.Shard) error {
-		// fmt.Println("head write metrics lss", shard.ShardID())
 		h.memoryInUse.With(
 			prometheus.Labels{
 				"generation": fmt.Sprintf("%d", h.generation),
@@ -182,7 +182,6 @@ func (h *Head) WriteMetrics() {
 			},
 		).Set(float64(shard.LSS().AllocatedMemory()))
 
-		// fmt.Println("head write metrics data storage", shard.ShardID())
 		h.memoryInUse.With(
 			prometheus.Labels{
 				"generation": fmt.Sprintf("%d", h.generation),
@@ -191,7 +190,6 @@ func (h *Head) WriteMetrics() {
 			},
 		).Set(float64(shard.DataStorage().AllocatedMemory()))
 
-		// fmt.Println("head write metrics relabeler", shard.ShardID())
 		for relabelerID, inputRelabeler := range shard.InputRelabelers() {
 			h.memoryInUse.With(
 				prometheus.Labels{
@@ -202,10 +200,81 @@ func (h *Head) WriteMetrics() {
 			).Set(float64(inputRelabeler.CacheAllocatedMemory()))
 		}
 
-		// fmt.Println("head write metrics completed", shard.ShardID())
-
 		return nil
 	})
+}
+
+func (h *Head) Status(limit int) relabeler.HeadStatus {
+	shardStatuses := make([]*cppbridge.HeadStatus, h.NumberOfShards())
+	_ = h.ForEachShard(func(shard relabeler.Shard) error {
+		shardStatuses[shard.ShardID()] = cppbridge.GetHeadStatus(shard.LSS().Raw().Pointer(), shard.DataStorage().Raw().Pointer(), limit)
+		return nil
+	})
+
+	headStatus := relabeler.HeadStatus{
+		HeadStats: relabeler.HeadStats{
+			MinTime: math.MaxInt64,
+			MaxTime: math.MinInt64,
+		},
+	}
+
+	seriesStats := make(map[string]uint64)
+	labelsStats := make(map[string]uint64)
+	memoryStats := make(map[string]uint64)
+	countStats := make(map[string]uint64)
+
+	for _, shardStatus := range shardStatuses {
+		if headStatus.HeadStats.MaxTime < shardStatus.TimeInterval.Max {
+			headStatus.HeadStats.MaxTime = shardStatus.TimeInterval.Max
+		}
+		if headStatus.HeadStats.MinTime > shardStatus.TimeInterval.Min {
+			headStatus.HeadStats.MinTime = shardStatus.TimeInterval.Min
+		}
+
+		headStatus.HeadStats.NumSeries += uint64(shardStatus.NumSeries)
+		headStatus.HeadStats.ChunkCount += int64(shardStatus.ChunkCount)
+		headStatus.HeadStats.NumLabelPairs += int(shardStatus.NumLabelPairs)
+
+		for _, stat := range shardStatus.SeriesCountByMetricName {
+			seriesStats[stat.Name] += uint64(stat.Count)
+		}
+		for _, stat := range shardStatus.LabelValueCountByLabelName {
+			labelsStats[stat.Name] += uint64(stat.Count)
+		}
+		for _, stat := range shardStatus.MemoryInBytesByLabelName {
+			memoryStats[stat.Name] += uint64(stat.Size)
+		}
+		for _, stat := range shardStatus.SeriesCountByLabelValuePair {
+			countStats[stat.Name+"="+stat.Value] += uint64(stat.Count)
+		}
+	}
+
+	headStatus.SeriesCountByMetricName = getSortedStats(seriesStats, limit)
+	headStatus.LabelValueCountByLabelName = getSortedStats(labelsStats, limit)
+	headStatus.MemoryInBytesByLabelName = getSortedStats(memoryStats, limit)
+	headStatus.SeriesCountByLabelValuePair = getSortedStats(countStats, limit)
+
+	return headStatus
+}
+
+func getSortedStats(stats map[string]uint64, limit int) []relabeler.HeadStat {
+	result := make([]relabeler.HeadStat, 0, len(stats))
+	for k, v := range stats {
+		result = append(result, relabeler.HeadStat{
+			Name:  k,
+			Value: v,
+		})
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Value > result[j].Value
+	})
+
+	if len(result) < limit {
+		limit = len(result)
+	}
+
+	return result[:limit]
 }
 
 func (h *Head) Rotate() error {
@@ -314,9 +383,4 @@ func (h *Head) stop() {
 	close(h.stopc)
 	h.wg.Wait()
 	h.stopc = make(chan struct{})
-}
-
-func logWithStack(value string) {
-	fmt.Println(value)
-	debug.PrintStack()
 }
