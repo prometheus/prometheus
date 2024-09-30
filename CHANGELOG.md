@@ -5,7 +5,6 @@
 ## 2.55.0-rc.0 / 2024-09-20
 
 * [FEATURE] Support UTF-8 characters in label names - feature flag `utf8-names`. #14482, #14880, #14736, #14727
-* [FEATURE] Support config reload automatically - feature flag `auto-reload-config`. #14769
 * [FEATURE] Scraping: Add the ability to set custom `http_headers` in config. #14817
 * [FEATURE] Scraping: Support feature flag `created-timestamp-zero-ingestion` in OpenMetrics. #14356, #14815
 * [FEATURE] Scraping: `scrape_failure_log_file` option to log failures to a file. #14734

@@ -154,9 +154,6 @@ type flagConfig struct {
 	RemoteFlushDeadline model.Duration
 	nameEscapingScheme  string
 
-	enableAutoReload   bool
-	autoReloadInterval model.Duration
-
 	featureList   []string
 	memlimitRatio float64
 	// These options are extracted from featureList
@@ -215,12 +212,6 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "auto-gomaxprocs":
 				c.enableAutoGOMAXPROCS = true
 				level.Info(logger).Log("msg", "Automatically set GOMAXPROCS to match Linux container CPU quota")
-			case "auto-reload-config":
-				c.enableAutoReload = true
-				if s := time.Duration(c.autoReloadInterval).Seconds(); s > 0 && s < 1 {
-					c.autoReloadInterval, _ = model.ParseDuration("1s")
-				}
-				level.Info(logger).Log("msg", fmt.Sprintf("Enabled automatic configuration file reloading. Checking for configuration changes every %s.", c.autoReloadInterval))
 			case "auto-gomemlimit":
 				c.enableAutoGOMEMLIMIT = true
 				level.Info(logger).Log("msg", "Automatically set GOMEMLIMIT to match Linux container or system memory limit")
@@ -310,9 +301,6 @@ func main() {
 
 	a.Flag("config.file", "Prometheus configuration file path.").
 		Default("prometheus.yml").StringVar(&cfg.configFile)
-
-	a.Flag("config.auto-reload-interval", "Specifies the interval for checking and automatically reloading the Prometheus configuration file upon detecting changes.").
-		Default("30s").SetValue(&cfg.autoReloadInterval)
 
 	a.Flag("web.listen-address", "Address to listen on for UI, API, and telemetry. Can be repeated.").
 		Default("0.0.0.0:9090").StringsVar(&cfg.web.ListenAddresses)
@@ -504,7 +492,7 @@ func main() {
 
 	a.Flag("scrape.name-escaping-scheme", `Method for escaping legacy invalid names when sending to Prometheus that does not support UTF-8. Can be one of "values", "underscores", or "dots".`).Default(scrape.DefaultNameEscapingScheme.String()).StringVar(&cfg.nameEscapingScheme)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, auto-gomaxprocs, auto-gomemlimit, auto-reload-config, concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, expand-external-labels, extra-scrape-metrics, memory-snapshot-on-shutdown, native-histograms, new-service-discovery-manager, no-default-scrape-port, otlp-write-receiver, promql-experimental-functions, promql-delayed-name-removal, promql-per-step-stats, remote-write-receiver (DEPRECATED), utf8-names. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, auto-gomaxprocs, auto-gomemlimit, concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, expand-external-labels, extra-scrape-metrics, memory-snapshot-on-shutdown, native-histograms, new-service-discovery-manager, no-default-scrape-port, otlp-write-receiver, promql-experimental-functions, promql-delayed-name-removal, promql-per-step-stats, remote-write-receiver (DEPRECATED), utf8-names. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
@@ -1142,15 +1130,6 @@ func main() {
 		hup := make(chan os.Signal, 1)
 		signal.Notify(hup, syscall.SIGHUP)
 		cancel := make(chan struct{})
-
-		var checksum string
-		if cfg.enableAutoReload {
-			checksum, err = config.GenerateChecksum(cfg.configFile)
-			if err != nil {
-				level.Error(logger).Log("msg", "Failed to generate initial checksum for configuration file", "err", err)
-			}
-		}
-
 		g.Add(
 			func() error {
 				<-reloadReady.C
@@ -1160,12 +1139,6 @@ func main() {
 					case <-hup:
 						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, reloaders...); err != nil {
 							level.Error(logger).Log("msg", "Error reloading config", "err", err)
-						} else if cfg.enableAutoReload {
-							if currentChecksum, err := config.GenerateChecksum(cfg.configFile); err == nil {
-								checksum = currentChecksum
-							} else {
-								level.Error(logger).Log("msg", "Failed to generate checksum during configuration reload", "err", err)
-							}
 						}
 					case rc := <-webHandler.Reload():
 						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, reloaders...); err != nil {
@@ -1173,32 +1146,6 @@ func main() {
 							rc <- err
 						} else {
 							rc <- nil
-							if cfg.enableAutoReload {
-								if currentChecksum, err := config.GenerateChecksum(cfg.configFile); err == nil {
-									checksum = currentChecksum
-								} else {
-									level.Error(logger).Log("msg", "Failed to generate checksum during configuration reload", "err", err)
-								}
-							}
-						}
-					case <-time.Tick(time.Duration(cfg.autoReloadInterval)):
-						if !cfg.enableAutoReload {
-							continue
-						}
-						currentChecksum, err := config.GenerateChecksum(cfg.configFile)
-						if err != nil {
-							level.Error(logger).Log("msg", "Failed to generate checksum during configuration reload", "err", err)
-							continue
-						}
-						if currentChecksum == checksum {
-							continue
-						}
-						level.Info(logger).Log("msg", "Configuration file change detected, reloading the configuration.")
-
-						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, reloaders...); err != nil {
-							level.Error(logger).Log("msg", "Error reloading config", "err", err)
-						} else {
-							checksum = currentChecksum
 						}
 					case <-cancel:
 						return nil
