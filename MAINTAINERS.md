@@ -2,7 +2,6 @@
 
 General maintainers:
 * Bryan Boreham (bjboreham@gmail.com / @bboreham)
-* Levi Harrison (levi@leviharrison.dev / @LeviHarrison)
 * Ayoub Mrini (ayoubmrini424@gmail.com / @machine424)
 * Julien Pivotto (roidelapluie@prometheus.io / @roidelapluie)
 

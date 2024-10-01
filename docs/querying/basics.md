@@ -109,8 +109,16 @@ single sample value for each at a given timestamp (point in time).  In the simpl
 form, only a metric name is specified, which results in an instant vector
 containing elements for all time series that have this metric name.
 
+The value returned will be that of the most recent sample at or before the
+query's evaluation timestamp (in the case of an
+[instant query](api.md#instant-queries))
+or the current step within the query (in the case of a
+[range query](api.md/#range-queries)).
+The [`@` modifier](#modifier) allows overriding the timestamp relative to which
+the selection takes place. Time series are only returned if their most recent sample is less than the [lookback period](#staleness) ago.
+
 This example selects all time series that have the `http_requests_total` metric
-name:
+name, returning the most recent sample for each:
 
     http_requests_total
 
@@ -359,7 +367,8 @@ cases like aggregation (`sum`, `avg`, and so on), where multiple aggregated
 time series do not precisely align in time. Because of their independence,
 Prometheus needs to assign a value at those timestamps for each relevant time
 series. It does so by taking the newest sample that is less than the lookback period ago.
-The lookback period is 5 minutes by default.
+The lookback period is 5 minutes by default, but can be
+[set with the `--query.lookback-delta` flag](../command-line/prometheus.md)
 
 If a target scrape or rule evaluation no longer returns a sample for a time
 series that was previously present, this time series will be marked as stale.

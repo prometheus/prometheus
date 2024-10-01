@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -3707,4 +3708,76 @@ histogram {{sum:4 count:4 buckets:[2 2]}} {{sum:6 count:6 buckets:[3 3]}} {{sum:
 			PositiveBuckets: []float64{1},
 		},
 	})
+}
+
+func TestRateAnnotations(t *testing.T) {
+	testCases := map[string]struct {
+		data                       string
+		expr                       string
+		expectedWarningAnnotations []string
+		expectedInfoAnnotations    []string
+	}{
+		"info annotation when two samples are selected": {
+			data: `
+				series 1 2
+			`,
+			expr:                       "rate(series[1m1s])",
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations: []string{
+				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "series" (1:6)`,
+			},
+		},
+		"no info annotations when no samples": {
+			data: `
+				series
+			`,
+			expr:                       "rate(series[1m1s])",
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
+		"no info annotations when selecting one sample": {
+			data: `
+				series 1 2
+			`,
+			expr:                       "rate(series[10s])",
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
+		"no info annotations when no samples due to mixed data types": {
+			data: `
+				series{label="a"} 1 {{schema:1 sum:15 count:10 buckets:[1 2 3]}}
+			`,
+			expr: "rate(series[1m1s])",
+			expectedWarningAnnotations: []string{
+				`PromQL warning: encountered a mix of histograms and floats for metric name "series" (1:6)`,
+			},
+			expectedInfoAnnotations: []string{},
+		},
+		"no info annotations when selecting two native histograms": {
+			data: `
+				series{label="a"} {{schema:1 sum:10 count:5 buckets:[1 2 3]}} {{schema:1 sum:15 count:10 buckets:[1 2 3]}}
+			`,
+			expr:                       "rate(series[1m1s])",
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
+	}
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			store := promqltest.LoadedStorage(t, "load 1m\n"+strings.TrimSpace(testCase.data))
+			t.Cleanup(func() { _ = store.Close() })
+
+			engine := newTestEngine(t)
+			query, err := engine.NewInstantQuery(context.Background(), store, nil, testCase.expr, timestamp.Time(0).Add(1*time.Minute))
+			require.NoError(t, err)
+			t.Cleanup(query.Close)
+
+			res := query.Exec(context.Background())
+			require.NoError(t, res.Err)
+
+			warnings, infos := res.Warnings.AsStrings(testCase.expr, 0, 0)
+			testutil.RequireEqual(t, testCase.expectedWarningAnnotations, warnings)
+			testutil.RequireEqual(t, testCase.expectedInfoAnnotations, infos)
+		})
+	}
 }

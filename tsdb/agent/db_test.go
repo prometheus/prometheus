@@ -640,7 +640,9 @@ func Test_ExistingWAL_NextRef(t *testing.T) {
 	// Create a new storage and see what nextRef is initialized to.
 	db, err = Open(log.NewNopLogger(), nil, rs, dbDir, DefaultOptions())
 	require.NoError(t, err)
-	defer require.NoError(t, db.Close())
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
 
 	require.Equal(t, uint64(seriesCount+histogramCount), db.nextRef.Load(), "nextRef should be equal to the number of series written across the entire WAL")
 }

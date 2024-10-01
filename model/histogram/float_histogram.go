@@ -230,6 +230,17 @@ func (h *FloatHistogram) TestExpression() string {
 		res = append(res, fmt.Sprintf("custom_values:%g", m.CustomValues))
 	}
 
+	switch m.CounterResetHint {
+	case UnknownCounterReset:
+		// Unknown is the default, don't add anything.
+	case CounterReset:
+		res = append(res, "counter_reset_hint:reset")
+	case NotCounterReset:
+		res = append(res, "counter_reset_hint:not_reset")
+	case GaugeType:
+		res = append(res, "counter_reset_hint:gauge")
+	}
+
 	addBuckets := func(kind, bucketsKey, offsetKey string, buckets []float64, spans []Span) []string {
 		if len(spans) > 1 {
 			panic(fmt.Sprintf("histogram with multiple %s spans not supported", kind))

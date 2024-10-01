@@ -56,14 +56,15 @@ import TSDBStatusPage from "./pages/TSDBStatusPage";
 import FlagsPage from "./pages/FlagsPage";
 import ConfigPage from "./pages/ConfigPage";
 import AgentPage from "./pages/AgentPage";
-import { Suspense, useEffect } from "react";
+import { Suspense } from "react";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeSelector } from "./components/ThemeSelector";
 import { Notifications } from "@mantine/notifications";
-import { useAppDispatch } from "./state/hooks";
-import { updateSettings, useSettings } from "./state/settingsSlice";
+import { useSettings } from "./state/settingsSlice";
 import SettingsMenu from "./components/SettingsMenu";
 import ReadinessWrapper from "./components/ReadinessWrapper";
+import NotificationsProvider from "./components/NotificationsProvider";
+import NotificationsIcon from "./components/NotificationsIcon";
 import { QueryParamProvider } from "use-query-params";
 import { ReactRouter6Adapter } from "use-query-params/adapters/react-router-6";
 import ServiceDiscoveryPage from "./pages/service-discovery/ServiceDiscoveryPage";
@@ -170,37 +171,12 @@ const theme = createTheme({
   },
 });
 
-// This dynamically/generically determines the pathPrefix by stripping the first known
-// endpoint suffix from the window location path. It works out of the box for both direct
-// hosting and reverse proxy deployments with no additional configurations required.
-const getPathPrefix = (path: string) => {
-  if (path.endsWith("/")) {
-    path = path.slice(0, -1);
-  }
-
-  const pagePaths = [
-    ...mainNavPages,
-    ...allStatusPages,
-    { path: "/agent" },
-  ].map((p) => p.path);
-
-  const pagePath = pagePaths.find((p) => path.endsWith(p));
-  return path.slice(0, path.length - (pagePath || "").length);
-};
-
 const navLinkXPadding = "md";
 
 function App() {
   const [opened, { toggle }] = useDisclosure();
 
-  const pathPrefix = getPathPrefix(window.location.pathname);
-  const dispatch = useAppDispatch();
-
-  useEffect(() => {
-    dispatch(updateSettings({ pathPrefix }));
-  }, [pathPrefix, dispatch]);
-
-  const { agentMode, consolesLink } = useSettings();
+  const { agentMode, consolesLink, pathPrefix } = useSettings();
 
   const navLinks = (
     <>
@@ -314,6 +290,7 @@ function App() {
   const navActionIcons = (
     <>
       <ThemeSelector />
+      <NotificationsIcon />
       <SettingsMenu />
       <ActionIcon
         component="a"
@@ -347,47 +324,49 @@ function App() {
               }}
               padding="md"
             >
-              <AppShell.Header bg="rgb(65, 73, 81)" c="#fff">
-                <Group h="100%" px="md" wrap="nowrap">
-                  <Group
-                    style={{ flex: 1 }}
-                    justify="space-between"
-                    wrap="nowrap"
-                  >
-                    <Group gap={65} wrap="nowrap">
-                      <Link
-                        to="/"
-                        style={{ textDecoration: "none", color: "white" }}
-                      >
-                        <Group gap={10} wrap="nowrap">
-                          <img src={PrometheusLogo} height={30} />
-                          <Text fz={20}>Prometheus{agentMode && " Agent"}</Text>
+              <NotificationsProvider>
+                <AppShell.Header bg="rgb(65, 73, 81)" c="#fff">
+                  <Group h="100%" px="md" wrap="nowrap">
+                    <Group
+                      style={{ flex: 1 }}
+                      justify="space-between"
+                      wrap="nowrap"
+                    >
+                      <Group gap={65} wrap="nowrap">
+                        <Link
+                          to="/"
+                          style={{ textDecoration: "none", color: "white" }}
+                        >
+                          <Group gap={10} wrap="nowrap">
+                            <img src={PrometheusLogo} height={30} />
+                            <Text fz={20}>Prometheus{agentMode && " Agent"}</Text>
+                          </Group>
+                        </Link>
+                        <Group gap={12} visibleFrom="sm" wrap="nowrap">
+                          {navLinks}
                         </Group>
-                      </Link>
-                      <Group gap={12} visibleFrom="sm" wrap="nowrap">
-                        {navLinks}
+                      </Group>
+                      <Group visibleFrom="xs" wrap="nowrap" gap="xs">
+                        {navActionIcons}
                       </Group>
                     </Group>
-                    <Group visibleFrom="xs" wrap="nowrap" gap="xs">
-                      {navActionIcons}
-                    </Group>
+                    <Burger
+                      opened={opened}
+                      onClick={toggle}
+                      hiddenFrom="sm"
+                      size="sm"
+                      color="gray.2"
+                    />
                   </Group>
-                  <Burger
-                    opened={opened}
-                    onClick={toggle}
-                    hiddenFrom="sm"
-                    size="sm"
-                    color="gray.2"
-                  />
-                </Group>
-              </AppShell.Header>
+                </AppShell.Header>
 
-              <AppShell.Navbar py="md" px={4} bg="rgb(65, 73, 81)" c="#fff">
-                {navLinks}
-                <Group mt="md" hiddenFrom="xs" justify="center">
-                  {navActionIcons}
-                </Group>
-              </AppShell.Navbar>
+                <AppShell.Navbar py="md" px={4} bg="rgb(65, 73, 81)" c="#fff">
+                  {navLinks}
+                  <Group mt="md" hiddenFrom="xs" justify="center">
+                    {navActionIcons}
+                  </Group>
+                </AppShell.Navbar>
+              </NotificationsProvider>
 
               <AppShell.Main>
                 <ErrorBoundary key={location.pathname}>

@@ -16,6 +16,8 @@ package tsdb
 import (
 	"testing"
 
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/stretchr/testify/require"
@@ -27,7 +29,11 @@ import (
 )
 
 const (
-	float = "float"
+	float               = "float"
+	intHistogram        = "integer histogram"
+	floatHistogram      = "float histogram"
+	gaugeIntHistogram   = "gauge int histogram"
+	gaugeFloatHistogram = "gauge float histogram"
 )
 
 type testValue struct {
@@ -42,7 +48,6 @@ type sampleTypeScenario struct {
 	sampleFunc func(ts, value int64) sample
 }
 
-// TODO: native histogram sample types will be added as part of out-of-order native histogram support; see #11220.
 var sampleTypeScenarios = map[string]sampleTypeScenario{
 	float: {
 		sampleType: sampleMetricTypeFloat,
@@ -55,50 +60,50 @@ var sampleTypeScenarios = map[string]sampleTypeScenario{
 			return sample{t: ts, f: float64(value)}
 		},
 	},
-	// intHistogram: {
-	//	 sampleType: sampleMetricTypeHistogram,
-	//	 appendFunc: func(appender storage.Appender, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error) {
-	//		 s := sample{t: ts, h: tsdbutil.GenerateTestHistogram(int(value))}
-	//		 ref, err := appender.AppendHistogram(0, lbls, ts, s.h, nil)
-	//		 return ref, s, err
-	//	 },
-	//	 sampleFunc: func(ts, value int64) sample {
-	//		 return sample{t: ts, h: tsdbutil.GenerateTestHistogram(int(value))}
-	//	 },
-	// },
-	// floatHistogram: {
-	//	 sampleType: sampleMetricTypeHistogram,
-	//	 appendFunc: func(appender storage.Appender, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error) {
-	//		 s := sample{t: ts, fh: tsdbutil.GenerateTestFloatHistogram(int(value))}
-	//		 ref, err := appender.AppendHistogram(0, lbls, ts, nil, s.fh)
-	//		 return ref, s, err
-	//	 },
-	//	 sampleFunc: func(ts, value int64) sample {
-	//		 return sample{t: ts, fh: tsdbutil.GenerateTestFloatHistogram(int(value))}
-	//	 },
-	// },
-	// gaugeIntHistogram: {
-	//	 sampleType: sampleMetricTypeHistogram,
-	//	 appendFunc: func(appender storage.Appender, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error) {
-	//		 s := sample{t: ts, h: tsdbutil.GenerateTestGaugeHistogram(int(value))}
-	//		 ref, err := appender.AppendHistogram(0, lbls, ts, s.h, nil)
-	//		 return ref, s, err
-	//	 },
-	//	 sampleFunc: func(ts, value int64) sample {
-	//		 return sample{t: ts, h: tsdbutil.GenerateTestGaugeHistogram(int(value))}
-	//	 },
-	// },
-	// gaugeFloatHistogram: {
-	//	 sampleType: sampleMetricTypeHistogram,
-	//	 appendFunc: func(appender storage.Appender, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error) {
-	//		 s := sample{t: ts, fh: tsdbutil.GenerateTestGaugeFloatHistogram(int(value))}
-	//		 ref, err := appender.AppendHistogram(0, lbls, ts, nil, s.fh)
-	//		 return ref, s, err
-	//	 },
-	//	 sampleFunc: func(ts, value int64) sample {
-	//		 return sample{t: ts, fh: tsdbutil.GenerateTestGaugeFloatHistogram(int(value))}
-	//	 },
-	// },
+	intHistogram: {
+		sampleType: sampleMetricTypeHistogram,
+		appendFunc: func(appender storage.Appender, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error) {
+			s := sample{t: ts, h: tsdbutil.GenerateTestHistogram(int(value))}
+			ref, err := appender.AppendHistogram(0, lbls, ts, s.h, nil)
+			return ref, s, err
+		},
+		sampleFunc: func(ts, value int64) sample {
+			return sample{t: ts, h: tsdbutil.GenerateTestHistogram(int(value))}
+		},
+	},
+	floatHistogram: {
+		sampleType: sampleMetricTypeHistogram,
+		appendFunc: func(appender storage.Appender, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error) {
+			s := sample{t: ts, fh: tsdbutil.GenerateTestFloatHistogram(int(value))}
+			ref, err := appender.AppendHistogram(0, lbls, ts, nil, s.fh)
+			return ref, s, err
+		},
+		sampleFunc: func(ts, value int64) sample {
+			return sample{t: ts, fh: tsdbutil.GenerateTestFloatHistogram(int(value))}
+		},
+	},
+	gaugeIntHistogram: {
+		sampleType: sampleMetricTypeHistogram,
+		appendFunc: func(appender storage.Appender, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error) {
+			s := sample{t: ts, h: tsdbutil.GenerateTestGaugeHistogram(int(value))}
+			ref, err := appender.AppendHistogram(0, lbls, ts, s.h, nil)
+			return ref, s, err
+		},
+		sampleFunc: func(ts, value int64) sample {
+			return sample{t: ts, h: tsdbutil.GenerateTestGaugeHistogram(int(value))}
+		},
+	},
+	gaugeFloatHistogram: {
+		sampleType: sampleMetricTypeHistogram,
+		appendFunc: func(appender storage.Appender, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error) {
+			s := sample{t: ts, fh: tsdbutil.GenerateTestGaugeFloatHistogram(int(value))}
+			ref, err := appender.AppendHistogram(0, lbls, ts, nil, s.fh)
+			return ref, s, err
+		},
+		sampleFunc: func(ts, value int64) sample {
+			return sample{t: ts, fh: tsdbutil.GenerateTestGaugeFloatHistogram(int(value))}
+		},
+	},
 }
 
 // requireEqualSeries checks that the actual series are equal to the expected ones. It ignores the counter reset hints for histograms.

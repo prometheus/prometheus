@@ -156,7 +156,7 @@ func TestReadyAndHealthy(t *testing.T) {
 	cleanupTestResponse(t, resp)
 
 	// Set to ready.
-	webHandler.SetReady(true)
+	webHandler.SetReady(Ready)
 
 	for _, u := range []string{
 		baseURL + "/-/healthy",
@@ -260,7 +260,7 @@ func TestRoutePrefix(t *testing.T) {
 	cleanupTestResponse(t, resp)
 
 	// Set to ready.
-	webHandler.SetReady(true)
+	webHandler.SetReady(Ready)
 
 	resp, err = http.Get(baseURL + opts.RoutePrefix + "/-/healthy")
 	require.NoError(t, err)
@@ -307,7 +307,7 @@ func TestDebugHandler(t *testing.T) {
 			},
 		}
 		handler := New(nil, opts)
-		handler.SetReady(true)
+		handler.SetReady(Ready)
 
 		w := httptest.NewRecorder()
 
@@ -349,7 +349,7 @@ func TestHTTPMetrics(t *testing.T) {
 	counter := handler.metrics.requestCounter
 	require.Equal(t, 1, int(prom_testutil.ToFloat64(counter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusServiceUnavailable)))))
 
-	handler.SetReady(true)
+	handler.SetReady(Ready)
 	for range [2]int{} {
 		code = getReady()
 		require.Equal(t, http.StatusOK, code)
@@ -358,7 +358,7 @@ func TestHTTPMetrics(t *testing.T) {
 	require.Equal(t, 2, int(prom_testutil.ToFloat64(counter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusOK)))))
 	require.Equal(t, 1, int(prom_testutil.ToFloat64(counter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusServiceUnavailable)))))
 
-	handler.SetReady(false)
+	handler.SetReady(NotReady)
 	for range [2]int{} {
 		code = getReady()
 		require.Equal(t, http.StatusServiceUnavailable, code)
@@ -537,7 +537,7 @@ func TestAgentAPIEndPoints(t *testing.T) {
 	opts.Flags = map[string]string{}
 
 	webHandler := New(nil, opts)
-	webHandler.SetReady(true)
+	webHandler.SetReady(Ready)
 	webHandler.config = &config.Config{}
 	webHandler.notifier = &notifier.Manager{}
 	l, err := webHandler.Listeners()
@@ -692,7 +692,7 @@ func TestMultipleListenAddresses(t *testing.T) {
 	time.Sleep(5 * time.Second)
 
 	// Set to ready.
-	webHandler.SetReady(true)
+	webHandler.SetReady(Ready)
 
 	for _, port := range []string{port1, port2} {
 		baseURL := "http://localhost" + port

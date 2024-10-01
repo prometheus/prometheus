@@ -790,7 +790,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 				}
 
 				if !compareNativeHistogram(expected.H.Compact(0), actual.H.Compact(0)) {
-					return fmt.Errorf("expected histogram value at index %v (t=%v) for %s to be %v, but got %v (result has %s)", i, actual.T, ev.metrics[hash], expected.H, actual.H, formatSeriesResult(s))
+					return fmt.Errorf("expected histogram value at index %v (t=%v) for %s to be %v, but got %v (result has %s)", i, actual.T, ev.metrics[hash], expected.H.TestExpression(), actual.H.TestExpression(), formatSeriesResult(s))
 				}
 			}
 		}
@@ -1006,7 +1006,13 @@ func formatSeriesResult(s promql.Series) string {
 		histogramPlural = ""
 	}
 
-	return fmt.Sprintf("%v float point%s %v and %v histogram point%s %v", len(s.Floats), floatPlural, s.Floats, len(s.Histograms), histogramPlural, s.Histograms)
+	histograms := make([]string, 0, len(s.Histograms))
+
+	for _, p := range s.Histograms {
+		histograms = append(histograms, fmt.Sprintf("%v @[%v]", p.H.TestExpression(), p.T))
+	}
+
+	return fmt.Sprintf("%v float point%s %v and %v histogram point%s %v", len(s.Floats), floatPlural, s.Floats, len(s.Histograms), histogramPlural, histograms)
 }
 
 // HistogramTestExpression returns TestExpression() for the given histogram or "" if the histogram is nil.

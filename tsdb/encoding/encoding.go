@@ -20,7 +20,6 @@ import (
 	"hash"
 	"hash/crc32"
 	"math"
-	"unsafe"
 
 	"github.com/dennwc/varint"
 )
@@ -75,8 +74,7 @@ func (e *Encbuf) PutVarint64(x int64) {
 
 // PutUvarintStr writes a string to the buffer prefixed by its varint length (in bytes!).
 func (e *Encbuf) PutUvarintStr(s string) {
-	b := *(*[]byte)(unsafe.Pointer(&s))
-	e.PutUvarint(len(b))
+	e.PutUvarint(len(s))
 	e.PutString(s)
 }
 

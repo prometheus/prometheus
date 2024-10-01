@@ -583,12 +583,42 @@ describe('analyzeCompletion test', () => {
       pos: 5,
       expectedContext: [{ kind: ContextKind.AtModifiers }],
     },
+    {
+      title: 'autocomplete topk params',
+      expr: 'topk()',
+      pos: 5,
+      expectedContext: [{ kind: ContextKind.Number }],
+    },
+    {
+      title: 'autocomplete topk params 2',
+      expr: 'topk(inf,)',
+      pos: 9,
+      expectedContext: [{ kind: ContextKind.MetricName, metricName: '' }, { kind: ContextKind.Function }, { kind: ContextKind.Aggregation }],
+    },
+    {
+      title: 'autocomplete topk params 3',
+      expr: 'topk(inf,r)',
+      pos: 10,
+      expectedContext: [{ kind: ContextKind.MetricName, metricName: 'r' }, { kind: ContextKind.Function }, { kind: ContextKind.Aggregation }],
+    },
+    {
+      title: 'autocomplete topk params 4',
+      expr: 'topk by(instance) ()',
+      pos: 19,
+      expectedContext: [{ kind: ContextKind.Number }],
+    },
+    {
+      title: 'autocomplete topk params 5',
+      expr: 'topk by(instance) (inf,r)',
+      pos: 24,
+      expectedContext: [{ kind: ContextKind.MetricName, metricName: 'r' }, { kind: ContextKind.Function }, { kind: ContextKind.Aggregation }],
+    },
   ];
   testCases.forEach((value) => {
     it(value.title, () => {
       const state = createEditorState(value.expr);
       const node = syntaxTree(state).resolve(value.pos, -1);
-      const result = analyzeCompletion(state, node);
+      const result = analyzeCompletion(state, node, value.pos);
       expect(value.expectedContext).toEqual(result);
     });
   });

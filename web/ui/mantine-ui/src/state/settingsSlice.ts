@@ -4,7 +4,7 @@ import { initializeFromLocalStorage } from "./initializeFromLocalStorage";
 
 interface Settings {
   consolesLink: string | null;
-  lookbackDelta: string,
+  lookbackDelta: string;
   agentMode: boolean;
   ready: boolean;
   pathPrefix: string;
@@ -30,6 +30,32 @@ export const localStorageKeyEnableSyntaxHighlighting =
 export const localStorageKeyEnableLinter = "settings.enableLinter";
 export const localStorageKeyShowAnnotations = "settings.showAnnotations";
 
+// This dynamically/generically determines the pathPrefix by stripping the first known
+// endpoint suffix from the window location path. It works out of the box for both direct
+// hosting and reverse proxy deployments with no additional configurations required.
+const getPathPrefix = (path: string) => {
+  if (path.endsWith("/")) {
+    path = path.slice(0, -1);
+  }
+
+  const pagePaths = [
+    "/query",
+    "/alerts",
+    "/targets",
+    "/rules",
+    "/service-discovery",
+    "/status",
+    "/tsdb-status",
+    "/flags",
+    "/config",
+    "/alertmanager-discovery",
+    "/agent",
+  ];
+
+  const pagePath = pagePaths.find((p) => path.endsWith(p));
+  return path.slice(0, path.length - (pagePath || "").length);
+};
+
 export const initialState: Settings = {
   consolesLink:
     GLOBAL_CONSOLES_LINK === "CONSOLES_LINK_PLACEHOLDER" ||
@@ -44,7 +70,7 @@ export const initialState: Settings = {
     GLOBAL_LOOKBACKDELTA === null
       ? ""
       : GLOBAL_LOOKBACKDELTA,
-  pathPrefix: "",
+  pathPrefix: getPathPrefix(window.location.pathname),
   useLocalTime: initializeFromLocalStorage<boolean>(
     localStorageKeyUseLocalTime,
     false

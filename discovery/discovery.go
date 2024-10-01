@@ -109,7 +109,7 @@ func (c *Configs) SetDirectory(dir string) {
 
 // UnmarshalYAML implements yaml.Unmarshaler.
 func (c *Configs) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	cfgTyp := getConfigType(configsType)
+	cfgTyp := reflect.StructOf(configFields)
 	cfgPtr := reflect.New(cfgTyp)
 	cfgVal := cfgPtr.Elem()
 
@@ -124,7 +124,7 @@ func (c *Configs) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // MarshalYAML implements yaml.Marshaler.
 func (c Configs) MarshalYAML() (interface{}, error) {
-	cfgTyp := getConfigType(configsType)
+	cfgTyp := reflect.StructOf(configFields)
 	cfgPtr := reflect.New(cfgTyp)
 	cfgVal := cfgPtr.Elem()
 

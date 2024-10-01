@@ -1277,17 +1277,17 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
     </>
   ),
-  holt_winters: (
+  double_exponential_smoothing: (
     <>
       <p>
-        <code>holt_winters(v range-vector, sf scalar, tf scalar)</code> produces a smoothed value for time series based on
+        <code>double_exponential_smoothing(v range-vector, sf scalar, tf scalar)</code> produces a smoothed value for time series based on
         the range in <code>v</code>. The lower the smoothing factor <code>sf</code>, the more importance is given to old
         data. The higher the trend factor <code>tf</code>, the more trends in the data is considered. Both <code>sf</code>{' '}
         and <code>tf</code> must be between 0 and 1.
       </p>
 
       <p>
-        <code>holt_winters</code> should only be used with gauges.
+        <code>double_exponential_smoothing</code> should only be used with gauges.
       </p>
     </>
   ),
