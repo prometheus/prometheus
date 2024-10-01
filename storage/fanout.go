@@ -145,10 +145,11 @@ type fanoutAppender struct {
 
 	primary     Appender
 	secondaries []Appender
+	hints       *AppendHints
 }
 
 func (f *fanoutAppender) SetHints(hints *AppendHints) {
-	panic("unimplemented")
+	f.hints = hints
 }
 
 func (f *fanoutAppender) Append(ref SeriesRef, l labels.Labels, t int64, v float64) (SeriesRef, error) {
