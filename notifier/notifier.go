@@ -196,6 +196,7 @@ func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen, alertmanag
 	m.queueCapacity.Set(float64(queueCap))
 
 	if r != nil {
+
 		r.MustRegister(
 			m.latency,
 			m.errors,
@@ -265,6 +266,15 @@ func (n *Manager) ApplyConfig(conf *config.Config) error {
 		}
 
 		amSets[k] = ams
+	}
+
+	// Drop series of the previous alertmanagers.
+	// TODO: This may result in unneeded
+	 resets? (if nothing changes?)
+	for _, ams := range n.alertmanagers {
+		for _, am := range ams.ams {
+			ams.dropMetrics(am.url().String())
+		}
 	}
 
 	n.alertmanagers = amSets
@@ -752,6 +762,18 @@ func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger log.Logger, metri
 	return s, nil
 }
 
+func (s *alertmanagerSet) initializeMetrics(lvs ...string) {
+	// This will initialize the Counters for the AM to 0.
+	s.metrics.sent.WithLabelValues(lvs...)
+	s.metrics.errors.WithLabelValues(lvs...)
+}
+
+func (s *alertmanagerSet) dropMetrics(lvs ...string) {
+	s.metrics.latency.DeleteLabelValues(lvs...)
+	s.metrics.sent.DeleteLabelValues(lvs...)
+	s.metrics.errors.DeleteLabelValues(lvs...)
+}
+
 // sync extracts a deduplicated set of Alertmanager endpoints from a list
 // of target groups definitions.
 func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
@@ -782,11 +804,7 @@ func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 		if _, ok := seen[us]; ok {
 			continue
 		}
-
-		// This will initialize the Counters for the AM to 0.
-		s.metrics.sent.WithLabelValues(us)
-		s.metrics.errors.WithLabelValues(us)
-
+		s.initializeMetrics(us)
 		seen[us] = struct{}{}
 		s.ams = append(s.ams, am)
 	}
@@ -796,9 +814,7 @@ func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 		if _, ok := seen[us]; ok {
 			continue
 		}
-		s.metrics.latency.DeleteLabelValues(us)
-		s.metrics.sent.DeleteLabelValues(us)
-		s.metrics.errors.DeleteLabelValues(us)
+		s.dropMetrics(us)
 		seen[us] = struct{}{}
 	}
 }

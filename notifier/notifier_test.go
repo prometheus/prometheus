@@ -1017,3 +1017,85 @@ func TestStop_DrainingEnabled(t *testing.T) {
 
 	require.Equal(t, int64(2), alertsReceived.Load())
 }
+
+func metricsWithStringAsLabelValue(g prometheus.Gatherer, s string) ([]string, error) {
+	families, err := g.Gather()
+	if err != nil {
+		return nil, err
+	}
+
+	metrics := []string{}
+	for _, f := range families {
+		for _, m := range f.GetMetric() {
+			for _, v := range m.GetLabel() {
+				if v.GetValue() == s {
+					metrics = append(metrics, f.GetName())
+				}
+			}
+		}
+	}
+	return metrics, nil
+}
+
+func TestAlertMetrics(t *testing.T) {
+	targetGroup := func(s string) *targetgroup.Group {
+		return &targetgroup.Group{
+			Targets: []model.LabelSet{
+				{
+					"__address__": model.LabelValue(s),
+				},
+			},
+		}
+	}
+	alertmanagerURL := func(s string) string {
+		return fmt.Sprintf("http://%s/api/v2/alerts", s)
+	}
+
+	reg := prometheus.NewRegistry()
+	n := NewManager(&Options{Registerer: reg}, nil)
+	cfg := &config.Config{}
+	s := `
+alerting:
+  alertmanagers:
+  - static_configs:
+`
+
+	targetURL1 := "alertmanager:9093"
+	require.NoError(t, yaml.UnmarshalStrict([]byte(s), cfg))
+	require.Len(t, cfg.AlertingConfig.AlertmanagerConfigs, 1)
+
+	require.NoError(t, n.ApplyConfig(cfg))
+	tgs := map[string][]*targetgroup.Group{"config-0": {targetGroup(targetURL1)}}
+	n.reload(tgs)
+
+	metrics, err := metricsWithStringAsLabelValue(reg, alertmanagerURL(targetURL1))
+	require.NoError(t, err)
+	// Corresponds to:
+	// metrics.sent
+	// metrics.errors
+	require.Len(t, metrics, 2)
+
+	// The alertmanager targer gets changed.
+	targetURL2 := "alertmanager:9094"
+	tgs = map[string][]*targetgroup.Group{"config-0": {targetGroup(targetURL2)}}
+	n.reload(tgs)
+
+	// targetURL1 related series were dropped.
+	metrics, err = metricsWithStringAsLabelValue(reg, alertmanagerURL(targetURL1))
+	require.NoError(t, err)
+	require.Len(t, metrics, 0)
+
+	s = `
+alerting:
+  alertmanagers:
+`
+	// Drop the config.
+	require.NoError(t, yaml.UnmarshalStrict([]byte(s), cfg))
+	require.Len(t, cfg.AlertingConfig.AlertmanagerConfigs, 0)
+
+	require.NoError(t, n.ApplyConfig(cfg))
+	// targetURL2 related series were dropped.
+	metrics, err = metricsWithStringAsLabelValue(reg, alertmanagerURL(targetURL2))
+	require.NoError(t, err)
+	require.Len(t, metrics, 0)
+}
