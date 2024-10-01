@@ -871,12 +871,6 @@ func (c DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compa
 		for _, chk := range chks {
 			meta.Stats.NumSamples += uint64(chk.Chunk.NumSamples())
 		}
-
-		for _, chk := range chks {
-			if err := chunkPool.Put(chk.Chunk); err != nil {
-				return fmt.Errorf("put chunk: %w", err)
-			}
-		}
 		ref++
 	}
 	if err := set.Err(); err != nil {
