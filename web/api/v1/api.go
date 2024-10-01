@@ -1599,9 +1599,15 @@ type HeadStats struct {
 	MaxTime       int64  `json:"maxTime"`
 }
 
+// TSDBStats has information about the TSDB.
+type TSDBStats struct {
+	MinTime int64 `json:"minTime"`
+}
+
 // TSDBStatus has information of cardinality statistics from postings.
 type TSDBStatus struct {
 	HeadStats                   HeadStats  `json:"headStats"`
+	TSDBStats                   TSDBStats  `json:"tsdbStats"`
 	SeriesCountByMetricName     []TSDBStat `json:"seriesCountByMetricName"`
 	LabelValueCountByLabelName  []TSDBStat `json:"labelValueCountByLabelName"`
 	MemoryInBytesByLabelName    []TSDBStat `json:"memoryInBytesByLabelName"`
@@ -1635,12 +1641,18 @@ func (api *API) serveTSDBStatus(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("error gathering runtime status: %w", err)}, nil, nil}
 	}
 	chunkCount := int64(math.NaN())
+	lowestTimestamp := int64(math.NaN())
 	for _, mF := range metrics {
-		if *mF.Name == "prometheus_tsdb_head_chunks" {
+		switch *mF.Name {
+		case "prometheus_tsdb_head_chunks":
 			m := mF.Metric[0]
 			if m.Gauge != nil {
 				chunkCount = int64(m.Gauge.GetValue())
-				break
+			}
+		case "prometheus_tsdb_lowest_timestamp":
+			m := mF.Metric[0]
+			if m.Gauge != nil {
+				lowestTimestamp = int64(m.Gauge.GetValue())
 			}
 		}
 	}
@@ -1652,6 +1664,7 @@ func (api *API) serveTSDBStatus(r *http.Request) apiFuncResult {
 			MaxTime:       s.MaxTime,
 			NumLabelPairs: s.IndexPostingStats.NumLabelPairs,
 		},
+		TSDBStats:                   TSDBStats{MinTime: lowestTimestamp},
 		SeriesCountByMetricName:     TSDBStatsFromIndexStats(s.IndexPostingStats.CardinalityMetricsStats),
 		LabelValueCountByLabelName:  TSDBStatsFromIndexStats(s.IndexPostingStats.CardinalityLabelStats),
 		MemoryInBytesByLabelName:    TSDBStatsFromIndexStats(s.IndexPostingStats.LabelValueStats),
