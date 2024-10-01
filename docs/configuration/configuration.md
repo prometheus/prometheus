@@ -77,7 +77,7 @@ global:
 
   # The labels to add to any time series or alerts when communicating with
   # external systems (federation, remote storage, Alertmanager). 
-  # Note that external_labels are always enabled in release-3.0.
+  # Example: exported_instance:127.0.0.1
   external_labels:
     [ <labelname>: <labelvalue> ... ]
 
