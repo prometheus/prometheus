@@ -722,7 +722,7 @@ scrape_configs:
 	require.ElementsMatch(t, []string{"job1", "job3"}, scrapeManager.ScrapePools())
 }
 
-func setupScrapeManager(t *testing.T, honorTimestamps bool, enableCTZeroIngestion bool) (*collectResultAppender, *Manager) {
+func setupScrapeManager(t *testing.T, honorTimestamps, enableCTZeroIngestion bool) (*collectResultAppender, *Manager) {
 	app := &collectResultAppender{}
 	scrapeManager, err := NewManager(
 		&Options{
@@ -837,7 +837,7 @@ func TestManagerCTZeroIngestion(t *testing.T) {
 	}
 }
 
-func prepareTestEncodedCounter(t *testing.T, format config.ScrapeProtocol, mName string, v float64, ts time.Time, ct time.Time) (encoded []byte) {
+func prepareTestEncodedCounter(t *testing.T, format config.ScrapeProtocol, mName string, v float64, ts, ct time.Time) (encoded []byte) {
 	t.Helper()
 
 	counter := &dto.Counter{Value: proto.Float64(v)}
