@@ -17,7 +17,15 @@ Notable deviations are that the record fragment is encoded as:
 └───────────┴──────────┴────────────┴──────────────┘
 ```
 
-The type flag has the following states:
+The initial type byte is made up of three components: a 3-bit reserved field, a 1-bit zstd compression flag, a 1-bit snappy compression flag, and a 3-bit type flag. 
+
+```
+┌─────────────────┬──────────────────┬────────────────────┬──────────────────┐
+│ reserved <3bit> │ zstd_flag <1bit> │ snappy_flag <1bit> │ type_flag <3bit> │
+└─────────────────┴──────────────────┴────────────────────┴──────────────────┘
+```
+
+The lowest 3 bits within this flag represent the record type as follows:
 
 * `0`: rest of page will be empty
 * `1`: a full record encoded in a single fragment
