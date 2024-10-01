@@ -85,6 +85,10 @@ func Load(s string, logger log.Logger) (*Config, error) {
 		return nil, err
 	}
 
+	if cfg.GlobalConfig.ExternalLabels.Len() == 0 {
+		return cfg, nil
+	}
+
 	b := labels.NewScratchBuilder(0)
 	cfg.GlobalConfig.ExternalLabels.Range(func(v labels.Label) {
 		newV := os.Expand(v.Value, func(s string) string {
