@@ -994,7 +994,7 @@ go_gc_duration_seconds_created`)
 	require.False(t, copyParser.skipCTSeries)
 }
 
-func BenchmarkOMParse(b *testing.B) {
+func BenchmarkOMParseCreatedTimestamp(b *testing.B) {
 	for parserName, parser := range map[string]func([]byte, *labels.SymbolTable) Parser{
 		"openmetrics": func(b []byte, st *labels.SymbolTable) Parser {
 			return NewOpenMetricsParser(b, st)
