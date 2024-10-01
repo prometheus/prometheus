@@ -576,6 +576,56 @@ scrape_configs:
 	}
 }
 
+func TestManagerApplyConfigAndOptions(t *testing.T) {
+	cfgText := `
+scrape_configs:
+ - job_name: job1
+   static_configs:
+   - targets: ["foo:9090"]
+`
+	var (
+		cfg = loadConfiguration(t, cfgText)
+	)
+
+	opts := Options{}
+	scrapeManager := NewManager(&opts, nil, nil)
+	ts := make(chan map[string][]*targetgroup.Group)
+
+	go scrapeManager.Run(ts)
+	defer scrapeManager.Stop()
+
+	tgSent := make(map[string][]*targetgroup.Group)
+	for x := 0; x < 10; x++ {
+		tgSent[fmt.Sprintf("job%v", x)] = []*targetgroup.Group{
+			{
+				Source: strconv.Itoa(x),
+			},
+		}
+
+		select {
+		case ts <- tgSent:
+		case <-time.After(10 * time.Millisecond):
+			t.Error("Scrape manager's channel remained blocked after the set threshold.")
+		}
+	}
+
+	// Apply old scrape configs but new manager's options
+	scrapeManager.ApplyConfigAndOptions(
+		cfg,
+		&Options{
+			ExtraMetrics:          true,
+			NoDefaultPort:         true,
+			PassMetadataInContext: true,
+			EnableMetadataStorage: true,
+		},
+	)
+
+	require.True(t, scrapeManager.opts.ExtraMetrics)
+	require.True(t, scrapeManager.opts.NoDefaultPort)
+	require.True(t, scrapeManager.opts.PassMetadataInContext)
+	require.True(t, scrapeManager.opts.EnableMetadataStorage)
+}
+
 func TestManagerTargetsUpdates(t *testing.T) {
 	opts := Options{}
 	testRegistry := prometheus.NewRegistry()
