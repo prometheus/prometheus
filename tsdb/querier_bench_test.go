@@ -75,7 +75,7 @@ func BenchmarkQuerier(b *testing.B) {
 
 	b.Run("Block", func(b *testing.B) {
 		blockdir := createBlockFromHead(b, b.TempDir(), h)
-		block, err := OpenBlock(nil, blockdir, nil)
+		block, err := OpenBlock(nil, blockdir, nil, nil)
 		require.NoError(b, err)
 		defer func() {
 			require.NoError(b, block.Close())
@@ -315,7 +315,7 @@ func BenchmarkQuerierSelect(b *testing.B) {
 		tmpdir := b.TempDir()
 
 		blockdir := createBlockFromHead(b, tmpdir, h)
-		block, err := OpenBlock(nil, blockdir, nil)
+		block, err := OpenBlock(nil, blockdir, nil, nil)
 		require.NoError(b, err)
 		defer func() {
 			require.NoError(b, block.Close())
