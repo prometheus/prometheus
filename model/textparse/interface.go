@@ -91,10 +91,9 @@ func New(b []byte, contentType string, parseClassicHistograms, skipOMCTSeries bo
 	}
 	switch mediaType {
 	case "application/openmetrics-text":
-		opts := func(o *openMetricsParserOptions) {
+		return NewOpenMetricsParser(b, st, func(o *openMetricsParserOptions) {
 			o.SkipCTSeries = skipOMCTSeries
-		}
-		return NewOpenMetricsParser(b, st, opts), nil
+		}), nil
 	case "application/vnd.google.protobuf":
 		return NewProtobufParser(b, parseClassicHistograms, st), nil
 	default:
