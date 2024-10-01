@@ -16,7 +16,7 @@ Maintainers for specific parts of the codebase:
 George Krajcsovits (<gyorgy.krajcsovits@grafana.com> / @krajorama)
 * `storage`
   * `remote`: Callum Styan (<callumstyan@gmail.com> / @cstyan), Bartłomiej Płotka (<bwplotka@gmail.com> / @bwplotka), Tom Wilkie (tom.wilkie@gmail.com / @tomwilkie), Nicolás Pazos ( <npazosmendez@gmail.com> / @npazosmendez), Alex Greenbank ( <alex.greenbank@grafana.com> / @alexgreenbank)
-    * `otlptranslator`: Arve Knudsen (<arve.knudsen@gmail.com> / @aknuds1), Jesús Vázquez (<jesus.vazquez@grafana.com> / @jesusvazquez)
+    * `otlptranslator`: Arthur Silva Sens (<arthursens2005@gmail.com> / @ArthurSens), Arve Knudsen (<arve.knudsen@gmail.com> / @aknuds1), Jesús Vázquez (<jesus.vazquez@grafana.com> / @jesusvazquez)
 * `tsdb`: Ganesh Vernekar (<ganesh@grafana.com> / @codesome), Bartłomiej Płotka (<bwplotka@gmail.com> / @bwplotka), Jesús Vázquez (<jesus.vazquez@grafana.com> / @jesusvazquez)
 * `web`
   * `ui`: Julius Volz (<julius.volz@gmail.com> / @juliusv)
