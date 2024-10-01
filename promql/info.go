@@ -58,8 +58,7 @@ func (ev *evaluator) evalInfo(ctx context.Context, args parser.Expressions) (par
 	ignoreSeries := map[int]struct{}{}
 loop:
 	for i, s := range mat {
-		lblMap := s.Metric.Map()
-		name := lblMap[labels.MetricName]
+		name := s.Metric.Get(labels.MetricName)
 		for _, m := range infoNameMatchers {
 			if m.Matches(name) {
 				ignoreSeries[i] = struct{}{}
