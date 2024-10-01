@@ -2081,6 +2081,17 @@ func (s sample) Type() chunkenc.ValueType {
 	}
 }
 
+func (s sample) Copy() chunks.Sample {
+	c := sample{t: s.t, f: s.f}
+	if s.h != nil {
+		c.h = s.h.Copy()
+	}
+	if s.fh != nil {
+		c.fh = s.fh.Copy()
+	}
+	return c
+}
+
 // memSeries is the in-memory representation of a series. None of its methods
 // are goroutine safe and it is the caller's responsibility to lock it.
 type memSeries struct {
