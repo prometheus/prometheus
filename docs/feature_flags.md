@@ -71,15 +71,6 @@ When enabled, the GOMEMLIMIT variable is automatically set to match the Linux co
 
 There is also an additional tuning flag, `--auto-gomemlimit.ratio`, which allows controlling how much of the memory is used for Prometheus. The remainder is reserved for memory outside the process. For example, kernel page cache. Page cache is important for Prometheus TSDB query performance. The default is `0.9`, which means 90% of the memory limit will be used for Prometheus.
 
-## No default scrape port
-
-`--enable-feature=no-default-scrape-port`
-
-When enabled, the default ports for HTTP (`:80`) or HTTPS (`:443`) will _not_ be added to
-the address used to scrape a target (the value of the `__address_` label), contrary to the default behavior.
-In addition, if a default HTTP or HTTPS port has already been added either in a static configuration or
-by a service discovery mechanism and the respective scheme is specified (`http` or `https`), that port will be removed.
-
 ## Native Histograms
 
 `--enable-feature=native-histograms`
@@ -155,14 +146,6 @@ This should **only** be applied to metrics that currently produce such labels.
         target_label: le
         regex: (\d+)\.0+;.*_bucket
 ```
-
-## OTLP Receiver
-
-`--enable-feature=otlp-write-receiver`
-
-The OTLP receiver allows Prometheus to accept [OpenTelemetry](https://opentelemetry.io/) metrics writes.
-Prometheus is best used as a Pull based system, and staleness, `up` metric, and other Pull enabled features
-won't work when you push OTLP metrics.
 
 ## Experimental PromQL functions
 

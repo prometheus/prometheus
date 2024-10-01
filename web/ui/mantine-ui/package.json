@@ -25,6 +25,7 @@
     "@mantine/dates": "^7.11.2",
     "@mantine/hooks": "^7.11.2",
     "@mantine/notifications": "^7.11.2",
+    "@microsoft/fetch-event-source": "^2.0.1",
     "@nexucis/fuzzy": "^0.5.1",
     "@nexucis/kvsearch": "^0.9.1",
     "@prometheus-io/codemirror-promql": "0.300.0-beta.0",

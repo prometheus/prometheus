@@ -42,8 +42,10 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	_ "github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/runutil"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -55,12 +57,11 @@ func init() {
 
 func TestPopulateLabels(t *testing.T) {
 	cases := []struct {
-		in            labels.Labels
-		cfg           *config.ScrapeConfig
-		noDefaultPort bool
-		res           labels.Labels
-		resOrig       labels.Labels
-		err           string
+		in      labels.Labels
+		cfg     *config.ScrapeConfig
+		res     labels.Labels
+		resOrig labels.Labels
+		err     string
 	}{
 		// Regular population of scrape config options.
 		{
@@ -114,8 +115,8 @@ func TestPopulateLabels(t *testing.T) {
 				ScrapeTimeout:  model.Duration(time.Second),
 			},
 			res: labels.FromMap(map[string]string{
-				model.AddressLabel:        "1.2.3.4:80",
-				model.InstanceLabel:       "1.2.3.4:80",
+				model.AddressLabel:        "1.2.3.4",
+				model.InstanceLabel:       "1.2.3.4",
 				model.SchemeLabel:         "http",
 				model.MetricsPathLabel:    "/custom",
 				model.JobLabel:            "custom-job",
@@ -145,7 +146,7 @@ func TestPopulateLabels(t *testing.T) {
 				ScrapeTimeout:  model.Duration(time.Second),
 			},
 			res: labels.FromMap(map[string]string{
-				model.AddressLabel:        "[::1]:443",
+				model.AddressLabel:        "[::1]",
 				model.InstanceLabel:       "custom-instance",
 				model.SchemeLabel:         "https",
 				model.MetricsPathLabel:    "/metrics",
@@ -368,7 +369,6 @@ func TestPopulateLabels(t *testing.T) {
 				ScrapeInterval: model.Duration(time.Second),
 				ScrapeTimeout:  model.Duration(time.Second),
 			},
-			noDefaultPort: true,
 			res: labels.FromMap(map[string]string{
 				model.AddressLabel:        "1.2.3.4",
 				model.InstanceLabel:       "1.2.3.4",
@@ -387,7 +387,7 @@ func TestPopulateLabels(t *testing.T) {
 				model.ScrapeTimeoutLabel:  "1s",
 			}),
 		},
-		// Remove default port (http).
+		// verify that the default port is not removed (http).
 		{
 			in: labels.FromMap(map[string]string{
 				model.AddressLabel: "1.2.3.4:80",
@@ -399,9 +399,8 @@ func TestPopulateLabels(t *testing.T) {
 				ScrapeInterval: model.Duration(time.Second),
 				ScrapeTimeout:  model.Duration(time.Second),
 			},
-			noDefaultPort: true,
 			res: labels.FromMap(map[string]string{
-				model.AddressLabel:        "1.2.3.4",
+				model.AddressLabel:        "1.2.3.4:80",
 				model.InstanceLabel:       "1.2.3.4:80",
 				model.SchemeLabel:         "http",
 				model.MetricsPathLabel:    "/metrics",
@@ -418,7 +417,7 @@ func TestPopulateLabels(t *testing.T) {
 				model.ScrapeTimeoutLabel:  "1s",
 			}),
 		},
-		// Remove default port (https).
+		// verify that the default port is not removed (https).
 		{
 			in: labels.FromMap(map[string]string{
 				model.AddressLabel: "1.2.3.4:443",
@@ -430,9 +429,8 @@ func TestPopulateLabels(t *testing.T) {
 				ScrapeInterval: model.Duration(time.Second),
 				ScrapeTimeout:  model.Duration(time.Second),
 			},
-			noDefaultPort: true,
 			res: labels.FromMap(map[string]string{
-				model.AddressLabel:        "1.2.3.4",
+				model.AddressLabel:        "1.2.3.4:443",
 				model.InstanceLabel:       "1.2.3.4:443",
 				model.SchemeLabel:         "https",
 				model.MetricsPathLabel:    "/metrics",
@@ -453,7 +451,7 @@ func TestPopulateLabels(t *testing.T) {
 	for _, c := range cases {
 		in := c.in.Copy()
 
-		res, orig, err := PopulateLabels(labels.NewBuilder(c.in), c.cfg, c.noDefaultPort)
+		res, orig, err := PopulateLabels(labels.NewBuilder(c.in), c.cfg)
 		if c.err != "" {
 			require.EqualError(t, err, c.err)
 		} else {
@@ -839,6 +837,7 @@ func TestManagerCTZeroIngestion(t *testing.T) {
 	}
 }
 
+
 func prepareTestEncodedCounter(t *testing.T, format config.ScrapeProtocol, mName string, v float64, ts time.Time, ct time.Time) (encoded []byte) {
 	t.Helper()
 
@@ -911,6 +910,178 @@ func findSamplesForMetric(floats []floatSample, metricName string) (ret []floatS
 		}
 	}
 	return ret
+}
+
+// generateTestHistogram generates the same thing as tsdbutil.GenerateTestHistogram,
+// but in the form of dto.Histogram.
+func generateTestHistogram(i int) *dto.Histogram {
+	helper := tsdbutil.GenerateTestHistogram(i)
+	h := &dto.Histogram{}
+	h.SampleCount = proto.Uint64(helper.Count)
+	h.SampleSum = proto.Float64(helper.Sum)
+	h.Schema = proto.Int32(helper.Schema)
+	h.ZeroThreshold = proto.Float64(helper.ZeroThreshold)
+	h.ZeroCount = proto.Uint64(helper.ZeroCount)
+	h.PositiveSpan = make([]*dto.BucketSpan, len(helper.PositiveSpans))
+	for i, span := range helper.PositiveSpans {
+		h.PositiveSpan[i] = &dto.BucketSpan{
+			Offset: proto.Int32(span.Offset),
+			Length: proto.Uint32(span.Length),
+		}
+	}
+	h.PositiveDelta = helper.PositiveBuckets
+	h.NegativeSpan = make([]*dto.BucketSpan, len(helper.NegativeSpans))
+	for i, span := range helper.NegativeSpans {
+		h.NegativeSpan[i] = &dto.BucketSpan{
+			Offset: proto.Int32(span.Offset),
+			Length: proto.Uint32(span.Length),
+		}
+	}
+	h.NegativeDelta = helper.NegativeBuckets
+	return h
+}
+
+func TestManagerCTZeroIngestionHistogram(t *testing.T) {
+	const mName = "expected_histogram"
+
+	for _, tc := range []struct {
+		name                  string
+		inputHistSample       *dto.Histogram
+		enableCTZeroIngestion bool
+	}{
+		{
+			name: "disabled with CT on histogram",
+			inputHistSample: func() *dto.Histogram {
+				h := generateTestHistogram(0)
+				h.CreatedTimestamp = timestamppb.Now()
+				return h
+			}(),
+			enableCTZeroIngestion: false,
+		},
+		{
+			name: "enabled with CT on histogram",
+			inputHistSample: func() *dto.Histogram {
+				h := generateTestHistogram(0)
+				h.CreatedTimestamp = timestamppb.Now()
+				return h
+			}(),
+			enableCTZeroIngestion: true,
+		},
+		{
+			name: "enabled without CT on histogram",
+			inputHistSample: func() *dto.Histogram {
+				h := generateTestHistogram(0)
+				return h
+			}(),
+			enableCTZeroIngestion: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app := &collectResultAppender{}
+			scrapeManager, err := NewManager(
+				&Options{
+					EnableCreatedTimestampZeroIngestion: tc.enableCTZeroIngestion,
+					EnableNativeHistogramsIngestion:     true,
+					skipOffsetting:                      true,
+				},
+				log.NewLogfmtLogger(os.Stderr),
+				nil,
+				&collectResultAppendable{app},
+				prometheus.NewRegistry(),
+			)
+			require.NoError(t, err)
+
+			require.NoError(t, scrapeManager.ApplyConfig(&config.Config{
+				GlobalConfig: config.GlobalConfig{
+					// Disable regular scrapes.
+					ScrapeInterval: model.Duration(9999 * time.Minute),
+					ScrapeTimeout:  model.Duration(5 * time.Second),
+					// Ensure the proto is chosen. We need proto as it's the only protocol
+					// with the CT parsing support.
+					ScrapeProtocols: []config.ScrapeProtocol{config.PrometheusProto},
+				},
+				ScrapeConfigs: []*config.ScrapeConfig{{JobName: "test"}},
+			}))
+
+			once := sync.Once{}
+			// Start fake HTTP target to that allow one scrape only.
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					fail := true // TODO(bwplotka): Kill or use?
+					once.Do(func() {
+						fail = false
+						w.Header().Set("Content-Type", `application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited`)
+
+						ctrType := dto.MetricType_HISTOGRAM
+						w.Write(protoMarshalDelimited(t, &dto.MetricFamily{
+							Name:   proto.String(mName),
+							Type:   &ctrType,
+							Metric: []*dto.Metric{{Histogram: tc.inputHistSample}},
+						}))
+					})
+
+					if fail {
+						w.WriteHeader(http.StatusInternalServerError)
+					}
+				}),
+			)
+			defer server.Close()
+
+			serverURL, err := url.Parse(server.URL)
+			require.NoError(t, err)
+
+			// Add fake target directly into tsets + reload. Normally users would use
+			// Manager.Run and wait for minimum 5s refresh interval.
+			scrapeManager.updateTsets(map[string][]*targetgroup.Group{
+				"test": {{
+					Targets: []model.LabelSet{{
+						model.SchemeLabel:  model.LabelValue(serverURL.Scheme),
+						model.AddressLabel: model.LabelValue(serverURL.Host),
+					}},
+				}},
+			})
+			scrapeManager.reload()
+
+			var got []histogramSample
+
+			// Wait for one scrape.
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+			defer cancel()
+			require.NoError(t, runutil.Retry(100*time.Millisecond, ctx.Done(), func() error {
+				app.mtx.Lock()
+				defer app.mtx.Unlock()
+
+				// Check if scrape happened and grab the relevant histograms, they have to be there - or it's a bug
+				// and it's not worth waiting.
+				for _, h := range app.resultHistograms {
+					if h.metric.Get(model.MetricNameLabel) == mName {
+						got = append(got, h)
+					}
+				}
+				if len(app.resultHistograms) > 0 {
+					return nil
+				}
+				return fmt.Errorf("expected some histogram samples, got none")
+			}), "after 1 minute")
+			scrapeManager.Stop()
+
+			// Check for zero samples, assuming we only injected always one histogram sample.
+			// Did it contain CT to inject? If yes, was CT zero enabled?
+			if tc.inputHistSample.CreatedTimestamp.IsValid() && tc.enableCTZeroIngestion {
+				require.Len(t, got, 2)
+				// Zero sample.
+				require.Equal(t, histogram.Histogram{}, *got[0].h)
+				// Quick soft check to make sure it's the same sample or at least not zero.
+				require.Equal(t, tc.inputHistSample.GetSampleSum(), got[1].h.Sum)
+				return
+			}
+
+			// Expect only one, valid sample.
+			require.Len(t, got, 1)
+			// Quick soft check to make sure it's the same sample or at least not zero.
+			require.Equal(t, tc.inputHistSample.GetSampleSum(), got[0].h.Sum)
+		})
+	}
 }
 
 func TestUnregisterMetrics(t *testing.T) {

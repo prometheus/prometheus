@@ -22,7 +22,6 @@ import (
 	"math/bits"
 	"net"
 	"net/http"
-	_ "net/http/pprof" // Comment this line to disable pprof endpoint.
 	"net/url"
 	"os"
 	"os/signal"
@@ -79,6 +78,7 @@ import (
 	"github.com/prometheus/prometheus/util/logging"
 	prom_runtime "github.com/prometheus/prometheus/util/runtime"
 	"github.com/prometheus/prometheus/web"
+	"github.com/prometheus/prometheus/web/api"
 )
 
 var (
@@ -135,24 +135,25 @@ func agentOnlyFlag(app *kingpin.Application, name, help string) *kingpin.FlagCla
 type flagConfig struct {
 	configFile string
 
-	agentStoragePath    string
-	serverStoragePath   string
-	notifier            notifier.Options
-	forGracePeriod      model.Duration
-	outageTolerance     model.Duration
-	resendDelay         model.Duration
-	maxConcurrentEvals  int64
-	web                 web.Options
-	scrape              scrape.Options
-	tsdb                tsdbOptions
-	agent               agentOptions
-	lookbackDelta       model.Duration
-	webTimeout          model.Duration
-	queryTimeout        model.Duration
-	queryConcurrency    int
-	queryMaxSamples     int
-	RemoteFlushDeadline model.Duration
-	nameEscapingScheme  string
+	agentStoragePath            string
+	serverStoragePath           string
+	notifier                    notifier.Options
+	forGracePeriod              model.Duration
+	outageTolerance             model.Duration
+	resendDelay                 model.Duration
+	maxConcurrentEvals          int64
+	web                         web.Options
+	scrape                      scrape.Options
+	tsdb                        tsdbOptions
+	agent                       agentOptions
+	lookbackDelta               model.Duration
+	webTimeout                  model.Duration
+	queryTimeout                model.Duration
+	queryConcurrency            int
+	queryMaxSamples             int
+	RemoteFlushDeadline         model.Duration
+	nameEscapingScheme          string
+	maxNotificationsSubscribers int
 
 	enableAutoReload   bool
 	autoReloadInterval model.Duration
@@ -181,9 +182,6 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 		opts := strings.Split(f, ",")
 		for _, o := range opts {
 			switch o {
-			case "otlp-write-receiver":
-				c.web.EnableOTLPWriteReceiver = true
-				level.Info(logger).Log("msg", "Experimental OTLP write receiver enabled")
 			case "expand-external-labels":
 				c.enableExpandExternalLabels = true
 				level.Info(logger).Log("msg", "Experimental expand-external-labels enabled")
@@ -217,9 +215,6 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "concurrent-rule-eval":
 				c.enableConcurrentRuleEval = true
 				level.Info(logger).Log("msg", "Experimental concurrent rule evaluation enabled.")
-			case "no-default-scrape-port":
-				c.scrape.NoDefaultPort = true
-				level.Info(logger).Log("msg", "No default port will be appended to scrape targets' addresses.")
 			case "promql-experimental-functions":
 				parser.EnableExperimentalFunctions = true
 				level.Info(logger).Log("msg", "Experimental PromQL functions enabled.")
@@ -318,6 +313,9 @@ func main() {
 	a.Flag("web.max-connections", "Maximum number of simultaneous connections across all listeners.").
 		Default("512").IntVar(&cfg.web.MaxConnections)
 
+	a.Flag("web.max-notifications-subscribers", "Limits the maximum number of subscribers that can concurrently receive live notifications. If the limit is reached, new subscription requests will be denied until existing connections close.").
+		Default("16").IntVar(&cfg.maxNotificationsSubscribers)
+
 	a.Flag("web.external-url",
 		"The URL under which Prometheus is externally reachable (for example, if Prometheus is served via a reverse proxy). Used for generating relative and absolute links back to Prometheus itself. If the URL has a path portion, it will be used to prefix all HTTP endpoints served by Prometheus. If omitted, relevant URL components will be derived automatically.").
 		PlaceHolder("<URL>").StringVar(&cfg.prometheusURL)
@@ -343,6 +341,9 @@ func main() {
 	supportedRemoteWriteProtoMsgs := config.RemoteWriteProtoMsgs{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2}
 	a.Flag("web.remote-write-receiver.accepted-protobuf-messages", fmt.Sprintf("List of the remote write protobuf messages to accept when receiving the remote writes. Supported values: %v", supportedRemoteWriteProtoMsgs.String())).
 		Default(supportedRemoteWriteProtoMsgs.Strings()...).SetValue(rwProtoMsgFlagValue(&cfg.web.AcceptRemoteWriteProtoMsgs))
+
+	a.Flag("web.enable-otlp-receiver", "Enable API endpoint accepting OTLP write requests.").
+		Default("false").BoolVar(&cfg.web.EnableOTLPWriteReceiver)
 
 	a.Flag("web.console.templates", "Path to the console template directory, available at /consoles.").
 		Default("consoles").StringVar(&cfg.web.ConsoleTemplatesPath)
@@ -474,7 +475,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: auto-gomemlimit, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, no-default-scrape-port, native-histograms, otlp-write-receiver, created-timestamp-zero-ingestion, concurrent-rule-eval, delayed-compaction, old-ui. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: auto-gomemlimit, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, native-histograms, created-timestamp-zero-ingestion, concurrent-rule-eval, delayed-compaction, old-ui. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
@@ -498,6 +499,10 @@ func main() {
 	}
 
 	logger := promlog.New(&cfg.promlogConfig)
+
+	notifs := api.NewNotifications(cfg.maxNotificationsSubscribers, prometheus.DefaultRegisterer)
+	cfg.web.NotificationsSub = notifs.Sub
+	cfg.web.NotificationsGetter = notifs.Get
 
 	if err := cfg.setFeatureListOptions(logger); err != nil {
 		fmt.Fprintln(os.Stderr, fmt.Errorf("Error parsing feature list: %w", err))
@@ -1082,6 +1087,14 @@ func main() {
 			}
 		}
 
+		callback := func(success bool) {
+			if success {
+				notifs.DeleteNotification(api.ConfigurationUnsuccessful)
+				return
+			}
+			notifs.AddNotification(api.ConfigurationUnsuccessful)
+		}
+
 		g.Add(
 			func() error {
 				<-reloadReady.C
@@ -1089,7 +1102,7 @@ func main() {
 				for {
 					select {
 					case <-hup:
-						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
 							level.Error(logger).Log("msg", "Error reloading config", "err", err)
 						} else if cfg.enableAutoReload {
 							if currentChecksum, err := config.GenerateChecksum(cfg.configFile); err == nil {
@@ -1099,7 +1112,7 @@ func main() {
 							}
 						}
 					case rc := <-webHandler.Reload():
-						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
 							level.Error(logger).Log("msg", "Error reloading config", "err", err)
 							rc <- err
 						} else {
@@ -1119,14 +1132,12 @@ func main() {
 						currentChecksum, err := config.GenerateChecksum(cfg.configFile)
 						if err != nil {
 							level.Error(logger).Log("msg", "Failed to generate checksum during configuration reload", "err", err)
-							continue
-						}
-						if currentChecksum == checksum {
+						} else if currentChecksum == checksum {
 							continue
 						}
 						level.Info(logger).Log("msg", "Configuration file change detected, reloading the configuration.")
 
-						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
 							level.Error(logger).Log("msg", "Error reloading config", "err", err)
 						} else {
 							checksum = currentChecksum
@@ -1156,7 +1167,7 @@ func main() {
 					return nil
 				}
 
-				if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, reloaders...); err != nil {
+				if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, func(bool) {}, reloaders...); err != nil {
 					return fmt.Errorf("error loading config from %q: %w", cfg.configFile, err)
 				}
 
@@ -1382,7 +1393,7 @@ type reloader struct {
 	reloader func(*config.Config) error
 }
 
-func reloadConfig(filename string, expandExternalLabels, enableExemplarStorage bool, logger log.Logger, noStepSuqueryInterval *safePromQLNoStepSubqueryInterval, rls ...reloader) (err error) {
+func reloadConfig(filename string, expandExternalLabels, enableExemplarStorage bool, logger log.Logger, noStepSuqueryInterval *safePromQLNoStepSubqueryInterval, callback func(bool), rls ...reloader) (err error) {
 	start := time.Now()
 	timings := []interface{}{}
 	level.Info(logger).Log("msg", "Loading configuration file", "filename", filename)
@@ -1391,8 +1402,10 @@ func reloadConfig(filename string, expandExternalLabels, enableExemplarStorage b
 		if err == nil {
 			configSuccess.Set(1)
 			configSuccessTime.SetToCurrentTime()
+			callback(true)
 		} else {
 			configSuccess.Set(0)
+			callback(false)
 		}
 	}()
 
@@ -1596,6 +1609,10 @@ func (n notReadyAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels,
 }
 
 func (n notReadyAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	return 0, tsdb.ErrNotReady
+}
+
+func (n notReadyAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	return 0, tsdb.ErrNotReady
 }
 

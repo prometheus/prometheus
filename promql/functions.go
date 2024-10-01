@@ -1514,11 +1514,6 @@ func (ev *evaluator) evalLabelReplace(ctx context.Context, args parser.Expressio
 	return matrix, ws
 }
 
-// === label_replace(Vector parser.ValueTypeVector, dst_label, replacement, src_labelname, regex parser.ValueTypeString) (Vector, Annotations) ===
-func funcLabelReplace(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	panic("funcLabelReplace wrong implementation called")
-}
-
 // === Vector(s Scalar) (Vector, Annotations) ===
 func funcVector(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return append(enh.Out,
@@ -1568,11 +1563,6 @@ func (ev *evaluator) evalLabelJoin(ctx context.Context, args parser.Expressions)
 	}
 
 	return matrix, ws
-}
-
-// === label_join(vector model.ValVector, dest_labelname, separator, src_labelname...) (Vector, Annotations) ===
-func funcLabelJoin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	panic("funcLabelReplace wrong implementation called")
 }
 
 // Common code for date related functions.
@@ -1696,8 +1686,8 @@ var FunctionCalls = map[string]FunctionCall{
 	"idelta":                       funcIdelta,
 	"increase":                     funcIncrease,
 	"irate":                        funcIrate,
-	"label_replace":                funcLabelReplace,
-	"label_join":                   funcLabelJoin,
+	"label_replace":                nil, // evalLabelReplace not called via this map.
+	"label_join":                   nil, // evalLabelJoin not called via this map.
 	"ln":                           funcLn,
 	"log10":                        funcLog10,
 	"log2":                         funcLog2,

@@ -70,5 +70,5 @@ func TestSDCheckResult(t *testing.T) {
 		},
 	}
 
-	testutil.RequireEqual(t, expectedSDCheckResult, getSDCheckResult(targetGroups, scrapeConfig, true))
+	testutil.RequireEqual(t, expectedSDCheckResult, getSDCheckResult(targetGroups, scrapeConfig))
 }
