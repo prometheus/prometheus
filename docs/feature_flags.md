@@ -38,16 +38,6 @@ When enabled, for each instance scrape, Prometheus stores a sample in the follow
   to find out how close they are to reaching the limit with `scrape_samples_post_metric_relabeling / scrape_sample_limit`. Note that `scrape_sample_limit` can be zero if there is no limit configured, which means that the query above can return `+Inf` for targets with no limit (as we divide by zero). If you want to query only for targets that do have a sample limit use this query: `scrape_samples_post_metric_relabeling / (scrape_sample_limit > 0)`.
 - `scrape_body_size_bytes`. The uncompressed size of the most recent scrape response, if successful. Scrapes failing because `body_size_limit` is exceeded report `-1`, other scrape failures report `0`.
 
-## Prometheus agent
-
-`--enable-feature=agent`
-
-When enabled, Prometheus runs in agent mode. The agent mode is limited to
-discovery, scrape and remote write.
-
-This is useful when you do not need to query the Prometheus data locally, but
-only from a central [remote endpoint](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage).
-
 ## Per-step stats
 
 `--enable-feature=promql-per-step-stats`
@@ -71,15 +61,6 @@ When enabled, GOMAXPROCS variable is automatically set to match Linux container 
 When enabled, the GOMEMLIMIT variable is automatically set to match the Linux container memory limit. If there is no container limit, or the process is running outside of containers, the system memory total is used.
 
 There is also an additional tuning flag, `--auto-gomemlimit.ratio`, which allows controlling how much of the memory is used for Prometheus. The remainder is reserved for memory outside the process. For example, kernel page cache. Page cache is important for Prometheus TSDB query performance. The default is `0.9`, which means 90% of the memory limit will be used for Prometheus.
-
-## No default scrape port
-
-`--enable-feature=no-default-scrape-port`
-
-When enabled, the default ports for HTTP (`:80`) or HTTPS (`:443`) will _not_ be added to
-the address used to scrape a target (the value of the `__address_` label), contrary to the default behavior.
-In addition, if a default HTTP or HTTPS port has already been added either in a static configuration or
-by a service discovery mechanism and the respective scheme is specified (`http` or `https`), that port will be removed.
 
 ## Native Histograms
 
@@ -156,14 +137,6 @@ This should **only** be applied to metrics that currently produce such labels.
         target_label: le
         regex: (\d+)\.0+;.*_bucket
 ```
-
-## OTLP Receiver
-
-`--enable-feature=otlp-write-receiver`
-
-The OTLP receiver allows Prometheus to accept [OpenTelemetry](https://opentelemetry.io/) metrics writes.
-Prometheus is best used as a Pull based system, and staleness, `up` metric, and other Pull enabled features
-won't work when you push OTLP metrics.
 
 ## Experimental PromQL functions
 

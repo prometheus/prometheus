@@ -30,6 +30,7 @@ import {
 } from "../../state/serviceDiscoveryPageSlice";
 import { StateMultiSelect } from "../../components/StateMultiSelect";
 import badgeClasses from "../../Badge.module.css";
+import { expandIconStyle, inputIconStyle } from "../../styles";
 
 export const targetPoolDisplayLimit = 20;
 
@@ -98,7 +99,7 @@ export default function ServiceDiscoveryPage() {
         />
         <TextInput
           flex={1}
-          leftSection={<IconSearch size={14} />}
+          leftSection={<IconSearch style={inputIconStyle} />}
           placeholder="Filter by labels"
           value={searchFilter || ""}
           onChange={(event) => setSearchFilter(event.currentTarget.value)}
@@ -118,9 +119,9 @@ export default function ServiceDiscoveryPage() {
           }
         >
           {collapsedPools.length > 0 ? (
-            <IconLayoutNavbarExpand size={16} />
+            <IconLayoutNavbarExpand style={expandIconStyle} />
           ) : (
-            <IconLayoutNavbarCollapse size={16} />
+            <IconLayoutNavbarCollapse style={expandIconStyle} />
           )}
         </ActionIcon>
       </Group>

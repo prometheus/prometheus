@@ -3,6 +3,7 @@ import { IconSettings } from "@tabler/icons-react";
 import { FC } from "react";
 import { useAppDispatch } from "../state/hooks";
 import { updateSettings, useSettings } from "../state/settingsSlice";
+import { actionIconStyle } from "../styles";
 
 const SettingsMenu: FC = () => {
   const {
@@ -24,7 +25,7 @@ const SettingsMenu: FC = () => {
           aria-label="Settings"
           size={32}
         >
-          <IconSettings size={20} />
+          <IconSettings style={actionIconStyle} />
         </ActionIcon>
       </Popover.Target>
       <Popover.Dropdown>

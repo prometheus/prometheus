@@ -1,4 +1,4 @@
-import { Alert, Box, Button, Stack, rem } from "@mantine/core";
+import { Alert, Box, Button, Stack } from "@mantine/core";
 import {
   IconAlertCircle,
   IconAlertTriangle,
@@ -17,6 +17,7 @@ import { useEffect, useState } from "react";
 import { InstantQueryResult } from "../../api/responseTypes/query";
 import { humanizeDuration } from "../../lib/formatTime";
 import { decodePanelOptionsFromURLParams } from "./urlStateEncoding";
+import { buttonIconStyle } from "../../styles";
 
 export default function QueryPage() {
   const panels = useAppSelector((state) => state.queryPage.panels);
@@ -80,12 +81,9 @@ export default function QueryPage() {
       {metricNamesError && (
         <Alert
           mb="sm"
-          icon={
-            <IconAlertTriangle style={{ width: rem(14), height: rem(14) }} />
-          }
+          icon={<IconAlertTriangle />}
           color="red"
           title="Error fetching metrics list"
-          withCloseButton
         >
           Unable to fetch list of metric names: {metricNamesError.message}
         </Alert>
@@ -93,12 +91,9 @@ export default function QueryPage() {
       {timeError && (
         <Alert
           mb="sm"
-          icon={
-            <IconAlertTriangle style={{ width: rem(14), height: rem(14) }} />
-          }
+          icon={<IconAlertTriangle />}
           color="red"
           title="Error fetching server time"
-          withCloseButton
         >
           {timeError.message}
         </Alert>
@@ -108,7 +103,7 @@ export default function QueryPage() {
           mb="sm"
           title="Server time is out of sync"
           color="red"
-          icon={<IconAlertCircle style={{ width: rem(14), height: rem(14) }} />}
+          icon={<IconAlertCircle />}
           onClose={() => setTimeDelta(0)}
         >
           Detected a time difference of{" "}
@@ -131,7 +126,7 @@ export default function QueryPage() {
       <Button
         variant="light"
         mt="xl"
-        leftSection={<IconPlus size={18} />}
+        leftSection={<IconPlus style={buttonIconStyle} />}
         onClick={() => dispatch(addPanel())}
       >
         Add query

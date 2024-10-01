@@ -59,6 +59,7 @@ import (
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/netconnlimit"
+	"github.com/prometheus/prometheus/web/api"
 	api_v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/prometheus/prometheus/web/ui"
 )
@@ -101,6 +102,14 @@ var newUIReactRouterServerPaths = []string{
 	"/rules",
 	"/tsdb-status",
 }
+
+type ReadyStatus uint32
+
+const (
+	NotReady ReadyStatus = iota
+	Ready
+	Stopping
+)
 
 // withStackTrace logs the stack trace in case the request panics. The function
 // will re-raise the error which will then be handled by the net/http package.
@@ -258,6 +267,8 @@ type Options struct {
 	RuleManager           *rules.Manager
 	Notifier              *notifier.Manager
 	Version               *PrometheusVersion
+	NotificationsGetter   func() []api.Notification
+	NotificationsSub      func() (<-chan api.Notification, func(), bool)
 	Flags                 map[string]string
 
 	ListenAddresses            []string
@@ -331,7 +342,7 @@ func New(logger log.Logger, o *Options) *Handler {
 
 		now: model.Now,
 	}
-	h.SetReady(false)
+	h.SetReady(NotReady)
 
 	factorySPr := func(_ context.Context) api_v1.ScrapePoolsRetriever { return h.scrapeManager }
 	factoryTr := func(_ context.Context) api_v1.TargetRetriever { return h.scrapeManager }
@@ -368,6 +379,8 @@ func New(logger log.Logger, o *Options) *Handler {
 		h.options.CORSOrigin,
 		h.runtimeInfo,
 		h.versionInfo,
+		h.options.NotificationsGetter,
+		h.options.NotificationsSub,
 		o.Gatherer,
 		o.Registerer,
 		nil,
@@ -572,30 +585,39 @@ func serveDebug(w http.ResponseWriter, req *http.Request) {
 }
 
 // SetReady sets the ready status of our web Handler.
-func (h *Handler) SetReady(v bool) {
-	if v {
-		h.ready.Store(1)
+func (h *Handler) SetReady(v ReadyStatus) {
+	if v == Ready {
+		h.ready.Store(uint32(Ready))
 		h.metrics.readyStatus.Set(1)
 		return
 	}
 
-	h.ready.Store(0)
+	h.ready.Store(uint32(v))
 	h.metrics.readyStatus.Set(0)
 }
 
 // Verifies whether the server is ready or not.
 func (h *Handler) isReady() bool {
-	return h.ready.Load() > 0
+	return ReadyStatus(h.ready.Load()) == Ready
 }
 
 // Checks if server is ready, calls f if it is, returns 503 if it is not.
 func (h *Handler) testReady(f http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if h.isReady() {
+		switch ReadyStatus(h.ready.Load()) {
+		case Ready:
 			f(w, r)
-		} else {
+		case NotReady:
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Header().Set("X-Prometheus-Stopping", "false")
+			fmt.Fprintf(w, "Service Unavailable")
+		case Stopping:
+			w.Header().Set("X-Prometheus-Stopping", "true")
 			w.WriteHeader(http.StatusServiceUnavailable)
 			fmt.Fprintf(w, "Service Unavailable")
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, "Unknown state")
 		}
 	}
 }

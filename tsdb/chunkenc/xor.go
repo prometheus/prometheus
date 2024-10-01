@@ -191,8 +191,8 @@ func (a *xorAppender) Append(t int64, v float64) {
 		case dod == 0:
 			a.b.writeBit(zero)
 		case bitRange(dod, 14):
-			a.b.writeBits(0b10, 2)
-			a.b.writeBits(uint64(dod), 14)
+			a.b.writeByte(0b10<<6 | (uint8(dod>>8) & (1<<6 - 1))) // 0b10 size code combined with 6 bits of dod.
+			a.b.writeByte(uint8(dod))                             // Bottom 8 bits of dod.
 		case bitRange(dod, 17):
 			a.b.writeBits(0b110, 3)
 			a.b.writeBits(uint64(dod), 17)

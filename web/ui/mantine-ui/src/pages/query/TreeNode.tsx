@@ -4,7 +4,6 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import ASTNode, { nodeType } from "../../promql/ast";
@@ -17,6 +16,7 @@ import {
   Group,
   List,
   Loader,
+  rem,
   Text,
   Tooltip,
 } from "@mantine/core";
@@ -36,6 +36,8 @@ import { functionSignatures } from "../../promql/functionSignatures";
 const nodeIndent = 20;
 const maxLabelNames = 10;
 const maxLabelValues = 10;
+
+const nodeIndicatorIconStyle = { width: rem(18), height: rem(18) };
 
 type NodeState = "waiting" | "running" | "error" | "success";
 
@@ -57,7 +59,7 @@ const TreeNode: FC<{
   node: ASTNode;
   selectedNode: { id: string; node: ASTNode } | null;
   setSelectedNode: (Node: { id: string; node: ASTNode } | null) => void;
-  parentRef?: React.RefObject<HTMLDivElement>;
+  parentEl?: HTMLDivElement | null;
   reportNodeState?: (childIdx: number, state: NodeState) => void;
   reverse: boolean;
   // The index of this node in its parent's children.
@@ -66,13 +68,21 @@ const TreeNode: FC<{
   node,
   selectedNode,
   setSelectedNode,
-  parentRef,
+  parentEl,
   reportNodeState,
   reverse,
   childIdx,
 }) => {
   const nodeID = useId();
-  const nodeRef = useRef<HTMLDivElement>(null);
+
+  // A normal ref won't work properly here because the ref's `current` property
+  // going from `null` to defined won't trigger a re-render of the child
+  // component, since it's not a React state update. So we manually have to
+  // create a state update using a callback ref. See also
+  // https://tkdodo.eu/blog/avoiding-use-effect-with-callback-refs
+  const [nodeEl, setNodeEl] = useState<HTMLDivElement | null>(null);
+  const nodeRef = useCallback((node: HTMLDivElement) => setNodeEl(node), []);
+
   const [connectorStyle, setConnectorStyle] = useState<CSSProperties>({
     borderColor:
       "light-dark(var(--mantine-color-gray-4), var(--mantine-color-dark-3))",
@@ -94,10 +104,10 @@ const TreeNode: FC<{
 
   // Select the node when it is mounted and it is the root of the tree.
   useEffect(() => {
-    if (parentRef === undefined) {
+    if (parentEl === undefined) {
       setSelectedNode({ id: nodeID, node: node });
     }
-  }, [parentRef, setSelectedNode, nodeID, node]);
+  }, [parentEl, setSelectedNode, nodeID, node]);
 
   // Deselect node when node is unmounted.
   useEffect(() => {
@@ -170,16 +180,18 @@ const TreeNode: FC<{
 
   // Update the size and position of tree connector lines based on the node's and its parent's position.
   useLayoutEffect(() => {
-    if (parentRef === undefined) {
+    if (parentEl === undefined) {
       // We're the root node.
       return;
     }
 
-    if (parentRef.current === null || nodeRef.current === null) {
+    if (parentEl === null || nodeEl === null) {
+      // Either of the two connected nodes hasn't been rendered yet.
       return;
     }
-    const parentRect = parentRef.current.getBoundingClientRect();
-    const nodeRect = nodeRef.current.getBoundingClientRect();
+
+    const parentRect = parentEl.getBoundingClientRect();
+    const nodeRect = nodeEl.getBoundingClientRect();
     if (reverse) {
       setConnectorStyle((prevStyle) => ({
         ...prevStyle,
@@ -199,7 +211,7 @@ const TreeNode: FC<{
         borderTopLeftRadius: undefined,
       }));
     }
-  }, [parentRef, reverse, nodeRef, setConnectorStyle]);
+  }, [parentEl, nodeEl, reverse, nodeRef, setConnectorStyle]);
 
   // Update the node info state based on the query result.
   useEffect(() => {
@@ -261,7 +273,7 @@ const TreeNode: FC<{
       pos="relative"
       align="center"
     >
-      {parentRef && (
+      {parentEl !== undefined && (
         // Connector line between this node and its parent.
         <Box pos="absolute" display="inline-block" style={connectorStyle} />
       )}
@@ -288,13 +300,14 @@ const TreeNode: FC<{
       </Box>
       {mergedChildState === "waiting" ? (
         <Group c="gray">
-          <IconPointFilled size={18} />
+          <IconPointFilled style={nodeIndicatorIconStyle} />
         </Group>
       ) : mergedChildState === "running" ? (
         <Loader size={14} color="gray" type="dots" />
       ) : mergedChildState === "error" ? (
         <Group c="orange.7" gap={5} fz="xs" wrap="nowrap">
-          <IconPointFilled size={18} /> Blocked on child query error
+          <IconPointFilled style={nodeIndicatorIconStyle} /> Blocked on child
+          query error
         </Group>
       ) : isFetching ? (
         <Loader size={14} color="gray" />
@@ -305,7 +318,7 @@ const TreeNode: FC<{
           style={{ flexShrink: 0 }}
           className={classes.errorText}
         >
-          <IconPointFilled size={18} />
+          <IconPointFilled style={nodeIndicatorIconStyle} />
           <Text fz="xs">
             <strong>Error executing query:</strong> {error.message}
           </Text>
@@ -387,7 +400,7 @@ const TreeNode: FC<{
             node={children[0]}
             selectedNode={selectedNode}
             setSelectedNode={setSelectedNode}
-            parentRef={nodeRef}
+            parentEl={nodeEl}
             reverse={true}
             childIdx={0}
             reportNodeState={childReportNodeState}
@@ -399,7 +412,7 @@ const TreeNode: FC<{
             node={children[1]}
             selectedNode={selectedNode}
             setSelectedNode={setSelectedNode}
-            parentRef={nodeRef}
+            parentEl={nodeEl}
             reverse={false}
             childIdx={1}
             reportNodeState={childReportNodeState}
@@ -418,7 +431,7 @@ const TreeNode: FC<{
             node={child}
             selectedNode={selectedNode}
             setSelectedNode={setSelectedNode}
-            parentRef={nodeRef}
+            parentEl={nodeEl}
             reverse={false}
             childIdx={idx}
             reportNodeState={childReportNodeState}

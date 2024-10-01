@@ -258,7 +258,7 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
-    label: 'holt_winters',
+    label: 'double_exponential_smoothing',
     detail: 'function',
     info: 'Calculate smoothed value of input series',
     type: 'function',
