@@ -64,7 +64,7 @@
     "eslint-plugin-react-refresh": "^0.4.12",
     "globals": "^15.9.0",
     "jsdom": "^25.0.1",
-    "postcss": "^8.4.35",
+    "postcss": "^8.4.47",
     "postcss-preset-mantine": "^1.17.0",
     "postcss-simple-vars": "^7.0.1",
     "vite": "^5.4.8",
