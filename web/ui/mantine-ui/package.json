@@ -20,7 +20,7 @@
     "@floating-ui/dom": "^1.6.7",
     "@lezer/common": "^1.2.1",
     "@lezer/highlight": "^1.2.1",
-    "@mantine/code-highlight": "^7.11.2",
+    "@mantine/code-highlight": "^7.13.1",
     "@mantine/core": "^7.11.2",
     "@mantine/dates": "^7.13.1",
     "@mantine/hooks": "^7.11.2",
