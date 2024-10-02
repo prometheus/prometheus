@@ -16,6 +16,7 @@ package textparse
 import (
 	"errors"
 	"io"
+	"os"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -991,4 +992,47 @@ go_gc_duration_seconds_created`)
 	copyParser.Next()
 	require.Equal(t, "go_gc_duration_seconds", string(copyParser.l.b[copyParser.offsets[0]:copyParser.offsets[1]]))
 	require.False(t, copyParser.skipCTSeries)
+}
+
+func BenchmarkOMParseCreatedTimestamp(b *testing.B) {
+	for parserName, parser := range map[string]func([]byte, *labels.SymbolTable) Parser{
+		"openmetrics": func(b []byte, st *labels.SymbolTable) Parser {
+			return NewOpenMetricsParser(b, st)
+		},
+		"openmetrics-skip-ct": func(b []byte, st *labels.SymbolTable) Parser {
+			return NewOpenMetricsParser(b, st, WithOMParserCTSeriesSkipped())
+		},
+	} {
+		f, err := os.Open("omtestdata.txt")
+		require.NoError(b, err)
+		defer f.Close()
+
+		buf, err := io.ReadAll(f)
+		require.NoError(b, err)
+
+		b.Run(parserName+"/parse-ct/"+"omtestdata.txt", func(b *testing.B) {
+			b.SetBytes(int64(len(buf) / promtestdataSampleCount))
+			b.ReportAllocs()
+			b.ResetTimer()
+
+			st := labels.NewSymbolTable()
+			for i := 0; i < b.N; i += promtestdataSampleCount {
+				p := parser(buf, st)
+
+			Outer:
+				for i < b.N {
+					t, err := p.Next()
+					switch t {
+					case EntryInvalid:
+						if errors.Is(err, io.EOF) {
+							break Outer
+						}
+						b.Fatal(err)
+					case EntrySeries:
+						p.CreatedTimestamp()
+					}
+				}
+			}
+		})
+	}
 }
