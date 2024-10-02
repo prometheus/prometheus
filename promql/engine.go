@@ -2811,7 +2811,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 		if hlhs != nil {
 			lhsTyp, rhsTyp = rhsTyp, lhsTyp
 		}
-		return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo(lhsTyp, "+", lhsTyp, pos)
+		return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo(lhsTyp, "+", rhsTyp, pos)
 	case parser.SUB:
 		if hlhs != nil && hrhs != nil {
 			res, err := hlhs.Copy().Sub(hrhs)
@@ -2828,7 +2828,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 		if hlhs != nil {
 			lhsTyp, rhsTyp = rhsTyp, lhsTyp
 		}
-		return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", "-", "histogram", pos)
+		return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo(lhsTyp, "-", rhsTyp, pos)
 	case parser.MUL:
 		if hlhs != nil && hrhs == nil {
 			return 0, hlhs.Copy().Mul(rhs), true, nil
