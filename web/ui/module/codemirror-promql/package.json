@@ -33,7 +33,7 @@
     "lru-cache": "^11.0.1"
   },
   "devDependencies": {
-    "@codemirror/autocomplete": "^6.17.0",
+    "@codemirror/autocomplete": "^6.18.1",
     "@codemirror/language": "^6.10.2",
     "@codemirror/lint": "^6.8.1",
     "@codemirror/state": "^6.3.3",
