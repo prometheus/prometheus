@@ -957,13 +957,13 @@ eval instant at 10m histogram_mul_div/float_series_0
 eval instant at 10m histogram_mul_div*0/0
     {} {{schema:0 count:NaN sum:NaN z_bucket_w:0.001 z_bucket:NaN}}
 
-eval instant at 10m histogram_mul_div*histogram_mul_div
+eval_info instant at 10m histogram_mul_div*histogram_mul_div
 
-eval instant at 10m histogram_mul_div/histogram_mul_div
+eval_info instant at 10m histogram_mul_div/histogram_mul_div
 
-eval instant at 10m float_series_3/histogram_mul_div
+eval_info instant at 10m float_series_3/histogram_mul_div
 
-eval instant at 10m 0/histogram_mul_div
+eval_info instant at 10m 0/histogram_mul_div
 
 clear
 
@@ -974,13 +974,13 @@ load 10m
     histogram_sample {{schema:0 count:24 sum:100 z_bucket:4 z_bucket_w:0.001 buckets:[2 3 0 1 4] n_buckets:[2 3 0 1 4]}}x1
     float_sample 0x1
 
-eval instant at 10m float_sample+histogram_sample
+eval_info instant at 10m float_sample+histogram_sample
 
-eval instant at 10m histogram_sample+float_sample
+eval_info instant at 10m histogram_sample+float_sample
 
-eval instant at 10m float_sample-histogram_sample
+eval_info instant at 10m float_sample-histogram_sample
 
-eval instant at 10m histogram_sample-float_sample
+eval_info instant at 10m histogram_sample-float_sample
 
 # Counter reset only noticeable in a single bucket.
 load 5m

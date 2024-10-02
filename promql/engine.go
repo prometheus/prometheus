@@ -19,7 +19,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"io"
 	"math"
 	"reflect"
