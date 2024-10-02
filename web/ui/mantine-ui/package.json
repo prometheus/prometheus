@@ -16,7 +16,7 @@
     "@codemirror/language": "^6.10.2",
     "@codemirror/lint": "^6.8.1",
     "@codemirror/state": "^6.4.1",
-    "@codemirror/view": "^6.33.0",
+    "@codemirror/view": "^6.34.1",
     "@floating-ui/dom": "^1.6.7",
     "@lezer/common": "^1.2.1",
     "@lezer/highlight": "^1.2.1",
