@@ -70,23 +70,23 @@ testmetric{label="\"bar\""} 1
 # HELP foo Counter with and without labels to certify CT is parsed for both cases
 # TYPE foo counter
 foo_total 17.0 1520879607.789 # {id="counter-test"} 5
-foo_created 1000
+foo_created 1520872607.123
 foo_total{a="b"} 17.0 1520879607.789 # {id="counter-test"} 5
-foo_created{a="b"} 1000
+foo_created{a="b"} 1520872607.123
 # HELP bar Summary with CT at the end, making sure we find CT even if it's multiple lines a far
 # TYPE bar summary
 bar_count 17.0
 bar_sum 324789.3
 bar{quantile="0.95"} 123.7
 bar{quantile="0.99"} 150.0
-bar_created 1520430000
+bar_created 1520872607.123
 # HELP baz Histogram with the same objective as above's summary
 # TYPE baz histogram
 baz_bucket{le="0.0"} 0
 baz_bucket{le="+Inf"} 17
 baz_count 17
 baz_sum 324789.3
-baz_created 1520430000
+baz_created 1520872607.123
 # HELP fizz_created Gauge which shouldn't be parsed as CT
 # TYPE fizz_created gauge
 fizz_created 17.0`
@@ -251,14 +251,14 @@ fizz_created 17.0`
 			lset: labels.FromStrings("__name__", "foo_total"),
 			t:    int64p(1520879607789),
 			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "counter-test"), Value: 5},
-			ct:   int64p(1000),
+			ct:   int64p(1520872607123),
 		}, {
 			m:    `foo_total{a="b"}`,
 			v:    17.0,
 			lset: labels.FromStrings("__name__", "foo_total", "a", "b"),
 			t:    int64p(1520879607789),
 			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "counter-test"), Value: 5},
-			ct:   int64p(1000),
+			ct:   int64p(1520872607123),
 		}, {
 			m:    "bar",
 			help: "Summary with CT at the end, making sure we find CT even if it's multiple lines a far",
@@ -269,22 +269,22 @@ fizz_created 17.0`
 			m:    "bar_count",
 			v:    17.0,
 			lset: labels.FromStrings("__name__", "bar_count"),
-			ct:   int64p(1520430000),
+			ct:   int64p(1520872607123),
 		}, {
 			m:    "bar_sum",
 			v:    324789.3,
 			lset: labels.FromStrings("__name__", "bar_sum"),
-			ct:   int64p(1520430000),
+			ct:   int64p(1520872607123),
 		}, {
 			m:    `bar{quantile="0.95"}`,
 			v:    123.7,
 			lset: labels.FromStrings("__name__", "bar", "quantile", "0.95"),
-			ct:   int64p(1520430000),
+			ct:   int64p(1520872607123),
 		}, {
 			m:    `bar{quantile="0.99"}`,
 			v:    150.0,
 			lset: labels.FromStrings("__name__", "bar", "quantile", "0.99"),
-			ct:   int64p(1520430000),
+			ct:   int64p(1520872607123),
 		}, {
 			m:    "baz",
 			help: "Histogram with the same objective as above's summary",
@@ -295,22 +295,22 @@ fizz_created 17.0`
 			m:    `baz_bucket{le="0.0"}`,
 			v:    0,
 			lset: labels.FromStrings("__name__", "baz_bucket", "le", "0.0"),
-			ct:   int64p(1520430000),
+			ct:   int64p(1520872607123),
 		}, {
 			m:    `baz_bucket{le="+Inf"}`,
 			v:    17,
 			lset: labels.FromStrings("__name__", "baz_bucket", "le", "+Inf"),
-			ct:   int64p(1520430000),
+			ct:   int64p(1520872607123),
 		}, {
 			m:    `baz_count`,
 			v:    17,
 			lset: labels.FromStrings("__name__", "baz_count"),
-			ct:   int64p(1520430000),
+			ct:   int64p(1520872607123),
 		}, {
 			m:    `baz_sum`,
 			v:    324789.3,
 			lset: labels.FromStrings("__name__", "baz_sum"),
-			ct:   int64p(1520430000),
+			ct:   int64p(1520872607123),
 		}, {
 			m:    "fizz_created",
 			help: "Gauge which shouldn't be parsed as CT",
@@ -347,7 +347,7 @@ func TestUTF8OpenMetricsParse(t *testing.T) {
 # UNIT "go.gc_duration_seconds" seconds
 {"go.gc_duration_seconds",quantile="0"} 4.9351e-05
 {"go.gc_duration_seconds",quantile="0.25"} 7.424100000000001e-05
-{"go.gc_duration_seconds_created"} 12313
+{"go.gc_duration_seconds_created"} 1520872607.123
 {"go.gc_duration_seconds",quantile="0.5",a="b"} 8.3835e-05
 {"http.status",q="0.9",a="b"} 8.3835e-05
 {"http.status",q="0.9",a="b"} 8.3835e-05
@@ -371,12 +371,12 @@ func TestUTF8OpenMetricsParse(t *testing.T) {
 			m:    `{"go.gc_duration_seconds",quantile="0"}`,
 			v:    4.9351e-05,
 			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "0"),
-			ct:   int64p(12313),
+			ct:   int64p(1520872607123),
 		}, {
 			m:    `{"go.gc_duration_seconds",quantile="0.25"}`,
 			v:    7.424100000000001e-05,
 			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "0.25"),
-			ct:   int64p(12313),
+			ct:   int64p(1520872607123),
 		}, {
 			m:    `{"go.gc_duration_seconds",quantile="0.5",a="b"}`,
 			v:    8.3835e-05,
@@ -700,7 +700,7 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		p := NewOpenMetricsParser([]byte(c.input), labels.NewSymbolTable())
+		p := NewOpenMetricsParser([]byte(c.input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
 		var err error
 		for err == nil {
 			_, err = p.Next()
@@ -765,7 +765,7 @@ func TestOMNullByteHandling(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		p := NewOpenMetricsParser([]byte(c.input), labels.NewSymbolTable())
+		p := NewOpenMetricsParser([]byte(c.input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
 		var err error
 		for err == nil {
 			_, err = p.Next()
@@ -788,12 +788,12 @@ func TestCTParseFailures(t *testing.T) {
 # TYPE something histogram
 something_count 17
 something_sum 324789.3
-something_created 1520430001
+something_created 1520872607.123
 something_bucket{le="0.0"} 0
 something_bucket{le="+Inf"} 17
 # HELP thing Histogram with _created as first line
 # TYPE thing histogram
-thing_created 1520430002
+thing_created 1520872607.123
 thing_count 17
 thing_sum 324789.3
 thing_bucket{le="0.0"} 0
@@ -802,12 +802,12 @@ thing_bucket{le="+Inf"} 17
 # TYPE yum summary
 yum_count 17.0
 yum_sum 324789.3
-yum_created 1520430003
+yum_created 1520872607.123
 yum{quantile="0.95"} 123.7
 yum{quantile="0.99"} 150.0
 # HELP foobar Summary with _created as the first line
 # TYPE foobar summary
-foobar_created 1520430004
+foobar_created 1520872607.123
 foobar_count 17.0
 foobar_sum 324789.3
 foobar{quantile="0.95"} 123.7
@@ -836,19 +836,19 @@ foobar{quantile="0.99"} 150.0`
 			isErr: false,
 		}, {
 			m:     `something_count`,
-			ct:    int64p(1520430001),
+			ct:    int64p(1520872607123),
 			isErr: false,
 		}, {
 			m:     `something_sum`,
-			ct:    int64p(1520430001),
+			ct:    int64p(1520872607123),
 			isErr: false,
 		}, {
 			m:     `something_bucket{le="0.0"}`,
-			ct:    int64p(1520430001),
+			ct:    int64p(1520872607123),
 			isErr: true,
 		}, {
 			m:     `something_bucket{le="+Inf"}`,
-			ct:    int64p(1520430001),
+			ct:    int64p(1520872607123),
 			isErr: true,
 		}, {
 			m:     "thing",
@@ -860,19 +860,19 @@ foobar{quantile="0.99"} 150.0`
 			isErr: false,
 		}, {
 			m:     `thing_count`,
-			ct:    int64p(1520430002),
+			ct:    int64p(1520872607123),
 			isErr: true,
 		}, {
 			m:     `thing_sum`,
-			ct:    int64p(1520430002),
+			ct:    int64p(1520872607123),
 			isErr: true,
 		}, {
 			m:     `thing_bucket{le="0.0"}`,
-			ct:    int64p(1520430002),
+			ct:    int64p(1520872607123),
 			isErr: true,
 		}, {
 			m:     `thing_bucket{le="+Inf"}`,
-			ct:    int64p(1520430002),
+			ct:    int64p(1520872607123),
 			isErr: true,
 		}, {
 			m:     "yum",
@@ -884,19 +884,19 @@ foobar{quantile="0.99"} 150.0`
 			isErr: false,
 		}, {
 			m:     "yum_count",
-			ct:    int64p(1520430003),
+			ct:    int64p(1520872607123),
 			isErr: false,
 		}, {
 			m:     "yum_sum",
-			ct:    int64p(1520430003),
+			ct:    int64p(1520872607123),
 			isErr: false,
 		}, {
 			m:     `yum{quantile="0.95"}`,
-			ct:    int64p(1520430003),
+			ct:    int64p(1520872607123),
 			isErr: true,
 		}, {
 			m:     `yum{quantile="0.99"}`,
-			ct:    int64p(1520430003),
+			ct:    int64p(1520872607123),
 			isErr: true,
 		}, {
 			m:     "foobar",
