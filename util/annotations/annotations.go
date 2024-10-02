@@ -280,6 +280,6 @@ func NewHistogramQuantileForcedMonotonicityInfo(metricName string, pos posrange.
 func NewIncompatibleTypesInBinOpInfo(lhsType, operator, rhsType string, pos posrange.PositionRange) error {
 	return annoErr{
 		PositionRange: pos,
-		Err:           fmt.Errorf("%w %q: %s %s %s)", IncompatibleTypesInBinOpInfo, operator, lhsType, operator, rhsType),
+		Err:           fmt.Errorf("%w %q: %s %s %s", IncompatibleTypesInBinOpInfo, operator, lhsType, operator, rhsType),
 	}
 }
