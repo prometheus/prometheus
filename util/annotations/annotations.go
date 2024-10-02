@@ -146,8 +146,7 @@ var (
 
 	PossibleNonCounterInfo                  = fmt.Errorf("%w: metric might not be a counter, name does not end in _total/_sum/_count/_bucket:", PromQLInfo)
 	HistogramQuantileForcedMonotonicityInfo = fmt.Errorf("%w: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name", PromQLInfo)
-	MixedFloatsHistogramsBinOpInfo          = fmt.Errorf("%w: encountered a mix of histograms and floats for", PromQLInfo)
-	InvalidHistogramsBinOpInfo              = fmt.Errorf("%w: encountered two histograms for", PromQLInfo)
+	IncompatibleTypesInBinOpInfo            = fmt.Errorf("%w: incompatible sample types encountered for binary operator", PromQLInfo)
 )
 
 type annoErr struct {
@@ -276,21 +275,11 @@ func NewHistogramQuantileForcedMonotonicityInfo(metricName string, pos posrange.
 	}
 }
 
-// NewMixedFloatsHistogramsBinOpInfo is used when binary operators
-// encounter a float on the one side and a histogram on the other side
-// for a binary operator that cannot combine a histogram and a float.
-func NewMixedFloatsHistogramsBinOpInfo(pos posrange.PositionRange) error {
+// NewIncompatibleTypesInBinOpInfo is used if binary operators act on a
+// combination of types that doesn't work and therefore returns no result.
+func NewIncompatibleTypesInBinOpInfo(lhsType, operator, rhsType string, pos posrange.PositionRange) error {
 	return annoErr{
 		PositionRange: pos,
-		Err:           fmt.Errorf("%w binary operator", MixedFloatsHistogramsBinOpInfo),
-	}
-}
-
-// NewInvalidHistogramsBinOpInfo is used when binary operators encounter histograms on the both side
-// for a binary operator that cannot combine two histograms.
-func NewInvalidHistogramsBinOpInfo(pos posrange.PositionRange) error {
-	return annoErr{
-		PositionRange: pos,
-		Err:           fmt.Errorf("%w binary operator", InvalidHistogramsBinOpInfo),
+		Err:           fmt.Errorf("%w %q: %s %s %s)", IncompatibleTypesInBinOpInfo, operator, lhsType, operator, rhsType),
 	}
 }
