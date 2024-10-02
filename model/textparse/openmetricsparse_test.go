@@ -352,22 +352,22 @@ foobar{quantile="0.99"} 150.1`
 			m:    `something_count`,
 			v:    18,
 			lset: labels.FromStrings("__name__", "something_count"),
-			ct:   int64p(1520430001),
+			ct:   int64p(1520430001000),
 		}, {
 			m:    `something_sum`,
 			v:    324789.4,
 			lset: labels.FromStrings("__name__", "something_sum"),
-			ct:   int64p(1520430001),
+			ct:   int64p(1520430001000),
 		}, {
 			m:    `something_bucket{le="0.0"}`,
 			v:    1,
 			lset: labels.FromStrings("__name__", "something_bucket", "le", "0.0"),
-			ct:   int64p(1520430001),
+			ct:   int64p(1520430001000),
 		}, {
 			m:    `something_bucket{le="+Inf"}`,
 			v:    18,
 			lset: labels.FromStrings("__name__", "something_bucket", "le", "+Inf"),
-			ct:   int64p(1520430001),
+			ct:   int64p(1520430001000),
 		}, {
 			m:    "yum",
 			help: "Summary with _created between sum and quantiles",
@@ -378,22 +378,22 @@ foobar{quantile="0.99"} 150.1`
 			m:    `yum_count`,
 			v:    20,
 			lset: labels.FromStrings("__name__", "yum_count"),
-			ct:   int64p(1520430003),
+			ct:   int64p(1520430003000),
 		}, {
 			m:    `yum_sum`,
 			v:    324789.5,
 			lset: labels.FromStrings("__name__", "yum_sum"),
-			ct:   int64p(1520430003),
+			ct:   int64p(1520430003000),
 		}, {
 			m:    `yum{quantile="0.95"}`,
 			v:    123.7,
 			lset: labels.FromStrings("__name__", "yum", "quantile", "0.95"),
-			ct:   int64p(1520430003),
+			ct:   int64p(1520430003000),
 		}, {
 			m:    `yum{quantile="0.99"}`,
 			v:    150.0,
 			lset: labels.FromStrings("__name__", "yum", "quantile", "0.99"),
-			ct:   int64p(1520430003),
+			ct:   int64p(1520430003000),
 		}, {
 			m:    "foobar",
 			help: "Summary with _created as the first line",
@@ -404,22 +404,22 @@ foobar{quantile="0.99"} 150.1`
 			m:    `foobar_count`,
 			v:    21,
 			lset: labels.FromStrings("__name__", "foobar_count"),
-			ct:   int64p(1520430004),
+			ct:   int64p(1520430004000),
 		}, {
 			m:    `foobar_sum`,
 			v:    324789.6,
 			lset: labels.FromStrings("__name__", "foobar_sum"),
-			ct:   int64p(1520430004),
+			ct:   int64p(1520430004000),
 		}, {
 			m:    `foobar{quantile="0.95"}`,
 			v:    123.8,
 			lset: labels.FromStrings("__name__", "foobar", "quantile", "0.95"),
-			ct:   int64p(1520430004),
+			ct:   int64p(1520430004000),
 		}, {
 			m:    `foobar{quantile="0.99"}`,
 			v:    150.1,
 			lset: labels.FromStrings("__name__", "foobar", "quantile", "0.99"),
-			ct:   int64p(1520430004),
+			ct:   int64p(1520430004000),
 		}, {
 			m:    "metric",
 			help: "foo\x00bar",
@@ -890,7 +890,6 @@ thing_count 17
 thing_sum 324789.3
 thing_bucket{le="0.0"} 0
 thing_bucket{le="+Inf"} 17`
-
 
 	input += "\n# EOF\n"
 
