@@ -492,7 +492,7 @@ const (
 	promtestdataSampleCount = 410
 )
 
-func BenchmarkParse(b *testing.B) {
+func BenchmarkPromParse(b *testing.B) {
 	for parserName, parser := range map[string]func([]byte, *labels.SymbolTable) Parser{
 		"prometheus": NewPromParser,
 		"openmetrics": func(b []byte, st *labels.SymbolTable) Parser {
