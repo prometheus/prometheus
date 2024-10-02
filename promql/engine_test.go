@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -29,11 +30,13 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/teststorage"
@@ -3780,4 +3783,116 @@ func TestRateAnnotations(t *testing.T) {
 			testutil.RequireEqual(t, testCase.expectedInfoAnnotations, infos)
 		})
 	}
+}
+
+func TestHistogramRateWithFloatStaleness(t *testing.T) {
+	// Make a chunk with two normal histograms of the same value.
+	h1 := histogram.Histogram{
+		Schema:          2,
+		Count:           10,
+		Sum:             100,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+		PositiveBuckets: []int64{100},
+	}
+
+	c1 := chunkenc.NewHistogramChunk()
+	app, err := c1.Appender()
+	require.NoError(t, err)
+	var (
+		newc    chunkenc.Chunk
+		recoded bool
+	)
+
+	newc, recoded, app, err = app.AppendHistogram(nil, 0, h1.Copy(), false)
+	require.NoError(t, err)
+	require.False(t, recoded)
+	require.Nil(t, newc)
+
+	newc, recoded, _, err = app.AppendHistogram(nil, 10, h1.Copy(), false)
+	require.NoError(t, err)
+	require.False(t, recoded)
+	require.Nil(t, newc)
+
+	// Make a chunk with a single float stale marker.
+	c2 := chunkenc.NewXORChunk()
+	app, err = c2.Appender()
+	require.NoError(t, err)
+
+	app.Append(20, math.Float64frombits(value.StaleNaN))
+
+	// Make a chunk with two normal histograms that have zero value.
+	h2 := histogram.Histogram{
+		Schema: 2,
+	}
+
+	c3 := chunkenc.NewHistogramChunk()
+	app, err = c3.Appender()
+	require.NoError(t, err)
+
+	newc, recoded, app, err = app.AppendHistogram(nil, 30, h2.Copy(), false)
+	require.NoError(t, err)
+	require.False(t, recoded)
+	require.Nil(t, newc)
+
+	newc, recoded, _, err = app.AppendHistogram(nil, 40, h2.Copy(), false)
+	require.NoError(t, err)
+	require.False(t, recoded)
+	require.Nil(t, newc)
+
+	querier := storage.MockQuerier{
+		SelectMockFunction: func(_ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+			return &singleSeriesSet{
+				series: mockSeries{chunks: []chunkenc.Chunk{c1, c2, c3}, labelSet: []string{"__name__", "foo"}},
+			}
+		},
+	}
+
+	queriable := storage.MockQueryable{MockQuerier: &querier}
+
+	engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
+
+	q, err := engine.NewInstantQuery(context.Background(), &queriable, nil, "rate(foo[40s])", timestamp.Time(45))
+	require.NoError(t, err)
+	defer q.Close()
+
+	res := q.Exec(context.Background())
+	require.NoError(t, res.Err)
+
+	vec, err := res.Vector()
+	require.NoError(t, err)
+
+	// Single sample result.
+	require.Len(t, vec, 1)
+	// The result is a histogram.
+	require.NotNil(t, vec[0].H)
+	// The result should be zero as the histogram has not increased, so the rate is zero.
+	require.Equal(t, 0.0, vec[0].H.Count)
+	require.Equal(t, 0.0, vec[0].H.Sum)
+}
+
+type singleSeriesSet struct {
+	series   storage.Series
+	consumed bool
+}
+
+func (s *singleSeriesSet) Next() bool                       { c := s.consumed; s.consumed = true; return !c }
+func (s singleSeriesSet) At() storage.Series                { return s.series }
+func (s singleSeriesSet) Err() error                        { return nil }
+func (s singleSeriesSet) Warnings() annotations.Annotations { return nil }
+
+type mockSeries struct {
+	chunks   []chunkenc.Chunk
+	labelSet []string
+}
+
+func (s mockSeries) Labels() labels.Labels {
+	return labels.FromStrings(s.labelSet...)
+}
+
+func (s mockSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
+	iterables := []chunkenc.Iterator{}
+	for _, c := range s.chunks {
+		iterables = append(iterables, c.Iterator(nil))
+	}
+	return storage.ChainSampleIteratorFromIterators(it, iterables)
 }
