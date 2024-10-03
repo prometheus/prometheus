@@ -35,8 +35,9 @@ evaluate to one of four types:
 
 Depending on the use-case (e.g. when graphing vs. displaying the output of an
 expression), only some of these types are legal as the result of a
-user-specified expression. For example, an expression that returns an instant
-vector is the only type which can be graphed.
+user-specified expression. 
+For [instant queries](api.md#instant-queries), any of the above data types are allowed as the root of the expression.
+[Range queries](api.md/#range-queries) only support scalar-typed and instant-vector-typed expressions.
 
 _Notes about the experimental native histograms:_
 
