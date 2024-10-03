@@ -49,6 +49,10 @@ class BasicLabelSet {
   explicit BasicLabelSet(const LabelSet& other) {
     labels_.reserve(other.size());
     for (const auto& label : other) {
+      // if label value empty - skip label
+      if (label.second.empty()) [[unlikely]] {
+        continue;
+      }
       labels_.emplace_back(label);
     }
   };
@@ -62,6 +66,11 @@ class BasicLabelSet {
   inline __attribute__((always_inline)) void clear() noexcept { labels_.clear(); }
 
   PROMPP_ALWAYS_INLINE void add(const LabelType& label) noexcept {
+    // if label value empty - skip label
+    if (label.second.empty()) [[unlikely]] {
+      return;
+    }
+
     if (labels_.empty() || label.first > labels_.back().first) {
       [[likely]];
       labels_.emplace_back(label);
