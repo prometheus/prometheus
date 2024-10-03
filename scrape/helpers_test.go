@@ -116,12 +116,11 @@ type collectResultAppender struct {
 	pendingExemplars     []exemplar.Exemplar
 	resultMetadata       []metadata.Metadata
 	pendingMetadata      []metadata.Metadata
-	hints                *storage.AppendHints
 }
 
 // SetHints implements storage.Appender.
 func (a *collectResultAppender) SetHints(hints *storage.AppendHints) {
-	a.hints = hints
+	panic("unimplemented")
 }
 
 func (a *collectResultAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
