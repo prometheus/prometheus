@@ -20,6 +20,15 @@ struct LabelIndicesWriterCase {
   std::string_view expected;
 };
 
+LabelViewSet make_ls_with_empty_label_value() {
+  LabelViewSet ls{{"key", "value"}};
+  for (auto& label : ls) {
+    label.second = "";
+    break;
+  }
+  return ls;
+}
+
 class LabelIndicesWriterFixture : public testing::TestWithParam<LabelIndicesWriterCase> {
  protected:
   using TrieIndex = series_index::TrieIndex<series_index::trie::CedarTrie, series_index::trie::CedarMatchesList>;
@@ -62,7 +71,7 @@ INSTANTIATE_TEST_SUITE_P(EmptyLabelSet,
 
 INSTANTIATE_TEST_SUITE_P(LabelWithEmptyValue,
                          LabelIndicesWriterFixture,
-                         testing::Values(LabelIndicesWriterCase{.label_sets = {{{"key", ""}}},
+                         testing::Values(LabelIndicesWriterCase{.label_sets = {make_ls_with_empty_label_value()},
                                                                 .expected = "\x00\x00\x00\x04"
                                                                             "\x00\x00\x00\x00"
                                                                             "\x48\x67\x4B\xC7"sv}));

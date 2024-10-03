@@ -40,7 +40,12 @@ TEST_F(QueryableEncodingBimapFixture, EmplaceInvalidLabel) {
   // Arrange
 
   // Act
-  auto ls_id = index_.find_or_emplace(LabelViewSet{{"key", ""}});
+  LabelViewSet ls{{"key", "value"}};
+  for (auto& label : ls) {
+    label.second = "";
+    break;
+  }
+  auto ls_id = index_.find_or_emplace(ls);
 
   // Assert
   auto label = index_[ls_id].begin();
@@ -53,7 +58,14 @@ TEST_F(QueryableEncodingBimapFixture, EmplaceLabelSetWithInvalidLabel) {
   // Arrange
 
   // Act
-  auto ls_id = index_.find_or_emplace(LabelViewSet{{"job", "cron"}, {"key", ""}, {"process", "php"}});
+  LabelViewSet ls{{"job", "cron"}, {"key", "value"}, {"process", "php"}};
+  for (auto& label : ls) {
+    if (label.first == "key") {
+      label.second = "";
+      break;
+    }
+  }
+  auto ls_id = index_.find_or_emplace(ls);
 
   // Assert
   {
