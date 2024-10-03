@@ -22,6 +22,8 @@ import (
 
 const (
 	ConfigurationUnsuccessful = "Configuration reload has failed."
+	StartingUp                = "Prometheus is starting and replaying the write-ahead log (WAL)."
+	ShuttingDown              = "Prometheus is shutting down and gracefully stopping all operations."
 )
 
 // Notification represents an individual notification message.

@@ -503,6 +503,7 @@ func main() {
 	notifs := api.NewNotifications(cfg.maxNotificationsSubscribers, prometheus.DefaultRegisterer)
 	cfg.web.NotificationsSub = notifs.Sub
 	cfg.web.NotificationsGetter = notifs.Get
+	notifs.AddNotification(api.StartingUp)
 
 	if err := cfg.setFeatureListOptions(logger); err != nil {
 		fmt.Fprintln(os.Stderr, fmt.Errorf("Error parsing feature list: %w", err))
@@ -989,6 +990,7 @@ func main() {
 			func(err error) {
 				close(cancel)
 				webHandler.SetReady(web.Stopping)
+				notifs.AddNotification(api.ShuttingDown)
 			},
 		)
 	}
@@ -1174,6 +1176,7 @@ func main() {
 				reloadReady.Close()
 
 				webHandler.SetReady(web.Ready)
+				notifs.DeleteNotification(api.StartingUp)
 				level.Info(logger).Log("msg", "Server is ready to receive web requests.")
 				<-cancel
 				return nil
