@@ -8,6 +8,7 @@ import (
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"github.com/prometheus/prometheus/pp/go/relabeler/distributor"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head"
+	"github.com/prometheus/prometheus/pp/go/relabeler/querier"
 	"github.com/stretchr/testify/require"
 	"math"
 	"os"
@@ -106,7 +107,8 @@ func (s *AppenderSuite) TestManagerRelabelerKeep() {
 	hd, err := head.New(0, inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
 	require.NoError(s.T(), err)
 	s.T().Log("make appender")
-	app := appender.NewQueryableAppender(hd, dstrb)
+	metrics := querier.NewMetrics(prometheus.DefaultRegisterer)
+	app := appender.NewQueryableAppender(hd, dstrb, metrics)
 
 	hlimits := cppbridge.DefaultWALHashdexLimits()
 
@@ -237,7 +239,8 @@ func (s *AppenderSuite) TestManagerRelabelerRelabeling() {
 	hd, err := head.New(0, inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
 	require.NoError(s.T(), err)
 	s.T().Log("make appender")
-	app := appender.NewQueryableAppender(hd, dstrb)
+	metrics := querier.NewMetrics(prometheus.DefaultRegisterer)
+	app := appender.NewQueryableAppender(hd, dstrb, metrics)
 
 	hlimits := cppbridge.DefaultWALHashdexLimits()
 
@@ -379,7 +382,8 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingAddNewLabel() {
 	hd, err := head.New(0, inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
 	require.NoError(s.T(), err)
 	s.T().Log("make appender")
-	app := appender.NewQueryableAppender(hd, dstrb)
+	metrics := querier.NewMetrics(prometheus.DefaultRegisterer)
+	app := appender.NewQueryableAppender(hd, dstrb, metrics)
 
 	hlimits := cppbridge.DefaultWALHashdexLimits()
 
@@ -525,7 +529,8 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsEnd() {
 	hd, err := head.New(0, inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
 	require.NoError(s.T(), err)
 	s.T().Log("make appender")
-	app := appender.NewQueryableAppender(hd, dstrb)
+	metrics := querier.NewMetrics(prometheus.DefaultRegisterer)
+	app := appender.NewQueryableAppender(hd, dstrb, metrics)
 	hlimits := cppbridge.DefaultWALHashdexLimits()
 
 	s.T().Log("append first data")
@@ -670,7 +675,8 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsRelabel(
 	hd, err := head.New(0, inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
 	require.NoError(s.T(), err)
 	s.T().Log("make appender")
-	app := appender.NewQueryableAppender(hd, dstrb)
+	metrics := querier.NewMetrics(prometheus.DefaultRegisterer)
+	app := appender.NewQueryableAppender(hd, dstrb, metrics)
 
 	hlimits := cppbridge.DefaultWALHashdexLimits()
 
@@ -822,7 +828,8 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 	}))
 	require.NoError(s.T(), err)
 	s.T().Log("make appender")
-	app := appender.NewQueryableAppender(rotatableHead, dstrb)
+	metrics := querier.NewMetrics(prometheus.DefaultRegisterer)
+	app := appender.NewQueryableAppender(rotatableHead, dstrb, metrics)
 
 	rotator := appender.NewRotator(app, clock, appender.DefaultRotateDuration)
 	rotator.Run()
@@ -1257,7 +1264,8 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans() {
 	hd, err := head.New(0, inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
 	require.NoError(s.T(), err)
 	s.T().Log("make appender")
-	app := appender.NewQueryableAppender(hd, dstrb)
+	metrics := querier.NewMetrics(prometheus.DefaultRegisterer)
+	app := appender.NewQueryableAppender(hd, dstrb, metrics)
 
 	hlimits := cppbridge.DefaultWALHashdexLimits()
 
@@ -1396,7 +1404,8 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 	}))
 	require.NoError(s.T(), err)
 	s.T().Log("make appender")
-	app := appender.NewQueryableAppender(rotatableHead, dstrb)
+	metrics := querier.NewMetrics(prometheus.DefaultRegisterer)
+	app := appender.NewQueryableAppender(rotatableHead, dstrb, metrics)
 
 	rotator := appender.NewRotator(app, clock, appender.DefaultRotateDuration)
 	defer func() {

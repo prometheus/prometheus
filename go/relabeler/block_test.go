@@ -4,6 +4,7 @@ import (
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/model"
 	"github.com/prometheus/prometheus/pp/go/relabeler/block"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 	"os"
 	"path/filepath"
@@ -28,7 +29,7 @@ func TestNewBlock(t *testing.T) {
 	t.Log(dir)
 
 	dir = filepath.Join(dir, "data")
-	blockWriter := block.NewBlockWriter(dir, block.DefaultChunkSegmentSize)
+	blockWriter := block.NewBlockWriter(dir, block.DefaultChunkSegmentSize, prometheus.DefaultRegisterer)
 	err = blockWriter.Write(NewBlock(lss, ds))
 	require.NoError(t, err)
 
