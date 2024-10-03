@@ -353,11 +353,11 @@ func (p *OpenMetricsParser) resetCTParseValues(resetLexer *openMetricsLexer) {
 }
 
 // findBaseMetricName returns the metric name without reserved suffixes such as "_created",
-// "_sum", etc. based on the OpenMetrics specification. If no suffix is found, the original
-// name is returned.
-// TODO(Maniktherana): Make sure OM 1.1/2.0 explicitly specify a list of reserved suffixes or pass CT as metadata.
+// "_sum", etc. based on the OpenMetrics specification found at
+// https://github.com/OpenObservability/OpenMetrics/blob/main/specification/OpenMetrics.md.
+// If no suffix is found, the original name is returned.
 func findBaseMetricName(name string) string {
-	suffixes := []string{"_created", "_count", "_sum", "_bucket"}
+	suffixes := []string{"_created", "_count", "_sum", "_bucket", "_total", "_gcount", "_gsum", "_info"}
 	for _, suffix := range suffixes {
 		if strings.HasSuffix(name, suffix) {
 			return strings.TrimSuffix(name, suffix)
