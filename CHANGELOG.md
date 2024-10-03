@@ -3,6 +3,7 @@
 ## unreleased
 
 * [CHANGE] `holt_winters` is now called `double_exponential_smoothing` and moves behind the [experimental-promql-functions feature flag](https://prometheus.io/docs/prometheus/latest/feature_flags/#experimental-promql-functions). #14930
+* [CHANGE] API: The OTLP receiver endpoint can now be enabled using `--web.enable-otlp-receiver` instead of `--enable-feature=otlp-write-receiver`. #14894
 * [BUGFIX] PromQL: Only return "possible non-counter" annotation when `rate` returns points. #14910
 
 ## 3.0.0-beta.0 / 2024-09-05

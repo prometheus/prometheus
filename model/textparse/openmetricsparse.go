@@ -297,7 +297,10 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 			// CT line for a different series, for our series no CT.
 			return nil
 		}
-		ct := int64(peek.val)
+
+		// All timestamps in OpenMetrics are Unix Epoch in seconds. Convert to milliseconds.
+		// https://github.com/OpenObservability/OpenMetrics/blob/main/specification/OpenMetrics.md#timestamps
+		ct := int64(peek.val * 1000.0)
 		return &ct
 	}
 }

@@ -187,6 +187,10 @@ func (s fSample) Type() chunkenc.ValueType {
 	return chunkenc.ValFloat
 }
 
+func (s fSample) Copy() chunks.Sample {
+	return s
+}
+
 type hSample struct {
 	t int64
 	h *histogram.Histogram
@@ -212,6 +216,10 @@ func (s hSample) Type() chunkenc.ValueType {
 	return chunkenc.ValHistogram
 }
 
+func (s hSample) Copy() chunks.Sample {
+	return hSample{t: s.t, h: s.h.Copy()}
+}
+
 type fhSample struct {
 	t  int64
 	fh *histogram.FloatHistogram
@@ -235,6 +243,10 @@ func (s fhSample) FH() *histogram.FloatHistogram {
 
 func (s fhSample) Type() chunkenc.ValueType {
 	return chunkenc.ValFloatHistogram
+}
+
+func (s fhSample) Copy() chunks.Sample {
+	return fhSample{t: s.t, fh: s.fh.Copy()}
 }
 
 type sampleRing struct {
@@ -535,55 +547,8 @@ func (r *sampleRing) addFH(s fhSample) {
 	}
 }
 
-// genericAdd is a generic implementation of adding a chunks.Sample
-// implementation to a buffer of a sample ring. However, the Go compiler
-// currently (go1.20) decides to not expand the code during compile time, but
-// creates dynamic code to handle the different types. That has a significant
-// overhead during runtime, noticeable in PromQL benchmarks. For example, the
-// "RangeQuery/expr=rate(a_hundred[1d]),steps=.*" benchmarks show about 7%
-// longer runtime, 9% higher allocation size, and 10% more allocations.
-// Therefore, genericAdd has been manually implemented for all the types
-// (addSample, addF, addH, addFH) below.
-//
-// func genericAdd[T chunks.Sample](s T, buf []T, r *sampleRing) []T {
-// 	l := len(buf)
-// 	// Grow the ring buffer if it fits no more elements.
-// 	if l == 0 {
-// 		buf = make([]T, 16)
-// 		l = 16
-// 	}
-// 	if l == r.l {
-// 		newBuf := make([]T, 2*l)
-// 		copy(newBuf[l+r.f:], buf[r.f:])
-// 		copy(newBuf, buf[:r.f])
-//
-// 		buf = newBuf
-// 		r.i = r.f
-// 		r.f += l
-// 		l = 2 * l
-// 	} else {
-// 		r.i++
-// 		if r.i >= l {
-// 			r.i -= l
-// 		}
-// 	}
-//
-// 	buf[r.i] = s
-// 	r.l++
-//
-// 	// Free head of the buffer of samples that just fell out of the range.
-// 	tmin := s.T() - r.delta
-// 	for buf[r.f].T() < tmin {
-// 		r.f++
-// 		if r.f >= l {
-// 			r.f -= l
-// 		}
-// 		r.l--
-// 	}
-// 	return buf
-// }
-
-// addSample is a handcoded specialization of genericAdd (see above).
+// addSample adds a sample to a buffer of chunks.Sample, i.e. the general case
+// using an interface as the type.
 func addSample(s chunks.Sample, buf []chunks.Sample, r *sampleRing) []chunks.Sample {
 	l := len(buf)
 	// Grow the ring buffer if it fits no more elements.
@@ -607,7 +572,7 @@ func addSample(s chunks.Sample, buf []chunks.Sample, r *sampleRing) []chunks.Sam
 		}
 	}
 
-	buf[r.i] = s
+	buf[r.i] = s.Copy()
 	r.l++
 
 	// Free head of the buffer of samples that just fell out of the range.
@@ -622,7 +587,7 @@ func addSample(s chunks.Sample, buf []chunks.Sample, r *sampleRing) []chunks.Sam
 	return buf
 }
 
-// addF is a handcoded specialization of genericAdd (see above).
+// addF adds an fSample to a (specialized) fSample buffer.
 func addF(s fSample, buf []fSample, r *sampleRing) []fSample {
 	l := len(buf)
 	// Grow the ring buffer if it fits no more elements.
@@ -661,7 +626,7 @@ func addF(s fSample, buf []fSample, r *sampleRing) []fSample {
 	return buf
 }
 
-// addH is a handcoded specialization of genericAdd (see above).
+// addF adds an hSample to a (specialized) hSample buffer.
 func addH(s hSample, buf []hSample, r *sampleRing) []hSample {
 	l := len(buf)
 	// Grow the ring buffer if it fits no more elements.
@@ -705,7 +670,7 @@ func addH(s hSample, buf []hSample, r *sampleRing) []hSample {
 	return buf
 }
 
-// addFH is a handcoded specialization of genericAdd (see above).
+// addFH adds an fhSample to a (specialized) fhSample buffer.
 func addFH(s fhSample, buf []fhSample, r *sampleRing) []fhSample {
 	l := len(buf)
 	// Grow the ring buffer if it fits no more elements.
