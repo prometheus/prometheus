@@ -4204,7 +4204,6 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrapeForTimestampedMetrics(t *
 	case <-time.After(5 * time.Second):
 		t.Fatalf("Scrape wasn't stopped.")
 	}
-	fmt.Println(appender.resultFloats)
 	// 1 successfully scraped sample, 1 stale marker after first fail, 5 report samples for
 	// each scrape successful or not.
 	require.Len(t, appender.resultFloats, 27, "Appended samples not as expected:\n%s", appender)
