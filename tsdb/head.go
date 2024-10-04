@@ -1165,17 +1165,20 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 		h.memTruncationCallBack(1)
 	}
 
+	oldMinTime := h.MinTime()
+	// Set the minTime that new queries will see, before waiting for queries to finish.
+	h.minTime.Store(mint)
+	// Don't allow samples to be added before this time.
+	h.minValidTime.Store(mint)
+
 	// We wait for pending queries to end that overlap with this truncation.
 	if initialized {
-		h.WaitForPendingReadersInTimeRange(h.MinTime(), mint)
+		h.WaitForPendingReadersInTimeRange(oldMinTime, mint)
 	}
 
 	if h.memTruncationCallBack != nil {
 		h.memTruncationCallBack(2)
 	}
-
-	h.minTime.Store(mint)
-	h.minValidTime.Store(mint)
 
 	// Ensure that max time is at least as high as min time.
 	for h.MaxTime() < mint {
