@@ -24,7 +24,9 @@ import (
 // Parser parses samples from a byte slice of samples in the official
 // Prometheus and OpenMetrics text exposition formats.
 type Parser interface {
-	Next(v *ExposedValues, d DropperCache) (ExposedMetricType, error)
+	// Parse returns the next metric with all information collected about it, such as
+	// metric type, help text, unit, created timestamps, samples, etc.
+	Next(v *ExposedValues, d DropperCache, keepClassicHistogramSeries bool) (ExposedMetricType, error)
 }
 
 type DropperCache interface {
