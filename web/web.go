@@ -59,7 +59,7 @@ import (
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/netconnlimit"
-	"github.com/prometheus/prometheus/web/api"
+	"github.com/prometheus/prometheus/util/notifications"
 	api_v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/prometheus/prometheus/web/ui"
 )
@@ -267,8 +267,8 @@ type Options struct {
 	RuleManager           *rules.Manager
 	Notifier              *notifier.Manager
 	Version               *PrometheusVersion
-	NotificationsGetter   func() []api.Notification
-	NotificationsSub      func() (<-chan api.Notification, func(), bool)
+	NotificationsGetter   func() []notifications.Notification
+	NotificationsSub      func() (<-chan notifications.Notification, func(), bool)
 	Flags                 map[string]string
 
 	ListenAddresses            []string
