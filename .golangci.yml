@@ -12,6 +12,7 @@ linters:
     - godot
     - gofumpt
     - goimports
+    - makezero
     - misspell
     - nolintlint
     - perfsprint

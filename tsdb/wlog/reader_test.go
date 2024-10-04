@@ -160,8 +160,8 @@ func encodedRecord(t recType, b []byte) []byte {
 	if t == recPageTerm {
 		return append([]byte{0}, b...)
 	}
-	r := make([]byte, recordHeaderSize)
-	r[0] = byte(t)
+	r := make([]byte, 0, recordHeaderSize)
+	r = append(r, byte(t))
 	binary.BigEndian.PutUint16(r[1:], uint16(len(b)))
 	binary.BigEndian.PutUint32(r[3:], crc32.Checksum(b, castagnoliTable))
 	return append(r, b...)
@@ -172,7 +172,7 @@ func TestReader(t *testing.T) {
 	for name, fn := range readerConstructors {
 		for i, c := range testReaderCases {
 			t.Run(fmt.Sprintf("%s/%d", name, i), func(t *testing.T) {
-				var buf []byte
+				buf := make([]byte, 0, len(c.t))
 				for _, r := range c.t {
 					buf = append(buf, encodedRecord(r.t, r.b)...)
 				}

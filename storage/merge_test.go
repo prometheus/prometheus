@@ -944,7 +944,7 @@ func (m *mockQuerier) Select(_ context.Context, sortSeries bool, _ *SelectHints,
 
 	var ret []Series
 	if len(m.toReturn) > 0 {
-		ret = make([]Series, len(m.toReturn))
+		ret = make([]Series, 0, len(m.toReturn))
 		copy(ret, m.toReturn)
 	} else if len(m.resp) > 0 {
 		ret = make([]Series, 0, len(m.resp))

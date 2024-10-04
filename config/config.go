@@ -287,10 +287,10 @@ func (c Config) String() string {
 
 // GetScrapeConfigs returns the scrape configurations.
 func (c *Config) GetScrapeConfigs() ([]*ScrapeConfig, error) {
-	scfgs := make([]*ScrapeConfig, len(c.ScrapeConfigs))
+	scfgs := make([]*ScrapeConfig, 0, len(c.ScrapeConfigs))
 
 	jobNames := map[string]string{}
-	for i, scfg := range c.ScrapeConfigs {
+	for _, scfg := range c.ScrapeConfigs {
 		// We do these checks for library users that would not call validate in
 		// Unmarshal.
 		if err := scfg.Validate(c.GlobalConfig); err != nil {
@@ -301,7 +301,7 @@ func (c *Config) GetScrapeConfigs() ([]*ScrapeConfig, error) {
 			return nil, fmt.Errorf("found multiple scrape configs with job name %q", scfg.JobName)
 		}
 		jobNames[scfg.JobName] = "main config file"
-		scfgs[i] = scfg
+		scfgs = append(scfgs, scfg)
 	}
 	for _, pat := range c.ScrapeConfigFiles {
 		fs, err := filepath.Glob(pat)
