@@ -79,14 +79,14 @@ bar_count 17.0
 bar_sum 324789.3
 bar{quantile="0.95"} 123.7
 bar{quantile="0.99"} 150.0
-bar_created 1520872607.123
+bar_created 1520872608.124
 # HELP baz Histogram with the same objective as above's summary
 # TYPE baz histogram
 baz_bucket{le="0.0"} 0
 baz_bucket{le="+Inf"} 17
 baz_count 17
 baz_sum 324789.3
-baz_created 1520872607.123
+baz_created 1520872609.125
 # HELP fizz_created Gauge which shouldn't be parsed as CT
 # TYPE fizz_created gauge
 fizz_created 17.0
@@ -290,22 +290,22 @@ foobar{quantile="0.99"} 150.1`
 			m:    "bar_count",
 			v:    17.0,
 			lset: labels.FromStrings("__name__", "bar_count"),
-			ct:   int64p(1520872607123),
+			ct:   int64p(1520872608124),
 		}, {
 			m:    "bar_sum",
 			v:    324789.3,
 			lset: labels.FromStrings("__name__", "bar_sum"),
-			ct:   int64p(1520872607123),
+			ct:   int64p(1520872608124),
 		}, {
 			m:    `bar{quantile="0.95"}`,
 			v:    123.7,
 			lset: labels.FromStrings("__name__", "bar", "quantile", "0.95"),
-			ct:   int64p(1520872607123),
+			ct:   int64p(1520872608124),
 		}, {
 			m:    `bar{quantile="0.99"}`,
 			v:    150.0,
 			lset: labels.FromStrings("__name__", "bar", "quantile", "0.99"),
-			ct:   int64p(1520872607123),
+			ct:   int64p(1520872608124),
 		}, {
 			m:    "baz",
 			help: "Histogram with the same objective as above's summary",
@@ -316,22 +316,22 @@ foobar{quantile="0.99"} 150.1`
 			m:    `baz_bucket{le="0.0"}`,
 			v:    0,
 			lset: labels.FromStrings("__name__", "baz_bucket", "le", "0.0"),
-			ct:   int64p(1520872607123),
+			ct:   int64p(1520872609125),
 		}, {
 			m:    `baz_bucket{le="+Inf"}`,
 			v:    17,
 			lset: labels.FromStrings("__name__", "baz_bucket", "le", "+Inf"),
-			ct:   int64p(1520872607123),
+			ct:   int64p(1520872609125),
 		}, {
 			m:    `baz_count`,
 			v:    17,
 			lset: labels.FromStrings("__name__", "baz_count"),
-			ct:   int64p(1520872607123),
+			ct:   int64p(1520872609125),
 		}, {
 			m:    `baz_sum`,
 			v:    324789.3,
 			lset: labels.FromStrings("__name__", "baz_sum"),
-			ct:   int64p(1520872607123),
+			ct:   int64p(1520872609125),
 		}, {
 			m:    "fizz_created",
 			help: "Gauge which shouldn't be parsed as CT",
