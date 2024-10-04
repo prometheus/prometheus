@@ -78,7 +78,7 @@ type WriteStorage struct {
 }
 
 // NewWriteStorage creates and runs a WriteStorage.
-func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager, metadataInWal bool) *WriteStorage {
+func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager, metadataInWal, shouldIntern bool) *WriteStorage {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -91,7 +91,6 @@ func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, dir string, f
 		flushDeadline:     flushDeadline,
 		samplesIn:         newEWMARate(ewmaWeight, shardUpdateDuration),
 		dir:               dir,
-		interner:          newPool(),
 		scraper:           sm,
 		quit:              make(chan struct{}),
 		metadataInWAL:     metadataInWal,
@@ -103,6 +102,9 @@ func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, dir string, f
 				Help:      "Highest timestamp that has come into the remote storage via the Appender interface, in seconds since epoch. Initialized to 0 when no data has been received yet.",
 			}),
 		},
+	}
+	if shouldIntern {
+		rws.interner = newPool()
 	}
 	if reg != nil {
 		reg.MustRegister(rws.highestTimestamp)
@@ -226,7 +228,6 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	for _, q := range rws.queues {
 		q.Stop()
 	}
-
 	for _, hash := range newHashes {
 		newQueues[hash].Start()
 	}

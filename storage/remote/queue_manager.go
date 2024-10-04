@@ -959,11 +959,13 @@ func (t *QueueManager) Stop() {
 	}
 
 	// On shutdown, release the strings in the labels from the intern pool.
-	t.seriesMtx.Lock()
-	for _, labels := range t.seriesLabels {
-		t.releaseLabels(labels)
+	if t.interner != nil {
+		t.seriesMtx.Lock()
+		for _, labels := range t.seriesLabels {
+			t.releaseLabels(labels)
+		}
+		t.seriesMtx.Unlock()
 	}
-	t.seriesMtx.Unlock()
 	t.metrics.unregister()
 }
 
@@ -985,14 +987,17 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 			continue
 		}
 		lbls := t.builder.Labels()
-		t.internLabels(lbls)
+		if t.interner != nil {
+			t.internLabels(lbls)
 
-		// We should not ever be replacing a series labels in the map, but just
-		// in case we do we need to ensure we do not leak the replaced interned
-		// strings.
-		if orig, ok := t.seriesLabels[s.Ref]; ok {
-			t.releaseLabels(orig)
+			// We should not ever be replacing a series labels in the map, but just
+			// in case we do we need to ensure we do not leak the replaced interned
+			// strings.
+			if orig, ok := t.seriesLabels[s.Ref]; ok {
+				t.releaseLabels(orig)
+			}
 		}
+
 		t.seriesLabels[s.Ref] = lbls
 	}
 }
@@ -1037,10 +1042,13 @@ func (t *QueueManager) SeriesReset(index int) {
 	for k, v := range t.seriesSegmentIndexes {
 		if v < index {
 			delete(t.seriesSegmentIndexes, k)
-			t.releaseLabels(t.seriesLabels[k])
 			delete(t.seriesLabels, k)
 			delete(t.seriesMetadata, k)
 			delete(t.droppedSeries, k)
+
+			if t.interner != nil {
+				t.releaseLabels(t.seriesLabels[k])
+			}
 		}
 	}
 }
