@@ -381,7 +381,7 @@ func (r *AlertingRule) Eval(ctx context.Context, queryOffset time.Duration, ts t
 			result, err := tmpl.Expand()
 			if err != nil {
 				result = fmt.Sprintf("<error expanding template: %s>", err)
-				level.Warn(r.logger).Log("msg", "Expanding alert template failed", "err", err, "data", tmplData)
+				level.Warn(r.logger).Log("msg", "Expanding alert template failed", "err", err, "data", fmt.Sprintf("%#v", tmplData))
 			}
 			return result
 		}
