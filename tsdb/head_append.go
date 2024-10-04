@@ -978,6 +978,122 @@ func exemplarsForEncoding(es []exemplarWithSeriesRef) []record.RefExemplar {
 	return ret
 }
 
+func processSamples(
+	a *headAppender,
+	series *memSeries, //lint:ignore SA4009 // series are being reused.
+	floatsAppended int,
+	floatOOORejected int,
+	floatOOBRejected int,
+	floatTooOldRejected int,
+	oooCapMax int64,
+	oooMmapMarkers map[chunks.HeadSeriesRef][]chunks.ChunkDiskMapperRef,
+	collectOOORecords func(),
+	oooMmapMarkersCount int,
+	wblSamples []record.RefSample,
+	oooMinT int64,
+	oooMaxT int64,
+	oooFloatsAccepted int,
+	appendChunkOpts chunkOpts,
+	inOrderMint int64,
+	inOrderMaxt int64) (int, int, int, int, map[chunks.HeadSeriesRef][]chunks.ChunkDiskMapperRef, int64, int64, int, int64, int64) {
+	for i, s := range a.samples {
+		series = a.sampleSeries[i]
+		series.Lock()
+
+		oooSample, _, err := series.appendable(s.T, s.V, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+		switch {
+		case err == nil:
+			// Do nothing.
+		case errors.Is(err, storage.ErrOutOfOrderSample):
+			floatsAppended--
+			floatOOORejected++
+		case errors.Is(err, storage.ErrOutOfBounds):
+			floatsAppended--
+			floatOOBRejected++
+		case errors.Is(err, storage.ErrTooOldSample):
+			floatsAppended--
+			floatTooOldRejected++
+		default:
+			floatsAppended--
+		}
+
+		var ok, chunkCreated bool
+
+		switch {
+		case err != nil:
+			// Do nothing here.
+		case oooSample:
+			// Sample is OOO and OOO handling is enabled
+			// and the delta is within the OOO tolerance.
+			var mmapRefs []chunks.ChunkDiskMapperRef
+			ok, chunkCreated, mmapRefs = series.insert(s.T, s.V, nil, nil, a.head.chunkDiskMapper, oooCapMax, a.head.logger)
+			if chunkCreated {
+				r, ok := oooMmapMarkers[series.ref]
+				if !ok || r != nil {
+					// !ok means there are no markers collected for these samples yet. So we first flush the samples
+					// before setting this m-map marker.
+
+					// r != nil means we have already m-mapped a chunk for this series in the same Commit().
+					// Hence, before we m-map again, we should add the samples and m-map markers
+					// seen till now to the WBL records.
+					collectOOORecords()
+				}
+
+				if oooMmapMarkers == nil {
+					oooMmapMarkers = make(map[chunks.HeadSeriesRef][]chunks.ChunkDiskMapperRef)
+				}
+				if len(mmapRefs) > 0 {
+					oooMmapMarkers[series.ref] = mmapRefs
+					oooMmapMarkersCount += len(mmapRefs)
+				} else {
+					// No chunk was written to disk, so we need to set an initial marker for this series.
+					oooMmapMarkers[series.ref] = []chunks.ChunkDiskMapperRef{0}
+					oooMmapMarkersCount++
+				}
+			}
+			if ok {
+				wblSamples = append(wblSamples, s)
+				if s.T < oooMinT {
+					oooMinT = s.T
+				}
+				if s.T > oooMaxT {
+					oooMaxT = s.T
+				}
+				oooFloatsAccepted++
+			} else {
+				// Sample is an exact duplicate of the last sample.
+				// NOTE: We can only detect updates if they clash with a sample in the OOOHeadChunk,
+				// not with samples in already flushed OOO chunks.
+				// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
+				floatsAppended--
+			}
+		default:
+			ok, chunkCreated = series.append(s.T, s.V, a.appendID, appendChunkOpts)
+			if ok {
+				if s.T < inOrderMint {
+					inOrderMint = s.T
+				}
+				if s.T > inOrderMaxt {
+					inOrderMaxt = s.T
+				}
+			} else {
+				// The sample is an exact duplicate, and should be silently dropped.
+				floatsAppended--
+			}
+		}
+
+		if chunkCreated {
+			a.head.metrics.chunks.Inc()
+			a.head.metrics.chunksCreated.Inc()
+		}
+
+		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
+		series.pendingCommit = false
+		series.Unlock()
+	}
+	return floatsAppended, floatOOORejected, floatOOBRejected, floatTooOldRejected, oooMmapMarkers, oooMinT, oooMaxT, oooFloatsAccepted, inOrderMint, inOrderMaxt
+}
+
 // Commit writes to the WAL and adds the data to the Head.
 // TODO(codesome): Refactor this method to reduce indentation and make it more readable.
 func (a *headAppender) Commit() (err error) {
@@ -1108,8 +1224,30 @@ func (a *headAppender) Commit() (err error) {
 		wblFloatHistograms = nil
 		oooMmapMarkers = nil
 	}
-	for i, s := range a.samples {
-		series = a.sampleSeries[i]
+
+	floatsAppended, floatOOORejected, floatOOBRejected, floatTooOldRejected, oooMmapMarkers,
+		oooMinT, oooMaxT, oooFloatsAccepted, inOrderMint, inOrderMaxt =
+		processSamples(a,
+			series,
+			floatsAppended,
+			floatOOORejected,
+			floatOOBRejected,
+			floatTooOldRejected,
+			oooCapMax,
+			oooMmapMarkers,
+			collectOOORecords,
+			oooMmapMarkersCount,
+			wblSamples,
+			oooMinT,
+			oooMaxT,
+			oooFloatsAccepted,
+			appendChunkOpts,
+			inOrderMint,
+			inOrderMaxt,
+		)
+
+	for i, s := range a.histograms {
+		series = a.histogramSeries[i]
 		series.Lock()
 
 		oooSample, _, err := series.appendable(s.T, s.V, a.headMaxt, a.minValidTime, a.oooTimeWindow)
