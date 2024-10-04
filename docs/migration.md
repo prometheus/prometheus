@@ -3,13 +3,41 @@ title: Migration
 sort_rank: 10
 ---
 
+# Prometheus 3.0 migration guide
+
+In line with our [stability 
+promise](https://prometheus.io/docs/prometheus/latest/stability/),
+the Prometheus 3.0 release contains a number of backwards incompatible changes.
+This document offers guidance on migrating from Prometheus 2.x to Prometheus 3.0 and newer versions.
+
+## Flags
+
+- Some previously deprecated feature flags have been removed. Check that you no 
+  longer pass any of the following to `--enable-feature`: `promql-at-modifier`
+  `promql-negative-offset`, `remote-write-receiver`, 
+  `new-service-discovery-manager`, `expand-external-labels`, 
+  `no-default-scrape-port`.
+
+## PromQL
+
+- Regular expressions in PromQL not match newline characters.
+- Lookback and range selectors are left open and right closed (previously left 
+  closed and right closed). This mostly means that the result size of range 
+  selectors is more predictable.
+- The `holt_winters` function has been renamed to `double_exponential_smoothing` 
+  and is now guarded by the `experimental_promql` feature flag.
+
+## Miscellaneous
+
 # Prometheus 2.0 migration guide
 
-In line with our [stability promise](https://prometheus.io/blog/2016/07/18/prometheus-1-0-released/#fine-print),
+In line with our [stability promise](https://prometheus.io/docs/prometheus/latest/stability/),
 the Prometheus 2.0 release contains a number of backwards incompatible changes.
 This document offers guidance on migrating from Prometheus 1.8 to Prometheus 2.0 and newer versions.
 
 ## Flags
+
+Some notable flags which have been removed:
 
 The format of Prometheus command line flags has changed. Instead of a
 single dash, all flags now use a double dash. Common flags (`--config.file`,
