@@ -1,0 +1,11 @@
+.chartWrapper {
+  border: 1px solid
+    light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-5));
+  border-radius: var(--mantine-radius-default);
+}
+
+.uplotChart {
+  width: 100%;
+  height: 100%;
+  padding: 15px;
+}

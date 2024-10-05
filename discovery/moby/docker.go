@@ -19,6 +19,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"time"
 
@@ -251,28 +252,26 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 		}
 
 		if d.matchFirstNetwork && len(networks) > 1 {
-			// Match user defined network
-			if containerNetworkMode.IsUserDefined() {
-				networkMode := string(containerNetworkMode)
-				networks = map[string]*network.EndpointSettings{networkMode: networks[networkMode]}
-			} else {
-				// Get first network if container network mode has "none" value.
-				// This case appears under certain condition:
-				// 1. Container created with network set to "--net=none".
-				// 2. Disconnect network "none".
-				// 3. Reconnect network with user defined networks.
-				var first string
-				for k, n := range networks {
-					if n != nil {
-						first = k
-						break
-					}
+			// Sort networks by name and take first non-nil network.
+			keys := make([]string, 0, len(networks))
+			for k, n := range networks {
+				if n != nil {
+					keys = append(keys, k)
 				}
-				networks = map[string]*network.EndpointSettings{first: networks[first]}
+			}
+			if len(keys) > 0 {
+				sort.Strings(keys)
+				firstNetworkMode := keys[0]
+				firstNetwork := networks[firstNetworkMode]
+				networks = map[string]*network.EndpointSettings{firstNetworkMode: firstNetwork}
 			}
 		}
 
 		for _, n := range networks {
+			if n == nil {
+				continue
+			}
+
 			var added bool
 
 			for _, p := range c.Ports {

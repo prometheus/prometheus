@@ -202,10 +202,11 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeScalar, ValueTypeVector},
 		ReturnType: ValueTypeVector,
 	},
-	"holt_winters": {
-		Name:       "holt_winters",
-		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar, ValueTypeScalar},
-		ReturnType: ValueTypeVector,
+	"double_exponential_smoothing": {
+		Name:         "double_exponential_smoothing",
+		ArgTypes:     []ValueType{ValueTypeMatrix, ValueTypeScalar, ValueTypeScalar},
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
 	},
 	"hour": {
 		Name:       "hour",

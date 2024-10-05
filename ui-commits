@@ -1,0 +1,12 @@
+dfec29d8e Fix border color for target pools with one target that is failing
+65743bf9b ui: drop template readme
+a7c1a951d Add general Mantine overrides CSS file
+0757fbbec Make sure that alert element table headers are not wrapped
+0180cf31a Factor out common icon and card styles
+50af7d589 Fix tree line drawing by using a callback ref
+ac01dc903 Explain, vector-to-vector: Do not compute results for set operators
+9b0dc68d0 PromQL explain view: Support set operators
+57898c792 Refactor and fix time formatting functions, add tests
+091fc403c Fiddle with targets table styles to try and improve things a bit
+a1908df92 Don't wrap action buttons below metric name in metrics explorer
+ac5377873 mantine UI: Distinguish between Not Ready and Stopping

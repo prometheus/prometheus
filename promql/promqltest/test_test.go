@@ -237,7 +237,7 @@ eval instant at 5m sum by (group) (http_requests)
 load 5m
 	testmetric {{}}
 
-eval instant at 5m testmetric
+eval instant at 0m testmetric
 `,
 			expectedError: `error in eval testmetric (line 5): unexpected metric {__name__="testmetric"} in result, has value {count:0, sum:0}`,
 		},
@@ -381,7 +381,7 @@ load 5m
 eval range from 0 to 10m step 5m testmetric
 	testmetric {{schema:-1 sum:4 count:1 buckets:[1] offset:1}} {{schema:-1 sum:7 count:1 buckets:[1] offset:1}} {{schema:-1 sum:8 count:1 buckets:[1] offset:1}}
 `,
-			expectedError: `error in eval testmetric (line 5): expected histogram value at index 1 (t=300000) for {__name__="testmetric"} to be {count:1, sum:7, (1,4]:1}, but got {count:1, sum:5, (1,4]:1} (result has 0 float points [] and 3 histogram points [{count:1, sum:4, (1,4]:1} @[0] {count:1, sum:5, (1,4]:1} @[300000] {count:1, sum:6, (1,4]:1} @[600000]])`,
+			expectedError: `error in eval testmetric (line 5): expected histogram value at index 1 (t=300000) for {__name__="testmetric"} to be {{schema:-1 count:1 sum:7 offset:1 buckets:[1]}}, but got {{schema:-1 count:1 sum:5 counter_reset_hint:not_reset offset:1 buckets:[1]}} (result has 0 float points [] and 3 histogram points [{{schema:-1 count:1 sum:4 offset:1 buckets:[1]}} @[0] {{schema:-1 count:1 sum:5 counter_reset_hint:not_reset offset:1 buckets:[1]}} @[300000] {{schema:-1 count:1 sum:6 counter_reset_hint:not_reset offset:1 buckets:[1]}} @[600000]])`,
 		},
 		"range query with too many points for query time range": {
 			input: testData + `
@@ -532,7 +532,7 @@ load 5m
 eval range from 0 to 5m step 5m testmetric
 	testmetric 2 3
 `,
-			expectedError: `error in eval testmetric (line 5): expected 2 float points and 0 histogram points for {__name__="testmetric"}, but got 0 float points [] and 2 histogram points [{count:0, sum:0} @[0] {count:0, sum:0} @[300000]]`,
+			expectedError: `error in eval testmetric (line 5): expected 2 float points and 0 histogram points for {__name__="testmetric"}, but got 0 float points [] and 2 histogram points [{{}} @[0] {{counter_reset_hint:not_reset}} @[300000]]`,
 		},
 		"range query with expected mixed results": {
 			input: `
@@ -552,13 +552,50 @@ load 5m
 eval range from 0 to 5m step 5m testmetric
 	testmetric {{}} 3
 `,
-			expectedError: `error in eval testmetric (line 5): expected float value at index 0 for {__name__="testmetric"} to have timestamp 300000, but it had timestamp 0 (result has 1 float point [3 @[0]] and 1 histogram point [{count:0, sum:0} @[300000]])`,
+			expectedError: `error in eval testmetric (line 5): expected float value at index 0 for {__name__="testmetric"} to have timestamp 300000, but it had timestamp 0 (result has 1 float point [3 @[0]] and 1 histogram point [{{}} @[300000]])`,
+		},
+		"instant query with expected scalar result": {
+			input: `
+				eval instant at 1m 3
+					3
+			`,
+		},
+		"instant query with unexpected scalar result": {
+			input: `
+				eval instant at 1m 3
+					2
+			`,
+			expectedError: `error in eval 3 (line 2): expected scalar 2 but got 3`,
+		},
+		"instant query that returns a scalar but expects a vector": {
+			input: `
+				eval instant at 1m 3
+					{} 3
+			`,
+			expectedError: `error in eval 3 (line 2): expected vector or matrix result, but got scalar: 3 @[60000]`,
+		},
+		"instant query that returns a vector but expects a scalar": {
+			input: `
+				eval instant at 1m vector(3)
+					3
+			`,
+			expectedError: `error in eval vector(3) (line 2): expected scalar result, but got vector {} => 3 @[60000]`,
+		},
+		"range query that returns a matrix but expects a scalar": {
+			input: `
+				eval range from 0 to 1m step 30s vector(3)
+					3
+			`,
+			expectedError: `error in eval vector(3) (line 2): expected scalar result, but got matrix {} =>
+3 @[0]
+3 @[30000]
+3 @[60000]`,
 		},
 	}
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			err := runTest(t, testCase.input, NewTestEngine(false, 0, DefaultMaxSamplesPerQuery))
+			err := runTest(t, testCase.input, NewTestEngine(t, false, 0, DefaultMaxSamplesPerQuery))
 
 			if testCase.expectedError == "" {
 				require.NoError(t, err)

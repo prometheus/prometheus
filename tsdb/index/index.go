@@ -43,10 +43,12 @@ const (
 	// HeaderLen represents number of bytes reserved of index for header.
 	HeaderLen = 5
 
-	// FormatV1 represents 1 version of index.
+	// FormatV1 represents version 1 of index.
 	FormatV1 = 1
-	// FormatV2 represents 2 version of index.
+	// FormatV2 represents version 2 of index.
 	FormatV2 = 2
+	// FormatV3 represents version 3 of index.
+	FormatV3 = 3
 
 	indexFilename = "index"
 
@@ -196,8 +198,9 @@ func NewTOCFromByteSlice(bs ByteSlice) (*TOC, error) {
 	return toc, d.Err()
 }
 
-// NewWriter returns a new Writer to the given filename. It serializes data in format version 2.
-// It uses the given encoder to encode each postings list.
+// NewWriterWithEncoder returns a new Writer to the given filename. It
+// serializes data in format version 2. It uses the given encoder to encode each
+// postings list.
 func NewWriterWithEncoder(ctx context.Context, fn string, encoder PostingsEncoder) (*Writer, error) {
 	dir := filepath.Dir(fn)
 
@@ -1192,7 +1195,9 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 	}
 	r.version = int(r.b.Range(4, 5)[0])
 
-	if r.version != FormatV1 && r.version != FormatV2 {
+	switch r.version {
+	case FormatV1, FormatV2, FormatV3:
+	default:
 		return nil, fmt.Errorf("unknown index file version %d", r.version)
 	}
 
@@ -1350,7 +1355,9 @@ func (s Symbols) Lookup(o uint32) (string, error) {
 		B: s.bs.Range(0, s.bs.Len()),
 	}
 
-	if s.version == FormatV2 {
+	if s.version == FormatV1 {
+		d.Skip(int(o))
+	} else {
 		if int(o) >= s.seen {
 			return "", fmt.Errorf("unknown symbol offset %d", o)
 		}
@@ -1359,8 +1366,6 @@ func (s Symbols) Lookup(o uint32) (string, error) {
 		for i := o - (o / symbolFactor * symbolFactor); i > 0; i-- {
 			d.UvarintBytes()
 		}
-	} else {
-		d.Skip(int(o))
 	}
 	sym := d.UvarintStr()
 	if d.Err() != nil {
@@ -1406,10 +1411,10 @@ func (s Symbols) ReverseLookup(sym string) (uint32, error) {
 	if lastSymbol != sym {
 		return 0, fmt.Errorf("unknown symbol %q", sym)
 	}
-	if s.version == FormatV2 {
-		return uint32(res), nil
+	if s.version == FormatV1 {
+		return uint32(s.bs.Len() - lastLen), nil
 	}
-	return uint32(s.bs.Len() - lastLen), nil
+	return uint32(res), nil
 }
 
 func (s Symbols) Size() int {
@@ -1568,7 +1573,7 @@ func (r *Reader) LabelNamesFor(ctx context.Context, postings Postings) ([]string
 		offset := id
 		// In version 2 series IDs are no longer exact references but series are 16-byte padded
 		// and the ID is the multiple of 16 of the actual position.
-		if r.version == FormatV2 {
+		if r.version != FormatV1 {
 			offset = id * seriesByteAlign
 		}
 
@@ -1607,7 +1612,7 @@ func (r *Reader) LabelValueFor(ctx context.Context, id storage.SeriesRef, label 
 	offset := id
 	// In version 2 series IDs are no longer exact references but series are 16-byte padded
 	// and the ID is the multiple of 16 of the actual position.
-	if r.version == FormatV2 {
+	if r.version != FormatV1 {
 		offset = id * seriesByteAlign
 	}
 	d := encoding.NewDecbufUvarintAt(r.b, int(offset), castagnoliTable)
@@ -1633,7 +1638,7 @@ func (r *Reader) Series(id storage.SeriesRef, builder *labels.ScratchBuilder, ch
 	offset := id
 	// In version 2 series IDs are no longer exact references but series are 16-byte padded
 	// and the ID is the multiple of 16 of the actual position.
-	if r.version == FormatV2 {
+	if r.version != FormatV1 {
 		offset = id * seriesByteAlign
 	}
 	d := encoding.NewDecbufUvarintAt(r.b, int(offset), castagnoliTable)
@@ -2062,5 +2067,5 @@ func (dec *Decoder) Series(b []byte, builder *labels.ScratchBuilder, chks *[]chu
 }
 
 func yoloString(b []byte) string {
-	return *((*string)(unsafe.Pointer(&b)))
+	return unsafe.String(unsafe.SliceData(b), len(b))
 }

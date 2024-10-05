@@ -1,0 +1,35 @@
+.promql-code {
+  font-family: "DejaVu Sans Mono", monospace;
+}
+
+.promql-keyword {
+  color: light-dark(#008080, #14bfad);
+}
+
+.promql-metric-name {
+  /* Should already inherit the right color from the theme. */
+}
+
+.promql-label-name {
+  color: light-dark(#800000, #ff8585);
+}
+
+.promql-string {
+  color: light-dark(#a31515, #fca5a5);
+}
+
+.promql-paren,
+.promql-brace {
+}
+
+.promql-ellipsis {
+  color: light-dark(rgb(170, 170, 170), rgb(170, 170, 170));
+}
+
+.promql-duration {
+  color: light-dark(#09885a, #22c55e);
+}
+
+.promql-number {
+  color: light-dark(#09885a, #22c55e);
+}

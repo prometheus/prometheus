@@ -188,7 +188,7 @@ func matchesMatcherSets(matcherSets [][]*labels.Matcher, lbls labels.Labels) boo
 	return ok
 }
 
-// Queryable returns the group's querable.
+// Queryable returns the group's queryable.
 func (g *Group) Queryable() storage.Queryable { return g.opts.Queryable }
 
 // Context returns the group's context.
@@ -621,14 +621,12 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			}
 		}
 
-		// If the rule has no dependencies, it can run concurrently because no other rules in this group depend on its output.
-		// Try run concurrently if there are slots available.
-		if ctrl := g.concurrencyController; isRuleEligibleForConcurrentExecution(rule) && ctrl.Allow() {
+		if ctrl := g.concurrencyController; ctrl.Allow(ctx, g, rule) {
 			wg.Add(1)
 
 			go eval(i, rule, func() {
 				wg.Done()
-				ctrl.Done()
+				ctrl.Done(ctx)
 			})
 		} else {
 			eval(i, rule, nil)
@@ -1093,8 +1091,4 @@ func buildDependencyMap(rules []Rule) dependencyMap {
 	}
 
 	return dependencies
-}
-
-func isRuleEligibleForConcurrentExecution(rule Rule) bool {
-	return rule.NoDependentRules() && rule.NoDependencyRules()
 }

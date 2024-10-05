@@ -239,6 +239,75 @@ $ curl 'http://localhost:9090/api/v1/format_query?query=foo/bar'
 }
 ```
 
+## Parsing a PromQL expressions into a abstract syntax tree (AST)
+
+This endpoint is **experimental** and might change in the future. It is currently only meant to be used by Prometheus' own web UI, and the endpoint name and exact format returned may change from one Prometheus version to another. It may also be removed again in case it is no longer needed by the UI.
+
+The following endpoint parses a PromQL expression and returns it as a JSON-formatted AST (abstract syntax tree) representation:
+
+```
+GET /api/v1/parse_query
+POST /api/v1/parse_query
+```
+
+URL query parameters:
+
+- `query=<string>`: Prometheus expression query string.
+
+You can URL-encode these parameters directly in the request body by using the `POST` method and
+`Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
+query that may breach server-side URL character limits.
+
+The `data` section of the query result is a string containing the AST of the parsed query expression.
+
+The following example parses the expression `foo/bar`:
+
+```json
+$ curl 'http://localhost:9090/api/v1/parse_query?query=foo/bar'
+{
+   "data" : {
+      "bool" : false,
+      "lhs" : {
+         "matchers" : [
+            {
+               "name" : "__name__",
+               "type" : "=",
+               "value" : "foo"
+            }
+         ],
+         "name" : "foo",
+         "offset" : 0,
+         "startOrEnd" : null,
+         "timestamp" : null,
+         "type" : "vectorSelector"
+      },
+      "matching" : {
+         "card" : "one-to-one",
+         "include" : [],
+         "labels" : [],
+         "on" : false
+      },
+      "op" : "/",
+      "rhs" : {
+         "matchers" : [
+            {
+               "name" : "__name__",
+               "type" : "=",
+               "value" : "bar"
+            }
+         ],
+         "name" : "bar",
+         "offset" : 0,
+         "startOrEnd" : null,
+         "timestamp" : null,
+         "type" : "vectorSelector"
+      },
+      "type" : "binaryExpr"
+   },
+   "status" : "success"
+}
+```
+
 ## Querying metadata
 
 Prometheus offers a set of API endpoints to query metadata about series and their labels.
@@ -693,7 +762,7 @@ URL query parameters:
 - `rule_name[]=<string>`: only return rules with the given rule name. If the parameter is repeated, rules with any of the provided names are returned. If we've filtered out all the rules of a group, the group is not returned. When the parameter is absent or empty, no filtering is done.
 - `rule_group[]=<string>`: only return rules with the given rule group name. If the parameter is repeated, rules with any of the provided rule group names are returned. When the parameter is absent or empty, no filtering is done.
 - `file[]=<string>`: only return rules with the given filepath. If the parameter is repeated, rules with any of the provided filepaths are returned. When the parameter is absent or empty, no filtering is done.
-- `exclude_alerts=<bool>`: only return rules, do not return active alerts. 
+- `exclude_alerts=<bool>`: only return rules, do not return active alerts.
 - `match[]=<label_selector>`: only return rules that have configured labels that satisfy the label selectors. If the parameter is repeated, rules that match any of the sets of label selectors are returned. Note that matching is on the labels in the definition of each rule, not on the values after template expansion (for alerting rules). Optional.
 - `max_groups=<number>`: return up to `max_groups` rule groups. In case there are more groups, a `nextToken` property will be present in the response. The value in that property can be used in subsequent requests in the `next_token` property to paginate over the remaining rule groups. The `nextToken` property will not be present in the last response.
 - `next_token`: the pagination token that was returned in previous request when the `max_groups` property is set. The pagination token is used to iteratively paginate over a large number of rule groups.
@@ -1321,8 +1390,8 @@ is not considered an efficient way of ingesting samples. Use it
 with caution for specific low-volume use cases. It is not suitable for
 replacing the ingestion via scraping.
 
-Enable the OTLP receiver by the feature flag
-`--enable-feature=otlp-write-receiver`. When enabled, the OTLP receiver
+Enable the OTLP receiver by setting
+`--web.enable-otlp-receiver`. When enabled, the OTLP receiver
 endpoint is `/api/v1/otlp/v1/metrics`.
 
 *New in v2.47*

@@ -17,6 +17,7 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -55,6 +56,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/httputil"
+	"github.com/prometheus/prometheus/util/notifications"
 	"github.com/prometheus/prometheus/util/stats"
 )
 
@@ -214,16 +216,18 @@ type API struct {
 	ready                 func(http.HandlerFunc) http.HandlerFunc
 	globalURLOptions      GlobalURLOptions
 
-	db            TSDBAdminStats
-	dbDir         string
-	enableAdmin   bool
-	logger        log.Logger
-	CORSOrigin    *regexp.Regexp
-	buildInfo     *PrometheusVersion
-	runtimeInfo   func() (RuntimeInfo, error)
-	gatherer      prometheus.Gatherer
-	isAgent       bool
-	statsRenderer StatsRenderer
+	db                  TSDBAdminStats
+	dbDir               string
+	enableAdmin         bool
+	logger              log.Logger
+	CORSOrigin          *regexp.Regexp
+	buildInfo           *PrometheusVersion
+	runtimeInfo         func() (RuntimeInfo, error)
+	gatherer            prometheus.Gatherer
+	isAgent             bool
+	statsRenderer       StatsRenderer
+	notificationsGetter func() []notifications.Notification
+	notificationsSub    func() (<-chan notifications.Notification, func(), bool)
 
 	remoteWriteHandler http.Handler
 	remoteReadHandler  http.Handler
@@ -257,6 +261,8 @@ func NewAPI(
 	corsOrigin *regexp.Regexp,
 	runtimeInfo func() (RuntimeInfo, error),
 	buildInfo *PrometheusVersion,
+	notificationsGetter func() []notifications.Notification,
+	notificationsSub func() (<-chan notifications.Notification, func(), bool),
 	gatherer prometheus.Gatherer,
 	registerer prometheus.Registerer,
 	statsRenderer StatsRenderer,
@@ -273,22 +279,24 @@ func NewAPI(
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
 
-		now:              time.Now,
-		config:           configFunc,
-		flagsMap:         flagsMap,
-		ready:            readyFunc,
-		globalURLOptions: globalURLOptions,
-		db:               db,
-		dbDir:            dbDir,
-		enableAdmin:      enableAdmin,
-		rulesRetriever:   rr,
-		logger:           logger,
-		CORSOrigin:       corsOrigin,
-		runtimeInfo:      runtimeInfo,
-		buildInfo:        buildInfo,
-		gatherer:         gatherer,
-		isAgent:          isAgent,
-		statsRenderer:    DefaultStatsRenderer,
+		now:                 time.Now,
+		config:              configFunc,
+		flagsMap:            flagsMap,
+		ready:               readyFunc,
+		globalURLOptions:    globalURLOptions,
+		db:                  db,
+		dbDir:               dbDir,
+		enableAdmin:         enableAdmin,
+		rulesRetriever:      rr,
+		logger:              logger,
+		CORSOrigin:          corsOrigin,
+		runtimeInfo:         runtimeInfo,
+		buildInfo:           buildInfo,
+		gatherer:            gatherer,
+		isAgent:             isAgent,
+		statsRenderer:       DefaultStatsRenderer,
+		notificationsGetter: notificationsGetter,
+		notificationsSub:    notificationsSub,
 
 		remoteReadHandler: remote.NewReadHandler(logger, registerer, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
 	}
@@ -307,7 +315,7 @@ func NewAPI(
 		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, acceptRemoteWriteProtoMsgs)
 	}
 	if otlpEnabled {
-		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, ap)
+		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, ap, configFunc)
 	}
 
 	return a
@@ -378,6 +386,9 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/format_query", wrapAgent(api.formatQuery))
 	r.Post("/format_query", wrapAgent(api.formatQuery))
 
+	r.Get("/parse_query", wrapAgent(api.parseQuery))
+	r.Post("/parse_query", wrapAgent(api.parseQuery))
+
 	r.Get("/labels", wrapAgent(api.labelNames))
 	r.Post("/labels", wrapAgent(api.labelNames))
 	r.Get("/label/:name/values", wrapAgent(api.labelValues))
@@ -399,6 +410,8 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/flags", wrap(api.serveFlags))
 	r.Get("/status/tsdb", wrapAgent(api.serveTSDBStatus))
 	r.Get("/status/walreplay", api.serveWALReplayStatus)
+	r.Get("/notifications", api.notifications)
+	r.Get("/notifications/live", api.notificationsSSE)
 	r.Post("/read", api.ready(api.remoteRead))
 	r.Post("/write", api.ready(api.remoteWrite))
 	r.Post("/otlp/v1/metrics", api.ready(api.otlpWrite))
@@ -495,6 +508,15 @@ func (api *API) formatQuery(r *http.Request) (result apiFuncResult) {
 	}
 
 	return apiFuncResult{expr.Pretty(0), nil, nil, nil}
+}
+
+func (api *API) parseQuery(r *http.Request) apiFuncResult {
+	expr, err := parser.ParseExpr(r.FormValue("query"))
+	if err != nil {
+		return invalidParamError(err, "query")
+	}
+
+	return apiFuncResult{data: translateAST(expr), err: nil, warnings: nil, finalizer: nil}
 }
 
 func extractQueryOpts(r *http.Request) (promql.QueryOpts, error) {
@@ -824,12 +846,22 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 }
 
 var (
-	// MinTime is the default timestamp used for the begin of optional time ranges.
-	// Exposed to let downstream projects to reference it.
+	// MinTime is the default timestamp used for the start of optional time ranges.
+	// Exposed to let downstream projects reference it.
+	//
+	// Historical note: This should just be time.Unix(math.MinInt64/1000, 0).UTC(),
+	// but it was set to a higher value in the past due to a misunderstanding.
+	// The value is still low enough for practical purposes, so we don't want
+	// to change it now, avoiding confusion for importers of this variable.
 	MinTime = time.Unix(math.MinInt64/1000+62135596801, 0).UTC()
 
 	// MaxTime is the default timestamp used for the end of optional time ranges.
 	// Exposed to let downstream projects to reference it.
+	//
+	// Historical note: This should just be time.Unix(math.MaxInt64/1000, 0).UTC(),
+	// but it was set to a lower value in the past due to a misunderstanding.
+	// The value is still high enough for practical purposes, so we don't want
+	// to change it now, avoiding confusion for importers of this variable.
 	MaxTime = time.Unix(math.MaxInt64/1000-62135596801, 999999999).UTC()
 
 	minTimeFormatted = MinTime.Format(time.RFC3339Nano)
@@ -1740,6 +1772,57 @@ func (api *API) serveWALReplayStatus(w http.ResponseWriter, r *http.Request) {
 	}, nil, "")
 }
 
+func (api *API) notifications(w http.ResponseWriter, r *http.Request) {
+	httputil.SetCORS(w, api.CORSOrigin, r)
+	api.respond(w, r, api.notificationsGetter(), nil, "")
+}
+
+func (api *API) notificationsSSE(w http.ResponseWriter, r *http.Request) {
+	httputil.SetCORS(w, api.CORSOrigin, r)
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	// Subscribe to notifications.
+	notifications, unsubscribe, ok := api.notificationsSub()
+	if !ok {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	defer unsubscribe()
+
+	// Set up a flusher to push the response to the client.
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	// Flush the response to ensure the headers are immediately and eventSource
+	// onopen is triggered client-side.
+	flusher.Flush()
+
+	for {
+		select {
+		case notification := <-notifications:
+			// Marshal the notification to JSON.
+			jsonData, err := json.Marshal(notification)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				continue
+			}
+
+			// Write the event data in SSE format with JSON content.
+			fmt.Fprintf(w, "data: %s\n\n", jsonData)
+
+			// Flush the response to ensure the data is sent immediately.
+			flusher.Flush()
+		case <-r.Context().Done():
+			return
+		}
+	}
+}
+
 func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {
 	// This is only really for tests - this will never be nil IRL.
 	if api.remoteReadHandler != nil {
@@ -1761,7 +1844,7 @@ func (api *API) otlpWrite(w http.ResponseWriter, r *http.Request) {
 	if api.otlpWriteHandler != nil {
 		api.otlpWriteHandler.ServeHTTP(w, r)
 	} else {
-		http.Error(w, "otlp write receiver needs to be enabled with --enable-feature=otlp-write-receiver", http.StatusNotFound)
+		http.Error(w, "otlp write receiver needs to be enabled with --web.enable-otlp-receiver", http.StatusNotFound)
 	}
 }
 

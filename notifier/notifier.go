@@ -674,7 +674,6 @@ func (n *Manager) sendOne(ctx context.Context, c *http.Client, url string, b []b
 	}()
 
 	// Any HTTP status 2xx is OK.
-	//nolint:usestdlibvars
 	if resp.StatusCode/100 != 2 {
 		return fmt.Errorf("bad response status %s", resp.Status)
 	}
@@ -771,6 +770,7 @@ func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
+	previousAms := s.ams
 	// Set new Alertmanagers and deduplicate them along their unique URL.
 	s.ams = []alertmanager{}
 	s.droppedAms = []alertmanager{}
@@ -789,6 +789,17 @@ func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 
 		seen[us] = struct{}{}
 		s.ams = append(s.ams, am)
+	}
+	// Now remove counters for any removed Alertmanagers.
+	for _, am := range previousAms {
+		us := am.url().String()
+		if _, ok := seen[us]; ok {
+			continue
+		}
+		s.metrics.latency.DeleteLabelValues(us)
+		s.metrics.sent.DeleteLabelValues(us)
+		s.metrics.errors.DeleteLabelValues(us)
+		seen[us] = struct{}{}
 	}
 }
 

@@ -43,13 +43,15 @@ var (
 	ErrExemplarLabelLength         = fmt.Errorf("label length for exemplar exceeds maximum of %d UTF-8 characters", exemplar.ExemplarMaxLabelSetLength)
 	ErrExemplarsDisabled           = fmt.Errorf("exemplar storage is disabled or max exemplars is less than or equal to 0")
 	ErrNativeHistogramsDisabled    = fmt.Errorf("native histograms are disabled")
+	ErrOOONativeHistogramsDisabled = fmt.Errorf("out-of-order native histogram ingestion is disabled")
 
 	// ErrOutOfOrderCT indicates failed append of CT to the storage
 	// due to CT being older the then newer sample.
 	// NOTE(bwplotka): This can be both an instrumentation failure or commonly expected
 	// behaviour, and we currently don't have a way to determine this. As a result
 	// it's recommended to ignore this error for now.
-	ErrOutOfOrderCT = fmt.Errorf("created timestamp out of order, ignoring")
+	ErrOutOfOrderCT      = fmt.Errorf("created timestamp out of order, ignoring")
+	ErrCTNewerThanSample = fmt.Errorf("CT is newer or the same as sample's timestamp, ignoring")
 )
 
 // SeriesRef is a generic series reference. In prometheus it is either a
@@ -157,7 +159,7 @@ type ChunkQuerier interface {
 
 // LabelQuerier provides querying access over labels.
 type LabelQuerier interface {
-	// LabelValues returns all potential values for a label name.
+	// LabelValues returns all potential values for a label name in sorted order.
 	// It is not safe to use the strings beyond the lifetime of the querier.
 	// If matchers are specified the returned result set is reduced
 	// to label values of metrics matching the matchers.
@@ -227,9 +229,9 @@ type LabelHints struct {
 	Limit int
 }
 
-// TODO(bwplotka): Move to promql/engine_test.go?
 // QueryableFunc is an adapter to allow the use of ordinary functions as
 // Queryables. It follows the idea of http.HandlerFunc.
+// TODO(bwplotka): Move to promql/engine_test.go?
 type QueryableFunc func(mint, maxt int64) (Querier, error)
 
 // Querier calls f() with the given parameters.
@@ -312,6 +314,20 @@ type HistogramAppender interface {
 	// pointer. AppendHistogram won't mutate the histogram, but in turn
 	// depends on the caller to not mutate it either.
 	AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error)
+	// AppendHistogramCTZeroSample adds synthetic zero sample for the given ct timestamp,
+	// which will be associated with given series, labels and the incoming
+	// sample's t (timestamp). AppendHistogramCTZeroSample returns error if zero sample can't be
+	// appended, for example when ct is too old, or when it would collide with
+	// incoming sample (sample has priority).
+	//
+	// AppendHistogramCTZeroSample has to be called before the corresponding histogram AppendHistogram.
+	// A series reference number is returned which can be used to modify the
+	// CT for the given series in the same or later transactions.
+	// Returned reference numbers are ephemeral and may be rejected in calls
+	// to AppendHistogramCTZeroSample() at any point.
+	//
+	// If the reference is 0 it must not be used for caching.
+	AppendHistogramCTZeroSample(ref SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error)
 }
 
 // MetadataUpdater provides an interface for associating metadata to stored series.

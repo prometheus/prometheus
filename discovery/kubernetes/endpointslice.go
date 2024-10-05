@@ -26,7 +26,6 @@ import (
 	"github.com/prometheus/common/model"
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/discovery/v1"
-	"k8s.io/api/discovery/v1beta1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 
@@ -103,9 +102,9 @@ func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, nod
 			return
 		}
 
-		// TODO(brancz): use cache.Indexer to index endpoints by
-		// disv1beta1.LabelServiceName so this operation doesn't have to
-		// iterate over all endpoint objects.
+		// TODO(brancz): use cache.Indexer to index endpointslices by
+		// LabelServiceName so this operation doesn't have to iterate over all
+		// endpoint objects.
 		for _, obj := range e.endpointSliceStore.List() {
 			esa, err := e.getEndpointSliceAdaptor(obj)
 			if err != nil {
@@ -241,8 +240,6 @@ func (e *EndpointSlice) getEndpointSliceAdaptor(o interface{}) (endpointSliceAda
 	switch endpointSlice := o.(type) {
 	case *v1.EndpointSlice:
 		return newEndpointSliceAdaptorFromV1(endpointSlice), nil
-	case *v1beta1.EndpointSlice:
-		return newEndpointSliceAdaptorFromV1beta1(endpointSlice), nil
 	default:
 		return nil, fmt.Errorf("received unexpected object: %v", o)
 	}
@@ -380,19 +377,23 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 		target = target.Merge(podLabels(pod))
 
 		// Attach potential container port labels matching the endpoint port.
-		for _, c := range pod.Spec.Containers {
+		containers := append(pod.Spec.Containers, pod.Spec.InitContainers...)
+		for i, c := range containers {
 			for _, cport := range c.Ports {
 				if port.port() == nil {
 					continue
 				}
+
 				if *port.port() == cport.ContainerPort {
 					ports := strconv.FormatUint(uint64(*port.port()), 10)
+					isInit := i >= len(pod.Spec.Containers)
 
 					target[podContainerNameLabel] = lv(c.Name)
 					target[podContainerImageLabel] = lv(c.Image)
 					target[podContainerPortNameLabel] = lv(cport.Name)
 					target[podContainerPortNumberLabel] = lv(ports)
 					target[podContainerPortProtocolLabel] = lv(string(cport.Protocol))
+					target[podContainerIsInit] = lv(strconv.FormatBool(isInit))
 					break
 				}
 			}
@@ -420,7 +421,8 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 			continue
 		}
 
-		for _, c := range pe.pod.Spec.Containers {
+		containers := append(pe.pod.Spec.Containers, pe.pod.Spec.InitContainers...)
+		for i, c := range containers {
 			for _, cport := range c.Ports {
 				hasSeenPort := func() bool {
 					for _, eport := range pe.servicePorts {
@@ -440,6 +442,7 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 				a := net.JoinHostPort(pe.pod.Status.PodIP, strconv.FormatUint(uint64(cport.ContainerPort), 10))
 				ports := strconv.FormatUint(uint64(cport.ContainerPort), 10)
 
+				isInit := i >= len(pe.pod.Spec.Containers)
 				target := model.LabelSet{
 					model.AddressLabel:            lv(a),
 					podContainerNameLabel:         lv(c.Name),
@@ -447,6 +450,7 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 					podContainerPortNameLabel:     lv(cport.Name),
 					podContainerPortNumberLabel:   lv(ports),
 					podContainerPortProtocolLabel: lv(string(cport.Protocol)),
+					podContainerIsInit:            lv(strconv.FormatBool(isInit)),
 				}
 				tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod)))
 			}
