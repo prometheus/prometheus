@@ -59,7 +59,7 @@ timestamps are always represented as Unix timestamps in seconds.
 * `<series_selector>`: Prometheus [time series
 selectors](basics.md#time-series-selectors) like `http_requests_total` or
 `http_requests_total{method=~"(GET|POST)"}` and need to be URL-encoded.
-* `<duration>`: [Prometheus duration strings](basics.md#time-durations).
+* `<duration>`: [the subset of Prometheus float literals using time units](basics.md#float-literals-and-time-durations).
 For example, `5m` refers to a duration of 5 minutes.
 * `<bool>`: boolean values (strings `true` and `false`).
 
