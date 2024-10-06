@@ -804,7 +804,7 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 		for err == nil {
 			_, err = p.Next()
 		}
-		require.Equal(t, c.err, err.Error(), "test %d: %s", i, c.input)
+		require.EqualError(t, err, c.err, "test %d: %s", i, c.input)
 	}
 }
 
@@ -871,11 +871,11 @@ func TestOMNullByteHandling(t *testing.T) {
 		}
 
 		if c.err == "" {
-			require.Equal(t, io.EOF, err, "test %d", i)
+			require.ErrorIs(t, err, io.EOF, "test %d", i)
 			continue
 		}
 
-		require.Equal(t, c.err, err.Error(), "test %d", i)
+		require.EqualError(t, err, c.err, "test %d", i)
 	}
 }
 

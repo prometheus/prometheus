@@ -423,8 +423,7 @@ func TestPromParseErrors(t *testing.T) {
 		for err == nil {
 			_, err = p.Next()
 		}
-		require.Error(t, err)
-		require.Equal(t, c.err, err.Error(), "test %d", i)
+		require.EqualError(t, err, c.err, "test %d", i)
 	}
 }
 
@@ -483,8 +482,7 @@ func TestPromNullByteHandling(t *testing.T) {
 			continue
 		}
 
-		require.Error(t, err)
-		require.Equal(t, c.err, err.Error(), "test %d", i)
+		require.EqualError(t, err, c.err, "test %d", i)
 	}
 }
 

@@ -98,8 +98,7 @@ func TestNewParser(t *testing.T) {
 			if tt.err == "" {
 				require.NoError(t, err)
 			} else {
-				require.Error(t, err)
-				require.Contains(t, err.Error(), tt.err)
+				require.ErrorContains(t, err, tt.err)
 			}
 		})
 	}

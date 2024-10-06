@@ -441,7 +441,7 @@ func TestScrapePoolTargetLimit(t *testing.T) {
 			lerr := l.(*testLoop).getForcedError()
 			if shouldErr {
 				require.Error(t, lerr, "error was expected for %d targets with a limit of %d", targets, limit)
-				require.Equal(t, fmt.Sprintf("target_limit exceeded (number of targets: %d, limit: %d)", targets, limit), lerr.Error())
+				require.EqualError(t, lerr, fmt.Sprintf("target_limit exceeded (number of targets: %d, limit: %d)", targets, limit))
 			} else {
 				require.NoError(t, lerr)
 			}
@@ -2549,7 +2549,7 @@ func TestTargetScrapeScrapeNotFound(t *testing.T) {
 	resp, err := ts.scrape(context.Background())
 	require.NoError(t, err)
 	_, err = ts.readResponse(context.Background(), resp, io.Discard)
-	require.Contains(t, err.Error(), "404", "Expected \"404 NotFound\" error but got: %s", err)
+	require.ErrorContains(t, err, "404", "Expected \"404 NotFound\" error but got: %s", err)
 }
 
 func TestTargetScraperBodySizeLimit(t *testing.T) {
