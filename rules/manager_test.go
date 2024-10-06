@@ -1231,13 +1231,13 @@ func TestRuleMovedBetweenGroups(t *testing.T) {
 	require.NoError(t, ruleManager.Update(1*time.Second, []string{rule2}, labels.EmptyLabels(), "", nil))
 
 	// Wait for rule to be evaluated
-	time.Sleep(5 * time.Second)
+	time.Sleep(3 * time.Second)
 
 	// Reload configuration  of rules1
 	require.NoError(t, ruleManager.Update(1*time.Second, []string{rule1}, labels.EmptyLabels(), "", nil))
 
 	// Wait for rule to be evaluated in new location and potential staleness marker
-	time.Sleep(5 * time.Second)
+	time.Sleep(3 * time.Second)
 
 	require.Equal(t, 0, countStaleNaN(t, storage)) // Not expecting any stale markers.
 }

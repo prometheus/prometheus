@@ -145,11 +145,19 @@ type fanoutAppender struct {
 
 	primary     Appender
 	secondaries []Appender
-	hints       *AppendHints
 }
 
 func (f *fanoutAppender) SetHints(hints *AppendHints) {
-	f.hints = hints
+	// Propagate the hints to the primary appender
+	if f.primary != nil {
+		f.primary.SetHints(hints)
+	}
+	// Propagate the hints to all secondary appenders
+	for _, appender := range f.secondaries {
+		if appender != nil {
+			appender.SetHints(hints)
+		}
+	}
 }
 
 func (f *fanoutAppender) Append(ref SeriesRef, l labels.Labels, t int64, v float64) (SeriesRef, error) {
