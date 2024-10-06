@@ -4,6 +4,7 @@ import {
   Badge,
   Card,
   Group,
+  rem,
   Stack,
   Text,
   Tooltip,
@@ -135,11 +136,15 @@ export default function RulesPage() {
                     <Group gap="xs" wrap="nowrap">
                       {r.type === "alerting" ? (
                         <Tooltip label="Alerting rule" withArrow>
-                          <IconBell size={15} />
+                          <IconBell
+                            style={{ width: rem(15), height: rem(15) }}
+                          />
                         </Tooltip>
                       ) : (
                         <Tooltip label="Recording rule" withArrow>
-                          <IconTimeline size={15} />
+                          <IconTimeline
+                            style={{ width: rem(15), height: rem(15) }}
+                          />
                         </Tooltip>
                       )}
                       <Text>{r.name}</Text>

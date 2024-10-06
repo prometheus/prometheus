@@ -21,6 +21,7 @@ import {
   Skeleton,
   Stack,
   Table,
+  rem,
 } from "@mantine/core";
 import { escapeString } from "../../../lib/escapeString";
 import serializeNode from "../../../promql/serialize";
@@ -326,7 +327,9 @@ const LabelsExplorer: FC<LabelsExplorerProps> = ({
                             title="Cancel"
                             style={{ flexShrink: 0 }}
                           >
-                            <IconX size={18} />
+                            <IconX
+                              style={{ width: rem(18), height: rem(18) }}
+                            />
                           </Button>
                         </Group>
                       ) : (

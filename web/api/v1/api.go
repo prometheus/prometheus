@@ -54,8 +54,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/httputil"
+	"github.com/prometheus/prometheus/util/notifications"
 	"github.com/prometheus/prometheus/util/stats"
-	"github.com/prometheus/prometheus/web/api"
 )
 
 type status string
@@ -214,8 +214,8 @@ type API struct {
 	gatherer            prometheus.Gatherer
 	isAgent             bool
 	statsRenderer       StatsRenderer
-	notificationsGetter func() []api.Notification
-	notificationsSub    func() (<-chan api.Notification, func(), bool)
+	notificationsGetter func() []notifications.Notification
+	notificationsSub    func() (<-chan notifications.Notification, func(), bool)
 
 	remoteWriteHandler http.Handler
 	remoteReadHandler  http.Handler
@@ -249,8 +249,8 @@ func NewAPI(
 	corsOrigin *regexp.Regexp,
 	runtimeInfo func() (RuntimeInfo, error),
 	buildInfo *PrometheusVersion,
-	notificationsGetter func() []api.Notification,
-	notificationsSub func() (<-chan api.Notification, func(), bool),
+	notificationsGetter func() []notifications.Notification,
+	notificationsSub func() (<-chan notifications.Notification, func(), bool),
 	gatherer prometheus.Gatherer,
 	registerer prometheus.Registerer,
 	statsRenderer StatsRenderer,
