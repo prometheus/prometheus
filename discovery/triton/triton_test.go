@@ -191,7 +191,6 @@ func TestTritonSDRefreshCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, err := td.refresh(ctx)
-	require.Error(t, err)
 	require.ErrorContains(t, err, context.Canceled.Error())
 	m.Unregister()
 }
