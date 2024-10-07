@@ -3419,62 +3419,9 @@ password: <secret>
 # Refresh interval to re-read the managed targets list.
 [ refresh_interval: <duration> | default = 60s ]
 
-# Optional HTTP basic authentication information, currently not supported by Uyuni.
-basic_auth:
-  [ username: <string> ]
-  [ username_file: <string> ]
-  [ password: <secret> ]
-  [ password_file: <string> ]
-
-# Optional `Authorization` header configuration, currently not supported by Uyuni.
-authorization:
-  # Sets the authentication type.
-    [ type: <string> | default: Bearer ]
-    # Sets the credentials. It is mutually exclusive with
-    # `credentials_file`.
-    [ credentials: <secret> ]
-    # Sets the credentials to the credentials read from the configured file.
-    # It is mutually exclusive with `credentials`.
-    [ credentials_file: <filename> ]
-
-# Optional OAuth 2.0 configuration, currently not supported by Uyuni.
-# Cannot be used at the same time as basic_auth or authorization.
-oauth2:
-  [ <oauth2> ]
-
-# Optional proxy URL.
-[ proxy_url: <string> ]
-# Comma-separated string that can contain IPs, CIDR notation, domain names
-# that should be excluded from proxying. IP and domain names can
-# contain port numbers.
-[ no_proxy: <string> ]
-# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
-[ proxy_from_environment: <boolean> | default: false ]
-# Specifies headers to send to proxies during CONNECT requests.
-[ proxy_connect_header:
-  [ <string>: [<secret>, ...] ] ]
-
-# Custom HTTP headers to be sent along with each request.
-# Headers that are set by Prometheus itself can't be overwritten.
-http_headers:
-  # Header name.
-  [ <string>:
-    # Header values.
-    [ values: [<string>, ...] ]
-    # Headers values. Hidden in configuration page.
-    [ secrets: [<secret>, ...] ]
-    # Files to read header values from.
-    [ files: [<string>, ...] ] ]
-
-# Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <boolean> | default = true ]
-
-# Whether to enable HTTP2.
-[ enable_http2: <boolean> | default: true ]
-
-# TLS configuration.
-tls_config:
-  [ <tls_config> ]
+# HTTP client settings, including authentication methods (such as basic auth and
+# authorization), proxy configurations, TLS options, custom HTTP headers, etc.
+[ <http_config> ]
 ```
 
 See [the Prometheus uyuni-sd configuration file](/documentation/examples/prometheus-uyuni.yml)
