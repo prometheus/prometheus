@@ -457,6 +457,12 @@ func (p *ProtobufParser) Next() (Entry, error) {
 
 		p.state = EntryHelp
 	case EntryHelp:
+		if p.mf.Unit != "" {
+			p.state = EntryUnit
+		} else {
+			p.state = EntryType
+		}
+	case EntryUnit:
 		p.state = EntryType
 	case EntryType:
 		t := p.mf.GetType()

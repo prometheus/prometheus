@@ -14,32 +14,14 @@
 package textparse
 
 import (
-	"errors"
 	"io"
-	"strings"
 	"testing"
 
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/common/model"
-
-	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/util/testutil"
 )
-
-type expectedParse struct {
-	lset    labels.Labels
-	m       string
-	t       *int64
-	v       float64
-	typ     model.MetricType
-	help    string
-	unit    string
-	comment string
-	e       *exemplar.Exemplar
-	ct      *int64
-}
 
 func TestPromParse(t *testing.T) {
 	input := `# HELP go_gc_duration_seconds A summary of the GC invocation durations.
@@ -72,9 +54,7 @@ testmetric{label="\"bar\""} 1`
 	input += "\n# HELP metric foo\x00bar"
 	input += "\nnull_byte_metric{a=\"abc\x00\"} 1"
 
-	int64p := func(x int64) *int64 { return &x }
-
-	exp := []expectedParse{
+	exp := []parsedEntry{
 		{
 			m:    "go_gc_duration_seconds",
 			help: "A summary of the GC invocation durations.",
@@ -182,80 +162,8 @@ testmetric{label="\"bar\""} 1`
 	}
 
 	p := NewPromParser([]byte(input), labels.NewSymbolTable())
-	checkParseResults(t, p, exp)
-}
-
-func checkParseResults(t *testing.T, p Parser, exp []expectedParse) {
-	checkParseResultsWithCT(t, p, exp, false)
-}
-
-func checkParseResultsWithCT(t *testing.T, p Parser, exp []expectedParse, ctLinesRemoved bool) {
-	i := 0
-
-	var res labels.Labels
-
-	for {
-		et, err := p.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		require.NoError(t, err)
-
-		switch et {
-		case EntrySeries:
-			m, ts, v := p.Series()
-
-			p.Metric(&res)
-
-			if ctLinesRemoved {
-				// Are CT series skipped?
-				_, typ := p.Type()
-				if typeRequiresCT(typ) && strings.HasSuffix(res.Get(labels.MetricName), "_created") {
-					t.Fatalf("we exped created lines skipped")
-				}
-			}
-
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].t, ts)
-			require.Equal(t, exp[i].v, v)
-			testutil.RequireEqual(t, exp[i].lset, res)
-
-			var e exemplar.Exemplar
-			found := p.Exemplar(&e)
-			if exp[i].e == nil {
-				require.False(t, found)
-			} else {
-				require.True(t, found)
-				testutil.RequireEqual(t, *exp[i].e, e)
-			}
-			if ct := p.CreatedTimestamp(); ct != nil {
-				require.Equal(t, *exp[i].ct, *ct)
-			} else {
-				require.Nil(t, exp[i].ct)
-			}
-
-		case EntryType:
-			m, typ := p.Type()
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].typ, typ)
-
-		case EntryHelp:
-			m, h := p.Help()
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].help, string(h))
-
-		case EntryUnit:
-			m, u := p.Unit()
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].unit, string(u))
-
-		case EntryComment:
-			require.Equal(t, exp[i].comment, string(p.Comment()))
-		}
-
-		i++
-	}
-	require.Len(t, exp, i)
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
 }
 
 func TestUTF8PromParse(t *testing.T) {
@@ -279,7 +187,7 @@ func TestUTF8PromParse(t *testing.T) {
 {"go.gc_duration_seconds_count"} 99
 {"Heizölrückstoßabdämpfung 10€ metric with \"interesting\" {character\nchoices}","strange©™\n'quoted' \"name\""="6"} 10.0`
 
-	exp := []expectedParse{
+	exp := []parsedEntry{
 		{
 			m:    "go.gc_duration_seconds",
 			help: "A summary of the GC invocation durations.",
@@ -335,7 +243,8 @@ choices}`, "strange©™\n'quoted' \"name\"", "6"),
 	}
 
 	p := NewPromParser([]byte(input), labels.NewSymbolTable())
-	checkParseResults(t, p, exp)
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
 }
 
 func TestPromParseErrors(t *testing.T) {
