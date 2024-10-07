@@ -252,7 +252,7 @@ func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matc
 			return nil, ctx.Err()
 		}
 		switch {
-		case m.Name == "" && m.Value == "": // Special-case for AllPostings, used in tests at least.
+		case m.Name == "" && m.Value == "":
 			k, v := index.AllPostingsKey()
 			allPostings, err := ix.Postings(ctx, k, v)
 			if err != nil {
