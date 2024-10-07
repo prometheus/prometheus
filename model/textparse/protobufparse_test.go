@@ -32,7 +32,9 @@ import (
 	dto "github.com/prometheus/prometheus/prompb/io/prometheus/client"
 )
 
-func createTestProtoBuf(t *testing.T) *bytes.Buffer {
+func createTestProtoBuf(t testing.TB) *bytes.Buffer {
+	t.Helper()
+
 	testMetricFamilies := []string{
 		`name: "go_build_info"
 help: "Build information about the main Go module."
