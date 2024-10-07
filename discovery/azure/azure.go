@@ -119,7 +119,7 @@ type SDConfig struct {
 	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
 }
 
-// AzureADCloudConfig is used to store the AAD config values.
+// AzureCloudConfig is used to store the AAD config values.
 type AzureCloudConfig struct { //nolint:revive // exported.
 	// Name is the Azure cloud in which the service is running. Example: AzurePublic/AzureGovernment/AzureChina.
 	Name string `yaml:"name,omitempty"`
