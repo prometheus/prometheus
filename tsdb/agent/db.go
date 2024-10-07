@@ -976,14 +976,68 @@ func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int
 	return storage.SeriesRef(series.ref), nil
 }
 
-func (a *appender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	// TODO(bwplotka/arthursens): Wire metadata in the Agent's appender.
-	return 0, nil
-}
-
 func (a *appender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Metadata) (storage.SeriesRef, error) {
 	// TODO: Wire metadata in the Agent's appender.
 	return 0, nil
+}
+
+func (a *appender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	if ct >= t {
+		return 0, storage.ErrCTNewerThanSample
+	}
+
+	series := a.series.GetByID(chunks.HeadSeriesRef(ref))
+	if series == nil {
+		// Ensure no empty labels have gotten through.
+		l = l.WithoutEmpty()
+		if l.IsEmpty() {
+			return 0, fmt.Errorf("empty labelset: %w", tsdb.ErrInvalidSample)
+		}
+
+		if lbl, dup := l.HasDuplicateLabelNames(); dup {
+			return 0, fmt.Errorf(`label name "%s" is not unique: %w`, lbl, tsdb.ErrInvalidSample)
+		}
+
+		var created bool
+		series, created = a.getOrCreate(l)
+		if created {
+			a.pendingSeries = append(a.pendingSeries, record.RefSeries{
+				Ref:    series.ref,
+				Labels: l,
+			})
+			a.metrics.numActiveSeries.Inc()
+		}
+	}
+
+	series.Lock()
+	defer series.Unlock()
+
+	if ct <= a.minValidTime(series.lastTs) {
+		a.metrics.totalOutOfOrderSamples.Inc()
+		return 0, storage.ErrOutOfOrderCT
+	}
+
+	switch {
+	case h != nil:
+		zeroHistogram := &histogram.Histogram{}
+		a.pendingHistograms = append(a.pendingHistograms, record.RefHistogramSample{
+			Ref: series.ref,
+			T:   ct,
+			H:   zeroHistogram,
+		})
+		a.histogramSeries = append(a.histogramSeries, series)
+	case fh != nil:
+		zeroFloatHistogram := &histogram.FloatHistogram{}
+		a.pendingFloatHistograms = append(a.pendingFloatHistograms, record.RefFloatHistogramSample{
+			Ref: series.ref,
+			T:   ct,
+			FH:  zeroFloatHistogram,
+		})
+		a.floatHistogramSeries = append(a.floatHistogramSeries, series)
+	}
+
+	a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
+	return storage.SeriesRef(series.ref), nil
 }
 
 func (a *appender) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64) (storage.SeriesRef, error) {
