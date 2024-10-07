@@ -924,29 +924,36 @@ thing_c_total 14123.232
 				{
 					m:    "thing",
 					help: "histogram with _created as first line",
-				}, {
+				},
+				{
 					m:   "thing",
 					typ: model.MetricTypeHistogram,
-				}, {
+				},
+				{
 					m:  `thing_count`,
 					ct: nil, // Should be int64p(1520872607123).
-				}, {
+				},
+				{
 					m:  `thing_sum`,
 					ct: nil, // Should be int64p(1520872607123).
-				}, {
+				},
+				{
 					m:  `thing_bucket{le="0.0"}`,
 					ct: nil, // Should be int64p(1520872607123).
-				}, {
+				},
+				{
 					m:  `thing_bucket{le="+Inf"}`,
 					ct: nil, // Should be int64p(1520872607123),
 				},
 				{
 					m:    "thing_c",
 					help: "counter with _created as first line",
-				}, {
+				},
+				{
 					m:   "thing_c",
 					typ: model.MetricTypeCounter,
-				}, {
+				},
+				{
 					m:  `thing_c_total`,
 					ct: nil, // Should be int64p(1520872607123).
 				},
@@ -966,7 +973,8 @@ foo_created{le="b"} 1520872608.123
 				{
 					m:    "foo",
 					help: "good counter",
-				}, {
+				},
+				{
 					m:   "foo",
 					typ: model.MetricTypeCounter,
 				},
