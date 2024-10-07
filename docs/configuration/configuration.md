@@ -2650,67 +2650,9 @@ See below for the configuration options for Lightsail discovery:
 # instead be specified in the relabeling rule.
 [ port: <int> | default = 80 ]
 
-# Authentication information used to authenticate to the Lightsail API.
-# Note that `basic_auth`, `authorization` and `oauth2` options are
-# mutually exclusive.
-# `username` and `username_file` are mutually exclusive.
-# `password` and `password_file` are mutually exclusive.
-
-# Optional HTTP basic authentication information, currently not supported by AWS.
-basic_auth:
-  [ username: <string> ]
-  [ username_file: <string> ]
-  [ password: <secret> ]
-  [ password_file: <string> ]
-
-# Optional `Authorization` header configuration, currently not supported by AWS.
-authorization:
-  # Sets the authentication type.
-  [ type: <string> | default: Bearer ]
-  # Sets the credentials. It is mutually exclusive with
-  # `credentials_file`.
-  [ credentials: <secret> ]
-  # Sets the credentials to the credentials read from the configured file.
-  # It is mutually exclusive with `credentials`.
-  [ credentials_file: <filename> ]
-
-# Optional OAuth 2.0 configuration, currently not supported by AWS.
-oauth2:
-  [ <oauth2> ]
-
-# Optional proxy URL.
-[ proxy_url: <string> ]
-# Comma-separated string that can contain IPs, CIDR notation, domain names
-# that should be excluded from proxying. IP and domain names can
-# contain port numbers.
-[ no_proxy: <string> ]
-# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
-[ proxy_from_environment: <boolean> | default: false ]
-# Specifies headers to send to proxies during CONNECT requests.
-[ proxy_connect_header:
-  [ <string>: [<secret>, ...] ] ]
-
-# Custom HTTP headers to be sent along with each request.
-# Headers that are set by Prometheus itself can't be overwritten.
-http_headers:
-  # Header name.
-  [ <string>:
-    # Header values.
-    [ values: [<string>, ...] ]
-    # Headers values. Hidden in configuration page.
-    [ secrets: [<secret>, ...] ]
-    # Files to read header values from.
-    [ files: [<string>, ...] ] ]
-
-# Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <boolean> | default = true ]
-
-# Whether to enable HTTP2.
-[ enable_http2: <boolean> | default: true ]
-
-# TLS configuration.
-tls_config:
-  [ <tls_config> ]
+# HTTP client settings, including authentication methods (such as basic auth and
+# authorization), proxy configurations, TLS options, custom HTTP headers, etc.
+[ <http_config> ]
 ```
 
 ### `<linode_sd_config>`
@@ -2720,6 +2662,8 @@ Linode APIv4.
 This service discovery uses the public IPv4 address by default, by that can be
 changed with relabeling, as demonstrated in [the Prometheus linode-sd
 configuration file](/documentation/examples/prometheus-linode.yml).
+
+Linode APIv4 Token must be created with scopes: `linodes:read_only`, `ips:read_only`, and `events:read_only`.
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
@@ -2748,72 +2692,9 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_linode_ipv6_ranges`: a list of IPv6 ranges with mask assigned to the linode instance joined by the tag separator
 
 ```yaml
-# Authentication information used to authenticate to the API server.
-# Note that `basic_auth` and `authorization` options are
-# mutually exclusive.
-# username and username_file are mutually exclusive.
-# password and password_file are mutually exclusive.
-# Note: Linode APIv4 Token must be created with scopes: 'linodes:read_only', 'ips:read_only', and 'events:read_only'
-
-# Optional HTTP basic authentication information, not currently supported by Linode APIv4.
-basic_auth:
-  [ username: <string> ]
-  [ username_file: <string> ]
-  [ password: <secret> ]
-  [ password_file: <string> ]
-
-# Optional the `Authorization` header configuration.
-authorization:
-  # Sets the authentication type.
-  [ type: <string> | default: Bearer ]
-  # Sets the credentials. It is mutually exclusive with
-  # `credentials_file`.
-  [ credentials: <secret> ]
-  # Sets the credentials with the credentials read from the configured file.
-  # It is mutually exclusive with `credentials`.
-  [ credentials_file: <filename> ]
-
-# Optional OAuth 2.0 configuration.
-# Cannot be used at the same time as basic_auth or authorization.
-oauth2:
-  [ <oauth2> ]
 
 # Optional region to filter on.
 [ region: <string> ]
-
-# Optional proxy URL.
-[ proxy_url: <string> ]
-# Comma-separated string that can contain IPs, CIDR notation, domain names
-# that should be excluded from proxying. IP and domain names can
-# contain port numbers.
-[ no_proxy: <string> ]
-# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
-[ proxy_from_environment: <boolean> | default: false ]
-# Specifies headers to send to proxies during CONNECT requests.
-[ proxy_connect_header:
-  [ <string>: [<secret>, ...] ] ]
-
-# Custom HTTP headers to be sent along with each request.
-# Headers that are set by Prometheus itself can't be overwritten.
-http_headers:
-  # Header name.
-  [ <string>:
-    # Header values.
-    [ values: [<string>, ...] ]
-    # Headers values. Hidden in configuration page.
-    [ secrets: [<secret>, ...] ]
-    # Files to read header values from.
-    [ files: [<string>, ...] ] ]
-
-# Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <boolean> | default = true ]
-
-# Whether to enable HTTP2.
-[ enable_http2: <boolean> | default: true ]
-
-# TLS configuration.
-tls_config:
-  [ <tls_config> ]
 
 # The port to scrape metrics from.
 [ port: <int> | default = 80 ]
@@ -2823,6 +2704,10 @@ tls_config:
 
 # The time after which the linode instances are refreshed.
 [ refresh_interval: <duration> | default = 60s ]
+
+# HTTP client settings, including authentication methods (such as basic auth and
+# authorization), proxy configurations, TLS options, custom HTTP headers, etc.
+[ <http_config> ]
 ```
 
 ### `<marathon_sd_config>`
