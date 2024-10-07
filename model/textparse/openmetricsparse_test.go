@@ -14,7 +14,6 @@
 package textparse
 
 import (
-	"errors"
 	"io"
 	"testing"
 
@@ -115,7 +114,7 @@ foobar{quantile="0.99"} 150.1`
 	input += "\nnull_byte_metric{a=\"abc\x00\"} 1"
 	input += "\n# EOF\n"
 
-	exp := []expectedParse{
+	exp := []parsedEntry{
 		{
 			m:    "go_gc_duration_seconds",
 			help: "A summary of the GC invocation durations.",
@@ -190,12 +189,16 @@ foobar{quantile="0.99"} 150.1`
 			m:    `hhh_bucket{le="+Inf"}`,
 			v:    1,
 			lset: labels.FromStrings("__name__", "hhh_bucket", "le", "+Inf"),
-			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "histogram-bucket-test"), Value: 4},
+			es: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("id", "histogram-bucket-test"), Value: 4},
+			},
 		}, {
 			m:    `hhh_count`,
 			v:    1,
 			lset: labels.FromStrings("__name__", "hhh_count"),
-			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "histogram-count-test"), Value: 4},
+			es: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("id", "histogram-count-test"), Value: 4},
+			},
 		}, {
 			m:   "ggh",
 			typ: model.MetricTypeGaugeHistogram,
@@ -203,12 +206,16 @@ foobar{quantile="0.99"} 150.1`
 			m:    `ggh_bucket{le="+Inf"}`,
 			v:    1,
 			lset: labels.FromStrings("__name__", "ggh_bucket", "le", "+Inf"),
-			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "gaugehistogram-bucket-test", "xx", "yy"), Value: 4, HasTs: true, Ts: 123123},
+			es: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("id", "gaugehistogram-bucket-test", "xx", "yy"), Value: 4, HasTs: true, Ts: 123123},
+			},
 		}, {
 			m:    `ggh_count`,
 			v:    1,
 			lset: labels.FromStrings("__name__", "ggh_count"),
-			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "gaugehistogram-count-test", "xx", "yy"), Value: 4, HasTs: true, Ts: 123123},
+			es: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("id", "gaugehistogram-count-test", "xx", "yy"), Value: 4, HasTs: true, Ts: 123123},
+			},
 		}, {
 			m:   "smr_seconds",
 			typ: model.MetricTypeSummary,
@@ -216,12 +223,16 @@ foobar{quantile="0.99"} 150.1`
 			m:    `smr_seconds_count`,
 			v:    2,
 			lset: labels.FromStrings("__name__", "smr_seconds_count"),
-			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "summary-count-test"), Value: 1, HasTs: true, Ts: 123321},
+			es: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("id", "summary-count-test"), Value: 1, HasTs: true, Ts: 123321},
+			},
 		}, {
 			m:    `smr_seconds_sum`,
 			v:    42,
 			lset: labels.FromStrings("__name__", "smr_seconds_sum"),
-			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "summary-sum-test"), Value: 1, HasTs: true, Ts: 123321},
+			es: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("id", "summary-sum-test"), Value: 1, HasTs: true, Ts: 123321},
+			},
 		}, {
 			m:   "ii",
 			typ: model.MetricTypeInfo,
@@ -270,15 +281,19 @@ foobar{quantile="0.99"} 150.1`
 			v:    17,
 			lset: labels.FromStrings("__name__", "foo_total"),
 			t:    int64p(1520879607789),
-			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "counter-test"), Value: 5},
-			ct:   int64p(1520872607123),
+			es: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("id", "counter-test"), Value: 5},
+			},
+			ct: int64p(1520872607123),
 		}, {
 			m:    `foo_total{a="b"}`,
 			v:    17.0,
 			lset: labels.FromStrings("__name__", "foo_total", "a", "b"),
 			t:    int64p(1520879607789),
-			e:    &exemplar.Exemplar{Labels: labels.FromStrings("id", "counter-test"), Value: 5},
-			ct:   int64p(1520872607123),
+			es: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("id", "counter-test"), Value: 5},
+			},
+			ct: int64p(1520872607123),
 		}, {
 			m:    "bar",
 			help: "Summary with CT at the end, making sure we find CT even if it's multiple lines a far",
@@ -430,7 +445,8 @@ foobar{quantile="0.99"} 150.1`
 	}
 
 	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
-	checkParseResultsWithCT(t, p, exp, true)
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
 }
 
 func TestUTF8OpenMetricsParse(t *testing.T) {
@@ -455,7 +471,7 @@ func TestUTF8OpenMetricsParse(t *testing.T) {
 
 	input += "\n# EOF\n"
 
-	exp := []expectedParse{
+	exp := []parsedEntry{
 		{
 			m:    "go.gc_duration_seconds",
 			help: "A summary of the GC invocation durations.",
@@ -504,7 +520,8 @@ choices}`, "strange©™\n'quoted' \"name\"", "6"),
 	}
 
 	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
-	checkParseResultsWithCT(t, p, exp, true)
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
 }
 
 func TestOpenMetricsParseErrors(t *testing.T) {
@@ -878,8 +895,8 @@ func TestOMNullByteHandling(t *testing.T) {
 	}
 }
 
-// While not desirable, there are cases were CT fails to parse and
-// these tests show them.
+// TestCTParseFailures tests known failure edge cases, we know does not work due
+// current OM spec limitations or clients with broken OM format.
 // TODO(maniktherana): Make sure OM 1.1/2.0 pass CT via metadata or exemplar-like to avoid this.
 func TestCTParseFailures(t *testing.T) {
 	input := `# HELP thing Histogram with _created as first line
@@ -892,68 +909,37 @@ thing_bucket{le="+Inf"} 17`
 
 	input += "\n# EOF\n"
 
-	int64p := func(x int64) *int64 { return &x }
-
-	type expectCT struct {
-		m     string
-		ct    *int64
-		typ   model.MetricType
-		help  string
-		isErr bool
-	}
-
-	exp := []expectCT{
+	exp := []parsedEntry{
 		{
-			m:     "thing",
-			help:  "Histogram with _created as first line",
-			isErr: false,
+			m:    "thing",
+			help: "Histogram with _created as first line",
 		}, {
-			m:     "thing",
-			typ:   model.MetricTypeHistogram,
-			isErr: false,
+			m:   "thing",
+			typ: model.MetricTypeHistogram,
 		}, {
-			m:     `thing_count`,
-			ct:    int64p(1520872607123),
-			isErr: true,
+			m:  `thing_count`,
+			ct: nil, // Should be int64p(1520872607123).
 		}, {
-			m:     `thing_sum`,
-			ct:    int64p(1520872607123),
-			isErr: true,
+			m:  `thing_sum`,
+			ct: nil, // Should be int64p(1520872607123).
 		}, {
-			m:     `thing_bucket{le="0.0"}`,
-			ct:    int64p(1520872607123),
-			isErr: true,
+			m:  `thing_bucket{le="0.0"}`,
+			ct: nil, // Should be int64p(1520872607123).
 		}, {
-			m:     `thing_bucket{le="+Inf"}`,
-			ct:    int64p(1520872607123),
-			isErr: true,
+			m:  `thing_bucket{le="+Inf"}`,
+			ct: nil, // Should be int64p(1520872607123),
 		},
 	}
 
 	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
-	i := 0
+	got := testParse(t, p)
+	resetValAndLset(got) // Keep this test focused on metric, basic entries and CT only.
+	requireEntries(t, exp, got)
+}
 
-	var res labels.Labels
-	for {
-		et, err := p.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		require.NoError(t, err)
-
-		switch et {
-		case EntrySeries:
-			p.Metric(&res)
-
-			if ct := p.CreatedTimestamp(); exp[i].isErr {
-				require.Nil(t, ct)
-			} else {
-				require.Equal(t, *exp[i].ct, *ct)
-			}
-		default:
-			i++
-			continue
-		}
-		i++
+func resetValAndLset(e []parsedEntry) {
+	for i := range e {
+		e[i].v = 0
+		e[i].lset = labels.EmptyLabels()
 	}
 }
