@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -34,7 +35,7 @@ import (
 const configReloadMetric = "prometheus_config_last_reload_successful"
 
 func TestAutoReloadConfig_ValidToValid(t *testing.T) {
-	testCases := []struct {
+	steps := []struct {
 		configText       string
 		expectedInterval string
 		expectedMetric   float64
@@ -65,11 +66,11 @@ global:
 		},
 	}
 
-	runTestCase(t, testCases)
+	runTestSteps(t, steps)
 }
 
 func TestAutoReloadConfig_ValidToInvalidToValid(t *testing.T) {
-	testCases := []struct {
+	steps := []struct {
 		configText       string
 		expectedInterval string
 		expectedMetric   float64
@@ -101,10 +102,10 @@ global:
 		},
 	}
 
-	runTestCase(t, testCases)
+	runTestSteps(t, steps)
 }
 
-func runTestCase(t *testing.T, testCases []struct {
+func runTestSteps(t *testing.T, steps []struct {
 	configText       string
 	expectedInterval string
 	expectedMetric   float64
@@ -115,26 +116,35 @@ func runTestCase(t *testing.T, testCases []struct {
 
 	t.Logf("Config file path: %s", configFilePath)
 
-	require.NoError(t, os.WriteFile(configFilePath, []byte(testCases[0].configText), 0o644), "Failed to write initial config file")
+	require.NoError(t, os.WriteFile(configFilePath, []byte(steps[0].configText), 0o644), "Failed to write initial config file")
 
 	port := testutil.RandomUnprivilegedPort(t)
-
 	prom := runPrometheusWithLogging(t, configFilePath, port)
+
 	defer prom.Process.Kill()
 
-	time.Sleep(5 * time.Second)
+	baseURL := "http://localhost:" + strconv.Itoa(port)
+	require.Eventually(t, func() bool {
+		resp, err := http.Get(baseURL + "/-/ready")
+		if err != nil {
+			return false
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode == http.StatusOK
+	}, 5*time.Second, 100*time.Millisecond, "Prometheus didn't become ready in time")
 
-	for _, tc := range testCases {
-		require.NoError(t, os.WriteFile(configFilePath, []byte(tc.configText), 0o644), "Failed to write config file for test case")
+	for i, step := range steps {
+		t.Logf("Step %d", i)
+		require.NoError(t, os.WriteFile(configFilePath, []byte(step.configText), 0o644), "Failed to write config file for step")
 
-		time.Sleep(2 * time.Second)
-
-		verifyScrapeInterval(t, "http://localhost:"+strconv.Itoa(port), tc.expectedInterval)
-		verifyConfigReloadMetric(t, "http://localhost:"+strconv.Itoa(port), tc.expectedMetric)
+		require.Eventually(t, func() bool {
+			return verifyScrapeInterval(t, baseURL, step.expectedInterval) &&
+				verifyConfigReloadMetric(t, baseURL, step.expectedMetric)
+		}, 10*time.Second, 500*time.Millisecond, "Prometheus config reload didn't happen in time")
 	}
 }
 
-func verifyScrapeInterval(t *testing.T, baseURL, expectedInterval string) {
+func verifyScrapeInterval(t *testing.T, baseURL, expectedInterval string) bool {
 	resp, err := http.Get(baseURL + "/api/v1/status/config")
 	require.NoError(t, err)
 	defer resp.Body.Close()
@@ -149,10 +159,10 @@ func verifyScrapeInterval(t *testing.T, baseURL, expectedInterval string) {
 	}{}
 
 	require.NoError(t, json.Unmarshal(body, &config))
-	require.Contains(t, config.Data.YAML, "scrape_interval: "+expectedInterval)
+	return strings.Contains(config.Data.YAML, "scrape_interval: "+expectedInterval)
 }
 
-func verifyConfigReloadMetric(t *testing.T, baseURL string, expectedValue float64) {
+func verifyConfigReloadMetric(t *testing.T, baseURL string, expectedValue float64) bool {
 	resp, err := http.Get(baseURL + "/metrics")
 	require.NoError(t, err)
 	defer resp.Body.Close()
@@ -176,8 +186,7 @@ func verifyConfigReloadMetric(t *testing.T, baseURL string, expectedValue float6
 		}
 	}
 
-	require.True(t, found, "Expected metric %s not found in Prometheus metrics", configReloadMetric)
-	require.Equal(t, expectedValue, actualValue)
+	return found && actualValue == expectedValue
 }
 
 func captureLogsToTLog(t *testing.T, r io.Reader) {
@@ -194,19 +203,29 @@ func runPrometheusWithLogging(t *testing.T, configFilePath string, port int) *ex
 	stdoutPipe, stdoutWriter := io.Pipe()
 	stderrPipe, stderrWriter := io.Pipe()
 
+	var wg sync.WaitGroup
+	wg.Add(2)
+
 	prom := exec.Command(promPath, "-test.main", "--enable-feature=auto-reload-config", "--config.file="+configFilePath, "--config.auto-reload-interval=1s", "--web.listen-address=0.0.0.0:"+strconv.Itoa(port))
 	prom.Stdout = stdoutWriter
 	prom.Stderr = stderrWriter
 
 	go func() {
-		defer stdoutWriter.Close()
+		defer wg.Done()
 		captureLogsToTLog(t, stdoutPipe)
 	}()
-
 	go func() {
-		defer stderrWriter.Close()
+		defer wg.Done()
 		captureLogsToTLog(t, stderrPipe)
 	}()
+
+	t.Cleanup(func() {
+		prom.Process.Kill()
+		prom.Wait()
+		stdoutWriter.Close()
+		stderrWriter.Close()
+		wg.Wait()
+	})
 
 	require.NoError(t, prom.Start())
 	return prom
