@@ -28,9 +28,9 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/gogo/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -305,7 +305,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 	// V2 supports partial writes for non-retriable errors, so test them.
 	for _, tc := range []struct {
 		desc             string
-		input            []writev2.TimeSeries
+		input            []*writev2.TimeSeries
 		expectedCode     int
 		expectedRespBody string
 
@@ -324,7 +324,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			desc: "Partial write; first series with invalid labels (no metric name)",
 			input: append(
 				// Series with test_metric1="test_metric1" labels.
-				[]writev2.TimeSeries{{LabelsRefs: []uint32{2, 2}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
+				[]*writev2.TimeSeries{{LabelsRefs: []uint32{2, 2}, Samples: []*writev2.Sample{{Value: 1, Timestamp: 1}}}},
 				writeV2RequestFixture.Timeseries...),
 			expectedCode:     http.StatusBadRequest,
 			expectedRespBody: "invalid metric name or labels, got {test_metric1=\"test_metric1\"}\n",
@@ -333,7 +333,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			desc: "Partial write; first series with invalid labels (empty metric name)",
 			input: append(
 				// Series with __name__="" labels.
-				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 0}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
+				[]*writev2.TimeSeries{{LabelsRefs: []uint32{1, 0}, Samples: []*writev2.Sample{{Value: 1, Timestamp: 1}}}},
 				writeV2RequestFixture.Timeseries...),
 			expectedCode:     http.StatusBadRequest,
 			expectedRespBody: "invalid metric name or labels, got {__name__=\"\"}\n",
@@ -342,16 +342,16 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			desc: "Partial write; first series with duplicate labels",
 			input: append(
 				// Series with __name__="test_metric1",test_metric1="test_metric1",test_metric1="test_metric1" labels.
-				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 2, 2, 2, 2, 2}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
+				[]*writev2.TimeSeries{{LabelsRefs: []uint32{1, 2, 2, 2, 2, 2}, Samples: []*writev2.Sample{{Value: 1, Timestamp: 1}}}},
 				writeV2RequestFixture.Timeseries...),
 			expectedCode:     http.StatusBadRequest,
 			expectedRespBody: "invalid labels for series, labels {__name__=\"test_metric1\", test_metric1=\"test_metric1\", test_metric1=\"test_metric1\"}, duplicated label test_metric1\n",
 		},
 		{
 			desc: "Partial write; first series with one OOO sample",
-			input: func() []writev2.TimeSeries {
+			input: func() []*writev2.TimeSeries {
 				f := proto.Clone(writeV2RequestFixture).(*writev2.Request)
-				f.Timeseries[0].Samples = append(f.Timeseries[0].Samples, writev2.Sample{Value: 2, Timestamp: 0})
+				f.Timeseries[0].Samples = append(f.Timeseries[0].Samples, &writev2.Sample{Value: 2, Timestamp: 0})
 				return f.Timeseries
 			}(),
 			expectedCode:     http.StatusBadRequest,
@@ -359,7 +359,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 		},
 		{
 			desc: "Partial write; first series with one dup sample",
-			input: func() []writev2.TimeSeries {
+			input: func() []*writev2.TimeSeries {
 				f := proto.Clone(writeV2RequestFixture).(*writev2.Request)
 				f.Timeseries[0].Samples = append(f.Timeseries[0].Samples, f.Timeseries[0].Samples[0])
 				return f.Timeseries
@@ -369,7 +369,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 		},
 		{
 			desc: "Partial write; first series with one OOO histogram sample",
-			input: func() []writev2.TimeSeries {
+			input: func() []*writev2.TimeSeries {
 				f := proto.Clone(writeV2RequestFixture).(*writev2.Request)
 				f.Timeseries[0].Histograms = append(f.Timeseries[0].Histograms, writev2.FromFloatHistogram(1, testHistogram.ToFloat(nil)))
 				return f.Timeseries
@@ -379,7 +379,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 		},
 		{
 			desc: "Partial write; first series with one dup histogram sample",
-			input: func() []writev2.TimeSeries {
+			input: func() []*writev2.TimeSeries {
 				f := proto.Clone(writeV2RequestFixture).(*writev2.Request)
 				f.Timeseries[0].Histograms = append(f.Timeseries[0].Histograms, f.Timeseries[0].Histograms[1])
 				return f.Timeseries
@@ -534,9 +534,9 @@ func TestOutOfOrderSample_V1Message(t *testing.T) {
 		},
 	} {
 		t.Run(tc.Name, func(t *testing.T) {
-			payload, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
-				Labels:  []prompb.Label{{Name: "__name__", Value: "test_metric"}},
-				Samples: []prompb.Sample{{Value: 1, Timestamp: tc.Timestamp}},
+			payload, _, _, err := buildWriteRequest(nil, []*prompb.TimeSeries{{
+				Labels:  []*prompb.Label{{Name: "__name__", Value: "test_metric"}},
+				Samples: []*prompb.Sample{{Value: 1, Timestamp: tc.Timestamp}},
 			}}, nil, nil, nil, nil, "snappy")
 			require.NoError(t, err)
 
@@ -576,9 +576,9 @@ func TestOutOfOrderExemplar_V1Message(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.Name, func(t *testing.T) {
-			payload, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
-				Labels:    []prompb.Label{{Name: "__name__", Value: "test_metric"}},
-				Exemplars: []prompb.Exemplar{{Labels: []prompb.Label{{Name: "foo", Value: "bar"}}, Value: 1, Timestamp: tc.Timestamp}},
+			payload, _, _, err := buildWriteRequest(nil, []*prompb.TimeSeries{{
+				Labels:    []*prompb.Label{{Name: "__name__", Value: "test_metric"}},
+				Exemplars: []*prompb.Exemplar{{Labels: []*prompb.Label{{Name: "foo", Value: "bar"}}, Value: 1, Timestamp: tc.Timestamp}},
 			}}, nil, nil, nil, nil, "snappy")
 			require.NoError(t, err)
 
@@ -614,9 +614,9 @@ func TestOutOfOrderHistogram_V1Message(t *testing.T) {
 		},
 	} {
 		t.Run(tc.Name, func(t *testing.T) {
-			payload, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
-				Labels:     []prompb.Label{{Name: "__name__", Value: "test_metric"}},
-				Histograms: []prompb.Histogram{prompb.FromIntHistogram(tc.Timestamp, &testHistogram), prompb.FromFloatHistogram(1, testHistogram.ToFloat(nil))},
+			payload, _, _, err := buildWriteRequest(nil, []*prompb.TimeSeries{{
+				Labels:     []*prompb.Label{{Name: "__name__", Value: "test_metric"}},
+				Histograms: []*prompb.Histogram{prompb.FromIntHistogram(tc.Timestamp, &testHistogram), prompb.FromFloatHistogram(1, testHistogram.ToFloat(nil))},
 			}}, nil, nil, nil, nil, "snappy")
 			require.NoError(t, err)
 
@@ -640,12 +640,12 @@ func BenchmarkRemoteWriteHandler(b *testing.B) {
 	var reqs []*http.Request
 	for i := 0; i < b.N; i++ {
 		num := strings.Repeat(strconv.Itoa(i), 16)
-		buf, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
-			Labels: []prompb.Label{
+		buf, _, _, err := buildWriteRequest(nil, []*prompb.TimeSeries{{
+			Labels: []*prompb.Label{
 				{Name: "__name__", Value: "test_metric"},
 				{Name: "test_label_name_" + num, Value: labelValue + num},
 			},
-			Histograms: []prompb.Histogram{prompb.FromIntHistogram(0, &testHistogram)},
+			Histograms: []*prompb.Histogram{prompb.FromIntHistogram(0, &testHistogram)},
 		}}, nil, nil, nil, nil, "snappy")
 		require.NoError(b, err)
 		req, err := http.NewRequest("", "", bytes.NewReader(buf))
@@ -755,12 +755,12 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 	}
 }
 
-func genSeriesWithSample(numSeries int, ts int64) []prompb.TimeSeries {
-	var series []prompb.TimeSeries
+func genSeriesWithSample(numSeries int, ts int64) []*prompb.TimeSeries {
+	var series []*prompb.TimeSeries
 	for i := 0; i < numSeries; i++ {
-		s := prompb.TimeSeries{
-			Labels:  []prompb.Label{{Name: "__name__", Value: fmt.Sprintf("test_metric_%d", i)}},
-			Samples: []prompb.Sample{{Value: float64(i), Timestamp: ts}},
+		s := &prompb.TimeSeries{
+			Labels:  []*prompb.Label{{Name: "__name__", Value: fmt.Sprintf("test_metric_%d", i)}},
+			Samples: []*prompb.Sample{{Value: float64(i), Timestamp: ts}},
 		}
 		series = append(series, s)
 	}
