@@ -234,7 +234,7 @@ type azureClient struct {
 
 var _ client = &azureClient{}
 
-// createAzureClient is a helper function for creating an Azure compute client to ARM.
+// createAzureClient is a helper method for creating an Azure compute client to ARM.
 func (d *Discovery) createAzureClient() (client, error) {
 	cloudConfiguration, err := CloudConfigurationFromName(d.cfg.Environment)
 	if err != nil {
