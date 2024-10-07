@@ -38,6 +38,7 @@ type NHCBParser struct {
 	// For Series and Histogram.
 	bytes []byte
 	ts    *int64
+	ct    *int64
 	value float64
 	h     *histogram.Histogram
 	fh    *histogram.FloatHistogram
@@ -57,12 +58,15 @@ type NHCBParser struct {
 	bytesNHCB        []byte
 	hNHCB            *histogram.Histogram
 	fhNHCB           *histogram.FloatHistogram
+	ctNHCB           *int64
 	lsetNHCB         labels.Labels
 	metricStringNHCB string
 
 	// Collates values from the classic histogram series to build
 	// the converted histogram later.
 	tempLsetNHCB          labels.Labels
+	tempCtNHCB            *int64
+	tempCtNHCBbacking     int64
 	tempNHCB              convertnhcb.TempHistogram
 	isCollationInProgress bool
 
@@ -124,8 +128,10 @@ func (p *NHCBParser) Exemplar(ex *exemplar.Exemplar) bool {
 }
 
 func (p *NHCBParser) CreatedTimestamp() *int64 {
-	// TODO(krajorama) fix: return p.parser.CreatedTimestamp()
-	return nil
+	if p.justInsertedNHCB {
+		return p.ctNHCB
+	}
+	return p.ct
 }
 
 func (p *NHCBParser) Next() (Entry, error) {
@@ -151,6 +157,7 @@ func (p *NHCBParser) Next() (Entry, error) {
 	case EntrySeries:
 		p.bytes, p.ts, p.value = p.parser.Series()
 		p.metricString = p.parser.Metric(&p.lset)
+		p.ct = p.parser.CreatedTimestamp()
 		// Check the label set to see if we can continue or need to emit the NHCB.
 		shouldInsertNHCB := false
 		if len(p.lastBaseHistLabels) > 0 {
@@ -183,13 +190,14 @@ func (p *NHCBParser) Next() (Entry, error) {
 			p.entry = et
 			return EntryHistogram, nil
 		}
-		if isNHCB := p.handleClassicHistogramSeries(p.lset); isNHCB && !p.keepClassicHistograms {
+		if !p.keepClassicHistograms && p.handleClassicHistogramSeries(p.lset) {
 			return p.Next()
 		}
 		return et, err
 	case EntryHistogram:
 		p.bytes, p.ts, p.h, p.fh = p.parser.Histogram()
 		p.metricString = p.parser.Metric(&p.lset)
+		p.ct = p.parser.CreatedTimestamp()
 		p.lastNativeHistLabels.CopyFrom(p.lset)
 	case EntryType:
 		p.bName, p.typ = p.parser.Type()
@@ -230,6 +238,10 @@ func (p *NHCBParser) handleClassicHistogramSeries(lset labels.Labels) bool {
 	// Sanity check to ensure that the TYPE metadata entry name is the same as the base name.
 	if convertnhcb.GetHistogramMetricBaseName(mName) != string(p.bName) {
 		return false
+	}
+	if p.ct != nil {
+		p.tempCtNHCBbacking = *p.ct
+		p.tempCtNHCB = &p.tempCtNHCBbacking
 	}
 	switch {
 	case strings.HasSuffix(mName, "_bucket") && lset.Has(labels.BucketLabel):
@@ -286,10 +298,12 @@ func (p *NHCBParser) processNHCB() bool {
 		p.hNHCB = nil
 		p.fhNHCB = fh
 	}
+	p.ctNHCB = p.tempCtNHCB
 	p.metricStringNHCB = p.tempLsetNHCB.Get(labels.MetricName) + strings.ReplaceAll(p.tempLsetNHCB.DropMetricName().String(), ", ", ",")
 	p.bytesNHCB = []byte(p.metricStringNHCB)
 	p.lsetNHCB = p.tempLsetNHCB
 	p.tempNHCB = convertnhcb.NewTempHistogram()
+	p.tempCtNHCB = nil
 	p.isCollationInProgress = false
 	p.justInsertedNHCB = true
 	return true
