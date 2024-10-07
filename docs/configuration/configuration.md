@@ -269,70 +269,13 @@ params:
 # response from the scraped target.
 [ enable_compression: <boolean> | default = true ]
 
-# Sets the `Authorization` header on every scrape request with the
-# configured username and password.
-# username and username_file are mutually exclusive.
-# password and password_file are mutually exclusive.
-basic_auth:
-  [ username: <string> ]
-  [ username_file: <string> ]
-  [ password: <secret> ]
-  [ password_file: <string> ]
-
-# Sets the `Authorization` header on every scrape request with
-# the configured credentials.
-authorization:
-  # Sets the authentication type of the request.
-  [ type: <string> | default: Bearer ]
-  # Sets the credentials of the request. It is mutually exclusive with
-  # `credentials_file`.
-  [ credentials: <secret> ]
-  # Sets the credentials of the request with the credentials read from the
-  # configured file. It is mutually exclusive with `credentials`.
-  [ credentials_file: <filename> ]
-
-# Optional OAuth 2.0 configuration.
-# Cannot be used at the same time as basic_auth or authorization.
-oauth2:
-  [ <oauth2> ]
-
-# Configure whether scrape requests follow HTTP 3xx redirects.
-[ follow_redirects: <boolean> | default = true ]
-
-# Whether to enable HTTP2.
-[ enable_http2: <boolean> | default: true ]
-
-# Configures the scrape request's TLS settings.
-tls_config:
-  [ <tls_config> ]
-
-# Optional proxy URL.
-[ proxy_url: <string> ]
-# Comma-separated string that can contain IPs, CIDR notation, domain names
-# that should be excluded from proxying. IP and domain names can
-# contain port numbers.
-[ no_proxy: <string> ]
-# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
-[ proxy_from_environment: <boolean> | default: false ]
-# Specifies headers to send to proxies during CONNECT requests.
-[ proxy_connect_header:
-  [ <string>: [<secret>, ...] ] ]
-
-# Custom HTTP headers to be sent along with each request.
-# Headers that are set by Prometheus itself can't be overwritten.
-http_headers:
-  # Header name.
-  [ <string>:
-    # Header values.
-    [ values: [<string>, ...] ]
-    # Headers values. Hidden in configuration page.
-    [ secrets: [<secret>, ...] ]
-    # Files to read header values from.
-    [ files: [<string>, ...] ] ]
-
 # File to which scrape failures are logged.
 # Reloading the configuration will reopen the file.
 [ scrape_failure_log_file: <string> ]
+
+# HTTP client settings, including authentication methods (such as basic auth and
+# authorization), proxy configurations, TLS options, custom HTTP headers, etc.
+[ <http_config> ]
 
 # List of Azure service discovery configurations.
 azure_sd_configs:
@@ -548,6 +491,73 @@ metric_relabel_configs:
 ```
 
 Where `<job_name>` must be unique across all scrape configurations.
+
+### `<http_config>`
+
+A `http_config` allows configuring HTTP requests.
+
+```
+# Sets the `Authorization` header on every request with the
+# configured username and password.
+# username and username_file are mutually exclusive.
+# password and password_file are mutually exclusive.
+basic_auth:
+  [ username: <string> ]
+  [ username_file: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Sets the `Authorization` header on every request with
+# the configured credentials.
+authorization:
+  # Sets the authentication type of the request.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials of the request. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials of the request with the credentials read from the
+  # configured file. It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
+# Configure whether requests follow HTTP 3xx redirects.
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <boolean> | default: true ]
+
+# Configures the request's TLS settings.
+tls_config:
+  [ <tls_config> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+# Comma-separated string that can contain IPs, CIDR notation, domain names
+# that should be excluded from proxying. IP and domain names can
+# contain port numbers.
+[ no_proxy: <string> ]
+# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
+[ proxy_from_environment: <boolean> | default: false ]
+# Specifies headers to send to proxies during CONNECT requests.
+[ proxy_connect_header:
+  [ <string>: [<secret>, ...] ] ]
+
+# Custom HTTP headers to be sent along with each request.
+# Headers that are set by Prometheus itself can't be overwritten.
+http_headers:
+  # Header name.
+  [ <string>:
+    # Header values.
+    [ values: [<string>, ...] ]
+    # Headers values. Hidden in configuration page.
+    [ secrets: [<secret>, ...] ]
+    # Files to read header values from.
+    [ files: [<string>, ...] ] ]
+```
 
 ### `<tls_config>`
 
