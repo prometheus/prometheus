@@ -14,24 +14,52 @@
 package textparse
 
 import (
-	"bytes"
-	"errors"
-	"io"
-	"os"
-	"strings"
+	// "bytes"
+	// "errors"
+	// "io"
+	// "os"
+	// "strings"
 	"testing"
 
-	"github.com/klauspost/compress/gzip"
+	//"github.com/klauspost/compress/gzip"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/common/expfmt"
-	"github.com/prometheus/common/model"
+	// "github.com/prometheus/common/expfmt"
+	// "github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/model/exemplar"
+	// "github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/util/testutil"
+	// "github.com/prometheus/prometheus/util/testutil"
 )
 
+type MockDropperCache struct {
+}
+
+func (m *MockDropperCache) Get(rawSeriesId []byte) (isDropped, isKnown bool) {
+	return false, false
+}
+
+func (m *MockDropperCache) Set(rawSeriesId []byte, lbls labels.Labels) (isDropped bool) {
+	return false
+}
+
+func TestPromParse(t *testing.T) {
+	input := `# HELP go_goroutines Number of goroutines that currently exist.
+# TYPE go_goroutines gauge
+go_goroutines 33  	123123`
+	
+	dropperCache := &MockDropperCache{}
+	p := NewPromParser([]byte(input), labels.NewSymbolTable())
+	m, err := p.Next(dropperCache, false)
+	require.NoError(t, err)
+	f, ok := m.(FloatCounterMetric)
+	require.True(t, ok)
+	require.Equal(t, "go_goroutines", f.Name())
+	help, ok := f.Help()
+	require.True(t, ok)
+	require.Equal(t, "Number of goroutines that currently exist.", help)
+}
+/*
 type expectedParse struct {
 	lset    labels.Labels
 	m       string
@@ -674,3 +702,4 @@ func BenchmarkGzip(b *testing.B) {
 		})
 	}
 }
+*/

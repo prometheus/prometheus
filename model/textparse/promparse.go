@@ -17,21 +17,23 @@
 package textparse
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
-	"math"
-	"strconv"
-	"strings"
-	"unicode/utf8"
+
+	// "math"
+	// "strconv"
+	// "strings"
+	// "unicode/utf8"
 	"unsafe"
 
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/model/exemplar"
-	"github.com/prometheus/prometheus/model/histogram"
+	// "github.com/prometheus/prometheus/model/exemplar"
+	// "github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/value"
+	//"github.com/prometheus/prometheus/model/value"
 )
 
 type promlexer struct {
@@ -167,7 +169,18 @@ type PromParser struct {
 
 	err error
 	state int
-	exposedMetricType ExposedMetricType
+	detectedNameStart int
+	detectedNameEnd int
+	detectedType detectedType
+	detectedHelpStart int
+	detectedHelpEnd int
+
+	// Values for detected metrics.
+	hasSumValue bool
+	sumValue float64
+
+	// Cached interface objects.
+	exposedCounterMetric FloatCounterMetric
 }
 
 const (
@@ -176,34 +189,212 @@ const (
 	stateError
 )
 
+type detectedType int
+const (
+	detectedUntyped detectedType = iota
+	detectedCounter
+	detectedGauge
+	detectedHistogram
+	detectedSummary
+)
+
+type promBase struct {
+	p *PromParser
+}
+
+func (p promBase) Name() string {
+	return yoloString(p.p.l.b[p.p.detectedNameStart:p.p.detectedNameEnd])
+}
+
+func (p promBase) Help() (string, bool) {
+	if p.p.detectedHelpStart >= p.p.detectedHelpEnd {
+		return "", false
+	}
+	return yoloString(p.p.l.b[p.p.detectedHelpStart:p.p.detectedHelpEnd]), true
+}
+
+type promFloat struct {
+	promBase
+}
+
+func (p promFloat) Value() float64 {
+	return p.p.sumValue
+}
+
 // NewPromParser returns a new parser of the byte slice.
 func NewPromParser(b []byte, st *labels.SymbolTable) Parser {
-	return &PromParser{
+	p := &PromParser{
 		l:       &promlexer{b: append(b, '\n')},
 		builder: labels.NewScratchBuilderWithSymbolTable(st, 16),
 	}
+	p.exposedCounterMetric = promFloat{promBase{p: p}}
+	return p
 }
 
-func (p *PromParser) Next(v *ExposedValues, d Dropper) (ExposedMetricType, error) {
-	for p.err == nil && p.state != stateFoundMetric {
+func (p *PromParser) Next(d DropperCache, keepClassicHistogramSeries bool) (interface{}, error) {
+	for {
 		p.state = p.evalState()
+		switch p.state {
+		case stateError:
+			return nil, p.err
+		case stateFoundMetric:
+			switch p.detectedType {
+			case detectedGauge:
+				return p.exposedCounterMetric, nil
+			}
+		}
 	}
-	if p.err != nil {
-		return ExposedMetricTypeInvalid, p.err
-	}
-	return p.exposedMetricType, nil
 }
 
 func (p *PromParser) evalState() int {
+	var t token
+	// Shorthand to the lexer.
+	l := p.l
 	switch p.state {
+	case stateFoundMetric:
+		// Reset state to start.
+		p.detectedNameStart = p.detectedNameEnd
+		p.detectedType = detectedUntyped
+		p.detectedHelpStart = p.detectedHelpEnd
+		p.hasSumValue = false
+		return stateStart
 	case stateStart:
-		switch t := p.nextToken(); t {
-		case tEOF:
-			p.err = io.EOF
+		t = p.nextToken()
+		switch t {
+		case tInvalid:
+			p.err = fmt.Errorf("invalid token")
 			return stateError
+		case tEOF:
+			return p.setEOFState()
 		case tLinebreak:
 			// Allow full blank lines.
-			return p.Next()
+			return stateStart
+		case tWhitespace:
+			// Skip whitespace.
+			return stateStart
+		case tHelp:
+			// Try to store the help text.
+			t = p.nextToken()
+			if t != tMName {
+				// Next token wasn't a metric name as expected. Skip.
+				t = l.consumeComment()
+				if t == tEOF {
+					return p.setEOFState()
+				}
+				return stateStart
+			}
+			nameStart := p.l.start
+			nameEnd := p.l.i
+			t = p.nextToken()
+			if t == tEOF {
+				return p.setEOFState()
+			}
+			if t != tText {
+				// We are supposed to have text here.
+				p.err = fmt.Errorf("expected text")
+				return stateError
+			}
+			// Check if we have a metric name already.
+			if p.detectedNameStart != p.detectedNameEnd {
+				if !bytes.Equal(l.b[nameStart:nameEnd], l.buf()) {
+					// The metric name in the help text does not match the metric name for the type. We prioritize the type. Skip.
+					t = l.consumeComment()
+					if t == tEOF {
+						return p.setEOFState()
+					}
+					return stateStart
+				}
+			} else {
+				// Store the metric name for later.
+				p.detectedNameStart = nameStart
+				p.detectedNameEnd = nameEnd
+			}
+			p.detectedHelpStart = p.l.start+1
+			p.detectedHelpEnd = p.l.i
+			return stateStart
+		case tType:
+			// Try to store the type.
+			t = p.nextToken()
+			if t != tMName {
+				// Next token wasn't a metric name as expected. Skip.
+				t = l.consumeComment()
+				if t == tEOF {
+					return p.setEOFState()
+				}
+				return stateStart
+			}
+			nameStart := p.l.start
+			nameEnd := p.l.i
+			// Get the type.
+			t = p.nextToken()
+			if t != tText {
+				// We are supposed to have text here.
+				p.err = fmt.Errorf("expected text")
+				return stateError
+			}
+			switch s := string(l.buf()); s {
+			case "counter":
+				p.detectedType = detectedCounter
+			case "gauge":
+				p.detectedType = detectedGauge
+			case "histogram":
+				p.detectedType = detectedHistogram
+			case "summary":
+				p.detectedType = detectedSummary
+			case "untyped":
+				p.detectedType = detectedUntyped
+			default:
+				// We don't know this type. Skip.
+				return stateStart
+			}
+			if p.detectedNameStart != p.detectedNameEnd {
+				if !bytes.Equal(l.b[nameStart:nameEnd], l.buf()) {
+					// The metric name in the help text does not match the metric name for the type. We prioritize the type.
+					p.detectedNameStart = nameStart
+					p.detectedNameEnd = nameEnd
+					// Unset help.
+					p.detectedHelpStart = p.detectedHelpEnd
+				}
+			} else {
+				// Store the metric name for later.
+				p.detectedNameStart = nameStart
+				p.detectedNameEnd = nameEnd
+			}
+			return stateStart
+		case tMName:
+			// Check if we have the metric name already.
+			if p.detectedNameStart != p.detectedNameEnd {
+				if !bytes.Equal(l.b[p.detectedNameStart:p.detectedNameEnd], l.buf()) {
+					// Metric name does not match the stored metric name. Overwrite.
+					p.detectedNameStart = p.l.start
+					p.detectedNameEnd = p.l.i
+					// Unset help.
+					p.detectedHelpStart = p.detectedHelpEnd
+				}
+			} else {
+				// Store the metric name for later.
+				p.detectedNameStart = p.l.start
+				p.detectedNameEnd = p.l.i
+			}
+			return stateFoundMetric
+		}
+	}
+	p.err = fmt.Errorf("unhandled state=%d, token=%s", p.state, t.String())
+	return stateError
+}
+
+func (p *PromParser) setEOFState() int {
+	p.err = io.EOF
+	return stateError
+}
+
+// nextToken returns the next token from the promlexer. It skips over tabs
+// and spaces.
+func (p *PromParser) nextToken() token {
+	for {
+		if tok := p.l.Lex(); tok != tWhitespace {
+			return tok
+		}
 	}
 }
 /*
@@ -297,15 +488,7 @@ func (p *PromParser) CreatedTimestamp() *int64 {
 	return nil
 }
 
-// nextToken returns the next token from the promlexer. It skips over tabs
-// and spaces.
-func (p *PromParser) nextToken() token {
-	for {
-		if tok := p.l.Lex(); tok != tWhitespace {
-			return tok
-		}
-	}
-}
+
 
 func (p *PromParser) parseError(exp string, got token) error {
 	e := p.l.i + 1
@@ -536,9 +719,7 @@ func unreplace(s string) string {
 	return s
 }
 
-func yoloString(b []byte) string {
-	return unsafe.String(unsafe.SliceData(b), len(b))
-}
+
 
 func parseFloat(s string) (float64, error) {
 	// Keep to pre-Go 1.13 float formats.
@@ -548,3 +729,7 @@ func parseFloat(s string) (float64, error) {
 	return strconv.ParseFloat(s, 64)
 }
 */
+
+func yoloString(b []byte) string {
+	return unsafe.String(unsafe.SliceData(b), len(b))
+}

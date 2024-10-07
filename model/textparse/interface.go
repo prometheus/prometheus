@@ -14,7 +14,7 @@
 package textparse
 
 import (
-	"mime"
+	//"mime"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -26,7 +26,7 @@ import (
 type Parser interface {
 	// Parse returns the next metric with all information collected about it, such as
 	// metric type, help text, unit, created timestamps, samples, etc.
-	Next(v *ExposedValues, d DropperCache, keepClassicHistogramSeries bool) (ExposedMetricType, error)
+	Next(d DropperCache, keepClassicHistogramSeries bool) (interface{}, error)
 }
 
 type DropperCache interface {
@@ -43,95 +43,156 @@ func New(b []byte, contentType string, parseClassicHistograms bool, st *labels.S
 		return NewPromParser(b, st), nil
 	}
 
-	mediaType, _, err := mime.ParseMediaType(contentType)
-	if err != nil {
-		return NewPromParser(b, st), err
-	}
-	switch mediaType {
-	case "application/openmetrics-text":
-		return NewOpenMetricsParser(b, st), nil
-	case "application/vnd.google.protobuf":
-		return NewProtobufParser(b, parseClassicHistograms, st), nil
-	default:
-		return NewPromParser(b, st), nil
-	}
+	// mediaType, _, err := mime.ParseMediaType(contentType)
+	// if err != nil {
+	// 	return NewPromParser(b, st), err
+	// }
+	// switch mediaType {
+	// case "application/openmetrics-text":
+	// 	return NewOpenMetricsParser(b, st), nil
+	// case "application/vnd.google.protobuf":
+	// 	return NewProtobufParser(b, parseClassicHistograms, st), nil
+	// default:
+	// 	return NewPromParser(b, st), nil
+	// }
+
+	return NewPromParser(b, st), nil
 }
 
-type EntryType int
-
-const (
-	EntryMetricFamily EntryType = iota
-)
-
-type ExposedMetricType int
-const (
-	ExposedMetricTypeInvalid ExposedMetricType = iota
-	ExposedMetricTypeUnknown
-	ExposedMetricTypeCounter
-	ExposedMetricTypeGauge
-	ExposedMetricTypeHistogram
-	ExposedMetricTypeGaugeHistogram
-	ExposedMetricTypeSummary
-)
-
-// ExposedValues holds the values of a metric, the purpose is to group the values in one place and reuse the memory as much as possible.
-type ExposedValues struct {
-	flags ExposureFlags
-	timestamp int64
-	createdTimestamp int64
-	sum    float64  // For Counter value, Gauge value, Histogram Sum, Summary Sum and Unknown value.
-	count  float64	// For Histogram Count, Summary Count.
-
-  counts []ExposedBoundaryCount   // For classic histogram bucket counts (cumulative) and summary quantile values.
-
-	h  *histogram.Histogram  // For native histogram. There is no hasH as this is a pointer that can be nil.
-	fh *histogram.FloatHistogram  // For native float histogram. There is no hasFH as this is a pointer that can be nil.
-	// For native histograms and eventually summaries.
-	exemplars []exemplar.Exemplar
-
-	help string
-	unit string
+type BaseExposedMetric interface {
+	Name() string
+	// Labels() labels.Labels
+	Help() (string, bool)
+	// Unit() (string, bool)
+	// Timestamp() (int64, bool)
+	// CreatedTimestamp() (int64, bool)
+	// // A uniq identifier for the metric for putting into the dropper cache.
+	// RawSeriesId() []byte
+	// IsGauge() bool
+	// Exemplars() []*exemplar.Exemplar
 }
 
-type ExposedBoundaryCount struct {
-	store bool // Whether to store this bucket count value (according to relabel drop rules).
-	boundary float64
-	count uint64
-	hasExemplar bool
-	exemplar exemplar.Exemplar
+// Untyped float value
+type FloatMetric interface {
+	BaseExposedMetric
+	Value() float64
 }
 
-type ExposureFlags uint64
-
-const (
-	ExposureFlagHasTimestamp = 1 << iota
-	ExposureFlagHasCreatedTimestamp
-	ExposureFlagHasSum
-	ExposureFlagStoreSum
-	ExposureFlagHasCount
-	ExposureFlagStoreCount
-	ExposureFlagHasHelp
-	ExposureFlagHasUnit
-
-	// No need to have flag for native histograms, we can just check if h or fh is nil.
-)
-
-// Reset values to zero, reuse memory if possible.
-// For native histograms, the commit will use the value so we need to reset to nil.
-func (v *ExposedValues) Reset() {
-	v.flags = 0
-	v.h = nil
-	v.fh = nil
-	v.counts = v.counts[:0]
-	v.exemplars = v.exemplars[:0]
+type FloatCounterMetric interface {
+	BaseExposedMetric
+	Value() float64
 }
 
-func (v *ExposedValues) SetTimestamp(t int64) {
-	v.timestamp = t
-	v.flags |= ExposureFlagHasTimestamp
+type FloatGaugeMetric interface {
+	BaseExposedMetric
+	Value() float64
 }
 
-func (v *ExposedValues) SetCreatedTimestamp(t int64) {
-	v.createdTimestamp = t
-	v.flags |= ExposureFlagHasCreatedTimestamp
+type HistogramCounterMetric interface {
+	BaseExposedMetric
+	SumValue() float64
+	CountValue() float64
+	CustomBuckets() bool
+	Buckets() ExposedBucketIterator
+	Native() (*histogram.Histogram, *histogram.FloatHistogram)
 }
+
+type HistogramGaugeMetric interface {
+	BaseExposedMetric
+	SumValue() float64
+	CountValue() float64
+	CustomBuckets() bool
+	Buckets() ExposedBucketIterator
+	Native() (*histogram.Histogram, *histogram.FloatHistogram)
+}
+
+type SummaryMetric interface {
+	BaseExposedMetric
+	SumValue() float64
+	CountValue() float64
+	Quantiles() ExposedQuantileIterator
+}
+
+type ExposedBucketIterator interface {
+	Next() bool
+	At() ExposedBucket
+}
+
+type ExposedBucket struct {
+	UpperBound float64
+	Count      float64
+	Exemplar   *exemplar.Exemplar
+}
+
+type ExposedQuantileIterator interface {
+	Next() bool
+	At() ExposedQuantile
+}
+
+type ExposedQuantile struct {
+	Quantile float64
+	Value    float64
+}
+
+
+// // ExposedValues holds the values of a metric, the purpose is to group the values in one place and reuse the memory as much as possible.
+// type ExposedValues struct {
+// 	flags ExposureFlags
+// 	timestamp int64
+// 	createdTimestamp int64
+// 	sum    float64  // For Counter value, Gauge value, Histogram Sum, Summary Sum and Unknown value.
+// 	count  float64	// For Histogram Count, Summary Count.
+
+//   counts []ExposedBoundaryCount   // For classic histogram bucket counts (cumulative) and summary quantile values.
+
+// 	h  *histogram.Histogram  // For native histogram. There is no hasH as this is a pointer that can be nil.
+// 	fh *histogram.FloatHistogram  // For native float histogram. There is no hasFH as this is a pointer that can be nil.
+// 	// For native histograms and eventually summaries.
+// 	exemplars []exemplar.Exemplar
+
+// 	help string
+// 	unit string
+// }
+
+// type ExposedBoundaryCount struct {
+// 	store bool // Whether to store this bucket count value (according to relabel drop rules).
+// 	boundary float64
+// 	count uint64
+// 	hasExemplar bool
+// 	exemplar exemplar.Exemplar
+// }
+
+// type ExposureFlags uint64
+
+// const (
+// 	ExposureFlagHasTimestamp = 1 << iota
+// 	ExposureFlagHasCreatedTimestamp
+// 	ExposureFlagHasSum
+// 	ExposureFlagStoreSum
+// 	ExposureFlagHasCount
+// 	ExposureFlagStoreCount
+// 	ExposureFlagHasHelp
+// 	ExposureFlagHasUnit
+
+// 	// No need to have flag for native histograms, we can just check if h or fh is nil.
+// )
+
+// // Reset values to zero, reuse memory if possible.
+// // For native histograms, the commit will use the value so we need to reset to nil.
+// func (v *ExposedValues) Reset() {
+// 	v.flags = 0
+// 	v.h = nil
+// 	v.fh = nil
+// 	v.counts = v.counts[:0]
+// 	v.exemplars = v.exemplars[:0]
+// }
+
+// func (v *ExposedValues) SetTimestamp(t int64) {
+// 	v.timestamp = t
+// 	v.flags |= ExposureFlagHasTimestamp
+// }
+
+// func (v *ExposedValues) SetCreatedTimestamp(t int64) {
+// 	v.createdTimestamp = t
+// 	v.flags |= ExposureFlagHasCreatedTimestamp
+// }
