@@ -120,7 +120,7 @@ type collectResultAppender struct {
 
 // SetHints implements storage.Appender.
 func (a *collectResultAppender) SetHints(hints *storage.AppendHints) {
-	//Do nothing
+	// Do nothing
 }
 
 func (a *collectResultAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
