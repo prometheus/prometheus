@@ -95,8 +95,7 @@ func TestRobotSDRefreshHandleError(t *testing.T) {
 	require.NoError(t, err)
 
 	targetGroups, err := d.refresh(context.Background())
-	require.Error(t, err)
-	require.Equal(t, "non 2xx status '401' response during hetzner service discovery with role robot", err.Error())
+	require.EqualError(t, err, "non 2xx status '401' response during hetzner service discovery with role robot")
 
 	require.Empty(t, targetGroups)
 }

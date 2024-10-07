@@ -14,10 +14,8 @@
 package textparse
 
 import (
-	"errors"
 	"fmt"
 	"io"
-	"os"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -890,11 +888,11 @@ func TestOMNullByteHandling(t *testing.T) {
 		}
 
 		if c.err == "" {
-			require.Equal(t, io.EOF, err, "test %d", i)
+			require.ErrorIs(t, err, io.EOF, "test %d", i)
 			continue
 		}
 
-		require.Equal(t, c.err, err.Error(), "test %d", i)
+		require.EqualError(t, err, c.err, "test %d", i)
 	}
 }
 
@@ -1020,48 +1018,5 @@ func resetValAndLset(e []parsedEntry) {
 	for i := range e {
 		e[i].v = 0
 		e[i].lset = labels.EmptyLabels()
-	}
-}
-
-func BenchmarkOMParseCreatedTimestamp(b *testing.B) {
-	for parserName, parser := range map[string]func([]byte, *labels.SymbolTable) Parser{
-		"openmetrics": func(b []byte, st *labels.SymbolTable) Parser {
-			return NewOpenMetricsParser(b, st)
-		},
-		"openmetrics-skip-ct": func(b []byte, st *labels.SymbolTable) Parser {
-			return NewOpenMetricsParser(b, st, WithOMParserCTSeriesSkipped())
-		},
-	} {
-		f, err := os.Open("omtestdata.txt")
-		require.NoError(b, err)
-		defer f.Close()
-
-		buf, err := io.ReadAll(f)
-		require.NoError(b, err)
-
-		b.Run(parserName+"/parse-ct/"+"omtestdata.txt", func(b *testing.B) {
-			b.SetBytes(int64(len(buf) / promtestdataSampleCount))
-			b.ReportAllocs()
-			b.ResetTimer()
-
-			st := labels.NewSymbolTable()
-			for i := 0; i < b.N; i += promtestdataSampleCount {
-				p := parser(buf, st)
-
-			Outer:
-				for i < b.N {
-					t, err := p.Next()
-					switch t {
-					case EntryInvalid:
-						if errors.Is(err, io.EOF) {
-							break Outer
-						}
-						b.Fatal(err)
-					case EntrySeries:
-						p.CreatedTimestamp()
-					}
-				}
-			}
-		})
 	}
 }
