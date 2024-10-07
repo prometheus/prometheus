@@ -933,6 +933,37 @@ func TestDBOutOfOrderTimeWindow(t *testing.T) {
 	}
 }
 
+func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	opts := DefaultOptions()
+	opts.OutOfOrderTimeWindow = 0
+	s := createTestAgentDB(t, reg, opts)
+	app := s.Appender(context.TODO())
+	defer s.Close()
+
+	lbls := labelsForTest(t.Name()+"_histogram", 1)
+	lset := labels.New(lbls[0]...)
+	_, err := app.AppendHistogramCTZeroSample(0, lset, 100, 30, tsdbutil.GenerateTestHistograms(1)[0], nil)
+	require.NoError(t, err)
+	_, err = app.AppendHistogram(0, lset, 100, tsdbutil.GenerateTestHistograms(1)[0], nil)
+	require.NoError(t, err)
+	err = app.Commit()
+	require.NoError(t, err)
+
+	lbls = labelsForTest(t.Name(), 1)
+	lset = labels.New(lbls[0]...)
+	_, err = app.AppendCTZeroSample(0, lset, 100, 70)
+	require.NoError(t, err)
+	_, err = app.Append(0, lset, 100, 0)
+	require.NoError(t, err)
+	err = app.Commit()
+	require.NoError(t, err)
+
+	m := gatherFamily(t, reg, "prometheus_agent_samples_appended_total")
+	require.Equal(t, float64(2), m.Metric[0].Counter.GetValue(), "agent wal mismatch of total appended samples")
+	require.Equal(t, float64(2), m.Metric[1].Counter.GetValue(), "agent wal mismatch of total appended histograms")
+}
+
 func BenchmarkCreateSeries(b *testing.B) {
 	s := createTestAgentDB(b, nil, DefaultOptions())
 	defer s.Close()
