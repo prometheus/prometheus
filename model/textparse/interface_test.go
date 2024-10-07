@@ -93,13 +93,12 @@ func TestNewParser(t *testing.T) {
 			tt := tt // Copy to local variable before going parallel.
 			t.Parallel()
 
-			p, err := New([]byte{}, tt.contentType, false, labels.NewSymbolTable())
+			p, err := New([]byte{}, tt.contentType, false, false, labels.NewSymbolTable())
 			tt.validateParser(t, p)
 			if tt.err == "" {
 				require.NoError(t, err)
 			} else {
-				require.Error(t, err)
-				require.Contains(t, err.Error(), tt.err)
+				require.ErrorContains(t, err, tt.err)
 			}
 		})
 	}

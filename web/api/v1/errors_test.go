@@ -134,6 +134,8 @@ func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable) *route
 		regexp.MustCompile(".*"),
 		func() (RuntimeInfo, error) { return RuntimeInfo{}, errors.New("not implemented") },
 		&PrometheusVersion{},
+		nil,
+		nil,
 		prometheus.DefaultGatherer,
 		nil,
 		nil,

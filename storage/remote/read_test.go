@@ -475,7 +475,9 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 			)
 			q, err := c.Querier(tc.mint, tc.maxt)
 			require.NoError(t, err)
-			defer require.NoError(t, q.Close())
+			defer func() {
+				require.NoError(t, q.Close())
+			}()
 
 			ss := q.Select(context.Background(), true, nil, tc.matchers...)
 			require.NoError(t, err)

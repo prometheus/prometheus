@@ -4,7 +4,7 @@ import { useAppDispatch } from "../state/hooks";
 import { updateSettings, useSettings } from "../state/settingsSlice";
 import { useSuspenseAPIQuery } from "../api/api";
 import { WALReplayStatus } from "../api/responseTypes/walreplay";
-import { Progress, Alert } from "@mantine/core";
+import { Progress, Alert, Stack } from "@mantine/core";
 import { useSuspenseQuery } from "@tanstack/react-query";
 
 const STATUS_STARTING = "is starting up...";
@@ -57,14 +57,12 @@ const ReadinessLoader: FC = () => {
   // Only call WAL replay status API if the service is starting up.
   const shouldQueryWALReplay = statusMessage === STATUS_STARTING;
 
-  const {
-    data: walData,
-    isSuccess: walSuccess,
-  } = useSuspenseAPIQuery<WALReplayStatus>({
-    path: "/status/walreplay",
-    key: ["walreplay", queryKey],
-    enabled: shouldQueryWALReplay, // Only enabled when service is starting up.
-  });
+  const { data: walData, isSuccess: walSuccess } =
+    useSuspenseAPIQuery<WALReplayStatus>({
+      path: "/status/walreplay",
+      key: ["walreplay", queryKey],
+      enabled: shouldQueryWALReplay, // Only enabled when service is starting up.
+    });
 
   useEffect(() => {
     if (ready) {
@@ -80,14 +78,18 @@ const ReadinessLoader: FC = () => {
   return (
     <Alert
       color="yellow"
-      title={"Prometheus " + (agentMode && "Agent "||"") + (statusMessage || STATUS_LOADING)}
-      icon={<IconAlertTriangle/>}
+      title={
+        "Prometheus " +
+        ((agentMode && "Agent ") || "") +
+        (statusMessage || STATUS_LOADING)
+      }
+      icon={<IconAlertTriangle />}
       maw={500}
       mx="auto"
       mt="lg"
     >
       {shouldQueryWALReplay && walSuccess && walData && (
-        <>
+        <Stack>
           <strong>
             Replaying WAL ({walData.data.current}/{walData.data.max})
           </strong>
@@ -95,9 +97,13 @@ const ReadinessLoader: FC = () => {
             size="xl"
             animated
             color="yellow"
-            value={((walData.data.current - walData.data.min + 1) / (walData.data.max - walData.data.min + 1)) * 100}
+            value={
+              ((walData.data.current - walData.data.min + 1) /
+                (walData.data.max - walData.data.min + 1)) *
+              100
+            }
           />
-        </>
+        </Stack>
       )}
     </Alert>
   );

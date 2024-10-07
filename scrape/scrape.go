@@ -87,8 +87,6 @@ type scrapePool struct {
 	// Constructor for new scrape loops. This is settable for testing convenience.
 	newLoop func(scrapeLoopOptions) loop
 
-	noDefaultPort bool
-
 	metrics *scrapeMetrics
 
 	scrapeFailureLogger    log.Logger
@@ -150,7 +148,6 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 		logger:               logger,
 		metrics:              metrics,
 		httpOpts:             options.HTTPClientOptions,
-		noDefaultPort:        options.NoDefaultPort,
 	}
 	sp.newLoop = func(opts scrapeLoopOptions) loop {
 		// Update the targets retrieval function for metadata to a new scrape cache.
@@ -431,7 +428,7 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 	sp.droppedTargets = []*Target{}
 	sp.droppedTargetsCount = 0
 	for _, tg := range tgs {
-		targets, failures := TargetsFromGroup(tg, sp.config, sp.noDefaultPort, targets, lb)
+		targets, failures := TargetsFromGroup(tg, sp.config, targets, lb)
 		for _, err := range failures {
 			level.Error(sp.logger).Log("msg", "Creating target failed", "err", err)
 		}
@@ -1546,7 +1543,7 @@ type appendErrors struct {
 }
 
 func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
-	p, err := textparse.New(b, contentType, sl.scrapeClassicHistograms, sl.symbolTable)
+	p, err := textparse.New(b, contentType, sl.scrapeClassicHistograms, sl.enableCTZeroIngestion, sl.symbolTable)
 	if sl.convertClassicHistograms {
 		p = textparse.NewNHCBParser(p, sl.scrapeClassicHistograms)
 	}
@@ -1711,7 +1708,15 @@ loop:
 		} else {
 			if sl.enableCTZeroIngestion {
 				if ctMs := p.CreatedTimestamp(); ctMs != nil {
-					ref, err = app.AppendCTZeroSample(ref, lset, t, *ctMs)
+					if isHistogram && sl.enableNativeHistogramIngestion {
+						if h != nil {
+							ref, err = app.AppendHistogramCTZeroSample(ref, lset, t, *ctMs, h, nil)
+						} else {
+							ref, err = app.AppendHistogramCTZeroSample(ref, lset, t, *ctMs, nil, fh)
+						}
+					} else {
+						ref, err = app.AppendCTZeroSample(ref, lset, t, *ctMs)
+					}
 					if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) { // OOO is a common case, ignoring completely for now.
 						// CT is an experimental feature. For now, we don't need to fail the
 						// scrape on errors updating the created timestamp, log debug.
