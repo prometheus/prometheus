@@ -124,7 +124,8 @@ func (p *NHCBParser) Exemplar(ex *exemplar.Exemplar) bool {
 }
 
 func (p *NHCBParser) CreatedTimestamp() *int64 {
-	return p.parser.CreatedTimestamp()
+	// TODO(krajorama) fix: return p.parser.CreatedTimestamp()
+	return nil
 }
 
 func (p *NHCBParser) Next() (Entry, error) {
