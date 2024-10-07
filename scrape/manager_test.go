@@ -27,12 +27,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gopkg.in/yaml.v2"
@@ -730,7 +730,7 @@ func setupScrapeManager(t *testing.T, honorTimestamps, enableCTZeroIngestion boo
 			EnableCreatedTimestampZeroIngestion: enableCTZeroIngestion,
 			skipOffsetting:                      true,
 		},
-		log.NewLogfmtLogger(os.Stderr),
+		promslog.New(&promslog.Config{}),
 		nil,
 		&collectResultAppendable{app},
 		prometheus.NewRegistry(),
@@ -984,7 +984,7 @@ func TestManagerCTZeroIngestionHistogram(t *testing.T) {
 					EnableNativeHistogramsIngestion:     true,
 					skipOffsetting:                      true,
 				},
-				log.NewLogfmtLogger(os.Stderr),
+				promslog.New(&promslog.Config{}),
 				nil,
 				&collectResultAppendable{app},
 				prometheus.NewRegistry(),
@@ -1125,7 +1125,7 @@ func runManagers(t *testing.T, ctx context.Context) (*discovery.Manager, *Manage
 	require.NoError(t, err)
 	discoveryManager := discovery.NewManager(
 		ctx,
-		log.NewNopLogger(),
+		promslog.NewNopLogger(),
 		reg,
 		sdMetrics,
 		discovery.Updatert(100*time.Millisecond),

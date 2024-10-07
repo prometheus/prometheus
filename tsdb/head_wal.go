@@ -24,7 +24,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-kit/log/level"
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -128,7 +127,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 			// replaying the WAL, so lets just log the error if it's not that type.
 			err = h.exemplars.AddExemplar(ms.labels(), exemplar.Exemplar{Ts: e.T, Value: e.V, Labels: e.Labels})
 			if err != nil && errors.Is(err, storage.ErrOutOfOrderExemplar) {
-				level.Warn(h.logger).Log("msg", "Unexpected error when replaying WAL on exemplar record", "err", err)
+				h.logger.Warn("Unexpected error when replaying WAL on exemplar record", "err", err)
 			}
 		}
 	}(exemplarsInput)
@@ -421,8 +420,8 @@ Outer:
 	}
 
 	if unknownRefs.Load()+unknownExemplarRefs.Load()+unknownHistogramRefs.Load()+unknownMetadataRefs.Load() > 0 {
-		level.Warn(h.logger).Log(
-			"msg", "Unknown series references",
+		h.logger.Warn(
+			"Unknown series references",
 			"samples", unknownRefs.Load(),
 			"exemplars", unknownExemplarRefs.Load(),
 			"histograms", unknownHistogramRefs.Load(),
@@ -430,7 +429,7 @@ Outer:
 		)
 	}
 	if count := mmapOverlappingChunks.Load(); count > 0 {
-		level.Info(h.logger).Log("msg", "Overlapping m-map chunks on duplicate series records", "count", count)
+		h.logger.Info("Overlapping m-map chunks on duplicate series records", "count", count)
 	}
 	return nil
 }
@@ -446,8 +445,8 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*m
 				mmc[0].minTime,
 				mmc[len(mmc)-1].maxTime,
 			) {
-				level.Debug(h.logger).Log(
-					"msg", "M-mapped chunks overlap on a duplicate series record",
+				h.logger.Debug(
+					"M-mapped chunks overlap on a duplicate series record",
 					"series", mSeries.labels().String(),
 					"oldref", mSeries.ref,
 					"oldmint", mSeries.mmappedChunks[0].minTime,
@@ -911,7 +910,7 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 	}
 
 	if unknownRefs.Load() > 0 || mmapMarkerUnknownRefs.Load() > 0 {
-		level.Warn(h.logger).Log("msg", "Unknown series references for ooo WAL replay", "samples", unknownRefs.Load(), "mmap_markers", mmapMarkerUnknownRefs.Load())
+		h.logger.Warn("Unknown series references for ooo WAL replay", "samples", unknownRefs.Load(), "mmap_markers", mmapMarkerUnknownRefs.Load())
 	}
 	return nil
 }
@@ -1212,7 +1211,7 @@ const chunkSnapshotPrefix = "chunk_snapshot."
 func (h *Head) ChunkSnapshot() (*ChunkSnapshotStats, error) {
 	if h.wal == nil {
 		// If we are not storing any WAL, does not make sense to take a snapshot too.
-		level.Warn(h.logger).Log("msg", "skipping chunk snapshotting as WAL is disabled")
+		h.logger.Warn("skipping chunk snapshotting as WAL is disabled")
 		return &ChunkSnapshotStats{}, nil
 	}
 	h.chunkSnapshotMtx.Lock()
@@ -1361,7 +1360,7 @@ func (h *Head) ChunkSnapshot() (*ChunkSnapshotStats, error) {
 		// Leftover old chunk snapshots do not cause problems down the line beyond
 		// occupying disk space.
 		// They will just be ignored since a higher chunk snapshot exists.
-		level.Error(h.logger).Log("msg", "delete old chunk snapshots", "err", err)
+		h.logger.Error("delete old chunk snapshots", "err", err)
 	}
 	return stats, nil
 }
@@ -1371,12 +1370,12 @@ func chunkSnapshotDir(wlast, woffset int) string {
 }
 
 func (h *Head) performChunkSnapshot() error {
-	level.Info(h.logger).Log("msg", "creating chunk snapshot")
+	h.logger.Info("creating chunk snapshot")
 	startTime := time.Now()
 	stats, err := h.ChunkSnapshot()
 	elapsed := time.Since(startTime)
 	if err == nil {
-		level.Info(h.logger).Log("msg", "chunk snapshot complete", "duration", elapsed.String(), "num_series", stats.TotalSeries, "dir", stats.Dir)
+		h.logger.Info("chunk snapshot complete", "duration", elapsed.String(), "num_series", stats.TotalSeries, "dir", stats.Dir)
 	}
 	if err != nil {
 		return fmt.Errorf("chunk snapshot: %w", err)
@@ -1491,7 +1490,7 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 	}
 	defer func() {
 		if err := sr.Close(); err != nil {
-			level.Warn(h.logger).Log("msg", "error while closing the wal segments reader", "err", err)
+			h.logger.Warn("error while closing the wal segments reader", "err", err)
 		}
 	}()
 
@@ -1680,9 +1679,9 @@ Outer:
 	}
 
 	elapsed := time.Since(start)
-	level.Info(h.logger).Log("msg", "chunk snapshot loaded", "dir", dir, "num_series", numSeries, "duration", elapsed.String())
+	h.logger.Info("chunk snapshot loaded", "dir", dir, "num_series", numSeries, "duration", elapsed.String())
 	if unknownRefs > 0 {
-		level.Warn(h.logger).Log("msg", "unknown series references during chunk snapshot replay", "count", unknownRefs)
+		h.logger.Warn("unknown series references during chunk snapshot replay", "count", unknownRefs)
 	}
 
 	return snapIdx, snapOffset, refSeries, nil

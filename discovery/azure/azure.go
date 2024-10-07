@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/rand"
 	"net"
 	"net/http"
@@ -35,10 +36,9 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v4"
 	cache "github.com/Code-Hex/go-generics-cache"
 	"github.com/Code-Hex/go-generics-cache/policy/lru"
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
@@ -175,7 +175,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 type Discovery struct {
 	*refresh.Discovery
-	logger  log.Logger
+	logger  *slog.Logger
 	cfg     *SDConfig
 	port    int
 	cache   *cache.Cache[string, *armnetwork.Interface]
@@ -183,14 +183,14 @@ type Discovery struct {
 }
 
 // NewDiscovery returns a new AzureDiscovery which periodically refreshes its targets.
-func NewDiscovery(cfg *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+func NewDiscovery(cfg *SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
 	m, ok := metrics.(*azureMetrics)
 	if !ok {
 		return nil, fmt.Errorf("invalid discovery metrics type")
 	}
 
 	if logger == nil {
-		logger = log.NewNopLogger()
+		logger = promslog.NewNopLogger()
 	}
 	l := cache.New(cache.AsLRU[string, *armnetwork.Interface](lru.WithCapacity(5000)))
 	d := &Discovery{
@@ -228,13 +228,13 @@ type azureClient struct {
 	vm     *armcompute.VirtualMachinesClient
 	vmss   *armcompute.VirtualMachineScaleSetsClient
 	vmssvm *armcompute.VirtualMachineScaleSetVMsClient
-	logger log.Logger
+	logger *slog.Logger
 }
 
 var _ client = &azureClient{}
 
 // createAzureClient is a helper function for creating an Azure compute client to ARM.
-func createAzureClient(cfg SDConfig, logger log.Logger) (client, error) {
+func createAzureClient(cfg SDConfig, logger *slog.Logger) (client, error) {
 	cloudConfiguration, err := CloudConfigurationFromName(cfg.Environment)
 	if err != nil {
 		return &azureClient{}, err
@@ -337,21 +337,21 @@ type virtualMachine struct {
 }
 
 // Create a new azureResource object from an ID string.
-func newAzureResourceFromID(id string, logger log.Logger) (*arm.ResourceID, error) {
+func newAzureResourceFromID(id string, logger *slog.Logger) (*arm.ResourceID, error) {
 	if logger == nil {
-		logger = log.NewNopLogger()
+		logger = promslog.NewNopLogger()
 	}
 	resourceID, err := arm.ParseResourceID(id)
 	if err != nil {
 		err := fmt.Errorf("invalid ID '%s': %w", id, err)
-		level.Error(logger).Log("err", err)
+		logger.Error("Failed to parse resource ID", "err", err)
 		return &arm.ResourceID{}, err
 	}
 	return resourceID, nil
 }
 
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	defer level.Debug(d.logger).Log("msg", "Azure discovery completed")
+	defer d.logger.Debug("Azure discovery completed")
 
 	client, err := createAzureClient(*d.cfg, d.logger)
 	if err != nil {
@@ -365,7 +365,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		return nil, fmt.Errorf("could not get virtual machines: %w", err)
 	}
 
-	level.Debug(d.logger).Log("msg", "Found virtual machines during Azure discovery.", "count", len(machines))
+	d.logger.Debug("Found virtual machines during Azure discovery.", "count", len(machines))
 
 	// Load the vms managed by scale sets.
 	scaleSets, err := client.getScaleSets(ctx, d.cfg.ResourceGroup)
@@ -459,7 +459,7 @@ func (d *Discovery) vmToLabelSet(ctx context.Context, client client, vm virtualM
 			}
 			if err != nil {
 				if errors.Is(err, errorNotFound) {
-					level.Warn(d.logger).Log("msg", "Network interface does not exist", "name", nicID, "err", err)
+					d.logger.Warn("Network interface does not exist", "name", nicID, "err", err)
 				} else {
 					return nil, err
 				}
@@ -480,7 +480,7 @@ func (d *Discovery) vmToLabelSet(ctx context.Context, client client, vm virtualM
 		// yet support this. On deallocated machines, this value happens to be nil so it
 		// is a cheap and easy way to determine if a machine is allocated or not.
 		if networkInterface.Properties.Primary == nil {
-			level.Debug(d.logger).Log("msg", "Skipping deallocated virtual machine", "machine", vm.Name)
+			d.logger.Debug("Skipping deallocated virtual machine", "machine", vm.Name)
 			return nil, nil
 		}
 
@@ -724,7 +724,7 @@ func (d *Discovery) addToCache(nicID string, netInt *armnetwork.Interface) {
 	rs := time.Duration(random) * time.Second
 	exptime := time.Duration(d.cfg.RefreshInterval*10) + rs
 	d.cache.Set(nicID, netInt, cache.WithExpiration(exptime))
-	level.Debug(d.logger).Log("msg", "Adding nic", "nic", nicID, "time", exptime.Seconds())
+	d.logger.Debug("Adding nic", "nic", nicID, "time", exptime.Seconds())
 }
 
 // getFromCache will get the network Interface for the specified nicID

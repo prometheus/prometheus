@@ -19,7 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	stdlog "log"
+	"log/slog"
 	"math"
 	"net"
 	"net/http"
@@ -36,14 +36,13 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/grafana/regexp"
 	"github.com/mwitkow/go-conntrack"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	io_prometheus_client "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/common/server"
 	toolkit_web "github.com/prometheus/exporter-toolkit/web"
@@ -115,14 +114,14 @@ const (
 // will re-raise the error which will then be handled by the net/http package.
 // It is needed because the go-kit log package doesn't manage properly the
 // panics from net/http (see https://github.com/go-kit/kit/issues/233).
-func withStackTracer(h http.Handler, l log.Logger) http.Handler {
+func withStackTracer(h http.Handler, l *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if err := recover(); err != nil {
 				const size = 64 << 10
 				buf := make([]byte, size)
 				buf = buf[:runtime.Stack(buf, false)]
-				level.Error(l).Log("msg", "panic while serving request", "client", r.RemoteAddr, "url", r.URL, "err", err, "stack", buf)
+				l.Error("panic while serving request", "client", r.RemoteAddr, "url", r.URL, "err", err, "stack", buf)
 				panic(err)
 			}
 		}()
@@ -208,7 +207,7 @@ type LocalStorage interface {
 
 // Handler serves various HTTP endpoints of the Prometheus server.
 type Handler struct {
-	logger log.Logger
+	logger *slog.Logger
 
 	gatherer prometheus.Gatherer
 	metrics  *metrics
@@ -300,9 +299,9 @@ type Options struct {
 }
 
 // New initializes a new web Handler.
-func New(logger log.Logger, o *Options) *Handler {
+func New(logger *slog.Logger, o *Options) *Handler {
 	if logger == nil {
-		logger = log.NewNopLogger()
+		logger = promslog.NewNopLogger()
 	}
 
 	m := newMetrics(o.Registerer)
@@ -648,7 +647,7 @@ func (h *Handler) Listeners() ([]net.Listener, error) {
 
 // Listener creates the TCP listener for web requests.
 func (h *Handler) Listener(address string, sem chan struct{}) (net.Listener, error) {
-	level.Info(h.logger).Log("msg", "Start listening for connections", "address", address)
+	h.logger.Info("Start listening for connections", "address", address)
 
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
@@ -680,7 +679,7 @@ func (h *Handler) Run(ctx context.Context, listeners []net.Listener, webConfig s
 	apiPath := "/api"
 	if h.options.RoutePrefix != "/" {
 		apiPath = h.options.RoutePrefix + apiPath
-		level.Info(h.logger).Log("msg", "Router prefix", "prefix", h.options.RoutePrefix)
+		h.logger.Info("Router prefix", "prefix", h.options.RoutePrefix)
 	}
 	av1 := route.New().
 		WithInstrumentation(h.metrics.instrumentHandlerWithPrefix("/api/v1")).
@@ -689,7 +688,7 @@ func (h *Handler) Run(ctx context.Context, listeners []net.Listener, webConfig s
 
 	mux.Handle(apiPath+"/v1/", http.StripPrefix(apiPath+"/v1", av1))
 
-	errlog := stdlog.New(log.NewStdlibAdapter(level.Error(h.logger)), "", 0)
+	errlog := slog.NewLogLogger(h.logger.Handler(), slog.LevelError)
 
 	spanNameFormatter := otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
 		return fmt.Sprintf("%s %s", r.Method, r.URL.Path)
