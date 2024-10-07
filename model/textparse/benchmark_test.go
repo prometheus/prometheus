@@ -63,7 +63,7 @@ var newTestParserFns = map[string]newParser{
 // as the testdata has different amount and type of metrics and features (e.g. exemplars).
 func BenchmarkParse(b *testing.B) {
 	for _, bcase := range []struct {
-		dataFile  string // localized to ./testdata
+		dataFile  string // Localized to "./testdata".
 		dataProto []byte
 		parser    string
 
@@ -72,14 +72,10 @@ func BenchmarkParse(b *testing.B) {
 		{dataFile: "promtestdata.txt", parser: "promtext", compareToExpfmtFormat: expfmt.TypeTextPlain},
 		{dataFile: "promtestdata.nometa.txt", parser: "promtext", compareToExpfmtFormat: expfmt.TypeTextPlain},
 
-		//  We don't pass compareToExpfmtFormat: expfmt.TypeProtoDelim as expfmt does not support GAUGE_HISTOGRAM:
-		// "expfmt.extractSamples: unknown metric family type GAUGE_HISTOGRAM"
-		// TODO(bwplotka): Fix expfmt?
+		//  We don't pass compareToExpfmtFormat: expfmt.TypeProtoDelim as expfmt does not support GAUGE_HISTOGRAM, see https://github.com/prometheus/common/issues/430.
 		{dataProto: createTestProtoBuf(b).Bytes(), parser: "promproto"},
 
-		// We don't pass compareToExpfmtFormat: expfmt.TypeOpenMetrics as expfmt does not support OM exemplars:
-		// text format parsing error in line 19: expected integer as timestamp, got "#"
-		// TODO(bwplotka): Fix expfmt?
+		// We don't pass compareToExpfmtFormat: expfmt.TypeOpenMetrics as expfmt does not support OM exemplars, see https://github.com/prometheus/common/issues/703.
 		{dataFile: "omtestdata.txt", parser: "omtext"},
 		{dataFile: "promtestdata.txt", parser: "omtext"}, // Compare how omtext parser deals with Prometheus text format vs promtext.
 	} {
@@ -148,9 +144,7 @@ func BenchmarkParse(b *testing.B) {
 			}
 		})
 
-		// Compare with expfmt, opt-in, no need to benchmark external code.
 		b.Run(fmt.Sprintf("data=%v/parser=xpfmt", dataCase), func(b *testing.B) {
-			// b.Skip("Not needed for commit-commit comparisons, skipped by default")
 			if bcase.compareToExpfmtFormat == expfmt.TypeUnknown {
 				b.Skip("compareToExpfmtFormat not set")
 			}
