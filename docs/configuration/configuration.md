@@ -3976,27 +3976,6 @@ write_relabel_configs:
 # For the `io.prometheus.write.v2.Request` message, this option is noop (always true).
 [ send_native_histograms: <boolean> | default = false ]
 
-# Sets the `Authorization` header on every remote write request with the
-# configured username and password.
-# username and username_file are mutually exclusive.
-# password and password_file are mutually exclusive.
-basic_auth:
-  [ username: <string> ]
-  [ username_file: <string> ]
-  [ password: <secret> ]
-  [ password_file: <string> ]
-
-# Optional `Authorization` header configuration.
-authorization:
-  # Sets the authentication type.
-  [ type: <string> | default = Bearer ]
-  # Sets the credentials. It is mutually exclusive with
-  # `credentials_file`.
-  [ credentials: <secret> ]
-  # Sets the credentials to the credentials read from the configured file.
-  # It is mutually exclusive with `credentials`.
-  [ credentials_file: <filename> ]
-
 # Optionally configures AWS's Signature Verification 4 signing process to
 # sign requests. Cannot be set at the same time as basic_auth, authorization, oauth2, or azuread.
 # To use the default credentials from the AWS SDK, use `sigv4: {}`.
@@ -4015,11 +3994,6 @@ sigv4:
 
   # AWS Role ARN, an alternative to using AWS API keys.
   [ role_arn: <string> ]
-
-# Optional OAuth 2.0 configuration.
-# Cannot be used at the same time as basic_auth, authorization, sigv4, azuread or google_iam.
-oauth2:
-  [ <oauth2> ]
 
 # Optional AzureAD configuration.
 # Cannot be used at the same time as basic_auth, authorization, oauth2, sigv4 or google_iam.
@@ -4049,40 +4023,6 @@ azuread:
 google_iam:
   # Service account key with monitoring write permissions.
   credentials_file: <file_name>
-
-# Configures the remote write request's TLS settings.
-tls_config:
-  [ <tls_config> ]
-
-# Optional proxy URL.
-[ proxy_url: <string> ]
-# Comma-separated string that can contain IPs, CIDR notation, domain names
-# that should be excluded from proxying. IP and domain names can
-# contain port numbers.
-[ no_proxy: <string> ]
-# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
-[ proxy_from_environment: <boolean> | default = false ]
-# Specifies headers to send to proxies during CONNECT requests.
-[ proxy_connect_header:
-  [ <string>: [<secret>, ...] ] ]
-
-# Custom HTTP headers to be sent along with each request.
-# Headers that are set by Prometheus itself can't be overwritten.
-http_headers:
-  # Header name.
-  [ <string>:
-    # Header values.
-    [ values: [<string>, ...] ]
-    # Headers values. Hidden in configuration page.
-    [ secrets: [<secret>, ...] ]
-    # Files to read header values from.
-    [ files: [<string>, ...] ] ]
-
-# Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <boolean> | default = true ]
-
-# Whether to enable HTTP2.
-[ enable_http2: <boolean> | default = true ]
 
 # Configures the queue used to write to remote storage.
 queue_config:
@@ -4125,6 +4065,10 @@ metadata_config:
   [ send_interval: <duration> | default = 1m ]
   # Maximum number of samples per send.
   [ max_samples_per_send: <int> | default = 500]
+
+# HTTP client settings, including authentication methods (such as basic auth and
+# authorization), proxy configurations, TLS options, custom HTTP headers, etc.
+[ <http_config> ]
 ```
 
 There is a list of
@@ -4159,68 +4103,12 @@ headers:
 # the local storage should have complete data for.
 [ read_recent: <boolean> | default = false ]
 
-# Sets the `Authorization` header on every remote read request with the
-# configured username and password.
-# username and username_file are mutually exclusive.
-# password and password_file are mutually exclusive.
-basic_auth:
-  [ username: <string> ]
-  [ username_file: <string> ]
-  [ password: <secret> ]
-  [ password_file: <string> ]
-
-# Optional `Authorization` header configuration.
-authorization:
-  # Sets the authentication type.
-  [ type: <string> | default: Bearer ]
-  # Sets the credentials. It is mutually exclusive with
-  # `credentials_file`.
-  [ credentials: <secret> ]
-  # Sets the credentials to the credentials read from the configured file.
-  # It is mutually exclusive with `credentials`.
-  [ credentials_file: <filename> ]
-
-# Optional OAuth 2.0 configuration.
-# Cannot be used at the same time as basic_auth or authorization.
-oauth2:
-  [ <oauth2> ]
-
-# Configures the remote read request's TLS settings.
-tls_config:
-  [ <tls_config> ]
-
-# Optional proxy URL.
-[ proxy_url: <string> ]
-# Comma-separated string that can contain IPs, CIDR notation, domain names
-# that should be excluded from proxying. IP and domain names can
-# contain port numbers.
-[ no_proxy: <string> ]
-# Use proxy URL indicated by environment variables (HTTP_PROXY, https_proxy, HTTPs_PROXY, https_proxy, and no_proxy)
-[ proxy_from_environment: <boolean> | default: false ]
-# Specifies headers to send to proxies during CONNECT requests.
-[ proxy_connect_header:
-  [ <string>: [<secret>, ...] ] ]
-
-# Custom HTTP headers to be sent along with each request.
-# Headers that are set by Prometheus itself can't be overwritten.
-http_headers:
-  # Header name.
-  [ <string>:
-    # Header values.
-    [ values: [<string>, ...] ]
-    # Headers values. Hidden in configuration page.
-    [ secrets: [<secret>, ...] ]
-    # Files to read header values from.
-    [ files: [<string>, ...] ] ]
-
-# Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <boolean> | default = true ]
-
-# Whether to enable HTTP2.
-[ enable_http2: <boolean> | default: true ]
-
 # Whether to use the external labels as selectors for the remote read endpoint.
 [ filter_external_labels: <boolean> | default = true ]
+
+# HTTP client settings, including authentication methods (such as basic auth and
+# authorization), proxy configurations, TLS options, custom HTTP headers, etc.
+[ <http_config> ]
 ```
 
 There is a list of
