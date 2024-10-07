@@ -1393,3 +1393,69 @@ Enable the OTLP receiver by setting
 endpoint is `/api/v1/otlp/v1/metrics`.
 
 *New in v2.47*
+
+## Notifications
+
+The following endpoints provide information about active status notifications concerning the Prometheus server itself.
+Notifications are used in the web UI.
+
+These endpoints are **experimental**. They may change in the future.
+
+### Active Notifications
+
+The `/api/v1/notifications` endpoint returns a list of all currently active notifications.
+
+```
+GET /api/v1/notifications
+```
+
+Example:
+
+```
+$ curl http://localhost:9090/api/v1/notifications
+{
+  "status": "success",
+  "data": [
+    {
+      "text": "Prometheus is shutting down and gracefully stopping all operations.",
+      "date": "2024-10-07T12:33:08.551376578+02:00",
+      "active": true
+    }
+  ]
+}
+```
+
+*New in v3.0*
+
+### Live Notifications
+
+The `/api/v1/notifications/live` endpoint streams live notifications as they occur, using [Server-Sent Events](https://html.spec.whatwg.org/multipage/server-sent-events.html#server-sent-events). Deleted notifications are sent with `active: false`. Active notifications will be sent when connecting to the endpoint.
+
+```
+GET /api/v1/notifications/live
+```
+
+Example:
+
+```
+$ curl http://localhost:9090/api/v1/notifications/live
+data: {
+  "status": "success",
+  "data": [
+    {
+      "text": "Prometheus is shutting down and gracefully stopping all operations.",
+      "date": "2024-10-07T12:33:08.551376578+02:00",
+      "active": true
+    }
+  ]
+}
+```
+
+**Note:** The `/notifications/live` endpoint will return a `204 No Content` response if the maximum number of subscribers has been reached. You can set the maximum number of listeners with the flag `--web.max-notifications-subscribers`, which defaults to 16.
+
+```
+GET /api/v1/notifications/live
+204 No Content
+```
+
+*New in v3.0*
