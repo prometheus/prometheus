@@ -2043,7 +2043,7 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 
 	overlapsOOO := overlapsClosedInterval(mint, maxt, db.head.MinOOOTime(), db.head.MaxOOOTime())
 	var headQuerier storage.Querier
-	inoMint := mint
+	inoMint := max(db.head.MinTime(), mint)
 	if maxt >= db.head.MinTime() || overlapsOOO {
 		rh := NewRangeHead(db.head, mint, maxt)
 		var err error
@@ -2121,7 +2121,7 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) (_ []storage.ChunkQuer
 
 	overlapsOOO := overlapsClosedInterval(mint, maxt, db.head.MinOOOTime(), db.head.MaxOOOTime())
 	var headQuerier storage.ChunkQuerier
-	inoMint := mint
+	inoMint := max(db.head.MinTime(), mint)
 	if maxt >= db.head.MinTime() || overlapsOOO {
 		rh := NewRangeHead(db.head, mint, maxt)
 		headQuerier, err = db.blockChunkQuerierFunc(rh, mint, maxt)
