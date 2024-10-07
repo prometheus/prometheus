@@ -352,19 +352,18 @@ foobar{quantile="0.99"} 150.1`
 			m:   "something",
 			typ: model.MetricTypeHistogram,
 		}, {
-			// TODO(krajorama): do not miss the first histogram.
-			// 	m:    `something{}`,
-			// 	shs:   &histogram.Histogram{
-			// 		Schema: -53,  // Custom buckets.
-			// 		Count: 18,
-			// 		Sum: 324789.4,
-			// 		PositiveSpans: []histogram.Span{{Offset: 0, Length: 2}},
-			// 		PositiveBuckets: []int64{1, 16},
-			// 		CustomValues: []float64{0.0},  // We do not store the +Inf boundary.
-			// 	},
-			// 	lset: labels.FromStrings("__name__", "something"),
-			// 	// TODO(krajorama): ct:   int64p(1520430001000),
-			// }, {
+			m: `something{}`,
+			shs: &histogram.Histogram{
+				Schema:          -53, // Custom buckets.
+				Count:           18,
+				Sum:             324789.4,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+				PositiveBuckets: []int64{1, 16},
+				CustomValues:    []float64{0.0}, // We do not store the +Inf boundary.
+			},
+			lset: labels.FromStrings("__name__", "something"),
+			// TODO(krajorama): ct:   int64p(1520430001000),
+		}, {
 			m: `something{a="b"}`,
 			shs: &histogram.Histogram{
 				Schema:          -53, // Custom buckets.
@@ -435,6 +434,64 @@ foobar{quantile="0.99"} 150.1`
 			m:    "null_byte_metric{a=\"abc\x00\"}",
 			v:    1,
 			lset: labels.FromStrings("__name__", "null_byte_metric", "a", "abc\x00"),
+		},
+	}
+
+	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
+	p = NewNHCBParser(p, false)
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
+}
+
+func TestNhcbParserMultiHOnOpenMetricsParser(t *testing.T) {
+	// The input is taken originally from TestOpenMetricsParse, with additional tests for the NHCBParser.
+
+	input := `# HELP something Histogram with _created between buckets and summary
+# TYPE something histogram
+something_count 18
+something_sum 324789.4
+something_created 1520430001
+something_bucket{le="0.0"} 1
+something_bucket{le="+Inf"} 18
+something_count{a="b"} 9
+something_sum{a="b"} 42123.0
+something_bucket{a="b",le="0.0"} 8
+something_bucket{a="b",le="+Inf"} 9
+something_created{a="b"} 1520430002
+# EOF
+`
+
+	exp := []parsedEntry{
+		{
+			m:    "something",
+			help: "Histogram with _created between buckets and summary",
+		}, {
+			m:   "something",
+			typ: model.MetricTypeHistogram,
+		}, {
+			m: `something{}`,
+			shs: &histogram.Histogram{
+				Schema:          -53, // Custom buckets.
+				Count:           18,
+				Sum:             324789.4,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+				PositiveBuckets: []int64{1, 16},
+				CustomValues:    []float64{0.0}, // We do not store the +Inf boundary.
+			},
+			lset: labels.FromStrings("__name__", "something"),
+			// TODO(krajorama): ct:   int64p(1520430001000),
+		}, {
+			m: `something{a="b"}`,
+			shs: &histogram.Histogram{
+				Schema:          -53, // Custom buckets.
+				Count:           9,
+				Sum:             42123.0,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+				PositiveBuckets: []int64{8, -7},
+				CustomValues:    []float64{0.0}, // We do not store the +Inf boundary.
+			},
+			lset: labels.FromStrings("__name__", "something", "a", "b"),
+			// TODO(krajorama): ct:   int64p(1520430001000),
 		},
 	}
 

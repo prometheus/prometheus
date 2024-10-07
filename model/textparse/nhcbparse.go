@@ -68,11 +68,11 @@ type NHCBParser struct {
 
 	// Remembers the last native histogram name so we can ignore
 	// conversions to NHCB when the name is the same.
-	lastNativeHistName string
+	lastNativeHistLabels labels.Labels
 	// Remembers the last base histogram metric name (assuming it's
 	// a classic histogram) so we can tell if the next float series
 	// is part of the same classic histogram.
-	lastBaseHistName string
+	lastBaseHistLabels labels.Labels
 }
 
 func NewNHCBParser(p Parser, keepClassicHistograms bool) Parser {
@@ -132,7 +132,7 @@ func (p *NHCBParser) Next() (Entry, error) {
 	if p.justInsertedNHCB {
 		p.justInsertedNHCB = false
 		if p.entry == EntrySeries {
-			if isNHCB := p.handleClassicHistogramSeries(p.lset); isNHCB && !p.keepClassicHistograms {
+			if !p.keepClassicHistograms && p.handleClassicHistogramSeries(p.lset) {
 				return p.Next()
 			}
 		}
@@ -151,12 +151,34 @@ func (p *NHCBParser) Next() (Entry, error) {
 	case EntrySeries:
 		p.bytes, p.ts, p.value = p.parser.Series()
 		p.metricString = p.parser.Metric(&p.lset)
-		histBaseName := convertnhcb.GetHistogramMetricBaseName(p.lset.Get(labels.MetricName))
-		if histBaseName == p.lastNativeHistName {
-			break
+		// Check the label set to see if we can continue or need to emit the NHCB.
+		shouldInsertNHCB := false
+		if len(p.lastBaseHistLabels) > 0 {
+		InnerCompare:
+			for _, l := range p.lset {
+				if l.Name == labels.MetricName {
+					baseName := convertnhcb.GetHistogramMetricBaseName(l.Value)
+					if baseName != p.lastBaseHistLabels.Get(labels.MetricName) {
+						p.storeBaseLabels()
+						shouldInsertNHCB = true
+						break InnerCompare
+					}
+					continue InnerCompare
+				}
+				if l.Name == labels.BucketLabel {
+					// Ignore.
+					continue InnerCompare
+				}
+				if l.Value != p.lastBaseHistLabels.Get(l.Name) {
+					// Different label value.
+					p.storeBaseLabels()
+					shouldInsertNHCB = true
+					break InnerCompare
+				}
+			}
+		} else {
+			p.storeBaseLabels()
 		}
-		shouldInsertNHCB := p.lastBaseHistName != "" && p.lastBaseHistName != histBaseName
-		p.lastBaseHistName = histBaseName
 		if shouldInsertNHCB && p.processNHCB() {
 			p.entry = et
 			return EntryHistogram, nil
@@ -168,7 +190,7 @@ func (p *NHCBParser) Next() (Entry, error) {
 	case EntryHistogram:
 		p.bytes, p.ts, p.h, p.fh = p.parser.Histogram()
 		p.metricString = p.parser.Metric(&p.lset)
-		p.lastNativeHistName = p.lset.Get(labels.MetricName)
+		p.lastNativeHistLabels.CopyFrom(p.lset)
 	case EntryType:
 		p.bName, p.typ = p.parser.Type()
 	}
@@ -177,6 +199,23 @@ func (p *NHCBParser) Next() (Entry, error) {
 		return EntryHistogram, nil
 	}
 	return et, err
+}
+
+// Save the label set of the classic histogram without suffix and bucket `le` label.
+func (p *NHCBParser) storeBaseLabels() {
+	builder := labels.Builder{}
+	for _, l := range p.lset {
+		if l.Name == labels.MetricName {
+			builder.Set(l.Name, convertnhcb.GetHistogramMetricBaseName(l.Value))
+			continue
+		}
+		if l.Name == labels.BucketLabel {
+			// Ignore.
+			continue
+		}
+		builder.Set(l.Name, l.Value)
+	}
+	p.lastBaseHistLabels = builder.Labels()
 }
 
 // handleClassicHistogramSeries collates the classic histogram series to be converted to NHCB
@@ -188,6 +227,7 @@ func (p *NHCBParser) handleClassicHistogramSeries(lset labels.Labels) bool {
 		return false
 	}
 	mName := lset.Get(labels.MetricName)
+	// Sanity check to ensure that the TYPE metadata entry name is the same as the base name.
 	if convertnhcb.GetHistogramMetricBaseName(mName) != string(p.bName) {
 		return false
 	}
