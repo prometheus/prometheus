@@ -407,7 +407,7 @@ func TestGetDatacenterShouldReturnError(t *testing.T) {
 		err = d.getDatacenter()
 
 		// An error should be returned.
-		require.Equal(t, tc.errMessage, err.Error())
+		require.EqualError(t, err, tc.errMessage)
 		// Should still be empty.
 		require.Equal(t, "", d.clientDatacenter)
 	}

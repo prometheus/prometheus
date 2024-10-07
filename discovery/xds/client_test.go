@@ -52,16 +52,14 @@ func TestMakeXDSResourceHttpEndpointEmptyServerURLScheme(t *testing.T) {
 	endpointURL, err := makeXDSResourceHTTPEndpointURL(ProtocolV3, urlMustParse("127.0.0.1"), "monitoring")
 
 	require.Empty(t, endpointURL)
-	require.Error(t, err)
-	require.Equal(t, "invalid xDS server URL", err.Error())
+	require.EqualError(t, err, "invalid xDS server URL")
 }
 
 func TestMakeXDSResourceHttpEndpointEmptyServerURLHost(t *testing.T) {
 	endpointURL, err := makeXDSResourceHTTPEndpointURL(ProtocolV3, urlMustParse("grpc://127.0.0.1"), "monitoring")
 
 	require.Empty(t, endpointURL)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "must be either 'http' or 'https'")
+	require.ErrorContains(t, err, "must be either 'http' or 'https'")
 }
 
 func TestMakeXDSResourceHttpEndpoint(t *testing.T) {

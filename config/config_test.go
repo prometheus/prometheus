@@ -2095,8 +2095,7 @@ func TestBadConfigs(t *testing.T) {
 	}()
 	for _, ee := range expectedErrors {
 		_, err := LoadFile("testdata/"+ee.filename, false, false, log.NewNopLogger())
-		require.Error(t, err, "%s", ee.filename)
-		require.Contains(t, err.Error(), ee.errMsg,
+		require.ErrorContains(t, err, ee.errMsg,
 			"Expected error for %s to contain %q but got: %s", ee.filename, ee.errMsg, err)
 	}
 }

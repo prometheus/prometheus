@@ -192,7 +192,7 @@ func TestCorruptedChunk(t *testing.T) {
 			// Check open err.
 			b, err := OpenBlock(nil, blockDir, nil)
 			if tc.openErr != nil {
-				require.Equal(t, tc.openErr.Error(), err.Error())
+				require.EqualError(t, err, tc.openErr.Error())
 				return
 			}
 			defer func() { require.NoError(t, b.Close()) }()
@@ -206,7 +206,7 @@ func TestCorruptedChunk(t *testing.T) {
 			require.True(t, set.Next())
 			it := set.At().Iterator(nil)
 			require.Equal(t, chunkenc.ValNone, it.Next())
-			require.Equal(t, tc.iterErr.Error(), it.Err().Error())
+			require.EqualError(t, it.Err(), tc.iterErr.Error())
 		})
 	}
 }

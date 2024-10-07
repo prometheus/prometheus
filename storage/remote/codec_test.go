@@ -253,8 +253,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 		t.Run(test.description, func(t *testing.T) {
 			err := validateLabelsAndMetricName(test.input)
 			if test.expectedErr != "" {
-				require.Error(t, err)
-				require.Equal(t, test.expectedErr, err.Error())
+				require.EqualError(t, err, test.expectedErr)
 			} else {
 				require.NoError(t, err)
 			}
@@ -551,7 +550,7 @@ func TestNegotiateResponseType(t *testing.T) {
 
 	_, err = NegotiateResponseType([]prompb.ReadRequest_ResponseType{20})
 	require.Error(t, err, "expected error due to not supported requested response types")
-	require.Equal(t, "server does not support any of the requested response types: [20]; supported: map[SAMPLES:{} STREAMED_XOR_CHUNKS:{}]", err.Error())
+	require.EqualError(t, err, "server does not support any of the requested response types: [20]; supported: map[SAMPLES:{} STREAMED_XOR_CHUNKS:{}]")
 }
 
 func TestMergeLabels(t *testing.T) {

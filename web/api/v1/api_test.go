@@ -4176,7 +4176,7 @@ func TestExtractQueryOpts(t *testing.T) {
 			if test.err == nil {
 				require.NoError(t, err)
 			} else {
-				require.Equal(t, test.err.Error(), err.Error())
+				require.EqualError(t, err, test.err.Error())
 			}
 		})
 	}
