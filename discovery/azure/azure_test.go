@@ -17,7 +17,8 @@ import (
 	"context"
 	"log"
 	"net/http"
-	"sort"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -180,9 +181,7 @@ func TestVMToLabelSet(t *testing.T) {
 	}
 
 	client, err := createMockAzureClient(nil, nil, nil, network, nil)
-	if err != nil {
-		t.Fatalf("unexpected error occurred while creating mock client: %v", err)
-	}
+	require.NoError(t, err)
 
 	labelSet, err := d.vmToLabelSet(context.Background(), client, actualVM)
 	require.NoError(t, err)
@@ -659,23 +658,17 @@ func TestAzureRefresh(t *testing.T) {
 			azureSDConfig := &DefaultSDConfig
 
 			azureClient, err := createMockAzureClient(tc.vmResp, tc.vmssResp, tc.vmssvmResp, tc.interfacesResp, nil)
-			if err != nil {
-				t.Fatalf("unexpected error occurred while creating mock client: %v", err)
-			}
+			require.NoError(t, err)
 
 			reg := prometheus.NewRegistry()
 			refreshMetrics := discovery.NewRefreshMetrics(reg)
 			metrics := azureSDConfig.NewDiscovererMetrics(reg, refreshMetrics)
 
 			sd, err := NewDiscovery(azureSDConfig, nil, metrics)
-			if err != nil {
-				t.Fatalf("unexpected error occurred while creating new discovery: %v", err)
-			}
+			require.NoError(t, err)
 
 			tg, err := sd.refreshAzureClient(context.Background(), azureClient)
-			if err != nil {
-				t.Fatalf("unexpected error occurred while fetching target groups: %v", err)
-			}
+			require.NoError(t, err)
 
 			sortTargetsByID(tg[0].Targets)
 			require.Equal(t, tc.expectedTG, tg)
@@ -874,7 +867,7 @@ func defaultVMSSVMWithIDAndName(id, name *string) *armcompute.VirtualMachineScal
 }
 
 func sortTargetsByID(targets []model.LabelSet) {
-	sort.Slice(targets, func(i, j int) bool {
-		return targets[i]["__meta_azure_machine_id"] < targets[j]["__meta_azure_machine_id"]
+	slices.SortFunc(targets, func(a, b model.LabelSet) int {
+		return strings.Compare(string(a["__meta_azure_machine_id"]), string(b["__meta_azure_machine_id"]))
 	})
 }
