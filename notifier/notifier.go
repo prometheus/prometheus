@@ -610,12 +610,12 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 			go func(ctx context.Context, client *http.Client, url string, payload []byte, count int) {
 				if err := n.sendOne(ctx, client, url, payload); err != nil {
 					level.Error(n.logger).Log("alertmanager", url, "count", count, "msg", "Error sending alert", "err", err)
-					n.metrics.errors.WithLabelValues(url).Inc()
+					n.metrics.errors.WithLabelValues(url).Add(float64(count))
 				} else {
 					numSuccess.Inc()
 				}
 				n.metrics.latency.WithLabelValues(url).Observe(time.Since(begin).Seconds())
-				n.metrics.sent.WithLabelValues(url).Add(float64(len(amAlerts)))
+				n.metrics.sent.WithLabelValues(url).Add(float64(count))
 
 				wg.Done()
 			}(ctx, ams.client, am.url().String(), payload, len(amAlerts))
