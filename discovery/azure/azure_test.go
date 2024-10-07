@@ -180,8 +180,7 @@ func TestVMToLabelSet(t *testing.T) {
 		},
 	}
 
-	client, err := createMockAzureClient(nil, nil, nil, network, nil)
-	require.NoError(t, err)
+	client := createMockAzureClient(t, nil, nil, nil, network, nil)
 
 	labelSet, err := d.vmToLabelSet(context.Background(), client, actualVM)
 	require.NoError(t, err)
@@ -657,8 +656,7 @@ func TestAzureRefresh(t *testing.T) {
 			t.Parallel()
 			azureSDConfig := &DefaultSDConfig
 
-			azureClient, err := createMockAzureClient(tc.vmResp, tc.vmssResp, tc.vmssvmResp, tc.interfacesResp, nil)
-			require.NoError(t, err)
+			azureClient := createMockAzureClient(t, tc.vmResp, tc.vmssResp, tc.vmssvmResp, tc.interfacesResp, nil)
 
 			reg := prometheus.NewRegistry()
 			refreshMetrics := discovery.NewRefreshMetrics(reg)
@@ -680,7 +678,8 @@ type mockAzureClient struct {
 	azureClient
 }
 
-func createMockAzureClient(vmResp []armcompute.VirtualMachinesClientListAllResponse, vmssResp []armcompute.VirtualMachineScaleSetsClientListAllResponse, vmssvmResp []armcompute.VirtualMachineScaleSetVMsClientListResponse, interfaceResp armnetwork.Interface, logger log.Logger) (client, error) {
+func createMockAzureClient(t *testing.T, vmResp []armcompute.VirtualMachinesClientListAllResponse, vmssResp []armcompute.VirtualMachineScaleSetsClientListAllResponse, vmssvmResp []armcompute.VirtualMachineScaleSetVMsClientListResponse, interfaceResp armnetwork.Interface, logger log.Logger) client {
+	t.Helper()
 	mockVMServer := defaultMockVMServer(vmResp)
 	mockVMSSServer := defaultMockVMSSServer(vmssResp)
 	mockVMScaleSetVMServer := defaultMockVMSSVMServer(vmssvmResp)
@@ -691,36 +690,28 @@ func createMockAzureClient(vmResp []armcompute.VirtualMachinesClientListAllRespo
 			Transport: fake.NewVirtualMachinesServerTransport(&mockVMServer),
 		},
 	})
-	if err != nil {
-		return nil, err
-	}
+	require.NoError(t, err)
 
 	vmssClient, err := armcompute.NewVirtualMachineScaleSetsClient("fake-subscription-id", &azfake.TokenCredential{}, &arm.ClientOptions{
 		ClientOptions: azcore.ClientOptions{
 			Transport: fake.NewVirtualMachineScaleSetsServerTransport(&mockVMSSServer),
 		},
 	})
-	if err != nil {
-		return nil, err
-	}
+	require.NoError(t, err)
 
 	vmssvmClient, err := armcompute.NewVirtualMachineScaleSetVMsClient("fake-subscription-id", &azfake.TokenCredential{}, &arm.ClientOptions{
 		ClientOptions: azcore.ClientOptions{
 			Transport: fake.NewVirtualMachineScaleSetVMsServerTransport(&mockVMScaleSetVMServer),
 		},
 	})
-	if err != nil {
-		return nil, err
-	}
+	require.NoError(t, err)
 
 	interfacesClient, err := armnetwork.NewInterfacesClient("fake-subscription-id", &azfake.TokenCredential{}, &arm.ClientOptions{
 		ClientOptions: azcore.ClientOptions{
 			Transport: fakenetwork.NewInterfacesServerTransport(&mockInterfaceServer),
 		},
 	})
-	if err != nil {
-		return nil, err
-	}
+	require.NoError(t, err)
 
 	return &mockAzureClient{
 		azureClient: azureClient{
@@ -730,7 +721,7 @@ func createMockAzureClient(vmResp []armcompute.VirtualMachinesClientListAllRespo
 			nic:    interfacesClient,
 			logger: logger,
 		},
-	}, nil
+	}
 }
 
 func defaultMockInterfaceServer(interfaceResp armnetwork.Interface) fakenetwork.InterfacesServer {
