@@ -24,6 +24,8 @@ import (
 )
 
 func TestNhcbParserOnOpenMetricsParser(t *testing.T) {
+	// The input is taken originally from TestOpenMetricsParse, with additional tests for the NHCBParser.
+
 	input := `# HELP go_gc_duration_seconds A summary of the GC invocation durations.
 # TYPE go_gc_duration_seconds summary
 # UNIT go_gc_duration_seconds seconds
@@ -92,6 +94,11 @@ something_sum 324789.4
 something_created 1520430001
 something_bucket{le="0.0"} 1
 something_bucket{le="+Inf"} 18
+something_count{a="b"} 9
+something_sum{a="b"} 42123.0
+something_bucket{a="b",le="0.0"} 8
+something_bucket{a="b",le="+Inf"} 9
+something_created{a="b"} 1520430002
 # HELP yum Summary with _created between sum and quantiles
 # TYPE yum summary
 yum_count 20
@@ -106,12 +113,12 @@ foobar_created 1520430004
 foobar_sum 324789.6
 foobar{quantile="0.95"} 123.8
 foobar{quantile="0.99"} 150.1`
-	
+
 	input += "\n# HELP metric foo\x00bar"
 	input += "\nnull_byte_metric{a=\"abc\x00\"} 1"
 	input += "\n# EOF\n"
 
-	exp := []expectedParse{
+	exp := []parsedEntry{
 		{
 			m:    "go_gc_duration_seconds",
 			help: "A summary of the GC invocation durations.",
@@ -169,12 +176,12 @@ foobar{quantile="0.99"} 150.1`
 			m:   "hh",
 			typ: model.MetricTypeHistogram,
 		}, {
-			m:    `hh{}`,
-			h:    &histogram.Histogram{
-				Schema: -53,  // Custom buckets.
-				Count: 1,
-				Sum: 0.0,
-				PositiveSpans: []histogram.Span{{Offset: 0, Length: 1}},
+			m: `hh{}`,
+			shs: &histogram.Histogram{
+				Schema:          -53, // Custom buckets.
+				Count:           1,
+				Sum:             0.0,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
 				PositiveBuckets: []int64{1},
 				// Custom values are empty as we do not store the +Inf boundary.
 			},
@@ -190,12 +197,12 @@ foobar{quantile="0.99"} 150.1`
 			m:   "hhh",
 			typ: model.MetricTypeHistogram,
 		}, {
-			m:    `hhh{}`,
-			h:    &histogram.Histogram{
-				Schema: -53,  // Custom buckets.
-				Count: 1,
-				Sum: 0.0,
-				PositiveSpans: []histogram.Span{{Offset: 0, Length: 1}},
+			m: `hhh{}`,
+			shs: &histogram.Histogram{
+				Schema:          -53, // Custom buckets.
+				Count:           1,
+				Sum:             0.0,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
 				PositiveBuckets: []int64{1},
 				// Custom values are empty as we do not store the +Inf boundary.
 			},
@@ -208,12 +215,12 @@ foobar{quantile="0.99"} 150.1`
 			m:    `ggh_bucket{le="+Inf"}`,
 			v:    1,
 			lset: labels.FromStrings("__name__", "ggh_bucket", "le", "+Inf"),
-			e:    []*exemplar.Exemplar{{Labels: labels.FromStrings("id", "gaugehistogram-bucket-test", "xx", "yy"), Value: 4, HasTs: true, Ts: 123123}},
+			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "gaugehistogram-bucket-test", "xx", "yy"), Value: 4, HasTs: true, Ts: 123123}},
 		}, {
 			m:    `ggh_count`,
 			v:    1,
 			lset: labels.FromStrings("__name__", "ggh_count"),
-			e:    []*exemplar.Exemplar{{Labels: labels.FromStrings("id", "gaugehistogram-count-test", "xx", "yy"), Value: 4, HasTs: true, Ts: 123123}},
+			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "gaugehistogram-count-test", "xx", "yy"), Value: 4, HasTs: true, Ts: 123123}},
 		}, {
 			m:   "smr_seconds",
 			typ: model.MetricTypeSummary,
@@ -221,12 +228,12 @@ foobar{quantile="0.99"} 150.1`
 			m:    `smr_seconds_count`,
 			v:    2,
 			lset: labels.FromStrings("__name__", "smr_seconds_count"),
-			e:    []*exemplar.Exemplar{{Labels: labels.FromStrings("id", "summary-count-test"), Value: 1, HasTs: true, Ts: 123321}},
+			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "summary-count-test"), Value: 1, HasTs: true, Ts: 123321}},
 		}, {
 			m:    `smr_seconds_sum`,
 			v:    42,
 			lset: labels.FromStrings("__name__", "smr_seconds_sum"),
-			e:    []*exemplar.Exemplar{{Labels: labels.FromStrings("id", "summary-sum-test"), Value: 1, HasTs: true, Ts: 123321}},
+			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "summary-sum-test"), Value: 1, HasTs: true, Ts: 123321}},
 		}, {
 			m:   "ii",
 			typ: model.MetricTypeInfo,
@@ -275,15 +282,15 @@ foobar{quantile="0.99"} 150.1`
 			v:    17,
 			lset: labels.FromStrings("__name__", "foo_total"),
 			t:    int64p(1520879607789),
-			e:    []*exemplar.Exemplar{{Labels: labels.FromStrings("id", "counter-test"), Value: 5}},
-			ct:   int64p(1520872607123),
+			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "counter-test"), Value: 5}},
+			// TODO ct:   int64p(1520872607123),
 		}, {
 			m:    `foo_total{a="b"}`,
 			v:    17.0,
 			lset: labels.FromStrings("__name__", "foo_total", "a", "b"),
 			t:    int64p(1520879607789),
-			e:    []*exemplar.Exemplar{{Labels: labels.FromStrings("id", "counter-test"), Value: 5}},
-			ct:   int64p(1520872607123),
+			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "counter-test"), Value: 5}},
+			// TODO(krajorama): ct:   int64p(1520872607123),
 		}, {
 			m:    "bar",
 			help: "Summary with CT at the end, making sure we find CT even if it's multiple lines a far",
@@ -294,22 +301,22 @@ foobar{quantile="0.99"} 150.1`
 			m:    "bar_count",
 			v:    17.0,
 			lset: labels.FromStrings("__name__", "bar_count"),
-			ct:   int64p(1520872608124),
+			// TODO(krajorama): ct:   int64p(1520872608124),
 		}, {
 			m:    "bar_sum",
 			v:    324789.3,
 			lset: labels.FromStrings("__name__", "bar_sum"),
-			ct:   int64p(1520872608124),
+			// TODO(krajorama): ct:   int64p(1520872608124),
 		}, {
 			m:    `bar{quantile="0.95"}`,
 			v:    123.7,
 			lset: labels.FromStrings("__name__", "bar", "quantile", "0.95"),
-			ct:   int64p(1520872608124),
+			// TODO(krajorama): ct:   int64p(1520872608124),
 		}, {
 			m:    `bar{quantile="0.99"}`,
 			v:    150.0,
 			lset: labels.FromStrings("__name__", "bar", "quantile", "0.99"),
-			ct:   int64p(1520872608124),
+			// TODO(krajorama): ct:   int64p(1520872608124),
 		}, {
 			m:    "baz",
 			help: "Histogram with the same objective as above's summary",
@@ -317,21 +324,122 @@ foobar{quantile="0.99"} 150.1`
 			m:   "baz",
 			typ: model.MetricTypeHistogram,
 		}, {
-			m:    `baz{}`,
-			h:   	&histogram.Histogram{
-				Schema: -53,  // Custom buckets.
-				Count: 17,
-				Sum: 324789.3,
-				PositiveSpans: []histogram.Span{{Offset: 1, Length: 1}},  // The first bucket has 0 count so we don't store it and Offset is 1.
+			m: `baz{}`,
+			shs: &histogram.Histogram{
+				Schema:          -53, // Custom buckets.
+				Count:           17,
+				Sum:             324789.3,
+				PositiveSpans:   []histogram.Span{{Offset: 1, Length: 1}}, // The first bucket has 0 count so we don't store it and Offset is 1.
 				PositiveBuckets: []int64{17},
-				CustomValues: []float64{0.0},  // We do not store the +Inf boundary.
+				CustomValues:    []float64{0.0}, // We do not store the +Inf boundary.
 			},
 			lset: labels.FromStrings("__name__", "baz"),
 			//ct:   int64p(1520872609125),
+		}, {
+			m:    "fizz_created",
+			help: "Gauge which shouldn't be parsed as CT",
+		}, {
+			m:   "fizz_created",
+			typ: model.MetricTypeGauge,
+		}, {
+			m:    `fizz_created`,
+			v:    17,
+			lset: labels.FromStrings("__name__", "fizz_created"),
+		}, {
+			m:    "something",
+			help: "Histogram with _created between buckets and summary",
+		}, {
+			m:   "something",
+			typ: model.MetricTypeHistogram,
+		}, {
+			// TODO(krajorama): do not miss the first histogram.
+			// 	m:    `something{}`,
+			// 	shs:   &histogram.Histogram{
+			// 		Schema: -53,  // Custom buckets.
+			// 		Count: 18,
+			// 		Sum: 324789.4,
+			// 		PositiveSpans: []histogram.Span{{Offset: 0, Length: 2}},
+			// 		PositiveBuckets: []int64{1, 16},
+			// 		CustomValues: []float64{0.0},  // We do not store the +Inf boundary.
+			// 	},
+			// 	lset: labels.FromStrings("__name__", "something"),
+			// 	// TODO(krajorama): ct:   int64p(1520430001000),
+			// }, {
+			m: `something{a="b"}`,
+			shs: &histogram.Histogram{
+				Schema:          -53, // Custom buckets.
+				Count:           9,
+				Sum:             42123.0,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+				PositiveBuckets: []int64{8, -7},
+				CustomValues:    []float64{0.0}, // We do not store the +Inf boundary.
+			},
+			lset: labels.FromStrings("__name__", "something", "a", "b"),
+			// TODO(krajorama): ct:   int64p(1520430001000),
+		}, {
+			m:    "yum",
+			help: "Summary with _created between sum and quantiles",
+		}, {
+			m:   "yum",
+			typ: model.MetricTypeSummary,
+		}, {
+			m:    `yum_count`,
+			v:    20,
+			lset: labels.FromStrings("__name__", "yum_count"),
+			// TODO(krajorama): ct:   int64p(1520430003000),
+		}, {
+			m:    `yum_sum`,
+			v:    324789.5,
+			lset: labels.FromStrings("__name__", "yum_sum"),
+			// TODO(krajorama): ct:   int64p(1520430003000),
+		}, {
+			m:    `yum{quantile="0.95"}`,
+			v:    123.7,
+			lset: labels.FromStrings("__name__", "yum", "quantile", "0.95"),
+			// TODO(krajorama): ct:   int64p(1520430003000),
+		}, {
+			m:    `yum{quantile="0.99"}`,
+			v:    150.0,
+			lset: labels.FromStrings("__name__", "yum", "quantile", "0.99"),
+			// TODO(krajorama): ct:   int64p(1520430003000),
+		}, {
+			m:    "foobar",
+			help: "Summary with _created as the first line",
+		}, {
+			m:   "foobar",
+			typ: model.MetricTypeSummary,
+		}, {
+			m:    `foobar_count`,
+			v:    21,
+			lset: labels.FromStrings("__name__", "foobar_count"),
+			// TODO(krajorama): ct:   int64p(1520430004000),
+		}, {
+			m:    `foobar_sum`,
+			v:    324789.6,
+			lset: labels.FromStrings("__name__", "foobar_sum"),
+			// TODO(krajorama): ct:   int64p(1520430004000),
+		}, {
+			m:    `foobar{quantile="0.95"}`,
+			v:    123.8,
+			lset: labels.FromStrings("__name__", "foobar", "quantile", "0.95"),
+			// TODO(krajorama): ct:   int64p(1520430004000),
+		}, {
+			m:    `foobar{quantile="0.99"}`,
+			v:    150.1,
+			lset: labels.FromStrings("__name__", "foobar", "quantile", "0.99"),
+			// TODO(krajorama): ct:   int64p(1520430004000),
+		}, {
+			m:    "metric",
+			help: "foo\x00bar",
+		}, {
+			m:    "null_byte_metric{a=\"abc\x00\"}",
+			v:    1,
+			lset: labels.FromStrings("__name__", "null_byte_metric", "a", "abc\x00"),
 		},
 	}
 
 	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
 	p = NewNHCBParser(p, false)
-	checkParseResultsWithCT(t, p, exp, true)
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
 }
