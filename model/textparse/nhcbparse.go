@@ -45,7 +45,7 @@ type NHCBParser struct {
 	lset         labels.Labels
 	metricString string
 	// For Type.
-	bType []byte
+	bName []byte
 	typ   model.MetricType
 
 	// Caches the entry itself if we are inserting a converted NHCB
@@ -99,7 +99,7 @@ func (p *NHCBParser) Help() ([]byte, []byte) {
 }
 
 func (p *NHCBParser) Type() ([]byte, model.MetricType) {
-	return p.bType, p.typ
+	return p.bName, p.typ
 }
 
 func (p *NHCBParser) Unit() ([]byte, []byte) {
@@ -169,7 +169,7 @@ func (p *NHCBParser) Next() (Entry, error) {
 		p.metricString = p.parser.Metric(&p.lset)
 		p.lastNativeHistName = p.lset.Get(labels.MetricName)
 	case EntryType:
-		p.bType, p.typ = p.parser.Type()
+		p.bName, p.typ = p.parser.Type()
 	}
 	if p.processNHCB() {
 		p.entry = et
@@ -187,7 +187,7 @@ func (p *NHCBParser) handleClassicHistogramSeries(lset labels.Labels) bool {
 		return false
 	}
 	mName := lset.Get(labels.MetricName)
-	if convertnhcb.GetHistogramMetricBaseName(mName) != string(p.bType) {
+	if convertnhcb.GetHistogramMetricBaseName(mName) != string(p.bName) {
 		return false
 	}
 	switch {
