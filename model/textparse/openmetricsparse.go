@@ -25,6 +25,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -266,19 +267,17 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 		return nil
 	}
 
-	var (
-		currLset                labels.Labels
-		buf                     []byte
-		peekWithoutNameLsetHash uint64
-	)
-	p.Metric(&currLset) // Avoid/optimize (probably similar techique Metric is using, parsing only bits we need e.g.
-	// take relevant bytes from {...} (excluding le ONLY for histograms, quantile for summaries).
+	var currName []byte
+	if string(p.series[0]) == `{` && string(p.series[1]) == `"` {
+		// special case for UTF-8 encoded metric family names.
+		currName = p.series[p.offsets[0]-p.start : p.mfNameLen+2]
+	} else {
+		currName = p.series[p.offsets[0]-p.start : p.mfNameLen]
+	}
 
-	currFamilyLsetHash, buf := currLset.HashWithoutLabels(buf, labels.MetricName, "le", "quantile")
-	currName := p.series[0:p.mfNameLen]
-
+	currHash := p.hashOffsets(currName)
 	// Check cache, perhaps we fetched something already.
-	if p.ctHashSet > 0 && bytes.Equal(currName, p.visitedMFName) && currFamilyLsetHash == p.ctHashSet && p.ct > 0 {
+	if currHash == p.ctHashSet && p.ct > 0 {
 		return &p.ct
 	}
 
@@ -309,17 +308,17 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 			return nil
 		}
 
-		var peekedLset labels.Labels
-		p.Metric(&peekedLset)
-		peekedName := peekedLset.Get(model.MetricNameLabel)
+		s := string(p.series)
+		peekedName := s[p.offsets[0]-p.start : p.offsets[1]-p.start]
 		if !strings.HasSuffix(peekedName, "_created") {
 			// Not a CT line, search more.
 			continue
 		}
 
-		// We got a CT line here, but let's search if CT line is actually for our series, edge case.
-		peekWithoutNameLsetHash, _ = peekedLset.HashWithoutLabels(buf, labels.MetricName, "le", "quantile")
-		if peekWithoutNameLsetHash != currFamilyLsetHash {
+		// Remove _created suffix and convert to byte slice.
+		peekedNameBytes := []byte(peekedName[:len(peekedName)-8])
+		peekedHash := p.hashOffsets(peekedNameBytes)
+		if peekedHash != currHash {
 			// Found CT line for a different series, for our series no CT.
 			p.resetCTParseValues(resetLexer)
 			return nil
@@ -328,9 +327,35 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 		// All timestamps in OpenMetrics are Unix Epoch in seconds. Convert to milliseconds.
 		// https://github.com/OpenObservability/OpenMetrics/blob/main/specification/OpenMetrics.md#timestamps
 		ct := int64(p.val * 1000.0)
-		p.setCTParseValues(ct, currFamilyLsetHash, currName, true, resetLexer)
+		p.setCTParseValues(ct, currHash, currName, true, resetLexer)
 		return &ct
 	}
+}
+
+var (
+	quantile = []byte{113, 117, 97, 110, 116, 105, 108, 101}
+	le       = []byte{108, 101}
+)
+
+// hashOffsets takes in the metric family name and hashes the offsets of the labels and values.
+func (p *OpenMetricsParser) hashOffsets(metricFamilyName []byte) uint64 {
+	offsetsArr := make([]byte, 0)
+
+	for i := 2; i < len(p.offsets); i += 4 {
+		lStart := p.offsets[i] - p.start
+		lEnd := p.offsets[i+1] - p.start
+		label := p.series[lStart:lEnd]
+		if bytes.Equal(label, quantile) || bytes.Equal(label, le) {
+			continue
+		}
+		offsetsArr = append(offsetsArr, p.series[lStart:lEnd]...)
+		vStart := p.offsets[i+2] - p.start
+		vEnd := p.offsets[i+3] - p.start
+		offsetsArr = append(offsetsArr, p.series[vStart:vEnd]...)
+	}
+
+	offsetsArr = append(offsetsArr, metricFamilyName...)
+	return xxhash.Sum64(offsetsArr)
 }
 
 // setCTParseValues sets the parser to the state after CreatedTimestamp method was called and CT was found.
