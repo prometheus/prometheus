@@ -4,6 +4,7 @@ package config
 
 import (
 	"fmt"
+
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 )
 

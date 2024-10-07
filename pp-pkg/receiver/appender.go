@@ -2,6 +2,7 @@ package receiver
 
 import (
 	"context"
+
 	"github.com/prometheus/prometheus/pp/go/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -52,7 +53,7 @@ func (a *promAppender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v
 }
 
 func (a *promAppender) Commit() error {
-	return a.receiver.AppendTimeSeries(a.ctx, a.data, nil, nil, 0, a.relabelerID)
+	return a.receiver.AppendTimeSeries(a.ctx, a.data, nil, a.relabelerID)
 }
 
 func (a *promAppender) Rollback() error {

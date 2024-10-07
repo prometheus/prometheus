@@ -17,8 +17,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/prometheus/prometheus/pp/go/relabeler"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"math"
 	"math/rand"
 	"net"
@@ -30,6 +28,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/prometheus/prometheus/pp/go/relabeler"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -580,7 +581,6 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
-	fmt.Println("QUERY RANGE OPTIONS LOOKBACK DELTA", opts.LookbackDelta())
 	qry, err := api.QueryEngine.NewRangeQuery(ctx, api.Queryable, opts, r.FormValue("query"), start, end, step)
 	if err != nil {
 		return invalidParamError(err, "query")

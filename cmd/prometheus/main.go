@@ -645,7 +645,8 @@ func main() {
 		scraper       = &readyScrapeManager{}
 		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper)
 		opStorage     = storage2.NewQueryableStorage(receiver)
-		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage, opStorage)
+		// fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage, opStorage)
+		fanoutStorage = storage.NewFanout(logger, opStorage, remoteStorage, localStorage)
 	)
 
 	var (

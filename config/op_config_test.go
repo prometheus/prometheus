@@ -10,12 +10,12 @@ import (
 	"github.com/alecthomas/units"
 	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
-	"github.com/prometheus/prometheus/pp/go/relabeler"
 	common_config "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/suite"
 	"gopkg.in/yaml.v2"
 
+	relabelerconfig "github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
@@ -243,7 +243,7 @@ var expectedConf = &config.Config{
 
 	ReceiverConfig: op_config.RemoteWriteReceiverConfig{
 		NumberOfShards: 2,
-		Configs: []*relabeler.InputRelabelerConfig{
+		Configs: []*relabelerconfig.InputRelabelerConfig{
 			{
 				Name: "some_remote_write_receiver_1",
 				RelabelConfigs: []*cppbridge.RelabelConfig{
