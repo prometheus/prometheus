@@ -16,10 +16,10 @@ package openstack
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"strconv"
 
-	"github.com/go-kit/log"
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/hypervisors"
@@ -43,14 +43,14 @@ type HypervisorDiscovery struct {
 	provider     *gophercloud.ProviderClient
 	authOpts     *gophercloud.AuthOptions
 	region       string
-	logger       log.Logger
+	logger       *slog.Logger
 	port         int
 	availability gophercloud.Availability
 }
 
 // newHypervisorDiscovery returns a new hypervisor discovery.
 func newHypervisorDiscovery(provider *gophercloud.ProviderClient, opts *gophercloud.AuthOptions,
-	port int, region string, availability gophercloud.Availability, l log.Logger,
+	port int, region string, availability gophercloud.Availability, l *slog.Logger,
 ) *HypervisorDiscovery {
 	return &HypervisorDiscovery{
 		provider: provider, authOpts: opts,

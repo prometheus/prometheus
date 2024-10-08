@@ -16,15 +16,16 @@ package tsdbutil
 import (
 	"testing"
 
-	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestLockfile(t *testing.T) {
 	TestDirLockerUsage(t, func(t *testing.T, data string, createLock bool) (*DirLocker, testutil.Closer) {
-		locker, err := NewDirLocker(data, "tsdbutil", log.NewNopLogger(), nil)
+		locker, err := NewDirLocker(data, "tsdbutil", promslog.NewNopLogger(), nil)
 		require.NoError(t, err)
 
 		if createLock {

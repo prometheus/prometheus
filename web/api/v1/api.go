@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"math/rand"
 	"net"
@@ -31,8 +32,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/grafana/regexp"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/munnerz/goautoneg"
@@ -54,8 +53,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/httputil"
+	"github.com/prometheus/prometheus/util/notifications"
 	"github.com/prometheus/prometheus/util/stats"
-	"github.com/prometheus/prometheus/web/api"
 )
 
 type status string
@@ -207,15 +206,15 @@ type API struct {
 	db                  TSDBAdminStats
 	dbDir               string
 	enableAdmin         bool
-	logger              log.Logger
+	logger              *slog.Logger
 	CORSOrigin          *regexp.Regexp
 	buildInfo           *PrometheusVersion
 	runtimeInfo         func() (RuntimeInfo, error)
 	gatherer            prometheus.Gatherer
 	isAgent             bool
 	statsRenderer       StatsRenderer
-	notificationsGetter func() []api.Notification
-	notificationsSub    func() (<-chan api.Notification, func(), bool)
+	notificationsGetter func() []notifications.Notification
+	notificationsSub    func() (<-chan notifications.Notification, func(), bool)
 
 	remoteWriteHandler http.Handler
 	remoteReadHandler  http.Handler
@@ -240,7 +239,7 @@ func NewAPI(
 	db TSDBAdminStats,
 	dbDir string,
 	enableAdmin bool,
-	logger log.Logger,
+	logger *slog.Logger,
 	rr func(context.Context) RulesRetriever,
 	remoteReadSampleLimit int,
 	remoteReadConcurrencyLimit int,
@@ -249,8 +248,8 @@ func NewAPI(
 	corsOrigin *regexp.Regexp,
 	runtimeInfo func() (RuntimeInfo, error),
 	buildInfo *PrometheusVersion,
-	notificationsGetter func() []api.Notification,
-	notificationsSub func() (<-chan api.Notification, func(), bool),
+	notificationsGetter func() []notifications.Notification,
+	notificationsSub func() (<-chan notifications.Notification, func(), bool),
 	gatherer prometheus.Gatherer,
 	registerer prometheus.Registerer,
 	statsRenderer StatsRenderer,
@@ -834,12 +833,22 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 }
 
 var (
-	// MinTime is the default timestamp used for the begin of optional time ranges.
-	// Exposed to let downstream projects to reference it.
+	// MinTime is the default timestamp used for the start of optional time ranges.
+	// Exposed to let downstream projects reference it.
+	//
+	// Historical note: This should just be time.Unix(math.MinInt64/1000, 0).UTC(),
+	// but it was set to a higher value in the past due to a misunderstanding.
+	// The value is still low enough for practical purposes, so we don't want
+	// to change it now, avoiding confusion for importers of this variable.
 	MinTime = time.Unix(math.MinInt64/1000+62135596801, 0).UTC()
 
 	// MaxTime is the default timestamp used for the end of optional time ranges.
 	// Exposed to let downstream projects to reference it.
+	//
+	// Historical note: This should just be time.Unix(math.MaxInt64/1000, 0).UTC(),
+	// but it was set to a lower value in the past due to a misunderstanding.
+	// The value is still high enough for practical purposes, so we don't want
+	// to change it now, avoiding confusion for importers of this variable.
 	MaxTime = time.Unix(math.MaxInt64/1000-62135596801, 999999999).UTC()
 
 	minTimeFormatted = MinTime.Format(time.RFC3339Nano)
@@ -1853,7 +1862,7 @@ func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface
 
 	b, err := codec.Encode(resp)
 	if err != nil {
-		level.Error(api.logger).Log("msg", "error marshaling response", "url", req.URL, "err", err)
+		api.logger.Error("error marshaling response", "url", req.URL, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -1861,7 +1870,7 @@ func (api *API) respond(w http.ResponseWriter, req *http.Request, data interface
 	w.Header().Set("Content-Type", codec.ContentType().String())
 	w.WriteHeader(http.StatusOK)
 	if n, err := w.Write(b); err != nil {
-		level.Error(api.logger).Log("msg", "error writing response", "url", req.URL, "bytesWritten", n, "err", err)
+		api.logger.Error("error writing response", "url", req.URL, "bytesWritten", n, "err", err)
 	}
 }
 
@@ -1891,7 +1900,7 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 		Data:      data,
 	})
 	if err != nil {
-		level.Error(api.logger).Log("msg", "error marshaling json response", "err", err)
+		api.logger.Error("error marshaling json response", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -1919,7 +1928,7 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	if n, err := w.Write(b); err != nil {
-		level.Error(api.logger).Log("msg", "error writing response", "bytesWritten", n, "err", err)
+		api.logger.Error("error writing response", "bytesWritten", n, "err", err)
 	}
 }
 
