@@ -341,7 +341,7 @@ var (
 // hashOffsets generates a hash based on the metric family name and the offsets
 // of label names and values from the parsed OpenMetrics data. It skips quantile
 // and le labels for summaries and histograms respectively.
-func (p *OpenMetricsParser) hashOffsets(offsetsArr, metricFamilyName []byte) uint64 {
+func (p *OpenMetricsParser) seriesHash(offsetsArr, metricFamilyName []byte) uint64 {
 	// Iterate through p.offsets to find the label names and values.
 	for i := 2; i < len(p.offsets); i += 4 {
 		lStart := p.offsets[i] - p.start
