@@ -1,5 +1,5 @@
 // Copyright 2016 The Prometheus Authors
-// Licensed under the Apache License, Version 2.0 (the "License");
+
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
@@ -1576,23 +1576,16 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 
 		// If the rule group response has no rules, skip it - this means we filtered all the rules of this group.
 		if len(apiRuleGroup.Rules) > 0 {
+			// We've reached the capacity of our page.
+			// We are looking ahead up to this point because this is ultimately where the presence of at least one rule
+			// group in a subsequent response is determined, hence requiring a nextToken.
+			if paginationRequest != nil && len(rgs) == int(paginationRequest.MaxRuleGroups) {
+				res.NextToken = getRuleGroupNextToken(grp.File(), grp.Name())
+				break
+			}
 			rgs = append(rgs, apiRuleGroup)
 		}
 
-		if paginationRequest != nil && len(rgs) == int(paginationRequest.MaxRuleGroups+1) {
-			break
-		}
-	}
-
-	if paginationRequest != nil {
-		if len(rgs) == int(paginationRequest.MaxRuleGroups+1) {
-			nextRg := rgs[paginationRequest.MaxRuleGroups]
-			res.NextToken = getRuleGroupNextToken(nextRg.File, nextRg.Name)
-			res.RuleGroups = rgs[:paginationRequest.MaxRuleGroups]
-		} else {
-			res.RuleGroups = rgs
-		}
-		return apiFuncResult{res, nil, nil, nil}
 	}
 
 	res.RuleGroups = rgs
