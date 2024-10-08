@@ -9,13 +9,15 @@
 * [CHANGE] API: The OTLP receiver endpoint can now be enabled using `--web.enable-otlp-receiver` instead of `--enable-feature=otlp-write-receiver`. #14894
 * [CHANGE] Prometheus will not add or remove port numbers from the target address. `no-default-scrape-port` feature flag removed. #14160
 * [CHANGE] Logging: the format of log lines has changed a little, along with the adoption of Go's Structured Logging package. #14906
-* [CHANGE]: Don't create extra `_created` timeseries if feature-flag `created-timestamp-zero-ingestion' is enabled. #14738
+* [CHANGE] Don't create extra `_created` timeseries if feature-flag `created-timestamp-zero-ingestion' is enabled. #14738
+* [CHANGE] Float literals and time durations being the same is now a stable fetaure. #15111
 * [ENHANCEMENT] UI: Many fixes and improvements. #14898, #14899, #14907, #14908, #14912, #14913, #14914, #14931, #14940, #14945, #14946, #14972, #14981, #14982, #14994, #15096
 * [ENHANCEMENT] UI: Web UI now displays notifications, e.g. when starting up and shutting down. #15082
 * [ENHANCEMENT] PromQL: Introduce exponential interpolation for native histograms. #14677
 * [ENHANCEMENT] TSDB: Add support for ingestion of out-of-order native histogram samples. #14850, #14546
 * [ENHANCEMENT] Alerts: remove metrics for removed Alertmanagers. #13909
 * [ENHANCEMENT] Scraping: support Created-Timestamp feature on native histograms. #14694
+* [ENHANCEMENT] Kubernetes SD: Support sidecar containers in endpoint discovery. #14929
 * [ENHANCEMENT] Consul SD: Support catalog filters. #11224
 * [PERF] TSDB: Parallelize deletion of postings after head compaction. #14975
 * [PERF] TSDB: Chunk encoding: shorten some write sequences. #14932
