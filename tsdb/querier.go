@@ -253,12 +253,9 @@ func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matc
 		}
 		switch {
 		case m.Name == "" && m.Value == "":
-			k, v := index.AllPostingsKey()
-			allPostings, err := ix.Postings(ctx, k, v)
-			if err != nil {
-				return nil, err
-			}
-			its = append(its, allPostings)
+			// We already handled the case at the top of the function,
+			// and it is unexpected to get all postings again here.
+			return nil, errors.New("unexpected all postings")
 		case m.Type == labels.MatchRegexp && m.Value == ".*":
 			// .* regexp matches any string: do nothing.
 		case m.Type == labels.MatchNotRegexp && m.Value == ".*":
