@@ -18,15 +18,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
-
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -94,11 +92,11 @@ const checkpointPrefix = "checkpoint."
 // segmented format as the original WAL itself.
 // This makes it easy to read it through the WAL package and concatenate
 // it with the original WAL.
-func Checkpoint(logger log.Logger, w *WL, from, to int, keep func(id chunks.HeadSeriesRef) bool, mint int64) (*CheckpointStats, error) {
+func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.HeadSeriesRef) bool, mint int64) (*CheckpointStats, error) {
 	stats := &CheckpointStats{}
 	var sgmReader io.ReadCloser
 
-	level.Info(logger).Log("msg", "Creating checkpoint", "from_segment", from, "to_segment", to, "mint", mint)
+	logger.Info("Creating checkpoint", "from_segment", from, "to_segment", to, "mint", mint)
 
 	{
 		var sgmRange []SegmentRange
@@ -149,22 +147,23 @@ func Checkpoint(logger log.Logger, w *WL, from, to int, keep func(id chunks.Head
 	r := NewReader(sgmReader)
 
 	var (
-		series           []record.RefSeries
-		samples          []record.RefSample
-		histogramSamples []record.RefHistogramSample
-		tstones          []tombstones.Stone
-		exemplars        []record.RefExemplar
-		metadata         []record.RefMetadata
-		st               = labels.NewSymbolTable() // Needed for decoding; labels do not outlive this function.
-		dec              = record.NewDecoder(st)
-		enc              record.Encoder
-		buf              []byte
-		recs             [][]byte
+		series                []record.RefSeries
+		samples               []record.RefSample
+		histogramSamples      []record.RefHistogramSample
+		floatHistogramSamples []record.RefFloatHistogramSample
+		tstones               []tombstones.Stone
+		exemplars             []record.RefExemplar
+		metadata              []record.RefMetadata
+		st                    = labels.NewSymbolTable() // Needed for decoding; labels do not outlive this function.
+		dec                   = record.NewDecoder(st)
+		enc                   record.Encoder
+		buf                   []byte
+		recs                  [][]byte
 
 		latestMetadataMap = make(map[chunks.HeadSeriesRef]record.RefMetadata)
 	)
 	for r.Next() {
-		series, samples, histogramSamples, tstones, exemplars, metadata = series[:0], samples[:0], histogramSamples[:0], tstones[:0], exemplars[:0], metadata[:0]
+		series, samples, histogramSamples, floatHistogramSamples, tstones, exemplars, metadata = series[:0], samples[:0], histogramSamples[:0], floatHistogramSamples[:0], tstones[:0], exemplars[:0], metadata[:0]
 
 		// We don't reset the buffer since we batch up multiple records
 		// before writing them to the checkpoint.
@@ -224,8 +223,26 @@ func Checkpoint(logger log.Logger, w *WL, from, to int, keep func(id chunks.Head
 			if len(repl) > 0 {
 				buf = enc.HistogramSamples(repl, buf)
 			}
-			stats.TotalSamples += len(samples)
-			stats.DroppedSamples += len(samples) - len(repl)
+			stats.TotalSamples += len(histogramSamples)
+			stats.DroppedSamples += len(histogramSamples) - len(repl)
+
+		case record.FloatHistogramSamples:
+			floatHistogramSamples, err = dec.FloatHistogramSamples(rec, floatHistogramSamples)
+			if err != nil {
+				return nil, fmt.Errorf("decode float histogram samples: %w", err)
+			}
+			// Drop irrelevant floatHistogramSamples in place.
+			repl := floatHistogramSamples[:0]
+			for _, fh := range floatHistogramSamples {
+				if fh.T >= mint {
+					repl = append(repl, fh)
+				}
+			}
+			if len(repl) > 0 {
+				buf = enc.FloatHistogramSamples(repl, buf)
+			}
+			stats.TotalSamples += len(floatHistogramSamples)
+			stats.DroppedSamples += len(floatHistogramSamples) - len(repl)
 
 		case record.Tombstones:
 			tstones, err = dec.Tombstones(rec, tstones)

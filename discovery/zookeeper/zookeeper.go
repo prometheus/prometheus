@@ -18,15 +18,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/go-zookeeper/zk"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -146,16 +147,16 @@ type Discovery struct {
 	treeCaches  []*treecache.ZookeeperTreeCache
 
 	parse  func(data []byte, path string) (model.LabelSet, error)
-	logger log.Logger
+	logger *slog.Logger
 }
 
 // NewNerveDiscovery returns a new Discovery for the given Nerve config.
-func NewNerveDiscovery(conf *NerveSDConfig, logger log.Logger) (*Discovery, error) {
+func NewNerveDiscovery(conf *NerveSDConfig, logger *slog.Logger) (*Discovery, error) {
 	return NewDiscovery(conf.Servers, time.Duration(conf.Timeout), conf.Paths, logger, parseNerveMember)
 }
 
 // NewServersetDiscovery returns a new Discovery for the given serverset config.
-func NewServersetDiscovery(conf *ServersetSDConfig, logger log.Logger) (*Discovery, error) {
+func NewServersetDiscovery(conf *ServersetSDConfig, logger *slog.Logger) (*Discovery, error) {
 	return NewDiscovery(conf.Servers, time.Duration(conf.Timeout), conf.Paths, logger, parseServersetMember)
 }
 
@@ -165,11 +166,11 @@ func NewDiscovery(
 	srvs []string,
 	timeout time.Duration,
 	paths []string,
-	logger log.Logger,
+	logger *slog.Logger,
 	pf func(data []byte, path string) (model.LabelSet, error),
 ) (*Discovery, error) {
 	if logger == nil {
-		logger = log.NewNopLogger()
+		logger = promslog.NewNopLogger()
 	}
 
 	conn, _, err := zk.Connect(
@@ -280,18 +281,17 @@ func parseServersetMember(data []byte, path string) (model.LabelSet, error) {
 	labels := model.LabelSet{}
 	labels[serversetPathLabel] = model.LabelValue(path)
 	labels[model.AddressLabel] = model.LabelValue(
-		net.JoinHostPort(member.ServiceEndpoint.Host, fmt.Sprintf("%d", member.ServiceEndpoint.Port)))
+		net.JoinHostPort(member.ServiceEndpoint.Host, strconv.Itoa(member.ServiceEndpoint.Port)))
 
 	labels[serversetEndpointLabelPrefix+"_host"] = model.LabelValue(member.ServiceEndpoint.Host)
-	labels[serversetEndpointLabelPrefix+"_port"] = model.LabelValue(fmt.Sprintf("%d", member.ServiceEndpoint.Port))
+	labels[serversetEndpointLabelPrefix+"_port"] = model.LabelValue(strconv.Itoa(member.ServiceEndpoint.Port))
 
 	for name, endpoint := range member.AdditionalEndpoints {
 		cleanName := model.LabelName(strutil.SanitizeLabelName(name))
 		labels[serversetEndpointLabelPrefix+"_host_"+cleanName] = model.LabelValue(
 			endpoint.Host)
 		labels[serversetEndpointLabelPrefix+"_port_"+cleanName] = model.LabelValue(
-			fmt.Sprintf("%d", endpoint.Port))
-
+			strconv.Itoa(endpoint.Port))
 	}
 
 	labels[serversetStatusLabel] = model.LabelValue(member.Status)
@@ -322,10 +322,10 @@ func parseNerveMember(data []byte, path string) (model.LabelSet, error) {
 	labels := model.LabelSet{}
 	labels[nervePathLabel] = model.LabelValue(path)
 	labels[model.AddressLabel] = model.LabelValue(
-		net.JoinHostPort(member.Host, fmt.Sprintf("%d", member.Port)))
+		net.JoinHostPort(member.Host, strconv.Itoa(member.Port)))
 
 	labels[nerveEndpointLabelPrefix+"_host"] = model.LabelValue(member.Host)
-	labels[nerveEndpointLabelPrefix+"_port"] = model.LabelValue(fmt.Sprintf("%d", member.Port))
+	labels[nerveEndpointLabelPrefix+"_port"] = model.LabelValue(strconv.Itoa(member.Port))
 	labels[nerveEndpointLabelPrefix+"_name"] = model.LabelValue(member.Name)
 
 	return labels, nil

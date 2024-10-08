@@ -61,8 +61,11 @@ A Prometheus server's data directory looks something like this:
 Note that a limitation of local storage is that it is not clustered or
 replicated. Thus, it is not arbitrarily scalable or durable in the face of
 drive or node outages and should be managed like any other single node
-database. The use of RAID is suggested for storage availability, and
-[snapshots](querying/api.md#snapshot) are recommended for backups. With proper
+database. 
+
+[Snapshots](querying/api.md#snapshot) are recommended for backups. Backups 
+made without snapshots run the risk of losing data that was recorded since 
+the last WAL sync, which typically happens every two hours. With proper
 architecture, it is possible to retain years of data in local storage.
 
 Alternatively, external storage may be used via the
@@ -84,8 +87,9 @@ or 31 days, whichever is smaller.
 Prometheus has several flags that configure local storage. The most important are:
 
 - `--storage.tsdb.path`: Where Prometheus writes its database. Defaults to `data/`.
-- `--storage.tsdb.retention.time`: When to remove old data. Defaults to `15d`.
-  Overrides `storage.tsdb.retention` if this flag is set to anything other than default.
+- `--storage.tsdb.retention.time`: How long to retain samples in storage. If neither
+  this flag nor `storage.tsdb.retention.size` is set, the retention time defaults to
+  `15d`. Supported units: y, w, d, h, m, s, ms.
 - `--storage.tsdb.retention.size`: The maximum number of bytes of storage blocks to retain.
   The oldest data will be removed first. Defaults to `0` or disabled. Units supported:
   B, KB, MB, GB, TB, PB, EB. Ex: "512MB". Based on powers-of-2, so 1KB is 1024B. Only
@@ -93,7 +97,6 @@ Prometheus has several flags that configure local storage. The most important ar
   chunks are counted in the total size. So the minimum requirement for the disk is the
   peak space taken by the `wal` (the WAL and Checkpoint) and `chunks_head`
   (m-mapped Head chunks) directory combined (peaks every 2 hours).
-- `--storage.tsdb.retention`: Deprecated in favor of `storage.tsdb.retention.time`.
 - `--storage.tsdb.wal-compression`: Enables compression of the write-ahead log (WAL).
   Depending on your data, you can expect the WAL size to be halved with little extra
   cpu load. This flag was introduced in 2.11.0 and enabled by default in 2.20.0.
@@ -132,6 +135,18 @@ will be used.
 Expired block cleanup happens in the background. It may take up to two hours
 to remove expired blocks. Blocks must be fully expired before they are removed.
 
+## Right-Sizing Retention Size
+
+If you are utilizing `storage.tsdb.retention.size` to set a size limit, you 
+will want to consider the right size for this value relative to the storage you 
+have allocated for Prometheus. It is wise to reduce the retention size to provide 
+a buffer, ensuring that older entries will be removed before the allocated storage 
+for Prometheus becomes full.
+
+At present, we recommend setting the retention size to, at most, 80-85% of your 
+allocated Prometheus disk space. This increases the likelihood that older entries 
+will be removed prior to hitting any disk limitations.
+
 ## Remote storage integrations
 
 Prometheus's local storage is limited to a single node's scalability and durability.
@@ -140,30 +155,26 @@ a set of interfaces that allow integrating with remote storage systems.
 
 ### Overview
 
-Prometheus integrates with remote storage systems in three ways:
+Prometheus integrates with remote storage systems in four ways:
 
-- Prometheus can write samples that it ingests to a remote URL in a standardized format.
-- Prometheus can receive samples from other Prometheus servers in a standardized format.
-- Prometheus can read (back) sample data from a remote URL in a standardized format.
+- Prometheus can write samples that it ingests to a remote URL in a [Remote Write format](https://prometheus.io/docs/specs/remote_write_spec_2_0/).
+- Prometheus can receive samples from other clients in a [Remote Write format](https://prometheus.io/docs/specs/remote_write_spec_2_0/).
+- Prometheus can read (back) sample data from a remote URL in a [Remote Read format](https://github.com/prometheus/prometheus/blob/main/prompb/remote.proto#L31).
+- Prometheus can return sample data requested by clients in a [Remote Read format](https://github.com/prometheus/prometheus/blob/main/prompb/remote.proto#L31).
 
 ![Remote read and write architecture](images/remote_integrations.png)
 
-The read and write protocols both use a snappy-compressed protocol buffer encoding over
-HTTP. The protocols are not considered as stable APIs yet and may change to use gRPC
-over HTTP/2 in the future, when all hops between Prometheus and the remote storage can
-safely be assumed to support HTTP/2.
+The remote read and write protocols both use a snappy-compressed protocol buffer encoding over
+HTTP. The read protocol is not yet considered as stable API.
 
-For details on configuring remote storage integrations in Prometheus, see the
+The write protocol has a [stable specification for 1.0 version](https://prometheus.io/docs/specs/remote_write_spec/)
+and [experimental specification for 2.0 version](https://prometheus.io/docs/specs/remote_write_spec_2_0/),
+both supported by Prometheus server.
+
+For details on configuring remote storage integrations in Prometheus as a client, see the
 [remote write](configuration/configuration.md#remote_write) and
 [remote read](configuration/configuration.md#remote_read) sections of the Prometheus
 configuration documentation.
-
-The built-in remote write receiver can be enabled by setting the
-`--web.enable-remote-write-receiver` command line flag. When enabled,
-the remote write receiver endpoint is `/api/v1/write`.
-
-For details on the request and response messages, see the
-[remote storage protocol buffer definitions](https://github.com/prometheus/prometheus/blob/main/prompb/remote.proto).
 
 Note that on the read path, Prometheus only fetches raw series data for a set of
 label selectors and time ranges from the remote end. All PromQL evaluation on the
@@ -171,6 +182,11 @@ raw data still happens in Prometheus itself. This means that remote read queries
 have some scalability limit, since all necessary data needs to be loaded into the
 querying Prometheus server first and then processed there. However, supporting
 fully distributed evaluation of PromQL was deemed infeasible for the time being.
+
+Prometheus also serves both protocols. The built-in remote write receiver can be enabled
+by setting the `--web.enable-remote-write-receiver` command line flag. When enabled,
+the remote write receiver endpoint is `/api/v1/write`. The remote read endpoint is
+available on [`/api/v1/read`](https://prometheus.io/docs/prometheus/latest/querying/remote_read_api/).
 
 ### Existing integrations
 
@@ -194,6 +210,9 @@ A typical use case is to migrate metrics data from a different monitoring system
 or time-series database to Prometheus. To do so, the user must first convert the
 source data into [OpenMetrics](https://openmetrics.io/) format, which is the
 input format for the backfilling as described below.
+
+Note that native histograms and staleness markers are not supported by this
+procedure, as they cannot be represented in the OpenMetrics format.
 
 ### Usage
 

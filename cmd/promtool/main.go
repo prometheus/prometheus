@@ -32,13 +32,13 @@ import (
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
-	"github.com/go-kit/log"
 	"github.com/google/pprof/profile"
 	"github.com/prometheus/client_golang/api"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil/promlint"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/version"
 	"github.com/prometheus/exporter-toolkit/web"
 	"gopkg.in/yaml.v2"
@@ -56,11 +56,16 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	_ "github.com/prometheus/prometheus/plugins" // Register plugins.
-	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/util/documentcli"
 )
+
+func init() {
+	// This can be removed when the default validation scheme in common is updated.
+	model.NameValidationScheme = model.UTF8Validation
+}
 
 const (
 	successExitCode = 0
@@ -204,6 +209,7 @@ func main() {
 	pushMetricsHeaders := pushMetricsCmd.Flag("header", "Prometheus remote write header.").StringMap()
 
 	testCmd := app.Command("test", "Unit testing.")
+	junitOutFile := testCmd.Flag("junit", "File path to store JUnit XML test results.").OpenFile(os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	testRulesCmd := testCmd.Command("rules", "Unit tests for rules.")
 	testRulesRun := testRulesCmd.Flag("run", "If set, will only run test groups whose names match the regular expression. Can be specified multiple times.").Strings()
 	testRulesFiles := testRulesCmd.Arg(
@@ -235,12 +241,14 @@ func main() {
 
 	tsdbDumpCmd := tsdbCmd.Command("dump", "Dump samples from a TSDB.")
 	dumpPath := tsdbDumpCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
+	dumpSandboxDirRoot := tsdbDumpCmd.Flag("sandbox-dir-root", "Root directory where a sandbox directory will be created, this sandbox is used in case WAL replay generates chunks (default is the database path). The sandbox is cleaned up at the end.").String()
 	dumpMinTime := tsdbDumpCmd.Flag("min-time", "Minimum timestamp to dump.").Default(strconv.FormatInt(math.MinInt64, 10)).Int64()
 	dumpMaxTime := tsdbDumpCmd.Flag("max-time", "Maximum timestamp to dump.").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
 	dumpMatch := tsdbDumpCmd.Flag("match", "Series selector. Can be specified multiple times.").Default("{__name__=~'(?s:.*)'}").Strings()
 
-	tsdbDumpOpenMetricsCmd := tsdbCmd.Command("dump-openmetrics", "[Experimental] Dump samples from a TSDB into OpenMetrics format. Native histograms are not dumped.")
+	tsdbDumpOpenMetricsCmd := tsdbCmd.Command("dump-openmetrics", "[Experimental] Dump samples from a TSDB into OpenMetrics text format, excluding native histograms and staleness markers, which are not representable in OpenMetrics.")
 	dumpOpenMetricsPath := tsdbDumpOpenMetricsCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
+	dumpOpenMetricsSandboxDirRoot := tsdbDumpOpenMetricsCmd.Flag("sandbox-dir-root", "Root directory where a sandbox directory will be created, this sandbox is used in case WAL replay generates chunks (default is the database path). The sandbox is cleaned up at the end.").String()
 	dumpOpenMetricsMinTime := tsdbDumpOpenMetricsCmd.Flag("min-time", "Minimum timestamp to dump.").Default(strconv.FormatInt(math.MinInt64, 10)).Int64()
 	dumpOpenMetricsMaxTime := tsdbDumpOpenMetricsCmd.Flag("max-time", "Maximum timestamp to dump.").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
 	dumpOpenMetricsMatch := tsdbDumpOpenMetricsCmd.Flag("match", "Series selector. Can be specified multiple times.").Default("{__name__=~'(?s:.*)'}").Strings()
@@ -250,6 +258,7 @@ func main() {
 	importQuiet := importCmd.Flag("quiet", "Do not print created blocks.").Short('q').Bool()
 	maxBlockDuration := importCmd.Flag("max-block-duration", "Maximum duration created blocks may span. Anything less than 2h is ignored.").Hidden().PlaceHolder("<duration>").Duration()
 	openMetricsImportCmd := importCmd.Command("openmetrics", "Import samples from OpenMetrics input and produce TSDB blocks. Please refer to the storage docs for more details.")
+	openMetricsLabels := openMetricsImportCmd.Flag("label", "Label to attach to metrics. Can be specified multiple times. Example --label=label_name=label_value").StringMap()
 	importFilePath := openMetricsImportCmd.Arg("input file", "OpenMetrics file to read samples from.").Required().String()
 	importDBPath := openMetricsImportCmd.Arg("output directory", "Output directory for generated blocks.").Default(defaultDBPath).String()
 	importRulesCmd := importCmd.Command("rules", "Create blocks of data for new recording rules.")
@@ -282,7 +291,7 @@ func main() {
 	promQLLabelsDeleteQuery := promQLLabelsDeleteCmd.Arg("query", "PromQL query.").Required().String()
 	promQLLabelsDeleteName := promQLLabelsDeleteCmd.Arg("name", "Name of the label to delete.").Required().String()
 
-	featureList := app.Flag("enable-feature", "Comma separated feature names to enable (only PromQL related and no-default-scrape-port). See https://prometheus.io/docs/prometheus/latest/feature_flags/ for the options and more details.").Default("").Strings()
+	featureList := app.Flag("enable-feature", "Comma separated feature names to enable. Currently unused.").Default("").Strings()
 
 	documentationCmd := app.Command("write-documentation", "Generate command line documentation. Internal use.").Hidden()
 
@@ -312,26 +321,21 @@ func main() {
 		}
 	}
 
-	var noDefaultScrapePort bool
 	for _, f := range *featureList {
 		opts := strings.Split(f, ",")
 		for _, o := range opts {
 			switch o {
-			case "no-default-scrape-port":
-				noDefaultScrapePort = true
 			case "":
 				continue
-			case "promql-at-modifier", "promql-negative-offset":
-				fmt.Printf("  WARNING: Option for --enable-feature is a no-op after promotion to a stable feature: %q\n", o)
 			default:
-				fmt.Printf("  WARNING: Unknown option for --enable-feature: %q\n", o)
+				fmt.Printf("  WARNING: --enable-feature is currently a no-op")
 			}
 		}
 	}
 
 	switch parsedCmd {
 	case sdCheckCmd.FullCommand():
-		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout, noDefaultScrapePort, prometheus.DefaultRegisterer))
+		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout, prometheus.DefaultRegisterer))
 
 	case checkConfigCmd.FullCommand():
 		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newLintConfig(*checkConfigLint, *checkConfigLintFatal), *configFiles...))
@@ -376,8 +380,12 @@ func main() {
 		os.Exit(QueryLabels(serverURL, httpRoundTripper, *queryLabelsMatch, *queryLabelsName, *queryLabelsBegin, *queryLabelsEnd, p))
 
 	case testRulesCmd.FullCommand():
-		os.Exit(RulesUnitTest(
-			promql.LazyLoaderOpts{
+		results := io.Discard
+		if *junitOutFile != nil {
+			results = *junitOutFile
+		}
+		os.Exit(RulesUnitTestResult(results,
+			promqltest.LazyLoaderOpts{
 				EnableAtModifier:     true,
 				EnableNegativeOffset: true,
 			},
@@ -396,12 +404,12 @@ func main() {
 		os.Exit(checkErr(listBlocks(*listPath, *listHumanReadable)))
 
 	case tsdbDumpCmd.FullCommand():
-		os.Exit(checkErr(dumpSamples(ctx, *dumpPath, *dumpMinTime, *dumpMaxTime, *dumpMatch, formatSeriesSet)))
+		os.Exit(checkErr(dumpSamples(ctx, *dumpPath, *dumpSandboxDirRoot, *dumpMinTime, *dumpMaxTime, *dumpMatch, formatSeriesSet)))
 	case tsdbDumpOpenMetricsCmd.FullCommand():
-		os.Exit(checkErr(dumpSamples(ctx, *dumpOpenMetricsPath, *dumpOpenMetricsMinTime, *dumpOpenMetricsMaxTime, *dumpOpenMetricsMatch, formatSeriesSetOpenMetrics)))
+		os.Exit(checkErr(dumpSamples(ctx, *dumpOpenMetricsPath, *dumpOpenMetricsSandboxDirRoot, *dumpOpenMetricsMinTime, *dumpOpenMetricsMaxTime, *dumpOpenMetricsMatch, formatSeriesSetOpenMetrics)))
 	// TODO(aSquare14): Work on adding support for custom block size.
 	case openMetricsImportCmd.FullCommand():
-		os.Exit(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable, *importQuiet, *maxBlockDuration))
+		os.Exit(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable, *importQuiet, *maxBlockDuration, *openMetricsLabels))
 
 	case importRulesCmd.FullCommand():
 		os.Exit(checkErr(importRules(serverURL, httpRoundTripper, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, *maxBlockDuration, *importRulesFiles...)))
@@ -464,7 +472,7 @@ func (ls lintConfig) lintDuplicateRules() bool {
 	return ls.all || ls.duplicateRules
 }
 
-// Check server status - healthy & ready.
+// CheckServerStatus - healthy & ready.
 func CheckServerStatus(serverURL *url.URL, checkEndpoint string, roundTripper http.RoundTripper) error {
 	if serverURL.Scheme == "" {
 		serverURL.Scheme = "http"
@@ -482,7 +490,7 @@ func CheckServerStatus(serverURL *url.URL, checkEndpoint string, roundTripper ht
 		return err
 	}
 
-	request, err := http.NewRequest("GET", config.Address, nil)
+	request, err := http.NewRequest(http.MethodGet, config.Address, nil)
 	if err != nil {
 		return err
 	}
@@ -567,7 +575,7 @@ func checkFileExists(fn string) error {
 func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]string, error) {
 	fmt.Println("Checking", filename)
 
-	cfg, err := config.LoadFile(filename, agentMode, false, log.NewNopLogger())
+	cfg, err := config.LoadFile(filename, agentMode, false, promslog.NewNopLogger())
 	if err != nil {
 		return nil, err
 	}
@@ -1174,7 +1182,7 @@ func importRules(url *url.URL, roundTripper http.RoundTripper, start, end, outpu
 		return fmt.Errorf("new api client error: %w", err)
 	}
 
-	ruleImporter := newRuleImporter(log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)), cfg, api)
+	ruleImporter := newRuleImporter(promslog.New(&promslog.Config{}), cfg, api)
 	errs := ruleImporter.loadGroups(ctx, files)
 	for _, err := range errs {
 		if err != nil {
@@ -1208,7 +1216,7 @@ func checkTargetGroupsForScrapeConfig(targetGroups []*targetgroup.Group, scfg *c
 	lb := labels.NewBuilder(labels.EmptyLabels())
 	for _, tg := range targetGroups {
 		var failures []error
-		targets, failures = scrape.TargetsFromGroup(tg, scfg, false, targets, lb)
+		targets, failures = scrape.TargetsFromGroup(tg, scfg, targets, lb)
 		if len(failures) > 0 {
 			first := failures[0]
 			return first

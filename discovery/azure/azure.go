@@ -17,9 +17,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/rand"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -34,10 +36,9 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v4"
 	cache "github.com/Code-Hex/go-generics-cache"
 	"github.com/Code-Hex/go-generics-cache/policy/lru"
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
@@ -174,7 +175,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 type Discovery struct {
 	*refresh.Discovery
-	logger  log.Logger
+	logger  *slog.Logger
 	cfg     *SDConfig
 	port    int
 	cache   *cache.Cache[string, *armnetwork.Interface]
@@ -182,14 +183,14 @@ type Discovery struct {
 }
 
 // NewDiscovery returns a new AzureDiscovery which periodically refreshes its targets.
-func NewDiscovery(cfg *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+func NewDiscovery(cfg *SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
 	m, ok := metrics.(*azureMetrics)
 	if !ok {
 		return nil, fmt.Errorf("invalid discovery metrics type")
 	}
 
 	if logger == nil {
-		logger = log.NewNopLogger()
+		logger = promslog.NewNopLogger()
 	}
 	l := cache.New(cache.AsLRU[string, *armnetwork.Interface](lru.WithCapacity(5000)))
 	d := &Discovery{
@@ -213,23 +214,34 @@ func NewDiscovery(cfg *SDConfig, logger log.Logger, metrics discovery.Discoverer
 	return d, nil
 }
 
+type client interface {
+	getVMs(ctx context.Context, resourceGroup string) ([]virtualMachine, error)
+	getScaleSets(ctx context.Context, resourceGroup string) ([]armcompute.VirtualMachineScaleSet, error)
+	getScaleSetVMs(ctx context.Context, scaleSet armcompute.VirtualMachineScaleSet) ([]virtualMachine, error)
+	getVMNetworkInterfaceByID(ctx context.Context, networkInterfaceID string) (*armnetwork.Interface, error)
+	getVMScaleSetVMNetworkInterfaceByID(ctx context.Context, networkInterfaceID, scaleSetName, instanceID string) (*armnetwork.Interface, error)
+}
+
 // azureClient represents multiple Azure Resource Manager providers.
 type azureClient struct {
 	nic    *armnetwork.InterfacesClient
 	vm     *armcompute.VirtualMachinesClient
 	vmss   *armcompute.VirtualMachineScaleSetsClient
 	vmssvm *armcompute.VirtualMachineScaleSetVMsClient
-	logger log.Logger
+	logger *slog.Logger
 }
 
+var _ client = &azureClient{}
+
 // createAzureClient is a helper function for creating an Azure compute client to ARM.
-func createAzureClient(cfg SDConfig) (azureClient, error) {
+func createAzureClient(cfg SDConfig, logger *slog.Logger) (client, error) {
 	cloudConfiguration, err := CloudConfigurationFromName(cfg.Environment)
 	if err != nil {
-		return azureClient{}, err
+		return &azureClient{}, err
 	}
 
 	var c azureClient
+	c.logger = logger
 
 	telemetry := policy.TelemetryOptions{
 		ApplicationID: userAgent,
@@ -240,12 +252,12 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 		Telemetry: telemetry,
 	})
 	if err != nil {
-		return azureClient{}, err
+		return &azureClient{}, err
 	}
 
 	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, "azure_sd")
 	if err != nil {
-		return azureClient{}, err
+		return &azureClient{}, err
 	}
 	options := &arm.ClientOptions{
 		ClientOptions: policy.ClientOptions{
@@ -257,25 +269,25 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 
 	c.vm, err = armcompute.NewVirtualMachinesClient(cfg.SubscriptionID, credential, options)
 	if err != nil {
-		return azureClient{}, err
+		return &azureClient{}, err
 	}
 
 	c.nic, err = armnetwork.NewInterfacesClient(cfg.SubscriptionID, credential, options)
 	if err != nil {
-		return azureClient{}, err
+		return &azureClient{}, err
 	}
 
 	c.vmss, err = armcompute.NewVirtualMachineScaleSetsClient(cfg.SubscriptionID, credential, options)
 	if err != nil {
-		return azureClient{}, err
+		return &azureClient{}, err
 	}
 
 	c.vmssvm, err = armcompute.NewVirtualMachineScaleSetVMsClient(cfg.SubscriptionID, credential, options)
 	if err != nil {
-		return azureClient{}, err
+		return &azureClient{}, err
 	}
 
-	return c, nil
+	return &c, nil
 }
 
 func newCredential(cfg SDConfig, policyClientOptions policy.ClientOptions) (azcore.TokenCredential, error) {
@@ -325,28 +337,27 @@ type virtualMachine struct {
 }
 
 // Create a new azureResource object from an ID string.
-func newAzureResourceFromID(id string, logger log.Logger) (*arm.ResourceID, error) {
+func newAzureResourceFromID(id string, logger *slog.Logger) (*arm.ResourceID, error) {
 	if logger == nil {
-		logger = log.NewNopLogger()
+		logger = promslog.NewNopLogger()
 	}
 	resourceID, err := arm.ParseResourceID(id)
 	if err != nil {
 		err := fmt.Errorf("invalid ID '%s': %w", id, err)
-		level.Error(logger).Log("err", err)
+		logger.Error("Failed to parse resource ID", "err", err)
 		return &arm.ResourceID{}, err
 	}
 	return resourceID, nil
 }
 
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	defer level.Debug(d.logger).Log("msg", "Azure discovery completed")
+	defer d.logger.Debug("Azure discovery completed")
 
-	client, err := createAzureClient(*d.cfg)
+	client, err := createAzureClient(*d.cfg, d.logger)
 	if err != nil {
 		d.metrics.failuresCount.Inc()
 		return nil, fmt.Errorf("could not create Azure client: %w", err)
 	}
-	client.logger = d.logger
 
 	machines, err := client.getVMs(ctx, d.cfg.ResourceGroup)
 	if err != nil {
@@ -354,7 +365,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		return nil, fmt.Errorf("could not get virtual machines: %w", err)
 	}
 
-	level.Debug(d.logger).Log("msg", "Found virtual machines during Azure discovery.", "count", len(machines))
+	d.logger.Debug("Found virtual machines during Azure discovery.", "count", len(machines))
 
 	// Load the vms managed by scale sets.
 	scaleSets, err := client.getScaleSets(ctx, d.cfg.ResourceGroup)
@@ -385,96 +396,8 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	for _, vm := range machines {
 		go func(vm virtualMachine) {
 			defer wg.Done()
-			r, err := newAzureResourceFromID(vm.ID, d.logger)
-			if err != nil {
-				ch <- target{labelSet: nil, err: err}
-				return
-			}
-
-			labels := model.LabelSet{
-				azureLabelSubscriptionID:       model.LabelValue(d.cfg.SubscriptionID),
-				azureLabelTenantID:             model.LabelValue(d.cfg.TenantID),
-				azureLabelMachineID:            model.LabelValue(vm.ID),
-				azureLabelMachineName:          model.LabelValue(vm.Name),
-				azureLabelMachineComputerName:  model.LabelValue(vm.ComputerName),
-				azureLabelMachineOSType:        model.LabelValue(vm.OsType),
-				azureLabelMachineLocation:      model.LabelValue(vm.Location),
-				azureLabelMachineResourceGroup: model.LabelValue(r.ResourceGroupName),
-				azureLabelMachineSize:          model.LabelValue(vm.Size),
-			}
-
-			if vm.ScaleSet != "" {
-				labels[azureLabelMachineScaleSet] = model.LabelValue(vm.ScaleSet)
-			}
-
-			for k, v := range vm.Tags {
-				name := strutil.SanitizeLabelName(k)
-				labels[azureLabelMachineTag+model.LabelName(name)] = model.LabelValue(*v)
-			}
-
-			// Get the IP address information via separate call to the network provider.
-			for _, nicID := range vm.NetworkInterfaces {
-				var networkInterface *armnetwork.Interface
-				if v, ok := d.getFromCache(nicID); ok {
-					networkInterface = v
-					d.metrics.cacheHitCount.Add(1)
-				} else {
-					if vm.ScaleSet == "" {
-						networkInterface, err = client.getVMNetworkInterfaceByID(ctx, nicID)
-					} else {
-						networkInterface, err = client.getVMScaleSetVMNetworkInterfaceByID(ctx, nicID, vm.ScaleSet, vm.InstanceID)
-					}
-
-					if err != nil {
-						if errors.Is(err, errorNotFound) {
-							level.Warn(d.logger).Log("msg", "Network interface does not exist", "name", nicID, "err", err)
-						} else {
-							ch <- target{labelSet: nil, err: err}
-						}
-
-						// Get out of this routine because we cannot continue without a network interface.
-						return
-					}
-
-					// Continue processing with the network interface
-					d.addToCache(nicID, networkInterface)
-				}
-
-				if networkInterface.Properties == nil {
-					continue
-				}
-
-				// Unfortunately Azure does not return information on whether a VM is deallocated.
-				// This information is available via another API call however the Go SDK does not
-				// yet support this. On deallocated machines, this value happens to be nil so it
-				// is a cheap and easy way to determine if a machine is allocated or not.
-				if networkInterface.Properties.Primary == nil {
-					level.Debug(d.logger).Log("msg", "Skipping deallocated virtual machine", "machine", vm.Name)
-					return
-				}
-
-				if *networkInterface.Properties.Primary {
-					for _, ip := range networkInterface.Properties.IPConfigurations {
-						// IPAddress is a field defined in PublicIPAddressPropertiesFormat,
-						// therefore we need to validate that both are not nil.
-						if ip.Properties != nil && ip.Properties.PublicIPAddress != nil && ip.Properties.PublicIPAddress.Properties != nil && ip.Properties.PublicIPAddress.Properties.IPAddress != nil {
-							labels[azureLabelMachinePublicIP] = model.LabelValue(*ip.Properties.PublicIPAddress.Properties.IPAddress)
-						}
-						if ip.Properties != nil && ip.Properties.PrivateIPAddress != nil {
-							labels[azureLabelMachinePrivateIP] = model.LabelValue(*ip.Properties.PrivateIPAddress)
-							address := net.JoinHostPort(*ip.Properties.PrivateIPAddress, fmt.Sprintf("%d", d.port))
-							labels[model.AddressLabel] = model.LabelValue(address)
-							ch <- target{labelSet: labels, err: nil}
-							return
-						}
-						// If we made it here, we don't have a private IP which should be impossible.
-						// Return an empty target and error to ensure an all or nothing situation.
-						err = fmt.Errorf("unable to find a private IP for VM %s", vm.Name)
-						ch <- target{labelSet: nil, err: err}
-						return
-					}
-				}
-			}
+			labelSet, err := d.vmToLabelSet(ctx, client, vm)
+			ch <- target{labelSet: labelSet, err: err}
 		}(vm)
 	}
 
@@ -493,6 +416,95 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	}
 
 	return []*targetgroup.Group{&tg}, nil
+}
+
+func (d *Discovery) vmToLabelSet(ctx context.Context, client client, vm virtualMachine) (model.LabelSet, error) {
+	r, err := newAzureResourceFromID(vm.ID, d.logger)
+	if err != nil {
+		return nil, err
+	}
+
+	labels := model.LabelSet{
+		azureLabelSubscriptionID:       model.LabelValue(d.cfg.SubscriptionID),
+		azureLabelTenantID:             model.LabelValue(d.cfg.TenantID),
+		azureLabelMachineID:            model.LabelValue(vm.ID),
+		azureLabelMachineName:          model.LabelValue(vm.Name),
+		azureLabelMachineComputerName:  model.LabelValue(vm.ComputerName),
+		azureLabelMachineOSType:        model.LabelValue(vm.OsType),
+		azureLabelMachineLocation:      model.LabelValue(vm.Location),
+		azureLabelMachineResourceGroup: model.LabelValue(r.ResourceGroupName),
+		azureLabelMachineSize:          model.LabelValue(vm.Size),
+	}
+
+	if vm.ScaleSet != "" {
+		labels[azureLabelMachineScaleSet] = model.LabelValue(vm.ScaleSet)
+	}
+
+	for k, v := range vm.Tags {
+		name := strutil.SanitizeLabelName(k)
+		labels[azureLabelMachineTag+model.LabelName(name)] = model.LabelValue(*v)
+	}
+
+	// Get the IP address information via separate call to the network provider.
+	for _, nicID := range vm.NetworkInterfaces {
+		var networkInterface *armnetwork.Interface
+		if v, ok := d.getFromCache(nicID); ok {
+			networkInterface = v
+			d.metrics.cacheHitCount.Add(1)
+		} else {
+			if vm.ScaleSet == "" {
+				networkInterface, err = client.getVMNetworkInterfaceByID(ctx, nicID)
+			} else {
+				networkInterface, err = client.getVMScaleSetVMNetworkInterfaceByID(ctx, nicID, vm.ScaleSet, vm.InstanceID)
+			}
+			if err != nil {
+				if errors.Is(err, errorNotFound) {
+					d.logger.Warn("Network interface does not exist", "name", nicID, "err", err)
+				} else {
+					return nil, err
+				}
+				// Get out of this routine because we cannot continue without a network interface.
+				return nil, nil
+			}
+
+			// Continue processing with the network interface
+			d.addToCache(nicID, networkInterface)
+		}
+
+		if networkInterface.Properties == nil {
+			continue
+		}
+
+		// Unfortunately Azure does not return information on whether a VM is deallocated.
+		// This information is available via another API call however the Go SDK does not
+		// yet support this. On deallocated machines, this value happens to be nil so it
+		// is a cheap and easy way to determine if a machine is allocated or not.
+		if networkInterface.Properties.Primary == nil {
+			d.logger.Debug("Skipping deallocated virtual machine", "machine", vm.Name)
+			return nil, nil
+		}
+
+		if *networkInterface.Properties.Primary {
+			for _, ip := range networkInterface.Properties.IPConfigurations {
+				// IPAddress is a field defined in PublicIPAddressPropertiesFormat,
+				// therefore we need to validate that both are not nil.
+				if ip.Properties != nil && ip.Properties.PublicIPAddress != nil && ip.Properties.PublicIPAddress.Properties != nil && ip.Properties.PublicIPAddress.Properties.IPAddress != nil {
+					labels[azureLabelMachinePublicIP] = model.LabelValue(*ip.Properties.PublicIPAddress.Properties.IPAddress)
+				}
+				if ip.Properties != nil && ip.Properties.PrivateIPAddress != nil {
+					labels[azureLabelMachinePrivateIP] = model.LabelValue(*ip.Properties.PrivateIPAddress)
+					address := net.JoinHostPort(*ip.Properties.PrivateIPAddress, strconv.Itoa(d.port))
+					labels[model.AddressLabel] = model.LabelValue(address)
+					return labels, nil
+				}
+				// If we made it here, we don't have a private IP which should be impossible.
+				// Return an empty target and error to ensure an all or nothing situation.
+				return nil, fmt.Errorf("unable to find a private IP for VM %s", vm.Name)
+			}
+		}
+	}
+	// TODO: Should we say something at this point?
+	return nil, nil
 }
 
 func (client *azureClient) getVMs(ctx context.Context, resourceGroup string) ([]virtualMachine, error) {
@@ -712,7 +724,7 @@ func (d *Discovery) addToCache(nicID string, netInt *armnetwork.Interface) {
 	rs := time.Duration(random) * time.Second
 	exptime := time.Duration(d.cfg.RefreshInterval*10) + rs
 	d.cache.Set(nicID, netInt, cache.WithExpiration(exptime))
-	level.Debug(d.logger).Log("msg", "Adding nic", "nic", nicID, "time", exptime.Seconds())
+	d.logger.Debug("Adding nic", "nic", nicID, "time", exptime.Seconds())
 }
 
 // getFromCache will get the network Interface for the specified nicID

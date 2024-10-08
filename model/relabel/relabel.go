@@ -17,6 +17,7 @@ import (
 	"crypto/md5"
 	"encoding/binary"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/grafana/regexp"
@@ -48,7 +49,7 @@ const (
 	Drop Action = "drop"
 	// KeepEqual drops targets for which the input does not match the target.
 	KeepEqual Action = "keepequal"
-	// Drop drops targets for which the input does match the target.
+	// DropEqual drops targets for which the input does match the target.
 	DropEqual Action = "dropequal"
 	// HashMod sets a label to the modulus of a hash of labels.
 	HashMod Action = "hashmod"
@@ -170,7 +171,7 @@ type Regexp struct {
 // NewRegexp creates a new anchored Regexp and returns an error if the
 // passed-in regular expression does not compile.
 func NewRegexp(s string) (Regexp, error) {
-	regex, err := regexp.Compile("^(?:" + s + ")$")
+	regex, err := regexp.Compile("^(?s:" + s + ")$")
 	return Regexp{Regexp: regex}, err
 }
 
@@ -205,11 +206,20 @@ func (re Regexp) MarshalYAML() (interface{}, error) {
 	return nil, nil
 }
 
+// IsZero implements the yaml.IsZeroer interface.
+func (re Regexp) IsZero() bool {
+	return re.Regexp == DefaultRelabelConfig.Regex.Regexp
+}
+
 // String returns the original string used to compile the regular expression.
 func (re Regexp) String() string {
+	if re.Regexp == nil {
+		return ""
+	}
+
 	str := re.Regexp.String()
-	// Trim the anchor `^(?:` prefix and `)$` suffix.
-	return str[4 : len(str)-2]
+	// Trim the anchor `^(?s:` prefix and `)$` suffix.
+	return str[5 : len(str)-2]
 }
 
 // Process returns a relabeled version of the given label set. The relabel configurations
@@ -267,6 +277,13 @@ func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
 			return false
 		}
 	case Replace:
+		// Fast path to add or delete label pair.
+		if val == "" && cfg.Regex == DefaultRelabelConfig.Regex &&
+			!varInRegexTemplate(cfg.TargetLabel) && !varInRegexTemplate(cfg.Replacement) {
+			lb.Set(cfg.TargetLabel, cfg.Replacement)
+			break
+		}
+
 		indexes := cfg.Regex.FindStringSubmatchIndex(val)
 		// If there is no match no replacement must take place.
 		if indexes == nil {
@@ -290,7 +307,7 @@ func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
 		hash := md5.Sum([]byte(val))
 		// Use only the last 8 bytes of the hash to give the same result as earlier versions of this code.
 		mod := binary.BigEndian.Uint64(hash[8:]) % cfg.Modulus
-		lb.Set(cfg.TargetLabel, fmt.Sprintf("%d", mod))
+		lb.Set(cfg.TargetLabel, strconv.FormatUint(mod, 10))
 	case LabelMap:
 		lb.Range(func(l labels.Label) {
 			if cfg.Regex.MatchString(l.Name) {
@@ -315,4 +332,8 @@ func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
 	}
 
 	return true
+}
+
+func varInRegexTemplate(template string) bool {
+	return strings.Contains(template, "$")
 }

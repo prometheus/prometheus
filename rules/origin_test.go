@@ -19,8 +19,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -31,7 +32,7 @@ type unknownRule struct{}
 
 func (u unknownRule) Name() string          { return "" }
 func (u unknownRule) Labels() labels.Labels { return labels.EmptyLabels() }
-func (u unknownRule) Eval(context.Context, time.Time, QueryFunc, *url.URL, int) (promql.Vector, error) {
+func (u unknownRule) Eval(context.Context, time.Duration, time.Time, QueryFunc, *url.URL, int) (promql.Vector, error) {
 	return nil, nil
 }
 func (u unknownRule) String() string                       { return "" }
@@ -96,7 +97,7 @@ func TestNewRuleDetail(t *testing.T) {
 			labels.EmptyLabels(),
 			labels.EmptyLabels(),
 			"",
-			true, log.NewNopLogger(),
+			true, promslog.NewNopLogger(),
 		)
 
 		detail := NewRuleDetail(rule)

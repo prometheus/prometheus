@@ -16,9 +16,10 @@ package openstack
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
+	"strconv"
 
-	"github.com/go-kit/log"
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/hypervisors"
@@ -42,14 +43,14 @@ type HypervisorDiscovery struct {
 	provider     *gophercloud.ProviderClient
 	authOpts     *gophercloud.AuthOptions
 	region       string
-	logger       log.Logger
+	logger       *slog.Logger
 	port         int
 	availability gophercloud.Availability
 }
 
 // newHypervisorDiscovery returns a new hypervisor discovery.
 func newHypervisorDiscovery(provider *gophercloud.ProviderClient, opts *gophercloud.AuthOptions,
-	port int, region string, availability gophercloud.Availability, l log.Logger,
+	port int, region string, availability gophercloud.Availability, l *slog.Logger,
 ) *HypervisorDiscovery {
 	return &HypervisorDiscovery{
 		provider: provider, authOpts: opts,
@@ -72,7 +73,7 @@ func (h *HypervisorDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group
 	}
 
 	tg := &targetgroup.Group{
-		Source: fmt.Sprintf("OS_" + h.region),
+		Source: "OS_" + h.region,
 	}
 	// OpenStack API reference
 	// https://developer.openstack.org/api-ref/compute/#list-hypervisors-details
@@ -84,7 +85,7 @@ func (h *HypervisorDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group
 		}
 		for _, hypervisor := range hypervisorList {
 			labels := model.LabelSet{}
-			addr := net.JoinHostPort(hypervisor.HostIP, fmt.Sprintf("%d", h.port))
+			addr := net.JoinHostPort(hypervisor.HostIP, strconv.Itoa(h.port))
 			labels[model.AddressLabel] = model.LabelValue(addr)
 			labels[openstackLabelHypervisorID] = model.LabelValue(hypervisor.ID)
 			labels[openstackLabelHypervisorHostName] = model.LabelValue(hypervisor.HypervisorHostname)

@@ -173,15 +173,13 @@ func TestFanoutErrors(t *testing.T) {
 			}
 
 			if tc.err != nil {
-				require.Error(t, ss.Err())
-				require.Equal(t, tc.err.Error(), ss.Err().Error())
+				require.EqualError(t, ss.Err(), tc.err.Error())
 			}
 
 			if tc.warning != nil {
-				require.NotEmpty(t, ss.Warnings(), "warnings expected")
 				w := ss.Warnings()
-				require.Error(t, w.AsErrors()[0])
-				require.Equal(t, tc.warning.Error(), w.AsStrings("", 0)[0])
+				require.NotEmpty(t, w, "warnings expected")
+				require.EqualError(t, w.AsErrors()[0], tc.warning.Error())
 			}
 		})
 		t.Run("chunks", func(t *testing.T) {
@@ -199,15 +197,13 @@ func TestFanoutErrors(t *testing.T) {
 			}
 
 			if tc.err != nil {
-				require.Error(t, ss.Err())
-				require.Equal(t, tc.err.Error(), ss.Err().Error())
+				require.EqualError(t, ss.Err(), tc.err.Error())
 			}
 
 			if tc.warning != nil {
-				require.NotEmpty(t, ss.Warnings(), "warnings expected")
 				w := ss.Warnings()
-				require.Error(t, w.AsErrors()[0])
-				require.Equal(t, tc.warning.Error(), w.AsStrings("", 0)[0])
+				require.NotEmpty(t, w, "warnings expected")
+				require.EqualError(t, w.AsErrors()[0], tc.warning.Error())
 			}
 		})
 	}
@@ -236,11 +232,11 @@ func (errQuerier) Select(context.Context, bool, *storage.SelectHints, ...*labels
 	return storage.ErrSeriesSet(errSelect)
 }
 
-func (errQuerier) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (errQuerier) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, errors.New("label values error")
 }
 
-func (errQuerier) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (errQuerier) LabelNames(context.Context, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, errors.New("label names error")
 }
 

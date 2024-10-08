@@ -14,7 +14,7 @@
 // The code in this file was largely written by Damian Gryski as part of
 // https://github.com/dgryski/go-tsz and published under the license below.
 // It was modified to accommodate reading from byte slices without modifying
-// the underlying bytes, which would panic when reading from mmap'd
+// the underlying bytes, which would panic when reading from mmapped
 // read-only byte slices.
 package chunkenc
 
@@ -373,6 +373,7 @@ func TestWriteReadHistogramChunkLayout(t *testing.T) {
 		schema                       int32
 		zeroThreshold                float64
 		positiveSpans, negativeSpans []histogram.Span
+		customValues                 []float64
 	}{
 		{
 			schema:        3,
@@ -422,23 +423,48 @@ func TestWriteReadHistogramChunkLayout(t *testing.T) {
 			positiveSpans: nil,
 			negativeSpans: nil,
 		},
+		{
+			schema:        histogram.CustomBucketsSchema,
+			positiveSpans: []histogram.Span{{Offset: -4, Length: 3}, {Offset: 2, Length: 42}},
+			negativeSpans: nil,
+			customValues:  []float64{-5, -2.5, 0, 0.1, 0.25, 0.5, 1, 2, 5, 10, 25, 50, 100, 255, 500, 1000, 50000, 1e7},
+		},
+		{
+			schema:        histogram.CustomBucketsSchema,
+			positiveSpans: []histogram.Span{{Offset: -4, Length: 3}, {Offset: 2, Length: 42}},
+			negativeSpans: nil,
+			customValues:  []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 25.0, 50.0, 100.0},
+		},
+		{
+			schema:        histogram.CustomBucketsSchema,
+			positiveSpans: []histogram.Span{{Offset: -4, Length: 3}, {Offset: 2, Length: 42}},
+			negativeSpans: nil,
+			customValues:  []float64{0.001, 0.002, 0.004, 0.008, 0.016, 0.032, 0.064, 0.128, 0.256, 0.512, 1.024, 2.048, 4.096, 8.192},
+		},
+		{
+			schema:        histogram.CustomBucketsSchema,
+			positiveSpans: []histogram.Span{{Offset: -4, Length: 3}, {Offset: 2, Length: 42}},
+			negativeSpans: nil,
+			customValues:  []float64{1.001, 1.023, 2.01, 4.007, 4.095, 8.001, 8.19, 16.24},
+		},
 	}
 
 	bs := bstream{}
 
 	for _, l := range layouts {
-		writeHistogramChunkLayout(&bs, l.schema, l.zeroThreshold, l.positiveSpans, l.negativeSpans)
+		writeHistogramChunkLayout(&bs, l.schema, l.zeroThreshold, l.positiveSpans, l.negativeSpans, l.customValues)
 	}
 
 	bsr := newBReader(bs.bytes())
 
 	for _, want := range layouts {
-		gotSchema, gotZeroThreshold, gotPositiveSpans, gotNegativeSpans, err := readHistogramChunkLayout(&bsr)
+		gotSchema, gotZeroThreshold, gotPositiveSpans, gotNegativeSpans, gotCustomBounds, err := readHistogramChunkLayout(&bsr)
 		require.NoError(t, err)
 		require.Equal(t, want.schema, gotSchema)
 		require.Equal(t, want.zeroThreshold, gotZeroThreshold)
 		require.Equal(t, want.positiveSpans, gotPositiveSpans)
 		require.Equal(t, want.negativeSpans, gotNegativeSpans)
+		require.Equal(t, want.customValues, gotCustomBounds)
 	}
 }
 

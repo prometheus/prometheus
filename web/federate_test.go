@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -34,6 +35,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/teststorage"
@@ -201,7 +203,7 @@ test_metric_without_labels{instance="baz"} 1001 6000000
 }
 
 func TestFederation(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			test_metric1{foo="bar",instance="i"}    0+100x100
 			test_metric1{foo="boo",instance="i"}    1+0x100
@@ -224,7 +226,7 @@ func TestFederation(t *testing.T) {
 	for name, scenario := range scenarios {
 		t.Run(name, func(t *testing.T) {
 			h.config.GlobalConfig.ExternalLabels = scenario.externalLabels
-			req := httptest.NewRequest("GET", "http://example.org/federate?"+scenario.params, nil)
+			req := httptest.NewRequest(http.MethodGet, "http://example.org/federate?"+scenario.params, nil)
 			res := httptest.NewRecorder()
 
 			h.federation(res, req)
@@ -265,7 +267,7 @@ func TestFederation_NotReady(t *testing.T) {
 				},
 			}
 
-			req := httptest.NewRequest("GET", "http://example.org/federate?"+scenario.params, nil)
+			req := httptest.NewRequest(http.MethodGet, "http://example.org/federate?"+scenario.params, nil)
 			res := httptest.NewRecorder()
 
 			h.federation(res, req)
@@ -340,8 +342,8 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 	}
 	app := db.Appender(context.Background())
 	for i := 0; i < 6; i++ {
-		l := labels.FromStrings("__name__", "test_metric", "foo", fmt.Sprintf("%d", i))
-		expL := labels.FromStrings("__name__", "test_metric", "instance", "", "foo", fmt.Sprintf("%d", i))
+		l := labels.FromStrings("__name__", "test_metric", "foo", strconv.Itoa(i))
+		expL := labels.FromStrings("__name__", "test_metric", "instance", "", "foo", strconv.Itoa(i))
 		var err error
 		switch i {
 		case 0, 3:
@@ -381,7 +383,7 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 		},
 	}
 
-	req := httptest.NewRequest("GET", "http://example.org/federate?match[]=test_metric", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://example.org/federate?match[]=test_metric", nil)
 	req.Header.Add("Accept", `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited,application/openmetrics-text;version=1.0.0;q=0.8,application/openmetrics-text;version=0.0.1;q=0.75,text/plain;version=0.0.4;q=0.5,*/*;q=0.1`)
 	res := httptest.NewRecorder()
 

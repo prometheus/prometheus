@@ -16,13 +16,12 @@ package rules
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
 	"go.uber.org/atomic"
 	"gopkg.in/yaml.v2"
@@ -141,7 +140,7 @@ type AlertingRule struct {
 	// the fingerprint of the labelset they correspond to.
 	active map[uint64]*Alert
 
-	logger log.Logger
+	logger *slog.Logger
 
 	noDependentRules  *atomic.Bool
 	noDependencyRules *atomic.Bool
@@ -151,7 +150,7 @@ type AlertingRule struct {
 func NewAlertingRule(
 	name string, vec parser.Expr, hold, keepFiringFor time.Duration,
 	labels, annotations, externalLabels labels.Labels, externalURL string,
-	restored bool, logger log.Logger,
+	restored bool, logger *slog.Logger,
 ) *AlertingRule {
 	el := externalLabels.Map()
 
@@ -246,13 +245,16 @@ func (r *AlertingRule) sample(alert *Alert, ts time.Time) promql.Sample {
 	return s
 }
 
-// forStateSample returns the sample for ALERTS_FOR_STATE.
+// forStateSample returns a promql.Sample with the rule labels, `ALERTS_FOR_STATE` as the metric name and the rule name as the `alertname` label.
+// Optionally, if an alert is provided it'll copy the labels of the alert into the sample labels.
 func (r *AlertingRule) forStateSample(alert *Alert, ts time.Time, v float64) promql.Sample {
 	lb := labels.NewBuilder(r.labels)
 
-	alert.Labels.Range(func(l labels.Label) {
-		lb.Set(l.Name, l.Value)
-	})
+	if alert != nil {
+		alert.Labels.Range(func(l labels.Label) {
+			lb.Set(l.Name, l.Value)
+		})
+	}
 
 	lb.Set(labels.MetricName, alertForStateMetricName)
 	lb.Set(labels.AlertName, r.name)
@@ -265,9 +267,11 @@ func (r *AlertingRule) forStateSample(alert *Alert, ts time.Time, v float64) pro
 	return s
 }
 
-// QueryforStateSeries returns the series for ALERTS_FOR_STATE.
-func (r *AlertingRule) QueryforStateSeries(ctx context.Context, alert *Alert, q storage.Querier) (storage.Series, error) {
-	smpl := r.forStateSample(alert, time.Now(), 0)
+// QueryForStateSeries returns the series for ALERTS_FOR_STATE of the alert rule.
+func (r *AlertingRule) QueryForStateSeries(ctx context.Context, q storage.Querier) (storage.SeriesSet, error) {
+	// We use a sample to ease the building of matchers.
+	// Don't provide an alert as we want matchers that match all series for the alert rule.
+	smpl := r.forStateSample(nil, time.Now(), 0)
 	var matchers []*labels.Matcher
 	smpl.Metric.Range(func(l labels.Label) {
 		mt, err := labels.NewMatcher(labels.MatchEqual, l.Name, l.Value)
@@ -276,20 +280,9 @@ func (r *AlertingRule) QueryforStateSeries(ctx context.Context, alert *Alert, q 
 		}
 		matchers = append(matchers, mt)
 	})
+
 	sset := q.Select(ctx, false, nil, matchers...)
-
-	var s storage.Series
-	for sset.Next() {
-		// Query assures that smpl.Metric is included in sset.At().Labels(),
-		// hence just checking the length would act like equality.
-		// (This is faster than calling labels.Compare again as we already have some info).
-		if sset.At().Labels().Len() == len(matchers) {
-			s = sset.At()
-			break
-		}
-	}
-
-	return s, sset.Err()
+	return sset, sset.Err()
 }
 
 // SetEvaluationDuration updates evaluationDuration to the duration it took to evaluate the rule on its last evaluation.
@@ -344,10 +337,9 @@ const resolvedRetention = 15 * time.Minute
 
 // Eval evaluates the rule expression and then creates pending alerts and fires
 // or removes previously pending alerts accordingly.
-func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, externalURL *url.URL, limit int) (promql.Vector, error) {
+func (r *AlertingRule) Eval(ctx context.Context, queryOffset time.Duration, ts time.Time, query QueryFunc, externalURL *url.URL, limit int) (promql.Vector, error) {
 	ctx = NewOriginContext(ctx, NewRuleDetail(r))
-
-	res, err := query(ctx, r.vector.String(), ts)
+	res, err := query(ctx, r.vector.String(), ts.Add(-queryOffset))
 	if err != nil {
 		return nil, err
 	}
@@ -364,7 +356,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		// Provide the alert information to the template.
 		l := smpl.Metric.Map()
 
-		tmplData := template.AlertTemplateData(l, r.externalLabels, r.externalURL, smpl.F)
+		tmplData := template.AlertTemplateData(l, r.externalLabels, r.externalURL, smpl)
 		// Inject some convenience variables that are easier to remember for users
 		// who are not used to Go's templating system.
 		defs := []string{
@@ -388,7 +380,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 			result, err := tmpl.Expand()
 			if err != nil {
 				result = fmt.Sprintf("<error expanding template: %s>", err)
-				level.Warn(r.logger).Log("msg", "Expanding alert template failed", "err", err, "data", tmplData)
+				r.logger.Warn("Expanding alert template failed", "err", err, "data", tmplData)
 			}
 			return result
 		}
@@ -457,8 +449,17 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 				}
 			}
 
-			// If the alert was previously firing, keep it around for a given
-			// retention time so it is reported as resolved to the AlertManager.
+			// If the alert is resolved (was firing but is now inactive) keep it for
+			// at least the retention period. This is important for a number of reasons:
+			//
+			// 1. It allows for Prometheus to be more resilient to network issues that
+			//    would otherwise prevent a resolved alert from being reported as resolved
+			//    to Alertmanager.
+			//
+			// 2. It helps reduce the chance of resolved notifications being lost if
+			//    Alertmanager crashes or restarts between receiving the resolved alert
+			//    from Prometheus and sending the resolved notification. This tends to
+			//    occur for routes with large Group intervals.
 			if a.State == StatePending || (!a.ResolvedAt.IsZero() && ts.Sub(a.ResolvedAt) > resolvedRetention) {
 				delete(r.active, fp)
 			}
@@ -481,8 +482,8 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		}
 
 		if r.restored.Load() {
-			vec = append(vec, r.sample(a, ts))
-			vec = append(vec, r.forStateSample(a, ts, float64(a.ActiveAt.Unix())))
+			vec = append(vec, r.sample(a, ts.Add(-queryOffset)))
+			vec = append(vec, r.forStateSample(a, ts.Add(-queryOffset), float64(a.ActiveAt.Unix())))
 		}
 	}
 
@@ -546,6 +547,13 @@ func (r *AlertingRule) ForEachActiveAlert(f func(*Alert)) {
 	for _, a := range r.active {
 		f(a)
 	}
+}
+
+func (r *AlertingRule) ActiveAlertsCount() int {
+	r.activeMtx.Lock()
+	defer r.activeMtx.Unlock()
+
+	return len(r.active)
 }
 
 func (r *AlertingRule) sendAlerts(ctx context.Context, ts time.Time, resendDelay, interval time.Duration, notifyFunc NotifyFunc) {

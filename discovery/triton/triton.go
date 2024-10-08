@@ -19,12 +19,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/mwitkow/go-conntrack"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
@@ -146,7 +146,7 @@ type Discovery struct {
 }
 
 // New returns a new Discovery which periodically refreshes its targets.
-func New(logger log.Logger, conf *SDConfig, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+func New(logger *slog.Logger, conf *SDConfig, metrics discovery.DiscovererMetrics) (*Discovery, error) {
 	m, ok := metrics.(*tritonMetrics)
 	if !ok {
 		return nil, fmt.Errorf("invalid discovery metrics type")
@@ -211,7 +211,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		endpoint = fmt.Sprintf("%s?groups=%s", endpoint, groups)
 	}
 
-	req, err := http.NewRequest("GET", endpoint, nil)
+	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
 	}

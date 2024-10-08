@@ -19,8 +19,6 @@ import (
 	"fmt"
 	"math"
 	"slices"
-	"strings"
-	"unicode/utf8"
 
 	"github.com/oklog/ulid"
 
@@ -35,19 +33,8 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
-// Bitmap used by func isRegexMetaCharacter to check whether a character needs to be escaped.
-var regexMetaCharacterBytes [16]byte
-
-// isRegexMetaCharacter reports whether byte b needs to be escaped.
-func isRegexMetaCharacter(b byte) bool {
-	return b < utf8.RuneSelf && regexMetaCharacterBytes[b%16]&(1<<(b/16)) != 0
-}
-
-func init() {
-	for _, b := range []byte(`.+*?()|[]{}^$`) {
-		regexMetaCharacterBytes[b%16] |= 1 << (b / 16)
-	}
-}
+// checkContextEveryNIterations is used in some tight loops to check if the context is done.
+const checkContextEveryNIterations = 100
 
 type blockBaseQuerier struct {
 	blockID    ulid.ULID
@@ -90,12 +77,12 @@ func newBlockBaseQuerier(b BlockReader, mint, maxt int64) (*blockBaseQuerier, er
 	}, nil
 }
 
-func (q *blockBaseQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *blockBaseQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	res, err := q.index.SortedLabelValues(ctx, name, matchers...)
 	return res, nil, err
 }
 
-func (q *blockBaseQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *blockBaseQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	res, err := q.index.LabelNames(ctx, matchers...)
 	return res, nil, err
 }
@@ -128,20 +115,24 @@ func NewBlockQuerier(b BlockReader, mint, maxt int64) (storage.Querier, error) {
 }
 
 func (q *blockQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.SeriesSet {
-	mint := q.mint
-	maxt := q.maxt
+	return selectSeriesSet(ctx, sortSeries, hints, ms, q.index, q.chunks, q.tombstones, q.mint, q.maxt)
+}
+
+func selectSeriesSet(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms []*labels.Matcher,
+	index IndexReader, chunks ChunkReader, tombstones tombstones.Reader, mint, maxt int64,
+) storage.SeriesSet {
 	disableTrimming := false
 	sharded := hints != nil && hints.ShardCount > 0
 
-	p, err := PostingsForMatchers(ctx, q.index, ms...)
+	p, err := PostingsForMatchers(ctx, index, ms...)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
 	if sharded {
-		p = q.index.ShardedPostings(p, hints.ShardIndex, hints.ShardCount)
+		p = index.ShardedPostings(p, hints.ShardIndex, hints.ShardCount)
 	}
 	if sortSeries {
-		p = q.index.SortedPostings(p)
+		p = index.SortedPostings(p)
 	}
 
 	if hints != nil {
@@ -150,11 +141,11 @@ func (q *blockQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 		disableTrimming = hints.DisableTrimming
 		if hints.Func == "series" {
 			// When you're only looking up metadata (for example series API), you don't need to load any chunks.
-			return newBlockSeriesSet(q.index, newNopChunkReader(), q.tombstones, p, mint, maxt, disableTrimming)
+			return newBlockSeriesSet(index, newNopChunkReader(), tombstones, p, mint, maxt, disableTrimming)
 		}
 	}
 
-	return newBlockSeriesSet(q.index, q.chunks, q.tombstones, p, mint, maxt, disableTrimming)
+	return newBlockSeriesSet(index, chunks, tombstones, p, mint, maxt, disableTrimming)
 }
 
 // blockChunkQuerier provides chunk querying access to a single block database.
@@ -172,8 +163,12 @@ func NewBlockChunkQuerier(b BlockReader, mint, maxt int64) (storage.ChunkQuerier
 }
 
 func (q *blockChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.ChunkSeriesSet {
-	mint := q.mint
-	maxt := q.maxt
+	return selectChunkSeriesSet(ctx, sortSeries, hints, ms, q.blockID, q.index, q.chunks, q.tombstones, q.mint, q.maxt)
+}
+
+func selectChunkSeriesSet(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms []*labels.Matcher,
+	blockID ulid.ULID, index IndexReader, chunks ChunkReader, tombstones tombstones.Reader, mint, maxt int64,
+) storage.ChunkSeriesSet {
 	disableTrimming := false
 	sharded := hints != nil && hints.ShardCount > 0
 
@@ -182,66 +177,17 @@ func (q *blockChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *
 		maxt = hints.End
 		disableTrimming = hints.DisableTrimming
 	}
-	p, err := PostingsForMatchers(ctx, q.index, ms...)
+	p, err := PostingsForMatchers(ctx, index, ms...)
 	if err != nil {
 		return storage.ErrChunkSeriesSet(err)
 	}
 	if sharded {
-		p = q.index.ShardedPostings(p, hints.ShardIndex, hints.ShardCount)
+		p = index.ShardedPostings(p, hints.ShardIndex, hints.ShardCount)
 	}
 	if sortSeries {
-		p = q.index.SortedPostings(p)
+		p = index.SortedPostings(p)
 	}
-	return NewBlockChunkSeriesSet(q.blockID, q.index, q.chunks, q.tombstones, p, mint, maxt, disableTrimming)
-}
-
-func findSetMatches(pattern string) []string {
-	// Return empty matches if the wrapper from Prometheus is missing.
-	if len(pattern) < 6 || pattern[:4] != "^(?:" || pattern[len(pattern)-2:] != ")$" {
-		return nil
-	}
-	escaped := false
-	sets := []*strings.Builder{{}}
-	init := 4
-	end := len(pattern) - 2
-	// If the regex is wrapped in a group we can remove the first and last parentheses
-	if pattern[init] == '(' && pattern[end-1] == ')' {
-		init++
-		end--
-	}
-	for i := init; i < end; i++ {
-		if escaped {
-			switch {
-			case isRegexMetaCharacter(pattern[i]):
-				sets[len(sets)-1].WriteByte(pattern[i])
-			case pattern[i] == '\\':
-				sets[len(sets)-1].WriteByte('\\')
-			default:
-				return nil
-			}
-			escaped = false
-		} else {
-			switch {
-			case isRegexMetaCharacter(pattern[i]):
-				if pattern[i] == '|' {
-					sets = append(sets, &strings.Builder{})
-				} else {
-					return nil
-				}
-			case pattern[i] == '\\':
-				escaped = true
-			default:
-				sets[len(sets)-1].WriteByte(pattern[i])
-			}
-		}
-	}
-	matches := make([]string, 0, len(sets))
-	for _, s := range sets {
-		if s.Len() > 0 {
-			matches = append(matches, s.String())
-		}
-	}
-	return matches
+	return NewBlockChunkSeriesSet(blockID, index, chunks, tombstones, p, mint, maxt, disableTrimming)
 }
 
 // PostingsForMatchers assembles a single postings iterator against the index reader
@@ -308,6 +254,10 @@ func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matc
 				return nil, err
 			}
 			its = append(its, allPostings)
+		case m.Type == labels.MatchRegexp && m.Value == ".*":
+			// .* regexp matches any string: do nothing.
+		case m.Type == labels.MatchNotRegexp && m.Value == ".*":
+			return index.EmptyPostings(), nil
 		case labelMustBeSet[m.Name]:
 			// If this matcher must be non-empty, we can be smarter.
 			matchesEmpty := m.Matches("")
@@ -385,29 +335,14 @@ func postingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Matcher) 
 
 	// Fast-path for set matching.
 	if m.Type == labels.MatchRegexp {
-		setMatches := findSetMatches(m.GetRegexString())
+		setMatches := m.SetMatches()
 		if len(setMatches) > 0 {
 			return ix.Postings(ctx, m.Name, setMatches...)
 		}
 	}
 
-	vals, err := ix.LabelValues(ctx, m.Name)
-	if err != nil {
-		return nil, err
-	}
-
-	var res []string
-	for _, val := range vals {
-		if m.Matches(val) {
-			res = append(res, val)
-		}
-	}
-
-	if len(res) == 0 {
-		return index.EmptyPostings(), nil
-	}
-
-	return ix.Postings(ctx, m.Name, res...)
+	it := ix.PostingsForLabelMatching(ctx, m.Name, m.Matches)
+	return it, it.Err()
 }
 
 // inversePostingsForMatcher returns the postings for the series with the label name set but not matching the matcher.
@@ -416,7 +351,7 @@ func inversePostingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Ma
 	// Inverse of a MatchNotRegexp is MatchRegexp (double negation).
 	// Fast-path for set matching.
 	if m.Type == labels.MatchNotRegexp {
-		setMatches := findSetMatches(m.GetRegexString())
+		setMatches := m.SetMatches()
 		if len(setMatches) > 0 {
 			return ix.Postings(ctx, m.Name, setMatches...)
 		}
@@ -433,12 +368,17 @@ func inversePostingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Ma
 		return nil, err
 	}
 
-	var res []string
-	// If the inverse match is ="", we just want all the values.
-	if m.Type == labels.MatchEqual && m.Value == "" {
+	res := vals[:0]
+	// If the match before inversion was !="" or !~"", we just want all the values.
+	if m.Value == "" && (m.Type == labels.MatchRegexp || m.Type == labels.MatchEqual) {
 		res = vals
 	} else {
+		count := 1
 		for _, val := range vals {
+			if count%checkContextEveryNIterations == 0 && ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			count++
 			if !m.Matches(val) {
 				res = append(res, val)
 			}
@@ -467,7 +407,12 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, ma
 		// re-use the allValues slice to avoid allocations
 		// this is safe because the iteration is always ahead of the append
 		filteredValues := allValues[:0]
+		count := 1
 		for _, v := range allValues {
+			if count%checkContextEveryNIterations == 0 && ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			count++
 			if m.Matches(v) {
 				filteredValues = append(filteredValues, v)
 			}
@@ -514,16 +459,7 @@ func labelNamesWithMatchers(ctx context.Context, r IndexReader, matchers ...*lab
 	if err != nil {
 		return nil, err
 	}
-
-	var postings []storage.SeriesRef
-	for p.Next() {
-		postings = append(postings, p.At())
-	}
-	if err := p.Err(); err != nil {
-		return nil, fmt.Errorf("postings for label names with matchers: %w", err)
-	}
-
-	return r.LabelNamesFor(ctx, postings...)
+	return r.LabelNamesFor(ctx, p)
 }
 
 // seriesData, used inside other iterators, are updated when we move from one series to another.
@@ -709,14 +645,16 @@ func (p *populateWithDelGenericSeriesIterator) next(copyHeadChunk bool) bool {
 		}
 	}
 
-	hcr, ok := p.cr.(*headChunkReader)
+	hcr, ok := p.cr.(ChunkReaderWithCopy)
 	var iterable chunkenc.Iterable
 	if ok && copyHeadChunk && len(p.bufIter.Intervals) == 0 {
-		// ChunkWithCopy will copy the head chunk.
+		// ChunkOrIterableWithCopy will copy the head chunk, if it can.
 		var maxt int64
-		p.currMeta.Chunk, maxt, p.err = hcr.ChunkWithCopy(p.currMeta)
-		// For the in-memory head chunk the index reader sets maxt as MaxInt64. We fix it here.
-		p.currMeta.MaxTime = maxt
+		p.currMeta.Chunk, iterable, maxt, p.err = hcr.ChunkOrIterableWithCopy(p.currMeta)
+		if p.currMeta.Chunk != nil {
+			// For the in-memory head chunk the index reader sets maxt as MaxInt64. We fix it here.
+			p.currMeta.MaxTime = maxt
+		}
 	} else {
 		p.currMeta.Chunk, iterable, p.err = p.cr.ChunkOrIterable(p.currMeta)
 	}
@@ -909,7 +847,6 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 				return true
 			}
 		}
-
 	}
 	return false
 }
@@ -1039,7 +976,7 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 		// Check if the encoding has changed (i.e. we need to create a new
 		// chunk as chunks can't have multiple encoding types).
 		// For the first sample, the following condition will always be true as
-		// ValNoneNone != ValFloat | ValHistogram | ValFloatHistogram.
+		// ValNone != ValFloat | ValHistogram | ValFloatHistogram.
 		if currentValueType != prevValueType {
 			if prevValueType != chunkenc.ValNone {
 				p.chunksFromIterable = append(p.chunksFromIterable, chunks.Meta{Chunk: currentChunk, MinTime: cmint, MaxTime: cmaxt})

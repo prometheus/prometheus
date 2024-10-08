@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -111,7 +112,7 @@ var ruleEvalTestScenarios = []struct {
 }
 
 func setUpRuleEvalTest(t require.TestingT) *teststorage.TestStorage {
-	return promql.LoadedStorage(t, `
+	return promqltest.LoadedStorage(t, `
 		load 1m
 			metric{label_a="1",label_b="3"} 1
 			metric{label_a="2",label_b="4"} 10
@@ -122,10 +123,11 @@ func TestRuleEval(t *testing.T) {
 	storage := setUpRuleEvalTest(t)
 	t.Cleanup(func() { storage.Close() })
 
+	ng := testEngine(t)
 	for _, scenario := range ruleEvalTestScenarios {
 		t.Run(scenario.name, func(t *testing.T) {
 			rule := NewRecordingRule("test_rule", scenario.expr, scenario.ruleLabels)
-			result, err := rule.Eval(context.TODO(), ruleEvaluationTime, EngineQueryFunc(testEngine, storage), nil, 0)
+			result, err := rule.Eval(context.TODO(), 0, ruleEvaluationTime, EngineQueryFunc(ng, storage), nil, 0)
 			require.NoError(t, err)
 			testutil.RequireEqual(t, scenario.expected, result)
 		})
@@ -136,6 +138,7 @@ func BenchmarkRuleEval(b *testing.B) {
 	storage := setUpRuleEvalTest(b)
 	b.Cleanup(func() { storage.Close() })
 
+	ng := testEngine(b)
 	for _, scenario := range ruleEvalTestScenarios {
 		b.Run(scenario.name, func(b *testing.B) {
 			rule := NewRecordingRule("test_rule", scenario.expr, scenario.ruleLabels)
@@ -143,7 +146,7 @@ func BenchmarkRuleEval(b *testing.B) {
 			b.ResetTimer()
 
 			for i := 0; i < b.N; i++ {
-				_, err := rule.Eval(context.TODO(), ruleEvaluationTime, EngineQueryFunc(testEngine, storage), nil, 0)
+				_, err := rule.Eval(context.TODO(), 0, ruleEvaluationTime, EngineQueryFunc(ng, storage), nil, 0)
 				if err != nil {
 					require.NoError(b, err)
 				}
@@ -164,7 +167,7 @@ func TestRuleEvalDuplicate(t *testing.T) {
 		Timeout:    10 * time.Second,
 	}
 
-	engine := promql.NewEngine(opts)
+	engine := promqltest.NewTestEngineWithOpts(t, opts)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 
@@ -172,13 +175,13 @@ func TestRuleEvalDuplicate(t *testing.T) {
 
 	expr, _ := parser.ParseExpr(`vector(0) or label_replace(vector(0),"test","x","","")`)
 	rule := NewRecordingRule("foo", expr, labels.FromStrings("test", "test"))
-	_, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil, 0)
+	_, err := rule.Eval(ctx, 0, now, EngineQueryFunc(engine, storage), nil, 0)
 	require.Error(t, err)
 	require.EqualError(t, err, "vector contains metrics with the same labelset after applying rule labels")
 }
 
 func TestRecordingRuleLimit(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 1m
 			metric{label="1"} 1
 			metric{label="2"} 1
@@ -211,10 +214,11 @@ func TestRecordingRuleLimit(t *testing.T) {
 		labels.FromStrings("test", "test"),
 	)
 
+	ng := testEngine(t)
 	evalTime := time.Unix(0, 0)
 
 	for _, test := range tests {
-		switch _, err := rule.Eval(context.TODO(), evalTime, EngineQueryFunc(testEngine, storage), nil, test.limit); {
+		switch _, err := rule.Eval(context.TODO(), 0, evalTime, EngineQueryFunc(ng, storage), nil, test.limit); {
 		case err != nil:
 			require.EqualError(t, err, test.err)
 		case test.err != "":
@@ -242,7 +246,7 @@ func TestRecordingEvalWithOrigin(t *testing.T) {
 	require.NoError(t, err)
 
 	rule := NewRecordingRule(name, expr, lbs)
-	_, err = rule.Eval(ctx, now, func(ctx context.Context, qs string, _ time.Time) (promql.Vector, error) {
+	_, err = rule.Eval(ctx, 0, now, func(ctx context.Context, qs string, _ time.Time) (promql.Vector, error) {
 		detail = FromOriginContext(ctx)
 		return nil, nil
 	}, nil, 0)

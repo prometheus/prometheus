@@ -31,13 +31,15 @@ import (
 	"github.com/google/uuid"
 )
 
+// Clouds.
 const (
-	// Clouds.
 	AzureChina      = "AzureChina"
 	AzureGovernment = "AzureGovernment"
 	AzurePublic     = "AzurePublic"
+)
 
-	// Audiences.
+// Audiences.
+const (
 	IngestionChinaAudience      = "https://monitor.azure.cn//.default"
 	IngestionGovernmentAudience = "https://monitor.azure.us//.default"
 	IngestionPublicAudience     = "https://monitor.azure.com//.default"
@@ -75,7 +77,7 @@ type AzureADConfig struct { //nolint:revive // exported.
 	// OAuth is the oauth config that is being used to authenticate.
 	OAuth *OAuthConfig `yaml:"oauth,omitempty"`
 
-	// OAuth is the oauth config that is being used to authenticate.
+	// SDK is the SDK config that is being used to authenticate.
 	SDK *SDKConfig `yaml:"sdk,omitempty"`
 
 	// Cloud is the Azure cloud in which the service is running. Example: AzurePublic/AzureGovernment/AzureChina.

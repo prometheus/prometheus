@@ -1,15 +1,25 @@
-// DO NOT EDIT. COPIED AS-IS. SEE ../README.md
+// Copyright 2024 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// Provenance-includes-location: https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/95e8f8fdc2a9dc87230406c9a3cf02be4fd68bea/pkg/translator/prometheus/normalize_name.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: Copyright The OpenTelemetry Authors.
 
-// Copyright The OpenTelemetry Authors
-// SPDX-License-Identifier: Apache-2.0
-
-package prometheus // import "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
+package prometheus
 
 import (
 	"strings"
 	"unicode"
 
-	"go.opentelemetry.io/collector/featuregate"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 )
 
@@ -19,7 +29,6 @@ import (
 // Prometheus best practices for units: https://prometheus.io/docs/practices/naming/#base-units
 // OpenMetrics specification for units: https://github.com/OpenObservability/OpenMetrics/blob/main/specification/OpenMetrics.md#units-and-base-units
 var unitMap = map[string]string{
-
 	// Time
 	"d":   "days",
 	"h":   "hours",
@@ -67,26 +76,20 @@ var perUnitMap = map[string]string{
 	"y":  "year",
 }
 
-var normalizeNameGate = featuregate.GlobalRegistry().MustRegister(
-	"pkg.translator.prometheus.NormalizeName",
-	featuregate.StageBeta,
-	featuregate.WithRegisterDescription("Controls whether metrics names are automatically normalized to follow Prometheus naming convention"),
-	featuregate.WithRegisterReferenceURL("https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/8950"),
-)
-
-// BuildCompliantName builds a Prometheus-compliant metric name for the specified metric
+// BuildCompliantName builds a Prometheus-compliant metric name for the specified metric.
 //
 // Metric name is prefixed with specified namespace and underscore (if any).
 // Namespace is not cleaned up. Make sure specified namespace follows Prometheus
 // naming convention.
 //
-// See rules at https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels
-// and https://prometheus.io/docs/practices/naming/#metric-and-label-naming
+// See rules at https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels,
+// https://prometheus.io/docs/practices/naming/#metric-and-label-naming
+// and https://github.com/open-telemetry/opentelemetry-specification/blob/v1.33.0/specification/compatibility/prometheus_and_openmetrics.md#otlp-metric-points-to-prometheus.
 func BuildCompliantName(metric pmetric.Metric, namespace string, addMetricSuffixes bool) string {
 	var metricName string
 
 	// Full normalization following standard Prometheus naming conventions
-	if addMetricSuffixes && normalizeNameGate.IsEnabled() {
+	if addMetricSuffixes {
 		return normalizeName(metric, namespace)
 	}
 
@@ -108,8 +111,7 @@ func BuildCompliantName(metric pmetric.Metric, namespace string, addMetricSuffix
 
 // Build a normalized name for the specified metric
 func normalizeName(metric pmetric.Metric, namespace string) string {
-
-	// Split metric name in "tokens" (remove all non-alphanumeric)
+	// Split metric name into "tokens" (remove all non-alphanumerics)
 	nameTokens := strings.FieldsFunc(
 		metric.Name(),
 		func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) },
@@ -121,9 +123,9 @@ func normalizeName(metric pmetric.Metric, namespace string) string {
 	// Main unit
 	// Append if not blank, doesn't contain '{}', and is not present in metric name already
 	if len(unitTokens) > 0 {
-		mainUnitOtel := strings.TrimSpace(unitTokens[0])
-		if mainUnitOtel != "" && !strings.ContainsAny(mainUnitOtel, "{}") {
-			mainUnitProm := CleanUpString(unitMapGetOrDefault(mainUnitOtel))
+		mainUnitOTel := strings.TrimSpace(unitTokens[0])
+		if mainUnitOTel != "" && !strings.ContainsAny(mainUnitOTel, "{}") {
+			mainUnitProm := CleanUpString(unitMapGetOrDefault(mainUnitOTel))
 			if mainUnitProm != "" && !contains(nameTokens, mainUnitProm) {
 				nameTokens = append(nameTokens, mainUnitProm)
 			}
@@ -132,11 +134,11 @@ func normalizeName(metric pmetric.Metric, namespace string) string {
 		// Per unit
 		// Append if not blank, doesn't contain '{}', and is not present in metric name already
 		if len(unitTokens) > 1 && unitTokens[1] != "" {
-			perUnitOtel := strings.TrimSpace(unitTokens[1])
-			if perUnitOtel != "" && !strings.ContainsAny(perUnitOtel, "{}") {
-				perUnitProm := CleanUpString(perUnitMapGetOrDefault(perUnitOtel))
+			perUnitOTel := strings.TrimSpace(unitTokens[1])
+			if perUnitOTel != "" && !strings.ContainsAny(perUnitOTel, "{}") {
+				perUnitProm := CleanUpString(perUnitMapGetOrDefault(perUnitOTel))
 				if perUnitProm != "" && !contains(nameTokens, perUnitProm) {
-					nameTokens = append(append(nameTokens, "per"), perUnitProm)
+					nameTokens = append(nameTokens, "per", perUnitProm)
 				}
 			}
 		}
@@ -149,7 +151,7 @@ func normalizeName(metric pmetric.Metric, namespace string) string {
 	}
 
 	// Append _ratio for metrics with unit "1"
-	// Some Otel receivers improperly use unit "1" for counters of objects
+	// Some OTel receivers improperly use unit "1" for counters of objects
 	// See https://github.com/open-telemetry/opentelemetry-collector-contrib/issues?q=is%3Aissue+some+metric+units+don%27t+follow+otel+semantic+conventions
 	// Until these issues have been fixed, we're appending `_ratio` for gauges ONLY
 	// Theoretically, counters could be ratios as well, but it's absurd (for mathematical reasons)

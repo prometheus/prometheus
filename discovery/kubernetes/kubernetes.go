@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"reflect"
 	"strings"
@@ -25,23 +26,18 @@ import (
 
 	"github.com/prometheus/prometheus/util/strutil"
 
-	disv1beta1 "k8s.io/api/discovery/v1beta1"
-
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/version"
 	apiv1 "k8s.io/api/core/v1"
 	disv1 "k8s.io/api/discovery/v1"
 	networkv1 "k8s.io/api/networking/v1"
-	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	utilversion "k8s.io/apimachinery/pkg/util/version"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -264,7 +260,7 @@ type Discovery struct {
 	sync.RWMutex
 	client             kubernetes.Interface
 	role               Role
-	logger             log.Logger
+	logger             *slog.Logger
 	namespaceDiscovery *NamespaceDiscovery
 	discoverers        []discovery.Discoverer
 	selectors          roleSelector
@@ -289,14 +285,14 @@ func (d *Discovery) getNamespaces() []string {
 }
 
 // New creates a new Kubernetes discovery for the given role.
-func New(l log.Logger, metrics discovery.DiscovererMetrics, conf *SDConfig) (*Discovery, error) {
+func New(l *slog.Logger, metrics discovery.DiscovererMetrics, conf *SDConfig) (*Discovery, error) {
 	m, ok := metrics.(*kubernetesMetrics)
 	if !ok {
 		return nil, fmt.Errorf("invalid discovery metrics type")
 	}
 
 	if l == nil {
-		l = log.NewNopLogger()
+		l = promslog.NewNopLogger()
 	}
 	var (
 		kcfg         *rest.Config
@@ -311,7 +307,7 @@ func New(l log.Logger, metrics discovery.DiscovererMetrics, conf *SDConfig) (*Di
 		}
 	case conf.APIServer.URL == nil:
 		// Use the Kubernetes provided pod service account
-		// as described in https://kubernetes.io/docs/admin/service-accounts-admin/
+		// as described in https://kubernetes.io/docs/tasks/run-application/access-api-from-pod/#using-official-client-libraries
 		kcfg, err = rest.InClusterConfig()
 		if err != nil {
 			return nil, err
@@ -328,7 +324,7 @@ func New(l log.Logger, metrics discovery.DiscovererMetrics, conf *SDConfig) (*Di
 			ownNamespace = string(ownNamespaceContents)
 		}
 
-		level.Info(l).Log("msg", "Using pod service account via in-cluster config")
+		l.Info("Using pod service account via in-cluster config")
 	default:
 		rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "kubernetes_sd")
 		if err != nil {
@@ -401,55 +397,22 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 
 	switch d.role {
 	case RoleEndpointSlice:
-		// Check "networking.k8s.io/v1" availability with retries.
-		// If "v1" is not available, use "networking.k8s.io/v1beta1" for backward compatibility
-		var v1Supported bool
-		if retryOnError(ctx, 10*time.Second,
-			func() (err error) {
-				v1Supported, err = checkDiscoveryV1Supported(d.client)
-				if err != nil {
-					level.Error(d.logger).Log("msg", "Failed to check networking.k8s.io/v1 availability", "err", err)
-				}
-				return err
-			},
-		) {
-			d.Unlock()
-			return
-		}
-
 		for _, namespace := range namespaces {
 			var informer cache.SharedIndexInformer
-			if v1Supported {
-				e := d.client.DiscoveryV1().EndpointSlices(namespace)
-				elw := &cache.ListWatch{
-					ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-						options.FieldSelector = d.selectors.endpointslice.field
-						options.LabelSelector = d.selectors.endpointslice.label
-						return e.List(ctx, options)
-					},
-					WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-						options.FieldSelector = d.selectors.endpointslice.field
-						options.LabelSelector = d.selectors.endpointslice.label
-						return e.Watch(ctx, options)
-					},
-				}
-				informer = d.newEndpointSlicesByNodeInformer(elw, &disv1.EndpointSlice{})
-			} else {
-				e := d.client.DiscoveryV1beta1().EndpointSlices(namespace)
-				elw := &cache.ListWatch{
-					ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-						options.FieldSelector = d.selectors.endpointslice.field
-						options.LabelSelector = d.selectors.endpointslice.label
-						return e.List(ctx, options)
-					},
-					WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-						options.FieldSelector = d.selectors.endpointslice.field
-						options.LabelSelector = d.selectors.endpointslice.label
-						return e.Watch(ctx, options)
-					},
-				}
-				informer = d.newEndpointSlicesByNodeInformer(elw, &disv1beta1.EndpointSlice{})
+			e := d.client.DiscoveryV1().EndpointSlices(namespace)
+			elw := &cache.ListWatch{
+				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+					options.FieldSelector = d.selectors.endpointslice.field
+					options.LabelSelector = d.selectors.endpointslice.label
+					return e.List(ctx, options)
+				},
+				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+					options.FieldSelector = d.selectors.endpointslice.field
+					options.LabelSelector = d.selectors.endpointslice.label
+					return e.Watch(ctx, options)
+				},
 			}
+			informer = d.newEndpointSlicesByNodeInformer(elw, &disv1.EndpointSlice{})
 
 			s := d.client.CoreV1().Services(namespace)
 			slw := &cache.ListWatch{
@@ -483,10 +446,10 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				go nodeInf.Run(ctx.Done())
 			}
 			eps := NewEndpointSlice(
-				log.With(d.logger, "role", "endpointslice"),
+				d.logger.With("role", "endpointslice"),
 				informer,
-				cache.NewSharedInformer(slw, &apiv1.Service{}, resyncDisabled),
-				cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncDisabled),
+				d.mustNewSharedInformer(slw, &apiv1.Service{}, resyncDisabled),
+				d.mustNewSharedInformer(plw, &apiv1.Pod{}, resyncDisabled),
 				nodeInf,
 				d.metrics.eventCount,
 			)
@@ -543,10 +506,10 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			}
 
 			eps := NewEndpoints(
-				log.With(d.logger, "role", "endpoint"),
+				d.logger.With("role", "endpoint"),
 				d.newEndpointsByNodeInformer(elw),
-				cache.NewSharedInformer(slw, &apiv1.Service{}, resyncDisabled),
-				cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncDisabled),
+				d.mustNewSharedInformer(slw, &apiv1.Service{}, resyncDisabled),
+				d.mustNewSharedInformer(plw, &apiv1.Pod{}, resyncDisabled),
 				nodeInf,
 				d.metrics.eventCount,
 			)
@@ -577,7 +540,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				},
 			}
 			pod := NewPod(
-				log.With(d.logger, "role", "pod"),
+				d.logger.With("role", "pod"),
 				d.newPodsByNodeInformer(plw),
 				nodeInformer,
 				d.metrics.eventCount,
@@ -601,65 +564,32 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				},
 			}
 			svc := NewService(
-				log.With(d.logger, "role", "service"),
-				cache.NewSharedInformer(slw, &apiv1.Service{}, resyncDisabled),
+				d.logger.With("role", "service"),
+				d.mustNewSharedInformer(slw, &apiv1.Service{}, resyncDisabled),
 				d.metrics.eventCount,
 			)
 			d.discoverers = append(d.discoverers, svc)
 			go svc.informer.Run(ctx.Done())
 		}
 	case RoleIngress:
-		// Check "networking.k8s.io/v1" availability with retries.
-		// If "v1" is not available, use "networking.k8s.io/v1beta1" for backward compatibility
-		var v1Supported bool
-		if retryOnError(ctx, 10*time.Second,
-			func() (err error) {
-				v1Supported, err = checkNetworkingV1Supported(d.client)
-				if err != nil {
-					level.Error(d.logger).Log("msg", "Failed to check networking.k8s.io/v1 availability", "err", err)
-				}
-				return err
-			},
-		) {
-			d.Unlock()
-			return
-		}
-
 		for _, namespace := range namespaces {
 			var informer cache.SharedInformer
-			if v1Supported {
-				i := d.client.NetworkingV1().Ingresses(namespace)
-				ilw := &cache.ListWatch{
-					ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-						options.FieldSelector = d.selectors.ingress.field
-						options.LabelSelector = d.selectors.ingress.label
-						return i.List(ctx, options)
-					},
-					WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-						options.FieldSelector = d.selectors.ingress.field
-						options.LabelSelector = d.selectors.ingress.label
-						return i.Watch(ctx, options)
-					},
-				}
-				informer = cache.NewSharedInformer(ilw, &networkv1.Ingress{}, resyncDisabled)
-			} else {
-				i := d.client.NetworkingV1beta1().Ingresses(namespace)
-				ilw := &cache.ListWatch{
-					ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-						options.FieldSelector = d.selectors.ingress.field
-						options.LabelSelector = d.selectors.ingress.label
-						return i.List(ctx, options)
-					},
-					WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-						options.FieldSelector = d.selectors.ingress.field
-						options.LabelSelector = d.selectors.ingress.label
-						return i.Watch(ctx, options)
-					},
-				}
-				informer = cache.NewSharedInformer(ilw, &v1beta1.Ingress{}, resyncDisabled)
+			i := d.client.NetworkingV1().Ingresses(namespace)
+			ilw := &cache.ListWatch{
+				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+					options.FieldSelector = d.selectors.ingress.field
+					options.LabelSelector = d.selectors.ingress.label
+					return i.List(ctx, options)
+				},
+				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+					options.FieldSelector = d.selectors.ingress.field
+					options.LabelSelector = d.selectors.ingress.label
+					return i.Watch(ctx, options)
+				},
 			}
+			informer = d.mustNewSharedInformer(ilw, &networkv1.Ingress{}, resyncDisabled)
 			ingress := NewIngress(
-				log.With(d.logger, "role", "ingress"),
+				d.logger.With("role", "ingress"),
 				informer,
 				d.metrics.eventCount,
 			)
@@ -668,11 +598,11 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		}
 	case RoleNode:
 		nodeInformer := d.newNodeInformer(ctx)
-		node := NewNode(log.With(d.logger, "role", "node"), nodeInformer, d.metrics.eventCount)
+		node := NewNode(d.logger.With("role", "node"), nodeInformer, d.metrics.eventCount)
 		d.discoverers = append(d.discoverers, node)
 		go node.informer.Run(ctx.Done())
 	default:
-		level.Error(d.logger).Log("msg", "unknown Kubernetes discovery kind", "role", d.role)
+		d.logger.Error("unknown Kubernetes discovery kind", "role", d.role)
 	}
 
 	var wg sync.WaitGroup
@@ -720,20 +650,6 @@ func retryOnError(ctx context.Context, interval time.Duration, f func() error) (
 	}
 }
 
-func checkNetworkingV1Supported(client kubernetes.Interface) (bool, error) {
-	k8sVer, err := client.Discovery().ServerVersion()
-	if err != nil {
-		return false, err
-	}
-	semVer, err := utilversion.ParseSemantic(k8sVer.String())
-	if err != nil {
-		return false, err
-	}
-	// networking.k8s.io/v1 is available since Kubernetes v1.19
-	// https://github.com/kubernetes/kubernetes/blob/master/CHANGELOG/CHANGELOG-1.19.md
-	return semVer.Major() >= 1 && semVer.Minor() >= 19, nil
-}
-
 func (d *Discovery) newNodeInformer(ctx context.Context) cache.SharedInformer {
 	nlw := &cache.ListWatch{
 		ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
@@ -747,7 +663,7 @@ func (d *Discovery) newNodeInformer(ctx context.Context) cache.SharedInformer {
 			return d.client.CoreV1().Nodes().Watch(ctx, options)
 		},
 	}
-	return cache.NewSharedInformer(nlw, &apiv1.Node{}, resyncDisabled)
+	return d.mustNewSharedInformer(nlw, &apiv1.Node{}, resyncDisabled)
 }
 
 func (d *Discovery) newPodsByNodeInformer(plw *cache.ListWatch) cache.SharedIndexInformer {
@@ -762,7 +678,7 @@ func (d *Discovery) newPodsByNodeInformer(plw *cache.ListWatch) cache.SharedInde
 		}
 	}
 
-	return cache.NewSharedIndexInformer(plw, &apiv1.Pod{}, resyncDisabled, indexers)
+	return d.mustNewSharedIndexInformer(plw, &apiv1.Pod{}, resyncDisabled, indexers)
 }
 
 func (d *Discovery) newEndpointsByNodeInformer(plw *cache.ListWatch) cache.SharedIndexInformer {
@@ -783,7 +699,7 @@ func (d *Discovery) newEndpointsByNodeInformer(plw *cache.ListWatch) cache.Share
 		return pods, nil
 	}
 	if !d.attachMetadata.Node {
-		return cache.NewSharedIndexInformer(plw, &apiv1.Endpoints{}, resyncDisabled, indexers)
+		return d.mustNewSharedIndexInformer(plw, &apiv1.Endpoints{}, resyncDisabled, indexers)
 	}
 
 	indexers[nodeIndex] = func(obj interface{}) ([]string, error) {
@@ -809,32 +725,19 @@ func (d *Discovery) newEndpointsByNodeInformer(plw *cache.ListWatch) cache.Share
 		return nodes, nil
 	}
 
-	return cache.NewSharedIndexInformer(plw, &apiv1.Endpoints{}, resyncDisabled, indexers)
+	return d.mustNewSharedIndexInformer(plw, &apiv1.Endpoints{}, resyncDisabled, indexers)
 }
 
 func (d *Discovery) newEndpointSlicesByNodeInformer(plw *cache.ListWatch, object runtime.Object) cache.SharedIndexInformer {
 	indexers := make(map[string]cache.IndexFunc)
 	if !d.attachMetadata.Node {
-		return cache.NewSharedIndexInformer(plw, object, resyncDisabled, indexers)
+		return d.mustNewSharedIndexInformer(plw, object, resyncDisabled, indexers)
 	}
 
 	indexers[nodeIndex] = func(obj interface{}) ([]string, error) {
 		var nodes []string
 		switch e := obj.(type) {
 		case *disv1.EndpointSlice:
-			for _, target := range e.Endpoints {
-				if target.TargetRef != nil {
-					switch target.TargetRef.Kind {
-					case "Pod":
-						if target.NodeName != nil {
-							nodes = append(nodes, *target.NodeName)
-						}
-					case "Node":
-						nodes = append(nodes, target.TargetRef.Name)
-					}
-				}
-			}
-		case *disv1beta1.EndpointSlice:
 			for _, target := range e.Endpoints {
 				if target.TargetRef != nil {
 					switch target.TargetRef.Kind {
@@ -854,22 +757,32 @@ func (d *Discovery) newEndpointSlicesByNodeInformer(plw *cache.ListWatch, object
 		return nodes, nil
 	}
 
-	return cache.NewSharedIndexInformer(plw, object, resyncDisabled, indexers)
+	return d.mustNewSharedIndexInformer(plw, object, resyncDisabled, indexers)
 }
 
-func checkDiscoveryV1Supported(client kubernetes.Interface) (bool, error) {
-	k8sVer, err := client.Discovery().ServerVersion()
-	if err != nil {
-		return false, err
+func (d *Discovery) informerWatchErrorHandler(r *cache.Reflector, err error) {
+	d.metrics.failuresCount.Inc()
+	cache.DefaultWatchErrorHandler(r, err)
+}
+
+func (d *Discovery) mustNewSharedInformer(lw cache.ListerWatcher, exampleObject runtime.Object, defaultEventHandlerResyncPeriod time.Duration) cache.SharedInformer {
+	informer := cache.NewSharedInformer(lw, exampleObject, defaultEventHandlerResyncPeriod)
+	// Invoking SetWatchErrorHandler should fail only if the informer has been started beforehand.
+	// Such a scenario would suggest an incorrect use of the API, thus the panic.
+	if err := informer.SetWatchErrorHandler(d.informerWatchErrorHandler); err != nil {
+		panic(err)
 	}
-	semVer, err := utilversion.ParseSemantic(k8sVer.String())
-	if err != nil {
-		return false, err
+	return informer
+}
+
+func (d *Discovery) mustNewSharedIndexInformer(lw cache.ListerWatcher, exampleObject runtime.Object, defaultEventHandlerResyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
+	informer := cache.NewSharedIndexInformer(lw, exampleObject, defaultEventHandlerResyncPeriod, indexers)
+	// Invoking SetWatchErrorHandler should fail only if the informer has been started beforehand.
+	// Such a scenario would suggest an incorrect use of the API, thus the panic.
+	if err := informer.SetWatchErrorHandler(d.informerWatchErrorHandler); err != nil {
+		panic(err)
 	}
-	// The discovery.k8s.io/v1beta1 API version of EndpointSlice will no longer be served in v1.25.
-	// discovery.k8s.io/v1 is available since Kubernetes v1.21
-	// https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-25
-	return semVer.Major() >= 1 && semVer.Minor() >= 21, nil
+	return informer
 }
 
 func addObjectMetaLabels(labelSet model.LabelSet, objectMeta metav1.ObjectMeta, role Role) {

@@ -17,13 +17,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/kolo/xmlrpc"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
@@ -40,10 +41,10 @@ const (
 	uyuniMetaLabelPrefix     = model.MetaLabelPrefix + "uyuni_"
 	uyuniLabelMinionHostname = uyuniMetaLabelPrefix + "minion_hostname"
 	uyuniLabelPrimaryFQDN    = uyuniMetaLabelPrefix + "primary_fqdn"
-	uyuniLablelSystemID      = uyuniMetaLabelPrefix + "system_id"
-	uyuniLablelGroups        = uyuniMetaLabelPrefix + "groups"
-	uyuniLablelEndpointName  = uyuniMetaLabelPrefix + "endpoint_name"
-	uyuniLablelExporter      = uyuniMetaLabelPrefix + "exporter"
+	uyuniLabelSystemID       = uyuniMetaLabelPrefix + "system_id"
+	uyuniLabelGroups         = uyuniMetaLabelPrefix + "groups"
+	uyuniLabelEndpointName   = uyuniMetaLabelPrefix + "endpoint_name"
+	uyuniLabelExporter       = uyuniMetaLabelPrefix + "exporter"
 	uyuniLabelProxyModule    = uyuniMetaLabelPrefix + "proxy_module"
 	uyuniLabelMetricsPath    = uyuniMetaLabelPrefix + "metrics_path"
 	uyuniLabelScheme         = uyuniMetaLabelPrefix + "scheme"
@@ -108,7 +109,7 @@ type Discovery struct {
 	entitlement     string
 	separator       string
 	interval        time.Duration
-	logger          log.Logger
+	logger          *slog.Logger
 }
 
 // NewDiscovererMetrics implements discovery.Config.
@@ -211,7 +212,7 @@ func getEndpointInfoForSystems(
 }
 
 // NewDiscovery returns a uyuni discovery for the given configuration.
-func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
 	m, ok := metrics.(*uyuniMetrics)
 	if !ok {
 		return nil, fmt.Errorf("invalid discovery metrics type")
@@ -269,10 +270,10 @@ func (d *Discovery) getEndpointLabels(
 		model.AddressLabel:       model.LabelValue(addr),
 		uyuniLabelMinionHostname: model.LabelValue(networkInfo.Hostname),
 		uyuniLabelPrimaryFQDN:    model.LabelValue(networkInfo.PrimaryFQDN),
-		uyuniLablelSystemID:      model.LabelValue(fmt.Sprintf("%d", endpoint.SystemID)),
-		uyuniLablelGroups:        model.LabelValue(strings.Join(managedGroupNames, d.separator)),
-		uyuniLablelEndpointName:  model.LabelValue(endpoint.EndpointName),
-		uyuniLablelExporter:      model.LabelValue(endpoint.ExporterName),
+		uyuniLabelSystemID:       model.LabelValue(strconv.Itoa(endpoint.SystemID)),
+		uyuniLabelGroups:         model.LabelValue(strings.Join(managedGroupNames, d.separator)),
+		uyuniLabelEndpointName:   model.LabelValue(endpoint.EndpointName),
+		uyuniLabelExporter:       model.LabelValue(endpoint.ExporterName),
 		uyuniLabelProxyModule:    model.LabelValue(endpoint.Module),
 		uyuniLabelMetricsPath:    model.LabelValue(endpoint.Path),
 		uyuniLabelScheme:         model.LabelValue(scheme),

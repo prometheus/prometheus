@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -27,11 +28,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/version"
 
 	"github.com/prometheus/prometheus/discovery"
@@ -138,14 +139,14 @@ type Discovery struct {
 }
 
 // NewDiscovery returns a new PuppetDB discovery for the given config.
-func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
 	m, ok := metrics.(*puppetdbMetrics)
 	if !ok {
 		return nil, fmt.Errorf("invalid discovery metrics type")
 	}
 
 	if logger == nil {
-		logger = log.NewNopLogger()
+		logger = promslog.NewNopLogger()
 	}
 
 	client, err := config.NewClientFromConfig(conf.HTTPClientConfig, "http")
@@ -189,7 +190,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		return nil, err
 	}
 
-	req, err := http.NewRequest("POST", d.url, bytes.NewBuffer(bodyBytes))
+	req, err := http.NewRequest(http.MethodPost, d.url, bytes.NewBuffer(bodyBytes))
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +238,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 			pdbLabelResource:    model.LabelValue(resource.Resource),
 			pdbLabelType:        model.LabelValue(resource.Type),
 			pdbLabelTitle:       model.LabelValue(resource.Title),
-			pdbLabelExported:    model.LabelValue(fmt.Sprintf("%t", resource.Exported)),
+			pdbLabelExported:    model.LabelValue(strconv.FormatBool(resource.Exported)),
 			pdbLabelFile:        model.LabelValue(resource.File),
 			pdbLabelEnvironment: model.LabelValue(resource.Environment),
 		}

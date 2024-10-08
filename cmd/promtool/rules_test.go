@@ -21,9 +21,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -78,7 +78,6 @@ func TestBackfillRuleIntegration(t *testing.T) {
 			// Execute the test more than once to simulate running the rule importer twice with the same data.
 			// We expect duplicate blocks with the same series are created when run more than once.
 			for i := 0; i < tt.runcount; i++ {
-
 				ruleImporter, err := newTestRuleImporter(ctx, start, tmpDir, tt.samples, tt.maxBlockDuration)
 				require.NoError(t, err)
 				path1 := filepath.Join(tmpDir, "test.file")
@@ -162,7 +161,7 @@ func TestBackfillRuleIntegration(t *testing.T) {
 }
 
 func newTestRuleImporter(_ context.Context, start time.Time, tmpDir string, testSamples model.Matrix, maxBlockDuration time.Duration) (*ruleImporter, error) {
-	logger := log.NewNopLogger()
+	logger := promslog.NewNopLogger()
 	cfg := ruleImporterConfig{
 		outputDir:        tmpDir,
 		start:            start.Add(-10 * time.Hour),

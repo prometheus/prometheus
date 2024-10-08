@@ -1,0 +1,29 @@
+{
+  "page": 1,
+  "pages": 1,
+  "results": 2,
+  "data": [
+    {
+      "address": "192.53.120.25",
+      "gateway": "192.53.120.1",
+      "subnet_mask": "255.255.255.0",
+      "prefix": 24,
+      "type": "ipv4",
+      "public": true,
+      "rdns": "li2216-25.members.linode.com",
+      "linode_id": 26837938,
+      "region": "ca-central"
+    },
+    {
+      "address": "2600:3c04::f03c:92ff:fe1a:fb68",
+      "gateway": "fe80::1",
+      "subnet_mask": "ffff:ffff:ffff:ffff::",
+      "prefix": 64,
+      "type": "ipv6",
+      "rdns": null,
+      "linode_id": 26837938,
+      "region": "ca-central",
+      "public": true
+    }
+  ]
+}

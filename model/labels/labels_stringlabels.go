@@ -16,7 +16,6 @@
 package labels
 
 import (
-	"reflect"
 	"slices"
 	"strings"
 	"unsafe"
@@ -112,9 +111,9 @@ func (ls Labels) HashForLabels(b []byte, names ...string) (uint64, []byte) {
 		}
 		if name == names[j] {
 			b = append(b, name...)
-			b = append(b, seps[0])
+			b = append(b, sep)
 			b = append(b, value...)
-			b = append(b, seps[0])
+			b = append(b, sep)
 		}
 	}
 
@@ -138,9 +137,9 @@ func (ls Labels) HashWithoutLabels(b []byte, names ...string) (uint64, []byte) {
 			continue
 		}
 		b = append(b, name...)
-		b = append(b, seps[0])
+		b = append(b, sep)
 		b = append(b, value...)
-		b = append(b, seps[0])
+		b = append(b, sep)
 	}
 	return xxhash.Sum64(b), b
 }
@@ -299,15 +298,8 @@ func Equal(ls, o Labels) bool {
 func EmptyLabels() Labels {
 	return Labels{}
 }
-
-func yoloString(b []byte) string {
-	return *((*string)(unsafe.Pointer(&b)))
-}
-
-func yoloBytes(s string) (b []byte) {
-	*(*string)(unsafe.Pointer(&b)) = s
-	(*reflect.SliceHeader)(unsafe.Pointer(&b)).Cap = len(s)
-	return
+func yoloBytes(s string) []byte {
+	return unsafe.Slice(unsafe.StringData(s), len(s))
 }
 
 // New returns a sorted Labels from the given labels.
@@ -343,8 +335,8 @@ func Compare(a, b Labels) int {
 	}
 	i := 0
 	// First, go 8 bytes at a time. Data strings are expected to be 8-byte aligned.
-	sp := unsafe.Pointer((*reflect.StringHeader)(unsafe.Pointer(&shorter)).Data)
-	lp := unsafe.Pointer((*reflect.StringHeader)(unsafe.Pointer(&longer)).Data)
+	sp := unsafe.Pointer(unsafe.StringData(shorter))
+	lp := unsafe.Pointer(unsafe.StringData(longer))
 	for ; i < len(shorter)-8; i += 8 {
 		if *(*uint64)(unsafe.Add(sp, i)) != *(*uint64)(unsafe.Add(lp, i)) {
 			break
@@ -363,13 +355,11 @@ func Compare(a, b Labels) int {
 
 	// Now we know that there is some difference before the end of a and b.
 	// Go back through the fields and find which field that difference is in.
-	firstCharDifferent := i
-	for i = 0; ; {
-		size, nextI := decodeSize(a.data, i)
-		if nextI+size > firstCharDifferent {
-			break
-		}
+	firstCharDifferent, i := i, 0
+	size, nextI := decodeSize(a.data, i)
+	for nextI+size <= firstCharDifferent {
 		i = nextI + size
+		size, nextI = decodeSize(a.data, i)
 	}
 	// Difference is inside this entry.
 	aStr, _ := decodeString(a.data, i)

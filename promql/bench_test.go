@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package promql
+package promql_test
 
 import (
 	"context"
@@ -23,13 +23,15 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
-func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *Engine, interval, numIntervals int) error {
+func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *promql.Engine, interval, numIntervals int) error {
 	ctx := context.Background()
 
 	metrics := []labels.Labels{}
@@ -115,7 +117,7 @@ func rangeQueryCases() []benchCase {
 		},
 		// Holt-Winters and long ranges.
 		{
-			expr: "holt_winters(a_X[1d], 0.3, 0.3)",
+			expr: "double_exponential_smoothing(a_X[1d], 0.3, 0.3)",
 		},
 		{
 			expr: "changes(a_X[1d])",
@@ -165,6 +167,9 @@ func rangeQueryCases() []benchCase {
 			expr: "sum(a_X)",
 		},
 		{
+			expr: "avg(a_X)",
+		},
+		{
 			expr: "sum without (l)(h_X)",
 		},
 		{
@@ -185,6 +190,21 @@ func rangeQueryCases() []benchCase {
 		},
 		{
 			expr: "topk(5, a_X)",
+		},
+		{
+			expr: "limitk(1, a_X)",
+		},
+		{
+			expr: "limitk(5, a_X)",
+		},
+		{
+			expr: "limit_ratio(0.1, a_X)",
+		},
+		{
+			expr: "limit_ratio(0.5, a_X)",
+		},
+		{
+			expr: "limit_ratio(-0.5, a_X)",
 		},
 		// Combinations.
 		{
@@ -249,13 +269,13 @@ func BenchmarkRangeQuery(b *testing.B) {
 	stor := teststorage.New(b)
 	stor.DB.DisableCompactions() // Don't want auto-compaction disrupting timings.
 	defer stor.Close()
-	opts := EngineOpts{
+	opts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,
 		MaxSamples: 50000000,
 		Timeout:    100 * time.Second,
 	}
-	engine := NewEngine(opts)
+	engine := promqltest.NewTestEngineWithOpts(b, opts)
 
 	const interval = 10000 // 10s interval.
 	// A day of data plus 10k steps.
@@ -322,9 +342,17 @@ func BenchmarkNativeHistograms(b *testing.B) {
 			name:  "sum rate with long rate interval",
 			query: "sum(rate(native_histogram_series[20m]))",
 		},
+		{
+			name:  "histogram_count with short rate interval",
+			query: "histogram_count(sum(rate(native_histogram_series[2m])))",
+		},
+		{
+			name:  "histogram_count with long rate interval",
+			query: "histogram_count(sum(rate(native_histogram_series[20m])))",
+		},
 	}
 
-	opts := EngineOpts{
+	opts := promql.EngineOpts{
 		Logger:               nil,
 		Reg:                  nil,
 		MaxSamples:           50000000,
@@ -338,7 +366,7 @@ func BenchmarkNativeHistograms(b *testing.B) {
 
 	for _, tc := range cases {
 		b.Run(tc.name, func(b *testing.B) {
-			ng := NewEngine(opts)
+			ng := promqltest.NewTestEngineWithOpts(b, opts)
 			for i := 0; i < b.N; i++ {
 				qry, err := ng.NewRangeQuery(context.Background(), testStorage, nil, tc.query, start, end, step)
 				if err != nil {

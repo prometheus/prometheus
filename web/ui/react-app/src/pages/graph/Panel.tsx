@@ -37,6 +37,7 @@ interface PanelState {
   lastQueryParams: QueryParams | null;
   loading: boolean;
   warnings: string[] | null;
+  infos: string[] | null;
   error: string | null;
   stats: QueryStats | null;
   exprInputValue: string;
@@ -87,6 +88,7 @@ class Panel extends Component<PanelProps, PanelState> {
       lastQueryParams: null,
       loading: false,
       warnings: null,
+      infos: null,
       error: null,
       stats: null,
       exprInputValue: props.options.expr,
@@ -134,7 +136,7 @@ class Panel extends Component<PanelProps, PanelState> {
     this.abortInFlightFetch = () => abortController.abort();
     this.setState({ loading: true });
 
-    const endTime = this.getEndTime().valueOf() / 1000; // TODO: shouldn't valueof only work when it's a moment?
+    const endTime = this.getEndTime().valueOf() / 1000; // TODO: shouldn't valueOf only work when it's a moment?
     const startTime = endTime - this.props.options.range / 1000;
     const resolution = this.props.options.resolution || Math.max(Math.floor(this.props.options.range / 250000), 1);
     const params: URLSearchParams = new URLSearchParams({
@@ -204,6 +206,7 @@ class Panel extends Component<PanelProps, PanelState> {
         data: query.data,
         exemplars: exemplars?.data,
         warnings: query.warnings,
+        infos: query.infos,
         lastQueryParams: {
           startTime,
           endTime,
@@ -305,6 +308,11 @@ class Panel extends Component<PanelProps, PanelState> {
         {this.state.warnings?.map((warning, index) => (
           <Row key={index}>
             <Col>{warning && <Alert color="warning">{warning}</Alert>}</Col>
+          </Row>
+        ))}
+        {this.state.infos?.map((info, index) => (
+          <Row key={index}>
+            <Col>{info && <Alert color="info">{info}</Alert>}</Col>
           </Row>
         ))}
         <Row>

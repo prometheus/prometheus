@@ -79,7 +79,12 @@ labels of the 1-element output vector from the input vector.
 ## `ceil()`
 
 `ceil(v instant-vector)` rounds the sample values of all elements in `v` up to
-the nearest integer.
+the nearest integer value greater than or equal to v.
+
+* `ceil(+Inf) = +Inf`
+* `ceil(±0) = ±0`
+* `ceil(1.49) = 2.0`
+* `ceil(1.78) = 2.0`
 
 ## `changes()`
 
@@ -93,8 +98,9 @@ vector.
 clamps the sample values of all elements in `v` to have a lower limit of `min` and an upper limit of `max`.
 
 Special cases:
-- Return an empty vector if `min > max`
-- Return `NaN` if `min` or `max` is `NaN`
+
+* Return an empty vector if `min > max`
+* Return `NaN` if `min` or `max` is `NaN`
 
 ## `clamp_max()`
 
@@ -173,7 +179,12 @@ Special cases are:
 ## `floor()`
 
 `floor(v instant-vector)` rounds the sample values of all elements in `v` down
-to the nearest integer.
+to the nearest integer value smaller than or equal to v.
+
+* `floor(+Inf) = +Inf`
+* `floor(±0) = ±0`
+* `floor(1.49) = 1.0`
+* `floor(1.78) = 1.0`
 
 ## `histogram_avg()`
 
@@ -315,45 +326,70 @@ With native histograms, aggregating everything works as usual without any `by` c
 
     histogram_quantile(0.9, sum(rate(http_request_duration_seconds[10m])))
 
-The `histogram_quantile()` function interpolates quantile values by
-assuming a linear distribution within a bucket. 
+In the (common) case that a quantile value does not coincide with a bucket
+boundary, the `histogram_quantile()` function interpolates the quantile value
+within the bucket the quantile value falls into. For classic histograms, for
+native histograms with custom bucket boundaries, and for the zero bucket of
+other native histograms, it assumes a uniform distribution of observations
+within the bucket (also called _linear interpolation_). For the
+non-zero-buckets of native histograms with a standard exponential bucketing
+schema, the interpolation is done under the assumption that the samples within
+the bucket are distributed in a way that they would uniformly populate the
+buckets in a hypothetical histogram with higher resolution. (This is also
+called _exponential interpolation_.)
 
 If `b` has 0 observations, `NaN` is returned. For φ < 0, `-Inf` is
 returned. For φ > 1, `+Inf` is returned. For φ = `NaN`, `NaN` is returned.
 
-The following is only relevant for classic histograms: If `b` contains
-fewer than two buckets, `NaN` is returned. The highest bucket must have an
-upper bound of `+Inf`. (Otherwise, `NaN` is returned.) If a quantile is located
-in the highest bucket, the upper bound of the second highest bucket is
-returned. A lower limit of the lowest bucket is assumed to be 0 if the upper
-bound of that bucket is greater than
-0. In that case, the usual linear interpolation is applied within that
-bucket. Otherwise, the upper bound of the lowest bucket is returned for
-quantiles located in the lowest bucket. 
+Special cases for classic histograms:
 
-You can use `histogram_quantile(0, v instant-vector)` to get the estimated minimum value stored in
-a histogram.
+* If `b` contains fewer than two buckets, `NaN` is returned.
+* The highest bucket must have an upper bound of `+Inf`. (Otherwise, `NaN` is
+  returned.)
+* If a quantile is located in the highest bucket, the upper bound of the second
+  highest bucket is returned.
+* The lower limit of the lowest bucket is assumed to be 0 if the upper bound of
+  that bucket is greater than 0. In that case, the usual linear interpolation
+  is applied within that bucket. Otherwise, the upper bound of the lowest
+  bucket is returned for quantiles located in the lowest bucket.
 
-You can use `histogram_quantile(1, v instant-vector)` to get the estimated maximum value stored in
-a histogram.
+Special cases for native histograms (relevant for the exact interpolation
+happening within the zero bucket):
 
-Buckets of classic histograms are cumulative. Therefore, the following should always be the case:
+* A zero bucket with finite width is assumed to contain no negative
+  observations if the histogram has observations in positive buckets, but none
+  in negative buckets.
+* A zero bucket with finite width is assumed to contain no positive
+  observations if the histogram has observations in negative buckets, but none
+  in positive buckets.
 
-- The counts in the buckets are monotonically increasing (strictly non-decreasing).
-- A lack of observations between the upper limits of two consecutive buckets results in equal counts
-in those two buckets.
+You can use `histogram_quantile(0, v instant-vector)` to get the estimated
+minimum value stored in a histogram.
 
-However, floating point precision issues (e.g. small discrepancies introduced by computing of buckets
-with `sum(rate(...))`) or invalid data might violate these assumptions. In that case,
-`histogram_quantile` would be unable to return meaningful results. To mitigate the issue,
-`histogram_quantile` assumes that tiny relative differences between consecutive buckets are happening
-because of floating point precision errors and ignores them. (The threshold to ignore a difference
-between two buckets is a trillionth (1e-12) of the sum of both buckets.) Furthermore, if there are
-non-monotonic bucket counts even after this adjustment, they are increased to the value of the
-previous buckets to enforce monotonicity. The latter is evidence for an actual issue with the input
-data and is therefore flagged with an informational annotation reading `input to histogram_quantile
-needed to be fixed for monotonicity`. If you encounter this annotation, you should find and remove
-the source of the invalid data.
+You can use `histogram_quantile(1, v instant-vector)` to get the estimated
+maximum value stored in a histogram.
+
+Buckets of classic histograms are cumulative. Therefore, the following should
+always be the case:
+
+* The counts in the buckets are monotonically increasing (strictly
+  non-decreasing).
+* A lack of observations between the upper limits of two consecutive buckets
+  results in equal counts in those two buckets.
+
+However, floating point precision issues (e.g. small discrepancies introduced
+by computing of buckets with `sum(rate(...))`) or invalid data might violate
+these assumptions. In that case, `histogram_quantile` would be unable to return
+meaningful results. To mitigate the issue, `histogram_quantile` assumes that
+tiny relative differences between consecutive buckets are happening because of
+floating point precision errors and ignores them. (The threshold to ignore a
+difference between two buckets is a trillionth (1e-12) of the sum of both
+buckets.) Furthermore, if there are non-monotonic bucket counts even after this
+adjustment, they are increased to the value of the previous buckets to enforce
+monotonicity. The latter is evidence for an actual issue with the input data
+and is therefore flagged with an informational annotation reading `input to
+histogram_quantile needed to be fixed for monotonicity`. If you encounter this
+annotation, you should find and remove the source of the invalid data.
 
 ## `histogram_stddev()` and `histogram_stdvar()`
 
@@ -369,15 +405,22 @@ do not show up in the returned vector.
 Similarly, `histogram_stdvar(v instant-vector)` returns the estimated standard
 variance of observations in a native histogram.
 
-## `holt_winters()`
+## `double_exponential_smoothing()`
 
-`holt_winters(v range-vector, sf scalar, tf scalar)` produces a smoothed value
+**This function has to be enabled via the [feature flag](../feature_flags.md#experimental-promql-functions) `--enable-feature=promql-experimental-functions`.**
+
+`double_exponential_smoothing(v range-vector, sf scalar, tf scalar)` produces a smoothed value
 for time series based on the range in `v`. The lower the smoothing factor `sf`,
 the more importance is given to old data. The higher the trend factor `tf`, the
 more trends in the data is considered. Both `sf` and `tf` must be between 0 and
 1.
+For additional details, refer to [NIST Engineering Statistics Handbook](https://www.itl.nist.gov/div898/handbook/pmc/section4/pmc433.htm).
+In Prometheus V2 this function was called `holt_winters`. This caused confusion
+since the Holt-Winters method usually refers to triple exponential smoothing.
+Double exponential smoothing as implemented here is also referred to as "Holt
+Linear".
 
-`holt_winters` should only be used with gauges.
+`double_exponential_smoothing` should only be used with gauges.
 
 ## `hour()`
 
@@ -596,15 +639,19 @@ have exactly one element, `scalar` will return `NaN`.
 `sort(v instant-vector)` returns vector elements sorted by their sample values,
 in ascending order. Native histograms are sorted by their sum of observations.
 
+Please note that `sort` only affects the results of instant queries, as range query results always have a fixed output ordering.
+
 ## `sort_desc()`
 
 Same as `sort`, but sorts in descending order.
 
+Like `sort`, `sort_desc` only affects the results of instant queries, as range query results always have a fixed output ordering.
+
 ## `sort_by_label()`
 
-**This function has to be enabled via the [feature flag](../feature_flags/) `--enable-feature=promql-experimental-functions`.**
+**This function has to be enabled via the [feature flag](../feature_flags.md#experimental-promql-functions) `--enable-feature=promql-experimental-functions`.**
 
-`sort_by_label(v instant-vector, label string, ...)` returns vector elements sorted by their label values and sample value in case of label values being equal, in ascending order.
+`sort_by_label(v instant-vector, label string, ...)` returns vector elements sorted by the values of the given labels in ascending order. In case these label values are equal, elements are sorted by their full label sets.
 
 Please note that the sort by label functions only affect the results of instant queries, as range query results always have a fixed output ordering.
 
@@ -612,7 +659,7 @@ This function uses [natural sort order](https://en.wikipedia.org/wiki/Natural_so
 
 ## `sort_by_label_desc()`
 
-**This function has to be enabled via the [feature flag](../feature_flags/) `--enable-feature=promql-experimental-functions`.**
+**This function has to be enabled via the [feature flag](../feature_flags.md#experimental-promql-functions) `--enable-feature=promql-experimental-functions`.**
 
 Same as `sort_by_label`, but sorts in descending order.
 
@@ -661,7 +708,7 @@ over time and return an instant vector with per-series aggregation results:
 * `last_over_time(range-vector)`: the most recent point value in the specified interval.
 * `present_over_time(range-vector)`: the value 1 for any series in the specified interval.
 
-If the [feature flag](../feature_flags/)
+If the [feature flag](../feature_flags.md#experimental-promql-functions)
 `--enable-feature=promql-experimental-functions` is set, the following
 additional functions are available:
 
@@ -678,21 +725,21 @@ ignore histogram samples.
 
 The trigonometric functions work in radians:
 
-- `acos(v instant-vector)`: calculates the arccosine of all elements in `v` ([special cases](https://pkg.go.dev/math#Acos)).
-- `acosh(v instant-vector)`: calculates the inverse hyperbolic cosine of all elements in `v` ([special cases](https://pkg.go.dev/math#Acosh)).
-- `asin(v instant-vector)`: calculates the arcsine of all elements in `v` ([special cases](https://pkg.go.dev/math#Asin)).
-- `asinh(v instant-vector)`: calculates the inverse hyperbolic sine of all elements in `v` ([special cases](https://pkg.go.dev/math#Asinh)).
-- `atan(v instant-vector)`: calculates the arctangent of all elements in `v` ([special cases](https://pkg.go.dev/math#Atan)).
-- `atanh(v instant-vector)`: calculates the inverse hyperbolic tangent of all elements in `v` ([special cases](https://pkg.go.dev/math#Atanh)).
-- `cos(v instant-vector)`: calculates the cosine of all elements in `v` ([special cases](https://pkg.go.dev/math#Cos)).
-- `cosh(v instant-vector)`: calculates the hyperbolic cosine of all elements in `v` ([special cases](https://pkg.go.dev/math#Cosh)).
-- `sin(v instant-vector)`: calculates the sine of all elements in `v` ([special cases](https://pkg.go.dev/math#Sin)).
-- `sinh(v instant-vector)`: calculates the hyperbolic sine of all elements in `v` ([special cases](https://pkg.go.dev/math#Sinh)).
-- `tan(v instant-vector)`: calculates the tangent of all elements in `v` ([special cases](https://pkg.go.dev/math#Tan)).
-- `tanh(v instant-vector)`: calculates the hyperbolic tangent of all elements in `v` ([special cases](https://pkg.go.dev/math#Tanh)).
+* `acos(v instant-vector)`: calculates the arccosine of all elements in `v` ([special cases](https://pkg.go.dev/math#Acos)).
+* `acosh(v instant-vector)`: calculates the inverse hyperbolic cosine of all elements in `v` ([special cases](https://pkg.go.dev/math#Acosh)).
+* `asin(v instant-vector)`: calculates the arcsine of all elements in `v` ([special cases](https://pkg.go.dev/math#Asin)).
+* `asinh(v instant-vector)`: calculates the inverse hyperbolic sine of all elements in `v` ([special cases](https://pkg.go.dev/math#Asinh)).
+* `atan(v instant-vector)`: calculates the arctangent of all elements in `v` ([special cases](https://pkg.go.dev/math#Atan)).
+* `atanh(v instant-vector)`: calculates the inverse hyperbolic tangent of all elements in `v` ([special cases](https://pkg.go.dev/math#Atanh)).
+* `cos(v instant-vector)`: calculates the cosine of all elements in `v` ([special cases](https://pkg.go.dev/math#Cos)).
+* `cosh(v instant-vector)`: calculates the hyperbolic cosine of all elements in `v` ([special cases](https://pkg.go.dev/math#Cosh)).
+* `sin(v instant-vector)`: calculates the sine of all elements in `v` ([special cases](https://pkg.go.dev/math#Sin)).
+* `sinh(v instant-vector)`: calculates the hyperbolic sine of all elements in `v` ([special cases](https://pkg.go.dev/math#Sinh)).
+* `tan(v instant-vector)`: calculates the tangent of all elements in `v` ([special cases](https://pkg.go.dev/math#Tan)).
+* `tanh(v instant-vector)`: calculates the hyperbolic tangent of all elements in `v` ([special cases](https://pkg.go.dev/math#Tanh)).
 
 The following are useful for converting between degrees and radians:
 
-- `deg(v instant-vector)`: converts radians to degrees for all elements in `v`.
-- `pi()`: returns pi.
-- `rad(v instant-vector)`: converts degrees to radians for all elements in `v`.
+* `deg(v instant-vector)`: converts radians to degrees for all elements in `v`.
+* `pi()`: returns pi.
+* `rad(v instant-vector)`: converts degrees to radians for all elements in `v`.
