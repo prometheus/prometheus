@@ -1590,7 +1590,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 
 	if paginationRequest != nil && paginationRequest.NextToken != "" && !foundToken {
 		err := fmt.Errorf("invalid nextToken '%v'. were rule groups changed?", paginationRequest.NextToken)
-		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+		return invalidParamError(err, "next_token")
 	}
 
 	res.RuleGroups = rgs
@@ -1613,28 +1613,32 @@ func parseExcludeAlerts(r *http.Request) (bool, error) {
 
 func parseListRulesPaginationRequest(r *http.Request) (*listRulesPaginationRequest, *parsePaginationError) {
 	var (
-		maxRuleGroups int64 = -1
-		nextToken           = ""
-		err           error
+		parsedMaxGroups int64 = -1
+		err             error
 	)
+	maxGroups := r.URL.Query().Get("max_groups")
+	nextToken := r.URL.Query().Get("next_token")
 
-	if r.URL.Query().Get("max_groups") != "" {
-		maxRuleGroups, err = strconv.ParseInt(r.URL.Query().Get("max_groups"), 10, 32)
-		if err != nil || maxRuleGroups < 0 {
+	if nextToken != "" && maxGroups == "" {
+		return nil, &parsePaginationError{
+			err:       fmt.Errorf("max_groups needs to be present in order to paginate"),
+			parameter: "max_groups",
+		}
+	}
+
+	if maxGroups != "" {
+		parsedMaxGroups, err = strconv.ParseInt(maxGroups, 10, 32)
+		if err != nil || parsedMaxGroups <= 0 {
 			return nil, &parsePaginationError{
-				err:       fmt.Errorf("max_groups need to be a valid number greater than or equal to 0: %w", err),
+				err:       fmt.Errorf("max_groups need to be a valid number greater than 0: %w", err),
 				parameter: "max_groups",
 			}
 		}
 	}
 
-	if r.URL.Query().Get("next_token") != "" {
-		nextToken = r.URL.Query().Get("next_token")
-	}
-
-	if maxRuleGroups >= 0 || nextToken != "" {
+	if parsedMaxGroups >= 0 || nextToken != "" {
 		return &listRulesPaginationRequest{
-			MaxRuleGroups: maxRuleGroups,
+			MaxRuleGroups: parsedMaxGroups,
 			NextToken:     nextToken,
 		}, nil
 	}

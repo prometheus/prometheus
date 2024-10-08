@@ -2874,11 +2874,28 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 			zeroFunc: rulesZeroFunc,
 		},
-		{
+		{ // invalid pagination request
+			endpoint: api.rules,
+			query: url.Values{
+				"next_token": []string{getRuleGroupNextToken("/path/to/file", "grp2")},
+			},
+			errType:  errorBadData,
+			zeroFunc: rulesZeroFunc,
+		},
+		{ // invalid max_groups
+			endpoint: api.rules,
+			query: url.Values{
+				"max_groups": []string{"0"},
+				"next_token": []string{getRuleGroupNextToken("/path/to/file", "grp2")},
+			},
+			errType:  errorBadData,
+			zeroFunc: rulesZeroFunc,
+		},
+		{ // Pagination token is invalid due to changes in the rule groups
 			endpoint: api.rules,
 			query: url.Values{
 				"max_groups": []string{"1"},
-				"next_token": []string{getRuleGroupNextToken("/path/to/not/exist", "unknown")},
+				"next_token": []string{getRuleGroupNextToken("/removed/file", "notfound")},
 			},
 			errType:  errorBadData,
 			zeroFunc: rulesZeroFunc,
