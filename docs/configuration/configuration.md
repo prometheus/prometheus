@@ -80,7 +80,10 @@ global:
 
   # The labels to add to any time series or alerts when communicating with
   # external systems (federation, remote storage, Alertmanager). 
-  # Example: exported_instance:127.0.0.1
+  # Environment variable references `${var}` or `$var` are replaced according 
+  # to the values of the current environment variables. 
+  # References to undefined variables are replaced by the empty string.
+  # The `$` character can be escaped by using `$$`.
   external_labels:
     [ <labelname>: <labelvalue> ... ]
 
