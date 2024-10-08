@@ -427,6 +427,17 @@ eval instant at 50m sum(request_duration_seconds{job="job1",instance="ins1"} + i
 eval instant at 50m avg(request_duration_seconds)
 	{} {{schema:-53 count:62.5 custom_values:[0.1 0.2] buckets:[25 22.5 15]}}
 
+# To verify the result above, calculate from classic histogram as well.
+eval instant at 50m avg (request_duration_seconds_bucket{le="0.1"})
+	{} 25
+
+eval instant at 50m avg (request_duration_seconds_bucket{le="0.2"}) - avg (request_duration_seconds_bucket{le="0.1"})
+	{} 22.5
+
+eval instant at 50m avg (request_duration_seconds_bucket{le="+Inf"}) - avg (request_duration_seconds_bucket{le="0.2"})
+	{} 15
+
+
 eval instant at 50m count(request_duration_seconds)
 	{} 4
 
