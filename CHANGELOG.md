@@ -2,25 +2,31 @@
 
 ## unreleased
 
-## 3.0.0-beta.1 / 2024-09-25
+## 3.0.0-beta.1 / 2024-10-09
 
 * [CHANGE] regexp `.` now matches all characters (performance improvement). #14505
 * [CHANGE] `holt_winters` is now called `double_exponential_smoothing` and moves behind the [experimental-promql-functions feature flag](https://prometheus.io/docs/prometheus/latest/feature_flags/#experimental-promql-functions). #14930
 * [CHANGE] API: The OTLP receiver endpoint can now be enabled using `--web.enable-otlp-receiver` instead of `--enable-feature=otlp-write-receiver`. #14894
 * [CHANGE] Prometheus will not add or remove port numbers from the target address. `no-default-scrape-port` feature flag removed. #14160
-* [ENHANCEMENT] UI: Many fixes and improvements. #14898, #14899, #14907, #14908, #14912, #14913, #14914, #14931, #14940, #14945, #14946, #14972, #14981, #14982, #14994
+* [CHANGE] Logging: the format of log lines has changed a little, along with the adoption of Go's Structured Logging package. #14906
+* [CHANGE]: Don't create extra `_created` timeseries if feature-flag `created-timestamp-zero-ingestion' is enabled. #14738
+* [ENHANCEMENT] UI: Many fixes and improvements. #14898, #14899, #14907, #14908, #14912, #14913, #14914, #14931, #14940, #14945, #14946, #14972, #14981, #14982, #14994, #15096
+* [ENHANCEMENT] UI: Web UI now displays notifications, e.g. when starting up and shutting down. #15082
 * [ENHANCEMENT] PromQL: Introduce exponential interpolation for native histograms. #14677
 * [ENHANCEMENT] TSDB: Add support for ingestion of out-of-order native histogram samples. #14850, #14546
 * [ENHANCEMENT] Alerts: remove metrics for removed Alertmanagers. #13909
 * [ENHANCEMENT] Scraping: support Created-Timestamp feature on native histograms. #14694
+* [ENHANCEMENT] Consul SD: Support catalog filters. #11224
 * [PERF] TSDB: Parallelize deletion of postings after head compaction. #14975
 * [PERF] TSDB: Chunk encoding: shorten some write sequences. #14932
 * [PERF] TSDB: Grow postings by doubling. #14721
 * [PERF] Relabeling: Optimize adding a constant label pair. #12180
+* [BUGFIX] Scraping: Unit was missing when using protobuf format. #15095
 * [BUGFIX] PromQL: Only return "possible non-counter" annotation when `rate` returns points. #14910
 * [BUGFIX] TSDB: Chunks could have one unnecessary zero byte at the end. #14854
 * [BUGFIX] "superfluous response.WriteHeader call" messages in log. #14884
 * [BUGFIX] PromQL: Unary negation of native histograms. #14821
+* [BUGFIX] PromQL: Handle stale marker in native histogram series (e.g. if series goes away and comes back). #15025
 * [BUGFIX] Autoreload: Reload invalid yaml files. #14947
 
 ## 3.0.0-beta.0 / 2024-09-05
