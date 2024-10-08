@@ -796,14 +796,17 @@ The following meta labels are available on targets during [relabeling](#relabel_
 services:
   [ - <string> ]
 
-# See https://www.consul.io/api/catalog.html#list-nodes-for-service to know more
-# about the possible filters that can be used.
+# A Consul Filter expression used to filter the catalog results
+# See https://www.consul.io/api-docs/catalog#list-services to know more
+# about the filter expressions that can be used.
+[ filter: <string> ]
 
+# The `tags` and `node_meta` fields are deprecated in Consul in favor of `filter`.
 # An optional list of tags used to filter nodes for a given service. Services must contain all tags in the list.
 tags:
   [ - <string> ]
 
-# Node metadata key/value pairs to filter nodes for a given service.
+# Node metadata key/value pairs to filter nodes for a given service. As of Consul 1.14, consider `filter` instead.
 [ node_meta:
   [ <string>: <string> ... ] ]
 

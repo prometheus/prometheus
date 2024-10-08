@@ -113,8 +113,11 @@ type SDConfig struct {
 	Services []string `yaml:"services,omitempty"`
 	// A list of tags used to filter instances inside a service. Services must contain all tags in the list.
 	ServiceTags []string `yaml:"tags,omitempty"`
-	// Desired node metadata.
+	// Desired node metadata. As of Consul 1.14, consider `filter` instead.
 	NodeMeta map[string]string `yaml:"node_meta,omitempty"`
+	// Consul filter string
+	// See https://www.consul.io/api-docs/catalog#filtering-1, for syntax
+	Filter string `yaml:"filter,omitempty"`
 
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 }
@@ -174,6 +177,7 @@ type Discovery struct {
 	watchedServices  []string // Set of services which will be discovered.
 	watchedTags      []string // Tags used to filter instances of a service.
 	watchedNodeMeta  map[string]string
+	watchedFilter    string
 	allowStale       bool
 	refreshInterval  time.Duration
 	finalizer        func()
@@ -218,6 +222,7 @@ func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.Discove
 		watchedServices:  conf.Services,
 		watchedTags:      conf.ServiceTags,
 		watchedNodeMeta:  conf.NodeMeta,
+		watchedFilter:    conf.Filter,
 		allowStale:       conf.AllowStale,
 		refreshInterval:  time.Duration(conf.RefreshInterval),
 		clientDatacenter: conf.Datacenter,
@@ -361,13 +366,14 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 // entire list of services.
 func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.Group, lastIndex *uint64, services map[string]func()) {
 	catalog := d.client.Catalog()
-	d.logger.Debug("Watching services", "tags", strings.Join(d.watchedTags, ","))
+	d.logger.Debug("Watching services", "tags", strings.Join(d.watchedTags, ","), "filter", d.watchedFilter)
 
 	opts := &consul.QueryOptions{
 		WaitIndex:  *lastIndex,
 		WaitTime:   watchTimeout,
 		AllowStale: d.allowStale,
 		NodeMeta:   d.watchedNodeMeta,
+		Filter:     d.watchedFilter,
 	}
 	t0 := time.Now()
 	srvs, meta, err := catalog.Services(opts.WithContext(ctx))
