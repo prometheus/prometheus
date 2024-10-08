@@ -2,6 +2,10 @@
 
 ## unreleased
 
+## 2.55.0-rc.1 / 2024-09-30
+
+* [BUGFIX] PromQL: make sort_by_label stable. #14985
+
 ## 2.55.0-rc.0 / 2024-09-20
 
 * [FEATURE] Support UTF-8 characters in label names - feature flag `utf8-names`. #14482, #14880, #14736, #14727
