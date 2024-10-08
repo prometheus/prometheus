@@ -72,6 +72,8 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5
 foo_created 1520872607.123
 foo_total{a="b"} 17.0 1520879607.789 # {id="counter-test"} 5
 foo_created{a="b"} 1520872607.123
+foo_total{le="c"} 21.0
+foo_created{le="c"} 1520872621.123
 # HELP bar Summary with CT at the end, making sure we find CT even if it's multiple lines a far
 # TYPE bar summary
 bar_count 17.0
@@ -295,6 +297,11 @@ foobar{quantile="0.99"} 150.1`
 				{Labels: labels.FromStrings("id", "counter-test"), Value: 5},
 			},
 			ct: int64p(1520872607123),
+		}, {
+			m:    `foo_total{le="c"}`,
+			v:    21.0,
+			lset: labels.FromStrings("__name__", "foo_total", "le", "c"),
+			ct:   int64p(1520872621123),
 		}, {
 			m:    "bar",
 			help: "Summary with CT at the end, making sure we find CT even if it's multiple lines a far",
@@ -956,35 +963,6 @@ thing_c_total 14123.232
 				{
 					m:  `thing_c_total`,
 					ct: nil, // Should be int64p(1520872607123).
-				},
-			},
-		},
-		{
-			name: "counter with le label",
-			input: `# HELP foo good counter
-# TYPE foo counter
-foo_total 17.0
-foo_created 1520872607.123
-foo_total{le="b"} 17.0
-foo_created{le="b"} 1520872608.123
-# EOF
-`,
-			expected: []parsedEntry{
-				{
-					m:    "foo",
-					help: "good counter",
-				},
-				{
-					m:   "foo",
-					typ: model.MetricTypeCounter,
-				},
-				{
-					m:  `foo_total`,
-					ct: int64p(1520872607123),
-				},
-				{
-					m:  `foo_total{le="b"}`,
-					ct: int64p(1520872607123), // Wrong, should 1520872608123
 				},
 			},
 		},

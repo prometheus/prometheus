@@ -267,15 +267,18 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 		return nil
 	}
 
-	var currName []byte
-	if string(p.series[0]) == `{` && string(p.series[1]) == `"` {
+	var (
+		buf      []byte
+		currName []byte
+	)
+	if p.series[0] == []byte(`{`)[0] && p.series[1] == []byte(`"`)[0] {
 		// special case for UTF-8 encoded metric family names.
 		currName = p.series[p.offsets[0]-p.start : p.mfNameLen+2]
 	} else {
 		currName = p.series[p.offsets[0]-p.start : p.mfNameLen]
 	}
 
-	currHash := p.hashOffsets(currName)
+	currHash := p.hashOffsets(buf, currName)
 	// Check cache, perhaps we fetched something already.
 	if currHash == p.ctHashSet && p.ct > 0 {
 		return &p.ct
@@ -308,16 +311,14 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 			return nil
 		}
 
-		s := string(p.series)
-		peekedName := s[p.offsets[0]-p.start : p.offsets[1]-p.start]
-		if !strings.HasSuffix(peekedName, "_created") {
+		peekedName := p.series[p.offsets[0]-p.start : p.offsets[1]-p.start]
+		if len(peekedName) < 8 || string(peekedName[len(peekedName)-8:]) != "_created" {
 			// Not a CT line, search more.
 			continue
 		}
 
-		// Remove _created suffix and convert to byte slice.
-		peekedNameBytes := []byte(peekedName[:len(peekedName)-8])
-		peekedHash := p.hashOffsets(peekedNameBytes)
+		// Remove _created suffix.
+		peekedHash := p.hashOffsets(buf, peekedName[:len(peekedName)-8])
 		if peekedHash != currHash {
 			// Found CT line for a different series, for our series no CT.
 			p.resetCTParseValues(resetLexer)
@@ -333,19 +334,25 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 }
 
 var (
-	quantile = []byte{113, 117, 97, 110, 116, 105, 108, 101}
-	le       = []byte{108, 101}
+	leBytes       = []byte{108, 101}
+	quantileBytes = []byte{113, 117, 97, 110, 116, 105, 108, 101}
 )
 
-// hashOffsets takes in the metric family name and hashes the offsets of the labels and values.
-func (p *OpenMetricsParser) hashOffsets(metricFamilyName []byte) uint64 {
-	offsetsArr := make([]byte, 0)
+// hashOffsets generates a hash based on the metric family name and the offsets
+// of label names and values from the parsed OpenMetrics data. It skips quantile
+// and le labels for summaries and histograms respectively.
+func (p *OpenMetricsParser) hashOffsets(offsetsArr, metricFamilyName []byte) uint64 {
 
+	// Iterate through p.offsets to find the label names and values.
 	for i := 2; i < len(p.offsets); i += 4 {
 		lStart := p.offsets[i] - p.start
 		lEnd := p.offsets[i+1] - p.start
 		label := p.series[lStart:lEnd]
-		if bytes.Equal(label, quantile) || bytes.Equal(label, le) {
+		// Skip quantile and le labels for summaries and histograms.
+		if bytes.Equal(label, quantileBytes) && p.mtype == model.MetricTypeSummary {
+			continue
+		}
+		if bytes.Equal(label, leBytes) && p.mtype == model.MetricTypeHistogram {
 			continue
 		}
 		offsetsArr = append(offsetsArr, p.series[lStart:lEnd]...)
@@ -355,7 +362,11 @@ func (p *OpenMetricsParser) hashOffsets(metricFamilyName []byte) uint64 {
 	}
 
 	offsetsArr = append(offsetsArr, metricFamilyName...)
-	return xxhash.Sum64(offsetsArr)
+	hashedOffsets := xxhash.Sum64(offsetsArr)
+
+	// Reset the offsets array for later reuse.
+	offsetsArr = offsetsArr[:0]
+	return hashedOffsets
 }
 
 // setCTParseValues sets the parser to the state after CreatedTimestamp method was called and CT was found.
