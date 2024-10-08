@@ -4060,3 +4060,73 @@ func newScrapableServer(scrapeText string) (s *httptest.Server, scrapedTwice cha
 		}
 	})), scrapedTwice
 }
+
+func TestScrapeConnectionHeader(t *testing.T) {
+	responses := []struct {
+		statusCode   int
+		expectedConn string
+	}{
+		{statusCode: http.StatusOK, expectedConn: ""},
+		{statusCode: http.StatusForbidden, expectedConn: ""},
+		{statusCode: http.StatusForbidden, expectedConn: "close"},
+		{statusCode: http.StatusOK, expectedConn: ""},
+		{statusCode: http.StatusOK, expectedConn: ""},
+		{statusCode: http.StatusInternalServerError, expectedConn: ""},
+		{statusCode: http.StatusOK, expectedConn: ""},
+		{statusCode: http.StatusForbidden, expectedConn: ""},
+		{statusCode: http.StatusForbidden, expectedConn: "close"},
+		{statusCode: http.StatusForbidden, expectedConn: ""},
+		{statusCode: http.StatusForbidden, expectedConn: "close"},
+		{statusCode: http.StatusInternalServerError, expectedConn: ""},
+		{statusCode: http.StatusForbidden, expectedConn: ""},
+		{statusCode: http.StatusOK, expectedConn: "close"},
+		{statusCode: http.StatusOK, expectedConn: ""},
+	}
+
+	var scrapeCount int
+	var wg sync.WaitGroup
+	wg.Add(len(responses))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		scrapeCount++
+		defer wg.Done()
+
+		resp := responses[scrapeCount]
+
+		connHeader := r.Header.Get("Connection")
+		if resp.expectedConn == "" {
+			require.Empty(t, connHeader, "Expected no Connection header, but got one")
+		} else {
+			require.Equal(t, resp.expectedConn, connHeader, "Unexpected Connection header value")
+		}
+
+		w.WriteHeader(resp.statusCode)
+		fmt.Fprint(w, "metric_a 42\n")
+	}))
+	defer server.Close()
+
+	cfg := &config.ScrapeConfig{
+		JobName:        "test",
+		Scheme:         "http",
+		ScrapeInterval: model.Duration(100 * time.Millisecond),
+		ScrapeTimeout:  model.Duration(100 * time.Millisecond),
+	}
+
+	s := teststorage.New(t)
+	defer s.Close()
+
+	sp, err := newScrapePool(cfg, s, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
+	require.NoError(t, err)
+	defer sp.stop()
+
+	testURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	sp.Sync([]*targetgroup.Group{
+		{
+			Targets: []model.LabelSet{{model.AddressLabel: model.LabelValue(testURL.Host)}},
+		},
+	})
+
+	wg.Wait()
+	require.Len(t, responses, scrapeCount)
+}
