@@ -437,7 +437,6 @@ eval instant at 50m avg (request_duration_seconds_bucket{le="0.2"}) - avg (reque
 eval instant at 50m avg (request_duration_seconds_bucket{le="+Inf"}) - avg (request_duration_seconds_bucket{le="0.2"})
 	{} 15
 
-
 eval instant at 50m count(request_duration_seconds)
 	{} 4
 
