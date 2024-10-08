@@ -282,14 +282,14 @@ foobar{quantile="0.99"} 150.1`
 			v:    17,
 			lset: labels.FromStrings("__name__", "foo_total"),
 			t:    int64p(1520879607789),
-			// TODO(krajorama) e:es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "counter-test"), Value: 5}},
+			//es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "counter-test"), Value: 5}},
 			ct: int64p(1520872607123),
 		}, {
 			m:    `foo_total{a="b"}`,
 			v:    17.0,
 			lset: labels.FromStrings("__name__", "foo_total", "a", "b"),
 			t:    int64p(1520879607789),
-			// TODO(krajorama) e:es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "counter-test"), Value: 5}},
+			//es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "counter-test"), Value: 5}},
 			ct: int64p(1520872607123),
 		}, {
 			m:    "bar",
@@ -492,6 +492,45 @@ something_created{a="b"} 1520430002
 			},
 			lset: labels.FromStrings("__name__", "something", "a", "b"),
 			ct:   int64p(1520430002000),
+		},
+	}
+
+	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
+	p = NewNHCBParser(p, false)
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
+}
+
+func TestNhcbParserExemplarOnOpenMetricsParser(t *testing.T) {
+	// The input is taken originally from TestOpenMetricsParse, with additional tests for the NHCBParser.
+
+	input := `# HELP foo Counter with and without labels to certify CT is parsed for both cases
+# TYPE foo counter
+foo_total 17.0 1520879607.789 # {id="counter-test"} 5
+foo_created 1520872607.123
+# EOF
+`
+	exp := []parsedEntry{
+		{
+			m:    "foo",
+			help: "Counter with and without labels to certify CT is parsed for both cases",
+		}, {
+			m:   "foo",
+			typ: model.MetricTypeCounter,
+		}, {
+			m:    "foo_total",
+			v:    17,
+			lset: labels.FromStrings("__name__", "foo_total"),
+			t:    int64p(1520879607789),
+			//es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "counter-test"), Value: 5}},
+			ct: int64p(1520872607123),
+			// }, {
+			// 	m:    `foo_total{a="b"}`,
+			// 	v:    17.0,
+			// 	lset: labels.FromStrings("__name__", "foo_total", "a", "b"),
+			// 	t:    int64p(1520879607789),
+			// 	es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "counter-test"), Value: 5}},
+			// 	ct: int64p(1520872607123),
 		},
 	}
 
