@@ -278,7 +278,7 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 		currName = p.series[p.offsets[0]-p.start : p.mfNameLen]
 	}
 
-	currHash := p.hashOffsets(buf, currName)
+	currHash := p.seriesHash(buf, currName)
 	// Check cache, perhaps we fetched something already.
 	if currHash == p.ctHashSet && p.ct > 0 {
 		return &p.ct
@@ -318,7 +318,7 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 		}
 
 		// Remove _created suffix.
-		peekedHash := p.hashOffsets(buf, peekedName[:len(peekedName)-8])
+		peekedHash := p.seriesHash(buf, peekedName[:len(peekedName)-8])
 		if peekedHash != currHash {
 			// Found CT line for a different series, for our series no CT.
 			p.resetCTParseValues(resetLexer)
@@ -338,7 +338,7 @@ var (
 	quantileBytes = []byte{113, 117, 97, 110, 116, 105, 108, 101}
 )
 
-// hashOffsets generates a hash based on the metric family name and the offsets
+// seriesHash generates a hash based on the metric family name and the offsets
 // of label names and values from the parsed OpenMetrics data. It skips quantile
 // and le labels for summaries and histograms respectively.
 func (p *OpenMetricsParser) seriesHash(offsetsArr, metricFamilyName []byte) uint64 {
