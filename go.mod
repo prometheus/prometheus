@@ -18,7 +18,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/dennwc/varint v1.0.0
 	github.com/digitalocean/godo v1.126.0
-	github.com/docker/docker v27.2.0+incompatible
+	github.com/docker/docker v27.3.1+incompatible
 	github.com/edsrzf/mmap-go v1.1.0
 	github.com/envoyproxy/go-control-plane v0.13.0
 	github.com/envoyproxy/protoc-gen-validate v1.1.0
