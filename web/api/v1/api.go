@@ -1483,11 +1483,10 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 
 	for _, grp := range ruleGroups {
 		if paginationRequest != nil && paginationRequest.NextToken != "" && !foundToken {
-			if paginationRequest.NextToken == getRuleGroupNextToken(grp.File(), grp.Name()) {
-				foundToken = true
-			} else {
+			if paginationRequest.NextToken != getRuleGroupNextToken(grp.File(), grp.Name()) {
 				continue
 			}
+			foundToken = true
 		}
 
 		if len(rgSet) > 0 {
