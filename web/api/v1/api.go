@@ -1588,6 +1588,11 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 
 	}
 
+	if paginationRequest != nil && paginationRequest.NextToken != "" && !foundToken {
+		err := fmt.Errorf("invalid nextToken '%v'. were rule groups changed?", paginationRequest.NextToken)
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	}
+
 	res.RuleGroups = rgs
 	return apiFuncResult{res, nil, nil, nil}
 }

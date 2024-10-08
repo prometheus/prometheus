@@ -2875,6 +2875,15 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			zeroFunc: rulesZeroFunc,
 		},
 		{
+			endpoint: api.rules,
+			query: url.Values{
+				"max_groups": []string{"1"},
+				"next_token": []string{getRuleGroupNextToken("/path/to/not/exist", "unknown")},
+			},
+			errType:  errorBadData,
+			zeroFunc: rulesZeroFunc,
+		},
+		{
 			endpoint: api.queryExemplars,
 			query: url.Values{
 				"query": []string{`test_metric3{foo="boo"} - test_metric4{foo="bar"}`},
