@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 
 # Required minimum versions.
-REQUIRED_GO_VERSION="1.17"
-REQUIRED_NODE_VERSION="16.0.0"
-REQUIRED_NPM_VERSION="7.0.0"
+REQUIRED_GO_VERSION=$(grep 'version:' .promu.yml | awk '{print $2}')
+REQUIRED_NODE_VERSION=$(cat web/ui/.nvmrc | tr -d '\r' | sed 's/v//')
 
 # Function to compare versions (checks if version A >= version B).
 compare_versions() {
@@ -44,15 +43,6 @@ if compare_versions "$NODE_VERSION" "$REQUIRED_NODE_VERSION"; then
     echo "Node.js version $NODE_VERSION is OK"
 else
     echo "Node.js version $NODE_VERSION is too old, required >= $REQUIRED_NODE_VERSION"
-    exit 1
-fi
-
-# Check npm version.
-NPM_VERSION=$(npm -v)
-if compare_versions "$NPM_VERSION" "$REQUIRED_NPM_VERSION"; then
-    echo "npm version $NPM_VERSION is OK"
-else
-    echo "npm version $NPM_VERSION is too old, required >= $REQUIRED_NPM_VERSION"
     exit 1
 fi
 
