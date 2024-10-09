@@ -15,7 +15,7 @@ package azure
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
@@ -678,7 +678,7 @@ type mockAzureClient struct {
 	azureClient
 }
 
-func createMockAzureClient(t *testing.T, vmResp []armcompute.VirtualMachinesClientListAllResponse, vmssResp []armcompute.VirtualMachineScaleSetsClientListAllResponse, vmssvmResp []armcompute.VirtualMachineScaleSetVMsClientListResponse, interfaceResp armnetwork.Interface, logger log.Logger) client {
+func createMockAzureClient(t *testing.T, vmResp []armcompute.VirtualMachinesClientListAllResponse, vmssResp []armcompute.VirtualMachineScaleSetsClientListAllResponse, vmssvmResp []armcompute.VirtualMachineScaleSetVMsClientListResponse, interfaceResp armnetwork.Interface, logger *slog.Logger) client {
 	t.Helper()
 	mockVMServer := defaultMockVMServer(vmResp)
 	mockVMSSServer := defaultMockVMSSServer(vmssResp)

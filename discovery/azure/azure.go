@@ -36,7 +36,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v4"
 	cache "github.com/Code-Hex/go-generics-cache"
 	"github.com/Code-Hex/go-generics-cache/policy/lru"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/promslog"
@@ -412,7 +411,7 @@ func (d *Discovery) refreshAzureClient(ctx context.Context, client client) ([]*t
 }
 
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	defer level.Debug(d.logger).Log("msg", "Azure discovery completed")
+	defer d.logger.Debug("Azure discovery completed")
 
 	client, err := d.createAzureClient()
 	if err != nil {
