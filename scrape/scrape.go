@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"net/http"
 	"reflect"
@@ -29,11 +30,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/klauspost/compress/gzip"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/version"
 
 	"github.com/prometheus/prometheus/config"
@@ -47,6 +47,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/logging"
 	"github.com/prometheus/prometheus/util/pool"
 )
 
@@ -63,7 +64,7 @@ var errNameLabelMandatory = fmt.Errorf("missing metric name (%s label)", labels.
 // scrapePool manages scrapes for sets of targets.
 type scrapePool struct {
 	appendable storage.Appendable
-	logger     log.Logger
+	logger     *slog.Logger
 	cancel     context.CancelFunc
 	httpOpts   []config_util.HTTPClientOption
 
@@ -89,7 +90,7 @@ type scrapePool struct {
 
 	metrics *scrapeMetrics
 
-	scrapeFailureLogger    log.Logger
+	scrapeFailureLogger    *logging.JSONFileLogger
 	scrapeFailureLoggerMtx sync.RWMutex
 }
 
@@ -125,9 +126,9 @@ const maxAheadTime = 10 * time.Minute
 // returning an empty label set is interpreted as "drop".
 type labelsMutator func(labels.Labels) labels.Labels
 
-func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed uint64, logger log.Logger, buffers *pool.Pool, options *Options, metrics *scrapeMetrics) (*scrapePool, error) {
+func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed uint64, logger *slog.Logger, buffers *pool.Pool, options *Options, metrics *scrapeMetrics) (*scrapePool, error) {
 	if logger == nil {
-		logger = log.NewNopLogger()
+		logger = promslog.NewNopLogger()
 	}
 
 	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, options.HTTPClientOptions...)
@@ -160,7 +161,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 		return newScrapeLoop(
 			ctx,
 			opts.scraper,
-			log.With(logger, "target", opts.target),
+			logger.With("target", opts.target),
 			buffers,
 			func(l labels.Labels) labels.Labels {
 				return mutateSampleLabels(l, opts.target, opts.honorLabels, opts.mrc)
@@ -220,11 +221,11 @@ func (sp *scrapePool) DroppedTargetsCount() int {
 	return sp.droppedTargetsCount
 }
 
-func (sp *scrapePool) SetScrapeFailureLogger(l log.Logger) {
+func (sp *scrapePool) SetScrapeFailureLogger(l *logging.JSONFileLogger) {
 	sp.scrapeFailureLoggerMtx.Lock()
 	defer sp.scrapeFailureLoggerMtx.Unlock()
 	if l != nil {
-		l = log.With(l, "job_name", sp.config.JobName)
+		l.With("job_name", sp.config.JobName)
 	}
 	sp.scrapeFailureLogger = l
 
@@ -235,7 +236,7 @@ func (sp *scrapePool) SetScrapeFailureLogger(l log.Logger) {
 	}
 }
 
-func (sp *scrapePool) getScrapeFailureLogger() log.Logger {
+func (sp *scrapePool) getScrapeFailureLogger() *logging.JSONFileLogger {
 	sp.scrapeFailureLoggerMtx.RLock()
 	defer sp.scrapeFailureLoggerMtx.RUnlock()
 	return sp.scrapeFailureLogger
@@ -430,7 +431,7 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 	for _, tg := range tgs {
 		targets, failures := TargetsFromGroup(tg, sp.config, targets, lb)
 		for _, err := range failures {
-			level.Error(sp.logger).Log("msg", "Creating target failed", "err", err)
+			sp.logger.Error("Creating target failed", "err", err)
 		}
 		sp.metrics.targetSyncFailed.WithLabelValues(sp.config.JobName).Add(float64(len(failures)))
 		for _, t := range targets {
@@ -853,7 +854,7 @@ func (s *targetScraper) readResponse(ctx context.Context, resp *http.Response, w
 type loop interface {
 	run(errc chan<- error)
 	setForcedError(err error)
-	setScrapeFailureLogger(log.Logger)
+	setScrapeFailureLogger(*logging.JSONFileLogger)
 	stop()
 	getCache() *scrapeCache
 	disableEndOfRunStalenessMarkers()
@@ -868,8 +869,8 @@ type cacheEntry struct {
 
 type scrapeLoop struct {
 	scraper                  scraper
-	l                        log.Logger
-	scrapeFailureLogger      log.Logger
+	l                        *slog.Logger
+	scrapeFailureLogger      *logging.JSONFileLogger
 	scrapeFailureLoggerMtx   sync.RWMutex
 	cache                    *scrapeCache
 	lastScrapeSize           int
@@ -1170,7 +1171,7 @@ func (c *scrapeCache) LengthMetadata() int {
 
 func newScrapeLoop(ctx context.Context,
 	sc scraper,
-	l log.Logger,
+	l *slog.Logger,
 	buffers *pool.Pool,
 	sampleMutator labelsMutator,
 	reportSampleMutator labelsMutator,
@@ -1200,7 +1201,7 @@ func newScrapeLoop(ctx context.Context,
 	validationScheme model.ValidationScheme,
 ) *scrapeLoop {
 	if l == nil {
-		l = log.NewNopLogger()
+		l = promslog.NewNopLogger()
 	}
 	if buffers == nil {
 		buffers = pool.New(1e3, 1e6, 3, func(sz int) interface{} { return make([]byte, 0, sz) })
@@ -1257,11 +1258,11 @@ func newScrapeLoop(ctx context.Context,
 	return sl
 }
 
-func (sl *scrapeLoop) setScrapeFailureLogger(l log.Logger) {
+func (sl *scrapeLoop) setScrapeFailureLogger(l *logging.JSONFileLogger) {
 	sl.scrapeFailureLoggerMtx.Lock()
 	defer sl.scrapeFailureLoggerMtx.Unlock()
 	if ts, ok := sl.scraper.(fmt.Stringer); ok && l != nil {
-		l = log.With(l, "target", ts.String())
+		l.With("target", ts.String())
 	}
 	sl.scrapeFailureLogger = l
 }
@@ -1359,13 +1360,13 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 		}
 		err = app.Commit()
 		if err != nil {
-			level.Error(sl.l).Log("msg", "Scrape commit failed", "err", err)
+			sl.l.Error("Scrape commit failed", "err", err)
 		}
 	}()
 
 	defer func() {
 		if err = sl.report(app, appendTime, time.Since(start), total, added, seriesAdded, bytesRead, scrapeErr); err != nil {
-			level.Warn(sl.l).Log("msg", "Appending scrape report failed", "err", err)
+			sl.l.Warn("Appending scrape report failed", "err", err)
 		}
 	}()
 
@@ -1375,7 +1376,7 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 		if _, _, _, err := sl.append(app, []byte{}, "", appendTime); err != nil {
 			app.Rollback()
 			app = sl.appender(sl.appenderCtx)
-			level.Warn(sl.l).Log("msg", "Append failed", "err", err)
+			sl.l.Warn("Append failed", "err", err)
 		}
 		if errc != nil {
 			errc <- forcedErr
@@ -1408,10 +1409,10 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 		}
 		bytesRead = len(b)
 	} else {
-		level.Debug(sl.l).Log("msg", "Scrape failed", "err", scrapeErr)
+		sl.l.Debug("Scrape failed", "err", scrapeErr)
 		sl.scrapeFailureLoggerMtx.RLock()
 		if sl.scrapeFailureLogger != nil {
-			sl.scrapeFailureLogger.Log("err", scrapeErr)
+			sl.scrapeFailureLogger.Error("err", scrapeErr)
 		}
 		sl.scrapeFailureLoggerMtx.RUnlock()
 		if errc != nil {
@@ -1428,13 +1429,13 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	if appErr != nil {
 		app.Rollback()
 		app = sl.appender(sl.appenderCtx)
-		level.Debug(sl.l).Log("msg", "Append failed", "err", appErr)
+		sl.l.Debug("Append failed", "err", appErr)
 		// The append failed, probably due to a parse error or sample limit.
 		// Call sl.append again with an empty scrape to trigger stale markers.
 		if _, _, _, err := sl.append(app, []byte{}, "", appendTime); err != nil {
 			app.Rollback()
 			app = sl.appender(sl.appenderCtx)
-			level.Warn(sl.l).Log("msg", "Append failed", "err", err)
+			sl.l.Warn("Append failed", "err", err)
 		}
 	}
 
@@ -1507,16 +1508,16 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 		}
 		err = app.Commit()
 		if err != nil {
-			level.Warn(sl.l).Log("msg", "Stale commit failed", "err", err)
+			sl.l.Warn("Stale commit failed", "err", err)
 		}
 	}()
 	if _, _, _, err = sl.append(app, []byte{}, "", staleTime); err != nil {
 		app.Rollback()
 		app = sl.appender(sl.appenderCtx)
-		level.Warn(sl.l).Log("msg", "Stale append failed", "err", err)
+		sl.l.Warn("Stale append failed", "err", err)
 	}
 	if err = sl.reportStale(app, staleTime); err != nil {
-		level.Warn(sl.l).Log("msg", "Stale report failed", "err", err)
+		sl.l.Warn("Stale report failed", "err", err)
 	}
 }
 
@@ -1548,8 +1549,8 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 		p = textparse.NewNHCBParser(p, sl.scrapeClassicHistograms)
 	}
 	if err != nil {
-		level.Debug(sl.l).Log(
-			"msg", "Invalid content type on scrape, using prometheus parser as fallback.",
+		sl.l.Debug(
+			"Invalid content type on scrape, using prometheus parser as fallback.",
 			"content_type", contentType,
 			"err", err,
 		)
@@ -1720,7 +1721,7 @@ loop:
 					if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) { // OOO is a common case, ignoring completely for now.
 						// CT is an experimental feature. For now, we don't need to fail the
 						// scrape on errors updating the created timestamp, log debug.
-						level.Debug(sl.l).Log("msg", "Error when appending CT in scrape loop", "series", string(met), "ct", *ctMs, "t", t, "err", err)
+						sl.l.Debug("Error when appending CT in scrape loop", "series", string(met), "ct", *ctMs, "t", t, "err", err)
 					}
 				}
 			}
@@ -1745,7 +1746,7 @@ loop:
 		sampleAdded, err = sl.checkAddError(met, err, &sampleLimitErr, &bucketLimitErr, &appErrs)
 		if err != nil {
 			if !errors.Is(err, storage.ErrNotFound) {
-				level.Debug(sl.l).Log("msg", "Unexpected error", "series", string(met), "err", err)
+				sl.l.Debug("Unexpected error", "series", string(met), "err", err)
 			}
 			break loop
 		}
@@ -1797,21 +1798,21 @@ loop:
 				outOfOrderExemplars++
 			default:
 				// Since exemplar storage is still experimental, we don't fail the scrape on ingestion errors.
-				level.Debug(sl.l).Log("msg", "Error while adding exemplar in AddExemplar", "exemplar", fmt.Sprintf("%+v", e), "err", exemplarErr)
+				sl.l.Debug("Error while adding exemplar in AddExemplar", "exemplar", fmt.Sprintf("%+v", e), "err", exemplarErr)
 			}
 		}
 		if outOfOrderExemplars > 0 && outOfOrderExemplars == len(exemplars) {
 			// Only report out of order exemplars if all are out of order, otherwise this was a partial update
 			// to some existing set of exemplars.
 			appErrs.numExemplarOutOfOrder += outOfOrderExemplars
-			level.Debug(sl.l).Log("msg", "Out of order exemplars", "count", outOfOrderExemplars, "latest", fmt.Sprintf("%+v", exemplars[len(exemplars)-1]))
+			sl.l.Debug("Out of order exemplars", "count", outOfOrderExemplars, "latest", fmt.Sprintf("%+v", exemplars[len(exemplars)-1]))
 			sl.metrics.targetScrapeExemplarOutOfOrder.Add(float64(outOfOrderExemplars))
 		}
 
 		if sl.appendMetadataToWAL && metadataChanged {
 			if _, merr := app.UpdateMetadata(ref, lset, meta); merr != nil {
 				// No need to fail the scrape on errors appending metadata.
-				level.Debug(sl.l).Log("msg", "Error when appending metadata in scrape loop", "ref", fmt.Sprintf("%d", ref), "metadata", fmt.Sprintf("%+v", meta), "err", merr)
+				sl.l.Debug("Error when appending metadata in scrape loop", "ref", fmt.Sprintf("%d", ref), "metadata", fmt.Sprintf("%+v", meta), "err", merr)
 			}
 		}
 	}
@@ -1830,16 +1831,16 @@ loop:
 		sl.metrics.targetScrapeNativeHistogramBucketLimit.Inc()
 	}
 	if appErrs.numOutOfOrder > 0 {
-		level.Warn(sl.l).Log("msg", "Error on ingesting out-of-order samples", "num_dropped", appErrs.numOutOfOrder)
+		sl.l.Warn("Error on ingesting out-of-order samples", "num_dropped", appErrs.numOutOfOrder)
 	}
 	if appErrs.numDuplicates > 0 {
-		level.Warn(sl.l).Log("msg", "Error on ingesting samples with different value but same timestamp", "num_dropped", appErrs.numDuplicates)
+		sl.l.Warn("Error on ingesting samples with different value but same timestamp", "num_dropped", appErrs.numDuplicates)
 	}
 	if appErrs.numOutOfBounds > 0 {
-		level.Warn(sl.l).Log("msg", "Error on ingesting samples that are too old or are too far into the future", "num_dropped", appErrs.numOutOfBounds)
+		sl.l.Warn("Error on ingesting samples that are too old or are too far into the future", "num_dropped", appErrs.numOutOfBounds)
 	}
 	if appErrs.numExemplarOutOfOrder > 0 {
-		level.Warn(sl.l).Log("msg", "Error on ingesting out-of-order exemplars", "num_dropped", appErrs.numExemplarOutOfOrder)
+		sl.l.Warn("Error on ingesting out-of-order exemplars", "num_dropped", appErrs.numExemplarOutOfOrder)
 	}
 	if err == nil {
 		sl.cache.forEachStale(func(lset labels.Labels) bool {
@@ -1867,17 +1868,17 @@ func (sl *scrapeLoop) checkAddError(met []byte, err error, sampleLimitErr, bucke
 		return false, storage.ErrNotFound
 	case errors.Is(err, storage.ErrOutOfOrderSample):
 		appErrs.numOutOfOrder++
-		level.Debug(sl.l).Log("msg", "Out of order sample", "series", string(met))
+		sl.l.Debug("Out of order sample", "series", string(met))
 		sl.metrics.targetScrapeSampleOutOfOrder.Inc()
 		return false, nil
 	case errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
 		appErrs.numDuplicates++
-		level.Debug(sl.l).Log("msg", "Duplicate sample for timestamp", "series", string(met))
+		sl.l.Debug("Duplicate sample for timestamp", "series", string(met))
 		sl.metrics.targetScrapeSampleDuplicate.Inc()
 		return false, nil
 	case errors.Is(err, storage.ErrOutOfBounds):
 		appErrs.numOutOfBounds++
-		level.Debug(sl.l).Log("msg", "Out of bounds metric", "series", string(met))
+		sl.l.Debug("Out of bounds metric", "series", string(met))
 		sl.metrics.targetScrapeSampleOutOfBounds.Inc()
 		return false, nil
 	case errors.Is(err, errSampleLimit):

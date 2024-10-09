@@ -16,11 +16,10 @@ package tracing
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/version"
 	"go.opentelemetry.io/otel"
@@ -43,14 +42,14 @@ const serviceName = "prometheus"
 // Manager is capable of building, (re)installing and shutting down
 // the tracer provider.
 type Manager struct {
-	logger       log.Logger
+	logger       *slog.Logger
 	done         chan struct{}
 	config       config.TracingConfig
 	shutdownFunc func() error
 }
 
 // NewManager creates a new tracing manager.
-func NewManager(logger log.Logger) *Manager {
+func NewManager(logger *slog.Logger) *Manager {
 	return &Manager{
 		logger: logger,
 		done:   make(chan struct{}),
@@ -62,7 +61,7 @@ func NewManager(logger log.Logger) *Manager {
 func (m *Manager) Run() {
 	otel.SetTextMapPropagator(propagation.TraceContext{})
 	otel.SetErrorHandler(otelErrHandler(func(err error) {
-		level.Error(m.logger).Log("msg", "OpenTelemetry handler returned an error", "err", err)
+		m.logger.Error("OpenTelemetry handler returned an error", "err", err.Error())
 	}))
 	<-m.done
 }
@@ -89,7 +88,7 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 		m.config = cfg.TracingConfig
 		m.shutdownFunc = nil
 		otel.SetTracerProvider(noop.NewTracerProvider())
-		level.Info(m.logger).Log("msg", "Tracing provider uninstalled.")
+		m.logger.Info("Tracing provider uninstalled.")
 		return nil
 	}
 
@@ -102,7 +101,7 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 	m.config = cfg.TracingConfig
 	otel.SetTracerProvider(tp)
 
-	level.Info(m.logger).Log("msg", "Successfully installed a new tracer provider.")
+	m.logger.Info("Successfully installed a new tracer provider.")
 	return nil
 }
 
@@ -115,10 +114,10 @@ func (m *Manager) Stop() {
 	}
 
 	if err := m.shutdownFunc(); err != nil {
-		level.Error(m.logger).Log("msg", "failed to shut down the tracer provider", "err", err)
+		m.logger.Error("failed to shut down the tracer provider", "err", err)
 	}
 
-	level.Info(m.logger).Log("msg", "Tracing manager stopped")
+	m.logger.Info("Tracing manager stopped")
 }
 
 type otelErrHandler func(err error)

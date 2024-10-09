@@ -16,11 +16,11 @@ package dns
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/miekg/dns"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -40,7 +40,7 @@ func TestDNS(t *testing.T) {
 	testCases := []struct {
 		name   string
 		config SDConfig
-		lookup func(name string, qtype uint16, logger log.Logger) (*dns.Msg, error)
+		lookup func(name string, qtype uint16, logger *slog.Logger) (*dns.Msg, error)
 
 		expected []*targetgroup.Group
 	}{
@@ -52,7 +52,7 @@ func TestDNS(t *testing.T) {
 				Port:            80,
 				Type:            "A",
 			},
-			lookup: func(name string, qtype uint16, logger log.Logger) (*dns.Msg, error) {
+			lookup: func(name string, qtype uint16, logger *slog.Logger) (*dns.Msg, error) {
 				return nil, fmt.Errorf("some error")
 			},
 			expected: []*targetgroup.Group{},
@@ -65,7 +65,7 @@ func TestDNS(t *testing.T) {
 				Port:            80,
 				Type:            "A",
 			},
-			lookup: func(name string, qtype uint16, logger log.Logger) (*dns.Msg, error) {
+			lookup: func(name string, qtype uint16, logger *slog.Logger) (*dns.Msg, error) {
 				return &dns.Msg{
 						Answer: []dns.RR{
 							&dns.A{A: net.IPv4(192, 0, 2, 2)},
@@ -97,7 +97,7 @@ func TestDNS(t *testing.T) {
 				Port:            80,
 				Type:            "AAAA",
 			},
-			lookup: func(name string, qtype uint16, logger log.Logger) (*dns.Msg, error) {
+			lookup: func(name string, qtype uint16, logger *slog.Logger) (*dns.Msg, error) {
 				return &dns.Msg{
 						Answer: []dns.RR{
 							&dns.AAAA{AAAA: net.IPv6loopback},
@@ -128,7 +128,7 @@ func TestDNS(t *testing.T) {
 				Type:            "SRV",
 				RefreshInterval: model.Duration(time.Minute),
 			},
-			lookup: func(name string, qtype uint16, logger log.Logger) (*dns.Msg, error) {
+			lookup: func(name string, qtype uint16, logger *slog.Logger) (*dns.Msg, error) {
 				return &dns.Msg{
 						Answer: []dns.RR{
 							&dns.SRV{Port: 3306, Target: "db1.example.com."},
@@ -167,7 +167,7 @@ func TestDNS(t *testing.T) {
 				Names:           []string{"_mysql._tcp.db.example.com."},
 				RefreshInterval: model.Duration(time.Minute),
 			},
-			lookup: func(name string, qtype uint16, logger log.Logger) (*dns.Msg, error) {
+			lookup: func(name string, qtype uint16, logger *slog.Logger) (*dns.Msg, error) {
 				return &dns.Msg{
 						Answer: []dns.RR{
 							&dns.SRV{Port: 3306, Target: "db1.example.com."},
@@ -198,7 +198,7 @@ func TestDNS(t *testing.T) {
 				Names:           []string{"_mysql._tcp.db.example.com."},
 				RefreshInterval: model.Duration(time.Minute),
 			},
-			lookup: func(name string, qtype uint16, logger log.Logger) (*dns.Msg, error) {
+			lookup: func(name string, qtype uint16, logger *slog.Logger) (*dns.Msg, error) {
 				return &dns.Msg{}, nil
 			},
 			expected: []*targetgroup.Group{
@@ -215,7 +215,7 @@ func TestDNS(t *testing.T) {
 				Port:            25,
 				RefreshInterval: model.Duration(time.Minute),
 			},
-			lookup: func(name string, qtype uint16, logger log.Logger) (*dns.Msg, error) {
+			lookup: func(name string, qtype uint16, logger *slog.Logger) (*dns.Msg, error) {
 				return &dns.Msg{
 						Answer: []dns.RR{
 							&dns.MX{Preference: 0, Mx: "smtp1.example.com."},

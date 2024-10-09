@@ -21,10 +21,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 	"gopkg.in/yaml.v2"
@@ -252,6 +252,8 @@ func newServer(t *testing.T) (*httptest.Server, *SDConfig) {
 		case "/v1/catalog/services?index=1&wait=120000ms":
 			time.Sleep(5 * time.Second)
 			response = ServicesTestAnswer
+		case "/v1/catalog/services?filter=NodeMeta.rack_name+%3D%3D+%222304%22&index=1&wait=120000ms":
+			response = ServicesTestAnswer
 		default:
 			t.Errorf("Unhandled consul call: %s", r.URL)
 		}
@@ -270,7 +272,7 @@ func newServer(t *testing.T) (*httptest.Server, *SDConfig) {
 }
 
 func newDiscovery(t *testing.T, config *SDConfig) *Discovery {
-	logger := log.NewNopLogger()
+	logger := promslog.NewNopLogger()
 
 	metrics := NewTestMetrics(t, config, prometheus.NewRegistry())
 
@@ -367,6 +369,27 @@ func TestAllOptions(t *testing.T) {
 	checkOneTarget(t, <-ch)
 	cancel()
 	<-ch
+}
+
+// Watch the test service with a specific tag and node-meta via Filter parameter.
+func TestFilterOption(t *testing.T) {
+	stub, config := newServer(t)
+	defer stub.Close()
+
+	config.Services = []string{"test"}
+	config.Filter = `NodeMeta.rack_name == "2304"`
+	config.Token = "fake-token"
+
+	d := newDiscovery(t, config)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	ch := make(chan []*targetgroup.Group)
+	go func() {
+		d.Run(ctx, ch)
+		close(ch)
+	}()
+	checkOneTarget(t, <-ch)
+	cancel()
 }
 
 func TestGetDatacenterShouldReturnError(t *testing.T) {

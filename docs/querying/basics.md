@@ -35,8 +35,9 @@ evaluate to one of four types:
 
 Depending on the use-case (e.g. when graphing vs. displaying the output of an
 expression), only some of these types are legal as the result of a
-user-specified expression. For example, an expression that returns an instant
-vector is the only type which can be graphed.
+user-specified expression. 
+For [instant queries](api.md#instant-queries), any of the above data types are allowed as the root of the expression.
+[Range queries](api.md/#range-queries) only support scalar-typed and instant-vector-typed expressions.
 
 _Notes about the experimental native histograms:_
 
@@ -68,9 +69,10 @@ Example:
     'these are unescaped: \n \\ \t'
     `these are not unescaped: \n ' " \t`
 
-### Float literals
+### Float literals and time durations
 
-Scalar float values can be written as literal integer or floating-point numbers in the format (whitespace only included for better readability):
+Scalar float values can be written as literal integer or floating-point numbers
+in the format (whitespace only included for better readability):
 
     [-+]?(
           [0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?
@@ -87,16 +89,53 @@ Examples:
     0x8f
     -Inf
     NaN
-	
 
-As of version 2.54, float literals can also be represented using the syntax of time durations, where the time duration is converted into a float value corresponding to the number of seconds the time duration represents. This is an experimental feature and might still change.
+Additionally, underscores (`_`) can be used in between decimal or hexadecimal
+digits to improve readability.
 
 Examples:
 
-    1s # Equivalent to 1.0
-    2m # Equivalent to 120.0
-    1ms # Equivalent to 0.001
- 
+    1_000_000
+    .123_456_789
+    0x_53_AB_F3_82
+
+Float literals are also used to specify durations in seconds. For convenience,
+decimal integer numbers may be combined with the following
+time units:
+
+* `ms` – milliseconds
+* `s` – seconds – 1s equals 1000ms
+* `m` – minutes – 1m equals 60s (ignoring leap seconds)
+* `h` – hours – 1h equals 60m
+* `d` – days – 1d equals 24h (ignoring so-called daylight saving time)
+* `w` – weeks – 1w equals 7d
+* `y` – years – 1y equals 365d (ignoring leap days)
+
+Suffixing a decimal integer number with one of the units above is a different
+representation of the equivalent number of seconds as a bare float literal.
+
+Examples:
+
+    1s # Equivalent to 1.
+    2m # Equivalent to 120.
+    1ms # Equivalent to 0.001.
+    -2h # Equivalent to -7200.
+
+The following examples do _not_ work:
+
+    0xABm # No suffixing of hexadecimal numbers.
+    1.5h # Time units cannot be combined with a floating point.
+    +Infd # No suffixing of ±Inf or NaN.
+
+Multiple units can be combined by concatenation of suffixed integers. Units
+must be ordered from the longest to the shortest. A given unit must only appear
+once per float literal.
+
+Examples:
+
+    1h30m # Equivalent to 5400s and thus 5400.
+    12h34m56s # Equivalent to 45296s and thus 45296.
+    54s321ms # Equivalent to 54.321.
 
 ## Time series selectors
 
@@ -208,52 +247,21 @@ syntax](https://github.com/google/re2/wiki/Syntax).
 ### Range Vector Selectors
 
 Range vector literals work like instant vector literals, except that they
-select a range of samples back from the current instant. Syntactically, a [time
-duration](#time-durations) is appended in square brackets (`[]`) at the end of
-a vector selector to specify how far back in time values should be fetched for
-each resulting range vector element. The range is a left-open and right-closed interval,
-i.e. samples with timestamps coinciding with the left boundary of the range are excluded from the selection,
-while samples coinciding with the right boundary of the range are included in the selection.
+select a range of samples back from the current instant. Syntactically, a
+[float literal](#float-literals-and-time-durations) is appended in square
+brackets (`[]`) at the end of a vector selector to specify for how many seconds
+back in time values should be fetched for each resulting range vector element.
+Commonly, the float literal uses the syntax with one or more time units, e.g.
+`[5m]`. The range is a left-open and right-closed interval, i.e. samples with
+timestamps coinciding with the left boundary of the range are excluded from the
+selection, while samples coinciding with the right boundary of the range are
+included in the selection.
 
-In this example, we select all the values recorded less than 5m ago for all time series
-that have the metric name `http_requests_total` and
-a `job` label set to `prometheus`:
+In this example, we select all the values recorded less than 5m ago for all
+time series that have the metric name `http_requests_total` and a `job` label
+set to `prometheus`:
 
     http_requests_total{job="prometheus"}[5m]
-
-### Time Durations
-
-Time durations are specified as a number, followed immediately by one of the
-following units:
-
-* `ms` - milliseconds
-* `s` - seconds
-* `m` - minutes
-* `h` - hours
-* `d` - days - assuming a day always has 24h
-* `w` - weeks - assuming a week always has 7d
-* `y` - years - assuming a year always has 365d<sup>1</sup>
-
-<sup>1</sup> For days in a year, the leap day is ignored, and conversely, for a minute, a leap second is ignored.
-
-Time durations can be combined by concatenation. Units must be ordered from the
-longest to the shortest. A given unit must only appear once in a time duration.
-
-Here are some examples of valid time durations:
-
-    5h
-    1h30m
-    5m
-    10s
-
-
-As of version 2.54, time durations can also be represented using the syntax of float literals, implying the number of seconds of the time duration. This is an experimental feature and might still change.
-
-Examples:
-
-    1.0 # Equivalent to 1s
-    0.001 # Equivalent to 1ms
-    120 # Equivalent to 2m
 
 ### Offset modifier
 
@@ -337,7 +345,7 @@ Note that the `@` modifier allows a query to look ahead of its evaluation time.
 
 Subquery allows you to run an instant query for a given range and resolution. The result of a subquery is a range vector.
 
-Syntax: `<instant_query> '[' <range> ':' [<resolution>] ']' [ @ <float_literal> ] [ offset <duration> ]`
+Syntax: `<instant_query> '[' <range> ':' [<resolution>] ']' [ @ <float_literal> ] [ offset <float_literal> ]`
 
 * `<resolution>` is optional. Default is the global evaluation interval.
 

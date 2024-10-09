@@ -23,7 +23,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v4"
 	cache "github.com/Code-Hex/go-generics-cache"
 	"github.com/Code-Hex/go-generics-cache/policy/lru"
-	"github.com/go-kit/log"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 )
@@ -150,7 +150,7 @@ func TestVMToLabelSet(t *testing.T) {
 	cfg := DefaultSDConfig
 	d := &Discovery{
 		cfg:    &cfg,
-		logger: log.NewNopLogger(),
+		logger: promslog.NewNopLogger(),
 		cache:  cache.New(cache.AsLRU[string, *armnetwork.Interface](lru.WithCapacity(5))),
 	}
 	network := armnetwork.Interface{

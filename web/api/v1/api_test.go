@@ -34,12 +34,11 @@ import (
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/testutil"
 
-	"github.com/go-kit/log"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/common/promlog"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/route"
 	"github.com/stretchr/testify/require"
 
@@ -238,7 +237,7 @@ func (m *rulesRetrieverMock) CreateAlertingRules() {
 		labels.Labels{},
 		"",
 		true,
-		log.NewNopLogger(),
+		promslog.NewNopLogger(),
 	)
 	rule2 := rules.NewAlertingRule(
 		"test_metric4",
@@ -250,7 +249,7 @@ func (m *rulesRetrieverMock) CreateAlertingRules() {
 		labels.Labels{},
 		"",
 		true,
-		log.NewNopLogger(),
+		promslog.NewNopLogger(),
 	)
 	rule3 := rules.NewAlertingRule(
 		"test_metric5",
@@ -262,7 +261,7 @@ func (m *rulesRetrieverMock) CreateAlertingRules() {
 		labels.FromStrings("name", "tm5"),
 		"",
 		false,
-		log.NewNopLogger(),
+		promslog.NewNopLogger(),
 	)
 	rule4 := rules.NewAlertingRule(
 		"test_metric6",
@@ -274,7 +273,7 @@ func (m *rulesRetrieverMock) CreateAlertingRules() {
 		labels.Labels{},
 		"",
 		true,
-		log.NewNopLogger(),
+		promslog.NewNopLogger(),
 	)
 	rule5 := rules.NewAlertingRule(
 		"test_metric7",
@@ -286,7 +285,7 @@ func (m *rulesRetrieverMock) CreateAlertingRules() {
 		labels.Labels{},
 		"",
 		true,
-		log.NewNopLogger(),
+		promslog.NewNopLogger(),
 	)
 	var r []*rules.AlertingRule
 	r = append(r, rule1)
@@ -314,7 +313,7 @@ func (m *rulesRetrieverMock) CreateRuleGroups() {
 		QueryFunc:  rules.EngineQueryFunc(engine, storage),
 		Appendable: storage,
 		Context:    context.Background(),
-		Logger:     log.NewNopLogger(),
+		Logger:     promslog.NewNopLogger(),
 		NotifyFunc: func(ctx context.Context, expr string, alerts ...*rules.Alert) {},
 	}
 
@@ -471,20 +470,20 @@ func TestEndpoints(t *testing.T) {
 		u, err := url.Parse(server.URL)
 		require.NoError(t, err)
 
-		al := promlog.AllowedLevel{}
+		al := promslog.AllowedLevel{}
 		require.NoError(t, al.Set("debug"))
 
-		af := promlog.AllowedFormat{}
+		af := promslog.AllowedFormat{}
 		require.NoError(t, af.Set("logfmt"))
 
-		promlogConfig := promlog.Config{
+		promslogConfig := promslog.Config{
 			Level:  &al,
 			Format: &af,
 		}
 
 		dbDir := t.TempDir()
 
-		remote := remote.NewStorage(promlog.New(&promlogConfig), prometheus.DefaultRegisterer, func() (int64, error) {
+		remote := remote.NewStorage(promslog.New(&promslogConfig), prometheus.DefaultRegisterer, func() (int64, error) {
 			return 0, nil
 		}, dbDir, 1*time.Second, nil, false)
 
@@ -3530,7 +3529,7 @@ func TestAdminEndpoints(t *testing.T) {
 
 func TestRespondSuccess(t *testing.T) {
 	api := API{
-		logger: log.NewNopLogger(),
+		logger: promslog.NewNopLogger(),
 	}
 
 	api.ClearCodecs()
@@ -3622,7 +3621,7 @@ func TestRespondSuccess(t *testing.T) {
 
 func TestRespondSuccess_DefaultCodecCannotEncodeResponse(t *testing.T) {
 	api := API{
-		logger: log.NewNopLogger(),
+		logger: promslog.NewNopLogger(),
 	}
 
 	api.ClearCodecs()
