@@ -68,11 +68,10 @@ loop:
 	}
 
 	infoSeries, ws, err := ev.fetchInfoSeries(ctx, mat, ignoreSeries, dataLabelMatchers)
-	annots.Merge(ws)
 	if err != nil {
-		annots.Add(err)
-		return nil, annots
+		ev.error(err)
 	}
+	annots.Merge(ws)
 
 	res, ws := ev.combineWithInfoSeries(ctx, mat, infoSeries, ignoreSeries, dataLabelMatchers)
 	annots.Merge(ws)
@@ -85,9 +84,7 @@ loop:
 func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeries map[int]struct{}, dataLabelMatchers map[string][]*labels.Matcher) (Matrix, annotations.Annotations, error) {
 	if ev.selectHints == nil {
 		// ev.selectHints should have been set.
-		var annots annotations.Annotations
-		annots.Add(fmt.Errorf("ev.selectHints not set"))
-		return nil, annots, nil
+		return nil, nil, fmt.Errorf("ev.selectHints not set")
 	}
 
 	// A map of values for all identifying labels we are interested in.
