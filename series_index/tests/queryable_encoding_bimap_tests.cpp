@@ -40,7 +40,12 @@ TEST_F(QueryableEncodingBimapFixture, EmplaceInvalidLabel) {
   // Arrange
 
   // Act
-  auto ls_id = index_.find_or_emplace(LabelViewSet{{"key", ""}});
+  LabelViewSet ls{{"key", "value"}};
+  for (auto& label : ls) {
+    label.second = "";
+    break;
+  }
+  auto ls_id = index_.find_or_emplace(ls);
 
   // Assert
   auto label = index_[ls_id].begin();
@@ -53,7 +58,14 @@ TEST_F(QueryableEncodingBimapFixture, EmplaceLabelSetWithInvalidLabel) {
   // Arrange
 
   // Act
-  auto ls_id = index_.find_or_emplace(LabelViewSet{{"job", "cron"}, {"key", ""}, {"process", "php"}});
+  LabelViewSet ls{{"job", "cron"}, {"key", "value"}, {"process", "php"}};
+  for (auto& label : ls) {
+    if (label.first == "key") {
+      label.second = "";
+      break;
+    }
+  }
+  auto ls_id = index_.find_or_emplace(ls);
 
   // Assert
   {
@@ -85,6 +97,21 @@ TEST_F(QueryableEncodingBimapFixture, EmplaceLabelSetWithInvalidLabel) {
     ASSERT_NE(nullptr, values_trie);
     EXPECT_TRUE(values_trie->lookup("php"));
   }
+}
+
+TEST_F(QueryableEncodingBimapFixture, EmplaceDuplicatedLabelSet) {
+  // Arrange
+  const auto label_set = LabelViewSet{{"job", "cron"}, {"key", ""}, {"process", "php"}};
+  const auto label_set2 = LabelViewSet{{"job", "cron"}, {"key", ""}, {"process", "php1"}};
+
+  // Act
+  const auto ls_id1 = index_.find_or_emplace(label_set);
+  const auto existing_ls_id = index_.find_or_emplace(label_set);
+  const auto ls_id2 = index_.find_or_emplace(label_set2);
+
+  // Assert
+  EXPECT_EQ(ls_id1, existing_ls_id);
+  EXPECT_NE(ls_id1, ls_id2);
 }
 
 }  // namespace
