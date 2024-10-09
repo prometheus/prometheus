@@ -17,10 +17,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
-
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -1009,7 +1007,7 @@ func (a *headAppender) Commit() (err error) {
 			if errors.Is(err, storage.ErrOutOfOrderExemplar) {
 				continue
 			}
-			level.Debug(a.head.logger).Log("msg", "Unknown error while adding exemplar", "err", err)
+			a.head.logger.Debug("Unknown error while adding exemplar", "err", err)
 		}
 	}
 
@@ -1421,14 +1419,14 @@ func (a *headAppender) Commit() (err error) {
 			// until we have found what samples become OOO. We can try having a metric for this failure.
 			// Returning the error here is not correct because we have already put the samples into the memory,
 			// hence the append/insert was a success.
-			level.Error(a.head.logger).Log("msg", "Failed to log out of order samples into the WAL", "err", err)
+			a.head.logger.Error("Failed to log out of order samples into the WAL", "err", err)
 		}
 	}
 	return nil
 }
 
 // insert is like append, except it inserts. Used for OOO samples.
-func (s *memSeries) insert(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, chunkDiskMapper *chunks.ChunkDiskMapper, oooCapMax int64, logger log.Logger) (inserted, chunkCreated bool, mmapRefs []chunks.ChunkDiskMapperRef) {
+func (s *memSeries) insert(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, chunkDiskMapper *chunks.ChunkDiskMapper, oooCapMax int64, logger *slog.Logger) (inserted, chunkCreated bool, mmapRefs []chunks.ChunkDiskMapperRef) {
 	if s.ooo == nil {
 		s.ooo = &memSeriesOOOFields{}
 	}
@@ -1790,7 +1788,7 @@ func (s *memSeries) cutNewHeadChunk(mint int64, e chunkenc.Encoding, chunkRange 
 
 // cutNewOOOHeadChunk cuts a new OOO chunk and m-maps the old chunk.
 // The caller must ensure that s is locked and s.ooo is not nil.
-func (s *memSeries) cutNewOOOHeadChunk(mint int64, chunkDiskMapper *chunks.ChunkDiskMapper, logger log.Logger) (*oooHeadChunk, []chunks.ChunkDiskMapperRef) {
+func (s *memSeries) cutNewOOOHeadChunk(mint int64, chunkDiskMapper *chunks.ChunkDiskMapper, logger *slog.Logger) (*oooHeadChunk, []chunks.ChunkDiskMapperRef) {
 	ref := s.mmapCurrentOOOHeadChunk(chunkDiskMapper, logger)
 
 	s.ooo.oooHeadChunk = &oooHeadChunk{
@@ -1803,7 +1801,7 @@ func (s *memSeries) cutNewOOOHeadChunk(mint int64, chunkDiskMapper *chunks.Chunk
 }
 
 // s must be locked when calling.
-func (s *memSeries) mmapCurrentOOOHeadChunk(chunkDiskMapper *chunks.ChunkDiskMapper, logger log.Logger) []chunks.ChunkDiskMapperRef {
+func (s *memSeries) mmapCurrentOOOHeadChunk(chunkDiskMapper *chunks.ChunkDiskMapper, logger *slog.Logger) []chunks.ChunkDiskMapperRef {
 	if s.ooo == nil || s.ooo.oooHeadChunk == nil {
 		// OOO is not enabled or there is no head chunk, so nothing to m-map here.
 		return nil
@@ -1816,7 +1814,7 @@ func (s *memSeries) mmapCurrentOOOHeadChunk(chunkDiskMapper *chunks.ChunkDiskMap
 	chunkRefs := make([]chunks.ChunkDiskMapperRef, 0, len(chks))
 	for _, memchunk := range chks {
 		if len(s.ooo.oooMmappedChunks) >= (oooChunkIDMask - 1) {
-			level.Error(logger).Log("msg", "Too many OOO chunks, dropping data", "series", s.lset.String())
+			logger.Error("Too many OOO chunks, dropping data", "series", s.lset.String())
 			break
 		}
 		chunkRef := chunkDiskMapper.WriteChunk(s.ref, memchunk.minTime, memchunk.maxTime, memchunk.chunk, true, handleChunkWriteError)
