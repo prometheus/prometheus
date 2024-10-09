@@ -28,7 +28,7 @@ import (
 	"github.com/prometheus/prometheus/util/convertnhcb"
 )
 
-var labelsMismatchError = errors.New("labels mismatch")
+var errLabelsMismatch = errors.New("labels mismatch")
 
 type NHCBParser struct {
 	// The parser we're wrapping.
@@ -82,7 +82,6 @@ func NewNHCBParser(p Parser, keepClassicHistograms bool) Parser {
 		parser:                p,
 		keepClassicHistograms: keepClassicHistograms,
 		tempNHCB:              convertnhcb.NewTempHistogram(),
-		tempExemplars:         make([]exemplar.Exemplar, 0, 1),
 	}
 }
 
@@ -212,7 +211,7 @@ func (p *NHCBParser) compareLabels() bool {
 				} else {
 					p.lastBaseHistLabels = labels.EmptyLabels()
 				}
-				return labelsMismatchError
+				return errLabelsMismatch
 			}
 		case l.Value != p.lastBaseHistLabels.Get(l.Name):
 			// Different label value.
@@ -221,11 +220,11 @@ func (p *NHCBParser) compareLabels() bool {
 			} else {
 				p.lastBaseHistLabels = labels.EmptyLabels()
 			}
-			return labelsMismatchError
+			return errLabelsMismatch
 		}
 		return nil
 	})
-	return err == labelsMismatchError
+	return errors.Is(err, errLabelsMismatch)
 }
 
 // Save the label set of the classic histogram without suffix and bucket `le` label.
