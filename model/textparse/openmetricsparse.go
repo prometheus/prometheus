@@ -351,7 +351,7 @@ func (p *OpenMetricsParser) seriesHash(offsetsArr, metricFamilyName []byte) uint
 		if p.mtype == model.MetricTypeSummary && bytes.Equal(label, quantileBytes) {
 			continue
 		}
-		if bytes.Equal(label, leBytes) && p.mtype == model.MetricTypeHistogram {
+		if p.mtype == model.MetricTypeHistogram && bytes.Equal(label, leBytes) {
 			continue
 		}
 		offsetsArr = append(offsetsArr, p.series[lStart:lEnd]...)
