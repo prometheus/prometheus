@@ -86,6 +86,9 @@ const formatDuration = (
         r.push(`${v}${unit}`);
       }
     }
+    if (r.length == 0 && unit == "ms") {
+        r.push(`${Math.round(ms)}ms`)
+    }
   }
 
   return sign + r.join(componentSeparator || "");

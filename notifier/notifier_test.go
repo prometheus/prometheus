@@ -26,11 +26,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/alertmanager/api/v2/models"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"gopkg.in/yaml.v2"
@@ -751,7 +751,7 @@ func TestHangingNotifier(t *testing.T) {
 	require.NoError(t, err)
 	sdManager := discovery.NewManager(
 		ctx,
-		log.NewNopLogger(),
+		promslog.NewNopLogger(),
 		reg,
 		sdMetrics,
 		discovery.Name("sd-manager"),

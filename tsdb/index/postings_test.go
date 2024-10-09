@@ -973,37 +973,69 @@ func TestMemPostingsStats(t *testing.T) {
 }
 
 func TestMemPostings_Delete(t *testing.T) {
-	p := NewMemPostings()
-	p.Add(1, labels.FromStrings("lbl1", "a"))
-	p.Add(2, labels.FromStrings("lbl1", "b"))
-	p.Add(3, labels.FromStrings("lbl2", "a"))
+	t.Run("some postings", func(t *testing.T) {
+		p := NewMemPostings()
+		p.Add(1, labels.FromStrings("lbl1", "a"))
+		p.Add(2, labels.FromStrings("lbl1", "b"))
+		p.Add(3, labels.FromStrings("lbl2", "a"))
 
-	before := p.Get(allPostingsKey.Name, allPostingsKey.Value)
-	deletedRefs := map[storage.SeriesRef]struct{}{
-		2: {},
-	}
-	affectedLabels := map[labels.Label]struct{}{
-		{Name: "lbl1", Value: "b"}: {},
-	}
-	p.Delete(deletedRefs, affectedLabels)
-	after := p.Get(allPostingsKey.Name, allPostingsKey.Value)
+		before := p.Get(allPostingsKey.Name, allPostingsKey.Value)
+		deletedRefs := map[storage.SeriesRef]struct{}{
+			2: {},
+		}
+		affectedLabels := map[labels.Label]struct{}{
+			{Name: "lbl1", Value: "b"}: {},
+		}
+		p.Delete(deletedRefs, affectedLabels)
+		after := p.Get(allPostingsKey.Name, allPostingsKey.Value)
 
-	// Make sure postings gotten before the delete have the old data when
-	// iterated over.
-	expanded, err := ExpandPostings(before)
-	require.NoError(t, err)
-	require.Equal(t, []storage.SeriesRef{1, 2, 3}, expanded)
+		// Make sure postings gotten before the delete have the old data when
+		// iterated over.
+		expanded, err := ExpandPostings(before)
+		require.NoError(t, err)
+		require.Equal(t, []storage.SeriesRef{1, 2, 3}, expanded)
 
-	// Make sure postings gotten after the delete have the new data when
-	// iterated over.
-	expanded, err = ExpandPostings(after)
-	require.NoError(t, err)
-	require.Equal(t, []storage.SeriesRef{1, 3}, expanded)
+		// Make sure postings gotten after the delete have the new data when
+		// iterated over.
+		expanded, err = ExpandPostings(after)
+		require.NoError(t, err)
+		require.Equal(t, []storage.SeriesRef{1, 3}, expanded)
 
-	deleted := p.Get("lbl1", "b")
-	expanded, err = ExpandPostings(deleted)
-	require.NoError(t, err)
-	require.Empty(t, expanded, "expected empty postings, got %v", expanded)
+		deleted := p.Get("lbl1", "b")
+		expanded, err = ExpandPostings(deleted)
+		require.NoError(t, err)
+		require.Empty(t, expanded, "expected empty postings, got %v", expanded)
+	})
+
+	t.Run("all postings", func(t *testing.T) {
+		p := NewMemPostings()
+		p.Add(1, labels.FromStrings("lbl1", "a"))
+		p.Add(2, labels.FromStrings("lbl1", "b"))
+		p.Add(3, labels.FromStrings("lbl2", "a"))
+
+		deletedRefs := map[storage.SeriesRef]struct{}{1: {}, 2: {}, 3: {}}
+		affectedLabels := map[labels.Label]struct{}{
+			{Name: "lbl1", Value: "a"}: {},
+			{Name: "lbl1", Value: "b"}: {},
+			{Name: "lbl1", Value: "c"}: {},
+		}
+		p.Delete(deletedRefs, affectedLabels)
+		after := p.Get(allPostingsKey.Name, allPostingsKey.Value)
+		expanded, err := ExpandPostings(after)
+		require.NoError(t, err)
+		require.Empty(t, expanded)
+	})
+
+	t.Run("nothing on empty mempostings", func(t *testing.T) {
+		p := NewMemPostings()
+		deletedRefs := map[storage.SeriesRef]struct{}{}
+		affectedLabels := map[labels.Label]struct{}{}
+		p.Delete(deletedRefs, affectedLabels)
+		after := p.Get(allPostingsKey.Name, allPostingsKey.Value)
+		expanded, err := ExpandPostings(after)
+		require.NoError(t, err)
+		require.Empty(t, expanded)
+	})
 }
 
 // BenchmarkMemPostings_Delete is quite heavy, so consider running it with
@@ -1025,7 +1057,7 @@ func BenchmarkMemPostings_Delete(b *testing.B) {
 		return s
 	}
 
-	const total = 1e6
+	const total = 2e6
 	allSeries := [total]labels.Labels{}
 	nameValues := make([]string, 0, 100)
 	for i := 0; i < total; i++ {

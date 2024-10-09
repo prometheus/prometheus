@@ -46,8 +46,8 @@ import (
 var (
 	patSpace       = regexp.MustCompile("[\t ]+")
 	patLoad        = regexp.MustCompile(`^load(?:_(with_nhcb))?\s+(.+?)$`)
-	patEvalInstant = regexp.MustCompile(`^eval(?:_(fail|warn|ordered))?\s+instant\s+(?:at\s+(.+?))?\s+(.+)$`)
-	patEvalRange   = regexp.MustCompile(`^eval(?:_(fail|warn))?\s+range\s+from\s+(.+)\s+to\s+(.+)\s+step\s+(.+?)\s+(.+)$`)
+	patEvalInstant = regexp.MustCompile(`^eval(?:_(fail|warn|ordered|info))?\s+instant\s+(?:at\s+(.+?))?\s+(.+)$`)
+	patEvalRange   = regexp.MustCompile(`^eval(?:_(fail|warn|info))?\s+range\s+from\s+(.+)\s+to\s+(.+)\s+step\s+(.+?)\s+(.+)$`)
 )
 
 const (
@@ -321,6 +321,8 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 		cmd.fail = true
 	case "warn":
 		cmd.warn = true
+	case "info":
+		cmd.info = true
 	}
 
 	for j := 1; i+1 < len(lines); j++ {
@@ -657,10 +659,10 @@ type evalCmd struct {
 	step  time.Duration
 	line  int
 
-	isRange             bool // if false, instant query
-	fail, warn, ordered bool
-	expectedFailMessage string
-	expectedFailRegexp  *regexp.Regexp
+	isRange                   bool // if false, instant query
+	fail, warn, ordered, info bool
+	expectedFailMessage       string
+	expectedFailRegexp        *regexp.Regexp
 
 	metrics      map[uint64]labels.Labels
 	expectScalar bool
@@ -790,7 +792,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 				}
 
 				if !compareNativeHistogram(expected.H.Compact(0), actual.H.Compact(0)) {
-					return fmt.Errorf("expected histogram value at index %v (t=%v) for %s to be %v, but got %v (result has %s)", i, actual.T, ev.metrics[hash], expected.H, actual.H, formatSeriesResult(s))
+					return fmt.Errorf("expected histogram value at index %v (t=%v) for %s to be %v, but got %v (result has %s)", i, actual.T, ev.metrics[hash], expected.H.TestExpression(), actual.H.TestExpression(), formatSeriesResult(s))
 				}
 			}
 		}
@@ -1006,7 +1008,13 @@ func formatSeriesResult(s promql.Series) string {
 		histogramPlural = ""
 	}
 
-	return fmt.Sprintf("%v float point%s %v and %v histogram point%s %v", len(s.Floats), floatPlural, s.Floats, len(s.Histograms), histogramPlural, s.Histograms)
+	histograms := make([]string, 0, len(s.Histograms))
+
+	for _, p := range s.Histograms {
+		histograms = append(histograms, fmt.Sprintf("%v @[%v]", p.H.TestExpression(), p.T))
+	}
+
+	return fmt.Sprintf("%v float point%s %v and %v histogram point%s %v", len(s.Floats), floatPlural, s.Floats, len(s.Histograms), histogramPlural, histograms)
 }
 
 // HistogramTestExpression returns TestExpression() for the given histogram or "" if the histogram is nil.
@@ -1202,12 +1210,15 @@ func (t *test) runInstantQuery(iq atModifierTestCase, cmd *evalCmd, engine promq
 	if res.Err == nil && cmd.fail {
 		return fmt.Errorf("expected error evaluating query %q (line %d) but got none", iq.expr, cmd.line)
 	}
-	countWarnings, _ := res.Warnings.CountWarningsAndInfo()
+	countWarnings, countInfo := res.Warnings.CountWarningsAndInfo()
 	if !cmd.warn && countWarnings > 0 {
 		return fmt.Errorf("unexpected warnings evaluating query %q (line %d): %v", iq.expr, cmd.line, res.Warnings)
 	}
 	if cmd.warn && countWarnings == 0 {
 		return fmt.Errorf("expected warnings evaluating query %q (line %d) but got none", iq.expr, cmd.line)
+	}
+	if cmd.info && countInfo == 0 {
+		return fmt.Errorf("expected info annotations evaluating query %q (line %d) but got none", iq.expr, cmd.line)
 	}
 	err = cmd.compareResult(res.Value)
 	if err != nil {

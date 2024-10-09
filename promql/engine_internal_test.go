@@ -14,22 +14,21 @@
 package promql
 
 import (
+	"bytes"
 	"errors"
 	"testing"
 
-	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
 func TestRecoverEvaluatorRuntime(t *testing.T) {
-	var output []interface{}
-	logger := log.Logger(log.LoggerFunc(func(keyvals ...interface{}) error {
-		output = append(output, keyvals...)
-		return nil
-	}))
+	var output bytes.Buffer
+	logger := promslog.New(&promslog.Config{Writer: &output})
 	ev := &evaluator{logger: logger}
 
 	expr, _ := parser.ParseExpr("sum(up)")
@@ -38,7 +37,7 @@ func TestRecoverEvaluatorRuntime(t *testing.T) {
 
 	defer func() {
 		require.EqualError(t, err, "unexpected error: runtime error: index out of range [123] with length 0")
-		require.Contains(t, output, "sum(up)")
+		require.Contains(t, output.String(), "sum(up)")
 	}()
 	defer ev.recover(expr, nil, &err)
 
@@ -48,7 +47,7 @@ func TestRecoverEvaluatorRuntime(t *testing.T) {
 }
 
 func TestRecoverEvaluatorError(t *testing.T) {
-	ev := &evaluator{logger: log.NewNopLogger()}
+	ev := &evaluator{logger: promslog.NewNopLogger()}
 	var err error
 
 	e := errors.New("custom error")
@@ -62,7 +61,7 @@ func TestRecoverEvaluatorError(t *testing.T) {
 }
 
 func TestRecoverEvaluatorErrorWithWarnings(t *testing.T) {
-	ev := &evaluator{logger: log.NewNopLogger()}
+	ev := &evaluator{logger: promslog.NewNopLogger()}
 	var err error
 	var ws annotations.Annotations
 

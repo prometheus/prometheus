@@ -31,7 +31,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
 	"github.com/grafana/regexp"
@@ -40,6 +39,7 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
@@ -54,6 +54,7 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/logging"
 	"github.com/prometheus/prometheus/util/pool"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -159,7 +160,7 @@ type testLoop struct {
 	timeout      time.Duration
 }
 
-func (l *testLoop) setScrapeFailureLogger(log.Logger) {
+func (l *testLoop) setScrapeFailureLogger(*logging.JSONFileLogger) {
 }
 
 func (l *testLoop) run(errc chan<- error) {
@@ -396,7 +397,7 @@ func TestScrapePoolTargetLimit(t *testing.T) {
 		activeTargets: map[uint64]*Target{},
 		loops:         map[uint64]loop{},
 		newLoop:       newLoop,
-		logger:        log.NewNopLogger(),
+		logger:        promslog.NewNopLogger(),
 		client:        http.DefaultClient,
 		metrics:       newTestScrapeMetrics(t),
 		symbolTable:   labels.NewSymbolTable(),
@@ -441,7 +442,7 @@ func TestScrapePoolTargetLimit(t *testing.T) {
 			lerr := l.(*testLoop).getForcedError()
 			if shouldErr {
 				require.Error(t, lerr, "error was expected for %d targets with a limit of %d", targets, limit)
-				require.Equal(t, fmt.Sprintf("target_limit exceeded (number of targets: %d, limit: %d)", targets, limit), lerr.Error())
+				require.EqualError(t, lerr, fmt.Sprintf("target_limit exceeded (number of targets: %d, limit: %d)", targets, limit))
 			} else {
 				require.NoError(t, lerr)
 			}
@@ -1525,7 +1526,7 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 	fakeRef := storage.SeriesRef(1)
 	expValue := float64(1)
 	metric := []byte(`metric{n="1"} 1`)
-	p, warning := textparse.New(metric, "", false, labels.NewSymbolTable())
+	p, warning := textparse.New(metric, "", false, false, labels.NewSymbolTable())
 	require.NoError(t, warning)
 
 	var lset labels.Labels
@@ -1999,7 +2000,8 @@ metric: <
 `,
 			contentType: "application/vnd.google.protobuf",
 			histograms: []histogramSample{{
-				t: 1234568,
+				t:      1234568,
+				metric: labels.FromStrings("__name__", "test_histogram"),
 				h: &histogram.Histogram{
 					Count:         175,
 					ZeroCount:     2,
@@ -2125,7 +2127,8 @@ metric: <
 				{metric: labels.FromStrings("__name__", "test_histogram_bucket", "le", "+Inf"), t: 1234568, f: 175},
 			},
 			histograms: []histogramSample{{
-				t: 1234568,
+				t:      1234568,
+				metric: labels.FromStrings("__name__", "test_histogram"),
 				h: &histogram.Histogram{
 					Count:         175,
 					ZeroCount:     2,
@@ -2547,7 +2550,7 @@ func TestTargetScrapeScrapeNotFound(t *testing.T) {
 	resp, err := ts.scrape(context.Background())
 	require.NoError(t, err)
 	_, err = ts.readResponse(context.Background(), resp, io.Discard)
-	require.Contains(t, err.Error(), "404", "Expected \"404 NotFound\" error but got: %s", err)
+	require.ErrorContains(t, err, "404", "Expected \"404 NotFound\" error but got: %s", err)
 }
 
 func TestTargetScraperBodySizeLimit(t *testing.T) {
@@ -3059,7 +3062,7 @@ func TestReuseCacheRace(t *testing.T) {
 
 func TestCheckAddError(t *testing.T) {
 	var appErrs appendErrors
-	sl := scrapeLoop{l: log.NewNopLogger(), metrics: newTestScrapeMetrics(t)}
+	sl := scrapeLoop{l: promslog.NewNopLogger(), metrics: newTestScrapeMetrics(t)}
 	sl.checkAddError(nil, storage.ErrOutOfOrderSample, nil, nil, &appErrs)
 	require.Equal(t, 1, appErrs.numOutOfOrder)
 }
@@ -3771,7 +3774,9 @@ func TestNativeHistogramMaxSchemaSet(t *testing.T) {
 		},
 	}
 	for name, tc := range testcases {
+		tc := tc
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			testNativeHistogramMaxSchemaSet(t, tc.minBucketFactor, tc.expectedSchema)
 		})
 	}
@@ -3814,8 +3819,8 @@ func testNativeHistogramMaxSchemaSet(t *testing.T, minBucketFactor string, expec
 	configStr := fmt.Sprintf(`
 global:
   metric_name_validation_scheme: legacy
-  scrape_interval: 1s
-  scrape_timeout: 1s
+  scrape_interval: 50ms
+  scrape_timeout: 25ms
 scrape_configs:
   - job_name: test
     %s
@@ -3828,9 +3833,9 @@ scrape_configs:
 	s.DB.EnableNativeHistograms()
 	reg := prometheus.NewRegistry()
 
-	mng, err := NewManager(&Options{EnableNativeHistogramsIngestion: true}, nil, nil, s, reg)
+	mng, err := NewManager(&Options{DiscoveryReloadInterval: model.Duration(10 * time.Millisecond), EnableNativeHistogramsIngestion: true}, nil, nil, s, reg)
 	require.NoError(t, err)
-	cfg, err := config.Load(configStr, false, log.NewNopLogger())
+	cfg, err := config.Load(configStr, false, promslog.NewNopLogger())
 	require.NoError(t, err)
 	mng.ApplyConfig(cfg)
 	tsets := make(chan map[string][]*targetgroup.Group)
@@ -3859,7 +3864,7 @@ scrape_configs:
 			countSeries++
 		}
 		return countSeries > 0
-	}, 15*time.Second, 100*time.Millisecond)
+	}, 5*time.Second, 100*time.Millisecond)
 
 	// Check that native histogram schema is as expected.
 	q, err := s.Querier(0, math.MaxInt64)

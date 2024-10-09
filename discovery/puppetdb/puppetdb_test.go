@@ -22,10 +22,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/discovery"
@@ -70,7 +70,7 @@ func TestPuppetSlashInURL(t *testing.T) {
 		metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
 		require.NoError(t, metrics.Register())
 
-		d, err := NewDiscovery(&cfg, log.NewNopLogger(), metrics)
+		d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), metrics)
 		require.NoError(t, err)
 		require.Equal(t, apiURL, d.url)
 
@@ -94,7 +94,7 @@ func TestPuppetDBRefresh(t *testing.T) {
 	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
 	require.NoError(t, metrics.Register())
 
-	d, err := NewDiscovery(&cfg, log.NewNopLogger(), metrics)
+	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), metrics)
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -142,7 +142,7 @@ func TestPuppetDBRefreshWithParameters(t *testing.T) {
 	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
 	require.NoError(t, metrics.Register())
 
-	d, err := NewDiscovery(&cfg, log.NewNopLogger(), metrics)
+	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), metrics)
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -201,7 +201,7 @@ func TestPuppetDBInvalidCode(t *testing.T) {
 	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
 	require.NoError(t, metrics.Register())
 
-	d, err := NewDiscovery(&cfg, log.NewNopLogger(), metrics)
+	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), metrics)
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -229,7 +229,7 @@ func TestPuppetDBInvalidFormat(t *testing.T) {
 	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
 	require.NoError(t, metrics.Register())
 
-	d, err := NewDiscovery(&cfg, log.NewNopLogger(), metrics)
+	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), metrics)
 	require.NoError(t, err)
 
 	ctx := context.Background()
