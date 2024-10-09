@@ -83,7 +83,7 @@ type Parser interface {
 //
 // This function always returns a valid parser, but might additionally
 // return an error if the content type cannot be parsed.
-func NewFallback(b []byte, contentType string, fallbackType string, parseClassicHistograms, skipOMCTSeries bool, st *labels.SymbolTable) (Parser, error) {
+func NewFallback(b []byte, contentType, fallbackType string, parseClassicHistograms, skipOMCTSeries bool, st *labels.SymbolTable) (Parser, error) {
 	var contentTypeErr error
 
 	if contentType == "" {
