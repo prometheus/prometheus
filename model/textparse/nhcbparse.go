@@ -143,7 +143,9 @@ func (p *NHCBParser) Next() (Entry, error) {
 	if p.justInsertedNHCB {
 		p.justInsertedNHCB = false
 		if p.entry == EntrySeries {
-			if !p.keepClassicHistograms && p.handleClassicHistogramSeries(p.lset) {
+			isNHCB := p.handleClassicHistogramSeries(p.lset)
+			if isNHCB && !p.keepClassicHistograms {
+				// Do not return the classic histogram series if it was converted to NHCB and we are not keeping classic histograms.
 				return p.Next()
 			}
 		}
@@ -167,7 +169,9 @@ func (p *NHCBParser) Next() (Entry, error) {
 			p.entry = et
 			return EntryHistogram, nil
 		}
-		if !p.keepClassicHistograms && p.handleClassicHistogramSeries(p.lset) {
+		isNHCB := p.handleClassicHistogramSeries(p.lset)
+		if isNHCB && !p.keepClassicHistograms {
+			// Do not return the classic histogram series if it was converted to NHCB and we are not keeping classic histograms.
 			return p.Next()
 		}
 		return et, err
@@ -206,7 +210,7 @@ func (p *NHCBParser) compareLabels() bool {
 		return true
 	}
 	var buf []byte
-	lastHash, _ := p.lastBaseHistLabels.HashWithoutLabels(buf, labels.BucketLabel)
+	lastHash, _ := p.lastBaseHistLabels.HashWithoutLabels(buf) // We removed the bucket label in storeBaseLabels.
 	nextHash, _ := p.lset.HashWithoutLabels(buf, labels.BucketLabel)
 	if lastHash != nextHash {
 		// Different label values.
