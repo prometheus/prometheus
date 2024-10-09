@@ -67,9 +67,9 @@ Notes:
 ## Histogram chunk data
 
 ```
-┌──────────────────────┬──────────────────────────┬───────────────────────────────┬─────────────────────┬──────────────────┬──────────────────┬────────────────┬──────────────────┐
-│ num_samples <uint16> │ histogram_flags <1 byte> │ zero_threshold <1 or 9 bytes> │ schema <varbit_int> │ pos_spans <data> │ neg_spans <data> │ samples <data> │ padding <x bits> │
-└──────────────────────┴──────────────────────────┴───────────────────────────────┴─────────────────────┴──────────────────┴──────────────────┴────────────────┴──────────────────┘
+┌──────────────────────┬──────────────────────────┬───────────────────────────────┬─────────────────────┬──────────────────┬──────────────────┬──────────────────────┬────────────────┬──────────────────┐
+│ num_samples <uint16> │ histogram_flags <1 byte> │ zero_threshold <1 or 9 bytes> │ schema <varbit_int> │ pos_spans <data> │ neg_spans <data> │ custom_values <data> │ samples <data> │ padding <x bits> │
+└──────────────────────┴──────────────────────────┴───────────────────────────────┴─────────────────────┴──────────────────┴──────────────────┴──────────────────────┴────────────────┴──────────────────┘
 ```
 
 ### Positive and negative spans data:
@@ -78,6 +78,16 @@ Notes:
 ┌─────────────────────────┬────────────────────────┬───────────────────────┬────────────────────────┬───────────────────────┬─────┬────────────────────────┬───────────────────────┐
 │ num_spans <varbit_uint> │ length_0 <varbit_uint> │ offset_0 <varbit_int> │ length_1 <varbit_uint> │ offset_1 <varbit_int> │ ... │ length_n <varbit_uint> │ offset_n <varbit_int> │
 └─────────────────────────┴────────────────────────┴───────────────────────┴────────────────────────┴───────────────────────┴─────┴────────────────────────┴───────────────────────┘
+```
+
+### Custom values data:
+
+The `custom_values` data is currently only used for schema -53 (custom bucket boundaries). For other schemas, it is empty (length of zero).
+
+```
+┌──────────────────────────┬──────────────────┬──────────────────┬─────┬──────────────────┐
+│ num_values <varbit_uint> │ value_0 <custom> │ value_1 <custom> │ ... │ value_n <custom> │
+└──────────────────────────┴─────────────────────────────────────┴─────┴──────────────────┘
 ```
 
 ### Samples data:
@@ -131,7 +141,9 @@ Notes:
   * If 0, it is a single zero byte.
   * If a power of two between 2^-243 and 2^10, it is a single byte between 1 and 254.
   * Otherwise, it is a byte with all bits set (255), followed by a float64, resulting in 9 bytes length.
-* `schema` is a specific value defined by the exposition format. Currently valid values are -4 <= n <= 8.
+* `schema` is a specific value defined by the exposition format. Currently
+  valid values are either -4 <= n <= 8 (standard exponential schemas) or -53
+  (custom bucket boundaries).
 * `<varbit_int>` is a variable bitwidth encoding for signed integers, optimized for “delta of deltas” of bucket deltas. It has between 1 bit and 9 bytes.
   See [code for details](https://github.com/prometheus/prometheus/blob/8c1507ebaa4ca552958ffb60c2d1b21afb7150e4/tsdb/chunkenc/varbit.go#L31-L60).
 * `<varbit_uint>` is a variable bitwidth encoding for unsigned integers with the same bit-bucketing as `<varbit_int>`.
@@ -142,6 +154,28 @@ Notes:
 * Note that buckets are inherently deltas between the current bucket and the previous bucket. Only `bucket_0` is an absolute count.
 * The chunk can have as few as one sample, i.e. sample 1 and following are optional.
 * Similarly, there could be down to zero spans and down to zero buckets.
+
+The `<custom>` encoding within the custom values data depends on the schema.
+For schema -53 (custom bucket boundaries, currently the only use case for
+custom values), the values to encode are bucket boundaries in the form of
+floats. The encoding of a given float value _x_ works as follows:
+
+1. Create an intermediate value _y_ = _x_ * 1000.
+2. If 0 ≤ _y_ ≤ 33554430 _and_ if the decimal value of _y_ is integer, store
+   _y_ + 1 as `<varbit_uint>`.
+3. Otherwise, store a 0 bit, followed by the 64 bit of the original _x_
+   encoded as plain `<float64>`.
+
+Note that values stored as per (2) will always start with a 1 bit, which allow
+decoders to recognize this case in contrast to values stores as per (3), which
+always start with a 0 bit.
+
+The rational behind this encoding is that most custom bucket boundaries are set
+by humans as decimal numbers with not very many decimal places. In most cases,
+the encoding will therefore result in a short varbit representation. The upper
+bound of 33554430 is picked so that the varbit encoded value will take at most
+4 bytes.
+
 
 ## Float histogram chunk data
 
