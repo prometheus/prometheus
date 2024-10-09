@@ -207,7 +207,10 @@ foobar{quantile="0.99"} 150.1`
 				// Custom values are empty as we do not store the +Inf boundary.
 			},
 			lset: labels.FromStrings("__name__", "hhh"),
-			// TODO(krajorama) e:    []*exemplar.Exemplar{{Labels: labels.FromStrings("id", "histogram-bucket-test"), Value: 4}},
+			es: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("id", "histogram-bucket-test"), Value: 4},
+				{Labels: labels.FromStrings("id", "histogram-count-test"), Value: 4},
+			},
 		}, {
 			m:   "ggh",
 			typ: model.MetricTypeGaugeHistogram,
@@ -228,7 +231,7 @@ foobar{quantile="0.99"} 150.1`
 			m:    `smr_seconds_count`,
 			v:    2,
 			lset: labels.FromStrings("__name__", "smr_seconds_count"),
-			// TODO(krajorama) e:es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "summary-count-test"), Value: 1, HasTs: true, Ts: 123321}},
+			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "summary-count-test"), Value: 1, HasTs: true, Ts: 123321}},
 		}, {
 			m:    `smr_seconds_sum`,
 			v:    42,
@@ -282,15 +285,15 @@ foobar{quantile="0.99"} 150.1`
 			v:    17,
 			lset: labels.FromStrings("__name__", "foo_total"),
 			t:    int64p(1520879607789),
-			//es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "counter-test"), Value: 5}},
-			ct: int64p(1520872607123),
+			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "counter-test"), Value: 5}},
+			// TODO(krajorama): ct: int64p(1520872607123),
 		}, {
 			m:    `foo_total{a="b"}`,
 			v:    17.0,
 			lset: labels.FromStrings("__name__", "foo_total", "a", "b"),
 			t:    int64p(1520879607789),
-			//es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "counter-test"), Value: 5}},
-			ct: int64p(1520872607123),
+			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "counter-test"), Value: 5}},
+			// TODO(krajorama): ct: int64p(1520872607123),
 		}, {
 			m:    "bar",
 			help: "Summary with CT at the end, making sure we find CT even if it's multiple lines a far",
@@ -301,22 +304,22 @@ foobar{quantile="0.99"} 150.1`
 			m:    "bar_count",
 			v:    17.0,
 			lset: labels.FromStrings("__name__", "bar_count"),
-			ct:   int64p(1520872608124),
+			// TODO(krajorama): ct:   int64p(1520872608124),
 		}, {
 			m:    "bar_sum",
 			v:    324789.3,
 			lset: labels.FromStrings("__name__", "bar_sum"),
-			ct:   int64p(1520872608124),
+			// TODO(krajorama): ct:   int64p(1520872608124),
 		}, {
 			m:    `bar{quantile="0.95"}`,
 			v:    123.7,
 			lset: labels.FromStrings("__name__", "bar", "quantile", "0.95"),
-			ct:   int64p(1520872608124),
+			// TODO(krajorama): ct:   int64p(1520872608124),
 		}, {
 			m:    `bar{quantile="0.99"}`,
 			v:    150.0,
 			lset: labels.FromStrings("__name__", "bar", "quantile", "0.99"),
-			ct:   int64p(1520872608124),
+			// TODO(krajorama): ct:   int64p(1520872608124),
 		}, {
 			m:    "baz",
 			help: "Histogram with the same objective as above's summary",
@@ -334,7 +337,7 @@ foobar{quantile="0.99"} 150.1`
 				CustomValues:    []float64{0.0}, // We do not store the +Inf boundary.
 			},
 			lset: labels.FromStrings("__name__", "baz"),
-			ct:   int64p(1520872609125),
+			// TODO(krajorama): ct:   int64p(1520872609125),
 		}, {
 			m:    "fizz_created",
 			help: "Gauge which shouldn't be parsed as CT",
@@ -362,7 +365,7 @@ foobar{quantile="0.99"} 150.1`
 				CustomValues:    []float64{0.0}, // We do not store the +Inf boundary.
 			},
 			lset: labels.FromStrings("__name__", "something"),
-			ct:   int64p(1520430001000),
+			// TODO(krajorama): ct:   int64p(1520430001000),
 		}, {
 			m: `something{a="b"}`,
 			shs: &histogram.Histogram{
@@ -374,7 +377,7 @@ foobar{quantile="0.99"} 150.1`
 				CustomValues:    []float64{0.0}, // We do not store the +Inf boundary.
 			},
 			lset: labels.FromStrings("__name__", "something", "a", "b"),
-			ct:   int64p(1520430002000),
+			// TODO(krajorama): ct:   int64p(1520430002000),
 		}, {
 			m:    "yum",
 			help: "Summary with _created between sum and quantiles",
@@ -385,22 +388,22 @@ foobar{quantile="0.99"} 150.1`
 			m:    `yum_count`,
 			v:    20,
 			lset: labels.FromStrings("__name__", "yum_count"),
-			ct:   int64p(1520430003000),
+			// TODO(krajorama): ct:   int64p(1520430003000),
 		}, {
 			m:    `yum_sum`,
 			v:    324789.5,
 			lset: labels.FromStrings("__name__", "yum_sum"),
-			ct:   int64p(1520430003000),
+			// TODO(krajorama): ct:   int64p(1520430003000),
 		}, {
 			m:    `yum{quantile="0.95"}`,
 			v:    123.7,
 			lset: labels.FromStrings("__name__", "yum", "quantile", "0.95"),
-			ct:   int64p(1520430003000),
+			// TODO(krajorama): ct:   int64p(1520430003000),
 		}, {
 			m:    `yum{quantile="0.99"}`,
 			v:    150.0,
 			lset: labels.FromStrings("__name__", "yum", "quantile", "0.99"),
-			ct:   int64p(1520430003000),
+			// TODO(krajorama): ct:   int64p(1520430003000),
 		}, {
 			m:    "foobar",
 			help: "Summary with _created as the first line",
@@ -411,22 +414,22 @@ foobar{quantile="0.99"} 150.1`
 			m:    `foobar_count`,
 			v:    21,
 			lset: labels.FromStrings("__name__", "foobar_count"),
-			ct:   int64p(1520430004000),
+			// TODO(krajorama): ct:   int64p(1520430004000),
 		}, {
 			m:    `foobar_sum`,
 			v:    324789.6,
 			lset: labels.FromStrings("__name__", "foobar_sum"),
-			ct:   int64p(1520430004000),
+			// TODO(krajorama): ct:   int64p(1520430004000),
 		}, {
 			m:    `foobar{quantile="0.95"}`,
 			v:    123.8,
 			lset: labels.FromStrings("__name__", "foobar", "quantile", "0.95"),
-			ct:   int64p(1520430004000),
+			// TODO(krajorama): ct:   int64p(1520430004000),
 		}, {
 			m:    `foobar{quantile="0.99"}`,
 			v:    150.1,
 			lset: labels.FromStrings("__name__", "foobar", "quantile", "0.99"),
-			ct:   int64p(1520430004000),
+			// TODO(krajorama): ct:   int64p(1520430004000),
 		}, {
 			m:    "metric",
 			help: "foo\x00bar",
@@ -450,14 +453,14 @@ func TestNhcbParserMultiHOnOpenMetricsParser(t *testing.T) {
 # TYPE something histogram
 something_count 18
 something_sum 324789.4
-something_created 1520430001
-something_bucket{le="0.0"} 1
-something_bucket{le="+Inf"} 18
+something_bucket{le="0.0"} 1 # {id="something-test"} -2.0
+something_bucket{le="1.0"} 16 # {id="something-test"} 0.5
+something_bucket{le="+Inf"} 18 # {id="something-test"} 8
 something_count{a="b"} 9
 something_sum{a="b"} 42123.0
-something_bucket{a="b",le="0.0"} 8
-something_bucket{a="b",le="+Inf"} 9
-something_created{a="b"} 1520430002
+something_bucket{a="b",le="0.0"} 8 # {id="something-test"} 0.0 123.321
+something_bucket{a="b",le="1.0"} 8
+something_bucket{a="b",le="+Inf"} 9 # {id="something-test"} 2e100 123.000
 # EOF
 `
 
@@ -474,63 +477,33 @@ something_created{a="b"} 1520430002
 				Schema:          -53, // Custom buckets.
 				Count:           18,
 				Sum:             324789.4,
-				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
-				PositiveBuckets: []int64{1, 16},
-				CustomValues:    []float64{0.0}, // We do not store the +Inf boundary.
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
+				PositiveBuckets: []int64{1, 14, -13},
+				CustomValues:    []float64{0.0, 1.0}, // We do not store the +Inf boundary.
 			},
 			lset: labels.FromStrings("__name__", "something"),
-			ct:   int64p(1520430001000),
+			es: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("id", "something-test"), Value: -2.0},
+				{Labels: labels.FromStrings("id", "something-test"), Value: 0.5},
+				{Labels: labels.FromStrings("id", "something-test"), Value: 8.0},
+			},
+			// TODO(krajorama): ct:   int64p(1520430001000),
 		}, {
 			m: `something{a="b"}`,
 			shs: &histogram.Histogram{
 				Schema:          -53, // Custom buckets.
 				Count:           9,
 				Sum:             42123.0,
-				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}, {Offset: 1, Length: 1}},
 				PositiveBuckets: []int64{8, -7},
-				CustomValues:    []float64{0.0}, // We do not store the +Inf boundary.
+				CustomValues:    []float64{0.0, 1.0}, // We do not store the +Inf boundary.
 			},
 			lset: labels.FromStrings("__name__", "something", "a", "b"),
-			ct:   int64p(1520430002000),
-		},
-	}
-
-	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
-	p = NewNHCBParser(p, false)
-	got := testParse(t, p)
-	requireEntries(t, exp, got)
-}
-
-func TestNhcbParserExemplarOnOpenMetricsParser(t *testing.T) {
-	// The input is taken originally from TestOpenMetricsParse, with additional tests for the NHCBParser.
-
-	input := `# HELP foo Counter with and without labels to certify CT is parsed for both cases
-# TYPE foo counter
-foo_total 17.0 1520879607.789 # {id="counter-test"} 5
-foo_created 1520872607.123
-# EOF
-`
-	exp := []parsedEntry{
-		{
-			m:    "foo",
-			help: "Counter with and without labels to certify CT is parsed for both cases",
-		}, {
-			m:   "foo",
-			typ: model.MetricTypeCounter,
-		}, {
-			m:    "foo_total",
-			v:    17,
-			lset: labels.FromStrings("__name__", "foo_total"),
-			t:    int64p(1520879607789),
-			//es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "counter-test"), Value: 5}},
-			ct: int64p(1520872607123),
-			// }, {
-			// 	m:    `foo_total{a="b"}`,
-			// 	v:    17.0,
-			// 	lset: labels.FromStrings("__name__", "foo_total", "a", "b"),
-			// 	t:    int64p(1520879607789),
-			// 	es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "counter-test"), Value: 5}},
-			// 	ct: int64p(1520872607123),
+			es: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("id", "something-test"), Value: 0.0, HasTs: true, Ts: 123321},
+				{Labels: labels.FromStrings("id", "something-test"), Value: 2e100, HasTs: true, Ts: 123000},
+			},
+			// TODO(krajorama): ct:   int64p(1520430002000),
 		},
 	}
 

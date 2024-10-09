@@ -178,6 +178,11 @@ func (m *Manager) reload() {
 				level.Error(m.logger).Log("msg", "error reloading target set", "err", "invalid config id:"+setName)
 				continue
 			}
+			if scrapeConfig.ConvertClassicHistograms && m.opts.EnableCreatedTimestampZeroIngestion {
+				// TODO(krajorama): lift this limitation
+				level.Error(m.logger).Log("msg", "error reloading target set", "err", "cannot convert classic histograms to native histograms with custom buckets and ingest created timestamp zero samples at the same time")
+				continue
+			}
 			m.metrics.targetScrapePools.Inc()
 			sp, err := newScrapePool(scrapeConfig, m.append, m.offsetSeed, log.With(m.logger, "scrape_pool", setName), m.buffers, m.opts, m.metrics)
 			if err != nil {
