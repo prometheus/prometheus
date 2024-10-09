@@ -2867,15 +2867,15 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 		group := &groups[seriesToResult[si]]
 		// Initialize this group if it's the first time we've seen it.
 		if !group.seen {
+			*group = groupedAggregation{
+				seen:                   true,
+				floatValue:             f,
+				floatMean:              f,
+				incompatibleHistograms: false,
+				groupCount:             1,
+			}
 			switch op {
 			case parser.AVG, parser.SUM:
-				*group = groupedAggregation{
-					seen:                   true,
-					floatValue:             f,
-					floatMean:              f,
-					incompatibleHistograms: false,
-					groupCount:             1,
-				}
 				if h == nil {
 					group.hasFloat = true
 				} else {
@@ -2883,45 +2883,20 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 					group.hasHistogram = true
 				}
 			case parser.STDVAR, parser.STDDEV:
-				if h == nil {
-					fv := float64(0)
-					if math.IsNaN(f) || math.IsInf(f, 0) {
-						fv = math.NaN()
-					}
-					*group = groupedAggregation{
-						seen:                   true,
-						floatValue:             fv,
-						floatMean:              f,
-						incompatibleHistograms: false,
-						groupCount:             1,
-					}
+				switch {
+				case h != nil:
+					// Ignore histograms for STDVAR and STDDEV.
+					group.seen = false
+				case math.IsNaN(f), math.IsInf(f, 0):
+					group.floatValue = math.NaN()
+				default:
+					group.floatValue = 0
 				}
 			case parser.QUANTILE:
-				*group = groupedAggregation{
-					seen:                   true,
-					floatValue:             f,
-					floatMean:              f,
-					incompatibleHistograms: false,
-					groupCount:             1,
-				}
 				group.heap = make(vectorByValueHeap, 1)
 				group.heap[0] = Sample{F: f}
 			case parser.GROUP:
-				*group = groupedAggregation{
-					seen:                   true,
-					floatValue:             1,
-					floatMean:              f,
-					incompatibleHistograms: false,
-					groupCount:             1,
-				}
-			default:
-				*group = groupedAggregation{
-					seen:                   true,
-					floatValue:             f,
-					floatMean:              f,
-					incompatibleHistograms: false,
-					groupCount:             1,
-				}
+				group.floatValue = 1
 			}
 			continue
 		}
