@@ -180,7 +180,7 @@ func (m *Manager) reload() {
 			}
 			if scrapeConfig.ConvertClassicHistograms && m.opts.EnableCreatedTimestampZeroIngestion {
 				// TODO(krajorama): lift this limitation
-				level.Error(m.logger).Log("msg", "error reloading target set", "err", "cannot convert classic histograms to native histograms with custom buckets and ingest created timestamp zero samples at the same time")
+				m.logger.Error("msg", "error reloading target set", "err", "cannot convert classic histograms to native histograms with custom buckets and ingest created timestamp zero samples at the same time")
 				continue
 			}
 			m.metrics.targetScrapePools.Inc()
