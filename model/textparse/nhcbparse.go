@@ -28,6 +28,8 @@ import (
 	"github.com/prometheus/prometheus/util/convertnhcb"
 )
 
+var labelsMismatchError = errors.New("labels mismatch")
+
 type NHCBParser struct {
 	// The parser we're wrapping.
 	parser Parser
@@ -198,50 +200,46 @@ func (p *NHCBParser) compareLabels() bool {
 	}
 
 	// Compare the labels.
-	for _, l := range p.lset {
-		if l.Name == labels.MetricName {
+	err := p.lset.Validate(func(l labels.Label) error {
+		switch {
+		case l.Name == labels.BucketLabel:
+		case l.Name == labels.MetricName:
 			baseName := convertnhcb.GetHistogramMetricBaseName(l.Value)
 			if baseName != p.lastBaseHistLabels.Get(labels.MetricName) {
+				// Different metric name.
 				if p.typ == model.MetricTypeHistogram {
 					p.storeBaseLabels()
 				} else {
 					p.lastBaseHistLabels = labels.EmptyLabels()
 				}
-				return true
+				return labelsMismatchError
 			}
-			continue
-		}
-		if l.Name == labels.BucketLabel {
-			// Ignore.
-			continue
-		}
-		if l.Value != p.lastBaseHistLabels.Get(l.Name) {
+		case l.Value != p.lastBaseHistLabels.Get(l.Name):
 			// Different label value.
 			if p.typ == model.MetricTypeHistogram {
 				p.storeBaseLabels()
 			} else {
 				p.lastBaseHistLabels = labels.EmptyLabels()
 			}
-			return true
+			return labelsMismatchError
 		}
-	}
-	return false
+		return nil
+	})
+	return err == labelsMismatchError
 }
 
 // Save the label set of the classic histogram without suffix and bucket `le` label.
 func (p *NHCBParser) storeBaseLabels() {
 	builder := labels.Builder{}
-	for _, l := range p.lset {
-		if l.Name == labels.MetricName {
+	p.lset.Range(func(l labels.Label) {
+		switch {
+		case l.Name == labels.BucketLabel:
+		case l.Name == labels.MetricName:
 			builder.Set(l.Name, convertnhcb.GetHistogramMetricBaseName(l.Value))
-			continue
+		default:
+			builder.Set(l.Name, l.Value)
 		}
-		if l.Name == labels.BucketLabel {
-			// Ignore.
-			continue
-		}
-		builder.Set(l.Name, l.Value)
-	}
+	})
 	p.lastBaseHistLabels = builder.Labels()
 }
 
