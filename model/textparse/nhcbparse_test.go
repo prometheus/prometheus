@@ -441,7 +441,7 @@ foobar{quantile="0.99"} 150.1`
 	}
 
 	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
-	p = NewNHCBParser(p, false)
+	p = NewNHCBParser(p, labels.NewSymbolTable(), false)
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -508,7 +508,8 @@ something_bucket{a="b",le="+Inf"} 9 # {id="something-test"} 2e100 123.000
 	}
 
 	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
-	p = NewNHCBParser(p, false)
+
+	p = NewNHCBParser(p, labels.NewSymbolTable(), false)
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }

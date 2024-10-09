@@ -1546,7 +1546,7 @@ type appendErrors struct {
 func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
 	p, err := textparse.New(b, contentType, sl.scrapeClassicHistograms, sl.enableCTZeroIngestion, sl.symbolTable)
 	if sl.convertClassicHistograms {
-		p = textparse.NewNHCBParser(p, sl.scrapeClassicHistograms)
+		p = textparse.NewNHCBParser(p, sl.symbolTable, sl.scrapeClassicHistograms)
 	}
 	if err != nil {
 		sl.l.Debug(
