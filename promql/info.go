@@ -81,6 +81,7 @@ loop:
 
 // fetchInfoSeries fetches info series given ev.selectHints and matching identifying labels in mat.
 // Series in ignoreSeries are not fetched.
+// dataLabelMatchers may be mutated.
 func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeries map[int]struct{}, dataLabelMatchers map[string][]*labels.Matcher) (Matrix, annotations.Annotations, error) {
 	if ev.selectHints == nil {
 		// ev.selectHints should have been set.
@@ -97,9 +98,8 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 		}
 
 		// Register relevant values per identifying label for this series.
-		lblMap := s.Metric.Map()
 		for _, l := range identifyingLabels {
-			val := lblMap[l]
+			val := s.Metric.Get(l)
 			if val == "" {
 				continue
 			}
@@ -155,10 +155,6 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 	}
 
 	infoIt := ev.querier.Select(ctx, false, ev.selectHints, infoLabelMatchers...)
-	annots := infoIt.Warnings()
-	if infoIt.Err() != nil {
-		return nil, annots, infoIt.Err()
-	}
 	var infoSeries []storage.Series
 	for infoIt.Next() {
 		select {
@@ -168,8 +164,12 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 		}
 		infoSeries = append(infoSeries, infoIt.At())
 	}
+	annots := infoIt.Warnings()
+	if infoIt.Err() != nil {
+		return nil, annots, infoIt.Err()
+	}
 	infoMat := ev.evalSeries(ctx, infoSeries, 0, true)
-	return infoMat, annots, infoIt.Err()
+	return infoMat, annots, nil
 }
 
 // combineWithInfoSeries combines mat with select data labels from infoMat.
