@@ -215,3 +215,16 @@ func (i *HeadDataStorageDecodeIterator) Next() bool {
 func (i *HeadDataStorageDecodeIterator) Sample() (int64, float64) {
 	return seriesDataDecodeIteratorSample(i.decodeIterator)
 }
+
+type HeadWalEncoder struct {
+	lss     *LabelSetStorage
+	encoder uintptr
+}
+
+func NewHeadWalEncoder(lss *LabelSetStorage) *HeadWalEncoder {
+	return nil
+}
+
+func (e *HeadWalEncoder) Encode(innerSeriesSlice []*InnerSeries) ([]byte, error) {
+	return nil, nil
+}

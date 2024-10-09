@@ -27,6 +27,10 @@ type LSS interface {
 	GetLabelSets(labelSetIDs []uint32) *cppbridge.LabelSetStorageGetLabelSetsResult
 }
 
+type Wal interface {
+	Write(innerSeriesSlice []*cppbridge.InnerSeries) error
+}
+
 type InputRelabeler interface {
 	CacheAllocatedMemory() uint64
 }

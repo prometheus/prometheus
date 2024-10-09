@@ -82,15 +82,7 @@ func (h *Head) reconfigureStages(numberOfShards uint16) {
 	}
 }
 
-//// relabelerIDIsExist check on exist relabelerID.
-//func (h *ShardHead) relabelerIDIsExist(relabelerID string) bool {
-//	s.irrwm.RLock()
-//	_, ok := s.inputRelabelers[relabelerKey{relabelerID, 0}]
-//	s.irrwm.RUnlock()
-//	return ok
-//}
-
-// reconfiguringShardLsses reconfiguring lss for all shards.
+// reconfigureLsses reconfiguring lss for all shards.
 func (h *Head) reconfigureLsses(numberOfShards uint16) {
 	if h.numberOfShards == numberOfShards {
 		return
@@ -125,7 +117,7 @@ func (h *Head) reconfigureLsses(numberOfShards uint16) {
 	}
 }
 
-// reconfiguringInputRelabeler reconfiguring input relabelers for all shards.
+// reconfigureInputRelabeler reconfiguring input relabelers for all shards.
 func (h *Head) reconfigureInputRelabeler(
 	inputRelabelerConfigs []*config.InputRelabelerConfig,
 	numberOfShards uint16,

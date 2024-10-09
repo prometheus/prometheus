@@ -15,6 +15,7 @@ type Storage interface {
 // HeadBuilder - head builder.
 type HeadBuilder interface {
 	Build() (relabeler.Head, error)
+	BuildWithConfig(inputRelabelerConfigs []*config.InputRelabelerConfig, numberOfShards uint16) (relabeler.Head, error)
 }
 
 // RotatableHead - head wrapper, allows rotations.
@@ -59,6 +60,9 @@ func (h *RotatableHead) Finalize() {}
 
 // Reconfigure - relabeler.Head interface implementation.
 func (h *RotatableHead) Reconfigure(inputRelabelerConfigs []*config.InputRelabelerConfig, numberOfShards uint16) error {
+	if h.head.NumberOfShards() != numberOfShards {
+		return h.RotateWithConfig(inputRelabelerConfigs, numberOfShards)
+	}
 	return h.head.Reconfigure(inputRelabelerConfigs, numberOfShards)
 }
 
@@ -93,6 +97,19 @@ func NewRotatableHead(storage Storage, builder HeadBuilder) (*RotatableHead, err
 // Rotate - relabeler.Head interface implementation.
 func (h *RotatableHead) Rotate() error {
 	newHead, err := h.builder.Build()
+	if err != nil {
+		return err
+	}
+
+	h.head.Finalize()
+	h.storage.Add(h.head)
+	h.head = newHead
+
+	return nil
+}
+
+func (h *RotatableHead) RotateWithConfig(inputRelabelerConfigs []*config.InputRelabelerConfig, numberOfShards uint16) error {
+	newHead, err := h.builder.BuildWithConfig(inputRelabelerConfigs, numberOfShards)
 	if err != nil {
 		return err
 	}

@@ -137,13 +137,13 @@ func (h *Head) NumberOfShards() uint16 {
 }
 
 func (h *Head) Finalize() {
+	// todo: wait all tasks on stop
 	_ = h.finalizer.Finalize(func() error {
 		_ = h.forEachShard(func(shard relabeler.Shard) error {
 			shard.DataStorage().MergeOutOfOrderChunks()
 			return nil
 		})
 
-		// todo: wait all tasks on stop
 		h.stop()
 		for key := range h.inputRelabelers {
 			h.memoryInUse.Delete(
