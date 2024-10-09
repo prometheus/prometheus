@@ -277,6 +277,13 @@ func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
 			return false
 		}
 	case Replace:
+		// Fast path to add or delete label pair.
+		if val == "" && cfg.Regex == DefaultRelabelConfig.Regex &&
+			!varInRegexTemplate(cfg.TargetLabel) && !varInRegexTemplate(cfg.Replacement) {
+			lb.Set(cfg.TargetLabel, cfg.Replacement)
+			break
+		}
+
 		indexes := cfg.Regex.FindStringSubmatchIndex(val)
 		// If there is no match no replacement must take place.
 		if indexes == nil {
@@ -325,4 +332,8 @@ func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
 	}
 
 	return true
+}
+
+func varInRegexTemplate(template string) bool {
+	return strings.Contains(template, "$")
 }

@@ -146,7 +146,7 @@ func TestCheckSDFile(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := checkSDFile(test.file)
 			if test.err != "" {
-				require.Equalf(t, test.err, err.Error(), "Expected error %q, got %q", test.err, err.Error())
+				require.EqualErrorf(t, err, test.err, "Expected error %q, got %q", test.err, err.Error())
 				return
 			}
 			require.NoError(t, err)
@@ -228,7 +228,7 @@ func TestCheckTargetConfig(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := checkConfig(false, "testdata/"+test.file, false)
 			if test.err != "" {
-				require.Equalf(t, test.err, err.Error(), "Expected error %q, got %q", test.err, err.Error())
+				require.EqualErrorf(t, err, test.err, "Expected error %q, got %q", test.err, err.Error())
 				return
 			}
 			require.NoError(t, err)
@@ -315,7 +315,7 @@ func TestCheckConfigSyntax(t *testing.T) {
 				expectedErrMsg = test.errWindows
 			}
 			if expectedErrMsg != "" {
-				require.Equalf(t, expectedErrMsg, err.Error(), "Expected error %q, got %q", test.err, err.Error())
+				require.EqualErrorf(t, err, expectedErrMsg, "Expected error %q, got %q", test.err, err.Error())
 				return
 			}
 			require.NoError(t, err)
@@ -345,7 +345,7 @@ func TestAuthorizationConfig(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := checkConfig(false, "testdata/"+test.file, false)
 			if test.err != "" {
-				require.Contains(t, err.Error(), test.err, "Expected error to contain %q, got %q", test.err, err.Error())
+				require.ErrorContains(t, err, test.err, "Expected error to contain %q, got %q", test.err, err.Error())
 				return
 			}
 			require.NoError(t, err)

@@ -22,10 +22,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -675,7 +675,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 			reg := prometheus.NewRegistry()
 			_, sdMetrics := NewTestMetrics(t, reg)
 
-			discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
+			discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
 			require.NotNil(t, discoveryManager)
 			discoveryManager.updatert = 100 * time.Millisecond
 
@@ -791,7 +791,7 @@ func TestTargetSetTargetGroupsPresentOnConfigReload(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	_, sdMetrics := NewTestMetrics(t, reg)
 
-	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
+	discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
@@ -828,7 +828,7 @@ func TestTargetSetTargetGroupsPresentOnConfigRename(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	_, sdMetrics := NewTestMetrics(t, reg)
 
-	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
+	discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
@@ -868,7 +868,7 @@ func TestTargetSetTargetGroupsPresentOnConfigDuplicateAndDeleteOriginal(t *testi
 	reg := prometheus.NewRegistry()
 	_, sdMetrics := NewTestMetrics(t, reg)
 
-	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
+	discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
@@ -911,7 +911,7 @@ func TestTargetSetTargetGroupsPresentOnConfigChange(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	_, sdMetrics := NewTestMetrics(t, reg)
 
-	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
+	discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
@@ -979,7 +979,7 @@ func TestTargetSetRecreatesTargetGroupsOnConfigChange(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	_, sdMetrics := NewTestMetrics(t, reg)
 
-	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
+	discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
@@ -1023,7 +1023,7 @@ func TestDiscovererConfigs(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	_, sdMetrics := NewTestMetrics(t, reg)
 
-	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
+	discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
@@ -1060,7 +1060,7 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	_, sdMetrics := NewTestMetrics(t, reg)
 
-	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
+	discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
@@ -1141,7 +1141,7 @@ func TestApplyConfigDoesNotModifyStaticTargets(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	_, sdMetrics := NewTestMetrics(t, reg)
 
-	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
+	discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
@@ -1202,7 +1202,7 @@ func TestGaugeFailedConfigs(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	_, sdMetrics := NewTestMetrics(t, reg)
 
-	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
+	discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
@@ -1454,7 +1454,7 @@ func TestTargetSetTargetGroupsUpdateDuringApplyConfig(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	_, sdMetrics := NewTestMetrics(t, reg)
 
-	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
+	discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
@@ -1551,7 +1551,7 @@ func TestUnregisterMetrics(t *testing.T) {
 
 		refreshMetrics, sdMetrics := NewTestMetrics(t, reg)
 
-		discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
+		discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
 		// discoveryManager will be nil if there was an error configuring metrics.
 		require.NotNil(t, discoveryManager)
 		// Unregister all metrics.

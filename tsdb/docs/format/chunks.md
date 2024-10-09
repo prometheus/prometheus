@@ -36,7 +36,7 @@ in-file offset (lower 4 bytes) and segment sequence number (upper 4 bytes).
 
 Notes:
 * `<uvarint>` has 1 to 10 bytes.
-* `encoding`: Currently either `XOR` or `histogram`.
+* `encoding`: Currently either `XOR`, `histogram`, or `float histogram`.
 * `data`: See below for each encoding.
 
 ## XOR chunk data
@@ -92,7 +92,7 @@ Notes:
 ├──────────────────────────┤
 │          ...             │
 ├──────────────────────────┤
-│    Sample_n <data>       │
+│    sample_n <data>       │
 └──────────────────────────┘
 ```
 
@@ -107,9 +107,9 @@ Notes:
 #### Sample 1 data:
 
 ```
-┌────────────────────────┬───────────────────────────┬────────────────────────────────┬──────────────────────┬─────────────────────────────────┬─────┬─────────────────────────────────┬─────────────────────────────────┬─────┬─────────────────────────────────┐
-│ ts_delta <varbit_uint> │ count_delta <varbit_uint> │ zero_count_delta <varbit_uint> │ sum_xor <varbit_xor> │ pos_bucket_0_delta <varbit_int> │ ... │ pos_bucket_n_delta <varbit_int> │ neg_bucket_0_delta <varbit_int> │ ... │ neg_bucket_n_delta <varbit_int> │
-└────────────────────────┴───────────────────────────┴────────────────────────────────┴──────────────────────┴─────────────────────────────────┴─────┴─────────────────────────────────┴─────────────────────────────────┴─────┴─────────────────────────────────┘
+┌───────────────────────┬──────────────────────────┬───────────────────────────────┬──────────────────────┬─────────────────────────────────┬─────┬─────────────────────────────────┬─────────────────────────────────┬─────┬─────────────────────────────────┐
+│ ts_delta <varbit_int> │ count_delta <varbit_int> │ zero_count_delta <varbit_int> │ sum_xor <varbit_xor> │ pos_bucket_0_delta <varbit_int> │ ... │ pos_bucket_n_delta <varbit_int> │ neg_bucket_0_delta <varbit_int> │ ... │ neg_bucket_n_delta <varbit_int> │
+└───────────────────────┴──────────────────────────┴───────────────────────────────┴──────────────────────┴─────────────────────────────────┴─────┴─────────────────────────────────┴─────────────────────────────────┴─────┴─────────────────────────────────┘
 ```
 
 #### Sample 2 data and following:
@@ -142,3 +142,47 @@ Notes:
 * Note that buckets are inherently deltas between the current bucket and the previous bucket. Only `bucket_0` is an absolute count.
 * The chunk can have as few as one sample, i.e. sample 1 and following are optional.
 * Similarly, there could be down to zero spans and down to zero buckets.
+
+## Float histogram chunk data
+
+Float histograms have the same layout as histograms apart from the encoding of samples.
+
+### Samples data:
+
+```
+┌──────────────────────────┐
+│    sample_0 <data>       │
+├──────────────────────────┤
+│    sample_1 <data>       │
+├──────────────────────────┤
+│    sample_2 <data>       │
+├──────────────────────────┤
+│          ...             │
+├──────────────────────────┤
+│    sample_n <data>       │
+└──────────────────────────┘
+```
+
+#### Sample 0 data:
+
+```
+┌─────────────────┬─────────────────┬──────────────────────┬───────────────┬────────────────────────┬─────┬────────────────────────┬────────────────────────┬─────┬────────────────────────┐
+│ ts <varbit_int> │ count <float64> │ zero_count <float64> │ sum <float64> │ pos_bucket_0 <float64> │ ... │ pos_bucket_n <float64> │ neg_bucket_0 <float64> │ ... │ neg_bucket_n <float64> │
+└─────────────────┴─────────────────┴──────────────────────┴───────────────┴────────────────────────┴─────┴────────────────────────┴────────────────────────┴─────┴────────────────────────┘
+```
+
+#### Sample 1 data:
+
+```
+┌───────────────────────┬────────────────────────┬─────────────────────────────┬──────────────────────┬───────────────────────────────┬─────┬───────────────────────────────┬───────────────────────────────┬─────┬───────────────────────────────┐
+│ ts_delta <varbit_int> │ count_xor <varbit_xor> │ zero_count_xor <varbit_xor> │ sum_xor <varbit_xor> │ pos_bucket_0_xor <varbit_xor> │ ... │ pos_bucket_n_xor <varbit_xor> │ neg_bucket_0_xor <varbit_xor> │ ... │ neg_bucket_n_xor <varbit_xor> │
+└───────────────────────┴────────────────────────┴─────────────────────────────┴──────────────────────┴───────────────────────────────┴─────┴───────────────────────────────┴───────────────────────────────┴─────┴───────────────────────────────┘
+```
+
+#### Sample 2 data and following:
+
+```
+┌─────────────────────┬────────────────────────┬─────────────────────────────┬──────────────────────┬───────────────────────────────┬─────┬───────────────────────────────┬───────────────────────────────┬─────┬───────────────────────────────┐
+│ ts_dod <varbit_int> │ count_xor <varbit_xor> │ zero_count_xor <varbit_xor> │ sum_xor <varbit_xor> │ pos_bucket_0_xor <varbit_xor> │ ... │ pos_bucket_n_xor <varbit_xor> │ neg_bucket_0_xor <varbit_xor> │ ... │ neg_bucket_n_xor <varbit_xor> │
+└─────────────────────┴────────────────────────┴─────────────────────────────┴──────────────────────┴───────────────────────────────┴─────┴───────────────────────────────┴───────────────────────────────┴─────┴───────────────────────────────┘
+```

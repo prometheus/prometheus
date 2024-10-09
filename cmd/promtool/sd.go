@@ -20,9 +20,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
@@ -38,8 +38,8 @@ type sdCheckResult struct {
 }
 
 // CheckSD performs service discovery for the given job name and reports the results.
-func CheckSD(sdConfigFiles, sdJobName string, sdTimeout time.Duration, noDefaultScrapePort bool, registerer prometheus.Registerer) int {
-	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+func CheckSD(sdConfigFiles, sdJobName string, sdTimeout time.Duration, registerer prometheus.Registerer) int {
+	logger := promslog.New(&promslog.Config{})
 
 	cfg, err := config.LoadFile(sdConfigFiles, false, false, logger)
 	if err != nil {
@@ -114,7 +114,7 @@ outerLoop:
 	}
 	results := []sdCheckResult{}
 	for _, tgs := range sdCheckResults {
-		results = append(results, getSDCheckResult(tgs, scrapeConfig, noDefaultScrapePort)...)
+		results = append(results, getSDCheckResult(tgs, scrapeConfig)...)
 	}
 
 	res, err := json.MarshalIndent(results, "", "  ")
@@ -127,7 +127,7 @@ outerLoop:
 	return successExitCode
 }
 
-func getSDCheckResult(targetGroups []*targetgroup.Group, scrapeConfig *config.ScrapeConfig, noDefaultScrapePort bool) []sdCheckResult {
+func getSDCheckResult(targetGroups []*targetgroup.Group, scrapeConfig *config.ScrapeConfig) []sdCheckResult {
 	sdCheckResults := []sdCheckResult{}
 	lb := labels.NewBuilder(labels.EmptyLabels())
 	for _, targetGroup := range targetGroups {
@@ -144,7 +144,7 @@ func getSDCheckResult(targetGroups []*targetgroup.Group, scrapeConfig *config.Sc
 				}
 			}
 
-			res, orig, err := scrape.PopulateLabels(lb, scrapeConfig, noDefaultScrapePort)
+			res, orig, err := scrape.PopulateLabels(lb, scrapeConfig)
 			result := sdCheckResult{
 				DiscoveredLabels: orig,
 				Labels:           res,
