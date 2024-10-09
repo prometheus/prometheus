@@ -271,7 +271,7 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 		buf      []byte
 		currName []byte
 	)
-	if p.series[0] == '{' && p.series[1] == '"' {
+	if len(p.series)>1 && p.series[0] == '{' && p.series[1] == '"' {
 		// special case for UTF-8 encoded metric family names.
 		currName = p.series[p.offsets[0]-p.start : p.mfNameLen+2]
 	} else {
