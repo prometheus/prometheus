@@ -29,14 +29,15 @@ in-file offset (lower 4 bytes) and segment sequence number (upper 4 bytes).
 # Chunk
 
 ```
-┌───────────────┬───────────────────┬──────────────┬────────────────┐
-│ len <uvarint> │ encoding <1 byte> │ data <bytes> │ CRC32 <4 byte> │
-└───────────────┴───────────────────┴──────────────┴────────────────┘
+┌───────────────┬───────────────────┬─────────────┬────────────────┐
+│ len <uvarint> │ encoding <1 byte> │ data <data> │ CRC32 <4 byte> │
+└───────────────┴───────────────────┴─────────────┴────────────────┘
 ```
 
 Notes:
 * `<uvarint>` has 1 to 10 bytes.
-* `encoding`: Currently either `XOR`, `histogram`, or `float histogram`.
+* `encoding`: Currently either `XOR`, `histogram`, or `floathistogram`, see 
+  [code for numerical values](https://github.com/prometheus/prometheus/blob/02d0de9987ad99dee5de21853715954fadb3239f/tsdb/chunkenc/chunk.go#L28-L47).
 * `data`: See below for each encoding.
 
 ## XOR chunk data
