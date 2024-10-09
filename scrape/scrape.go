@@ -52,8 +52,8 @@ import (
 )
 
 // FallbackScrapeFormat is the format to try if the format cannot be
-// determined by content negotiation
-// A blank format defaults to 2.x behaviour
+// determined by content negotiation.
+// A blank format defaults to 2.x behaviour.
 var FallbackScrapeFormat = ""
 
 // ScrapeTimestampTolerance is the tolerance for scrape appends timestamps

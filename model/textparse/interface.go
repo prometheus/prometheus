@@ -79,7 +79,7 @@ type Parser interface {
 	Next() (Entry, error)
 }
 
-// New returns a new parser of the byte slice.
+// NewFallback returns a new parser of the byte slice.
 //
 // This function always returns a valid parser, but might additionally
 // return an error if the content type cannot be parsed.
@@ -122,6 +122,12 @@ func NewFallback(b []byte, contentType string, fallbackType string, parseClassic
 	}
 }
 
+// New returns a new parser of the byte slice.
+//
+// This function always returns a valid parser, but might additionally
+// return an error if the content type cannot be parsed.
+//
+// This exists as a wrapper for NewFallback() to maintain external interface.
 func New(b []byte, contentType string, parseClassicHistograms, skipOMCTSeries bool, st *labels.SymbolTable) (Parser, error) {
 	// TODO(alexg): What should be the default value we pass here, `text/plain` or empty?
 	return NewFallback(b, contentType, "", parseClassicHistograms, skipOMCTSeries, st)
