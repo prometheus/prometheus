@@ -75,7 +75,9 @@ type NHCBParser struct {
 	// Remembers the last base histogram metric name (assuming it's
 	// a classic histogram) so we can tell if the next float series
 	// is part of the same classic histogram.
-	lastBaseHistLabels labels.Labels
+	lastHistogramName       string
+	lastHistogramLabelsHash uint64
+	hBuffer                 []byte
 }
 
 func NewNHCBParser(p Parser, st *labels.SymbolTable, keepClassicHistograms bool) Parser {
@@ -192,7 +194,7 @@ func (p *NHCBParser) Next() (Entry, error) {
 // Update the stored labels if the labels have changed.
 func (p *NHCBParser) compareLabels() bool {
 	// Collection not in progress.
-	if p.lastBaseHistLabels.IsEmpty() {
+	if p.lastHistogramName == "" {
 		if p.typ == model.MetricTypeHistogram {
 			p.storeBaseLabels()
 		}
@@ -200,19 +202,17 @@ func (p *NHCBParser) compareLabels() bool {
 	}
 	if p.typ != model.MetricTypeHistogram {
 		// Different metric type, emit the NHCB.
-		p.lastBaseHistLabels = labels.EmptyLabels()
+		p.lastHistogramName = ""
 		return true
 	}
 
-	if p.lastBaseHistLabels.Get(labels.MetricName) != convertnhcb.GetHistogramMetricBaseName(p.lset.Get(labels.MetricName)) {
+	if p.lastHistogramName != convertnhcb.GetHistogramMetricBaseName(p.lset.Get(labels.MetricName)) {
 		// Different metric name.
 		p.storeBaseLabels()
 		return true
 	}
-	var buf []byte
-	lastHash, _ := p.lastBaseHistLabels.HashWithoutLabels(buf) // We removed the bucket label in storeBaseLabels.
-	nextHash, _ := p.lset.HashWithoutLabels(buf, labels.BucketLabel)
-	if lastHash != nextHash {
+	nextHash, _ := p.lset.HashWithoutLabels(p.hBuffer, labels.BucketLabel)
+	if p.lastHistogramLabelsHash != nextHash {
 		// Different label values.
 		p.storeBaseLabels()
 		return true
@@ -223,18 +223,8 @@ func (p *NHCBParser) compareLabels() bool {
 
 // Save the label set of the classic histogram without suffix and bucket `le` label.
 func (p *NHCBParser) storeBaseLabels() {
-	p.builder.Reset()
-	p.lset.Range(func(l labels.Label) {
-		switch {
-		case l.Name == labels.BucketLabel:
-		case l.Name == labels.MetricName:
-			p.builder.Add(l.Name, convertnhcb.GetHistogramMetricBaseName(l.Value))
-		default:
-			p.builder.Add(l.Name, l.Value)
-		}
-	})
-	// Note: we don't sort the labels as changing the name label value doesn't affect sorting.
-	p.lastBaseHistLabels = p.builder.Labels()
+	p.lastHistogramName = convertnhcb.GetHistogramMetricBaseName(p.lset.Get(labels.MetricName))
+	p.lastHistogramLabelsHash, _ = p.lset.HashWithoutLabels(p.hBuffer, labels.BucketLabel)
 }
 
 // handleClassicHistogramSeries collates the classic histogram series to be converted to NHCB
