@@ -1475,15 +1475,16 @@ func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, of
 				if ss.Floats == nil {
 					ss.Floats = reuseOrGetFPointSlices(prevSS, numSteps)
 				}
-				val := f
 				if recordOrigT {
 					// This is an info metric, where we want to track the original sample timestamp.
-					val = float64(origT)
+					// Info metric values should be 1 by convention, therefore we can re-use this
+					// space in the sample.
+					f = float64(origT)
 				}
-				ss.Floats = append(ss.Floats, FPoint{F: val, T: ts})
+				ss.Floats = append(ss.Floats, FPoint{F: f, T: ts})
 			} else {
 				if recordOrigT {
-					panic("this should be an info metric, with float samples")
+					ev.error(fmt.Errorf("this should be an info metric, with float samples: %s", ss.Metric))
 				}
 
 				point := HPoint{H: h, T: ts}
