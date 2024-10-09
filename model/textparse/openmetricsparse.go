@@ -278,7 +278,7 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 		currName = p.series[p.offsets[0]-p.start : p.mfNameLen]
 	}
 
-	currHash := p.seriesHash(buf, currName)
+	currHash := p.seriesHash(&buf, currName)
 	// Check cache, perhaps we fetched something already.
 	if currHash == p.ctHashSet && p.ct > 0 {
 		return &p.ct
@@ -318,7 +318,7 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 		}
 
 		// Remove _created suffix.
-		peekedHash := p.seriesHash(buf, peekedName[:len(peekedName)-8])
+		peekedHash := p.seriesHash(&buf, peekedName[:len(peekedName)-8])
 		if peekedHash != currHash {
 			// Found CT line for a different series, for our series no CT.
 			p.resetCTParseValues(resetLexer)
@@ -341,7 +341,7 @@ var (
 // seriesHash generates a hash based on the metric family name and the offsets
 // of label names and values from the parsed OpenMetrics data. It skips quantile
 // and le labels for summaries and histograms respectively.
-func (p *OpenMetricsParser) seriesHash(offsetsArr, metricFamilyName []byte) uint64 {
+func (p *OpenMetricsParser) seriesHash(offsetsArr *[]byte, metricFamilyName []byte) uint64 {
 	// Iterate through p.offsets to find the label names and values.
 	for i := 2; i < len(p.offsets); i += 4 {
 		lStart := p.offsets[i] - p.start
@@ -354,17 +354,17 @@ func (p *OpenMetricsParser) seriesHash(offsetsArr, metricFamilyName []byte) uint
 		if p.mtype == model.MetricTypeHistogram && bytes.Equal(label, leBytes) {
 			continue
 		}
-		offsetsArr = append(offsetsArr, p.series[lStart:lEnd]...)
+		*offsetsArr = append(*offsetsArr, p.series[lStart:lEnd]...)
 		vStart := p.offsets[i+2] - p.start
 		vEnd := p.offsets[i+3] - p.start
-		offsetsArr = append(offsetsArr, p.series[vStart:vEnd]...)
+		*offsetsArr = append(*offsetsArr, p.series[vStart:vEnd]...)
 	}
 
-	offsetsArr = append(offsetsArr, metricFamilyName...)
-	hashedOffsets := xxhash.Sum64(offsetsArr)
+	*offsetsArr = append(*offsetsArr, metricFamilyName...)
+	hashedOffsets := xxhash.Sum64(*offsetsArr)
 
 	// Reset the offsets array for later reuse.
-	offsetsArr = offsetsArr[:0]
+	*offsetsArr = (*offsetsArr)[:0]
 	return hashedOffsets
 }
 
