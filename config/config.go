@@ -172,6 +172,7 @@ var (
 		HonorTimestamps:         true,
 		HTTPClientConfig:        config.DefaultHTTPClientConfig,
 		EnableCompression:       true,
+		FallbackScrapeFormat:    "text/plain",
 	}
 
 	// DefaultAlertmanagerConfig is the default alertmanager configuration.
@@ -672,6 +673,8 @@ type ScrapeConfig struct {
 	KeepDroppedTargets uint `yaml:"keep_dropped_targets,omitempty"`
 	// Allow UTF8 Metric and Label Names.
 	MetricNameValidationScheme string `yaml:"metric_name_validation_scheme,omitempty"`
+	// Format to fall back to if scrape format cannot be idenfitied by content negotation
+	FallbackScrapeFormat string `yaml:"fallback_scrape_config,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.

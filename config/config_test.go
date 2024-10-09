@@ -219,6 +219,7 @@ var expectedConf = &Config{
 			LabelValueLengthLimit: globLabelValueLengthLimit,
 			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
 			ScrapeFailureLogFile:  "testdata/fail_prom.log",
+			FallbackScrapeFormat:  "text/plain",
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,

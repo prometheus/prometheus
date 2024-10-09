@@ -51,6 +51,11 @@ import (
 	"github.com/prometheus/prometheus/util/pool"
 )
 
+// FallbackScrapeFormat is the format to try if the format cannot be
+// determined by content negotiation
+// A blank format defaults to 2.x behaviour
+var FallbackScrapeFormat = ""
+
 // ScrapeTimestampTolerance is the tolerance for scrape appends timestamps
 // alignment, to enable better compression at the TSDB level.
 // See https://github.com/prometheus/prometheus/issues/7846
@@ -1537,13 +1542,22 @@ type appendErrors struct {
 }
 
 func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
-	p, err := textparse.New(b, contentType, sl.scrapeClassicHistograms, sl.enableCTZeroIngestion, sl.symbolTable)
+	p, err := textparse.NewFallback(b, contentType, FallbackScrapeFormat, sl.scrapeClassicHistograms, sl.enableCTZeroIngestion, sl.symbolTable)
 	if err != nil {
-		sl.l.Debug(
-			"Invalid content type on scrape, using prometheus parser as fallback.",
-			"content_type", contentType,
-			"err", err,
-		)
+		if FallbackScrapeFormat == "" {
+			sl.l.Debug(
+				"Invalid content type on scrape, using prometheus parser as fallback.",
+				"content_type", contentType,
+				"err", err,
+			)
+		} else {
+			sl.l.Debug(
+				"Invalid content type on scrape, using 'scrape.fallback-scrape-format' parser as fallback.",
+				"content_type", contentType,
+				"fallback_format", FallbackScrapeFormat,
+				"err", err,
+			)
+		}
 	}
 
 	var (

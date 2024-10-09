@@ -46,8 +46,10 @@ func TestNewParser(t *testing.T) {
 	for name, tt := range map[string]*struct {
 		contentType    string
 		validateParser func(*testing.T, Parser)
+		fallbackFormat string
 		err            string
 	}{
+		// Tests with no fallbackFormat set
 		"empty-string": {
 			validateParser: requirePromParser,
 		},
@@ -95,12 +97,55 @@ func TestNewParser(t *testing.T) {
 			contentType:    "text/html",
 			validateParser: requirePromParser,
 		},
+		// Tests with fallbackFormat set
+		"empty-string-fallback-invalid": {
+			fallbackFormat: "invalid",
+			err:            "Unrecognised `scrape.fallback-scrape-format` value",
+			validateParser: requirePromParser,
+		},
+		"empty-string-fallback-text-plain-ok-1": {
+			fallbackFormat: "text/plain; version=0.0.4",
+			err:            "Non-compliant scraper sending blank Content-Type",
+			validateParser: requirePromParser,
+		},
+		"empty-string-fallback-text-plain-ok-2": {
+			fallbackFormat: "text/plain; version=1.0.0",
+			err:            "Non-compliant scraper sending blank Content-Type",
+			validateParser: requirePromParser,
+		},
+		"empty-string-fallback-text-plain-ok-3": {
+			fallbackFormat: "text/plain;",
+			err:            "Non-compliant scraper sending blank Content-Type",
+			validateParser: requirePromParser,
+		},
+		"empty-string-fallback-text-plain-ok-4": {
+			fallbackFormat: "text/plain",
+			err:            "Non-compliant scraper sending blank Content-Type",
+			validateParser: requirePromParser,
+		},
+		"unhandled-content-type-ok-fallback": {
+			contentType:    "something-else",
+			fallbackFormat: "text/plain;",
+			err:            "Unrecognised `scrape.fallback-scrape-format` value",
+			validateParser: requirePromParser,
+		},
+		"unhandled-content-type-invalid-fallback": {
+			contentType:    "something-else",
+			fallbackFormat: "something-wrong",
+			err:            "Unrecognised `scrape.fallback-scrape-format` value",
+			validateParser: requirePromParser,
+		},
+		"empty-content-type-openmetrics-fallback": {
+			fallbackFormat: "application/openmetrics-text",
+			err:            "Non-compliant scraper sending blank Content-Type",
+			validateParser: requireOpenMetricsParser,
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			tt := tt // Copy to local variable before going parallel.
 			t.Parallel()
 
-			p, err := New([]byte{}, tt.contentType, false, false, labels.NewSymbolTable())
+			p, err := NewFallback([]byte{}, tt.contentType, tt.fallbackFormat, false, false, labels.NewSymbolTable())
 			tt.validateParser(t, p)
 			if tt.err == "" {
 				require.NoError(t, err)

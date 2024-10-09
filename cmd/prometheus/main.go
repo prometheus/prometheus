@@ -495,6 +495,9 @@ func main() {
 	a.Flag("scrape.timestamp-tolerance", "Timestamp tolerance. See https://github.com/prometheus/prometheus/issues/7846 for more context. Experimental. This flag will be removed in a future release.").
 		Hidden().Default("2ms").DurationVar(&scrape.ScrapeTimestampTolerance)
 
+	a.Flag("scrape.fallback-scrape-format", "Format to use if format cannot be determined from content negotation").
+		Default("text/plain").StringVar(&scrape.FallbackScrapeFormat)
+
 	serverOnlyFlag(a, "alertmanager.notification-queue-capacity", "The capacity of the queue for pending Alertmanager notifications.").
 		Default("10000").IntVar(&cfg.notifier.QueueCapacity)
 
