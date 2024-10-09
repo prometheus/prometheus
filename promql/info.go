@@ -24,7 +24,6 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -152,21 +151,13 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 	}
 
 	infoIt := ev.querier.Select(ctx, false, ev.selectHints, infoLabelMatchers...)
-	var infoSeries []storage.Series
-	for infoIt.Next() {
-		select {
-		case <-ctx.Done():
-			return nil, nil, ctx.Err()
-		default:
-		}
-		infoSeries = append(infoSeries, infoIt.At())
+	infoSeries, ws, err := expandSeriesSet(ctx, infoIt)
+	if err != nil {
+		return nil, ws, err
 	}
-	annots := infoIt.Warnings()
-	if infoIt.Err() != nil {
-		return nil, annots, infoIt.Err()
-	}
+
 	infoMat := ev.evalSeries(ctx, infoSeries, 0, true)
-	return infoMat, annots, nil
+	return infoMat, ws, nil
 }
 
 // combineWithInfoSeries combines mat with select data labels from infoMat.
