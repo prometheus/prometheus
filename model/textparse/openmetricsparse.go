@@ -348,7 +348,7 @@ func (p *OpenMetricsParser) seriesHash(offsetsArr, metricFamilyName []byte) uint
 		lEnd := p.offsets[i+1] - p.start
 		label := p.series[lStart:lEnd]
 		// Skip quantile and le labels for summaries and histograms.
-		if bytes.Equal(label, quantileBytes) && p.mtype == model.MetricTypeSummary {
+		if p.mtype == model.MetricTypeSummary && bytes.Equal(label, quantileBytes) {
 			continue
 		}
 		if bytes.Equal(label, leBytes) && p.mtype == model.MetricTypeHistogram {
