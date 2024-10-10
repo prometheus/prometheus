@@ -9,7 +9,7 @@
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
-// limitations under the License.
+// limitations under the License.s
 
 package storage
 
@@ -145,6 +145,12 @@ type fanoutAppender struct {
 
 	primary     Appender
 	secondaries []Appender
+}
+
+// SetHints is a no-op. It exists to satisfy the Appender interface,
+// but hints are not propagated or stored in this fanoutAppender.
+func (f *fanoutAppender) SetHints(hints *AppendHints) {
+	// Do nothing.
 }
 
 func (f *fanoutAppender) Append(ref SeriesRef, l labels.Labels, t int64, v float64) (SeriesRef, error) {
