@@ -59,42 +59,50 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
-func TestRefreshAZIDs(t *testing.T) {
+func TestEC2DiscoveryRefreshAZIDs(t *testing.T) {
 	ctx := context.Background()
-	client := newMockEC2Client(
-		&ec2DataStore{
-			azToAZID: map[string]string{
-				"azname-a": "azid-1",
-				"azname-b": "azid-2",
-				"azname-c": "azid-3",
+
+	// iterate through the test cases
+	for _, tt := range []struct {
+		name       string
+		shouldFail bool
+		ec2Data    *ec2DataStore
+	}{
+		{
+			name:       "Normal",
+			shouldFail: false,
+			ec2Data: &ec2DataStore{
+				azToAZID: map[string]string{
+					"azname-a": "azid-1",
+					"azname-b": "azid-2",
+					"azname-c": "azid-3",
+				},
 			},
 		},
-	)
+		{
+			name:       "HandleError",
+			shouldFail: true,
+			ec2Data:    &ec2DataStore{},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			client := newMockEC2Client(tt.ec2Data)
 
-	d := &EC2Discovery{
-		ec2: client,
+			d := &EC2Discovery{
+				ec2: client,
+			}
+
+			err := d.refreshAZIDs(ctx)
+			if tt.shouldFail {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, client.ec2Data.azToAZID, d.azToAZID)
+			}
+		})
 	}
-
-	err := d.refreshAZIDs(ctx)
-	require.NoError(t, err)
-	require.Equal(t, client.ec2Data.azToAZID, d.azToAZID)
 }
 
-func TestRefreshAZIDsHandleError(t *testing.T) {
-	ctx := context.Background()
-	client := newMockEC2Client(
-		&ec2DataStore{},
-	)
-
-	d := &EC2Discovery{
-		ec2: client,
-	}
-
-	err := d.refreshAZIDs(ctx)
-	require.Error(t, err)
-}
-
-// Tests for the refresh function.
 func TestEC2DiscoveryRefresh(t *testing.T) {
 	ctx := context.Background()
 
