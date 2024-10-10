@@ -1371,6 +1371,7 @@ func getGoGCEnv() int {
 // OTLPConfig is the configuration for writing to the OTLP endpoint.
 type OTLPConfig struct {
 	PromoteResourceAttributes []string `yaml:"promote_resource_attributes,omitempty"`
+	AllowUTF8                 bool     `yaml:"allow_utf8,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.

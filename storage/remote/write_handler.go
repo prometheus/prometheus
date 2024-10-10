@@ -511,9 +511,11 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	otlpCfg := h.configFunc().OTLPConfig
 
 	converter := otlptranslator.NewPrometheusConverter()
+
 	annots, err := converter.FromMetrics(r.Context(), req.Metrics(), otlptranslator.Settings{
 		AddMetricSuffixes:         true,
 		PromoteResourceAttributes: otlpCfg.PromoteResourceAttributes,
+		AllowUTF8:                 (model.NameValidationScheme == model.UTF8Validation) && otlpCfg.AllowUTF8,
 	})
 	if err != nil {
 		h.logger.Warn("Error translating OTLP metrics to Prometheus write request", "err", err)
