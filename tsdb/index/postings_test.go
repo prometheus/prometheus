@@ -1522,7 +1522,7 @@ func TestMemPostings_Unordered_Add_Get(t *testing.T) {
 		// Next postings should still reference the next series.
 		nextExpanded, err := ExpandPostings(nextPostings)
 		require.NoError(t, err)
-		require.Equal(t, int(ref), len(nextExpanded))
+		require.Len(t, nextExpanded, int(ref))
 		require.Equal(t, next, nextExpanded[len(nextExpanded)-1])
 	}
 }
