@@ -233,21 +233,21 @@ type azureClient struct {
 
 var _ client = &azureClient{}
 
-// createAzureClient is a helper function for creating an Azure compute client to ARM.
-func createAzureClient(cfg SDConfig, logger *slog.Logger) (client, error) {
-	cloudConfiguration, err := CloudConfigurationFromName(cfg.Environment)
+// createAzureClient is a helper method for creating an Azure compute client to ARM.
+func (d *Discovery) createAzureClient() (client, error) {
+	cloudConfiguration, err := CloudConfigurationFromName(d.cfg.Environment)
 	if err != nil {
 		return &azureClient{}, err
 	}
 
 	var c azureClient
-	c.logger = logger
+	c.logger = d.logger
 
 	telemetry := policy.TelemetryOptions{
 		ApplicationID: userAgent,
 	}
 
-	credential, err := newCredential(cfg, policy.ClientOptions{
+	credential, err := newCredential(*d.cfg, policy.ClientOptions{
 		Cloud:     cloudConfiguration,
 		Telemetry: telemetry,
 	})
@@ -255,7 +255,7 @@ func createAzureClient(cfg SDConfig, logger *slog.Logger) (client, error) {
 		return &azureClient{}, err
 	}
 
-	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, "azure_sd")
+	client, err := config_util.NewClientFromConfig(d.cfg.HTTPClientConfig, "azure_sd")
 	if err != nil {
 		return &azureClient{}, err
 	}
@@ -267,22 +267,22 @@ func createAzureClient(cfg SDConfig, logger *slog.Logger) (client, error) {
 		},
 	}
 
-	c.vm, err = armcompute.NewVirtualMachinesClient(cfg.SubscriptionID, credential, options)
+	c.vm, err = armcompute.NewVirtualMachinesClient(d.cfg.SubscriptionID, credential, options)
 	if err != nil {
 		return &azureClient{}, err
 	}
 
-	c.nic, err = armnetwork.NewInterfacesClient(cfg.SubscriptionID, credential, options)
+	c.nic, err = armnetwork.NewInterfacesClient(d.cfg.SubscriptionID, credential, options)
 	if err != nil {
 		return &azureClient{}, err
 	}
 
-	c.vmss, err = armcompute.NewVirtualMachineScaleSetsClient(cfg.SubscriptionID, credential, options)
+	c.vmss, err = armcompute.NewVirtualMachineScaleSetsClient(d.cfg.SubscriptionID, credential, options)
 	if err != nil {
 		return &azureClient{}, err
 	}
 
-	c.vmssvm, err = armcompute.NewVirtualMachineScaleSetVMsClient(cfg.SubscriptionID, credential, options)
+	c.vmssvm, err = armcompute.NewVirtualMachineScaleSetVMsClient(d.cfg.SubscriptionID, credential, options)
 	if err != nil {
 		return &azureClient{}, err
 	}
@@ -350,15 +350,7 @@ func newAzureResourceFromID(id string, logger *slog.Logger) (*arm.ResourceID, er
 	return resourceID, nil
 }
 
-func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	defer d.logger.Debug("Azure discovery completed")
-
-	client, err := createAzureClient(*d.cfg, d.logger)
-	if err != nil {
-		d.metrics.failuresCount.Inc()
-		return nil, fmt.Errorf("could not create Azure client: %w", err)
-	}
-
+func (d *Discovery) refreshAzureClient(ctx context.Context, client client) ([]*targetgroup.Group, error) {
 	machines, err := client.getVMs(ctx, d.cfg.ResourceGroup)
 	if err != nil {
 		d.metrics.failuresCount.Inc()
@@ -416,6 +408,18 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	}
 
 	return []*targetgroup.Group{&tg}, nil
+}
+
+func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+	defer d.logger.Debug("Azure discovery completed")
+
+	client, err := d.createAzureClient()
+	if err != nil {
+		d.metrics.failuresCount.Inc()
+		return nil, fmt.Errorf("could not create Azure client: %w", err)
+	}
+
+	return d.refreshAzureClient(ctx, client)
 }
 
 func (d *Discovery) vmToLabelSet(ctx context.Context, client client, vm virtualMachine) (model.LabelSet, error) {
