@@ -102,7 +102,9 @@ func Load(s string, logger *slog.Logger) (*Config, error) {
 		// Note newV can be blank. https://github.com/prometheus/prometheus/issues/11024
 		b.Add(v.Name, newV)
 	})
-	cfg.GlobalConfig.ExternalLabels = b.Labels()
+	if !b.Labels().IsEmpty() {
+		cfg.GlobalConfig.ExternalLabels = b.Labels()
+	}
 	return cfg, nil
 }
 
@@ -151,6 +153,7 @@ var (
 		// When native histogram feature flag is enabled, ScrapeProtocols default
 		// changes to DefaultNativeHistogramScrapeProtocols.
 		ScrapeProtocols: DefaultScrapeProtocols,
+		//ExternalLabels:  labels.Labels{},
 	}
 
 	DefaultRuntimeConfig = RuntimeConfig{
