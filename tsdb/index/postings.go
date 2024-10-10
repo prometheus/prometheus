@@ -410,19 +410,25 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 	list := appendWithExponentialGrowth(nm[l.Value], id)
 	nm[l.Value] = list
 
-	if !p.ordered {
+	// Return if it shouldn't be ordered, if it only has one element or if it's already ordered.
+	// The invariant is that the first n-1 items in the list are already sorted.
+	if !p.ordered || len(list) == 1 || list[len(list)-1] >= list[len(list)-2] {
 		return
 	}
-	// There is no guarantee that no higher ID was inserted before as they may
-	// be generated independently before adding them to postings.
-	// We repair order violations on insert. The invariant is that the first n-1
-	// items in the list are already sorted.
+
+	// Readers may already have a copy of this postings slice, so we need to copy it before sorting.
+	old := list
+	list = make([]storage.SeriesRef, len(old), cap(old))
+	copy(list, old)
+
+	// Repair order violations on insert.
 	for i := len(list) - 1; i >= 1; i-- {
 		if list[i] >= list[i-1] {
 			break
 		}
 		list[i], list[i-1] = list[i-1], list[i]
 	}
+	nm[l.Value] = list
 }
 
 func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) Postings {
