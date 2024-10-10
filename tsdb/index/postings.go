@@ -392,13 +392,14 @@ func (p *MemPostings) Add(id storage.SeriesRef, lset labels.Labels) {
 	p.mtx.Unlock()
 }
 
-func appendWithExponentialGrowth[T any](a []T, v T) []T {
+func appendWithExponentialGrowth[T any](a []T, v T) (_ []T, copied bool) {
 	if cap(a) < len(a)+1 {
 		newList := make([]T, len(a), len(a)*2+1)
 		copy(newList, a)
 		a = newList
+		copied = true
 	}
-	return append(a, v)
+	return append(a, v), copied
 }
 
 func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
@@ -407,7 +408,7 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 		nm = map[string][]storage.SeriesRef{}
 		p.m[l.Name] = nm
 	}
-	list := appendWithExponentialGrowth(nm[l.Value], id)
+	list, copied := appendWithExponentialGrowth(nm[l.Value], id)
 	nm[l.Value] = list
 
 	// Return if it shouldn't be ordered, if it only has one element or if it's already ordered.
@@ -416,19 +417,23 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 		return
 	}
 
-	// Readers may already have a copy of this postings slice, so we need to copy it before sorting.
-	old := list
-	list = make([]storage.SeriesRef, len(old), cap(old))
-	copy(list, old)
+	if !copied {
+		// We have appended to the existing slice,
+		// and readers may already have a copy of this postings slice,
+		// so we need to copy it before sorting.
+		old := list
+		list = make([]storage.SeriesRef, len(old), cap(old))
+		copy(list, old)
+		nm[l.Value] = list
+	}
 
-	// Repair order violations on insert.
+	// Repair order violations.
 	for i := len(list) - 1; i >= 1; i-- {
 		if list[i] >= list[i-1] {
 			break
 		}
 		list[i], list[i-1] = list[i-1], list[i]
 	}
-	nm[l.Value] = list
 }
 
 func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) Postings {
