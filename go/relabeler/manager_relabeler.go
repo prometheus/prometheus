@@ -811,21 +811,6 @@ func (s *shards) updateOrCreateStatelessRelabeler(
 	return sr, nil
 }
 
-//// rotate main lss and input relabelers.
-//func (s *shards) rotate() error {
-//	var shardID uint16
-//	for ; shardID < s.numberOfShards; shardID++ {
-//		s.shardLsses[shardID].Reset()
-//		s.heads[shardID].ResetDataStorage()
-//	}
-//
-//	for rkey, inputRelabeler := range s.inputRelabelers {
-//		inputRelabeler.ResetTo(s.shardLsses[rkey.shardID].Generation(), s.numberOfShards)
-//	}
-//
-//	return nil
-//}
-
 // run shards loop for relableling.
 func (s *shards) run() {
 	var shardID uint16

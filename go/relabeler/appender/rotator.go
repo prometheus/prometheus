@@ -1,11 +1,12 @@
 package appender
 
 import (
-	"fmt"
+	"time"
+
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/prometheus/pp/go/relabeler"
+	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 	"github.com/prometheus/prometheus/pp/go/util"
-	"time"
 )
 
 // DefaultRotateDuration - default block duration.
@@ -59,12 +60,9 @@ func (r *Rotator) loop() {
 			return
 
 		case <-r.rotateTimer.Chan():
-			fmt.Println("ROTATION!")
+			logger.Debugf("start rotation")
 			if err := r.rotatable.Rotate(); err != nil {
-				// todo: log rotation error
-				fmt.Println("ROTATION FAILED: ", err.Error())
-			} else {
-				fmt.Println("ROTATION COMPLETED")
+				logger.Errorf("rotation failed: %s", err.Error())
 			}
 
 			r.rotateTimer.Reset()
