@@ -89,6 +89,11 @@ name: <string>
 # Offset the rule evaluation timestamp of this particular group by the specified duration into the past.
 [ query_offset: <duration> | default = global.rule_query_offset ]
 
+# Labels to add or overwrite before storing the result for its rules.
+# Labels defined in <rule> will override the key if it has a collision.
+labels:
+  [ <labelname>: <labelvalue> ]
+
 rules:
   [ - <rule> ... ]
 ```

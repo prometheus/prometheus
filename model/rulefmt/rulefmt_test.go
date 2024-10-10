@@ -111,6 +111,23 @@ groups:
 			shouldPass: true,
 		},
 		{
+			ruleString: `
+groups:
+- name: example
+  labels:
+    team: myteam
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+    for: 5m
+    labels:
+      severity: "page"
+    annotations:
+      summary: "Instance {{ $labels.instance }} down"
+`,
+			shouldPass: true,
+		},
+		{
 			// `$label` instead of `$labels`.
 			ruleString: `
 groups:
