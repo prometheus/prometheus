@@ -572,3 +572,160 @@ clear
 #
 #eval instant at 1m count(topk(1,max(up) without()) == topk(1,max(up) without()) == topk(1,max(up) without()) == topk(1,max(up) without()) == topk(1,max(up) without()))
 #	{} 1
+
+clear
+
+# Test stddev produces consistent results regardless the order the data is loaded in.
+load 5m
+	series{label="a"} 1
+	series{label="b"} 2
+	series{label="c"} {{schema:1 sum:15 count:10 buckets:[3 2 5 7 9]}}
+
+eval instant at 0m stddev(series)
+	{} 0.5
+
+eval instant at 0m stdvar(series)
+	{} 0.25
+
+eval instant at 0m stddev by (label) (series)
+	{label="a"} 0
+	{label="b"} 0
+
+eval instant at 0m stdvar by (label) (series)
+	{label="a"} 0
+	{label="b"} 0
+
+clear
+
+load 5m
+	series{label="a"} {{schema:1 sum:15 count:10 buckets:[3 2 5 7 9]}}
+	series{label="b"} 1
+	series{label="c"} 2
+
+eval instant at 0m stddev(series)
+	{} 0.5
+
+eval instant at 0m stdvar(series)
+	{} 0.25
+
+eval instant at 0m stddev by (label) (series)
+	{label="b"} 0
+	{label="c"} 0
+
+eval instant at 0m stdvar by (label) (series)
+	{label="b"} 0
+	{label="c"} 0
+
+clear
+
+load 5m
+	series{label="a"} 1
+	series{label="b"} 2
+	series{label="c"} NaN
+
+eval instant at 0m stddev(series)
+	{} NaN
+
+eval instant at 0m stdvar(series)
+	{} NaN
+
+eval instant at 0m stddev by (label) (series)
+	{label="a"} 0
+	{label="b"} 0
+	{label="c"} NaN
+
+eval instant at 0m stdvar by (label) (series)
+	{label="a"} 0
+	{label="b"} 0
+	{label="c"} NaN
+
+clear
+
+load 5m
+	series{label="a"} NaN
+	series{label="b"} 1
+	series{label="c"} 2
+
+eval instant at 0m stddev(series)
+	{} NaN
+
+eval instant at 0m stdvar(series)
+	{} NaN
+
+eval instant at 0m stddev by (label) (series)
+	{label="a"} NaN
+	{label="b"} 0
+	{label="c"} 0
+
+eval instant at 0m stdvar by (label) (series)
+	{label="a"} NaN
+	{label="b"} 0
+	{label="c"} 0
+
+clear
+
+load 5m
+	series NaN
+
+eval instant at 0m stddev(series)
+	{} NaN
+
+eval instant at 0m stdvar(series)
+	{} NaN
+
+clear
+
+load 5m
+	series{label="a"} 1
+	series{label="b"} 2
+	series{label="c"} inf
+
+eval instant at 0m stddev (series)
+	{} NaN
+
+eval instant at 0m stdvar (series)
+	{} NaN
+
+eval instant at 0m stddev by (label) (series)
+	{label="a"} 0
+	{label="b"} 0
+	{label="c"} NaN
+
+eval instant at 0m stdvar by (label) (series)
+	{label="a"} 0
+	{label="b"} 0
+	{label="c"} NaN
+
+clear
+
+load 5m
+	series{label="a"} inf
+	series{label="b"} 1
+	series{label="c"} 2
+
+eval instant at 0m stddev(series)
+	{} NaN
+
+eval instant at 0m stdvar(series)
+	{} NaN
+
+eval instant at 0m stddev by (label) (series)
+	{label="a"} NaN
+	{label="b"} 0
+	{label="c"} 0
+
+eval instant at 0m stdvar by (label) (series)
+	{label="a"} NaN
+	{label="b"} 0
+	{label="c"} 0
+
+clear
+
+load 5m
+	series inf
+
+eval instant at 0m stddev(series)
+	{} NaN
+
+eval instant at 0m stdvar(series)
+	{} NaN
