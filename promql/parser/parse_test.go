@@ -3872,6 +3872,81 @@ var testExpr = []struct {
 			},
 		},
 	},
+	{
+		input: `info(rate(http_request_counter_total{}[5m]))`,
+		expected: &Call{
+			Func: MustGetFunction("info"),
+			Args: Expressions{
+				&Call{
+					Func: MustGetFunction("rate"),
+					PosRange: posrange.PositionRange{
+						Start: 5,
+						End:   43,
+					},
+					Args: Expressions{
+						&MatrixSelector{
+							VectorSelector: &VectorSelector{
+								Name:           "http_request_counter_total",
+								OriginalOffset: 0,
+								LabelMatchers: []*labels.Matcher{
+									MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "http_request_counter_total"),
+								},
+								PosRange: posrange.PositionRange{
+									Start: 10,
+									End:   38,
+								},
+							},
+							EndPos: 42,
+							Range:  5 * time.Minute,
+						},
+					},
+				},
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   44,
+			},
+		},
+	},
+	{
+		input:  `info(rate(http_request_counter_total{}[5m]), target_info{foo="bar"})`,
+		fail:   true,
+		errMsg: `1:46: parse error: expected label selectors only, got vector selector instead`,
+	},
+	{
+		input: `info(http_request_counter_total{namespace="zzz"}, {foo="bar", bar="baz"})`,
+		expected: &Call{
+			Func: MustGetFunction("info"),
+			Args: Expressions{
+				&VectorSelector{
+					Name: "http_request_counter_total",
+					LabelMatchers: []*labels.Matcher{
+						MustLabelMatcher(labels.MatchEqual, "namespace", "zzz"),
+						MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "http_request_counter_total"),
+					},
+					PosRange: posrange.PositionRange{
+						Start: 5,
+						End:   48,
+					},
+				},
+				&VectorSelector{
+					LabelMatchers: []*labels.Matcher{
+						MustLabelMatcher(labels.MatchEqual, "foo", "bar"),
+						MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+					},
+					PosRange: posrange.PositionRange{
+						Start: 50,
+						End:   72,
+					},
+					BypassEmptyMatcherCheck: true,
+				},
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   73,
+			},
+		},
+	},
 }
 
 func makeInt64Pointer(val int64) *int64 {
@@ -3889,6 +3964,12 @@ func readable(s string) string {
 }
 
 func TestParseExpressions(t *testing.T) {
+	// Enable experimental functions testing.
+	EnableExperimentalFunctions = true
+	t.Cleanup(func() {
+		EnableExperimentalFunctions = false
+	})
+
 	model.NameValidationScheme = model.UTF8Validation
 	for _, test := range testExpr {
 		t.Run(readable(test.input), func(t *testing.T) {

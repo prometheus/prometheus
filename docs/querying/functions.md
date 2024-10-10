@@ -464,6 +464,97 @@ by the number of seconds under the specified time range window, and should be
 used primarily for human readability.  Use `rate` in recording rules so that
 increases are tracked consistently on a per-second basis.
 
+## `info()` (experimental)
+
+_The `info` function is an experiment to improve UX
+around including labels from [info metrics](https://grafana.com/blog/2021/08/04/how-to-use-promql-joins-for-more-effective-queries-of-prometheus-metrics-at-scale/#info-metrics).
+The behavior of this function may change in future versions of Prometheus,
+including its removal from PromQL. `info` has to be enabled via the 
+[feature flag](../feature_flags.md#experimental-promql-functions) `--enable-feature=promql-experimental-functions`._
+
+`info(v instant-vector, [data-label-selector instant-vector])` finds, for each time 
+series in `v`, all info series with matching _identifying_ labels (more on
+this later), and adds the union of their _data_ (i.e., non-identifying) labels
+to the time series. The second argument `data-label-selector` is optional.
+It is not a real instant vector, but uses a subset of its syntax.
+It must start and end with curly braces (`{ ... }`) and may only contain label matchers.
+The label matchers are used to constrain which info series to consider
+and which data labels to add to `v`.
+
+Identifying labels of an info series are the subset of labels that uniquely
+identify the info series. The remaining labels are considered
+_data labels_ (also called non-identifying). (Note that Prometheus's concept
+of time series identity always includes _all_ the labels. For the sake of the `info`
+function, we “logically” define info series identity in a different way than
+in the conventional Prometheus view.) The identifying labels of an info series
+are used to join it to regular (non-info) series, i.e. those series that have
+the same labels as the identifying labels of the info series. The data labels, which are
+the ones added to the regular series by the `info` function, effectively encode 
+metadata key value pairs. (This implies that a change in the data labels 
+in the conventional Prometheus view constitutes the end of one info series and
+the beginning of a new info series, while the “logical” view of the `info` function is
+that the same info series continues to exist, just with different “data”.)
+
+The conventional approach of adding data labels is sometimes called a “join query”,
+as illustrated by the following example:
+
+```
+  rate(http_server_request_duration_seconds_count[2m])
+* on (job, instance) group_left (k8s_cluster_name)
+  target_info
+```
+
+The core of the query is the expression `rate(http_server_request_duration_seconds_count[2m])`.
+But to add data labels from an info metric, the user has to use elaborate
+(and not very obvious) syntax to specify which info metric to use (`target_info`), what the
+identifying labels are (`on (job, instance)`), and which data labels to add
+(`group_left (k8s_cluster_name)`).
+
+This query is not only verbose and hard to write, it might also run into an “identity crisis”:
+If any of the data labels of `target_info` changes, Prometheus sees that as a change of series
+(as alluded to above, Prometheus just has no native concept of non-identifying labels).
+If the old `target_info` series is not properly marked as stale (which can happen with certain ingestion paths),
+the query above will fail for up to 5m (the lookback delta) because it will find a conflicting 
+match with both the old and the new version of `target_info`.
+
+The `info` function not only resolves this conflict in favor of the newer series, it also simplifies the syntax
+because it knows about the available info series and what their identifying labels are. The example query
+looks like this with the `info` function:
+
+```
+info(
+  rate(http_server_request_duration_seconds_count[2m]),
+  {k8s_cluster_name=~".+"}
+)
+```
+
+The common case of adding _all_ data labels can be achieved by
+omitting the 2nd argument of the `info` function entirely, simplifying
+the example even more:
+
+```
+info(rate(http_server_request_duration_seconds_count[2m]))
+```
+
+While `info` normally automatically finds all matching info series, it's possible to
+restrict them by providing a `__name__` label matcher, e.g.
+`{__name__="target_info"}`.
+
+### Limitations
+
+In its current iteration, `info` defaults to considering only info series with
+the name `target_info`. It also assumes that the identifying info series labels are
+`instance` and `job`. `info` does support other info series names however, through
+`__name__` label matchers. E.g., one can explicitly say to consider both 
+`target_info` and `build_info` as follows:
+`{__name__=~"(target|build)_info"}`. However, the identifying labels always
+have to be `instance` and `job`.
+
+These limitations are partially defeating the purpose of the `info` function.
+At the current stage, this is an experiment to find out how useful the approach
+turns out to be in practice. A final version of the `info` function will indeed
+consider all matching info series and with their appropriate identifying labels.
+
 ## `irate()`
 
 `irate(v range-vector)` calculates the per-second instant rate of increase of
