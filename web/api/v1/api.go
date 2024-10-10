@@ -1,5 +1,5 @@
 // Copyright 2016 The Prometheus Authors
-// Licensed under the Apache License, Version 2.0 (the "License");
+
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
@@ -15,6 +15,8 @@ package v1
 
 import (
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -171,6 +173,16 @@ type apiFuncResult struct {
 }
 
 type apiFunc func(r *http.Request) apiFuncResult
+
+type listRulesPaginationRequest struct {
+	MaxRuleGroups int64
+	NextToken     string
+}
+
+type parsePaginationError struct {
+	err       error
+	parameter string
+}
 
 // TSDBAdminStats defines the tsdb interfaces used by the v1 API for admin operations as well as statistics.
 type TSDBAdminStats interface {
@@ -1372,6 +1384,7 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 // RuleDiscovery has info for all rules.
 type RuleDiscovery struct {
 	RuleGroups []*RuleGroup `json:"groups"`
+	NextToken  string       `json:"nextToken:omitempty"`
 }
 
 // RuleGroup has info for rules which are part of a group.
@@ -1458,8 +1471,23 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 		return invalidParamError(err, "exclude_alerts")
 	}
 
+	paginationRequest, parseErr := parseListRulesPaginationRequest(r)
+	if parseErr != nil {
+		return invalidParamError(parseErr.err, parseErr.parameter)
+	}
+
 	rgs := make([]*RuleGroup, 0, len(ruleGroups))
+
+	foundToken := false
+
 	for _, grp := range ruleGroups {
+		if paginationRequest != nil && paginationRequest.NextToken != "" && !foundToken {
+			if paginationRequest.NextToken != getRuleGroupNextToken(grp.File(), grp.Name()) {
+				continue
+			}
+			foundToken = true
+		}
+
 		if len(rgSet) > 0 {
 			if _, ok := rgSet[grp.Name()]; !ok {
 				continue
@@ -1504,6 +1532,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 				if !excludeAlerts {
 					activeAlerts = rulesAlertsToAPIAlerts(rule.ActiveAlerts())
 				}
+
 				enrichedRule = AlertingRule{
 					State:          rule.State().String(),
 					Name:           rule.Name(),
@@ -1519,6 +1548,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 					LastEvaluation: rule.GetEvaluationTimestamp(),
 					Type:           "alerting",
 				}
+
 			case *rules.RecordingRule:
 				if !returnRecording {
 					break
@@ -1545,9 +1575,22 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 
 		// If the rule group response has no rules, skip it - this means we filtered all the rules of this group.
 		if len(apiRuleGroup.Rules) > 0 {
+			if paginationRequest != nil && len(rgs) == int(paginationRequest.MaxRuleGroups) {
+				// We've reached the capacity of our page.
+				// We are looking ahead up to this point because this is ultimately where the presence of at least one rule
+				// group in a subsequent response is determined, hence requiring a nextToken.
+				res.NextToken = getRuleGroupNextToken(grp.File(), grp.Name())
+				break
+			}
 			rgs = append(rgs, apiRuleGroup)
 		}
 	}
+
+	if paginationRequest != nil && paginationRequest.NextToken != "" && !foundToken {
+		err := fmt.Errorf("invalid nextToken '%v'. were rule groups changed?", paginationRequest.NextToken)
+		return invalidParamError(err, "next_token")
+	}
+
 	res.RuleGroups = rgs
 	return apiFuncResult{res, nil, nil, nil}
 }
@@ -1564,6 +1607,47 @@ func parseExcludeAlerts(r *http.Request) (bool, error) {
 		return false, fmt.Errorf("error converting exclude_alerts: %w", err)
 	}
 	return excludeAlerts, nil
+}
+
+func parseListRulesPaginationRequest(r *http.Request) (*listRulesPaginationRequest, *parsePaginationError) {
+	var (
+		parsedMaxGroups int64 = -1
+		err             error
+	)
+	maxGroups := r.URL.Query().Get("max_groups")
+	nextToken := r.URL.Query().Get("next_token")
+
+	if nextToken != "" && maxGroups == "" {
+		return nil, &parsePaginationError{
+			err:       fmt.Errorf("max_groups needs to be present in order to paginate"),
+			parameter: "max_groups",
+		}
+	}
+
+	if maxGroups != "" {
+		parsedMaxGroups, err = strconv.ParseInt(maxGroups, 10, 32)
+		if err != nil || parsedMaxGroups <= 0 {
+			return nil, &parsePaginationError{
+				err:       fmt.Errorf("max_groups need to be a valid number greater than 0: %w", err),
+				parameter: "max_groups",
+			}
+		}
+	}
+
+	if parsedMaxGroups >= 0 || nextToken != "" {
+		return &listRulesPaginationRequest{
+			MaxRuleGroups: parsedMaxGroups,
+			NextToken:     nextToken,
+		}, nil
+	}
+
+	return nil, nil
+}
+
+func getRuleGroupNextToken(file, group string) string {
+	h := sha1.New()
+	h.Write([]byte(file + ";" + group))
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 type prometheusConfig struct {
