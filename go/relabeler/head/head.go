@@ -14,7 +14,6 @@ import (
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"github.com/prometheus/prometheus/pp/go/util"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/prometheus/model/labels"
 )
 
 type Head struct {
@@ -31,10 +30,10 @@ type Head struct {
 	genericTaskCh              []chan *GenericTask
 	numberOfShards             uint16
 	// stat
-	memoryInUse    *prometheus.GaugeVec
-	labelsToDelete []labels.Labels
-	stopc          chan struct{}
-	wg             *sync.WaitGroup
+	memoryInUse *prometheus.GaugeVec
+	series      prometheus.Gauge
+	stopc       chan struct{}
+	wg          *sync.WaitGroup
 }
 
 func New(
@@ -61,6 +60,10 @@ func New(
 			},
 			[]string{"generation", "allocator", "id"},
 		),
+		series: factory.NewGauge(prometheus.GaugeOpts{
+			Name: "prompp_head_series",
+			Help: "Total number of series in the heads block.",
+		}),
 	}
 
 	if err := h.reconfigure(inputRelabelerConfigs, numberOfShards); err != nil {
@@ -173,6 +176,8 @@ func (h *Head) Reconfigure(inputRelabelerConfigs []*config.InputRelabelerConfig,
 }
 
 func (h *Head) WriteMetrics() {
+	h.series.Set(float64(h.Status(1).HeadStats.NumSeries))
+
 	_ = h.ForEachShard(func(shard relabeler.Shard) error {
 		h.memoryInUse.With(
 			prometheus.Labels{
