@@ -72,7 +72,7 @@ const (
 )
 
 // Load parses the YAML input s into a Config.
-func Load(s string, expandExternalLabels bool, logger *slog.Logger) (*Config, error) {
+func Load(s string, logger *slog.Logger) (*Config, error) {
 	cfg := &Config{}
 	// If the entire config body is empty the UnmarshalYAML method is
 	// never called. We thus have to set the DefaultConfig at the entry
@@ -82,10 +82,6 @@ func Load(s string, expandExternalLabels bool, logger *slog.Logger) (*Config, er
 	err := yaml.UnmarshalStrict([]byte(s), cfg)
 	if err != nil {
 		return nil, err
-	}
-
-	if !expandExternalLabels {
-		return cfg, nil
 	}
 
 	b := labels.NewScratchBuilder(0)
@@ -106,17 +102,19 @@ func Load(s string, expandExternalLabels bool, logger *slog.Logger) (*Config, er
 		// Note newV can be blank. https://github.com/prometheus/prometheus/issues/11024
 		b.Add(v.Name, newV)
 	})
-	cfg.GlobalConfig.ExternalLabels = b.Labels()
+	if !b.Labels().IsEmpty() {
+		cfg.GlobalConfig.ExternalLabels = b.Labels()
+	}
 	return cfg, nil
 }
 
 // LoadFile parses the given YAML file into a Config.
-func LoadFile(filename string, agentMode, expandExternalLabels bool, logger *slog.Logger) (*Config, error) {
+func LoadFile(filename string, agentMode bool, logger *slog.Logger) (*Config, error) {
 	content, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := Load(string(content), expandExternalLabels, logger)
+	cfg, err := Load(string(content), logger)
 	if err != nil {
 		return nil, fmt.Errorf("parsing YAML file %s: %w", filename, err)
 	}
