@@ -14,6 +14,7 @@
 package textparse
 
 import (
+	"errors"
 	"mime"
 
 	"github.com/prometheus/common/model"
@@ -78,13 +79,21 @@ type Parser interface {
 	Next() (Entry, error)
 }
 
-// New returns a new parser of the byte slice.
+// NewFallback returns a new parser of the byte slice.
 //
 // This function always returns a valid parser, but might additionally
 // return an error if the content type cannot be parsed.
-func New(b []byte, contentType string, parseClassicHistograms, skipOMCTSeries bool, st *labels.SymbolTable) (Parser, error) {
+func NewFallback(b []byte, contentType, fallbackType string, parseClassicHistograms, skipOMCTSeries bool, st *labels.SymbolTable) (Parser, error) {
+	var contentTypeErr error
+
 	if contentType == "" {
-		return NewPromParser(b, st), nil
+		if fallbackType == "" {
+			// No fallbackType set, so we default to standard NewPromParser()
+			return NewPromParser(b, st), nil
+		}
+		// Otherwise we fall through and override the contentType
+		contentType = fallbackType
+		contentTypeErr = errors.New("Non-compliant scraper sending blank Content-Type")
 	}
 
 	mediaType, _, err := mime.ParseMediaType(contentType)
@@ -95,12 +104,33 @@ func New(b []byte, contentType string, parseClassicHistograms, skipOMCTSeries bo
 	case "application/openmetrics-text":
 		return NewOpenMetricsParser(b, st, func(o *openMetricsParserOptions) {
 			o.SkipCTSeries = skipOMCTSeries
-		}), nil
+		}), contentTypeErr
 	case "application/vnd.google.protobuf":
-		return NewProtobufParser(b, parseClassicHistograms, st), nil
+		return NewProtobufParser(b, parseClassicHistograms, st), contentTypeErr
+	case "text/plain":
+		return NewPromParser(b, st), contentTypeErr
 	default:
-		return NewPromParser(b, st), nil
+		if fallbackType == "" {
+			// With no fallbackType provided we default to NewPromParser() without an error
+			return NewPromParser(b, st), nil
+		}
+
+		// If we get here we have specified a fallback format but it is not recognised
+		err = errors.New("Unrecognised `scrape.fallback-scrape-format` value")
+		// TODO(alexg): Should we validate scrape.fallback-scrape-format at startup/config-parse?
+		return NewPromParser(b, st), err
 	}
+}
+
+// New returns a new parser of the byte slice.
+//
+// This function always returns a valid parser, but might additionally
+// return an error if the content type cannot be parsed.
+//
+// This exists as a wrapper for NewFallback() to maintain external interface.
+func New(b []byte, contentType string, parseClassicHistograms, skipOMCTSeries bool, st *labels.SymbolTable) (Parser, error) {
+	// TODO(alexg): What should be the default value we pass here, `text/plain` or empty?
+	return NewFallback(b, contentType, "", parseClassicHistograms, skipOMCTSeries, st)
 }
 
 // Entry represents the type of a parsed entry.
