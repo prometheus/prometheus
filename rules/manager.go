@@ -311,14 +311,14 @@ func (m *Manager) LoadGroups(
 
 			rules := make([]Rule, 0, len(rg.Rules))
 			for _, r := range rg.Rules {
-				expr, err := m.opts.GroupLoader.Parse(r.Expr.Value)
+				expr, err := m.opts.GroupLoader.Parse(r.Expr)
 				if err != nil {
 					return nil, []error{fmt.Errorf("%s: %w", fn, err)}
 				}
 
-				if r.Alert.Value != "" {
+				if r.Alert != "" {
 					rules = append(rules, NewAlertingRule(
-						r.Alert.Value,
+						r.Alert,
 						expr,
 						time.Duration(r.For),
 						time.Duration(r.KeepFiringFor),
@@ -332,7 +332,7 @@ func (m *Manager) LoadGroups(
 					continue
 				}
 				rules = append(rules, NewRecordingRule(
-					r.Record.Value,
+					r.Record,
 					expr,
 					labels.FromMap(r.Labels),
 				))
