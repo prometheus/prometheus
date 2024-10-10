@@ -153,7 +153,6 @@ var (
 		// When native histogram feature flag is enabled, ScrapeProtocols default
 		// changes to DefaultNativeHistogramScrapeProtocols.
 		ScrapeProtocols: DefaultScrapeProtocols,
-		//ExternalLabels:  labels.Labels{},
 	}
 
 	DefaultRuntimeConfig = RuntimeConfig{
