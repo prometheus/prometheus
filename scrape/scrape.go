@@ -801,6 +801,12 @@ func (s *targetScraper) readResponse(ctx context.Context, resp *http.Response, w
 		resp.Body.Close()
 	}()
 
+	if resp.StatusCode == http.StatusForbidden && s.req.Header.Get("Connection") == "" {
+		s.req.Header.Set("Connection", "close")
+	} else {
+		s.req.Header.Del("Connection")
+	}
+
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("server returned HTTP status %s", resp.Status)
 	}
