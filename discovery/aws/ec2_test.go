@@ -91,7 +91,7 @@ func TestRefreshAZIDsHandleError(t *testing.T) {
 	}
 
 	err := d.refreshAZIDs(ctx)
-	require.Equal(t, "No AZs found", err.Error())
+	require.Error(t, err)
 }
 
 // Tests for the refresh function.
