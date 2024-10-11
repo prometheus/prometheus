@@ -81,6 +81,8 @@ type Parser interface {
 
 // Helper function to returns the mediaType of a required parser checking contentType
 // first and falling back to fallbackType if necessary.
+// As fallbackType comes from the parse `fallback_scrape_protocol` config option it
+// is assumed to be a valid/supported mediaType.
 func newHelper(contentType, fallbackType string) (string, error) {
 	if contentType == "" {
 		if fallbackType == "" {
