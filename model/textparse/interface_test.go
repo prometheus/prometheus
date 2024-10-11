@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -47,9 +48,15 @@ func TestNewParser(t *testing.T) {
 		require.True(t, ok)
 	}
 
+	requireProtobufParser := func(t *testing.T, p Parser) {
+		require.NotNil(t, p)
+		_, ok := p.(*ProtobufParser)
+		require.True(t, ok)
+	}
+
 	for name, tt := range map[string]*struct {
 		contentType            string
-		fallbackScrapeProtocol string
+		fallbackScrapeProtocol config.ScrapeProtocol
 		validateParser         func(*testing.T, Parser)
 		err                    string
 	}{
@@ -59,7 +66,7 @@ func TestNewParser(t *testing.T) {
 		},
 		"empty-string-fallback-text-plain": {
 			validateParser:         requirePromParser,
-			fallbackScrapeProtocol: "text/plain",
+			fallbackScrapeProtocol: config.PrometheusText0_0_4,
 			// No error for mirror of v2 behaviour
 		},
 		"invalid-content-type-1": {
@@ -70,7 +77,19 @@ func TestNewParser(t *testing.T) {
 		"invalid-content-type-1-fallback-text-plain": {
 			contentType:            "invalid/",
 			validateParser:         requirePromParser,
-			fallbackScrapeProtocol: "text/plain",
+			fallbackScrapeProtocol: config.PrometheusText0_0_4,
+			err:                    "expected token after slash",
+		},
+		"invalid-content-type-1-fallback-openmetrics": {
+			contentType:            "invalid/",
+			validateParser:         requireOpenMetricsParser,
+			fallbackScrapeProtocol: config.OpenMetricsText0_0_1,
+			err:                    "expected token after slash",
+		},
+		"invalid-content-type-1-fallback-protobuf": {
+			contentType:            "invalid/",
+			validateParser:         requireProtobufParser,
+			fallbackScrapeProtocol: config.PrometheusProto,
 			err:                    "expected token after slash",
 		},
 		"invalid-content-type-2": {
@@ -81,7 +100,7 @@ func TestNewParser(t *testing.T) {
 		"invalid-content-type-2-fallback-text-plain": {
 			contentType:            "invalid/invalid/invalid",
 			validateParser:         requirePromParser,
-			fallbackScrapeProtocol: "text/plain",
+			fallbackScrapeProtocol: config.PrometheusText1_0_0,
 			err:                    "unexpected content after media subtype",
 		},
 		"invalid-content-type-3": {
@@ -92,7 +111,7 @@ func TestNewParser(t *testing.T) {
 		"invalid-content-type-3-fallback-text-plain": {
 			contentType:            "/",
 			validateParser:         requirePromParser,
-			fallbackScrapeProtocol: "text/plain",
+			fallbackScrapeProtocol: config.PrometheusText1_0_0,
 			err:                    "no media type",
 		},
 		"invalid-content-type-4": {
@@ -103,7 +122,7 @@ func TestNewParser(t *testing.T) {
 		"invalid-content-type-4-fallback-open-metrics": {
 			contentType:            "application/openmetrics-text; charset=UTF-8; charset=utf-8",
 			validateParser:         requireOpenMetricsParser,
-			fallbackScrapeProtocol: "application/openmetrics-text",
+			fallbackScrapeProtocol: config.OpenMetricsText1_0_0,
 			err:                    "duplicate parameter name",
 		},
 		"openmetrics": {
@@ -122,6 +141,10 @@ func TestNewParser(t *testing.T) {
 			contentType:    "text/plain",
 			validateParser: requirePromParser,
 		},
+		"protobuf": {
+			contentType:    "application/vnd.google.protobuf",
+			validateParser: requireProtobufParser,
+		},
 		"plain-text-with-version": {
 			contentType:    "text/plain; version=0.0.4",
 			validateParser: requirePromParser,
@@ -134,7 +157,7 @@ func TestNewParser(t *testing.T) {
 		"some-other-valid-content-type-fallback-text-plain": {
 			contentType:            "text/html",
 			validateParser:         requirePromParser,
-			fallbackScrapeProtocol: "text/plain",
+			fallbackScrapeProtocol: config.PrometheusText0_0_4,
 			err:                    "Content-Type not recognised mediaType, using fallback_scrape_protocol for target",
 		},
 	} {
@@ -142,7 +165,9 @@ func TestNewParser(t *testing.T) {
 			tt := tt // Copy to local variable before going parallel.
 			t.Parallel()
 
-			p, err := New([]byte{}, tt.contentType, tt.fallbackScrapeProtocol, false, false, labels.NewSymbolTable())
+			fallbackProtoMediaType := tt.fallbackScrapeProtocol.HeaderMediaType()
+
+			p, err := New([]byte{}, tt.contentType, fallbackProtoMediaType, false, false, labels.NewSymbolTable())
 			tt.validateParser(t, p)
 			if tt.err == "" {
 				require.NoError(t, err)
