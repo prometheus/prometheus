@@ -967,6 +967,42 @@ func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
 	m := gatherFamily(t, reg, "prometheus_agent_samples_appended_total")
 	require.Equal(t, float64(2), m.Metric[0].Counter.GetValue(), "agent wal mismatch of total appended samples")
 	require.Equal(t, float64(2), m.Metric[1].Counter.GetValue(), "agent wal mismatch of total appended histograms")
+
+	// Open the WAL and check the samples
+	sr, err := wlog.NewSegmentsReader(s.wal.Dir())
+	require.NoError(t, err)
+
+	dec := record.NewDecoder(labels.NewSymbolTable())
+	r := wlog.NewReader(sr)
+
+	var walSamplesCount int
+	var allSeries []record.RefSeries
+	var rawSamples = make(map[chunks.HeadSeriesRef][]record.RefSample)
+	var series []record.RefSeries
+	var lastSeriesRef chunks.HeadSeriesRef
+	for r.Next() {
+		rec := r.Record()
+		switch dec.Type(rec) {
+		case record.Series:
+			series, err = dec.Series(rec, series)
+			require.NoError(t, err)
+			allSeries = append(allSeries, series[0])
+			rawSamples[series[0].Ref] = nil
+			lastSeriesRef = series[0].Ref
+
+			series = series[:0]
+		case record.Samples:
+			var samples []record.RefSample
+			samples, err = dec.Samples(rec, samples)
+			require.NoError(t, err)
+			rawSamples[lastSeriesRef] = samples
+			walSamplesCount += len(samples)
+		}
+	}
+
+	require.Equal(t, 2, walSamplesCount)
+	// One series for the histogram and one for float metric
+	require.Equal(t, 2, len(allSeries))
 }
 
 func BenchmarkCreateSeries(b *testing.B) {
