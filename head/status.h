@@ -63,6 +63,9 @@ class TopItems {
   PROMPP_ALWAYS_INLINE void add(uint32_t count, ElementConstructor&& element_constructor) noexcept {
     if (count > min_element_->count) {
       *min_element_ = std::forward<ElementConstructor>(element_constructor)();
+      // min_element returns iterator with overloaded operator `*` that returns reference to element in vector's memory.
+      // Explicit operator `&` reinterprets reference into pointer to address in vector's memory.
+      // Important! We assume that we never reallocate vector's memory, so pointer always valid.
       min_element_ = &*std::ranges::min_element(elements_, [](const Element& lhs, const Element& rhs) PROMPP_LAMBDA_INLINE { return lhs.count < rhs.count; });
     }
   }
