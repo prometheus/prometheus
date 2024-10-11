@@ -80,7 +80,7 @@ type Parser interface {
 }
 
 // Helper function to returns the mediaType of a required parser checking contentType
-// first and falling back to fallbackType if necessary
+// first and falling back to fallbackType if necessary.
 func newHelper(contentType, fallbackType string) (string, error) {
 	if contentType == "" {
 		if fallbackType == "" {
@@ -119,8 +119,8 @@ func newHelper(contentType, fallbackType string) (string, error) {
 // This function no longer guarantees to return a valid parser.
 //
 // It only  returns a valid parser if the supplied contentType and fallbackType allow
-// an additonal error may be returned if fallbackType had to be used or there was some
-// other error parsing the supplied Content-Type
+// an additional error may be returned if fallbackType had to be used or there was some
+// other error parsing the supplied Content-Type.
 func New(b []byte, contentType, fallbackType string, parseClassicHistograms, skipOMCTSeries bool, st *labels.SymbolTable) (Parser, error) {
 	mediaType, err := newHelper(contentType, fallbackType)
 	// err may be nil or something we want to warn about
