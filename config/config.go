@@ -476,7 +476,7 @@ func (s ScrapeProtocol) Validate() error {
 	return nil
 }
 
-// Return the MIME mediaType for a particular ScrapeProtocol.
+// HeaderMediaType returns the MIME mediaType for a particular ScrapeProtocol.
 func (s ScrapeProtocol) HeaderMediaType() string {
 	if _, ok := ScrapeProtocolsHeaders[s]; !ok {
 		return ""
