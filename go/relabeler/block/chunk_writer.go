@@ -3,8 +3,8 @@ package block
 import (
 	"bufio"
 	"encoding/binary"
+	"errors"
 	"fmt"
-	"github.com/hashicorp/go-multierror"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"hash"
@@ -192,19 +192,17 @@ func cutSegmentFile(dirFile *os.File, magicNumber uint32, chunksFormat byte, all
 		return 0, nil, 0, fmt.Errorf("next sequence file: %w", err)
 	}
 	ptmp := p + ".tmp"
-	f, err := os.OpenFile(ptmp, os.O_WRONLY|os.O_CREATE, 0o666)
+	f, err := os.Create(ptmp)
 	if err != nil {
 		return 0, nil, 0, fmt.Errorf("open temp file: %w", err)
 	}
 	defer func() {
 		if returnErr != nil {
-			errs := multierror.Append(returnErr)
 			if f != nil {
-				errs = multierror.Append(errs, f.Close())
+				returnErr = errors.Join(returnErr, f.Close())
 			}
 			// Calling RemoveAll on a non-existent file does not return error.
-			errs = multierror.Append(errs, os.RemoveAll(ptmp))
-			returnErr = errs.ErrorOrNil()
+			returnErr = errors.Join(returnErr, os.RemoveAll(ptmp))
 		}
 	}()
 	if allocSize > 0 {

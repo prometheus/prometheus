@@ -215,6 +215,7 @@ func (t *GenericTask) Errors() []error {
 
 func (t *GenericTask) ExecuteOnShard(shard relabeler.Shard) {
 	t.errs[shard.ShardID()] = t.shardFn(shard)
+	t.wg.Done()
 }
 
 // NewGenericTask - constructor.
