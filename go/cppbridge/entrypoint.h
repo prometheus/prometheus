@@ -31,11 +31,12 @@ extern "C" {
  * @param args {
  *     lss         uintptr      // pointer to constructed lss
  *     dataStorage uintptr      // pointer to constructed data storage
+ *     limit       int          // statistics limit
  * }
  *
  * @param res {
  *     status struct {     // head status
- *          time {
+ *          time_interval {
  *              min int64
  *              max int64
  *          }
@@ -629,6 +630,34 @@ void prompp_series_data_data_storage_ctor(void* res);
 void prompp_series_data_data_storage_reset(void* args);
 
 /**
+ * @brief Queries data storage and serializes result.
+ *
+ * @param args {
+ *     dataStorage uintptr // pointer to constructed data storage
+ * }
+ *
+ * @param args {
+ *     allocated_memory uint64 // serialized data
+ * }
+ */
+void prompp_series_data_data_storage_allocated_memory(void* args, void* res);
+
+/**
+ * @brief Queries data storage and serializes result.
+ *
+ * @param args {
+ *     dataStorage uintptr // pointer to constructed data storage
+ *     query DataStorageQuery // query
+ * }
+ *
+ * @param args {
+ *     serializedData []byte // serialized data
+ * }
+ */
+void prompp_series_data_data_storage_query(void* args, void* res);
+
+
+/**
  * @brief series data DataStorage destructor.
  *
  * @param args {
@@ -674,6 +703,60 @@ void prompp_series_data_chunk_recoder_recode_next_chunk(void* args, void* res);
  * }
  */
 void prompp_series_data_chunk_recoder_dtor(void* args);
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void prompp_series_data_decode_iterator_next(void* args, void* res);
+void prompp_series_data_decode_iterator_sample(void* args, void* res);
+void prompp_series_data_decode_iterator_dtor(void* args);
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/**
+ * @brief series data Deserializer constructor.
+ *
+ * @param args {
+ *     serializedChunks []byte // serialized chunks data.
+ * }
+ *
+ * @param res {
+ *     deserializer uintptr // pointer to constructed deserializer.
+ * }
+ */
+void prompp_series_data_deserializer_ctor(void* args, void* res);
+
+/**
+ * @brief creates decode iterator for chunk.
+ *
+ * @param args {
+ *     deserializer  uintptr // deserializer.
+       chunkMetadata []byte  // chunk metadata.
+ * }
+ *
+ * @param res {
+ *     decodeIterator uintptr // pointer to constructed encoder
+ * }
+ */
+void prompp_series_data_deserializer_create_decode_iterator(void* args, void* res);
+
+/**
+ * @brief series data Deserializer destructor.
+ *
+ * @param args {
+ *     deserializer uintptr // pointer to constructed deserializer
+ * }
+ */
+void prompp_series_data_deserializer_dtor(void* args);
 
 #ifdef __cplusplus
 }  // extern "C"

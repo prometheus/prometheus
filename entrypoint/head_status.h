@@ -8,6 +8,7 @@ extern "C" {
  * @param args {
  *     lss         uintptr      // pointer to constructed lss
  *     dataStorage uintptr      // pointer to constructed data storage
+ *     limit       int          // statistics limit
  * }
  *
  * @param res {

@@ -8,10 +8,11 @@
 
 namespace series_data::querier {
 
+template<typename Vector = BareBones::Vector<PromPP::Primitives::LabelSetID>>
 struct Query {
   int64_t start_timestamp_ms{};
   int64_t end_timestamp_ms{};
-  BareBones::Vector<PromPP::Primitives::LabelSetID> label_set_ids;
+  Vector label_set_ids;
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_valid() const noexcept { return !label_set_ids.empty() && end_timestamp_ms >= start_timestamp_ms; }
 

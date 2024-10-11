@@ -31,11 +31,11 @@ type HeadStatus struct {
 	NumLabelPairs uint32
 }
 
-func GetHeadStatus(lss uintptr, dataStorage uintptr) *HeadStatus {
+func GetHeadStatus(lss uintptr, dataStorage uintptr, limit int) *HeadStatus {
 	status := &HeadStatus{}
 	runtime.SetFinalizer(status, func(status *HeadStatus) {
 		freeHeadStatus(status)
 	})
-	getHeadStatus(lss, dataStorage, status)
+	getHeadStatus(lss, dataStorage, status, limit)
 	return status
 }

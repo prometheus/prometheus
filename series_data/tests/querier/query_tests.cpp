@@ -4,7 +4,7 @@
 
 namespace {
 
-using series_data::querier::Query;
+using Query = series_data::querier::Query<BareBones::Vector<PromPP::Primitives::LabelSetID>>;
 using std::string_view_literals::operator""sv;
 
 class QueryReadFromProtobufErrorFixture : public testing::TestWithParam<std::string_view> {};

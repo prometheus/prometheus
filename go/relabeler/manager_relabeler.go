@@ -8,8 +8,9 @@ import (
 	"math/rand"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"time"
+
+	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
@@ -43,9 +44,8 @@ type MetricData interface {
 
 // IncomingData implements.
 type IncomingData struct {
-	Hashdex         cppbridge.ShardedData
-	Data            MetricData
-	numberOfDestroy int32
+	Hashdex cppbridge.ShardedData
+	Data    MetricData
 }
 
 // ShardedData return hashdex.
@@ -55,9 +55,6 @@ func (i *IncomingData) ShardedData() cppbridge.ShardedData {
 
 // Destroy increment or destroy IncomingData.
 func (i *IncomingData) Destroy() {
-	if atomic.AddInt32(&i.numberOfDestroy, -1) != 0 {
-		return
-	}
 	i.Hashdex = nil
 	if i.Data != nil {
 		i.Data.Destroy()
@@ -68,66 +65,6 @@ func (i *IncomingData) Destroy() {
 type relabelerKey struct {
 	relabelerID string
 	shardID     uint16
-}
-
-// InputRelabelerConfig internal config for input relabelers.
-type InputRelabelerConfig struct {
-	Name           string                     `yaml:"name"`                      // name of input relabeler, required
-	RelabelConfigs []*cppbridge.RelabelConfig `yaml:"relabel_configs,omitempty"` // list of relabeler configs
-}
-
-// NewInputRelabelerConfig init new InputRelabelerConfig.
-func NewInputRelabelerConfig(name string, configs []*cppbridge.RelabelConfig) *InputRelabelerConfig {
-	return &InputRelabelerConfig{name, configs}
-}
-
-// Copy return copy *InputRelabelerConfig.
-func (c *InputRelabelerConfig) Copy() *InputRelabelerConfig {
-	newCfg := &InputRelabelerConfig{
-		Name:           c.Name,
-		RelabelConfigs: make([]*cppbridge.RelabelConfig, 0, len(c.RelabelConfigs)),
-	}
-
-	for _, rcfg := range c.RelabelConfigs {
-		newCfg.RelabelConfigs = append(newCfg.RelabelConfigs, rcfg.Copy())
-	}
-
-	return newCfg
-}
-
-// GetName return name of input relabeler.
-func (c *InputRelabelerConfig) GetName() string {
-	return c.Name
-}
-
-// GetConfigs return configs with rulers relabeling.
-func (c *InputRelabelerConfig) GetConfigs() []*cppbridge.RelabelConfig {
-	return c.RelabelConfigs
-}
-
-// UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *InputRelabelerConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	type plain InputRelabelerConfig
-	if err := unmarshal((*plain)(c)); err != nil {
-		return err
-	}
-
-	return c.Validate()
-}
-
-// Validate validates receiver config.
-func (c *InputRelabelerConfig) Validate() error {
-	if c.Name == "" {
-		return errors.New("name is empty")
-	}
-
-	for _, rlcfg := range c.RelabelConfigs {
-		if rlcfg == nil {
-			return errors.New("empty or null target relabeling rule in receiver config")
-		}
-	}
-
-	return nil
 }
 
 // ManagerRelabeler - manager for relabeling.
@@ -155,12 +92,12 @@ type ManagerRelabeler struct {
 func NewManagerRelabeler(
 	clock clockwork.Clock,
 	registerer prometheus.Registerer,
-	inputRelabelerConfigs []*InputRelabelerConfig,
+	inputRelabelerConfigs []*config.InputRelabelerConfig,
 	destinationGroups *DestinationGroups,
 	numberOfShards uint16,
 ) (*ManagerRelabeler, error) {
 	if numberOfShards == 0 {
-		numberOfShards = 1
+		numberOfShards = 2
 	}
 
 	shards, err := newshards(inputRelabelerConfigs, numberOfShards, registerer)
@@ -241,12 +178,12 @@ func (msr *ManagerRelabeler) AppendWithStaleNans(
 		sourceStates.ResizeIfNeed(int(msr.shards.numberOfShards))
 	}
 	inputPromise := NewInputRelabelingPromise(msr.shards.numberOfShards)
-	// incomingData.numberOfDestroy = int32(msr.shards.numberOfShards) * int32(len(msr.shards.inputRelabelers))
-	incomingData.numberOfDestroy = int32(msr.shards.numberOfShards)
+	//incomingData.numberOfDestroy = int32(msr.shards.numberOfShards) * int32(len(msr.shards.inputRelabelers))
+	desctructibleIncomingData := NewDestructibleIncomingData(incomingData, int(msr.shards.numberOfShards))
 	msr.shards.enqueueInputRelabeling(NewTaskInputRelabeling(
 		ctx,
 		inputPromise,
-		incomingData,
+		desctructibleIncomingData,
 		metricLimits,
 		sourceStates,
 		staleNansTS,
@@ -261,7 +198,7 @@ func (msr *ManagerRelabeler) AppendWithStaleNans(
 		return err
 	}
 
-	msr.shards.forEachShard(func(shard Shard) {
+	msr.shards.forEachShard(func(shard ShardInterface) {
 		shard.Head().AppendInnerSeriesSlice(inputPromise.ShardsInnerSeries(shard.ShardID()))
 	})
 
@@ -338,11 +275,11 @@ func (msr *ManagerRelabeler) AppendWithStaleNans(
 
 // ApplyConfig update ManagerRelabeler for new config.
 func (msr *ManagerRelabeler) ApplyConfig(
-	inputRelabelerConfigs []*InputRelabelerConfig,
+	inputRelabelerConfigs []*config.InputRelabelerConfig,
 	numberOfShards uint16,
 ) error {
 	if numberOfShards == 0 {
-		numberOfShards = 1
+		numberOfShards = 2
 	}
 
 	msr.shards.stopLoop()
@@ -455,7 +392,16 @@ func (msr *ManagerRelabeler) rotate() error {
 		},
 	)
 
-	return msr.shards.rotate()
+	msr.shards.forEachShard(func(shard ShardInterface) {
+		shard.LSS().Reset()
+		shard.Head().Reset()
+		generation := shard.LSS().Generation()
+		for _, relabeler := range shard.InputRelabelers() {
+			relabeler.ResetTo(generation, msr.shards.numberOfShards)
+		}
+	})
+
+	return nil
 }
 
 //
@@ -506,21 +452,53 @@ func (h *shardHead) AppendInnerSeriesSlice(innerSeriesSlice []*cppbridge.InnerSe
 	h.encoder.EncodeInnerSeriesSlice(innerSeriesSlice)
 }
 
-func (h *shardHead) ResetDataStorage() {
+func (h *shardHead) Reset() {
 	h.dataStorage.Reset()
 }
 
+type shardLSS struct {
+	lss *cppbridge.LabelSetStorage
+}
+
+func (lss *shardLSS) Reset() {
+	lss.lss.Reset()
+}
+
+func (lss *shardLSS) Generation() uint32 {
+	return lss.lss.Generation()
+}
+
+type shardInputRelabeler struct {
+	relabelers []*cppbridge.InputPerShardRelabeler
+}
+
+func (r *shardInputRelabeler) ResetTo(generation uint32, numberOfShards uint16) {
+	for _, relabeler := range r.relabelers {
+		relabeler.ResetTo(generation, numberOfShards)
+	}
+}
+
 type shard struct {
-	id   uint16
-	head *shardHead
+	id              uint16
+	head            *shardHead
+	lss             *shardLSS
+	inputRelabelers []InputRelabelerInterface
 }
 
 func (s *shard) ShardID() uint16 {
 	return s.id
 }
 
-func (s *shard) Head() Head {
+func (s *shard) Head() ShardHead {
 	return s.head
+}
+
+func (s *shard) LSS() LSSInterface {
+	return s.lss
+}
+
+func (s *shard) InputRelabelers() []InputRelabelerInterface {
+	return s.inputRelabelers
 }
 
 // shards for relabelers.
@@ -545,7 +523,7 @@ type shards struct {
 
 // newshards init new shards.
 func newshards(
-	inputRelabelerConfigs []*InputRelabelerConfig,
+	inputRelabelerConfigs []*config.InputRelabelerConfig,
 	numberOfShards uint16,
 	registerer prometheus.Registerer,
 ) (*shards, error) {
@@ -590,7 +568,7 @@ func (s *shards) enqueueMetricUpdate(task *TaskMetricUpdate) {
 }
 
 // enqueueHeadAppending append all series after input relabeling stage to head.
-func (s *shards) forEachShard(fn ShardFn) {
+func (s *shards) forEachShard(fn ShardFnInterface) {
 	task := NewGenericTask(fn)
 	task.wg.Add(int(s.numberOfShards))
 	for _, shardGenericTaskCh := range s.genericTaskCh {
@@ -628,7 +606,7 @@ func (s *shards) enqueueOutputUpdateRelabelerState(
 
 // reshards changes the number of shards to the required amount.
 func (s *shards) reshards(
-	inputRelabelerConfigs []*InputRelabelerConfig,
+	inputRelabelerConfigs []*config.InputRelabelerConfig,
 	numberOfShards uint16,
 ) error {
 	s.stop = make(chan struct{})
@@ -756,7 +734,7 @@ func (s *shards) reconfigureHeads(numberOfShards uint16) {
 
 // reconfiguringInputRelabeler reconfiguring input relabelers for all shards.
 func (s *shards) reconfiguringInputRelabeler(
-	inputRelabelerConfigs []*InputRelabelerConfig,
+	inputRelabelerConfigs []*config.InputRelabelerConfig,
 	numberOfShards uint16,
 ) error {
 	updated := make(map[relabelerKey]struct{})
@@ -831,21 +809,6 @@ func (s *shards) updateOrCreateStatelessRelabeler(
 	}
 
 	return sr, nil
-}
-
-// rotate main lss and input relabelers.
-func (s *shards) rotate() error {
-	var shardID uint16
-	for ; shardID < s.numberOfShards; shardID++ {
-		s.shardLsses[shardID].Reset()
-		s.heads[shardID].ResetDataStorage()
-	}
-
-	for rkey, inputRelabeler := range s.inputRelabelers {
-		inputRelabeler.ResetTo(s.shardLsses[rkey.shardID].Generation(), s.numberOfShards)
-	}
-
-	return nil
 }
 
 // run shards loop for relableling.
@@ -974,7 +937,14 @@ func (s *shards) shardLoop(shardID uint16) {
 				continue
 			}
 		case task := <-s.genericTaskCh[shardID]:
-			task.shardFn(&shard{id: shardID, head: s.heads[shardID]})
+			var relabelers []InputRelabelerInterface
+			for key, relabeler := range s.inputRelabelers {
+				if key.shardID == shardID {
+					rc := relabeler
+					relabelers = append(relabelers, rc)
+				}
+			}
+			task.shardFn(&shard{id: shardID, head: s.heads[shardID], lss: &shardLSS{lss: s.shardLsses[shardID]}, inputRelabelers: relabelers})
 			task.wg.Done()
 		case task := <-s.stageOutputRelabeling[shardID]:
 			_ = task.DestinationGroups().RangeGo(
@@ -1061,7 +1031,7 @@ func (task *TaskMetricUpdate) updateOutputRelabersMetrics(shardID uint16) {
 type TaskInputRelabeling struct {
 	ctx          context.Context
 	promise      *InputRelabelingPromise
-	incomingData *IncomingData
+	incomingData *DestructibleIncomingData
 	metricLimits *cppbridge.MetricLimits
 	sourceStates *SourceStates
 	staleNansTS  int64
@@ -1072,7 +1042,7 @@ type TaskInputRelabeling struct {
 func NewTaskInputRelabeling(
 	ctx context.Context,
 	promise *InputRelabelingPromise,
-	incomingData *IncomingData,
+	incomingData *DestructibleIncomingData,
 	metricLimits *cppbridge.MetricLimits,
 	sourceStates *SourceStates,
 	staleNansTS int64,
@@ -1116,7 +1086,7 @@ func (t *TaskInputRelabeling) MetricLimits() *cppbridge.MetricLimits {
 
 // ShardedData - return ShardedData.
 func (t *TaskInputRelabeling) ShardedData() cppbridge.ShardedData {
-	return t.incomingData.ShardedData()
+	return t.incomingData.Data().ShardedData()
 }
 
 // SourceStateByShard return state for stalenans for shard.
@@ -1330,28 +1300,40 @@ func (p *InputRelabelingPromise) Wait(ctx context.Context) error {
 	}
 }
 
-// Head - head appender interface.
-type Head interface {
+// ShardHead - head appender interface.
+type ShardHead interface {
 	AppendInnerSeriesSlice(innerSeriesSlice []*cppbridge.InnerSeries)
+	Reset()
 }
 
-// Shard interface.
-type Shard interface {
+type LSSInterface interface {
+	Reset()
+	Generation() uint32
+}
+
+type InputRelabelerInterface interface {
+	ResetTo(generation uint32, numberOfShards uint16)
+}
+
+// ShardInterface interface.
+type ShardInterface interface {
 	ShardID() uint16
-	Head() Head
+	Head() ShardHead
+	LSS() LSSInterface
+	InputRelabelers() []InputRelabelerInterface
 }
 
-// ShardFn - shard function.
-type ShardFn func(shard Shard)
+// ShardFnInterface - shard function.
+type ShardFnInterface func(shard ShardInterface)
 
 // GenericTask - generic task, will be executed on each shard.
 type GenericTask struct {
-	shardFn ShardFn
+	shardFn ShardFnInterface
 	wg      *sync.WaitGroup
 }
 
 // NewGenericTask - constructor.
-func NewGenericTask(shardFn ShardFn) *GenericTask {
+func NewGenericTask(shardFn ShardFnInterface) *GenericTask {
 	return &GenericTask{shardFn: shardFn, wg: &sync.WaitGroup{}}
 }
 

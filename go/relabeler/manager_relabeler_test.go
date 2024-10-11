@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"math"
 	"os"
 	"path/filepath"
@@ -79,8 +80,8 @@ func (s *ManagerRelabelerSuite) TestManagerRelabelerKeep() {
 	)
 
 	s.T().Log("make input relabeler")
-	inputRelabelerConfigs := []*relabeler.InputRelabelerConfig{
-		relabeler.NewInputRelabelerConfig(
+	inputRelabelerConfigs := []*config.InputRelabelerConfig{
+		config.NewInputRelabelerConfig(
 			relabelerID,
 			[]*cppbridge.RelabelConfig{
 				{
@@ -217,8 +218,8 @@ func (s *ManagerRelabelerSuite) TestManagerRelabelerRelabeling() {
 	)
 
 	s.T().Log("make input relabeler")
-	inputRelabelerConfigs := []*relabeler.InputRelabelerConfig{
-		relabeler.NewInputRelabelerConfig(
+	inputRelabelerConfigs := []*config.InputRelabelerConfig{
+		config.NewInputRelabelerConfig(
 			relabelerID,
 			[]*cppbridge.RelabelConfig{
 				{
@@ -366,8 +367,8 @@ func (s *ManagerRelabelerSuite) TestManagerRelabelerRelabelingAddNewLabel() {
 	)
 
 	s.T().Log("make input relabeler")
-	inputRelabelerConfigs := []*relabeler.InputRelabelerConfig{
-		relabeler.NewInputRelabelerConfig(
+	inputRelabelerConfigs := []*config.InputRelabelerConfig{
+		config.NewInputRelabelerConfig(
 			relabelerID,
 			[]*cppbridge.RelabelConfig{
 				{
@@ -519,8 +520,8 @@ func (s *ManagerRelabelerSuite) TestManagerRelabelerRelabelingWithExternalLabels
 	)
 
 	s.T().Log("make input relabeler")
-	inputRelabelerConfigs := []*relabeler.InputRelabelerConfig{
-		relabeler.NewInputRelabelerConfig(
+	inputRelabelerConfigs := []*config.InputRelabelerConfig{
+		config.NewInputRelabelerConfig(
 			relabelerID,
 			[]*cppbridge.RelabelConfig{
 				{
@@ -672,8 +673,8 @@ func (s *ManagerRelabelerSuite) TestManagerRelabelerRelabelingWithExternalLabels
 	)
 
 	s.T().Log("make input relabeler")
-	inputRelabelerConfigs := []*relabeler.InputRelabelerConfig{
-		relabeler.NewInputRelabelerConfig(
+	inputRelabelerConfigs := []*config.InputRelabelerConfig{
+		config.NewInputRelabelerConfig(
 			relabelerID,
 			[]*cppbridge.RelabelConfig{
 				{
@@ -821,8 +822,8 @@ func (s *ManagerRelabelerSuite) TestManagerRelabelerRelabelingWithRotate() {
 	)
 
 	s.T().Log("make input relabeler")
-	inputRelabelerConfigs := []*relabeler.InputRelabelerConfig{
-		relabeler.NewInputRelabelerConfig(
+	inputRelabelerConfigs := []*config.InputRelabelerConfig{
+		config.NewInputRelabelerConfig(
 			relabelerID,
 			[]*cppbridge.RelabelConfig{
 				{
@@ -1238,8 +1239,8 @@ func (s *ManagerRelabelerSuite) TestManagerRelabelerKeepWithStaleNans() {
 	)
 
 	s.T().Log("make input relabeler")
-	inputRelabelerConfigs := []*relabeler.InputRelabelerConfig{
-		relabeler.NewInputRelabelerConfig(
+	inputRelabelerConfigs := []*config.InputRelabelerConfig{
+		config.NewInputRelabelerConfig(
 			relabelerID,
 			[]*cppbridge.RelabelConfig{
 				{
@@ -1382,8 +1383,8 @@ func (s *ManagerRelabelerSuite) TestManagerRelabelerRelabelingWithRotateWithStal
 	)
 
 	s.T().Log("make input relabeler")
-	inputRelabelerConfigs := []*relabeler.InputRelabelerConfig{
-		relabeler.NewInputRelabelerConfig(
+	inputRelabelerConfigs := []*config.InputRelabelerConfig{
+		config.NewInputRelabelerConfig(
 			relabelerID,
 			[]*cppbridge.RelabelConfig{
 				{

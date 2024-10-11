@@ -5,19 +5,13 @@
 #include <gtest/gtest.h>
 #include <cstdint>
 #include <initializer_list>
-#include <numeric>
 #include <ostream>
 #include <string>
 #include <string_view>
 #include <vector>
 
-#include "parallel_hashmap/btree.h"
-
-#define PROTOZERO_USE_VIEW std::string_view
-#include "third_party/protozero/pbf_writer.hpp"
-
+#include "primitives/snug_composites.h"
 #include "prometheus/relabeler.h"
-#include "prometheus/remote_write.h"
 
 namespace {
 

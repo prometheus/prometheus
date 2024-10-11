@@ -7,13 +7,10 @@
 #include <string>
 #include <string_view>
 
-#include <parallel_hashmap/phmap.h>
+#include <parallel_hashmap/btree.h>
 #include <roaring/roaring.hh>
 #include "md5/md5.h"
 #include "utf8/utf8.h"
-
-#define PROTOZERO_USE_VIEW std::string_view
-#include "third_party/protozero/pbf_reader.hpp"
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wold-style-cast"
@@ -26,11 +23,8 @@
 #include "bare_bones/gorilla.h"
 #include "bare_bones/preprocess.h"
 #include "bare_bones/vector.h"
-#include "primitives/go_model.h"
 #include "primitives/go_slice.h"
 #include "primitives/primitives.h"
-#include "primitives/snug_composites.h"
-#include "prometheus/remote_write.h"
 
 namespace PromPP::Prometheus::Relabel {
 
@@ -980,6 +974,7 @@ class PerShardRelabeler {
 
       timeseries_buf_.clear();
       item.read(timeseries_buf_);
+
       uint32_t ls_id = lss.find_or_emplace(timeseries_buf_.label_set(), item.hash());
 
       bool added = input_relabel_process(lss, metric_limits, builder, shards_inner_series, shards_relabeled_series, timeseries_buf_.samples(), ls_id);

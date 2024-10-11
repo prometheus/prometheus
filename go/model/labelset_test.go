@@ -237,6 +237,23 @@ func (s *LabelSetSuite) TestLabelSetSimpleBuilder_Build() {
 	s.Equal("__name__:example;container:~unknown;flags:empty;instance:instance;job:test;", ls.String())
 }
 
+func (s *LabelSetSuite) TestLabelSetSimpleBuilder_BuildWithEmpty() {
+	labels := []model.SimpleLabel{
+		{"__name__", "example"},
+		{"container", "~unknown"},
+		{"instance", ""},
+		{"job", "test"},
+		{"flags", "empty"},
+	}
+
+	builder := model.NewLabelSetSimpleBuilder()
+	for _, l := range labels {
+		builder.Add(l.Name, l.Value)
+	}
+	ls := builder.Build()
+	s.Equal("__name__:example;container:~unknown;flags:empty;job:test;", ls.String())
+}
+
 func (s *LabelSetSuite) TestLabelSetSimpleBuilder_Get() {
 	labels := []model.SimpleLabel{
 		{"__name__", "example"},
@@ -311,6 +328,25 @@ func (s *LabelSetSuite) TestLabelSetSimpleBuilder_HasNotDuplicateLabelNames() {
 	s.False(has)
 }
 
+func (s *LabelSetSuite) TestLabelSetSimpleBuilder_HasNotDuplicateLabelNames_Set() {
+	labels := []model.SimpleLabel{
+		{"__name__", "example"},
+		{"container", "~unknown"},
+		{"instance", "instance"},
+		{"job", "test"},
+		{"container", "empty"},
+	}
+
+	builder := model.NewLabelSetSimpleBuilder()
+	for _, l := range labels {
+		builder.Set(l.Name, l.Value)
+	}
+
+	dup, has := builder.HasDuplicateLabelNames()
+	s.Equal("", dup)
+	s.False(has)
+}
+
 func (s *LabelSetSuite) TestLabelSetSimpleBuilder_Reset() {
 	labels := []model.SimpleLabel{
 		{"__name__", "example"},
@@ -346,38 +382,51 @@ func (s *LabelSetSuite) TestLabelSetSimpleBuilder_Sort() {
 	for _, l := range labels {
 		builder.Add(l.Name, l.Value)
 	}
+	s.Equal("__name__:example;flags:empty;container:~unknown;instance:instance;job:test;", builder.String())
 	builder.Sort()
-	ls := builder.Build()
-	builder.Sort()
-	s.Equal("__name__:example;container:~unknown;flags:empty;instance:instance;job:test;", ls.String())
+	s.Equal("__name__:example;container:~unknown;flags:empty;instance:instance;job:test;", builder.String())
 }
 
-func BenchmarkDecoderV3(b *testing.B) {
+func (s *LabelSetSuite) TestLabelSetSimpleBuilder_Sort_1() {
 	labels := []model.SimpleLabel{
 		{"__name__", "example"},
-		{"container", "~unknown"},
-		{"instance", "instance"},
-		{"job", "test"},
-		{"flags", "empty"},
-		{"flags1", "empty"},
 	}
 
 	builder := model.NewLabelSetSimpleBuilder()
 	for _, l := range labels {
 		builder.Add(l.Name, l.Value)
 	}
-
-	for i := 0; i < b.N; i++ {
-		v := builder.Has("flagsq")
-		if !v {
-			//
-		}
-
-		// v := builder.Get("flagsq")
-		// if v == "" {
-		// 	//
-		// }
-	}
+	s.Equal("__name__:example;", builder.String())
+	builder.Sort()
+	s.Equal("__name__:example;", builder.String())
 }
 
-// BenchmarkDecoderV3-8   	12041396	       104.2 ns/op	       0 B/op	       0 allocs/op
+func (s *LabelSetSuite) TestLabelSetSimpleBuilder_Sort_Unsorted_2() {
+	labels := []model.SimpleLabel{
+		{"flags", "empty"},
+		{"container", "~unknown"},
+	}
+
+	builder := model.NewLabelSetSimpleBuilder()
+	for _, l := range labels {
+		builder.Add(l.Name, l.Value)
+	}
+	s.Equal("flags:empty;container:~unknown;", builder.String())
+	builder.Sort()
+	s.Equal("container:~unknown;flags:empty;", builder.String())
+}
+
+func (s *LabelSetSuite) TestLabelSetSimpleBuilder_Sort_Sorted_2() {
+	labels := []model.SimpleLabel{
+		{"container", "~unknown"},
+		{"flags", "empty"},
+	}
+
+	builder := model.NewLabelSetSimpleBuilder()
+	for _, l := range labels {
+		builder.Add(l.Name, l.Value)
+	}
+	s.Equal("container:~unknown;flags:empty;", builder.String())
+	builder.Sort()
+	s.Equal("container:~unknown;flags:empty;", builder.String())
+}

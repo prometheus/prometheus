@@ -296,6 +296,10 @@ func (dk *ManagerKeeper) ShardsNumberPower() uint8 {
 	return dk.currentState.ShardsNumberPower()
 }
 
+func (dk *ManagerKeeper) Dialers() []Dialer {
+	return dk.dialers
+}
+
 // rotateLoop - loop for rotate Manage.
 func (dk *ManagerKeeper) rotateLoop(ctx context.Context) {
 	defer dk.rotateNotifyer.DrainedTriggers(dk.generation)

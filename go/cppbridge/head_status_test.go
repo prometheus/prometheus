@@ -13,6 +13,7 @@ type HeadStatusSuite struct {
 	dataStorage *cppbridge.HeadDataStorage
 	encoder     *cppbridge.HeadEncoder
 	lssStorage  *cppbridge.LabelSetStorage
+	limit       int
 }
 
 func TestHeadStatusSuite(t *testing.T) {
@@ -23,6 +24,7 @@ func (s *HeadStatusSuite) SetupTest() {
 	s.dataStorage = cppbridge.NewHeadDataStorage()
 	s.encoder = cppbridge.NewHeadEncoderWithDataStorage(s.dataStorage)
 	s.lssStorage = cppbridge.NewQueryableLssStorage()
+	s.limit = 10
 }
 
 func (s *HeadStatusSuite) TestSomeData() {
@@ -41,7 +43,7 @@ func (s *HeadStatusSuite) TestSomeData() {
 	s.encoder.Encode(2, 3, 1.0)
 
 	// Act
-	status := cppbridge.GetHeadStatus(s.lssStorage.Pointer(), s.dataStorage.Pointer())
+	status := cppbridge.GetHeadStatus(s.lssStorage.Pointer(), s.dataStorage.Pointer(), s.limit)
 
 	// Assert
 	s.Equal(cppbridge.HeadStatus{
