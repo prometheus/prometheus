@@ -652,9 +652,8 @@ func (p *OpenMetricsParser) parseLVals(offsets []int, isExemplar bool) ([]int, e
 
 // isCreatedSeries returns true if the current series is a _created series.
 func (p *OpenMetricsParser) isCreatedSeries() bool {
-	s := string(p.series)
-	metricName := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
-	if typeRequiresCT(p.mtype) && strings.HasSuffix(metricName, "_created") {
+	metricName := p.series[p.offsets[0]-p.start : p.offsets[1]-p.start]
+	if typeRequiresCT(p.mtype) && len(metricName) >= 8 && string(metricName[len(metricName)-8:]) == "_created" {
 		return true
 	}
 	return false
