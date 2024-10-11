@@ -16,10 +16,11 @@ concept have_allocated_memory = requires(const T& t) {
 };
 
 namespace PromPP::WAL {
-class Encoder {
+template <typename W = Writer>
+class GenericEncoder {
   uint16_t shard_id_;
   uint8_t log_shards_;
-  Writer writer_;
+  W writer_;
   Primitives::TimeseriesSemiview timeseries_;
 
   template <class Stats>
@@ -38,8 +39,9 @@ class Encoder {
   }
 
  public:
-  inline __attribute__((always_inline)) Encoder(uint16_t shard_id, uint8_t log_shards) noexcept
-      : shard_id_(shard_id), log_shards_(log_shards), writer_(shard_id, log_shards) {}
+  template <class... Args>
+  PROMPP_ALWAYS_INLINE GenericEncoder(uint16_t shard_id, uint8_t log_shards, Args&&... args) noexcept
+      :  shard_id_(shard_id), log_shards_(log_shards), writer_{std::forward<Args>(args)...} {}
 
   // add_wo_stalenans - add (without any stalenans) to encode incoming data(ShardedData) through C++ encoder.
   template <class Hashdex, class Stats>
@@ -104,7 +106,7 @@ class Encoder {
         }
       }
     };
-    auto result = writer_.add_many<decltype(writer_)::add_many_generator_callback_type::with_hash_value, decltype(timeseries_)>(state, stale_ts, add_many_cb);
+    auto result = writer_.template add_many<decltype(writer_)::add_many_generator_callback_type::with_hash_value, decltype(timeseries_)>(state, stale_ts, add_many_cb);
 
     write_stats(stats);
     return result;
@@ -113,7 +115,7 @@ class Encoder {
   template <class Stats>
   inline __attribute__((always_inline)) void collect_source(Stats* stats, Primitives::Timestamp stale_ts, Writer::SourceState state) {
     constexpr auto add_many_cb = [&](auto&) {};
-    auto result = writer_.add_many<decltype(writer_)::add_many_generator_callback_type::with_hash_value, decltype(timeseries_)>(state, stale_ts, add_many_cb);
+    auto result = writer_.template add_many<decltype(writer_)::add_many_generator_callback_type::with_hash_value, decltype(timeseries_)>(state, stale_ts, add_many_cb);
     write_stats(stats);
     Writer::DestroySourceState(result);
   }
@@ -126,7 +128,7 @@ class Encoder {
     writer_.write(out);
   }
 
-  inline __attribute__((always_inline)) ~Encoder() = default;
+  inline __attribute__((always_inline)) ~GenericEncoder() = default;
 };
 
 class EncoderLightweight {
@@ -237,4 +239,6 @@ class EncoderLightweight {
 
   PROMPP_ALWAYS_INLINE ~EncoderLightweight() = default;
 };
+
+using Encoder = GenericEncoder<>;
 }  // namespace PromPP::WAL

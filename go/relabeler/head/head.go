@@ -24,6 +24,7 @@ type Head struct {
 
 	inputRelabelers            map[relabelerKey]*cppbridge.InputPerShardRelabeler
 	dataStorages               []*DataStorage
+	wals                       []*ShardWal
 	lsses                      []*cppbridge.LabelSetStorage
 	stageInputRelabeling       []chan *TaskInputRelabeling
 	stageAppendRelabelerSeries []chan *TaskAppendRelabelerSeries
@@ -40,19 +41,44 @@ type Head struct {
 func New(
 	generation uint64,
 	inputRelabelerConfigs []*config.InputRelabelerConfig,
+	lsses []*cppbridge.LabelSetStorage,
+	wals []*ShardWal,
+	dataStorages []*DataStorage,
 	numberOfShards uint16,
 	registerer prometheus.Registerer) (*Head, error) {
+
+	stageInputRelabeling := make([]chan *TaskInputRelabeling, numberOfShards)
+	stageAppendRelabelerSeries := make([]chan *TaskAppendRelabelerSeries, numberOfShards)
+	stageUpdateRelabelerState := make([]chan *TaskUpdateRelabelerState, numberOfShards)
+	genericTaskCh := make([]chan *GenericTask, numberOfShards)
+
+	var shardID uint16
+	for ; shardID < numberOfShards; shardID++ {
+		stageInputRelabeling[shardID] = make(chan *TaskInputRelabeling, chanBufferSize)
+		stageAppendRelabelerSeries[shardID] = make(chan *TaskAppendRelabelerSeries, chanBufferSize)
+		stageUpdateRelabelerState[shardID] = make(chan *TaskUpdateRelabelerState, chanBufferSize)
+		genericTaskCh[shardID] = make(chan *GenericTask, chanBufferSize)
+	}
+
 	factory := util.NewUnconflictRegisterer(registerer)
 	h := &Head{
-		finalizer:        NewFinalizer(),
-		referenceCounter: relabeler.NewLoggedAtomicReferenceCounter(fmt.Sprintf("HEAD {%d}", generation)),
-		generation:       generation,
-		stopc:            make(chan struct{}),
-		wg:               &sync.WaitGroup{},
+		finalizer:                  NewFinalizer(),
+		referenceCounter:           relabeler.NewLoggedAtomicReferenceCounter(fmt.Sprintf("HEAD {%d}", generation)),
+		generation:                 generation,
+		lsses:                      lsses,
+		wals:                       wals,
+		dataStorages:               dataStorages,
+		stageInputRelabeling:       stageInputRelabeling,
+		stageAppendRelabelerSeries: stageAppendRelabelerSeries,
+		stageUpdateRelabelerState:  stageUpdateRelabelerState,
+		genericTaskCh:              genericTaskCh,
+		stopc:                      make(chan struct{}),
+		wg:                         &sync.WaitGroup{},
 		inputRelabelers: make(
 			map[relabelerKey]*cppbridge.InputPerShardRelabeler,
 			int(numberOfShards)*len(inputRelabelerConfigs),
 		),
+		numberOfShards: numberOfShards,
 		// stat
 		memoryInUse: factory.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -106,6 +132,14 @@ func (h *Head) Append(ctx context.Context, incomingData *relabeler.IncomingData,
 		//Errorf("failed input promise: %s", err)
 		// reset msr.rotateWG on error
 		return nil, err
+	}
+
+	err := h.forEachShard(func(shard relabeler.Shard) error {
+		return shard.Wal().Write(inputPromise.ShardsInnerSeries(shard.ShardID()))
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to write wal: %w", err)
 	}
 
 	_ = h.forEachShard(func(shard relabeler.Shard) error {

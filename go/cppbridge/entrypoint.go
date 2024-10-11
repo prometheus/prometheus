@@ -1749,3 +1749,73 @@ func freeHeadStatus(status *HeadStatus) {
 		uintptr(unsafe.Pointer(status)),
 	)
 }
+
+func headWalEncoderCtor(shardID uint16, logShards uint8, lss uintptr) uintptr {
+	var args = struct {
+		shardID   uint16
+		logShards uint8
+		lss       uintptr
+	}{shardID, logShards, lss}
+
+	var res = struct {
+		encoder uintptr
+	}{}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_head_wal_encoder_ctor,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.encoder
+}
+
+func headWalEncoderAddInnerSeries(encoder uintptr, innerSeries []*InnerSeries) (stats WALEncoderStats, exception []byte) {
+	var args = struct {
+		innerSeries []*InnerSeries
+		encoder     uintptr
+	}{innerSeries, encoder}
+	var res struct {
+		WALEncoderStats
+		exception []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_head_wal_encoder_add_inner_series,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.WALEncoderStats, res.exception
+}
+
+// headWalEncoderFinalize - finalize the encoded data in the C++ encoder to Segment.
+func headWalEncoderFinalize(encoder uintptr) (stats WALEncoderStats, segment, exception []byte) {
+	var args = struct {
+		encoder uintptr
+	}{encoder}
+	var res struct {
+		WALEncoderStats
+		segment   []byte
+		exception []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_head_wal_encoder_finalize,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.WALEncoderStats, res.segment, res.exception
+}
+
+func headWalEncoderDtor(encoder uintptr) {
+	var args = struct {
+		encoder uintptr
+	}{encoder}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_head_wal_encoder_dtor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}

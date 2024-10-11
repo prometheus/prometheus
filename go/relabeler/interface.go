@@ -40,6 +40,7 @@ type Shard interface {
 	ShardID() uint16
 	DataStorage() DataStorage
 	LSS() LSS
+	Wal() Wal
 	InputRelabelers() map[string]InputRelabeler
 }
 

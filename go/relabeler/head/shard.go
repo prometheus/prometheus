@@ -47,19 +47,7 @@ func (h *Head) reconfigure(
 	inputRelabelerConfigs []*config.InputRelabelerConfig,
 	numberOfShards uint16,
 ) error {
-	h.reconfigureStages(numberOfShards)
-
-	h.reconfigureLsses(numberOfShards)
-
-	if err := h.reconfigureInputRelabeler(inputRelabelerConfigs, numberOfShards); err != nil {
-		return err
-	}
-
-	h.reconfigureDataStorages(numberOfShards)
-
-	h.numberOfShards = numberOfShards
-
-	return nil
+	return h.reconfigureInputRelabeler(inputRelabelerConfigs, numberOfShards)
 }
 
 // reconfiguringStages reconfiguring stages for all shards.
@@ -337,6 +325,7 @@ func (h *Head) shardLoop(shardID uint16, stopc chan struct{}) {
 				id:              shardID,
 				dataStorage:     h.dataStorages[shardID],
 				lssWrapper:      &lssWrapper{lss: h.lsses[shardID]},
+				wal:             h.wals[shardID],
 				inputRelabelers: inputRelabelers,
 			})
 			task.wg.Done()
@@ -376,6 +365,7 @@ type shard struct {
 	id              uint16
 	lssWrapper      *lssWrapper
 	dataStorage     *DataStorage
+	wal             *ShardWal
 	inputRelabelers map[string]*cppbridge.InputPerShardRelabeler
 }
 
@@ -389,6 +379,10 @@ func (s *shard) DataStorage() relabeler.DataStorage {
 
 func (s *shard) LSS() relabeler.LSS {
 	return s.lssWrapper
+}
+
+func (s *shard) Wal() relabeler.Wal {
+	return s.wal
 }
 
 func (s *shard) InputRelabelers() map[string]relabeler.InputRelabeler {
