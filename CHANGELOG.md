@@ -59,7 +59,7 @@ As is traditional with a beta release, we do **not** recommend users install 3.0
 
 ## 2.54.1 / 2024-08-27
 
-* [BUGFIX] Scraping: allow multiple samples on same series, with explicit timestamps (mixing samples of the same series with and without timestamps still rejected). #14685
+* [BUGFIX] Scraping: allow multiple samples on same series, with explicit timestamps (mixing samples of the same series with and without timestamps is still rejected). #14685
 * [BUGFIX] Docker SD: fix crash in `match_first_network` mode when container is reconnected to a new network. #14654
 * [BUGFIX] PromQL: fix experimental native histograms getting corrupted due to vector selector bug in range queries. #14538
 * [BUGFIX] PromQL: fix experimental native histogram counter reset detection on stale samples. #14514
