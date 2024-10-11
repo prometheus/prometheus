@@ -205,7 +205,30 @@ type GenericTask struct {
 	wg      *sync.WaitGroup
 }
 
+func (t *GenericTask) Wait() {
+	t.wg.Wait()
+}
+
+func (t *GenericTask) Errors() []error {
+	return t.errs
+}
+
+func (t *GenericTask) ExecuteOnShard(shard relabeler.Shard) {
+	t.errs[shard.ShardID()] = t.shardFn(shard)
+}
+
 // NewGenericTask - constructor.
-func NewGenericTask(shardFn relabeler.ShardFn, errs []error) *GenericTask {
-	return &GenericTask{errs: errs, shardFn: shardFn, wg: &sync.WaitGroup{}}
+func NewGenericTask(shardFn relabeler.ShardFn, numberOfShards uint16) *GenericTask {
+	errs := make([]error, numberOfShards)
+	wg := &sync.WaitGroup{}
+	wg.Add(int(numberOfShards))
+	return &GenericTask{errs: errs, shardFn: shardFn, wg: wg}
+}
+
+// NewSingleGenericTask - constructor.
+func NewSingleGenericTask(shardFn relabeler.ShardFn, numberOfShards uint16) *GenericTask {
+	errs := make([]error, numberOfShards)
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	return &GenericTask{errs: errs, shardFn: shardFn, wg: wg}
 }

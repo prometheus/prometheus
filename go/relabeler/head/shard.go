@@ -82,14 +82,6 @@ func (h *Head) reconfigureStages(numberOfShards uint16) {
 	}
 }
 
-//// relabelerIDIsExist check on exist relabelerID.
-//func (h *ShardHead) relabelerIDIsExist(relabelerID string) bool {
-//	s.irrwm.RLock()
-//	_, ok := s.inputRelabelers[relabelerKey{relabelerID, 0}]
-//	s.irrwm.RUnlock()
-//	return ok
-//}
-
 // reconfiguringShardLsses reconfiguring lss for all shards.
 func (h *Head) reconfigureLsses(numberOfShards uint16) {
 	if h.numberOfShards == numberOfShards {
@@ -341,13 +333,12 @@ func (h *Head) shardLoop(shardID uint16, stopc chan struct{}) {
 				ir := inputRelabeler
 				inputRelabelers[key.relabelerID] = ir
 			}
-			task.errs[shardID] = task.shardFn(&shard{
+			task.ExecuteOnShard(&shard{
 				id:              shardID,
 				dataStorage:     h.dataStorages[shardID],
 				lssWrapper:      &lssWrapper{lss: h.lsses[shardID]},
 				inputRelabelers: inputRelabelers,
 			})
-			task.wg.Done()
 		}
 	}
 }

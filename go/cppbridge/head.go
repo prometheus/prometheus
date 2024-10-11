@@ -174,7 +174,6 @@ func NewHeadDataStorageDeserializer(serializedChunks *HeadDataStorageSerializedC
 		serializedChunks: serializedChunks,
 	}
 	runtime.SetFinalizer(d, func(d *HeadDataStorageDeserializer) {
-		// fmt.Println("Deserializer destroyed")
 		seriesDataDeserializerDtor(d.deserializer)
 	})
 	return d
