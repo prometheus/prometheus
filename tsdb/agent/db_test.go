@@ -1065,6 +1065,94 @@ func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
 	}
 }
 
+func TestAppendCTZeroSampleFailureModes(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	opts := DefaultOptions()
+	opts.OutOfOrderTimeWindow = 0
+	s := createTestAgentDB(t, reg, opts)
+
+	app := s.Appender(context.TODO())
+
+	// Test AppendCTZeroSample
+	lbls := labels.FromStrings("__name__", "test_metric", "label", "value")
+
+	// Success case
+	ref, err := app.AppendCTZeroSample(0, lbls, 100, 70)
+	require.NoError(t, err)
+	require.NotZero(t, ref)
+
+	_, err = app.Append(0, lbls, 100, 2)
+	require.NoError(t, err)
+
+	// Error: CT >= T
+	_, err = app.AppendCTZeroSample(ref, lbls, 100, 100)
+	require.Error(t, err)
+	require.Equal(t, "CT is newer or the same as sample's timestamp, ignoring", err.Error())
+
+	// Test AppendHistogramCTZeroSample
+	lblsHist := labels.FromStrings("__name__", "test_histogram", "label", "value")
+
+	// Success case
+	h := tsdbutil.GenerateTestHistograms(1)[0]
+	refHist, err := app.AppendHistogramCTZeroSample(0, lblsHist, 100, 80, &histogram.Histogram{}, nil)
+	require.NoError(t, err)
+	require.NotZero(t, refHist)
+
+	_, err = app.AppendHistogram(0, lblsHist, 100, h, nil)
+	require.NoError(t, err)
+
+	// Error: CT >= T
+	_, err = app.AppendHistogramCTZeroSample(refHist, lblsHist, 100, 100, h, nil)
+	require.Error(t, err)
+	require.Equal(t, storage.ErrCTNewerThanSample, err)
+
+	// Commit the appender
+	err = app.Commit()
+	require.NoError(t, err)
+
+	// Verify metrics
+	m := gatherFamily(t, reg, "prometheus_agent_samples_appended_total")
+	require.Equal(t, float64(2), m.Metric[0].Counter.GetValue(), "Expected 2 samples appended")
+	require.Equal(t, float64(2), m.Metric[1].Counter.GetValue(), "Expected 2 histograms appended")
+
+	// Close the DB
+	require.NoError(t, s.Close())
+
+	// Now read the WAL and verify its contents
+	sr, err := wlog.NewSegmentsReader(s.wal.Dir())
+	require.NoError(t, err)
+	defer sr.Close()
+
+	r := wlog.NewReader(sr)
+	dec := record.NewDecoder(labels.NewSymbolTable())
+
+	var (
+		series     []record.RefSeries
+		samples    []record.RefSample
+		histograms []record.RefHistogramSample
+	)
+
+	for r.Next() {
+		rec := r.Record()
+		switch dec.Type(rec) {
+		case record.Series:
+			series, err = dec.Series(rec, series[:0])
+			require.NoError(t, err)
+		case record.Samples:
+			samples, err = dec.Samples(rec, samples[:0])
+			require.NoError(t, err)
+		case record.HistogramSamples:
+			histograms, err = dec.HistogramSamples(rec, histograms[:0])
+			require.NoError(t, err)
+		}
+	}
+
+	// Verify the contents
+	require.Len(t, series, 2, "Expected 2 series")
+	require.Len(t, samples, 2, "Expected 2 samples")
+	require.Len(t, histograms, 2, "Expected 2 histograms")
+}
+
 func BenchmarkCreateSeries(b *testing.B) {
 	s := createTestAgentDB(b, nil, DefaultOptions())
 	defer s.Close()
