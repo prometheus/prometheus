@@ -141,6 +141,7 @@ This release changes the default for GOGC, the Go runtime control for the trade-
 ## 2.52.0 / 2024-05-07
 
 * [CHANGE] TSDB: Fix the predicate checking for blocks which are beyond the retention period to include the ones right at the retention boundary. #9633
+* [CHANGE] Scrape: Multiple samples (even with different timestamps) are treated as duplicates during one scrape; partially undone in 2.54.1. #12933
 * [FEATURE] Kubernetes SD: Add a new metric `prometheus_sd_kubernetes_failures_total` to track failed requests to Kubernetes API. #13554
 * [FEATURE] Kubernetes SD: Add node and zone metadata labels when using the endpointslice role. #13935
 * [FEATURE] Azure SD/Remote Write: Allow usage of Azure authorization SDK. #13099
