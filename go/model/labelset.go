@@ -523,8 +523,6 @@ func (builder *LabelSetSimpleBuilder) Add(name, value string) {
 		// Empty labels are the same as missing labels.
 		return
 	}
-	// builder.pairs = append(builder.pairs, SimpleLabel{Name: name, Value: value})
-	// builder.sorted = false
 
 	builder.pairs = append(builder.pairs, SimpleLabel{Name: name, Value: value})
 	n := len(builder.pairs)
@@ -546,7 +544,8 @@ func (builder *LabelSetSimpleBuilder) Set(name, value string) {
 		}
 	}
 	builder.pairs = append(builder.pairs, SimpleLabel{Name: name, Value: value})
-	builder.sorted = false
+	n := len(builder.pairs)
+	builder.sorted = builder.sorted && (n > 1 && builder.pairs[n-1].Name > builder.pairs[n-2].Name)
 }
 
 // Del deletes the label of the given name.
