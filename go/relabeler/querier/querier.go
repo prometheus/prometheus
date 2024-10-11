@@ -3,10 +3,12 @@ package querier
 import (
 	"context"
 	"fmt"
-	"github.com/prometheus/client_golang/prometheus"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/model"
@@ -210,6 +212,7 @@ func (q *Querier) Select(ctx context.Context, sortSeries bool, hints *storage.Se
 				},
 			})
 		}
+		runtime.KeepAlive(getLabelSetsResult)
 
 		logger.Warnf("QUERIER: HEAD{ %d } Select Deserializer completed", q.head.Generation())
 

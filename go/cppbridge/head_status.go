@@ -1,7 +1,6 @@
 package cppbridge
 
 import (
-	"fmt"
 	"runtime"
 )
 
@@ -38,6 +37,5 @@ func GetHeadStatus(lss uintptr, dataStorage uintptr, limit int) *HeadStatus {
 		freeHeadStatus(status)
 	})
 	getHeadStatus(lss, dataStorage, status, limit)
-	fmt.Println(status.SeriesCountByLabelValuePair)
 	return status
 }
