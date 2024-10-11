@@ -1,0 +1,5 @@
+scrape_configs:
+  - job_name: node
+    fallback_scrape_protocol: "prometheusproto"
+    static_configs:
+      - targets: ['localhost:8080']

@@ -31,6 +31,10 @@ import (
 func TestNewParser(t *testing.T) {
 	t.Parallel()
 
+	requireNilParser := func(t *testing.T, p Parser) {
+		require.Nil(t, p)
+	}
+
 	requirePromParser := func(t *testing.T, p Parser) {
 		require.NotNil(t, p)
 		_, ok := p.(*PromParser)
@@ -44,34 +48,63 @@ func TestNewParser(t *testing.T) {
 	}
 
 	for name, tt := range map[string]*struct {
-		contentType    string
-		validateParser func(*testing.T, Parser)
-		fallbackFormat string
-		err            string
+		contentType            string
+		fallbackScrapeProtocol string
+		validateParser         func(*testing.T, Parser)
+		err                    string
 	}{
-		// Tests with no fallbackFormat set
 		"empty-string": {
-			validateParser: requirePromParser,
+			validateParser: requireNilParser,
+			err:            "Non-compliant scraper sending blank Content-Type and no fallback_scrape_protocol specified for target",
+		},
+		"empty-string-fallback-text-plain": {
+			validateParser:         requirePromParser,
+			fallbackScrapeProtocol: "text/plain",
+			// No error for mirror of v2 behaviour
 		},
 		"invalid-content-type-1": {
 			contentType:    "invalid/",
-			validateParser: requirePromParser,
+			validateParser: requireNilParser,
 			err:            "expected token after slash",
+		},
+		"invalid-content-type-1-fallback-text-plain": {
+			contentType:            "invalid/",
+			validateParser:         requirePromParser,
+			fallbackScrapeProtocol: "text/plain",
+			err:                    "expected token after slash",
 		},
 		"invalid-content-type-2": {
 			contentType:    "invalid/invalid/invalid",
-			validateParser: requirePromParser,
+			validateParser: requireNilParser,
 			err:            "unexpected content after media subtype",
+		},
+		"invalid-content-type-2-fallback-text-plain": {
+			contentType:            "invalid/invalid/invalid",
+			validateParser:         requirePromParser,
+			fallbackScrapeProtocol: "text/plain",
+			err:                    "unexpected content after media subtype",
 		},
 		"invalid-content-type-3": {
 			contentType:    "/",
-			validateParser: requirePromParser,
+			validateParser: requireNilParser,
 			err:            "no media type",
+		},
+		"invalid-content-type-3-fallback-text-plain": {
+			contentType:            "/",
+			validateParser:         requirePromParser,
+			fallbackScrapeProtocol: "text/plain",
+			err:                    "no media type",
 		},
 		"invalid-content-type-4": {
 			contentType:    "application/openmetrics-text; charset=UTF-8; charset=utf-8",
-			validateParser: requirePromParser,
+			validateParser: requireNilParser,
 			err:            "duplicate parameter name",
+		},
+		"invalid-content-type-4-fallback-open-metrics": {
+			contentType:            "application/openmetrics-text; charset=UTF-8; charset=utf-8",
+			validateParser:         requireOpenMetricsParser,
+			fallbackScrapeProtocol: "application/openmetrics-text",
+			err:                    "duplicate parameter name",
 		},
 		"openmetrics": {
 			contentType:    "application/openmetrics-text",
@@ -95,57 +128,21 @@ func TestNewParser(t *testing.T) {
 		},
 		"some-other-valid-content-type": {
 			contentType:    "text/html",
-			validateParser: requirePromParser,
+			validateParser: requireNilParser,
+			err:            "Scraper sending unrecognisable Content-Type and no fallback_scrape_protocol specified for target",
 		},
-		// Tests with fallbackFormat set
-		"empty-string-fallback-invalid": {
-			fallbackFormat: "invalid",
-			err:            "Unrecognised `scrape.fallback-scrape-format` value",
-			validateParser: requirePromParser,
-		},
-		"empty-string-fallback-text-plain-ok-1": {
-			fallbackFormat: "text/plain; version=0.0.4",
-			err:            "Non-compliant scraper sending blank Content-Type",
-			validateParser: requirePromParser,
-		},
-		"empty-string-fallback-text-plain-ok-2": {
-			fallbackFormat: "text/plain; version=1.0.0",
-			err:            "Non-compliant scraper sending blank Content-Type",
-			validateParser: requirePromParser,
-		},
-		"empty-string-fallback-text-plain-ok-3": {
-			fallbackFormat: "text/plain;",
-			err:            "Non-compliant scraper sending blank Content-Type",
-			validateParser: requirePromParser,
-		},
-		"empty-string-fallback-text-plain-ok-4": {
-			fallbackFormat: "text/plain",
-			err:            "Non-compliant scraper sending blank Content-Type",
-			validateParser: requirePromParser,
-		},
-		"unhandled-content-type-ok-fallback": {
-			contentType:    "something-else",
-			fallbackFormat: "text/plain;",
-			err:            "Unrecognised `scrape.fallback-scrape-format` value",
-			validateParser: requirePromParser,
-		},
-		"unhandled-content-type-invalid-fallback": {
-			contentType:    "something-else",
-			fallbackFormat: "something-wrong",
-			err:            "Unrecognised `scrape.fallback-scrape-format` value",
-			validateParser: requirePromParser,
-		},
-		"empty-content-type-openmetrics-fallback": {
-			fallbackFormat: "application/openmetrics-text",
-			err:            "Non-compliant scraper sending blank Content-Type",
-			validateParser: requireOpenMetricsParser,
+		"some-other-valid-content-type-fallback-text-plain": {
+			contentType:            "text/html",
+			validateParser:         requirePromParser,
+			fallbackScrapeProtocol: "text/plain",
+			err:                    "Content-Type not recognised mediaType, using fallback_scrape_protocol for target",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			tt := tt // Copy to local variable before going parallel.
 			t.Parallel()
 
-			p, err := NewFallback([]byte{}, tt.contentType, tt.fallbackFormat, false, false, labels.NewSymbolTable())
+			p, err := New([]byte{}, tt.contentType, tt.fallbackScrapeProtocol, false, false, labels.NewSymbolTable())
 			tt.validateParser(t, p)
 			if tt.err == "" {
 				require.NoError(t, err)

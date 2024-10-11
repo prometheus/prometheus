@@ -79,58 +79,64 @@ type Parser interface {
 	Next() (Entry, error)
 }
 
-// NewFallback returns a new parser of the byte slice.
-//
-// This function always returns a valid parser, but might additionally
-// return an error if the content type cannot be parsed.
-func NewFallback(b []byte, contentType, fallbackType string, parseClassicHistograms, skipOMCTSeries bool, st *labels.SymbolTable) (Parser, error) {
-	var contentTypeErr error
-
+// Helper function to returns the mediaType of a required parser checking contentType
+// first and falling back to fallbackType if necessary
+func newHelper(contentType, fallbackType string) (string, error) {
 	if contentType == "" {
 		if fallbackType == "" {
-			// No fallbackType set, so we default to standard NewPromParser()
-			return NewPromParser(b, st), nil
+			return "", errors.New("Non-compliant scraper sending blank Content-Type and no fallback_scrape_protocol specified for target")
 		}
-		// Otherwise we fall through and override the contentType
-		contentType = fallbackType
-		contentTypeErr = errors.New("Non-compliant scraper sending blank Content-Type")
+		// We don't set the error here so that we're kind and mirror v2 behaviour
+		return fallbackType, nil
 	}
 
+	// We have a contentType, parse it
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err != nil {
-		return NewPromParser(b, st), err
-	}
-	switch mediaType {
-	case "application/openmetrics-text":
-		return NewOpenMetricsParser(b, st, func(o *openMetricsParserOptions) {
-			o.SkipCTSeries = skipOMCTSeries
-		}), contentTypeErr
-	case "application/vnd.google.protobuf":
-		return NewProtobufParser(b, parseClassicHistograms, st), contentTypeErr
-	case "text/plain":
-		return NewPromParser(b, st), contentTypeErr
-	default:
 		if fallbackType == "" {
-			// With no fallbackType provided we default to NewPromParser() without an error
-			return NewPromParser(b, st), nil
+			retErr := errors.New("Cannot parse Content-Type and no fallback_scrape_protocol for target")
+			return "", errors.Join(retErr, err)
 		}
-
-		// If we get here we have specified a fallback format but it is not recognised
-		err = errors.New("Unrecognised `scrape.fallback-scrape-format` value")
-		// TODO(alexg): Should we validate scrape.fallback-scrape-format at startup/config-parse?
-		return NewPromParser(b, st), err
+		retErr := errors.New("Could not parse received Content-Type, using fallback_scrape_protocol for target")
+		return fallbackType, errors.Join(retErr, err)
 	}
+
+	// We have a valid media type, either we recognise it and can use it
+	// or we have to error
+	switch mediaType {
+	case "application/openmetrics-text", "application/vnd.google.protobuf", "text/plain":
+		return mediaType, nil
+	}
+	// We're here because we have no regonised mediaType
+	if fallbackType == "" {
+		return "", errors.New("Scraper sending unrecognisable Content-Type and no fallback_scrape_protocol specified for target")
+	}
+	return fallbackType, errors.New("Content-Type not recognised mediaType, using fallback_scrape_protocol for target")
 }
 
 // New returns a new parser of the byte slice.
 //
-// This function always returns a valid parser, but might additionally
-// return an error if the content type cannot be parsed.
+// This function no longer guarantees to return a valid parser.
 //
-// This exists as a wrapper for NewFallback() to maintain external interface.
-func New(b []byte, contentType string, parseClassicHistograms, skipOMCTSeries bool, st *labels.SymbolTable) (Parser, error) {
-	// TODO(alexg): What should be the default value we pass here, `text/plain` or empty?
-	return NewFallback(b, contentType, "", parseClassicHistograms, skipOMCTSeries, st)
+// It only  returns a valid parser if the supplied contentType and fallbackType allow
+// an additonal error may be returned if fallbackType had to be used or there was some
+// other error parsing the supplied Content-Type
+func New(b []byte, contentType, fallbackType string, parseClassicHistograms, skipOMCTSeries bool, st *labels.SymbolTable) (Parser, error) {
+	mediaType, err := newHelper(contentType, fallbackType)
+	// err may be nil or something we want to warn about
+
+	switch mediaType {
+	case "application/openmetrics-text":
+		return NewOpenMetricsParser(b, st, func(o *openMetricsParserOptions) {
+			o.SkipCTSeries = skipOMCTSeries
+		}), err
+	case "application/vnd.google.protobuf":
+		return NewProtobufParser(b, parseClassicHistograms, st), err
+	case "text/plain":
+		return NewPromParser(b, st), err
+	default:
+		return nil, err
+	}
 }
 
 // Entry represents the type of a parsed entry.
