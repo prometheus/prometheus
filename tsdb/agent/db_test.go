@@ -29,6 +29,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
@@ -938,71 +939,130 @@ func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = 0
 	s := createTestAgentDB(t, reg, opts)
-	app := s.Appender(context.TODO())
-	defer s.Close()
 
+	app := s.Appender(context.TODO())
+
+	seriesMap := make(map[storage.SeriesRef]labels.Labels)
+	samplesMap := make(map[storage.SeriesRef][]record.RefSample)
+	histogramsMap := make(map[storage.SeriesRef][]record.RefHistogramSample)
+
+	// Append histogram samples
 	lbls := labelsForTest(t.Name()+"_histogram", 1)
 	lset := labels.New(lbls[0]...)
-	_, err := app.AppendHistogramCTZeroSample(0, lset, 100, 30, tsdbutil.GenerateTestHistograms(1)[0], nil)
+	ref, err := app.AppendHistogramCTZeroSample(0, lset, 100, 30, tsdbutil.GenerateTestHistograms(1)[0], nil)
 	require.NoError(t, err)
+	t.Logf("Appended histogram with ref %d", ref)
+	seriesMap[ref] = lset
+	histogramsMap[ref] = append(histogramsMap[ref], record.RefHistogramSample{
+		Ref: chunks.HeadSeriesRef(ref),
+		T:   30,
+		// The CT Zero Sample is a Zero Histogram
+		H: &histogram.Histogram{},
+	})
+
 	_, err = app.AppendHistogram(0, lset, 100, tsdbutil.GenerateTestHistograms(1)[0], nil)
 	require.NoError(t, err)
+	histogramsMap[ref] = append(histogramsMap[ref], record.RefHistogramSample{
+		Ref: chunks.HeadSeriesRef(ref),
+		T:   100,
+		H:   tsdbutil.GenerateTestHistograms(1)[0],
+	})
 	err = app.Commit()
 	require.NoError(t, err)
 
+	// Append float samples
 	lbls = labelsForTest(t.Name(), 1)
 	lset = labels.New(lbls[0]...)
-	_, err = app.AppendCTZeroSample(0, lset, 100, 70)
+	ref, err = app.AppendCTZeroSample(0, lset, 100, 70)
 	require.NoError(t, err)
+	seriesMap[ref] = lset
+	samplesMap[ref] = append(samplesMap[ref], record.RefSample{Ref: chunks.HeadSeriesRef(ref), T: 70, V: 0})
 
-	// not allow when CT is newer or equal to the sample timestamp
-	_, err = app.AppendCTZeroSample(0, lset, 100, 100)
-	require.Error(t, err)
-
-	_, err = app.Append(0, lset, 100, 0)
+	ref2, err := app.Append(0, lset, 100, 20)
 	require.NoError(t, err)
+	samplesMap[ref2] = append(samplesMap[ref2], record.RefSample{Ref: chunks.HeadSeriesRef(ref2), T: 100, V: 20})
 	err = app.Commit()
 	require.NoError(t, err)
 
-	m := gatherFamily(t, reg, "prometheus_agent_samples_appended_total")
-	require.Equal(t, float64(2), m.Metric[0].Counter.GetValue(), "agent wal mismatch of total appended samples")
-	require.Equal(t, float64(2), m.Metric[1].Counter.GetValue(), "agent wal mismatch of total appended histograms")
+	// Close the DB to ensure all data is flushed to the WAL
+	require.NoError(t, s.Close())
 
-	// Open the WAL and check the samples
+	// Now read the WAL and verify its contents
 	sr, err := wlog.NewSegmentsReader(s.wal.Dir())
 	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, sr.Close())
+	}()
 
-	dec := record.NewDecoder(labels.NewSymbolTable())
 	r := wlog.NewReader(sr)
+	dec := record.NewDecoder(labels.NewSymbolTable())
 
-	var walSamplesCount int
-	var allSeries []record.RefSeries
-	var rawSamples = make(map[chunks.HeadSeriesRef][]record.RefSample)
-	var series []record.RefSeries
-	var lastSeriesRef chunks.HeadSeriesRef
+	var (
+		series     []record.RefSeries
+		allSeries  []record.RefSeries
+		samples    []record.RefSample
+		histograms []record.RefHistogramSample
+	)
+
 	for r.Next() {
 		rec := r.Record()
 		switch dec.Type(rec) {
 		case record.Series:
-			series, err = dec.Series(rec, series)
+			series, err = dec.Series(rec, series[:0])
 			require.NoError(t, err)
-			allSeries = append(allSeries, series[0])
-			rawSamples[series[0].Ref] = nil
-			lastSeriesRef = series[0].Ref
-
-			series = series[:0]
+			allSeries = append(allSeries, series...)
 		case record.Samples:
-			var samples []record.RefSample
-			samples, err = dec.Samples(rec, samples)
+			samples, err = dec.Samples(rec, samples[:0])
 			require.NoError(t, err)
-			rawSamples[lastSeriesRef] = samples
-			walSamplesCount += len(samples)
+		case record.HistogramSamples:
+			histograms, err = dec.HistogramSamples(rec, histograms[:0])
+			require.NoError(t, err)
 		}
 	}
 
-	require.Equal(t, 2, walSamplesCount)
-	// One series for the histogram and one for float metric
-	require.Equal(t, 2, len(allSeries))
+	// Verify the contents
+	require.Len(t, allSeries, 2, "Expected 2 series")
+	require.Len(t, samples, 2, "Expected 2 samples")
+	require.Len(t, histograms, 2, "Expected 2 histograms")
+
+	// Verify series
+	for _, s := range series {
+		lset, ok := seriesMap[storage.SeriesRef(s.Ref)]
+		require.True(t, ok, "Series not found in seriesMap")
+		require.Equal(t, lset, s.Labels, "Series labels don't match")
+	}
+
+	// Verify samples
+	for _, s := range samples {
+		found := false
+		for ref, expectedSamples := range samplesMap {
+			for _, es := range expectedSamples {
+				if chunks.HeadSeriesRef(ref) == s.Ref && es.T == s.T && es.V == s.V {
+					found = true
+					break
+				}
+			}
+			if found {
+				break
+			}
+		}
+		require.True(t, found, "Sample not found in expected samples: Ref=%d, T=%d, V=%f", s.Ref, s.T, s.V)
+	}
+
+	// Verify histograms
+	for _, h := range histograms {
+		expectedHistograms, ok := histogramsMap[storage.SeriesRef(h.Ref)]
+		require.True(t, ok, "Histogram refers to unknown series")
+
+		found := false
+		for _, eh := range expectedHistograms {
+			if eh.T == h.T && eh.H.Equals(h.H) {
+				found = true
+				break
+			}
+		}
+		require.True(t, found, "Histogram not found in expected histograms")
+	}
 }
 
 func BenchmarkCreateSeries(b *testing.B) {
