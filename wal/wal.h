@@ -155,8 +155,7 @@ class BasicEncoder {
         [[unlikely]];
 
         const auto& first_smpl = singular_[ls_id];
-        if (first_smpl.timestamp() <= smpl.timestamp()) {
-          [[likely]]
+        if (first_smpl.timestamp() <= smpl.timestamp()) [[likely]] {
           switch_to_plural_list(ls_id, first_smpl, Primitives::Sample(smpl));
         } else {
           switch_to_plural_list(ls_id, Primitives::Sample(smpl), first_smpl);
@@ -241,7 +240,7 @@ class BasicEncoder {
 
  private:
   LabelSetsTable label_sets_;
-  typename LabelSetsTable::checkpoint_type label_sets_checkpoint_;
+  typename std::remove_reference_t<LabelSetsTable>::checkpoint_type label_sets_checkpoint_;
   Buffer buffer_;
   BareBones::Vector<
       BareBones::Encoding::Gorilla::StreamEncoder<BareBones::Encoding::Gorilla::ZigZagTimestampEncoder<>, BareBones::Encoding::Gorilla::ValuesEncoder>>
@@ -390,6 +389,13 @@ class BasicEncoder {
   }
 
  public:
+  explicit BasicEncoder(LabelSetsTable& lss, uint16_t shard_id = 0, uint8_t pow_two_of_total_shards = 0)
+      : label_sets_(lss),
+        label_sets_checkpoint_(label_sets_.checkpoint()),
+        uuid_(generate_uuid()),
+        shard_id_(shard_id),
+        pow_two_of_total_shards_(pow_two_of_total_shards) {
+  }
   explicit BasicEncoder(uint16_t shard_id = 0, uint8_t pow_two_of_total_shards = 0)
       : label_sets_checkpoint_(label_sets_.checkpoint()), uuid_(generate_uuid()), shard_id_(shard_id), pow_two_of_total_shards_(pow_two_of_total_shards) {}
 
