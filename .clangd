@@ -5,3 +5,4 @@ CompileFlags:
   Add:
     - "-std=c++2b"
     - "-ferror-limit=0"
+    - "-frelaxed-template-template-args"

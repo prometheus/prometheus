@@ -7,13 +7,10 @@
 #include <string>
 #include <string_view>
 
-#include <parallel_hashmap/phmap.h>
+#include <parallel_hashmap/btree.h>
 #include <roaring/roaring.hh>
 #include "md5/md5.h"
 #include "utf8/utf8.h"
-
-#define PROTOZERO_USE_VIEW std::string_view
-#include "third_party/protozero/pbf_reader.hpp"
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wold-style-cast"
@@ -26,11 +23,8 @@
 #include "bare_bones/gorilla.h"
 #include "bare_bones/preprocess.h"
 #include "bare_bones/vector.h"
-#include "primitives/go_model.h"
 #include "primitives/go_slice.h"
 #include "primitives/primitives.h"
-#include "primitives/snug_composites.h"
-#include "prometheus/remote_write.h"
 
 namespace PromPP::Prometheus::Relabel {
 
@@ -962,11 +956,10 @@ class PerShardRelabeler {
   }
 
   // input_relabeling - relabeling incoming hashdex(first stage).
-  template <class LSS, class Hashdex, class Metrics>
+  template <class LSS, class Hashdex>
   PROMPP_ALWAYS_INLINE void input_relabeling(LSS& lss,
                                              MetricLimits* metric_limits,
                                              Hashdex& hashdex,
-                                             Metrics& metrics,
                                              PromPP::Primitives::Go::SliceView<InnerSeries*>& shards_inner_series,
                                              PromPP::Primitives::Go::SliceView<RelabeledSeries*>& shards_relabeled_series) {
     PromPP::Primitives::LabelsBuilder builder =
@@ -982,11 +975,9 @@ class PerShardRelabeler {
       timeseries_buf_.clear();
       item.read(timeseries_buf_);
 
-      auto start = std::chrono::system_clock::now();
       uint32_t ls_id = lss.find_or_emplace(timeseries_buf_.label_set(), item.hash());
-      metrics.lss_add += (std::chrono::system_clock::now() - start).count();
 
-      bool added = input_relabel_process(lss, metric_limits, builder, metrics, shards_inner_series, shards_relabeled_series, timeseries_buf_.samples(), ls_id);
+      bool added = input_relabel_process(lss, metric_limits, builder, shards_inner_series, shards_relabeled_series, timeseries_buf_.samples(), ls_id);
       if (!added) {
         continue;
       }
@@ -1006,10 +997,9 @@ class PerShardRelabeler {
   }
 
   // input_relabeling_with_stalenan relabeling with stalenans incoming hashdex(first stage).
-  template <class LSS, class Hashdex, class Metrics>
+  template <class LSS, class Hashdex>
   PROMPP_ALWAYS_INLINE SourceState input_relabeling_with_stalenans(LSS& lss,
                                                                    Hashdex& hashdex,
-                                                                   Metrics& metrics,
                                                                    PromPP::Primitives::Go::SliceView<InnerSeries*>& shards_inner_series,
                                                                    PromPP::Primitives::Go::SliceView<RelabeledSeries*>& shards_relabeled_series,
                                                                    MetricLimits* metric_limits,
@@ -1023,48 +1013,38 @@ class PerShardRelabeler {
     }
 
     LSSWithStaleNaNs wrapped_lss(lss, result);
-    input_relabeling(wrapped_lss, metric_limits, hashdex, metrics, shards_inner_series, shards_relabeled_series);
+    input_relabeling(wrapped_lss, metric_limits, hashdex, shards_inner_series, shards_relabeled_series);
 
     BareBones::Vector<PromPP::Primitives::Sample> smpl{{stale_ts, BareBones::Encoding::Gorilla::STALE_NAN}};
     PromPP::Primitives::LabelsBuilder builder =
         PromPP::Primitives::LabelsBuilder<typename LSS::value_type, PromPP::Primitives::LabelsBuilderStateMap>(builder_state_);
-    result->swap(
-        [&](uint32_t ls_id) { input_relabel_process(lss, metric_limits, builder, metrics, shards_inner_series, shards_relabeled_series, smpl, ls_id); });
+    result->swap([&](uint32_t ls_id) { input_relabel_process(lss, metric_limits, builder, shards_inner_series, shards_relabeled_series, smpl, ls_id); });
 
     return result;
   }
 
-  template <class LSS, class LabelsBuilder, class Metrics>
+  template <class LSS, class LabelsBuilder>
   PROMPP_ALWAYS_INLINE bool input_relabel_process(LSS& lss,
                                                   MetricLimits* metric_limits,
                                                   LabelsBuilder& builder,
-                                                  Metrics& metrics,
                                                   PromPP::Primitives::Go::SliceView<InnerSeries*>& shards_inner_series,
                                                   PromPP::Primitives::Go::SliceView<RelabeledSeries*>& shards_relabeled_series,
                                                   BareBones::Vector<PromPP::Primitives::Sample>& samples,
                                                   uint32_t ls_id) {
-    auto start = std::chrono::system_clock::now();
     if (cache_drop_.contains(ls_id)) {
-      metrics.cache_drop += (std::chrono::system_clock::now() - start).count();
       return false;
     }
 
-    start = std::chrono::system_clock::now();
     if (cache_keep_.contains(ls_id)) {
       shards_inner_series[shard_id_]->emplace_back(samples, ls_id);
-      metrics.cache_keep += (std::chrono::system_clock::now() - start).count();
       return true;
     }
 
-    start = std::chrono::system_clock::now();
     auto it = cache_relabel_.find(ls_id);
     if (it != cache_relabel_.end()) {
       shards_inner_series[it->second.shard_id]->emplace_back(samples, it->second.ls_id);
-      metrics.cache_relabel += (std::chrono::system_clock::now() - start).count();
       return true;
     }
-
-    ++metrics.stateless_relabeler;
 
     typename LSS::value_type label_set = lss[ls_id];
     builder.reset(&label_set);
