@@ -120,9 +120,10 @@ func newHelper(contentType, fallbackType string) (string, error) {
 //
 // This function no longer guarantees to return a valid parser.
 //
-// It only  returns a valid parser if the supplied contentType and fallbackType allow
-// an additional error may be returned if fallbackType had to be used or there was some
+// It only returns a valid parser if the supplied contentType and fallbackType allow.
+// An error may also be returned if fallbackType had to be used or there was some
 // other error parsing the supplied Content-Type.
+// If the returned parser is nil then the scrape must fail.
 func New(b []byte, contentType, fallbackType string, parseClassicHistograms, skipOMCTSeries bool, st *labels.SymbolTable) (Parser, error) {
 	mediaType, err := newHelper(contentType, fallbackType)
 	// err may be nil or something we want to warn about
