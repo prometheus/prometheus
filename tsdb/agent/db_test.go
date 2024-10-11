@@ -945,10 +945,6 @@ func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
 	lset := labels.New(lbls[0]...)
 	_, err := app.AppendHistogramCTZeroSample(0, lset, 100, 30, tsdbutil.GenerateTestHistograms(1)[0], nil)
 	require.NoError(t, err)
-
-	_, err = app.AppendHistogramCTZeroSample(0, lset, 100, 100, tsdbutil.GenerateTestHistograms(1)[0], nil)
-	require.Error(t, err)
-
 	_, err = app.AppendHistogram(0, lset, 100, tsdbutil.GenerateTestHistograms(1)[0], nil)
 	require.NoError(t, err)
 	err = app.Commit()

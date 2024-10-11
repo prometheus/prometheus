@@ -982,6 +982,16 @@ func (a *appender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Met
 }
 
 func (a *appender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	if h != nil {
+		if err := h.Validate(); err != nil {
+			return 0, err
+		}
+	}
+	if fh != nil {
+		if err := fh.Validate(); err != nil {
+			return 0, err
+		}
+	}
 	if ct >= t {
 		return 0, storage.ErrCTNewerThanSample
 	}
@@ -1013,7 +1023,6 @@ func (a *appender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.L
 	defer series.Unlock()
 
 	if ct <= a.minValidTime(series.lastTs) {
-		a.metrics.totalOutOfOrderSamples.Inc()
 		return 0, storage.ErrOutOfOrderCT
 	}
 
@@ -1027,11 +1036,10 @@ func (a *appender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.L
 		})
 		a.histogramSeries = append(a.histogramSeries, series)
 	case fh != nil:
-		zeroFloatHistogram := &histogram.FloatHistogram{}
 		a.pendingFloatHistograms = append(a.pendingFloatHistograms, record.RefFloatHistogramSample{
 			Ref: series.ref,
 			T:   ct,
-			FH:  zeroFloatHistogram,
+			FH:  &histogram.FloatHistogram{},
 		})
 		a.floatHistogramSeries = append(a.floatHistogramSeries, series)
 	}
@@ -1056,7 +1064,16 @@ func (a *appender) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labels, t,
 			return 0, fmt.Errorf(`label name "%s" is not unique: %w`, lbl, tsdb.ErrInvalidSample)
 		}
 
-		series, _ = a.getOrCreate(l)
+		newSeries, created := a.getOrCreate(l)
+		if created {
+			a.pendingSeries = append(a.pendingSeries, record.RefSeries{
+				Ref:    newSeries.ref,
+				Labels: l,
+			})
+			a.metrics.numActiveSeries.Inc()
+		}
+
+		series = newSeries
 	}
 
 	series.Lock()
@@ -1070,7 +1087,7 @@ func (a *appender) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labels, t,
 	// NOTE: always modify pendingSamples and sampleSeries together.
 	a.pendingSamples = append(a.pendingSamples, record.RefSample{
 		Ref: series.ref,
-		T:   t,
+		T:   ct,
 		V:   0,
 	})
 	a.sampleSeries = append(a.sampleSeries, series)
