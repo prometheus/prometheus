@@ -77,19 +77,12 @@ class Graph extends PureComponent<GraphProps, GraphState> {
       this.setState({ chartData: normalizeData(this.props) }, this.plot);
     } else if (prevProps.displayMode !== displayMode) {
       this.setState({ chartData: normalizeData(this.props) }, () => {
-        if (this.selectedSeriesIndexes.length === 0) {
-          this.plot();
-        } else {
-          this.plot([
-            ...this.state.chartData.series.filter((_, i) => this.selectedSeriesIndexes.includes(i)),
-            ...this.state.chartData.exemplars,
-          ]);
-        }
+        this.plotSelectedSeriesIndexes();
       });
     }
 
     if (prevProps.useLocalTime !== useLocalTime) {
-      this.plot();
+      this.plotSelectedSeriesIndexes();
     }
 
     if (prevProps.showExemplars !== showExemplars && !showExemplars) {
@@ -99,9 +92,20 @@ class Graph extends PureComponent<GraphProps, GraphState> {
           selectedExemplarLabels: { exemplar: {}, series: {} },
         },
         () => {
-          this.plot();
+          this.plotSelectedSeriesIndexes();
         }
       );
+    }
+  }
+
+  plotSelectedSeriesIndexes(): void {
+    if (this.selectedSeriesIndexes.length === 0) {
+      this.plot();
+    } else {
+      this.plot([
+        ...this.state.chartData.series.filter((_, i) => this.selectedSeriesIndexes.includes(i)),
+        ...this.state.chartData.exemplars,
+      ]);
     }
   }
 
