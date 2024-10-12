@@ -554,7 +554,6 @@ func TestAzureRefresh(t *testing.T) {
 					},
 				},
 			},
-
 			expectedTG: []*targetgroup.Group{
 				{
 					Targets: []model.LabelSet{
@@ -649,9 +648,7 @@ func TestAzureRefresh(t *testing.T) {
 			},
 		},
 	}
-	for _, test := range tests {
-		tc := test
-
+	for _, tc := range tests {
 		t.Run(tc.scenario, func(t *testing.T) {
 			t.Parallel()
 			azureSDConfig := &DefaultSDConfig
