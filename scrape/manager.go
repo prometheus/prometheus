@@ -90,8 +90,9 @@ type Options struct {
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption
 
-	// private option for testability.
+	// private options for testability.
 	skipOffsetting bool
+	skipReloader   bool
 }
 
 const DefaultNameEscapingScheme = model.ValueEncodingEscaping
@@ -121,7 +122,9 @@ type Manager struct {
 // Run receives and saves target set updates and triggers the scraping loops reloading.
 // Reloading happens in the background so that it doesn't block receiving targets updates.
 func (m *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
-	go m.reloader()
+	if !m.opts.skipReloader {
+		go m.reloader()
+	}
 	for {
 		select {
 		case ts := <-tsets:
@@ -155,15 +158,15 @@ func (m *Manager) reloader() {
 
 	for {
 		select {
+		case <-m.triggerReload:
+			m.reload()
+		case <-m.graceShut:
+			return
+		}
+		select {
 		case <-m.graceShut:
 			return
 		case <-ticker.C:
-			select {
-			case <-m.triggerReload:
-				m.reload()
-			case <-m.graceShut:
-				return
-			}
 		}
 	}
 }

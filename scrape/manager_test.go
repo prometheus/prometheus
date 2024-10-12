@@ -581,7 +581,7 @@ scrape_configs:
 }
 
 func TestManagerTargetsUpdates(t *testing.T) {
-	opts := Options{}
+	opts := Options{skipReloader: true}
 	testRegistry := prometheus.NewRegistry()
 	m, err := NewManager(&opts, nil, nil, nil, testRegistry)
 	require.NoError(t, err)
