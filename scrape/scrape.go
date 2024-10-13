@@ -1557,7 +1557,7 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 		metadataChanged bool
 	)
 
-	exemplars := make([]exemplar.Exemplar, 1)
+	exemplars := make([]exemplar.Exemplar, 0, 1)
 
 	// updateMetadata updates the current iteration's metadata object and the
 	// metadataChanged value if we have metadata in the scrape cache AND the

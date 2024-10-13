@@ -14,6 +14,7 @@
 package textparse
 
 import (
+	"fmt"
 	"io"
 	"testing"
 
@@ -71,6 +72,8 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5
 foo_created 1520872607.123
 foo_total{a="b"} 17.0 1520879607.789 # {id="counter-test"} 5
 foo_created{a="b"} 1520872607.123
+foo_total{le="c"} 21.0
+foo_created{le="c"} 1520872621.123
 # HELP bar Summary with CT at the end, making sure we find CT even if it's multiple lines a far
 # TYPE bar summary
 bar_count 17.0
@@ -294,6 +297,11 @@ foobar{quantile="0.99"} 150.1`
 				{Labels: labels.FromStrings("id", "counter-test"), Value: 5},
 			},
 			ct: int64p(1520872607123),
+		}, {
+			m:    `foo_total{le="c"}`,
+			v:    21.0,
+			lset: labels.FromStrings("__name__", "foo_total", "le", "c"),
+			ct:   int64p(1520872621123),
 		}, {
 			m:    "bar",
 			help: "Summary with CT at the end, making sure we find CT even if it's multiple lines a far",
@@ -820,7 +828,7 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 		for err == nil {
 			_, err = p.Next()
 		}
-		require.EqualError(t, err, c.err, "test %d: %s", i, c.input)
+		require.Equal(t, c.err, err.Error(), "test %d: %s", i, c.input)
 	}
 }
 
@@ -899,42 +907,97 @@ func TestOMNullByteHandling(t *testing.T) {
 // current OM spec limitations or clients with broken OM format.
 // TODO(maniktherana): Make sure OM 1.1/2.0 pass CT via metadata or exemplar-like to avoid this.
 func TestCTParseFailures(t *testing.T) {
-	input := `# HELP thing Histogram with _created as first line
+	for _, tcase := range []struct {
+		name     string
+		input    string
+		expected []parsedEntry
+	}{
+		{
+			name: "_created line is a first one",
+			input: `# HELP thing histogram with _created as first line
 # TYPE thing histogram
 thing_created 1520872607.123
 thing_count 17
 thing_sum 324789.3
 thing_bucket{le="0.0"} 0
-thing_bucket{le="+Inf"} 17`
-
-	input += "\n# EOF\n"
-
-	exp := []parsedEntry{
-		{
-			m:    "thing",
-			help: "Histogram with _created as first line",
-		}, {
-			m:   "thing",
-			typ: model.MetricTypeHistogram,
-		}, {
-			m:  `thing_count`,
-			ct: nil, // Should be int64p(1520872607123).
-		}, {
-			m:  `thing_sum`,
-			ct: nil, // Should be int64p(1520872607123).
-		}, {
-			m:  `thing_bucket{le="0.0"}`,
-			ct: nil, // Should be int64p(1520872607123).
-		}, {
-			m:  `thing_bucket{le="+Inf"}`,
-			ct: nil, // Should be int64p(1520872607123),
+thing_bucket{le="+Inf"} 17
+# HELP thing_c counter with _created as first line
+# TYPE thing_c counter
+thing_c_created 1520872607.123
+thing_c_total 14123.232
+# EOF
+`,
+			expected: []parsedEntry{
+				{
+					m:    "thing",
+					help: "histogram with _created as first line",
+				},
+				{
+					m:   "thing",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m:  `thing_count`,
+					ct: nil, // Should be int64p(1520872607123).
+				},
+				{
+					m:  `thing_sum`,
+					ct: nil, // Should be int64p(1520872607123).
+				},
+				{
+					m:  `thing_bucket{le="0.0"}`,
+					ct: nil, // Should be int64p(1520872607123).
+				},
+				{
+					m:  `thing_bucket{le="+Inf"}`,
+					ct: nil, // Should be int64p(1520872607123),
+				},
+				{
+					m:    "thing_c",
+					help: "counter with _created as first line",
+				},
+				{
+					m:   "thing_c",
+					typ: model.MetricTypeCounter,
+				},
+				{
+					m:  `thing_c_total`,
+					ct: nil, // Should be int64p(1520872607123).
+				},
+			},
 		},
+		{
+			// TODO(bwplotka): Kind of correct bevaviour? If yes, let's move to the OK tests above.
+			name: "maybe counter with no meta",
+			input: `foo_total 17.0
+foo_created 1520872607.123
+foo_total{a="b"} 17.0
+foo_created{a="b"} 1520872608.123
+# EOF
+`,
+			expected: []parsedEntry{
+				{
+					m: `foo_total`,
+				},
+				{
+					m: `foo_created`,
+				},
+				{
+					m: `foo_total{a="b"}`,
+				},
+				{
+					m: `foo_created{a="b"}`,
+				},
+			},
+		},
+	} {
+		t.Run(fmt.Sprintf("case=%v", tcase.name), func(t *testing.T) {
+			p := NewOpenMetricsParser([]byte(tcase.input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
+			got := testParse(t, p)
+			resetValAndLset(got) // Keep this test focused on metric, basic entries and CT only.
+			requireEntries(t, tcase.expected, got)
+		})
 	}
-
-	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
-	got := testParse(t, p)
-	resetValAndLset(got) // Keep this test focused on metric, basic entries and CT only.
-	requireEntries(t, exp, got)
 }
 
 func resetValAndLset(e []parsedEntry) {
