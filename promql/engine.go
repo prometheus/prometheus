@@ -1063,7 +1063,7 @@ type evaluator struct {
 	enableDelayedNameRemoval bool
 	querier                  storage.Querier
 
-	// selectHints is the top-most SelectHints in the expression tree.
+	// selectHints are the hints used in selecting the series for the last executed VectorSelector.
 	selectHints *storage.SelectHints
 }
 
