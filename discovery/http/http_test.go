@@ -21,11 +21,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/discovery"
@@ -49,7 +49,7 @@ func TestHTTPValidRefresh(t *testing.T) {
 	require.NoError(t, metrics.Register())
 	defer metrics.Unregister()
 
-	d, err := NewDiscovery(&cfg, log.NewNopLogger(), nil, metrics)
+	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), nil, metrics)
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -94,7 +94,7 @@ func TestHTTPInvalidCode(t *testing.T) {
 	require.NoError(t, metrics.Register())
 	defer metrics.Unregister()
 
-	d, err := NewDiscovery(&cfg, log.NewNopLogger(), nil, metrics)
+	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), nil, metrics)
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -123,7 +123,7 @@ func TestHTTPInvalidFormat(t *testing.T) {
 	require.NoError(t, metrics.Register())
 	defer metrics.Unregister()
 
-	d, err := NewDiscovery(&cfg, log.NewNopLogger(), nil, metrics)
+	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), nil, metrics)
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -442,7 +442,7 @@ func TestSourceDisappeared(t *testing.T) {
 	require.NoError(t, metrics.Register())
 	defer metrics.Unregister()
 
-	d, err := NewDiscovery(&cfg, log.NewNopLogger(), nil, metrics)
+	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), nil, metrics)
 	require.NoError(t, err)
 	for _, test := range cases {
 		ctx := context.Background()

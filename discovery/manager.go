@@ -16,14 +16,14 @@ package discovery
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"sync"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
+	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
@@ -81,9 +81,9 @@ func CreateAndRegisterSDMetrics(reg prometheus.Registerer) (map[string]Discovere
 }
 
 // NewManager is the Discovery Manager constructor.
-func NewManager(ctx context.Context, logger log.Logger, registerer prometheus.Registerer, sdMetrics map[string]DiscovererMetrics, options ...func(*Manager)) *Manager {
+func NewManager(ctx context.Context, logger *slog.Logger, registerer prometheus.Registerer, sdMetrics map[string]DiscovererMetrics, options ...func(*Manager)) *Manager {
 	if logger == nil {
-		logger = log.NewNopLogger()
+		logger = promslog.NewNopLogger()
 	}
 	mgr := &Manager{
 		logger:      logger,
@@ -104,7 +104,7 @@ func NewManager(ctx context.Context, logger log.Logger, registerer prometheus.Re
 	if metrics, err := NewManagerMetrics(registerer, mgr.name); err == nil {
 		mgr.metrics = metrics
 	} else {
-		level.Error(logger).Log("msg", "Failed to create discovery manager metrics", "manager", mgr.name, "err", err)
+		logger.Error("Failed to create discovery manager metrics", "manager", mgr.name, "err", err)
 		return nil
 	}
 
@@ -141,7 +141,7 @@ func HTTPClientOptions(opts ...config.HTTPClientOption) func(*Manager) {
 // Manager maintains a set of discovery providers and sends each update to a map channel.
 // Targets are grouped by the target set name.
 type Manager struct {
-	logger   log.Logger
+	logger   *slog.Logger
 	name     string
 	httpOpts []config.HTTPClientOption
 	mtx      sync.RWMutex
@@ -294,7 +294,7 @@ func (m *Manager) StartCustomProvider(ctx context.Context, name string, worker D
 }
 
 func (m *Manager) startProvider(ctx context.Context, p *Provider) {
-	level.Debug(m.logger).Log("msg", "Starting provider", "provider", p.name, "subs", fmt.Sprintf("%v", p.subs))
+	m.logger.Debug("Starting provider", "provider", p.name, "subs", fmt.Sprintf("%v", p.subs))
 	ctx, cancel := context.WithCancel(ctx)
 	updates := make(chan []*targetgroup.Group)
 
@@ -328,7 +328,7 @@ func (m *Manager) updater(ctx context.Context, p *Provider, updates chan []*targ
 		case tgs, ok := <-updates:
 			m.metrics.ReceivedUpdates.Inc()
 			if !ok {
-				level.Debug(m.logger).Log("msg", "Discoverer channel closed", "provider", p.name)
+				m.logger.Debug("Discoverer channel closed", "provider", p.name)
 				// Wait for provider cancellation to ensure targets are cleaned up when expected.
 				<-ctx.Done()
 				return
@@ -364,7 +364,7 @@ func (m *Manager) sender() {
 				case m.syncCh <- m.allGroups():
 				default:
 					m.metrics.DelayedUpdates.Inc()
-					level.Debug(m.logger).Log("msg", "Discovery receiver's channel was full so will retry the next cycle")
+					m.logger.Debug("Discovery receiver's channel was full so will retry the next cycle")
 					select {
 					case m.triggerSend <- struct{}{}:
 					default:
@@ -458,12 +458,12 @@ func (m *Manager) registerProviders(cfgs Configs, setName string) int {
 		}
 		typ := cfg.Name()
 		d, err := cfg.NewDiscoverer(DiscovererOptions{
-			Logger:            log.With(m.logger, "discovery", typ, "config", setName),
+			Logger:            m.logger.With("discovery", typ, "config", setName),
 			HTTPClientOptions: m.httpOpts,
 			Metrics:           m.sdMetrics[typ],
 		})
 		if err != nil {
-			level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", typ, "config", setName)
+			m.logger.Error("Cannot create service discovery", "err", err, "type", typ, "config", setName)
 			failed++
 			return
 		}

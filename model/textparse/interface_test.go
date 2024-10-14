@@ -14,11 +14,18 @@
 package textparse
 
 import (
+	"errors"
+	"io"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestNewParser(t *testing.T) {
@@ -93,14 +100,103 @@ func TestNewParser(t *testing.T) {
 			tt := tt // Copy to local variable before going parallel.
 			t.Parallel()
 
-			p, err := New([]byte{}, tt.contentType, false, labels.NewSymbolTable())
+			p, err := New([]byte{}, tt.contentType, false, false, labels.NewSymbolTable())
 			tt.validateParser(t, p)
 			if tt.err == "" {
 				require.NoError(t, err)
 			} else {
-				require.Error(t, err)
-				require.Contains(t, err.Error(), tt.err)
+				require.ErrorContains(t, err, tt.err)
 			}
 		})
 	}
+}
+
+// parsedEntry represents data that is parsed for each entry.
+type parsedEntry struct {
+	// In all but EntryComment, EntryInvalid.
+	m string
+
+	// In EntryHistogram.
+	shs *histogram.Histogram
+	fhs *histogram.FloatHistogram
+
+	// In EntrySeries.
+	v float64
+
+	// In EntrySeries and EntryHistogram.
+	lset labels.Labels
+	t    *int64
+	es   []exemplar.Exemplar
+	ct   *int64
+
+	// In EntryType.
+	typ model.MetricType
+	// In EntryHelp.
+	help string
+	// In EntryUnit.
+	unit string
+	// In EntryComment.
+	comment string
+}
+
+func requireEntries(t *testing.T, exp, got []parsedEntry) {
+	t.Helper()
+
+	testutil.RequireEqualWithOptions(t, exp, got, []cmp.Option{
+		cmp.AllowUnexported(parsedEntry{}),
+	})
+}
+
+func testParse(t *testing.T, p Parser) (ret []parsedEntry) {
+	t.Helper()
+
+	for {
+		et, err := p.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		require.NoError(t, err)
+
+		var got parsedEntry
+		var m []byte
+		switch et {
+		case EntryInvalid:
+			t.Fatal("entry invalid not expected")
+		case EntrySeries, EntryHistogram:
+			if et == EntrySeries {
+				m, got.t, got.v = p.Series()
+				got.m = string(m)
+			} else {
+				m, got.t, got.shs, got.fhs = p.Histogram()
+				got.m = string(m)
+			}
+
+			p.Metric(&got.lset)
+			for e := (exemplar.Exemplar{}); p.Exemplar(&e); {
+				got.es = append(got.es, e)
+			}
+			// Parser reuses int pointer.
+			if ct := p.CreatedTimestamp(); ct != nil {
+				got.ct = int64p(*ct)
+			}
+		case EntryType:
+			m, got.typ = p.Type()
+			got.m = string(m)
+
+		case EntryHelp:
+			m, h := p.Help()
+			got.m = string(m)
+			got.help = string(h)
+
+		case EntryUnit:
+			m, u := p.Unit()
+			got.m = string(m)
+			got.unit = string(u)
+
+		case EntryComment:
+			got.comment = string(p.Comment())
+		}
+		ret = append(ret, got)
+	}
+	return ret
 }

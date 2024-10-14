@@ -651,7 +651,7 @@ eval_ordered instant at 50m sort_by_label(node_uname_info, "release")
 	node_uname_info{job="node_exporter", instance="4m5", release="1.11.3"} 100
 	node_uname_info{job="node_exporter", instance="4m1000", release="1.111.3"} 100
 
-# Tests for holt_winters
+# Tests for double_exponential_smoothing
 clear
 
 # positive trends
@@ -661,7 +661,7 @@ load 10s
 	http_requests{job="api-server", instance="0", group="canary"}		0+30x1000 300+80x1000
 	http_requests{job="api-server", instance="1", group="canary"}		0+40x2000
 
-eval instant at 8000s holt_winters(http_requests[1m], 0.01, 0.1)
+eval instant at 8000s double_exponential_smoothing(http_requests[1m], 0.01, 0.1)
 	{job="api-server", instance="0", group="production"} 8000
 	{job="api-server", instance="1", group="production"} 16000
 	{job="api-server", instance="0", group="canary"} 24000
@@ -675,7 +675,7 @@ load 10s
 	http_requests{job="api-server", instance="0", group="canary"}		0+30x1000 300-80x1000
 	http_requests{job="api-server", instance="1", group="canary"}		0-40x1000 0+40x1000
 
-eval instant at 8000s holt_winters(http_requests[1m], 0.01, 0.1)
+eval instant at 8000s double_exponential_smoothing(http_requests[1m], 0.01, 0.1)
 	{job="api-server", instance="0", group="production"} 0
 	{job="api-server", instance="1", group="production"} -16000
 	{job="api-server", instance="0", group="canary"} 24000

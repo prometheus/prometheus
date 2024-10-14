@@ -69,13 +69,13 @@ tests:
         eval_time: 2m
         exp_samples:
           - labels: "test_histogram_repeat"
-            histogram: "{{count:2 sum:3 buckets:[2]}}"
+            histogram: "{{count:2 sum:3 counter_reset_hint:not_reset buckets:[2]}}"
 
       - expr: test_histogram_increase
         eval_time: 2m
         exp_samples:
           - labels: "test_histogram_increase"
-            histogram: "{{count:4 sum:5.6 buckets:[4]}}"
+            histogram: "{{count:4 sum:5.6 counter_reset_hint:not_reset buckets:[4]}}"
 
       # Ensure a value is stale as soon as it is marked as such.
       - expr: test_stale

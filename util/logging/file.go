@@ -15,20 +15,15 @@ package logging
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
-	"time"
 
-	"github.com/go-kit/log"
+	"github.com/prometheus/common/promslog"
 )
 
-var timestampFormat = log.TimestampFormat(
-	func() time.Time { return time.Now().UTC() },
-	"2006-01-02T15:04:05.000Z07:00",
-)
-
-// JSONFileLogger represents a logger that writes JSON to a file.
+// JSONFileLogger represents a logger that writes JSON to a file. It implements the promql.QueryLogger interface.
 type JSONFileLogger struct {
-	logger log.Logger
+	logger *slog.Logger
 	file   *os.File
 }
 
@@ -40,21 +35,48 @@ func NewJSONFileLogger(s string) (*JSONFileLogger, error) {
 
 	f, err := os.OpenFile(s, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o666)
 	if err != nil {
-		return nil, fmt.Errorf("can't create json logger: %w", err)
+		return nil, fmt.Errorf("can't create json log file: %w", err)
 	}
 
+	jsonFmt := &promslog.AllowedFormat{}
+	_ = jsonFmt.Set("json")
 	return &JSONFileLogger{
-		logger: log.With(log.NewJSONLogger(f), "ts", timestampFormat),
+		logger: promslog.New(&promslog.Config{Format: jsonFmt, Writer: f}),
 		file:   f,
 	}, nil
 }
 
-// Close closes the underlying file.
+// Close closes the underlying file. It implements the promql.QueryLogger interface.
 func (l *JSONFileLogger) Close() error {
 	return l.file.Close()
 }
 
-// Log calls the Log function of the underlying logger.
-func (l *JSONFileLogger) Log(i ...interface{}) error {
-	return l.logger.Log(i...)
+// With calls the `With()` method on the underlying `log/slog.Logger` with the
+// provided msg and args. It implements the promql.QueryLogger interface.
+func (l *JSONFileLogger) With(args ...any) {
+	l.logger = l.logger.With(args...)
+}
+
+// Info calls the `Info()` method on the underlying `log/slog.Logger` with the
+// provided msg and args. It implements the promql.QueryLogger interface.
+func (l *JSONFileLogger) Info(msg string, args ...any) {
+	l.logger.Info(msg, args...)
+}
+
+// Error calls the `Error()` method on the underlying `log/slog.Logger` with the
+// provided msg and args. It implements the promql.QueryLogger interface.
+func (l *JSONFileLogger) Error(msg string, args ...any) {
+	l.logger.Error(msg, args...)
+}
+
+// Debug calls the `Debug()` method on the underlying `log/slog.Logger` with the
+// provided msg and args. It implements the promql.QueryLogger interface.
+func (l *JSONFileLogger) Debug(msg string, args ...any) {
+	l.logger.Debug(msg, args...)
+}
+
+// Warn calls the `Warn()` method on the underlying `log/slog.Logger` with the
+// provided msg and args. It implements the promql.QueryLogger interface.
+func (l *JSONFileLogger) Warn(msg string, args ...any) {
+	l.logger.Warn(msg, args...)
 }

@@ -84,7 +84,6 @@ export default function QueryPage() {
           icon={<IconAlertTriangle />}
           color="red"
           title="Error fetching metrics list"
-          withCloseButton
         >
           Unable to fetch list of metric names: {metricNamesError.message}
         </Alert>
@@ -95,7 +94,6 @@ export default function QueryPage() {
           icon={<IconAlertTriangle />}
           color="red"
           title="Error fetching server time"
-          withCloseButton
         >
           {timeError.message}
         </Alert>

@@ -26,6 +26,7 @@ import (
 	"sync"
 
 	"github.com/bboreham/go-loser"
+	"github.com/cespare/xxhash/v2"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -292,30 +293,76 @@ func (p *MemPostings) EnsureOrder(numberOfConcurrentProcesses int) {
 func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}, affected map[labels.Label]struct{}) {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
-
-	process := func(l labels.Label) {
-		orig := p.m[l.Name][l.Value]
-		repl := make([]storage.SeriesRef, 0, len(orig))
-		for _, id := range orig {
-			if _, ok := deleted[id]; !ok {
-				repl = append(repl, id)
-			}
-		}
-		if len(repl) > 0 {
-			p.m[l.Name][l.Value] = repl
-		} else {
-			delete(p.m[l.Name], l.Value)
-			// Delete the key if we removed all values.
-			if len(p.m[l.Name]) == 0 {
-				delete(p.m, l.Name)
-			}
-		}
+	if len(p.m) == 0 || len(deleted) == 0 {
+		return
 	}
+
+	// Deleting label names mutates p.m map, so it should be done from a single goroutine after nobody else is reading it.
+	deleteLabelNames := make(chan string, len(p.m))
+
+	process, wait := processWithBoundedParallelismAndConsistentWorkers(
+		runtime.GOMAXPROCS(0),
+		func(l labels.Label) uint64 { return xxhash.Sum64String(l.Name) },
+		func(l labels.Label) {
+			orig := p.m[l.Name][l.Value]
+			repl := make([]storage.SeriesRef, 0, len(orig))
+			for _, id := range orig {
+				if _, ok := deleted[id]; !ok {
+					repl = append(repl, id)
+				}
+			}
+			if len(repl) > 0 {
+				p.m[l.Name][l.Value] = repl
+			} else {
+				delete(p.m[l.Name], l.Value)
+				if len(p.m[l.Name]) == 0 {
+					// Delete the key if we removed all values.
+					deleteLabelNames <- l.Name
+				}
+			}
+		},
+	)
 
 	for l := range affected {
 		process(l)
 	}
 	process(allPostingsKey)
+	wait()
+
+	// Close deleteLabelNames channel and delete the label names requested.
+	close(deleteLabelNames)
+	for name := range deleteLabelNames {
+		delete(p.m, name)
+	}
+}
+
+// processWithBoundedParallelismAndConsistentWorkers will call f() with bounded parallelism,
+// making sure that elements with same hash(T) will always be processed by the same worker.
+// Call process() to add more jobs to process, and once finished adding, call wait() to ensure that all jobs are processed.
+func processWithBoundedParallelismAndConsistentWorkers[T any](workers int, hash func(T) uint64, f func(T)) (process func(T), wait func()) {
+	wg := &sync.WaitGroup{}
+	jobs := make([]chan T, workers)
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		jobs[i] = make(chan T, 128)
+		go func(jobs <-chan T) {
+			defer wg.Done()
+			for l := range jobs {
+				f(l)
+			}
+		}(jobs[i])
+	}
+
+	process = func(job T) {
+		jobs[hash(job)%uint64(workers)] <- job
+	}
+	wait = func() {
+		for i := range jobs {
+			close(jobs[i])
+		}
+		wg.Wait()
+	}
+	return process, wait
 }
 
 // Iter calls f for each postings list. It aborts if f returns an error and returns it.
@@ -345,22 +392,42 @@ func (p *MemPostings) Add(id storage.SeriesRef, lset labels.Labels) {
 	p.mtx.Unlock()
 }
 
+func appendWithExponentialGrowth[T any](a []T, v T) (_ []T, copied bool) {
+	if cap(a) < len(a)+1 {
+		newList := make([]T, len(a), len(a)*2+1)
+		copy(newList, a)
+		a = newList
+		copied = true
+	}
+	return append(a, v), copied
+}
+
 func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 	nm, ok := p.m[l.Name]
 	if !ok {
 		nm = map[string][]storage.SeriesRef{}
 		p.m[l.Name] = nm
 	}
-	list := append(nm[l.Value], id)
+	list, copied := appendWithExponentialGrowth(nm[l.Value], id)
 	nm[l.Value] = list
 
-	if !p.ordered {
+	// Return if it shouldn't be ordered, if it only has one element or if it's already ordered.
+	// The invariant is that the first n-1 items in the list are already sorted.
+	if !p.ordered || len(list) == 1 || list[len(list)-1] >= list[len(list)-2] {
 		return
 	}
-	// There is no guarantee that no higher ID was inserted before as they may
-	// be generated independently before adding them to postings.
-	// We repair order violations on insert. The invariant is that the first n-1
-	// items in the list are already sorted.
+
+	if !copied {
+		// We have appended to the existing slice,
+		// and readers may already have a copy of this postings slice,
+		// so we need to copy it before sorting.
+		old := list
+		list = make([]storage.SeriesRef, len(old), cap(old))
+		copy(list, old)
+		nm[l.Value] = list
+	}
+
+	// Repair order violations.
 	for i := len(list) - 1; i >= 1; i-- {
 		if list[i] >= list[i-1] {
 			break

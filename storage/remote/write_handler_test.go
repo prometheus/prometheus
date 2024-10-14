@@ -27,10 +27,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -129,7 +130,7 @@ func TestRemoteWriteHandlerHeadersHandling_V1Message(t *testing.T) {
 			}
 
 			appendable := &mockAppendable{}
-			handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -144,7 +145,7 @@ func TestRemoteWriteHandlerHeadersHandling_V1Message(t *testing.T) {
 }
 
 func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
-	payload, _, _, err := buildV2WriteRequest(log.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
+	payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
 	for _, tc := range []struct {
@@ -230,7 +231,7 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 			}
 
 			appendable := &mockAppendable{}
-			handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2})
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2})
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -255,7 +256,7 @@ func TestRemoteWriteHandler_V1Message(t *testing.T) {
 	// in Prometheus, so keeping like this to not break existing 1.0 clients.
 
 	appendable := &mockAppendable{}
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -428,7 +429,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			payload, _, _, err := buildV2WriteRequest(log.NewNopLogger(), tc.input, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
+			payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), tc.input, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
 			require.NoError(t, err)
 
 			req, err := http.NewRequest("", "", bytes.NewReader(payload))
@@ -445,7 +446,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				appendExemplarErr:  tc.appendExemplarErr,
 				updateMetadataErr:  tc.updateMetadataErr,
 			}
-			handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2})
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2})
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -544,7 +545,7 @@ func TestOutOfOrderSample_V1Message(t *testing.T) {
 			require.NoError(t, err)
 
 			appendable := &mockAppendable{latestSample: map[uint64]int64{labels.FromStrings("__name__", "test_metric").Hash(): 100}}
-			handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -586,7 +587,7 @@ func TestOutOfOrderExemplar_V1Message(t *testing.T) {
 			require.NoError(t, err)
 
 			appendable := &mockAppendable{latestSample: map[uint64]int64{labels.FromStrings("__name__", "test_metric").Hash(): 100}}
-			handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -624,7 +625,7 @@ func TestOutOfOrderHistogram_V1Message(t *testing.T) {
 			require.NoError(t, err)
 
 			appendable := &mockAppendable{latestSample: map[uint64]int64{labels.FromStrings("__name__", "test_metric").Hash(): 100}}
-			handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -655,7 +656,7 @@ func BenchmarkRemoteWriteHandler(b *testing.B) {
 
 	appendable := &mockAppendable{}
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
 	recorder := httptest.NewRecorder()
 
 	b.ResetTimer()
@@ -672,7 +673,7 @@ func TestCommitErr_V1Message(t *testing.T) {
 	require.NoError(t, err)
 
 	appendable := &mockAppendable{commitErr: fmt.Errorf("commit error")}
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -685,7 +686,7 @@ func TestCommitErr_V1Message(t *testing.T) {
 }
 
 func TestCommitErr_V2Message(t *testing.T) {
-	payload, _, _, err := buildV2WriteRequest(log.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
+	payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
 	req, err := http.NewRequest("", "", bytes.NewReader(payload))
@@ -696,7 +697,7 @@ func TestCommitErr_V2Message(t *testing.T) {
 	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
 
 	appendable := &mockAppendable{commitErr: fmt.Errorf("commit error")}
-	handler := NewWriteHandler(log.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2})
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2})
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -723,7 +724,7 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 		require.NoError(b, db.Close())
 	})
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(log.NewNopLogger(), nil, db.Head(), []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, db.Head(), []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
 
 	buf, _, _, err := buildWriteRequest(nil, genSeriesWithSample(1000, 200*time.Minute.Milliseconds()), nil, nil, nil, nil, "snappy")
 	require.NoError(b, err)
@@ -912,6 +913,13 @@ func (m *mockAppendable) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t
 
 	m.latestHistogram[l.Hash()] = t
 	m.histograms = append(m.histograms, mockHistogram{l, t, h, fh})
+	return 0, nil
+}
+
+func (m *mockAppendable) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	// AppendCTZeroSample is no-op for remote-write for now.
+	// TODO(bwplotka/arthursens): Add support for PRW 2.0 for CT zero feature (but also we might
+	// replace this with in-metadata CT storage, see https://github.com/prometheus/prometheus/issues/14218).
 	return 0, nil
 }
 

@@ -45,37 +45,58 @@ export const parsePrometheusDuration = (durationStr: string): number | null => {
   return dur;
 };
 
-// Format a duration in milliseconds into a Prometheus duration string like "1d2h3m4s".
-export const formatPrometheusDuration = (d: number): string => {
-  let ms = d;
-  let r = "";
-  if (ms === 0) {
+// Used by:
+// - formatPrometheusDuration() => "5d5m2s123ms"
+// - humanizeDuration()         => "5d 5m 2.123s"
+const formatDuration = (
+  d: number,
+  componentSeparator?: string,
+  showFractionalSeconds?: boolean
+): string => {
+  if (d === 0) {
     return "0s";
   }
 
-  const f = (unit: string, mult: number, exact: boolean) => {
+  const sign = d < 0 ? "-" : "";
+  let ms = Math.abs(d);
+  const r: string[] = [];
+
+  for (const { unit, mult, exact } of [
+    // Only format years and weeks if the remainder is zero, as it is often
+    // easier to read 90d than 12w6d.
+    { unit: "y", mult: 1000 * 60 * 60 * 24 * 365, exact: true },
+    { unit: "w", mult: 1000 * 60 * 60 * 24 * 7, exact: true },
+    { unit: "d", mult: 1000 * 60 * 60 * 24, exact: false },
+    { unit: "h", mult: 1000 * 60 * 60, exact: false },
+    { unit: "m", mult: 1000 * 60, exact: false },
+    { unit: "s", mult: 1000, exact: false },
+    { unit: "ms", mult: 1, exact: false },
+  ]) {
     if (exact && ms % mult !== 0) {
-      return;
+      continue;
     }
     const v = Math.floor(ms / mult);
     if (v > 0) {
-      r += `${v}${unit}`;
       ms -= v * mult;
+      if (showFractionalSeconds && unit === "s" && ms > 0) {
+        // Show "2.34s" instead of "2s 340ms".
+        r.push(`${parseFloat((v + ms / 1000).toFixed(3))}s`);
+        break;
+      } else {
+        r.push(`${v}${unit}`);
+      }
     }
-  };
+    if (r.length == 0 && unit == "ms") {
+        r.push(`${Math.round(ms)}ms`)
+    }
+  }
 
-  // Only format years and weeks if the remainder is zero, as it is often
-  // easier to read 90d than 12w6d.
-  f("y", 1000 * 60 * 60 * 24 * 365, true);
-  f("w", 1000 * 60 * 60 * 24 * 7, true);
+  return sign + r.join(componentSeparator || "");
+};
 
-  f("d", 1000 * 60 * 60 * 24, false);
-  f("h", 1000 * 60 * 60, false);
-  f("m", 1000 * 60, false);
-  f("s", 1000, false);
-  f("ms", 1, false);
-
-  return r;
+// Format a duration in milliseconds into a Prometheus duration string like "1d2h3m4s".
+export const formatPrometheusDuration = (d: number): string => {
+  return formatDuration(d);
 };
 
 export function parseTime(timeText: string): number {
@@ -85,37 +106,7 @@ export function parseTime(timeText: string): number {
 export const now = (): number => dayjs().valueOf();
 
 export const humanizeDuration = (milliseconds: number): string => {
-  if (milliseconds === 0) {
-    return "0s";
-  }
-
-  const sign = milliseconds < 0 ? "-" : "";
-  const duration = dayjs.duration(Math.abs(milliseconds), "ms");
-  const ms = Math.floor(duration.milliseconds());
-  const s = Math.floor(duration.seconds());
-  const m = Math.floor(duration.minutes());
-  const h = Math.floor(duration.hours());
-  const d = Math.floor(duration.asDays());
-  const parts: string[] = [];
-  if (d !== 0) {
-    parts.push(`${d}d`);
-  }
-  if (h !== 0) {
-    parts.push(`${h}h`);
-  }
-  if (m !== 0) {
-    parts.push(`${m}m`);
-  }
-  if (s !== 0) {
-    if (ms !== 0) {
-      parts.push(`${s}.${ms}s`);
-    } else {
-      parts.push(`${s}s`);
-    }
-  } else if (milliseconds !== 0) {
-    parts.push(`${milliseconds.toFixed(3)}ms`);
-  }
-  return sign + parts.join(" ");
+  return formatDuration(milliseconds, " ", true);
 };
 
 export const humanizeDurationRelative = (
