@@ -16,12 +16,16 @@ package remote
 import (
 	"bytes"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"reflect"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
 	common_config "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -475,4 +479,55 @@ func generateOTLPWriteRequest() pmetricotlp.ExportRequest {
 	exponentialHistogramDataPoint.Attributes().PutStr("foo.bar", "baz")
 
 	return pmetricotlp.NewExportRequestFromMetrics(d)
+}
+
+func TestOTLPDelta(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	appendable := &mockAppendable{}
+	handler := NewOTLPWriteHandler(log, appendable, func() config.Config {
+		return config.Config{
+			OTLPConfig: config.DefaultOTLPConfig,
+		}
+	}).(*otlpWriteHandler)
+
+	md := pmetric.NewMetrics()
+	ms := md.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics()
+
+	m := ms.AppendEmpty()
+	m.SetName("some.delta.total")
+
+	sum := m.SetEmptySum()
+	sum.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+
+	ts := time.Date(2000, 1, 2, 3, 4, 0, 0, time.UTC)
+	for i := range 3 {
+		dp := sum.DataPoints().AppendEmpty()
+		dp.SetIntValue(int64(i))
+		dp.SetTimestamp(pcommon.NewTimestampFromTime(ts.Add(time.Duration(i) * time.Second)))
+	}
+
+	proto, err := pmetricotlp.NewExportRequestFromMetrics(md).MarshalProto()
+	require.NoError(t, err)
+
+	req, err := http.NewRequest("", "", bytes.NewReader(proto))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/x-protobuf")
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Result().StatusCode)
+
+	ls := labels.FromStrings("__name__", "some_delta_total")
+	milli := func(sec int) int64 {
+		return time.Date(2000, 1, 2, 3, 4, sec, 0, time.UTC).UnixMilli()
+	}
+
+	want := []mockSample{
+		{t: milli(0), l: ls, v: 0}, // +0
+		{t: milli(1), l: ls, v: 1}, // +1
+		{t: milli(2), l: ls, v: 3}, // +2
+	}
+	if diff := cmp.Diff(want, appendable.samples, cmp.Exporter(func(_ reflect.Type) bool { return true })); diff != "" {
+		t.Fatal(diff)
+	}
 }
