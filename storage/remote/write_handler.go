@@ -28,6 +28,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
+	"go.opentelemetry.io/collector/consumer"
+	"go.opentelemetry.io/collector/pdata/pmetric"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -520,53 +522,68 @@ func (h *writeHandler) handleHistogramZeroSample(app storage.Appender, ref stora
 // NewOTLPWriteHandler creates a http.Handler that accepts OTLP write requests and
 // writes them to the provided appendable.
 func NewOTLPWriteHandler(logger *slog.Logger, appendable storage.Appendable, configFunc func() config.Config) http.Handler {
-	rwHandler := &writeHandler{
-		logger:     logger,
-		appendable: appendable,
+	sink := &rwExporter{
+		writeHandler: &writeHandler{
+			logger:     logger,
+			appendable: appendable,
+		},
+		config: configFunc,
 	}
 
 	return &otlpWriteHandler{
-		logger:     logger,
-		rwHandler:  rwHandler,
-		configFunc: configFunc,
+		logger:   logger,
+		pipeline: sink,
 	}
 }
 
-type otlpWriteHandler struct {
-	logger     *slog.Logger
-	rwHandler  *writeHandler
-	configFunc func() config.Config
+type rwExporter struct {
+	*writeHandler
+	config func() config.Config
 }
 
-func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	req, err := DecodeOTLPWriteRequest(r)
-	if err != nil {
-		h.logger.Error("Error decoding remote write request", "err", err.Error())
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	otlpCfg := h.configFunc().OTLPConfig
+func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) error {
+	otlpCfg := rw.config().OTLPConfig
 
 	converter := otlptranslator.NewPrometheusConverter()
-	annots, err := converter.FromMetrics(r.Context(), req.Metrics(), otlptranslator.Settings{
+	annots, err := converter.FromMetrics(ctx, md, otlptranslator.Settings{
 		AddMetricSuffixes:                 true,
 		AllowUTF8:                         otlpCfg.TranslationStrategy == config.NoUTF8EscapingWithSuffixes,
 		PromoteResourceAttributes:         otlpCfg.PromoteResourceAttributes,
 		KeepIdentifyingResourceAttributes: otlpCfg.KeepIdentifyingResourceAttributes,
 	})
 	if err != nil {
-		h.logger.Warn("Error translating OTLP metrics to Prometheus write request", "err", err)
+		rw.logger.Warn("Error translating OTLP metrics to Prometheus write request", "err", err)
 	}
 	ws, _ := annots.AsStrings("", 0, 0)
 	if len(ws) > 0 {
-		h.logger.Warn("Warnings translating OTLP metrics to Prometheus write request", "warnings", ws)
+		rw.logger.Warn("Warnings translating OTLP metrics to Prometheus write request", "warnings", ws)
 	}
 
-	err = h.rwHandler.write(r.Context(), &prompb.WriteRequest{
+	return rw.write(ctx, &prompb.WriteRequest{
 		Timeseries: converter.TimeSeries(),
 		Metadata:   converter.Metadata(),
 	})
+}
+
+func (rw *rwExporter) Capabilities() consumer.Capabilities {
+	return consumer.Capabilities{MutatesData: false}
+}
+
+type otlpWriteHandler struct {
+	logger   *slog.Logger
+	pipeline consumer.Metrics
+}
+
+func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	req, err := DecodeOTLPWriteRequest(r)
+	if err != nil {
+		h.logger.Error("Error decoding OTLP write request", "err", err.Error())
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	md := req.Metrics()
+	err = h.pipeline.ConsumeMetrics(r.Context(), md)
 
 	switch {
 	case err == nil:
