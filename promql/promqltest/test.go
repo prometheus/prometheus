@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/almost"
+	"github.com/prometheus/prometheus/util/convertnhcb"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -479,43 +480,22 @@ func (cmd *loadCmd) append(a storage.Appender) error {
 	return nil
 }
 
-func getHistogramMetricBase(m labels.Labels, suffix string) (labels.Labels, uint64) {
-	mName := m.Get(labels.MetricName)
-	baseM := labels.NewBuilder(m).
-		Set(labels.MetricName, strings.TrimSuffix(mName, suffix)).
-		Del(labels.BucketLabel).
-		Labels()
-	hash := baseM.Hash()
-	return baseM, hash
-}
-
 type tempHistogramWrapper struct {
 	metric        labels.Labels
 	upperBounds   []float64
-	histogramByTs map[int64]tempHistogram
+	histogramByTs map[int64]convertnhcb.TempHistogram
 }
 
 func newTempHistogramWrapper() tempHistogramWrapper {
 	return tempHistogramWrapper{
 		upperBounds:   []float64{},
-		histogramByTs: map[int64]tempHistogram{},
+		histogramByTs: map[int64]convertnhcb.TempHistogram{},
 	}
 }
 
-type tempHistogram struct {
-	bucketCounts map[float64]float64
-	count        float64
-	sum          float64
-}
-
-func newTempHistogram() tempHistogram {
-	return tempHistogram{
-		bucketCounts: map[float64]float64{},
-	}
-}
-
-func processClassicHistogramSeries(m labels.Labels, suffix string, histogramMap map[uint64]tempHistogramWrapper, smpls []promql.Sample, updateHistogramWrapper func(*tempHistogramWrapper), updateHistogram func(*tempHistogram, float64)) {
-	m2, m2hash := getHistogramMetricBase(m, suffix)
+func processClassicHistogramSeries(m labels.Labels, suffix string, histogramMap map[uint64]tempHistogramWrapper, smpls []promql.Sample, updateHistogramWrapper func(*tempHistogramWrapper), updateHistogram func(*convertnhcb.TempHistogram, float64)) {
+	m2 := convertnhcb.GetHistogramMetricBase(m, suffix)
+	m2hash := m2.Hash()
 	histogramWrapper, exists := histogramMap[m2hash]
 	if !exists {
 		histogramWrapper = newTempHistogramWrapper()
@@ -530,40 +510,12 @@ func processClassicHistogramSeries(m labels.Labels, suffix string, histogramMap 
 		}
 		histogram, exists := histogramWrapper.histogramByTs[s.T]
 		if !exists {
-			histogram = newTempHistogram()
+			histogram = convertnhcb.NewTempHistogram()
 		}
 		updateHistogram(&histogram, s.F)
 		histogramWrapper.histogramByTs[s.T] = histogram
 	}
 	histogramMap[m2hash] = histogramWrapper
-}
-
-func processUpperBoundsAndCreateBaseHistogram(upperBounds0 []float64) ([]float64, *histogram.FloatHistogram) {
-	sort.Float64s(upperBounds0)
-	upperBounds := make([]float64, 0, len(upperBounds0))
-	prevLE := math.Inf(-1)
-	for _, le := range upperBounds0 {
-		if le != prevLE { // deduplicate
-			upperBounds = append(upperBounds, le)
-			prevLE = le
-		}
-	}
-	var customBounds []float64
-	if upperBounds[len(upperBounds)-1] == math.Inf(1) {
-		customBounds = upperBounds[:len(upperBounds)-1]
-	} else {
-		customBounds = upperBounds
-	}
-	return upperBounds, &histogram.FloatHistogram{
-		Count:  0,
-		Sum:    0,
-		Schema: histogram.CustomBucketsSchema,
-		PositiveSpans: []histogram.Span{
-			{Offset: 0, Length: uint32(len(upperBounds))},
-		},
-		PositiveBuckets: make([]float64, len(upperBounds)),
-		CustomValues:    customBounds,
-	}
 }
 
 // If classic histograms are defined, convert them into native histograms with custom
@@ -584,16 +536,16 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 			}
 			processClassicHistogramSeries(m, "_bucket", histogramMap, smpls, func(histogramWrapper *tempHistogramWrapper) {
 				histogramWrapper.upperBounds = append(histogramWrapper.upperBounds, le)
-			}, func(histogram *tempHistogram, f float64) {
-				histogram.bucketCounts[le] = f
+			}, func(histogram *convertnhcb.TempHistogram, f float64) {
+				histogram.BucketCounts[le] = f
 			})
 		case strings.HasSuffix(mName, "_count"):
-			processClassicHistogramSeries(m, "_count", histogramMap, smpls, nil, func(histogram *tempHistogram, f float64) {
-				histogram.count = f
+			processClassicHistogramSeries(m, "_count", histogramMap, smpls, nil, func(histogram *convertnhcb.TempHistogram, f float64) {
+				histogram.Count = f
 			})
 		case strings.HasSuffix(mName, "_sum"):
-			processClassicHistogramSeries(m, "_sum", histogramMap, smpls, nil, func(histogram *tempHistogram, f float64) {
-				histogram.sum = f
+			processClassicHistogramSeries(m, "_sum", histogramMap, smpls, nil, func(histogram *convertnhcb.TempHistogram, f float64) {
+				histogram.Sum = f
 			})
 		}
 	}
@@ -601,30 +553,21 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 	// Convert the collated classic histogram data into native histograms
 	// with custom bounds and append them to the storage.
 	for _, histogramWrapper := range histogramMap {
-		upperBounds, fhBase := processUpperBoundsAndCreateBaseHistogram(histogramWrapper.upperBounds)
+		upperBounds, hBase := convertnhcb.ProcessUpperBoundsAndCreateBaseHistogram(histogramWrapper.upperBounds, true)
+		fhBase := hBase.ToFloat(nil)
 		samples := make([]promql.Sample, 0, len(histogramWrapper.histogramByTs))
 		for t, histogram := range histogramWrapper.histogramByTs {
-			fh := fhBase.Copy()
-			var prevCount, total float64
-			for i, le := range upperBounds {
-				currCount, exists := histogram.bucketCounts[le]
-				if !exists {
-					currCount = 0
+			h, fh := convertnhcb.NewHistogram(histogram, upperBounds, hBase, fhBase)
+			if fh == nil {
+				if err := h.Validate(); err != nil {
+					return err
 				}
-				count := currCount - prevCount
-				fh.PositiveBuckets[i] = count
-				total += count
-				prevCount = currCount
+				fh = h.ToFloat(nil)
 			}
-			fh.Sum = histogram.sum
-			if histogram.count != 0 {
-				total = histogram.count
-			}
-			fh.Count = total
-			s := promql.Sample{T: t, H: fh.Compact(0)}
-			if err := s.H.Validate(); err != nil {
+			if err := fh.Validate(); err != nil {
 				return err
 			}
+			s := promql.Sample{T: t, H: fh}
 			samples = append(samples, s)
 		}
 		sort.Slice(samples, func(i, j int) bool { return samples[i].T < samples[j].T })
