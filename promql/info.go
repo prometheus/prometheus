@@ -24,6 +24,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -66,7 +67,8 @@ loop:
 		}
 	}
 
-	infoSeries, ws, err := ev.fetchInfoSeries(ctx, mat, ignoreSeries, dataLabelMatchers)
+	selectHints := ev.infoSelectHints(args[0])
+	infoSeries, ws, err := ev.fetchInfoSeries(ctx, mat, ignoreSeries, dataLabelMatchers, selectHints)
 	if err != nil {
 		ev.error(err)
 	}
@@ -77,15 +79,49 @@ loop:
 	return res, annots
 }
 
-// fetchInfoSeries fetches info series given ev.selectHints and matching identifying labels in mat.
+// infoSelectHints calculates the storage.SelectHints for selecting info series, given expr (first argument to info call).
+func (ev *evaluator) infoSelectHints(expr parser.Expr) storage.SelectHints {
+	var nodeTimestamp *int64
+	var offset int64
+	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+		switch n := node.(type) {
+		case *parser.VectorSelector:
+			if n.Timestamp != nil {
+				nodeTimestamp = n.Timestamp
+			}
+			offset = durationMilliseconds(n.OriginalOffset)
+			return fmt.Errorf("end traversal")
+		default:
+			return nil
+		}
+	})
+
+	start := ev.startTimestamp
+	end := ev.endTimestamp
+	if nodeTimestamp != nil {
+		// The timestamp on the selector overrides everything.
+		start = *nodeTimestamp
+		end = *nodeTimestamp
+	}
+	// Reduce the start by one fewer ms than the lookback delta
+	// because wo want to exclude samples that are precisely the
+	// lookback delta before the eval time.
+	start -= durationMilliseconds(ev.lookbackDelta) - 1
+	start -= offset
+	end -= offset
+
+	return storage.SelectHints{
+		Start: start,
+		End:   end,
+		Step:  ev.interval,
+		Func:  "info",
+	}
+}
+
+// fetchInfoSeries fetches info series given matching identifying labels in mat.
 // Series in ignoreSeries are not fetched.
 // dataLabelMatchers may be mutated.
-func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeries map[int]struct{}, dataLabelMatchers map[string][]*labels.Matcher) (Matrix, annotations.Annotations, error) {
-	if ev.selectHints == nil {
-		// ev.selectHints should have been set.
-		return nil, nil, fmt.Errorf("ev.selectHints not set")
-	}
-
+func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeries map[int]struct{}, dataLabelMatchers map[string][]*labels.Matcher, selectHints storage.SelectHints) (Matrix, annotations.Annotations, error) {
 	// A map of values for all identifying labels we are interested in.
 	idLblValues := map[string]map[string]struct{}{}
 	for i, s := range mat {
@@ -150,7 +186,7 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 		infoLabelMatchers = append([]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, targetInfo)}, infoLabelMatchers...)
 	}
 
-	infoIt := ev.querier.Select(ctx, false, ev.selectHints, infoLabelMatchers...)
+	infoIt := ev.querier.Select(ctx, false, &selectHints, infoLabelMatchers...)
 	infoSeries, ws, err := expandSeriesSet(ctx, infoIt)
 	if err != nil {
 		return nil, ws, err

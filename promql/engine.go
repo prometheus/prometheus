@@ -962,7 +962,6 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 			evalRange = 0
 			hints.By, hints.Grouping = extractGroupsFromPath(path)
 			n.UnexpandedSeriesSet = querier.Select(ctx, false, hints, n.LabelMatchers...)
-			n.SelectHints = hints
 
 		case *parser.MatrixSelector:
 			evalRange = n.Range
@@ -1020,7 +1019,7 @@ func checkAndExpandSeriesSet(ctx context.Context, expr parser.Expr) (annotations
 			}
 		}
 		e.Series = series
-		ev.selectHints = e.SelectHints
+		span.AddEvent("expand end", trace.WithAttributes(attribute.Int("num_series", len(series))))
 		return ws, err
 	}
 	return nil, nil
@@ -1062,9 +1061,6 @@ type evaluator struct {
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 	enableDelayedNameRemoval bool
 	querier                  storage.Querier
-
-	// selectHints are the hints used in selecting the series for the last executed VectorSelector.
-	selectHints *storage.SelectHints
 }
 
 // errorf causes a panic with the input formatted into an error.

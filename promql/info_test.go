@@ -116,5 +116,25 @@ load 5m
   histogram{instance="a", job="1"} {{schema:1 sum:3 count:22 buckets:[5 10 7]}}
 
 eval_fail range from 0m to 10m step 5m info(metric, {__name__="histogram"})
+
+clear
+
+# Series with skipped scrape.
+load 1m
+  metric{instance="a", job="1", label="value"} 0 _ 2 3 4
+  target_info{instance="a", job="1", data="info"} 1 _ 1 1 1
+
+# Lookback works also for the info series.
+eval range from 1m to 4m step 1m info(metric)
+  metric{data="info", instance="a", job="1", label="value"} 0 2 3 4
+
+# @ operator works also with info.
+# Note that we pick the timestamp missing a sample, lookback should pick previous sample.
+eval range from 1m to 4m step 1m info(metric @ 60)
+  metric{data="info", instance="a", job="1", label="value"} 0 0 0 0
+
+# offset operator works also with info.
+eval range from 1m to 4m step 1m info(metric offset 1m)
+  metric{data="info", instance="a", job="1", label="value"} 0 0 2 3
 `, engine)
 }

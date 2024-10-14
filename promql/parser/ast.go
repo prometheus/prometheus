@@ -208,8 +208,6 @@ type VectorSelector struct {
 	UnexpandedSeriesSet storage.SeriesSet
 	Series              []storage.Series
 
-	// SelectHints specifies eventual hints passed for selecting corresponding info series.
-	SelectHints *storage.SelectHints
 	// BypassEmptyMatcherCheck is true when the VectorSelector isn't required to have at least one matcher matching the empty string.
 	// This is the case when VectorSelector is used to represent the info function's second argument.
 	BypassEmptyMatcherCheck bool
