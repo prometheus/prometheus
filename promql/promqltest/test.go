@@ -557,7 +557,7 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 		fhBase := hBase.ToFloat(nil)
 		samples := make([]promql.Sample, 0, len(histogramWrapper.histogramByTs))
 		for t, histogram := range histogramWrapper.histogramByTs {
-			h, fh := convertnhcb.ConvertHistogramWrapper(histogram, upperBounds, hBase, fhBase)
+			h, fh := convertnhcb.NewHistogram(histogram, upperBounds, hBase, fhBase)
 			if fh == nil {
 				if err := h.Validate(); err != nil {
 					return err

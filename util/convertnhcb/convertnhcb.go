@@ -43,6 +43,9 @@ var histogramNameSuffixReplacements = []struct {
 	},
 }
 
+// TempHistogram is used to collect information about classic histogram
+// samples incrementally before creating a histogram.Histogram or
+// histogram.FloatHistogram based on the values collected.
 type TempHistogram struct {
 	BucketCounts map[float64]float64
 	Count        float64
@@ -50,6 +53,8 @@ type TempHistogram struct {
 	HasFloat     bool
 }
 
+// NewTempHistogram creates a new TempHistogram to
+// collect information about classic histogram samples.
 func NewTempHistogram() TempHistogram {
 	return TempHistogram{
 		BucketCounts: map[float64]float64{},
@@ -68,6 +73,10 @@ func (h TempHistogram) getIntBucketCounts() (map[float64]int64, error) {
 	return bucketCounts, nil
 }
 
+// ProcessUpperBoundsAndCreateBaseHistogram prepares an integer native
+// histogram with custom buckets based on the provided upper bounds.
+// Everything is set except the bucket counts.
+// The sorted upper bounds are also returned.
 func ProcessUpperBoundsAndCreateBaseHistogram(upperBounds0 []float64, needsDedup bool) ([]float64, *histogram.Histogram) {
 	sort.Float64s(upperBounds0)
 	var upperBounds []float64
@@ -101,15 +110,18 @@ func ProcessUpperBoundsAndCreateBaseHistogram(upperBounds0 []float64, needsDedup
 	}
 }
 
-func ConvertHistogramWrapper(histogram TempHistogram, upperBounds []float64, hBase *histogram.Histogram, fhBase *histogram.FloatHistogram) (*histogram.Histogram, *histogram.FloatHistogram) {
+// NewHistogram fills the bucket counts in the provided histogram.Histogram
+// or histogram.FloatHistogram based on the provided temporary histogram and
+// upper bounds.
+func NewHistogram(histogram TempHistogram, upperBounds []float64, hBase *histogram.Histogram, fhBase *histogram.FloatHistogram) (*histogram.Histogram, *histogram.FloatHistogram) {
 	intBucketCounts, err := histogram.getIntBucketCounts()
 	if err != nil {
-		return nil, convertFloatHistogramWrapper(histogram, upperBounds, histogram.BucketCounts, fhBase)
+		return nil, newFloatHistogram(histogram, upperBounds, histogram.BucketCounts, fhBase)
 	}
-	return convertIntHistogramWrapper(histogram, upperBounds, intBucketCounts, hBase), nil
+	return newIntegerHistogram(histogram, upperBounds, intBucketCounts, hBase), nil
 }
 
-func convertIntHistogramWrapper(histogram TempHistogram, upperBounds []float64, bucketCounts map[float64]int64, hBase *histogram.Histogram) *histogram.Histogram {
+func newIntegerHistogram(histogram TempHistogram, upperBounds []float64, bucketCounts map[float64]int64, hBase *histogram.Histogram) *histogram.Histogram {
 	h := hBase.Copy()
 	absBucketCounts := make([]int64, len(h.PositiveBuckets))
 	var prevCount, total int64
@@ -135,7 +147,7 @@ func convertIntHistogramWrapper(histogram TempHistogram, upperBounds []float64, 
 	return h.Compact(0)
 }
 
-func convertFloatHistogramWrapper(histogram TempHistogram, upperBounds []float64, bucketCounts map[float64]float64, fhBase *histogram.FloatHistogram) *histogram.FloatHistogram {
+func newFloatHistogram(histogram TempHistogram, upperBounds []float64, bucketCounts map[float64]float64, fhBase *histogram.FloatHistogram) *histogram.FloatHistogram {
 	fh := fhBase.Copy()
 	var prevCount, total float64
 	for i, le := range upperBounds {

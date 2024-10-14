@@ -114,6 +114,8 @@ type Querier interface {
 	LabelQuerier
 
 	// Select returns a set of series that matches the given label matchers.
+	// Results are not checked whether they match. Results that do not match
+	// may cause undefined behavior.
 	// Caller can specify if it requires returned series to be sorted. Prefer not requiring sorting for better performance.
 	// It allows passing hints that can help in optimising select, but it's up to implementation how this is used if used at all.
 	Select(ctx context.Context, sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet
@@ -152,6 +154,8 @@ type ChunkQuerier interface {
 	LabelQuerier
 
 	// Select returns a set of series that matches the given label matchers.
+	// Results are not checked whether they match. Results that do not match
+	// may cause undefined behavior.
 	// Caller can specify if it requires returned series to be sorted. Prefer not requiring sorting for better performance.
 	// It allows passing hints that can help in optimising select, but it's up to implementation how this is used if used at all.
 	Select(ctx context.Context, sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) ChunkSeriesSet

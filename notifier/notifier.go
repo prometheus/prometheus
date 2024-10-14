@@ -16,6 +16,8 @@ package notifier
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -35,6 +37,7 @@ import (
 	"github.com/prometheus/common/sigv4"
 	"github.com/prometheus/common/version"
 	"go.uber.org/atomic"
+	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -257,11 +260,31 @@ func (n *Manager) ApplyConfig(conf *config.Config) error {
 	n.opts.RelabelConfigs = conf.AlertingConfig.AlertRelabelConfigs
 
 	amSets := make(map[string]*alertmanagerSet)
+	// configToAlertmanagers maps alertmanager sets for each unique AlertmanagerConfig,
+	// helping to avoid dropping known alertmanagers and re-use them without waiting for SD updates when applying the config.
+	configToAlertmanagers := make(map[string]*alertmanagerSet, len(n.alertmanagers))
+	for _, oldAmSet := range n.alertmanagers {
+		hash, err := oldAmSet.configHash()
+		if err != nil {
+			return err
+		}
+		configToAlertmanagers[hash] = oldAmSet
+	}
 
 	for k, cfg := range conf.AlertingConfig.AlertmanagerConfigs.ToMap() {
 		ams, err := newAlertmanagerSet(cfg, n.logger, n.metrics)
 		if err != nil {
 			return err
+		}
+
+		hash, err := ams.configHash()
+		if err != nil {
+			return err
+		}
+
+		if oldAmSet, ok := configToAlertmanagers[hash]; ok {
+			ams.ams = oldAmSet.ams
+			ams.droppedAms = oldAmSet.droppedAms
 		}
 
 		amSets[k] = ams
@@ -801,6 +824,15 @@ func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 		s.metrics.errors.DeleteLabelValues(us)
 		seen[us] = struct{}{}
 	}
+}
+
+func (s *alertmanagerSet) configHash() (string, error) {
+	b, err := yaml.Marshal(s.cfg)
+	if err != nil {
+		return "", err
+	}
+	hash := md5.Sum(b)
+	return hex.EncodeToString(hash[:]), nil
 }
 
 func postPath(pre string, v config.AlertmanagerAPIVersion) string {

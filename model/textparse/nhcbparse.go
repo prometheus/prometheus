@@ -308,7 +308,7 @@ func (p *NHCBParser) processNHCB() bool {
 	}
 	upperBounds, hBase := convertnhcb.ProcessUpperBoundsAndCreateBaseHistogram(ub, false)
 	fhBase := hBase.ToFloat(nil)
-	h, fh := convertnhcb.ConvertHistogramWrapper(p.tempNHCB, upperBounds, hBase, fhBase)
+	h, fh := convertnhcb.NewHistogram(p.tempNHCB, upperBounds, hBase, fhBase)
 	if h != nil {
 		if err := h.Validate(); err != nil {
 			return false
