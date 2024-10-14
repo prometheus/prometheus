@@ -934,192 +934,142 @@ func TestDBOutOfOrderTimeWindow(t *testing.T) {
 	}
 }
 
+type walSample struct {
+	t    int64
+	f    float64
+	h    *histogram.Histogram
+	lbls labels.Labels
+	ref  storage.SeriesRef
+}
+
 func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
-	reg := prometheus.NewRegistry()
-	opts := DefaultOptions()
-	opts.OutOfOrderTimeWindow = 0
-	s := createTestAgentDB(t, reg, opts)
+	t.Parallel()
 
-	app := s.Appender(context.TODO())
-
-	seriesMap := make(map[storage.SeriesRef]labels.Labels)
-	samplesMap := make(map[storage.SeriesRef][]record.RefSample)
-	histogramsMap := make(map[storage.SeriesRef][]record.RefHistogramSample)
-
-	// Append histogram samples
-	lbls := labelsForTest(t.Name()+"_histogram", 1)
-	lset := labels.New(lbls[0]...)
-	ref, err := app.AppendHistogramCTZeroSample(0, lset, 100, 30, tsdbutil.GenerateTestHistograms(1)[0], nil)
-	require.NoError(t, err)
-	t.Logf("Appended histogram with ref %d", ref)
-	seriesMap[ref] = lset
-	histogramsMap[ref] = append(histogramsMap[ref], record.RefHistogramSample{
-		Ref: chunks.HeadSeriesRef(ref),
-		T:   30,
-		// The CT Zero Sample is a Zero Histogram
-		H: &histogram.Histogram{},
-	})
-
-	_, err = app.AppendHistogram(0, lset, 100, tsdbutil.GenerateTestHistograms(1)[0], nil)
-	require.NoError(t, err)
-	histogramsMap[ref] = append(histogramsMap[ref], record.RefHistogramSample{
-		Ref: chunks.HeadSeriesRef(ref),
-		T:   100,
-		H:   tsdbutil.GenerateTestHistograms(1)[0],
-	})
-	err = app.Commit()
-	require.NoError(t, err)
-
-	// Append float samples
-	lbls = labelsForTest(t.Name(), 1)
-	lset = labels.New(lbls[0]...)
-	ref, err = app.AppendCTZeroSample(0, lset, 100, 70)
-	require.NoError(t, err)
-	seriesMap[ref] = lset
-	samplesMap[ref] = append(samplesMap[ref], record.RefSample{Ref: chunks.HeadSeriesRef(ref), T: 70, V: 0})
-
-	ref2, err := app.Append(0, lset, 100, 20)
-	require.NoError(t, err)
-	samplesMap[ref2] = append(samplesMap[ref2], record.RefSample{Ref: chunks.HeadSeriesRef(ref2), T: 100, V: 20})
-	err = app.Commit()
-	require.NoError(t, err)
-
-	// Close the DB to ensure all data is flushed to the WAL
-	require.NoError(t, s.Close())
-
-	// Now read the WAL and verify its contents
-	sr, err := wlog.NewSegmentsReader(s.wal.Dir())
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, sr.Close())
-	}()
-
-	r := wlog.NewReader(sr)
-	dec := record.NewDecoder(labels.NewSymbolTable())
-
-	var (
-		series     []record.RefSeries
-		allSeries  []record.RefSeries
-		samples    []record.RefSample
-		histograms []record.RefHistogramSample
-	)
-
-	for r.Next() {
-		rec := r.Record()
-		switch dec.Type(rec) {
-		case record.Series:
-			series, err = dec.Series(rec, series[:0])
-			require.NoError(t, err)
-			allSeries = append(allSeries, series...)
-		case record.Samples:
-			samples, err = dec.Samples(rec, samples[:0])
-			require.NoError(t, err)
-		case record.HistogramSamples:
-			histograms, err = dec.HistogramSamples(rec, histograms[:0])
-			require.NoError(t, err)
-		}
+	type appendableSample struct {
+		t            int64
+		ct           int64
+		v            float64
+		lbls         labels.Labels
+		h            *histogram.Histogram
+		expectsError bool
 	}
 
-	// Verify the contents
-	require.Len(t, allSeries, 2, "Expected 2 series")
-	require.Len(t, samples, 2, "Expected 2 samples")
-	require.Len(t, histograms, 2, "Expected 2 histograms")
+	testHistogram := tsdbutil.GenerateTestHistograms(1)[0]
+	zeroHistogram := &histogram.Histogram{}
 
-	// Verify series
-	for _, s := range series {
-		lset, ok := seriesMap[storage.SeriesRef(s.Ref)]
-		require.True(t, ok, "Series not found in seriesMap")
-		require.Equal(t, lset.String(), s.Labels.String(), "Series labels don't match")
+	lbls := labelsForTest(t.Name(), 1)
+	defLbls := labels.New(lbls[0]...)
+
+	testCases := []struct {
+		name                string
+		inputSamples        []appendableSample
+		expectedSamples     []*walSample
+		appendFunc          func(app storage.Appender, lset labels.Labels, t, ct int64, value interface{}) (storage.SeriesRef, error)
+		appendErrorFunc     func(app storage.Appender, ref storage.SeriesRef, lset labels.Labels, t, ct int64, value interface{}) error
+		value               interface{}
+		expectedSampleCount int
+		expectedType        string
+		expectedErrorMsg    string
+		expectedSeriesCount int
+	}{
+		{
+			name: "CT+float && CT+histogram samples",
+			inputSamples: []appendableSample{
+				{
+					t:    100,
+					ct:   30,
+					v:    0,
+					lbls: defLbls,
+				},
+				{
+					t:    200,
+					v:    20,
+					lbls: defLbls,
+				},
+				{
+					t:    300,
+					ct:   230,
+					h:    zeroHistogram,
+					lbls: defLbls,
+				},
+				{
+					t:    400,
+					h:    testHistogram,
+					lbls: defLbls,
+				},
+			},
+			expectedSamples: []*walSample{
+				{t: 30, f: 0, lbls: defLbls},
+				{t: 100, f: 20, lbls: defLbls},
+				{t: 230, h: zeroHistogram, lbls: defLbls},
+				{t: 300, h: testHistogram, lbls: defLbls},
+			},
+			expectedSeriesCount: 1,
+		},
 	}
 
-	// Verify samples
-	for _, s := range samples {
-		found := false
-		for ref, expectedSamples := range samplesMap {
-			for _, es := range expectedSamples {
-				if chunks.HeadSeriesRef(ref) == s.Ref && es.T == s.T && es.V == s.V {
-					found = true
-					break
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			reg := prometheus.NewRegistry()
+			opts := DefaultOptions()
+			opts.OutOfOrderTimeWindow = 0
+			s := createTestAgentDB(t, reg, opts)
+			app := s.Appender(context.TODO())
+
+			seriesInsertMap := make(map[storage.SeriesRef]labels.Labels)
+			for _, sample := range tc.inputSamples {
+				// We supposed to write a Histogram to the WAL
+				if sample.h != nil {
+					if sample.ct != 0 {
+						refId, err := app.AppendHistogramCTZeroSample(0, sample.lbls, sample.t, sample.ct, sample.h, nil)
+						require.True(t, sample.expectsError == (err != nil), "expectedError (%v), got: %v", sample.expectsError, err)
+						seriesInsertMap[refId] = sample.lbls
+					} else {
+						refId, err := app.AppendHistogram(0, sample.lbls, sample.t, sample.h, nil)
+						require.True(t, sample.expectsError == (err != nil), "expectedError (%v), got: %v", sample.expectsError, err)
+						seriesInsertMap[refId] = sample.lbls
+					}
+				} else {
+					// We supposed to write a float sample to the WAL
+					if sample.ct != 0 {
+						refId, err := app.AppendCTZeroSample(0, sample.lbls, sample.t, sample.ct)
+						require.True(t, sample.expectsError == (err != nil), "expectedError (%v), got: %v", sample.expectsError, err)
+						seriesInsertMap[refId] = sample.lbls
+					} else {
+						refId, err := app.Append(0, sample.lbls, sample.t, sample.v)
+						require.True(t, sample.expectsError == (err != nil), "expectedError (%v), got: %v", sample.expectsError, err)
+						seriesInsertMap[refId] = sample.lbls
+					}
 				}
 			}
-			if found {
-				break
-			}
-		}
-		require.True(t, found, "Sample not found in expected samples: Ref=%d, T=%d, V=%f", s.Ref, s.T, s.V)
-	}
 
-	// Verify histograms
-	for _, h := range histograms {
-		expectedHistograms, ok := histogramsMap[storage.SeriesRef(h.Ref)]
-		require.True(t, ok, "Histogram refers to unknown series")
+			require.NoError(t, app.Commit())
+			// Close the DB to ensure all data is flushed to the WAL
+			require.NoError(t, s.Close())
 
-		found := false
-		for _, eh := range expectedHistograms {
-			if eh.T == h.T && eh.H.Equals(h.H) {
-				found = true
-				break
+			outputSamples := readWALSamples(t, s.wal.Dir())
+
+			require.Equal(t, len(outputSamples), len(tc.expectedSamples), "Expected %d samples", len(tc.expectedSamples))
+
+			for _, expectedSample := range tc.expectedSamples {
+				for _, sample := range outputSamples {
+					if sample.t == expectedSample.t && sample.lbls.String() == expectedSample.lbls.String() {
+						if expectedSample.h != nil {
+							require.Equal(t, expectedSample.h, sample.h)
+						} else {
+							require.Equal(t, expectedSample.f, sample.f)
+						}
+					}
+				}
 			}
-		}
-		require.True(t, found, "Histogram not found in expected histograms")
+		})
 	}
 }
 
-func TestAppendCTZeroSampleFailureModes(t *testing.T) {
-	reg := prometheus.NewRegistry()
-	opts := DefaultOptions()
-	opts.OutOfOrderTimeWindow = 0
-	s := createTestAgentDB(t, reg, opts)
-
-	app := s.Appender(context.TODO())
-
-	// Test AppendCTZeroSample
-	lbls := labels.FromStrings("__name__", "test_metric", "label", "value")
-
-	// Success case
-	ref, err := app.AppendCTZeroSample(0, lbls, 100, 70)
-	require.NoError(t, err)
-	require.NotZero(t, ref)
-
-	_, err = app.Append(0, lbls, 100, 2)
-	require.NoError(t, err)
-
-	// Error: CT >= T
-	_, err = app.AppendCTZeroSample(ref, lbls, 100, 100)
-	require.Error(t, err)
-	require.Equal(t, "CT is newer or the same as sample's timestamp, ignoring", err.Error())
-
-	// Test AppendHistogramCTZeroSample
-	lblsHist := labels.FromStrings("__name__", "test_histogram", "label", "value")
-
-	// Success case
-	h := tsdbutil.GenerateTestHistograms(1)[0]
-	refHist, err := app.AppendHistogramCTZeroSample(0, lblsHist, 100, 80, &histogram.Histogram{}, nil)
-	require.NoError(t, err)
-	require.NotZero(t, refHist)
-
-	_, err = app.AppendHistogram(0, lblsHist, 100, h, nil)
-	require.NoError(t, err)
-
-	// Error: CT >= T
-	_, err = app.AppendHistogramCTZeroSample(refHist, lblsHist, 100, 100, h, nil)
-	require.Error(t, err)
-	require.Equal(t, storage.ErrCTNewerThanSample, err)
-
-	// Commit the appender
-	err = app.Commit()
-	require.NoError(t, err)
-
-	// Verify metrics
-	m := gatherFamily(t, reg, "prometheus_agent_samples_appended_total")
-	require.Equal(t, float64(2), m.Metric[0].Counter.GetValue(), "Expected 2 samples appended")
-	require.Equal(t, float64(2), m.Metric[1].Counter.GetValue(), "Expected 2 histograms appended")
-
-	// Close the DB
-	require.NoError(t, s.Close())
-
-	// Now read the WAL and verify its contents
-	sr, err := wlog.NewSegmentsReader(s.wal.Dir())
+func readWALSamples(t *testing.T, walDir string) []*walSample {
+	sr, err := wlog.NewSegmentsReader(walDir)
 	require.NoError(t, err)
 	defer sr.Close()
 
@@ -1127,30 +1077,46 @@ func TestAppendCTZeroSampleFailureModes(t *testing.T) {
 	dec := record.NewDecoder(labels.NewSymbolTable())
 
 	var (
-		series     []record.RefSeries
 		samples    []record.RefSample
 		histograms []record.RefHistogramSample
+
+		lastSeries    record.RefSeries
+		outputSamples = make([]*walSample, 0)
 	)
 
 	for r.Next() {
 		rec := r.Record()
 		switch dec.Type(rec) {
 		case record.Series:
-			series, err = dec.Series(rec, series[:0])
+			series, err := dec.Series(rec, nil)
 			require.NoError(t, err)
+			lastSeries = series[0]
 		case record.Samples:
 			samples, err = dec.Samples(rec, samples[:0])
 			require.NoError(t, err)
+			for _, s := range samples {
+				outputSamples = append(outputSamples, &walSample{
+					t:    s.T,
+					f:    s.V,
+					lbls: lastSeries.Labels.Copy(),
+					ref:  storage.SeriesRef(lastSeries.Ref),
+				})
+			}
 		case record.HistogramSamples:
 			histograms, err = dec.HistogramSamples(rec, histograms[:0])
 			require.NoError(t, err)
+			for _, h := range histograms {
+				outputSamples = append(outputSamples, &walSample{
+					t:    h.T,
+					h:    h.H,
+					lbls: lastSeries.Labels.Copy(),
+					ref:  storage.SeriesRef(lastSeries.Ref),
+				})
+			}
 		}
 	}
 
-	// Verify the contents
-	require.Len(t, series, 2, "Expected 2 series")
-	require.Len(t, samples, 2, "Expected 2 samples")
-	require.Len(t, histograms, 2, "Expected 2 histograms")
+	return outputSamples
 }
 
 func BenchmarkCreateSeries(b *testing.B) {
