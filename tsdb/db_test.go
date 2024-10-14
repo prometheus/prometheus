@@ -8837,7 +8837,7 @@ func TestBlockQuerierAndBlockChunkQuerier(t *testing.T) {
 }
 
 func TestGenerateCompactionDelay(t *testing.T) {
-	assertDelay := func(delay time.Duration, expectedMaxPercentDelay int64) {
+	assertDelay := func(delay time.Duration, expectedMaxPercentDelay int) {
 		t.Helper()
 		require.GreaterOrEqual(t, delay, time.Duration(0))
 		// Expect to generate a delay up to MaxPercentDelay of the head chunk range
@@ -8845,21 +8845,31 @@ func TestGenerateCompactionDelay(t *testing.T) {
 	}
 
 	opts := DefaultOptions()
-	opts.EnableDelayedCompaction = true
-	db := openTestDB(t, opts, []int64{60000})
-	defer func() {
-		require.NoError(t, db.Close())
-	}()
-	// The offset is generated and changed while opening.
-	assertDelay(db.opts.CompactionDelay, 10)
-
-	// Test the default 10% delay
-	for i := 0; i < 1000; i++ {
-		assertDelay(db.generateCompactionDelay(), 10)
+	cases := []struct {
+		compactionDelayPercent int
+	}{
+		{
+			compactionDelayPercent: 10,
+		},
+		{
+			compactionDelayPercent: 60,
+		},
 	}
 
-	opts.CompactionDelayMaxPercent = 60 // Test a delay of 60% of the head chunk range
-	for i := 0; i < 1000; i++ {
-		assertDelay(db.generateCompactionDelay(), 60)
+	opts.EnableDelayedCompaction = true
+
+	for _, c := range cases {
+		opts.CompactionDelayMaxPercent = c.compactionDelayPercent
+		db := openTestDB(t, opts, []int64{60000})
+		defer func() {
+			require.NoError(t, db.Close())
+		}()
+		// The offset is generated and changed while opening.
+		assertDelay(db.opts.CompactionDelay, c.compactionDelayPercent)
+
+		// Test the default 10% delay
+		for i := 0; i < 1000; i++ {
+			assertDelay(db.generateCompactionDelay(), c.compactionDelayPercent)
+		}
 	}
 }
