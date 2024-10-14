@@ -635,7 +635,7 @@ type ScrapeConfig struct {
 	ScrapeProtocols []ScrapeProtocol `yaml:"scrape_protocols,omitempty"`
 	// Whether to scrape a classic histogram that is also exposed as a native histogram.
 	ScrapeClassicHistograms bool `yaml:"scrape_classic_histograms,omitempty"`
-	// Whether to convert a scraped classic histogram into a native histogram with custom buckets.
+	// Whether to convert all scraped classic histograms into a native histogram with custom buckets.
 	ConvertClassicHistograms bool `yaml:"convert_classic_histograms,omitempty"`
 	// File to which scrape failures are logged.
 	ScrapeFailureLogFile string `yaml:"scrape_failure_log_file,omitempty"`
