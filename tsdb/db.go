@@ -202,7 +202,7 @@ type Options struct {
 	// CompactionDelay delays the start time of auto compactions.
 	// It can be increased by up to one minute if the DB does not commit too often.
 	CompactionDelay time.Duration
-	// CompactDelayPercentageRange is the percentage of the chunk range window the random delay will be generated for the compaction.
+	// CompactionDelayMaxPercent is the upper limit for CompactionDelay, specified as a percentage of the head chunk range.
 	CompactDelayPercentageRange int
 
 	// NewCompactorFunc is a function that returns a TSDB compactor.
