@@ -7613,11 +7613,11 @@ func TestBlockQuerierAndBlockChunkQuerier(t *testing.T) {
 }
 
 func TestGenerateCompactionDelay(t *testing.T) {
-	assertDelay := func(delay time.Duration) {
+	assertDelay := func(delay time.Duration, expectedMaxPercentDelay int64) {
 		t.Helper()
 		require.GreaterOrEqual(t, delay, time.Duration(0))
-		// Less than 10% of the chunkRange.
-		require.LessOrEqual(t, delay, 6000*time.Millisecond)
+		// Expect to generate a delay up to MaxPercentDelay of the head chunk range
+		require.LessOrEqual(t, delay, (time.Duration(60000*expectedMaxPercentDelay/100) * time.Millisecond))
 	}
 
 	opts := DefaultOptions()
@@ -7627,9 +7627,15 @@ func TestGenerateCompactionDelay(t *testing.T) {
 		require.NoError(t, db.Close())
 	}()
 	// The offset is generated and changed while opening.
-	assertDelay(db.opts.CompactionDelay)
+	assertDelay(db.opts.CompactionDelay, 10)
 
+	// Test the default 10% delay
 	for i := 0; i < 1000; i++ {
-		assertDelay(db.generateCompactionDelay())
+		assertDelay(db.generateCompactionDelay(), 10)
+	}
+
+	opts.CompactionDelayMaxPercent = 60 // Test a delay of 60% of the head chunk range
+	for i := 0; i < 1000; i++ {
+		assertDelay(db.generateCompactionDelay(), 60)
 	}
 }

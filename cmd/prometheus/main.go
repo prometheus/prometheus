@@ -393,7 +393,7 @@ func main() {
 		Default("120").Hidden().IntVar(&cfg.tsdb.SamplesPerChunk)
 
 	serverOnlyFlag(a, "storage.tsdb.delayed-compaction.max-percent", "Sets the upper limit for the random compaction delay, specified as a percentage of the head chunk range. 100 means the compaction can be delayed by up to the entire head chunk range. Only effective when the delayed-compaction feature flag is enabled.").
-		Default("10").Hidden().IntVar(&cfg.tsdb.CompactionDelayMaxPercent)
+		Default("10").Hidden().Int64Var(&cfg.tsdb.CompactionDelayMaxPercent)
 
 	agentOnlyFlag(a, "storage.agent.path", "Base path for metrics storage.").
 		Default("data-agent/").StringVar(&cfg.agentStoragePath)
@@ -621,9 +621,9 @@ func main() {
 		}
 
 		// Delayed compaction checks
-		if cfg.tsdb.EnableDelayedCompaction && (cfg.tsdb.CompactDelayPercentageRange >= 100 || cfg.tsdb.CompactDelayPercentageRange < 1) {
-			cfg.tsdb.CompactDelayPercentageRange = tsdb.DefaultCompactDelayPercentageRange
-			level.Warn(logger).Log("msg", "The --storage.tsdb.delayed-compaction.range-percent should have a value between 1 and 100. Using default 10%")
+		if cfg.tsdb.EnableDelayedCompaction && (cfg.tsdb.CompactionDelayMaxPercent >= 100 || cfg.tsdb.CompactionDelayMaxPercent < 0) {
+			cfg.tsdb.CompactionDelayMaxPercent = tsdb.DefaultCompactionDelayMaxPercent
+			level.Warn(logger).Log("msg", "The --storage.tsdb.delayed-compaction.max-percent should have a value between 0 and 100. Using default 10%")
 		}
 	}
 
@@ -1743,7 +1743,7 @@ type tsdbOptions struct {
 	EnableMemorySnapshotOnShutdown bool
 	EnableNativeHistograms         bool
 	EnableDelayedCompaction        bool
-	CompactDelayPercentageRange    int
+	CompactionDelayMaxPercent      int64
 	EnableOverlappingCompaction    bool
 }
 
@@ -1766,7 +1766,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableNativeHistograms:         opts.EnableNativeHistograms,
 		OutOfOrderTimeWindow:           opts.OutOfOrderTimeWindow,
 		EnableDelayedCompaction:        opts.EnableDelayedCompaction,
-		CompactDelayPercentageRange:    opts.CompactDelayPercentageRange,
+		CompactionDelayMaxPercent:      opts.CompactionDelayMaxPercent,
 		EnableOverlappingCompaction:    opts.EnableOverlappingCompaction,
 	}
 }
