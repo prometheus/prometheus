@@ -28,6 +28,17 @@ import (
 	"github.com/prometheus/prometheus/util/convertnhcb"
 )
 
+// The NHCBParser wraps a Parser and converts classic histograms to native
+// histograms with custom buckets.
+//
+// Since Parser interface is line based, this parser needs to keep track
+// of the last classic histogram series it saw to collate them into a
+// single native histogram.
+//
+// Note:
+// - Only series that have the histogram metadata type are considered for
+//   conversion.
+// - The classic series are also returned if keepClassicHistograms is true.
 type NHCBParser struct {
 	// The parser we're wrapping.
 	parser Parser
