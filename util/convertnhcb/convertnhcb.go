@@ -101,15 +101,15 @@ func ProcessUpperBoundsAndCreateBaseHistogram(upperBounds0 []float64, needsDedup
 	}
 }
 
-func ConvertHistogramWrapper(histogram TempHistogram, upperBounds []float64, hBase *histogram.Histogram, fhBase *histogram.FloatHistogram) (*histogram.Histogram, *histogram.FloatHistogram) {
+func NewHistogram(histogram TempHistogram, upperBounds []float64, hBase *histogram.Histogram, fhBase *histogram.FloatHistogram) (*histogram.Histogram, *histogram.FloatHistogram) {
 	intBucketCounts, err := histogram.getIntBucketCounts()
 	if err != nil {
-		return nil, convertFloatHistogramWrapper(histogram, upperBounds, histogram.BucketCounts, fhBase)
+		return nil, newFloatHistogram(histogram, upperBounds, histogram.BucketCounts, fhBase)
 	}
-	return convertIntHistogramWrapper(histogram, upperBounds, intBucketCounts, hBase), nil
+	return newIntegerHistogram(histogram, upperBounds, intBucketCounts, hBase), nil
 }
 
-func convertIntHistogramWrapper(histogram TempHistogram, upperBounds []float64, bucketCounts map[float64]int64, hBase *histogram.Histogram) *histogram.Histogram {
+func newIntegerHistogram(histogram TempHistogram, upperBounds []float64, bucketCounts map[float64]int64, hBase *histogram.Histogram) *histogram.Histogram {
 	h := hBase.Copy()
 	absBucketCounts := make([]int64, len(h.PositiveBuckets))
 	var prevCount, total int64
@@ -135,7 +135,7 @@ func convertIntHistogramWrapper(histogram TempHistogram, upperBounds []float64, 
 	return h.Compact(0)
 }
 
-func convertFloatHistogramWrapper(histogram TempHistogram, upperBounds []float64, bucketCounts map[float64]float64, fhBase *histogram.FloatHistogram) *histogram.FloatHistogram {
+func newFloatHistogram(histogram TempHistogram, upperBounds []float64, bucketCounts map[float64]float64, fhBase *histogram.FloatHistogram) *histogram.FloatHistogram {
 	fh := fhBase.Copy()
 	var prevCount, total float64
 	for i, le := range upperBounds {
