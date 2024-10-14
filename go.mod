@@ -60,6 +60,7 @@ require (
 	github.com/shurcooL/httpfs v0.0.0-20230704072500-f1e31cf0ba5c
 	github.com/stretchr/testify v1.10.0
 	github.com/vultr/govultr/v2 v2.17.2
+	go.opentelemetry.io/collector/consumer v0.111.0
 	go.opentelemetry.io/collector/pdata v1.22.0
 	go.opentelemetry.io/collector/semconv v0.116.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.58.0
