@@ -1029,7 +1029,7 @@ func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
 	for _, s := range series {
 		lset, ok := seriesMap[storage.SeriesRef(s.Ref)]
 		require.True(t, ok, "Series not found in seriesMap")
-		require.Equal(t, lset, s.Labels, "Series labels don't match")
+		require.Equal(t, lset.String(), s.Labels.String(), "Series labels don't match")
 	}
 
 	// Verify samples
