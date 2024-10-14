@@ -43,6 +43,9 @@ var histogramNameSuffixReplacements = []struct {
 	},
 }
 
+// TempHistogram is used to collect information about classic histogram
+// samples incrementally before creating a histogram.Histogram or
+// histogram.FloatHistogram based on the values collected.
 type TempHistogram struct {
 	BucketCounts map[float64]float64
 	Count        float64
@@ -50,6 +53,8 @@ type TempHistogram struct {
 	HasFloat     bool
 }
 
+// NewTempHistogram creates a new TempHistogram to
+// collect information about classic histogram samples.
 func NewTempHistogram() TempHistogram {
 	return TempHistogram{
 		BucketCounts: map[float64]float64{},
@@ -68,6 +73,10 @@ func (h TempHistogram) getIntBucketCounts() (map[float64]int64, error) {
 	return bucketCounts, nil
 }
 
+// ProcessUpperBoundsAndCreateBaseHistogram prepares an integer native
+// histogram with custom buckets based on the provided upper bounds.
+// Everything is set except the bucket counts.
+// The sorted upper bounds are also returned.
 func ProcessUpperBoundsAndCreateBaseHistogram(upperBounds0 []float64, needsDedup bool) ([]float64, *histogram.Histogram) {
 	sort.Float64s(upperBounds0)
 	var upperBounds []float64
@@ -101,6 +110,9 @@ func ProcessUpperBoundsAndCreateBaseHistogram(upperBounds0 []float64, needsDedup
 	}
 }
 
+// NewHistogram fills the bucket counts in the provided histogram.Histogram
+// or histogram.FloatHistogram based on the provided temporary histogram and
+// upper bounds.
 func NewHistogram(histogram TempHistogram, upperBounds []float64, hBase *histogram.Histogram, fhBase *histogram.FloatHistogram) (*histogram.Histogram, *histogram.FloatHistogram) {
 	intBucketCounts, err := histogram.getIntBucketCounts()
 	if err != nil {
