@@ -28,8 +28,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
-	"go.opentelemetry.io/collector/consumer"
-	"go.opentelemetry.io/collector/pdata/pmetric"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -39,7 +37,11 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/storage"
+
 	otlptranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
+	"github.com/prometheus/prometheus/util/otel"
+	"go.opentelemetry.io/collector/consumer"
+	"go.opentelemetry.io/collector/pdata/pmetric"
 )
 
 type writeHandler struct {
@@ -521,8 +523,8 @@ func (h *writeHandler) handleHistogramZeroSample(app storage.Appender, ref stora
 
 // NewOTLPWriteHandler creates a http.Handler that accepts OTLP write requests and
 // writes them to the provided appendable.
-func NewOTLPWriteHandler(logger *slog.Logger, appendable storage.Appendable, configFunc func() config.Config) http.Handler {
-	sink := &rwExporter{
+func NewOTLPWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, configFunc func() config.Config) http.Handler {
+	ex := &rwExporter{
 		writeHandler: &writeHandler{
 			logger:     logger,
 			appendable: appendable,
@@ -530,10 +532,18 @@ func NewOTLPWriteHandler(logger *slog.Logger, appendable storage.Appendable, con
 		config: configFunc,
 	}
 
-	return &otlpWriteHandler{
-		logger:   logger,
-		pipeline: sink,
+	pl, err := otel.Use(reg,
+		otel.Sink(ex),
+	)
+	if err != nil {
+		panic(err) // TODO: how to handle?
 	}
+
+	if err := pl.Start(context.TODO(), nil); err != nil {
+		panic(err) // TODO: how to handle?
+	}
+
+	return &otlpWriteHandler{logger: logger, pipeline: pl}
 }
 
 type rwExporter struct {
@@ -559,10 +569,11 @@ func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) er
 		rw.logger.Warn("Warnings translating OTLP metrics to Prometheus write request", "warnings", ws)
 	}
 
-	return rw.write(ctx, &prompb.WriteRequest{
+	err = rw.write(ctx, &prompb.WriteRequest{
 		Timeseries: converter.TimeSeries(),
 		Metadata:   converter.Metadata(),
 	})
+	return err
 }
 
 func (rw *rwExporter) Capabilities() consumer.Capabilities {
