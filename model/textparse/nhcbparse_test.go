@@ -178,7 +178,7 @@ foobar{quantile="0.99"} 150.1`
 		}, {
 			m: `hh{}`,
 			shs: &histogram.Histogram{
-				Schema:          -53, // Custom buckets.
+				Schema:          histogram.CustomBucketsSchema,
 				Count:           1,
 				Sum:             0.0,
 				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
@@ -199,7 +199,7 @@ foobar{quantile="0.99"} 150.1`
 		}, {
 			m: `hhh{}`,
 			shs: &histogram.Histogram{
-				Schema:          -53, // Custom buckets.
+				Schema:          histogram.CustomBucketsSchema,
 				Count:           1,
 				Sum:             0.0,
 				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
@@ -329,7 +329,7 @@ foobar{quantile="0.99"} 150.1`
 		}, {
 			m: `baz{}`,
 			shs: &histogram.Histogram{
-				Schema:          -53, // Custom buckets.
+				Schema:          histogram.CustomBucketsSchema,
 				Count:           17,
 				Sum:             324789.3,
 				PositiveSpans:   []histogram.Span{{Offset: 1, Length: 1}}, // The first bucket has 0 count so we don't store it and Offset is 1.
@@ -357,7 +357,7 @@ foobar{quantile="0.99"} 150.1`
 		}, {
 			m: `something{}`,
 			shs: &histogram.Histogram{
-				Schema:          -53, // Custom buckets.
+				Schema:          histogram.CustomBucketsSchema,
 				Count:           18,
 				Sum:             324789.4,
 				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
@@ -369,7 +369,7 @@ foobar{quantile="0.99"} 150.1`
 		}, {
 			m: `something{a="b"}`,
 			shs: &histogram.Histogram{
-				Schema:          -53, // Custom buckets.
+				Schema:          histogram.CustomBucketsSchema,
 				Count:           9,
 				Sum:             42123.0,
 				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
@@ -474,7 +474,7 @@ something_bucket{a="b",le="+Inf"} 9 # {id="something-test"} 2e100 123.000
 		}, {
 			m: `something{}`,
 			shs: &histogram.Histogram{
-				Schema:          -53, // Custom buckets.
+				Schema:          histogram.CustomBucketsSchema,
 				Count:           18,
 				Sum:             324789.4,
 				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
@@ -491,7 +491,7 @@ something_bucket{a="b",le="+Inf"} 9 # {id="something-test"} 2e100 123.000
 		}, {
 			m: `something{a="b"}`,
 			shs: &histogram.Histogram{
-				Schema:          -53, // Custom buckets.
+				Schema:          histogram.CustomBucketsSchema,
 				Count:           9,
 				Sum:             42123.0,
 				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}, {Offset: 1, Length: 1}},
