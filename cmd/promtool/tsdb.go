@@ -733,7 +733,7 @@ func dumpSamples(ctx context.Context, dbDir, sandboxDirRoot string, mint, maxt i
 		for _, mset := range matcherSets {
 			sets = append(sets, q.Select(ctx, true, nil, mset...))
 		}
-		ss = storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
+		ss = storage.NewMergeSeriesSet(sets, 0, storage.ChainedSeriesMerge)
 	} else {
 		ss = q.Select(ctx, false, nil, matcherSets[0]...)
 	}
