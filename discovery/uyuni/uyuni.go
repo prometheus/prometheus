@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"path"
@@ -24,7 +25,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/kolo/xmlrpc"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
@@ -109,7 +109,7 @@ type Discovery struct {
 	entitlement     string
 	separator       string
 	interval        time.Duration
-	logger          log.Logger
+	logger          *slog.Logger
 }
 
 // NewDiscovererMetrics implements discovery.Config.
@@ -212,7 +212,7 @@ func getEndpointInfoForSystems(
 }
 
 // NewDiscovery returns a uyuni discovery for the given configuration.
-func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
 	m, ok := metrics.(*uyuniMetrics)
 	if !ok {
 		return nil, fmt.Errorf("invalid discovery metrics type")

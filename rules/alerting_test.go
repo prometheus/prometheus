@@ -19,8 +19,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -276,7 +276,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	ruleWithExternalLabels := NewAlertingRule(
 		"ExternalLabelExists",
@@ -287,7 +287,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.FromStrings("foo", "bar", "dings", "bums"),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	result := promql.Vector{
 		promql.Sample{
@@ -371,7 +371,7 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	ruleWithExternalURL := NewAlertingRule(
 		"ExternalURLExists",
@@ -382,7 +382,7 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"http://localhost:1234",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	result := promql.Vector{
 		promql.Sample{
@@ -466,7 +466,7 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	result := promql.Vector{
 		promql.Sample{
@@ -527,7 +527,7 @@ instance: {{ $v.Labels.instance }}, value: {{ printf "%.0f" $v.Value }};
 `),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	evalTime := time.Unix(0, 0)
 
@@ -607,7 +607,7 @@ func TestAlertingRuleDuplicate(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	_, err := rule.Eval(ctx, 0, now, EngineQueryFunc(engine, storage), nil, 0)
 	require.Error(t, err)
@@ -651,7 +651,7 @@ func TestAlertingRuleLimit(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 
 	evalTime := time.Unix(0, 0)
@@ -779,7 +779,7 @@ func TestSendAlertsDontAffectActiveAlerts(t *testing.T) {
 			},
 		},
 	}
-	nm := notifier.NewManager(&opts, log.NewNopLogger())
+	nm := notifier.NewManager(&opts, promslog.NewNopLogger())
 
 	f := SendAlerts(nm, "")
 	notifyFunc := func(ctx context.Context, expr string, alerts ...*Alert) {
@@ -986,7 +986,7 @@ func TestAlertingEvalWithOrigin(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 
 	_, err = rule.Eval(ctx, 0, now, func(ctx context.Context, qs string, _ time.Time) (promql.Vector, error) {
@@ -1008,7 +1008,7 @@ func TestAlertingRule_SetNoDependentRules(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	require.False(t, rule.NoDependentRules())
 
@@ -1029,7 +1029,7 @@ func TestAlertingRule_SetNoDependencyRules(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	require.False(t, rule.NoDependencyRules())
 

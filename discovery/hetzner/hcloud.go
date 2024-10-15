@@ -15,12 +15,12 @@ package hetzner
 
 import (
 	"context"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -58,7 +58,7 @@ type hcloudDiscovery struct {
 }
 
 // newHcloudDiscovery returns a new hcloudDiscovery which periodically refreshes its targets.
-func newHcloudDiscovery(conf *SDConfig, _ log.Logger) (*hcloudDiscovery, error) {
+func newHcloudDiscovery(conf *SDConfig, _ *slog.Logger) (*hcloudDiscovery, error) {
 	d := &hcloudDiscovery{
 		port: conf.Port,
 	}

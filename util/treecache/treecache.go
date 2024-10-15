@@ -17,12 +17,11 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/go-zookeeper/zk"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -47,19 +46,19 @@ func init() {
 	prometheus.MustRegister(numWatchers)
 }
 
-// ZookeeperLogger wraps a log.Logger into a zk.Logger.
+// ZookeeperLogger wraps a *slog.Logger into a zk.Logger.
 type ZookeeperLogger struct {
-	logger log.Logger
+	logger *slog.Logger
 }
 
 // NewZookeeperLogger is a constructor for ZookeeperLogger.
-func NewZookeeperLogger(logger log.Logger) ZookeeperLogger {
+func NewZookeeperLogger(logger *slog.Logger) ZookeeperLogger {
 	return ZookeeperLogger{logger: logger}
 }
 
 // Printf implements zk.Logger.
 func (zl ZookeeperLogger) Printf(s string, i ...interface{}) {
-	level.Info(zl.logger).Log("msg", fmt.Sprintf(s, i...))
+	zl.logger.Info(s, i...)
 }
 
 // A ZookeeperTreeCache keeps data from all children of a Zookeeper path
@@ -72,7 +71,7 @@ type ZookeeperTreeCache struct {
 	wg     *sync.WaitGroup
 	head   *zookeeperTreeCacheNode
 
-	logger log.Logger
+	logger *slog.Logger
 }
 
 // A ZookeeperTreeCacheEvent models a Zookeeper event for a path.
@@ -90,7 +89,7 @@ type zookeeperTreeCacheNode struct {
 }
 
 // NewZookeeperTreeCache creates a new ZookeeperTreeCache for a given path.
-func NewZookeeperTreeCache(conn *zk.Conn, path string, events chan ZookeeperTreeCacheEvent, logger log.Logger) *ZookeeperTreeCache {
+func NewZookeeperTreeCache(conn *zk.Conn, path string, events chan ZookeeperTreeCacheEvent, logger *slog.Logger) *ZookeeperTreeCache {
 	tc := &ZookeeperTreeCache{
 		conn:   conn,
 		prefix: path,
@@ -144,20 +143,20 @@ func (tc *ZookeeperTreeCache) loop(path string) {
 
 	err := tc.recursiveNodeUpdate(path, tc.head)
 	if err != nil {
-		level.Error(tc.logger).Log("msg", "Error during initial read of Zookeeper", "err", err)
+		tc.logger.Error("Error during initial read of Zookeeper", "err", err)
 		failure()
 	}
 
 	for {
 		select {
 		case ev := <-tc.head.events:
-			level.Debug(tc.logger).Log("msg", "Received Zookeeper event", "event", ev)
+			tc.logger.Debug("Received Zookeeper event", "event", ev)
 			if failureMode {
 				continue
 			}
 
 			if ev.Type == zk.EventNotWatching {
-				level.Info(tc.logger).Log("msg", "Lost connection to Zookeeper.")
+				tc.logger.Info("Lost connection to Zookeeper.")
 				failure()
 			} else {
 				path := strings.TrimPrefix(ev.Path, tc.prefix)
@@ -178,15 +177,15 @@ func (tc *ZookeeperTreeCache) loop(path string) {
 
 				switch err := tc.recursiveNodeUpdate(ev.Path, node); {
 				case err != nil:
-					level.Error(tc.logger).Log("msg", "Error during processing of Zookeeper event", "err", err)
+					tc.logger.Error("Error during processing of Zookeeper event", "err", err)
 					failure()
 				case tc.head.data == nil:
-					level.Error(tc.logger).Log("msg", "Error during processing of Zookeeper event", "err", "path no longer exists", "path", tc.prefix)
+					tc.logger.Error("Error during processing of Zookeeper event", "err", "path no longer exists", "path", tc.prefix)
 					failure()
 				}
 			}
 		case <-retryChan:
-			level.Info(tc.logger).Log("msg", "Attempting to resync state with Zookeeper")
+			tc.logger.Info("Attempting to resync state with Zookeeper")
 			previousState := &zookeeperTreeCacheNode{
 				children: tc.head.children,
 			}
@@ -194,13 +193,13 @@ func (tc *ZookeeperTreeCache) loop(path string) {
 			tc.head.children = make(map[string]*zookeeperTreeCacheNode)
 
 			if err := tc.recursiveNodeUpdate(tc.prefix, tc.head); err != nil {
-				level.Error(tc.logger).Log("msg", "Error during Zookeeper resync", "err", err)
+				tc.logger.Error("Error during Zookeeper resync", "err", err)
 				// Revert to our previous state.
 				tc.head.children = previousState.children
 				failure()
 			} else {
 				tc.resyncState(tc.prefix, tc.head, previousState)
-				level.Info(tc.logger).Log("msg", "Zookeeper resync successful")
+				tc.logger.Info("Zookeeper resync successful")
 				failureMode = false
 			}
 		case <-tc.stop:

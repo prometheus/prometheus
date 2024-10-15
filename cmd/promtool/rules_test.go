@@ -21,9 +21,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -161,7 +161,7 @@ func TestBackfillRuleIntegration(t *testing.T) {
 }
 
 func newTestRuleImporter(_ context.Context, start time.Time, tmpDir string, testSamples model.Matrix, maxBlockDuration time.Duration) (*ruleImporter, error) {
-	logger := log.NewNopLogger()
+	logger := promslog.NewNopLogger()
 	cfg := ruleImporterConfig{
 		outputDir:        tmpDir,
 		start:            start.Add(-10 * time.Hour),

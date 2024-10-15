@@ -16,12 +16,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -38,7 +38,7 @@ type queryRangeAPI interface {
 }
 
 type ruleImporter struct {
-	logger log.Logger
+	logger *slog.Logger
 	config ruleImporterConfig
 
 	apiClient queryRangeAPI
@@ -57,8 +57,8 @@ type ruleImporterConfig struct {
 
 // newRuleImporter creates a new rule importer that can be used to parse and evaluate recording rule files and create new series
 // written to disk in blocks.
-func newRuleImporter(logger log.Logger, config ruleImporterConfig, apiClient queryRangeAPI) *ruleImporter {
-	level.Info(logger).Log("backfiller", "new rule importer", "start", config.start.Format(time.RFC822), "end", config.end.Format(time.RFC822))
+func newRuleImporter(logger *slog.Logger, config ruleImporterConfig, apiClient queryRangeAPI) *ruleImporter {
+	logger.Info("new rule importer", "component", "backfiller", "start", config.start.Format(time.RFC822), "end", config.end.Format(time.RFC822))
 	return &ruleImporter{
 		logger:      logger,
 		config:      config,
@@ -80,10 +80,10 @@ func (importer *ruleImporter) loadGroups(_ context.Context, filenames []string) 
 // importAll evaluates all the recording rules and creates new time series and writes them to disk in blocks.
 func (importer *ruleImporter) importAll(ctx context.Context) (errs []error) {
 	for name, group := range importer.groups {
-		level.Info(importer.logger).Log("backfiller", "processing group", "name", name)
+		importer.logger.Info("processing group", "component", "backfiller", "name", name)
 
 		for i, r := range group.Rules() {
-			level.Info(importer.logger).Log("backfiller", "processing rule", "id", i, "name", r.Name())
+			importer.logger.Info("processing rule", "component", "backfiller", "id", i, "name", r.Name())
 			if err := importer.importRule(ctx, r.Query().String(), r.Name(), r.Labels(), importer.config.start, importer.config.end, int64(importer.config.maxBlockDuration/time.Millisecond), group); err != nil {
 				errs = append(errs, err)
 			}
@@ -124,7 +124,7 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 			return fmt.Errorf("query range: %w", err)
 		}
 		if warnings != nil {
-			level.Warn(importer.logger).Log("msg", "Range query returned warnings.", "warnings", warnings)
+			importer.logger.Warn("Range query returned warnings.", "warnings", warnings)
 		}
 
 		// To prevent races with compaction, a block writer only allows appending samples
@@ -133,7 +133,7 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 		// also need to append samples throughout the whole block range. To allow that, we
 		// pretend that the block is twice as large here, but only really add sample in the
 		// original interval later.
-		w, err := tsdb.NewBlockWriter(log.NewNopLogger(), importer.config.outputDir, 2*blockDuration)
+		w, err := tsdb.NewBlockWriter(promslog.NewNopLogger(), importer.config.outputDir, 2*blockDuration)
 		if err != nil {
 			return fmt.Errorf("new block writer: %w", err)
 		}

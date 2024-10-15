@@ -18,13 +18,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
@@ -51,7 +51,7 @@ type robotDiscovery struct {
 }
 
 // newRobotDiscovery returns a new robotDiscovery which periodically refreshes its targets.
-func newRobotDiscovery(conf *SDConfig, _ log.Logger) (*robotDiscovery, error) {
+func newRobotDiscovery(conf *SDConfig, _ *slog.Logger) (*robotDiscovery, error) {
 	d := &robotDiscovery{
 		port:     conf.Port,
 		endpoint: conf.robotEndpoint,

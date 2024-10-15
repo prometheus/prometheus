@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 )
 
@@ -43,7 +43,7 @@ func TestHCloudSDRefresh(t *testing.T) {
 	cfg.HTTPClientConfig.BearerToken = hcloudTestToken
 	cfg.hcloudEndpoint = suite.Mock.Endpoint()
 
-	d, err := newHcloudDiscovery(&cfg, log.NewNopLogger())
+	d, err := newHcloudDiscovery(&cfg, promslog.NewNopLogger())
 	require.NoError(t, err)
 
 	targetGroups, err := d.refresh(context.Background())

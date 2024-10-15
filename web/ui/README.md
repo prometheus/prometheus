@@ -12,6 +12,27 @@ in `.promu.yml`, and then `make build` (or build Prometheus using
 
 This will serve all files from your local filesystem. This is for development purposes only.
 
+### Using Prebuilt UI Assets
+
+If you are only working on the go backend, for faster builds, you can use
+prebuilt web UI assets available with each Prometheus release
+(`prometheus-web-ui-<version>.tar.gz`). This allows you to skip building the UI
+from source.
+
+1. Download and extract the prebuilt UI tarball:
+   ```bash
+   tar -xvf prometheus-web-ui-<version>.tar.gz -C web/ui
+   ```
+
+2. Build Prometheus using the prebuilt assets by passing the following parameter
+   to `make`:
+   ```bash
+   make PREBUILT_ASSETS_STATIC_DIR=web/ui/static build
+   ```
+
+This will include the prebuilt UI files directly in the Prometheus binary,
+avoiding the need to install npm or rebuild the frontend from source.
+
 ## React-app
 
 ### Introduction

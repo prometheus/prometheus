@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,14 +27,12 @@ import (
 	"unicode/utf8"
 
 	"github.com/edsrzf/mmap-go"
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 )
 
 type ActiveQueryTracker struct {
 	mmappedFile   []byte
 	getNextIndex  chan int
-	logger        log.Logger
+	logger        *slog.Logger
 	closer        io.Closer
 	maxConcurrent int
 }
@@ -63,11 +62,11 @@ func parseBrokenJSON(brokenJSON []byte) (string, bool) {
 	return queries, true
 }
 
-func logUnfinishedQueries(filename string, filesize int, logger log.Logger) {
+func logUnfinishedQueries(filename string, filesize int, logger *slog.Logger) {
 	if _, err := os.Stat(filename); err == nil {
 		fd, err := os.Open(filename)
 		if err != nil {
-			level.Error(logger).Log("msg", "Failed to open query log file", "err", err)
+			logger.Error("Failed to open query log file", "err", err)
 			return
 		}
 		defer fd.Close()
@@ -75,7 +74,7 @@ func logUnfinishedQueries(filename string, filesize int, logger log.Logger) {
 		brokenJSON := make([]byte, filesize)
 		_, err = fd.Read(brokenJSON)
 		if err != nil {
-			level.Error(logger).Log("msg", "Failed to read query log file", "err", err)
+			logger.Error("Failed to read query log file", "err", err)
 			return
 		}
 
@@ -83,7 +82,7 @@ func logUnfinishedQueries(filename string, filesize int, logger log.Logger) {
 		if !queriesExist {
 			return
 		}
-		level.Info(logger).Log("msg", "These queries didn't finish in prometheus' last run:", "queries", queries)
+		logger.Info("These queries didn't finish in prometheus' last run:", "queries", queries)
 	}
 }
 
@@ -104,38 +103,38 @@ func (f *mmappedFile) Close() error {
 	return err
 }
 
-func getMMappedFile(filename string, filesize int, logger log.Logger) ([]byte, io.Closer, error) {
+func getMMappedFile(filename string, filesize int, logger *slog.Logger) ([]byte, io.Closer, error) {
 	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o666)
 	if err != nil {
 		absPath, pathErr := filepath.Abs(filename)
 		if pathErr != nil {
 			absPath = filename
 		}
-		level.Error(logger).Log("msg", "Error opening query log file", "file", absPath, "err", err)
+		logger.Error("Error opening query log file", "file", absPath, "err", err)
 		return nil, nil, err
 	}
 
 	err = file.Truncate(int64(filesize))
 	if err != nil {
 		file.Close()
-		level.Error(logger).Log("msg", "Error setting filesize.", "filesize", filesize, "err", err)
+		logger.Error("Error setting filesize.", "filesize", filesize, "err", err)
 		return nil, nil, err
 	}
 
 	fileAsBytes, err := mmap.Map(file, mmap.RDWR, 0)
 	if err != nil {
 		file.Close()
-		level.Error(logger).Log("msg", "Failed to mmap", "file", filename, "Attempted size", filesize, "err", err)
+		logger.Error("Failed to mmap", "file", filename, "Attempted size", filesize, "err", err)
 		return nil, nil, err
 	}
 
 	return fileAsBytes, &mmappedFile{f: file, m: fileAsBytes}, err
 }
 
-func NewActiveQueryTracker(localStoragePath string, maxConcurrent int, logger log.Logger) *ActiveQueryTracker {
+func NewActiveQueryTracker(localStoragePath string, maxConcurrent int, logger *slog.Logger) *ActiveQueryTracker {
 	err := os.MkdirAll(localStoragePath, 0o777)
 	if err != nil {
-		level.Error(logger).Log("msg", "Failed to create directory for logging active queries")
+		logger.Error("Failed to create directory for logging active queries")
 	}
 
 	filename, filesize := filepath.Join(localStoragePath, "queries.active"), 1+maxConcurrent*entrySize
@@ -174,18 +173,18 @@ func trimStringByBytes(str string, size int) string {
 	return string(bytesStr[:trimIndex])
 }
 
-func _newJSONEntry(query string, timestamp int64, logger log.Logger) []byte {
+func _newJSONEntry(query string, timestamp int64, logger *slog.Logger) []byte {
 	entry := Entry{query, timestamp}
 	jsonEntry, err := json.Marshal(entry)
 	if err != nil {
-		level.Error(logger).Log("msg", "Cannot create json of query", "query", query)
+		logger.Error("Cannot create json of query", "query", query)
 		return []byte{}
 	}
 
 	return jsonEntry
 }
 
-func newJSONEntry(query string, logger log.Logger) []byte {
+func newJSONEntry(query string, logger *slog.Logger) []byte {
 	timestamp := time.Now().Unix()
 	minEntryJSON := _newJSONEntry("", timestamp, logger)
 

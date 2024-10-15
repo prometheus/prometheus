@@ -3925,8 +3925,7 @@ func TestParseExpressions(t *testing.T) {
 
 				require.Equal(t, expected, expr, "error on input '%s'", test.input)
 			} else {
-				require.Error(t, err)
-				require.Contains(t, err.Error(), test.errMsg, "unexpected error on input '%s', expected '%s', got '%s'", test.input, test.errMsg, err.Error())
+				require.ErrorContains(t, err, test.errMsg, "unexpected error on input '%s', expected '%s', got '%s'", test.input, test.errMsg, err.Error())
 
 				var errorList ParseErrors
 				ok := errors.As(err, &errorList)
@@ -4468,7 +4467,7 @@ func TestRecoverParserError(t *testing.T) {
 	e := errors.New("custom error")
 
 	defer func() {
-		require.Equal(t, e.Error(), err.Error())
+		require.EqualError(t, err, e.Error())
 	}()
 	defer p.recover(&err)
 

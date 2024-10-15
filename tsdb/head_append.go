@@ -17,10 +17,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
-
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -341,13 +339,17 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
 	if s == nil {
 		var err error
-		s, err = a.getOrCreate(lset)
+		s, _, err = a.getOrCreate(lset)
 		if err != nil {
 			return 0, err
 		}
 	}
 
 	if value.IsStaleNaN(v) {
+		// This is not thread safe as we should be holding the lock for "s".
+		// TODO(krajorama): reorganize Commit() to handle samples in append order
+		// not floats first and then histograms. Then we could do this conversion
+		// in commit. This code should move into Commit().
 		switch {
 		case s.lastHistogramValue != nil:
 			return a.AppendHistogram(ref, lset, t, &histogram.Histogram{Sum: v}, nil)
@@ -404,7 +406,7 @@ func (a *headAppender) AppendCTZeroSample(ref storage.SeriesRef, lset labels.Lab
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
 	if s == nil {
 		var err error
-		s, err = a.getOrCreate(lset)
+		s, _, err = a.getOrCreate(lset)
 		if err != nil {
 			return 0, err
 		}
@@ -434,20 +436,18 @@ func (a *headAppender) AppendCTZeroSample(ref storage.SeriesRef, lset labels.Lab
 	return storage.SeriesRef(s.ref), nil
 }
 
-func (a *headAppender) getOrCreate(lset labels.Labels) (*memSeries, error) {
+func (a *headAppender) getOrCreate(lset labels.Labels) (s *memSeries, created bool, err error) {
 	// Ensure no empty labels have gotten through.
 	lset = lset.WithoutEmpty()
 	if lset.IsEmpty() {
-		return nil, fmt.Errorf("empty labelset: %w", ErrInvalidSample)
+		return nil, false, fmt.Errorf("empty labelset: %w", ErrInvalidSample)
 	}
 	if l, dup := lset.HasDuplicateLabelNames(); dup {
-		return nil, fmt.Errorf(`label name "%s" is not unique: %w`, l, ErrInvalidSample)
+		return nil, false, fmt.Errorf(`label name "%s" is not unique: %w`, l, ErrInvalidSample)
 	}
-	var created bool
-	var err error
-	s, created, err := a.head.getOrCreate(lset.Hash(), lset)
+	s, created, err = a.head.getOrCreate(lset.Hash(), lset)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if created {
 		a.series = append(a.series, record.RefSeries{
@@ -455,7 +455,7 @@ func (a *headAppender) getOrCreate(lset labels.Labels) (*memSeries, error) {
 			Labels: lset,
 		})
 	}
-	return s, nil
+	return s, created, nil
 }
 
 // appendable checks whether the given sample is valid for appending to the series. (if we return false and no error)
@@ -654,41 +654,27 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		}
 	}
 
+	var created bool
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
 	if s == nil {
-		// Ensure no empty labels have gotten through.
-		lset = lset.WithoutEmpty()
-		if lset.IsEmpty() {
-			return 0, fmt.Errorf("empty labelset: %w", ErrInvalidSample)
-		}
-
-		if l, dup := lset.HasDuplicateLabelNames(); dup {
-			return 0, fmt.Errorf(`label name "%s" is not unique: %w`, l, ErrInvalidSample)
-		}
-
-		var created bool
 		var err error
-		s, created, err = a.head.getOrCreate(lset.Hash(), lset)
+		s, created, err = a.getOrCreate(lset)
 		if err != nil {
 			return 0, err
-		}
-		if created {
-			switch {
-			case h != nil:
-				s.lastHistogramValue = &histogram.Histogram{}
-			case fh != nil:
-				s.lastFloatHistogramValue = &histogram.FloatHistogram{}
-			}
-			a.series = append(a.series, record.RefSeries{
-				Ref:    s.ref,
-				Labels: lset,
-			})
 		}
 	}
 
 	switch {
 	case h != nil:
 		s.Lock()
+
+		// TODO(krajorama): reorganize Commit() to handle samples in append order
+		// not floats first and then histograms. Then we would not need to do this.
+		// This whole "if" should be removed.
+		if created && s.lastHistogramValue == nil && s.lastFloatHistogramValue == nil {
+			s.lastHistogramValue = &histogram.Histogram{}
+		}
+
 		// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 		// to skip that sample from the WAL and write only in the WBL.
 		_, delta, err := s.appendableHistogram(t, h, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head.opts.EnableOOONativeHistograms.Load())
@@ -718,6 +704,14 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		a.histogramSeries = append(a.histogramSeries, s)
 	case fh != nil:
 		s.Lock()
+
+		// TODO(krajorama): reorganize Commit() to handle samples in append order
+		// not floats first and then histograms. Then we would not need to do this.
+		// This whole "if" should be removed.
+		if created && s.lastHistogramValue == nil && s.lastFloatHistogramValue == nil {
+			s.lastFloatHistogramValue = &histogram.FloatHistogram{}
+		}
+
 		// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 		// to skip that sample from the WAL and write only in the WBL.
 		_, delta, err := s.appendableFloatHistogram(t, fh, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head.opts.EnableOOONativeHistograms.Load())
@@ -765,35 +759,14 @@ func (a *headAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, lset l
 	if ct >= t {
 		return 0, storage.ErrCTNewerThanSample
 	}
+
+	var created bool
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
 	if s == nil {
-		// Ensure no empty labels have gotten through.
-		lset = lset.WithoutEmpty()
-		if lset.IsEmpty() {
-			return 0, fmt.Errorf("empty labelset: %w", ErrInvalidSample)
-		}
-
-		if l, dup := lset.HasDuplicateLabelNames(); dup {
-			return 0, fmt.Errorf(`label name "%s" is not unique: %w`, l, ErrInvalidSample)
-		}
-
-		var created bool
 		var err error
-		s, created, err = a.head.getOrCreate(lset.Hash(), lset)
+		s, created, err = a.getOrCreate(lset)
 		if err != nil {
 			return 0, err
-		}
-		if created {
-			switch {
-			case h != nil:
-				s.lastHistogramValue = &histogram.Histogram{}
-			case fh != nil:
-				s.lastFloatHistogramValue = &histogram.FloatHistogram{}
-			}
-			a.series = append(a.series, record.RefSeries{
-				Ref:    s.ref,
-				Labels: lset,
-			})
 		}
 	}
 
@@ -801,6 +774,14 @@ func (a *headAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, lset l
 	case h != nil:
 		zeroHistogram := &histogram.Histogram{}
 		s.Lock()
+
+		// TODO(krajorama): reorganize Commit() to handle samples in append order
+		// not floats first and then histograms. Then we would not need to do this.
+		// This whole "if" should be removed.
+		if created && s.lastHistogramValue == nil && s.lastFloatHistogramValue == nil {
+			s.lastHistogramValue = zeroHistogram
+		}
+
 		// Although we call `appendableHistogram` with oooHistogramsEnabled=true, for CTZeroSamples OOO is not allowed.
 		// We set it to true to make this implementation as close as possible to the float implementation.
 		isOOO, _, err := s.appendableHistogram(ct, zeroHistogram, a.headMaxt, a.minValidTime, a.oooTimeWindow, true)
@@ -827,6 +808,14 @@ func (a *headAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, lset l
 	case fh != nil:
 		zeroFloatHistogram := &histogram.FloatHistogram{}
 		s.Lock()
+
+		// TODO(krajorama): reorganize Commit() to handle samples in append order
+		// not floats first and then histograms. Then we would not need to do this.
+		// This whole "if" should be removed.
+		if created && s.lastHistogramValue == nil && s.lastFloatHistogramValue == nil {
+			s.lastFloatHistogramValue = zeroFloatHistogram
+		}
+
 		// Although we call `appendableFloatHistogram` with oooHistogramsEnabled=true, for CTZeroSamples OOO is not allowed.
 		// We set it to true to make this implementation as close as possible to the float implementation.
 		isOOO, _, err := s.appendableFloatHistogram(ct, zeroFloatHistogram, a.headMaxt, a.minValidTime, a.oooTimeWindow, true) // OOO is not allowed for CTZeroSamples.
@@ -1025,7 +1014,7 @@ func (a *headAppender) commitExemplars() {
 			if errors.Is(err, storage.ErrOutOfOrderExemplar) {
 				continue
 			}
-			level.Debug(a.head.logger).Log("msg", "Unknown error while adding exemplar", "err", err)
+			a.head.logger.Debug("Unknown error while adding exemplar", "err", err)
 		}
 	}
 }
@@ -1466,14 +1455,14 @@ func (a *headAppender) Commit() (err error) {
 			// until we have found what samples become OOO. We can try having a metric for this failure.
 			// Returning the error here is not correct because we have already put the samples into the memory,
 			// hence the append/insert was a success.
-			level.Error(a.head.logger).Log("msg", "Failed to log out of order samples into the WAL", "err", err)
+			a.head.logger.Error("Failed to log out of order samples into the WAL", "err", err)
 		}
 	}
 	return nil
 }
 
 // insert is like append, except it inserts. Used for OOO samples.
-func (s *memSeries) insert(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, chunkDiskMapper *chunks.ChunkDiskMapper, oooCapMax int64, logger log.Logger) (inserted, chunkCreated bool, mmapRefs []chunks.ChunkDiskMapperRef) {
+func (s *memSeries) insert(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, chunkDiskMapper *chunks.ChunkDiskMapper, oooCapMax int64, logger *slog.Logger) (inserted, chunkCreated bool, mmapRefs []chunks.ChunkDiskMapperRef) {
 	if s.ooo == nil {
 		s.ooo = &memSeriesOOOFields{}
 	}
@@ -1835,7 +1824,7 @@ func (s *memSeries) cutNewHeadChunk(mint int64, e chunkenc.Encoding, chunkRange 
 
 // cutNewOOOHeadChunk cuts a new OOO chunk and m-maps the old chunk.
 // The caller must ensure that s is locked and s.ooo is not nil.
-func (s *memSeries) cutNewOOOHeadChunk(mint int64, chunkDiskMapper *chunks.ChunkDiskMapper, logger log.Logger) (*oooHeadChunk, []chunks.ChunkDiskMapperRef) {
+func (s *memSeries) cutNewOOOHeadChunk(mint int64, chunkDiskMapper *chunks.ChunkDiskMapper, logger *slog.Logger) (*oooHeadChunk, []chunks.ChunkDiskMapperRef) {
 	ref := s.mmapCurrentOOOHeadChunk(chunkDiskMapper, logger)
 
 	s.ooo.oooHeadChunk = &oooHeadChunk{
@@ -1848,7 +1837,7 @@ func (s *memSeries) cutNewOOOHeadChunk(mint int64, chunkDiskMapper *chunks.Chunk
 }
 
 // s must be locked when calling.
-func (s *memSeries) mmapCurrentOOOHeadChunk(chunkDiskMapper *chunks.ChunkDiskMapper, logger log.Logger) []chunks.ChunkDiskMapperRef {
+func (s *memSeries) mmapCurrentOOOHeadChunk(chunkDiskMapper *chunks.ChunkDiskMapper, logger *slog.Logger) []chunks.ChunkDiskMapperRef {
 	if s.ooo == nil || s.ooo.oooHeadChunk == nil {
 		// OOO is not enabled or there is no head chunk, so nothing to m-map here.
 		return nil
@@ -1861,7 +1850,7 @@ func (s *memSeries) mmapCurrentOOOHeadChunk(chunkDiskMapper *chunks.ChunkDiskMap
 	chunkRefs := make([]chunks.ChunkDiskMapperRef, 0, len(chks))
 	for _, memchunk := range chks {
 		if len(s.ooo.oooMmappedChunks) >= (oooChunkIDMask - 1) {
-			level.Error(logger).Log("msg", "Too many OOO chunks, dropping data", "series", s.lset.String())
+			logger.Error("Too many OOO chunks, dropping data", "series", s.lset.String())
 			break
 		}
 		chunkRef := chunkDiskMapper.WriteChunk(s.ref, memchunk.minTime, memchunk.maxTime, memchunk.chunk, true, handleChunkWriteError)

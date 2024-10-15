@@ -20,14 +20,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
 	"sync"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid"
+
+	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -265,7 +266,7 @@ func readMetaFile(dir string) (*BlockMeta, int64, error) {
 	return &m, int64(len(b)), nil
 }
 
-func writeMetaFile(logger log.Logger, dir string, meta *BlockMeta) (int64, error) {
+func writeMetaFile(logger *slog.Logger, dir string, meta *BlockMeta) (int64, error) {
 	meta.Version = metaVersion1
 
 	// Make any changes to the file appear atomic.
@@ -273,7 +274,7 @@ func writeMetaFile(logger log.Logger, dir string, meta *BlockMeta) (int64, error
 	tmp := path + ".tmp"
 	defer func() {
 		if err := os.RemoveAll(tmp); err != nil {
-			level.Error(logger).Log("msg", "remove tmp file", "err", err.Error())
+			logger.Error("remove tmp file", "err", err.Error())
 		}
 	}()
 
@@ -319,7 +320,7 @@ type Block struct {
 	indexr     IndexReader
 	tombstones tombstones.Reader
 
-	logger log.Logger
+	logger *slog.Logger
 
 	numBytesChunks    int64
 	numBytesIndex     int64
@@ -329,9 +330,9 @@ type Block struct {
 
 // OpenBlock opens the block in the directory. It can be passed a chunk pool, which is used
 // to instantiate chunk structs.
-func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool) (pb *Block, err error) {
+func OpenBlock(logger *slog.Logger, dir string, pool chunkenc.Pool) (pb *Block, err error) {
 	if logger == nil {
-		logger = log.NewNopLogger()
+		logger = promslog.NewNopLogger()
 	}
 	var closers []io.Closer
 	defer func() {
