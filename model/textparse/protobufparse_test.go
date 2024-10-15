@@ -410,6 +410,49 @@ metric: <
 >
 
 `,
+		`name: "test_histogram3"
+help: "Similar histogram as before but now with integer buckets."
+type: HISTOGRAM
+metric: <
+  histogram: <
+    sample_count: 6
+    sample_sum: 50
+    bucket: <
+      cumulative_count: 2
+      upper_bound: -20
+    >
+    bucket: <
+      cumulative_count: 4
+      upper_bound: 20
+      exemplar: <
+        label: <
+          name: "dummyID"
+          value: "59727"
+        >
+        value: 15
+        timestamp: <
+          seconds: 1625851153
+          nanos: 146848499
+        >
+      >
+    >
+    bucket: <
+      cumulative_count: 6
+      upper_bound: 30
+      exemplar: <
+        label: <
+          name: "dummyID"
+          value: "5617"
+        >
+        value: 25
+      >
+    >
+    schema: 0
+    zero_threshold: 0
+  >
+>
+
+`,
 		`name: "test_histogram_family"
 help: "Test histogram metric family with two very simple histograms."
 type: HISTOGRAM
@@ -1047,6 +1090,66 @@ func TestProtobufParse(t *testing.T) {
 					v: 175,
 					lset: labels.FromStrings(
 						"__name__", "test_histogram2_bucket",
+						"le", "+Inf",
+					),
+				},
+				{
+					m:    "test_histogram3",
+					help: "Similar histogram as before but now with integer buckets.",
+				},
+				{
+					m:   "test_histogram3",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m: "test_histogram3_count",
+					v: 6,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram3_count",
+					),
+				},
+				{
+					m: "test_histogram3_sum",
+					v: 50,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram3_sum",
+					),
+				},
+				{
+					m: "test_histogram3_bucket\xffle\xff-20.0",
+					v: 2,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram3_bucket",
+						"le", "-20.0",
+					),
+				},
+				{
+					m: "test_histogram3_bucket\xffle\xff20.0",
+					v: 4,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram3_bucket",
+						"le", "20.0",
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "59727"), Value: 15, HasTs: true, Ts: 1625851153146},
+					},
+				},
+				{
+					m: "test_histogram3_bucket\xffle\xff30.0",
+					v: 6,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram3_bucket",
+						"le", "30.0",
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "5617"), Value: 25, HasTs: false},
+					},
+				},
+				{
+					m: "test_histogram3_bucket\xffle\xff+Inf",
+					v: 6,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram3_bucket",
 						"le", "+Inf",
 					),
 				},
@@ -1854,6 +1957,66 @@ func TestProtobufParse(t *testing.T) {
 					v: 175,
 					lset: labels.FromStrings(
 						"__name__", "test_histogram2_bucket",
+						"le", "+Inf",
+					),
+				},
+				{
+					m:    "test_histogram3",
+					help: "Similar histogram as before but now with integer buckets.",
+				},
+				{
+					m:   "test_histogram3",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m: "test_histogram3_count",
+					v: 6,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram3_count",
+					),
+				},
+				{
+					m: "test_histogram3_sum",
+					v: 50,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram3_sum",
+					),
+				},
+				{
+					m: "test_histogram3_bucket\xffle\xff-20.0",
+					v: 2,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram3_bucket",
+						"le", "-20.0",
+					),
+				},
+				{
+					m: "test_histogram3_bucket\xffle\xff20.0",
+					v: 4,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram3_bucket",
+						"le", "20.0",
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "59727"), Value: 15, HasTs: true, Ts: 1625851153146},
+					},
+				},
+				{
+					m: "test_histogram3_bucket\xffle\xff30.0",
+					v: 6,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram3_bucket",
+						"le", "30.0",
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "5617"), Value: 25, HasTs: false},
+					},
+				},
+				{
+					m: "test_histogram3_bucket\xffle\xff+Inf",
+					v: 6,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram3_bucket",
 						"le", "+Inf",
 					),
 				},
