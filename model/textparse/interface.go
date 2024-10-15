@@ -23,8 +23,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-// Parser parses samples from a byte slice of samples in the official
-// Prometheus and OpenMetrics text exposition formats.
+// Parser parses samples from a byte slice of samples in different exposition formats.
 type Parser interface {
 	// Series returns the bytes of a series with a simple float64 as a
 	// value, the timestamp if set, and the value of the current sample.
@@ -58,6 +57,8 @@ type Parser interface {
 
 	// Metric writes the labels of the current sample into the passed labels.
 	// It returns the string from which the metric was parsed.
+	// The values of the "le" labels of classic histograms and "quantile" labels
+	// of summaries should follow the OpenMetrics formatting rules.
 	Metric(l *labels.Labels) string
 
 	// Exemplar writes the exemplar of the current sample into the passed
