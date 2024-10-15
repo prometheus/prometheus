@@ -759,6 +759,12 @@ class InnerSeries {
     data_.emplace_back(samples, ls_id);
     ++size_;
   }
+
+  PROMPP_ALWAYS_INLINE void clear() noexcept {
+    data_.clear();
+    size_ = 0;
+  }
+
 };
 
 // RelabeledSerie - element after relabeling with new ls(for next step).

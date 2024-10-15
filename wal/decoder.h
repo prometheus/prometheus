@@ -51,13 +51,22 @@ class TimeseriesProtobufWriter {
   uint32_t processed_series_{};
 };
 
-class Decoder {
+template <class Encoder, class Decoder>
+Encoder create_encoder_from_decoder(const Decoder& decoder) {
+   auto state = decoder.get_encoder_state();
+   return Encoder(state.shard_id, state.pow_two_of_total_shards, state.lss, state.shard_id, state.pow_two_of_total_shards, state.next_segment_id, state.ts_base);
+};
+
+template <typename LSS = Primitives::SnugComposites::LabelSet::DecodingTable>
+class GenericDecoder {
+ using Reader = BasicDecoder<std::remove_reference_t<LSS>>;
  private:
-  Primitives::SnugComposites::LabelSet::DecodingTable label_set_;
+  LSS label_set_;
   Reader reader_;
 
  public:
-  explicit PROMPP_ALWAYS_INLINE Decoder(BasicEncoderVersion encoder_version) noexcept : reader_(label_set_, encoder_version) {}
+  explicit PROMPP_ALWAYS_INLINE GenericDecoder(BasicEncoderVersion encoder_version) noexcept : reader_(label_set_, encoder_version) {}
+  explicit PROMPP_ALWAYS_INLINE GenericDecoder(LSS& lss, BasicEncoderVersion encoder_version) : label_set_{lss}, reader_(label_set_, encoder_version) {}
 
   // decode - decoding incoming data and make protbuf.
   template <class Input, class Output, class Stats>
@@ -78,6 +87,28 @@ class Decoder {
 
     hx.presharding(reader_, std::forward<PreshardingArgs>(presharding_args)...);
     hx.write_stats(reader_, stats);
+  }
+
+  template <class Input, class InnerSeriesContainer, class Stats>
+  PROMPP_ALWAYS_INLINE void decode_to_inner_series(Input& in, InnerSeriesContainer& container, [[maybe_unused]] Stats* stats) {
+    std::ispanstream inspan(std::string_view(in.data(), in.size()));
+    inspan >> reader_;
+    BareBones::Vector<PromPP::Primitives::Sample> samples;
+    uint32_t last_ls_id = std::numeric_limits<uint32_t>::max();
+    reader_.process_segment([&last_ls_id, &samples, &container](uint32_t ls_id, int64_t ts, double v) PROMPP_LAMBDA_INLINE {
+      if (ls_id != last_ls_id) {
+        if (!samples.empty()) {
+          container.emplace_back(samples, last_ls_id);
+        }
+        samples.clear();
+        last_ls_id = ls_id;
+      }
+      samples.emplace_back(ts, v);
+    });
+
+    if (!samples.empty()) {
+      container.emplace_back(samples, last_ls_id);
+    }
   }
 
   // decode_dry - decoding incoming data without protbuf.
@@ -104,6 +135,26 @@ class Decoder {
 
     stats->segment_id = reader_.last_processed_segment();
   }
+
+  struct EncoderState {
+    LSS& lss;
+    uint32_t next_segment_id;
+    Primitives::Timestamp ts_base;
+    uint16_t shard_id;
+    uint8_t pow_two_of_total_shards;
+  };
+
+  PROMPP_ALWAYS_INLINE EncoderState get_encoder_state() const noexcept {
+    return EncoderState{
+      .lss = label_set_,
+      .next_segment_id = reader_.last_processed_segment() + 1,
+      .ts_base = reader_.ts_base(),
+      .shard_id = reader_.shard_id(),
+      .pow_two_of_total_shards = reader_.pow_two_of_total_shards(),
+    };
+  }
+
 };
 
+using Decoder = GenericDecoder<>;
 }  // namespace PromPP::WAL

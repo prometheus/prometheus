@@ -142,6 +142,52 @@ void prompp_head_wal_encoder_add_inner_series(void* args, void* res);
  */
 void prompp_head_wal_encoder_finalize(void* args, void* res);
 
+/**
+ * @brief Construct a new WAL Decoder
+ *
+ * @param args {
+ *     encoder_version uint8_t // basic encoder version
+ * }
+ *
+ * @param res {
+ *     decoder uintptr // pointer to constructed decoder
+ * }
+ */
+void prompp_head_wal_decoder_ctor(void* args, void* res);
+
+/**
+ * @brief Destroy decoder
+ *
+ * @param args {
+ *     decoder uintptr // pointer to constructed decoder
+ * }
+ */
+void prompp_head_wal_decoder_dtor(void* args);
+
+/**
+ * @brief Decode WAL-segment into protobuf message
+ *
+ * @param args {
+ *     decoder uintptr // pointer to constructed decoder
+ *     segment []byte  // segment content
+ * }
+ * @param res {
+ *     created_at int64  // timestamp in ns when data was start writed to encoder
+ *     encoded_at int64  // timestamp in ns when segment was encoded
+ *     samples    uint32 // number of samples in segment
+ *     series     uint32 // number of series in segment
+ *     segment_id uint32 // processed segment id
+ *     earliest_block_sample int64 // min timestamp in block
+ *     latest_block_sample int64 // max timestamp in block
+ *     inner_series *InnerSeries // decoded content
+ *     error      []byte // error string if thrown
+ * }
+ */
+void prompp_head_wal_decoder_decode(void* args, void* res);
+
+// todo: header
+void prompp_head_wal_decoder_create_encoder(void* args, void* res);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

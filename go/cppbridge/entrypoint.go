@@ -1770,7 +1770,7 @@ func headWalEncoderCtor(shardID uint16, logShards uint8, lss uintptr) uintptr {
 	return res.encoder
 }
 
-func headWalEncoderAddInnerSeries(encoder uintptr, innerSeries []*InnerSeries) (stats WALEncoderStats, exception []byte) {
+func headWalEncoderAddInnerSeries(encoder uintptr, innerSeries []*InnerSeries) (stats WALEncoderStats, err error) {
 	var args = struct {
 		innerSeries []*InnerSeries
 		encoder     uintptr
@@ -1786,11 +1786,11 @@ func headWalEncoderAddInnerSeries(encoder uintptr, innerSeries []*InnerSeries) (
 		uintptr(unsafe.Pointer(&res)),
 	)
 
-	return res.WALEncoderStats, res.exception
+	return res.WALEncoderStats, handleException(res.exception)
 }
 
 // headWalEncoderFinalize - finalize the encoded data in the C++ encoder to Segment.
-func headWalEncoderFinalize(encoder uintptr) (stats WALEncoderStats, segment, exception []byte) {
+func headWalEncoderFinalize(encoder uintptr) (stats WALEncoderStats, segment []byte, err error) {
 	var args = struct {
 		encoder uintptr
 	}{encoder}
@@ -1806,7 +1806,7 @@ func headWalEncoderFinalize(encoder uintptr) (stats WALEncoderStats, segment, ex
 		uintptr(unsafe.Pointer(&res)),
 	)
 
-	return res.WALEncoderStats, res.segment, res.exception
+	return res.WALEncoderStats, res.segment, handleException(res.exception)
 }
 
 func headWalEncoderDtor(encoder uintptr) {
@@ -1816,6 +1816,73 @@ func headWalEncoderDtor(encoder uintptr) {
 
 	fastcgo.UnsafeCall1(
 		C.prompp_head_wal_encoder_dtor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
+func headWalDecoderCtor(lss uintptr, encoderVersion uint8) uintptr {
+	var args = struct {
+		lss            uintptr
+		encoderVersion uint8
+	}{lss, encoderVersion}
+
+	var res = struct {
+		decoder uintptr
+	}{}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_head_wal_decoder_ctor,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.decoder
+}
+
+func headWalDecoderDecode(decoder uintptr, segment []byte) (*InnerSeries, error) {
+	var args = struct {
+		decoder uintptr
+		segment []byte
+	}{decoder, segment}
+	var res struct {
+		DecodedSegmentStats
+		innerSeries *InnerSeries
+		exception   []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_head_wal_decoder_decode,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.innerSeries, handleException(res.exception)
+}
+
+func headWalDecoderCreateEncoder(decoder uintptr) uintptr {
+	var args = struct {
+		decoder uintptr
+	}{decoder}
+	var res struct {
+		encoder uintptr
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_head_wal_decoder_create_encoder,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.encoder
+}
+
+func headWalDecoderDtor(decoder uintptr) {
+	var args = struct {
+		decoder uintptr
+	}{decoder}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_head_wal_decoder_dtor,
 		uintptr(unsafe.Pointer(&args)),
 	)
 }

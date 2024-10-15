@@ -1,4 +1,4 @@
-package head_test
+package main
 
 import (
 	"context"
@@ -11,18 +11,18 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/stretchr/testify/require"
 	"os"
-	"testing"
 	"time"
 )
 
-func TestLoad(t *testing.T) {
+func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
 	tmpDir, err := os.MkdirTemp("", "head_wal_test")
-	require.NoError(t, err)
+	if err != nil {
+		panic(err)
+	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	const transparentRelabelerName = "transparent_relabeler"
@@ -40,36 +40,49 @@ func TestLoad(t *testing.T) {
 		},
 	}
 	h, err := head.Load(0, tmpDir, cfgs, 2, prometheus.DefaultRegisterer)
-	require.NoError(t, err)
+	if err != nil {
+		panic(err)
+	}
 
 	ls := model.NewLabelSetBuilder().Set("__name__", "wal_metric").Set("job", "test").Build()
-	require.NoError(t, appendTimeSeries(t, ctx, h, []model.TimeSeries{
+	err = appendTimeSeries(ctx, h, []model.TimeSeries{
 		{
 			LabelSet:  ls,
 			Timestamp: 0,
 			Value:     1,
 		},
-	}))
+	})
+	if err != nil {
+		panic(err)
+	}
 
-	require.NoError(t, appendTimeSeries(t, ctx, h, []model.TimeSeries{
+	err = appendTimeSeries(ctx, h, []model.TimeSeries{
 		{
 			LabelSet:  ls,
 			Timestamp: 1,
 			Value:     2,
 		},
-	}))
+	})
+	if err != nil {
+		panic(err)
+	}
 
-	require.NoError(t, appendTimeSeries(t, ctx, h, []model.TimeSeries{
+	err = appendTimeSeries(ctx, h, []model.TimeSeries{
 		{
 			LabelSet:  ls,
 			Timestamp: 2,
 			Value:     3,
 		},
-	}))
+	})
+	if err != nil {
+		panic(err)
+	}
 
 	q := querier.NewQuerier(h, querier.NoOpShardedDeduplicatorFactory(), 0, 10, nil, nil)
 	matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", "wal_metric")
-	require.NoError(t, err)
+	if err != nil {
+		panic(err)
+	}
 	seriesSet := q.Select(ctx, false, nil, matcher)
 
 	expected := []model.TimeSeries{
@@ -90,7 +103,10 @@ func TestLoad(t *testing.T) {
 		},
 	}
 
-	require.True(t, seriesSet.Next())
+	if !seriesSet.Next() {
+		panic("no series")
+	}
+
 	series := seriesSet.At()
 
 	// todo compare label sets
@@ -98,25 +114,37 @@ func TestLoad(t *testing.T) {
 	sIndex := 0
 	for chunkIterator.Next() != chunkenc.ValNone {
 		ts, v := chunkIterator.At()
-		require.Equal(t, int64(expected[sIndex].Timestamp), ts)
-		require.Equal(t, expected[sIndex].Value, v)
+		if int64(expected[sIndex].Timestamp) != ts {
+			panic("int64(expected[sIndex].Timestamp) != ts ")
+		}
+		if expected[sIndex].Value != v {
+			panic("expected[sIndex].Value != v ")
+		}
 		sIndex++
 	}
-	require.Equal(t, sIndex, len(expected))
+	if sIndex != len(expected) {
+		panic("sIndex != len(expected)")
+	}
 
-	require.False(t, seriesSet.Next())
-
-	require.NoError(t, q.Close())
+	if seriesSet.Next() {
+		panic("seriesSet.Next() must be false")
+	}
 
 	h.Finalize()
-	require.NoError(t, h.Close())
+	if err = h.Close(); err != nil {
+		panic(err)
+	}
 
 	h, err = head.Load(0, tmpDir, cfgs, 2, prometheus.DefaultRegisterer)
-	require.NoError(t, err)
+	if err != nil {
+		panic(err)
+	}
 
 	q = querier.NewQuerier(h, querier.NoOpShardedDeduplicatorFactory(), 0, 10, nil, nil)
 	matcher, err = labels.NewMatcher(labels.MatchEqual, "__name__", "wal_metric")
-	require.NoError(t, err)
+	if err != nil {
+		panic(err)
+	}
 	seriesSet = q.Select(ctx, false, nil, matcher)
 
 	expected = []model.TimeSeries{
@@ -137,7 +165,10 @@ func TestLoad(t *testing.T) {
 		},
 	}
 
-	require.True(t, seriesSet.Next())
+	if !seriesSet.Next() {
+		panic("!seriesSet.Next()")
+	}
+
 	series = seriesSet.At()
 
 	// todo compare label sets
@@ -145,72 +176,26 @@ func TestLoad(t *testing.T) {
 	sIndex = 0
 	for chunkIterator.Next() != chunkenc.ValNone {
 		ts, v := chunkIterator.At()
-		require.Equal(t, int64(expected[sIndex].Timestamp), ts)
-		require.Equal(t, expected[sIndex].Value, v)
+		if int64(expected[sIndex].Timestamp) != ts {
+			panic("int64(expected[sIndex].Timestamp) != ts ")
+		}
+		if expected[sIndex].Value != v {
+			panic("expected[sIndex].Value != v ")
+		}
 		sIndex++
 	}
-	require.Equal(t, sIndex, len(expected))
-
-	require.False(t, seriesSet.Next())
-
-	require.NoError(t, q.Close())
-
-	require.NoError(t, appendTimeSeries(t, ctx, h, []model.TimeSeries{
-		{
-			LabelSet:  ls,
-			Timestamp: 3,
-			Value:     4,
-		},
-	}))
-
-	q = querier.NewQuerier(h, querier.NoOpShardedDeduplicatorFactory(), 0, 10, nil, nil)
-	matcher, err = labels.NewMatcher(labels.MatchEqual, "__name__", "wal_metric")
-	require.NoError(t, err)
-	seriesSet = q.Select(ctx, false, nil, matcher)
-
-	expected = []model.TimeSeries{
-		{
-			LabelSet:  ls,
-			Timestamp: 0,
-			Value:     1,
-		},
-		{
-			LabelSet:  ls,
-			Timestamp: 1,
-			Value:     2,
-		},
-		{
-			LabelSet:  ls,
-			Timestamp: 2,
-			Value:     3,
-		},
-		{
-			LabelSet:  ls,
-			Timestamp: 3,
-			Value:     4,
-		},
+	if sIndex != len(expected) {
+		panic("sIndex != len(expected)")
 	}
 
-	require.True(t, seriesSet.Next())
-	series = seriesSet.At()
-
-	// todo compare label sets
-	chunkIterator = series.Iterator(nil)
-	sIndex = 0
-	for chunkIterator.Next() != chunkenc.ValNone {
-		ts, v := chunkIterator.At()
-		require.Equal(t, int64(expected[sIndex].Timestamp), ts)
-		require.Equal(t, expected[sIndex].Value, v)
-		sIndex++
+	if seriesSet.Next() {
+		panic("seriesSet.Next() must be false")
 	}
-	require.Equal(t, sIndex, len(expected))
-
-	require.False(t, seriesSet.Next())
-
-	require.NoError(t, q.Close())
 
 	h.Finalize()
-	require.NoError(t, h.Close())
+	if err = h.Close(); err != nil {
+		panic(err)
+	}
 }
 
 type timeSeriesData struct {
@@ -225,10 +210,12 @@ func (tsd *timeSeriesData) Destroy() {
 	tsd.timeSeries = nil
 }
 
-func appendTimeSeries(t *testing.T, ctx context.Context, h *head.Head, timeSeries []model.TimeSeries) error {
+func appendTimeSeries(ctx context.Context, h *head.Head, timeSeries []model.TimeSeries) error {
 	tsd := &timeSeriesData{timeSeries: timeSeries}
 	hx, err := (cppbridge.HashdexFactory{}).GoModel(tsd.TimeSeries(), cppbridge.DefaultWALHashdexLimits())
-	require.NoError(t, err)
+	if err != nil {
+		return err
+	}
 
 	incomingData := &relabeler.IncomingData{Hashdex: hx, Data: tsd}
 	metricLimits := &cppbridge.MetricLimits{

@@ -98,12 +98,15 @@ void prompp_head_wal_decoder_dtor(void* args);
  *     series     uint32 // number of series in segment
  *     segment_id uint32 // processed segment id
  *     earliest_block_sample int64 // min timestamp in block
- *     latest_block_sample inte64 // max timestamp in block
- *     protobuf   []byte // decoded RemoteWrite protobuf content
+ *     latest_block_sample int64 // max timestamp in block
+ *     inner_series *InnerSeries // decoded content
  *     error      []byte // error string if thrown
  * }
  */
 void prompp_head_wal_decoder_decode(void* args, void* res);
+
+// todo: header
+void prompp_head_wal_decoder_create_encoder(void* args, void* res);
 
 #ifdef __cplusplus
 }  // extern "C"
