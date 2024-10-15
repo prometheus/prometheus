@@ -990,7 +990,7 @@ type appenderCommitContext struct {
 	// number of samples rejected due to: that are out of order but too old (OOO support enabled, but outside time window)
 	floatTooOldRejected int
 	histoTooOldRejected int
-	// number of samples rejected due to: out of bounds: with t < minValidTime (OOO support disabled)
+	// Number of samples rejected due to: out of bounds: with t < minValidTime (OOO support disabled).
 	floatOOBRejected    int
 	histoOOBRejected    int
 	inOrderMint         int64
