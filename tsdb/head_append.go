@@ -981,7 +981,7 @@ func exemplarsForEncoding(es []exemplarWithSeriesRef) []record.RefExemplar {
 type appenderCommitContext struct {
 	floatsAppended     int
 	histogramsAppended int
-	// number of samples out of order but accepted: with ooo enabled and within time window
+	// Number of samples out of order but accepted: with ooo enabled and within time window.
 	oooFloatsAccepted    int
 	oooHistogramAccepted int
 	// number of samples rejected due to: out of order but OOO support disabled.
