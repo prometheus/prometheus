@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -77,6 +78,9 @@ type ProtobufParser struct {
 
 	// The following are just shenanigans to satisfy the Parser interface.
 	metricBytes *bytes.Buffer // A somewhat fluid representation of the current metric.
+
+	// mainly used in formatOpenMetricsFloat.
+	floatFormatBuf []byte
 }
 
 // NewProtobufParser returns a parser for the payload in the byte slice.
@@ -88,6 +92,7 @@ func NewProtobufParser(b []byte, parseClassicHistograms bool, st *labels.SymbolT
 		metricBytes:            &bytes.Buffer{},
 		parseClassicHistograms: parseClassicHistograms,
 		builder:                labels.NewScratchBuilderWithSymbolTable(st, 16),
+		floatFormatBuf:         make([]byte, 0, 24),
 	}
 }
 
@@ -573,7 +578,7 @@ func (p *ProtobufParser) getMagicLabel() (bool, string, string) {
 		qq := p.mf.GetMetric()[p.metricPos].GetSummary().GetQuantile()
 		q := qq[p.fieldPos]
 		p.fieldsDone = p.fieldPos == len(qq)-1
-		return true, model.QuantileLabel, formatOpenMetricsFloat(q.GetQuantile())
+		return true, model.QuantileLabel, formatOpenMetricsFloat(q.GetQuantile(), p.floatFormatBuf)
 	case dto.MetricType_HISTOGRAM, dto.MetricType_GAUGE_HISTOGRAM:
 		bb := p.mf.GetMetric()[p.metricPos].GetHistogram().GetBucket()
 		if p.fieldPos >= len(bb) {
@@ -582,7 +587,7 @@ func (p *ProtobufParser) getMagicLabel() (bool, string, string) {
 		}
 		b := bb[p.fieldPos]
 		p.fieldsDone = math.IsInf(b.GetUpperBound(), +1)
-		return true, model.BucketLabel, formatOpenMetricsFloat(b.GetUpperBound())
+		return true, model.BucketLabel, formatOpenMetricsFloat(b.GetUpperBound(), p.floatFormatBuf)
 	}
 	return false, "", ""
 }
@@ -613,7 +618,7 @@ func readDelimited(b []byte, mf *dto.MetricFamily) (n int, err error) {
 // formatOpenMetricsFloat works like the usual Go string formatting of a float
 // but appends ".0" if the resulting number would otherwise contain neither a
 // "." nor an "e".
-func formatOpenMetricsFloat(f float64) string {
+func formatOpenMetricsFloat(f float64, b []byte) string {
 	// A few common cases hardcoded.
 	switch {
 	case f == 1:
@@ -629,7 +634,7 @@ func formatOpenMetricsFloat(f float64) string {
 	case math.IsInf(f, -1):
 		return "-Inf"
 	}
-	s := fmt.Sprint(f)
+	s := string(strconv.AppendFloat(b[:0], f, 'g', -1, 64))
 	if strings.ContainsAny(s, "e.") {
 		return s
 	}
