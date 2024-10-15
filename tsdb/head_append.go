@@ -984,7 +984,7 @@ type appenderCommitContext struct {
 	// Number of samples out of order but accepted: with ooo enabled and within time window.
 	oooFloatsAccepted    int
 	oooHistogramAccepted int
-	// number of samples rejected due to: out of order but OOO support disabled.
+	// Number of samples rejected due to: out of order but OOO support disabled.
 	floatOOORejected int
 	histoOOORejected int
 	// Number of samples rejected due to: out of order but too old (OOO support enabled, but outside time window).
@@ -1121,6 +1121,8 @@ func handleAppendableError(err error, appended, oooRejected, oobRejected, tooOld
 //
 // The function also increments the chunk metrics if a new chunk is created and performs cleanup
 // operations on the series after appending the samples.
+//
+// There are also espefic functions to commit histograms and commitFloatHistograms.
 func (a *headAppender) commitSamples(acc *appenderCommitContext) {
 	var ok, chunkCreated bool
 
@@ -1207,22 +1209,7 @@ func (a *headAppender) commitSamples(acc *appenderCommitContext) {
 	}
 }
 
-// commitHistograms processes and commits histogram samples to the headAppender.
-// It handles both in-order and out-of-order (OOO) samples, updating various metrics
-// and counters based on the outcome of the append operations.
-//
-// The function iterates over the histograms in the headAppender and attempts to append each
-// histogram to the corresponding series. Depending on the result of the append operation,
-// it updates the appenderCommitContext with the appropriate counters and metrics.
-//
-// The function handles different error scenarios such as out-of-order samples, out-of-bounds
-// samples, and too-old samples, updating the respective counters for each case.
-//
-// For out-of-order samples, if the sample is within the OOO tolerance, it attempts to insert
-// the sample into the series and updates the OOO markers and records accordingly.
-//
-// The function also updates the chunk creation metrics and performs cleanup operations
-// on the series after processing each histogram.
+// For details on the commitHistograms function, see the commitSamples docs.
 func (a *headAppender) commitHistograms(acc *appenderCommitContext) {
 	var ok, chunkCreated bool
 	for i, s := range a.histograms {
@@ -1308,26 +1295,7 @@ func (a *headAppender) commitHistograms(acc *appenderCommitContext) {
 	}
 }
 
-// commitFloatHistograms processes and commits float histograms to the headAppender.
-// It iterates over the float histograms in the headAppender and attempts to append
-// each histogram to its corresponding series. Depending on the result of the append
-// operation, it updates various metrics and counters in the appenderCommitContext.
-//
-// The function handles different error scenarios such as out-of-order samples,
-// out-of-bounds samples, and too-old samples. It also manages the insertion of
-// out-of-order samples and updates the write-ahead log (WAL) records accordingly.
-//
-// Metrics and counters updated:
-// - histogramsAppended: Incremented for each successfully appended histogram.
-// - histoOOORejected: Incremented for each out-of-order sample rejection.
-// - histoOOBRejected: Incremented for each out-of-bounds sample rejection.
-// - histoTooOldRejected: Incremented for each too-old sample rejection.
-// - oooHistogramAccepted: Incremented for each accepted out-of-order histogram.
-// - chunks: Incremented for each created chunk.
-// - chunksCreated: Incremented for each created chunk.
-//
-// The function also manages the cleanup of append IDs and the pending commit state
-// for each series.
+// For details on the commitFloatHistograms function, see the commitSamples docs.
 func (a *headAppender) commitFloatHistograms(acc *appenderCommitContext) {
 	var ok, chunkCreated bool
 	for i, s := range a.floatHistograms {

@@ -14,15 +14,22 @@
 package tsdb
 
 import (
+	"context"
 	"errors"
+	"fmt"
+	"math/rand"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
 func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
@@ -76,6 +83,71 @@ func BenchmarkHeadStripeSeriesCreate_PreCreationFailure(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(i)))
+	}
+}
+
+func BenchmarkHead_WalCommitWithVaryingSeriesSamplesExemplarsAndHistograms(b *testing.B) {
+	minute := func(m int) int64 { return int64(m) * time.Minute.Milliseconds() }
+	seriesCounts := []int{100, 1000, 10000}
+	series := genSeries(10000, 10, 0, 0)
+	histograms := genHistogramSeries(10000, 10, minute(0), minute(119), minute(1), true)
+
+	for _, seriesCount := range seriesCounts {
+		b.Run(fmt.Sprintf("%d series", seriesCount), func(b *testing.B) {
+			for _, samplesPerAppend := range []int64{1, 2, 5, 100} {
+				b.Run(fmt.Sprintf("%d samples per append", samplesPerAppend), func(b *testing.B) {
+					h, _ := newTestHead(b, 10000, wlog.CompressionNone, false)
+					b.Cleanup(func() { require.NoError(b, h.Close()) })
+
+					ts := int64(1000)
+					appendSamples := func() error {
+						var err error
+						app := h.Appender(context.Background())
+						for _, s := range series[:seriesCount] {
+							var ref storage.SeriesRef
+							for sampleIndex := int64(0); sampleIndex < samplesPerAppend; sampleIndex++ {
+								ref, err = app.Append(ref, s.Labels(), ts+sampleIndex, float64(ts+sampleIndex))
+								if err != nil {
+									return err
+								}
+							}
+						}
+
+						for _, s := range histograms[:seriesCount] {
+							var ref storage.SeriesRef
+							for sampleIndex := int64(0); sampleIndex < samplesPerAppend; sampleIndex++ {
+								ref, err = app.Append(ref, s.Labels(), ts+sampleIndex, float64(ts+sampleIndex))
+								if err != nil {
+									return err
+								}
+
+								_, err = app.AppendExemplar(ref, s.Labels(), exemplar.Exemplar{
+									Labels: labels.FromStrings("trace_id", strconv.Itoa(rand.Int())),
+									Value:  rand.Float64(),
+									Ts:     ts,
+								})
+								if err != nil {
+									return err
+								}
+							}
+						}
+
+						ts += 1000 // should increment more than highest samplesPerAppend
+						return app.Commit()
+					}
+
+					// Init series, that's not what we're benchmarking here.
+					require.NoError(b, appendSamples())
+
+					b.ReportAllocs()
+					b.ResetTimer()
+
+					for i := 0; i < b.N; i++ {
+						require.NoError(b, appendSamples())
+					}
+				})
+			}
+		})
 	}
 }
 
