@@ -105,7 +105,16 @@ void prompp_head_wal_decoder_dtor(void* args);
  */
 void prompp_head_wal_decoder_decode(void* args, void* res);
 
-// todo: header
+/**
+ * @brief Create encoder from decoder
+ *
+ * @param args {
+ *     decoder uintptr // pointer to decoder
+ * }
+ * @param res {
+ *     encoder uintptr // pointer to constructed encoder
+ * }
+ */
 void prompp_head_wal_decoder_create_encoder(void* args, void* res);
 
 #ifdef __cplusplus
