@@ -56,22 +56,6 @@ var (
 		},
 		[]string{"object", "method"},
 	)
-
-	durationStage = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "prompp_cppbridge_duration_stage_nanoseconds",
-			Help: "The time duration stage in cpp.",
-		},
-		[]string{"method", "stage"},
-	)
-
-	statelessRelabelerCall = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "prompp_cppbridge_stateless_relabeler_count",
-			Help: "Total count call stateless_relabeler.",
-		},
-		[]string{"method"},
-	)
 )
 
 func freeBytes(b []byte) {
@@ -1064,7 +1048,6 @@ func prometheusPerShardRelabelerInputRelabeling(
 		lss                   uintptr
 	}{shardsInnerSeries, shardsRelabeledSeries, labelLimits, perShardRelabeler, hashdex, lss}
 	var res struct {
-		RelabelingStats
 		exception []byte
 	}
 	start := time.Now()
@@ -1076,23 +1059,6 @@ func prometheusPerShardRelabelerInputRelabeling(
 	unsafeCall.With(
 		prometheus.Labels{"object": "input_relabeler", "method": "input_relabeling"},
 	).Add(float64(time.Since(start).Nanoseconds()))
-
-	durationStage.With(
-		prometheus.Labels{"method": "input_relabeling", "stage": "lss_add"},
-	).Add(float64(res.lssAdd))
-	durationStage.With(
-		prometheus.Labels{"method": "input_relabeling", "stage": "cache_drop"},
-	).Add(float64(res.cacheDrop))
-	durationStage.With(
-		prometheus.Labels{"method": "input_relabeling", "stage": "cache_keep"},
-	).Add(float64(res.cacheKeep))
-	durationStage.With(
-		prometheus.Labels{"method": "input_relabeling", "stage": "cache_relabel"},
-	).Add(float64(res.cacheRelabel))
-
-	statelessRelabelerCall.With(
-		prometheus.Labels{"method": "input_relabeling"},
-	).Add(float64(res.statelessRelabeler))
 
 	return res.exception
 }
@@ -1117,7 +1083,6 @@ func prometheusPerShardRelabelerInputRelabelingWithStalenans(
 		staleNansTS           int64
 	}{shardsInnerSeries, shardsRelabeledSeries, labelLimits, perShardRelabeler, hashdex, lss, sourceState, staleNansTS}
 	var res struct {
-		RelabelingStats
 		sourceState uintptr
 		exception   []byte
 	}
@@ -1130,23 +1095,6 @@ func prometheusPerShardRelabelerInputRelabelingWithStalenans(
 	unsafeCall.With(
 		prometheus.Labels{"object": "input_relabeler", "method": "relabeling_with_stalenans"},
 	).Add(float64(time.Since(start).Nanoseconds()))
-
-	durationStage.With(
-		prometheus.Labels{"method": "relabeling_with_stalenans", "stage": "lss_add"},
-	).Add(float64(res.lssAdd))
-	durationStage.With(
-		prometheus.Labels{"method": "relabeling_with_stalenans", "stage": "cache_drop"},
-	).Add(float64(res.cacheDrop))
-	durationStage.With(
-		prometheus.Labels{"method": "relabeling_with_stalenans", "stage": "cache_keep"},
-	).Add(float64(res.cacheKeep))
-	durationStage.With(
-		prometheus.Labels{"method": "relabeling_with_stalenans", "stage": "cache_relabel"},
-	).Add(float64(res.cacheRelabel))
-
-	statelessRelabelerCall.With(
-		prometheus.Labels{"method": "relabeling_with_stalenans"},
-	).Add(float64(res.statelessRelabeler))
 
 	return res.sourceState, res.exception
 }
@@ -1473,15 +1421,12 @@ func seriesDataDecodeIteratorSample(decodeIterator uintptr) (int64, float64) {
 		timestamp int64
 		value     float64
 	}
-	// start := time.Now()
+
 	fastcgo.UnsafeCall2(
 		C.prompp_series_data_decode_iterator_sample,
 		uintptr(unsafe.Pointer(&args)),
 		uintptr(unsafe.Pointer(&res)),
 	)
-	// unsafeCall.With(
-	// 	prometheus.Labels{"object": "head_data_storage_decode_iterator", "method": "sample"},
-	// ).Add(float64(time.Since(start).Nanoseconds()))
 
 	return res.timestamp, res.value
 }

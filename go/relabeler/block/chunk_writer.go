@@ -3,8 +3,8 @@ package block
 import (
 	"bufio"
 	"encoding/binary"
+	"errors"
 	"fmt"
-	"github.com/hashicorp/go-multierror"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"hash"
@@ -12,7 +12,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 )
 
 const (
@@ -170,7 +169,7 @@ func (w *ChunkWriter) cut() error {
 		return err
 	}
 
-	n, f, _, err := cutSegmentFile(w.dirFile, chunks.MagicChunks, chunksFormatV1, w.segmentSize)
+	n, f, _, err := cutSegmentFile(w.dirFile, w.seq(), chunks.MagicChunks, chunksFormatV1, w.segmentSize)
 	if err != nil {
 		return err
 	}
@@ -186,25 +185,23 @@ func (w *ChunkWriter) cut() error {
 	return nil
 }
 
-func cutSegmentFile(dirFile *os.File, magicNumber uint32, chunksFormat byte, allocSize int64) (headerSize int, newFile *os.File, seq int, returnErr error) {
-	p, seq, err := nextSequenceFile(dirFile.Name())
+func cutSegmentFile(dirFile *os.File, currentSeq int, magicNumber uint32, chunksFormat byte, allocSize int64) (headerSize int, newFile *os.File, seq int, returnErr error) {
+	p, seq, err := nextSequenceFile(dirFile.Name(), currentSeq)
 	if err != nil {
 		return 0, nil, 0, fmt.Errorf("next sequence file: %w", err)
 	}
 	ptmp := p + ".tmp"
-	f, err := os.OpenFile(ptmp, os.O_WRONLY|os.O_CREATE, 0o666)
+	f, err := os.Create(ptmp)
 	if err != nil {
 		return 0, nil, 0, fmt.Errorf("open temp file: %w", err)
 	}
 	defer func() {
 		if returnErr != nil {
-			errs := multierror.Append(returnErr)
 			if f != nil {
-				errs = multierror.Append(errs, f.Close())
+				returnErr = errors.Join(returnErr, f.Close())
 			}
 			// Calling RemoveAll on a non-existent file does not return error.
-			errs = multierror.Append(errs, os.RemoveAll(ptmp))
-			returnErr = errs.ErrorOrNil()
+			returnErr = errors.Join(returnErr, os.RemoveAll(ptmp))
 		}
 	}()
 	if allocSize > 0 {
@@ -246,26 +243,8 @@ func cutSegmentFile(dirFile *os.File, magicNumber uint32, chunksFormat byte, all
 	return n, f, seq, nil
 }
 
-func nextSequenceFile(dir string) (string, int, error) {
-	files, err := os.ReadDir(dir)
-	if err != nil {
-		return "", 0, err
-	}
-
-	i := uint64(0)
-	for _, f := range files {
-		j, err := strconv.ParseUint(f.Name(), 10, 64)
-		if err != nil {
-			continue
-		}
-		// It is not necessary that we find the files in number order,
-		// for example with '1000000' and '200000', '1000000' would come first.
-		// Though this is a very very race case, we check anyway for the max id.
-		if j > i {
-			i = j
-		}
-	}
-	return segmentFile(dir, int(i+1)), int(i + 1), nil
+func nextSequenceFile(dir string, currentSeq int) (string, int, error) {
+	return segmentFile(dir, currentSeq+1), currentSeq + 1, nil
 }
 
 func segmentFile(baseDir string, index int) string {

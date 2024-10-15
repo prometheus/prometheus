@@ -321,14 +321,13 @@ func (h *Head) shardLoop(shardID uint16, stopc chan struct{}) {
 				ir := inputRelabeler
 				inputRelabelers[key.relabelerID] = ir
 			}
-			task.errs[shardID] = task.shardFn(&shard{
+			task.ExecuteOnShard(&shard{
 				id:              shardID,
 				dataStorage:     h.dataStorages[shardID],
 				lssWrapper:      &lssWrapper{lss: h.lsses[shardID]},
 				wal:             h.wals[shardID],
 				inputRelabelers: inputRelabelers,
 			})
-			task.wg.Done()
 		}
 	}
 }

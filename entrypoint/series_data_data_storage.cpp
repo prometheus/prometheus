@@ -47,7 +47,7 @@ extern "C" void prompp_series_data_data_storage_query(void* args, void* res) {
   Result* out = new (res) Result();
 
   Querier querier{*in->data_storage};
-  auto queried_chunk_list = querier.query(in->query);
+  const auto& queried_chunk_list = querier.query(in->query);
   Serializer serializer{*in->data_storage};
   BytesStream bytes_stream{&out->serialized_chunks};
   serializer.serialize(queried_chunk_list, bytes_stream);

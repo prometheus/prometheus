@@ -1,6 +1,7 @@
 package model
 
 import (
+	"bytes"
 	"encoding/json"
 	"slices"
 	"sort"
@@ -522,8 +523,11 @@ func (builder *LabelSetSimpleBuilder) Add(name, value string) {
 		// Empty labels are the same as missing labels.
 		return
 	}
+
 	builder.pairs = append(builder.pairs, SimpleLabel{Name: name, Value: value})
-	builder.sorted = false
+	n := len(builder.pairs)
+	builder.sorted = builder.sorted && (n > 1 && builder.pairs[n-1].Name > builder.pairs[n-2].Name)
+
 }
 
 // Set the name/value pair as a label. A value of "" means delete that label.
@@ -540,7 +544,8 @@ func (builder *LabelSetSimpleBuilder) Set(name, value string) {
 		}
 	}
 	builder.pairs = append(builder.pairs, SimpleLabel{Name: name, Value: value})
-	builder.sorted = false
+	n := len(builder.pairs)
+	builder.sorted = builder.sorted && (n > 1 && builder.pairs[n-1].Name > builder.pairs[n-2].Name)
 }
 
 // Del deletes the label of the given name.
@@ -623,4 +628,17 @@ func (builder *LabelSetSimpleBuilder) Sort() {
 	}
 	slices.SortFunc(builder.pairs, func(a, b SimpleLabel) int { return strings.Compare(a.Name, b.Name) })
 	builder.sorted = true
+}
+
+func (builder *LabelSetSimpleBuilder) String() string {
+	var b bytes.Buffer
+
+	for _, l := range builder.pairs {
+		_, _ = b.WriteString(l.Name)
+		_ = b.WriteByte(':')
+		_, _ = b.WriteString(l.Value)
+		_ = b.WriteByte(';')
+	}
+
+	return b.String()
 }
