@@ -125,6 +125,8 @@ cover only a few samples.
 
 Ways to deal with this change either globally or on a per metric basis:
 
+// TODO: adjust doc
+
 - Fix references to integer `le`, `quantile` label values, but otherwise do
 nothing and accept that some queries that span the transition time will produce
 inaccurate or unexpected results.

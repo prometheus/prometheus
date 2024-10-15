@@ -66,6 +66,9 @@ const (
 	tEqual
 	tTimestamp
 	tValue
+
+	quantileString = "quantile"
+	leString = "le"
 )
 
 func (t token) String() string {
@@ -240,7 +243,17 @@ func (p *PromParser) Metric(l *labels.Labels) string {
 		c := p.offsets[i+2] - p.start
 		d := p.offsets[i+3] - p.start
 		value := unreplace(s[c:d])
+		//
+		// XXX: this is just a PoC
+		if (p.mtype == model.MetricTypeSummary && label == quantileString) || (p.mtype == model.MetricTypeHistogram && label == leString) {
+			f, err := strconv.ParseFloat(value, 64)
+			if err == nil {
+				// XXX: maybe use f even in case of error? (zero value)
+				value = formatOpenMetricsFloat(f)
+			}
+		}
 		p.builder.Add(label, value)
+
 	}
 
 	p.builder.Sort()
@@ -432,6 +445,8 @@ func (p *PromParser) parseLVals() error {
 		if !utf8.Valid(p.l.buf()) {
 			return fmt.Errorf("invalid UTF-8 label value: %q", p.l.buf())
 		}
+
+		// XXX: ensure quantile and le are floats and return error if not?
 
 		// The promlexer ensures the value string is quoted. Strip first
 		// and last character.
