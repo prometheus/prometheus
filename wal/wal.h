@@ -99,6 +99,8 @@ enum class BasicEncoderVersion : uint8_t { kUnknown = 0, kV1, kV2, kV3 };
 template <class LabelSetsTable = Primitives::SnugComposites::LabelSet::EncodingBimap, bool shrink_lss = false>
 class BasicEncoder {
  public:
+   using checkpoint_type = typename std::remove_reference_t<LabelSetsTable>::checkpoint_type;
+
   class Buffer {
     BareBones::SparseVector<Primitives::Sample> singular_;
     BareBones::SparseVector<BareBones::Vector<Primitives::Sample>> plural_;
@@ -213,11 +215,11 @@ class BasicEncoder {
   struct Redundant {
     uint32_t segment;
     uint32_t encoders_count;
-    typename LabelSetsTable::checkpoint_type label_sets_checkpoint;
+    checkpoint_type label_sets_checkpoint;
     BareBones::Vector<EncoderWithID> encoders;
 
     inline __attribute__((always_inline))
-    Redundant(uint32_t _segment, typename LabelSetsTable::checkpoint_type _label_sets_checkpoint, uint32_t _encoders_count)
+    Redundant(uint32_t _segment, checkpoint_type _label_sets_checkpoint, uint32_t _encoders_count)
         : segment(_segment), encoders_count(_encoders_count), label_sets_checkpoint(_label_sets_checkpoint) {}
   };
 
@@ -240,7 +242,7 @@ class BasicEncoder {
 
  private:
   LabelSetsTable label_sets_;
-  typename std::remove_reference_t<LabelSetsTable>::checkpoint_type label_sets_checkpoint_;
+  checkpoint_type label_sets_checkpoint_;
   Buffer buffer_;
   BareBones::Vector<
       BareBones::Encoding::Gorilla::StreamEncoder<BareBones::Encoding::Gorilla::ZigZagTimestampEncoder<>, BareBones::Encoding::Gorilla::ValuesEncoder>>
@@ -389,10 +391,12 @@ class BasicEncoder {
   }
 
  public:
-  explicit BasicEncoder(LabelSetsTable& lss, uint16_t shard_id = 0, uint8_t pow_two_of_total_shards = 0)
+  explicit BasicEncoder(LabelSetsTable& lss, uint16_t shard_id = 0, uint8_t pow_two_of_total_shards = 0, uint32_t next_encoded_segment = 0, Primitives::Timestamp ts_base = std::numeric_limits<Primitives::Timestamp>::max())
       : label_sets_(lss),
         label_sets_checkpoint_(label_sets_.checkpoint()),
         uuid_(generate_uuid()),
+        next_encoded_segment_{next_encoded_segment},
+        ts_base_{ts_base},
         shard_id_(shard_id),
         pow_two_of_total_shards_(pow_two_of_total_shards) {
   }
@@ -871,6 +875,8 @@ class BasicDecoder {
   inline __attribute__((always_inline)) uint8_t pow_two_of_total_shards() const noexcept { return pow_two_of_total_shards_; }
 
   inline __attribute__((always_inline)) uint32_t last_processed_segment() const { return last_processed_segment_; }
+
+  inline __attribute__((always_inline)) Primitives::Timestamp ts_base() const { return ts_base_; }
 
   inline __attribute__((always_inline)) int64_t created_at_tsns() const { return created_at_tsns_; }
 
