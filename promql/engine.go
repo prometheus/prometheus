@@ -1000,8 +1000,6 @@ func extractGroupsFromPath(p []parser.Node) (bool, []string) {
 	return false, nil
 }
 
-// checkAndExpandSeriesSet expands expr's UnexpandedSeriesSet into expr's Series.
-// If the Series field is already non-nil, it's a no-op.
 func checkAndExpandSeriesSet(ctx context.Context, expr parser.Expr) (annotations.Annotations, error) {
 	switch e := expr.(type) {
 	case *parser.MatrixSelector:
