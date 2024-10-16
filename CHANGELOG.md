@@ -2,7 +2,10 @@
 
 ## unreleased
 
+## 2.55.0-rc.1 / 2024-10-16
+
 * [FEATURE] PromQL: Add experimental `info` function. #14495
+* [BUGFIX] PromQL: make sort_by_label stable. #14985
 
 ## 2.55.0-rc.0 / 2024-09-20
 
@@ -14,6 +17,7 @@
 * [FEATURE] Remote-Write: Support Google Cloud Monitoring authorization. #14346
 * [FEATURE] Promtool: `tsdb create-blocks` new option to add labels. #14403
 * [FEATURE] Promtool: `promtool test` adds `--junit` flag to format results. #14506
+* [FEATURE] TSDB: Add `delayed-compaction` feature flag, for people running many Prometheus to randomize timing. #12532
 * [ENHANCEMENT] OTLP receiver: Warn on exponential histograms with zero count and non-zero sum. #14706
 * [ENHANCEMENT] OTLP receiver: Interrupt translation on context cancellation/timeout. #14612
 * [ENHANCEMENT] Remote Read client: Enable streaming remote read if the server supports it. #11379
@@ -25,7 +29,7 @@
 * [ENHANCEMENT] Tracing: Improve PromQL tracing, including showing the operation performed for aggregates, operators, and calls. #14816
 * [ENHANCEMENT] API: Support multiple listening addresses. #14665
 * [ENHANCEMENT] TSDB: Backward compatibility with upcoming index v3. #14934
-* [PERF] TSDB: Query in-order and out-of-order series together. #14354, #14693, #14714, #14831, #14874, #14948
+* [PERF] TSDB: Query in-order and out-of-order series together. #14354, #14693, #14714, #14831, #14874, #14948, #15120
 * [PERF] TSDB: Streamline reading of overlapping out-of-order head chunks. #14729
 * [BUGFIX] SD: Fix dropping targets (with feature flag `new-service-discovery-manager`). #13147
 * [BUGFIX] SD: Stop storing stale targets (with feature flag `new-service-discovery-manager`). #13622
