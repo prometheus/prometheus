@@ -52,6 +52,7 @@ const (
 	HistogramSamples Type = 7
 	// FloatHistogramSamples is used to match WAL records of type Float Histograms.
 	FloatHistogramSamples Type = 8
+	CustomValues          Type = 9
 )
 
 func (rt Type) String() string {
@@ -72,6 +73,8 @@ func (rt Type) String() string {
 		return "mmapmarkers"
 	case Metadata:
 		return "metadata"
+	case CustomValues:
+		return "custom_values"
 	default:
 		return "unknown"
 	}
@@ -147,6 +150,11 @@ type RefSeries struct {
 	Labels labels.Labels
 }
 
+type RefCustomValues struct {
+	Ref          chunks.HeadSeriesRef
+	CustomValues []float64
+}
+
 // RefSample is a timestamp/value pair associated with a reference to a series.
 // TODO(beorn7): Perhaps make this "polymorphic", including histogram and float-histogram pointers? Then get rid of RefHistogramSample.
 type RefSample struct {
@@ -207,7 +215,7 @@ func (d *Decoder) Type(rec []byte) Type {
 		return Unknown
 	}
 	switch t := Type(rec[0]); t {
-	case Series, Samples, Tombstones, Exemplars, MmapMarkers, Metadata, HistogramSamples, FloatHistogramSamples:
+	case Series, Samples, Tombstones, Exemplars, MmapMarkers, Metadata, HistogramSamples, FloatHistogramSamples, CustomValues:
 		return t
 	}
 	return Unknown
@@ -589,6 +597,39 @@ func DecodeFloatHistogram(buf *encoding.Decbuf, fh *histogram.FloatHistogram) {
 	}
 }
 
+// TODO: optimize
+func (d *Decoder) CustomValues(rec []byte, customValues []RefCustomValues) ([]RefCustomValues, error) {
+	dec := encoding.Decbuf{B: rec}
+
+	if Type(dec.Byte()) != CustomValues {
+		return nil, errors.New("invalid record type")
+	}
+	if dec.Len() == 0 {
+		return customValues, nil
+	}
+	for len(dec.B) > 0 && dec.Err() == nil {
+		ref := storage.SeriesRef(dec.Be64())
+		l := dec.Uvarint()
+		if l > 0 {
+			vals := make([]float64, l)
+			for i := range vals {
+				vals[i] = dec.Be64Float64()
+			}
+			customValues = append(customValues, RefCustomValues{
+				Ref:          chunks.HeadSeriesRef(ref),
+				CustomValues: vals,
+			})
+		}
+	}
+	if dec.Err() != nil {
+		return nil, dec.Err()
+	}
+	if len(dec.B) > 0 {
+		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
+	}
+	return customValues, nil
+}
+
 // Encoder encodes series, sample, and tombstones records.
 // The zero value is ready to use.
 type Encoder struct{}
@@ -829,5 +870,29 @@ func EncodeFloatHistogram(buf *encoding.Encbuf, h *histogram.FloatHistogram) {
 	buf.PutUvarint(len(h.NegativeBuckets))
 	for _, b := range h.NegativeBuckets {
 		buf.PutBEFloat64(b)
+	}
+}
+
+func (e *Encoder) CustomValues(customValues []RefCustomValues, b []byte) []byte {
+	buf := encoding.Encbuf{B: b}
+	buf.PutByte(byte(CustomValues))
+
+	if len(customValues) == 0 {
+		return buf.Get()
+	}
+
+	for _, v := range customValues {
+		buf.PutBE64(uint64(v.Ref))
+		EncodeCustomValues(&buf, v.CustomValues)
+	}
+
+	return buf.Get()
+}
+
+// TODO: optimize
+func EncodeCustomValues(buf *encoding.Encbuf, values []float64) {
+	buf.PutUvarint(len(values))
+	for _, v := range values {
+		buf.PutBEFloat64(v)
 	}
 }
