@@ -2,6 +2,8 @@
 
 ## unreleased
 
+* [BUGFIX] Clamp functions: Ignore any points with native histograms. #15169
+
 ## 3.0.0-beta.1 / 2024-10-09
 
 * [CHANGE] regexp `.` now matches all characters (performance improvement). #14505
