@@ -2,8 +2,6 @@
 
 #include "wal/wal.h"
 
-#include "gtest/gtest.h"
-
 namespace {
 
 using PromPP::Primitives::LabelSetID;
@@ -33,11 +31,7 @@ class NamesSetForTest : public std::vector<std::string> {
   using Base::Base;
 
   friend size_t hash_value(const NamesSetForTest& lns) {
-    size_t res = 0;
-    for (const auto& label_name : lns) {
-      res = XXH3_64bits_withSeed(label_name.data(), label_name.size(), res);
-    }
-    return res;
+    return PromPP::Primitives::hash::hash_of_string_list(lns);
   }
 };
 

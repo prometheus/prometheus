@@ -17,13 +17,7 @@ class NamesSetForTest : public std::vector<std::string> {
 
  public:
   using Base::Base;
-  friend size_t hash_value(const NamesSetForTest& lns) {
-    size_t res = 0;
-    for (const auto& label_name : lns) {
-      res = XXH3_64bits_withSeed(label_name.data(), label_name.size(), res);
-    }
-    return res;
-  }
+  friend size_t hash_value(const NamesSetForTest& lns) { return PromPP::Primitives::hash::hash_of_string_list(lns); }
 };
 
 class LabelSetForTest : public std::vector<std::pair<std::string, std::string>> {
@@ -42,13 +36,7 @@ class LabelSetForTest : public std::vector<std::pair<std::string, std::string>> 
     return tns;
   }
 
-  friend size_t hash_value(const LabelSetForTest& tls) {
-    size_t res = 0;
-    for (const auto& [label_name, label_value] : tls) {
-      res = XXH3_64bits_withSeed(label_name.data(), label_name.size(), res) ^ XXH3_64bits_withSeed(label_value.data(), label_value.size(), res);
-    }
-    return res;
-  }
+  friend size_t hash_value(const LabelSetForTest& tls) { return PromPP::Primitives::hash::hash_of_label_set(tls); }
 };
 
 const char SYMBOLS_DATA[89] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-+=/|.,\\?<>!@#$%^&*()\"':;";

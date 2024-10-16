@@ -5,6 +5,7 @@
 
 #include "bare_bones/preprocess.h"
 #include "primitives/primitives.h"
+#include "prometheus/value.h"
 
 namespace PromPP::WAL {
 
@@ -46,7 +47,7 @@ class HeartbeatMetricsInserter {
     timeseries_.clear();
 
     timeseries_.label_set().add(std::initializer_list<PromPP::Primitives::LabelView>{
-        {"__name__", name},
+        {Prometheus::kMetricLabelName, name},
         {"instance", data_.hostname},
         {"agent_uuid", data_.agent_uuid},
         {"job", job},

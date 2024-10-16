@@ -42,13 +42,7 @@ class NamesSetForTest : public std::vector<std::string_view> {
 
  public:
   using Base::Base;
-  [[maybe_unused]] friend size_t hash_value(const NamesSetForTest& lns) {
-    size_t res = 0;
-    for (const auto& label_name : lns) {
-      res = XXH3_64bits_withSeed(label_name.data(), label_name.size(), res);
-    }
-    return res;
-  }
+  [[maybe_unused]] friend size_t hash_value(const NamesSetForTest& lns) { return PromPP::Primitives::hash::hash_of_string_list(lns); }
 };
 
 class LabelViewSetForTest : public std::vector<LabelViewForTest> {
@@ -83,13 +77,7 @@ class LabelViewSetForTest : public std::vector<LabelViewForTest> {
     return tns;
   }
 
-  [[maybe_unused]] friend size_t hash_value(const LabelViewSetForTest& tls) {
-    size_t res = 0;
-    for (const auto& [label_name, label_value] : tls) {
-      res = XXH3_64bits_withSeed(label_name.data(), label_name.size(), res) ^ XXH3_64bits_withSeed(label_value.data(), label_value.size(), res);
-    }
-    return res;
-  }
+  [[maybe_unused]] friend size_t hash_value(const LabelViewSetForTest& tls) { return PromPP::Primitives::hash::hash_of_label_set(tls); }
 };
 
 class TimeseriesForTest {
@@ -2089,8 +2077,7 @@ TEST_F(TestPerShardRelabeler, InputRelabelingWithStalenans) {
   PromPP::Primitives::Timestamp stale_ts = 1712567047055;
   prs.input_relabeling_with_stalenans(lss, empty_hx, shards_inner_series_, relabeled_results_, nullptr, newstate, stale_ts);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
-  EXPECT_EQ(shards_inner_series_[1]->data()[0].samples[0].timestamp(), stale_ts);
-  EXPECT_EQ(std::bit_cast<uint64_t>(shards_inner_series_[1]->data()[0].samples[0].value()), std::bit_cast<uint64_t>(BareBones::Encoding::Gorilla::STALE_NAN));
+  EXPECT_EQ(PromPP::Primitives::Sample(stale_ts, PromPP::Prometheus::kStaleNan), shards_inner_series_[1]->data()[0].samples[0]);
 }
 
 struct TestProcessExternalLabels : public testing::Test {

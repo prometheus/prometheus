@@ -2,6 +2,8 @@ package cppbridge
 
 import (
 	"encoding/binary"
+	"errors"
+	"fmt"
 	"runtime"
 	"strings"
 
@@ -208,5 +210,81 @@ func (h *WALBasicDecoderHashdex) Replica() string {
 
 // cptr pointer to underlying c++ object.
 func (h *WALBasicDecoderHashdex) cptr() uintptr {
+	return h.hashdex
+}
+
+const (
+	ScraperParseNoError uint32 = iota
+	ScraperParseUnexpectedToken
+	ScraperParseNoMetricName
+	ScraperInvalidUtf8
+	ScraperParseInvalidValue
+	ScraperParseInvalidTimestamp
+)
+
+var (
+	ErrScraperParseUnexpectedToken  = errors.New("scraper parse unexpected token")
+	ErrScraperParseNoMetricName     = errors.New("scraper parse no metric name")
+	ErrScraperInvalidUtf8           = errors.New("scraper parse invalid utf8")
+	ErrScraperParseInvalidValue     = errors.New("scraper parse invalid value")
+	ErrScraperParseInvalidTimestamp = errors.New("scraper parse invalid timestamp")
+
+	codeToError = map[uint32]error{
+		ScraperParseNoError:          nil,
+		ScraperParseUnexpectedToken:  ErrScraperParseUnexpectedToken,
+		ScraperParseNoMetricName:     ErrScraperParseNoMetricName,
+		ScraperInvalidUtf8:           ErrScraperInvalidUtf8,
+		ScraperParseInvalidValue:     ErrScraperParseInvalidValue,
+		ScraperParseInvalidTimestamp: ErrScraperParseInvalidTimestamp,
+	}
+)
+
+func errorFromCode(code uint32) error {
+	if code == ScraperParseNoError {
+		return nil
+	}
+
+	if err, ok := codeToError[code]; ok {
+		return err
+	}
+
+	return fmt.Errorf("scraper parse unknown code error: %d", code)
+}
+
+type WALScraperHashdex struct {
+	hashdex uintptr
+	buffer  []byte
+}
+
+var _ ShardedData = (*WALScraperHashdex)(nil)
+
+func NewScraperHashdex() *WALScraperHashdex {
+	h := &WALScraperHashdex{
+		hashdex: walScraperHashdexCtor(),
+		buffer:  nil,
+	}
+	runtime.SetFinalizer(h, func(h *WALScraperHashdex) {
+		walScraperHashdexDtor(h.hashdex)
+	})
+	return h
+}
+
+func (h *WALScraperHashdex) Parse(buffer []byte, default_timestamp int64, target_id string) error {
+	h.buffer = buffer
+	return errorFromCode(walScraperHashdexParse(h.hashdex, h.buffer, default_timestamp, target_id))
+}
+
+// Cluster get Cluster name.
+func (*WALScraperHashdex) Cluster() string {
+	return ""
+}
+
+// Replica get Replica name.
+func (*WALScraperHashdex) Replica() string {
+	return ""
+}
+
+// cptr pointer to underlying c++ object.
+func (h *WALScraperHashdex) cptr() uintptr {
 	return h.hashdex
 }

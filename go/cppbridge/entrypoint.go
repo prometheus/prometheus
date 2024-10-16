@@ -1694,3 +1694,47 @@ func freeHeadStatus(status *HeadStatus) {
 		uintptr(unsafe.Pointer(status)),
 	)
 }
+
+func walScraperHashdexCtor() uintptr {
+	var res struct {
+		hashdex uintptr
+	}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_wal_scraper_hashdex_ctor,
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.hashdex
+}
+
+func walScraperHashdexParse(hashdex uintptr, buffer []byte, default_timestamp int64, target_id string) uint32 {
+	var args = struct {
+		hashdex           uintptr
+		buffer            []byte
+		default_timestamp int64
+		target_id         string
+	}{hashdex, buffer, default_timestamp, target_id}
+	var res struct {
+		error uint32
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_wal_scraper_hashdex_parse,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.error
+}
+
+func walScraperHashdexDtor(hashdex uintptr) {
+	var args = struct {
+		hashdex uintptr
+	}{hashdex}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_wal_scraper_hashdex_dtor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}

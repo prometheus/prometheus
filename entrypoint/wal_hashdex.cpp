@@ -105,3 +105,32 @@ extern "C" void prompp_wal_go_model_hashdex_presharding(void* args, void* res) {
 extern "C" void prompp_wal_basic_decoder_hashdex_dtor(void* args) {
   prompp_wal_hashdex_dtor(args);
 }
+
+extern "C" void prompp_wal_scraper_hashdex_ctor(void* res) {
+  struct Result {
+    HashdexVariant* hashdex;
+  };
+
+  new (res) Result{.hashdex = new HashdexVariant{std::in_place_index<HashdexType::scraper>}};
+}
+
+extern "C" void prompp_wal_scraper_hashdex_parse(void* args, void* res) {
+  struct Arguments {
+    HashdexVariant* hashdex;
+    PromPP::Primitives::Go::SliceView<char> buffer;
+    PromPP::Primitives::Timestamp default_timestamp;
+    PromPP::Primitives::Go::String target_id;
+  };
+  struct Result {
+    PromPP::WAL::hashdex::Scraper::Error error{PromPP::WAL::hashdex::Scraper::Error::kNoError};
+  };
+
+  const auto in = static_cast<Arguments*>(args);
+  new (res) Result{
+      .error = std::get<PromPP::WAL::hashdex::Scraper>(*in->hashdex)
+                   .parse({const_cast<char*>(in->buffer.data()), in->buffer.size()}, in->default_timestamp, static_cast<std::string_view>(in->target_id))};
+}
+
+extern "C" void prompp_wal_scraper_hashdex_dtor(void* args) {
+  prompp_wal_hashdex_dtor(args);
+}

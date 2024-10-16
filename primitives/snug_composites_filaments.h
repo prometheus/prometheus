@@ -3,13 +3,12 @@
 #include <cstdint>
 
 #include <scope_exit.h>
-#define XXH_INLINE_ALL
-#include "xxHash/xxhash.h"
 
 #include "bare_bones/exception.h"
 #include "bare_bones/snug_composite.h"
 #include "bare_bones/stream_v_byte.h"
 #include "bare_bones/vector.h"
+#include "hash.h"
 
 namespace PromPP {
 namespace Primitives {
@@ -354,13 +353,7 @@ class LabelNameSet {
       return std::ranges::lexicographical_compare(Base::begin(), Base::end(), b.begin(), b.end());
     }
 
-    inline __attribute__((always_inline)) friend size_t hash_value(const composite_type& lns) noexcept {
-      size_t res = 0;
-      for (const auto& label_name : lns) {
-        res = XXH3_64bits_withSeed(label_name.data(), label_name.size(), res);
-      }
-      return res;
-    }
+    PROMPP_ALWAYS_INLINE friend size_t hash_value(const composite_type& lns) noexcept { return hash::hash_of_string_list(lns); }
   };
 
   inline __attribute__((always_inline)) composite_type composite(const data_type& data) const noexcept {
@@ -827,13 +820,7 @@ class LabelSet {
       return std::ranges::lexicographical_compare(begin(), end(), b.begin(), b.end(), [](const auto& a, const auto& b) { return a < b; });
     }
 
-    inline __attribute__((always_inline)) friend size_t hash_value(const composite_type& ls) noexcept {
-      size_t res = 0;
-      for (const auto& [label_name, label_value] : ls) {
-        res = XXH3_64bits_withSeed(label_name.data(), label_name.size(), res) ^ XXH3_64bits_withSeed(label_value.data(), label_value.size(), res);
-      }
-      return res;
-    }
+    PROMPP_ALWAYS_INLINE friend size_t hash_value(const composite_type& ls) noexcept { return hash::hash_of_label_set(ls); }
   };
 
   inline __attribute__((always_inline)) composite_type composite(const data_type& data) const noexcept {

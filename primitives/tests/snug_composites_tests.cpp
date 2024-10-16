@@ -1,6 +1,7 @@
 #include <sstream>
 
 #include "gtest/gtest.h"
+#include "primitives/hash.h"
 
 #include "primitives/snug_composites.h"
 #include "primitives/snug_composites_filaments.h"
@@ -12,13 +13,7 @@ class NamesSetForTest : public std::vector<std::string> {
 
  public:
   using Base::Base;
-  friend size_t hash_value(const NamesSetForTest& lns) {
-    size_t res = 0;
-    for (const auto& label_name : lns) {
-      res = XXH3_64bits_withSeed(label_name.data(), label_name.size(), res);
-    }
-    return res;
-  }
+  friend size_t hash_value(const NamesSetForTest& lns) { return PromPP::Primitives::hash::hash_of_string_list(lns); }
 };
 
 class LabelSetForTest : public std::vector<std::pair<std::string, std::string>> {
