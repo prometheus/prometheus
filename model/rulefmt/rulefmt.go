@@ -111,6 +111,20 @@ func (g *RuleGroups) Validate(node ruleGroups) (errs []error) {
 			)
 		}
 
+		for k, v := range g.Labels {
+			if !model.LabelName(k).IsValid() || k == model.MetricNameLabel {
+				errs = append(
+					errs, fmt.Errorf("invalid label name: %s", k),
+				)
+			}
+
+			if !model.LabelValue(v).IsValid() {
+				errs = append(
+					errs, fmt.Errorf("invalid label value: %s", v),
+				)
+			}
+		}
+
 		set[g.Name] = struct{}{}
 
 		for i, r := range g.Rules {
@@ -136,11 +150,12 @@ func (g *RuleGroups) Validate(node ruleGroups) (errs []error) {
 
 // RuleGroup is a list of sequentially evaluated recording and alerting rules.
 type RuleGroup struct {
-	Name        string          `yaml:"name"`
-	Interval    model.Duration  `yaml:"interval,omitempty"`
-	QueryOffset *model.Duration `yaml:"query_offset,omitempty"`
-	Limit       int             `yaml:"limit,omitempty"`
-	Rules       []RuleNode      `yaml:"rules"`
+	Name        string            `yaml:"name"`
+	Interval    model.Duration    `yaml:"interval,omitempty"`
+	QueryOffset *model.Duration   `yaml:"query_offset,omitempty"`
+	Limit       int               `yaml:"limit,omitempty"`
+	Rules       []RuleNode        `yaml:"rules"`
+	Labels      map[string]string `yaml:"labels,omitempty"`
 }
 
 // Rule describes an alerting or recording rule.
