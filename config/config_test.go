@@ -1500,7 +1500,7 @@ var expectedConf = &Config{
 	},
 }
 
-func TestYAMLDeprecatedAMApi(t *testing.T) {
+func TestYAMLNotLongerSupportedAMApi(t *testing.T) {
 	_, err := LoadFile("testdata/config_with_deprecated_am_api_config.yml", false, false, log.NewNopLogger())
 	require.Error(t, err, "parsing YAML file testdata/config_with_deprecated_am_api_config.yml: expected Alertmanager api version to be one of [v2] but got v1")
 }
