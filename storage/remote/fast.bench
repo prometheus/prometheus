@@ -1,0 +1,35 @@
+goos: linux
+goarch: arm64
+pkg: github.com/prometheus/prometheus/storage/remote
+BenchmarkOTLP/type=sum/temporality=Cumulative/cfg=default/K=128-8         	   94728	     12379 ns/op	   12072 B/op	     193 allocs/op
+BenchmarkOTLP/type=sum/temporality=Cumulative/cfg=default/K=128-8         	   91476	     11512 ns/op	   12155 B/op	     193 allocs/op
+BenchmarkOTLP/type=sum/temporality=Cumulative/cfg=default/K=128-8         	  106219	     13655 ns/op	   11823 B/op	     193 allocs/op
+BenchmarkOTLP/type=sum/temporality=Cumulative/cfg=default/K=128-8         	  107425	     10859 ns/op	   11801 B/op	     193 allocs/op
+BenchmarkOTLP/type=sum/temporality=Cumulative/cfg=default/K=128-8         	  106982	     10838 ns/op	   11810 B/op	     193 allocs/op
+BenchmarkOTLP/type=sum/temporality=Cumulative/cfg=default/K=128-8         	  102601	     10957 ns/op	   11898 B/op	     193 allocs/op
+BenchmarkOTLP/type=sum/temporality=Cumulative/cfg=default/K=128-8         	  104622	     10877 ns/op	   11854 B/op	     193 allocs/op
+BenchmarkOTLP/type=sum/temporality=Cumulative/cfg=default/K=128-8         	  104182	     10999 ns/op	   11867 B/op	     193 allocs/op
+BenchmarkOTLP/type=sum/temporality=Cumulative/cfg=default/K=128-8         	  101974	     10916 ns/op	   11910 B/op	     193 allocs/op
+BenchmarkOTLP/type=sum/temporality=Cumulative/cfg=default/K=128-8         	  102988	     10745 ns/op	   11889 B/op	     193 allocs/op
+BenchmarkOTLP/type=sum/temporality=Cumulative/cfg=convert/K=128-8         	  104649	     11017 ns/op	   11854 B/op	     193 allocs/op
+BenchmarkOTLP/type=sum/temporality=Cumulative/cfg=convert/K=128-8         	  109172	     11645 ns/op	   12264 B/op	     193 allocs/op
+BenchmarkOTLP/type=sum/temporality=Cumulative/cfg=convert/K=128-8         	  118238	     13125 ns/op	   12074 B/op	     193 allocs/op
+BenchmarkOTLP/type=sum/temporality=Cumulative/cfg=convert/K=128-8         	  116134	     12205 ns/op	   12116 B/op	     193 allocs/op
+BenchmarkOTLP/type=sum/temporality=Cumulative/cfg=convert/K=128-8         	  119810	     11411 ns/op	   12044 B/op	     193 allocs/op
+BenchmarkOTLP/type=sum/temporality=Cumulative/cfg=convert/K=128-8         	  118890	     12556 ns/op	   12056 B/op	     193 allocs/op
+BenchmarkOTLP/type=sum/temporality=Cumulative/cfg=convert/K=128-8         	  127275	     13290 ns/op	   11907 B/op	     193 allocs/op
+BenchmarkOTLP/type=sum/temporality=Cumulative/cfg=convert/K=128-8         	  122923	     11677 ns/op	   11983 B/op	     193 allocs/op
+BenchmarkOTLP/type=sum/temporality=Cumulative/cfg=convert/K=128-8         	   99676	     11643 ns/op	   11952 B/op	     193 allocs/op
+BenchmarkOTLP/type=sum/temporality=Cumulative/cfg=convert/K=128-8         	  114663	     12725 ns/op	   12140 B/op	     193 allocs/op
+BenchmarkOTLP/type=sum/temporality=Delta/cfg=convert/K=128-8              	   49600	     24938 ns/op	   12776 B/op	     245 allocs/op
+BenchmarkOTLP/type=sum/temporality=Delta/cfg=convert/K=128-8              	   50520	     23977 ns/op	   12734 B/op	     245 allocs/op
+BenchmarkOTLP/type=sum/temporality=Delta/cfg=convert/K=128-8              	   49147	     25330 ns/op	   12799 B/op	     245 allocs/op
+BenchmarkOTLP/type=sum/temporality=Delta/cfg=convert/K=128-8              	   45404	     24334 ns/op	   12992 B/op	     245 allocs/op
+BenchmarkOTLP/type=sum/temporality=Delta/cfg=convert/K=128-8              	   48708	     24422 ns/op	   12821 B/op	     245 allocs/op
+BenchmarkOTLP/type=sum/temporality=Delta/cfg=convert/K=128-8              	   45812	     25908 ns/op	   12967 B/op	     245 allocs/op
+BenchmarkOTLP/type=sum/temporality=Delta/cfg=convert/K=128-8              	   45411	     28885 ns/op	   12991 B/op	     245 allocs/op
+BenchmarkOTLP/type=sum/temporality=Delta/cfg=convert/K=128-8              	   41396	     25799 ns/op	   12685 B/op	     245 allocs/op
+BenchmarkOTLP/type=sum/temporality=Delta/cfg=convert/K=128-8              	   48331	     26449 ns/op	   12834 B/op	     245 allocs/op
+BenchmarkOTLP/type=sum/temporality=Delta/cfg=convert/K=128-8              	   46374	     27399 ns/op	   12935 B/op	     245 allocs/op
+PASS
+ok  	github.com/prometheus/prometheus/storage/remote	74.489s
