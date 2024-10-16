@@ -86,7 +86,11 @@ cc_test(
 
 cc_library(
     name = "prometheus",
-    hdrs = glob(["prometheus/**/*.h"]),
+    hdrs = glob(["prometheus/**/*.h", "prometheus/**/*.hpp"]),
+    srcs = glob(
+        include=["prometheus/**/*.cpp"],
+        exclude=["prometheus/**/*_tests.cpp"]
+    ),
     deps = [
         ":bare_bones",
         ":primitives",
@@ -99,7 +103,7 @@ cc_library(
 
 cc_test(
     name = "prometheus_test",
-    srcs = glob(["prometheus/tests/**/*_tests.cpp"]),
+    srcs = glob(["prometheus/**/*_tests.cpp"]),
     deps = [
         ":prometheus",
         "@gtest//:gtest_main",
@@ -109,18 +113,19 @@ cc_test(
 
 cc_library(
     name = "wal",
-    hdrs = glob(["wal/*.h"]),
+    hdrs = glob(["wal/**/*.h"]),
     deps = [
         ":bare_bones",
         ":primitives",
         ":prometheus",
         "@roaring",
+        "@utf8",
     ],
 )
 
 cc_test(
     name = "wal_test",
-    srcs = glob(["wal/tests/*_tests.cpp"]),
+    srcs = glob(["wal/**/*_tests.cpp"]),
     deps = [
         ":wal",
         "@gtest//:gtest_main",

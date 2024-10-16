@@ -54,35 +54,6 @@ void timeseries_to_go_time_series(Timeseries& timeseries, GoTimeSeries& go_time_
   go_time_series.value = timeseries.samples().back().value();
 }
 
-bool operator==(const PromPP::Primitives::TimeseriesSemiview& a, const PromPP::Primitives::TimeseriesSemiview& b) {
-  if (a.label_set().size() != b.label_set().size()) {
-    std::cout << "lhv label set size: " << a.label_set().size() << ", rhv label set size: " << b.label_set().size() << std::endl;
-    return false;
-  }
-
-  auto b_ls_it = b.label_set().begin();
-  for (auto a_ls_it = a.label_set().begin(); a_ls_it != a.label_set().end(); a_ls_it++, b_ls_it++) {
-    if ((std::get<0>(*a_ls_it) != std::get<0>(*b_ls_it)) || (std::get<1>(*a_ls_it) != std::get<1>(*b_ls_it))) {
-      std::cout << std::get<0>(*a_ls_it) << " != " << std::get<0>(*b_ls_it) << " or " << std::get<1>(*a_ls_it) << " != " << std::get<1>(*b_ls_it) << std::endl;
-      return false;
-    }
-  }
-
-  if (a.samples().size() != b.samples().size()) {
-    std::cout << "lhv samples size: " << a.label_set().size() << ", rhv samples size: " << b.label_set().size() << std::endl;
-    return false;
-  }
-
-  auto b_s_it = b.samples().begin();
-  for (auto a_s_it = a.samples().begin(); a_s_it != a.samples().end(); a_s_it++, b_s_it++) {
-    if ((a_s_it->timestamp() != b_s_it->timestamp()) || (a_s_it->value() != b_s_it->value())) {
-      std::cout << a_s_it->timestamp() << " != " << b_s_it->timestamp() << " or " << a_s_it->value() << " != " << b_s_it->value() << std::endl;
-      return false;
-    }
-  }
-  return true;
-}
-
 TEST(GoModelHashdexTest, HappyPath) {
   std::vector<std::string> label_set_a = {"name", "value", "cluster", "THECLUSTER", "__replica__", "rplc"};
   std::tuple<std::vector<std::string>, uint64_t, double> input_a = std::make_tuple(label_set_a, 25, 42);

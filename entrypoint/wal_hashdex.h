@@ -100,6 +100,39 @@ void prompp_wal_go_model_hashdex_presharding(void* args, void* res);
  */
 void prompp_wal_basic_decoder_hashdex_dtor(void* args);
 
+/**
+ * @brief Construct a new PromPP::WAL::hashdex::Scraper
+ *
+ * @param res {
+ *     hashdex uintptr // pointer to constructed hashdex
+ * }
+ */
+void prompp_wal_scraper_hashdex_ctor(void* res);
+
+/**
+ * @brief Parse scraped buffer
+ *
+ * @param args {
+ *     hashdex           uintptr
+ *     buffer            string // buffer will be modified by parser
+ *     default_timestamp int64
+ *     target_id         string
+ * }
+ * @param res {
+ *     error uint32 // value of PromPP::WAL::hashdex::Scraper::Error
+ * }
+ */
+void prompp_wal_scraper_hashdex_parse(void* args, void* res);
+
+/**
+ * @brief Destroy hashdex
+ *
+ * @param args {
+ *     hashdex uintptr // pointer to constructed hashdex
+ * }
+ */
+void prompp_wal_scraper_hashdex_dtor(void* args);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

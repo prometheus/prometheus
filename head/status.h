@@ -1,5 +1,6 @@
 #pragma once
 
+#include "prometheus/value.h"
 #include "series_data/decoder.h"
 #include "series_index/reverse_index.h"
 
@@ -132,8 +133,6 @@ class StatusGetter {
   TimeInterval min_max_timestamp_{};
   uint32_t label_count_{};
 
-  static constexpr std::string_view kMetricLabelName = "__name__";
-
   void fill() noexcept {
     fill_storage_statistic();
     fill_lss_statistic();
@@ -163,7 +162,7 @@ class StatusGetter {
   }
 
   void fill_reverse_index_statistic() noexcept {
-    const auto metric_name_id = lss_.trie_index().names_trie().lookup(kMetricLabelName).value_or(std::numeric_limits<uint32_t>::max());
+    const auto metric_name_id = lss_.trie_index().names_trie().lookup(PromPP::Prometheus::kMetricLabelName).value_or(std::numeric_limits<uint32_t>::max());
 
     auto& names = lss_.reverse_index().labels_by_name();
     for (uint32_t name_id = 0; name_id < names.size(); ++name_id) {

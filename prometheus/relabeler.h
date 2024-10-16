@@ -20,11 +20,11 @@
 #pragma GCC diagnostic pop
 
 #include "bare_bones/allocator.h"
-#include "bare_bones/gorilla.h"
 #include "bare_bones/preprocess.h"
 #include "bare_bones/vector.h"
 #include "primitives/go_slice.h"
 #include "primitives/primitives.h"
+#include "prometheus/value.h"
 
 namespace PromPP::Prometheus::Relabel {
 
@@ -281,14 +281,14 @@ PROMPP_ALWAYS_INLINE void hard_validate(relabelStatus& rstatus, LabelsBuilder& b
   }
 
   // check on contains metric name labels set
-  if (!builder.contains("__name__")) [[unlikely]] {
+  if (!builder.contains(kMetricLabelName)) [[unlikely]] {
     rstatus = rsInvalid;
     return;
   }
 
   // validate labels
   builder.range([&]<typename LNameType, typename LValueType>(LNameType& lname, LValueType& lvalue) PROMPP_LAMBDA_INLINE -> bool {
-    if (lname == "__name__" && !metric_name_value_is_valid(lvalue)) {
+    if (lname == kMetricLabelName && !metric_name_value_is_valid(lvalue)) {
       rstatus = rsInvalid;
       return false;
     }
@@ -946,7 +946,7 @@ class PerShardRelabeler {
   PROMPP_ALWAYS_INLINE size_t calculate_samples(BareBones::Vector<PromPP::Primitives::Sample>& samples) {
     size_t samples_count{0};
     for (const auto smpl : samples) {
-      if (BareBones::Encoding::Gorilla::isstalenan(smpl.value())) {
+      if (is_stale_nan(smpl.value())) {
         continue;
       }
       ++samples_count;
@@ -1015,7 +1015,7 @@ class PerShardRelabeler {
     LSSWithStaleNaNs wrapped_lss(lss, result);
     input_relabeling(wrapped_lss, metric_limits, hashdex, shards_inner_series, shards_relabeled_series);
 
-    BareBones::Vector<PromPP::Primitives::Sample> smpl{{stale_ts, BareBones::Encoding::Gorilla::STALE_NAN}};
+    BareBones::Vector<PromPP::Primitives::Sample> smpl{{stale_ts, kStaleNan}};
     PromPP::Primitives::LabelsBuilder builder =
         PromPP::Primitives::LabelsBuilder<typename LSS::value_type, PromPP::Primitives::LabelsBuilderStateMap>(builder_state_);
     result->swap([&](uint32_t ls_id) { input_relabel_process(lss, metric_limits, builder, shards_inner_series, shards_relabeled_series, smpl, ls_id); });

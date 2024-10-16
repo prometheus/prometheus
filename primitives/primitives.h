@@ -9,11 +9,9 @@
 
 #include <parallel_hashmap/phmap.h>
 
-#define XXH_INLINE_ALL
-#include "xxHash/xxhash.h"
-
 #include "bare_bones/preprocess.h"
 #include "bare_bones/vector.h"
+#include "hash.h"
 
 namespace PromPP {
 namespace Primitives {
@@ -120,13 +118,7 @@ class BasicLabelSet {
     return std::ranges::lexicographical_compare(begin(), end(), o.begin(), o.end());
   }
 
-  inline __attribute__((always_inline)) friend size_t hash_value(const BasicLabelSet& label_set) noexcept {
-    size_t res = 0;
-    for (const auto& [label_name, label_value] : label_set) {
-      res = XXH3_64bits_withSeed(label_name.data(), label_name.size(), res) ^ XXH3_64bits_withSeed(label_value.data(), label_value.size(), res);
-    }
-    return res;
-  }
+  PROMPP_ALWAYS_INLINE friend size_t hash_value(const BasicLabelSet& label_set) noexcept { return hash::hash_of_label_set(label_set); }
 
   class Names {
     const Container<LabelType>& labels_;
@@ -177,13 +169,7 @@ class BasicLabelSet {
       return std::ranges::lexicographical_compare(begin(), end(), o.begin(), o.end());
     }
 
-    inline __attribute__((always_inline)) friend size_t hash_value(const Names& label_set_names) noexcept {
-      size_t res = 0;
-      for (const auto& label_name : label_set_names) {
-        res = XXH3_64bits_withSeed(label_name.data(), label_name.size(), res);
-      }
-      return res;
-    }
+    PROMPP_ALWAYS_INLINE friend size_t hash_value(const Names& label_set_names) noexcept { return hash::hash_of_string_list(label_set_names); }
   };
 
   inline __attribute__((always_inline)) Names names() const noexcept { return Names(*this); }
@@ -270,10 +256,12 @@ class BasicTimeseries {
   BasicTimeseries(BasicTimeseries&&) noexcept = default;
   BasicTimeseries& operator=(BasicTimeseries&&) noexcept = default;
 
-  BasicTimeseries(const LabelSetType& label_set, const SamplesType samples) noexcept : label_set_(label_set), samples_(samples) {}
+  BasicTimeseries(const LabelSetType& label_set, SamplesType samples) noexcept : label_set_(label_set), samples_(std::move(samples)) {}
 
   template <class LabelSet>
   BasicTimeseries(const LabelSet& label_set, SamplesType samples) noexcept : label_set_(label_set), samples_(std::move(samples)) {}
+
+  PROMPP_ALWAYS_INLINE bool operator==(const BasicTimeseries&) const noexcept = default;
 
   inline __attribute__((always_inline)) auto& label_set() noexcept {
     if constexpr (std::is_pointer<LabelSetType>::value) {
