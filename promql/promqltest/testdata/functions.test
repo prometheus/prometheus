@@ -452,6 +452,21 @@ eval instant at 0m clamp(test_clamp, NaN, 0)
 
 eval instant at 0m clamp(test_clamp, 5, -5)
 
+clear
+
+load 1m
+	mixed_metric {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 1 2 3 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:8 count:6 buckets:[1 4 1]}}
+
+# clamp ignores any histograms
+eval range from 0 to 5m step 1m clamp(mixed_metric, 2, 5)
+	{} _ 2 2 3
+
+eval range from 0 to 5m step 1m clamp_min(mixed_metric, 2)
+	{} _ 2 2 3
+
+eval range from 0 to 5m step 1m clamp_max(mixed_metric, 2)
+	{} _ 1 2 2
+
 # Test cases for sgn.
 clear
 load 5m
