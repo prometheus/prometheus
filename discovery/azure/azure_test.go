@@ -15,18 +15,33 @@ package azure
 
 import (
 	"context"
-	"fmt"
+	"log/slog"
+	"net/http"
+	"slices"
+	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	azfake "github.com/Azure/azure-sdk-for-go/sdk/azcore/fake"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	fake "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5/fake"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v4"
+	fakenetwork "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v4/fake"
 	cache "github.com/Code-Hex/go-generics-cache"
 	"github.com/Code-Hex/go-generics-cache/policy/lru"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
+
+	"github.com/prometheus/prometheus/discovery"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
+
+const defaultMockNetworkID string = "/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/networkInterfaces/{networkInterfaceName}"
 
 func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m,
@@ -96,13 +111,12 @@ func TestVMToLabelSet(t *testing.T) {
 	vmType := "type"
 	location := "westeurope"
 	computerName := "computer_name"
-	networkID := "/subscriptions/00000000-0000-0000-0000-000000000000/network1"
 	ipAddress := "10.20.30.40"
 	primary := true
 	networkProfile := armcompute.NetworkProfile{
 		NetworkInterfaces: []*armcompute.NetworkInterfaceReference{
 			{
-				ID:         &networkID,
+				ID:         to.Ptr(defaultMockNetworkID),
 				Properties: &armcompute.NetworkInterfaceReferenceProperties{Primary: &primary},
 			},
 		},
@@ -139,7 +153,7 @@ func TestVMToLabelSet(t *testing.T) {
 		Location:          location,
 		OsType:            "Linux",
 		Tags:              map[string]*string{},
-		NetworkInterfaces: []string{networkID},
+		NetworkInterfaces: []string{defaultMockNetworkID},
 		Size:              size,
 	}
 
@@ -154,7 +168,8 @@ func TestVMToLabelSet(t *testing.T) {
 		cache:  cache.New(cache.AsLRU[string, *armnetwork.Interface](lru.WithCapacity(5))),
 	}
 	network := armnetwork.Interface{
-		Name: &networkID,
+		Name: to.Ptr(defaultMockNetworkID),
+		ID:   to.Ptr(defaultMockNetworkID),
 		Properties: &armnetwork.InterfacePropertiesFormat{
 			Primary: &primary,
 			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
@@ -164,9 +179,9 @@ func TestVMToLabelSet(t *testing.T) {
 			},
 		},
 	}
-	client := &mockAzureClient{
-		networkInterface: &network,
-	}
+
+	client := createMockAzureClient(t, nil, nil, nil, network, nil)
+
 	labelSet, err := d.vmToLabelSet(context.Background(), client, actualVM)
 	require.NoError(t, err)
 	require.Len(t, labelSet, 11)
@@ -475,34 +490,372 @@ func TestNewAzureResourceFromID(t *testing.T) {
 	}
 }
 
+func TestAzureRefresh(t *testing.T) {
+	tests := []struct {
+		scenario       string
+		vmResp         []armcompute.VirtualMachinesClientListAllResponse
+		vmssResp       []armcompute.VirtualMachineScaleSetsClientListAllResponse
+		vmssvmResp     []armcompute.VirtualMachineScaleSetVMsClientListResponse
+		interfacesResp armnetwork.Interface
+		expectedTG     []*targetgroup.Group
+	}{
+		{
+			scenario: "VMs, VMSS and VMSSVMs in Multiple Responses",
+			vmResp: []armcompute.VirtualMachinesClientListAllResponse{
+				{
+					VirtualMachineListResult: armcompute.VirtualMachineListResult{
+						Value: []*armcompute.VirtualMachine{
+							defaultVMWithIDAndName(to.Ptr("/subscriptions/00000000-0000-0000-0000-00000000000/resourceGroups/{resourceGroup}/providers/Microsoft.Compute/virtualMachine/vm1"), to.Ptr("vm1")),
+							defaultVMWithIDAndName(to.Ptr("/subscriptions/00000000-0000-0000-0000-00000000000/resourceGroups/{resourceGroup}/providers/Microsoft.Compute/virtualMachine/vm2"), to.Ptr("vm2")),
+						},
+					},
+				},
+				{
+					VirtualMachineListResult: armcompute.VirtualMachineListResult{
+						Value: []*armcompute.VirtualMachine{
+							defaultVMWithIDAndName(to.Ptr("/subscriptions/00000000-0000-0000-0000-00000000000/resourceGroups/{resourceGroup}/providers/Microsoft.Compute/virtualMachine/vm3"), to.Ptr("vm3")),
+							defaultVMWithIDAndName(to.Ptr("/subscriptions/00000000-0000-0000-0000-00000000000/resourceGroups/{resourceGroup}/providers/Microsoft.Compute/virtualMachine/vm4"), to.Ptr("vm4")),
+						},
+					},
+				},
+			},
+			vmssResp: []armcompute.VirtualMachineScaleSetsClientListAllResponse{
+				{
+					VirtualMachineScaleSetListWithLinkResult: armcompute.VirtualMachineScaleSetListWithLinkResult{
+						Value: []*armcompute.VirtualMachineScaleSet{
+							{
+								ID:       to.Ptr("/subscriptions/00000000-0000-0000-0000-00000000000/resourceGroups/{resourceGroup}/providers/Microsoft.Compute/virtualMachineScaleSets/vmScaleSet1"),
+								Name:     to.Ptr("vmScaleSet1"),
+								Location: to.Ptr("australiaeast"),
+								Type:     to.Ptr("Microsoft.Compute/virtualMachineScaleSets"),
+							},
+						},
+					},
+				},
+			},
+			vmssvmResp: []armcompute.VirtualMachineScaleSetVMsClientListResponse{
+				{
+					VirtualMachineScaleSetVMListResult: armcompute.VirtualMachineScaleSetVMListResult{
+						Value: []*armcompute.VirtualMachineScaleSetVM{
+							defaultVMSSVMWithIDAndName(to.Ptr("/subscriptions/00000000-0000-0000-0000-00000000000/resourceGroups/{resourceGroup}/providers/Microsoft.Compute/virtualMachineScaleSets/vmScaleSet1/virtualMachines/vmScaleSet1_vm1"), to.Ptr("vmScaleSet1_vm1")),
+							defaultVMSSVMWithIDAndName(to.Ptr("/subscriptions/00000000-0000-0000-0000-00000000000/resourceGroups/{resourceGroup}/providers/Microsoft.Compute/virtualMachineScaleSets/vmScaleSet1/virtualMachines/vmScaleSet1_vm2"), to.Ptr("vmScaleSet1_vm2")),
+						},
+					},
+				},
+			},
+			interfacesResp: armnetwork.Interface{
+				ID: to.Ptr(defaultMockNetworkID),
+				Properties: &armnetwork.InterfacePropertiesFormat{
+					Primary: to.Ptr(true),
+					IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
+						{Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
+							PrivateIPAddress: to.Ptr("10.0.0.1"),
+						}},
+					},
+				},
+			},
+			expectedTG: []*targetgroup.Group{
+				{
+					Targets: []model.LabelSet{
+						{
+							"__address__":                         "10.0.0.1:80",
+							"__meta_azure_machine_computer_name":  "computer_name",
+							"__meta_azure_machine_id":             "/subscriptions/00000000-0000-0000-0000-00000000000/resourceGroups/{resourceGroup}/providers/Microsoft.Compute/virtualMachine/vm1",
+							"__meta_azure_machine_location":       "australiaeast",
+							"__meta_azure_machine_name":           "vm1",
+							"__meta_azure_machine_os_type":        "Linux",
+							"__meta_azure_machine_private_ip":     "10.0.0.1",
+							"__meta_azure_machine_resource_group": "{resourceGroup}",
+							"__meta_azure_machine_size":           "size",
+							"__meta_azure_machine_tag_prometheus": "",
+							"__meta_azure_subscription_id":        "",
+							"__meta_azure_tenant_id":              "",
+						},
+						{
+							"__address__":                         "10.0.0.1:80",
+							"__meta_azure_machine_computer_name":  "computer_name",
+							"__meta_azure_machine_id":             "/subscriptions/00000000-0000-0000-0000-00000000000/resourceGroups/{resourceGroup}/providers/Microsoft.Compute/virtualMachine/vm2",
+							"__meta_azure_machine_location":       "australiaeast",
+							"__meta_azure_machine_name":           "vm2",
+							"__meta_azure_machine_os_type":        "Linux",
+							"__meta_azure_machine_private_ip":     "10.0.0.1",
+							"__meta_azure_machine_resource_group": "{resourceGroup}",
+							"__meta_azure_machine_size":           "size",
+							"__meta_azure_machine_tag_prometheus": "",
+							"__meta_azure_subscription_id":        "",
+							"__meta_azure_tenant_id":              "",
+						},
+						{
+							"__address__":                         "10.0.0.1:80",
+							"__meta_azure_machine_computer_name":  "computer_name",
+							"__meta_azure_machine_id":             "/subscriptions/00000000-0000-0000-0000-00000000000/resourceGroups/{resourceGroup}/providers/Microsoft.Compute/virtualMachine/vm3",
+							"__meta_azure_machine_location":       "australiaeast",
+							"__meta_azure_machine_name":           "vm3",
+							"__meta_azure_machine_os_type":        "Linux",
+							"__meta_azure_machine_private_ip":     "10.0.0.1",
+							"__meta_azure_machine_resource_group": "{resourceGroup}",
+							"__meta_azure_machine_size":           "size",
+							"__meta_azure_machine_tag_prometheus": "",
+							"__meta_azure_subscription_id":        "",
+							"__meta_azure_tenant_id":              "",
+						},
+						{
+							"__address__":                         "10.0.0.1:80",
+							"__meta_azure_machine_computer_name":  "computer_name",
+							"__meta_azure_machine_id":             "/subscriptions/00000000-0000-0000-0000-00000000000/resourceGroups/{resourceGroup}/providers/Microsoft.Compute/virtualMachine/vm4",
+							"__meta_azure_machine_location":       "australiaeast",
+							"__meta_azure_machine_name":           "vm4",
+							"__meta_azure_machine_os_type":        "Linux",
+							"__meta_azure_machine_private_ip":     "10.0.0.1",
+							"__meta_azure_machine_resource_group": "{resourceGroup}",
+							"__meta_azure_machine_size":           "size",
+							"__meta_azure_machine_tag_prometheus": "",
+							"__meta_azure_subscription_id":        "",
+							"__meta_azure_tenant_id":              "",
+						},
+						{
+							"__address__":                         "10.0.0.1:80",
+							"__meta_azure_machine_computer_name":  "computer_name",
+							"__meta_azure_machine_id":             "/subscriptions/00000000-0000-0000-0000-00000000000/resourceGroups/{resourceGroup}/providers/Microsoft.Compute/virtualMachineScaleSets/vmScaleSet1/virtualMachines/vmScaleSet1_vm1",
+							"__meta_azure_machine_location":       "australiaeast",
+							"__meta_azure_machine_name":           "vmScaleSet1_vm1",
+							"__meta_azure_machine_os_type":        "Linux",
+							"__meta_azure_machine_private_ip":     "10.0.0.1",
+							"__meta_azure_machine_resource_group": "{resourceGroup}",
+							"__meta_azure_machine_scale_set":      "vmScaleSet1",
+							"__meta_azure_machine_size":           "size",
+							"__meta_azure_machine_tag_prometheus": "",
+							"__meta_azure_subscription_id":        "",
+							"__meta_azure_tenant_id":              "",
+						},
+						{
+							"__address__":                         "10.0.0.1:80",
+							"__meta_azure_machine_computer_name":  "computer_name",
+							"__meta_azure_machine_id":             "/subscriptions/00000000-0000-0000-0000-00000000000/resourceGroups/{resourceGroup}/providers/Microsoft.Compute/virtualMachineScaleSets/vmScaleSet1/virtualMachines/vmScaleSet1_vm2",
+							"__meta_azure_machine_location":       "australiaeast",
+							"__meta_azure_machine_name":           "vmScaleSet1_vm2",
+							"__meta_azure_machine_os_type":        "Linux",
+							"__meta_azure_machine_private_ip":     "10.0.0.1",
+							"__meta_azure_machine_resource_group": "{resourceGroup}",
+							"__meta_azure_machine_scale_set":      "vmScaleSet1",
+							"__meta_azure_machine_size":           "size",
+							"__meta_azure_machine_tag_prometheus": "",
+							"__meta_azure_subscription_id":        "",
+							"__meta_azure_tenant_id":              "",
+						},
+					},
+				},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.scenario, func(t *testing.T) {
+			t.Parallel()
+			azureSDConfig := &DefaultSDConfig
+
+			azureClient := createMockAzureClient(t, tc.vmResp, tc.vmssResp, tc.vmssvmResp, tc.interfacesResp, nil)
+
+			reg := prometheus.NewRegistry()
+			refreshMetrics := discovery.NewRefreshMetrics(reg)
+			metrics := azureSDConfig.NewDiscovererMetrics(reg, refreshMetrics)
+
+			sd, err := NewDiscovery(azureSDConfig, nil, metrics)
+			require.NoError(t, err)
+
+			tg, err := sd.refreshAzureClient(context.Background(), azureClient)
+			require.NoError(t, err)
+
+			sortTargetsByID(tg[0].Targets)
+			require.Equal(t, tc.expectedTG, tg)
+		})
+	}
+}
+
 type mockAzureClient struct {
-	networkInterface *armnetwork.Interface
+	azureClient
 }
 
-var _ client = &mockAzureClient{}
+func createMockAzureClient(t *testing.T, vmResp []armcompute.VirtualMachinesClientListAllResponse, vmssResp []armcompute.VirtualMachineScaleSetsClientListAllResponse, vmssvmResp []armcompute.VirtualMachineScaleSetVMsClientListResponse, interfaceResp armnetwork.Interface, logger *slog.Logger) client {
+	t.Helper()
+	mockVMServer := defaultMockVMServer(vmResp)
+	mockVMSSServer := defaultMockVMSSServer(vmssResp)
+	mockVMScaleSetVMServer := defaultMockVMSSVMServer(vmssvmResp)
+	mockInterfaceServer := defaultMockInterfaceServer(interfaceResp)
 
-func (*mockAzureClient) getVMs(ctx context.Context, resourceGroup string) ([]virtualMachine, error) {
-	return nil, nil
-}
+	vmClient, err := armcompute.NewVirtualMachinesClient("fake-subscription-id", &azfake.TokenCredential{}, &arm.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
+			Transport: fake.NewVirtualMachinesServerTransport(&mockVMServer),
+		},
+	})
+	require.NoError(t, err)
 
-func (*mockAzureClient) getScaleSets(ctx context.Context, resourceGroup string) ([]armcompute.VirtualMachineScaleSet, error) {
-	return nil, nil
-}
+	vmssClient, err := armcompute.NewVirtualMachineScaleSetsClient("fake-subscription-id", &azfake.TokenCredential{}, &arm.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
+			Transport: fake.NewVirtualMachineScaleSetsServerTransport(&mockVMSSServer),
+		},
+	})
+	require.NoError(t, err)
 
-func (*mockAzureClient) getScaleSetVMs(ctx context.Context, scaleSet armcompute.VirtualMachineScaleSet) ([]virtualMachine, error) {
-	return nil, nil
-}
+	vmssvmClient, err := armcompute.NewVirtualMachineScaleSetVMsClient("fake-subscription-id", &azfake.TokenCredential{}, &arm.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
+			Transport: fake.NewVirtualMachineScaleSetVMsServerTransport(&mockVMScaleSetVMServer),
+		},
+	})
+	require.NoError(t, err)
 
-func (m *mockAzureClient) getVMNetworkInterfaceByID(ctx context.Context, networkInterfaceID string) (*armnetwork.Interface, error) {
-	if networkInterfaceID == "" {
-		return nil, fmt.Errorf("parameter networkInterfaceID cannot be empty")
+	interfacesClient, err := armnetwork.NewInterfacesClient("fake-subscription-id", &azfake.TokenCredential{}, &arm.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
+			Transport: fakenetwork.NewInterfacesServerTransport(&mockInterfaceServer),
+		},
+	})
+	require.NoError(t, err)
+
+	return &mockAzureClient{
+		azureClient: azureClient{
+			vm:     vmClient,
+			vmss:   vmssClient,
+			vmssvm: vmssvmClient,
+			nic:    interfacesClient,
+			logger: logger,
+		},
 	}
-	return m.networkInterface, nil
 }
 
-func (m *mockAzureClient) getVMScaleSetVMNetworkInterfaceByID(ctx context.Context, networkInterfaceID, scaleSetName, instanceID string) (*armnetwork.Interface, error) {
-	if scaleSetName == "" {
-		return nil, fmt.Errorf("parameter virtualMachineScaleSetName cannot be empty")
+func defaultMockInterfaceServer(interfaceResp armnetwork.Interface) fakenetwork.InterfacesServer {
+	return fakenetwork.InterfacesServer{
+		Get: func(ctx context.Context, resourceGroupName, networkInterfaceName string, options *armnetwork.InterfacesClientGetOptions) (resp azfake.Responder[armnetwork.InterfacesClientGetResponse], errResp azfake.ErrorResponder) {
+			resp.SetResponse(http.StatusOK, armnetwork.InterfacesClientGetResponse{Interface: interfaceResp}, nil)
+			return
+		},
+		GetVirtualMachineScaleSetNetworkInterface: func(ctx context.Context, resourceGroupName, virtualMachineScaleSetName, virtualmachineIndex, networkInterfaceName string, options *armnetwork.InterfacesClientGetVirtualMachineScaleSetNetworkInterfaceOptions) (resp azfake.Responder[armnetwork.InterfacesClientGetVirtualMachineScaleSetNetworkInterfaceResponse], errResp azfake.ErrorResponder) {
+			resp.SetResponse(http.StatusOK, armnetwork.InterfacesClientGetVirtualMachineScaleSetNetworkInterfaceResponse{Interface: interfaceResp}, nil)
+			return
+		},
 	}
-	return m.networkInterface, nil
+}
+
+func defaultMockVMServer(vmResp []armcompute.VirtualMachinesClientListAllResponse) fake.VirtualMachinesServer {
+	return fake.VirtualMachinesServer{
+		NewListAllPager: func(options *armcompute.VirtualMachinesClientListAllOptions) (resp azfake.PagerResponder[armcompute.VirtualMachinesClientListAllResponse]) {
+			for _, page := range vmResp {
+				resp.AddPage(http.StatusOK, page, nil)
+			}
+			return
+		},
+	}
+}
+
+func defaultMockVMSSServer(vmssResp []armcompute.VirtualMachineScaleSetsClientListAllResponse) fake.VirtualMachineScaleSetsServer {
+	return fake.VirtualMachineScaleSetsServer{
+		NewListAllPager: func(options *armcompute.VirtualMachineScaleSetsClientListAllOptions) (resp azfake.PagerResponder[armcompute.VirtualMachineScaleSetsClientListAllResponse]) {
+			for _, page := range vmssResp {
+				resp.AddPage(http.StatusOK, page, nil)
+			}
+			return
+		},
+	}
+}
+
+func defaultMockVMSSVMServer(vmssvmResp []armcompute.VirtualMachineScaleSetVMsClientListResponse) fake.VirtualMachineScaleSetVMsServer {
+	return fake.VirtualMachineScaleSetVMsServer{
+		NewListPager: func(resourceGroupName, virtualMachineScaleSetName string, options *armcompute.VirtualMachineScaleSetVMsClientListOptions) (resp azfake.PagerResponder[armcompute.VirtualMachineScaleSetVMsClientListResponse]) {
+			for _, page := range vmssvmResp {
+				resp.AddPage(http.StatusOK, page, nil)
+			}
+			return
+		},
+	}
+}
+
+func defaultVMWithIDAndName(id, name *string) *armcompute.VirtualMachine {
+	vmSize := armcompute.VirtualMachineSizeTypes("size")
+	osType := armcompute.OperatingSystemTypesLinux
+	defaultID := "/subscriptions/00000000-0000-0000-0000-00000000000/resourceGroups/{resourceGroup}/providers/Microsoft.Compute/virtualMachine/testVM"
+	defaultName := "testVM"
+
+	if id == nil {
+		id = &defaultID
+	}
+	if name == nil {
+		name = &defaultName
+	}
+
+	return &armcompute.VirtualMachine{
+		ID:       id,
+		Name:     name,
+		Type:     to.Ptr("Microsoft.Compute/virtualMachines"),
+		Location: to.Ptr("australiaeast"),
+		Properties: &armcompute.VirtualMachineProperties{
+			OSProfile: &armcompute.OSProfile{
+				ComputerName: to.Ptr("computer_name"),
+			},
+			StorageProfile: &armcompute.StorageProfile{
+				OSDisk: &armcompute.OSDisk{
+					OSType: &osType,
+				},
+			},
+			NetworkProfile: &armcompute.NetworkProfile{
+				NetworkInterfaces: []*armcompute.NetworkInterfaceReference{
+					{
+						ID: to.Ptr(defaultMockNetworkID),
+					},
+				},
+			},
+			HardwareProfile: &armcompute.HardwareProfile{
+				VMSize: &vmSize,
+			},
+		},
+		Tags: map[string]*string{
+			"prometheus": new(string),
+		},
+	}
+}
+
+func defaultVMSSVMWithIDAndName(id, name *string) *armcompute.VirtualMachineScaleSetVM {
+	vmSize := armcompute.VirtualMachineSizeTypes("size")
+	osType := armcompute.OperatingSystemTypesLinux
+	defaultID := "/subscriptions/00000000-0000-0000-0000-00000000000/resourceGroups/{resourceGroup}/providers/Microsoft.Compute/virtualMachineScaleSets/testVMScaleSet/virtualMachines/testVM"
+	defaultName := "testVM"
+
+	if id == nil {
+		id = &defaultID
+	}
+	if name == nil {
+		name = &defaultName
+	}
+
+	return &armcompute.VirtualMachineScaleSetVM{
+		ID:         id,
+		Name:       name,
+		Type:       to.Ptr("Microsoft.Compute/virtualMachines"),
+		InstanceID: to.Ptr("123"),
+		Location:   to.Ptr("australiaeast"),
+		Properties: &armcompute.VirtualMachineScaleSetVMProperties{
+			OSProfile: &armcompute.OSProfile{
+				ComputerName: to.Ptr("computer_name"),
+			},
+			StorageProfile: &armcompute.StorageProfile{
+				OSDisk: &armcompute.OSDisk{
+					OSType: &osType,
+				},
+			},
+			NetworkProfile: &armcompute.NetworkProfile{
+				NetworkInterfaces: []*armcompute.NetworkInterfaceReference{
+					{ID: to.Ptr(defaultMockNetworkID)},
+				},
+			},
+			HardwareProfile: &armcompute.HardwareProfile{
+				VMSize: &vmSize,
+			},
+		},
+		Tags: map[string]*string{
+			"prometheus": new(string),
+		},
+	}
+}
+
+func sortTargetsByID(targets []model.LabelSet) {
+	slices.SortFunc(targets, func(a, b model.LabelSet) int {
+		return strings.Compare(string(a["__meta_azure_machine_id"]), string(b["__meta_azure_machine_id"]))
+	})
 }
