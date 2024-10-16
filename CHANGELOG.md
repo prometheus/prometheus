@@ -2,6 +2,9 @@
 
 ## unreleased
 
+* [BUGFIX] PromQL: Fix stddev+stdvar aggregations to always ignore native histograms. #14941
+* [BUGFIX] PromQL: Fix stddev+stdvar aggregations to treat Infinity consistently. #14941
+
 ## 3.0.0-beta.1 / 2024-10-09
 
 * [CHANGE] regexp `.` now matches all characters (performance improvement). #14505

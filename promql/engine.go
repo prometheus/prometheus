@@ -2926,7 +2926,15 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 					group.hasHistogram = true
 				}
 			case parser.STDVAR, parser.STDDEV:
-				group.floatValue = 0
+				switch {
+				case h != nil:
+					// Ignore histograms for STDVAR and STDDEV.
+					group.seen = false
+				case math.IsNaN(f), math.IsInf(f, 0):
+					group.floatValue = math.NaN()
+				default:
+					group.floatValue = 0
+				}
 			case parser.QUANTILE:
 				group.heap = make(vectorByValueHeap, 1)
 				group.heap[0] = Sample{F: f}
