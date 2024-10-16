@@ -20,7 +20,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1041,11 +1040,6 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 
 	if httpClientConfigAuthEnabled && c.SigV4Config != nil {
 		return fmt.Errorf("at most one of basic_auth, authorization, oauth2, & sigv4 must be configured")
-	}
-
-	// Disallow config using AM V1 API.
-	if !slices.Contains(SupportedAlertmanagerAPIVersions, c.APIVersion) {
-		return fmt.Errorf("invalid Alertmanager API version '%v', expected one of '%v'", c.APIVersion, SupportedAlertmanagerAPIVersions)
 	}
 
 	// Check for users putting URLs in target groups.

@@ -545,7 +545,7 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 	// v2Payload represent 'alerts' marshaled for Alertmanager API v2.
 	// Marshaling happens below. Reference here is for caching between
 	// for loop iterations.
-	var v2Payload []byte
+	var cachedPayload []byte
 
 	n.mtx.RLock()
 	amSets := n.alertmanagers
@@ -576,22 +576,16 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 				continue
 			}
 			// We can't use the cached values from previous iteration.
-			v2Payload = nil
+			cachedPayload = nil
 		}
 
 		switch ams.cfg.APIVersion {
-		case config.AlertmanagerAPIVersionV1:
-			{
-				level.Error(n.logger).Log("msg", "Alertmanager API v1 is deprecated and not long supported")
-				ams.mtx.RUnlock()
-				return false
-			}
 		case config.AlertmanagerAPIVersionV2:
 			{
-				if v2Payload == nil {
+				if cachedPayload == nil {
 					openAPIAlerts := alertsToOpenAPIAlerts(amAlerts)
 
-					v2Payload, err = json.Marshal(openAPIAlerts)
+					cachedPayload, err = json.Marshal(openAPIAlerts)
 					if err != nil {
 						n.logger.Error("Encoding alerts for Alertmanager API v2 failed", "err", err)
 						ams.mtx.RUnlock()
@@ -599,7 +593,7 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 					}
 				}
 
-				payload = v2Payload
+				payload = cachedPayload
 			}
 		default:
 			{
@@ -614,7 +608,7 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 
 		if len(ams.cfg.AlertRelabelConfigs) > 0 {
 			// We can't use the cached values on the next iteration.
-			v2Payload = nil
+			cachedPayload = nil
 		}
 
 		for _, am := range ams.ams {
