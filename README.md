@@ -140,6 +140,9 @@ make npm_licenses
 make common-docker-amd64
 ```
 
+Or to build an image for your machine specific architecture,
+you can run `make docker-curr-arch`
+
 ## Using Prometheus as a Go Library
 
 ### Remote Write
