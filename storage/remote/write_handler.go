@@ -486,7 +486,7 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 
 // NewOTLPWriteHandler creates a http.Handler that accepts OTLP write requests and
 // writes them to the provided appendable.
-func NewOTLPWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, configFunc func() config.Config) http.Handler {
+func NewOTLPWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, configFunc func() config.Config, delta bool) http.Handler {
 	ex := &rwExporter{
 		writeHandler: &writeHandler{
 			logger:     logger,
@@ -496,7 +496,7 @@ func NewOTLPWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appenda
 	}
 
 	pl, err := otel.Use(reg,
-		otel.Processor(deltatocumulative.NewFactory(), nil), // TODO: how to pass config?
+		otel.Maybe(delta, otel.Processor(deltatocumulative.NewFactory(), nil)),
 		otel.Sink(ex),
 	)
 	if err != nil {

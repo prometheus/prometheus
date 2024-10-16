@@ -75,6 +75,15 @@ func Use(reg prometheus.Registerer, steps ...Step) (Pipeline, error) {
 	return pl, nil
 }
 
+func Maybe(ok bool, step Step) Step {
+	if ok {
+		return step
+	}
+	return func(set Settings, next consumer.Metrics) (consumer.Metrics, error) {
+		return next, nil
+	}
+}
+
 type Pipeline interface {
 	component.Component
 	consumer.Metrics
