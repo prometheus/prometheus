@@ -80,6 +80,7 @@ type OpenMetricsParser struct {
 	mfNameLen int // length of metric family name to get from series.
 	text      []byte
 	mtype     model.MetricType
+	unit      string
 	val       float64
 	ts        int64
 	hasTS     bool
@@ -203,6 +204,8 @@ func (p *OpenMetricsParser) Metric(l *labels.Labels) string {
 	p.builder.Reset()
 	metricName := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
 	p.builder.Add(labels.MetricName, metricName)
+	p.builder.Add(labels.MetricType, string(p.mtype))
+	p.builder.Add(labels.MetricUnit, p.unit)
 
 	for i := 2; i < len(p.offsets); i += 4 {
 		a := p.offsets[i] - p.start
@@ -492,6 +495,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 				if !strings.HasSuffix(m, u) || len(m) < len(u)+1 || p.l.b[p.offsets[1]-len(u)-1] != '_' {
 					return EntryInvalid, fmt.Errorf("unit %q not a suffix of metric %q", u, m)
 				}
+				p.unit = u
 			}
 			return EntryUnit, nil
 		}

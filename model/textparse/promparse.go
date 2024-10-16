@@ -232,6 +232,7 @@ func (p *PromParser) Metric(l *labels.Labels) string {
 	p.builder.Reset()
 	metricName := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
 	p.builder.Add(labels.MetricName, metricName)
+	p.builder.Add(labels.MetricType, string(p.mtype))
 
 	for i := 2; i < len(p.offsets); i += 4 {
 		a := p.offsets[i] - p.start

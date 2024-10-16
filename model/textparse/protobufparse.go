@@ -290,6 +290,9 @@ func (p *ProtobufParser) Comment() []byte {
 func (p *ProtobufParser) Metric(l *labels.Labels) string {
 	p.builder.Reset()
 	p.builder.Add(labels.MetricName, p.getMagicName())
+	_, t := p.Type()
+	p.builder.Add(labels.MetricType, string(t))
+	p.builder.Add(labels.MetricUnit, p.mf.GetUnit())
 
 	for _, lp := range p.mf.GetMetric()[p.metricPos].GetLabel() {
 		p.builder.Add(lp.GetName(), lp.GetValue())
