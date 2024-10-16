@@ -1784,11 +1784,17 @@ func (r *Reader) PostingsForLabelMatching(ctx context.Context, name string, matc
 		return EmptyPostings()
 	}
 
+	postingsCount := 0
+	if match == nil {
+		// The caller wants all postings for name.
+		postingsCount = len(e) * symbolFactor
+	}
+
 	lastVal := e[len(e)-1].value
-	var its []Postings
+	its := make([]Postings, 0, postingsCount)
 	if err := r.traversePostingOffsets(ctx, e[0].off, func(val string, postingsOff uint64) (bool, error) {
-		if match(val) {
-			// We want this postings iterator since the value is a match
+		if match == nil || match(val) {
+			// We want this postings iterator since the value is a match.
 			postingsDec := encoding.NewDecbufAt(r.b, int(postingsOff), castagnoliTable)
 			_, p, err := r.dec.PostingsFromDecbuf(postingsDec)
 			if err != nil {
