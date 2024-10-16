@@ -1890,13 +1890,21 @@ func (sl *scrapeLoop) checkAddError(met []byte, err error, sampleLimitErr, bucke
 // with scraped metrics in the cache.
 var (
 	scrapeHealthMetricName        = []byte("up" + "\xff")
+	scrapeHealthMetricUnit        = ""
 	scrapeDurationMetricName      = []byte("scrape_duration_seconds" + "\xff")
+	scrapeDurationMetricUnit      = "seconds"
 	scrapeSamplesMetricName       = []byte("scrape_samples_scraped" + "\xff")
+	scrapeSamplesMetricUnit       = ""
 	samplesPostRelabelMetricName  = []byte("scrape_samples_post_metric_relabeling" + "\xff")
+	samplesPostRelabelMetricUnit  = ""
 	scrapeSeriesAddedMetricName   = []byte("scrape_series_added" + "\xff")
+	scrapeSeriesAddedMetricUnit   = ""
 	scrapeTimeoutMetricName       = []byte("scrape_timeout_seconds" + "\xff")
+	scrapeTimeoutMetricUnit       = "seconds"
 	scrapeSampleLimitMetricName   = []byte("scrape_sample_limit" + "\xff")
+	scrapeSampleLimitMetricUnit   = ""
 	scrapeBodySizeBytesMetricName = []byte("scrape_body_size_bytes" + "\xff")
+	scrapeBodySizeBytesMetricUnit = "bytes"
 )
 
 func (sl *scrapeLoop) report(app storage.Appender, start time.Time, duration time.Duration, scraped, added, seriesAdded, bytes int, scrapeErr error) (err error) {
@@ -1910,29 +1918,29 @@ func (sl *scrapeLoop) report(app storage.Appender, start time.Time, duration tim
 	}
 	b := labels.NewBuilderWithSymbolTable(sl.symbolTable)
 
-	if err = sl.addReportSample(app, scrapeHealthMetricName, ts, health, b); err != nil {
+	if err = sl.addReportSample(app, scrapeHealthMetricName, scrapeHealthMetricUnit, ts, health, b); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeDurationMetricName, ts, duration.Seconds(), b); err != nil {
+	if err = sl.addReportSample(app, scrapeDurationMetricName, scrapeDurationMetricUnit, ts, duration.Seconds(), b); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeSamplesMetricName, ts, float64(scraped), b); err != nil {
+	if err = sl.addReportSample(app, scrapeSamplesMetricName, scrapeSamplesMetricUnit, ts, float64(scraped), b); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, samplesPostRelabelMetricName, ts, float64(added), b); err != nil {
+	if err = sl.addReportSample(app, samplesPostRelabelMetricName, samplesPostRelabelMetricUnit, ts, float64(added), b); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, ts, float64(seriesAdded), b); err != nil {
+	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, scrapeSeriesAddedMetricUnit, ts, float64(seriesAdded), b); err != nil {
 		return
 	}
 	if sl.reportExtraMetrics {
-		if err = sl.addReportSample(app, scrapeTimeoutMetricName, ts, sl.timeout.Seconds(), b); err != nil {
+		if err = sl.addReportSample(app, scrapeTimeoutMetricName, scrapeTimeoutMetricUnit, ts, sl.timeout.Seconds(), b); err != nil {
 			return
 		}
-		if err = sl.addReportSample(app, scrapeSampleLimitMetricName, ts, float64(sl.sampleLimit), b); err != nil {
+		if err = sl.addReportSample(app, scrapeSampleLimitMetricName, scrapeSampleLimitMetricUnit, ts, float64(sl.sampleLimit), b); err != nil {
 			return
 		}
-		if err = sl.addReportSample(app, scrapeBodySizeBytesMetricName, ts, float64(bytes), b); err != nil {
+		if err = sl.addReportSample(app, scrapeBodySizeBytesMetricName, scrapeBodySizeBytesMetricUnit, ts, float64(bytes), b); err != nil {
 			return
 		}
 	}
@@ -1945,36 +1953,36 @@ func (sl *scrapeLoop) reportStale(app storage.Appender, start time.Time) (err er
 	stale := math.Float64frombits(value.StaleNaN)
 	b := labels.NewBuilder(labels.EmptyLabels())
 
-	if err = sl.addReportSample(app, scrapeHealthMetricName, ts, stale, b); err != nil {
+	if err = sl.addReportSample(app, scrapeHealthMetricName, scrapeHealthMetricUnit, ts, stale, b); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeDurationMetricName, ts, stale, b); err != nil {
+	if err = sl.addReportSample(app, scrapeDurationMetricName, scrapeDurationMetricUnit, ts, stale, b); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeSamplesMetricName, ts, stale, b); err != nil {
+	if err = sl.addReportSample(app, scrapeSamplesMetricName, scrapeSamplesMetricUnit, ts, stale, b); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, samplesPostRelabelMetricName, ts, stale, b); err != nil {
+	if err = sl.addReportSample(app, samplesPostRelabelMetricName, samplesPostRelabelMetricUnit, ts, stale, b); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, ts, stale, b); err != nil {
+	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, scrapeSeriesAddedMetricUnit, ts, stale, b); err != nil {
 		return
 	}
 	if sl.reportExtraMetrics {
-		if err = sl.addReportSample(app, scrapeTimeoutMetricName, ts, stale, b); err != nil {
+		if err = sl.addReportSample(app, scrapeTimeoutMetricName, scrapeTimeoutMetricUnit, ts, stale, b); err != nil {
 			return
 		}
-		if err = sl.addReportSample(app, scrapeSampleLimitMetricName, ts, stale, b); err != nil {
+		if err = sl.addReportSample(app, scrapeSampleLimitMetricName, scrapeSampleLimitMetricUnit, ts, stale, b); err != nil {
 			return
 		}
-		if err = sl.addReportSample(app, scrapeBodySizeBytesMetricName, ts, stale, b); err != nil {
+		if err = sl.addReportSample(app, scrapeBodySizeBytesMetricName, scrapeBodySizeBytesMetricUnit, ts, stale, b); err != nil {
 			return
 		}
 	}
 	return
 }
 
-func (sl *scrapeLoop) addReportSample(app storage.Appender, s []byte, t int64, v float64, b *labels.Builder) error {
+func (sl *scrapeLoop) addReportSample(app storage.Appender, s []byte, unit string, t int64, v float64, b *labels.Builder) error {
 	ce, ok, _ := sl.cache.get(s)
 	var ref storage.SeriesRef
 	var lset labels.Labels
@@ -1987,6 +1995,8 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s []byte, t int64, v
 		// We have to drop it when building the actual metric.
 		b.Reset(labels.EmptyLabels())
 		b.Set(labels.MetricName, string(s[:len(s)-1]))
+		b.Set(labels.MetricUnit, unit)
+		b.Set(labels.MetricType, string(model.MetricTypeGauge))
 		lset = sl.reportSampleMutator(b.Labels())
 	}
 
