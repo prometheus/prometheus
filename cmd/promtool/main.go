@@ -76,13 +76,16 @@ const (
 
 	lintOptionAll                = "all"
 	lintOptionDuplicateRules     = "duplicate-rules"
-	lintOptionLongScrapeInterval = "long-scrape-inerval"
+	lintOptionLongScrapeInterval = "long-scrape-interval"
 	lintOptionNone               = "none"
 	checkHealth                  = "/-/healthy"
 	checkReadiness               = "/-/ready"
 )
 
-var lintOptions = []string{lintOptionAll, lintOptionDuplicateRules, lintOptionNone}
+var (
+	lintRuleOptions   = []string{lintOptionAll, lintOptionDuplicateRules, lintOptionNone}
+	lintConfigOptions = append(lintRuleOptions, lintOptionLongScrapeInterval)
+)
 
 func main() {
 	var (
@@ -115,8 +118,12 @@ func main() {
 	checkConfigSyntaxOnly := checkConfigCmd.Flag("syntax-only", "Only check the config file syntax, ignoring file and content validation referenced in the config").Bool()
 	checkConfigLint := checkConfigCmd.Flag(
 		"lint",
-		"Linting checks to apply to the rules specified in the config. Available options are: "+strings.Join(lintOptions, ", ")+". Use --lint=none to disable linting",
+		"Linting checks to apply to the rules specified in the config. Available options are: "+strings.Join(lintConfigOptions, ", ")+". Use --lint=none to disable linting",
 	).Default(lintOptionDuplicateRules).String()
+	checkConfigLintLookbackDelta := checkConfigCmd.Flag(
+		"lint.lookback-delta",
+		"The maximum lookback duration. This config is only used for config linting checks.",
+	).Default("5m").Duration()
 	checkConfigLintFatal := checkConfigCmd.Flag(
 		"lint-fatal",
 		"Make lint errors exit with exit code 3.").Default("false").Bool()
@@ -142,15 +149,11 @@ func main() {
 	).ExistingFiles()
 	checkRulesLint := checkRulesCmd.Flag(
 		"lint",
-		"Linting checks to apply. Available options are: "+strings.Join(lintOptions, ", ")+". Use --lint=none to disable linting",
+		"Linting checks to apply. Available options are: "+strings.Join(lintRuleOptions, ", ")+". Use --lint=none to disable linting",
 	).Default(lintOptionDuplicateRules).String()
 	checkRulesLintFatal := checkRulesCmd.Flag(
 		"lint-fatal",
 		"Make lint errors exit with exit code 3.").Default("false").Bool()
-	checkRulesLintLookbackDelta := checkRulesCmd.Flag(
-		"lint.lookback-delta",
-		"The maximum lookback duration. This config is only used for rules linting checks.",
-	).Default("5m").Duration()
 
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
 	checkMetricsExtended := checkCmd.Flag("extended", "Print extended information related to the cardinality of the metrics.").Bool()
@@ -345,7 +348,7 @@ func main() {
 		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout, prometheus.DefaultRegisterer))
 
 	case checkConfigCmd.FullCommand():
-		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newLintConfig(*checkConfigLint, *checkConfigLintFatal, *checkRulesLintLookbackDelta), *configFiles...))
+		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newLintConfig(*checkConfigLint, *checkConfigLintFatal, *checkConfigLintLookbackDelta), *configFiles...))
 
 	case checkServerHealthCmd.FullCommand():
 		os.Exit(checkErr(CheckServerStatus(serverURL, checkHealth, httpRoundTripper)))
@@ -357,7 +360,7 @@ func main() {
 		os.Exit(CheckWebConfig(*webConfigFiles...))
 
 	case checkRulesCmd.FullCommand():
-		os.Exit(CheckRules(newLintConfig(*checkRulesLint, *checkRulesLintFatal, *checkRulesLintLookbackDelta), *ruleFiles...))
+		os.Exit(CheckRules(newLintConfig(*checkRulesLint, *checkRulesLintFatal, 5*time.Minute), *ruleFiles...))
 
 	case checkMetricsCmd.FullCommand():
 		os.Exit(CheckMetrics(*checkMetricsExtended))
