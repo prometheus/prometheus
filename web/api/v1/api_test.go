@@ -2750,10 +2750,10 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 		{
 			endpoint: api.rules,
 			query: url.Values{
-				"max_groups": []string{"1"},
+				"group_limit": []string{"1"},
 			},
 			response: &RuleDiscovery{
-				NextToken: getRuleGroupNextToken("/path/to/file", "grp2"),
+				GroupNextToken: getRuleGroupNextToken("/path/to/file", "grp2"),
 				RuleGroups: []*RuleGroup{
 					{
 						Name:     "grp",
@@ -2846,8 +2846,8 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 		{
 			endpoint: api.rules,
 			query: url.Values{
-				"max_groups": []string{"1"},
-				"next_token": []string{getRuleGroupNextToken("/path/to/file", "grp2")},
+				"group_limit":      []string{"1"},
+				"group_next_token": []string{getRuleGroupNextToken("/path/to/file", "grp2")},
 			},
 			response: &RuleDiscovery{
 				RuleGroups: []*RuleGroup{
@@ -2877,16 +2877,16 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 		{ // invalid pagination request
 			endpoint: api.rules,
 			query: url.Values{
-				"next_token": []string{getRuleGroupNextToken("/path/to/file", "grp2")},
+				"group_next_token": []string{getRuleGroupNextToken("/path/to/file", "grp2")},
 			},
 			errType:  errorBadData,
 			zeroFunc: rulesZeroFunc,
 		},
-		{ // invalid max_groups
+		{ // invalid group_limit
 			endpoint: api.rules,
 			query: url.Values{
-				"max_groups": []string{"0"},
-				"next_token": []string{getRuleGroupNextToken("/path/to/file", "grp2")},
+				"group_limit":      []string{"0"},
+				"group_next_token": []string{getRuleGroupNextToken("/path/to/file", "grp2")},
 			},
 			errType:  errorBadData,
 			zeroFunc: rulesZeroFunc,
@@ -2894,8 +2894,8 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 		{ // Pagination token is invalid due to changes in the rule groups
 			endpoint: api.rules,
 			query: url.Values{
-				"max_groups": []string{"1"},
-				"next_token": []string{getRuleGroupNextToken("/removed/file", "notfound")},
+				"group_limit":      []string{"1"},
+				"group_next_token": []string{getRuleGroupNextToken("/removed/file", "notfound")},
 			},
 			errType:  errorBadData,
 			zeroFunc: rulesZeroFunc,
