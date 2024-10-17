@@ -275,7 +275,7 @@ type Appender interface {
 	// Appender has to be discarded after rollback.
 	Rollback() error
 
-	// New SetHints method to set the append hints.
+	// SetHints method to set the append hints.
 	SetHints(hints *AppendHints)
 
 	ExemplarAppender
