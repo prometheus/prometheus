@@ -16,6 +16,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"io"
 	"math"
 	"path/filepath"
 	"strconv"
@@ -957,6 +958,10 @@ func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
 	testHistogram := tsdbutil.GenerateTestHistograms(1)[0]
 	zeroHistogram := &histogram.Histogram{}
 
+	invalidHist := &histogram.Histogram{
+		CustomValues: make([]float64, 0, 1),
+	}
+
 	lbls := labelsForTest(t.Name(), 1)
 	defLbls := labels.New(lbls[0]...)
 
@@ -1006,6 +1011,35 @@ func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
 			},
 			expectedSeriesCount: 1,
 		},
+		{
+			name: "CT+float && CT+histogram samples with error",
+			inputSamples: []appendableSample{
+				{
+					// invalid CT
+					t:            100,
+					ct:           100,
+					v:            0,
+					lbls:         defLbls,
+					expectsError: true,
+				},
+				{
+					// invalid Histogram, will validate
+					t:            200,
+					h:            invalidHist,
+					lbls:         defLbls,
+					expectsError: true,
+				},
+				{
+					// invalid CT histogram
+					t:            300,
+					ct:           300,
+					h:            zeroHistogram,
+					lbls:         defLbls,
+					expectsError: true,
+				},
+			},
+			expectedSeriesCount: 0,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -1018,29 +1052,24 @@ func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
 			s := createTestAgentDB(t, reg, opts)
 			app := s.Appender(context.TODO())
 
-			seriesInsertMap := make(map[storage.SeriesRef]labels.Labels)
 			for _, sample := range tc.inputSamples {
 				// We supposed to write a Histogram to the WAL
 				if sample.h != nil {
 					if sample.ct != 0 {
-						refId, err := app.AppendHistogramCTZeroSample(0, sample.lbls, sample.t, sample.ct, sample.h, nil)
-						require.True(t, sample.expectsError == (err != nil), "expectedError (%v), got: %v", sample.expectsError, err)
-						seriesInsertMap[refId] = sample.lbls
+						_, err := app.AppendHistogramCTZeroSample(0, sample.lbls, sample.t, sample.ct, sample.h, nil)
+						require.Equal(t, sample.expectsError, err != nil, "expectedError (%v), got: %v", sample.expectsError, err)
 					} else {
-						refId, err := app.AppendHistogram(0, sample.lbls, sample.t, sample.h, nil)
-						require.True(t, sample.expectsError == (err != nil), "expectedError (%v), got: %v", sample.expectsError, err)
-						seriesInsertMap[refId] = sample.lbls
+						_, err := app.AppendHistogram(0, sample.lbls, sample.t, sample.h, nil)
+						require.Equal(t, sample.expectsError, err != nil, "expectedError (%v), got: %v", sample.expectsError, err)
 					}
 				} else {
 					// We supposed to write a float sample to the WAL
 					if sample.ct != 0 {
-						refId, err := app.AppendCTZeroSample(0, sample.lbls, sample.t, sample.ct)
-						require.True(t, sample.expectsError == (err != nil), "expectedError (%v), got: %v", sample.expectsError, err)
-						seriesInsertMap[refId] = sample.lbls
+						_, err := app.AppendCTZeroSample(0, sample.lbls, sample.t, sample.ct)
+						require.Equal(t, sample.expectsError, err != nil, "expectedError (%v), got: %v", sample.expectsError, err)
 					} else {
-						refId, err := app.Append(0, sample.lbls, sample.t, sample.v)
-						require.True(t, sample.expectsError == (err != nil), "expectedError (%v), got: %v", sample.expectsError, err)
-						seriesInsertMap[refId] = sample.lbls
+						_, err := app.Append(0, sample.lbls, sample.t, sample.v)
+						require.Equal(t, sample.expectsError, err != nil, "expectedError (%v), got: %v", sample.expectsError, err)
 					}
 				}
 			}
@@ -1069,9 +1098,13 @@ func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
 }
 
 func readWALSamples(t *testing.T, walDir string) []*walSample {
+	t.Helper()
 	sr, err := wlog.NewSegmentsReader(walDir)
 	require.NoError(t, err)
-	defer sr.Close()
+	defer func(sr io.ReadCloser) {
+		err := sr.Close()
+		require.NoError(t, err)
+	}(sr)
 
 	r := wlog.NewReader(sr)
 	dec := record.NewDecoder(labels.NewSymbolTable())
