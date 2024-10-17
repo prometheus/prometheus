@@ -345,8 +345,13 @@ func (ls Labels) Validate(f func(l Label) error) error {
 
 // DropMetricName returns Labels with "__name__" removed.
 func (ls Labels) DropMetricName() Labels {
+	return ls.DropMetricLabel(MetricName)
+}
+
+// DropMetricLabel returns Labels with the labelName removed.
+func (ls Labels) DropMetricLabel(labelName string) Labels {
 	for i, l := range ls {
-		if l.Name == MetricName {
+		if l.Name == labelName {
 			if i == 0 { // Make common case fast with no allocations.
 				return ls[1:]
 			}
