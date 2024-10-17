@@ -24,9 +24,8 @@ class Scraper {
     kInvalidTimestamp,
   };
 
-  [[nodiscard]] Error parse(std::span<char> buffer, Primitives::Timestamp default_timestamp, std::string_view target_id_label) {
+  [[nodiscard]] Error parse(std::span<char> buffer, Primitives::Timestamp default_timestamp) {
     items_.clear();
-    target_id_label_ = target_id_label;
     tokenizer_.tokenize({buffer.data(), buffer.data() + buffer.size()});
 
     while (true) {
@@ -66,7 +65,6 @@ class Scraper {
   [[nodiscard]] PROMPP_LAMBDA_INLINE uint32_t size() const noexcept { return items_.size(); }
   [[nodiscard]] PROMPP_LAMBDA_INLINE auto begin() const noexcept { return items_.begin(); }
   [[nodiscard]] PROMPP_LAMBDA_INLINE auto end() const noexcept { return items_.end(); }
-  [[nodiscard]] PROMPP_LAMBDA_INLINE std::string_view target_id_label() const noexcept { return target_id_label_; }
 
  private:
   using enum Tokenizer::Token;
@@ -152,27 +150,18 @@ class Scraper {
 
   class Item {
    public:
-    explicit Item(const Scraper* scraper) : scraper_(scraper) {}
-
     [[nodiscard]] PROMPP_ALWAYS_INLINE uint64_t hash() const noexcept { return hash_; }
 
     template <class Timeseries>
     void read(Timeseries& timeseries) const {
       LabelSetParser{buffer_, timeseries.label_set()}.parse();
-      add_target_id_label<decltype(timeseries.label_set()), std::string_view>(timeseries.label_set());
       timeseries.samples().emplace_back(sample_);
-    }
-
-    template <class LabelSet, class StringType>
-    void add_target_id_label(LabelSet& label_set) const {
-      label_set.add({StringType{"__target_id__"}, StringType{scraper_->target_id_label()}});
     }
 
    private:
     std::string_view buffer_{};
     Primitives::Sample sample_{};
     uint64_t hash_{};
-    const Scraper* scraper_{};
 
     friend class ItemParser;
 
@@ -187,7 +176,7 @@ class Scraper {
 
   class ItemParser {
    public:
-    explicit ItemParser(Prometheus::textparse::Tokenizer& tokenizer, const Scraper* scraper) : tokenizer_(tokenizer), item_(scraper) {}
+    explicit ItemParser(Prometheus::textparse::Tokenizer& tokenizer) : tokenizer_(tokenizer) {}
 
     [[nodiscard]] PROMPP_ALWAYS_INLINE const Item& item() const noexcept { return item_; }
 
@@ -215,7 +204,6 @@ class Scraper {
         tokenizer_.next_non_whitespace();
       }
 
-      item_.add_target_id_label<decltype(label_set_), StringView>(label_set_);
       item_.hash_ = hash_value(label_set_);
       return parse_metric_suffix();
     }
@@ -428,8 +416,7 @@ class Scraper {
 
   BareBones::Vector<Item> items_;
   Prometheus::textparse::Tokenizer tokenizer_;
-  ItemParser item_parser_{tokenizer_, this};
-  std::string target_id_label_;
+  ItemParser item_parser_{tokenizer_};
 };
 
 }  // namespace PromPP::WAL::hashdex

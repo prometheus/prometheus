@@ -47,13 +47,10 @@ constexpr Timestamp kDefaultTimestamp = std::numeric_limits<Timestamp>::max();
 
 class ScraperFixture : public ::testing::TestWithParam<ScraperCase> {
  protected:
-  static constexpr PromPP::Primitives::LabelView kTargetIdLabel = {"__target_id__", "1"};
-
   Scraper scraper_;
 
   void SetUp() override {
     for (auto& item : const_cast<ScraperCase&>(GetParam()).items) {
-      item.timeseries.label_set().add(kTargetIdLabel);
       item.hash = PromPP::Primitives::hash::hash_of_label_set(item.timeseries.label_set());
     }
   }
@@ -76,7 +73,7 @@ TEST_P(ScraperFixture, Test) {
   std::string buffer(GetParam().buffer.data(), GetParam().buffer.size());
 
   // Act
-  const auto result = scraper_.parse(buffer, kDefaultTimestamp, kTargetIdLabel.second);
+  const auto result = scraper_.parse(buffer, kDefaultTimestamp);
   const auto items = get_items();
 
   // Assert
