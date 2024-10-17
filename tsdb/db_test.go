@@ -8867,7 +8867,6 @@ func TestGenerateCompactionDelay(t *testing.T) {
 		// The offset is generated and changed while opening.
 		assertDelay(db.opts.CompactionDelay, c.compactionDelayPercent)
 
-		// Test the default 10% delay
 		for i := 0; i < 1000; i++ {
 			assertDelay(db.generateCompactionDelay(), c.compactionDelayPercent)
 		}
