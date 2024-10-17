@@ -20,6 +20,7 @@ import (
 	"math"
 	"math/rand"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"sync"
@@ -2277,11 +2278,15 @@ func (m mockIndex) LabelValues(_ context.Context, name string, matchers ...*labe
 	}
 
 	for _, series := range m.series {
+		matches := true
 		for _, matcher := range matchers {
-			if matcher.Matches(series.l.Get(matcher.Name)) {
-				// TODO(colega): shouldn't we check all the matchers before adding this to the values?
-				values = append(values, series.l.Get(name))
+			matches = matches && matcher.Matches(series.l.Get(matcher.Name))
+			if !matches {
+				break
 			}
+		}
+		if matches && !slices.Contains(values, series.l.Get(name)) {
+			values = append(values, series.l.Get(name))
 		}
 	}
 
@@ -2382,7 +2387,7 @@ func (m mockIndex) LabelNames(_ context.Context, matchers ...*labels.Matcher) ([
 		for _, series := range m.series {
 			matches := true
 			for _, matcher := range matchers {
-				matches = matches || matcher.Matches(series.l.Get(matcher.Name))
+				matches = matches && matcher.Matches(series.l.Get(matcher.Name))
 				if !matches {
 					break
 				}
