@@ -23,7 +23,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-func TestNhcbParserOnOpenMetricsParser(t *testing.T) {
+func TestNHCBParserOnOMParser(t *testing.T) {
 	// The input is taken originally from TestOpenMetricsParse, with additional tests for the NHCBParser.
 
 	input := `# HELP go_gc_duration_seconds A summary of the GC invocation durations.
@@ -446,7 +446,7 @@ foobar{quantile="0.99"} 150.1`
 	requireEntries(t, exp, got)
 }
 
-func TestNhcbParserMultiHOnOpenMetricsParser(t *testing.T) {
+func TestNHCBParserOMParser_MultipleHistograms(t *testing.T) {
 	// The input is taken originally from TestOpenMetricsParse, with additional tests for the NHCBParser.
 
 	input := `# HELP something Histogram with _created between buckets and summary

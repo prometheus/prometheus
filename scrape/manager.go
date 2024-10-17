@@ -179,8 +179,8 @@ func (m *Manager) reload() {
 				continue
 			}
 			if scrapeConfig.ConvertClassicHistograms && m.opts.EnableCreatedTimestampZeroIngestion {
-				// TODO(krajorama): lift this limitation
-				m.logger.Error("error reloading target set", "err", "cannot convert classic histograms to native histograms with custom buckets and ingest created timestamp zero samples at the same time")
+				// TODO(krajorama): fix https://github.com/prometheus/prometheus/issues/15137
+				m.logger.Error("error reloading target set", "err", "cannot convert classic histograms to native histograms with custom buckets and ingest created timestamp zero samples at the same time due to https://github.com/prometheus/prometheus/issues/15137")
 				continue
 			}
 			m.metrics.targetScrapePools.Inc()
