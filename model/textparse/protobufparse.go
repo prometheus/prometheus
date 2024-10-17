@@ -22,6 +22,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"github.com/gogo/protobuf/proto"
@@ -34,6 +35,15 @@ import (
 
 	dto "github.com/prometheus/prometheus/prompb/io/prometheus/client"
 )
+
+// floatFormatBufPool is exclusively used in formatOpenMetricsFloat.
+var floatFormatBufPool = sync.Pool{
+	New: func() interface{} {
+		// To contain at most 17 digits and additional syntax for a float64.
+		b := make([]byte, 0, 24)
+		return &b
+	},
+}
 
 // ProtobufParser is a very inefficient way of unmarshaling the old Prometheus
 // protobuf format and then present it as it if were parsed by a
@@ -78,9 +88,6 @@ type ProtobufParser struct {
 
 	// The following are just shenanigans to satisfy the Parser interface.
 	metricBytes *bytes.Buffer // A somewhat fluid representation of the current metric.
-
-	// mainly used in formatOpenMetricsFloat.
-	floatFormatBuf []byte
 }
 
 // NewProtobufParser returns a parser for the payload in the byte slice.
@@ -92,7 +99,6 @@ func NewProtobufParser(b []byte, parseClassicHistograms bool, st *labels.SymbolT
 		metricBytes:            &bytes.Buffer{},
 		parseClassicHistograms: parseClassicHistograms,
 		builder:                labels.NewScratchBuilderWithSymbolTable(st, 16),
-		floatFormatBuf:         make([]byte, 0, 24),
 	}
 }
 
@@ -578,7 +584,7 @@ func (p *ProtobufParser) getMagicLabel() (bool, string, string) {
 		qq := p.mf.GetMetric()[p.metricPos].GetSummary().GetQuantile()
 		q := qq[p.fieldPos]
 		p.fieldsDone = p.fieldPos == len(qq)-1
-		return true, model.QuantileLabel, formatOpenMetricsFloat(q.GetQuantile(), p.floatFormatBuf)
+		return true, model.QuantileLabel, formatOpenMetricsFloat(q.GetQuantile())
 	case dto.MetricType_HISTOGRAM, dto.MetricType_GAUGE_HISTOGRAM:
 		bb := p.mf.GetMetric()[p.metricPos].GetHistogram().GetBucket()
 		if p.fieldPos >= len(bb) {
@@ -587,7 +593,7 @@ func (p *ProtobufParser) getMagicLabel() (bool, string, string) {
 		}
 		b := bb[p.fieldPos]
 		p.fieldsDone = math.IsInf(b.GetUpperBound(), +1)
-		return true, model.BucketLabel, formatOpenMetricsFloat(b.GetUpperBound(), p.floatFormatBuf)
+		return true, model.BucketLabel, formatOpenMetricsFloat(b.GetUpperBound())
 	}
 	return false, "", ""
 }
@@ -618,7 +624,7 @@ func readDelimited(b []byte, mf *dto.MetricFamily) (n int, err error) {
 // formatOpenMetricsFloat works like the usual Go string formatting of a float
 // but appends ".0" if the resulting number would otherwise contain neither a
 // "." nor an "e".
-func formatOpenMetricsFloat(f float64, b []byte) string {
+func formatOpenMetricsFloat(f float64) string {
 	// A few common cases hardcoded.
 	switch {
 	case f == 1:
@@ -634,11 +640,17 @@ func formatOpenMetricsFloat(f float64, b []byte) string {
 	case math.IsInf(f, -1):
 		return "-Inf"
 	}
-	s := string(strconv.AppendFloat(b[:0], f, 'g', -1, 64))
-	if strings.ContainsAny(s, "e.") {
+	bp := floatFormatBufPool.Get().(*[]byte)
+	*bp = strconv.AppendFloat((*bp)[:0], f, 'g', -1, 64)
+	if bytes.ContainsAny(*bp, "e.") {
+		s := string(*bp)
+		floatFormatBufPool.Put(bp)
 		return s
 	}
-	return s + ".0"
+	*bp = append(*bp, '.', '0')
+	s := string(*bp)
+	floatFormatBufPool.Put(bp)
+	return s
 }
 
 // isNativeHistogram returns false iff the provided histograms has no spans at
