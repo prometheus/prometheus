@@ -399,14 +399,10 @@ func TestFloatHistogramDiv(t *testing.T) {
 			},
 			0,
 			&FloatHistogram{
-				ZeroThreshold:   0.01,
-				ZeroCount:       math.Inf(1),
-				Count:           math.Inf(1),
-				Sum:             math.Inf(1),
-				PositiveSpans:   []Span{{-2, 1}, {2, 3}},
-				PositiveBuckets: []float64{math.Inf(1), math.Inf(1), math.Inf(1), math.Inf(1)},
-				NegativeSpans:   []Span{{3, 2}, {3, 2}},
-				NegativeBuckets: []float64{math.Inf(1), math.Inf(1), math.Inf(1), math.Inf(1)},
+				ZeroThreshold: 0.01,
+				Count:         math.Inf(1),
+				Sum:           math.Inf(1),
+				ZeroCount:     math.Inf(1),
 			},
 		},
 		{
