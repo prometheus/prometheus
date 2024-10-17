@@ -43,9 +43,7 @@ func (a nopAppendable) Appender(_ context.Context) storage.Appender {
 
 type nopAppender struct{}
 
-func (a nopAppender) SetHints(hints *storage.AppendHints) {
-	panic("unimplemented")
-}
+func (a nopAppender) SetHints(hints *storage.AppendHints) {}
 
 func (a nopAppender) Append(storage.SeriesRef, labels.Labels, int64, float64) (storage.SeriesRef, error) {
 	return 0, nil
