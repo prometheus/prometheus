@@ -543,7 +543,7 @@ func TestBucketLimitAppender(t *testing.T) {
 				var err error
 				if floatHisto {
 					fh := c.h.Copy().ToFloat(nil)
-					_, err = app.AppendHistogram(0, lbls, ts, nil, fh)
+					_, err = app.AppendHistogram(0, lbls, ts, nil, fh, nil)
 					if c.expectError {
 						require.Error(t, err)
 					} else {
@@ -553,7 +553,7 @@ func TestBucketLimitAppender(t *testing.T) {
 					}
 				} else {
 					h := c.h.Copy()
-					_, err = app.AppendHistogram(0, lbls, ts, h, nil)
+					_, err = app.AppendHistogram(0, lbls, ts, h, nil, nil)
 					if c.expectError {
 						require.Error(t, err)
 					} else {
@@ -629,12 +629,12 @@ func TestMaxSchemaAppender(t *testing.T) {
 				var err error
 				if floatHisto {
 					fh := c.h.Copy().ToFloat(nil)
-					_, err = app.AppendHistogram(0, lbls, ts, nil, fh)
+					_, err = app.AppendHistogram(0, lbls, ts, nil, fh, nil)
 					require.Equal(t, c.expectSchema, fh.Schema)
 					require.NoError(t, err)
 				} else {
 					h := c.h.Copy()
-					_, err = app.AppendHistogram(0, lbls, ts, h, nil)
+					_, err = app.AppendHistogram(0, lbls, ts, h, nil, nil)
 					require.Equal(t, c.expectSchema, h.Schema)
 					require.NoError(t, err)
 				}

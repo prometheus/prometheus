@@ -347,14 +347,14 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 		var err error
 		switch i {
 		case 0, 3:
-			_, err = app.Append(0, l, 100*60*1000, float64(i*100))
+			_, err = app.Append(0, l, 100*60*1000, float64(i*100), nil)
 			expVec = append(expVec, promql.Sample{
 				T:      100 * 60 * 1000,
 				F:      float64(i * 100),
 				Metric: expL,
 			})
 		case 4:
-			_, err = app.AppendHistogram(0, l, 100*60*1000, histWithoutZeroBucket.Copy(), nil)
+			_, err = app.AppendHistogram(0, l, 100*60*1000, histWithoutZeroBucket.Copy(), nil, nil)
 			expVec = append(expVec, promql.Sample{
 				T:      100 * 60 * 1000,
 				H:      histWithoutZeroBucket.ToFloat(nil),
@@ -363,7 +363,7 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 		default:
 			hist.ZeroCount++
 			hist.Count++
-			_, err = app.AppendHistogram(0, l, 100*60*1000, hist.Copy(), nil)
+			_, err = app.AppendHistogram(0, l, 100*60*1000, hist.Copy(), nil, nil)
 			expVec = append(expVec, promql.Sample{
 				T:      100 * 60 * 1000,
 				H:      hist.ToFloat(nil),

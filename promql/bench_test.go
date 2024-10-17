@@ -72,13 +72,13 @@ func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *promql.Engine, in
 		a := stor.Appender(context.Background())
 		ts := int64(s * interval)
 		for i, metric := range metrics {
-			ref, _ := a.Append(refs[i], metric, ts, float64(s)+float64(i)/float64(len(metrics)))
+			ref, _ := a.Append(refs[i], metric, ts, float64(s)+float64(i)/float64(len(metrics)), nil)
 			refs[i] = ref
 		}
 		// Generating a sparse time series: each label value of "l" will contain data only for
 		// pointsPerSparseSeries points
 		metric := labels.FromStrings("__name__", "sparse", "l", strconv.Itoa(s/pointsPerSparseSeries))
-		_, err := a.Append(0, metric, ts, float64(s)/float64(len(metrics)))
+		_, err := a.Append(0, metric, ts, float64(s)/float64(len(metrics)), nil)
 		if err != nil {
 			return err
 		}
@@ -402,11 +402,11 @@ func generateNativeHistogramSeries(app storage.Appender, numSeries int) error {
 			ts := time.Unix(int64(i*15), 0).UnixMilli()
 			if i == 0 {
 				// Inject a histogram with a higher schema.
-				if _, err := app.AppendHistogram(0, seriesLabels, ts, higherSchemaHist, nil); err != nil {
+				if _, err := app.AppendHistogram(0, seriesLabels, ts, higherSchemaHist, nil, nil); err != nil {
 					return err
 				}
 			}
-			if _, err := app.AppendHistogram(0, seriesLabels, ts, histograms[i], nil); err != nil {
+			if _, err := app.AppendHistogram(0, seriesLabels, ts, histograms[i], nil, nil); err != nil {
 				return err
 			}
 		}

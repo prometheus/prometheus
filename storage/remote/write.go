@@ -286,7 +286,7 @@ type timestampTracker struct {
 }
 
 // Append implements storage.Appender.
-func (t *timestampTracker) Append(_ storage.SeriesRef, _ labels.Labels, ts int64, _ float64) (storage.SeriesRef, error) {
+func (t *timestampTracker) Append(ref storage.SeriesRef, l labels.Labels, ts int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	t.samples++
 	if ts > t.highestTimestamp {
 		t.highestTimestamp = ts
@@ -299,7 +299,7 @@ func (t *timestampTracker) AppendExemplar(_ storage.SeriesRef, _ labels.Labels, 
 	return 0, nil
 }
 
-func (t *timestampTracker) AppendHistogram(_ storage.SeriesRef, _ labels.Labels, ts int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (t *timestampTracker) AppendHistogram(ref storage.SeriesRef, l labels.Labels, ts int64, h *histogram.Histogram, fh *histogram.FloatHistogram, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	t.histograms++
 	if ts > t.highestTimestamp {
 		t.highestTimestamp = ts
@@ -307,7 +307,7 @@ func (t *timestampTracker) AppendHistogram(_ storage.SeriesRef, _ labels.Labels,
 	return 0, nil
 }
 
-func (t *timestampTracker) AppendHistogramCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (t *timestampTracker) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, ts, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	// TODO: Implement
 	return 0, nil
 }

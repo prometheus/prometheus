@@ -243,6 +243,12 @@ func (f QueryableFunc) Querier(mint, maxt int64) (Querier, error) {
 	return f(mint, maxt)
 }
 
+// AppendHints specifies hints passed for appender writes.
+// This is used only as an option for implementation to use.
+type AppendHints struct {
+	DiscardOutOfOrder bool
+}
+
 // Appender provides batched appends against a storage.
 // It must be completed with a call to Commit or Rollback and must not be reused afterwards.
 //
@@ -259,7 +265,7 @@ type Appender interface {
 	// to Append() at any point. Adding the sample via Append() returns a new
 	// reference number.
 	// If the reference is 0 it must not be used for caching.
-	Append(ref SeriesRef, l labels.Labels, t int64, v float64) (SeriesRef, error)
+	Append(ref SeriesRef, l labels.Labels, t int64, v float64, hints *AppendHints) (SeriesRef, error)
 
 	// Commit submits the collected samples and purges the batch. If Commit
 	// returns a non-nil error, it also rolls back all modifications made in
@@ -317,7 +323,7 @@ type HistogramAppender interface {
 	// For efficiency reasons, the histogram is passed as a
 	// pointer. AppendHistogram won't mutate the histogram, but in turn
 	// depends on the caller to not mutate it either.
-	AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error)
+	AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram, hints *AppendHints) (SeriesRef, error)
 	// AppendHistogramCTZeroSample adds synthetic zero sample for the given ct timestamp,
 	// which will be associated with given series, labels and the incoming
 	// sample's t (timestamp). AppendHistogramCTZeroSample returns error if zero sample can't be
@@ -331,7 +337,7 @@ type HistogramAppender interface {
 	// to AppendHistogramCTZeroSample() at any point.
 	//
 	// If the reference is 0 it must not be used for caching.
-	AppendHistogramCTZeroSample(ref SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error)
+	AppendHistogramCTZeroSample(ref SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram, hints *AppendHints) (SeriesRef, error)
 }
 
 // MetadataUpdater provides an interface for associating metadata to stored series.

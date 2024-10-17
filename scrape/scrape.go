@@ -1730,9 +1730,9 @@ loop:
 				if ctMs := p.CreatedTimestamp(); ctMs != nil {
 					if isHistogram && sl.enableNativeHistogramIngestion {
 						if h != nil {
-							ref, err = app.AppendHistogramCTZeroSample(ref, lset, t, *ctMs, h, nil)
+							ref, err = app.AppendHistogramCTZeroSample(ref, lset, t, *ctMs, h, nil, nil)
 						} else {
-							ref, err = app.AppendHistogramCTZeroSample(ref, lset, t, *ctMs, nil, fh)
+							ref, err = app.AppendHistogramCTZeroSample(ref, lset, t, *ctMs, nil, fh, nil)
 						}
 					} else {
 						ref, err = app.AppendCTZeroSample(ref, lset, t, *ctMs)
@@ -1747,12 +1747,12 @@ loop:
 
 			if isHistogram && sl.enableNativeHistogramIngestion {
 				if h != nil {
-					ref, err = app.AppendHistogram(ref, lset, t, h, nil)
+					ref, err = app.AppendHistogram(ref, lset, t, h, nil, nil)
 				} else {
-					ref, err = app.AppendHistogram(ref, lset, t, nil, fh)
+					ref, err = app.AppendHistogram(ref, lset, t, nil, fh, nil)
 				}
 			} else {
-				ref, err = app.Append(ref, lset, t, val)
+				ref, err = app.Append(ref, lset, t, val, nil)
 			}
 		}
 
@@ -1864,7 +1864,7 @@ loop:
 	if err == nil {
 		sl.cache.forEachStale(func(lset labels.Labels) bool {
 			// Series no longer exposed, mark it stale.
-			_, err = app.Append(0, lset, defTime, math.Float64frombits(value.StaleNaN))
+			_, err = app.Append(0, lset, defTime, math.Float64frombits(value.StaleNaN), nil)
 			switch {
 			case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
 				// Do not count these in logging, as this is expected if a target
@@ -2019,7 +2019,7 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s []byte, t int64, v
 		lset = sl.reportSampleMutator(b.Labels())
 	}
 
-	ref, err := app.Append(ref, lset, t, v)
+	ref, err := app.Append(ref, lset, t, v, nil)
 	switch {
 	case err == nil:
 		if !ok {

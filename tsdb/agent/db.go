@@ -783,7 +783,7 @@ type appender struct {
 	floatHistogramSeries []*memSeries
 }
 
-func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	// series references and chunk references are identical for agent mode.
 	headRef := chunks.HeadSeriesRef(ref)
 
@@ -899,7 +899,7 @@ func (a *appender) AppendExemplar(ref storage.SeriesRef, _ labels.Labels, e exem
 	return storage.SeriesRef(s.ref), nil
 }
 
-func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	if h != nil {
 		if err := h.Validate(); err != nil {
 			return 0, err
@@ -971,7 +971,7 @@ func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int
 	return storage.SeriesRef(series.ref), nil
 }
 
-func (a *appender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (a *appender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	// TODO(bwplotka/arthursens): Wire metadata in the Agent's appender.
 	return 0, nil
 }

@@ -40,14 +40,14 @@ type initAppender struct {
 
 var _ storage.GetRef = &initAppender{}
 
-func (a *initAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+func (a *initAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	if a.app != nil {
-		return a.app.Append(ref, lset, t, v)
+		return a.app.Append(ref, lset, t, v, nil)
 	}
 
 	a.head.initTime(t)
 	a.app = a.head.appender()
-	return a.app.Append(ref, lset, t, v)
+	return a.app.Append(ref, lset, t, v, nil)
 }
 
 func (a *initAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
@@ -67,24 +67,24 @@ func (a *initAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e 
 	return a.app.AppendExemplar(ref, l, e)
 }
 
-func (a *initAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (a *initAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	if a.app != nil {
-		return a.app.AppendHistogram(ref, l, t, h, fh)
+		return a.app.AppendHistogram(ref, l, t, h, fh, nil)
 	}
 	a.head.initTime(t)
 	a.app = a.head.appender()
 
-	return a.app.AppendHistogram(ref, l, t, h, fh)
+	return a.app.AppendHistogram(ref, l, t, h, fh, nil)
 }
 
-func (a *initAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (a *initAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	if a.app != nil {
-		return a.app.AppendHistogramCTZeroSample(ref, l, t, ct, h, fh)
+		return a.app.AppendHistogramCTZeroSample(ref, l, t, ct, h, fh, nil)
 	}
 	a.head.initTime(t)
 	a.app = a.head.appender()
 
-	return a.app.AppendHistogramCTZeroSample(ref, l, t, ct, h, fh)
+	return a.app.AppendHistogramCTZeroSample(ref, l, t, ct, h, fh, nil)
 }
 
 func (a *initAppender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
@@ -328,7 +328,7 @@ type headAppender struct {
 	closed                          bool
 }
 
-func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	// Fail fast if OOO is disabled and the sample is out of bounds.
 	// Otherwise a full check will be done later to decide if the sample is in-order or out-of-order.
 	if a.oooTimeWindow == 0 && t < a.minValidTime {
@@ -352,9 +352,9 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 		// in commit. This code should move into Commit().
 		switch {
 		case s.lastHistogramValue != nil:
-			return a.AppendHistogram(ref, lset, t, &histogram.Histogram{Sum: v}, nil)
+			return a.AppendHistogram(ref, lset, t, &histogram.Histogram{Sum: v}, nil, nil)
 		case s.lastFloatHistogramValue != nil:
-			return a.AppendHistogram(ref, lset, t, nil, &histogram.FloatHistogram{Sum: v})
+			return a.AppendHistogram(ref, lset, t, nil, &histogram.FloatHistogram{Sum: v}, nil)
 		}
 	}
 
@@ -630,7 +630,7 @@ func (a *headAppender) AppendExemplar(ref storage.SeriesRef, lset labels.Labels,
 	return storage.SeriesRef(s.ref), nil
 }
 
-func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	if !a.head.opts.EnableNativeHistograms.Load() {
 		return 0, storage.ErrNativeHistogramsDisabled
 	}
@@ -751,7 +751,7 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 	return storage.SeriesRef(s.ref), nil
 }
 
-func (a *headAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, lset labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (a *headAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	if !a.head.opts.EnableNativeHistograms.Load() {
 		return 0, storage.ErrNativeHistogramsDisabled
 	}
@@ -764,7 +764,7 @@ func (a *headAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, lset l
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
 	if s == nil {
 		var err error
-		s, created, err = a.getOrCreate(lset)
+		s, created, err = a.getOrCreate(l)
 		if err != nil {
 			return 0, err
 		}

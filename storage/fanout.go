@@ -147,14 +147,14 @@ type fanoutAppender struct {
 	secondaries []Appender
 }
 
-func (f *fanoutAppender) Append(ref SeriesRef, l labels.Labels, t int64, v float64) (SeriesRef, error) {
-	ref, err := f.primary.Append(ref, l, t, v)
+func (f *fanoutAppender) Append(ref SeriesRef, l labels.Labels, t int64, v float64, hints *AppendHints) (SeriesRef, error) {
+	ref, err := f.primary.Append(ref, l, t, v, nil)
 	if err != nil {
 		return ref, err
 	}
 
 	for _, appender := range f.secondaries {
-		if _, err := appender.Append(ref, l, t, v); err != nil {
+		if _, err := appender.Append(ref, l, t, v, nil); err != nil {
 			return 0, err
 		}
 	}
@@ -175,28 +175,28 @@ func (f *fanoutAppender) AppendExemplar(ref SeriesRef, l labels.Labels, e exempl
 	return ref, nil
 }
 
-func (f *fanoutAppender) AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error) {
-	ref, err := f.primary.AppendHistogram(ref, l, t, h, fh)
+func (f *fanoutAppender) AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram, hints *AppendHints) (SeriesRef, error) {
+	ref, err := f.primary.AppendHistogram(ref, l, t, h, fh, nil)
 	if err != nil {
 		return ref, err
 	}
 
 	for _, appender := range f.secondaries {
-		if _, err := appender.AppendHistogram(ref, l, t, h, fh); err != nil {
+		if _, err := appender.AppendHistogram(ref, l, t, h, fh, nil); err != nil {
 			return 0, err
 		}
 	}
 	return ref, nil
 }
 
-func (f *fanoutAppender) AppendHistogramCTZeroSample(ref SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error) {
-	ref, err := f.primary.AppendHistogramCTZeroSample(ref, l, t, ct, h, fh)
+func (f *fanoutAppender) AppendHistogramCTZeroSample(ref SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram, hints *AppendHints) (SeriesRef, error) {
+	ref, err := f.primary.AppendHistogramCTZeroSample(ref, l, t, ct, h, fh, nil)
 	if err != nil {
 		return ref, err
 	}
 
 	for _, appender := range f.secondaries {
-		if _, err := appender.AppendHistogramCTZeroSample(ref, l, t, ct, h, fh); err != nil {
+		if _, err := appender.AppendHistogramCTZeroSample(ref, l, t, ct, h, fh, nil); err != nil {
 			return 0, err
 		}
 	}

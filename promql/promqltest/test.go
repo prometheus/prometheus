@@ -582,11 +582,11 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 
 func appendSample(a storage.Appender, s promql.Sample, m labels.Labels) error {
 	if s.H != nil {
-		if _, err := a.AppendHistogram(0, m, s.T, nil, s.H); err != nil {
+		if _, err := a.AppendHistogram(0, m, s.T, nil, s.H, nil); err != nil {
 			return err
 		}
 	} else {
-		if _, err := a.Append(0, m, s.T, s.F); err != nil {
+		if _, err := a.Append(0, m, s.T, s.F, nil); err != nil {
 			return err
 		}
 	}

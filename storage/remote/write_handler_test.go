@@ -833,7 +833,7 @@ func (m *mockAppendable) Appender(_ context.Context) storage.Appender {
 	return m
 }
 
-func (m *mockAppendable) Append(_ storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+func (m *mockAppendable) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	if m.appendSampleErr != nil {
 		return 0, m.appendSampleErr
 	}
@@ -891,7 +891,7 @@ func (m *mockAppendable) AppendExemplar(_ storage.SeriesRef, l labels.Labels, e 
 	return 0, nil
 }
 
-func (m *mockAppendable) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (m *mockAppendable) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	if m.appendHistogramErr != nil {
 		return 0, m.appendHistogramErr
 	}
@@ -916,7 +916,7 @@ func (m *mockAppendable) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t
 	return 0, nil
 }
 
-func (m *mockAppendable) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (m *mockAppendable) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	// AppendCTZeroSample is no-op for remote-write for now.
 	// TODO(bwplotka/arthursens): Add support for PRW 2.0 for CT zero feature (but also we might
 	// replace this with in-metadata CT storage, see https://github.com/prometheus/prometheus/issues/14218).

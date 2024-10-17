@@ -323,14 +323,14 @@ type limitAppender struct {
 	i     int
 }
 
-func (app *limitAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+func (app *limitAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	if !value.IsStaleNaN(v) {
 		app.i++
 		if app.i > app.limit {
 			return 0, errSampleLimit
 		}
 	}
-	ref, err := app.Appender.Append(ref, lset, t, v)
+	ref, err := app.Appender.Append(ref, lset, t, v, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -343,12 +343,12 @@ type timeLimitAppender struct {
 	maxTime int64
 }
 
-func (app *timeLimitAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+func (app *timeLimitAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	if t > app.maxTime {
 		return 0, storage.ErrOutOfBounds
 	}
 
-	ref, err := app.Appender.Append(ref, lset, t, v)
+	ref, err := app.Appender.Append(ref, lset, t, v, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -362,7 +362,7 @@ type bucketLimitAppender struct {
 	limit int
 }
 
-func (app *bucketLimitAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (app *bucketLimitAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	if h != nil {
 		// Return with an early error if the histogram has too many buckets and the
 		// schema is not exponential, in which case we can't reduce the resolution.
@@ -389,7 +389,7 @@ func (app *bucketLimitAppender) AppendHistogram(ref storage.SeriesRef, lset labe
 			fh = fh.ReduceResolution(fh.Schema - 1)
 		}
 	}
-	ref, err := app.Appender.AppendHistogram(ref, lset, t, h, fh)
+	ref, err := app.Appender.AppendHistogram(ref, lset, t, h, fh, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -402,7 +402,7 @@ type maxSchemaAppender struct {
 	maxSchema int32
 }
 
-func (app *maxSchemaAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (app *maxSchemaAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	if h != nil {
 		if histogram.IsExponentialSchema(h.Schema) && h.Schema > app.maxSchema {
 			h = h.ReduceResolution(app.maxSchema)
@@ -413,7 +413,7 @@ func (app *maxSchemaAppender) AppendHistogram(ref storage.SeriesRef, lset labels
 			fh = fh.ReduceResolution(app.maxSchema)
 		}
 	}
-	ref, err := app.Appender.AppendHistogram(ref, lset, t, h, fh)
+	ref, err := app.Appender.AppendHistogram(ref, lset, t, h, fh, nil)
 	if err != nil {
 		return 0, err
 	}

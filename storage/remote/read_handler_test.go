@@ -436,7 +436,7 @@ func addNativeHistogramsToTestSuite(t *testing.T, storage *teststorage.TestStora
 
 	app := storage.Appender(context.TODO())
 	for i, fh := range tsdbutil.GenerateTestFloatHistograms(n) {
-		_, err := app.AppendHistogram(0, lbls, int64(i)*int64(60*time.Second/time.Millisecond), nil, fh)
+		_, err := app.AppendHistogram(0, lbls, int64(i)*int64(60*time.Second/time.Millisecond), nil, fh, nil)
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
