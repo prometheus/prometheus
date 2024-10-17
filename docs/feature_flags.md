@@ -23,9 +23,9 @@ Exemplar storage is implemented as a fixed size circular buffer that stores exem
 
 `--enable-feature=memory-snapshot-on-shutdown`
 
-This takes the snapshot of the chunks that are in memory along with the series information when shutting down and stores
-it on disk. This will reduce the startup time since the memory state can be restored with this snapshot and m-mapped
-chunks without the need of WAL replay.
+This takes the snapshot of the chunks that are in memory along with the series information when shutting down and stores it on disk 
+as a m-mapped structure. This will reduce the startup time since the memory state can now be restored with this snapshot 
+and m-mapped chunks without the need of WAL replay fetching hours of metrics by scanning through the disk again.
 
 ## Extra scrape metrics
 
