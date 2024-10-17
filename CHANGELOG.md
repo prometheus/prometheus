@@ -2,7 +2,7 @@
 
 ## unreleased
 
-* [CHANGE] Scraping: Add ability to specify a fallback protocol per target in case of invalid/missing Content-Type. This can be changed by setting `scrape_config.fallback_scrape_protocol`. #15136
+* [CHANGE] Scraping: Remove implicit fallback to the Prometheus text format in case of invalid/missing Content-Type and fail the scrape instead. Add ability to specify a `fallback_scrape_protocol` in the scrape config. #15136
 * [BUGFIX] PromQL: Fix stddev+stdvar aggregations to always ignore native histograms. #14941
 * [BUGFIX] PromQL: Fix stddev+stdvar aggregations to treat Infinity consistently. #14941
 
