@@ -49,10 +49,13 @@ class Tokenizer {
 
   Token consume_comment() noexcept;
 
+  [[nodiscard]] std::string_view buffer() const noexcept { return {start_ptr_, limit_ptr_}; }
+
   [[nodiscard]] std::string_view token_str() const noexcept { return {token_ptr_, static_cast<size_t>(cursor_ptr_ - token_ptr_)}; }
   [[nodiscard]] Token token() const noexcept { return token_; }
 
  private:
+  const char* start_ptr_{};
   const char* cursor_ptr_{};
   const char* limit_ptr_{};
   const char* marker_ptr_{};

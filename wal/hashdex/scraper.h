@@ -1,13 +1,13 @@
 #pragma once
 
-#include <charconv>
+#include <fastfloat/fast_float.h>
+#include <utf8/utf8.h>
 
 #include "bare_bones/vector.h"
 #include "primitives/primitives.h"
 #include "prometheus/textparse/escape.h"
 #include "prometheus/textparse/tokenizer.h"
 #include "prometheus/value.h"
-#include "utf8/utf8.h"
 
 namespace PromPP::WAL::hashdex {
 
@@ -25,7 +25,7 @@ class Scraper {
   };
 
   [[nodiscard]] Error parse(std::span<char> buffer, Primitives::Timestamp default_timestamp) {
-    items_.clear();
+    markup_buffer_.initialize(buffer.size() / 2);
     tokenizer_.tokenize({buffer.data(), buffer.data() + buffer.size()});
 
     while (true) {
@@ -48,10 +48,10 @@ class Scraper {
 
         case kMetricName:
         case kBraceOpen: {
-          if (const auto error = item_parser_.parse(default_timestamp); error != Error::kNoError) {
+          if (const auto error = ItemParser{tokenizer_, markup_buffer_, markup_buffer_.add_item(default_timestamp)}.parse(); error != Error::kNoError) {
+            markup_buffer_.remove_item();
             return error;
           }
-          items_.emplace_back(item_parser_.item());
           break;
         }
 
@@ -62,131 +62,176 @@ class Scraper {
     }
   }
 
-  [[nodiscard]] PROMPP_LAMBDA_INLINE uint32_t size() const noexcept { return items_.size(); }
-  [[nodiscard]] PROMPP_LAMBDA_INLINE auto begin() const noexcept { return items_.begin(); }
-  [[nodiscard]] PROMPP_LAMBDA_INLINE auto end() const noexcept { return items_.end(); }
+  [[nodiscard]] PROMPP_LAMBDA_INLINE uint32_t size() const noexcept { return markup_buffer_.items_count(); }
+  [[nodiscard]] PROMPP_LAMBDA_INLINE auto begin() const noexcept { return markup_buffer_.begin(tokenizer_.buffer()); }
+  [[nodiscard]] PROMPP_LAMBDA_INLINE static auto end() noexcept { return MarkupBuffer::end(); }
 
  private:
   using enum Tokenizer::Token;
 
-  template <class LabelSet>
-  class LabelSetParser {
-   public:
-    LabelSetParser(std::string_view buffer, LabelSet& label_set) : tokenizer_{buffer}, label_set_{label_set} {}
+#pragma pack(push, 1)
+  struct MarkedString {
+    uint32_t offset{std::numeric_limits<uint32_t>::max()};
+    uint32_t length{std::numeric_limits<uint32_t>::max()};
 
-    void parse() noexcept {
-      using enum Tokenizer::Token;
-
-      while (true) {
-        switch (tokenizer_.next()) {
-          case kQuotedString: {
-            if (!metric_name_added()) [[unlikely]] {
-              add_metric_name_label<true>();
-            } else {
-              label_name_ = unescape_token();
-            }
-            break;
-          }
-
-          case kMetricName: {
-            add_metric_name_label<false>();
-            break;
-          }
-
-          case kLabelValue: {
-            label_set_.add({label_name_, unescape_token()});
-            break;
-          }
-
-          case kLabelName: {
-            label_name_ = tokenizer_.token_str();
-            break;
-          }
-
-          case kEOF: {
-            return;
-          }
-
-          default: {
-            break;
-          }
-        }
-      }
+    [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_valid() const noexcept {
+      return offset != std::numeric_limits<uint32_t>::max() && length != std::numeric_limits<uint32_t>::max();
     }
 
-   private:
-    std::string_view label_name_;
-    Tokenizer tokenizer_;
-    LabelSet& label_set_;
-
-    [[nodiscard]] PROMPP_LAMBDA_INLINE bool metric_name_added() const noexcept { return !label_name_.empty(); }
-
-    template <bool quoted>
-    PROMPP_ALWAYS_INLINE void add_metric_name_label() {
-      label_name_ = Prometheus::kMetricLabelName;
-      if constexpr (quoted) {
-        label_set_.add({label_name_, unescape_token()});
-      } else {
-        label_set_.add({label_name_, tokenizer_.token_str()});
+    [[nodiscard]] std::string_view string_view(const std::string_view& buffer) const noexcept {
+      if (!is_valid()) [[unlikely]] {
+        return Prometheus::kMetricLabelName;
       }
-    }
 
-    std::string_view unescape_token() noexcept {
-      auto string = tokenizer_.token_str();
-      Prometheus::textparse::unquote(string);
-
-      auto copy_to = const_cast<char*>(string.data());
-      Prometheus::textparse::unescape_label_value(string, [&copy_to](const std::string_view& piece_of_string) {
-        memmove(copy_to, piece_of_string.data(), piece_of_string.size());
-        copy_to += piece_of_string.size();
-      });
-
-      string.remove_suffix(string.size() - (copy_to - string.data()));
-      return string;
+      return buffer.substr(offset, length);
     }
   };
 
-  class ItemParser;
+  struct MarkedLabel {
+    MarkedString name{};
+    MarkedString value;
+  };
 
-  class Item {
-   public:
-    [[nodiscard]] PROMPP_ALWAYS_INLINE uint64_t hash() const noexcept { return hash_; }
+  struct MarkedLabelSet {
+    uint32_t count{};
+    MarkedLabel labels[];
 
-    template <class Timeseries>
-    void read(Timeseries& timeseries) const {
-      LabelSetParser{buffer_, timeseries.label_set()}.parse();
-      timeseries.samples().emplace_back(sample_);
+    PROMPP_ALWAYS_INLINE void sort(const std::string_view& buffer) noexcept {
+      std::sort(labels, labels + count,
+                [&buffer](const MarkedLabel& a, const MarkedLabel& b) PROMPP_LAMBDA_INLINE { return a.name.string_view(buffer) < b.name.string_view(buffer); });
     }
+
+    [[nodiscard]] PROMPP_ALWAYS_INLINE uint64_t hash(const std::string_view& buffer) const noexcept {
+      BareBones::XXHash hash;
+      for (uint32_t i = 0; i < count; ++i) {
+        const auto& [name, value] = labels[i];
+        hash.extend(name.string_view(buffer), value.string_view(buffer));
+      }
+      return hash.hash();
+    }
+  };
+
+  struct MarkedItem {
+    uint64_t hash{};
+    Primitives::Sample sample{};
+    MarkedLabelSet label_set;
+
+    explicit MarkedItem(Primitives::Timestamp timestamp) : sample(timestamp, 0.0) {}
+
+    PROMPP_ALWAYS_INLINE void calculate_hash(const std::string_view& buffer) noexcept {
+      label_set.sort(buffer);
+      hash = label_set.hash(buffer);
+    }
+
+    [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t occupied_size() const noexcept { return sizeof(*this) + sizeof(MarkedLabel) * label_set.count; }
+  };
+#pragma pack(pop)
+
+  class MarkupBuffer {
+   public:
+    class Item {
+     public:
+      explicit Item(std::string_view buffer, const MarkedItem* item) : buffer_(buffer), item_(item) {}
+
+      [[nodiscard]] PROMPP_ALWAYS_INLINE const MarkedItem* item() const noexcept { return item_; }
+      PROMPP_ALWAYS_INLINE void set_item(const MarkedItem* item) noexcept { item_ = item; }
+
+      [[nodiscard]] PROMPP_ALWAYS_INLINE uint64_t hash() const noexcept { return item_->hash; }
+
+      template <class Timeseries>
+      void read(Timeseries& timeseries) const {
+        timeseries.label_set().reserve(item_->label_set.count);
+        for (uint32_t i = 0; i < item_->label_set.count; ++i) {
+          const auto& [name, value] = item_->label_set.labels[i];
+          timeseries.label_set().add({name.string_view(buffer_), value.string_view(buffer_)});
+        }
+
+        timeseries.samples().emplace_back(item_->sample);
+      }
+
+     private:
+      std::string_view buffer_;
+      const MarkedItem* item_{};
+    };
+
+    class IteratorSentinel {};
+
+    class Iterator {
+     public:
+      using iterator_category = std::forward_iterator_tag;
+      using value_type = Item;
+      using difference_type = ptrdiff_t;
+      using pointer = value_type*;
+      using reference = value_type&;
+
+      Iterator(std::string_view buffer, const MarkupBuffer* markup_buffer)
+          : item_(buffer, reinterpret_cast<const MarkedItem*>(markup_buffer->buffer().data())), items_count_(markup_buffer->items_count()) {}
+
+      [[nodiscard]] PROMPP_ALWAYS_INLINE const value_type& operator*() const noexcept { return item_; }
+      [[nodiscard]] PROMPP_ALWAYS_INLINE const value_type* operator->() const noexcept { return &item_; }
+
+      PROMPP_ALWAYS_INLINE Iterator& operator++() noexcept {
+        item_.set_item(reinterpret_cast<const MarkedItem*>(reinterpret_cast<const char*>(item_.item()) + item_.item()->occupied_size()));
+        --items_count_;
+        return *this;
+      }
+
+      PROMPP_ALWAYS_INLINE Iterator operator++(int) noexcept {
+        const auto it = *this;
+        ++*this;
+        return it;
+      }
+
+      PROMPP_ALWAYS_INLINE bool operator==(const IteratorSentinel&) const noexcept { return items_count_ == 0; }
+
+     private:
+      Item item_;
+      uint32_t items_count_;
+    };
+
+    [[nodiscard]] PROMPP_ALWAYS_INLINE const BareBones::Vector<char>& buffer() const noexcept { return buffer_; }
+    [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t items_count() const noexcept { return items_count_; }
+
+    PROMPP_ALWAYS_INLINE MarkedItem* add_item(Primitives::Timestamp default_timestamp) noexcept {
+      ++items_count_;
+
+      const auto offset = buffer_.size();
+      buffer_.resize(offset + sizeof(MarkedItem));
+      return new (reinterpret_cast<MarkedItem*>(buffer_.data() + offset)) MarkedItem(default_timestamp);
+    }
+
+    PROMPP_ALWAYS_INLINE void remove_item() noexcept { --items_count_; }
+
+    PROMPP_ALWAYS_INLINE void add_label(const MarkedLabel& label, MarkedItem*& item) noexcept {
+      const auto offset = reinterpret_cast<const char*>(item) - buffer_.data();
+      buffer_.push_back(reinterpret_cast<const char*>(&label), reinterpret_cast<const char*>(&label) + sizeof(label));
+      item = reinterpret_cast<MarkedItem*>(buffer_.data() + offset);
+      ++item->label_set.count;
+    }
+
+    PROMPP_ALWAYS_INLINE void initialize(size_t reserve) noexcept {
+      buffer_.clear();
+      buffer_.reserve(reserve);
+      items_count_ = 0;
+    }
+
+    [[nodiscard]] PROMPP_ALWAYS_INLINE Iterator begin(std::string_view buffer) const noexcept { return {buffer, this}; }
+    [[nodiscard]] PROMPP_ALWAYS_INLINE static IteratorSentinel end() noexcept { return {}; }
 
    private:
-    std::string_view buffer_{};
-    Primitives::Sample sample_{};
-    uint64_t hash_{};
-
-    friend class ItemParser;
-
-    PROMPP_ALWAYS_INLINE void reset(Primitives::Timestamp timestamp, std::string_view buffer) noexcept {
-      buffer_ = buffer;
-      sample_ = Primitives::Sample(timestamp, 0.0);
-      hash_ = 0;
-    }
-
-    PROMPP_ALWAYS_INLINE void set_buffer_length(size_t length) noexcept { buffer_ = {buffer_.data(), length}; }
+    BareBones::Vector<char> buffer_;
+    uint32_t items_count_{};
   };
 
   class ItemParser {
    public:
-    explicit ItemParser(Prometheus::textparse::Tokenizer& tokenizer) : tokenizer_(tokenizer) {}
+    ItemParser(Tokenizer& tokenizer, MarkupBuffer& markup_buffer, MarkedItem* item) : tokenizer_(tokenizer), markup_buffer_(markup_buffer), item_(item) {}
 
-    [[nodiscard]] PROMPP_ALWAYS_INLINE const Item& item() const noexcept { return item_; }
-
-    [[nodiscard]] Error parse(Primitives::Timestamp default_timestamp) noexcept {
-      reset(default_timestamp);
-
+    [[nodiscard]] Error parse() noexcept {
       bool have_metric_name = false;
       if (tokenizer_.token() == kMetricName) [[likely]] {
+        markup_buffer_.add_label(MarkedLabel{.value = create_marked_string(tokenizer_.token_str())}, item_);
         have_metric_name = true;
-        label_set_.add({StringView{Prometheus::kMetricLabelName}, StringView{tokenizer_.token_str()}});
         tokenizer_.next();
       }
 
@@ -204,79 +249,20 @@ class Scraper {
         tokenizer_.next_non_whitespace();
       }
 
-      item_.hash_ = hash_value(label_set_);
+      item_->calculate_hash(tokenizer_.buffer());
       return parse_metric_suffix();
     }
 
    private:
-    using UnreplacedStringBuffer = BareBones::Vector<char>;
+    Tokenizer& tokenizer_;
+    MarkupBuffer& markup_buffer_;
+    MarkedItem* item_;
 
-    class BufferView {
-     public:
-      BufferView(const UnreplacedStringBuffer& buffer, uint32_t offset, uint32_t length) : buffer_(&buffer), offset_(offset), length_(length) {}
-
-      [[nodiscard]] PROMPP_ALWAYS_INLINE bool empty() const noexcept { return length_ == 0; }
-
-      explicit operator std::string_view() const noexcept { return {buffer_->data() + offset_, buffer_->data() + offset_ + length_}; }
-
-      auto operator<=>(const BufferView& other) const noexcept { return static_cast<std::string_view>(*this) <=> static_cast<std::string_view>(other); }
-      bool operator==(const BufferView& other) const noexcept { return static_cast<std::string_view>(*this) == static_cast<std::string_view>(other); }
-
-     private:
-      const UnreplacedStringBuffer* buffer_;
-      uint32_t offset_{};
-      uint32_t length_{};
-    };
-
-    class StringView {
-     public:
-      StringView() : type_(Type::kStringView) {}
-      explicit StringView(std::string_view str) : string_view_{str}, type_(Type::kStringView) {}
-      explicit StringView(const UnreplacedStringBuffer& buffer, uint32_t offset, uint32_t length)
-          : buffer_view_{buffer, offset, length}, type_(Type::kBufferView) {}
-
-      void set(std::string_view str) noexcept {
-        new (&string_view_) std::string_view{str};
-        type_ = Type::kStringView;
-      }
-
-      void set(const UnreplacedStringBuffer& buffer, uint32_t offset, uint32_t length) noexcept {
-        new (&buffer_view_) BufferView{buffer, offset, length};
-        type_ = Type::kBufferView;
-      }
-
-      [[nodiscard]] PROMPP_ALWAYS_INLINE bool empty() const noexcept { return type_ == Type::kStringView ? string_view_.empty() : buffer_view_.empty(); }
-
-      explicit operator std::string_view() const noexcept { return type_ == Type::kStringView ? string_view_ : static_cast<std::string_view>(buffer_view_); }
-
-      auto operator<=>(const StringView& other) const noexcept { return static_cast<std::string_view>(*this) <=> static_cast<std::string_view>(other); }
-      bool operator==(const StringView& other) const noexcept { return static_cast<std::string_view>(*this) == static_cast<std::string_view>(other); }
-
-     private:
-      enum class Type {
-        kBufferView = 0,
-        kStringView,
+    [[nodiscard]] PROMPP_ALWAYS_INLINE MarkedString create_marked_string(const std::string_view& value) const noexcept {
+      return {
+          .offset = static_cast<uint32_t>(value.data() - tokenizer_.buffer().data()),
+          .length = static_cast<uint32_t>(value.size()),
       };
-
-      union {
-        BufferView buffer_view_;
-        std::string_view string_view_{};
-      };
-      Type type_;
-    };
-
-    using Label = std::pair<StringView, StringView>;
-    using LabelSet = Primitives::BasicLabelSet<Label>;
-
-    LabelSet label_set_{};
-    UnreplacedStringBuffer unreplaced_string_buffer_{};
-    Prometheus::textparse::Tokenizer& tokenizer_;
-    Item item_;
-
-    PROMPP_ALWAYS_INLINE void reset(Primitives::Timestamp default_timestamp) noexcept {
-      item_.reset(default_timestamp, tokenizer_.token_str());
-      label_set_.clear();
-      unreplaced_string_buffer_.clear();
     }
 
     [[nodiscard]] Error tokenize_metric_name_and_label_set() noexcept {
@@ -284,11 +270,11 @@ class Scraper {
         return Error::kNoMetricName;
       }
 
-      StringView label_name;
-      if (const auto error = get_quoted_value(label_name); error != Error::kNoError) {
+      MarkedLabel metric_name;
+      if (const auto error = get_quoted_value(metric_name.value); error != Error::kNoError) {
         return error;
       }
-      label_set_.add({StringView{Prometheus::kMetricLabelName}, label_name});
+      markup_buffer_.add_label(metric_name, item_);
 
       if (tokenizer_.next() == kBraceClose) {
         return Error::kNoError;
@@ -307,8 +293,8 @@ class Scraper {
           return Error::kNoError;
         }
 
-        Label label;
-        if (const auto error = get_label_name(label.first); error != Error::kNoError) [[unlikely]] {
+        MarkedLabel label;
+        if (const auto error = get_label_name(label.name); error != Error::kNoError) [[unlikely]] {
           return error;
         }
 
@@ -320,19 +306,19 @@ class Scraper {
           return Error::kUnexpectedToken;
         }
 
-        if (const auto error = get_quoted_value(label.second); error != Error::kNoError) [[unlikely]] {
+        if (const auto error = get_quoted_value(label.value); error != Error::kNoError) [[unlikely]] {
           return error;
         }
 
-        label_set_.add(label);
+        markup_buffer_.add_label(label, item_);
       } while (tokenizer_.next(), tokenizer_.token() == kComma || tokenizer_.token() == kWhitespace);
 
       return tokenizer_.token() == kBraceClose ? Error::kNoError : Error::kUnexpectedToken;
     }
 
-    [[nodiscard]] Error get_label_name(StringView& label_name) noexcept {
+    [[nodiscard]] Error get_label_name(MarkedString& label_name) const noexcept {
       if (tokenizer_.token() == kLabelName) [[likely]] {
-        label_name.set(tokenizer_.token_str());
+        label_name = create_marked_string(tokenizer_.token_str());
         return Error::kNoError;
       }
       if (tokenizer_.token() == kQuotedString) {
@@ -342,34 +328,39 @@ class Scraper {
       return Error::kUnexpectedToken;
     }
 
-    [[nodiscard]] Error get_quoted_value(StringView& label_value) noexcept {
+    [[nodiscard]] Error get_quoted_value(MarkedString& string) const noexcept {
       auto value = tokenizer_.token_str();
       Prometheus::textparse::unquote(value);
 
-      unreplaced_string_buffer_.reserve(unreplaced_string_buffer_.size() + value.length());
-      const auto offset = unreplaced_string_buffer_.size();
-
+      auto copy_to = const_cast<char*>(value.data());
       auto error = Error::kNoError;
-      Prometheus::textparse::unescape_label_value(value, [this, &error](std::string_view piece_of_label_value) PROMPP_LAMBDA_INLINE {
-        if (!UTF8::check_string_view_is_valid(piece_of_label_value)) [[likely]] {
+      Prometheus::textparse::unescape_label_value(value, [&copy_to, &error](const std::string_view& piece_of_string) {
+        if (!UTF8::check_string_view_is_valid(piece_of_string)) [[unlikely]] {
           error = Error::kInvalidUtf8;
           return false;
         }
 
-        unreplaced_string_buffer_.push_back(piece_of_label_value.begin(), piece_of_label_value.end());
+        if (copy_to != piece_of_string.data()) [[unlikely]] {
+          memmove(copy_to, piece_of_string.data(), piece_of_string.size());
+        }
+
+        copy_to += piece_of_string.size();
         return true;
       });
+      if (error != Error::kNoError) [[unlikely]] {
+        return error;
+      }
 
-      label_value.set(unreplaced_string_buffer_, static_cast<uint32_t>(offset), static_cast<uint32_t>(unreplaced_string_buffer_.size() - offset));
-      return error;
+      value.remove_suffix(value.size() - (copy_to - value.data()));
+
+      string = create_marked_string(value);
+      return Error::kNoError;
     }
 
     [[nodiscard]] Error parse_metric_suffix() noexcept {
-      if (tokenizer_.token() != kValue && tokenizer_.token() != kEOF) {
+      if (tokenizer_.token() != kValue && tokenizer_.token() != kEOF) [[unlikely]] {
         return Error::kUnexpectedToken;
       }
-
-      item_.set_buffer_length(tokenizer_.token_str().data() - item_.buffer_.data());
 
       if (const auto error = parse_sample(); error != Error::kNoError) {
         return error;
@@ -379,17 +370,17 @@ class Scraper {
     }
 
     [[nodiscard]] Error parse_sample() noexcept {
-      if (!parse_token_value(item_.sample_.value())) {
+      if (!parse_token_value(item_->sample.value())) [[unlikely]] {
         return Error::kInvalidValue;
       }
-      if (std::isnan(item_.sample_.value())) {
-        item_.sample_.value() = Prometheus::kNormalNan;
+      if (std::isnan(item_->sample.value())) [[unlikely]] {
+        item_->sample.value() = Prometheus::kNormalNan;
       }
 
       tokenizer_.next_non_whitespace();
 
       if (tokenizer_.token() == kTimestamp || (tokenizer_.token() == kEOF && !tokenizer_.token_str().empty())) {
-        if (!parse_token_value(item_.sample_.timestamp())) {
+        if (!parse_token_value(item_->sample.timestamp())) {
           return Error::kInvalidTimestamp;
         }
 
@@ -406,7 +397,7 @@ class Scraper {
         str.remove_prefix(1);
       }
 
-      if (const auto [ptr, ec] = std::from_chars(str.begin(), str.end(), value); ec != std::errc{} || ptr != str.end()) {
+      if (const auto [ptr, ec] = fast_float::from_chars(str.begin(), str.end(), value); ec != std::errc{} || ptr != str.end()) [[unlikely]] {
         return false;
       }
 
@@ -414,9 +405,8 @@ class Scraper {
     }
   };
 
-  BareBones::Vector<Item> items_;
   Prometheus::textparse::Tokenizer tokenizer_;
-  ItemParser item_parser_{tokenizer_};
+  MarkupBuffer markup_buffer_;
 };
 
 }  // namespace PromPP::WAL::hashdex
