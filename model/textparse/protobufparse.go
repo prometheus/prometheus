@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -610,6 +611,9 @@ func readDelimited(b []byte, mf *dto.MetricFamily) (n int, err error) {
 	return totalLength, mf.Unmarshal(b[varIntLength:totalLength])
 }
 
+// XXX: just a PoC
+var buf = make([]byte, 0, 24)
+
 // formatOpenMetricsFloat works like the usual Go string formatting of a float
 // but appends ".0" if the resulting number would otherwise contain neither a
 // "." nor an "e".
@@ -629,7 +633,9 @@ func formatOpenMetricsFloat(f float64) string {
 	case math.IsInf(f, -1):
 		return "-Inf"
 	}
-	s := fmt.Sprint(f)
+
+	// s := fmt.Sprint(f)
+	s := string(strconv.AppendFloat(buf[:0], f, 'g', -1, 64))
 	if strings.ContainsAny(s, "e.") {
 		return s
 	}

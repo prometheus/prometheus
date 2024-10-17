@@ -1667,6 +1667,8 @@ loop:
 
 			// Hash label set as it is seen local to the target. Then add target labels
 			// and relabeling and store the final label set.
+			// XXX: in case we cannot/don't want parsers to do that
+			// with p.Type() and lset we can take care of the normalization somewhere here (but we'll need to rebuild the labels).
 			lset = sl.sampleMutator(lset)
 
 			// The label set may be set to empty to indicate dropping.
