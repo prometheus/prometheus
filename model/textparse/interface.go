@@ -79,11 +79,11 @@ type Parser interface {
 	Next() (Entry, error)
 }
 
-// Helper function to returns the mediaType of a required parser checking contentType
-// first and falling back to fallbackType if necessary.
-// As fallbackType comes from the parse `fallback_scrape_protocol` config option it
-// is assumed to be a valid/supported mediaType.
-func newHelper(contentType, fallbackType string) (string, error) {
+// extractMediaType returns the mediaType of a required parser. It tries first to
+// extract a valid and supported mediaType from contentType. If that fails,
+// the provided fallbackType (possibly an empty string) is returned, together with
+// an error. fallbackType is used as-is without further validation.
+func extractMediaType(contentType, fallbackType string) (string, error) {
 	if contentType == "" {
 		if fallbackType == "" {
 			return "", errors.New("Non-compliant scraper sending blank Content-Type and no fallback_scrape_protocol specified for target")
