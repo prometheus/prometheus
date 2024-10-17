@@ -85,16 +85,20 @@ var perUnitMap = map[string]string{
 // See rules at https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels,
 // https://prometheus.io/docs/practices/naming/#metric-and-label-naming
 // and https://github.com/open-telemetry/opentelemetry-specification/blob/v1.33.0/specification/compatibility/prometheus_and_openmetrics.md#otlp-metric-points-to-prometheus.
-func BuildCompliantName(metric pmetric.Metric, namespace string, addMetricSuffixes bool) string {
+func BuildCompliantName(metric pmetric.Metric, namespace string, addMetricSuffixes bool, allowUTF8 bool) string {
 	var metricName string
 
 	// Full normalization following standard Prometheus naming conventions
 	if addMetricSuffixes {
-		return normalizeName(metric, namespace)
+		return normalizeName(metric, namespace, allowUTF8)
 	}
 
-	// Simple case (no full normalization, no units, etc.), we simply trim out forbidden chars
-	metricName = RemovePromForbiddenRunes(metric.Name())
+	if !allowUTF8 {
+		// Simple case (no full normalization, no units, etc.), we simply trim out forbidden chars
+		metricName = RemovePromForbiddenRunes(metric.Name())
+	} else {
+		metricName = metric.Name()
+	}
 
 	// Namespace?
 	if namespace != "" {
@@ -110,9 +114,9 @@ func BuildCompliantName(metric pmetric.Metric, namespace string, addMetricSuffix
 }
 
 // Build a normalized name for the specified metric
-func normalizeName(metric pmetric.Metric, namespace string) string {
-	// Split metric name into "tokens" (remove all non-alphanumerics)
-	nameTokens := strings.FieldsFunc(
+func normalizeName(metric pmetric.Metric, namespace string, allowUTF8 bool) string {
+	// Split metric name into "tokens"
+	nameTokens, separators := fieldsFunc(
 		metric.Name(),
 		func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) },
 	)
@@ -125,7 +129,7 @@ func normalizeName(metric pmetric.Metric, namespace string) string {
 	if len(unitTokens) > 0 {
 		mainUnitOTel := strings.TrimSpace(unitTokens[0])
 		if mainUnitOTel != "" && !strings.ContainsAny(mainUnitOTel, "{}") {
-			mainUnitProm := CleanUpString(unitMapGetOrDefault(mainUnitOTel))
+			mainUnitProm := CleanUpString(unitMapGetOrDefault(mainUnitOTel), allowUTF8)
 			if mainUnitProm != "" && !contains(nameTokens, mainUnitProm) {
 				nameTokens = append(nameTokens, mainUnitProm)
 			}
@@ -136,7 +140,7 @@ func normalizeName(metric pmetric.Metric, namespace string) string {
 		if len(unitTokens) > 1 && unitTokens[1] != "" {
 			perUnitOTel := strings.TrimSpace(unitTokens[1])
 			if perUnitOTel != "" && !strings.ContainsAny(perUnitOTel, "{}") {
-				perUnitProm := CleanUpString(perUnitMapGetOrDefault(perUnitOTel))
+				perUnitProm := CleanUpString(perUnitMapGetOrDefault(perUnitOTel), allowUTF8)
 				if perUnitProm != "" && !contains(nameTokens, perUnitProm) {
 					nameTokens = append(nameTokens, "per", perUnitProm)
 				}
@@ -164,8 +168,12 @@ func normalizeName(metric pmetric.Metric, namespace string) string {
 		nameTokens = append([]string{namespace}, nameTokens...)
 	}
 
-	// Build the string from the tokens, separated with underscores
-	normalizedName := strings.Join(nameTokens, "_")
+	// Build the string from the tokens + separators.
+	// If UTF-8 isn't allowed, we'll use underscores as separators.
+	if !allowUTF8 {
+		separators = []string{}
+	}
+	normalizedName := join(nameTokens, separators, "_")
 
 	// Metric name cannot start with a digit, so prefix it with "_" in this case
 	if normalizedName != "" && unicode.IsDigit(rune(normalizedName[0])) {
@@ -173,6 +181,93 @@ func normalizeName(metric pmetric.Metric, namespace string) string {
 	}
 
 	return normalizedName
+}
+
+// fieldsFunc is a copy of strings.FieldsFunc from the Go standard library,
+// but it also returns the separators as part of the result.
+func fieldsFunc(s string, f func(rune) bool) ([]string, []string) {
+	// A span is used to record a slice of s of the form s[start:end].
+	// The start index is inclusive and the end index is exclusive.
+	type span struct {
+		start int
+		end   int
+	}
+	spans := make([]span, 0, 32)
+	separators := make([]string, 0, 32)
+
+	// Find the field start and end indices.
+	// Doing this in a separate pass (rather than slicing the string s
+	// and collecting the result substrings right away) is significantly
+	// more efficient, possibly due to cache effects.
+	start := -1 // valid span start if >= 0
+	for end, rune := range s {
+		if f(rune) {
+			if start >= 0 {
+				spans = append(spans, span{start, end})
+				// Set start to a negative value.
+				// Note: using -1 here consistently and reproducibly
+				// slows down this code by a several percent on amd64.
+				start = ^start
+				separators = append(separators, string(s[end]))
+			}
+		} else {
+			if start < 0 {
+				start = end
+			}
+		}
+	}
+
+	// Last field might end at EOF.
+	if start >= 0 {
+		spans = append(spans, span{start, len(s)})
+	}
+
+	// Create strings from recorded field indices.
+	a := make([]string, len(spans))
+	for i, span := range spans {
+		a[i] = s[span.start:span.end]
+	}
+
+	return a, separators
+}
+
+// join is a copy of strings.Join from the Go standard library,
+// but it also accepts a slice of separators to join the elements with.
+// If the slice of separators is shorter than the slice of elements, use a default value.
+// We also don't check for integer overflow.
+func join(elems []string, separators []string, def string) string {
+	switch len(elems) {
+	case 0:
+		return ""
+	case 1:
+		return elems[0]
+	}
+
+	var n int
+	var sep string
+	sepLen := len(separators)
+	for i, elem := range elems {
+		if i >= sepLen {
+			sep = def
+		} else {
+			sep = separators[i]
+		}
+		n += len(sep) + len(elem)
+	}
+
+	var b strings.Builder
+	b.Grow(n)
+	b.WriteString(elems[0])
+	for i, s := range elems[1:] {
+		if i >= sepLen {
+			sep = def
+		} else {
+			sep = separators[i]
+		}
+		b.WriteString(sep)
+		b.WriteString(s)
+	}
+	return b.String()
 }
 
 // TrimPromSuffixes trims type and unit prometheus suffixes from a metric name.
@@ -236,8 +331,11 @@ func removeSuffix(tokens []string, suffix string) []string {
 }
 
 // Clean up specified string so it's Prometheus compliant
-func CleanUpString(s string) string {
-	return strings.Join(strings.FieldsFunc(s, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }), "_")
+func CleanUpString(s string, allowUTF8 bool) string {
+	if !allowUTF8 {
+		return strings.Join(strings.FieldsFunc(s, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }), "_")
+	}
+	return s
 }
 
 func RemovePromForbiddenRunes(s string) string {
