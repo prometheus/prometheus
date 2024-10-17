@@ -15,13 +15,17 @@ package remote
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
 	common_config "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -379,7 +383,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-protobuf")
 
 	appendable := &mockAppendable{}
-	handler := NewOTLPWriteHandler(nil, appendable, func() config.Config {
+	handler := NewOTLPWriteHandler(nil, nil, appendable, func() config.Config {
 		return config.Config{
 			OTLPConfig: config.DefaultOTLPConfig,
 		}
@@ -475,4 +479,55 @@ func generateOTLPWriteRequest() pmetricotlp.ExportRequest {
 	exponentialHistogramDataPoint.Attributes().PutStr("foo.bar", "baz")
 
 	return pmetricotlp.NewExportRequestFromMetrics(d)
+}
+
+func TestOTLPDelta(t *testing.T) {
+	var logbuf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&logbuf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
+	appendable := &mockAppendable{}
+	handler := NewOTLPWriteHandler(log, nil, appendable, func() config.Config {
+		return config.Config{
+			OTLPConfig: config.DefaultOTLPConfig,
+		}
+	}).(*otlpWriteHandler)
+
+	md := pmetric.NewMetrics()
+	ms := md.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics()
+
+	m := ms.AppendEmpty()
+	m.SetName("some.delta.total")
+
+	sum := m.SetEmptySum()
+	sum.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+
+	ts := time.Date(2000, 1, 2, 3, 4, 0, 0, time.UTC)
+	for i := range 3 {
+		dp := sum.DataPoints().AppendEmpty()
+		dp.SetIntValue(int64(i))
+		dp.SetTimestamp(pcommon.NewTimestampFromTime(ts.Add(time.Duration(i) * time.Second)))
+	}
+
+	ctx := context.Background()
+	if err := handler.pipeline.ConsumeMetrics(ctx, md); err != nil {
+		t.Fatal(err)
+	}
+
+	if logbuf.Len() > 0 {
+		t.Fatal(logbuf.String())
+	}
+
+	ls := labels.FromStrings("__name__", "some_delta_total")
+	milli := func(sec int) int64 {
+		return time.Date(2000, 1, 2, 3, 4, sec, 0, time.UTC).UnixMilli()
+	}
+
+	want := []mockSample{
+		{t: milli(0), l: ls, v: 0}, // +0
+		{t: milli(1), l: ls, v: 1}, // +1
+		{t: milli(2), l: ls, v: 3}, // +2
+	}
+	if diff := cmp.Diff(want, appendable.samples, cmp.Exporter(func(_ reflect.Type) bool { return true })); diff != "" {
+		t.Fatal(diff)
+	}
 }
