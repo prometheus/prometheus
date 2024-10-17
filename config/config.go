@@ -806,7 +806,7 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 
 	if c.ScrapeFallbackProtocol != "" {
 		if err := c.ScrapeFallbackProtocol.Validate(); err != nil {
-			return fmt.Errorf("%w for fallback scrape config with job name %q", err, c.JobName)
+			return fmt.Errorf("invalid fallback_scrape_protocol for scrape config with job name %q: %w", c.JobName, err)
 		}
 	}
 
