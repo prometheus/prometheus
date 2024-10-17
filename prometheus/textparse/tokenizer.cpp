@@ -18,13 +18,19 @@ namespace PromPP::Prometheus::textparse {
 Tokenizer::Tokenizer() : condition_{yycinit} {}
 
 Tokenizer::Tokenizer(std::string_view str)
-    : cursor_ptr_(str.data()), limit_ptr_(str.data() + str.size()), marker_ptr_(str.data()), token_ptr_(str.data()), condition_{yycinit} {}
+    : start_ptr_(str.data()),
+      cursor_ptr_(start_ptr_),
+      limit_ptr_(start_ptr_ + str.size()),
+      marker_ptr_(start_ptr_),
+      token_ptr_(start_ptr_),
+      condition_{yycinit} {}
 
 void Tokenizer::tokenize(std::string_view str) noexcept {
-  cursor_ptr_ = str.data();
-  limit_ptr_ = str.data() + str.size();
-  marker_ptr_ = str.data();
-  token_ptr_ = str.data();
+  start_ptr_ = str.data();
+  cursor_ptr_ = start_ptr_;
+  limit_ptr_ = start_ptr_ + str.size();
+  marker_ptr_ = start_ptr_;
+  token_ptr_ = start_ptr_;
 
   condition_ = yycinit;
 }
@@ -44,104 +50,89 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
   token_ptr_ = cursor_ptr_;
 
   {
-    char yych;
-    switch (condition_) {
-      case yycinit:
-        goto yyc_init;
-      case yyccomment:
-        goto yyc_comment;
-      case yycmeta_name:
-        goto yyc_meta_name;
-      case yycmeta_text_with_leading_spaces:
-        goto yyc_meta_text_with_leading_spaces;
-      case yycmeta_text:
-        goto yyc_meta_text;
-      case yyclabels:
-        goto yyc_labels;
-      case yyclabel_value:
-        goto yyc_label_value;
-      case yycvalue:
-        goto yyc_value;
-      case yyctimestamp:
-        goto yyc_timestamp;
+    unsigned char yych;
+    if (condition_ < 4) {
+      if (condition_ < 2) {
+        if (condition_ < 1) {
+          goto yyc_init;
+        } else {
+          goto yyc_comment;
+        }
+      } else {
+        if (condition_ < 3) {
+          goto yyc_meta_name;
+        } else {
+          goto yyc_meta_text_with_leading_spaces;
+        }
+      }
+    } else {
+      if (condition_ < 6) {
+        if (condition_ < 5) {
+          goto yyc_meta_text;
+        } else {
+          goto yyc_labels;
+        }
+      } else {
+        if (condition_ < 7) {
+          goto yyc_label_value;
+        } else {
+          if (condition_ < 8) {
+            goto yyc_value;
+          } else {
+            goto yyc_timestamp;
+          }
+        }
+      }
     }
   /* *********************************** */
-  yyc_init:
+  yyc_init: {
+    static const unsigned char yybm[] = {
+        0,  0,   0,   0,   0,   0,   0,   0,   0,   64,  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0, 0, 0, 0, 0,
+        64, 0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 0, 0, 0, 0, 0,
+        0,  128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 0, 0, 0, 0, 128,
+        0,  128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 0, 0, 0, 0, 0,
+        0,  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0, 0, 0, 0, 0,
+        0,  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0, 0, 0, 0, 0,
+        0,  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0, 0, 0, 0, 0,
+        0,  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0, 0, 0, 0, 0,
+    };
     if ((limit_ptr_ - cursor_ptr_) < 2) {
       if (limit_ptr_ >= cursor_ptr_) {
         return Token::kEOF;
       }
     }
     yych = *cursor_ptr_;
-    switch (yych) {
-      case 0x00:
-        goto yy2;
-      case '\t':
-      case ' ':
-        goto yy3;
-      case '\n':
-        goto yy5;
-      case '#':
-        goto yy6;
-      case ':':
-      case 'A':
-      case 'B':
-      case 'C':
-      case 'D':
-      case 'E':
-      case 'F':
-      case 'G':
-      case 'H':
-      case 'I':
-      case 'J':
-      case 'K':
-      case 'L':
-      case 'M':
-      case 'N':
-      case 'O':
-      case 'P':
-      case 'Q':
-      case 'R':
-      case 'S':
-      case 'T':
-      case 'U':
-      case 'V':
-      case 'W':
-      case 'X':
-      case 'Y':
-      case 'Z':
-      case '_':
-      case 'a':
-      case 'b':
-      case 'c':
-      case 'd':
-      case 'e':
-      case 'f':
-      case 'g':
-      case 'h':
-      case 'i':
-      case 'j':
-      case 'k':
-      case 'l':
-      case 'm':
-      case 'n':
-      case 'o':
-      case 'p':
-      case 'q':
-      case 'r':
-      case 's':
-      case 't':
-      case 'u':
-      case 'v':
-      case 'w':
-      case 'x':
-      case 'y':
-      case 'z':
-        goto yy8;
-      case '{':
-        goto yy10;
-      default:
-        goto yy1;
+    if (yybm[0 + yych] & 64) {
+      goto yy3;
+    }
+    if (yych <= ':') {
+      if (yych <= '\n') {
+        if (yych <= 0x00)
+          goto yy2;
+        if (yych >= '\t')
+          goto yy4;
+      } else {
+        if (yych == '#')
+          goto yy5;
+        if (yych >= ':')
+          goto yy6;
+      }
+    } else {
+      if (yych <= '_') {
+        if (yych <= '@')
+          goto yy1;
+        if (yych <= 'Z')
+          goto yy6;
+        if (yych >= '_')
+          goto yy6;
+      } else {
+        if (yych <= '`')
+          goto yy1;
+        if (yych <= 'z')
+          goto yy6;
+        if (yych <= '{')
+          goto yy7;
+      }
     }
   yy1: { return Token::kInvalid; }
   yy2:
@@ -155,30 +146,40 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
       }
     }
     yych = *cursor_ptr_;
-    switch (yych) {
-      case '\t':
-      case ' ':
-        goto yy3;
-      default:
-        goto yy4;
+    if (yybm[0 + yych] & 64) {
+      goto yy3;
     }
-  yy4: { return Token::kWhitespace; }
-  yy5:
+    { return Token::kWhitespace; }
+  yy4:
     ++cursor_ptr_;
     { return Token::kLinebreak; }
-  yy6:
+  yy5:
     yych = *++cursor_ptr_;
-    switch (yych) {
-      case '\t':
-      case ' ':
-        goto yy11;
-      default:
-        goto yy7;
+    if (yych == '\t')
+      goto yy8;
+    if (yych == ' ')
+      goto yy8;
+    {
+      token_ptr_ = cursor_ptr_;
+      return consume_comment();
     }
-  yy7: {
-    token_ptr_ = cursor_ptr_;
-    return consume_comment();
-  }
+  yy6:
+    ++cursor_ptr_;
+    if (limit_ptr_ <= cursor_ptr_) {
+      if (limit_ptr_ >= cursor_ptr_) {
+        return Token::kEOF;
+      }
+    }
+    yych = *cursor_ptr_;
+    if (yybm[0 + yych] & 128) {
+      goto yy6;
+    }
+    condition_ = yycvalue;
+    { return Token::kMetricName; }
+  yy7:
+    ++cursor_ptr_;
+    condition_ = yyclabels;
+    { return Token::kBraceOpen; }
   yy8:
     ++cursor_ptr_;
     if (limit_ptr_ <= cursor_ptr_) {
@@ -187,82 +188,39 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
       }
     }
     yych = *cursor_ptr_;
-    switch (yych) {
-      case '0':
-      case '1':
-      case '2':
-      case '3':
-      case '4':
-      case '5':
-      case '6':
-      case '7':
-      case '8':
-      case '9':
-      case ':':
-      case 'A':
-      case 'B':
-      case 'C':
-      case 'D':
-      case 'E':
-      case 'F':
-      case 'G':
-      case 'H':
-      case 'I':
-      case 'J':
-      case 'K':
-      case 'L':
-      case 'M':
-      case 'N':
-      case 'O':
-      case 'P':
-      case 'Q':
-      case 'R':
-      case 'S':
-      case 'T':
-      case 'U':
-      case 'V':
-      case 'W':
-      case 'X':
-      case 'Y':
-      case 'Z':
-      case '_':
-      case 'a':
-      case 'b':
-      case 'c':
-      case 'd':
-      case 'e':
-      case 'f':
-      case 'g':
-      case 'h':
-      case 'i':
-      case 'j':
-      case 'k':
-      case 'l':
-      case 'm':
-      case 'n':
-      case 'o':
-      case 'p':
-      case 'q':
-      case 'r':
-      case 's':
-      case 't':
-      case 'u':
-      case 'v':
-      case 'w':
-      case 'x':
-      case 'y':
-      case 'z':
-        goto yy8;
-      default:
-        goto yy9;
+    if (yych == '\t')
+      goto yy8;
+    if (yych == ' ')
+      goto yy8;
+    condition_ = yyccomment;
+    { token_ptr_ = cursor_ptr_; }
+  }
+  /* *********************************** */
+  yyc_comment: {
+    static const unsigned char yybm[] = {
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0,
+    };
+    if ((limit_ptr_ - cursor_ptr_) < 5) {
+      if (limit_ptr_ >= cursor_ptr_) {
+        return Token::kEOF;
+      }
     }
-  yy9:
-    condition_ = yycvalue;
-    { return Token::kMetricName; }
+    yych = *(marker_ptr_ = cursor_ptr_);
+    if (yybm[0 + yych] & 128) {
+      goto yy11;
+    }
+    if (yych == 'H')
+      goto yy12;
+    if (yych == 'T')
+      goto yy14;
   yy10:
-    ++cursor_ptr_;
-    condition_ = yyclabels;
-    { return Token::kBraceOpen; }
+    condition_ = yycinit;
+    { return consume_comment(); }
   yy11:
     ++cursor_ptr_;
     if (limit_ptr_ <= cursor_ptr_) {
@@ -271,39 +229,57 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
       }
     }
     yych = *cursor_ptr_;
-    switch (yych) {
-      case '\t':
-      case ' ':
-        goto yy11;
-      default:
-        goto yy12;
+    if (yybm[0 + yych] & 128) {
+      goto yy11;
     }
+    { return Token::kWhitespace; }
   yy12:
-    condition_ = yyccomment;
-    { token_ptr_ = cursor_ptr_; }
-  /* *********************************** */
-  yyc_comment:
-    if ((limit_ptr_ - cursor_ptr_) < 5) {
-      if (limit_ptr_ >= cursor_ptr_) {
-        return Token::kEOF;
-      }
-    }
-    yych = *(marker_ptr_ = cursor_ptr_);
-    switch (yych) {
-      case '\t':
-      case ' ':
-        goto yy15;
-      case 'H':
-        goto yy17;
-      case 'T':
-        goto yy19;
-      default:
-        goto yy14;
-    }
+    yych = *++cursor_ptr_;
+    if (yych == 'E')
+      goto yy15;
+  yy13:
+    cursor_ptr_ = marker_ptr_;
+    goto yy10;
   yy14:
-    condition_ = yycinit;
-    { return consume_comment(); }
+    yych = *++cursor_ptr_;
+    if (yych == 'Y')
+      goto yy16;
+    goto yy13;
   yy15:
+    yych = *++cursor_ptr_;
+    if (yych == 'L')
+      goto yy17;
+    goto yy13;
+  yy16:
+    yych = *++cursor_ptr_;
+    if (yych == 'P')
+      goto yy18;
+    goto yy13;
+  yy17:
+    yych = *++cursor_ptr_;
+    if (yych == 'P')
+      goto yy19;
+    goto yy13;
+  yy18:
+    yych = *++cursor_ptr_;
+    if (yych == 'E')
+      goto yy20;
+    goto yy13;
+  yy19:
+    yych = *++cursor_ptr_;
+    if (yych == '\t')
+      goto yy21;
+    if (yych == ' ')
+      goto yy21;
+    goto yy13;
+  yy20:
+    yych = *++cursor_ptr_;
+    if (yych == '\t')
+      goto yy22;
+    if (yych == ' ')
+      goto yy22;
+    goto yy13;
+  yy21:
     ++cursor_ptr_;
     if (limit_ptr_ <= cursor_ptr_) {
       if (limit_ptr_ >= cursor_ptr_) {
@@ -311,83 +287,83 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
       }
     }
     yych = *cursor_ptr_;
-    switch (yych) {
-      case '\t':
-      case ' ':
-        goto yy15;
-      default:
-        goto yy16;
-    }
-  yy16: { return Token::kWhitespace; }
-  yy17:
-    yych = *++cursor_ptr_;
-    switch (yych) {
-      case 'E':
-        goto yy20;
-      default:
-        goto yy18;
-    }
-  yy18:
-    cursor_ptr_ = marker_ptr_;
-    goto yy14;
-  yy19:
-    yych = *++cursor_ptr_;
-    switch (yych) {
-      case 'Y':
-        goto yy21;
-      default:
-        goto yy18;
-    }
-  yy20:
-    yych = *++cursor_ptr_;
-    switch (yych) {
-      case 'L':
-        goto yy22;
-      default:
-        goto yy18;
-    }
-  yy21:
-    yych = *++cursor_ptr_;
-    switch (yych) {
-      case 'P':
-        goto yy23;
-      default:
-        goto yy18;
-    }
+    if (yych == '\t')
+      goto yy21;
+    if (yych == ' ')
+      goto yy21;
+    condition_ = yycmeta_name;
+    { return Token::kHelp; }
   yy22:
-    yych = *++cursor_ptr_;
-    switch (yych) {
-      case 'P':
-        goto yy24;
-      default:
-        goto yy18;
+    ++cursor_ptr_;
+    if (limit_ptr_ <= cursor_ptr_) {
+      if (limit_ptr_ >= cursor_ptr_) {
+        return Token::kEOF;
+      }
     }
-  yy23:
-    yych = *++cursor_ptr_;
-    switch (yych) {
-      case 'E':
-        goto yy25;
-      default:
-        goto yy18;
+    yych = *cursor_ptr_;
+    if (yych == '\t')
+      goto yy22;
+    if (yych == ' ')
+      goto yy22;
+    condition_ = yycmeta_name;
+    { return Token::kType; }
+  }
+  /* *********************************** */
+  yyc_meta_name: {
+    static const unsigned char yybm[] = {
+        64,  64,  64,  64,  64,  64,  64,  64,  64,  96,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,
+        64,  64,  64,  96,  64,  0,   64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  192, 192, 192, 192, 192, 192, 192, 192, 192, 192,
+        192, 64,  64,  64,  64,  64,  64,  192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192,
+        192, 192, 192, 192, 64,  0,   64,  64,  192, 64,  192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192,
+        192, 192, 192, 192, 192, 192, 192, 64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,
+        64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,
+        64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,
+        64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,
+        64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,
+    };
+    if (limit_ptr_ <= cursor_ptr_) {
+      if (limit_ptr_ >= cursor_ptr_) {
+        return Token::kEOF;
+      }
     }
-  yy24:
-    yych = *++cursor_ptr_;
-    switch (yych) {
-      case '\t':
-      case ' ':
-        goto yy26;
-      default:
-        goto yy18;
+    yych = *(marker_ptr_ = cursor_ptr_);
+    if (yybm[0 + yych] & 32) {
+      goto yy25;
     }
+    if (yych <= '@') {
+      if (yych <= '"') {
+        if (yych >= '"')
+          goto yy26;
+      } else {
+        if (yych == ':')
+          goto yy27;
+      }
+    } else {
+      if (yych <= '_') {
+        if (yych <= 'Z')
+          goto yy27;
+        if (yych >= '_')
+          goto yy27;
+      } else {
+        if (yych <= '`')
+          goto yy24;
+        if (yych <= 'z')
+          goto yy27;
+      }
+    }
+  yy24: { return Token::kInvalid; }
   yy25:
-    yych = *++cursor_ptr_;
-    switch (yych) {
-      case '\t':
-      case ' ':
-        goto yy28;
-      default:
-        goto yy18;
+    ++cursor_ptr_;
+    if (limit_ptr_ <= cursor_ptr_) {
+      if (limit_ptr_ >= cursor_ptr_) {
+        return Token::kEOF;
+      }
     }
+    yych = *cursor_ptr_;
+    if (yybm[0 + yych] & 32) {
+      goto yy25;
+    }
+    { return Token::kWhitespace; }
   yy26:
     ++cursor_ptr_;
     if (limit_ptr_ <= cursor_ptr_) {
@@ -396,108 +372,30 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
       }
     }
     yych = *cursor_ptr_;
-    switch (yych) {
-      case '\t':
-      case ' ':
-        goto yy26;
-      default:
-        goto yy27;
+    if (yybm[0 + yych] & 64) {
+      goto yy26;
     }
+    if (yych <= '"')
+      goto yy28;
+    goto yy29;
   yy27:
-    condition_ = yycmeta_name;
-    { return Token::kHelp; }
+    ++cursor_ptr_;
+    if (limit_ptr_ <= cursor_ptr_) {
+      if (limit_ptr_ >= cursor_ptr_) {
+        return Token::kEOF;
+      }
+    }
+    yych = *cursor_ptr_;
+    if (yybm[0 + yych] & 128) {
+      goto yy27;
+    }
+    condition_ = yycmeta_text_with_leading_spaces;
+    { return Token::kMetricName; }
   yy28:
     ++cursor_ptr_;
-    if (limit_ptr_ <= cursor_ptr_) {
-      if (limit_ptr_ >= cursor_ptr_) {
-        return Token::kEOF;
-      }
-    }
-    yych = *cursor_ptr_;
-    switch (yych) {
-      case '\t':
-      case ' ':
-        goto yy28;
-      default:
-        goto yy29;
-    }
+    condition_ = yycmeta_text_with_leading_spaces;
+    { return Token::kMetricName; }
   yy29:
-    condition_ = yycmeta_name;
-    { return Token::kType; }
-  /* *********************************** */
-  yyc_meta_name:
-    if (limit_ptr_ <= cursor_ptr_) {
-      if (limit_ptr_ >= cursor_ptr_) {
-        return Token::kEOF;
-      }
-    }
-    yych = *(marker_ptr_ = cursor_ptr_);
-    switch (yych) {
-      case '\t':
-      case ' ':
-        goto yy32;
-      case '"':
-        goto yy34;
-      case ':':
-      case 'A':
-      case 'B':
-      case 'C':
-      case 'D':
-      case 'E':
-      case 'F':
-      case 'G':
-      case 'H':
-      case 'I':
-      case 'J':
-      case 'K':
-      case 'L':
-      case 'M':
-      case 'N':
-      case 'O':
-      case 'P':
-      case 'Q':
-      case 'R':
-      case 'S':
-      case 'T':
-      case 'U':
-      case 'V':
-      case 'W':
-      case 'X':
-      case 'Y':
-      case 'Z':
-      case '_':
-      case 'a':
-      case 'b':
-      case 'c':
-      case 'd':
-      case 'e':
-      case 'f':
-      case 'g':
-      case 'h':
-      case 'i':
-      case 'j':
-      case 'k':
-      case 'l':
-      case 'm':
-      case 'n':
-      case 'o':
-      case 'p':
-      case 'q':
-      case 'r':
-      case 's':
-      case 't':
-      case 'u':
-      case 'v':
-      case 'w':
-      case 'x':
-      case 'y':
-      case 'z':
-        goto yy35;
-      default:
-        goto yy31;
-    }
-  yy31: { return Token::kInvalid; }
-  yy32:
     ++cursor_ptr_;
     if (limit_ptr_ <= cursor_ptr_) {
       if (limit_ptr_ >= cursor_ptr_) {
@@ -505,252 +403,230 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
       }
     }
     yych = *cursor_ptr_;
-    switch (yych) {
-      case '\t':
-      case ' ':
-        goto yy32;
-      default:
-        goto yy33;
-    }
-  yy33: { return Token::kWhitespace; }
-  yy34:
-    ++cursor_ptr_;
-    if (limit_ptr_ <= cursor_ptr_) {
-      if (limit_ptr_ >= cursor_ptr_) {
-        return Token::kEOF;
-      }
-    }
-    yych = *cursor_ptr_;
-    switch (yych) {
-      case '"':
-        goto yy37;
-      case '\\':
-        goto yy38;
-      default:
-        goto yy34;
-    }
-  yy35:
-    ++cursor_ptr_;
-    if (limit_ptr_ <= cursor_ptr_) {
-      if (limit_ptr_ >= cursor_ptr_) {
-        return Token::kEOF;
-      }
-    }
-    yych = *cursor_ptr_;
-    switch (yych) {
-      case '0':
-      case '1':
-      case '2':
-      case '3':
-      case '4':
-      case '5':
-      case '6':
-      case '7':
-      case '8':
-      case '9':
-      case ':':
-      case 'A':
-      case 'B':
-      case 'C':
-      case 'D':
-      case 'E':
-      case 'F':
-      case 'G':
-      case 'H':
-      case 'I':
-      case 'J':
-      case 'K':
-      case 'L':
-      case 'M':
-      case 'N':
-      case 'O':
-      case 'P':
-      case 'Q':
-      case 'R':
-      case 'S':
-      case 'T':
-      case 'U':
-      case 'V':
-      case 'W':
-      case 'X':
-      case 'Y':
-      case 'Z':
-      case '_':
-      case 'a':
-      case 'b':
-      case 'c':
-      case 'd':
-      case 'e':
-      case 'f':
-      case 'g':
-      case 'h':
-      case 'i':
-      case 'j':
-      case 'k':
-      case 'l':
-      case 'm':
-      case 'n':
-      case 'o':
-      case 'p':
-      case 'q':
-      case 'r':
-      case 's':
-      case 't':
-      case 'u':
-      case 'v':
-      case 'w':
-      case 'x':
-      case 'y':
-      case 'z':
-        goto yy35;
-      default:
-        goto yy36;
-    }
-  yy36:
-    condition_ = yycmeta_text_with_leading_spaces;
-    { return Token::kMetricName; }
-  yy37:
-    ++cursor_ptr_;
-    condition_ = yycmeta_text_with_leading_spaces;
-    { return Token::kMetricName; }
-  yy38:
-    ++cursor_ptr_;
-    if (limit_ptr_ <= cursor_ptr_) {
-      if (limit_ptr_ >= cursor_ptr_) {
-        return Token::kEOF;
-      }
-    }
-    yych = *cursor_ptr_;
-    switch (yych) {
-      case '\n':
-        goto yy39;
-      default:
-        goto yy34;
-    }
-  yy39:
+    if (yych != '\n')
+      goto yy26;
     cursor_ptr_ = marker_ptr_;
-    goto yy31;
+    goto yy24;
+  }
   /* *********************************** */
-  yyc_meta_text_with_leading_spaces:
-    goto yy40;
-  yy41:
+  yyc_meta_text_with_leading_spaces: {
+    static const unsigned char yybm[] = {
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,   0, 0, 0, 0, 0, 0, 0, 0,
+    };
+    goto yy30;
+  yy31:
     ++cursor_ptr_;
-  yy40:
+  yy30:
     if (limit_ptr_ <= cursor_ptr_) {
       if (limit_ptr_ >= cursor_ptr_) {
         return Token::kEOF;
       }
     }
     yych = *cursor_ptr_;
-    switch (yych) {
-      case '\t':
-      case ' ':
-        goto yy41;
-      default:
-        goto yy42;
+    if (yybm[0 + yych] & 128) {
+      goto yy31;
     }
-  yy42:
     condition_ = yycmeta_text;
     { token_ptr_ = cursor_ptr_; }
+  }
   /* *********************************** */
-  yyc_meta_text:
-    goto yy43;
-  yy44:
+  yyc_meta_text: {
+    static const unsigned char yybm[] = {
+        128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 0,   128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128,
+        128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128,
+        128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128,
+        128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128,
+        128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128,
+        128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128,
+        128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128,
+        128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128,
+        128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128,
+    };
+    goto yy32;
+  yy33:
     ++cursor_ptr_;
-  yy43:
+  yy32:
     if (limit_ptr_ <= cursor_ptr_) {
       if (limit_ptr_ >= cursor_ptr_) {
         return Token::kEOF;
       }
     }
     yych = *cursor_ptr_;
-    switch (yych) {
-      case '\n':
-        goto yy45;
-      default:
-        goto yy44;
+    if (yybm[0 + yych] & 128) {
+      goto yy33;
     }
-  yy45:
     condition_ = yycinit;
     { return Token::kText; }
+  }
   /* *********************************** */
-  yyc_labels:
+  yyc_labels: {
+    static const unsigned char yybm[] = {
+        64,  64,  64,  64,  64,  64,  64,  64,  64,  96,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,
+        64,  64,  64,  96,  64,  0,   64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  192, 192, 192, 192, 192, 192, 192, 192, 192, 192,
+        64,  64,  64,  64,  64,  64,  64,  192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192,
+        192, 192, 192, 192, 64,  0,   64,  64,  192, 64,  192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192, 192,
+        192, 192, 192, 192, 192, 192, 192, 64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,
+        64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,
+        64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,
+        64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,
+        64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,  64,
+    };
     if (limit_ptr_ <= cursor_ptr_) {
       if (limit_ptr_ >= cursor_ptr_) {
         return Token::kEOF;
       }
     }
     yych = *(marker_ptr_ = cursor_ptr_);
-    switch (yych) {
-      case '\t':
-      case ' ':
-        goto yy48;
-      case '"':
-        goto yy50;
-      case ',':
-        goto yy51;
-      case '=':
-        goto yy52;
-      case 'A':
-      case 'B':
-      case 'C':
-      case 'D':
-      case 'E':
-      case 'F':
-      case 'G':
-      case 'H':
-      case 'I':
-      case 'J':
-      case 'K':
-      case 'L':
-      case 'M':
-      case 'N':
-      case 'O':
-      case 'P':
-      case 'Q':
-      case 'R':
-      case 'S':
-      case 'T':
-      case 'U':
-      case 'V':
-      case 'W':
-      case 'X':
-      case 'Y':
-      case 'Z':
-      case '_':
-      case 'a':
-      case 'b':
-      case 'c':
-      case 'd':
-      case 'e':
-      case 'f':
-      case 'g':
-      case 'h':
-      case 'i':
-      case 'j':
-      case 'k':
-      case 'l':
-      case 'm':
-      case 'n':
-      case 'o':
-      case 'p':
-      case 'q':
-      case 'r':
-      case 's':
-      case 't':
-      case 'u':
-      case 'v':
-      case 'w':
-      case 'x':
-      case 'y':
-      case 'z':
-        goto yy53;
-      case '}':
-        goto yy55;
-      default:
-        goto yy47;
+    if (yybm[0 + yych] & 32) {
+      goto yy36;
     }
-  yy47: { return Token::kInvalid; }
+    if (yych <= '@') {
+      if (yych <= '+') {
+        if (yych == '"')
+          goto yy37;
+      } else {
+        if (yych <= ',')
+          goto yy38;
+        if (yych == '=')
+          goto yy39;
+      }
+    } else {
+      if (yych <= '`') {
+        if (yych <= 'Z')
+          goto yy40;
+        if (yych == '_')
+          goto yy40;
+      } else {
+        if (yych <= 'z')
+          goto yy40;
+        if (yych == '}')
+          goto yy41;
+      }
+    }
+  yy35: { return Token::kInvalid; }
+  yy36:
+    ++cursor_ptr_;
+    if (limit_ptr_ <= cursor_ptr_) {
+      if (limit_ptr_ >= cursor_ptr_) {
+        return Token::kEOF;
+      }
+    }
+    yych = *cursor_ptr_;
+    if (yybm[0 + yych] & 32) {
+      goto yy36;
+    }
+    { return Token::kWhitespace; }
+  yy37:
+    ++cursor_ptr_;
+    if (limit_ptr_ <= cursor_ptr_) {
+      if (limit_ptr_ >= cursor_ptr_) {
+        return Token::kEOF;
+      }
+    }
+    yych = *cursor_ptr_;
+    if (yybm[0 + yych] & 64) {
+      goto yy37;
+    }
+    if (yych <= '"')
+      goto yy42;
+    goto yy43;
+  yy38:
+    ++cursor_ptr_;
+    { return Token::kComma; }
+  yy39:
+    ++cursor_ptr_;
+    condition_ = yyclabel_value;
+    { return Token::kEqual; }
+  yy40:
+    ++cursor_ptr_;
+    if (limit_ptr_ <= cursor_ptr_) {
+      if (limit_ptr_ >= cursor_ptr_) {
+        return Token::kEOF;
+      }
+    }
+    yych = *cursor_ptr_;
+    if (yybm[0 + yych] & 128) {
+      goto yy40;
+    }
+    { return Token::kLabelName; }
+  yy41:
+    ++cursor_ptr_;
+    condition_ = yycvalue;
+    { return Token::kBraceClose; }
+  yy42:
+    ++cursor_ptr_;
+    { return Token::kQuotedString; }
+  yy43:
+    ++cursor_ptr_;
+    if (limit_ptr_ <= cursor_ptr_) {
+      if (limit_ptr_ >= cursor_ptr_) {
+        return Token::kEOF;
+      }
+    }
+    yych = *cursor_ptr_;
+    if (yych != '\n')
+      goto yy37;
+    cursor_ptr_ = marker_ptr_;
+    goto yy35;
+  }
+  /* *********************************** */
+  yyc_label_value: {
+    static const unsigned char yybm[] = {
+        128, 128, 128, 128, 128, 128, 128, 128, 128, 192, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128,
+        128, 128, 128, 192, 128, 0,   128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128,
+        128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128,
+        128, 128, 128, 128, 128, 0,   128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128,
+        128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128,
+        128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128,
+        128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128,
+        128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128,
+        128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128,
+    };
+    if (limit_ptr_ <= cursor_ptr_) {
+      if (limit_ptr_ >= cursor_ptr_) {
+        return Token::kEOF;
+      }
+    }
+    yych = *(marker_ptr_ = cursor_ptr_);
+    if (yybm[0 + yych] & 64) {
+      goto yy46;
+    }
+    if (yych == '"')
+      goto yy47;
+  yy45: { return Token::kInvalid; }
+  yy46:
+    ++cursor_ptr_;
+    if (limit_ptr_ <= cursor_ptr_) {
+      if (limit_ptr_ >= cursor_ptr_) {
+        return Token::kEOF;
+      }
+    }
+    yych = *cursor_ptr_;
+    if (yybm[0 + yych] & 64) {
+      goto yy46;
+    }
+    { return Token::kWhitespace; }
+  yy47:
+    ++cursor_ptr_;
+    if (limit_ptr_ <= cursor_ptr_) {
+      if (limit_ptr_ >= cursor_ptr_) {
+        return Token::kEOF;
+      }
+    }
+    yych = *cursor_ptr_;
+    if (yybm[0 + yych] & 128) {
+      goto yy47;
+    }
+    if (yych >= '#')
+      goto yy48;
+    ++cursor_ptr_;
+    condition_ = yyclabels;
+    { return Token::kLabelValue; }
   yy48:
     ++cursor_ptr_;
     if (limit_ptr_ <= cursor_ptr_) {
@@ -759,250 +635,51 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
       }
     }
     yych = *cursor_ptr_;
-    switch (yych) {
-      case '\t':
-      case ' ':
-        goto yy48;
-      default:
-        goto yy49;
-    }
-  yy49: { return Token::kWhitespace; }
-  yy50:
-    ++cursor_ptr_;
+    if (yych != '\n')
+      goto yy47;
+    cursor_ptr_ = marker_ptr_;
+    goto yy45;
+  }
+  /* *********************************** */
+  yyc_value: {
+    static const unsigned char yybm[] = {
+        64, 64, 64, 64, 64, 64, 64, 64, 64, 128, 0,  64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 128, 64, 64, 64, 64,
+        64, 64, 64, 64, 64, 64, 64, 64, 64, 64,  64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,  64, 64, 64, 64,
+        64, 64, 64, 64, 64, 64, 64, 64, 64, 64,  64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,  64, 64, 64, 64,
+        64, 64, 64, 64, 64, 64, 64, 64, 64, 64,  64, 64, 0,  64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,  64, 64, 64, 64,
+        64, 64, 64, 64, 64, 64, 64, 64, 64, 64,  64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,  64, 64, 64, 64,
+        64, 64, 64, 64, 64, 64, 64, 64, 64, 64,  64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,  64, 64, 64, 64,
+        64, 64, 64, 64, 64, 64, 64, 64, 64, 64,  64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,  64,
+    };
     if (limit_ptr_ <= cursor_ptr_) {
       if (limit_ptr_ >= cursor_ptr_) {
         return Token::kEOF;
       }
     }
     yych = *cursor_ptr_;
-    switch (yych) {
-      case '"':
-        goto yy56;
-      case '\\':
-        goto yy57;
-      default:
-        goto yy50;
+    if (yybm[0 + yych] & 64) {
+      goto yy51;
     }
+    if (yych == '\n')
+      goto yy50;
+    if (yych <= ' ')
+      goto yy52;
+    goto yy53;
+  yy50: { return Token::kInvalid; }
   yy51:
     ++cursor_ptr_;
-    { return Token::kComma; }
-  yy52:
-    ++cursor_ptr_;
-    condition_ = yyclabel_value;
-    { return Token::kEqual; }
-  yy53:
-    ++cursor_ptr_;
     if (limit_ptr_ <= cursor_ptr_) {
       if (limit_ptr_ >= cursor_ptr_) {
         return Token::kEOF;
       }
     }
     yych = *cursor_ptr_;
-    switch (yych) {
-      case '0':
-      case '1':
-      case '2':
-      case '3':
-      case '4':
-      case '5':
-      case '6':
-      case '7':
-      case '8':
-      case '9':
-      case 'A':
-      case 'B':
-      case 'C':
-      case 'D':
-      case 'E':
-      case 'F':
-      case 'G':
-      case 'H':
-      case 'I':
-      case 'J':
-      case 'K':
-      case 'L':
-      case 'M':
-      case 'N':
-      case 'O':
-      case 'P':
-      case 'Q':
-      case 'R':
-      case 'S':
-      case 'T':
-      case 'U':
-      case 'V':
-      case 'W':
-      case 'X':
-      case 'Y':
-      case 'Z':
-      case '_':
-      case 'a':
-      case 'b':
-      case 'c':
-      case 'd':
-      case 'e':
-      case 'f':
-      case 'g':
-      case 'h':
-      case 'i':
-      case 'j':
-      case 'k':
-      case 'l':
-      case 'm':
-      case 'n':
-      case 'o':
-      case 'p':
-      case 'q':
-      case 'r':
-      case 's':
-      case 't':
-      case 'u':
-      case 'v':
-      case 'w':
-      case 'x':
-      case 'y':
-      case 'z':
-        goto yy53;
-      default:
-        goto yy54;
+    if (yybm[0 + yych] & 64) {
+      goto yy51;
     }
-  yy54: { return Token::kLabelName; }
-  yy55:
-    ++cursor_ptr_;
-    condition_ = yycvalue;
-    { return Token::kBraceClose; }
-  yy56:
-    ++cursor_ptr_;
-    { return Token::kQuotedString; }
-  yy57:
-    ++cursor_ptr_;
-    if (limit_ptr_ <= cursor_ptr_) {
-      if (limit_ptr_ >= cursor_ptr_) {
-        return Token::kEOF;
-      }
-    }
-    yych = *cursor_ptr_;
-    switch (yych) {
-      case '\n':
-        goto yy58;
-      default:
-        goto yy50;
-    }
-  yy58:
-    cursor_ptr_ = marker_ptr_;
-    goto yy47;
-  /* *********************************** */
-  yyc_label_value:
-    if (limit_ptr_ <= cursor_ptr_) {
-      if (limit_ptr_ >= cursor_ptr_) {
-        return Token::kEOF;
-      }
-    }
-    yych = *(marker_ptr_ = cursor_ptr_);
-    switch (yych) {
-      case '\t':
-      case ' ':
-        goto yy61;
-      case '"':
-        goto yy63;
-      default:
-        goto yy60;
-    }
-  yy60: { return Token::kInvalid; }
-  yy61:
-    ++cursor_ptr_;
-    if (limit_ptr_ <= cursor_ptr_) {
-      if (limit_ptr_ >= cursor_ptr_) {
-        return Token::kEOF;
-      }
-    }
-    yych = *cursor_ptr_;
-    switch (yych) {
-      case '\t':
-      case ' ':
-        goto yy61;
-      default:
-        goto yy62;
-    }
-  yy62: { return Token::kWhitespace; }
-  yy63:
-    ++cursor_ptr_;
-    if (limit_ptr_ <= cursor_ptr_) {
-      if (limit_ptr_ >= cursor_ptr_) {
-        return Token::kEOF;
-      }
-    }
-    yych = *cursor_ptr_;
-    switch (yych) {
-      case '"':
-        goto yy64;
-      case '\\':
-        goto yy65;
-      default:
-        goto yy63;
-    }
-  yy64:
-    ++cursor_ptr_;
-    condition_ = yyclabels;
-    { return Token::kLabelValue; }
-  yy65:
-    ++cursor_ptr_;
-    if (limit_ptr_ <= cursor_ptr_) {
-      if (limit_ptr_ >= cursor_ptr_) {
-        return Token::kEOF;
-      }
-    }
-    yych = *cursor_ptr_;
-    switch (yych) {
-      case '\n':
-        goto yy66;
-      default:
-        goto yy63;
-    }
-  yy66:
-    cursor_ptr_ = marker_ptr_;
-    goto yy60;
-  /* *********************************** */
-  yyc_value:
-    if (limit_ptr_ <= cursor_ptr_) {
-      if (limit_ptr_ >= cursor_ptr_) {
-        return Token::kEOF;
-      }
-    }
-    yych = *cursor_ptr_;
-    switch (yych) {
-      case '\t':
-      case ' ':
-        goto yy71;
-      case '\n':
-        goto yy68;
-      case '{':
-        goto yy73;
-      default:
-        goto yy69;
-    }
-  yy68: { return Token::kInvalid; }
-  yy69:
-    ++cursor_ptr_;
-    if (limit_ptr_ <= cursor_ptr_) {
-      if (limit_ptr_ >= cursor_ptr_) {
-        return Token::kEOF;
-      }
-    }
-    yych = *cursor_ptr_;
-    switch (yych) {
-      case '\t':
-      case '\n':
-      case ' ':
-      case '{':
-        goto yy70;
-      default:
-        goto yy69;
-    }
-  yy70:
     condition_ = yyctimestamp;
     { return Token::kValue; }
-  yy71:
+  yy52:
     ++cursor_ptr_;
     if (limit_ptr_ <= cursor_ptr_) {
       if (limit_ptr_ >= cursor_ptr_) {
@@ -1010,48 +687,44 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
       }
     }
     yych = *cursor_ptr_;
-    switch (yych) {
-      case '\t':
-      case ' ':
-        goto yy71;
-      default:
-        goto yy72;
+    if (yybm[0 + yych] & 128) {
+      goto yy52;
     }
-  yy72: { return Token::kWhitespace; }
-  yy73:
+    { return Token::kWhitespace; }
+  yy53:
     ++cursor_ptr_;
     condition_ = yyclabels;
     { return Token::kBraceOpen; }
+  }
   /* *********************************** */
-  yyc_timestamp:
+  yyc_timestamp: {
+    static const unsigned char yybm[] = {
+        0, 0, 0, 0, 0, 0,   0,   0,   0,   64,  0,   0,   0,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 64, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,
+    };
     if (limit_ptr_ <= cursor_ptr_) {
       if (limit_ptr_ >= cursor_ptr_) {
         return Token::kEOF;
       }
     }
     yych = *cursor_ptr_;
-    switch (yych) {
-      case '\t':
-      case ' ':
-        goto yy76;
-      case '\n':
-        goto yy78;
-      case '0':
-      case '1':
-      case '2':
-      case '3':
-      case '4':
-      case '5':
-      case '6':
-      case '7':
-      case '8':
-      case '9':
-        goto yy79;
-      default:
-        goto yy75;
+    if (yybm[0 + yych] & 64) {
+      goto yy56;
     }
-  yy75: { return Token::kInvalid; }
-  yy76:
+    if (yych <= 0x08)
+      goto yy55;
+    if (yych <= '\n')
+      goto yy57;
+    if (yych <= '/')
+      goto yy55;
+    if (yych <= '9')
+      goto yy58;
+  yy55: { return Token::kInvalid; }
+  yy56:
     ++cursor_ptr_;
     if (limit_ptr_ <= cursor_ptr_) {
       if (limit_ptr_ >= cursor_ptr_) {
@@ -1059,19 +732,15 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
       }
     }
     yych = *cursor_ptr_;
-    switch (yych) {
-      case '\t':
-      case ' ':
-        goto yy76;
-      default:
-        goto yy77;
+    if (yybm[0 + yych] & 64) {
+      goto yy56;
     }
-  yy77: { return Token::kWhitespace; }
-  yy78:
+    { return Token::kWhitespace; }
+  yy57:
     ++cursor_ptr_;
     condition_ = yycinit;
     { return Token::kLinebreak; }
-  yy79:
+  yy58:
     ++cursor_ptr_;
     if (limit_ptr_ <= cursor_ptr_) {
       if (limit_ptr_ >= cursor_ptr_) {
@@ -1079,22 +748,11 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
       }
     }
     yych = *cursor_ptr_;
-    switch (yych) {
-      case '0':
-      case '1':
-      case '2':
-      case '3':
-      case '4':
-      case '5':
-      case '6':
-      case '7':
-      case '8':
-      case '9':
-        goto yy79;
-      default:
-        goto yy80;
+    if (yybm[0 + yych] & 128) {
+      goto yy58;
     }
-  yy80: { return Token::kTimestamp; }
+    { return Token::kTimestamp; }
+  }
   }
 }
 

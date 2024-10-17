@@ -9,7 +9,7 @@ apt install re2c
 ## Lexer code generation
 
 ```bash
-re2c prometheus/textparse/tokenizer.cxx -o prometheus/textparse/tokenizer.cpp --no-debug-info --conditions --no-generation-date --no-version
+re2c prometheus/textparse/tokenizer.cxx -o prometheus/textparse/tokenizer.cpp --no-debug-info --conditions --bit-vectors --no-generation-date --no-version
 ```
 
 ## Links

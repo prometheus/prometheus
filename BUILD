@@ -118,6 +118,7 @@ cc_library(
         ":bare_bones",
         ":primitives",
         ":prometheus",
+        "@fastfloat",
         "@roaring",
         "@utf8",
     ],

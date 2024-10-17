@@ -7,13 +7,15 @@ namespace PromPP::Prometheus::textparse {
 Tokenizer::Tokenizer() : condition_{yycinit} {}
 
 Tokenizer::Tokenizer(std::string_view str)
-    : cursor_ptr_(str.data()), limit_ptr_(str.data() + str.size()), marker_ptr_(str.data()), token_ptr_(str.data()), condition_{yycinit} {}
+    : start_ptr_(str.data()), cursor_ptr_(start_ptr_), limit_ptr_(start_ptr_ + str.size()), marker_ptr_(start_ptr_), token_ptr_(start_ptr_),
+      condition_{yycinit} {}
 
 void Tokenizer::tokenize(std::string_view str) noexcept {
-  cursor_ptr_ = str.data();
-  limit_ptr_ = str.data() + str.size();
-  marker_ptr_ = str.data();
-  token_ptr_ = str.data();
+  start_ptr_ = str.data();
+  cursor_ptr_ = start_ptr_;
+  limit_ptr_ = start_ptr_ + str.size();
+  marker_ptr_ = start_ptr_;
+  token_ptr_ = start_ptr_;
 
   condition_ = yycinit;
 }
@@ -34,7 +36,7 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
 
   /*!re2c
       re2c:api:style = free-form;
-      re2c:define:YYCTYPE = char;
+      re2c:define:YYCTYPE = "unsigned char";
       re2c:define:YYCURSOR = cursor_ptr_;
       re2c:define:YYLIMIT = limit_ptr_;
       re2c:define:YYMARKER = marker_ptr_;
@@ -138,4 +140,4 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
   */
 }
 
-}  // namespace PromPP::Prometheus::textparse
+} // namespace PromPP::Prometheus::textparse
