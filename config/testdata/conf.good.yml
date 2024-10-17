@@ -74,6 +74,8 @@ scrape_configs:
     # metrics_path defaults to '/metrics'
     # scheme defaults to 'http'.
 
+    fallback_scrape_protocol: PrometheusText0.0.4
+
     scrape_failure_log_file: fail_prom.log
     file_sd_configs:
       - files:
