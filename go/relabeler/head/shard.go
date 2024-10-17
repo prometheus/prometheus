@@ -2,6 +2,7 @@ package head
 
 import (
 	"fmt"
+
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/model"
 	"github.com/prometheus/prometheus/pp/go/relabeler"
@@ -248,7 +249,7 @@ func (h *Head) shardLoop(shardID uint16, stopc chan struct{}) {
 				err = h.inputRelabelers[relabelerKey{task.RelabelerID(), shardID}].InputRelabelingWithStalenans(
 					task.Ctx(),
 					h.lsses[shardID],
-					task.MetricLimits(),
+					task.Options(),
 					task.SourceStateByShard(shardID),
 					task.StaleNansTS(),
 					task.ShardedData(),
@@ -260,7 +261,7 @@ func (h *Head) shardLoop(shardID uint16, stopc chan struct{}) {
 				err = h.inputRelabelers[relabelerKey{task.RelabelerID(), shardID}].InputRelabeling(
 					task.Ctx(),
 					h.lsses[shardID],
-					task.MetricLimits(),
+					task.Options(),
 					task.ShardedData(),
 					shardsInnerSeries,
 					shardsRelabeledSeries,

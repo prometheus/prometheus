@@ -2,6 +2,7 @@ package appender
 
 import (
 	"context"
+
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler"
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
@@ -35,8 +36,15 @@ func (h *RotatableHead) ReferenceCounter() relabeler.ReferenceCounter {
 }
 
 // Append - relabeler.Head interface implementation.
-func (h *RotatableHead) Append(ctx context.Context, incomingData *relabeler.IncomingData, metricLimits *cppbridge.MetricLimits, sourceStates *relabeler.SourceStates, staleNansTS int64, relabelerID string) ([][]*cppbridge.InnerSeries, error) {
-	return h.head.Append(ctx, incomingData, metricLimits, sourceStates, staleNansTS, relabelerID)
+func (h *RotatableHead) Append(
+	ctx context.Context,
+	incomingData *relabeler.IncomingData,
+	options cppbridge.RelabelerOptions,
+	sourceStates *relabeler.SourceStates,
+	staleNansTS int64,
+	relabelerID string,
+) ([][]*cppbridge.InnerSeries, error) {
+	return h.head.Append(ctx, incomingData, options, sourceStates, staleNansTS, relabelerID)
 }
 
 // ForEachShard - relabeler.Head interface implementation.
@@ -55,7 +63,7 @@ func (h *RotatableHead) NumberOfShards() uint16 {
 }
 
 // Finalize - relabeler.Head interface implementation.
-func (h *RotatableHead) Finalize() {}
+func (*RotatableHead) Finalize() {}
 
 // Reconfigure - relabeler.Head interface implementation.
 func (h *RotatableHead) Reconfigure(inputRelabelerConfigs []*config.InputRelabelerConfig, numberOfShards uint16) error {
@@ -67,6 +75,7 @@ func (h *RotatableHead) WriteMetrics() {
 	h.head.WriteMetrics()
 }
 
+// Status return head stats.
 func (h *RotatableHead) Status(limit int) relabeler.HeadStatus {
 	return h.head.Status(limit)
 }

@@ -3,11 +3,12 @@ package appender
 import (
 	"context"
 	"fmt"
+	"sync"
+
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler"
 	"github.com/prometheus/prometheus/pp/go/relabeler/querier"
 	"github.com/prometheus/prometheus/storage"
-	"sync"
 )
 
 type QueryableAppender struct {
@@ -17,7 +18,11 @@ type QueryableAppender struct {
 	querierMetrics *querier.Metrics
 }
 
-func NewQueryableAppender(head relabeler.Head, distributor relabeler.Distributor, querierMetrics *querier.Metrics) *QueryableAppender {
+func NewQueryableAppender(
+	head relabeler.Head,
+	distributor relabeler.Distributor,
+	querierMetrics *querier.Metrics,
+) *QueryableAppender {
 	return &QueryableAppender{
 		head:           head,
 		distributor:    distributor,
@@ -28,13 +33,13 @@ func NewQueryableAppender(head relabeler.Head, distributor relabeler.Distributor
 func (qa *QueryableAppender) Append(
 	ctx context.Context,
 	incomingData *relabeler.IncomingData,
-	metricLimits *cppbridge.MetricLimits,
+	options cppbridge.RelabelerOptions,
 	relabelerID string,
 ) error {
 	return qa.AppendWithStaleNans(
 		ctx,
 		incomingData,
-		metricLimits,
+		options,
 		nil,
 		0,
 		relabelerID,
@@ -44,7 +49,7 @@ func (qa *QueryableAppender) Append(
 func (qa *QueryableAppender) AppendWithStaleNans(
 	ctx context.Context,
 	incomingData *relabeler.IncomingData,
-	metricLimits *cppbridge.MetricLimits,
+	options cppbridge.RelabelerOptions,
 	sourceStates *relabeler.SourceStates,
 	staleNansTS int64,
 	relabelerID string,
@@ -52,7 +57,7 @@ func (qa *QueryableAppender) AppendWithStaleNans(
 	qa.lock.Lock()
 	defer qa.lock.Unlock()
 
-	data, err := qa.head.Append(ctx, incomingData, metricLimits, sourceStates, staleNansTS, relabelerID)
+	data, err := qa.head.Append(ctx, incomingData, options, sourceStates, staleNansTS, relabelerID)
 	if err != nil {
 		return err
 	}
@@ -93,7 +98,10 @@ func (qa *QueryableAppender) Rotate() error {
 	return nil
 }
 
-func (qa *QueryableAppender) Reconfigure(headConfigurator relabeler.HeadConfigurator, distributorConfigurator relabeler.DistributorConfigurator) error {
+func (qa *QueryableAppender) Reconfigure(
+	headConfigurator relabeler.HeadConfigurator,
+	distributorConfigurator relabeler.DistributorConfigurator,
+) error {
 	qa.lock.Lock()
 	defer qa.lock.Unlock()
 

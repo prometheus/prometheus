@@ -4,6 +4,12 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"io"
+	"math"
+	"os"
+	"path/filepath"
+	"time"
+
 	"github.com/hashicorp/go-multierror"
 	"github.com/prometheus/prometheus/pp/go/util"
 	"github.com/oklog/ulid"
@@ -11,11 +17,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
-	"io"
-	"math"
-	"os"
-	"path/filepath"
-	"time"
 )
 
 const (
@@ -186,8 +187,6 @@ func (w *BlockWriter) Write(block Block) (err error) {
 	if err = fileutil.Replace(tmp, dir); err != nil {
 		return fmt.Errorf("failed to move temporary block dir {%s} to {%s}: %w", tmp, dir, err)
 	}
-
-	fmt.Println(*blockMeta)
 
 	w.blockWriteDuration.With(prometheus.Labels{
 		"block_id": blockMeta.ULID.String(),

@@ -216,9 +216,18 @@ func (qs *QueryableStorage) shrink() {
 
 	var heads []relabeler.Head
 	for _, head := range qs.heads {
-		logger.Infof("QUERYABLE STORAGE: SHRINK: HEAD { %d }: persisted: %v, ref count: %d", head.Generation(), head.ReferenceCounter().Value() < 0, refCount(head.ReferenceCounter().Value()))
+		logger.Infof(
+			"QUERYABLE STORAGE: SHRINK: HEAD { %d }: persisted: %v, ref count: %d",
+			head.Generation(),
+			head.ReferenceCounter().Value() < 0,
+			refCount(head.ReferenceCounter().Value()),
+		)
 		if head.ReferenceCounter().Value() == PersistedHeadValue {
-			_ = head.Close()
+			errClose := head.Close()
+			if errClose != nil {
+				logger.Infof("QUERYABLE STORAGE: head { %d } closed error: %v", errClose)
+				continue
+			}
 			logger.Infof("QUERYABLE STORAGE: head { %d } persisted and closed", head.Generation())
 			continue
 		}

@@ -509,7 +509,7 @@ void prompp_prometheus_per_shard_relabeler_cache_allocated_memory(void* args, vo
  * @param args {
  *     shards_inner_series     []*InnerSeries     // go slice with InnerSeries;
  *     shards_relabeled_series []*RelabeledSeries // go slice with RelabeledSeries;
- *     metric_limits           *MetricLimits      // pointer to MetricLimits;
+ *     options                 RelabelerOptions   // object RelabelerOptions;
  *     per_shard_relabeler     uintptr            // pointer to constructed per shard relabeler;
  *     hashdex                 uintptr            // pointer to filled hashdex;
  *     lss                     uintptr            // pointer to constructed label sets;
@@ -527,7 +527,7 @@ void prompp_prometheus_per_shard_relabeler_input_relabeling(void* args, void* re
  * @param args {
  *     shards_inner_series     []*InnerSeries     // go slice with InnerSeries;
  *     shards_relabeled_series []*RelabeledSeries // go slice with RelabeledSeries;
- *     metric_limits           *MetricLimits      // pointer to MetricLimits;
+ *     options                 RelabelerOptions   // object RelabelerOptions;
  *     per_shard_relabeler     uintptr            // pointer to constructed per shard relabeler;
  *     hashdex                 uintptr            // pointer to filled hashdex;
  *     lss                     uintptr            // pointer to constructed label sets;

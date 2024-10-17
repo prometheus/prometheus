@@ -16,6 +16,7 @@ import (
 type RelabelerSuite struct {
 	suite.Suite
 	baseCtx context.Context
+	options cppbridge.RelabelerOptions
 }
 
 func TestRelabelerSuite(t *testing.T) {
@@ -179,7 +180,7 @@ func (s *RelabelerSuite) TestInvalidAction() {
 	shardsInnerSeries := cppbridge.NewShardsInnerSeries(numberOfShards)
 	shardsRelabeledSeries := cppbridge.NewShardsRelabeledSeries(numberOfShards)
 
-	err = psr.InputRelabeling(s.baseCtx, lss, nil, h, shardsInnerSeries, shardsRelabeledSeries)
+	err = psr.InputRelabeling(s.baseCtx, lss, s.options, h, shardsInnerSeries, shardsRelabeledSeries)
 	s.Require().Error(err)
 }
 
@@ -236,7 +237,7 @@ func (s *RelabelerSuite) TestInputPerShardRelabeler() {
 	shardsInnerSeries := cppbridge.NewShardsInnerSeries(numberOfShards)
 	shardsRelabeledSeries := cppbridge.NewShardsRelabeledSeries(numberOfShards)
 
-	err = psr.InputRelabeling(s.baseCtx, lss, nil, h, shardsInnerSeries, shardsRelabeledSeries)
+	err = psr.InputRelabeling(s.baseCtx, lss, s.options, h, shardsInnerSeries, shardsRelabeledSeries)
 	s.Require().NoError(err)
 }
 
