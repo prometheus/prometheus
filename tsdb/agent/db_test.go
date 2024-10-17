@@ -16,6 +16,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"io"
 	"math"
 	"path/filepath"
 	"strconv"
@@ -29,6 +30,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
@@ -931,6 +933,223 @@ func TestDBOutOfOrderTimeWindow(t *testing.T) {
 			require.NoError(t, s.Close())
 		})
 	}
+}
+
+type walSample struct {
+	t    int64
+	f    float64
+	h    *histogram.Histogram
+	lbls labels.Labels
+	ref  storage.SeriesRef
+}
+
+func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
+	t.Parallel()
+
+	type appendableSample struct {
+		t            int64
+		ct           int64
+		v            float64
+		lbls         labels.Labels
+		h            *histogram.Histogram
+		expectsError bool
+	}
+
+	testHistogram := tsdbutil.GenerateTestHistograms(1)[0]
+	zeroHistogram := &histogram.Histogram{}
+
+	invalidHist := &histogram.Histogram{
+		CustomValues: make([]float64, 0, 1),
+	}
+
+	lbls := labelsForTest(t.Name(), 1)
+	defLbls := labels.New(lbls[0]...)
+
+	testCases := []struct {
+		name                string
+		inputSamples        []appendableSample
+		expectedSamples     []*walSample
+		appendFunc          func(app storage.Appender, lset labels.Labels, t, ct int64, value interface{}) (storage.SeriesRef, error)
+		appendErrorFunc     func(app storage.Appender, ref storage.SeriesRef, lset labels.Labels, t, ct int64, value interface{}) error
+		value               interface{}
+		expectedSampleCount int
+		expectedType        string
+		expectedErrorMsg    string
+		expectedSeriesCount int
+	}{
+		{
+			name: "CT+float && CT+histogram samples",
+			inputSamples: []appendableSample{
+				{
+					t:    100,
+					ct:   30,
+					v:    0,
+					lbls: defLbls,
+				},
+				{
+					t:    200,
+					v:    20,
+					lbls: defLbls,
+				},
+				{
+					t:    300,
+					ct:   230,
+					h:    zeroHistogram,
+					lbls: defLbls,
+				},
+				{
+					t:    400,
+					h:    testHistogram,
+					lbls: defLbls,
+				},
+			},
+			expectedSamples: []*walSample{
+				{t: 30, f: 0, lbls: defLbls},
+				{t: 100, f: 20, lbls: defLbls},
+				{t: 230, h: zeroHistogram, lbls: defLbls},
+				{t: 300, h: testHistogram, lbls: defLbls},
+			},
+			expectedSeriesCount: 1,
+		},
+		{
+			name: "CT+float && CT+histogram samples with error",
+			inputSamples: []appendableSample{
+				{
+					// invalid CT
+					t:            100,
+					ct:           100,
+					v:            0,
+					lbls:         defLbls,
+					expectsError: true,
+				},
+				{
+					// invalid Histogram, will validate
+					t:            200,
+					h:            invalidHist,
+					lbls:         defLbls,
+					expectsError: true,
+				},
+				{
+					// invalid CT histogram
+					t:            300,
+					ct:           300,
+					h:            zeroHistogram,
+					lbls:         defLbls,
+					expectsError: true,
+				},
+			},
+			expectedSeriesCount: 0,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			reg := prometheus.NewRegistry()
+			opts := DefaultOptions()
+			opts.OutOfOrderTimeWindow = 0
+			s := createTestAgentDB(t, reg, opts)
+			app := s.Appender(context.TODO())
+
+			for _, sample := range tc.inputSamples {
+				// We supposed to write a Histogram to the WAL
+				if sample.h != nil {
+					if sample.ct != 0 {
+						_, err := app.AppendHistogramCTZeroSample(0, sample.lbls, sample.t, sample.ct, sample.h, nil)
+						require.Equal(t, sample.expectsError, err != nil, "expectedError (%v), got: %v", sample.expectsError, err)
+					} else {
+						_, err := app.AppendHistogram(0, sample.lbls, sample.t, sample.h, nil)
+						require.Equal(t, sample.expectsError, err != nil, "expectedError (%v), got: %v", sample.expectsError, err)
+					}
+				} else {
+					// We supposed to write a float sample to the WAL
+					if sample.ct != 0 {
+						_, err := app.AppendCTZeroSample(0, sample.lbls, sample.t, sample.ct)
+						require.Equal(t, sample.expectsError, err != nil, "expectedError (%v), got: %v", sample.expectsError, err)
+					} else {
+						_, err := app.Append(0, sample.lbls, sample.t, sample.v)
+						require.Equal(t, sample.expectsError, err != nil, "expectedError (%v), got: %v", sample.expectsError, err)
+					}
+				}
+			}
+
+			require.NoError(t, app.Commit())
+			// Close the DB to ensure all data is flushed to the WAL
+			require.NoError(t, s.Close())
+
+			outputSamples := readWALSamples(t, s.wal.Dir())
+
+			require.Equal(t, len(outputSamples), len(tc.expectedSamples), "Expected %d samples", len(tc.expectedSamples))
+
+			for _, expectedSample := range tc.expectedSamples {
+				for _, sample := range outputSamples {
+					if sample.t == expectedSample.t && sample.lbls.String() == expectedSample.lbls.String() {
+						if expectedSample.h != nil {
+							require.Equal(t, expectedSample.h, sample.h)
+						} else {
+							require.Equal(t, expectedSample.f, sample.f)
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
+func readWALSamples(t *testing.T, walDir string) []*walSample {
+	t.Helper()
+	sr, err := wlog.NewSegmentsReader(walDir)
+	require.NoError(t, err)
+	defer func(sr io.ReadCloser) {
+		err := sr.Close()
+		require.NoError(t, err)
+	}(sr)
+
+	r := wlog.NewReader(sr)
+	dec := record.NewDecoder(labels.NewSymbolTable())
+
+	var (
+		samples    []record.RefSample
+		histograms []record.RefHistogramSample
+
+		lastSeries    record.RefSeries
+		outputSamples = make([]*walSample, 0)
+	)
+
+	for r.Next() {
+		rec := r.Record()
+		switch dec.Type(rec) {
+		case record.Series:
+			series, err := dec.Series(rec, nil)
+			require.NoError(t, err)
+			lastSeries = series[0]
+		case record.Samples:
+			samples, err = dec.Samples(rec, samples[:0])
+			require.NoError(t, err)
+			for _, s := range samples {
+				outputSamples = append(outputSamples, &walSample{
+					t:    s.T,
+					f:    s.V,
+					lbls: lastSeries.Labels.Copy(),
+					ref:  storage.SeriesRef(lastSeries.Ref),
+				})
+			}
+		case record.HistogramSamples:
+			histograms, err = dec.HistogramSamples(rec, histograms[:0])
+			require.NoError(t, err)
+			for _, h := range histograms {
+				outputSamples = append(outputSamples, &walSample{
+					t:    h.T,
+					h:    h.H,
+					lbls: lastSeries.Labels.Copy(),
+					ref:  storage.SeriesRef(lastSeries.Ref),
+				})
+			}
+		}
+	}
+
+	return outputSamples
 }
 
 func BenchmarkCreateSeries(b *testing.B) {
