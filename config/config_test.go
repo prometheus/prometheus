@@ -1501,7 +1501,7 @@ var expectedConf = &Config{
 }
 
 func TestYAMLNotLongerSupportedAMApi(t *testing.T) {
-	_, err := LoadFile("testdata/config_with_no_longer_supported_am_api_config.yml", false, false, promslog.NewNopLogger())
+	_, err := LoadFile("testdata/config_with_no_longer_supported_am_api_config.yml", false, promslog.NewNopLogger())
 	require.Error(t, err)
 }
 
