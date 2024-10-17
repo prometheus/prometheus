@@ -442,6 +442,7 @@ func readQueryLog(t *testing.T, path string) []queryLogLine {
 	file, err := os.Open(path)
 	require.NoError(t, err)
 	defer file.Close()
+
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		var q queryLogLine

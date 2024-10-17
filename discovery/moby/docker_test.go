@@ -19,9 +19,9 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 
@@ -48,7 +48,7 @@ host: %s
 	defer metrics.Unregister()
 	defer refreshMetrics.Unregister()
 
-	d, err := NewDockerDiscovery(&cfg, log.NewNopLogger(), metrics)
+	d, err := NewDockerDiscovery(&cfg, promslog.NewNopLogger(), metrics)
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -226,7 +226,7 @@ host: %s
 	require.NoError(t, metrics.Register())
 	defer metrics.Unregister()
 	defer refreshMetrics.Unregister()
-	d, err := NewDockerDiscovery(&cfg, log.NewNopLogger(), metrics)
+	d, err := NewDockerDiscovery(&cfg, promslog.NewNopLogger(), metrics)
 	require.NoError(t, err)
 
 	ctx := context.Background()

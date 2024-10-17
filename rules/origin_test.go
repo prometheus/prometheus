@@ -19,8 +19,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -96,7 +97,7 @@ func TestNewRuleDetail(t *testing.T) {
 			labels.EmptyLabels(),
 			labels.EmptyLabels(),
 			"",
-			true, log.NewNopLogger(),
+			true, promslog.NewNopLogger(),
 		)
 
 		detail := NewRuleDetail(rule)

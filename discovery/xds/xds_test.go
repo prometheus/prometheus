@@ -22,9 +22,9 @@ import (
 	"time"
 
 	v3 "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -90,7 +90,7 @@ func constantResourceParser(targets []model.LabelSet, err error) resourceParser 
 	}
 }
 
-var nopLogger = log.NewNopLogger()
+var nopLogger = promslog.NewNopLogger()
 
 type testResourceClient struct {
 	resourceTypeURL string

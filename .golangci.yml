@@ -23,6 +23,7 @@ linters:
     - usestdlibvars
     - whitespace
     - loggercheck
+    - sloglint
 
 issues:
   max-issues-per-linter: 0
@@ -100,8 +101,6 @@ linters-settings:
       - (net/http.ResponseWriter).Write
       # No need to check for errors on server's shutdown.
       - (*net/http.Server).Shutdown
-      # Never check for logger errors.
-      - (github.com/go-kit/log.Logger).Log
       # Never check for rollback errors as Rollback() is called when a previous error was detected.
       - (github.com/prometheus/prometheus/storage.Appender).Rollback
   goimports:
