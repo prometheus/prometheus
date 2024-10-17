@@ -2089,7 +2089,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "scrape_config_files_fallback_scrape_protocol1.bad.yml",
-		errMsg:   `parsing YAML file testdata/scrape_config_files_fallback_scrape_protocol1.bad.yml: unknown scrape protocol prometheusproto, supported: [OpenMetricsText0.0.1 OpenMetricsText1.0.0 PrometheusProto PrometheusText0.0.4 PrometheusText1.0.0] for fallback scrape config with job name "node"`,
+		errMsg:   `parsing YAML file testdata/scrape_config_files_fallback_scrape_protocol1.bad.yml: invalid fallback_scrape_protocol for scrape config with job name "node": unknown scrape protocol prometheusproto, supported: [OpenMetricsText0.0.1 OpenMetricsText1.0.0 PrometheusProto PrometheusText0.0.4 PrometheusText1.0.0]`,
 	},
 	{
 		filename: "scrape_config_files_fallback_scrape_protocol2.bad.yml",
