@@ -152,13 +152,13 @@ func TestNewParser(t *testing.T) {
 		"some-other-valid-content-type": {
 			contentType:    "text/html",
 			validateParser: requireNilParser,
-			err:            "Scraper sending unrecognisable Content-Type and no fallback_scrape_protocol specified for target",
+			err:            "Scraper sending unrecognisable Content-Type '\"text/html\"' and no fallback_scrape_protocol specified for target",
 		},
 		"some-other-valid-content-type-fallback-text-plain": {
 			contentType:            "text/html",
 			validateParser:         requirePromParser,
 			fallbackScrapeProtocol: config.PrometheusText0_0_4,
-			err:                    "Content-Type not recognised mediaType, using fallback_scrape_protocol for target",
+			err:                    "Content-Type '\"text/html\"' not recognised mediaType, using fallback_scrape_protocol for target",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

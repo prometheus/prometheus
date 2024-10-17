@@ -15,6 +15,7 @@ package textparse
 
 import (
 	"errors"
+	"fmt"
 	"mime"
 
 	"github.com/prometheus/common/model"
@@ -108,11 +109,11 @@ func extractMediaType(contentType, fallbackType string) (string, error) {
 	case "application/openmetrics-text", "application/vnd.google.protobuf", "text/plain":
 		return mediaType, nil
 	}
-	// We're here because we have no regonised mediaType.
+	// We're here because we have no recognised mediaType.
 	if fallbackType == "" {
-		return "", errors.New("Scraper sending unrecognisable Content-Type and no fallback_scrape_protocol specified for target")
+		return "", fmt.Errorf("Scraper sending unrecognisable Content-Type '%q' and no fallback_scrape_protocol specified for target", contentType)
 	}
-	return fallbackType, errors.New("Content-Type not recognised mediaType, using fallback_scrape_protocol for target")
+	return fallbackType, fmt.Errorf("Content-Type '%q' not recognised mediaType, using fallback_scrape_protocol for target", contentType)
 }
 
 // New returns a new parser of the byte slice.
