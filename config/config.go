@@ -163,13 +163,13 @@ var (
 	// DefaultScrapeConfig is the default scrape configuration.
 	DefaultScrapeConfig = ScrapeConfig{
 		// ScrapeTimeout, ScrapeInterval and ScrapeProtocols default to the configured globals.
-		ScrapeClassicHistograms: false,
-		MetricsPath:             "/metrics",
-		Scheme:                  "http",
-		HonorLabels:             false,
-		HonorTimestamps:         true,
-		HTTPClientConfig:        config.DefaultHTTPClientConfig,
-		EnableCompression:       true,
+		AlwaysScrapeClassicHistograms: false,
+		MetricsPath:                   "/metrics",
+		Scheme:                        "http",
+		HonorLabels:                   false,
+		HonorTimestamps:               true,
+		HTTPClientConfig:              config.DefaultHTTPClientConfig,
+		EnableCompression:             true,
 	}
 
 	// DefaultAlertmanagerConfig is the default alertmanager configuration.
@@ -631,8 +631,8 @@ type ScrapeConfig struct {
 	// Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
 	// OpenMetricsText1.0.0, PrometheusText0.0.4.
 	ScrapeProtocols []ScrapeProtocol `yaml:"scrape_protocols,omitempty"`
-	// Whether to scrape a classic histogram that is also exposed as a native histogram.
-	ScrapeClassicHistograms bool `yaml:"scrape_classic_histograms,omitempty"`
+	// Whether to scrape a classic histogram, even if it is also exposed as a native histogram.
+	AlwaysScrapeClassicHistograms bool `yaml:"always_scrape_classic_histograms,omitempty"`
 	// File to which scrape failures are logged.
 	ScrapeFailureLogFile string `yaml:"scrape_failure_log_file,omitempty"`
 	// The HTTP resource path on which to fetch metrics from targets.
