@@ -84,7 +84,7 @@ those classic histograms that do not come with a corresponding native
 histogram. However, if a native histogram is present, Prometheus will ignore
 the corresponding classic histogram, with the notable exception of exemplars,
 which are always ingested. To keep the classic histograms as well, enable
-`scrape_classic_histograms` in the scrape job.
+`always_scrape_classic_histograms` in the scrape job.
 
 _Note about the format of `le` and `quantile` label values:_
 

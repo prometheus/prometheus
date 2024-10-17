@@ -1846,7 +1846,7 @@ func TestScrapeLoopAppendStalenessIfTrackTimestampStaleness(t *testing.T) {
 func TestScrapeLoopAppendExemplar(t *testing.T) {
 	tests := []struct {
 		title                           string
-		scrapeClassicHistograms         bool
+		alwaysScrapeClassicHist         bool
 		enableNativeHistogramsIngestion bool
 		scrapeText                      string
 		contentType                     string
@@ -2115,7 +2115,7 @@ metric: <
 >
 
 `,
-			scrapeClassicHistograms: true,
+			alwaysScrapeClassicHist: true,
 			contentType:             "application/vnd.google.protobuf",
 			floats: []floatSample{
 				{metric: labels.FromStrings("__name__", "test_histogram_count"), t: 1234568, f: 175},
@@ -2177,7 +2177,7 @@ metric: <
 			sl.reportSampleMutator = func(l labels.Labels) labels.Labels {
 				return mutateReportSampleLabels(l, discoveryLabels)
 			}
-			sl.scrapeClassicHistograms = test.scrapeClassicHistograms
+			sl.alwaysScrapeClassicHist = test.alwaysScrapeClassicHist
 
 			now := time.Now()
 

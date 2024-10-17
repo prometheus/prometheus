@@ -215,9 +215,9 @@ job_name: <job_name>
 # OpenMetricsText1.0.0, PrometheusText0.0.4.
 [ scrape_protocols: [<string>, ...] | default = <global_config.scrape_protocols> ]
 
-# Whether to scrape a classic histogram that is also exposed as a native
+# Whether to scrape a classic histogram, even if it is also exposed as a native
 # histogram (has no effect without --enable-feature=native-histograms).
-[ scrape_classic_histograms: <boolean> | default = false ]
+[ always_scrape_classic_histograms: <boolean> | default = false ]
 
 # The HTTP resource path on which to fetch metrics from targets.
 [ metrics_path: <path> | default = /metrics ]
