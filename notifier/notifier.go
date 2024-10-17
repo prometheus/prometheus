@@ -542,7 +542,7 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 
 	begin := time.Now()
 
-	// v2Payload represent 'alerts' marshaled for Alertmanager API v2.
+	// cachedPayload represent 'alerts' marshaled for Alertmanager API v2.
 	// Marshaling happens below. Reference here is for caching between
 	// for loop iterations.
 	var cachedPayload []byte
