@@ -1501,7 +1501,7 @@ var expectedConf = &Config{
 }
 
 func TestYAMLRoundtrip(t *testing.T) {
-	want, err := LoadFile("testdata/roundtrip.good.yml", false, false, promslog.NewNopLogger())
+	want, err := LoadFile("testdata/roundtrip.good.yml", false, promslog.NewNopLogger())
 	require.NoError(t, err)
 
 	out, err := yaml.Marshal(want)
@@ -1514,7 +1514,7 @@ func TestYAMLRoundtrip(t *testing.T) {
 }
 
 func TestRemoteWriteRetryOnRateLimit(t *testing.T) {
-	want, err := LoadFile("testdata/remote_write_retry_on_rate_limit.good.yml", false, false, promslog.NewNopLogger())
+	want, err := LoadFile("testdata/remote_write_retry_on_rate_limit.good.yml", false, promslog.NewNopLogger())
 	require.NoError(t, err)
 
 	out, err := yaml.Marshal(want)
@@ -1529,7 +1529,7 @@ func TestRemoteWriteRetryOnRateLimit(t *testing.T) {
 
 func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 	t.Run("good config", func(t *testing.T) {
-		want, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_resource_attributes.good.yml"), false, false, promslog.NewNopLogger())
+		want, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_resource_attributes.good.yml"), false, promslog.NewNopLogger())
 		require.NoError(t, err)
 
 		out, err := yaml.Marshal(want)
@@ -1541,7 +1541,7 @@ func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 	})
 
 	t.Run("bad config", func(t *testing.T) {
-		_, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_resource_attributes.bad.yml"), false, false, promslog.NewNopLogger())
+		_, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_resource_attributes.bad.yml"), false, promslog.NewNopLogger())
 		require.ErrorContains(t, err, `duplicated promoted OTel resource attribute "k8s.job.name"`)
 		require.ErrorContains(t, err, `empty promoted OTel resource attribute`)
 	})
@@ -1550,16 +1550,17 @@ func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 func TestLoadConfig(t *testing.T) {
 	// Parse a valid file that sets a global scrape timeout. This tests whether parsing
 	// an overwritten default field in the global config permanently changes the default.
-	_, err := LoadFile("testdata/global_timeout.good.yml", false, false, promslog.NewNopLogger())
+	_, err := LoadFile("testdata/global_timeout.good.yml", false, promslog.NewNopLogger())
 	require.NoError(t, err)
 
-	c, err := LoadFile("testdata/conf.good.yml", false, false, promslog.NewNopLogger())
+	c, err := LoadFile("testdata/conf.good.yml", false, promslog.NewNopLogger())
+
 	require.NoError(t, err)
 	require.Equal(t, expectedConf, c)
 }
 
 func TestScrapeIntervalLarger(t *testing.T) {
-	c, err := LoadFile("testdata/scrape_interval_larger.good.yml", false, false, promslog.NewNopLogger())
+	c, err := LoadFile("testdata/scrape_interval_larger.good.yml", false, promslog.NewNopLogger())
 	require.NoError(t, err)
 	require.Len(t, c.ScrapeConfigs, 1)
 	for _, sc := range c.ScrapeConfigs {
@@ -1569,7 +1570,7 @@ func TestScrapeIntervalLarger(t *testing.T) {
 
 // YAML marshaling must not reveal authentication credentials.
 func TestElideSecrets(t *testing.T) {
-	c, err := LoadFile("testdata/conf.good.yml", false, false, promslog.NewNopLogger())
+	c, err := LoadFile("testdata/conf.good.yml", false, promslog.NewNopLogger())
 	require.NoError(t, err)
 
 	secretRe := regexp.MustCompile(`\\u003csecret\\u003e|<secret>`)
@@ -1586,31 +1587,31 @@ func TestElideSecrets(t *testing.T) {
 
 func TestLoadConfigRuleFilesAbsolutePath(t *testing.T) {
 	// Parse a valid file that sets a rule files with an absolute path
-	c, err := LoadFile(ruleFilesConfigFile, false, false, promslog.NewNopLogger())
+	c, err := LoadFile(ruleFilesConfigFile, false, promslog.NewNopLogger())
 	require.NoError(t, err)
 	require.Equal(t, ruleFilesExpectedConf, c)
 }
 
 func TestKubernetesEmptyAPIServer(t *testing.T) {
-	_, err := LoadFile("testdata/kubernetes_empty_apiserver.good.yml", false, false, promslog.NewNopLogger())
+	_, err := LoadFile("testdata/kubernetes_empty_apiserver.good.yml", false, promslog.NewNopLogger())
 	require.NoError(t, err)
 }
 
 func TestKubernetesWithKubeConfig(t *testing.T) {
-	_, err := LoadFile("testdata/kubernetes_kubeconfig_without_apiserver.good.yml", false, false, promslog.NewNopLogger())
+	_, err := LoadFile("testdata/kubernetes_kubeconfig_without_apiserver.good.yml", false, promslog.NewNopLogger())
 	require.NoError(t, err)
 }
 
 func TestKubernetesSelectors(t *testing.T) {
-	_, err := LoadFile("testdata/kubernetes_selectors_endpoints.good.yml", false, false, promslog.NewNopLogger())
+	_, err := LoadFile("testdata/kubernetes_selectors_endpoints.good.yml", false, promslog.NewNopLogger())
 	require.NoError(t, err)
-	_, err = LoadFile("testdata/kubernetes_selectors_node.good.yml", false, false, promslog.NewNopLogger())
+	_, err = LoadFile("testdata/kubernetes_selectors_node.good.yml", false, promslog.NewNopLogger())
 	require.NoError(t, err)
-	_, err = LoadFile("testdata/kubernetes_selectors_ingress.good.yml", false, false, promslog.NewNopLogger())
+	_, err = LoadFile("testdata/kubernetes_selectors_ingress.good.yml", false, promslog.NewNopLogger())
 	require.NoError(t, err)
-	_, err = LoadFile("testdata/kubernetes_selectors_pod.good.yml", false, false, promslog.NewNopLogger())
+	_, err = LoadFile("testdata/kubernetes_selectors_pod.good.yml", false, promslog.NewNopLogger())
 	require.NoError(t, err)
-	_, err = LoadFile("testdata/kubernetes_selectors_service.good.yml", false, false, promslog.NewNopLogger())
+	_, err = LoadFile("testdata/kubernetes_selectors_service.good.yml", false, promslog.NewNopLogger())
 	require.NoError(t, err)
 }
 
@@ -2094,7 +2095,7 @@ func TestBadConfigs(t *testing.T) {
 		model.NameValidationScheme = model.UTF8Validation
 	}()
 	for _, ee := range expectedErrors {
-		_, err := LoadFile("testdata/"+ee.filename, false, false, promslog.NewNopLogger())
+		_, err := LoadFile("testdata/"+ee.filename, false, promslog.NewNopLogger())
 		require.ErrorContains(t, err, ee.errMsg,
 			"Expected error for %s to contain %q but got: %s", ee.filename, ee.errMsg, err)
 	}
@@ -2125,7 +2126,7 @@ func TestBadStaticConfigsYML(t *testing.T) {
 }
 
 func TestEmptyConfig(t *testing.T) {
-	c, err := Load("", false, promslog.NewNopLogger())
+	c, err := Load("", promslog.NewNopLogger())
 	require.NoError(t, err)
 	exp := DefaultConfig
 	require.Equal(t, exp, *c)
@@ -2135,38 +2136,34 @@ func TestExpandExternalLabels(t *testing.T) {
 	// Cleanup ant TEST env variable that could exist on the system.
 	os.Setenv("TEST", "")
 
-	c, err := LoadFile("testdata/external_labels.good.yml", false, false, promslog.NewNopLogger())
-	require.NoError(t, err)
-	testutil.RequireEqual(t, labels.FromStrings("bar", "foo", "baz", "foo${TEST}bar", "foo", "${TEST}", "qux", "foo$${TEST}", "xyz", "foo$$bar"), c.GlobalConfig.ExternalLabels)
-
-	c, err = LoadFile("testdata/external_labels.good.yml", false, true, promslog.NewNopLogger())
+	c, err := LoadFile("testdata/external_labels.good.yml", false, promslog.NewNopLogger())
 	require.NoError(t, err)
 	testutil.RequireEqual(t, labels.FromStrings("bar", "foo", "baz", "foobar", "foo", "", "qux", "foo${TEST}", "xyz", "foo$bar"), c.GlobalConfig.ExternalLabels)
 
 	os.Setenv("TEST", "TestValue")
-	c, err = LoadFile("testdata/external_labels.good.yml", false, true, promslog.NewNopLogger())
+	c, err = LoadFile("testdata/external_labels.good.yml", false, promslog.NewNopLogger())
 	require.NoError(t, err)
 	testutil.RequireEqual(t, labels.FromStrings("bar", "foo", "baz", "fooTestValuebar", "foo", "TestValue", "qux", "foo${TEST}", "xyz", "foo$bar"), c.GlobalConfig.ExternalLabels)
 }
 
 func TestAgentMode(t *testing.T) {
-	_, err := LoadFile("testdata/agent_mode.with_alert_manager.yml", true, false, promslog.NewNopLogger())
+	_, err := LoadFile("testdata/agent_mode.with_alert_manager.yml", true, promslog.NewNopLogger())
 	require.ErrorContains(t, err, "field alerting is not allowed in agent mode")
 
-	_, err = LoadFile("testdata/agent_mode.with_alert_relabels.yml", true, false, promslog.NewNopLogger())
+	_, err = LoadFile("testdata/agent_mode.with_alert_relabels.yml", true, promslog.NewNopLogger())
 	require.ErrorContains(t, err, "field alerting is not allowed in agent mode")
 
-	_, err = LoadFile("testdata/agent_mode.with_rule_files.yml", true, false, promslog.NewNopLogger())
+	_, err = LoadFile("testdata/agent_mode.with_rule_files.yml", true, promslog.NewNopLogger())
 	require.ErrorContains(t, err, "field rule_files is not allowed in agent mode")
 
-	_, err = LoadFile("testdata/agent_mode.with_remote_reads.yml", true, false, promslog.NewNopLogger())
+	_, err = LoadFile("testdata/agent_mode.with_remote_reads.yml", true, promslog.NewNopLogger())
 	require.ErrorContains(t, err, "field remote_read is not allowed in agent mode")
 
-	c, err := LoadFile("testdata/agent_mode.without_remote_writes.yml", true, false, promslog.NewNopLogger())
+	c, err := LoadFile("testdata/agent_mode.without_remote_writes.yml", true, promslog.NewNopLogger())
 	require.NoError(t, err)
 	require.Empty(t, c.RemoteWriteConfigs)
 
-	c, err = LoadFile("testdata/agent_mode.good.yml", true, false, promslog.NewNopLogger())
+	c, err = LoadFile("testdata/agent_mode.good.yml", true, promslog.NewNopLogger())
 	require.NoError(t, err)
 	require.Len(t, c.RemoteWriteConfigs, 1)
 	require.Equal(
@@ -2177,7 +2174,7 @@ func TestAgentMode(t *testing.T) {
 }
 
 func TestEmptyGlobalBlock(t *testing.T) {
-	c, err := Load("global:\n", false, promslog.NewNopLogger())
+	c, err := Load("global:\n", promslog.NewNopLogger())
 	require.NoError(t, err)
 	exp := DefaultConfig
 	exp.Runtime = DefaultRuntimeConfig
@@ -2332,7 +2329,7 @@ func TestGetScrapeConfigs(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			c, err := LoadFile(tc.configFile, false, false, promslog.NewNopLogger())
+			c, err := LoadFile(tc.configFile, false, promslog.NewNopLogger())
 			require.NoError(t, err)
 
 			scfgs, err := c.GetScrapeConfigs()
@@ -2350,7 +2347,7 @@ func kubernetesSDHostURL() config.URL {
 }
 
 func TestScrapeConfigDisableCompression(t *testing.T) {
-	want, err := LoadFile("testdata/scrape_config_disable_compression.good.yml", false, false, promslog.NewNopLogger())
+	want, err := LoadFile("testdata/scrape_config_disable_compression.good.yml", false, promslog.NewNopLogger())
 	require.NoError(t, err)
 
 	out, err := yaml.Marshal(want)
@@ -2397,7 +2394,7 @@ func TestScrapeConfigNameValidationSettings(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			want, err := LoadFile(fmt.Sprintf("testdata/%s.yml", tc.inputFile), false, false, promslog.NewNopLogger())
+			want, err := LoadFile(fmt.Sprintf("testdata/%s.yml", tc.inputFile), false, promslog.NewNopLogger())
 			require.NoError(t, err)
 
 			out, err := yaml.Marshal(want)

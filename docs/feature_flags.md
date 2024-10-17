@@ -11,15 +11,6 @@ Their behaviour can change in future releases which will be communicated via the
 You can enable them using the `--enable-feature` flag with a comma separated list of features.
 They may be enabled by default in future versions.
 
-## Expand environment variables in external labels
-
-`--enable-feature=expand-external-labels`
-
-Replace `${var}` or `$var` in the [`external_labels`](configuration/configuration.md#configuration-file)
-values according to the values of the current environment variables. References
-to undefined variables are replaced by the empty string.
-The `$` character can be escaped by using `$$`.
-
 ## Exemplars storage
 
 `--enable-feature=exemplar-storage`

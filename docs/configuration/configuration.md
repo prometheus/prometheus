@@ -79,7 +79,11 @@ global:
   [ rule_query_offset: <duration> | default = 0s ]
 
   # The labels to add to any time series or alerts when communicating with
-  # external systems (federation, remote storage, Alertmanager).
+  # external systems (federation, remote storage, Alertmanager). 
+  # Environment variable references `${var}` or `$var` are replaced according 
+  # to the values of the current environment variables. 
+  # References to undefined variables are replaced by the empty string.
+  # The `$` character can be escaped by using `$$`.
   external_labels:
     [ <labelname>: <labelvalue> ... ]
 
