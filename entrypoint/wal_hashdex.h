@@ -116,7 +116,6 @@ void prompp_wal_scraper_hashdex_ctor(void* res);
  *     hashdex           uintptr
  *     buffer            string // buffer will be modified by parser
  *     default_timestamp int64
- *     target_id         string
  * }
  * @param res {
  *     error uint32 // value of PromPP::WAL::hashdex::Scraper::Error

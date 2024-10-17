@@ -378,8 +378,7 @@ func (s *GoModelHashdexTestSuite) TestHashdexLabels() {
 
 type ScraperHashdexSuite struct {
 	suite.Suite
-	hasdex    *cppbridge.WALScraperHashdex
-	target_id string
+	hasdex *cppbridge.WALScraperHashdex
 }
 
 func TestScraperHashdexSuite(t *testing.T) {
@@ -388,7 +387,6 @@ func TestScraperHashdexSuite(t *testing.T) {
 
 func (s *ScraperHashdexSuite) SetupTest() {
 	s.hasdex = cppbridge.NewScraperHashdex()
-	s.target_id = "1"
 }
 
 func (s *ScraperHashdexSuite) TestParseOk() {
@@ -424,7 +422,7 @@ testmetric{label="\"bar\""} 1`
 	input += "\nnull_byte_metric{a=\"abc\x00\"} 1\n"
 
 	// Act
-	err := s.hasdex.Parse([]byte(input), -1, s.target_id)
+	err := s.hasdex.Parse([]byte(input), -1)
 
 	// Assert
 	s.NoError(err)
@@ -435,7 +433,7 @@ func (s *ScraperHashdexSuite) TestParseErrScraperParseUnexpectedToken() {
 	input := []byte("a{b='c'} 1\n")
 
 	// Act
-	err := s.hasdex.Parse(input, -1, s.target_id)
+	err := s.hasdex.Parse(input, -1)
 
 	// Assert
 	s.ErrorIs(err, cppbridge.ErrScraperParseUnexpectedToken)
@@ -446,7 +444,7 @@ func (s *ScraperHashdexSuite) TestParseErrScraperParseNoMetricName() {
 	input := []byte("{b=\"c\"} 1\n")
 
 	// Act
-	err := s.hasdex.Parse(input, -1, s.target_id)
+	err := s.hasdex.Parse(input, -1)
 
 	// Assert
 	s.ErrorIs(err, cppbridge.ErrScraperParseNoMetricName)
@@ -457,7 +455,7 @@ func (s *ScraperHashdexSuite) TestParseErrScraperInvalidUtf8() {
 	input := []byte("a{b=\"\x80\"} 1\n")
 
 	// Act
-	err := s.hasdex.Parse(input, -1, s.target_id)
+	err := s.hasdex.Parse(input, -1)
 
 	// Assert
 	s.ErrorIs(err, cppbridge.ErrScraperInvalidUtf8)
@@ -468,7 +466,7 @@ func (s *ScraperHashdexSuite) TestParseErrScraperParseInvalidValue() {
 	input := []byte("a{b=\"c\"} v\n")
 
 	// Act
-	err := s.hasdex.Parse(input, -1, s.target_id)
+	err := s.hasdex.Parse(input, -1)
 
 	// Assert
 	s.ErrorIs(err, cppbridge.ErrScraperParseInvalidValue)
@@ -479,7 +477,7 @@ func (s *ScraperHashdexSuite) TestParseErrScraperParseInvalidTimestamp() {
 	input := []byte("a{b=\"c\"} 1 9223372036854775808\n")
 
 	// Act
-	err := s.hasdex.Parse(input, -1, s.target_id)
+	err := s.hasdex.Parse(input, -1)
 
 	// Assert
 	s.ErrorIs(err, cppbridge.ErrScraperParseInvalidTimestamp)
@@ -490,7 +488,7 @@ func (s *ScraperHashdexSuite) TestParseEmptyInput() {
 	input := []byte{}
 
 	// Act
-	err := s.hasdex.Parse(input, -1, s.target_id)
+	err := s.hasdex.Parse(input, -1)
 
 	// Assert
 	s.NoError(err)

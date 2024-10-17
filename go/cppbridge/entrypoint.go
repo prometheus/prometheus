@@ -1708,13 +1708,12 @@ func walScraperHashdexCtor() uintptr {
 	return res.hashdex
 }
 
-func walScraperHashdexParse(hashdex uintptr, buffer []byte, default_timestamp int64, target_id string) uint32 {
+func walScraperHashdexParse(hashdex uintptr, buffer []byte, default_timestamp int64) uint32 {
 	var args = struct {
 		hashdex           uintptr
 		buffer            []byte
 		default_timestamp int64
-		target_id         string
-	}{hashdex, buffer, default_timestamp, target_id}
+	}{hashdex, buffer, default_timestamp}
 	var res struct {
 		error uint32
 	}

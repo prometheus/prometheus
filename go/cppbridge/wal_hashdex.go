@@ -269,9 +269,9 @@ func NewScraperHashdex() *WALScraperHashdex {
 	return h
 }
 
-func (h *WALScraperHashdex) Parse(buffer []byte, default_timestamp int64, target_id string) error {
+func (h *WALScraperHashdex) Parse(buffer []byte, default_timestamp int64) error {
 	h.buffer = buffer
-	return errorFromCode(walScraperHashdexParse(h.hashdex, h.buffer, default_timestamp, target_id))
+	return errorFromCode(walScraperHashdexParse(h.hashdex, h.buffer, default_timestamp))
 }
 
 // Cluster get Cluster name.
