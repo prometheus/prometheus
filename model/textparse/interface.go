@@ -88,8 +88,7 @@ func extractMediaType(contentType, fallbackType string) (string, error) {
 		if fallbackType == "" {
 			return "", errors.New("Non-compliant scraper sending blank Content-Type and no fallback_scrape_protocol specified for target")
 		}
-		// We don't set the error here so that we're kind and mirror v2 behaviour
-		return fallbackType, nil
+		return fallbackType, errors.New("Non-compliant scraper sending blank Content-Type, using fallback_scrape_protocol for target")
 	}
 
 	// We have a contentType, parse it.
@@ -104,12 +103,12 @@ func extractMediaType(contentType, fallbackType string) (string, error) {
 	}
 
 	// We have a valid media type, either we recognise it and can use it
-	// or we have to error
+	// or we have to error.
 	switch mediaType {
 	case "application/openmetrics-text", "application/vnd.google.protobuf", "text/plain":
 		return mediaType, nil
 	}
-	// We're here because we have no regonised mediaType
+	// We're here because we have no regonised mediaType.
 	if fallbackType == "" {
 		return "", errors.New("Scraper sending unrecognisable Content-Type and no fallback_scrape_protocol specified for target")
 	}
@@ -125,8 +124,8 @@ func extractMediaType(contentType, fallbackType string) (string, error) {
 // other error parsing the supplied Content-Type.
 // If the returned parser is nil then the scrape must fail.
 func New(b []byte, contentType, fallbackType string, parseClassicHistograms, skipOMCTSeries bool, st *labels.SymbolTable) (Parser, error) {
-	mediaType, err := newHelper(contentType, fallbackType)
-	// err may be nil or something we want to warn about
+	mediaType, err := extractMediaType(contentType, fallbackType)
+	// err may be nil or something we want to warn about.
 
 	switch mediaType {
 	case "application/openmetrics-text":

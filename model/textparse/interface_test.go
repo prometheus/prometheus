@@ -67,7 +67,7 @@ func TestNewParser(t *testing.T) {
 		"empty-string-fallback-text-plain": {
 			validateParser:         requirePromParser,
 			fallbackScrapeProtocol: config.PrometheusText0_0_4,
-			// No error for mirror of v2 behaviour
+			err:                    "Non-compliant scraper sending blank Content-Type, using fallback_scrape_protocol for target",
 		},
 		"invalid-content-type-1": {
 			contentType:    "invalid/",
