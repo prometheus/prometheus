@@ -7,8 +7,7 @@ namespace PromPP::Prometheus::textparse {
 Tokenizer::Tokenizer() : condition_{yycinit} {}
 
 Tokenizer::Tokenizer(std::string_view str)
-    : cursor_ptr_(str.data()), limit_ptr_(str.data() + str.size()), marker_ptr_(str.data()), token_ptr_(str.data()),
-      condition_{yycinit} {}
+    : cursor_ptr_(str.data()), limit_ptr_(str.data() + str.size()), marker_ptr_(str.data()), token_ptr_(str.data()), condition_{yycinit} {}
 
 void Tokenizer::tokenize(std::string_view str) noexcept {
   cursor_ptr_ = str.data();
@@ -139,4 +138,4 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
   */
 }
 
-} // namespace PromPP::Prometheus::textparse
+}  // namespace PromPP::Prometheus::textparse

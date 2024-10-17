@@ -475,15 +475,15 @@ class RelabelConfig {
   template <class GORelabelConfig>
   PROMPP_ALWAYS_INLINE explicit RelabelConfig(GORelabelConfig* go_rc) noexcept
       : source_labels_{},
-        separator_{go_rc->separator.begin(), go_rc->separator.size()},
-        regexp_(std::string_view{go_rc->regex.begin(), go_rc->regex.size()}),
+        separator_{static_cast<std::string_view>(go_rc->separator)},
+        regexp_(static_cast<std::string_view>(go_rc->regex)),
         modulus_{go_rc->modulus},
-        target_label_{go_rc->target_label.begin(), go_rc->target_label.size()},
-        replacement_{go_rc->replacement.begin(), go_rc->replacement.size()},
+        target_label_{static_cast<std::string_view>(go_rc->target_label)},
+        replacement_{static_cast<std::string_view>(go_rc->replacement)},
         action_{static_cast<rAction>(go_rc->action)} {
     source_labels_.reserve(go_rc->source_labels.size());
     for (const auto& sl : go_rc->source_labels) {
-      source_labels_.emplace_back(sl.begin(), sl.size());
+      source_labels_.emplace_back(static_cast<std::string_view>(sl));
     }
 
     static re2::RE2 rgx_validate("(^[\\p{N}\\p{L}_]+)");
@@ -890,6 +890,12 @@ class LSSWithStaleNaNs {
   }
 };
 
+struct Options {
+  PromPP::Primitives::Go::SliceView<std::pair<PromPP::Primitives::Go::String, PromPP::Primitives::Go::String>> target_labels{};
+  MetricLimits* metric_limits{nullptr};
+  bool honor_labels{false};
+};
+
 // PerShardRelabeler - relabeler for shard.
 //
 // buf_                 - stringstream for construct pattern part;
@@ -934,7 +940,7 @@ class PerShardRelabeler {
 
     external_labels_.reserve(external_labels.size());
     for (const auto& [ln, lv] : external_labels) {
-      external_labels_.emplace_back(std::string_view{ln.begin(), ln.size()}, std::string_view{lv.begin(), lv.size()});
+      external_labels_.emplace_back(static_cast<std::string_view>(ln), static_cast<std::string_view>(lv));
     }
   }
 
@@ -943,6 +949,7 @@ class PerShardRelabeler {
     return cache_allocated_memory_ + cache_keep_.getSizeInBytes() + cache_drop_.getSizeInBytes();
   }
 
+  // calculate_samples counts the number of samples excluding stale_nan.
   PROMPP_ALWAYS_INLINE size_t calculate_samples(BareBones::Vector<PromPP::Primitives::Sample>& samples) {
     size_t samples_count{0};
     for (const auto smpl : samples) {
@@ -955,15 +962,70 @@ class PerShardRelabeler {
     return samples_count;
   }
 
+  // inject_target_labels add labels from target to builder.
+  template <class LabelSet, class LabelsBuilder>
+  PROMPP_ALWAYS_INLINE void inject_target_labels(LabelsBuilder& target_builder, LabelSet& label_set, const Options& o) {
+    target_builder.reset(&label_set);
+
+    if (o.honor_labels) {
+      for (const auto& [lname, lvalue] : o.target_labels) {
+        if (target_builder.contains(static_cast<std::string_view>(lname))) [[unlikely]] {
+          continue;
+        }
+        target_builder.set(static_cast<std::string_view>(lname), static_cast<std::string_view>(lvalue));
+      }
+      return;
+    }
+
+    std::vector<PromPP::Primitives::LabelView> conflicting_exposed_labels;
+    for (const auto& [lname, lvalue] : o.target_labels) {
+      std::string_view existing_value = label_set.get(static_cast<std::string_view>(lname));
+      if (!existing_value.empty()) [[likely]] {
+        conflicting_exposed_labels.emplace_back(static_cast<std::string_view>(lname), existing_value);
+      }
+
+      // It is now safe to set the target label.
+      target_builder.set(static_cast<std::string_view>(lname), std::string_view{lvalue.begin(), lvalue.size()});
+    }
+
+    // resolve conflict
+    if (!conflicting_exposed_labels.empty()) {
+      resolve_conflicting_exposed_labels(target_builder, conflicting_exposed_labels);
+    }
+
+    return;
+  }
+
+  // resolve_conflicting_exposed_labels add prefix to conflicting label name.
+  template <class LabelsBuilder>
+  PROMPP_ALWAYS_INLINE void resolve_conflicting_exposed_labels(LabelsBuilder& builder, std::vector<PromPP::Primitives::LabelView>& conflicting_exposed_labels) {
+    std::stable_sort(conflicting_exposed_labels.begin(), conflicting_exposed_labels.end(),
+                     [](PromPP::Primitives::LabelView a, PromPP::Primitives::LabelView b) { return a.first.size() < b.first.size(); });
+
+    std::string new_name;
+    for (const PromPP::Primitives::LabelView& l : conflicting_exposed_labels) {
+      new_name = l.first;
+      while (true) {
+        new_name.insert(0, "exported_");
+        if (builder.get(new_name).empty()) {
+          builder.set(new_name, l.second);
+          break;
+        }
+      }
+    }
+  }
+
   // input_relabeling - relabeling incoming hashdex(first stage).
   template <class LSS, class Hashdex>
   PROMPP_ALWAYS_INLINE void input_relabeling(LSS& lss,
-                                             MetricLimits* metric_limits,
-                                             Hashdex& hashdex,
+                                             const Hashdex& hashdex,
+                                             const Options& o,
                                              PromPP::Primitives::Go::SliceView<InnerSeries*>& shards_inner_series,
                                              PromPP::Primitives::Go::SliceView<RelabeledSeries*>& shards_relabeled_series) {
     PromPP::Primitives::LabelsBuilder builder =
         PromPP::Primitives::LabelsBuilder<typename LSS::value_type, PromPP::Primitives::LabelsBuilderStateMap>(builder_state_);
+    PromPP::Primitives::LabelsBuilder target_builder =
+        PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelViewSet, PromPP::Primitives::LabelsBuilderStateMap>(builder_state_);
 
     size_t samples_count{0};
 
@@ -975,19 +1037,28 @@ class PerShardRelabeler {
       timeseries_buf_.clear();
       item.read(timeseries_buf_);
 
-      uint32_t ls_id = lss.find_or_emplace(timeseries_buf_.label_set(), item.hash());
+      // add target labels
+      uint32_t ls_id;
+      if (o.target_labels.empty()) {
+        ls_id = lss.find_or_emplace(timeseries_buf_.label_set(), item.hash());
+      } else {
+        inject_target_labels(target_builder, timeseries_buf_.label_set(), o);
+        const PromPP::Primitives::LabelViewSet& target_label_view_set = target_builder.label_view_set();
+        ls_id = lss.find_or_emplace(target_label_view_set, hash_value(target_label_view_set));
+        target_builder.reset_base();
+      }
 
-      bool added = input_relabel_process(lss, metric_limits, builder, shards_inner_series, shards_relabeled_series, timeseries_buf_.samples(), ls_id);
+      bool added = input_relabel_process(lss, o, builder, shards_inner_series, shards_relabeled_series, timeseries_buf_.samples(), ls_id);
       if (!added) {
         continue;
       }
 
-      if (metric_limits == nullptr) {
+      if (o.metric_limits == nullptr) {
         continue;
       }
 
       samples_count += calculate_samples(timeseries_buf_.samples());
-      if (metric_limits->samples_limit_exceeded(samples_count)) {
+      if (o.metric_limits->samples_limit_exceeded(samples_count)) {
         break;
       }
     }
@@ -999,10 +1070,10 @@ class PerShardRelabeler {
   // input_relabeling_with_stalenan relabeling with stalenans incoming hashdex(first stage).
   template <class LSS, class Hashdex>
   PROMPP_ALWAYS_INLINE SourceState input_relabeling_with_stalenans(LSS& lss,
-                                                                   Hashdex& hashdex,
+                                                                   const Hashdex& hashdex,
+                                                                   const Options& o,
                                                                    PromPP::Primitives::Go::SliceView<InnerSeries*>& shards_inner_series,
                                                                    PromPP::Primitives::Go::SliceView<RelabeledSeries*>& shards_relabeled_series,
-                                                                   MetricLimits* metric_limits,
                                                                    SourceState state,
                                                                    PromPP::Primitives::Timestamp stale_ts) {
     PromPP::Prometheus::Relabel::StaleNaNsState* result =
@@ -1013,19 +1084,19 @@ class PerShardRelabeler {
     }
 
     LSSWithStaleNaNs wrapped_lss(lss, result);
-    input_relabeling(wrapped_lss, metric_limits, hashdex, shards_inner_series, shards_relabeled_series);
+    input_relabeling(wrapped_lss, hashdex, o, shards_inner_series, shards_relabeled_series);
 
     BareBones::Vector<PromPP::Primitives::Sample> smpl{{stale_ts, kStaleNan}};
     PromPP::Primitives::LabelsBuilder builder =
         PromPP::Primitives::LabelsBuilder<typename LSS::value_type, PromPP::Primitives::LabelsBuilderStateMap>(builder_state_);
-    result->swap([&](uint32_t ls_id) { input_relabel_process(lss, metric_limits, builder, shards_inner_series, shards_relabeled_series, smpl, ls_id); });
+    result->swap([&](uint32_t ls_id) { input_relabel_process(lss, o, builder, shards_inner_series, shards_relabeled_series, smpl, ls_id); });
 
     return result;
   }
 
   template <class LSS, class LabelsBuilder>
   PROMPP_ALWAYS_INLINE bool input_relabel_process(LSS& lss,
-                                                  MetricLimits* metric_limits,
+                                                  const Options& o,
                                                   LabelsBuilder& builder,
                                                   PromPP::Primitives::Go::SliceView<InnerSeries*>& shards_inner_series,
                                                   PromPP::Primitives::Go::SliceView<RelabeledSeries*>& shards_relabeled_series,
@@ -1050,7 +1121,7 @@ class PerShardRelabeler {
     builder.reset(&label_set);
 
     relabelStatus rstatus = stateless_relabeler_->relabeling_process(buf_, builder);
-    hard_validate(rstatus, builder, metric_limits);
+    hard_validate(rstatus, builder, o.metric_limits);
     switch (rstatus) {
       case rsDrop: {
         cache_drop_.add(ls_id);
@@ -1200,7 +1271,7 @@ class PerShardRelabeler {
     external_labels_.clear();
     external_labels_.reserve(external_labels.size());
     for (const auto& [ln, lv] : external_labels) {
-      external_labels_.emplace_back(std::string_view{ln.begin(), ln.size()}, std::string_view{lv.begin(), lv.size()});
+      external_labels_.emplace_back(static_cast<std::string_view>(ln), static_cast<std::string_view>(lv));
     }
   }
 

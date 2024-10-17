@@ -45,7 +45,14 @@ type ShardFn func(shard Shard) error
 type Head interface {
 	Generation() uint64
 	ReferenceCounter() ReferenceCounter
-	Append(ctx context.Context, incomingData *IncomingData, metricLimits *cppbridge.MetricLimits, sourceStates *SourceStates, staleNansTS int64, relabelerID string) ([][]*cppbridge.InnerSeries, error)
+	Append(
+		ctx context.Context,
+		incomingData *IncomingData,
+		options cppbridge.RelabelerOptions,
+		sourceStates *SourceStates,
+		staleNansTS int64,
+		relabelerID string,
+	) ([][]*cppbridge.InnerSeries, error)
 	ForEachShard(fn ShardFn) error
 	OnShard(shardID uint16, fn ShardFn) error
 	NumberOfShards() uint16
@@ -113,8 +120,7 @@ func (rc *AtomicReferenceCounter) Add(delta int64) int64 {
 }
 
 func (rc *AtomicReferenceCounter) Value() int64 {
-	value := rc.value.Load()
-	return value
+	return rc.value.Load()
 }
 
 type LoggedAtomicReferenceCounter struct {
@@ -129,15 +135,11 @@ func NewLoggedAtomicReferenceCounter(prefix string) *LoggedAtomicReferenceCounte
 }
 
 func (rc *LoggedAtomicReferenceCounter) Add(delta int64) int64 {
-	newValue := rc.value.Add(delta)
-	// fmt.Println(rc.prefix, ": Reference Counter: add: ", delta, ", value: ", newValue)
-	return newValue
+	return rc.value.Add(delta)
 }
 
 func (rc *LoggedAtomicReferenceCounter) Value() int64 {
-	value := rc.value.Load()
-	// fmt.Println(rc.prefix, ": Reference Counter: value: ", value)
-	return value
+	return rc.value.Load()
 }
 
 // HeadStatus holds information about all shards.
