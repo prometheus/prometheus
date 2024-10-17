@@ -651,7 +651,7 @@ type ScrapeConfig struct {
 	// OpenMetricsText1.0.0, PrometheusText1.0.0, PrometheusText0.0.4.
 	ScrapeProtocols []ScrapeProtocol `yaml:"scrape_protocols,omitempty"`
 	// The fallback protocol to use if the Content-Type provided by the target
-	// is not provided, blank or not one of the expected values.
+	// is not provided, blank, or not one of the expected values.
 	// Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
 	// OpenMetricsText1.0.0, PrometheusText1.0.0, PrometheusText0.0.4.
 	ScrapeFallbackProtocol ScrapeProtocol `yaml:"fallback_scrape_protocol,omitempty"`
