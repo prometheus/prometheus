@@ -1214,7 +1214,7 @@ func TestRuleMovedBetweenGroups(t *testing.T) {
 		Queryable:  storage,
 		QueryFunc:  EngineQueryFunc(engine, storage),
 		Context:    context.Background(),
-		Logger:     log.NewNopLogger(),
+		Logger:     promslog.NewNopLogger(),
 	})
 	var stopped bool
 	ruleManager.start()
