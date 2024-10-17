@@ -23,6 +23,7 @@
 * [ENHANCEMENT] Scraping: support Created-Timestamp feature on native histograms. #14694
 * [ENHANCEMENT] Kubernetes SD: Support sidecar containers in endpoint discovery. #14929
 * [ENHANCEMENT] Consul SD: Support catalog filters. #11224
+* [ENHANCEMENT] TSDB: Provide a commit interface that does not write OOO samples. #14710
 * [PERF] TSDB: Parallelize deletion of postings after head compaction. #14975
 * [PERF] TSDB: Chunk encoding: shorten some write sequences. #14932
 * [PERF] TSDB: Grow postings by doubling. #14721
