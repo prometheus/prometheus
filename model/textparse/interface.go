@@ -92,7 +92,7 @@ func extractMediaType(contentType, fallbackType string) (string, error) {
 		return fallbackType, nil
 	}
 
-	// We have a contentType, parse it
+	// We have a contentType, parse it.
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err != nil {
 		if fallbackType == "" {
