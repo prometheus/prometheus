@@ -26,7 +26,7 @@ Things considered unstable for 3.x:
 
 * Any feature listed as experimental or subject to change, including:
   * The [`double_exponential_smoothing` PromQL function](https://github.com/prometheus/prometheus/issues/2458)
-  * Remote remote read and the remote read endpoint
+  * Remote read and the remote read endpoint
 * Server-side HTTPS and basic authentication
 * Service discovery integrations, with the exception of `static_configs`, `file_sd_configs` and `http_sd_config`
 * Go APIs of packages that are part of the server
