@@ -74,6 +74,7 @@ foo_total{a="b"} 17.0 1520879607.789 # {id="counter-test"} 5
 foo_created{a="b"} 1520872607.123
 foo_total{le="c"} 21.0
 foo_created{le="c"} 1520872621.123
+foo_total{le="1"} 10.0
 # HELP bar Summary with CT at the end, making sure we find CT even if it's multiple lines a far
 # TYPE bar summary
 bar_count 17.0
@@ -97,6 +98,7 @@ something_count 18
 something_sum 324789.4
 something_created 1520430001
 something_bucket{le="0.0"} 1
+something_bucket{le="1"} 2
 something_bucket{le="+Inf"} 18
 # HELP yum Summary with _created between sum and quantiles
 # TYPE yum summary
@@ -130,7 +132,7 @@ foobar{quantile="0.99"} 150.1`
 		}, {
 			m:    `go_gc_duration_seconds{quantile="0"}`,
 			v:    4.9351e-05,
-			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0"),
+			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.0"),
 		}, {
 			m:    `go_gc_duration_seconds{quantile="0.25"}`,
 			v:    7.424100000000001e-05,
@@ -303,6 +305,10 @@ foobar{quantile="0.99"} 150.1`
 			lset: labels.FromStrings("__name__", "foo_total", "le", "c"),
 			ct:   int64p(1520872621123),
 		}, {
+			m:    `foo_total{le="1"}`,
+			v:    10.0,
+			lset: labels.FromStrings("__name__", "foo_total", "le", "1"),
+		}, {
 			m:    "bar",
 			help: "Summary with CT at the end, making sure we find CT even if it's multiple lines a far",
 		}, {
@@ -384,6 +390,11 @@ foobar{quantile="0.99"} 150.1`
 			m:    `something_bucket{le="0.0"}`,
 			v:    1,
 			lset: labels.FromStrings("__name__", "something_bucket", "le", "0.0"),
+			ct:   int64p(1520430001000),
+		}, {
+			m:    `something_bucket{le="1"}`,
+			v:    2,
+			lset: labels.FromStrings("__name__", "something_bucket", "le", "1.0"),
 			ct:   int64p(1520430001000),
 		}, {
 			m:    `something_bucket{le="+Inf"}`,
@@ -492,7 +503,7 @@ func TestUTF8OpenMetricsParse(t *testing.T) {
 		}, {
 			m:    `{"go.gc_duration_seconds",quantile="0"}`,
 			v:    4.9351e-05,
-			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "0"),
+			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "0.0"),
 			ct:   int64p(1520872607123),
 		}, {
 			m:    `{"go.gc_duration_seconds",quantile="0.25"}`,

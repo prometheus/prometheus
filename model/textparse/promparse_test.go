@@ -31,6 +31,13 @@ go_gc_duration_seconds{quantile="0.25",} 7.424100000000001e-05
 go_gc_duration_seconds{quantile="0.5",a="b"} 8.3835e-05
 go_gc_duration_seconds{quantile="0.8", a="b"} 8.3835e-05
 go_gc_duration_seconds{ quantile="0.9", a="b"} 8.3835e-05
+# HELP prometheus_http_request_duration_seconds Histogram of latencies for HTTP requests.
+# TYPE prometheus_http_request_duration_seconds histogram
+prometheus_http_request_duration_seconds_bucket{handler="/",le="1"} 423
+prometheus_http_request_duration_seconds_bucket{handler="/",le="2"} 1423
+prometheus_http_request_duration_seconds_bucket{handler="/",le="+Inf"} 1423
+prometheus_http_request_duration_seconds_sum{handler="/"} 2000
+prometheus_http_request_duration_seconds_count{handler="/"} 1423
 # Hrandom comment starting with prefix of HELP
 #
 wind_speed{A="2",c="3"} 12345
@@ -50,7 +57,8 @@ some:aggregate:rate5m{a_b="c"}	1
 go_goroutines 33  	123123
 _metric_starting_with_underscore 1
 testmetric{_label_starting_with_underscore="foo"} 1
-testmetric{label="\"bar\""} 1`
+testmetric{label="\"bar\""} 1
+testmetric{le="10"} 1`
 	input += "\n# HELP metric foo\x00bar"
 	input += "\nnull_byte_metric{a=\"abc\x00\"} 1"
 
@@ -64,7 +72,7 @@ testmetric{label="\"bar\""} 1`
 		}, {
 			m:    `go_gc_duration_seconds{quantile="0"}`,
 			v:    4.9351e-05,
-			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0"),
+			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.0"),
 		}, {
 			m:    `go_gc_duration_seconds{quantile="0.25",}`,
 			v:    7.424100000000001e-05,
@@ -81,6 +89,32 @@ testmetric{label="\"bar\""} 1`
 			m:    `go_gc_duration_seconds{ quantile="0.9", a="b"}`,
 			v:    8.3835e-05,
 			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.9", "a", "b"),
+		}, {
+			m:    "prometheus_http_request_duration_seconds",
+			help: "Histogram of latencies for HTTP requests.",
+		}, {
+			m:   "prometheus_http_request_duration_seconds",
+			typ: model.MetricTypeHistogram,
+		}, {
+			m:    `prometheus_http_request_duration_seconds_bucket{handler="/",le="1"}`,
+			v:    423,
+			lset: labels.FromStrings("__name__", "prometheus_http_request_duration_seconds_bucket", "handler", "/", "le", "1.0"),
+		}, {
+			m:    `prometheus_http_request_duration_seconds_bucket{handler="/",le="2"}`,
+			v:    1423,
+			lset: labels.FromStrings("__name__", "prometheus_http_request_duration_seconds_bucket", "handler", "/", "le", "2.0"),
+		}, {
+			m:    `prometheus_http_request_duration_seconds_bucket{handler="/",le="+Inf"}`,
+			v:    1423,
+			lset: labels.FromStrings("__name__", "prometheus_http_request_duration_seconds_bucket", "handler", "/", "le", "+Inf"),
+		}, {
+			m:    `prometheus_http_request_duration_seconds_sum{handler="/"}`,
+			v:    2000,
+			lset: labels.FromStrings("__name__", "prometheus_http_request_duration_seconds_sum", "handler", "/"),
+		}, {
+			m:    `prometheus_http_request_duration_seconds_count{handler="/"}`,
+			v:    1423,
+			lset: labels.FromStrings("__name__", "prometheus_http_request_duration_seconds_count", "handler", "/"),
 		}, {
 			comment: "# Hrandom comment starting with prefix of HELP",
 		}, {
@@ -152,6 +186,10 @@ testmetric{label="\"bar\""} 1`
 			v:    1,
 			lset: labels.FromStrings("__name__", "testmetric", "label", `"bar"`),
 		}, {
+			m:    `testmetric{le="10"}`,
+			v:    1,
+			lset: labels.FromStrings("__name__", "testmetric", "le", "10"),
+		}, {
 			m:    "metric",
 			help: "foo\x00bar",
 		}, {
@@ -197,7 +235,7 @@ func TestUTF8PromParse(t *testing.T) {
 		}, {
 			m:    `{"go.gc_duration_seconds",quantile="0"}`,
 			v:    4.9351e-05,
-			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "0"),
+			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "0.0"),
 		}, {
 			m:    `{"go.gc_duration_seconds",quantile="0.25",}`,
 			v:    7.424100000000001e-05,
