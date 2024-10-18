@@ -21,6 +21,8 @@ An example rules file with an alert would be:
 ```yaml
 groups:
 - name: example
+  labels:
+    team: myteam
   rules:
   - alert: HighRequestLatency
     expr: job:request_latency_seconds:mean5m{job="myjob"} > 0.5

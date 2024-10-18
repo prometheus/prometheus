@@ -855,10 +855,11 @@ type ruleGroupsTest struct {
 
 // ruleGroupTest forms a testing struct for running tests over rules.
 type ruleGroupTest struct {
-	Name     string         `yaml:"name"`
-	Interval model.Duration `yaml:"interval,omitempty"`
-	Limit    int            `yaml:"limit,omitempty"`
-	Rules    []rulefmt.Rule `yaml:"rules"`
+	Name     string            `yaml:"name"`
+	Interval model.Duration    `yaml:"interval,omitempty"`
+	Limit    int               `yaml:"limit,omitempty"`
+	Rules    []rulefmt.Rule    `yaml:"rules"`
+	Labels   map[string]string `yaml:"labels,omitempty"`
 }
 
 func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
@@ -881,6 +882,7 @@ func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
 			Interval: g.Interval,
 			Limit:    g.Limit,
 			Rules:    rtmp,
+			Labels:   g.Labels,
 		})
 	}
 	return ruleGroupsTest{
@@ -2157,4 +2159,19 @@ func optsFactory(storage storage.Storage, maxInflight, inflightQueries *atomic.I
 			}, nil
 		},
 	}
+}
+
+func TestLabels_FromMaps(t *testing.T) {
+	mLabels := FromMaps(
+		map[string]string{"aaa": "101", "bbb": "222"},
+		map[string]string{"aaa": "111", "ccc": "333"},
+	)
+
+	expected := labels.New(
+		labels.Label{Name: "aaa", Value: "111"},
+		labels.Label{Name: "bbb", Value: "222"},
+		labels.Label{Name: "ccc", Value: "333"},
+	)
+
+	require.Equal(t, expected, mLabels, "unexpected labelset")
 }

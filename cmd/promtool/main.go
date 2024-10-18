@@ -58,6 +58,7 @@ import (
 	_ "github.com/prometheus/prometheus/plugins" // Register plugins.
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
+	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/util/documentcli"
 )
@@ -895,30 +896,30 @@ func compare(a, b compareRuleType) int {
 
 func checkDuplicates(groups []rulefmt.RuleGroup) []compareRuleType {
 	var duplicates []compareRuleType
-	var rules compareRuleTypes
+	var cRules compareRuleTypes
 
 	for _, group := range groups {
 		for _, rule := range group.Rules {
-			rules = append(rules, compareRuleType{
+			cRules = append(cRules, compareRuleType{
 				metric: ruleMetric(rule),
-				label:  labels.FromMap(rule.Labels),
+				label:  rules.FromMaps(group.Labels, rule.Labels),
 			})
 		}
 	}
-	if len(rules) < 2 {
+	if len(cRules) < 2 {
 		return duplicates
 	}
-	sort.Sort(rules)
+	sort.Sort(cRules)
 
-	last := rules[0]
-	for i := 1; i < len(rules); i++ {
-		if compare(last, rules[i]) == 0 {
+	last := cRules[0]
+	for i := 1; i < len(cRules); i++ {
+		if compare(last, cRules[i]) == 0 {
 			// Don't add a duplicated rule multiple times.
 			if len(duplicates) == 0 || compare(last, duplicates[len(duplicates)-1]) != 0 {
-				duplicates = append(duplicates, rules[i])
+				duplicates = append(duplicates, cRules[i])
 			}
 		}
-		last = rules[i]
+		last = cRules[i]
 	}
 
 	return duplicates
