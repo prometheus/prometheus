@@ -73,7 +73,7 @@ const (
 )
 
 // Load parses the YAML input s into a Config.
-func Load(s string, expandExternalLabels bool, logger *slog.Logger) (*Config, error) {
+func Load(s string, logger *slog.Logger) (*Config, error) {
 	cfg := &Config{}
 	// If the entire config body is empty the UnmarshalYAML method is
 	// never called. We thus have to set the DefaultConfig at the entry
@@ -83,10 +83,6 @@ func Load(s string, expandExternalLabels bool, logger *slog.Logger) (*Config, er
 	err := yaml.UnmarshalStrict([]byte(s), cfg)
 	if err != nil {
 		return nil, err
-	}
-
-	if !expandExternalLabels {
-		return cfg, nil
 	}
 
 	b := labels.NewScratchBuilder(0)
@@ -107,17 +103,19 @@ func Load(s string, expandExternalLabels bool, logger *slog.Logger) (*Config, er
 		// Note newV can be blank. https://github.com/prometheus/prometheus/issues/11024
 		b.Add(v.Name, newV)
 	})
-	cfg.GlobalConfig.ExternalLabels = b.Labels()
+	if !b.Labels().IsEmpty() {
+		cfg.GlobalConfig.ExternalLabels = b.Labels()
+	}
 	return cfg, nil
 }
 
 // LoadFile parses the given YAML file into a Config.
-func LoadFile(filename string, agentMode, expandExternalLabels bool, logger *slog.Logger) (*Config, error) {
+func LoadFile(filename string, agentMode bool, logger *slog.Logger) (*Config, error) {
 	content, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := Load(string(content), expandExternalLabels, logger)
+	cfg, err := Load(string(content), logger)
 	if err != nil {
 		return nil, fmt.Errorf("parsing YAML file %s: %w", filename, err)
 	}
@@ -166,13 +164,13 @@ var (
 	// DefaultScrapeConfig is the default scrape configuration.
 	DefaultScrapeConfig = ScrapeConfig{
 		// ScrapeTimeout, ScrapeInterval and ScrapeProtocols default to the configured globals.
-		ScrapeClassicHistograms: false,
-		MetricsPath:             "/metrics",
-		Scheme:                  "http",
-		HonorLabels:             false,
-		HonorTimestamps:         true,
-		HTTPClientConfig:        config.DefaultHTTPClientConfig,
-		EnableCompression:       true,
+		AlwaysScrapeClassicHistograms: false,
+		MetricsPath:                   "/metrics",
+		Scheme:                        "http",
+		HonorLabels:                   false,
+		HonorTimestamps:               true,
+		HTTPClientConfig:              config.DefaultHTTPClientConfig,
+		EnableCompression:             true,
 	}
 
 	// DefaultAlertmanagerConfig is the default alertmanager configuration.
@@ -657,6 +655,8 @@ type ScrapeConfig struct {
 	ScrapeFallbackProtocol ScrapeProtocol `yaml:"fallback_scrape_protocol,omitempty"`
 	// Whether to scrape a classic histogram that is also exposed as a native histogram.
 	ScrapeClassicHistograms bool `yaml:"scrape_classic_histograms,omitempty"`
+	// Whether to scrape a classic histogram, even if it is also exposed as a native histogram.
+	AlwaysScrapeClassicHistograms bool `yaml:"always_scrape_classic_histograms,omitempty"`
 	// File to which scrape failures are logged.
 	ScrapeFailureLogFile string `yaml:"scrape_failure_log_file,omitempty"`
 	// The HTTP resource path on which to fetch metrics from targets.

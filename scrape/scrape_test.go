@@ -1850,7 +1850,7 @@ func TestScrapeLoopAppendStalenessIfTrackTimestampStaleness(t *testing.T) {
 func TestScrapeLoopAppendExemplar(t *testing.T) {
 	tests := []struct {
 		title                           string
-		scrapeClassicHistograms         bool
+		alwaysScrapeClassicHist         bool
 		enableNativeHistogramsIngestion bool
 		scrapeText                      string
 		contentType                     string
@@ -2119,7 +2119,7 @@ metric: <
 >
 
 `,
-			scrapeClassicHistograms: true,
+			alwaysScrapeClassicHist: true,
 			contentType:             "application/vnd.google.protobuf",
 			floats: []floatSample{
 				{metric: labels.FromStrings("__name__", "test_histogram_count"), t: 1234568, f: 175},
@@ -2181,7 +2181,7 @@ metric: <
 			sl.reportSampleMutator = func(l labels.Labels) labels.Labels {
 				return mutateReportSampleLabels(l, discoveryLabels)
 			}
-			sl.scrapeClassicHistograms = test.scrapeClassicHistograms
+			sl.alwaysScrapeClassicHist = test.alwaysScrapeClassicHist
 
 			now := time.Now()
 
@@ -3839,7 +3839,7 @@ scrape_configs:
 
 	mng, err := NewManager(&Options{DiscoveryReloadInterval: model.Duration(10 * time.Millisecond), EnableNativeHistogramsIngestion: true}, nil, nil, s, reg)
 	require.NoError(t, err)
-	cfg, err := config.Load(configStr, false, promslog.NewNopLogger())
+	cfg, err := config.Load(configStr, promslog.NewNopLogger())
 	require.NoError(t, err)
 	mng.ApplyConfig(cfg)
 	tsets := make(chan map[string][]*targetgroup.Group)
