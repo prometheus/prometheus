@@ -249,16 +249,6 @@ type AppendHints struct {
 	DiscardOutOfOrder bool
 }
 
-// AppendSample holds all types of samples to try to provide a unified Append method.
-type AppendSample struct {
-	// Checked in the order as present here. If h, fh, and e are nil, f is used.
-	h  *histogram.Histogram
-	fh *histogram.FloatHistogram
-	e  *exemplar.Exemplar // If this is present, t is ignored.
-	f  float64
-	t  int64
-}
-
 // Appender provides batched appends against a storage.
 // It must be completed with a call to Commit or Rollback and must not be reused afterwards.
 //
@@ -275,7 +265,7 @@ type Appender interface {
 	// to Append() at any point. Adding the sample via Append() returns a new
 	// reference number.
 	// If the reference is 0 it must not be used for caching.
-	Append(ref SeriesRef, l labels.Labels, t int64, v float64) (SeriesRef, error)
+	Append(ref SeriesRef, l labels.Labels, t int64, v float64, hints *AppendHints) (SeriesRef, error)
 
 	// Commit submits the collected samples and purges the batch. If Commit
 	// returns a non-nil error, it also rolls back all modifications made in

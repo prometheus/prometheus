@@ -40,13 +40,13 @@ func Example() {
 	series := labels.FromStrings("foo", "bar")
 
 	// Ref is 0 for the first append since we don't know the reference for the series.
-	ref, err := app.Append(0, series, time.Now().Unix(), 123)
+	ref, err := app.Append(0, series, time.Now().Unix(), 123, nil)
 	noErr(err)
 
 	// Another append for a second later.
 	// Re-using the ref from above since it's the same series, makes append faster.
 	time.Sleep(time.Second)
-	_, err = app.Append(ref, series, time.Now().Unix(), 124)
+	_, err = app.Append(ref, series, time.Now().Unix(), 124, nil)
 	noErr(err)
 
 	// Commit to storage.

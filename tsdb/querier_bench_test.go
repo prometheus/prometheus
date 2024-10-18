@@ -43,7 +43,7 @@ func BenchmarkQuerier(b *testing.B) {
 
 	app := h.Appender(context.Background())
 	addSeries := func(l labels.Labels) {
-		app.Append(0, l, 0, 0)
+		app.Append(0, l, 0, 0, nil)
 	}
 
 	for n := 0; n < 10; n++ {
@@ -298,7 +298,7 @@ func benchmarkSelect(b *testing.B, queryable storage.Queryable, numSeries int, s
 func BenchmarkQuerierSelect(b *testing.B) {
 	numSeries := 1000000
 	h, db := createHeadForBenchmarkSelect(b, numSeries, func(app storage.Appender, i int) {
-		_, err := app.Append(0, labels.FromStrings("foo", "bar", "i", fmt.Sprintf("%d%s", i, postingsBenchSuffix)), int64(i), 0)
+		_, err := app.Append(0, labels.FromStrings("foo", "bar", "i", fmt.Sprintf("%d%s", i, postingsBenchSuffix)), int64(i), 0, nil)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -336,11 +336,11 @@ func BenchmarkQuerierSelectWithOutOfOrder(b *testing.B) {
 	numSeries := 1000000
 	_, db := createHeadForBenchmarkSelect(b, numSeries, func(app storage.Appender, i int) {
 		l := labels.FromStrings("foo", "bar", "i", fmt.Sprintf("%d%s", i, postingsBenchSuffix))
-		ref, err := app.Append(0, l, int64(i+1), 0)
+		ref, err := app.Append(0, l, int64(i+1), 0, nil)
 		if err != nil {
 			b.Fatal(err)
 		}
-		_, err = app.Append(ref, l, int64(i), 1) // Out of order sample
+		_, err = app.Append(ref, l, int64(i), 1, nil) // Out of order sample
 		if err != nil {
 			b.Fatal(err)
 		}

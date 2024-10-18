@@ -40,14 +40,14 @@ type initAppender struct {
 
 var _ storage.GetRef = &initAppender{}
 
-func (a *initAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+func (a *initAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	if a.app != nil {
-		return a.app.Append(ref, lset, t, v)
+		return a.app.Append(ref, lset, t, v, nil)
 	}
 
 	a.head.initTime(t)
 	a.app = a.head.appender()
-	return a.app.Append(ref, lset, t, v)
+	return a.app.Append(ref, lset, t, v, nil)
 }
 
 func (a *initAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
@@ -328,7 +328,7 @@ type headAppender struct {
 	closed                          bool
 }
 
-func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	// Fail fast if OOO is disabled and the sample is out of bounds.
 	// Otherwise a full check will be done later to decide if the sample is in-order or out-of-order.
 	if a.oooTimeWindow == 0 && t < a.minValidTime {

@@ -287,7 +287,7 @@ func (h *writeHandler) appendV1Samples(app storage.Appender, ss []prompb.Sample,
 	var ref storage.SeriesRef
 	var err error
 	for _, s := range ss {
-		ref, err = app.Append(ref, labels, s.GetTimestamp(), s.GetValue())
+		ref, err = app.Append(ref, labels, s.GetTimestamp(), s.GetValue(), nil)
 		if err != nil {
 			if errors.Is(err, storage.ErrOutOfOrderSample) ||
 				errors.Is(err, storage.ErrOutOfBounds) ||
@@ -395,7 +395,7 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 
 		// Samples.
 		for _, s := range ts.Samples {
-			ref, err = app.Append(ref, ls, s.GetTimestamp(), s.GetValue())
+			ref, err = app.Append(ref, ls, s.GetTimestamp(), s.GetValue(), nil)
 			if err == nil {
 				rs.Samples++
 				continue
@@ -548,12 +548,12 @@ type timeLimitAppender struct {
 	maxTime int64
 }
 
-func (app *timeLimitAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+func (app *timeLimitAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	if t > app.maxTime {
 		return 0, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds)
 	}
 
-	ref, err := app.Appender.Append(ref, lset, t, v)
+	ref, err := app.Appender.Append(ref, lset, t, v, nil)
 	if err != nil {
 		return 0, err
 	}
