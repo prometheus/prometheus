@@ -29,6 +29,7 @@ type robotSDTestSuite struct {
 }
 
 func (s *robotSDTestSuite) SetupTest(t *testing.T) {
+	t.Helper()
 	s.Mock = NewSDMock(t)
 	s.Mock.Setup()
 

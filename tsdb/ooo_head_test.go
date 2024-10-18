@@ -74,6 +74,7 @@ func TestOOOInsert(t *testing.T) {
 func testOOOInsert(t *testing.T,
 	sampleFunc func(ts int64) sample,
 ) {
+	t.Helper()
 	for numPreExisting := 0; numPreExisting <= testMaxSize; numPreExisting++ {
 		// For example, if we have numPreExisting 2, then:
 		// chunk.samples indexes filled        0   1
@@ -138,6 +139,7 @@ func TestOOOInsertDuplicate(t *testing.T) {
 func testOOOInsertDuplicate(t *testing.T,
 	sampleFunc func(ts int64) sample,
 ) {
+	t.Helper()
 	for num := 1; num <= testMaxSize; num++ {
 		for dupPos := 0; dupPos < num; dupPos++ {
 			chunk := NewOOOChunk()

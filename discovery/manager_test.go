@@ -37,6 +37,7 @@ func TestMain(m *testing.M) {
 }
 
 func NewTestMetrics(t *testing.T, reg prometheus.Registerer) (RefreshMetricsManager, map[string]DiscovererMetrics) {
+	t.Helper()
 	refreshMetrics := NewRefreshMetrics(reg)
 	sdMetrics, err := RegisterSDMetrics(reg, refreshMetrics)
 	require.NoError(t, err)

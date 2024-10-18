@@ -36,6 +36,7 @@ func (s *VultrSDTestSuite) TearDownSuite() {
 }
 
 func (s *VultrSDTestSuite) SetupTest(t *testing.T) {
+	t.Helper()
 	s.Mock = NewSDMock(t)
 	s.Mock.Setup()
 

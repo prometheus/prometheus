@@ -362,6 +362,7 @@ func TestFloatHistogramCopyTo(t *testing.T) {
 }
 
 func assertDeepCopyFHSpans(t *testing.T, orig, hCopy, expected *FloatHistogram) {
+	t.Helper()
 	// Do an in-place expansion of an original spans slice.
 	orig.PositiveSpans = expandSpans(orig.PositiveSpans)
 	orig.PositiveSpans[len(orig.PositiveSpans)-1] = Span{1, 2}
@@ -2317,6 +2318,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 }
 
 func testHistogramAdd(t *testing.T, a, b, expected *FloatHistogram, expErrMsg string) {
+	t.Helper()
 	var (
 		aCopy        = a.Copy()
 		bCopy        = b.Copy()
@@ -2515,6 +2517,7 @@ func TestFloatHistogramSub(t *testing.T) {
 }
 
 func testFloatHistogramSub(t *testing.T, a, b, expected *FloatHistogram, expErrMsg string) {
+	t.Helper()
 	var (
 		aCopy        = a.Copy()
 		bCopy        = b.Copy()

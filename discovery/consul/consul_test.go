@@ -39,6 +39,7 @@ func TestMain(m *testing.M) {
 
 // TODO: Add ability to unregister metrics?
 func NewTestMetrics(t *testing.T, conf discovery.Config, reg prometheus.Registerer) discovery.DiscovererMetrics {
+	t.Helper()
 	refreshMetrics := discovery.NewRefreshMetrics(reg)
 	require.NoError(t, refreshMetrics.Register())
 
@@ -230,6 +231,7 @@ const (
 )
 
 func newServer(t *testing.T) (*httptest.Server, *SDConfig) {
+	t.Helper()
 	// github.com/hashicorp/consul/testutil/ would be nice but it needs a local consul binary.
 	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		response := ""
@@ -272,6 +274,7 @@ func newServer(t *testing.T) (*httptest.Server, *SDConfig) {
 }
 
 func newDiscovery(t *testing.T, config *SDConfig) *Discovery {
+	t.Helper()
 	logger := promslog.NewNopLogger()
 
 	metrics := NewTestMetrics(t, config, prometheus.NewRegistry())
@@ -282,6 +285,7 @@ func newDiscovery(t *testing.T, config *SDConfig) *Discovery {
 }
 
 func checkOneTarget(t *testing.T, tg []*targetgroup.Group) {
+	t.Helper()
 	require.Len(t, tg, 1)
 	target := tg[0]
 	require.Equal(t, "test-dc", string(target.Labels["__meta_consul_dc"]))

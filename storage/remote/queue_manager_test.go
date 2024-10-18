@@ -309,15 +309,17 @@ func TestSampleDelivery(t *testing.T) {
 	}
 }
 
-func newTestClientAndQueueManager(t testing.TB, flushDeadline time.Duration, protoMsg config.RemoteWriteProtoMsg) (*TestWriteClient, *QueueManager) {
+func newTestClientAndQueueManager(tb testing.TB, flushDeadline time.Duration, protoMsg config.RemoteWriteProtoMsg) (*TestWriteClient, *QueueManager) {
+	tb.Helper()
 	c := NewTestWriteClient(protoMsg)
 	cfg := config.DefaultQueueConfig
 	mcfg := config.DefaultMetadataConfig
-	return c, newTestQueueManager(t, cfg, mcfg, flushDeadline, c, protoMsg)
+	return c, newTestQueueManager(tb, cfg, mcfg, flushDeadline, c, protoMsg)
 }
 
-func newTestQueueManager(t testing.TB, cfg config.QueueConfig, mcfg config.MetadataConfig, deadline time.Duration, c WriteClient, protoMsg config.RemoteWriteProtoMsg) *QueueManager {
-	dir := t.TempDir()
+func newTestQueueManager(tb testing.TB, cfg config.QueueConfig, mcfg config.MetadataConfig, deadline time.Duration, c WriteClient, protoMsg config.RemoteWriteProtoMsg) *QueueManager {
+	tb.Helper()
+	dir := tb.TempDir()
 	metrics := newQueueManagerMetrics(nil, "", "")
 	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, protoMsg)
 
@@ -1854,6 +1856,7 @@ func createDummyTimeSeries(instances int) []timeSeries {
 func BenchmarkBuildWriteRequest(b *testing.B) {
 	noopLogger := promslog.NewNopLogger()
 	bench := func(b *testing.B, batch []timeSeries) {
+		b.Helper()
 		buff := make([]byte, 0)
 		seriesBuff := make([]prompb.TimeSeries, len(batch))
 		for i := range seriesBuff {
@@ -1894,6 +1897,7 @@ func BenchmarkBuildWriteRequest(b *testing.B) {
 func BenchmarkBuildV2WriteRequest(b *testing.B) {
 	noopLogger := promslog.NewNopLogger()
 	bench := func(b *testing.B, batch []timeSeries) {
+		b.Helper()
 		symbolTable := writev2.NewSymbolTable()
 		buff := make([]byte, 0)
 		seriesBuff := make([]writev2.TimeSeries, len(batch))

@@ -218,7 +218,7 @@ func TestNewHTTPCACert(t *testing.T) {
 			},
 		),
 	)
-	server.TLS = newTLSConfig("server", t)
+	server.TLS = newTLSConfig(t, "server")
 	server.StartTLS()
 	defer server.Close()
 
@@ -242,7 +242,7 @@ func TestNewHTTPClientCert(t *testing.T) {
 			},
 		),
 	)
-	tlsConfig := newTLSConfig("server", t)
+	tlsConfig := newTLSConfig(t, "server")
 	tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
 	tlsConfig.ClientCAs = tlsConfig.RootCAs
 	server.TLS = tlsConfig
@@ -271,7 +271,7 @@ func TestNewHTTPWithServerName(t *testing.T) {
 			},
 		),
 	)
-	server.TLS = newTLSConfig("servername", t)
+	server.TLS = newTLSConfig(t, "servername")
 	server.StartTLS()
 	defer server.Close()
 
@@ -296,7 +296,7 @@ func TestNewHTTPWithBadServerName(t *testing.T) {
 			},
 		),
 	)
-	server.TLS = newTLSConfig("servername", t)
+	server.TLS = newTLSConfig(t, "servername")
 	server.StartTLS()
 	defer server.Close()
 
@@ -312,7 +312,8 @@ func TestNewHTTPWithBadServerName(t *testing.T) {
 	require.Error(t, err)
 }
 
-func newTLSConfig(certName string, t *testing.T) *tls.Config {
+func newTLSConfig(t *testing.T, certName string) *tls.Config {
+	t.Helper()
 	tlsConfig := &tls.Config{}
 	caCertPool := x509.NewCertPool()
 	caCert, err := os.ReadFile(caCertPath)

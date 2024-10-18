@@ -215,6 +215,7 @@ rule_files:
 
 // calculateChecksum generates a checksum for the given YAML file path.
 func calculateChecksum(t *testing.T, yamlFilePath string) string {
+	t.Helper()
 	checksum, err := GenerateChecksum(yamlFilePath)
 	require.NoError(t, err)
 	require.NotEmpty(t, checksum)

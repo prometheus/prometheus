@@ -538,6 +538,7 @@ func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 }
 
 func createChunkDiskMapper(t *testing.T, dir string) *ChunkDiskMapper {
+	t.Helper()
 	if dir == "" {
 		dir = t.TempDir()
 	}
@@ -554,6 +555,7 @@ func createChunkDiskMapper(t *testing.T, dir string) *ChunkDiskMapper {
 }
 
 func randomChunk(t *testing.T) chunkenc.Chunk {
+	t.Helper()
 	chunk := chunkenc.NewXORChunk()
 	length := rand.Int() % 120
 	app, err := chunk.Appender()
@@ -565,6 +567,7 @@ func randomChunk(t *testing.T) chunkenc.Chunk {
 }
 
 func createChunk(t *testing.T, idx int, hrw *ChunkDiskMapper) (seriesRef HeadSeriesRef, chunkRef ChunkDiskMapperRef, mint, maxt int64, chunk chunkenc.Chunk, isOOO bool) {
+	t.Helper()
 	var err error
 	seriesRef = HeadSeriesRef(rand.Int63())
 	mint = int64((idx)*1000 + 1)

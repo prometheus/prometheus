@@ -28,8 +28,8 @@ import (
 	dto "github.com/prometheus/prometheus/prompb/io/prometheus/client"
 )
 
-func createTestProtoBuf(t testing.TB) *bytes.Buffer {
-	t.Helper()
+func createTestProtoBuf(tb testing.TB) *bytes.Buffer {
+	tb.Helper()
 
 	testMetricFamilies := []string{
 		`name: "go_build_info"
@@ -766,10 +766,10 @@ metric: <
 	for _, tmf := range testMetricFamilies {
 		pb := &dto.MetricFamily{}
 		// From text to proto message.
-		require.NoError(t, proto.UnmarshalText(tmf, pb))
+		require.NoError(tb, proto.UnmarshalText(tmf, pb))
 		// From proto message to binary protobuf.
 		protoBuf, err := proto.Marshal(pb)
-		require.NoError(t, err)
+		require.NoError(tb, err)
 
 		// Write first length, then binary protobuf.
 		varintLength := binary.PutUvarint(varintBuf, uint64(len(protoBuf)))

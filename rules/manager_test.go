@@ -831,13 +831,13 @@ func TestUpdate(t *testing.T) {
 			rgs.Groups[i].Interval = model.Duration(10)
 		}
 	}
-	reloadAndValidate(rgs, t, tmpFile, ruleManager, ogs)
+	reloadAndValidate(t, rgs, tmpFile, ruleManager, ogs)
 
 	// Update limit and reload.
 	for i := range rgs.Groups {
 		rgs.Groups[i].Limit = 1
 	}
-	reloadAndValidate(rgs, t, tmpFile, ruleManager, ogs)
+	reloadAndValidate(t, rgs, tmpFile, ruleManager, ogs)
 
 	// Change group rules and reload.
 	for i, g := range rgs.Groups {
@@ -845,7 +845,7 @@ func TestUpdate(t *testing.T) {
 			rgs.Groups[i].Rules[j].Expr.SetString(fmt.Sprintf("%s * 0", r.Expr.Value))
 		}
 	}
-	reloadAndValidate(rgs, t, tmpFile, ruleManager, ogs)
+	reloadAndValidate(t, rgs, tmpFile, ruleManager, ogs)
 }
 
 // ruleGroupsTest for running tests over rules.
@@ -888,7 +888,8 @@ func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
 	}
 }
 
-func reloadAndValidate(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, ruleManager *Manager, ogs map[string]*Group) {
+func reloadAndValidate(t *testing.T, rgs *rulefmt.RuleGroups, tmpFile *os.File, ruleManager *Manager, ogs map[string]*Group) {
+	t.Helper()
 	bs, err := yaml.Marshal(formatRules(rgs))
 	require.NoError(t, err)
 	tmpFile.Seek(0, 0)
@@ -1169,6 +1170,7 @@ func TestMetricsStalenessOnManagerShutdown(t *testing.T) {
 }
 
 func countStaleNaN(t *testing.T, st storage.Storage) int {
+	t.Helper()
 	var c int
 	querier, err := st.Querier(0, time.Now().Unix()*1000)
 	require.NoError(t, err)

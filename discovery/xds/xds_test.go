@@ -46,6 +46,7 @@ func TestMain(m *testing.M) {
 type discoveryResponder func(request *v3.DiscoveryRequest) (*v3.DiscoveryResponse, error)
 
 func createTestHTTPServer(t *testing.T, responder discoveryResponder) *httptest.Server {
+	t.Helper()
 	return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Validate req MIME types.
 		require.Equal(t, "application/json", r.Header.Get("Content-Type"))

@@ -945,6 +945,7 @@ func TestHistogramCopyTo(t *testing.T) {
 }
 
 func assertDeepCopyHSpans(t *testing.T, orig, hCopy, expected *Histogram) {
+	t.Helper()
 	// Do an in-place expansion of an original spans slice.
 	orig.PositiveSpans = expandSpans(orig.PositiveSpans)
 	orig.PositiveSpans[len(orig.PositiveSpans)-1] = Span{1, 2}

@@ -27,6 +27,7 @@ type OpenstackSDInstanceTestSuite struct {
 }
 
 func (s *OpenstackSDInstanceTestSuite) SetupTest(t *testing.T) {
+	t.Helper()
 	s.Mock = NewSDMock(t)
 	s.Mock.Setup()
 

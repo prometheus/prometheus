@@ -29,6 +29,7 @@ type SDMock struct {
 
 // NewSDMock returns a new SDMock.
 func NewSDMock(t *testing.T) *SDMock {
+	t.Helper()
 	return &SDMock{
 		t: t,
 	}

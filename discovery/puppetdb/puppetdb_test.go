@@ -33,6 +33,7 @@ import (
 )
 
 func mockServer(t *testing.T) *httptest.Server {
+	t.Helper()
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request struct {
 			Query string `json:"query"`

@@ -387,6 +387,7 @@ func TestOOOHeadChunkReader_LabelValues(t *testing.T) {
 
 //nolint:revive // unexported-return.
 func testOOOHeadChunkReader_LabelValues(t *testing.T, scenario sampleTypeScenario) {
+	t.Helper()
 	chunkRange := int64(2000)
 	head, _ := newTestHead(t, chunkRange, wlog.CompressionNone, true)
 	head.opts.EnableOOONativeHistograms.Store(true)
@@ -491,6 +492,7 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 
 //nolint:revive // unexported-return.
 func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
+	t.Helper()
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 5
 	opts.OutOfOrderTimeWindow = 120 * time.Minute.Milliseconds()
@@ -902,6 +904,7 @@ func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 
 //nolint:revive // unexported-return.
 func testOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(t *testing.T, scenario sampleTypeScenario) {
+	t.Helper()
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 5
 	opts.OutOfOrderTimeWindow = 120 * time.Minute.Milliseconds()
@@ -1125,6 +1128,7 @@ func TestSortMetaByMinTimeAndMinRef(t *testing.T) {
 }
 
 func newTestDBWithOpts(t *testing.T, opts *Options) *DB {
+	t.Helper()
 	dir := t.TempDir()
 
 	db, err := Open(dir, nil, nil, opts, nil)

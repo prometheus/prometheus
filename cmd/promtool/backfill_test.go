@@ -45,13 +45,14 @@ func sortSamples(samples []backfillSample) {
 	})
 }
 
-func queryAllSeries(t testing.TB, q storage.Querier, expectedMinTime, expectedMaxTime int64) []backfillSample {
+func queryAllSeries(tb testing.TB, q storage.Querier, expectedMinTime, expectedMaxTime int64) []backfillSample {
+	tb.Helper()
 	ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
 	samples := []backfillSample{}
 	for ss.Next() {
 		series := ss.At()
 		it := series.Iterator(nil)
-		require.NoError(t, it.Err())
+		require.NoError(tb, it.Err())
 		for it.Next() == chunkenc.ValFloat {
 			ts, v := it.At()
 			samples = append(samples, backfillSample{Timestamp: ts, Value: v, Labels: series.Labels()})
@@ -61,6 +62,7 @@ func queryAllSeries(t testing.TB, q storage.Querier, expectedMinTime, expectedMa
 }
 
 func testBlocks(t *testing.T, db *tsdb.DB, expectedMinTime, expectedMaxTime, expectedBlockDuration int64, expectedSamples []backfillSample, expectedNumBlocks int) {
+	t.Helper()
 	blocks := db.Blocks()
 	require.Len(t, blocks, expectedNumBlocks, "did not create correct number of blocks")
 

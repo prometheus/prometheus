@@ -97,6 +97,7 @@ func BenchmarkQuerier(b *testing.B) {
 }
 
 func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
+	b.Helper()
 	ctx := context.Background()
 
 	n1 := labels.MustNewMatcher(labels.MatchEqual, "n", "1"+postingsBenchSuffix)
@@ -182,6 +183,7 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 }
 
 func benchmarkLabelValuesWithMatchers(b *testing.B, ir IndexReader) {
+	b.Helper()
 	i1 := labels.MustNewMatcher(labels.MatchEqual, "i", "1")
 	i1Plus := labels.MustNewMatcher(labels.MatchRegexp, "i", "1.+")
 	i1PostingsBenchSuffix := labels.MustNewMatcher(labels.MatchEqual, "i", "1"+postingsBenchSuffix)
@@ -256,6 +258,7 @@ func BenchmarkMergedStringIter(b *testing.B) {
 }
 
 func createHeadForBenchmarkSelect(b *testing.B, numSeries int, addSeries func(app storage.Appender, i int)) (*Head, *DB) {
+	b.Helper()
 	dir := b.TempDir()
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 255
@@ -276,6 +279,7 @@ func createHeadForBenchmarkSelect(b *testing.B, numSeries int, addSeries func(ap
 }
 
 func benchmarkSelect(b *testing.B, queryable storage.Queryable, numSeries int, sorted bool) {
+	b.Helper()
 	matcher := labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")
 	b.ResetTimer()
 	for s := 1; s <= numSeries; s *= 10 {

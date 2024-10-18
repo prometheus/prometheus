@@ -24,6 +24,7 @@ import (
 )
 
 func (q *writeJobQueue) assertInvariants(t *testing.T) {
+	t.Helper()
 	q.mtx.Lock()
 	defer q.mtx.Unlock()
 

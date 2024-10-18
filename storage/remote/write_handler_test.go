@@ -293,13 +293,13 @@ func TestRemoteWriteHandler_V1Message(t *testing.T) {
 	}
 }
 
-func expectHeaderValue(t testing.TB, expected int, got string) {
-	t.Helper()
+func expectHeaderValue(tb testing.TB, expected int, got string) {
+	tb.Helper()
 
-	require.NotEmpty(t, got)
+	require.NotEmpty(tb, got)
 	i, err := strconv.Atoi(got)
-	require.NoError(t, err)
-	require.Equal(t, expected, i)
+	require.NoError(tb, err)
+	require.Equal(tb, expected, i)
 }
 
 func TestRemoteWriteHandler_V2Message(t *testing.T) {

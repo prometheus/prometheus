@@ -82,6 +82,7 @@ func LoadedStorage(t testutil.T, input string) *teststorage.TestStorage {
 
 // NewTestEngine creates a promql.Engine with enablePerStepStats, lookbackDelta and maxSamples, and returns it.
 func NewTestEngine(tb testing.TB, enablePerStepStats bool, lookbackDelta time.Duration, maxSamples int) *promql.Engine {
+	tb.Helper()
 	return NewTestEngineWithOpts(tb, promql.EngineOpts{
 		Logger:                   nil,
 		Reg:                      nil,
@@ -116,6 +117,7 @@ func RunBuiltinTests(t TBRun, engine promql.QueryEngine) {
 
 	for _, fn := range files {
 		t.Run(fn, func(t *testing.T) {
+			t.Helper()
 			content, err := fs.ReadFile(testsFs, fn)
 			require.NoError(t, err)
 			RunTest(t, string(content), engine)

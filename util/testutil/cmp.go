@@ -25,20 +25,20 @@ import (
 
 // RequireEqual is a replacement for require.Equal using go-cmp adapted for
 // Prometheus data structures, instead of DeepEqual.
-func RequireEqual(t testing.TB, expected, actual interface{}, msgAndArgs ...interface{}) {
-	t.Helper()
-	RequireEqualWithOptions(t, expected, actual, nil, msgAndArgs...)
+func RequireEqual(tb testing.TB, expected, actual interface{}, msgAndArgs ...interface{}) {
+	tb.Helper()
+	RequireEqualWithOptions(tb, expected, actual, nil, msgAndArgs...)
 }
 
 // RequireEqualWithOptions works like RequireEqual but allows extra cmp.Options.
-func RequireEqualWithOptions(t testing.TB, expected, actual interface{}, extra []cmp.Option, msgAndArgs ...interface{}) {
-	t.Helper()
+func RequireEqualWithOptions(tb testing.TB, expected, actual interface{}, extra []cmp.Option, msgAndArgs ...interface{}) {
+	tb.Helper()
 	options := append([]cmp.Option{cmp.Comparer(labels.Equal)}, extra...)
 	if cmp.Equal(expected, actual, options...) {
 		return
 	}
 	diff := cmp.Diff(expected, actual, options...)
-	require.Fail(t, fmt.Sprintf("Not equal: \n"+
+	require.Fail(tb, fmt.Sprintf("Not equal: \n"+
 		"expected: %s\n"+
 		"actual  : %s%s", expected, actual, diff), msgAndArgs...)
 }

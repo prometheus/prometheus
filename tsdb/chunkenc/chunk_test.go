@@ -42,6 +42,7 @@ func TestChunk(t *testing.T) {
 }
 
 func testChunk(t *testing.T, c Chunk) {
+	t.Helper()
 	app, err := c.Appender()
 	require.NoError(t, err)
 
@@ -201,6 +202,7 @@ func (c fakeChunk) Reset([]byte) {
 }
 
 func benchmarkIterator(b *testing.B, newChunk func() Chunk) {
+	b.Helper()
 	const samplesPerChunk = 250
 	var (
 		t   = int64(1234123324)
@@ -281,6 +283,7 @@ func BenchmarkXORAppender(b *testing.B) {
 }
 
 func benchmarkAppender(b *testing.B, deltas func() (int64, float64), newChunk func() Chunk) {
+	b.Helper()
 	var (
 		t = int64(1234123324)
 		v = 1243535.123

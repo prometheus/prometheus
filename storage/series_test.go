@@ -584,6 +584,7 @@ func TestHistogramSeriesToChunks(t *testing.T) {
 }
 
 func testHistogramsSeriesToChunks(t *testing.T, test histogramTest) {
+	t.Helper()
 	lbs := labels.FromStrings("__name__", "up", "instance", "localhost:8080")
 	copiedSamples := []chunks.Sample{}
 	for _, s := range test.samples {

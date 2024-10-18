@@ -32,12 +32,14 @@ func TestNewParser(t *testing.T) {
 	t.Parallel()
 
 	requirePromParser := func(t *testing.T, p Parser) {
+		t.Helper()
 		require.NotNil(t, p)
 		_, ok := p.(*PromParser)
 		require.True(t, ok)
 	}
 
 	requireOpenMetricsParser := func(t *testing.T, p Parser) {
+		t.Helper()
 		require.NotNil(t, p)
 		_, ok := p.(*OpenMetricsParser)
 		require.True(t, ok)

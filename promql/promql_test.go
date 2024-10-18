@@ -29,6 +29,7 @@ import (
 )
 
 func newTestEngine(t *testing.T) *promql.Engine {
+	t.Helper()
 	return promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
 }
 

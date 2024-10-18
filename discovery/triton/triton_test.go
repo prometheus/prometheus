@@ -228,6 +228,7 @@ func TestTritonSDRefreshCNsWithHostname(t *testing.T) {
 }
 
 func testTritonSDRefresh(t *testing.T, c SDConfig, dstr string) []model.LabelSet {
+	t.Helper()
 	var (
 		td, m, _ = newTritonDiscovery(c)
 		s        = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

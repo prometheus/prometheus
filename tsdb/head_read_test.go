@@ -32,6 +32,7 @@ func TestMemSeries_chunk(t *testing.T) {
 	const chunkStep int64 = 5
 
 	appendSamples := func(t *testing.T, s *memSeries, start, end int64, cdm *chunks.ChunkDiskMapper) {
+		t.Helper()
 		for i := start; i < end; i += chunkStep {
 			ok, _ := s.append(i, float64(i), 0, chunkOpts{
 				chunkDiskMapper: cdm,
@@ -71,6 +72,7 @@ func TestMemSeries_chunk(t *testing.T) {
 		{
 			name: "firstChunkID > ix",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
+				t.Helper()
 				appendSamples(t, s, 0, chunkRange, cdm)
 				require.Empty(t, s.mmappedChunks, "wrong number of mmappedChunks")
 				require.Equal(t, 1, s.headChunks.len(), "wrong number of headChunks")
@@ -84,6 +86,7 @@ func TestMemSeries_chunk(t *testing.T) {
 		{
 			name: "call ix=0 on memSeries with no mmapped chunks",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
+				t.Helper()
 				appendSamples(t, s, 0, chunkRange, cdm)
 				require.Empty(t, s.mmappedChunks, "wrong number of mmappedChunks")
 				require.Equal(t, 1, s.headChunks.len(), "wrong number of headChunks")
@@ -96,6 +99,7 @@ func TestMemSeries_chunk(t *testing.T) {
 		{
 			name: "call ix=1 on memSeries with no mmapped chunks",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
+				t.Helper()
 				appendSamples(t, s, 0, chunkRange, cdm)
 				require.Empty(t, s.mmappedChunks, "wrong number of mmappedChunks")
 				require.Equal(t, 1, s.headChunks.len(), "wrong number of headChunks")
@@ -108,6 +112,7 @@ func TestMemSeries_chunk(t *testing.T) {
 		{
 			name: "call ix=10 on memSeries with no mmapped chunks",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
+				t.Helper()
 				appendSamples(t, s, 0, chunkRange, cdm)
 				require.Empty(t, s.mmappedChunks, "wrong number of mmappedChunks")
 				require.Equal(t, 1, s.headChunks.len(), "wrong number of headChunks")
@@ -120,6 +125,7 @@ func TestMemSeries_chunk(t *testing.T) {
 		{
 			name: "call ix=0 on memSeries with 3 mmapped chunks",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
+				t.Helper()
 				appendSamples(t, s, 0, chunkRange*4, cdm)
 				s.mmapChunks(cdm)
 				require.Len(t, s.mmappedChunks, 3, "wrong number of mmappedChunks")
@@ -133,6 +139,7 @@ func TestMemSeries_chunk(t *testing.T) {
 		{
 			name: "call ix=1 on memSeries with 3 mmapped chunks",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
+				t.Helper()
 				appendSamples(t, s, 0, chunkRange*4, cdm)
 				s.mmapChunks(cdm)
 				require.Len(t, s.mmappedChunks, 3, "wrong number of mmappedChunks")
@@ -146,6 +153,7 @@ func TestMemSeries_chunk(t *testing.T) {
 		{
 			name: "call ix=3 on memSeries with 3 mmapped chunks",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
+				t.Helper()
 				appendSamples(t, s, 0, chunkRange*4, cdm)
 				s.mmapChunks(cdm)
 				require.Len(t, s.mmappedChunks, 3, "wrong number of mmappedChunks")
@@ -159,6 +167,7 @@ func TestMemSeries_chunk(t *testing.T) {
 		{
 			name: "call ix=0 on memSeries with 3 mmapped chunks and no headChunk",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
+				t.Helper()
 				appendSamples(t, s, 0, chunkRange*4, cdm)
 				s.mmapChunks(cdm)
 				require.Len(t, s.mmappedChunks, 3, "wrong number of mmappedChunks")
@@ -173,6 +182,7 @@ func TestMemSeries_chunk(t *testing.T) {
 		{
 			name: "call ix=2 on memSeries with 3 mmapped chunks and no headChunk",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
+				t.Helper()
 				appendSamples(t, s, 0, chunkRange*4, cdm)
 				s.mmapChunks(cdm)
 				require.Len(t, s.mmappedChunks, 3, "wrong number of mmappedChunks")
@@ -187,6 +197,7 @@ func TestMemSeries_chunk(t *testing.T) {
 		{
 			name: "call ix=3 on memSeries with 3 mmapped chunks and no headChunk",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
+				t.Helper()
 				appendSamples(t, s, 0, chunkRange*4, cdm)
 				s.mmapChunks(cdm)
 				require.Len(t, s.mmappedChunks, 3, "wrong number of mmappedChunks")
@@ -201,6 +212,7 @@ func TestMemSeries_chunk(t *testing.T) {
 		{
 			name: "call ix=1 on memSeries with 3 mmapped chunks and closed ChunkDiskMapper",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
+				t.Helper()
 				appendSamples(t, s, 0, chunkRange*4, cdm)
 				s.mmapChunks(cdm)
 				require.Len(t, s.mmappedChunks, 3, "wrong number of mmappedChunks")
@@ -215,6 +227,7 @@ func TestMemSeries_chunk(t *testing.T) {
 		{
 			name: "call ix=3 on memSeries with 3 mmapped chunks and closed ChunkDiskMapper",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
+				t.Helper()
 				appendSamples(t, s, 0, chunkRange*4, cdm)
 				s.mmapChunks(cdm)
 				require.Len(t, s.mmappedChunks, 3, "wrong number of mmappedChunks")
@@ -229,6 +242,7 @@ func TestMemSeries_chunk(t *testing.T) {
 		{
 			name: "call ix=0 on memSeries with 3 head chunks and no mmapped chunks",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
+				t.Helper()
 				appendSamples(t, s, 0, chunkRange*3, cdm)
 				require.Empty(t, s.mmappedChunks, "wrong number of mmappedChunks")
 				require.Equal(t, 3, s.headChunks.len(), "wrong number of headChunks")
@@ -241,6 +255,7 @@ func TestMemSeries_chunk(t *testing.T) {
 		{
 			name: "call ix=1 on memSeries with 3 head chunks and no mmapped chunks",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
+				t.Helper()
 				appendSamples(t, s, 0, chunkRange*3, cdm)
 				require.Empty(t, s.mmappedChunks, "wrong number of mmappedChunks")
 				require.Equal(t, 3, s.headChunks.len(), "wrong number of headChunks")
@@ -253,6 +268,7 @@ func TestMemSeries_chunk(t *testing.T) {
 		{
 			name: "call ix=10 on memSeries with 3 head chunks and no mmapped chunks",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
+				t.Helper()
 				appendSamples(t, s, 0, chunkRange*3, cdm)
 				require.Empty(t, s.mmappedChunks, "wrong number of mmappedChunks")
 				require.Equal(t, 3, s.headChunks.len(), "wrong number of headChunks")
@@ -265,6 +281,7 @@ func TestMemSeries_chunk(t *testing.T) {
 		{
 			name: "call ix=0 on memSeries with 3 head chunks and 3 mmapped chunks",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
+				t.Helper()
 				appendSamples(t, s, 0, chunkRange*4, cdm)
 				s.mmapChunks(cdm)
 				require.Len(t, s.mmappedChunks, 3, "wrong number of mmappedChunks")
@@ -282,6 +299,7 @@ func TestMemSeries_chunk(t *testing.T) {
 		{
 			name: "call ix=2 on memSeries with 3 head chunks and 3 mmapped chunks",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
+				t.Helper()
 				appendSamples(t, s, 0, chunkRange*4, cdm)
 				s.mmapChunks(cdm)
 				require.Len(t, s.mmappedChunks, 3, "wrong number of mmappedChunks")
@@ -299,6 +317,7 @@ func TestMemSeries_chunk(t *testing.T) {
 		{
 			name: "call ix=3 on memSeries with 3 head chunks and 3 mmapped chunks",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
+				t.Helper()
 				appendSamples(t, s, 0, chunkRange*4, cdm)
 				s.mmapChunks(cdm)
 				require.Len(t, s.mmappedChunks, 3, "wrong number of mmappedChunks")
@@ -316,6 +335,7 @@ func TestMemSeries_chunk(t *testing.T) {
 		{
 			name: "call ix=5 on memSeries with 3 head chunks and 3 mmapped chunks",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
+				t.Helper()
 				appendSamples(t, s, 0, chunkRange*4, cdm)
 				s.mmapChunks(cdm)
 				require.Len(t, s.mmappedChunks, 3, "wrong number of mmappedChunks")
@@ -333,6 +353,7 @@ func TestMemSeries_chunk(t *testing.T) {
 		{
 			name: "call ix=6 on memSeries with 3 head chunks and 3 mmapped chunks",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
+				t.Helper()
 				appendSamples(t, s, 0, chunkRange*4, cdm)
 				s.mmapChunks(cdm)
 				require.Len(t, s.mmappedChunks, 3, "wrong number of mmappedChunks")
@@ -351,6 +372,7 @@ func TestMemSeries_chunk(t *testing.T) {
 		{
 			name: "call ix=10 on memSeries with 3 head chunks and 3 mmapped chunks",
 			setup: func(t *testing.T, s *memSeries, cdm *chunks.ChunkDiskMapper) {
+				t.Helper()
 				appendSamples(t, s, 0, chunkRange*4, cdm)
 				s.mmapChunks(cdm)
 				require.Len(t, s.mmappedChunks, 3, "wrong number of mmappedChunks")
@@ -411,6 +433,7 @@ func TestMemSeries_chunk(t *testing.T) {
 
 func TestHeadIndexReader_PostingsForLabelMatching(t *testing.T) {
 	testPostingsForLabelMatching(t, 0, func(t *testing.T, series []labels.Labels) IndexReader {
+		t.Helper()
 		opts := DefaultHeadOptions()
 		opts.ChunkRange = 1000
 		opts.ChunkDirRoot = t.TempDir()

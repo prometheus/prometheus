@@ -42,6 +42,7 @@ type SDMock struct {
 
 // NewSDMock returns a new SDMock.
 func NewSDMock(t *testing.T) *SDMock {
+	t.Helper()
 	return &SDMock{
 		t: t,
 	}
@@ -68,6 +69,7 @@ func (s *NomadSDTestSuite) TearDownSuite() {
 }
 
 func (s *NomadSDTestSuite) SetupTest(t *testing.T) {
+	t.Helper()
 	s.Mock = NewSDMock(t)
 	s.Mock.Setup()
 

@@ -163,6 +163,7 @@ scrape_configs:
 // reloadPrometheus sends a reload request to the Prometheus server to apply
 // updated configurations.
 func reloadPrometheus(t *testing.T, port int) {
+	t.Helper()
 	resp, err := http.Post(fmt.Sprintf("http://127.0.0.1:%d/-/reload", port), "", nil)
 	require.NoError(t, err, "Failed to reload Prometheus")
 	require.Equal(t, http.StatusOK, resp.StatusCode, "Unexpected status code when reloading Prometheus")
@@ -171,6 +172,7 @@ func reloadPrometheus(t *testing.T, port int) {
 // startGarbageServer sets up a mock server that returns a 500 Internal Server Error
 // for all requests. It also increments the request count each time it's hit.
 func startGarbageServer(t *testing.T, requestCount *atomic.Int32) string {
+	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount.Inc()
 		w.WriteHeader(http.StatusInternalServerError)

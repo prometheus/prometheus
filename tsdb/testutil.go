@@ -108,6 +108,7 @@ var sampleTypeScenarios = map[string]sampleTypeScenario{
 
 // requireEqualSeries checks that the actual series are equal to the expected ones. It ignores the counter reset hints for histograms.
 func requireEqualSeries(t *testing.T, expected, actual map[string][]chunks.Sample, ignoreCounterResets bool) {
+	t.Helper()
 	for name, expectedItem := range expected {
 		actualItem, ok := actual[name]
 		require.True(t, ok, "Expected series %s not found", name)
@@ -120,6 +121,7 @@ func requireEqualSeries(t *testing.T, expected, actual map[string][]chunks.Sampl
 }
 
 func requireEqualOOOSamples(t *testing.T, expectedSamples int, db *DB) {
+	t.Helper()
 	require.Equal(t, float64(expectedSamples),
 		prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeFloat))+
 			prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeHistogram)),
@@ -135,6 +137,7 @@ const (
 )
 
 func requireEqualSamples(t *testing.T, name string, expected, actual []chunks.Sample, options ...requireEqualSamplesOption) {
+	t.Helper()
 	var (
 		ignoreCounterResets bool
 		inUseBucketCompare  bool

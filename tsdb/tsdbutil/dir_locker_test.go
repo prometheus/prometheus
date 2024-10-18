@@ -25,6 +25,7 @@ import (
 
 func TestLockfile(t *testing.T) {
 	TestDirLockerUsage(t, func(t *testing.T, data string, createLock bool) (*DirLocker, testutil.Closer) {
+		t.Helper()
 		locker, err := NewDirLocker(data, "tsdbutil", promslog.NewNopLogger(), nil)
 		require.NoError(t, err)
 

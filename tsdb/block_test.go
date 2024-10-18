@@ -541,6 +541,7 @@ func TestLabelNamesWithMatchers(t *testing.T) {
 
 func TestBlockIndexReader_PostingsForLabelMatching(t *testing.T) {
 	testPostingsForLabelMatching(t, 2, func(t *testing.T, series []labels.Labels) IndexReader {
+		t.Helper()
 		var seriesEntries []storage.Series
 		for _, s := range series {
 			seriesEntries = append(seriesEntries, storage.NewListSeries(s, []chunks.Sample{sample{100, 0, nil, nil}}))
@@ -621,12 +622,14 @@ func testPostingsForLabelMatching(t *testing.T, offset storage.SeriesRef, setUp 
 
 // createBlock creates a block with given set of series and returns its dir.
 func createBlock(tb testing.TB, dir string, series []storage.Series) string {
+	tb.Helper()
 	blockDir, err := CreateBlock(series, dir, 0, promslog.NewNopLogger())
 	require.NoError(tb, err)
 	return blockDir
 }
 
 func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
+	tb.Helper()
 	compactor, err := NewLeveledCompactor(context.Background(), nil, promslog.NewNopLogger(), []int64{1000000}, nil, nil)
 	require.NoError(tb, err)
 
@@ -641,6 +644,7 @@ func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
 }
 
 func createBlockFromOOOHead(tb testing.TB, dir string, head *OOOCompactionHead) string {
+	tb.Helper()
 	compactor, err := NewLeveledCompactor(context.Background(), nil, promslog.NewNopLogger(), []int64{1000000}, nil, nil)
 	require.NoError(tb, err)
 
@@ -655,6 +659,7 @@ func createBlockFromOOOHead(tb testing.TB, dir string, head *OOOCompactionHead) 
 }
 
 func createHead(tb testing.TB, w *wlog.WL, series []storage.Series, chunkDir string) *Head {
+	tb.Helper()
 	opts := DefaultHeadOptions()
 	opts.ChunkDirRoot = chunkDir
 	head, err := NewHead(nil, nil, w, nil, opts, nil)
@@ -700,6 +705,7 @@ func createHead(tb testing.TB, w *wlog.WL, series []storage.Series, chunkDir str
 }
 
 func createHeadWithOOOSamples(tb testing.TB, w *wlog.WL, series []storage.Series, chunkDir string, oooSampleFrequency int) *Head {
+	tb.Helper()
 	opts := DefaultHeadOptions()
 	opts.ChunkDirRoot = chunkDir
 	opts.OutOfOrderTimeWindow.Store(10000000000)
