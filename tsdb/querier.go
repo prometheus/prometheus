@@ -1022,9 +1022,9 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 		if newChunk != nil {
 			if !recoded {
 				p.chunksFromIterable = append(p.chunksFromIterable, chunks.Meta{Chunk: currentChunk, MinTime: cmint, MaxTime: cmaxt})
+				cmint = t
 			}
 			currentChunk = newChunk
-			cmint = t
 		}
 
 		cmaxt = t
