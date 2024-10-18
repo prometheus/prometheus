@@ -50,6 +50,57 @@ const (
 	namespace = "prometheus"
 )
 
+// DNSCache stores DNS responses based on their TTL values.
+type Cache struct {
+	mu    sync.RWMutex
+	cache map[string]*dnsCacheEntry
+}
+
+type dnsCacheEntry struct {
+	msg    *dns.Msg
+	expiry time.Time
+}
+
+func NewDNSCache() *Cache {
+	return &Cache{
+		cache: make(map[string]*dnsCacheEntry),
+	}
+}
+
+func (c *Cache) Get(name string) (*dns.Msg, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	entry, ok := c.cache[name]
+	if !ok || time.Now().After(entry.expiry) {
+		return nil, false
+	}
+	return entry.msg, true
+}
+
+func (c *Cache) Set(name string, msg *dns.Msg) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	ttl := getMinimumTTL(msg)
+	entry := &dnsCacheEntry{
+		msg:    msg,
+		expiry: time.Now().Add(ttl),
+	}
+	c.cache[name] = entry
+}
+
+func getMinimumTTL(msg *dns.Msg) time.Duration {
+	minTTL := ^uint32(0) // Set to maximum value
+	for _, record := range append(msg.Answer, msg.Ns...) {
+		hdr := record.Header()
+		if hdr.Ttl < minTTL {
+			minTTL = hdr.Ttl
+		}
+	}
+	return time.Duration(minTTL) * time.Second
+}
+
 // DefaultSDConfig is the default DNS SD configuration.
 var DefaultSDConfig = SDConfig{
 	RefreshInterval: model.Duration(30 * time.Second),
@@ -113,6 +164,7 @@ type Discovery struct {
 	qtype   uint16
 	logger  *slog.Logger
 	metrics *dnsMetrics
+	cache   *Cache
 
 	lookupFn func(name string, qtype uint16, logger *slog.Logger) (*dns.Msg, error)
 }
@@ -148,6 +200,7 @@ func NewDiscovery(conf SDConfig, logger *slog.Logger, metrics discovery.Discover
 		logger:   logger,
 		lookupFn: lookupWithSearchPath,
 		metrics:  m,
+		cache:    NewDNSCache(),
 	}
 
 	d.Discovery = refresh.NewDiscovery(
@@ -192,6 +245,22 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 }
 
 func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targetgroup.Group) error {
+	cachedMsg, found := d.cache.Get(name)
+	if found {
+		d.metrics.dnsSDLookupsCount.Inc()
+		tg, err := d.dnsMsgToTargetGroup(name, cachedMsg)
+		if err != nil {
+			d.metrics.dnsSDLookupFailuresCount.Inc()
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case ch <- tg:
+		}
+		return nil
+	}
+
 	response, err := d.lookupFn(name, d.qtype, d.logger)
 	d.metrics.dnsSDLookupsCount.Inc()
 	if err != nil {
@@ -199,12 +268,27 @@ func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targ
 		return err
 	}
 
+	d.cache.Set(name, response)
+	tg, err := d.dnsMsgToTargetGroup(name, response)
+	if err != nil {
+		d.metrics.dnsSDLookupFailuresCount.Inc()
+		return err
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case ch <- tg:
+	}
+	return nil
+}
+
+func (d *Discovery) dnsMsgToTargetGroup(name string, msg *dns.Msg) (*targetgroup.Group, error) {
 	tg := &targetgroup.Group{}
 	hostPort := func(a string, p int) model.LabelValue {
 		return model.LabelValue(net.JoinHostPort(a, strconv.Itoa(p)))
 	}
 
-	for _, record := range response.Answer {
+	for _, record := range msg.Answer {
 		var target, dnsSrvRecordTarget, dnsSrvRecordPort, dnsMxRecordTarget, dnsNsRecordTarget model.LabelValue
 
 		switch addr := record.(type) {
@@ -252,13 +336,7 @@ func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targ
 	}
 
 	tg.Source = name
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case ch <- tg:
-	}
-
-	return nil
+	return tg, nil
 }
 
 // lookupWithSearchPath tries to get an answer for various permutations of
