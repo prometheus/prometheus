@@ -100,9 +100,28 @@ implementing `remote_read`.
 This contract is not explicitly enforced, but can cause undefined behavior.
 
 ### UTF-8 names
-Prometheus v3 supports UTF-8 in metrics and label names. This means metrics and 
-label names can change after upgrading according to what is exposed by 
-endpoints.
+Prometheus v3 supports UTF-8 in metric and label names. This means metric and
+label names can change after upgrading according to what is exposed by
+endpoints. Furthermore, metric and label names that would have previously been
+flagged as invalid no longer will be.
+
+Users wishing to preserve the original validation behavior can update their
+prometheus yaml configuration to specify the legacy validation scheme:
+
+```
+global:
+  metric_name_validation_scheme: legacy
+```
+
+Or on a per-scrape basis:
+
+```
+scrape_configs:
+  - job_name: job1
+    metric_name_validation_scheme: utf8
+  - job_name: job2
+    metric_name_validation_scheme: legacy
+```
 
 # Prometheus 2.0 migration guide
 
