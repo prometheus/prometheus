@@ -955,6 +955,7 @@ func (a AlertmanagerConfigs) ToMap() map[string]*AlertmanagerConfig {
 
 // AlertmanagerAPIVersion represents a version of the
 // github.com/prometheus/alertmanager/api, e.g. 'v1' or 'v2'.
+// 'v1' is no longer supported.
 type AlertmanagerAPIVersion string
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -984,7 +985,7 @@ const (
 )
 
 var SupportedAlertmanagerAPIVersions = []AlertmanagerAPIVersion{
-	AlertmanagerAPIVersionV1, AlertmanagerAPIVersionV2,
+	AlertmanagerAPIVersionV2,
 }
 
 // AlertmanagerConfig configures how Alertmanagers can be discovered and communicated with.
