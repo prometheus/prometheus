@@ -14,6 +14,8 @@
 package textparse
 
 import (
+	"errors"
+	"fmt"
 	"mime"
 
 	"github.com/prometheus/common/model"
@@ -78,28 +80,65 @@ type Parser interface {
 	Next() (Entry, error)
 }
 
-// New returns a new parser of the byte slice.
-//
-// This function always returns a valid parser, but might additionally
-// return an error if the content type cannot be parsed.
-func New(b []byte, contentType string, parseClassicHistograms, skipOMCTSeries bool, st *labels.SymbolTable) (Parser, error) {
+// extractMediaType returns the mediaType of a required parser. It tries first to
+// extract a valid and supported mediaType from contentType. If that fails,
+// the provided fallbackType (possibly an empty string) is returned, together with
+// an error. fallbackType is used as-is without further validation.
+func extractMediaType(contentType, fallbackType string) (string, error) {
 	if contentType == "" {
-		return NewPromParser(b, st), nil
+		if fallbackType == "" {
+			return "", errors.New("non-compliant scrape target sending blank Content-Type and no fallback_scrape_protocol specified for target")
+		}
+		return fallbackType, fmt.Errorf("non-compliant scrape target sending blank Content-Type, using fallback_scrape_protocol %q", fallbackType)
 	}
 
+	// We have a contentType, parse it.
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err != nil {
-		return NewPromParser(b, st), err
+		if fallbackType == "" {
+			retErr := fmt.Errorf("cannot parse Content-Type %q and no fallback_scrape_protocol for target", contentType)
+			return "", errors.Join(retErr, err)
+		}
+		retErr := fmt.Errorf("could not parse received Content-Type %q, using fallback_scrape_protocol %q", contentType, fallbackType)
+		return fallbackType, errors.Join(retErr, err)
 	}
+
+	// We have a valid media type, either we recognise it and can use it
+	// or we have to error.
+	switch mediaType {
+	case "application/openmetrics-text", "application/vnd.google.protobuf", "text/plain":
+		return mediaType, nil
+	}
+	// We're here because we have no recognised mediaType.
+	if fallbackType == "" {
+		return "", fmt.Errorf("received unsupported Content-Type %q and no fallback_scrape_protocol specified for target", contentType)
+	}
+	return fallbackType, fmt.Errorf("received unsupported Content-Type %q, using fallback_scrape_protocol %q", contentType, fallbackType)
+}
+
+// New returns a new parser of the byte slice.
+//
+// This function no longer guarantees to return a valid parser.
+//
+// It only returns a valid parser if the supplied contentType and fallbackType allow.
+// An error may also be returned if fallbackType had to be used or there was some
+// other error parsing the supplied Content-Type.
+// If the returned parser is nil then the scrape must fail.
+func New(b []byte, contentType, fallbackType string, parseClassicHistograms, skipOMCTSeries bool, st *labels.SymbolTable) (Parser, error) {
+	mediaType, err := extractMediaType(contentType, fallbackType)
+	// err may be nil or something we want to warn about.
+
 	switch mediaType {
 	case "application/openmetrics-text":
 		return NewOpenMetricsParser(b, st, func(o *openMetricsParserOptions) {
 			o.SkipCTSeries = skipOMCTSeries
-		}), nil
+		}), err
 	case "application/vnd.google.protobuf":
-		return NewProtobufParser(b, parseClassicHistograms, st), nil
+		return NewProtobufParser(b, parseClassicHistograms, st), err
+	case "text/plain":
+		return NewPromParser(b, st), err
 	default:
-		return NewPromParser(b, st), nil
+		return nil, err
 	}
 }
 

@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"mime"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -473,9 +474,22 @@ func (s ScrapeProtocol) Validate() error {
 	return nil
 }
 
+// HeaderMediaType returns the MIME mediaType for a particular ScrapeProtocol.
+func (s ScrapeProtocol) HeaderMediaType() string {
+	if _, ok := ScrapeProtocolsHeaders[s]; !ok {
+		return ""
+	}
+	mediaType, _, err := mime.ParseMediaType(ScrapeProtocolsHeaders[s])
+	if err != nil {
+		return ""
+	}
+	return mediaType
+}
+
 var (
 	PrometheusProto      ScrapeProtocol = "PrometheusProto"
 	PrometheusText0_0_4  ScrapeProtocol = "PrometheusText0.0.4"
+	PrometheusText1_0_0  ScrapeProtocol = "PrometheusText1.0.0"
 	OpenMetricsText0_0_1 ScrapeProtocol = "OpenMetricsText0.0.1"
 	OpenMetricsText1_0_0 ScrapeProtocol = "OpenMetricsText1.0.0"
 	UTF8NamesHeader      string         = model.EscapingKey + "=" + model.AllowUTF8
@@ -483,6 +497,7 @@ var (
 	ScrapeProtocolsHeaders = map[ScrapeProtocol]string{
 		PrometheusProto:      "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited",
 		PrometheusText0_0_4:  "text/plain;version=0.0.4",
+		PrometheusText1_0_0:  "text/plain;version=1.0.0;escaping=allow-utf-8",
 		OpenMetricsText0_0_1: "application/openmetrics-text;version=0.0.1",
 		OpenMetricsText1_0_0: "application/openmetrics-text;version=1.0.0",
 	}
@@ -492,6 +507,7 @@ var (
 	DefaultScrapeProtocols = []ScrapeProtocol{
 		OpenMetricsText1_0_0,
 		OpenMetricsText0_0_1,
+		PrometheusText1_0_0,
 		PrometheusText0_0_4,
 	}
 
@@ -503,6 +519,7 @@ var (
 		PrometheusProto,
 		OpenMetricsText1_0_0,
 		OpenMetricsText0_0_1,
+		PrometheusText1_0_0,
 		PrometheusText0_0_4,
 	}
 )
@@ -629,8 +646,15 @@ type ScrapeConfig struct {
 	// The protocols to negotiate during a scrape. It tells clients what
 	// protocol are accepted by Prometheus and with what preference (most wanted is first).
 	// Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
-	// OpenMetricsText1.0.0, PrometheusText0.0.4.
+	// OpenMetricsText1.0.0, PrometheusText1.0.0, PrometheusText0.0.4.
 	ScrapeProtocols []ScrapeProtocol `yaml:"scrape_protocols,omitempty"`
+	// The fallback protocol to use if the Content-Type provided by the target
+	// is not provided, blank, or not one of the expected values.
+	// Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
+	// OpenMetricsText1.0.0, PrometheusText1.0.0, PrometheusText0.0.4.
+	ScrapeFallbackProtocol ScrapeProtocol `yaml:"fallback_scrape_protocol,omitempty"`
+	// Whether to scrape a classic histogram that is also exposed as a native histogram.
+	ScrapeClassicHistograms bool `yaml:"scrape_classic_histograms,omitempty"`
 	// Whether to scrape a classic histogram, even if it is also exposed as a native histogram.
 	AlwaysScrapeClassicHistograms bool `yaml:"always_scrape_classic_histograms,omitempty"`
 	// File to which scrape failures are logged.
@@ -778,6 +802,12 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	}
 	if err := validateAcceptScrapeProtocols(c.ScrapeProtocols); err != nil {
 		return fmt.Errorf("%w for scrape config with job name %q", err, c.JobName)
+	}
+
+	if c.ScrapeFallbackProtocol != "" {
+		if err := c.ScrapeFallbackProtocol.Validate(); err != nil {
+			return fmt.Errorf("invalid fallback_scrape_protocol for scrape config with job name %q: %w", c.JobName, err)
+		}
 	}
 
 	switch globalConfig.MetricNameValidationScheme {

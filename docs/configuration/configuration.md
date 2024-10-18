@@ -212,8 +212,14 @@ job_name: <job_name>
 
 # The protocols to negotiate during a scrape with the client.
 # Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
-# OpenMetricsText1.0.0, PrometheusText0.0.4.
+# OpenMetricsText1.0.0, PrometheusText0.0.4, PrometheusText1.0.0.
 [ scrape_protocols: [<string>, ...] | default = <global_config.scrape_protocols> ]
+
+# Fallback protocol to use if a scrape returns blank, unparseable, or otherwise
+# invalid Content-Type.
+# Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
+# OpenMetricsText1.0.0, PrometheusText0.0.4, PrometheusText1.0.0.
+[ fallback_scrape_protocol: <string> ]
 
 # Whether to scrape a classic histogram, even if it is also exposed as a native
 # histogram (has no effect without --enable-feature=native-histograms).
