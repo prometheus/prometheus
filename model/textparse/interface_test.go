@@ -62,12 +62,12 @@ func TestNewParser(t *testing.T) {
 	}{
 		"empty-string": {
 			validateParser: requireNilParser,
-			err:            "non-compliant scraper sending blank Content-Type and no fallback_scrape_protocol specified for target",
+			err:            "non-compliant scrape target sending blank Content-Type and no fallback_scrape_protocol specified for target",
 		},
 		"empty-string-fallback-text-plain": {
 			validateParser:         requirePromParser,
 			fallbackScrapeProtocol: config.PrometheusText0_0_4,
-			err:                    "non-compliant scraper sending blank Content-Type, using fallback_scrape_protocol for target",
+			err:                    "non-compliant scrape target sending blank Content-Type, using fallback_scrape_protocol \"text/plain\"",
 		},
 		"invalid-content-type-1": {
 			contentType:    "invalid/",
@@ -152,13 +152,13 @@ func TestNewParser(t *testing.T) {
 		"some-other-valid-content-type": {
 			contentType:    "text/html",
 			validateParser: requireNilParser,
-			err:            "scraper sending unrecognisable Content-Type '\"text/html\"' and no fallback_scrape_protocol specified for target",
+			err:            "received unsupported Content-Type \"text/html\" and no fallback_scrape_protocol specified for target",
 		},
 		"some-other-valid-content-type-fallback-text-plain": {
 			contentType:            "text/html",
 			validateParser:         requirePromParser,
 			fallbackScrapeProtocol: config.PrometheusText0_0_4,
-			err:                    "Content-Type '\"text/html\"' not recognised mediaType, using fallback_scrape_protocol for target",
+			err:                    "received unsupported Content-Type \"text/html\", using fallback_scrape_protocol \"text/plain\"",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

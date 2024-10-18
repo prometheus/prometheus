@@ -87,19 +87,19 @@ type Parser interface {
 func extractMediaType(contentType, fallbackType string) (string, error) {
 	if contentType == "" {
 		if fallbackType == "" {
-			return "", errors.New("non-compliant scraper sending blank Content-Type and no fallback_scrape_protocol specified for target")
+			return "", errors.New("non-compliant scrape target sending blank Content-Type and no fallback_scrape_protocol specified for target")
 		}
-		return fallbackType, errors.New("non-compliant scraper sending blank Content-Type, using fallback_scrape_protocol for target")
+		return fallbackType, fmt.Errorf("non-compliant scrape target sending blank Content-Type, using fallback_scrape_protocol %q", fallbackType)
 	}
 
 	// We have a contentType, parse it.
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err != nil {
 		if fallbackType == "" {
-			retErr := errors.New("cannot parse Content-Type and no fallback_scrape_protocol for target")
+			retErr := fmt.Errorf("cannot parse Content-Type %q and no fallback_scrape_protocol for target", contentType)
 			return "", errors.Join(retErr, err)
 		}
-		retErr := errors.New("could not parse received Content-Type, using fallback_scrape_protocol for target")
+		retErr := fmt.Errorf("could not parse received Content-Type %q, using fallback_scrape_protocol %q", contentType, fallbackType)
 		return fallbackType, errors.Join(retErr, err)
 	}
 
@@ -111,9 +111,9 @@ func extractMediaType(contentType, fallbackType string) (string, error) {
 	}
 	// We're here because we have no recognised mediaType.
 	if fallbackType == "" {
-		return "", fmt.Errorf("scraper sending unrecognisable Content-Type '%q' and no fallback_scrape_protocol specified for target", contentType)
+		return "", fmt.Errorf("received unsupported Content-Type %q and no fallback_scrape_protocol specified for target", contentType)
 	}
-	return fallbackType, fmt.Errorf("Content-Type '%q' not recognised mediaType, using fallback_scrape_protocol for target", contentType)
+	return fallbackType, fmt.Errorf("received unsupported Content-Type %q, using fallback_scrape_protocol %q", contentType, fallbackType)
 }
 
 // New returns a new parser of the byte slice.
