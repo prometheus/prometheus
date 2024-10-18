@@ -1546,7 +1546,7 @@ type appendErrors struct {
 }
 
 func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
-	p, err := textparse.New(b, contentType, sl.alwaysScrapeClassicHist, sl.scrapeClassicHistograms, sl.enableCTZeroIngestion, sl.symbolTable)
+	p, err := textparse.New(b, contentType, sl.fallbackScrapeProtocol, sl.alwaysScrapeClassicHist, sl.enableCTZeroIngestion, sl.symbolTable)
 	if p == nil {
 		sl.l.Error(
 			"Failed to determine correct type of scrape target.",
