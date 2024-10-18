@@ -1,0 +1,7 @@
+type: S3
+config:
+  bucket: thanos-bucket
+  endpoint: minio:9000
+  access_key: ROOTNAME
+  secret_key: CHANGEME123
+  insecure: true
