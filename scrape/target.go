@@ -323,14 +323,14 @@ type limitAppender struct {
 	i     int
 }
 
-func (app *limitAppender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
-	if !value.IsStaleNaN(v) {
+func (app *limitAppender) Append(ref storage.SeriesRef, lset labels.Labels, s storage.AppendSample, hints *storage.AppendHints) (storage.SeriesRef, error) {
+	if !value.IsStaleNaN(s.F) {
 		app.i++
 		if app.i > app.limit {
 			return 0, errSampleLimit
 		}
 	}
-	ref, err := app.Appender.Append(ref, lset, t, v, nil)
+	ref, err := app.Appender.Append(ref, lset, s, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -343,12 +343,12 @@ type timeLimitAppender struct {
 	maxTime int64
 }
 
-func (app *timeLimitAppender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
-	if t > app.maxTime {
+func (app *timeLimitAppender) Append(ref storage.SeriesRef, lset labels.Labels, s storage.AppendSample, hints *storage.AppendHints) (storage.SeriesRef, error) {
+	if s.T > app.maxTime {
 		return 0, storage.ErrOutOfBounds
 	}
 
-	ref, err := app.Appender.Append(ref, lset, t, v, nil)
+	ref, err := app.Appender.Append(ref, lset, s, nil)
 	if err != nil {
 		return 0, err
 	}

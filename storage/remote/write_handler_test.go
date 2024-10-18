@@ -833,16 +833,16 @@ func (m *mockAppendable) Appender(_ context.Context) storage.Appender {
 	return m
 }
 
-func (m *mockAppendable) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
+func (m *mockAppendable) Append(ref storage.SeriesRef, l labels.Labels, s storage.AppendSample, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	if m.appendSampleErr != nil {
 		return 0, m.appendSampleErr
 	}
 
 	latestTs := m.latestSample[l.Hash()]
-	if t < latestTs {
+	if s.T < latestTs {
 		return 0, storage.ErrOutOfOrderSample
 	}
-	if t == latestTs {
+	if s.T == latestTs {
 		return 0, storage.ErrDuplicateSampleForTimestamp
 	}
 
@@ -853,8 +853,8 @@ func (m *mockAppendable) Append(ref storage.SeriesRef, l labels.Labels, t int64,
 		return 0, tsdb.ErrInvalidSample
 	}
 
-	m.latestSample[l.Hash()] = t
-	m.samples = append(m.samples, mockSample{l, t, v})
+	m.latestSample[l.Hash()] = s.T
+	m.samples = append(m.samples, mockSample{l, s.T, s.F})
 	return 0, nil
 }
 

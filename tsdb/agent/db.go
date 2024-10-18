@@ -783,7 +783,7 @@ type appender struct {
 	floatHistogramSeries []*memSeries
 }
 
-func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
+func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, s storage.AppendSample, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	// series references and chunk references are identical for agent mode.
 	headRef := chunks.HeadSeriesRef(ref)
 
@@ -815,7 +815,7 @@ func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v flo
 	series.Lock()
 	defer series.Unlock()
 
-	if t <= a.minValidTime(series.lastTs) {
+	if s.T <= a.minValidTime(series.lastTs) {
 		a.metrics.totalOutOfOrderSamples.Inc()
 		return 0, storage.ErrOutOfOrderSample
 	}
@@ -823,8 +823,8 @@ func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v flo
 	// NOTE: always modify pendingSamples and sampleSeries together.
 	a.pendingSamples = append(a.pendingSamples, record.RefSample{
 		Ref: series.ref,
-		T:   t,
-		V:   v,
+		T:   s.T,
+		V:   s.F,
 	})
 	a.sampleSeries = append(a.sampleSeries, series)
 

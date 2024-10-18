@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
+	promStorage "github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
@@ -52,7 +53,7 @@ func TestDeriv(t *testing.T) {
 	// https://github.com/prometheus/prometheus/issues/7180
 	for i = 0; i < 15; i++ {
 		jitter := 12 * i % 2
-		a.Append(0, metric, start+interval*i+jitter, 1, nil)
+		a.Append(0, metric, promStorage.AppendSample{T: start + interval*i + jitter, F: 1}, nil)
 	}
 
 	require.NoError(t, a.Commit())

@@ -40,6 +40,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
+
+	promStorage "github.com/prometheus/prometheus/storage"
 )
 
 var scenarios = map[string]struct {
@@ -347,7 +349,7 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 		var err error
 		switch i {
 		case 0, 3:
-			_, err = app.Append(0, l, 100*60*1000, float64(i*100), nil)
+			_, err = app.Append(0, l, promStorage.AppendSample{T: 100 * 60 * 1000, F: float64(i * 100)}, nil)
 			expVec = append(expVec, promql.Sample{
 				T:      100 * 60 * 1000,
 				F:      float64(i * 100),

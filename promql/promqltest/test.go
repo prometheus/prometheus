@@ -586,7 +586,7 @@ func appendSample(a storage.Appender, s promql.Sample, m labels.Labels) error {
 			return err
 		}
 	} else {
-		if _, err := a.Append(0, m, s.T, s.F, nil); err != nil {
+		if _, err := a.Append(0, m, storage.AppendSample{T: s.T, F: s.F}, nil); err != nil {
 			return err
 		}
 	}

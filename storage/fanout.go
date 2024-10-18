@@ -147,14 +147,14 @@ type fanoutAppender struct {
 	secondaries []Appender
 }
 
-func (f *fanoutAppender) Append(ref SeriesRef, l labels.Labels, t int64, v float64, hints *AppendHints) (SeriesRef, error) {
-	ref, err := f.primary.Append(ref, l, t, v, nil)
+func (f *fanoutAppender) Append(ref SeriesRef, l labels.Labels, s AppendSample, hints *AppendHints) (SeriesRef, error) {
+	ref, err := f.primary.Append(ref, l, s, nil)
 	if err != nil {
 		return ref, err
 	}
 
 	for _, appender := range f.secondaries {
-		if _, err := appender.Append(ref, l, t, v, nil); err != nil {
+		if _, err := appender.Append(ref, l, s, nil); err != nil {
 			return 0, err
 		}
 	}

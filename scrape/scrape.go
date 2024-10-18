@@ -1723,7 +1723,7 @@ loop:
 					ref, err = app.AppendHistogram(ref, lset, t, nil, fh)
 				}
 			} else {
-				ref, err = app.Append(ref, lset, t, val, nil)
+				ref, err = app.Append(ref, lset, storage.AppendSample{T: t, F: val}, nil)
 			}
 		}
 
@@ -1835,7 +1835,7 @@ loop:
 	if err == nil {
 		sl.cache.forEachStale(func(lset labels.Labels) bool {
 			// Series no longer exposed, mark it stale.
-			_, err = app.Append(0, lset, defTime, math.Float64frombits(value.StaleNaN), nil)
+			_, err = app.Append(0, lset, storage.AppendSample{T: defTime, F: math.Float64frombits(value.StaleNaN)}, nil)
 			switch {
 			case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
 				// Do not count these in logging, as this is expected if a target
@@ -1990,7 +1990,7 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s []byte, t int64, v
 		lset = sl.reportSampleMutator(b.Labels())
 	}
 
-	ref, err := app.Append(ref, lset, t, v, nil)
+	ref, err := app.Append(ref, lset, storage.AppendSample{T: t, F: v}, nil)
 	switch {
 	case err == nil:
 		if !ok {

@@ -40,14 +40,14 @@ type initAppender struct {
 
 var _ storage.GetRef = &initAppender{}
 
-func (a *initAppender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
+func (a *initAppender) Append(ref storage.SeriesRef, l labels.Labels, s storage.AppendSample, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	if a.app != nil {
-		return a.app.Append(ref, lset, t, v, nil)
+		return a.app.Append(ref, l, s, nil)
 	}
 
-	a.head.initTime(t)
+	a.head.initTime(s.T)
 	a.app = a.head.appender()
-	return a.app.Append(ref, lset, t, v, nil)
+	return a.app.Append(ref, l, s, nil)
 }
 
 func (a *initAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
@@ -328,10 +328,10 @@ type headAppender struct {
 	closed                          bool
 }
 
-func (a *headAppender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
+func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, sample storage.AppendSample, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	// Fail fast if OOO is disabled and the sample is out of bounds.
 	// Otherwise a full check will be done later to decide if the sample is in-order or out-of-order.
-	if a.oooTimeWindow == 0 && t < a.minValidTime {
+	if a.oooTimeWindow == 0 && sample.T < a.minValidTime {
 		a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
 		return 0, storage.ErrOutOfBounds
 	}
@@ -345,23 +345,23 @@ func (a *headAppender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v
 		}
 	}
 
-	if value.IsStaleNaN(v) {
+	if value.IsStaleNaN(sample.F) {
 		// This is not thread safe as we should be holding the lock for "s".
 		// TODO(krajorama): reorganize Commit() to handle samples in append order
 		// not floats first and then histograms. Then we could do this conversion
 		// in commit. This code should move into Commit().
 		switch {
 		case s.lastHistogramValue != nil:
-			return a.AppendHistogram(ref, lset, t, &histogram.Histogram{Sum: v}, nil)
+			return a.AppendHistogram(ref, lset, sample.T, &histogram.Histogram{Sum: sample.F}, nil)
 		case s.lastFloatHistogramValue != nil:
-			return a.AppendHistogram(ref, lset, t, nil, &histogram.FloatHistogram{Sum: v})
+			return a.AppendHistogram(ref, lset, sample.T, nil, &histogram.FloatHistogram{Sum: sample.F})
 		}
 	}
 
 	s.Lock()
 	// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 	// to skip that sample from the WAL and write only in the WBL.
-	_, delta, err := s.appendable(t, v, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+	_, delta, err := s.appendable(sample.T, sample.F, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 	if err == nil {
 		s.pendingCommit = true
 	}
@@ -379,17 +379,17 @@ func (a *headAppender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v
 		return 0, err
 	}
 
-	if t < a.mint {
-		a.mint = t
+	if sample.T < a.mint {
+		a.mint = sample.T
 	}
-	if t > a.maxt {
-		a.maxt = t
+	if sample.T > a.maxt {
+		a.maxt = sample.T
 	}
 
 	a.samples = append(a.samples, record.RefSample{
 		Ref: s.ref,
-		T:   t,
-		V:   v,
+		T:   sample.T,
+		V:   sample.F,
 	})
 	a.sampleSeries = append(a.sampleSeries, s)
 	return storage.SeriesRef(s.ref), nil

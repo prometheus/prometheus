@@ -42,6 +42,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
+	promStorage "github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/teststorage"
@@ -564,9 +565,9 @@ func TestStaleness(t *testing.T) {
 
 		// A time series that has two samples and then goes stale.
 		app := st.Appender(context.Background())
-		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1, nil)
-		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2, nil)
-		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 2000, math.Float64frombits(value.StaleNaN), nil)
+		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), storage.AppendSample{T: 0, F: 1}, nil)
+		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), storage.AppendSample{T: 1000, F: 2}, nil)
+		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), storage.AppendSample{T: 2000, F: math.Float64frombits(value.StaleNaN)}, nil)
 
 		err = app.Commit()
 		require.NoError(t, err)
@@ -940,10 +941,10 @@ func TestNotify(t *testing.T) {
 	})
 
 	app := storage.Appender(context.Background())
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2, nil)
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 2000, 3, nil)
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 5000, 3, nil)
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 6000, 0, nil)
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), promStorage.AppendSample{T: 1000, F: 2}, nil)
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), promStorage.AppendSample{T: 2000, F: 3}, nil)
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), promStorage.AppendSample{T: 5000, F: 3}, nil)
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), promStorage.AppendSample{T: 6000, F: 0}, nil)
 
 	err = app.Commit()
 	require.NoError(t, err)
@@ -1263,8 +1264,8 @@ func TestRuleHealthUpdates(t *testing.T) {
 
 	// A time series that has two samples.
 	app := st.Appender(context.Background())
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1, nil)
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2, nil)
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), storage.AppendSample{T: 0, F: 1}, nil)
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), storage.AppendSample{T: 1000, F: 2}, nil)
 	err = app.Commit()
 	require.NoError(t, err)
 

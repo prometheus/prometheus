@@ -38,11 +38,11 @@ func TestFanout_SelectSorted(t *testing.T) {
 	priStorage := teststorage.New(t)
 	defer priStorage.Close()
 	app1 := priStorage.Appender(ctx)
-	app1.Append(0, inputLabel, 0, 0, nil)
+	app1.Append(0, inputLabel, storage.AppendSample{T: 0, F: 0}, nil)
 	inputTotalSize++
-	app1.Append(0, inputLabel, 1000, 1, nil)
+	app1.Append(0, inputLabel, storage.AppendSample{T: 1000, F: 1}, nil)
 	inputTotalSize++
-	app1.Append(0, inputLabel, 2000, 2, nil)
+	app1.Append(0, inputLabel, storage.AppendSample{T: 2000, F: 2}, nil)
 	inputTotalSize++
 	err := app1.Commit()
 	require.NoError(t, err)
@@ -50,11 +50,11 @@ func TestFanout_SelectSorted(t *testing.T) {
 	remoteStorage1 := teststorage.New(t)
 	defer remoteStorage1.Close()
 	app2 := remoteStorage1.Appender(ctx)
-	app2.Append(0, inputLabel, 3000, 3, nil)
+	app2.Append(0, inputLabel, storage.AppendSample{T: 3000, F: 3}, nil)
 	inputTotalSize++
-	app2.Append(0, inputLabel, 4000, 4, nil)
+	app2.Append(0, inputLabel, storage.AppendSample{T: 4000, F: 4}, nil)
 	inputTotalSize++
-	app2.Append(0, inputLabel, 5000, 5, nil)
+	app2.Append(0, inputLabel, storage.AppendSample{T: 5000, F: 5}, nil)
 	inputTotalSize++
 	err = app2.Commit()
 	require.NoError(t, err)
@@ -63,11 +63,11 @@ func TestFanout_SelectSorted(t *testing.T) {
 	defer remoteStorage2.Close()
 
 	app3 := remoteStorage2.Appender(ctx)
-	app3.Append(0, inputLabel, 6000, 6, nil)
+	app3.Append(0, inputLabel, storage.AppendSample{T: 6000, F: 6}, nil)
 	inputTotalSize++
-	app3.Append(0, inputLabel, 7000, 7, nil)
+	app3.Append(0, inputLabel, storage.AppendSample{T: 7000, F: 7}, nil)
 	inputTotalSize++
-	app3.Append(0, inputLabel, 8000, 8, nil)
+	app3.Append(0, inputLabel, storage.AppendSample{T: 8000, F: 8}, nil)
 	inputTotalSize++
 
 	err = app3.Commit()

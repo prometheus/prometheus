@@ -40,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/rules"
+	"github.com/prometheus/prometheus/storage"
 )
 
 func init() {
@@ -313,11 +314,11 @@ func TestTimeMetrics(t *testing.T) {
 	))
 
 	app := db.Appender(context.Background())
-	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 1, nil)
+	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), storage.AppendSample{T: 1000, F: 1}, nil)
 	require.NoError(t, err)
-	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 2000, 1, nil)
+	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), storage.AppendSample{T: 2000, F: 1}, nil)
 	require.NoError(t, err)
-	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 3000, 1, nil)
+	_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), storage.AppendSample{T: 3000, F: 1}, nil)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 

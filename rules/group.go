@@ -25,6 +25,7 @@ import (
 
 	"go.uber.org/atomic"
 
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -35,7 +36,6 @@ import (
 	"go.opentelemetry.io/otel/codes"
 
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
@@ -564,7 +564,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				if s.H != nil {
 					_, err = app.AppendHistogram(0, s.Metric, s.T, nil, s.H)
 				} else {
-					_, err = app.Append(0, s.Metric, s.T, s.F, nil)
+					_, err = app.Append(0, s.Metric, storage.AppendSample{T: s.T, F: s.F}, nil)
 				}
 
 				if err != nil {
@@ -606,7 +606,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			for metric, lset := range g.seriesInPreviousEval[i] {
 				if _, ok := seriesReturned[metric]; !ok {
 					// Series no longer exposed, mark it stale.
-					_, err = app.Append(0, lset, timestamp.FromTime(ts.Add(-ruleQueryOffset)), math.Float64frombits(value.StaleNaN), nil)
+					_, err = app.Append(0, lset, storage.AppendSample{T: timestamp.FromTime(ts.Add(-ruleQueryOffset)), F: math.Float64frombits(value.StaleNaN)}, nil)
 					unwrappedErr := errors.Unwrap(err)
 					if unwrappedErr == nil {
 						unwrappedErr = err
@@ -663,7 +663,7 @@ func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
 	queryOffset := g.QueryOffset()
 	for _, s := range g.staleSeries {
 		// Rule that produced series no longer configured, mark it stale.
-		_, err := app.Append(0, s, timestamp.FromTime(ts.Add(-queryOffset)), math.Float64frombits(value.StaleNaN), nil)
+		_, err := app.Append(0, s, storage.AppendSample{T: timestamp.FromTime(ts.Add(-queryOffset)), F: math.Float64frombits(value.StaleNaN)}, nil)
 		unwrappedErr := errors.Unwrap(err)
 		if unwrappedErr == nil {
 			unwrappedErr = err
