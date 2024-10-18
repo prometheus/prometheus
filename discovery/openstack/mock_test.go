@@ -31,6 +31,7 @@ type SDMock struct {
 
 // NewSDMock returns a new SDMock.
 func NewSDMock(t *testing.T) *SDMock {
+	t.Helper()
 	return &SDMock{
 		t: t,
 	}
@@ -51,6 +52,7 @@ func (m *SDMock) Setup() {
 const tokenID = "cbc36478b0bd8e67e89469c7749d4127"
 
 func testMethod(t *testing.T, r *http.Request, expected string) {
+	t.Helper()
 	require.Equal(t, expected, r.Method, "Unexpected request method.")
 }
 

@@ -399,6 +399,7 @@ func TestReadClient(t *testing.T) {
 }
 
 func sampledResponseHTTPHandler(t *testing.T) http.HandlerFunc {
+	t.Helper()
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/x-protobuf")
 

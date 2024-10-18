@@ -3699,6 +3699,7 @@ histogram {{sum:4 count:4 buckets:[2 2]}} {{sum:6 count:6 buckets:[3 3]}} {{sum:
 	engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
 
 	verify := func(t *testing.T, qry promql.Query, expected []histogram.FloatHistogram) {
+		t.Helper()
 		res := qry.Exec(context.Background())
 		require.NoError(t, res.Err)
 

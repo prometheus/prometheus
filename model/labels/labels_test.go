@@ -776,6 +776,7 @@ func TestBuilder(t *testing.T) {
 		},
 	} {
 		test := func(t *testing.T, b *Builder) {
+			t.Helper()
 			for _, lbl := range tcase.set {
 				b.Set(lbl.Name, lbl.Value)
 			}

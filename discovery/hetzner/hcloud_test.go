@@ -28,6 +28,7 @@ type hcloudSDTestSuite struct {
 }
 
 func (s *hcloudSDTestSuite) SetupTest(t *testing.T) {
+	t.Helper()
 	s.Mock = NewSDMock(t)
 	s.Mock.Setup()
 

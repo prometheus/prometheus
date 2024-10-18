@@ -464,12 +464,12 @@ func TestPopulateLabels(t *testing.T) {
 	}
 }
 
-func loadConfiguration(t testing.TB, c string) *config.Config {
-	t.Helper()
+func loadConfiguration(tb testing.TB, c string) *config.Config {
+	tb.Helper()
 
 	cfg := &config.Config{}
 	err := yaml.UnmarshalStrict([]byte(c), cfg)
-	require.NoError(t, err, "Unable to load YAML config.")
+	require.NoError(tb, err, "Unable to load YAML config.")
 
 	return cfg
 }
@@ -724,6 +724,7 @@ scrape_configs:
 }
 
 func setupScrapeManager(t *testing.T, honorTimestamps, enableCTZeroIngestion bool) (*collectResultAppender, *Manager) {
+	t.Helper()
 	app := &collectResultAppender{}
 	scrapeManager, err := NewManager(
 		&Options{
@@ -751,6 +752,7 @@ func setupScrapeManager(t *testing.T, honorTimestamps, enableCTZeroIngestion boo
 }
 
 func setupTestServer(t *testing.T, typ string, toWrite []byte) *httptest.Server {
+	t.Helper()
 	once := sync.Once{}
 
 	server := httptest.NewServer(

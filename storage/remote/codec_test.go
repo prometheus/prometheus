@@ -945,6 +945,7 @@ const (
 )
 
 func buildTestChunks(t *testing.T) []prompb.Chunk {
+	t.Helper()
 	startTime := int64(0)
 	chks := make([]prompb.Chunk, 0, numTestChunks)
 

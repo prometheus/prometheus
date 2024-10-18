@@ -26,6 +26,7 @@ type OpenstackSDHypervisorTestSuite struct {
 }
 
 func (s *OpenstackSDHypervisorTestSuite) SetupTest(t *testing.T) {
+	t.Helper()
 	s.Mock = NewSDMock(t)
 	s.Mock.Setup()
 

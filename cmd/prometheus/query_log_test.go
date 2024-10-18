@@ -56,6 +56,7 @@ type queryLogTest struct {
 
 // skip checks if the test is needed and the prerequisites are met.
 func (p *queryLogTest) skip(t *testing.T) {
+	t.Helper()
 	if p.prefix != "" && p.origin == ruleOrigin {
 		t.Skip("changing prefix has no effect on rules")
 	}
@@ -83,6 +84,7 @@ func (p *queryLogTest) waitForPrometheus() error {
 // setQueryLog alters the configuration file to enable or disable the query log,
 // then reloads the configuration if needed.
 func (p *queryLogTest) setQueryLog(t *testing.T, queryLogFile string) {
+	t.Helper()
 	err := p.configFile.Truncate(0)
 	require.NoError(t, err)
 	_, err = p.configFile.Seek(0, 0)
@@ -97,6 +99,7 @@ func (p *queryLogTest) setQueryLog(t *testing.T, queryLogFile string) {
 
 // reloadConfig reloads the configuration using POST.
 func (p *queryLogTest) reloadConfig(t *testing.T) {
+	t.Helper()
 	r, err := http.Post(fmt.Sprintf("http://%s:%d%s/-/reload", p.host, p.port, p.prefix), "text/plain", nil)
 	require.NoError(t, err)
 	require.Equal(t, 200, r.StatusCode)
@@ -104,6 +107,7 @@ func (p *queryLogTest) reloadConfig(t *testing.T) {
 
 // query runs a query according to the test origin.
 func (p *queryLogTest) query(t *testing.T) {
+	t.Helper()
 	switch p.origin {
 	case apiOrigin:
 		r, err := http.Get(fmt.Sprintf(
@@ -197,6 +201,7 @@ func (p *queryLogTest) queryString() string {
 // validateLastQuery checks that the last query in the query log matches the
 // test parameters.
 func (p *queryLogTest) validateLastQuery(t *testing.T, ql []queryLogLine) {
+	t.Helper()
 	q := ql[len(ql)-1]
 	require.Equal(t, p.queryString(), q.Params.Query)
 
@@ -281,6 +286,7 @@ func (p *queryLogTest) exactQueryCount() bool {
 
 // run launches the scenario of this query log test.
 func (p *queryLogTest) run(t *testing.T) {
+	t.Helper()
 	p.skip(t)
 
 	// Setup temporary files for this test.
@@ -438,6 +444,7 @@ type queryLogLine struct {
 
 // readQueryLog unmarshal a json-formatted query log into query log lines.
 func readQueryLog(t *testing.T, path string) []queryLogLine {
+	t.Helper()
 	ql := []queryLogLine{}
 	file, err := os.Open(path)
 	require.NoError(t, err)
