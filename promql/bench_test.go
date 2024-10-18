@@ -72,13 +72,13 @@ func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *promql.Engine, in
 		a := stor.Appender(context.Background())
 		ts := int64(s * interval)
 		for i, metric := range metrics {
-			ref, _ := a.Append(refs[i], metric, ts, float64(s)+float64(i)/float64(len(metrics)))
+			ref, _ := a.Append(refs[i], metric, ts, float64(s)+float64(i)/float64(len(metrics)), nil)
 			refs[i] = ref
 		}
 		// Generating a sparse time series: each label value of "l" will contain data only for
 		// pointsPerSparseSeries points
 		metric := labels.FromStrings("__name__", "sparse", "l", strconv.Itoa(s/pointsPerSparseSeries))
-		_, err := a.Append(0, metric, ts, float64(s)/float64(len(metrics)))
+		_, err := a.Append(0, metric, ts, float64(s)/float64(len(metrics)), nil)
 		if err != nil {
 			return err
 		}

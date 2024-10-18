@@ -506,7 +506,7 @@ func TestBlockQuerier_AgainstHeadWithOpenChunks(t *testing.T) {
 			for _, s := range testData {
 				for _, chk := range s.chunks {
 					for _, sample := range chk {
-						_, err = app.Append(0, labels.FromMap(s.lset), sample.t, sample.f)
+						_, err = app.Append(0, labels.FromMap(s.lset), sample.t, sample.f, nil)
 						require.NoError(t, err)
 					}
 				}
@@ -2686,12 +2686,12 @@ func TestPostingsForMatchers(t *testing.T) {
 	}()
 
 	app := h.Appender(context.Background())
-	app.Append(0, labels.FromStrings("n", "1"), 0, 0)
-	app.Append(0, labels.FromStrings("n", "1", "i", "a"), 0, 0)
-	app.Append(0, labels.FromStrings("n", "1", "i", "b"), 0, 0)
-	app.Append(0, labels.FromStrings("n", "1", "i", "\n"), 0, 0)
-	app.Append(0, labels.FromStrings("n", "2"), 0, 0)
-	app.Append(0, labels.FromStrings("n", "2.5"), 0, 0)
+	app.Append(0, labels.FromStrings("n", "1"), 0, 0, nil)
+	app.Append(0, labels.FromStrings("n", "1", "i", "a"), 0, 0, nil)
+	app.Append(0, labels.FromStrings("n", "1", "i", "b"), 0, 0, nil)
+	app.Append(0, labels.FromStrings("n", "1", "i", "\n"), 0, 0, nil)
+	app.Append(0, labels.FromStrings("n", "2"), 0, 0, nil)
+	app.Append(0, labels.FromStrings("n", "2.5"), 0, 0, nil)
 	require.NoError(t, app.Commit())
 
 	cases := []struct {
@@ -3103,7 +3103,7 @@ func appendSeries(t *testing.T, ctx context.Context, wg *sync.WaitGroup, h *Head
 
 	for i := 0; ctx.Err() == nil; i++ {
 		app := h.Appender(context.Background())
-		_, err := app.Append(0, labels.FromStrings(labels.MetricName, "metric", "seq", strconv.Itoa(i), "always_0", "0"), 0, 0)
+		_, err := app.Append(0, labels.FromStrings(labels.MetricName, "metric", "seq", strconv.Itoa(i), "always_0", "0"), 0, 0, nil)
 		require.NoError(t, err)
 		err = app.Commit()
 		require.NoError(t, err)
@@ -3485,7 +3485,7 @@ func BenchmarkHeadChunkQuerier(b *testing.B) {
 				require.NoError(b, app.Commit())
 				app = db.Appender(context.Background())
 			}
-			_, err := app.Append(0, lbls, int64(i*15)*time.Second.Milliseconds(), float64(i*100))
+			_, err := app.Append(0, lbls, int64(i*15)*time.Second.Milliseconds(), float64(i*100), nil)
 			require.NoError(b, err)
 		}
 	}
@@ -3530,7 +3530,7 @@ func BenchmarkHeadQuerier(b *testing.B) {
 				require.NoError(b, app.Commit())
 				app = db.Appender(context.Background())
 			}
-			_, err := app.Append(0, lbls, int64(i*15)*time.Second.Milliseconds(), float64(i*100))
+			_, err := app.Append(0, lbls, int64(i*15)*time.Second.Milliseconds(), float64(i*100), nil)
 			require.NoError(b, err)
 		}
 	}

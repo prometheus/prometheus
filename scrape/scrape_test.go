@@ -2320,7 +2320,7 @@ type errorAppender struct {
 	collectResultAppender
 }
 
-func (app *errorAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+func (app *errorAppender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	switch lset.Get(model.MetricNameLabel) {
 	case "out_of_order":
 		return 0, storage.ErrOutOfOrderSample
@@ -2329,7 +2329,7 @@ func (app *errorAppender) Append(ref storage.SeriesRef, lset labels.Labels, t in
 	case "out_of_bounds":
 		return 0, storage.ErrOutOfBounds
 	default:
-		return app.collectResultAppender.Append(ref, lset, t, v)
+		return app.collectResultAppender.Append(ref, lset, t, v, nil)
 	}
 }
 
