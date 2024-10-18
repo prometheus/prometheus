@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: data
+  namespace: prombench-{{ .PR_NUMBER }}
+data:
+  minio-config.yaml: |
+    type: S3
+    config:
+      bucket: ${BUCKET_KEY}
+      endpoint: minio:9000
+      access_key: ${ACCESS_KEY}  
+      secret_key: ${SECRET_KEY} 
+      insecure: true
