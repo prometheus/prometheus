@@ -87,19 +87,19 @@ type Parser interface {
 func extractMediaType(contentType, fallbackType string) (string, error) {
 	if contentType == "" {
 		if fallbackType == "" {
-			return "", errors.New("Non-compliant scraper sending blank Content-Type and no fallback_scrape_protocol specified for target")
+			return "", errors.New("non-compliant scraper sending blank Content-Type and no fallback_scrape_protocol specified for target")
 		}
-		return fallbackType, errors.New("Non-compliant scraper sending blank Content-Type, using fallback_scrape_protocol for target")
+		return fallbackType, errors.New("non-compliant scraper sending blank Content-Type, using fallback_scrape_protocol for target")
 	}
 
 	// We have a contentType, parse it.
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err != nil {
 		if fallbackType == "" {
-			retErr := errors.New("Cannot parse Content-Type and no fallback_scrape_protocol for target")
+			retErr := errors.New("cannot parse Content-Type and no fallback_scrape_protocol for target")
 			return "", errors.Join(retErr, err)
 		}
-		retErr := errors.New("Could not parse received Content-Type, using fallback_scrape_protocol for target")
+		retErr := errors.New("could not parse received Content-Type, using fallback_scrape_protocol for target")
 		return fallbackType, errors.Join(retErr, err)
 	}
 
@@ -111,7 +111,7 @@ func extractMediaType(contentType, fallbackType string) (string, error) {
 	}
 	// We're here because we have no recognised mediaType.
 	if fallbackType == "" {
-		return "", fmt.Errorf("Scraper sending unrecognisable Content-Type '%q' and no fallback_scrape_protocol specified for target", contentType)
+		return "", fmt.Errorf("scraper sending unrecognisable Content-Type '%q' and no fallback_scrape_protocol specified for target", contentType)
 	}
 	return fallbackType, fmt.Errorf("Content-Type '%q' not recognised mediaType, using fallback_scrape_protocol for target", contentType)
 }
