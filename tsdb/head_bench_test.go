@@ -20,7 +20,6 @@ import (
 	"math/rand"
 	"strconv"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
@@ -89,7 +88,8 @@ func BenchmarkHeadStripeSeriesCreate_PreCreationFailure(b *testing.B) {
 func BenchmarkHead_WalCommit(b *testing.B) {
 	seriesCounts := []int{100, 1000, 10000}
 	series := genSeries(10000, 10, 0, 0)
-	histograms := genHistogramSeries(10000, 10, 0, 119, 1, true)
+	histograms := genHistogramSeries(10000, 10, 0, 119, 1, false)
+	floatHistograms := genHistogramSeries(10000, 10, 0, 119, 1, true)
 
 	for _, seriesCount := range seriesCounts {
 		b.Run(fmt.Sprintf("%d series", seriesCount), func(b *testing.B) {
@@ -112,10 +112,30 @@ func BenchmarkHead_WalCommit(b *testing.B) {
 							}
 						}
 
+						for _, s := range floatHistograms[:seriesCount] {
+							var ref storage.SeriesRef
+							for sampleIndex := int64(0); sampleIndex < samplesPerAppend; sampleIndex++ {
+
+								ref, err = app.AppendHistogram(ref, s.Labels(), ts+sampleIndex, nil, nil)
+								if err != nil {
+									return err
+								}
+
+								_, err = app.AppendExemplar(ref, s.Labels(), exemplar.Exemplar{
+									Labels: labels.FromStrings("trace_id", strconv.Itoa(rand.Int())),
+									Value:  rand.Float64(),
+									Ts:     ts,
+								})
+								if err != nil {
+									return err
+								}
+							}
+						}
+
 						for _, s := range histograms[:seriesCount] {
 							var ref storage.SeriesRef
 							for sampleIndex := int64(0); sampleIndex < samplesPerAppend; sampleIndex++ {
-								ref, err = app.AppendHistogram(ref, s.Labels(), ts+sampleIndex, float64(ts+sampleIndex))
+								ref, err = app.AppendHistogram(ref, s.Labels(), ts+sampleIndex, nil, nil)
 								if err != nil {
 									return err
 								}
