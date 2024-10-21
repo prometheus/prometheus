@@ -680,7 +680,7 @@ func createHead(tb testing.TB, w *wlog.WL, series []storage.Series, chunkDir str
 			switch typ {
 			case chunkenc.ValFloat:
 				t, v := it.At()
-				ref, err = app.Append(ref, lset, t, v)
+				ref, err = app.Append(ref, lset, t, v, nil)
 			case chunkenc.ValHistogram:
 				t, h := it.AtHistogram(nil)
 				ref, err = app.AppendHistogram(ref, lset, t, h, nil)
@@ -726,7 +726,7 @@ func createHeadWithOOOSamples(tb testing.TB, w *wlog.WL, series []storage.Series
 				os = append(os, sample{t: t, f: v})
 				continue
 			}
-			ref, err = app.Append(ref, lset, t, v)
+			ref, err = app.Append(ref, lset, t, v, nil)
 			require.NoError(tb, err)
 		}
 		require.NoError(tb, it.Err())
@@ -744,7 +744,7 @@ func createHeadWithOOOSamples(tb testing.TB, w *wlog.WL, series []storage.Series
 	for i, lset := range oooSampleLabels {
 		ref := storage.SeriesRef(0)
 		for _, sample := range oooSamples[i] {
-			ref, err = app.Append(ref, lset, sample.T(), sample.F())
+			ref, err = app.Append(ref, lset, sample.T(), sample.F(), nil)
 			require.NoError(tb, err)
 			oooSamplesAppended++
 		}

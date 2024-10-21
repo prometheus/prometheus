@@ -783,7 +783,7 @@ type appender struct {
 	floatHistogramSeries []*memSeries
 }
 
-func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	// series references and chunk references are identical for agent mode.
 	headRef := chunks.HeadSeriesRef(ref)
 

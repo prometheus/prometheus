@@ -122,7 +122,7 @@ func BenchmarkHeadAppender_Append_Commit_ExistingSeries(b *testing.B) {
 						for _, s := range series[:seriesCount] {
 							var ref storage.SeriesRef
 							for sampleIndex := int64(0); sampleIndex < samplesPerAppend; sampleIndex++ {
-								ref, err = app.Append(ref, s.Labels(), ts+sampleIndex, float64(ts+sampleIndex))
+								ref, err = app.Append(ref, s.Labels(), ts+sampleIndex, float64(ts+sampleIndex), nil)
 								if err != nil {
 									return err
 								}
@@ -536,7 +536,7 @@ func TestHead_HighConcurrencyReadAndWrite(t *testing.T) {
 				app := head.Appender(ctx)
 				for i := 0; i < len(workerLabelSets); i++ {
 					// We also use the timestamp as the sample value.
-					_, err := app.Append(0, workerLabelSets[i], int64(ts), float64(ts))
+					_, err := app.Append(0, workerLabelSets[i], int64(ts), float64(ts), nil)
 					if err != nil {
 						return false, fmt.Errorf("Error when appending to head: %w", err)
 					}
@@ -746,14 +746,14 @@ func TestHead_WALMultiRef(t *testing.T) {
 	require.NoError(t, head.Init(0))
 
 	app := head.Appender(context.Background())
-	ref1, err := app.Append(0, labels.FromStrings("foo", "bar"), 100, 1)
+	ref1, err := app.Append(0, labels.FromStrings("foo", "bar"), 100, 1, nil)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
 
 	// Add another sample outside chunk range to mmap a chunk.
 	app = head.Appender(context.Background())
-	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 1500, 2)
+	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 1500, 2, nil)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
@@ -761,14 +761,14 @@ func TestHead_WALMultiRef(t *testing.T) {
 	require.NoError(t, head.Truncate(1600))
 
 	app = head.Appender(context.Background())
-	ref2, err := app.Append(0, labels.FromStrings("foo", "bar"), 1700, 3)
+	ref2, err := app.Append(0, labels.FromStrings("foo", "bar"), 1700, 3, nil)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	require.Equal(t, 3.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
 
 	// Add another sample outside chunk range to mmap a chunk.
 	app = head.Appender(context.Background())
-	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 2000, 4)
+	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 2000, 4, nil)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	require.Equal(t, 4.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
@@ -819,7 +819,7 @@ func TestHead_ActiveAppenders(t *testing.T) {
 
 	// Now rollback with one sample.
 	app = head.Appender(context.Background())
-	_, err := app.Append(0, labels.FromStrings("foo", "bar"), 100, 1)
+	_, err := app.Append(0, labels.FromStrings("foo", "bar"), 100, 1, nil)
 	require.NoError(t, err)
 	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
 	require.NoError(t, app.Rollback())
@@ -827,7 +827,7 @@ func TestHead_ActiveAppenders(t *testing.T) {
 
 	// Now commit with one sample.
 	app = head.Appender(context.Background())
-	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 100, 1)
+	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 100, 1, nil)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
@@ -1313,7 +1313,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 
 				app := head.Appender(context.Background())
 				for _, smpl := range smplsAll {
-					_, err := app.Append(0, lblsDefault, smpl.t, smpl.f)
+					_, err := app.Append(0, lblsDefault, smpl.t, smpl.f, nil)
 					require.NoError(t, err)
 				}
 				require.NoError(t, app.Commit())
@@ -1326,7 +1326,7 @@ func TestHeadDeleteSimple(t *testing.T) {
 				// Add more samples.
 				app = head.Appender(context.Background())
 				for _, smpl := range c.addSamples {
-					_, err := app.Append(0, lblsDefault, smpl.t, smpl.f)
+					_, err := app.Append(0, lblsDefault, smpl.t, smpl.f, nil)
 					require.NoError(t, err)
 				}
 				require.NoError(t, app.Commit())
@@ -1397,7 +1397,7 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	smpls := make([]float64, numSamples)
 	for i := int64(0); i < numSamples; i++ {
 		smpls[i] = rand.Float64()
-		_, err := app.Append(0, labels.FromStrings("a", "b"), i, smpls[i])
+		_, err := app.Append(0, labels.FromStrings("a", "b"), i, smpls[i], nil)
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
@@ -1418,7 +1418,7 @@ func TestDeleteUntilCurMax(t *testing.T) {
 
 	// Add again and test for presence.
 	app = hb.Appender(context.Background())
-	_, err = app.Append(0, labels.FromStrings("a", "b"), 11, 1)
+	_, err = app.Append(0, labels.FromStrings("a", "b"), 11, 1, nil)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	q, err = NewBlockQuerier(hb, 0, 100000)
@@ -1444,7 +1444,7 @@ func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
 
 	for i := 0; i < numSamples; i++ {
 		app := hb.Appender(context.Background())
-		_, err := app.Append(0, labels.FromStrings("a", "b"), int64(i), 0)
+		_, err := app.Append(0, labels.FromStrings("a", "b"), int64(i), 0, nil)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 	}
@@ -1544,7 +1544,7 @@ func TestDelete_e2e(t *testing.T) {
 		ts := rand.Int63n(300)
 		for i := 0; i < numDatapoints; i++ {
 			v := rand.Float64()
-			_, err := app.Append(0, ls, ts, v)
+			_, err := app.Append(0, ls, ts, v, nil)
 			require.NoError(t, err)
 			series = append(series, sample{ts, v, nil, nil})
 			ts += rand.Int63n(timeInterval) + 1
@@ -2027,7 +2027,7 @@ func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
 
 	app := h.appender()
 	lset := labels.FromStrings("a", "1")
-	_, err := app.Append(0, lset, 2100, 1)
+	_, err := app.Append(0, lset, 2100, 1, nil)
 	require.NoError(t, err)
 
 	require.NoError(t, h.Truncate(2000))
@@ -2057,7 +2057,7 @@ func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
 
 	app := h.appender()
 	lset := labels.FromStrings("a", "1")
-	_, err := app.Append(0, lset, 2100, 1)
+	_, err := app.Append(0, lset, 2100, 1, nil)
 	require.NoError(t, err)
 
 	require.NoError(t, h.Truncate(2000))
@@ -2087,7 +2087,7 @@ func TestHead_LogRollback(t *testing.T) {
 			}()
 
 			app := h.Appender(context.Background())
-			_, err := app.Append(0, labels.FromStrings("a", "b"), 1, 2)
+			_, err := app.Append(0, labels.FromStrings("a", "b"), 1, 2, nil)
 			require.NoError(t, err)
 
 			require.NoError(t, app.Rollback())
@@ -2117,7 +2117,7 @@ func TestHead_ReturnsSortedLabelValues(t *testing.T) {
 				"__name__", fmt.Sprintf("metric_%d", i),
 				"label", fmt.Sprintf("value_%d", j),
 			)
-			_, err := app.Append(0, lset, 2100, 1)
+			_, err := app.Append(0, lset, 2100, 1, nil)
 			require.NoError(t, err)
 		}
 	}
@@ -2382,7 +2382,7 @@ func TestNewWalSegmentOnTruncate(t *testing.T) {
 	}()
 	add := func(ts int64) {
 		app := h.Appender(context.Background())
-		_, err := app.Append(0, labels.FromStrings("a", "b"), ts, 0)
+		_, err := app.Append(0, labels.FromStrings("a", "b"), ts, 0, nil)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 	}
@@ -2413,7 +2413,7 @@ func TestAddDuplicateLabelName(t *testing.T) {
 
 	add := func(labels labels.Labels, labelName string) {
 		app := h.Appender(context.Background())
-		_, err := app.Append(0, labels, 0, 0)
+		_, err := app.Append(0, labels, 0, 0, nil)
 		require.EqualError(t, err, fmt.Sprintf(`label name "%s" is not unique: invalid sample`, labelName))
 	}
 
@@ -2477,7 +2477,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 				app = a
 			}
 
-			_, err := app.Append(0, labels.FromStrings("foo", "bar"), int64(i), float64(i))
+			_, err := app.Append(0, labels.FromStrings("foo", "bar"), int64(i), float64(i), nil)
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 			h.mmapHeadChunks()
@@ -2506,7 +2506,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 	// Cleanup appendIDs below 500.
 	app := hb.appender()
 	app.cleanupAppendIDsBelow = 500
-	_, err := app.Append(0, labels.FromStrings("foo", "bar"), int64(i), float64(i))
+	_, err := app.Append(0, labels.FromStrings("foo", "bar"), int64(i), float64(i), nil)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	i++
@@ -2525,7 +2525,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 	// the only thing with appendIDs.
 	app = hb.appender()
 	app.cleanupAppendIDsBelow = 1000
-	_, err = app.Append(0, labels.FromStrings("foo", "bar"), int64(i), float64(i))
+	_, err = app.Append(0, labels.FromStrings("foo", "bar"), int64(i), float64(i), nil)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	require.Equal(t, 999, lastValue(hb, 998))
@@ -2539,7 +2539,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 	// Cleanup appendIDs below 1001, but with a rollback.
 	app = hb.appender()
 	app.cleanupAppendIDsBelow = 1001
-	_, err = app.Append(0, labels.FromStrings("foo", "bar"), int64(i), float64(i))
+	_, err = app.Append(0, labels.FromStrings("foo", "bar"), int64(i), float64(i), nil)
 	require.NoError(t, err)
 	require.NoError(t, app.Rollback())
 	require.Equal(t, 1000, lastValue(hb, 999))
@@ -2575,7 +2575,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 	// Cleanup appendIDs below 1000, which means the sample buffer is
 	// the only thing with appendIDs.
 	app = hb.appender()
-	_, err = app.Append(0, labels.FromStrings("foo", "bar"), int64(i), float64(i))
+	_, err = app.Append(0, labels.FromStrings("foo", "bar"), int64(i), float64(i), nil)
 	i++
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
@@ -2588,7 +2588,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 
 	// Cleanup appendIDs below 1002, but with a rollback.
 	app = hb.appender()
-	_, err = app.Append(0, labels.FromStrings("foo", "bar"), int64(i), float64(i))
+	_, err = app.Append(0, labels.FromStrings("foo", "bar"), int64(i), float64(i), nil)
 	require.NoError(t, err)
 	require.NoError(t, app.Rollback())
 	require.Equal(t, 1001, lastValue(hb, 999))
@@ -2610,21 +2610,21 @@ func TestIsolationRollback(t *testing.T) {
 	}()
 
 	app := hb.Appender(context.Background())
-	_, err := app.Append(0, labels.FromStrings("foo", "bar"), 0, 0)
+	_, err := app.Append(0, labels.FromStrings("foo", "bar"), 0, 0, nil)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	require.Equal(t, uint64(1), hb.iso.lowWatermark())
 
 	app = hb.Appender(context.Background())
-	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 1, 1)
+	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 1, 1, nil)
 	require.NoError(t, err)
-	_, err = app.Append(0, labels.FromStrings("foo", "bar", "foo", "baz"), 2, 2)
+	_, err = app.Append(0, labels.FromStrings("foo", "bar", "foo", "baz"), 2, 2, nil)
 	require.Error(t, err)
 	require.NoError(t, app.Rollback())
 	require.Equal(t, uint64(2), hb.iso.lowWatermark())
 
 	app = hb.Appender(context.Background())
-	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 3, 3)
+	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 3, 3, nil)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	require.Equal(t, uint64(3), hb.iso.lowWatermark(), "Low watermark should proceed to 3 even if append #2 was rolled back.")
@@ -2641,18 +2641,18 @@ func TestIsolationLowWatermarkMonotonous(t *testing.T) {
 	}()
 
 	app1 := hb.Appender(context.Background())
-	_, err := app1.Append(0, labels.FromStrings("foo", "bar"), 0, 0)
+	_, err := app1.Append(0, labels.FromStrings("foo", "bar"), 0, 0, nil)
 	require.NoError(t, err)
 	require.NoError(t, app1.Commit())
 	require.Equal(t, uint64(1), hb.iso.lowWatermark(), "Low watermark should by 1 after 1st append.")
 
 	app1 = hb.Appender(context.Background())
-	_, err = app1.Append(0, labels.FromStrings("foo", "bar"), 1, 1)
+	_, err = app1.Append(0, labels.FromStrings("foo", "bar"), 1, 1, nil)
 	require.NoError(t, err)
 	require.Equal(t, uint64(2), hb.iso.lowWatermark(), "Low watermark should be two, even if append is not committed yet.")
 
 	app2 := hb.Appender(context.Background())
-	_, err = app2.Append(0, labels.FromStrings("foo", "baz"), 1, 1)
+	_, err = app2.Append(0, labels.FromStrings("foo", "baz"), 1, 1, nil)
 	require.NoError(t, err)
 	require.NoError(t, app2.Commit())
 	require.Equal(t, uint64(2), hb.iso.lowWatermark(), "Low watermark should stay two because app1 is not committed yet.")
@@ -2712,7 +2712,7 @@ func TestIsolationWithoutAdd(t *testing.T) {
 	require.NoError(t, app.Commit())
 
 	app = hb.Appender(context.Background())
-	_, err := app.Append(0, labels.FromStrings("foo", "baz"), 1, 1)
+	_, err := app.Append(0, labels.FromStrings("foo", "baz"), 1, 1, nil)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -2835,10 +2835,10 @@ func testHeadSeriesChunkRace(t *testing.T) {
 	require.NoError(t, h.Init(0))
 	app := h.Appender(context.Background())
 
-	s2, err := app.Append(0, labels.FromStrings("foo2", "bar"), 5, 0)
+	s2, err := app.Append(0, labels.FromStrings("foo2", "bar"), 5, 0, nil)
 	require.NoError(t, err)
 	for ts := int64(6); ts < 11; ts++ {
-		_, err = app.Append(s2, labels.EmptyLabels(), ts, 0)
+		_, err = app.Append(s2, labels.EmptyLabels(), ts, 0, nil)
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
@@ -2886,7 +2886,7 @@ func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 
 	app := head.Appender(ctx)
 	for i, name := range expectedLabelNames {
-		_, err := app.Append(0, labels.FromStrings(name, expectedLabelValues[i]), seriesTimestamps[i], 0)
+		_, err := app.Append(0, labels.FromStrings(name, expectedLabelValues[i]), seriesTimestamps[i], 0, nil)
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
@@ -2934,7 +2934,7 @@ func TestHeadLabelValuesWithMatchers(t *testing.T) {
 		_, err := app.Append(0, labels.FromStrings(
 			"tens", fmt.Sprintf("value%d", i/10),
 			"unique", fmt.Sprintf("value%d", i),
-		), 100, 0)
+		), 100, 0, nil)
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
@@ -3009,14 +3009,14 @@ func TestHeadLabelNamesWithMatchers(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		_, err := app.Append(0, labels.FromStrings(
 			"unique", fmt.Sprintf("value%d", i),
-		), 100, 0)
+		), 100, 0, nil)
 		require.NoError(t, err)
 
 		if i%10 == 0 {
 			_, err := app.Append(0, labels.FromStrings(
 				"tens", fmt.Sprintf("value%d", i/10),
 				"unique", fmt.Sprintf("value%d", i),
-			), 100, 0)
+			), 100, 0, nil)
 			require.NoError(t, err)
 		}
 
@@ -3025,7 +3025,7 @@ func TestHeadLabelNamesWithMatchers(t *testing.T) {
 				"tens", fmt.Sprintf("value%d", i/10),
 				"twenties", fmt.Sprintf("value%d", i/20),
 				"unique", fmt.Sprintf("value%d", i),
-			), 100, 0)
+			), 100, 0, nil)
 			require.NoError(t, err)
 		}
 	}
@@ -3080,7 +3080,7 @@ func TestHeadShardedPostings(t *testing.T) {
 	// Append some series.
 	app := head.Appender(ctx)
 	for i := 0; i < 100; i++ {
-		_, err := app.Append(0, labels.FromStrings("unique", fmt.Sprintf("value%d", i), "const", "1"), 100, 0)
+		_, err := app.Append(0, labels.FromStrings("unique", fmt.Sprintf("value%d", i), "const", "1"), 100, 0, nil)
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
@@ -3139,28 +3139,28 @@ func TestErrReuseAppender(t *testing.T) {
 	}()
 
 	app := head.Appender(context.Background())
-	_, err := app.Append(0, labels.FromStrings("test", "test"), 0, 0)
+	_, err := app.Append(0, labels.FromStrings("test", "test"), 0, 0, nil)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	require.Error(t, app.Commit())
 	require.Error(t, app.Rollback())
 
 	app = head.Appender(context.Background())
-	_, err = app.Append(0, labels.FromStrings("test", "test"), 1, 0)
+	_, err = app.Append(0, labels.FromStrings("test", "test"), 1, 0, nil)
 	require.NoError(t, err)
 	require.NoError(t, app.Rollback())
 	require.Error(t, app.Rollback())
 	require.Error(t, app.Commit())
 
 	app = head.Appender(context.Background())
-	_, err = app.Append(0, labels.FromStrings("test", "test"), 2, 0)
+	_, err = app.Append(0, labels.FromStrings("test", "test"), 2, 0, nil)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	require.Error(t, app.Rollback())
 	require.Error(t, app.Commit())
 
 	app = head.Appender(context.Background())
-	_, err = app.Append(0, labels.FromStrings("test", "test"), 3, 0)
+	_, err = app.Append(0, labels.FromStrings("test", "test"), 3, 0, nil)
 	require.NoError(t, err)
 	require.NoError(t, app.Rollback())
 	require.Error(t, app.Commit())
@@ -3172,11 +3172,11 @@ func TestHeadMintAfterTruncation(t *testing.T) {
 	head, _ := newTestHead(t, chunkRange, wlog.CompressionNone, false)
 
 	app := head.Appender(context.Background())
-	_, err := app.Append(0, labels.FromStrings("a", "b"), 100, 100)
+	_, err := app.Append(0, labels.FromStrings("a", "b"), 100, 100, nil)
 	require.NoError(t, err)
-	_, err = app.Append(0, labels.FromStrings("a", "b"), 4000, 200)
+	_, err = app.Append(0, labels.FromStrings("a", "b"), 4000, 200, nil)
 	require.NoError(t, err)
-	_, err = app.Append(0, labels.FromStrings("a", "b"), 8000, 300)
+	_, err = app.Append(0, labels.FromStrings("a", "b"), 8000, 300, nil)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -3210,7 +3210,7 @@ func TestHeadExemplars(t *testing.T) {
 	// It is perfectly valid to add Exemplars before the current start time -
 	// histogram buckets that haven't been update in a while could still be
 	// exported exemplars from an hour ago.
-	ref, err := app.Append(0, labels.FromStrings("a", "b"), 100, 100)
+	ref, err := app.Append(0, labels.FromStrings("a", "b"), 100, 100, nil)
 	require.NoError(t, err)
 	_, err = app.AppendExemplar(ref, l, exemplar.Exemplar{
 		Labels: l,
@@ -3238,7 +3238,7 @@ func BenchmarkHeadLabelValuesWithMatchers(b *testing.B) {
 			"a_unique", fmt.Sprintf("value%d", i),
 			"b_tens", fmt.Sprintf("value%d", i/(metricCount/10)),
 			"c_ninety", fmt.Sprintf("value%d", i/(metricCount/10)/9), // "0" for the first 90%, then "1"
-		), 100, 0)
+		), 100, 0, nil)
 		require.NoError(b, err)
 	}
 	require.NoError(b, app.Commit())
@@ -3339,7 +3339,7 @@ func TestChunkNotFoundHeadGCRace(t *testing.T) {
 	// 7 chunks with 15s scrape interval.
 	for i := int64(0); i <= 120*7; i++ {
 		ts := i * DefaultBlockDuration / (4 * 120)
-		ref, err = app.Append(ref, labels.FromStrings("a", "b"), ts, float64(i))
+		ref, err = app.Append(ref, labels.FromStrings("a", "b"), ts, float64(i), nil)
 		require.NoError(t, err)
 		maxt = ts
 	}
@@ -3406,7 +3406,7 @@ func TestDataMissingOnQueryDuringCompaction(t *testing.T) {
 	// 7 chunks with 15s scrape interval.
 	for i := int64(0); i <= 120*7; i++ {
 		ts := i * DefaultBlockDuration / (4 * 120)
-		ref, err = app.Append(ref, labels.FromStrings("a", "b"), ts, float64(i))
+		ref, err = app.Append(ref, labels.FromStrings("a", "b"), ts, float64(i), nil)
 		require.NoError(t, err)
 		maxt = ts
 		expSamples = append(expSamples, sample{ts, float64(i), nil, nil})
@@ -3448,7 +3448,7 @@ func TestIsQuerierCollidingWithTruncation(t *testing.T) {
 	)
 
 	for i := int64(0); i <= 3000; i++ {
-		ref, err = app.Append(ref, labels.FromStrings("a", "b"), i, float64(i))
+		ref, err = app.Append(ref, labels.FromStrings("a", "b"), i, float64(i), nil)
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
@@ -3496,7 +3496,7 @@ func TestWaitForPendingReadersInTimeRange(t *testing.T) {
 
 	for i := int64(0); i <= 3000; i++ {
 		ts := sampleTs(i)
-		ref, err = app.Append(ref, labels.FromStrings("a", "b"), ts, float64(i))
+		ref, err = app.Append(ref, labels.FromStrings("a", "b"), ts, float64(i), nil)
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
@@ -3611,12 +3611,12 @@ func testQueryOOOHeadDuringTruncate(t *testing.T, makeQuerier func(db *DB, minT,
 	)
 	// Add in-order samples at every 100ms starting at 0ms.
 	for i := int64(0); i < maxT; i += 100 {
-		_, err := app.Append(ref, labels.FromStrings("a", "b"), i, 0)
+		_, err := app.Append(ref, labels.FromStrings("a", "b"), i, 0, nil)
 		require.NoError(t, err)
 	}
 	// Add out-of-order samples at every 100ms starting at 50ms.
 	for i := int64(50); i < maxT; i += 100 {
-		_, err := app.Append(ref, labels.FromStrings("a", "b"), i, 0)
+		_, err := app.Append(ref, labels.FromStrings("a", "b"), i, 0, nil)
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
@@ -3875,7 +3875,7 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 				// Add some float.
 				for i := 0; i < 10; i++ {
 					ts++
-					_, err := app.Append(0, s2, ts, float64(ts))
+					_, err := app.Append(0, s2, ts, float64(ts), nil)
 					require.NoError(t, err)
 					exp[k2] = append(exp[k2], sample{t: ts, f: float64(ts)})
 				}
@@ -3911,7 +3911,7 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 				// Add some float.
 				for i := 0; i < 10; i++ {
 					ts++
-					_, err := app.Append(0, s2, ts, float64(ts))
+					_, err := app.Append(0, s2, ts, float64(ts), nil)
 					require.NoError(t, err)
 					exp[k2] = append(exp[k2], sample{t: ts, f: float64(ts)})
 				}
@@ -4075,7 +4075,7 @@ func TestChunkSnapshot(t *testing.T) {
 			for ts := int64(1); ts <= 240; ts++ {
 				val := rand.Float64()
 				expSeries[lblStr] = append(expSeries[lblStr], sample{ts, val, nil, nil})
-				ref, err := app.Append(0, lbls, ts, val)
+				ref, err := app.Append(0, lbls, ts, val, nil)
 				require.NoError(t, err)
 
 				hist := histograms[int(ts)]
@@ -4149,7 +4149,7 @@ func TestChunkSnapshot(t *testing.T) {
 			for ts := int64(241); ts <= 480; ts++ {
 				val := rand.Float64()
 				expSeries[lblStr] = append(expSeries[lblStr], sample{ts, val, nil, nil})
-				ref, err := app.Append(0, lbls, ts, val)
+				ref, err := app.Append(0, lbls, ts, val, nil)
 				require.NoError(t, err)
 
 				hist := histograms[int(ts)]
@@ -4250,7 +4250,7 @@ func TestSnapshotError(t *testing.T) {
 	// Add a sample.
 	app := head.Appender(context.Background())
 	lbls := labels.FromStrings("foo", "bar")
-	_, err := app.Append(0, lbls, 99, 99)
+	_, err := app.Append(0, lbls, 99, 99, nil)
 	require.NoError(t, err)
 
 	// Add histograms
@@ -4499,7 +4499,7 @@ func testHistogramStaleSampleHelper(t *testing.T, floatHistogram bool) {
 		require.NoError(t, err)
 	}
 	// +1 so that delta-of-delta is not 0.
-	_, err := app.Append(0, l, 100*int64(len(expHistograms))+1, math.Float64frombits(value.StaleNaN))
+	_, err := app.Append(0, l, 100*int64(len(expHistograms))+1, math.Float64frombits(value.StaleNaN), nil)
 	require.NoError(t, err)
 	if floatHistogram {
 		expHistograms = append(expHistograms, timedHistogram{t: 100*int64(len(expHistograms)) + 1, fh: &histogram.FloatHistogram{Sum: math.Float64frombits(value.StaleNaN)}})
@@ -4533,7 +4533,7 @@ func testHistogramStaleSampleHelper(t *testing.T, floatHistogram bool) {
 
 	app = head.Appender(context.Background())
 	// +1 so that delta-of-delta is not 0.
-	_, err = app.Append(0, l, 100*int64(len(expHistograms))+1, math.Float64frombits(value.StaleNaN))
+	_, err = app.Append(0, l, 100*int64(len(expHistograms))+1, math.Float64frombits(value.StaleNaN), nil)
 	require.NoError(t, err)
 	if floatHistogram {
 		expHistograms = append(expHistograms, timedHistogram{t: 100*int64(len(expHistograms)) + 1, fh: &histogram.FloatHistogram{Sum: math.Float64frombits(value.StaleNaN)}})
@@ -4951,7 +4951,7 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 			if s.H() != nil || s.FH() != nil {
 				_, err = app.AppendHistogram(0, lbls, s.T(), s.H(), s.FH())
 			} else {
-				_, err = app.Append(0, lbls, s.T(), s.F())
+				_, err = app.Append(0, lbls, s.T(), s.F(), nil)
 			}
 			require.Equal(t, a.err, err)
 		}
@@ -5074,7 +5074,7 @@ func TestChunkSnapshotTakenAfterIncompleteSnapshot(t *testing.T) {
 
 	// Add some samples for the snapshot.
 	app := head.Appender(context.Background())
-	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 10, 10)
+	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 10, 10, nil)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -5290,7 +5290,7 @@ func TestHeadInit_DiscardChunksWithUnsupportedEncoding(t *testing.T) {
 	var seriesRef storage.SeriesRef
 	var err error
 	for i := 0; i < 400; i++ {
-		seriesRef, err = app.Append(0, seriesLabels, int64(i), float64(i))
+		seriesRef, err = app.Append(0, seriesLabels, int64(i), float64(i), nil)
 		require.NoError(t, err)
 	}
 
@@ -5303,7 +5303,7 @@ func TestHeadInit_DiscardChunksWithUnsupportedEncoding(t *testing.T) {
 
 	app = h.Appender(ctx)
 	for i := 700; i < 1200; i++ {
-		_, err := app.Append(0, seriesLabels, int64(i), float64(i))
+		_, err := app.Append(0, seriesLabels, int64(i), float64(i), nil)
 		require.NoError(t, err)
 	}
 
@@ -5376,7 +5376,7 @@ func TestMmapPanicAfterMmapReplayCorruption(t *testing.T) {
 		interval := DefaultBlockDuration / (4 * 120)
 		app := h.Appender(context.Background())
 		for i := 0; i < 250; i++ {
-			ref, err = app.Append(ref, lbls, lastTs, float64(lastTs))
+			ref, err = app.Append(ref, lbls, lastTs, float64(lastTs), nil)
 			lastTs += interval
 			if i%10 == 0 {
 				require.NoError(t, app.Commit())
@@ -5439,7 +5439,7 @@ func TestReplayAfterMmapReplayError(t *testing.T) {
 		app := h.Appender(context.Background())
 		var ref storage.SeriesRef
 		for i := 0; i < numSamples; i++ {
-			ref, err = app.Append(ref, lbls, lastTs, float64(lastTs))
+			ref, err = app.Append(ref, lbls, lastTs, float64(lastTs), nil)
 			expSamples = append(expSamples, sample{t: lastTs, f: float64(lastTs)})
 			require.NoError(t, err)
 			lastTs += itvl
@@ -5793,7 +5793,7 @@ func TestSnapshotAheadOfWALError(t *testing.T) {
 	head.opts.EnableMemorySnapshotOnShutdown = true
 	// Add a sample to fill WAL.
 	app := head.Appender(context.Background())
-	_, err := app.Append(0, labels.FromStrings("foo", "bar"), 10, 10)
+	_, err := app.Append(0, labels.FromStrings("foo", "bar"), 10, 10, nil)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -5817,7 +5817,7 @@ func TestSnapshotAheadOfWALError(t *testing.T) {
 	require.NoError(t, err)
 	// Add a sample to fill WAL.
 	app = head.Appender(context.Background())
-	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 10, 10)
+	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 10, 10, nil)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	lastSegment, _, _ := w.LastSegmentAndOffset()
@@ -5980,7 +5980,7 @@ func TestCuttingNewHeadChunks(t *testing.T) {
 
 			for i := 0; i < tc.numTotalSamples; i++ {
 				if tc.floatValFunc != nil {
-					_, err := a.Append(0, lbls, ts, tc.floatValFunc(i))
+					_, err := a.Append(0, lbls, ts, tc.floatValFunc(i), nil)
 					require.NoError(t, err)
 				} else if tc.histValFunc != nil {
 					_, err := a.AppendHistogram(0, lbls, ts, tc.histValFunc(i), nil)
@@ -6045,7 +6045,7 @@ func TestHeadDetectsDuplicateSampleAtSizeLimit(t *testing.T) {
 	vals := []float64{math.MaxFloat64, 0x00} // Use the worst case scenario for the XOR encoding. Otherwise we hit the sample limit before the size limit.
 	for i := 0; i < numSamples; i++ {
 		ts := baseTS + int64(i/2)*10000
-		a.Append(0, labels.FromStrings("foo", "bar"), ts, vals[(i/2)%len(vals)])
+		a.Append(0, labels.FromStrings("foo", "bar"), ts, vals[(i/2)%len(vals)], nil)
 		err = a.Commit()
 		require.NoError(t, err)
 		a = h.Appender(context.Background())
@@ -6082,7 +6082,7 @@ func TestWALSampleAndExemplarOrder(t *testing.T) {
 	}{
 		"float sample": {
 			appendF: func(app storage.Appender, ts int64) (storage.SeriesRef, error) {
-				return app.Append(0, lbls, ts, 1.0)
+				return app.Append(0, lbls, ts, 1.0, nil)
 			},
 			expectedType: reflect.TypeOf([]record.RefSample{}),
 		},
@@ -6142,7 +6142,7 @@ func TestHeadCompactionWhileAppendAndCommitExemplar(t *testing.T) {
 	h, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
 	app := h.Appender(context.Background())
 	lbls := labels.FromStrings("foo", "bar")
-	ref, err := app.Append(0, lbls, 1, 1)
+	ref, err := app.Append(0, lbls, 1, 1, nil)
 	require.NoError(t, err)
 	app.Commit()
 	// Not adding a sample here to trigger the fault.
@@ -6260,7 +6260,7 @@ func TestHeadAppender_AppendFloatWithSameTimestampAsPreviousHistogram(t *testing
 	{
 		// Append a float 10.0 @ 1_000
 		app := head.Appender(context.Background())
-		_, err := app.Append(0, ls, 1_000, 10.0)
+		_, err := app.Append(0, ls, 1_000, 10.0, nil)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 	}
@@ -6275,7 +6275,7 @@ func TestHeadAppender_AppendFloatWithSameTimestampAsPreviousHistogram(t *testing
 	}
 
 	app := head.Appender(context.Background())
-	_, err := app.Append(0, ls, 2_000, 10.0)
+	_, err := app.Append(0, ls, 2_000, 10.0, nil)
 	require.Error(t, err)
 	require.ErrorIs(t, err, storage.NewDuplicateHistogramToFloatErr(2_000, 10.0))
 }
@@ -6479,7 +6479,7 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 				if sample.fSample != 0 {
 					_, err := a.AppendCTZeroSample(0, lbls, sample.ts, sample.ct)
 					require.NoError(t, err)
-					_, err = a.Append(0, lbls, sample.ts, sample.fSample)
+					_, err = a.Append(0, lbls, sample.ts, sample.fSample, nil)
 					require.NoError(t, err)
 				}
 

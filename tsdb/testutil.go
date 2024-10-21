@@ -53,7 +53,7 @@ var sampleTypeScenarios = map[string]sampleTypeScenario{
 		sampleType: sampleMetricTypeFloat,
 		appendFunc: func(appender storage.Appender, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error) {
 			s := sample{t: ts, f: float64(value)}
-			ref, err := appender.Append(0, lbls, ts, s.f)
+			ref, err := appender.Append(0, lbls, ts, s.f, nil)
 			return ref, s, err
 		},
 		sampleFunc: func(ts, value int64) sample {
