@@ -239,7 +239,8 @@ func (p *PromParser) Metric(l *labels.Labels) string {
 		label := unreplace(s[a:b])
 		c := p.offsets[i+2] - p.start
 		d := p.offsets[i+3] - p.start
-		value := unreplace(s[c:d])
+		value := normalizeFloatsInLabelValues(p.mtype, label, unreplace(s[c:d]))
+
 		p.builder.Add(label, value)
 	}
 

@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -30,6 +31,10 @@ import (
 
 func TestNewParser(t *testing.T) {
 	t.Parallel()
+
+	requireNilParser := func(t *testing.T, p Parser) {
+		require.Nil(t, p)
+	}
 
 	requirePromParser := func(t *testing.T, p Parser) {
 		require.NotNil(t, p)
@@ -43,33 +48,82 @@ func TestNewParser(t *testing.T) {
 		require.True(t, ok)
 	}
 
+	requireProtobufParser := func(t *testing.T, p Parser) {
+		require.NotNil(t, p)
+		_, ok := p.(*ProtobufParser)
+		require.True(t, ok)
+	}
+
 	for name, tt := range map[string]*struct {
-		contentType    string
-		validateParser func(*testing.T, Parser)
-		err            string
+		contentType            string
+		fallbackScrapeProtocol config.ScrapeProtocol
+		validateParser         func(*testing.T, Parser)
+		err                    string
 	}{
 		"empty-string": {
-			validateParser: requirePromParser,
+			validateParser: requireNilParser,
+			err:            "non-compliant scrape target sending blank Content-Type and no fallback_scrape_protocol specified for target",
+		},
+		"empty-string-fallback-text-plain": {
+			validateParser:         requirePromParser,
+			fallbackScrapeProtocol: config.PrometheusText0_0_4,
+			err:                    "non-compliant scrape target sending blank Content-Type, using fallback_scrape_protocol \"text/plain\"",
 		},
 		"invalid-content-type-1": {
 			contentType:    "invalid/",
-			validateParser: requirePromParser,
+			validateParser: requireNilParser,
 			err:            "expected token after slash",
+		},
+		"invalid-content-type-1-fallback-text-plain": {
+			contentType:            "invalid/",
+			validateParser:         requirePromParser,
+			fallbackScrapeProtocol: config.PrometheusText0_0_4,
+			err:                    "expected token after slash",
+		},
+		"invalid-content-type-1-fallback-openmetrics": {
+			contentType:            "invalid/",
+			validateParser:         requireOpenMetricsParser,
+			fallbackScrapeProtocol: config.OpenMetricsText0_0_1,
+			err:                    "expected token after slash",
+		},
+		"invalid-content-type-1-fallback-protobuf": {
+			contentType:            "invalid/",
+			validateParser:         requireProtobufParser,
+			fallbackScrapeProtocol: config.PrometheusProto,
+			err:                    "expected token after slash",
 		},
 		"invalid-content-type-2": {
 			contentType:    "invalid/invalid/invalid",
-			validateParser: requirePromParser,
+			validateParser: requireNilParser,
 			err:            "unexpected content after media subtype",
+		},
+		"invalid-content-type-2-fallback-text-plain": {
+			contentType:            "invalid/invalid/invalid",
+			validateParser:         requirePromParser,
+			fallbackScrapeProtocol: config.PrometheusText1_0_0,
+			err:                    "unexpected content after media subtype",
 		},
 		"invalid-content-type-3": {
 			contentType:    "/",
-			validateParser: requirePromParser,
+			validateParser: requireNilParser,
 			err:            "no media type",
+		},
+		"invalid-content-type-3-fallback-text-plain": {
+			contentType:            "/",
+			validateParser:         requirePromParser,
+			fallbackScrapeProtocol: config.PrometheusText1_0_0,
+			err:                    "no media type",
 		},
 		"invalid-content-type-4": {
 			contentType:    "application/openmetrics-text; charset=UTF-8; charset=utf-8",
-			validateParser: requirePromParser,
+			validateParser: requireNilParser,
 			err:            "duplicate parameter name",
+		},
+		"invalid-content-type-4-fallback-open-metrics": {
+			contentType:            "application/openmetrics-text; charset=UTF-8; charset=utf-8",
+			validateParser:         requireOpenMetricsParser,
+			fallbackScrapeProtocol: config.OpenMetricsText1_0_0,
+			err:                    "duplicate parameter name",
 		},
 		"openmetrics": {
 			contentType:    "application/openmetrics-text",
@@ -87,20 +141,33 @@ func TestNewParser(t *testing.T) {
 			contentType:    "text/plain",
 			validateParser: requirePromParser,
 		},
+		"protobuf": {
+			contentType:    "application/vnd.google.protobuf",
+			validateParser: requireProtobufParser,
+		},
 		"plain-text-with-version": {
 			contentType:    "text/plain; version=0.0.4",
 			validateParser: requirePromParser,
 		},
 		"some-other-valid-content-type": {
 			contentType:    "text/html",
-			validateParser: requirePromParser,
+			validateParser: requireNilParser,
+			err:            "received unsupported Content-Type \"text/html\" and no fallback_scrape_protocol specified for target",
+		},
+		"some-other-valid-content-type-fallback-text-plain": {
+			contentType:            "text/html",
+			validateParser:         requirePromParser,
+			fallbackScrapeProtocol: config.PrometheusText0_0_4,
+			err:                    "received unsupported Content-Type \"text/html\", using fallback_scrape_protocol \"text/plain\"",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			tt := tt // Copy to local variable before going parallel.
 			t.Parallel()
 
-			p, err := New([]byte{}, tt.contentType, false, false, labels.NewSymbolTable())
+			fallbackProtoMediaType := tt.fallbackScrapeProtocol.HeaderMediaType()
+
+			p, err := New([]byte{}, tt.contentType, fallbackProtoMediaType, false, false, labels.NewSymbolTable())
 			tt.validateParser(t, p)
 			if tt.err == "" {
 				require.NoError(t, err)

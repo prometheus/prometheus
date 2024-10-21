@@ -692,6 +692,7 @@ func newBasicScrapeLoop(t testing.TB, ctx context.Context, scraper scraper, app 
 		newTestScrapeMetrics(t),
 		false,
 		model.LegacyValidation,
+		"text/plain",
 	)
 }
 
@@ -836,6 +837,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		scrapeMetrics,
 		false,
 		model.LegacyValidation,
+		"text/plain",
 	)
 
 	// The loop must terminate during the initial offset if the context
@@ -982,6 +984,7 @@ func TestScrapeLoopMetadata(t *testing.T) {
 		scrapeMetrics,
 		false,
 		model.LegacyValidation,
+		"text/plain",
 	)
 	defer cancel()
 
@@ -1530,7 +1533,8 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 	fakeRef := storage.SeriesRef(1)
 	expValue := float64(1)
 	metric := []byte(`metric{n="1"} 1`)
-	p, warning := textparse.New(metric, "", false, false, labels.NewSymbolTable())
+	p, warning := textparse.New(metric, "text/plain", "", false, false, labels.NewSymbolTable())
+	require.NotNil(t, p)
 	require.NoError(t, warning)
 
 	var lset labels.Labels
@@ -1850,7 +1854,7 @@ func TestScrapeLoopAppendStalenessIfTrackTimestampStaleness(t *testing.T) {
 func TestScrapeLoopAppendExemplar(t *testing.T) {
 	tests := []struct {
 		title                           string
-		scrapeClassicHistograms         bool
+		alwaysScrapeClassicHist         bool
 		enableNativeHistogramsIngestion bool
 		scrapeText                      string
 		contentType                     string
@@ -2119,7 +2123,7 @@ metric: <
 >
 
 `,
-			scrapeClassicHistograms: true,
+			alwaysScrapeClassicHist: true,
 			contentType:             "application/vnd.google.protobuf",
 			floats: []floatSample{
 				{metric: labels.FromStrings("__name__", "test_histogram_count"), t: 1234568, f: 175},
@@ -2181,7 +2185,7 @@ metric: <
 			sl.reportSampleMutator = func(l labels.Labels) labels.Labels {
 				return mutateReportSampleLabels(l, discoveryLabels)
 			}
-			sl.scrapeClassicHistograms = test.scrapeClassicHistograms
+			sl.alwaysScrapeClassicHist = test.alwaysScrapeClassicHist
 
 			now := time.Now()
 

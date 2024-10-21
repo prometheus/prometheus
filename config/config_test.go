@@ -206,19 +206,20 @@ var expectedConf = &Config{
 		{
 			JobName: "prometheus",
 
-			HonorLabels:           true,
-			HonorTimestamps:       true,
-			ScrapeInterval:        model.Duration(15 * time.Second),
-			ScrapeTimeout:         DefaultGlobalConfig.ScrapeTimeout,
-			EnableCompression:     true,
-			BodySizeLimit:         globBodySizeLimit,
-			SampleLimit:           globSampleLimit,
-			TargetLimit:           globTargetLimit,
-			LabelLimit:            globLabelLimit,
-			LabelNameLengthLimit:  globLabelNameLengthLimit,
-			LabelValueLengthLimit: globLabelValueLengthLimit,
-			ScrapeProtocols:       DefaultGlobalConfig.ScrapeProtocols,
-			ScrapeFailureLogFile:  "testdata/fail_prom.log",
+			HonorLabels:            true,
+			HonorTimestamps:        true,
+			ScrapeInterval:         model.Duration(15 * time.Second),
+			ScrapeTimeout:          DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:      true,
+			BodySizeLimit:          globBodySizeLimit,
+			SampleLimit:            globSampleLimit,
+			TargetLimit:            globTargetLimit,
+			LabelLimit:             globLabelLimit,
+			LabelNameLengthLimit:   globLabelNameLengthLimit,
+			LabelValueLengthLimit:  globLabelValueLengthLimit,
+			ScrapeProtocols:        DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFallbackProtocol: PrometheusText0_0_4,
+			ScrapeFailureLogFile:   "testdata/fail_prom.log",
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -1500,6 +1501,11 @@ var expectedConf = &Config{
 	},
 }
 
+func TestYAMLNotLongerSupportedAMApi(t *testing.T) {
+	_, err := LoadFile("testdata/config_with_no_longer_supported_am_api_config.yml", false, promslog.NewNopLogger())
+	require.Error(t, err)
+}
+
 func TestYAMLRoundtrip(t *testing.T) {
 	want, err := LoadFile("testdata/roundtrip.good.yml", false, promslog.NewNopLogger())
 	require.NoError(t, err)
@@ -2081,11 +2087,19 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "scrape_config_files_scrape_protocols.bad.yml",
-		errMsg:   `parsing YAML file testdata/scrape_config_files_scrape_protocols.bad.yml: scrape_protocols: unknown scrape protocol prometheusproto, supported: [OpenMetricsText0.0.1 OpenMetricsText1.0.0 PrometheusProto PrometheusText0.0.4] for scrape config with job name "node"`,
+		errMsg:   `parsing YAML file testdata/scrape_config_files_scrape_protocols.bad.yml: scrape_protocols: unknown scrape protocol prometheusproto, supported: [OpenMetricsText0.0.1 OpenMetricsText1.0.0 PrometheusProto PrometheusText0.0.4 PrometheusText1.0.0] for scrape config with job name "node"`,
 	},
 	{
 		filename: "scrape_config_files_scrape_protocols2.bad.yml",
 		errMsg:   `parsing YAML file testdata/scrape_config_files_scrape_protocols2.bad.yml: duplicated protocol in scrape_protocols, got [OpenMetricsText1.0.0 PrometheusProto OpenMetricsText1.0.0] for scrape config with job name "node"`,
+	},
+	{
+		filename: "scrape_config_files_fallback_scrape_protocol1.bad.yml",
+		errMsg:   `parsing YAML file testdata/scrape_config_files_fallback_scrape_protocol1.bad.yml: invalid fallback_scrape_protocol for scrape config with job name "node": unknown scrape protocol prometheusproto, supported: [OpenMetricsText0.0.1 OpenMetricsText1.0.0 PrometheusProto PrometheusText0.0.4 PrometheusText1.0.0]`,
+	},
+	{
+		filename: "scrape_config_files_fallback_scrape_protocol2.bad.yml",
+		errMsg:   `unmarshal errors`,
 	},
 }
 
@@ -2404,6 +2418,57 @@ func TestScrapeConfigNameValidationSettings(t *testing.T) {
 			require.NoError(t, yaml.UnmarshalStrict(out, got))
 
 			require.Equal(t, tc.expectScheme, got.ScrapeConfigs[0].MetricNameValidationScheme)
+		})
+	}
+}
+
+func TestScrapeProtocolHeader(t *testing.T) {
+	tests := []struct {
+		name          string
+		proto         ScrapeProtocol
+		expectedValue string
+	}{
+		{
+			name:          "blank",
+			proto:         ScrapeProtocol(""),
+			expectedValue: "",
+		},
+		{
+			name:          "invalid",
+			proto:         ScrapeProtocol("invalid"),
+			expectedValue: "",
+		},
+		{
+			name:          "prometheus protobuf",
+			proto:         PrometheusProto,
+			expectedValue: "application/vnd.google.protobuf",
+		},
+		{
+			name:          "prometheus text 0.0.4",
+			proto:         PrometheusText0_0_4,
+			expectedValue: "text/plain",
+		},
+		{
+			name:          "prometheus text 1.0.0",
+			proto:         PrometheusText1_0_0,
+			expectedValue: "text/plain",
+		},
+		{
+			name:          "openmetrics 0.0.1",
+			proto:         OpenMetricsText0_0_1,
+			expectedValue: "application/openmetrics-text",
+		},
+		{
+			name:          "openmetrics 1.0.0",
+			proto:         OpenMetricsText1_0_0,
+			expectedValue: "application/openmetrics-text",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mediaType := tc.proto.HeaderMediaType()
+
+			require.Equal(t, tc.expectedValue, mediaType)
 		})
 	}
 }

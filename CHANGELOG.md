@@ -2,6 +2,7 @@
 
 ## unreleased
 
+* [CHANGE] Scraping: Remove implicit fallback to the Prometheus text format in case of invalid/missing Content-Type and fail the scrape instead. Add ability to specify a `fallback_scrape_protocol` in the scrape config. #15136
 * [BUGFIX] PromQL: Fix stddev+stdvar aggregations to always ignore native histograms. #14941
 * [BUGFIX] PromQL: Fix stddev+stdvar aggregations to treat Infinity consistently. #14941
 
@@ -51,12 +52,12 @@ As is traditional with a beta release, we do **not** recommend users install 3.0
 * [CHANGE] Remove deprecated `remote-write-receiver`,`promql-at-modifier`, and `promql-negative-offset` feature flags. #13456, #14526
 * [CHANGE] Remove deprecated `storage.tsdb.allow-overlapping-blocks`, `alertmanager.timeout`, and `storage.tsdb.retention` flags. #14640, #14643
 * [ENHANCEMENT] Move AM discovery page from "Monitoring status" to "Server status". #14875
+* [FEATURE] Support config reload automatically - feature flag `auto-reload-config`. #14769
 * [BUGFIX] Scrape: Do not override target parameter labels with config params. #11029
 
 ## 2.55.0-rc.0 / 2024-09-20
 
 * [FEATURE] Support UTF-8 characters in label names - feature flag `utf8-names`. #14482, #14880, #14736, #14727
-* [FEATURE] Support config reload automatically - feature flag `auto-reload-config`. #14769
 * [FEATURE] Scraping: Add the ability to set custom `http_headers` in config. #14817
 * [FEATURE] Scraping: Support feature flag `created-timestamp-zero-ingestion` in OpenMetrics. #14356, #14815
 * [FEATURE] Scraping: `scrape_failure_log_file` option to log failures to a file. #14734
@@ -69,7 +70,7 @@ As is traditional with a beta release, we do **not** recommend users install 3.0
 * [ENHANCEMENT] Remote Read client: Enable streaming remote read if the server supports it. #11379
 * [ENHANCEMENT] Remote-Write: Don't reshard if we haven't successfully sent a sample since last update. #14450
 * [ENHANCEMENT] PromQL: Delay deletion of `__name__` label to the end of the query evaluation. This is **experimental** and enabled under the feature-flag `promql-delayed-name-removal`. #14477
-* [ENHANCEMENT] PromQL: Experimental `sort_by_label` and `sort_by_label_desc` sort by all labels when label is equal. #14655
+* [ENHANCEMENT] PromQL: Experimental `sort_by_label` and `sort_by_label_desc` sort by all labels when label is equal. #14655, #14985
 * [ENHANCEMENT] PromQL: Clarify error message logged when Go runtime panic occurs during query evaluation. #14621
 * [ENHANCEMENT] PromQL: Use Kahan summation for better accuracy in `avg` and `avg_over_time`. #14413
 * [ENHANCEMENT] Tracing: Improve PromQL tracing, including showing the operation performed for aggregates, operators, and calls. #14816

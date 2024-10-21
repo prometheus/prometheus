@@ -50,27 +50,27 @@ func TestPostPath(t *testing.T) {
 	}{
 		{
 			in:  "",
-			out: "/api/v1/alerts",
+			out: "/api/v2/alerts",
 		},
 		{
 			in:  "/",
-			out: "/api/v1/alerts",
+			out: "/api/v2/alerts",
 		},
 		{
 			in:  "/prefix",
-			out: "/prefix/api/v1/alerts",
+			out: "/prefix/api/v2/alerts",
 		},
 		{
 			in:  "/prefix//",
-			out: "/prefix/api/v1/alerts",
+			out: "/prefix/api/v2/alerts",
 		},
 		{
 			in:  "prefix//",
-			out: "/prefix/api/v1/alerts",
+			out: "/prefix/api/v2/alerts",
 		},
 	}
 	for _, c := range cases {
-		require.Equal(t, c.out, postPath(c.in, config.AlertmanagerAPIVersionV1))
+		require.Equal(t, c.out, postPath(c.in, config.AlertmanagerAPIVersionV2))
 	}
 }
 

@@ -36,9 +36,9 @@ import (
 // single native histogram.
 //
 // Note:
-// - Only series that have the histogram metadata type are considered for
-//   conversion.
-// - The classic series are also returned if keepClassicHistograms is true.
+//   - Only series that have the histogram metadata type are considered for
+//     conversion.
+//   - The classic series are also returned if keepClassicHistograms is true.
 type NHCBParser struct {
 	// The parser we're wrapping.
 	parser Parser

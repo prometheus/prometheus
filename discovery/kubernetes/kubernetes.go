@@ -804,3 +804,13 @@ func addObjectMetaLabels(labelSet model.LabelSet, objectMeta metav1.ObjectMeta, 
 func namespacedName(namespace, name string) string {
 	return namespace + "/" + name
 }
+
+// nodeName knows how to handle the cache.DeletedFinalStateUnknown tombstone.
+// It assumes the MetaNamespaceKeyFunc keyFunc is used, which uses the node name as the tombstone key.
+func nodeName(o interface{}) (string, error) {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(o)
+	if err != nil {
+		return "", err
+	}
+	return key, nil
+}

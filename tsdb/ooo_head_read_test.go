@@ -878,7 +878,7 @@ func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 				}
 				resultSamples, err := storage.ExpandSamples(it, nil)
 				require.NoError(t, err)
-				requireEqualSamples(t, s1.String(), tc.expChunksSamples[i], resultSamples, true)
+				requireEqualSamples(t, s1.String(), tc.expChunksSamples[i], resultSamples, requireEqualSamplesIgnoreCounterResets)
 			}
 		})
 	}
@@ -1054,7 +1054,7 @@ func testOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 				it := iterable.Iterator(nil)
 				resultSamples, err := storage.ExpandSamples(it, nil)
 				require.NoError(t, err)
-				requireEqualSamples(t, s1.String(), tc.expChunksSamples[i], resultSamples, true)
+				requireEqualSamples(t, s1.String(), tc.expChunksSamples[i], resultSamples, requireEqualSamplesIgnoreCounterResets)
 			}
 		})
 	}

@@ -112,9 +112,10 @@ type scrapeLoopOptions struct {
 	trackTimestampsStaleness bool
 	interval                 time.Duration
 	timeout                  time.Duration
-	scrapeClassicHistograms  bool
+	alwaysScrapeClassicHist  bool
 	convertClassicHistograms bool
 	validationScheme         model.ValidationScheme
+	fallbackScrapeProtocol   string
 
 	mrc               []*relabel.Config
 	cache             *scrapeCache
@@ -180,7 +181,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 			opts.labelLimits,
 			opts.interval,
 			opts.timeout,
-			opts.scrapeClassicHistograms,
+			opts.alwaysScrapeClassicHist,
 			opts.convertClassicHistograms,
 			options.EnableNativeHistogramsIngestion,
 			options.EnableCreatedTimestampZeroIngestion,
@@ -191,6 +192,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 			metrics,
 			options.skipOffsetting,
 			opts.validationScheme,
+			opts.fallbackScrapeProtocol,
 		)
 	}
 	sp.metrics.targetScrapePoolTargetLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.TargetLimit))
@@ -327,6 +329,7 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 		enableCompression        = sp.config.EnableCompression
 		trackTimestampsStaleness = sp.config.TrackTimestampsStaleness
 		mrc                      = sp.config.MetricRelabelConfigs
+		fallbackScrapeProtocol   = sp.config.ScrapeFallbackProtocol.HeaderMediaType()
 	)
 
 	validationScheme := model.UTF8Validation
@@ -373,6 +376,7 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 				interval:                 interval,
 				timeout:                  timeout,
 				validationScheme:         validationScheme,
+				fallbackScrapeProtocol:   fallbackScrapeProtocol,
 			})
 		)
 		if err != nil {
@@ -482,7 +486,8 @@ func (sp *scrapePool) sync(targets []*Target) {
 		enableCompression        = sp.config.EnableCompression
 		trackTimestampsStaleness = sp.config.TrackTimestampsStaleness
 		mrc                      = sp.config.MetricRelabelConfigs
-		scrapeClassicHistograms  = sp.config.ScrapeClassicHistograms
+		fallbackScrapeProtocol   = sp.config.ScrapeFallbackProtocol.HeaderMediaType()
+		alwaysScrapeClassicHist  = sp.config.AlwaysScrapeClassicHistograms
 		convertClassicHistograms = sp.config.ConvertClassicHistograms
 	)
 
@@ -524,9 +529,10 @@ func (sp *scrapePool) sync(targets []*Target) {
 				mrc:                      mrc,
 				interval:                 interval,
 				timeout:                  timeout,
-				scrapeClassicHistograms:  scrapeClassicHistograms,
+				alwaysScrapeClassicHist:  alwaysScrapeClassicHist,
 				convertClassicHistograms: convertClassicHistograms,
 				validationScheme:         validationScheme,
+				fallbackScrapeProtocol:   fallbackScrapeProtocol,
 			})
 			if err != nil {
 				l.setForcedError(err)
@@ -887,9 +893,10 @@ type scrapeLoop struct {
 	labelLimits              *labelLimits
 	interval                 time.Duration
 	timeout                  time.Duration
-	scrapeClassicHistograms  bool
+	alwaysScrapeClassicHist  bool
 	convertClassicHistograms bool
 	validationScheme         model.ValidationScheme
+	fallbackScrapeProtocol   string
 
 	// Feature flagged options.
 	enableNativeHistogramIngestion bool
@@ -1188,7 +1195,7 @@ func newScrapeLoop(ctx context.Context,
 	labelLimits *labelLimits,
 	interval time.Duration,
 	timeout time.Duration,
-	scrapeClassicHistograms bool,
+	alwaysScrapeClassicHist bool,
 	convertClassicHistograms bool,
 	enableNativeHistogramIngestion bool,
 	enableCTZeroIngestion bool,
@@ -1199,6 +1206,7 @@ func newScrapeLoop(ctx context.Context,
 	metrics *scrapeMetrics,
 	skipOffsetting bool,
 	validationScheme model.ValidationScheme,
+	fallbackScrapeProtocol string,
 ) *scrapeLoop {
 	if l == nil {
 		l = promslog.NewNopLogger()
@@ -1243,7 +1251,7 @@ func newScrapeLoop(ctx context.Context,
 		labelLimits:                    labelLimits,
 		interval:                       interval,
 		timeout:                        timeout,
-		scrapeClassicHistograms:        scrapeClassicHistograms,
+		alwaysScrapeClassicHist:        alwaysScrapeClassicHist,
 		convertClassicHistograms:       convertClassicHistograms,
 		enableNativeHistogramIngestion: enableNativeHistogramIngestion,
 		enableCTZeroIngestion:          enableCTZeroIngestion,
@@ -1252,6 +1260,7 @@ func newScrapeLoop(ctx context.Context,
 		metrics:                        metrics,
 		skipOffsetting:                 skipOffsetting,
 		validationScheme:               validationScheme,
+		fallbackScrapeProtocol:         fallbackScrapeProtocol,
 	}
 	sl.ctx, sl.cancel = context.WithCancel(ctx)
 
@@ -1544,14 +1553,24 @@ type appendErrors struct {
 }
 
 func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
-	p, err := textparse.New(b, contentType, sl.scrapeClassicHistograms, sl.enableCTZeroIngestion, sl.symbolTable)
+	p, err := textparse.New(b, contentType, sl.fallbackScrapeProtocol, sl.alwaysScrapeClassicHist, sl.enableCTZeroIngestion, sl.symbolTable)
+	if p == nil {
+		sl.l.Error(
+			"Failed to determine correct type of scrape target.",
+			"content_type", contentType,
+			"fallback_media_type", sl.fallbackScrapeProtocol,
+			"err", err,
+		)
+		return
+	}
 	if sl.convertClassicHistograms {
-		p = textparse.NewNHCBParser(p, sl.symbolTable, sl.scrapeClassicHistograms)
+		p = textparse.NewNHCBParser(p, sl.symbolTable, sl.alwaysScrapeClassicHist)
 	}
 	if err != nil {
 		sl.l.Debug(
-			"Invalid content type on scrape, using prometheus parser as fallback.",
+			"Invalid content type on scrape, using fallback setting.",
 			"content_type", contentType,
+			"fallback_media_type", sl.fallbackScrapeProtocol,
 			"err", err,
 		)
 	}

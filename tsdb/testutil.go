@@ -111,7 +111,7 @@ func requireEqualSeries(t *testing.T, expected, actual map[string][]chunks.Sampl
 	for name, expectedItem := range expected {
 		actualItem, ok := actual[name]
 		require.True(t, ok, "Expected series %s not found", name)
-		requireEqualSamples(t, name, expectedItem, actualItem, ignoreCounterResets)
+		requireEqualSamples(t, name, expectedItem, actualItem, requireEqualSamplesIgnoreCounterResets)
 	}
 	for name := range actual {
 		_, ok := expected[name]
@@ -126,7 +126,28 @@ func requireEqualOOOSamples(t *testing.T, expectedSamples int, db *DB) {
 		"number of ooo appended samples mismatch")
 }
 
-func requireEqualSamples(t *testing.T, name string, expected, actual []chunks.Sample, ignoreCounterResets bool) {
+type requireEqualSamplesOption int
+
+const (
+	requireEqualSamplesNoOption requireEqualSamplesOption = iota
+	requireEqualSamplesIgnoreCounterResets
+	requireEqualSamplesInUseBucketCompare
+)
+
+func requireEqualSamples(t *testing.T, name string, expected, actual []chunks.Sample, options ...requireEqualSamplesOption) {
+	var (
+		ignoreCounterResets bool
+		inUseBucketCompare  bool
+	)
+	for _, option := range options {
+		switch option {
+		case requireEqualSamplesIgnoreCounterResets:
+			ignoreCounterResets = true
+		case requireEqualSamplesInUseBucketCompare:
+			inUseBucketCompare = true
+		}
+	}
+
 	require.Equal(t, len(expected), len(actual), "Length not equal to expected for %s", name)
 	for i, s := range expected {
 		expectedSample := s
@@ -144,6 +165,10 @@ func requireEqualSamples(t *testing.T, name string, expected, actual []chunks.Sa
 				} else {
 					require.Equal(t, expectedHist.CounterResetHint, actualHist.CounterResetHint, "Sample header doesn't match for %s[%d] at ts %d, expected: %s, actual: %s", name, i, expectedSample.T(), counterResetAsString(expectedHist.CounterResetHint), counterResetAsString(actualHist.CounterResetHint))
 				}
+				if inUseBucketCompare {
+					expectedSample.H().Compact(0)
+					actualSample.H().Compact(0)
+				}
 				require.Equal(t, expectedHist, actualHist, "Sample doesn't match for %s[%d] at ts %d", name, i, expectedSample.T())
 			}
 		case s.FH() != nil:
@@ -155,6 +180,10 @@ func requireEqualSamples(t *testing.T, name string, expected, actual []chunks.Sa
 					actualHist.CounterResetHint = histogram.UnknownCounterReset
 				} else {
 					require.Equal(t, expectedHist.CounterResetHint, actualHist.CounterResetHint, "Sample header doesn't match for %s[%d] at ts %d, expected: %s, actual: %s", name, i, expectedSample.T(), counterResetAsString(expectedHist.CounterResetHint), counterResetAsString(actualHist.CounterResetHint))
+				}
+				if inUseBucketCompare {
+					expectedSample.FH().Compact(0)
+					actualSample.FH().Compact(0)
 				}
 				require.Equal(t, expectedHist, actualHist, "Sample doesn't match for %s[%d] at ts %d", name, i, expectedSample.T())
 			}
