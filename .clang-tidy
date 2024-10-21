@@ -1,13 +1,14 @@
 Checks: >
   clang-diagnostic-*,
-  clang-analyzer-*,
+  clang-analyzer-*,-clang-analyzer-optin.core.EnumCastOutOfRange,
   google-*,-google-readability-todo,-google-readability-braces-around-statements,-google-readability-avoid-underscore-in-googletest-name,
-  performance-*,
+  performance-*,-performance-avoid-endl,
 WarningsAsErrors: '*'
-HeaderFilterRegex: '(bare_bones|primitives|prometheus|wal|ceph|series_index)/.*'
+HeaderFilterRegex: '^(bare_bones|ceph|entrypoint|head|performance_tests|primitives|prometheus|series_data|series_index|wal)/.*'
 ExtraArgs:
-  - '-frelaxed-template-template-args'
+  - '-Wno-deprecated-declarations'
 FormatStyle: file
+SystemHeaders: true
 CheckOptions:
   modernize-loop-convert.MinConfidence: reasonable
   modernize-replace-auto-ptr.IncludeStyle: llvm
