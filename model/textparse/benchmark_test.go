@@ -40,7 +40,7 @@ var newTestParserFns = map[string]newParser{
 	"omtext": func(b []byte, st *labels.SymbolTable) Parser {
 		return NewOpenMetricsParser(b, st, WithOMParserCTSeriesSkipped())
 	},
-	"omtext_with_nhcb": func(b []byte, st *labels.SymbolTable) Parser {
+	"nhcb_over_omtext": func(b []byte, st *labels.SymbolTable) Parser {
 		p := NewOpenMetricsParser(b, st, WithOMParserCTSeriesSkipped())
 		return NewNHCBParser(p, st, false)
 	},
