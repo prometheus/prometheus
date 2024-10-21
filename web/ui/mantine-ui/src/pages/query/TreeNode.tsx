@@ -233,7 +233,7 @@ const TreeNode: FC<{
         Object.entries(s.metric).forEach(([ln, lv]) => {
           // TODO: If we ever want to include __name__ here again, we cannot use the
           // last_over_time(foo[7d]) optimization since that removes the metric name.
-          if (ln !== "__name__") {
+          if (ln !== "__name__" && ln !== "__type__" && ln !== "__unit__") {
             if (!labelValuesByName[ln]) {
               labelValuesByName[ln] = {};
             }

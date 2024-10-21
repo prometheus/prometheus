@@ -110,7 +110,7 @@ const noMatchLabels = (
 ): Metric => {
   const result: Metric = {};
   for (const name in metric) {
-    if (!(labels.includes(name) === on && (on || name !== "__name__"))) {
+    if (!(labels.includes(name) === on && (on || name !== "__name__" && name !== "__type__" && name !== "__unit__"))) {
       result[name] = metric[name];
     }
   }

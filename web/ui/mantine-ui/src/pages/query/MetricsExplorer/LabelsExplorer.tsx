@@ -115,7 +115,7 @@ const LabelsExplorer: FC<LabelsExplorerProps> = ({
     if (data !== undefined) {
       data.data.forEach((series: Metric) => {
         Object.entries(series).forEach(([ln, lv]) => {
-          if (ln !== "__name__") {
+          if (ln !== "__name__" && ln !== "__type__" && ln !== "__unit__") {
             if (!(ln in labelValuesByName)) {
               labelValuesByName[ln] = { [lv]: 1 };
             } else {

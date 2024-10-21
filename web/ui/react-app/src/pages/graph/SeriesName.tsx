@@ -26,7 +26,7 @@ const SeriesName: FC<SeriesNameProps> = ({ labels, format }) => {
     const labelNodes: React.ReactElement[] = [];
     let first = true;
     for (const label in labels) {
-      if (label === '__name__') {
+      if (label === '__name__' || label === '__type__' || label === '__unit__') {
         continue;
       }
 

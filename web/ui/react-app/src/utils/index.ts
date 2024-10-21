@@ -33,7 +33,7 @@ export const metricToSeriesName = (labels: { [key: string]: string }): string =>
   let tsName = (labels.__name__ || '') + '{';
   const labelStrings: string[] = [];
   for (const label in labels) {
-    if (label !== '__name__') {
+    if (label !== '__name__' && label !== '__type__' && label !== '__unit__') {
       labelStrings.push(label + '="' + labels[label] + '"');
     }
   }

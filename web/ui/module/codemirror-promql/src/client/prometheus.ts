@@ -135,7 +135,7 @@ export class HTTPPrometheusClient implements PrometheusClient {
       const labelNames = new Set<string>();
       for (const labelSet of series) {
         for (const [key] of Object.entries(labelSet)) {
-          if (key === '__name__') {
+          if (key === '__name__' || key === '__type__' || key === '__unit__') {
             continue;
           }
           labelNames.add(key);
@@ -169,7 +169,7 @@ export class HTTPPrometheusClient implements PrometheusClient {
       const labelValues = new Set<string>();
       for (const labelSet of series) {
         for (const [key, value] of Object.entries(labelSet)) {
-          if (key === '__name__') {
+          if (key === '__name__' || key === '__type__' || key === '__unit__') {
             continue;
           }
           if (key === labelName) {
@@ -315,7 +315,7 @@ class Cache {
       }
 
       for (const [key, value] of Object.entries(labelSet)) {
-        if (key === '__name__') {
+        if (key === '__name__' || key === '__type__' || key === '__unit__') {
           continue;
         }
         const labelValues = currentAssociation.get(key);

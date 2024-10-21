@@ -73,7 +73,7 @@ const formatLabels = (labels: { [key: string]: string }): string => `
               ${Object.keys(labels).length === 0 ? '<div class="no-labels">no labels</div>' : ""}
               ${labels["__name__"] ? `<div><strong>${escapeHTML(labels["__name__"])}</strong></div>` : ""}
               ${Object.keys(labels)
-                .filter((k) => k !== "__name__")
+                .filter((k) => k !== "__name__" && k !== "__type__" && k !== "__unit__")
                 .map(
                   (k) =>
                     `<div><strong>${escapeHTML(k)}</strong>: ${escapeHTML(labels[k])}</div>`

@@ -6,7 +6,7 @@ export const formatSeries = (labels: { [key: string]: string }): string => {
   }
 
   return `${labels.__name__ || ""}{${Object.entries(labels)
-    .filter(([k]) => k !== "__name__")
+    .filter(([k]) => k !== "__name__" && k !== "__type__" && k !== "__unit__")
     .map(([k, v]) => `${k}="${escapeString(v)}"`)
     .join(", ")}}`;
 };

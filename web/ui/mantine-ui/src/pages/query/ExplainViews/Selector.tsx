@@ -30,7 +30,7 @@ const matchingCriteriaList = (
         </List.Item>
       )}
       {matchers
-        .filter((m) => !(m.name === "__name__"))
+        .filter((m) => !(m.name === "__name__" || m.name === "__type__" || m.name === "__unit__"))
         .map((m) => {
           switch (m.type) {
             case matchType.equal:
