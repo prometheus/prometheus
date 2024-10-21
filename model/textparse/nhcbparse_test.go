@@ -14,13 +14,18 @@
 package textparse
 
 import (
+	"bytes"
+	"encoding/binary"
 	"testing"
 
-	"github.com/prometheus/common/model"
+	"github.com/gogo/protobuf/proto"
+	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	dto "github.com/prometheus/prometheus/prompb/io/prometheus/client"
 )
 
 func TestNHCBParserOnOMParser(t *testing.T) {
@@ -512,4 +517,172 @@ something_bucket{a="b",le="+Inf"} 9 # {id="something-test"} 2e100 123.000
 	p = NewNHCBParser(p, labels.NewSymbolTable(), false)
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
+}
+
+// Verify that the NHCBParser does not parse the NHCB when the exponential is present.
+func TestNHCBParserProtoBufParser_NoNHCBWhenExponential(t *testing.T) {
+	inputBuf := createTestProtoBufHistogram(t)
+	// Initialize the protobuf parser so that it returns classic histograms as
+	// well when there's both classic and exponential histograms.
+	p := NewProtobufParser(inputBuf.Bytes(), true, labels.NewSymbolTable())
+
+	// Initialize the NHCBParser so that it returns classic histograms as well
+	// when there's both classic and exponential histograms.
+	p = NewNHCBParser(p, labels.NewSymbolTable(), true)
+
+	exp := []parsedEntry{
+		{
+			m:    "test_histogram",
+			help: "Test histogram with classic and exponential buckets.",
+		},
+		{
+			m:   "test_histogram",
+			typ: model.MetricTypeHistogram,
+		},
+		{
+			m: "test_histogram",
+			shs: &histogram.Histogram{
+				Schema:          3,
+				Count:           175,
+				Sum:             0.0008280461746287094,
+				ZeroThreshold:   2.938735877055719e-39,
+				ZeroCount:       2,
+				PositiveSpans:   []histogram.Span{{Offset: -161, Length: 1}, {Offset: 8, Length: 3}},
+				NegativeSpans:   []histogram.Span{{Offset: -162, Length: 1}, {Offset: 23, Length: 4}},
+				PositiveBuckets: []int64{1, 2, -1, -1},
+				NegativeBuckets: []int64{1, 3, -2, -1, 1},
+			},
+			lset: labels.FromStrings("__name__", "test_histogram"),
+			t:    int64p(1234568),
+		},
+		{
+			m:    "test_histogram_count",
+			v:    175,
+			lset: labels.FromStrings("__name__", "test_histogram_count"),
+			t:    int64p(1234568),
+		},
+		{
+			m:    "test_histogram_sum",
+			v:    0.0008280461746287094,
+			lset: labels.FromStrings("__name__", "test_histogram_sum"),
+			t:    int64p(1234568),
+		},
+		{
+			m:    "test_histogram_bucket\xffle\xff-0.0004899999999999998",
+			v:    2,
+			lset: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0004899999999999998"),
+			t:    int64p(1234568),
+		},
+		{
+			m:    "test_histogram_bucket\xffle\xff-0.0003899999999999998",
+			v:    4,
+			lset: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0003899999999999998"),
+			t:    int64p(1234568),
+		},
+		{
+			m:    "test_histogram_bucket\xffle\xff-0.0002899999999999998",
+			v:    16,
+			lset: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0002899999999999998"),
+			t:    int64p(1234568),
+		},
+		{
+			m:    "test_histogram_bucket\xffle\xff+Inf",
+			v:    175,
+			lset: labels.FromStrings("__name__", "test_histogram_bucket", "le", "+Inf"),
+			t:    int64p(1234568),
+		},
+		{
+			// TODO(krajorama): optimize: this should not be here. In case there's
+			// an exponential histogram we should not scrape the classic histogram.
+			// TSDB will throw this away with storage.errDuplicateSampleForTimestamp
+			// at Commit(), but it needs to be parsed here after the exponential
+			// histogram.
+			m: "test_histogram{}",
+			shs: &histogram.Histogram{
+				Schema:          histogram.CustomBucketsSchema,
+				Count:           175,
+				Sum:             0.0008280461746287094,
+				PositiveSpans:   []histogram.Span{{Length: 4}},
+				PositiveBuckets: []int64{2, 0, 10, 147},
+				CustomValues:    []float64{-0.0004899999999999998, -0.0003899999999999998, -0.0002899999999999998},
+			},
+			lset: labels.FromStrings("__name__", "test_histogram"),
+			t:    int64p(1234568),
+		},
+	}
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
+}
+
+func createTestProtoBufHistogram(t *testing.T) *bytes.Buffer {
+	testMetricFamilies := []string{`name: "test_histogram"
+help: "Test histogram with classic and exponential buckets."
+type: HISTOGRAM
+metric: <
+  histogram: <
+    sample_count: 175
+    sample_sum: 0.0008280461746287094
+    bucket: <
+      cumulative_count: 2
+      upper_bound: -0.0004899999999999998
+    >
+    bucket: <
+      cumulative_count: 4
+      upper_bound: -0.0003899999999999998
+    >
+    bucket: <
+      cumulative_count: 16
+      upper_bound: -0.0002899999999999998
+    >
+    schema: 3
+    zero_threshold: 2.938735877055719e-39
+    zero_count: 2
+    negative_span: <
+      offset: -162
+      length: 1
+    >
+    negative_span: <
+      offset: 23
+      length: 4
+    >
+    negative_delta: 1
+    negative_delta: 3
+    negative_delta: -2
+    negative_delta: -1
+    negative_delta: 1
+    positive_span: <
+      offset: -161
+      length: 1
+    >
+    positive_span: <
+      offset: 8
+      length: 3
+    >
+    positive_delta: 1
+    positive_delta: 2
+    positive_delta: -1
+    positive_delta: -1
+  >
+  timestamp_ms: 1234568
+>
+`}
+
+	varintBuf := make([]byte, binary.MaxVarintLen32)
+	buf := &bytes.Buffer{}
+
+	for _, tmf := range testMetricFamilies {
+		pb := &dto.MetricFamily{}
+		// From text to proto message.
+		require.NoError(t, proto.UnmarshalText(tmf, pb))
+		// From proto message to binary protobuf.
+		protoBuf, err := proto.Marshal(pb)
+		require.NoError(t, err)
+
+		// Write first length, then binary protobuf.
+		varintLength := binary.PutUvarint(varintBuf, uint64(len(protoBuf)))
+		buf.Write(varintBuf[:varintLength])
+		buf.Write(protoBuf)
+	}
+
+	return buf
 }
