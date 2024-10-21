@@ -7,6 +7,8 @@
 
 #include <cstring>
 #if PROMPP_PLATFORM_AMD64
+#include <cstdint>
+
 //#entrypoint.amd64_includes
 #elif PROMPP_PLATFORM_ARM64
 #include <asm/hwcap.h>
@@ -18,25 +20,25 @@
 //#entrypoint.function_pointers
 
 #if PROMPP_PLATFORM_AMD64
-enum arch_flavor { generic, nehalem, haswell };
+enum class arch_flavor : uint8_t { generic, nehalem, haswell };
 
 arch_flavor determine_arch_flavor() {
   if (!__builtin_cpu_supports("sse4.2"))
-    return generic;
+    return arch_flavor::generic;
 
   if (!__builtin_cpu_supports("bmi") || !__builtin_cpu_supports("avx2"))
-    return nehalem;
+    return arch_flavor::nehalem;
 
-  return haswell;
+  return arch_flavor::haswell;
 }
 #elif PROMPP_PLATFORM_ARM64
-enum arch_flavor { generic, crc32 };
+enum class arch_flavor : uint8_t { generic, crc32 };
 
 arch_flavor determine_arch_flavor() {
   if (getauxval(AT_HWCAP) & HWCAP_CRC32) {
-    return crc32;
+    return arch_flavor::crc32;
   }
-  return generic;
+  return arch_flavor::generic;
 }
 #endif
 
@@ -125,12 +127,12 @@ OVERRIDE_ALLOCATOR_SYMBOL(void, free, (void *ptr), (ptr));
 static __attribute__((constructor)) void initialize() {
   switch (determine_arch_flavor()) {
 #if PROMPP_PLATFORM_AMD64
-    case haswell: {
+    case arch_flavor::haswell: {
 //#entrypoint.amd64_haswell_bindings
       SELECT_ARCH(amd64_haswell, "haswell");
       break;
     }
-    case nehalem: {
+    case arch_flavor::nehalem: {
 //#entrypoint.amd64_nehalem_bindings
       SELECT_ARCH(amd64_nehalem, "nehalem");
       break;
@@ -141,7 +143,7 @@ static __attribute__((constructor)) void initialize() {
       break;
     }
 #elif PROMPP_PLATFORM_ARM64
-    case crc32: {
+    case arch_flavor::crc32: {
 //#entrypoint.arm64_armv8_a_crc_bindings
       SELECT_ARCH(arm64_armv8_a_crc, "armv8-a+crc");
       break;

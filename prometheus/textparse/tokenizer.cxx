@@ -1,6 +1,8 @@
 #include "tokenizer.h"
 
+// NOLINTBEGIN
 /*!conditions:re2c*/
+// NOLINTEND
 
 namespace PromPP::Prometheus::textparse {
 
@@ -31,6 +33,7 @@ Tokenizer::Token Tokenizer::consume_comment() noexcept {
   return Token::kEOF;
 }
 
+// NOLINTBEGIN
 Tokenizer::Token Tokenizer::next_impl() noexcept {
   token_ptr_ = cursor_ptr_;
 
@@ -139,5 +142,6 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
       }
   */
 }
+// NOLINTEND
 
 } // namespace PromPP::Prometheus::textparse
