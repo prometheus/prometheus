@@ -115,7 +115,7 @@ func BenchmarkHead_WalCommit(b *testing.B) {
 						for _, s := range histograms[:seriesCount] {
 							var ref storage.SeriesRef
 							for sampleIndex := int64(0); sampleIndex < samplesPerAppend; sampleIndex++ {
-								ref, err = app.Append(ref, s.Labels(), ts+sampleIndex, float64(ts+sampleIndex))
+								ref, err = app.AppendHistogram(ref, s.Labels(), ts+sampleIndex, float64(ts+sampleIndex))
 								if err != nil {
 									return err
 								}
