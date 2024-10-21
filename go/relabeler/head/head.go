@@ -18,6 +18,7 @@ import (
 )
 
 type Head struct {
+	id               string
 	finalizer        *Finalizer
 	referenceCounter relabeler.ReferenceCounter
 	generation       uint64
@@ -39,6 +40,7 @@ type Head struct {
 }
 
 func New(
+	id string,
 	generation uint64,
 	inputRelabelerConfigs []*config.InputRelabelerConfig,
 	lsses []*cppbridge.LabelSetStorage,
@@ -62,6 +64,7 @@ func New(
 
 	factory := util.NewUnconflictRegisterer(registerer)
 	h := &Head{
+		id:                         id,
 		finalizer:                  NewFinalizer(),
 		referenceCounter:           relabeler.NewLoggedAtomicReferenceCounter(fmt.Sprintf("HEAD {%d}", generation)),
 		generation:                 generation,
@@ -104,6 +107,10 @@ func New(
 	})
 
 	return h, nil
+}
+
+func (h *Head) ID() string {
+	return h.id
 }
 
 func (h *Head) Generation() uint64 {
@@ -335,6 +342,10 @@ func (h *Head) enqueueInputRelabeling(task *TaskInputRelabeling) {
 	for _, s := range h.stageInputRelabeling {
 		s <- task
 	}
+}
+
+func (h *Head) Discard() error {
+	return nil
 }
 
 // enqueueHeadAppending append all series after input relabeling stage to head.

@@ -17,8 +17,8 @@ import (
 
 var shardFileNameRegexp = regexp.MustCompile(`shard_\d`)
 
-func Load(generation uint64, dir string, configs []*config.InputRelabelerConfig, numberOfShards uint16, registerer prometheus.Registerer) (_ *Head, err error) {
-	d, err := os.Open(dir)
+func Load(id string, generation uint64, dir string, configs []*config.InputRelabelerConfig, numberOfShards uint16, registerer prometheus.Registerer) (_ *Head, err error) {
+	d, err := os.OpenFile(dir, os.O_RDONLY, 0777)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open dir: %w", err)
 	}
@@ -65,7 +65,7 @@ func Load(generation uint64, dir string, configs []*config.InputRelabelerConfig,
 			}
 		}
 
-		return New(generation, configs, lsses, wals, dataStorages, numberOfShards, registerer)
+		return New(id, generation, configs, lsses, wals, dataStorages, numberOfShards, registerer)
 	}
 
 	// existing head case
@@ -101,7 +101,7 @@ func Load(generation uint64, dir string, configs []*config.InputRelabelerConfig,
 		shardID++
 	}
 
-	return New(generation, configs, lsses, wals, dataStorages, numberOfShards, registerer)
+	return New(id, generation, configs, lsses, wals, dataStorages, numberOfShards, registerer)
 }
 
 func findShardFiles(fileNames []string) ([]string, error) {

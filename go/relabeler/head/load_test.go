@@ -39,7 +39,8 @@ func TestLoad(t *testing.T) {
 			},
 		},
 	}
-	h, err := head.Load(0, tmpDir, cfgs, 2, prometheus.DefaultRegisterer)
+	headID := "head_id"
+	h, err := head.Load(headID, 0, tmpDir, cfgs, 2, prometheus.DefaultRegisterer)
 	require.NoError(t, err)
 
 	ls := model.NewLabelSetBuilder().Set("__name__", "wal_metric").Set("job", "test").Build()
@@ -111,7 +112,7 @@ func TestLoad(t *testing.T) {
 	h.Finalize()
 	require.NoError(t, h.Close())
 
-	h, err = head.Load(0, tmpDir, cfgs, 2, prometheus.DefaultRegisterer)
+	h, err = head.Load(headID, 0, tmpDir, cfgs, 2, prometheus.DefaultRegisterer)
 	require.NoError(t, err)
 
 	q = querier.NewQuerier(h, querier.NoOpShardedDeduplicatorFactory(), 0, 10, nil, nil)
@@ -188,6 +189,117 @@ func TestLoad(t *testing.T) {
 			LabelSet:  ls,
 			Timestamp: 3,
 			Value:     4,
+		},
+	}
+
+	require.True(t, seriesSet.Next())
+	series = seriesSet.At()
+
+	// todo compare label sets
+	chunkIterator = series.Iterator(nil)
+	sIndex = 0
+	for chunkIterator.Next() != chunkenc.ValNone {
+		ts, v := chunkIterator.At()
+		require.Equal(t, int64(expected[sIndex].Timestamp), ts)
+		require.Equal(t, expected[sIndex].Value, v)
+		sIndex++
+	}
+	require.Equal(t, sIndex, len(expected))
+
+	require.False(t, seriesSet.Next())
+
+	require.NoError(t, q.Close())
+
+	h.Finalize()
+	require.NoError(t, h.Close())
+
+	h, err = head.Load(headID, 0, tmpDir, cfgs, 2, prometheus.DefaultRegisterer)
+	require.NoError(t, err)
+
+	q = querier.NewQuerier(h, querier.NoOpShardedDeduplicatorFactory(), 0, 10, nil, nil)
+	matcher, err = labels.NewMatcher(labels.MatchEqual, "__name__", "wal_metric")
+	require.NoError(t, err)
+	seriesSet = q.Select(ctx, false, nil, matcher)
+
+	expected = []model.TimeSeries{
+		{
+			LabelSet:  ls,
+			Timestamp: 0,
+			Value:     1,
+		},
+		{
+			LabelSet:  ls,
+			Timestamp: 1,
+			Value:     2,
+		},
+		{
+			LabelSet:  ls,
+			Timestamp: 2,
+			Value:     3,
+		},
+		{
+			LabelSet:  ls,
+			Timestamp: 3,
+			Value:     4,
+		},
+	}
+
+	require.True(t, seriesSet.Next())
+	series = seriesSet.At()
+
+	// todo compare label sets
+	chunkIterator = series.Iterator(nil)
+	sIndex = 0
+	for chunkIterator.Next() != chunkenc.ValNone {
+		ts, v := chunkIterator.At()
+		require.Equal(t, int64(expected[sIndex].Timestamp), ts)
+		require.Equal(t, expected[sIndex].Value, v)
+		sIndex++
+	}
+	require.Equal(t, sIndex, len(expected))
+
+	require.False(t, seriesSet.Next())
+
+	require.NoError(t, q.Close())
+
+	require.NoError(t, appendTimeSeries(t, ctx, h, []model.TimeSeries{
+		{
+			LabelSet:  ls,
+			Timestamp: 4,
+			Value:     5,
+		},
+	}))
+
+	q = querier.NewQuerier(h, querier.NoOpShardedDeduplicatorFactory(), 0, 10, nil, nil)
+	matcher, err = labels.NewMatcher(labels.MatchEqual, "__name__", "wal_metric")
+	require.NoError(t, err)
+	seriesSet = q.Select(ctx, false, nil, matcher)
+
+	expected = []model.TimeSeries{
+		{
+			LabelSet:  ls,
+			Timestamp: 0,
+			Value:     1,
+		},
+		{
+			LabelSet:  ls,
+			Timestamp: 1,
+			Value:     2,
+		},
+		{
+			LabelSet:  ls,
+			Timestamp: 2,
+			Value:     3,
+		},
+		{
+			LabelSet:  ls,
+			Timestamp: 3,
+			Value:     4,
+		},
+		{
+			LabelSet:  ls,
+			Timestamp: 4,
+			Value:     5,
 		},
 	}
 

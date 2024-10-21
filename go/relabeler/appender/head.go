@@ -25,6 +25,11 @@ type RotatableHead struct {
 	builder HeadBuilder
 }
 
+// ID - relabeler.Head interface implementation.
+func (h *RotatableHead) ID() string {
+	return h.head.ID()
+}
+
 // Generation - relabeler.Head interface implementation.
 func (h *RotatableHead) Generation() uint64 {
 	return h.head.Generation()
@@ -81,14 +86,9 @@ func (h *RotatableHead) Close() error {
 }
 
 // NewRotatableHead - RotatableHead constructor.
-func NewRotatableHead(storage Storage, builder HeadBuilder) (*RotatableHead, error) {
-	hd, err := builder.Build()
-	if err != nil {
-		return nil, err
-	}
-
+func NewRotatableHead(head relabeler.Head, storage Storage, builder HeadBuilder) (*RotatableHead, error) {
 	return &RotatableHead{
-		head:    hd,
+		head:    head,
 		storage: storage,
 		builder: builder,
 	}, nil
@@ -119,4 +119,8 @@ func (h *RotatableHead) RotateWithConfig(inputRelabelerConfigs []*config.InputRe
 	h.head = newHead
 
 	return nil
+}
+
+func (h *RotatableHead) Discard() error {
+	return h.head.Discard()
 }

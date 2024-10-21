@@ -48,6 +48,7 @@ type Shard interface {
 type ShardFn func(shard Shard) error
 
 type Head interface {
+	ID() string
 	Generation() uint64
 	ReferenceCounter() ReferenceCounter
 	Append(ctx context.Context, incomingData *IncomingData, metricLimits *cppbridge.MetricLimits, sourceStates *SourceStates, staleNansTS int64, relabelerID string) ([][]*cppbridge.InnerSeries, error)
@@ -60,6 +61,7 @@ type Head interface {
 	Status(limit int) HeadStatus
 	Rotate() error
 	Close() error
+	Discard() error
 }
 
 type Distributor interface {

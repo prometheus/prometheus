@@ -39,10 +39,11 @@ type QueryableStorage struct {
 }
 
 // NewQueryableStorage - QueryableStorage constructor.
-func NewQueryableStorage(blockWriter BlockWriter, registerer prometheus.Registerer, querierMetrics *querier.Metrics) *QueryableStorage {
+func NewQueryableStorage(blockWriter BlockWriter, registerer prometheus.Registerer, querierMetrics *querier.Metrics, heads ...relabeler.Head) *QueryableStorage {
 	factory := util.NewUnconflictRegisterer(registerer)
 	qs := &QueryableStorage{
 		blockWriter: blockWriter,
+		heads:       heads,
 		signal:      make(chan struct{}),
 		closer:      util.NewCloser(),
 		headPersistenceDuration: factory.NewGaugeVec(
@@ -63,7 +64,7 @@ func (qs *QueryableStorage) loop() {
 	defer qs.closer.Done()
 
 	var writeFinished chan struct{}
-	writeRequested := false
+	writeRequested := len(qs.heads) > 0
 	closed := false
 
 	for {
@@ -219,6 +220,7 @@ func (qs *QueryableStorage) shrink() {
 		logger.Infof("QUERYABLE STORAGE: SHRINK: HEAD { %d }: persisted: %v, ref count: %d", head.Generation(), head.ReferenceCounter().Value() < 0, refCount(head.ReferenceCounter().Value()))
 		if head.ReferenceCounter().Value() == PersistedHeadValue {
 			_ = head.Close()
+			_ = head.Discard()
 			logger.Infof("QUERYABLE STORAGE: head { %d } persisted and closed", head.Generation())
 			continue
 		}
