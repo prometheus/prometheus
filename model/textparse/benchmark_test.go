@@ -86,8 +86,6 @@ func BenchmarkParse(b *testing.B) {
 		// NHCB.
 		{dataFile: "omhistogramdata.txt", parser: "omtext"},           // Measure OM parser baseline for histograms.
 		{dataFile: "omhistogramdata.txt", parser: "nhcb_over_omtext"}, // Measure NHCB over OM parser.
-		{dataFile: "omcounterdata.txt", parser: "omtext"},             // Measure OM parser baseline for counters.
-		{dataFile: "omcounterdata.txt", parser: "nhcb_over_omtext"},   // Measure NHCB over OM parser.
 	} {
 		var buf []byte
 		dataCase := bcase.dataFile
