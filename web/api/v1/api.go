@@ -15,6 +15,8 @@ package v1
 
 import (
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1371,7 +1373,8 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 
 // RuleDiscovery has info for all rules.
 type RuleDiscovery struct {
-	RuleGroups []*RuleGroup `json:"groups"`
+	RuleGroups     []*RuleGroup `json:"groups"`
+	GroupNextToken string       `json:"groupNextToken:omitempty"`
 }
 
 // RuleGroup has info for rules which are part of a group.
@@ -1458,8 +1461,23 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 		return invalidParamError(err, "exclude_alerts")
 	}
 
+	maxGroups, nextToken, parseErr := parseListRulesPaginationRequest(r)
+	if parseErr != nil {
+		return *parseErr
+	}
+
 	rgs := make([]*RuleGroup, 0, len(ruleGroups))
+
+	foundToken := false
+
 	for _, grp := range ruleGroups {
+		if maxGroups > 0 && nextToken != "" && !foundToken {
+			if nextToken != getRuleGroupNextToken(grp.File(), grp.Name()) {
+				continue
+			}
+			foundToken = true
+		}
+
 		if len(rgSet) > 0 {
 			if _, ok := rgSet[grp.Name()]; !ok {
 				continue
@@ -1504,6 +1522,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 				if !excludeAlerts {
 					activeAlerts = rulesAlertsToAPIAlerts(rule.ActiveAlerts())
 				}
+
 				enrichedRule = AlertingRule{
 					State:          rule.State().String(),
 					Name:           rule.Name(),
@@ -1519,6 +1538,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 					LastEvaluation: rule.GetEvaluationTimestamp(),
 					Type:           "alerting",
 				}
+
 			case *rules.RecordingRule:
 				if !returnRecording {
 					break
@@ -1545,9 +1565,20 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 
 		// If the rule group response has no rules, skip it - this means we filtered all the rules of this group.
 		if len(apiRuleGroup.Rules) > 0 {
+			if maxGroups > 0 && len(rgs) == int(maxGroups) {
+				// We've reached the capacity of our page plus one. That means that for sure there will be at least one
+				// rule group in a subsequent request. Therefore a next token is required.
+				res.GroupNextToken = getRuleGroupNextToken(grp.File(), grp.Name())
+				break
+			}
 			rgs = append(rgs, apiRuleGroup)
 		}
 	}
+
+	if maxGroups > 0 && nextToken != "" && !foundToken {
+		return invalidParamError(fmt.Errorf("invalid group_next_token '%v'. were rule groups changed?", nextToken), "group_next_token")
+	}
+
 	res.RuleGroups = rgs
 	return apiFuncResult{res, nil, nil, nil}
 }
@@ -1564,6 +1595,44 @@ func parseExcludeAlerts(r *http.Request) (bool, error) {
 		return false, fmt.Errorf("error converting exclude_alerts: %w", err)
 	}
 	return excludeAlerts, nil
+}
+
+func parseListRulesPaginationRequest(r *http.Request) (int64, string, *apiFuncResult) {
+	var (
+		parsedMaxGroups int64 = -1
+		err             error
+	)
+	maxGroups := r.URL.Query().Get("group_limit")
+	nextToken := r.URL.Query().Get("group_next_token")
+
+	if nextToken != "" && maxGroups == "" {
+		errResult := invalidParamError(fmt.Errorf("group_limit needs to be present in order to paginate over the groups"), "group_next_token")
+		return -1, "", &errResult
+	}
+
+	if maxGroups != "" {
+		parsedMaxGroups, err = strconv.ParseInt(maxGroups, 10, 32)
+		if err != nil {
+			errResult := invalidParamError(fmt.Errorf("group_limit needs to be a valid number: %w", err), "group_limit")
+			return -1, "", &errResult
+		}
+		if parsedMaxGroups <= 0 {
+			errResult := invalidParamError(fmt.Errorf("group_limit needs to be greater than 0"), "group_limit")
+			return -1, "", &errResult
+		}
+	}
+
+	if parsedMaxGroups > 0 {
+		return parsedMaxGroups, nextToken, nil
+	}
+
+	return -1, "", nil
+}
+
+func getRuleGroupNextToken(file, group string) string {
+	h := sha1.New()
+	h.Write([]byte(file + ";" + group))
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 type prometheusConfig struct {

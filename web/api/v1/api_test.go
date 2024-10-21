@@ -338,7 +338,15 @@ func (m *rulesRetrieverMock) CreateRuleGroups() {
 		ShouldRestore: false,
 		Opts:          opts,
 	})
-	m.ruleGroups = []*rules.Group{group}
+	group2 := rules.NewGroup(rules.GroupOptions{
+		Name:          "grp2",
+		File:          "/path/to/file",
+		Interval:      time.Second,
+		Rules:         []rules.Rule{r[0]},
+		ShouldRestore: false,
+		Opts:          opts,
+	})
+	m.ruleGroups = []*rules.Group{group, group2}
 }
 
 func (m *rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
@@ -2241,6 +2249,25 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 							},
 						},
 					},
+					{
+						Name:     "grp2",
+						File:     "/path/to/file",
+						Interval: 1,
+						Limit:    0,
+						Rules: []Rule{
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric3",
+								Query:       "absent(test_metric3) != 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "ok",
+								Type:        "alerting",
+							},
+						},
+					},
 				},
 			},
 			zeroFunc: rulesZeroFunc,
@@ -2329,6 +2356,25 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 							},
 						},
 					},
+					{
+						Name:     "grp2",
+						File:     "/path/to/file",
+						Interval: 1,
+						Limit:    0,
+						Rules: []Rule{
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric3",
+								Query:       "absent(test_metric3) != 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      nil,
+								Health:      "ok",
+								Type:        "alerting",
+							},
+						},
+					},
 				},
 			},
 			zeroFunc: rulesZeroFunc,
@@ -2403,6 +2449,25 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Query:       "up == 1",
 								Duration:    1,
 								Labels:      labels.FromStrings("templatedlabel", "{{ $externalURL }}"),
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "ok",
+								Type:        "alerting",
+							},
+						},
+					},
+					{
+						Name:     "grp2",
+						File:     "/path/to/file",
+						Interval: 1,
+						Limit:    0,
+						Rules: []Rule{
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric3",
+								Query:       "absent(test_metric3) != 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
 								Annotations: labels.Labels{},
 								Alerts:      []*Alert{},
 								Health:      "ok",
@@ -2679,6 +2744,159 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					},
 				},
 			},
+			zeroFunc: rulesZeroFunc,
+		},
+		{
+			endpoint: api.rules,
+			query: url.Values{
+				"group_limit": []string{"1"},
+			},
+			response: &RuleDiscovery{
+				GroupNextToken: getRuleGroupNextToken("/path/to/file", "grp2"),
+				RuleGroups: []*RuleGroup{
+					{
+						Name:     "grp",
+						File:     "/path/to/file",
+						Interval: 1,
+						Limit:    0,
+						Rules: []Rule{
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric3",
+								Query:       "absent(test_metric3) != 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "ok",
+								Type:        "alerting",
+							},
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric4",
+								Query:       "up == 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "ok",
+								Type:        "alerting",
+							},
+							AlertingRule{
+								State:       "pending",
+								Name:        "test_metric5",
+								Query:       "vector(1)",
+								Duration:    1,
+								Labels:      labels.FromStrings("name", "tm5"),
+								Annotations: labels.Labels{},
+								Alerts: []*Alert{
+									{
+										Labels:      labels.FromStrings("alertname", "test_metric5", "name", "tm5"),
+										Annotations: labels.Labels{},
+										State:       "pending",
+										Value:       "1e+00",
+									},
+								},
+								Health: "ok",
+								Type:   "alerting",
+							},
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric6",
+								Query:       "up == 1",
+								Duration:    1,
+								Labels:      labels.FromStrings("testlabel", "rule"),
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "ok",
+								Type:        "alerting",
+							},
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric7",
+								Query:       "up == 1",
+								Duration:    1,
+								Labels:      labels.FromStrings("templatedlabel", "{{ $externalURL }}"),
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "ok",
+								Type:        "alerting",
+							},
+							RecordingRule{
+								Name:   "recording-rule-1",
+								Query:  "vector(1)",
+								Labels: labels.Labels{},
+								Health: "ok",
+								Type:   "recording",
+							},
+							RecordingRule{
+								Name:   "recording-rule-2",
+								Query:  "vector(1)",
+								Labels: labels.FromStrings("testlabel", "rule"),
+								Health: "ok",
+								Type:   "recording",
+							},
+						},
+					},
+				},
+			},
+			zeroFunc: rulesZeroFunc,
+		},
+		{
+			endpoint: api.rules,
+			query: url.Values{
+				"group_limit":      []string{"1"},
+				"group_next_token": []string{getRuleGroupNextToken("/path/to/file", "grp2")},
+			},
+			response: &RuleDiscovery{
+				RuleGroups: []*RuleGroup{
+					{
+						Name:     "grp2",
+						File:     "/path/to/file",
+						Interval: 1,
+						Limit:    0,
+						Rules: []Rule{
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric3",
+								Query:       "absent(test_metric3) != 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "ok",
+								Type:        "alerting",
+							},
+						},
+					},
+				},
+			},
+			zeroFunc: rulesZeroFunc,
+		},
+		{ // invalid pagination request
+			endpoint: api.rules,
+			query: url.Values{
+				"group_next_token": []string{getRuleGroupNextToken("/path/to/file", "grp2")},
+			},
+			errType:  errorBadData,
+			zeroFunc: rulesZeroFunc,
+		},
+		{ // invalid group_limit
+			endpoint: api.rules,
+			query: url.Values{
+				"group_limit":      []string{"0"},
+				"group_next_token": []string{getRuleGroupNextToken("/path/to/file", "grp2")},
+			},
+			errType:  errorBadData,
+			zeroFunc: rulesZeroFunc,
+		},
+		{ // Pagination token is invalid due to changes in the rule groups
+			endpoint: api.rules,
+			query: url.Values{
+				"group_limit":      []string{"1"},
+				"group_next_token": []string{getRuleGroupNextToken("/removed/file", "notfound")},
+			},
+			errType:  errorBadData,
 			zeroFunc: rulesZeroFunc,
 		},
 		{
