@@ -87,10 +87,9 @@ func BenchmarkHeadStripeSeriesCreate_PreCreationFailure(b *testing.B) {
 }
 
 func BenchmarkHead_WalCommit(b *testing.B) {
-	minute := func(m int) int64 { return int64(m) * time.Minute.Milliseconds() }
 	seriesCounts := []int{100, 1000, 10000}
 	series := genSeries(10000, 10, 0, 0)
-	histograms := genHistogramSeries(10000, 10, minute(0), minute(119), minute(1), true)
+	histograms := genHistogramSeries(10000, 10, 0, 119, 1, true)
 
 	for _, seriesCount := range seriesCounts {
 		b.Run(fmt.Sprintf("%d series", seriesCount), func(b *testing.B) {
