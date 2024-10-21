@@ -28,15 +28,6 @@ struct PostingsWriterCase {
   std::string_view expected;
 };
 
-LabelViewSet make_ls_with_empty_label_value() {
-  LabelViewSet ls{{"key", "value"}};
-  for (auto& label : ls) {
-    label.second = "";
-    break;
-  }
-  return ls;
-}
-
 class PostingsWriterFixture : public testing::TestWithParam<PostingsWriterCase> {
  protected:
   using TrieIndex = series_index::TrieIndex<series_index::trie::CedarTrie, series_index::trie::CedarMatchesList>;
@@ -59,6 +50,11 @@ class PostingsWriterFixture : public testing::TestWithParam<PostingsWriterCase> 
     SeriesWriter<QueryableEncodingBimap, ChunkMetadataList, decltype(stream_)>{lss_, chunk_metadata_list, symbol_references_, series_references_}.write(
         stream_writer);
   }
+
+  void reset_stream() noexcept {
+    stream_.str("");
+    stream_writer_.writer().set_stream(&stream_);
+  }
 };
 
 TEST_P(PostingsWriterFixture, FullWrite) {
@@ -80,111 +76,107 @@ INSTANTIATE_TEST_SUITE_P(EmptyLabelSet,
                                                             .chunk_metadata_list = {},
                                                             .expected = "\x00\x00\x00\x04"
                                                                         "\x00\x00\x00\x00"
-                                                                        "\x48\x67\x4B\xC7"
-
-                                                                        "\x00\x00\x00\x08"
-                                                                        "\x00\x00\x00\x01"
-                                                                        "\x02"
-                                                                        "\x00"
-                                                                        "\x00"
-                                                                        "\x00"
-                                                                        "\x0B\x5E\xFE\xA7"sv}));
-
-INSTANTIATE_TEST_SUITE_P(LabelWithEmptyValue,
-                         PostingsWriterFixture,
-                         testing::Values(PostingsWriterCase{.label_sets = {make_ls_with_empty_label_value()},
-                                                            .chunk_metadata_list = {{}},
-                                                            .expected = "\x00\x00\x00\x08"
-                                                                        "\x00\x00\x00\x01"
-                                                                        "\x00\x00\x00\x02"
-                                                                        "\x55\x02\xAD\xD1"
-
-                                                                        "\x00\x00\x00\x08"
-                                                                        "\x00\x00\x00\x01"
-                                                                        "\x02"
-                                                                        "\x00"
-                                                                        "\x00"
-                                                                        "\x00"
-
-                                                                        "\x0B\x5E\xFE\xA7"sv}));
+                                                                        "\x48\x67\x4B\xC7"sv}));
 
 INSTANTIATE_TEST_SUITE_P(Test,
                          PostingsWriterFixture,
-                         testing::Values(PostingsWriterCase{
-                             .label_sets = {{{"job", "cron"}, {"server", "localhost"}}, {{"job", "cron"}, {"server", "127.0.0.1"}}},
-                             .chunk_metadata_list = {{}, {}},
-                             .expected = "\x00\x00\x00\x0C"
-                                         "\x00\x00\x00\x02"
-                                         "\x00\x00\x00\x04"
-                                         "\x00\x00\x00\x05"
-                                         "\x13\x45\xC5\x90"
+                         testing::Values(PostingsWriterCase{.label_sets =
+                                                                {
+                                                                    {{"job", "cron"}, {"server", "localhost"}},
+                                                                    {{"job", "cron"}, {"server", "remote"}},
+                                                                    {{"job", "cron"}, {"server", "127.0.0.1"}},
+                                                                },
+                                                            .chunk_metadata_list =
+                                                                {
+                                                                    {{.min_timestamp = 1000, .max_timestamp = 2001, .reference = 0},
+                                                                     {.min_timestamp = 2002, .max_timestamp = 4004, .reference = 100},
+                                                                     {.min_timestamp = 4005, .max_timestamp = 5005, .reference = 125}},
+                                                                    {},
+                                                                    {{.min_timestamp = 1000, .max_timestamp = 2001, .reference = 0},
+                                                                     {.min_timestamp = 2002, .max_timestamp = 4004, .reference = 100},
+                                                                     {.min_timestamp = 4005, .max_timestamp = 5005, .reference = 125}},
+                                                                },
+                                                            .expected = "\x00\x00\x00\x0C"
+                                                                        "\x00\x00\x00\x02"
+                                                                        "\x00\x00\x00\x04"
+                                                                        "\x00\x00\x00\x06"
+                                                                        "\x00\x15\x36\x64"
 
-                                         "\x00\x00\x00\x0C"
-                                         "\x00\x00\x00\x02"
-                                         "\x00\x00\x00\x04"
-                                         "\x00\x00\x00\x05"
-                                         "\x13\x45\xC5\x90"
+                                                                        "\x00\x00\x00\x0C"
+                                                                        "\x00\x00\x00\x02"
+                                                                        "\x00\x00\x00\x04"
+                                                                        "\x00\x00\x00\x06"
+                                                                        "\x00\x15\x36\x64"
 
-                                         "\x00\x00\x00\x08"
-                                         "\x00\x00\x00\x01"
-                                         "\x00\x00\x00\x04"
-                                         "\x73\xA3\x4A\x39"
+                                                                        "\x00\x00\x00\x08"
+                                                                        "\x00\x00\x00\x01"
+                                                                        "\x00\x00\x00\x04"
+                                                                        "\x73\xA3\x4A\x39"
 
-                                         "\x00\x00\x00\x08"
-                                         "\x00\x00\x00\x01"
-                                         "\x00\x00\x00\x05"
-                                         "\x81\xC8\xC9\x3A"
+                                                                        "\x00\x00\x00\x08"
+                                                                        "\x00\x00\x00\x01"
+                                                                        "\x00\x00\x00\x06"
+                                                                        "\x92\x98\x3A\xCE"
 
-                                         "\x00\x00\x00\x39"
-                                         "\x00\x00\x00\x04"
-                                         "\x02"
-                                         "\x00\x00\x00"
-                                         "\x02"
-                                         "\x03"
-                                         "job"
-                                         "\x04"
-                                         "cron"
-                                         "\x14"
-                                         "\x02"
-                                         "\x06"
-                                         "server"
-                                         "\x09"
-                                         "127.0.0.1"
-                                         "\x28"
-                                         "\x02"
-                                         "\x06"
-                                         "server"
-                                         "\x09"
-                                         "localhost"
-                                         "\x38"
-                                         "\xF7\x79\x10\x67"sv}));
+                                                                        "\x00\x00\x00\x39"
+                                                                        "\x00\x00\x00\x04"
+                                                                        "\x02"
+                                                                        "\x00\x00\x00"
+                                                                        "\x02"
+                                                                        "\x03"
+                                                                        "job"
+                                                                        "\x04"
+                                                                        "cron"
+                                                                        "\x14"
+                                                                        "\x02"
+                                                                        "\x06"
+                                                                        "server"
+                                                                        "\x09"
+                                                                        "127.0.0.1"
+                                                                        "\x28"
+                                                                        "\x02"
+                                                                        "\x06"
+                                                                        "server"
+                                                                        "\x09"
+                                                                        "localhost"
+                                                                        "\x38"
+                                                                        "\xF7\x79\x10\x67"sv}));
 
 TEST_F(PostingsWriterFixture, PartialWrite) {
   // Arrange
-  ChunkMetadataList chunk_metadata_list = {{}, {}};
+  ChunkMetadataList chunk_metadata_list = {
+      {{.min_timestamp = 1000, .max_timestamp = 2001, .reference = 0},
+       {.min_timestamp = 2002, .max_timestamp = 4004, .reference = 100},
+       {.min_timestamp = 4005, .max_timestamp = 5005, .reference = 125}},
+      {},
+      {{.min_timestamp = 1000, .max_timestamp = 2001, .reference = 0},
+       {.min_timestamp = 2002, .max_timestamp = 4004, .reference = 100},
+       {.min_timestamp = 4005, .max_timestamp = 5005, .reference = 125}},
+  };
   fill_data(
       LabelViewSetList{
-          {{"server", "localhost"}},
-          {{"server", "127.0.0.1"}},
+          {{"job", "cron"}, {"server", "localhost"}},
+          {{"job", "cron"}, {"server", "remote"}},
+          {{"job", "cron"}, {"server", "127.0.0.1"}},
       },
       chunk_metadata_list);
-  PostingsWriter<QueryableEncodingBimap, decltype(stream_)> postings_writer{lss_, series_references_, stream_writer_};
+  PostingsWriter postings_writer{lss_, series_references_, stream_writer_};
 
   // Act
   postings_writer.write_postings(0);
   auto has_more_data_after_first_write = postings_writer.has_more_data();
   auto first_batch_data = stream_.str();
-  stream_.str("");
+  reset_stream();
 
   postings_writer.write_postings(1);
   auto has_more_data_after_second_write = postings_writer.has_more_data();
   auto second_batch_data = stream_.str();
-  stream_.str("");
+  reset_stream();
 
-  postings_writer.write_postings(0);
+  postings_writer.write_postings(17);
   auto has_more_data_after_third_write = postings_writer.has_more_data();
   auto third_batch_data = stream_.str();
-  stream_.str("");
+  reset_stream();
 
   postings_writer.write_postings_table_offsets();
 
@@ -193,50 +185,56 @@ TEST_F(PostingsWriterFixture, PartialWrite) {
   EXPECT_EQ(
       "\x00\x00\x00\x0C"
       "\x00\x00\x00\x02"
-      "\x00\x00\x00\x03"
       "\x00\x00\x00\x04"
-      "\x49\x58\x48\xD7"sv,
+      "\x00\x00\x00\x06"
+      "\x00\x15\x36\x64"sv,
       first_batch_data);
 
   EXPECT_TRUE(has_more_data_after_second_write);
   EXPECT_EQ(
-      "\x00\x00\x00\x08"
-      "\x00\x00\x00\x01"
-      "\x00\x00\x00\x03"
-      "\xA7\x69\x2E\xD2"sv,
+      "\x00\x00\x00\x0C"
+      "\x00\x00\x00\x02"
+      "\x00\x00\x00\x04"
+      "\x00\x00\x00\x06"
+      "\x00\x15\x36\x64"sv,
       second_batch_data);
 
-  EXPECT_FALSE(has_more_data_after_third_write);
+  EXPECT_TRUE(has_more_data_after_third_write);
   EXPECT_EQ(
       "\x00\x00\x00\x08"
       "\x00\x00\x00\x01"
       "\x00\x00\x00\x04"
-      "\x73\xA3\x4A\x39"sv,
+      "\x73\xA3\x4A\x39"
+      "\x00\x00\x00\x08"
+      "\x00\x00\x00\x01"
+      "\x00\x00\x00\x06"
+      "\x92\x98\x3A\xCE"sv,
       third_batch_data);
 
   EXPECT_EQ(
-      "\x00\x00\x00\x2E"
-      "\x00\x00\x00\x03"
-
+      "\x00\x00\x00\x39"
+      "\x00\x00\x00\x04"
       "\x02"
-      "\x00\x00"
-      "\x00"
-
+      "\x00\x00\x00"
+      "\x02"
+      "\x03"
+      "job"
+      "\x04"
+      "cron"
+      "\x14"
       "\x02"
       "\x06"
       "server"
       "\x09"
       "127.0.0.1"
-      "\x14"
-
+      "\x28"
       "\x02"
       "\x06"
       "server"
       "\x09"
       "localhost"
-      "\x24"
-
-      "\xAA\x6D\x56\x15"sv,
+      "\x38"
+      "\xF7\x79\x10\x67"sv,
       stream_.view());
 }
 

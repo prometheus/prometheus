@@ -42,8 +42,8 @@ type ChunkIterator struct {
 	rc *cppbridge.RecodedChunk
 }
 
-func NewChunkIterator(ds *cppbridge.HeadDataStorage) *ChunkIterator {
-	return &ChunkIterator{r: cppbridge.NewChunkRecoder(ds)}
+func NewChunkIterator(ds *cppbridge.HeadDataStorage, minT, maxT int64) *ChunkIterator {
+	return &ChunkIterator{r: cppbridge.NewChunkRecoder(ds, cppbridge.TimeInterval{MinT: minT, MaxT: maxT})}
 }
 
 func (i *ChunkIterator) Next() bool {
@@ -137,8 +137,13 @@ type Block struct {
 	ds  *cppbridge.HeadDataStorage
 }
 
-func (b *Block) ChunkIterator() block.ChunkIterator {
-	return NewChunkIterator(b.ds)
+func (b *Block) TimeBounds() (minT, maxT int64) {
+	interval := b.ds.TimeInterval()
+	return interval.MinT, interval.MaxT
+}
+
+func (b *Block) ChunkIterator(minT, maxT int64) block.ChunkIterator {
+	return NewChunkIterator(b.ds, minT, maxT)
 }
 
 func (b *Block) IndexWriterTo(chunkMetadataList [][]block.ChunkMetadata) io.WriterTo {

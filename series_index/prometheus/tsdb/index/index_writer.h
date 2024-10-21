@@ -41,8 +41,7 @@ class IndexWriter {
   PROMPP_ALWAYS_INLINE void write_series(Stream& stream, uint32_t series_count) {
     writer_.writer().set_stream(&stream);
 
-    if (toc_.series == 0) {
-      [[unlikely]];
+    if (toc_.series == 0) [[unlikely]] {
       toc_.series = writer_.position();
     }
     series_writer_.write(writer_, series_count);
@@ -58,8 +57,7 @@ class IndexWriter {
   PROMPP_ALWAYS_INLINE void write_postings(Stream& stream, uint32_t max_batch_size) {
     writer_.writer().set_stream(&stream);
 
-    if (toc_.postings == 0) {
-      [[unlikely]];
+    if (toc_.postings == 0) [[unlikely]] {
       toc_.postings = writer_.position();
     }
     postings_writer_.write_postings(max_batch_size);

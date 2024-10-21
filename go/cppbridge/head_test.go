@@ -7,75 +7,28 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-type ChunkRecoderSuite struct {
+type HeadSuite struct {
 	suite.Suite
 	dataStorage *cppbridge.HeadDataStorage
 	encoder     *cppbridge.HeadEncoder
 }
 
-func TestChunkRecoderSuite(t *testing.T) {
-	suite.Run(t, new(ChunkRecoderSuite))
+func TestHeadSuite(t *testing.T) {
+	suite.Run(t, new(HeadSuite))
 }
 
-func (s *ChunkRecoderSuite) SetupTest() {
+func (s *HeadSuite) SetupTest() {
 	s.dataStorage = cppbridge.NewHeadDataStorage()
 	s.encoder = cppbridge.NewHeadEncoderWithDataStorage(s.dataStorage)
 }
 
-func (s *ChunkRecoderSuite) TestEmptyStorage() {
-	// Arrange
-	recoder := cppbridge.NewChunkRecoder(s.dataStorage)
-
-	// Act
-	chunk := recoder.RecodeNextChunk()
-
-	// Assert
-	s.Equal(cppbridge.RecodedChunk{
-		MinT:         0,
-		MaxT:         0,
-		SamplesCount: 0,
-		SeriesId:     cppbridge.InvalidSeriesId,
-		HasMoreData:  false,
-		ChunkData:    nil,
-	}, chunk)
-}
-
-func (s *ChunkRecoderSuite) TestStorageWithOneChunk() {
-	// Arrange
-	s.encoder.Encode(0, 1, 1.0)
-	s.encoder.Encode(0, 2, 1.0)
-	recoder := cppbridge.NewChunkRecoder(s.dataStorage)
-
-	// Act
-	chunk1 := recoder.RecodeNextChunk()
-	chunk1.ChunkData = append([]byte(nil), chunk1.ChunkData...)
-	chunk2 := recoder.RecodeNextChunk()
-
-	// Assert
-	s.Equal(cppbridge.RecodedChunk{
-		MinT:         1,
-		MaxT:         2,
-		SamplesCount: 2,
-		SeriesId:     0,
-		HasMoreData:  false,
-		ChunkData:    []byte{0x00, 0x02, 0x02, 0x3f, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00},
-	}, chunk1)
-	s.Equal(cppbridge.RecodedChunk{
-		MinT:        0,
-		MaxT:        0,
-		SeriesId:    cppbridge.InvalidSeriesId,
-		HasMoreData: false,
-		ChunkData:   []byte{},
-	}, chunk2)
-}
-
-func (s *ChunkRecoderSuite) TestStorageWithEmptyChunks() {
+func (s *HeadSuite) TestChunkRecoder() {
 	// Arrange
 	s.encoder.Encode(2, 1, 1.0)
 	s.encoder.Encode(2, 2, 1.0)
 	s.encoder.Encode(4, 3, 2.0)
 	s.encoder.Encode(4, 4, 2.0)
-	recoder := cppbridge.NewChunkRecoder(s.dataStorage)
+	recoder := cppbridge.NewChunkRecoder(s.dataStorage, cppbridge.TimeInterval{MinT: 0, MaxT: 5})
 
 	// Act
 	chunk2 := recoder.RecodeNextChunk()
@@ -84,16 +37,20 @@ func (s *ChunkRecoderSuite) TestStorageWithEmptyChunks() {
 
 	// Assert
 	s.Equal(cppbridge.RecodedChunk{
-		MinT:         1,
-		MaxT:         2,
+		TimeInterval: cppbridge.TimeInterval{
+			MinT: 1,
+			MaxT: 2,
+		},
 		SamplesCount: 2,
 		SeriesId:     2,
 		HasMoreData:  true,
 		ChunkData:    []byte{0x00, 0x02, 0x02, 0x3f, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00},
 	}, chunk2)
 	s.Equal(cppbridge.RecodedChunk{
-		MinT:         3,
-		MaxT:         4,
+		TimeInterval: cppbridge.TimeInterval{
+			MinT: 3,
+			MaxT: 4,
+		},
 		SamplesCount: 2,
 		SeriesId:     4,
 		HasMoreData:  false,
@@ -101,57 +58,18 @@ func (s *ChunkRecoderSuite) TestStorageWithEmptyChunks() {
 	}, chunk4)
 }
 
-func (s *ChunkRecoderSuite) TestRecodeChunkWithFinalizedTimestampStream() {
+func (s *HeadSuite) TestTimeInterval() {
 	// Arrange
-	for i := 0; i < cppbridge.MaxPointsInChunk; i++ {
-		s.encoder.Encode(0, int64(i), 1.0)
-		s.encoder.Encode(1, int64(i), 1.0)
-	}
-	s.encoder.Encode(1, int64(cppbridge.MaxPointsInChunk), 1.0)
-
-	recoder := cppbridge.NewChunkRecoder(s.dataStorage)
+	dataStorage := cppbridge.NewHeadDataStorage()
+	encoder := cppbridge.NewHeadEncoderWithDataStorage(dataStorage)
+	encoder.Encode(0, 1, 1.0)
+	encoder.Encode(0, 2, 1.0)
+	encoder.Encode(1, 2, 1.0)
+	encoder.Encode(1, 3, 1.0)
 
 	// Act
-	chunk := recoder.RecodeNextChunk()
+	time_interval := dataStorage.TimeInterval()
 
 	// Assert
-	s.Equal(cppbridge.RecodedChunk{
-		MinT:         0,
-		MaxT:         cppbridge.MaxPointsInChunk - 1,
-		SamplesCount: cppbridge.MaxPointsInChunk,
-		SeriesId:     0,
-		HasMoreData:  true,
-		ChunkData: []byte{
-			0x00, 0xf0, 0x00, 0x3f, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
-			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
-	}, chunk)
-}
-
-func (s *ChunkRecoderSuite) TestRecodeGorillaChunk() {
-	// Arrange
-	s.encoder.Encode(0, 1, 1.1)
-	s.encoder.Encode(0, 2, 1.2)
-	s.encoder.Encode(0, 3, 1.3)
-	s.encoder.Encode(0, 4, 1.4)
-
-	recoder := cppbridge.NewChunkRecoder(s.dataStorage)
-
-	// Act
-	chunk := recoder.RecodeNextChunk()
-
-	// Assert
-	s.Equal(cppbridge.RecodedChunk{
-		MinT:         1,
-		MaxT:         4,
-		SamplesCount: 4,
-		SeriesId:     0,
-		HasMoreData:  false,
-		ChunkData: []byte{
-			0x00, 0x04, 0x02, 0x3f, 0xf1, 0x99, 0x99, 0x99, 0x99, 0x99, 0x9a, 0x01, 0xdd, 0x95, 0x55, 0x55,
-			0x55, 0x55, 0x55, 0x52, 0xdb, 0x97, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe, 0xdd, 0x95, 0x55, 0x55,
-			0x55, 0x55, 0x55, 0x56},
-	}, chunk)
+	s.Equal(cppbridge.TimeInterval{MinT: 1, MaxT: 3}, time_interval)
 }

@@ -1276,6 +1276,23 @@ func seriesDataDataStorageQuery(dataStorage uintptr, query HeadDataStorageQuery)
 	return res.serializedChunks
 }
 
+func seriesDataDataStorageTimeInterval(dataStorage uintptr) TimeInterval {
+	var args = struct {
+		dataStorage uintptr
+	}{dataStorage}
+	var res = struct {
+		interval TimeInterval
+	}{}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_series_data_data_storage_time_interval,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.interval
+}
+
 func seriesDataDataStorageDtor(dataStorage uintptr) {
 	var args = struct {
 		dataStorage uintptr
@@ -1453,10 +1470,11 @@ func seriesDataDeserializerDtor(deserializer uintptr) {
 	)
 }
 
-func seriesDataChunkRecoderCtor(dataStorage uintptr) uintptr {
+func seriesDataChunkRecoderCtor(dataStorage uintptr, timeInterval TimeInterval) uintptr {
 	var args = struct {
 		dataStorage uintptr
-	}{dataStorage}
+		TimeInterval
+	}{dataStorage, timeInterval}
 	var res struct {
 		chunkRecoder uintptr
 	}

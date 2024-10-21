@@ -39,6 +39,12 @@ struct DataStorage {
       [[nodiscard]] PROMPP_ALWAYS_INLINE const chunk::DataChunk& chunk() const noexcept {
         return chunk_type() == chunk::DataChunk::Type::kOpen ? *open_chunk_ : *finalized_chunk_iterator_;
       }
+      [[nodiscard]] PROMPP_ALWAYS_INLINE std::forward_list<chunk::DataChunk>::const_iterator finalized_chunk_iterator() const noexcept {
+        return finalized_chunk_iterator_;
+      }
+      [[nodiscard]] PROMPP_ALWAYS_INLINE std::forward_list<chunk::DataChunk>::const_iterator finalized_chunk_end_iterator() const noexcept {
+        return finalized_chunk_end_iterator_;
+      }
 
      private:
       friend class SeriesChunkIterator;
