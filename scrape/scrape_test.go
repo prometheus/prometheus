@@ -3478,7 +3478,7 @@ test_summary_count 199
 }
 
 // Testing whether we can automatically convert scraped classic histograms into native histograms with custom buckets.
-func TestConvertClassicHistograms(t *testing.T) {
+func TestConvertClassicHistogramsToNHCB(t *testing.T) {
 	genTestCounterText := func(name string, value int, withMetadata bool) string {
 		if withMetadata {
 			return fmt.Sprintf(`
@@ -3839,23 +3839,23 @@ metric: <
 	for metricsTextName, metricsText := range metricsTexts {
 		for name, tc := range map[string]struct {
 			alwaysScrapeClassicHistograms bool
-			convertClassicHistograms      bool
+			convertClassicHistToNHCB      bool
 		}{
 			"convert with scrape": {
 				alwaysScrapeClassicHistograms: true,
-				convertClassicHistograms:      true,
+				convertClassicHistToNHCB:      true,
 			},
 			"convert without scrape": {
 				alwaysScrapeClassicHistograms: false,
-				convertClassicHistograms:      true,
+				convertClassicHistToNHCB:      true,
 			},
 			"scrape without convert": {
 				alwaysScrapeClassicHistograms: true,
-				convertClassicHistograms:      false,
+				convertClassicHistToNHCB:      false,
 			},
 			"neither scrape nor convert": {
 				alwaysScrapeClassicHistograms: false,
-				convertClassicHistograms:      false,
+				convertClassicHistToNHCB:      false,
 			},
 		} {
 			var expectedClassicHistCount, expectedNativeHistCount int
@@ -3869,15 +3869,15 @@ metric: <
 				}
 			} else if metricsText.hasClassic {
 				switch {
-				case tc.alwaysScrapeClassicHistograms && tc.convertClassicHistograms:
+				case tc.alwaysScrapeClassicHistograms && tc.convertClassicHistToNHCB:
 					expectedClassicHistCount = 1
 					expectedNativeHistCount = 1
 					expectCustomBuckets = true
-				case !tc.alwaysScrapeClassicHistograms && tc.convertClassicHistograms:
+				case !tc.alwaysScrapeClassicHistograms && tc.convertClassicHistToNHCB:
 					expectedClassicHistCount = 0
 					expectedNativeHistCount = 1
 					expectCustomBuckets = true
-				case !tc.convertClassicHistograms:
+				case !tc.convertClassicHistToNHCB:
 					expectedClassicHistCount = 1
 					expectedNativeHistCount = 0
 				}
@@ -3888,13 +3888,13 @@ metric: <
 				defer simpleStorage.Close()
 
 				config := &config.ScrapeConfig{
-					JobName:                       "test",
-					SampleLimit:                   100,
-					Scheme:                        "http",
-					ScrapeInterval:                model.Duration(100 * time.Millisecond),
-					ScrapeTimeout:                 model.Duration(100 * time.Millisecond),
-					AlwaysScrapeClassicHistograms: tc.alwaysScrapeClassicHistograms,
-					ConvertClassicHistograms:      tc.convertClassicHistograms,
+					JobName:                        "test",
+					SampleLimit:                    100,
+					Scheme:                         "http",
+					ScrapeInterval:                 model.Duration(100 * time.Millisecond),
+					ScrapeTimeout:                  model.Duration(100 * time.Millisecond),
+					AlwaysScrapeClassicHistograms:  tc.alwaysScrapeClassicHistograms,
+					ConvertClassicHistogramsToNHCB: tc.convertClassicHistToNHCB,
 				}
 
 				scrapeCount := 0

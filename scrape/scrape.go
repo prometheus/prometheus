@@ -113,7 +113,7 @@ type scrapeLoopOptions struct {
 	interval                 time.Duration
 	timeout                  time.Duration
 	alwaysScrapeClassicHist  bool
-	convertClassicHistograms bool
+	convertClassicHistToNHCB bool
 	validationScheme         model.ValidationScheme
 	fallbackScrapeProtocol   string
 
@@ -182,7 +182,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 			opts.interval,
 			opts.timeout,
 			opts.alwaysScrapeClassicHist,
-			opts.convertClassicHistograms,
+			opts.convertClassicHistToNHCB,
 			options.EnableNativeHistogramsIngestion,
 			options.EnableCreatedTimestampZeroIngestion,
 			options.ExtraMetrics,
@@ -488,7 +488,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 		mrc                      = sp.config.MetricRelabelConfigs
 		fallbackScrapeProtocol   = sp.config.ScrapeFallbackProtocol.HeaderMediaType()
 		alwaysScrapeClassicHist  = sp.config.AlwaysScrapeClassicHistograms
-		convertClassicHistograms = sp.config.ConvertClassicHistograms
+		convertClassicHistToNHCB = sp.config.ConvertClassicHistogramsToNHCB
 	)
 
 	validationScheme := model.UTF8Validation
@@ -530,7 +530,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 				interval:                 interval,
 				timeout:                  timeout,
 				alwaysScrapeClassicHist:  alwaysScrapeClassicHist,
-				convertClassicHistograms: convertClassicHistograms,
+				convertClassicHistToNHCB: convertClassicHistToNHCB,
 				validationScheme:         validationScheme,
 				fallbackScrapeProtocol:   fallbackScrapeProtocol,
 			})
@@ -894,7 +894,7 @@ type scrapeLoop struct {
 	interval                 time.Duration
 	timeout                  time.Duration
 	alwaysScrapeClassicHist  bool
-	convertClassicHistograms bool
+	convertClassicHistToNHCB bool
 	validationScheme         model.ValidationScheme
 	fallbackScrapeProtocol   string
 
@@ -1196,7 +1196,7 @@ func newScrapeLoop(ctx context.Context,
 	interval time.Duration,
 	timeout time.Duration,
 	alwaysScrapeClassicHist bool,
-	convertClassicHistograms bool,
+	convertClassicHistToNHCB bool,
 	enableNativeHistogramIngestion bool,
 	enableCTZeroIngestion bool,
 	reportExtraMetrics bool,
@@ -1252,7 +1252,7 @@ func newScrapeLoop(ctx context.Context,
 		interval:                       interval,
 		timeout:                        timeout,
 		alwaysScrapeClassicHist:        alwaysScrapeClassicHist,
-		convertClassicHistograms:       convertClassicHistograms,
+		convertClassicHistToNHCB:       convertClassicHistToNHCB,
 		enableNativeHistogramIngestion: enableNativeHistogramIngestion,
 		enableCTZeroIngestion:          enableCTZeroIngestion,
 		reportExtraMetrics:             reportExtraMetrics,
@@ -1563,7 +1563,7 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 		)
 		return
 	}
-	if sl.convertClassicHistograms {
+	if sl.convertClassicHistToNHCB {
 		p = textparse.NewNHCBParser(p, sl.symbolTable, sl.alwaysScrapeClassicHist)
 	}
 	if err != nil {
@@ -1750,6 +1750,9 @@ loop:
 					ref, err = app.AppendHistogram(ref, lset, t, h, nil)
 				} else {
 					ref, err = app.AppendHistogram(ref, lset, t, nil, fh)
+				}
+				if err != nil {
+					fmt.Printf("Error when appending histogram in scrape loop: %s\n", err)
 				}
 			} else {
 				ref, err = app.Append(ref, lset, t, val)
