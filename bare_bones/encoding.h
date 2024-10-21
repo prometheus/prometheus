@@ -295,8 +295,9 @@ class EncodedSequence {
     using value_type = typename DataSequence::value_type;
     using difference_type = std::ptrdiff_t;
 
-    inline __attribute__((always_inline))
-    Iterator(typename DataSequence::const_iterator begin, typename DataSequence::sentinel end, const typename E::Encoder* encoder) noexcept
+    inline __attribute__((always_inline)) Iterator(typename DataSequence::const_iterator begin,
+                                                   typename DataSequence::sentinel end,
+                                                   const typename E::Encoder* encoder) noexcept
         : begin_(begin), end_(end), encoder_(encoder), decoder_(begin_, end_, *encoder_) {}
 
     inline __attribute__((always_inline)) Iterator& operator++() noexcept {

@@ -59,9 +59,7 @@ extern "C" void prompp_wal_encoder_add(void* args, void* res) {
   Result* out = new (res) Result();
 
   try {
-    auto lmb = [ in, out ](auto& hashdex) __attribute__((always_inline)) {
-      in->encoder->add(hashdex, out);
-    };
+    auto lmb = [in, out](auto& hashdex) __attribute__((always_inline)) { in->encoder->add(hashdex, out); };
     std::visit(lmb, *in->hashdex);
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
@@ -144,9 +142,7 @@ extern "C" void prompp_wal_encoder_add_with_stale_nans(void* args, void* res) {
   Result* out = new (res) Result();
 
   try {
-    auto lmb = [ in, out ](auto& hashdex) __attribute__((always_inline)) {
-      in->encoder->add(hashdex, out);
-    };
+    auto lmb = [in, out](auto& hashdex) __attribute__((always_inline)) { in->encoder->add(hashdex, out); };
     std::visit(lmb, *in->hashdex);
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
@@ -273,9 +269,7 @@ extern "C" void prompp_wal_encoder_lightweight_add(void* args, void* res) {
   Result* out = new (res) Result();
 
   try {
-    auto lmb = [ in, out ](auto& hashdex) __attribute__((always_inline)) {
-      in->encoder->add(hashdex, out);
-    };
+    auto lmb = [in, out](auto& hashdex) __attribute__((always_inline)) { in->encoder->add(hashdex, out); };
     std::visit(lmb, *in->hashdex);
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);

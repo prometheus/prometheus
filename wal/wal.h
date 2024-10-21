@@ -216,8 +216,9 @@ class BasicEncoder {
     typename LabelSetsTable::checkpoint_type label_sets_checkpoint;
     BareBones::Vector<EncoderWithID> encoders;
 
-    inline __attribute__((always_inline))
-    Redundant(uint32_t _segment, typename LabelSetsTable::checkpoint_type _label_sets_checkpoint, uint32_t _encoders_count)
+    inline __attribute__((always_inline)) Redundant(uint32_t _segment,
+                                                    typename LabelSetsTable::checkpoint_type _label_sets_checkpoint,
+                                                    uint32_t _encoders_count)
         : segment(_segment), encoders_count(_encoders_count), label_sets_checkpoint(_label_sets_checkpoint) {}
   };
 
@@ -394,8 +395,7 @@ class BasicEncoder {
         label_sets_checkpoint_(label_sets_.checkpoint()),
         uuid_(generate_uuid()),
         shard_id_(shard_id),
-        pow_two_of_total_shards_(pow_two_of_total_shards) {
-  }
+        pow_two_of_total_shards_(pow_two_of_total_shards) {}
   explicit BasicEncoder(uint16_t shard_id = 0, uint8_t pow_two_of_total_shards = 0)
       : label_sets_checkpoint_(label_sets_.checkpoint()), uuid_(generate_uuid()), shard_id_(shard_id), pow_two_of_total_shards_(pow_two_of_total_shards) {}
 
