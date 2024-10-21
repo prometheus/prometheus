@@ -1,5 +1,6 @@
 #pragma once
 
+#include "chunk_finalizer.h"
 #include "concepts.h"
 #include "data_storage.h"
 #include "decoder.h"

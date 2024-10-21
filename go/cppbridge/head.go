@@ -12,6 +12,11 @@ const (
 	SerializedChunkMetadataSize = 13
 )
 
+type TimeInterval struct {
+	MinT int64
+	MaxT int64
+}
+
 // HeadDataStorage is Go wrapper around series_data::Data_storage.
 type HeadDataStorage struct {
 	dataStorage uintptr
@@ -33,6 +38,10 @@ func NewHeadDataStorage() *HeadDataStorage {
 // Reset - resets data storage.
 func (ds *HeadDataStorage) Reset() {
 	seriesDataDataStorageReset(ds.dataStorage)
+}
+
+func (ds *HeadDataStorage) TimeInterval() TimeInterval {
+	return seriesDataDataStorageTimeInterval(ds.dataStorage)
 }
 
 func (ds *HeadDataStorage) Pointer() uintptr {
@@ -83,8 +92,7 @@ func (e *HeadEncoder) MergeOutOfOrderChunks() {
 }
 
 type RecodedChunk struct {
-	MinT         int64
-	MaxT         int64
+	TimeInterval
 	SeriesId     uint32
 	SamplesCount uint8
 	HasMoreData  bool
@@ -103,9 +111,9 @@ type ChunkRecoder struct {
 	dataStorage *HeadDataStorage
 }
 
-func NewChunkRecoder(dataStorage *HeadDataStorage) *ChunkRecoder {
+func NewChunkRecoder(dataStorage *HeadDataStorage, timeInterval TimeInterval) *ChunkRecoder {
 	chunkRecoder := &ChunkRecoder{
-		recoder:     seriesDataChunkRecoderCtor(dataStorage.dataStorage),
+		recoder:     seriesDataChunkRecoderCtor(dataStorage.dataStorage, timeInterval),
 		dataStorage: dataStorage,
 	}
 

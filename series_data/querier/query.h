@@ -10,11 +10,10 @@ namespace series_data::querier {
 
 template <typename Vector = BareBones::Vector<PromPP::Primitives::LabelSetID>>
 struct Query {
-  int64_t start_timestamp_ms{};
-  int64_t end_timestamp_ms{};
+  PromPP::Primitives::TimeInterval time_interval;
   Vector label_set_ids;
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_valid() const noexcept { return !label_set_ids.empty() && end_timestamp_ms >= start_timestamp_ms; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_valid() const noexcept { return !label_set_ids.empty() && time_interval.max >= time_interval.min; }
 
   bool operator==(const Query&) const noexcept = default;
 
@@ -31,12 +30,12 @@ struct Query {
       while (reader.next()) {
         switch (reader.tag()) {
           case kStartTimestampMs: {
-            query.start_timestamp_ms = reader.get_int64();
+            query.time_interval.min = reader.get_int64();
             break;
           }
 
           case kEndTimestampMs: {
-            query.end_timestamp_ms = reader.get_int64();
+            query.time_interval.max = reader.get_int64();
             break;
           }
 

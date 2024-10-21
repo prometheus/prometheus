@@ -1,6 +1,6 @@
 #include "series_data_data_storage.h"
 
-#include "chunk_recoder.hpp"
+#include "head/chunk_recoder.h"
 #include "head/data_storage.h"
 #include "primitives/go_slice.h"
 #include "series_data/data_storage.h"
@@ -8,6 +8,7 @@
 #include "series_data/serialization/serializer.h"
 
 using entrypoint::head::DataStoragePtr;
+using ChunkRecoderPtr = std::unique_ptr<head::ChunkRecoder>;
 
 extern "C" void prompp_series_data_data_storage_ctor(void* res) {
   using Result = struct {
@@ -22,7 +23,18 @@ extern "C" void prompp_series_data_data_storage_reset(void* args) {
     DataStoragePtr data_storage;
   };
 
-  reinterpret_cast<Arguments*>(args)->data_storage->reset();
+  static_cast<Arguments*>(args)->data_storage->reset();
+}
+
+extern "C" void prompp_series_data_data_storage_time_interval(void* args, void* res) {
+  struct Arguments {
+    DataStoragePtr data_storage;
+  };
+  struct Result {
+    PromPP::Primitives::TimeInterval interval;
+  };
+
+  new (res) Result{.interval = series_data::Decoder::get_time_interval(*static_cast<Arguments*>(args)->data_storage)};
 }
 
 extern "C" void prompp_series_data_data_storage_query(void* args, void* res) {
@@ -75,27 +87,28 @@ extern "C" void prompp_series_data_data_storage_dtor(void* args) {
     DataStoragePtr data_storage;
   };
 
-  reinterpret_cast<Arguments*>(args)->~Arguments();
+  static_cast<Arguments*>(args)->~Arguments();
 }
 
 extern "C" void prompp_series_data_chunk_recoder_ctor(void* args, void* res) {
   struct Arguments {
     DataStoragePtr data_storage;
+    PromPP::Primitives::TimeInterval time_interval;
   };
   struct Result {
-    entrypoint::ChunkRecoderPtr chunk_recoder;
+    ChunkRecoderPtr chunk_recoder;
   };
 
-  new (res) Result{.chunk_recoder = std::make_unique<entrypoint::ChunkRecoder>(static_cast<Arguments*>(args)->data_storage.get())};
+  const auto in = static_cast<Arguments*>(args);
+  new (res) Result{.chunk_recoder = std::make_unique<head::ChunkRecoder>(in->data_storage.get(), in->time_interval)};
 }
 
 extern "C" void prompp_series_data_chunk_recoder_recode_next_chunk(void* args, void* res) {
   struct Arguments {
-    entrypoint::ChunkRecoderPtr chunk_recoder;
+    ChunkRecoderPtr chunk_recoder;
   };
   struct Result {
-    PromPP::Primitives::Timestamp min_t;
-    PromPP::Primitives::Timestamp max_t;
+    PromPP::Primitives::TimeInterval interval;
     uint32_t series_id;
     uint8_t samples_count;
     bool has_more_data;
@@ -104,7 +117,6 @@ extern "C" void prompp_series_data_chunk_recoder_recode_next_chunk(void* args, v
 
   const auto in = static_cast<const Arguments*>(args);
   const auto out = static_cast<Result*>(res);
-  out->series_id = in->chunk_recoder->series_id();
   in->chunk_recoder->recode_next_chunk(*out);
   out->has_more_data = in->chunk_recoder->has_more_data();
   out->buffer.reset_to(in->chunk_recoder->bytes());
@@ -112,7 +124,7 @@ extern "C" void prompp_series_data_chunk_recoder_recode_next_chunk(void* args, v
 
 extern "C" void prompp_series_data_chunk_recoder_dtor(void* args) {
   struct Arguments {
-    entrypoint::ChunkRecoderPtr chunk_recoder;
+    ChunkRecoderPtr chunk_recoder;
   };
 
   static_cast<Arguments*>(args)->~Arguments();

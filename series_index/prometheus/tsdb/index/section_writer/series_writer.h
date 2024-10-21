@@ -24,7 +24,9 @@ class SeriesWriter {
         end_iterator_(lss_.ls_id_set().end()),
         chunk_metadata_list_(chunk_metadata_list),
         symbol_references_(symbol_references),
-        series_references_(series_references) {}
+        series_references_(series_references) {
+    advance_to_non_empty_series();
+  }
 
   void write(StreamWriter& writer, uint32_t series_count = kAllSeries) {
     writer.align_to(PromPP::Prometheus::tsdb::index::kSeriesAlignment);
@@ -40,16 +42,22 @@ class SeriesWriter {
 
  private:
   const Lss& lss_;
-  Lss::LsIdSetIterator iterator_;
-  Lss::LsIdSetIterator end_iterator_;
+  typename Lss::LsIdSetIterator iterator_;
+  typename Lss::LsIdSetIterator end_iterator_;
   const ChunkMetadataList& chunk_metadata_list_;
   const SymbolReferencesMap& symbol_references_;
   SeriesReferencesMap& series_references_;
 
   StringWriter series_writer_;
 
+  void advance_to_non_empty_series() noexcept {
+    while (has_more_data() && chunk_metadata_list_[*iterator_].empty()) {
+      ++iterator_;
+    }
+  }
+
   void write_series(StreamWriter& writer, uint32_t series_count) {
-    for (uint32_t i = 0; has_more_data() && i < series_count; ++i, ++iterator_) {
+    for (uint32_t i = 0; has_more_data() && i < series_count; ++i) {
       auto ls_id = *iterator_;
       emplace_series_reference(ls_id, writer.position());
 
@@ -58,6 +66,9 @@ class SeriesWriter {
       serialize_labels(ls_id);
       serialize_chunks(ls_id);
       write_serialized_series(writer);
+
+      ++iterator_;
+      advance_to_non_empty_series();
     }
   }
 
@@ -79,8 +90,7 @@ class SeriesWriter {
     uint64_t previous_chunk_reference = 0;
 
     for (auto& chunk : chunks) {
-      if (previous_max_timestamp == std::numeric_limits<PromPP::Primitives::Timestamp>::max()) {
-        [[unlikely]];
+      if (previous_max_timestamp == std::numeric_limits<PromPP::Primitives::Timestamp>::max()) [[unlikely]] {
         series_writer_.write_varint<NoCrc32>(static_cast<int64_t>(chunk.min_timestamp));
         series_writer_.write_varint<NoCrc32>(static_cast<uint64_t>(chunk.max_timestamp - chunk.min_timestamp));
         series_writer_.write_varint<NoCrc32>(static_cast<uint64_t>(chunk.reference));
@@ -111,7 +121,7 @@ class SeriesWriter {
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE PromPP::Prometheus::tsdb::index::SymbolReference get_symbol_reference(SymbolLssId symbol_id) const noexcept {
-    auto reference_it = symbol_references_.find(symbol_id);
+    const auto reference_it = symbol_references_.find(symbol_id);
     assert(reference_it != symbol_references_.end());
     return reference_it->second;
   }

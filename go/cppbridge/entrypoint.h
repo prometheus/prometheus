@@ -36,7 +36,7 @@ extern "C" {
  *
  * @param res {
  *     status struct {     // head status
- *          time_interval {
+ *          time_interval struct {
  *              min int64
  *              max int64
  *          }
@@ -630,6 +630,23 @@ void prompp_series_data_data_storage_ctor(void* res);
 void prompp_series_data_data_storage_reset(void* args);
 
 /**
+ * @brief Get min max timestamps in storage
+ *
+ * @param args {
+ *     dataStorage uintptr // pointer to constructed data storage
+ * }
+ *
+ * @param res {
+ *     interval struct {
+ *        min int64
+ *        max int64
+ *     }
+ * }
+ *
+ */
+void prompp_series_data_data_storage_time_interval(void* args, void* res);
+
+/**
  * @brief Queries data storage and serializes result.
  *
  * @param args {
@@ -670,6 +687,10 @@ void prompp_series_data_data_storage_dtor(void* args);
  *
  * @param args {
  *     dataStorage   uintptr  // pointer to constructed data storage
+ *     time_interval struct { interval is semi-open [min, max)
+ *        min int64
+ *        max int64
+ *     }
  * }
  * @param res {
  *     chunk_recoder uintptr // pointer to chunk recoder
@@ -684,8 +705,10 @@ void prompp_series_data_chunk_recoder_ctor(void* args, void* res);
  *     chunk_recoder uintptr // pointer to chunk recoder
  * }
  * @param res {
- *     min_t         int64
- *     max_t         int64
+ *     interval struct {
+ *        min int64
+ *        max int64
+ *     }
  *     series_id     uint32
  *     samples_count uint8
  *     has_more_data bool

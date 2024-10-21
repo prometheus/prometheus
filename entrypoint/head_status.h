@@ -13,7 +13,7 @@ extern "C" {
  *
  * @param res {
  *     status struct {     // head status
- *          time_interval {
+ *          time_interval struct {
  *              min int64
  *              max int64
  *          }

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <bit>
 #include <string>
 
 #include "absl/crc/crc32c.h"
@@ -41,7 +40,7 @@ class StreamWriterImpl {
   PROMPP_ALWAYS_INLINE void write(const void* memory, uint32_t size) noexcept {
     assert(stream_ != nullptr);
 
-    stream_->write(reinterpret_cast<const char*>(memory), static_cast<std::streamsize>(size));
+    stream_->write(static_cast<const char*>(memory), static_cast<std::streamsize>(size));
     position_ += size;
     size_ += size;
   }
@@ -138,7 +137,7 @@ class Writer {
   void align_to(uint32_t size) noexcept {
     static constexpr uint64_t kZeroBytesPadding = 0ULL;
 
-    if (auto rest = position() % size; rest != 0) {
+    if (const auto rest = position() % size; rest != 0) {
       auto padding_bytes = size - rest;
       while (padding_bytes >= sizeof(kZeroBytesPadding)) {
         write_number<NoCrc32Tag>(kZeroBytesPadding);

@@ -24,6 +24,26 @@ using LabelView = std::pair<SymbolView, SymbolView>;
 
 using Timestamp = int64_t;
 
+struct TimeInterval {
+  static constexpr Timestamp kMin = std::numeric_limits<int64_t>::max();
+  static constexpr Timestamp kMax = std::numeric_limits<int64_t>::min();
+
+  Timestamp min{kMin};
+  Timestamp max{kMax};
+
+  PROMPP_ALWAYS_INLINE void reset(Timestamp min_value = kMin, Timestamp max_value = kMax) noexcept {
+    min = min_value;
+    max = max_value;
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool contains(Timestamp timestamp) const noexcept { return timestamp >= min && timestamp <= max; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool intersect(const TimeInterval& interval) const noexcept {
+    return std::max(min, interval.min) <= std::min(max, interval.max);
+  }
+
+  bool operator==(const TimeInterval&) const noexcept = default;
+};
+
 using LabelSetID = uint32_t;
 
 template <class LabelType, template <class> class Container = BareBones::Vector>
