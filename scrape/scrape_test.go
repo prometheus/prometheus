@@ -3844,24 +3844,24 @@ metric: <
 
 	for metricsTextName, metricsText := range metricsTexts {
 		for name, tc := range map[string]struct {
-			scrapeClassicHistograms  bool
-			convertClassicHistograms bool
+			alwaysScrapeClassicHistograms bool
+			convertClassicHistograms      bool
 		}{
 			"convert with scrape": {
-				scrapeClassicHistograms:  true,
-				convertClassicHistograms: true,
+				alwaysScrapeClassicHistograms: true,
+				convertClassicHistograms:      true,
 			},
 			"convert without scrape": {
-				scrapeClassicHistograms:  false,
-				convertClassicHistograms: true,
+				alwaysScrapeClassicHistograms: false,
+				convertClassicHistograms:      true,
 			},
 			"scrape without convert": {
-				scrapeClassicHistograms:  true,
-				convertClassicHistograms: false,
+				alwaysScrapeClassicHistograms: true,
+				convertClassicHistograms:      false,
 			},
 			"neither scrape nor convert": {
-				scrapeClassicHistograms:  false,
-				convertClassicHistograms: false,
+				alwaysScrapeClassicHistograms: false,
+				convertClassicHistograms:      false,
 			},
 		} {
 			var expectedClassicHistCount, expectedNativeHistCount int
@@ -3870,16 +3870,16 @@ metric: <
 				expectedNativeHistCount = 1
 				expectCustomBuckets = false
 				expectedClassicHistCount = 0
-				if metricsText.hasClassic && tc.scrapeClassicHistograms {
+				if metricsText.hasClassic && tc.alwaysScrapeClassicHistograms {
 					expectedClassicHistCount = 1
 				}
 			} else if metricsText.hasClassic {
 				switch {
-				case tc.scrapeClassicHistograms && tc.convertClassicHistograms:
+				case tc.alwaysScrapeClassicHistograms && tc.convertClassicHistograms:
 					expectedClassicHistCount = 1
 					expectedNativeHistCount = 1
 					expectCustomBuckets = true
-				case !tc.scrapeClassicHistograms && tc.convertClassicHistograms:
+				case !tc.alwaysScrapeClassicHistograms && tc.convertClassicHistograms:
 					expectedClassicHistCount = 0
 					expectedNativeHistCount = 1
 					expectCustomBuckets = true
@@ -3894,13 +3894,13 @@ metric: <
 				defer simpleStorage.Close()
 
 				config := &config.ScrapeConfig{
-					JobName:                  "test",
-					SampleLimit:              100,
-					Scheme:                   "http",
-					ScrapeInterval:           model.Duration(100 * time.Millisecond),
-					ScrapeTimeout:            model.Duration(100 * time.Millisecond),
-					ScrapeClassicHistograms:  tc.scrapeClassicHistograms,
-					ConvertClassicHistograms: tc.convertClassicHistograms,
+					JobName:                       "test",
+					SampleLimit:                   100,
+					Scheme:                        "http",
+					ScrapeInterval:                model.Duration(100 * time.Millisecond),
+					ScrapeTimeout:                 model.Duration(100 * time.Millisecond),
+					AlwaysScrapeClassicHistograms: tc.alwaysScrapeClassicHistograms,
+					ConvertClassicHistograms:      tc.convertClassicHistograms,
 				}
 
 				scrapeCount := 0
