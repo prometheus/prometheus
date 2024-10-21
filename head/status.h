@@ -76,9 +76,7 @@ class TopItems {
     min_element_ = &elements_.back();
   }
 
-  PROMPP_ALWAYS_INLINE size_t size() const noexcept {
-    return elements_.size();
-  }
+  PROMPP_ALWAYS_INLINE size_t size() const noexcept { return elements_.size(); }
 
  private:
   Elements elements_;
@@ -88,14 +86,14 @@ class TopItems {
 template <class Lss, class Status>
 class StatusGetter {
  public:
-  StatusGetter(const Lss& lss, const series_data::DataStorage& data_storage, size_t limit) :
-    lss_(lss),
-    data_storage_(data_storage),
-     top_label_value_count_by_name_{limit},
-     top_series_count_by_metric_name_{limit},
-     top_memory_in_bytes_by_label_name_{limit},
-     top_series_count_by_label_value_pair_{limit} {
-   fill();
+  StatusGetter(const Lss& lss, const series_data::DataStorage& data_storage, size_t limit)
+      : lss_(lss),
+        data_storage_(data_storage),
+        top_label_value_count_by_name_{limit},
+        top_series_count_by_metric_name_{limit},
+        top_memory_in_bytes_by_label_name_{limit},
+        top_series_count_by_label_value_pair_{limit} {
+    fill();
   }
 
   void get(Status& status) {

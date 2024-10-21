@@ -100,6 +100,10 @@ ascii: $(our_files) ## Check there is no non-ascii symbols in code
 format: $(our_cc_files)
 	@clang-format --dry-run  --Werror $^
 
+.PHONY: reformat
+reformat: $(our_cc_files)
+	@clang-format -i $^
+
 .PHONY: tidy
 tidy: ## Check clang-tidy for all librarie code
 tidy: tidy_flags := --aspects @bazel_clang_tidy//clang_tidy:clang_tidy.bzl%clang_tidy_aspect

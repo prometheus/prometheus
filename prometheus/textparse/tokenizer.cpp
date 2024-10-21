@@ -141,7 +141,9 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
   yy1: { return Token::kInvalid; }
   yy2:
     ++cursor_ptr_;
-    { return Token::kEOF; }
+    {
+      return Token::kEOF;
+    }
   yy3:
     ++cursor_ptr_;
     if (limit_ptr_ <= cursor_ptr_) {
@@ -153,10 +155,14 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
     if (yybm[0 + yych] & 64) {
       goto yy3;
     }
-    { return Token::kWhitespace; }
+    {
+      return Token::kWhitespace;
+    }
   yy4:
     ++cursor_ptr_;
-    { return Token::kLinebreak; }
+    {
+      return Token::kLinebreak;
+    }
   yy5:
     yych = *++cursor_ptr_;
     if (yych == '\t')
@@ -179,11 +185,15 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
       goto yy6;
     }
     condition_ = yycvalue;
-    { return Token::kMetricName; }
+    {
+      return Token::kMetricName;
+    }
   yy7:
     ++cursor_ptr_;
     condition_ = yyclabels;
-    { return Token::kBraceOpen; }
+    {
+      return Token::kBraceOpen;
+    }
   yy8:
     ++cursor_ptr_;
     if (limit_ptr_ <= cursor_ptr_) {
@@ -197,7 +207,9 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
     if (yych == ' ')
       goto yy8;
     condition_ = yyccomment;
-    { token_ptr_ = cursor_ptr_; }
+    {
+      token_ptr_ = cursor_ptr_;
+    }
   }
   /* *********************************** */
   yyc_comment: {
@@ -224,7 +236,9 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
       goto yy14;
   yy10:
     condition_ = yycinit;
-    { return consume_comment(); }
+    {
+      return consume_comment();
+    }
   yy11:
     ++cursor_ptr_;
     if (limit_ptr_ <= cursor_ptr_) {
@@ -236,7 +250,9 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
     if (yybm[0 + yych] & 128) {
       goto yy11;
     }
-    { return Token::kWhitespace; }
+    {
+      return Token::kWhitespace;
+    }
   yy12:
     yych = *++cursor_ptr_;
     if (yych == 'E')
@@ -296,7 +312,9 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
     if (yych == ' ')
       goto yy21;
     condition_ = yycmeta_name;
-    { return Token::kHelp; }
+    {
+      return Token::kHelp;
+    }
   yy22:
     ++cursor_ptr_;
     if (limit_ptr_ <= cursor_ptr_) {
@@ -310,7 +328,9 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
     if (yych == ' ')
       goto yy22;
     condition_ = yycmeta_name;
-    { return Token::kType; }
+    {
+      return Token::kType;
+    }
   }
   /* *********************************** */
   yyc_meta_name: {
@@ -367,7 +387,9 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
     if (yybm[0 + yych] & 32) {
       goto yy25;
     }
-    { return Token::kWhitespace; }
+    {
+      return Token::kWhitespace;
+    }
   yy26:
     ++cursor_ptr_;
     if (limit_ptr_ <= cursor_ptr_) {
@@ -394,11 +416,15 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
       goto yy27;
     }
     condition_ = yycmeta_text_with_leading_spaces;
-    { return Token::kMetricName; }
+    {
+      return Token::kMetricName;
+    }
   yy28:
     ++cursor_ptr_;
     condition_ = yycmeta_text_with_leading_spaces;
-    { return Token::kMetricName; }
+    {
+      return Token::kMetricName;
+    }
   yy29:
     ++cursor_ptr_;
     if (limit_ptr_ <= cursor_ptr_) {
@@ -436,7 +462,9 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
       goto yy31;
     }
     condition_ = yycmeta_text;
-    { token_ptr_ = cursor_ptr_; }
+    {
+      token_ptr_ = cursor_ptr_;
+    }
   }
   /* *********************************** */
   yyc_meta_text: {
@@ -465,7 +493,9 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
       goto yy33;
     }
     condition_ = yycinit;
-    { return Token::kText; }
+    {
+      return Token::kText;
+    }
   }
   /* *********************************** */
   yyc_labels: {
@@ -524,7 +554,9 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
     if (yybm[0 + yych] & 32) {
       goto yy36;
     }
-    { return Token::kWhitespace; }
+    {
+      return Token::kWhitespace;
+    }
   yy37:
     ++cursor_ptr_;
     if (limit_ptr_ <= cursor_ptr_) {
@@ -541,11 +573,15 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
     goto yy43;
   yy38:
     ++cursor_ptr_;
-    { return Token::kComma; }
+    {
+      return Token::kComma;
+    }
   yy39:
     ++cursor_ptr_;
     condition_ = yyclabel_value;
-    { return Token::kEqual; }
+    {
+      return Token::kEqual;
+    }
   yy40:
     ++cursor_ptr_;
     if (limit_ptr_ <= cursor_ptr_) {
@@ -557,14 +593,20 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
     if (yybm[0 + yych] & 128) {
       goto yy40;
     }
-    { return Token::kLabelName; }
+    {
+      return Token::kLabelName;
+    }
   yy41:
     ++cursor_ptr_;
     condition_ = yycvalue;
-    { return Token::kBraceClose; }
+    {
+      return Token::kBraceClose;
+    }
   yy42:
     ++cursor_ptr_;
-    { return Token::kQuotedString; }
+    {
+      return Token::kQuotedString;
+    }
   yy43:
     ++cursor_ptr_;
     if (limit_ptr_ <= cursor_ptr_) {
@@ -614,7 +656,9 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
     if (yybm[0 + yych] & 64) {
       goto yy46;
     }
-    { return Token::kWhitespace; }
+    {
+      return Token::kWhitespace;
+    }
   yy47:
     ++cursor_ptr_;
     if (limit_ptr_ <= cursor_ptr_) {
@@ -630,7 +674,9 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
       goto yy48;
     ++cursor_ptr_;
     condition_ = yyclabels;
-    { return Token::kLabelValue; }
+    {
+      return Token::kLabelValue;
+    }
   yy48:
     ++cursor_ptr_;
     if (limit_ptr_ <= cursor_ptr_) {
@@ -682,7 +728,9 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
       goto yy51;
     }
     condition_ = yyctimestamp;
-    { return Token::kValue; }
+    {
+      return Token::kValue;
+    }
   yy52:
     ++cursor_ptr_;
     if (limit_ptr_ <= cursor_ptr_) {
@@ -694,11 +742,15 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
     if (yybm[0 + yych] & 128) {
       goto yy52;
     }
-    { return Token::kWhitespace; }
+    {
+      return Token::kWhitespace;
+    }
   yy53:
     ++cursor_ptr_;
     condition_ = yyclabels;
-    { return Token::kBraceOpen; }
+    {
+      return Token::kBraceOpen;
+    }
   }
   /* *********************************** */
   yyc_timestamp: {
@@ -739,11 +791,15 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
     if (yybm[0 + yych] & 64) {
       goto yy56;
     }
-    { return Token::kWhitespace; }
+    {
+      return Token::kWhitespace;
+    }
   yy57:
     ++cursor_ptr_;
     condition_ = yycinit;
-    { return Token::kLinebreak; }
+    {
+      return Token::kLinebreak;
+    }
   yy58:
     ++cursor_ptr_;
     if (limit_ptr_ <= cursor_ptr_) {
@@ -755,7 +811,9 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
     if (yybm[0 + yych] & 128) {
       goto yy58;
     }
-    { return Token::kTimestamp; }
+    {
+      return Token::kTimestamp;
+    }
   }
   }
 }
