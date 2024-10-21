@@ -64,7 +64,7 @@ type metricWithBuckets struct {
 	buckets buckets
 }
 
-// bucketQuantile calculates the quantile 'q' based on the given buckets. The
+// BucketQuantile calculates the quantile 'q' based on the given buckets. The
 // buckets will be sorted by upperBound by this function (i.e. no sorting
 // needed before calling this function). The quantile value is interpolated
 // assuming a linear distribution within a bucket. However, if the quantile
@@ -95,7 +95,7 @@ type metricWithBuckets struct {
 // and another bool to indicate if small differences between buckets (that
 // are likely artifacts of floating point precision issues) have been
 // ignored.
-func bucketQuantile(q float64, buckets buckets) (float64, bool, bool) {
+func BucketQuantile(q float64, buckets buckets) (float64, bool, bool) {
 	if math.IsNaN(q) {
 		return math.NaN(), false, false
 	}
@@ -151,7 +151,7 @@ func bucketQuantile(q float64, buckets buckets) (float64, bool, bool) {
 	return bucketStart + (bucketEnd-bucketStart)*(rank/count), forcedMonotonic, fixedPrecision
 }
 
-// histogramQuantile calculates the quantile 'q' based on the given histogram.
+// HistogramQuantile calculates the quantile 'q' based on the given histogram.
 //
 // For custom buckets, the result is interpolated linearly, i.e. it is assumed
 // the observations are uniformly distributed within each bucket. (This is a
@@ -186,7 +186,7 @@ func bucketQuantile(q float64, buckets buckets) (float64, bool, bool) {
 // If q>1, +Inf is returned.
 //
 // If q is NaN, NaN is returned.
-func histogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
+func HistogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 	if q < 0 {
 		return math.Inf(-1)
 	}
@@ -297,11 +297,11 @@ func histogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 	return -math.Exp2(logUpper + (logLower-logUpper)*(1-fraction))
 }
 
-// histogramFraction calculates the fraction of observations between the
+// HistogramFraction calculates the fraction of observations between the
 // provided lower and upper bounds, based on the provided histogram.
 //
-// histogramFraction is in a certain way the inverse of histogramQuantile.  If
-// histogramQuantile(0.9, h) returns 123.4, then histogramFraction(-Inf, 123.4, h)
+// HistogramFraction is in a certain way the inverse of histogramQuantile.  If
+// HistogramQuantile(0.9, h) returns 123.4, then HistogramFraction(-Inf, 123.4, h)
 // returns 0.9.
 //
 // The same notes with regard to interpolation and assumptions about the zero
@@ -328,7 +328,7 @@ func histogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 // If lower or upper is NaN, NaN is returned.
 //
 // If lower >= upper and the histogram has at least 1 observation, zero is returned.
-func histogramFraction(lower, upper float64, h *histogram.FloatHistogram) float64 {
+func HistogramFraction(lower, upper float64, h *histogram.FloatHistogram) float64 {
 	if h.Count == 0 || math.IsNaN(lower) || math.IsNaN(upper) {
 		return math.NaN()
 	}
@@ -505,14 +505,14 @@ func ensureMonotonicAndIgnoreSmallDeltas(buckets buckets, tolerance float64) (bo
 	return forcedMonotonic, fixedPrecision
 }
 
-// quantile calculates the given quantile of a vector of samples.
+// Quantile calculates the given Quantile of a vector of samples.
 //
 // The Vector will be sorted.
 // If 'values' has zero elements, NaN is returned.
 // If q==NaN, NaN is returned.
 // If q<0, -Inf is returned.
 // If q>1, +Inf is returned.
-func quantile(q float64, values vectorByValueHeap) float64 {
+func Quantile(q float64, values vectorByValueHeap) float64 {
 	if len(values) == 0 || math.IsNaN(q) {
 		return math.NaN()
 	}

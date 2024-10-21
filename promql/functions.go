@@ -695,12 +695,12 @@ func funcMadOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 		for _, f := range s.Floats {
 			values = append(values, Sample{F: f.F})
 		}
-		median := quantile(0.5, values)
+		median := Quantile(0.5, values)
 		values = make(vectorByValueHeap, 0, len(s.Floats))
 		for _, f := range s.Floats {
 			values = append(values, Sample{F: math.Abs(f.F - median)})
 		}
-		return quantile(0.5, values)
+		return Quantile(0.5, values)
 	}), nil
 }
 
@@ -806,7 +806,7 @@ func funcQuantileOverTime(vals []parser.Value, args parser.Expressions, enh *Eva
 	for _, f := range el.Floats {
 		values = append(values, Sample{F: f.F})
 	}
-	return append(enh.Out, Sample{F: quantile(q, values)}), annos
+	return append(enh.Out, Sample{F: Quantile(q, values)}), annos
 }
 
 // === stddev_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
@@ -1305,7 +1305,7 @@ func funcHistogramFraction(vals []parser.Value, args parser.Expressions, enh *Ev
 		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:   sample.Metric,
-			F:        histogramFraction(lower, upper, sample.H),
+			F:        HistogramFraction(lower, upper, sample.H),
 			DropName: true,
 		})
 	}
@@ -1379,14 +1379,14 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:   sample.Metric,
-			F:        histogramQuantile(q, sample.H),
+			F:        HistogramQuantile(q, sample.H),
 			DropName: true,
 		})
 	}
 
 	for _, mb := range enh.signatureToMetricWithBuckets {
 		if len(mb.buckets) > 0 {
-			res, forcedMonotonicity, _ := bucketQuantile(q, mb.buckets)
+			res, forcedMonotonicity, _ := BucketQuantile(q, mb.buckets)
 			enh.Out = append(enh.Out, Sample{
 				Metric: mb.metric,
 				F:      res,

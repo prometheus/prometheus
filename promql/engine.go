@@ -3080,7 +3080,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			aggr.floatValue = math.Sqrt(aggr.floatValue / aggr.groupCount)
 
 		case parser.QUANTILE:
-			aggr.floatValue = quantile(q, aggr.heap)
+			aggr.floatValue = Quantile(q, aggr.heap)
 
 		case parser.SUM:
 			if aggr.hasFloat && aggr.hasHistogram {
