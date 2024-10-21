@@ -86,7 +86,7 @@ func BenchmarkHeadStripeSeriesCreate_PreCreationFailure(b *testing.B) {
 	}
 }
 
-func BenchmarkHead_WalCommitWithVaryingSeriesSamplesExemplarsAndHistograms(b *testing.B) {
+func BenchmarkHead_WalCommit(b *testing.B) {
 	minute := func(m int) int64 { return int64(m) * time.Minute.Milliseconds() }
 	seriesCounts := []int{100, 1000, 10000}
 	series := genSeries(10000, 10, 0, 0)
