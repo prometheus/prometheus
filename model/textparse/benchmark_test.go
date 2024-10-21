@@ -40,7 +40,7 @@ var newTestParserFns = map[string]newParser{
 	"omtext": func(b []byte, st *labels.SymbolTable) Parser {
 		return NewOpenMetricsParser(b, st, WithOMParserCTSeriesSkipped())
 	},
-	"nhcb_over_omtext": func(b []byte, st *labels.SymbolTable) Parser {
+	"omtext_with_nhcb": func(b []byte, st *labels.SymbolTable) Parser {
 		p := NewOpenMetricsParser(b, st, WithOMParserCTSeriesSkipped())
 		return NewNHCBParser(p, st, false)
 	},
@@ -85,7 +85,7 @@ func BenchmarkParse(b *testing.B) {
 
 		// NHCB.
 		{dataFile: "omhistogramdata.txt", parser: "omtext"},           // Measure OM parser baseline for histograms.
-		{dataFile: "omhistogramdata.txt", parser: "nhcb_over_omtext"}, // Measure NHCB over OM parser.
+		{dataFile: "omhistogramdata.txt", parser: "omtext_with_nhcb"}, // Measure NHCB over OM parser.
 	} {
 		var buf []byte
 		dataCase := bcase.dataFile
