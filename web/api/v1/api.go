@@ -1568,8 +1568,6 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 		if len(apiRuleGroup.Rules) > 0 {
 			if maxGroups > 0 && len(rgs) == int(maxGroups) {
 				// We've reached the capacity of our page.
-				// We are looking ahead up to this point because this is ultimately where the presence of at least one rule
-				// group in a subsequent response is determined, hence requiring a nextToken.
 				res.GroupNextToken = getRuleGroupNextToken(grp.File(), grp.Name())
 				break
 			}
