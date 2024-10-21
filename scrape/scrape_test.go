@@ -3758,17 +3758,11 @@ metric: <
 		},
 	}
 
-	checkBucketValues := func(expectedCount int, contentType string, series storage.SeriesSet) {
+	checkBucketValues := func(expectedCount int, series storage.SeriesSet) {
 		labelName := "le"
 		var expectedValues []string
 		if expectedCount > 0 {
-			if contentType == "application/vnd.google.protobuf" {
-				// The expected "le" values have the trailing ".0".
-				expectedValues = []string{"0.005", "0.01", "0.025", "0.05", "0.1", "0.25", "0.5", "1.0", "2.5", "5.0", "10.0", "+Inf"}
-			} else {
-				// The expected "le" values do not have the trailing ".0".
-				expectedValues = []string{"0.005", "0.01", "0.025", "0.05", "0.1", "0.25", "0.5", "1", "2.5", "5", "10", "+Inf"}
-			}
+			expectedValues = []string{"0.005", "0.01", "0.025", "0.05", "0.1", "0.25", "0.5", "1.0", "2.5", "5.0", "10.0", "+Inf"}
 		}
 		foundLeValues := map[string]bool{}
 
@@ -3984,7 +3978,7 @@ metric: <
 					checkFloatSeries(series, expectedClassicHistCount, 10.)
 
 					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_histogram_%d_bucket", i)))
-					checkBucketValues(expectedClassicHistCount, metricsText.contentType, series)
+					checkBucketValues(expectedClassicHistCount, series)
 
 					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_histogram_%d", i)))
 
