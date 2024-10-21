@@ -1567,7 +1567,8 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 		// If the rule group response has no rules, skip it - this means we filtered all the rules of this group.
 		if len(apiRuleGroup.Rules) > 0 {
 			if maxGroups > 0 && len(rgs) == int(maxGroups) {
-				// We've reached the capacity of our page.
+				// We've reached the capacity of our page plus one. That means that for sure there will be at least one
+				// rule group in a subsequent request. Therefore a next token is required.
 				res.GroupNextToken = getRuleGroupNextToken(grp.File(), grp.Name())
 				break
 			}
