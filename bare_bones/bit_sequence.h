@@ -124,17 +124,22 @@ class BitSequenceReader {
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE uint64_t consume_u64_svbyte_0248() noexcept {
     const uint8_t code = consume_bits_u32(2);
-    const uint8_t size_in_bits = (code + (code == 3)) << (1 + 3);
 
-    return consume_bits_u64(size_in_bits);
+    if (const uint8_t size_in_bits = (code + (code == 3)) << (1 + 3); size_in_bits > 0) [[likely]] {
+      return consume_bits_u64(size_in_bits);
+    }
+
+    return 0;
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE double consume_d64_svbyte_0468() noexcept {
     const uint8_t code = consume_bits_u32(2);
-    const uint8_t size_in_bits = (code + (code != 0)) << (1 + 3);
 
-    uint64_t res = consume_bits_u64(size_in_bits) << (64 - size_in_bits);
-    return std::bit_cast<double>(res);
+    if (const uint8_t size_in_bits = (code + (code != 0)) << (1 + 3); size_in_bits > 0) [[likely]] {
+      return std::bit_cast<double>(consume_bits_u64(size_in_bits) << (64 - size_in_bits));
+    }
+
+    return 0.0;
   }
 
  private:
@@ -477,7 +482,9 @@ class BitSequence {
     const uint8_t code = (size_in_bytes >> 1) - (size_in_bytes == 8);
 
     push_back_bits_u32(2, code);
-    push_back_bits_u64(size_in_bytes << 3, val);
+    if (const auto size_in_bits = Bit::to_bits(size_in_bytes); size_in_bits > 0) [[likely]] {
+      push_back_bits_u64(size_in_bits, val);
+    }
   }
 
   inline __attribute__((always_inline)) void push_back_d64_svbyte_0468(double val) noexcept {
@@ -488,7 +495,9 @@ class BitSequence {
     const uint8_t code = (size_in_bytes >> 1) - (size_in_bytes != 0);
 
     push_back_bits_u32(2, code);
-    push_back_bits_u64(size_in_bytes << 3, (std::bit_cast<uint64_t>(val)) >> (64 - (size_in_bytes << 3)));
+    if (const auto size_in_bits = Bit::to_bits(size_in_bytes); size_in_bits > 0) [[likely]] {
+      push_back_bits_u64(size_in_bits, (std::bit_cast<uint64_t>(val)) >> (64 - size_in_bits));
+    }
   }
 
   inline __attribute__((always_inline)) BitSequenceReader reader() const noexcept { return {data_, size_}; }

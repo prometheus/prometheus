@@ -19,7 +19,7 @@ extern "C" void prompp_primitives_lss_ctor(void* args, void* res) {
     LssVariantPtr lss;
   };
 
-  new (res) Result{.lss = create_lss(reinterpret_cast<Arguments*>(args)->lss_type)};
+  new (res) Result{.lss = create_lss(static_cast<Arguments*>(args)->lss_type)};
 }
 
 extern "C" void prompp_primitives_lss_dtor(void* args) {
@@ -27,7 +27,7 @@ extern "C" void prompp_primitives_lss_dtor(void* args) {
     LssVariantPtr lss;
   };
 
-  reinterpret_cast<Arguments*>(args)->~Arguments();
+  static_cast<Arguments*>(args)->~Arguments();
 }
 
 extern "C" void prompp_primitives_lss_allocated_memory(void* args, void* res) {
@@ -39,7 +39,7 @@ extern "C" void prompp_primitives_lss_allocated_memory(void* args, void* res) {
   };
 
   std::visit([res](const auto& lss) PROMPP_LAMBDA_INLINE { new (res) Result{.allocated_memory = lss.allocated_memory()}; },
-             *reinterpret_cast<Arguments*>(args)->lss);
+             *static_cast<Arguments*>(args)->lss);
 }
 
 extern "C" void prompp_primitives_lss_find_or_emplace(void* args, void* res) {
@@ -51,7 +51,7 @@ extern "C" void prompp_primitives_lss_find_or_emplace(void* args, void* res) {
     uint32_t ls_id;
   };
 
-  auto in = reinterpret_cast<Arguments*>(args);
+  auto in = static_cast<Arguments*>(args);
   new (res) Result{.ls_id = std::visit([in](auto& lss) PROMPP_LAMBDA_INLINE { return lss.find_or_emplace(in->label_set); }, *in->lss)};
 }
 
@@ -61,15 +61,15 @@ extern "C" void prompp_primitives_lss_query(void* args, void* res) {
     GoLabelMatchers label_matchers;
   };
   struct Result {
-    series_index::querier::QuerierStatus status;
+    uint32_t status;
     PromPP::Primitives::Go::Slice<uint32_t> matches;
   };
   using Querier = series_index::querier::Querier<QueryableEncodingBimap, PromPP::Primitives::Go::Slice>;
 
-  auto in = reinterpret_cast<Arguments*>(args);
+  const auto in = static_cast<Arguments*>(args);
   auto query_result = Querier{std::get<QueryableEncodingBimap>(*in->lss)}.query(in->label_matchers);
 
-  new (res) Result{.status = query_result.status, .matches = std::move(query_result.series_ids)};
+  new (res) Result{.status = static_cast<uint32_t>(query_result.status), .matches = std::move(query_result.series_ids)};
 }
 
 void prompp_primitives_lss_get_label_sets(void* args, void* res) {
@@ -85,7 +85,7 @@ void prompp_primitives_lss_get_label_sets(void* args, void* res) {
     Slice<Slice<Label>> label_sets;
   };
 
-  auto in = reinterpret_cast<Arguments*>(args);
+  auto in = static_cast<Arguments*>(args);
   auto out = new (res) Result();
 
   std::visit(
@@ -110,7 +110,7 @@ extern "C" void prompp_primitives_lss_free_label_sets(void* args) {
     Slice<Slice<PromPP::Primitives::Go::Label>> label_sets;
   };
 
-  reinterpret_cast<Arguments*>(args)->label_sets.~Slice();
+  static_cast<Arguments*>(args)->label_sets.~Slice();
 }
 
 extern "C" void prompp_primitives_lss_query_label_names(void* args, void* res) {
@@ -119,16 +119,16 @@ extern "C" void prompp_primitives_lss_query_label_names(void* args, void* res) {
     GoLabelMatchers label_matchers;
   };
   struct Result {
-    series_index::querier::QuerierStatus status{series_index::querier::QuerierStatus::kNoMatch};
+    uint32_t status{};
     GoSliceOfString names;
   };
 
   using LabelNamesQuerier = series_index::querier::LabelNamesQuerier<QueryableEncodingBimap>;
 
-  auto in = reinterpret_cast<Arguments*>(args);
+  const auto in = static_cast<Arguments*>(args);
   auto out = new (res) Result();
-  out->status = LabelNamesQuerier{std::get<QueryableEncodingBimap>(*in->lss)}.query(
-      in->label_matchers, [out](std::string_view name) PROMPP_LAMBDA_INLINE { out->names.emplace_back(name); });
+  out->status = static_cast<uint32_t>(LabelNamesQuerier{std::get<QueryableEncodingBimap>(*in->lss)}.query(
+      in->label_matchers, [out](std::string_view name) PROMPP_LAMBDA_INLINE { out->names.emplace_back(name); }));
 }
 
 extern "C" void prompp_primitives_lss_query_label_values(void* args, void* res) {
@@ -138,15 +138,15 @@ extern "C" void prompp_primitives_lss_query_label_values(void* args, void* res) 
     GoLabelMatchers label_matchers;
   };
   struct Result {
-    series_index::querier::QuerierStatus status{series_index::querier::QuerierStatus::kNoMatch};
+    uint32_t status{};
     GoSliceOfString values;
   };
 
   using LabelValuesQuerier = series_index::querier::LabelValuesQuerier<QueryableEncodingBimap>;
 
-  auto in = reinterpret_cast<Arguments*>(args);
+  const auto in = static_cast<Arguments*>(args);
   auto out = new (res) Result();
-  out->status = LabelValuesQuerier{std::get<QueryableEncodingBimap>(*in->lss)}.query(
+  out->status = static_cast<uint32_t>(LabelValuesQuerier{std::get<QueryableEncodingBimap>(*in->lss)}.query(
       static_cast<std::string_view>(in->label_name), in->label_matchers,
-      [out](std::string_view value) PROMPP_LAMBDA_INLINE { out->values.emplace_back(value); });
+      [out](std::string_view value) PROMPP_LAMBDA_INLINE { out->values.emplace_back(value); }));
 }

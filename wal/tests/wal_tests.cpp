@@ -30,9 +30,7 @@ class NamesSetForTest : public std::vector<std::string> {
  public:
   using Base::Base;
 
-  friend size_t hash_value(const NamesSetForTest& lns) {
-    return PromPP::Primitives::hash::hash_of_string_list(lns);
-  }
+  friend size_t hash_value(const NamesSetForTest& lns) { return PromPP::Primitives::hash::hash_of_string_list(lns); }
 };
 
 class LabelSetForTest : public std::vector<std::pair<std::string, std::string>> {
@@ -44,7 +42,7 @@ class LabelSetForTest : public std::vector<std::pair<std::string, std::string>> 
   NamesSetForTest names() const {
     NamesSetForTest tns;
 
-    for (auto [label_name, _] : *this) {
+    for (const auto& [label_name, _] : *this) {
       tns.push_back(label_name);
     }
 
@@ -211,6 +209,7 @@ INSTANTIATE_TEST_SUITE_P(OneSample,
                              .earliest_sample = 101,
                              .latest_sample = 101,
                          }));
+
 INSTANTIATE_TEST_SUITE_P(
     ManySamplesForOneSerie,
     WalBufferAddFixture,
@@ -231,6 +230,7 @@ INSTANTIATE_TEST_SUITE_P(
             .earliest_sample = 101,
             .latest_sample = 103,
         }));
+
 INSTANTIATE_TEST_SUITE_P(
     SortSamplesByTimestamp,
     WalBufferAddFixture,
@@ -251,6 +251,7 @@ INSTANTIATE_TEST_SUITE_P(
             .earliest_sample = 100,
             .latest_sample = 102,
         }));
+
 INSTANTIATE_TEST_SUITE_P(
     TwoSeries,
     WalBufferAddFixture,
@@ -285,33 +286,35 @@ INSTANTIATE_TEST_SUITE_P(
             .earliest_sample = 101,
             .latest_sample = 102,
         }));
-INSTANTIATE_TEST_SUITE_P(DontSkipNonUniqueSamples,
-                         WalBufferAddFixture,
-                         testing::Values(
-                             WalBufferAddCase{
-                                 .samples = {{.sample = {101, 1.0}, .ls_id = 0}, {.sample = {101, 2.0}, .ls_id = 0}},
-                                 .expected_samples = {{.sample = {101, 1.0}, .ls_id = 0}, {.sample = {101, 2.0}, .ls_id = 0}},
-                                 .samples_count = 2,
-                                 .series_count = 1,
-                                 .earliest_sample = 101,
-                                 .latest_sample = 101,
-                             },
-                             WalBufferAddCase{
-                                 .samples = {{.sample = {101, 1.0}, .ls_id = 0}, {.sample = {102, 1.0}, .ls_id = 0}, {.sample = {101, 2.0}, .ls_id = 0}},
-                                 .expected_samples = {{.sample = {101, 1.0}, .ls_id = 0}, {.sample = {101, 2.0}, .ls_id = 0}, {.sample = {102, 1.0}, .ls_id = 0}},
-                                 .samples_count = 3,
-                                 .series_count = 1,
-                                 .earliest_sample = 101,
-                                 .latest_sample = 102,
-                             },
-                             WalBufferAddCase{
-                                 .samples = {{.sample = {101, 1.0}, .ls_id = 0}, {.sample = {102, 1.0}, .ls_id = 0}, {.sample = {102, 2.0}, .ls_id = 0}},
-                                 .expected_samples = {{.sample = {101, 1.0}, .ls_id = 0}, {.sample = {102, 1.0}, .ls_id = 0}, {.sample = {102, 2.0}, .ls_id = 0}},
-                                 .samples_count = 3,
-                                 .series_count = 1,
-                                 .earliest_sample = 101,
-                                 .latest_sample = 102,
-                             }));
+
+INSTANTIATE_TEST_SUITE_P(
+    DontSkipNonUniqueSamples,
+    WalBufferAddFixture,
+    testing::Values(
+        WalBufferAddCase{
+            .samples = {{.sample = {101, 1.0}, .ls_id = 0}, {.sample = {101, 2.0}, .ls_id = 0}},
+            .expected_samples = {{.sample = {101, 1.0}, .ls_id = 0}, {.sample = {101, 2.0}, .ls_id = 0}},
+            .samples_count = 2,
+            .series_count = 1,
+            .earliest_sample = 101,
+            .latest_sample = 101,
+        },
+        WalBufferAddCase{
+            .samples = {{.sample = {101, 1.0}, .ls_id = 0}, {.sample = {102, 1.0}, .ls_id = 0}, {.sample = {101, 2.0}, .ls_id = 0}},
+            .expected_samples = {{.sample = {101, 1.0}, .ls_id = 0}, {.sample = {101, 2.0}, .ls_id = 0}, {.sample = {102, 1.0}, .ls_id = 0}},
+            .samples_count = 3,
+            .series_count = 1,
+            .earliest_sample = 101,
+            .latest_sample = 102,
+        },
+        WalBufferAddCase{
+            .samples = {{.sample = {101, 1.0}, .ls_id = 0}, {.sample = {102, 1.0}, .ls_id = 0}, {.sample = {102, 2.0}, .ls_id = 0}},
+            .expected_samples = {{.sample = {101, 1.0}, .ls_id = 0}, {.sample = {102, 1.0}, .ls_id = 0}, {.sample = {102, 2.0}, .ls_id = 0}},
+            .samples_count = 3,
+            .series_count = 1,
+            .earliest_sample = 101,
+            .latest_sample = 102,
+        }));
 
 struct Wal : public testing::Test {};
 

@@ -25,7 +25,7 @@ class LabelSetForTest : public std::vector<std::pair<std::string, std::string>> 
   NamesSetForTest names() const {
     NamesSetForTest tns;
 
-    for (auto [label_name, _] : *this) {
+    for (const auto& [label_name, _] : *this) {
       tns.push_back(label_name);
     }
 

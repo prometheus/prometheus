@@ -8,7 +8,7 @@
 
 namespace series_data::querier {
 
-template<typename Vector = BareBones::Vector<PromPP::Primitives::LabelSetID>>
+template <typename Vector = BareBones::Vector<PromPP::Primitives::LabelSetID>>
 struct Query {
   int64_t start_timestamp_ms{};
   int64_t end_timestamp_ms{};
@@ -19,7 +19,7 @@ struct Query {
   bool operator==(const Query&) const noexcept = default;
 
   [[nodiscard]] static bool read_from_protobuf(std::string_view protobuf, Query& query) noexcept {
-    enum Tag {
+    enum Tag : uint8_t {
       kStartTimestampMs = 1,
       kEndTimestampMs = 2,
       kLabelSetIds = 3,
