@@ -40,6 +40,10 @@ var newTestParserFns = map[string]newParser{
 	"omtext": func(b []byte, st *labels.SymbolTable) Parser {
 		return NewOpenMetricsParser(b, st, WithOMParserCTSeriesSkipped())
 	},
+	"omtext_with_nhcb": func(b []byte, st *labels.SymbolTable) Parser {
+		p := NewOpenMetricsParser(b, st, WithOMParserCTSeriesSkipped())
+		return NewNHCBParser(p, st, false)
+	},
 }
 
 // BenchmarkParse benchmarks parsing, mimicking how scrape/scrape.go#append use it.
@@ -78,6 +82,10 @@ func BenchmarkParse(b *testing.B) {
 		// We don't pass compareToExpfmtFormat: expfmt.TypeOpenMetrics as expfmt does not support OM exemplars, see https://github.com/prometheus/common/issues/703.
 		{dataFile: "omtestdata.txt", parser: "omtext"},
 		{dataFile: "promtestdata.txt", parser: "omtext"}, // Compare how omtext parser deals with Prometheus text format vs promtext.
+
+		// NHCB.
+		{dataFile: "omhistogramdata.txt", parser: "omtext"},           // Measure OM parser baseline for histograms.
+		{dataFile: "omhistogramdata.txt", parser: "omtext_with_nhcb"}, // Measure NHCB over OM parser.
 	} {
 		var buf []byte
 		dataCase := bcase.dataFile
