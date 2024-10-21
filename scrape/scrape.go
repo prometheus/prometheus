@@ -1751,9 +1751,6 @@ loop:
 				} else {
 					ref, err = app.AppendHistogram(ref, lset, t, nil, fh)
 				}
-				if err != nil {
-					fmt.Printf("Error when appending histogram in scrape loop: %s\n", err)
-				}
 			} else {
 				ref, err = app.Append(ref, lset, t, val)
 			}
