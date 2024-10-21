@@ -131,7 +131,7 @@ foobar{quantile="0.99"} 150.1`
 		}, {
 			m:    `go_gc_duration_seconds{quantile="0"}`,
 			v:    4.9351e-05,
-			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0"),
+			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.0"),
 		}, {
 			m:    `go_gc_duration_seconds{quantile="0.25"}`,
 			v:    7.424100000000001e-05,
