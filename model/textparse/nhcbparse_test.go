@@ -593,10 +593,10 @@ func TestNHCBParserProtoBufParser_NoNHCBWhenExponential(t *testing.T) {
 		},
 		{
 			// TODO(krajorama): optimize: this should not be here. In case there's
-			// an exponential histogram we should not scrape the classic histogram.
-			// TSDB will throw this away with storage.errDuplicateSampleForTimestamp
-			// at Commit(), but it needs to be parsed here after the exponential
-			// histogram.
+			// an exponential histogram we should not convert the classic histogram
+			// to NHCB. In the end TSDB will throw this away with
+			// storage.errDuplicateSampleForTimestamp error at Commit(), but it
+			// is better to avoid this conversion in the first place.
 			m: "test_histogram{}",
 			shs: &histogram.Histogram{
 				Schema:          histogram.CustomBucketsSchema,
