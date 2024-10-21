@@ -1,9 +1,5 @@
 <!--
-    Please give your PR a title in the form "area: short description".  For example "tsdb: reduce disk usage by 95%"
-
-    If your PR is to fix an issue, put "Fixes #issue-number" in the description.
-
-    Don't forget!
+    - Please give your PR a title in the form "area: short description".  For example "tsdb: reduce disk usage by 95%"
 
     - Please sign CNCF's Developer Certificate of Origin and sign-off your commits by adding the -s / --signoff flag to `git commit`. See https://github.com/apps/dco for more information.
 
@@ -17,3 +13,18 @@
 
     - All comments should start with a capital letter and end with a full stop.
  -->
+
+#### Which issue(s) this PR fixes:
+<!--
+*Automatically closes linked issue when PR is merged.
+Usage: `Fixes #<issue number>`, or `Fixes (paste link of issue)`.*
+-->
+
+#### Does this PR introduce a user-facing change?
+<!--
+If no, just write "NONE" in the release-note block below.
+If yes, please provide a one-line release note in the `release-note` block below
+-->
+```release-note
+
+```
