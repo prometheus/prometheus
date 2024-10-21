@@ -24,14 +24,14 @@ func TestBucketQuantile_ForcedMonotonicity(t *testing.T) {
 	eps := 1e-12
 
 	for name, tc := range map[string]struct {
-		getInput       func() buckets // The buckets can be modified in-place so return a new one each time.
+		getInput       func() Buckets // The buckets can be modified in-place so return a new one each time.
 		expectedForced bool
 		expectedFixed  bool
 		expectedValues map[float64]float64
 	}{
 		"simple - monotonic": {
-			getInput: func() buckets {
-				return buckets{
+			getInput: func() Buckets {
+				return Buckets{
 					{
 						upperBound: 10,
 						count:      10,
@@ -60,8 +60,8 @@ func TestBucketQuantile_ForcedMonotonicity(t *testing.T) {
 			},
 		},
 		"simple - non-monotonic middle": {
-			getInput: func() buckets {
-				return buckets{
+			getInput: func() Buckets {
+				return Buckets{
 					{
 						upperBound: 10,
 						count:      10,
@@ -90,8 +90,8 @@ func TestBucketQuantile_ForcedMonotonicity(t *testing.T) {
 			},
 		},
 		"real example - monotonic": {
-			getInput: func() buckets {
-				return buckets{
+			getInput: func() Buckets {
+				return Buckets{
 					{
 						upperBound: 1,
 						count:      6454661.3014166197,
@@ -138,8 +138,8 @@ func TestBucketQuantile_ForcedMonotonicity(t *testing.T) {
 			},
 		},
 		"real example - non-monotonic": {
-			getInput: func() buckets {
-				return buckets{
+			getInput: func() Buckets {
+				return Buckets{
 					{
 						upperBound: 1,
 						count:      6454661.3014166225,
@@ -186,8 +186,8 @@ func TestBucketQuantile_ForcedMonotonicity(t *testing.T) {
 			},
 		},
 		"real example 2 - monotonic": {
-			getInput: func() buckets {
-				return buckets{
+			getInput: func() Buckets {
+				return Buckets{
 					{
 						upperBound: 0.005,
 						count:      9.6,
@@ -246,8 +246,8 @@ func TestBucketQuantile_ForcedMonotonicity(t *testing.T) {
 			},
 		},
 		"real example 2 - non-monotonic": {
-			getInput: func() buckets {
-				return buckets{
+			getInput: func() Buckets {
+				return Buckets{
 					{
 						upperBound: 0.005,
 						count:      9.6,
@@ -308,7 +308,7 @@ func TestBucketQuantile_ForcedMonotonicity(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			for q, v := range tc.expectedValues {
-				res, forced, fixed := bucketQuantile(q, tc.getInput())
+				res, forced, fixed := BucketQuantile(q, tc.getInput())
 				require.Equal(t, tc.expectedForced, forced)
 				require.Equal(t, tc.expectedFixed, fixed)
 				require.InEpsilon(t, v, res, eps)

@@ -1324,7 +1324,7 @@ func funcHistogramFraction(vals []parser.Value, args parser.Expressions, enh *Ev
 		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:   sample.Metric,
-			F:        histogramFraction(lower, upper, sample.H),
+			F:        HistogramFraction(lower, upper, sample.H),
 			DropName: true,
 		})
 	}
@@ -1376,7 +1376,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			mb = &metricWithBuckets{sample.Metric, nil}
 			enh.signatureToMetricWithBuckets[string(enh.lblBuf)] = mb
 		}
-		mb.buckets = append(mb.buckets, bucket{upperBound, sample.F})
+		mb.buckets = append(mb.buckets, Bucket{upperBound, sample.F})
 	}
 
 	// Now deal with the histograms.
@@ -1398,14 +1398,14 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:   sample.Metric,
-			F:        histogramQuantile(q, sample.H),
+			F:        HistogramQuantile(q, sample.H),
 			DropName: true,
 		})
 	}
 
 	for _, mb := range enh.signatureToMetricWithBuckets {
 		if len(mb.buckets) > 0 {
-			res, forcedMonotonicity, _ := bucketQuantile(q, mb.buckets)
+			res, forcedMonotonicity, _ := BucketQuantile(q, mb.buckets)
 			enh.Out = append(enh.Out, Sample{
 				Metric: mb.metric,
 				F:      res,
