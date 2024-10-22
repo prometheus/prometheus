@@ -131,7 +131,7 @@ func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *reg
 		if t.Interval == 0 {
 			t.Interval = unitTestInp.EvaluationInterval
 		}
-		ers := t.test(evalInterval, groupOrderMap, queryOpts, diffFlag, debug, unitTestInp.RuleFiles...)
+		ers := t.test(testname, evalInterval, groupOrderMap, queryOpts, diffFlag, debug, unitTestInp.RuleFiles...)
 		if ers != nil {
 			for _, e := range ers {
 				tc.Fail(e.Error())
@@ -198,12 +198,12 @@ type testGroup struct {
 }
 
 // test performs the unit tests.
-func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]int, queryOpts promqltest.LazyLoaderOpts, diffFlag, debug bool, ruleFiles ...string) (outErr []error) {
+func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrderMap map[string]int, queryOpts promqltest.LazyLoaderOpts, diffFlag, debug bool, ruleFiles ...string) (outErr []error) {
 	if debug {
 		testStart := time.Now()
-		fmt.Printf("DEBUG: Starting test %s\n", tg.TestGroupName)
+		fmt.Printf("DEBUG: Starting test %s\n", testname)
 		defer func() {
-			fmt.Printf("DEBUG: Test %s finished, took %v\n", tg.TestGroupName, time.Since(testStart))
+			fmt.Printf("DEBUG: Test %s finished, took %v\n", testname, time.Since(testStart))
 		}()
 	}
 	// Setup testing suite.
