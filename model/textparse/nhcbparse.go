@@ -225,12 +225,8 @@ func (p *NHCBParser) compareLabels() bool {
 		return true
 	}
 	nextHash, _ := p.lset.HashWithoutLabels(p.hBuffer, labels.BucketLabel)
-	if p.lastHistogramLabelsHash != nextHash {
-		// Different label values.
-		return true
-	}
-
-	return false
+	// Different label values.
+	return p.lastHistogramLabelsHash != nextHash
 }
 
 // Save the label set of the classic histogram without suffix and bucket `le` label.
