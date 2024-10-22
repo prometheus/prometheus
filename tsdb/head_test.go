@@ -107,6 +107,9 @@ func BenchmarkCreateSeries(b *testing.B) {
 func BenchmarkHeadAppender_Append_Commit_ExistingSeries(b *testing.B) {
 	seriesCounts := []int{100, 1000, 10000}
 	series := genSeries(10000, 10, 0, 0)
+	hints := storage.AppendHints{
+		DiscardOutOfOrder: false,
+	}
 
 	for _, seriesCount := range seriesCounts {
 		b.Run(fmt.Sprintf("%d series", seriesCount), func(b *testing.B) {
@@ -122,7 +125,7 @@ func BenchmarkHeadAppender_Append_Commit_ExistingSeries(b *testing.B) {
 						for _, s := range series[:seriesCount] {
 							var ref storage.SeriesRef
 							for sampleIndex := int64(0); sampleIndex < samplesPerAppend; sampleIndex++ {
-								ref, err = app.Append(ref, s.Labels(), ts+sampleIndex, float64(ts+sampleIndex), nil)
+								ref, err = app.Append(ref, s.Labels(), ts+sampleIndex, float64(ts+sampleIndex), &hints)
 								if err != nil {
 									return err
 								}
