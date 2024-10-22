@@ -271,6 +271,7 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) (WriteRespo
 
 	if attempt > 0 {
 		httpReq.Header.Set("Retry-Attempt", strconv.Itoa(attempt))
+		httpReq.Close = attempt > 3
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
