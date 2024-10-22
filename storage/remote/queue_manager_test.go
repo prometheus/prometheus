@@ -28,9 +28,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
+	"github.com/golang/protobuf/proto"
 	"github.com/golang/snappy"
-	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
@@ -806,7 +805,7 @@ func TestDisableReshardOnRetry(t *testing.T) {
 	}, time.Minute, retryAfter, "shouldReshard should have been re-enabled")
 }
 
-func createTimeseries(numSamples, numSeries int, extraLabels ...labels.Label) ([]record.RefSample, []record.RefSeries) {
+func createTimeseries(numSamples, numSeries int, extraLabels ...*labels.Label) ([]record.RefSample, []record.RefSeries) {
 	samples := make([]record.RefSample, 0, numSamples)
 	series := make([]record.RefSeries, 0, numSeries)
 	lb := labels.NewScratchBuilder(1 + len(extraLabels))
@@ -837,16 +836,16 @@ func createTimeseries(numSamples, numSeries int, extraLabels ...labels.Label) ([
 	return samples, series
 }
 
-func createProtoTimeseriesWithOld(numSamples, baseTs int64, extraLabels ...labels.Label) []prompb.TimeSeries {
-	samples := make([]prompb.TimeSeries, numSamples)
+func createProtoTimeseriesWithOld(numSamples, baseTs int64, extraLabels ...*labels.Label) []*prompb.TimeSeries {
+	samples := make([]*prompb.TimeSeries, numSamples)
 	// use a fixed rand source so tests are consistent
 	r := rand.New(rand.NewSource(99))
 	for j := int64(0); j < numSamples; j++ {
 		name := fmt.Sprintf("test_metric_%d", j)
 
-		samples[j] = prompb.TimeSeries{
-			Labels: []prompb.Label{{Name: "__name__", Value: name}},
-			Samples: []prompb.Sample{
+		samples[j] = &prompb.TimeSeries{
+			Labels: []*prompb.Label{{Name: "__name__", Value: name}},
+			Samples: []*prompb.Sample{
 				{
 					Timestamp: baseTs + j,
 					Value:     float64(j),
@@ -950,15 +949,15 @@ func getSeriesIDFromRef(r record.RefSeries) string {
 // TestWriteClient represents write client which does not call remote storage,
 // but instead re-implements fake WriteHandler for test purposes.
 type TestWriteClient struct {
-	receivedSamples         map[string][]prompb.Sample
-	expectedSamples         map[string][]prompb.Sample
-	receivedExemplars       map[string][]prompb.Exemplar
-	expectedExemplars       map[string][]prompb.Exemplar
-	receivedHistograms      map[string][]prompb.Histogram
-	receivedFloatHistograms map[string][]prompb.Histogram
-	expectedHistograms      map[string][]prompb.Histogram
-	expectedFloatHistograms map[string][]prompb.Histogram
-	receivedMetadata        map[string][]prompb.MetricMetadata
+	receivedSamples         map[string][]*prompb.Sample
+	expectedSamples         map[string][]*prompb.Sample
+	receivedExemplars       map[string][]*prompb.Exemplar
+	expectedExemplars       map[string][]*prompb.Exemplar
+	receivedHistograms      map[string][]*prompb.Histogram
+	receivedFloatHistograms map[string][]*prompb.Histogram
+	expectedHistograms      map[string][]*prompb.Histogram
+	expectedFloatHistograms map[string][]*prompb.Histogram
+	receivedMetadata        map[string][]*prompb.MetricMetadata
 	writesReceived          int
 	mtx                     sync.Mutex
 	buf                     []byte
@@ -975,9 +974,9 @@ type TestWriteClient struct {
 // NewTestWriteClient creates a new testing write client.
 func NewTestWriteClient(protoMsg config.RemoteWriteProtoMsg) *TestWriteClient {
 	return &TestWriteClient{
-		receivedSamples:  map[string][]prompb.Sample{},
-		expectedSamples:  map[string][]prompb.Sample{},
-		receivedMetadata: map[string][]prompb.MetricMetadata{},
+		receivedSamples:  map[string][]*prompb.Sample{},
+		expectedSamples:  map[string][]*prompb.Sample{},
+		receivedMetadata: map[string][]*prompb.MetricMetadata{},
 		protoMsg:         protoMsg,
 		storeWait:        0,
 		returnError:      nil,
@@ -994,12 +993,12 @@ func (c *TestWriteClient) expectSamples(ss []record.RefSample, series []record.R
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
-	c.expectedSamples = map[string][]prompb.Sample{}
-	c.receivedSamples = map[string][]prompb.Sample{}
+	c.expectedSamples = map[string][]*prompb.Sample{}
+	c.receivedSamples = map[string][]*prompb.Sample{}
 
 	for _, s := range ss {
 		tsID := getSeriesIDFromRef(series[s.Ref])
-		c.expectedSamples[tsID] = append(c.expectedSamples[tsID], prompb.Sample{
+		c.expectedSamples[tsID] = append(c.expectedSamples[tsID], &prompb.Sample{
 			Timestamp: s.T,
 			Value:     s.V,
 		})
@@ -1010,12 +1009,12 @@ func (c *TestWriteClient) expectExemplars(ss []record.RefExemplar, series []reco
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
-	c.expectedExemplars = map[string][]prompb.Exemplar{}
-	c.receivedExemplars = map[string][]prompb.Exemplar{}
+	c.expectedExemplars = map[string][]*prompb.Exemplar{}
+	c.receivedExemplars = map[string][]*prompb.Exemplar{}
 
 	for _, s := range ss {
 		tsID := getSeriesIDFromRef(series[s.Ref])
-		e := prompb.Exemplar{
+		e := &prompb.Exemplar{
 			Labels:    prompb.FromLabels(s.Labels, nil),
 			Timestamp: s.T,
 			Value:     s.V,
@@ -1028,8 +1027,8 @@ func (c *TestWriteClient) expectHistograms(hh []record.RefHistogramSample, serie
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
-	c.expectedHistograms = map[string][]prompb.Histogram{}
-	c.receivedHistograms = map[string][]prompb.Histogram{}
+	c.expectedHistograms = map[string][]*prompb.Histogram{}
+	c.receivedHistograms = map[string][]*prompb.Histogram{}
 
 	for _, h := range hh {
 		tsID := getSeriesIDFromRef(series[h.Ref])
@@ -1041,8 +1040,8 @@ func (c *TestWriteClient) expectFloatHistograms(fhs []record.RefFloatHistogramSa
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
-	c.expectedFloatHistograms = map[string][]prompb.Histogram{}
-	c.receivedFloatHistograms = map[string][]prompb.Histogram{}
+	c.expectedFloatHistograms = map[string][]*prompb.Histogram{}
+	c.receivedFloatHistograms = map[string][]*prompb.Histogram{}
 
 	for _, fh := range fhs {
 		tsID := getSeriesIDFromRef(series[fh.Ref])
@@ -1083,16 +1082,24 @@ func (c *TestWriteClient) waitForExpectedData(tb testing.TB, timeout time.Durati
 	defer c.mtx.Unlock()
 
 	for ts, expectedSamples := range c.expectedSamples {
-		require.Equal(tb, expectedSamples, c.receivedSamples[ts], ts)
+		for i := range expectedSamples {
+			require.True(tb, proto.Equal(expectedSamples[i], c.receivedSamples[ts][i]))
+		}
 	}
 	for ts, expectedExemplar := range c.expectedExemplars {
-		require.Equal(tb, expectedExemplar, c.receivedExemplars[ts], ts)
+		for i := range expectedExemplar {
+			require.True(tb, proto.Equal(expectedExemplar[i], c.receivedExemplars[ts][i]))
+		}
 	}
 	for ts, expectedHistogram := range c.expectedHistograms {
-		require.Equal(tb, expectedHistogram, c.receivedHistograms[ts], ts)
+		for i := range expectedHistogram {
+			require.True(tb, proto.Equal(expectedHistogram[i], c.receivedHistograms[ts][i]))
+		}
 	}
 	for ts, expectedFloatHistogram := range c.expectedFloatHistograms {
-		require.Equal(tb, expectedFloatHistogram, c.receivedFloatHistograms[ts], ts)
+		for i := range expectedFloatHistogram {
+			require.True(tb, proto.Equal(expectedFloatHistogram[i], c.receivedFloatHistograms[ts][i]))
+		}
 	}
 }
 
@@ -1196,24 +1203,26 @@ func (c *TestWriteClient) Endpoint() string {
 
 func v2RequestToWriteRequest(v2Req *writev2.Request) (*prompb.WriteRequest, error) {
 	req := &prompb.WriteRequest{
-		Timeseries: make([]prompb.TimeSeries, len(v2Req.Timeseries)),
+		Timeseries: make([]*prompb.TimeSeries, len(v2Req.Timeseries)),
 		// TODO handle metadata?
 	}
 	b := labels.NewScratchBuilder(0)
 	for i, rts := range v2Req.Timeseries {
 		rts.ToLabels(&b, v2Req.Symbols).Range(func(l labels.Label) {
-			req.Timeseries[i].Labels = append(req.Timeseries[i].Labels, prompb.Label{
+			req.Timeseries[i] = &prompb.TimeSeries{}
+			req.Timeseries[i].Labels = append(req.Timeseries[i].Labels, &prompb.Label{
 				Name:  l.Name,
 				Value: l.Value,
 			})
 		})
 
-		exemplars := make([]prompb.Exemplar, len(rts.Exemplars))
+		exemplars := make([]*prompb.Exemplar, len(rts.Exemplars))
 		for j, e := range rts.Exemplars {
+			exemplars[j] = &prompb.Exemplar{}
 			exemplars[j].Value = e.Value
 			exemplars[j].Timestamp = e.Timestamp
 			e.ToExemplar(&b, v2Req.Symbols).Labels.Range(func(l labels.Label) {
-				exemplars[j].Labels = append(exemplars[j].Labels, prompb.Label{
+				exemplars[j].Labels = append(exemplars[j].Labels, &prompb.Label{
 					Name:  l.Name,
 					Value: l.Value,
 				})
@@ -1221,13 +1230,14 @@ func v2RequestToWriteRequest(v2Req *writev2.Request) (*prompb.WriteRequest, erro
 		}
 		req.Timeseries[i].Exemplars = exemplars
 
-		req.Timeseries[i].Samples = make([]prompb.Sample, len(rts.Samples))
+		req.Timeseries[i].Samples = make([]*prompb.Sample, len(rts.Samples))
 		for j, s := range rts.Samples {
+			req.Timeseries[i].Samples[j] = &prompb.Sample{}
 			req.Timeseries[i].Samples[j].Timestamp = s.Timestamp
 			req.Timeseries[i].Samples[j].Value = s.Value
 		}
 
-		req.Timeseries[i].Histograms = make([]prompb.Histogram, len(rts.Histograms))
+		req.Timeseries[i].Histograms = make([]*prompb.Histogram, len(rts.Histograms))
 		for j, h := range rts.Histograms {
 			if h.IsFloatHistogram() {
 				req.Timeseries[i].Histograms[j] = prompb.FromFloatHistogram(h.Timestamp, h.ToFloatHistogram())
@@ -1292,7 +1302,7 @@ func (c *MockWriteClient) Name() string     { return c.NameFunc() }
 func (c *MockWriteClient) Endpoint() string { return c.EndpointFunc() }
 
 // Extra labels to make a more realistic workload - taken from Kubernetes' embedded cAdvisor metrics.
-var extraLabels []labels.Label = []labels.Label{
+var extraLabels []*labels.Label = []*labels.Label{
 	{Name: "kubernetes_io_arch", Value: "amd64"},
 	{Name: "kubernetes_io_instance_type", Value: "c3.somesize"},
 	{Name: "kubernetes_io_os", Value: "linux"},
@@ -1855,17 +1865,18 @@ func BenchmarkBuildWriteRequest(b *testing.B) {
 	noopLogger := promslog.NewNopLogger()
 	bench := func(b *testing.B, batch []timeSeries) {
 		buff := make([]byte, 0)
-		seriesBuff := make([]prompb.TimeSeries, len(batch))
+		seriesBuff := make([]*prompb.TimeSeries, len(batch))
 		for i := range seriesBuff {
-			seriesBuff[i].Samples = []prompb.Sample{{}}
-			seriesBuff[i].Exemplars = []prompb.Exemplar{{}}
+			seriesBuff[i] = &prompb.TimeSeries{}
+			seriesBuff[i].Samples = []*prompb.Sample{{}}
+			seriesBuff[i].Exemplars = []*prompb.Exemplar{{}}
 		}
-		pBuf := proto.NewBuffer(nil)
+		var pBuf []byte
 
 		totalSize := 0
 		for i := 0; i < b.N; i++ {
 			populateTimeSeries(batch, seriesBuff, true, true)
-			req, _, _, err := buildWriteRequest(noopLogger, seriesBuff, nil, pBuf, &buff, nil, "snappy")
+			req, _, _, err := buildWriteRequest(noopLogger, seriesBuff, nil, &pBuf, &buff, nil, "snappy")
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -1896,10 +1907,11 @@ func BenchmarkBuildV2WriteRequest(b *testing.B) {
 	bench := func(b *testing.B, batch []timeSeries) {
 		symbolTable := writev2.NewSymbolTable()
 		buff := make([]byte, 0)
-		seriesBuff := make([]writev2.TimeSeries, len(batch))
+		seriesBuff := make([]*writev2.TimeSeries, len(batch))
 		for i := range seriesBuff {
-			seriesBuff[i].Samples = []writev2.Sample{{}}
-			seriesBuff[i].Exemplars = []writev2.Exemplar{{}}
+			seriesBuff[i] = &writev2.TimeSeries{}
+			seriesBuff[i].Samples = []*writev2.Sample{{}}
+			seriesBuff[i].Exemplars = []*writev2.Exemplar{{}}
 		}
 		pBuf := []byte{}
 
@@ -1986,7 +1998,7 @@ func TestSendSamplesWithBackoffWithSampleAgeLimit(t *testing.T) {
 	m.Start()
 
 	batchID := 0
-	expectedSamples := map[string][]prompb.Sample{}
+	expectedSamples := map[string][]*prompb.Sample{}
 
 	appendData := func(numberOfSeries int, timeAdd time.Duration, shouldBeDropped bool) {
 		t.Log(">>>>  Appending series ", numberOfSeries, " as batch ID ", batchID, " with timeAdd ", timeAdd, " and should be dropped ", shouldBeDropped)
@@ -1997,7 +2009,7 @@ func TestSendSamplesWithBackoffWithSampleAgeLimit(t *testing.T) {
 		if !shouldBeDropped {
 			for _, s := range samples {
 				tsID := getSeriesIDFromRef(series[s.Ref])
-				expectedSamples[tsID] = append(c.expectedSamples[tsID], prompb.Sample{
+				expectedSamples[tsID] = append(c.expectedSamples[tsID], &prompb.Sample{
 					Timestamp: s.T,
 					Value:     s.V,
 				})
@@ -2021,9 +2033,15 @@ func TestSendSamplesWithBackoffWithSampleAgeLimit(t *testing.T) {
 	appendData(5, timeShift, false)
 	m.Stop()
 
-	if diff := cmp.Diff(expectedSamples, c.receivedSamples); diff != "" {
-		t.Errorf("mismatch (-want +got):\n%s", diff)
+	for tsID, samples := range expectedSamples {
+		for i, _ := range samples {
+			require.True(t, proto.Equal(samples[i], c.receivedSamples[tsID][i]))
+		}
 	}
+
+	//if diff := cmp.Diff(expectedSamples, c.receivedSamples); diff != "" {
+	//	t.Errorf("mismatch (-want +got):\n%s", diff)
+	//}
 }
 
 func createTimeseriesWithRandomLabelCount(id string, seriesCount int, timeAdd time.Duration, maxLabels int) ([]record.RefSample, []record.RefSeries) {
@@ -2094,15 +2112,15 @@ func createTimeseriesWithOldSamples(numSamples, numSeries int, extraLabels ...la
 	return samples, newSamples, series
 }
 
-func filterTsLimit(limit int64, ts prompb.TimeSeries) bool {
+func filterTsLimit(limit int64, ts *prompb.TimeSeries) bool {
 	return limit > ts.Samples[0].Timestamp
 }
 
 func TestBuildTimeSeries(t *testing.T) {
 	testCases := []struct {
 		name           string
-		ts             []prompb.TimeSeries
-		filter         func(ts prompb.TimeSeries) bool
+		ts             []*prompb.TimeSeries
+		filter         func(ts *prompb.TimeSeries) bool
 		lowestTs       int64
 		highestTs      int64
 		droppedSamples int
@@ -2110,9 +2128,9 @@ func TestBuildTimeSeries(t *testing.T) {
 	}{
 		{
 			name: "No filter applied",
-			ts: []prompb.TimeSeries{
+			ts: []*prompb.TimeSeries{
 				{
-					Samples: []prompb.Sample{
+					Samples: []*prompb.Sample{
 						{
 							Timestamp: 1234567890,
 							Value:     1.23,
@@ -2120,7 +2138,7 @@ func TestBuildTimeSeries(t *testing.T) {
 					},
 				},
 				{
-					Samples: []prompb.Sample{
+					Samples: []*prompb.Sample{
 						{
 							Timestamp: 1234567891,
 							Value:     2.34,
@@ -2128,7 +2146,7 @@ func TestBuildTimeSeries(t *testing.T) {
 					},
 				},
 				{
-					Samples: []prompb.Sample{
+					Samples: []*prompb.Sample{
 						{
 							Timestamp: 1234567892,
 							Value:     3.34,
@@ -2143,9 +2161,9 @@ func TestBuildTimeSeries(t *testing.T) {
 		},
 		{
 			name: "Filter applied, samples in order",
-			ts: []prompb.TimeSeries{
+			ts: []*prompb.TimeSeries{
 				{
-					Samples: []prompb.Sample{
+					Samples: []*prompb.Sample{
 						{
 							Timestamp: 1234567890,
 							Value:     1.23,
@@ -2153,7 +2171,7 @@ func TestBuildTimeSeries(t *testing.T) {
 					},
 				},
 				{
-					Samples: []prompb.Sample{
+					Samples: []*prompb.Sample{
 						{
 							Timestamp: 1234567891,
 							Value:     2.34,
@@ -2161,7 +2179,7 @@ func TestBuildTimeSeries(t *testing.T) {
 					},
 				},
 				{
-					Samples: []prompb.Sample{
+					Samples: []*prompb.Sample{
 						{
 							Timestamp: 1234567892,
 							Value:     3.45,
@@ -2169,7 +2187,7 @@ func TestBuildTimeSeries(t *testing.T) {
 					},
 				},
 				{
-					Samples: []prompb.Sample{
+					Samples: []*prompb.Sample{
 						{
 							Timestamp: 1234567893,
 							Value:     3.45,
@@ -2177,7 +2195,7 @@ func TestBuildTimeSeries(t *testing.T) {
 					},
 				},
 			},
-			filter:         func(ts prompb.TimeSeries) bool { return filterTsLimit(1234567892, ts) },
+			filter:         func(ts *prompb.TimeSeries) bool { return filterTsLimit(1234567892, ts) },
 			responseLen:    2,
 			lowestTs:       1234567892,
 			highestTs:      1234567893,
@@ -2185,9 +2203,9 @@ func TestBuildTimeSeries(t *testing.T) {
 		},
 		{
 			name: "Filter applied, samples out of order",
-			ts: []prompb.TimeSeries{
+			ts: []*prompb.TimeSeries{
 				{
-					Samples: []prompb.Sample{
+					Samples: []*prompb.Sample{
 						{
 							Timestamp: 1234567892,
 							Value:     3.45,
@@ -2195,7 +2213,7 @@ func TestBuildTimeSeries(t *testing.T) {
 					},
 				},
 				{
-					Samples: []prompb.Sample{
+					Samples: []*prompb.Sample{
 						{
 							Timestamp: 1234567890,
 							Value:     1.23,
@@ -2203,7 +2221,7 @@ func TestBuildTimeSeries(t *testing.T) {
 					},
 				},
 				{
-					Samples: []prompb.Sample{
+					Samples: []*prompb.Sample{
 						{
 							Timestamp: 1234567893,
 							Value:     3.45,
@@ -2211,7 +2229,7 @@ func TestBuildTimeSeries(t *testing.T) {
 					},
 				},
 				{
-					Samples: []prompb.Sample{
+					Samples: []*prompb.Sample{
 						{
 							Timestamp: 1234567891,
 							Value:     2.34,
@@ -2219,7 +2237,7 @@ func TestBuildTimeSeries(t *testing.T) {
 					},
 				},
 			},
-			filter:         func(ts prompb.TimeSeries) bool { return filterTsLimit(1234567892, ts) },
+			filter:         func(ts *prompb.TimeSeries) bool { return filterTsLimit(1234567892, ts) },
 			responseLen:    2,
 			lowestTs:       1234567892,
 			highestTs:      1234567893,
@@ -2227,9 +2245,9 @@ func TestBuildTimeSeries(t *testing.T) {
 		},
 		{
 			name: "Filter applied, samples not consecutive",
-			ts: []prompb.TimeSeries{
+			ts: []*prompb.TimeSeries{
 				{
-					Samples: []prompb.Sample{
+					Samples: []*prompb.Sample{
 						{
 							Timestamp: 1234567890,
 							Value:     1.23,
@@ -2237,7 +2255,7 @@ func TestBuildTimeSeries(t *testing.T) {
 					},
 				},
 				{
-					Samples: []prompb.Sample{
+					Samples: []*prompb.Sample{
 						{
 							Timestamp: 1234567892,
 							Value:     3.45,
@@ -2245,7 +2263,7 @@ func TestBuildTimeSeries(t *testing.T) {
 					},
 				},
 				{
-					Samples: []prompb.Sample{
+					Samples: []*prompb.Sample{
 						{
 							Timestamp: 1234567895,
 							Value:     6.78,
@@ -2253,7 +2271,7 @@ func TestBuildTimeSeries(t *testing.T) {
 					},
 				},
 				{
-					Samples: []prompb.Sample{
+					Samples: []*prompb.Sample{
 						{
 							Timestamp: 1234567897,
 							Value:     6.78,
@@ -2261,7 +2279,7 @@ func TestBuildTimeSeries(t *testing.T) {
 					},
 				},
 			},
-			filter:         func(ts prompb.TimeSeries) bool { return filterTsLimit(1234567895, ts) },
+			filter:         func(ts *prompb.TimeSeries) bool { return filterTsLimit(1234567895, ts) },
 			responseLen:    2,
 			lowestTs:       1234567895,
 			highestTs:      1234567897,
@@ -2285,7 +2303,7 @@ func TestBuildTimeSeries(t *testing.T) {
 func BenchmarkBuildTimeSeries(b *testing.B) {
 	// Send one sample per series, which is the typical remote_write case
 	const numSamples = 10000
-	filter := func(ts prompb.TimeSeries) bool { return filterTsLimit(99, ts) }
+	filter := func(ts *prompb.TimeSeries) bool { return filterTsLimit(99, ts) }
 	for i := 0; i < b.N; i++ {
 		samples := createProtoTimeseriesWithOld(numSamples, 100, extraLabels...)
 		_, _, result, _, _, _ := buildTimeSeries(samples, filter)

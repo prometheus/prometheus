@@ -1,0 +1,34 @@
+version: v1
+managed:
+  enabled: true
+  go_package_prefix:
+    # <module_name>   : name in go.mod
+    # <relative_path> : where generated code should be output
+    default: github.com/prometheus/prometheus/prompb
+    except:
+      - buf.build/googleapis/googleapis
+plugins:
+  - plugin: buf.build/protocolbuffers/go
+    out: .
+    opt:
+      - paths=source_relative
+  - plugin: buf.build/community/planetscale-vtprotobuf:v0.6.0
+    out: .
+    opt:
+      - paths=source_relative
+      - pool=github.com/prometheus/prometheus/prompb/io/prometheus/write/v2.Request
+      - pool=github.com/prometheus/prometheus/prompb/io/prometheus/write/v2.TimeSeries
+      - pool=github.com/prometheus/prometheus/prompb/io/prometheus/write/v2.Sample
+      - pool=github.com/prometheus/prometheus/prompb/io/prometheus/write/v2.Histogram
+      - pool=github.com/prometheus/prometheus/prompb/io/prometheus/write/v2.BucketSpan
+      - pool=github.com/prometheus/prometheus/prompb/io/prometheus/write/v2.Exemplar
+      - pool=github.com/prometheus/prometheus/prompb/io/prometheus/write/v2.Label
+      - pool=github.com/prometheus/prometheus/prompb/io/prometheus/write/v2.Metadata
+      - pool=github.com/prometheus/prometheus/prompb.WriteRequest
+      - pool=github.com/prometheus/prometheus/prompb.MetricMetadata
+      - pool=github.com/prometheus/prometheus/prompb.Sample
+      - pool=github.com/prometheus/prometheus/prompb.Exemplar
+      - pool=github.com/prometheus/prometheus/prompb.Label
+      - pool=github.com/prometheus/prometheus/prompb.Histogram
+      - pool=github.com/prometheus/prometheus/prompb.BucketSpan
+      - pool=github.com/prometheus/prometheus/prompb.TimeSeries

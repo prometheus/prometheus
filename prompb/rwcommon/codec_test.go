@@ -30,7 +30,7 @@ func TestToLabels(t *testing.T) {
 	expected := labels.FromStrings("__name__", "metric1", "foo", "bar")
 
 	t.Run("v1", func(t *testing.T) {
-		ts := prompb.TimeSeries{Labels: []prompb.Label{{Name: "__name__", Value: "metric1"}, {Name: "foo", Value: "bar"}}}
+		ts := prompb.TimeSeries{Labels: []*prompb.Label{{Name: "__name__", Value: "metric1"}, {Name: "foo", Value: "bar"}}}
 		b := labels.NewScratchBuilder(2)
 		require.Equal(t, expected, ts.ToLabels(&b, nil))
 		require.Equal(t, ts.Labels, prompb.FromLabels(expected, nil))
@@ -86,41 +86,41 @@ func TestToMetadata(t *testing.T) {
 	sym := writev2.NewSymbolTable()
 
 	for _, tc := range []struct {
-		input    writev2.Metadata
-		expected metadata.Metadata
+		input    *writev2.Metadata
+		expected *metadata.Metadata
 	}{
 		{
-			input: writev2.Metadata{},
-			expected: metadata.Metadata{
+			input: &writev2.Metadata{},
+			expected: &metadata.Metadata{
 				Type: model.MetricTypeUnknown,
 			},
 		},
 		{
-			input: writev2.Metadata{
+			input: &writev2.Metadata{
 				Type: 12414, // Unknown.
 			},
-			expected: metadata.Metadata{
+			expected: &metadata.Metadata{
 				Type: model.MetricTypeUnknown,
 			},
 		},
 		{
-			input: writev2.Metadata{
+			input: &writev2.Metadata{
 				Type:    writev2.Metadata_METRIC_TYPE_COUNTER,
 				HelpRef: sym.Symbolize("help1"),
 				UnitRef: sym.Symbolize("unit1"),
 			},
-			expected: metadata.Metadata{
+			expected: &metadata.Metadata{
 				Type: model.MetricTypeCounter,
 				Help: "help1",
 				Unit: "unit1",
 			},
 		},
 		{
-			input: writev2.Metadata{
+			input: &writev2.Metadata{
 				Type:    writev2.Metadata_METRIC_TYPE_STATESET,
 				HelpRef: sym.Symbolize("help2"),
 			},
-			expected: metadata.Metadata{
+			expected: &metadata.Metadata{
 				Type: model.MetricTypeStateset,
 				Help: "help2",
 			},
@@ -128,7 +128,7 @@ func TestToMetadata(t *testing.T) {
 	} {
 		t.Run("", func(t *testing.T) {
 			ts := writev2.TimeSeries{Metadata: tc.input}
-			require.Equal(t, tc.expected, ts.ToMetadata(sym.Symbols()))
+			require.Equal(t, *tc.expected, ts.ToMetadata(sym.Symbols()))
 		})
 	}
 }
@@ -139,8 +139,8 @@ func TestToHistogram_Empty(t *testing.T) {
 		require.NotNilf(t, prompb.Histogram{}.ToFloatHistogram(), "")
 	})
 	t.Run("v2", func(t *testing.T) {
-		require.NotNilf(t, writev2.Histogram{}.ToIntHistogram(), "")
-		require.NotNilf(t, writev2.Histogram{}.ToFloatHistogram(), "")
+		require.NotNilf(t, (&writev2.Histogram{}).ToIntHistogram(), "")
+		require.NotNilf(t, (&writev2.Histogram{}).ToFloatHistogram(), "")
 	})
 }
 

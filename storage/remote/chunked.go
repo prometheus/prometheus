@@ -23,7 +23,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/gogo/protobuf/proto"
+	"google.golang.org/protobuf/proto"
 )
 
 // The table gets initialized with sync.Once but may still cause a race

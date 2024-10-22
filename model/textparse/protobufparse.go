@@ -25,15 +25,15 @@ import (
 	"sync"
 	"unicode/utf8"
 
-	"github.com/gogo/protobuf/proto"
-	"github.com/gogo/protobuf/types"
+	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/common/model"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 
-	dto "github.com/prometheus/prometheus/prompb/io/prometheus/client"
+	dto "github.com/prometheus/client_model/go"
 )
 
 // floatFormatBufPool is exclusively used in formatOpenMetricsFloat.
@@ -393,7 +393,7 @@ func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 // CreatedTimestamp returns CT or nil if CT is not present or
 // invalid (as timestamp e.g. negative value) on counters, summaries or histograms.
 func (p *ProtobufParser) CreatedTimestamp() *int64 {
-	var ct *types.Timestamp
+	var ct *timestamppb.Timestamp
 	switch p.mf.GetType() {
 	case dto.MetricType_COUNTER:
 		ct = p.mf.GetMetric()[p.metricPos].GetCounter().GetCreatedTimestamp()
@@ -403,11 +403,7 @@ func (p *ProtobufParser) CreatedTimestamp() *int64 {
 		ct = p.mf.GetMetric()[p.metricPos].GetHistogram().GetCreatedTimestamp()
 	default:
 	}
-	ctAsTime, err := types.TimestampFromProto(ct)
-	if err != nil {
-		// Errors means ct == nil or invalid timestamp, which we silently ignore.
-		return nil
-	}
+	ctAsTime := ct.AsTime()
 	ctMilis := ctAsTime.UnixMilli()
 	return &ctMilis
 }
@@ -468,7 +464,7 @@ func (p *ProtobufParser) Next() (Entry, error) {
 
 		p.state = EntryHelp
 	case EntryHelp:
-		if p.mf.Unit != "" {
+		if *p.mf.Unit != "" {
 			p.state = EntryUnit
 		} else {
 			p.state = EntryType
@@ -618,7 +614,7 @@ func readDelimited(b []byte, mf *dto.MetricFamily) (n int, err error) {
 		return 0, fmt.Errorf("protobufparse: insufficient length of buffer, expected at least %d bytes, got %d bytes", totalLength, len(b))
 	}
 	mf.Reset()
-	return totalLength, mf.Unmarshal(b[varIntLength:totalLength])
+	return totalLength, proto.Unmarshal(b[varIntLength:totalLength], mf)
 }
 
 // formatOpenMetricsFloat works like the usual Go string formatting of a float
