@@ -1809,7 +1809,7 @@ loop:
 		slices.SortFunc(exemplars, exemplar.Compare)
 		outOfOrderExemplars := 0
 		for _, e := range exemplars {
-			_, exemplarErr := app.AppendExemplar(ref, lset, e)
+			_, exemplarErr := app.AppendExemplar(ref, lset, e, nil)
 			switch {
 			case exemplarErr == nil:
 				// Do nothing.

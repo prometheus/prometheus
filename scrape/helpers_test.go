@@ -47,7 +47,7 @@ func (a nopAppender) Append(storage.SeriesRef, labels.Labels, int64, float64, *s
 	return 0, nil
 }
 
-func (a nopAppender) AppendExemplar(storage.SeriesRef, labels.Labels, exemplar.Exemplar) (storage.SeriesRef, error) {
+func (a nopAppender) AppendExemplar(storage.SeriesRef, labels.Labels, exemplar.Exemplar, *storage.AppendHints) (storage.SeriesRef, error) {
 	return 0, nil
 }
 
@@ -137,7 +137,7 @@ func (a *collectResultAppender) Append(ref storage.SeriesRef, lset labels.Labels
 	return ref, err
 }
 
-func (a *collectResultAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+func (a *collectResultAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
 	a.pendingExemplars = append(a.pendingExemplars, e)
@@ -145,7 +145,7 @@ func (a *collectResultAppender) AppendExemplar(ref storage.SeriesRef, l labels.L
 		return 0, nil
 	}
 
-	return a.next.AppendExemplar(ref, l, e)
+	return a.next.AppendExemplar(ref, l, e, nil)
 }
 
 func (a *collectResultAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram, hints *storage.AppendHints) (storage.SeriesRef, error) {

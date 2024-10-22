@@ -873,7 +873,7 @@ func (m *mockAppendable) Rollback() error {
 	return nil
 }
 
-func (m *mockAppendable) AppendExemplar(_ storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+func (m *mockAppendable) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	if m.appendExemplarErr != nil {
 		return 0, m.appendExemplarErr
 	}

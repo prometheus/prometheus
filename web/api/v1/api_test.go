@@ -434,7 +434,7 @@ func TestEndpoints(t *testing.T) {
 		},
 	}
 	for _, ed := range exemplars {
-		_, err := storage.AppendExemplar(0, ed.SeriesLabels, ed.Exemplars[0])
+		_, err := storage.AppendExemplar(0, ed.SeriesLabels, ed.Exemplars[0], nil)
 		require.NoError(t, err, "failed to add exemplar: %+v", ed.Exemplars[0])
 	}
 
@@ -744,7 +744,7 @@ func TestQueryExemplars(t *testing.T) {
 
 			for _, te := range tc.exemplars {
 				for _, e := range te.Exemplars {
-					_, err := es.AppendExemplar(0, te.SeriesLabels, e)
+					_, err := es.AppendExemplar(0, te.SeriesLabels, e, nil)
 					require.NoError(t, err)
 				}
 			}
@@ -3454,7 +3454,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 
 					for _, te := range test.exemplars {
 						for _, e := range te.Exemplars {
-							_, err := es.AppendExemplar(0, te.SeriesLabels, e)
+							_, err := es.AppendExemplar(0, te.SeriesLabels, e, nil)
 							require.NoError(t, err)
 						}
 					}

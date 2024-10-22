@@ -307,7 +307,7 @@ type ExemplarAppender interface {
 	// Note that in our current implementation of Prometheus' exemplar storage
 	// calls to Append should generate the reference numbers, AppendExemplar
 	// generating a new reference number should be considered possible erroneous behaviour and be logged.
-	AppendExemplar(ref SeriesRef, l labels.Labels, e exemplar.Exemplar) (SeriesRef, error)
+	AppendExemplar(ref SeriesRef, l labels.Labels, e exemplar.Exemplar, hints *AppendHints) (SeriesRef, error)
 }
 
 // HistogramAppender provides an interface for appending histograms to the storage.

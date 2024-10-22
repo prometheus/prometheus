@@ -161,14 +161,14 @@ func (f *fanoutAppender) Append(ref SeriesRef, l labels.Labels, t int64, v float
 	return ref, nil
 }
 
-func (f *fanoutAppender) AppendExemplar(ref SeriesRef, l labels.Labels, e exemplar.Exemplar) (SeriesRef, error) {
-	ref, err := f.primary.AppendExemplar(ref, l, e)
+func (f *fanoutAppender) AppendExemplar(ref SeriesRef, l labels.Labels, e exemplar.Exemplar, hints *AppendHints) (SeriesRef, error) {
+	ref, err := f.primary.AppendExemplar(ref, l, e, nil)
 	if err != nil {
 		return ref, err
 	}
 
 	for _, appender := range f.secondaries {
-		if _, err := appender.AppendExemplar(ref, l, e); err != nil {
+		if _, err := appender.AppendExemplar(ref, l, e, nil); err != nil {
 			return 0, err
 		}
 	}

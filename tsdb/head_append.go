@@ -50,21 +50,21 @@ func (a *initAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	return a.app.Append(ref, lset, t, v, nil)
 }
 
-func (a *initAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+func (a *initAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	// Check if exemplar storage is enabled.
 	if !a.head.opts.EnableExemplarStorage || a.head.opts.MaxExemplars.Load() <= 0 {
 		return 0, nil
 	}
 
 	if a.app != nil {
-		return a.app.AppendExemplar(ref, l, e)
+		return a.app.AppendExemplar(ref, l, e, nil)
 	}
 	// We should never reach here given we would call Append before AppendExemplar
 	// and we probably want to always base head/WAL min time on sample times.
 	a.head.initTime(e.Ts)
 	a.app = a.head.appender()
 
-	return a.app.AppendExemplar(ref, l, e)
+	return a.app.AppendExemplar(ref, l, e, nil)
 }
 
 func (a *initAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram, hints *storage.AppendHints) (storage.SeriesRef, error) {
@@ -595,7 +595,7 @@ func (s *memSeries) appendableFloatHistogram(t int64, fh *histogram.FloatHistogr
 
 // AppendExemplar for headAppender assumes the series ref already exists, and so it doesn't
 // use getOrCreate or make any of the lset validity checks that Append does.
-func (a *headAppender) AppendExemplar(ref storage.SeriesRef, lset labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+func (a *headAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	// Check if exemplar storage is enabled.
 	if !a.head.opts.EnableExemplarStorage || a.head.opts.MaxExemplars.Load() <= 0 {
 		return 0, nil
@@ -604,7 +604,7 @@ func (a *headAppender) AppendExemplar(ref storage.SeriesRef, lset labels.Labels,
 	// Get Series
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
 	if s == nil {
-		s = a.head.series.getByHash(lset.Hash(), lset)
+		s = a.head.series.getByHash(l.Hash(), l)
 		if s != nil {
 			ref = storage.SeriesRef(s.ref)
 		}

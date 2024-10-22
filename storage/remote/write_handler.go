@@ -256,7 +256,7 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 
 		for _, ep := range ts.Exemplars {
 			e := ep.ToExemplar(&b, nil)
-			if _, err := app.AppendExemplar(0, ls, e); err != nil {
+			if _, err := app.AppendExemplar(0, ls, e, nil); err != nil {
 				switch {
 				case errors.Is(err, storage.ErrOutOfOrderExemplar):
 					outOfOrderExemplarErrs++
@@ -441,7 +441,7 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		// Exemplars.
 		for _, ep := range ts.Exemplars {
 			e := ep.ToExemplar(&b, req.Symbols)
-			ref, err = app.AppendExemplar(ref, ls, e)
+			ref, err = app.AppendExemplar(ref, ls, e, nil)
 			if err == nil {
 				rs.Exemplars++
 				continue
@@ -572,12 +572,12 @@ func (app *timeLimitAppender) AppendHistogram(ref storage.SeriesRef, l labels.La
 	return ref, nil
 }
 
-func (app *timeLimitAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+func (app *timeLimitAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	if e.Ts > app.maxTime {
 		return 0, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds)
 	}
 
-	ref, err := app.Appender.AppendExemplar(ref, l, e)
+	ref, err := app.Appender.AppendExemplar(ref, l, e, nil)
 	if err != nil {
 		return 0, err
 	}

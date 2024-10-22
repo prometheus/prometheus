@@ -3217,7 +3217,7 @@ func TestHeadExemplars(t *testing.T) {
 		HasTs:  true,
 		Ts:     -1000,
 		Value:  1,
-	})
+	}, nil)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	require.NoError(t, head.Close())
@@ -3984,7 +3984,7 @@ func TestChunkSnapshot(t *testing.T) {
 			},
 		}
 		expExemplars = append(expExemplars, e)
-		_, err := app.AppendExemplar(ref, e.seriesLabels, e.e)
+		_, err := app.AppendExemplar(ref, e.seriesLabels, e.e, nil)
 		require.NoError(t, err)
 	}
 
@@ -6110,7 +6110,7 @@ func TestWALSampleAndExemplarOrder(t *testing.T) {
 			app := h.Appender(context.Background())
 			ref, err := tc.appendF(app, 10)
 			require.NoError(t, err)
-			app.AppendExemplar(ref, lbls, exemplar.Exemplar{Value: 1.0, Ts: 5})
+			app.AppendExemplar(ref, lbls, exemplar.Exemplar{Value: 1.0, Ts: 5}, nil)
 
 			app.Commit()
 
@@ -6147,7 +6147,7 @@ func TestHeadCompactionWhileAppendAndCommitExemplar(t *testing.T) {
 	app.Commit()
 	// Not adding a sample here to trigger the fault.
 	app = h.Appender(context.Background())
-	_, err = app.AppendExemplar(ref, lbls, exemplar.Exemplar{Value: 1, Ts: 20})
+	_, err = app.AppendExemplar(ref, lbls, exemplar.Exemplar{Value: 1, Ts: 20}, nil)
 	require.NoError(t, err)
 	h.Truncate(10)
 	app.Commit()

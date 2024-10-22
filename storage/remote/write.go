@@ -294,7 +294,7 @@ func (t *timestampTracker) Append(ref storage.SeriesRef, l labels.Labels, ts int
 	return 0, nil
 }
 
-func (t *timestampTracker) AppendExemplar(_ storage.SeriesRef, _ labels.Labels, _ exemplar.Exemplar) (storage.SeriesRef, error) {
+func (t *timestampTracker) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar, hints *storage.AppendHints) (storage.SeriesRef, error) {
 	t.exemplars++
 	return 0, nil
 }
