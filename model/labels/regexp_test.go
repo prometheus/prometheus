@@ -250,9 +250,10 @@ func TestFindSetMatches(t *testing.T) {
 			t.Parallel()
 			parsed, err := syntax.Parse(c.pattern, syntax.Perl|syntax.DotNL)
 			require.NoError(t, err)
-			matches, actualCaseSensitive := findSetMatches(parsed)
+			matches, prefixes, actualCaseSensitive := findSetMatches(parsed)
 			require.Equal(t, c.expMatches, matches)
 			require.Equal(t, c.expCaseSensitive, actualCaseSensitive)
+			require.Empty(t, prefixes)
 
 			if c.expCaseSensitive {
 				// When the regexp is case sensitive, we want to ensure that the
@@ -393,7 +394,7 @@ func TestStringMatcherFromRegexp(t *testing.T) {
 		{".*foo.*bar.*", nil},
 		{`\d*`, nil},
 		{".", nil},
-		{"/|/bar.*", &literalPrefixSensitiveStringMatcher{prefix: "/", right: orStringMatcher{emptyStringMatcher{}, &literalPrefixSensitiveStringMatcher{prefix: "bar", right: trueMatcher{}}}}},
+		{"/|/bar.*", orStringMatcher{&equalStringMatcher{s: "/", caseSensitive: true}, &literalPrefixSensitiveStringMatcher{prefix: "/bar", right: trueMatcher{}}}},
 		// This one is not supported because  `stringMatcherFromRegexp` is not reentrant for syntax.OpConcat.
 		// It would make the code too complex to handle it.
 		{"(.+)/(foo.*|bar$)", nil},
