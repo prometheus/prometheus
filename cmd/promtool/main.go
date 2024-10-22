@@ -217,6 +217,7 @@ func main() {
 		"test-rule-file",
 		"The unit test file.",
 	).Required().ExistingFiles()
+	testRulesDebug := testRulesCmd.Flag("debug", "Enable unit test debugging.").Default("false").Bool()
 	testRulesDiff := testRulesCmd.Flag("diff", "[Experimental] Print colored differential output between expected & received output.").Default("false").Bool()
 
 	defaultDBPath := "data/"
@@ -392,6 +393,7 @@ func main() {
 			},
 			*testRulesRun,
 			*testRulesDiff,
+			*testRulesDebug,
 			*testRulesFiles...),
 		)
 
