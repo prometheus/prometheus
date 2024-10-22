@@ -14,149 +14,108 @@
 package scrape
 
 import (
+	"errors"
 	"fmt"
 	"hash/fnv"
+	"log/slog"
 	"reflect"
 	"sync"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/logging"
 	"github.com/prometheus/prometheus/util/osutil"
+	"github.com/prometheus/prometheus/util/pool"
 )
 
-var targetMetadataCache = newMetadataMetricsCollector()
-
-// MetadataMetricsCollector is a Custom Collector for the metadata cache metrics.
-type MetadataMetricsCollector struct {
-	CacheEntries *prometheus.Desc
-	CacheBytes   *prometheus.Desc
-
-	scrapeManager *Manager
-}
-
-func newMetadataMetricsCollector() *MetadataMetricsCollector {
-	return &MetadataMetricsCollector{
-		CacheEntries: prometheus.NewDesc(
-			"prometheus_target_metadata_cache_entries",
-			"Total number of metric metadata entries in the cache",
-			[]string{"scrape_job"},
-			nil,
-		),
-		CacheBytes: prometheus.NewDesc(
-			"prometheus_target_metadata_cache_bytes",
-			"The number of bytes that are currently used for storing metric metadata in the cache",
-			[]string{"scrape_job"},
-			nil,
-		),
-	}
-}
-
-func (mc *MetadataMetricsCollector) registerManager(m *Manager) {
-	mc.scrapeManager = m
-}
-
-// Describe sends the metrics descriptions to the channel.
-func (mc *MetadataMetricsCollector) Describe(ch chan<- *prometheus.Desc) {
-	ch <- mc.CacheEntries
-	ch <- mc.CacheBytes
-}
-
-// Collect creates and sends the metrics for the metadata cache.
-func (mc *MetadataMetricsCollector) Collect(ch chan<- prometheus.Metric) {
-	if mc.scrapeManager == nil {
-		return
-	}
-
-	for tset, targets := range mc.scrapeManager.TargetsActive() {
-		var size, length int
-		for _, t := range targets {
-			size += t.MetadataSize()
-			length += t.MetadataLength()
-		}
-
-		ch <- prometheus.MustNewConstMetric(
-			mc.CacheEntries,
-			prometheus.GaugeValue,
-			float64(length),
-			tset,
-		)
-
-		ch <- prometheus.MustNewConstMetric(
-			mc.CacheBytes,
-			prometheus.GaugeValue,
-			float64(size),
-			tset,
-		)
-	}
-}
-
-// NewManager is the Manager constructor
-func NewManager(o *Options, logger log.Logger, app storage.Appendable) *Manager {
+// NewManager is the Manager constructor.
+func NewManager(o *Options, logger *slog.Logger, newScrapeFailureLogger func(string) (*logging.JSONFileLogger, error), app storage.Appendable, registerer prometheus.Registerer) (*Manager, error) {
 	if o == nil {
 		o = &Options{}
 	}
 	if logger == nil {
-		logger = log.NewNopLogger()
+		logger = promslog.NewNopLogger()
 	}
-	m := &Manager{
-		append:        app,
-		opts:          o,
-		logger:        logger,
-		scrapeConfigs: make(map[string]*config.ScrapeConfig),
-		scrapePools:   make(map[string]*scrapePool),
-		graceShut:     make(chan struct{}),
-		triggerReload: make(chan struct{}, 1),
-	}
-	targetMetadataCache.registerManager(m)
 
-	return m
+	sm, err := newScrapeMetrics(registerer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create scrape manager due to error: %w", err)
+	}
+
+	m := &Manager{
+		append:                 app,
+		opts:                   o,
+		logger:                 logger,
+		newScrapeFailureLogger: newScrapeFailureLogger,
+		scrapeConfigs:          make(map[string]*config.ScrapeConfig),
+		scrapePools:            make(map[string]*scrapePool),
+		graceShut:              make(chan struct{}),
+		triggerReload:          make(chan struct{}, 1),
+		metrics:                sm,
+		buffers:                pool.New(1e3, 100e6, 3, func(sz int) interface{} { return make([]byte, 0, sz) }),
+	}
+
+	m.metrics.setTargetMetadataCacheGatherer(m)
+
+	return m, nil
 }
 
 // Options are the configuration parameters to the scrape manager.
 type Options struct {
-	ExtraMetrics  bool
-	NoDefaultPort bool
+	ExtraMetrics bool
 	// Option used by downstream scraper users like OpenTelemetry Collector
 	// to help lookup metric metadata. Should be false for Prometheus.
 	PassMetadataInContext bool
-	// Option to enable the experimental in-memory metadata storage and append
-	// metadata to the WAL.
-	EnableMetadataStorage bool
-	// Option to enable protobuf negotiation with the client. Note that the client can already
-	// send protobuf without needing to enable this.
-	EnableProtobufNegotiation bool
+	// Option to enable appending of scraped Metadata to the TSDB/other appenders. Individual appenders
+	// can decide what to do with metadata, but for practical purposes this flag exists so that metadata
+	// can be written to the WAL and thus read for remote write.
+	// TODO: implement some form of metadata storage
+	AppendMetadata bool
 	// Option to increase the interval used by scrape manager to throttle target groups updates.
 	DiscoveryReloadInterval model.Duration
+	// Option to enable the ingestion of the created timestamp as a synthetic zero sample.
+	// See: https://github.com/prometheus/proposals/blob/main/proposals/2023-06-13_created-timestamp.md
+	EnableCreatedTimestampZeroIngestion bool
+	// Option to enable the ingestion of native histograms.
+	EnableNativeHistogramsIngestion bool
 
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption
+
+	// private option for testability.
+	skipOffsetting bool
 }
+
+const DefaultNameEscapingScheme = model.ValueEncodingEscaping
 
 // Manager maintains a set of scrape pools and manages start/stop cycles
 // when receiving new target groups from the discovery manager.
 type Manager struct {
 	opts      *Options
-	logger    log.Logger
+	logger    *slog.Logger
 	append    storage.Appendable
 	graceShut chan struct{}
 
-	offsetSeed    uint64     // Global offsetSeed seed is used to spread scrape workload across HA setup.
-	mtxScrape     sync.Mutex // Guards the fields below.
-	scrapeConfigs map[string]*config.ScrapeConfig
-	scrapePools   map[string]*scrapePool
-	targetSets    map[string][]*targetgroup.Group
+	offsetSeed             uint64     // Global offsetSeed seed is used to spread scrape workload across HA setup.
+	mtxScrape              sync.Mutex // Guards the fields below.
+	scrapeConfigs          map[string]*config.ScrapeConfig
+	scrapePools            map[string]*scrapePool
+	newScrapeFailureLogger func(string) (*logging.JSONFileLogger, error)
+	scrapeFailureLoggers   map[string]*logging.JSONFileLogger
+	targetSets             map[string][]*targetgroup.Group
+	buffers                *pool.Pool
 
 	triggerReload chan struct{}
+
+	metrics *scrapeMetrics
 }
 
 // Run receives and saves target set updates and triggers the scraping loops reloading.
@@ -179,9 +138,14 @@ func (m *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
 	}
 }
 
+// UnregisterMetrics unregisters manager metrics.
+func (m *Manager) UnregisterMetrics() {
+	m.metrics.Unregister()
+}
+
 func (m *Manager) reloader() {
 	reloadIntervalDuration := m.opts.DiscoveryReloadInterval
-	if reloadIntervalDuration < model.Duration(5*time.Second) {
+	if reloadIntervalDuration == model.Duration(0) {
 		reloadIntervalDuration = model.Duration(5 * time.Second)
 	}
 
@@ -211,15 +175,27 @@ func (m *Manager) reload() {
 		if _, ok := m.scrapePools[setName]; !ok {
 			scrapeConfig, ok := m.scrapeConfigs[setName]
 			if !ok {
-				level.Error(m.logger).Log("msg", "error reloading target set", "err", "invalid config id:"+setName)
+				m.logger.Error("error reloading target set", "err", "invalid config id:"+setName)
 				continue
 			}
-			sp, err := newScrapePool(scrapeConfig, m.append, m.offsetSeed, log.With(m.logger, "scrape_pool", setName), m.opts)
+			if scrapeConfig.ConvertClassicHistogramsToNHCB && m.opts.EnableCreatedTimestampZeroIngestion {
+				// TODO(krajorama): fix https://github.com/prometheus/prometheus/issues/15137
+				m.logger.Error("error reloading target set", "err", "cannot convert classic histograms to native histograms with custom buckets and ingest created timestamp zero samples at the same time due to https://github.com/prometheus/prometheus/issues/15137")
+				continue
+			}
+			m.metrics.targetScrapePools.Inc()
+			sp, err := newScrapePool(scrapeConfig, m.append, m.offsetSeed, m.logger.With("scrape_pool", setName), m.buffers, m.opts, m.metrics)
 			if err != nil {
-				level.Error(m.logger).Log("msg", "error creating new scrape pool", "err", err, "scrape_pool", setName)
+				m.metrics.targetScrapePoolsFailed.Inc()
+				m.logger.Error("error creating new scrape pool", "err", err, "scrape_pool", setName)
 				continue
 			}
 			m.scrapePools[setName] = sp
+			if l, ok := m.scrapeFailureLoggers[scrapeConfig.ScrapeFailureLogFile]; ok {
+				sp.SetScrapeFailureLogger(l)
+			} else {
+				sp.logger.Error("No logger found. This is a bug in Prometheus that should be reported upstream.", "scrape_pool", setName)
+			}
 		}
 
 		wg.Add(1)
@@ -228,7 +204,6 @@ func (m *Manager) reload() {
 			sp.Sync(groups)
 			wg.Done()
 		}(m.scrapePools[setName], groups)
-
 	}
 	m.mtxScrape.Unlock()
 	wg.Wait()
@@ -276,10 +251,35 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 	}
 
 	c := make(map[string]*config.ScrapeConfig)
+	scrapeFailureLoggers := map[string]*logging.JSONFileLogger{
+		"": nil, // Emptying the file name sets the scrape logger to nil.
+	}
 	for _, scfg := range scfgs {
 		c[scfg.JobName] = scfg
+		if _, ok := scrapeFailureLoggers[scfg.ScrapeFailureLogFile]; !ok {
+			// We promise to reopen the file on each reload.
+			var (
+				logger *logging.JSONFileLogger
+				err    error
+			)
+			if m.newScrapeFailureLogger != nil {
+				if logger, err = m.newScrapeFailureLogger(scfg.ScrapeFailureLogFile); err != nil {
+					return err
+				}
+			}
+			scrapeFailureLoggers[scfg.ScrapeFailureLogFile] = logger
+		}
 	}
 	m.scrapeConfigs = c
+
+	oldScrapeFailureLoggers := m.scrapeFailureLoggers
+	for _, s := range oldScrapeFailureLoggers {
+		if s != nil {
+			defer s.Close()
+		}
+	}
+
+	m.scrapeFailureLoggers = scrapeFailureLoggers
 
 	if err := m.setOffsetSeed(cfg.GlobalConfig.ExternalLabels); err != nil {
 		return err
@@ -295,8 +295,15 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 		case !reflect.DeepEqual(sp.config, cfg):
 			err := sp.reload(cfg)
 			if err != nil {
-				level.Error(m.logger).Log("msg", "error reloading scrape pool", "err", err, "scrape_pool", name)
+				m.logger.Error("error reloading scrape pool", "err", err, "scrape_pool", name)
 				failed = true
+			}
+			fallthrough
+		case ok:
+			if l, ok := m.scrapeFailureLoggers[cfg.ScrapeFailureLogFile]; ok {
+				sp.SetScrapeFailureLogger(l)
+			} else {
+				sp.logger.Error("No logger found. This is a bug in Prometheus that should be reported upstream.", "scrape_pool", name)
 			}
 		}
 	}
@@ -336,24 +343,10 @@ func (m *Manager) TargetsActive() map[string][]*Target {
 	m.mtxScrape.Lock()
 	defer m.mtxScrape.Unlock()
 
-	var (
-		wg  sync.WaitGroup
-		mtx sync.Mutex
-	)
-
 	targets := make(map[string][]*Target, len(m.scrapePools))
-	wg.Add(len(m.scrapePools))
 	for tset, sp := range m.scrapePools {
-		// Running in parallel limits the blocking time of scrapePool to scrape
-		// interval when there's an update from SD.
-		go func(tset string, sp *scrapePool) {
-			mtx.Lock()
-			targets[tset] = sp.ActiveTargets()
-			mtx.Unlock()
-			wg.Done()
-		}(tset, sp)
+		targets[tset] = sp.ActiveTargets()
 	}
-	wg.Wait()
 	return targets
 }
 

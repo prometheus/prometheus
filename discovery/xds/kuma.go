@@ -15,14 +15,14 @@ package xds
 
 import (
 	"fmt"
+	"log/slog"
 	"net/url"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/prometheus/prometheus/discovery"
@@ -30,35 +30,12 @@ import (
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
-var (
-	// DefaultKumaSDConfig is the default Kuma MADS SD configuration.
-	DefaultKumaSDConfig = KumaSDConfig{
-		HTTPClientConfig: config.DefaultHTTPClientConfig,
-		RefreshInterval:  model.Duration(15 * time.Second),
-		FetchTimeout:     model.Duration(2 * time.Minute),
-	}
-
-	kumaFetchFailuresCount = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: namespace,
-			Name:      "sd_kuma_fetch_failures_total",
-			Help:      "The number of Kuma MADS fetch call failures.",
-		})
-	kumaFetchSkipUpdateCount = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: namespace,
-			Name:      "sd_kuma_fetch_skipped_updates_total",
-			Help:      "The number of Kuma MADS fetch calls that result in no updates to the targets.",
-		})
-	kumaFetchDuration = prometheus.NewSummary(
-		prometheus.SummaryOpts{
-			Namespace:  namespace,
-			Name:       "sd_kuma_fetch_duration_seconds",
-			Help:       "The duration of a Kuma MADS fetch call.",
-			Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
-		},
-	)
-)
+// DefaultKumaSDConfig is the default Kuma MADS SD configuration.
+var DefaultKumaSDConfig = KumaSDConfig{
+	HTTPClientConfig: config.DefaultHTTPClientConfig,
+	RefreshInterval:  model.Duration(15 * time.Second),
+	FetchTimeout:     model.Duration(2 * time.Minute),
+}
 
 const (
 	// kumaMetaLabelPrefix is the meta prefix used for all kuma meta labels.
@@ -80,6 +57,11 @@ const (
 )
 
 type KumaSDConfig = SDConfig
+
+// NewDiscovererMetrics implements discovery.Config.
+func (*KumaSDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return newDiscovererMetrics(reg, rmi)
+}
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *KumaSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
@@ -117,10 +99,10 @@ func (c *KumaSDConfig) SetDirectory(dir string) {
 func (c *KumaSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
 	logger := opts.Logger
 	if logger == nil {
-		logger = log.NewNopLogger()
+		logger = promslog.NewNopLogger()
 	}
 
-	return NewKumaHTTPDiscovery(c, logger)
+	return NewKumaHTTPDiscovery(c, logger, opts.Metrics)
 }
 
 func convertKumaV1MonitoringAssignment(assignment *MonitoringAssignment) []model.LabelSet {
@@ -176,12 +158,21 @@ func kumaMadsV1ResourceParser(resources []*anypb.Any, typeURL string) ([]model.L
 	return targets, nil
 }
 
-func NewKumaHTTPDiscovery(conf *KumaSDConfig, logger log.Logger) (discovery.Discoverer, error) {
+func NewKumaHTTPDiscovery(conf *KumaSDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (discovery.Discoverer, error) {
+	m, ok := metrics.(*xdsMetrics)
+	if !ok {
+		return nil, fmt.Errorf("invalid discovery metrics type")
+	}
+
 	// Default to "prometheus" if hostname is unavailable.
-	clientID, err := osutil.GetFQDN()
-	if err != nil {
-		level.Debug(logger).Log("msg", "error getting FQDN", "err", err)
-		clientID = "prometheus"
+	clientID := conf.ClientID
+	if clientID == "" {
+		var err error
+		clientID, err = osutil.GetFQDN()
+		if err != nil {
+			logger.Debug("error getting FQDN", "err", err)
+			clientID = "prometheus"
+		}
 	}
 
 	clientConfig := &HTTPResourceClientConfig{
@@ -203,14 +194,12 @@ func NewKumaHTTPDiscovery(conf *KumaSDConfig, logger log.Logger) (discovery.Disc
 	}
 
 	d := &fetchDiscovery{
-		client:               client,
-		logger:               logger,
-		refreshInterval:      time.Duration(conf.RefreshInterval),
-		source:               "kuma",
-		parseResources:       kumaMadsV1ResourceParser,
-		fetchFailuresCount:   kumaFetchFailuresCount,
-		fetchSkipUpdateCount: kumaFetchSkipUpdateCount,
-		fetchDuration:        kumaFetchDuration,
+		client:          client,
+		logger:          logger,
+		refreshInterval: time.Duration(conf.RefreshInterval),
+		source:          "kuma",
+		parseResources:  kumaMadsV1ResourceParser,
+		metrics:         m,
 	}
 
 	return d, nil

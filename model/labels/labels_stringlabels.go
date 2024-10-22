@@ -16,31 +16,12 @@
 package labels
 
 import (
-	"bytes"
-	"encoding/json"
-	"reflect"
-	"strconv"
+	"slices"
+	"strings"
 	"unsafe"
 
 	"github.com/cespare/xxhash/v2"
-	"github.com/prometheus/common/model"
-	"golang.org/x/exp/slices"
 )
-
-// Well-known label names used by Prometheus components.
-const (
-	MetricName   = "__name__"
-	AlertName    = "alertname"
-	BucketLabel  = "le"
-	InstanceName = "instance"
-)
-
-var seps = []byte{'\xff'}
-
-// Label is a key/value pair of strings.
-type Label struct {
-	Name, Value string
-}
 
 // Labels is implemented by a single flat string holding name/value pairs.
 // Each name and value is preceded by its length in varint encoding.
@@ -76,26 +57,6 @@ func decodeString(data string, index int) (string, int) {
 	return data[index : index+size], index + size
 }
 
-func (ls Labels) String() string {
-	var b bytes.Buffer
-
-	b.WriteByte('{')
-	for i := 0; i < len(ls.data); {
-		if i > 0 {
-			b.WriteByte(',')
-			b.WriteByte(' ')
-		}
-		var name, value string
-		name, i = decodeString(ls.data, i)
-		value, i = decodeString(ls.data, i)
-		b.WriteString(name)
-		b.WriteByte('=')
-		b.WriteString(strconv.Quote(value))
-	}
-	b.WriteByte('}')
-	return b.String()
-}
-
 // Bytes returns ls as a byte slice.
 // It uses non-printing characters and so should not be used for printing.
 func (ls Labels) Bytes(buf []byte) []byte {
@@ -108,43 +69,9 @@ func (ls Labels) Bytes(buf []byte) []byte {
 	return buf
 }
 
-// MarshalJSON implements json.Marshaler.
-func (ls Labels) MarshalJSON() ([]byte, error) {
-	return json.Marshal(ls.Map())
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (ls *Labels) UnmarshalJSON(b []byte) error {
-	var m map[string]string
-
-	if err := json.Unmarshal(b, &m); err != nil {
-		return err
-	}
-
-	*ls = FromMap(m)
-	return nil
-}
-
-// MarshalYAML implements yaml.Marshaler.
-func (ls Labels) MarshalYAML() (interface{}, error) {
-	return ls.Map(), nil
-}
-
 // IsZero implements yaml.IsZeroer - if we don't have this then 'omitempty' fields are always omitted.
 func (ls Labels) IsZero() bool {
 	return len(ls.data) == 0
-}
-
-// UnmarshalYAML implements yaml.Unmarshaler.
-func (ls *Labels) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	var m map[string]string
-
-	if err := unmarshal(&m); err != nil {
-		return err
-	}
-
-	*ls = FromMap(m)
-	return nil
 }
 
 // MatchLabels returns a subset of Labels that matches/does not match with the provided label names based on the 'on' boolean.
@@ -184,9 +111,9 @@ func (ls Labels) HashForLabels(b []byte, names ...string) (uint64, []byte) {
 		}
 		if name == names[j] {
 			b = append(b, name...)
-			b = append(b, seps[0])
+			b = append(b, sep)
 			b = append(b, value...)
-			b = append(b, seps[0])
+			b = append(b, sep)
 		}
 	}
 
@@ -210,9 +137,9 @@ func (ls Labels) HashWithoutLabels(b []byte, names ...string) (uint64, []byte) {
 			continue
 		}
 		b = append(b, name...)
-		b = append(b, seps[0])
+		b = append(b, sep)
 		b = append(b, value...)
-		b = append(b, seps[0])
+		b = append(b, sep)
 	}
 	return xxhash.Sum64(b), b
 }
@@ -260,8 +187,7 @@ func (ls Labels) BytesWithoutLabels(buf []byte, names ...string) []byte {
 
 // Copy returns a copy of the labels.
 func (ls Labels) Copy() Labels {
-	buf := append([]byte{}, ls.data...)
-	return Labels{data: yoloString(buf)}
+	return Labels{data: strings.Clone(ls.data)}
 }
 
 // Get returns the value for the label with the given name.
@@ -363,69 +289,27 @@ func (ls Labels) WithoutEmpty() Labels {
 	return ls
 }
 
-// IsValid checks if the metric name or label names are valid.
-func (ls Labels) IsValid() bool {
-	err := ls.Validate(func(l Label) error {
-		if l.Name == model.MetricNameLabel && !model.IsValidMetricName(model.LabelValue(l.Value)) {
-			return strconv.ErrSyntax
-		}
-		if !model.LabelName(l.Name).IsValid() || !model.LabelValue(l.Value).IsValid() {
-			return strconv.ErrSyntax
-		}
-		return nil
-	})
-	return err == nil
-}
-
 // Equal returns whether the two label sets are equal.
 func Equal(ls, o Labels) bool {
 	return ls.data == o.data
-}
-
-// Map returns a string map of the labels.
-func (ls Labels) Map() map[string]string {
-	m := make(map[string]string, len(ls.data)/10)
-	for i := 0; i < len(ls.data); {
-		var lName, lValue string
-		lName, i = decodeString(ls.data, i)
-		lValue, i = decodeString(ls.data, i)
-		m[lName] = lValue
-	}
-	return m
 }
 
 // EmptyLabels returns an empty Labels value, for convenience.
 func EmptyLabels() Labels {
 	return Labels{}
 }
-
-func yoloString(b []byte) string {
-	return *((*string)(unsafe.Pointer(&b)))
-}
-
-func yoloBytes(s string) (b []byte) {
-	*(*string)(unsafe.Pointer(&b)) = s
-	(*reflect.SliceHeader)(unsafe.Pointer(&b)).Cap = len(s)
-	return
+func yoloBytes(s string) []byte {
+	return unsafe.Slice(unsafe.StringData(s), len(s))
 }
 
 // New returns a sorted Labels from the given labels.
 // The caller has to guarantee that all label names are unique.
 func New(ls ...Label) Labels {
-	slices.SortFunc(ls, func(a, b Label) bool { return a.Name < b.Name })
+	slices.SortFunc(ls, func(a, b Label) int { return strings.Compare(a.Name, b.Name) })
 	size := labelsSize(ls)
 	buf := make([]byte, size)
 	marshalLabelsToSizedBuffer(ls, buf)
 	return Labels{data: yoloString(buf)}
-}
-
-// FromMap returns new sorted Labels from the given map.
-func FromMap(m map[string]string) Labels {
-	l := make([]Label, 0, len(m))
-	for k, v := range m {
-		l = append(l, Label{Name: k, Value: v})
-	}
-	return New(l...)
 }
 
 // FromStrings creates new labels from pairs of strings.
@@ -451,8 +335,8 @@ func Compare(a, b Labels) int {
 	}
 	i := 0
 	// First, go 8 bytes at a time. Data strings are expected to be 8-byte aligned.
-	sp := unsafe.Pointer((*reflect.StringHeader)(unsafe.Pointer(&shorter)).Data)
-	lp := unsafe.Pointer((*reflect.StringHeader)(unsafe.Pointer(&longer)).Data)
+	sp := unsafe.Pointer(unsafe.StringData(shorter))
+	lp := unsafe.Pointer(unsafe.StringData(longer))
 	for ; i < len(shorter)-8; i += 8 {
 		if *(*uint64)(unsafe.Add(sp, i)) != *(*uint64)(unsafe.Add(lp, i)) {
 			break
@@ -471,13 +355,11 @@ func Compare(a, b Labels) int {
 
 	// Now we know that there is some difference before the end of a and b.
 	// Go back through the fields and find which field that difference is in.
-	firstCharDifferent := i
-	for i = 0; ; {
-		size, nextI := decodeSize(a.data, i)
-		if nextI+size > firstCharDifferent {
-			break
-		}
+	firstCharDifferent, i := i, 0
+	size, nextI := decodeSize(a.data, i)
+	for nextI+size <= firstCharDifferent {
 		i = nextI + size
+		size, nextI = decodeSize(a.data, i)
 	}
 	// Difference is inside this entry.
 	aStr, _ := decodeString(a.data, i)
@@ -536,14 +418,33 @@ func (ls Labels) Validate(f func(l Label) error) error {
 	return nil
 }
 
-// InternStrings calls intern on every string value inside ls, replacing them with what it returns.
-func (ls *Labels) InternStrings(intern func(string) string) {
-	ls.data = intern(ls.data)
+// DropMetricName returns Labels with "__name__" removed.
+func (ls Labels) DropMetricName() Labels {
+	for i := 0; i < len(ls.data); {
+		lName, i2 := decodeString(ls.data, i)
+		size, i2 := decodeSize(ls.data, i2)
+		i2 += size
+		if lName == MetricName {
+			if i == 0 { // Make common case fast with no allocations.
+				ls.data = ls.data[i2:]
+			} else {
+				ls.data = ls.data[:i] + ls.data[i2:]
+			}
+			break
+		} else if lName[0] > MetricName[0] { // Stop looking if we've gone past.
+			break
+		}
+		i = i2
+	}
+	return ls
 }
 
-// ReleaseStrings calls release on every string value inside ls.
+// InternStrings is a no-op because it would only save when the whole set of labels is identical.
+func (ls *Labels) InternStrings(intern func(string) string) {
+}
+
+// ReleaseStrings is a no-op for the same reason as InternStrings.
 func (ls Labels) ReleaseStrings(release func(string)) {
-	release(ls.data)
 }
 
 // Builder allows modifying Labels.
@@ -553,115 +454,16 @@ type Builder struct {
 	add  []Label
 }
 
-// NewBuilder returns a new LabelsBuilder.
-func NewBuilder(base Labels) *Builder {
-	b := &Builder{
-		del: make([]string, 0, 5),
-		add: make([]Label, 0, 5),
-	}
-	b.Reset(base)
-	return b
-}
-
 // Reset clears all current state for the builder.
 func (b *Builder) Reset(base Labels) {
 	b.base = base
 	b.del = b.del[:0]
 	b.add = b.add[:0]
-	for i := 0; i < len(base.data); {
-		var lName, lValue string
-		lName, i = decodeString(base.data, i)
-		lValue, i = decodeString(base.data, i)
-		if lValue == "" {
-			b.del = append(b.del, lName)
-		}
-	}
-}
-
-// Del deletes the label of the given name.
-func (b *Builder) Del(ns ...string) *Builder {
-	for _, n := range ns {
-		for i, a := range b.add {
-			if a.Name == n {
-				b.add = append(b.add[:i], b.add[i+1:]...)
-			}
-		}
-		b.del = append(b.del, n)
-	}
-	return b
-}
-
-// Keep removes all labels from the base except those with the given names.
-func (b *Builder) Keep(ns ...string) *Builder {
-Outer:
-	for i := 0; i < len(b.base.data); {
-		var lName string
-		lName, i = decodeString(b.base.data, i)
-		_, i = decodeString(b.base.data, i)
-		for _, n := range ns {
-			if lName == n {
-				continue Outer
-			}
-		}
-		b.del = append(b.del, lName)
-	}
-	return b
-}
-
-// Set the name/value pair as a label. A value of "" means delete that label.
-func (b *Builder) Set(n, v string) *Builder {
-	if v == "" {
-		// Empty labels are the same as missing labels.
-		return b.Del(n)
-	}
-	for i, a := range b.add {
-		if a.Name == n {
-			b.add[i].Value = v
-			return b
-		}
-	}
-	b.add = append(b.add, Label{Name: n, Value: v})
-
-	return b
-}
-
-func (b *Builder) Get(n string) string {
-	// Del() removes entries from .add but Set() does not remove from .del, so check .add first.
-	for _, a := range b.add {
-		if a.Name == n {
-			return a.Value
-		}
-	}
-	if slices.Contains(b.del, n) {
-		return ""
-	}
-	return b.base.Get(n)
-}
-
-// Range calls f on each label in the Builder.
-func (b *Builder) Range(f func(l Label)) {
-	// Stack-based arrays to avoid heap allocation in most cases.
-	var addStack [128]Label
-	var delStack [128]string
-	// Take a copy of add and del, so they are unaffected by calls to Set() or Del().
-	origAdd, origDel := append(addStack[:0], b.add...), append(delStack[:0], b.del...)
 	b.base.Range(func(l Label) {
-		if !slices.Contains(origDel, l.Name) && !contains(origAdd, l.Name) {
-			f(l)
+		if l.Value == "" {
+			b.del = append(b.del, l.Name)
 		}
 	})
-	for _, a := range origAdd {
-		f(a)
-	}
-}
-
-func contains(s []Label, n string) bool {
-	for _, a := range s {
-		if a.Name == n {
-			return true
-		}
-	}
-	return false
 }
 
 // Labels returns the labels from the builder.
@@ -671,7 +473,7 @@ func (b *Builder) Labels() Labels {
 		return b.base
 	}
 
-	slices.SortFunc(b.add, func(a, b Label) bool { return a.Name < b.Name })
+	slices.SortFunc(b.add, func(a, b Label) int { return strings.Compare(a.Name, b.Name) })
 	slices.Sort(b.del)
 	a, d := 0, 0
 
@@ -828,9 +630,15 @@ func (b *ScratchBuilder) Add(name, value string) {
 	b.add = append(b.add, Label{Name: name, Value: value})
 }
 
+// Add a name/value pair, using []byte instead of string to reduce memory allocations.
+// The values must remain live until Labels() is called.
+func (b *ScratchBuilder) UnsafeAddBytes(name, value []byte) {
+	b.add = append(b.add, Label{Name: yoloString(name), Value: yoloString(value)})
+}
+
 // Sort the labels added so far by name.
 func (b *ScratchBuilder) Sort() {
-	slices.SortFunc(b.add, func(a, b Label) bool { return a.Name < b.Name })
+	slices.SortFunc(b.add, func(a, b Label) int { return strings.Compare(a.Name, b.Name) })
 }
 
 // Assign is for when you already have a Labels which you want this ScratchBuilder to return.
@@ -861,4 +669,25 @@ func (b *ScratchBuilder) Overwrite(ls *Labels) {
 	}
 	marshalLabelsToSizedBuffer(b.add, b.overwriteBuffer)
 	ls.data = yoloString(b.overwriteBuffer)
+}
+
+// Symbol-table is no-op, just for api parity with dedupelabels.
+type SymbolTable struct{}
+
+func NewSymbolTable() *SymbolTable { return nil }
+
+func (t *SymbolTable) Len() int { return 0 }
+
+// NewBuilderWithSymbolTable creates a Builder, for api parity with dedupelabels.
+func NewBuilderWithSymbolTable(_ *SymbolTable) *Builder {
+	return NewBuilder(EmptyLabels())
+}
+
+// NewScratchBuilderWithSymbolTable creates a ScratchBuilder, for api parity with dedupelabels.
+func NewScratchBuilderWithSymbolTable(_ *SymbolTable, n int) ScratchBuilder {
+	return NewScratchBuilder(n)
+}
+
+func (b *ScratchBuilder) SetSymbolTable(_ *SymbolTable) {
+	// no-op
 }

@@ -46,7 +46,7 @@ func TestChunkedReaderCanReadFromChunkedWriter(t *testing.T) {
 	for _, msg := range msgs {
 		n, err := w.Write(msg)
 		require.NoError(t, err)
-		require.Equal(t, len(msg), n)
+		require.Len(t, msg, n)
 	}
 
 	i := 0
@@ -86,7 +86,7 @@ func TestChunkedReader_Overflow(t *testing.T) {
 
 	_, err = NewChunkedReader(bytes.NewReader(b2), 11, nil).Next()
 	require.Error(t, err, "expect exceed limit error")
-	require.Equal(t, "chunkedReader: message size exceeded the limit 11 bytes; got: 12 bytes", err.Error())
+	require.EqualError(t, err, "chunkedReader: message size exceeded the limit 11 bytes; got: 12 bytes")
 }
 
 func TestChunkedReader_CorruptedFrame(t *testing.T) {
@@ -102,5 +102,5 @@ func TestChunkedReader_CorruptedFrame(t *testing.T) {
 
 	_, err = NewChunkedReader(bytes.NewReader(bs), 20, nil).Next()
 	require.Error(t, err, "expected malformed frame")
-	require.Equal(t, "chunkedReader: corrupted frame; checksum mismatch", err.Error())
+	require.EqualError(t, err, "chunkedReader: corrupted frame; checksum mismatch")
 }

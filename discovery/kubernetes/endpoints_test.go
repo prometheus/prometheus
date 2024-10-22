@@ -244,6 +244,7 @@ func TestEndpointsDiscoveryAdd(t *testing.T) {
 						"__meta_kubernetes_pod_container_port_number":    "9000",
 						"__meta_kubernetes_pod_container_port_protocol":  "TCP",
 						"__meta_kubernetes_pod_uid":                      "deadbeef",
+						"__meta_kubernetes_pod_container_init":           "false",
 					},
 					{
 						"__address__":                                   "1.2.3.4:9001",
@@ -259,6 +260,7 @@ func TestEndpointsDiscoveryAdd(t *testing.T) {
 						"__meta_kubernetes_pod_container_port_number":   "9001",
 						"__meta_kubernetes_pod_container_port_protocol": "TCP",
 						"__meta_kubernetes_pod_uid":                     "deadbeef",
+						"__meta_kubernetes_pod_container_init":          "false",
 					},
 				},
 				Labels: model.LabelSet{
@@ -821,6 +823,7 @@ func TestEndpointsDiscoveryNamespaces(t *testing.T) {
 						"__meta_kubernetes_pod_container_port_number":    "9000",
 						"__meta_kubernetes_pod_container_port_protocol":  "TCP",
 						"__meta_kubernetes_pod_uid":                      "deadbeef",
+						"__meta_kubernetes_pod_container_init":           "false",
 					},
 				},
 				Labels: model.LabelSet{
@@ -967,5 +970,290 @@ func TestEndpointsDiscoveryEmptyPodStatus(t *testing.T) {
 		discovery:        n,
 		expectedMaxItems: 0,
 		expectedRes:      map[string]*targetgroup.Group{},
+	}.Run(t)
+}
+
+// TestEndpointsDiscoveryUpdatePod makes sure that Endpoints discovery detects underlying Pods changes.
+// See https://github.com/prometheus/prometheus/issues/11305 for more details.
+func TestEndpointsDiscoveryUpdatePod(t *testing.T) {
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "testpod",
+			Namespace: "default",
+			UID:       types.UID("deadbeef"),
+		},
+		Spec: v1.PodSpec{
+			NodeName: "testnode",
+			Containers: []v1.Container{
+				{
+					Name:  "c1",
+					Image: "c1:latest",
+					Ports: []v1.ContainerPort{
+						{
+							Name:          "mainport",
+							ContainerPort: 9000,
+							Protocol:      v1.ProtocolTCP,
+						},
+					},
+				},
+			},
+		},
+		Status: v1.PodStatus{
+			// Pod is in Pending phase when discovered for first time.
+			Phase: "Pending",
+			Conditions: []v1.PodCondition{
+				{
+					Type:   v1.PodReady,
+					Status: v1.ConditionFalse,
+				},
+			},
+			HostIP: "2.3.4.5",
+			PodIP:  "4.3.2.1",
+		},
+	}
+	objs := []runtime.Object{
+		&v1.Endpoints{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "testendpoints",
+				Namespace: "default",
+			},
+			Subsets: []v1.EndpointSubset{
+				{
+					Addresses: []v1.EndpointAddress{
+						{
+							IP: "4.3.2.1",
+							// The Pending Pod may be included because the Endpoints was created manually.
+							// Or because the corresponding service has ".spec.publishNotReadyAddresses: true".
+							TargetRef: &v1.ObjectReference{
+								Kind:      "Pod",
+								Name:      "testpod",
+								Namespace: "default",
+							},
+						},
+					},
+					Ports: []v1.EndpointPort{
+						{
+							Name:     "mainport",
+							Port:     9000,
+							Protocol: v1.ProtocolTCP,
+						},
+					},
+				},
+			},
+		},
+		pod,
+	}
+	n, c := makeDiscovery(RoleEndpoint, NamespaceDiscovery{}, objs...)
+
+	k8sDiscoveryTest{
+		discovery: n,
+		afterStart: func() {
+			// the Pod becomes Ready.
+			pod.Status.Phase = "Running"
+			pod.Status.Conditions = []v1.PodCondition{
+				{
+					Type:   v1.PodReady,
+					Status: v1.ConditionTrue,
+				},
+			}
+			c.CoreV1().Pods(pod.Namespace).Update(context.Background(), pod, metav1.UpdateOptions{})
+		},
+		expectedMaxItems: 2,
+		expectedRes: map[string]*targetgroup.Group{
+			"endpoints/default/testendpoints": {
+				Targets: []model.LabelSet{
+					{
+						"__address__":                                    "4.3.2.1:9000",
+						"__meta_kubernetes_endpoint_port_name":           "mainport",
+						"__meta_kubernetes_endpoint_port_protocol":       "TCP",
+						"__meta_kubernetes_endpoint_ready":               "true",
+						"__meta_kubernetes_endpoint_address_target_kind": "Pod",
+						"__meta_kubernetes_endpoint_address_target_name": "testpod",
+						"__meta_kubernetes_pod_name":                     "testpod",
+						"__meta_kubernetes_pod_ip":                       "4.3.2.1",
+						"__meta_kubernetes_pod_ready":                    "true",
+						"__meta_kubernetes_pod_phase":                    "Running",
+						"__meta_kubernetes_pod_node_name":                "testnode",
+						"__meta_kubernetes_pod_host_ip":                  "2.3.4.5",
+						"__meta_kubernetes_pod_container_name":           "c1",
+						"__meta_kubernetes_pod_container_image":          "c1:latest",
+						"__meta_kubernetes_pod_container_port_name":      "mainport",
+						"__meta_kubernetes_pod_container_port_number":    "9000",
+						"__meta_kubernetes_pod_container_port_protocol":  "TCP",
+						"__meta_kubernetes_pod_uid":                      "deadbeef",
+						"__meta_kubernetes_pod_container_init":           "false",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_namespace":      "default",
+					"__meta_kubernetes_endpoints_name": "testendpoints",
+				},
+				Source: "endpoints/default/testendpoints",
+			},
+		},
+	}.Run(t)
+}
+
+func TestEndpointsDiscoverySidecarContainer(t *testing.T) {
+	objs := []runtime.Object{
+		&v1.Endpoints{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "testsidecar",
+				Namespace: "default",
+			},
+			Subsets: []v1.EndpointSubset{
+				{
+					Addresses: []v1.EndpointAddress{
+						{
+							IP: "4.3.2.1",
+							TargetRef: &v1.ObjectReference{
+								Kind:      "Pod",
+								Name:      "testpod",
+								Namespace: "default",
+							},
+						},
+					},
+					Ports: []v1.EndpointPort{
+						{
+							Name:     "testport",
+							Port:     9000,
+							Protocol: v1.ProtocolTCP,
+						},
+						{
+							Name:     "initport",
+							Port:     9111,
+							Protocol: v1.ProtocolTCP,
+						},
+					},
+				},
+			},
+		},
+		&v1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "testpod",
+				Namespace: "default",
+				UID:       types.UID("deadbeef"),
+			},
+			Spec: v1.PodSpec{
+				NodeName: "testnode",
+				InitContainers: []v1.Container{
+					{
+						Name:  "ic1",
+						Image: "ic1:latest",
+						Ports: []v1.ContainerPort{
+							{
+								Name:          "initport",
+								ContainerPort: 1111,
+								Protocol:      v1.ProtocolTCP,
+							},
+						},
+					},
+					{
+						Name:  "ic2",
+						Image: "ic2:latest",
+						Ports: []v1.ContainerPort{
+							{
+								Name:          "initport",
+								ContainerPort: 9111,
+								Protocol:      v1.ProtocolTCP,
+							},
+						},
+					},
+				},
+				Containers: []v1.Container{
+					{
+						Name:  "c1",
+						Image: "c1:latest",
+						Ports: []v1.ContainerPort{
+							{
+								Name:          "mainport",
+								ContainerPort: 9000,
+								Protocol:      v1.ProtocolTCP,
+							},
+						},
+					},
+				},
+			},
+			Status: v1.PodStatus{
+				HostIP: "2.3.4.5",
+				PodIP:  "4.3.2.1",
+			},
+		},
+	}
+
+	n, _ := makeDiscovery(RoleEndpoint, NamespaceDiscovery{}, objs...)
+
+	k8sDiscoveryTest{
+		discovery:        n,
+		expectedMaxItems: 1,
+		expectedRes: map[string]*targetgroup.Group{
+			"endpoints/default/testsidecar": {
+				Targets: []model.LabelSet{
+					{
+						"__address__": "4.3.2.1:9000",
+						"__meta_kubernetes_endpoint_address_target_kind": "Pod",
+						"__meta_kubernetes_endpoint_address_target_name": "testpod",
+						"__meta_kubernetes_endpoint_port_name":           "testport",
+						"__meta_kubernetes_endpoint_port_protocol":       "TCP",
+						"__meta_kubernetes_endpoint_ready":               "true",
+						"__meta_kubernetes_pod_container_image":          "c1:latest",
+						"__meta_kubernetes_pod_container_name":           "c1",
+						"__meta_kubernetes_pod_container_port_name":      "mainport",
+						"__meta_kubernetes_pod_container_port_number":    "9000",
+						"__meta_kubernetes_pod_container_port_protocol":  "TCP",
+						"__meta_kubernetes_pod_host_ip":                  "2.3.4.5",
+						"__meta_kubernetes_pod_ip":                       "4.3.2.1",
+						"__meta_kubernetes_pod_name":                     "testpod",
+						"__meta_kubernetes_pod_node_name":                "testnode",
+						"__meta_kubernetes_pod_phase":                    "",
+						"__meta_kubernetes_pod_ready":                    "unknown",
+						"__meta_kubernetes_pod_uid":                      "deadbeef",
+						"__meta_kubernetes_pod_container_init":           "false",
+					},
+					{
+						"__address__": "4.3.2.1:9111",
+						"__meta_kubernetes_endpoint_address_target_kind": "Pod",
+						"__meta_kubernetes_endpoint_address_target_name": "testpod",
+						"__meta_kubernetes_endpoint_port_name":           "initport",
+						"__meta_kubernetes_endpoint_port_protocol":       "TCP",
+						"__meta_kubernetes_endpoint_ready":               "true",
+						"__meta_kubernetes_pod_container_image":          "ic2:latest",
+						"__meta_kubernetes_pod_container_name":           "ic2",
+						"__meta_kubernetes_pod_container_port_name":      "initport",
+						"__meta_kubernetes_pod_container_port_number":    "9111",
+						"__meta_kubernetes_pod_container_port_protocol":  "TCP",
+						"__meta_kubernetes_pod_host_ip":                  "2.3.4.5",
+						"__meta_kubernetes_pod_ip":                       "4.3.2.1",
+						"__meta_kubernetes_pod_name":                     "testpod",
+						"__meta_kubernetes_pod_node_name":                "testnode",
+						"__meta_kubernetes_pod_phase":                    "",
+						"__meta_kubernetes_pod_ready":                    "unknown",
+						"__meta_kubernetes_pod_uid":                      "deadbeef",
+						"__meta_kubernetes_pod_container_init":           "true",
+					},
+					{
+						"__address__":                                   "4.3.2.1:1111",
+						"__meta_kubernetes_pod_container_image":         "ic1:latest",
+						"__meta_kubernetes_pod_container_name":          "ic1",
+						"__meta_kubernetes_pod_container_port_name":     "initport",
+						"__meta_kubernetes_pod_container_port_number":   "1111",
+						"__meta_kubernetes_pod_container_port_protocol": "TCP",
+						"__meta_kubernetes_pod_host_ip":                 "2.3.4.5",
+						"__meta_kubernetes_pod_ip":                      "4.3.2.1",
+						"__meta_kubernetes_pod_name":                    "testpod",
+						"__meta_kubernetes_pod_node_name":               "testnode",
+						"__meta_kubernetes_pod_phase":                   "",
+						"__meta_kubernetes_pod_ready":                   "unknown",
+						"__meta_kubernetes_pod_uid":                     "deadbeef",
+						"__meta_kubernetes_pod_container_init":          "true",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_endpoints_name": "testsidecar",
+					"__meta_kubernetes_namespace":      "default",
+				},
+				Source: "endpoints/default/testsidecar",
+			},
+		},
 	}.Run(t)
 }

@@ -27,13 +27,17 @@ in-file offset (lower 4 bytes) and segment sequence number (upper 4 bytes).
 
 # Chunk
 
-Unlike chunks in the on-disk blocks, here we additionally store series
-reference that the chunks belongs to and the mint/maxt of the chunks. This is
-because we don't have an index associated with these chunks, hence these meta
-information are used while replaying the chunks.
+Unlike chunks in the on-disk blocks, here we additionally store the series
+reference that each chunk belongs to and the mint/maxt of the chunks. This is
+because we don't have an index associated with these chunks, hence this metadata
+is used while replaying the chunks.
 
 ```
 ┌─────────────────────┬───────────────────────┬───────────────────────┬───────────────────┬───────────────┬──────────────┬────────────────┐
 | series ref <8 byte> | mint <8 byte, uint64> | maxt <8 byte, uint64> | encoding <1 byte> | len <uvarint> | data <bytes> │ CRC32 <4 byte> │
 └─────────────────────┴───────────────────────┴───────────────────────┴───────────────────┴───────────────┴──────────────┴────────────────┘
 ```
+
+## OOO encoding
+
+Head chunks use the highest bit of the `encoding` field to indicate whether it is out-of-order (1) or not (0). This bit is not set for chunks in the on-disk blocks.

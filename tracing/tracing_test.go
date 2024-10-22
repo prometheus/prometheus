@@ -16,11 +16,11 @@ package tracing
 import (
 	"testing"
 
-	"github.com/go-kit/log"
 	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/prometheus/prometheus/config"
 )
@@ -28,7 +28,7 @@ import (
 func TestInstallingNewTracerProvider(t *testing.T) {
 	tpBefore := otel.GetTracerProvider()
 
-	m := NewManager(log.NewNopLogger())
+	m := NewManager(promslog.NewNopLogger())
 	cfg := config.Config{
 		TracingConfig: config.TracingConfig{
 			Endpoint:   "localhost:1234",
@@ -41,7 +41,7 @@ func TestInstallingNewTracerProvider(t *testing.T) {
 }
 
 func TestReinstallingTracerProvider(t *testing.T) {
-	m := NewManager(log.NewNopLogger())
+	m := NewManager(promslog.NewNopLogger())
 	cfg := config.Config{
 		TracingConfig: config.TracingConfig{
 			Endpoint:   "localhost:1234",
@@ -76,7 +76,7 @@ func TestReinstallingTracerProvider(t *testing.T) {
 }
 
 func TestReinstallingTracerProviderWithTLS(t *testing.T) {
-	m := NewManager(log.NewNopLogger())
+	m := NewManager(promslog.NewNopLogger())
 	cfg := config.Config{
 		TracingConfig: config.TracingConfig{
 			Endpoint:   "localhost:1234",
@@ -96,7 +96,7 @@ func TestReinstallingTracerProviderWithTLS(t *testing.T) {
 }
 
 func TestUninstallingTracerProvider(t *testing.T) {
-	m := NewManager(log.NewNopLogger())
+	m := NewManager(promslog.NewNopLogger())
 	cfg := config.Config{
 		TracingConfig: config.TracingConfig{
 			Endpoint:   "localhost:1234",
@@ -105,7 +105,7 @@ func TestUninstallingTracerProvider(t *testing.T) {
 	}
 
 	require.NoError(t, m.ApplyConfig(&cfg))
-	require.NotEqual(t, trace.NewNoopTracerProvider(), otel.GetTracerProvider())
+	require.NotEqual(t, noop.NewTracerProvider(), otel.GetTracerProvider())
 
 	// Uninstall by passing empty config.
 	cfg2 := config.Config{
@@ -114,11 +114,11 @@ func TestUninstallingTracerProvider(t *testing.T) {
 
 	require.NoError(t, m.ApplyConfig(&cfg2))
 	// Make sure we get a no-op tracer provider after uninstallation.
-	require.Equal(t, trace.NewNoopTracerProvider(), otel.GetTracerProvider())
+	require.Equal(t, noop.NewTracerProvider(), otel.GetTracerProvider())
 }
 
 func TestTracerProviderShutdown(t *testing.T) {
-	m := NewManager(log.NewNopLogger())
+	m := NewManager(promslog.NewNopLogger())
 	cfg := config.Config{
 		TracingConfig: config.TracingConfig{
 			Endpoint:   "localhost:1234",
@@ -131,5 +131,5 @@ func TestTracerProviderShutdown(t *testing.T) {
 
 	// Check if we closed the done channel.
 	_, ok := <-m.done
-	require.Equal(t, ok, false)
+	require.False(t, ok)
 }

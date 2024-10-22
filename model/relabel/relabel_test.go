@@ -14,6 +14,7 @@
 package relabel
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -21,6 +22,7 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestRelabel(t *testing.T) {
@@ -214,6 +216,25 @@ func TestRelabel(t *testing.T) {
 			}),
 		},
 		{
+			// Blank replacement should delete the label.
+			input: labels.FromMap(map[string]string{
+				"a": "foo",
+				"f": "baz",
+			}),
+			relabel: []*Config{
+				{
+					SourceLabels: model.LabelNames{"a"},
+					Regex:        MustNewRegexp("(f).*"),
+					TargetLabel:  "$1",
+					Replacement:  "$2",
+					Action:       Replace,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"a": "foo",
+			}),
+		},
+		{
 			input: labels.FromMap(map[string]string{
 				"a": "foo",
 				"b": "bar",
@@ -334,7 +355,7 @@ func TestRelabel(t *testing.T) {
 		},
 		{ // invalid target_labels
 			input: labels.FromMap(map[string]string{
-				"a": "some-name-value",
+				"a": "some-name-0",
 			}),
 			relabel: []*Config{
 				{
@@ -349,18 +370,18 @@ func TestRelabel(t *testing.T) {
 					Regex:        MustNewRegexp("some-([^-]+)-([^,]+)"),
 					Action:       Replace,
 					Replacement:  "${1}",
-					TargetLabel:  "0${3}",
+					TargetLabel:  "${3}",
 				},
 				{
 					SourceLabels: model.LabelNames{"a"},
-					Regex:        MustNewRegexp("some-([^-]+)-([^,]+)"),
+					Regex:        MustNewRegexp("some-([^-]+)(-[^,]+)"),
 					Action:       Replace,
 					Replacement:  "${1}",
-					TargetLabel:  "-${3}",
+					TargetLabel:  "${3}",
 				},
 			},
 			output: labels.FromMap(map[string]string{
-				"a": "some-name-value",
+				"a": "some-name-0",
 			}),
 		},
 		{ // more complex real-life like usecase
@@ -548,6 +569,29 @@ func TestRelabel(t *testing.T) {
 			},
 			drop: true,
 		},
+		{
+			input: labels.FromMap(map[string]string{
+				"a": "line1\nline2",
+				"b": "bar",
+				"c": "baz",
+			}),
+			relabel: []*Config{
+				{
+					SourceLabels: model.LabelNames{"a"},
+					Regex:        MustNewRegexp("line1.*line2"),
+					TargetLabel:  "d",
+					Separator:    ";",
+					Replacement:  "match${1}",
+					Action:       Replace,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"a": "line1\nline2",
+				"b": "bar",
+				"c": "baz",
+				"d": "match",
+			}),
+		},
 	}
 
 	for _, test := range tests {
@@ -565,13 +609,85 @@ func TestRelabel(t *testing.T) {
 			if cfg.Replacement == "" {
 				cfg.Replacement = DefaultRelabelConfig.Replacement
 			}
+			require.NoError(t, cfg.Validate())
 		}
 
 		res, keep := Process(test.input, test.relabel...)
 		require.Equal(t, !test.drop, keep)
 		if keep {
-			require.Equal(t, test.output, res)
+			testutil.RequireEqual(t, test.output, res)
 		}
+	}
+}
+
+func TestRelabelValidate(t *testing.T) {
+	tests := []struct {
+		config   Config
+		expected string
+	}{
+		{
+			config:   Config{},
+			expected: `relabel action cannot be empty`,
+		},
+		{
+			config: Config{
+				Action: Replace,
+			},
+			expected: `requires 'target_label' value`,
+		},
+		{
+			config: Config{
+				Action: Lowercase,
+			},
+			expected: `requires 'target_label' value`,
+		},
+		{
+			config: Config{
+				Action:      Lowercase,
+				Replacement: DefaultRelabelConfig.Replacement,
+				TargetLabel: "${3}",
+			},
+			expected: `"${3}" is invalid 'target_label'`,
+		},
+		{
+			config: Config{
+				SourceLabels: model.LabelNames{"a"},
+				Regex:        MustNewRegexp("some-([^-]+)-([^,]+)"),
+				Action:       Replace,
+				Replacement:  "${1}",
+				TargetLabel:  "${3}",
+			},
+		},
+		{
+			config: Config{
+				SourceLabels: model.LabelNames{"a"},
+				Regex:        MustNewRegexp("some-([^-]+)-([^,]+)"),
+				Action:       Replace,
+				Replacement:  "${1}",
+				TargetLabel:  "0${3}",
+			},
+			expected: `"0${3}" is invalid 'target_label'`,
+		},
+		{
+			config: Config{
+				SourceLabels: model.LabelNames{"a"},
+				Regex:        MustNewRegexp("some-([^-]+)-([^,]+)"),
+				Action:       Replace,
+				Replacement:  "${1}",
+				TargetLabel:  "-${3}",
+			},
+			expected: `"-${3}" is invalid 'target_label' for replace action`,
+		},
+	}
+	for i, test := range tests {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			err := test.config.Validate()
+			if test.expected == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, test.expected)
+			}
+		})
 	}
 }
 
@@ -745,6 +861,34 @@ func BenchmarkRelabel(b *testing.B) {
 				"__scrape_timeout__", "10s",
 				"job", "kubernetes-pods"),
 		},
+		{
+			name: "static label pair",
+			config: `
+        - replacement: wwwwww
+          target_label: wwwwww
+        - replacement: yyyyyyyyyyyy
+          target_label: xxxxxxxxx
+        - replacement: xxxxxxxxx
+          target_label: yyyyyyyyyyyy
+        - source_labels: ["something"]
+          target_label: with_source_labels
+          replacement: value
+        - replacement: dropped
+          target_label: ${0}
+        - replacement: ${0}
+          target_label: dropped`,
+			lbls: labels.FromStrings(
+				"abcdefg01", "hijklmn1",
+				"abcdefg02", "hijklmn2",
+				"abcdefg03", "hijklmn3",
+				"abcdefg04", "hijklmn4",
+				"abcdefg05", "hijklmn5",
+				"abcdefg06", "hijklmn6",
+				"abcdefg07", "hijklmn7",
+				"abcdefg08", "hijklmn8",
+				"job", "foo",
+			),
+		},
 	}
 	for i := range tests {
 		err := yaml.UnmarshalStrict([]byte(tests[i].config), &tests[i].cfgs)
@@ -757,4 +901,66 @@ func BenchmarkRelabel(b *testing.B) {
 			}
 		})
 	}
+}
+
+func TestConfig_UnmarshalThenMarshal(t *testing.T) {
+	tests := []struct {
+		name      string
+		inputYaml string
+	}{
+		{
+			name: "Values provided",
+			inputYaml: `source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_port]
+separator: ;
+regex: \\d+
+target_label: __meta_kubernetes_pod_container_port_number
+replacement: $1
+action: replace
+`,
+		},
+		{
+			name: "No regex provided",
+			inputYaml: `source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_port]
+separator: ;
+target_label: __meta_kubernetes_pod_container_port_number
+replacement: $1
+action: keepequal
+`,
+		},
+		{
+			name: "Default regex provided",
+			inputYaml: `source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_port]
+separator: ;
+regex: (.*)
+target_label: __meta_kubernetes_pod_container_port_number
+replacement: $1
+action: replace
+`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			unmarshalled := Config{}
+			err := yaml.Unmarshal([]byte(test.inputYaml), &unmarshalled)
+			require.NoError(t, err)
+
+			marshalled, err := yaml.Marshal(&unmarshalled)
+			require.NoError(t, err)
+
+			require.Equal(t, test.inputYaml, string(marshalled))
+		})
+	}
+}
+
+func TestRegexp_ShouldMarshalAndUnmarshalZeroValue(t *testing.T) {
+	var zero Regexp
+
+	marshalled, err := yaml.Marshal(&zero)
+	require.NoError(t, err)
+	require.Equal(t, "null\n", string(marshalled))
+
+	var unmarshalled Regexp
+	err = yaml.Unmarshal(marshalled, &unmarshalled)
+	require.NoError(t, err)
+	require.Nil(t, unmarshalled.Regexp)
 }

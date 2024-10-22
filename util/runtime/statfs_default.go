@@ -12,7 +12,6 @@
 // limitations under the License.
 
 //go:build !windows && !openbsd && !netbsd && !solaris && !386
-// +build !windows,!openbsd,!netbsd,!solaris,!386
 
 package runtime
 
@@ -21,7 +20,7 @@ import (
 	"syscall"
 )
 
-// Statfs returns the file system type (Unix only)
+// Statfs returns the file system type (Unix only).
 func Statfs(path string) string {
 	// Types of file systems that may be returned by `statfs`
 	fsTypes := map[int64]string{
@@ -72,7 +71,8 @@ func Statfs(path string) string {
 
 	var fs syscall.Statfs_t
 	err := syscall.Statfs(path, &fs)
-	//nolint:unconvert // This ensure Type format on all Platforms
+	// nolintlint might cry out depending on the architecture (e.g. ARM64), so ignore it.
+	//nolint:unconvert,nolintlint // This ensures Type format on all Platforms.
 	localType := int64(fs.Type)
 	if err != nil {
 		return strconv.FormatInt(localType, 16)

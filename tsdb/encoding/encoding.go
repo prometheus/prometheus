@@ -15,13 +15,13 @@ package encoding
 
 import (
 	"encoding/binary"
+	"errors"
+	"fmt"
 	"hash"
 	"hash/crc32"
 	"math"
-	"unsafe"
 
 	"github.com/dennwc/varint"
-	"github.com/pkg/errors"
 )
 
 var (
@@ -74,8 +74,7 @@ func (e *Encbuf) PutVarint64(x int64) {
 
 // PutUvarintStr writes a string to the buffer prefixed by its varint length (in bytes!).
 func (e *Encbuf) PutUvarintStr(s string) {
-	b := *(*[]byte)(unsafe.Pointer(&s))
-	e.PutUvarint(len(b))
+	e.PutUvarint(len(s))
 	e.PutString(s)
 }
 
@@ -153,7 +152,7 @@ func NewDecbufUvarintAt(bs ByteSlice, off int, castagnoliTable *crc32.Table) Dec
 
 	l, n := varint.Uvarint(b)
 	if n <= 0 || n > binary.MaxVarintLen32 {
-		return Decbuf{E: errors.Errorf("invalid uvarint %d", n)}
+		return Decbuf{E: fmt.Errorf("invalid uvarint %d", n)}
 	}
 
 	if bs.Len() < off+n+int(l)+4 {
@@ -200,8 +199,9 @@ func (d *Decbuf) UvarintStr() string {
 	return string(d.UvarintBytes())
 }
 
-// The return value becomes invalid if the byte slice goes away.
-// Compared to UvarintStr, this avoid allocations.
+// UvarintBytes returns a pointer to internal data;
+// the return value becomes invalid if the byte slice goes away.
+// Compared to UvarintStr, this avoids allocations.
 func (d *Decbuf) UvarintBytes() []byte {
 	l := d.Uvarint64()
 	if d.E != nil {

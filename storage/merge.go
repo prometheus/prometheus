@@ -16,17 +16,18 @@ package storage
 import (
 	"bytes"
 	"container/heap"
+	"context"
 	"fmt"
 	"math"
+	"slices"
 	"sync"
-
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 type mergeGenericQuerier struct {
@@ -44,16 +45,24 @@ type mergeGenericQuerier struct {
 //
 // In case of overlaps between the data given by primaries' and secondaries' Selects, merge function will be used.
 func NewMergeQuerier(primaries, secondaries []Querier, mergeFn VerticalSeriesMergeFunc) Querier {
+	primaries = filterQueriers(primaries)
+	secondaries = filterQueriers(secondaries)
+
+	switch {
+	case len(primaries) == 0 && len(secondaries) == 0:
+		return noopQuerier{}
+	case len(primaries) == 1 && len(secondaries) == 0:
+		return primaries[0]
+	case len(primaries) == 0 && len(secondaries) == 1:
+		return &querierAdapter{newSecondaryQuerierFrom(secondaries[0])}
+	}
+
 	queriers := make([]genericQuerier, 0, len(primaries)+len(secondaries))
 	for _, q := range primaries {
-		if _, ok := q.(noopQuerier); !ok && q != nil {
-			queriers = append(queriers, newGenericQuerierFrom(q))
-		}
+		queriers = append(queriers, newGenericQuerierFrom(q))
 	}
 	for _, q := range secondaries {
-		if _, ok := q.(noopQuerier); !ok && q != nil {
-			queriers = append(queriers, newSecondaryQuerierFrom(q))
-		}
+		queriers = append(queriers, newSecondaryQuerierFrom(q))
 	}
 
 	concurrentSelect := false
@@ -67,22 +76,40 @@ func NewMergeQuerier(primaries, secondaries []Querier, mergeFn VerticalSeriesMer
 	}}
 }
 
+func filterQueriers(qs []Querier) []Querier {
+	ret := make([]Querier, 0, len(qs))
+	for _, q := range qs {
+		if _, ok := q.(noopQuerier); !ok && q != nil {
+			ret = append(ret, q)
+		}
+	}
+	return ret
+}
+
 // NewMergeChunkQuerier returns a new Chunk Querier that merges results of given primary and secondary chunk queriers.
 // See NewFanout commentary to learn more about primary vs secondary differences.
 //
 // In case of overlaps between the data given by primaries' and secondaries' Selects, merge function will be used.
 // TODO(bwplotka): Currently merge will compact overlapping chunks with bigger chunk, without limit. Split it: https://github.com/prometheus/tsdb/issues/670
 func NewMergeChunkQuerier(primaries, secondaries []ChunkQuerier, mergeFn VerticalChunkSeriesMergeFunc) ChunkQuerier {
+	primaries = filterChunkQueriers(primaries)
+	secondaries = filterChunkQueriers(secondaries)
+
+	switch {
+	case len(primaries) == 0 && len(secondaries) == 0:
+		return noopChunkQuerier{}
+	case len(primaries) == 1 && len(secondaries) == 0:
+		return primaries[0]
+	case len(primaries) == 0 && len(secondaries) == 1:
+		return &chunkQuerierAdapter{newSecondaryQuerierFromChunk(secondaries[0])}
+	}
+
 	queriers := make([]genericQuerier, 0, len(primaries)+len(secondaries))
 	for _, q := range primaries {
-		if _, ok := q.(noopChunkQuerier); !ok && q != nil {
-			queriers = append(queriers, newGenericQuerierFromChunk(q))
-		}
+		queriers = append(queriers, newGenericQuerierFromChunk(q))
 	}
-	for _, querier := range secondaries {
-		if _, ok := querier.(noopChunkQuerier); !ok && querier != nil {
-			queriers = append(queriers, newSecondaryQuerierFromChunk(querier))
-		}
+	for _, q := range secondaries {
+		queriers = append(queriers, newSecondaryQuerierFromChunk(q))
 	}
 
 	concurrentSelect := false
@@ -96,20 +123,23 @@ func NewMergeChunkQuerier(primaries, secondaries []ChunkQuerier, mergeFn Vertica
 	}}
 }
 
-// Select returns a set of series that matches the given label matchers.
-func (q *mergeGenericQuerier) Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) genericSeriesSet {
-	if len(q.queriers) == 0 {
-		return noopGenericSeriesSet{}
+func filterChunkQueriers(qs []ChunkQuerier) []ChunkQuerier {
+	ret := make([]ChunkQuerier, 0, len(qs))
+	for _, q := range qs {
+		if _, ok := q.(noopChunkQuerier); !ok && q != nil {
+			ret = append(ret, q)
+		}
 	}
-	if len(q.queriers) == 1 {
-		return q.queriers[0].Select(sortSeries, hints, matchers...)
-	}
+	return ret
+}
 
+// Select returns a set of series that matches the given label matchers.
+func (q *mergeGenericQuerier) Select(ctx context.Context, sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) genericSeriesSet {
 	seriesSets := make([]genericSeriesSet, 0, len(q.queriers))
 	if !q.concurrentSelect {
 		for _, querier := range q.queriers {
 			// We need to sort for merge  to work.
-			seriesSets = append(seriesSets, querier.Select(true, hints, matchers...))
+			seriesSets = append(seriesSets, querier.Select(ctx, true, hints, matchers...))
 		}
 		return &lazyGenericSeriesSet{init: func() (genericSeriesSet, bool) {
 			s := newGenericMergeSeriesSet(seriesSets, q.mergeFn)
@@ -128,7 +158,7 @@ func (q *mergeGenericQuerier) Select(sortSeries bool, hints *SelectHints, matche
 			defer wg.Done()
 
 			// We need to sort for NewMergeSeriesSet to work.
-			seriesSetChan <- qr.Select(true, hints, matchers...)
+			seriesSetChan <- qr.Select(ctx, true, hints, matchers...)
 		}(querier)
 	}
 	go func() {
@@ -157,8 +187,8 @@ func (l labelGenericQueriers) SplitByHalf() (labelGenericQueriers, labelGenericQ
 // LabelValues returns all potential values for a label name.
 // If matchers are specified the returned result set is reduced
 // to label values of metrics matching the matchers.
-func (q *mergeGenericQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, Warnings, error) {
-	res, ws, err := q.lvals(q.queriers, name, matchers...)
+func (q *mergeGenericQuerier) LabelValues(ctx context.Context, name string, hints *LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	res, ws, err := q.lvals(ctx, q.queriers, name, hints, matchers...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("LabelValues() from merge generic querier for label %s: %w", name, err)
 	}
@@ -166,23 +196,23 @@ func (q *mergeGenericQuerier) LabelValues(name string, matchers ...*labels.Match
 }
 
 // lvals performs merge sort for LabelValues from multiple queriers.
-func (q *mergeGenericQuerier) lvals(lq labelGenericQueriers, n string, matchers ...*labels.Matcher) ([]string, Warnings, error) {
+func (q *mergeGenericQuerier) lvals(ctx context.Context, lq labelGenericQueriers, n string, hints *LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	if lq.Len() == 0 {
 		return nil, nil, nil
 	}
 	if lq.Len() == 1 {
-		return lq.Get(0).LabelValues(n, matchers...)
+		return lq.Get(0).LabelValues(ctx, n, hints, matchers...)
 	}
 	a, b := lq.SplitByHalf()
 
-	var ws Warnings
-	s1, w, err := q.lvals(a, n, matchers...)
-	ws = append(ws, w...)
+	var ws annotations.Annotations
+	s1, w, err := q.lvals(ctx, a, n, hints, matchers...)
+	ws.Merge(w)
 	if err != nil {
 		return nil, ws, err
 	}
-	s2, ws, err := q.lvals(b, n, matchers...)
-	ws = append(ws, w...)
+	s2, ws, err := q.lvals(ctx, b, n, hints, matchers...)
+	ws.Merge(w)
 	if err != nil {
 		return nil, ws, err
 	}
@@ -217,16 +247,16 @@ func mergeStrings(a, b []string) []string {
 }
 
 // LabelNames returns all the unique label names present in all queriers in sorted order.
-func (q *mergeGenericQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, Warnings, error) {
+func (q *mergeGenericQuerier) LabelNames(ctx context.Context, hints *LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	var (
 		labelNamesMap = make(map[string]struct{})
-		warnings      Warnings
+		warnings      annotations.Annotations
 	)
 	for _, querier := range q.queriers {
-		names, wrn, err := querier.LabelNames(matchers...)
+		names, wrn, err := querier.LabelNames(ctx, hints, matchers...)
 		if wrn != nil {
 			// TODO(bwplotka): We could potentially wrap warnings.
-			warnings = append(warnings, wrn...)
+			warnings.Merge(wrn)
 		}
 		if err != nil {
 			return nil, nil, fmt.Errorf("LabelNames() from merge generic querier: %w", err)
@@ -345,7 +375,7 @@ func (c *genericMergeSeriesSet) Next() bool {
 		}
 
 		// Now, pop items of the heap that have equal label sets.
-		c.currentSets = nil
+		c.currentSets = c.currentSets[:0]
 		c.currentLabels = c.heap[0].At().Labels()
 		for len(c.heap) > 0 && labels.Equal(c.currentLabels, c.heap[0].At().Labels()) {
 			set := heap.Pop(&c.heap).(genericSeriesSet)
@@ -381,10 +411,10 @@ func (c *genericMergeSeriesSet) Err() error {
 	return nil
 }
 
-func (c *genericMergeSeriesSet) Warnings() Warnings {
-	var ws Warnings
+func (c *genericMergeSeriesSet) Warnings() annotations.Annotations {
+	var ws annotations.Annotations
 	for _, set := range c.sets {
-		ws = append(ws, set.Warnings()...)
+		ws.Merge(set.Warnings())
 	}
 	return ws
 }
@@ -471,10 +501,10 @@ func ChainSampleIteratorFromSeries(it chunkenc.Iterator, series []Series) chunke
 	return csi
 }
 
-func ChainSampleIteratorFromMetas(it chunkenc.Iterator, chunks []chunks.Meta) chunkenc.Iterator {
-	csi := getChainSampleIterator(it, len(chunks))
-	for i, c := range chunks {
-		csi.iterators[i] = c.Chunk.Iterator(csi.iterators[i])
+func ChainSampleIteratorFromIterables(it chunkenc.Iterator, iterables []chunkenc.Iterable) chunkenc.Iterator {
+	csi := getChainSampleIterator(it, len(iterables))
+	for i, c := range iterables {
+		csi.iterators[i] = c.Iterator(csi.iterators[i])
 	}
 	return csi
 }
@@ -495,9 +525,14 @@ func (c *chainSampleIterator) Seek(t int64) chunkenc.ValueType {
 	c.consecutive = false
 	c.h = samplesIteratorHeap{}
 	for _, iter := range c.iterators {
-		if iter.Seek(t) != chunkenc.ValNone {
-			heap.Push(&c.h, iter)
+		if iter.Seek(t) == chunkenc.ValNone {
+			if iter.Err() != nil {
+				// If any iterator is reporting an error, abort.
+				return chunkenc.ValNone
+			}
+			continue
 		}
+		heap.Push(&c.h, iter)
 	}
 	if len(c.h) > 0 {
 		c.curr = heap.Pop(&c.h).(chunkenc.Iterator)
@@ -515,24 +550,28 @@ func (c *chainSampleIterator) At() (t int64, v float64) {
 	return c.curr.At()
 }
 
-func (c *chainSampleIterator) AtHistogram() (int64, *histogram.Histogram) {
+func (c *chainSampleIterator) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
 	if c.curr == nil {
 		panic("chainSampleIterator.AtHistogram called before first .Next or after .Next returned false.")
 	}
-	t, h := c.curr.AtHistogram()
+	t, h := c.curr.AtHistogram(h)
 	// If the current sample is not consecutive with the previous one, we
-	// cannot be sure anymore that there was no counter reset.
-	if !c.consecutive && h.CounterResetHint == histogram.NotCounterReset {
+	// cannot be sure anymore about counter resets for counter histograms.
+	// TODO(beorn7): If a `NotCounterReset` sample is followed by a
+	// non-consecutive `CounterReset` sample, we could keep the hint as
+	// `CounterReset`. But then we needed to track the previous sample
+	// in more detail, which might not be worth it.
+	if !c.consecutive && h.CounterResetHint != histogram.GaugeType {
 		h.CounterResetHint = histogram.UnknownCounterReset
 	}
 	return t, h
 }
 
-func (c *chainSampleIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (c *chainSampleIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	if c.curr == nil {
 		panic("chainSampleIterator.AtFloatHistogram called before first .Next or after .Next returned false.")
 	}
-	t, fh := c.curr.AtFloatHistogram()
+	t, fh := c.curr.AtFloatHistogram(fh)
 	// If the current sample is not consecutive with the previous one, we
 	// cannot be sure anymore about counter resets for counter histograms.
 	// TODO(beorn7): If a `NotCounterReset` sample is followed by a
@@ -565,7 +604,13 @@ func (c *chainSampleIterator) Next() chunkenc.ValueType {
 		// So, we don't call Next() on it here.
 		c.curr = c.iterators[0]
 		for _, iter := range c.iterators[1:] {
-			if iter.Next() != chunkenc.ValNone {
+			if iter.Next() == chunkenc.ValNone {
+				if iter.Err() != nil {
+					// If any iterator is reporting an error, abort.
+					// If c.iterators[0] is reporting an error, we'll handle that below.
+					return chunkenc.ValNone
+				}
+			} else {
 				heap.Push(&c.h, iter)
 			}
 		}
@@ -577,7 +622,19 @@ func (c *chainSampleIterator) Next() chunkenc.ValueType {
 
 	for {
 		currValueType = c.curr.Next()
-		if currValueType != chunkenc.ValNone {
+
+		if currValueType == chunkenc.ValNone {
+			if c.curr.Err() != nil {
+				// Abort if we've hit an error.
+				return chunkenc.ValNone
+			}
+
+			if len(c.h) == 0 {
+				// No iterator left to iterate.
+				c.curr = nil
+				return chunkenc.ValNone
+			}
+		} else {
 			currT = c.curr.AtT()
 			if currT == c.lastT {
 				// Ignoring sample for the same timestamp.
@@ -597,10 +654,6 @@ func (c *chainSampleIterator) Next() chunkenc.ValueType {
 			}
 			// Current iterator does not hold the smallest timestamp.
 			heap.Push(&c.h, c.curr)
-		} else if len(c.h) == 0 {
-			// No iterator left to iterate.
-			c.curr = nil
-			return chunkenc.ValNone
 		}
 
 		c.curr = heap.Pop(&c.h).(chunkenc.Iterator)
@@ -834,6 +887,9 @@ func (c *concatenatingChunkIterator) Next() bool {
 	if c.iterators[c.idx].Next() {
 		c.curr = c.iterators[c.idx].At()
 		return true
+	}
+	if c.iterators[c.idx].Err() != nil {
+		return false
 	}
 	c.idx++
 	return c.Next()

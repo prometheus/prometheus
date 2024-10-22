@@ -16,15 +16,14 @@ package wlog
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"io"
+	"log/slog"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/golang/snappy"
 	"github.com/klauspost/compress/zstd"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -51,7 +50,7 @@ func NewLiveReaderMetrics(reg prometheus.Registerer) *LiveReaderMetrics {
 }
 
 // NewLiveReader returns a new live reader.
-func NewLiveReader(logger log.Logger, metrics *LiveReaderMetrics, r io.Reader) *LiveReader {
+func NewLiveReader(logger *slog.Logger, metrics *LiveReaderMetrics, r io.Reader) *LiveReader {
 	// Calling zstd.NewReader with a nil io.Reader and no options cannot return an error.
 	zstdReader, _ := zstd.NewReader(nil)
 
@@ -73,7 +72,7 @@ func NewLiveReader(logger log.Logger, metrics *LiveReaderMetrics, r io.Reader) *
 // that are still in the process of being written, and returns records as soon
 // as they can be read.
 type LiveReader struct {
-	logger      log.Logger
+	logger      *slog.Logger
 	rdr         io.Reader
 	err         error
 	rec         []byte
@@ -135,7 +134,7 @@ func (r *LiveReader) Next() bool {
 		switch ok, err := r.buildRecord(); {
 		case ok:
 			return true
-		case err != nil && err != io.EOF:
+		case err != nil && !errors.Is(err, io.EOF):
 			r.err = err
 			return false
 		}
@@ -157,7 +156,7 @@ func (r *LiveReader) Next() bool {
 
 		if r.writeIndex != pageSize {
 			n, err := r.fillBuffer()
-			if n == 0 || (err != nil && err != io.EOF) {
+			if n == 0 || (err != nil && !errors.Is(err, io.EOF)) {
 				r.err = err
 				return false
 			}
@@ -174,7 +173,7 @@ func (r *LiveReader) Record() []byte {
 // Rebuild a full record from potentially partial records. Returns false
 // if there was an error or if we weren't able to read a record for any reason.
 // Returns true if we read a full record. Any record data is appended to
-// LiveReader.rec
+// LiveReader.rec.
 func (r *LiveReader) buildRecord() (bool, error) {
 	for {
 		// Check that we have data in the internal buffer to read.
@@ -265,7 +264,7 @@ func validateRecord(typ recType, i int) error {
 		}
 		return nil
 	default:
-		return errors.Errorf("unexpected record type %d", typ)
+		return fmt.Errorf("unexpected record type %d", typ)
 	}
 }
 
@@ -311,7 +310,7 @@ func (r *LiveReader) readRecord() ([]byte, int, error) {
 			return nil, 0, fmt.Errorf("record would overflow current page: %d > %d", r.readIndex+recordHeaderSize+length, pageSize)
 		}
 		r.metrics.readerCorruptionErrors.WithLabelValues("record_span_page").Inc()
-		level.Warn(r.logger).Log("msg", "Record spans page boundaries", "start", r.readIndex, "end", recordHeaderSize+length, "pageSize", pageSize)
+		r.logger.Warn("Record spans page boundaries", "start", r.readIndex, "end", recordHeaderSize+length, "pageSize", pageSize)
 	}
 	if recordHeaderSize+length > pageSize {
 		return nil, 0, fmt.Errorf("record length greater than a single page: %d > %d", recordHeaderSize+length, pageSize)
@@ -322,15 +321,8 @@ func (r *LiveReader) readRecord() ([]byte, int, error) {
 
 	rec := r.buf[r.readIndex+recordHeaderSize : r.readIndex+recordHeaderSize+length]
 	if c := crc32.Checksum(rec, castagnoliTable); c != crc {
-		return nil, 0, errors.Errorf("unexpected checksum %x, expected %x", c, crc)
+		return nil, 0, fmt.Errorf("unexpected checksum %x, expected %x", c, crc)
 	}
 
 	return rec, length + recordHeaderSize, nil
-}
-
-func min(i, j int) int {
-	if i < j {
-		return i
-	}
-	return j
 }

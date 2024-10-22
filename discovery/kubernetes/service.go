@@ -17,12 +17,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"strconv"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
@@ -30,26 +31,31 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
-var (
-	svcAddCount    = eventCount.WithLabelValues("service", "add")
-	svcUpdateCount = eventCount.WithLabelValues("service", "update")
-	svcDeleteCount = eventCount.WithLabelValues("service", "delete")
-)
-
 // Service implements discovery of Kubernetes services.
 type Service struct {
-	logger   log.Logger
+	logger   *slog.Logger
 	informer cache.SharedInformer
 	store    cache.Store
 	queue    *workqueue.Type
 }
 
 // NewService returns a new service discovery.
-func NewService(l log.Logger, inf cache.SharedInformer) *Service {
+func NewService(l *slog.Logger, inf cache.SharedInformer, eventCount *prometheus.CounterVec) *Service {
 	if l == nil {
-		l = log.NewNopLogger()
+		l = promslog.NewNopLogger()
 	}
-	s := &Service{logger: l, informer: inf, store: inf.GetStore(), queue: workqueue.NewNamed("service")}
+
+	svcAddCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleAdd)
+	svcUpdateCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleUpdate)
+	svcDeleteCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleDelete)
+
+	s := &Service{
+		logger:   l,
+		informer: inf,
+		store:    inf.GetStore(),
+		queue:    workqueue.NewNamed(RoleService.String()),
+	}
+
 	_, err := s.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
 			svcAddCount.Inc()
@@ -65,7 +71,7 @@ func NewService(l log.Logger, inf cache.SharedInformer) *Service {
 		},
 	})
 	if err != nil {
-		level.Error(l).Log("msg", "Error adding services event handler.", "err", err)
+		l.Error("Error adding services event handler.", "err", err)
 	}
 	return s
 }
@@ -85,13 +91,13 @@ func (s *Service) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 
 	if !cache.WaitForCacheSync(ctx.Done(), s.informer.HasSynced) {
 		if !errors.Is(ctx.Err(), context.Canceled) {
-			level.Error(s.logger).Log("msg", "service informer unable to sync cache")
+			s.logger.Error("service informer unable to sync cache")
 		}
 		return
 	}
 
 	go func() {
-		for s.process(ctx, ch) { // nolint:revive
+		for s.process(ctx, ch) {
 		}
 	}()
 
@@ -122,7 +128,7 @@ func (s *Service) process(ctx context.Context, ch chan<- []*targetgroup.Group) b
 	}
 	eps, err := convertToService(o)
 	if err != nil {
-		level.Error(s.logger).Log("msg", "converting to Service object failed", "err", err)
+		s.logger.Error("converting to Service object failed", "err", err)
 		return true
 	}
 	send(ctx, ch, s.buildService(eps))

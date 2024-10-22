@@ -29,7 +29,7 @@ import (
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
-// SDMock is the interface for the DigitalOcean mock
+// SDMock is the interface for the DigitalOcean mock.
 type SDMock struct {
 	t         *testing.T
 	Server    *httptest.Server
@@ -47,12 +47,12 @@ func NewSDMock(t *testing.T, directory string) *SDMock {
 	}
 }
 
-// Endpoint returns the URI to the mock server
+// Endpoint returns the URI to the mock server.
 func (m *SDMock) Endpoint() string {
 	return m.Server.URL + "/"
 }
 
-// Setup creates the mock server
+// Setup creates the mock server.
 func (m *SDMock) Setup() {
 	m.Mux = http.NewServeMux()
 	m.Server = httptest.NewServer(m.Mux)
@@ -98,7 +98,7 @@ func (m *SDMock) SetupHandlers() {
 				if len(query) == 2 {
 					h := sha1.New()
 					h.Write([]byte(query[1]))
-					// Avoing long filenames for Windows.
+					// Avoiding long filenames for Windows.
 					f += "__" + base64.URLEncoding.EncodeToString(h.Sum(nil))[:10]
 				}
 			}

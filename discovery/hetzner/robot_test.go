@@ -18,9 +18,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 )
 
@@ -42,17 +42,17 @@ func TestRobotSDRefresh(t *testing.T) {
 	cfg.HTTPClientConfig.BasicAuth = &config.BasicAuth{Username: robotTestUsername, Password: robotTestPassword}
 	cfg.robotEndpoint = suite.Mock.Endpoint()
 
-	d, err := newRobotDiscovery(&cfg, log.NewNopLogger())
+	d, err := newRobotDiscovery(&cfg, promslog.NewNopLogger())
 	require.NoError(t, err)
 
 	targetGroups, err := d.refresh(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, 1, len(targetGroups))
+	require.Len(t, targetGroups, 1)
 
 	targetGroup := targetGroups[0]
 	require.NotNil(t, targetGroup, "targetGroup should not be nil")
 	require.NotNil(t, targetGroup.Targets, "targetGroup.targets should not be nil")
-	require.Equal(t, 2, len(targetGroup.Targets))
+	require.Len(t, targetGroup.Targets, 2)
 
 	for i, labelSet := range []model.LabelSet{
 		{
@@ -91,12 +91,11 @@ func TestRobotSDRefreshHandleError(t *testing.T) {
 	cfg := DefaultSDConfig
 	cfg.robotEndpoint = suite.Mock.Endpoint()
 
-	d, err := newRobotDiscovery(&cfg, log.NewNopLogger())
+	d, err := newRobotDiscovery(&cfg, promslog.NewNopLogger())
 	require.NoError(t, err)
 
 	targetGroups, err := d.refresh(context.Background())
-	require.Error(t, err)
-	require.Equal(t, "non 2xx status '401' response during hetzner service discovery with role robot", err.Error())
+	require.EqualError(t, err, "non 2xx status '401' response during hetzner service discovery with role robot")
 
-	require.Equal(t, 0, len(targetGroups))
+	require.Empty(t, targetGroups)
 }

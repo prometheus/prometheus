@@ -13,6 +13,7 @@ import QueryStatsView, { QueryStats } from './QueryStatsView';
 import { QueryParams, ExemplarData } from '../../types/types';
 import { API_PATH } from '../../constants/constants';
 import { debounce } from '../../utils';
+import { isHeatmapData } from './GraphHeatmapHelpers';
 
 interface PanelProps {
   options: PanelOptions;
@@ -36,9 +37,11 @@ interface PanelState {
   lastQueryParams: QueryParams | null;
   loading: boolean;
   warnings: string[] | null;
+  infos: string[] | null;
   error: string | null;
   stats: QueryStats | null;
   exprInputValue: string;
+  isHeatmapData: boolean;
 }
 
 export interface PanelOptions {
@@ -47,7 +50,7 @@ export interface PanelOptions {
   range: number; // Range in milliseconds.
   endTime: number | null; // Timestamp in milliseconds.
   resolution: number | null; // Resolution in seconds.
-  stacked: boolean;
+  displayMode: GraphDisplayMode;
   showExemplars: boolean;
 }
 
@@ -56,13 +59,19 @@ export enum PanelType {
   Table = 'table',
 }
 
+export enum GraphDisplayMode {
+  Lines = 'lines',
+  Stacked = 'stacked',
+  Heatmap = 'heatmap',
+}
+
 export const PanelDefaultOptions: PanelOptions = {
   type: PanelType.Table,
   expr: '',
   range: 60 * 60 * 1000,
   endTime: null,
   resolution: null,
-  stacked: false,
+  displayMode: GraphDisplayMode.Lines,
   showExemplars: false,
 };
 
@@ -79,9 +88,11 @@ class Panel extends Component<PanelProps, PanelState> {
       lastQueryParams: null,
       loading: false,
       warnings: null,
+      infos: null,
       error: null,
       stats: null,
       exprInputValue: props.options.expr,
+      isHeatmapData: false,
     };
 
     this.debounceExecuteQuery = debounce(this.executeQuery.bind(this), 250);
@@ -125,7 +136,7 @@ class Panel extends Component<PanelProps, PanelState> {
     this.abortInFlightFetch = () => abortController.abort();
     this.setState({ loading: true });
 
-    const endTime = this.getEndTime().valueOf() / 1000; // TODO: shouldn't valueof only work when it's a moment?
+    const endTime = this.getEndTime().valueOf() / 1000; // TODO: shouldn't valueOf only work when it's a moment?
     const startTime = endTime - this.props.options.range / 1000;
     const resolution = this.props.options.resolution || Math.max(Math.floor(this.props.options.range / 250000), 1);
     const params: URLSearchParams = new URLSearchParams({
@@ -184,11 +195,18 @@ class Panel extends Component<PanelProps, PanelState> {
         }
       }
 
+      const isHeatmap = isHeatmapData(query.data);
+      const isHeatmapDisplayMode = this.props.options.displayMode === GraphDisplayMode.Heatmap;
+      if (!isHeatmap && isHeatmapDisplayMode) {
+        this.setOptions({ displayMode: GraphDisplayMode.Lines });
+      }
+
       this.setState({
         error: null,
         data: query.data,
         exemplars: exemplars?.data,
         warnings: query.warnings,
+        infos: query.infos,
         lastQueryParams: {
           startTime,
           endTime,
@@ -200,6 +218,7 @@ class Panel extends Component<PanelProps, PanelState> {
           resultSeries,
         },
         loading: false,
+        isHeatmapData: isHeatmap,
       });
       this.abortInFlightFetch = null;
     } catch (err: unknown) {
@@ -252,8 +271,8 @@ class Panel extends Component<PanelProps, PanelState> {
     this.setOptions({ type: type });
   };
 
-  handleChangeStacking = (stacked: boolean): void => {
-    this.setOptions({ stacked: stacked });
+  handleChangeDisplayMode = (mode: GraphDisplayMode): void => {
+    this.setOptions({ displayMode: mode });
   };
 
   handleChangeShowExemplars = (show: boolean): void => {
@@ -289,6 +308,11 @@ class Panel extends Component<PanelProps, PanelState> {
         {this.state.warnings?.map((warning, index) => (
           <Row key={index}>
             <Col>{warning && <Alert color="warning">{warning}</Alert>}</Col>
+          </Row>
+        ))}
+        {this.state.infos?.map((info, index) => (
+          <Row key={index}>
+            <Col>{info && <Alert color="info">{info}</Alert>}</Col>
           </Row>
         ))}
         <Row>
@@ -337,18 +361,19 @@ class Panel extends Component<PanelProps, PanelState> {
                       endTime={options.endTime}
                       useLocalTime={this.props.useLocalTime}
                       resolution={options.resolution}
-                      stacked={options.stacked}
+                      displayMode={options.displayMode}
+                      isHeatmapData={this.state.isHeatmapData}
                       showExemplars={options.showExemplars}
                       onChangeRange={this.handleChangeRange}
                       onChangeEndTime={this.handleChangeEndTime}
                       onChangeResolution={this.handleChangeResolution}
-                      onChangeStacking={this.handleChangeStacking}
+                      onChangeDisplayMode={this.handleChangeDisplayMode}
                       onChangeShowExemplars={this.handleChangeShowExemplars}
                     />
                     <GraphTabContent
                       data={this.state.data}
                       exemplars={this.state.exemplars}
-                      stacked={options.stacked}
+                      displayMode={options.displayMode}
                       useLocalTime={this.props.useLocalTime}
                       showExemplars={options.showExemplars}
                       lastQueryParams={this.state.lastQueryParams}

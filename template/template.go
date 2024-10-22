@@ -23,7 +23,6 @@ import (
 	"net"
 	"net/url"
 	"sort"
-	"strconv"
 	"strings"
 	text_template "text/template"
 	"time"
@@ -31,6 +30,8 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+
+	common_templates "github.com/prometheus/common/helpers/templates"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -57,7 +58,7 @@ func init() {
 // A version of vector that's easier to use from templates.
 type sample struct {
 	Labels map[string]string
-	Value  float64
+	Value  interface{}
 }
 type queryResult []*sample
 
@@ -96,28 +97,12 @@ func query(ctx context.Context, q string, ts time.Time, queryFn QueryFunc) (quer
 			Value:  v.F,
 			Labels: v.Metric.Map(),
 		}
+		if v.H != nil {
+			s.Value = v.H
+		}
 		result[n] = &s
 	}
 	return result, nil
-}
-
-func convertToFloat(i interface{}) (float64, error) {
-	switch v := i.(type) {
-	case float64:
-		return v, nil
-	case string:
-		return strconv.ParseFloat(v, 64)
-	case int:
-		return float64(v), nil
-	case uint:
-		return float64(v), nil
-	case int64:
-		return float64(v), nil
-	case uint64:
-		return float64(v), nil
-	default:
-		return 0, fmt.Errorf("can't convert %T to float", v)
-	}
 }
 
 // Expander executes templates in text or HTML mode with a common set of Prometheus template functions.
@@ -160,7 +145,7 @@ func NewTemplateExpander(
 			"label": func(label string, s *sample) string {
 				return s.Labels[label]
 			},
-			"value": func(s *sample) float64 {
+			"value": func(s *sample) interface{} {
 				return s.Value
 			},
 			"strvalue": func(s *sample) string {
@@ -181,7 +166,7 @@ func NewTemplateExpander(
 				return html_template.HTML(text)
 			},
 			"match":     regexp.MatchString,
-			"title":     strings.Title, // nolint:staticcheck
+			"title":     strings.Title, //nolint:staticcheck // TODO(beorn7): Need to come up with a replacement using the cases package.
 			"toUpper":   strings.ToUpper,
 			"toLower":   strings.ToLower,
 			"graphLink": strutil.GraphLinkForExpression,
@@ -214,7 +199,7 @@ func NewTemplateExpander(
 				return host
 			},
 			"humanize": func(i interface{}) (string, error) {
-				v, err := convertToFloat(i)
+				v, err := common_templates.ConvertToFloat(i)
 				if err != nil {
 					return "", err
 				}
@@ -243,7 +228,7 @@ func NewTemplateExpander(
 				return fmt.Sprintf("%.4g%s", v, prefix), nil
 			},
 			"humanize1024": func(i interface{}) (string, error) {
-				v, err := convertToFloat(i)
+				v, err := common_templates.ConvertToFloat(i)
 				if err != nil {
 					return "", err
 				}
@@ -260,76 +245,17 @@ func NewTemplateExpander(
 				}
 				return fmt.Sprintf("%.4g%s", v, prefix), nil
 			},
-			"humanizeDuration": func(i interface{}) (string, error) {
-				v, err := convertToFloat(i)
-				if err != nil {
-					return "", err
-				}
-				if math.IsNaN(v) || math.IsInf(v, 0) {
-					return fmt.Sprintf("%.4g", v), nil
-				}
-				if v == 0 {
-					return fmt.Sprintf("%.4gs", v), nil
-				}
-				if math.Abs(v) >= 1 {
-					sign := ""
-					if v < 0 {
-						sign = "-"
-						v = -v
-					}
-					duration := int64(v)
-					seconds := duration % 60
-					minutes := (duration / 60) % 60
-					hours := (duration / 60 / 60) % 24
-					days := duration / 60 / 60 / 24
-					// For days to minutes, we display seconds as an integer.
-					if days != 0 {
-						return fmt.Sprintf("%s%dd %dh %dm %ds", sign, days, hours, minutes, seconds), nil
-					}
-					if hours != 0 {
-						return fmt.Sprintf("%s%dh %dm %ds", sign, hours, minutes, seconds), nil
-					}
-					if minutes != 0 {
-						return fmt.Sprintf("%s%dm %ds", sign, minutes, seconds), nil
-					}
-					// For seconds, we display 4 significant digits.
-					return fmt.Sprintf("%s%.4gs", sign, v), nil
-				}
-				prefix := ""
-				for _, p := range []string{"m", "u", "n", "p", "f", "a", "z", "y"} {
-					if math.Abs(v) >= 1 {
-						break
-					}
-					prefix = p
-					v *= 1000
-				}
-				return fmt.Sprintf("%.4g%ss", v, prefix), nil
-			},
+			"humanizeDuration": common_templates.HumanizeDuration,
 			"humanizePercentage": func(i interface{}) (string, error) {
-				v, err := convertToFloat(i)
+				v, err := common_templates.ConvertToFloat(i)
 				if err != nil {
 					return "", err
 				}
 				return fmt.Sprintf("%.4g%%", v*100), nil
 			},
-			"humanizeTimestamp": func(i interface{}) (string, error) {
-				v, err := convertToFloat(i)
-				if err != nil {
-					return "", err
-				}
-
-				tm, err := floatToTime(v)
-				switch {
-				case errors.Is(err, errNaNOrInf):
-					return fmt.Sprintf("%.4g", v), nil
-				case err != nil:
-					return "", err
-				}
-
-				return fmt.Sprint(tm), nil
-			},
+			"humanizeTimestamp": common_templates.HumanizeTimestamp,
 			"toTime": func(i interface{}) (*time.Time, error) {
-				v, err := convertToFloat(i)
+				v, err := common_templates.ConvertToFloat(i)
 				if err != nil {
 					return nil, err
 				}
@@ -355,18 +281,24 @@ func NewTemplateExpander(
 }
 
 // AlertTemplateData returns the interface to be used in expanding the template.
-func AlertTemplateData(labels, externalLabels map[string]string, externalURL string, value float64) interface{} {
-	return struct {
+func AlertTemplateData(labels, externalLabels map[string]string, externalURL string, smpl promql.Sample) interface{} {
+	res := struct {
 		Labels         map[string]string
 		ExternalLabels map[string]string
 		ExternalURL    string
-		Value          float64
+		Value          interface{}
 	}{
 		Labels:         labels,
 		ExternalLabels: externalLabels,
 		ExternalURL:    externalURL,
-		Value:          value,
+		Value:          smpl.F,
 	}
+
+	if smpl.H != nil {
+		res.Value = smpl.H
+	}
+
+	return res
 }
 
 // Funcs adds the functions in fm to the Expander's function map.

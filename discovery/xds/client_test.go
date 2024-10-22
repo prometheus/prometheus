@@ -52,23 +52,21 @@ func TestMakeXDSResourceHttpEndpointEmptyServerURLScheme(t *testing.T) {
 	endpointURL, err := makeXDSResourceHTTPEndpointURL(ProtocolV3, urlMustParse("127.0.0.1"), "monitoring")
 
 	require.Empty(t, endpointURL)
-	require.Error(t, err)
-	require.Equal(t, err.Error(), "invalid xDS server URL")
+	require.EqualError(t, err, "invalid xDS server URL")
 }
 
 func TestMakeXDSResourceHttpEndpointEmptyServerURLHost(t *testing.T) {
 	endpointURL, err := makeXDSResourceHTTPEndpointURL(ProtocolV3, urlMustParse("grpc://127.0.0.1"), "monitoring")
 
 	require.Empty(t, endpointURL)
-	require.NotNil(t, err)
-	require.Contains(t, err.Error(), "must be either 'http' or 'https'")
+	require.ErrorContains(t, err, "must be either 'http' or 'https'")
 }
 
 func TestMakeXDSResourceHttpEndpoint(t *testing.T) {
 	endpointURL, err := makeXDSResourceHTTPEndpointURL(ProtocolV3, urlMustParse("http://127.0.0.1:5000"), "monitoring")
 
 	require.NoError(t, err)
-	require.Equal(t, endpointURL.String(), "http://127.0.0.1:5000/v3/discovery:monitoring")
+	require.Equal(t, "http://127.0.0.1:5000/v3/discovery:monitoring", endpointURL.String())
 }
 
 func TestCreateNewHTTPResourceClient(t *testing.T) {
@@ -89,8 +87,8 @@ func TestCreateNewHTTPResourceClient(t *testing.T) {
 
 	require.NoError(t, err)
 
-	require.Equal(t, client.endpoint, "http://127.0.0.1:5000/v3/discovery:monitoring?param1=v1")
-	require.Equal(t, client.client.Timeout, 1*time.Minute)
+	require.Equal(t, "http://127.0.0.1:5000/v3/discovery:monitoring?param1=v1", client.endpoint)
+	require.Equal(t, 1*time.Minute, client.client.Timeout)
 }
 
 func createTestHTTPResourceClient(t *testing.T, conf *HTTPResourceClientConfig, protocolVersion ProtocolVersion, responder discoveryResponder) (*HTTPResourceClient, func()) {
@@ -138,7 +136,7 @@ func TestHTTPResourceClientFetchFullResponse(t *testing.T) {
 	require.NotNil(t, res)
 
 	require.Equal(t, client.ResourceTypeURL(), res.TypeUrl)
-	require.Len(t, res.Resources, 0)
+	require.Empty(t, res.Resources)
 	require.Equal(t, "abc", client.latestNonce, "Nonce not cached")
 	require.Equal(t, "1", client.latestVersion, "Version not cached")
 

@@ -14,18 +14,18 @@
 package web
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
+	"strings"
 
-	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -57,19 +57,17 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	h.mtx.RLock()
 	defer h.mtx.RUnlock()
 
+	ctx := req.Context()
+
 	if err := req.ParseForm(); err != nil {
 		http.Error(w, fmt.Sprintf("error parsing form values: %v", err), http.StatusBadRequest)
 		return
 	}
 
-	var matcherSets [][]*labels.Matcher
-	for _, s := range req.Form["match[]"] {
-		matchers, err := parser.ParseMetricSelector(s)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		matcherSets = append(matcherSets, matchers)
+	matcherSets, err := parser.ParseMetricSelectors(req.Form["match[]"])
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	var (
@@ -80,10 +78,10 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	)
 	w.Header().Set("Content-Type", string(format))
 
-	q, err := h.localStorage.Querier(req.Context(), mint, maxt)
+	q, err := h.localStorage.Querier(mint, maxt)
 	if err != nil {
 		federationErrors.Inc()
-		if errors.Cause(err) == tsdb.ErrNotReady {
+		if errors.Is(err, tsdb.ErrNotReady) {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
 		}
@@ -98,7 +96,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 	var sets []storage.SeriesSet
 	for _, mset := range matcherSets {
-		s := q.Select(true, hints, mset...)
+		s := q.Select(ctx, true, hints, mset...)
 		sets = append(sets, s)
 	}
 
@@ -124,7 +122,7 @@ Loop:
 		case chunkenc.ValFloat:
 			t, f = it.At()
 		case chunkenc.ValFloatHistogram, chunkenc.ValHistogram:
-			t, fh = it.AtFloatHistogram()
+			t, fh = it.AtFloatHistogram(nil)
 		default:
 			sample, ok := it.PeekBack(1)
 			if !ok {
@@ -135,7 +133,7 @@ Loop:
 			case chunkenc.ValFloat:
 				f = sample.F()
 			case chunkenc.ValHistogram:
-				fh = sample.H().ToFloat()
+				fh = sample.H().ToFloat(nil)
 			case chunkenc.ValFloatHistogram:
 				fh = sample.FH()
 			default:
@@ -158,7 +156,7 @@ Loop:
 		})
 	}
 	if ws := set.Warnings(); len(ws) > 0 {
-		level.Debug(h.logger).Log("msg", "Federation select returned warnings", "warnings", ws)
+		h.logger.Debug("Federation select returned warnings", "warnings", ws)
 		federationWarnings.Add(float64(len(ws)))
 	}
 	if set.Err() != nil {
@@ -167,10 +165,10 @@ Loop:
 		return
 	}
 
-	slices.SortFunc(vec, func(a, b promql.Sample) bool {
+	slices.SortFunc(vec, func(a, b promql.Sample) int {
 		ni := a.Metric.Get(labels.MetricName)
 		nj := b.Metric.Get(labels.MetricName)
-		return ni < nj
+		return strings.Compare(ni, nj)
 	})
 
 	externalLabels := h.config.GlobalConfig.ExternalLabels.Map()
@@ -190,8 +188,9 @@ Loop:
 	)
 	for _, s := range vec {
 		isHistogram := s.H != nil
+		formatType := format.FormatType()
 		if isHistogram &&
-			format != expfmt.FmtProtoDelim && format != expfmt.FmtProtoText && format != expfmt.FmtProtoCompact {
+			formatType != expfmt.TypeProtoDelim && formatType != expfmt.TypeProtoText && formatType != expfmt.TypeProtoCompact {
 			// Can't serve the native histogram.
 			// TODO(codesome): Serve them when other protocols get the native histogram support.
 			continue
@@ -253,11 +252,11 @@ Loop:
 		})
 		if err != nil {
 			federationErrors.Inc()
-			level.Error(h.logger).Log("msg", "federation failed", "err", err)
+			h.logger.Error("federation failed", "err", err)
 			return
 		}
 		if !nameSeen {
-			level.Warn(h.logger).Log("msg", "Ignoring nameless metric during federation", "metric", s.Metric)
+			h.logger.Warn("Ignoring nameless metric during federation", "metric", s.Metric)
 			continue
 		}
 		// Attach global labels if they do not exist yet.
@@ -314,7 +313,7 @@ Loop:
 	if protMetricFam != nil {
 		if err := enc.Encode(protMetricFam); err != nil {
 			federationErrors.Inc()
-			level.Error(h.logger).Log("msg", "federation failed", "err", err)
+			h.logger.Error("federation failed", "err", err)
 		}
 	}
 }

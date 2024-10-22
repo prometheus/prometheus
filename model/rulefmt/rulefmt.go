@@ -27,6 +27,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/template"
 )
@@ -110,6 +111,20 @@ func (g *RuleGroups) Validate(node ruleGroups) (errs []error) {
 			)
 		}
 
+		for k, v := range g.Labels {
+			if !model.LabelName(k).IsValid() || k == model.MetricNameLabel {
+				errs = append(
+					errs, fmt.Errorf("invalid label name: %s", k),
+				)
+			}
+
+			if !model.LabelValue(v).IsValid() {
+				errs = append(
+					errs, fmt.Errorf("invalid label value: %s", v),
+				)
+			}
+		}
+
 		set[g.Name] = struct{}{}
 
 		for i, r := range g.Rules {
@@ -135,10 +150,12 @@ func (g *RuleGroups) Validate(node ruleGroups) (errs []error) {
 
 // RuleGroup is a list of sequentially evaluated recording and alerting rules.
 type RuleGroup struct {
-	Name     string         `yaml:"name"`
-	Interval model.Duration `yaml:"interval,omitempty"`
-	Limit    int            `yaml:"limit,omitempty"`
-	Rules    []RuleNode     `yaml:"rules"`
+	Name        string            `yaml:"name"`
+	Interval    model.Duration    `yaml:"interval,omitempty"`
+	QueryOffset *model.Duration   `yaml:"query_offset,omitempty"`
+	Limit       int               `yaml:"limit,omitempty"`
+	Rules       []RuleNode        `yaml:"rules"`
+	Labels      map[string]string `yaml:"labels,omitempty"`
 }
 
 // Rule describes an alerting or recording rule.
@@ -173,17 +190,11 @@ func (r *RuleNode) Validate() (nodes []WrappedError) {
 		})
 	}
 	if r.Record.Value == "" && r.Alert.Value == "" {
-		if r.Record.Value == "0" {
-			nodes = append(nodes, WrappedError{
-				err:  fmt.Errorf("one of 'record' or 'alert' must be set"),
-				node: &r.Alert,
-			})
-		} else {
-			nodes = append(nodes, WrappedError{
-				err:  fmt.Errorf("one of 'record' or 'alert' must be set"),
-				node: &r.Record,
-			})
-		}
+		nodes = append(nodes, WrappedError{
+			err:     fmt.Errorf("one of 'record' or 'alert' must be set"),
+			node:    &r.Record,
+			nodeAlt: &r.Alert,
+		})
 	}
 
 	if r.Expr.Value == "" {
@@ -262,7 +273,7 @@ func testTemplateParsing(rl *RuleNode) (errs []error) {
 	}
 
 	// Trying to parse templates.
-	tmplData := template.AlertTemplateData(map[string]string{}, map[string]string{}, "", 0)
+	tmplData := template.AlertTemplateData(map[string]string{}, map[string]string{}, "", promql.Sample{})
 	defs := []string{
 		"{{$labels := .Labels}}",
 		"{{$externalLabels := .ExternalLabels}}",

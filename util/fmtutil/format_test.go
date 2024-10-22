@@ -204,7 +204,7 @@ func TestParseAndPushMetricsTextAndFormat(t *testing.T) {
 	expected, err := MetricTextToWriteRequest(input, labels)
 	require.NoError(t, err)
 
-	require.Equal(t, writeRequestFixture, expected)
+	require.Equal(t, expected, writeRequestFixture)
 }
 
 func TestMetricTextToWriteRequestErrorParsingFloatValue(t *testing.T) {
@@ -217,7 +217,7 @@ func TestMetricTextToWriteRequestErrorParsingFloatValue(t *testing.T) {
 	labels := map[string]string{"job": "promtool"}
 
 	_, err := MetricTextToWriteRequest(input, labels)
-	require.Equal(t, err.Error(), "text format parsing error in line 4: expected float as value, got \"1027Error\"")
+	require.Equal(t, "text format parsing error in line 4: expected float as value, got \"1027Error\"", err.Error())
 }
 
 func TestMetricTextToWriteRequestErrorParsingMetricType(t *testing.T) {
@@ -229,5 +229,5 @@ func TestMetricTextToWriteRequestErrorParsingMetricType(t *testing.T) {
 	labels := map[string]string{"job": "promtool"}
 
 	_, err := MetricTextToWriteRequest(input, labels)
-	require.Equal(t, err.Error(), "text format parsing error in line 3: unknown metric type \"info\"")
+	require.Equal(t, "text format parsing error in line 3: unknown metric type \"info\"", err.Error())
 }

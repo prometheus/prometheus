@@ -16,9 +16,8 @@ package tsdb
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"path/filepath"
-
-	"github.com/go-kit/log"
 
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -27,7 +26,7 @@ import (
 var ErrInvalidTimes = fmt.Errorf("max time is lesser than min time")
 
 // CreateBlock creates a chunkrange block from the samples passed to it, and writes it to disk.
-func CreateBlock(series []storage.Series, dir string, chunkRange int64, logger log.Logger) (string, error) {
+func CreateBlock(series []storage.Series, dir string, chunkRange int64, logger *slog.Logger) (string, error) {
 	if chunkRange == 0 {
 		chunkRange = DefaultBlockDuration
 	}
@@ -41,7 +40,7 @@ func CreateBlock(series []storage.Series, dir string, chunkRange int64, logger l
 	}
 	defer func() {
 		if err := w.Close(); err != nil {
-			logger.Log("err closing blockwriter", err.Error())
+			logger.Error("err closing blockwriter", "err", err.Error())
 		}
 	}()
 
@@ -73,10 +72,10 @@ func CreateBlock(series []storage.Series, dir string, chunkRange int64, logger l
 				t, v := it.At()
 				ref, err = app.Append(ref, lset, t, v)
 			case chunkenc.ValHistogram:
-				t, h := it.AtHistogram()
+				t, h := it.AtHistogram(nil)
 				ref, err = app.AppendHistogram(ref, lset, t, h, nil)
 			case chunkenc.ValFloatHistogram:
-				t, fh := it.AtFloatHistogram()
+				t, fh := it.AtFloatHistogram(nil)
 				ref, err = app.AppendHistogram(ref, lset, t, nil, fh)
 			default:
 				return "", fmt.Errorf("unknown sample type %s", typ.String())

@@ -55,8 +55,8 @@ func NewListSeries(lset labels.Labels, s []chunks.Sample) *SeriesEntry {
 	}
 }
 
-// NewListChunkSeriesFromSamples returns chunk series entry that allows to iterate over provided samples.
-// NOTE: It uses inefficient chunks encoding implementation, not caring about chunk size.
+// NewListChunkSeriesFromSamples returns a chunk series entry that allows to iterate over provided samples.
+// NOTE: It uses an inefficient chunks encoding implementation, not caring about chunk size.
 // Use only for testing.
 func NewListChunkSeriesFromSamples(lset labels.Labels, samples ...[]chunks.Sample) *ChunkSeriesEntry {
 	chksFromSamples := make([]chunks.Meta, 0, len(samples))
@@ -123,12 +123,12 @@ func (it *listSeriesIterator) At() (int64, float64) {
 	return s.T(), s.F()
 }
 
-func (it *listSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
+func (it *listSeriesIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	s := it.samples.Get(it.idx)
 	return s.T(), s.H()
 }
 
-func (it *listSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (it *listSeriesIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	s := it.samples.Get(it.idx)
 	return s.T(), s.FH()
 }
@@ -170,6 +170,34 @@ func (it *listSeriesIterator) Seek(t int64) chunkenc.ValueType {
 }
 
 func (it *listSeriesIterator) Err() error { return nil }
+
+type listSeriesIteratorWithCopy struct {
+	*listSeriesIterator
+}
+
+func NewListSeriesIteratorWithCopy(samples Samples) chunkenc.Iterator {
+	return &listSeriesIteratorWithCopy{
+		listSeriesIterator: &listSeriesIterator{samples: samples, idx: -1},
+	}
+}
+
+func (it *listSeriesIteratorWithCopy) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
+	t, ih := it.listSeriesIterator.AtHistogram(nil)
+	if h == nil || ih == nil {
+		return t, ih
+	}
+	ih.CopyTo(h)
+	return t, h
+}
+
+func (it *listSeriesIteratorWithCopy) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+	t, ih := it.listSeriesIterator.AtFloatHistogram(nil)
+	if fh == nil || ih == nil {
+		return t, ih
+	}
+	ih.CopyTo(fh)
+	return t, fh
+}
 
 type listChunkSeriesIterator struct {
 	chks []chunks.Meta
@@ -337,7 +365,7 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 			t, v = seriesIter.At()
 			app.Append(t, v)
 		case chunkenc.ValHistogram:
-			t, h = seriesIter.AtHistogram()
+			t, h = seriesIter.AtHistogram(nil)
 			newChk, recoded, app, err = app.AppendHistogram(nil, t, h, false)
 			if err != nil {
 				return errChunksIterator{err: err}
@@ -352,7 +380,7 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 				chk = newChk
 			}
 		case chunkenc.ValFloatHistogram:
-			t, fh = seriesIter.AtFloatHistogram()
+			t, fh = seriesIter.AtFloatHistogram(nil)
 			newChk, recoded, app, err = app.AppendFloatHistogram(nil, t, fh, false)
 			if err != nil {
 				return errChunksIterator{err: err}
@@ -438,10 +466,10 @@ func ExpandSamples(iter chunkenc.Iterator, newSampleFn func(t int64, f float64, 
 			}
 			result = append(result, newSampleFn(t, f, nil, nil))
 		case chunkenc.ValHistogram:
-			t, h := iter.AtHistogram()
+			t, h := iter.AtHistogram(nil)
 			result = append(result, newSampleFn(t, 0, h, nil))
 		case chunkenc.ValFloatHistogram:
-			t, fh := iter.AtFloatHistogram()
+			t, fh := iter.AtFloatHistogram(nil)
 			result = append(result, newSampleFn(t, 0, nil, fh))
 		}
 	}

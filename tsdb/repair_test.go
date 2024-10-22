@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -24,10 +25,12 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestRepairBadIndexVersion(t *testing.T) {
 	tmpDir := t.TempDir()
+	ctx := context.Background()
 
 	// The broken index used in this test was written by the following script
 	// at a broken revision.
@@ -78,7 +81,7 @@ func TestRepairBadIndexVersion(t *testing.T) {
 	// Read current index to check integrity.
 	r, err := index.NewFileReader(filepath.Join(tmpDbDir, indexFilename))
 	require.NoError(t, err)
-	p, err := r.Postings("b", "1")
+	p, err := r.Postings(ctx, "b", "1")
 	require.NoError(t, err)
 	var builder labels.ScratchBuilder
 	for p.Next() {
@@ -97,7 +100,7 @@ func TestRepairBadIndexVersion(t *testing.T) {
 	r, err = index.NewFileReader(filepath.Join(tmpDbDir, indexFilename))
 	require.NoError(t, err)
 	defer r.Close()
-	p, err = r.Postings("b", "1")
+	p, err = r.Postings(ctx, "b", "1")
 	require.NoError(t, err)
 	res := []labels.Labels{}
 
@@ -110,7 +113,7 @@ func TestRepairBadIndexVersion(t *testing.T) {
 	}
 
 	require.NoError(t, p.Err())
-	require.Equal(t, []labels.Labels{
+	testutil.RequireEqual(t, []labels.Labels{
 		labels.FromStrings("a", "1", "b", "1"),
 		labels.FromStrings("a", "2", "b", "1"),
 	}, res)

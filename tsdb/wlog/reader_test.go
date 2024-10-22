@@ -29,11 +29,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/common/promslog"
+
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 type reader interface {
@@ -53,7 +53,7 @@ var readerConstructors = map[string]func(io.Reader) reader{
 		return NewReader(r)
 	},
 	"LiveReader": func(r io.Reader) reader {
-		lr := NewLiveReader(log.NewNopLogger(), NewLiveReaderMetrics(nil), r)
+		lr := NewLiveReader(promslog.NewNopLogger(), NewLiveReaderMetrics(nil), r)
 		lr.eofNonErr = true
 		return lr
 	},
@@ -182,16 +182,13 @@ func TestReader(t *testing.T) {
 					t.Logf("record %d", j)
 					rec := r.Record()
 
-					if j >= len(c.exp) {
-						t.Fatal("received more records than expected")
-					}
+					require.Less(t, j, len(c.exp), "received more records than expected")
 					require.Equal(t, c.exp[j], rec, "Bytes within record did not match expected Bytes")
 				}
-				if !c.fail && r.Err() != nil {
-					t.Fatalf("unexpected error: %s", r.Err())
-				}
-				if c.fail && r.Err() == nil {
-					t.Fatalf("expected error but got none")
+				if !c.fail {
+					require.NoError(t, r.Err())
+				} else {
+					require.Error(t, r.Err())
 				}
 			})
 		}
@@ -199,7 +196,7 @@ func TestReader(t *testing.T) {
 }
 
 func TestReader_Live(t *testing.T) {
-	logger := testutil.NewLogger(t)
+	logger := promslog.NewNopLogger()
 
 	for i := range testReaderCases {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
@@ -344,7 +341,7 @@ func TestReaderFuzz(t *testing.T) {
 					r := reader.Record()
 					// Expected value may come as nil or empty slice, so it requires special comparison.
 					if len(expected) == 0 {
-						require.Len(t, r, 0)
+						require.Empty(t, r)
 					} else {
 						require.Equal(t, expected, r, "read wrong record")
 					}
@@ -356,7 +353,7 @@ func TestReaderFuzz(t *testing.T) {
 }
 
 func TestReaderFuzz_Live(t *testing.T) {
-	logger := testutil.NewLogger(t)
+	logger := promslog.NewNopLogger()
 	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
 		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
 			dir := t.TempDir()
@@ -395,7 +392,7 @@ func TestReaderFuzz_Live(t *testing.T) {
 					require.True(t, ok, "unexpected record")
 					// Expected value may come as nil or empty slice, so it requires special comparison.
 					if len(expected) == 0 {
-						require.Len(t, rec, 0)
+						require.Empty(t, rec)
 					} else {
 						require.Equal(t, expected, rec, "record does not match expected")
 					}
@@ -444,7 +441,7 @@ func TestReaderFuzz_Live(t *testing.T) {
 func TestLiveReaderCorrupt_ShortFile(t *testing.T) {
 	// Write a corrupt WAL segment, there is one record of pageSize in length,
 	// but the segment is only half written.
-	logger := testutil.NewLogger(t)
+	logger := promslog.NewNopLogger()
 	dir := t.TempDir()
 
 	w, err := NewSize(nil, nil, dir, pageSize, CompressionNone)
@@ -484,7 +481,7 @@ func TestLiveReaderCorrupt_ShortFile(t *testing.T) {
 
 func TestLiveReaderCorrupt_RecordTooLongAndShort(t *testing.T) {
 	// Write a corrupt WAL segment, when record len > page size.
-	logger := testutil.NewLogger(t)
+	logger := promslog.NewNopLogger()
 	dir := t.TempDir()
 
 	w, err := NewSize(nil, nil, dir, pageSize*2, CompressionNone)
@@ -541,7 +538,7 @@ func TestReaderData(t *testing.T) {
 			require.NoError(t, err)
 
 			reader := fn(sr)
-			for reader.Next() { // nolint:revive
+			for reader.Next() {
 			}
 			require.NoError(t, reader.Err())
 

@@ -15,16 +15,15 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"path/filepath"
 	"sync"
 	"time"
 	"unicode/utf8"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"go.uber.org/atomic"
@@ -81,19 +80,23 @@ type Options struct {
 
 	// NoLockfile disables creation and consideration of a lock file.
 	NoLockfile bool
+
+	// OutOfOrderTimeWindow specifies how much out of order is allowed, if any.
+	OutOfOrderTimeWindow int64
 }
 
 // DefaultOptions used for the WAL storage. They are reasonable for setups using
 // millisecond-precision timestamps.
 func DefaultOptions() *Options {
 	return &Options{
-		WALSegmentSize:    wlog.DefaultSegmentSize,
-		WALCompression:    wlog.CompressionNone,
-		StripeSize:        tsdb.DefaultStripeSize,
-		TruncateFrequency: DefaultTruncateFrequency,
-		MinWALTime:        DefaultMinWALTime,
-		MaxWALTime:        DefaultMaxWALTime,
-		NoLockfile:        false,
+		WALSegmentSize:       wlog.DefaultSegmentSize,
+		WALCompression:       wlog.CompressionNone,
+		StripeSize:           tsdb.DefaultStripeSize,
+		TruncateFrequency:    DefaultTruncateFrequency,
+		MinWALTime:           DefaultMinWALTime,
+		MaxWALTime:           DefaultMaxWALTime,
+		NoLockfile:           false,
+		OutOfOrderTimeWindow: 0,
 	}
 }
 
@@ -222,7 +225,7 @@ func (m *dbMetrics) Unregister() {
 // DB represents a WAL-only storage. It implements storage.DB.
 type DB struct {
 	mtx    sync.RWMutex
-	logger log.Logger
+	logger *slog.Logger
 	opts   *Options
 	rs     *remote.Storage
 
@@ -241,11 +244,13 @@ type DB struct {
 	donec chan struct{}
 	stopc chan struct{}
 
+	writeNotified wlog.WriteNotified
+
 	metrics *dbMetrics
 }
 
 // Open returns a new agent.DB in the given directory.
-func Open(l log.Logger, reg prometheus.Registerer, rs *remote.Storage, dir string, opts *Options) (*DB, error) {
+func Open(l *slog.Logger, reg prometheus.Registerer, rs *remote.Storage, dir string, opts *Options) (*DB, error) {
 	opts = validateOptions(opts)
 
 	locker, err := tsdbutil.NewDirLocker(dir, "agent", l, reg)
@@ -263,7 +268,7 @@ func Open(l log.Logger, reg prometheus.Registerer, rs *remote.Storage, dir strin
 
 	w, err := wlog.NewSize(l, reg, dir, opts.WALSegmentSize, opts.WALCompression)
 	if err != nil {
-		return nil, errors.Wrap(err, "creating WAL")
+		return nil, fmt.Errorf("creating WAL: %w", err)
 	}
 
 	db := &DB{
@@ -300,15 +305,21 @@ func Open(l log.Logger, reg prometheus.Registerer, rs *remote.Storage, dir strin
 	}
 
 	if err := db.replayWAL(); err != nil {
-		level.Warn(db.logger).Log("msg", "encountered WAL read error, attempting repair", "err", err)
+		db.logger.Warn("encountered WAL read error, attempting repair", "err", err)
 		if err := w.Repair(err); err != nil {
-			return nil, errors.Wrap(err, "repair corrupted WAL")
+			return nil, fmt.Errorf("repair corrupted WAL: %w", err)
 		}
-		level.Info(db.logger).Log("msg", "successfully repaired WAL")
+		db.logger.Info("successfully repaired WAL")
 	}
 
 	go db.run()
 	return db, nil
+}
+
+// SetWriteNotified allows to set an instance to notify when a write happens.
+// It must be used during initialization. It is not safe to use it during execution.
+func (db *DB) SetWriteNotified(wn wlog.WriteNotified) {
+	db.writeNotified = wn
 }
 
 func validateOptions(opts *Options) *Options {
@@ -323,7 +334,7 @@ func validateOptions(opts *Options) *Options {
 		opts.WALCompression = wlog.CompressionNone
 	}
 
-	// Revert Stripesize to DefaultStripsize if Stripsize is either 0 or not a power of 2.
+	// Revert StripeSize to DefaultStripeSize if StripeSize is either 0 or not a power of 2.
 	if opts.StripeSize <= 0 || ((opts.StripeSize & (opts.StripeSize - 1)) != 0) {
 		opts.StripeSize = tsdb.DefaultStripeSize
 	}
@@ -347,12 +358,12 @@ func validateOptions(opts *Options) *Options {
 }
 
 func (db *DB) replayWAL() error {
-	level.Info(db.logger).Log("msg", "replaying WAL, this may take a while", "dir", db.wal.Dir())
+	db.logger.Info("replaying WAL, this may take a while", "dir", db.wal.Dir())
 	start := time.Now()
 
 	dir, startFrom, err := wlog.LastCheckpoint(db.wal.Dir())
-	if err != nil && err != record.ErrNotFound {
-		return errors.Wrap(err, "find last checkpoint")
+	if err != nil && !errors.Is(err, record.ErrNotFound) {
+		return fmt.Errorf("find last checkpoint: %w", err)
 	}
 
 	multiRef := map[chunks.HeadSeriesRef]chunks.HeadSeriesRef{}
@@ -360,45 +371,45 @@ func (db *DB) replayWAL() error {
 	if err == nil {
 		sr, err := wlog.NewSegmentsReader(dir)
 		if err != nil {
-			return errors.Wrap(err, "open checkpoint")
+			return fmt.Errorf("open checkpoint: %w", err)
 		}
 		defer func() {
 			if err := sr.Close(); err != nil {
-				level.Warn(db.logger).Log("msg", "error while closing the wal segments reader", "err", err)
+				db.logger.Warn("error while closing the wal segments reader", "err", err)
 			}
 		}()
 
 		// A corrupted checkpoint is a hard error for now and requires user
 		// intervention. There's likely little data that can be recovered anyway.
 		if err := db.loadWAL(wlog.NewReader(sr), multiRef); err != nil {
-			return errors.Wrap(err, "backfill checkpoint")
+			return fmt.Errorf("backfill checkpoint: %w", err)
 		}
 		startFrom++
-		level.Info(db.logger).Log("msg", "WAL checkpoint loaded")
+		db.logger.Info("WAL checkpoint loaded")
 	}
 
 	// Find the last segment.
 	_, last, err := wlog.Segments(db.wal.Dir())
 	if err != nil {
-		return errors.Wrap(err, "finding WAL segments")
+		return fmt.Errorf("finding WAL segments: %w", err)
 	}
 
-	// Backfil segments from the most recent checkpoint onwards.
+	// Backfill segments from the most recent checkpoint onwards.
 	for i := startFrom; i <= last; i++ {
 		seg, err := wlog.OpenReadSegment(wlog.SegmentName(db.wal.Dir(), i))
 		if err != nil {
-			return errors.Wrap(err, fmt.Sprintf("open WAL segment: %d", i))
+			return fmt.Errorf("open WAL segment: %d: %w", i, err)
 		}
 
 		sr := wlog.NewSegmentBufReader(seg)
 		err = db.loadWAL(wlog.NewReader(sr), multiRef)
 		if err := sr.Close(); err != nil {
-			level.Warn(db.logger).Log("msg", "error while closing the wal segments reader", "err", err)
+			db.logger.Warn("error while closing the wal segments reader", "err", err)
 		}
 		if err != nil {
 			return err
 		}
-		level.Info(db.logger).Log("msg", "WAL segment loaded", "segment", i, "maxSegment", last)
+		db.logger.Info("WAL segment loaded", "segment", i, "maxSegment", last)
 	}
 
 	walReplayDuration := time.Since(start)
@@ -409,7 +420,8 @@ func (db *DB) replayWAL() error {
 
 func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef) (err error) {
 	var (
-		dec     record.Decoder
+		syms    = labels.NewSymbolTable() // One table for the whole WAL.
+		dec     = record.NewDecoder(syms)
 		lastRef = chunks.HeadSeriesRef(db.nextRef.Load())
 
 		decoded = make(chan interface{}, 10)
@@ -432,7 +444,7 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 				series, err = dec.Series(rec, series)
 				if err != nil {
 					errCh <- &wlog.CorruptionErr{
-						Err:     errors.Wrap(err, "decode series"),
+						Err:     fmt.Errorf("decode series: %w", err),
 						Segment: r.Segment(),
 						Offset:  r.Offset(),
 					}
@@ -444,7 +456,7 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 				samples, err = dec.Samples(rec, samples)
 				if err != nil {
 					errCh <- &wlog.CorruptionErr{
-						Err:     errors.Wrap(err, "decode samples"),
+						Err:     fmt.Errorf("decode samples: %w", err),
 						Segment: r.Segment(),
 						Offset:  r.Offset(),
 					}
@@ -456,7 +468,7 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 				histograms, err = dec.HistogramSamples(rec, histograms)
 				if err != nil {
 					errCh <- &wlog.CorruptionErr{
-						Err:     errors.Wrap(err, "decode histogram samples"),
+						Err:     fmt.Errorf("decode histogram samples: %w", err),
 						Segment: r.Segment(),
 						Offset:  r.Offset(),
 					}
@@ -468,7 +480,7 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 				floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms)
 				if err != nil {
 					errCh <- &wlog.CorruptionErr{
-						Err:     errors.Wrap(err, "decode float histogram samples"),
+						Err:     fmt.Errorf("decode float histogram samples: %w", err),
 						Segment: r.Segment(),
 						Offset:  r.Offset(),
 					}
@@ -482,7 +494,7 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 				continue
 			default:
 				errCh <- &wlog.CorruptionErr{
-					Err:     errors.Errorf("invalid record type %v", dec.Type(rec)),
+					Err:     fmt.Errorf("invalid record type %v", dec.Type(rec)),
 					Segment: r.Segment(),
 					Offset:  r.Offset(),
 				}
@@ -558,7 +570,7 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 	}
 
 	if v := nonExistentSeriesRefs.Load(); v > 0 {
-		level.Warn(db.logger).Log("msg", "found sample referencing non-existing series", "skipped_series", v)
+		db.logger.Warn("found sample referencing non-existing series", "skipped_series", v)
 	}
 
 	db.nextRef.Store(uint64(lastRef))
@@ -568,7 +580,7 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 		return err
 	default:
 		if r.Err() != nil {
-			return errors.Wrap(r.Err(), "read records")
+			return fmt.Errorf("read records: %w", r.Err())
 		}
 		return nil
 	}
@@ -603,9 +615,9 @@ Loop:
 				ts = maxTS
 			}
 
-			level.Debug(db.logger).Log("msg", "truncating the WAL", "ts", ts)
+			db.logger.Debug("truncating the WAL", "ts", ts)
 			if err := db.truncate(ts); err != nil {
-				level.Warn(db.logger).Log("msg", "failed to truncate WAL", "err", err)
+				db.logger.Warn("failed to truncate WAL", "err", err)
 			}
 		}
 	}
@@ -618,17 +630,17 @@ func (db *DB) truncate(mint int64) error {
 	start := time.Now()
 
 	db.gc(mint)
-	level.Info(db.logger).Log("msg", "series GC completed", "duration", time.Since(start))
+	db.logger.Info("series GC completed", "duration", time.Since(start))
 
 	first, last, err := wlog.Segments(db.wal.Dir())
 	if err != nil {
-		return errors.Wrap(err, "get segment range")
+		return fmt.Errorf("get segment range: %w", err)
 	}
 
 	// Start a new segment so low ingestion volume instances don't have more WAL
 	// than needed.
 	if _, err := db.wal.NextSegment(); err != nil {
-		return errors.Wrap(err, "next segment")
+		return fmt.Errorf("next segment: %w", err)
 	}
 
 	last-- // Never consider most recent segment for checkpoint
@@ -656,16 +668,17 @@ func (db *DB) truncate(mint int64) error {
 
 	if _, err = wlog.Checkpoint(db.logger, db.wal, first, last, keep, mint); err != nil {
 		db.metrics.checkpointCreationFail.Inc()
-		if _, ok := errors.Cause(err).(*wlog.CorruptionErr); ok {
+		var cerr *wlog.CorruptionErr
+		if errors.As(err, &cerr) {
 			db.metrics.walCorruptionsTotal.Inc()
 		}
-		return errors.Wrap(err, "create checkpoint")
+		return fmt.Errorf("create checkpoint: %w", err)
 	}
 	if err := db.wal.Truncate(last + 1); err != nil {
 		// If truncating fails, we'll just try it again at the next checkpoint.
 		// Leftover segments will still just be ignored in the future if there's a
 		// checkpoint that supersedes them.
-		level.Error(db.logger).Log("msg", "truncating segments failed", "err", err)
+		db.logger.Error("truncating segments failed", "err", err)
 	}
 
 	// The checkpoint is written and segments before it are truncated, so we
@@ -682,13 +695,13 @@ func (db *DB) truncate(mint int64) error {
 		// Leftover old checkpoints do not cause problems down the line beyond
 		// occupying disk space. They will just be ignored since a newer checkpoint
 		// exists.
-		level.Error(db.logger).Log("msg", "delete old checkpoints", "err", err)
+		db.logger.Error("delete old checkpoints", "err", err)
 		db.metrics.checkpointDeleteFail.Inc()
 	}
 
 	db.metrics.walTruncateDuration.Observe(time.Since(start).Seconds())
 
-	level.Info(db.logger).Log("msg", "WAL checkpoint complete", "first", first, "last", last, "duration", time.Since(start))
+	db.logger.Info("WAL checkpoint complete", "first", first, "last", last, "duration", time.Since(start))
 	return nil
 }
 
@@ -716,12 +729,12 @@ func (db *DB) StartTime() (int64, error) {
 }
 
 // Querier implements the Storage interface.
-func (db *DB) Querier(context.Context, int64, int64) (storage.Querier, error) {
+func (db *DB) Querier(int64, int64) (storage.Querier, error) {
 	return nil, ErrUnsupported
 }
 
 // ChunkQuerier implements the Storage interface.
-func (db *DB) ChunkQuerier(context.Context, int64, int64) (storage.ChunkQuerier, error) {
+func (db *DB) ChunkQuerier(int64, int64) (storage.ChunkQuerier, error) {
 	return nil, ErrUnsupported
 }
 
@@ -780,11 +793,11 @@ func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v flo
 		// equivalent validation code in the TSDB's headAppender.
 		l = l.WithoutEmpty()
 		if l.IsEmpty() {
-			return 0, errors.Wrap(tsdb.ErrInvalidSample, "empty labelset")
+			return 0, fmt.Errorf("empty labelset: %w", tsdb.ErrInvalidSample)
 		}
 
 		if lbl, dup := l.HasDuplicateLabelNames(); dup {
-			return 0, errors.Wrap(tsdb.ErrInvalidSample, fmt.Sprintf(`label name "%s" is not unique`, lbl))
+			return 0, fmt.Errorf(`label name "%s" is not unique: %w`, lbl, tsdb.ErrInvalidSample)
 		}
 
 		var created bool
@@ -802,7 +815,7 @@ func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v flo
 	series.Lock()
 	defer series.Unlock()
 
-	if t < series.lastTs {
+	if t <= a.minValidTime(series.lastTs) {
 		a.metrics.totalOutOfOrderSamples.Inc()
 		return 0, storage.ErrOutOfOrderSample
 	}
@@ -846,7 +859,7 @@ func (a *appender) AppendExemplar(ref storage.SeriesRef, _ labels.Labels, e exem
 	e.Labels = e.Labels.WithoutEmpty()
 
 	if lbl, dup := e.Labels.HasDuplicateLabelNames(); dup {
-		return 0, errors.Wrap(tsdb.ErrInvalidExemplar, fmt.Sprintf(`label name "%s" is not unique`, lbl))
+		return 0, fmt.Errorf(`label name "%s" is not unique: %w`, lbl, tsdb.ErrInvalidExemplar)
 	}
 
 	// Exemplar label length does not include chars involved in text rendering such as quotes
@@ -888,13 +901,13 @@ func (a *appender) AppendExemplar(ref storage.SeriesRef, _ labels.Labels, e exem
 
 func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	if h != nil {
-		if err := tsdb.ValidateHistogram(h); err != nil {
+		if err := h.Validate(); err != nil {
 			return 0, err
 		}
 	}
 
 	if fh != nil {
-		if err := tsdb.ValidateFloatHistogram(fh); err != nil {
+		if err := fh.Validate(); err != nil {
 			return 0, err
 		}
 	}
@@ -908,11 +921,11 @@ func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int
 		// equivalent validation code in the TSDB's headAppender.
 		l = l.WithoutEmpty()
 		if l.IsEmpty() {
-			return 0, errors.Wrap(tsdb.ErrInvalidSample, "empty labelset")
+			return 0, fmt.Errorf("empty labelset: %w", tsdb.ErrInvalidSample)
 		}
 
 		if lbl, dup := l.HasDuplicateLabelNames(); dup {
-			return 0, errors.Wrap(tsdb.ErrInvalidSample, fmt.Sprintf(`label name "%s" is not unique`, lbl))
+			return 0, fmt.Errorf(`label name "%s" is not unique: %w`, lbl, tsdb.ErrInvalidSample)
 		}
 
 		var created bool
@@ -930,7 +943,7 @@ func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int
 	series.Lock()
 	defer series.Unlock()
 
-	if t < series.lastTs {
+	if t <= a.minValidTime(series.lastTs) {
 		a.metrics.totalOutOfOrderSamples.Inc()
 		return 0, storage.ErrOutOfOrderSample
 	}
@@ -958,8 +971,18 @@ func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int
 	return storage.SeriesRef(series.ref), nil
 }
 
+func (a *appender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	// TODO(bwplotka/arthursens): Wire metadata in the Agent's appender.
+	return 0, nil
+}
+
 func (a *appender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Metadata) (storage.SeriesRef, error) {
 	// TODO: Wire metadata in the Agent's appender.
+	return 0, nil
+}
+
+func (a *appender) AppendCTZeroSample(storage.SeriesRef, labels.Labels, int64, int64) (storage.SeriesRef, error) {
+	// TODO(bwplotka): Wire metadata in the Agent's appender.
 	return 0, nil
 }
 
@@ -971,6 +994,10 @@ func (a *appender) Commit() error {
 
 	a.clearData()
 	a.appenderPool.Put(a)
+
+	if a.writeNotified != nil {
+		a.writeNotified.Notify()
+	}
 	return nil
 }
 
@@ -1093,4 +1120,14 @@ func (a *appender) logSeries() error {
 	}
 
 	return nil
+}
+
+// minValidTime returns the minimum timestamp that a sample can have
+// and is needed for preventing underflow.
+func (a *appender) minValidTime(lastTs int64) int64 {
+	if lastTs < math.MinInt64+a.opts.OutOfOrderTimeWindow {
+		return math.MinInt64
+	}
+
+	return lastTs - a.opts.OutOfOrderTimeWindow
 }

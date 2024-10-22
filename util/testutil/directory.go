@@ -33,7 +33,7 @@ const (
 	// NilCloser is a no-op Closer.
 	NilCloser = nilCloser(true)
 
-	// The number of times that a TemporaryDirectory will retry its removal
+	// The number of times that a TemporaryDirectory will retry its removal.
 	temporaryDirectoryRemoveRetries = 2
 )
 
@@ -155,7 +155,7 @@ func DirHash(t *testing.T, path string) []byte {
 		modTime, err := info.ModTime().GobEncode()
 		require.NoError(t, err)
 
-		_, err = io.WriteString(hash, string(modTime))
+		_, err = hash.Write(modTime)
 		require.NoError(t, err)
 		return nil
 	})

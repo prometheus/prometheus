@@ -28,6 +28,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestNoDuplicateReadConfigs(t *testing.T) {
@@ -91,7 +93,7 @@ func TestNoDuplicateReadConfigs(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run("", func(t *testing.T) {
-			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
+			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
 			conf := &config.Config{
 				GlobalConfig:      config.DefaultGlobalConfig,
 				RemoteReadConfigs: tc.cfgs,
@@ -171,12 +173,12 @@ func TestSeriesSetFilter(t *testing.T) {
 			toRemove: []string{"foo"},
 			in: &prompb.QueryResult{
 				Timeseries: []*prompb.TimeSeries{
-					{Labels: labelsToLabelsProto(labels.FromStrings("foo", "bar", "a", "b"), nil)},
+					{Labels: prompb.FromLabels(labels.FromStrings("foo", "bar", "a", "b"), nil)},
 				},
 			},
 			expected: &prompb.QueryResult{
 				Timeseries: []*prompb.TimeSeries{
-					{Labels: labelsToLabelsProto(labels.FromStrings("a", "b"), nil)},
+					{Labels: prompb.FromLabels(labels.FromStrings("a", "b"), nil)},
 				},
 			},
 		},
@@ -186,7 +188,7 @@ func TestSeriesSetFilter(t *testing.T) {
 		filtered := newSeriesSetFilter(FromQueryResult(true, tc.in), tc.toRemove)
 		act, ws, err := ToQueryResult(filtered, 1e6)
 		require.NoError(t, err)
-		require.Equal(t, 0, len(ws))
+		require.Empty(t, ws)
 		require.Equal(t, tc.expected, act)
 	}
 }
@@ -194,9 +196,10 @@ func TestSeriesSetFilter(t *testing.T) {
 type mockedRemoteClient struct {
 	got   *prompb.Query
 	store []*prompb.TimeSeries
+	b     labels.ScratchBuilder
 }
 
-func (c *mockedRemoteClient) Read(_ context.Context, query *prompb.Query) (*prompb.QueryResult, error) {
+func (c *mockedRemoteClient) Read(_ context.Context, query *prompb.Query, sortSeries bool) (storage.SeriesSet, error) {
 	if c.got != nil {
 		return nil, fmt.Errorf("expected only one call to remote client got: %v", query)
 	}
@@ -209,7 +212,7 @@ func (c *mockedRemoteClient) Read(_ context.Context, query *prompb.Query) (*prom
 
 	q := &prompb.QueryResult{}
 	for _, s := range c.store {
-		l := labelProtosToLabels(s.Labels)
+		l := s.ToLabels(&c.b, nil)
 		var notMatch bool
 
 		for _, m := range matchers {
@@ -225,7 +228,7 @@ func (c *mockedRemoteClient) Read(_ context.Context, query *prompb.Query) (*prom
 			q.Timeseries = append(q.Timeseries, &prompb.TimeSeries{Labels: s.Labels})
 		}
 	}
-	return q, nil
+	return FromQueryResult(sortSeries, q), nil
 }
 
 func (c *mockedRemoteClient) reset() {
@@ -241,6 +244,7 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 			{Labels: []prompb.Label{{Name: "a", Value: "b3"}, {Name: "region", Value: "us"}}},
 			{Labels: []prompb.Label{{Name: "a", Value: "b2"}, {Name: "region", Value: "europe"}}},
 		},
+		b: labels.NewScratchBuilder(0),
 	}
 
 	for _, tc := range []struct {
@@ -469,13 +473,15 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 				tc.readRecent,
 				tc.callback,
 			)
-			q, err := c.Querier(context.TODO(), tc.mint, tc.maxt)
+			q, err := c.Querier(tc.mint, tc.maxt)
 			require.NoError(t, err)
-			defer require.NoError(t, q.Close())
+			defer func() {
+				require.NoError(t, q.Close())
+			}()
 
-			ss := q.Select(true, nil, tc.matchers...)
+			ss := q.Select(context.Background(), true, nil, tc.matchers...)
 			require.NoError(t, err)
-			require.Equal(t, storage.Warnings(nil), ss.Warnings())
+			require.Equal(t, annotations.Annotations(nil), ss.Warnings())
 
 			require.Equal(t, tc.expectedQuery, m.got)
 
@@ -484,7 +490,7 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 				got = append(got, ss.At().Labels())
 			}
 			require.NoError(t, ss.Err())
-			require.Equal(t, tc.expectedSeries, got)
+			testutil.RequireEqual(t, tc.expectedSeries, got)
 		})
 	}
 }

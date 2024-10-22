@@ -72,7 +72,7 @@ func (p *queryLogTest) waitForPrometheus() error {
 	var err error
 	for x := 0; x < 20; x++ {
 		var r *http.Response
-		if r, err = http.Get(fmt.Sprintf("http://%s:%d%s/-/ready", p.host, p.port, p.prefix)); err == nil && r.StatusCode == 200 {
+		if r, err = http.Get(fmt.Sprintf("http://%s:%d%s/-/ready", p.host, p.port, p.prefix)); err == nil && r.StatusCode == http.StatusOK {
 			break
 		}
 		time.Sleep(500 * time.Millisecond)
@@ -125,10 +125,59 @@ func (p *queryLogTest) query(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 200, r.StatusCode)
 	case ruleOrigin:
-		time.Sleep(2 * time.Second)
+		// Poll the /api/v1/rules endpoint until a new rule evaluation is detected.
+		var lastEvalTime time.Time
+		for {
+			r, err := http.Get(fmt.Sprintf("http://%s:%d/api/v1/rules", p.host, p.port))
+			require.NoError(t, err)
+
+			rulesBody, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+			defer r.Body.Close()
+
+			// Parse the rules response to find the last evaluation time.
+			newEvalTime := parseLastEvaluation(rulesBody)
+			if newEvalTime.After(lastEvalTime) {
+				if !lastEvalTime.IsZero() {
+					break
+				}
+				lastEvalTime = newEvalTime
+			}
+
+			time.Sleep(100 * time.Millisecond)
+		}
 	default:
 		panic("can't query this origin")
 	}
+}
+
+// parseLastEvaluation extracts the last evaluation timestamp from the /api/v1/rules response.
+func parseLastEvaluation(rulesBody []byte) time.Time {
+	var ruleResponse struct {
+		Status string `json:"status"`
+		Data   struct {
+			Groups []struct {
+				Rules []struct {
+					LastEvaluation string `json:"lastEvaluation"`
+				} `json:"rules"`
+			} `json:"groups"`
+		} `json:"data"`
+	}
+
+	err := json.Unmarshal(rulesBody, &ruleResponse)
+	if err != nil {
+		return time.Time{}
+	}
+
+	for _, group := range ruleResponse.Data.Groups {
+		for _, rule := range group.Rules {
+			if evalTime, err := time.Parse(time.RFC3339Nano, rule.LastEvaluation); err == nil {
+				return evalTime
+			}
+		}
+	}
+
+	return time.Time{}
 }
 
 // queryString returns the expected queryString of a this test.
@@ -284,7 +333,7 @@ func (p *queryLogTest) run(t *testing.T) {
 
 	if !p.enabledAtStart {
 		p.query(t)
-		require.Equal(t, 0, len(readQueryLog(t, queryLogFile.Name())))
+		require.Empty(t, readQueryLog(t, queryLogFile.Name()))
 		p.setQueryLog(t, queryLogFile.Name())
 		p.reloadConfig(t)
 	}
@@ -296,7 +345,7 @@ func (p *queryLogTest) run(t *testing.T) {
 	if p.exactQueryCount() {
 		require.Equal(t, 1, qc)
 	} else {
-		require.Greater(t, qc, 0, "no queries logged")
+		require.Positive(t, qc, "no queries logged")
 	}
 	p.validateLastQuery(t, ql)
 
@@ -309,7 +358,7 @@ func (p *queryLogTest) run(t *testing.T) {
 	p.query(t)
 
 	ql = readQueryLog(t, queryLogFile.Name())
-	require.Equal(t, qc, len(ql))
+	require.Len(t, ql, qc)
 
 	qc = len(ql)
 	p.setQueryLog(t, queryLogFile.Name())
@@ -320,9 +369,9 @@ func (p *queryLogTest) run(t *testing.T) {
 
 	ql = readQueryLog(t, queryLogFile.Name())
 	if p.exactQueryCount() {
-		require.Equal(t, qc, len(ql))
+		require.Len(t, ql, qc)
 	} else {
-		require.Greater(t, len(ql), qc, "no queries logged")
+		require.GreaterOrEqual(t, len(ql), qc, "no queries logged")
 	}
 	p.validateLastQuery(t, ql)
 	qc = len(ql)
@@ -340,7 +389,7 @@ func (p *queryLogTest) run(t *testing.T) {
 	require.NoError(t, os.Rename(queryLogFile.Name(), newFile.Name()))
 	ql = readQueryLog(t, newFile.Name())
 	if p.exactQueryCount() {
-		require.Equal(t, qc, len(ql))
+		require.Len(t, ql, qc)
 	}
 	p.validateLastQuery(t, ql)
 	qc = len(ql)
@@ -351,9 +400,9 @@ func (p *queryLogTest) run(t *testing.T) {
 
 	ql = readQueryLog(t, newFile.Name())
 	if p.exactQueryCount() {
-		require.Equal(t, qc, len(ql))
+		require.Len(t, ql, qc)
 	} else {
-		require.Greater(t, len(ql), qc, "no queries logged")
+		require.GreaterOrEqual(t, len(ql), qc, "no queries logged")
 	}
 	p.validateLastQuery(t, ql)
 
@@ -366,7 +415,7 @@ func (p *queryLogTest) run(t *testing.T) {
 	if p.exactQueryCount() {
 		require.Equal(t, 1, qc)
 	} else {
-		require.Greater(t, qc, 0, "no queries logged")
+		require.Positive(t, qc, "no queries logged")
 	}
 }
 
@@ -393,6 +442,7 @@ func readQueryLog(t *testing.T, path string) []queryLogLine {
 	file, err := os.Open(path)
 	require.NoError(t, err)
 	defer file.Close()
+
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		var q queryLogLine
@@ -406,6 +456,7 @@ func TestQueryLog(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
 	}
+	t.Parallel()
 
 	cwd, err := os.Getwd()
 	require.NoError(t, err)
@@ -424,6 +475,7 @@ func TestQueryLog(t *testing.T) {
 					}
 
 					t.Run(p.String(), func(t *testing.T) {
+						t.Parallel()
 						p.run(t)
 					})
 				}

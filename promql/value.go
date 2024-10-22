@@ -24,8 +24,8 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 func (Matrix) Type() parser.ValueType { return parser.ValueTypeMatrix }
@@ -68,6 +68,9 @@ type Series struct {
 	Metric     labels.Labels `json:"metric"`
 	Floats     []FPoint      `json:"values,omitempty"`
 	Histograms []HPoint      `json:"histograms,omitempty"`
+	// DropName is used to indicate whether the __name__ label should be dropped
+	// as part of the query evaluation.
+	DropName bool `json:"-"`
 }
 
 func (s Series) String() string {
@@ -168,6 +171,23 @@ func (p HPoint) MarshalJSON() ([]byte, error) {
 	return json.Marshal([...]interface{}{float64(p.T) / 1000, h})
 }
 
+// size returns the size of the HPoint compared to the size of an FPoint.
+// The total size is calculated considering the histogram timestamp (p.T - 8 bytes),
+// and then a number of bytes in the histogram.
+// This sum is divided by 16, as samples are 16 bytes.
+func (p HPoint) size() int {
+	return (p.H.Size() + 8) / 16
+}
+
+// totalHPointSize returns the total number of samples in the given slice of HPoints.
+func totalHPointSize(histograms []HPoint) int {
+	var total int
+	for _, h := range histograms {
+		total += h.size()
+	}
+	return total
+}
+
 // Sample is a single sample belonging to a metric. It represents either a float
 // sample or a histogram sample. If H is nil, it is a float sample. Otherwise,
 // it is a histogram sample.
@@ -177,6 +197,9 @@ type Sample struct {
 	H *histogram.FloatHistogram
 
 	Metric labels.Labels
+	// DropName is used to indicate whether the __name__ label should be dropped
+	// as part of the query evaluation.
+	DropName bool
 }
 
 func (s Sample) String() string {
@@ -226,6 +249,21 @@ func (vec Vector) String() string {
 	return strings.Join(entries, "\n")
 }
 
+// TotalSamples returns the total number of samples in the series within a vector.
+// Float samples have a weight of 1 in this number, while histogram samples have a higher
+// weight according to their size compared with the size of a float sample.
+// See HPoint.size for details.
+func (vec Vector) TotalSamples() int {
+	numSamples := 0
+	for _, sample := range vec {
+		numSamples++
+		if sample.H != nil {
+			numSamples += sample.H.Size() / 16
+		}
+	}
+	return numSamples
+}
+
 // ContainsSameLabelset checks if a vector has samples with the same labelset
 // Such a behavior is semantically undefined
 // https://github.com/prometheus/prometheus/issues/4562
@@ -264,10 +302,13 @@ func (m Matrix) String() string {
 }
 
 // TotalSamples returns the total number of samples in the series within a matrix.
+// Float samples have a weight of 1 in this number, while histogram samples have a higher
+// weight according to their size compared with the size of a float sample.
+// See HPoint.size for details.
 func (m Matrix) TotalSamples() int {
 	numSamples := 0
 	for _, series := range m {
-		numSamples += len(series.Floats) + len(series.Histograms)
+		numSamples += len(series.Floats) + totalHPointSize(series.Histograms)
 	}
 	return numSamples
 }
@@ -303,7 +344,7 @@ func (m Matrix) ContainsSameLabelset() bool {
 type Result struct {
 	Err      error
 	Value    parser.Value
-	Warnings storage.Warnings
+	Warnings annotations.Annotations
 }
 
 // Vector returns a Vector if the result value is one. An error is returned if
@@ -429,11 +470,11 @@ func (ssi *storageSeriesIterator) At() (t int64, v float64) {
 	return ssi.currT, ssi.currF
 }
 
-func (ssi *storageSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
+func (ssi *storageSeriesIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	panic(errors.New("storageSeriesIterator: AtHistogram not supported"))
 }
 
-func (ssi *storageSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (ssi *storageSeriesIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	return ssi.currT, ssi.currH
 }
 
@@ -485,7 +526,7 @@ func (ssi *storageSeriesIterator) Next() chunkenc.ValueType {
 		ssi.currH = p.H
 		return chunkenc.ValFloatHistogram
 	default:
-		panic("storageSeriesIterater.Next failed to pick value type")
+		panic("storageSeriesIterator.Next failed to pick value type")
 	}
 }
 

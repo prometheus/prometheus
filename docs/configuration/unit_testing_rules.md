@@ -39,7 +39,7 @@ tests:
 
 ``` yaml
 # Series data
-interval: <duration>
+[ interval: <duration> | default = evaluation_interval ]
 input_series:
   [ - <series> ]
 
@@ -80,7 +80,7 @@ series: <string>
 #     Read this as series starts at a, then n further samples incrementing by b.
 #     'a-bxn' becomes 'a a-b a-(2*b) a-(3*b) … a-(n*b)'
 #     Read this as series starts at a, then n further samples decrementing by b (or incrementing by negative b).
-#     'axn' becomes 'a a a … a' (n times) - it's a shorthand for 'a+0xn'
+#     'axn' becomes 'a a a … a' (a n+1 times) - it's a shorthand for 'a+0xn'
 # There are special values to indicate missing and stale samples:
 #     '_' represents a missing sample from scrape
 #     'stale' indicates a stale sample
@@ -92,7 +92,7 @@ series: <string>
 #
 # Native histogram notation:
 #     Native histograms can be used instead of floating point numbers using the following notation:
-#     {{schema:1 sum:-0.3 count:3.1 z_bucket:7.1 z_bucket_w:0.05 buckets:[5.1 10 7] offset:-3 n_buckets:[4.1 5] n_offset:-5}}
+#     {{schema:1 sum:-0.3 count:3.1 z_bucket:7.1 z_bucket_w:0.05 buckets:[5.1 10 7] offset:-3 n_buckets:[4.1 5] n_offset:-5 counter_reset_hint:gauge}}
 #     Native histograms support the same expanding notation as floating point numbers, i.e. 'axn', 'a+bxn' and 'a-bxn'.
 #     All properties are optional and default to 0. The order is not important. The following properties are supported:
 #     - schema (int): 
@@ -119,6 +119,8 @@ series: <string>
 #         Observation counts in negative buckets. Each represents an absolute count.
 #     - n_offset (int):
 #         The starting index of the first entry in the negative buckets.
+#     - counter_reset_hint (one of 'unknown', 'reset', 'not_reset' or 'gauge')
+#         The counter reset hint associated with this histogram. Defaults to 'unknown' if not set.
 values: <string>
 ```
 

@@ -24,8 +24,6 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/pkg/errors"
-
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
@@ -93,13 +91,14 @@ func (p HeadChunkRef) Unpack() (HeadSeriesRef, HeadChunkID) {
 //
 // Example:
 // assume a memSeries.firstChunkID=7 and memSeries.mmappedChunks=[p5,p6,p7,p8,p9].
-// | HeadChunkID value | refers to ...                                                                          |
-// |-------------------|----------------------------------------------------------------------------------------|
-// |               0-6 | chunks that have been compacted to blocks, these won't return data for queries in Head |
-// |              7-11 | memSeries.mmappedChunks[i] where i is 0 to 4.                                          |
-// |                12 |                                                         *memChunk{next: nil}
-// |                13 |                                         *memChunk{next: ^}
-// |                14 | memSeries.headChunks -> *memChunk{next: ^}
+//
+//	| HeadChunkID value | refers to ...                                                                          |
+//	|-------------------|----------------------------------------------------------------------------------------|
+//	|               0-6 | chunks that have been compacted to blocks, these won't return data for queries in Head |
+//	|              7-11 | memSeries.mmappedChunks[i] where i is 0 to 4.                                          |
+//	|                12 |                                                         *memChunk{next: nil}
+//	|                13 |                                         *memChunk{next: ^}
+//	|                14 | memSeries.headChunks -> *memChunk{next: ^}
 type HeadChunkID uint64
 
 // BlockChunkRef refers to a chunk within a persisted block.
@@ -118,26 +117,22 @@ func (b BlockChunkRef) Unpack() (int, int) {
 	return sgmIndex, chkStart
 }
 
-// Meta holds information about a chunk of data.
+// Meta holds information about one or more chunks.
+// For examples of when chunks.Meta could refer to multiple chunks, see
+// ChunkReader.ChunkOrIterable().
 type Meta struct {
 	// Ref and Chunk hold either a reference that can be used to retrieve
 	// chunk data or the data itself.
-	// If Chunk is nil, call ChunkReader.Chunk(Meta.Ref) to get the chunk and assign it to the Chunk field
+	// If Chunk is nil, call ChunkReader.ChunkOrIterable(Meta.Ref) to get the
+	// chunk and assign it to the Chunk field. If an iterable is returned from
+	// that method, then it may not be possible to set Chunk as the iterable
+	// might form several chunks.
 	Ref   ChunkRef
 	Chunk chunkenc.Chunk
 
 	// Time range the data covers.
 	// When MaxTime == math.MaxInt64 the chunk is still open and being appended to.
 	MinTime, MaxTime int64
-
-	// OOOLastRef, OOOLastMinTime and OOOLastMaxTime are kept as markers for
-	// overlapping chunks.
-	// These fields point to the last created out of order Chunk (the head) that existed
-	// when Series() was called and was overlapping.
-	// Series() and Chunk() method responses should be consistent for the same
-	// query even if new data is added in between the calls.
-	OOOLastRef                     ChunkRef
-	OOOLastMinTime, OOOLastMaxTime int64
 }
 
 // ChunkFromSamples requires all samples to have the same type.
@@ -198,19 +193,38 @@ func ChunkFromSamplesGeneric(s Samples) (Meta, error) {
 	}, nil
 }
 
-// PopulatedChunk creates a chunk populated with samples every second starting at minTime
-func PopulatedChunk(numSamples int, minTime int64) (Meta, error) {
-	samples := make([]Sample, numSamples)
-	for i := 0; i < numSamples; i++ {
-		samples[i] = sample{t: minTime + int64(i*1000), f: 1.0}
+// ChunkMetasToSamples converts a slice of chunk meta data to a slice of samples.
+// Used in tests to compare the content of chunks.
+func ChunkMetasToSamples(chunks []Meta) (result []Sample) {
+	if len(chunks) == 0 {
+		return
 	}
-	return ChunkFromSamples(samples)
+
+	for _, chunk := range chunks {
+		it := chunk.Chunk.Iterator(nil)
+		for vt := it.Next(); vt != chunkenc.ValNone; vt = it.Next() {
+			switch vt {
+			case chunkenc.ValFloat:
+				t, v := it.At()
+				result = append(result, sample{t: t, f: v})
+			case chunkenc.ValHistogram:
+				t, h := it.AtHistogram(nil)
+				result = append(result, sample{t: t, h: h})
+			case chunkenc.ValFloatHistogram:
+				t, fh := it.AtFloatHistogram(nil)
+				result = append(result, sample{t: t, fh: fh})
+			default:
+				panic("unexpected value type")
+			}
+		}
+	}
+	return
 }
 
 // Iterator iterates over the chunks of a single time series.
 type Iterator interface {
 	// At returns the current meta.
-	// It depends on implementation if the chunk is populated or not.
+	// It depends on the implementation whether the chunk is populated or not.
 	At() Meta
 	// Next advances the iterator by one.
 	Next() bool
@@ -256,7 +270,7 @@ func checkCRC32(data, sum []byte) error {
 	// This combination of shifts is the inverse of digest.Sum() in go/src/hash/crc32.
 	want := uint32(sum[0])<<24 + uint32(sum[1])<<16 + uint32(sum[2])<<8 + uint32(sum[3])
 	if got != want {
-		return errors.Errorf("checksum mismatch expected:%x, actual:%x", want, got)
+		return fmt.Errorf("checksum mismatch expected:%x, actual:%x", want, got)
 	}
 	return nil
 }
@@ -369,12 +383,12 @@ func (w *Writer) cut() error {
 func cutSegmentFile(dirFile *os.File, magicNumber uint32, chunksFormat byte, allocSize int64) (headerSize int, newFile *os.File, seq int, returnErr error) {
 	p, seq, err := nextSequenceFile(dirFile.Name())
 	if err != nil {
-		return 0, nil, 0, errors.Wrap(err, "next sequence file")
+		return 0, nil, 0, fmt.Errorf("next sequence file: %w", err)
 	}
 	ptmp := p + ".tmp"
 	f, err := os.OpenFile(ptmp, os.O_WRONLY|os.O_CREATE, 0o666)
 	if err != nil {
-		return 0, nil, 0, errors.Wrap(err, "open temp file")
+		return 0, nil, 0, fmt.Errorf("open temp file: %w", err)
 	}
 	defer func() {
 		if returnErr != nil {
@@ -389,11 +403,11 @@ func cutSegmentFile(dirFile *os.File, magicNumber uint32, chunksFormat byte, all
 	}()
 	if allocSize > 0 {
 		if err = fileutil.Preallocate(f, allocSize, true); err != nil {
-			return 0, nil, 0, errors.Wrap(err, "preallocate")
+			return 0, nil, 0, fmt.Errorf("preallocate: %w", err)
 		}
 	}
 	if err = dirFile.Sync(); err != nil {
-		return 0, nil, 0, errors.Wrap(err, "sync directory")
+		return 0, nil, 0, fmt.Errorf("sync directory: %w", err)
 	}
 
 	// Write header metadata for new file.
@@ -403,24 +417,24 @@ func cutSegmentFile(dirFile *os.File, magicNumber uint32, chunksFormat byte, all
 
 	n, err := f.Write(metab)
 	if err != nil {
-		return 0, nil, 0, errors.Wrap(err, "write header")
+		return 0, nil, 0, fmt.Errorf("write header: %w", err)
 	}
 	if err := f.Close(); err != nil {
-		return 0, nil, 0, errors.Wrap(err, "close temp file")
+		return 0, nil, 0, fmt.Errorf("close temp file: %w", err)
 	}
 	f = nil
 
 	if err := fileutil.Rename(ptmp, p); err != nil {
-		return 0, nil, 0, errors.Wrap(err, "replace file")
+		return 0, nil, 0, fmt.Errorf("replace file: %w", err)
 	}
 
 	f, err = os.OpenFile(p, os.O_WRONLY, 0o666)
 	if err != nil {
-		return 0, nil, 0, errors.Wrap(err, "open final file")
+		return 0, nil, 0, fmt.Errorf("open final file: %w", err)
 	}
 	// Skip header for further writes.
 	if _, err := f.Seek(int64(n), 0); err != nil {
-		return 0, nil, 0, errors.Wrap(err, "seek in final file")
+		return 0, nil, 0, fmt.Errorf("seek in final file: %w", err)
 	}
 	return n, f, seq, nil
 }
@@ -455,7 +469,7 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 		// the batch is too large to fit in the current segment.
 		cutNewBatch := (i != 0) && (batchSize+SegmentHeaderSize > w.segmentSize)
 
-		// When the segment already has some data than
+		// If the segment already has some data then
 		// the first batch size calculation should account for that.
 		if firstBatch && w.n > SegmentHeaderSize {
 			cutNewBatch = batchSize+w.n > w.segmentSize
@@ -577,16 +591,16 @@ func newReader(bs []ByteSlice, cs []io.Closer, pool chunkenc.Pool) (*Reader, err
 	cr := Reader{pool: pool, bs: bs, cs: cs}
 	for i, b := range cr.bs {
 		if b.Len() < SegmentHeaderSize {
-			return nil, errors.Wrapf(errInvalidSize, "invalid segment header in segment %d", i)
+			return nil, fmt.Errorf("invalid segment header in segment %d: %w", i, errInvalidSize)
 		}
 		// Verify magic number.
 		if m := binary.BigEndian.Uint32(b.Range(0, MagicChunksSize)); m != MagicChunks {
-			return nil, errors.Errorf("invalid magic number %x", m)
+			return nil, fmt.Errorf("invalid magic number %x", m)
 		}
 
 		// Verify chunk format version.
 		if v := int(b.Range(MagicChunksSize, MagicChunksSize+ChunksFormatVersionSize)[0]); v != chunksFormatV1 {
-			return nil, errors.Errorf("invalid chunk format version %d", v)
+			return nil, fmt.Errorf("invalid chunk format version %d", v)
 		}
 		cr.size += int64(b.Len())
 	}
@@ -612,7 +626,7 @@ func NewDirReader(dir string, pool chunkenc.Pool) (*Reader, error) {
 		f, err := fileutil.OpenMmapFile(fn)
 		if err != nil {
 			return nil, tsdb_errors.NewMulti(
-				errors.Wrap(err, "mmap files"),
+				fmt.Errorf("mmap files: %w", err),
 				tsdb_errors.CloseAll(cs),
 			).Err()
 		}
@@ -639,25 +653,25 @@ func (s *Reader) Size() int64 {
 	return s.size
 }
 
-// Chunk returns a chunk from a given reference.
-func (s *Reader) Chunk(meta Meta) (chunkenc.Chunk, error) {
+// ChunkOrIterable returns a chunk from a given reference.
+func (s *Reader) ChunkOrIterable(meta Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
 	sgmIndex, chkStart := BlockChunkRef(meta.Ref).Unpack()
 
 	if sgmIndex >= len(s.bs) {
-		return nil, errors.Errorf("segment index %d out of range", sgmIndex)
+		return nil, nil, fmt.Errorf("segment index %d out of range", sgmIndex)
 	}
 
 	sgmBytes := s.bs[sgmIndex]
 
 	if chkStart+MaxChunkLengthFieldSize > sgmBytes.Len() {
-		return nil, errors.Errorf("segment doesn't include enough bytes to read the chunk size data field - required:%v, available:%v", chkStart+MaxChunkLengthFieldSize, sgmBytes.Len())
+		return nil, nil, fmt.Errorf("segment doesn't include enough bytes to read the chunk size data field - required:%v, available:%v", chkStart+MaxChunkLengthFieldSize, sgmBytes.Len())
 	}
 	// With the minimum chunk length this should never cause us reading
 	// over the end of the slice.
 	c := sgmBytes.Range(chkStart, chkStart+MaxChunkLengthFieldSize)
 	chkDataLen, n := binary.Uvarint(c)
 	if n <= 0 {
-		return nil, errors.Errorf("reading chunk length failed with %d", n)
+		return nil, nil, fmt.Errorf("reading chunk length failed with %d", n)
 	}
 
 	chkEncStart := chkStart + n
@@ -666,17 +680,18 @@ func (s *Reader) Chunk(meta Meta) (chunkenc.Chunk, error) {
 	chkDataEnd := chkEnd - crc32.Size
 
 	if chkEnd > sgmBytes.Len() {
-		return nil, errors.Errorf("segment doesn't include enough bytes to read the chunk - required:%v, available:%v", chkEnd, sgmBytes.Len())
+		return nil, nil, fmt.Errorf("segment doesn't include enough bytes to read the chunk - required:%v, available:%v", chkEnd, sgmBytes.Len())
 	}
 
 	sum := sgmBytes.Range(chkDataEnd, chkEnd)
 	if err := checkCRC32(sgmBytes.Range(chkEncStart, chkDataEnd), sum); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	chkData := sgmBytes.Range(chkDataStart, chkDataEnd)
 	chkEnc := sgmBytes.Range(chkEncStart, chkEncStart+ChunkEncodingSize)[0]
-	return s.pool.Get(chunkenc.Encoding(chkEnc), chkData)
+	chk, err := s.pool.Get(chunkenc.Encoding(chkEnc), chkData)
+	return chk, nil, err
 }
 
 func nextSequenceFile(dir string) (string, int, error) {
@@ -693,7 +708,7 @@ func nextSequenceFile(dir string) (string, int, error) {
 		}
 		// It is not necessary that we find the files in number order,
 		// for example with '1000000' and '200000', '1000000' would come first.
-		// Though this is a very very race case, we check anyway for the max id.
+		// Though this is a very very rare case, we check anyway for the max id.
 		if j > i {
 			i = j
 		}

@@ -16,25 +16,28 @@ package notifier
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"path"
 	"sync"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/go-openapi/strfmt"
 	"github.com/prometheus/alertmanager/api/v2/models"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/sigv4"
 	"github.com/prometheus/common/version"
 	"go.uber.org/atomic"
+	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -110,20 +113,22 @@ type Manager struct {
 
 	metrics *alertMetrics
 
-	more   chan struct{}
-	mtx    sync.RWMutex
-	ctx    context.Context
-	cancel func()
+	more chan struct{}
+	mtx  sync.RWMutex
+
+	stopOnce      *sync.Once
+	stopRequested chan struct{}
 
 	alertmanagers map[string]*alertmanagerSet
-	logger        log.Logger
+	logger        *slog.Logger
 }
 
 // Options are the configurable parameters of a Handler.
 type Options struct {
-	QueueCapacity  int
-	ExternalLabels labels.Labels
-	RelabelConfigs []*relabel.Config
+	QueueCapacity   int
+	DrainOnShutdown bool
+	ExternalLabels  labels.Labels
+	RelabelConfigs  []*relabel.Config
 	// Used for sending HTTP requests to the Alertmanager.
 	Do func(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error)
 
@@ -216,23 +221,21 @@ func do(ctx context.Context, client *http.Client, req *http.Request) (*http.Resp
 }
 
 // NewManager is the manager constructor.
-func NewManager(o *Options, logger log.Logger) *Manager {
-	ctx, cancel := context.WithCancel(context.Background())
-
+func NewManager(o *Options, logger *slog.Logger) *Manager {
 	if o.Do == nil {
 		o.Do = do
 	}
 	if logger == nil {
-		logger = log.NewNopLogger()
+		logger = promslog.NewNopLogger()
 	}
 
 	n := &Manager{
-		queue:  make([]*Alert, 0, o.QueueCapacity),
-		ctx:    ctx,
-		cancel: cancel,
-		more:   make(chan struct{}, 1),
-		opts:   o,
-		logger: logger,
+		queue:         make([]*Alert, 0, o.QueueCapacity),
+		more:          make(chan struct{}, 1),
+		stopRequested: make(chan struct{}),
+		stopOnce:      &sync.Once{},
+		opts:          o,
+		logger:        logger,
 	}
 
 	queueLenFunc := func() float64 { return float64(n.queueLen()) }
@@ -257,11 +260,31 @@ func (n *Manager) ApplyConfig(conf *config.Config) error {
 	n.opts.RelabelConfigs = conf.AlertingConfig.AlertRelabelConfigs
 
 	amSets := make(map[string]*alertmanagerSet)
+	// configToAlertmanagers maps alertmanager sets for each unique AlertmanagerConfig,
+	// helping to avoid dropping known alertmanagers and re-use them without waiting for SD updates when applying the config.
+	configToAlertmanagers := make(map[string]*alertmanagerSet, len(n.alertmanagers))
+	for _, oldAmSet := range n.alertmanagers {
+		hash, err := oldAmSet.configHash()
+		if err != nil {
+			return err
+		}
+		configToAlertmanagers[hash] = oldAmSet
+	}
 
 	for k, cfg := range conf.AlertingConfig.AlertmanagerConfigs.ToMap() {
 		ams, err := newAlertmanagerSet(cfg, n.logger, n.metrics)
 		if err != nil {
 			return err
+		}
+
+		hash, err := ams.configHash()
+		if err != nil {
+			return err
+		}
+
+		if oldAmSet, ok := configToAlertmanagers[hash]; ok {
+			ams.ams = oldAmSet.ams
+			ams.droppedAms = oldAmSet.droppedAms
 		}
 
 		amSets[k] = ams
@@ -298,36 +321,98 @@ func (n *Manager) nextBatch() []*Alert {
 	return alerts
 }
 
-// Run dispatches notifications continuously.
+// Run dispatches notifications continuously, returning once Stop has been called and all
+// pending notifications have been drained from the queue (if draining is enabled).
+//
+// Dispatching of notifications occurs in parallel to processing target updates to avoid one starving the other.
+// Refer to https://github.com/prometheus/prometheus/issues/13676 for more details.
 func (n *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) {
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		n.targetUpdateLoop(tsets)
+	}()
+
+	go func() {
+		defer wg.Done()
+		n.sendLoop()
+		n.drainQueue()
+	}()
+
+	wg.Wait()
+	n.logger.Info("Notification manager stopped")
+}
+
+// sendLoop continuously consumes the notifications queue and sends alerts to
+// the configured Alertmanagers.
+func (n *Manager) sendLoop() {
 	for {
-		// The select is split in two parts, such as we will first try to read
-		// new alertmanager targets if they are available, before sending new
-		// alerts.
+		// If we've been asked to stop, that takes priority over sending any further notifications.
 		select {
-		case <-n.ctx.Done():
+		case <-n.stopRequested:
 			return
-		case ts := <-tsets:
-			n.reload(ts)
 		default:
 			select {
-			case <-n.ctx.Done():
+			case <-n.stopRequested:
+				return
+
+			case <-n.more:
+				n.sendOneBatch()
+
+				// If the queue still has items left, kick off the next iteration.
+				if n.queueLen() > 0 {
+					n.setMore()
+				}
+			}
+		}
+	}
+}
+
+// targetUpdateLoop receives updates of target groups and triggers a reload.
+func (n *Manager) targetUpdateLoop(tsets <-chan map[string][]*targetgroup.Group) {
+	for {
+		// If we've been asked to stop, that takes priority over processing any further target group updates.
+		select {
+		case <-n.stopRequested:
+			return
+		default:
+			select {
+			case <-n.stopRequested:
 				return
 			case ts := <-tsets:
 				n.reload(ts)
-			case <-n.more:
 			}
 		}
-		alerts := n.nextBatch()
-
-		if !n.sendAll(alerts...) {
-			n.metrics.dropped.Add(float64(len(alerts)))
-		}
-		// If the queue still has items left, kick off the next iteration.
-		if n.queueLen() > 0 {
-			n.setMore()
-		}
 	}
+}
+
+func (n *Manager) sendOneBatch() {
+	alerts := n.nextBatch()
+
+	if !n.sendAll(alerts...) {
+		n.metrics.dropped.Add(float64(len(alerts)))
+	}
+}
+
+func (n *Manager) drainQueue() {
+	if !n.opts.DrainOnShutdown {
+		if n.queueLen() > 0 {
+			n.logger.Warn("Draining remaining notifications on shutdown is disabled, and some notifications have been dropped", "count", n.queueLen())
+			n.metrics.dropped.Add(float64(n.queueLen()))
+		}
+
+		return
+	}
+
+	n.logger.Info("Draining any remaining notifications...")
+
+	for n.queueLen() > 0 {
+		n.sendOneBatch()
+	}
+
+	n.logger.Info("Remaining notifications drained")
 }
 
 func (n *Manager) reload(tgs map[string][]*targetgroup.Group) {
@@ -337,7 +422,7 @@ func (n *Manager) reload(tgs map[string][]*targetgroup.Group) {
 	for id, tgroup := range tgs {
 		am, ok := n.alertmanagers[id]
 		if !ok {
-			level.Error(n.logger).Log("msg", "couldn't sync alert manager set", "err", fmt.Sprintf("invalid id:%v", id))
+			n.logger.Error("couldn't sync alert manager set", "err", fmt.Sprintf("invalid id:%v", id))
 			continue
 		}
 		am.sync(tgroup)
@@ -350,7 +435,7 @@ func (n *Manager) Send(alerts ...*Alert) {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 
-	alerts = n.relabelAlerts(alerts)
+	alerts = relabelAlerts(n.opts.RelabelConfigs, n.opts.ExternalLabels, alerts)
 	if len(alerts) == 0 {
 		return
 	}
@@ -360,7 +445,7 @@ func (n *Manager) Send(alerts ...*Alert) {
 	if d := len(alerts) - n.opts.QueueCapacity; d > 0 {
 		alerts = alerts[d:]
 
-		level.Warn(n.logger).Log("msg", "Alert batch larger than queue capacity, dropping alerts", "num_dropped", d)
+		n.logger.Warn("Alert batch larger than queue capacity, dropping alerts", "num_dropped", d)
 		n.metrics.dropped.Add(float64(d))
 	}
 
@@ -369,7 +454,7 @@ func (n *Manager) Send(alerts ...*Alert) {
 	if d := (len(n.queue) + len(alerts)) - n.opts.QueueCapacity; d > 0 {
 		n.queue = n.queue[d:]
 
-		level.Warn(n.logger).Log("msg", "Alert notification queue full, dropping alerts", "num_dropped", d)
+		n.logger.Warn("Alert notification queue full, dropping alerts", "num_dropped", d)
 		n.metrics.dropped.Add(float64(d))
 	}
 	n.queue = append(n.queue, alerts...)
@@ -378,20 +463,19 @@ func (n *Manager) Send(alerts ...*Alert) {
 	n.setMore()
 }
 
-// Attach external labels and process relabelling rules.
-func (n *Manager) relabelAlerts(alerts []*Alert) []*Alert {
+func relabelAlerts(relabelConfigs []*relabel.Config, externalLabels labels.Labels, alerts []*Alert) []*Alert {
 	lb := labels.NewBuilder(labels.EmptyLabels())
 	var relabeledAlerts []*Alert
 
 	for _, a := range alerts {
 		lb.Reset(a.Labels)
-		n.opts.ExternalLabels.Range(func(l labels.Label) {
+		externalLabels.Range(func(l labels.Label) {
 			if a.Labels.Get(l.Name) == "" {
 				lb.Set(l.Name, l.Value)
 			}
 		})
 
-		keep := relabel.ProcessBuilder(lb, n.opts.RelabelConfigs...)
+		keep := relabel.ProcessBuilder(lb, relabelConfigs...)
 		if !keep {
 			continue
 		}
@@ -458,10 +542,10 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 
 	begin := time.Now()
 
-	// v1Payload and v2Payload represent 'alerts' marshaled for Alertmanager API
-	// v1 or v2. Marshaling happens below. Reference here is for caching between
+	// cachedPayload represent 'alerts' marshaled for Alertmanager API v2.
+	// Marshaling happens below. Reference here is for caching between
 	// for loop iterations.
-	var v1Payload, v2Payload []byte
+	var cachedPayload []byte
 
 	n.mtx.RLock()
 	amSets := n.alertmanagers
@@ -473,45 +557,48 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 	)
 	for _, ams := range amSets {
 		var (
-			payload []byte
-			err     error
+			payload  []byte
+			err      error
+			amAlerts = alerts
 		)
 
 		ams.mtx.RLock()
 
-		switch ams.cfg.APIVersion {
-		case config.AlertmanagerAPIVersionV1:
-			{
-				if v1Payload == nil {
-					v1Payload, err = json.Marshal(alerts)
-					if err != nil {
-						level.Error(n.logger).Log("msg", "Encoding alerts for Alertmanager API v1 failed", "err", err)
-						ams.mtx.RUnlock()
-						return false
-					}
-				}
+		if len(ams.ams) == 0 {
+			ams.mtx.RUnlock()
+			continue
+		}
 
-				payload = v1Payload
+		if len(ams.cfg.AlertRelabelConfigs) > 0 {
+			amAlerts = relabelAlerts(ams.cfg.AlertRelabelConfigs, labels.Labels{}, alerts)
+			if len(amAlerts) == 0 {
+				ams.mtx.RUnlock()
+				continue
 			}
+			// We can't use the cached values from previous iteration.
+			cachedPayload = nil
+		}
+
+		switch ams.cfg.APIVersion {
 		case config.AlertmanagerAPIVersionV2:
 			{
-				if v2Payload == nil {
-					openAPIAlerts := alertsToOpenAPIAlerts(alerts)
+				if cachedPayload == nil {
+					openAPIAlerts := alertsToOpenAPIAlerts(amAlerts)
 
-					v2Payload, err = json.Marshal(openAPIAlerts)
+					cachedPayload, err = json.Marshal(openAPIAlerts)
 					if err != nil {
-						level.Error(n.logger).Log("msg", "Encoding alerts for Alertmanager API v2 failed", "err", err)
+						n.logger.Error("Encoding alerts for Alertmanager API v2 failed", "err", err)
 						ams.mtx.RUnlock()
 						return false
 					}
 				}
 
-				payload = v2Payload
+				payload = cachedPayload
 			}
 		default:
 			{
-				level.Error(n.logger).Log(
-					"msg", fmt.Sprintf("Invalid Alertmanager API version '%v', expected one of '%v'", ams.cfg.APIVersion, config.SupportedAlertmanagerAPIVersions),
+				n.logger.Error(
+					fmt.Sprintf("Invalid Alertmanager API version '%v', expected one of '%v'", ams.cfg.APIVersion, config.SupportedAlertmanagerAPIVersions),
 					"err", err,
 				)
 				ams.mtx.RUnlock()
@@ -519,24 +606,29 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 			}
 		}
 
+		if len(ams.cfg.AlertRelabelConfigs) > 0 {
+			// We can't use the cached values on the next iteration.
+			cachedPayload = nil
+		}
+
 		for _, am := range ams.ams {
 			wg.Add(1)
 
-			ctx, cancel := context.WithTimeout(n.ctx, time.Duration(ams.cfg.Timeout))
+			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(ams.cfg.Timeout))
 			defer cancel()
 
-			go func(client *http.Client, url string) {
+			go func(ctx context.Context, client *http.Client, url string, payload []byte, count int) {
 				if err := n.sendOne(ctx, client, url, payload); err != nil {
-					level.Error(n.logger).Log("alertmanager", url, "count", len(alerts), "msg", "Error sending alert", "err", err)
+					n.logger.Error("Error sending alert", "alertmanager", url, "count", count, "err", err)
 					n.metrics.errors.WithLabelValues(url).Inc()
 				} else {
 					numSuccess.Inc()
 				}
 				n.metrics.latency.WithLabelValues(url).Observe(time.Since(begin).Seconds())
-				n.metrics.sent.WithLabelValues(url).Add(float64(len(alerts)))
+				n.metrics.sent.WithLabelValues(url).Add(float64(len(amAlerts)))
 
 				wg.Done()
-			}(ams.client, am.url().String())
+			}(ctx, ams.client, am.url().String(), payload, len(amAlerts))
 		}
 
 		ams.mtx.RUnlock()
@@ -576,7 +668,7 @@ func labelsToOpenAPILabelSet(modelLabelSet labels.Labels) models.LabelSet {
 }
 
 func (n *Manager) sendOne(ctx context.Context, c *http.Client, url string, b []byte) error {
-	req, err := http.NewRequest("POST", url, bytes.NewReader(b))
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(b))
 	if err != nil {
 		return err
 	}
@@ -599,10 +691,19 @@ func (n *Manager) sendOne(ctx context.Context, c *http.Client, url string, b []b
 	return nil
 }
 
-// Stop shuts down the notification handler.
+// Stop signals the notification manager to shut down and immediately returns.
+//
+// Run will return once the notification manager has successfully shut down.
+//
+// The manager will optionally drain any queued notifications before shutting down.
+//
+// Stop is safe to call multiple times.
 func (n *Manager) Stop() {
-	level.Info(n.logger).Log("msg", "Stopping notification manager...")
-	n.cancel()
+	n.logger.Info("Stopping notification manager...")
+
+	n.stopOnce.Do(func() {
+		close(n.stopRequested)
+	})
 }
 
 // Alertmanager holds Alertmanager endpoint information.
@@ -633,10 +734,10 @@ type alertmanagerSet struct {
 	mtx        sync.RWMutex
 	ams        []alertmanager
 	droppedAms []alertmanager
-	logger     log.Logger
+	logger     *slog.Logger
 }
 
-func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger log.Logger, metrics *alertMetrics) (*alertmanagerSet, error) {
+func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger *slog.Logger, metrics *alertMetrics) (*alertmanagerSet, error) {
 	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, "alertmanager")
 	if err != nil {
 		return nil, err
@@ -670,7 +771,7 @@ func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 	for _, tg := range tgs {
 		ams, droppedAms, err := AlertmanagerFromGroup(tg, s.cfg)
 		if err != nil {
-			level.Error(s.logger).Log("msg", "Creating discovered Alertmanagers failed", "err", err)
+			s.logger.Error("Creating discovered Alertmanagers failed", "err", err)
 			continue
 		}
 		allAms = append(allAms, ams...)
@@ -679,6 +780,7 @@ func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
+	previousAms := s.ams
 	// Set new Alertmanagers and deduplicate them along their unique URL.
 	s.ams = []alertmanager{}
 	s.droppedAms = []alertmanager{}
@@ -698,6 +800,26 @@ func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 		seen[us] = struct{}{}
 		s.ams = append(s.ams, am)
 	}
+	// Now remove counters for any removed Alertmanagers.
+	for _, am := range previousAms {
+		us := am.url().String()
+		if _, ok := seen[us]; ok {
+			continue
+		}
+		s.metrics.latency.DeleteLabelValues(us)
+		s.metrics.sent.DeleteLabelValues(us)
+		s.metrics.errors.DeleteLabelValues(us)
+		seen[us] = struct{}{}
+	}
+}
+
+func (s *alertmanagerSet) configHash() (string, error) {
+	b, err := yaml.Marshal(s.cfg)
+	if err != nil {
+		return "", err
+	}
+	hash := md5.Sum(b)
+	return hex.EncodeToString(hash[:]), nil
 }
 
 func postPath(pre string, v config.AlertmanagerAPIVersion) string {

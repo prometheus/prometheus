@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -26,10 +27,11 @@ import (
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 
+	prom_discovery "github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/documentation/examples/custom-sd/adapter"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -39,7 +41,7 @@ var (
 	a             = kingpin.New("sd adapter usage", "Tool to generate file_sd target files for unimplemented SD mechanisms.")
 	outputFile    = a.Flag("output.file", "Output file for file_sd compatible file.").Default("custom_sd.json").String()
 	listenAddress = a.Flag("listen.address", "The address the Consul HTTP API is listening on for requests.").Default("localhost:8500").String()
-	logger        log.Logger
+	logger        *slog.Logger
 
 	// addressLabel is the name for the label containing a target's address.
 	addressLabel = model.MetaLabelPrefix + "consul_address"
@@ -88,7 +90,7 @@ type discovery struct {
 	address         string
 	refreshInterval int
 	tagSeparator    string
-	logger          log.Logger
+	logger          *slog.Logger
 	oldSourceList   map[string]bool
 }
 
@@ -125,9 +127,9 @@ func (d *discovery) parseServiceNodes(resp *http.Response, name string) (*target
 		// since the service may be registered remotely through a different node.
 		var addr string
 		if node.ServiceAddress != "" {
-			addr = net.JoinHostPort(node.ServiceAddress, fmt.Sprintf("%d", node.ServicePort))
+			addr = net.JoinHostPort(node.ServiceAddress, strconv.Itoa(node.ServicePort))
 		} else {
-			addr = net.JoinHostPort(node.Address, fmt.Sprintf("%d", node.ServicePort))
+			addr = net.JoinHostPort(node.Address, strconv.Itoa(node.ServicePort))
 		}
 
 		target := model.LabelSet{model.AddressLabel: model.LabelValue(addr)}
@@ -162,7 +164,7 @@ func (d *discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		var srvs map[string][]string
 		resp, err := http.Get(fmt.Sprintf("http://%s/v1/catalog/services", d.address))
 		if err != nil {
-			level.Error(d.logger).Log("msg", "Error getting services list", "err", err)
+			d.logger.Error("Error getting services list", "err", err)
 			time.Sleep(time.Duration(d.refreshInterval) * time.Second)
 			continue
 		}
@@ -171,7 +173,7 @@ func (d *discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 		if err != nil {
-			level.Error(d.logger).Log("msg", "Error reading services list", "err", err)
+			d.logger.Error("Error reading services list", "err", err)
 			time.Sleep(time.Duration(d.refreshInterval) * time.Second)
 			continue
 		}
@@ -179,7 +181,7 @@ func (d *discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		err = json.Unmarshal(b, &srvs)
 		resp.Body.Close()
 		if err != nil {
-			level.Error(d.logger).Log("msg", "Error parsing services list", "err", err)
+			d.logger.Error("Error parsing services list", "err", err)
 			time.Sleep(time.Duration(d.refreshInterval) * time.Second)
 			continue
 		}
@@ -198,13 +200,13 @@ func (d *discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			}
 			resp, err := http.Get(fmt.Sprintf("http://%s/v1/catalog/service/%s", d.address, name))
 			if err != nil {
-				level.Error(d.logger).Log("msg", "Error getting services nodes", "service", name, "err", err)
+				d.logger.Error("Error getting services nodes", "service", name, "err", err)
 				break
 			}
 
 			tg, err := d.parseServiceNodes(resp, name)
 			if err != nil {
-				level.Error(d.logger).Log("msg", "Error parsing services nodes", "service", name, "err", err)
+				d.logger.Error("Error parsing services nodes", "service", name, "err", err)
 				break
 			}
 			tgs = append(tgs, tg)
@@ -252,8 +254,7 @@ func main() {
 		fmt.Println("err: ", err)
 		return
 	}
-	logger = log.NewSyncLogger(log.NewLogfmtLogger(os.Stdout))
-	logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.DefaultCaller)
+	logger = promslog.New(&promslog.Config{})
 
 	ctx := context.Background()
 
@@ -268,7 +269,21 @@ func main() {
 	if err != nil {
 		fmt.Println("err: ", err)
 	}
-	sdAdapter := adapter.NewAdapter(ctx, *outputFile, "exampleSD", disc, logger)
+
+	if err != nil {
+		logger.Error("failed to create discovery metrics", "err", err)
+		os.Exit(1)
+	}
+
+	reg := prometheus.NewRegistry()
+	refreshMetrics := prom_discovery.NewRefreshMetrics(reg)
+	metrics, err := prom_discovery.RegisterSDMetrics(reg, refreshMetrics)
+	if err != nil {
+		logger.Error("failed to register service discovery metrics", "err", err)
+		os.Exit(1)
+	}
+
+	sdAdapter := adapter.NewAdapter(ctx, *outputFile, "exampleSD", disc, logger, metrics, reg)
 	sdAdapter.Run()
 
 	<-ctx.Done()

@@ -18,10 +18,13 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
+
+	"github.com/prometheus/prometheus/discovery"
 )
 
 func TestDockerSwarmTasksSDRefresh(t *testing.T) {
@@ -38,19 +41,26 @@ host: %s
 	var cfg DockerSwarmSDConfig
 	require.NoError(t, yaml.Unmarshal([]byte(cfgString), &cfg))
 
-	d, err := NewDiscovery(&cfg, log.NewNopLogger())
+	reg := prometheus.NewRegistry()
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	metrics := cfg.NewDiscovererMetrics(reg, refreshMetrics)
+	require.NoError(t, metrics.Register())
+	defer metrics.Unregister()
+	defer refreshMetrics.Unregister()
+
+	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), metrics)
 	require.NoError(t, err)
 
 	ctx := context.Background()
 	tgs, err := d.refresh(ctx)
 	require.NoError(t, err)
 
-	require.Equal(t, 1, len(tgs))
+	require.Len(t, tgs, 1)
 
 	tg := tgs[0]
 	require.NotNil(t, tg)
 	require.NotNil(t, tg.Targets)
-	require.Equal(t, 27, len(tg.Targets))
+	require.Len(t, tg.Targets, 27)
 
 	for i, lbls := range []model.LabelSet{
 		{

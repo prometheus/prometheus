@@ -1,0 +1,64 @@
+# HELP go_build_info Build information about the main Go module.
+# TYPE go_build_info gauge
+go_build_info{checksum="",path="",version=""} 1.0
+# HELP promhttp_metric_handler_errors Total number of internal errors encountered by the promhttp metric handler.
+# TYPE promhttp_metric_handler_errors counter
+promhttp_metric_handler_errors_total{cause="encoding"} 0.0
+promhttp_metric_handler_errors_created{cause="encoding"} 1.726839813016397e+09
+promhttp_metric_handler_errors_total{cause="gathering"} 0.0
+promhttp_metric_handler_errors_created{cause="gathering"} 1.726839813016395e+09
+# HELP rpc_durations_histogram_seconds RPC latency distributions.
+# TYPE rpc_durations_histogram_seconds histogram
+rpc_durations_histogram_seconds_bucket{le="-0.00099"} 0
+rpc_durations_histogram_seconds_bucket{le="-0.00089"} 0
+rpc_durations_histogram_seconds_bucket{le="-0.0007899999999999999"} 0
+rpc_durations_histogram_seconds_bucket{le="-0.0006899999999999999"} 0
+rpc_durations_histogram_seconds_bucket{le="-0.0005899999999999998"} 0
+rpc_durations_histogram_seconds_bucket{le="-0.0004899999999999998"} 0
+rpc_durations_histogram_seconds_bucket{le="-0.0003899999999999998"} 0
+rpc_durations_histogram_seconds_bucket{le="-0.0002899999999999998"} 3 # {dummyID="17783"} -0.0003825067330956884 1.7268398142239082e+09
+rpc_durations_histogram_seconds_bucket{le="-0.0001899999999999998"} 5 # {dummyID="84741"} -0.00020178290006788965 1.726839814829977e+09
+rpc_durations_histogram_seconds_bucket{le="-8.999999999999979e-05"} 5
+rpc_durations_histogram_seconds_bucket{le="1.0000000000000216e-05"} 8 # {dummyID="19206"} -4.6156147425468016e-05 1.7268398151337721e+09
+rpc_durations_histogram_seconds_bucket{le="0.00011000000000000022"} 9 # {dummyID="3974"} 9.528436760156754e-05 1.726839814526797e+09
+rpc_durations_histogram_seconds_bucket{le="0.00021000000000000023"} 11 # {dummyID="29640"} 0.00017459624183458996 1.7268398139220061e+09
+rpc_durations_histogram_seconds_bucket{le="0.0003100000000000002"} 15 # {dummyID="9818"} 0.0002791130914009552 1.7268398149821382e+09
+rpc_durations_histogram_seconds_bucket{le="0.0004100000000000002"} 15
+rpc_durations_histogram_seconds_bucket{le="0.0005100000000000003"} 15
+rpc_durations_histogram_seconds_bucket{le="0.0006100000000000003"} 15
+rpc_durations_histogram_seconds_bucket{le="0.0007100000000000003"} 15
+rpc_durations_histogram_seconds_bucket{le="0.0008100000000000004"} 15
+rpc_durations_histogram_seconds_bucket{le="0.0009100000000000004"} 15
+rpc_durations_histogram_seconds_bucket{le="+Inf"} 15
+rpc_durations_histogram_seconds_sum -8.452185437166741e-05
+rpc_durations_histogram_seconds_count 15
+rpc_durations_histogram_seconds_created 1.726839813016302e+09
+# HELP rpc_durations_seconds RPC latency distributions.
+# TYPE rpc_durations_seconds summary
+rpc_durations_seconds{service="exponential",quantile="0.5"} 7.689368882420941e-07
+rpc_durations_seconds{service="exponential",quantile="0.9"} 1.6537614174305048e-06
+rpc_durations_seconds{service="exponential",quantile="0.99"} 2.0965499063061924e-06
+rpc_durations_seconds_sum{service="exponential"} 2.0318666372575776e-05
+rpc_durations_seconds_count{service="exponential"} 22
+rpc_durations_seconds_created{service="exponential"} 1.7268398130168908e+09
+rpc_durations_seconds{service="normal",quantile="0.5"} -5.066758674917046e-06
+rpc_durations_seconds{service="normal",quantile="0.9"} 0.0002935723711788224
+rpc_durations_seconds{service="normal",quantile="0.99"} 0.0003023094636293776
+rpc_durations_seconds_sum{service="normal"} -8.452185437166741e-05
+rpc_durations_seconds_count{service="normal"} 15
+rpc_durations_seconds_created{service="normal"} 1.726839813016714e+09
+rpc_durations_seconds{service="uniform",quantile="0.5"} 9.005014931474918e-05
+rpc_durations_seconds{service="uniform",quantile="0.9"} 0.00017801230208182325
+rpc_durations_seconds{service="uniform",quantile="0.99"} 0.00018641524538180192
+rpc_durations_seconds_sum{service="uniform"} 0.0011666095700533677
+rpc_durations_seconds_count{service="uniform"} 11
+rpc_durations_seconds_created{service="uniform"} 1.72683981301684e+09
+# HELP rpc_requests Total number of RPC requests received.
+# TYPE rpc_requests counter
+rpc_requests_total{service="exponential"} 22.0
+rpc_requests_created{service="exponential"} 1.726839813016893e+09
+rpc_requests_total{service="normal"} 15.0
+rpc_requests_created{service="normal"} 1.726839813016717e+09
+rpc_requests_total{service="uniform"} 11.0
+rpc_requests_created{service="uniform"} 1.7268398130168471e+09
+# EOF

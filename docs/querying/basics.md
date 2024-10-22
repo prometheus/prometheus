@@ -8,13 +8,19 @@ sort_rank: 1
 
 Prometheus provides a functional query language called PromQL (Prometheus Query
 Language) that lets the user select and aggregate time series data in real
-time. The result of an expression can either be shown as a graph, viewed as
-tabular data in Prometheus's expression browser, or consumed by external
-systems via the [HTTP API](api.md).
+time. 
+
+When you send a query request to Prometheus, it can be an _instant query_, evaluated at one point in time,
+or a _range query_ at equally-spaced steps between a start and an end time. PromQL works exactly the same
+in each cases; the range query is just like an instant query run multiple times at different timestamps.
+
+In the Prometheus UI, the "Table" tab is for instant queries and the "Graph" tab is for range queries.
+
+Other programs can fetch the result of a PromQL expression via the [HTTP API](api.md).
 
 ## Examples
 
-This document is meant as a reference. For learning, it might be easier to
+This document is a Prometheus basic language reference. For learning, it may be easier to
 start with a couple of [examples](examples.md).
 
 ## Expression language data types
@@ -28,14 +34,15 @@ evaluate to one of four types:
 * **String** - a simple string value; currently unused
 
 Depending on the use-case (e.g. when graphing vs. displaying the output of an
-expression), only some of these types are legal as the result from a
-user-specified expression. For example, an expression that returns an instant
-vector is the only type that can be directly graphed.
+expression), only some of these types are legal as the result of a
+user-specified expression. 
+For [instant queries](api.md#instant-queries), any of the above data types are allowed as the root of the expression.
+[Range queries](api.md/#range-queries) only support scalar-typed and instant-vector-typed expressions.
 
 _Notes about the experimental native histograms:_
 
 * Ingesting native histograms has to be enabled via a [feature
-  flag](../../feature_flags.md#native-histograms).
+  flag](../feature_flags.md#native-histograms).
 * Once native histograms have been ingested into the TSDB (and even after
   disabling the feature flag again), both instant vectors and range vectors may
   now contain samples that aren't simple floating point numbers (float samples)
@@ -46,16 +53,15 @@ _Notes about the experimental native histograms:_
 
 ### String literals
 
-Strings may be specified as literals in single quotes, double quotes or
-backticks.
+String literals are designated by single quotes, double quotes or backticks.
 
 PromQL follows the same [escaping rules as
-Go](https://golang.org/ref/spec#String_literals). In single or double quotes a
+Go](https://golang.org/ref/spec#String_literals). For string literals in single or double quotes, a
 backslash begins an escape sequence, which may be followed by `a`, `b`, `f`,
-`n`, `r`, `t`, `v` or `\`. Specific characters can be provided using octal
-(`\nnn`) or hexadecimal (`\xnn`, `\unnnn` and `\Unnnnnnnn`).
+`n`, `r`, `t`, `v` or `\`.  Specific characters can be provided using octal
+(`\nnn`) or hexadecimal (`\xnn`, `\unnnn` and `\Unnnnnnnn`) notations.
 
-No escaping is processed inside backticks. Unlike Go, Prometheus does not discard newlines inside backticks.
+Conversely, escape characters are not parsed in string literals designated by backticks. It is important to note that, unlike Go, Prometheus does not discard newlines inside backticks.
 
 Example:
 
@@ -63,9 +69,10 @@ Example:
     'these are unescaped: \n \\ \t'
     `these are not unescaped: \n ' " \t`
 
-### Float literals
+### Float literals and time durations
 
-Scalar float values can be written as literal integer or floating-point numbers in the format (whitespace only included for better readability):
+Scalar float values can be written as literal integer or floating-point numbers
+in the format (whitespace only included for better readability):
 
     [-+]?(
           [0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?
@@ -83,21 +90,78 @@ Examples:
     -Inf
     NaN
 
-## Time series Selectors
+Additionally, underscores (`_`) can be used in between decimal or hexadecimal
+digits to improve readability.
+
+Examples:
+
+    1_000_000
+    .123_456_789
+    0x_53_AB_F3_82
+
+Float literals are also used to specify durations in seconds. For convenience,
+decimal integer numbers may be combined with the following
+time units:
+
+* `ms` – milliseconds
+* `s` – seconds – 1s equals 1000ms
+* `m` – minutes – 1m equals 60s (ignoring leap seconds)
+* `h` – hours – 1h equals 60m
+* `d` – days – 1d equals 24h (ignoring so-called daylight saving time)
+* `w` – weeks – 1w equals 7d
+* `y` – years – 1y equals 365d (ignoring leap days)
+
+Suffixing a decimal integer number with one of the units above is a different
+representation of the equivalent number of seconds as a bare float literal.
+
+Examples:
+
+    1s # Equivalent to 1.
+    2m # Equivalent to 120.
+    1ms # Equivalent to 0.001.
+    -2h # Equivalent to -7200.
+
+The following examples do _not_ work:
+
+    0xABm # No suffixing of hexadecimal numbers.
+    1.5h # Time units cannot be combined with a floating point.
+    +Infd # No suffixing of ±Inf or NaN.
+
+Multiple units can be combined by concatenation of suffixed integers. Units
+must be ordered from the longest to the shortest. A given unit must only appear
+once per float literal.
+
+Examples:
+
+    1h30m # Equivalent to 5400s and thus 5400.
+    12h34m56s # Equivalent to 45296s and thus 45296.
+    54s321ms # Equivalent to 54.321.
+
+## Time series selectors
+
+These are the basic building-blocks that instruct PromQL what data to fetch.
 
 ### Instant vector selectors
 
 Instant vector selectors allow the selection of a set of time series and a
-single sample value for each at a given timestamp (instant): in the simplest
-form, only a metric name is specified. This results in an instant vector
+single sample value for each at a given timestamp (point in time).  In the simplest
+form, only a metric name is specified, which results in an instant vector
 containing elements for all time series that have this metric name.
 
+The value returned will be that of the most recent sample at or before the
+query's evaluation timestamp (in the case of an
+[instant query](api.md#instant-queries))
+or the current step within the query (in the case of a
+[range query](api.md/#range-queries)).
+The [`@` modifier](#modifier) allows overriding the timestamp relative to which
+the selection takes place. Time series are only returned if their most recent sample is less than the [lookback period](#staleness) ago.
+
 This example selects all time series that have the `http_requests_total` metric
-name:
+name, returning the most recent sample for each:
 
     http_requests_total
 
-It is possible to filter these time series further by appending a comma separated list of label
+It is possible to filter these time series further by appending a comma-separated list of label
 matchers in curly braces (`{}`).
 
 This example selects only those time series with the `http_requests_total`
@@ -123,6 +187,33 @@ For example, this selects all `http_requests_total` time series for `staging`,
 
 Label matchers that match empty label values also select all time series that
 do not have the specific label set at all. It is possible to have multiple matchers for the same label name.
+
+For example, given the dataset:
+
+    http_requests_total
+    http_requests_total{replica="rep-a"}
+    http_requests_total{replica="rep-b"}
+    http_requests_total{environment="development"}
+
+The query `http_requests_total{environment=""}` would match and return:
+
+    http_requests_total
+    http_requests_total{replica="rep-a"}
+    http_requests_total{replica="rep-b"}
+
+and would exclude:
+
+    http_requests_total{environment="development"}
+
+Multiple matchers can be used for the same label name; they all must pass for a result to be returned. 
+
+The query:
+
+    http_requests_total{replica!="rep-a",replica=~"rep.*"}
+
+Would then match:
+
+    http_requests_total{replica="rep-b"}
 
 Vector selectors must either specify a name or at least one label matcher
 that does not match the empty string. The following expression is illegal:
@@ -156,41 +247,21 @@ syntax](https://github.com/google/re2/wiki/Syntax).
 ### Range Vector Selectors
 
 Range vector literals work like instant vector literals, except that they
-select a range of samples back from the current instant. Syntactically, a [time
-duration](#time-durations) is appended in square brackets (`[]`) at the end of
-a vector selector to specify how far back in time values should be fetched for
-each resulting range vector element. The range is a closed interval,
-i.e. samples with timestamps coinciding with either boundary of the range are
-still included in the selection.
+select a range of samples back from the current instant. Syntactically, a
+[float literal](#float-literals-and-time-durations) is appended in square
+brackets (`[]`) at the end of a vector selector to specify for how many seconds
+back in time values should be fetched for each resulting range vector element.
+Commonly, the float literal uses the syntax with one or more time units, e.g.
+`[5m]`. The range is a left-open and right-closed interval, i.e. samples with
+timestamps coinciding with the left boundary of the range are excluded from the
+selection, while samples coinciding with the right boundary of the range are
+included in the selection.
 
-In this example, we select all the values we have recorded within the last 5
-minutes for all time series that have the metric name `http_requests_total` and
-a `job` label set to `prometheus`:
+In this example, we select all the values recorded less than 5m ago for all
+time series that have the metric name `http_requests_total` and a `job` label
+set to `prometheus`:
 
     http_requests_total{job="prometheus"}[5m]
-
-### Time Durations
-
-Time durations are specified as a number, followed immediately by one of the
-following units:
-
-* `ms` - milliseconds
-* `s` - seconds
-* `m` - minutes
-* `h` - hours
-* `d` - days - assuming a day has always 24h
-* `w` - weeks - assuming a week has always 7d
-* `y` - years - assuming a year has always 365d
-
-Time durations can be combined, by concatenation. Units must be ordered from the
-longest to the shortest. A given unit must only appear once in a time duration.
-
-Here are some examples of valid time durations:
-
-    5h
-    1h30m
-    5m
-    10s
 
 ### Offset modifier
 
@@ -212,13 +283,12 @@ While the following would be *incorrect*:
 
     sum(http_requests_total{method="GET"}) offset 5m // INVALID.
 
-The same works for range vectors. This returns the 5-minute rate that
-`http_requests_total` had a week ago:
+The same works for range vectors. This returns the 5-minute [rate](./functions.md#rate)
+that `http_requests_total` had a week ago:
 
     rate(http_requests_total[5m] offset 1w)
 
-For comparisons with temporal shifts forward in time, a negative offset
-can be specified:
+When querying for samples in the past, a negative offset will enable temporal comparisons forward in time:
 
     rate(http_requests_total[5m] offset -1w)
 
@@ -249,11 +319,11 @@ The same works for range vectors. This returns the 5-minute rate that
 
     rate(http_requests_total[5m] @ 1609746000)
 
-The `@` modifier supports all representation of float literals described
-above within the limits of `int64`. It can also be used along
-with the `offset` modifier where the offset is applied relative to the `@`
-modifier time irrespective of which modifier is written first.
-These 2 queries will produce the same result.
+The `@` modifier supports all representations of numeric literals described above.
+It works with the `offset` modifier where the offset is applied relative to the `@`
+modifier time.  The results are the same irrespective of the order of the modifiers.
+
+For example, these two queries will produce the same result:
 
     # offset after @
     http_requests_total @ 1609746000 offset 5m
@@ -275,7 +345,7 @@ Note that the `@` modifier allows a query to look ahead of its evaluation time.
 
 Subquery allows you to run an instant query for a given range and resolution. The result of a subquery is a range vector.
 
-Syntax: `<instant_query> '[' <range> ':' [<resolution>] ']' [ @ <float_literal> ] [ offset <duration> ]`
+Syntax: `<instant_query> '[' <range> ':' [<resolution>] ']' [ @ <float_literal> ] [ offset <float_literal> ]`
 
 * `<resolution>` is optional. Default is the global evaluation interval.
 
@@ -299,33 +369,36 @@ PromQL supports line comments that start with `#`. Example:
 
 ### Staleness
 
-When queries are run, timestamps at which to sample data are selected
+The timestamps at which to sample data, during a query, are selected
 independently of the actual present time series data. This is mainly to support
 cases like aggregation (`sum`, `avg`, and so on), where multiple aggregated
-time series do not exactly align in time. Because of their independence,
+time series do not precisely align in time. Because of their independence,
 Prometheus needs to assign a value at those timestamps for each relevant time
-series. It does so by simply taking the newest sample before this timestamp.
+series. It does so by taking the newest sample that is less than the lookback period ago.
+The lookback period is 5 minutes by default, but can be
+[set with the `--query.lookback-delta` flag](../command-line/prometheus.md)
 
 If a target scrape or rule evaluation no longer returns a sample for a time
-series that was previously present, that time series will be marked as stale.
-If a target is removed, its previously returned time series will be marked as
-stale soon afterwards.
+series that was previously present, this time series will be marked as stale.
+If a target is removed, the previously retrieved time series will be marked as
+stale soon after removal.
 
 If a query is evaluated at a sampling timestamp after a time series is marked
-stale, then no value is returned for that time series. If new samples are
-subsequently ingested for that time series, they will be returned as normal.
+as stale, then no value is returned for that time series. If new samples are
+subsequently ingested for that time series, they will be returned as expected.
 
-If no sample is found (by default) 5 minutes before a sampling timestamp,
-no value is returned for that time series at this point in time. This
-effectively means that time series "disappear" from graphs at times where their
-latest collected sample is older than 5 minutes or after they are marked stale.
+A time series will go stale when it is no longer exported, or the target no
+longer exists. Such time series will disappear from graphs 
+at the times of their latest collected sample, and they will not be returned
+in queries after they are marked stale.
 
-Staleness will not be marked for time series that have timestamps included in
-their scrapes. Only the 5 minute threshold will be applied in that case.
+Some exporters, which put their own timestamps on samples, get a different behaviour: 
+series that stop being exported take the last value for (by default) 5 minutes before
+disappearing. The `track_timestamps_staleness` setting can change this.
 
 ### Avoiding slow queries and overloads
 
-If a query needs to operate on a very large amount of data, graphing it might
+If a query needs to operate on a substantial amount of data, graphing it might
 time out or overload the server or browser. Thus, when constructing queries
 over unknown data, always start building the query in the tabular view of
 Prometheus's expression browser until the result set seems reasonable
@@ -336,7 +409,7 @@ rule](../configuration/recording_rules.md#recording-rules).
 
 This is especially relevant for Prometheus's query language, where a bare
 metric name selector like `api_http_requests_total` could expand to thousands
-of time series with different labels. Also keep in mind that expressions which
+of time series with different labels. Also, keep in mind that expressions that
 aggregate over many time series will generate load on the server even if the
 output is only a small number of time series. This is similar to how it would
 be slow to sum all values of a column in a relational database, even if the

@@ -32,7 +32,7 @@ func TestIntern(t *testing.T) {
 	interner.intern(testString)
 	interned, ok := interner.pool[testString]
 
-	require.Equal(t, true, ok)
+	require.True(t, ok)
 	require.Equal(t, int64(1), interned.refs.Load(), fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs.Load()))
 }
 
@@ -43,13 +43,13 @@ func TestIntern_MultiRef(t *testing.T) {
 	interner.intern(testString)
 	interned, ok := interner.pool[testString]
 
-	require.Equal(t, true, ok)
+	require.True(t, ok)
 	require.Equal(t, int64(1), interned.refs.Load(), fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs.Load()))
 
 	interner.intern(testString)
 	interned, ok = interner.pool[testString]
 
-	require.Equal(t, true, ok)
+	require.True(t, ok)
 	require.Equal(t, int64(2), interned.refs.Load(), fmt.Sprintf("expected refs to be 2 but it was %d", interned.refs.Load()))
 }
 
@@ -60,12 +60,12 @@ func TestIntern_DeleteRef(t *testing.T) {
 	interner.intern(testString)
 	interned, ok := interner.pool[testString]
 
-	require.Equal(t, true, ok)
+	require.True(t, ok)
 	require.Equal(t, int64(1), interned.refs.Load(), fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs.Load()))
 
 	interner.release(testString)
 	_, ok = interner.pool[testString]
-	require.Equal(t, false, ok)
+	require.False(t, ok)
 }
 
 func TestIntern_MultiRef_Concurrent(t *testing.T) {
@@ -74,7 +74,7 @@ func TestIntern_MultiRef_Concurrent(t *testing.T) {
 
 	interner.intern(testString)
 	interned, ok := interner.pool[testString]
-	require.Equal(t, true, ok)
+	require.True(t, ok)
 	require.Equal(t, int64(1), interned.refs.Load(), fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs.Load()))
 
 	go interner.release(testString)
@@ -86,6 +86,6 @@ func TestIntern_MultiRef_Concurrent(t *testing.T) {
 	interner.mtx.RLock()
 	interned, ok = interner.pool[testString]
 	interner.mtx.RUnlock()
-	require.Equal(t, true, ok)
+	require.True(t, ok)
 	require.Equal(t, int64(1), interned.refs.Load(), fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs.Load()))
 }

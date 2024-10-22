@@ -17,12 +17,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"strconv"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
@@ -35,26 +36,31 @@ const (
 	NodeLegacyHostIP = "LegacyHostIP"
 )
 
-var (
-	nodeAddCount    = eventCount.WithLabelValues("node", "add")
-	nodeUpdateCount = eventCount.WithLabelValues("node", "update")
-	nodeDeleteCount = eventCount.WithLabelValues("node", "delete")
-)
-
 // Node discovers Kubernetes nodes.
 type Node struct {
-	logger   log.Logger
+	logger   *slog.Logger
 	informer cache.SharedInformer
 	store    cache.Store
 	queue    *workqueue.Type
 }
 
 // NewNode returns a new node discovery.
-func NewNode(l log.Logger, inf cache.SharedInformer) *Node {
+func NewNode(l *slog.Logger, inf cache.SharedInformer, eventCount *prometheus.CounterVec) *Node {
 	if l == nil {
-		l = log.NewNopLogger()
+		l = promslog.NewNopLogger()
 	}
-	n := &Node{logger: l, informer: inf, store: inf.GetStore(), queue: workqueue.NewNamed("node")}
+
+	nodeAddCount := eventCount.WithLabelValues(RoleNode.String(), MetricLabelRoleAdd)
+	nodeUpdateCount := eventCount.WithLabelValues(RoleNode.String(), MetricLabelRoleUpdate)
+	nodeDeleteCount := eventCount.WithLabelValues(RoleNode.String(), MetricLabelRoleDelete)
+
+	n := &Node{
+		logger:   l,
+		informer: inf,
+		store:    inf.GetStore(),
+		queue:    workqueue.NewNamed(RoleNode.String()),
+	}
+
 	_, err := n.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
 			nodeAddCount.Inc()
@@ -70,13 +76,13 @@ func NewNode(l log.Logger, inf cache.SharedInformer) *Node {
 		},
 	})
 	if err != nil {
-		level.Error(l).Log("msg", "Error adding nodes event handler.", "err", err)
+		l.Error("Error adding nodes event handler.", "err", err)
 	}
 	return n
 }
 
 func (n *Node) enqueue(obj interface{}) {
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+	key, err := nodeName(obj)
 	if err != nil {
 		return
 	}
@@ -90,13 +96,13 @@ func (n *Node) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 
 	if !cache.WaitForCacheSync(ctx.Done(), n.informer.HasSynced) {
 		if !errors.Is(ctx.Err(), context.Canceled) {
-			level.Error(n.logger).Log("msg", "node informer unable to sync cache")
+			n.logger.Error("node informer unable to sync cache")
 		}
 		return
 	}
 
 	go func() {
-		for n.process(ctx, ch) { // nolint:revive
+		for n.process(ctx, ch) {
 		}
 	}()
 
@@ -127,7 +133,7 @@ func (n *Node) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool
 	}
 	node, err := convertToNode(o)
 	if err != nil {
-		level.Error(n.logger).Log("msg", "converting to Node object failed", "err", err)
+		n.logger.Error("converting to Node object failed", "err", err)
 		return true
 	}
 	send(ctx, ch, n.buildNode(node))
@@ -175,7 +181,7 @@ func (n *Node) buildNode(node *apiv1.Node) *targetgroup.Group {
 
 	addr, addrMap, err := nodeAddress(node)
 	if err != nil {
-		level.Warn(n.logger).Log("msg", "No node address found", "err", err)
+		n.logger.Warn("No node address found", "err", err)
 		return nil
 	}
 	addr = net.JoinHostPort(addr, strconv.FormatInt(int64(node.Status.DaemonEndpoints.KubeletEndpoint.Port), 10))
@@ -202,7 +208,7 @@ func (n *Node) buildNode(node *apiv1.Node) *targetgroup.Group {
 // 5. NodeLegacyHostIP
 // 6. NodeHostName
 //
-// Derived from k8s.io/kubernetes/pkg/util/node/node.go
+// Derived from k8s.io/kubernetes/pkg/util/node/node.go.
 func nodeAddress(node *apiv1.Node) (string, map[apiv1.NodeAddressType][]string, error) {
 	m := map[apiv1.NodeAddressType][]string{}
 	for _, a := range node.Status.Addresses {

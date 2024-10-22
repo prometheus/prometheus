@@ -16,18 +16,22 @@ package rules
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"math"
 	"os"
+	"path"
 	"sort"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
-	"go.uber.org/goleak"
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -36,18 +40,20 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/teststorage"
+	prom_testutil "github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m)
+	prom_testutil.TolerantVerifyLeak(m)
 }
 
 func TestAlertingRule(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 5m
 			http_requests{job="app-server", instance="0", group="canary", severity="overwrite-me"}	75 85  95 105 105  95  85
 			http_requests{job="app-server", instance="1", group="canary", severity="overwrite-me"}	80 90 100 110 120 130 140
@@ -152,12 +158,13 @@ func TestAlertingRule(t *testing.T) {
 		},
 	}
 
+	ng := testEngine(t)
 	for i, test := range tests {
 		t.Logf("case %d", i)
 
 		evalTime := baseTime.Add(test.time)
 
-		res, err := rule.Eval(context.TODO(), evalTime, EngineQueryFunc(testEngine, storage), nil, 0)
+		res, err := rule.Eval(context.TODO(), 0, evalTime, EngineQueryFunc(ng, storage), nil, 0)
 		require.NoError(t, err)
 
 		var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
@@ -167,7 +174,7 @@ func TestAlertingRule(t *testing.T) {
 				filteredRes = append(filteredRes, smpl)
 			} else {
 				// If not 'ALERTS', it has to be 'ALERTS_FOR_STATE'.
-				require.Equal(t, smplName, "ALERTS_FOR_STATE")
+				require.Equal(t, "ALERTS_FOR_STATE", smplName)
 			}
 		}
 		for i := range test.result {
@@ -178,7 +185,7 @@ func TestAlertingRule(t *testing.T) {
 		sort.Slice(filteredRes, func(i, j int) bool {
 			return labels.Compare(filteredRes[i].Metric, filteredRes[j].Metric) < 0
 		})
-		require.Equal(t, test.result, filteredRes)
+		prom_testutil.RequireEqual(t, test.result, filteredRes)
 
 		for _, aa := range rule.ActiveAlerts() {
 			require.Zero(t, aa.Labels.Get(model.MetricNameLabel), "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
@@ -187,153 +194,157 @@ func TestAlertingRule(t *testing.T) {
 }
 
 func TestForStateAddSamples(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	for _, queryOffset := range []time.Duration{0, time.Minute} {
+		t.Run(fmt.Sprintf("queryOffset %s", queryOffset.String()), func(t *testing.T) {
+			storage := promqltest.LoadedStorage(t, `
 		load 5m
 			http_requests{job="app-server", instance="0", group="canary", severity="overwrite-me"}	75 85  95 105 105  95  85
 			http_requests{job="app-server", instance="1", group="canary", severity="overwrite-me"}	80 90 100 110 120 130 140
 	`)
-	t.Cleanup(func() { storage.Close() })
+			t.Cleanup(func() { storage.Close() })
 
-	expr, err := parser.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)
-	require.NoError(t, err)
+			expr, err := parser.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)
+			require.NoError(t, err)
 
-	rule := NewAlertingRule(
-		"HTTPRequestRateLow",
-		expr,
-		time.Minute,
-		0,
-		labels.FromStrings("severity", "{{\"c\"}}ritical"),
-		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
-	)
-	result := promql.Vector{
-		promql.Sample{
-			Metric: labels.FromStrings(
-				"__name__", "ALERTS_FOR_STATE",
-				"alertname", "HTTPRequestRateLow",
-				"group", "canary",
-				"instance", "0",
-				"job", "app-server",
-				"severity", "critical",
-			),
-			F: 1,
-		},
-		promql.Sample{
-			Metric: labels.FromStrings(
-				"__name__", "ALERTS_FOR_STATE",
-				"alertname", "HTTPRequestRateLow",
-				"group", "canary",
-				"instance", "1",
-				"job", "app-server",
-				"severity", "critical",
-			),
-			F: 1,
-		},
-		promql.Sample{
-			Metric: labels.FromStrings(
-				"__name__", "ALERTS_FOR_STATE",
-				"alertname", "HTTPRequestRateLow",
-				"group", "canary",
-				"instance", "0",
-				"job", "app-server",
-				"severity", "critical",
-			),
-			F: 1,
-		},
-		promql.Sample{
-			Metric: labels.FromStrings(
-				"__name__", "ALERTS_FOR_STATE",
-				"alertname", "HTTPRequestRateLow",
-				"group", "canary",
-				"instance", "1",
-				"job", "app-server",
-				"severity", "critical",
-			),
-			F: 1,
-		},
-	}
-
-	baseTime := time.Unix(0, 0)
-
-	tests := []struct {
-		time            time.Duration
-		result          promql.Vector
-		persistThisTime bool // If true, it means this 'time' is persisted for 'for'.
-	}{
-		{
-			time:            0,
-			result:          append(promql.Vector{}, result[:2]...),
-			persistThisTime: true,
-		},
-		{
-			time:   5 * time.Minute,
-			result: append(promql.Vector{}, result[2:]...),
-		},
-		{
-			time:   10 * time.Minute,
-			result: append(promql.Vector{}, result[2:3]...),
-		},
-		{
-			time:   15 * time.Minute,
-			result: nil,
-		},
-		{
-			time:   20 * time.Minute,
-			result: nil,
-		},
-		{
-			time:            25 * time.Minute,
-			result:          append(promql.Vector{}, result[:1]...),
-			persistThisTime: true,
-		},
-		{
-			time:   30 * time.Minute,
-			result: append(promql.Vector{}, result[2:3]...),
-		},
-	}
-
-	var forState float64
-	for i, test := range tests {
-		t.Logf("case %d", i)
-		evalTime := baseTime.Add(test.time)
-
-		if test.persistThisTime {
-			forState = float64(evalTime.Unix())
-		}
-		if test.result == nil {
-			forState = float64(value.StaleNaN)
-		}
-
-		res, err := rule.Eval(context.TODO(), evalTime, EngineQueryFunc(testEngine, storage), nil, 0)
-		require.NoError(t, err)
-
-		var filteredRes promql.Vector // After removing 'ALERTS' samples.
-		for _, smpl := range res {
-			smplName := smpl.Metric.Get("__name__")
-			if smplName == "ALERTS_FOR_STATE" {
-				filteredRes = append(filteredRes, smpl)
-			} else {
-				// If not 'ALERTS_FOR_STATE', it has to be 'ALERTS'.
-				require.Equal(t, smplName, "ALERTS")
+			rule := NewAlertingRule(
+				"HTTPRequestRateLow",
+				expr,
+				time.Minute,
+				0,
+				labels.FromStrings("severity", "{{\"c\"}}ritical"),
+				labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
+			)
+			result := promql.Vector{
+				promql.Sample{
+					Metric: labels.FromStrings(
+						"__name__", "ALERTS_FOR_STATE",
+						"alertname", "HTTPRequestRateLow",
+						"group", "canary",
+						"instance", "0",
+						"job", "app-server",
+						"severity", "critical",
+					),
+					F: 1,
+				},
+				promql.Sample{
+					Metric: labels.FromStrings(
+						"__name__", "ALERTS_FOR_STATE",
+						"alertname", "HTTPRequestRateLow",
+						"group", "canary",
+						"instance", "1",
+						"job", "app-server",
+						"severity", "critical",
+					),
+					F: 1,
+				},
+				promql.Sample{
+					Metric: labels.FromStrings(
+						"__name__", "ALERTS_FOR_STATE",
+						"alertname", "HTTPRequestRateLow",
+						"group", "canary",
+						"instance", "0",
+						"job", "app-server",
+						"severity", "critical",
+					),
+					F: 1,
+				},
+				promql.Sample{
+					Metric: labels.FromStrings(
+						"__name__", "ALERTS_FOR_STATE",
+						"alertname", "HTTPRequestRateLow",
+						"group", "canary",
+						"instance", "1",
+						"job", "app-server",
+						"severity", "critical",
+					),
+					F: 1,
+				},
 			}
-		}
-		for i := range test.result {
-			test.result[i].T = timestamp.FromTime(evalTime)
-			// Updating the expected 'for' state.
-			if test.result[i].F >= 0 {
-				test.result[i].F = forState
-			}
-		}
-		require.Equal(t, len(test.result), len(filteredRes), "%d. Number of samples in expected and actual output don't match (%d vs. %d)", i, len(test.result), len(res))
 
-		sort.Slice(filteredRes, func(i, j int) bool {
-			return labels.Compare(filteredRes[i].Metric, filteredRes[j].Metric) < 0
+			baseTime := time.Unix(0, 0)
+
+			tests := []struct {
+				time            time.Duration
+				result          promql.Vector
+				persistThisTime bool // If true, it means this 'time' is persisted for 'for'.
+			}{
+				{
+					time:            0,
+					result:          append(promql.Vector{}, result[:2]...),
+					persistThisTime: true,
+				},
+				{
+					time:   5 * time.Minute,
+					result: append(promql.Vector{}, result[2:]...),
+				},
+				{
+					time:   10 * time.Minute,
+					result: append(promql.Vector{}, result[2:3]...),
+				},
+				{
+					time:   15 * time.Minute,
+					result: nil,
+				},
+				{
+					time:   20 * time.Minute,
+					result: nil,
+				},
+				{
+					time:            25 * time.Minute,
+					result:          append(promql.Vector{}, result[:1]...),
+					persistThisTime: true,
+				},
+				{
+					time:   30 * time.Minute,
+					result: append(promql.Vector{}, result[2:3]...),
+				},
+			}
+
+			ng := testEngine(t)
+			var forState float64
+			for i, test := range tests {
+				t.Logf("case %d", i)
+				evalTime := baseTime.Add(test.time).Add(queryOffset)
+
+				if test.persistThisTime {
+					forState = float64(evalTime.Unix())
+				}
+				if test.result == nil {
+					forState = float64(value.StaleNaN)
+				}
+
+				res, err := rule.Eval(context.TODO(), queryOffset, evalTime, EngineQueryFunc(ng, storage), nil, 0)
+				require.NoError(t, err)
+
+				var filteredRes promql.Vector // After removing 'ALERTS' samples.
+				for _, smpl := range res {
+					smplName := smpl.Metric.Get("__name__")
+					if smplName == "ALERTS_FOR_STATE" {
+						filteredRes = append(filteredRes, smpl)
+					} else {
+						// If not 'ALERTS_FOR_STATE', it has to be 'ALERTS'.
+						require.Equal(t, "ALERTS", smplName)
+					}
+				}
+				for i := range test.result {
+					test.result[i].T = timestamp.FromTime(evalTime.Add(-queryOffset))
+					// Updating the expected 'for' state.
+					if test.result[i].F >= 0 {
+						test.result[i].F = forState
+					}
+				}
+				require.Equal(t, len(test.result), len(filteredRes), "%d. Number of samples in expected and actual output don't match (%d vs. %d)", i, len(test.result), len(res))
+
+				sort.Slice(filteredRes, func(i, j int) bool {
+					return labels.Compare(filteredRes[i].Metric, filteredRes[j].Metric) < 0
+				})
+				prom_testutil.RequireEqual(t, test.result, filteredRes)
+
+				for _, aa := range rule.ActiveAlerts() {
+					require.Zero(t, aa.Labels.Get(model.MetricNameLabel), "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
+				}
+			}
 		})
-		require.Equal(t, test.result, filteredRes)
-
-		for _, aa := range rule.ActiveAlerts() {
-			require.Zero(t, aa.Labels.Get(model.MetricNameLabel), "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
-		}
-
 	}
 }
 
@@ -345,242 +356,252 @@ func sortAlerts(items []*Alert) {
 }
 
 func TestForStateRestore(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	for _, queryOffset := range []time.Duration{0, time.Minute} {
+		t.Run(fmt.Sprintf("queryOffset %s", queryOffset.String()), func(t *testing.T) {
+			storage := promqltest.LoadedStorage(t, `
 		load 5m
 		http_requests{job="app-server", instance="0", group="canary", severity="overwrite-me"}	75  85 50 0 0 25 0 0 40 0 120
 		http_requests{job="app-server", instance="1", group="canary", severity="overwrite-me"}	125 90 60 0 0 25 0 0 40 0 130
 	`)
-	t.Cleanup(func() { storage.Close() })
+			t.Cleanup(func() { storage.Close() })
 
-	expr, err := parser.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)
-	require.NoError(t, err)
+			expr, err := parser.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)
+			require.NoError(t, err)
 
-	opts := &ManagerOptions{
-		QueryFunc:       EngineQueryFunc(testEngine, storage),
-		Appendable:      storage,
-		Queryable:       storage,
-		Context:         context.Background(),
-		Logger:          log.NewNopLogger(),
-		NotifyFunc:      func(ctx context.Context, expr string, alerts ...*Alert) {},
-		OutageTolerance: 30 * time.Minute,
-		ForGracePeriod:  10 * time.Minute,
-	}
+			ng := testEngine(t)
+			opts := &ManagerOptions{
+				QueryFunc:       EngineQueryFunc(ng, storage),
+				Appendable:      storage,
+				Queryable:       storage,
+				Context:         context.Background(),
+				Logger:          promslog.NewNopLogger(),
+				NotifyFunc:      func(ctx context.Context, expr string, alerts ...*Alert) {},
+				OutageTolerance: 30 * time.Minute,
+				ForGracePeriod:  10 * time.Minute,
+			}
 
-	alertForDuration := 25 * time.Minute
-	// Initial run before prometheus goes down.
-	rule := NewAlertingRule(
-		"HTTPRequestRateLow",
-		expr,
-		alertForDuration,
-		0,
-		labels.FromStrings("severity", "critical"),
-		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
-	)
+			alertForDuration := 25 * time.Minute
+			// Initial run before prometheus goes down.
+			rule := NewAlertingRule(
+				"HTTPRequestRateLow",
+				expr,
+				alertForDuration,
+				0,
+				labels.FromStrings("severity", "critical"),
+				labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
+			)
 
-	group := NewGroup(GroupOptions{
-		Name:          "default",
-		Interval:      time.Second,
-		Rules:         []Rule{rule},
-		ShouldRestore: true,
-		Opts:          opts,
-	})
-	groups := make(map[string]*Group)
-	groups["default;"] = group
+			group := NewGroup(GroupOptions{
+				Name:          "default",
+				Interval:      time.Second,
+				Rules:         []Rule{rule},
+				ShouldRestore: true,
+				Opts:          opts,
+			})
+			groups := make(map[string]*Group)
+			groups["default;"] = group
 
-	initialRuns := []time.Duration{0, 5 * time.Minute}
+			initialRuns := []time.Duration{0, 5 * time.Minute}
 
-	baseTime := time.Unix(0, 0)
-	for _, duration := range initialRuns {
-		evalTime := baseTime.Add(duration)
-		group.Eval(context.TODO(), evalTime)
-	}
+			baseTime := time.Unix(0, 0)
+			for _, duration := range initialRuns {
+				evalTime := baseTime.Add(duration)
+				group.Eval(context.TODO(), evalTime)
+			}
 
-	exp := rule.ActiveAlerts()
-	for _, aa := range exp {
-		require.Zero(t, aa.Labels.Get(model.MetricNameLabel), "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
-	}
-	sort.Slice(exp, func(i, j int) bool {
-		return labels.Compare(exp[i].Labels, exp[j].Labels) < 0
-	})
+			// Prometheus goes down here. We create new rules and groups.
+			type testInput struct {
+				name            string
+				restoreDuration time.Duration
+				expectedAlerts  []*Alert
 
-	// Prometheus goes down here. We create new rules and groups.
-	type testInput struct {
-		restoreDuration time.Duration
-		alerts          []*Alert
+				num          int
+				noRestore    bool
+				gracePeriod  bool
+				downDuration time.Duration
+				before       func()
+			}
 
-		num          int
-		noRestore    bool
-		gracePeriod  bool
-		downDuration time.Duration
-	}
+			tests := []testInput{
+				{
+					name:            "normal restore (alerts were not firing)",
+					restoreDuration: 15 * time.Minute,
+					expectedAlerts:  rule.ActiveAlerts(),
+					downDuration:    10 * time.Minute,
+				},
+				{
+					name:            "outage tolerance",
+					restoreDuration: 40 * time.Minute,
+					noRestore:       true,
+					num:             2,
+				},
+				{
+					name:            "no active alerts",
+					restoreDuration: 50 * time.Minute,
+					expectedAlerts:  []*Alert{},
+				},
+				{
+					name:            "test the grace period",
+					restoreDuration: 25 * time.Minute,
+					expectedAlerts:  []*Alert{},
+					gracePeriod:     true,
+					before: func() {
+						for _, duration := range []time.Duration{10 * time.Minute, 15 * time.Minute, 20 * time.Minute} {
+							evalTime := baseTime.Add(duration)
+							group.Eval(context.TODO(), evalTime)
+						}
+					},
+					num: 2,
+				},
+			}
 
-	tests := []testInput{
-		{
-			// Normal restore (alerts were not firing).
-			restoreDuration: 15 * time.Minute,
-			alerts:          rule.ActiveAlerts(),
-			downDuration:    10 * time.Minute,
-		},
-		{
-			// Testing Outage Tolerance.
-			restoreDuration: 40 * time.Minute,
-			noRestore:       true,
-			num:             2,
-		},
-		{
-			// No active alerts.
-			restoreDuration: 50 * time.Minute,
-			alerts:          []*Alert{},
-		},
-	}
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					if tt.before != nil {
+						tt.before()
+					}
 
-	testFunc := func(tst testInput) {
-		newRule := NewAlertingRule(
-			"HTTPRequestRateLow",
-			expr,
-			alertForDuration,
-			0,
-			labels.FromStrings("severity", "critical"),
-			labels.EmptyLabels(), labels.EmptyLabels(), "", false, nil,
-		)
-		newGroup := NewGroup(GroupOptions{
-			Name:          "default",
-			Interval:      time.Second,
-			Rules:         []Rule{newRule},
-			ShouldRestore: true,
-			Opts:          opts,
+					newRule := NewAlertingRule(
+						"HTTPRequestRateLow",
+						expr,
+						alertForDuration,
+						0,
+						labels.FromStrings("severity", "critical"),
+						labels.EmptyLabels(), labels.EmptyLabels(), "", false, nil,
+					)
+					newGroup := NewGroup(GroupOptions{
+						Name:          "default",
+						Interval:      time.Second,
+						Rules:         []Rule{newRule},
+						ShouldRestore: true,
+						Opts:          opts,
+						QueryOffset:   &queryOffset,
+					})
+
+					newGroups := make(map[string]*Group)
+					newGroups["default;"] = newGroup
+
+					restoreTime := baseTime.Add(tt.restoreDuration).Add(queryOffset)
+					// First eval before restoration.
+					newGroup.Eval(context.TODO(), restoreTime)
+					// Restore happens here.
+					newGroup.RestoreForState(restoreTime)
+
+					got := newRule.ActiveAlerts()
+					for _, aa := range got {
+						require.Zero(t, aa.Labels.Get(model.MetricNameLabel), "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
+					}
+					sort.Slice(got, func(i, j int) bool {
+						return labels.Compare(got[i].Labels, got[j].Labels) < 0
+					})
+
+					// In all cases, we expect the restoration process to have completed.
+					require.Truef(t, newRule.Restored(), "expected the rule restoration process to have completed")
+
+					// Checking if we have restored it correctly.
+					switch {
+					case tt.noRestore:
+						require.Len(t, got, tt.num)
+						for _, e := range got {
+							require.Equal(t, e.ActiveAt, restoreTime)
+						}
+					case tt.gracePeriod:
+
+						require.Len(t, got, tt.num)
+						for _, e := range got {
+							require.Equal(t, opts.ForGracePeriod, e.ActiveAt.Add(alertForDuration).Sub(restoreTime))
+						}
+					default:
+						exp := tt.expectedAlerts
+						require.Equal(t, len(exp), len(got))
+						sortAlerts(exp)
+						sortAlerts(got)
+						for i, e := range exp {
+							require.Equal(t, e.Labels, got[i].Labels)
+
+							// Difference in time should be within 1e6 ns, i.e. 1ms
+							// (due to conversion between ns & ms, float64 & int64).
+							activeAtDiff := queryOffset.Seconds() + float64(e.ActiveAt.Unix()+int64(tt.downDuration/time.Second)-got[i].ActiveAt.Unix())
+							require.Equal(t, 0.0, math.Abs(activeAtDiff), "'for' state restored time is wrong")
+						}
+					}
+				})
+			}
 		})
-
-		newGroups := make(map[string]*Group)
-		newGroups["default;"] = newGroup
-
-		restoreTime := baseTime.Add(tst.restoreDuration)
-		// First eval before restoration.
-		newGroup.Eval(context.TODO(), restoreTime)
-		// Restore happens here.
-		newGroup.RestoreForState(restoreTime)
-
-		got := newRule.ActiveAlerts()
-		for _, aa := range got {
-			require.Zero(t, aa.Labels.Get(model.MetricNameLabel), "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
-		}
-		sort.Slice(got, func(i, j int) bool {
-			return labels.Compare(got[i].Labels, got[j].Labels) < 0
-		})
-
-		// Checking if we have restored it correctly.
-		switch {
-		case tst.noRestore:
-			require.Equal(t, tst.num, len(got))
-			for _, e := range got {
-				require.Equal(t, e.ActiveAt, restoreTime)
-			}
-		case tst.gracePeriod:
-			require.Equal(t, tst.num, len(got))
-			for _, e := range got {
-				require.Equal(t, opts.ForGracePeriod, e.ActiveAt.Add(alertForDuration).Sub(restoreTime))
-			}
-		default:
-			exp := tst.alerts
-			require.Equal(t, len(exp), len(got))
-			sortAlerts(exp)
-			sortAlerts(got)
-			for i, e := range exp {
-				require.Equal(t, e.Labels, got[i].Labels)
-
-				// Difference in time should be within 1e6 ns, i.e. 1ms
-				// (due to conversion between ns & ms, float64 & int64).
-				activeAtDiff := float64(e.ActiveAt.Unix() + int64(tst.downDuration/time.Second) - got[i].ActiveAt.Unix())
-				require.Equal(t, 0.0, math.Abs(activeAtDiff), "'for' state restored time is wrong")
-			}
-		}
 	}
-
-	for _, tst := range tests {
-		testFunc(tst)
-	}
-
-	// Testing the grace period.
-	for _, duration := range []time.Duration{10 * time.Minute, 15 * time.Minute, 20 * time.Minute} {
-		evalTime := baseTime.Add(duration)
-		group.Eval(context.TODO(), evalTime)
-	}
-	testFunc(testInput{
-		restoreDuration: 25 * time.Minute,
-		alerts:          []*Alert{},
-		gracePeriod:     true,
-		num:             2,
-	})
 }
 
 func TestStaleness(t *testing.T) {
-	st := teststorage.New(t)
-	defer st.Close()
-	engineOpts := promql.EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 10,
-		Timeout:    10 * time.Second,
+	for _, queryOffset := range []time.Duration{0, time.Minute} {
+		st := teststorage.New(t)
+		defer st.Close()
+		engineOpts := promql.EngineOpts{
+			Logger:     nil,
+			Reg:        nil,
+			MaxSamples: 10,
+			Timeout:    10 * time.Second,
+		}
+		engine := promqltest.NewTestEngineWithOpts(t, engineOpts)
+		opts := &ManagerOptions{
+			QueryFunc:  EngineQueryFunc(engine, st),
+			Appendable: st,
+			Queryable:  st,
+			Context:    context.Background(),
+			Logger:     promslog.NewNopLogger(),
+		}
+
+		expr, err := parser.ParseExpr("a + 1")
+		require.NoError(t, err)
+		rule := NewRecordingRule("a_plus_one", expr, labels.Labels{})
+		group := NewGroup(GroupOptions{
+			Name:          "default",
+			Interval:      time.Second,
+			Rules:         []Rule{rule},
+			ShouldRestore: true,
+			Opts:          opts,
+			QueryOffset:   &queryOffset,
+		})
+
+		// A time series that has two samples and then goes stale.
+		app := st.Appender(context.Background())
+		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1)
+		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
+		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 2000, math.Float64frombits(value.StaleNaN))
+
+		err = app.Commit()
+		require.NoError(t, err)
+
+		ctx := context.Background()
+
+		// Execute 3 times, 1 second apart.
+		group.Eval(ctx, time.Unix(0, 0).Add(queryOffset))
+		group.Eval(ctx, time.Unix(1, 0).Add(queryOffset))
+		group.Eval(ctx, time.Unix(2, 0).Add(queryOffset))
+
+		querier, err := st.Querier(0, 2000)
+		require.NoError(t, err)
+		defer querier.Close()
+
+		matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a_plus_one")
+		require.NoError(t, err)
+
+		set := querier.Select(ctx, false, nil, matcher)
+		samples, err := readSeriesSet(set)
+		require.NoError(t, err)
+
+		metric := labels.FromStrings(model.MetricNameLabel, "a_plus_one").String()
+		metricSample, ok := samples[metric]
+
+		require.True(t, ok, "Series %s not returned.", metric)
+		require.True(t, value.IsStaleNaN(metricSample[2].F), "Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(metricSample[2].F))
+		metricSample[2].F = 42 // require.Equal cannot handle NaN.
+
+		want := map[string][]promql.FPoint{
+			metric: {{T: 0, F: 2}, {T: 1000, F: 3}, {T: 2000, F: 42}},
+		}
+
+		require.Equal(t, want, samples)
 	}
-	engine := promql.NewEngine(engineOpts)
-	opts := &ManagerOptions{
-		QueryFunc:  EngineQueryFunc(engine, st),
-		Appendable: st,
-		Queryable:  st,
-		Context:    context.Background(),
-		Logger:     log.NewNopLogger(),
-	}
-
-	expr, err := parser.ParseExpr("a + 1")
-	require.NoError(t, err)
-	rule := NewRecordingRule("a_plus_one", expr, labels.Labels{})
-	group := NewGroup(GroupOptions{
-		Name:          "default",
-		Interval:      time.Second,
-		Rules:         []Rule{rule},
-		ShouldRestore: true,
-		Opts:          opts,
-	})
-
-	// A time series that has two samples and then goes stale.
-	app := st.Appender(context.Background())
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1)
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 2000, math.Float64frombits(value.StaleNaN))
-
-	err = app.Commit()
-	require.NoError(t, err)
-
-	ctx := context.Background()
-
-	// Execute 3 times, 1 second apart.
-	group.Eval(ctx, time.Unix(0, 0))
-	group.Eval(ctx, time.Unix(1, 0))
-	group.Eval(ctx, time.Unix(2, 0))
-
-	querier, err := st.Querier(context.Background(), 0, 2000)
-	require.NoError(t, err)
-	defer querier.Close()
-
-	matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a_plus_one")
-	require.NoError(t, err)
-
-	set := querier.Select(false, nil, matcher)
-	samples, err := readSeriesSet(set)
-	require.NoError(t, err)
-
-	metric := labels.FromStrings(model.MetricNameLabel, "a_plus_one").String()
-	metricSample, ok := samples[metric]
-
-	require.True(t, ok, "Series %s not returned.", metric)
-	require.True(t, value.IsStaleNaN(metricSample[2].F), "Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(metricSample[2].F))
-	metricSample[2].F = 42 // require.Equal cannot handle NaN.
-
-	want := map[string][]promql.FPoint{
-		metric: {{T: 0, F: 2}, {T: 1000, F: 3}, {T: 2000, F: 42}},
-	}
-
-	require.Equal(t, want, samples)
 }
 
 // Convert a SeriesSet into a form usable with require.Equal.
@@ -602,6 +623,46 @@ func readSeriesSet(ss storage.SeriesSet) (map[string][]promql.FPoint, error) {
 		result[name] = points
 	}
 	return result, ss.Err()
+}
+
+func TestGroup_QueryOffset(t *testing.T) {
+	config := `
+groups:
+  - name: group1
+    query_offset: 2m
+  - name: group2
+    query_offset: 0s
+  - name: group3
+`
+
+	dir := t.TempDir()
+	fname := path.Join(dir, "rules.yaml")
+	err := os.WriteFile(fname, []byte(config), fs.ModePerm)
+	require.NoError(t, err)
+
+	m := NewManager(&ManagerOptions{
+		Logger: promslog.NewNopLogger(),
+		DefaultRuleQueryOffset: func() time.Duration {
+			return time.Minute
+		},
+	})
+	m.start()
+	err = m.Update(time.Second, []string{fname}, labels.EmptyLabels(), "", nil)
+	require.NoError(t, err)
+
+	rgs := m.RuleGroups()
+	sort.Slice(rgs, func(i, j int) bool {
+		return rgs[i].Name() < rgs[j].Name()
+	})
+
+	// From config.
+	require.Equal(t, 2*time.Minute, rgs[0].QueryOffset())
+	// Setting 0 in config is detected.
+	require.Equal(t, time.Duration(0), rgs[1].QueryOffset())
+	// Default when nothing is set.
+	require.Equal(t, time.Minute, rgs[2].QueryOffset())
+
+	m.Stop()
 }
 
 func TestCopyState(t *testing.T) {
@@ -674,21 +735,23 @@ func TestDeletedRuleMarkedStale(t *testing.T) {
 		rules:                []Rule{},
 		seriesInPreviousEval: []map[string]labels.Labels{},
 		opts: &ManagerOptions{
-			Appendable: st,
+			Appendable:                st,
+			RuleConcurrencyController: sequentialRuleEvalController{},
 		},
+		metrics: NewGroupMetrics(nil),
 	}
 	newGroup.CopyState(oldGroup)
 
 	newGroup.Eval(context.Background(), time.Unix(0, 0))
 
-	querier, err := st.Querier(context.Background(), 0, 2000)
+	querier, err := st.Querier(0, 2000)
 	require.NoError(t, err)
 	defer querier.Close()
 
 	matcher, err := labels.NewMatcher(labels.MatchEqual, "l1", "v1")
 	require.NoError(t, err)
 
-	set := querier.Select(false, nil, matcher)
+	set := querier.Select(context.Background(), false, nil, matcher)
 	samples, err := readSeriesSet(set)
 	require.NoError(t, err)
 
@@ -712,20 +775,20 @@ func TestUpdate(t *testing.T) {
 		MaxSamples: 10,
 		Timeout:    10 * time.Second,
 	}
-	engine := promql.NewEngine(opts)
+	engine := promqltest.NewTestEngineWithOpts(t, opts)
 	ruleManager := NewManager(&ManagerOptions{
 		Appendable: st,
 		Queryable:  st,
 		QueryFunc:  EngineQueryFunc(engine, st),
 		Context:    context.Background(),
-		Logger:     log.NewNopLogger(),
+		Logger:     promslog.NewNopLogger(),
 	})
 	ruleManager.start()
 	defer ruleManager.Stop()
 
 	err := ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil)
 	require.NoError(t, err)
-	require.Greater(t, len(ruleManager.groups), 0, "expected non-empty rule groups")
+	require.NotEmpty(t, ruleManager.groups, "expected non-empty rule groups")
 	ogs := map[string]*Group{}
 	for h, g := range ruleManager.groups {
 		g.seriesInPreviousEval = []map[string]labels.Labels{
@@ -746,7 +809,7 @@ func TestUpdate(t *testing.T) {
 
 	// Groups will be recreated if updated.
 	rgs, errs := rulefmt.ParseFile("fixtures/rules.yaml")
-	require.Equal(t, 0, len(errs), "file parsing failures")
+	require.Empty(t, errs, "file parsing failures")
 
 	tmpFile, err := os.CreateTemp("", "rules.test.*.yaml")
 	require.NoError(t, err)
@@ -792,10 +855,11 @@ type ruleGroupsTest struct {
 
 // ruleGroupTest forms a testing struct for running tests over rules.
 type ruleGroupTest struct {
-	Name     string         `yaml:"name"`
-	Interval model.Duration `yaml:"interval,omitempty"`
-	Limit    int            `yaml:"limit,omitempty"`
-	Rules    []rulefmt.Rule `yaml:"rules"`
+	Name     string            `yaml:"name"`
+	Interval model.Duration    `yaml:"interval,omitempty"`
+	Limit    int               `yaml:"limit,omitempty"`
+	Rules    []rulefmt.Rule    `yaml:"rules"`
+	Labels   map[string]string `yaml:"labels,omitempty"`
 }
 
 func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
@@ -818,6 +882,7 @@ func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
 			Interval: g.Interval,
 			Limit:    g.Limit,
 			Rules:    rtmp,
+			Labels:   g.Labels,
 		})
 	}
 	return ruleGroupsTest{
@@ -850,7 +915,7 @@ func TestNotify(t *testing.T) {
 		MaxSamples: 10,
 		Timeout:    10 * time.Second,
 	}
-	engine := promql.NewEngine(engineOpts)
+	engine := promqltest.NewTestEngineWithOpts(t, engineOpts)
 	var lastNotified []*Alert
 	notifyFunc := func(ctx context.Context, expr string, alerts ...*Alert) {
 		lastNotified = alerts
@@ -860,14 +925,14 @@ func TestNotify(t *testing.T) {
 		Appendable:  storage,
 		Queryable:   storage,
 		Context:     context.Background(),
-		Logger:      log.NewNopLogger(),
+		Logger:      promslog.NewNopLogger(),
 		NotifyFunc:  notifyFunc,
 		ResendDelay: 2 * time.Second,
 	}
 
 	expr, err := parser.ParseExpr("a > 1")
 	require.NoError(t, err)
-	rule := NewAlertingRule("aTooHigh", expr, 0, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, log.NewNopLogger())
+	rule := NewAlertingRule("aTooHigh", expr, 0, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, promslog.NewNopLogger())
 	group := NewGroup(GroupOptions{
 		Name:          "alert",
 		Interval:      time.Second,
@@ -889,20 +954,20 @@ func TestNotify(t *testing.T) {
 
 	// Alert sent right away
 	group.Eval(ctx, time.Unix(1, 0))
-	require.Equal(t, 1, len(lastNotified))
+	require.Len(t, lastNotified, 1)
 	require.NotZero(t, lastNotified[0].ValidUntil, "ValidUntil should not be zero")
 
 	// Alert is not sent 1s later
 	group.Eval(ctx, time.Unix(2, 0))
-	require.Equal(t, 0, len(lastNotified))
+	require.Empty(t, lastNotified)
 
 	// Alert is resent at t=5s
 	group.Eval(ctx, time.Unix(5, 0))
-	require.Equal(t, 1, len(lastNotified))
+	require.Len(t, lastNotified, 1)
 
 	// Resolution alert sent right away
 	group.Eval(ctx, time.Unix(6, 0))
-	require.Equal(t, 1, len(lastNotified))
+	require.Len(t, lastNotified, 1)
 }
 
 func TestMetricsUpdate(t *testing.T) {
@@ -925,13 +990,13 @@ func TestMetricsUpdate(t *testing.T) {
 		MaxSamples: 10,
 		Timeout:    10 * time.Second,
 	}
-	engine := promql.NewEngine(opts)
+	engine := promqltest.NewTestEngineWithOpts(t, opts)
 	ruleManager := NewManager(&ManagerOptions{
 		Appendable: storage,
 		Queryable:  storage,
 		QueryFunc:  EngineQueryFunc(engine, storage),
 		Context:    context.Background(),
-		Logger:     log.NewNopLogger(),
+		Logger:     promslog.NewNopLogger(),
 		Registerer: registry,
 	})
 	ruleManager.start()
@@ -999,13 +1064,13 @@ func TestGroupStalenessOnRemoval(t *testing.T) {
 		MaxSamples: 10,
 		Timeout:    10 * time.Second,
 	}
-	engine := promql.NewEngine(opts)
+	engine := promqltest.NewTestEngineWithOpts(t, opts)
 	ruleManager := NewManager(&ManagerOptions{
 		Appendable: storage,
 		Queryable:  storage,
 		QueryFunc:  EngineQueryFunc(engine, storage),
 		Context:    context.Background(),
-		Logger:     log.NewNopLogger(),
+		Logger:     promslog.NewNopLogger(),
 	})
 	var stopped bool
 	ruleManager.start()
@@ -1076,13 +1141,13 @@ func TestMetricsStalenessOnManagerShutdown(t *testing.T) {
 		MaxSamples: 10,
 		Timeout:    10 * time.Second,
 	}
-	engine := promql.NewEngine(opts)
+	engine := promqltest.NewTestEngineWithOpts(t, opts)
 	ruleManager := NewManager(&ManagerOptions{
 		Appendable: storage,
 		Queryable:  storage,
 		QueryFunc:  EngineQueryFunc(engine, storage),
 		Context:    context.Background(),
-		Logger:     log.NewNopLogger(),
+		Logger:     promslog.NewNopLogger(),
 	})
 	var stopped bool
 	ruleManager.start()
@@ -1100,21 +1165,21 @@ func TestMetricsStalenessOnManagerShutdown(t *testing.T) {
 	require.NoError(t, err)
 	ruleManager.Stop()
 	stopped = true
-	require.True(t, time.Since(start) < 1*time.Second, "rule manager does not stop early")
+	require.Less(t, time.Since(start), 1*time.Second, "rule manager does not stop early")
 	time.Sleep(5 * time.Second)
 	require.Equal(t, 0, countStaleNaN(t, storage), "invalid count of staleness markers after stopping the engine")
 }
 
 func countStaleNaN(t *testing.T, st storage.Storage) int {
 	var c int
-	querier, err := st.Querier(context.Background(), 0, time.Now().Unix()*1000)
+	querier, err := st.Querier(0, time.Now().Unix()*1000)
 	require.NoError(t, err)
 	defer querier.Close()
 
 	matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_2")
 	require.NoError(t, err)
 
-	set := querier.Select(false, nil, matcher)
+	set := querier.Select(context.Background(), false, nil, matcher)
 	samples, err := readSeriesSet(set)
 	require.NoError(t, err)
 
@@ -1178,13 +1243,13 @@ func TestRuleHealthUpdates(t *testing.T) {
 		MaxSamples: 10,
 		Timeout:    10 * time.Second,
 	}
-	engine := promql.NewEngine(engineOpts)
+	engine := promqltest.NewTestEngineWithOpts(t, engineOpts)
 	opts := &ManagerOptions{
 		QueryFunc:  EngineQueryFunc(engine, st),
 		Appendable: st,
 		Queryable:  st,
 		Context:    context.Background(),
-		Logger:     log.NewNopLogger(),
+		Logger:     promslog.NewNopLogger(),
 	}
 
 	expr, err := parser.ParseExpr("a + 1")
@@ -1227,7 +1292,7 @@ func TestRuleHealthUpdates(t *testing.T) {
 }
 
 func TestRuleGroupEvalIterationFunc(t *testing.T) {
-	storage := promql.LoadedStorage(t, `
+	storage := promqltest.LoadedStorage(t, `
 		load 5m
 		http_requests{instance="0"}	75  85 50 0 0 25 0 0 40 0 120
 	`)
@@ -1275,13 +1340,14 @@ func TestRuleGroupEvalIterationFunc(t *testing.T) {
 		},
 	}
 
+	ng := testEngine(t)
 	testFunc := func(tst testInput) {
 		opts := &ManagerOptions{
-			QueryFunc:       EngineQueryFunc(testEngine, storage),
+			QueryFunc:       EngineQueryFunc(ng, storage),
 			Appendable:      storage,
 			Queryable:       storage,
 			Context:         context.Background(),
-			Logger:          log.NewNopLogger(),
+			Logger:          promslog.NewNopLogger(),
 			NotifyFunc:      func(ctx context.Context, expr string, alerts ...*Alert) {},
 			OutageTolerance: 30 * time.Minute,
 			ForGracePeriod:  10 * time.Minute,
@@ -1310,6 +1376,8 @@ func TestRuleGroupEvalIterationFunc(t *testing.T) {
 			evaluationTimestamp: atomic.NewTime(time.Time{}),
 			evaluationDuration:  atomic.NewDuration(0),
 			lastError:           atomic.NewError(nil),
+			noDependentRules:    atomic.NewBool(false),
+			noDependencyRules:   atomic.NewBool(false),
 		}
 
 		group := NewGroup(GroupOptions{
@@ -1353,18 +1421,19 @@ func TestNativeHistogramsInRecordingRules(t *testing.T) {
 	ts := time.Now()
 	app := db.Appender(context.Background())
 	for i, h := range hists {
-		l := labels.FromStrings("__name__", "histogram_metric", "idx", fmt.Sprintf("%d", i))
+		l := labels.FromStrings("__name__", "histogram_metric", "idx", strconv.Itoa(i))
 		_, err := app.AppendHistogram(0, l, ts.UnixMilli(), h.Copy(), nil)
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
 
+	ng := testEngine(t)
 	opts := &ManagerOptions{
-		QueryFunc:  EngineQueryFunc(testEngine, storage),
+		QueryFunc:  EngineQueryFunc(ng, storage),
 		Appendable: storage,
 		Queryable:  storage,
 		Context:    context.Background(),
-		Logger:     log.NewNopLogger(),
+		Logger:     promslog.NewNopLogger(),
 	}
 
 	expr, err := parser.ParseExpr("sum(histogram_metric)")
@@ -1381,24 +1450,728 @@ func TestNativeHistogramsInRecordingRules(t *testing.T) {
 
 	group.Eval(context.Background(), ts.Add(10*time.Second))
 
-	q, err := db.Querier(context.Background(), ts.UnixMilli(), ts.Add(20*time.Second).UnixMilli())
+	q, err := db.Querier(ts.UnixMilli(), ts.Add(20*time.Second).UnixMilli())
 	require.NoError(t, err)
-	ss := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "sum:histogram_metric"))
+	ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "sum:histogram_metric"))
 	require.True(t, ss.Next())
 	s := ss.At()
 	require.False(t, ss.Next())
 
 	require.Equal(t, labels.FromStrings("__name__", "sum:histogram_metric"), s.Labels())
 
-	expHist := hists[0].ToFloat()
+	expHist := hists[0].ToFloat(nil)
 	for _, h := range hists[1:] {
-		expHist = expHist.Add(h.ToFloat())
+		expHist, err = expHist.Add(h.ToFloat(nil))
+		require.NoError(t, err)
 	}
 
 	it := s.Iterator(nil)
 	require.Equal(t, chunkenc.ValFloatHistogram, it.Next())
-	tsp, fh := it.AtFloatHistogram()
+	tsp, fh := it.AtFloatHistogram(nil)
 	require.Equal(t, ts.Add(10*time.Second).UnixMilli(), tsp)
 	require.Equal(t, expHist, fh)
 	require.Equal(t, chunkenc.ValNone, it.Next())
+}
+
+func TestManager_LoadGroups_ShouldCheckWhetherEachRuleHasDependentsAndDependencies(t *testing.T) {
+	storage := teststorage.New(t)
+	t.Cleanup(func() {
+		require.NoError(t, storage.Close())
+	})
+
+	ruleManager := NewManager(&ManagerOptions{
+		Context:    context.Background(),
+		Logger:     promslog.NewNopLogger(),
+		Appendable: storage,
+		QueryFunc:  func(ctx context.Context, q string, ts time.Time) (promql.Vector, error) { return nil, nil },
+	})
+
+	t.Run("load a mix of dependent and independent rules", func(t *testing.T) {
+		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, []string{"fixtures/rules_multiple.yaml"}...)
+		require.Empty(t, errs)
+		require.Len(t, groups, 1)
+
+		expected := map[string]struct {
+			noDependentRules  bool
+			noDependencyRules bool
+		}{
+			"job:http_requests:rate1m": {
+				noDependentRules:  true,
+				noDependencyRules: true,
+			},
+			"job:http_requests:rate5m": {
+				noDependentRules:  true,
+				noDependencyRules: true,
+			},
+			"job:http_requests:rate15m": {
+				noDependentRules:  true,
+				noDependencyRules: false,
+			},
+			"TooManyRequests": {
+				noDependentRules:  false,
+				noDependencyRules: true,
+			},
+		}
+
+		for _, r := range ruleManager.Rules() {
+			exp, ok := expected[r.Name()]
+			require.Truef(t, ok, "rule: %s", r.String())
+			require.Equalf(t, exp.noDependentRules, r.NoDependentRules(), "rule: %s", r.String())
+			require.Equalf(t, exp.noDependencyRules, r.NoDependencyRules(), "rule: %s", r.String())
+		}
+	})
+
+	t.Run("load only independent rules", func(t *testing.T) {
+		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, []string{"fixtures/rules_multiple_independent.yaml"}...)
+		require.Empty(t, errs)
+		require.Len(t, groups, 1)
+
+		for _, r := range ruleManager.Rules() {
+			require.Truef(t, r.NoDependentRules(), "rule: %s", r.String())
+			require.Truef(t, r.NoDependencyRules(), "rule: %s", r.String())
+		}
+	})
+}
+
+func TestDependencyMap(t *testing.T) {
+	ctx := context.Background()
+	opts := &ManagerOptions{
+		Context: ctx,
+		Logger:  promslog.NewNopLogger(),
+	}
+
+	expr, err := parser.ParseExpr("sum by (user) (rate(requests[1m]))")
+	require.NoError(t, err)
+	rule := NewRecordingRule("user:requests:rate1m", expr, labels.Labels{})
+
+	expr, err = parser.ParseExpr("user:requests:rate1m <= 0")
+	require.NoError(t, err)
+	rule2 := NewAlertingRule("ZeroRequests", expr, 0, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, promslog.NewNopLogger())
+
+	expr, err = parser.ParseExpr("sum by (user) (rate(requests[5m]))")
+	require.NoError(t, err)
+	rule3 := NewRecordingRule("user:requests:rate5m", expr, labels.Labels{})
+
+	expr, err = parser.ParseExpr("increase(user:requests:rate1m[1h])")
+	require.NoError(t, err)
+	rule4 := NewRecordingRule("user:requests:increase1h", expr, labels.Labels{})
+
+	group := NewGroup(GroupOptions{
+		Name:     "rule_group",
+		Interval: time.Second,
+		Rules:    []Rule{rule, rule2, rule3, rule4},
+		Opts:     opts,
+	})
+
+	depMap := buildDependencyMap(group.rules)
+
+	require.Zero(t, depMap.dependencies(rule))
+	require.Equal(t, 2, depMap.dependents(rule))
+	require.False(t, depMap.isIndependent(rule))
+
+	require.Zero(t, depMap.dependents(rule2))
+	require.Equal(t, 1, depMap.dependencies(rule2))
+	require.False(t, depMap.isIndependent(rule2))
+
+	require.Zero(t, depMap.dependents(rule3))
+	require.Zero(t, depMap.dependencies(rule3))
+	require.True(t, depMap.isIndependent(rule3))
+
+	require.Zero(t, depMap.dependents(rule4))
+	require.Equal(t, 1, depMap.dependencies(rule4))
+	require.False(t, depMap.isIndependent(rule4))
+}
+
+func TestNoDependency(t *testing.T) {
+	ctx := context.Background()
+	opts := &ManagerOptions{
+		Context: ctx,
+		Logger:  promslog.NewNopLogger(),
+	}
+
+	expr, err := parser.ParseExpr("sum by (user) (rate(requests[1m]))")
+	require.NoError(t, err)
+	rule := NewRecordingRule("user:requests:rate1m", expr, labels.Labels{})
+
+	group := NewGroup(GroupOptions{
+		Name:     "rule_group",
+		Interval: time.Second,
+		Rules:    []Rule{rule},
+		Opts:     opts,
+	})
+
+	depMap := buildDependencyMap(group.rules)
+	// A group with only one rule cannot have dependencies.
+	require.Empty(t, depMap)
+}
+
+func TestDependenciesEdgeCases(t *testing.T) {
+	ctx := context.Background()
+	opts := &ManagerOptions{
+		Context: ctx,
+		Logger:  promslog.NewNopLogger(),
+	}
+
+	t.Run("empty group", func(t *testing.T) {
+		group := NewGroup(GroupOptions{
+			Name:     "rule_group",
+			Interval: time.Second,
+			Rules:    []Rule{}, // empty group
+			Opts:     opts,
+		})
+
+		expr, err := parser.ParseExpr("sum by (user) (rate(requests[1m]))")
+		require.NoError(t, err)
+		rule := NewRecordingRule("user:requests:rate1m", expr, labels.Labels{})
+
+		depMap := buildDependencyMap(group.rules)
+		// A group with no rules has no dependency map, but doesn't panic if the map is queried.
+		require.Empty(t, depMap)
+		require.True(t, depMap.isIndependent(rule))
+	})
+
+	t.Run("rules which reference no series", func(t *testing.T) {
+		expr, err := parser.ParseExpr("one")
+		require.NoError(t, err)
+		rule1 := NewRecordingRule("1", expr, labels.Labels{})
+
+		expr, err = parser.ParseExpr("two")
+		require.NoError(t, err)
+		rule2 := NewRecordingRule("2", expr, labels.Labels{})
+
+		group := NewGroup(GroupOptions{
+			Name:     "rule_group",
+			Interval: time.Second,
+			Rules:    []Rule{rule1, rule2},
+			Opts:     opts,
+		})
+
+		depMap := buildDependencyMap(group.rules)
+		// A group with rules which reference no series will still produce a dependency map
+		require.True(t, depMap.isIndependent(rule1))
+		require.True(t, depMap.isIndependent(rule2))
+	})
+
+	t.Run("rule with regexp matcher on metric name", func(t *testing.T) {
+		expr, err := parser.ParseExpr("sum(requests)")
+		require.NoError(t, err)
+		rule1 := NewRecordingRule("first", expr, labels.Labels{})
+
+		expr, err = parser.ParseExpr(`sum({__name__=~".+"})`)
+		require.NoError(t, err)
+		rule2 := NewRecordingRule("second", expr, labels.Labels{})
+
+		group := NewGroup(GroupOptions{
+			Name:     "rule_group",
+			Interval: time.Second,
+			Rules:    []Rule{rule1, rule2},
+			Opts:     opts,
+		})
+
+		depMap := buildDependencyMap(group.rules)
+		// A rule with regexp matcher on metric name causes the whole group to be indeterminate.
+		require.False(t, depMap.isIndependent(rule1))
+		require.False(t, depMap.isIndependent(rule2))
+	})
+
+	t.Run("rule with not equal matcher on metric name", func(t *testing.T) {
+		expr, err := parser.ParseExpr("sum(requests)")
+		require.NoError(t, err)
+		rule1 := NewRecordingRule("first", expr, labels.Labels{})
+
+		expr, err = parser.ParseExpr(`sum({__name__!="requests", service="app"})`)
+		require.NoError(t, err)
+		rule2 := NewRecordingRule("second", expr, labels.Labels{})
+
+		group := NewGroup(GroupOptions{
+			Name:     "rule_group",
+			Interval: time.Second,
+			Rules:    []Rule{rule1, rule2},
+			Opts:     opts,
+		})
+
+		depMap := buildDependencyMap(group.rules)
+		// A rule with not equal matcher on metric name causes the whole group to be indeterminate.
+		require.False(t, depMap.isIndependent(rule1))
+		require.False(t, depMap.isIndependent(rule2))
+	})
+
+	t.Run("rule with not regexp matcher on metric name", func(t *testing.T) {
+		expr, err := parser.ParseExpr("sum(requests)")
+		require.NoError(t, err)
+		rule1 := NewRecordingRule("first", expr, labels.Labels{})
+
+		expr, err = parser.ParseExpr(`sum({__name__!~"requests.+", service="app"})`)
+		require.NoError(t, err)
+		rule2 := NewRecordingRule("second", expr, labels.Labels{})
+
+		group := NewGroup(GroupOptions{
+			Name:     "rule_group",
+			Interval: time.Second,
+			Rules:    []Rule{rule1, rule2},
+			Opts:     opts,
+		})
+
+		depMap := buildDependencyMap(group.rules)
+		// A rule with not regexp matcher on metric name causes the whole group to be indeterminate.
+		require.False(t, depMap.isIndependent(rule1))
+		require.False(t, depMap.isIndependent(rule2))
+	})
+
+	t.Run("rule querying ALERTS metric", func(t *testing.T) {
+		expr, err := parser.ParseExpr("sum(requests)")
+		require.NoError(t, err)
+		rule1 := NewRecordingRule("first", expr, labels.Labels{})
+
+		expr, err = parser.ParseExpr(`sum(ALERTS{alertname="test"})`)
+		require.NoError(t, err)
+		rule2 := NewRecordingRule("second", expr, labels.Labels{})
+
+		group := NewGroup(GroupOptions{
+			Name:     "rule_group",
+			Interval: time.Second,
+			Rules:    []Rule{rule1, rule2},
+			Opts:     opts,
+		})
+
+		depMap := buildDependencyMap(group.rules)
+		// A rule querying ALERTS metric causes the whole group to be indeterminate.
+		require.False(t, depMap.isIndependent(rule1))
+		require.False(t, depMap.isIndependent(rule2))
+	})
+
+	t.Run("rule querying ALERTS_FOR_STATE metric", func(t *testing.T) {
+		expr, err := parser.ParseExpr("sum(requests)")
+		require.NoError(t, err)
+		rule1 := NewRecordingRule("first", expr, labels.Labels{})
+
+		expr, err = parser.ParseExpr(`sum(ALERTS_FOR_STATE{alertname="test"})`)
+		require.NoError(t, err)
+		rule2 := NewRecordingRule("second", expr, labels.Labels{})
+
+		group := NewGroup(GroupOptions{
+			Name:     "rule_group",
+			Interval: time.Second,
+			Rules:    []Rule{rule1, rule2},
+			Opts:     opts,
+		})
+
+		depMap := buildDependencyMap(group.rules)
+		// A rule querying ALERTS_FOR_STATE metric causes the whole group to be indeterminate.
+		require.False(t, depMap.isIndependent(rule1))
+		require.False(t, depMap.isIndependent(rule2))
+	})
+}
+
+func TestNoMetricSelector(t *testing.T) {
+	ctx := context.Background()
+	opts := &ManagerOptions{
+		Context: ctx,
+		Logger:  promslog.NewNopLogger(),
+	}
+
+	expr, err := parser.ParseExpr("sum by (user) (rate(requests[1m]))")
+	require.NoError(t, err)
+	rule := NewRecordingRule("user:requests:rate1m", expr, labels.Labels{})
+
+	expr, err = parser.ParseExpr(`count({user="bob"})`)
+	require.NoError(t, err)
+	rule2 := NewRecordingRule("user:requests:rate1m", expr, labels.Labels{})
+
+	group := NewGroup(GroupOptions{
+		Name:     "rule_group",
+		Interval: time.Second,
+		Rules:    []Rule{rule, rule2},
+		Opts:     opts,
+	})
+
+	depMap := buildDependencyMap(group.rules)
+	// A rule with no metric selector cannot be reliably determined to have no dependencies on other rules, and therefore
+	// all rules are not considered independent.
+	require.False(t, depMap.isIndependent(rule))
+	require.False(t, depMap.isIndependent(rule2))
+}
+
+func TestDependentRulesWithNonMetricExpression(t *testing.T) {
+	ctx := context.Background()
+	opts := &ManagerOptions{
+		Context: ctx,
+		Logger:  promslog.NewNopLogger(),
+	}
+
+	expr, err := parser.ParseExpr("sum by (user) (rate(requests[1m]))")
+	require.NoError(t, err)
+	rule := NewRecordingRule("user:requests:rate1m", expr, labels.Labels{})
+
+	expr, err = parser.ParseExpr("user:requests:rate1m <= 0")
+	require.NoError(t, err)
+	rule2 := NewAlertingRule("ZeroRequests", expr, 0, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, promslog.NewNopLogger())
+
+	expr, err = parser.ParseExpr("3")
+	require.NoError(t, err)
+	rule3 := NewRecordingRule("three", expr, labels.Labels{})
+
+	group := NewGroup(GroupOptions{
+		Name:     "rule_group",
+		Interval: time.Second,
+		Rules:    []Rule{rule, rule2, rule3},
+		Opts:     opts,
+	})
+
+	depMap := buildDependencyMap(group.rules)
+	require.False(t, depMap.isIndependent(rule))
+	require.False(t, depMap.isIndependent(rule2))
+	require.True(t, depMap.isIndependent(rule3))
+}
+
+func TestRulesDependentOnMetaMetrics(t *testing.T) {
+	ctx := context.Background()
+	opts := &ManagerOptions{
+		Context: ctx,
+		Logger:  promslog.NewNopLogger(),
+	}
+
+	// This rule is not dependent on any other rules in its group but it does depend on `ALERTS`, which is produced by
+	// the rule engine, and is therefore not independent.
+	expr, err := parser.ParseExpr("count(ALERTS)")
+	require.NoError(t, err)
+	rule := NewRecordingRule("alert_count", expr, labels.Labels{})
+
+	// Create another rule so a dependency map is built (no map is built if a group contains one or fewer rules).
+	expr, err = parser.ParseExpr("1")
+	require.NoError(t, err)
+	rule2 := NewRecordingRule("one", expr, labels.Labels{})
+
+	group := NewGroup(GroupOptions{
+		Name:     "rule_group",
+		Interval: time.Second,
+		Rules:    []Rule{rule, rule2},
+		Opts:     opts,
+	})
+
+	depMap := buildDependencyMap(group.rules)
+	require.False(t, depMap.isIndependent(rule))
+}
+
+func TestDependencyMapUpdatesOnGroupUpdate(t *testing.T) {
+	files := []string{"fixtures/rules.yaml"}
+	ruleManager := NewManager(&ManagerOptions{
+		Context: context.Background(),
+		Logger:  promslog.NewNopLogger(),
+	})
+
+	ruleManager.start()
+	defer ruleManager.Stop()
+
+	err := ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, ruleManager.groups, "expected non-empty rule groups")
+
+	orig := make(map[string]dependencyMap, len(ruleManager.groups))
+	for _, g := range ruleManager.groups {
+		depMap := buildDependencyMap(g.rules)
+		// No dependency map is expected because there is only one rule in the group.
+		require.Empty(t, depMap)
+		orig[g.Name()] = depMap
+	}
+
+	// Update once without changing groups.
+	err = ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil)
+	require.NoError(t, err)
+	for h, g := range ruleManager.groups {
+		depMap := buildDependencyMap(g.rules)
+		// Dependency maps are the same because of no updates.
+		if orig[h] == nil {
+			require.Empty(t, orig[h])
+			require.Empty(t, depMap)
+		} else {
+			require.Equal(t, orig[h], depMap)
+		}
+	}
+
+	// Groups will be recreated when updated.
+	files[0] = "fixtures/rules_dependencies.yaml"
+	err = ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil)
+	require.NoError(t, err)
+
+	for h, g := range ruleManager.groups {
+		const ruleName = "job:http_requests:rate5m"
+		var rr *RecordingRule
+
+		for _, r := range g.rules {
+			if r.Name() == ruleName {
+				rr = r.(*RecordingRule)
+			}
+		}
+
+		require.NotEmptyf(t, rr, "expected to find %q recording rule in fixture", ruleName)
+
+		depMap := buildDependencyMap(g.rules)
+		// Dependency maps must change because the groups would've been updated.
+		require.NotEqual(t, orig[h], depMap)
+		// We expect there to be some dependencies since the new rule group contains a dependency.
+		require.NotEmpty(t, depMap)
+		require.Equal(t, 1, depMap.dependents(rr))
+		require.Zero(t, depMap.dependencies(rr))
+	}
+}
+
+func TestAsyncRuleEvaluation(t *testing.T) {
+	t.Run("synchronous evaluation with independent rules", func(t *testing.T) {
+		t.Parallel()
+		storage := teststorage.New(t)
+		t.Cleanup(func() { storage.Close() })
+		inflightQueries := atomic.Int32{}
+		maxInflight := atomic.Int32{}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+
+		ruleManager := NewManager(optsFactory(storage, &maxInflight, &inflightQueries, 0))
+		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, []string{"fixtures/rules_multiple.yaml"}...)
+		require.Empty(t, errs)
+		require.Len(t, groups, 1)
+
+		ruleCount := 4
+
+		for _, group := range groups {
+			require.Len(t, group.rules, ruleCount)
+
+			start := time.Now()
+			group.Eval(ctx, start)
+
+			// Never expect more than 1 inflight query at a time.
+			require.EqualValues(t, 1, maxInflight.Load())
+			// Each rule should take at least 1 second to execute sequentially.
+			require.GreaterOrEqual(t, time.Since(start).Seconds(), (time.Duration(ruleCount) * artificialDelay).Seconds())
+			// Each rule produces one vector.
+			require.EqualValues(t, ruleCount, testutil.ToFloat64(group.metrics.GroupSamples))
+		}
+	})
+
+	t.Run("asynchronous evaluation with independent and dependent rules", func(t *testing.T) {
+		t.Parallel()
+		storage := teststorage.New(t)
+		t.Cleanup(func() { storage.Close() })
+		inflightQueries := atomic.Int32{}
+		maxInflight := atomic.Int32{}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+
+		ruleCount := 4
+		opts := optsFactory(storage, &maxInflight, &inflightQueries, 0)
+
+		// Configure concurrency settings.
+		opts.ConcurrentEvalsEnabled = true
+		opts.MaxConcurrentEvals = 2
+		opts.RuleConcurrencyController = nil
+		ruleManager := NewManager(opts)
+
+		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, []string{"fixtures/rules_multiple.yaml"}...)
+		require.Empty(t, errs)
+		require.Len(t, groups, 1)
+
+		for _, group := range groups {
+			require.Len(t, group.rules, ruleCount)
+
+			start := time.Now()
+			group.Eval(ctx, start)
+
+			// Max inflight can be 1 synchronous eval and up to MaxConcurrentEvals concurrent evals.
+			require.EqualValues(t, opts.MaxConcurrentEvals+1, maxInflight.Load())
+			// Some rules should execute concurrently so should complete quicker.
+			require.Less(t, time.Since(start).Seconds(), (time.Duration(ruleCount) * artificialDelay).Seconds())
+			// Each rule produces one vector.
+			require.EqualValues(t, ruleCount, testutil.ToFloat64(group.metrics.GroupSamples))
+		}
+	})
+
+	t.Run("asynchronous evaluation of all independent rules, insufficient concurrency", func(t *testing.T) {
+		t.Parallel()
+		storage := teststorage.New(t)
+		t.Cleanup(func() { storage.Close() })
+		inflightQueries := atomic.Int32{}
+		maxInflight := atomic.Int32{}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+
+		ruleCount := 6
+		opts := optsFactory(storage, &maxInflight, &inflightQueries, 0)
+
+		// Configure concurrency settings.
+		opts.ConcurrentEvalsEnabled = true
+		opts.MaxConcurrentEvals = 2
+		opts.RuleConcurrencyController = nil
+		ruleManager := NewManager(opts)
+
+		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, []string{"fixtures/rules_multiple_independent.yaml"}...)
+		require.Empty(t, errs)
+		require.Len(t, groups, 1)
+
+		for _, group := range groups {
+			require.Len(t, group.rules, ruleCount)
+
+			start := time.Now()
+			group.Eval(ctx, start)
+
+			// Max inflight can be 1 synchronous eval and up to MaxConcurrentEvals concurrent evals.
+			require.EqualValues(t, opts.MaxConcurrentEvals+1, maxInflight.Load())
+			// Some rules should execute concurrently so should complete quicker.
+			require.Less(t, time.Since(start).Seconds(), (time.Duration(ruleCount) * artificialDelay).Seconds())
+			// Each rule produces one vector.
+			require.EqualValues(t, ruleCount, testutil.ToFloat64(group.metrics.GroupSamples))
+		}
+	})
+
+	t.Run("asynchronous evaluation of all independent rules, sufficient concurrency", func(t *testing.T) {
+		t.Parallel()
+		storage := teststorage.New(t)
+		t.Cleanup(func() { storage.Close() })
+		inflightQueries := atomic.Int32{}
+		maxInflight := atomic.Int32{}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+
+		ruleCount := 6
+		opts := optsFactory(storage, &maxInflight, &inflightQueries, 0)
+
+		// Configure concurrency settings.
+		opts.ConcurrentEvalsEnabled = true
+		opts.MaxConcurrentEvals = int64(ruleCount) * 2
+		opts.RuleConcurrencyController = nil
+		ruleManager := NewManager(opts)
+
+		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, []string{"fixtures/rules_multiple_independent.yaml"}...)
+		require.Empty(t, errs)
+		require.Len(t, groups, 1)
+
+		for _, group := range groups {
+			require.Len(t, group.rules, ruleCount)
+
+			start := time.Now()
+
+			group.Eval(ctx, start)
+
+			// Max inflight can be up to MaxConcurrentEvals concurrent evals, since there is sufficient concurrency to run all rules at once.
+			require.LessOrEqual(t, int64(maxInflight.Load()), opts.MaxConcurrentEvals)
+			// Some rules should execute concurrently so should complete quicker.
+			require.Less(t, time.Since(start).Seconds(), (time.Duration(ruleCount) * artificialDelay).Seconds())
+			// Each rule produces one vector.
+			require.EqualValues(t, ruleCount, testutil.ToFloat64(group.metrics.GroupSamples))
+		}
+	})
+}
+
+func TestBoundedRuleEvalConcurrency(t *testing.T) {
+	storage := teststorage.New(t)
+	t.Cleanup(func() { storage.Close() })
+
+	var (
+		inflightQueries atomic.Int32
+		maxInflight     atomic.Int32
+		maxConcurrency  int64 = 3
+		groupCount            = 2
+	)
+
+	files := []string{"fixtures/rules_multiple_groups.yaml"}
+
+	ruleManager := NewManager(optsFactory(storage, &maxInflight, &inflightQueries, maxConcurrency))
+
+	groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, files...)
+	require.Empty(t, errs)
+	require.Len(t, groups, groupCount)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	// Evaluate groups concurrently (like they normally do).
+	var wg sync.WaitGroup
+	for _, group := range groups {
+		group := group
+
+		wg.Add(1)
+		go func() {
+			group.Eval(ctx, time.Now())
+			wg.Done()
+		}()
+	}
+
+	wg.Wait()
+
+	// Synchronous queries also count towards inflight, so at most we can have maxConcurrency+$groupCount inflight evaluations.
+	require.EqualValues(t, maxInflight.Load(), int32(maxConcurrency)+int32(groupCount))
+}
+
+func TestUpdateWhenStopped(t *testing.T) {
+	files := []string{"fixtures/rules.yaml"}
+	ruleManager := NewManager(&ManagerOptions{
+		Context: context.Background(),
+		Logger:  promslog.NewNopLogger(),
+	})
+	ruleManager.start()
+	err := ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, ruleManager.groups)
+
+	ruleManager.Stop()
+	// Updates following a stop are no-op.
+	err = ruleManager.Update(10*time.Second, []string{}, labels.EmptyLabels(), "", nil)
+	require.NoError(t, err)
+}
+
+const artificialDelay = 250 * time.Millisecond
+
+func optsFactory(storage storage.Storage, maxInflight, inflightQueries *atomic.Int32, maxConcurrent int64) *ManagerOptions {
+	var inflightMu sync.Mutex
+
+	concurrent := maxConcurrent > 0
+
+	return &ManagerOptions{
+		Context:                context.Background(),
+		Logger:                 promslog.NewNopLogger(),
+		ConcurrentEvalsEnabled: concurrent,
+		MaxConcurrentEvals:     maxConcurrent,
+		Appendable:             storage,
+		QueryFunc: func(ctx context.Context, q string, ts time.Time) (promql.Vector, error) {
+			inflightMu.Lock()
+
+			current := inflightQueries.Add(1)
+			defer func() {
+				inflightQueries.Add(-1)
+			}()
+
+			highWatermark := maxInflight.Load()
+
+			if current > highWatermark {
+				maxInflight.Store(current)
+			}
+			inflightMu.Unlock()
+
+			// Artificially delay all query executions to highlight concurrent execution improvement.
+			time.Sleep(artificialDelay)
+
+			// Return a stub sample.
+			return promql.Vector{
+				promql.Sample{Metric: labels.FromStrings("__name__", "test"), T: ts.UnixMilli(), F: 12345},
+			}, nil
+		},
+	}
+}
+
+func TestLabels_FromMaps(t *testing.T) {
+	mLabels := FromMaps(
+		map[string]string{"aaa": "101", "bbb": "222"},
+		map[string]string{"aaa": "111", "ccc": "333"},
+	)
+
+	expected := labels.New(
+		labels.Label{Name: "aaa", Value: "111"},
+		labels.Label{Name: "bbb", Value: "222"},
+		labels.Label{Name: "ccc", Value: "333"},
+	)
+
+	require.Equal(t, expected, mLabels, "unexpected labelset")
 }

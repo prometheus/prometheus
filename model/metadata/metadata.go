@@ -13,11 +13,11 @@
 
 package metadata
 
-import "github.com/prometheus/prometheus/model/textparse"
+import "github.com/prometheus/common/model"
 
 // Metadata stores a series' metadata information.
 type Metadata struct {
-	Type textparse.MetricType
-	Unit string
-	Help string
+	Type model.MetricType `json:"type"`
+	Unit string           `json:"unit"`
+	Help string           `json:"help"`
 }

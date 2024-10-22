@@ -23,8 +23,8 @@ import (
 
 	yaml "gopkg.in/yaml.v2"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 )
 
@@ -43,17 +43,17 @@ consumer_key: %s`, mock.URL, ovhcloudApplicationKeyTest, ovhcloudApplicationSecr
 
 	require.NoError(t, yaml.UnmarshalStrict([]byte(cfgString), &cfg))
 
-	d, err := newRefresher(&cfg, log.NewNopLogger())
+	d, err := newRefresher(&cfg, promslog.NewNopLogger())
 	require.NoError(t, err)
 	ctx := context.Background()
 	targetGroups, err := d.refresh(ctx)
 	require.NoError(t, err)
 
-	require.Equal(t, 1, len(targetGroups))
+	require.Len(t, targetGroups, 1)
 	targetGroup := targetGroups[0]
 	require.NotNil(t, targetGroup)
 	require.NotNil(t, targetGroup.Targets)
-	require.Equal(t, 1, len(targetGroup.Targets))
+	require.Len(t, targetGroup.Targets, 1)
 	for i, lbls := range []model.LabelSet{
 		{
 			"__address__":                               "192.0.2.1",

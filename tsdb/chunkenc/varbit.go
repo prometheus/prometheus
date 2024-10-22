@@ -14,9 +14,8 @@
 package chunkenc
 
 import (
+	"fmt"
 	"math/bits"
-
-	"github.com/pkg/errors"
 )
 
 // putVarbitInt writes an int64 using varbit encoding with a bit bucketing
@@ -62,7 +61,7 @@ func putVarbitInt(b *bstream, val int64) {
 	}
 }
 
-// readVarbitInt reads an int64 encoced with putVarbitInt.
+// readVarbitInt reads an int64 encoded with putVarbitInt.
 func readVarbitInt(b *bstreamReader) (int64, error) {
 	var d byte
 	for i := 0; i < 8; i++ {
@@ -109,7 +108,7 @@ func readVarbitInt(b *bstreamReader) (int64, error) {
 
 		val = int64(bits)
 	default:
-		return 0, errors.Errorf("invalid bit pattern %b", d)
+		return 0, fmt.Errorf("invalid bit pattern %b", d)
 	}
 
 	if sz != 0 {
@@ -167,7 +166,7 @@ func putVarbitUint(b *bstream, val uint64) {
 	}
 }
 
-// readVarbitUint reads a uint64 encoced with putVarbitUint.
+// readVarbitUint reads a uint64 encoded with putVarbitUint.
 func readVarbitUint(b *bstreamReader) (uint64, error) {
 	var d byte
 	for i := 0; i < 8; i++ {
@@ -215,7 +214,7 @@ func readVarbitUint(b *bstreamReader) (uint64, error) {
 			return 0, err
 		}
 	default:
-		return 0, errors.Errorf("invalid bit pattern %b", d)
+		return 0, fmt.Errorf("invalid bit pattern %b", d)
 	}
 
 	if sz != 0 {

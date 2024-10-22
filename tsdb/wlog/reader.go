@@ -16,12 +16,13 @@ package wlog
 
 import (
 	"encoding/binary"
+	"errors"
+	"fmt"
 	"hash/crc32"
 	"io"
 
 	"github.com/golang/snappy"
 	"github.com/klauspost/compress/zstd"
-	"github.com/pkg/errors"
 )
 
 // Reader reads WAL records from an io.Reader.
@@ -47,7 +48,7 @@ func NewReader(r io.Reader) *Reader {
 // It must not be called again after it returned false.
 func (r *Reader) Next() bool {
 	err := r.next()
-	if errors.Is(err, io.EOF) {
+	if err != nil && errors.Is(err, io.EOF) {
 		// The last WAL segment record shouldn't be torn(should be full or last).
 		// The last record would be torn after a crash just before
 		// the last record part could be persisted to disk.
@@ -72,7 +73,7 @@ func (r *Reader) next() (err error) {
 	i := 0
 	for {
 		if _, err = io.ReadFull(r.rdr, hdr[:1]); err != nil {
-			return errors.Wrap(err, "read first header byte")
+			return fmt.Errorf("read first header byte: %w", err)
 		}
 		r.total++
 		r.curRecTyp = recTypeFromHeader(hdr[0])
@@ -95,7 +96,7 @@ func (r *Reader) next() (err error) {
 			}
 			n, err := io.ReadFull(r.rdr, buf[:k])
 			if err != nil {
-				return errors.Wrap(err, "read remaining zeros")
+				return fmt.Errorf("read remaining zeros: %w", err)
 			}
 			r.total += int64(n)
 
@@ -108,7 +109,7 @@ func (r *Reader) next() (err error) {
 		}
 		n, err := io.ReadFull(r.rdr, hdr[1:])
 		if err != nil {
-			return errors.Wrap(err, "read remaining header")
+			return fmt.Errorf("read remaining header: %w", err)
 		}
 		r.total += int64(n)
 
@@ -118,7 +119,7 @@ func (r *Reader) next() (err error) {
 		)
 
 		if length > pageSize-recordHeaderSize {
-			return errors.Errorf("invalid record size %d", length)
+			return fmt.Errorf("invalid record size %d", length)
 		}
 		n, err = io.ReadFull(r.rdr, buf[:length])
 		if err != nil {
@@ -127,10 +128,10 @@ func (r *Reader) next() (err error) {
 		r.total += int64(n)
 
 		if n != int(length) {
-			return errors.Errorf("invalid size: expected %d, got %d", length, n)
+			return fmt.Errorf("invalid size: expected %d, got %d", length, n)
 		}
 		if c := crc32.Checksum(buf[:length], castagnoliTable); c != crc {
-			return errors.Errorf("unexpected checksum %x, expected %x", c, crc)
+			return fmt.Errorf("unexpected checksum %x, expected %x", c, crc)
 		}
 
 		if isSnappyCompressed || isZstdCompressed {

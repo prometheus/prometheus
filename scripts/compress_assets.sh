@@ -4,6 +4,12 @@
 
 set -euo pipefail
 
+export STATIC_DIR=static
+PREBUILT_ASSETS_STATIC_DIR=${PREBUILT_ASSETS_STATIC_DIR:-}
+if [ -n "$PREBUILT_ASSETS_STATIC_DIR" ]; then
+    STATIC_DIR=$(realpath $PREBUILT_ASSETS_STATIC_DIR)
+fi
+
 cd web/ui
 cp embed.go.tmpl embed.go
 
@@ -11,6 +17,19 @@ GZIP_OPTS="-fk"
 # gzip option '-k' may not always exist in the latest gzip available on different distros.
 if ! gzip -k -h &>/dev/null; then GZIP_OPTS="-f"; fi
 
+mkdir -p static
 find static -type f -name '*.gz' -delete
-find static -type f -exec gzip $GZIP_OPTS '{}' \; -print0 | xargs -0 -I % echo %.gz | xargs echo //go:embed >> embed.go
+
+# Compress files from the prebuilt static directory and replicate the structure in the current static directory
+find "${STATIC_DIR}" -type f ! -name '*.gz' -exec bash -c '
+    for file; do
+        dest="${file#${STATIC_DIR}}"
+        mkdir -p "static/$(dirname "$dest")"
+        gzip '"$GZIP_OPTS"' "$file" -c > "static/${dest}.gz"
+    done
+' bash {} +
+
+# Append the paths of gzipped files to embed.go
+find static -type f -name '*.gz' -print0 | sort -z | xargs -0 echo //go:embed >> embed.go
+
 echo var EmbedFS embed.FS >> embed.go

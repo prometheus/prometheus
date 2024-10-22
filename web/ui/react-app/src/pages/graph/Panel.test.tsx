@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { mount, shallow } from 'enzyme';
-import Panel, { PanelOptions, PanelType } from './Panel';
+import Panel, { GraphDisplayMode, PanelOptions, PanelType } from './Panel';
 import GraphControls from './GraphControls';
 import { NavLink, TabPane } from 'reactstrap';
 import TimeInput from './TimeInput';
@@ -14,7 +14,7 @@ const defaultProps = {
     range: 10,
     endTime: 1572100217898,
     resolution: 28,
-    stacked: false,
+    displayMode: GraphDisplayMode.Lines,
     showExemplars: true,
   },
   onOptionsChanged: (): void => {
@@ -84,7 +84,7 @@ describe('Panel', () => {
       range: 10,
       endTime: 1572100217898,
       resolution: 28,
-      stacked: false,
+      displayMode: GraphDisplayMode.Lines,
       showExemplars: true,
     };
     const graphPanel = mount(<Panel {...defaultProps} options={options} />);
@@ -94,8 +94,8 @@ describe('Panel', () => {
     expect(controls.prop('endTime')).toEqual(options.endTime);
     expect(controls.prop('range')).toEqual(options.range);
     expect(controls.prop('resolution')).toEqual(options.resolution);
-    expect(controls.prop('stacked')).toEqual(options.stacked);
-    expect(graph.prop('stacked')).toEqual(options.stacked);
+    expect(controls.prop('displayMode')).toEqual(options.displayMode);
+    expect(graph.prop('displayMode')).toEqual(options.displayMode);
   });
 
   describe('when switching between modes', () => {

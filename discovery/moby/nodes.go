@@ -66,7 +66,7 @@ func (d *Discovery) refreshNodes(ctx context.Context) ([]*targetgroup.Group, err
 			swarmLabelNodeAddress:              model.LabelValue(n.Status.Addr),
 		}
 		if n.ManagerStatus != nil {
-			labels[swarmLabelNodeManagerLeader] = model.LabelValue(fmt.Sprintf("%t", n.ManagerStatus.Leader))
+			labels[swarmLabelNodeManagerLeader] = model.LabelValue(strconv.FormatBool(n.ManagerStatus.Leader))
 			labels[swarmLabelNodeManagerReachability] = model.LabelValue(n.ManagerStatus.Reachability)
 			labels[swarmLabelNodeManagerAddr] = model.LabelValue(n.ManagerStatus.Addr)
 		}
@@ -80,7 +80,6 @@ func (d *Discovery) refreshNodes(ctx context.Context) ([]*targetgroup.Group, err
 		labels[model.AddressLabel] = model.LabelValue(addr)
 
 		tg.Targets = append(tg.Targets, labels)
-
 	}
 	return []*targetgroup.Group{tg}, nil
 }

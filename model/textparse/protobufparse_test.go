@@ -16,21 +16,21 @@ package textparse
 import (
 	"bytes"
 	"encoding/binary"
-	"errors"
-	"io"
 	"testing"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-
 	dto "github.com/prometheus/prometheus/prompb/io/prometheus/client"
 )
 
-func createTestProtoBuf(t *testing.T) *bytes.Buffer {
+func createTestProtoBuf(t testing.TB) *bytes.Buffer {
+	t.Helper()
+
 	testMetricFamilies := []string{
 		`name: "go_build_info"
 help: "Build information about the main Go module."
@@ -57,6 +57,7 @@ metric: <
 		`name: "go_memstats_alloc_bytes_total"
 help: "Total number of bytes allocated, even if freed."
 type: COUNTER
+unit: "bytes"
 metric: <
   counter: <
     value: 1.546544e+06
@@ -409,6 +410,49 @@ metric: <
 >
 
 `,
+		`name: "test_histogram3"
+help: "Similar histogram as before but now with integer buckets."
+type: HISTOGRAM
+metric: <
+  histogram: <
+    sample_count: 6
+    sample_sum: 50
+    bucket: <
+      cumulative_count: 2
+      upper_bound: -20
+    >
+    bucket: <
+      cumulative_count: 4
+      upper_bound: 20
+      exemplar: <
+        label: <
+          name: "dummyID"
+          value: "59727"
+        >
+        value: 15
+        timestamp: <
+          seconds: 1625851153
+          nanos: 146848499
+        >
+      >
+    >
+    bucket: <
+      cumulative_count: 6
+      upper_bound: 30
+      exemplar: <
+        label: <
+          name: "dummyID"
+          value: "5617"
+        >
+        value: 25
+      >
+    >
+    schema: 0
+    zero_threshold: 0
+  >
+>
+
+`,
 		`name: "test_histogram_family"
 help: "Test histogram metric family with two very simple histograms."
 type: HISTOGRAM
@@ -531,6 +575,232 @@ metric: <
 >
 
 `,
+		`name: "test_counter_with_createdtimestamp"
+help: "A counter with a created timestamp."
+type: COUNTER
+metric: <
+  counter: <
+    value: 42
+    created_timestamp: <
+      seconds: 1
+      nanos: 1
+    >
+  >
+>
+
+`,
+		`name: "test_summary_with_createdtimestamp"
+help: "A summary with a created timestamp."
+type: SUMMARY
+metric: <
+  summary: <
+    sample_count: 42
+    sample_sum: 1.234
+    created_timestamp: <
+      seconds: 1
+      nanos: 1
+    >
+  >
+>
+
+`,
+		`name: "test_histogram_with_createdtimestamp"
+help: "A histogram with a created timestamp."
+type: HISTOGRAM
+metric: <
+  histogram: <
+    created_timestamp: <
+      seconds: 1
+      nanos: 1
+    >
+    positive_span: <
+      offset: 0
+      length: 0
+    >
+  >
+>
+
+`,
+		`name: "test_gaugehistogram_with_createdtimestamp"
+help: "A gauge histogram with a created timestamp."
+type: GAUGE_HISTOGRAM
+metric: <
+  histogram: <
+    created_timestamp: <
+      seconds: 1
+      nanos: 1
+    >
+    positive_span: <
+      offset: 0
+      length: 0
+    >
+  >
+>
+
+`,
+		`name: "test_histogram_with_native_histogram_exemplars"
+help: "A histogram with native histogram exemplars."
+type: HISTOGRAM
+metric: <
+  histogram: <
+    sample_count: 175
+    sample_sum: 0.0008280461746287094
+    bucket: <
+      cumulative_count: 2
+      upper_bound: -0.0004899999999999998
+    >
+    bucket: <
+      cumulative_count: 4
+      upper_bound: -0.0003899999999999998
+      exemplar: <
+	    label: <
+	      name: "dummyID"
+	      value: "59727"
+	    >
+	    value: -0.00039
+	    timestamp: <
+	      seconds: 1625851155
+	      nanos: 146848499
+	    >
+      >
+    >
+    bucket: <
+      cumulative_count: 16
+      upper_bound: -0.0002899999999999998
+      exemplar: <
+	    label: <
+	      name: "dummyID"
+	      value: "5617"
+	    >
+	    value: -0.00029
+      >
+    >
+    schema: 3
+    zero_threshold: 2.938735877055719e-39
+    zero_count: 2
+    negative_span: <
+      offset: -162
+      length: 1
+    >
+    negative_span: <
+      offset: 23
+      length: 4
+    >
+    negative_delta: 1
+    negative_delta: 3
+    negative_delta: -2
+    negative_delta: -1
+    negative_delta: 1
+    positive_span: <
+      offset: -161
+      length: 1
+    >
+    positive_span: <
+      offset: 8
+      length: 3
+    >
+    positive_delta: 1
+    positive_delta: 2
+    positive_delta: -1
+    positive_delta: -1
+    exemplars: <
+      label: <
+        name: "dummyID"
+        value: "59780"
+      >
+      value: -0.00039
+      timestamp: <
+        seconds: 1625851155
+        nanos: 146848499
+      >
+    >
+    exemplars: <
+      label: <
+        name: "dummyID"
+        value: "5617"
+      >
+      value: -0.00029
+    >
+    exemplars: <
+      label: <
+        name: "dummyID"
+        value: "59772"
+      >
+      value: -0.00052
+      timestamp: <
+        seconds: 1625851160
+        nanos: 156848499
+      >
+    >
+  >
+  timestamp_ms: 1234568
+>
+
+`,
+
+		`name: "test_histogram_with_native_histogram_exemplars2"
+help: "Another histogram with native histogram exemplars."
+type: HISTOGRAM
+metric: <
+  histogram: <
+    sample_count: 175
+    sample_sum: 0.0008280461746287094
+    bucket: <
+      cumulative_count: 2
+      upper_bound: -0.0004899999999999998
+    >
+    bucket: <
+      cumulative_count: 4
+      upper_bound: -0.0003899999999999998
+    >
+    bucket: <
+      cumulative_count: 16
+      upper_bound: -0.0002899999999999998
+    >
+    schema: 3
+    zero_threshold: 2.938735877055719e-39
+    zero_count: 2
+    negative_span: <
+      offset: -162
+      length: 1
+    >
+    negative_span: <
+      offset: 23
+      length: 4
+    >
+    negative_delta: 1
+    negative_delta: 3
+    negative_delta: -2
+    negative_delta: -1
+    negative_delta: 1
+    positive_span: <
+      offset: -161
+      length: 1
+    >
+    positive_span: <
+      offset: 8
+      length: 3
+    >
+    positive_delta: 1
+    positive_delta: 2
+    positive_delta: -1
+    positive_delta: -1
+    exemplars: <
+      label: <
+        name: "dummyID"
+        value: "59780"
+      >
+      value: -0.00039
+      timestamp: <
+        seconds: 1625851155
+        nanos: 146848499
+      >
+    >
+  >
+  timestamp_ms: 1234568
+>
+
+`,
 	}
 
 	varintBuf := make([]byte, binary.MaxVarintLen32)
@@ -554,38 +824,24 @@ metric: <
 }
 
 func TestProtobufParse(t *testing.T) {
-	type parseResult struct {
-		lset    labels.Labels
-		m       string
-		t       int64
-		v       float64
-		typ     MetricType
-		help    string
-		unit    string
-		comment string
-		shs     *histogram.Histogram
-		fhs     *histogram.FloatHistogram
-		e       []exemplar.Exemplar
-	}
-
 	inputBuf := createTestProtoBuf(t)
 
 	scenarios := []struct {
 		name     string
 		parser   Parser
-		expected []parseResult
+		expected []parsedEntry
 	}{
 		{
 			name:   "ignore classic buckets of native histograms",
-			parser: NewProtobufParser(inputBuf.Bytes(), false),
-			expected: []parseResult{
+			parser: NewProtobufParser(inputBuf.Bytes(), false, labels.NewSymbolTable()),
+			expected: []parsedEntry{
 				{
 					m:    "go_build_info",
 					help: "Build information about the main Go module.",
 				},
 				{
 					m:   "go_build_info",
-					typ: MetricTypeGauge,
+					typ: model.MetricTypeGauge,
 				},
 				{
 					m: "go_build_info\xFFchecksum\xFF\xFFpath\xFFgithub.com/prometheus/client_golang\xFFversion\xFF(devel)",
@@ -602,8 +858,12 @@ func TestProtobufParse(t *testing.T) {
 					help: "Total number of bytes allocated, even if freed.",
 				},
 				{
+					m:    "go_memstats_alloc_bytes_total",
+					unit: "bytes",
+				},
+				{
 					m:   "go_memstats_alloc_bytes_total",
-					typ: MetricTypeCounter,
+					typ: model.MetricTypeCounter,
 				},
 				{
 					m: "go_memstats_alloc_bytes_total",
@@ -611,7 +871,7 @@ func TestProtobufParse(t *testing.T) {
 					lset: labels.FromStrings(
 						"__name__", "go_memstats_alloc_bytes_total",
 					),
-					e: []exemplar.Exemplar{
+					es: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "42"), Value: 12, HasTs: true, Ts: 1625851151233},
 					},
 				},
@@ -621,11 +881,11 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:   "something_untyped",
-					typ: MetricTypeUnknown,
+					typ: model.MetricTypeUnknown,
 				},
 				{
 					m: "something_untyped",
-					t: 1234567,
+					t: int64p(1234567),
 					v: 42,
 					lset: labels.FromStrings(
 						"__name__", "something_untyped",
@@ -637,11 +897,11 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:   "test_histogram",
-					typ: MetricTypeHistogram,
+					typ: model.MetricTypeHistogram,
 				},
 				{
 					m: "test_histogram",
-					t: 1234568,
+					t: int64p(1234568),
 					shs: &histogram.Histogram{
 						Count:         175,
 						ZeroCount:     2,
@@ -662,9 +922,8 @@ func TestProtobufParse(t *testing.T) {
 					lset: labels.FromStrings(
 						"__name__", "test_histogram",
 					),
-					e: []exemplar.Exemplar{
+					es: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
-						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
 					},
 				},
 				{
@@ -673,11 +932,11 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:   "test_gauge_histogram",
-					typ: MetricTypeGaugeHistogram,
+					typ: model.MetricTypeGaugeHistogram,
 				},
 				{
 					m: "test_gauge_histogram",
-					t: 1234568,
+					t: int64p(1234568),
 					shs: &histogram.Histogram{
 						CounterResetHint: histogram.GaugeType,
 						Count:            175,
@@ -699,9 +958,8 @@ func TestProtobufParse(t *testing.T) {
 					lset: labels.FromStrings(
 						"__name__", "test_gauge_histogram",
 					),
-					e: []exemplar.Exemplar{
+					es: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
-						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
 					},
 				},
 				{
@@ -710,11 +968,11 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:   "test_float_histogram",
-					typ: MetricTypeHistogram,
+					typ: model.MetricTypeHistogram,
 				},
 				{
 					m: "test_float_histogram",
-					t: 1234568,
+					t: int64p(1234568),
 					fhs: &histogram.FloatHistogram{
 						Count:         175.0,
 						ZeroCount:     2.0,
@@ -735,9 +993,8 @@ func TestProtobufParse(t *testing.T) {
 					lset: labels.FromStrings(
 						"__name__", "test_float_histogram",
 					),
-					e: []exemplar.Exemplar{
+					es: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
-						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
 					},
 				},
 				{
@@ -746,11 +1003,11 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:   "test_gauge_float_histogram",
-					typ: MetricTypeGaugeHistogram,
+					typ: model.MetricTypeGaugeHistogram,
 				},
 				{
 					m: "test_gauge_float_histogram",
-					t: 1234568,
+					t: int64p(1234568),
 					fhs: &histogram.FloatHistogram{
 						CounterResetHint: histogram.GaugeType,
 						Count:            175.0,
@@ -772,9 +1029,8 @@ func TestProtobufParse(t *testing.T) {
 					lset: labels.FromStrings(
 						"__name__", "test_gauge_float_histogram",
 					),
-					e: []exemplar.Exemplar{
+					es: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
-						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
 					},
 				},
 				{
@@ -783,7 +1039,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:   "test_histogram2",
-					typ: MetricTypeHistogram,
+					typ: model.MetricTypeHistogram,
 				},
 				{
 					m: "test_histogram2_count",
@@ -814,7 +1070,7 @@ func TestProtobufParse(t *testing.T) {
 						"__name__", "test_histogram2_bucket",
 						"le", "-0.00038",
 					),
-					e: []exemplar.Exemplar{
+					es: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00038, HasTs: true, Ts: 1625851153146},
 					},
 				},
@@ -825,7 +1081,7 @@ func TestProtobufParse(t *testing.T) {
 						"__name__", "test_histogram2_bucket",
 						"le", "1.0",
 					),
-					e: []exemplar.Exemplar{
+					es: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.000295, HasTs: false},
 					},
 				},
@@ -838,12 +1094,72 @@ func TestProtobufParse(t *testing.T) {
 					),
 				},
 				{
+					m:    "test_histogram3",
+					help: "Similar histogram as before but now with integer buckets.",
+				},
+				{
+					m:   "test_histogram3",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m: "test_histogram3_count",
+					v: 6,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram3_count",
+					),
+				},
+				{
+					m: "test_histogram3_sum",
+					v: 50,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram3_sum",
+					),
+				},
+				{
+					m: "test_histogram3_bucket\xffle\xff-20.0",
+					v: 2,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram3_bucket",
+						"le", "-20.0",
+					),
+				},
+				{
+					m: "test_histogram3_bucket\xffle\xff20.0",
+					v: 4,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram3_bucket",
+						"le", "20.0",
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "59727"), Value: 15, HasTs: true, Ts: 1625851153146},
+					},
+				},
+				{
+					m: "test_histogram3_bucket\xffle\xff30.0",
+					v: 6,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram3_bucket",
+						"le", "30.0",
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "5617"), Value: 25, HasTs: false},
+					},
+				},
+				{
+					m: "test_histogram3_bucket\xffle\xff+Inf",
+					v: 6,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram3_bucket",
+						"le", "+Inf",
+					),
+				},
+				{
 					m:    "test_histogram_family",
 					help: "Test histogram metric family with two very simple histograms.",
 				},
 				{
 					m:   "test_histogram_family",
-					typ: MetricTypeHistogram,
+					typ: model.MetricTypeHistogram,
 				},
 				{
 					m: "test_histogram_family\xfffoo\xffbar",
@@ -887,7 +1203,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:   "test_float_histogram_with_zerothreshold_zero",
-					typ: MetricTypeHistogram,
+					typ: model.MetricTypeHistogram,
 				},
 				{
 					m: "test_float_histogram_with_zerothreshold_zero",
@@ -911,7 +1227,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:   "rpc_durations_seconds",
-					typ: MetricTypeSummary,
+					typ: model.MetricTypeSummary,
 				},
 				{
 					m: "rpc_durations_seconds_count\xffservice\xffexponential",
@@ -962,7 +1278,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:   "without_quantiles",
-					typ: MetricTypeSummary,
+					typ: model.MetricTypeSummary,
 				},
 				{
 					m: "without_quantiles_count",
@@ -984,7 +1300,7 @@ func TestProtobufParse(t *testing.T) {
 				},
 				{
 					m:   "empty_histogram",
-					typ: MetricTypeHistogram,
+					typ: model.MetricTypeHistogram,
 				},
 				{
 					m: "empty_histogram",
@@ -997,21 +1313,172 @@ func TestProtobufParse(t *testing.T) {
 						"__name__", "empty_histogram",
 					),
 				},
+				{
+					m:    "test_counter_with_createdtimestamp",
+					help: "A counter with a created timestamp.",
+				},
+				{
+					m:   "test_counter_with_createdtimestamp",
+					typ: model.MetricTypeCounter,
+				},
+				{
+					m:  "test_counter_with_createdtimestamp",
+					v:  42,
+					ct: int64p(1000),
+					lset: labels.FromStrings(
+						"__name__", "test_counter_with_createdtimestamp",
+					),
+				},
+				{
+					m:    "test_summary_with_createdtimestamp",
+					help: "A summary with a created timestamp.",
+				},
+				{
+					m:   "test_summary_with_createdtimestamp",
+					typ: model.MetricTypeSummary,
+				},
+				{
+					m:  "test_summary_with_createdtimestamp_count",
+					v:  42,
+					ct: int64p(1000),
+					lset: labels.FromStrings(
+						"__name__", "test_summary_with_createdtimestamp_count",
+					),
+				},
+				{
+					m:  "test_summary_with_createdtimestamp_sum",
+					v:  1.234,
+					ct: int64p(1000),
+					lset: labels.FromStrings(
+						"__name__", "test_summary_with_createdtimestamp_sum",
+					),
+				},
+				{
+					m:    "test_histogram_with_createdtimestamp",
+					help: "A histogram with a created timestamp.",
+				},
+				{
+					m:   "test_histogram_with_createdtimestamp",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m:  "test_histogram_with_createdtimestamp",
+					ct: int64p(1000),
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.UnknownCounterReset,
+						PositiveSpans:    []histogram.Span{},
+						NegativeSpans:    []histogram.Span{},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_with_createdtimestamp",
+					),
+				},
+				{
+					m:    "test_gaugehistogram_with_createdtimestamp",
+					help: "A gauge histogram with a created timestamp.",
+				},
+				{
+					m:   "test_gaugehistogram_with_createdtimestamp",
+					typ: model.MetricTypeGaugeHistogram,
+				},
+				{
+					m:  "test_gaugehistogram_with_createdtimestamp",
+					ct: int64p(1000),
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.GaugeType,
+						PositiveSpans:    []histogram.Span{},
+						NegativeSpans:    []histogram.Span{},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_gaugehistogram_with_createdtimestamp",
+					),
+				},
+				{
+					m:    "test_histogram_with_native_histogram_exemplars",
+					help: "A histogram with native histogram exemplars.",
+				},
+				{
+					m:   "test_histogram_with_native_histogram_exemplars",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m: "test_histogram_with_native_histogram_exemplars",
+					t: int64p(1234568),
+					shs: &histogram.Histogram{
+						Count:         175,
+						ZeroCount:     2,
+						Sum:           0.0008280461746287094,
+						ZeroThreshold: 2.938735877055719e-39,
+						Schema:        3,
+						PositiveSpans: []histogram.Span{
+							{Offset: -161, Length: 1},
+							{Offset: 8, Length: 3},
+						},
+						NegativeSpans: []histogram.Span{
+							{Offset: -162, Length: 1},
+							{Offset: 23, Length: 4},
+						},
+						PositiveBuckets: []int64{1, 2, -1, -1},
+						NegativeBuckets: []int64{1, 3, -2, -1, 1},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_with_native_histogram_exemplars",
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "59780"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
+						{Labels: labels.FromStrings("dummyID", "59772"), Value: -0.00052, HasTs: true, Ts: 1625851160156},
+					},
+				},
+				{
+					m:    "test_histogram_with_native_histogram_exemplars2",
+					help: "Another histogram with native histogram exemplars.",
+				},
+				{
+					m:   "test_histogram_with_native_histogram_exemplars2",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m: "test_histogram_with_native_histogram_exemplars2",
+					t: int64p(1234568),
+					shs: &histogram.Histogram{
+						Count:         175,
+						ZeroCount:     2,
+						Sum:           0.0008280461746287094,
+						ZeroThreshold: 2.938735877055719e-39,
+						Schema:        3,
+						PositiveSpans: []histogram.Span{
+							{Offset: -161, Length: 1},
+							{Offset: 8, Length: 3},
+						},
+						NegativeSpans: []histogram.Span{
+							{Offset: -162, Length: 1},
+							{Offset: 23, Length: 4},
+						},
+						PositiveBuckets: []int64{1, 2, -1, -1},
+						NegativeBuckets: []int64{1, 3, -2, -1, 1},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_with_native_histogram_exemplars2",
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "59780"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
+					},
+				},
 			},
 		},
 		{
 			name:   "parse classic and native buckets",
-			parser: NewProtobufParser(inputBuf.Bytes(), true),
-			expected: []parseResult{
-				{ // 0
+			parser: NewProtobufParser(inputBuf.Bytes(), true, labels.NewSymbolTable()),
+			expected: []parsedEntry{
+				{
 					m:    "go_build_info",
 					help: "Build information about the main Go module.",
 				},
-				{ // 1
+				{
 					m:   "go_build_info",
-					typ: MetricTypeGauge,
+					typ: model.MetricTypeGauge,
 				},
-				{ // 2
+				{
 					m: "go_build_info\xFFchecksum\xFF\xFFpath\xFFgithub.com/prometheus/client_golang\xFFversion\xFF(devel)",
 					v: 1,
 					lset: labels.FromStrings(
@@ -1021,51 +1488,55 @@ func TestProtobufParse(t *testing.T) {
 						"version", "(devel)",
 					),
 				},
-				{ // 3
+				{
 					m:    "go_memstats_alloc_bytes_total",
 					help: "Total number of bytes allocated, even if freed.",
 				},
-				{ // 4
-					m:   "go_memstats_alloc_bytes_total",
-					typ: MetricTypeCounter,
+				{
+					m:    "go_memstats_alloc_bytes_total",
+					unit: "bytes",
 				},
-				{ // 5
+				{
+					m:   "go_memstats_alloc_bytes_total",
+					typ: model.MetricTypeCounter,
+				},
+				{
 					m: "go_memstats_alloc_bytes_total",
 					v: 1.546544e+06,
 					lset: labels.FromStrings(
 						"__name__", "go_memstats_alloc_bytes_total",
 					),
-					e: []exemplar.Exemplar{
+					es: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "42"), Value: 12, HasTs: true, Ts: 1625851151233},
 					},
 				},
-				{ // 6
+				{
 					m:    "something_untyped",
 					help: "Just to test the untyped type.",
 				},
-				{ // 7
+				{
 					m:   "something_untyped",
-					typ: MetricTypeUnknown,
+					typ: model.MetricTypeUnknown,
 				},
-				{ // 8
+				{
 					m: "something_untyped",
-					t: 1234567,
+					t: int64p(1234567),
 					v: 42,
 					lset: labels.FromStrings(
 						"__name__", "something_untyped",
 					),
 				},
-				{ // 9
+				{
 					m:    "test_histogram",
 					help: "Test histogram with many buckets removed to keep it manageable in size.",
 				},
-				{ // 10
+				{
 					m:   "test_histogram",
-					typ: MetricTypeHistogram,
+					typ: model.MetricTypeHistogram,
 				},
-				{ // 11
+				{
 					m: "test_histogram",
-					t: 1234568,
+					t: int64p(1234568),
 					shs: &histogram.Histogram{
 						Count:         175,
 						ZeroCount:     2,
@@ -1086,80 +1557,79 @@ func TestProtobufParse(t *testing.T) {
 					lset: labels.FromStrings(
 						"__name__", "test_histogram",
 					),
-					e: []exemplar.Exemplar{
+					es: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
-						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
 					},
 				},
-				{ // 12
+				{
 					m: "test_histogram_count",
-					t: 1234568,
+					t: int64p(1234568),
 					v: 175,
 					lset: labels.FromStrings(
 						"__name__", "test_histogram_count",
 					),
 				},
-				{ // 13
+				{
 					m: "test_histogram_sum",
-					t: 1234568,
+					t: int64p(1234568),
 					v: 0.0008280461746287094,
 					lset: labels.FromStrings(
 						"__name__", "test_histogram_sum",
 					),
 				},
-				{ // 14
+				{
 					m: "test_histogram_bucket\xffle\xff-0.0004899999999999998",
-					t: 1234568,
+					t: int64p(1234568),
 					v: 2,
 					lset: labels.FromStrings(
 						"__name__", "test_histogram_bucket",
 						"le", "-0.0004899999999999998",
 					),
 				},
-				{ // 15
+				{
 					m: "test_histogram_bucket\xffle\xff-0.0003899999999999998",
-					t: 1234568,
+					t: int64p(1234568),
 					v: 4,
 					lset: labels.FromStrings(
 						"__name__", "test_histogram_bucket",
 						"le", "-0.0003899999999999998",
 					),
-					e: []exemplar.Exemplar{
+					es: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
 					},
 				},
-				{ // 16
+				{
 					m: "test_histogram_bucket\xffle\xff-0.0002899999999999998",
-					t: 1234568,
+					t: int64p(1234568),
 					v: 16,
 					lset: labels.FromStrings(
 						"__name__", "test_histogram_bucket",
 						"le", "-0.0002899999999999998",
 					),
-					e: []exemplar.Exemplar{
+					es: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
 					},
 				},
-				{ // 17
+				{
 					m: "test_histogram_bucket\xffle\xff+Inf",
-					t: 1234568,
+					t: int64p(1234568),
 					v: 175,
 					lset: labels.FromStrings(
 						"__name__", "test_histogram_bucket",
 						"le", "+Inf",
 					),
 				},
-				{ // 18
+				{
 					m:    "test_gauge_histogram",
 					help: "Like test_histogram but as gauge histogram.",
 				},
-				{ // 19
+				{
 					m:   "test_gauge_histogram",
-					typ: MetricTypeGaugeHistogram,
+					typ: model.MetricTypeGaugeHistogram,
 				},
-				{ // 20
+				{
 					m: "test_gauge_histogram",
-					t: 1234568,
+					t: int64p(1234568),
 					shs: &histogram.Histogram{
 						CounterResetHint: histogram.GaugeType,
 						Count:            175,
@@ -1181,80 +1651,79 @@ func TestProtobufParse(t *testing.T) {
 					lset: labels.FromStrings(
 						"__name__", "test_gauge_histogram",
 					),
-					e: []exemplar.Exemplar{
+					es: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
-						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
 					},
 				},
-				{ // 21
+				{
 					m: "test_gauge_histogram_count",
-					t: 1234568,
+					t: int64p(1234568),
 					v: 175,
 					lset: labels.FromStrings(
 						"__name__", "test_gauge_histogram_count",
 					),
 				},
-				{ // 22
+				{
 					m: "test_gauge_histogram_sum",
-					t: 1234568,
+					t: int64p(1234568),
 					v: 0.0008280461746287094,
 					lset: labels.FromStrings(
 						"__name__", "test_gauge_histogram_sum",
 					),
 				},
-				{ // 23
+				{
 					m: "test_gauge_histogram_bucket\xffle\xff-0.0004899999999999998",
-					t: 1234568,
+					t: int64p(1234568),
 					v: 2,
 					lset: labels.FromStrings(
 						"__name__", "test_gauge_histogram_bucket",
 						"le", "-0.0004899999999999998",
 					),
 				},
-				{ // 24
+				{
 					m: "test_gauge_histogram_bucket\xffle\xff-0.0003899999999999998",
-					t: 1234568,
+					t: int64p(1234568),
 					v: 4,
 					lset: labels.FromStrings(
 						"__name__", "test_gauge_histogram_bucket",
 						"le", "-0.0003899999999999998",
 					),
-					e: []exemplar.Exemplar{
+					es: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
 					},
 				},
-				{ // 25
+				{
 					m: "test_gauge_histogram_bucket\xffle\xff-0.0002899999999999998",
-					t: 1234568,
+					t: int64p(1234568),
 					v: 16,
 					lset: labels.FromStrings(
 						"__name__", "test_gauge_histogram_bucket",
 						"le", "-0.0002899999999999998",
 					),
-					e: []exemplar.Exemplar{
+					es: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
 					},
 				},
-				{ // 26
+				{
 					m: "test_gauge_histogram_bucket\xffle\xff+Inf",
-					t: 1234568,
+					t: int64p(1234568),
 					v: 175,
 					lset: labels.FromStrings(
 						"__name__", "test_gauge_histogram_bucket",
 						"le", "+Inf",
 					),
 				},
-				{ // 27
+				{
 					m:    "test_float_histogram",
 					help: "Test float histogram with many buckets removed to keep it manageable in size.",
 				},
-				{ // 28
+				{
 					m:   "test_float_histogram",
-					typ: MetricTypeHistogram,
+					typ: model.MetricTypeHistogram,
 				},
-				{ // 29
+				{
 					m: "test_float_histogram",
-					t: 1234568,
+					t: int64p(1234568),
 					fhs: &histogram.FloatHistogram{
 						Count:         175.0,
 						ZeroCount:     2.0,
@@ -1275,80 +1744,79 @@ func TestProtobufParse(t *testing.T) {
 					lset: labels.FromStrings(
 						"__name__", "test_float_histogram",
 					),
-					e: []exemplar.Exemplar{
+					es: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
-						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
 					},
 				},
-				{ // 30
+				{
 					m: "test_float_histogram_count",
-					t: 1234568,
+					t: int64p(1234568),
 					v: 175,
 					lset: labels.FromStrings(
 						"__name__", "test_float_histogram_count",
 					),
 				},
-				{ // 31
+				{
 					m: "test_float_histogram_sum",
-					t: 1234568,
+					t: int64p(1234568),
 					v: 0.0008280461746287094,
 					lset: labels.FromStrings(
 						"__name__", "test_float_histogram_sum",
 					),
 				},
-				{ // 32
+				{
 					m: "test_float_histogram_bucket\xffle\xff-0.0004899999999999998",
-					t: 1234568,
+					t: int64p(1234568),
 					v: 2,
 					lset: labels.FromStrings(
 						"__name__", "test_float_histogram_bucket",
 						"le", "-0.0004899999999999998",
 					),
 				},
-				{ // 33
+				{
 					m: "test_float_histogram_bucket\xffle\xff-0.0003899999999999998",
-					t: 1234568,
+					t: int64p(1234568),
 					v: 4,
 					lset: labels.FromStrings(
 						"__name__", "test_float_histogram_bucket",
 						"le", "-0.0003899999999999998",
 					),
-					e: []exemplar.Exemplar{
+					es: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
 					},
 				},
-				{ // 34
+				{
 					m: "test_float_histogram_bucket\xffle\xff-0.0002899999999999998",
-					t: 1234568,
+					t: int64p(1234568),
 					v: 16,
 					lset: labels.FromStrings(
 						"__name__", "test_float_histogram_bucket",
 						"le", "-0.0002899999999999998",
 					),
-					e: []exemplar.Exemplar{
+					es: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
 					},
 				},
-				{ // 35
+				{
 					m: "test_float_histogram_bucket\xffle\xff+Inf",
-					t: 1234568,
+					t: int64p(1234568),
 					v: 175,
 					lset: labels.FromStrings(
 						"__name__", "test_float_histogram_bucket",
 						"le", "+Inf",
 					),
 				},
-				{ // 36
+				{
 					m:    "test_gauge_float_histogram",
 					help: "Like test_float_histogram but as gauge histogram.",
 				},
-				{ // 37
+				{
 					m:   "test_gauge_float_histogram",
-					typ: MetricTypeGaugeHistogram,
+					typ: model.MetricTypeGaugeHistogram,
 				},
-				{ // 38
+				{
 					m: "test_gauge_float_histogram",
-					t: 1234568,
+					t: int64p(1234568),
 					fhs: &histogram.FloatHistogram{
 						CounterResetHint: histogram.GaugeType,
 						Count:            175.0,
@@ -1370,92 +1838,91 @@ func TestProtobufParse(t *testing.T) {
 					lset: labels.FromStrings(
 						"__name__", "test_gauge_float_histogram",
 					),
-					e: []exemplar.Exemplar{
+					es: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
-						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
 					},
 				},
-				{ // 39
+				{
 					m: "test_gauge_float_histogram_count",
-					t: 1234568,
+					t: int64p(1234568),
 					v: 175,
 					lset: labels.FromStrings(
 						"__name__", "test_gauge_float_histogram_count",
 					),
 				},
-				{ // 40
+				{
 					m: "test_gauge_float_histogram_sum",
-					t: 1234568,
+					t: int64p(1234568),
 					v: 0.0008280461746287094,
 					lset: labels.FromStrings(
 						"__name__", "test_gauge_float_histogram_sum",
 					),
 				},
-				{ // 41
+				{
 					m: "test_gauge_float_histogram_bucket\xffle\xff-0.0004899999999999998",
-					t: 1234568,
+					t: int64p(1234568),
 					v: 2,
 					lset: labels.FromStrings(
 						"__name__", "test_gauge_float_histogram_bucket",
 						"le", "-0.0004899999999999998",
 					),
 				},
-				{ // 42
+				{
 					m: "test_gauge_float_histogram_bucket\xffle\xff-0.0003899999999999998",
-					t: 1234568,
+					t: int64p(1234568),
 					v: 4,
 					lset: labels.FromStrings(
 						"__name__", "test_gauge_float_histogram_bucket",
 						"le", "-0.0003899999999999998",
 					),
-					e: []exemplar.Exemplar{
+					es: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
 					},
 				},
-				{ // 43
+				{
 					m: "test_gauge_float_histogram_bucket\xffle\xff-0.0002899999999999998",
-					t: 1234568,
+					t: int64p(1234568),
 					v: 16,
 					lset: labels.FromStrings(
 						"__name__", "test_gauge_float_histogram_bucket",
 						"le", "-0.0002899999999999998",
 					),
-					e: []exemplar.Exemplar{
+					es: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
 					},
 				},
-				{ // 44
+				{
 					m: "test_gauge_float_histogram_bucket\xffle\xff+Inf",
-					t: 1234568,
+					t: int64p(1234568),
 					v: 175,
 					lset: labels.FromStrings(
 						"__name__", "test_gauge_float_histogram_bucket",
 						"le", "+Inf",
 					),
 				},
-				{ // 45
+				{
 					m:    "test_histogram2",
 					help: "Similar histogram as before but now without sparse buckets.",
 				},
-				{ // 46
+				{
 					m:   "test_histogram2",
-					typ: MetricTypeHistogram,
+					typ: model.MetricTypeHistogram,
 				},
-				{ // 47
+				{
 					m: "test_histogram2_count",
 					v: 175,
 					lset: labels.FromStrings(
 						"__name__", "test_histogram2_count",
 					),
 				},
-				{ // 48
+				{
 					m: "test_histogram2_sum",
 					v: 0.000828,
 					lset: labels.FromStrings(
 						"__name__", "test_histogram2_sum",
 					),
 				},
-				{ // 49
+				{
 					m: "test_histogram2_bucket\xffle\xff-0.00048",
 					v: 2,
 					lset: labels.FromStrings(
@@ -1463,29 +1930,29 @@ func TestProtobufParse(t *testing.T) {
 						"le", "-0.00048",
 					),
 				},
-				{ // 50
+				{
 					m: "test_histogram2_bucket\xffle\xff-0.00038",
 					v: 4,
 					lset: labels.FromStrings(
 						"__name__", "test_histogram2_bucket",
 						"le", "-0.00038",
 					),
-					e: []exemplar.Exemplar{
+					es: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00038, HasTs: true, Ts: 1625851153146},
 					},
 				},
-				{ // 51
+				{
 					m: "test_histogram2_bucket\xffle\xff1.0",
 					v: 16,
 					lset: labels.FromStrings(
 						"__name__", "test_histogram2_bucket",
 						"le", "1.0",
 					),
-					e: []exemplar.Exemplar{
+					es: []exemplar.Exemplar{
 						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.000295, HasTs: false},
 					},
 				},
-				{ // 52
+				{
 					m: "test_histogram2_bucket\xffle\xff+Inf",
 					v: 175,
 					lset: labels.FromStrings(
@@ -1493,15 +1960,75 @@ func TestProtobufParse(t *testing.T) {
 						"le", "+Inf",
 					),
 				},
-				{ // 53
+				{
+					m:    "test_histogram3",
+					help: "Similar histogram as before but now with integer buckets.",
+				},
+				{
+					m:   "test_histogram3",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m: "test_histogram3_count",
+					v: 6,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram3_count",
+					),
+				},
+				{
+					m: "test_histogram3_sum",
+					v: 50,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram3_sum",
+					),
+				},
+				{
+					m: "test_histogram3_bucket\xffle\xff-20.0",
+					v: 2,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram3_bucket",
+						"le", "-20.0",
+					),
+				},
+				{
+					m: "test_histogram3_bucket\xffle\xff20.0",
+					v: 4,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram3_bucket",
+						"le", "20.0",
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "59727"), Value: 15, HasTs: true, Ts: 1625851153146},
+					},
+				},
+				{
+					m: "test_histogram3_bucket\xffle\xff30.0",
+					v: 6,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram3_bucket",
+						"le", "30.0",
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "5617"), Value: 25, HasTs: false},
+					},
+				},
+				{
+					m: "test_histogram3_bucket\xffle\xff+Inf",
+					v: 6,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram3_bucket",
+						"le", "+Inf",
+					),
+				},
+				{
 					m:    "test_histogram_family",
 					help: "Test histogram metric family with two very simple histograms.",
 				},
-				{ // 54
+				{
 					m:   "test_histogram_family",
-					typ: MetricTypeHistogram,
+					typ: model.MetricTypeHistogram,
 				},
-				{ // 55
+				{
 					m: "test_histogram_family\xfffoo\xffbar",
 					shs: &histogram.Histogram{
 						CounterResetHint: histogram.UnknownCounterReset,
@@ -1519,7 +2046,7 @@ func TestProtobufParse(t *testing.T) {
 						"foo", "bar",
 					),
 				},
-				{ // 56
+				{
 					m: "test_histogram_family_count\xfffoo\xffbar",
 					v: 5,
 					lset: labels.FromStrings(
@@ -1527,7 +2054,7 @@ func TestProtobufParse(t *testing.T) {
 						"foo", "bar",
 					),
 				},
-				{ // 57
+				{
 					m: "test_histogram_family_sum\xfffoo\xffbar",
 					v: 12.1,
 					lset: labels.FromStrings(
@@ -1535,7 +2062,7 @@ func TestProtobufParse(t *testing.T) {
 						"foo", "bar",
 					),
 				},
-				{ // 58
+				{
 					m: "test_histogram_family_bucket\xfffoo\xffbar\xffle\xff1.1",
 					v: 2,
 					lset: labels.FromStrings(
@@ -1544,7 +2071,7 @@ func TestProtobufParse(t *testing.T) {
 						"le", "1.1",
 					),
 				},
-				{ // 59
+				{
 					m: "test_histogram_family_bucket\xfffoo\xffbar\xffle\xff2.2",
 					v: 3,
 					lset: labels.FromStrings(
@@ -1553,7 +2080,7 @@ func TestProtobufParse(t *testing.T) {
 						"le", "2.2",
 					),
 				},
-				{ // 60
+				{
 					m: "test_histogram_family_bucket\xfffoo\xffbar\xffle\xff+Inf",
 					v: 5,
 					lset: labels.FromStrings(
@@ -1562,7 +2089,7 @@ func TestProtobufParse(t *testing.T) {
 						"le", "+Inf",
 					),
 				},
-				{ // 61
+				{
 					m: "test_histogram_family\xfffoo\xffbaz",
 					shs: &histogram.Histogram{
 						CounterResetHint: histogram.UnknownCounterReset,
@@ -1580,7 +2107,7 @@ func TestProtobufParse(t *testing.T) {
 						"foo", "baz",
 					),
 				},
-				{ // 62
+				{
 					m: "test_histogram_family_count\xfffoo\xffbaz",
 					v: 6,
 					lset: labels.FromStrings(
@@ -1588,7 +2115,7 @@ func TestProtobufParse(t *testing.T) {
 						"foo", "baz",
 					),
 				},
-				{ // 63
+				{
 					m: "test_histogram_family_sum\xfffoo\xffbaz",
 					v: 13.1,
 					lset: labels.FromStrings(
@@ -1596,7 +2123,7 @@ func TestProtobufParse(t *testing.T) {
 						"foo", "baz",
 					),
 				},
-				{ // 64
+				{
 					m: "test_histogram_family_bucket\xfffoo\xffbaz\xffle\xff1.1",
 					v: 1,
 					lset: labels.FromStrings(
@@ -1605,7 +2132,7 @@ func TestProtobufParse(t *testing.T) {
 						"le", "1.1",
 					),
 				},
-				{ // 65
+				{
 					m: "test_histogram_family_bucket\xfffoo\xffbaz\xffle\xff2.2",
 					v: 5,
 					lset: labels.FromStrings(
@@ -1614,7 +2141,7 @@ func TestProtobufParse(t *testing.T) {
 						"le", "2.2",
 					),
 				},
-				{ // 66
+				{
 					m: "test_histogram_family_bucket\xfffoo\xffbaz\xffle\xff+Inf",
 					v: 6,
 					lset: labels.FromStrings(
@@ -1623,15 +2150,15 @@ func TestProtobufParse(t *testing.T) {
 						"le", "+Inf",
 					),
 				},
-				{ // 67
+				{
 					m:    "test_float_histogram_with_zerothreshold_zero",
 					help: "Test float histogram with a zero threshold of zero.",
 				},
-				{ // 68
+				{
 					m:   "test_float_histogram_with_zerothreshold_zero",
-					typ: MetricTypeHistogram,
+					typ: model.MetricTypeHistogram,
 				},
-				{ // 69
+				{
 					m: "test_float_histogram_with_zerothreshold_zero",
 					fhs: &histogram.FloatHistogram{
 						Count:  5.0,
@@ -1647,15 +2174,15 @@ func TestProtobufParse(t *testing.T) {
 						"__name__", "test_float_histogram_with_zerothreshold_zero",
 					),
 				},
-				{ // 70
+				{
 					m:    "rpc_durations_seconds",
 					help: "RPC latency distributions.",
 				},
-				{ // 71
+				{
 					m:   "rpc_durations_seconds",
-					typ: MetricTypeSummary,
+					typ: model.MetricTypeSummary,
 				},
-				{ // 72
+				{
 					m: "rpc_durations_seconds_count\xffservice\xffexponential",
 					v: 262,
 					lset: labels.FromStrings(
@@ -1663,7 +2190,7 @@ func TestProtobufParse(t *testing.T) {
 						"service", "exponential",
 					),
 				},
-				{ // 73
+				{
 					m: "rpc_durations_seconds_sum\xffservice\xffexponential",
 					v: 0.00025551262820703587,
 					lset: labels.FromStrings(
@@ -1671,7 +2198,7 @@ func TestProtobufParse(t *testing.T) {
 						"service", "exponential",
 					),
 				},
-				{ // 74
+				{
 					m: "rpc_durations_seconds\xffservice\xffexponential\xffquantile\xff0.5",
 					v: 6.442786329648548e-07,
 					lset: labels.FromStrings(
@@ -1680,7 +2207,7 @@ func TestProtobufParse(t *testing.T) {
 						"service", "exponential",
 					),
 				},
-				{ // 75
+				{
 					m: "rpc_durations_seconds\xffservice\xffexponential\xffquantile\xff0.9",
 					v: 1.9435742936658396e-06,
 					lset: labels.FromStrings(
@@ -1689,7 +2216,7 @@ func TestProtobufParse(t *testing.T) {
 						"service", "exponential",
 					),
 				},
-				{ // 76
+				{
 					m: "rpc_durations_seconds\xffservice\xffexponential\xffquantile\xff0.99",
 					v: 4.0471608667037015e-06,
 					lset: labels.FromStrings(
@@ -1698,37 +2225,37 @@ func TestProtobufParse(t *testing.T) {
 						"service", "exponential",
 					),
 				},
-				{ // 77
+				{
 					m:    "without_quantiles",
 					help: "A summary without quantiles.",
 				},
-				{ // 78
+				{
 					m:   "without_quantiles",
-					typ: MetricTypeSummary,
+					typ: model.MetricTypeSummary,
 				},
-				{ // 79
+				{
 					m: "without_quantiles_count",
 					v: 42,
 					lset: labels.FromStrings(
 						"__name__", "without_quantiles_count",
 					),
 				},
-				{ // 80
+				{
 					m: "without_quantiles_sum",
 					v: 1.234,
 					lset: labels.FromStrings(
 						"__name__", "without_quantiles_sum",
 					),
 				},
-				{ // 78
+				{
 					m:    "empty_histogram",
 					help: "A histogram without observations and with a zero threshold of zero but with a no-op span to identify it as a native histogram.",
 				},
-				{ // 79
+				{
 					m:   "empty_histogram",
-					typ: MetricTypeHistogram,
+					typ: model.MetricTypeHistogram,
 				},
-				{ // 80
+				{
 					m: "empty_histogram",
 					shs: &histogram.Histogram{
 						CounterResetHint: histogram.UnknownCounterReset,
@@ -1737,6 +2264,267 @@ func TestProtobufParse(t *testing.T) {
 					},
 					lset: labels.FromStrings(
 						"__name__", "empty_histogram",
+					),
+				},
+				{
+					m:    "test_counter_with_createdtimestamp",
+					help: "A counter with a created timestamp.",
+				},
+				{
+					m:   "test_counter_with_createdtimestamp",
+					typ: model.MetricTypeCounter,
+				},
+				{
+					m:  "test_counter_with_createdtimestamp",
+					v:  42,
+					ct: int64p(1000),
+					lset: labels.FromStrings(
+						"__name__", "test_counter_with_createdtimestamp",
+					),
+				},
+				{
+					m:    "test_summary_with_createdtimestamp",
+					help: "A summary with a created timestamp.",
+				},
+				{
+					m:   "test_summary_with_createdtimestamp",
+					typ: model.MetricTypeSummary,
+				},
+				{
+					m:  "test_summary_with_createdtimestamp_count",
+					v:  42,
+					ct: int64p(1000),
+					lset: labels.FromStrings(
+						"__name__", "test_summary_with_createdtimestamp_count",
+					),
+				},
+				{
+					m:  "test_summary_with_createdtimestamp_sum",
+					v:  1.234,
+					ct: int64p(1000),
+					lset: labels.FromStrings(
+						"__name__", "test_summary_with_createdtimestamp_sum",
+					),
+				},
+				{
+					m:    "test_histogram_with_createdtimestamp",
+					help: "A histogram with a created timestamp.",
+				},
+				{
+					m:   "test_histogram_with_createdtimestamp",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m:  "test_histogram_with_createdtimestamp",
+					ct: int64p(1000),
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.UnknownCounterReset,
+						PositiveSpans:    []histogram.Span{},
+						NegativeSpans:    []histogram.Span{},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_with_createdtimestamp",
+					),
+				},
+				{
+					m:    "test_gaugehistogram_with_createdtimestamp",
+					help: "A gauge histogram with a created timestamp.",
+				},
+				{
+					m:   "test_gaugehistogram_with_createdtimestamp",
+					typ: model.MetricTypeGaugeHistogram,
+				},
+				{
+					m:  "test_gaugehistogram_with_createdtimestamp",
+					ct: int64p(1000),
+					shs: &histogram.Histogram{
+						CounterResetHint: histogram.GaugeType,
+						PositiveSpans:    []histogram.Span{},
+						NegativeSpans:    []histogram.Span{},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_gaugehistogram_with_createdtimestamp",
+					),
+				},
+				{
+					m:    "test_histogram_with_native_histogram_exemplars",
+					help: "A histogram with native histogram exemplars.",
+				},
+				{
+					m:   "test_histogram_with_native_histogram_exemplars",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m: "test_histogram_with_native_histogram_exemplars",
+					t: int64p(1234568),
+					shs: &histogram.Histogram{
+						Count:         175,
+						ZeroCount:     2,
+						Sum:           0.0008280461746287094,
+						ZeroThreshold: 2.938735877055719e-39,
+						Schema:        3,
+						PositiveSpans: []histogram.Span{
+							{Offset: -161, Length: 1},
+							{Offset: 8, Length: 3},
+						},
+						NegativeSpans: []histogram.Span{
+							{Offset: -162, Length: 1},
+							{Offset: 23, Length: 4},
+						},
+						PositiveBuckets: []int64{1, 2, -1, -1},
+						NegativeBuckets: []int64{1, 3, -2, -1, 1},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_with_native_histogram_exemplars",
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "59780"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
+						{Labels: labels.FromStrings("dummyID", "59772"), Value: -0.00052, HasTs: true, Ts: 1625851160156},
+					},
+				},
+				{
+					m: "test_histogram_with_native_histogram_exemplars_count",
+					t: int64p(1234568),
+					v: 175,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_with_native_histogram_exemplars_count",
+					),
+				},
+				{
+					m: "test_histogram_with_native_histogram_exemplars_sum",
+					t: int64p(1234568),
+					v: 0.0008280461746287094,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_with_native_histogram_exemplars_sum",
+					),
+				},
+				{
+					m: "test_histogram_with_native_histogram_exemplars_bucket\xffle\xff-0.0004899999999999998",
+					t: int64p(1234568),
+					v: 2,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_with_native_histogram_exemplars_bucket",
+						"le", "-0.0004899999999999998",
+					),
+				},
+				{
+					m: "test_histogram_with_native_histogram_exemplars_bucket\xffle\xff-0.0003899999999999998",
+					t: int64p(1234568),
+					v: 4,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_with_native_histogram_exemplars_bucket",
+						"le", "-0.0003899999999999998",
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
+					},
+				},
+				{
+					m: "test_histogram_with_native_histogram_exemplars_bucket\xffle\xff-0.0002899999999999998",
+					t: int64p(1234568),
+					v: 16,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_with_native_histogram_exemplars_bucket",
+						"le", "-0.0002899999999999998",
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
+					},
+				},
+				{
+					m: "test_histogram_with_native_histogram_exemplars_bucket\xffle\xff+Inf",
+					t: int64p(1234568),
+					v: 175,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_with_native_histogram_exemplars_bucket",
+						"le", "+Inf",
+					),
+				},
+				{
+					m:    "test_histogram_with_native_histogram_exemplars2",
+					help: "Another histogram with native histogram exemplars.",
+				},
+				{
+					m:   "test_histogram_with_native_histogram_exemplars2",
+					typ: model.MetricTypeHistogram,
+				},
+				{
+					m: "test_histogram_with_native_histogram_exemplars2",
+					t: int64p(1234568),
+					shs: &histogram.Histogram{
+						Count:         175,
+						ZeroCount:     2,
+						Sum:           0.0008280461746287094,
+						ZeroThreshold: 2.938735877055719e-39,
+						Schema:        3,
+						PositiveSpans: []histogram.Span{
+							{Offset: -161, Length: 1},
+							{Offset: 8, Length: 3},
+						},
+						NegativeSpans: []histogram.Span{
+							{Offset: -162, Length: 1},
+							{Offset: 23, Length: 4},
+						},
+						PositiveBuckets: []int64{1, 2, -1, -1},
+						NegativeBuckets: []int64{1, 3, -2, -1, 1},
+					},
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_with_native_histogram_exemplars2",
+					),
+					es: []exemplar.Exemplar{
+						{Labels: labels.FromStrings("dummyID", "59780"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
+					},
+				},
+				{
+					m: "test_histogram_with_native_histogram_exemplars2_count",
+					t: int64p(1234568),
+					v: 175,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_with_native_histogram_exemplars2_count",
+					),
+				},
+				{
+					m: "test_histogram_with_native_histogram_exemplars2_sum",
+					t: int64p(1234568),
+					v: 0.0008280461746287094,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_with_native_histogram_exemplars2_sum",
+					),
+				},
+				{
+					m: "test_histogram_with_native_histogram_exemplars2_bucket\xffle\xff-0.0004899999999999998",
+					t: int64p(1234568),
+					v: 2,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_with_native_histogram_exemplars2_bucket",
+						"le", "-0.0004899999999999998",
+					),
+				},
+				{
+					m: "test_histogram_with_native_histogram_exemplars2_bucket\xffle\xff-0.0003899999999999998",
+					t: int64p(1234568),
+					v: 4,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_with_native_histogram_exemplars2_bucket",
+						"le", "-0.0003899999999999998",
+					),
+				},
+				{
+					m: "test_histogram_with_native_histogram_exemplars2_bucket\xffle\xff-0.0002899999999999998",
+					t: int64p(1234568),
+					v: 16,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_with_native_histogram_exemplars2_bucket",
+						"le", "-0.0002899999999999998",
+					),
+				},
+				{
+					m: "test_histogram_with_native_histogram_exemplars2_bucket\xffle\xff+Inf",
+					t: int64p(1234568),
+					v: 175,
+					lset: labels.FromStrings(
+						"__name__", "test_histogram_with_native_histogram_exemplars2_bucket",
+						"le", "+Inf",
 					),
 				},
 			},
@@ -1746,87 +2534,11 @@ func TestProtobufParse(t *testing.T) {
 	for _, scenario := range scenarios {
 		t.Run(scenario.name, func(t *testing.T) {
 			var (
-				i   int
-				res labels.Labels
 				p   = scenario.parser
 				exp = scenario.expected
 			)
-
-			for {
-				et, err := p.Next()
-				if errors.Is(err, io.EOF) {
-					break
-				}
-				require.NoError(t, err)
-
-				switch et {
-				case EntrySeries:
-					m, ts, v := p.Series()
-
-					var e exemplar.Exemplar
-					p.Metric(&res)
-					found := p.Exemplar(&e)
-					require.Equal(t, exp[i].m, string(m), "i: %d", i)
-					if ts != nil {
-						require.Equal(t, exp[i].t, *ts, "i: %d", i)
-					} else {
-						require.Equal(t, exp[i].t, int64(0), "i: %d", i)
-					}
-					require.Equal(t, exp[i].v, v, "i: %d", i)
-					require.Equal(t, exp[i].lset, res, "i: %d", i)
-					if len(exp[i].e) == 0 {
-						require.Equal(t, false, found, "i: %d", i)
-					} else {
-						require.Equal(t, true, found, "i: %d", i)
-						require.Equal(t, exp[i].e[0], e, "i: %d", i)
-						require.False(t, p.Exemplar(&e), "too many exemplars returned, i: %d", i)
-					}
-
-				case EntryHistogram:
-					m, ts, shs, fhs := p.Histogram()
-					p.Metric(&res)
-					require.Equal(t, exp[i].m, string(m), "i: %d", i)
-					if ts != nil {
-						require.Equal(t, exp[i].t, *ts, "i: %d", i)
-					} else {
-						require.Equal(t, exp[i].t, int64(0), "i: %d", i)
-					}
-					require.Equal(t, exp[i].lset, res, "i: %d", i)
-					require.Equal(t, exp[i].m, string(m), "i: %d", i)
-					if shs != nil {
-						require.Equal(t, exp[i].shs, shs, "i: %d", i)
-					} else {
-						require.Equal(t, exp[i].fhs, fhs, "i: %d", i)
-					}
-					j := 0
-					for e := (exemplar.Exemplar{}); p.Exemplar(&e); j++ {
-						require.Equal(t, exp[i].e[j], e, "i: %d", i)
-						e = exemplar.Exemplar{}
-					}
-					require.Equal(t, len(exp[i].e), j, "not enough exemplars found, i: %d", i)
-
-				case EntryType:
-					m, typ := p.Type()
-					require.Equal(t, exp[i].m, string(m), "i: %d", i)
-					require.Equal(t, exp[i].typ, typ, "i: %d", i)
-
-				case EntryHelp:
-					m, h := p.Help()
-					require.Equal(t, exp[i].m, string(m), "i: %d", i)
-					require.Equal(t, exp[i].help, string(h), "i: %d", i)
-
-				case EntryUnit:
-					m, u := p.Unit()
-					require.Equal(t, exp[i].m, string(m), "i: %d", i)
-					require.Equal(t, exp[i].unit, string(u), "i: %d", i)
-
-				case EntryComment:
-					require.Equal(t, exp[i].comment, string(p.Comment()), "i: %d", i)
-				}
-
-				i++
-			}
-			require.Equal(t, len(exp), i)
+			got := testParse(t, p)
+			requireEntries(t, exp, got)
 		})
 	}
 }

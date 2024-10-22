@@ -15,7 +15,7 @@ Tooling for the Prometheus monitoring system.
 | <code class="text-nowrap">-h</code>, <code class="text-nowrap">--help</code> | Show context-sensitive help (also try --help-long and --help-man). |
 | <code class="text-nowrap">--version</code> | Show application version. |
 | <code class="text-nowrap">--experimental</code> | Enable experimental commands. |
-| <code class="text-nowrap">--enable-feature</code> | Comma separated feature names to enable (only PromQL related and no-default-scrape-port). See https://prometheus.io/docs/prometheus/latest/feature_flags/ for the options and more details. |
+| <code class="text-nowrap">--enable-feature</code> <code class="text-nowrap">...<code class="text-nowrap"> | Comma separated feature names to enable. Currently unused. |
 
 
 
@@ -281,7 +281,7 @@ Run series query.
 
 | Flag | Description |
 | --- | --- |
-| <code class="text-nowrap">--match</code> | Series selector. Can be specified multiple times. |
+| <code class="text-nowrap">--match</code> <code class="text-nowrap">...<code class="text-nowrap"> | Series selector. Can be specified multiple times. |
 | <code class="text-nowrap">--start</code> | Start time (RFC3339 or Unix timestamp). |
 | <code class="text-nowrap">--end</code> | End time (RFC3339 or Unix timestamp). |
 
@@ -309,7 +309,7 @@ Run labels query.
 | --- | --- |
 | <code class="text-nowrap">--start</code> | Start time (RFC3339 or Unix timestamp). |
 | <code class="text-nowrap">--end</code> | End time (RFC3339 or Unix timestamp). |
-| <code class="text-nowrap">--match</code> | Series selector. Can be specified multiple times. |
+| <code class="text-nowrap">--match</code> <code class="text-nowrap">...<code class="text-nowrap"> | Series selector. Can be specified multiple times. |
 
 
 
@@ -320,6 +320,25 @@ Run labels query.
 | --- | --- | --- |
 | server | Prometheus server to query. | Yes |
 | name | Label name to provide label values for. | Yes |
+
+
+
+
+##### `promtool query analyze`
+
+Run queries against your Prometheus to analyze the usage pattern of certain metrics.
+
+
+
+###### Flags
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| <code class="text-nowrap">--server</code> | Prometheus server to query. |  |
+| <code class="text-nowrap">--type</code> | Type of metric: histogram. |  |
+| <code class="text-nowrap">--duration</code> | Time frame to analyze. | `1h` |
+| <code class="text-nowrap">--time</code> | Query time (RFC3339 or Unix timestamp), defaults to now. |  |
+| <code class="text-nowrap">--match</code> <code class="text-nowrap">...<code class="text-nowrap"> | Series selector. Can be specified multiple times. |  |
 
 
 
@@ -423,9 +442,29 @@ Unit testing.
 
 
 
+#### Flags
+
+| Flag | Description |
+| --- | --- |
+| <code class="text-nowrap">--junit</code> | File path to store JUnit XML test results. |
+
+
+
+
 ##### `promtool test rules`
 
 Unit tests for rules.
+
+
+
+###### Flags
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| <code class="text-nowrap">--run</code> <code class="text-nowrap">...<code class="text-nowrap"> | If set, will only run test groups whose names match the regular expression. Can be specified multiple times. |  |
+| <code class="text-nowrap">--debug</code> | Enable unit test debugging. | `false` |
+| <code class="text-nowrap">--diff</code> | [Experimental] Print colored differential output between expected & received output. | `false` |
+
 
 
 
@@ -488,6 +527,7 @@ Analyze churn, label pair cardinality and compaction efficiency.
 | --- | --- | --- |
 | <code class="text-nowrap">--limit</code> | How many items to show in each list. | `20` |
 | <code class="text-nowrap">--extended</code> | Run extended analysis. |  |
+| <code class="text-nowrap">--match</code> | Series selector to analyze. Only 1 set of matchers is supported now. |  |
 
 
 
@@ -536,9 +576,37 @@ Dump samples from a TSDB.
 
 | Flag | Description | Default |
 | --- | --- | --- |
+| <code class="text-nowrap">--sandbox-dir-root</code> | Root directory where a sandbox directory will be created, this sandbox is used in case WAL replay generates chunks (default is the database path). The sandbox is cleaned up at the end. |  |
 | <code class="text-nowrap">--min-time</code> | Minimum timestamp to dump. | `-9223372036854775808` |
 | <code class="text-nowrap">--max-time</code> | Maximum timestamp to dump. | `9223372036854775807` |
-| <code class="text-nowrap">--match</code> | Series selector. | `{__name__=~'(?s:.*)'}` |
+| <code class="text-nowrap">--match</code> <code class="text-nowrap">...<code class="text-nowrap"> | Series selector. Can be specified multiple times. | `{__name__=~'(?s:.*)'}` |
+
+
+
+
+###### Arguments
+
+| Argument | Description | Default |
+| --- | --- | --- |
+| db path | Database path (default is data/). | `data/` |
+
+
+
+
+##### `promtool tsdb dump-openmetrics`
+
+[Experimental] Dump samples from a TSDB into OpenMetrics text format, excluding native histograms and staleness markers, which are not representable in OpenMetrics.
+
+
+
+###### Flags
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| <code class="text-nowrap">--sandbox-dir-root</code> | Root directory where a sandbox directory will be created, this sandbox is used in case WAL replay generates chunks (default is the database path). The sandbox is cleaned up at the end. |  |
+| <code class="text-nowrap">--min-time</code> | Minimum timestamp to dump. | `-9223372036854775808` |
+| <code class="text-nowrap">--max-time</code> | Maximum timestamp to dump. | `9223372036854775807` |
+| <code class="text-nowrap">--match</code> <code class="text-nowrap">...<code class="text-nowrap"> | Series selector. Can be specified multiple times. | `{__name__=~'(?s:.*)'}` |
 
 
 
@@ -571,6 +639,15 @@ Dump samples from a TSDB.
 ##### `promtool tsdb create-blocks-from openmetrics`
 
 Import samples from OpenMetrics input and produce TSDB blocks. Please refer to the storage docs for more details.
+
+
+
+###### Flags
+
+| Flag | Description |
+| --- | --- |
+| <code class="text-nowrap">--label</code> | Label to attach to metrics. Can be specified multiple times. Example --label=label_name=label_value |
+
 
 
 

@@ -86,6 +86,14 @@ name: <string>
 # rule can produce. 0 is no limit.
 [ limit: <int> | default = 0 ]
 
+# Offset the rule evaluation timestamp of this particular group by the specified duration into the past.
+[ query_offset: <duration> | default = global.rule_query_offset ]
+
+# Labels to add or overwrite before storing the result for its rules.
+# Labels defined in <rule> will override the key if it has a collision.
+labels:
+  [ <labelname>: <labelvalue> ]
+
 rules:
   [ - <rule> ... ]
 ```
@@ -147,3 +155,10 @@ by the rule are discarded, and if it's an alerting rule, _all_ alerts for
 the rule, active, pending, or inactive, are cleared as well. The event will be
 recorded as an error in the evaluation, and as such no stale markers are
 written.
+
+# Rule query offset
+This is useful to ensure the underlying metrics have been received and stored in Prometheus. Metric availability delays are more likely to occur when Prometheus is running as a remote write target due to the nature of distributed systems, but can also occur when there's anomalies with scraping and/or short evaluation intervals.
+
+# Failed rule evaluations due to slow evaluation
+
+If a rule group hasn't finished evaluating before its next evaluation is supposed to start (as defined by the `evaluation_interval`), the next evaluation will be skipped. Subsequent evaluations of the rule group will continue to be skipped until the initial evaluation either completes or times out. When this happens, there will be a gap in the metric produced by the recording rule. The `rule_group_iterations_missed_total` metric will be incremented for each missed iteration of the rule group. 

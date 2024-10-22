@@ -52,6 +52,12 @@ type bstream struct {
 	count  uint8  // How many right-most bits are available for writing in the current byte (the last byte of the stream).
 }
 
+// Reset resets b around stream.
+func (b *bstream) Reset(stream []byte) {
+	b.stream = stream
+	b.count = 0
+}
+
 func (b *bstream) bytes() []byte {
 	return b.stream
 }
@@ -80,8 +86,8 @@ func (b *bstream) writeBit(bit bit) {
 
 func (b *bstream) writeByte(byt byte) {
 	if b.count == 0 {
-		b.stream = append(b.stream, 0)
-		b.count = 8
+		b.stream = append(b.stream, byt)
+		return
 	}
 
 	i := len(b.stream) - 1
@@ -89,10 +95,8 @@ func (b *bstream) writeByte(byt byte) {
 	// Complete the last byte with the leftmost b.count bits from byt.
 	b.stream[i] |= byt >> (8 - b.count)
 
-	b.stream = append(b.stream, 0)
-	i++
 	// Write the remainder, if any.
-	b.stream[i] = byt << b.count
+	b.stream = append(b.stream, byt<<b.count)
 }
 
 // writeBits writes the nbits right-most bits of u to the stream

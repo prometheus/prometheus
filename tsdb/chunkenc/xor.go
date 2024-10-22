@@ -14,7 +14,7 @@
 // The code in this file was largely written by Damian Gryski as part of
 // https://github.com/dgryski/go-tsz and published under the license below.
 // It was modified to accommodate reading from byte slices without modifying
-// the underlying bytes, which would panic when reading from mmap'd
+// the underlying bytes, which would panic when reading from mmapped
 // read-only byte slices.
 
 // Copyright (c) 2015,2016 Damian Gryski <damian@gryski.com>
@@ -60,10 +60,14 @@ type XORChunk struct {
 	b bstream
 }
 
-// NewXORChunk returns a new chunk with XOR encoding of the given size.
+// NewXORChunk returns a new chunk with XOR encoding.
 func NewXORChunk() *XORChunk {
 	b := make([]byte, 2, 128)
 	return &XORChunk{b: bstream{stream: b, count: 0}}
+}
+
+func (c *XORChunk) Reset(stream []byte) {
+	c.b.Reset(stream)
 }
 
 // Encoding returns the encoding type.
@@ -99,7 +103,7 @@ func (c *XORChunk) Appender() (Appender, error) {
 	// To get an appender we must know the state it would have if we had
 	// appended all existing data from scratch.
 	// We iterate through the end and populate via the iterator's state.
-	for it.Next() != ValNone { // nolint:revive
+	for it.Next() != ValNone {
 	}
 	if err := it.Err(); err != nil {
 		return nil, err
@@ -171,7 +175,6 @@ func (a *xorAppender) Append(t int64, v float64) {
 		}
 
 		a.writeVDelta(v)
-
 	default:
 		tDelta = uint64(t - a.t)
 		dod := int64(tDelta - a.tDelta)
@@ -188,8 +191,8 @@ func (a *xorAppender) Append(t int64, v float64) {
 		case dod == 0:
 			a.b.writeBit(zero)
 		case bitRange(dod, 14):
-			a.b.writeBits(0b10, 2)
-			a.b.writeBits(uint64(dod), 14)
+			a.b.writeByte(0b10<<6 | (uint8(dod>>8) & (1<<6 - 1))) // 0b10 size code combined with 6 bits of dod.
+			a.b.writeByte(uint8(dod))                             // Bottom 8 bits of dod.
 		case bitRange(dod, 17):
 			a.b.writeBits(0b110, 3)
 			a.b.writeBits(uint64(dod), 17)
@@ -260,11 +263,11 @@ func (it *xorIterator) At() (int64, float64) {
 	return it.t, it.val
 }
 
-func (it *xorIterator) AtHistogram() (int64, *histogram.Histogram) {
+func (it *xorIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	panic("cannot call xorIterator.AtHistogram")
 }
 
-func (it *xorIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (it *xorIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	panic("cannot call xorIterator.AtFloatHistogram")
 }
 

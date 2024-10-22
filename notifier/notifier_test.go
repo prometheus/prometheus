@@ -27,13 +27,18 @@ import (
 	"time"
 
 	"github.com/prometheus/alertmanager/api/v2/models"
+	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"gopkg.in/yaml.v2"
 
+	"github.com/prometheus/prometheus/discovery"
+
 	"github.com/prometheus/prometheus/config"
+	_ "github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
@@ -45,27 +50,27 @@ func TestPostPath(t *testing.T) {
 	}{
 		{
 			in:  "",
-			out: "/api/v1/alerts",
+			out: "/api/v2/alerts",
 		},
 		{
 			in:  "/",
-			out: "/api/v1/alerts",
+			out: "/api/v2/alerts",
 		},
 		{
 			in:  "/prefix",
-			out: "/prefix/api/v1/alerts",
+			out: "/prefix/api/v2/alerts",
 		},
 		{
 			in:  "/prefix//",
-			out: "/prefix/api/v1/alerts",
+			out: "/prefix/api/v2/alerts",
 		},
 		{
 			in:  "prefix//",
-			out: "/prefix/api/v1/alerts",
+			out: "/prefix/api/v2/alerts",
 		},
 	}
 	for _, c := range cases {
-		require.Equal(t, c.out, postPath(c.in, config.AlertmanagerAPIVersionV1))
+		require.Equal(t, c.out, postPath(c.in, config.AlertmanagerAPIVersionV2))
 	}
 }
 
@@ -74,7 +79,7 @@ func TestHandlerNextBatch(t *testing.T) {
 
 	for i := range make([]struct{}, 2*maxBatchSize+1) {
 		h.queue = append(h.queue, &Alert{
-			Labels: labels.FromStrings("alertname", fmt.Sprintf("%d", i)),
+			Labels: labels.FromStrings("alertname", strconv.Itoa(i)),
 		})
 	}
 
@@ -83,7 +88,7 @@ func TestHandlerNextBatch(t *testing.T) {
 	require.NoError(t, alertsEqual(expected[0:maxBatchSize], h.nextBatch()))
 	require.NoError(t, alertsEqual(expected[maxBatchSize:2*maxBatchSize], h.nextBatch()))
 	require.NoError(t, alertsEqual(expected[2*maxBatchSize:], h.nextBatch()))
-	require.Equal(t, 0, len(h.queue), "Expected queue to be empty but got %d alerts", len(h.queue))
+	require.Empty(t, h.queue, "Expected queue to be empty but got %d alerts", len(h.queue))
 }
 
 func alertsEqual(a, b []*Alert) error {
@@ -98,6 +103,41 @@ func alertsEqual(a, b []*Alert) error {
 	return nil
 }
 
+func newTestHTTPServerBuilder(expected *[]*Alert, errc chan<- error, u, p string, status *atomic.Int32) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		defer func() {
+			if err == nil {
+				return
+			}
+			select {
+			case errc <- err:
+			default:
+			}
+		}()
+		user, pass, _ := r.BasicAuth()
+		if user != u || pass != p {
+			err = fmt.Errorf("unexpected user/password: %s/%s != %s/%s", user, pass, u, p)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		b, err := io.ReadAll(r.Body)
+		if err != nil {
+			err = fmt.Errorf("error reading body: %w", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		var alerts []*Alert
+		err = json.Unmarshal(b, &alerts)
+		if err == nil {
+			err = alertsEqual(*expected, alerts)
+		}
+		w.WriteHeader(int(status.Load()))
+	}))
+}
+
 func TestHandlerSendAll(t *testing.T) {
 	var (
 		errc             = make(chan error, 1)
@@ -107,42 +147,8 @@ func TestHandlerSendAll(t *testing.T) {
 	status1.Store(int32(http.StatusOK))
 	status2.Store(int32(http.StatusOK))
 
-	newHTTPServer := func(u, p string, status *atomic.Int32) *httptest.Server {
-		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var err error
-			defer func() {
-				if err == nil {
-					return
-				}
-				select {
-				case errc <- err:
-				default:
-				}
-			}()
-			user, pass, _ := r.BasicAuth()
-			if user != u || pass != p {
-				err = fmt.Errorf("unexpected user/password: %s/%s != %s/%s", user, pass, u, p)
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-
-			b, err := io.ReadAll(r.Body)
-			if err != nil {
-				err = fmt.Errorf("error reading body: %w", err)
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-
-			var alerts []*Alert
-			err = json.Unmarshal(b, &alerts)
-			if err == nil {
-				err = alertsEqual(expected, alerts)
-			}
-			w.WriteHeader(int(status.Load()))
-		}))
-	}
-	server1 := newHTTPServer("prometheus", "testing_password", &status1)
-	server2 := newHTTPServer("", "", &status2)
+	server1 := newTestHTTPServerBuilder(&expected, errc, "prometheus", "testing_password", &status1)
+	server2 := newTestHTTPServerBuilder(&expected, errc, "", "", &status2)
 	defer server1.Close()
 	defer server2.Close()
 
@@ -185,10 +191,10 @@ func TestHandlerSendAll(t *testing.T) {
 
 	for i := range make([]struct{}, maxBatchSize) {
 		h.queue = append(h.queue, &Alert{
-			Labels: labels.FromStrings("alertname", fmt.Sprintf("%d", i)),
+			Labels: labels.FromStrings("alertname", strconv.Itoa(i)),
 		})
 		expected = append(expected, &Alert{
-			Labels: labels.FromStrings("alertname", fmt.Sprintf("%d", i)),
+			Labels: labels.FromStrings("alertname", strconv.Itoa(i)),
 		})
 	}
 
@@ -211,6 +217,129 @@ func TestHandlerSendAll(t *testing.T) {
 	status2.Store(int32(http.StatusInternalServerError))
 	require.False(t, h.sendAll(h.queue...), "all sends succeeded unexpectedly")
 	checkNoErr()
+}
+
+func TestHandlerSendAllRemapPerAm(t *testing.T) {
+	var (
+		errc      = make(chan error, 1)
+		expected1 = make([]*Alert, 0, maxBatchSize)
+		expected2 = make([]*Alert, 0, maxBatchSize)
+		expected3 = make([]*Alert, 0)
+
+		statusOK atomic.Int32
+	)
+	statusOK.Store(int32(http.StatusOK))
+
+	server1 := newTestHTTPServerBuilder(&expected1, errc, "", "", &statusOK)
+	server2 := newTestHTTPServerBuilder(&expected2, errc, "", "", &statusOK)
+	server3 := newTestHTTPServerBuilder(&expected3, errc, "", "", &statusOK)
+
+	defer server1.Close()
+	defer server2.Close()
+	defer server3.Close()
+
+	h := NewManager(&Options{}, nil)
+	h.alertmanagers = make(map[string]*alertmanagerSet)
+
+	am1Cfg := config.DefaultAlertmanagerConfig
+	am1Cfg.Timeout = model.Duration(time.Second)
+
+	am2Cfg := config.DefaultAlertmanagerConfig
+	am2Cfg.Timeout = model.Duration(time.Second)
+	am2Cfg.AlertRelabelConfigs = []*relabel.Config{
+		{
+			SourceLabels: model.LabelNames{"alertnamedrop"},
+			Action:       "drop",
+			Regex:        relabel.MustNewRegexp(".+"),
+		},
+	}
+
+	am3Cfg := config.DefaultAlertmanagerConfig
+	am3Cfg.Timeout = model.Duration(time.Second)
+	am3Cfg.AlertRelabelConfigs = []*relabel.Config{
+		{
+			SourceLabels: model.LabelNames{"alertname"},
+			Action:       "drop",
+			Regex:        relabel.MustNewRegexp(".+"),
+		},
+	}
+
+	h.alertmanagers = map[string]*alertmanagerSet{
+		// Drop no alerts.
+		"1": {
+			ams: []alertmanager{
+				alertmanagerMock{
+					urlf: func() string { return server1.URL },
+				},
+			},
+			cfg: &am1Cfg,
+		},
+		// Drop only alerts with the "alertnamedrop" label.
+		"2": {
+			ams: []alertmanager{
+				alertmanagerMock{
+					urlf: func() string { return server2.URL },
+				},
+			},
+			cfg: &am2Cfg,
+		},
+		// Drop all alerts.
+		"3": {
+			ams: []alertmanager{
+				alertmanagerMock{
+					urlf: func() string { return server3.URL },
+				},
+			},
+			cfg: &am3Cfg,
+		},
+		// Empty list of Alertmanager endpoints.
+		"4": {
+			ams: []alertmanager{},
+			cfg: &config.DefaultAlertmanagerConfig,
+		},
+	}
+
+	for i := range make([]struct{}, maxBatchSize/2) {
+		h.queue = append(h.queue,
+			&Alert{
+				Labels: labels.FromStrings("alertname", strconv.Itoa(i)),
+			},
+			&Alert{
+				Labels: labels.FromStrings("alertname", "test", "alertnamedrop", strconv.Itoa(i)),
+			},
+		)
+
+		expected1 = append(expected1,
+			&Alert{
+				Labels: labels.FromStrings("alertname", strconv.Itoa(i)),
+			}, &Alert{
+				Labels: labels.FromStrings("alertname", "test", "alertnamedrop", strconv.Itoa(i)),
+			},
+		)
+
+		expected2 = append(expected2, &Alert{
+			Labels: labels.FromStrings("alertname", strconv.Itoa(i)),
+		})
+	}
+
+	checkNoErr := func() {
+		t.Helper()
+		select {
+		case err := <-errc:
+			require.NoError(t, err)
+		default:
+		}
+	}
+
+	require.True(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
+	checkNoErr()
+
+	// Verify that individual locks are released.
+	for k := range h.alertmanagers {
+		h.alertmanagers[k].mtx.Lock()
+		h.alertmanagers[k].ams = nil
+		h.alertmanagers[k].mtx.Unlock()
+	}
 }
 
 func TestCustomDo(t *testing.T) {
@@ -378,7 +507,7 @@ func TestHandlerQueuing(t *testing.T) {
 	var alerts []*Alert
 	for i := range make([]struct{}, 20*maxBatchSize) {
 		alerts = append(alerts, &Alert{
-			Labels: labels.FromStrings("alertname", fmt.Sprintf("%d", i)),
+			Labels: labels.FromStrings("alertname", strconv.Itoa(i)),
 		})
 	}
 
@@ -482,7 +611,7 @@ alerting:
 `
 	err := yaml.UnmarshalStrict([]byte(s), cfg)
 	require.NoError(t, err, "Unable to load YAML config.")
-	require.Equal(t, 1, len(cfg.AlertingConfig.AlertmanagerConfigs))
+	require.Len(t, cfg.AlertingConfig.AlertmanagerConfigs, 1)
 
 	err = n.ApplyConfig(cfg)
 	require.NoError(t, err, "Error applying the config.")
@@ -533,7 +662,7 @@ alerting:
 `
 	err := yaml.UnmarshalStrict([]byte(s), cfg)
 	require.NoError(t, err, "Unable to load YAML config.")
-	require.Equal(t, 1, len(cfg.AlertingConfig.AlertmanagerConfigs))
+	require.Len(t, cfg.AlertingConfig.AlertmanagerConfigs, 1)
 
 	err = n.ApplyConfig(cfg)
 	require.NoError(t, err, "Error applying the config.")
@@ -573,117 +702,423 @@ func TestLabelsToOpenAPILabelSet(t *testing.T) {
 	require.Equal(t, models.LabelSet{"aaa": "111", "bbb": "222"}, labelsToOpenAPILabelSet(labels.FromStrings("aaa", "111", "bbb", "222")))
 }
 
-// TestHangingNotifier validates that targets updates happen even when there are
-// queued alerts.
+// TestHangingNotifier ensures that the notifier takes into account SD changes even when there are
+// queued alerts. This test reproduces the issue described in https://github.com/prometheus/prometheus/issues/13676.
+// and https://github.com/prometheus/prometheus/issues/8768.
 func TestHangingNotifier(t *testing.T) {
-	// Note: When targets are not updated in time, this test is flaky because go
-	// selects are not deterministic. Therefore we run 10 subtests to run into the issue.
-	for i := 0; i < 10; i++ {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			var (
-				done    = make(chan struct{})
-				changed = make(chan struct{})
-				syncCh  = make(chan map[string][]*targetgroup.Group)
-			)
+	const (
+		batches     = 100
+		alertsCount = maxBatchSize * batches
+	)
 
-			defer func() {
-				close(done)
-			}()
+	var (
+		sendTimeout = 100 * time.Millisecond
+		sdUpdatert  = sendTimeout / 2
 
-			var calledOnce bool
-			// Setting up a bad server. This server hangs for 2 seconds.
-			badServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if calledOnce {
-					t.Fatal("hanging server called multiple times")
-				}
-				calledOnce = true
-				select {
-				case <-done:
-				case <-time.After(2 * time.Second):
-				}
-			}))
-			badURL, err := url.Parse(badServer.URL)
-			require.NoError(t, err)
-			badAddress := badURL.Host // Used for __name__ label in targets.
+		done = make(chan struct{})
+	)
 
-			// Setting up a bad server. This server returns fast, signaling requests on
-			// by closing the changed channel.
-			goodServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				close(changed)
-			}))
-			goodURL, err := url.Parse(goodServer.URL)
-			require.NoError(t, err)
-			goodAddress := goodURL.Host // Used for __name__ label in targets.
+	defer func() {
+		close(done)
+	}()
 
-			h := NewManager(
-				&Options{
-					QueueCapacity: 20 * maxBatchSize,
-				},
-				nil,
-			)
+	// Set up a faulty Alertmanager.
+	var faultyCalled atomic.Bool
+	faultyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		faultyCalled.Store(true)
+		select {
+		case <-done:
+		case <-time.After(time.Hour):
+		}
+	}))
+	faultyURL, err := url.Parse(faultyServer.URL)
+	require.NoError(t, err)
 
-			h.alertmanagers = make(map[string]*alertmanagerSet)
+	// Set up a functional Alertmanager.
+	var functionalCalled atomic.Bool
+	functionalServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		functionalCalled.Store(true)
+	}))
+	functionalURL, err := url.Parse(functionalServer.URL)
+	require.NoError(t, err)
 
-			am1Cfg := config.DefaultAlertmanagerConfig
-			am1Cfg.Timeout = model.Duration(200 * time.Millisecond)
+	// Initialize the discovery manager
+	// This is relevant as the updates aren't sent continually in real life, but only each updatert.
+	// The old implementation of TestHangingNotifier didn't take that into account.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	reg := prometheus.NewRegistry()
+	sdMetrics, err := discovery.RegisterSDMetrics(reg, discovery.NewRefreshMetrics(reg))
+	require.NoError(t, err)
+	sdManager := discovery.NewManager(
+		ctx,
+		promslog.NewNopLogger(),
+		reg,
+		sdMetrics,
+		discovery.Name("sd-manager"),
+		discovery.Updatert(sdUpdatert),
+	)
+	go sdManager.Run()
 
-			h.alertmanagers["config-0"] = &alertmanagerSet{
-				ams:     []alertmanager{},
-				cfg:     &am1Cfg,
-				metrics: h.metrics,
-			}
-			go h.Run(syncCh)
-			defer h.Stop()
+	// Set up the notifier with both faulty and functional Alertmanagers.
+	notifier := NewManager(
+		&Options{
+			QueueCapacity: alertsCount,
+		},
+		nil,
+	)
+	notifier.alertmanagers = make(map[string]*alertmanagerSet)
+	amCfg := config.DefaultAlertmanagerConfig
+	amCfg.Timeout = model.Duration(sendTimeout)
+	notifier.alertmanagers["config-0"] = &alertmanagerSet{
+		ams: []alertmanager{
+			alertmanagerMock{
+				urlf: func() string { return faultyURL.String() },
+			},
+			alertmanagerMock{
+				urlf: func() string { return functionalURL.String() },
+			},
+		},
+		cfg:     &amCfg,
+		metrics: notifier.metrics,
+	}
+	go notifier.Run(sdManager.SyncCh())
+	defer notifier.Stop()
 
-			var alerts []*Alert
-			for i := range make([]struct{}, 20*maxBatchSize) {
-				alerts = append(alerts, &Alert{
-					Labels: labels.FromStrings("alertname", fmt.Sprintf("%d", i)),
-				})
-			}
+	require.Len(t, notifier.Alertmanagers(), 2)
 
-			// Injecting the hanging server URL.
-			syncCh <- map[string][]*targetgroup.Group{
-				"config-0": {
-					{
-						Targets: []model.LabelSet{
-							{
-								model.AddressLabel: model.LabelValue(badAddress),
-							},
-						},
-					},
-				},
-			}
-
-			// Queing alerts.
-			h.Send(alerts...)
-
-			// Updating with a working alertmanager target.
-			go func() {
-				select {
-				case syncCh <- map[string][]*targetgroup.Group{
-					"config-0": {
-						{
-							Targets: []model.LabelSet{
-								{
-									model.AddressLabel: model.LabelValue(goodAddress),
-								},
-							},
-						},
-					},
-				}:
-				case <-done:
-				}
-			}()
-
-			select {
-			case <-time.After(1 * time.Second):
-				t.Fatalf("Timeout after 1 second, targets not synced in time.")
-			case <-changed:
-				// The good server has been hit in less than 3 seconds, therefore
-				// targets have been updated before a second call could be made to the
-				// bad server.
-			}
+	// Enqueue the alerts.
+	var alerts []*Alert
+	for i := range make([]struct{}, alertsCount) {
+		alerts = append(alerts, &Alert{
+			Labels: labels.FromStrings("alertname", strconv.Itoa(i)),
 		})
 	}
+	notifier.Send(alerts...)
+
+	// Wait for the Alertmanagers to start receiving alerts.
+	// 10*sdUpdatert is used as an arbitrary timeout here.
+	timeout := time.After(10 * sdUpdatert)
+loop1:
+	for {
+		select {
+		case <-timeout:
+			t.Fatalf("Timeout waiting for the alertmanagers to be reached for the first time.")
+		default:
+			if faultyCalled.Load() && functionalCalled.Load() {
+				break loop1
+			}
+		}
+	}
+
+	// Request to remove the faulty Alertmanager.
+	c := map[string]discovery.Configs{
+		"config-0": {
+			discovery.StaticConfig{
+				&targetgroup.Group{
+					Targets: []model.LabelSet{
+						{
+							model.AddressLabel: model.LabelValue(functionalURL.Host),
+						},
+					},
+				},
+			},
+		},
+	}
+	require.NoError(t, sdManager.ApplyConfig(c))
+
+	// The notifier should not wait until the alerts queue is empty to apply the discovery changes
+	// A faulty Alertmanager could cause each alert sending cycle to take up to AlertmanagerConfig.Timeout
+	// The queue may never be emptied, as the arrival rate could be larger than the departure rate
+	// It could even overflow and alerts could be dropped.
+	timeout = time.After(batches * sendTimeout)
+loop2:
+	for {
+		select {
+		case <-timeout:
+			t.Fatalf("Timeout, the faulty alertmanager not removed on time.")
+		default:
+			// The faulty alertmanager was dropped.
+			if len(notifier.Alertmanagers()) == 1 {
+				// Prevent from TOCTOU.
+				require.Positive(t, notifier.queueLen())
+				break loop2
+			}
+			require.Positive(t, notifier.queueLen(), "The faulty alertmanager wasn't dropped before the alerts queue was emptied.")
+		}
+	}
+}
+
+func TestStop_DrainingDisabled(t *testing.T) {
+	releaseReceiver := make(chan struct{})
+	receiverReceivedRequest := make(chan struct{}, 2)
+	alertsReceived := atomic.NewInt64(0)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Let the test know we've received a request.
+		receiverReceivedRequest <- struct{}{}
+
+		var alerts []*Alert
+
+		b, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+
+		err = json.Unmarshal(b, &alerts)
+		require.NoError(t, err)
+
+		alertsReceived.Add(int64(len(alerts)))
+
+		// Wait for the test to release us.
+		<-releaseReceiver
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer func() {
+		server.Close()
+	}()
+
+	m := NewManager(
+		&Options{
+			QueueCapacity:   10,
+			DrainOnShutdown: false,
+		},
+		nil,
+	)
+
+	m.alertmanagers = make(map[string]*alertmanagerSet)
+
+	am1Cfg := config.DefaultAlertmanagerConfig
+	am1Cfg.Timeout = model.Duration(time.Second)
+
+	m.alertmanagers["1"] = &alertmanagerSet{
+		ams: []alertmanager{
+			alertmanagerMock{
+				urlf: func() string { return server.URL },
+			},
+		},
+		cfg: &am1Cfg,
+	}
+
+	notificationManagerStopped := make(chan struct{})
+
+	go func() {
+		defer close(notificationManagerStopped)
+		m.Run(nil)
+	}()
+
+	// Queue two alerts. The first should be immediately sent to the receiver, which should block until we release it later.
+	m.Send(&Alert{Labels: labels.FromStrings(labels.AlertName, "alert-1")})
+
+	select {
+	case <-receiverReceivedRequest:
+		// Nothing more to do.
+	case <-time.After(time.Second):
+		require.FailNow(t, "gave up waiting for receiver to receive notification of first alert")
+	}
+
+	m.Send(&Alert{Labels: labels.FromStrings(labels.AlertName, "alert-2")})
+
+	// Stop the notification manager, pause to allow the shutdown to be observed, and then allow the receiver to proceed.
+	m.Stop()
+	time.Sleep(time.Second)
+	close(releaseReceiver)
+
+	// Wait for the notification manager to stop and confirm only the first notification was sent.
+	// The second notification should be dropped.
+	select {
+	case <-notificationManagerStopped:
+		// Nothing more to do.
+	case <-time.After(time.Second):
+		require.FailNow(t, "gave up waiting for notification manager to stop")
+	}
+
+	require.Equal(t, int64(1), alertsReceived.Load())
+}
+
+func TestStop_DrainingEnabled(t *testing.T) {
+	releaseReceiver := make(chan struct{})
+	receiverReceivedRequest := make(chan struct{}, 2)
+	alertsReceived := atomic.NewInt64(0)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Let the test know we've received a request.
+		receiverReceivedRequest <- struct{}{}
+
+		var alerts []*Alert
+
+		b, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+
+		err = json.Unmarshal(b, &alerts)
+		require.NoError(t, err)
+
+		alertsReceived.Add(int64(len(alerts)))
+
+		// Wait for the test to release us.
+		<-releaseReceiver
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer func() {
+		server.Close()
+	}()
+
+	m := NewManager(
+		&Options{
+			QueueCapacity:   10,
+			DrainOnShutdown: true,
+		},
+		nil,
+	)
+
+	m.alertmanagers = make(map[string]*alertmanagerSet)
+
+	am1Cfg := config.DefaultAlertmanagerConfig
+	am1Cfg.Timeout = model.Duration(time.Second)
+
+	m.alertmanagers["1"] = &alertmanagerSet{
+		ams: []alertmanager{
+			alertmanagerMock{
+				urlf: func() string { return server.URL },
+			},
+		},
+		cfg: &am1Cfg,
+	}
+
+	notificationManagerStopped := make(chan struct{})
+
+	go func() {
+		defer close(notificationManagerStopped)
+		m.Run(nil)
+	}()
+
+	// Queue two alerts. The first should be immediately sent to the receiver, which should block until we release it later.
+	m.Send(&Alert{Labels: labels.FromStrings(labels.AlertName, "alert-1")})
+
+	select {
+	case <-receiverReceivedRequest:
+		// Nothing more to do.
+	case <-time.After(time.Second):
+		require.FailNow(t, "gave up waiting for receiver to receive notification of first alert")
+	}
+
+	m.Send(&Alert{Labels: labels.FromStrings(labels.AlertName, "alert-2")})
+
+	// Stop the notification manager and allow the receiver to proceed.
+	m.Stop()
+	close(releaseReceiver)
+
+	// Wait for the notification manager to stop and confirm both notifications were sent.
+	select {
+	case <-notificationManagerStopped:
+		// Nothing more to do.
+	case <-time.After(200 * time.Millisecond):
+		require.FailNow(t, "gave up waiting for notification manager to stop")
+	}
+
+	require.Equal(t, int64(2), alertsReceived.Load())
+}
+
+func TestApplyConfig(t *testing.T) {
+	targetURL := "alertmanager:9093"
+	targetGroup := &targetgroup.Group{
+		Targets: []model.LabelSet{
+			{
+				"__address__": model.LabelValue(targetURL),
+			},
+		},
+	}
+	alertmanagerURL := fmt.Sprintf("http://%s/api/v2/alerts", targetURL)
+
+	n := NewManager(&Options{}, nil)
+	cfg := &config.Config{}
+	s := `
+alerting:
+  alertmanagers:
+  - file_sd_configs:
+    - files:
+      - foo.json
+`
+	// 1. Ensure known alertmanagers are not dropped during ApplyConfig.
+	require.NoError(t, yaml.UnmarshalStrict([]byte(s), cfg))
+	require.Len(t, cfg.AlertingConfig.AlertmanagerConfigs, 1)
+
+	// First, apply the config and reload.
+	require.NoError(t, n.ApplyConfig(cfg))
+	tgs := map[string][]*targetgroup.Group{"config-0": {targetGroup}}
+	n.reload(tgs)
+	require.Len(t, n.Alertmanagers(), 1)
+	require.Equal(t, alertmanagerURL, n.Alertmanagers()[0].String())
+
+	// Reapply the config.
+	require.NoError(t, n.ApplyConfig(cfg))
+	// Ensure the known alertmanagers are not dropped.
+	require.Len(t, n.Alertmanagers(), 1)
+	require.Equal(t, alertmanagerURL, n.Alertmanagers()[0].String())
+
+	// 2. Ensure known alertmanagers are not dropped during ApplyConfig even when
+	// the config order changes.
+	s = `
+alerting:
+  alertmanagers:
+  - static_configs:
+  - file_sd_configs:
+    - files:
+      - foo.json
+`
+	require.NoError(t, yaml.UnmarshalStrict([]byte(s), cfg))
+	require.Len(t, cfg.AlertingConfig.AlertmanagerConfigs, 2)
+
+	require.NoError(t, n.ApplyConfig(cfg))
+	require.Len(t, n.Alertmanagers(), 1)
+	// Ensure no unnecessary alertmanagers are injected.
+	require.Empty(t, n.alertmanagers["config-0"].ams)
+	// Ensure the config order is taken into account.
+	ams := n.alertmanagers["config-1"].ams
+	require.Len(t, ams, 1)
+	require.Equal(t, alertmanagerURL, ams[0].url().String())
+
+	// 3. Ensure known alertmanagers are reused for new config with identical AlertmanagerConfig.
+	s = `
+alerting:
+  alertmanagers:
+  - file_sd_configs:
+    - files:
+      - foo.json
+  - file_sd_configs:
+    - files:
+      - foo.json
+`
+	require.NoError(t, yaml.UnmarshalStrict([]byte(s), cfg))
+	require.Len(t, cfg.AlertingConfig.AlertmanagerConfigs, 2)
+
+	require.NoError(t, n.ApplyConfig(cfg))
+	require.Len(t, n.Alertmanagers(), 2)
+	for cfgIdx := range 2 {
+		ams := n.alertmanagers[fmt.Sprintf("config-%d", cfgIdx)].ams
+		require.Len(t, ams, 1)
+		require.Equal(t, alertmanagerURL, ams[0].url().String())
+	}
+
+	// 4. Ensure known alertmanagers are reused only for identical AlertmanagerConfig.
+	s = `
+alerting:
+  alertmanagers:
+  - file_sd_configs:
+    - files:
+      - foo.json
+    path_prefix: /bar
+  - file_sd_configs:
+    - files:
+      - foo.json
+    relabel_configs:
+    - source_labels: ['__address__']
+      regex: 'doesntmatter:1234'
+      action: drop
+`
+	require.NoError(t, yaml.UnmarshalStrict([]byte(s), cfg))
+	require.Len(t, cfg.AlertingConfig.AlertmanagerConfigs, 2)
+
+	require.NoError(t, n.ApplyConfig(cfg))
+	require.Empty(t, n.Alertmanagers())
 }
