@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 )
@@ -421,7 +422,7 @@ func TestHeadIndexReader_PostingsForLabelMatching(t *testing.T) {
 		})
 		app := h.Appender(context.Background())
 		for _, s := range series {
-			app.Append(0, s, 0, 0, nil)
+			app.Append(0, s, 0, 0, storage.AppendHints{})
 		}
 		require.NoError(t, app.Commit())
 

@@ -40,14 +40,14 @@ type initAppender struct {
 
 var _ storage.GetRef = &initAppender{}
 
-func (a *initAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
+func (a *initAppender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64, hints storage.AppendHints) (storage.SeriesRef, error) {
 	if a.app != nil {
-		return a.app.Append(ref, lset, t, v, nil)
+		return a.app.Append(ref, l, t, v, storage.AppendHints{})
 	}
 
 	a.head.initTime(t)
 	a.app = a.head.appender()
-	return a.app.Append(ref, lset, t, v, nil)
+	return a.app.Append(ref, l, t, v, storage.AppendHints{})
 }
 
 func (a *initAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar, hints *storage.AppendHints) (storage.SeriesRef, error) {
@@ -328,7 +328,7 @@ type headAppender struct {
 	closed                          bool
 }
 
-func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64, hints *storage.AppendHints) (storage.SeriesRef, error) {
+func (a *headAppender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64, hints storage.AppendHints) (storage.SeriesRef, error) {
 	// Fail fast if OOO is disabled and the sample is out of bounds.
 	// Otherwise a full check will be done later to decide if the sample is in-order or out-of-order.
 	if a.oooTimeWindow == 0 && t < a.minValidTime {
@@ -339,7 +339,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
 	if s == nil {
 		var err error
-		s, _, err = a.getOrCreate(lset)
+		s, _, err = a.getOrCreate(l)
 		if err != nil {
 			return 0, err
 		}
@@ -352,9 +352,9 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 		// in commit. This code should move into Commit().
 		switch {
 		case s.lastHistogramValue != nil:
-			return a.AppendHistogram(ref, lset, t, &histogram.Histogram{Sum: v}, nil, nil)
+			return a.AppendHistogram(ref, l, t, &histogram.Histogram{Sum: v}, nil, nil)
 		case s.lastFloatHistogramValue != nil:
-			return a.AppendHistogram(ref, lset, t, nil, &histogram.FloatHistogram{Sum: v}, nil)
+			return a.AppendHistogram(ref, l, t, nil, &histogram.FloatHistogram{Sum: v}, nil)
 		}
 	}
 
