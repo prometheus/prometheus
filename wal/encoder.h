@@ -16,11 +16,11 @@ concept have_allocated_memory = requires(const T& t) {
 };
 
 namespace PromPP::WAL {
-template <typename W = Writer>
+template <typename WriterType = Writer>
 class GenericEncoder {
   uint16_t shard_id_;
   uint8_t log_shards_;
-  W writer_;
+  WriterType writer_;
   Primitives::TimeseriesSemiview timeseries_;
 
   template <class Stats>
@@ -57,8 +57,8 @@ class GenericEncoder {
     write_stats(stats);
   }
 
-  template <class Stats>
-  inline __attribute__((always_inline)) void add_inner_series(PromPP::Primitives::Go::SliceView<PromPP::Prometheus::Relabel::InnerSeries*>& incoming_inner_series,
+  template <class Stats, class InnerSeriesSlice = PromPP::Primitives::Go::SliceView<PromPP::Prometheus::Relabel::InnerSeries*>>
+  inline __attribute__((always_inline)) void add_inner_series(InnerSeriesSlice& incoming_inner_series,
                                                               Stats* stats) {
     std::ranges::for_each(incoming_inner_series, [&](const PromPP::Prometheus::Relabel::InnerSeries* inner_series) {
       if (inner_series == nullptr || inner_series->size() == 0) {
@@ -66,6 +66,7 @@ class GenericEncoder {
       }
 
       std::ranges::for_each(inner_series->data(), [&](const PromPP::Prometheus::Relabel::InnerSerie& inner_serie) {
+        std::cout << "encoder.add_inner_series, inner_series.samples.size(): " << inner_serie.samples.size() <<  std::endl;
         writer_.add_samples_on_ls_id(inner_serie.ls_id, inner_serie.samples);
       });
     });

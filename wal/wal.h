@@ -219,7 +219,7 @@ class BasicEncoder {
     BareBones::Vector<EncoderWithID> encoders;
 
     inline __attribute__((always_inline))
-    Redundant(uint32_t _segment, checkpoint_type _label_sets_checkpoint, uint32_t _encoders_count)
+    Redundant(uint32_t _segment, const checkpoint_type& _label_sets_checkpoint, uint32_t _encoders_count)
         : segment(_segment), encoders_count(_encoders_count), label_sets_checkpoint(_label_sets_checkpoint) {}
   };
 
@@ -338,6 +338,7 @@ class BasicEncoder {
     // write new label sets
     label_sets_checkpoint_ = label_sets_.checkpoint();
     label_sets_bytes_ += label_sets_checkpoint_.save_size(&redundant->label_sets_checkpoint);
+    std::cout << "label_sets_checkpoint.save_size(): " << label_sets_bytes_ << std::endl;
     lz4stream_ << (label_sets_checkpoint_ - redundant->label_sets_checkpoint);
     if constexpr (shrink_lss) {
       label_sets_.shrink_to_checkpoint_size(label_sets_checkpoint_);
@@ -1008,7 +1009,7 @@ class BasicDecoder {
                                  uuids::to_string(uuid_).c_str(), static_cast<uint32_t>(segment_ts_crc_), static_cast<uint32_t>(ts_crc));
     }
     if (v_crc != segment_v_crc_) {
-      throw BareBones::Exception(0x0ee2b199218aaf7d, "Decoder %s got error: CRC for LabelSet's timestamps mismatch: Decoder ts CRC: %u, segment ts CRC: %u",
+      throw BareBones::Exception(0x0ee2b199218aaf7d, "Decoder %s got error: CRC for LabelSet's timestamps mismatch: Decoder v CRC: %u, segment v CRC: %u",
                                  uuids::to_string(uuid_).c_str(), static_cast<uint32_t>(segment_v_crc_), static_cast<uint32_t>(v_crc));
     }
 
