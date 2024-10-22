@@ -533,6 +533,10 @@ func funcRound(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 	toNearestInverse := 1.0 / toNearest
 
 	for _, el := range vec {
+		if el.H != nil {
+			// Process only float samples.
+			continue
+		}
 		f := math.Floor(el.F*toNearestInverse+0.5) / toNearestInverse
 		enh.Out = append(enh.Out, Sample{
 			Metric:   el.Metric,
