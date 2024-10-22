@@ -8849,10 +8849,16 @@ func TestGenerateCompactionDelay(t *testing.T) {
 		compactionDelayPercent int
 	}{
 		{
+			compactionDelayPercent: 1,
+		},
+		{
 			compactionDelayPercent: 10,
 		},
 		{
 			compactionDelayPercent: 60,
+		},
+		{
+			compactionDelayPercent: 100,
 		},
 	}
 

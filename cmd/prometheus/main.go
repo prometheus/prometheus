@@ -672,8 +672,8 @@ func main() {
 		}
 
 		// Delayed compaction checks
-		if cfg.tsdb.EnableDelayedCompaction && (cfg.tsdb.CompactionDelayMaxPercent > 100 || cfg.tsdb.CompactionDelayMaxPercent < 0) {
-			logger.Warn("The --storage.tsdb.delayed-compaction.max-percent should have a value between 0 and 100. Using default", "default", tsdb.DefaultCompactionDelayMaxPercent)
+		if cfg.tsdb.EnableDelayedCompaction && (cfg.tsdb.CompactionDelayMaxPercent > 100 || cfg.tsdb.CompactionDelayMaxPercent <= 0) {
+			logger.Warn("The --storage.tsdb.delayed-compaction.max-percent should have a value between 1 and 100. Using default", "default", tsdb.DefaultCompactionDelayMaxPercent)
 			cfg.tsdb.CompactionDelayMaxPercent = tsdb.DefaultCompactionDelayMaxPercent
 		}
 	}
