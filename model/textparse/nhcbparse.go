@@ -28,6 +28,14 @@ import (
 	"github.com/prometheus/prometheus/util/convertnhcb"
 )
 
+type collectionState int
+
+const (
+	stateStart collectionState = iota
+	stateCollecting
+	stateEmitting
+)
+
 // The NHCBParser wraps a Parser and converts classic histograms to native
 // histograms with custom buckets.
 //
@@ -48,6 +56,9 @@ type NHCBParser struct {
 	// Labels builder.
 	builder labels.ScratchBuilder
 
+	// State of the parser.
+	state collectionState
+
 	// Caches the values from the underlying parser.
 	// For Series and Histogram.
 	bytes []byte
@@ -64,9 +75,9 @@ type NHCBParser struct {
 
 	// Caches the entry itself if we are inserting a converted NHCB
 	// halfway through.
-	entry            Entry
-	err              error
-	justInsertedNHCB bool
+	entry Entry
+	err   error
+
 	// Caches the values and metric for the inserted converted NHCB.
 	bytesNHCB        []byte
 	hNHCB            *histogram.Histogram
@@ -77,11 +88,10 @@ type NHCBParser struct {
 
 	// Collates values from the classic histogram series to build
 	// the converted histogram later.
-	tempLsetNHCB          labels.Labels
-	tempNHCB              convertnhcb.TempHistogram
-	tempExemplars         []exemplar.Exemplar
-	tempExemplarCount     int
-	isCollationInProgress bool
+	tempLsetNHCB      labels.Labels
+	tempNHCB          convertnhcb.TempHistogram
+	tempExemplars     []exemplar.Exemplar
+	tempExemplarCount int
 
 	// Remembers the last base histogram metric name (assuming it's
 	// a classic histogram) so we can tell if the next float series
@@ -105,7 +115,7 @@ func (p *NHCBParser) Series() ([]byte, *int64, float64) {
 }
 
 func (p *NHCBParser) Histogram() ([]byte, *int64, *histogram.Histogram, *histogram.FloatHistogram) {
-	if p.justInsertedNHCB {
+	if p.state == stateEmitting {
 		return p.bytesNHCB, p.ts, p.hNHCB, p.fhNHCB
 	}
 	return p.bytes, p.ts, p.h, p.fh
@@ -128,7 +138,7 @@ func (p *NHCBParser) Comment() []byte {
 }
 
 func (p *NHCBParser) Metric(l *labels.Labels) string {
-	if p.justInsertedNHCB {
+	if p.state == stateEmitting {
 		*l = p.lsetNHCB
 		return p.metricStringNHCB
 	}
@@ -137,7 +147,7 @@ func (p *NHCBParser) Metric(l *labels.Labels) string {
 }
 
 func (p *NHCBParser) Exemplar(ex *exemplar.Exemplar) bool {
-	if p.justInsertedNHCB {
+	if p.state == stateEmitting {
 		if len(p.exemplars) == 0 {
 			return false
 		}
@@ -153,8 +163,8 @@ func (p *NHCBParser) CreatedTimestamp() *int64 {
 }
 
 func (p *NHCBParser) Next() (Entry, error) {
-	if p.justInsertedNHCB {
-		p.justInsertedNHCB = false
+	if p.state == stateEmitting {
+		p.state = stateStart
 		if p.entry == EntrySeries {
 			isNHCB := p.handleClassicHistogramSeries(p.lset)
 			if isNHCB && !p.keepClassicHistograms {
@@ -202,34 +212,21 @@ func (p *NHCBParser) Next() (Entry, error) {
 }
 
 // Return true if labels have changed and we should emit the NHCB.
-// Update the stored labels if the labels have changed.
 func (p *NHCBParser) compareLabels() bool {
-	// Collection not in progress.
-	if p.lastHistogramName == "" {
-		if p.typ == model.MetricTypeHistogram {
-			p.storeBaseLabels()
-		}
+	if p.state != stateCollecting {
 		return false
 	}
 	if p.typ != model.MetricTypeHistogram {
-		// Different metric type, emit the NHCB.
-		p.lastHistogramName = ""
+		// Different metric type.
 		return true
 	}
-
 	if p.lastHistogramName != convertnhcb.GetHistogramMetricBaseName(p.lset.Get(labels.MetricName)) {
 		// Different metric name.
-		p.storeBaseLabels()
 		return true
 	}
 	nextHash, _ := p.lset.HashWithoutLabels(p.hBuffer, labels.BucketLabel)
-	if p.lastHistogramLabelsHash != nextHash {
-		// Different label values.
-		p.storeBaseLabels()
-		return true
-	}
-
-	return false
+	// Different label values.
+	return p.lastHistogramLabelsHash != nextHash
 }
 
 // Save the label set of the classic histogram without suffix and bucket `le` label.
@@ -275,7 +272,10 @@ func (p *NHCBParser) handleClassicHistogramSeries(lset labels.Labels) bool {
 }
 
 func (p *NHCBParser) processClassicHistogramSeries(lset labels.Labels, suffix string, updateHist func(*convertnhcb.TempHistogram)) {
-	p.isCollationInProgress = true
+	if p.state != stateCollecting {
+		p.storeBaseLabels()
+	}
+	p.state = stateCollecting
 	p.tempLsetNHCB = convertnhcb.GetHistogramMetricBase(lset, suffix)
 	p.storeExemplars()
 	updateHist(&p.tempNHCB)
@@ -308,9 +308,9 @@ func (p *NHCBParser) swapExemplars() {
 }
 
 // processNHCB converts the collated classic histogram series to NHCB and caches the info
-// to be returned to callers.
+// to be returned to callers. Retruns true if the conversion was successful.
 func (p *NHCBParser) processNHCB() bool {
-	if !p.isCollationInProgress {
+	if p.state != stateCollecting {
 		return false
 	}
 	ub := make([]float64, 0, len(p.tempNHCB.BucketCounts))
@@ -338,7 +338,6 @@ func (p *NHCBParser) processNHCB() bool {
 	p.lsetNHCB = p.tempLsetNHCB
 	p.swapExemplars()
 	p.tempNHCB = convertnhcb.NewTempHistogram()
-	p.isCollationInProgress = false
-	p.justInsertedNHCB = true
+	p.state = stateEmitting
 	return true
 }

@@ -3891,8 +3891,8 @@ metric: <
 					JobName:                        "test",
 					SampleLimit:                    100,
 					Scheme:                         "http",
-					ScrapeInterval:                 model.Duration(100 * time.Millisecond),
-					ScrapeTimeout:                  model.Duration(100 * time.Millisecond),
+					ScrapeInterval:                 model.Duration(50 * time.Millisecond),
+					ScrapeTimeout:                  model.Duration(25 * time.Millisecond),
 					AlwaysScrapeClassicHistograms:  tc.alwaysScrapeClassicHistograms,
 					ConvertClassicHistogramsToNHCB: tc.convertClassicHistToNHCB,
 				}
@@ -3931,7 +3931,7 @@ metric: <
 				}))
 				defer ts.Close()
 
-				sp, err := newScrapePool(config, simpleStorage, 0, nil, nil, &Options{EnableNativeHistogramsIngestion: true}, newTestScrapeMetrics(t))
+				sp, err := newScrapePool(config, simpleStorage, 0, nil, nil, &Options{DiscoveryReloadInterval: model.Duration(10 * time.Millisecond), EnableNativeHistogramsIngestion: true}, newTestScrapeMetrics(t))
 				require.NoError(t, err)
 				defer sp.stop()
 
