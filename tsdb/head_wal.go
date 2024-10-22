@@ -58,7 +58,6 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 	var unknownExemplarRefs atomic.Uint64
 	var unknownHistogramRefs atomic.Uint64
 	var unknownMetadataRefs atomic.Uint64
-	var unknownCustomValuesRefs atomic.Uint64
 	// Track number of series records that had overlapping m-map chunks.
 	var mmapOverlappingChunks atomic.Uint64
 
@@ -82,7 +81,6 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		histogramsPool      zeropool.Pool[[]record.RefHistogramSample]
 		floatHistogramsPool zeropool.Pool[[]record.RefFloatHistogramSample]
 		metadataPool        zeropool.Pool[[]record.RefMetadata]
-		customValuesPool    zeropool.Pool[[]record.RefCustomValues]
 	)
 
 	defer func() {
@@ -225,18 +223,18 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 					return
 				}
 				decoded <- meta
-			case record.CustomValues:
-				customVals := customValuesPool.Get()[:0]
-				customVals, err := dec.CustomValues(rec, customVals)
-				if err != nil {
-					decodeErr = &wlog.CorruptionErr{
-						Err:     fmt.Errorf("decode custom values: %w", err),
-						Segment: r.Segment(),
-						Offset:  r.Offset(),
-					}
-					return
-				}
-				decoded <- customVals
+			//case record.CustomValues:
+			//	customVals := customValuesPool.Get()[:0]
+			//	customVals, err := dec.CustomValues(rec, customVals)
+			//	if err != nil {
+			//		decodeErr = &wlog.CorruptionErr{
+			//			Err:     fmt.Errorf("decode custom values: %w", err),
+			//			Segment: r.Segment(),
+			//			Offset:  r.Offset(),
+			//		}
+			//		return
+			//	}
+			//	decoded <- customVals
 			default:
 				// Noop.
 			}
@@ -345,19 +343,19 @@ Outer:
 					if r, ok := multiRef[sam.Ref]; ok {
 						sam.Ref = r
 					}
-					if histogram.IsCustomBucketsSchema(sam.H.Schema) {
-						ms := h.series.getByID(sam.Ref)
-						if ms == nil {
-							unknownHistogramRefs.Inc()
-							continue
-						}
-
-						if ms.lastFloatHistogramValue != nil {
-							sam.H.CustomValues = ms.lastFloatHistogramValue.CustomValues
-						} else {
-							sam.H.CustomValues = ms.customValues
-						}
-					}
+					//if histogram.IsCustomBucketsSchema(sam.H.Schema) {
+					//	ms := h.series.getByID(sam.Ref)
+					//	if ms == nil {
+					//		unknownHistogramRefs.Inc()
+					//		continue
+					//	}
+					//
+					//	if ms.lastFloatHistogramValue != nil {
+					//		sam.H.CustomValues = ms.lastFloatHistogramValue.CustomValues
+					//	} else {
+					//		sam.H.CustomValues = ms.customValues
+					//	}
+					//}
 					mod := uint64(sam.Ref) % uint64(concurrency)
 					histogramShards[mod] = append(histogramShards[mod], histogramRecord{ref: sam.Ref, t: sam.T, h: sam.H})
 				}
@@ -394,14 +392,14 @@ Outer:
 					if r, ok := multiRef[sam.Ref]; ok {
 						sam.Ref = r
 					}
-					if histogram.IsCustomBucketsSchema(sam.FH.Schema) {
-						ms := h.series.getByID(sam.Ref)
-						if ms == nil {
-							unknownHistogramRefs.Inc()
-							continue
-						}
-						sam.FH.CustomValues = ms.customValues
-					}
+					//if histogram.IsCustomBucketsSchema(sam.FH.Schema) {
+					//	ms := h.series.getByID(sam.Ref)
+					//	if ms == nil {
+					//		unknownHistogramRefs.Inc()
+					//		continue
+					//	}
+					//	sam.FH.CustomValues = ms.customValues
+					//}
 					mod := uint64(sam.Ref) % uint64(concurrency)
 					histogramShards[mod] = append(histogramShards[mod], histogramRecord{ref: sam.Ref, t: sam.T, fh: sam.FH})
 				}
@@ -428,29 +426,11 @@ Outer:
 				}
 			}
 			metadataPool.Put(v)
-		case []record.RefCustomValues:
-			for _, cv := range v {
-				s := h.series.getByID(cv.Ref)
-				if s == nil {
-					unknownCustomValuesRefs.Inc()
-					continue
-				}
-				//TODO: do we actually want to check lastFloatHistogramValue?
-				if s.lastHistogramValue == nil && s.lastFloatHistogramValue == nil {
-					s.customValues = cv.CustomValues
-				}
-			}
-			customValuesPool.Put(v)
-			// iterate over custom value records and do same things as for series/samples - put them in correct processor
-			// processor depends on series ref
-			// something like this:
-			// idx := uint64(mSeries.ref) % uint64(concurrency)
-			// processors[idx].input <- walSubsetProcessorInputItem{customValues: }
-			//for _, cv := range v {
-			//	idx := uint64(cv.Ref) % uint64(concurrency)
-			//	processors[idx].input <- walSubsetProcessorInputItem{customValues: cv}
-			//}
-			//customValuesPool.Put(v)
+		///if histogram.IsCustomBucketsSchema(s.h.Schema) {
+		//				//	if ms.lastHistogramValue != nil {
+		//				//
+		//				//	}
+		//				//}
 		default:
 			panic(fmt.Errorf("unexpected decoded type: %T", d))
 		}
@@ -755,11 +735,6 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 				return []record.RefFloatHistogramSample{}
 			},
 		}
-		customValuesPool = sync.Pool{
-			New: func() interface{} {
-				return []record.RefCustomValues{}
-			},
-		}
 	)
 
 	defer func() {
@@ -840,18 +815,18 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 					return
 				}
 				decodedCh <- hists
-			case record.CustomValues:
-				customVals := customValuesPool.Get().([]record.RefCustomValues)[:0]
-				customVals, err := dec.CustomValues(rec, customVals)
-				if err != nil {
-					decodeErr = &wlog.CorruptionErr{
-						Err:     fmt.Errorf("decode custom values: %w", err),
-						Segment: r.Segment(),
-						Offset:  r.Offset(),
-					}
-					return
-				}
-				decodedCh <- customVals
+			//case record.CustomValues:
+			//	customVals := customValuesPool.Get().([]record.RefCustomValues)[:0]
+			//	customVals, err := dec.CustomValues(rec, customVals)
+			//	if err != nil {
+			//		decodeErr = &wlog.CorruptionErr{
+			//			Err:     fmt.Errorf("decode custom values: %w", err),
+			//			Segment: r.Segment(),
+			//			Offset:  r.Offset(),
+			//		}
+			//		return
+			//	}
+			//	decodedCh <- customVals
 			default:
 				// Noop.
 			}
@@ -936,18 +911,18 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 					if r, ok := multiRef[sam.Ref]; ok {
 						sam.Ref = r
 					}
-					if histogram.IsCustomBucketsSchema(sam.H.Schema) {
-						ms := h.series.getByID(sam.Ref)
-						if ms == nil {
-							unknownHistogramRefs.Inc()
-							continue
-						}
-						if ms.lastFloatHistogramValue != nil {
-							sam.H.CustomValues = ms.lastFloatHistogramValue.CustomValues
-						} else {
-							sam.H.CustomValues = ms.customValues
-						}
-					}
+					//if histogram.IsCustomBucketsSchema(sam.H.Schema) {
+					//	ms := h.series.getByID(sam.Ref)
+					//	if ms == nil {
+					//		unknownHistogramRefs.Inc()
+					//		continue
+					//	}
+					//	if ms.lastFloatHistogramValue != nil {
+					//		sam.H.CustomValues = ms.lastFloatHistogramValue.CustomValues
+					//	} else {
+					//		sam.H.CustomValues = ms.customValues
+					//	}
+					//}
 					mod := uint64(sam.Ref) % uint64(concurrency)
 					histogramShards[mod] = append(histogramShards[mod], histogramRecord{ref: sam.Ref, t: sam.T, h: sam.H})
 				}
@@ -980,14 +955,14 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 					if r, ok := multiRef[sam.Ref]; ok {
 						sam.Ref = r
 					}
-					if histogram.IsCustomBucketsSchema(sam.FH.Schema) {
-						ms := h.series.getByID(sam.Ref)
-						if ms == nil {
-							unknownHistogramRefs.Inc()
-							continue
-						}
-						sam.FH.CustomValues = ms.customValues
-					}
+					//if histogram.IsCustomBucketsSchema(sam.FH.Schema) {
+					//	ms := h.series.getByID(sam.Ref)
+					//	if ms == nil {
+					//		unknownHistogramRefs.Inc()
+					//		continue
+					//	}
+					//	sam.FH.CustomValues = ms.customValues
+					//}
 					mod := uint64(sam.Ref) % uint64(concurrency)
 					histogramShards[mod] = append(histogramShards[mod], histogramRecord{ref: sam.Ref, t: sam.T, fh: sam.FH})
 				}
@@ -1001,18 +976,18 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 			}
 			floatHistogramSamplesPool.Put(v) //nolint:staticcheck
 
-		case []record.RefCustomValues:
-			for _, cv := range v {
-				s := h.series.getByID(cv.Ref)
-				if s == nil {
-					unknownCustomValuesRefs.Inc()
-					continue
-				}
-				if s.lastHistogramValue == nil && s.lastFloatHistogramValue == nil {
-					s.customValues = cv.CustomValues
-				}
-			}
-			customValuesPool.Put(v)
+		//case []record.RefCustomValues:
+		//	for _, cv := range v {
+		//		s := h.series.getByID(cv.Ref)
+		//		if s == nil {
+		//			unknownCustomValuesRefs.Inc()
+		//			continue
+		//		}
+		//		if s.lastHistogramValue == nil && s.lastFloatHistogramValue == nil {
+		//			s.customValues = cv.CustomValues
+		//		}
+		//	}
+		//	customValuesPool.Put(v)
 		default:
 			panic(fmt.Errorf("unexpected decodedCh type: %T", d))
 		}

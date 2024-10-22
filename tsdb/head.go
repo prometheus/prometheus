@@ -87,7 +87,6 @@ type Head struct {
 	logger              *slog.Logger
 	appendPool          zeropool.Pool[[]record.RefSample]
 	exemplarsPool       zeropool.Pool[[]exemplarWithSeriesRef]
-	customValuesPool    zeropool.Pool[[]record.RefCustomValues]
 	histogramsPool      zeropool.Pool[[]record.RefHistogramSample]
 	floatHistogramsPool zeropool.Pool[[]record.RefFloatHistogramSample]
 	metadataPool        zeropool.Pool[[]record.RefMetadata]
@@ -2139,7 +2138,6 @@ type memSeries struct {
 	// We keep the last histogram value here (in addition to appending it to the chunk) so we can check for duplicates.
 	lastHistogramValue      *histogram.Histogram
 	lastFloatHistogramValue *histogram.FloatHistogram
-	customValues            []float64
 
 	// Current appender for the head chunk. Set when a new head chunk is cut.
 	// It is nil only if headChunks is nil. E.g. if there was an appender that created a new series, but rolled back the commit

@@ -175,7 +175,6 @@ func (h *Head) appender() *headAppender {
 		samples:               h.getAppendBuffer(),
 		sampleSeries:          h.getSeriesBuffer(),
 		exemplars:             exemplarsBuf,
-		customValues:          h.getCustomValuesBuffer(),
 		histograms:            h.getHistogramBuffer(),
 		floatHistograms:       h.getFloatHistogramBuffer(),
 		metadata:              h.getMetadataBuffer(),
@@ -237,18 +236,6 @@ func (h *Head) putExemplarBuffer(b []exemplarWithSeriesRef) {
 	}
 
 	h.exemplarsPool.Put(b[:0])
-}
-
-func (h *Head) getCustomValuesBuffer() []record.RefCustomValues {
-	b := h.customValuesPool.Get()
-	if b == nil {
-		return make([]record.RefCustomValues, 0, 512)
-	}
-	return b
-}
-
-func (h *Head) putCustomValuesBuffer(b []record.RefCustomValues) {
-	h.customValuesPool.Put(b[:0])
 }
 
 func (h *Head) getHistogramBuffer() []record.RefHistogramSample {
@@ -333,7 +320,6 @@ type headAppender struct {
 	histogramSeries      []*memSeries                     // HistogramSamples series corresponding to the samples held by this appender (using corresponding slice indices - same series may appear more than once).
 	floatHistograms      []record.RefFloatHistogramSample // New float histogram samples held by this appender.
 	floatHistogramSeries []*memSeries                     // FloatHistogramSamples series corresponding to the samples held by this appender (using corresponding slice indices - same series may appear more than once).
-	customValues         []record.RefCustomValues         // Custom values for histograms that use custom buckets held by this appender.
 	metadata             []record.RefMetadata             // New metadata held by this appender.
 	metadataSeries       []*memSeries                     // Series corresponding to the metadata held by this appender.
 	exemplars            []exemplarWithSeriesRef          // New exemplars held by this appender.
@@ -687,12 +673,7 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		// This whole "if" should be removed.
 		if created && s.lastHistogramValue == nil && s.lastFloatHistogramValue == nil {
 			s.lastHistogramValue = &histogram.Histogram{}
-			if histogram.IsCustomBucketsSchema(h.Schema) {
-				a.customValues = append(a.customValues, record.RefCustomValues{
-					Ref:          s.ref,
-					CustomValues: h.CustomValues,
-				})
-			}
+		}
 
 		// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 		// to skip that sample from the WAL and write only in the WBL.
@@ -729,12 +710,6 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		// This whole "if" should be removed.
 		if created && s.lastHistogramValue == nil && s.lastFloatHistogramValue == nil {
 			s.lastFloatHistogramValue = &histogram.FloatHistogram{}
-			if histogram.IsCustomBucketsSchema(fh.Schema) {
-				a.customValues = append(a.customValues, record.RefCustomValues{
-					Ref:          s.ref,
-					CustomValues: fh.CustomValues,
-				})
-			}
 		}
 
 		// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
@@ -950,13 +925,6 @@ func (a *headAppender) log() error {
 			return fmt.Errorf("log samples: %w", err)
 		}
 	}
-	if len(a.customValues) > 0 {
-		rec = enc.CustomValues(a.customValues, buf)
-		buf = rec[:0]
-		if err := a.head.wal.Log(rec); err != nil {
-			return fmt.Errorf("log custom values: %w", err)
-		}
-	}
 	if len(a.histograms) > 0 {
 		rec = enc.HistogramSamples(a.histograms, buf)
 		buf = rec[:0]
@@ -1038,7 +1006,6 @@ func (a *headAppender) Commit() (err error) {
 	defer a.head.putAppendBuffer(a.samples)
 	defer a.head.putSeriesBuffer(a.sampleSeries)
 	defer a.head.putExemplarBuffer(a.exemplars)
-	defer a.head.putCustomValuesBuffer(a.customValues)
 	defer a.head.putHistogramBuffer(a.histograms)
 	defer a.head.putFloatHistogramBuffer(a.floatHistograms)
 	defer a.head.putMetadataBuffer(a.metadata)
@@ -1066,7 +1033,6 @@ func (a *headAppender) Commit() (err error) {
 		wblSamples          []record.RefSample
 		wblHistograms       []record.RefHistogramSample
 		wblFloatHistograms  []record.RefFloatHistogramSample
-		wblCustomValues     []record.RefCustomValues
 		oooMmapMarkers      map[chunks.HeadSeriesRef][]chunks.ChunkDiskMapperRef
 		oooMmapMarkersCount int
 		oooRecords          [][]byte
@@ -1090,7 +1056,6 @@ func (a *headAppender) Commit() (err error) {
 			wblSamples = nil
 			wblHistograms = nil
 			wblFloatHistograms = nil
-			wblCustomValues = nil
 			oooMmapMarkers = nil
 			oooMmapMarkersCount = 0
 			return
@@ -1118,10 +1083,6 @@ func (a *headAppender) Commit() (err error) {
 			r := enc.Samples(wblSamples, a.head.getBytesBuffer())
 			oooRecords = append(oooRecords, r)
 		}
-		if len(wblCustomValues) > 0 {
-			r := enc.CustomValues(wblCustomValues, a.head.getBytesBuffer())
-			oooRecords = append(oooRecords, r)
-		}
 		if len(wblHistograms) > 0 {
 			r := enc.HistogramSamples(wblHistograms, a.head.getBytesBuffer())
 			oooRecords = append(oooRecords, r)
@@ -1134,7 +1095,6 @@ func (a *headAppender) Commit() (err error) {
 		wblSamples = nil
 		wblHistograms = nil
 		wblFloatHistograms = nil
-		wblCustomValues = nil
 		oooMmapMarkers = nil
 	}
 	for i, s := range a.samples {
@@ -1290,12 +1250,6 @@ func (a *headAppender) Commit() (err error) {
 			}
 			if ok {
 				wblHistograms = append(wblHistograms, s)
-				if histogram.IsCustomBucketsSchema(s.H.Schema) {
-					wblCustomValues = append(wblCustomValues, record.RefCustomValues{
-						Ref:          s.Ref,
-						CustomValues: s.H.CustomValues,
-					})
-				}
 				if s.T < oooMinT {
 					oooMinT = s.T
 				}
@@ -1392,12 +1346,6 @@ func (a *headAppender) Commit() (err error) {
 			}
 			if ok {
 				wblFloatHistograms = append(wblFloatHistograms, s)
-				if histogram.IsCustomBucketsSchema(s.FH.Schema) {
-					wblCustomValues = append(wblCustomValues, record.RefCustomValues{
-						Ref:          s.Ref,
-						CustomValues: s.FH.CustomValues,
-					})
-				}
 				if s.T < oooMinT {
 					oooMinT = s.T
 				}
@@ -1934,7 +1882,6 @@ func (a *headAppender) Rollback() (err error) {
 	}
 	a.head.putAppendBuffer(a.samples)
 	a.head.putExemplarBuffer(a.exemplars)
-	a.head.putCustomValuesBuffer(a.customValues)
 	a.head.putHistogramBuffer(a.histograms)
 	a.head.putFloatHistogramBuffer(a.floatHistograms)
 	a.head.putMetadataBuffer(a.metadata)

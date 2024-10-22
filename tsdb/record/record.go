@@ -52,7 +52,6 @@ const (
 	HistogramSamples Type = 7
 	// FloatHistogramSamples is used to match WAL records of type Float Histograms.
 	FloatHistogramSamples Type = 8
-	CustomValues          Type = 9
 )
 
 func (rt Type) String() string {
@@ -73,8 +72,6 @@ func (rt Type) String() string {
 		return "mmapmarkers"
 	case Metadata:
 		return "metadata"
-	case CustomValues:
-		return "custom_values"
 	default:
 		return "unknown"
 	}
@@ -150,11 +147,6 @@ type RefSeries struct {
 	Labels labels.Labels
 }
 
-type RefCustomValues struct {
-	Ref          chunks.HeadSeriesRef
-	CustomValues []float64
-}
-
 // RefSample is a timestamp/value pair associated with a reference to a series.
 // TODO(beorn7): Perhaps make this "polymorphic", including histogram and float-histogram pointers? Then get rid of RefHistogramSample.
 type RefSample struct {
@@ -209,13 +201,13 @@ func NewDecoder(t *labels.SymbolTable) Decoder { // FIXME remove t
 }
 
 // Type returns the type of the record.
-// Returns RecordUnknown if no valid record type is found.
+// Returns Unknown if no valid record type is found.
 func (d *Decoder) Type(rec []byte) Type {
 	if len(rec) < 1 {
 		return Unknown
 	}
 	switch t := Type(rec[0]); t {
-	case Series, Samples, Tombstones, Exemplars, MmapMarkers, Metadata, HistogramSamples, FloatHistogramSamples, CustomValues:
+	case Series, Samples, Tombstones, Exemplars, MmapMarkers, Metadata, HistogramSamples, FloatHistogramSamples:
 		return t
 	}
 	return Unknown
@@ -513,6 +505,15 @@ func DecodeHistogram(buf *encoding.Decbuf, h *histogram.Histogram) {
 	for i := range h.NegativeBuckets {
 		h.NegativeBuckets[i] = buf.Varint64()
 	}
+
+	// TODO(bwplotka): This breaks compatibility (think: rollback to older version).
+	l = buf.Uvarint()
+	if l > 0 {
+		h.CustomValues = make([]float64, l)
+	}
+	for i := range h.CustomValues {
+		h.CustomValues[i] = buf.Be64Float64()
+	}
 }
 
 func (d *Decoder) FloatHistogramSamples(rec []byte, histograms []RefFloatHistogramSample) ([]RefFloatHistogramSample, error) {
@@ -595,39 +596,15 @@ func DecodeFloatHistogram(buf *encoding.Decbuf, fh *histogram.FloatHistogram) {
 	for i := range fh.NegativeBuckets {
 		fh.NegativeBuckets[i] = buf.Be64Float64()
 	}
-}
 
-// TODO: optimize
-func (d *Decoder) CustomValues(rec []byte, customValues []RefCustomValues) ([]RefCustomValues, error) {
-	dec := encoding.Decbuf{B: rec}
-
-	if Type(dec.Byte()) != CustomValues {
-		return nil, errors.New("invalid record type")
+	// TODO(bwplotka): This breaks compatibility (think: rollback to older version).
+	l = buf.Uvarint()
+	if l > 0 {
+		fh.CustomValues = make([]float64, l)
 	}
-	if dec.Len() == 0 {
-		return customValues, nil
+	for i := range fh.CustomValues {
+		fh.CustomValues[i] = buf.Be64Float64()
 	}
-	for len(dec.B) > 0 && dec.Err() == nil {
-		ref := storage.SeriesRef(dec.Be64())
-		l := dec.Uvarint()
-		if l > 0 {
-			vals := make([]float64, l)
-			for i := range vals {
-				vals[i] = dec.Be64Float64()
-			}
-			customValues = append(customValues, RefCustomValues{
-				Ref:          chunks.HeadSeriesRef(ref),
-				CustomValues: vals,
-			})
-		}
-	}
-	if dec.Err() != nil {
-		return nil, dec.Err()
-	}
-	if len(dec.B) > 0 {
-		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
-	}
-	return customValues, nil
 }
 
 // Encoder encodes series, sample, and tombstones records.
@@ -813,6 +790,13 @@ func EncodeHistogram(buf *encoding.Encbuf, h *histogram.Histogram) {
 	for _, b := range h.NegativeBuckets {
 		buf.PutVarint64(b)
 	}
+
+	// TODO(bwplotka): This breaks compatibility (think: rollback to older version).
+	// Should we version records (e.g. using type?)
+	buf.PutUvarint(len(h.CustomValues))
+	for _, v := range h.CustomValues {
+		buf.PutBEFloat64(v)
+	}
 }
 
 func (e *Encoder) FloatHistogramSamples(histograms []RefFloatHistogramSample, b []byte) []byte {
@@ -871,28 +855,11 @@ func EncodeFloatHistogram(buf *encoding.Encbuf, h *histogram.FloatHistogram) {
 	for _, b := range h.NegativeBuckets {
 		buf.PutBEFloat64(b)
 	}
-}
 
-func (e *Encoder) CustomValues(customValues []RefCustomValues, b []byte) []byte {
-	buf := encoding.Encbuf{B: b}
-	buf.PutByte(byte(CustomValues))
-
-	if len(customValues) == 0 {
-		return buf.Get()
-	}
-
-	for _, v := range customValues {
-		buf.PutBE64(uint64(v.Ref))
-		EncodeCustomValues(&buf, v.CustomValues)
-	}
-
-	return buf.Get()
-}
-
-// TODO: optimize
-func EncodeCustomValues(buf *encoding.Encbuf, values []float64) {
-	buf.PutUvarint(len(values))
-	for _, v := range values {
+	// TODO(bwplotka): This breaks compatibility (think: rollback to older version).
+	// Should we version records (e.g. using type?)
+	buf.PutUvarint(len(h.CustomValues))
+	for _, v := range h.CustomValues {
 		buf.PutBEFloat64(v)
 	}
 }

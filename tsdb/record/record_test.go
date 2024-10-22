@@ -182,21 +182,59 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, floatHistograms, decFloatHistograms)
 
-	// Custom values for histograms
-	customValues := []RefCustomValues{
+	// NHCB.
+	histograms = []RefHistogramSample{
 		{
-			Ref:          56,
-			CustomValues: []float64{0, 1, 2, 3, 4},
+			Ref: 56,
+			T:   1234,
+			H: &histogram.Histogram{
+				Count:  5,
+				Sum:    18.4 * rand.Float64(),
+				Schema: histogram.CustomBucketsSchema,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 1, -1, 0},
+				CustomValues: []float64{
+					0, 100, 1000, 10000,
+				},
+			},
 		},
 		{
-			Ref:          42,
-			CustomValues: []float64{5, 10, 15, 20, 25},
+			Ref: 42,
+			T:   5678,
+			H: &histogram.Histogram{
+				Count:  11,
+				Sum:    35.5,
+				Schema: histogram.CustomBucketsSchema,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 2, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 1, -1, 0},
+				CustomValues: []float64{
+					0, 100, 1000, 10000,
+				},
+			},
 		},
 	}
 
-	decCustomValues, err := dec.CustomValues(enc.CustomValues(customValues, nil), nil)
+	decHistograms, err = dec.HistogramSamples(enc.HistogramSamples(histograms, nil), nil)
 	require.NoError(t, err)
-	require.Equal(t, customValues, decCustomValues)
+	require.Equal(t, histograms, decHistograms)
+
+	floatHistograms = make([]RefFloatHistogramSample, len(histograms))
+	for i, h := range histograms {
+		floatHistograms[i] = RefFloatHistogramSample{
+			Ref: h.Ref,
+			T:   h.T,
+			FH:  h.H.ToFloat(nil),
+		}
+	}
+	decFloatHistograms, err = dec.FloatHistogramSamples(enc.FloatHistogramSamples(floatHistograms, nil), nil)
+	require.NoError(t, err)
+	require.Equal(t, floatHistograms, decFloatHistograms)
 }
 
 // TestRecord_Corrupted ensures that corrupted records return the correct error.
@@ -285,15 +323,6 @@ func TestRecord_Corrupted(t *testing.T) {
 		_, err := dec.HistogramSamples(corrupted, nil)
 		require.ErrorIs(t, err, encoding.ErrInvalidSize)
 	})
-
-	t.Run("Test corrupted customValues record", func(t *testing.T) {
-		customValues := []RefCustomValues{
-			{Ref: 56, CustomValues: []float64{0, 1, 2, 3, 4}},
-		}
-		corrupted := enc.CustomValues(customValues, nil)[:8]
-		_, err := dec.CustomValues(corrupted, nil)
-		require.ErrorIs(t, err, encoding.ErrInvalidSize)
-	})
 }
 
 func TestRecord_Type(t *testing.T) {
@@ -336,10 +365,6 @@ func TestRecord_Type(t *testing.T) {
 	}
 	recordType = dec.Type(enc.HistogramSamples(histograms, nil))
 	require.Equal(t, HistogramSamples, recordType)
-
-	customValues := []RefCustomValues{{Ref: 56, CustomValues: []float64{0, 1, 2, 3, 4}}}
-	recordType = dec.Type(enc.CustomValues(customValues, nil))
-	require.Equal(t, CustomValues, recordType)
 
 	recordType = dec.Type(nil)
 	require.Equal(t, Unknown, recordType)
