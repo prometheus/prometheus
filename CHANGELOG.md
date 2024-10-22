@@ -2,13 +2,9 @@
 
 ## unreleased
 
-## 2.55.0-rc.1 / 2024-10-16
+## 2.55.0 / 2024-10-22
 
 * [FEATURE] PromQL: Add experimental `info` function. #14495
-* [BUGFIX] PromQL: make sort_by_label stable. #14985
-
-## 2.55.0-rc.0 / 2024-09-20
-
 * [FEATURE] Support UTF-8 characters in label names - feature flag `utf8-names`. #14482, #14880, #14736, #14727
 * [FEATURE] Scraping: Add the ability to set custom `http_headers` in config. #14817
 * [FEATURE] Scraping: Support feature flag `created-timestamp-zero-ingestion` in OpenMetrics. #14356, #14815
@@ -31,6 +27,7 @@
 * [ENHANCEMENT] TSDB: Backward compatibility with upcoming index v3. #14934
 * [PERF] TSDB: Query in-order and out-of-order series together. #14354, #14693, #14714, #14831, #14874, #14948, #15120
 * [PERF] TSDB: Streamline reading of overlapping out-of-order head chunks. #14729
+* [BUGFIX] PromQL: make sort_by_label stable. #14985
 * [BUGFIX] SD: Fix dropping targets (with feature flag `new-service-discovery-manager`). #13147
 * [BUGFIX] SD: Stop storing stale targets (with feature flag `new-service-discovery-manager`). #13622
 * [BUGFIX] Scraping: exemplars could be dropped in protobuf scraping. #14810
