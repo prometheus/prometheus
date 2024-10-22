@@ -27,6 +27,7 @@ groups:
   - alert: HighRequestLatency
     expr: job:request_latency_seconds:mean5m{job="myjob"} > 0.5
     for: 10m
+    keep_firing_for: 5m
     labels:
       severity: page
     annotations:
@@ -39,6 +40,13 @@ an alert as firing for this element. In this case, Prometheus will check that
 the alert continues to be active during each evaluation for 10 minutes before
 firing the alert. Elements that are active, but not firing yet, are in the pending state.
 Alerting rules without the `for` clause will become active on the first evaluation.
+
+There is also an optional `keep_firing_for` clause that tells Prometheus to keep
+this alert firing for the specified duration after the firing condition was last met.
+This can be used to prevent situations such as flapping alerts, false resolutions
+due to lack of data loss, etc. Alerting rules without the `keep_firing_for` clause
+will deactivate on the first evaluation where the condition is not met (assuming
+any optional `for` duration desribed above has been satisfied).
 
 The `labels` clause allows specifying a set of additional labels to be attached
 to the alert. Any existing conflicting labels will be overwritten. The label
