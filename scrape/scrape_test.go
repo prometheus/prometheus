@@ -29,6 +29,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"text/template"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -685,6 +686,7 @@ func newBasicScrapeLoop(t testing.TB, ctx context.Context, scraper scraper, app 
 		false,
 		false,
 		false,
+		false,
 		nil,
 		false,
 		newTestScrapeMetrics(t),
@@ -824,6 +826,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		nil,
 		time.Second,
 		time.Hour,
+		false,
 		false,
 		false,
 		false,
@@ -970,6 +973,7 @@ func TestScrapeLoopMetadata(t *testing.T) {
 		nil,
 		0,
 		0,
+		false,
 		false,
 		false,
 		false,
@@ -3471,6 +3475,524 @@ test_summary_count 199
 
 	series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_summary"))
 	checkValues("quantile", expectedQuantileValues, series)
+}
+
+// Testing whether we can automatically convert scraped classic histograms into native histograms with custom buckets.
+func TestConvertClassicHistogramsToNHCB(t *testing.T) {
+	genTestCounterText := func(name string, value int, withMetadata bool) string {
+		if withMetadata {
+			return fmt.Sprintf(`
+# HELP %s some help text
+# TYPE %s counter
+%s{address="0.0.0.0",port="5001"} %d
+`, name, name, name, value)
+		}
+		return fmt.Sprintf(`
+%s %d
+`, name, value)
+	}
+	genTestHistText := func(name string, withMetadata bool) string {
+		data := map[string]interface{}{
+			"name": name,
+		}
+		b := &bytes.Buffer{}
+		if withMetadata {
+			template.Must(template.New("").Parse(`
+# HELP {{.name}} This is a histogram with default buckets
+# TYPE {{.name}} histogram
+`)).Execute(b, data)
+		}
+		template.Must(template.New("").Parse(`
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="0.005"} 0
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="0.01"} 0
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="0.025"} 0
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="0.05"} 0
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="0.1"} 0
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="0.25"} 0
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="0.5"} 0
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="1"} 0
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="2.5"} 0
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="5"} 0
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="10"} 1
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="+Inf"} 1
+{{.name}}_sum{address="0.0.0.0",port="5001"} 10
+{{.name}}_count{address="0.0.0.0",port="5001"} 1
+`)).Execute(b, data)
+		return b.String()
+	}
+	genTestCounterProto := func(name string, value int) string {
+		return fmt.Sprintf(`
+name: "%s"
+help: "some help text"
+type: COUNTER
+metric: <
+	label: <
+		name: "address"
+		value: "0.0.0.0"
+	>
+	label: <
+		name: "port"
+		value: "5001"
+	>
+	counter: <
+		value: %d
+	>
+>
+`, name, value)
+	}
+	genTestHistProto := func(name string, hasClassic, hasExponential bool) string {
+		var classic string
+		if hasClassic {
+			classic = `
+bucket: <
+	cumulative_count: 0
+	upper_bound: 0.005
+>
+bucket: <
+	cumulative_count: 0
+	upper_bound: 0.01
+>
+bucket: <
+	cumulative_count: 0
+	upper_bound: 0.025
+>
+bucket: <
+	cumulative_count: 0
+	upper_bound: 0.05
+>
+bucket: <
+	cumulative_count: 0
+	upper_bound: 0.1
+>
+bucket: <
+	cumulative_count: 0
+	upper_bound: 0.25
+>
+bucket: <
+	cumulative_count: 0
+	upper_bound: 0.5
+>
+bucket: <
+	cumulative_count: 0
+	upper_bound: 1
+>
+bucket: <
+	cumulative_count: 0
+	upper_bound: 2.5
+>
+bucket: <
+	cumulative_count: 0
+	upper_bound: 5
+>
+bucket: <
+	cumulative_count: 1
+	upper_bound: 10
+>`
+		}
+		var expo string
+		if hasExponential {
+			expo = `
+schema: 3
+zero_threshold: 2.938735877055719e-39
+zero_count: 0
+positive_span: <
+	offset: 2
+	length: 1
+>
+positive_delta: 1`
+		}
+		return fmt.Sprintf(`
+name: "%s"
+help: "This is a histogram with default buckets"
+type: HISTOGRAM
+metric: <
+	label: <
+		name: "address"
+		value: "0.0.0.0"
+	>
+	label: <
+		name: "port"
+		value: "5001"
+	>
+	histogram: <
+		sample_count: 1
+		sample_sum: 10
+		%s
+		%s
+	>
+	timestamp_ms: 1234568
+>
+`, name, classic, expo)
+	}
+
+	metricsTexts := map[string]struct {
+		text           []string
+		contentType    string
+		hasClassic     bool
+		hasExponential bool
+	}{
+		"text": {
+			text: []string{
+				genTestCounterText("test_metric_1", 1, true),
+				genTestCounterText("test_metric_1_count", 1, true),
+				genTestCounterText("test_metric_1_sum", 1, true),
+				genTestCounterText("test_metric_1_bucket", 1, true),
+				genTestHistText("test_histogram_1", true),
+				genTestCounterText("test_metric_2", 1, true),
+				genTestCounterText("test_metric_2_count", 1, true),
+				genTestCounterText("test_metric_2_sum", 1, true),
+				genTestCounterText("test_metric_2_bucket", 1, true),
+				genTestHistText("test_histogram_2", true),
+				genTestCounterText("test_metric_3", 1, true),
+				genTestCounterText("test_metric_3_count", 1, true),
+				genTestCounterText("test_metric_3_sum", 1, true),
+				genTestCounterText("test_metric_3_bucket", 1, true),
+				genTestHistText("test_histogram_3", true),
+			},
+			hasClassic: true,
+		},
+		"text, in different order": {
+			text: []string{
+				genTestCounterText("test_metric_1", 1, true),
+				genTestCounterText("test_metric_1_count", 1, true),
+				genTestCounterText("test_metric_1_sum", 1, true),
+				genTestCounterText("test_metric_1_bucket", 1, true),
+				genTestHistText("test_histogram_1", true),
+				genTestCounterText("test_metric_2", 1, true),
+				genTestCounterText("test_metric_2_count", 1, true),
+				genTestCounterText("test_metric_2_sum", 1, true),
+				genTestCounterText("test_metric_2_bucket", 1, true),
+				genTestHistText("test_histogram_2", true),
+				genTestHistText("test_histogram_3", true),
+				genTestCounterText("test_metric_3", 1, true),
+				genTestCounterText("test_metric_3_count", 1, true),
+				genTestCounterText("test_metric_3_sum", 1, true),
+				genTestCounterText("test_metric_3_bucket", 1, true),
+			},
+			hasClassic: true,
+		},
+		"protobuf": {
+			text: []string{
+				genTestCounterProto("test_metric_1", 1),
+				genTestCounterProto("test_metric_1_count", 1),
+				genTestCounterProto("test_metric_1_sum", 1),
+				genTestCounterProto("test_metric_1_bucket", 1),
+				genTestHistProto("test_histogram_1", true, false),
+				genTestCounterProto("test_metric_2", 1),
+				genTestCounterProto("test_metric_2_count", 1),
+				genTestCounterProto("test_metric_2_sum", 1),
+				genTestCounterProto("test_metric_2_bucket", 1),
+				genTestHistProto("test_histogram_2", true, false),
+				genTestCounterProto("test_metric_3", 1),
+				genTestCounterProto("test_metric_3_count", 1),
+				genTestCounterProto("test_metric_3_sum", 1),
+				genTestCounterProto("test_metric_3_bucket", 1),
+				genTestHistProto("test_histogram_3", true, false),
+			},
+			contentType: "application/vnd.google.protobuf",
+			hasClassic:  true,
+		},
+		"protobuf, in different order": {
+			text: []string{
+				genTestHistProto("test_histogram_1", true, false),
+				genTestCounterProto("test_metric_1", 1),
+				genTestCounterProto("test_metric_1_count", 1),
+				genTestCounterProto("test_metric_1_sum", 1),
+				genTestCounterProto("test_metric_1_bucket", 1),
+				genTestHistProto("test_histogram_2", true, false),
+				genTestCounterProto("test_metric_2", 1),
+				genTestCounterProto("test_metric_2_count", 1),
+				genTestCounterProto("test_metric_2_sum", 1),
+				genTestCounterProto("test_metric_2_bucket", 1),
+				genTestHistProto("test_histogram_3", true, false),
+				genTestCounterProto("test_metric_3", 1),
+				genTestCounterProto("test_metric_3_count", 1),
+				genTestCounterProto("test_metric_3_sum", 1),
+				genTestCounterProto("test_metric_3_bucket", 1),
+			},
+			contentType: "application/vnd.google.protobuf",
+			hasClassic:  true,
+		},
+		"protobuf, with additional native exponential histogram": {
+			text: []string{
+				genTestCounterProto("test_metric_1", 1),
+				genTestCounterProto("test_metric_1_count", 1),
+				genTestCounterProto("test_metric_1_sum", 1),
+				genTestCounterProto("test_metric_1_bucket", 1),
+				genTestHistProto("test_histogram_1", true, true),
+				genTestCounterProto("test_metric_2", 1),
+				genTestCounterProto("test_metric_2_count", 1),
+				genTestCounterProto("test_metric_2_sum", 1),
+				genTestCounterProto("test_metric_2_bucket", 1),
+				genTestHistProto("test_histogram_2", true, true),
+				genTestCounterProto("test_metric_3", 1),
+				genTestCounterProto("test_metric_3_count", 1),
+				genTestCounterProto("test_metric_3_sum", 1),
+				genTestCounterProto("test_metric_3_bucket", 1),
+				genTestHistProto("test_histogram_3", true, true),
+			},
+			contentType:    "application/vnd.google.protobuf",
+			hasClassic:     true,
+			hasExponential: true,
+		},
+		"protobuf, with only native exponential histogram": {
+			text: []string{
+				genTestCounterProto("test_metric_1", 1),
+				genTestCounterProto("test_metric_1_count", 1),
+				genTestCounterProto("test_metric_1_sum", 1),
+				genTestCounterProto("test_metric_1_bucket", 1),
+				genTestHistProto("test_histogram_1", false, true),
+				genTestCounterProto("test_metric_2", 1),
+				genTestCounterProto("test_metric_2_count", 1),
+				genTestCounterProto("test_metric_2_sum", 1),
+				genTestCounterProto("test_metric_2_bucket", 1),
+				genTestHistProto("test_histogram_2", false, true),
+				genTestCounterProto("test_metric_3", 1),
+				genTestCounterProto("test_metric_3_count", 1),
+				genTestCounterProto("test_metric_3_sum", 1),
+				genTestCounterProto("test_metric_3_bucket", 1),
+				genTestHistProto("test_histogram_3", false, true),
+			},
+			contentType:    "application/vnd.google.protobuf",
+			hasExponential: true,
+		},
+	}
+
+	checkBucketValues := func(expectedCount int, series storage.SeriesSet) {
+		labelName := "le"
+		var expectedValues []string
+		if expectedCount > 0 {
+			expectedValues = []string{"0.005", "0.01", "0.025", "0.05", "0.1", "0.25", "0.5", "1.0", "2.5", "5.0", "10.0", "+Inf"}
+		}
+		foundLeValues := map[string]bool{}
+
+		for series.Next() {
+			s := series.At()
+			v := s.Labels().Get(labelName)
+			require.NotContains(t, foundLeValues, v, "duplicate label value found")
+			foundLeValues[v] = true
+		}
+
+		require.Equal(t, len(expectedValues), len(foundLeValues), "unexpected number of label values, expected %v but found %v", expectedValues, foundLeValues)
+		for _, v := range expectedValues {
+			require.Contains(t, foundLeValues, v, "label value not found")
+		}
+	}
+
+	// Checks that the expected series is present and runs a basic sanity check of the float values.
+	checkFloatSeries := func(series storage.SeriesSet, expectedCount int, expectedFloat float64) {
+		count := 0
+		for series.Next() {
+			i := series.At().Iterator(nil)
+		loop:
+			for {
+				switch i.Next() {
+				case chunkenc.ValNone:
+					break loop
+				case chunkenc.ValFloat:
+					_, f := i.At()
+					require.Equal(t, expectedFloat, f)
+				case chunkenc.ValHistogram:
+					panic("unexpected value type: histogram")
+				case chunkenc.ValFloatHistogram:
+					panic("unexpected value type: float histogram")
+				default:
+					panic("unexpected value type")
+				}
+			}
+			count++
+		}
+		require.Equal(t, expectedCount, count, "number of float series not as expected")
+	}
+
+	// Checks that the expected series is present and runs a basic sanity check of the histogram values.
+	checkHistSeries := func(series storage.SeriesSet, expectedCount int, expectedSchema int32) {
+		count := 0
+		for series.Next() {
+			i := series.At().Iterator(nil)
+		loop:
+			for {
+				switch i.Next() {
+				case chunkenc.ValNone:
+					break loop
+				case chunkenc.ValFloat:
+					panic("unexpected value type: float")
+				case chunkenc.ValHistogram:
+					_, h := i.AtHistogram(nil)
+					require.Equal(t, expectedSchema, h.Schema)
+					require.Equal(t, uint64(1), h.Count)
+					require.Equal(t, 10.0, h.Sum)
+				case chunkenc.ValFloatHistogram:
+					_, h := i.AtFloatHistogram(nil)
+					require.Equal(t, expectedSchema, h.Schema)
+					require.Equal(t, uint64(1), h.Count)
+					require.Equal(t, 10.0, h.Sum)
+				default:
+					panic("unexpected value type")
+				}
+			}
+			count++
+		}
+		require.Equal(t, expectedCount, count, "number of histogram series not as expected")
+	}
+
+	for metricsTextName, metricsText := range metricsTexts {
+		for name, tc := range map[string]struct {
+			alwaysScrapeClassicHistograms bool
+			convertClassicHistToNHCB      bool
+		}{
+			"convert with scrape": {
+				alwaysScrapeClassicHistograms: true,
+				convertClassicHistToNHCB:      true,
+			},
+			"convert without scrape": {
+				alwaysScrapeClassicHistograms: false,
+				convertClassicHistToNHCB:      true,
+			},
+			"scrape without convert": {
+				alwaysScrapeClassicHistograms: true,
+				convertClassicHistToNHCB:      false,
+			},
+			"neither scrape nor convert": {
+				alwaysScrapeClassicHistograms: false,
+				convertClassicHistToNHCB:      false,
+			},
+		} {
+			var expectedClassicHistCount, expectedNativeHistCount int
+			var expectCustomBuckets bool
+			if metricsText.hasExponential {
+				expectedNativeHistCount = 1
+				expectCustomBuckets = false
+				expectedClassicHistCount = 0
+				if metricsText.hasClassic && tc.alwaysScrapeClassicHistograms {
+					expectedClassicHistCount = 1
+				}
+			} else if metricsText.hasClassic {
+				switch {
+				case tc.alwaysScrapeClassicHistograms && tc.convertClassicHistToNHCB:
+					expectedClassicHistCount = 1
+					expectedNativeHistCount = 1
+					expectCustomBuckets = true
+				case !tc.alwaysScrapeClassicHistograms && tc.convertClassicHistToNHCB:
+					expectedClassicHistCount = 0
+					expectedNativeHistCount = 1
+					expectCustomBuckets = true
+				case !tc.convertClassicHistToNHCB:
+					expectedClassicHistCount = 1
+					expectedNativeHistCount = 0
+				}
+			}
+
+			t.Run(fmt.Sprintf("%s with %s", name, metricsTextName), func(t *testing.T) {
+				simpleStorage := teststorage.New(t)
+				defer simpleStorage.Close()
+
+				config := &config.ScrapeConfig{
+					JobName:                        "test",
+					SampleLimit:                    100,
+					Scheme:                         "http",
+					ScrapeInterval:                 model.Duration(100 * time.Millisecond),
+					ScrapeTimeout:                  model.Duration(100 * time.Millisecond),
+					AlwaysScrapeClassicHistograms:  tc.alwaysScrapeClassicHistograms,
+					ConvertClassicHistogramsToNHCB: tc.convertClassicHistToNHCB,
+				}
+
+				scrapeCount := 0
+				scraped := make(chan bool)
+
+				ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if metricsText.contentType != "" {
+						w.Header().Set("Content-Type", `application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited`)
+						for _, text := range metricsText.text {
+							buf := &bytes.Buffer{}
+							// In case of protobuf, we have to create the binary representation.
+							pb := &dto.MetricFamily{}
+							// From text to proto message.
+							require.NoError(t, proto.UnmarshalText(text, pb))
+							// From proto message to binary protobuf.
+							protoBuf, err := proto.Marshal(pb)
+							require.NoError(t, err)
+
+							// Write first length, then binary protobuf.
+							varintBuf := binary.AppendUvarint(nil, uint64(len(protoBuf)))
+							buf.Write(varintBuf)
+							buf.Write(protoBuf)
+							w.Write(buf.Bytes())
+						}
+					} else {
+						for _, text := range metricsText.text {
+							fmt.Fprint(w, text)
+						}
+					}
+					scrapeCount++
+					if scrapeCount > 2 {
+						close(scraped)
+					}
+				}))
+				defer ts.Close()
+
+				sp, err := newScrapePool(config, simpleStorage, 0, nil, nil, &Options{EnableNativeHistogramsIngestion: true}, newTestScrapeMetrics(t))
+				require.NoError(t, err)
+				defer sp.stop()
+
+				testURL, err := url.Parse(ts.URL)
+				require.NoError(t, err)
+				sp.Sync([]*targetgroup.Group{
+					{
+						Targets: []model.LabelSet{{model.AddressLabel: model.LabelValue(testURL.Host)}},
+					},
+				})
+				require.Len(t, sp.ActiveTargets(), 1)
+
+				select {
+				case <-time.After(5 * time.Second):
+					t.Fatalf("target was not scraped")
+				case <-scraped:
+				}
+
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				q, err := simpleStorage.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
+				require.NoError(t, err)
+				defer q.Close()
+
+				var series storage.SeriesSet
+
+				for i := 1; i <= 3; i++ {
+					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_metric_%d", i)))
+					checkFloatSeries(series, 1, 1.)
+
+					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_metric_%d_count", i)))
+					checkFloatSeries(series, 1, 1.)
+
+					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_metric_%d_sum", i)))
+					checkFloatSeries(series, 1, 1.)
+
+					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_metric_%d_bucket", i)))
+					checkFloatSeries(series, 1, 1.)
+
+					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_histogram_%d_count", i)))
+					checkFloatSeries(series, expectedClassicHistCount, 1.)
+
+					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_histogram_%d_sum", i)))
+					checkFloatSeries(series, expectedClassicHistCount, 10.)
+
+					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_histogram_%d_bucket", i)))
+					checkBucketValues(expectedClassicHistCount, series)
+
+					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_histogram_%d", i)))
+
+					var expectedSchema int32
+					if expectCustomBuckets {
+						expectedSchema = histogram.CustomBucketsSchema
+					} else {
+						expectedSchema = 3
+					}
+					checkHistSeries(series, expectedNativeHistCount, expectedSchema)
+				}
+			})
+		}
+	}
 }
 
 func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrapeForTimestampedMetrics(t *testing.T) {
