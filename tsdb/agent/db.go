@@ -763,6 +763,7 @@ func (db *DB) Close() error {
 
 type appender struct {
 	*DB
+	hints *storage.AppendHints
 
 	pendingSeries          []record.RefSeries
 	pendingSamples         []record.RefSample
@@ -784,7 +785,7 @@ type appender struct {
 }
 
 func (a *appender) SetHints(hints *storage.AppendHints) {
-	panic("unimplemented")
+	a.hints = hints
 }
 
 func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {

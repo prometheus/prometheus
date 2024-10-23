@@ -34,15 +34,16 @@ import (
 // initAppender is a helper to initialize the time bounds of the head
 // upon the first sample it receives.
 type initAppender struct {
-	app   storage.Appender
-	head  *Head
-	hints *storage.AppendHints
+	app  storage.Appender
+	head *Head
 }
 
 var _ storage.GetRef = &initAppender{}
 
 func (a *initAppender) SetHints(hints *storage.AppendHints) {
-	a.hints = hints
+	if a.app != nil {
+		a.app.SetHints(hints)
+	}
 }
 
 func (a *initAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {

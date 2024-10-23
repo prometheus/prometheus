@@ -147,10 +147,14 @@ type fanoutAppender struct {
 	secondaries []Appender
 }
 
-// SetHints is a no-op. It exists to satisfy the Appender interface,
-// but hints are not propagated or stored in this fanoutAppender.
+// SetHints propagates the hints to both primary and secondary appenders.
 func (f *fanoutAppender) SetHints(hints *AppendHints) {
-	// Do nothing.
+	if f.primary != nil {
+		f.primary.SetHints(hints)
+	}
+	for _, appender := range f.secondaries {
+		appender.SetHints(hints)
+	}
 }
 
 func (f *fanoutAppender) Append(ref SeriesRef, l labels.Labels, t int64, v float64) (SeriesRef, error) {
