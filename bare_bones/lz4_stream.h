@@ -29,7 +29,8 @@ class basic_ostream : public std::ostream {
    *
    * @param stream The stream to write compressed data to
    */
-  explicit basic_ostream(std::ostream* stream, int compression_level = LZ4HC_CLEVEL_DEFAULT) : std::ostream(&buffer_), buffer_(stream, compression_level) {}
+  explicit basic_ostream(std::ostream* stream, bool write_header = true, int compression_level = LZ4HC_CLEVEL_DEFAULT)
+      : std::ostream(&buffer_), buffer_(stream, !write_header, compression_level) {}
 
   /**
    * @brief Destroys the LZ4 output stream. Calls close() if not already called.
@@ -51,7 +52,7 @@ class basic_ostream : public std::ostream {
     output_buffer(const output_buffer&) = delete;
     output_buffer& operator=(const output_buffer&) = delete;
 
-    output_buffer(std::ostream* stream, int compression_level) : stream_(stream) {
+    output_buffer(std::ostream* stream, bool header_written, int compression_level) : stream_(stream), header_written_(header_written) {
       preferences_.compressionLevel = compression_level;
 
       // TODO: No need to recalculate the dest_buf_ size on each construction
@@ -141,7 +142,7 @@ class basic_ostream : public std::ostream {
       // TODO: Throw exception instead or set badbit
       assert(!closed_);
 
-      if (stream_ == nullptr || header_written_) {
+      if (stream_ == nullptr) {
         return;
       }
 
@@ -149,8 +150,11 @@ class basic_ostream : public std::ostream {
       if (LZ4F_isError(ret) != 0) {
         throw std::runtime_error(std::string("Failed to start LZ4 compression: ") + LZ4F_getErrorName(ret));
       }
-      stream_->write(&dest_buf_.front(), ret);
-      header_written_ = true;
+
+      if (!header_written_) {
+        stream_->write(&dest_buf_.front(), ret);
+        header_written_ = true;
+      }
     }
   };
 

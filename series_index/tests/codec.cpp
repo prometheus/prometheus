@@ -33,7 +33,7 @@ struct DecodingResult {};
 
 Encoder create_encoder(Decoder& decoder, QueryableEncodingBimap& lss, uint16_t shard_id, uint8_t log_shards, size_t iteration) {
   if (iteration == 0) {
-    return Encoder(shard_id, log_shards, lss, shard_id, log_shards);
+    return Encoder(shard_id, log_shards, decoder.gorilla(), lss, shard_id, log_shards);
   }
 
   return PromPP::WAL::create_encoder_from_decoder<Encoder, Decoder>(decoder);
