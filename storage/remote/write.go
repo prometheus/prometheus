@@ -278,6 +278,7 @@ func (rws *WriteStorage) Close() error {
 
 type timestampTracker struct {
 	writeStorage         *WriteStorage
+	appendOptions        *storage.AppendOptions
 	samples              int64
 	exemplars            int64
 	histograms           int64
@@ -286,7 +287,7 @@ type timestampTracker struct {
 }
 
 func (t *timestampTracker) SetOptions(opts *storage.AppendOptions) {
-	panic("unimplemented")
+	t.appendOptions = opts
 }
 
 // Append implements storage.Appender.
