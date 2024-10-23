@@ -159,6 +159,9 @@ func (p *NHCBParser) Exemplar(ex *exemplar.Exemplar) bool {
 }
 
 func (p *NHCBParser) CreatedTimestamp() *int64 {
+	if p.state == stateStart && (p.entry == EntrySeries || p.entry == EntryHistogram) {
+		return p.parser.CreatedTimestamp()
+	}
 	return nil
 }
 
