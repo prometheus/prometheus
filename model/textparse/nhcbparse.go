@@ -174,22 +174,20 @@ func (p *NHCBParser) Next() (Entry, error) {
 		}
 		return p.entry, p.err
 	}
-	et, err := p.parser.Next()
-	if err != nil {
-		if errors.Is(err, io.EOF) && p.processNHCB() {
-			p.entry = et
-			p.err = err
+
+	p.entry, p.err = p.parser.Next()
+	if p.err != nil {
+		if errors.Is(p.err, io.EOF) && p.processNHCB() {
 			return EntryHistogram, nil
 		}
-		return EntryInvalid, err
+		return EntryInvalid, p.err
 	}
-	switch et {
+	switch p.entry {
 	case EntrySeries:
 		p.bytes, p.ts, p.value = p.parser.Series()
 		p.metricString = p.parser.Metric(&p.lset)
 		// Check the label set to see if we can continue or need to emit the NHCB.
 		if p.compareLabels() && p.processNHCB() {
-			p.entry = et
 			return EntryHistogram, nil
 		}
 		isNHCB := p.handleClassicHistogramSeries(p.lset)
@@ -197,7 +195,7 @@ func (p *NHCBParser) Next() (Entry, error) {
 			// Do not return the classic histogram series if it was converted to NHCB and we are not keeping classic histograms.
 			return p.Next()
 		}
-		return et, err
+		return p.entry, p.err
 	case EntryHistogram:
 		p.bytes, p.ts, p.h, p.fh = p.parser.Histogram()
 		p.metricString = p.parser.Metric(&p.lset)
@@ -205,10 +203,9 @@ func (p *NHCBParser) Next() (Entry, error) {
 		p.bName, p.typ = p.parser.Type()
 	}
 	if p.processNHCB() {
-		p.entry = et
 		return EntryHistogram, nil
 	}
-	return et, err
+	return p.entry, p.err
 }
 
 // Return true if labels have changed and we should emit the NHCB.
