@@ -250,7 +250,7 @@ clear
 load 5m
 	http_requests{job="api-server", instance="0", group="production"}	0+10x10
 	http_requests{job="api-server", instance="1", group="production"}	0+20x10
-	http_requests{job="api-server", instance="2", group="production"}	NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN
+	http_requests{job="api-server", instance="2", group="production"}	NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN
 	http_requests{job="api-server", instance="0", group="canary"}		0+30x10
 	http_requests{job="api-server", instance="1", group="canary"}		0+40x10
 	http_requests{job="app-server", instance="0", group="production"}	0+50x10
@@ -337,32 +337,32 @@ load 5m
 	version{job="app-server", instance="0", group="canary"}		7
 	version{job="app-server", instance="1", group="canary"}		7
 
-eval instant at 5m count_values("version", version)
+eval instant at 1m count_values("version", version)
 	{version="6"} 5
 	{version="7"} 2
 	{version="8"} 2
 
 
-eval instant at 5m count_values(((("version"))), version)
+eval instant at 1m count_values(((("version"))), version)
        {version="6"} 5
        {version="7"} 2
        {version="8"} 2
 
 
-eval instant at 5m count_values without (instance)("version", version)
+eval instant at 1m count_values without (instance)("version", version)
 	{job="api-server", group="production", version="6"} 3
 	{job="api-server", group="canary", version="8"} 2
 	{job="app-server", group="production", version="6"} 2
 	{job="app-server", group="canary", version="7"} 2
 
 # Overwrite label with output. Don't do this.
-eval instant at 5m count_values without (instance)("job", version)
+eval instant at 1m count_values without (instance)("job", version)
 	{job="6", group="production"} 5
 	{job="8", group="canary"} 2
 	{job="7", group="canary"} 2
 
 # Overwrite label with output. Don't do this.
-eval instant at 5m count_values by (job, group)("job", version)
+eval instant at 1m count_values by (job, group)("job", version)
 	{job="6", group="production"} 5
 	{job="8", group="canary"} 2
 	{job="7", group="canary"} 2
@@ -572,3 +572,160 @@ clear
 #
 #eval instant at 1m count(topk(1,max(up) without()) == topk(1,max(up) without()) == topk(1,max(up) without()) == topk(1,max(up) without()) == topk(1,max(up) without()))
 #	{} 1
+
+clear
+
+# Test stddev produces consistent results regardless the order the data is loaded in.
+load 5m
+	series{label="a"} 1
+	series{label="b"} 2
+	series{label="c"} {{schema:1 sum:15 count:10 buckets:[3 2 5 7 9]}}
+
+eval instant at 0m stddev(series)
+	{} 0.5
+
+eval instant at 0m stdvar(series)
+	{} 0.25
+
+eval instant at 0m stddev by (label) (series)
+	{label="a"} 0
+	{label="b"} 0
+
+eval instant at 0m stdvar by (label) (series)
+	{label="a"} 0
+	{label="b"} 0
+
+clear
+
+load 5m
+	series{label="a"} {{schema:1 sum:15 count:10 buckets:[3 2 5 7 9]}}
+	series{label="b"} 1
+	series{label="c"} 2
+
+eval instant at 0m stddev(series)
+	{} 0.5
+
+eval instant at 0m stdvar(series)
+	{} 0.25
+
+eval instant at 0m stddev by (label) (series)
+	{label="b"} 0
+	{label="c"} 0
+
+eval instant at 0m stdvar by (label) (series)
+	{label="b"} 0
+	{label="c"} 0
+
+clear
+
+load 5m
+	series{label="a"} 1
+	series{label="b"} 2
+	series{label="c"} NaN
+
+eval instant at 0m stddev(series)
+	{} NaN
+
+eval instant at 0m stdvar(series)
+	{} NaN
+
+eval instant at 0m stddev by (label) (series)
+	{label="a"} 0
+	{label="b"} 0
+	{label="c"} NaN
+
+eval instant at 0m stdvar by (label) (series)
+	{label="a"} 0
+	{label="b"} 0
+	{label="c"} NaN
+
+clear
+
+load 5m
+	series{label="a"} NaN
+	series{label="b"} 1
+	series{label="c"} 2
+
+eval instant at 0m stddev(series)
+	{} NaN
+
+eval instant at 0m stdvar(series)
+	{} NaN
+
+eval instant at 0m stddev by (label) (series)
+	{label="a"} NaN
+	{label="b"} 0
+	{label="c"} 0
+
+eval instant at 0m stdvar by (label) (series)
+	{label="a"} NaN
+	{label="b"} 0
+	{label="c"} 0
+
+clear
+
+load 5m
+	series NaN
+
+eval instant at 0m stddev(series)
+	{} NaN
+
+eval instant at 0m stdvar(series)
+	{} NaN
+
+clear
+
+load 5m
+	series{label="a"} 1
+	series{label="b"} 2
+	series{label="c"} inf
+
+eval instant at 0m stddev (series)
+	{} NaN
+
+eval instant at 0m stdvar (series)
+	{} NaN
+
+eval instant at 0m stddev by (label) (series)
+	{label="a"} 0
+	{label="b"} 0
+	{label="c"} NaN
+
+eval instant at 0m stdvar by (label) (series)
+	{label="a"} 0
+	{label="b"} 0
+	{label="c"} NaN
+
+clear
+
+load 5m
+	series{label="a"} inf
+	series{label="b"} 1
+	series{label="c"} 2
+
+eval instant at 0m stddev(series)
+	{} NaN
+
+eval instant at 0m stdvar(series)
+	{} NaN
+
+eval instant at 0m stddev by (label) (series)
+	{label="a"} NaN
+	{label="b"} 0
+	{label="c"} 0
+
+eval instant at 0m stdvar by (label) (series)
+	{label="a"} NaN
+	{label="b"} 0
+	{label="c"} 0
+
+clear
+
+load 5m
+	series inf
+
+eval instant at 0m stddev(series)
+	{} NaN
+
+eval instant at 0m stdvar(series)
+	{} NaN

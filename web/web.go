@@ -19,7 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	stdlog "log"
+	"log/slog"
 	"math"
 	"net"
 	"net/http"
@@ -36,20 +36,18 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/grafana/regexp"
 	"github.com/mwitkow/go-conntrack"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	io_prometheus_client "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/common/server"
 	toolkit_web "github.com/prometheus/exporter-toolkit/web"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.uber.org/atomic"
-	"golang.org/x/net/netutil"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
@@ -59,18 +57,29 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/httputil"
+	"github.com/prometheus/prometheus/util/netconnlimit"
+	"github.com/prometheus/prometheus/util/notifications"
 	api_v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/prometheus/prometheus/web/ui"
 )
 
-// Paths that are handled by the React / Reach router that should all be served the main React app's index.html.
-var reactRouterPaths = []string{
+// Paths handled by the React router that should all serve the main React app's index.html,
+// no matter if agent mode is enabled or not.
+var oldUIReactRouterPaths = []string{
 	"/config",
 	"/flags",
 	"/service-discovery",
 	"/status",
 	"/targets",
-	"/starting",
+}
+
+var newUIReactRouterPaths = []string{
+	"/config",
+	"/flags",
+	"/service-discovery",
+	"/alertmanager-discovery",
+	"/status",
+	"/targets",
 }
 
 // Paths that are handled by the React router when the Agent mode is set.
@@ -79,25 +88,40 @@ var reactRouterAgentPaths = []string{
 }
 
 // Paths that are handled by the React router when the Agent mode is not set.
-var reactRouterServerPaths = []string{
+var oldUIReactRouterServerPaths = []string{
 	"/alerts",
 	"/graph",
 	"/rules",
 	"/tsdb-status",
 }
 
+var newUIReactRouterServerPaths = []string{
+	"/alerts",
+	"/query", // The old /graph redirects to /query on the server side.
+	"/rules",
+	"/tsdb-status",
+}
+
+type ReadyStatus uint32
+
+const (
+	NotReady ReadyStatus = iota
+	Ready
+	Stopping
+)
+
 // withStackTrace logs the stack trace in case the request panics. The function
 // will re-raise the error which will then be handled by the net/http package.
 // It is needed because the go-kit log package doesn't manage properly the
 // panics from net/http (see https://github.com/go-kit/kit/issues/233).
-func withStackTracer(h http.Handler, l log.Logger) http.Handler {
+func withStackTracer(h http.Handler, l *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if err := recover(); err != nil {
 				const size = 64 << 10
 				buf := make([]byte, size)
 				buf = buf[:runtime.Stack(buf, false)]
-				level.Error(l).Log("msg", "panic while serving request", "client", r.RemoteAddr, "url", r.URL, "err", err, "stack", buf)
+				l.Error("panic while serving request", "client", r.RemoteAddr, "url", r.URL, "err", err, "stack", buf)
 				panic(err)
 			}
 		}()
@@ -183,7 +207,7 @@ type LocalStorage interface {
 
 // Handler serves various HTTP endpoints of the Prometheus server.
 type Handler struct {
-	logger log.Logger
+	logger *slog.Logger
 
 	gatherer prometheus.Gatherer
 	metrics  *metrics
@@ -242,9 +266,11 @@ type Options struct {
 	RuleManager           *rules.Manager
 	Notifier              *notifier.Manager
 	Version               *PrometheusVersion
+	NotificationsGetter   func() []notifications.Notification
+	NotificationsSub      func() (<-chan notifications.Notification, func(), bool)
 	Flags                 map[string]string
 
-	ListenAddress              string
+	ListenAddresses            []string
 	CORSOrigin                 *regexp.Regexp
 	ReadTimeout                time.Duration
 	MaxConnections             int
@@ -254,6 +280,7 @@ type Options struct {
 	UserAssetsPath             string
 	ConsoleTemplatesPath       string
 	ConsoleLibrariesPath       string
+	UseOldUI                   bool
 	EnableLifecycle            bool
 	EnableAdminAPI             bool
 	PageTitle                  string
@@ -272,9 +299,9 @@ type Options struct {
 }
 
 // New initializes a new web Handler.
-func New(logger log.Logger, o *Options) *Handler {
+func New(logger *slog.Logger, o *Options) *Handler {
 	if logger == nil {
-		logger = log.NewNopLogger()
+		logger = promslog.NewNopLogger()
 	}
 
 	m := newMetrics(o.Registerer)
@@ -314,7 +341,7 @@ func New(logger log.Logger, o *Options) *Handler {
 
 		now: model.Now,
 	}
-	h.SetReady(false)
+	h.SetReady(NotReady)
 
 	factorySPr := func(_ context.Context) api_v1.ScrapePoolsRetriever { return h.scrapeManager }
 	factoryTr := func(_ context.Context) api_v1.TargetRetriever { return h.scrapeManager }
@@ -334,7 +361,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		},
 		o.Flags,
 		api_v1.GlobalURLOptions{
-			ListenAddress: o.ListenAddress,
+			ListenAddress: o.ListenAddresses[0],
 			Host:          o.ExternalURL.Host,
 			Scheme:        o.ExternalURL.Scheme,
 		},
@@ -351,6 +378,8 @@ func New(logger log.Logger, o *Options) *Handler {
 		h.options.CORSOrigin,
 		h.runtimeInfo,
 		h.versionInfo,
+		h.options.NotificationsGetter,
+		h.options.NotificationsSub,
 		o.Gatherer,
 		o.Registerer,
 		nil,
@@ -367,7 +396,10 @@ func New(logger log.Logger, o *Options) *Handler {
 		router = router.WithPrefix(o.RoutePrefix)
 	}
 
-	homePage := "/graph"
+	homePage := "/query"
+	if o.UseOldUI {
+		homePage = "/graph"
+	}
 	if o.IsAgent {
 		homePage = "/agent"
 	}
@@ -377,6 +409,17 @@ func New(logger log.Logger, o *Options) *Handler {
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, path.Join(o.ExternalURL.Path, homePage), http.StatusFound)
 	})
+
+	if !o.UseOldUI {
+		router.Get("/graph", func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, path.Join(o.ExternalURL.Path, "/query?"+r.URL.RawQuery), http.StatusFound)
+		})
+	}
+
+	reactAssetsRoot := "/static/mantine-ui"
+	if h.options.UseOldUI {
+		reactAssetsRoot = "/static/react-app"
+	}
 
 	// The console library examples at 'console_libraries/prom.lib' still depend on old asset files being served under `classic`.
 	router.Get("/classic/static/*filepath", func(w http.ResponseWriter, r *http.Request) {
@@ -395,7 +438,8 @@ func New(logger log.Logger, o *Options) *Handler {
 	router.Get("/consoles/*filepath", readyf(h.consoles))
 
 	serveReactApp := func(w http.ResponseWriter, r *http.Request) {
-		f, err := ui.Assets.Open("/static/react/index.html")
+		indexPath := reactAssetsRoot + "/index.html"
+		f, err := ui.Assets.Open(indexPath)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			fmt.Fprintf(w, "Error opening React index.html: %v", err)
@@ -412,10 +456,18 @@ func New(logger log.Logger, o *Options) *Handler {
 		replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("TITLE_PLACEHOLDER"), []byte(h.options.PageTitle))
 		replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("AGENT_MODE_PLACEHOLDER"), []byte(strconv.FormatBool(h.options.IsAgent)))
 		replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("READY_PLACEHOLDER"), []byte(strconv.FormatBool(h.isReady())))
+		replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("LOOKBACKDELTA_PLACEHOLDER"), []byte(model.Duration(h.options.LookbackDelta).String()))
 		w.Write(replacedIdx)
 	}
 
 	// Serve the React app.
+	reactRouterPaths := newUIReactRouterPaths
+	reactRouterServerPaths := newUIReactRouterServerPaths
+	if h.options.UseOldUI {
+		reactRouterPaths = oldUIReactRouterPaths
+		reactRouterServerPaths = oldUIReactRouterServerPaths
+	}
+
 	for _, p := range reactRouterPaths {
 		router.Get(p, serveReactApp)
 	}
@@ -432,8 +484,8 @@ func New(logger log.Logger, o *Options) *Handler {
 
 	// The favicon and manifest are bundled as part of the React app, but we want to serve
 	// them on the root.
-	for _, p := range []string{"/favicon.ico", "/manifest.json"} {
-		assetPath := "/static/react" + p
+	for _, p := range []string{"/favicon.svg", "/favicon.ico", "/manifest.json"} {
+		assetPath := reactAssetsRoot + p
 		router.Get(p, func(w http.ResponseWriter, r *http.Request) {
 			r.URL.Path = assetPath
 			fs := server.StaticFileServer(ui.Assets)
@@ -441,9 +493,13 @@ func New(logger log.Logger, o *Options) *Handler {
 		})
 	}
 
+	reactStaticAssetsDir := "/assets"
+	if h.options.UseOldUI {
+		reactStaticAssetsDir = "/static"
+	}
 	// Static files required by the React app.
-	router.Get("/static/*filepath", func(w http.ResponseWriter, r *http.Request) {
-		r.URL.Path = path.Join("/static/react/static", route.Param(r.Context(), "filepath"))
+	router.Get(reactStaticAssetsDir+"/*filepath", func(w http.ResponseWriter, r *http.Request) {
+		r.URL.Path = path.Join(reactAssetsRoot+reactStaticAssetsDir, route.Param(r.Context(), "filepath"))
 		fs := server.StaticFileServer(ui.Assets)
 		fs.ServeHTTP(w, r)
 	})
@@ -481,14 +537,14 @@ func New(logger log.Logger, o *Options) *Handler {
 
 	router.Get("/-/healthy", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, o.AppName+" is Healthy.\n")
+		fmt.Fprintf(w, "%s is Healthy.\n", o.AppName)
 	})
 	router.Head("/-/healthy", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 	router.Get("/-/ready", readyf(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, o.AppName+" is Ready.\n")
+		fmt.Fprintf(w, "%s is Ready.\n", o.AppName)
 	}))
 	router.Head("/-/ready", readyf(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -528,30 +584,39 @@ func serveDebug(w http.ResponseWriter, req *http.Request) {
 }
 
 // SetReady sets the ready status of our web Handler.
-func (h *Handler) SetReady(v bool) {
-	if v {
-		h.ready.Store(1)
+func (h *Handler) SetReady(v ReadyStatus) {
+	if v == Ready {
+		h.ready.Store(uint32(Ready))
 		h.metrics.readyStatus.Set(1)
 		return
 	}
 
-	h.ready.Store(0)
+	h.ready.Store(uint32(v))
 	h.metrics.readyStatus.Set(0)
 }
 
 // Verifies whether the server is ready or not.
 func (h *Handler) isReady() bool {
-	return h.ready.Load() > 0
+	return ReadyStatus(h.ready.Load()) == Ready
 }
 
 // Checks if server is ready, calls f if it is, returns 503 if it is not.
 func (h *Handler) testReady(f http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if h.isReady() {
+		switch ReadyStatus(h.ready.Load()) {
+		case Ready:
 			f(w, r)
-		} else {
+		case NotReady:
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Header().Set("X-Prometheus-Stopping", "false")
+			fmt.Fprintf(w, "Service Unavailable")
+		case Stopping:
+			w.Header().Set("X-Prometheus-Stopping", "true")
 			w.WriteHeader(http.StatusServiceUnavailable)
 			fmt.Fprintf(w, "Service Unavailable")
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, "Unknown state")
 		}
 	}
 }
@@ -566,15 +631,29 @@ func (h *Handler) Reload() <-chan chan error {
 	return h.reloadCh
 }
 
-// Listener creates the TCP listener for web requests.
-func (h *Handler) Listener() (net.Listener, error) {
-	level.Info(h.logger).Log("msg", "Start listening for connections", "address", h.options.ListenAddress)
+// Listeners creates the TCP listeners for web requests.
+func (h *Handler) Listeners() ([]net.Listener, error) {
+	var listeners []net.Listener
+	sem := netconnlimit.NewSharedSemaphore(h.options.MaxConnections)
+	for _, address := range h.options.ListenAddresses {
+		listener, err := h.Listener(address, sem)
+		if err != nil {
+			return listeners, err
+		}
+		listeners = append(listeners, listener)
+	}
+	return listeners, nil
+}
 
-	listener, err := net.Listen("tcp", h.options.ListenAddress)
+// Listener creates the TCP listener for web requests.
+func (h *Handler) Listener(address string, sem chan struct{}) (net.Listener, error) {
+	h.logger.Info("Start listening for connections", "address", address)
+
+	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return listener, err
 	}
-	listener = netutil.LimitListener(listener, h.options.MaxConnections)
+	listener = netconnlimit.SharedLimitListener(listener, sem)
 
 	// Monitor incoming connections with conntrack.
 	listener = conntrack.NewListener(listener,
@@ -585,10 +664,10 @@ func (h *Handler) Listener() (net.Listener, error) {
 }
 
 // Run serves the HTTP endpoints.
-func (h *Handler) Run(ctx context.Context, listener net.Listener, webConfig string) error {
-	if listener == nil {
+func (h *Handler) Run(ctx context.Context, listeners []net.Listener, webConfig string) error {
+	if len(listeners) == 0 {
 		var err error
-		listener, err = h.Listener()
+		listeners, err = h.Listeners()
 		if err != nil {
 			return err
 		}
@@ -600,7 +679,7 @@ func (h *Handler) Run(ctx context.Context, listener net.Listener, webConfig stri
 	apiPath := "/api"
 	if h.options.RoutePrefix != "/" {
 		apiPath = h.options.RoutePrefix + apiPath
-		level.Info(h.logger).Log("msg", "Router prefix", "prefix", h.options.RoutePrefix)
+		h.logger.Info("Router prefix", "prefix", h.options.RoutePrefix)
 	}
 	av1 := route.New().
 		WithInstrumentation(h.metrics.instrumentHandlerWithPrefix("/api/v1")).
@@ -609,7 +688,7 @@ func (h *Handler) Run(ctx context.Context, listener net.Listener, webConfig stri
 
 	mux.Handle(apiPath+"/v1/", http.StripPrefix(apiPath+"/v1", av1))
 
-	errlog := stdlog.New(log.NewStdlibAdapter(level.Error(h.logger)), "", 0)
+	errlog := slog.NewLogLogger(h.logger.Handler(), slog.LevelError)
 
 	spanNameFormatter := otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
 		return fmt.Sprintf("%s %s", r.Method, r.URL.Path)
@@ -623,7 +702,7 @@ func (h *Handler) Run(ctx context.Context, listener net.Listener, webConfig stri
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- toolkit_web.Serve(listener, httpSrv, &toolkit_web.FlagConfig{WebConfigFile: &webConfig}, h.logger)
+		errCh <- toolkit_web.ServeMultiple(listeners, httpSrv, &toolkit_web.FlagConfig{WebConfigFile: &webConfig}, h.logger)
 	}()
 
 	select {

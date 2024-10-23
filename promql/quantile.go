@@ -153,19 +153,31 @@ func bucketQuantile(q float64, buckets buckets) (float64, bool, bool) {
 
 // histogramQuantile calculates the quantile 'q' based on the given histogram.
 //
-// The quantile value is interpolated assuming a linear distribution within a
-// bucket.
-// TODO(beorn7): Find an interpolation method that is a better fit for
-// exponential buckets (and think about configurable interpolation).
+// For custom buckets, the result is interpolated linearly, i.e. it is assumed
+// the observations are uniformly distributed within each bucket. (This is a
+// quite blunt assumption, but it is consistent with the interpolation method
+// used for classic histograms so far.)
+//
+// For exponential buckets, the interpolation is done under the assumption that
+// the samples within each bucket are distributed in a way that they would
+// uniformly populate the buckets in a hypothetical histogram with higher
+// resolution. For example, if the rank calculation suggests that the requested
+// quantile is right in the middle of the population of the (1,2] bucket, we
+// assume the quantile would be right at the bucket boundary between the two
+// buckets the (1,2] bucket would be divided into if the histogram had double
+// the resolution, which is 2**2**-1 = 1.4142... We call this exponential
+// interpolation.
+//
+// However, for a quantile that ends up in the zero bucket, this method isn't
+// very helpful (because there is an infinite number of buckets close to zero,
+// so we would have to assume zero as the result). Therefore, we return to
+// linear interpolation in the zero bucket.
 //
 // A natural lower bound of 0 is assumed if the histogram has only positive
 // buckets. Likewise, a natural upper bound of 0 is assumed if the histogram has
 // only negative buckets.
-// TODO(beorn7): Come to terms if we want that.
 //
-// There are a number of special cases (once we have a way to report errors
-// happening during evaluations of AST functions, we should report those
-// explicitly):
+// There are a number of special cases:
 //
 // If the histogram has 0 observations, NaN is returned.
 //
@@ -193,9 +205,9 @@ func histogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 		rank   float64
 	)
 
-	// if there are NaN observations in the histogram (h.Sum is NaN), use the forward iterator
-	// if the q < 0.5, use the forward iterator
-	// if the q >= 0.5, use the reverse iterator
+	// If there are NaN observations in the histogram (h.Sum is NaN), use the forward iterator.
+	// If q < 0.5, use the forward iterator.
+	// If q >= 0.5, use the reverse iterator.
 	if math.IsNaN(h.Sum) || q < 0.5 {
 		it = h.AllBucketIterator()
 		rank = q * h.Count
@@ -260,8 +272,29 @@ func histogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 		rank = count - rank
 	}
 
-	// TODO(codesome): Use a better estimation than linear.
-	return bucket.Lower + (bucket.Upper-bucket.Lower)*(rank/bucket.Count)
+	// The fraction of how far we are into the current bucket.
+	fraction := rank / bucket.Count
+
+	// Return linear interpolation for custom buckets and for quantiles that
+	// end up in the zero bucket.
+	if h.UsesCustomBuckets() || (bucket.Lower <= 0 && bucket.Upper >= 0) {
+		return bucket.Lower + (bucket.Upper-bucket.Lower)*fraction
+	}
+
+	// For exponential buckets, we interpolate on a logarithmic scale. On a
+	// logarithmic scale, the exponential bucket boundaries (for any schema)
+	// become linear (every bucket has the same width). Therefore, after
+	// taking the logarithm of both bucket boundaries, we can use the
+	// calculated fraction in the same way as for linear interpolation (see
+	// above). Finally, we return to the normal scale by applying the
+	// exponential function to the result.
+	logLower := math.Log2(math.Abs(bucket.Lower))
+	logUpper := math.Log2(math.Abs(bucket.Upper))
+	if bucket.Lower > 0 { // Positive bucket.
+		return math.Exp2(logLower + (logUpper-logLower)*fraction)
+	}
+	// Otherwise, we are in a negative bucket and have to mirror things.
+	return -math.Exp2(logUpper + (logLower-logUpper)*(1-fraction))
 }
 
 // histogramFraction calculates the fraction of observations between the
@@ -271,8 +304,8 @@ func histogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 // histogramQuantile(0.9, h) returns 123.4, then histogramFraction(-Inf, 123.4, h)
 // returns 0.9.
 //
-// The same notes (and TODOs) with regard to interpolation and assumptions about
-// the zero bucket boundaries apply as for histogramQuantile.
+// The same notes with regard to interpolation and assumptions about the zero
+// bucket boundaries apply as for histogramQuantile.
 //
 // Whether either boundary is inclusive or exclusive doesn’t actually matter as
 // long as interpolation has to be performed anyway. In the case of a boundary
@@ -310,7 +343,35 @@ func histogramFraction(lower, upper float64, h *histogram.FloatHistogram) float6
 	)
 	for it.Next() {
 		b := it.At()
-		if b.Lower < 0 && b.Upper > 0 {
+		zeroBucket := false
+
+		// interpolateLinearly is used for custom buckets to be
+		// consistent with the linear interpolation known from classic
+		// histograms. It is also used for the zero bucket.
+		interpolateLinearly := func(v float64) float64 {
+			return rank + b.Count*(v-b.Lower)/(b.Upper-b.Lower)
+		}
+
+		// interpolateExponentially is using the same exponential
+		// interpolation method as above for histogramQuantile. This
+		// method is a better fit for exponential bucketing.
+		interpolateExponentially := func(v float64) float64 {
+			var (
+				logLower = math.Log2(math.Abs(b.Lower))
+				logUpper = math.Log2(math.Abs(b.Upper))
+				logV     = math.Log2(math.Abs(v))
+				fraction float64
+			)
+			if v > 0 {
+				fraction = (logV - logLower) / (logUpper - logLower)
+			} else {
+				fraction = 1 - ((logV - logUpper) / (logLower - logUpper))
+			}
+			return rank + b.Count*fraction
+		}
+
+		if b.Lower <= 0 && b.Upper >= 0 {
+			zeroBucket = true
 			switch {
 			case len(h.NegativeBuckets) == 0 && len(h.PositiveBuckets) > 0:
 				// This is the zero bucket and the histogram has only
@@ -325,10 +386,12 @@ func histogramFraction(lower, upper float64, h *histogram.FloatHistogram) float6
 			}
 		}
 		if !lowerSet && b.Lower >= lower {
+			// We have hit the lower value at the lower bucket boundary.
 			lowerRank = rank
 			lowerSet = true
 		}
 		if !upperSet && b.Lower >= upper {
+			// We have hit the upper value at the lower bucket boundary.
 			upperRank = rank
 			upperSet = true
 		}
@@ -336,11 +399,21 @@ func histogramFraction(lower, upper float64, h *histogram.FloatHistogram) float6
 			break
 		}
 		if !lowerSet && b.Lower < lower && b.Upper > lower {
-			lowerRank = rank + b.Count*(lower-b.Lower)/(b.Upper-b.Lower)
+			// The lower value is in this bucket.
+			if h.UsesCustomBuckets() || zeroBucket {
+				lowerRank = interpolateLinearly(lower)
+			} else {
+				lowerRank = interpolateExponentially(lower)
+			}
 			lowerSet = true
 		}
 		if !upperSet && b.Lower < upper && b.Upper > upper {
-			upperRank = rank + b.Count*(upper-b.Lower)/(b.Upper-b.Lower)
+			// The upper value is in this bucket.
+			if h.UsesCustomBuckets() || zeroBucket {
+				upperRank = interpolateLinearly(upper)
+			} else {
+				upperRank = interpolateExponentially(upper)
+			}
 			upperSet = true
 		}
 		if lowerSet && upperSet {

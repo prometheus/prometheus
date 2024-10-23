@@ -23,14 +23,13 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
 	"github.com/prometheus/prometheus/tsdb/fileutil"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestMain(m *testing.M) {
@@ -215,7 +214,7 @@ func TestCorruptAndCarryOn(t *testing.T) {
 	dir := t.TempDir()
 
 	var (
-		logger      = testutil.NewLogger(t)
+		logger      = promslog.NewNopLogger()
 		segmentSize = pageSize * 3
 		recordSize  = (pageSize / 3) - recordHeaderSize
 	)
@@ -568,7 +567,7 @@ func TestUnregisterMetrics(t *testing.T) {
 	reg := prometheus.NewRegistry()
 
 	for i := 0; i < 2; i++ {
-		wl, err := New(log.NewNopLogger(), reg, t.TempDir(), CompressionNone)
+		wl, err := New(promslog.NewNopLogger(), reg, t.TempDir(), CompressionNone)
 		require.NoError(t, err)
 		require.NoError(t, wl.Close())
 	}

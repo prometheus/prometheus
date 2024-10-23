@@ -610,6 +610,9 @@ func lexBuckets(l *Lexer) stateFn {
 	case isSpace(r):
 		l.emit(SPACE)
 		return lexSpace
+	case r == '-':
+		l.emit(SUB)
+		return lexNumber
 	case isDigit(r):
 		l.backup()
 		return lexNumber
@@ -617,6 +620,16 @@ func lexBuckets(l *Lexer) stateFn {
 		l.bracketOpen = false
 		l.emit(RIGHT_BRACKET)
 		return lexHistogram
+	case isAlpha(r):
+		// Current word is Inf or NaN.
+		word := l.input[l.start:l.pos]
+		if desc, ok := key[strings.ToLower(word)]; ok {
+			if desc == NUMBER {
+				l.emit(desc)
+				return lexStatements
+			}
+		}
+		return lexBuckets
 	default:
 		return l.errorf("invalid character in buckets description: %q", r)
 	}
@@ -727,23 +740,23 @@ func lexValueSequence(l *Lexer) stateFn {
 // was only modified to integrate with our lexer.
 func lexEscape(l *Lexer) stateFn {
 	var n int
-	var base, max uint32
+	var base, maxVal uint32
 
 	ch := l.next()
 	switch ch {
 	case 'a', 'b', 'f', 'n', 'r', 't', 'v', '\\', l.stringOpen:
 		return lexString
 	case '0', '1', '2', '3', '4', '5', '6', '7':
-		n, base, max = 3, 8, 255
+		n, base, maxVal = 3, 8, 255
 	case 'x':
 		ch = l.next()
-		n, base, max = 2, 16, 255
+		n, base, maxVal = 2, 16, 255
 	case 'u':
 		ch = l.next()
-		n, base, max = 4, 16, unicode.MaxRune
+		n, base, maxVal = 4, 16, unicode.MaxRune
 	case 'U':
 		ch = l.next()
-		n, base, max = 8, 16, unicode.MaxRune
+		n, base, maxVal = 8, 16, unicode.MaxRune
 	case eof:
 		l.errorf("escape sequence not terminated")
 		return lexString
@@ -772,7 +785,7 @@ func lexEscape(l *Lexer) stateFn {
 		}
 	}
 
-	if x > max || 0xD800 <= x && x < 0xE000 {
+	if x > maxVal || 0xD800 <= x && x < 0xE000 {
 		l.errorf("escape sequence is an invalid Unicode code point")
 	}
 	return lexString

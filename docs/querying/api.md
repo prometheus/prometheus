@@ -59,7 +59,7 @@ timestamps are always represented as Unix timestamps in seconds.
 * `<series_selector>`: Prometheus [time series
 selectors](basics.md#time-series-selectors) like `http_requests_total` or
 `http_requests_total{method=~"(GET|POST)"}` and need to be URL-encoded.
-* `<duration>`: [Prometheus duration strings](basics.md#time-durations).
+* `<duration>`: [the subset of Prometheus float literals using time units](basics.md#float-literals-and-time-durations).
 For example, `5m` refers to a duration of 5 minutes.
 * `<bool>`: boolean values (strings `true` and `false`).
 
@@ -236,6 +236,75 @@ $ curl 'http://localhost:9090/api/v1/format_query?query=foo/bar'
 {
    "status" : "success",
    "data" : "foo / bar"
+}
+```
+
+## Parsing a PromQL expressions into a abstract syntax tree (AST)
+
+This endpoint is **experimental** and might change in the future. It is currently only meant to be used by Prometheus' own web UI, and the endpoint name and exact format returned may change from one Prometheus version to another. It may also be removed again in case it is no longer needed by the UI.
+
+The following endpoint parses a PromQL expression and returns it as a JSON-formatted AST (abstract syntax tree) representation:
+
+```
+GET /api/v1/parse_query
+POST /api/v1/parse_query
+```
+
+URL query parameters:
+
+- `query=<string>`: Prometheus expression query string.
+
+You can URL-encode these parameters directly in the request body by using the `POST` method and
+`Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
+query that may breach server-side URL character limits.
+
+The `data` section of the query result is a string containing the AST of the parsed query expression.
+
+The following example parses the expression `foo/bar`:
+
+```json
+$ curl 'http://localhost:9090/api/v1/parse_query?query=foo/bar'
+{
+   "data" : {
+      "bool" : false,
+      "lhs" : {
+         "matchers" : [
+            {
+               "name" : "__name__",
+               "type" : "=",
+               "value" : "foo"
+            }
+         ],
+         "name" : "foo",
+         "offset" : 0,
+         "startOrEnd" : null,
+         "timestamp" : null,
+         "type" : "vectorSelector"
+      },
+      "matching" : {
+         "card" : "one-to-one",
+         "include" : [],
+         "labels" : [],
+         "on" : false
+      },
+      "op" : "/",
+      "rhs" : {
+         "matchers" : [
+            {
+               "name" : "__name__",
+               "type" : "=",
+               "value" : "bar"
+            }
+         ],
+         "name" : "bar",
+         "offset" : 0,
+         "startOrEnd" : null,
+         "timestamp" : null,
+         "type" : "vectorSelector"
+      },
+      "type" : "binaryExpr"
+   },
+   "status" : "success"
 }
 ```
 
@@ -693,8 +762,10 @@ URL query parameters:
 - `rule_name[]=<string>`: only return rules with the given rule name. If the parameter is repeated, rules with any of the provided names are returned. If we've filtered out all the rules of a group, the group is not returned. When the parameter is absent or empty, no filtering is done.
 - `rule_group[]=<string>`: only return rules with the given rule group name. If the parameter is repeated, rules with any of the provided rule group names are returned. When the parameter is absent or empty, no filtering is done.
 - `file[]=<string>`: only return rules with the given filepath. If the parameter is repeated, rules with any of the provided filepaths are returned. When the parameter is absent or empty, no filtering is done.
-- `exclude_alerts=<bool>`: only return rules, do not return active alerts. 
+- `exclude_alerts=<bool>`: only return rules, do not return active alerts.
 - `match[]=<label_selector>`: only return rules that have configured labels that satisfy the label selectors. If the parameter is repeated, rules that match any of the sets of label selectors are returned. Note that matching is on the labels in the definition of each rule, not on the values after template expansion (for alerting rules). Optional.
+- `group_limit=<number>`: The `group_limit` parameter allows you to specify a limit for the number of rule groups that is returned in a single response. If the total number of rule groups exceeds the specified `group_limit` value, the response will include a `groupNextToken` property. You can use the value of this `groupNextToken` property in subsequent requests in the `group_next_token` parameter to paginate over the remaining rule groups. The `groupNextToken` property will not be present in the final response, indicating that you have retrieved all the available rule groups. Please note that there are no guarantees regarding the consistency of the response if the rule groups are being modified during the pagination process.
+- `group_next_token`: the pagination token that was returned in previous request when the `group_limit` property is set. The pagination token is used to iteratively paginate over a large number of rule groups. To use the `group_next_token` parameter, the `group_limit` parameter also need to be present. If a rule group that coincides with the next token is removed while you are paginating over the rule groups, a response with status code 400 will be returned.
 
 ```json
 $ curl http://localhost:9090/api/v1/rules
@@ -1319,8 +1390,74 @@ is not considered an efficient way of ingesting samples. Use it
 with caution for specific low-volume use cases. It is not suitable for
 replacing the ingestion via scraping.
 
-Enable the OTLP receiver by the feature flag
-`--enable-feature=otlp-write-receiver`. When enabled, the OTLP receiver
+Enable the OTLP receiver by setting
+`--web.enable-otlp-receiver`. When enabled, the OTLP receiver
 endpoint is `/api/v1/otlp/v1/metrics`.
 
 *New in v2.47*
+
+## Notifications
+
+The following endpoints provide information about active status notifications concerning the Prometheus server itself.
+Notifications are used in the web UI.
+
+These endpoints are **experimental**. They may change in the future.
+
+### Active Notifications
+
+The `/api/v1/notifications` endpoint returns a list of all currently active notifications.
+
+```
+GET /api/v1/notifications
+```
+
+Example:
+
+```
+$ curl http://localhost:9090/api/v1/notifications
+{
+  "status": "success",
+  "data": [
+    {
+      "text": "Prometheus is shutting down and gracefully stopping all operations.",
+      "date": "2024-10-07T12:33:08.551376578+02:00",
+      "active": true
+    }
+  ]
+}
+```
+
+*New in v3.0*
+
+### Live Notifications
+
+The `/api/v1/notifications/live` endpoint streams live notifications as they occur, using [Server-Sent Events](https://html.spec.whatwg.org/multipage/server-sent-events.html#server-sent-events). Deleted notifications are sent with `active: false`. Active notifications will be sent when connecting to the endpoint.
+
+```
+GET /api/v1/notifications/live
+```
+
+Example:
+
+```
+$ curl http://localhost:9090/api/v1/notifications/live
+data: {
+  "status": "success",
+  "data": [
+    {
+      "text": "Prometheus is shutting down and gracefully stopping all operations.",
+      "date": "2024-10-07T12:33:08.551376578+02:00",
+      "active": true
+    }
+  ]
+}
+```
+
+**Note:** The `/notifications/live` endpoint will return a `204 No Content` response if the maximum number of subscribers has been reached. You can set the maximum number of listeners with the flag `--web.max-notifications-subscribers`, which defaults to 16.
+
+```
+GET /api/v1/notifications/live
+204 No Content
+```
+
+*New in v3.0*

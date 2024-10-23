@@ -85,9 +85,8 @@ func TestParseFileFailure(t *testing.T) {
 
 	for _, c := range table {
 		_, errs := ParseFile(filepath.Join("testdata", c.filename))
-		require.NotNil(t, errs, "Expected error parsing %s but got none", c.filename)
-		require.Error(t, errs[0])
-		require.Containsf(t, errs[0].Error(), c.errMsg, "Expected error for %s.", c.filename)
+		require.NotEmpty(t, errs, "Expected error parsing %s but got none", c.filename)
+		require.ErrorContainsf(t, errs[0], c.errMsg, "Expected error for %s.", c.filename)
 	}
 }
 
@@ -100,6 +99,23 @@ func TestTemplateParsing(t *testing.T) {
 			ruleString: `
 groups:
 - name: example
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+    for: 5m
+    labels:
+      severity: "page"
+    annotations:
+      summary: "Instance {{ $labels.instance }} down"
+`,
+			shouldPass: true,
+		},
+		{
+			ruleString: `
+groups:
+- name: example
+  labels:
+    team: myteam
   rules:
   - alert: InstanceDown
     expr: up == 0
@@ -259,8 +275,7 @@ func TestError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := tt.error.Error()
-			require.Equal(t, tt.want, got)
+			require.EqualError(t, tt.error, tt.want)
 		})
 	}
 }
@@ -308,8 +323,7 @@ func TestWrappedError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := tt.wrappedError.Error()
-			require.Equal(t, tt.want, got)
+			require.EqualError(t, tt.wrappedError, tt.want)
 		})
 	}
 }

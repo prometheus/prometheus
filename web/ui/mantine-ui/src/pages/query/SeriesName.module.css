@@ -1,0 +1,19 @@
+.metricName {
+}
+
+.labelPair:hover {
+  --bg-expand: 4px;
+  background-color: #add6ffa0;
+  border-radius: 3px;
+  padding: var(--bg-expand);
+  margin: calc(-1 * var(--bg-expand));
+  color: #495057;
+  cursor: pointer;
+}
+
+.labelName {
+  font-weight: 600;
+}
+
+.labelValue {
+}

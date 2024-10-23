@@ -173,16 +173,13 @@ func TestFanoutErrors(t *testing.T) {
 			}
 
 			if tc.err != nil {
-				require.Error(t, ss.Err())
-				require.Equal(t, tc.err.Error(), ss.Err().Error())
+				require.EqualError(t, ss.Err(), tc.err.Error())
 			}
 
 			if tc.warning != nil {
-				require.NotEmpty(t, ss.Warnings(), "warnings expected")
 				w := ss.Warnings()
-				require.Error(t, w.AsErrors()[0])
-				warn, _ := w.AsStrings("", 0, 0)
-				require.Equal(t, tc.warning.Error(), warn[0])
+				require.NotEmpty(t, w, "warnings expected")
+				require.EqualError(t, w.AsErrors()[0], tc.warning.Error())
 			}
 		})
 		t.Run("chunks", func(t *testing.T) {
@@ -200,16 +197,13 @@ func TestFanoutErrors(t *testing.T) {
 			}
 
 			if tc.err != nil {
-				require.Error(t, ss.Err())
-				require.Equal(t, tc.err.Error(), ss.Err().Error())
+				require.EqualError(t, ss.Err(), tc.err.Error())
 			}
 
 			if tc.warning != nil {
-				require.NotEmpty(t, ss.Warnings(), "warnings expected")
 				w := ss.Warnings()
-				require.Error(t, w.AsErrors()[0])
-				warn, _ := w.AsStrings("", 0, 0)
-				require.Equal(t, tc.warning.Error(), warn[0])
+				require.NotEmpty(t, w, "warnings expected")
+				require.EqualError(t, w.AsErrors()[0], tc.warning.Error())
 			}
 		})
 	}

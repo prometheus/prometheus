@@ -16,9 +16,11 @@ package moby
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"time"
 
@@ -27,7 +29,6 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -127,7 +128,7 @@ type DockerDiscovery struct {
 }
 
 // NewDockerDiscovery returns a new DockerDiscovery which periodically refreshes its targets.
-func NewDockerDiscovery(conf *DockerSDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*DockerDiscovery, error) {
+func NewDockerDiscovery(conf *DockerSDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*DockerDiscovery, error) {
 	m, ok := metrics.(*dockerMetrics)
 	if !ok {
 		return nil, fmt.Errorf("invalid discovery metrics type")
@@ -251,28 +252,26 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 		}
 
 		if d.matchFirstNetwork && len(networks) > 1 {
-			// Match user defined network
-			if containerNetworkMode.IsUserDefined() {
-				networkMode := string(containerNetworkMode)
-				networks = map[string]*network.EndpointSettings{networkMode: networks[networkMode]}
-			} else {
-				// Get first network if container network mode has "none" value.
-				// This case appears under certain condition:
-				// 1. Container created with network set to "--net=none".
-				// 2. Disconnect network "none".
-				// 3. Reconnect network with user defined networks.
-				var first string
-				for k, n := range networks {
-					if n != nil {
-						first = k
-						break
-					}
+			// Sort networks by name and take first non-nil network.
+			keys := make([]string, 0, len(networks))
+			for k, n := range networks {
+				if n != nil {
+					keys = append(keys, k)
 				}
-				networks = map[string]*network.EndpointSettings{first: networks[first]}
+			}
+			if len(keys) > 0 {
+				sort.Strings(keys)
+				firstNetworkMode := keys[0]
+				firstNetwork := networks[firstNetworkMode]
+				networks = map[string]*network.EndpointSettings{firstNetworkMode: firstNetwork}
 			}
 		}
 
 		for _, n := range networks {
+			if n == nil {
+				continue
+			}
+
 			var added bool
 
 			for _, p := range c.Ports {
