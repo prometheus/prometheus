@@ -14,12 +14,11 @@ require (
 	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/alecthomas/units v0.0.0-20240626203959-61d1e3462e30
 	github.com/aliyun/alibaba-cloud-sdk-go v1.62.271
-	github.com/cespare/xxhash/v2 v2.3.0
-	github.com/denverdino/aliyungo v0.0.0-20230411124812-ab98a9173ace
 	github.com/aws/aws-sdk-go v1.55.5
 	github.com/bboreham/go-loser v0.0.0-20230920113527-fcc2c21820a3
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/dennwc/varint v1.0.0
+	github.com/denverdino/aliyungo v0.0.0-20230411124812-ab98a9173ace
 	github.com/digitalocean/godo v1.126.0
 	github.com/docker/docker v27.3.1+incompatible
 	github.com/edsrzf/mmap-go v1.1.0

@@ -19,16 +19,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"strconv"
 	"time"
 
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
 	"github.com/denverdino/aliyungo/metadata"
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
@@ -53,7 +53,7 @@ const (
 	ecsLabelUserID      = ecsLabel + "user_id"
 	ecsLabelTag         = ecsLabel + "tag_"
 
-	MaxPageLimit = 50 // it's limited by ecs describeInstances API
+	MaxPageLimit = 50 // MaxPageLimit is limited by ecs describeInstances API
 )
 
 var DefaultECSConfig = ECSConfig{
@@ -122,7 +122,7 @@ func (c *ECSConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-// Filter is the configuration tags for filtering ECS instances.
+// TagFilter is the configuration tags for filtering ECS instances.
 type TagFilter struct {
 	Key    string   `yaml:"key"`
 	Values []string `yaml:"values"`
@@ -130,7 +130,7 @@ type TagFilter struct {
 
 type Discovery struct {
 	*refresh.Discovery
-	logger log.Logger
+	logger *slog.Logger
 	ecsCfg *ECSConfig
 	port   int
 	limit  int
@@ -140,14 +140,14 @@ type Discovery struct {
 }
 
 // NewECSDiscovery returns a new ECSDiscovery which periodically refreshes its targets.
-func NewECSDiscovery(cfg *ECSConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (discovery.Discoverer, error) {
+func NewECSDiscovery(cfg *ECSConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (discovery.Discoverer, error) {
 	m, ok := metrics.(*ecsMetrics)
 	if !ok {
 		return nil, fmt.Errorf("invalid discovery metrics type")
 	}
 
 	if logger == nil {
-		logger = log.NewNopLogger()
+		logger = promslog.NewNopLogger()
 	}
 	d := &Discovery{
 		ecsCfg:  cfg,
@@ -169,27 +169,27 @@ func NewECSDiscovery(cfg *ECSConfig, logger log.Logger, metrics discovery.Discov
 }
 
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	defer level.Debug(d.logger).Log("msg", "ECS discovery completed")
+	defer d.logger.Info("ECS discovery completed")
 
 	d.metrics.queryCount.Inc()
 
-	level.Info(d.logger).Log("msg", "New ECS Client with config and logger.")
+	d.logger.Info("New ECS Client with config and logger.")
 	client, err := newECSClient(d.ecsCfg, d.logger)
 	if err != nil {
-		level.Debug(d.logger).Log("msg", "newECSClient", "err: ", err)
+		d.logger.Debug("newECSClient", "err", err)
 		return nil, err
 	}
 
-	level.Info(d.logger).Log("msg", "Query Instances with Aliyun OpenAPI.")
+	d.logger.Info("Query Instances with Aliyun OpenAPI.")
 	instances, err := client.QueryInstances(d.ecsCfg.TagFilters, d.tgCache)
 	if err != nil {
-		level.Debug(d.logger).Log("msg", "QueryInstances", "err: ", err)
+		d.logger.Debug("QueryInstances", "err", err)
 		d.metrics.queryFailuresCount.Inc()
 		return nil, err
 	}
 
 	// build instances list.
-	level.Info(d.logger).Log("msg", "Found Instances from remote during ECS discovery.", "count", len(instances))
+	d.logger.Info("Found Instances from remote during ECS discovery.", "count", len(instances))
 
 	tg := &targetgroup.Group{
 		Source: d.ecsCfg.RegionID,
@@ -200,15 +200,15 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		labels, err := addLabel(d.ecsCfg.UserID, d.port, instance)
 		if err != nil {
 			noIPAddressInstanceCount++
-			level.Debug(d.logger).Log("msg", "Instance dont have AddressLabel.", "instance: ", fmt.Sprintf("%v", instance))
+			d.logger.Debug("Instance dont have AddressLabel.", "instance", fmt.Sprintf("%v", instance))
 			continue
 		}
 		tg.Targets = append(tg.Targets, labels)
 	}
 
-	level.Info(d.logger).Log("msg", "Found Instances during ECS discovery.", "count", len(tg.Targets))
+	d.logger.Info("Found Instances during ECS discovery.", "count", len(tg.Targets))
 	if noIPAddressInstanceCount > 0 {
-		level.Info(d.logger).Log("msg", "Found no AddressLabel instances during ECS discovery.", "count", noIPAddressInstanceCount)
+		d.logger.Info("Found no AddressLabel instances during ECS discovery.", "count", noIPAddressInstanceCount)
 	}
 
 	// cache targetGroup
@@ -222,7 +222,7 @@ func (cl *ecsClient) QueryInstances(tagFilters []*TagFilter, cache *targetgroup.
 		// 1. tagFilter situation. query ListTagResources first, then query DescribeInstances
 		instancesFromListTagResources, err := cl.queryFromListTagResources(tagFilters)
 		if err != nil {
-			level.Debug(cl.logger).Log("msg", "Query Instances from ListTagResources during ECS discovery.", "err", err)
+			cl.logger.Debug("Query Instances from ListTagResources during ECS discovery.", "err", err)
 			return nil, err
 		}
 		return instancesFromListTagResources, nil
@@ -231,11 +231,11 @@ func (cl *ecsClient) QueryInstances(tagFilters []*TagFilter, cache *targetgroup.
 	// 2. no tagFilter situation. query DescribeInstances, then do cache double check.
 	instancesFromDescribeInstances, err := cl.queryFromDescribeInstances()
 	if err != nil {
-		level.Debug(cl.logger).Log("msg", "Query Instances from DescribeInstances during ECS discovery.", "err", err)
+		cl.logger.Debug("Query Instances from DescribeInstances during ECS discovery.", "err", err)
 		return nil, fmt.Errorf("query from DescribeInstances in QueryInstances, err: %w", err)
 	}
 	instancesFromCacheReCheck := cl.getCacheReCheckInstances(cache)
-	level.Info(cl.logger).Log("msg", "Found Instances from cache re-check during ECS discovery.", "count", len(instancesFromCacheReCheck))
+	cl.logger.Info("Found Instances from cache re-check during ECS discovery.", "count", len(instancesFromCacheReCheck))
 	instances := mergeHashInstances(instancesFromDescribeInstances, instancesFromCacheReCheck)
 	return instances, nil
 }
@@ -261,11 +261,11 @@ func (cl *ecsClient) listTagInstanceIDs(token string, tagFilters []*TagFilter) (
 	if err != nil {
 		return []string{}, "", fmt.Errorf("response from ListTagResources, err: %w", err)
 	}
-	level.Debug(cl.logger).Log("msg", "get response from ListTagResources.", "response: ", response)
+	cl.logger.Info("get response from ListTagResources.", "response", response)
 
 	tagResources := response.TagResources.TagResource
 	if len(tagResources) == 0 { // len(tagResources) = 0 when tagResources = nil
-		level.Debug(cl.logger).Log("msg", "ListTagResourcesTagFilter found no resources.", "response: ", response)
+		cl.logger.Info("ListTagResourcesTagFilter found no resources.", "response", response)
 		return []string{}, "", nil
 	}
 
@@ -273,7 +273,7 @@ func (cl *ecsClient) listTagInstanceIDs(token string, tagFilters []*TagFilter) (
 	for _, tagResource := range tagResources {
 		resourceIDs = append(resourceIDs, tagResource.ResourceId)
 	}
-	level.Debug(cl.logger).Log("msg", "listTagResource and get ECS instanceIds. for ListTagResourcesTagFilter.", "instanceIds: ", resourceIDs)
+	cl.logger.Info("listTagResource and get ECS instanceIds for ListTagResourcesTagFilter.", "instanceIds", resourceIDs)
 	return resourceIDs, response.NextToken, nil
 }
 
@@ -351,7 +351,7 @@ func (cl *ecsClient) getCacheReCheckInstances(cache *targetgroup.Group) []ecs_po
 			// query instances
 			instances, err := cl.describeInstances(instanceIDs)
 			if err != nil {
-				level.Error(cl.logger).Log("msg", "getCacheReCheckInstances describeInstancesResponse err.", "err: ", err)
+				cl.logger.Debug("getCacheReCheckInstances describeInstancesResponse err.", "err", err)
 				continue
 			}
 
@@ -448,10 +448,10 @@ type ecsClient struct {
 	regionID string
 	limit    int
 	client
-	logger log.Logger
+	logger *slog.Logger
 }
 
-func newECSClient(config *ECSConfig, logger log.Logger) (*ecsClient, error) {
+func newECSClient(config *ECSConfig, logger *slog.Logger) (*ecsClient, error) {
 	cli, err := getClient(config, logger)
 	if err != nil {
 		return nil, err
@@ -464,8 +464,8 @@ func newECSClient(config *ECSConfig, logger log.Logger) (*ecsClient, error) {
 	}, nil
 }
 
-func getClient(config *ECSConfig, logger log.Logger) (*ecs_pop.Client, error) {
-	level.Debug(logger).Log("msg", "Start to get Ecs Client.")
+func getClient(config *ECSConfig, logger *slog.Logger) (*ecs_pop.Client, error) {
+	logger.Info("Start to get Ecs Client.")
 
 	if config.RegionID == "" {
 		return nil, errors.New("aliyun ECS service discovery config need regionId")
@@ -509,7 +509,7 @@ func getClient(config *ECSConfig, logger log.Logger) (*ecs_pop.Client, error) {
 		return client, clientErr
 	}
 
-	level.Debug(logger).Log("msg", "Start to get Ecs Client from ram.")
+	logger.Info("Start to get Ecs Client from ram.")
 
 	// 2. ACS
 	// get all RoleName for check
@@ -518,23 +518,23 @@ func getClient(config *ECSConfig, logger log.Logger) (*ecs_pop.Client, error) {
 	var allRoleName metadata.ResultList
 	allRoleNameErr := metaData.New().Resource("ram/security-credentials/").Do(&allRoleName)
 	if allRoleNameErr != nil {
-		level.Error(logger).Log("msg", "Get ECS Client from ram allRoleNameErr.", "err: ", allRoleNameErr)
+		logger.Debug("Get ECS Client from ram allRoleNameErr.", "err", allRoleNameErr)
 		return nil, errors.New("aliyun ECS service discovery cant init client, need auth config")
 	}
 
 	roleName, roleNameErr := metaData.RoleName()
-	level.Debug(logger).Log("msg", "Start to get Ecs Client from ram2.")
+	logger.Info("Start to get Ecs Client from ram2.")
 
 	if roleNameErr != nil {
-		level.Error(logger).Log("msg", "Get ECS Client from ram roleNameErr.", "err: ", roleNameErr)
+		logger.Debug("Get ECS Client from ram roleNameErr.", "err", roleNameErr)
 		return nil, errors.New("aliyun ECS service discovery cant init client, need auth config")
 	}
 	roleAuth, roleAuthErr := metaData.RamRoleToken(roleName)
 
-	level.Debug(logger).Log("msg", "Start to get Ecs Client from ram3.")
+	logger.Info("Start to get Ecs Client from ram3.")
 
 	if roleAuthErr != nil {
-		level.Error(logger).Log("msg", "Get ECS Client from ram roleAuthErr.", "err: ", roleAuthErr)
+		logger.Debug("Get ECS Client from ram roleAuthErr.", "err", roleAuthErr)
 		return nil, errors.New("aliyun ECS service discovery cant init client, need auth config")
 	}
 	client := ecs_pop.Client{}
@@ -542,10 +542,10 @@ func getClient(config *ECSConfig, logger log.Logger) (*ecs_pop.Client, error) {
 	clientConfig.Debug = true
 	clientErr := client.InitWithStsToken(config.RegionID, roleAuth.AccessKeyId, roleAuth.AccessKeySecret, roleAuth.SecurityToken)
 
-	level.Debug(logger).Log("msg", "Start to get Ecs Client from ram4.")
+	logger.Info("Start to get Ecs Client from ram4.")
 
 	if clientErr != nil {
-		level.Error(logger).Log("msg", "Get ECS Client from ram clientErr.", "err: ", clientErr)
+		logger.Debug("Get ECS Client from ram clientErr.", "err", clientErr)
 		return nil, errors.New("aliyun ECS service discovery cant init client, need auth config")
 	}
 	return &client, nil

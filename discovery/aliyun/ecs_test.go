@@ -22,8 +22,8 @@ import (
 	"testing"
 
 	ecs_pop "github.com/aliyun/alibaba-cloud-sdk-go/services/ecs"
-	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
@@ -48,7 +48,7 @@ func newClient(t *testing.T) *ecsClient {
 		regionID: "cn-beijing",
 		limit:    100,
 		client:   mockClient,
-		logger:   log.NewNopLogger(),
+		logger:   promslog.NewNopLogger(),
 	}
 
 	mockClient.EXPECT().
