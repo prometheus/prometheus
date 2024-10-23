@@ -99,7 +99,7 @@ enum class BasicEncoderVersion : uint8_t { kUnknown = 0, kV1, kV2, kV3 };
 template <class LabelSetsTable = Primitives::SnugComposites::LabelSet::EncodingBimap, bool shrink_lss = false>
 class BasicEncoder {
  public:
-   using checkpoint_type = typename std::remove_reference_t<LabelSetsTable>::checkpoint_type;
+  using checkpoint_type = typename std::remove_reference_t<LabelSetsTable>::checkpoint_type;
 
   class Buffer {
     BareBones::SparseVector<Primitives::Sample> singular_;
@@ -218,8 +218,7 @@ class BasicEncoder {
     checkpoint_type label_sets_checkpoint;
     BareBones::Vector<EncoderWithID> encoders;
 
-    inline __attribute__((always_inline))
-    Redundant(uint32_t _segment, checkpoint_type _label_sets_checkpoint, uint32_t _encoders_count)
+    inline __attribute__((always_inline)) Redundant(uint32_t _segment, const checkpoint_type& _label_sets_checkpoint, uint32_t _encoders_count)
         : segment(_segment), encoders_count(_encoders_count), label_sets_checkpoint(_label_sets_checkpoint) {}
   };
 
@@ -338,6 +337,7 @@ class BasicEncoder {
     // write new label sets
     label_sets_checkpoint_ = label_sets_.checkpoint();
     label_sets_bytes_ += label_sets_checkpoint_.save_size(&redundant->label_sets_checkpoint);
+    std::cout << "label_sets_checkpoint.save_size(): " << label_sets_bytes_ << std::endl;
     lz4stream_ << (label_sets_checkpoint_ - redundant->label_sets_checkpoint);
     if constexpr (shrink_lss) {
       label_sets_.shrink_to_checkpoint_size(label_sets_checkpoint_);
@@ -391,14 +391,25 @@ class BasicEncoder {
   }
 
  public:
-  explicit BasicEncoder(LabelSetsTable& lss, uint16_t shard_id = 0, uint8_t pow_two_of_total_shards = 0, uint32_t next_encoded_segment = 0, Primitives::Timestamp ts_base = std::numeric_limits<Primitives::Timestamp>::max())
+  explicit BasicEncoder(const BareBones::Vector<BareBones::Encoding::Gorilla::StreamDecoder<BareBones::Encoding::Gorilla::ZigZagTimestampDecoder<>,
+                                                                                            BareBones::Encoding::Gorilla::ValuesDecoder>>& gorilla,
+                        LabelSetsTable& lss,
+                        uint16_t shard_id = 0,
+                        uint8_t pow_two_of_total_shards = 0,
+                        uint32_t next_encoded_segment = 0,
+                        Primitives::Timestamp ts_base = std::numeric_limits<Primitives::Timestamp>::max())
       : label_sets_(lss),
         label_sets_checkpoint_(label_sets_.checkpoint()),
+        lz4stream_(nullptr, next_encoded_segment == 0),
         uuid_(generate_uuid()),
         next_encoded_segment_{next_encoded_segment},
         ts_base_{ts_base},
         shard_id_(shard_id),
         pow_two_of_total_shards_(pow_two_of_total_shards) {
+    gorilla_.reserve(gorilla.size());
+    for (auto& decoder : gorilla) {
+      gorilla_.emplace_back().reset(decoder.state());
+    }
   }
   explicit BasicEncoder(uint16_t shard_id = 0, uint8_t pow_two_of_total_shards = 0)
       : label_sets_checkpoint_(label_sets_.checkpoint()), uuid_(generate_uuid()), shard_id_(shard_id), pow_two_of_total_shards_(pow_two_of_total_shards) {}
@@ -786,6 +797,8 @@ class BasicDecoder {
  public:
   BasicDecoder(LabelSetsTable& label_sets, BasicEncoderVersion encoder_version) : label_sets_(label_sets), encoder_version_(encoder_version) {}
 
+  const auto& gorilla() const noexcept { return gorilla_; }
+
   [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_empty() const noexcept { return last_processed_segment_ == std::numeric_limits<uint32_t>::max(); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_valid() const noexcept { return encoder_version_ != BasicEncoderVersion::kUnknown; }
 
@@ -1008,7 +1021,7 @@ class BasicDecoder {
                                  uuids::to_string(uuid_).c_str(), static_cast<uint32_t>(segment_ts_crc_), static_cast<uint32_t>(ts_crc));
     }
     if (v_crc != segment_v_crc_) {
-      throw BareBones::Exception(0x0ee2b199218aaf7d, "Decoder %s got error: CRC for LabelSet's timestamps mismatch: Decoder ts CRC: %u, segment ts CRC: %u",
+      throw BareBones::Exception(0x0ee2b199218aaf7d, "Decoder %s got error: CRC for LabelSet's timestamps mismatch: Decoder v CRC: %u, segment v CRC: %u",
                                  uuids::to_string(uuid_).c_str(), static_cast<uint32_t>(segment_v_crc_), static_cast<uint32_t>(v_crc));
     }
 

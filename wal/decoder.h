@@ -53,13 +53,15 @@ class TimeseriesProtobufWriter {
 
 template <class Encoder, class Decoder>
 Encoder create_encoder_from_decoder(const Decoder& decoder) {
-   auto state = decoder.get_encoder_state();
-   return Encoder(state.shard_id, state.pow_two_of_total_shards, state.lss, state.shard_id, state.pow_two_of_total_shards, state.next_segment_id, state.ts_base);
+  auto state = decoder.get_encoder_state();
+  return Encoder(state.shard_id, state.pow_two_of_total_shards, state.gorilla, state.lss, state.shard_id, state.pow_two_of_total_shards, state.next_segment_id,
+                 state.ts_base);
 };
 
 template <typename LSS = Primitives::SnugComposites::LabelSet::DecodingTable>
 class GenericDecoder {
- using Reader = BasicDecoder<std::remove_reference_t<LSS>>;
+  using Reader = BasicDecoder<std::remove_reference_t<LSS>>;
+
  private:
   LSS label_set_;
   Reader reader_;
@@ -67,6 +69,8 @@ class GenericDecoder {
  public:
   explicit PROMPP_ALWAYS_INLINE GenericDecoder(BasicEncoderVersion encoder_version) noexcept : reader_(label_set_, encoder_version) {}
   explicit PROMPP_ALWAYS_INLINE GenericDecoder(LSS& lss, BasicEncoderVersion encoder_version) : label_set_{lss}, reader_(label_set_, encoder_version) {}
+
+  const auto& gorilla() const noexcept { return reader_.gorilla(); }
 
   // decode - decoding incoming data and make protbuf.
   template <class Input, class Output, class Stats>
@@ -137,6 +141,8 @@ class GenericDecoder {
   }
 
   struct EncoderState {
+    const BareBones::Vector<BareBones::Encoding::Gorilla::StreamDecoder<BareBones::Encoding::Gorilla::ZigZagTimestampDecoder<>,
+                                                                        BareBones::Encoding::Gorilla::ValuesDecoder>>& gorilla;
     LSS& lss;
     uint32_t next_segment_id;
     Primitives::Timestamp ts_base;
@@ -146,14 +152,14 @@ class GenericDecoder {
 
   PROMPP_ALWAYS_INLINE EncoderState get_encoder_state() const noexcept {
     return EncoderState{
-      .lss = label_set_,
-      .next_segment_id = reader_.last_processed_segment() + 1,
-      .ts_base = reader_.ts_base(),
-      .shard_id = reader_.shard_id(),
-      .pow_two_of_total_shards = reader_.pow_two_of_total_shards(),
+        .gorilla = reader_.gorilla(),
+        .lss = label_set_,
+        .next_segment_id = reader_.last_processed_segment() + 1,
+        .ts_base = reader_.ts_base(),
+        .shard_id = reader_.shard_id(),
+        .pow_two_of_total_shards = reader_.pow_two_of_total_shards(),
     };
   }
-
 };
 
 using Decoder = GenericDecoder<>;

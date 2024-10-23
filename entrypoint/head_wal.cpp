@@ -1,8 +1,6 @@
 #include <variant>
 
 #include "_helpers.hpp"
-#include "wal_encoder.h"
-
 #include "primitives/go_slice.h"
 #include "wal/encoder.h"
 #include "wal/decoder.h"
@@ -161,10 +159,11 @@ extern "C" void prompp_head_wal_encoder_finalize(void* args, void* res) {
 extern "C" void prompp_head_wal_decoder_ctor(void* args, void* res) {
   using entrypoint::head::LssVariantPtr;
   using Decoder = PromPP::WAL::GenericDecoder<entrypoint::head::QueryableEncodingBimap&>;
+  using EncoderVersion = PromPP::WAL::BasicEncoderVersion;
 
   struct Arguments {
     LssVariantPtr lss;
-    uint8_t encoder_version;
+    EncoderVersion encoder_version;
   };
   using Result = struct {
     Decoder* decoder;
@@ -173,7 +172,7 @@ extern "C" void prompp_head_wal_decoder_ctor(void* args, void* res) {
   auto* in = reinterpret_cast<Arguments*>(args);
   Result* out = new (res) Result();
   auto& lss = std::get<entrypoint::head::QueryableEncodingBimap>(*in->lss);
-  out->decoder = new Decoder(lss, static_cast<PromPP::WAL::BasicEncoderVersion>(in->encoder_version));
+  out->decoder = new Decoder(lss, in->encoder_version);
 }
 
 extern "C" void prompp_head_wal_decoder_dtor(void* args) {
@@ -192,6 +191,7 @@ extern "C" void prompp_head_wal_decoder_decode(void* args, void* res) {
   struct Arguments {
     Decoder* decoder;
     PromPP::Primitives::Go::SliceView<char> segment;
+    PromPP::Prometheus::Relabel::InnerSeries *inner_series;
   };
   using Result = struct {
     int64_t created_at;
@@ -201,21 +201,17 @@ extern "C" void prompp_head_wal_decoder_decode(void* args, void* res) {
     uint32_t segment_id;
     PromPP::Primitives::Timestamp earliest_block_sample;
     PromPP::Primitives::Timestamp latest_block_sample;
-    PromPP::Prometheus::Relabel::InnerSeries* inner_series;
     PromPP::Primitives::Go::Slice<char> error;
   };
 
   Arguments* in = reinterpret_cast<Arguments*>(args);
   Result* out = new (res) Result();
 
-  try {
-    if (out->inner_series == nullptr) {
-      out->inner_series = new PromPP::Prometheus::Relabel::InnerSeries();
-    } else {
-      out->inner_series->clear();
-    }
 
-    in->decoder->decode_to_inner_series(in->segment, *out->inner_series, out);
+  try {
+    in->inner_series->clear();
+
+    in->decoder->decode_to_inner_series(in->segment, *in->inner_series, out);
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
     handle_current_exception(__func__, err_stream);
