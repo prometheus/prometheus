@@ -343,7 +343,7 @@ foobar{quantile="0.99"} 150.1`
 				CustomValues:    []float64{0.0}, // We do not store the +Inf boundary.
 			},
 			lset: labels.FromStrings("__name__", "baz"),
-			// TODO(krajorama): ct:   int64p(1520872609125),
+			ct:   int64p(1520872609125),
 		}, {
 			m:    "fizz_created",
 			help: "Gauge which shouldn't be parsed as CT",
@@ -371,7 +371,7 @@ foobar{quantile="0.99"} 150.1`
 				CustomValues:    []float64{0.0}, // We do not store the +Inf boundary.
 			},
 			lset: labels.FromStrings("__name__", "something"),
-			// TODO(krajorama): ct:   int64p(1520430001000),
+			ct:   int64p(1520430001000),
 		}, {
 			m: `something{a="b"}`,
 			shs: &histogram.Histogram{
@@ -383,7 +383,7 @@ foobar{quantile="0.99"} 150.1`
 				CustomValues:    []float64{0.0}, // We do not store the +Inf boundary.
 			},
 			lset: labels.FromStrings("__name__", "something", "a", "b"),
-			// TODO(krajorama): ct:   int64p(1520430002000),
+			ct:   int64p(1520430002000),
 		}, {
 			m:    "yum",
 			help: "Summary with _created between sum and quantiles",
@@ -562,36 +562,42 @@ func TestNHCBParserProtoBufParser_NoNHCBWhenExponential(t *testing.T) {
 			v:    175,
 			lset: labels.FromStrings("__name__", "test_histogram_count"),
 			t:    int64p(1234568),
+			ct:   int64p(1000),
 		},
 		{
 			m:    "test_histogram_sum",
 			v:    0.0008280461746287094,
 			lset: labels.FromStrings("__name__", "test_histogram_sum"),
 			t:    int64p(1234568),
+			ct:   int64p(1000),
 		},
 		{
 			m:    "test_histogram_bucket\xffle\xff-0.0004899999999999998",
 			v:    2,
 			lset: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0004899999999999998"),
 			t:    int64p(1234568),
+			ct:   int64p(1000),
 		},
 		{
 			m:    "test_histogram_bucket\xffle\xff-0.0003899999999999998",
 			v:    4,
 			lset: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0003899999999999998"),
 			t:    int64p(1234568),
+			ct:   int64p(1000),
 		},
 		{
 			m:    "test_histogram_bucket\xffle\xff-0.0002899999999999998",
 			v:    16,
 			lset: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0002899999999999998"),
 			t:    int64p(1234568),
+			ct:   int64p(1000),
 		},
 		{
 			m:    "test_histogram_bucket\xffle\xff+Inf",
 			v:    175,
 			lset: labels.FromStrings("__name__", "test_histogram_bucket", "le", "+Inf"),
 			t:    int64p(1234568),
+			ct:   int64p(1000),
 		},
 		{
 			// TODO(krajorama): optimize: this should not be here. In case there's
@@ -610,6 +616,7 @@ func TestNHCBParserProtoBufParser_NoNHCBWhenExponential(t *testing.T) {
 			},
 			lset: labels.FromStrings("__name__", "test_histogram"),
 			t:    int64p(1234568),
+			ct:   int64p(1000),
 		},
 	}
 	got := testParse(t, p)
