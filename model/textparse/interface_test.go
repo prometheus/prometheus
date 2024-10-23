@@ -239,12 +239,12 @@ func testParse(t *testing.T, p Parser) (ret []parsedEntry) {
 			}
 
 			p.Metric(&got.lset)
-			for e := (exemplar.Exemplar{}); p.Exemplar(&e); {
-				got.es = append(got.es, e)
-			}
 			// Parser reuses int pointer.
 			if ct := p.CreatedTimestamp(); ct != nil {
 				got.ct = int64p(*ct)
+			}
+			for e := (exemplar.Exemplar{}); p.Exemplar(&e); {
+				got.es = append(got.es, e)
 			}
 		case EntryType:
 			m, got.typ = p.Type()

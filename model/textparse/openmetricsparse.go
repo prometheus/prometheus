@@ -102,6 +102,8 @@ type OpenMetricsParser struct {
 	// Created timestamp parsing state.
 	ct        int64
 	ctHashSet uint64
+	// ignoreExemplar instructs the parser to not overwrite exemplars (to keep them while peeking ahead).
+	ignoreExemplar bool
 	// visitedMFName is the metric family name of the last visited metric when peeking ahead
 	// for _created series during the execution of the CreatedTimestamp method.
 	visitedMFName []byte
@@ -296,6 +298,14 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 
 	p.skipCTSeries = false
 
+	p.ignoreExemplar = true
+	savedStart := p.start
+	defer func() {
+		p.ignoreExemplar = false
+		p.start = savedStart
+		p.l = resetLexer
+	}()
+
 	for {
 		eType, err := p.Next()
 		if err != nil {
@@ -303,12 +313,12 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 			// This might result in partial scrape with wrong/missing CT, but only
 			// spec improvement would help.
 			// TODO: Make sure OM 1.1/2.0 pass CT via metadata or exemplar-like to avoid this.
-			p.resetCTParseValues(resetLexer)
+			p.resetCTParseValues()
 			return nil
 		}
 		if eType != EntrySeries {
 			// Assume we hit different family, no CT line found.
-			p.resetCTParseValues(resetLexer)
+			p.resetCTParseValues()
 			return nil
 		}
 
@@ -322,14 +332,14 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 		peekedHash := p.seriesHash(&buf, peekedName[:len(peekedName)-8])
 		if peekedHash != currHash {
 			// Found CT line for a different series, for our series no CT.
-			p.resetCTParseValues(resetLexer)
+			p.resetCTParseValues()
 			return nil
 		}
 
 		// All timestamps in OpenMetrics are Unix Epoch in seconds. Convert to milliseconds.
 		// https://github.com/OpenObservability/OpenMetrics/blob/main/specification/OpenMetrics.md#timestamps
 		ct := int64(p.val * 1000.0)
-		p.setCTParseValues(ct, currHash, currName, true, resetLexer)
+		p.setCTParseValues(ct, currHash, currName, true)
 		return &ct
 	}
 }
@@ -371,17 +381,15 @@ func (p *OpenMetricsParser) seriesHash(offsetsArr *[]byte, metricFamilyName []by
 
 // setCTParseValues sets the parser to the state after CreatedTimestamp method was called and CT was found.
 // This is useful to prevent re-parsing the same series again and early return the CT value.
-func (p *OpenMetricsParser) setCTParseValues(ct int64, ctHashSet uint64, mfName []byte, skipCTSeries bool, resetLexer *openMetricsLexer) {
+func (p *OpenMetricsParser) setCTParseValues(ct int64, ctHashSet uint64, mfName []byte, skipCTSeries bool) {
 	p.ct = ct
-	p.l = resetLexer
 	p.ctHashSet = ctHashSet
 	p.visitedMFName = mfName
 	p.skipCTSeries = skipCTSeries // Do we need to set it?
 }
 
 // resetCtParseValues resets the parser to the state before CreatedTimestamp method was called.
-func (p *OpenMetricsParser) resetCTParseValues(resetLexer *openMetricsLexer) {
-	p.l = resetLexer
+func (p *OpenMetricsParser) resetCTParseValues() {
 	p.ctHashSet = 0
 	p.skipCTSeries = true
 }
@@ -417,10 +425,12 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 
 	p.start = p.l.i
 	p.offsets = p.offsets[:0]
-	p.eOffsets = p.eOffsets[:0]
-	p.exemplar = p.exemplar[:0]
-	p.exemplarVal = 0
-	p.hasExemplarTs = false
+	if !p.ignoreExemplar {
+		p.eOffsets = p.eOffsets[:0]
+		p.exemplar = p.exemplar[:0]
+		p.exemplarVal = 0
+		p.hasExemplarTs = false
+	}
 
 	switch t := p.nextToken(); t {
 	case tEOFWord:
@@ -545,6 +555,16 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 
 func (p *OpenMetricsParser) parseComment() error {
 	var err error
+
+	if p.ignoreExemplar {
+		for t := p.nextToken(); t != tLinebreak; t = p.nextToken() {
+			if t == tEOF {
+				return errors.New("data does not end with # EOF")
+			}
+		}
+		return nil
+	}
+
 	// Parse the labels.
 	p.eOffsets, err = p.parseLVals(p.eOffsets, true)
 	if err != nil {
