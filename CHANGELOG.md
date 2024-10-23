@@ -3,6 +3,7 @@
 ## unreleased
 
 * [CHANGE] Scraping: Remove implicit fallback to the Prometheus text format in case of invalid/missing Content-Type and fail the scrape instead. Add ability to specify a `fallback_scrape_protocol` in the scrape config. #15136
+* [ENHANCEMENT] Scraping, rules: handle targets reappearing, or rules moving group, when out-of-order is enabled. #14710 
 - [BUGFIX] PromQL: Fix stddev+stdvar aggregations to always ignore native histograms. #14941
 - [BUGFIX] PromQL: Fix stddev+stdvar aggregations to treat Infinity consistently. #14941
 
@@ -20,10 +21,8 @@
 * [ENHANCEMENT] PromQL: Introduce exponential interpolation for native histograms. #14677
 * [ENHANCEMENT] TSDB: Add support for ingestion of out-of-order native histogram samples. #14850, #14546
 * [ENHANCEMENT] Alerts: remove metrics for removed Alertmanagers. #13909
-* [ENHANCEMENT] Scraping: support Created-Timestamp feature on native histograms. #14694
 * [ENHANCEMENT] Kubernetes SD: Support sidecar containers in endpoint discovery. #14929
 * [ENHANCEMENT] Consul SD: Support catalog filters. #11224
-* [ENHANCEMENT] TSDB: Provide a commit interface that does not write OOO samples. Also scrapes will now make use of this interface and drop out of order by default regardless of whether its enabled on the TSDB. #14710 
 * [PERF] TSDB: Parallelize deletion of postings after head compaction. #14975
 * [PERF] TSDB: Chunk encoding: shorten some write sequences. #14932
 * [PERF] TSDB: Grow postings by doubling. #14721
