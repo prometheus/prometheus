@@ -25,9 +25,9 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
@@ -88,65 +88,76 @@ func BenchmarkHeadStripeSeriesCreate_PreCreationFailure(b *testing.B) {
 
 func BenchmarkHead_WalCommit(b *testing.B) {
 	seriesCounts := []int{100, 1000, 10000}
-	series := genSeries(10000, 10, 0, 0)
-	histograms := genHistogramSeries(10000, 11, 0, 119, 1, false)
+	series := genSeries(10000, 10, 0, 0) // Only using the generated labels.
+
+	appendSamples := func(b *testing.B, app storage.Appender, seriesCount int, ts int64) {
+		var err error
+		for i, s := range series[:seriesCount] {
+			var ref storage.SeriesRef
+			if i%2 == 0 {
+				ref, err = app.Append(ref, s.Labels(), ts, float64(ts))
+			} else {
+				h := &histogram.Histogram{
+					Count:         7 + uint64(ts*5),
+					ZeroCount:     2 + uint64(ts),
+					ZeroThreshold: 0.001,
+					Sum:           18.4 * rand.Float64(),
+					Schema:        1,
+					PositiveSpans: []histogram.Span{
+						{Offset: 0, Length: 2},
+						{Offset: 1, Length: 2},
+					},
+					PositiveBuckets: []int64{ts + 1, 1, -1, 0},
+				}
+				ref, err = app.AppendHistogram(ref, s.Labels(), ts, h, nil)
+			}
+			require.NoError(b, err)
+
+			_, err = app.AppendExemplar(ref, s.Labels(), exemplar.Exemplar{
+				Labels: labels.FromStrings("trace_id", strconv.Itoa(rand.Int())),
+				Value:  rand.Float64(),
+				Ts:     ts,
+			})
+			require.NoError(b, err)
+		}
+	}
 
 	for _, seriesCount := range seriesCounts {
 		b.Run(fmt.Sprintf("%d series", seriesCount), func(b *testing.B) {
-			for _, samplesPerAppend := range []int64{1, 2, 5, 100} {
-				b.Run(fmt.Sprintf("%d samples per append", samplesPerAppend), func(b *testing.B) {
-					h, _ := newTestHead(b, 10000, wlog.CompressionNone, false)
-					b.Cleanup(func() { require.NoError(b, h.Close()) })
-
-					ts := int64(1000)
-					appendSamples := func() error {
-						var err error
-						app := h.Appender(context.Background())
-						for _, s := range series[:seriesCount] {
-							var ref storage.SeriesRef
-							for sampleIndex := int64(0); sampleIndex < samplesPerAppend; sampleIndex++ {
-								ref, err = app.Append(ref, s.Labels(), ts+sampleIndex, float64(ts+sampleIndex))
-								if err != nil {
-									return err
-								}
-							}
-						}
-
-						for _, s := range histograms[:seriesCount] {
-							var ref storage.SeriesRef
-							var it chunkenc.Iterator
-							for sampleIndex := int64(0); sampleIndex < samplesPerAppend; sampleIndex++ {
-								it = s.Iterator(it)
-								it.Next()
-								_, h := it.AtHistogram(nil)
-								ref, err = app.AppendHistogram(ref, s.Labels(), ts+sampleIndex, h, nil)
-								if err != nil {
-									return err
-								}
-
-								_, err = app.AppendExemplar(ref, s.Labels(), exemplar.Exemplar{
-									Labels: labels.FromStrings("trace_id", strconv.Itoa(rand.Int())),
-									Value:  rand.Float64(),
-									Ts:     ts,
-								})
-								if err != nil {
-									return err
-								}
-							}
-						}
-
-						ts += 1000 // should increment more than highest samplesPerAppend
-						return app.Commit()
-					}
-
-					// Init series, that's not what we're benchmarking here.
-					require.NoError(b, appendSamples())
-
+			for _, commits := range []int64{1, 2} {
+				b.Run(fmt.Sprintf("%d commits", commits), func(b *testing.B) {
 					b.ReportAllocs()
 					b.ResetTimer()
 
 					for i := 0; i < b.N; i++ {
-						require.NoError(b, appendSamples())
+						b.StopTimer()
+						h, w := newTestHead(b, 10000, wlog.CompressionNone, false)
+						b.Cleanup(func() {
+							if h != nil {
+								h.Close()
+							}
+							if w != nil {
+								w.Close()
+							}
+						})
+						app := h.Appender(context.Background())
+
+						appendSamples(b, app, seriesCount, 0)
+
+						b.StartTimer()
+						require.NoError(b, app.Commit())
+						if commits == 2 {
+							b.StopTimer()
+							app = h.Appender(context.Background())
+							appendSamples(b, app, seriesCount, 1)
+							b.StartTimer()
+							require.NoError(b, app.Commit())
+						}
+						b.StopTimer()
+						h.Close()
+						h = nil
+						w.Close()
+						w = nil
 					}
 				})
 			}
