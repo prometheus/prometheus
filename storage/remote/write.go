@@ -278,11 +278,16 @@ func (rws *WriteStorage) Close() error {
 
 type timestampTracker struct {
 	writeStorage         *WriteStorage
+	appendOptions        *storage.AppendOptions
 	samples              int64
 	exemplars            int64
 	histograms           int64
 	highestTimestamp     int64
 	highestRecvTimestamp *maxTimestamp
+}
+
+func (t *timestampTracker) SetOptions(opts *storage.AppendOptions) {
+	t.appendOptions = opts
 }
 
 // Append implements storage.Appender.

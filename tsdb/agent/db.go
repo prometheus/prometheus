@@ -763,6 +763,7 @@ func (db *DB) Close() error {
 
 type appender struct {
 	*DB
+	hints *storage.AppendOptions
 
 	pendingSeries          []record.RefSeries
 	pendingSamples         []record.RefSample
@@ -781,6 +782,10 @@ type appender struct {
 	// Pointers to the series referenced by each element of pendingFloatHistograms.
 	// Series lock is not held on elements.
 	floatHistogramSeries []*memSeries
+}
+
+func (a *appender) SetOptions(opts *storage.AppendOptions) {
+	a.hints = opts
 }
 
 func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {

@@ -86,6 +86,97 @@ func TestNewScrapePool(t *testing.T) {
 	require.NotNil(t, sp.newLoop, "newLoop function not initialized.")
 }
 
+func TestStorageHandlesOutOfOrderTimestamps(t *testing.T) {
+	// Test with default OutOfOrderTimeWindow (0)
+	t.Run("Out-Of-Order Sample Disabled", func(t *testing.T) {
+		s := teststorage.New(t)
+		defer s.Close()
+
+		runScrapeLoopTest(t, s, false)
+	})
+
+	// Test with specific OutOfOrderTimeWindow (600000)
+	t.Run("Out-Of-Order Sample Enabled", func(t *testing.T) {
+		s := teststorage.New(t, 600000)
+		defer s.Close()
+
+		runScrapeLoopTest(t, s, true)
+	})
+}
+
+func runScrapeLoopTest(t *testing.T, s *teststorage.TestStorage, expectOutOfOrder bool) {
+	// Create an appender for adding samples to the storage.
+	app := s.Appender(context.Background())
+	capp := &collectResultAppender{next: app}
+	sl := newBasicScrapeLoop(t, context.Background(), nil, func(ctx context.Context) storage.Appender { return capp }, 0)
+
+	// Current time for generating timestamps.
+	now := time.Now()
+
+	// Calculate timestamps for the samples based on the current time.
+	now = now.Truncate(time.Minute) // round down the now timestamp to the nearest minute
+	timestampInorder1 := now
+	timestampOutOfOrder := now.Add(-5 * time.Minute)
+	timestampInorder2 := now.Add(5 * time.Minute)
+
+	slApp := sl.appender(context.Background())
+	_, _, _, err := sl.append(slApp, []byte(`metric_a{a="1",b="1"} 1`), "", timestampInorder1)
+	require.NoError(t, err)
+
+	_, _, _, err = sl.append(slApp, []byte(`metric_a{a="1",b="1"} 2`), "", timestampOutOfOrder)
+	require.NoError(t, err)
+
+	_, _, _, err = sl.append(slApp, []byte(`metric_a{a="1",b="1"} 3`), "", timestampInorder2)
+	require.NoError(t, err)
+
+	require.NoError(t, slApp.Commit())
+
+	// Query the samples back from the storage.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	q, err := s.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
+	require.NoError(t, err)
+	defer q.Close()
+
+	// Use a matcher to filter the metric name.
+	series := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "metric_a"))
+
+	var results []floatSample
+	for series.Next() {
+		it := series.At().Iterator(nil)
+		for it.Next() == chunkenc.ValFloat {
+			t, v := it.At()
+			results = append(results, floatSample{
+				metric: series.At().Labels(),
+				t:      t,
+				f:      v,
+			})
+		}
+		require.NoError(t, it.Err())
+	}
+	require.NoError(t, series.Err())
+
+	// Define the expected results
+	want := []floatSample{
+		{
+			metric: labels.FromStrings("__name__", "metric_a", "a", "1", "b", "1"),
+			t:      timestamp.FromTime(timestampInorder1),
+			f:      1,
+		},
+		{
+			metric: labels.FromStrings("__name__", "metric_a", "a", "1", "b", "1"),
+			t:      timestamp.FromTime(timestampInorder2),
+			f:      3,
+		},
+	}
+
+	if expectOutOfOrder {
+		require.NotEqual(t, want, results, "Expected results to include out-of-order sample:\n%s", results)
+	} else {
+		require.Equal(t, want, results, "Appended samples not as expected:\n%s", results)
+	}
+}
+
 func TestDroppedTargetsList(t *testing.T) {
 	var (
 		app = &nopAppendable{}
@@ -1155,6 +1246,87 @@ func BenchmarkScrapeLoopAppendOM(b *testing.B) {
 		ts = ts.Add(time.Second)
 		_, _, _, _ = sl.append(slApp, metrics, "application/openmetrics-text", ts)
 	}
+}
+
+func TestSetOptionsHandlingStaleness(t *testing.T) {
+	s := teststorage.New(t, 600000)
+	defer s.Close()
+
+	signal := make(chan struct{}, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Function to run the scrape loop
+	runScrapeLoop := func(ctx context.Context, t *testing.T, cue int, action func(*scrapeLoop)) {
+		var (
+			scraper = &testScraper{}
+			app     = func(ctx context.Context) storage.Appender {
+				return s.Appender(ctx)
+			}
+		)
+		sl := newBasicScrapeLoop(t, ctx, scraper, app, 10*time.Millisecond)
+		numScrapes := 0
+		scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
+			numScrapes++
+			if numScrapes == cue {
+				action(sl)
+			}
+			w.Write([]byte(fmt.Sprintf("metric_a{a=\"1\",b=\"1\"} %d\n", 42+numScrapes)))
+			return nil
+		}
+		sl.run(nil)
+	}
+	go func() {
+		runScrapeLoop(ctx, t, 2, func(sl *scrapeLoop) {
+			go sl.stop()
+			// Wait a bit then start a new target.
+			time.Sleep(100 * time.Millisecond)
+			go func() {
+				runScrapeLoop(ctx, t, 4, func(_ *scrapeLoop) {
+					cancel()
+				})
+				signal <- struct{}{}
+			}()
+		})
+	}()
+
+	select {
+	case <-signal:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("Scrape wasn't stopped.")
+	}
+
+	ctx1, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	q, err := s.Querier(0, time.Now().UnixNano())
+
+	require.NoError(t, err)
+	defer q.Close()
+
+	series := q.Select(ctx1, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "metric_a"))
+
+	var results []floatSample
+	for series.Next() {
+		it := series.At().Iterator(nil)
+		for it.Next() == chunkenc.ValFloat {
+			t, v := it.At()
+			results = append(results, floatSample{
+				metric: series.At().Labels(),
+				t:      t,
+				f:      v,
+			})
+		}
+		require.NoError(t, it.Err())
+	}
+	require.NoError(t, series.Err())
+	var c int
+	for _, s := range results {
+		if value.IsStaleNaN(s.f) {
+			c++
+		}
+	}
+	require.Equal(t, 0, c, "invalid count of staleness markers after stopping the engine")
 }
 
 func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
@@ -4032,7 +4204,6 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrapeForTimestampedMetrics(t *
 	case <-time.After(5 * time.Second):
 		t.Fatalf("Scrape wasn't stopped.")
 	}
-
 	// 1 successfully scraped sample, 1 stale marker after first fail, 5 report samples for
 	// each scrape successful or not.
 	require.Len(t, appender.resultFloats, 27, "Appended samples not as expected:\n%s", appender)

@@ -243,6 +243,10 @@ func (f QueryableFunc) Querier(mint, maxt int64) (Querier, error) {
 	return f(mint, maxt)
 }
 
+type AppendOptions struct {
+	DiscardOutOfOrder bool
+}
+
 // Appender provides batched appends against a storage.
 // It must be completed with a call to Commit or Rollback and must not be reused afterwards.
 //
@@ -270,6 +274,10 @@ type Appender interface {
 	// Rollback rolls back all modifications made in the appender so far.
 	// Appender has to be discarded after rollback.
 	Rollback() error
+
+	// SetOptions configures the appender with specific append options such as
+	// discarding out-of-order samples even if out-of-order is enabled in the TSDB.
+	SetOptions(opts *AppendOptions)
 
 	ExemplarAppender
 	HistogramAppender

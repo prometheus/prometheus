@@ -1864,7 +1864,9 @@ loop:
 	if err == nil {
 		sl.cache.forEachStale(func(lset labels.Labels) bool {
 			// Series no longer exposed, mark it stale.
+			app.SetOptions(&storage.AppendOptions{DiscardOutOfOrder: true})
 			_, err = app.Append(0, lset, defTime, math.Float64frombits(value.StaleNaN))
+			app.SetOptions(nil)
 			switch {
 			case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
 				// Do not count these in logging, as this is expected if a target
@@ -1970,7 +1972,7 @@ func (sl *scrapeLoop) report(app storage.Appender, start time.Time, duration tim
 
 func (sl *scrapeLoop) reportStale(app storage.Appender, start time.Time) (err error) {
 	ts := timestamp.FromTime(start)
-
+	app.SetOptions(&storage.AppendOptions{DiscardOutOfOrder: true})
 	stale := math.Float64frombits(value.StaleNaN)
 	b := labels.NewBuilder(labels.EmptyLabels())
 
