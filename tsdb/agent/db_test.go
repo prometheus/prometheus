@@ -958,10 +958,6 @@ func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
 	testHistogram := tsdbutil.GenerateTestHistograms(1)[0]
 	zeroHistogram := &histogram.Histogram{}
 
-	invalidHist := &histogram.Histogram{
-		CustomValues: make([]float64, 0, 1),
-	}
-
 	lbls := labelsForTest(t.Name(), 1)
 	defLbls := labels.New(lbls[0]...)
 
@@ -969,12 +965,6 @@ func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
 		name                string
 		inputSamples        []appendableSample
 		expectedSamples     []*walSample
-		appendFunc          func(app storage.Appender, lset labels.Labels, t, ct int64, value interface{}) (storage.SeriesRef, error)
-		appendErrorFunc     func(app storage.Appender, ref storage.SeriesRef, lset labels.Labels, t, ct int64, value interface{}) error
-		value               interface{}
-		expectedSampleCount int
-		expectedType        string
-		expectedErrorMsg    string
 		expectedSeriesCount int
 	}{
 		{
@@ -983,22 +973,12 @@ func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
 				{
 					t:    100,
 					ct:   30,
-					v:    0,
-					lbls: defLbls,
-				},
-				{
-					t:    200,
 					v:    20,
 					lbls: defLbls,
 				},
 				{
 					t:    300,
 					ct:   230,
-					h:    zeroHistogram,
-					lbls: defLbls,
-				},
-				{
-					t:    400,
 					h:    testHistogram,
 					lbls: defLbls,
 				},
@@ -1018,14 +998,7 @@ func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
 					// invalid CT
 					t:            100,
 					ct:           100,
-					v:            0,
-					lbls:         defLbls,
-					expectsError: true,
-				},
-				{
-					// invalid Histogram, will validate
-					t:            200,
-					h:            invalidHist,
+					v:            10,
 					lbls:         defLbls,
 					expectsError: true,
 				},
@@ -1033,10 +1006,14 @@ func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
 					// invalid CT histogram
 					t:            300,
 					ct:           300,
-					h:            zeroHistogram,
+					h:            testHistogram,
 					lbls:         defLbls,
 					expectsError: true,
 				},
+			},
+			expectedSamples: []*walSample{
+				{t: 100, f: 10, lbls: defLbls},
+				{t: 300, h: testHistogram, lbls: defLbls},
 			},
 			expectedSeriesCount: 0,
 		},
@@ -1052,25 +1029,20 @@ func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
 			s := createTestAgentDB(t, reg, opts)
 			app := s.Appender(context.TODO())
 
-			for _, sample := range tc.inputSamples {
+			for i, sample := range tc.inputSamples {
 				// We supposed to write a Histogram to the WAL
 				if sample.h != nil {
-					if sample.ct != 0 {
-						_, err := app.AppendHistogramCTZeroSample(0, sample.lbls, sample.t, sample.ct, sample.h, nil)
-						require.Equal(t, sample.expectsError, err != nil, "expectedError (%v), got: %v", sample.expectsError, err)
-					} else {
-						_, err := app.AppendHistogram(0, sample.lbls, sample.t, sample.h, nil)
-						require.Equal(t, sample.expectsError, err != nil, "expectedError (%v), got: %v", sample.expectsError, err)
-					}
+					_, err := app.AppendHistogramCTZeroSample(0, sample.lbls, sample.t, sample.ct, zeroHistogram, nil)
+					require.Equal(t, sample.expectsError, err != nil, "expectedError (%v), got: %v. for sample %d", sample.expectsError, err, i)
+
+					_, err = app.AppendHistogram(0, sample.lbls, sample.t, sample.h, nil)
+					require.NoError(t, err)
 				} else {
 					// We supposed to write a float sample to the WAL
-					if sample.ct != 0 {
-						_, err := app.AppendCTZeroSample(0, sample.lbls, sample.t, sample.ct)
-						require.Equal(t, sample.expectsError, err != nil, "expectedError (%v), got: %v", sample.expectsError, err)
-					} else {
-						_, err := app.Append(0, sample.lbls, sample.t, sample.v)
-						require.Equal(t, sample.expectsError, err != nil, "expectedError (%v), got: %v", sample.expectsError, err)
-					}
+					_, err := app.AppendCTZeroSample(0, sample.lbls, sample.t, sample.ct)
+					require.Equal(t, sample.expectsError, err != nil, "expectedError (%v), got: %v. for sample %d", sample.expectsError, err, i)
+					_, err = app.Append(0, sample.lbls, sample.t, sample.v)
+					require.NoError(t, err)
 				}
 			}
 
