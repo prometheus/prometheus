@@ -285,7 +285,7 @@ type timestampTracker struct {
 	highestRecvTimestamp *maxTimestamp
 }
 
-func (t *timestampTracker) SetHints(hints *storage.AppendHints) {
+func (t *timestampTracker) SetOptions(opts *storage.AppendOptions) {
 	panic("unimplemented")
 }
 

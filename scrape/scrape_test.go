@@ -1248,7 +1248,7 @@ func BenchmarkScrapeLoopAppendOM(b *testing.B) {
 	}
 }
 
-func TestSetHintsHandlingStaleness(t *testing.T) {
+func TestSetOptionsHandlingStaleness(t *testing.T) {
 	s := teststorage.New(t, 600000)
 	defer s.Close()
 

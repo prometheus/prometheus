@@ -1639,8 +1639,8 @@ func (s *readyStorage) Appender(ctx context.Context) storage.Appender {
 
 type notReadyAppender struct{}
 
-// SetHints does nothing in this appender implementation.
-func (n notReadyAppender) SetHints(hints *storage.AppendHints) {}
+// SetOptions does nothing in this appender implementation.
+func (n notReadyAppender) SetOptions(opts *storage.AppendOptions) {}
 
 func (n notReadyAppender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	return 0, tsdb.ErrNotReady

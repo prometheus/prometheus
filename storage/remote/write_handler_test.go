@@ -833,7 +833,7 @@ func (m *mockAppendable) Appender(_ context.Context) storage.Appender {
 	return m
 }
 
-func (m *mockAppendable) SetHints(hints *storage.AppendHints) {
+func (m *mockAppendable) SetOptions(opts *storage.AppendOptions) {
 	panic("unimplemented")
 }
 

@@ -147,13 +147,13 @@ type fanoutAppender struct {
 	secondaries []Appender
 }
 
-// SetHints propagates the hints to both primary and secondary appenders.
-func (f *fanoutAppender) SetHints(hints *AppendHints) {
+// SetOptions propagates the hints to both primary and secondary appenders.
+func (f *fanoutAppender) SetOptions(opts *AppendOptions) {
 	if f.primary != nil {
-		f.primary.SetHints(hints)
+		f.primary.SetOptions(opts)
 	}
 	for _, appender := range f.secondaries {
-		appender.SetHints(hints)
+		appender.SetOptions(opts)
 	}
 }
 

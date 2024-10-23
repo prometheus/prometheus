@@ -243,7 +243,7 @@ func (f QueryableFunc) Querier(mint, maxt int64) (Querier, error) {
 	return f(mint, maxt)
 }
 
-type AppendHints struct {
+type AppendOptions struct {
 	DiscardOutOfOrder bool
 }
 
@@ -275,8 +275,8 @@ type Appender interface {
 	// Appender has to be discarded after rollback.
 	Rollback() error
 
-	// SetHints configures the appender with specific append hints.
-	SetHints(hints *AppendHints)
+	// SetOptions configures the appender with specific append hints.
+	SetOptions(opts *AppendOptions)
 
 	ExemplarAppender
 	HistogramAppender

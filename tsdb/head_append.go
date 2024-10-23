@@ -40,9 +40,9 @@ type initAppender struct {
 
 var _ storage.GetRef = &initAppender{}
 
-func (a *initAppender) SetHints(hints *storage.AppendHints) {
+func (a *initAppender) SetOptions(opts *storage.AppendOptions) {
 	if a.app != nil {
-		a.app.SetHints(hints)
+		a.app.SetOptions(opts)
 	}
 }
 
@@ -332,11 +332,11 @@ type headAppender struct {
 
 	appendID, cleanupAppendIDsBelow uint64
 	closed                          bool
-	hints                           *storage.AppendHints
+	hints                           *storage.AppendOptions
 }
 
-func (a *headAppender) SetHints(hints *storage.AppendHints) {
-	a.hints = hints
+func (a *headAppender) SetOptions(opts *storage.AppendOptions) {
+	a.hints = opts
 }
 
 func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
