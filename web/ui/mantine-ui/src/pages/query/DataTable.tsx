@@ -123,6 +123,9 @@ const DataTable: FC<DataTableProps> = ({
                       </Stack>
                     )}
                   </Table.Td>
+                  <Table.Td>
+                    <span>{s.metric ? s.metric.__unit__ : ""}</span>
+                  </Table.Td>
                 </Table.Tr>
               ))
             ) : resultType === "matrix" ? (

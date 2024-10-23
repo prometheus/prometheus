@@ -157,7 +157,7 @@ const tooltipPlugin = (useLocalTime: boolean, data: AlignedData) => {
             <div class="date">${formatTimestamp(ts, useLocalTime)}</div>
             <div class="series-value">
               <span class="detail-swatch" style="background-color: ${color}"></span>
-              <span>${labels.__name__ ? labels.__name__ + ": " : " "}<strong>${value}</strong></span>
+              <span>${labels.__name__ ? labels.__name__ + ": " : " "}<strong>${value}</strong>${labels.__unit__ ? " " + labels.__unit__ + " " : ""}</span>
             </div>
             ${formatLabels(labels)}
           `.trimEnd();

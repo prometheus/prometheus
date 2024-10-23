@@ -129,8 +129,9 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
             <div class="date">${dateTime.format('YYYY-MM-DD HH:mm:ss Z')}</div>
             <div>
               <span class="detail-swatch" style="background-color: ${color}"></span>
-              <span>${labels.__name__ || 'value'}: <strong>${yval}</strong></span>
+              <span>${labels.__name__ || 'value'}: <strong>${yval}</strong> ${labels.__unit__ || ''}</span>
             </div>
+            ${labels['__type__'] ? `<div class="mt-2 mb-1 font-weight-bold">${labels['__type__']}</div>` : 'unknown'}
             <div class="mt-2 mb-1 font-weight-bold">${'seriesLabels' in both ? 'Trace exemplar:' : 'Series:'}</div>
             ${formatLabels(labels)}
             ${
