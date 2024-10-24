@@ -15,6 +15,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -968,6 +969,18 @@ func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
 		expectedSeriesCount int
 	}{
 		{
+			name: "in order ct+normal sample/floatSamples",
+			inputSamples: []appendableSample{
+				{t: 100, ct: 1, v: 10, lbls: defLbls},
+				{t: 101, ct: 1, v: 10, lbls: defLbls},
+			},
+			expectedSamples: []*walSample{
+				{t: 1, f: 0, lbls: defLbls},
+				{t: 100, f: 10, lbls: defLbls},
+				{t: 101, f: 10, lbls: defLbls},
+			},
+		},
+		{
 			name: "CT+float && CT+histogram samples",
 			inputSamples: []appendableSample{
 				{
@@ -1017,6 +1030,34 @@ func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
 			},
 			expectedSeriesCount: 0,
 		},
+		{
+			name: "In order ct+normal sample/histogram",
+			inputSamples: []appendableSample{
+				{t: 100, h: testHistogram, ct: 1, lbls: defLbls},
+				{t: 101, h: testHistogram, ct: 1, lbls: defLbls},
+			},
+			expectedSamples: []*walSample{
+				{t: 1, h: &histogram.Histogram{}},
+				{t: 100, h: testHistogram},
+				{t: 101, h: &histogram.Histogram{CounterResetHint: histogram.NotCounterReset}},
+			},
+		},
+		{
+			name: "ct+normal then OOO sample/float",
+			inputSamples: []appendableSample{
+				{t: 60_000, ct: 40_000, v: 10, lbls: defLbls},
+				{t: 120_000, ct: 40_000, v: 10, lbls: defLbls},
+				{t: 180_000, ct: 40_000, v: 10, lbls: defLbls},
+				{t: 50_000, ct: 40_000, v: 10, lbls: defLbls},
+			},
+			expectedSamples: []*walSample{
+				{t: 40_000, f: 0, lbls: defLbls},
+				{t: 50_000, f: 10, lbls: defLbls},
+				{t: 60_000, f: 10, lbls: defLbls},
+				{t: 120_000, f: 10, lbls: defLbls},
+				{t: 180_000, f: 10, lbls: defLbls},
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -1025,22 +1066,27 @@ func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
 
 			reg := prometheus.NewRegistry()
 			opts := DefaultOptions()
-			opts.OutOfOrderTimeWindow = 0
+			opts.OutOfOrderTimeWindow = 360_000
 			s := createTestAgentDB(t, reg, opts)
 			app := s.Appender(context.TODO())
 
-			for i, sample := range tc.inputSamples {
+			for _, sample := range tc.inputSamples {
 				// We supposed to write a Histogram to the WAL
 				if sample.h != nil {
 					_, err := app.AppendHistogramCTZeroSample(0, sample.lbls, sample.t, sample.ct, zeroHistogram, nil)
-					require.Equal(t, sample.expectsError, err != nil, "expectedError (%v), got: %v. for sample %d", sample.expectsError, err, i)
+					if !errors.Is(err, storage.ErrOutOfOrderCT) {
+						require.Equal(t, sample.expectsError, err != nil, "expected error: %v, got: %v", sample.expectsError, err)
+					}
 
 					_, err = app.AppendHistogram(0, sample.lbls, sample.t, sample.h, nil)
 					require.NoError(t, err)
 				} else {
 					// We supposed to write a float sample to the WAL
 					_, err := app.AppendCTZeroSample(0, sample.lbls, sample.t, sample.ct)
-					require.Equal(t, sample.expectsError, err != nil, "expectedError (%v), got: %v. for sample %d", sample.expectsError, err, i)
+					if !errors.Is(err, storage.ErrOutOfOrderCT) {
+						require.Equal(t, sample.expectsError, err != nil, "expected error: %v, got: %v", sample.expectsError, err)
+					}
+
 					_, err = app.Append(0, sample.lbls, sample.t, sample.v)
 					require.NoError(t, err)
 				}
@@ -1052,15 +1098,15 @@ func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
 
 			outputSamples := readWALSamples(t, s.wal.Dir())
 
-			require.Equal(t, len(outputSamples), len(tc.expectedSamples), "Expected %d samples", len(tc.expectedSamples))
+			require.Equal(t, len(tc.expectedSamples), len(outputSamples), "Expected %d samples", len(tc.expectedSamples))
 
-			for _, expectedSample := range tc.expectedSamples {
+			for i, expectedSample := range tc.expectedSamples {
 				for _, sample := range outputSamples {
 					if sample.t == expectedSample.t && sample.lbls.String() == expectedSample.lbls.String() {
 						if expectedSample.h != nil {
-							require.Equal(t, expectedSample.h, sample.h)
+							require.Equal(t, expectedSample.h, sample.h, "histogram value mismatch (sample index %d)", i)
 						} else {
-							require.Equal(t, expectedSample.f, sample.f)
+							require.Equal(t, expectedSample.f, sample.f, "value mismatch (sample index %d)", i)
 						}
 					}
 				}
