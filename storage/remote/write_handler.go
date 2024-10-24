@@ -38,6 +38,11 @@ import (
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/storage"
 	otlptranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
+	"github.com/prometheus/prometheus/util/otel"
+
+	deltatocumulative "github.com/open-telemetry/opentelemetry-collector-contrib/processor/deltatocumulativeprocessor"
+	"go.opentelemetry.io/collector/consumer"
+	"go.opentelemetry.io/collector/pdata/pmetric"
 )
 
 type writeHandler struct {
@@ -479,25 +484,73 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 	return samplesWithoutMetadata, http.StatusBadRequest, errors.Join(badRequestErrs...)
 }
 
+type OTLPOptions struct {
+	// Convert delta samples to their cumulative equivalent by aggregating in-memory
+	ConvertDelta bool
+}
+
 // NewOTLPWriteHandler creates a http.Handler that accepts OTLP write requests and
 // writes them to the provided appendable.
-func NewOTLPWriteHandler(logger *slog.Logger, appendable storage.Appendable, configFunc func() config.Config) http.Handler {
-	rwHandler := &writeHandler{
-		logger:     logger,
-		appendable: appendable,
+func NewOTLPWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, configFunc func() config.Config, opts OTLPOptions) http.Handler {
+	ex := &rwExporter{
+		writeHandler: &writeHandler{
+			logger:     logger,
+			appendable: appendable,
+		},
+		config: configFunc,
 	}
 
-	return &otlpWriteHandler{
-		logger:     logger,
-		rwHandler:  rwHandler,
-		configFunc: configFunc,
+	pl, err := otel.Use(reg,
+		otel.If(opts.ConvertDelta,
+			otel.Processor(deltatocumulative.NewFactory(), otel.DefaultConfig),
+		),
+		otel.Sink(ex),
+	)
+	if err != nil {
+		panic(err) // TODO: how to handle?
 	}
+
+	if err := pl.Start(context.TODO(), nil); err != nil {
+		panic(err) // TODO: how to handle?
+	}
+
+	return &otlpWriteHandler{logger: logger, pipeline: pl}
+}
+
+type rwExporter struct {
+	*writeHandler
+	config func() config.Config
+}
+
+func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) error {
+	otlpCfg := rw.config().OTLPConfig
+
+	converter := otlptranslator.NewPrometheusConverter()
+	annots, err := converter.FromMetrics(ctx, md, otlptranslator.Settings{
+		AddMetricSuffixes:         true,
+		PromoteResourceAttributes: otlpCfg.PromoteResourceAttributes,
+	})
+	if err != nil {
+		rw.logger.Warn("Error translating OTLP metrics to Prometheus write request", "err", err)
+	}
+	ws, _ := annots.AsStrings("", 0, 0)
+	if len(ws) > 0 {
+		rw.logger.Warn("Warnings translating OTLP metrics to Prometheus write request", "warnings", ws)
+	}
+
+	err = rw.write(ctx, &prompb.WriteRequest{
+		Timeseries: converter.TimeSeries(),
+	})
+	return err
+}
+
+func (rw *rwExporter) Capabilities() consumer.Capabilities {
+	return consumer.Capabilities{MutatesData: false}
 }
 
 type otlpWriteHandler struct {
-	logger     *slog.Logger
-	rwHandler  *writeHandler
-	configFunc func() config.Config
+	logger   *slog.Logger
+	pipeline consumer.Metrics
 }
 
 func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -508,24 +561,8 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	otlpCfg := h.configFunc().OTLPConfig
-
-	converter := otlptranslator.NewPrometheusConverter()
-	annots, err := converter.FromMetrics(r.Context(), req.Metrics(), otlptranslator.Settings{
-		AddMetricSuffixes:         true,
-		PromoteResourceAttributes: otlpCfg.PromoteResourceAttributes,
-	})
-	if err != nil {
-		h.logger.Warn("Error translating OTLP metrics to Prometheus write request", "err", err)
-	}
-	ws, _ := annots.AsStrings("", 0, 0)
-	if len(ws) > 0 {
-		h.logger.Warn("Warnings translating OTLP metrics to Prometheus write request", "warnings", ws)
-	}
-
-	err = h.rwHandler.write(r.Context(), &prompb.WriteRequest{
-		Timeseries: converter.TimeSeries(),
-	})
+	md := req.Metrics()
+	err = h.pipeline.ConsumeMetrics(r.Context(), md)
 
 	switch {
 	case err == nil:
