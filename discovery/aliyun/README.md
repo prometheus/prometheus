@@ -57,3 +57,5 @@ scrape_configs:
       #   regex: ".+"       # or other value regex
       #   action: keep      # keep / drop
 ```
+
+### [Pressure Test](./PRESSURE_TEST.md)
