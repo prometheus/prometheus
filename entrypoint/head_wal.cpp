@@ -109,22 +109,6 @@ extern "C" void prompp_head_wal_encoder_add_inner_series(void* args, void* res) 
   }
 }
 
-/**
- * @brief Flush segment
- *
- * @param args {
- *     encoderLightweight uintptr // pointer to constructed encoder
- * }
- * @param res {
- *     earliestTimestamp  int64   // minimal sample timestamp in segment
- *     latestTimestamp    int64   // maximal sample timestamp in segment
- *     allocatedMemory    uint64  // size of allocated memory for label sets;
- *     samples            uint32  // number of samples in segment
- *     series             uint32  // number of series in segment
- *     remainderSize      uint32  // rest of internal buffers capacity
- *     error              []byte  // error string if thrown
- * }
- */
 extern "C" void prompp_head_wal_encoder_finalize(void* args, void* res) {
   using BasicEncoder = PromPP::WAL::BasicEncoder<entrypoint::head::QueryableEncodingBimap&>;
   using Encoder = PromPP::WAL::GenericEncoder<BasicEncoder>;

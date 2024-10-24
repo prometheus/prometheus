@@ -18,6 +18,7 @@ import (
 )
 
 func TestLoad(t *testing.T) {
+
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
@@ -39,8 +40,10 @@ func TestLoad(t *testing.T) {
 			},
 		},
 	}
+	var numberOfShards uint16 = 2
+
 	headID := "head_id"
-	h, err := head.Load(headID, 0, tmpDir, cfgs, 2, prometheus.DefaultRegisterer)
+	h, err := head.Create(headID, 0, tmpDir, cfgs, numberOfShards, prometheus.DefaultRegisterer)
 	require.NoError(t, err)
 
 	ls := model.NewLabelSetBuilder().Set("__name__", "wal_metric").Set("job", "test").Build()
@@ -112,7 +115,7 @@ func TestLoad(t *testing.T) {
 	h.Finalize()
 	require.NoError(t, h.Close())
 
-	h, err = head.Load(headID, 0, tmpDir, cfgs, 2, prometheus.DefaultRegisterer)
+	h, err = head.Load(headID, 0, tmpDir, cfgs, numberOfShards, prometheus.DefaultRegisterer)
 	require.NoError(t, err)
 
 	q = querier.NewQuerier(h, querier.NoOpShardedDeduplicatorFactory(), 0, 10, nil, nil)
@@ -213,7 +216,8 @@ func TestLoad(t *testing.T) {
 	h.Finalize()
 	require.NoError(t, h.Close())
 
-	h, err = head.Load(headID, 0, tmpDir, cfgs, 2, prometheus.DefaultRegisterer)
+	h, err = head.Load(headID, 0, tmpDir, cfgs, numberOfShards, prometheus.DefaultRegisterer)
+
 	require.NoError(t, err)
 
 	q = querier.NewQuerier(h, querier.NoOpShardedDeduplicatorFactory(), 0, 10, nil, nil)

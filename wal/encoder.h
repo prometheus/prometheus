@@ -66,7 +66,6 @@ class GenericEncoder {
       }
 
       std::ranges::for_each(inner_series->data(), [&](const PromPP::Prometheus::Relabel::InnerSerie& inner_serie) {
-        std::cout << "encoder.add_inner_series, inner_series.samples.size(): " << inner_serie.samples.size() <<  std::endl;
         writer_.add_samples_on_ls_id(inner_serie.ls_id, inner_serie.samples);
       });
     });

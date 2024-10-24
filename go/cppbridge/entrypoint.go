@@ -1784,15 +1784,15 @@ func headWalDecoderCtor(lss uintptr, encoderVersion uint8) uintptr {
 	return res.decoder
 }
 
-func headWalDecoderDecode(decoder uintptr, segment []byte) (*InnerSeries, error) {
+func headWalDecoderDecode(decoder uintptr, segment []byte, innerSeries *InnerSeries) error {
 	var args = struct {
-		decoder uintptr
-		segment []byte
-	}{decoder, segment}
+		decoder     uintptr
+		segment     []byte
+		innerSeries *InnerSeries
+	}{decoder, segment, innerSeries}
 	var res struct {
 		DecodedSegmentStats
-		innerSeries *InnerSeries
-		exception   []byte
+		exception []byte
 	}
 
 	fastcgo.UnsafeCall2(
@@ -1801,7 +1801,7 @@ func headWalDecoderDecode(decoder uintptr, segment []byte) (*InnerSeries, error)
 		uintptr(unsafe.Pointer(&res)),
 	)
 
-	return res.innerSeries, handleException(res.exception)
+	return handleException(res.exception)
 }
 
 func headWalDecoderCreateEncoder(decoder uintptr) uintptr {

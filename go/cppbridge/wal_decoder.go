@@ -2,6 +2,7 @@ package cppbridge
 
 import (
 	"context"
+	"hash/crc32"
 	"io"
 	"runtime"
 
@@ -107,6 +108,10 @@ func NewDecodedProtobuf(b []byte, stats DecodedSegmentStats) *DecodedProtobuf {
 // Size - returns len of bytes.
 func (p *DecodedProtobuf) Size() int64 {
 	return int64(len(p.buf))
+}
+
+func (p *DecodedProtobuf) CRC32() uint32 {
+	return crc32.ChecksumIEEE(p.buf)
 }
 
 // WriteTo - implements io.WriterTo interface.

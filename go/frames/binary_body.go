@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"hash/crc32"
 	"io"
 )
 
@@ -99,6 +100,10 @@ func (sb *BinaryBodyV1) Size() int64 {
 	return int64(len(sb.data))
 }
 
+func (sb *BinaryBodyV1) CRC32() uint32 {
+	return crc32.ChecksumIEEE(sb.data)
+}
+
 // WriteTo - implements io.WriterTo inerface.
 func (sb *BinaryBodyV1) WriteTo(w io.Writer) (int64, error) {
 	n, err := w.Write(sb.data)
@@ -174,6 +179,10 @@ func (sb *BinaryBodyV2) ReadFrom(ctx context.Context, r io.Reader, size int) err
 // Size - get size.
 func (sb *BinaryBodyV2) Size() int64 {
 	return sb.body.Size() + sb.si.Size()
+}
+
+func (sb *BinaryBodyV2) CRC32() uint32 {
+	return crc32.ChecksumIEEE(sb.body.data)
 }
 
 // WriteTo implements WritePayload.

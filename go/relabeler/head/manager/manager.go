@@ -126,7 +126,7 @@ func (m *Manager) BuildWithConfig(inputRelabelerConfigs []*config.InputRelabeler
 
 	generation := m.generation
 
-	h, err = head.Load(id, generation, dir, inputRelabelerConfigs, numberOfShards, m.registerer)
+	h, err = head.Create(id, generation, dir, inputRelabelerConfigs, numberOfShards, m.registerer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create head: %w", err)
 	}

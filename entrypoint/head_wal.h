@@ -90,6 +90,7 @@ void prompp_head_wal_decoder_dtor(void* args);
  * @param args {
  *     decoder uintptr // pointer to constructed decoder
  *     segment []byte  // segment content
+ *     inner_series *InnerSeries // decoded content
  * }
  * @param res {
  *     created_at int64  // timestamp in ns when data was start writed to encoder
@@ -99,7 +100,6 @@ void prompp_head_wal_decoder_dtor(void* args);
  *     segment_id uint32 // processed segment id
  *     earliest_block_sample int64 // min timestamp in block
  *     latest_block_sample int64 // max timestamp in block
- *     inner_series *InnerSeries // decoded content
  *     error      []byte // error string if thrown
  * }
  */

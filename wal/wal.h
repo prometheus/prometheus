@@ -289,6 +289,7 @@ class BasicEncoder {
     auto redundant = std::make_unique<Redundant>(next_encoded_segment_, label_sets_checkpoint_, label_sets_.size());
     constexpr Primitives::LabelSetID max_last_id = std::numeric_limits<Primitives::LabelSetID>::max();
     Primitives::LabelSetID last_id = max_last_id;
+    std::cout << "ts_delta_rle_is_worth_trying: " << ts_delta_rle_is_worth_trying << std::endl;
     if (ts_delta_rle_is_worth_trying) {
       buffer_.for_each([&](Primitives::LabelSetID ls_id, Primitives::Timestamp ts, Primitives::Sample::value_type v) {
         assert(last_id == max_last_id || ls_id >= last_id);
@@ -324,52 +325,52 @@ class BasicEncoder {
     auto sg1 = std::experimental::scope_exit([original_exceptions = stream.exceptions(), &stream]() { stream.exceptions(original_exceptions); });
     stream.exceptions(std::ifstream::failbit | std::ifstream::badbit);
 
-    lz4stream_.set_stream(&stream);
+//    lz4stream_.set_stream(&stream);
 
     // write open-close timestamps
     const int64_t created_at_tsns = buffer_.first_sample_added_at_ts_ns();
     const auto now = std::chrono::system_clock::now();
     const int64_t encoded_at_tsns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
-    lz4stream_.write(reinterpret_cast<const char*>(&created_at_tsns), sizeof(created_at_tsns));
-    lz4stream_.write(reinterpret_cast<const char*>(&encoded_at_tsns), sizeof(encoded_at_tsns));
+    stream.write(reinterpret_cast<const char*>(&created_at_tsns), sizeof(created_at_tsns));
+    stream.write(reinterpret_cast<const char*>(&encoded_at_tsns), sizeof(encoded_at_tsns));
     metadata_bytes_ += 16;
 
     // write new label sets
     label_sets_checkpoint_ = label_sets_.checkpoint();
     label_sets_bytes_ += label_sets_checkpoint_.save_size(&redundant->label_sets_checkpoint);
-    std::cout << "label_sets_checkpoint.save_size(): " << label_sets_bytes_ << std::endl;
-    lz4stream_ << (label_sets_checkpoint_ - redundant->label_sets_checkpoint);
+    stream << (label_sets_checkpoint_ - redundant->label_sets_checkpoint);
     if constexpr (shrink_lss) {
       label_sets_.shrink_to_checkpoint_size(label_sets_checkpoint_);
     }
 
     // write ls ids
     ls_id_bytes_ += ls_id_delta_rle_seq.save_size() + ls_id_crc.save_size();
-    lz4stream_ << ls_id_delta_rle_seq << ls_id_crc;
+    stream << ls_id_delta_rle_seq << ls_id_crc;
 
     // write ts base
-    lz4stream_.write(reinterpret_cast<const char*>(&ts_base_), sizeof(ts_base_));
+    stream.write(reinterpret_cast<const char*>(&ts_base_), sizeof(ts_base_));
     ts_bytes_ += sizeof(ts_base_);
 
     // write ts
     if (ts_delta_rle_is_worth_trying && ts_delta_rle_seq.save_size() < gorilla_ts_bitseq.save_size()) {
-      lz4stream_.put(0);
+      stream.put(0);
+      std::cout << "write ts, stream.put(0)" << std::endl;
 
       ts_bytes_ += ts_delta_rle_seq.save_size() + ts_crc.save_size();
-      lz4stream_ << ts_delta_rle_seq << ts_crc;
+      stream << ts_delta_rle_seq << ts_crc;
     } else {
-      lz4stream_.put(1);
-
+      stream.put(1);
+      std::cout << "write ts, stream.put(1)" << std::endl;
       ts_bytes_ += gorilla_ts_bitseq.save_size() + ts_crc.save_size();
-      lz4stream_ << gorilla_ts_bitseq << ts_crc;
+      stream << gorilla_ts_bitseq << ts_crc;
     }
 
     // write values
     v_bytes_ += gorilla_v_bitseq.save_size() + v_crc.save_size();
-    lz4stream_ << gorilla_v_bitseq << v_crc;
+    stream << gorilla_v_bitseq << v_crc;
 
-    lz4stream_ << std::flush;
-    lz4stream_.set_stream(nullptr);
+//    lz4stream_ << std::flush;
+//    lz4stream_.set_stream(nullptr);
 
     samples_ += buffer_.samples_count();
     buffer_.clear();
@@ -413,6 +414,15 @@ class BasicEncoder {
   }
   explicit BasicEncoder(uint16_t shard_id = 0, uint8_t pow_two_of_total_shards = 0)
       : label_sets_checkpoint_(label_sets_.checkpoint()), uuid_(generate_uuid()), shard_id_(shard_id), pow_two_of_total_shards_(pow_two_of_total_shards) {}
+
+    explicit BasicEncoder(LabelSetsTable& lss, uint16_t shard_id = 0, uint8_t pow_two_of_total_shards = 0)
+        : label_sets_(lss),
+          label_sets_checkpoint_(label_sets_.checkpoint()),
+          uuid_(generate_uuid()),
+          shard_id_(shard_id),
+          pow_two_of_total_shards_(pow_two_of_total_shards) {
+    }
+
 
   inline __attribute__((always_inline)) const LabelSetsTable& label_sets() const { return label_sets_; }
 
@@ -768,8 +778,10 @@ class BasicDecoder {
 
       // read ts
       if (in.get() == 0) {
+        std::cout << "read ts, in.get(0)" << std::endl;
         in >> segment_ts_delta_rle_seq_ >> segment_ts_crc_;
       } else {
+        std::cout << "read ts, in.get(1)" << std::endl;
         in >> segment_gorilla_ts_bitseq_ >> segment_ts_crc_;
       }
 
@@ -786,10 +798,10 @@ class BasicDecoder {
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE std::istream& get_stream(std::istream& stream) noexcept {
-    if (encoder_version_ == BasicEncoderVersion::kV3) {
-      lz4stream_.set_stream(&stream);
-      return lz4stream_;
-    }
+//    if (encoder_version_ == BasicEncoderVersion::kV3) {
+//      lz4stream_.set_stream(&stream);
+//      return lz4stream_;
+//    }
 
     return stream;
   }
@@ -1021,7 +1033,7 @@ class BasicDecoder {
                                  uuids::to_string(uuid_).c_str(), static_cast<uint32_t>(segment_ts_crc_), static_cast<uint32_t>(ts_crc));
     }
     if (v_crc != segment_v_crc_) {
-      throw BareBones::Exception(0x0ee2b199218aaf7d, "Decoder %s got error: CRC for LabelSet's timestamps mismatch: Decoder v CRC: %u, segment v CRC: %u",
+      throw BareBones::Exception(0x0ee2b199218aaf7d, "Decoder %s got error: CRC for LabelSet's values mismatch: Decoder v CRC: %u, segment v CRC: %u",
                                  uuids::to_string(uuid_).c_str(), static_cast<uint32_t>(segment_v_crc_), static_cast<uint32_t>(v_crc));
     }
 

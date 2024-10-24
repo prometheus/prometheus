@@ -1,7 +1,6 @@
 package head
 
 import (
-	"bufio"
 	"encoding/binary"
 	"fmt"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
@@ -14,15 +13,15 @@ type ShardWal struct {
 	writeCloser         io.WriteCloser
 	fileHeaderIsWritten bool
 	buf                 [binary.MaxVarintLen32]byte
-	bufferedWriter      *bufio.Writer
+	segmentID           int
 }
 
 func newShardWal(encoder *cppbridge.HeadWalEncoder, fileHeaderIsWritten bool, writeCloser io.WriteCloser) *ShardWal {
 	return &ShardWal{
 		encoder:             encoder,
 		writeCloser:         writeCloser,
-		bufferedWriter:      bufio.NewWriter(writeCloser),
 		fileHeaderIsWritten: fileHeaderIsWritten,
+		segmentID:           -1,
 	}
 }
 
@@ -37,6 +36,9 @@ func (w *ShardWal) Write(innerSeriesSlice []*cppbridge.InnerSeries) error {
 		return fmt.Errorf("failed to finalize segment: %w", err)
 	}
 
+	w.segmentID++
+	fmt.Println("encoding segment: id:", w.segmentID)
+
 	if !w.fileHeaderIsWritten {
 		_, err = WriteHeader(w.writeCloser, 1, w.encoder.Version())
 		if err != nil {
@@ -49,8 +51,6 @@ func (w *ShardWal) Write(innerSeriesSlice []*cppbridge.InnerSeries) error {
 	if err != nil {
 		return fmt.Errorf("failed to write segment: %w", err)
 	}
-
-	// todo: flush?
 
 	return nil
 }
@@ -115,12 +115,19 @@ func ReadHeader(reader io.Reader) (fileFormatVersion uint8, encoderVersion uint8
 	return fileFormatVersion, encoderVersion, n, nil
 }
 
-func WriteSegment(writer io.Writer, segment []byte) (n int, err error) {
+type EncodedSegment interface {
+	Size() int64
+	CRC32() uint32
+	io.WriterTo
+	cppbridge.SegmentStats
+}
+
+func WriteSegment(writer io.Writer, segment EncodedSegment) (n int, err error) {
 	var buf [binary.MaxVarintLen32]byte
 	var size int
 	var bytesWritten int
 
-	segmentSize := uint64(len(segment))
+	segmentSize := uint64(segment.Size())
 	size = binary.PutUvarint(buf[:], segmentSize)
 	bytesWritten, err = writer.Write(buf[:size])
 	if err != nil {
@@ -128,42 +135,73 @@ func WriteSegment(writer io.Writer, segment []byte) (n int, err error) {
 	}
 	n += bytesWritten
 
-	crc32Hash := crc32.ChecksumIEEE(segment)
-	size = binary.PutUvarint(buf[:], uint64(crc32Hash))
+	size = binary.PutUvarint(buf[:], uint64(segment.CRC32()))
 	bytesWritten, err = writer.Write(buf[:size])
 	if err != nil {
 		return n, fmt.Errorf("failed to write segment crc32 hash: %w", err)
 	}
 	n += bytesWritten
 
-	bytesWritten, err = writer.Write(segment)
+	size = binary.PutUvarint(buf[:], uint64(segment.Samples()))
+	bytesWritten, err = writer.Write(buf[:size])
+	if err != nil {
+		return n, fmt.Errorf("failed to write segment sample count: %w", err)
+	}
+	n += bytesWritten
+
+	var bytesWritten64 int64
+	bytesWritten64, err = segment.WriteTo(writer)
 	if err != nil {
 		return n, fmt.Errorf("failed to write segment data: %w", err)
 	}
-	n += bytesWritten
+	n += int(bytesWritten64)
 
 	return n, nil
 }
 
-func ReadSegment(reader io.Reader) (size uint64, crc32Hash uint32, data []byte, n int, err error) {
+type DecodedSegment struct {
+	data        []byte
+	sampleCount uint32
+}
+
+func (d DecodedSegment) Data() []byte {
+	return d.data
+}
+
+func (d DecodedSegment) SampleCount() uint32 {
+	return d.sampleCount
+}
+
+func ReadSegment(reader io.Reader) (decodedSegment DecodedSegment, n int, err error) {
 	br := &byteReader{r: reader}
+	var size uint64
 	size, err = binary.ReadUvarint(br)
 	if err != nil {
-		return size, crc32Hash, data, br.n, fmt.Errorf("failed to read segment size: %w", err)
+		return decodedSegment, br.n, fmt.Errorf("failed to read segment size: %w", err)
 	}
 
 	crc32HashU64, err := binary.ReadUvarint(br)
 	if err != nil {
-		return size, crc32Hash, data, br.n, fmt.Errorf("failed to read segment crc32 hash: %w", err)
+		return decodedSegment, br.n, fmt.Errorf("failed to read segment crc32 hash: %w", err)
 	}
-	crc32Hash = uint32(crc32HashU64)
+	crc32Hash := uint32(crc32HashU64)
 
-	data = make([]byte, size)
-	n, err = reader.Read(data)
+	sampleCountU64, err := binary.ReadUvarint(br)
 	if err != nil {
-		return size, crc32Hash, data, br.n, fmt.Errorf("failed to read segment data: %w", err)
+		return decodedSegment, br.n, fmt.Errorf("failed to read segment sample count: %w", err)
+	}
+	decodedSegment.sampleCount = uint32(sampleCountU64)
+
+	decodedSegment.data = make([]byte, size)
+	n, err = reader.Read(decodedSegment.data)
+	if err != nil {
+		return decodedSegment, br.n, fmt.Errorf("failed to read segment data: %w", err)
 	}
 	n += br.n
 
-	return size, crc32Hash, data, n, nil
+	if crc32Hash != crc32.ChecksumIEEE(decodedSegment.data) {
+		return decodedSegment, n, fmt.Errorf("crc32 did not match, want: %d, have: %d", crc32Hash, crc32.ChecksumIEEE(decodedSegment.data))
+	}
+
+	return decodedSegment, n, nil
 }

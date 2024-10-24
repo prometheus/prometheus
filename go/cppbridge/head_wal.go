@@ -29,9 +29,9 @@ func (e *HeadWalEncoder) Encode(innerSeriesSlice []*InnerSeries) error {
 	return err
 }
 
-func (e *HeadWalEncoder) Finalize() ([]byte, error) {
-	_, segment, err := headWalEncoderFinalize(e.encoder)
-	return segment, err
+func (e *HeadWalEncoder) Finalize() (*EncodedSegment, error) {
+	stats, segment, err := headWalEncoderFinalize(e.encoder)
+	return NewEncodedSegment(segment, stats), err
 }
 
 type HeadWalDecoder struct {
@@ -52,8 +52,8 @@ func NewHeadWalDecoder(lss *LabelSetStorage, encoderVersion uint8) *HeadWalDecod
 	return d
 }
 
-func (d *HeadWalDecoder) Decode(segment []byte) (*InnerSeries, error) {
-	return headWalDecoderDecode(d.decoder, segment)
+func (d *HeadWalDecoder) Decode(segment []byte, innerSeries *InnerSeries) error {
+	return headWalDecoderDecode(d.decoder, segment, innerSeries)
 }
 
 func (d *HeadWalDecoder) CreateEncoder() *HeadWalEncoder {
