@@ -63,8 +63,15 @@ const (
 )
 
 var (
-	// UserAgent represents Prometheus version to use for user agent header.
-	UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+	// internalUserAgent should not be modified as it is to allow tracking of the
+	// specific Prometheus version in use if UserAgent below is over-ridden.
+	// This value is used to set the X-Prometheus-User-Agent header.
+	internalUserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+
+	// UserAgent represents Prometheus version to use for the User-Agent header.
+	// This is now modifiable.
+	// It defaults to the internalUserAgent value defined above.
+	UserAgent = internalUserAgent
 
 	remoteWriteContentTypeHeaders = map[config.RemoteWriteProtoMsg]string{
 		config.RemoteWriteProtoMsgV1: appProtoContentType, // Also application/x-protobuf;proto=prometheus.WriteRequest but simplified for compatibility with 1.x spec.
@@ -149,6 +156,11 @@ type ClientConfig struct {
 // also fall back to the SAMPLES method if necessary.
 type ReadClient interface {
 	Read(ctx context.Context, query *prompb.Query, sortSeries bool) (storage.SeriesSet, error)
+}
+
+// SetUserAgent allows the User-Agent header value to be over-ridden.
+func SetUserAgent(userAgent string) {
+	UserAgent = userAgent
 }
 
 // NewReadClient creates a new client for remote read.
@@ -262,6 +274,7 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) (WriteRespo
 	httpReq.Header.Add("Content-Encoding", string(c.writeCompression))
 	httpReq.Header.Set("Content-Type", remoteWriteContentTypeHeaders[c.writeProtoMsg])
 	httpReq.Header.Set("User-Agent", UserAgent)
+	httpReq.Header.Set("X-Prometheus-User-Agent", internalUserAgent)
 	if c.writeProtoMsg == config.RemoteWriteProtoMsgV1 {
 		// Compatibility mode for 1.0.
 		httpReq.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion1HeaderValue)
@@ -363,6 +376,7 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query, sortSeries bool)
 	httpReq.Header.Add("Accept-Encoding", "snappy")
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
 	httpReq.Header.Set("User-Agent", UserAgent)
+	httpReq.Header.Set("X-Prometheus-User-Agent", internalUserAgent)
 	httpReq.Header.Set("X-Prometheus-Remote-Read-Version", "0.1.0")
 
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
