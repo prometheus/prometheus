@@ -134,6 +134,61 @@ scrape_configs:
     metric_name_validation_scheme: legacy
 ```
 
+### Log message format
+Prometheus v3 has adopted `log/slog` over the previous `go-kit/log`. This 
+results in a change of log message format. An example of the old log format is:
+```
+ts=2024-10-23T22:01:06.074Z caller=main.go:627 level=info msg="No time or size retention was set so using the default time retention" duration=15d
+ts=2024-10-23T22:01:06.074Z caller=main.go:671 level=info msg="Starting Prometheus Server" mode=server version="(version=, branch=, revision=91d80252c3e528728b0f88d254dd720f6be07cb8-modified)"
+ts=2024-10-23T22:01:06.074Z caller=main.go:676 level=info build_context="(go=go1.23.0, platform=linux/amd64, user=, date=, tags=unknown)"
+ts=2024-10-23T22:01:06.074Z caller=main.go:677 level=info host_details="(Linux 5.15.0-124-generic #134-Ubuntu SMP Fri Sep 27 20:20:17 UTC 2024 x86_64 gigafips (none))"
+```
+
+a similar sequence in the new log format looks like this:
+```
+time=2024-10-24T00:03:07.542+02:00 level=INFO source=/home/user/go/src/github.com/prometheus/prometheus/cmd/prometheus/main.go:640 msg="No time or size retention was set so using the default time retention" duration=15d
+time=2024-10-24T00:03:07.542+02:00 level=INFO source=/home/user/go/src/github.com/prometheus/prometheus/cmd/prometheus/main.go:681 msg="Starting Prometheus Server" mode=server version="(version=, branch=, revision=7c7116fea8343795cae6da42960cacd0207a2af8)"
+time=2024-10-24T00:03:07.542+02:00 level=INFO source=/home/user/go/src/github.com/prometheus/prometheus/cmd/prometheus/main.go:686 msg="operational information" build_context="(go=go1.23.0, platform=linux/amd64, user=, date=, tags=unknown)" host_details="(Linux 5.15.0-124-generic #134-Ubuntu SMP Fri Sep 27 20:20:17 UTC 2024 x86_64 gigafips (none))" fd_limits="(soft=1048576, hard=1048576)" vm_limits="(soft=unlimited, hard=unlimited)"
+```
+
+### `le` and `quantile` label values
+In Prometheus v3, the values of the `le` label of classic histograms and the 
+`quantile` label of summaries are normalized upon ingestions. In Prometheus v2 
+the value of these labels depended on the scrape protocol (protobuf vs text 
+format) in some situations. This led to label values changing based on the 
+scrape protocol. E.g. a metric exposed as `my_classic_hist{le="1"}` would be 
+ingested as `my_classic_hist{le="1"}` via the text format, but as 
+`my_classic_hist{le="1.0"}` via protobuf. This changed the identity of the 
+metric and caused problems when querying the metric.
+In Prometheus v3 these label values will always be normalized to a float like 
+representation. I.e. the above example will always result in 
+`my_classic_hist{le="1.0"}` being ingested into prometheus, not matter via which 
+protocol. The effect of this change is that alerts, recording rules and dashboards that
+directly reference label values as whole numbers such as `le="1"` will stop
+working.
+
+Ways to deal with this change either globally or on a per metric basis:
+
+- Fix references to integer `le`, `quantile` label values, but otherwise do
+nothing and accept that some queries that span the transition time will produce
+inaccurate or unexpected results.
+_This is the recommended solution._
+- Use `metric_relabel_config` to retain the old labels when scraping targets.
+This should **only** be applied to metrics that currently produce such labels.
+
+```yaml
+    metric_relabel_configs:
+      - source_labels:
+          - quantile
+        target_label: quantile
+        regex: (\d+)\.0+
+      - source_labels:
+          - le
+          - __name__
+        target_label: le
+        regex: (\d+)\.0+;.*_bucket
+```
+
 # Prometheus 2.0 migration guide
 
 For the Prometheus 1.8 to 2.0 please refer to the [Prometheus v2.55 documentation](https://prometheus.io/docs/prometheus/2.55/migration/).
