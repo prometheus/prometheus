@@ -16,6 +16,7 @@
 package install
 
 import (
+	_ "github.com/prometheus/prometheus/discovery/aliyun"       // register aliyun
 	_ "github.com/prometheus/prometheus/discovery/aws"          // register aws
 	_ "github.com/prometheus/prometheus/discovery/azure"        // register azure
 	_ "github.com/prometheus/prometheus/discovery/consul"       // register consul
