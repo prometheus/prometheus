@@ -2889,6 +2889,7 @@ metadata_config:
 
 # HTTP client settings, including authentication methods (such as basic auth and
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.
+# enable_http2 defaults to false for remote-write.
 [ <http_config> ]
 ```
 

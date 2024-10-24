@@ -181,13 +181,18 @@ var (
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
 
+	DefaultRemoteWriteHTTPClientConfig = config.HTTPClientConfig{
+		FollowRedirects: true,
+		EnableHTTP2:     false,
+	}
+
 	// DefaultRemoteWriteConfig is the default remote write configuration.
 	DefaultRemoteWriteConfig = RemoteWriteConfig{
 		RemoteTimeout:    model.Duration(30 * time.Second),
 		ProtobufMessage:  RemoteWriteProtoMsgV1,
 		QueueConfig:      DefaultQueueConfig,
 		MetadataConfig:   DefaultMetadataConfig,
-		HTTPClientConfig: config.DefaultHTTPClientConfig,
+		HTTPClientConfig: DefaultRemoteWriteHTTPClientConfig,
 	}
 
 	// DefaultQueueConfig is the default remote queue configuration.
