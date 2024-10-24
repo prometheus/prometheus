@@ -839,13 +839,21 @@ func (s syncAppendable) Appender(ctx context.Context) storage.Appender {
 }
 
 func (s syncAppender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+	return s.AppendWithCT(ref, l, t, 0, v)
+}
+
+func (s syncAppender) AppendWithCT(ref storage.SeriesRef, l labels.Labels, t, ct int64, v float64) (storage.SeriesRef, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	return s.Appender.Append(ref, l, t, v)
+	return s.Appender.AppendWithCT(ref, l, t, ct, v)
 }
 
 func (s syncAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, f *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	return s.AppendHistogramWithCT(ref, l, t, 0, h, f)
+}
+
+func (s syncAppender) AppendHistogramWithCT(ref storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, f *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	return s.Appender.AppendHistogram(ref, l, t, h, f)
+	return s.Appender.AppendHistogramWithCT(ref, l, t, ct, h, f)
 }

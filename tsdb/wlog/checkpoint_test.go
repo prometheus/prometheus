@@ -323,7 +323,7 @@ func TestCheckpoint(t *testing.T) {
 				case record.Series:
 					series, err = dec.Series(rec, series)
 					require.NoError(t, err)
-				case record.Samples:
+				case record.Samples, record.SamplesWithCT:
 					samples, err := dec.Samples(rec, nil)
 					require.NoError(t, err)
 					for _, s := range samples {
