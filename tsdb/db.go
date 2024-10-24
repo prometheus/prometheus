@@ -1672,7 +1672,6 @@ func openBlocks(l *slog.Logger, dir string, loaded []*Block, chunkPool chunkenc.
 		go func(d string) {
 			defer wg.Done()
 			meta, _, err := readMetaFile(d)
-
 			if err != nil {
 				l.Error("Failed to read meta.json for a block during reloadBlocks. Skipping", "dir", d, "err", err)
 				return
