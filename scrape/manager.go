@@ -81,17 +81,23 @@ type Options struct {
 	AppendMetadata bool
 	// Option to increase the interval used by scrape manager to throttle target groups updates.
 	DiscoveryReloadInterval model.Duration
-	// Option to enable the ingestion of the created timestamp as a synthetic zero sample.
-	// See: https://github.com/prometheus/proposals/blob/main/proposals/2023-06-13_created-timestamp.md
-	EnableCreatedTimestampZeroIngestion bool
-	// Option to enable the ingestion of native histograms.
-	EnableNativeHistogramsIngestion bool
 
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption
 
 	// private option for testability.
 	skipOffsetting bool
+
+	// ---Feature flags:
+
+	// EnableNativeHistogramsIngestion enables the ingestion of native histograms.
+	EnableNativeHistogramsIngestion bool
+	// EnableCreatedTimestampZeroIngestion enables the ingestion of the created timestamp as a synthetic zero sample.
+	// See: https://github.com/prometheus/proposals/blob/main/proposals/2023-06-13_created-timestamp.md
+	EnableCreatedTimestampZeroIngestion bool
+	// EnableCreatedTimestampPerSample enables the ingestion of the created timestamp per sample,
+	// through the TSDB AppendWithCT and AppendHistogramWithCT methods.
+	EnableCreatedTimestampPerSample bool
 }
 
 // Manager maintains a set of scrape pools and manages start/stop cycles

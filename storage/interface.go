@@ -265,6 +265,12 @@ type Appender interface {
 	// If the reference is 0 it must not be used for caching.
 	Append(ref SeriesRef, l labels.Labels, t int64, v float64) (SeriesRef, error)
 
+	// AppendWithCT is like Append, but also stores an optional CT with to the sample.
+	// ct equal to 0 value means no CT.
+	// TODO(bwplotka): Consider adding CT (with 0 being empty) to Append once
+	// this mechanism is proven.
+	AppendWithCT(ref SeriesRef, l labels.Labels, t, ct int64, v float64) (SeriesRef, error)
+
 	// Commit submits the collected samples and purges the batch. If Commit
 	// returns a non-nil error, it also rolls back all modifications made in
 	// the appender so far, as Rollback would do. In any case, an Appender
@@ -319,13 +325,19 @@ type HistogramAppender interface {
 	// reference number is returned which can be used to add further
 	// histograms in the same or later transactions. Returned reference
 	// numbers are ephemeral and may be rejected in calls to Append() at any
-	// point. Adding the sample via Append() returns a new reference number.
+	// point. Adding the sample via AppendHistogram() returns a new reference number.
 	// If the reference is 0, it must not be used for caching.
 	//
 	// For efficiency reasons, the histogram is passed as a
 	// pointer. AppendHistogram won't mutate the histogram, but in turn
 	// depends on the caller to not mutate it either.
 	AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error)
+
+	// AppendHistogramWithCT is like AppendHistogram, but also stores CT with to the sample.
+	// TODO(bwplotka): Consider adding CT (with 0 being empty) to AppendHistogram once
+	// this mechanism is proven.
+	AppendHistogramWithCT(ref SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error)
+
 	// AppendHistogramCTZeroSample adds synthetic zero sample for the given ct timestamp,
 	// which will be associated with given series, labels and the incoming
 	// sample's t (timestamp). AppendHistogramCTZeroSample returns error if zero sample can't be
@@ -355,6 +367,8 @@ type MetadataUpdater interface {
 }
 
 // CreatedTimestampAppender provides an interface for appending CT to storage.
+// TODO(bwplotka): Consider add histogram CT zero sample methods here for consistency.
+// TODO(bwplotka): This might be removed at some point, superseded by https://github.com/prometheus/prometheus/issues/14218
 type CreatedTimestampAppender interface {
 	// AppendCTZeroSample adds synthetic zero sample for the given ct timestamp,
 	// which will be associated with given series, labels and the incoming

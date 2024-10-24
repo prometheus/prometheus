@@ -84,6 +84,15 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, samples, decSamples)
 
+	samplesWithCT := []RefSample{
+		{Ref: 0, T: 12423423, CT: 14, V: 1.2345},
+		{Ref: 123, T: -1231, CT: 14, V: -123},
+		{Ref: 2, T: 0, CT: 14, V: 99999},
+	}
+	decSamplesWithCT, err := dec.Samples(enc.Samples(samplesWithCT, nil), nil)
+	require.NoError(t, err)
+	require.Equal(t, samplesWithCT, decSamplesWithCT)
+
 	// Intervals get split up into single entries. So we don't get back exactly
 	// what we put in.
 	tstones := []tombstones.Stone{

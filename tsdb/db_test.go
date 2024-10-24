@@ -4497,7 +4497,7 @@ func testOOOWALWrite(t *testing.T,
 				series, err := dec.Series(rec, nil)
 				require.NoError(t, err)
 				records = append(records, series)
-			case record.Samples:
+			case record.Samples, record.SamplesWithCT:
 				samples, err := dec.Samples(rec, nil)
 				require.NoError(t, err)
 				records = append(records, samples)

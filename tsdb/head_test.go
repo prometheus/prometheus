@@ -179,12 +179,12 @@ func readTestWAL(t testing.TB, dir string) (recs []interface{}) {
 	for r.Next() {
 		rec := r.Record()
 
-		switch dec.Type(rec) {
+		switch typ := dec.Type(rec); typ {
 		case record.Series:
 			series, err := dec.Series(rec, nil)
 			require.NoError(t, err)
 			recs = append(recs, series)
-		case record.Samples:
+		case record.Samples, record.SamplesWithCT:
 			samples, err := dec.Samples(rec, nil)
 			require.NoError(t, err)
 			recs = append(recs, samples)
@@ -209,7 +209,7 @@ func readTestWAL(t testing.TB, dir string) (recs []interface{}) {
 			require.NoError(t, err)
 			recs = append(recs, exemplars)
 		default:
-			require.Fail(t, "unknown record type")
+			require.Fail(t, "unknown record type", typ)
 		}
 	}
 	require.NoError(t, r.Err())
@@ -6295,15 +6295,14 @@ func TestHeadAppender_AppendFloatWithSameTimestampAsPreviousHistogram(t *testing
 	require.ErrorIs(t, err, storage.NewDuplicateHistogramToFloatErr(2_000, 10.0))
 }
 
-func TestHeadAppender_AppendCT(t *testing.T) {
+func TestHeadAppender_AppendCTZeroSample(t *testing.T) {
 	testHistogram := tsdbutil.GenerateTestHistogram(1)
 	testFloatHistogram := tsdbutil.GenerateTestFloatHistogram(1)
 	type appendableSamples struct {
-		ts      int64
+		ts, ct  int64
 		fSample float64
 		h       *histogram.Histogram
 		fh      *histogram.FloatHistogram
-		ct      int64
 	}
 	for _, tc := range []struct {
 		name              string
@@ -6512,6 +6511,82 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 			require.NoError(t, err)
 			result := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 			require.Equal(t, tc.expectedSamples, result[`{foo="bar"}`])
+		})
+	}
+}
+
+func TestHeadAppender_AppendWithCT(t *testing.T) {
+	type appendableSamples struct {
+		t, ct int64
+		v     float64
+	}
+	for _, tc := range []struct {
+		name              string
+		appendableSamples []appendableSamples
+		expectedSamples   []record.RefSample
+	}{
+		{
+			name: "sample with non-zero ct",
+			appendableSamples: []appendableSamples{
+				{t: 100, v: 10, ct: 1},
+			},
+			expectedSamples: []record.RefSample{
+				{T: 100, V: 10, CT: 1, Ref: 1},
+			},
+		},
+		{
+			name: "sample with ct > t are ignored",
+			appendableSamples: []appendableSamples{
+				{t: 100, v: 10, ct: 101},
+			},
+			expectedSamples: []record.RefSample{
+				{T: 100, V: 10, Ref: 1},
+			},
+		},
+		{
+			name: "multiple samples + same ct",
+			appendableSamples: []appendableSamples{
+				{t: 100, v: 10, ct: 1},
+				{t: 101, v: 10, ct: 1},
+			},
+			expectedSamples: []record.RefSample{
+				{T: 100, V: 10, CT: 1, Ref: 1},
+				{T: 101, V: 10, CT: 1, Ref: 1},
+			},
+		},
+		{
+			name: "multiple samples + different ct",
+			appendableSamples: []appendableSamples{
+				{t: 100, v: 10, ct: 1},
+				{t: 102, v: 10, ct: 101},
+			},
+			expectedSamples: []record.RefSample{
+				{T: 100, V: 10, CT: 1, Ref: 1},
+				{T: 102, V: 10, CT: 101, Ref: 1},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, w := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
+			defer func() {
+				require.NoError(t, h.Close())
+			}()
+			a := h.Appender(context.Background())
+
+			lbls := labels.FromStrings("foo", "bar")
+			for _, sample := range tc.appendableSamples {
+				_, err := a.AppendWithCT(0, lbls, sample.t, sample.ct, sample.v)
+				require.NoError(t, err)
+			}
+			require.NoError(t, a.Commit())
+
+			recs := readTestWAL(t, w.Dir())
+			_, ok := recs[0].([]record.RefSeries)
+			require.True(t, ok, "expected first record to be a RefSeries")
+			actualType := reflect.TypeOf(recs[1])
+			require.Equal(t, reflect.TypeOf([]record.RefSample{}), actualType, "expected second record to be a record.RefSample")
+
+			require.Equal(t, tc.expectedSamples, recs[1])
 		})
 	}
 }

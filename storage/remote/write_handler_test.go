@@ -271,7 +271,7 @@ func TestRemoteWriteHandler_V1Message(t *testing.T) {
 	for _, ts := range writeRequestFixture.Timeseries {
 		labels := ts.ToLabels(&b, nil)
 		for _, s := range ts.Samples {
-			requireEqual(t, mockSample{labels, s.Timestamp, s.Value}, appendable.samples[i])
+			requireEqual(t, mockSample{labels, s.Timestamp, 0, s.Value}, appendable.samples[i])
 			i++
 		}
 		for _, e := range ts.Exemplars {
@@ -282,10 +282,10 @@ func TestRemoteWriteHandler_V1Message(t *testing.T) {
 		for _, hp := range ts.Histograms {
 			if hp.IsFloatHistogram() {
 				fh := hp.ToFloatHistogram()
-				requireEqual(t, mockHistogram{labels, hp.Timestamp, nil, fh}, appendable.histograms[k])
+				requireEqual(t, mockHistogram{labels, hp.Timestamp, 0, nil, fh}, appendable.histograms[k])
 			} else {
 				h := hp.ToIntHistogram()
-				requireEqual(t, mockHistogram{labels, hp.Timestamp, h, nil}, appendable.histograms[k])
+				requireEqual(t, mockHistogram{labels, hp.Timestamp, 0, h, nil}, appendable.histograms[k])
 			}
 
 			k++
@@ -500,27 +500,27 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 
 				for _, s := range ts.Samples {
 					if ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
-						requireEqual(t, mockSample{ls, ts.CreatedTimestamp, 0}, appendable.samples[i])
+						requireEqual(t, mockSample{ls, ts.CreatedTimestamp, 0, 0}, appendable.samples[i])
 						i++
 					}
-					requireEqual(t, mockSample{ls, s.Timestamp, s.Value}, appendable.samples[i])
+					requireEqual(t, mockSample{ls, s.Timestamp, 0, s.Value}, appendable.samples[i])
 					i++
 				}
 				for _, hp := range ts.Histograms {
 					if hp.IsFloatHistogram() {
 						fh := hp.ToFloatHistogram()
 						if ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
-							requireEqual(t, mockHistogram{ls, ts.CreatedTimestamp, nil, &histogram.FloatHistogram{}}, appendable.histograms[k])
+							requireEqual(t, mockHistogram{ls, ts.CreatedTimestamp, 0, nil, &histogram.FloatHistogram{}}, appendable.histograms[k])
 							k++
 						}
-						requireEqual(t, mockHistogram{ls, hp.Timestamp, nil, fh}, appendable.histograms[k])
+						requireEqual(t, mockHistogram{ls, hp.Timestamp, 0, nil, fh}, appendable.histograms[k])
 					} else {
 						h := hp.ToIntHistogram()
 						if ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
-							requireEqual(t, mockHistogram{ls, ts.CreatedTimestamp, &histogram.Histogram{}, nil}, appendable.histograms[k])
+							requireEqual(t, mockHistogram{ls, ts.CreatedTimestamp, 0, &histogram.Histogram{}, nil}, appendable.histograms[k])
 							k++
 						}
-						requireEqual(t, mockHistogram{ls, hp.Timestamp, h, nil}, appendable.histograms[k])
+						requireEqual(t, mockHistogram{ls, hp.Timestamp, 0, h, nil}, appendable.histograms[k])
 					}
 					k++
 				}
@@ -811,9 +811,9 @@ type mockAppendable struct {
 }
 
 type mockSample struct {
-	l labels.Labels
-	t int64
-	v float64
+	l     labels.Labels
+	t, ct int64
+	v     float64
 }
 
 type mockExemplar struct {
@@ -824,10 +824,10 @@ type mockExemplar struct {
 }
 
 type mockHistogram struct {
-	l  labels.Labels
-	t  int64
-	h  *histogram.Histogram
-	fh *histogram.FloatHistogram
+	l     labels.Labels
+	t, ct int64
+	h     *histogram.Histogram
+	fh    *histogram.FloatHistogram
 }
 
 type mockMetadata struct {
@@ -864,7 +864,11 @@ func (m *mockAppendable) SetOptions(_ *storage.AppendOptions) {
 	panic("unimplemented")
 }
 
-func (m *mockAppendable) Append(_ storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+func (m *mockAppendable) Append(r storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+	return m.AppendWithCT(r, l, t, 0, v)
+}
+
+func (m *mockAppendable) AppendWithCT(_ storage.SeriesRef, l labels.Labels, t, ct int64, v float64) (storage.SeriesRef, error) {
 	if m.appendSampleErr != nil {
 		return 0, m.appendSampleErr
 	}
@@ -885,7 +889,7 @@ func (m *mockAppendable) Append(_ storage.SeriesRef, l labels.Labels, t int64, v
 	}
 
 	m.latestSample[l.Hash()] = t
-	m.samples = append(m.samples, mockSample{l, t, v})
+	m.samples = append(m.samples, mockSample{l, t, ct, v})
 	return 0, nil
 }
 
@@ -922,7 +926,11 @@ func (m *mockAppendable) AppendExemplar(_ storage.SeriesRef, l labels.Labels, e 
 	return 0, nil
 }
 
-func (m *mockAppendable) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (m *mockAppendable) AppendHistogram(r storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	return m.AppendHistogramWithCT(r, l, t, 0, h, fh)
+}
+
+func (m *mockAppendable) AppendHistogramWithCT(_ storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	if m.appendHistogramErr != nil {
 		return 0, m.appendHistogramErr
 	}
@@ -952,7 +960,7 @@ func (m *mockAppendable) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t
 	} else {
 		m.latestFloatHist[l.Hash()] = t
 	}
-	m.histograms = append(m.histograms, mockHistogram{l, t, h, fh})
+	m.histograms = append(m.histograms, mockHistogram{l, t, ct, h, fh})
 	return 0, nil
 }
 
@@ -989,10 +997,10 @@ func (m *mockAppendable) AppendHistogramCTZeroSample(_ storage.SeriesRef, l labe
 
 	if h != nil {
 		m.latestHistogram[l.Hash()] = ct
-		m.histograms = append(m.histograms, mockHistogram{l, ct, &histogram.Histogram{}, nil})
+		m.histograms = append(m.histograms, mockHistogram{l, ct, 0, &histogram.Histogram{}, nil})
 	} else {
 		m.latestFloatHist[l.Hash()] = ct
-		m.histograms = append(m.histograms, mockHistogram{l, ct, nil, &histogram.FloatHistogram{}})
+		m.histograms = append(m.histograms, mockHistogram{l, ct, 0, nil, &histogram.FloatHistogram{}})
 	}
 	return 0, nil
 }
@@ -1032,6 +1040,6 @@ func (m *mockAppendable) AppendCTZeroSample(_ storage.SeriesRef, l labels.Labels
 	}
 
 	m.latestSample[l.Hash()] = ct
-	m.samples = append(m.samples, mockSample{l, ct, 0})
+	m.samples = append(m.samples, mockSample{l, ct, 0, 0})
 	return 0, nil
 }
