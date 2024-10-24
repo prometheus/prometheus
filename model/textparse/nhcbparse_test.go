@@ -16,6 +16,7 @@ package textparse
 import (
 	"bytes"
 	"encoding/binary"
+	"strconv"
 	"testing"
 
 	"github.com/gogo/protobuf/proto"
@@ -493,7 +494,6 @@ something_bucket{a="b",le="+Inf"} 9 # {id="something-test"} 2e100 123.000
 				{Labels: labels.FromStrings("id", "something-test"), Value: 0.5},
 				{Labels: labels.FromStrings("id", "something-test"), Value: 8.0},
 			},
-			// TODO(krajorama): ct:   int64p(1520430001000),
 		}, {
 			m: `something{a="b"}`,
 			shs: &histogram.Histogram{
@@ -509,7 +509,6 @@ something_bucket{a="b",le="+Inf"} 9 # {id="something-test"} 2e100 123.000
 				{Labels: labels.FromStrings("id", "something-test"), Value: 0.0, HasTs: true, Ts: 123321},
 				{Labels: labels.FromStrings("id", "something-test"), Value: 2e100, HasTs: true, Ts: 123000},
 			},
-			// TODO(krajorama): ct:   int64p(1520430002000),
 		},
 	}
 
@@ -520,112 +519,208 @@ something_bucket{a="b",le="+Inf"} 9 # {id="something-test"} 2e100 123.000
 	requireEntries(t, exp, got)
 }
 
-// Verify that the NHCBParser does not parse the NHCB when the exponential is present.
+// Verify the requirement tables from
+// https://github.com/prometheus/prometheus/issues/13532 .
+// "classic" means the option "always_scrape_classic_histograms".
+// "nhcb" means the option "convert_classic_histograms_to_nhcb".
+//
+// Currently only with the ProtoBuf parser that supports exponential
+// histograms.
+//
+// Case 1. Only classic histogram is exposed.
+//
+// | Scrape Config             | Expect classic | Expect exponential | Expect NHCB |.
+// | classic=false, nhcb=false | YES            | NO                 | NO          |.
+// | classic=true,  nhcb=false | YES            | NO                 | NO          |.
+// | classic=false, nhcb=true  | NO             | NO                 | YES         |.
+// | classic=true,  nhcb=true  | YES            | NO                 | YES         |.
+//
+// Case 2. Both classic and exponential histograms are exposed.
+//
+// | Scrape Config             | Expect classic | Expect exponential | Expect NHCB |.
+// | classic=false, nhcb=false | NO             | YES                | NO          |.
+// | classic=true,  nhcb=false | YES            | YES                | NO          |.
+// | classic=false, nhcb=true  | NO             | YES                | NO          |.
+// | classic=true,  nhcb=true  | YES            | YES                | NO          |.
+//
+// Case 3. Only exponential histogram is exposed.
+//
+// | Scrape Config             | Expect classic | Expect exponential | Expect NHCB |.
+// | classic=false, nhcb=false | NO             | YES                | NO          |.
+// | classic=true,  nhcb=false | NO             | YES                | NO          |.
+// | classic=false, nhcb=true  | NO             | YES                | NO          |.
+// | classic=true,  nhcb=true  | NO             | YES                | NO          |.
 func TestNHCBParserProtoBufParser_NoNHCBWhenExponential(t *testing.T) {
-	inputBuf := createTestProtoBufHistogram(t)
-	// Initialize the protobuf parser so that it returns classic histograms as
-	// well when there's both classic and exponential histograms.
-	p := NewProtobufParser(inputBuf.Bytes(), true, labels.NewSymbolTable())
+	type requirement struct {
+		expectClassic     bool
+		expectExponential bool
+		expectNHCB        bool
+	}
 
-	// Initialize the NHCBParser so that it returns classic histograms as well
-	// when there's both classic and exponential histograms.
-	p = NewNHCBParser(p, labels.NewSymbolTable(), true)
-
-	exp := []parsedEntry{
+	cases := []map[string]requirement{
+		// Case 1.
 		{
-			m:    "test_histogram",
-			help: "Test histogram with classic and exponential buckets.",
+			"classic=false, nhcb=false": {expectClassic: true, expectExponential: false, expectNHCB: false},
+			"classic=true, nhcb=false":  {expectClassic: true, expectExponential: false, expectNHCB: false},
+			"classic=false, nhcb=true":  {expectClassic: false, expectExponential: false, expectNHCB: true},
+			"classic=true, nhcb=true":   {expectClassic: true, expectExponential: false, expectNHCB: true},
 		},
+		// Case 2.
 		{
-			m:   "test_histogram",
-			typ: model.MetricTypeHistogram,
+			"classic=false, nhcb=false": {expectClassic: false, expectExponential: true, expectNHCB: false},
+			"classic=true, nhcb=false":  {expectClassic: true, expectExponential: true, expectNHCB: false},
+			"classic=false, nhcb=true":  {expectClassic: false, expectExponential: true, expectNHCB: false},
+			"classic=true, nhcb=true":   {expectClassic: true, expectExponential: true, expectNHCB: false},
 		},
+		// Case 3.
 		{
-			m: "test_histogram",
-			shs: &histogram.Histogram{
-				Schema:          3,
-				Count:           175,
-				Sum:             0.0008280461746287094,
-				ZeroThreshold:   2.938735877055719e-39,
-				ZeroCount:       2,
-				PositiveSpans:   []histogram.Span{{Offset: -161, Length: 1}, {Offset: 8, Length: 3}},
-				NegativeSpans:   []histogram.Span{{Offset: -162, Length: 1}, {Offset: 23, Length: 4}},
-				PositiveBuckets: []int64{1, 2, -1, -1},
-				NegativeBuckets: []int64{1, 3, -2, -1, 1},
-			},
-			lset: labels.FromStrings("__name__", "test_histogram"),
-			t:    int64p(1234568),
-			ct:   int64p(1000),
-		},
-		{
-			m:    "test_histogram_count",
-			v:    175,
-			lset: labels.FromStrings("__name__", "test_histogram_count"),
-			t:    int64p(1234568),
-			ct:   int64p(1000),
-		},
-		{
-			m:    "test_histogram_sum",
-			v:    0.0008280461746287094,
-			lset: labels.FromStrings("__name__", "test_histogram_sum"),
-			t:    int64p(1234568),
-			ct:   int64p(1000),
-		},
-		{
-			m:    "test_histogram_bucket\xffle\xff-0.0004899999999999998",
-			v:    2,
-			lset: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0004899999999999998"),
-			t:    int64p(1234568),
-			ct:   int64p(1000),
-		},
-		{
-			m:    "test_histogram_bucket\xffle\xff-0.0003899999999999998",
-			v:    4,
-			lset: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0003899999999999998"),
-			t:    int64p(1234568),
-			ct:   int64p(1000),
-		},
-		{
-			m:    "test_histogram_bucket\xffle\xff-0.0002899999999999998",
-			v:    16,
-			lset: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0002899999999999998"),
-			t:    int64p(1234568),
-			ct:   int64p(1000),
-		},
-		{
-			m:    "test_histogram_bucket\xffle\xff+Inf",
-			v:    175,
-			lset: labels.FromStrings("__name__", "test_histogram_bucket", "le", "+Inf"),
-			t:    int64p(1234568),
-			ct:   int64p(1000),
-		},
-		{
-			// TODO(krajorama): optimize: this should not be here. In case there's
-			// an exponential histogram we should not convert the classic histogram
-			// to NHCB. In the end TSDB will throw this away with
-			// storage.errDuplicateSampleForTimestamp error at Commit(), but it
-			// is better to avoid this conversion in the first place.
-			m: "test_histogram{}",
-			shs: &histogram.Histogram{
-				Schema:          histogram.CustomBucketsSchema,
-				Count:           175,
-				Sum:             0.0008280461746287094,
-				PositiveSpans:   []histogram.Span{{Length: 4}},
-				PositiveBuckets: []int64{2, 0, 10, 147},
-				CustomValues:    []float64{-0.0004899999999999998, -0.0003899999999999998, -0.0002899999999999998},
-			},
-			lset: labels.FromStrings("__name__", "test_histogram"),
-			t:    int64p(1234568),
-			ct:   int64p(1000),
+			"classic=false, nhcb=false": {expectClassic: false, expectExponential: true, expectNHCB: false},
+			"classic=true, nhcb=false":  {expectClassic: false, expectExponential: true, expectNHCB: false},
+			"classic=false, nhcb=true":  {expectClassic: false, expectExponential: true, expectNHCB: false},
+			"classic=true, nhcb=true":   {expectClassic: false, expectExponential: true, expectNHCB: false},
 		},
 	}
-	got := testParse(t, p)
-	requireEntries(t, exp, got)
+
+	type testCase struct {
+		name    string
+		classic bool
+		nhcb    bool
+		exp     []parsedEntry
+	}
+
+	testCases := []testCase{}
+	for _, classic := range []bool{false, true} {
+		for _, nhcb := range []bool{false, true} {
+			tc := testCase{
+				name:    "classic=" + strconv.FormatBool(classic) + ", nhcb=" + strconv.FormatBool(nhcb),
+				classic: classic,
+				nhcb:    nhcb,
+				exp:     []parsedEntry{},
+			}
+			for i, caseI := range cases {
+				req := caseI[tc.name]
+				metric := "test_histogram" + strconv.Itoa(i+1)
+				tc.exp = append(tc.exp, parsedEntry{
+					m:    metric,
+					help: "Test histogram " + strconv.Itoa(i+1),
+				})
+				tc.exp = append(tc.exp, parsedEntry{
+					m:   metric,
+					typ: model.MetricTypeHistogram,
+				})
+				if req.expectExponential {
+					// Always expect exponential histogram first.
+					exponentialSeries := []parsedEntry{
+						{
+							m: metric,
+							shs: &histogram.Histogram{
+								Schema:          3,
+								Count:           175,
+								Sum:             0.0008280461746287094,
+								ZeroThreshold:   2.938735877055719e-39,
+								ZeroCount:       2,
+								PositiveSpans:   []histogram.Span{{Offset: -161, Length: 1}, {Offset: 8, Length: 3}},
+								NegativeSpans:   []histogram.Span{{Offset: -162, Length: 1}, {Offset: 23, Length: 4}},
+								PositiveBuckets: []int64{1, 2, -1, -1},
+								NegativeBuckets: []int64{1, 3, -2, -1, 1},
+							},
+							lset: labels.FromStrings("__name__", metric),
+							t:    int64p(1234568),
+							ct:   int64p(1000),
+						},
+					}
+					tc.exp = append(tc.exp, exponentialSeries...)
+				}
+				if req.expectClassic {
+					// Always expect classic histogram series after exponential.
+					classicSeries := []parsedEntry{
+						{
+							m:    metric + "_count",
+							v:    175,
+							lset: labels.FromStrings("__name__", metric+"_count"),
+							t:    int64p(1234568),
+							ct:   int64p(1000),
+						},
+						{
+							m:    metric + "_sum",
+							v:    0.0008280461746287094,
+							lset: labels.FromStrings("__name__", metric+"_sum"),
+							t:    int64p(1234568),
+							ct:   int64p(1000),
+						},
+						{
+							m:    metric + "_bucket\xffle\xff-0.0004899999999999998",
+							v:    2,
+							lset: labels.FromStrings("__name__", metric+"_bucket", "le", "-0.0004899999999999998"),
+							t:    int64p(1234568),
+							ct:   int64p(1000),
+						},
+						{
+							m:    metric + "_bucket\xffle\xff-0.0003899999999999998",
+							v:    4,
+							lset: labels.FromStrings("__name__", metric+"_bucket", "le", "-0.0003899999999999998"),
+							t:    int64p(1234568),
+							ct:   int64p(1000),
+						},
+						{
+							m:    metric + "_bucket\xffle\xff-0.0002899999999999998",
+							v:    16,
+							lset: labels.FromStrings("__name__", metric+"_bucket", "le", "-0.0002899999999999998"),
+							t:    int64p(1234568),
+							ct:   int64p(1000),
+						},
+						{
+							m:    metric + "_bucket\xffle\xff+Inf",
+							v:    175,
+							lset: labels.FromStrings("__name__", metric+"_bucket", "le", "+Inf"),
+							t:    int64p(1234568),
+							ct:   int64p(1000),
+						},
+					}
+					tc.exp = append(tc.exp, classicSeries...)
+				}
+				if req.expectNHCB {
+					// Always expect NHCB series after classic.
+					nhcbSeries := []parsedEntry{
+						{
+							m: metric + "{}",
+							shs: &histogram.Histogram{
+								Schema:          histogram.CustomBucketsSchema,
+								Count:           175,
+								Sum:             0.0008280461746287094,
+								PositiveSpans:   []histogram.Span{{Length: 4}},
+								PositiveBuckets: []int64{2, 0, 10, 147},
+								CustomValues:    []float64{-0.0004899999999999998, -0.0003899999999999998, -0.0002899999999999998},
+							},
+							lset: labels.FromStrings("__name__", metric),
+							t:    int64p(1234568),
+							ct:   int64p(1000),
+						},
+					}
+					tc.exp = append(tc.exp, nhcbSeries...)
+				}
+			}
+			testCases = append(testCases, tc)
+		}
+	}
+
+	inputBuf := createTestProtoBufHistogram(t)
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := NewProtobufParser(inputBuf.Bytes(), tc.classic, labels.NewSymbolTable())
+			if tc.nhcb {
+				p = NewNHCBParser(p, labels.NewSymbolTable(), tc.classic)
+			}
+			got := testParse(t, p)
+			requireEntries(t, tc.exp, got)
+		})
+	}
 }
 
 func createTestProtoBufHistogram(t *testing.T) *bytes.Buffer {
-	testMetricFamilies := []string{`name: "test_histogram"
-help: "Test histogram with classic and exponential buckets."
+	testMetricFamilies := []string{`name: "test_histogram1"
+help: "Test histogram 1"
 type: HISTOGRAM
 metric: <
   histogram: <
@@ -647,6 +742,72 @@ metric: <
       cumulative_count: 16
       upper_bound: -0.0002899999999999998
     >
+  >
+  timestamp_ms: 1234568
+>`, `name: "test_histogram2"
+help: "Test histogram 2"
+type: HISTOGRAM
+metric: <
+  histogram: <
+		created_timestamp: <
+      seconds: 1
+      nanos: 1
+    >
+    sample_count: 175
+    sample_sum: 0.0008280461746287094
+    bucket: <
+      cumulative_count: 2
+      upper_bound: -0.0004899999999999998
+    >
+    bucket: <
+      cumulative_count: 4
+      upper_bound: -0.0003899999999999998
+    >
+    bucket: <
+      cumulative_count: 16
+      upper_bound: -0.0002899999999999998
+    >
+    schema: 3
+    zero_threshold: 2.938735877055719e-39
+    zero_count: 2
+    negative_span: <
+      offset: -162
+      length: 1
+    >
+    negative_span: <
+      offset: 23
+      length: 4
+    >
+    negative_delta: 1
+    negative_delta: 3
+    negative_delta: -2
+    negative_delta: -1
+    negative_delta: 1
+    positive_span: <
+      offset: -161
+      length: 1
+    >
+    positive_span: <
+      offset: 8
+      length: 3
+    >
+    positive_delta: 1
+    positive_delta: 2
+    positive_delta: -1
+    positive_delta: -1
+  >
+  timestamp_ms: 1234568
+>`, `name: "test_histogram3"
+help: "Test histogram 3"
+type: HISTOGRAM
+metric: <
+  histogram: <
+		created_timestamp: <
+      seconds: 1
+      nanos: 1
+    >
+    sample_count: 175
+    sample_sum: 0.0008280461746287094
     schema: 3
     zero_threshold: 2.938735877055719e-39
     zero_count: 2
