@@ -1122,7 +1122,7 @@ func handleAppendableError(err error, appended, oooRejected, oobRejected, tooOld
 // The function also increments the chunk metrics if a new chunk is created and performs cleanup
 // operations on the series after appending the samples.
 //
-// There are also specific functions to commit histograms and commitFloatHistograms.
+// There are also specific functions to commit histograms and float histograms.
 func (a *headAppender) commitSamples(acc *appenderCommitContext) {
 	var ok, chunkCreated bool
 
