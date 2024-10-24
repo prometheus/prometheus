@@ -40,7 +40,7 @@ func TestJSONFileLogger_basic(t *testing.T) {
 	_, err = f.Read(r)
 	require.NoError(t, err)
 
-	result, err := regexp.Match(`^{"time":"[^"]+","level":"INFO","source":\{.+\},"msg":"test","hello":"world"}\n`, r)
+	result, err := regexp.Match(`{"time":"[^"]+","level":"INFO","source":"[^"]+","msg":"test","hello":"world"}`, r)
 	require.NoError(t, err)
 	require.True(t, result, "unexpected content: %s", r)
 
