@@ -1723,24 +1723,27 @@ loop:
 			updateMetadata(lset, true)
 		}
 
+		var ct int64
 		if seriesAlreadyScraped && parsedTimestamp == nil {
 			err = storage.ErrDuplicateSampleForTimestamp
 		} else {
 			if sl.enableCTZeroIngestion {
+				// TODO(ridwanmsharif): store the current created timestamp for the counter.
 				if ctMs := p.CreatedTimestamp(); ctMs != nil {
+					ct = *ctMs
 					if isHistogram && sl.enableNativeHistogramIngestion {
 						if h != nil {
-							ref, err = app.AppendHistogramCTZeroSample(ref, lset, t, *ctMs, h, nil)
+							ref, err = app.AppendHistogramCTZeroSample(ref, lset, t, ct, h, nil)
 						} else {
-							ref, err = app.AppendHistogramCTZeroSample(ref, lset, t, *ctMs, nil, fh)
+							ref, err = app.AppendHistogramCTZeroSample(ref, lset, t, ct, nil, fh)
 						}
 					} else {
-						ref, err = app.AppendCTZeroSample(ref, lset, t, *ctMs)
+						ref, err = app.AppendCTZeroSample(ref, lset, t, ct)
 					}
 					if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) { // OOO is a common case, ignoring completely for now.
 						// CT is an experimental feature. For now, we don't need to fail the
 						// scrape on errors updating the created timestamp, log debug.
-						sl.l.Debug("Error when appending CT in scrape loop", "series", string(met), "ct", *ctMs, "t", t, "err", err)
+						sl.l.Debug("Error when appending CT in scrape loop", "series", string(met), "ct", ct, "t", t, "err", err)
 					}
 				}
 			}
@@ -1752,7 +1755,8 @@ loop:
 					ref, err = app.AppendHistogram(ref, lset, t, nil, fh)
 				}
 			} else {
-				ref, err = app.Append(ref, lset, t, val)
+				// TODO(ridwanmsharif) Find the created timestamp from the hash and use that when appending.
+				ref, err = app.Append(ref, lset, t, val, ct)
 			}
 		}
 
@@ -1864,7 +1868,8 @@ loop:
 	if err == nil {
 		sl.cache.forEachStale(func(lset labels.Labels) bool {
 			// Series no longer exposed, mark it stale.
-			_, err = app.Append(0, lset, defTime, math.Float64frombits(value.StaleNaN))
+			// TODO(ridwanmsharif): What should the CT be here?
+			_, err = app.Append(0, lset, defTime, math.Float64frombits(value.StaleNaN), 0)
 			switch {
 			case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
 				// Do not count these in logging, as this is expected if a target
@@ -2019,7 +2024,8 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s []byte, t int64, v
 		lset = sl.reportSampleMutator(b.Labels())
 	}
 
-	ref, err := app.Append(ref, lset, t, v)
+	// TODO(ridwanmsharif): What ct do we use here?
+	ref, err := app.Append(ref, lset, t, v, 0)
 	switch {
 	case err == nil:
 		if !ok {

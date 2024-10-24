@@ -151,6 +151,7 @@ type RefSeries struct {
 // TODO(beorn7): Perhaps make this "polymorphic", including histogram and float-histogram pointers? Then get rid of RefHistogramSample.
 type RefSample struct {
 	Ref chunks.HeadSeriesRef
+	CT  int64
 	T   int64
 	V   float64
 }
@@ -294,6 +295,7 @@ func (d *Decoder) DecodeLabels(dec *encoding.Decbuf) labels.Labels {
 }
 
 // Samples appends samples in rec to the given slice.
+// TODO(ridwanmsharif): Decode the sample with the created timestamp
 func (d *Decoder) Samples(rec []byte, samples []RefSample) ([]RefSample, error) {
 	dec := encoding.Decbuf{B: rec}
 
@@ -637,6 +639,7 @@ func EncodeLabels(buf *encoding.Encbuf, lbls labels.Labels) {
 }
 
 // Samples appends the encoded samples to b and returns the resulting slice.
+// TODO(ridwanmsharif): Encode the sample with the created timestamp
 func (e *Encoder) Samples(samples []RefSample, b []byte) []byte {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(Samples))

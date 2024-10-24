@@ -729,6 +729,7 @@ outer:
 				return false
 			default:
 			}
+			// TODO(ridwanmsharif): Use the created timestamp and preserve it in the timeSeries.
 			if t.shards.enqueue(s.Ref, timeSeries{
 				seriesLabels: lbls,
 				metadata:     meta,
@@ -1964,6 +1965,7 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 		pendingData[nPending].LabelsRefs = symbolTable.SymbolizeLabels(d.seriesLabels, pendingData[nPending].LabelsRefs)
 		switch d.sType {
 		case tSample:
+			// TODO(ridwanmsharif): Update the timeseries created timestamp too.
 			pendingData[nPending].Samples = append(pendingData[nPending].Samples, writev2.Sample{
 				Value:     d.value,
 				Timestamp: d.timestamp,

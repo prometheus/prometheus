@@ -171,7 +171,13 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 				}
 				lbls := lb.Labels()
 
-				if _, err := app.Append(0, lbls, *ts, v); err != nil {
+				pCt := p.CreatedTimestamp()
+				var ct int64
+				if pCt != nil {
+					ct = *pCt
+				}
+
+				if _, err := app.Append(0, lbls, *ts, v, ct); err != nil {
 					return fmt.Errorf("add sample: %w", err)
 				}
 

@@ -271,7 +271,7 @@ func TestRemoteWriteHandler_V1Message(t *testing.T) {
 	for _, ts := range writeRequestFixture.Timeseries {
 		labels := ts.ToLabels(&b, nil)
 		for _, s := range ts.Samples {
-			requireEqual(t, mockSample{labels, s.Timestamp, s.Value}, appendable.samples[i])
+			requireEqual(t, mockSample{labels, s.Timestamp, s.Value, 0}, appendable.samples[i])
 			i++
 		}
 		for _, e := range ts.Exemplars {
@@ -489,7 +489,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				ls := ts.ToLabels(&b, writeV2RequestFixture.Symbols)
 
 				for _, s := range ts.Samples {
-					requireEqual(t, mockSample{ls, s.Timestamp, s.Value}, appendable.samples[i])
+					requireEqual(t, mockSample{ls, s.Timestamp, s.Value, ts.CreatedTimestamp}, appendable.samples[i])
 					i++
 				}
 				for _, hp := range ts.Histograms {
@@ -787,9 +787,10 @@ type mockAppendable struct {
 }
 
 type mockSample struct {
-	l labels.Labels
-	t int64
-	v float64
+	l  labels.Labels
+	t  int64
+	v  float64
+	ct int64
 }
 
 type mockExemplar struct {
@@ -833,7 +834,7 @@ func (m *mockAppendable) Appender(_ context.Context) storage.Appender {
 	return m
 }
 
-func (m *mockAppendable) Append(_ storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+func (m *mockAppendable) Append(_ storage.SeriesRef, l labels.Labels, t int64, v float64, ct int64) (storage.SeriesRef, error) {
 	if m.appendSampleErr != nil {
 		return 0, m.appendSampleErr
 	}
@@ -854,7 +855,7 @@ func (m *mockAppendable) Append(_ storage.SeriesRef, l labels.Labels, t int64, v
 	}
 
 	m.latestSample[l.Hash()] = t
-	m.samples = append(m.samples, mockSample{l, t, v})
+	m.samples = append(m.samples, mockSample{l, t, v, ct})
 	return 0, nil
 }
 
