@@ -1004,9 +1004,8 @@ type appenderCommitContext struct {
 	oooMmapMarkersCount int
 	oooRecords          [][]byte
 	oooCapMax           int64
-	// series              *memSeries
-	appendChunkOpts chunkOpts
-	enc             record.Encoder
+	appendChunkOpts     chunkOpts
+	enc                 record.Encoder
 }
 
 // commitExemplars adds all exemplars from headAppender to the head's exemplar storage.
