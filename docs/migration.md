@@ -35,6 +35,15 @@ This document offers guidance on migrating from Prometheus 2.x to Prometheus 3.0
   Prometheus v3 will log a warning if you continue to pass these to 
   `--enable-feature`.
 
+## Configuration
+
+- The scrape job level configuration option `scrape_classic_histograms` has been 
+  renamed to `always_scrape_classic_histograms`. If you use the 
+  `--enable-feature=native-histograms` feature flag to ingest native histograms 
+  and you also want to ingest classic histograms that an endpoint might expose 
+  along with native histograms, be sure to add this configuration or change your 
+  configuration from the old name.
+
 ## PromQL
 
 - The `.` pattern in regular expressions in PromQL matches newline characters. 
@@ -92,6 +101,8 @@ may now fail if this fallback protocol is not specified.
 The TSDB format has been changed in Prometheus v2.55 in preparation for changes 
 to the index format. Consequently a Prometheus v3 tsdb can only be read by a 
 Prometheus v2.55 or newer.
+Before upgrading to Prometheus v3 please upgrade to v2.55 first and confirm 
+Prometheus works as expected. Only then continue with the upgrade to v3.
 
 ### TSDB Storage contract
 TSDB compatible storage is now expected to return results matching the specified 
