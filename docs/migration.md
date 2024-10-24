@@ -43,6 +43,12 @@ This document offers guidance on migrating from Prometheus 2.x to Prometheus 3.0
   and you also want to ingest classic histograms that an endpoint might expose 
   along with native histograms, be sure to add this configuration or change your 
   configuration from the old name.
+- The `http_config.enable_http2` in `remote_write` items default has been 
+  changed to `false`. In Prometheus v2 the remote write http client would 
+  default to use http2. In order to parallelize multiple remote write queues 
+  across multiple sockets its preferable to not default to http2.
+  If you prefer to use http2 for remote write you must now set 
+  `http_config.enable_http2: true` in your `remote_write` configuration section.
 
 ## PromQL
 
