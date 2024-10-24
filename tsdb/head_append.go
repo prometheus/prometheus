@@ -1004,9 +1004,9 @@ type appenderCommitContext struct {
 	oooMmapMarkersCount int
 	oooRecords          [][]byte
 	oooCapMax           int64
-	series              *memSeries
-	appendChunkOpts     chunkOpts
-	enc                 record.Encoder
+	// series              *memSeries
+	appendChunkOpts chunkOpts
+	enc             record.Encoder
 }
 
 // commitExemplars adds all exemplars from headAppender to the head's exemplar storage.
@@ -1125,12 +1125,13 @@ func handleAppendableError(err error, appended, oooRejected, oobRejected, tooOld
 // There are also specific functions to commit histograms and float histograms.
 func (a *headAppender) commitSamples(acc *appenderCommitContext) {
 	var ok, chunkCreated bool
+	var series *memSeries
 
 	for i, s := range a.samples {
-		acc.series = a.sampleSeries[i]
-		acc.series.Lock()
+		series = a.sampleSeries[i]
+		series.Lock()
 
-		oooSample, _, err := acc.series.appendable(s.T, s.V, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+		oooSample, _, err := series.appendable(s.T, s.V, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		if err != nil {
 			handleAppendableError(err, &acc.floatsAppended, &acc.floatOOORejected, &acc.floatOOBRejected, &acc.floatTooOldRejected)
 		}
@@ -1142,9 +1143,9 @@ func (a *headAppender) commitSamples(acc *appenderCommitContext) {
 			// Sample is OOO and OOO handling is enabled
 			// and the delta is within the OOO tolerance.
 			var mmapRefs []chunks.ChunkDiskMapperRef
-			ok, chunkCreated, mmapRefs = acc.series.insert(s.T, s.V, nil, nil, a.head.chunkDiskMapper, acc.oooCapMax, a.head.logger)
+			ok, chunkCreated, mmapRefs = series.insert(s.T, s.V, nil, nil, a.head.chunkDiskMapper, acc.oooCapMax, a.head.logger)
 			if chunkCreated {
-				r, ok := acc.oooMmapMarkers[acc.series.ref]
+				r, ok := acc.oooMmapMarkers[series.ref]
 				if !ok || r != nil {
 					// !ok means there are no markers collected for these samples yet. So we first flush the samples
 					// before setting this m-map marker.
@@ -1159,11 +1160,11 @@ func (a *headAppender) commitSamples(acc *appenderCommitContext) {
 					acc.oooMmapMarkers = make(map[chunks.HeadSeriesRef][]chunks.ChunkDiskMapperRef)
 				}
 				if len(mmapRefs) > 0 {
-					acc.oooMmapMarkers[acc.series.ref] = mmapRefs
+					acc.oooMmapMarkers[series.ref] = mmapRefs
 					acc.oooMmapMarkersCount += len(mmapRefs)
 				} else {
 					// No chunk was written to disk, so we need to set an initial marker for this series.
-					acc.oooMmapMarkers[acc.series.ref] = []chunks.ChunkDiskMapperRef{0}
+					acc.oooMmapMarkers[series.ref] = []chunks.ChunkDiskMapperRef{0}
 					acc.oooMmapMarkersCount++
 				}
 			}
@@ -1184,7 +1185,7 @@ func (a *headAppender) commitSamples(acc *appenderCommitContext) {
 				acc.floatsAppended--
 			}
 		default:
-			ok, chunkCreated = acc.series.append(s.T, s.V, a.appendID, acc.appendChunkOpts)
+			ok, chunkCreated = series.append(s.T, s.V, a.appendID, acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
 					acc.inOrderMint = s.T
@@ -1203,20 +1204,22 @@ func (a *headAppender) commitSamples(acc *appenderCommitContext) {
 			a.head.metrics.chunksCreated.Inc()
 		}
 
-		acc.series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
-		acc.series.pendingCommit = false
-		acc.series.Unlock()
+		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
+		series.pendingCommit = false
+		series.Unlock()
 	}
 }
 
 // For details on the commitHistograms function, see the commitSamples docs.
 func (a *headAppender) commitHistograms(acc *appenderCommitContext) {
 	var ok, chunkCreated bool
-	for i, s := range a.histograms {
-		acc.series = a.histogramSeries[i]
-		acc.series.Lock()
+	var series *memSeries
 
-		oooSample, _, err := acc.series.appendableHistogram(s.T, s.H, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head.opts.EnableOOONativeHistograms.Load())
+	for i, s := range a.histograms {
+		series = a.histogramSeries[i]
+		series.Lock()
+
+		oooSample, _, err := series.appendableHistogram(s.T, s.H, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head.opts.EnableOOONativeHistograms.Load())
 		if err != nil {
 			handleAppendableError(err, &acc.histogramsAppended, &acc.histoOOORejected, &acc.histoOOBRejected, &acc.histoTooOldRejected)
 		}
@@ -1228,9 +1231,9 @@ func (a *headAppender) commitHistograms(acc *appenderCommitContext) {
 			// Sample is OOO and OOO handling is enabled
 			// and the delta is within the OOO tolerance.
 			var mmapRefs []chunks.ChunkDiskMapperRef
-			ok, chunkCreated, mmapRefs = acc.series.insert(s.T, 0, s.H, nil, a.head.chunkDiskMapper, acc.oooCapMax, a.head.logger)
+			ok, chunkCreated, mmapRefs = series.insert(s.T, 0, s.H, nil, a.head.chunkDiskMapper, acc.oooCapMax, a.head.logger)
 			if chunkCreated {
-				r, ok := acc.oooMmapMarkers[acc.series.ref]
+				r, ok := acc.oooMmapMarkers[series.ref]
 				if !ok || r != nil {
 					// !ok means there are no markers collected for these samples yet. So we first flush the samples
 					// before setting this m-map marker.
@@ -1245,11 +1248,11 @@ func (a *headAppender) commitHistograms(acc *appenderCommitContext) {
 					acc.oooMmapMarkers = make(map[chunks.HeadSeriesRef][]chunks.ChunkDiskMapperRef)
 				}
 				if len(mmapRefs) > 0 {
-					acc.oooMmapMarkers[acc.series.ref] = mmapRefs
+					acc.oooMmapMarkers[series.ref] = mmapRefs
 					acc.oooMmapMarkersCount += len(mmapRefs)
 				} else {
 					// No chunk was written to disk, so we need to set an initial marker for this series.
-					acc.oooMmapMarkers[acc.series.ref] = []chunks.ChunkDiskMapperRef{0}
+					acc.oooMmapMarkers[series.ref] = []chunks.ChunkDiskMapperRef{0}
 					acc.oooMmapMarkersCount++
 				}
 			}
@@ -1270,7 +1273,7 @@ func (a *headAppender) commitHistograms(acc *appenderCommitContext) {
 				acc.histogramsAppended--
 			}
 		default:
-			ok, chunkCreated = acc.series.appendHistogram(s.T, s.H, a.appendID, acc.appendChunkOpts)
+			ok, chunkCreated = series.appendHistogram(s.T, s.H, a.appendID, acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
 					acc.inOrderMint = s.T
@@ -1289,20 +1292,22 @@ func (a *headAppender) commitHistograms(acc *appenderCommitContext) {
 			a.head.metrics.chunksCreated.Inc()
 		}
 
-		acc.series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
-		acc.series.pendingCommit = false
-		acc.series.Unlock()
+		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
+		series.pendingCommit = false
+		series.Unlock()
 	}
 }
 
 // For details on the commitFloatHistograms function, see the commitSamples docs.
 func (a *headAppender) commitFloatHistograms(acc *appenderCommitContext) {
 	var ok, chunkCreated bool
-	for i, s := range a.floatHistograms {
-		acc.series = a.floatHistogramSeries[i]
-		acc.series.Lock()
+	var series *memSeries
 
-		oooSample, _, err := acc.series.appendableFloatHistogram(s.T, s.FH, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head.opts.EnableOOONativeHistograms.Load())
+	for i, s := range a.floatHistograms {
+		series = a.floatHistogramSeries[i]
+		series.Lock()
+
+		oooSample, _, err := series.appendableFloatHistogram(s.T, s.FH, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head.opts.EnableOOONativeHistograms.Load())
 		if err != nil {
 			handleAppendableError(err, &acc.histogramsAppended, &acc.histoOOORejected, &acc.histoOOBRejected, &acc.histoTooOldRejected)
 		}
@@ -1314,9 +1319,9 @@ func (a *headAppender) commitFloatHistograms(acc *appenderCommitContext) {
 			// Sample is OOO and OOO handling is enabled
 			// and the delta is within the OOO tolerance.
 			var mmapRefs []chunks.ChunkDiskMapperRef
-			ok, chunkCreated, mmapRefs = acc.series.insert(s.T, 0, nil, s.FH, a.head.chunkDiskMapper, acc.oooCapMax, a.head.logger)
+			ok, chunkCreated, mmapRefs = series.insert(s.T, 0, nil, s.FH, a.head.chunkDiskMapper, acc.oooCapMax, a.head.logger)
 			if chunkCreated {
-				r, ok := acc.oooMmapMarkers[acc.series.ref]
+				r, ok := acc.oooMmapMarkers[series.ref]
 				if !ok || r != nil {
 					// !ok means there are no markers collected for these samples yet. So we first flush the samples
 					// before setting this m-map marker.
@@ -1331,11 +1336,11 @@ func (a *headAppender) commitFloatHistograms(acc *appenderCommitContext) {
 					acc.oooMmapMarkers = make(map[chunks.HeadSeriesRef][]chunks.ChunkDiskMapperRef)
 				}
 				if len(mmapRefs) > 0 {
-					acc.oooMmapMarkers[acc.series.ref] = mmapRefs
+					acc.oooMmapMarkers[series.ref] = mmapRefs
 					acc.oooMmapMarkersCount += len(mmapRefs)
 				} else {
 					// No chunk was written to disk, so we need to set an initial marker for this series.
-					acc.oooMmapMarkers[acc.series.ref] = []chunks.ChunkDiskMapperRef{0}
+					acc.oooMmapMarkers[series.ref] = []chunks.ChunkDiskMapperRef{0}
 					acc.oooMmapMarkersCount++
 				}
 			}
@@ -1356,7 +1361,7 @@ func (a *headAppender) commitFloatHistograms(acc *appenderCommitContext) {
 				acc.histogramsAppended--
 			}
 		default:
-			ok, chunkCreated = acc.series.appendFloatHistogram(s.T, s.FH, a.appendID, acc.appendChunkOpts)
+			ok, chunkCreated = series.appendFloatHistogram(s.T, s.FH, a.appendID, acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
 					acc.inOrderMint = s.T
@@ -1375,9 +1380,9 @@ func (a *headAppender) commitFloatHistograms(acc *appenderCommitContext) {
 			a.head.metrics.chunksCreated.Inc()
 		}
 
-		acc.series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
-		acc.series.pendingCommit = false
-		acc.series.Unlock()
+		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
+		series.pendingCommit = false
+		series.Unlock()
 	}
 }
 
@@ -1385,12 +1390,13 @@ func (a *headAppender) commitFloatHistograms(acc *appenderCommitContext) {
 // It iterates over the metadata slice and updates the corresponding series
 // with the new metadata information. The series is locked during the update
 // to ensure thread safety.
-func (a *headAppender) commitMetadata(acc *appenderCommitContext) {
+func (a *headAppender) commitMetadata() {
+	var series *memSeries
 	for i, m := range a.metadata {
-		acc.series = a.metadataSeries[i]
-		acc.series.Lock()
-		acc.series.meta = &metadata.Metadata{Type: record.ToMetricType(m.Type), Unit: m.Unit, Help: m.Help}
-		acc.series.Unlock()
+		series = a.metadataSeries[i]
+		series.Lock()
+		series.meta = &metadata.Metadata{Type: record.ToMetricType(m.Type), Unit: m.Unit, Help: m.Help}
+		series.Unlock()
 	}
 }
 
@@ -1446,7 +1452,7 @@ func (a *headAppender) Commit() (err error) {
 	a.commitSamples(acc)
 	a.commitHistograms(acc)
 	a.commitFloatHistograms(acc)
-	a.commitMetadata(acc)
+	a.commitMetadata()
 
 	a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatOOORejected))
 	a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.histoOOORejected))
