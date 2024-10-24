@@ -1613,6 +1613,12 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 	// Take an appender with limits.
 	app = appender(app, sl.sampleLimit, sl.bucketLimit, sl.maxSchema)
 
+	var appWithCT storage.AppenderWithCT
+	var canEncodeCT bool
+	if sl.enableCTZeroIngestion {
+		appWithCT, canEncodeCT = app.(storage.AppenderWithCT)
+	}
+
 	defer func() {
 		if err != nil {
 			return
@@ -1726,21 +1732,23 @@ loop:
 		if seriesAlreadyScraped && parsedTimestamp == nil {
 			err = storage.ErrDuplicateSampleForTimestamp
 		} else {
+			var ct int64
 			if sl.enableCTZeroIngestion {
 				if ctMs := p.CreatedTimestamp(); ctMs != nil {
+					ct = *ctMs
 					if isHistogram && sl.enableNativeHistogramIngestion {
 						if h != nil {
-							ref, err = app.AppendHistogramCTZeroSample(ref, lset, t, *ctMs, h, nil)
+							ref, err = app.AppendHistogramCTZeroSample(ref, lset, t, ct, h, nil)
 						} else {
-							ref, err = app.AppendHistogramCTZeroSample(ref, lset, t, *ctMs, nil, fh)
+							ref, err = app.AppendHistogramCTZeroSample(ref, lset, t, ct, nil, fh)
 						}
 					} else {
-						ref, err = app.AppendCTZeroSample(ref, lset, t, *ctMs)
+						ref, err = app.AppendCTZeroSample(ref, lset, t, ct)
 					}
 					if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) { // OOO is a common case, ignoring completely for now.
 						// CT is an experimental feature. For now, we don't need to fail the
 						// scrape on errors updating the created timestamp, log debug.
-						sl.l.Debug("Error when appending CT in scrape loop", "series", string(met), "ct", *ctMs, "t", t, "err", err)
+						sl.l.Debug("Error when appending CT in scrape loop", "series", string(met), "ct", ct, "t", t, "err", err)
 					}
 				}
 			}
@@ -1752,7 +1760,11 @@ loop:
 					ref, err = app.AppendHistogram(ref, lset, t, nil, fh)
 				}
 			} else {
-				ref, err = app.Append(ref, lset, t, val)
+				if canEncodeCT && ct != 0 {
+					ref, err = appWithCT.AppendWithCT(ref, lset, t, val, ct)
+				} else {
+					ref, err = app.Append(ref, lset, t, val)
+				}
 			}
 		}
 
