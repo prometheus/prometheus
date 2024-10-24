@@ -568,7 +568,7 @@ Instant vectors are returned as result type `vector`. The corresponding
 Each series could have the `"value"` key, or the `"histogram"` key, but not both.
 
 Series are not guaranteed to be returned in any particular order unless a function
-such as [`sort`](functions.md#sort) or [`sort_by_label`](functions.md#sort_by_label)`
+such as [`sort`](functions.md#sort) or [`sort_by_label`](functions.md#sort_by_label)
 is used.
 
 ### Scalars
@@ -905,7 +905,7 @@ curl -G http://localhost:9091/api/v1/targets/metadata \
 ```
 
 The following example returns metadata for all metrics for all targets with
-label `instance="127.0.0.1:9090`.
+label `instance="127.0.0.1:9090"`.
 
 ```json
 curl -G http://localhost:9091/api/v1/targets/metadata \
@@ -1190,9 +1190,11 @@ The following endpoint returns various cardinality statistics about the Promethe
 GET /api/v1/status/tsdb
 ```
 URL query parameters:
+
 - `limit=<number>`: Limit the number of returned items to a given number for each set of statistics. By default, 10 items are returned.
 
-The `data` section of the query result consists of
+The `data` section of the query result consists of:
+
 - **headStats**: This provides the following data about the head block of the TSDB:
   - **numSeries**: The number of series.
   - **chunkCount**: The number of chunks.
@@ -1268,13 +1270,13 @@ The following endpoint returns information about the WAL replay:
 GET /api/v1/status/walreplay
 ```
 
-**read**: The number of segments replayed so far.
-**total**: The total number segments needed to be replayed.
-**progress**: The progress of the replay (0 - 100%).
-**state**: The state of the replay. Possible states:
-- **waiting**: Waiting for the replay to start.
-- **in progress**: The replay is in progress.
-- **done**: The replay has finished.
+- **read**: The number of segments replayed so far.
+- **total**: The total number segments needed to be replayed.
+- **progress**: The progress of the replay (0 - 100%).
+- **state**: The state of the replay. Possible states:
+  - **waiting**: Waiting for the replay to start.
+  - **in progress**: The replay is in progress.
+  - **done**: The replay has finished.
 
 ```json
 $ curl http://localhost:9090/api/v1/status/walreplay
