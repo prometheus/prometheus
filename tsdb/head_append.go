@@ -46,6 +46,21 @@ func (a *initAppender) SetOptions(opts *storage.AppendOptions) {
 	}
 }
 
+func (a *initAppender) AppendWithCT(ref storage.SeriesRef, lset labels.Labels, t int64, v float64, ct int64) (storage.SeriesRef, error) {
+	if a.app != nil {
+		appWithCT, ok := a.app.(storage.AppenderWithCT)
+		if ok {
+			return appWithCT.AppendWithCT(ref, lset, t, v, ct)
+		}
+		return a.app.Append(ref, lset, t, v)
+	}
+
+	a.head.initTime(t)
+	headAppender := a.head.appender()
+	a.app = headAppender
+	return headAppender.AppendWithCT(ref, lset, t, v, ct)
+}
+
 func (a *initAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	if a.app != nil {
 		return a.app.Append(ref, lset, t, v)
@@ -340,6 +355,55 @@ func (a *headAppender) SetOptions(opts *storage.AppendOptions) {
 }
 
 func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+	return a.appendWithCT(ref, lset, t, v, 0)
+}
+
+func (a *headAppender) AppendWithCT(ref storage.SeriesRef, lset labels.Labels, t int64, v float64, ct int64) (storage.SeriesRef, error) {
+	return a.appendWithCT(ref, lset, t, v, ct)
+}
+
+// AppendCTZeroSample appends synthetic zero sample for ct timestamp. It returns
+// error when sample can't be appended. See
+// storage.CreatedTimestampAppender.AppendCTZeroSample for further documentation.
+func (a *headAppender) AppendCTZeroSample(ref storage.SeriesRef, lset labels.Labels, t, ct int64) (storage.SeriesRef, error) {
+	if ct >= t {
+		return 0, storage.ErrCTNewerThanSample
+	}
+
+	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
+	if s == nil {
+		var err error
+		s, _, err = a.getOrCreate(lset)
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	// Check if CT wouldn't be OOO vs samples we already might have for this series.
+	// NOTE(bwplotka): This will be often hit as it's expected for long living
+	// counters to share the same CT.
+	s.Lock()
+	isOOO, _, err := s.appendable(ct, 0, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+	if err == nil {
+		s.pendingCommit = true
+	}
+	s.Unlock()
+	if err != nil {
+		return 0, err
+	}
+	if isOOO {
+		return storage.SeriesRef(s.ref), storage.ErrOutOfOrderCT
+	}
+
+	if ct > a.maxt {
+		a.maxt = ct
+	}
+	a.samples = append(a.samples, record.RefSample{Ref: s.ref, T: ct, V: 0.0, CT: ct})
+	a.sampleSeries = append(a.sampleSeries, s)
+	return storage.SeriesRef(s.ref), nil
+}
+
+func (a *headAppender) appendWithCT(ref storage.SeriesRef, lset labels.Labels, t int64, v float64, ct int64) (storage.SeriesRef, error) {
 	// Fail fast if OOO is disabled and the sample is out of bounds.
 	// Otherwise a full check will be done later to decide if the sample is in-order or out-of-order.
 	if a.oooTimeWindow == 0 && t < a.minValidTime {
@@ -401,53 +465,15 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	if t > a.maxt {
 		a.maxt = t
 	}
-
+	if ct > t {
+		ct = t
+	}
 	a.samples = append(a.samples, record.RefSample{
 		Ref: s.ref,
 		T:   t,
 		V:   v,
+		CT:  ct,
 	})
-	a.sampleSeries = append(a.sampleSeries, s)
-	return storage.SeriesRef(s.ref), nil
-}
-
-// AppendCTZeroSample appends synthetic zero sample for ct timestamp. It returns
-// error when sample can't be appended. See
-// storage.CreatedTimestampAppender.AppendCTZeroSample for further documentation.
-func (a *headAppender) AppendCTZeroSample(ref storage.SeriesRef, lset labels.Labels, t, ct int64) (storage.SeriesRef, error) {
-	if ct >= t {
-		return 0, storage.ErrCTNewerThanSample
-	}
-
-	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
-	if s == nil {
-		var err error
-		s, _, err = a.getOrCreate(lset)
-		if err != nil {
-			return 0, err
-		}
-	}
-
-	// Check if CT wouldn't be OOO vs samples we already might have for this series.
-	// NOTE(bwplotka): This will be often hit as it's expected for long living
-	// counters to share the same CT.
-	s.Lock()
-	isOOO, _, err := s.appendable(ct, 0, a.headMaxt, a.minValidTime, a.oooTimeWindow)
-	if err == nil {
-		s.pendingCommit = true
-	}
-	s.Unlock()
-	if err != nil {
-		return 0, err
-	}
-	if isOOO {
-		return storage.SeriesRef(s.ref), storage.ErrOutOfOrderCT
-	}
-
-	if ct > a.maxt {
-		a.maxt = ct
-	}
-	a.samples = append(a.samples, record.RefSample{Ref: s.ref, T: ct, V: 0.0})
 	a.sampleSeries = append(a.sampleSeries, s)
 	return storage.SeriesRef(s.ref), nil
 }

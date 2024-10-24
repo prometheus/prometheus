@@ -285,6 +285,12 @@ type Appender interface {
 	CreatedTimestampAppender
 }
 
+type AppenderWithCT interface {
+	Appender
+
+	AppendWithCT(ref SeriesRef, l labels.Labels, t int64, v float64, ct int64) (SeriesRef, error)
+}
+
 // GetRef is an extra interface on Appenders used by downstream projects
 // (e.g. Cortex) to avoid maintaining a parallel set of references.
 type GetRef interface {

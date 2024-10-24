@@ -6501,6 +6501,85 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 	}
 }
 
+func TestHeadAppender_CTinRefSample(t *testing.T) {
+	type appendableSamples struct {
+		t  int64
+		v  float64
+		ct int64
+	}
+	for _, tc := range []struct {
+		name              string
+		appendableSamples []appendableSamples
+		expectedSamples   []record.RefSample
+	}{
+		{
+			name: "sample with non-zero ct",
+			appendableSamples: []appendableSamples{
+				{t: 100, v: 10, ct: 1},
+			},
+			expectedSamples: []record.RefSample{
+				{T: 100, V: 10, CT: 1, Ref: 1},
+			},
+		},
+		{
+			name: "sample with ct > t",
+			appendableSamples: []appendableSamples{
+				{t: 100, v: 10, ct: 101},
+			},
+			expectedSamples: []record.RefSample{
+				{T: 100, V: 10, CT: 100, Ref: 1},
+			},
+		},
+		{
+			name: "multiple samples + same ct",
+			appendableSamples: []appendableSamples{
+				{t: 100, v: 10, ct: 1},
+				{t: 101, v: 10, ct: 1},
+			},
+			expectedSamples: []record.RefSample{
+				{T: 100, V: 10, CT: 1, Ref: 1},
+				{T: 101, V: 10, CT: 1, Ref: 1},
+			},
+		},
+		{
+			name: "multiple samples + different ct",
+			appendableSamples: []appendableSamples{
+				{t: 100, v: 10, ct: 1},
+				{t: 102, v: 10, ct: 101},
+			},
+			expectedSamples: []record.RefSample{
+				{T: 100, V: 10, CT: 1, Ref: 1},
+				{T: 102, V: 10, CT: 101, Ref: 1},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, w := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
+			defer func() {
+				require.NoError(t, h.Close())
+			}()
+			a := h.Appender(context.Background())
+			aWithCT, ok := a.(storage.AppenderWithCT)
+			require.True(t, ok)
+
+			lbls := labels.FromStrings("foo", "bar")
+			for _, sample := range tc.appendableSamples {
+				_, err := aWithCT.AppendWithCT(0, lbls, sample.t, sample.v, sample.ct)
+				require.NoError(t, err)
+			}
+			require.NoError(t, a.Commit())
+
+			recs := readTestWAL(t, w.Dir())
+			_, ok = recs[0].([]record.RefSeries)
+			require.True(t, ok, "expected first record to be a RefSeries")
+			actualType := reflect.TypeOf(recs[1])
+			require.Equal(t, reflect.TypeOf([]record.RefSample{}), actualType, "expected second record to be a record.RefSample")
+
+			require.Equal(t, tc.expectedSamples, recs[1])
+		})
+	}
+}
+
 func TestHeadCompactableDoesNotCompactEmptyHead(t *testing.T) {
 	// Use a chunk range of 1 here so that if we attempted to determine if the head
 	// was compactable using default values for min and max times, `Head.compactable()`
