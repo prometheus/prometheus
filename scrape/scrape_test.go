@@ -65,10 +65,11 @@ func TestMain(m *testing.M) {
 	testutil.TolerantVerifyLeak(m)
 }
 
-func newTestScrapeMetrics(t testing.TB) *scrapeMetrics {
+func newTestScrapeMetrics(tb testing.TB) *scrapeMetrics {
+	tb.Helper()
 	reg := prometheus.NewRegistry()
 	metrics, err := newScrapeMetrics(reg)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 	return metrics
 }
 
@@ -755,7 +756,8 @@ func TestScrapePoolScrapeLoopsStarted(t *testing.T) {
 	}
 }
 
-func newBasicScrapeLoop(t testing.TB, ctx context.Context, scraper scraper, app func(ctx context.Context) storage.Appender, interval time.Duration) *scrapeLoop {
+func newBasicScrapeLoop(tb testing.TB, ctx context.Context, scraper scraper, app func(ctx context.Context) storage.Appender, interval time.Duration) *scrapeLoop {
+	tb.Helper()
 	return newScrapeLoop(ctx,
 		scraper,
 		nil, nil,
@@ -780,7 +782,7 @@ func newBasicScrapeLoop(t testing.TB, ctx context.Context, scraper scraper, app 
 		false,
 		nil,
 		false,
-		newTestScrapeMetrics(t),
+		newTestScrapeMetrics(tb),
 		false,
 		model.LegacyValidation,
 		"text/plain",
@@ -1110,14 +1112,15 @@ test_metric 1
 	require.Equal(t, "", md.Unit)
 }
 
-func simpleTestScrapeLoop(t testing.TB) (context.Context, *scrapeLoop) {
+func simpleTestScrapeLoop(tb testing.TB) (context.Context, *scrapeLoop) {
+	tb.Helper()
 	// Need a full storage for correct Add/AddFast semantics.
-	s := teststorage.New(t)
-	t.Cleanup(func() { s.Close() })
+	s := teststorage.New(tb)
+	tb.Cleanup(func() { s.Close() })
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sl := newBasicScrapeLoop(t, ctx, &testScraper{}, s.Appender, 0)
-	t.Cleanup(func() { cancel() })
+	sl := newBasicScrapeLoop(tb, ctx, &testScraper{}, s.Appender, 0)
+	tb.Cleanup(func() { cancel() })
 
 	return ctx, sl
 }
@@ -1618,6 +1621,7 @@ func TestScrapeLoopAppend(t *testing.T) {
 }
 
 func requireEqual(t *testing.T, expected, actual interface{}, msgAndArgs ...interface{}) {
+	t.Helper()
 	testutil.RequireEqualWithOptions(t, expected, actual,
 		[]cmp.Option{cmp.Comparer(equalFloatSamples), cmp.AllowUnexported(histogramSample{})},
 		msgAndArgs...)
@@ -4480,6 +4484,7 @@ func TestNativeHistogramMaxSchemaSet(t *testing.T) {
 }
 
 func testNativeHistogramMaxSchemaSet(t *testing.T, minBucketFactor string, expectedSchema int32) {
+	t.Helper()
 	// Create a ProtoBuf message to serve as a Prometheus metric.
 	nativeHistogram := prometheus.NewHistogram(
 		prometheus.HistogramOpts{
@@ -4604,6 +4609,7 @@ func TestTargetScrapeConfigWithLabels(t *testing.T) {
 	)
 
 	createTestServer := func(t *testing.T, done chan struct{}) *url.URL {
+		t.Helper()
 		server := httptest.NewServer(
 			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				defer close(done)
@@ -4622,6 +4628,7 @@ func TestTargetScrapeConfigWithLabels(t *testing.T) {
 	}
 
 	run := func(t *testing.T, cfg *config.ScrapeConfig, targets []*targetgroup.Group) chan struct{} {
+		t.Helper()
 		done := make(chan struct{})
 		srvURL := createTestServer(t, done)
 

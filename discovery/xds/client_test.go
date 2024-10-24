@@ -92,6 +92,7 @@ func TestCreateNewHTTPResourceClient(t *testing.T) {
 }
 
 func createTestHTTPResourceClient(t *testing.T, conf *HTTPResourceClientConfig, protocolVersion ProtocolVersion, responder discoveryResponder) (*HTTPResourceClient, func()) {
+	t.Helper()
 	s := createTestHTTPServer(t, func(request *v3.DiscoveryRequest) (*v3.DiscoveryResponse, error) {
 		require.Equal(t, conf.ResourceTypeURL, request.TypeUrl)
 		require.Equal(t, conf.ClientID, request.Node.Id)

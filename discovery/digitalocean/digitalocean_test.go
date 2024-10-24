@@ -36,6 +36,7 @@ func (s *DigitalOceanSDTestSuite) TearDownSuite() {
 }
 
 func (s *DigitalOceanSDTestSuite) SetupTest(t *testing.T) {
+	t.Helper()
 	s.Mock = NewSDMock(t)
 	s.Mock.Setup()
 

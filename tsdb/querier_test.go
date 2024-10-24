@@ -104,6 +104,7 @@ type seriesSamples struct {
 // Index: labels -> postings -> chunkMetas -> chunkRef.
 // ChunkReader: ref -> vals.
 func createIdxChkReaders(t *testing.T, tc []seriesSamples) (IndexReader, ChunkReader, int64, int64) {
+	t.Helper()
 	sort.Slice(tc, func(i, j int) bool {
 		return labels.Compare(labels.FromMap(tc[i].lset), labels.FromMap(tc[i].lset)) < 0
 	})
@@ -194,6 +195,7 @@ type blockQuerierTestCase struct {
 }
 
 func testBlockQuerier(t *testing.T, c blockQuerierTestCase, ir IndexReader, cr ChunkReader, stones *tombstones.MemTombstones) {
+	t.Helper()
 	t.Run("sample", func(t *testing.T) {
 		q := blockQuerier{
 			blockBaseQuerier: &blockBaseQuerier{
@@ -1817,6 +1819,7 @@ func rmChunkRefs(chks []chunks.Meta) {
 }
 
 func checkCurrVal(t *testing.T, valType chunkenc.ValueType, it *populateWithDelSeriesIterator, expectedTs, expectedValue int) {
+	t.Helper()
 	switch valType {
 	case chunkenc.ValFloat:
 		ts, v := it.At()
@@ -3099,6 +3102,7 @@ func TestQuerierIndexQueriesRace(t *testing.T) {
 }
 
 func appendSeries(t *testing.T, ctx context.Context, wg *sync.WaitGroup, h *Head) {
+	t.Helper()
 	defer wg.Done()
 
 	for i := 0; ctx.Err() == nil; i++ {
@@ -3256,6 +3260,7 @@ func BenchmarkQueries(b *testing.B) {
 }
 
 func benchQuery(b *testing.B, expExpansions int, q storage.Querier, selectors labels.Selector) {
+	b.Helper()
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {

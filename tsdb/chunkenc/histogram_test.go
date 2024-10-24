@@ -733,6 +733,7 @@ func TestHistogramChunkAppendable(t *testing.T) {
 }
 
 func assertNewHistogramChunkOnAppend(t *testing.T, oldChunk Chunk, hApp *HistogramAppender, ts int64, h *histogram.Histogram, expectHeader CounterResetHeader) {
+	t.Helper()
 	oldChunkBytes := oldChunk.Bytes()
 	newChunk, recoded, newAppender, err := hApp.AppendHistogram(nil, ts, h, false)
 	require.Equal(t, oldChunkBytes, oldChunk.Bytes()) // Sanity check that previous chunk is untouched.
@@ -747,6 +748,7 @@ func assertNewHistogramChunkOnAppend(t *testing.T, oldChunk Chunk, hApp *Histogr
 }
 
 func assertNoNewHistogramChunkOnAppend(t *testing.T, currChunk Chunk, hApp *HistogramAppender, ts int64, h *histogram.Histogram, expectHeader CounterResetHeader) {
+	t.Helper()
 	prevChunkBytes := currChunk.Bytes()
 	newChunk, recoded, newAppender, err := hApp.AppendHistogram(nil, ts, h, false)
 	require.Greater(t, len(currChunk.Bytes()), len(prevChunkBytes)) // Check that current chunk is bigger than previously.
@@ -760,6 +762,7 @@ func assertNoNewHistogramChunkOnAppend(t *testing.T, currChunk Chunk, hApp *Hist
 }
 
 func assertRecodedHistogramChunkOnAppend(t *testing.T, prevChunk Chunk, hApp *HistogramAppender, ts int64, h *histogram.Histogram, expectHeader CounterResetHeader) {
+	t.Helper()
 	prevChunkBytes := prevChunk.Bytes()
 	newChunk, recoded, newAppender, err := hApp.AppendHistogram(nil, ts, h, false)
 	require.Equal(t, prevChunkBytes, prevChunk.Bytes()) // Sanity check that previous chunk is untouched. This may change in the future if we implement in-place recoding.
@@ -774,6 +777,7 @@ func assertRecodedHistogramChunkOnAppend(t *testing.T, prevChunk Chunk, hApp *Hi
 }
 
 func assertSampleCount(t *testing.T, c Chunk, exp int64, vtype ValueType) {
+	t.Helper()
 	count := int64(0)
 	it := c.Iterator(nil)
 	require.NoError(t, it.Err())

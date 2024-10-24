@@ -67,22 +67,24 @@ func newTestHeadDefaultOptions(chunkRange int64, oooEnabled bool) *HeadOptions {
 	return opts
 }
 
-func newTestHead(t testing.TB, chunkRange int64, compressWAL wlog.CompressionType, oooEnabled bool) (*Head, *wlog.WL) {
-	return newTestHeadWithOptions(t, compressWAL, newTestHeadDefaultOptions(chunkRange, oooEnabled))
+func newTestHead(tb testing.TB, chunkRange int64, compressWAL wlog.CompressionType, oooEnabled bool) (*Head, *wlog.WL) {
+	tb.Helper()
+	return newTestHeadWithOptions(tb, compressWAL, newTestHeadDefaultOptions(chunkRange, oooEnabled))
 }
 
-func newTestHeadWithOptions(t testing.TB, compressWAL wlog.CompressionType, opts *HeadOptions) (*Head, *wlog.WL) {
-	dir := t.TempDir()
+func newTestHeadWithOptions(tb testing.TB, compressWAL wlog.CompressionType, opts *HeadOptions) (*Head, *wlog.WL) {
+	tb.Helper()
+	dir := tb.TempDir()
 	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compressWAL)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
 	// Override the chunks dir with the testing one.
 	opts.ChunkDirRoot = dir
 
 	h, err := NewHead(nil, nil, wal, nil, opts, nil)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
-	require.NoError(t, h.chunkDiskMapper.IterateAllChunks(func(_ chunks.HeadSeriesRef, _ chunks.ChunkDiskMapperRef, _, _ int64, _ uint16, _ chunkenc.Encoding, _ bool) error {
+	require.NoError(tb, h.chunkDiskMapper.IterateAllChunks(func(_ chunks.HeadSeriesRef, _ chunks.ChunkDiskMapperRef, _, _ int64, _ uint16, _ chunkenc.Encoding, _ bool) error {
 		return nil
 	}))
 
@@ -147,29 +149,31 @@ func BenchmarkHeadAppender_Append_Commit_ExistingSeries(b *testing.B) {
 	}
 }
 
-func populateTestWL(t testing.TB, w *wlog.WL, recs []interface{}) {
+func populateTestWL(tb testing.TB, w *wlog.WL, recs []interface{}) {
+	tb.Helper()
 	var enc record.Encoder
 	for _, r := range recs {
 		switch v := r.(type) {
 		case []record.RefSeries:
-			require.NoError(t, w.Log(enc.Series(v, nil)))
+			require.NoError(tb, w.Log(enc.Series(v, nil)))
 		case []record.RefSample:
-			require.NoError(t, w.Log(enc.Samples(v, nil)))
+			require.NoError(tb, w.Log(enc.Samples(v, nil)))
 		case []tombstones.Stone:
-			require.NoError(t, w.Log(enc.Tombstones(v, nil)))
+			require.NoError(tb, w.Log(enc.Tombstones(v, nil)))
 		case []record.RefExemplar:
-			require.NoError(t, w.Log(enc.Exemplars(v, nil)))
+			require.NoError(tb, w.Log(enc.Exemplars(v, nil)))
 		case []record.RefMmapMarker:
-			require.NoError(t, w.Log(enc.MmapMarkers(v, nil)))
+			require.NoError(tb, w.Log(enc.MmapMarkers(v, nil)))
 		}
 	}
 }
 
-func readTestWAL(t testing.TB, dir string) (recs []interface{}) {
+func readTestWAL(tb testing.TB, dir string) (recs []interface{}) {
+	tb.Helper()
 	sr, err := wlog.NewSegmentsReader(dir)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 	defer func() {
-		require.NoError(t, sr.Close())
+		require.NoError(tb, sr.Close())
 	}()
 
 	dec := record.NewDecoder(labels.NewSymbolTable())
@@ -181,37 +185,37 @@ func readTestWAL(t testing.TB, dir string) (recs []interface{}) {
 		switch dec.Type(rec) {
 		case record.Series:
 			series, err := dec.Series(rec, nil)
-			require.NoError(t, err)
+			require.NoError(tb, err)
 			recs = append(recs, series)
 		case record.Samples:
 			samples, err := dec.Samples(rec, nil)
-			require.NoError(t, err)
+			require.NoError(tb, err)
 			recs = append(recs, samples)
 		case record.HistogramSamples:
 			samples, err := dec.HistogramSamples(rec, nil)
-			require.NoError(t, err)
+			require.NoError(tb, err)
 			recs = append(recs, samples)
 		case record.FloatHistogramSamples:
 			samples, err := dec.FloatHistogramSamples(rec, nil)
-			require.NoError(t, err)
+			require.NoError(tb, err)
 			recs = append(recs, samples)
 		case record.Tombstones:
 			tstones, err := dec.Tombstones(rec, nil)
-			require.NoError(t, err)
+			require.NoError(tb, err)
 			recs = append(recs, tstones)
 		case record.Metadata:
 			meta, err := dec.Metadata(rec, nil)
-			require.NoError(t, err)
+			require.NoError(tb, err)
 			recs = append(recs, meta)
 		case record.Exemplars:
 			exemplars, err := dec.Exemplars(rec, nil)
-			require.NoError(t, err)
+			require.NoError(tb, err)
 			recs = append(recs, exemplars)
 		default:
-			require.Fail(t, "unknown record type")
+			require.Fail(tb, "unknown record type")
 		}
 	}
-	require.NoError(t, r.Err())
+	require.NoError(tb, r.Err())
 	return recs
 }
 
@@ -846,6 +850,7 @@ func BenchmarkHead_Truncate(b *testing.B) {
 	const total = 1e6
 
 	prepare := func(b *testing.B, churn int) *Head {
+		b.Helper()
 		h, _ := newTestHead(b, 1000, wlog.CompressionNone, false)
 		b.Cleanup(func() {
 			require.NoError(b, h.Close())
@@ -2746,6 +2751,7 @@ func TestOutOfOrderSamplesMetricNativeHistogramOOODisabled(t *testing.T) {
 }
 
 func testOutOfOrderSamplesMetric(t *testing.T, scenario sampleTypeScenario, options *Options, expectOutOfOrderError error) {
+	t.Helper()
 	dir := t.TempDir()
 	db, err := Open(dir, nil, nil, options, nil)
 	require.NoError(t, err)
@@ -2828,6 +2834,7 @@ func testOutOfOrderSamplesMetric(t *testing.T, scenario sampleTypeScenario, opti
 }
 
 func testHeadSeriesChunkRace(t *testing.T) {
+	t.Helper()
 	h, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
 	defer func() {
 		require.NoError(t, h.Close())
@@ -3545,6 +3552,7 @@ func TestQueryOOOHeadDuringTruncate(t *testing.T) {
 			return db.Querier(minT, maxT)
 		},
 		func(t *testing.T, lq storage.LabelQuerier, minT, _ int64) {
+			t.Helper()
 			// Samples
 			q, ok := lq.(storage.Querier)
 			require.True(t, ok)
@@ -3568,6 +3576,7 @@ func TestChunkQueryOOOHeadDuringTruncate(t *testing.T) {
 			return db.ChunkQuerier(minT, maxT)
 		},
 		func(t *testing.T, lq storage.LabelQuerier, minT, _ int64) {
+			t.Helper()
 			// Chunks
 			q, ok := lq.(storage.ChunkQuerier)
 			require.True(t, ok)
@@ -3590,6 +3599,7 @@ func TestChunkQueryOOOHeadDuringTruncate(t *testing.T) {
 }
 
 func testQueryOOOHeadDuringTruncate(t *testing.T, makeQuerier func(db *DB, minT, maxT int64) (storage.LabelQuerier, error), verify func(t *testing.T, q storage.LabelQuerier, minT, maxT int64)) {
+	t.Helper()
 	const maxT int64 = 6000
 
 	dir := t.TempDir()
@@ -5099,6 +5109,7 @@ func TestWBLReplay(t *testing.T) {
 }
 
 func testWBLReplay(t *testing.T, scenario sampleTypeScenario) {
+	t.Helper()
 	dir := t.TempDir()
 	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, wlog.CompressionSnappy)
 	require.NoError(t, err)
@@ -5193,6 +5204,7 @@ func TestOOOMmapReplay(t *testing.T) {
 }
 
 func testOOOMmapReplay(t *testing.T, scenario sampleTypeScenario) {
+	t.Helper()
 	dir := t.TempDir()
 	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, wlog.CompressionSnappy)
 	require.NoError(t, err)
@@ -5497,6 +5509,7 @@ func TestOOOAppendWithNoSeries(t *testing.T) {
 }
 
 func testOOOAppendWithNoSeries(t *testing.T, appendFunc func(appender storage.Appender, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error)) {
+	t.Helper()
 	dir := t.TempDir()
 	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, wlog.CompressionSnappy)
 	require.NoError(t, err)
@@ -5590,6 +5603,7 @@ func TestHeadMinOOOTimeUpdate(t *testing.T) {
 }
 
 func testHeadMinOOOTimeUpdate(t *testing.T, scenario sampleTypeScenario) {
+	t.Helper()
 	dir := t.TempDir()
 	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, wlog.CompressionSnappy)
 	require.NoError(t, err)
@@ -6548,6 +6562,7 @@ func TestHeadAppendHistogramAndCommitConcurrency(t *testing.T) {
 }
 
 func testHeadAppendHistogramAndCommitConcurrency(t *testing.T, appendFn func(storage.Appender, int) error) {
+	t.Helper()
 	head, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
 	defer func() {
 		require.NoError(t, head.Close())

@@ -12,18 +12,19 @@ linters:
     - godot
     - gofumpt
     - goimports
+    - loggercheck
     - misspell
     - nolintlint
     - perfsprint
     - predeclared
     - revive
+    - sloglint
     - testifylint
+    - thelper
     - unconvert
     - unused
     - usestdlibvars
     - whitespace
-    - loggercheck
-    - sloglint
 
 issues:
   max-issues-per-linter: 0

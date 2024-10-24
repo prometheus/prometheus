@@ -84,17 +84,17 @@ func TestDB_InvalidSeries(t *testing.T) {
 	})
 }
 
-func createTestAgentDB(t testing.TB, reg prometheus.Registerer, opts *Options) *DB {
-	t.Helper()
+func createTestAgentDB(tb testing.TB, reg prometheus.Registerer, opts *Options) *DB {
+	tb.Helper()
 
-	dbDir := t.TempDir()
+	dbDir := tb.TempDir()
 	rs := remote.NewStorage(promslog.NewNopLogger(), reg, startTime, dbDir, time.Second*30, nil, false)
-	t.Cleanup(func() {
-		require.NoError(t, rs.Close())
+	tb.Cleanup(func() {
+		require.NoError(tb, rs.Close())
 	})
 
 	db, err := Open(promslog.NewNopLogger(), reg, rs, dbDir, opts)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 	return db
 }
 
@@ -582,6 +582,7 @@ func TestWALReplay(t *testing.T) {
 
 func TestLockfile(t *testing.T) {
 	tsdbutil.TestDirLockerUsage(t, func(t *testing.T, data string, createLock bool) (*tsdbutil.DirLocker, testutil.Closer) {
+		t.Helper()
 		logger := promslog.NewNopLogger()
 		reg := prometheus.NewRegistry()
 		rs := remote.NewStorage(logger, reg, startTime, data, time.Second*30, nil, false)

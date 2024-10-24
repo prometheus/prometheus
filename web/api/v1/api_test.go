@@ -912,6 +912,7 @@ func TestStats(t *testing.T) {
 			name:  "stats is blank",
 			param: "",
 			expected: func(t *testing.T, i interface{}) {
+				t.Helper()
 				require.IsType(t, &QueryData{}, i)
 				qd := i.(*QueryData)
 				require.Nil(t, qd.Stats)
@@ -921,6 +922,7 @@ func TestStats(t *testing.T) {
 			name:  "stats is true",
 			param: "true",
 			expected: func(t *testing.T, i interface{}) {
+				t.Helper()
 				require.IsType(t, &QueryData{}, i)
 				qd := i.(*QueryData)
 				require.NotNil(t, qd.Stats)
@@ -936,6 +938,7 @@ func TestStats(t *testing.T) {
 			name:  "stats is all",
 			param: "all",
 			expected: func(t *testing.T, i interface{}) {
+				t.Helper()
 				require.IsType(t, &QueryData{}, i)
 				qd := i.(*QueryData)
 				require.NotNil(t, qd.Stats)
@@ -957,6 +960,7 @@ func TestStats(t *testing.T) {
 			},
 			param: "known",
 			expected: func(t *testing.T, i interface{}) {
+				t.Helper()
 				require.IsType(t, &QueryData{}, i)
 				qd := i.(*QueryData)
 				require.NotNil(t, qd.Stats)
@@ -1096,6 +1100,7 @@ func setupRemote(s storage.Storage) *httptest.Server {
 }
 
 func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.ExemplarStorage, testLabelAPI bool) {
+	t.Helper()
 	start := time.Unix(0, 0)
 
 	type targetMetadata struct {
@@ -4219,6 +4224,7 @@ func BenchmarkRespond(b *testing.B) {
 
 func TestGetGlobalURL(t *testing.T) {
 	mustParseURL := func(t *testing.T, u string) *url.URL {
+		t.Helper()
 		parsed, err := url.Parse(u)
 		require.NoError(t, err)
 		return parsed

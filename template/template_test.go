@@ -568,6 +568,7 @@ type scenario struct {
 }
 
 func testTemplateExpansion(t *testing.T, scenarios []scenario) {
+	t.Helper()
 	extURL, err := url.Parse("http://testhost:9090/path/prefix")
 	if err != nil {
 		panic(err)

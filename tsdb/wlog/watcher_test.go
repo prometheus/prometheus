@@ -55,6 +55,7 @@ func retry(t *testing.T, interval time.Duration, n int, f func() bool) {
 
 // Overwrite readTimeout defined in watcher.go.
 func overwriteReadTimeout(t *testing.T, val time.Duration) {
+	t.Helper()
 	initialVal := readTimeout
 	readTimeout = val
 	t.Cleanup(func() { readTimeout = initialVal })

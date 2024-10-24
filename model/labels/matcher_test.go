@@ -22,6 +22,7 @@ import (
 )
 
 func mustNewMatcher(t *testing.T, mType MatchType, value string) *Matcher {
+	t.Helper()
 	m, err := NewMatcher(mType, "test_label_name", value)
 	require.NoError(t, err)
 	return m

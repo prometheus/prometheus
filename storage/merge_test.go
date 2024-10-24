@@ -1349,6 +1349,7 @@ func makeMergeSeriesSet(serieses [][]Series) SeriesSet {
 }
 
 func benchmarkDrain(b *testing.B, makeSeriesSet func() SeriesSet) {
+	b.Helper()
 	var err error
 	var t int64
 	var v float64
@@ -1391,6 +1392,7 @@ func BenchmarkMergeSeriesSet(b *testing.B) {
 }
 
 func visitMockQueriers(t *testing.T, qr Querier, f func(t *testing.T, q *mockQuerier)) int {
+	t.Helper()
 	count := 0
 	switch x := qr.(type) {
 	case *mockQuerier:
@@ -1403,6 +1405,7 @@ func visitMockQueriers(t *testing.T, qr Querier, f func(t *testing.T, q *mockQue
 }
 
 func visitMockQueriersInGenericQuerier(t *testing.T, g genericQuerier, f func(t *testing.T, q *mockQuerier)) int {
+	t.Helper()
 	count := 0
 	switch x := g.(type) {
 	case *mergeGenericQuerier:
@@ -1569,6 +1572,7 @@ func TestMergeQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 				require.Equal(t, tcase.expectedSelectsSeries, lbls)
 
 				n := visitMockQueriers(t, q, func(t *testing.T, m *mockQuerier) {
+					t.Helper()
 					// Single queries should be unsorted; merged queries sorted.
 					exp := len(tcase.primaries)+len(tcase.secondaries) > 1
 					require.Equal(t, []bool{exp}, m.sortedSeriesRequested)
@@ -1586,6 +1590,7 @@ func TestMergeQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 					return
 				}
 				visitMockQueriers(t, q, func(t *testing.T, m *mockQuerier) {
+					t.Helper()
 					require.Equal(t, 1, m.labelNamesCalls)
 				})
 			})
@@ -1599,6 +1604,7 @@ func TestMergeQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 					return
 				}
 				visitMockQueriers(t, q, func(t *testing.T, m *mockQuerier) {
+					t.Helper()
 					require.Equal(t, []labelNameRequest{{name: "test"}}, m.labelNamesRequested)
 				})
 			})
@@ -1613,6 +1619,7 @@ func TestMergeQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 					return
 				}
 				visitMockQueriers(t, q, func(t *testing.T, m *mockQuerier) {
+					t.Helper()
 					require.Equal(t, []labelNameRequest{
 						{name: "test"},
 						{name: "test2", matchers: []*labels.Matcher{matcher}},

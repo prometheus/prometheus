@@ -706,6 +706,7 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 }
 
 func assertNewFloatHistogramChunkOnAppend(t *testing.T, oldChunk Chunk, hApp *FloatHistogramAppender, ts int64, h *histogram.FloatHistogram, expectHeader CounterResetHeader) {
+	t.Helper()
 	oldChunkBytes := oldChunk.Bytes()
 	newChunk, recoded, newAppender, err := hApp.AppendFloatHistogram(nil, ts, h, false)
 	require.Equal(t, oldChunkBytes, oldChunk.Bytes()) // Sanity check that previous chunk is untouched.
@@ -720,6 +721,7 @@ func assertNewFloatHistogramChunkOnAppend(t *testing.T, oldChunk Chunk, hApp *Fl
 }
 
 func assertNoNewFloatHistogramChunkOnAppend(t *testing.T, oldChunk Chunk, hApp *FloatHistogramAppender, ts int64, h *histogram.FloatHistogram, expectHeader CounterResetHeader) {
+	t.Helper()
 	oldChunkBytes := oldChunk.Bytes()
 	newChunk, recoded, newAppender, err := hApp.AppendFloatHistogram(nil, ts, h, false)
 	require.Greater(t, len(oldChunk.Bytes()), len(oldChunkBytes)) // Check that current chunk is bigger than previously.
@@ -733,6 +735,7 @@ func assertNoNewFloatHistogramChunkOnAppend(t *testing.T, oldChunk Chunk, hApp *
 }
 
 func assertRecodedFloatHistogramChunkOnAppend(t *testing.T, prevChunk Chunk, hApp *FloatHistogramAppender, ts int64, h *histogram.FloatHistogram, expectHeader CounterResetHeader) {
+	t.Helper()
 	prevChunkBytes := prevChunk.Bytes()
 	newChunk, recoded, newAppender, err := hApp.AppendFloatHistogram(nil, ts, h, false)
 	require.Equal(t, prevChunkBytes, prevChunk.Bytes()) // Sanity check that previous chunk is untouched. This may change in the future if we implement in-place recoding.

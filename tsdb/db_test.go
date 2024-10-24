@@ -79,8 +79,9 @@ func TestMain(m *testing.M) {
 		goleak.IgnoreTopFunction("go.opencensus.io/stats/view.(*worker).start"))
 }
 
-func openTestDB(t testing.TB, opts *Options, rngs []int64) (db *DB) {
-	tmpdir := t.TempDir()
+func openTestDB(tb testing.TB, opts *Options, rngs []int64) (db *DB) {
+	tb.Helper()
+	tmpdir := tb.TempDir()
 	var err error
 
 	if opts == nil {
@@ -94,17 +95,18 @@ func openTestDB(t testing.TB, opts *Options, rngs []int64) (db *DB) {
 		opts, rngs = validateOpts(opts, rngs)
 		db, err = open(tmpdir, nil, nil, opts, rngs, nil)
 	}
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
 	// Do not Close() the test database by default as it will deadlock on test failures.
 	return db
 }
 
 // query runs a matcher query against the querier and fully expands its data.
-func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[string][]chunks.Sample {
+func query(tb testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[string][]chunks.Sample {
+	tb.Helper()
 	ss := q.Select(context.Background(), false, nil, matchers...)
 	defer func() {
-		require.NoError(t, q.Close())
+		require.NoError(tb, q.Close())
 	}()
 
 	var it chunkenc.Iterator
@@ -114,8 +116,8 @@ func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[str
 
 		it = series.Iterator(it)
 		samples, err := storage.ExpandSamples(it, newSample)
-		require.NoError(t, err)
-		require.NoError(t, it.Err())
+		require.NoError(tb, err)
+		require.NoError(tb, it.Err())
 
 		if len(samples) == 0 {
 			continue
@@ -124,22 +126,23 @@ func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[str
 		name := series.Labels().String()
 		result[name] = samples
 	}
-	require.NoError(t, ss.Err())
-	require.Empty(t, ss.Warnings())
+	require.NoError(tb, ss.Err())
+	require.Empty(tb, ss.Warnings())
 
 	return result
 }
 
 // queryAndExpandChunks runs a matcher query against the querier and fully expands its data into samples.
-func queryAndExpandChunks(t testing.TB, q storage.ChunkQuerier, matchers ...*labels.Matcher) map[string][][]chunks.Sample {
-	s := queryChunks(t, q, matchers...)
+func queryAndExpandChunks(tb testing.TB, q storage.ChunkQuerier, matchers ...*labels.Matcher) map[string][][]chunks.Sample {
+	tb.Helper()
+	s := queryChunks(tb, q, matchers...)
 
 	res := make(map[string][][]chunks.Sample)
 	for k, v := range s {
 		var samples [][]chunks.Sample
 		for _, chk := range v {
 			sam, err := storage.ExpandSamples(chk.Chunk.Iterator(nil), nil)
-			require.NoError(t, err)
+			require.NoError(tb, err)
 			samples = append(samples, sam)
 		}
 		res[k] = samples
@@ -149,10 +152,11 @@ func queryAndExpandChunks(t testing.TB, q storage.ChunkQuerier, matchers ...*lab
 }
 
 // queryChunks runs a matcher query against the querier and expands its data.
-func queryChunks(t testing.TB, q storage.ChunkQuerier, matchers ...*labels.Matcher) map[string][]chunks.Meta {
+func queryChunks(tb testing.TB, q storage.ChunkQuerier, matchers ...*labels.Matcher) map[string][]chunks.Meta {
+	tb.Helper()
 	ss := q.Select(context.Background(), false, nil, matchers...)
 	defer func() {
-		require.NoError(t, q.Close())
+		require.NoError(tb, q.Close())
 	}()
 
 	var it chunks.Iterator
@@ -165,7 +169,7 @@ func queryChunks(t testing.TB, q storage.ChunkQuerier, matchers ...*labels.Match
 		for it.Next() {
 			chks = append(chks, it.At())
 		}
-		require.NoError(t, it.Err())
+		require.NoError(tb, it.Err())
 
 		if len(chks) == 0 {
 			continue
@@ -174,8 +178,8 @@ func queryChunks(t testing.TB, q storage.ChunkQuerier, matchers ...*labels.Match
 		name := series.Labels().String()
 		result[name] = chks
 	}
-	require.NoError(t, ss.Err())
-	require.Empty(t, ss.Warnings())
+	require.NoError(tb, ss.Err())
+	require.Empty(tb, ss.Warnings())
 	return result
 }
 
@@ -1101,6 +1105,7 @@ func TestWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T) {
 }
 
 func testWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T, numSamplesBeforeSeriesCreation, numSamplesAfterSeriesCreation int) {
+	t.Helper()
 	const numSeries = 1000
 
 	db := openTestDB(t, nil, nil)
@@ -2842,6 +2847,7 @@ func TestDBQueryDoesntSeeAppendsAfterCreation(t *testing.T) {
 }
 
 func assureChunkFromSamples(t *testing.T, samples []chunks.Sample) chunks.Meta {
+	t.Helper()
 	chks, err := chunks.ChunkFromSamples(samples)
 	require.NoError(t, err)
 	return chks
@@ -3451,6 +3457,7 @@ func TestNoPanicOnTSDBOpenError(t *testing.T) {
 
 func TestLockfile(t *testing.T) {
 	tsdbutil.TestDirLockerUsage(t, func(t *testing.T, data string, createLock bool) (*tsdbutil.DirLocker, testutil.Closer) {
+		t.Helper()
 		opts := DefaultOptions()
 		opts.NoLockfile = !createLock
 
@@ -3477,6 +3484,7 @@ func TestQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t
 }
 
 func testQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t *testing.T) {
+	t.Helper()
 	const (
 		numSeries                = 1000
 		numStressIterations      = 10000
@@ -3613,6 +3621,7 @@ func TestChunkQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChu
 }
 
 func testChunkQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t *testing.T) {
+	t.Helper()
 	const (
 		numSeries                = 1000
 		numStressIterations      = 10000
@@ -3981,6 +3990,7 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingIterators(t *te
 }
 
 func newTestDB(t *testing.T) *DB {
+	t.Helper()
 	dir := t.TempDir()
 
 	db, err := Open(dir, nil, nil, DefaultOptions(), nil)
@@ -4293,6 +4303,7 @@ func testOOOWALWrite(t *testing.T,
 	expectedOOORecords []interface{},
 	expectedInORecords []interface{},
 ) {
+	t.Helper()
 	dir := t.TempDir()
 
 	opts := DefaultOptions()
@@ -4459,6 +4470,7 @@ func TestDBPanicOnMmappingHeadChunk(t *testing.T) {
 
 func TestMetadataInWAL(t *testing.T) {
 	updateMetadata := func(t *testing.T, app storage.Appender, s labels.Labels, m metadata.Metadata) {
+		t.Helper()
 		_, err := app.UpdateMetadata(0, s, m)
 		require.NoError(t, err)
 	}
@@ -4524,6 +4536,7 @@ func TestMetadataInWAL(t *testing.T) {
 
 func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 	updateMetadata := func(t *testing.T, app storage.Appender, s labels.Labels, m metadata.Metadata) {
+		t.Helper()
 		_, err := app.UpdateMetadata(0, s, m)
 		require.NoError(t, err)
 	}
@@ -4628,6 +4641,7 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 
 func TestMetadataAssertInMemoryData(t *testing.T) {
 	updateMetadata := func(t *testing.T, app storage.Appender, s labels.Labels, m metadata.Metadata) {
+		t.Helper()
 		_, err := app.UpdateMetadata(0, s, m)
 		require.NoError(t, err)
 	}
@@ -4877,6 +4891,7 @@ func TestOOOCompaction(t *testing.T) {
 }
 
 func testOOOCompaction(t *testing.T, scenario sampleTypeScenario, addExtraSamples bool) {
+	t.Helper()
 	dir := t.TempDir()
 	ctx := context.Background()
 
@@ -5080,6 +5095,7 @@ func TestOOOCompactionWithNormalCompaction(t *testing.T) {
 }
 
 func testOOOCompactionWithNormalCompaction(t *testing.T, scenario sampleTypeScenario) {
+	t.Helper()
 	dir := t.TempDir()
 	ctx := context.Background()
 
@@ -5190,6 +5206,7 @@ func TestOOOCompactionWithDisabledWriteLog(t *testing.T) {
 }
 
 func testOOOCompactionWithDisabledWriteLog(t *testing.T, scenario sampleTypeScenario) {
+	t.Helper()
 	dir := t.TempDir()
 	ctx := context.Background()
 
@@ -5303,6 +5320,7 @@ func TestOOOQueryAfterRestartWithSnapshotAndRemovedWBL(t *testing.T) {
 }
 
 func testOOOQueryAfterRestartWithSnapshotAndRemovedWBL(t *testing.T, scenario sampleTypeScenario) {
+	t.Helper()
 	dir := t.TempDir()
 	ctx := context.Background()
 
@@ -5472,6 +5490,7 @@ func testQuerierOOOQuery(t *testing.T,
 	appendFunc func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error),
 	sampleFunc func(ts int64) chunks.Sample,
 ) {
+	t.Helper()
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = 24 * time.Hour.Milliseconds()
 
@@ -5802,6 +5821,7 @@ func testChunkQuerierOOOQuery(t *testing.T,
 	sampleFunc func(ts int64) chunks.Sample,
 	checkInUseBuckets bool,
 ) {
+	t.Helper()
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 24 * time.Hour.Milliseconds()
@@ -6084,6 +6104,7 @@ func TestOOONativeHistogramsWithCounterResets(t *testing.T) {
 }
 
 func testOOONativeHistogramsWithCounterResets(t *testing.T, scenario sampleTypeScenario) {
+	t.Helper()
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 24 * time.Hour.Milliseconds()
@@ -6249,6 +6270,7 @@ func TestOOOAppendAndQuery(t *testing.T) {
 }
 
 func testOOOAppendAndQuery(t *testing.T, scenario sampleTypeScenario) {
+	t.Helper()
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 4 * time.Hour.Milliseconds()
@@ -6384,6 +6406,7 @@ func TestOOODisabled(t *testing.T) {
 }
 
 func testOOODisabled(t *testing.T, scenario sampleTypeScenario) {
+	t.Helper()
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = 0
 	db := openTestDB(t, opts, nil)
@@ -6459,6 +6482,7 @@ func TestWBLAndMmapReplay(t *testing.T) {
 }
 
 func testWBLAndMmapReplay(t *testing.T, scenario sampleTypeScenario) {
+	t.Helper()
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 4 * time.Hour.Milliseconds()
@@ -7027,6 +7051,7 @@ func TestOOOCompactionFailure(t *testing.T) {
 }
 
 func testOOOCompactionFailure(t *testing.T, scenario sampleTypeScenario) {
+	t.Helper()
 	dir := t.TempDir()
 	ctx := context.Background()
 
@@ -7321,6 +7346,7 @@ func TestOOOMmapCorruption(t *testing.T) {
 }
 
 func testOOOMmapCorruption(t *testing.T, scenario sampleTypeScenario) {
+	t.Helper()
 	dir := t.TempDir()
 
 	opts := DefaultOptions()
@@ -7454,6 +7480,7 @@ func TestOutOfOrderRuntimeConfig(t *testing.T) {
 }
 
 func testOutOfOrderRuntimeConfig(t *testing.T, scenario sampleTypeScenario) {
+	t.Helper()
 	ctx := context.Background()
 
 	getDB := func(oooTimeWindow int64) *DB {
@@ -7486,6 +7513,7 @@ func testOutOfOrderRuntimeConfig(t *testing.T, scenario sampleTypeScenario) {
 
 	series1 := labels.FromStrings("foo", "bar1")
 	addSamples := func(t *testing.T, db *DB, fromMins, toMins int64, success bool, allSamples []chunks.Sample) []chunks.Sample {
+		t.Helper()
 		app := db.Appender(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
@@ -7502,6 +7530,7 @@ func testOutOfOrderRuntimeConfig(t *testing.T, scenario sampleTypeScenario) {
 	}
 
 	verifySamples := func(t *testing.T, db *DB, expSamples []chunks.Sample) {
+		t.Helper()
 		sort.Slice(expSamples, func(i, j int) bool {
 			return expSamples[i].T() < expSamples[j].T()
 		})
@@ -7518,6 +7547,7 @@ func testOutOfOrderRuntimeConfig(t *testing.T, scenario sampleTypeScenario) {
 	}
 
 	doOOOCompaction := func(t *testing.T, db *DB) {
+		t.Helper()
 		// WBL is not empty.
 		size, err := db.head.wbl.Size()
 		require.NoError(t, err)
@@ -7695,8 +7725,10 @@ func TestNoGapAfterRestartWithOOO(t *testing.T) {
 }
 
 func testNoGapAfterRestartWithOOO(t *testing.T, scenario sampleTypeScenario) {
+	t.Helper()
 	series1 := labels.FromStrings("foo", "bar1")
 	addSamples := func(t *testing.T, db *DB, fromMins, toMins int64, success bool) {
+		t.Helper()
 		app := db.Appender(context.Background())
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
@@ -7711,6 +7743,7 @@ func testNoGapAfterRestartWithOOO(t *testing.T, scenario sampleTypeScenario) {
 	}
 
 	verifySamples := func(t *testing.T, db *DB, fromMins, toMins int64) {
+		t.Helper()
 		var expSamples []chunks.Sample
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
@@ -7812,6 +7845,7 @@ func TestWblReplayAfterOOODisableAndRestart(t *testing.T) {
 }
 
 func testWblReplayAfterOOODisableAndRestart(t *testing.T, scenario sampleTypeScenario) {
+	t.Helper()
 	dir := t.TempDir()
 
 	opts := DefaultOptions()
@@ -7881,6 +7915,7 @@ func TestPanicOnApplyConfig(t *testing.T) {
 }
 
 func testPanicOnApplyConfig(t *testing.T, scenario sampleTypeScenario) {
+	t.Helper()
 	dir := t.TempDir()
 
 	opts := DefaultOptions()
@@ -7939,6 +7974,7 @@ func TestDiskFillingUpAfterDisablingOOO(t *testing.T) {
 }
 
 func testDiskFillingUpAfterDisablingOOO(t *testing.T, scenario sampleTypeScenario) {
+	t.Helper()
 	dir := t.TempDir()
 	ctx := context.Background()
 

@@ -376,6 +376,7 @@ func TestTimeMetrics(t *testing.T) {
 }
 
 func getCurrentGaugeValuesFor(t *testing.T, reg prometheus.Gatherer, metricNames ...string) map[string]float64 {
+	t.Helper()
 	f, err := reg.Gather()
 	require.NoError(t, err)
 

@@ -610,12 +610,14 @@ func TestAgentAPIEndPoints(t *testing.T) {
 }
 
 func cleanupTestResponse(t *testing.T, resp *http.Response) {
+	t.Helper()
 	_, err := io.Copy(io.Discard, resp.Body)
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
 }
 
 func cleanupSnapshot(t *testing.T, dbDir string, resp *http.Response) {
+	t.Helper()
 	snapshot := &struct {
 		Data struct {
 			Name string `json:"name"`
