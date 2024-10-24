@@ -292,14 +292,14 @@ foobar{quantile="0.99"} 150.1`
 			lset: labels.FromStrings("__name__", "foo_total"),
 			t:    int64p(1520879607789),
 			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "counter-test"), Value: 5}},
-			// TODO(krajorama): ct: int64p(1520872607123),
+			ct:   int64p(1520872607123),
 		}, {
 			m:    `foo_total{a="b"}`,
 			v:    17.0,
 			lset: labels.FromStrings("__name__", "foo_total", "a", "b"),
 			t:    int64p(1520879607789),
 			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "counter-test"), Value: 5}},
-			// TODO(krajorama): ct: int64p(1520872607123),
+			ct:   int64p(1520872607123),
 		}, {
 			m:    "bar",
 			help: "Summary with CT at the end, making sure we find CT even if it's multiple lines a far",
@@ -310,22 +310,22 @@ foobar{quantile="0.99"} 150.1`
 			m:    "bar_count",
 			v:    17.0,
 			lset: labels.FromStrings("__name__", "bar_count"),
-			// TODO(krajorama): ct:   int64p(1520872608124),
+			ct:   int64p(1520872608124),
 		}, {
 			m:    "bar_sum",
 			v:    324789.3,
 			lset: labels.FromStrings("__name__", "bar_sum"),
-			// TODO(krajorama): ct:   int64p(1520872608124),
+			ct:   int64p(1520872608124),
 		}, {
 			m:    `bar{quantile="0.95"}`,
 			v:    123.7,
 			lset: labels.FromStrings("__name__", "bar", "quantile", "0.95"),
-			// TODO(krajorama): ct:   int64p(1520872608124),
+			ct:   int64p(1520872608124),
 		}, {
 			m:    `bar{quantile="0.99"}`,
 			v:    150.0,
 			lset: labels.FromStrings("__name__", "bar", "quantile", "0.99"),
-			// TODO(krajorama): ct:   int64p(1520872608124),
+			ct:   int64p(1520872608124),
 		}, {
 			m:    "baz",
 			help: "Histogram with the same objective as above's summary",
@@ -343,7 +343,7 @@ foobar{quantile="0.99"} 150.1`
 				CustomValues:    []float64{0.0}, // We do not store the +Inf boundary.
 			},
 			lset: labels.FromStrings("__name__", "baz"),
-			// TODO(krajorama): ct:   int64p(1520872609125),
+			ct:   int64p(1520872609125),
 		}, {
 			m:    "fizz_created",
 			help: "Gauge which shouldn't be parsed as CT",
@@ -371,7 +371,7 @@ foobar{quantile="0.99"} 150.1`
 				CustomValues:    []float64{0.0}, // We do not store the +Inf boundary.
 			},
 			lset: labels.FromStrings("__name__", "something"),
-			// TODO(krajorama): ct:   int64p(1520430001000),
+			ct:   int64p(1520430001000),
 		}, {
 			m: `something{a="b"}`,
 			shs: &histogram.Histogram{
@@ -383,7 +383,7 @@ foobar{quantile="0.99"} 150.1`
 				CustomValues:    []float64{0.0}, // We do not store the +Inf boundary.
 			},
 			lset: labels.FromStrings("__name__", "something", "a", "b"),
-			// TODO(krajorama): ct:   int64p(1520430002000),
+			ct:   int64p(1520430002000),
 		}, {
 			m:    "yum",
 			help: "Summary with _created between sum and quantiles",
@@ -394,22 +394,22 @@ foobar{quantile="0.99"} 150.1`
 			m:    `yum_count`,
 			v:    20,
 			lset: labels.FromStrings("__name__", "yum_count"),
-			// TODO(krajorama): ct:   int64p(1520430003000),
+			ct:   int64p(1520430003000),
 		}, {
 			m:    `yum_sum`,
 			v:    324789.5,
 			lset: labels.FromStrings("__name__", "yum_sum"),
-			// TODO(krajorama): ct:   int64p(1520430003000),
+			ct:   int64p(1520430003000),
 		}, {
 			m:    `yum{quantile="0.95"}`,
 			v:    123.7,
 			lset: labels.FromStrings("__name__", "yum", "quantile", "0.95"),
-			// TODO(krajorama): ct:   int64p(1520430003000),
+			ct:   int64p(1520430003000),
 		}, {
 			m:    `yum{quantile="0.99"}`,
 			v:    150.0,
 			lset: labels.FromStrings("__name__", "yum", "quantile", "0.99"),
-			// TODO(krajorama): ct:   int64p(1520430003000),
+			ct:   int64p(1520430003000),
 		}, {
 			m:    "foobar",
 			help: "Summary with _created as the first line",
@@ -420,22 +420,22 @@ foobar{quantile="0.99"} 150.1`
 			m:    `foobar_count`,
 			v:    21,
 			lset: labels.FromStrings("__name__", "foobar_count"),
-			// TODO(krajorama): ct:   int64p(1520430004000),
+			ct:   int64p(1520430004000),
 		}, {
 			m:    `foobar_sum`,
 			v:    324789.6,
 			lset: labels.FromStrings("__name__", "foobar_sum"),
-			// TODO(krajorama): ct:   int64p(1520430004000),
+			ct:   int64p(1520430004000),
 		}, {
 			m:    `foobar{quantile="0.95"}`,
 			v:    123.8,
 			lset: labels.FromStrings("__name__", "foobar", "quantile", "0.95"),
-			// TODO(krajorama): ct:   int64p(1520430004000),
+			ct:   int64p(1520430004000),
 		}, {
 			m:    `foobar{quantile="0.99"}`,
 			v:    150.1,
 			lset: labels.FromStrings("__name__", "foobar", "quantile", "0.99"),
-			// TODO(krajorama): ct:   int64p(1520430004000),
+			ct:   int64p(1520430004000),
 		}, {
 			m:    "metric",
 			help: "foo\x00bar",
@@ -555,42 +555,49 @@ func TestNHCBParserProtoBufParser_NoNHCBWhenExponential(t *testing.T) {
 			},
 			lset: labels.FromStrings("__name__", "test_histogram"),
 			t:    int64p(1234568),
+			ct:   int64p(1000),
 		},
 		{
 			m:    "test_histogram_count",
 			v:    175,
 			lset: labels.FromStrings("__name__", "test_histogram_count"),
 			t:    int64p(1234568),
+			ct:   int64p(1000),
 		},
 		{
 			m:    "test_histogram_sum",
 			v:    0.0008280461746287094,
 			lset: labels.FromStrings("__name__", "test_histogram_sum"),
 			t:    int64p(1234568),
+			ct:   int64p(1000),
 		},
 		{
 			m:    "test_histogram_bucket\xffle\xff-0.0004899999999999998",
 			v:    2,
 			lset: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0004899999999999998"),
 			t:    int64p(1234568),
+			ct:   int64p(1000),
 		},
 		{
 			m:    "test_histogram_bucket\xffle\xff-0.0003899999999999998",
 			v:    4,
 			lset: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0003899999999999998"),
 			t:    int64p(1234568),
+			ct:   int64p(1000),
 		},
 		{
 			m:    "test_histogram_bucket\xffle\xff-0.0002899999999999998",
 			v:    16,
 			lset: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0002899999999999998"),
 			t:    int64p(1234568),
+			ct:   int64p(1000),
 		},
 		{
 			m:    "test_histogram_bucket\xffle\xff+Inf",
 			v:    175,
 			lset: labels.FromStrings("__name__", "test_histogram_bucket", "le", "+Inf"),
 			t:    int64p(1234568),
+			ct:   int64p(1000),
 		},
 		{
 			// TODO(krajorama): optimize: this should not be here. In case there's
@@ -609,6 +616,7 @@ func TestNHCBParserProtoBufParser_NoNHCBWhenExponential(t *testing.T) {
 			},
 			lset: labels.FromStrings("__name__", "test_histogram"),
 			t:    int64p(1234568),
+			ct:   int64p(1000),
 		},
 	}
 	got := testParse(t, p)
@@ -621,6 +629,10 @@ help: "Test histogram with classic and exponential buckets."
 type: HISTOGRAM
 metric: <
   histogram: <
+		created_timestamp: <
+      seconds: 1
+      nanos: 1
+    >
     sample_count: 175
     sample_sum: 0.0008280461746287094
     bucket: <
