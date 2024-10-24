@@ -1096,6 +1096,15 @@ func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
 			// Close the DB to ensure all data is flushed to the WAL
 			require.NoError(t, s.Close())
 
+			// Check that we dont have any OOO samples in the WAL by checking metrics
+			families, err := reg.Gather()
+			require.NoError(t, err, "failed to gather metrics")
+			for _, f := range families {
+				if f.GetName() == "prometheus_agent_out_of_order_samples_total" {
+					t.Fatalf("unexpected metric %s", f.GetName())
+				}
+			}
+
 			outputSamples := readWALSamples(t, s.wal.Dir())
 
 			require.Equal(t, len(tc.expectedSamples), len(outputSamples), "Expected %d samples", len(tc.expectedSamples))

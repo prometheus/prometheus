@@ -1098,8 +1098,6 @@ func (a *appender) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labels, t,
 		return 0, storage.ErrOutOfOrderCT
 	}
 
-	// CT: t0
-
 	// NOTE: always modify pendingSamples and sampleSeries together.
 	a.pendingSamples = append(a.pendingSamples, record.RefSample{
 		Ref: series.ref,
