@@ -406,3 +406,38 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 		})
 	}
 }
+
+func TestGetPromExemplars(t *testing.T) {
+	ctx := context.Background()
+	everyN := &everyNTimes{n: 1}
+
+	t.Run("Exemplars with int value", func(t *testing.T) {
+		pt := pmetric.NewNumberDataPoint()
+		exemplar := pt.Exemplars().AppendEmpty()
+		exemplar.SetTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
+		exemplar.SetIntValue(42)
+		exemplars, err := getPromExemplars(ctx, everyN, pt)
+		assert.NoError(t, err)
+		assert.Len(t, exemplars, 1)
+		assert.Equal(t, float64(42), exemplars[0].Value)
+	})
+
+	t.Run("Exemplars with double value", func(t *testing.T) {
+		pt := pmetric.NewNumberDataPoint()
+		exemplar := pt.Exemplars().AppendEmpty()
+		exemplar.SetTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
+		exemplar.SetDoubleValue(69.420)
+		exemplars, err := getPromExemplars(ctx, everyN, pt)
+		assert.NoError(t, err)
+		assert.Len(t, exemplars, 1)
+		assert.Equal(t, 69.420, exemplars[0].Value)
+	})
+
+	t.Run("Exemplars with unsupported value type", func(t *testing.T) {
+		pt := pmetric.NewNumberDataPoint()
+		exemplar := pt.Exemplars().AppendEmpty()
+		exemplar.SetTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
+		_, err := getPromExemplars(ctx, everyN, pt)
+		assert.Error(t, err)
+	})
+}
