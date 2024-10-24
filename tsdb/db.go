@@ -1663,25 +1663,41 @@ func openBlocks(l *slog.Logger, dir string, loaded []*Block, chunkPool chunkenc.
 		return nil, nil, fmt.Errorf("find blocks: %w", err)
 	}
 
+	// Need lock as several goroutines can add block to the list.
+	var mu sync.Mutex
+	var wg sync.WaitGroup
 	corrupted = make(map[ulid.ULID]error)
 	for _, bDir := range bDirs {
-		meta, _, err := readMetaFile(bDir)
-		if err != nil {
-			l.Error("Failed to read meta.json for a block during reloadBlocks. Skipping", "dir", bDir, "err", err)
-			continue
-		}
+		wg.Add(1)
+		go func(d string) {
+			defer wg.Done()
+			meta, _, err := readMetaFile(d)
 
-		// See if we already have the block in memory or open it otherwise.
-		block, open := getBlock(loaded, meta.ULID)
-		if !open {
-			block, err = OpenBlock(l, bDir, chunkPool)
 			if err != nil {
-				corrupted[meta.ULID] = err
-				continue
+				l.Error("Failed to read meta.json for a block during reloadBlocks. Skipping", "dir", d, "err", err)
+				return
 			}
-		}
-		blocks = append(blocks, block)
+
+			// See if we already have the block in memory or open it otherwise.
+			block, open := getBlock(loaded, meta.ULID)
+			if !open {
+				block, err = OpenBlock(l, d, chunkPool)
+				if err != nil {
+					l.Error("Block corrupted", "dir", d)
+					mu.Lock()
+					corrupted[meta.ULID] = err
+					mu.Unlock()
+					return
+				}
+				l.Info("Block opened", "dir", d)
+			}
+			mu.Lock()
+			blocks = append(blocks, block)
+			mu.Unlock()
+		}(bDir)
 	}
+
+	wg.Wait()
 	return blocks, corrupted, nil
 }
 
