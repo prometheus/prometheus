@@ -51,11 +51,7 @@ func Dedupe(next *slog.Logger, repeat time.Duration) *Deduper {
 // provided context and log level, and returns false otherwise. It implements
 // slog.Handler.
 func (d *Deduper) Enabled(ctx context.Context, level slog.Level) bool {
-	d.mtx.RLock()
-	enabled := d.next.Enabled(ctx, level)
-	d.mtx.RUnlock()
-
-	return enabled
+	return d.next.Enabled(ctx, level)
 }
 
 // Handle uses the provided context and slog.Record to deduplicate messages
