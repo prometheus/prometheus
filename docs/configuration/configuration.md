@@ -2940,8 +2940,6 @@ with this feature.
 
 `tsdb` lets you configure the runtime-reloadable configuration settings of the TSDB.
 
-NOTE: Out-of-order ingestion is an experimental feature, but you do not need any additional flag to enable it. Setting `out_of_order_time_window` to a positive duration enables it.
-
 ```yaml
 # Configures how old an out-of-order/out-of-bounds sample can be w.r.t. the TSDB max time.
 # An out-of-order/out-of-bounds sample is ingested into the TSDB as long as the timestamp
