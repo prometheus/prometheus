@@ -104,30 +104,6 @@ func (d *Deduper) WithGroup(name string) slog.Handler {
 	}
 }
 
-// Info logs the provided message and key-value arguments using the Deduper's
-// internal slog.Logger. It is simply a wrapper around slog.Logger.Info().
-func (d *Deduper) Info(msg string, args ...any) {
-	d.next.Info(msg, args...)
-}
-
-// Warn logs the provided message and key-value arguments using the Deduper's
-// internal slog.Logger. It is simply a wrapper around slog.Logger.Warn().
-func (d *Deduper) Warn(msg string, args ...any) {
-	d.next.Warn(msg, args...)
-}
-
-// Error logs the provided message and key-value arguments using the Deduper's
-// internal slog.Logger. It is simply a wrapper around slog.Logger.Error().
-func (d *Deduper) Error(msg string, args ...any) {
-	d.next.Error(msg, args...)
-}
-
-// Debug logs the provided message and key-value arguments using the Deduper's
-// internal slog.Logger. It is simply a wrapper around slog.Logger.Debug().
-func (d *Deduper) Debug(msg string, args ...any) {
-	d.next.Debug(msg, args...)
-}
-
 // Stop the Deduper.
 func (d *Deduper) Stop() {
 	close(d.quit)
