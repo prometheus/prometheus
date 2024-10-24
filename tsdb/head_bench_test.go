@@ -94,6 +94,7 @@ func BenchmarkHead_WalCommit(b *testing.B) {
 		var err error
 		for i, s := range series[:seriesCount] {
 			var ref storage.SeriesRef
+			// if i is even, append a sample, else append a histogram.
 			if i%2 == 0 {
 				ref, err = app.Append(ref, s.Labels(), ts, float64(ts))
 			} else {
