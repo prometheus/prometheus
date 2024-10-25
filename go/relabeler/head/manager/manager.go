@@ -60,7 +60,7 @@ func New(dir string, configSource ConfigSource, catalog Catalog, registerer prom
 func (m *Manager) Restore(blockDuration time.Duration) (active relabeler.Head, rotated []relabeler.Head, err error) {
 	headRecords, err := m.catalog.List(
 		func(record catalog.Record) bool {
-			return record.DeletedAt == 0 && record.Status != catalog.StatusPersisted
+			return record.DeletedAt == 0 && record.Status != catalog.StatusPersisted && record.Status != catalog.StatusCorrupted
 		},
 		func(lhs, rhs catalog.Record) bool {
 			return lhs.CreatedAt < rhs.CreatedAt
@@ -77,9 +77,12 @@ func (m *Manager) Restore(blockDuration time.Duration) (active relabeler.Head, r
 		h, err = head.Load(headRecord.ID, m.generation, dir, cfgs, headRecord.NumberOfShards, m.registerer)
 		if err != nil {
 			_, setStatusErr := m.catalog.SetStatus(headRecord.ID, catalog.StatusCorrupted)
-			err = errors.Join(err, setStatusErr)
-			return nil, nil, err
+			if setStatusErr != nil {
+				return nil, nil, errors.Join(err, setStatusErr)
+			}
+			continue
 		}
+
 		h = NewDiscardableHead(h, func(id string) error {
 			var discardErr error
 			if _, discardErr = m.catalog.SetStatus(id, catalog.StatusPersisted); discardErr != nil {

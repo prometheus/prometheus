@@ -9,7 +9,8 @@ import (
 )
 
 const (
-	logFileName = "head.log"
+	logFileName    = "head.log"
+	MaxLogFileSize = 32 * 1024
 )
 
 type Status uint8
@@ -32,8 +33,10 @@ type Record struct {
 }
 
 type Log interface {
-	Write(r Record) error
-	Read(r *Record) error
+	Write(record Record) error
+	ReWrite(records ...Record) error
+	Read(record *Record) error
+	Size() int
 }
 
 type Catalog struct {
@@ -87,10 +90,9 @@ func (c *Catalog) Create(id, dir string, numberOfShards uint16) (r Record, err e
 	if err = c.log.Write(r); err != nil {
 		return r, fmt.Errorf("failed to write log: %w", err)
 	}
-
 	c.records[id] = r
 
-	return r, nil
+	return r, c.compactIfNeeded()
 }
 
 func (c *Catalog) SetStatus(id string, status Status) (Record, error) {
@@ -108,7 +110,7 @@ func (c *Catalog) SetStatus(id string, status Status) (Record, error) {
 
 	c.records[id] = r
 
-	return r, nil
+	return r, c.compactIfNeeded()
 }
 
 func (c *Catalog) Delete(id string) error {
@@ -126,7 +128,20 @@ func (c *Catalog) Delete(id string) error {
 
 	delete(c.records, r.ID)
 
-	return nil
+	return c.compactIfNeeded()
+}
+
+func (c *Catalog) Compact() error {
+	var records []Record
+	for _, record := range c.records {
+		records = append(records, record)
+	}
+
+	sort.Slice(records, func(i, j int) bool {
+		return records[i].CreatedAt < records[j].CreatedAt
+	})
+
+	return c.log.ReWrite(records...)
 }
 
 func (c *Catalog) sync() error {
@@ -142,4 +157,12 @@ func (c *Catalog) sync() error {
 		}
 		c.records[r.ID] = r
 	}
+}
+
+func (c *Catalog) compactIfNeeded() error {
+	if c.log.Size() < MaxLogFileSize {
+		return nil
+	}
+
+	return c.Compact()
 }

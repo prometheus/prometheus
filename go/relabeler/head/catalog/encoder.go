@@ -10,20 +10,12 @@ type DefaultEncoder struct {
 }
 
 func (DefaultEncoder) Encode(writer io.Writer, r Record) (err error) {
-	if err = binary.Write(writer, binary.LittleEndian, uint64(len(r.ID))); err != nil {
-		return fmt.Errorf("failed to write id length: %w", err)
+	if err = encodeString(writer, r.ID); err != nil {
+		return fmt.Errorf("failed to encode id: %w", err)
 	}
 
-	if _, err = writer.Write([]byte(r.ID)); err != nil {
-		return fmt.Errorf("failed to write id: %w", err)
-	}
-
-	if err = binary.Write(writer, binary.LittleEndian, uint64(len(r.Dir))); err != nil {
-		return fmt.Errorf("failed to write dir length: %w", err)
-	}
-
-	if _, err = writer.Write([]byte(r.Dir)); err != nil {
-		return fmt.Errorf("failed to write dir: %w", err)
+	if err = encodeString(writer, r.Dir); err != nil {
+		return fmt.Errorf("failed to encode dir: %w", err)
 	}
 
 	if err = binary.Write(writer, binary.LittleEndian, &r.NumberOfShards); err != nil {
@@ -44,6 +36,18 @@ func (DefaultEncoder) Encode(writer io.Writer, r Record) (err error) {
 
 	if err = binary.Write(writer, binary.LittleEndian, &r.Status); err != nil {
 		return fmt.Errorf("failed to write status: %w", err)
+	}
+
+	return nil
+}
+
+func encodeString(writer io.Writer, value string) (err error) {
+	if err = binary.Write(writer, binary.LittleEndian, uint64(len(value))); err != nil {
+		return fmt.Errorf("failed to write string length: %w", err)
+	}
+
+	if _, err = writer.Write([]byte(value)); err != nil {
+		return fmt.Errorf("failed to write string: %w", err)
 	}
 
 	return nil
