@@ -168,10 +168,10 @@ ingested as `my_classic_hist{le="1"}` via the text format, but as
 metric and caused problems when querying the metric.
 In Prometheus v3 these label values will always be normalized to a float like 
 representation. I.e. the above example will always result in 
-`my_classic_hist{le="1.0"}` being ingested into prometheus, not matter via which 
-protocol. The effect of this change is that alerts, recording rules and dashboards that
-directly reference label values as whole numbers such as `le="1"` will stop
-working.
+`my_classic_hist{le="1.0"}` being ingested into prometheus, no matter via which 
+protocol. The effect of this change is that alerts, recording rules and 
+dashboards that directly reference label values as whole numbers such as 
+`le="1"` will stop working.
 
 Ways to deal with this change either globally or on a per metric basis:
 
