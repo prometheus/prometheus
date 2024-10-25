@@ -27,14 +27,13 @@ import (
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
-	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	influx "github.com/influxdata/influxdb/client/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promlog/flag"
 	"github.com/prometheus/common/promslog"
-	"github.com/prometheus/common/promslog/flag"
 
 	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/graphite"
 	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/influxdb"
@@ -250,7 +249,7 @@ func serve(logger *slog.Logger, addr string, writers []writer, readers []reader)
 		}
 
 		var req prompb.ReadRequest
-		if err := proto.Unmarshal(reqBuf, &req); err != nil {
+		if err := req.Unmarshal(reqBuf); err != nil {
 			logger.Error("Unmarshal error", "err", err.Error())
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -271,7 +270,7 @@ func serve(logger *slog.Logger, addr string, writers []writer, readers []reader)
 			return
 		}
 
-		data, err := proto.Marshal(resp)
+		data, err := resp.Marshal()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

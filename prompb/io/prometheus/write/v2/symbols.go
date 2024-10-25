@@ -44,7 +44,10 @@ func (t *SymbolsTable) Symbolize(str string) uint32 {
 
 // SymbolizeLabels symbolize Prometheus labels.
 func (t *SymbolsTable) SymbolizeLabels(lbls labels.Labels, buf []uint32) []uint32 {
-	result := buf[:0]
+	var result []uint32
+	if buf != nil {
+		result = buf[:0]
+	}
 	lbls.Range(func(l labels.Label) {
 		off := t.Symbolize(l.Name)
 		result = append(result, off)

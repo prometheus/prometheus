@@ -18,12 +18,15 @@ package prometheusremotewrite
 
 import (
 	"context"
+	"sort"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/prometheus/common/model"
 
@@ -163,8 +166,16 @@ func TestCreateAttributes(t *testing.T) {
 				PromoteResourceAttributes: tc.promoteResourceAttributes,
 			}
 			lbls := createAttributes(resource, attrs, settings, nil, false)
-
-			assert.ElementsMatch(t, lbls, tc.expectedLabels)
+			sort.Slice(lbls, func(i, j int) bool {
+				return lbls[i].Name < lbls[j].Name
+			})
+			sort.Slice(tc.expectedLabels, func(i, j int) bool {
+				return tc.expectedLabels[i].Name < tc.expectedLabels[j].Name
+			})
+			for i := range lbls {
+				require.Equal(t, &tc.expectedLabels[i], lbls[i])
+				require.True(t, proto.Equal(lbls[i], &tc.expectedLabels[i]))
+			}
 		})
 	}
 }
@@ -208,31 +219,31 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 				return metric
 			},
 			want: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
+				labels := []*prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_summary" + countStr},
 				}
-				createdLabels := []prompb.Label{
+				createdLabels := []*prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_summary" + createdSuffix},
 				}
-				sumLabels := []prompb.Label{
+				sumLabels := []*prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_summary" + sumStr},
 				}
 				return map[uint64]*prompb.TimeSeries{
 					timeSeriesSignature(labels): {
 						Labels: labels,
-						Samples: []prompb.Sample{
+						Samples: []*prompb.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
 					timeSeriesSignature(sumLabels): {
 						Labels: sumLabels,
-						Samples: []prompb.Sample{
+						Samples: []*prompb.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
 					timeSeriesSignature(createdLabels): {
 						Labels: createdLabels,
-						Samples: []prompb.Sample{
+						Samples: []*prompb.Sample{
 							{Value: float64(convertTimeStamp(ts)), Timestamp: convertTimeStamp(ts)},
 						},
 					},
@@ -252,22 +263,22 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 				return metric
 			},
 			want: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
+				labels := []*prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_summary" + countStr},
 				}
-				sumLabels := []prompb.Label{
+				sumLabels := []*prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_summary" + sumStr},
 				}
 				return map[uint64]*prompb.TimeSeries{
 					timeSeriesSignature(labels): {
 						Labels: labels,
-						Samples: []prompb.Sample{
+						Samples: []*prompb.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
 					timeSeriesSignature(sumLabels): {
 						Labels: sumLabels,
-						Samples: []prompb.Sample{
+						Samples: []*prompb.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
@@ -317,32 +328,32 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 				return metric
 			},
 			want: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
+				labels := []*prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_hist" + countStr},
 				}
-				createdLabels := []prompb.Label{
+				createdLabels := []*prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_hist" + createdSuffix},
 				}
-				infLabels := []prompb.Label{
+				infLabels := []*prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_hist_bucket"},
 					{Name: model.BucketLabel, Value: "+Inf"},
 				}
 				return map[uint64]*prompb.TimeSeries{
 					timeSeriesSignature(infLabels): {
 						Labels: infLabels,
-						Samples: []prompb.Sample{
+						Samples: []*prompb.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
 					timeSeriesSignature(labels): {
 						Labels: labels,
-						Samples: []prompb.Sample{
+						Samples: []*prompb.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
 					timeSeriesSignature(createdLabels): {
 						Labels: createdLabels,
-						Samples: []prompb.Sample{
+						Samples: []*prompb.Sample{
 							{Value: float64(convertTimeStamp(ts)), Timestamp: convertTimeStamp(ts)},
 						},
 					},
@@ -362,23 +373,23 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 				return metric
 			},
 			want: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
+				labels := []*prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_hist" + countStr},
 				}
-				infLabels := []prompb.Label{
+				infLabels := []*prompb.Label{
 					{Name: model.MetricNameLabel, Value: "test_hist_bucket"},
 					{Name: model.BucketLabel, Value: "+Inf"},
 				}
 				return map[uint64]*prompb.TimeSeries{
 					timeSeriesSignature(infLabels): {
 						Labels: infLabels,
-						Samples: []prompb.Sample{
+						Samples: []*prompb.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},
 					timeSeriesSignature(labels): {
 						Labels: labels,
-						Samples: []prompb.Sample{
+						Samples: []*prompb.Sample{
 							{Value: 0, Timestamp: convertTimeStamp(ts)},
 						},
 					},

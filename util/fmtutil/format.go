@@ -69,7 +69,7 @@ func MetricFamiliesToWriteRequest(mf map[string]*dto.MetricFamily, extraLabels m
 	for _, metricName := range sortedMetricNames {
 		// Set metadata writerequest
 		mtype := MetricMetadataTypeValue[mf[metricName].Type.String()]
-		metadata := prompb.MetricMetadata{
+		metadata := &prompb.MetricMetadata{
 			MetricFamilyName: mf[metricName].GetName(),
 			Type:             prompb.MetricMetadata_MetricType(mtype),
 			Help:             mf[metricName].GetHelp(),
@@ -87,9 +87,9 @@ func MetricFamiliesToWriteRequest(mf map[string]*dto.MetricFamily, extraLabels m
 }
 
 func toTimeseries(wr *prompb.WriteRequest, labels map[string]string, timestamp int64, value float64) {
-	var ts prompb.TimeSeries
+	ts := &prompb.TimeSeries{}
 	ts.Labels = makeLabels(labels)
-	ts.Samples = []prompb.Sample{
+	ts.Samples = []*prompb.Sample{
 		{
 			Timestamp: timestamp,
 			Value:     value,
@@ -161,7 +161,7 @@ func makeTimeseries(wr *prompb.WriteRequest, labels map[string]string, m *dto.Me
 	return err
 }
 
-func makeLabels(labelsMap map[string]string) []prompb.Label {
+func makeLabels(labelsMap map[string]string) []*prompb.Label {
 	// build labels name list
 	sortedLabelNames := make([]string, 0, len(labelsMap))
 	for label := range labelsMap {
@@ -170,9 +170,9 @@ func makeLabels(labelsMap map[string]string) []prompb.Label {
 	// sort labels name in lexicographical order
 	sort.Strings(sortedLabelNames)
 
-	var labels []prompb.Label
+	var labels []*prompb.Label
 	for _, label := range sortedLabelNames {
-		labels = append(labels, prompb.Label{
+		labels = append(labels, &prompb.Label{
 			Name:  label,
 			Value: labelsMap[label],
 		})
