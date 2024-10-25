@@ -116,11 +116,6 @@ func replayWal(file *os.File, lss *cppbridge.LabelSetStorage, dataStorage *DataS
 	decoder := cppbridge.NewHeadWalDecoder(lss, encoderVersion)
 	innerSeries := cppbridge.NewInnerSeries()
 	segmentID := -1
-	hexFile, err := os.Create("failed_shard_0.wal")
-	if err != nil {
-		return offset, nil, err
-	}
-	defer hexFile.Close()
 
 	for {
 		var bytesRead int
@@ -134,14 +129,6 @@ func replayWal(file *os.File, lss *cppbridge.LabelSetStorage, dataStorage *DataS
 		}
 		offset += bytesRead
 		segmentID++
-		_, err = hexFile.WriteString(fmt.Sprintf("%d\n", segment.sampleCount))
-		if err != nil {
-			return offset, nil, err
-		}
-		_, err = hexFile.WriteString(fmt.Sprintf("%x\n\n", segment.Data()))
-		if err != nil {
-			return offset, nil, err
-		}
 
 		fmt.Println("decoding segment id:", segmentID)
 		err = decoder.Decode(segment.Data(), innerSeries)
