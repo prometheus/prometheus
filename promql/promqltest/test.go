@@ -482,18 +482,16 @@ func (cmd *loadCmd) append(a storage.Appender) error {
 
 type tempHistogramWrapper struct {
 	metric        labels.Labels
-	upperBounds   []float64
 	histogramByTs map[int64]convertnhcb.TempHistogram
 }
 
 func newTempHistogramWrapper() tempHistogramWrapper {
 	return tempHistogramWrapper{
-		upperBounds:   []float64{},
 		histogramByTs: map[int64]convertnhcb.TempHistogram{},
 	}
 }
 
-func processClassicHistogramSeries(m labels.Labels, suffix string, histogramMap map[uint64]tempHistogramWrapper, smpls []promql.Sample, updateHistogramWrapper func(*tempHistogramWrapper), updateHistogram func(*convertnhcb.TempHistogram, float64)) {
+func processClassicHistogramSeries(m labels.Labels, suffix string, histogramMap map[uint64]tempHistogramWrapper, smpls []promql.Sample, updateHistogram func(*convertnhcb.TempHistogram, float64)) {
 	m2 := convertnhcb.GetHistogramMetricBase(m, suffix)
 	m2hash := m2.Hash()
 	histogramWrapper, exists := histogramMap[m2hash]
@@ -501,9 +499,6 @@ func processClassicHistogramSeries(m labels.Labels, suffix string, histogramMap 
 		histogramWrapper = newTempHistogramWrapper()
 	}
 	histogramWrapper.metric = m2
-	if updateHistogramWrapper != nil {
-		updateHistogramWrapper(&histogramWrapper)
-	}
 	for _, s := range smpls {
 		if s.H != nil {
 			continue
@@ -534,18 +529,16 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 			if err != nil || math.IsNaN(le) {
 				continue
 			}
-			processClassicHistogramSeries(m, "_bucket", histogramMap, smpls, func(histogramWrapper *tempHistogramWrapper) {
-				histogramWrapper.upperBounds = append(histogramWrapper.upperBounds, le)
-			}, func(histogram *convertnhcb.TempHistogram, f float64) {
-				histogram.BucketCounts[le] = f
+			processClassicHistogramSeries(m, "_bucket", histogramMap, smpls, func(histogram *convertnhcb.TempHistogram, f float64) {
+				_ = histogram.SetBucketCount(le, f)
 			})
 		case strings.HasSuffix(mName, "_count"):
-			processClassicHistogramSeries(m, "_count", histogramMap, smpls, nil, func(histogram *convertnhcb.TempHistogram, f float64) {
-				histogram.Count = f
+			processClassicHistogramSeries(m, "_count", histogramMap, smpls, func(histogram *convertnhcb.TempHistogram, f float64) {
+				_ = histogram.SetCount(f)
 			})
 		case strings.HasSuffix(mName, "_sum"):
-			processClassicHistogramSeries(m, "_sum", histogramMap, smpls, nil, func(histogram *convertnhcb.TempHistogram, f float64) {
-				histogram.Sum = f
+			processClassicHistogramSeries(m, "_sum", histogramMap, smpls, func(histogram *convertnhcb.TempHistogram, f float64) {
+				_ = histogram.SetSum(f)
 			})
 		}
 	}
@@ -553,11 +546,12 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 	// Convert the collated classic histogram data into native histograms
 	// with custom bounds and append them to the storage.
 	for _, histogramWrapper := range histogramMap {
-		upperBounds, hBase := convertnhcb.ProcessUpperBoundsAndCreateBaseHistogram(histogramWrapper.upperBounds, true)
-		fhBase := hBase.ToFloat(nil)
 		samples := make([]promql.Sample, 0, len(histogramWrapper.histogramByTs))
 		for t, histogram := range histogramWrapper.histogramByTs {
-			h, fh := convertnhcb.NewHistogram(histogram, upperBounds, hBase, fhBase)
+			h, fh, err := histogram.Convert()
+			if err != nil {
+				return err
+			}
 			if fh == nil {
 				if err := h.Validate(); err != nil {
 					return err
