@@ -142,7 +142,7 @@ var expectedConf = &Config{
 					},
 				},
 				FollowRedirects: true,
-				EnableHTTP2:     true,
+				EnableHTTP2:     false,
 			},
 		},
 		{
@@ -158,7 +158,7 @@ var expectedConf = &Config{
 					KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 				},
 				FollowRedirects: true,
-				EnableHTTP2:     true,
+				EnableHTTP2:     false,
 			},
 			Headers: map[string]string{"name": "value"},
 		},
