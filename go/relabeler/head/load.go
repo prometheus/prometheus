@@ -115,7 +115,6 @@ func replayWal(file *os.File, lss *cppbridge.LabelSetStorage, dataStorage *DataS
 
 	decoder := cppbridge.NewHeadWalDecoder(lss, encoderVersion)
 	innerSeries := cppbridge.NewInnerSeries()
-	segmentID := -1
 
 	for {
 		var bytesRead int
@@ -128,9 +127,7 @@ func replayWal(file *os.File, lss *cppbridge.LabelSetStorage, dataStorage *DataS
 			return offset, nil, fmt.Errorf("failed to read segment: %w", err)
 		}
 		offset += bytesRead
-		segmentID++
 
-		fmt.Println("decoding segment id:", segmentID)
 		err = decoder.Decode(segment.Data(), innerSeries)
 		if err != nil {
 			return offset, nil, fmt.Errorf("failed to decode segment: %w", err)

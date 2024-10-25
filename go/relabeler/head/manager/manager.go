@@ -25,6 +25,12 @@ type Catalog interface {
 	Delete(id string) error
 }
 
+type metrics struct {
+	CreatedHeadsCount   prometheus.Counter
+	CorruptedHeadsCount prometheus.Counter
+	DeletedHeadsCount   prometheus.Counter
+}
+
 type Manager struct {
 	dir          string
 	configSource ConfigSource

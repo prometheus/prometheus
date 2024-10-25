@@ -13,7 +13,6 @@ type ShardWal struct {
 	writeCloser         io.WriteCloser
 	fileHeaderIsWritten bool
 	buf                 [binary.MaxVarintLen32]byte
-	segmentID           int
 }
 
 func newShardWal(encoder *cppbridge.HeadWalEncoder, fileHeaderIsWritten bool, writeCloser io.WriteCloser) *ShardWal {
@@ -21,7 +20,6 @@ func newShardWal(encoder *cppbridge.HeadWalEncoder, fileHeaderIsWritten bool, wr
 		encoder:             encoder,
 		writeCloser:         writeCloser,
 		fileHeaderIsWritten: fileHeaderIsWritten,
-		segmentID:           -1,
 	}
 }
 
@@ -35,9 +33,6 @@ func (w *ShardWal) Write(innerSeriesSlice []*cppbridge.InnerSeries) error {
 	if err != nil {
 		return fmt.Errorf("failed to finalize segment: %w", err)
 	}
-
-	w.segmentID++
-	fmt.Println("encoding segment: id:", w.segmentID)
 
 	if !w.fileHeaderIsWritten {
 		_, err = WriteHeader(w.writeCloser, 1, w.encoder.Version())
