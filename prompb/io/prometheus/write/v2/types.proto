@@ -16,9 +16,13 @@
 syntax = "proto3";
 package io.prometheus.write.v2;
 
-option go_package = "writev2";
+// TODO (tonyli233): Uncomment the import statement after the package is available on buf.build.
+// https://github.com/bufbuild/modules/issues/692
+// Also, we can remove all the options for buf.build/community/planetscale-vtprotobuf:v0.6.0 in buf.gen.yaml.
+//
+// import "github.com/planetscale/vtprotobuf/vtproto/ext.proto";
 
-import "gogoproto/gogo.proto";
+option go_package = "writev2";
 
 // Request represents a request to write the given timeseries to a remote destination.
 // This message was introduced in the Remote Write 2.0 specification:
@@ -38,6 +42,13 @@ message Request {
   // message if you use the wrong proto schema).
   reserved 1 to 3;
 
+  // TODO (tonyli233): Uncomment the extended message option to enable vtproto pooling after
+  // vtproto package is availble on buf.build. Similar to all other messages in this file
+  // https://github.com/bufbuild/modules/issues/692
+  //
+  //  option (vtproto.mempool) = true; // Enable memory pooling
+
+
   // symbols contains a de-duplicated array of string elements used for various
   // items in a Request message, like labels and metadata items. For the sender's convenience
   // around empty values for optional fields like unit_ref, symbols array MUST start with
@@ -48,7 +59,7 @@ message Request {
   // strings is up to the sender. The receiver should not assume any particular encoding.
   repeated string symbols = 4;
   // timeseries represents an array of distinct series with 0 or more samples.
-  repeated TimeSeries timeseries = 5 [(gogoproto.nullable) = false];
+  repeated TimeSeries timeseries = 5;
 }
 
 // TimeSeries represents a single series.
@@ -67,14 +78,14 @@ message TimeSeries {
   // streaming), in healthy cases, there will be only one sample or histogram.
   //
   // Samples and histograms are sorted by timestamp (older first).
-  repeated Sample samples = 2 [(gogoproto.nullable) = false];
-  repeated Histogram histograms = 3 [(gogoproto.nullable) = false];
+  repeated Sample samples = 2;
+  repeated Histogram histograms = 3;
 
   // exemplars represents an optional set of exemplars attached to this series' samples.
-  repeated Exemplar exemplars = 4 [(gogoproto.nullable) = false];
+  repeated Exemplar exemplars = 4;
 
   // metadata represents the metadata associated with the given series' samples.
-  Metadata metadata = 5 [(gogoproto.nullable) = false];
+  Metadata metadata = 5;
 
   // created_timestamp represents an optional created timestamp associated with
   // this series' samples in ms format, typically for counter or histogram type
@@ -187,7 +198,7 @@ message Histogram {
   }
 
   // Negative Buckets.
-  repeated BucketSpan negative_spans =  8 [(gogoproto.nullable) = false];
+  repeated BucketSpan negative_spans =  8;
   // Use either "negative_deltas" or "negative_counts", the former for
   // regular histograms with integer counts, the latter for
   // float histograms.
@@ -200,7 +211,7 @@ message Histogram {
   // * The span offset+length points to an the index of the custom_values array
   // or +Inf if pointing to the len of the array.
   // * The counts and deltas have the same meaning as for exponential histograms.
-  repeated BucketSpan positive_spans = 11 [(gogoproto.nullable) = false];
+  repeated BucketSpan positive_spans = 11;
   // Use either "positive_deltas" or "positive_counts", the former for
   // regular histograms with integer counts, the latter for
   // float histograms.

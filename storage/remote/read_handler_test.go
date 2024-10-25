@@ -23,9 +23,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
@@ -102,14 +102,14 @@ func TestSampledReadEndpoint(t *testing.T) {
 	require.Equal(t, &prompb.QueryResult{
 		Timeseries: []*prompb.TimeSeries{
 			{
-				Labels: []prompb.Label{
+				Labels: []*prompb.Label{
 					{Name: "__name__", Value: "test_metric1"},
 					{Name: "b", Value: "c"},
 					{Name: "baz", Value: "qux"},
 					{Name: "d", Value: "e"},
 					{Name: "foo", Value: "bar"},
 				},
-				Samples: []prompb.Sample{{Value: 1, Timestamp: 0}},
+				Samples: []*prompb.Sample{{Value: 1, Timestamp: 0}},
 			},
 		},
 	}, resp.Results[0])
@@ -117,13 +117,13 @@ func TestSampledReadEndpoint(t *testing.T) {
 	require.Equal(t, &prompb.QueryResult{
 		Timeseries: []*prompb.TimeSeries{
 			{
-				Labels: []prompb.Label{
+				Labels: []*prompb.Label{
 					{Name: "__name__", Value: "test_histogram_metric1"},
 					{Name: "b", Value: "c"},
 					{Name: "baz", Value: "qux"},
 					{Name: "d", Value: "e"},
 				},
-				Histograms: []prompb.Histogram{
+				Histograms: []*prompb.Histogram{
 					prompb.FromFloatHistogram(0, tsdbutil.GenerateTestFloatHistogram(0)),
 				},
 			},
@@ -293,18 +293,18 @@ func TestStreamReadEndpoint(t *testing.T) {
 
 	require.Len(t, results, 6, "Expected 6 results.")
 
-	require.Equal(t, []*prompb.ChunkedReadResponse{
+	expected := []*prompb.ChunkedReadResponse{
 		{
 			ChunkedSeries: []*prompb.ChunkedSeries{
 				{
-					Labels: []prompb.Label{
+					Labels: []*prompb.Label{
 						{Name: "__name__", Value: "test_metric1"},
 						{Name: "b", Value: "c"},
 						{Name: "baz", Value: "qux"},
 						{Name: "d", Value: "e"},
 						{Name: "foo", Value: "bar1"},
 					},
-					Chunks: []prompb.Chunk{
+					Chunks: []*prompb.Chunk{
 						{
 							Type:      prompb.Chunk_XOR,
 							MaxTimeMs: 7140000,
@@ -317,14 +317,14 @@ func TestStreamReadEndpoint(t *testing.T) {
 		{
 			ChunkedSeries: []*prompb.ChunkedSeries{
 				{
-					Labels: []prompb.Label{
+					Labels: []*prompb.Label{
 						{Name: "__name__", Value: "test_metric1"},
 						{Name: "b", Value: "c"},
 						{Name: "baz", Value: "qux"},
 						{Name: "d", Value: "e"},
 						{Name: "foo", Value: "bar2"},
 					},
-					Chunks: []prompb.Chunk{
+					Chunks: []*prompb.Chunk{
 						{
 							Type:      prompb.Chunk_XOR,
 							MaxTimeMs: 7140000,
@@ -343,14 +343,14 @@ func TestStreamReadEndpoint(t *testing.T) {
 		{
 			ChunkedSeries: []*prompb.ChunkedSeries{
 				{
-					Labels: []prompb.Label{
+					Labels: []*prompb.Label{
 						{Name: "__name__", Value: "test_metric1"},
 						{Name: "b", Value: "c"},
 						{Name: "baz", Value: "qux"},
 						{Name: "d", Value: "e"},
 						{Name: "foo", Value: "bar3"},
 					},
-					Chunks: []prompb.Chunk{
+					Chunks: []*prompb.Chunk{
 						{
 							Type:      prompb.Chunk_XOR,
 							MaxTimeMs: 7140000,
@@ -369,14 +369,14 @@ func TestStreamReadEndpoint(t *testing.T) {
 		{
 			ChunkedSeries: []*prompb.ChunkedSeries{
 				{
-					Labels: []prompb.Label{
+					Labels: []*prompb.Label{
 						{Name: "__name__", Value: "test_metric1"},
 						{Name: "b", Value: "c"},
 						{Name: "baz", Value: "qux"},
 						{Name: "d", Value: "e"},
 						{Name: "foo", Value: "bar3"},
 					},
-					Chunks: []prompb.Chunk{
+					Chunks: []*prompb.Chunk{
 						{
 							Type:      prompb.Chunk_XOR,
 							MinTimeMs: 14400000,
@@ -390,14 +390,14 @@ func TestStreamReadEndpoint(t *testing.T) {
 		{
 			ChunkedSeries: []*prompb.ChunkedSeries{
 				{
-					Labels: []prompb.Label{
+					Labels: []*prompb.Label{
 						{Name: "__name__", Value: "test_metric1"},
 						{Name: "b", Value: "c"},
 						{Name: "baz", Value: "qux"},
 						{Name: "d", Value: "e"},
 						{Name: "foo", Value: "bar1"},
 					},
-					Chunks: []prompb.Chunk{
+					Chunks: []*prompb.Chunk{
 						{
 							Type:      prompb.Chunk_XOR,
 							MaxTimeMs: 7140000,
@@ -411,13 +411,13 @@ func TestStreamReadEndpoint(t *testing.T) {
 		{
 			ChunkedSeries: []*prompb.ChunkedSeries{
 				{
-					Labels: []prompb.Label{
+					Labels: []*prompb.Label{
 						{Name: "__name__", Value: "test_histogram_metric1"},
 						{Name: "b", Value: "c"},
 						{Name: "baz", Value: "qux"},
 						{Name: "d", Value: "e"},
 					},
-					Chunks: []prompb.Chunk{
+					Chunks: []*prompb.Chunk{
 						{
 							Type:      prompb.Chunk_FLOAT_HISTOGRAM,
 							MaxTimeMs: 1440000,
@@ -428,7 +428,10 @@ func TestStreamReadEndpoint(t *testing.T) {
 			},
 			QueryIndex: 2,
 		},
-	}, results)
+	}
+	for i, _ := range expected {
+		require.True(t, proto.Equal(expected[i], results[i]))
+	}
 }
 
 func addNativeHistogramsToTestSuite(t *testing.T, storage *teststorage.TestStorage, n int) {
