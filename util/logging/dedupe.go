@@ -51,11 +51,7 @@ func Dedupe(next *slog.Logger, repeat time.Duration) *Deduper {
 // provided context and log level, and returns false otherwise. It implements
 // slog.Handler.
 func (d *Deduper) Enabled(ctx context.Context, level slog.Level) bool {
-	d.mtx.RLock()
-	enabled := d.next.Enabled(ctx, level)
-	d.mtx.RUnlock()
-
-	return enabled
+	return d.next.Enabled(ctx, level)
 }
 
 // Handle uses the provided context and slog.Record to deduplicate messages
@@ -85,43 +81,27 @@ func (d *Deduper) Handle(ctx context.Context, r slog.Record) error {
 // WithAttrs adds the provided attributes to the Deduper's internal
 // slog.Logger. It implements slog.Handler.
 func (d *Deduper) WithAttrs(attrs []slog.Attr) slog.Handler {
-	d.mtx.Lock()
-	d.next = slog.New(d.next.Handler().WithAttrs(attrs))
-	d.mtx.Unlock()
-	return d
+	return &Deduper{
+		next:   slog.New(d.next.Handler().WithAttrs(attrs)),
+		repeat: d.repeat,
+		quit:   d.quit,
+		seen:   d.seen,
+	}
 }
 
 // WithGroup adds the provided group name to the Deduper's internal
 // slog.Logger. It implements slog.Handler.
 func (d *Deduper) WithGroup(name string) slog.Handler {
-	d.mtx.Lock()
-	d.next = slog.New(d.next.Handler().WithGroup(name))
-	d.mtx.Unlock()
-	return d
-}
+	if name == "" {
+		return d
+	}
 
-// Info logs the provided message and key-value arguments using the Deduper's
-// internal slog.Logger. It is simply a wrapper around slog.Logger.Info().
-func (d *Deduper) Info(msg string, args ...any) {
-	d.next.Info(msg, args...)
-}
-
-// Warn logs the provided message and key-value arguments using the Deduper's
-// internal slog.Logger. It is simply a wrapper around slog.Logger.Warn().
-func (d *Deduper) Warn(msg string, args ...any) {
-	d.next.Warn(msg, args...)
-}
-
-// Error logs the provided message and key-value arguments using the Deduper's
-// internal slog.Logger. It is simply a wrapper around slog.Logger.Error().
-func (d *Deduper) Error(msg string, args ...any) {
-	d.next.Error(msg, args...)
-}
-
-// Debug logs the provided message and key-value arguments using the Deduper's
-// internal slog.Logger. It is simply a wrapper around slog.Logger.Debug().
-func (d *Deduper) Debug(msg string, args ...any) {
-	d.next.Debug(msg, args...)
+	return &Deduper{
+		next:   slog.New(d.next.Handler().WithGroup(name)),
+		repeat: d.repeat,
+		quit:   d.quit,
+		seen:   d.seen,
+	}
 }
 
 // Stop the Deduper.
