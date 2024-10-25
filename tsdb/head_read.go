@@ -262,6 +262,10 @@ func unpackHeadChunkRef(ref chunks.ChunkRef) (seriesID chunks.HeadSeriesRef, chu
 	return sid, (cid & (oooChunkIDMask - 1)), (cid & oooChunkIDMask) != 0
 }
 
+func isOOOChunkID(cid chunks.HeadChunkID) bool {
+	return (cid & oooChunkIDMask) != 0
+}
+
 // LabelValueFor returns label value for the given label name in the series referred to by ID.
 func (h *headIndexReader) LabelValueFor(_ context.Context, id storage.SeriesRef, label string) (string, error) {
 	memSeries := h.head.series.getByID(chunks.HeadSeriesRef(id))
