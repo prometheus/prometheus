@@ -334,7 +334,11 @@ func (h *Head) Close() error {
 	}
 	<-h.finalizer.Done()
 	h.memoryInUse.DeletePartialMatch(prometheus.Labels{"generation": strconv.FormatUint(h.generation, 10)})
-	return nil
+	var err error
+	for _, wal := range h.wals {
+		err = errors.Join(err, wal.Close())
+	}
+	return err
 }
 
 // enqueueInputRelabeling send task to shard for input relabeling.
