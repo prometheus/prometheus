@@ -408,7 +408,7 @@ class BasicEncoder {
         pow_two_of_total_shards_(pow_two_of_total_shards) {
     gorilla_.reserve(gorilla.size());
     for (auto& decoder : gorilla) {
-      gorilla_.emplace_back().reset(decoder.state());
+      gorilla_.emplace_back(decoder.state());
     }
   }
   explicit BasicEncoder(uint16_t shard_id = 0, uint8_t pow_two_of_total_shards = 0)

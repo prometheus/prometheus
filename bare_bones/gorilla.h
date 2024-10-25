@@ -151,24 +151,6 @@ class ZigZagTimestampEncoder {
   }
 };
 
-struct PROMPP_ATTRIBUTE_PACKED ValuesEncoderState {
-  double last_v{};
-  uint8_t last_v_xor_length{};
-  uint8_t last_v_xor_leading_z{};
-  uint8_t last_v_xor_trailing_z{};
-  uint8_t v_xor_waste_bits_written{};
-
-  bool operator==(const ValuesEncoderState&) const noexcept = default;
-
-  PROMPP_ALWAYS_INLINE void reset() {
-    last_v = {};
-    last_v_xor_length = {};
-    last_v_xor_leading_z = {};
-    last_v_xor_trailing_z = {};
-    v_xor_waste_bits_written = {};
-  }
-};
-
 struct PROMPP_ATTRIBUTE_PACKED ValuesDecoderState {
   double last_v{};
   uint8_t last_v_xor_length{};
@@ -177,16 +159,47 @@ struct PROMPP_ATTRIBUTE_PACKED ValuesDecoderState {
   bool operator==(const ValuesDecoderState&) const noexcept = default;
 };
 
+struct PROMPP_ATTRIBUTE_PACKED ValuesEncoderState {
+  static constexpr uint8_t kMaxXorTrailingLeadingZ = Bit::to_bits(sizeof(uint64_t));
+
+  double last_v{};
+  uint8_t last_v_xor_length{};
+  uint8_t last_v_xor_leading_z{kMaxXorTrailingLeadingZ};
+  uint8_t last_v_xor_trailing_z{kMaxXorTrailingLeadingZ};
+  uint8_t v_xor_waste_bits_written{};
+
+  ValuesEncoderState() = default;
+  explicit ValuesEncoderState(const ValuesDecoderState& state) noexcept
+      : last_v(state.last_v), last_v_xor_length(state.last_v_xor_length), last_v_xor_trailing_z(state.last_v_xor_trailing_z) {}
+
+  bool operator==(const ValuesEncoderState&) const noexcept = default;
+
+  PROMPP_ALWAYS_INLINE void reset() noexcept { reset({}); }
+
+  PROMPP_ALWAYS_INLINE void reset(const ValuesDecoderState& state) noexcept {
+    this->last_v = state.last_v;
+    this->last_v_xor_length = state.last_v_xor_length;
+    this->last_v_xor_leading_z = kMaxXorTrailingLeadingZ;
+    this->last_v_xor_trailing_z = state.last_v_xor_trailing_z;
+    this->v_xor_waste_bits_written = {};
+  }
+};
+
 enum class GorillaState : uint8_t {
   kFirstPoint = 0,
   kSecondPoint = 1,
   kOtherPoint = 2,
 };
 
+struct DecoderState;
+
 struct PROMPP_ATTRIBUTE_PACKED EncoderState {
   TimestampEncoderState timestamp_encoder;
   ValuesEncoderState values_encoder;
   GorillaState state{GorillaState::kFirstPoint};
+
+  EncoderState() = default;
+  explicit EncoderState(const DecoderState& state) noexcept;
 
   bool operator==(const EncoderState&) const noexcept = default;
 };
@@ -211,6 +224,9 @@ struct PROMPP_ATTRIBUTE_PACKED DecoderState {
 
   bool operator==(const DecoderState&) const noexcept = default;
 };
+
+inline EncoderState::EncoderState(const DecoderState& state) noexcept
+    : timestamp_encoder(state.timestamp_decoder), values_encoder(state.values_decoder), state(state.state) {}
 
 class TimestampEncoder {
  public:
@@ -547,12 +563,15 @@ class PROMPP_ATTRIBUTE_PACKED StreamEncoder {
   friend class StreamDecoder;
 
  public:
+  StreamEncoder() = default;
+  explicit StreamEncoder(const DecoderState& state) : state_{state} {}
+
   [[nodiscard]] PROMPP_ALWAYS_INLINE int64_t last_timestamp() const noexcept { return state_.timestamp_encoder.last_ts; }
   [[nodiscard]] PROMPP_ALWAYS_INLINE double last_value() const noexcept { return state_.values_encoder.last_v; }
   [[nodiscard]] PROMPP_ALWAYS_INLINE const EncoderState& state() const noexcept { return state_; }
 
   template <class BitSequence>
-  inline __attribute__((always_inline)) void encode(int64_t ts, double v, BitSequence& ts_bitseq, BitSequence& v_bitseq) noexcept {
+  PROMPP_ALWAYS_INLINE void encode(int64_t ts, double v, BitSequence& ts_bitseq, BitSequence& v_bitseq) noexcept {
     if (state_.state == GorillaState::kFirstPoint) {
       TimestampEncoder::encode(state_.timestamp_encoder, ts, ts_bitseq);
       ValuesEncoder::encode_first(state_.values_encoder, v, v_bitseq);
@@ -568,85 +587,9 @@ class PROMPP_ATTRIBUTE_PACKED StreamEncoder {
       ValuesEncoder::encode(state_.values_encoder, v, v_bitseq);
     }
   }
-
-  PROMPP_ALWAYS_INLINE void reset(const DecoderState& state) noexcept {
-    state_.timestamp_encoder = state.timestamp_decoder;
-    state_.values_encoder.last_v = state.values_decoder.last_v;
-    state_.values_encoder.last_v_xor_length = state.values_decoder.last_v_xor_length;
-    state_.values_encoder.last_v_xor_trailing_z = state.values_decoder.last_v_xor_trailing_z;
-    state_.values_encoder.v_xor_waste_bits_written = 0;
-    state_.state = static_cast<decltype(state_.state)>(state.state);
-  }
-};
-
-template <TimestampEncoderInterface TimestampEncoder, TimestampDecoderInterface TimestampDecoder>
-class PROMPP_ATTRIBUTE_PACKED PrometheusStreamEncoder {
- public:
-  PROMPP_ALWAYS_INLINE void encode(int64_t timestamp, double value, BitSequence& stream) {
-    if (timestamp > encoder_.last_timestamp()) {
-      append(timestamp, value, stream);
-      return;
-    } else if (timestamp == encoder_.last_timestamp() && value == encoder_.last_value()) {
-      return;
-    }
-
-    insert(timestamp, value, stream);
-  }
-
- private:
-  StreamEncoder<TimestampEncoder, ValuesEncoder> encoder_;
-
-  PROMPP_ALWAYS_INLINE void append(int64_t timestamp, double value, BitSequence& stream) { encoder_.encode(timestamp, value, stream, stream); }
-
-  PROMPP_ALWAYS_INLINE void insert(int64_t timestamp, double value, BitSequence& stream) {
-    StreamDecoder<TimestampDecoder, ValuesDecoder> decoder;
-    auto reader = stream.reader();
-    auto [position, state] = decode_to_timestamp(timestamp, reader, decoder);
-    if (timestamp == decoder.last_timestamp() && value == decoder.last_value()) {
-      return;
-    }
-
-    encoder_.reset(state);
-
-    BitSequence new_stream(stream, position);
-    append(timestamp, value, new_stream);
-    if (timestamp != decoder.last_timestamp()) {
-      append(decoder.last_timestamp(), decoder.last_value(), new_stream);
-    }
-
-    re_encode(reader, decoder, new_stream);
-    stream = std::move(new_stream);
-  }
-
-  PROMPP_ALWAYS_INLINE static std::pair<uint64_t, DecoderState> decode_to_timestamp(int64_t timestamp,
-                                                                                    BitSequenceReader& reader,
-                                                                                    StreamDecoder<TimestampDecoder, ValuesDecoder>& decoder) {
-    std::pair<uint64_t, DecoderState> result;
-
-    while (!reader.eof()) {
-      result.first = reader.position();
-      result.second = decoder.state();
-
-      decoder.decode(reader, reader);
-      if (decoder.last_timestamp() >= timestamp) {
-        return result;
-      }
-    }
-
-    assert(false);
-    return result;
-  }
-
-  PROMPP_ALWAYS_INLINE void re_encode(BitSequenceReader& reader, StreamDecoder<TimestampDecoder, ValuesDecoder>& decoder, BitSequence& stream) {
-    while (!reader.eof()) {
-      decoder.decode(reader, reader);
-      append(decoder.last_timestamp(), decoder.last_value(), stream);
-    }
-  }
 };
 
 static_assert(sizeof(StreamEncoder<ZigZagTimestampEncoder<>, ValuesEncoder>) == 29);
-static_assert(sizeof(PrometheusStreamEncoder<TimestampEncoder, TimestampDecoder>) == 29);
 
 template <TimestampDecoderInterface TimestampDecoder, ValuesDecoderInterface ValuesDecoder>
 class PROMPP_ATTRIBUTE_PACKED StreamDecoder {
