@@ -8,6 +8,7 @@ import (
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head/catalog"
+	"github.com/prometheus/prometheus/pp/go/util"
 	"github.com/prometheus/client_golang/prometheus"
 	"os"
 	"path/filepath"
@@ -27,7 +28,9 @@ type Catalog interface {
 
 type metrics struct {
 	CreatedHeadsCount   prometheus.Counter
+	RotatedHeadsCount   prometheus.Counter
 	CorruptedHeadsCount prometheus.Counter
+	PersistedHeadsCount prometheus.Counter
 	DeletedHeadsCount   prometheus.Counter
 }
 
@@ -36,6 +39,7 @@ type Manager struct {
 	configSource ConfigSource
 	catalog      Catalog
 	generation   uint64
+	counter      *prometheus.CounterVec
 	registerer   prometheus.Registerer
 }
 
@@ -49,18 +53,27 @@ func New(dir string, configSource ConfigSource, catalog Catalog, registerer prom
 		return nil, fmt.Errorf("%s is not directory", dir)
 	}
 
+	factory := util.NewUnconflictRegisterer(registerer)
+
 	return &Manager{
 		dir:          dir,
 		configSource: configSource,
 		catalog:      catalog,
-		registerer:   registerer,
+		counter: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "prompp_head_event_count",
+				Help: "Number of head events",
+			},
+			[]string{"type"},
+		),
+		registerer: registerer,
 	}, nil
 }
 
 func (m *Manager) Restore(blockDuration time.Duration) (active relabeler.Head, rotated []relabeler.Head, err error) {
 	headRecords, err := m.catalog.List(
 		func(record catalog.Record) bool {
-			return record.DeletedAt == 0 && record.Status != catalog.StatusPersisted && record.Status != catalog.StatusCorrupted
+			return record.DeletedAt == 0 && record.Status != catalog.StatusCorrupted
 		},
 		func(lhs, rhs catalog.Record) bool {
 			return lhs.CreatedAt < rhs.CreatedAt
@@ -72,36 +85,67 @@ func (m *Manager) Restore(blockDuration time.Duration) (active relabeler.Head, r
 
 	for index, headRecord := range headRecords {
 		var h relabeler.Head
-		dir := filepath.Join(m.dir, headRecord.Dir)
+		headDir := filepath.Join(m.dir, headRecord.Dir)
+		if headRecord.Status == catalog.StatusPersisted {
+			if err = os.RemoveAll(headDir); err != nil {
+				// todo: log
+			}
+			if err = m.catalog.Delete(headRecord.ID); err != nil {
+				return nil, nil, fmt.Errorf("failed to delete record from catalog: %w", err)
+			}
+
+			m.counter.With(prometheus.Labels{"type": "deleted"}).Inc()
+
+			continue
+		}
+
 		cfgs, _ := m.configSource.Get()
-		h, err = head.Load(headRecord.ID, m.generation, dir, cfgs, headRecord.NumberOfShards, m.registerer)
+		h, err = head.Load(headRecord.ID, m.generation, headDir, cfgs, headRecord.NumberOfShards, m.registerer)
 		if err != nil {
 			_, setStatusErr := m.catalog.SetStatus(headRecord.ID, catalog.StatusCorrupted)
 			if setStatusErr != nil {
 				return nil, nil, errors.Join(err, setStatusErr)
 			}
+			m.counter.With(prometheus.Labels{"type": "corrupted"}).Inc()
 			continue
 		}
-
-		h = NewDiscardableHead(h, func(id string) error {
-			var discardErr error
-			if _, discardErr = m.catalog.SetStatus(id, catalog.StatusPersisted); discardErr != nil {
-				return discardErr
-			}
-			if discardErr = os.RemoveAll(dir); discardErr != nil {
-				return discardErr
-			}
-			if discardErr = m.catalog.Delete(id); discardErr != nil {
-				return discardErr
-			}
-			return nil
-		})
-
+		m.generation++
+		h = NewDiscardableRotatableHead(
+			h,
+			func(id string, err error) error {
+				if _, rotateErr := m.catalog.SetStatus(id, catalog.StatusRotated); rotateErr != nil {
+					return errors.Join(err, rotateErr)
+				}
+				m.counter.With(prometheus.Labels{"type": "rotated"}).Inc()
+				return err
+			},
+			func(id string) error {
+				var discardErr error
+				if _, discardErr = m.catalog.SetStatus(id, catalog.StatusPersisted); discardErr != nil {
+					return discardErr
+				}
+				m.counter.With(prometheus.Labels{"type": "persisted"}).Inc()
+				if discardErr = os.RemoveAll(headDir); discardErr != nil {
+					return discardErr
+				}
+				if discardErr = m.catalog.Delete(id); discardErr != nil {
+					return discardErr
+				}
+				m.counter.With(prometheus.Labels{"type": "deleted"}).Inc()
+				return nil
+			})
+		m.counter.With(prometheus.Labels{"type": "created"}).Inc()
 		if index == len(headRecords)-1 && time.Now().Sub(time.UnixMilli(headRecord.CreatedAt)).Milliseconds() < blockDuration.Milliseconds() {
 			active = h
 			continue
 		}
 		h.Finalize()
+		if headRecord.Status != catalog.StatusRotated {
+			if _, err = m.catalog.SetStatus(headRecord.ID, catalog.StatusRotated); err != nil {
+				return nil, nil, fmt.Errorf("failed to set status: %w", err)
+			}
+			m.counter.With(prometheus.Labels{"type": "rotated"}).Inc()
+		}
 		rotated = append(rotated, h)
 	}
 
@@ -123,8 +167,8 @@ func (m *Manager) Build() (relabeler.Head, error) {
 
 func (m *Manager) BuildWithConfig(inputRelabelerConfigs []*config.InputRelabelerConfig, numberOfShards uint16) (h relabeler.Head, err error) {
 	id := uuid.New().String()
-	dir := filepath.Join(m.dir, id)
-	if err = os.Mkdir(dir, 0777); err != nil {
+	headDir := filepath.Join(m.dir, id)
+	if err = os.Mkdir(headDir, 0777); err != nil {
 		return nil, err
 	}
 	defer func() {
@@ -135,7 +179,7 @@ func (m *Manager) BuildWithConfig(inputRelabelerConfigs []*config.InputRelabeler
 
 	generation := m.generation
 
-	h, err = head.Create(id, generation, dir, inputRelabelerConfigs, numberOfShards, m.registerer)
+	h, err = head.Create(id, generation, headDir, inputRelabelerConfigs, numberOfShards, m.registerer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create head: %w", err)
 	}
@@ -146,19 +190,29 @@ func (m *Manager) BuildWithConfig(inputRelabelerConfigs []*config.InputRelabeler
 
 	m.generation++
 
-	return NewDiscardableHead(
+	m.counter.With(prometheus.Labels{"type": "created"}).Inc()
+	return NewDiscardableRotatableHead(
 		h,
+		func(id string, err error) error {
+			if _, rotateErr := m.catalog.SetStatus(id, catalog.StatusRotated); rotateErr != nil {
+				return errors.Join(err, rotateErr)
+			}
+			m.counter.With(prometheus.Labels{"type": "rotated"}).Inc()
+			return err
+		},
 		func(id string) error {
 			var discardErr error
 			if _, discardErr = m.catalog.SetStatus(id, catalog.StatusPersisted); discardErr != nil {
 				return discardErr
 			}
-			if discardErr = os.RemoveAll(dir); discardErr != nil {
+			m.counter.With(prometheus.Labels{"type": "persisted"}).Inc()
+			if discardErr = os.Remove(headDir); discardErr != nil {
 				return discardErr
 			}
 			if discardErr = m.catalog.Delete(id); discardErr != nil {
 				return discardErr
 			}
+			m.counter.With(prometheus.Labels{"type": "deleted"}).Inc()
 			return nil
 		},
 	), nil

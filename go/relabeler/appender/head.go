@@ -102,6 +102,7 @@ func (h *RotatableHead) Rotate() error {
 	}
 
 	h.head.Finalize()
+	_ = h.head.Rotate()
 	h.storage.Add(h.head)
 	h.head = newHead
 
@@ -115,6 +116,7 @@ func (h *RotatableHead) RotateWithConfig(inputRelabelerConfigs []*config.InputRe
 	}
 
 	h.head.Finalize()
+	_ = h.head.Rotate()
 	h.storage.Add(h.head)
 	h.head = newHead
 
