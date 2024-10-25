@@ -18,13 +18,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go.opentelemetry.io/otel/attribute"
 	"io"
 	"net/http"
 	"net/http/httptrace"
 	"strconv"
 	"strings"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
@@ -289,7 +290,7 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) (WriteRespo
 			span.AddEvent("GotConn", trace.WithAttributes(
 				attribute.Bool("reused", info.Reused),
 				attribute.Bool("wasIdle", info.WasIdle),
-				//attribute.Duration("idleTime", info.IdleTime),
+				attribute.Float64("idleTimeMs", float64(info.IdleTime.Milliseconds())),
 			))
 		},
 		DNSStart: func(info httptrace.DNSStartInfo) {
