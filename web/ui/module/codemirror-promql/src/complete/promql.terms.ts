@@ -282,6 +282,12 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'info',
+    detail: 'function',
+    info: 'Add data labels from corresponding info metrics',
+    type: 'function',
+  },
+  {
     label: 'irate',
     detail: 'function',
     info: 'Calculate the per-second increase over the last two samples of a range vector (for counters)',
