@@ -8,7 +8,6 @@ namespace {
 
 using BareBones::BitSequence;
 using BareBones::BitSequenceReader;
-using BareBones::Encoding::Gorilla::PrometheusStreamEncoder;
 using BareBones::Encoding::Gorilla::StreamDecoder;
 using BareBones::Encoding::Gorilla::StreamEncoder;
 using BareBones::Encoding::Gorilla::TimestampDecoder;
@@ -259,88 +258,40 @@ INSTANTIATE_TEST_SUITE_P(
                                       .expected = {0x00, 0xA0, 0x1F, 0x1C, 0xA2, 0x1E, 0x81, 0x8F, 0xC1, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF},
                                       .expected_size = 125}));
 
-struct PrometheusStreamEncoderCase {
-  std::vector<Sample> samples;
-  std::vector<Sample> decoded_samples;
-};
+TEST(EncoderDecoder, ResetState) {
+  using Encoder = StreamEncoder<TimestampEncoder, ValuesEncoder>;
+  using Decoder = StreamDecoder<TimestampDecoder, ValuesDecoder>;
 
-class PrometheusStreamEncoderFixture : public testing::TestWithParam<PrometheusStreamEncoderCase> {
- protected:
-  BitSequence sequence_;
-  PrometheusStreamEncoder<TimestampEncoder, TimestampDecoder> encoder_;
-  StreamDecoder<TimestampDecoder, ValuesDecoder> decoder_;
-};
-
-TEST_P(PrometheusStreamEncoderFixture, Test) {
   // Arrange
-  std::vector<Sample> decoded_samples;
+  Encoder encoder;
+  Decoder decoder;
+
+  BitSequence ts_seq;
+  BitSequence val_seq;
+
+  const auto encode_and_decode = [&decoder, &ts_seq, &val_seq](Encoder& encoder, int64_t timestamp, double value) {
+    encoder.encode(timestamp, value, ts_seq, val_seq);
+
+    auto ts_reader = ts_seq.reader();
+    auto val_reader = val_seq.reader();
+    decoder.decode(ts_reader, val_reader);
+
+    ts_seq.clear();
+    val_seq.clear();
+  };
+
+  encode_and_decode(encoder, 0, std::bit_cast<double>(4524633156059818833ULL));
+  encode_and_decode(encoder, 1, std::bit_cast<double>(4524633156059818833ULL));
+  encode_and_decode(encoder, 2, std::bit_cast<double>(4524871635567203750ULL));
+  encode_and_decode(encoder, 3, std::bit_cast<double>(4524871635567203750ULL));
 
   // Act
-  for (auto& sample : GetParam().samples) {
-    encoder_.encode(sample.timestamp, sample.value, sequence_);
-  }
-
-  auto reader = sequence_.reader();
-  while (!reader.eof()) {
-    decoder_.decode(reader, reader);
-    decoded_samples.emplace_back(Sample{.timestamp = decoder_.last_timestamp(), .value = decoder_.last_value()});
-  }
+  Encoder encoder2{decoder.state()};
+  encode_and_decode(encoder2, 4, std::bit_cast<double>(4524193975976911956ULL));
 
   // Assert
-  EXPECT_EQ(GetParam().decoded_samples, decoded_samples);
+  EXPECT_EQ(4, decoder.last_timestamp());
+  EXPECT_EQ(4524193975976911956ULL, std::bit_cast<uint64_t>(decoder.last_value()));
 }
-
-INSTANTIATE_TEST_SUITE_P(Append,
-                         PrometheusStreamEncoderFixture,
-                         testing::Values(PrometheusStreamEncoderCase{.samples = {{.timestamp = 1, .value = 1.0}},
-                                                                     .decoded_samples = {{.timestamp = 1, .value = 1.0}}},
-                                         PrometheusStreamEncoderCase{.samples = {{.timestamp = 1, .value = 1.0}, {.timestamp = 2, .value = 1.0}},
-                                                                     .decoded_samples = {{.timestamp = 1, .value = 1.0}, {.timestamp = 2, .value = 1.0}}}));
-
-INSTANTIATE_TEST_SUITE_P(SampleIsActual,
-                         PrometheusStreamEncoderFixture,
-                         testing::Values(PrometheusStreamEncoderCase{.samples = {{.timestamp = 1, .value = 1.0}, {.timestamp = 1, .value = 1.0}},
-                                                                     .decoded_samples = {{.timestamp = 1, .value = 1.0}}}));
-
-INSTANTIATE_TEST_SUITE_P(OverwriteExistingSample,
-                         PrometheusStreamEncoderFixture,
-                         testing::Values(PrometheusStreamEncoderCase{.samples = {{.timestamp = 1, .value = 1.0}, {.timestamp = 1, .value = 1.1}},
-                                                                     .decoded_samples = {{.timestamp = 1, .value = 1.1}}}));
-
-INSTANTIATE_TEST_SUITE_P(OverwriteExistingSampleOnInsert,
-                         PrometheusStreamEncoderFixture,
-                         testing::Values(PrometheusStreamEncoderCase{
-                             .samples = {{.timestamp = 1, .value = 1.0}, {.timestamp = 2, .value = 1.0}, {.timestamp = 1, .value = 1.1}},
-                             .decoded_samples = {{.timestamp = 1, .value = 1.1}, {.timestamp = 2, .value = 1.0}}}));
-
-INSTANTIATE_TEST_SUITE_P(Insert,
-                         PrometheusStreamEncoderFixture,
-                         testing::Values(PrometheusStreamEncoderCase{.samples = {{.timestamp = 2, .value = 1.0}, {.timestamp = 1, .value = 1.0}},
-                                                                     .decoded_samples = {{.timestamp = 1, .value = 1.0}, {.timestamp = 2, .value = 1.0}}},
-                                         PrometheusStreamEncoderCase{.samples = {{.timestamp = 1, .value = 1.0},
-                                                                                 {.timestamp = 3, .value = 1.0},
-                                                                                 {.timestamp = 4, .value = 1.0},
-                                                                                 {.timestamp = 2, .value = 1.0}},
-                                                                     .decoded_samples = {{.timestamp = 1, .value = 1.0},
-                                                                                         {.timestamp = 2, .value = 1.0},
-                                                                                         {.timestamp = 3, .value = 1.0},
-                                                                                         {.timestamp = 4, .value = 1.0}}},
-                                         PrometheusStreamEncoderCase{.samples = {{.timestamp = 1, .value = 1.0},
-                                                                                 {.timestamp = 2, .value = 1.0},
-                                                                                 {.timestamp = 3, .value = 1.0},
-                                                                                 {.timestamp = 5, .value = 1.0},
-                                                                                 {.timestamp = 4, .value = 1.0}},
-                                                                     .decoded_samples = {{.timestamp = 1, .value = 1.0},
-                                                                                         {.timestamp = 2, .value = 1.0},
-                                                                                         {.timestamp = 3, .value = 1.0},
-                                                                                         {.timestamp = 4, .value = 1.0},
-                                                                                         {.timestamp = 5, .value = 1.0}}}));
-
-INSTANTIATE_TEST_SUITE_P(
-    SkipIdenticalValueOnInsert,
-    PrometheusStreamEncoderFixture,
-    testing::Values(PrometheusStreamEncoderCase{
-        .samples = {{.timestamp = 1, .value = 1.0}, {.timestamp = 2, .value = 1.0}, {.timestamp = 3, .value = 1.0}, {.timestamp = 2, .value = 1.0}},
-        .decoded_samples = {{.timestamp = 1, .value = 1.0}, {.timestamp = 2, .value = 1.0}, {.timestamp = 3, .value = 1.0}}}));
 
 }  // namespace
