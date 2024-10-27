@@ -41,8 +41,8 @@ import (
 var (
 	// DefaultSDConfig is the default HTTP SD configuration.
 	DefaultSDConfig = SDConfig{
-		RefreshInterval:  model.Duration(60 * time.Second),
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
+		RefreshInterval:  model.Duration(60 * time.Second),
 	}
 	userAgent        = fmt.Sprintf("Prometheus/%s", version.Version)
 	matchContentType = regexp.MustCompile(`^(?i:application\/json(;\s*charset=("utf-8"|utf-8))?)$`)
