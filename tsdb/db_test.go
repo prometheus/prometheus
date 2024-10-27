@@ -2923,7 +2923,7 @@ func TestChunkWriter_ReadAfterWrite(t *testing.T) {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			tempDir := t.TempDir()
 
-			chunkw, err := chunks.NewWriterWithSegSize(tempDir, chunks.SegmentHeaderSize+int64(test.segmentSize))
+			chunkw, err := chunks.NewWriter(tempDir, chunks.WithSegmentSize(chunks.SegmentHeaderSize+int64(test.segmentSize)))
 			require.NoError(t, err)
 
 			for _, chks := range test.chks {
