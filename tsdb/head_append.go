@@ -474,9 +474,10 @@ func (a *headAppender) getOrCreate(lset labels.Labels) (s *memSeries, created bo
 	return s, created, nil
 }
 
-// appendable checks whether the given sample is valid for appending to the series. (if we return false and no error)
-// The sample belongs to the out of order chunk if we return true and no error.
-// An error signifies the sample cannot be handled.
+// appendable checks whether the given sample is valid for appending to the series.
+// If the sample is valid and in-order, it returns false with no error.
+// If the sample belongs to the out-of-order chunk, it returns true with no error.
+// If the sample cannot be handled, it returns an error.
 func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTimeWindow int64) (isOOO bool, oooDelta int64, err error) {
 	// Check if we can append in the in-order chunk.
 	if t >= minValidTime {
