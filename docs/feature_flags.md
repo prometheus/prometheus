@@ -184,3 +184,9 @@ Enabling this _can_ have negative impact on performance, because the in-memory
 state is mutex guarded. Cumulative-only OTLP requests are not affected.
 
 [d2c]: https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor
+
+## Use Direct IO
+
+`--enable-feature=use-direct-io`
+
+TODO
