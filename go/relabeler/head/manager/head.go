@@ -34,8 +34,14 @@ func (h *DiscardableRotatableHead) ReferenceCounter() relabeler.ReferenceCounter
 	return h.head.ReferenceCounter()
 }
 
-func (h *DiscardableRotatableHead) Append(ctx context.Context, incomingData *relabeler.IncomingData, metricLimits *cppbridge.MetricLimits, sourceStates *relabeler.SourceStates, staleNansTS int64, relabelerID string) ([][]*cppbridge.InnerSeries, error) {
-	return h.head.Append(ctx, incomingData, metricLimits, sourceStates, staleNansTS, relabelerID)
+func (h *DiscardableRotatableHead) Append(
+	ctx context.Context,
+	incomingData *relabeler.IncomingData,
+	options cppbridge.RelabelerOptions,
+	sourceStates *relabeler.SourceStates,
+	staleNansTS int64,
+	relabelerID string) ([][]*cppbridge.InnerSeries, error) {
+	return h.head.Append(ctx, incomingData, options, sourceStates, staleNansTS, relabelerID)
 }
 
 func (h *DiscardableRotatableHead) ForEachShard(fn relabeler.ShardFn) error {

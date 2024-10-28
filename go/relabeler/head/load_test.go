@@ -354,6 +354,6 @@ func appendTimeSeries(t *testing.T, ctx context.Context, h *head.Head, timeSerie
 		SampleLimit:           1500,
 	}
 
-	_, err = h.Append(ctx, incomingData, metricLimits, nil, 0, "transparent_relabeler")
+	_, err = h.Append(ctx, incomingData, cppbridge.RelabelerOptions{MetricLimits: metricLimits}, nil, 0, "transparent_relabeler")
 	return err
 }

@@ -1874,7 +1874,7 @@ func headWalDecoderCreateEncoder(decoder uintptr) uintptr {
 	}
 
 	fastcgo.UnsafeCall2(
-		C.prompp_head_wal_decoder_create_encoder,
+		C.prompp_head_wal_encoder_ctor_from_decoder,
 		uintptr(unsafe.Pointer(&args)),
 		uintptr(unsafe.Pointer(&res)),
 	)
