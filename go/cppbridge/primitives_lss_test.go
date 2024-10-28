@@ -90,7 +90,7 @@ func (s *QueryableLSSSuite) SetupTest() {
 }
 
 func (s *QueryableLSSSuite) TestQuery() {
-	// match
+	// match with sorting
 	{
 		labelMatchers := []model.LabelMatcher{
 			{Name: "lol", Value: "kek", MatcherType: model.MatcherTypeExactMatch},
@@ -98,8 +98,7 @@ func (s *QueryableLSSSuite) TestQuery() {
 		queryResult := s.lss.Query(labelMatchers)
 		s.Require().Equal(cppbridge.LSSQueryStatusMatch, queryResult.Status())
 		s.Require().Len(queryResult.Matches(), 2)
-		s.Require().Equal(s.labelSetIDs[0], queryResult.Matches()[0])
-		s.Require().Equal(s.labelSetIDs[1], queryResult.Matches()[1])
+		s.Require().Equal([]uint32{1, 0}, queryResult.Matches())
 	}
 
 	// no positive matchers

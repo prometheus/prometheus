@@ -67,7 +67,9 @@ extern "C" void prompp_primitives_lss_query(void* args, void* res) {
   using Querier = series_index::querier::Querier<QueryableEncodingBimap, PromPP::Primitives::Go::Slice>;
 
   const auto in = static_cast<Arguments*>(args);
-  auto query_result = Querier{std::get<QueryableEncodingBimap>(*in->lss)}.query(in->label_matchers);
+  auto& lss = std::get<QueryableEncodingBimap>(*in->lss);
+  auto query_result = Querier{lss}.query(in->label_matchers);
+  lss.sort_series_ids(query_result.series_ids);
 
   new (res) Result{.status = static_cast<uint32_t>(query_result.status), .matches = std::move(query_result.series_ids)};
 }
