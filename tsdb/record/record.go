@@ -513,6 +513,18 @@ func DecodeHistogram(buf *encoding.Decbuf, h *histogram.Histogram) {
 	for i := range h.NegativeBuckets {
 		h.NegativeBuckets[i] = buf.Varint64()
 	}
+
+	if histogram.IsCustomBucketsSchema(h.Schema) {
+		l = buf.Uvarint()
+		if l > 0 {
+			if l > 0 {
+				h.CustomValues = make([]float64, l)
+			}
+			for i := range h.CustomValues {
+				h.CustomValues[i] = buf.Be64Float64()
+			}
+		}
+	}
 }
 
 func (d *Decoder) FloatHistogramSamples(rec []byte, histograms []RefFloatHistogramSample) ([]RefFloatHistogramSample, error) {
@@ -595,39 +607,18 @@ func DecodeFloatHistogram(buf *encoding.Decbuf, fh *histogram.FloatHistogram) {
 	for i := range fh.NegativeBuckets {
 		fh.NegativeBuckets[i] = buf.Be64Float64()
 	}
-}
 
-// TODO: optimize
-func (d *Decoder) CustomValues(rec []byte, customValues []RefCustomValues) ([]RefCustomValues, error) {
-	dec := encoding.Decbuf{B: rec}
-
-	if Type(dec.Byte()) != CustomValues {
-		return nil, errors.New("invalid record type")
-	}
-	if dec.Len() == 0 {
-		return customValues, nil
-	}
-	for len(dec.B) > 0 && dec.Err() == nil {
-		ref := storage.SeriesRef(dec.Be64())
-		l := dec.Uvarint()
+	if histogram.IsCustomBucketsSchema(fh.Schema) {
+		l = buf.Uvarint()
 		if l > 0 {
-			vals := make([]float64, l)
-			for i := range vals {
-				vals[i] = dec.Be64Float64()
+			if l > 0 {
+				fh.CustomValues = make([]float64, l)
 			}
-			customValues = append(customValues, RefCustomValues{
-				Ref:          chunks.HeadSeriesRef(ref),
-				CustomValues: vals,
-			})
+			for i := range fh.CustomValues {
+				fh.CustomValues[i] = buf.Be64Float64()
+			}
 		}
 	}
-	if dec.Err() != nil {
-		return nil, dec.Err()
-	}
-	if len(dec.B) > 0 {
-		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
-	}
-	return customValues, nil
 }
 
 // Encoder encodes series, sample, and tombstones records.
@@ -813,6 +804,13 @@ func EncodeHistogram(buf *encoding.Encbuf, h *histogram.Histogram) {
 	for _, b := range h.NegativeBuckets {
 		buf.PutVarint64(b)
 	}
+
+	if histogram.IsCustomBucketsSchema(h.Schema) {
+		buf.PutUvarint(len(h.CustomValues))
+		for _, v := range h.CustomValues {
+			buf.PutBEFloat64(v)
+		}
+	}
 }
 
 func (e *Encoder) FloatHistogramSamples(histograms []RefFloatHistogramSample, b []byte) []byte {
@@ -871,28 +869,11 @@ func EncodeFloatHistogram(buf *encoding.Encbuf, h *histogram.FloatHistogram) {
 	for _, b := range h.NegativeBuckets {
 		buf.PutBEFloat64(b)
 	}
-}
 
-func (e *Encoder) CustomValues(customValues []RefCustomValues, b []byte) []byte {
-	buf := encoding.Encbuf{B: b}
-	buf.PutByte(byte(CustomValues))
-
-	if len(customValues) == 0 {
-		return buf.Get()
-	}
-
-	for _, v := range customValues {
-		buf.PutBE64(uint64(v.Ref))
-		EncodeCustomValues(&buf, v.CustomValues)
-	}
-
-	return buf.Get()
-}
-
-// TODO: optimize
-func EncodeCustomValues(buf *encoding.Encbuf, values []float64) {
-	buf.PutUvarint(len(values))
-	for _, v := range values {
-		buf.PutBEFloat64(v)
+	if histogram.IsCustomBucketsSchema(h.Schema) {
+		buf.PutUvarint(len(h.CustomValues))
+		for _, v := range h.CustomValues {
+			buf.PutBEFloat64(v)
+		}
 	}
 }

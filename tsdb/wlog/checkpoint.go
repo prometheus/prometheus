@@ -151,7 +151,6 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		samples               []record.RefSample
 		histogramSamples      []record.RefHistogramSample
 		floatHistogramSamples []record.RefFloatHistogramSample
-		customValues          []record.RefCustomValues
 		tstones               []tombstones.Stone
 		exemplars             []record.RefExemplar
 		metadata              []record.RefMetadata
@@ -300,18 +299,6 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			}
 			stats.TotalMetadata += len(metadata)
 			stats.DroppedMetadata += len(metadata) - repl
-		case record.CustomValues:
-			customValues, err = dec.CustomValues(rec, customValues)
-			if err != nil {
-				return nil, fmt.Errorf("decode custom values: %w", err)
-			}
-			repl := customValues[:0]
-			for _, v := range customValues {
-				repl = append(repl, v)
-			}
-			if len(repl) > 0 {
-				buf = enc.CustomValues(repl, buf)
-			}
 		default:
 			// Unknown record type, probably from a future Prometheus version.
 			continue
