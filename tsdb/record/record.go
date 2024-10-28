@@ -52,7 +52,6 @@ const (
 	HistogramSamples Type = 7
 	// FloatHistogramSamples is used to match WAL records of type Float Histograms.
 	FloatHistogramSamples Type = 8
-	CustomValues          Type = 9
 )
 
 func (rt Type) String() string {
@@ -73,8 +72,6 @@ func (rt Type) String() string {
 		return "mmapmarkers"
 	case Metadata:
 		return "metadata"
-	case CustomValues:
-		return "custom_values"
 	default:
 		return "unknown"
 	}
@@ -150,11 +147,6 @@ type RefSeries struct {
 	Labels labels.Labels
 }
 
-type RefCustomValues struct {
-	Ref          chunks.HeadSeriesRef
-	CustomValues []float64
-}
-
 // RefSample is a timestamp/value pair associated with a reference to a series.
 // TODO(beorn7): Perhaps make this "polymorphic", including histogram and float-histogram pointers? Then get rid of RefHistogramSample.
 type RefSample struct {
@@ -215,7 +207,7 @@ func (d *Decoder) Type(rec []byte) Type {
 		return Unknown
 	}
 	switch t := Type(rec[0]); t {
-	case Series, Samples, Tombstones, Exemplars, MmapMarkers, Metadata, HistogramSamples, FloatHistogramSamples, CustomValues:
+	case Series, Samples, Tombstones, Exemplars, MmapMarkers, Metadata, HistogramSamples, FloatHistogramSamples:
 		return t
 	}
 	return Unknown

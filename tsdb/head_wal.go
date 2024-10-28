@@ -332,19 +332,6 @@ Outer:
 					if r, ok := multiRef[sam.Ref]; ok {
 						sam.Ref = r
 					}
-					if histogram.IsCustomBucketsSchema(sam.H.Schema) {
-						ms := h.series.getByID(sam.Ref)
-						if ms == nil {
-							unknownHistogramRefs.Inc()
-							continue
-						}
-
-						if ms.lastFloatHistogramValue != nil {
-							sam.H.CustomValues = ms.lastFloatHistogramValue.CustomValues
-						} else {
-							sam.H.CustomValues = ms.customValues
-						}
-					}
 					mod := uint64(sam.Ref) % uint64(concurrency)
 					histogramShards[mod] = append(histogramShards[mod], histogramRecord{ref: sam.Ref, t: sam.T, h: sam.H})
 				}
@@ -380,14 +367,6 @@ Outer:
 					}
 					if r, ok := multiRef[sam.Ref]; ok {
 						sam.Ref = r
-					}
-					if histogram.IsCustomBucketsSchema(sam.FH.Schema) {
-						ms := h.series.getByID(sam.Ref)
-						if ms == nil {
-							unknownHistogramRefs.Inc()
-							continue
-						}
-						sam.FH.CustomValues = ms.customValues
 					}
 					mod := uint64(sam.Ref) % uint64(concurrency)
 					histogramShards[mod] = append(histogramShards[mod], histogramRecord{ref: sam.Ref, t: sam.T, fh: sam.FH})
@@ -641,22 +620,8 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 
 			var chunkCreated bool
 			if s.h != nil {
-				//if histogram.IsCustomBucketsSchema(s.h.Schema) {
-				//	if ms.lastHistogramValue != nil {
-				//
-				//	}
-				//}
 				_, chunkCreated = ms.appendHistogram(s.t, s.h, 0, appendChunkOpts)
 			} else {
-				//if histogram.IsCustomBucketsSchema(s.fh.Schema) {
-				//	if ms.lastFloatHistogramValue != nil {
-				//		s.h.CustomValues = ms.lastFloatHistogramValue.CustomValues
-				//	} else {
-				//		s.h.CustomValues = ms.customValues
-				//	}
-				//	//customVals := h.
-				//	//s.h.CustomValues =
-				//}
 				_, chunkCreated = ms.appendFloatHistogram(s.t, s.fh, 0, appendChunkOpts)
 			}
 			if chunkCreated {

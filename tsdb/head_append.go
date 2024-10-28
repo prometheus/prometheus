@@ -1458,17 +1458,6 @@ func (a *headAppender) Commit() (err error) {
 	a.commitFloatHistograms(acc)
 	a.commitMetadata()
 
-	a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatOOORejected))
-	a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.histoOOORejected))
-	a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatOOBRejected))
-	a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatTooOldRejected))
-	a.head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatsAppended))
-	a.head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.histogramsAppended))
-	a.head.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.oooFloatsAccepted))
-	a.head.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.oooHistogramAccepted))
-	a.head.updateMinMaxTime(acc.inOrderMint, acc.inOrderMaxt)
-	a.head.updateMinOOOMaxOOOTime(acc.oooMinT, acc.oooMaxT)
-
 	acc.collectOOORecords(a)
 	if a.head.wbl != nil {
 		if err := a.head.wbl.Log(acc.oooRecords...); err != nil {
