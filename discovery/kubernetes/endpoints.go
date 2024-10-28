@@ -20,6 +20,8 @@ import (
 	"log/slog"
 	"net"
 	"strconv"
+	"strings"
+	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -453,15 +455,43 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 	return tg
 }
 
+var objKeyPool = sync.Pool{}
+
+func generateObjKey(namespace, name string) (string, *strings.Builder) {
+	var sb *strings.Builder
+
+	b := objKeyPool.Get()
+	if b == nil {
+		sb = &strings.Builder{}
+	} else {
+		sb = b.(*strings.Builder)
+	}
+
+	sb.Reset()
+	if namespace == "" {
+		_, _ = sb.WriteString(name)
+		return sb.String(), sb
+	}
+
+	_, _ = sb.WriteString(namespace)
+	_, _ = sb.WriteRune('/')
+	_, _ = sb.WriteString(name)
+	return sb.String(), sb
+}
+
 func (e *Endpoints) resolvePodRef(ref *apiv1.ObjectReference) *apiv1.Pod {
 	if ref == nil || ref.Kind != "Pod" {
 		return nil
 	}
+
 	p := &apiv1.Pod{}
 	p.Namespace = ref.Namespace
 	p.Name = ref.Name
 
-	obj, exists, err := e.podStore.Get(p)
+	key, sb := generateObjKey(p.Namespace, p.Name)
+	defer objKeyPool.Put(sb)
+
+	obj, exists, err := e.podStore.GetByKey(key)
 	if err != nil {
 		e.logger.Error("resolving pod ref failed", "err", err)
 		return nil
