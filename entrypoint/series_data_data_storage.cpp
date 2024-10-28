@@ -2,13 +2,16 @@
 
 #include "head/chunk_recoder.h"
 #include "head/data_storage.h"
+#include "head/lss.h"
 #include "primitives/go_slice.h"
 #include "series_data/data_storage.h"
 #include "series_data/querier/querier.h"
 #include "series_data/serialization/serializer.h"
 
 using entrypoint::head::DataStoragePtr;
-using ChunkRecoderPtr = std::unique_ptr<head::ChunkRecoder>;
+using entrypoint::head::QueryableEncodingBimap;
+using ChunkRecoder = head::ChunkRecoder<QueryableEncodingBimap::LsIdSet>;
+using ChunkRecoderPtr = std::unique_ptr<ChunkRecoder>;
 
 extern "C" void prompp_series_data_data_storage_ctor(void* res) {
   using Result = struct {
@@ -92,6 +95,7 @@ extern "C" void prompp_series_data_data_storage_dtor(void* args) {
 
 extern "C" void prompp_series_data_chunk_recoder_ctor(void* args, void* res) {
   struct Arguments {
+    entrypoint::head::LssVariantPtr lss;
     DataStoragePtr data_storage;
     PromPP::Primitives::TimeInterval time_interval;
   };
@@ -100,7 +104,9 @@ extern "C" void prompp_series_data_chunk_recoder_ctor(void* args, void* res) {
   };
 
   const auto in = static_cast<Arguments*>(args);
-  new (res) Result{.chunk_recoder = std::make_unique<head::ChunkRecoder>(in->data_storage.get(), in->time_interval)};
+  new (res) Result{
+      .chunk_recoder = std::make_unique<ChunkRecoder>(std::get<QueryableEncodingBimap>(*in->lss).ls_id_set(), in->data_storage.get(), in->time_interval),
+  };
 }
 
 extern "C" void prompp_series_data_chunk_recoder_recode_next_chunk(void* args, void* res) {

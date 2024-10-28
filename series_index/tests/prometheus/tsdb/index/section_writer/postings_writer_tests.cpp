@@ -47,8 +47,10 @@ class PostingsWriterFixture : public testing::TestWithParam<PostingsWriterCase> 
     std::ostringstream stream;
     StreamWriter<decltype(stream_)> stream_writer{&stream};
     SymbolsWriter{lss_, symbol_references_, stream_writer}.write();
-    SeriesWriter<QueryableEncodingBimap, ChunkMetadataList, decltype(stream_)>{lss_, chunk_metadata_list, symbol_references_, series_references_}.write(
-        stream_writer);
+    SeriesWriter<QueryableEncodingBimap, decltype(stream_)> series_writer{lss_, symbol_references_, series_references_};
+    for (uint32_t ls_id = 0; ls_id < chunk_metadata_list.size(); ++ls_id) {
+      series_writer.write(ls_id, chunk_metadata_list[ls_id], stream_writer);
+    }
   }
 
   void reset_stream() noexcept {
@@ -82,16 +84,14 @@ INSTANTIATE_TEST_SUITE_P(Test,
                          PostingsWriterFixture,
                          testing::Values(PostingsWriterCase{.label_sets =
                                                                 {
-                                                                    {{"job", "cron"}, {"server", "localhost"}},
-                                                                    {{"job", "cron"}, {"server", "remote"}},
                                                                     {{"job", "cron"}, {"server", "127.0.0.1"}},
+                                                                    {{"job", "cron"}, {"server", "localhost"}},
                                                                 },
                                                             .chunk_metadata_list =
                                                                 {
                                                                     {{.min_timestamp = 1000, .max_timestamp = 2001, .reference = 0},
                                                                      {.min_timestamp = 2002, .max_timestamp = 4004, .reference = 100},
                                                                      {.min_timestamp = 4005, .max_timestamp = 5005, .reference = 125}},
-                                                                    {},
                                                                     {{.min_timestamp = 1000, .max_timestamp = 2001, .reference = 0},
                                                                      {.min_timestamp = 2002, .max_timestamp = 4004, .reference = 100},
                                                                      {.min_timestamp = 4005, .max_timestamp = 5005, .reference = 125}},
@@ -144,22 +144,20 @@ INSTANTIATE_TEST_SUITE_P(Test,
 
 TEST_F(PostingsWriterFixture, PartialWrite) {
   // Arrange
-  ChunkMetadataList chunk_metadata_list = {
-      {{.min_timestamp = 1000, .max_timestamp = 2001, .reference = 0},
-       {.min_timestamp = 2002, .max_timestamp = 4004, .reference = 100},
-       {.min_timestamp = 4005, .max_timestamp = 5005, .reference = 125}},
-      {},
-      {{.min_timestamp = 1000, .max_timestamp = 2001, .reference = 0},
-       {.min_timestamp = 2002, .max_timestamp = 4004, .reference = 100},
-       {.min_timestamp = 4005, .max_timestamp = 5005, .reference = 125}},
-  };
   fill_data(
       LabelViewSetList{
+          {{"job", "cron"}, {"server", "127.0.0.1"}},
           {{"job", "cron"}, {"server", "localhost"}},
           {{"job", "cron"}, {"server", "remote"}},
-          {{"job", "cron"}, {"server", "127.0.0.1"}},
       },
-      chunk_metadata_list);
+      ChunkMetadataList{
+          {{.min_timestamp = 1000, .max_timestamp = 2001, .reference = 0},
+           {.min_timestamp = 2002, .max_timestamp = 4004, .reference = 100},
+           {.min_timestamp = 4005, .max_timestamp = 5005, .reference = 125}},
+          {{.min_timestamp = 1000, .max_timestamp = 2001, .reference = 0},
+           {.min_timestamp = 2002, .max_timestamp = 4004, .reference = 100},
+           {.min_timestamp = 4005, .max_timestamp = 5005, .reference = 125}},
+      });
   PostingsWriter postings_writer{lss_, series_references_, stream_writer_};
 
   // Act

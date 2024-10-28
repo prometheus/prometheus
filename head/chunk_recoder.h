@@ -16,12 +16,11 @@ concept ChunkInfoInterface = requires(ChunkInfo& info) {
   { info.samples_count } -> std::same_as<uint8_t&>;
 };
 
+template <class LsIdSet>
 class ChunkRecoder {
  public:
-  static constexpr auto kInvalidSeriesId = std::numeric_limits<uint32_t>::max();
-
-  explicit ChunkRecoder(const series_data::DataStorage* data_storage, const PromPP::Primitives::TimeInterval& time_interval)
-      : iterator_(data_storage), time_interval_{.min = time_interval.min, .max = time_interval.max - 1} {
+  explicit ChunkRecoder(const LsIdSet& ls_id_id_set, const series_data::DataStorage* data_storage, const PromPP::Primitives::TimeInterval& time_interval)
+      : iterator_(ls_id_id_set, data_storage), time_interval_{.min = time_interval.min, .max = time_interval.max - 1} {
     advance_to_non_empty_chunk();
   }
 
@@ -46,7 +45,7 @@ class ChunkRecoder {
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE std::span<const uint8_t> bytes() const noexcept { return stream_.bytes(); }
-  [[nodiscard]] PROMPP_ALWAYS_INLINE bool has_more_data() const noexcept { return iterator_ != series_data::DataStorage::IteratorSentinel{}; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool has_more_data() const noexcept { return iterator_ != IteratorSentinel{}; }
 
  private:
   using Sample = series_data::encoder::Sample;
@@ -54,14 +53,61 @@ class ChunkRecoder {
   using Encoder =
       BareBones::Encoding::Gorilla::StreamEncoder<PromPP::Prometheus::tsdb::chunkenc::TimestampEncoder, PromPP::Prometheus::tsdb::chunkenc::ValuesEncoder>;
 
-  series_data::DataStorage::ChunkIterator iterator_;
+  class IteratorSentinel {};
+
+  class ChunkIterator {
+   public:
+    using iterator_category = std::forward_iterator_tag;
+    using value_type = series_data::DataStorage::SeriesChunkIterator::Data;
+    using difference_type = ptrdiff_t;
+    using pointer = value_type*;
+    using reference = value_type&;
+
+    using LabelSetID = PromPP::Primitives::LabelSetID;
+
+    ChunkIterator(const LsIdSet& series_id_set, const series_data::DataStorage* data_storage)
+        : ls_id_iterator_(series_id_set.begin()),
+          ls_id_end_iterator_(series_id_set.end()),
+          chunk_iterator_(data_storage,
+                          ls_id_iterator_ != ls_id_end_iterator_ ? static_cast<LabelSetID>(*ls_id_iterator_) : PromPP::Primitives::kInvalidLabelSetID) {}
+
+    const value_type& operator*() const noexcept { return *chunk_iterator_; }
+    const value_type* operator->() const noexcept { return chunk_iterator_.operator->(); }
+
+    PROMPP_ALWAYS_INLINE ChunkIterator& operator++() noexcept {
+      if (++chunk_iterator_ == series_data::DataStorage::IteratorSentinel{}) {
+        if (++ls_id_iterator_ != ls_id_end_iterator_) {
+          chunk_iterator_ = series_data::DataStorage::SeriesChunkIterator{chunk_iterator_->storage(), static_cast<LabelSetID>(*ls_id_iterator_)};
+        }
+      }
+
+      return *this;
+    }
+
+    PROMPP_ALWAYS_INLINE ChunkIterator operator++(int) noexcept {
+      const auto it = *this;
+      ++*this;
+      return it;
+    }
+
+    PROMPP_ALWAYS_INLINE bool operator==(const IteratorSentinel&) const noexcept {
+      return chunk_iterator_ == series_data::DataStorage::IteratorSentinel{} && ls_id_iterator_ == ls_id_end_iterator_;
+    }
+
+   private:
+    typename LsIdSet::const_iterator ls_id_iterator_;
+    typename LsIdSet::const_iterator ls_id_end_iterator_;
+    series_data::DataStorage::SeriesChunkIterator chunk_iterator_;
+  };
+
+  ChunkIterator iterator_;
   PromPP::Prometheus::tsdb::chunkenc::BStream<series_data::encoder::kAllocationSizesTable> stream_;
   const PromPP::Primitives::TimeInterval time_interval_;
 
   PROMPP_ALWAYS_INLINE static void reset_info(ChunkInfoInterface auto& info) noexcept {
     info.interval.reset(0, 0);
     info.samples_count = 0;
-    info.series_id = kInvalidSeriesId;
+    info.series_id = PromPP::Primitives::kInvalidLabelSetID;
   }
 
   PROMPP_ALWAYS_INLINE void write_samples_count_placeholder() noexcept { stream_.write_bits(0, BareBones::Bit::to_bits(sizeof(uint16_t))); }
@@ -99,7 +145,10 @@ class ChunkRecoder {
         return true;
       }
 
-      return !time_interval_.intersect({.min = Decoder::get_chunk_first_timestamp(*iterator_), .max = Decoder::get_chunk_last_timestamp(*iterator_)});
+      return !time_interval_.intersect({
+          .min = Decoder::get_chunk_first_timestamp(*iterator_),
+          .max = Decoder::get_chunk_last_timestamp(*iterator_),
+      });
     };
 
     while (has_more_data() && chunk_is_empty()) {

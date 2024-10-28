@@ -76,11 +76,9 @@ all_files := $(shell git ls-files -co --exclude-standard)
 vendored := $(patsubst ./%,%,$(shell find . -path '*/vendor/*'))
 our_files := $(filter-out $(vendored),$(all_files))
 cc_targets := $(shell bazel query 'kind("cc_.*", //...)')
+cc_tests := $(shell bazel query 'kind("cc_test.*", //...)')
 cc_files := $(patsubst ./%,%,$(shell find . -type f -regex '.*\.\(h\|hpp\|cpp\)' -a -not -path './third_party/*'))
 our_cc_files := $(filter $(cc_files),$(all_files))
-
-test:
-	@echo $(cc_files)
 
 .PHONY: help
 help: ## Show this message
@@ -111,3 +109,7 @@ tidy: tidy_flags += --@bazel_clang_tidy//:clang_tidy_config=//:clang_tidy_config
 tidy: compilation_mode := fastbuild
 tidy:
 	@$(bazel_build) $(tidy_flags) --output_groups=report --platform_suffix=tidy $(cc_targets)
+
+.PHONY: test
+test: ## Run all cpp tests
+	@$(bazel_test) --test_output=errors -- $(cc_tests)

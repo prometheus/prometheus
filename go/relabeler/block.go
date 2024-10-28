@@ -2,11 +2,12 @@ package relabeler
 
 import (
 	"fmt"
+	"io"
+	"unsafe"
+
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler/block"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"io"
-	"unsafe"
 )
 
 type Chunk struct {
@@ -42,8 +43,8 @@ type ChunkIterator struct {
 	rc *cppbridge.RecodedChunk
 }
 
-func NewChunkIterator(ds *cppbridge.HeadDataStorage, minT, maxT int64) *ChunkIterator {
-	return &ChunkIterator{r: cppbridge.NewChunkRecoder(ds, cppbridge.TimeInterval{MinT: minT, MaxT: maxT})}
+func NewChunkIterator(lss *cppbridge.LabelSetStorage, ds *cppbridge.HeadDataStorage, minT, maxT int64) *ChunkIterator {
+	return &ChunkIterator{r: cppbridge.NewChunkRecoder(lss, ds, cppbridge.TimeInterval{MinT: minT, MaxT: maxT})}
 }
 
 func (i *ChunkIterator) Next() bool {
@@ -60,43 +61,46 @@ func (i *ChunkIterator) At() block.Chunk {
 	return &Chunk{rc: i.rc}
 }
 
-type IndexWriterTo struct {
-	iw *cppbridge.IndexWriter
+type IndexWriter struct {
+	cppIndexWriter  *cppbridge.IndexWriter
+	isPrefixWritten bool
 }
 
-func (iw *IndexWriterTo) WriteTo(w io.Writer) (n int64, err error) {
-	bytesWritten, err := w.Write(iw.iw.WriteHeader())
-	if err != nil {
-		return n, fmt.Errorf("failed to write header: %w", err)
-	}
-	n += int64(bytesWritten)
-
-	bytesWritten, err = w.Write(iw.iw.WriteSymbols())
-	if err != nil {
-		return n, fmt.Errorf("failed to write symbols: %w", err)
-	}
-	n += int64(bytesWritten)
-
-	for {
-		data, hasMoreData := iw.iw.WriteNextSeriesBatch(256)
-		bytesWritten, err = w.Write(data)
-		if err != nil {
-			return n, fmt.Errorf("failed to write series: %w", err)
-		}
+func (iw *IndexWriter) WriteSeriesTo(id uint32, chunks []block.ChunkMetadata, w io.Writer) (n int64, err error) {
+	if !iw.isPrefixWritten {
+		var bytesWritten int
+		bytesWritten, err = w.Write(iw.cppIndexWriter.WriteHeader())
 		n += int64(bytesWritten)
-		if !hasMoreData {
-			break
+		if err != nil {
+			return n, fmt.Errorf("failed to write header: %w", err)
 		}
+
+		bytesWritten, err = w.Write(iw.cppIndexWriter.WriteSymbols())
+		n += int64(bytesWritten)
+		if err != nil {
+			return n, fmt.Errorf("failed to write symbols: %w", err)
+		}
+		iw.isPrefixWritten = true
 	}
 
-	bytesWritten, err = w.Write(iw.iw.WriteLabelIndices())
+	bytesWritten, err := w.Write(iw.cppIndexWriter.WriteSeries(id, *(*[]cppbridge.ChunkMetadata)(unsafe.Pointer(&chunks))))
+	n += int64(bytesWritten)
+	if err != nil {
+		return n, fmt.Errorf("failed to write series: %w", err)
+	}
+
+	return n, nil
+}
+
+func (iw *IndexWriter) WriteRestTo(w io.Writer) (n int64, err error) {
+	bytesWritten, err := w.Write(iw.cppIndexWriter.WriteLabelIndices())
+	n += int64(bytesWritten)
 	if err != nil {
 		return n, fmt.Errorf("failed to write label indicies: %w", err)
 	}
-	n += int64(bytesWritten)
 
 	for {
-		data, hasMoreData := iw.iw.WriteNextPostingsBatch(1 << 20)
+		data, hasMoreData := iw.cppIndexWriter.WriteNextPostingsBatch(1 << 20)
 		bytesWritten, err = w.Write(data)
 		if err != nil {
 			return n, fmt.Errorf("failed to write postings: %w", err)
@@ -107,19 +111,19 @@ func (iw *IndexWriterTo) WriteTo(w io.Writer) (n int64, err error) {
 		}
 	}
 
-	bytesWritten, err = w.Write(iw.iw.WriteLabelIndicesTable())
+	bytesWritten, err = w.Write(iw.cppIndexWriter.WriteLabelIndicesTable())
 	if err != nil {
 		return n, fmt.Errorf("failed to write label indicies table: %w", err)
 	}
 	n += int64(bytesWritten)
 
-	bytesWritten, err = w.Write(iw.iw.WritePostingsTableOffsets())
+	bytesWritten, err = w.Write(iw.cppIndexWriter.WritePostingsTableOffsets())
 	if err != nil {
 		return n, fmt.Errorf("failed to write posting table offsets: %w", err)
 	}
 	n += int64(bytesWritten)
 
-	bytesWritten, err = w.Write(iw.iw.WriteTableOfContents())
+	bytesWritten, err = w.Write(iw.cppIndexWriter.WriteTableOfContents())
 	if err != nil {
 		return n, fmt.Errorf("failed to write table of content: %w", err)
 	}
@@ -128,8 +132,8 @@ func (iw *IndexWriterTo) WriteTo(w io.Writer) (n int64, err error) {
 	return n, nil
 }
 
-func NewIndexWriterTo(lss *cppbridge.LabelSetStorage, chunkMetadataList [][]block.ChunkMetadata) *IndexWriterTo {
-	return &IndexWriterTo{iw: cppbridge.NewIndexWriter(lss, (*[][]cppbridge.ChunkMetadata)(unsafe.Pointer(&chunkMetadataList)))}
+func NewIndexWriter(lss *cppbridge.LabelSetStorage) *IndexWriter {
+	return &IndexWriter{cppIndexWriter: cppbridge.NewIndexWriter(lss)}
 }
 
 type Block struct {
@@ -143,11 +147,11 @@ func (b *Block) TimeBounds() (minT, maxT int64) {
 }
 
 func (b *Block) ChunkIterator(minT, maxT int64) block.ChunkIterator {
-	return NewChunkIterator(b.ds, minT, maxT)
+	return NewChunkIterator(b.lss, b.ds, minT, maxT)
 }
 
-func (b *Block) IndexWriterTo(chunkMetadataList [][]block.ChunkMetadata) io.WriterTo {
-	return NewIndexWriterTo(b.lss, chunkMetadataList)
+func (b *Block) IndexWriter() block.IndexWriter {
+	return NewIndexWriter(b.lss)
 }
 
 func NewBlock(lss *cppbridge.LabelSetStorage, ds *cppbridge.HeadDataStorage) *Block {

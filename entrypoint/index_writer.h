@@ -9,11 +9,6 @@ extern "C" {
  *
  * @param args {
  *     lss         uintptr      // pointer to constructed lss
- *     chunks_meta *[][]struct{ // index in first slice is series id
- *         min_t     int64
- *         max_t     int64
- *         reference uint64
- *     }
  * }
  * @param res {
  *     writer    uintptr
@@ -58,12 +53,16 @@ void prompp_index_writer_write_symbols(void* args, void* res);
  * @brief Write next series batch
  *
  * @param args {
- *     writer     uintptr
- *     batch_size uint32
+ *     writer      uintptr
+ *     chunks_meta []struct{ // chunks metadata slice
+ *         min_t     int64
+ *         max_t     int64
+ *         reference uint64
+ *     }
+ *     ls_id       uint32
  * }
  * @param res {
  *     data          []byte // only c allocated memory can be re-used
- *     has_more_data bool   // true if we should repeat this call
  * }
  */
 void prompp_index_writer_write_next_series_batch(void* args, void* res);

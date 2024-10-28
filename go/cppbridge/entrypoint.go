@@ -1470,11 +1470,12 @@ func seriesDataDeserializerDtor(deserializer uintptr) {
 	)
 }
 
-func seriesDataChunkRecoderCtor(dataStorage uintptr, timeInterval TimeInterval) uintptr {
+func seriesDataChunkRecoderCtor(lss uintptr, dataStorage uintptr, timeInterval TimeInterval) uintptr {
 	var args = struct {
+		lss         uintptr
 		dataStorage uintptr
 		TimeInterval
-	}{dataStorage, timeInterval}
+	}{lss, dataStorage, timeInterval}
 	var res struct {
 		chunkRecoder uintptr
 	}
@@ -1514,11 +1515,10 @@ func seriesDataChunkRecoderDtor(chunkRecoder uintptr) {
 	)
 }
 
-func indexWriterCtor(lss uintptr, chunk_metadata_list *[][]ChunkMetadata) uintptr {
+func indexWriterCtor(lss uintptr) uintptr {
 	var args = struct {
-		lss                 uintptr
-		chunk_metadata_list *[][]ChunkMetadata
-	}{lss, chunk_metadata_list}
+		lss uintptr
+	}{lss}
 
 	var res struct {
 		writer uintptr
@@ -1580,16 +1580,16 @@ func indexWriterWriteSymbols(writer uintptr, data []byte) []byte {
 	return res.data
 }
 
-func indexWriterWriteNextSeriesBatch(writer uintptr, batch_size uint32, data []byte) ([]byte, bool) {
+func indexWriterWriteNextSeriesBatch(writer uintptr, ls_id uint32, chunks_meta []ChunkMetadata, data []byte) []byte {
 	var args = struct {
-		writer     uintptr
-		batch_size uint32
-	}{writer, batch_size}
+		writer      uintptr
+		chunks_meta []ChunkMetadata
+		ls_id       uint32
+	}{writer, chunks_meta, ls_id}
 
 	var res = struct {
-		data          []byte
-		has_more_data bool
-	}{data, false}
+		data []byte
+	}{data}
 
 	fastcgo.UnsafeCall2(
 		C.prompp_index_writer_write_next_series_batch,
@@ -1597,7 +1597,7 @@ func indexWriterWriteNextSeriesBatch(writer uintptr, batch_size uint32, data []b
 		uintptr(unsafe.Pointer(&res)),
 	)
 
-	return res.data, res.has_more_data
+	return res.data
 }
 
 func indexWriterWriteLabelIndices(writer uintptr, data []byte) []byte {

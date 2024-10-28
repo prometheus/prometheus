@@ -13,15 +13,15 @@ template <class Filament, class TrieIndex>
 class QueryableEncodingBimap : public BareBones::SnugComposite::DecodingTable<Filament> {
  public:
   using Base = BareBones::SnugComposite::DecodingTable<Filament>;
-  using Set = phmap::btree_set<typename Base::Proxy, typename Base::LessComparator, BareBones::Allocator<typename Base::Proxy>>;
+  using LsIdSet = phmap::btree_set<typename Base::Proxy, typename Base::LessComparator, BareBones::Allocator<typename Base::Proxy>>;
   using HashSet =
       phmap::flat_hash_set<typename Base::Proxy, typename Base::Hasher, typename Base::EqualityComparator, BareBones::Allocator<typename Base::Proxy>>;
-  using LsIdSetIterator = typename Set::const_iterator;
+  using LsIdSetIterator = typename LsIdSet::const_iterator;
   using TrieIndexIterator = typename TrieIndex::Iterator;
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE const TrieIndex& trie_index() const noexcept { return trie_index_; }
   [[nodiscard]] PROMPP_ALWAYS_INLINE const SeriesReverseIndex& reverse_index() const noexcept { return reverse_index_; }
-  [[nodiscard]] PROMPP_ALWAYS_INLINE const Set& ls_id_set() const noexcept { return ls_id_set_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const LsIdSet& ls_id_set() const noexcept { return ls_id_set_; }
 
   PROMPP_ALWAYS_INLINE void build_sorting_index() {
     if (sorting_index_.empty()) {
@@ -64,12 +64,12 @@ class QueryableEncodingBimap : public BareBones::SnugComposite::DecodingTable<Fi
   SeriesReverseIndex reverse_index_;
 
   size_t ls_id_set_allocated_memory_{};
-  Set ls_id_set_{{}, Base::less_comparator_, BareBones::Allocator<typename Base::Proxy>{ls_id_set_allocated_memory_}};
+  LsIdSet ls_id_set_{{}, Base::less_comparator_, BareBones::Allocator<typename Base::Proxy>{ls_id_set_allocated_memory_}};
 
   size_t ls_id_hash_set_allocated_memory_{};
   HashSet ls_id_hash_set_{0, Base::hasher_, Base::equality_comparator_, BareBones::Allocator<typename Base::Proxy>{ls_id_hash_set_allocated_memory_}};
 
-  SortingIndex<Set> sorting_index_{ls_id_set_};
+  SortingIndex<LsIdSet> sorting_index_{ls_id_set_};
 
   PROMPP_ALWAYS_INLINE void after_items_load(uint32_t first_loaded_id) noexcept override {
     for (auto ls_id = first_loaded_id; ls_id < Base::items_.size(); ++ls_id) {

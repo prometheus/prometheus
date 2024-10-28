@@ -6,71 +6,35 @@
 
 namespace series_index::prometheus::tsdb::index::section_writer {
 
-template <class Lss, class ChunkMetadataList, class Stream>
+template <class Lss, class Stream>
 class SeriesWriter {
  public:
   using StreamWriter = PromPP::Prometheus::tsdb::index::StreamWriter<Stream>;
   using StringWriter = PromPP::Prometheus::tsdb::index::StringWriter;
   using NoCrc32 = PromPP::Prometheus::tsdb::index::NoCrc32Tag;
 
-  static constexpr uint32_t kAllSeries = std::numeric_limits<uint32_t>::max();
+  SeriesWriter(const Lss& lss, const SymbolReferencesMap& symbol_references, SeriesReferencesMap& series_references)
+      : lss_(lss), symbol_references_(symbol_references), series_references_(series_references) {}
 
-  SeriesWriter(const Lss& lss,
-               const ChunkMetadataList& chunk_metadata_list,
-               const SymbolReferencesMap& symbol_references,
-               SeriesReferencesMap& series_references)
-      : lss_(lss),
-        iterator_(lss_.ls_id_set().begin()),
-        end_iterator_(lss_.ls_id_set().end()),
-        chunk_metadata_list_(chunk_metadata_list),
-        symbol_references_(symbol_references),
-        series_references_(series_references) {
-    advance_to_non_empty_series();
-  }
-
-  void write(StreamWriter& writer, uint32_t series_count = kAllSeries) {
+  template <class ChunkMetadataContainer>
+  void write(PromPP::Primitives::LabelSetID ls_id, const ChunkMetadataContainer& chunks, StreamWriter& writer) {
     writer.align_to(PromPP::Prometheus::tsdb::index::kSeriesAlignment);
 
-    write_series(writer, series_count);
+    emplace_series_reference(ls_id, writer.position());
 
-    if (!has_more_data()) {
-      series_writer_.writer().free_memory();
-    }
+    series_writer_.writer().clear();
+
+    serialize_labels(ls_id);
+    serialize_chunks(chunks);
+    write_serialized_series(writer);
   }
-
-  [[nodiscard]] PROMPP_ALWAYS_INLINE bool has_more_data() const noexcept { return iterator_ != end_iterator_; }
 
  private:
   const Lss& lss_;
-  typename Lss::LsIdSetIterator iterator_;
-  typename Lss::LsIdSetIterator end_iterator_;
-  const ChunkMetadataList& chunk_metadata_list_;
   const SymbolReferencesMap& symbol_references_;
   SeriesReferencesMap& series_references_;
 
   StringWriter series_writer_;
-
-  void advance_to_non_empty_series() noexcept {
-    while (has_more_data() && chunk_metadata_list_[*iterator_].empty()) {
-      ++iterator_;
-    }
-  }
-
-  void write_series(StreamWriter& writer, uint32_t series_count) {
-    for (uint32_t i = 0; has_more_data() && i < series_count; ++i) {
-      auto ls_id = *iterator_;
-      emplace_series_reference(ls_id, writer.position());
-
-      series_writer_.writer().clear();
-
-      serialize_labels(ls_id);
-      serialize_chunks(ls_id);
-      write_serialized_series(writer);
-
-      ++iterator_;
-      advance_to_non_empty_series();
-    }
-  }
 
   void serialize_labels(PromPP::Primitives::LabelSetID ls_id) {
     const auto& labels = lss_[ls_id];
@@ -82,11 +46,11 @@ class SeriesWriter {
     }
   }
 
-  void serialize_chunks(PromPP::Primitives::LabelSetID ls_id) {
-    auto& chunks = chunk_metadata_list_[ls_id];
+  template <class ChunkMetadataContainer>
+  void serialize_chunks(const ChunkMetadataContainer& chunks) {
     series_writer_.write_varint<NoCrc32>(static_cast<uint64_t>(chunks.size()));
 
-    PromPP::Primitives::Timestamp previous_max_timestamp = std::numeric_limits<PromPP::Primitives::Timestamp>::max();
+    auto previous_max_timestamp = std::numeric_limits<PromPP::Primitives::Timestamp>::max();
     uint64_t previous_chunk_reference = 0;
 
     for (auto& chunk : chunks) {

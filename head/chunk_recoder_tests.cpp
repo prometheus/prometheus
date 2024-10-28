@@ -6,7 +6,8 @@
 
 namespace {
 
-using head::ChunkRecoder;
+using PromPP::Primitives::kInvalidLabelSetID;
+using PromPP::Primitives::LabelSetID;
 using PromPP::Primitives::TimeInterval;
 using series_data::DataStorage;
 using series_data::Encoder;
@@ -15,9 +16,12 @@ using std::operator""s;
 
 class ChunkRecoderFixture : public ::testing::Test {
  protected:
+  using LsIdSet = std::vector<LabelSetID>;
+  using ChunkRecoder = head::ChunkRecoder<LsIdSet>;
+
   struct RecodeInfo {
     TimeInterval interval{.min = 0, .max = 0};
-    uint32_t series_id{ChunkRecoder::kInvalidSeriesId};
+    uint32_t series_id{kInvalidLabelSetID};
     uint8_t samples_count{};
     std::string buffer;
     bool has_more_data{};
@@ -28,6 +32,12 @@ class ChunkRecoderFixture : public ::testing::Test {
   DataStorage storage_;
   std::chrono::system_clock clock_;
   OutdatedSampleEncoder<std::chrono::system_clock> outdated_sample_encoder_{clock_};
+  LsIdSet ls_id_set_;
+
+  ChunkRecoder create_recoder(const LsIdSet& ls_id_set, const TimeInterval& time_interval) {
+    ls_id_set_ = ls_id_set;
+    return ChunkRecoder{ls_id_set_, &storage_, time_interval};
+  }
 
   static RecodeInfo recode(ChunkRecoder& recoder) noexcept {
     RecodeInfo info;
@@ -40,7 +50,7 @@ class ChunkRecoderFixture : public ::testing::Test {
 
 TEST_F(ChunkRecoderFixture, EmptyStorage) {
   // Arrange
-  ChunkRecoder recoder(&storage_, {});
+  ChunkRecoder recoder({}, &storage_, {});
 
   // Act
   const auto info1 = recode(recoder);
@@ -56,7 +66,8 @@ TEST_F(ChunkRecoderFixture, StorageWithOneChunk) {
   Encoder encoder{storage_, outdated_sample_encoder_};
   encoder.encode(0, 1, 1.0);
   encoder.encode(0, 2, 1.0);
-  ChunkRecoder recoder(&storage_, {.min = 0, .max = 3});
+
+  auto recoder = create_recoder({0}, {.min = 0, .max = 3});
 
   // Act
   const auto info1 = recode(recoder);
@@ -81,7 +92,8 @@ TEST_F(ChunkRecoderFixture, StorageWithEmptyChunks) {
   encoder.encode(2, 2, 1.0);
   encoder.encode(4, 3, 2.0);
   encoder.encode(4, 4, 2.0);
-  ChunkRecoder recoder(&storage_, {.min = 0, .max = 5});
+
+  auto recoder = create_recoder({0, 1, 2, 3, 4}, {.min = 0, .max = 5});
 
   // Act
   const auto info1 = recode(recoder);
@@ -106,6 +118,39 @@ TEST_F(ChunkRecoderFixture, StorageWithEmptyChunks) {
             info2);
 }
 
+TEST_F(ChunkRecoderFixture, ReverseOrderOfChunks) {
+  // Arrange
+  Encoder encoder{storage_, outdated_sample_encoder_};
+  encoder.encode(2, 1, 1.0);
+  encoder.encode(2, 2, 1.0);
+  encoder.encode(4, 3, 2.0);
+  encoder.encode(4, 4, 2.0);
+
+  auto recoder = create_recoder({4, 3, 2, 1, 0}, {.min = 0, .max = 5});
+
+  // Act
+  const auto info1 = recode(recoder);
+  const auto info2 = recode(recoder);
+
+  // Assert
+  EXPECT_EQ((RecodeInfo{
+                .interval = {.min = 3, .max = 4},
+                .series_id = 4,
+                .samples_count = 2,
+                .buffer = "\x00\x02\x06\x40\x00\x00\x00\x00\x00\x00\x00\x01\x00"s,
+                .has_more_data = true,
+            }),
+            info1);
+  EXPECT_EQ((RecodeInfo{
+                .interval = {.min = 1, .max = 2},
+                .series_id = 2,
+                .samples_count = 2,
+                .buffer = "\x00\x02\x02\x3f\xf0\x00\x00\x00\x00\x00\x00\x01\x00"s,
+                .has_more_data = false,
+            }),
+            info2);
+}
+
 TEST_F(ChunkRecoderFixture, ChunkWithFinalizedTimestampStream) {
   // Arrange
   Encoder<decltype(outdated_sample_encoder_), 2> encoder{storage_, outdated_sample_encoder_};
@@ -114,7 +159,8 @@ TEST_F(ChunkRecoderFixture, ChunkWithFinalizedTimestampStream) {
   encoder.encode(0, 2, 1.0);
   encoder.encode(1, 2, 1.0);
   encoder.encode(1, 3, 1.0);
-  ChunkRecoder recoder(&storage_, {.min = 0, .max = 4});
+
+  auto recoder = create_recoder({0, 1}, {.min = 0, .max = 4});
 
   // Act
   const auto info1 = recode(recoder);
@@ -155,7 +201,8 @@ TEST_F(ChunkRecoderFixture, GorillaChunk) {
   encoder.encode(0, 2, 1.2);
   encoder.encode(0, 3, 1.3);
   encoder.encode(0, 4, 1.4);
-  ChunkRecoder recoder(&storage_, {.min = 0, .max = 5});
+
+  auto recoder = create_recoder({0}, {.min = 0, .max = 5});
 
   // Act
   const auto info = recode(recoder);
@@ -177,7 +224,8 @@ TEST_F(ChunkRecoderFixture, NoChunksByTimeInterval) {
   Encoder encoder{storage_, outdated_sample_encoder_};
   encoder.encode(0, 1, 1.1);
   encoder.encode(0, 2, 1.2);
-  ChunkRecoder recoder(&storage_, {.min = 0, .max = 1});
+
+  auto recoder = create_recoder({0}, {.min = 0, .max = 1});
 
   // Act
   const auto info = recode(recoder);
@@ -195,7 +243,8 @@ TEST_F(ChunkRecoderFixture, PartialReencodingByTimeInterval) {
   encoder.encode(0, 3, 1.0);
   encoder.encode(0, 4, 1.0);
   encoder.encode(1, 0, 1.0);
-  ChunkRecoder recoder(&storage_, {.min = 1, .max = 3});
+
+  auto recoder = create_recoder({0, 1}, {.min = 1, .max = 3});
 
   // Act
   const auto info = recode(recoder);
@@ -217,7 +266,8 @@ TEST_F(ChunkRecoderFixture, EmptyFinalizedChunk) {
   encoder.encode(0, 1, 1.0);
   encoder.encode(0, 2, 1.0);
   encoder.encode(0, 5, 1.0);
-  ChunkRecoder recoder(&storage_, {.min = 3, .max = 4});
+
+  auto recoder = create_recoder({0}, {.min = 3, .max = 4});
 
   // Act
   const auto info = recode(recoder);
@@ -232,7 +282,8 @@ TEST_F(ChunkRecoderFixture, EmptyFinalizedChunkNonEmptyOpenedChunk) {
   encoder.encode(0, 1, 1.0);
   encoder.encode(0, 2, 1.0);
   encoder.encode(0, 5, 1.0);
-  ChunkRecoder recoder(&storage_, {.min = 3, .max = 6});
+
+  auto recoder = create_recoder({0}, {.min = 3, .max = 6});
 
   // Act
   const auto info = recode(recoder);
@@ -246,6 +297,22 @@ TEST_F(ChunkRecoderFixture, EmptyFinalizedChunkNonEmptyOpenedChunk) {
                 .has_more_data = false,
             }),
             info);
+}
+
+TEST_F(ChunkRecoderFixture, EmptyLssWithNonEmptyDataStorage) {
+  // Arrange
+  Encoder encoder{storage_, outdated_sample_encoder_};
+  encoder.encode(0, 1, 1.0);
+
+  auto recoder = create_recoder({}, {.min = 0, .max = 2});
+
+  // Act
+  const auto info1 = recode(recoder);
+  const auto info2 = recode(recoder);
+
+  // Assert
+  EXPECT_EQ(RecodeInfo{}, info1);
+  EXPECT_EQ(RecodeInfo{}, info2);
 }
 
 }  // namespace

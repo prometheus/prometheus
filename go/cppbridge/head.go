@@ -108,12 +108,14 @@ type ChunkRecoder struct {
 	recoder      uintptr
 	recodedChunk RecodedChunk
 
+	lss         *LabelSetStorage
 	dataStorage *HeadDataStorage
 }
 
-func NewChunkRecoder(dataStorage *HeadDataStorage, timeInterval TimeInterval) *ChunkRecoder {
+func NewChunkRecoder(lss *LabelSetStorage, dataStorage *HeadDataStorage, timeInterval TimeInterval) *ChunkRecoder {
 	chunkRecoder := &ChunkRecoder{
-		recoder:     seriesDataChunkRecoderCtor(dataStorage.dataStorage, timeInterval),
+		recoder:     seriesDataChunkRecoderCtor(lss.Pointer(), dataStorage.dataStorage, timeInterval),
+		lss:         lss,
 		dataStorage: dataStorage,
 	}
 

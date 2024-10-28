@@ -46,6 +46,8 @@ struct TimeInterval {
 
 using LabelSetID = uint32_t;
 
+constexpr LabelSetID kInvalidLabelSetID = std::numeric_limits<LabelSetID>::max();
+
 template <class LabelType, template <class> class Container = BareBones::Vector>
 class BasicLabelSet {
   Container<LabelType> labels_;
