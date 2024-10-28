@@ -16,8 +16,11 @@ package targetgroup
 import (
 	"bytes"
 	"encoding/json"
+	"unsafe"
 
 	"github.com/prometheus/common/model"
+
+	"github.com/cespare/xxhash/v2"
 )
 
 // Group is a set of targets with a common label set(production , test, staging etc.).
@@ -34,6 +37,19 @@ type Group struct {
 
 func (tg Group) String() string {
 	return tg.Source
+}
+
+func (tg Group) Hash() uint64 {
+	res := xxhash.New()
+	writeLabelSet := func(ls model.LabelSet) {
+		fp := ls.FastFingerprint()
+		res.Write((*(*[8]byte)(unsafe.Pointer(&fp)))[:])
+	}
+	writeLabelSet(tg.Labels)
+	for i := range tg.Targets {
+		writeLabelSet(tg.Targets[i])
+	}
+	return res.Sum64()
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
