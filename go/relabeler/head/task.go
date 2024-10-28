@@ -2,9 +2,10 @@ package head
 
 import (
 	"context"
+	"sync"
+
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler"
-	"sync"
 )
 
 // TaskInputRelabeling - task for stage input relabeling.
@@ -12,7 +13,7 @@ type TaskInputRelabeling struct {
 	ctx          context.Context
 	promise      *InputRelabelingPromise
 	incomingData *relabeler.DestructibleIncomingData
-	metricLimits *cppbridge.MetricLimits
+	options      cppbridge.RelabelerOptions
 	sourceStates *relabeler.SourceStates
 	staleNansTS  int64
 	relabelerID  string
@@ -23,7 +24,7 @@ func NewTaskInputRelabeling(
 	ctx context.Context,
 	promise *InputRelabelingPromise,
 	incomingData *relabeler.DestructibleIncomingData,
-	metricLimits *cppbridge.MetricLimits,
+	options cppbridge.RelabelerOptions,
 	sourceStates *relabeler.SourceStates,
 	staleNansTS int64,
 	relabelerID string,
@@ -32,7 +33,7 @@ func NewTaskInputRelabeling(
 		ctx:          ctx,
 		promise:      promise,
 		incomingData: incomingData,
-		metricLimits: metricLimits,
+		options:      options,
 		sourceStates: sourceStates,
 		staleNansTS:  staleNansTS,
 		relabelerID:  relabelerID,
@@ -59,9 +60,9 @@ func (t *TaskInputRelabeling) RelabelerID() string {
 	return t.relabelerID
 }
 
-// MetricLimits return *cppbridge.MetricLimits.
-func (t *TaskInputRelabeling) MetricLimits() *cppbridge.MetricLimits {
-	return t.metricLimits
+// Options return *cppbridge.Options.
+func (t *TaskInputRelabeling) Options() cppbridge.RelabelerOptions {
+	return t.options
 }
 
 // ShardedData - return ShardedData.

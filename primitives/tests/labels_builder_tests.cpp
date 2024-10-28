@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include "primitives/go_slice.h"
 #include "primitives/primitives.h"
 #include "primitives/snug_composites.h"
 
@@ -140,8 +141,6 @@ TEST_F(TestLabelsBuilder, Range) {
   }
 
   builder_.range([&]<typename LNameType, typename LValueType>(LNameType& lname, LValueType& lvalue) PROMPP_LAMBDA_INLINE -> bool {
-    // std::string lname{l.first};
-    // std::string lvalue{l.second};
     builder_.del(lname);
     builder_.set(lvalue, lname);
     return true;
@@ -166,8 +165,6 @@ TEST_F(TestLabelsBuilder, RangeFastExit) {
 
   size_t count{0};
   builder_.range([&]<typename LNameType, typename LValueType>(LNameType& lname, LValueType& lvalue) PROMPP_LAMBDA_INLINE -> bool {
-    // std::string lname{l.first};
-    // std::string lvalue{l.second};
     builder_.del(lname);
     builder_.set(lvalue, lname);
     ++count;
@@ -193,8 +190,6 @@ TEST_F(TestLabelsBuilder, ResetRange) {
   builder_.reset(&ls);
 
   builder_.range([&]<typename LNameType, typename LValueType>(LNameType& lname, LValueType& lvalue) PROMPP_LAMBDA_INLINE -> bool {
-    // std::string lname{l.first};
-    // std::string lvalue{l.second};
     builder_.del(lname);
     builder_.set(lvalue, lname);
     return true;

@@ -51,35 +51,28 @@ class TimeseriesProtobufWriter {
   uint32_t processed_series_{};
 };
 
-template <class Encoder, class Decoder>
-Encoder create_encoder_from_decoder(const Decoder& decoder) {
-  auto state = decoder.get_encoder_state();
-  return Encoder(state.shard_id, state.pow_two_of_total_shards, state.gorilla, state.lss, state.shard_id, state.pow_two_of_total_shards, state.next_segment_id,
-                 state.ts_base);
-};
-
 template <typename LSS = Primitives::SnugComposites::LabelSet::DecodingTable>
 class GenericDecoder {
-  using Reader = BasicDecoder<std::remove_reference_t<LSS>>;
+  using Decoder = BasicDecoder<std::remove_reference_t<LSS>>;
 
- private:
   LSS label_set_;
-  Reader reader_;
+  Decoder decoder_;
 
  public:
-  explicit PROMPP_ALWAYS_INLINE GenericDecoder(BasicEncoderVersion encoder_version) noexcept : reader_(label_set_, encoder_version) {}
-  explicit PROMPP_ALWAYS_INLINE GenericDecoder(LSS& lss, BasicEncoderVersion encoder_version) : label_set_{lss}, reader_(label_set_, encoder_version) {}
+  explicit PROMPP_ALWAYS_INLINE GenericDecoder(BasicEncoderVersion encoder_version) noexcept : decoder_(label_set_, encoder_version) {}
+  explicit PROMPP_ALWAYS_INLINE GenericDecoder(LSS& lss, BasicEncoderVersion encoder_version) : label_set_{lss}, decoder_(label_set_, encoder_version) {}
 
-  const auto& gorilla() const noexcept { return reader_.gorilla(); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const Decoder& decoder() const noexcept { return decoder_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE LSS& label_set() const noexcept { return label_set_; }
 
   // decode - decoding incoming data and make protbuf.
   template <class Input, class Output, class Stats>
   PROMPP_ALWAYS_INLINE void decode(Input& in, Output& out, Stats& stats) {
     std::ispanstream inspan(std::string_view(in.data(), in.size()));
-    inspan >> reader_;
+    inspan >> decoder_;
 
-    TimeseriesProtobufWriter<Reader, Output> protobuf_writer(reader_, out);
-    reader_.process_segment(protobuf_writer);
+    TimeseriesProtobufWriter<Reader, Output> protobuf_writer(decoder_, out);
+    decoder_.process_segment(protobuf_writer);
     protobuf_writer.get_statistic(stats);
   }
 
@@ -87,19 +80,19 @@ class GenericDecoder {
   template <class Input, class Hashdex, class Stats, class... PreshardingArgs>
   PROMPP_ALWAYS_INLINE void decode_to_hashdex(Input& in, Hashdex& hx, Stats& stats, PreshardingArgs&&... presharding_args) {
     std::ispanstream inspan(std::string_view(in.data(), in.size()));
-    inspan >> reader_;
+    inspan >> decoder_;
 
-    hx.presharding(reader_, std::forward<PreshardingArgs>(presharding_args)...);
-    hx.write_stats(reader_, stats);
+    hx.presharding(decoder_, std::forward<PreshardingArgs>(presharding_args)...);
+    hx.write_stats(decoder_, stats);
   }
 
   template <class Input, class InnerSeriesContainer, class Stats>
   PROMPP_ALWAYS_INLINE void decode_to_inner_series(Input& in, InnerSeriesContainer& container, [[maybe_unused]] Stats* stats) {
     std::ispanstream inspan(std::string_view(in.data(), in.size()));
-    inspan >> reader_;
-    BareBones::Vector<PromPP::Primitives::Sample> samples;
+    inspan >> decoder_;
+    BareBones::Vector<Primitives::Sample> samples;
     uint32_t last_ls_id = std::numeric_limits<uint32_t>::max();
-    reader_.process_segment([&last_ls_id, &samples, &container](uint32_t ls_id, int64_t ts, double v) PROMPP_LAMBDA_INLINE {
+    decoder_.process_segment([&last_ls_id, &samples, &container](uint32_t ls_id, int64_t ts, double v) PROMPP_LAMBDA_INLINE {
       if (ls_id != last_ls_id) {
         if (!samples.empty()) {
           container.emplace_back(samples, last_ls_id);
@@ -119,46 +112,25 @@ class GenericDecoder {
   template <class Input, class Stats>
   PROMPP_ALWAYS_INLINE void decode_dry(Input& in, Stats* stats) {
     std::ispanstream inspan(std::string_view(in.data(), in.size()));
-    inspan >> reader_;
-    reader_.process_segment([](uint32_t, int64_t, double) PROMPP_LAMBDA_INLINE {});
-    stats->segment_id = reader_.last_processed_segment();
+    inspan >> decoder_;
+    decoder_.process_segment([](uint32_t, int64_t, double) PROMPP_LAMBDA_INLINE {});
+    stats->segment_id = decoder_.last_processed_segment();
   }
 
   // restore_from_stream - restore the decoder state to the required segment from the file.
   template <class Input, class Stats>
   PROMPP_ALWAYS_INLINE void restore_from_stream(Input& in, uint32_t segment_id, Stats* stats) {
     std::ispanstream inspan(std::string_view(in.data(), in.size()));
-    while (reader_.last_processed_segment() != segment_id) {
-      inspan >> reader_;
+    while (decoder_.last_processed_segment() != segment_id) {
+      inspan >> decoder_;
       if (inspan.eof()) {
         break;
       }
       stats->offset = inspan.tellg();
-      reader_.process_segment([](uint32_t, uint64_t, double) PROMPP_LAMBDA_INLINE {});
+      decoder_.process_segment([](uint32_t, uint64_t, double) PROMPP_LAMBDA_INLINE {});
     }
 
-    stats->segment_id = reader_.last_processed_segment();
-  }
-
-  struct EncoderState {
-    const BareBones::Vector<BareBones::Encoding::Gorilla::StreamDecoder<BareBones::Encoding::Gorilla::ZigZagTimestampDecoder<>,
-                                                                        BareBones::Encoding::Gorilla::ValuesDecoder>>& gorilla;
-    LSS& lss;
-    uint32_t next_segment_id;
-    Primitives::Timestamp ts_base;
-    uint16_t shard_id;
-    uint8_t pow_two_of_total_shards;
-  };
-
-  PROMPP_ALWAYS_INLINE EncoderState get_encoder_state() const noexcept {
-    return EncoderState{
-        .gorilla = reader_.gorilla(),
-        .lss = label_set_,
-        .next_segment_id = reader_.last_processed_segment() + 1,
-        .ts_base = reader_.ts_base(),
-        .shard_id = reader_.shard_id(),
-        .pow_two_of_total_shards = reader_.pow_two_of_total_shards(),
-    };
+    stats->segment_id = decoder_.last_processed_segment();
   }
 };
 

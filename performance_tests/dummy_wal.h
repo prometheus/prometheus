@@ -11,9 +11,7 @@
 #include <vector>
 
 #include "bare_bones/lz4_stream.h"
-
-#define XXH_INLINE_ALL
-#include "xxHash/xxhash.h"
+#include "primitives/hash.h"
 
 class DummyWal {
  public:
@@ -31,13 +29,7 @@ class DummyWal {
              text_data == o.text_data;
     }
 
-    friend size_t hash_value(const LabelSet& label_set) {
-      size_t res = 0;
-      for (const auto& [label_name, label_value] : label_set) {
-        res = XXH3_64bits_withSeed(label_name.data(), label_name.size(), res) ^ XXH3_64bits_withSeed(label_value.data(), label_value.size(), res);
-      }
-      return res;
-    }
+    friend size_t hash_value(const LabelSet& label_set) { return PromPP::Primitives::hash::hash_of_label_set(label_set); }
 
     uint32_t size() const { return word_positions.size() / 2; }
 
@@ -117,13 +109,7 @@ class DummyWal {
       Iterator begin() const { return Iterator(label_set_, 0); }
       Iterator end() const { return Iterator(label_set_, label_set_->size()); }
 
-      friend size_t hash_value(const Names& lsns) {
-        size_t res = 0;
-        for (const auto& label_name : lsns) {
-          res = XXH3_64bits_withSeed(label_name.data(), label_name.size(), res);
-        }
-        return res;
-      }
+      friend size_t hash_value(const Names& lsns) { return PromPP::Primitives::hash::hash_of_string_list(lsns); }
 
       uint32_t size() const { return label_set_->size(); }
     };

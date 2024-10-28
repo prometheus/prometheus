@@ -17,6 +17,7 @@ constexpr std::array kAllocationSizesTable = {AllocationSize{0U}, AllocationSize
 std::vector<uint64_t> generate_uint64_vector() {
   std::vector<uint64_t> data;
   std::mt19937 gen32(testing::UnitTest::GetInstance()->random_seed());
+  data.reserve(NUM_VALUES);
   for (size_t i = 0; i < NUM_VALUES; ++i) {
     data.push_back(gen32());
   }
@@ -28,6 +29,7 @@ std::vector<double> generate_double_vector() {
   std::vector<double> data;
   std::uniform_real_distribution<double> unif;
   std::mt19937 gen32(testing::UnitTest::GetInstance()->random_seed());
+  data.reserve(NUM_VALUES);
   for (size_t i = 0; i < NUM_VALUES; ++i) {
     data.push_back(unif(gen32));
   }

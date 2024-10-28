@@ -3,23 +3,36 @@ extern "C" {
 #endif
 
 /**
- * @brief Construct a new WAL EncoderLightweight
+ * @brief Construct a new Head WAL encoder
  *
  * @param args {
  *     shardID            uint16  // shard number
  *     logShards          uint8   // logarithm to the base 2 of total shards count
+ *.    lss                uintptr // pointer to lss
  * }
  * @param res {
- *     encoderLightweight uintptr // pointer to constructed encoder
+ *     encoder uintptr // pointer to constructed encoder
  * }
  */
 void prompp_head_wal_encoder_ctor(void* args, void* res);
 
 /**
- * @brief Destroy EncoderLightweight
+ * @brief Create encoder from decoder
  *
  * @param args {
- *     encoderLightweight uintptr // pointer to constructed encoder
+ *     decoder uintptr // pointer to decoder
+ * }
+ * @param res {
+ *     encoder uintptr // pointer to constructed encoder
+ * }
+ */
+void prompp_head_wal_encoder_ctor_from_decoder(void* args, void* res);
+
+/**
+ * @brief Destroy Encoder
+ *
+ * @param args {
+ *     encoder uintptr // pointer to constructed encoder
  * }
  */
 void prompp_head_wal_encoder_dtor(void* args);
@@ -28,8 +41,8 @@ void prompp_head_wal_encoder_dtor(void* args);
  * @brief Add inner series to current segment
  *
  * @param args {
- *     incomingInnerSeries []*InnerSeries // go slice with incoming InnerSeries;
- *     encoderLightweight  uintptr        // pointer to constructed encoder;
+ *     incomingInnerSeries []*InnerSeries // go slice with inner series;
+ *     encoder  uintptr        // pointer to constructed encoder;
  * }
  * @param res {
  *     earliestTimestamp   int64          // minimal sample timestamp in segment
@@ -47,7 +60,7 @@ void prompp_head_wal_encoder_add_inner_series(void* args, void* res);
  * @brief Flush segment
  *
  * @param args {
- *     encoderLightweight uintptr // pointer to constructed encoder
+ *     encoder uintptr // pointer to constructed encoder
  * }
  * @param res {
  *     earliestTimestamp  int64   // minimal sample timestamp in segment
@@ -63,9 +76,10 @@ void prompp_head_wal_encoder_add_inner_series(void* args, void* res);
 void prompp_head_wal_encoder_finalize(void* args, void* res);
 
 /**
- * @brief Construct a new WAL Decoder
+ * @brief Construct a new Head WAL Decoder
  *
  * @param args {
+ *     lss             uintptr // pointer to lss
  *     encoder_version uint8_t // basic encoder version
  * }
  *
@@ -90,7 +104,7 @@ void prompp_head_wal_decoder_dtor(void* args);
  * @param args {
  *     decoder uintptr // pointer to constructed decoder
  *     segment []byte  // segment content
- *     inner_series *InnerSeries // decoded content
+ *    inner_series *InnerSeries // decoded content
  * }
  * @param res {
  *     created_at int64  // timestamp in ns when data was start writed to encoder
@@ -104,18 +118,6 @@ void prompp_head_wal_decoder_dtor(void* args);
  * }
  */
 void prompp_head_wal_decoder_decode(void* args, void* res);
-
-/**
- * @brief Create encoder from decoder
- *
- * @param args {
- *     decoder uintptr // pointer to decoder
- * }
- * @param res {
- *     encoder uintptr // pointer to constructed encoder
- * }
- */
-void prompp_head_wal_decoder_create_encoder(void* args, void* res);
 
 #ifdef __cplusplus
 }  // extern "C"

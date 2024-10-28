@@ -51,7 +51,7 @@ class RegexpParser {
 
 class RegexpMatchAnalyzer {
  public:
-  enum class Status { kError = 0, kEmptyMatch, kAnythingMatch, kAllMatch, kPartialMatch };
+  enum class Status : uint8_t { kError = 0, kEmptyMatch, kAnythingMatch, kAllMatch, kPartialMatch };
 
   [[nodiscard]] static Status analyze(re2::Regexp* regexp) {
     if (!regexp) {

@@ -20,9 +20,9 @@ class PostingsWriter {
       : lss_(lss), trie_index_iterator_(lss_.trie_index().begin()), series_references_(series_references), writer_(writer) {}
 
   void write_postings(uint32_t max_batch_size = kUnlimitedBatchSize) {
-    auto const is_batch_filled = [this, max_batch_size]() PROMPP_LAMBDA_INLINE { return writer_.size() >= max_batch_size; };
+    auto const is_batch_filled = [this, max_batch_size] PROMPP_LAMBDA_INLINE { return writer_.size() >= max_batch_size; };
 
-    if (entries_ == 0) {
+    if (entries_ == 0) [[unlikely]] {
       write_posting_with_all_series();
 
       if (is_batch_filled()) {
@@ -54,7 +54,7 @@ class PostingsWriter {
 
  private:
   const Lss& lss_;
-  Lss::TrieIndexIterator trie_index_iterator_;
+  typename Lss::TrieIndexIterator trie_index_iterator_;
   const SeriesReferencesMap& series_references_;
   StreamWriter& writer_;
 
@@ -71,9 +71,11 @@ class PostingsWriter {
 
   template <class SeriesReference>
   void write_posting(const SeriesReference& series_reference, std::string_view name, std::string_view value) {
-    add_posting_table_offset_item(name, value, writer_.position());
+    if (generate_series_references(series_reference); series_reference_list_.empty()) {
+      return;
+    }
 
-    generate_series_references(series_reference);
+    add_posting_table_offset_item(name, value, writer_.position());
     write_posting_entry();
 
     ++entries_;
@@ -95,29 +97,27 @@ class PostingsWriter {
   void add_posting_table_offset_item(std::string_view name, std::string_view value, size_t position) {
     table_offsets_writer_.write<NoCrc32>(0x02);
 
-    table_offsets_writer_.write_varint<NoCrc32>(static_cast<uint64_t>(name.length()));
+    table_offsets_writer_.write_varint<NoCrc32>(name.length());
     table_offsets_writer_.write<NoCrc32>(name);
 
-    table_offsets_writer_.write_varint<NoCrc32>(static_cast<uint64_t>(value.length()));
+    table_offsets_writer_.write_varint<NoCrc32>(value.length());
     table_offsets_writer_.write<NoCrc32>(value);
 
-    table_offsets_writer_.write_varint<NoCrc32>(static_cast<uint64_t>(position));
+    table_offsets_writer_.write_varint<NoCrc32>(position);
   }
 
   template <class SeriesIdList>
   void generate_series_references(const SeriesIdList& series_id_sequence) {
-    const auto get_series_reference = [&](const uint32_t series_id) PROMPP_LAMBDA_INLINE {
-      auto it = series_references_.find(series_id);
-      assert(it != series_references_.end());
-      return it->second;
-    };
-
     series_reference_list_.clear();
 
     if constexpr (std::is_same_v<SeriesIdList, CompactSeriesIdSequence>) {
       series_reference_list_.reserve(series_id_sequence.count());
-      series_id_sequence.process_series([this, &get_series_reference](const auto& series) PROMPP_LAMBDA_INLINE {
-        std::ranges::transform(series, std::back_inserter(series_reference_list_), get_series_reference);
+      series_id_sequence.process_series([this](const auto& series) PROMPP_LAMBDA_INLINE {
+        for (auto series_id : series) {
+          if (const auto it = series_references_.find(series_id); it != series_references_.end()) {
+            series_reference_list_.emplace_back(it->second);
+          }
+        }
       });
     } else {
       series_reference_list_.reserve(series_id_sequence.size());

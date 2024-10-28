@@ -5,12 +5,52 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sync"
 
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/util"
 	"github.com/prometheus/client_golang/prometheus"
 )
+
+//
+// DestinationGroups
+//
+
+// DestinationGroups wrapper for slice for convenient work.
+type DestinationGroups []*DestinationGroup
+
+// Add new DestinationGroup to DestinationGroups.
+func (dgs *DestinationGroups) Add(dg *DestinationGroup) {
+	(*dgs) = append((*dgs), dg)
+}
+
+// RangeGo run goroutines for each group.
+func (dgs *DestinationGroups) RangeGo(fn func(destinationGroupID int, destinationGroup *DestinationGroup) error) error {
+	errs := make([]error, len(*dgs))
+	wg := new(sync.WaitGroup)
+	wg.Add(len(*dgs))
+	for destinationGroupID, destinationGroup := range *dgs {
+		go func(dgid int, dg *DestinationGroup) {
+			errs[dgid] = fn(dgid, dg)
+			wg.Done()
+		}(destinationGroupID, destinationGroup)
+	}
+	wg.Wait()
+	return errors.Join(errs...)
+}
+
+// RemoveByID remove DestinationGroup form DestinationGroups by id.
+func (dgs *DestinationGroups) RemoveByID(ids []int) {
+	for i := len(ids) - 1; i > -1; i-- {
+		copy((*dgs)[ids[i]:], (*dgs)[ids[i]+1:])
+	}
+	(*dgs) = (*dgs)[:len(*dgs)-len(ids)]
+}
+
+//
+// DestinationGroup
+//
 
 // DestinationGroupUpdate config for update DestinationGroup.
 type DestinationGroupUpdate struct {

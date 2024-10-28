@@ -1,14 +1,18 @@
 #include <gtest/gtest.h>
 
-#include "wal/wal.h"
+#include <spanstream>
 
-#include "gtest/gtest.h"
+#include "wal/wal.h"
 
 namespace {
 
+using PromPP::Primitives::LabelSet;
 using PromPP::Primitives::LabelSetID;
 using PromPP::Primitives::Sample;
 using PromPP::Primitives::Timestamp;
+using PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap;
+using PromPP::WAL::BasicDecoder;
+using PromPP::WAL::BasicEncoder;
 
 class SampleForTest {
   PromPP::Primitives::Timestamp timestamp_;
@@ -32,13 +36,7 @@ class NamesSetForTest : public std::vector<std::string> {
  public:
   using Base::Base;
 
-  friend size_t hash_value(const NamesSetForTest& lns) {
-    size_t res = 0;
-    for (const auto& label_name : lns) {
-      res = XXH3_64bits_withSeed(label_name.data(), label_name.size(), res);
-    }
-    return res;
-  }
+  friend size_t hash_value(const NamesSetForTest& lns) { return PromPP::Primitives::hash::hash_of_string_list(lns); }
 };
 
 class LabelSetForTest : public std::vector<std::pair<std::string, std::string>> {
@@ -50,7 +48,7 @@ class LabelSetForTest : public std::vector<std::pair<std::string, std::string>> 
   NamesSetForTest names() const {
     NamesSetForTest tns;
 
-    for (auto [label_name, _] : *this) {
+    for (const auto& [label_name, _] : *this) {
       tns.push_back(label_name);
     }
 
@@ -217,6 +215,7 @@ INSTANTIATE_TEST_SUITE_P(OneSample,
                              .earliest_sample = 101,
                              .latest_sample = 101,
                          }));
+
 INSTANTIATE_TEST_SUITE_P(
     ManySamplesForOneSerie,
     WalBufferAddFixture,
@@ -237,6 +236,7 @@ INSTANTIATE_TEST_SUITE_P(
             .earliest_sample = 101,
             .latest_sample = 103,
         }));
+
 INSTANTIATE_TEST_SUITE_P(
     SortSamplesByTimestamp,
     WalBufferAddFixture,
@@ -257,6 +257,7 @@ INSTANTIATE_TEST_SUITE_P(
             .earliest_sample = 100,
             .latest_sample = 102,
         }));
+
 INSTANTIATE_TEST_SUITE_P(
     TwoSeries,
     WalBufferAddFixture,
@@ -291,37 +292,39 @@ INSTANTIATE_TEST_SUITE_P(
             .earliest_sample = 101,
             .latest_sample = 102,
         }));
-INSTANTIATE_TEST_SUITE_P(DontSkipNonUniqueSamples,
-                         WalBufferAddFixture,
-                         testing::Values(
-                             WalBufferAddCase{
-                                 .samples = {{.sample = {101, 1.0}, .ls_id = 0}, {.sample = {101, 2.0}, .ls_id = 0}},
-                                 .expected_samples = {{.sample = {101, 1.0}, .ls_id = 0}, {.sample = {101, 2.0}, .ls_id = 0}},
-                                 .samples_count = 2,
-                                 .series_count = 1,
-                                 .earliest_sample = 101,
-                                 .latest_sample = 101,
-                             },
-                             WalBufferAddCase{
-                                 .samples = {{.sample = {101, 1.0}, .ls_id = 0}, {.sample = {102, 1.0}, .ls_id = 0}, {.sample = {101, 2.0}, .ls_id = 0}},
-                                 .expected_samples = {{.sample = {101, 1.0}, .ls_id = 0}, {.sample = {101, 2.0}, .ls_id = 0}, {.sample = {102, 1.0}, .ls_id = 0}},
-                                 .samples_count = 3,
-                                 .series_count = 1,
-                                 .earliest_sample = 101,
-                                 .latest_sample = 102,
-                             },
-                             WalBufferAddCase{
-                                 .samples = {{.sample = {101, 1.0}, .ls_id = 0}, {.sample = {102, 1.0}, .ls_id = 0}, {.sample = {102, 2.0}, .ls_id = 0}},
-                                 .expected_samples = {{.sample = {101, 1.0}, .ls_id = 0}, {.sample = {102, 1.0}, .ls_id = 0}, {.sample = {102, 2.0}, .ls_id = 0}},
-                                 .samples_count = 3,
-                                 .series_count = 1,
-                                 .earliest_sample = 101,
-                                 .latest_sample = 102,
-                             }));
 
-struct Wal : public testing::Test {};
+INSTANTIATE_TEST_SUITE_P(
+    DontSkipNonUniqueSamples,
+    WalBufferAddFixture,
+    testing::Values(
+        WalBufferAddCase{
+            .samples = {{.sample = {101, 1.0}, .ls_id = 0}, {.sample = {101, 2.0}, .ls_id = 0}},
+            .expected_samples = {{.sample = {101, 1.0}, .ls_id = 0}, {.sample = {101, 2.0}, .ls_id = 0}},
+            .samples_count = 2,
+            .series_count = 1,
+            .earliest_sample = 101,
+            .latest_sample = 101,
+        },
+        WalBufferAddCase{
+            .samples = {{.sample = {101, 1.0}, .ls_id = 0}, {.sample = {102, 1.0}, .ls_id = 0}, {.sample = {101, 2.0}, .ls_id = 0}},
+            .expected_samples = {{.sample = {101, 1.0}, .ls_id = 0}, {.sample = {101, 2.0}, .ls_id = 0}, {.sample = {102, 1.0}, .ls_id = 0}},
+            .samples_count = 3,
+            .series_count = 1,
+            .earliest_sample = 101,
+            .latest_sample = 102,
+        },
+        WalBufferAddCase{
+            .samples = {{.sample = {101, 1.0}, .ls_id = 0}, {.sample = {102, 1.0}, .ls_id = 0}, {.sample = {102, 2.0}, .ls_id = 0}},
+            .expected_samples = {{.sample = {101, 1.0}, .ls_id = 0}, {.sample = {102, 1.0}, .ls_id = 0}, {.sample = {102, 2.0}, .ls_id = 0}},
+            .samples_count = 3,
+            .series_count = 1,
+            .earliest_sample = 101,
+            .latest_sample = 102,
+        }));
 
-TEST_F(Wal, BasicEncoderBasicDecoder) {
+class WalFixture : public testing::Test {};
+
+TEST_F(WalFixture, BasicEncoderBasicDecoder) {
   PromPP::WAL::BasicEncoder<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap> writer;
 
   const LabelSetForTest etalons_label_set = generate_label_set();
@@ -391,7 +394,7 @@ TEST_F(Wal, BasicEncoderBasicDecoder) {
   EXPECT_EQ(writer_latest_sample, reader.latest_sample());
 }
 
-TEST_F(Wal, Snapshots) {
+TEST_F(WalFixture, Snapshots) {
   using WALEncoder = PromPP::WAL::BasicEncoder<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>;
   using WALDecoder = PromPP::WAL::BasicDecoder<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>;
   WALEncoder encoder(2, 3);
@@ -437,9 +440,8 @@ TEST_F(Wal, Snapshots) {
   EXPECT_EQ(reader_sbuf1.view(), reader_sbuf2.view());
   EXPECT_EQ(decoder.decoders(), decoder2.decoders());
 }
-}  // namespace
 
-TEST_F(Wal, BasicEncoderMany) {
+TEST_F(WalFixture, BasicEncoderMany) {
   using WALEncoder = PromPP::WAL::BasicEncoder<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>;
   using AddManyCallbackType = WALEncoder::add_many_generator_callback_type;
   using enum AddManyCallbackType;
@@ -477,14 +479,14 @@ TEST_F(Wal, BasicEncoderMany) {
 
   // clang-format off
   Item expected_items[]{
-      {0, 1000, 1.0},
-      {0, 2000, 2.0},
-      {1, 1000, 0},
-      {1, 2000, BareBones::Encoding::Gorilla::STALE_NAN},
-      {2, 1000, 2},
-      {2, 2000, 2},
-      {3, 2000, 2},
-  };
+    {0, 1000, 1.0},
+    {0, 2000, 2.0},
+    {1, 1000, 0},
+    {1, 2000, BareBones::Encoding::Gorilla::STALE_NAN},
+    {2, 1000, 2},
+    {2, 2000, 2},
+    {3, 2000, 2},
+};
   // clang-format on
 
   size_t ind = 0;
@@ -497,3 +499,78 @@ TEST_F(Wal, BasicEncoderMany) {
     ++ind;
   });
 }
+
+class CreateBasicEncoderFromBasicDecoderFixture : public ::testing::Test {
+ protected:
+  using Encoder = BasicEncoder<EncodingBimap&>;
+  using Decoder = BasicDecoder<EncodingBimap>;
+
+  struct DecodedPoint {
+    Sample sample{};
+    uint32_t ls_id{};
+
+    bool operator==(const DecodedPoint&) const noexcept = default;
+  };
+
+  const LabelSet kLabelSet1{{"__name__", "test_metric1"}};
+  const LabelSet kLabelSet2{{"__name__", "test_metric2"}};
+
+  EncodingBimap encoder_lss1_;
+  Encoder encoder1_{encoder_lss1_, 0, 2};
+
+  EncodingBimap decoder_lss1_;
+  Decoder decoder1_{decoder_lss1_, BasicEncoder<>::version};
+
+  EncodingBimap decoder_lss2_;
+  Decoder decoder2_{decoder_lss2_, BasicEncoder<>::version};
+
+  static auto create_point_decoder(DecodedPoint& point) noexcept {
+    return [&point](uint32_t ls_id, int64_t timestamp, double value) { point = DecodedPoint{.sample = Sample(timestamp, value), .ls_id = ls_id}; };
+  }
+
+  static void encode_decode_segment(const Sample& sample,
+                                    const LabelSet& label_set,
+                                    Encoder& encoder,
+                                    const std::vector<Decoder*>& decoders,
+                                    auto&& segment_handler) {
+    std::stringstream stream;
+
+    PromPP::Primitives::Timeseries timeseries;
+    timeseries.samples().emplace_back(sample);
+    timeseries.label_set().add(label_set);
+
+    encoder.add(timeseries);
+    encoder.write(stream);
+
+    for (const auto decoder : decoders) {
+      EXPECT_NO_THROW(std::ispanstream(stream.view()) >> *decoder);
+      EXPECT_NO_THROW(decoder->process_segment(segment_handler));
+    }
+  };
+};
+
+TEST_F(CreateBasicEncoderFromBasicDecoderFixture, Test) {
+  // Arrange
+  static constexpr auto nop_handler = [](uint32_t, int64_t, double) {};
+
+  // Arrange
+  encode_decode_segment(Sample(1, 1.0), kLabelSet1, encoder1_, {&decoder1_, &decoder2_}, nop_handler);
+  encode_decode_segment(Sample(2, 2.0), kLabelSet1, encoder1_, {&decoder1_, &decoder2_}, nop_handler);
+
+  Encoder encoder2(decoder1_.gorilla(), decoder_lss1_, decoder1_.shard_id(), decoder1_.pow_two_of_total_shards(), decoder1_.last_processed_segment() + 1,
+                   decoder1_.ts_base());
+
+  static const Sample kThirdSample(3, 3.0);
+  DecodedPoint third_point{};
+  encode_decode_segment(kThirdSample, kLabelSet1, encoder2, {&decoder2_}, create_point_decoder(third_point));
+
+  static const Sample kFourthSample(3, 3.0);
+  DecodedPoint fourth_point{};
+  encode_decode_segment(kFourthSample, kLabelSet2, encoder2, {&decoder2_}, create_point_decoder(fourth_point));
+
+  // Assert
+  ASSERT_EQ((DecodedPoint{.sample = kThirdSample, .ls_id = 0}), third_point);
+  ASSERT_EQ((DecodedPoint{.sample = kFourthSample, .ls_id = 1}), fourth_point);
+}
+
+}  // namespace

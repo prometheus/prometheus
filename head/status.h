@@ -1,5 +1,7 @@
 #pragma once
 
+#include "primitives/primitives.h"
+#include "prometheus/value.h"
 #include "series_data/decoder.h"
 #include "series_index/reverse_index.h"
 
@@ -22,18 +24,11 @@ struct StringPairCountItem {
   bool operator==(const StringPairCountItem&) const noexcept = default;
 };
 
-struct TimeInterval {
-  int64_t min{std::numeric_limits<int64_t>::max()};
-  int64_t max{std::numeric_limits<int64_t>::min()};
-
-  bool operator==(const TimeInterval&) const noexcept = default;
-};
-
 template <class StringType, template <class> class Container>
 struct Status {
   using String = StringType;
 
-  TimeInterval min_max_timestamp{};
+  PromPP::Primitives::TimeInterval min_max_timestamp{};
   Container<StringCountItem<StringType>> label_value_count_by_label_name{};
   Container<StringCountItem<StringType>> series_count_by_metric_name{};
   Container<StringCountItem<StringType>> memory_in_bytes_by_label_name{};
@@ -75,9 +70,7 @@ class TopItems {
     min_element_ = &elements_.back();
   }
 
-  PROMPP_ALWAYS_INLINE size_t size() const noexcept {
-    return elements_.size();
-  }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t size() const noexcept { return elements_.size(); }
 
  private:
   Elements elements_;
@@ -87,14 +80,14 @@ class TopItems {
 template <class Lss, class Status>
 class StatusGetter {
  public:
-  StatusGetter(const Lss& lss, const series_data::DataStorage& data_storage, size_t limit) :
-    lss_(lss),
-    data_storage_(data_storage),
-     top_label_value_count_by_name_{limit},
-     top_series_count_by_metric_name_{limit},
-     top_memory_in_bytes_by_label_name_{limit},
-     top_series_count_by_label_value_pair_{limit} {
-   fill();
+  StatusGetter(const Lss& lss, const series_data::DataStorage& data_storage, size_t limit)
+      : lss_(lss),
+        data_storage_(data_storage),
+        top_label_value_count_by_name_{limit},
+        top_series_count_by_metric_name_{limit},
+        top_memory_in_bytes_by_label_name_{limit},
+        top_series_count_by_label_value_pair_{limit} {
+    fill();
   }
 
   void get(Status& status) {
@@ -129,10 +122,8 @@ class StatusGetter {
   TopSeriesCountByMetricName top_series_count_by_metric_name_;
   TopMemoryInBytesByLabelName top_memory_in_bytes_by_label_name_;
   TopSeriesCountByLabelValuePair top_series_count_by_label_value_pair_;
-  TimeInterval min_max_timestamp_{};
+  PromPP::Primitives::TimeInterval min_max_timestamp_{};
   uint32_t label_count_{};
-
-  static constexpr std::string_view kMetricLabelName = "__name__";
 
   void fill() noexcept {
     fill_storage_statistic();
@@ -140,14 +131,7 @@ class StatusGetter {
     fill_reverse_index_statistic();
   }
 
-  void fill_storage_statistic() noexcept {
-    for (auto ls_id = 0U; ls_id < data_storage_.open_chunks.size(); ++ls_id) {
-      if (auto& chunk = data_storage_.open_chunks[ls_id]; !chunk.is_empty()) {
-        min_max_timestamp_.min = std::min(min_max_timestamp_.min, series_data::Decoder::get_series_min_timestamp(data_storage_, ls_id));
-        min_max_timestamp_.max = std::max(min_max_timestamp_.max, series_data::Decoder::get_open_chunk_last_timestamp(data_storage_, chunk));
-      }
-    }
-  }
+  PROMPP_ALWAYS_INLINE void fill_storage_statistic() noexcept { min_max_timestamp_ = series_data::Decoder::get_time_interval(data_storage_); }
 
   void fill_lss_statistic() noexcept {
     auto& names = lss_.data().label_name_sets_table.data().symbols_table;
@@ -163,7 +147,7 @@ class StatusGetter {
   }
 
   void fill_reverse_index_statistic() noexcept {
-    const auto metric_name_id = lss_.trie_index().names_trie().lookup(kMetricLabelName).value_or(std::numeric_limits<uint32_t>::max());
+    const auto metric_name_id = lss_.trie_index().names_trie().lookup(PromPP::Prometheus::kMetricLabelName).value_or(std::numeric_limits<uint32_t>::max());
 
     auto& names = lss_.reverse_index().labels_by_name();
     for (uint32_t name_id = 0; name_id < names.size(); ++name_id) {

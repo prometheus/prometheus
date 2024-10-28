@@ -1,8 +1,8 @@
 #include "series_data/decoder/universal_decode_iterator.h"
 
 extern "C" void prompp_series_data_decode_iterator_next(void* args, void* res) {
-  using series_data::decoder::UniversalDecodeIterator;
   using series_data::decoder::DecodeIteratorSentinel;
+  using series_data::decoder::UniversalDecodeIterator;
 
   struct Arguments {
     UniversalDecodeIterator* decode_iterator;

@@ -266,3 +266,8 @@ local_repository(
     name = "utf8",
     path = "third_party/utf8",
 )
+
+local_repository(
+    name = "fastfloat",
+    path = "third_party/fastfloat",
+)

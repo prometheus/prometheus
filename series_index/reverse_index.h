@@ -16,7 +16,7 @@ using SeriesIdSequence = BareBones::EncodedSequence<
 
 class CompactSeriesIdSequence {
  public:
-  enum class Type : uint32_t { kArray = 0, kSequence };
+  enum class Type : uint8_t { kArray = 0, kSequence };
 
   static constexpr uint32_t kMaxElementsInArray = sizeof(SeriesIdSequence) / sizeof(SeriesIdSequence::value_type);
   using Array = std::array<SeriesIdSequence::value_type, kMaxElementsInArray>;
@@ -68,7 +68,7 @@ class CompactSeriesIdSequence {
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE std::span<const SeriesIdSequence::value_type> array() const noexcept {
     assert(type_ == Type::kArray);
-    return {reinterpret_cast<const SeriesIdSequence::value_type*>(sequence_impl_buffer_.data()), elements_count_};
+    return {(sequence_impl_buffer_.data()), elements_count_};
   }
 
   template <class Processor>
@@ -81,9 +81,9 @@ class CompactSeriesIdSequence {
   }
 
  private:
-  Type type_;
-  uint32_t elements_count_{};
   alignas(alignof(SeriesIdSequence)) Array sequence_impl_buffer_;
+  uint32_t elements_count_{};
+  Type type_;
 
   PROMPP_ALWAYS_INLINE void switch_to_sequence() {
     Array buffer_copy = sequence_impl_buffer_;

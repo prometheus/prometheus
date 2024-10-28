@@ -11,17 +11,15 @@ type ChunkMetadata struct {
 }
 
 type IndexWriter struct {
-	writer              uintptr
-	chunk_metadata_list *[][]ChunkMetadata
-	lss                 *LabelSetStorage
-	data                []byte
+	writer uintptr
+	lss    *LabelSetStorage
+	data   []byte
 }
 
-func NewIndexWriter(lss *LabelSetStorage, chunk_metadata_list *[][]ChunkMetadata) *IndexWriter {
+func NewIndexWriter(lss *LabelSetStorage) *IndexWriter {
 	writer := &IndexWriter{
-		writer:              indexWriterCtor(lss.Pointer(), chunk_metadata_list),
-		chunk_metadata_list: chunk_metadata_list,
-		lss:                 lss,
+		writer: indexWriterCtor(lss.Pointer()),
+		lss:    lss,
 	}
 	runtime.SetFinalizer(writer, func(writer *IndexWriter) {
 		freeBytes(writer.data)
@@ -40,10 +38,9 @@ func (writer *IndexWriter) WriteSymbols() []byte {
 	return writer.data
 }
 
-func (writer *IndexWriter) WriteNextSeriesBatch(batch_size uint32) ([]byte, bool) {
-	var has_more_data bool
-	writer.data, has_more_data = indexWriterWriteNextSeriesBatch(writer.writer, batch_size, writer.data)
-	return writer.data, has_more_data
+func (writer *IndexWriter) WriteSeries(ls_id uint32, chunks_meta []ChunkMetadata) []byte {
+	writer.data = indexWriterWriteNextSeriesBatch(writer.writer, ls_id, chunks_meta, writer.data)
+	return writer.data
 }
 
 func (writer *IndexWriter) WriteLabelIndices() []byte {

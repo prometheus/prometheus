@@ -1,7 +1,6 @@
 #pragma once
 
 #include <array>
-#include <bitset>
 #include <cstdint>
 #include <ranges>
 #include <string_view>
@@ -9,11 +8,9 @@
 
 #include <parallel_hashmap/phmap.h>
 
-#define XXH_INLINE_ALL
-#include "xxHash/xxhash.h"
-
 #include "bare_bones/preprocess.h"
 #include "bare_bones/vector.h"
+#include "hash.h"
 
 namespace PromPP {
 namespace Primitives {
@@ -27,7 +24,29 @@ using LabelView = std::pair<SymbolView, SymbolView>;
 
 using Timestamp = int64_t;
 
+struct TimeInterval {
+  static constexpr Timestamp kMin = std::numeric_limits<int64_t>::max();
+  static constexpr Timestamp kMax = std::numeric_limits<int64_t>::min();
+
+  Timestamp min{kMin};
+  Timestamp max{kMax};
+
+  PROMPP_ALWAYS_INLINE void reset(Timestamp min_value = kMin, Timestamp max_value = kMax) noexcept {
+    min = min_value;
+    max = max_value;
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool contains(Timestamp timestamp) const noexcept { return timestamp >= min && timestamp <= max; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool intersect(const TimeInterval& interval) const noexcept {
+    return std::max(min, interval.min) <= std::min(max, interval.max);
+  }
+
+  bool operator==(const TimeInterval&) const noexcept = default;
+};
+
 using LabelSetID = uint32_t;
+
+constexpr LabelSetID kInvalidLabelSetID = std::numeric_limits<LabelSetID>::max();
 
 template <class LabelType, template <class> class Container = BareBones::Vector>
 class BasicLabelSet {
@@ -97,6 +116,17 @@ class BasicLabelSet {
     }
   }
 
+  template <class SymbolType>
+  PROMPP_ALWAYS_INLINE const SymbolType& get(const SymbolType& label_name) noexcept {
+    if (auto i = std::lower_bound(labels_.begin(), labels_.end(), label_name, [](const LabelType& a, const auto& b) { return a.first < b; });
+        i->first == label_name) [[likely]] {
+      return i->second;
+    }
+
+    static const SymbolType kEmptySymbol;
+    return kEmptySymbol;
+  }
+
   inline __attribute__((always_inline)) auto size() const noexcept { return labels_.size(); }
 
   inline __attribute__((always_inline)) void reserve(size_t size) noexcept { labels_.reserve(size); }
@@ -120,13 +150,7 @@ class BasicLabelSet {
     return std::ranges::lexicographical_compare(begin(), end(), o.begin(), o.end());
   }
 
-  inline __attribute__((always_inline)) friend size_t hash_value(const BasicLabelSet& label_set) noexcept {
-    size_t res = 0;
-    for (const auto& [label_name, label_value] : label_set) {
-      res = XXH3_64bits_withSeed(label_name.data(), label_name.size(), res) ^ XXH3_64bits_withSeed(label_value.data(), label_value.size(), res);
-    }
-    return res;
-  }
+  PROMPP_ALWAYS_INLINE friend size_t hash_value(const BasicLabelSet& label_set) noexcept { return hash::hash_of_label_set(label_set); }
 
   class Names {
     const Container<LabelType>& labels_;
@@ -177,13 +201,7 @@ class BasicLabelSet {
       return std::ranges::lexicographical_compare(begin(), end(), o.begin(), o.end());
     }
 
-    inline __attribute__((always_inline)) friend size_t hash_value(const Names& label_set_names) noexcept {
-      size_t res = 0;
-      for (const auto& label_name : label_set_names) {
-        res = XXH3_64bits_withSeed(label_name.data(), label_name.size(), res);
-      }
-      return res;
-    }
+    PROMPP_ALWAYS_INLINE friend size_t hash_value(const Names& label_set_names) noexcept { return hash::hash_of_string_list(label_set_names); }
   };
 
   inline __attribute__((always_inline)) Names names() const noexcept { return Names(*this); }
@@ -270,10 +288,12 @@ class BasicTimeseries {
   BasicTimeseries(BasicTimeseries&&) noexcept = default;
   BasicTimeseries& operator=(BasicTimeseries&&) noexcept = default;
 
-  BasicTimeseries(const LabelSetType& label_set, const SamplesType samples) noexcept : label_set_(label_set), samples_(samples) {}
+  BasicTimeseries(const LabelSetType& label_set, SamplesType samples) noexcept : label_set_(label_set), samples_(std::move(samples)) {}
 
   template <class LabelSet>
   BasicTimeseries(const LabelSet& label_set, SamplesType samples) noexcept : label_set_(label_set), samples_(std::move(samples)) {}
+
+  PROMPP_ALWAYS_INLINE bool operator==(const BasicTimeseries&) const noexcept = default;
 
   inline __attribute__((always_inline)) auto& label_set() noexcept {
     if constexpr (std::is_pointer<LabelSetType>::value) {
@@ -564,13 +584,13 @@ class LabelsBuilderStateMap {
  public:
   // del add label name to remove from label set.
   template <class LNameType>
-  PROMPP_ALWAYS_INLINE void del(LNameType& lname) {
+  PROMPP_ALWAYS_INLINE void del(const LNameType& lname) {
     buffer_.erase(lname);
   }
 
   // get returns the value for the label with the given name. Returns an empty string if the label doesn't exist.
   template <class LSSLabelSet>
-  PROMPP_ALWAYS_INLINE std::string_view get(std::string_view lname, [[maybe_unused]] LSSLabelSet* base) {
+  PROMPP_ALWAYS_INLINE std::string_view get(const std::string_view lname, [[maybe_unused]] LSSLabelSet* base) {
     if (auto it = buffer_.find(lname); it != buffer_.end()) {
       return (*it).second;
     }
@@ -580,7 +600,7 @@ class LabelsBuilderStateMap {
 
   // contains check the given name if exist.
   template <class LSSLabelSet>
-  PROMPP_ALWAYS_INLINE bool contains(std::string_view lname, [[maybe_unused]] LSSLabelSet* base) {
+  PROMPP_ALWAYS_INLINE bool contains(const std::string_view lname, [[maybe_unused]] LSSLabelSet* base) {
     if (auto it = buffer_.find(lname); it != buffer_.end()) {
       return true;
     }
@@ -590,7 +610,7 @@ class LabelsBuilderStateMap {
 
   // set - the name/value pair as a label. A value of "" means delete that label.
   template <class LNameType, class LValueType>
-  PROMPP_ALWAYS_INLINE void set(LNameType& lname, LValueType& lvalue) {
+  PROMPP_ALWAYS_INLINE void set(const LNameType& lname, const LValueType& lvalue) {
     if (lvalue.size() == 0) [[unlikely]] {
       del(lname);
       return;
@@ -703,17 +723,19 @@ class LabelsBuilder {
  public:
   PROMPP_ALWAYS_INLINE explicit LabelsBuilder(BuilderState& state) : state_(state) {}
 
+  PROMPP_ALWAYS_INLINE explicit LabelsBuilder(BuilderState& state, LabelSet* ls) : state_(state) { reset(ls); }
+
   // del - add label name to remove from label set.
   template <class LNameType>
-  PROMPP_ALWAYS_INLINE void del(LNameType& lname) {
+  PROMPP_ALWAYS_INLINE void del(const LNameType& lname) {
     state_.del(lname);
   }
 
   // get - returns the value for the label with the given name. Returns an empty string if the label doesn't exist.
-  PROMPP_ALWAYS_INLINE std::string_view get(std::string_view lname) { return state_.get(lname, base_); }
+  PROMPP_ALWAYS_INLINE std::string_view get(const std::string_view lname) { return state_.get(lname, base_); }
 
   // contains check the given name if exist.
-  PROMPP_ALWAYS_INLINE bool contains(std::string_view lname) { return state_.contains(lname, base_); }
+  PROMPP_ALWAYS_INLINE bool contains(const std::string_view lname) { return state_.contains(lname, base_); }
 
   // returns size of building labels.
   PROMPP_ALWAYS_INLINE size_t size() { return state_.size(base_); }
@@ -750,7 +772,7 @@ class LabelsBuilder {
 
   // set - the name/value pair as a label. A value of "" means delete that label.
   template <class LNameType, class LValueType>
-  PROMPP_ALWAYS_INLINE void set(LNameType& lname, LValueType& lvalue) {
+  PROMPP_ALWAYS_INLINE void set(const LNameType& lname, const LValueType& lvalue) {
     state_.set(lname, lvalue);
   }
 

@@ -14,7 +14,7 @@ TEST_P(QueryReadFromProtobufErrorFixture, Test) {
   Query query;
 
   // Act
-  auto result = Query::read_from_protobuf(GetParam(), query);
+  const auto result = Query::read_from_protobuf(GetParam(), query);
 
   // Assert
   EXPECT_FALSE(result);
@@ -37,7 +37,7 @@ TEST_P(QueryReadFromProtobufFixture, Test) {
   Query query;
 
   // Act
-  auto result = Query::read_from_protobuf(GetParam().protobuf, query);
+  const auto result = Query::read_from_protobuf(GetParam().protobuf, query);
 
   // Assert
   ASSERT_TRUE(result);
@@ -47,10 +47,10 @@ TEST_P(QueryReadFromProtobufFixture, Test) {
 INSTANTIATE_TEST_SUITE_P(EndTimestampEqualsStartTimestamp,
                          QueryReadFromProtobufFixture,
                          testing::Values(ReadFromProtobufCase{.protobuf = "\x08\x01\x10\x01\x1a\x01\x01"sv,
-                                                              .expected = {.start_timestamp_ms = 1, .end_timestamp_ms = 1, .label_set_ids = {1}}}));
+                                                              .expected = {.time_interval{.min = 1, .max = 1}, .label_set_ids = {1}}}));
 INSTANTIATE_TEST_SUITE_P(BufferWithUnknownField,
                          QueryReadFromProtobufFixture,
                          testing::Values(ReadFromProtobufCase{.protobuf = "\x08\x01\x10\x02\x1a\x02\x01\x02\xa0\x06\x7b",
-                                                              .expected = {.start_timestamp_ms = 1, .end_timestamp_ms = 2, .label_set_ids = {1, 2}}}));
+                                                              .expected = {.time_interval{.min = 1, .max = 2}, .label_set_ids = {1, 2}}}));
 
 }  // namespace

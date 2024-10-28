@@ -129,10 +129,6 @@ func (q *Querier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) (
 }
 
 func (q *Querier) Close() error {
-	// defer func() {
-	// 	fmt.Println("QUERIER: HEAD {", q.head.Generation(), "} Closed")
-	// }()
-
 	if q.closer != nil {
 		return q.closer()
 	}
@@ -150,20 +146,16 @@ func (q *Querier) Select(ctx context.Context, sortSeries bool, hints *storage.Se
 		}
 	}()
 
-	logger.Warnf("QUERIER: HEAD{ %d } SELECT", q.head.Generation())
 	seriesSets := make([]storage.SeriesSet, q.head.NumberOfShards())
 	convertedMatchers := convertPrometheusMatchersToOpcoreMatchers(matchers...)
 
 	err := q.head.ForEachShard(func(shard relabeler.Shard) error {
-		logger.Warnf("QUERIER: HEAD{ %d } shard: %d, convertedMatchers: %v", q.head.Generation(), shard.ShardID(), convertedMatchers)
 		lssQueryResult := shard.LSS().Query(convertedMatchers)
 
 		if lssQueryResult.Status() != cppbridge.LSSQueryStatusMatch {
 			seriesSets[shard.ShardID()] = &SeriesSet{}
 			return fmt.Errorf("failed to query from shard: %d, query status: %d", shard.ShardID(), lssQueryResult.Status())
 		}
-
-		logger.Warnf("QUERIER: HEAD{ %d } SELECT shard: %d, queried label sets count: %d", q.head.Generation(), shard.ShardID(), len(lssQueryResult.Matches()))
 
 		getLabelSetsResult := shard.LSS().GetLabelSets(lssQueryResult.Matches())
 		serializedChunks := shard.DataStorage().Query(cppbridge.HeadDataStorageQuery{
@@ -172,32 +164,25 @@ func (q *Querier) Select(ctx context.Context, sortSeries bool, hints *storage.Se
 			LabelSetIDs:      lssQueryResult.Matches(),
 		})
 
-		if len(serializedChunks.ChunkMetadataList()) == 0 {
+		if serializedChunks.NumberOfChunks() == 0 {
 			seriesSets[shard.ShardID()] = &SeriesSet{}
 			return fmt.Errorf("failed to query shard: %d, empty", shard.ShardID())
 		}
 
-		logger.Warnf("QUERIER: HEAD{ %d } SELECT shard: %d, queried chunks: %d", q.head.Generation(), shard.ShardID(), len(serializedChunks.ChunkMetadataList()))
-
-		chunksBySeriesID := make(map[uint32][]cppbridge.HeadDataStorageSerializedChunkMetadata)
-		for _, chunkMetadata := range serializedChunks.ChunkMetadataList() {
-			cm := chunkMetadata
-			chunksBySeriesID[chunkMetadata.SeriesID()] = append(chunksBySeriesID[chunkMetadata.SeriesID()], cm)
-		}
+		chunksIndex := serializedChunks.MakeIndex()
 
 		labelSetBySeriesID := make(map[uint32]labels.Labels)
 		for index, labelSetID := range lssQueryResult.Matches() {
-			if _, ok := chunksBySeriesID[labelSetID]; ok {
+			if chunksIndex.Has(labelSetID) {
 				labelSetBySeriesID[labelSetID] = getLabelSetsResult.LabelsSets()[index]
 			}
 		}
 
-		localSeriesSets := make([]*Series, 0, len(chunksBySeriesID))
+		localSeriesSets := make([]*Series, 0, chunksIndex.Len())
 		deserializer := cppbridge.NewHeadDataStorageDeserializer(serializedChunks)
-		logger.Warnf("QUERIER: HEAD{ %d } Select Deserializer created", q.head.Generation())
 		for _, seriesID := range lssQueryResult.Matches() {
-			chunksMetadata, ok := chunksBySeriesID[seriesID]
-			if !ok {
+			chunksMetadata := chunksIndex.Chunks(serializedChunks, seriesID)
+			if len(chunksMetadata) == 0 {
 				continue
 			}
 
@@ -214,17 +199,16 @@ func (q *Querier) Select(ctx context.Context, sortSeries bool, hints *storage.Se
 		}
 		runtime.KeepAlive(getLabelSetsResult)
 
-		logger.Warnf("QUERIER: HEAD{ %d } Select Deserializer completed", q.head.Generation())
-
 		seriesSets[shard.ShardID()] = NewSeriesSet(localSeriesSets)
 		return nil
 	})
 	if err != nil {
-		logger.Warnf("QUERIER: Select failed: %s", err)
+		if !strings.Contains(err.Error(), "query status: 2") {
+			logger.Warnf("QUERIER: Select failed: %s", err)
+		}
 		// todo: error
 	}
 
-	logger.Warnf("QUERIER: HEAD{ %d } Select finished, duration: %v", q.head.Generation(), time.Since(start))
 	return storage.NewMergeSeriesSet(seriesSets, storage.ChainedSeriesMerge)
 }
 

@@ -161,7 +161,8 @@ class Serializer {
 
       timestamp_streams_data.stream_offsets.emplace(timestamp_stream_id, data_size);
     } else {
-      if (const auto it = timestamp_streams_data.finalized_stream_offsets.find(timestamp_stream_id); it != timestamp_streams_data.finalized_stream_offsets.end()) {
+      if (const auto it = timestamp_streams_data.finalized_stream_offsets.find(timestamp_stream_id);
+          it != timestamp_streams_data.finalized_stream_offsets.end()) {
         serialized_chunk.timestamps_offset = it->second;
         return;
       }

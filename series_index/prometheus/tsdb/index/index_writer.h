@@ -11,18 +11,17 @@
 
 namespace series_index::prometheus::tsdb::index {
 
-template <class ChunkMetadataList, class Stream>
+template <class Stream>
 class IndexWriter {
  public:
   using TrieIndex = series_index::TrieIndex<trie::CedarTrie, trie::CedarMatchesList>;
   using QueryableEncodingBimap = series_index::QueryableEncodingBimap<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimapFilament, TrieIndex>;
   using StreamWriter = PromPP::Prometheus::tsdb::index::StreamWriter<Stream>;
-  using SeriesWriter = section_writer::SeriesWriter<QueryableEncodingBimap, ChunkMetadataList, Stream>;
+  using SeriesWriter = section_writer::SeriesWriter<QueryableEncodingBimap, Stream>;
   using PostingsWriter = section_writer::PostingsWriter<QueryableEncodingBimap, Stream>;
   using LabelIndicesWriter = section_writer::LabelIndicesWriter<QueryableEncodingBimap, Stream>;
 
-  IndexWriter(const QueryableEncodingBimap& lss, const ChunkMetadataList& chunk_metadata_list)
-      : lss_(lss), chunk_metadata_list_(chunk_metadata_list), series_writer_(lss_, chunk_metadata_list_, symbol_references_, series_references_) {}
+  explicit IndexWriter(const QueryableEncodingBimap& lss) : lss_(lss), series_writer_(lss_, symbol_references_, series_references_) {}
 
   PROMPP_ALWAYS_INLINE void write_header(Stream& stream) {
     writer_.writer().set_stream(&stream);
@@ -38,14 +37,14 @@ class IndexWriter {
     section_writer::SymbolsWriter{lss_, symbol_references_, writer_}.write();
   }
 
-  PROMPP_ALWAYS_INLINE void write_series(Stream& stream, uint32_t series_count) {
+  template <class ChunkMetadataContainer>
+  PROMPP_ALWAYS_INLINE void write_series(PromPP::Primitives::LabelSetID ls_id, const ChunkMetadataContainer& chunks, Stream& stream) {
     writer_.writer().set_stream(&stream);
 
-    if (toc_.series == 0) {
-      [[unlikely]];
+    if (toc_.series == 0) [[unlikely]] {
       toc_.series = writer_.position();
     }
-    series_writer_.write(writer_, series_count);
+    series_writer_.write(ls_id, chunks, writer_);
   }
 
   PROMPP_ALWAYS_INLINE void write_label_indices(Stream& stream) {
@@ -58,8 +57,7 @@ class IndexWriter {
   PROMPP_ALWAYS_INLINE void write_postings(Stream& stream, uint32_t max_batch_size) {
     writer_.writer().set_stream(&stream);
 
-    if (toc_.postings == 0) {
-      [[unlikely]];
+    if (toc_.postings == 0) [[unlikely]] {
       toc_.postings = writer_.position();
     }
     postings_writer_.write_postings(max_batch_size);
@@ -85,7 +83,6 @@ class IndexWriter {
     PromPP::Prometheus::tsdb::index::TocWriter{toc_, writer_}.write();
   }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE bool has_more_series_data() const noexcept { return series_writer_.has_more_data(); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE bool has_more_postings_data() const noexcept { return postings_writer_.has_more_data(); }
 
   void write(Stream& stream) {
@@ -101,7 +98,6 @@ class IndexWriter {
 
  private:
   const QueryableEncodingBimap& lss_;
-  const ChunkMetadataList& chunk_metadata_list_;
 
   SymbolReferencesMap symbol_references_;
   SeriesReferencesMap series_references_;

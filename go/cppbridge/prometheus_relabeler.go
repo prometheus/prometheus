@@ -470,6 +470,13 @@ type MetricLimits struct {
 	SampleLimit           int64
 }
 
+// RelabelerOptions relabeling options.
+type RelabelerOptions struct {
+	TargetLabels []Label
+	MetricLimits *MetricLimits
+	HonorLabels  bool
+}
+
 // SourceStaleNansState wrap pointer to source state for stalenans (null on first call).
 type SourceStaleNansState struct {
 	pointer uintptr
@@ -575,7 +582,7 @@ func (ipsr *InputPerShardRelabeler) Generation() uint32 {
 func (ipsr *InputPerShardRelabeler) InputRelabeling(
 	ctx context.Context,
 	lss *LabelSetStorage,
-	labelLimits *MetricLimits,
+	options RelabelerOptions,
 	shardedData ShardedData,
 	shardsInnerSeries []*InnerSeries,
 	shardsRelabeledSeries []*RelabeledSeries,
@@ -592,7 +599,7 @@ func (ipsr *InputPerShardRelabeler) InputRelabeling(
 		ipsr.cptr,
 		lss.Pointer(),
 		cptrContainer.cptr(),
-		labelLimits,
+		options,
 		shardsInnerSeries,
 		shardsRelabeledSeries,
 	)
@@ -604,7 +611,7 @@ func (ipsr *InputPerShardRelabeler) InputRelabeling(
 func (ipsr *InputPerShardRelabeler) InputRelabelingWithStalenans(
 	ctx context.Context,
 	lss *LabelSetStorage,
-	labelLimits *MetricLimits,
+	options RelabelerOptions,
 	sourceState *SourceStaleNansState,
 	staleNansTS int64,
 	shardedData ShardedData,
@@ -625,7 +632,7 @@ func (ipsr *InputPerShardRelabeler) InputRelabelingWithStalenans(
 		cptrContainer.cptr(),
 		sourceState.pointer,
 		staleNansTS,
-		labelLimits,
+		options,
 		shardsInnerSeries,
 		shardsRelabeledSeries,
 	)

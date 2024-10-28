@@ -1,10 +1,10 @@
 #include "series_data_deserializer.h"
-#include "series_data/serialization/deserializer.h"
 #include "primitives/go_slice.h"
+#include "series_data/serialization/deserializer.h"
 
 extern "C" void prompp_series_data_deserializer_ctor(void* args, void* res) {
-  using series_data::serialization::Deserializer;
   using PromPP::Primitives::Go::SliceView;
+  using series_data::serialization::Deserializer;
 
   struct Arguments {
     SliceView<uint8_t> chunk_data;
@@ -22,10 +22,10 @@ extern "C" void prompp_series_data_deserializer_ctor(void* args, void* res) {
 }
 
 extern "C" void prompp_series_data_deserializer_create_decode_iterator(void* args, void* res) {
-  using series_data::serialization::Deserializer;
   using PromPP::Primitives::Go::Slice;
-  using series_data::decoder::UniversalDecodeIterator;
   using series_data::chunk::SerializedChunk;
+  using series_data::decoder::UniversalDecodeIterator;
+  using series_data::serialization::Deserializer;
 
   struct Arguments {
     Deserializer* deserializer;

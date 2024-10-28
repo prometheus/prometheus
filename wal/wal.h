@@ -96,6 +96,11 @@ concept TimeseriesGenerator =
 
 enum class BasicEncoderVersion : uint8_t { kUnknown = 0, kV1, kV2, kV3 };
 
+using GorillaEncoder =
+    BareBones::Encoding::Gorilla::StreamEncoder<BareBones::Encoding::Gorilla::ZigZagTimestampEncoder<>, BareBones::Encoding::Gorilla::ValuesEncoder>;
+using GorillaDecoder =
+    BareBones::Encoding::Gorilla::StreamDecoder<BareBones::Encoding::Gorilla::ZigZagTimestampDecoder<>, BareBones::Encoding::Gorilla::ValuesDecoder>;
+
 template <class LabelSetsTable = Primitives::SnugComposites::LabelSet::EncodingBimap, bool shrink_lss = false>
 class BasicEncoder {
  public:
@@ -131,8 +136,7 @@ class BasicEncoder {
 
     template <class T>
     PROMPP_ALWAYS_INLINE void add(Primitives::LabelSetID ls_id, const T& smpl) {
-      if (first_sample_added_at_tsns_ == 0) {
-        [[unlikely]];
+      if (first_sample_added_at_tsns_ == 0) [[unlikely]] {
         const auto now = std::chrono::system_clock::now();
         first_sample_added_at_tsns_ = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
       }
@@ -141,21 +145,16 @@ class BasicEncoder {
       latest_sample_ = std::max(smpl.timestamp(), latest_sample_);
 
       ++samples_count_;
-      if (plural_.count(ls_id)) {
-        [[unlikely]];
-
+      if (plural_.count(ls_id)) [[unlikely]] {
         auto& vec = plural_[ls_id];
-        if (vec.back().timestamp() <= smpl.timestamp()) {
-          [[likely]];
+        if (vec.back().timestamp() <= smpl.timestamp()) [[likely]] {
           vec.emplace_back(smpl);
         } else {
           auto it = std::lower_bound(vec.begin(), vec.end(), smpl,
                                      [](const Primitives::Sample& a, const T& b) PROMPP_LAMBDA_INLINE { return a.timestamp() <= b.timestamp(); });
           vec.insert(it, Primitives::Sample(smpl));
         }
-      } else if (singular_.count(ls_id)) {
-        [[unlikely]];
-
+      } else if (singular_.count(ls_id)) [[unlikely]] {
         const auto& first_smpl = singular_[ls_id];
         if (first_smpl.timestamp() <= smpl.timestamp()) [[likely]] {
           switch_to_plural_list(ls_id, first_smpl, Primitives::Sample(smpl));
@@ -243,9 +242,7 @@ class BasicEncoder {
   LabelSetsTable label_sets_;
   checkpoint_type label_sets_checkpoint_;
   Buffer buffer_;
-  BareBones::Vector<
-      BareBones::Encoding::Gorilla::StreamEncoder<BareBones::Encoding::Gorilla::ZigZagTimestampEncoder<>, BareBones::Encoding::Gorilla::ValuesEncoder>>
-      gorilla_;
+  BareBones::Vector<GorillaEncoder> gorilla_;
   BareBones::LZ4Stream::ostream lz4stream_{nullptr};
 
   const uuids::uuid uuid_;
@@ -353,10 +350,12 @@ class BasicEncoder {
     // write ts
     if (ts_delta_rle_is_worth_trying && ts_delta_rle_seq.save_size() < gorilla_ts_bitseq.save_size()) {
       lz4stream_.put(0);
+
       ts_bytes_ += ts_delta_rle_seq.save_size() + ts_crc.save_size();
       lz4stream_ << ts_delta_rle_seq << ts_crc;
     } else {
       lz4stream_.put(1);
+
       ts_bytes_ += gorilla_ts_bitseq.save_size() + ts_crc.save_size();
       lz4stream_ << gorilla_ts_bitseq << ts_crc;
     }
@@ -388,8 +387,7 @@ class BasicEncoder {
   }
 
  public:
-  explicit BasicEncoder(const BareBones::Vector<BareBones::Encoding::Gorilla::StreamDecoder<BareBones::Encoding::Gorilla::ZigZagTimestampDecoder<>,
-                                                                                            BareBones::Encoding::Gorilla::ValuesDecoder>>& gorilla,
+  explicit BasicEncoder(const BareBones::Vector<GorillaDecoder>& gorilla,
                         LabelSetsTable& lss,
                         uint16_t shard_id = 0,
                         uint8_t pow_two_of_total_shards = 0,
@@ -408,17 +406,15 @@ class BasicEncoder {
       gorilla_.emplace_back(decoder.state());
     }
   }
+
+  explicit BasicEncoder(LabelSetsTable& lss, uint16_t shard_id = 0, uint8_t pow_two_of_total_shards = 0)
+      : label_sets_(lss),
+        label_sets_checkpoint_(label_sets_.checkpoint()),
+        uuid_(generate_uuid()),
+        shard_id_(shard_id),
+        pow_two_of_total_shards_(pow_two_of_total_shards) {}
   explicit BasicEncoder(uint16_t shard_id = 0, uint8_t pow_two_of_total_shards = 0)
       : label_sets_checkpoint_(label_sets_.checkpoint()), uuid_(generate_uuid()), shard_id_(shard_id), pow_two_of_total_shards_(pow_two_of_total_shards) {}
-
-    explicit BasicEncoder(LabelSetsTable& lss, uint16_t shard_id = 0, uint8_t pow_two_of_total_shards = 0)
-        : label_sets_(lss),
-          label_sets_checkpoint_(label_sets_.checkpoint()),
-          uuid_(generate_uuid()),
-          shard_id_(shard_id),
-          pow_two_of_total_shards_(pow_two_of_total_shards) {
-    }
-
 
   inline __attribute__((always_inline)) const LabelSetsTable& label_sets() const { return label_sets_; }
 
@@ -677,21 +673,19 @@ class BasicEncoder {
 
 template <class LabelSetsTable = Primitives::SnugComposites::LabelSet::DecodingTable, size_t LZ4DecompressedBufferSize = 256>
 class BasicDecoder {
-  BareBones::Vector<
-      BareBones::Encoding::Gorilla::StreamDecoder<BareBones::Encoding::Gorilla::ZigZagTimestampDecoder<>, BareBones::Encoding::Gorilla::ValuesDecoder>>
-      gorilla_;
+  BareBones::Vector<GorillaDecoder> gorilla_;
   BareBones::LZ4Stream::basic_istream<LZ4DecompressedBufferSize> lz4stream_{nullptr};
   LabelSetsTable& label_sets_;
 
   uuids::uuid uuid_;
   uint32_t last_processed_segment_ = std::numeric_limits<uint32_t>::max();
 
-  Primitives::Timestamp ts_base_;
+  Primitives::Timestamp ts_base_ = std::numeric_limits<Primitives::Timestamp>::max();
 
   BareBones::BitSequence segment_gorilla_ts_bitseq_;
   BareBones::BitSequence segment_gorilla_v_bitseq_;
-  BareBones::EncodedSequence<BareBones::Encoding::DeltaRLE<>> segment_ls_id_delta_rle_seq_;
-  BareBones::EncodedSequence<BareBones::Encoding::DeltaZigZagRLE<>> segment_ts_delta_rle_seq_;
+  BareBones::EncodedSequence<BareBones::Encoding::DeltaRLE<>> segment_ls_id_delta_rle_seq_{};
+  BareBones::EncodedSequence<BareBones::Encoding::DeltaZigZagRLE<>> segment_ts_delta_rle_seq_{};
 
   BareBones::CRC32 segment_ls_id_crc_;
   BareBones::CRC32 segment_ts_crc_;
@@ -803,7 +797,7 @@ class BasicDecoder {
  public:
   BasicDecoder(LabelSetsTable& label_sets, BasicEncoderVersion encoder_version) : label_sets_(label_sets), encoder_version_(encoder_version) {}
 
-  const auto& gorilla() const noexcept { return gorilla_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const BareBones::Vector<GorillaDecoder>& gorilla() const noexcept { return gorilla_; }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_empty() const noexcept { return last_processed_segment_ == std::numeric_limits<uint32_t>::max(); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_valid() const noexcept { return encoder_version_ != BasicEncoderVersion::kUnknown; }
@@ -1027,7 +1021,7 @@ class BasicDecoder {
                                  uuids::to_string(uuid_).c_str(), static_cast<uint32_t>(segment_ts_crc_), static_cast<uint32_t>(ts_crc));
     }
     if (v_crc != segment_v_crc_) {
-      throw BareBones::Exception(0x0ee2b199218aaf7d, "Decoder %s got error: CRC for LabelSet's values mismatch: Decoder v CRC: %u, segment v CRC: %u",
+      throw BareBones::Exception(0x0ee2b199218aaf7d, "Decoder %s got error: CRC for LabelSet's timestamps mismatch: Decoder v CRC: %u, segment v CRC: %u",
                                  uuids::to_string(uuid_).c_str(), static_cast<uint32_t>(segment_v_crc_), static_cast<uint32_t>(v_crc));
     }
 

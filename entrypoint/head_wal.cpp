@@ -1,30 +1,23 @@
 #include <variant>
 
 #include "_helpers.hpp"
-#include "primitives/go_slice.h"
-#include "wal/encoder.h"
-#include "wal/decoder.h"
-#include "wal/hashdex.h"
-#include "wal/wal.h"
 #include "head/lss.h"
 #include "head_wal.h"
+#include "primitives/go_slice.h"
+#include "wal/decoder.h"
+#include "wal/encoder.h"
+#include "wal/hashdex.h"
+#include "wal/wal.h"
 
-/**
- * @brief Construct a new WAL EncoderLightweight
- *
- * @param args {
- *     shardID            uint16  // shard number
- *     logShards          uint8   // logarithm to the base 2 of total shards count
- *     lss                uintptr // lss
- * }
- * @param res {
- *     encoderLightweight uintptr // pointer to constructed encoder
- * }
- */
+using Encoder = PromPP::WAL::GenericEncoder<PromPP::WAL::BasicEncoder<entrypoint::head::QueryableEncodingBimap&>>;
+using EncoderPtr = std::unique_ptr<Encoder>;
+using Decoder = PromPP::WAL::GenericDecoder<entrypoint::head::QueryableEncodingBimap&>;
+using DecoderPtr = std::unique_ptr<Decoder>;
+static_assert(sizeof(EncoderPtr) == sizeof(void*));
+static_assert(sizeof(DecoderPtr) == sizeof(void*));
+
 extern "C" void prompp_head_wal_encoder_ctor(void* args, void* res) {
   using entrypoint::head::LssVariantPtr;
-  using BasicEncoder = PromPP::WAL::BasicEncoder<entrypoint::head::QueryableEncodingBimap&>;
-  using Encoder = PromPP::WAL::GenericEncoder<BasicEncoder>;
 
   struct Arguments {
     uint16_t shard_id;
@@ -33,61 +26,43 @@ extern "C" void prompp_head_wal_encoder_ctor(void* args, void* res) {
   };
 
   struct Result {
-    Encoder* encoder;
+    EncoderPtr encoder;
   };
 
-  Arguments* in = reinterpret_cast<Arguments*>(args);
-  Result* out = new (res) Result();
-
+  const auto in = static_cast<Arguments*>(args);
   auto& lss = std::get<entrypoint::head::QueryableEncodingBimap>(*in->lss);
-  out->encoder = new Encoder(in->shard_id, in->log_shards, lss, in->shard_id, in->log_shards);
+  new (res) Result{.encoder = std::make_unique<Encoder>(lss, in->shard_id, in->log_shards)};
 }
 
-/**
- * @brief Destroy EncoderLightweight
- *
- * @param args {
- *     encoderLightweight uintptr // pointer to constructed encoder
- * }
- */
-extern "C" void prompp_head_wal_encoder_dtor(void* args) {
-  using BasicEncoder = PromPP::WAL::BasicEncoder<entrypoint::head::QueryableEncodingBimap&>;
-  using Encoder = PromPP::WAL::GenericEncoder<BasicEncoder>;
-
+extern "C" void prompp_head_wal_encoder_ctor_from_decoder(void* args, void* res) {
   struct Arguments {
-    Encoder* encoder;
+    DecoderPtr decoder;
   };
 
-  Arguments* in = reinterpret_cast<Arguments*>(args);
-  delete in->encoder;
+  struct Result {
+    EncoderPtr encoder;
+  };
+
+  const auto& generic_decoder = static_cast<Arguments*>(args)->decoder;
+  const auto& decoder = generic_decoder->decoder();
+  new (res) Result{.encoder = std::make_unique<Encoder>(decoder.gorilla(), generic_decoder->label_set(), decoder.shard_id(), decoder.pow_two_of_total_shards(),
+                                                        decoder.last_processed_segment() + 1, decoder.ts_base())};
 }
 
+extern "C" void prompp_head_wal_encoder_dtor(void* args) {
+  struct Arguments {
+    EncoderPtr encoder;
+  };
 
-/**
- * @brief Add inner series to current segment
- *
- * @param args {
- *     incomingInnerSeries []*InnerSeries // go slice with incoming InnerSeries;
- *     encoderLightweight  uintptr        // pointer to constructed encoder;
- * }
- * @param res {
- *     earliestTimestamp   int64          // minimal sample timestamp in segment
- *     latestTimestamp     int64          // maximal sample timestamp in segment
- *     allocatedMemory     uint64         // size of allocated memory for label sets;
- *     samples             uint32         // number of samples in segment
- *     series              uint32         // number of series in segment
- *     remainderSize       uint32         // rest of internal buffers capacity
- *     error               []byte         // error string if thrown
- * }
- */
+  static_cast<Arguments*>(args)->~Arguments();
+}
+
 extern "C" void prompp_head_wal_encoder_add_inner_series(void* args, void* res) {
-  using BasicEncoder = PromPP::WAL::BasicEncoder<entrypoint::head::QueryableEncodingBimap&>;
-  using Encoder = PromPP::WAL::GenericEncoder<BasicEncoder>;
-
   struct Arguments {
     PromPP::Primitives::Go::SliceView<PromPP::Prometheus::Relabel::InnerSeries*> incoming_inner_series;
-    Encoder* encoder;
+    EncoderPtr encoder;
   };
+
   struct Result {
     int64_t earliest_timestamp;
     int64_t latest_timestamp;
@@ -98,8 +73,8 @@ extern "C" void prompp_head_wal_encoder_add_inner_series(void* args, void* res) 
     PromPP::Primitives::Go::Slice<char> error;
   };
 
-  Arguments* in = reinterpret_cast<Arguments*>(args);
-  Result* out = new (res) Result();
+  const auto in = static_cast<Arguments*>(args);
+  const auto out = new (res) Result();
 
   try {
     in->encoder->add_inner_series(in->incoming_inner_series, out);
@@ -110,12 +85,10 @@ extern "C" void prompp_head_wal_encoder_add_inner_series(void* args, void* res) 
 }
 
 extern "C" void prompp_head_wal_encoder_finalize(void* args, void* res) {
-  using BasicEncoder = PromPP::WAL::BasicEncoder<entrypoint::head::QueryableEncodingBimap&>;
-  using Encoder = PromPP::WAL::GenericEncoder<BasicEncoder>;
-
   struct Arguments {
-    Encoder* encoder;
+    EncoderPtr encoder;
   };
+
   struct Result {
     int64_t earliest_timestamp;
     int64_t latest_timestamp;
@@ -127,8 +100,8 @@ extern "C" void prompp_head_wal_encoder_finalize(void* args, void* res) {
     PromPP::Primitives::Go::Slice<char> error;
   };
 
-  Arguments* in = reinterpret_cast<Arguments*>(args);
-  Result* out = new (res) Result();
+  const auto in = static_cast<Arguments*>(args);
+  const auto out = new (res) Result();
 
   auto out_stream = PromPP::Primitives::Go::BytesStream(&out->segment);
 
@@ -142,42 +115,37 @@ extern "C" void prompp_head_wal_encoder_finalize(void* args, void* res) {
 
 extern "C" void prompp_head_wal_decoder_ctor(void* args, void* res) {
   using entrypoint::head::LssVariantPtr;
-  using Decoder = PromPP::WAL::GenericDecoder<entrypoint::head::QueryableEncodingBimap&>;
-  using EncoderVersion = PromPP::WAL::BasicEncoderVersion;
 
   struct Arguments {
     LssVariantPtr lss;
-    EncoderVersion encoder_version;
-  };
-  using Result = struct {
-    Decoder* decoder;
+    PromPP::WAL::BasicEncoderVersion encoder_version;
   };
 
-  auto* in = reinterpret_cast<Arguments*>(args);
-  Result* out = new (res) Result();
+  using Result = struct {
+    DecoderPtr decoder;
+  };
+
+  const auto in = static_cast<Arguments*>(args);
   auto& lss = std::get<entrypoint::head::QueryableEncodingBimap>(*in->lss);
-  out->decoder = new Decoder(lss, in->encoder_version);
+  new (res) Result{.decoder = std::make_unique<Decoder>(lss, in->encoder_version)};
 }
 
 extern "C" void prompp_head_wal_decoder_dtor(void* args) {
-  using Decoder = PromPP::WAL::GenericDecoder<entrypoint::head::QueryableEncodingBimap&>;
   struct Arguments {
-    Decoder* decoder;
+    DecoderPtr decoder;
   };
 
-  Arguments* in = reinterpret_cast<Arguments*>(args);
-  delete in->decoder;
+  static_cast<Arguments*>(args)->~Arguments();
 }
 
 extern "C" void prompp_head_wal_decoder_decode(void* args, void* res) {
-  using Decoder = PromPP::WAL::GenericDecoder<entrypoint::head::QueryableEncodingBimap&>;
-
   struct Arguments {
-    Decoder* decoder;
+    DecoderPtr decoder;
     PromPP::Primitives::Go::SliceView<char> segment;
-    PromPP::Prometheus::Relabel::InnerSeries *inner_series;
+    PromPP::Prometheus::Relabel::InnerSeries* inner_series;
   };
-  using Result = struct {
+
+  struct Result {
     int64_t created_at;
     int64_t encoded_at;
     uint32_t samples;
@@ -188,35 +156,14 @@ extern "C" void prompp_head_wal_decoder_decode(void* args, void* res) {
     PromPP::Primitives::Go::Slice<char> error;
   };
 
-  Arguments* in = reinterpret_cast<Arguments*>(args);
-  Result* out = new (res) Result();
-
+  const auto in = static_cast<Arguments*>(args);
+  const auto out = new (res) Result();
 
   try {
     in->inner_series->clear();
-
     in->decoder->decode_to_inner_series(in->segment, *in->inner_series, out);
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
     handle_current_exception(__func__, err_stream);
   }
-}
-
-extern "C" void prompp_head_wal_decoder_create_encoder(void* args, void* res) {
-  using Decoder = PromPP::WAL::GenericDecoder<entrypoint::head::QueryableEncodingBimap&>;
-  using BasicEncoder = PromPP::WAL::BasicEncoder<entrypoint::head::QueryableEncodingBimap&>;
-  using Encoder = PromPP::WAL::GenericEncoder<BasicEncoder>;
-
-  struct Arguments {
-    Decoder* decoder;
-  };
-
-  struct Result {
-    Encoder* encoder;
-  };
-
-  auto* in = reinterpret_cast<Arguments*>(args);
-  Result* out = new (res) Result();
-
-  out->encoder = new Encoder(PromPP::WAL::create_encoder_from_decoder<Encoder, Decoder>(*in->decoder));
 }

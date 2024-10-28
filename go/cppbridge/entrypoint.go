@@ -1035,18 +1035,18 @@ func prometheusPerShardRelabelerCacheAllocatedMemory(perShardRelabeler uintptr) 
 // prometheusPerShardRelabelerInputRelabeling - wrapper for relabeling incoming hashdex(first stage).
 func prometheusPerShardRelabelerInputRelabeling(
 	perShardRelabeler, lss, hashdex uintptr,
-	labelLimits *MetricLimits,
+	options RelabelerOptions,
 	shardsInnerSeries []*InnerSeries,
 	shardsRelabeledSeries []*RelabeledSeries,
 ) []byte {
 	var args = struct {
 		shardsInnerSeries     []*InnerSeries
 		shardsRelabeledSeries []*RelabeledSeries
-		labelLimits           *MetricLimits
+		options               RelabelerOptions
 		perShardRelabeler     uintptr
 		hashdex               uintptr
 		lss                   uintptr
-	}{shardsInnerSeries, shardsRelabeledSeries, labelLimits, perShardRelabeler, hashdex, lss}
+	}{shardsInnerSeries, shardsRelabeledSeries, options, perShardRelabeler, hashdex, lss}
 	var res struct {
 		exception []byte
 	}
@@ -1068,20 +1068,20 @@ func prometheusPerShardRelabelerInputRelabeling(
 func prometheusPerShardRelabelerInputRelabelingWithStalenans(
 	perShardRelabeler, lss, hashdex, sourceState uintptr,
 	staleNansTS int64,
-	labelLimits *MetricLimits,
+	options RelabelerOptions,
 	shardsInnerSeries []*InnerSeries,
 	shardsRelabeledSeries []*RelabeledSeries,
 ) (state uintptr, exception []byte) {
 	var args = struct {
 		shardsInnerSeries     []*InnerSeries
 		shardsRelabeledSeries []*RelabeledSeries
-		labelLimits           *MetricLimits
+		options               RelabelerOptions
 		perShardRelabeler     uintptr
 		hashdex               uintptr
 		lss                   uintptr
 		sourceState           uintptr
 		staleNansTS           int64
-	}{shardsInnerSeries, shardsRelabeledSeries, labelLimits, perShardRelabeler, hashdex, lss, sourceState, staleNansTS}
+	}{shardsInnerSeries, shardsRelabeledSeries, options, perShardRelabeler, hashdex, lss, sourceState, staleNansTS}
 	var res struct {
 		sourceState uintptr
 		exception   []byte
@@ -1276,6 +1276,23 @@ func seriesDataDataStorageQuery(dataStorage uintptr, query HeadDataStorageQuery)
 	return res.serializedChunks
 }
 
+func seriesDataDataStorageTimeInterval(dataStorage uintptr) TimeInterval {
+	var args = struct {
+		dataStorage uintptr
+	}{dataStorage}
+	var res = struct {
+		interval TimeInterval
+	}{}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_series_data_data_storage_time_interval,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.interval
+}
+
 func seriesDataDataStorageDtor(dataStorage uintptr) {
 	var args = struct {
 		dataStorage uintptr
@@ -1453,10 +1470,12 @@ func seriesDataDeserializerDtor(deserializer uintptr) {
 	)
 }
 
-func seriesDataChunkRecoderCtor(dataStorage uintptr) uintptr {
+func seriesDataChunkRecoderCtor(lss uintptr, dataStorage uintptr, timeInterval TimeInterval) uintptr {
 	var args = struct {
+		lss         uintptr
 		dataStorage uintptr
-	}{dataStorage}
+		TimeInterval
+	}{lss, dataStorage, timeInterval}
 	var res struct {
 		chunkRecoder uintptr
 	}
@@ -1496,11 +1515,10 @@ func seriesDataChunkRecoderDtor(chunkRecoder uintptr) {
 	)
 }
 
-func indexWriterCtor(lss uintptr, chunk_metadata_list *[][]ChunkMetadata) uintptr {
+func indexWriterCtor(lss uintptr) uintptr {
 	var args = struct {
-		lss                 uintptr
-		chunk_metadata_list *[][]ChunkMetadata
-	}{lss, chunk_metadata_list}
+		lss uintptr
+	}{lss}
 
 	var res struct {
 		writer uintptr
@@ -1562,16 +1580,16 @@ func indexWriterWriteSymbols(writer uintptr, data []byte) []byte {
 	return res.data
 }
 
-func indexWriterWriteNextSeriesBatch(writer uintptr, batch_size uint32, data []byte) ([]byte, bool) {
+func indexWriterWriteNextSeriesBatch(writer uintptr, ls_id uint32, chunks_meta []ChunkMetadata, data []byte) []byte {
 	var args = struct {
-		writer     uintptr
-		batch_size uint32
-	}{writer, batch_size}
+		writer      uintptr
+		chunks_meta []ChunkMetadata
+		ls_id       uint32
+	}{writer, chunks_meta, ls_id}
 
 	var res = struct {
-		data          []byte
-		has_more_data bool
-	}{data, false}
+		data []byte
+	}{data}
 
 	fastcgo.UnsafeCall2(
 		C.prompp_index_writer_write_next_series_batch,
@@ -1579,7 +1597,7 @@ func indexWriterWriteNextSeriesBatch(writer uintptr, batch_size uint32, data []b
 		uintptr(unsafe.Pointer(&res)),
 	)
 
-	return res.data, res.has_more_data
+	return res.data
 }
 
 func indexWriterWriteLabelIndices(writer uintptr, data []byte) []byte {
@@ -1692,6 +1710,49 @@ func freeHeadStatus(status *HeadStatus) {
 	fastcgo.UnsafeCall1(
 		C.prompp_free_head_status,
 		uintptr(unsafe.Pointer(status)),
+	)
+}
+
+func walScraperHashdexCtor() uintptr {
+	var res struct {
+		hashdex uintptr
+	}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_wal_scraper_hashdex_ctor,
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.hashdex
+}
+
+func walScraperHashdexParse(hashdex uintptr, buffer []byte, default_timestamp int64) uint32 {
+	var args = struct {
+		hashdex           uintptr
+		buffer            []byte
+		default_timestamp int64
+	}{hashdex, buffer, default_timestamp}
+	var res struct {
+		error uint32
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_wal_scraper_hashdex_parse,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.error
+}
+
+func walScraperHashdexDtor(hashdex uintptr) {
+	var args = struct {
+		hashdex uintptr
+	}{hashdex}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_wal_scraper_hashdex_dtor,
+		uintptr(unsafe.Pointer(&args)),
 	)
 }
 

@@ -369,3 +369,89 @@ func (promise *OpenHeadPromise) Add(segmentStats []cppbridge.SegmentStats) (limi
 func (promise *OpenHeadPromise) Finalized() <-chan struct{} {
 	return promise.done
 }
+
+//
+// SourceStates
+//
+
+// SourceStates state for stalenans for all shards.
+type SourceStates struct {
+	states []*cppbridge.SourceStaleNansState
+}
+
+// NewSourceStates init new SourceStates with 1 mandatory shard.
+func NewSourceStates() *SourceStates {
+	return &SourceStates{
+		states: []*cppbridge.SourceStaleNansState{cppbridge.NewSourceStaleNansState()},
+	}
+}
+
+// GetByShard return SourceStaleNansState for shard.
+func (s *SourceStates) GetByShard(shardID uint16) *cppbridge.SourceStaleNansState {
+	return s.states[shardID]
+}
+
+// ResizeIfNeed resize states according to the number of shards.
+func (s *SourceStates) ResizeIfNeed(numberOfShards int) {
+	if len(s.states) == numberOfShards {
+		return
+	}
+
+	if len(s.states) > numberOfShards {
+		// cut
+		s.states = s.states[:numberOfShards]
+		for shardID := range s.states {
+			s.states[shardID] = cppbridge.NewSourceStaleNansState()
+		}
+		return
+	}
+
+	// grow
+	s.states = append(
+		s.states,
+		make([]*cppbridge.SourceStaleNansState, numberOfShards-len(s.states))...,
+	)
+	for shardID := range s.states {
+		s.states[shardID] = cppbridge.NewSourceStaleNansState()
+	}
+}
+
+//
+// IncomingData
+//
+
+// IncomingData implements.
+type IncomingData struct {
+	Hashdex cppbridge.ShardedData
+	Data    MetricData
+}
+
+// ShardedData return hashdex.
+func (i *IncomingData) ShardedData() cppbridge.ShardedData {
+	return i.Hashdex
+}
+
+// Destroy increment or destroy IncomingData.
+func (i *IncomingData) Destroy() {
+	i.Hashdex = nil
+	if i.Data != nil {
+		i.Data.Destroy()
+	}
+}
+
+// ProtobufData is an universal interface for blob protobuf data.
+type ProtobufData interface {
+	Bytes() []byte
+	Destroy()
+}
+
+// TimeSeriesData is an universal interface for slice model.TimeSeries data.
+type TimeSeriesData interface {
+	TimeSeries() []model.TimeSeries
+	Destroy()
+}
+
+// MetricData is an universal interface for blob protobuf or slice model.TimeSeries data.
+type MetricData interface {
+	Destroy()
+}

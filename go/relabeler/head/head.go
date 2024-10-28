@@ -121,7 +121,14 @@ func (h *Head) ReferenceCounter() relabeler.ReferenceCounter {
 	return h.referenceCounter
 }
 
-func (h *Head) Append(ctx context.Context, incomingData *relabeler.IncomingData, metricLimits *cppbridge.MetricLimits, sourceStates *relabeler.SourceStates, staleNansTS int64, relabelerID string) ([][]*cppbridge.InnerSeries, error) {
+func (h *Head) Append(
+	ctx context.Context,
+	incomingData *relabeler.IncomingData,
+	options cppbridge.RelabelerOptions,
+	sourceStates *relabeler.SourceStates,
+	staleNansTS int64,
+	relabelerID string,
+) ([][]*cppbridge.InnerSeries, error) {
 	if h.finalizer.FinalizeCalled() {
 		return nil, errors.New("appending to a finalized head")
 	}
@@ -134,7 +141,7 @@ func (h *Head) Append(ctx context.Context, incomingData *relabeler.IncomingData,
 		ctx,
 		inputPromise,
 		relabeler.NewDestructibleIncomingData(incomingData, int(h.numberOfShards)),
-		metricLimits,
+		options,
 		sourceStates,
 		staleNansTS,
 		relabelerID,

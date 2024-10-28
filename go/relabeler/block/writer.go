@@ -3,19 +3,21 @@ package block
 import (
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"github.com/hashicorp/go-multierror"
-	"github.com/prometheus/prometheus/pp/go/util"
-	"github.com/oklog/ulid"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"io"
 	"math"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/prometheus/prometheus/pp/go/util"
+
+	"github.com/oklog/ulid"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
 
 const (
@@ -30,14 +32,21 @@ const (
 type BlockWriter struct {
 	dataDir                  string
 	maxBlockChunkSegmentSize int64
+	blockDurationMs          int64
 	blockWriteDuration       *prometheus.GaugeVec
 }
 
-func NewBlockWriter(dataDir string, maxBlockChunkSegmentSize int64, registerer prometheus.Registerer) *BlockWriter {
+func NewBlockWriter(
+	dataDir string,
+	maxBlockChunkSegmentSize int64,
+	blockDuration time.Duration,
+	registerer prometheus.Registerer,
+) *BlockWriter {
 	factory := util.NewUnconflictRegisterer(registerer)
 	return &BlockWriter{
 		dataDir:                  dataDir,
 		maxBlockChunkSegmentSize: maxBlockChunkSegmentSize,
+		blockDurationMs:          blockDuration.Milliseconds(),
 		blockWriteDuration: factory.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "prompp_block_write_duration",
 			Help: "Block write duration in milliseconds.",
@@ -59,24 +68,44 @@ type ChunkIterator interface {
 	At() Chunk
 }
 
-type Block interface {
-	ChunkIterator() ChunkIterator
-	IndexWriterTo(metadataList [][]ChunkMetadata) io.WriterTo
+type IndexWriter interface {
+	WriteSeriesTo(uint32, []ChunkMetadata, io.Writer) (int64, error)
+	WriteRestTo(io.Writer) (int64, error)
 }
 
-func (w *BlockWriter) Write(block Block) (err error) {
+type Block interface {
+	TimeBounds() (minT, maxT int64)
+	ChunkIterator(minT, maxT int64) ChunkIterator
+	IndexWriter() IndexWriter
+}
+
+func (w *BlockWriter) Write(block Block) error {
+	minT, maxT := block.TimeBounds()
+
+	ts := (minT / w.blockDurationMs) * w.blockDurationMs
+	for ; ts < maxT; ts += w.blockDurationMs {
+		if err := w.write(block, ts, ts+w.blockDurationMs); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (w *BlockWriter) write(block Block, minT, maxT int64) (err error) {
 	start := time.Now()
 	uid := ulid.MustNew(ulid.Now(), rand.Reader)
 	dir := filepath.Join(w.dataDir, uid.String())
 	tmp := dir + tmpForCreationBlockDirSuffix
 	var closers []io.Closer
 	defer func() {
-		err = multierror.Append(err, closeAll(closers...)).ErrorOrNil()
+		err = errors.Join(err, closeAll(closers...))
 		if cleanUpErr := os.RemoveAll(tmp); err != nil {
 			// todo: log error
 			_ = cleanUpErr
 		}
 	}()
+
 	if err = os.RemoveAll(tmp); err != nil {
 		return fmt.Errorf("failed to cleanup tmp directory {%s}: %w", tmp, err)
 	}
@@ -91,11 +120,30 @@ func (w *BlockWriter) Write(block Block) (err error) {
 	}
 	closers = append(closers, chunkw)
 
-	chunkIterator := block.ChunkIterator()
-	var chunkMetadataListBySeries [][]ChunkMetadata
+	indexFileWriter, err := NewFileWriter(filepath.Join(tmp, indexFilename))
+	if err != nil {
+		return fmt.Errorf("failed to create index file writer: %w", err)
+	}
+
+	closers = append(closers, indexFileWriter)
+	indexWriter := block.IndexWriter()
+
+	chunkIterator := block.ChunkIterator(minT, maxT)
+	var chunksMetadata []ChunkMetadata
 	var chunkMetadata ChunkMetadata
-	var previousSeriesID *uint32
+	var previousSeriesID uint32 = math.MaxUint32
 	var chunk Chunk
+
+	writeSeries := func() error {
+		if len(chunksMetadata) == 0 {
+			return nil
+		}
+		_, err = indexWriter.WriteSeriesTo(previousSeriesID, chunksMetadata, indexFileWriter)
+		if err != nil {
+			return fmt.Errorf("failed to write series %d: %w", previousSeriesID, err)
+		}
+		return nil
+	}
 
 	blockMeta := &tsdb.BlockMeta{ULID: uid, MinTime: math.MaxInt64, MaxTime: math.MinInt64}
 
@@ -109,34 +157,24 @@ func (w *BlockWriter) Write(block Block) (err error) {
 		adjustBlockMetaTimeRange(blockMeta, chunk.MinT(), chunk.MaxT())
 		blockMeta.Stats.NumChunks++
 		blockMeta.Stats.NumSamples += uint64(chunk.SampleCount())
-
-		if previousSeriesID == nil {
-			chunkMetadataListBySeries = appendChunkMetadata(chunkMetadataListBySeries, chunk, chunkMetadata)
-			blockMeta.Stats.NumSeries++
-		} else {
-			if *previousSeriesID == chunk.SeriesID() {
-				chunkMetadataList := chunkMetadataListBySeries[len(chunkMetadataListBySeries)-1]
-				chunkMetadataList = append(chunkMetadataList, chunkMetadata)
-				chunkMetadataListBySeries[len(chunkMetadataListBySeries)-1] = chunkMetadataList
-			} else {
-				chunkMetadataListBySeries = appendChunkMetadata(chunkMetadataListBySeries, chunk, chunkMetadata)
-				blockMeta.Stats.NumSeries++
-			}
-		}
-
 		seriesID := chunk.SeriesID()
-		previousSeriesID = &seriesID
+
+		if previousSeriesID == seriesID {
+			chunksMetadata = append(chunksMetadata, chunkMetadata)
+		} else {
+			if err = writeSeries(); err != nil {
+				return err
+			}
+			blockMeta.Stats.NumSeries++
+			chunksMetadata = append(chunksMetadata[:0], chunkMetadata)
+			previousSeriesID = seriesID
+		}
 	}
 
-	// write index
-	indexFileWriter, err := NewFileWriter(filepath.Join(tmp, indexFilename))
-	if err != nil {
-		return fmt.Errorf("failed to create index file writer: %w", err)
+	if err = writeSeries(); err != nil {
+		return err
 	}
-
-	closers = append(closers, indexFileWriter)
-	indexWriterTo := block.IndexWriterTo(chunkMetadataListBySeries)
-	indexFileSize, err := indexWriterTo.WriteTo(indexFileWriter)
+	indexFileSize, err := indexWriter.WriteRestTo(indexFileWriter)
 	if err != nil {
 		return fmt.Errorf("failed to write index: %w", err)
 	}
@@ -153,14 +191,14 @@ func (w *BlockWriter) Write(block Block) (err error) {
 	// todo: log & metrics
 	_ = metaFileSize
 
-	closeErr := multierror.Append(err)
+	closeErr := err
 	for _, closer := range closers {
-		closeErr = multierror.Append(closeErr, closer.Close())
+		closeErr = errors.Join(closeErr, closer.Close())
 	}
 	closers = closers[:0]
 
-	if closeErr.ErrorOrNil() != nil {
-		return closeErr.ErrorOrNil()
+	if closeErr != nil {
+		return closeErr
 	}
 
 	var df *os.File
@@ -187,8 +225,6 @@ func (w *BlockWriter) Write(block Block) (err error) {
 		return fmt.Errorf("failed to move temporary block dir {%s} to {%s}: %w", tmp, dir, err)
 	}
 
-	fmt.Println(*blockMeta)
-
 	w.blockWriteDuration.With(prometheus.Labels{
 		"block_id": blockMeta.ULID.String(),
 	}).Set(float64(time.Since(start).Milliseconds()))
@@ -199,11 +235,11 @@ func (w *BlockWriter) Write(block Block) (err error) {
 func chunkDir(dir string) string { return filepath.Join(dir, "chunks") }
 
 func closeAll(closers ...io.Closer) error {
-	var err *multierror.Error
-	for _, closer := range closers {
-		err = multierror.Append(err, closer.Close())
+	errs := make([]error, len(closers))
+	for i, closer := range closers {
+		errs[i] = closer.Close()
 	}
-	return err.ErrorOrNil()
+	return errors.Join(errs...)
 }
 
 func adjustBlockMetaTimeRange(blockMeta *tsdb.BlockMeta, mint, maxt int64) {

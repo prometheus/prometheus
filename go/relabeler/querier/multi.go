@@ -3,10 +3,8 @@ package querier
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sort"
 	"sync"
-	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -28,9 +26,6 @@ func NewMultiQuerier(queriers []storage.Querier, closer func() error) *MultiQuer
 }
 
 func (q *MultiQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	fmt.Println("MULTIQUERIER: LabelValues")
-	start := time.Now()
-
 	labelValuesResults := make([][]string, len(q.queriers))
 	annotationResults := make([]annotations.Annotations, len(q.queriers))
 	errs := make([]error, len(q.queriers))
@@ -57,14 +52,10 @@ func (q *MultiQuerier) LabelValues(ctx context.Context, name string, matchers ..
 	}
 
 	labelValues := DeduplicateAndSortStringSlices(labelValuesResults...)
-	fmt.Println("MULTIQUERIER: LabelValues finished, duration: ", time.Since(start).Microseconds())
 	return labelValues, nil, errors.Join(errs...)
 }
 
 func (q *MultiQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	fmt.Println("MULTIQUERIER: LabelNames")
-	start := time.Now()
-
 	labelNamesResults := make([][]string, len(q.queriers))
 	annotationResults := make([]annotations.Annotations, len(q.queriers))
 	errs := make([]error, len(q.queriers))
@@ -83,7 +74,6 @@ func (q *MultiQuerier) LabelNames(ctx context.Context, matchers ...*labels.Match
 
 	labelNames := DeduplicateAndSortStringSlices(labelNamesResults...)
 
-	fmt.Println("MULTIQUERIER: LabelNames finished, duration: ", time.Since(start).Microseconds())
 	return labelNames, nil, errors.Join(errs...)
 }
 
@@ -95,14 +85,10 @@ func (q *MultiQuerier) Close() (err error) {
 	if q.closer != nil {
 		err = errors.Join(err, q.closer())
 	}
-	// fmt.Println("MULTIQUERIER: Closed")
 	return err
 }
 
 func (q *MultiQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	// fmt.Println("MULTIQUERIER: Select")
-	// start := time.Now()
-
 	seriesSets := make([]storage.SeriesSet, len(q.queriers))
 	wg := &sync.WaitGroup{}
 
@@ -116,7 +102,6 @@ func (q *MultiQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 
 	wg.Wait()
 
-	// fmt.Println("MULTIQUERIER: Select finished, duration: ", time.Since(start))
 	return storage.NewMergeSeriesSet(seriesSets, storage.ChainedSeriesMerge)
 }
 

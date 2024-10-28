@@ -36,7 +36,7 @@ extern "C" {
  *
  * @param res {
  *     status struct {     // head status
- *          time_interval {
+ *          time_interval struct {
  *              min int64
  *              max int64
  *          }
@@ -83,23 +83,36 @@ extern "C" {
 #endif
 
 /**
- * @brief Construct a new WAL EncoderLightweight
+ * @brief Construct a new Head WAL encoder
  *
  * @param args {
  *     shardID            uint16  // shard number
  *     logShards          uint8   // logarithm to the base 2 of total shards count
+ *.    lss                uintptr // pointer to lss
  * }
  * @param res {
- *     encoderLightweight uintptr // pointer to constructed encoder
+ *     encoder uintptr // pointer to constructed encoder
  * }
  */
 void prompp_head_wal_encoder_ctor(void* args, void* res);
 
 /**
- * @brief Destroy EncoderLightweight
+ * @brief Create encoder from decoder
  *
  * @param args {
- *     encoderLightweight uintptr // pointer to constructed encoder
+ *     decoder uintptr // pointer to decoder
+ * }
+ * @param res {
+ *     encoder uintptr // pointer to constructed encoder
+ * }
+ */
+void prompp_head_wal_encoder_ctor_from_decoder(void* args, void* res);
+
+/**
+ * @brief Destroy Encoder
+ *
+ * @param args {
+ *     encoder uintptr // pointer to constructed encoder
  * }
  */
 void prompp_head_wal_encoder_dtor(void* args);
@@ -108,8 +121,8 @@ void prompp_head_wal_encoder_dtor(void* args);
  * @brief Add inner series to current segment
  *
  * @param args {
- *     incomingInnerSeries []*InnerSeries // go slice with incoming InnerSeries;
- *     encoderLightweight  uintptr        // pointer to constructed encoder;
+ *     incomingInnerSeries []*InnerSeries // go slice with inner series;
+ *     encoder  uintptr        // pointer to constructed encoder;
  * }
  * @param res {
  *     earliestTimestamp   int64          // minimal sample timestamp in segment
@@ -127,7 +140,7 @@ void prompp_head_wal_encoder_add_inner_series(void* args, void* res);
  * @brief Flush segment
  *
  * @param args {
- *     encoderLightweight uintptr // pointer to constructed encoder
+ *     encoder uintptr // pointer to constructed encoder
  * }
  * @param res {
  *     earliestTimestamp  int64   // minimal sample timestamp in segment
@@ -143,9 +156,10 @@ void prompp_head_wal_encoder_add_inner_series(void* args, void* res);
 void prompp_head_wal_encoder_finalize(void* args, void* res);
 
 /**
- * @brief Construct a new WAL Decoder
+ * @brief Construct a new Head WAL Decoder
  *
  * @param args {
+ *     lss             uintptr // pointer to lss
  *     encoder_version uint8_t // basic encoder version
  * }
  *
@@ -170,7 +184,7 @@ void prompp_head_wal_decoder_dtor(void* args);
  * @param args {
  *     decoder uintptr // pointer to constructed decoder
  *     segment []byte  // segment content
- *     inner_series *InnerSeries // decoded content
+ *    inner_series *InnerSeries // decoded content
  * }
  * @param res {
  *     created_at int64  // timestamp in ns when data was start writed to encoder
@@ -184,18 +198,6 @@ void prompp_head_wal_decoder_dtor(void* args);
  * }
  */
 void prompp_head_wal_decoder_decode(void* args, void* res);
-
-/**
- * @brief Create encoder from decoder
- *
- * @param args {
- *     decoder uintptr // pointer to decoder
- * }
- * @param res {
- *     encoder uintptr // pointer to constructed encoder
- * }
- */
-void prompp_head_wal_decoder_create_encoder(void* args, void* res);
 
 #ifdef __cplusplus
 }  // extern "C"
@@ -211,11 +213,6 @@ extern "C" {
  *
  * @param args {
  *     lss         uintptr      // pointer to constructed lss
- *     chunks_meta *[][]struct{ // index in first slice is series id
- *         min_t     int64
- *         max_t     int64
- *         reference uint64
- *     }
  * }
  * @param res {
  *     writer    uintptr
@@ -260,12 +257,16 @@ void prompp_index_writer_write_symbols(void* args, void* res);
  * @brief Write next series batch
  *
  * @param args {
- *     writer     uintptr
- *     batch_size uint32
+ *     writer      uintptr
+ *     chunks_meta []struct{ // chunks metadata slice
+ *         min_t     int64
+ *         max_t     int64
+ *         reference uint64
+ *     }
+ *     ls_id       uint32
  * }
  * @param res {
  *     data          []byte // only c allocated memory can be re-used
- *     has_more_data bool   // true if we should repeat this call
  * }
  */
 void prompp_index_writer_write_next_series_batch(void* args, void* res);
@@ -631,7 +632,7 @@ void prompp_prometheus_per_shard_relabeler_cache_allocated_memory(void* args, vo
  * @param args {
  *     shards_inner_series     []*InnerSeries     // go slice with InnerSeries;
  *     shards_relabeled_series []*RelabeledSeries // go slice with RelabeledSeries;
- *     metric_limits           *MetricLimits      // pointer to MetricLimits;
+ *     options                 RelabelerOptions   // object RelabelerOptions;
  *     per_shard_relabeler     uintptr            // pointer to constructed per shard relabeler;
  *     hashdex                 uintptr            // pointer to filled hashdex;
  *     lss                     uintptr            // pointer to constructed label sets;
@@ -649,7 +650,7 @@ void prompp_prometheus_per_shard_relabeler_input_relabeling(void* args, void* re
  * @param args {
  *     shards_inner_series     []*InnerSeries     // go slice with InnerSeries;
  *     shards_relabeled_series []*RelabeledSeries // go slice with RelabeledSeries;
- *     metric_limits           *MetricLimits      // pointer to MetricLimits;
+ *     options                 RelabelerOptions   // object RelabelerOptions;
  *     per_shard_relabeler     uintptr            // pointer to constructed per shard relabeler;
  *     hashdex                 uintptr            // pointer to filled hashdex;
  *     lss                     uintptr            // pointer to constructed label sets;
@@ -752,6 +753,23 @@ void prompp_series_data_data_storage_ctor(void* res);
 void prompp_series_data_data_storage_reset(void* args);
 
 /**
+ * @brief Get min max timestamps in storage
+ *
+ * @param args {
+ *     dataStorage uintptr // pointer to constructed data storage
+ * }
+ *
+ * @param res {
+ *     interval struct {
+ *        min int64
+ *        max int64
+ *     }
+ * }
+ *
+ */
+void prompp_series_data_data_storage_time_interval(void* args, void* res);
+
+/**
  * @brief Queries data storage and serializes result.
  *
  * @param args {
@@ -778,7 +796,6 @@ void prompp_series_data_data_storage_allocated_memory(void* args, void* res);
  */
 void prompp_series_data_data_storage_query(void* args, void* res);
 
-
 /**
  * @brief series data DataStorage destructor.
  *
@@ -793,6 +810,10 @@ void prompp_series_data_data_storage_dtor(void* args);
  *
  * @param args {
  *     dataStorage   uintptr  // pointer to constructed data storage
+ *     time_interval struct { interval is semi-open [min, max)
+ *        min int64
+ *        max int64
+ *     }
  * }
  * @param res {
  *     chunk_recoder uintptr // pointer to chunk recoder
@@ -807,8 +828,10 @@ void prompp_series_data_chunk_recoder_ctor(void* args, void* res);
  *     chunk_recoder uintptr // pointer to chunk recoder
  * }
  * @param res {
- *     min_t         int64
- *     max_t         int64
+ *     interval struct {
+ *        min int64
+ *        max int64
+ *     }
  *     series_id     uint32
  *     samples_count uint8
  *     has_more_data bool
@@ -1426,6 +1449,38 @@ void prompp_wal_go_model_hashdex_presharding(void* args, void* res);
  * }
  */
 void prompp_wal_basic_decoder_hashdex_dtor(void* args);
+
+/**
+ * @brief Construct a new PromPP::WAL::hashdex::Scraper
+ *
+ * @param res {
+ *     hashdex uintptr // pointer to constructed hashdex
+ * }
+ */
+void prompp_wal_scraper_hashdex_ctor(void* res);
+
+/**
+ * @brief Parse scraped buffer
+ *
+ * @param args {
+ *     hashdex           uintptr
+ *     buffer            string // buffer will be modified by parser
+ *     default_timestamp int64
+ * }
+ * @param res {
+ *     error uint32 // value of PromPP::WAL::hashdex::Scraper::Error
+ * }
+ */
+void prompp_wal_scraper_hashdex_parse(void* args, void* res);
+
+/**
+ * @brief Destroy hashdex
+ *
+ * @param args {
+ *     hashdex uintptr // pointer to constructed hashdex
+ * }
+ */
+void prompp_wal_scraper_hashdex_dtor(void* args);
 
 #ifdef __cplusplus
 }  // extern "C"
