@@ -151,7 +151,6 @@ class DecodingTable {
       // write size
       uint32_t size_to_save = next_item_index_ - first_to_save_i;
       out.write(reinterpret_cast<char*>(&size_to_save), sizeof(size_to_save));
-
       // if there are no items to write, we finish here
       if (!size_to_save) {
         return;

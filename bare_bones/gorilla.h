@@ -1,8 +1,5 @@
 #pragma once
 
-#include <bit>
-#include <utility>
-
 #include "bit.h"
 #include "encoding.h"
 #include "type_traits.h"
@@ -74,7 +71,7 @@ class ZigZagTimestampEncoder {
 
   template <class BitSequence>
   PROMPP_ALWAYS_INLINE static void encode_delta_of_delta(TimestampEncoderState& state, int64_t ts, BitSequence& stream) {
-    auto ts_delta = ts - state.last_ts;
+    const auto ts_delta = ts - state.last_ts;
     const int64_t delta_of_delta = ts_delta - state.last_ts_delta;
     const uint64_t ts_dod_zigzag = ZigZag::encode(delta_of_delta);
 
@@ -89,7 +86,7 @@ class ZigZagTimestampEncoder {
     if (ts_dod_zigzag == 0) {
       stream.push_back_single_zero_bit();
     } else {
-      uint8_t ts_dod_significant_len = 64 - std::countl_zero(ts_dod_zigzag);
+      const uint8_t ts_dod_significant_len = 64 - std::countl_zero(ts_dod_zigzag);
 
       if (ts_dod_significant_len <= kDogSignificantLengths.first) {
         // 1->0
@@ -114,8 +111,8 @@ class ZigZagTimestampEncoder {
       [[unlikely]];
       stream.push_back_bits_u32(5, 0b11111);
     } else {
-      auto ts = static_cast<int64_t>(timestamp);
-      auto ts_delta = ts - state.last_ts;
+      const auto ts = static_cast<int64_t>(timestamp);
+      const auto ts_delta = ts - state.last_ts;
       const int64_t delta_of_delta = ts_delta - state.last_ts_delta;
       const uint64_t ts_dod_zigzag = ZigZag::encode(delta_of_delta);
 
@@ -131,7 +128,7 @@ class ZigZagTimestampEncoder {
     if (ts_dod_zigzag == 0) {
       stream.push_back_single_zero_bit();
     } else {
-      uint8_t ts_dod_significant_len = 64 - std::countl_zero(ts_dod_zigzag);
+      const uint8_t ts_dod_significant_len = 64 - std::countl_zero(ts_dod_zigzag);
 
       if (ts_dod_significant_len <= kDogSignificantLengths.first) {
         // 1->0
@@ -151,30 +148,43 @@ class ZigZagTimestampEncoder {
   }
 };
 
-struct PROMPP_ATTRIBUTE_PACKED ValuesEncoderState {
-  double last_v{};
-  uint8_t last_v_xor_length{};
-  uint8_t last_v_xor_leading_z{};
-  uint8_t last_v_xor_trailing_z{};
-  uint8_t v_xor_waste_bits_written{};
-
-  bool operator==(const ValuesEncoderState&) const noexcept = default;
-
-  PROMPP_ALWAYS_INLINE void reset() {
-    last_v = {};
-    last_v_xor_length = {};
-    last_v_xor_leading_z = {};
-    last_v_xor_trailing_z = {};
-    v_xor_waste_bits_written = {};
-  }
-};
-
 struct PROMPP_ATTRIBUTE_PACKED ValuesDecoderState {
   double last_v{};
   uint8_t last_v_xor_length{};
   uint8_t last_v_xor_trailing_z{};
 
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint8_t last_v_xor_leading_z() const noexcept {
+    return Bit::to_bits(sizeof(uint64_t)) - last_v_xor_trailing_z - last_v_xor_length;
+  }
+
   bool operator==(const ValuesDecoderState&) const noexcept = default;
+};
+
+struct PROMPP_ATTRIBUTE_PACKED ValuesEncoderState {
+  double last_v{};
+  uint8_t last_v_xor_length{};
+  uint8_t last_v_xor_leading_z{Bit::to_bits(sizeof(uint64_t))};
+  uint8_t last_v_xor_trailing_z{};
+  uint8_t v_xor_waste_bits_written{};
+
+  ValuesEncoderState() = default;
+  explicit ValuesEncoderState(const ValuesDecoderState& state) noexcept
+      : last_v(state.last_v),
+        last_v_xor_length(state.last_v_xor_length),
+        last_v_xor_leading_z(state.last_v_xor_leading_z()),
+        last_v_xor_trailing_z(state.last_v_xor_trailing_z) {}
+
+  bool operator==(const ValuesEncoderState&) const noexcept = default;
+
+  PROMPP_ALWAYS_INLINE void reset() noexcept { reset({}); }
+
+  PROMPP_ALWAYS_INLINE void reset(const ValuesDecoderState& state) noexcept {
+    this->last_v = state.last_v;
+    this->last_v_xor_length = state.last_v_xor_length;
+    this->last_v_xor_leading_z = state.last_v_xor_leading_z();
+    this->last_v_xor_trailing_z = state.last_v_xor_trailing_z;
+    this->v_xor_waste_bits_written = {};
+  }
 };
 
 enum class GorillaState : uint8_t {
@@ -183,10 +193,15 @@ enum class GorillaState : uint8_t {
   kOtherPoint = 2,
 };
 
+struct DecoderState;
+
 struct PROMPP_ATTRIBUTE_PACKED EncoderState {
   TimestampEncoderState timestamp_encoder;
   ValuesEncoderState values_encoder;
   GorillaState state{GorillaState::kFirstPoint};
+
+  EncoderState() = default;
+  explicit EncoderState(const DecoderState& state) noexcept;
 
   bool operator==(const EncoderState&) const noexcept = default;
 };
@@ -212,6 +227,9 @@ struct PROMPP_ATTRIBUTE_PACKED DecoderState {
   bool operator==(const DecoderState&) const noexcept = default;
 };
 
+inline EncoderState::EncoderState(const DecoderState& state) noexcept
+    : timestamp_encoder(state.timestamp_decoder), values_encoder(state.values_decoder), state(state.state) {}
+
 class TimestampEncoder {
  public:
   template <class BitSequence>
@@ -233,14 +251,13 @@ class TimestampEncoder {
 
   template <class BitSequence>
   PROMPP_ALWAYS_INLINE static void encode_delta_of_delta(TimestampEncoderState& state, int64_t ts, BitSequence& stream) {
-    auto ts_delta = ts - state.last_ts;
+    const auto ts_delta = ts - state.last_ts;
     const int64_t delta_of_delta = ts_delta - state.last_ts_delta;
-    const auto ts_dod_zigzag = std::bit_cast<uint64_t>(delta_of_delta);
 
-    if (ts_dod_zigzag == 0) {
+    if (const auto ts_dod_zigzag = std::bit_cast<uint64_t>(delta_of_delta); ts_dod_zigzag == 0) {
       stream.push_back_single_zero_bit();
     } else {
-      uint8_t ts_dod_significant_len = 64 - std::countl_zero(ts_dod_zigzag);
+      const uint8_t ts_dod_significant_len = 64 - std::countl_zero(ts_dod_zigzag);
 
       if (ts_dod_significant_len <= 4) {
         // 1->0
@@ -292,9 +309,7 @@ class ZigZagTimestampDecoder {
     state.last_ts += state.last_ts_delta;
   }
   PROMPP_ALWAYS_INLINE static void decode_delta_of_delta(TimestampEncoderState& state, BitSequenceReader& reader) {
-    uint32_t buf = reader.read_u32();
-
-    if (buf & 0b1) {
+    if (const uint32_t buf = reader.read_u32(); buf & 0b1) {
       uint64_t dod_zigzag;
 
       if ((buf & 0b10) == 0) {
@@ -324,9 +339,7 @@ class ZigZagTimestampDecoder {
   }
 
   PROMPP_ALWAYS_INLINE static ValueType decode_delta_of_delta_with_stale_nan(TimestampEncoderState& state, BitSequenceReader& reader) {
-    uint32_t buf = reader.read_u32();
-
-    if (buf & 0b1) {
+    if (const uint32_t buf = reader.read_u32(); buf & 0b1) {
       uint64_t dod_zigzag;
 
       if ((buf & 0b10) == 0) {
@@ -368,9 +381,7 @@ class TimestampDecoder {
     state.last_ts += state.last_ts_delta;
   }
   static void decode_delta_of_delta(TimestampEncoderState& state, BitSequenceReader& reader) {
-    uint32_t buf = reader.read_u32();
-
-    if (buf & 0b1) {
+    if (const uint32_t buf = reader.read_u32(); buf & 0b1) {
       uint64_t dod_zigzag;
 
       if ((buf & 0b10) == 0) {
@@ -425,7 +436,7 @@ class ValuesEncoder {
 
   template <class BitSequence>
   static void encode(ValuesEncoderState& state, double v, BitSequence& stream) noexcept {
-    uint64_t v_xor = std::bit_cast<uint64_t>(state.last_v) ^ std::bit_cast<uint64_t>(v);
+    const uint64_t v_xor = std::bit_cast<uint64_t>(state.last_v) ^ std::bit_cast<uint64_t>(v);
 
     state.last_v = v;
 
@@ -435,12 +446,12 @@ class ValuesEncoder {
     }
 
     uint8_t v_xor_leading_z = std::countl_zero(v_xor);
-    uint8_t v_xor_trailing_z = std::countr_zero(v_xor);
+    const uint8_t v_xor_trailing_z = std::countr_zero(v_xor);
 
     // we store lead_z in 5bits in encoding, so it's limited by 31
     v_xor_leading_z = v_xor_leading_z > 31 ? 31 : v_xor_leading_z;
 
-    uint8_t v_xor_length = 64 - v_xor_leading_z - v_xor_trailing_z;
+    const uint8_t v_xor_length = 64 - v_xor_leading_z - v_xor_trailing_z;
 
     // we need to write xor length, if it was never written
     if (state.last_v_xor_length == 0)
@@ -453,7 +464,7 @@ class ValuesEncoder {
     // heuristics that optimizes gorilla size based on one-time length change or amount of unnecessary bits written
     {
       // always positive, because we already checked that xor fits into the same bit range
-      uint8_t v_xor_length_delta = state.last_v_xor_length - v_xor_length;
+      const uint8_t v_xor_length_delta = state.last_v_xor_length - v_xor_length;
 
       // we need to write xor length
       //  * either because of accumulated statistics (more than 50 waste bits were written since last xor length write)
@@ -521,7 +532,7 @@ class ValuesDecoder {
     if (buf & 0b10) {
       reader.ff(5 + 6);
 
-      uint8_t v_xor_leading_z = Bit::bextr(buf, 2, 5);
+      const uint8_t v_xor_leading_z = Bit::bextr(buf, 2, 5);
       state.last_v_xor_length = Bit::bextr(buf, 7, 6);
 
       // if last_v_xor_length is zero it should be 64
@@ -547,12 +558,15 @@ class PROMPP_ATTRIBUTE_PACKED StreamEncoder {
   friend class StreamDecoder;
 
  public:
+  StreamEncoder() = default;
+  explicit StreamEncoder(const DecoderState& state) : state_{state} {}
+
   [[nodiscard]] PROMPP_ALWAYS_INLINE int64_t last_timestamp() const noexcept { return state_.timestamp_encoder.last_ts; }
   [[nodiscard]] PROMPP_ALWAYS_INLINE double last_value() const noexcept { return state_.values_encoder.last_v; }
   [[nodiscard]] PROMPP_ALWAYS_INLINE const EncoderState& state() const noexcept { return state_; }
 
   template <class BitSequence>
-  inline __attribute__((always_inline)) void encode(int64_t ts, double v, BitSequence& ts_bitseq, BitSequence& v_bitseq) noexcept {
+  PROMPP_ALWAYS_INLINE void encode(int64_t ts, double v, BitSequence& ts_bitseq, BitSequence& v_bitseq) noexcept {
     if (state_.state == GorillaState::kFirstPoint) {
       TimestampEncoder::encode(state_.timestamp_encoder, ts, ts_bitseq);
       ValuesEncoder::encode_first(state_.values_encoder, v, v_bitseq);
@@ -568,85 +582,9 @@ class PROMPP_ATTRIBUTE_PACKED StreamEncoder {
       ValuesEncoder::encode(state_.values_encoder, v, v_bitseq);
     }
   }
-
-  PROMPP_ALWAYS_INLINE void reset(const DecoderState& state) noexcept {
-    state_.timestamp_encoder = state.timestamp_decoder;
-    state_.values_encoder.last_v = state.values_decoder.last_v;
-    state_.values_encoder.last_v_xor_length = state.values_decoder.last_v_xor_length;
-    state_.values_encoder.last_v_xor_trailing_z = state.values_decoder.last_v_xor_trailing_z;
-    state_.values_encoder.v_xor_waste_bits_written = 0;
-    state_.state = static_cast<decltype(state_.state)>(state.state);
-  }
-};
-
-template <TimestampEncoderInterface TimestampEncoder, TimestampDecoderInterface TimestampDecoder>
-class PROMPP_ATTRIBUTE_PACKED PrometheusStreamEncoder {
- public:
-  PROMPP_ALWAYS_INLINE void encode(int64_t timestamp, double value, BitSequence& stream) {
-    if (timestamp > encoder_.last_timestamp()) {
-      append(timestamp, value, stream);
-      return;
-    } else if (timestamp == encoder_.last_timestamp() && value == encoder_.last_value()) {
-      return;
-    }
-
-    insert(timestamp, value, stream);
-  }
-
- private:
-  StreamEncoder<TimestampEncoder, ValuesEncoder> encoder_;
-
-  PROMPP_ALWAYS_INLINE void append(int64_t timestamp, double value, BitSequence& stream) { encoder_.encode(timestamp, value, stream, stream); }
-
-  PROMPP_ALWAYS_INLINE void insert(int64_t timestamp, double value, BitSequence& stream) {
-    StreamDecoder<TimestampDecoder, ValuesDecoder> decoder;
-    auto reader = stream.reader();
-    auto [position, state] = decode_to_timestamp(timestamp, reader, decoder);
-    if (timestamp == decoder.last_timestamp() && value == decoder.last_value()) {
-      return;
-    }
-
-    encoder_.reset(state);
-
-    BitSequence new_stream(stream, position);
-    append(timestamp, value, new_stream);
-    if (timestamp != decoder.last_timestamp()) {
-      append(decoder.last_timestamp(), decoder.last_value(), new_stream);
-    }
-
-    re_encode(reader, decoder, new_stream);
-    stream = std::move(new_stream);
-  }
-
-  PROMPP_ALWAYS_INLINE static std::pair<uint64_t, DecoderState> decode_to_timestamp(int64_t timestamp,
-                                                                                    BitSequenceReader& reader,
-                                                                                    StreamDecoder<TimestampDecoder, ValuesDecoder>& decoder) {
-    std::pair<uint64_t, DecoderState> result;
-
-    while (!reader.eof()) {
-      result.first = reader.position();
-      result.second = decoder.state();
-
-      decoder.decode(reader, reader);
-      if (decoder.last_timestamp() >= timestamp) {
-        return result;
-      }
-    }
-
-    assert(false);
-    return result;
-  }
-
-  PROMPP_ALWAYS_INLINE void re_encode(BitSequenceReader& reader, StreamDecoder<TimestampDecoder, ValuesDecoder>& decoder, BitSequence& stream) {
-    while (!reader.eof()) {
-      decoder.decode(reader, reader);
-      append(decoder.last_timestamp(), decoder.last_value(), stream);
-    }
-  }
 };
 
 static_assert(sizeof(StreamEncoder<ZigZagTimestampEncoder<>, ValuesEncoder>) == 29);
-static_assert(sizeof(PrometheusStreamEncoder<TimestampEncoder, TimestampDecoder>) == 29);
 
 template <TimestampDecoderInterface TimestampDecoder, ValuesDecoderInterface ValuesDecoder>
 class PROMPP_ATTRIBUTE_PACKED StreamDecoder {
