@@ -12,7 +12,6 @@
 
 namespace performance_tests {
 
-using BareBones::Encoding::Gorilla::PrometheusStreamEncoder;
 using BareBones::Encoding::Gorilla::StreamEncoder;
 using BareBones::Encoding::Gorilla::TimestampDecoder;
 using BareBones::Encoding::Gorilla::TimestampEncoder;
