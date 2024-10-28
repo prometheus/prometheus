@@ -334,6 +334,10 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 							}
 							chunk = mm
 						}
+						// OOO chunks are always wrapped in multiMeta.
+						if len(e.m) == 0 {
+							chunk = &multiMeta{metas: []chunks.Meta{{Ref: findID(e.c.ID), Chunk: chunk, MinTime: e.c.mint, MaxTime: e.c.maxt}}}
+						}
 						meta := chunks.Meta{
 							Chunk:   chunk,
 							MinTime: e.c.mint,
