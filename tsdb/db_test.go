@@ -6132,51 +6132,99 @@ func testOOOInterleavedImplicitCounterResets(t *testing.T, name string, scenario
 		v  int64
 	}
 
+	type expectedTsValue struct {
+		ts   int64
+		v    int64
+		hint histogram.CounterResetHint
+	}
+
+	type expectedChunk struct {
+		hint histogram.CounterResetHint
+		size int
+	}
+
 	cases := map[string]struct {
 		samples []tsValue
 		oooCap  int64
-		// The expected samples.
-		expectedSamples []tsValue
-		// The expected counter reset hints for each sample.
-		expectedQueryHint []histogram.CounterResetHint
+		// The expected samples with counter reset.
+		expectedSamples []expectedTsValue
 		// The expected counter reset hint for each chunk.
-		expectedChunkHint []histogram.CounterResetHint
-		expectedChunkSize []int
+		expectedChunks []expectedChunk
 	}{
-		"counter reset cleared by interleved in-order and OOO": {
+		"counter reset in-order cleared by in-memory OOO chunk": {
 			samples: []tsValue{
-				{1, 40}, // New in In-order.
-				{4, 30}, // In-order counter reset.
-				{2, 40}, // New in OOO.
-				{3, 10}, // OOO counter reset.
+				{1, 40}, // New in In-order. I1.
+				{4, 30}, // In-order counter reset. I2.
+				{2, 40}, // New in OOO. O1.
+				{3, 10}, // OOO counter reset. O2.
 			},
 			oooCap: 30,
-			expectedSamples: []tsValue{
-				{1, 40},
-				{2, 40},
-				{3, 10}, // Counter reset.
-				{4, 30},
-			},
 			// Expect all to be set to UnknownCounterReset because we switch between
 			// in-order and out-of-order samples.
-			expectedQueryHint: []histogram.CounterResetHint{
-				histogram.UnknownCounterReset,
-				histogram.UnknownCounterReset,
-				histogram.UnknownCounterReset,
-				histogram.UnknownCounterReset,
+			expectedSamples: []expectedTsValue{
+				{1, 40, histogram.UnknownCounterReset}, // I1.
+				{2, 40, histogram.UnknownCounterReset}, // O1.
+				{3, 10, histogram.UnknownCounterReset}, // O2. Counter reset cleared by iterator change.
+				{4, 30, histogram.UnknownCounterReset}, // I2. Counter reset cleared on merge.
 			},
-			// First sample is in its own chunk.
-			// Last 3 samples are added to iterable and re-encoded into
-			// two chunks along the counter reset.
-			expectedChunkHint: []histogram.CounterResetHint{
-				histogram.UnknownCounterReset,
-				histogram.UnknownCounterReset,
-				histogram.UnknownCounterReset,
+			expectedChunks: []expectedChunk{
+				{histogram.UnknownCounterReset, 2}, // I1+O2.
+				{histogram.CounterReset, 2},        // O2.I2.
 			},
-			expectedChunkSize: []int{
-				1,
-				1,
-				2,
+		},
+		"counter reset in OOO mmapped chunk cleared by in-memory ooo chunk": {
+			samples: []tsValue{
+				{8, 30}, // In-order, new chunk. I1.
+				{1, 10}, // OOO, new chunk (will be mmapped). MO1.
+				{2, 20}, // OOO, no reset (will be mmapped). MO1.
+				{3, 30}, // OOO, no reset (will be mmapped). MO1.
+				{5, 20}, // OOO, reset (will be mmapped). MO2.
+				{6, 10}, // OOO, reset (will be mmapped). MO3.
+				{7, 20}, // OOO, no reset (will be mmapped). MO3.
+				{4, 10}, // OOO, inserted into memory, triggers mmap. O1.
+			},
+			oooCap: 6,
+			expectedSamples: []expectedTsValue{
+				{1, 10, histogram.UnknownCounterReset}, // MO1.
+				{2, 20, histogram.NotCounterReset},     // MO1.
+				{3, 30, histogram.NotCounterReset},     // MO1.
+				{4, 10, histogram.UnknownCounterReset}, // O1. Counter reset cleared by iterator change.
+				{5, 20, histogram.UnknownCounterReset}, // MO2. Counter reset cleared by merge.
+				{6, 10, histogram.UnknownCounterReset}, // MO3. Counter reset cleared by iterator change.
+				{7, 20, histogram.NotCounterReset},     // MO3.
+				{8, 30, histogram.UnknownCounterReset}, // I1.
+			},
+			expectedChunks: []expectedChunk{
+				{histogram.UnknownCounterReset, 3}, // MO1.
+				{histogram.CounterReset, 2},        // O1+MO2.
+				{histogram.CounterReset, 3},        // MO3+I1.
+			},
+		},
+		"counter reset in OOO mmapped chunk cleared by another OOO mmaped chunk": {
+			samples: []tsValue{
+				{8, 100}, // In-order, new chunk. I1.
+				{1, 50},  // OOO, new chunk (will be mmapped). MO1.
+				{5, 40},  // OOO, reset (will be mmapped). MO2.
+				{6, 50},  // OOO, no reset (will be mmapped). MO2.
+				{2, 10},  // OOO, new chunk no reset (will be mmapped). MO3.
+				{3, 20},  // OOO, no reset (will be mmapped). MO3.
+				{4, 30},  // OOO, no reset (will be mmapped). MO3.
+				{7, 60},  // OOO, no reset in memory. O1.
+			},
+			oooCap: 3,
+			expectedSamples: []expectedTsValue{
+				{1, 50, histogram.UnknownCounterReset},  // MO1.
+				{2, 10, histogram.UnknownCounterReset},  // MO3. Counter reset cleared by iterator change.
+				{3, 20, histogram.NotCounterReset},      // MO3.
+				{4, 30, histogram.NotCounterReset},      // MO3.
+				{5, 40, histogram.UnknownCounterReset},  // MO2. Counter reset cleared by merge.
+				{6, 50, histogram.NotCounterReset},      // MO2.
+				{7, 60, histogram.UnknownCounterReset},  // O1.
+				{8, 100, histogram.UnknownCounterReset}, // I1.
+			},
+			expectedChunks: []expectedChunk{
+				{histogram.UnknownCounterReset, 1}, // MO1.
+				{histogram.CounterReset, 7},        // MO3+MO2+O1+I1.
 			},
 		},
 	}
@@ -6201,7 +6249,7 @@ func testOOOInterleavedImplicitCounterResets(t *testing.T, name string, scenario
 			require.NoError(t, app.Commit())
 
 			t.Run("querier", func(t *testing.T) {
-				querier, err := db.Querier(0, 5)
+				querier, err := db.Querier(0, 10)
 				require.NoError(t, err)
 				defer querier.Close()
 
@@ -6217,10 +6265,10 @@ func testOOOInterleavedImplicitCounterResets(t *testing.T, name string, scenario
 				for i, s := range samples {
 					switch name {
 					case intHistogram:
-						require.Equal(t, tc.expectedQueryHint[i], s.H().CounterResetHint, "sample %d", i)
+						require.Equal(t, tc.expectedSamples[i].hint, s.H().CounterResetHint, "sample %d", i)
 						require.Equal(t, tc.expectedSamples[i].v, int64(s.H().Count), "sample %d", i)
 					case floatHistogram:
-						require.Equal(t, tc.expectedQueryHint[i], s.FH().CounterResetHint, "sample %d", i)
+						require.Equal(t, tc.expectedSamples[i].hint, s.FH().CounterResetHint, "sample %d", i)
 						require.Equal(t, tc.expectedSamples[i].v, int64(s.FH().Count), "sample %d", i)
 					default:
 						t.Fatalf("unexpected sample type %s", name)
@@ -6229,7 +6277,7 @@ func testOOOInterleavedImplicitCounterResets(t *testing.T, name string, scenario
 			})
 
 			t.Run("chunk-querier", func(t *testing.T) {
-				querier, err := db.ChunkQuerier(0, 5)
+				querier, err := db.ChunkQuerier(0, 10)
 				require.NoError(t, err)
 				defer querier.Close()
 
@@ -6237,12 +6285,12 @@ func testOOOInterleavedImplicitCounterResets(t *testing.T, name string, scenario
 				require.Len(t, chunkSet, 1)
 				chunks, ok := chunkSet["{foo=\"bar1\"}"]
 				require.True(t, ok)
-				require.Len(t, chunks, len(tc.expectedChunkHint))
+				require.Len(t, chunks, len(tc.expectedChunks))
 				idx := 0
 				for i, samples := range chunks {
-					require.Len(t, samples, tc.expectedChunkSize[i])
+					require.Len(t, samples, tc.expectedChunks[i].size)
 					for j, s := range samples {
-						expectHint := tc.expectedChunkHint[i]
+						expectHint := tc.expectedChunks[i].hint
 						if j > 0 {
 							expectHint = histogram.NotCounterReset
 						}
