@@ -89,6 +89,7 @@ func (m *Manager) Restore(blockDuration time.Duration) (active relabeler.Head, r
 		if headRecord.Status == catalog.StatusPersisted {
 			if err = os.RemoveAll(headDir); err != nil {
 				// todo: log
+				continue
 			}
 			if err = m.catalog.Delete(headRecord.ID); err != nil {
 				return nil, nil, fmt.Errorf("failed to delete record from catalog: %w", err)
@@ -126,6 +127,7 @@ func (m *Manager) Restore(blockDuration time.Duration) (active relabeler.Head, r
 				}
 				m.counter.With(prometheus.Labels{"type": "persisted"}).Inc()
 				if discardErr = os.RemoveAll(headDir); discardErr != nil {
+					fmt.Println("FAILED TO DELETE DIR", headDir, discardErr)
 					return discardErr
 				}
 				if discardErr = m.catalog.Delete(id); discardErr != nil {
@@ -206,7 +208,7 @@ func (m *Manager) BuildWithConfig(inputRelabelerConfigs []*config.InputRelabeler
 				return discardErr
 			}
 			m.counter.With(prometheus.Labels{"type": "persisted"}).Inc()
-			if discardErr = os.Remove(headDir); discardErr != nil {
+			if discardErr = os.RemoveAll(headDir); discardErr != nil {
 				return discardErr
 			}
 			if discardErr = m.catalog.Delete(id); discardErr != nil {
