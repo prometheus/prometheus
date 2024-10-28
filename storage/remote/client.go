@@ -25,8 +25,6 @@ import (
 	"strings"
 	"time"
 
-	"go.opentelemetry.io/otel/attribute"
-
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/client_golang/prometheus"
@@ -34,6 +32,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/sigv4"
 	"github.com/prometheus/common/version"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
@@ -216,8 +215,11 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 	if conf.WriteProtoMsg != "" {
 		writeProtoMsg = conf.WriteProtoMsg
 	}
-
-	httpClient.Transport = otelhttp.NewTransport(t)
+	httpClient.Transport = otelhttp.NewTransport(
+		t,
+		otelhttp.WithClientTrace(func(ctx context.Context) *httptrace.ClientTrace {
+			return otelhttptrace.NewClientTrace(ctx)
+		}))
 	return &Client{
 		remoteName:       name,
 		urlString:        conf.URL.String(),
@@ -282,36 +284,7 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) (WriteRespo
 	ctx, span := otel.Tracer("").Start(ctx, "Remote Store", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
 
-	httpReqTrace := &httptrace.ClientTrace{
-		GetConn: func(hostPort string) {
-			span.AddEvent("GetConn", trace.WithAttributes(attribute.String("host", hostPort)))
-		},
-		GotConn: func(info httptrace.GotConnInfo) {
-			span.AddEvent("GotConn", trace.WithAttributes(
-				attribute.Bool("reused", info.Reused),
-				attribute.Bool("wasIdle", info.WasIdle),
-				attribute.Float64("idleTimeMs", float64(info.IdleTime.Milliseconds())),
-			))
-		},
-		DNSStart: func(info httptrace.DNSStartInfo) {
-			span.AddEvent("DNSStart", trace.WithAttributes(attribute.String("host", info.Host)))
-		},
-		DNSDone: func(info httptrace.DNSDoneInfo) {
-			span.AddEvent("DNSDone", trace.WithAttributes(attribute.Bool("coalesced", info.Coalesced)))
-		},
-		ConnectStart: func(network, addr string) {
-			span.AddEvent("ConnectStart", trace.WithAttributes(attribute.String("network", network), attribute.String("addr", addr)))
-		},
-		ConnectDone: func(network, addr string, err error) {
-			attrs := []attribute.KeyValue{attribute.String("network", network), attribute.String("addr", addr)}
-			if err != nil {
-				attrs = append(attrs, attribute.String("error", err.Error()))
-			}
-			span.AddEvent("ConnectDone", trace.WithAttributes(attrs...))
-		},
-	}
-
-	httpResp, err := c.Client.Do(httpReq.WithContext(httptrace.WithClientTrace(ctx, httpReqTrace)))
+	httpResp, err := c.Client.Do(httpReq.WithContext(ctx))
 	if err != nil {
 		// Errors from Client.Do are from (for example) network errors, so are
 		// recoverable.
