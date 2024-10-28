@@ -169,7 +169,7 @@ func (p *NHCBParser) CreatedTimestamp() *int64 {
 			return p.parser.CreatedTimestamp()
 		}
 	case stateCollecting:
-		return p.parser.CreatedTimestamp()
+		return p.tempCT
 	case stateEmitting:
 		return p.ctNHCB
 	}
