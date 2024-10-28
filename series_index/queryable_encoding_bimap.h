@@ -23,15 +23,18 @@ class QueryableEncodingBimap : public BareBones::SnugComposite::DecodingTable<Fi
   [[nodiscard]] PROMPP_ALWAYS_INLINE const SeriesReverseIndex& reverse_index() const noexcept { return reverse_index_; }
   [[nodiscard]] PROMPP_ALWAYS_INLINE const LsIdSet& ls_id_set() const noexcept { return ls_id_set_; }
 
-  PROMPP_ALWAYS_INLINE void build_sorting_index() {
-    if (sorting_index_.empty()) {
+  template <class Iterator>
+  PROMPP_ALWAYS_INLINE void sort_series_ids(Iterator begin, Iterator end) noexcept {
+    if (sorting_index_.empty()) [[unlikely]] {
       sorting_index_.build();
     }
+
+    sorting_index_.sort(begin, end);
   }
 
-  template <class Iterator>
-  PROMPP_ALWAYS_INLINE void sort_series_ids(Iterator begin, Iterator end) const noexcept {
-    sorting_index_.sort(begin, end);
+  template <class Container>
+  PROMPP_ALWAYS_INLINE void sort_series_ids(Container& container) noexcept {
+    sort_series_ids(container.begin(), container.end());
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept {
