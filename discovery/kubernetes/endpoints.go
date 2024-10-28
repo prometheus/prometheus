@@ -20,8 +20,6 @@ import (
 	"log/slog"
 	"net"
 	"strconv"
-	"strings"
-	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -104,10 +102,7 @@ func NewEndpoints(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, node 
 			return
 		}
 
-		ep := &apiv1.Endpoints{}
-		ep.Namespace = svc.Namespace
-		ep.Name = svc.Name
-		obj, exists, err := e.endpointsStore.Get(ep)
+		obj, exists, err := e.endpointsStore.GetByKey(namespacedName(svc.Namespace, svc.Name))
 		if exists && err == nil {
 			e.enqueue(obj.(*apiv1.Endpoints))
 		}
@@ -455,43 +450,12 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 	return tg
 }
 
-var objKeyPool = sync.Pool{}
-
-func generateObjKey(namespace, name string) (string, *strings.Builder) {
-	var sb *strings.Builder
-
-	b := objKeyPool.Get()
-	if b == nil {
-		sb = &strings.Builder{}
-	} else {
-		sb = b.(*strings.Builder)
-	}
-
-	sb.Reset()
-	if namespace == "" {
-		_, _ = sb.WriteString(name)
-		return sb.String(), sb
-	}
-
-	_, _ = sb.WriteString(namespace)
-	_, _ = sb.WriteRune('/')
-	_, _ = sb.WriteString(name)
-	return sb.String(), sb
-}
-
 func (e *Endpoints) resolvePodRef(ref *apiv1.ObjectReference) *apiv1.Pod {
 	if ref == nil || ref.Kind != "Pod" {
 		return nil
 	}
 
-	p := &apiv1.Pod{}
-	p.Namespace = ref.Namespace
-	p.Name = ref.Name
-
-	key, sb := generateObjKey(p.Namespace, p.Name)
-	defer objKeyPool.Put(sb)
-
-	obj, exists, err := e.podStore.GetByKey(key)
+	obj, exists, err := e.podStore.GetByKey(namespacedName(ref.Namespace, ref.Name))
 	if err != nil {
 		e.logger.Error("resolving pod ref failed", "err", err)
 		return nil
@@ -503,11 +467,7 @@ func (e *Endpoints) resolvePodRef(ref *apiv1.ObjectReference) *apiv1.Pod {
 }
 
 func (e *Endpoints) addServiceLabels(ns, name string, tg *targetgroup.Group) {
-	svc := &apiv1.Service{}
-	svc.Namespace = ns
-	svc.Name = name
-
-	obj, exists, err := e.serviceStore.Get(svc)
+	obj, exists, err := e.serviceStore.GetByKey(namespacedName(ns, name))
 	if err != nil {
 		e.logger.Error("retrieving service failed", "err", err)
 		return
@@ -515,7 +475,7 @@ func (e *Endpoints) addServiceLabels(ns, name string, tg *targetgroup.Group) {
 	if !exists {
 		return
 	}
-	svc = obj.(*apiv1.Service)
+	svc := obj.(*apiv1.Service)
 
 	tg.Labels = tg.Labels.Merge(serviceLabels(svc))
 }
