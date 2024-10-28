@@ -1402,6 +1402,10 @@ func (fm *FinalMsg) Size() int64 {
 	return n
 }
 
+func (fm *FinalMsg) CRC32() uint32 {
+	return 0
+}
+
 // WriteTo implements io.WriterTo interface
 func (fm *FinalMsg) WriteTo(w io.Writer) (int64, error) {
 	// error always nil

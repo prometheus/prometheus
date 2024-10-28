@@ -175,7 +175,7 @@ func (m *Manager) BuildWithConfig(inputRelabelerConfigs []*config.InputRelabeler
 	}
 	defer func() {
 		if err != nil {
-			//err = errors.Join(err, os.RemoveAll(dir))
+			err = errors.Join(err, os.RemoveAll(headDir))
 		}
 	}()
 
