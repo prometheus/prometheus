@@ -6125,80 +6125,143 @@ func testOOOInterleavedImplicitCounterResets(t *testing.T, name string, scenario
 		return
 	}
 
-	opts := DefaultOptions()
-	opts.OutOfOrderCapMax = 30
-	opts.OutOfOrderTimeWindow = 24 * time.Hour.Milliseconds()
+	// Not a sample, we're encoding an integer counter that we convert to a
+	// histogram with a single bucket.
+	type tsValue struct {
+		ts int64
+		v  int64
+	}
 
-	db := openTestDB(t, opts, nil)
-	db.DisableCompactions()
-	db.EnableOOONativeHistograms()
-	defer func() {
-		require.NoError(t, db.Close())
-	}()
+	cases := map[string]struct {
+		samples []tsValue
+		oooCap  int64
+		// The expected samples.
+		expectedSamples []tsValue
+		// The expected counter reset hints for each sample.
+		expectedQueryHint []histogram.CounterResetHint
+		// The expected counter reset hint for each chunk.
+		expectedChunkHint []histogram.CounterResetHint
+		expectedChunkSize []int
+	}{
+		"counter reset cleared by interleved in-order and OOO": {
+			samples: []tsValue{
+				{1, 40}, // New in In-order.
+				{4, 30}, // In-order counter reset.
+				{2, 40}, // New in OOO.
+				{3, 10}, // OOO counter reset.
+			},
+			oooCap: 30,
+			expectedSamples: []tsValue{
+				{1, 40},
+				{2, 40},
+				{3, 10}, // Counter reset.
+				{4, 30},
+			},
+			// Expect all to be set to UnknownCounterReset because we switch between
+			// in-order and out-of-order samples.
+			expectedQueryHint: []histogram.CounterResetHint{
+				histogram.UnknownCounterReset,
+				histogram.UnknownCounterReset,
+				histogram.UnknownCounterReset,
+				histogram.UnknownCounterReset,
+			},
+			// First sample is in its own chunk.
+			// Last 3 samples are added to iterable and re-encoded into
+			// two chunks along the counter reset.
+			expectedChunkHint: []histogram.CounterResetHint{
+				histogram.UnknownCounterReset,
+				histogram.UnknownCounterReset,
+				histogram.UnknownCounterReset,
+			},
+			expectedChunkSize: []int{
+				1,
+				1,
+				2,
+			},
+		},
+	}
 
-	app := db.Appender(context.Background())
+	for tcName, tc := range cases {
+		t.Run(tcName, func(t *testing.T) {
+			opts := DefaultOptions()
+			opts.OutOfOrderCapMax = tc.oooCap
+			opts.OutOfOrderTimeWindow = 24 * time.Hour.Milliseconds()
 
-	require.NoError(t, appendFunc(app, 1, 40)) // New in In-order.
-	require.NoError(t, appendFunc(app, 4, 30)) // In-order counter reset.
-	require.NoError(t, appendFunc(app, 2, 40)) // New in OOO.
-	require.NoError(t, appendFunc(app, 3, 10)) // OOO counter reset.
+			db := openTestDB(t, opts, nil)
+			db.DisableCompactions()
+			db.EnableOOONativeHistograms()
+			defer func() {
+				require.NoError(t, db.Close())
+			}()
 
-	// Result in order of readback: 40, 40, 10, 30, the only actual counter reset is between 40->10.
-	require.NoError(t, app.Commit())
-
-	t.Run("querier", func(t *testing.T) {
-		querier, err := db.Querier(0, 5)
-		require.NoError(t, err)
-		defer querier.Close()
-
-		seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar1"))
-		require.Len(t, seriesSet, 1)
-		samples, ok := seriesSet["{foo=\"bar1\"}"]
-		require.True(t, ok)
-		require.Len(t, samples, 4)
-
-		// We expect all unknown counter resets because we clear the counter reset
-		// hint when we switch between in-order and out-of-order samples.
-		for i, s := range samples {
-			switch name {
-			case intHistogram:
-				require.Equal(t, histogram.UnknownCounterReset, s.H().CounterResetHint, "sample %d", i)
-			case floatHistogram:
-				require.Equal(t, histogram.UnknownCounterReset, s.FH().CounterResetHint, "sample %d", i)
-			default:
-				t.Fatalf("unexpected sample type %s", name)
+			app := db.Appender(context.Background())
+			for _, s := range tc.samples {
+				require.NoError(t, appendFunc(app, s.ts, s.v))
 			}
-		}
-	})
+			require.NoError(t, app.Commit())
 
-	t.Run("chunk-querier", func(t *testing.T) {
-		querier, err := db.ChunkQuerier(0, 5)
-		require.NoError(t, err)
-		defer querier.Close()
+			t.Run("querier", func(t *testing.T) {
+				querier, err := db.Querier(0, 5)
+				require.NoError(t, err)
+				defer querier.Close()
 
-		chunkSet := queryAndExpandChunks(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar1"))
-		require.Len(t, chunkSet, 1)
-		chunks, ok := chunkSet["{foo=\"bar1\"}"]
-		require.True(t, ok)
-		idx := 0
-		for _, samples := range chunks {
-			for i, s := range samples {
-				expectHint := histogram.UnknownCounterReset
-				if i > 0 {
-					expectHint = histogram.NotCounterReset
+				seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar1"))
+				require.Len(t, seriesSet, 1)
+				samples, ok := seriesSet["{foo=\"bar1\"}"]
+				require.True(t, ok)
+				require.Len(t, samples, len(tc.samples))
+				require.Len(t, samples, len(tc.expectedSamples))
+
+				// We expect all unknown counter resets because we clear the counter reset
+				// hint when we switch between in-order and out-of-order samples.
+				for i, s := range samples {
+					switch name {
+					case intHistogram:
+						require.Equal(t, tc.expectedQueryHint[i], s.H().CounterResetHint, "sample %d", i)
+						require.Equal(t, tc.expectedSamples[i].v, int64(s.H().Count), "sample %d", i)
+					case floatHistogram:
+						require.Equal(t, tc.expectedQueryHint[i], s.FH().CounterResetHint, "sample %d", i)
+						require.Equal(t, tc.expectedSamples[i].v, int64(s.FH().Count), "sample %d", i)
+					default:
+						t.Fatalf("unexpected sample type %s", name)
+					}
 				}
-				switch name {
-				case intHistogram:
-					require.Equal(t, expectHint, s.H().CounterResetHint, "sample %d", idx)
-				case floatHistogram:
-					require.Equal(t, expectHint, s.FH().CounterResetHint, "sample %d", idx)
-				default:
-					t.Fatalf("unexpected sample type %s", name)
+			})
+
+			t.Run("chunk-querier", func(t *testing.T) {
+				querier, err := db.ChunkQuerier(0, 5)
+				require.NoError(t, err)
+				defer querier.Close()
+
+				chunkSet := queryAndExpandChunks(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar1"))
+				require.Len(t, chunkSet, 1)
+				chunks, ok := chunkSet["{foo=\"bar1\"}"]
+				require.True(t, ok)
+				require.Len(t, chunks, len(tc.expectedChunkHint))
+				idx := 0
+				for i, samples := range chunks {
+					require.Len(t, samples, tc.expectedChunkSize[i])
+					for j, s := range samples {
+						expectHint := tc.expectedChunkHint[i]
+						if j > 0 {
+							expectHint = histogram.NotCounterReset
+						}
+						switch name {
+						case intHistogram:
+							require.Equal(t, expectHint, s.H().CounterResetHint, "sample %d", idx)
+							require.Equal(t, tc.expectedSamples[idx].v, int64(s.H().Count), "sample %d", idx)
+						case floatHistogram:
+							require.Equal(t, expectHint, s.FH().CounterResetHint, "sample %d", idx)
+							require.Equal(t, tc.expectedSamples[idx].v, int64(s.FH().Count), "sample %d", idx)
+						default:
+							t.Fatalf("unexpected sample type %s", name)
+						}
+						idx++
+					}
 				}
-				idx++
-			}
-		}
-	})
+			})
+		})
+	}
 }
 
 func testOOONativeHistogramsWithCounterResets(t *testing.T, scenario sampleTypeScenario) {
