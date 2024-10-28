@@ -4,11 +4,13 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
+	"github.com/prometheus/prometheus/pp/go/model"
 	"github.com/stretchr/testify/suite"
 )
 
 type HeadSuite struct {
 	suite.Suite
+	lss         *cppbridge.LabelSetStorage
 	dataStorage *cppbridge.HeadDataStorage
 	encoder     *cppbridge.HeadEncoder
 }
@@ -18,17 +20,21 @@ func TestHeadSuite(t *testing.T) {
 }
 
 func (s *HeadSuite) SetupTest() {
+	s.lss = cppbridge.NewQueryableLssStorage()
 	s.dataStorage = cppbridge.NewHeadDataStorage()
 	s.encoder = cppbridge.NewHeadEncoderWithDataStorage(s.dataStorage)
 }
 
 func (s *HeadSuite) TestChunkRecoder() {
 	// Arrange
-	s.encoder.Encode(2, 1, 1.0)
-	s.encoder.Encode(2, 2, 1.0)
-	s.encoder.Encode(4, 3, 2.0)
-	s.encoder.Encode(4, 4, 2.0)
-	recoder := cppbridge.NewChunkRecoder(s.dataStorage, cppbridge.TimeInterval{MinT: 0, MaxT: 5})
+	s.lss.FindOrEmplace(model.NewLabelSetBuilder().Set("job", "1").Build())
+	s.lss.FindOrEmplace(model.NewLabelSetBuilder().Set("job", "2").Build())
+
+	s.encoder.Encode(0, 1, 1.0)
+	s.encoder.Encode(0, 2, 1.0)
+	s.encoder.Encode(1, 3, 2.0)
+	s.encoder.Encode(1, 4, 2.0)
+	recoder := cppbridge.NewChunkRecoder(s.lss, s.dataStorage, cppbridge.TimeInterval{MinT: 0, MaxT: 5})
 
 	// Act
 	chunk2 := recoder.RecodeNextChunk()
@@ -42,7 +48,7 @@ func (s *HeadSuite) TestChunkRecoder() {
 			MaxT: 2,
 		},
 		SamplesCount: 2,
-		SeriesId:     2,
+		SeriesId:     0,
 		HasMoreData:  true,
 		ChunkData:    []byte{0x00, 0x02, 0x02, 0x3f, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00},
 	}, chunk2)
@@ -52,7 +58,7 @@ func (s *HeadSuite) TestChunkRecoder() {
 			MaxT: 4,
 		},
 		SamplesCount: 2,
-		SeriesId:     4,
+		SeriesId:     1,
 		HasMoreData:  false,
 		ChunkData:    []byte{0x00, 0x02, 0x06, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00},
 	}, chunk4)

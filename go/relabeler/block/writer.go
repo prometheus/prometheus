@@ -68,10 +68,15 @@ type ChunkIterator interface {
 	At() Chunk
 }
 
+type IndexWriter interface {
+	WriteSeriesTo(uint32, []ChunkMetadata, io.Writer) (int64, error)
+	WriteRestTo(io.Writer) (int64, error)
+}
+
 type Block interface {
 	TimeBounds() (minT, maxT int64)
 	ChunkIterator(minT, maxT int64) ChunkIterator
-	IndexWriterTo(metadataList [][]ChunkMetadata) io.WriterTo
+	IndexWriter() IndexWriter
 }
 
 func (w *BlockWriter) Write(block Block) error {
@@ -115,11 +120,30 @@ func (w *BlockWriter) write(block Block, minT, maxT int64) (err error) {
 	}
 	closers = append(closers, chunkw)
 
+	indexFileWriter, err := NewFileWriter(filepath.Join(tmp, indexFilename))
+	if err != nil {
+		return fmt.Errorf("failed to create index file writer: %w", err)
+	}
+
+	closers = append(closers, indexFileWriter)
+	indexWriter := block.IndexWriter()
+
 	chunkIterator := block.ChunkIterator(minT, maxT)
-	var chunkMetadataListBySeries [][]ChunkMetadata
+	var chunksMetadata []ChunkMetadata
 	var chunkMetadata ChunkMetadata
-	var previousSeriesID *uint32
+	var previousSeriesID uint32 = math.MaxUint32
 	var chunk Chunk
+
+	writeSeries := func() error {
+		if len(chunksMetadata) == 0 {
+			return nil
+		}
+		_, err = indexWriter.WriteSeriesTo(previousSeriesID, chunksMetadata, indexFileWriter)
+		if err != nil {
+			return fmt.Errorf("failed to write series %d: %w", previousSeriesID, err)
+		}
+		return nil
+	}
 
 	blockMeta := &tsdb.BlockMeta{ULID: uid, MinTime: math.MaxInt64, MaxTime: math.MinInt64}
 
@@ -133,34 +157,24 @@ func (w *BlockWriter) write(block Block, minT, maxT int64) (err error) {
 		adjustBlockMetaTimeRange(blockMeta, chunk.MinT(), chunk.MaxT())
 		blockMeta.Stats.NumChunks++
 		blockMeta.Stats.NumSamples += uint64(chunk.SampleCount())
-
-		if previousSeriesID == nil {
-			chunkMetadataListBySeries = appendChunkMetadata(chunkMetadataListBySeries, chunk, chunkMetadata)
-			blockMeta.Stats.NumSeries++
-		} else {
-			if *previousSeriesID == chunk.SeriesID() {
-				chunkMetadataList := chunkMetadataListBySeries[len(chunkMetadataListBySeries)-1]
-				chunkMetadataList = append(chunkMetadataList, chunkMetadata)
-				chunkMetadataListBySeries[len(chunkMetadataListBySeries)-1] = chunkMetadataList
-			} else {
-				chunkMetadataListBySeries = appendChunkMetadata(chunkMetadataListBySeries, chunk, chunkMetadata)
-				blockMeta.Stats.NumSeries++
-			}
-		}
-
 		seriesID := chunk.SeriesID()
-		previousSeriesID = &seriesID
+
+		if previousSeriesID == seriesID {
+			chunksMetadata = append(chunksMetadata, chunkMetadata)
+		} else {
+			if err = writeSeries(); err != nil {
+				return err
+			}
+			blockMeta.Stats.NumSeries++
+			chunksMetadata = append(chunksMetadata[:0], chunkMetadata)
+			previousSeriesID = seriesID
+		}
 	}
 
-	// write index
-	indexFileWriter, err := NewFileWriter(filepath.Join(tmp, indexFilename))
-	if err != nil {
-		return fmt.Errorf("failed to create index file writer: %w", err)
+	if err = writeSeries(); err != nil {
+		return err
 	}
-
-	closers = append(closers, indexFileWriter)
-	indexWriterTo := block.IndexWriterTo(chunkMetadataListBySeries)
-	indexFileSize, err := indexWriterTo.WriteTo(indexFileWriter)
+	indexFileSize, err := indexWriter.WriteRestTo(indexFileWriter)
 	if err != nil {
 		return fmt.Errorf("failed to write index: %w", err)
 	}

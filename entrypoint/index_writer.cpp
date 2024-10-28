@@ -8,8 +8,7 @@
 
 using PromPP::Primitives::Go::SliceView;
 using series_index::prometheus::tsdb::index::ChunkMetadata;
-using ChunkMetadataList = SliceView<SliceView<ChunkMetadata>>;
-using IndexWriter = series_index::prometheus::tsdb::index::IndexWriter<ChunkMetadataList, PromPP::Primitives::Go::BytesStream>;
+using IndexWriter = series_index::prometheus::tsdb::index::IndexWriter<PromPP::Primitives::Go::BytesStream>;
 using IndexWriterPtr = std::unique_ptr<IndexWriter>;
 
 static_assert(sizeof(IndexWriterPtr) == sizeof(void*));
@@ -22,14 +21,13 @@ static PromPP::Primitives::Go::BytesStream create_bytes_stream(PromPP::Primitive
 extern "C" void prompp_index_writer_ctor(void* args, void* res) {
   struct Arguments {
     entrypoint::head::LssVariantPtr lss;
-    const ChunkMetadataList* chunk_metadata_list;
   };
   struct Result {
     IndexWriterPtr writer;
   };
 
   const auto in = static_cast<Arguments*>(args);
-  new (res) Result{.writer = std::make_unique<IndexWriter>(std::get<entrypoint::head::QueryableEncodingBimap>(*in->lss), *in->chunk_metadata_list)};
+  new (res) Result{.writer = std::make_unique<IndexWriter>(std::get<entrypoint::head::QueryableEncodingBimap>(*in->lss))};
 }
 
 extern "C" void prompp_index_writer_dtor(void* args) {
@@ -67,19 +65,18 @@ extern "C" void prompp_index_writer_write_symbols(void* args, void* res) {
 extern "C" void prompp_index_writer_write_next_series_batch(void* args, void* res) {
   struct Arguments {
     IndexWriterPtr writer;
-    uint32_t batch_size;
+    SliceView<ChunkMetadata> chunk_metadata_list;
+    PromPP::Primitives::LabelSetID ls_id;
   };
   struct Result {
     PromPP::Primitives::Go::Slice<char> buffer;
-    bool has_more_data;
   };
 
   const auto in = static_cast<Arguments*>(args);
   const auto out = static_cast<Result*>(res);
 
   auto stream = create_bytes_stream(out->buffer);
-  in->writer->write_series(stream, in->batch_size);
-  out->has_more_data = in->writer->has_more_series_data();
+  in->writer->write_series(in->ls_id, in->chunk_metadata_list, stream);
 }
 
 extern "C" void prompp_index_writer_write_label_indices(void* args, void* res) {

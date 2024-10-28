@@ -20,18 +20,6 @@ func (s *IndexWriterSuite) setLabelSets(label_sets []model.LabelSet) {
 	}
 }
 
-func (s *IndexWriterSuite) writeSeries(batch_size uint32) []byte {
-	var bytes []byte
-	for {
-		data, has_more_data := s.writer.WriteNextSeriesBatch(batch_size)
-		bytes = append(bytes, data...)
-		if !has_more_data {
-			break
-		}
-	}
-	return bytes
-}
-
 func (s *IndexWriterSuite) writePostings(max_batch_size uint32) []byte {
 	var bytes []byte
 	for {
@@ -74,12 +62,14 @@ func (s *IndexWriterSuite) TestWriteFullIndex() {
 			{MinTimestamp: 2002, MaxTimestamp: 4004, Reference: 550},
 		},
 	}
-	s.writer = cppbridge.NewIndexWriter(s.lssStorage, &chunk_metadata_list)
+	s.writer = cppbridge.NewIndexWriter(s.lssStorage)
 
 	// Act
 	index := append([]byte(nil), s.writer.WriteHeader()...)
 	index = append(index, s.writer.WriteSymbols()...)
-	index = append(index, s.writeSeries(1)...)
+	index = append(index, s.writer.WriteSeries(2, chunk_metadata_list[2])...)
+	index = append(index, s.writer.WriteSeries(1, chunk_metadata_list[1])...)
+	index = append(index, s.writer.WriteSeries(0, chunk_metadata_list[0])...)
 	index = append(index, s.writer.WriteLabelIndices()...)
 	index = append(index, s.writePostings(16)...)
 	index = append(index, s.writer.WriteLabelIndicesTable()...)

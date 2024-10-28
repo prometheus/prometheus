@@ -44,6 +44,15 @@ bazel_in_root := cd $(bazel_workspace_root)
 # use bazel_build_march
 bazel_build = $(bazel) build $(bazel_flags)
 
+# bazel_test exposed to bazel test command prefix
+#
+# Use this string in manner
+# ```
+# $(bazel_in_root);\
+# 	$(bazel_test) -- //:my-target
+# ```
+bazel_test = $(bazel) test $(bazel_flags)
+
 # bazel_build_march is a function to add --march flag to standard bazel_build
 #
 # Use this function in manner
