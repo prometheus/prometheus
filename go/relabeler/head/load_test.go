@@ -347,13 +347,7 @@ func appendTimeSeries(t *testing.T, ctx context.Context, h *head.Head, timeSerie
 	require.NoError(t, err)
 
 	incomingData := &relabeler.IncomingData{Hashdex: hx, Data: tsd}
-	metricLimits := &cppbridge.MetricLimits{
-		LabelLimit:            30,
-		LabelNameLengthLimit:  200,
-		LabelValueLengthLimit: 200,
-		SampleLimit:           1500,
-	}
 
-	_, err = h.Append(ctx, incomingData, cppbridge.RelabelerOptions{MetricLimits: metricLimits}, nil, 0, "transparent_relabeler")
+	_, err = h.Append(ctx, incomingData, cppbridge.NewState(h.NumberOfShards()), "transparent_relabeler")
 	return err
 }

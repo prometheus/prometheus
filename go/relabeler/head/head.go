@@ -204,12 +204,11 @@ func New(
 		dataStorages:               dataStorages,
 		stageInputRelabeling:       stageInputRelabeling,
 		stageAppendRelabelerSeries: stageAppendRelabelerSeries,
-		stageUpdateRelabelerState:  stageUpdateRelabelerState,
 		genericTaskCh:              genericTaskCh,
 		stopc:                      make(chan struct{}),
 		wg:                         &sync.WaitGroup{},
-		relabelersData:   make(map[string]*RelabelerData, len(inputRelabelerConfigs)),
-		numberOfShards: numberOfShards,
+		relabelersData:             make(map[string]*RelabelerData, len(inputRelabelerConfigs)),
+		numberOfShards:             numberOfShards,
 		// stat
 		memoryInUse: factory.NewGaugeVec(
 			prometheus.GaugeOpts{

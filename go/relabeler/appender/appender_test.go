@@ -1482,7 +1482,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 
 	rotationTimer := relabeler.NewRotateTimer(clock, appender.DefaultRotateDuration)
 	defer rotationTimer.Stop()
-	rotator := appender.NewRotator(app, rotationTimer)
+	rotator := appender.NewRotator(app, rotationTimer, prometheus.DefaultRegisterer)
 	rotator.Run()
 	defer func() { _ = rotator.Close() }()
 
@@ -2118,7 +2118,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 
 	rotationTimer := relabeler.NewRotateTimer(clock, appender.DefaultRotateDuration)
 	defer rotationTimer.Stop()
-	rotator := appender.NewRotator(app, rotationTimer)
+	rotator := appender.NewRotator(app, rotationTimer, prometheus.DefaultRegisterer)
 	rotator.Run()
 	defer func() { _ = rotator.Close() }()
 

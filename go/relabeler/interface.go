@@ -41,7 +41,6 @@ type Shard interface {
 	DataStorage() DataStorage
 	LSS() LSS
 	Wal() Wal
-	InputRelabelers() map[string]InputRelabeler
 }
 
 // ShardFn - shard function.
