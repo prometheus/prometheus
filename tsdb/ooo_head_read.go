@@ -264,7 +264,6 @@ func (cr *HeadAndOOOChunkReader) chunkOrIterable(meta chunks.Meta, copyLastChunk
 	if !ok { // Complete chunk was supplied.
 		return meta.Chunk, nil, meta.MaxTime, nil
 	}
-
 	// We have a composite meta: construct a composite iterable.
 	mc := &mergedOOOChunks{}
 	for _, m := range mm.metas {
