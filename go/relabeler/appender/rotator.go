@@ -7,6 +7,7 @@ import (
 	"github.com/prometheus/prometheus/pp/go/relabeler"
 	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 	"github.com/prometheus/prometheus/pp/go/util"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // DefaultRotateDuration - default block duration.
@@ -19,19 +20,32 @@ type Rotatable interface {
 
 // Rotator is a rotation trigger.
 type Rotator struct {
-	rotatable   Rotatable
-	rotateTimer *relabeler.RotateTimer
-	run         chan struct{}
-	closer      *util.Closer
+	rotatable     Rotatable
+	rotateTimer   *relabeler.RotateTimer
+	run           chan struct{}
+	closer        *util.Closer
+	rotateCounter prometheus.Counter
 }
 
 // NewRotator - Rotator constructor.
-func NewRotator(rotatable Rotatable, clock clockwork.Clock, rotateDuration time.Duration) *Rotator {
+func NewRotator(
+	rotatable Rotatable,
+	clock clockwork.Clock,
+	rotateDuration time.Duration,
+	registerer prometheus.Registerer,
+) *Rotator {
+	factory := util.NewUnconflictRegisterer(registerer)
 	r := &Rotator{
 		rotatable:   rotatable,
 		rotateTimer: relabeler.NewRotateTimer(clock, rotateDuration),
 		run:         make(chan struct{}),
 		closer:      util.NewCloser(),
+		rotateCounter: factory.NewCounter(
+			prometheus.CounterOpts{
+				Name: "prompp_rotator_rotate_count",
+				Help: "Total counter of rotate rotatable object.",
+			},
+		),
 	}
 	go r.loop()
 
@@ -64,6 +78,7 @@ func (r *Rotator) loop() {
 			if err := r.rotatable.Rotate(); err != nil {
 				logger.Errorf("rotation failed: %s", err.Error())
 			}
+			r.rotateCounter.Inc()
 
 			r.rotateTimer.Reset()
 		}

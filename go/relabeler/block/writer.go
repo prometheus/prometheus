@@ -22,7 +22,9 @@ import (
 
 const (
 	// DefaultChunkSegmentSize is the default chunks segment size.
-	DefaultChunkSegmentSize      = 512 * 1024 * 1024
+	DefaultChunkSegmentSize = 512 * 1024 * 1024
+	// DefaultBlockDuration is the default block duration.
+	DefaultBlockDuration         = 2 * time.Hour
 	tmpForCreationBlockDirSuffix = ".tmp-for-creation"
 	indexFilename                = "index"
 	metaFilename                 = "meta.json"

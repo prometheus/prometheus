@@ -39,7 +39,11 @@ type QueryableStorage struct {
 }
 
 // NewQueryableStorage - QueryableStorage constructor.
-func NewQueryableStorage(blockWriter BlockWriter, registerer prometheus.Registerer, querierMetrics *querier.Metrics) *QueryableStorage {
+func NewQueryableStorage(
+	blockWriter BlockWriter,
+	registerer prometheus.Registerer,
+	querierMetrics *querier.Metrics,
+) *QueryableStorage {
 	factory := util.NewUnconflictRegisterer(registerer)
 	qs := &QueryableStorage{
 		blockWriter: blockWriter,

@@ -3,9 +3,10 @@ package distributor
 import (
 	"context"
 	"errors"
+	"sync"
+
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler"
-	"sync"
 )
 
 type Distributor struct {
@@ -20,6 +21,16 @@ func NewDistributor(destinationGroups relabeler.DestinationGroups) *Distributor 
 }
 
 func (d *Distributor) Send(ctx context.Context, head relabeler.Head, shardedData [][]*cppbridge.InnerSeries) error {
+	_ = d.ParallelRange(func(_ int, dg *relabeler.DestinationGroup) error {
+		dg.RotateLock()
+		return nil
+	})
+
+	defer d.ParallelRange(func(_ int, dg *relabeler.DestinationGroup) error {
+		dg.RotateUnlock()
+		return nil
+	})
+
 	outputPromise := NewOutputRelabelingPromise(&d.destinationGroups, head.NumberOfShards())
 	err := head.ForEachShard(func(shard relabeler.Shard) error {
 		return d.ParallelRange(func(destinationGroupID int, destinationGroup *relabeler.DestinationGroup) error {

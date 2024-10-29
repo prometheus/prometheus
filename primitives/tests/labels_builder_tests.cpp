@@ -1,15 +1,12 @@
 #include <gtest/gtest.h>
 
-#include "primitives/go_slice.h"
 #include "primitives/primitives.h"
-#include "primitives/snug_composites.h"
 
 namespace {
 
 struct TestLabelsBuilder : public testing::Test {
   PromPP::Primitives::LabelsBuilderStateMap builder_state_;
-  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelViewSet, PromPP::Primitives::LabelsBuilderStateMap> builder_ =
-      PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelViewSet, PromPP::Primitives::LabelsBuilderStateMap>(builder_state_);
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder_{builder_state_};
   PromPP::Primitives::LabelViewSet ls_view_;
   PromPP::Primitives::LabelSet ls_;
   std::vector<std::pair<std::string, std::string>> DATA{{"qwe", "ewq"}, {"asd", "dsa"}, {"zxc", "cxz"}};
@@ -105,6 +102,18 @@ TEST_F(TestLabelsBuilder, Get) {
     std::string_view b_lvalue = builder_.get(lname);
     EXPECT_EQ(b_lvalue, lvalue);
   }
+}
+
+TEST_F(TestLabelsBuilder, Extract) {
+  for (auto& [lname, lvalue] : DATA) {
+    ls_view_.add({lname, lvalue});
+    builder_.set(lname, lvalue);
+  }
+
+  auto l = builder_.extract(DATA[0].first);
+
+  EXPECT_EQ(DATA[0], l);
+  EXPECT_EQ(builder_.get(l.first), "");
 }
 
 TEST_F(TestLabelsBuilder, Del) {

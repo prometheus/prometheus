@@ -33,31 +33,22 @@ func NewQueryableAppender(
 func (qa *QueryableAppender) Append(
 	ctx context.Context,
 	incomingData *relabeler.IncomingData,
-	options cppbridge.RelabelerOptions,
+	state *cppbridge.State,
 	relabelerID string,
 ) error {
-	return qa.AppendWithStaleNans(
-		ctx,
-		incomingData,
-		options,
-		nil,
-		0,
-		relabelerID,
-	)
+	return qa.AppendWithStaleNans(ctx, incomingData, state, relabelerID)
 }
 
 func (qa *QueryableAppender) AppendWithStaleNans(
 	ctx context.Context,
 	incomingData *relabeler.IncomingData,
-	options cppbridge.RelabelerOptions,
-	sourceStates *relabeler.SourceStates,
-	staleNansTS int64,
+	state *cppbridge.State,
 	relabelerID string,
 ) error {
 	qa.lock.Lock()
 	defer qa.lock.Unlock()
 
-	data, err := qa.head.Append(ctx, incomingData, options, sourceStates, staleNansTS, relabelerID)
+	data, err := qa.head.Append(ctx, incomingData, state, relabelerID)
 	if err != nil {
 		return err
 	}

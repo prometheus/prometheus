@@ -96,10 +96,9 @@ void prompp_prometheus_relabeled_series_dtor(void* args);
  *
  * @param res {
  *     relabeler_state_update *RelabelerStateUpdate // pointer to RelabelerStateUpdate;
- *     generation             uint32                // current generation;
  * }
  */
-void prompp_prometheus_relabeler_state_update_ctor(void* res);
+void prompp_prometheus_relabeler_state_update_ctor(void* args);
 
 /**
  * @brief Destroy vector in RelabelerStateUpdate.
@@ -129,7 +128,6 @@ void prompp_prometheus_stalenans_state_dtor(void* args);
  * @param args {
  *     external_labels     []Label // slice with external labels;
  *     stateless_relabeler uintptr // pointer to constructed stateless relabeler;
- *     generation          uint32  // generation of lss;
  *     shard_id            uint16  // current shard id;
  *     log_shards          uint8   // logarithm to the base 2 of total shards count;
  * }
@@ -172,6 +170,7 @@ void prompp_prometheus_per_shard_relabeler_cache_allocated_memory(void* args, vo
  *     options                 RelabelerOptions   // object RelabelerOptions;
  *     per_shard_relabeler     uintptr            // pointer to constructed per shard relabeler;
  *     hashdex                 uintptr            // pointer to filled hashdex;
+ *     cache                   uintptr            // pointer to constructed Cache;
  *     lss                     uintptr            // pointer to constructed label sets;
  * }
  *
@@ -190,6 +189,7 @@ void prompp_prometheus_per_shard_relabeler_input_relabeling(void* args, void* re
  *     options                 RelabelerOptions   // object RelabelerOptions;
  *     per_shard_relabeler     uintptr            // pointer to constructed per shard relabeler;
  *     hashdex                 uintptr            // pointer to filled hashdex;
+ *     cache                   uintptr            // pointer to constructed Cache;
  *     lss                     uintptr            // pointer to constructed label sets;
  *     source_state            uintptr            // pointer to source state (null on first call)
  *     stale_ts                int64              // timestamp for StaleNaNs
@@ -225,6 +225,7 @@ void prompp_prometheus_per_shard_relabeler_append_relabeler_series(void* args, v
  * @param args {
  *     relabeler_state_update *RelabelerStateUpdate // pointer to RelabelerStateUpdate;
  *     per_shard_relabeler    uintptr               // pointer to constructed per shard relabeler;
+ *     cache                  uintptr               // pointer to constructed Cache;
  *     relabeled_shard_id     uint16                // relabeled shard id;
  * }
  *
@@ -243,7 +244,7 @@ void prompp_prometheus_per_shard_relabeler_update_relabeler_state(void* args, vo
  *     shards_relabeled_series   []*RelabeledSeries // go slice with output RelabeledSeries;
  *     per_shard_relabeler       uintptr            // pointer to constructed per shard relabeler;
  *     lss                       uintptr            // pointer to constructed label sets;
- *     generation                uint32             // current encoders generation;
+ *     cache                     uintptr            // pointer to constructed Cache;
  * }
  *
  * @param res {
@@ -253,16 +254,59 @@ void prompp_prometheus_per_shard_relabeler_update_relabeler_state(void* args, vo
 void prompp_prometheus_per_shard_relabeler_output_relabeling(void* args, void* res);
 
 /**
- * @brief reset cache and store lss generation.
+ * @brief reset set new number_of_shards and external_labels.
  *
  * @param args {
  *     external_labels     []Label // slice with external lables(pair string);
  *     per_shard_relabeler uintptr // pointer to constructed per shard relabeler;
- *     generation          uint32  // generation of lss;
  *     number_of_shards    uint16  // total shards count;
  * }
  */
 void prompp_prometheus_per_shard_relabeler_reset_to(void* args);
+
+//
+// Relabeler cache
+//
+
+/**
+ * @brief Construct a new Cache.
+ *
+ * @param res {
+ *     cache               uintptr // pointer to constructed Cache;
+ * }
+ */
+void prompp_prometheus_cache_ctor(void* res);
+
+/**
+ * @brief Destroy Cache.
+ *
+ * @param args {
+ *     cache               uintptr // pointer to constructed Cache;
+ * }
+ */
+void prompp_prometheus_cache_dtor(void* args);
+
+/**
+ * @brief return size of allocated memory for caches.
+ *
+ * @param args {
+ *     cache               uintptr // pointer to constructed Cache;
+ * }
+ *
+ * @param res {
+ *     allocated_memory    uint64  // size of allocated memory for label sets;
+ * }
+ */
+void prompp_prometheus_cache_allocated_memory(void* args, void* res);
+
+/**
+ * @brief reset cache and store lss generation.
+ *
+ * @param args {
+ *     cache               uintptr // pointer to constructed Cache;
+ * }
+ */
+void prompp_prometheus_cache_reset_to(void* args);
 
 #ifdef __cplusplus
 }  // extern "C"
