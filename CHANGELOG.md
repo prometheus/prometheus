@@ -11,8 +11,9 @@
 * [CHANGE] Disallow configuring AM with the v1 api. #13883
 * [ENHANCEMENT] Scraping, rules: handle targets reappearing, or rules moving group, when out-of-order is enabled. #14710
 * [ENHANCEMENT] Tools: add debug printouts to promtool rules unit testing #15196
-- [BUGFIX] PromQL: Fix stddev+stdvar aggregations to always ignore native histograms. #14941
-- [BUGFIX] PromQL: Fix stddev+stdvar aggregations to treat Infinity consistently. #14941
+* [ENHANCEMENT] Scraping: support Created-Timestamp feature on native histograms. #14694
+* [BUGFIX] PromQL: Fix stddev+stdvar aggregations to always ignore native histograms. #14941
+* [BUGFIX] PromQL: Fix stddev+stdvar aggregations to treat Infinity consistently. #14941
 
 ## 3.0.0-beta.1 / 2024-10-09
 
