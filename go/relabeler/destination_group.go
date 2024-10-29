@@ -153,15 +153,8 @@ func NewDestinationGroup(
 			[]string{"allocator", "id"},
 		),
 	}
-	statelessRelabeler, err := dg.updateOrCreateStatelessRelabeler(dgCfg.Relabeling)
-	if err != nil {
-		return nil, err
-	}
 
-	if err = dg.reshardingOutputRelabelers(statelessRelabeler, dgCfg, dgCfg.NumberOfShards); err != nil {
-		return nil, err
-	}
-
+	var err error
 	dg.managerKeeper, err = NewManagerKeeper(
 		ctx,
 		dgCfg.ManagerKeeper,
@@ -176,6 +169,15 @@ func NewDestinationGroup(
 		registerer,
 	)
 	if err != nil {
+		return nil, err
+	}
+
+	statelessRelabeler, err := dg.updateOrCreateStatelessRelabeler(dgCfg.Relabeling)
+	if err != nil {
+		return nil, err
+	}
+
+	if err = dg.reshardingOutputRelabelers(statelessRelabeler, dgCfg, dgCfg.NumberOfShards); err != nil {
 		return nil, err
 	}
 
@@ -268,7 +270,6 @@ func (dg *DestinationGroup) OutputRelabeling(
 		data,
 		encodersInnerSeries,
 		relabeledSeries,
-		dg.managerKeeper.Generation(),
 	)
 }
 
@@ -280,7 +281,7 @@ func (dg *DestinationGroup) OutputStateUpdates() [][]*cppbridge.RelabelerStateUp
 		encodersStateUpdates[i] = make([]*cppbridge.RelabelerStateUpdate, 1<<dg.managerKeeper.ShardsNumberPower())
 		for j := range encodersStateUpdates[i] {
 			// set current DestinationGroup(lss) generation
-			encodersStateUpdates[i][j] = cppbridge.NewRelabelerStateUpdateWithGeneration(dg.managerKeeper.Generation())
+			encodersStateUpdates[i][j] = cppbridge.NewRelabelerStateUpdate()
 		}
 	}
 
@@ -421,6 +422,14 @@ func (dg *DestinationGroup) reshardingOutputRelabelers(
 	dgCfg *DestinationGroupConfig,
 	numberOfShards uint16,
 ) error {
+	for shardID := range dg.outputRelabelers {
+		if shardID >= int(numberOfShards) {
+			continue
+		}
+
+		dg.outputRelabelers[shardID].ResetCache(dg.managerKeeper.Generation(), numberOfShards)
+	}
+
 	if len(dg.outputRelabelers) == int(numberOfShards) {
 		return nil
 	}
@@ -457,7 +466,7 @@ func (dg *DestinationGroup) reshardingOutputRelabelers(
 		outputRelabeler, err := cppbridge.NewOutputPerShardRelabeler(
 			dgCfg.ExternalLabels,
 			statelessRelabeler,
-			0,
+			dg.managerKeeper.Generation(),
 			dg.cfg.NumberOfShards,
 			shardID,
 		)

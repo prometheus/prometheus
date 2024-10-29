@@ -1759,16 +1759,19 @@ struct TestPerShardRelabeler : public testing::Test {
   PromPP::Primitives::Go::SliceView<std::pair<PromPP::Primitives::Go::String, PromPP::Primitives::Go::String>> external_labels_;
 
   // target_labels
-  std::vector<std::pair<PromPP::Primitives::Go::String, PromPP::Primitives::Go::String>> vector_target_labels_;
+  std::vector<std::pair<PromPP::Primitives::Go::String, PromPP::Primitives::Go::String>> vector_target_labels_{};
 
   // Options
-  PromPP::Prometheus::Relabel::Options o_;
+  PromPP::Prometheus::Relabel::RelabelerOptions o_;
 
   // Hashdex
   HashdexTest hx_;
 
   // LSS
   PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap lss_;
+
+  // Cache
+  PromPP::Prometheus::Relabel::Cache cache_{};
 
   void reset() {
     TearDown();
@@ -1813,95 +1816,58 @@ struct TestPerShardRelabeler : public testing::Test {
 
 TEST_F(TestPerShardRelabeler, KeepEQ) {
   RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2};  // Keep
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
-  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 0, 2, 1);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   make_hashdex(hx_, make_label_set({{"__name__", "value"}, {"job", "abc"}}), make_samples({{1712567046855, 0.1}}));
 
-  prs.input_relabeling(lss_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
   // shard id 1
   EXPECT_EQ(relabeled_results_[0]->size(), 0);
   EXPECT_EQ(relabeled_results_[1]->size(), 0);
   EXPECT_EQ(shards_inner_series_[0]->size(), 0);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
 
-  PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data(0);
+  PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data{};
   prs.append_relabeler_series(lss_, shards_inner_series_[1], relabeled_results_[1], &update_data);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
   EXPECT_EQ(update_data.size(), 0);
 
-  prs.update_relabeler_state(&update_data, 1);
-
   vector_shards_inner_series_[1] = std::make_unique<PromPP::Prometheus::Relabel::InnerSeries>();
-  prs.input_relabeling(lss_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
 }
 
 TEST_F(TestPerShardRelabeler, KeepEQ_OrderedEncodingBimap) {
+  PromPP::Primitives::SnugComposites::LabelSet::OrderedEncodingBimap lss;
   RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2};  // Keep
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
-  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 0, 2, 1);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   make_hashdex(hx_, make_label_set({{"__name__", "value"}, {"job", "abc"}}), make_samples({{1712567046855, 0.1}}));
 
-  prs.input_relabeling(lss_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
   // shard id 1
   EXPECT_EQ(relabeled_results_[0]->size(), 0);
   EXPECT_EQ(relabeled_results_[1]->size(), 0);
   EXPECT_EQ(shards_inner_series_[0]->size(), 0);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
 
-  PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data(0);
+  PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data{};
   prs.append_relabeler_series(lss_, shards_inner_series_[1], relabeled_results_[1], &update_data);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
   EXPECT_EQ(update_data.size(), 0);
 
-  prs.update_relabeler_state(&update_data, 1);
-
   vector_shards_inner_series_[1] = std::make_unique<PromPP::Prometheus::Relabel::InnerSeries>();
-  prs.input_relabeling(lss_, hx_, o_, shards_inner_series_, relabeled_results_);
-  EXPECT_EQ(shards_inner_series_[1]->size(), 1);
-}
-
-TEST_F(TestPerShardRelabeler, KeepEQReset) {
-  RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2};  // Keep
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
-  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 0, 2, 1);
-  make_hashdex(hx_, make_label_set({{"__name__", "value"}, {"job", "abc"}}), make_samples({{1712567046855, 0.1}}));
-
-  prs.input_relabeling(lss_, hx_, o_, shards_inner_series_, relabeled_results_);
-  // shard id 1
-  EXPECT_EQ(relabeled_results_[0]->size(), 0);
-  EXPECT_EQ(relabeled_results_[1]->size(), 0);
-  EXPECT_EQ(shards_inner_series_[0]->size(), 0);
-  EXPECT_EQ(shards_inner_series_[1]->size(), 1);
-
-  PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data(0);
-  prs.append_relabeler_series(lss_, shards_inner_series_[1], relabeled_results_[1], &update_data);
-  EXPECT_EQ(shards_inner_series_[1]->size(), 1);
-  EXPECT_EQ(update_data.size(), 0);
-
-  prs.update_relabeler_state(&update_data, 1);
-
-  prs.reset_to(1, 2);
-  vector_shards_inner_series_[1] = std::make_unique<PromPP::Prometheus::Relabel::InnerSeries>();
-  prs.input_relabeling(lss_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
 }
 
 TEST_F(TestPerShardRelabeler, KeepNE) {
   RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"job"}, .regex = "no-match", .action = 2};  // Keep
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
-  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 0, 2, 1);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   make_hashdex(hx_, make_label_set({{"__name__", "value"}, {"job", "abc"}}), make_samples({{1712567046855, 0.1}}));
 
-  prs.input_relabeling(lss_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
   // shard id 1
   EXPECT_EQ(relabeled_results_[0]->size(), 0);
   EXPECT_EQ(relabeled_results_[1]->size(), 0);
@@ -1911,30 +1877,26 @@ TEST_F(TestPerShardRelabeler, KeepNE) {
 
 TEST_F(TestPerShardRelabeler, KeepEQNE) {
   RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2};  // Keep
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
-  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 0, 2, 1);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   make_hashdex(hx_, make_label_set({{"__name__", "value"}, {"job", "abc"}}), make_samples({{1712567046855, 0.1}}));
 
-  prs.input_relabeling(lss_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
   // shard id 1
   EXPECT_EQ(relabeled_results_[0]->size(), 0);
   EXPECT_EQ(relabeled_results_[1]->size(), 0);
   EXPECT_EQ(shards_inner_series_[0]->size(), 0);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
 
-  PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data(0);
+  PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data{};
   prs.append_relabeler_series(lss_, shards_inner_series_[1], relabeled_results_[1], &update_data);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
   EXPECT_EQ(update_data.size(), 0);
 
-  prs.update_relabeler_state(&update_data, 1);
-
   reset();
   hx_.clear();
   make_hashdex(hx_, make_label_set({{"__name__", "value"}, {"job", "abcd"}}), make_samples({{1712567046855, 0.1}}));
-  prs.input_relabeling(lss_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
   // shard id 1 skip
   EXPECT_EQ(relabeled_results_[0]->size(), 0);
   EXPECT_EQ(relabeled_results_[1]->size(), 0);
@@ -1949,25 +1911,23 @@ TEST_F(TestPerShardRelabeler, ReplaceToNewLS2) {
                         .target_label = "replaced",
                         .replacement = "$1",
                         .action = 5};  // Replace
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
-  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 0, 2, 1);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   make_hashdex(hx_, make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}}), make_samples({{1712567046855, 0.1}}));
 
-  prs.input_relabeling(lss_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
   // shard id 1
   EXPECT_EQ(relabeled_results_[0]->size(), 0);
   EXPECT_EQ(relabeled_results_[1]->size(), 1);
   EXPECT_EQ(shards_inner_series_[0]->size(), 0);
   EXPECT_EQ(shards_inner_series_[1]->size(), 0);
 
-  PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data(0);
+  PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data{};
   prs.append_relabeler_series(lss_, shards_inner_series_[1], relabeled_results_[1], &update_data);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
   EXPECT_EQ(update_data.size(), 1);
 
-  prs.update_relabeler_state(&update_data, 1);
+  prs.update_relabeler_state(cache_, &update_data, 1);
 
   auto rlabels = lss_[update_data[0].relabeled_ls_id];
   LabelViewSetForTest expected_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}, {"replaced", "o"}});
@@ -1977,25 +1937,23 @@ TEST_F(TestPerShardRelabeler, ReplaceToNewLS2) {
 
 TEST_F(TestPerShardRelabeler, ReplaceToNewLS3) {
   RelabelConfigTest rct{.separator = ";", .regex = ".*", .target_label = "replaced", .replacement = "blabla", .action = 5};  // Replace
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
-  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 0, 2, 1);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   make_hashdex(hx_, make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}}), make_samples({{1712567046855, 0.1}}));
 
-  prs.input_relabeling(lss_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
   // shard id 1
   EXPECT_EQ(relabeled_results_[0]->size(), 1);
   EXPECT_EQ(relabeled_results_[1]->size(), 0);
   EXPECT_EQ(shards_inner_series_[0]->size(), 0);
   EXPECT_EQ(shards_inner_series_[1]->size(), 0);
 
-  PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data(0);
+  PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data{};
   prs.append_relabeler_series(lss_, shards_inner_series_[0], relabeled_results_[0], &update_data);
   EXPECT_EQ(shards_inner_series_[0]->size(), 1);
   EXPECT_EQ(update_data.size(), 1);
 
-  prs.update_relabeler_state(&update_data, 1);
+  prs.update_relabeler_state(cache_, &update_data, 1);
 
   auto rlabels = lss_[update_data[0].relabeled_ls_id];
   LabelViewSetForTest expected_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}, {"replaced", "blabla"}});
@@ -2011,25 +1969,23 @@ TEST_F(TestPerShardRelabeler, ReplaceToNewLS2_OrderedEncodingBimap) {
                         .target_label = "replaced",
                         .replacement = "$1",
                         .action = 5};  // Replace
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
-  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 0, 2, 1);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   make_hashdex(hx_, make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}}), make_samples({{1712567046855, 0.1}}));
 
-  prs.input_relabeling(lss, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
   // shard id 1
   EXPECT_EQ(relabeled_results_[0]->size(), 0);
   EXPECT_EQ(relabeled_results_[1]->size(), 1);
   EXPECT_EQ(shards_inner_series_[0]->size(), 0);
   EXPECT_EQ(shards_inner_series_[1]->size(), 0);
 
-  PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data(0);
+  PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data{};
   prs.append_relabeler_series(lss, shards_inner_series_[1], relabeled_results_[1], &update_data);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
   EXPECT_EQ(update_data.size(), 1);
 
-  prs.update_relabeler_state(&update_data, 1);
+  prs.update_relabeler_state(cache_, &update_data, 1);
 
   auto rlabels = lss[update_data[0].relabeled_ls_id];
   LabelViewSetForTest expected_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}, {"replaced", "o"}});
@@ -2039,34 +1995,118 @@ TEST_F(TestPerShardRelabeler, ReplaceToNewLS2_OrderedEncodingBimap) {
 
 TEST_F(TestPerShardRelabeler, InputRelabelingWithStalenans) {
   RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2};  // Keep
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
-  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 0, 2, 1);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   make_hashdex(hx_, make_label_set({{"__name__", "value"}, {"job", "abc"}}), make_samples({{1712567046855, 0.1}}));
   PromPP::Prometheus::Relabel::SourceState state = nullptr;
 
   PromPP::Prometheus::Relabel::SourceState newstate =
-      prs.input_relabeling_with_stalenans(lss_, hx_, o_, shards_inner_series_, relabeled_results_, state, 1712567046855);
+      prs.input_relabeling_with_stalenans(lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_, state, 1712567046855);
+
   // shard id 1
   EXPECT_EQ(relabeled_results_[0]->size(), 0);
   EXPECT_EQ(relabeled_results_[1]->size(), 0);
   EXPECT_EQ(shards_inner_series_[0]->size(), 0);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
 
-  PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data(0);
+  PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data{};
   prs.append_relabeler_series(lss_, shards_inner_series_[1], relabeled_results_[1], &update_data);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
   EXPECT_EQ(update_data.size(), 0);
 
-  prs.update_relabeler_state(&update_data, 1);
-
   vector_shards_inner_series_[1] = std::make_unique<PromPP::Prometheus::Relabel::InnerSeries>();
   HashdexTest empty_hx;
   PromPP::Primitives::Timestamp stale_ts = 1712567047055;
-  prs.input_relabeling_with_stalenans(lss_, empty_hx, o_, shards_inner_series_, relabeled_results_, newstate, stale_ts);
+  prs.input_relabeling_with_stalenans(lss_, cache_, empty_hx, o_, shards_inner_series_, relabeled_results_, newstate, stale_ts);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
   EXPECT_EQ(PromPP::Primitives::Sample(stale_ts, PromPP::Prometheus::kStaleNan), shards_inner_series_[1]->data()[0].samples[0]);
+}
+
+TEST_F(TestPerShardRelabeler, TargetLabels_HappyPath) {
+  RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2};  // Keep
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 0);
+  make_hashdex(hx_, make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "abc"}}), make_samples({{1712567046855, 0.1}}));
+  std::vector<std::pair<std::string, std::string>> list_target_labels{{"a_name", "target_a_value"}, {"z_name", "target_z_value"}};
+  add_target_labels(list_target_labels);
+
+  prs.input_relabeling(lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
+  // shard id 1
+  EXPECT_EQ(relabeled_results_[0]->size(), 0);
+  EXPECT_EQ(relabeled_results_[1]->size(), 1);
+  EXPECT_EQ(shards_inner_series_[0]->size(), 0);
+  EXPECT_EQ(shards_inner_series_[1]->size(), 0);
+
+  PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data{};
+  prs.append_relabeler_series(lss_, shards_inner_series_[1], relabeled_results_[1], &update_data);
+  EXPECT_EQ(shards_inner_series_[1]->size(), 1);
+  EXPECT_EQ(update_data.size(), 1);
+
+  prs.update_relabeler_state(cache_, &update_data, 1);
+
+  auto rlabels = lss_[update_data[0].relabeled_ls_id];
+  LabelViewSetForTest expected_labels =
+      make_label_set({{"__name__", "booom"}, {"a_name", "target_a_value"}, {"jab", "baj"}, {"job", "abc"}, {"z_name", "target_z_value"}});
+
+  EXPECT_EQ(rlabels, expected_labels);
+}
+
+TEST_F(TestPerShardRelabeler, TargetLabels_ExportedLabel) {
+  RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2};  // Keep
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 0);
+  make_hashdex(hx_, make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "abc"}}), make_samples({{1712567046855, 0.1}}));
+  std::vector<std::pair<std::string, std::string>> list_target_labels{{"jab", "target_a_value"}, {"z_name", "target_z_value"}};
+  add_target_labels(list_target_labels);
+
+  prs.input_relabeling(lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
+  // shard id 1
+  EXPECT_EQ(relabeled_results_[0]->size(), 1);
+  EXPECT_EQ(relabeled_results_[1]->size(), 0);
+  EXPECT_EQ(shards_inner_series_[0]->size(), 0);
+  EXPECT_EQ(shards_inner_series_[1]->size(), 0);
+
+  PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data{};
+  prs.append_relabeler_series(lss_, shards_inner_series_[0], relabeled_results_[0], &update_data);
+  EXPECT_EQ(shards_inner_series_[0]->size(), 1);
+  EXPECT_EQ(update_data.size(), 1);
+
+  prs.update_relabeler_state(cache_, &update_data, 1);
+
+  auto rlabels = lss_[update_data[0].relabeled_ls_id];
+  LabelViewSetForTest expected_labels =
+      make_label_set({{"__name__", "booom"}, {"exported_jab", "baj"}, {"jab", "target_a_value"}, {"job", "abc"}, {"z_name", "target_z_value"}});
+
+  EXPECT_EQ(rlabels, expected_labels);
+}
+
+TEST_F(TestPerShardRelabeler, TargetLabels_ExportedLabel_Honor) {
+  RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2};  // Keep
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 0);
+  make_hashdex(hx_, make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "abc"}}), make_samples({{1712567046855, 0.1}}));
+  std::vector<std::pair<std::string, std::string>> list_target_labels{{"jab", "target_a_value"}, {"z_name", "target_z_value"}};
+  add_target_labels(list_target_labels);
+  o_.honor_labels = true;
+
+  prs.input_relabeling(lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
+  // shard id 1
+  EXPECT_EQ(relabeled_results_[0]->size(), 1);
+  EXPECT_EQ(relabeled_results_[1]->size(), 0);
+  EXPECT_EQ(shards_inner_series_[0]->size(), 0);
+  EXPECT_EQ(shards_inner_series_[1]->size(), 0);
+
+  PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data{};
+  prs.append_relabeler_series(lss_, shards_inner_series_[0], relabeled_results_[0], &update_data);
+  EXPECT_EQ(shards_inner_series_[0]->size(), 1);
+  EXPECT_EQ(update_data.size(), 1);
+
+  prs.update_relabeler_state(cache_, &update_data, 1);
+
+  auto rlabels = lss_[update_data[0].relabeled_ls_id];
+  LabelViewSetForTest expected_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "abc"}, {"z_name", "target_z_value"}});
+
+  EXPECT_EQ(rlabels, expected_labels);
 }
 
 struct TestProcessExternalLabels : public testing::Test {
@@ -2098,11 +2138,11 @@ TEST_F(TestProcessExternalLabels, AddingLSEnd) {
 
   auto labels = make_label_set({{"a_name", "a_value"}});
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
-  PromPP::Primitives::LabelsBuilder builder = PromPP::Primitives::LabelsBuilder<LabelViewSetForTest, PromPP::Primitives::LabelsBuilderStateMap>(builder_state);
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
   builder.reset(&labels);
 
   Relabel::StatelessRelabeler sr(rcts_);
-  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 0, 2, 1);
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   prs.process_external_labels(builder);
 
   LabelViewSetForTest expected_labels = make_label_set({{"a_name", "a_value"}, {"c_name", "c_value"}});
@@ -2118,11 +2158,11 @@ TEST_F(TestProcessExternalLabels, AddingLSBeginning) {
 
   auto labels = make_label_set({{"c_name", "c_value"}});
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
-  PromPP::Primitives::LabelsBuilder builder = PromPP::Primitives::LabelsBuilder<LabelViewSetForTest, PromPP::Primitives::LabelsBuilderStateMap>(builder_state);
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
   builder.reset(&labels);
 
   Relabel::StatelessRelabeler sr(rcts_);
-  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 0, 2, 1);
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   prs.process_external_labels(builder);
 
   LabelViewSetForTest expected_labels = make_label_set({{"a_name", "a_value"}, {"c_name", "c_value"}});
@@ -2138,11 +2178,11 @@ TEST_F(TestProcessExternalLabels, OverrideExistingLabels) {
 
   auto labels = make_label_set({{"a_name", "a_value"}});
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
-  PromPP::Primitives::LabelsBuilder builder = PromPP::Primitives::LabelsBuilder<LabelViewSetForTest, PromPP::Primitives::LabelsBuilderStateMap>(builder_state);
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
   builder.reset(&labels);
 
   Relabel::StatelessRelabeler sr(rcts_);
-  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 0, 2, 1);
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   prs.process_external_labels(builder);
 
   LabelViewSetForTest expected_labels = make_label_set({{"a_name", "a_value"}});
@@ -2158,11 +2198,11 @@ TEST_F(TestProcessExternalLabels, EmptyExternalLabels) {
 
   auto labels = make_label_set({{"a_name", "a_value"}});
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
-  PromPP::Primitives::LabelsBuilder builder = PromPP::Primitives::LabelsBuilder<LabelViewSetForTest, PromPP::Primitives::LabelsBuilderStateMap>(builder_state);
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
   builder.reset(&labels);
 
   Relabel::StatelessRelabeler sr(rcts_);
-  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 0, 2, 1);
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   prs.process_external_labels(builder);
 
   LabelViewSetForTest expected_labels = make_label_set({{"a_name", "a_value"}});
@@ -2178,11 +2218,11 @@ TEST_F(TestProcessExternalLabels, EmptyLabels) {
 
   auto labels = make_label_set({});
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
-  PromPP::Primitives::LabelsBuilder builder = PromPP::Primitives::LabelsBuilder<LabelViewSetForTest, PromPP::Primitives::LabelsBuilderStateMap>(builder_state);
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
   builder.reset(&labels);
 
   Relabel::StatelessRelabeler sr(rcts_);
-  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 0, 2, 1);
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   prs.process_external_labels(builder);
 
   LabelViewSetForTest expected_labels = make_label_set({{"a_name", "a_value"}});
@@ -2198,11 +2238,11 @@ TEST_F(TestProcessExternalLabels, LabelsLongerExternalLabels) {
 
   auto labels = make_label_set({{"a_name", "a_value"}, {"b_name", "b_value"}});
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
-  PromPP::Primitives::LabelsBuilder builder = PromPP::Primitives::LabelsBuilder<LabelViewSetForTest, PromPP::Primitives::LabelsBuilderStateMap>(builder_state);
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
   builder.reset(&labels);
 
   Relabel::StatelessRelabeler sr(rcts_);
-  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 0, 2, 1);
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   prs.process_external_labels(builder);
 
   LabelViewSetForTest expected_labels = make_label_set({{"a_name", "a_value"}, {"b_name", "b_value"}, {"c_name", "c_value"}});
@@ -2218,11 +2258,11 @@ TEST_F(TestProcessExternalLabels, ExternalLabelsLongerLabels) {
 
   auto labels = make_label_set({{"b_name", "b_value"}});
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
-  PromPP::Primitives::LabelsBuilder builder = PromPP::Primitives::LabelsBuilder<LabelViewSetForTest, PromPP::Primitives::LabelsBuilderStateMap>(builder_state);
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
   builder.reset(&labels);
 
   Relabel::StatelessRelabeler sr(rcts_);
-  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 0, 2, 1);
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   prs.process_external_labels(builder);
 
   LabelViewSetForTest expected_labels = make_label_set({{"a_name", "a_value"}, {"b_name", "b_value"}, {"c_name", "c_value"}});
@@ -2238,11 +2278,11 @@ TEST_F(TestProcessExternalLabels, AddingWithWithoutClashingLabels) {
 
   auto labels = make_label_set({{"a_name", "a_value"}, {"b_name", "b_value"}});
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
-  PromPP::Primitives::LabelsBuilder builder = PromPP::Primitives::LabelsBuilder<LabelViewSetForTest, PromPP::Primitives::LabelsBuilderStateMap>(builder_state);
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
   builder.reset(&labels);
 
   Relabel::StatelessRelabeler sr(rcts_);
-  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 0, 2, 1);
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   prs.process_external_labels(builder);
 
   LabelViewSetForTest expected_labels = make_label_set({{"a_name", "a_value"}, {"b_name", "b_value"}, {"c_name", "c1_value"}});
@@ -2257,7 +2297,7 @@ struct TestTargetLabels : public testing::Test {
   // PromPP::Primitives::Go::SliceView<std::pair<PromPP::Primitives::Go::String, PromPP::Primitives::Go::String>> target_labels_;
 
   // Options
-  PromPP::Prometheus::Relabel::Options o_;
+  PromPP::Prometheus::Relabel::RelabelerOptions o_;
 
   // for init PerShardRelabeler
   PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap lss_;
@@ -2283,11 +2323,11 @@ struct TestTargetLabels : public testing::Test {
 TEST_F(TestTargetLabels, ResolveConflictingExposedLabels_EmptyConflictingLabels) {
   auto labels = make_label_set({{"c_name", "c_value"}});
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
-  PromPP::Primitives::LabelsBuilder builder = PromPP::Primitives::LabelsBuilder<LabelViewSetForTest, PromPP::Primitives::LabelsBuilderStateMap>(builder_state);
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
   builder.reset(&labels);
   Relabel::StatelessRelabeler sr(rcts_);
-  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 0, 2, 1);
-  std::vector<PromPP::Primitives::LabelView> conflicting_exposed_labels{};
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
+  std::vector<PromPP::Primitives::Label> conflicting_exposed_labels{};
   LabelViewSetForTest expected_labels = make_label_set({{"c_name", "c_value"}});
 
   prs.resolve_conflicting_exposed_labels(builder, conflicting_exposed_labels);
@@ -2299,11 +2339,11 @@ TEST_F(TestTargetLabels, ResolveConflictingExposedLabels_EmptyConflictingLabels)
 TEST_F(TestTargetLabels, ResolveConflictingExposedLabels) {
   auto labels = make_label_set({{"c_name", "c_value"}});
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
-  PromPP::Primitives::LabelsBuilder builder = PromPP::Primitives::LabelsBuilder<LabelViewSetForTest, PromPP::Primitives::LabelsBuilderStateMap>(builder_state);
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
   builder.reset(&labels);
   Relabel::StatelessRelabeler sr(rcts_);
-  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 0, 2, 1);
-  std::vector<PromPP::Primitives::LabelView> conflicting_exposed_labels{{"c_name", "a_value"}};
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
+  std::vector<PromPP::Primitives::Label> conflicting_exposed_labels{{"c_name", "a_value"}};
   LabelViewSetForTest expected_labels = make_label_set({{"c_name", "c_value"}, {"exported_c_name", "a_value"}});
 
   prs.resolve_conflicting_exposed_labels(builder, conflicting_exposed_labels);
@@ -2315,11 +2355,11 @@ TEST_F(TestTargetLabels, ResolveConflictingExposedLabels) {
 TEST_F(TestTargetLabels, ResolveConflictingExposedLabels_ExportedLabel) {
   auto labels = make_label_set({{"c_name", "c_value"}});
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
-  PromPP::Primitives::LabelsBuilder builder = PromPP::Primitives::LabelsBuilder<LabelViewSetForTest, PromPP::Primitives::LabelsBuilderStateMap>(builder_state);
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
   builder.reset(&labels);
   Relabel::StatelessRelabeler sr(rcts_);
-  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 0, 2, 1);
-  std::vector<PromPP::Primitives::LabelView> conflicting_exposed_labels{{"exported_c_name", "a_value"}};
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
+  std::vector<PromPP::Primitives::Label> conflicting_exposed_labels{{"exported_c_name", "a_value"}};
   LabelViewSetForTest expected_labels = make_label_set({{"c_name", "c_value"}, {"exported_exported_c_name", "a_value"}});
 
   prs.resolve_conflicting_exposed_labels(builder, conflicting_exposed_labels);
@@ -2330,82 +2370,92 @@ TEST_F(TestTargetLabels, ResolveConflictingExposedLabels_ExportedLabel) {
 
 TEST_F(TestTargetLabels, InjectTargetLabels_EmptyLabels) {
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
-  PromPP::Primitives::LabelsBuilder target_builder = PromPP::Primitives::LabelsBuilder<LabelViewSetForTest, PromPP::Primitives::LabelsBuilderStateMap>(builder_state);
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
   auto labels = make_label_set({{"c_name", "c_value"}});
+  builder.reset(&labels);
   Relabel::StatelessRelabeler sr(rcts_);
-  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 0, 2, 1);
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   LabelViewSetForTest expected_labels = make_label_set({{"c_name", "c_value"}});
 
-  prs.inject_target_labels(target_builder, labels, o_);
-  const PromPP::Primitives::LabelViewSet& target_label_view_set = target_builder.label_view_set();
+  bool changed = prs.inject_target_labels(builder, o_);
+  const PromPP::Primitives::LabelViewSet& target_label_view_set = builder.label_view_set();
 
+  EXPECT_FALSE(changed);
   EXPECT_EQ(target_label_view_set, expected_labels);
 }
 
-TEST_F(TestTargetLabels, InjectTargetLabels) {
+TEST_F(TestTargetLabels, InjectTargetLabels_HappyPath) {
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
-  PromPP::Primitives::LabelsBuilder target_builder = PromPP::Primitives::LabelsBuilder<LabelViewSetForTest, PromPP::Primitives::LabelsBuilderStateMap>(builder_state);
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
   auto labels = make_label_set({{"c_name", "c_value"}});
+  builder.reset(&labels);
   Relabel::StatelessRelabeler sr(rcts_);
-  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 0, 2, 1);
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   std::vector<std::pair<std::string, std::string>> list_target_labels{{"a_name", "target_a_value"}, {"b_name", "target_b_value"}};
   add_target_labels(list_target_labels);
   LabelViewSetForTest expected_labels = make_label_set({{"a_name", "target_a_value"}, {"b_name", "target_b_value"}, {"c_name", "c_value"}});
 
-  prs.inject_target_labels(target_builder, labels, o_);
-  const PromPP::Primitives::LabelViewSet& target_label_view_set = target_builder.label_view_set();
+  bool changed = prs.inject_target_labels(builder, o_);
+  const PromPP::Primitives::LabelViewSet& target_label_view_set = builder.label_view_set();
 
+  EXPECT_TRUE(changed);
   EXPECT_EQ(target_label_view_set, expected_labels);
 }
 
 TEST_F(TestTargetLabels, InjectTargetLabels_ConflictingLabels) {
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
-  PromPP::Primitives::LabelsBuilder target_builder = PromPP::Primitives::LabelsBuilder<LabelViewSetForTest, PromPP::Primitives::LabelsBuilderStateMap>(builder_state);
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
   auto labels = make_label_set({{"a_name", "a_value"}, {"c_name", "c_value"}});
+  builder.reset(&labels);
   Relabel::StatelessRelabeler sr(rcts_);
-  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 0, 2, 1);
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   std::vector<std::pair<std::string, std::string>> list_target_labels{{"a_name", "target_a_value"}, {"b_name", "target_b_value"}};
   add_target_labels(list_target_labels);
   LabelViewSetForTest expected_labels =
       make_label_set({{"a_name", "target_a_value"}, {"b_name", "target_b_value"}, {"c_name", "c_value"}, {"exported_a_name", "a_value"}});
 
-  prs.inject_target_labels(target_builder, labels, o_);
-  const PromPP::Primitives::LabelViewSet& target_label_view_set = target_builder.label_view_set();
+  bool changed = prs.inject_target_labels(builder, o_);
+  const PromPP::Primitives::LabelViewSet& target_label_view_set = builder.label_view_set();
 
+  EXPECT_TRUE(changed);
   EXPECT_EQ(target_label_view_set, expected_labels);
 }
 
 TEST_F(TestTargetLabels, InjectTargetLabels_ConflictingLabels_ExportedLabel) {
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
-  PromPP::Primitives::LabelsBuilder target_builder = PromPP::Primitives::LabelsBuilder<LabelViewSetForTest, PromPP::Primitives::LabelsBuilderStateMap>(builder_state);
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
   auto labels = make_label_set({{"a_name", "a_value"}, {"c_name", "c_value"}});
+  builder.reset(&labels);
   Relabel::StatelessRelabeler sr(rcts_);
-  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 0, 2, 1);
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   std::vector<std::pair<std::string, std::string>> list_target_labels{{"a_name", "target_a_value"}, {"exported_a_name", "exported_target_a_value"}};
   add_target_labels(list_target_labels);
   LabelViewSetForTest expected_labels = make_label_set(
       {{"a_name", "target_a_value"}, {"c_name", "c_value"}, {"exported_a_name", "exported_target_a_value"}, {"exported_exported_a_name", "a_value"}});
 
-  prs.inject_target_labels(target_builder, labels, o_);
-  const PromPP::Primitives::LabelViewSet& target_label_view_set = target_builder.label_view_set();
+  bool changed = prs.inject_target_labels(builder, o_);
+  const PromPP::Primitives::LabelViewSet& target_label_view_set = builder.label_view_set();
 
+  EXPECT_TRUE(changed);
   EXPECT_EQ(target_label_view_set, expected_labels);
 }
 
 TEST_F(TestTargetLabels, InjectTargetLabels_ConflictingLabels_Honor) {
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
-  PromPP::Primitives::LabelsBuilder target_builder = PromPP::Primitives::LabelsBuilder<LabelViewSetForTest, PromPP::Primitives::LabelsBuilderStateMap>(builder_state);
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
   auto labels = make_label_set({{"a_name", "a_value"}, {"c_name", "c_value"}});
+  builder.reset(&labels);
   Relabel::StatelessRelabeler sr(rcts_);
-  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 0, 2, 1);
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   std::vector<std::pair<std::string, std::string>> list_target_labels{{"a_name", "target_a_value"}, {"b_name", "target_b_value"}};
   add_target_labels(list_target_labels);
   o_.honor_labels = true;
   LabelViewSetForTest expected_labels = make_label_set({{"a_name", "a_value"}, {"b_name", "target_b_value"}, {"c_name", "c_value"}});
 
-  prs.inject_target_labels(target_builder, labels, o_);
-  const PromPP::Primitives::LabelViewSet& target_label_view_set = target_builder.label_view_set();
+  bool changed = prs.inject_target_labels(builder, o_);
+  const PromPP::Primitives::LabelViewSet& target_label_view_set = builder.label_view_set();
 
+  EXPECT_TRUE(changed);
   EXPECT_EQ(target_label_view_set, expected_labels);
 }
 

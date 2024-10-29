@@ -17,17 +17,147 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+// RelabelerData data for relabeling - inputRelabelers per shard and state.
+type RelabelerData struct {
+	state           *cppbridge.State
+	inputRelabelers []*cppbridge.InputPerShardRelabeler
+}
+
+// NewRelabelerData init new RelabelerData.
+func NewRelabelerData(
+	rCfgs []*cppbridge.RelabelConfig,
+	generationHead uint64,
+	numberOfShards uint16,
+) (*RelabelerData, error) {
+	rd := &RelabelerData{
+		inputRelabelers: make([]*cppbridge.InputPerShardRelabeler, 0, numberOfShards),
+	}
+
+	if err := rd.Reconfigure(rCfgs, generationHead, numberOfShards); err != nil {
+		return nil, err
+	}
+
+	return rd, nil
+}
+
+// State return State of relabeler.
+func (rd *RelabelerData) State(generationHead uint64) *cppbridge.State {
+	if rd.state == nil {
+		rd.state = cppbridge.NewState(uint16(len(rd.inputRelabelers)))
+		rd.state.Reconfigure(
+			rd.generationRelabeler(),
+			generationHead,
+			uint16(len(rd.inputRelabelers)),
+		)
+	}
+
+	return rd.state
+}
+
+// InputRelabelerByShard return InputRelabeler by shard.
+func (rd *RelabelerData) InputRelabelerByShard(shardID uint16) *cppbridge.InputPerShardRelabeler {
+	return rd.inputRelabelers[shardID]
+}
+
+// Reconfigure update configuration on InputRelabeler and State.
+func (rd *RelabelerData) Reconfigure(
+	rCfgs []*cppbridge.RelabelConfig,
+	generationHead uint64,
+	numberOfShards uint16,
+) error {
+	if err := rd.reconfigureInputRelabelers(rCfgs, numberOfShards); err != nil {
+		return err
+	}
+
+	if rd.state != nil {
+		rd.state.Reconfigure(rd.generationRelabeler(), generationHead, numberOfShards)
+	}
+
+	return nil
+}
+
+// generationRelabeler return current(shardID == 0) relabeler's generation.
+func (rd *RelabelerData) generationRelabeler() uint64 {
+	return rd.inputRelabelers[0].Generation()
+}
+
+// Reconfigure update configuration on InputRelabeler.
+func (rd *RelabelerData) reconfigureInputRelabelers(
+	rCfgs []*cppbridge.RelabelConfig,
+	numberOfShards uint16,
+) error {
+	sr, err := rd.updateOrCreateStatelessRelabeler(rCfgs)
+	if err != nil {
+		return err
+	}
+
+	if len(rd.inputRelabelers) == int(numberOfShards) {
+		return nil
+	}
+
+	if len(rd.inputRelabelers) > int(numberOfShards) {
+		// cut
+		rd.inputRelabelers = rd.inputRelabelers[:numberOfShards]
+	}
+
+	if len(rd.inputRelabelers) < int(numberOfShards) {
+		// grow
+		rd.inputRelabelers = append(
+			rd.inputRelabelers,
+			make([]*cppbridge.InputPerShardRelabeler, int(numberOfShards)-len(rd.inputRelabelers))...,
+		)
+	}
+
+	for shardID := range rd.inputRelabelers {
+		if rd.inputRelabelers[shardID] != nil {
+			// TODO may be depreacate ResetTo and always recreate
+			rd.inputRelabelers[shardID].ResetTo(numberOfShards)
+			continue
+		}
+
+		if rd.inputRelabelers[shardID], err = cppbridge.NewInputPerShardRelabeler(
+			sr,
+			numberOfShards,
+			uint16(shardID),
+		); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// updateOrCreateStatelessRelabeler check inputRelabeler(shardID == 0) for key
+// and update configs for StatelessRelabeler, if not exist - create new.
+func (rd *RelabelerData) updateOrCreateStatelessRelabeler(
+	rCfgs []*cppbridge.RelabelConfig,
+) (*cppbridge.StatelessRelabeler, error) {
+	if len(rd.inputRelabelers) == 0 || rd.inputRelabelers[0] == nil {
+		return cppbridge.NewStatelessRelabeler(rCfgs)
+	}
+
+	sr := rd.inputRelabelers[0].StatelessRelabeler()
+	if sr.EqualConfigs(rCfgs) {
+		return sr, nil
+	}
+
+	if err := sr.ResetTo(rCfgs); err != nil {
+		return nil, err
+	}
+
+	return sr, nil
+}
+
 type Head struct {
 	finalizer        *Finalizer
 	referenceCounter relabeler.ReferenceCounter
 	generation       uint64
 
-	inputRelabelers            map[relabelerKey]*cppbridge.InputPerShardRelabeler
+	relabelersData             map[string]*RelabelerData
 	dataStorages               []*DataStorage
 	lsses                      []*cppbridge.LabelSetStorage
 	stageInputRelabeling       []chan *TaskInputRelabeling
 	stageAppendRelabelerSeries []chan *TaskAppendRelabelerSeries
-	stageUpdateRelabelerState  []chan *TaskUpdateRelabelerState
 	genericTaskCh              []chan *GenericTask
 	numberOfShards             uint16
 	// stat
@@ -49,10 +179,7 @@ func New(
 		generation:       generation,
 		stopc:            make(chan struct{}),
 		wg:               &sync.WaitGroup{},
-		inputRelabelers: make(
-			map[relabelerKey]*cppbridge.InputPerShardRelabeler,
-			int(numberOfShards)*len(inputRelabelerConfigs),
-		),
+		relabelersData:   make(map[string]*RelabelerData, len(inputRelabelerConfigs)),
 		// stat
 		memoryInUse: factory.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -74,7 +201,7 @@ func New(
 	h.run()
 
 	runtime.SetFinalizer(h, func(h *Head) {
-		fmt.Println("HEAD {", generation, "} DESTROYED")
+		fmt.Println("HEAD {", h.generation, "} DESTROYED")
 	})
 
 	return h, nil
@@ -88,36 +215,44 @@ func (h *Head) ReferenceCounter() relabeler.ReferenceCounter {
 	return h.referenceCounter
 }
 
+// Append incoming data to head.
 func (h *Head) Append(
 	ctx context.Context,
 	incomingData *relabeler.IncomingData,
-	options cppbridge.RelabelerOptions,
-	sourceStates *relabeler.SourceStates,
-	staleNansTS int64,
+	state *cppbridge.State,
 	relabelerID string,
 ) ([][]*cppbridge.InnerSeries, error) {
 	if h.finalizer.FinalizeCalled() {
 		return nil, errors.New("appending to a finalized head")
 	}
 
-	if sourceStates != nil {
-		sourceStates.ResizeIfNeed(int(h.numberOfShards))
+	rd, ok := h.relabelersData[relabelerID]
+	if !ok {
+		return nil, fmt.Errorf("relabeler ID not exist: %s", relabelerID)
 	}
+
+	if state != nil {
+		state.Reconfigure(rd.generationRelabeler(), h.generation, h.numberOfShards)
+	}
+
+	if state == nil {
+		state = rd.State(h.generation)
+	}
+
 	inputPromise := NewInputRelabelingPromise(h.numberOfShards)
 	h.enqueueInputRelabeling(NewTaskInputRelabeling(
 		ctx,
 		inputPromise,
 		relabeler.NewDestructibleIncomingData(incomingData, int(h.numberOfShards)),
-		options,
-		sourceStates,
-		staleNansTS,
-		relabelerID,
+		rd,
+		state,
 	))
 	if err := inputPromise.Wait(ctx); err != nil {
-		//Errorf("failed input promise: %s", err)
 		// reset msr.rotateWG on error
-		return nil, err
+		return nil, fmt.Errorf("failed input promise: %s", err)
 	}
+
+	inputPromise.UpdateRelabeler()
 
 	_ = h.forEachShard(func(shard relabeler.Shard) error {
 		shard.DataStorage().AppendInnerSeriesSlice(inputPromise.ShardsInnerSeries(shard.ShardID()))
@@ -156,16 +291,14 @@ func (h *Head) Finalize() {
 
 		// todo: wait all tasks on stop
 		h.stop()
-		for key := range h.inputRelabelers {
-			h.memoryInUse.Delete(
-				prometheus.Labels{
-					"generation": fmt.Sprintf("%d", h.generation),
-					"allocator":  fmt.Sprintf("input_relabeler_%s", key.relabelerID),
-					"id":         fmt.Sprintf("%d", key.shardID),
-				},
-			)
+		for relabelerID := range h.relabelersData {
+			// clear unnecessary
+			h.memoryInUse.DeletePartialMatch(prometheus.Labels{
+				"generation": fmt.Sprintf("%d", h.generation),
+				"allocator":  fmt.Sprintf("input_relabeler_%s", relabelerID),
+			})
 		}
-		h.inputRelabelers = nil
+		h.relabelersData = nil
 		return nil
 	})
 }
@@ -203,16 +336,6 @@ func (h *Head) WriteMetrics() {
 			},
 		).Set(float64(shard.DataStorage().AllocatedMemory()))
 
-		for relabelerID, inputRelabeler := range shard.InputRelabelers() {
-			h.memoryInUse.With(
-				prometheus.Labels{
-					"generation": fmt.Sprintf("%d", h.generation),
-					"allocator":  fmt.Sprintf("input_relabeler_%s", relabelerID),
-					"id":         fmt.Sprintf("%d", shard.ShardID()),
-				},
-			).Set(float64(inputRelabeler.CacheAllocatedMemory()))
-		}
-
 		return nil
 	})
 }
@@ -220,7 +343,11 @@ func (h *Head) WriteMetrics() {
 func (h *Head) Status(limit int) relabeler.HeadStatus {
 	shardStatuses := make([]*cppbridge.HeadStatus, h.NumberOfShards())
 	_ = h.ForEachShard(func(shard relabeler.Shard) error {
-		shardStatuses[shard.ShardID()] = cppbridge.GetHeadStatus(shard.LSS().Raw().Pointer(), shard.DataStorage().Raw().Pointer(), limit)
+		shardStatuses[shard.ShardID()] = cppbridge.GetHeadStatus(
+			shard.LSS().Raw().Pointer(),
+			shard.DataStorage().Raw().Pointer(),
+			limit,
+		)
 		return nil
 	})
 

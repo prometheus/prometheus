@@ -25,7 +25,11 @@ func NewMultiQuerier(queriers []storage.Querier, closer func() error) *MultiQuer
 	}
 }
 
-func (q *MultiQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *MultiQuerier) LabelValues(
+	ctx context.Context,
+	name string,
+	matchers ...*labels.Matcher,
+) ([]string, annotations.Annotations, error) {
 	labelValuesResults := make([][]string, len(q.queriers))
 	annotationResults := make([]annotations.Annotations, len(q.queriers))
 	errs := make([]error, len(q.queriers))
@@ -35,27 +39,24 @@ func (q *MultiQuerier) LabelValues(ctx context.Context, name string, matchers ..
 		wg.Add(1)
 		go func(index int, querier storage.Querier) {
 			defer wg.Done()
-			labelValuesResults[index], annotationResults[index], errs[index] = querier.LabelValues(ctx, name, matchers...)
-
+			labelValuesResults[index], annotationResults[index], errs[index] = querier.LabelValues(
+				ctx,
+				name,
+				matchers...,
+			)
 		}(index, querier)
 	}
 
 	wg.Wait()
 
-	dedup := make(map[string]struct{})
-	for _, labelValues := range labelValuesResults {
-		for _, labelValue := range labelValues {
-			if _, ok := dedup[labelValue]; !ok {
-				dedup[labelValue] = struct{}{}
-			}
-		}
-	}
-
 	labelValues := DeduplicateAndSortStringSlices(labelValuesResults...)
 	return labelValues, nil, errors.Join(errs...)
 }
 
-func (q *MultiQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *MultiQuerier) LabelNames(
+	ctx context.Context,
+	matchers ...*labels.Matcher,
+) ([]string, annotations.Annotations, error) {
 	labelNamesResults := make([][]string, len(q.queriers))
 	annotationResults := make([]annotations.Annotations, len(q.queriers))
 	errs := make([]error, len(q.queriers))
@@ -66,7 +67,6 @@ func (q *MultiQuerier) LabelNames(ctx context.Context, matchers ...*labels.Match
 		go func(index int, querier storage.Querier) {
 			defer wg.Done()
 			labelNamesResults[index], annotationResults[index], errs[index] = querier.LabelNames(ctx, matchers...)
-
 		}(index, querier)
 	}
 
@@ -88,7 +88,12 @@ func (q *MultiQuerier) Close() (err error) {
 	return err
 }
 
-func (q *MultiQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (q *MultiQuerier) Select(
+	ctx context.Context,
+	sortSeries bool,
+	hints *storage.SelectHints,
+	matchers ...*labels.Matcher,
+) storage.SeriesSet {
 	seriesSets := make([]storage.SeriesSet, len(q.queriers))
 	wg := &sync.WaitGroup{}
 

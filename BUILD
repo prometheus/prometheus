@@ -86,11 +86,14 @@ cc_test(
 
 cc_library(
     name = "prometheus",
-    hdrs = glob(["prometheus/**/*.h", "prometheus/**/*.hpp"]),
     srcs = glob(
-        include=["prometheus/**/*.cpp"],
-        exclude=["prometheus/**/*_tests.cpp"]
+        include = ["prometheus/**/*.cpp"],
+        exclude = ["prometheus/**/*_tests.cpp"],
     ),
+    hdrs = glob([
+        "prometheus/**/*.h",
+        "prometheus/**/*.hpp",
+    ]),
     deps = [
         ":bare_bones",
         ":primitives",
@@ -138,9 +141,9 @@ cc_library(
     hdrs = glob(["head/**/*.h"]),
     linkstatic = True,
     deps = [
-        ":series_index",
         ":series_data",
-    ]
+        ":series_index",
+    ],
 )
 
 cc_test(
@@ -155,8 +158,8 @@ cc_test(
 cc_library(
     name = "entrypoint",
     srcs = glob(
-        include=["entrypoint/**/*.cpp"],
-        exclude=["entrypoint/**/*_tests.cpp"]
+        include = ["entrypoint/**/*.cpp"],
+        exclude = ["entrypoint/**/*_tests.cpp"],
     ),
     hdrs = glob([
         "entrypoint/**/*.h",
@@ -165,9 +168,9 @@ cc_library(
     linkstatic = True,
     deps = [
         ":bare_bones",
+        ":head",
         ":primitives",
         ":wal",
-        ":head",
     ] + select({
         "//bazel/toolchain:with_asan": [],
         "//conditions:default": ["@jemalloc"],
@@ -204,8 +207,8 @@ cc_library(
     deps = [
         ":primitives",
         ":prometheus",
-        ":series_index",
         ":series_data",
+        ":series_index",
         ":wal",
         "//third_party",
         "@gtest//:gtest_main",
@@ -341,8 +344,8 @@ cc_library(
     hdrs = glob(["series_data/**/*.h"]),
     deps = [
         ":bare_bones_headers",
-        ":primitives"
-    ]
+        ":primitives",
+    ],
 )
 
 cc_test(
@@ -353,7 +356,7 @@ cc_test(
     deps = [
         ":series_data",
         "@gtest//:gtest_main",
-    ]
+    ],
 )
 
 cc_library(

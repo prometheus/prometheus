@@ -111,11 +111,11 @@ extern "C" void prompp_prometheus_relabeled_series_dtor(void* args) {
 extern "C" void prompp_prometheus_relabeler_state_update_ctor(void* args) {
   struct Arguments {
     PromPP::Prometheus::Relabel::RelabelerStateUpdate* relabeler_state_update;
-    uint32_t generation;
   };
 
   Arguments* in = reinterpret_cast<Arguments*>(args);
-  new (in->relabeler_state_update) PromPP::Prometheus::Relabel::RelabelerStateUpdate(in->generation);
+
+  new (in->relabeler_state_update) PromPP::Prometheus::Relabel::RelabelerStateUpdate();
 }
 
 extern "C" void prompp_prometheus_relabeler_state_update_dtor(void* args) {
@@ -124,6 +124,7 @@ extern "C" void prompp_prometheus_relabeler_state_update_dtor(void* args) {
   };
 
   Arguments* in = reinterpret_cast<Arguments*>(args);
+
   in->relabeler_state_update->~RelabelerStateUpdate();
 }
 
@@ -133,6 +134,7 @@ extern "C" void prompp_prometheus_stalenans_state_dtor(void* args) {
   };
 
   Arguments* in = reinterpret_cast<Arguments*>(args);
+
   delete in->source_state;
 }
 
@@ -144,7 +146,6 @@ extern "C" void prompp_prometheus_per_shard_relabeler_ctor(void* args, void* res
   struct Arguments {
     PromPP::Primitives::Go::SliceView<std::pair<PromPP::Primitives::Go::String, PromPP::Primitives::Go::String>> external_labels;
     PromPP::Prometheus::Relabel::StatelessRelabeler* stateless_relabeler;
-    uint32_t generation;
     uint16_t number_of_shards;
     uint16_t shard_id;
   };
@@ -158,7 +159,7 @@ extern "C" void prompp_prometheus_per_shard_relabeler_ctor(void* args, void* res
 
   try {
     out->per_shard_relabeler =
-        new PromPP::Prometheus::Relabel::PerShardRelabeler(in->external_labels, in->stateless_relabeler, in->generation, in->number_of_shards, in->shard_id);
+        new PromPP::Prometheus::Relabel::PerShardRelabeler(in->external_labels, in->stateless_relabeler, in->number_of_shards, in->shard_id);
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
     handle_current_exception(__func__, err_stream);
@@ -192,9 +193,10 @@ extern "C" void prompp_prometheus_per_shard_relabeler_input_relabeling(void* arg
   struct Arguments {
     PromPP::Primitives::Go::SliceView<PromPP::Prometheus::Relabel::InnerSeries*> shards_inner_series;
     PromPP::Primitives::Go::SliceView<PromPP::Prometheus::Relabel::RelabeledSeries*> shards_relabeled_series;
-    PromPP::Prometheus::Relabel::Options options;
+    PromPP::Prometheus::Relabel::RelabelerOptions options;
     PromPP::Prometheus::Relabel::PerShardRelabeler* per_shard_relabeler;
     HashdexVariant* hashdex;
+    PromPP::Prometheus::Relabel::Cache* cache;
     LssVariantPtr lss;
   };
   struct Result {
@@ -209,7 +211,7 @@ extern "C" void prompp_prometheus_per_shard_relabeler_input_relabeling(void* arg
         [in](auto& hashdex) PROMPP_LAMBDA_INLINE {
           std::visit(
               [in, &hashdex](auto& lss) PROMPP_LAMBDA_INLINE {
-                in->per_shard_relabeler->input_relabeling(lss, hashdex, in->options, in->shards_inner_series, in->shards_relabeled_series);
+                in->per_shard_relabeler->input_relabeling(lss, *in->cache, hashdex, in->options, in->shards_inner_series, in->shards_relabeled_series);
               },
               *in->lss);
         },
@@ -224,9 +226,10 @@ extern "C" void prompp_prometheus_per_shard_relabeler_input_relabeling_with_stal
   struct Arguments {
     PromPP::Primitives::Go::SliceView<PromPP::Prometheus::Relabel::InnerSeries*> shards_inner_series;
     PromPP::Primitives::Go::SliceView<PromPP::Prometheus::Relabel::RelabeledSeries*> shards_relabeled_series;
-    PromPP::Prometheus::Relabel::Options options;
+    PromPP::Prometheus::Relabel::RelabelerOptions options;
     PromPP::Prometheus::Relabel::PerShardRelabeler* per_shard_relabeler;
     HashdexVariant* hashdex;
+    PromPP::Prometheus::Relabel::Cache* cache;
     LssVariantPtr lss;
     PromPP::Prometheus::Relabel::SourceState source_state;
     PromPP::Primitives::Timestamp stale_ts;
@@ -244,7 +247,7 @@ extern "C" void prompp_prometheus_per_shard_relabeler_input_relabeling_with_stal
         [in, out](auto& hashdex) PROMPP_LAMBDA_INLINE {
           std::visit(
               [in, out, &hashdex](auto& lss) PROMPP_LAMBDA_INLINE {
-                out->source_state = in->per_shard_relabeler->input_relabeling_with_stalenans(lss, hashdex, in->options, in->shards_inner_series,
+                out->source_state = in->per_shard_relabeler->input_relabeling_with_stalenans(lss, *in->cache, hashdex, in->options, in->shards_inner_series,
                                                                                              in->shards_relabeled_series, in->source_state, in->stale_ts);
               },
               *in->lss);
@@ -286,6 +289,7 @@ extern "C" void prompp_prometheus_per_shard_relabeler_update_relabeler_state(voi
   struct Arguments {
     PromPP::Prometheus::Relabel::RelabelerStateUpdate* relabeler_state_update;
     PromPP::Prometheus::Relabel::PerShardRelabeler* per_shard_relabeler;
+    PromPP::Prometheus::Relabel::Cache* cache;
     uint16_t relabeled_shard_id;
   };
   struct Result {
@@ -296,7 +300,7 @@ extern "C" void prompp_prometheus_per_shard_relabeler_update_relabeler_state(voi
   Result* out = new (res) Result();
 
   try {
-    in->per_shard_relabeler->update_relabeler_state(in->relabeler_state_update, in->relabeled_shard_id);
+    in->per_shard_relabeler->update_relabeler_state(*in->cache, in->relabeler_state_update, in->relabeled_shard_id);
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
     handle_current_exception(__func__, err_stream);
@@ -310,7 +314,7 @@ extern "C" void prompp_prometheus_per_shard_relabeler_output_relabeling(void* ar
     PromPP::Primitives::Go::SliceView<PromPP::Prometheus::Relabel::InnerSeries*> encoders_inner_series;
     PromPP::Prometheus::Relabel::PerShardRelabeler* per_shard_relabeler;
     LssVariantPtr lss;
-    uint32_t generation;
+    PromPP::Prometheus::Relabel::Cache* cache;
   };
   struct Result {
     PromPP::Primitives::Go::Slice<char> error;
@@ -322,7 +326,7 @@ extern "C" void prompp_prometheus_per_shard_relabeler_output_relabeling(void* ar
   try {
     std::visit(
         [in](const auto& lss) PROMPP_LAMBDA_INLINE {
-          in->per_shard_relabeler->output_relabeling(lss, in->relabeled_series, in->incoming_inner_series, in->encoders_inner_series, in->generation);
+          in->per_shard_relabeler->output_relabeling(lss, *in->cache, in->relabeled_series, in->incoming_inner_series, in->encoders_inner_series);
         },
         *in->lss);
   } catch (...) {
@@ -335,11 +339,58 @@ extern "C" void prompp_prometheus_per_shard_relabeler_reset_to(void* args) {
   struct Arguments {
     PromPP::Primitives::Go::SliceView<std::pair<PromPP::Primitives::Go::String, PromPP::Primitives::Go::String>> external_labels;
     PromPP::Prometheus::Relabel::PerShardRelabeler* per_shard_relabeler;
-    uint32_t generation;
     uint16_t number_of_shards;
   };
 
   Arguments* in = reinterpret_cast<Arguments*>(args);
 
-  in->per_shard_relabeler->reset_to(in->external_labels, in->generation, in->number_of_shards);
+  in->per_shard_relabeler->reset_to(in->external_labels, in->number_of_shards);
+}
+
+//
+// Relabeler cache
+//
+
+extern "C" void prompp_prometheus_cache_ctor(void* res) {
+  struct Result {
+    PromPP::Prometheus::Relabel::Cache* cache;
+  };
+
+  Result* out = new (res) Result();
+
+  out->cache = new PromPP::Prometheus::Relabel::Cache();
+}
+
+extern "C" void prompp_prometheus_cache_dtor(void* args) {
+  struct Arguments {
+    PromPP::Prometheus::Relabel::Cache* cache;
+  };
+
+  Arguments* in = reinterpret_cast<Arguments*>(args);
+
+  delete in->cache;
+}
+
+extern "C" void prompp_prometheus_cache_allocated_memory(void* args, void* res) {
+  struct Arguments {
+    PromPP::Prometheus::Relabel::Cache* cache;
+  };
+  struct Result {
+    size_t allocated_memory;
+  };
+
+  Arguments* in = reinterpret_cast<Arguments*>(args);
+  Result* out = new (res) Result();
+
+  out->allocated_memory = in->cache->allocated_memory();
+}
+
+extern "C" void prompp_prometheus_cache_reset_to(void* args) {
+  struct Arguments {
+    PromPP::Prometheus::Relabel::Cache* cache;
+  };
+
+  Arguments* in = reinterpret_cast<Arguments*>(args);
+
+  in->cache->reset_to();
 }

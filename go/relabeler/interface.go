@@ -36,7 +36,6 @@ type Shard interface {
 	ShardID() uint16
 	DataStorage() DataStorage
 	LSS() LSS
-	InputRelabelers() map[string]InputRelabeler
 }
 
 // ShardFn - shard function.
@@ -48,9 +47,7 @@ type Head interface {
 	Append(
 		ctx context.Context,
 		incomingData *IncomingData,
-		options cppbridge.RelabelerOptions,
-		sourceStates *SourceStates,
-		staleNansTS int64,
+		state *cppbridge.State,
 		relabelerID string,
 	) ([][]*cppbridge.InnerSeries, error)
 	ForEachShard(fn ShardFn) error

@@ -10,13 +10,11 @@ import (
 
 // TaskInputRelabeling - task for stage input relabeling.
 type TaskInputRelabeling struct {
-	ctx          context.Context
-	promise      *InputRelabelingPromise
-	incomingData *relabeler.DestructibleIncomingData
-	options      cppbridge.RelabelerOptions
-	sourceStates *relabeler.SourceStates
-	staleNansTS  int64
-	relabelerID  string
+	ctx           context.Context
+	promise       *InputRelabelingPromise
+	incomingData  *relabeler.DestructibleIncomingData
+	relabelerData *RelabelerData
+	state         *cppbridge.State
 }
 
 // NewTaskInputRelabeling - init task for stage input relabeling.
@@ -24,19 +22,15 @@ func NewTaskInputRelabeling(
 	ctx context.Context,
 	promise *InputRelabelingPromise,
 	incomingData *relabeler.DestructibleIncomingData,
-	options cppbridge.RelabelerOptions,
-	sourceStates *relabeler.SourceStates,
-	staleNansTS int64,
-	relabelerID string,
+	relabelerData *RelabelerData,
+	state *cppbridge.State,
 ) *TaskInputRelabeling {
 	return &TaskInputRelabeling{
-		ctx:          ctx,
-		promise:      promise,
-		incomingData: incomingData,
-		options:      options,
-		sourceStates: sourceStates,
-		staleNansTS:  staleNansTS,
-		relabelerID:  relabelerID,
+		ctx:           ctx,
+		promise:       promise,
+		incomingData:  incomingData,
+		relabelerData: relabelerData,
+		state:         state,
 	}
 }
 
@@ -55,14 +49,29 @@ func (t *TaskInputRelabeling) Ctx() context.Context {
 	return t.ctx
 }
 
-// RelabelerID - return RelabelerID.
-func (t *TaskInputRelabeling) RelabelerID() string {
-	return t.relabelerID
+// InputRelabeler return *cppbridge.InputPerShardRelabeler by shard.
+func (t *TaskInputRelabeling) InputRelabelerByShard(shardID uint16) *cppbridge.InputPerShardRelabeler {
+	return t.relabelerData.InputRelabelerByShard(shardID)
 }
 
-// Options return *cppbridge.Options.
+// CacheByShard return *Cache by shard.
+func (t *TaskInputRelabeling) CacheByShard(shardID uint16) *cppbridge.Cache {
+	return t.state.CacheByShard(shardID)
+}
+
+// Options return options for relabeler.
 func (t *TaskInputRelabeling) Options() cppbridge.RelabelerOptions {
-	return t.options
+	return t.state.RelabelerOptions()
+}
+
+// RelabelerData return RelabelerData for relabeler.
+func (t *TaskInputRelabeling) RelabelerData() *RelabelerData {
+	return t.relabelerData
+}
+
+// State return state for relabeler.
+func (t *TaskInputRelabeling) State() *cppbridge.State {
+	return t.state
 }
 
 // ShardedData - return ShardedData.
@@ -72,17 +81,17 @@ func (t *TaskInputRelabeling) ShardedData() cppbridge.ShardedData {
 
 // SourceStateByShard return state for stalenans for shard.
 func (t *TaskInputRelabeling) SourceStateByShard(shardID uint16) *cppbridge.SourceStaleNansState {
-	return t.sourceStates.GetByShard(shardID)
+	return t.state.StaleNansStateByShard(shardID)
 }
 
 // WithStaleNans check task for stalenans states.
 func (t *TaskInputRelabeling) WithStaleNans() bool {
-	return t.sourceStates != nil
+	return t.state.TrackStaleness()
 }
 
 // StaleNansTS return timestamp for stalenans.
 func (t *TaskInputRelabeling) StaleNansTS() int64 {
-	return t.staleNansTS
+	return t.state.StaleNansTS()
 }
 
 // IncomingDataDestroy increment or destroy IncomingData.
@@ -100,7 +109,8 @@ type TaskAppendRelabelerSeries struct {
 	ctx             context.Context
 	relabeledSeries *cppbridge.RelabeledSeries
 	promise         *InputRelabelingPromise
-	relabelerID     string
+	relabelerData   *RelabelerData
+	state           *cppbridge.State
 	sourceShardID   uint16
 }
 
@@ -109,14 +119,16 @@ func NewTaskAppendRelabelerSeries(
 	ctx context.Context,
 	relabeledSeries *cppbridge.RelabeledSeries,
 	promise *InputRelabelingPromise,
-	relabelerID string,
+	relabelerData *RelabelerData,
+	state *cppbridge.State,
 	sourceShardID uint16,
 ) *TaskAppendRelabelerSeries {
 	return &TaskAppendRelabelerSeries{
 		ctx:             ctx,
 		relabeledSeries: relabeledSeries,
 		promise:         promise,
-		relabelerID:     relabelerID,
+		relabelerData:   relabelerData,
+		state:           state,
 		sourceShardID:   sourceShardID,
 	}
 }
@@ -131,9 +143,19 @@ func (t *TaskAppendRelabelerSeries) AddResult(shardID uint16, innerSeries *cppbr
 	t.promise.AddResult(shardID, innerSeries)
 }
 
+// AddUpdateTasks add to promise UpdateTasks.
+func (t *TaskAppendRelabelerSeries) AddUpdateRelabelerTasks(updateTask *TaskUpdateRelabelerState) {
+	t.promise.AddUpdateRelabelerTasks(updateTask)
+}
+
 // Ctx - return task context.
 func (t *TaskAppendRelabelerSeries) Ctx() context.Context {
 	return t.ctx
+}
+
+// CacheByShard return *Cache by shard.
+func (t *TaskAppendRelabelerSeries) CacheByShard(shardID uint16) *cppbridge.Cache {
+	return t.state.CacheByShard(shardID)
 }
 
 // Promise - return IncomingRelabelingPromise.
@@ -141,14 +163,24 @@ func (t *TaskAppendRelabelerSeries) Promise() *InputRelabelingPromise {
 	return t.promise
 }
 
+// InputRelabeler return *cppbridge.InputPerShardRelabeler by shard.
+func (t *TaskAppendRelabelerSeries) InputRelabelerByShard(shardID uint16) *cppbridge.InputPerShardRelabeler {
+	return t.relabelerData.InputRelabelerByShard(shardID)
+}
+
 // RelabeledSeries - return *RelabeledSeries.
 func (t *TaskAppendRelabelerSeries) RelabeledSeries() *cppbridge.RelabeledSeries {
 	return t.relabeledSeries
 }
 
-// RelabelerID - return RelabelerID.
-func (t *TaskAppendRelabelerSeries) RelabelerID() string {
-	return t.relabelerID
+// RelabelerData return RelabelerData for relabeler.
+func (t *TaskAppendRelabelerSeries) RelabelerData() *RelabelerData {
+	return t.relabelerData
+}
+
+// State return state for relabeler.
+func (t *TaskAppendRelabelerSeries) State() *cppbridge.State {
+	return t.state
 }
 
 // SourceShardID - return source shardID.
@@ -160,7 +192,8 @@ func (t *TaskAppendRelabelerSeries) SourceShardID() uint16 {
 type TaskUpdateRelabelerState struct {
 	ctx                  context.Context
 	relabelerStateUpdate *cppbridge.RelabelerStateUpdate
-	relabelerID          string
+	inputRelabeler       *cppbridge.InputPerShardRelabeler
+	cache                *cppbridge.Cache
 	relabeledShardID     uint16
 }
 
@@ -168,35 +201,27 @@ type TaskUpdateRelabelerState struct {
 func NewTaskUpdateRelabelerState(
 	ctx context.Context,
 	relabelerStateUpdate *cppbridge.RelabelerStateUpdate,
-	relabelerID string,
+	inputRelabeler *cppbridge.InputPerShardRelabeler,
+	cache *cppbridge.Cache,
 	relabeledShardID uint16,
 ) *TaskUpdateRelabelerState {
 	return &TaskUpdateRelabelerState{
 		ctx:                  ctx,
 		relabelerStateUpdate: relabelerStateUpdate,
-		relabelerID:          relabelerID,
+		inputRelabeler:       inputRelabeler,
+		cache:                cache,
 		relabeledShardID:     relabeledShardID,
 	}
 }
 
-// Ctx - return task context.
-func (t *TaskUpdateRelabelerState) Ctx() context.Context {
-	return t.ctx
-}
-
-// RelabeledShardID - return relabeled shardID.
-func (t *TaskUpdateRelabelerState) RelabeledShardID() uint16 {
-	return t.relabeledShardID
-}
-
-// RelabelerID - return RelabelerID.
-func (t *TaskUpdateRelabelerState) RelabelerID() string {
-	return t.relabelerID
-}
-
-// RelabelerStateUpdate - return *RelabelerStateUpdate.
-func (t *TaskUpdateRelabelerState) RelabelerStateUpdate() *cppbridge.RelabelerStateUpdate {
-	return t.relabelerStateUpdate
+// Update run update relabeler state.
+func (t *TaskUpdateRelabelerState) Update() error {
+	return t.inputRelabeler.UpdateRelabelerState(
+		t.ctx,
+		t.cache,
+		t.relabelerStateUpdate,
+		t.relabeledShardID,
+	)
 }
 
 // GenericTask - generic task, will be executed on each shard.

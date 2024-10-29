@@ -60,6 +60,22 @@ class QueryableEncodingBimap : public BareBones::SnugComposite::DecodingTable<Fi
     return ls_id;
   }
 
+  template <class Class>
+  PROMPP_ALWAYS_INLINE std::optional<uint32_t> find(const Class& c) const noexcept {
+    if (auto i = ls_id_hash_set_.find(c); i != ls_id_hash_set_.end()) {
+      return *i;
+    }
+    return {};
+  }
+
+  template <class Class>
+  PROMPP_ALWAYS_INLINE std::optional<uint32_t> find(const Class& c, size_t hashval) const noexcept {
+    if (auto i = ls_id_hash_set_.find(c, phmap_hash(hashval)); i != ls_id_hash_set_.end()) {
+      return *i;
+    }
+    return {};
+  }
+
  private:
   using LabelSet = typename Base::value_type;
 
