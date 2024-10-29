@@ -410,7 +410,7 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 	sp.droppedTargetsCount = 0
 	touchedTargets := map[uint64]bool{}
 	for _, tg := range tgs {
-		tghash := tg.Hash()
+		tghash := HashFromGroup(tg)
 		touchedTargets[tghash] = true
 		targets, ok := sp.targetsCache[tghash]
 		if !ok {

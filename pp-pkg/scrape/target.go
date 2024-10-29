@@ -10,7 +10,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 
+	"github.com/cespare/xxhash"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
@@ -471,6 +473,19 @@ func TargetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig, noDefault
 		}
 	}
 	return targets, failures
+}
+
+func HashFromGroup(tg *targetgroup.Group) uint64 {
+	res := xxhash.New()
+	writeLabelSet := func(ls model.LabelSet) {
+		fp := ls.FastFingerprint()
+		res.Write((*(*[8]byte)(unsafe.Pointer(&fp)))[:])
+	}
+	writeLabelSet(tg.Labels)
+	for i := range tg.Targets {
+		writeLabelSet(tg.Targets[i])
+	}
+	return res.Sum64()
 }
 
 // MetricMetadataStore implements MetricMetadataStore with empty data.
