@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,6 +33,7 @@ import (
 
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
@@ -40,6 +42,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/rules"
+
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func init() {
@@ -620,6 +624,116 @@ func TestRwProtoMsgFlagParser(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, tcase.expected, opt)
 			}
+		})
+	}
+}
+
+func TestRuntimeGOGCConfig(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name         string
+		config       string
+		gogcEnvVar   string
+		expectedGOGC int
+	}{
+		{
+			name:         "empty config file",
+			expectedGOGC: 75,
+		},
+		{
+			name:         "empty config file with GOGC env var set",
+			gogcEnvVar:   "66",
+			expectedGOGC: 66,
+		},
+		{
+			name: "gogc set through config",
+			config: `
+runtime:
+  gogc: 77`,
+			expectedGOGC: 77,
+		},
+		{
+			name: "gogc set through config and env var",
+			config: `
+runtime:
+  gogc: 77`,
+			gogcEnvVar:   "88",
+			expectedGOGC: 77,
+		},
+		{
+			name: "incomplete runtime block",
+			config: `
+runtime:`,
+			expectedGOGC: 75,
+		},
+		{
+			name: "incomplete runtime block and GOGC env var set",
+			config: `
+runtime:`,
+			gogcEnvVar:   "88",
+			expectedGOGC: 88,
+		},
+		{
+			name: "unrelated config and GOGC env var set",
+			config: `
+global:
+  scrape_interval: 500ms`,
+			gogcEnvVar:   "80",
+			expectedGOGC: 80,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			tmpDir := t.TempDir()
+			configFile := filepath.Join(tmpDir, "prometheus.yml")
+
+			port := testutil.RandomUnprivilegedPort(t)
+			os.WriteFile(configFile, []byte(tc.config), 0o777)
+			prom := exec.Command(
+				promPath,
+				"-test.main",
+				fmt.Sprintf("--web.listen-address=127.0.0.1:%d", port),
+				fmt.Sprintf("--config.file=%s", configFile),
+				fmt.Sprintf("--storage.tsdb.path=%s", tmpDir),
+			)
+			prom.Env = os.Environ()
+			if tc.gogcEnvVar != "" {
+				prom.Env = append(prom.Env, fmt.Sprintf("GOGC=%s", tc.gogcEnvVar))
+			}
+
+			require.NoError(t, prom.Start())
+
+			// Wait for the server to start up.
+			url := fmt.Sprintf("http://127.0.0.1:%d/metrics", port)
+			require.Eventually(t, func() bool {
+				resp, err := http.Get(url)
+				if err != nil {
+					return false
+				}
+				defer resp.Body.Close()
+				return resp.StatusCode == http.StatusOK
+			}, 3*time.Second, 50*time.Millisecond)
+
+			// Check the final GOGC that's set, consider go_gc_gogc_percent as source of truth.
+			resp, err := http.Get(url)
+			require.NoError(t, err)
+			defer resp.Body.Close()
+
+			p := expfmt.TextParser{}
+			metricFamilies, err := p.TextToMetricFamilies(resp.Body)
+			require.NoError(t, err)
+			metricName := "go_gc_gogc_percent"
+			require.Contains(t, metricFamilies, metricName)
+			metric := metricFamilies[metricName].GetMetric()
+			require.Len(t, metric, 1)
+			require.Equal(t, float64(tc.expectedGOGC), metric[0].GetGauge().GetValue())
+
+			require.NoError(t, prom.Process.Kill())
 		})
 	}
 }
