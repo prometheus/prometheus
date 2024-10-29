@@ -149,10 +149,10 @@ func getOOOSeriesChunks(s *memSeries, mint, maxt int64, lastGarbageCollectedMmap
 	prevIsOOO := isOOOChunkID(chunks.HeadChunkID(toBeMerged.Ref))
 	for _, c := range tmpChks[1:] {
 		currIsOOO := isOOOChunkID(chunks.HeadChunkID(c.Ref))
-		if !prevIsOOO && !currIsOOO && c.MinTime > toBeMerged.MaxTime {
-			// This in-order chunk doesn't overlap and we are not switching between
-			// in-order and out of order. Send current toBeMerged to output and start
-			// a new one.
+		if prevIsOOO == currIsOOO && c.MinTime > toBeMerged.MaxTime {
+			// This chunk doesn't overlap and we are not switching between in-order
+			// and out of order. Send current toBeMerged to output and start a new
+			// one.
 			*chks = append(*chks, toBeMerged)
 			toBeMerged = c
 		} else {

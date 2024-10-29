@@ -103,6 +103,11 @@ func (c *HistogramChunk) GetCounterResetHeader() CounterResetHeader {
 	return CounterResetHeader(c.Bytes()[2] & CounterResetHeaderMask)
 }
 
+// ClearCounterReset sets the counter reset header to UnknownCounterReset.
+func (c *HistogramChunk) ClearCounterReset() {
+	c.Bytes()[2] = (c.Bytes()[2] & (^CounterResetHeaderMask)) | byte(UnknownCounterReset)
+}
+
 // Compact implements the Chunk interface.
 func (c *HistogramChunk) Compact() {
 	if l := len(c.b.stream); cap(c.b.stream) > l+chunkCompactCapacityThreshold {

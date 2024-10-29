@@ -148,7 +148,8 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 			// Chunk 3:                                                                                                                  [-------------------]
 			// Output Graphically              [-----------------------------]                                                 [-----------------------------]
 			expChunks: []expChunk{
-				{c: chunkInterval{0, 100, 650}, m: []chunkInterval{{0, 100, 200}, {2, 150, 250}, {1, 500, 600}, {3, 550, 650}}},
+				{c: chunkInterval{0, 100, 250}, m: []chunkInterval{{0, 100, 200}, {2, 150, 250}}},
+				{c: chunkInterval{1, 500, 650}, m: []chunkInterval{{1, 500, 600}, {3, 550, 650}}},
 			},
 		},
 		{
@@ -190,7 +191,10 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 			// Chunk 3:                                                                                    [------------------]
 			// Output Graphically              [------------------][------------------][------------------][------------------]
 			expChunks: []expChunk{
-				{c: chunkInterval{0, 100, 499}, m: []chunkInterval{{0, 100, 199}, {1, 200, 299}, {2, 300, 399}, {3, 400, 499}}},
+				{c: chunkInterval{0, 100, 199}},
+				{c: chunkInterval{1, 200, 299}},
+				{c: chunkInterval{2, 300, 399}},
+				{c: chunkInterval{3, 400, 499}},
 			},
 		},
 		{
@@ -253,7 +257,8 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 			// Chunk 4:                                                                                                                             [---------------------------------------]
 			// Output Graphically              [---------------------------------------]                                                            [------------------------------------------------]
 			expChunks: []expChunk{
-				{c: chunkInterval{0, 100, 850}, m: []chunkInterval{{0, 100, 300}, {2, 150, 250}, {4, 600, 800}, {3, 650, 750}, {1, 770, 850}}},
+				{c: chunkInterval{0, 100, 300}, m: []chunkInterval{{0, 100, 300}, {2, 150, 250}}},
+				{c: chunkInterval{4, 600, 850}, m: []chunkInterval{{4, 600, 800}, {3, 650, 750}, {1, 770, 850}}},
 			},
 		},
 		{
@@ -272,7 +277,9 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 			// Chunk 2:                                           [--------]
 			// Output Graphically              [-------]          [--------]         [----------]
 			expChunks: []expChunk{
-				{c: chunkInterval{0, 100, 350}, m: []chunkInterval{{0, 100, 150}, {2, 200, 250}, {1, 300, 350}}},
+				{c: chunkInterval{0, 100, 150}},
+				{c: chunkInterval{2, 200, 250}},
+				{c: chunkInterval{1, 300, 350}},
 			},
 		},
 	}
@@ -609,6 +616,8 @@ func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 					scenario.sampleFunc(minutes(24), 1),
 					scenario.sampleFunc(minutes(26), 1),
 					scenario.sampleFunc(minutes(29), 1),
+				},
+				{
 					scenario.sampleFunc(minutes(30), 2),
 					scenario.sampleFunc(minutes(32), 2),
 					scenario.sampleFunc(minutes(34), 2),
@@ -662,6 +671,8 @@ func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 					scenario.sampleFunc(minutes(24), 2),
 					scenario.sampleFunc(minutes(26), 2),
 					scenario.sampleFunc(minutes(29), 2),
+				},
+				{
 					scenario.sampleFunc(minutes(30), 1),
 					scenario.sampleFunc(minutes(32), 1),
 					scenario.sampleFunc(minutes(34), 1),
@@ -675,7 +686,7 @@ func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 			},
 		},
 		{
-			name:                 "If chunks are not overlapped they are still converged",
+			name:                 "If chunks are not overlapped they are not converged",
 			queryMinT:            minutes(0),
 			queryMaxT:            minutes(100),
 			firstInOrderSampleAt: minutes(120),
@@ -702,7 +713,8 @@ func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 				{Ts: minutes(40), V: 3},
 				{Ts: minutes(42), V: 3},
 			},
-			expChunkError: false,
+			expChunkError:   false,
+			expSingleChunks: true,
 			// ts (in minutes)         0       10       20       30       40       50       60       70       80       90       100
 			// Query Interval          [------------------------------------------------------------------------------------------]
 			// Chunk 0                          [-------]
@@ -717,16 +729,22 @@ func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 					scenario.sampleFunc(minutes(14), 0),
 					scenario.sampleFunc(minutes(16), 0),
 					scenario.sampleFunc(minutes(18), 0),
+				},
+				{
 					scenario.sampleFunc(minutes(20), 1),
 					scenario.sampleFunc(minutes(22), 1),
 					scenario.sampleFunc(minutes(24), 1),
 					scenario.sampleFunc(minutes(26), 1),
 					scenario.sampleFunc(minutes(28), 1),
+				},
+				{
 					scenario.sampleFunc(minutes(30), 2),
 					scenario.sampleFunc(minutes(32), 2),
 					scenario.sampleFunc(minutes(34), 2),
 					scenario.sampleFunc(minutes(36), 2),
 					scenario.sampleFunc(minutes(38), 2),
+				},
+				{
 					scenario.sampleFunc(minutes(40), 3),
 					scenario.sampleFunc(minutes(42), 3),
 				},

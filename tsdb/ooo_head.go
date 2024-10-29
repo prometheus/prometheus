@@ -136,6 +136,12 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error
 			newChunk, recoded, app, _ = app.AppendHistogram(prevHApp, s.t, s.h, false)
 			if newChunk != nil { // A new chunk was allocated.
 				if !recoded {
+					hc := newChunk.(*chunkenc.HistogramChunk)
+					if s.h.CounterResetHint != histogram.CounterReset && hc.GetCounterResetHeader() == chunkenc.CounterReset {
+						// Clear the detected counter reset in the chunk as we cannot trust
+						// it in OOO.
+						hc.ClearCounterReset()
+					}
 					chks = append(chks, memChunk{chunk, cmint, cmaxt, nil})
 					cmint = s.t
 				}
@@ -151,6 +157,12 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error
 			newChunk, recoded, app, _ = app.AppendFloatHistogram(prevHApp, s.t, s.fh, false)
 			if newChunk != nil { // A new chunk was allocated.
 				if !recoded {
+					hc := newChunk.(*chunkenc.FloatHistogramChunk)
+					if s.fh.CounterResetHint != histogram.CounterReset && hc.GetCounterResetHeader() == chunkenc.CounterReset {
+						// Clear the detected counter reset in the chunk as we cannot trust
+						// it in OOO.
+						hc.ClearCounterReset()
+					}
 					chks = append(chks, memChunk{chunk, cmint, cmaxt, nil})
 					cmint = s.t
 				}
