@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"github.com/prometheus/prometheus/pp/go/relabeler/distributor"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head"
+	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 	"github.com/prometheus/prometheus/pp/go/relabeler/querier"
 	"github.com/stretchr/testify/require"
 
@@ -36,7 +37,6 @@ type AppenderSuite struct {
 	suite.Suite
 
 	baseCtx context.Context
-	options cppbridge.RelabelerOptions
 }
 
 func TestAppender(t *testing.T) {
@@ -141,7 +141,7 @@ func (s *AppenderSuite) TestManagerRelabelerKeep() {
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, s.options, relabelerID)
+	err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -168,7 +168,7 @@ func (s *AppenderSuite) TestManagerRelabelerKeep() {
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, s.options, relabelerID)
+	err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -281,7 +281,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabeling() {
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, s.options, relabelerID)
+	err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -319,7 +319,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabeling() {
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, s.options, relabelerID)
+	err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -432,7 +432,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingAddNewLabel() {
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, s.options, relabelerID)
+	err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -470,7 +470,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingAddNewLabel() {
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, s.options, relabelerID)
+	err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -484,7 +484,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingAddNewLabel() {
 	s.Equal(wr.String(), <-destination)
 
 	s.T().Log("shutdown manager")
-	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 100*time.Millisecond)
+	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 200*time.Millisecond)
 	err = dstrb.Shutdown(shutdownCtx)
 	cancel()
 	s.Require().NoError(err)
@@ -587,7 +587,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsEnd() {
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, s.options, relabelerID)
+	err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -625,7 +625,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsEnd() {
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, s.options, relabelerID)
+	err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -639,7 +639,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsEnd() {
 	s.Equal(wr.String(), <-destination)
 
 	s.T().Log("shutdown manager")
-	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 100*time.Millisecond)
+	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 200*time.Millisecond)
 	err = dstrb.Shutdown(shutdownCtx)
 	cancel()
 	s.Require().NoError(err)
@@ -742,7 +742,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsRelabel(
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, s.options, relabelerID)
+	err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -780,7 +780,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsRelabel(
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, s.options, relabelerID)
+	err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -807,7 +807,11 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels() {
 	clock := clockwork.NewFakeClock()
 	var numberOfShards uint16 = 3
 
-	s.options.TargetLabels = []cppbridge.Label{{Name: "zname", Value: "target_value"}}
+	options := &cppbridge.RelabelerOptions{
+		TargetLabels: []cppbridge.Label{{Name: "zname", Value: "target_value"}},
+	}
+	state := cppbridge.NewState(numberOfShards)
+	state.SetRelabelerOptions(options)
 
 	relabelingCfgs := []*cppbridge.RelabelConfig{
 		{
@@ -897,7 +901,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels() {
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, s.options, relabelerID)
+	err = app.Append(s.baseCtx, h, state, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -951,7 +955,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels() {
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, s.options, relabelerID)
+	err = app.Append(s.baseCtx, h, state, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -992,7 +996,11 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels_Conflicti
 	clock := clockwork.NewFakeClock()
 	var numberOfShards uint16 = 3
 
-	s.options.TargetLabels = []cppbridge.Label{{Name: "instance", Value: "target_instance"}}
+	options := &cppbridge.RelabelerOptions{
+		TargetLabels: []cppbridge.Label{{Name: "instance", Value: "target_instance"}},
+	}
+	state := cppbridge.NewState(numberOfShards)
+	state.SetRelabelerOptions(options)
 
 	relabelingCfgs := []*cppbridge.RelabelConfig{
 		{
@@ -1082,7 +1090,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels_Conflicti
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, s.options, relabelerID)
+	err = app.Append(s.baseCtx, h, state, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -1136,7 +1144,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels_Conflicti
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, s.options, relabelerID)
+	err = app.Append(s.baseCtx, h, state, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -1177,8 +1185,12 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels_Conflicti
 	clock := clockwork.NewFakeClock()
 	var numberOfShards uint16 = 3
 
-	s.options.TargetLabels = []cppbridge.Label{{Name: "instance", Value: "target_instance"}}
-	s.options.HonorLabels = true
+	options := &cppbridge.RelabelerOptions{
+		TargetLabels: []cppbridge.Label{{Name: "instance", Value: "target_instance"}},
+		HonorLabels:  true,
+	}
+	state := cppbridge.NewState(numberOfShards)
+	state.SetRelabelerOptions(options)
 
 	relabelingCfgs := []*cppbridge.RelabelConfig{
 		{
@@ -1268,7 +1280,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels_Conflicti
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, s.options, relabelerID)
+	err = app.Append(s.baseCtx, h, state, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -1321,7 +1333,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels_Conflicti
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, s.options, relabelerID)
+	err = app.Append(s.baseCtx, h, state, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -1492,7 +1504,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, s.options, relabelerID)
+	err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -1539,7 +1551,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, s.options, relabelerID)
+	err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -1578,7 +1590,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, s.options, relabelerID)
+	err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -1713,9 +1725,7 @@ func (*AppenderSuite) constructorForRefill(refill *ManagerRefillMock) relabeler.
 	}
 }
 
-func (*AppenderSuite) constructorForRefillSender(
-	mrs *ManagerRefillSenderMock,
-) relabeler.MangerRefillSenderCtor {
+func (*AppenderSuite) constructorForRefillSender(mrs *ManagerRefillSenderMock) relabeler.MangerRefillSenderCtor {
 	return func(
 		_ relabeler.RefillSendManagerConfig,
 		_ string,
@@ -1751,12 +1761,18 @@ func (s *AppenderSuite) errorHandler() {
 	relabeler.Warnf = s.T().Logf
 	relabeler.Infof = s.T().Logf
 	relabeler.Debugf = s.T().Logf
+
+	logger.Errorf = s.T().Errorf
+	logger.Warnf = s.T().Logf
+	logger.Infof = s.T().Logf
+	logger.Debugf = s.T().Logf
 }
 
 func (*AppenderSuite) mkDir(dName string) (string, error) {
 	return os.MkdirTemp("", filepath.Clean(fmt.Sprintf("refill-%s-", dName)))
 }
 
+// revive:disable-next-line:flag-parameter this is a flag, but it's more convenient this way
 func (*AppenderSuite) encoderSelector(isShrinkable bool) relabeler.ManagerEncoderCtor {
 	if isShrinkable {
 		return func(shardID uint16, shardsNumberPower uint8) relabeler.ManagerEncoder {
@@ -1932,9 +1948,12 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans() {
 		},
 	}
 	h := s.makeIncomingData(firstWr, hlimits)
-	sourceStates := relabeler.NewSourceStates()
-	staleNansTS := time.Now().UnixMilli()
-	err = app.AppendWithStaleNans(s.baseCtx, h, s.options, sourceStates, staleNansTS, relabelerID)
+
+	state := cppbridge.NewState(numberOfShards)
+	state.EnableTrackStaleness()
+	state.SetStaleNansTS(time.Now().UnixMilli())
+
+	err = app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -1962,8 +1981,8 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans() {
 	}
 
 	h = s.makeIncomingData(secondWr, hlimits)
-	staleNansTS = time.Now().UnixMilli()
-	err = app.AppendWithStaleNans(s.baseCtx, h, s.options, sourceStates, staleNansTS, relabelerID)
+	state.SetStaleNansTS(time.Now().UnixMilli())
+	err = app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -1973,13 +1992,13 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans() {
 	s.T().Log("wait send to 2 destinations")
 	firstWr.Timeseries = append(firstWr.Timeseries, secondWr.Timeseries...)
 	firstWr.Timeseries[0].Samples[0].Value = math.NaN()
-	firstWr.Timeseries[0].Samples[0].Timestamp = staleNansTS
+	firstWr.Timeseries[0].Samples[0].Timestamp = state.StaleNansTS()
 
 	s.Equal(firstWr.String(), <-destination)
 	s.Equal(firstWr.String(), <-destination)
 
 	s.T().Log("shutdown distributor")
-	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 150*time.Millisecond)
+	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 500*time.Millisecond)
 	err = dstrb.Shutdown(shutdownCtx)
 	cancel()
 	s.Require().NoError(err)
@@ -2121,9 +2140,10 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	sourceStates := relabeler.NewSourceStates()
-	staleNansTS := time.Now().UnixMilli()
-	err = app.AppendWithStaleNans(s.baseCtx, h, s.options, sourceStates, staleNansTS, relabelerID)
+	state := cppbridge.NewState(numberOfShards)
+	state.EnableTrackStaleness()
+	state.SetStaleNansTS(time.Now().UnixMilli())
+	err = app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -2170,8 +2190,8 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 		},
 	}
 	h = s.makeIncomingData(secondWr, hlimits)
-	staleNansTS = time.Now().UnixMilli()
-	err = app.AppendWithStaleNans(s.baseCtx, h, s.options, sourceStates, staleNansTS, relabelerID)
+	state.SetStaleNansTS(time.Now().UnixMilli())
+	err = app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -2210,8 +2230,8 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 		},
 	}
 	h = s.makeIncomingData(thirdWr, hlimits)
-	staleNansTS = time.Now().UnixMilli()
-	err = app.AppendWithStaleNans(s.baseCtx, h, s.options, sourceStates, staleNansTS, relabelerID)
+	state.SetStaleNansTS(time.Now().UnixMilli())
+	err = app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID)
 	s.Require().NoError(err)
 
 	time.AfterFunc(100*time.Millisecond, func() {
@@ -2222,7 +2242,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 	thirdWr.Timeseries[0].Labels = append(thirdWr.Timeseries[0].Labels, prompb.Label{Name: "lname", Value: "blabla"})
 	thirdWr.Timeseries = thirdWr.Timeseries[:1]
 	secondWr.Timeseries[0].Samples[0].Value = math.NaN()
-	secondWr.Timeseries[0].Samples[0].Timestamp = staleNansTS
+	secondWr.Timeseries[0].Samples[0].Timestamp = state.StaleNansTS()
 	secondWr.Timeseries = append(secondWr.Timeseries, thirdWr.Timeseries...)
 	s.Equal(secondWr.String(), <-destination)
 	s.Equal(secondWr.String(), <-destination)

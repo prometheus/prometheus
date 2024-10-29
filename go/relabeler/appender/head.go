@@ -45,12 +45,10 @@ func (h *RotatableHead) ReferenceCounter() relabeler.ReferenceCounter {
 func (h *RotatableHead) Append(
 	ctx context.Context,
 	incomingData *relabeler.IncomingData,
-	options cppbridge.RelabelerOptions,
-	sourceStates *relabeler.SourceStates,
-	staleNansTS int64,
+	state *cppbridge.State,
 	relabelerID string,
 ) ([][]*cppbridge.InnerSeries, error) {
-	return h.head.Append(ctx, incomingData, options, sourceStates, staleNansTS, relabelerID)
+	return h.head.Append(ctx, incomingData, state, relabelerID)
 }
 
 // ForEachShard - relabeler.Head interface implementation.

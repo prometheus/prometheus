@@ -23,15 +23,18 @@ class QueryableEncodingBimap : public BareBones::SnugComposite::DecodingTable<Fi
   [[nodiscard]] PROMPP_ALWAYS_INLINE const SeriesReverseIndex& reverse_index() const noexcept { return reverse_index_; }
   [[nodiscard]] PROMPP_ALWAYS_INLINE const LsIdSet& ls_id_set() const noexcept { return ls_id_set_; }
 
-  PROMPP_ALWAYS_INLINE void build_sorting_index() {
-    if (sorting_index_.empty()) {
+  template <class Iterator>
+  PROMPP_ALWAYS_INLINE void sort_series_ids(Iterator begin, Iterator end) noexcept {
+    if (sorting_index_.empty()) [[unlikely]] {
       sorting_index_.build();
     }
+
+    sorting_index_.sort(begin, end);
   }
 
-  template <class Iterator>
-  PROMPP_ALWAYS_INLINE void sort_series_ids(Iterator begin, Iterator end) const noexcept {
-    sorting_index_.sort(begin, end);
+  template <class Container>
+  PROMPP_ALWAYS_INLINE void sort_series_ids(Container& container) noexcept {
+    sort_series_ids(container.begin(), container.end());
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept {
@@ -55,6 +58,22 @@ class QueryableEncodingBimap : public BareBones::SnugComposite::DecodingTable<Fi
     auto composite_label_set = Base::items_.emplace_back(Base::data_, label_set).composite(Base::data());
     update_indexes(ls_id, composite_label_set, hash);
     return ls_id;
+  }
+
+  template <class Class>
+  PROMPP_ALWAYS_INLINE std::optional<uint32_t> find(const Class& c) const noexcept {
+    if (auto i = ls_id_hash_set_.find(c); i != ls_id_hash_set_.end()) {
+      return *i;
+    }
+    return {};
+  }
+
+  template <class Class>
+  PROMPP_ALWAYS_INLINE std::optional<uint32_t> find(const Class& c, size_t hashval) const noexcept {
+    if (auto i = ls_id_hash_set_.find(c, phmap_hash(hashval)); i != ls_id_hash_set_.end()) {
+      return *i;
+    }
+    return {};
   }
 
  private:

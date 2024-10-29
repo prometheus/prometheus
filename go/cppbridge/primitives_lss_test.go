@@ -79,6 +79,7 @@ func (s *QueryableLSSSuite) SetupTest() {
 	s.labelSets = []model.LabelSet{
 		model.NewLabelSetBuilder().Set("lol", "kek").Build(),
 		model.NewLabelSetBuilder().Set("lol", "kek").Set("che", "bureck").Build(),
+		model.NewLabelSetBuilder().Set("lol", "kek").Set("zhe", "bureck").Build(),
 		model.NewLabelSetBuilder().Set("foo", "bar").Build(),
 		model.NewLabelSetBuilder().Set("foo", "baz").Build(),
 	}
@@ -90,16 +91,17 @@ func (s *QueryableLSSSuite) SetupTest() {
 }
 
 func (s *QueryableLSSSuite) TestQuery() {
-	// match
+	// match with sorting
 	{
 		labelMatchers := []model.LabelMatcher{
 			{Name: "lol", Value: "kek", MatcherType: model.MatcherTypeExactMatch},
 		}
 		queryResult := s.lss.Query(labelMatchers)
 		s.Require().Equal(cppbridge.LSSQueryStatusMatch, queryResult.Status())
-		s.Require().Len(queryResult.Matches(), 2)
-		s.Require().Equal(s.labelSetIDs[0], queryResult.Matches()[0])
-		s.Require().Equal(s.labelSetIDs[1], queryResult.Matches()[1])
+		s.Require().Len(queryResult.Matches(), 3)
+		s.Require().Equal(s.labelSetIDs[1], queryResult.Matches()[0])
+		s.Require().Equal(s.labelSetIDs[0], queryResult.Matches()[1])
+		s.Require().Equal(s.labelSetIDs[2], queryResult.Matches()[2])
 	}
 
 	// no positive matchers
@@ -157,12 +159,12 @@ var queryLabelNamesCases = []queryLabelNameCase{
 	{
 		matchers:        []model.LabelMatcher{},
 		expected_status: cppbridge.LSSQueryStatusMatch,
-		expected_names:  []string{"che", "foo", "lol"},
+		expected_names:  []string{"che", "foo", "lol", "zhe"},
 	},
 	{
 		matchers:        []model.LabelMatcher{{Name: "lol", Value: ".+", MatcherType: model.MatcherTypeRegexpMatch}},
 		expected_status: cppbridge.LSSQueryStatusMatch,
-		expected_names:  []string{"che", "lol"},
+		expected_names:  []string{"che", "lol", "zhe"},
 	},
 }
 

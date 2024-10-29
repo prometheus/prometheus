@@ -1,7 +1,6 @@
 #pragma once
 
 #include <fstream>
-#include <string_view>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Warray-bounds"
@@ -501,6 +500,22 @@ class EncodingTable : private DecodingTable<Filament> {
     }) + shift_;
   }
 
+  template <class Class>
+  PROMPP_ALWAYS_INLINE std::optional<uint32_t> find(const Class& c) const noexcept {
+    if (auto i = set_.find(c); i != set_.end()) {
+      return *i + shift_;
+    }
+    return {};
+  }
+
+  template <class Class>
+  PROMPP_ALWAYS_INLINE std::optional<uint32_t> find(const Class& c, size_t hashval) const noexcept {
+    if (auto i = set_.find(c, phmap::phmap_mix<sizeof(size_t)>()(hashval)); i != set_.end()) {
+      return *i + shift_;
+    }
+    return {};
+  }
+
   PROMPP_ALWAYS_INLINE auto checkpoint() const noexcept { return checkpoint_type(*this, next_item_index()); }
 
   void shrink_to_checkpoint_size(const checkpoint_type& checkpoint) {
@@ -706,6 +721,14 @@ class OrderedEncodingBimap : public DecodingTable<Filament> {
 
   template <class Class>
   inline __attribute__((always_inline)) std::optional<uint32_t> find(const Class& c) const noexcept {
+    if (auto i = set_.find(c); i != set_.end()) {
+      return *i;
+    }
+    return {};
+  }
+
+  template <class Class>
+  inline __attribute__((always_inline)) std::optional<uint32_t> find(const Class& c, [[maybe_unused]] size_t hashval) const noexcept {
     if (auto i = set_.find(c); i != set_.end()) {
       return *i;
     }

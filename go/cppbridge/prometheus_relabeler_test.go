@@ -7,6 +7,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/suite"
@@ -170,7 +171,7 @@ func (s *RelabelerSuite) TestInvalidAction() {
 	s.Require().NoError(err)
 
 	var numberOfShards uint16 = 1
-	psr, err := cppbridge.NewInputPerShardRelabeler(statelessRelabeler, lss.Generation(), numberOfShards, 0)
+	psr, err := cppbridge.NewInputPerShardRelabeler(statelessRelabeler, numberOfShards, 0)
 	s.Require().NoError(err)
 
 	hlimits := cppbridge.DefaultWALHashdexLimits()
@@ -179,19 +180,21 @@ func (s *RelabelerSuite) TestInvalidAction() {
 
 	shardsInnerSeries := cppbridge.NewShardsInnerSeries(numberOfShards)
 	shardsRelabeledSeries := cppbridge.NewShardsRelabeledSeries(numberOfShards)
+	cache := cppbridge.NewCache()
 
-	err = psr.InputRelabeling(s.baseCtx, lss, s.options, h, shardsInnerSeries, shardsRelabeledSeries)
+	err = psr.InputRelabeling(s.baseCtx, lss, cache, s.options, h, shardsInnerSeries, shardsRelabeledSeries)
 	s.Require().Error(err)
 }
 
 func (s *RelabelerSuite) TestPerShardRelabelerWithNullPtrStatelessRelabeler() {
 	nilStatelessRelabeler := struct {
-		p     uintptr
-		rCfgs []*cppbridge.RelabelConfig
-	}{0, nil}
+		p          uintptr
+		rCfgs      []*cppbridge.RelabelConfig
+		generation uint64
+	}{0, nil, 0}
 	statelessRelabeler := (*cppbridge.StatelessRelabeler)(unsafe.Pointer(&nilStatelessRelabeler))
 
-	_, err := cppbridge.NewInputPerShardRelabeler(statelessRelabeler, 0, 0, 0)
+	_, err := cppbridge.NewInputPerShardRelabeler(statelessRelabeler, 0, 0)
 	s.Require().Error(err)
 }
 
@@ -227,7 +230,7 @@ func (s *RelabelerSuite) TestInputPerShardRelabeler() {
 	s.Require().NoError(err)
 
 	var numberOfShards uint16 = 1
-	psr, err := cppbridge.NewInputPerShardRelabeler(statelessRelabeler, lss.Generation(), numberOfShards, 0)
+	psr, err := cppbridge.NewInputPerShardRelabeler(statelessRelabeler, numberOfShards, 0)
 	s.Require().NoError(err)
 
 	hlimits := cppbridge.DefaultWALHashdexLimits()
@@ -236,8 +239,9 @@ func (s *RelabelerSuite) TestInputPerShardRelabeler() {
 
 	shardsInnerSeries := cppbridge.NewShardsInnerSeries(numberOfShards)
 	shardsRelabeledSeries := cppbridge.NewShardsRelabeledSeries(numberOfShards)
+	cache := cppbridge.NewCache()
 
-	err = psr.InputRelabeling(s.baseCtx, lss, s.options, h, shardsInnerSeries, shardsRelabeledSeries)
+	err = psr.InputRelabeling(s.baseCtx, lss, cache, s.options, h, shardsInnerSeries, shardsRelabeledSeries)
 	s.Require().NoError(err)
 }
 
@@ -250,8 +254,6 @@ func (s *RelabelerSuite) TestOutputPerShardRelabeler() {
 		},
 	}
 
-	lss := cppbridge.NewQueryableLssStorage()
-
 	statelessRelabeler, err := cppbridge.NewStatelessRelabeler(rCfgs)
 	s.Require().NoError(err)
 
@@ -260,22 +262,26 @@ func (s *RelabelerSuite) TestOutputPerShardRelabeler() {
 		{"name1", "value1"},
 	}
 
-	psr, err := cppbridge.NewOutputPerShardRelabeler(externalLabels, statelessRelabeler, lss.Generation(), 0, 0)
+	psr, err := cppbridge.NewOutputPerShardRelabeler(externalLabels, statelessRelabeler, 0, 0, 0)
 	s.Require().NoError(err)
 
 	psr.CacheAllocatedMemory()
 }
 
-func (s *RelabelerSuite) TestRelabelerStateUpdateCtor() {
-	var generation uint32 = 0
-
-	rsu := cppbridge.NewRelabelerStateUpdate()
-	s.Equal(generation, rsu.Generation())
+func (s *RelabelerSuite) TestCacheAllocatedMemory() {
+	cache := cppbridge.NewCache()
+	s.Equal(uint64(16), cache.AllocatedMemory())
 }
 
-func (s *RelabelerSuite) TestRelabelerStateUpdateWithGenerationCtor() {
-	var generation uint32 = 3
+func (s *RelabelerSuite) TestToHash_EmptySlice() {
+	rCfgs := []*cppbridge.RelabelConfig{}
 
-	rsu := cppbridge.NewRelabelerStateUpdateWithGeneration(generation)
-	s.Equal(generation, rsu.Generation())
+	s.Require().Equal(xxhash.Sum64String(""), cppbridge.ToHash(rCfgs))
+}
+
+func (s *RelabelerSuite) TestToHash_EmptyConfig() {
+	rCfgs := []*cppbridge.RelabelConfig{{}}
+	var a cppbridge.Action
+
+	s.Require().Equal(xxhash.Sum64String("0"+a.String()), cppbridge.ToHash(rCfgs))
 }

@@ -203,6 +203,9 @@ class Scraper {
     PROMPP_ALWAYS_INLINE void remove_item() noexcept { --items_count_; }
 
     PROMPP_ALWAYS_INLINE void add_label(const MarkedLabel& label, MarkedItem*& item) noexcept {
+      if (label.value.length == 0) [[unlikely]] {
+        return;
+      }
       const auto offset = reinterpret_cast<const char*>(item) - buffer_.data();
       buffer_.push_back(reinterpret_cast<const char*>(&label), reinterpret_cast<const char*>(&label) + sizeof(label));
       item = reinterpret_cast<MarkedItem*>(buffer_.data() + offset);

@@ -54,9 +54,7 @@ type Head interface {
 	Append(
 		ctx context.Context,
 		incomingData *IncomingData,
-		options cppbridge.RelabelerOptions,
-		sourceStates *SourceStates,
-		staleNansTS int64,
+		state *cppbridge.State,
 		relabelerID string,
 	) ([][]*cppbridge.InnerSeries, error)
 	ForEachShard(fn ShardFn) error

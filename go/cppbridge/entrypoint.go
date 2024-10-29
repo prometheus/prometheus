@@ -930,11 +930,10 @@ func prometheusRelabeledSeriesDtor(relabeledSeries *RelabeledSeries) {
 //
 
 // prometheusRelabelerStateUpdateCtor - wrapper for constructor C-RelabelerStateUpdate(vector), filling in c++.
-func prometheusRelabelerStateUpdateCtor(relabelerStateUpdate *RelabelerStateUpdate, generation uint32) {
+func prometheusRelabelerStateUpdateCtor(relabelerStateUpdate *RelabelerStateUpdate) {
 	var args = struct {
 		relabelerStateUpdate *RelabelerStateUpdate
-		generation           uint32
-	}{relabelerStateUpdate, generation}
+	}{relabelerStateUpdate}
 
 	fastcgo.UnsafeCall1(
 		C.prompp_prometheus_relabeler_state_update_ctor,
@@ -978,16 +977,14 @@ func prometheusRelabelerStalenansStateDtor(stalenansState uintptr) {
 func prometheusPerShardRelabelerCtor(
 	externalLabels []Label,
 	statelessRelabeler uintptr,
-	lssGeneration uint32,
 	numberOfShards, shardID uint16,
 ) (perShardRelabeler uintptr, exception []byte) {
 	var args = struct {
 		externalLabels     []Label
 		statelessRelabeler uintptr
-		lssGeneration      uint32
 		numberOfShards     uint16
 		shardID            uint16
-	}{externalLabels, statelessRelabeler, lssGeneration, numberOfShards, shardID}
+	}{externalLabels, statelessRelabeler, numberOfShards, shardID}
 	var res struct {
 		perShardRelabeler uintptr
 		exception         []byte
@@ -1034,7 +1031,7 @@ func prometheusPerShardRelabelerCacheAllocatedMemory(perShardRelabeler uintptr) 
 
 // prometheusPerShardRelabelerInputRelabeling - wrapper for relabeling incoming hashdex(first stage).
 func prometheusPerShardRelabelerInputRelabeling(
-	perShardRelabeler, lss, hashdex uintptr,
+	perShardRelabeler, lss, cache, hashdex uintptr,
 	options RelabelerOptions,
 	shardsInnerSeries []*InnerSeries,
 	shardsRelabeledSeries []*RelabeledSeries,
@@ -1045,8 +1042,9 @@ func prometheusPerShardRelabelerInputRelabeling(
 		options               RelabelerOptions
 		perShardRelabeler     uintptr
 		hashdex               uintptr
+		cache                 uintptr
 		lss                   uintptr
-	}{shardsInnerSeries, shardsRelabeledSeries, options, perShardRelabeler, hashdex, lss}
+	}{shardsInnerSeries, shardsRelabeledSeries, options, perShardRelabeler, hashdex, cache, lss}
 	var res struct {
 		exception []byte
 	}
@@ -1066,7 +1064,7 @@ func prometheusPerShardRelabelerInputRelabeling(
 // prometheusPerShardRelabelerInputRelabelingWithStalenans wrapper for relabeling incoming
 // hashdex(first stage) with state stalenans.
 func prometheusPerShardRelabelerInputRelabelingWithStalenans(
-	perShardRelabeler, lss, hashdex, sourceState uintptr,
+	perShardRelabeler, lss, cache, hashdex, sourceState uintptr,
 	staleNansTS int64,
 	options RelabelerOptions,
 	shardsInnerSeries []*InnerSeries,
@@ -1078,10 +1076,11 @@ func prometheusPerShardRelabelerInputRelabelingWithStalenans(
 		options               RelabelerOptions
 		perShardRelabeler     uintptr
 		hashdex               uintptr
+		cache                 uintptr
 		lss                   uintptr
 		sourceState           uintptr
 		staleNansTS           int64
-	}{shardsInnerSeries, shardsRelabeledSeries, options, perShardRelabeler, hashdex, lss, sourceState, staleNansTS}
+	}{shardsInnerSeries, shardsRelabeledSeries, options, perShardRelabeler, hashdex, cache, lss, sourceState, staleNansTS}
 	var res struct {
 		sourceState uintptr
 		exception   []byte
@@ -1133,14 +1132,15 @@ func prometheusPerShardRelabelerAppendRelabelerSeries(
 // prometheusPerShardRelabelerUpdateRelabelerState - wrapper for add to cache relabled data(third stage).
 func prometheusPerShardRelabelerUpdateRelabelerState(
 	relabelerStateUpdate *RelabelerStateUpdate,
-	perShardRelabeler uintptr,
+	perShardRelabeler, cache uintptr,
 	relabeledShardID uint16,
 ) []byte {
 	var args = struct {
 		relabelerStateUpdate *RelabelerStateUpdate
 		perShardRelabeler    uintptr
+		cache                uintptr
 		relabeledShardID     uint16
-	}{relabelerStateUpdate, perShardRelabeler, relabeledShardID}
+	}{relabelerStateUpdate, perShardRelabeler, cache, relabeledShardID}
 	var res struct {
 		exception []byte
 	}
@@ -1159,10 +1159,9 @@ func prometheusPerShardRelabelerUpdateRelabelerState(
 
 // prometheusPerShardRelabelerOutputRelabeling - wrapper for relabeling output series(fourth stage).
 func prometheusPerShardRelabelerOutputRelabeling(
-	perShardRelabeler, lss uintptr,
+	perShardRelabeler, lss, cache uintptr,
 	incomingInnerSeries, encodersInnerSeries []*InnerSeries,
 	relabeledSeries *RelabeledSeries,
-	generation uint32,
 ) []byte {
 	var args = struct {
 		relabeledSeries     *RelabeledSeries
@@ -1170,8 +1169,8 @@ func prometheusPerShardRelabelerOutputRelabeling(
 		encodersInnerSeries []*InnerSeries
 		perShardRelabeler   uintptr
 		lss                 uintptr
-		generation          uint32
-	}{relabeledSeries, incomingInnerSeries, encodersInnerSeries, perShardRelabeler, lss, generation}
+		cache               uintptr
+	}{relabeledSeries, incomingInnerSeries, encodersInnerSeries, perShardRelabeler, lss, cache}
 	var res struct {
 		exception []byte
 	}
@@ -1185,19 +1184,17 @@ func prometheusPerShardRelabelerOutputRelabeling(
 	return res.exception
 }
 
-// prometheusPerShardRelabelerResetTo - reset cache and store lss generation.
+// prometheusPerShardRelabelerResetTo - reset set new number_of_shards and external_labels.
 func prometheusPerShardRelabelerResetTo(
 	externalLabels []Label,
 	perShardRelabeler uintptr,
-	lssGeneration uint32,
 	numberOfShards uint16,
 ) {
 	var args = struct {
 		externalLabels    []Label
 		perShardRelabeler uintptr
-		lssGeneration     uint32
 		numberOfShards    uint16
-	}{externalLabels, perShardRelabeler, lssGeneration, numberOfShards}
+	}{externalLabels, perShardRelabeler, numberOfShards}
 	start := time.Now()
 	fastcgo.UnsafeCall1(
 		C.prompp_prometheus_per_shard_relabeler_reset_to,
@@ -1735,12 +1732,15 @@ func walScraperHashdexParse(hashdex uintptr, buffer []byte, default_timestamp in
 	var res struct {
 		error uint32
 	}
-
+	start := time.Now()
 	fastcgo.UnsafeCall2(
 		C.prompp_wal_scraper_hashdex_parse,
 		uintptr(unsafe.Pointer(&args)),
 		uintptr(unsafe.Pointer(&res)),
 	)
+	unsafeCall.With(
+		prometheus.Labels{"object": "hashdex", "method": "parse"},
+	).Add(float64(time.Since(start).Nanoseconds()))
 
 	return res.error
 }
@@ -1752,6 +1752,66 @@ func walScraperHashdexDtor(hashdex uintptr) {
 
 	fastcgo.UnsafeCall1(
 		C.prompp_wal_scraper_hashdex_dtor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
+//
+// Relabeler cache
+//
+
+// prometheusCacheCtor wrapper for constructor C-Cache.
+func prometheusCacheCtor() uintptr {
+	var res struct {
+		cache uintptr
+	}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_prometheus_cache_ctor,
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.cache
+}
+
+// prometheusCacheDtor wrapper for destructor C-Cache.
+func prometheusCacheDtor(cache uintptr) {
+	var args = struct {
+		cache uintptr
+	}{cache}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_prometheus_cache_dtor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
+// prometheusCacheAllocatedMemory return size of allocated memory for caches.
+func prometheusCacheAllocatedMemory(cache uintptr) uint64 {
+	var args = struct {
+		cache uintptr
+	}{cache}
+	var res struct {
+		cacheAllocatedMemory uint64
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_prometheus_cache_allocated_memory,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.cacheAllocatedMemory
+}
+
+// prometheusCacheResetTo reset cache.
+func prometheusCacheResetTo(cache uintptr) {
+	var args = struct {
+		cache uintptr
+	}{cache}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_prometheus_cache_reset_to,
 		uintptr(unsafe.Pointer(&args)),
 	)
 }
