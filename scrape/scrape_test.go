@@ -1270,6 +1270,7 @@ func BenchmarkScrapeLoopAppendOM(b *testing.B) {
 }
 
 func TestSetOptionsHandlingStaleness(t *testing.T) {
+	t.Parallel()
 	s := teststorage.New(t, 600000)
 	defer s.Close()
 
@@ -3712,6 +3713,7 @@ test_summary_count 199
 
 // Testing whether we can automatically convert scraped classic histograms into native histograms with custom buckets.
 func TestConvertClassicHistogramsToNHCB(t *testing.T) {
+	t.Parallel()
 	genTestCounterText := func(name string, value int, withMetadata bool) string {
 		if withMetadata {
 			return fmt.Sprintf(`
@@ -4117,6 +4119,7 @@ metric: <
 			}
 
 			t.Run(fmt.Sprintf("%s with %s", name, metricsTextName), func(t *testing.T) {
+				t.Parallel()
 				simpleStorage := teststorage.New(t)
 				defer simpleStorage.Close()
 
