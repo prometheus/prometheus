@@ -125,7 +125,7 @@ func BenchmarkHead_WalCommit(b *testing.B) {
 
 	for _, seriesCount := range seriesCounts {
 		b.Run(fmt.Sprintf("%d series", seriesCount), func(b *testing.B) {
-			for _, commits := range []int64{1, 2} {
+			for _, commits := range []int64{1, 2} { // To test commits that create new series and when the series already exists.
 				b.Run(fmt.Sprintf("%d commits", commits), func(b *testing.B) {
 					b.ReportAllocs()
 					b.ResetTimer()
