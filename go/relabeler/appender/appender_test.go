@@ -1468,7 +1468,9 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 	metrics := querier.NewMetrics(prometheus.DefaultRegisterer)
 	app := appender.NewQueryableAppender(rotatableHead, dstrb, metrics)
 
-	rotator := appender.NewRotator(app, clock, appender.DefaultRotateDuration)
+	rotationTimer := relabeler.NewRotateTimer(clock, appender.DefaultRotateDuration)
+	defer rotationTimer.Stop()
+	rotator := appender.NewRotator(app, rotationTimer)
 	rotator.Run()
 	defer func() { _ = rotator.Close() }()
 
@@ -2095,7 +2097,9 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 	metrics := querier.NewMetrics(prometheus.DefaultRegisterer)
 	app := appender.NewQueryableAppender(rotatableHead, dstrb, metrics)
 
-	rotator := appender.NewRotator(app, clock, appender.DefaultRotateDuration)
+	rotationTimer := relabeler.NewRotateTimer(clock, appender.DefaultRotateDuration)
+	defer rotationTimer.Stop()
+	rotator := appender.NewRotator(app, rotationTimer)
 	rotator.Run()
 	defer func() { _ = rotator.Close() }()
 

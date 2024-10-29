@@ -8,6 +8,7 @@ import (
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head/catalog"
+	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 	"github.com/prometheus/prometheus/pp/go/util"
 	"github.com/prometheus/client_golang/prometheus"
 	"os"
@@ -127,7 +128,7 @@ func (m *Manager) Restore(blockDuration time.Duration) (active relabeler.Head, r
 				}
 				m.counter.With(prometheus.Labels{"type": "persisted"}).Inc()
 				if discardErr = os.RemoveAll(headDir); discardErr != nil {
-					fmt.Println("FAILED TO DELETE DIR", headDir, discardErr)
+					logger.Errorf("FAILED TO DELETE DIR", headDir, discardErr)
 					return discardErr
 				}
 				if discardErr = m.catalog.Delete(id); discardErr != nil {

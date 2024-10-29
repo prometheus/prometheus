@@ -19,6 +19,10 @@ const (
 	PersistedHeadValue = -(1 << 30)
 )
 
+type WriteNotifier interface {
+	NotifyWritten()
+}
+
 // BlockWriter writes block on disk.
 type BlockWriter interface {
 	Write(block block.Block) error
@@ -27,9 +31,10 @@ type BlockWriter interface {
 // QueryableStorage hold reference to finalized heads and writes blocks from them. Also allows query not yet not
 // persisted heads.
 type QueryableStorage struct {
-	blockWriter BlockWriter
-	mtx         sync.Mutex
-	heads       []relabeler.Head
+	blockWriter   BlockWriter
+	writeNotifier WriteNotifier
+	mtx           sync.Mutex
+	heads         []relabeler.Head
 
 	signal chan struct{}
 	closer *util.Closer
@@ -40,12 +45,18 @@ type QueryableStorage struct {
 
 // NewQueryableStorage - QueryableStorage constructor.
 func NewQueryableStorage(blockWriter BlockWriter, registerer prometheus.Registerer, querierMetrics *querier.Metrics, heads ...relabeler.Head) *QueryableStorage {
+	return NewQueryableStorageWithWriteNotifier(blockWriter, registerer, querierMetrics, noOpWriteNotifier{}, heads...)
+}
+
+// NewQueryableStorageWithWriteNotifier - QueryableStorage constructor.
+func NewQueryableStorageWithWriteNotifier(blockWriter BlockWriter, registerer prometheus.Registerer, querierMetrics *querier.Metrics, writeNotifier WriteNotifier, heads ...relabeler.Head) *QueryableStorage {
 	factory := util.NewUnconflictRegisterer(registerer)
 	qs := &QueryableStorage{
-		blockWriter: blockWriter,
-		heads:       heads,
-		signal:      make(chan struct{}),
-		closer:      util.NewCloser(),
+		blockWriter:   blockWriter,
+		writeNotifier: writeNotifier,
+		heads:         heads,
+		signal:        make(chan struct{}),
+		closer:        util.NewCloser(),
 		headPersistenceDuration: factory.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "prompp_head_persistence_duration_duration",
@@ -109,6 +120,7 @@ func (qs *QueryableStorage) write() {
 	}
 
 	logger.Infof("QUERYABLE STORAGE: write: selected { %s } heads", strings.Join(headList, ", "))
+	shouldNotify := false
 	for _, head := range heads {
 		start := time.Now()
 		err := head.ForEachShard(func(shard relabeler.Shard) error {
@@ -123,7 +135,12 @@ func (qs *QueryableStorage) write() {
 			"generation": fmt.Sprintf("%d", head.Generation()),
 		}).Set(float64(time.Since(start).Milliseconds()))
 		head.ReferenceCounter().Add(PersistedHeadValue)
+		shouldNotify = true
 		logger.Infof("QUERYABLE STORAGE: head { %d } persisted, duration: %v", head.Generation(), time.Since(start))
+	}
+
+	if shouldNotify {
+		qs.writeNotifier.NotifyWritten()
 	}
 
 	qs.shrink()
@@ -235,3 +252,8 @@ func refCount(value int64) int64 {
 	}
 	return value
 }
+
+type noOpWriteNotifier struct {
+}
+
+func (noOpWriteNotifier) NotifyWritten() {}

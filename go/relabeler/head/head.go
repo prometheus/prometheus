@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 	"math"
 	"runtime"
 	"sort"
@@ -103,7 +104,7 @@ func New(
 	h.run()
 
 	runtime.SetFinalizer(h, func(h *Head) {
-		fmt.Println("HEAD {", generation, "} DESTROYED")
+		logger.Debugf("head {%d} destroyed", generation)
 	})
 
 	return h, nil

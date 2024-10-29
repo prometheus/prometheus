@@ -22,9 +22,15 @@ type RotateTimer struct {
 // NewRotateTimer - init new RotateTimer. The duration durationBlock and delayAfterNotify must be greater than zero;
 // if not, Ticker will panic. Stop the ticker to release associated resources.
 func NewRotateTimer(clock clockwork.Clock, desiredBlockFormationDuration time.Duration) *RotateTimer {
+	return NewRotateTimerWithSeed(clock, desiredBlockFormationDuration, uint64(clock.Now().UnixNano()))
+}
+
+// NewRotateTimerWithSeed - init new RotateTimer. The duration durationBlock and delayAfterNotify must be greater than zero;
+// if not, Ticker will panic. Stop the ticker to release associated resources.
+func NewRotateTimerWithSeed(clock clockwork.Clock, desiredBlockFormationDuration time.Duration, seed uint64) *RotateTimer {
 	bd := desiredBlockFormationDuration.Milliseconds()
 	//nolint:gosec // there is no need for cryptographic strength here
-	rnd := rand.New(rand.NewSource(clock.Now().UnixNano()))
+	rnd := rand.New(rand.NewSource(int64(seed)))
 	rt := &RotateTimer{
 		clock:            clock,
 		durationBlock:    bd,
