@@ -24,6 +24,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/bboreham/go-loser"
 
@@ -312,8 +313,29 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}, affected ma
 		}
 	}
 
+	i := 0
 	for l := range affected {
+		i++
 		process(l)
+
+		// From time to time want some readers to go through and read their postings.
+		// It takes around 50ms to process a 1K series batch, and 120ms to process a 10K series batch (local benchmarks on an M3).
+		// It seems that a number between that 1K and 10K should be a good balance between speed and amount of pauses.
+		if i%4096 == 0 {
+			p.mtx.Unlock()
+			// While it's tempting to just do a `time.Sleep(time.Millisecond)` here,
+			// it wouldn't ensure use that readers actually were able to get the read lock,
+			// because if there are writes waiting on same mutex, readers won't be able to get it.
+			// So we just grab one RLock ourselves.
+			p.mtx.RLock()
+			// We shouldn't wait here, because we would be blocking a potential write for no reason.
+			// Note that if there's a writer waiting for us to unlock, no reader will be able to get the read lock.
+			p.mtx.RUnlock() //nolint:staticcheck // SA2001: this is an intentionally empty critical section.
+			// Now we can wait a little bit just to increase the chance of a reader getting the lock.
+			// If we were deleting 100M series here, pausing every 4096 with 10ms sleeps would be an extra of 240s, which is negligible.
+			time.Sleep(10 * time.Millisecond)
+			p.mtx.Lock()
+		}
 	}
 	process(allPostingsKey)
 }
