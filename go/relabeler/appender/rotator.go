@@ -24,15 +24,16 @@ type RotationTimer interface {
 
 // Rotator is a rotation trigger.
 type Rotator struct {
-	rotatable Rotatable
-	timer     RotationTimer
-	run       chan struct{}
-	closer    *util.Closer
+	rotatable     Rotatable
+	timer         RotationTimer
+	run           chan struct{}
+	closer        *util.Closer
 	rotateCounter prometheus.Counter
 }
 
 // NewRotator - Rotator constructor.
 func NewRotator(rotatable Rotatable, timer RotationTimer, registerer prometheus.Registerer) *Rotator {
+	factory := util.NewUnconflictRegisterer(registerer)
 	r := &Rotator{
 		rotatable: rotatable,
 		timer:     timer,
