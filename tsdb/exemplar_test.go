@@ -501,6 +501,8 @@ func BenchmarkResizeExemplars(b *testing.B) {
 	}
 }
 
+// TestCircularExemplarStorage_Concurrent_AddExemplar_Resize tries to provoke a data race between AddExemplar and Resize.
+// Run with race detection enabled.
 func TestCircularExemplarStorage_Concurrent_AddExemplar_Resize(t *testing.T) {
 	exs, err := NewCircularExemplarStorage(0, eMetrics)
 	require.NoError(t, err)
@@ -518,8 +520,6 @@ func TestCircularExemplarStorage_Concurrent_AddExemplar_Resize(t *testing.T) {
 	t.Cleanup(wg.Wait)
 
 	started := make(chan struct{})
-
-	// Try to provoke data race between AddExemplar and Resize.
 
 	go func() {
 		defer wg.Done()
