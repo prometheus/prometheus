@@ -6165,11 +6165,11 @@ func testOOOInterleavedImplicitCounterResets(t *testing.T, name string, scenario
 				{1, 40, histogram.UnknownCounterReset}, // I1.
 				{2, 40, histogram.UnknownCounterReset}, // O1.
 				{3, 10, histogram.UnknownCounterReset}, // O2. Counter reset cleared by iterator change.
-				{4, 30, histogram.UnknownCounterReset}, // I2. Counter reset cleared on merge.
+				{4, 30, histogram.UnknownCounterReset}, // I2. Counter reset cleared by iterator change.
 			},
 			expectedChunks: []expectedChunk{
-				{histogram.UnknownCounterReset, 2}, // I1+O2.
-				{histogram.UnknownCounterReset, 2}, // O2.I2.
+				{histogram.UnknownCounterReset, 2}, // I1+O2. Recoded due to having OOO chunks.
+				{histogram.CounterReset, 2},        // O2.I2. Recoded due to having OOO chunks.
 			},
 		},
 		"counter reset in OOO mmapped chunk cleared by in-memory ooo chunk": {
@@ -6189,16 +6189,15 @@ func testOOOInterleavedImplicitCounterResets(t *testing.T, name string, scenario
 				{2, 20, histogram.NotCounterReset},     // MO1.
 				{3, 30, histogram.NotCounterReset},     // MO1.
 				{4, 10, histogram.UnknownCounterReset}, // O1. Counter reset cleared by iterator change.
-				{5, 20, histogram.UnknownCounterReset}, // MO2. Counter reset cleared by merge.
+				{5, 20, histogram.UnknownCounterReset}, // MO2. Counter reset cleared by iterator change.
 				{6, 10, histogram.UnknownCounterReset}, // MO3. Counter reset cleared by iterator change.
 				{7, 20, histogram.NotCounterReset},     // MO3.
 				{8, 30, histogram.UnknownCounterReset}, // I1.
 			},
 			expectedChunks: []expectedChunk{
-				{histogram.UnknownCounterReset, 3}, // MO1.
-				{histogram.UnknownCounterReset, 1}, // O1.
-				{histogram.UnknownCounterReset, 1}, // MO2.
-				{histogram.UnknownCounterReset, 3}, // MO3+I1.
+				{histogram.UnknownCounterReset, 3}, // MO1. Recoded due to having OOO chunks.
+				{histogram.CounterReset, 2},        // O1+MO2. Recoded due to having OOO chunks.
+				{histogram.CounterReset, 3},        // MO3+I1. Recoded due to having OOO chunks.
 			},
 		},
 		"counter reset in OOO mmapped chunk cleared by another OOO mmaped chunk": {
@@ -6218,16 +6217,14 @@ func testOOOInterleavedImplicitCounterResets(t *testing.T, name string, scenario
 				{2, 10, histogram.UnknownCounterReset},  // MO3. Counter reset cleared by iterator change.
 				{3, 20, histogram.NotCounterReset},      // MO3.
 				{4, 30, histogram.NotCounterReset},      // MO3.
-				{5, 40, histogram.UnknownCounterReset},  // MO2. Counter reset cleared by merge.
+				{5, 40, histogram.UnknownCounterReset},  // MO2. Counter reset cleared by iterator change.
 				{6, 50, histogram.NotCounterReset},      // MO2.
 				{7, 60, histogram.UnknownCounterReset},  // O1.
 				{8, 100, histogram.UnknownCounterReset}, // I1.
 			},
 			expectedChunks: []expectedChunk{
-				{histogram.UnknownCounterReset, 1}, // MO1.
-				{histogram.UnknownCounterReset, 3}, // MO3
-				{histogram.UnknownCounterReset, 2}, // MO2
-				{histogram.UnknownCounterReset, 2}, // O1+I1.
+				{histogram.UnknownCounterReset, 1}, // MO1. Recoded due to having OOO chunks.
+				{histogram.CounterReset, 7},        // MO3+MO2+O1+I1. Recoded due to having OOO chunks.
 			},
 		},
 	}
