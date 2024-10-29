@@ -349,9 +349,6 @@ func (ce *CircularExemplarStorage) migrate(entry *circularBufferEntry, buf []byt
 }
 
 func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemplar) error {
-	var buf [1024]byte
-	seriesLabels := l.Bytes(buf[:])
-
 	// TODO(bwplotka): This lock can lock all scrapers, there might high contention on this on scale.
 	// Optimize by moving the lock to be per series (& benchmark it).
 	ce.lock.Lock()
@@ -360,6 +357,9 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 	if len(ce.exemplars) == 0 {
 		return storage.ErrExemplarsDisabled
 	}
+
+	var buf [1024]byte
+	seriesLabels := l.Bytes(buf[:])
 
 	idx, ok := ce.index[string(seriesLabels)]
 	err := ce.validateExemplar(idx, e, true)
