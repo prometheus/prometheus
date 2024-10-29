@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,6 +34,7 @@ import (
 
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
@@ -41,6 +43,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/rules"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func init() {
@@ -643,6 +646,123 @@ func TestRwProtoMsgFlagParser(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, tcase.expected, opt)
 			}
+		})
+	}
+}
+
+func getGaugeValue(t *testing.T, body io.ReadCloser, metricName string) (float64, error) {
+	t.Helper()
+
+	p := expfmt.TextParser{}
+	metricFamilies, err := p.TextToMetricFamilies(body)
+	if err != nil {
+		return 0, err
+	}
+	metricFamily, ok := metricFamilies[metricName]
+	if !ok {
+		return 0, errors.New("metric family not found")
+	}
+	metric := metricFamily.GetMetric()
+	if len(metric) != 1 {
+		return 0, errors.New("metric not found")
+	}
+	return metric[0].GetGauge().GetValue(), nil
+}
+
+func TestRuntimeGOGCConfig(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name         string
+		config       string
+		gogcEnvVar   string
+		expectedGOGC int
+	}{
+		{
+			name:         "empty config file",
+			expectedGOGC: 75,
+		},
+		// the GOGC env var is ignored in this case, see https://github.com/prometheus/prometheus/issues/16334
+		/* 		{
+			name:         "empty config file with GOGC env var set",
+			gogcEnvVar:   "66",
+			expectedGOGC: 66,
+		}, */
+		{
+			name: "gogc set through config",
+			config: `
+runtime:
+  gogc: 77`,
+			expectedGOGC: 77,
+		},
+		{
+			name: "gogc set through config and env var",
+			config: `
+runtime:
+  gogc: 77`,
+			gogcEnvVar:   "88",
+			expectedGOGC: 77,
+		},
+		{
+			name: "incomplete runtime block",
+			config: `
+runtime:`,
+			expectedGOGC: 75,
+		},
+		{
+			name: "incomplete runtime block and GOGC env var set",
+			config: `
+runtime:`,
+			gogcEnvVar:   "88",
+			expectedGOGC: 88,
+		},
+		// the GOGC env var is ignored in this case, see https://github.com/prometheus/prometheus/issues/16334
+		/* 		{
+					name: "unrelated config and GOGC env var set",
+					config: `
+		global:
+		  scrape_interval: 500ms`,
+					gogcEnvVar:   "80",
+					expectedGOGC: 80,
+				}, */
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			tmpDir := t.TempDir()
+			configFile := filepath.Join(tmpDir, "prometheus.yml")
+
+			port := testutil.RandomUnprivilegedPort(t)
+			os.WriteFile(configFile, []byte(tc.config), 0o777)
+			prom := prometheusCommandWithLogging(t, configFile, port, fmt.Sprintf("--storage.tsdb.path=%s", tmpDir))
+			// Inject GOGC when set.
+			prom.Env = os.Environ()
+			if tc.gogcEnvVar != "" {
+				prom.Env = append(prom.Env, fmt.Sprintf("GOGC=%s", tc.gogcEnvVar))
+			}
+			require.NoError(t, prom.Start())
+
+			var (
+				r   *http.Response
+				err error
+			)
+			// Wait for the /metrics endpoint to be ready.
+			require.Eventually(t, func() bool {
+				r, err = http.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", port))
+				if err != nil {
+					return false
+				}
+				return r.StatusCode == http.StatusOK
+			}, 5*time.Second, 50*time.Millisecond)
+			defer r.Body.Close()
+
+			// Check the final GOGC that's set, consider go_gc_gogc_percent from /metrics as source of truth.
+			gogc, err := getGaugeValue(t, r.Body, "go_gc_gogc_percent")
+			require.NoError(t, err)
+			require.Equal(t, float64(tc.expectedGOGC), gogc)
 		})
 	}
 }
