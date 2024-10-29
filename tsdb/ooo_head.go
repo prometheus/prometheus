@@ -137,7 +137,7 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error
 			if newChunk != nil { // A new chunk was allocated.
 				if !recoded {
 					hc := newChunk.(*chunkenc.HistogramChunk)
-					if s.h.CounterResetHint != histogram.CounterReset && hc.GetCounterResetHeader() == chunkenc.CounterReset {
+					if hc.GetCounterResetHeader() == chunkenc.CounterReset {
 						// Clear the detected counter reset in the chunk as we cannot trust
 						// it in OOO.
 						hc.ClearCounterReset()
@@ -158,7 +158,7 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error
 			if newChunk != nil { // A new chunk was allocated.
 				if !recoded {
 					hc := newChunk.(*chunkenc.FloatHistogramChunk)
-					if s.fh.CounterResetHint != histogram.CounterReset && hc.GetCounterResetHeader() == chunkenc.CounterReset {
+					if hc.GetCounterResetHeader() == chunkenc.CounterReset {
 						// Clear the detected counter reset in the chunk as we cannot trust
 						// it in OOO.
 						hc.ClearCounterReset()

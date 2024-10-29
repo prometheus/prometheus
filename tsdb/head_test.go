@@ -4803,7 +4803,7 @@ func TestOOOHistogramCounterResetHeaders(t *testing.T) {
 					numSamples: 1,
 				},
 				expOOOMmappedChunks{
-					header:     chunkenc.CounterReset,
+					header:     chunkenc.UnknownCounterReset,
 					mint:       210,
 					maxt:       210,
 					numSamples: 1,
