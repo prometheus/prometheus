@@ -1,7 +1,0 @@
-# Test native histograms with sum_over_time, avg_over_time.
-load 1m
-    min_histogram{idx="2"} 1 2
-    min_histogram3{idx="1"} -1 1
-    min_histogram4{idx="1"} 2 1
-    min_histogram2{idx="1"} {{schema:0 count:25 sum:1234.5 z_bucket:4 z_bucket_w:0.001 buckets:[1 2 0 1 1] n_buckets:[2 4 0 0 1 9]}} {{schema:0 count:25 sum:1234.5 z_bucket:4 z_bucket_w:0.001 buckets:[1 2 0 1 1] n_buckets:[2 4 0 0 1 9]}}
-    min_histogram5{idx="1"} {{schema:0 count:25 sum:1234.5 z_bucket:4 z_bucket_w:0.001 buckets:[1 2 0 1 1] n_buckets:[2 4 0 0 1 9]}} {{schema:0 count:25 sum:1234.5 z_bucket:4 z_bucket_w:0.001 buckets:[1 2 0 1 1] n_buckets:[2 4 0 0 1 9]}}
