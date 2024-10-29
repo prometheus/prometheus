@@ -5,6 +5,10 @@ import classes from "./SeriesName.module.css";
 import { escapeString } from "../../lib/escapeString";
 import { useClipboard } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
+import {
+  maybeQuoteLabelName,
+  metricContainsExtendedCharset,
+} from "../../promql/utils";
 
 interface SeriesNameProps {
   labels: { [key: string]: string } | null;
@@ -15,8 +19,26 @@ const SeriesName: FC<SeriesNameProps> = ({ labels, format }) => {
   const clipboard = useClipboard();
 
   const renderFormatted = (): React.ReactElement => {
+    const metricExtendedCharset =
+      labels && metricContainsExtendedCharset(labels.__name__ || "");
+
     const labelNodes: React.ReactElement[] = [];
     let first = true;
+
+    // If the metric name uses the extended new charset, we need to escape it,
+    // put it into the label matcher list, and make sure it's the first item.
+    if (metricExtendedCharset) {
+      labelNodes.push(
+        <span key="__name__">
+          <span className={classes.labelValue}>
+            "{escapeString(labels.__name__)}"
+          </span>
+        </span>
+      );
+
+      first = false;
+    }
+
     for (const label in labels) {
       if (label === "__name__") {
         continue;
@@ -37,7 +59,10 @@ const SeriesName: FC<SeriesNameProps> = ({ labels, format }) => {
             }}
             title="Click to copy label matcher"
           >
-            <span className={classes.labelName}>{label}</span>=
+            <span className={classes.labelName}>
+              {maybeQuoteLabelName(label)}
+            </span>
+            =
             <span className={classes.labelValue}>
               "{escapeString(labels[label])}"
             </span>
@@ -52,19 +77,17 @@ const SeriesName: FC<SeriesNameProps> = ({ labels, format }) => {
 
     return (
       <span>
-        <span className={classes.metricName}>
-          {labels ? labels.__name__ : ""}
-        </span>
+        {!metricExtendedCharset && (
+          <span className={classes.metricName}>
+            {labels ? labels.__name__ : ""}
+          </span>
+        )}
         {"{"}
         {labelNodes}
         {"}"}
       </span>
     );
   };
-
-  if (labels === null) {
-    return <>scalar</>;
-  }
 
   if (format) {
     return renderFormatted();
