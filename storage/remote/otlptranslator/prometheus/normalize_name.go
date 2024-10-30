@@ -237,11 +237,13 @@ func removeSuffix(tokens []string, suffix string) []string {
 
 // Clean up specified string so it's Prometheus compliant
 func CleanUpString(s string) string {
-	return strings.Join(strings.FieldsFunc(s, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }), "_")
+	return strings.Join(strings.FieldsFunc(s, func(r rune) bool { return !unicode.IsUpper(r) && !unicode.IsLower(r) && !unicode.IsDigit(r) }), "_")
 }
 
 func RemovePromForbiddenRunes(s string) string {
-	return strings.Join(strings.FieldsFunc(s, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != ':' }), "_")
+	return strings.Join(strings.FieldsFunc(s, func(r rune) bool {
+		return !unicode.IsUpper(r) && !unicode.IsLower(r) && !unicode.IsDigit(r) && r != '_' && r != ':'
+	}), "_")
 }
 
 // Retrieve the Prometheus "basic" unit corresponding to the specified "basic" unit
