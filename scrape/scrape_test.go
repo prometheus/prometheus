@@ -4119,7 +4119,6 @@ metric: <
 			}
 
 			t.Run(fmt.Sprintf("%s with %s", name, metricsTextName), func(t *testing.T) {
-				t.Parallel()
 				simpleStorage := teststorage.New(t)
 				defer simpleStorage.Close()
 
