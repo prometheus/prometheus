@@ -218,7 +218,7 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 	httpClient.Transport = otelhttp.NewTransport(
 		t,
 		otelhttp.WithClientTrace(func(ctx context.Context) *httptrace.ClientTrace {
-			return otelhttptrace.NewClientTrace(ctx)
+			return otelhttptrace.NewClientTrace(ctx, otelhttptrace.WithoutSubSpans())
 		}))
 	return &Client{
 		remoteName:       name,
