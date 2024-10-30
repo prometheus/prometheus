@@ -40,6 +40,7 @@ import (
 )
 
 func TestApiStatusCodes(t *testing.T) {
+	t.Parallel()
 	for name, tc := range map[string]struct {
 		err            error
 		expectedString string
@@ -87,6 +88,7 @@ func TestApiStatusCodes(t *testing.T) {
 			"error from seriesset": errorTestQueryable{q: errorTestQuerier{s: errorTestSeriesSet{err: tc.err}}},
 		} {
 			t.Run(fmt.Sprintf("%s/%s", name, k), func(t *testing.T) {
+				t.Parallel()
 				r := createPrometheusAPI(t, q)
 				rec := httptest.NewRecorder()
 
