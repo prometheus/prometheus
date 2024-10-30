@@ -1161,7 +1161,7 @@ func TestScrapeLoopSeriesAdded(t *testing.T) {
 	require.Equal(t, 0, seriesAdded)
 }
 
-// TestScrapeLoopFailWithInvalidLabelsAfterRelabel can not run in parallel due model.NameValidationScheme shared variable
+// TestScrapeLoopFailWithInvalidLabelsAfterRelabel can not run in parallel due model.NameValidationScheme shared variable.
 func TestScrapeLoopFailWithInvalidLabelsAfterRelabel(t *testing.T) {
 	model.NameValidationScheme = model.LegacyValidation
 	s := teststorage.New(t)
@@ -1192,7 +1192,7 @@ func TestScrapeLoopFailWithInvalidLabelsAfterRelabel(t *testing.T) {
 	require.Equal(t, 0, seriesAdded)
 }
 
-// TestScrapeLoopFailLegacyUnderUTF8 can not run in parallel due model.NameValidationScheme shared variable
+// TestScrapeLoopFailLegacyUnderUTF8 can not run in parallel due model.NameValidationScheme shared variable.
 func TestScrapeLoopFailLegacyUnderUTF8(t *testing.T) {
 	// Test that scrapes fail when default validation is utf8 but scrape config is
 	// legacy.
@@ -3414,7 +3414,7 @@ func TestScrapeReportLimit(t *testing.T) {
 	require.True(t, found)
 }
 
-// TestScrapeUTF8 can not run in parallel due model.NameValidationScheme shared variable
+// TestScrapeUTF8 can not run in parallel due model.NameValidationScheme shared variable.
 func TestScrapeUTF8(t *testing.T) {
 	s := teststorage.New(t)
 	defer s.Close()
