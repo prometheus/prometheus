@@ -19,6 +19,8 @@ package prometheus
 import (
 	"strings"
 	"unicode"
+
+	"github.com/prometheus/common/model"
 )
 
 // Normalizes the specified label to follow Prometheus label names standard.
@@ -34,9 +36,6 @@ func NormalizeLabel(label string) string {
 		return label
 	}
 
-	// Replace all non-alphanumeric runes with underscores
-	label = strings.Map(sanitizeRune, label)
-
 	// If label starts with a number, prepend with "key_"
 	if unicode.IsDigit(rune(label[0])) {
 		label = "key_" + label
@@ -44,13 +43,5 @@ func NormalizeLabel(label string) string {
 		label = "key" + label
 	}
 
-	return label
-}
-
-// Return '_' for anything non-alphanumeric.
-func sanitizeRune(r rune) rune {
-	if unicode.IsLetter(r) || unicode.IsDigit(r) {
-		return r
-	}
-	return '_'
+	return model.EscapeName(label, model.UnderscoreEscaping)
 }
