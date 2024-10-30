@@ -89,6 +89,10 @@ const SeriesName: FC<SeriesNameProps> = ({ labels, format }) => {
     );
   };
 
+  if (labels === null) {
+    return <>scalar</>;
+  }
+
   if (format) {
     return renderFormatted();
   }
