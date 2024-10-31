@@ -90,8 +90,10 @@ class ChunkRecoder {
       return it;
     }
 
-    PROMPP_ALWAYS_INLINE bool operator==(const IteratorSentinel&) const noexcept {
-      return chunk_iterator_ == series_data::DataStorage::IteratorSentinel{} && ls_id_iterator_ == ls_id_end_iterator_;
+    PROMPP_ALWAYS_INLINE bool operator==(const IteratorSentinel&) const noexcept { return ls_id_iterator_ == ls_id_end_iterator_; }
+
+    [[nodiscard]] PROMPP_ALWAYS_INLINE bool chunk_is_empty() const noexcept {
+      return chunk_iterator_ == series_data::DataStorage::IteratorSentinel{} || chunk_iterator_->chunk().is_empty();
     }
 
    private:
@@ -141,7 +143,7 @@ class ChunkRecoder {
 
   void advance_to_non_empty_chunk() noexcept {
     const auto chunk_is_empty = [this] PROMPP_LAMBDA_INLINE {
-      if (iterator_->chunk().is_empty()) {
+      if (iterator_.chunk_is_empty()) {
         return true;
       }
 

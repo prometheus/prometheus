@@ -78,6 +78,8 @@ class Scraper {
       return offset != std::numeric_limits<uint32_t>::max() && length != std::numeric_limits<uint32_t>::max();
     }
 
+    [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_empty() const noexcept { return length == 0; }
+
     [[nodiscard]] std::string_view string_view(const std::string_view& buffer) const noexcept {
       if (!is_valid()) [[unlikely]] {
         return Prometheus::kMetricLabelName;
@@ -143,7 +145,7 @@ class Scraper {
         timeseries.label_set().reserve(item_->label_set.count);
         for (uint32_t i = 0; i < item_->label_set.count; ++i) {
           const auto& [name, value] = item_->label_set.labels[i];
-          timeseries.label_set().add({name.string_view(buffer_), value.string_view(buffer_)});
+          timeseries.label_set().append(name.string_view(buffer_), value.string_view(buffer_));
         }
 
         timeseries.samples().emplace_back(item_->sample);
@@ -203,9 +205,10 @@ class Scraper {
     PROMPP_ALWAYS_INLINE void remove_item() noexcept { --items_count_; }
 
     PROMPP_ALWAYS_INLINE void add_label(const MarkedLabel& label, MarkedItem*& item) noexcept {
-      if (label.value.length == 0) [[unlikely]] {
+      if (label.value.is_empty()) [[unlikely]] {
         return;
       }
+
       const auto offset = reinterpret_cast<const char*>(item) - buffer_.data();
       buffer_.push_back(reinterpret_cast<const char*>(&label), reinterpret_cast<const char*>(&label) + sizeof(label));
       item = reinterpret_cast<MarkedItem*>(buffer_.data() + offset);
