@@ -3,10 +3,16 @@
 ## unreleased
 
 * [CHANGE] Scraping: Remove implicit fallback to the Prometheus text format in case of invalid/missing Content-Type and fail the scrape instead. Add ability to specify a `fallback_scrape_protocol` in the scrape config. #15136
-* [CHANGE] Remote-write: default enable_http2 to false.
-* [ENHANCEMENT] Scraping, rules: handle targets reappearing, or rules moving group, when out-of-order is enabled. #14710 
-- [BUGFIX] PromQL: Fix stddev+stdvar aggregations to always ignore native histograms. #14941
-- [BUGFIX] PromQL: Fix stddev+stdvar aggregations to treat Infinity consistently. #14941
+* [CHANGE] Remote-write: default enable_http2 to false. #15219
+* [CHANGE] Scraping: normalize "le" and "quantile" label values upon ingestion. #15164
+* [CHANGE] Scraping: config `scrape_classic_histograms` was renamed to `always_scrape_classic_histograms`. #15178
+* [CHANGE] Config: remove expand-external-labels flag, expand external labels env vars by default. #14657
+* [CHANGE] Disallow configuring AM with the v1 api. #13883
+* [ENHANCEMENT] Scraping, rules: handle targets reappearing, or rules moving group, when out-of-order is enabled. #14710
+* [ENHANCEMENT] Tools: add debug printouts to promtool rules unit testing #15196
+* [ENHANCEMENT] Scraping: support Created-Timestamp feature on native histograms. #14694
+* [BUGFIX] PromQL: Fix stddev+stdvar aggregations to always ignore native histograms. #14941
+* [BUGFIX] PromQL: Fix stddev+stdvar aggregations to treat Infinity consistently. #14941
 
 ## 3.0.0-beta.1 / 2024-10-09
 
@@ -42,10 +48,6 @@ Release 3.0.0-beta.0 includes new features such as a brand new UI and UTF-8 supp
 
 As is traditional with a beta release, we do **not** recommend users install 3.0.0-beta on critical production systems, but we do want everyone to test it out and find bugs.
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> b10c3696c (Revert "updated changelog")
 * [CHANGE] UI: The old web UI has been replaced by a completely new one that is less cluttered and adds a few new features (PromLens-style tree view, better metrics explorer, "Explain" tab). However, it is still missing some features of the old UI (notably, exemplar display and heatmaps). To switch back to the old UI, you can use the feature flag `--enable-feature=old-ui` for the time being. #14872
 * [CHANGE] PromQL: Range selectors and the lookback delta are now left-open, i.e. a sample coinciding with the lower time limit is excluded rather than included. #13904
 * [CHANGE] Kubernetes SD: Remove support for `discovery.k8s.io/v1beta1` API version of EndpointSlice. This version is no longer served as of Kubernetes v1.25. #14365
@@ -57,12 +59,12 @@ As is traditional with a beta release, we do **not** recommend users install 3.0
 * [CHANGE] Remove deprecated `remote-write-receiver`,`promql-at-modifier`, and `promql-negative-offset` feature flags. #13456, #14526
 * [CHANGE] Remove deprecated `storage.tsdb.allow-overlapping-blocks`, `alertmanager.timeout`, and `storage.tsdb.retention` flags. #14640, #14643
 * [ENHANCEMENT] Move AM discovery page from "Monitoring status" to "Server status". #14875
-<<<<<<< HEAD
 * [FEATURE] Support config reload automatically - feature flag `auto-reload-config`. #14769
 * [BUGFIX] Scrape: Do not override target parameter labels with config params. #11029
 
-## 2.55.0-rc.0 / 2024-09-20
+## 2.55.0 / 2024-10-22
 
+* [FEATURE] PromQL: Add experimental `info` function. #14495
 * [FEATURE] Support UTF-8 characters in label names - feature flag `utf8-names`. #14482, #14880, #14736, #14727
 * [FEATURE] Scraping: Add the ability to set custom `http_headers` in config. #14817
 * [FEATURE] Scraping: Support feature flag `created-timestamp-zero-ingestion` in OpenMetrics. #14356, #14815
@@ -71,6 +73,7 @@ As is traditional with a beta release, we do **not** recommend users install 3.0
 * [FEATURE] Remote-Write: Support Google Cloud Monitoring authorization. #14346
 * [FEATURE] Promtool: `tsdb create-blocks` new option to add labels. #14403
 * [FEATURE] Promtool: `promtool test` adds `--junit` flag to format results. #14506
+* [FEATURE] TSDB: Add `delayed-compaction` feature flag, for people running many Prometheus to randomize timing. #12532
 * [ENHANCEMENT] OTLP receiver: Warn on exponential histograms with zero count and non-zero sum. #14706
 * [ENHANCEMENT] OTLP receiver: Interrupt translation on context cancellation/timeout. #14612
 * [ENHANCEMENT] Remote Read client: Enable streaming remote read if the server supports it. #11379
@@ -82,8 +85,9 @@ As is traditional with a beta release, we do **not** recommend users install 3.0
 * [ENHANCEMENT] Tracing: Improve PromQL tracing, including showing the operation performed for aggregates, operators, and calls. #14816
 * [ENHANCEMENT] API: Support multiple listening addresses. #14665
 * [ENHANCEMENT] TSDB: Backward compatibility with upcoming index v3. #14934
-* [PERF] TSDB: Query in-order and out-of-order series together. #14354, #14693, #14714, #14831, #14874, #14948
+* [PERF] TSDB: Query in-order and out-of-order series together. #14354, #14693, #14714, #14831, #14874, #14948, #15120
 * [PERF] TSDB: Streamline reading of overlapping out-of-order head chunks. #14729
+* [BUGFIX] PromQL: make sort_by_label stable. #14985
 * [BUGFIX] SD: Fix dropping targets (with feature flag `new-service-discovery-manager`). #13147
 * [BUGFIX] SD: Stop storing stale targets (with feature flag `new-service-discovery-manager`). #13622
 * [BUGFIX] Scraping: exemplars could be dropped in protobuf scraping. #14810
@@ -91,87 +95,6 @@ As is traditional with a beta release, we do **not** recommend users install 3.0
 * [BUGFIX] Remote-Write: Return 4xx not 5xx when timeseries has duplicate label. #14716
 * [BUGFIX] Experimental Native Histograms: many fixes for incorrect results, panics, warnings. #14513, #14575, #14598, #14609, #14611, #14771, #14821
 * [BUGFIX] TSDB: Only count unknown record types in `record_decode_failures_total` metric. #14042
-=======
-- [CHANGE] UI: The old web UI has been replaced by a completely new one that is less cluttered and adds a few new features (PromLens-style tree view, better metrics explorer, "Explain" tab). However, it is still missing some features of the old UI (notably, exemplar display and heatmaps). To switch back to the old UI, you can use the feature flag `--enable-feature=old-ui` for the time being. #14872
-- [CHANGE] PromQL: Range selectors and the lookback delta are now left-open, i.e. a sample coinciding with the lower time limit is excluded rather than included. #13904
-- [CHANGE] Kubernetes SD: Remove support for `discovery.k8s.io/v1beta1` API version of EndpointSlice. This version is no longer served as of Kubernetes v1.25. #14365
-- [CHANGE] Kubernetes SD: Remove support for `networking.k8s.io/v1beta1` API version of Ingress. This version is no longer served as of Kubernetes v1.22. #14365
-- [CHANGE] UTF-8: Enable UTF-8 support by default. Prometheus now allows all UTF-8 characters in metric and label names. The corresponding `utf8-name` feature flag has been removed. #14705
-- [CHANGE] Console: Remove example files for the console feature. Users can continue using the console feature by supplying their own JavaScript and templates. #14807
-- [CHANGE] SD: Enable the new service discovery manager by default. This SD manager does not restart unchanged discoveries upon reloading. This makes reloads faster and reduces pressure on service discoveries' sources. The corresponding `new-service-discovery-manager` feature flag has been removed. #14770
-- [CHANGE] Agent mode has been promoted to stable. The feature flag `agent` has been removed. To run Prometheus in Agent mode, use the new `--agent` cmdline arg instead. #14747
-- [CHANGE] Remove deprecated `remote-write-receiver`,`promql-at-modifier`, and `promql-negative-offset` feature flags. #13456, #14526
-- [CHANGE] Remove deprecated `storage.tsdb.allow-overlapping-blocks`, `alertmanager.timeout`, and `storage.tsdb.retention` flags. #14640, #14643
-- [ENHANCEMENT] Move AM discovery page from "Monitoring status" to "Server status". #14875
-- [BUGFIX] Scrape: Do not override target parameter labels with config params. #11029
-
-## 2.55.0-rc.0 / 2024-09-20
-
-- [FEATURE] Support UTF-8 characters in label names - feature flag `utf8-names`. #14482, #14880, #14736, #14727
-- [FEATURE] Support config reload automatically - feature flag `auto-reload-config`. #14769
-- [FEATURE] Scraping: Add the ability to set custom `http_headers` in config. #14817
-- [FEATURE] Scraping: Support feature flag `created-timestamp-zero-ingestion` in OpenMetrics. #14356, #14815
-- [FEATURE] Scraping: `scrape_failure_log_file` option to log failures to a file. #14734
-- [FEATURE] OTLP receiver: Optional promotion of resource attributes to series labels. #14200
-- [FEATURE] Remote-Write: Support Google Cloud Monitoring authorization. #14346
-- [FEATURE] Promtool: `tsdb create-blocks` new option to add labels. #14403
-- [FEATURE] Promtool: `promtool test` adds `--junit` flag to format results. #14506
-- [ENHANCEMENT] OTLP receiver: Warn on exponential histograms with zero count and non-zero sum. #14706
-- [ENHANCEMENT] OTLP receiver: Interrupt translation on context cancellation/timeout. #14612
-- [ENHANCEMENT] Remote Read client: Enable streaming remote read if the server supports it. #11379
-- [ENHANCEMENT] Remote-Write: Don't reshard if we haven't successfully sent a sample since last update. #14450
-- [ENHANCEMENT] PromQL: Delay deletion of `__name__` label to the end of the query evaluation. This is **experimental** and enabled under the feature-flag `promql-delayed-name-removal`. #14477
-- [ENHANCEMENT] PromQL: Experimental `sort_by_label` and `sort_by_label_desc` sort by all labels when label is equal. #14655
-- [ENHANCEMENT] PromQL: Clarify error message logged when Go runtime panic occurs during query evaluation. #14621
-- [ENHANCEMENT] PromQL: Use Kahan summation for better accuracy in `avg` and `avg_over_time`. #14413
-- [ENHANCEMENT] Tracing: Improve PromQL tracing, including showing the operation performed for aggregates, operators, and calls. #14816
-- [ENHANCEMENT] API: Support multiple listening addresses. #14665
-- [ENHANCEMENT] TSDB: Backward compatibility with upcoming index v3. #14934
-- [PERF] TSDB: Query in-order and out-of-order series together. #14354, #14693, #14714, #14831, #14874, #14948
-- [PERF] TSDB: Streamline reading of overlapping out-of-order head chunks. #14729
-- [BUGFIX] SD: Fix dropping targets (with feature flag `new-service-discovery-manager`). #13147
-- [BUGFIX] SD: Stop storing stale targets (with feature flag `new-service-discovery-manager`). #13622
-- [BUGFIX] Scraping: exemplars could be dropped in protobuf scraping. #14810
-- [BUGFIX] Remote-Write: fix metadata sending for experimental Remote-Write V2. #14766
-- [BUGFIX] Remote-Write: Return 4xx not 5xx when timeseries has duplicate label. #14716
-- [BUGFIX] Experimental Native Histograms: many fixes for incorrect results, panics, warnings. #14513, #14575, #14598, #14609, #14611, #14771, #14821
-- [BUGFIX] TSDB: Only count unknown record types in `record_decode_failures_total` metric. #14042
->>>>>>> 58173ab1e (updated changelog)
-=======
-* [BUGFIX] Scrape: Do not override target parameter labels with config params. #11029
-
-## 2.55.0-rc.0 / 2024-09-20
-
-* [FEATURE] Support UTF-8 characters in label names - feature flag `utf8-names`. #14482, #14880, #14736, #14727
-* [FEATURE] Support config reload automatically - feature flag `auto-reload-config`. #14769
-* [FEATURE] Scraping: Add the ability to set custom `http_headers` in config. #14817
-* [FEATURE] Scraping: Support feature flag `created-timestamp-zero-ingestion` in OpenMetrics. #14356, #14815
-* [FEATURE] Scraping: `scrape_failure_log_file` option to log failures to a file. #14734
-* [FEATURE] OTLP receiver: Optional promotion of resource attributes to series labels. #14200
-* [FEATURE] Remote-Write: Support Google Cloud Monitoring authorization. #14346
-* [FEATURE] Promtool: `tsdb create-blocks` new option to add labels. #14403
-* [FEATURE] Promtool: `promtool test` adds `--junit` flag to format results. #14506
-* [ENHANCEMENT] OTLP receiver: Warn on exponential histograms with zero count and non-zero sum. #14706
-* [ENHANCEMENT] OTLP receiver: Interrupt translation on context cancellation/timeout. #14612
-* [ENHANCEMENT] Remote Read client: Enable streaming remote read if the server supports it. #11379
-* [ENHANCEMENT] Remote-Write: Don't reshard if we haven't successfully sent a sample since last update. #14450
-* [ENHANCEMENT] PromQL: Delay deletion of `__name__` label to the end of the query evaluation. This is **experimental** and enabled under the feature-flag `promql-delayed-name-removal`. #14477
-* [ENHANCEMENT] PromQL: Experimental `sort_by_label` and `sort_by_label_desc` sort by all labels when label is equal. #14655
-* [ENHANCEMENT] PromQL: Clarify error message logged when Go runtime panic occurs during query evaluation. #14621
-* [ENHANCEMENT] PromQL: Use Kahan summation for better accuracy in `avg` and `avg_over_time`. #14413
-* [ENHANCEMENT] Tracing: Improve PromQL tracing, including showing the operation performed for aggregates, operators, and calls. #14816
-* [ENHANCEMENT] API: Support multiple listening addresses. #14665
-* [ENHANCEMENT] TSDB: Backward compatibility with upcoming index v3. #14934
-* [PERF] TSDB: Query in-order and out-of-order series together. #14354, #14693, #14714, #14831, #14874, #14948
-* [PERF] TSDB: Streamline reading of overlapping out-of-order head chunks. #14729
-* [BUGFIX] SD: Fix dropping targets (with feature flag `new-service-discovery-manager`). #13147
-* [BUGFIX] SD: Stop storing stale targets (with feature flag `new-service-discovery-manager`). #13622
-* [BUGFIX] Scraping: exemplars could be dropped in protobuf scraping. #14810
-* [BUGFIX] Remote-Write: fix metadata sending for experimental Remote-Write V2. #14766
-* [BUGFIX] Remote-Write: Return 4xx not 5xx when timeseries has duplicate label. #14716
-* [BUGFIX] Experimental Native Histograms: many fixes for incorrect results, panics, warnings. #14513, #14575, #14598, #14609, #14611, #14771, #14821
-* [BUGFIX] TSDB: Only count unknown record types in `record_decode_failures_total` metric. #14042
->>>>>>> b10c3696c (Revert "updated changelog")
 
 ## 2.54.1 / 2024-08-27
 

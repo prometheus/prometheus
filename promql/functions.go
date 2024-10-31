@@ -1671,6 +1671,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"hour":                         funcHour,
 	"idelta":                       funcIdelta,
 	"increase":                     funcIncrease,
+	"info":                         nil,
 	"irate":                        funcIrate,
 	"label_replace":                nil, // evalLabelReplace not called via this map.
 	"label_join":                   nil, // evalLabelJoin not called via this map.
