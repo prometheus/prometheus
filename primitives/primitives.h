@@ -82,7 +82,7 @@ class BasicLabelSet {
   BasicLabelSet& operator=(const BasicLabelSet&) = default;
   BasicLabelSet& operator=(BasicLabelSet&&) noexcept = default;
 
-  inline __attribute__((always_inline)) void clear() noexcept { labels_.clear(); }
+  PROMPP_ALWAYS_INLINE void clear() noexcept { labels_.clear(); }
 
   PROMPP_ALWAYS_INLINE void add(const LabelType& label) noexcept {
     // if label value empty - skip label
@@ -90,20 +90,23 @@ class BasicLabelSet {
       return;
     }
 
-    if (labels_.empty() || label.first > labels_.back().first) {
-      [[likely]];
+    if (labels_.empty() || label.first > labels_.back().first) [[likely]] {
       labels_.emplace_back(label);
-    } else if (label.first == labels_.back().first) {
-      [[unlikely]];
+    } else if (label.first == labels_.back().first) [[unlikely]] {
       labels_.back().second = label.second;
     } else {
       auto i = std::lower_bound(labels_.begin(), labels_.end(), label.first, [](const LabelType& a, const auto& b) { return a.first < b; });
-      if (i->first == label.first) {
-        [[unlikely]];
+      if (i->first == label.first) [[unlikely]] {
         i->second = label.second;
       } else {
         labels_.insert(i, label);
       }
+    }
+  }
+
+  PROMPP_ALWAYS_INLINE void append(std::string_view name, std::string_view value) noexcept {
+    if (!value.empty()) [[likely]] {
+      labels_.emplace_back(name, value);
     }
   }
 
@@ -127,18 +130,18 @@ class BasicLabelSet {
     return kEmptySymbol;
   }
 
-  inline __attribute__((always_inline)) auto size() const noexcept { return labels_.size(); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE auto size() const noexcept { return labels_.size(); }
 
-  inline __attribute__((always_inline)) void reserve(size_t size) noexcept { labels_.reserve(size); }
+  PROMPP_ALWAYS_INLINE void reserve(size_t size) noexcept { labels_.reserve(size); }
 
   using iterator = typename Container<LabelType>::iterator;
   using const_iterator = typename Container<LabelType>::const_iterator;
 
-  inline __attribute__((always_inline)) const_iterator begin() const noexcept { return labels_.begin(); }
-  inline __attribute__((always_inline)) iterator begin() noexcept { return labels_.begin(); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const_iterator begin() const noexcept { return labels_.begin(); }
+  PROMPP_ALWAYS_INLINE iterator begin() noexcept { return labels_.begin(); }
 
-  inline __attribute__((always_inline)) const_iterator end() const noexcept { return labels_.end(); }
-  inline __attribute__((always_inline)) iterator end() noexcept { return labels_.end(); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const_iterator end() const noexcept { return labels_.end(); }
+  PROMPP_ALWAYS_INLINE iterator end() noexcept { return labels_.end(); }
 
   template <class T>
   bool operator==(const T& o) const noexcept {
@@ -167,29 +170,29 @@ class BasicLabelSet {
       using value_type = typename std::tuple_element<0, LabelType>::type;
       using difference_type = std::ptrdiff_t;
 
-      inline __attribute__((always_inline)) explicit Iterator(typename Container<LabelType>::const_iterator i = {}) noexcept : i_(i) {}
+      PROMPP_ALWAYS_INLINE explicit Iterator(typename Container<LabelType>::const_iterator i = {}) noexcept : i_(i) {}
 
-      inline __attribute__((always_inline)) Iterator& operator++() noexcept {
+      PROMPP_ALWAYS_INLINE Iterator& operator++() noexcept {
         ++i_;
         return *this;
       }
 
-      inline __attribute__((always_inline)) Iterator operator++(int) noexcept {
+      PROMPP_ALWAYS_INLINE Iterator operator++(int) noexcept {
         Iterator retval = *this;
         ++(*this);
         return retval;
       }
 
-      inline __attribute__((always_inline)) bool operator==(const Iterator& o) const noexcept { return i_ == o.i_; }
+      PROMPP_ALWAYS_INLINE bool operator==(const Iterator& o) const noexcept { return i_ == o.i_; }
 
-      inline __attribute__((always_inline)) const value_type& operator*() const noexcept { return i_->first; }
+      PROMPP_ALWAYS_INLINE const value_type& operator*() const noexcept { return i_->first; }
     };
 
-    inline __attribute__((always_inline)) auto begin() const noexcept { return Iterator(labels_.begin()); }
+    PROMPP_ALWAYS_INLINE auto begin() const noexcept { return Iterator(labels_.begin()); }
 
-    inline __attribute__((always_inline)) auto end() const noexcept { return Iterator(labels_.end()); }
+    PROMPP_ALWAYS_INLINE auto end() const noexcept { return Iterator(labels_.end()); }
 
-    inline __attribute__((always_inline)) auto size() const noexcept { return labels_.size(); }
+    PROMPP_ALWAYS_INLINE auto size() const noexcept { return labels_.size(); }
 
     template <class T>
     bool operator==(const T& o) const noexcept {
@@ -204,7 +207,7 @@ class BasicLabelSet {
     PROMPP_ALWAYS_INLINE friend size_t hash_value(const Names& label_set_names) noexcept { return hash::hash_of_string_list(label_set_names); }
   };
 
-  inline __attribute__((always_inline)) Names names() const noexcept { return Names(*this); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE Names names() const noexcept { return Names(*this); }
 };
 
 using LabelSet = BasicLabelSet<Label, std::vector>;

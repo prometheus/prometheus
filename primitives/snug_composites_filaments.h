@@ -716,6 +716,7 @@ class LabelSet {
     lns_id_ = data.label_name_sets_table.find_or_emplace(label_set.names());
 
     // resize, if there are new symbols (in lns table)
+    data.symbols_tables.reserve(data.label_name_sets_table.data().symbols_table.size());
     for (auto i = data.symbols_tables.size(); i < data.label_name_sets_table.data().symbols_table.size(); ++i) {
       data.symbols_tables.emplace_back(new SymbolsTableType());
     }
@@ -727,7 +728,7 @@ class LabelSet {
     auto i = BareBones::StreamVByte::back_inserter<BareBones::StreamVByte::Codec1234>(data.symbols_ids_sequences, lns.size());
     for (auto [_, label_value] : label_set) {
       *i++ = data.symbols_tables[lns_i.id()]->find_or_emplace(label_value);
-      lns_i++;
+      ++lns_i;
     }
 
     data.next_item_index_ += data.symbols_ids_sequences.size() - size_before;

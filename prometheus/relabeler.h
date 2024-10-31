@@ -750,6 +750,8 @@ class InnerSeries {
 
   PROMPP_ALWAYS_INLINE size_t size() const { return size_; }
 
+  PROMPP_ALWAYS_INLINE void reserve(size_t n) { data_.reserve(n); }
+
   PROMPP_ALWAYS_INLINE void emplace_back(const BareBones::Vector<PromPP::Primitives::Sample>& samples, const uint32_t& ls_id) {
     data_.emplace_back(samples, ls_id);
     ++size_;
@@ -1096,9 +1098,15 @@ class PerShardRelabeler {
                                              const RelabelerOptions& o,
                                              PromPP::Primitives::Go::SliceView<InnerSeries*>& shards_inner_series,
                                              PromPP::Primitives::Go::SliceView<RelabeledSeries*>& shards_relabeled_series) {
+    assert(number_of_shards_ > 0);
+
     PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
 
     size_t samples_count{0};
+    size_t n = (hashdex.size() * 1.2) / (number_of_shards_ * number_of_shards_);
+    for (auto i = 0; i < number_of_shards_; ++i) {
+      shards_inner_series[i]->reserve(n);
+    }
 
     for (const auto& item : hashdex) {
       if ((item.hash() % number_of_shards_) != shard_id_) {

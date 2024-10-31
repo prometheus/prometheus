@@ -68,9 +68,10 @@ class GoModelHashdex {
   explicit inline __attribute__((always_inline)) GoModelHashdex(const HashdexLimits& limits) noexcept : limits_(limits) {}
   inline __attribute__((always_inline)) ~GoModelHashdex(){};
 
-  constexpr const std::string_view replica() const noexcept { return replica_; }
-  constexpr const std::string_view cluster() const noexcept { return cluster_; }
-  constexpr const HashdexLimits& limits() const noexcept { return limits_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t size() const noexcept { return items_.size(); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE std::string_view replica() const noexcept { return replica_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE std::string_view cluster() const noexcept { return cluster_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const HashdexLimits& limits() const noexcept { return limits_; }
 
   inline __attribute__((always_inline)) void presharding(PromPP::Primitives::Go::SliceView<PromPP::Primitives::Go::TimeSeries>& go_time_series_slice) {
     if (limits_.max_timeseries_count && std::size(go_time_series_slice) > limits_.max_timeseries_count) {
@@ -130,9 +131,10 @@ class ProtobufHashdex {
   explicit inline __attribute__((always_inline)) ProtobufHashdex(const HashdexLimits& limits) noexcept : limits_(limits) {}
   inline __attribute__((always_inline)) ~ProtobufHashdex(){};
 
-  constexpr const std::string_view replica() const noexcept { return replica_; }
-  constexpr const std::string_view cluster() const noexcept { return cluster_; }
-  constexpr const HashdexLimits& limits() const noexcept { return limits_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t size() const noexcept { return items_.size(); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE std::string_view replica() const noexcept { return replica_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE std::string_view cluster() const noexcept { return cluster_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const HashdexLimits& limits() const noexcept { return limits_; }
 
   // presharding - from protobuf make presharding slice with hash end proto.
   inline __attribute__((always_inline)) void presharding(const char* proto_data, size_t proto_len) {
