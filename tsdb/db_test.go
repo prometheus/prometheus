@@ -7039,9 +7039,8 @@ func TestOOOHistogramCompactionWithCounterResets(t *testing.T) {
 			}
 			series1ExpSamplesPostCompact = append(series1ExpSamplesPostCompact, s)
 		}
-		// Counter reset.
+		// Counter reset, but set as unknown since the first sample of OOO chunks have UnknownCounterReset
 		s = addSample(int64(490), series1, 100000, histogram.UnknownCounterReset)
-		s = copyWithCounterReset(s, histogram.CounterReset)
 		series1ExpSamplesPreCompact = append(series1ExpSamplesPreCompact, s)
 		series1ExpSamplesPostCompact = append(series1ExpSamplesPostCompact, s)
 		// Add some more samples after the counter reset.
@@ -7064,9 +7063,8 @@ func TestOOOHistogramCompactionWithCounterResets(t *testing.T) {
 			}
 			series2ExpSamplesPostCompact = append(series2ExpSamplesPostCompact, s)
 		}
-		// Counter reset.
+		// Counter reset, but set as unknown since the first sample of OOO chunks have UnknownCounterReset
 		s = addSample(int64(300), series2, 100000, histogram.UnknownCounterReset)
-		s = copyWithCounterReset(s, histogram.CounterReset)
 		series2ExpSamplesPreCompact = append(series2ExpSamplesPreCompact, s)
 		series2ExpSamplesPostCompact = append(series2ExpSamplesPostCompact, s)
 		// Add some more samples after the counter reset.
