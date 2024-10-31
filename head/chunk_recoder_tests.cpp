@@ -315,4 +315,15 @@ TEST_F(ChunkRecoderFixture, EmptyLssWithNonEmptyDataStorage) {
   EXPECT_EQ(RecodeInfo{}, info2);
 }
 
+TEST_F(ChunkRecoderFixture, EmptyStorageWithNonEmptyLss) {
+  // Arrange
+  const auto recoder = create_recoder({0, 1}, {.min = 0, .max = 2});
+
+  // Act
+  const bool has_more_data = recoder.has_more_data();
+
+  // Assert
+  EXPECT_FALSE(has_more_data);
+}
+
 }  // namespace
