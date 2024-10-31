@@ -548,10 +548,9 @@ template <class Codec, std::random_access_iterator InnerIteratorType>
 class DecodeIterator {
   using inner_iterator_type = InnerIteratorType;
 
-  uint32_t n_;
-
   inner_iterator_type k_i_;
   inner_iterator_type d_i_;
+  uint32_t n_;
   uint8_t shift_ = 0;  // cycles 0, 2, 4, 6, 0, 2, 4, 6, ...
   uint8_t code_;
 
@@ -560,17 +559,14 @@ class DecodeIterator {
   using value_type = typename Codec::value_type;
   using difference_type = std::ptrdiff_t;
 
-  inline __attribute__((always_inline)) explicit DecodeIterator(inner_iterator_type k_i = inner_iterator_type(),
-                                                                inner_iterator_type d_i = inner_iterator_type(),
-                                                                uint32_t size = 0) noexcept
-      : n_(size), k_i_(k_i), d_i_(d_i) {
-    code_ = n_ == 0 ? 0 : *k_i_;
-    code_ >>= shift_;
-    code_ &= 0x03;
-  }
-  inline __attribute__((always_inline)) DecodeIterator(inner_iterator_type i, uint32_t size) noexcept : DecodeIterator(i, i + keys_size(size), size) {}
+  PROMPP_ALWAYS_INLINE explicit DecodeIterator(inner_iterator_type k_i = inner_iterator_type(),
+                                               inner_iterator_type d_i = inner_iterator_type(),
+                                               uint32_t size = 0) noexcept
+      : k_i_(k_i), d_i_(d_i), n_(size), code_(n_ == 0 ? 0 : (*k_i_ & 0x03)) {}
 
-  inline __attribute__((always_inline)) DecodeIterator& operator++() noexcept {
+  PROMPP_ALWAYS_INLINE DecodeIterator(inner_iterator_type i, uint32_t size) noexcept : DecodeIterator(i, i + keys_size(size), size) {}
+
+  PROMPP_ALWAYS_INLINE DecodeIterator& operator++() noexcept {
     assert(n_ != 0);
 
     shift_ += 2;
@@ -586,15 +582,15 @@ class DecodeIterator {
     return *this;
   }
 
-  inline __attribute__((always_inline)) DecodeIterator operator++(int) noexcept {
+  PROMPP_ALWAYS_INLINE DecodeIterator operator++(int) noexcept {
     DecodeIterator retval = *this;
     ++(*this);
     return retval;
   }
-  inline __attribute__((always_inline)) bool operator==(const DecodeIterator& other) const noexcept { return n_ == other.n_; }
-  inline __attribute__((always_inline)) bool operator==(const DecodeIteratorSentinel&) const noexcept { return !n_; }
+  PROMPP_ALWAYS_INLINE bool operator==(const DecodeIterator& other) const noexcept { return n_ == other.n_; }
+  PROMPP_ALWAYS_INLINE bool operator==(const DecodeIteratorSentinel&) const noexcept { return !n_; }
 
-  inline __attribute__((always_inline)) value_type operator*() const noexcept { return Codec::decode(code_, d_i_); }
+  PROMPP_ALWAYS_INLINE value_type operator*() const noexcept { return Codec::decode(code_, d_i_); }
 };
 
 template <class Codec, uint32_t PreAllocationElementsCount = 1024>
