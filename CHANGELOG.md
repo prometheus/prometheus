@@ -7,7 +7,6 @@
 * [CHANGE] Scraping: normalize "le" and "quantile" label values upon ingestion. #15164
 * [CHANGE] Scraping: config `scrape_classic_histograms` was renamed to `always_scrape_classic_histograms`. #15178
 * [CHANGE] Config: remove expand-external-labels flag, expand external labels env vars by default. #14657
-* [CHANGE] Adopt log/slog and remove go-kit/log. #14906
 * [CHANGE] Disallow configuring AM with the v1 api. #13883
 * [ENHANCEMENT] Scraping, rules: handle targets reappearing, or rules moving group, when out-of-order is enabled. #14710
 * [ENHANCEMENT] Tools: add debug printouts to promtool rules unit testing #15196
