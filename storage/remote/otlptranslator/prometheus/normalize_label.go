@@ -49,7 +49,7 @@ func NormalizeLabel(label string) string {
 
 // Return '_' for anything non-alphanumeric.
 func sanitizeRune(r rune) rune {
-	if unicode.IsLetter(r) || unicode.IsDigit(r) {
+	if unicode.IsLower(r) || unicode.IsUpper(r) || unicode.IsDigit(r) {
 		return r
 	}
 	return '_'
