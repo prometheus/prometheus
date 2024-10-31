@@ -4799,14 +4799,8 @@ func TestOOOHistogramCounterResetHeaders(t *testing.T) {
 				expOOOMmappedChunks{
 					header:     chunkenc.UnknownCounterReset,
 					mint:       205,
-					maxt:       205,
-					numSamples: 1,
-				},
-				expOOOMmappedChunks{
-					header:     chunkenc.UnknownCounterReset,
-					mint:       210,
 					maxt:       210,
-					numSamples: 1,
+					numSamples: 2,
 				},
 				expOOOMmappedChunks{
 					header:     chunkenc.UnknownCounterReset,
@@ -4825,7 +4819,7 @@ func TestOOOHistogramCounterResetHeaders(t *testing.T) {
 
 			// One mmapped chunk with (ts, val) [(300, 3000), (301, 3001), (302, 3002), (303, 3003), (350, 4000)].
 			checkOOOExpCounterResetHeader(expOOOMmappedChunks{
-				header:     chunkenc.CounterReset,
+				header:     chunkenc.UnknownCounterReset,
 				mint:       300,
 				maxt:       350,
 				numSamples: 5,

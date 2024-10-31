@@ -127,6 +127,11 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error
 		case chunkenc.EncXOR:
 			app.Append(s.t, s.f)
 		case chunkenc.EncHistogram:
+			// Clear explicit counter reset headers in the chunk as we cannot trust
+			// them in OOO.
+			if s.h.CounterResetHint == histogram.CounterReset {
+				s.h.CounterResetHint = histogram.UnknownCounterReset
+			}
 			// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
 			prevHApp, _ := prevApp.(*chunkenc.HistogramAppender)
 			var (
@@ -148,6 +153,11 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error
 				chunk = newChunk
 			}
 		case chunkenc.EncFloatHistogram:
+			// Clear explicit counter reset headers in the chunk as we cannot trust
+			// them in OOO.
+			if s.fh.CounterResetHint == histogram.CounterReset {
+				s.fh.CounterResetHint = histogram.UnknownCounterReset
+			}
 			// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
 			prevHApp, _ := prevApp.(*chunkenc.FloatHistogramAppender)
 			var (

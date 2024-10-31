@@ -214,13 +214,21 @@ func TestOOOChunks_ToEncodedChunks(t *testing.T) {
 		},
 		"has an explicit counter reset": {
 			samples: []sample{
+				{t: 1100, h: h2explicit},
+			},
+			expectedCounterResets: []histogram.CounterResetHint{histogram.UnknownCounterReset},
+			expectedChunks: []chunkVerify{
+				{encoding: chunkenc.EncHistogram, minTime: 1100, maxTime: 1100},
+			},
+		},
+		"has an explicit counter reset inside": {
+			samples: []sample{
 				{t: 1000, h: h1},
 				{t: 1100, h: h2explicit},
 			},
-			expectedCounterResets: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.UnknownCounterReset},
+			expectedCounterResets: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.NotCounterReset},
 			expectedChunks: []chunkVerify{
-				{encoding: chunkenc.EncHistogram, minTime: 1000, maxTime: 1000},
-				{encoding: chunkenc.EncHistogram, minTime: 1100, maxTime: 1100},
+				{encoding: chunkenc.EncHistogram, minTime: 1000, maxTime: 1100},
 			},
 		},
 		"has a recoded histogram": { // Regression test for wrong minT, maxT in histogram recoding.
