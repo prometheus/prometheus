@@ -942,23 +942,23 @@ class Cache {
   PROMPP_ALWAYS_INLINE bool is_drop(const uint32_t ls_id) const noexcept { return cache_drop_.contains(ls_id); }
 
   // drop_add add ls id to drop cache.
-  PROMPP_ALWAYS_INLINE void drop_add(const uint32_t ls_id) { cache_drop_.add(ls_id); }
+  PROMPP_ALWAYS_INLINE void drop_add(const uint32_t ls_id) noexcept { cache_drop_.add(ls_id); }
 
   // drop_optimize run optimization on drop bitset caches.
-  PROMPP_ALWAYS_INLINE void drop_optimize() { cache_drop_.runOptimize(); }
+  PROMPP_ALWAYS_INLINE void drop_optimize() noexcept { cache_drop_.runOptimize(); }
 
   // is_keep validate ls id in keep cache.
   PROMPP_ALWAYS_INLINE bool is_keep(const uint32_t ls_id) const noexcept { return cache_keep_.contains(ls_id); }
 
   // keep_add add ls id to keep cache.
-  PROMPP_ALWAYS_INLINE void keep_add(const uint32_t ls_id) { cache_keep_.add(ls_id); }
+  PROMPP_ALWAYS_INLINE void keep_add(const uint32_t ls_id) noexcept { cache_keep_.add(ls_id); }
 
   // keep_optimize run optimization on keep bitset caches.
-  PROMPP_ALWAYS_INLINE void keep_optimize() { cache_keep_.runOptimize(); }
+  PROMPP_ALWAYS_INLINE void keep_optimize() noexcept { cache_keep_.runOptimize(); }
 
   // get pointer to CacheValue from relabel cache, if not exist return nullptr.
   PROMPP_ALWAYS_INLINE const CacheValue* get(const uint32_t ls_id) const noexcept {
-    if (auto it = cache_relabel_.find(ls_id); it != cache_relabel_.end()) {
+    if (auto it = cache_relabel_.find(ls_id); it != cache_relabel_.end()) [[likely]] {
       return &it->second;
     }
 
@@ -1119,7 +1119,7 @@ class PerShardRelabeler {
       }
 
       samples_count += calculate_samples(timeseries_buf_.samples());
-      if (o.metric_limits->samples_limit_exceeded(samples_count)) {
+      if (o.metric_limits->samples_limit_exceeded(samples_count)) [[unlikely]] {
         break;
       }
     }
@@ -1162,7 +1162,7 @@ class PerShardRelabeler {
                                                                     size_t hash,
                                                                     BareBones::Vector<PromPP::Primitives::Sample>& samples) {
     std::optional<uint32_t> ls_id = lss.find(label_set, hash);
-    if (!ls_id.has_value()) {
+    if (!ls_id.has_value()) [[unlikely]] {
       return {};
     }
     return input_relabel_from_cache(cache, shards_inner_series, ls_id.value(), samples);
@@ -1199,7 +1199,7 @@ class PerShardRelabeler {
                                                   BareBones::Vector<PromPP::Primitives::Sample>& samples,
                                                   PromPP::Primitives::Go::SliceView<InnerSeries*>& shards_inner_series,
                                                   PromPP::Primitives::Go::SliceView<RelabeledSeries*>& shards_relabeled_series) {
-    if (auto added = input_relabel_from_cache(lss, cache, shards_inner_series, label_view_set, hash, samples); added.has_value()) {
+    if (auto added = input_relabel_from_cache(lss, cache, shards_inner_series, label_view_set, hash, samples); added.has_value()) [[likely]] {
       return added.value();
     }
 
