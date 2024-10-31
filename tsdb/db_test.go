@@ -7236,6 +7236,121 @@ func TestOOOHistogramCompactionWithCounterResets(t *testing.T) {
 	}
 }
 
+// TODO: check overlapping with in-order
+// TODO: check interleaved with in-order
+// TODO: check interleaved with OOO
+// TODO: check mixing compaction in-order vs OOO first
+func TestOOOHistogramCompactionWithCounterResetsInterleaving(t *testing.T) {
+	for _, floatHistogram := range []bool{false, true} {
+		dir := t.TempDir()
+		ctx := context.Background()
+
+		opts := DefaultOptions()
+		opts.OutOfOrderCapMax = 30
+		opts.OutOfOrderTimeWindow = 500 * time.Minute.Milliseconds()
+
+		db, err := Open(dir, nil, nil, opts, nil)
+		require.NoError(t, err)
+		db.DisableCompactions() // We want to manually call it.
+		db.EnableNativeHistograms()
+		db.EnableOOONativeHistograms()
+		t.Cleanup(func() {
+			require.NoError(t, db.Close())
+		})
+
+		series1 := labels.FromStrings("foo", "bar1")
+
+		addSample := func(ts int64, l labels.Labels, val int) sample {
+			app := db.Appender(context.Background())
+			tsMs := ts
+			if floatHistogram {
+				h := tsdbutil.GenerateTestFloatHistogram(val)
+				_, err = app.AppendHistogram(0, l, tsMs, nil, h)
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+				return sample{t: tsMs, fh: h.Copy()}
+			}
+
+			h := tsdbutil.GenerateTestHistogram(val)
+			_, err = app.AppendHistogram(0, l, tsMs, h, nil)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			return sample{t: tsMs, h: h.Copy()}
+		}
+
+		var expSamples []chunks.Sample
+
+		s := addSample(0, series1, 0)
+		expSamples = append(expSamples, s)
+		s = addSample(1, series1, 10)
+		expSamples = append(expSamples, copyWithCounterReset(s, histogram.NotCounterReset))
+		s = addSample(3, series1, 3)
+		expSamples = append(expSamples, copyWithCounterReset(s, histogram.UnknownCounterReset))
+		s = addSample(2, series1, 0)
+		expSamples = append(expSamples, copyWithCounterReset(s, histogram.UnknownCounterReset))
+
+		// Sort samples (as OOO samples not added in time-order).
+		sort.Slice(expSamples, func(i, j int) bool {
+			return expSamples[i].T() < expSamples[j].T()
+		})
+
+		verifyDBSamples := func(s1Samples []chunks.Sample) {
+			t.Helper()
+			expRes := map[string][]chunks.Sample{
+				series1.String(): s1Samples,
+			}
+
+			q, err := db.Querier(math.MinInt64, math.MaxInt64)
+			require.NoError(t, err)
+			actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
+			requireEqualSeries(t, expRes, actRes, false)
+		}
+
+		// Verify DB samples before compaction.
+		verifyDBSamples(expSamples)
+
+		// Verify that the in-memory ooo chunk is not empty.
+		checkNonEmptyOOOChunk := func(lbls labels.Labels) {
+			ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
+			require.NoError(t, err)
+			require.False(t, created)
+			require.Positive(t, ms.ooo.oooHeadChunk.chunk.NumSamples())
+		}
+		checkNonEmptyOOOChunk(series1)
+
+		// No blocks before compaction.
+		require.Empty(t, db.Blocks())
+
+		// OOO compaction happens here.
+		require.NoError(t, db.CompactOOOHead(ctx))
+
+		// Check samples after OOO compaction.
+		verifyDBSamples(expSamples)
+
+		// Checking for expected data in the blocks.
+		// Check that blocks are created after compaction.
+		require.Len(t, db.Blocks(), 1)
+
+		// Compact the in-order head and expect another block.
+		// Since this is a forced compaction, this block is not aligned with 2h.
+		err = db.CompactHead(NewRangeHead(db.head, 0, 3))
+		require.NoError(t, err)
+		require.Len(t, db.Blocks(), 2)
+
+		// Blocks created out of normal and OOO head now. But not merged.
+		verifyDBSamples(expSamples)
+
+		// This will merge overlapping block.
+		require.NoError(t, db.Compact(ctx))
+
+		require.Len(t, db.Blocks(), 1)
+
+		// Final state. Blocks from normal and OOO head are merged.
+		// FIXME: erroring as T3 detected as counter reset incorrectly (when in-order and OOO blocks are merged if there are interleaved but not overlapping chunks, counter resets in the in-order chunks aren't corrected
+		verifyDBSamples(expSamples)
+	}
+}
+
 func copyWithCounterReset(s sample, hint histogram.CounterResetHint) sample {
 	if s.h != nil {
 		h := s.h.Copy()
