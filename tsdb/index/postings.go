@@ -320,8 +320,9 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}, affected ma
 
 		// From time to time want some readers to go through and read their postings.
 		// It takes around 50ms to process a 1K series batch, and 120ms to process a 10K series batch (local benchmarks on an M3).
-		// It seems that a number between that 1K and 10K should be a good balance between speed and amount of pauses.
-		if i%4096 == 0 {
+		// Note that a read query will most likely want to read multiple postings lists, say 5, 10 or 20 (depending on the number of matchers)
+		// And that read query will most likely evaluate only one of those matchers before we unpause here, so we want to pause often.
+		if i%512 == 0 {
 			p.mtx.Unlock()
 			// While it's tempting to just do a `time.Sleep(time.Millisecond)` here,
 			// it wouldn't ensure use that readers actually were able to get the read lock,
@@ -332,8 +333,8 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}, affected ma
 			// Note that if there's a writer waiting for us to unlock, no reader will be able to get the read lock.
 			p.mtx.RUnlock() //nolint:staticcheck // SA2001: this is an intentionally empty critical section.
 			// Now we can wait a little bit just to increase the chance of a reader getting the lock.
-			// If we were deleting 100M series here, pausing every 4096 with 10ms sleeps would be an extra of 240s, which is negligible.
-			time.Sleep(10 * time.Millisecond)
+			// If we were deleting 100M series here, pausing every 512 with 1ms sleeps would be an extra of 200s, which is negligible.
+			time.Sleep(time.Millisecond)
 			p.mtx.Lock()
 		}
 	}
