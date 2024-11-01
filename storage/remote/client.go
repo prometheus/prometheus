@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptrace"
 	"strconv"
 	"strings"
 	"time"
@@ -31,6 +32,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/sigv4"
 	"github.com/prometheus/common/version"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
@@ -213,8 +215,11 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 	if conf.WriteProtoMsg != "" {
 		writeProtoMsg = conf.WriteProtoMsg
 	}
-
-	httpClient.Transport = otelhttp.NewTransport(t)
+	httpClient.Transport = otelhttp.NewTransport(
+		t,
+		otelhttp.WithClientTrace(func(ctx context.Context) *httptrace.ClientTrace {
+			return otelhttptrace.NewClientTrace(ctx, otelhttptrace.WithoutSubSpans())
+		}))
 	return &Client{
 		remoteName:       name,
 		urlString:        conf.URL.String(),
