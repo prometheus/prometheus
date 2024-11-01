@@ -234,12 +234,12 @@ func cloneLabelSet(labelSet labels.Labels) labels.Labels {
 	offset := 0
 	result := make(labels.Labels, len(labelSet))
 	for i := range labelSet {
-		n = copy(buf[offset:], *(*[]byte)(unsafe.Pointer(&labelSet[i].Name)))
+		n = copy(buf[offset:], labelSet[i].Name)
 		nb := buf[offset : offset+n]
 		result[i].Name = *(*string)(unsafe.Pointer(&nb))
 		offset += n
 
-		n = copy(buf[offset:], *(*[]byte)(unsafe.Pointer(&labelSet[i].Value)))
+		n = copy(buf[offset:], labelSet[i].Value)
 		vb := buf[offset : offset+n]
 		result[i].Value = *(*string)(unsafe.Pointer(&vb))
 		offset += n

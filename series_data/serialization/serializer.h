@@ -17,6 +17,7 @@ class Serializer {
     {
       uint32_t data_size = sizeof(uint32_t);
       auto serialized_chunks = create_serialized_chunks(queried_chunks, timestamp_streams_data, data_size);
+      data_size += 9;
 
       if constexpr (BareBones::concepts::has_reserve<Stream>) {
         stream.reserve(data_size);
@@ -27,6 +28,9 @@ class Serializer {
     }
 
     write_chunks_data(queried_chunks, timestamp_streams_data, stream);
+    for (size_t i = 0; i < 9; ++i) {
+      stream.put('\0');
+    }
   }
 
  private:
