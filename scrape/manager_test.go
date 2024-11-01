@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -58,7 +59,7 @@ func init() {
 
 func TestPopulateLabels(t *testing.T) {
 	cases := []struct {
-		in      labels.Labels
+		in      model.LabelSet
 		cfg     *config.ScrapeConfig
 		res     labels.Labels
 		resOrig labels.Labels
@@ -66,10 +67,10 @@ func TestPopulateLabels(t *testing.T) {
 	}{
 		// Regular population of scrape config options.
 		{
-			in: labels.FromMap(map[string]string{
+			in: model.LabelSet{
 				model.AddressLabel: "1.2.3.4:1000",
 				"custom":           "value",
-			}),
+			},
 			cfg: &config.ScrapeConfig{
 				Scheme:         "https",
 				MetricsPath:    "/metrics",
@@ -100,14 +101,14 @@ func TestPopulateLabels(t *testing.T) {
 		// Pre-define/overwrite scrape config labels.
 		// Leave out port and expect it to be defaulted to scheme.
 		{
-			in: labels.FromMap(map[string]string{
+			in: model.LabelSet{
 				model.AddressLabel:        "1.2.3.4",
 				model.SchemeLabel:         "http",
 				model.MetricsPathLabel:    "/custom",
 				model.JobLabel:            "custom-job",
 				model.ScrapeIntervalLabel: "2s",
 				model.ScrapeTimeoutLabel:  "2s",
-			}),
+			},
 			cfg: &config.ScrapeConfig{
 				Scheme:         "https",
 				MetricsPath:    "/metrics",
@@ -135,10 +136,10 @@ func TestPopulateLabels(t *testing.T) {
 		},
 		// Provide instance label. HTTPS port default for IPv6.
 		{
-			in: labels.FromMap(map[string]string{
+			in: model.LabelSet{
 				model.AddressLabel:  "[::1]",
 				model.InstanceLabel: "custom-instance",
-			}),
+			},
 			cfg: &config.ScrapeConfig{
 				Scheme:         "https",
 				MetricsPath:    "/metrics",
@@ -167,7 +168,7 @@ func TestPopulateLabels(t *testing.T) {
 		},
 		// Address label missing.
 		{
-			in: labels.FromStrings("custom", "value"),
+			in: model.LabelSet{"custom": "value"},
 			cfg: &config.ScrapeConfig{
 				Scheme:         "https",
 				MetricsPath:    "/metrics",
@@ -181,7 +182,7 @@ func TestPopulateLabels(t *testing.T) {
 		},
 		// Address label missing, but added in relabelling.
 		{
-			in: labels.FromStrings("custom", "host:1234"),
+			in: model.LabelSet{"custom": "host:1234"},
 			cfg: &config.ScrapeConfig{
 				Scheme:         "https",
 				MetricsPath:    "/metrics",
@@ -219,7 +220,7 @@ func TestPopulateLabels(t *testing.T) {
 		},
 		// Address label missing, but added in relabelling.
 		{
-			in: labels.FromStrings("custom", "host:1234"),
+			in: model.LabelSet{"custom": "host:1234"},
 			cfg: &config.ScrapeConfig{
 				Scheme:         "https",
 				MetricsPath:    "/metrics",
@@ -257,10 +258,10 @@ func TestPopulateLabels(t *testing.T) {
 		},
 		// Invalid UTF-8 in label.
 		{
-			in: labels.FromMap(map[string]string{
+			in: model.LabelSet{
 				model.AddressLabel: "1.2.3.4:1000",
 				"custom":           "\xbd",
-			}),
+			},
 			cfg: &config.ScrapeConfig{
 				Scheme:         "https",
 				MetricsPath:    "/metrics",
@@ -274,10 +275,10 @@ func TestPopulateLabels(t *testing.T) {
 		},
 		// Invalid duration in interval label.
 		{
-			in: labels.FromMap(map[string]string{
+			in: model.LabelSet{
 				model.AddressLabel:        "1.2.3.4:1000",
 				model.ScrapeIntervalLabel: "2notseconds",
-			}),
+			},
 			cfg: &config.ScrapeConfig{
 				Scheme:         "https",
 				MetricsPath:    "/metrics",
@@ -291,10 +292,10 @@ func TestPopulateLabels(t *testing.T) {
 		},
 		// Invalid duration in timeout label.
 		{
-			in: labels.FromMap(map[string]string{
+			in: model.LabelSet{
 				model.AddressLabel:       "1.2.3.4:1000",
 				model.ScrapeTimeoutLabel: "2notseconds",
-			}),
+			},
 			cfg: &config.ScrapeConfig{
 				Scheme:         "https",
 				MetricsPath:    "/metrics",
@@ -308,10 +309,10 @@ func TestPopulateLabels(t *testing.T) {
 		},
 		// 0 interval in timeout label.
 		{
-			in: labels.FromMap(map[string]string{
+			in: model.LabelSet{
 				model.AddressLabel:        "1.2.3.4:1000",
 				model.ScrapeIntervalLabel: "0s",
-			}),
+			},
 			cfg: &config.ScrapeConfig{
 				Scheme:         "https",
 				MetricsPath:    "/metrics",
@@ -325,10 +326,10 @@ func TestPopulateLabels(t *testing.T) {
 		},
 		// 0 duration in timeout label.
 		{
-			in: labels.FromMap(map[string]string{
+			in: model.LabelSet{
 				model.AddressLabel:       "1.2.3.4:1000",
 				model.ScrapeTimeoutLabel: "0s",
-			}),
+			},
 			cfg: &config.ScrapeConfig{
 				Scheme:         "https",
 				MetricsPath:    "/metrics",
@@ -342,11 +343,11 @@ func TestPopulateLabels(t *testing.T) {
 		},
 		// Timeout less than interval.
 		{
-			in: labels.FromMap(map[string]string{
+			in: model.LabelSet{
 				model.AddressLabel:        "1.2.3.4:1000",
 				model.ScrapeIntervalLabel: "1s",
 				model.ScrapeTimeoutLabel:  "2s",
-			}),
+			},
 			cfg: &config.ScrapeConfig{
 				Scheme:         "https",
 				MetricsPath:    "/metrics",
@@ -360,9 +361,9 @@ func TestPopulateLabels(t *testing.T) {
 		},
 		// Don't attach default port.
 		{
-			in: labels.FromMap(map[string]string{
+			in: model.LabelSet{
 				model.AddressLabel: "1.2.3.4",
-			}),
+			},
 			cfg: &config.ScrapeConfig{
 				Scheme:         "https",
 				MetricsPath:    "/metrics",
@@ -390,9 +391,9 @@ func TestPopulateLabels(t *testing.T) {
 		},
 		// verify that the default port is not removed (http).
 		{
-			in: labels.FromMap(map[string]string{
+			in: model.LabelSet{
 				model.AddressLabel: "1.2.3.4:80",
-			}),
+			},
 			cfg: &config.ScrapeConfig{
 				Scheme:         "http",
 				MetricsPath:    "/metrics",
@@ -420,9 +421,9 @@ func TestPopulateLabels(t *testing.T) {
 		},
 		// verify that the default port is not removed (https).
 		{
-			in: labels.FromMap(map[string]string{
+			in: model.LabelSet{
 				model.AddressLabel: "1.2.3.4:443",
-			}),
+			},
 			cfg: &config.ScrapeConfig{
 				Scheme:         "https",
 				MetricsPath:    "/metrics",
@@ -450,9 +451,9 @@ func TestPopulateLabels(t *testing.T) {
 		},
 	}
 	for _, c := range cases {
-		in := c.in.Copy()
-
-		res, orig, err := PopulateLabels(labels.NewBuilder(c.in), c.cfg)
+		in := maps.Clone(c.in)
+		lb := labels.NewBuilder(labels.EmptyLabels())
+		res, err := PopulateLabels(lb, c.cfg, c.in, nil)
 		if c.err != "" {
 			require.EqualError(t, err, c.err)
 		} else {
@@ -460,7 +461,10 @@ func TestPopulateLabels(t *testing.T) {
 		}
 		require.Equal(t, c.in, in)
 		testutil.RequireEqual(t, c.res, res)
-		testutil.RequireEqual(t, c.resOrig, orig)
+		if err == nil {
+			PopulateDiscoveredLabels(lb, c.cfg, c.in, nil)
+			testutil.RequireEqual(t, c.resOrig, lb.Labels())
+		}
 	}
 }
 

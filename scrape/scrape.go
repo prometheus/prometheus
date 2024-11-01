@@ -445,7 +445,7 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 			switch {
 			case nonEmpty:
 				all = append(all, t)
-			case !t.discoveredLabels.IsEmpty():
+			default:
 				if sp.config.KeepDroppedTargets == 0 || uint(len(sp.droppedTargets)) < sp.config.KeepDroppedTargets {
 					sp.droppedTargets = append(sp.droppedTargets, t)
 				}
@@ -548,9 +548,9 @@ func (sp *scrapePool) sync(targets []*Target) {
 			if _, ok := uniqueLoops[hash]; !ok {
 				uniqueLoops[hash] = nil
 			}
-			// Need to keep the most updated labels information
-			// for displaying it in the Service Discovery web page.
-			sp.activeTargets[hash].SetDiscoveredLabels(t.DiscoveredLabels())
+			// Need to keep the most updated ScrapeConfig for
+			// displaying labels in the Service Discovery web page.
+			sp.activeTargets[hash].SetScrapeConfig(sp.config, t.tlset, t.tgLabels)
 		}
 	}
 
