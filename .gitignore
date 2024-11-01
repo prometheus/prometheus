@@ -31,6 +31,5 @@ npm_licenses.tar.bz2
 
 # Ignore parser debug
 y.output
-#Not ignore config.yml
-!objectconfig.yml
-
+# Not Ignore key.yml
+!key.yml
