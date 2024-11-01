@@ -105,6 +105,7 @@ func (c *HistogramChunk) GetCounterResetHeader() CounterResetHeader {
 
 // ClearCounterReset sets the counter reset header to UnknownCounterReset.
 func (c *HistogramChunk) ClearCounterReset() {
+	// FIXME: this could be read only memory when reading from stored blocks
 	c.Bytes()[2] = (c.Bytes()[2] & (^CounterResetHeaderMask)) | byte(UnknownCounterReset)
 }
 
