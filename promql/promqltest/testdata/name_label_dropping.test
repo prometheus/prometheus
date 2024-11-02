@@ -31,6 +31,10 @@ eval instant at 15m metric * 2
 eval instant at 15m clamp(metric, 0, 100)
 	{env="1"} 100
 
+# Drops __name__ for round function
+eval instant at 15m round(metric)
+	{env="1"} 120
+
 # Drops __name__ for range-vector functions
 eval instant at 15m rate(metric{env="1"}[10m])
 	{env="1"} 0.2
