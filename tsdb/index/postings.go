@@ -290,32 +290,99 @@ func (p *MemPostings) EnsureOrder(numberOfConcurrentProcesses int) {
 // Delete removes all ids in the given map from the postings lists.
 // affectedLabels contains all the labels that are affected by the deletion, there's no need to check other labels.
 func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}, affected map[labels.Label]struct{}) {
-	p.mtx.Lock()
-	defer p.mtx.Unlock()
-
-	process := func(l labels.Label) {
-		orig := p.m[l.Name][l.Value]
-		repl := make([]storage.SeriesRef, 0, len(orig))
-		for _, id := range orig {
-			if _, ok := deleted[id]; !ok {
-				repl = append(repl, id)
-			}
-		}
-		if len(repl) > 0 {
-			p.m[l.Name][l.Value] = repl
-		} else {
-			delete(p.m[l.Name], l.Value)
-			// Delete the key if we removed all values.
-			if len(p.m[l.Name]) == 0 {
-				delete(p.m, l.Name)
-			}
-		}
+	const batchSize = 128
+	type item struct {
+		label    labels.Label
+		snapshot []storage.SeriesRef
+		repl     []storage.SeriesRef
 	}
+
+	var (
+		stackBatch [batchSize]item
+		batch      = stackBatch[:0]
+	)
+
+	processBatch := func() {
+		// Build the replacements without holding the write mutex.
+		for i, e := range batch {
+			repl := make([]storage.SeriesRef, 0, len(e.snapshot))
+			for _, id := range e.snapshot {
+				if _, ok := deleted[id]; !ok {
+					repl = append(repl, id)
+				}
+			}
+			batch[i].repl = repl
+		}
+
+		// Take the write mutex, check if something else was added in the meantime, and replace slices.
+		p.mtx.RUnlock()
+		p.mtx.Lock()
+		for i, e := range batch {
+			// We need to look at the current and compare it to the snapshot we saw when we built the batch.
+			current := p.m[e.label.Name][e.label.Value]
+			// Add the ones that were added while were not holding the write mutex (if any).
+			// These can't been deleted, because they were created after this method was called.
+			for i := len(e.snapshot); i < len(current); i++ {
+				e.repl = append(e.repl, current[i])
+			}
+
+			// If the result is not empty, set it, otherwise delete the value key.
+			if len(e.repl) > 0 {
+				p.m[e.label.Name][e.label.Value] = e.repl
+			} else {
+				delete(p.m[e.label.Name], e.label.Value)
+				// Delete the name key if we removed all values.
+				if len(p.m[e.label.Name]) == 0 {
+					delete(p.m, e.label.Name)
+				}
+			}
+
+			batch[i] = item{} // De-reference everything.
+		}
+		p.mtx.Unlock()
+		p.mtx.RLock()
+
+		batch = stackBatch[:0]
+	}
+
+	// We're holding the RLock while building batches,
+	// temporarily unlocking and taking the write mutex in the processBatch when needed.
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+
+	// Add the allPostingsKey to the batch, it will be processed first and separately,
+	// as it also defines the max batch size in terms of postings.
+	allPostings := p.m[allPostingsKey.Name][allPostingsKey.Value]
+	batch = append(batch, item{
+		label:    allPostingsKey,
+		snapshot: allPostings,
+	})
+
+	// We don't want to keep references to slices with too many postings in the batch,
+	// That's why we're also counting the number of postings in the batch.
+	// We'll set the soft max as 10x the length of allPostings key,
+	// it is a soft max because we only check after adding a new label to the batch,
+	// so we can actually go up to 11x.
+	// This is still ok, for a TSDB with 2M series, that's extra 160MB we'd be referencing here.
+	maxBatchPostings := 10 * len(allPostings)
+	batchPostings := len(allPostings)
 
 	for l := range affected {
-		process(l)
+		if len(batch) >= batchSize || batchPostings >= maxBatchPostings {
+			processBatch()
+		}
+
+		e := item{
+			label:    l,
+			snapshot: p.m[l.Name][l.Value],
+		}
+		batchPostings += len(e.snapshot)
+		batch = append(batch, e)
 	}
-	process(allPostingsKey)
+
+	if len(batch) > 0 {
+		processBatch()
+	}
 }
 
 // Iter calls f for each postings list. It aborts if f returns an error and returns it.
