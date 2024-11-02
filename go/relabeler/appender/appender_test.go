@@ -1474,8 +1474,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 		},
 	)
 
-	rotatableHead, err := appender.NewRotatableHead(hd, noOpStorage{}, builder)
-	require.NoError(s.T(), err)
+	rotatableHead := appender.NewRotatableHead(hd, noOpStorage{}, builder)
 	s.T().Log("make appender")
 	metrics := querier.NewMetrics(prometheus.DefaultRegisterer)
 	app := appender.NewQueryableAppender(rotatableHead, dstrb, metrics)
@@ -2109,8 +2108,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 		},
 	)
 
-	rotatableHead, err := appender.NewRotatableHead(hd, noOpStorage{}, builder)
-	require.NoError(s.T(), err)
+	rotatableHead := appender.NewRotatableHead(hd, noOpStorage{}, builder)
 
 	s.T().Log("make appender")
 	metrics := querier.NewMetrics(prometheus.DefaultRegisterer)
