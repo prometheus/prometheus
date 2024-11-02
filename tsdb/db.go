@@ -186,6 +186,9 @@ type Options struct {
 	// they'd rather keep overlapping blocks and let another component do the overlapping compaction later.
 	// For Prometheus, this will always be true.
 	EnableOverlappingCompaction bool
+
+	// External trigger.
+	ReloadBlocksExternalTrigger ReloadBlocksExternalTrigger
 }
 
 type BlocksToDeleteFunc func(blocks []*Block) map[ulid.ULID]struct{}
@@ -213,6 +216,7 @@ type DB struct {
 
 	head *Head
 
+	trigger  ReloadBlocksExternalTrigger
 	compactc chan struct{}
 	donec    chan struct{}
 	stopc    chan struct{}
@@ -783,10 +787,16 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		}
 	}
 
+	trigger := opts.ReloadBlocksExternalTrigger
+	if trigger == nil {
+		trigger = newNoOnReloadBlocksExternalTrigger()
+	}
+
 	db := &DB{
 		dir:            dir,
 		logger:         l,
 		opts:           opts,
+		trigger:        trigger,
 		compactc:       make(chan struct{}, 1),
 		donec:          make(chan struct{}),
 		stopc:          make(chan struct{}),
@@ -988,6 +998,17 @@ func (db *DB) run(ctx context.Context) {
 		}
 
 		select {
+		case <-db.trigger.Chan():
+			db.cmtx.Lock()
+			if err := db.reloadBlocks(); err != nil {
+				level.Error(db.logger).Log("msg", "reloadBlocks", "err", err)
+			}
+			db.cmtx.Unlock()
+
+			select {
+			case db.compactc <- struct{}{}:
+			default:
+			}
 		case <-time.After(1 * time.Minute):
 			db.cmtx.Lock()
 			if err := db.reloadBlocks(); err != nil {

@@ -33,8 +33,6 @@ import (
 	"syscall"
 	"time"
 
-	storage2 "github.com/prometheus/prometheus/op-pkg/storage"
-
 	"github.com/KimMachineGun/automemlimit/memlimit"
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/alecthomas/units"
@@ -64,9 +62,10 @@ import (
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/notifier"
-	"github.com/prometheus/prometheus/op-pkg/receiver"
-	"github.com/prometheus/prometheus/op-pkg/scrape"
-	_ "github.com/prometheus/prometheus/plugins" // Register plugins.
+	"github.com/prometheus/prometheus/op-pkg/receiver"         // PP_CHANGES.md: rebuild on cpp
+	"github.com/prometheus/prometheus/op-pkg/scrape"           // PP_CHANGES.md: rebuild on cpp
+	storage2 "github.com/prometheus/prometheus/op-pkg/storage" // PP_CHANGES.md: rebuild on cpp
+	_ "github.com/prometheus/prometheus/plugins"               // Register plugins.
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
@@ -618,13 +617,16 @@ func main() {
 	level.Info(logger).Log("fd_limits", prom_runtime.FdLimits())
 	level.Info(logger).Log("vm_limits", prom_runtime.VMLimits())
 
+	// PP_CHANGES.md: rebuild on cpp start
 	receiverConfig, err := cfgFile.GetReceiverConfig()
 	if err != nil {
 		level.Error(logger).Log("msg", "failed take a receiver config", "err", err)
 		os.Exit(1)
 	}
 
-	var ctxReceiver, cancelReceiver = context.WithCancel(context.Background())
+	reloadBlocksTriggerNotifier := receiver.NewReloadBlocksTriggerNotifier()
+	cfg.tsdb.ReloadBlocksExternalTrigger = reloadBlocksTriggerNotifier
+	ctxReceiver, cancelReceiver := context.WithCancel(context.Background())
 	// create receiver
 	receiver, err := receiver.NewReceiver(
 		ctxReceiver,
@@ -634,27 +636,30 @@ func main() {
 		localStoragePath,
 		cfgFile.RemoteWriteConfigs,
 		localStoragePath,
+		receiver.RotationInfo{
+			BlockDuration: time.Duration(cfg.tsdb.MinBlockDuration),
+			Seed:          cfgFile.GlobalConfig.ExternalLabels.Hash(),
+		},
+		reloadBlocksTriggerNotifier,
 	)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to create a receiver", "err", err)
 		os.Exit(1)
 	}
+	// PP_CHANGES.md: rebuild on cpp end
 
 	var (
 		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
 		scraper       = &readyScrapeManager{}
 		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper)
-		opStorage     = storage2.NewQueryableStorage(receiver)
-		// fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage, opStorage)
-		fanoutStorage = storage.NewFanout(logger, opStorage, remoteStorage, localStorage)
+		opStorage     = storage2.NewQueryableStorage(receiver)                            // PP_CHANGES.md: rebuild on cpp
+		fanoutStorage = storage.NewFanout(logger, opStorage, remoteStorage, localStorage) // PP_CHANGES.md: rebuild on cpp
 	)
 
 	var (
-		ctxWeb, cancelWeb = context.WithCancel(context.Background())
-		ctxRule           = context.Background()
-
-		notifierManager = notifier.NewManager(&cfg.notifier, log.With(logger, "component", "notifier"))
-
+		ctxWeb, cancelWeb       = context.WithCancel(context.Background())
+		ctxRule                 = context.Background()
+		notifierManager         = notifier.NewManager(&cfg.notifier, log.With(logger, "component", "notifier"))
 		ctxScrape, cancelScrape = context.WithCancel(context.Background())
 		ctxNotify, cancelNotify = context.WithCancel(context.Background())
 		discoveryManagerScrape  discoveryManager
@@ -716,17 +721,18 @@ func main() {
 		}
 	}
 
+	// PP_CHANGES.md: rebuild on cpp start
 	scrapeManager, err := scrape.NewManager(
 		&cfg.scrape,
 		log.With(logger, "component", "scrape manager"),
 		receiver,
-		// fanoutStorage,
 		prometheus.DefaultRegisterer,
 	)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to create a scrape manager", "err", err)
 		os.Exit(1)
 	}
+	// PP_CHANGES.md: rebuild on cpp end
 
 	var (
 		tracingManager = tracing.NewManager(logger)
@@ -1324,8 +1330,6 @@ func openDBWithMetrics(dir string, logger log.Logger, reg prometheus.Registerer,
 		return nil, err
 	}
 
-	//db.DisableCompactions()
-
 	reg.MustRegister(
 		prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "prometheus_tsdb_lowest_timestamp_seconds",
@@ -1713,6 +1717,7 @@ type tsdbOptions struct {
 	MaxExemplars                   int64
 	EnableMemorySnapshotOnShutdown bool
 	EnableNativeHistograms         bool
+	ReloadBlocksExternalTrigger    tsdb.ReloadBlocksExternalTrigger
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -1734,6 +1739,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableNativeHistograms:         opts.EnableNativeHistograms,
 		OutOfOrderTimeWindow:           opts.OutOfOrderTimeWindow,
 		EnableOverlappingCompaction:    true,
+		ReloadBlocksExternalTrigger:    opts.ReloadBlocksExternalTrigger,
 	}
 }
 

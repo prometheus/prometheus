@@ -12,17 +12,17 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/prometheus/pp/go/cppbridge"
+	"github.com/prometheus/prometheus/pp/go/relabeler"
 	"github.com/prometheus/prometheus/pp/go/relabeler/appender"
 	"github.com/prometheus/prometheus/pp/go/relabeler/block"
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"github.com/prometheus/prometheus/pp/go/relabeler/distributor"
-	"github.com/prometheus/prometheus/pp/go/relabeler/head"
+	"github.com/prometheus/prometheus/pp/go/relabeler/head/catalog"
+	headmanager "github.com/prometheus/prometheus/pp/go/relabeler/head/manager"
 	rlogger "github.com/prometheus/prometheus/pp/go/relabeler/logger"
 	"github.com/prometheus/prometheus/pp/go/relabeler/querier"
 	"github.com/prometheus/prometheus/pp/go/util"
-	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/annotations"
-	"go.uber.org/atomic"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -32,6 +32,7 @@ import (
 	common_config "github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler"
+	"go.uber.org/atomic"
 	"gopkg.in/yaml.v2"
 
 	prom_config "github.com/prometheus/prometheus/config"
@@ -39,6 +40,8 @@ import (
 	"github.com/prometheus/prometheus/model/relabel"
 	op_config "github.com/prometheus/prometheus/op-pkg/config"
 	"github.com/prometheus/prometheus/op-pkg/dialer"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 const (
@@ -59,6 +62,11 @@ func (s *HeadConfigStorage) Load() *HeadConfig {
 	return s.ptr.Load()
 }
 
+func (s *HeadConfigStorage) Get() ([]*config.InputRelabelerConfig, uint16) {
+	cfg := s.ptr.Load()
+	return cfg.inputRelabelerConfigs, cfg.numberOfShards
+}
+
 func (s *HeadConfigStorage) Store(headConfig *HeadConfig) {
 	s.ptr.Store(headConfig)
 }
@@ -66,6 +74,7 @@ func (s *HeadConfigStorage) Store(headConfig *HeadConfig) {
 type Receiver struct {
 	ctx context.Context
 
+	headManager         *headmanager.Manager
 	distributor         *distributor.Distributor
 	appender            *appender.QueryableAppender
 	storage             *appender.QueryableStorage
@@ -89,6 +98,11 @@ func (rr *Receiver) Appender(ctx context.Context) storage.Appender {
 	return newPromAppender(ctx, rr, prom_config.TransparentRelabeler)
 }
 
+type RotationInfo struct {
+	BlockDuration time.Duration
+	Seed          uint64
+}
+
 func NewReceiver(
 	ctx context.Context,
 	logger log.Logger,
@@ -97,6 +111,8 @@ func NewReceiver(
 	workingDir string,
 	remoteWriteCfgs []*prom_config.OpRemoteWriteConfig,
 	dataDir string,
+	rotationInfo RotationInfo,
+	triggerNotifier *ReloadBlocksTriggerNotifier,
 ) (*Receiver, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -139,42 +155,52 @@ func NewReceiver(
 
 	querierMetrics := querier.NewMetrics(registerer)
 
-	storage := appender.NewQueryableStorage(
-		block.NewBlockWriter(dataDir, block.DefaultChunkSegmentSize, block.DefaultBlockDuration, registerer),
-		// block.NewBlockWriter(dataDir, block.DefaultChunkSegmentSize, 5*time.Minute, registerer),
-		registerer,
-		querierMetrics,
-	)
-
-	var headGeneration uint64
-	hd, err := appender.NewRotatableHead(storage, head.BuildFunc(func() (relabeler.Head, error) {
-		cfg := headConfigStorage.Load()
-		h, err := head.New(headGeneration, cfg.inputRelabelerConfigs, cfg.numberOfShards, registerer)
-		if err != nil {
-			return nil, err
-		}
-		headGeneration++
-		return h, nil
-	}))
+	dataDir, err = filepath.Abs(dataDir)
 	if err != nil {
-		level.Error(logger).Log("msg", "failed to init RotatableHead", "err", err)
 		return nil, err
+	}
+
+	fileLog, err := catalog.NewFileLog(filepath.Join(dataDir, "head.log"), catalog.DefaultEncoder{}, catalog.DefaultDecoder{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create log file: %w", err)
+	}
+
+	headCatalog, err := catalog.New(clock, fileLog)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create catalog: %w", err)
+	}
+
+	headManager, err := headmanager.New(dataDir, headConfigStorage, headCatalog, registerer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create head manager: %w", err)
+	}
+
+	activeHead, rotatedHeads, err := headManager.Restore(rotationInfo.BlockDuration)
+	if err != nil {
+		return nil, fmt.Errorf("failed to restore heads: %w", err)
+	}
+
+	queryableStorage := appender.NewQueryableStorageWithWriteNotifier(block.NewBlockWriter(dataDir, block.DefaultChunkSegmentSize, rotationInfo.BlockDuration, registerer), registerer, querierMetrics, triggerNotifier, rotatedHeads...)
+
+	hd, err := appender.NewRotatableHead(activeHead, queryableStorage, headManager)
+	if err != nil {
+		return nil, fmt.Errorf("failed make rotatable head: %w", err)
 	}
 
 	dstrb := distributor.NewDistributor(*destinationGroups)
 	app := appender.NewQueryableAppender(hd, dstrb, querierMetrics)
-	mwt := appender.NewMetricsWriteTrigger(appender.DefaultMetricWriteInterval, app, storage)
+	mwt := appender.NewMetricsWriteTrigger(appender.DefaultMetricWriteInterval, app, queryableStorage)
 
 	r := &Receiver{
 		ctx:               ctx,
 		distributor:       dstrb,
 		appender:          app,
-		storage:           storage,
+		storage:           queryableStorage,
 		headConfigStorage: headConfigStorage,
 		rotator: appender.NewRotator(
 			app,
-			clock,
-			2*time.Hour,
+			relabeler.NewRotateTimerWithSeed(clock, rotationInfo.BlockDuration, rotationInfo.Seed),
+			registerer,
 		),
 
 		metricsWriteTrigger: mwt,
@@ -274,6 +300,11 @@ func (rr *Receiver) ApplyConfig(cfg *prom_config.Config) error {
 		numberOfShards = defaultNumberOfShards
 	}
 
+	rr.headConfigStorage.Store(&HeadConfig{
+		inputRelabelerConfigs: rCfg.Configs,
+		numberOfShards:        numberOfShards,
+	})
+
 	err = rr.appender.Reconfigure(
 		HeadConfigureFunc(func(head relabeler.Head) error {
 			return head.Reconfigure(rCfg.Configs, numberOfShards)
@@ -362,10 +393,6 @@ func (rr *Receiver) ApplyConfig(cfg *prom_config.Config) error {
 			// }
 			dstrb.SetDestinationGroups(dgs)
 
-			rr.headConfigStorage.Store(&HeadConfig{
-				inputRelabelerConfigs: rCfg.Configs,
-				numberOfShards:        numberOfShards,
-			})
 			return nil
 		}),
 	)
