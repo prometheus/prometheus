@@ -21,8 +21,6 @@ import (
 	"strings"
 
 	"github.com/go-kit/log/level"
-	"github.com/gogo/protobuf/proto"
-	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
@@ -39,22 +37,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
-var (
-	federationErrors = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_web_federation_errors_total",
-		Help: "Total number of errors that occurred while sending federation responses.",
-	})
-	federationWarnings = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_web_federation_warnings_total",
-		Help: "Total number of warnings that occurred while sending federation responses.",
-	})
-)
-
-func registerFederationMetrics(r prometheus.Registerer) {
-	r.MustRegister(federationWarnings, federationErrors)
-}
-
-func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
+func (h *Handler) opFederation(w http.ResponseWriter, req *http.Request) {
 	h.mtx.RLock()
 	defer h.mtx.RUnlock()
 
@@ -77,9 +60,10 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 		format = expfmt.Negotiate(req.Header)
 		enc    = expfmt.NewEncoder(w, format)
 	)
+
 	w.Header().Set("Content-Type", string(format))
 
-	q, err := h.localStorage.Querier(mint, maxt)
+	q, err := h.storage.Querier(mint, maxt)
 	if err != nil {
 		federationErrors.Inc()
 		if errors.Is(err, tsdb.ErrNotReady) {
@@ -91,8 +75,6 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	}
 	defer q.Close()
 
-	vec := make(promql.Vector, 0, 8000)
-
 	hints := &storage.SelectHints{Start: mint, End: maxt}
 
 	var sets []storage.SeriesSet
@@ -102,7 +84,9 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	}
 
 	set := storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
+	vec := make(promql.Vector, 0, 8000) // TODO
 	it := storage.NewBuffer(int64(h.lookbackDelta / 1e6))
+
 	var chkIter chunkenc.Iterator
 Loop:
 	for set.Next() {
@@ -156,6 +140,7 @@ Loop:
 			H:      fh,
 		})
 	}
+
 	if ws := set.Warnings(); len(ws) > 0 {
 		level.Debug(h.logger).Log("msg", "Federation select returned warnings", "warnings", ws)
 		federationWarnings.Add(float64(len(ws)))
@@ -165,7 +150,6 @@ Loop:
 		http.Error(w, set.Err().Error(), http.StatusInternalServerError)
 		return
 	}
-
 	slices.SortFunc(vec, func(a, b promql.Sample) int {
 		ni := a.Metric.Get(labels.MetricName)
 		nj := b.Metric.Get(labels.MetricName)
@@ -187,7 +171,7 @@ Loop:
 		lastWasHistogram, lastHistogramWasGauge bool
 		protMetricFam                           *dto.MetricFamily
 	)
-	for _, s := range vec {
+	for i, s := range vec {
 		isHistogram := s.H != nil
 		if isHistogram &&
 			format != expfmt.FmtProtoDelim && format != expfmt.FmtProtoText && format != expfmt.FmtProtoCompact {
@@ -197,22 +181,26 @@ Loop:
 		}
 
 		nameSeen := false
-		globalUsed := map[string]struct{}{}
-		protMetric := &dto.Metric{}
+		globalUsed := make(map[string]struct{}, s.Metric.Len())
+		protMetric := &dto.Metric{
+			Label: make([]*dto.LabelPair, 0, s.Metric.Len()+len(externalLabelNames)),
+		}
 
-		err := s.Metric.Validate(func(l labels.Label) error {
+		// Validate
+		for j, l := range vec[i].Metric {
 			if l.Value == "" {
 				// No value means unset. Never consider those labels.
 				// This is also important to protect against nameless metrics.
-				return nil
+				continue
 			}
+
 			if l.Name == labels.MetricName {
 				nameSeen = true
 				if l.Value == lastMetricName && // We already have the name in the current MetricFamily, and we ignore nameless metrics.
 					lastWasHistogram == isHistogram && // The sample type matches (float vs histogram).
 					// If it was a histogram, the histogram type (counter vs gauge) also matches.
 					(!isHistogram || lastHistogramWasGauge == (s.H.CounterResetHint == histogram.GaugeType)) {
-					return nil
+					continue
 				}
 
 				// Since we now check for the sample type and type of histogram above, we will end up
@@ -224,12 +212,16 @@ Loop:
 				// creating the new one.
 				if protMetricFam != nil {
 					if err := enc.Encode(protMetricFam); err != nil {
-						return err
+						federationErrors.Inc()
+						level.Error(h.logger).Log("msg", "federation failed", "err", err)
+						return
 					}
 				}
+
 				protMetricFam = &dto.MetricFamily{
-					Type: dto.MetricType_UNTYPED.Enum(),
-					Name: proto.String(l.Value),
+					Type:   dto.MetricType_UNTYPED.Enum(),
+					Name:   &vec[i].Metric[j].Value,
+					Metric: make([]*dto.Metric, 0, 1),
 				}
 				if isHistogram {
 					if s.H.CounterResetHint == histogram.GaugeType {
@@ -239,69 +231,67 @@ Loop:
 					}
 				}
 				lastMetricName = l.Value
-				return nil
+				continue
 			}
+
 			protMetric.Label = append(protMetric.Label, &dto.LabelPair{
-				Name:  proto.String(l.Name),
-				Value: proto.String(l.Value),
+				Name:  &vec[i].Metric[j].Name,
+				Value: &vec[i].Metric[j].Value,
 			})
+
 			if _, ok := externalLabels[l.Name]; ok {
 				globalUsed[l.Name] = struct{}{}
 			}
-			return nil
-		})
-		if err != nil {
-			federationErrors.Inc()
-			level.Error(h.logger).Log("msg", "federation failed", "err", err)
-			return
 		}
+
 		if !nameSeen {
 			level.Warn(h.logger).Log("msg", "Ignoring nameless metric during federation", "metric", s.Metric)
 			continue
 		}
+
 		// Attach global labels if they do not exist yet.
-		for _, ln := range externalLabelNames {
-			lv := externalLabels[ln]
+		for i, ln := range externalLabelNames {
 			if _, ok := globalUsed[ln]; !ok {
+				lv := externalLabels[ln]
 				protMetric.Label = append(protMetric.Label, &dto.LabelPair{
-					Name:  proto.String(ln),
-					Value: proto.String(lv),
+					Name:  &externalLabelNames[i],
+					Value: &lv,
 				})
 			}
 		}
 
-		protMetric.TimestampMs = proto.Int64(s.T)
+		protMetric.TimestampMs = &vec[i].T
 		if !isHistogram {
 			lastHistogramWasGauge = false
 			protMetric.Untyped = &dto.Untyped{
-				Value: proto.Float64(s.F),
+				Value: &vec[i].F,
 			}
 		} else {
 			lastHistogramWasGauge = s.H.CounterResetHint == histogram.GaugeType
 			protMetric.Histogram = &dto.Histogram{
-				SampleCountFloat: proto.Float64(s.H.Count),
-				SampleSum:        proto.Float64(s.H.Sum),
-				Schema:           proto.Int32(s.H.Schema),
-				ZeroThreshold:    proto.Float64(s.H.ZeroThreshold),
-				ZeroCountFloat:   proto.Float64(s.H.ZeroCount),
+				SampleCountFloat: &vec[i].H.Count,
+				SampleSum:        &vec[i].H.Sum,
+				Schema:           &vec[i].H.Schema,
+				ZeroThreshold:    &vec[i].H.ZeroThreshold,
+				ZeroCountFloat:   &vec[i].H.ZeroCount,
 				NegativeCount:    s.H.NegativeBuckets,
 				PositiveCount:    s.H.PositiveBuckets,
 			}
 			if len(s.H.PositiveSpans) > 0 {
 				protMetric.Histogram.PositiveSpan = make([]*dto.BucketSpan, len(s.H.PositiveSpans))
-				for i, sp := range s.H.PositiveSpans {
-					protMetric.Histogram.PositiveSpan[i] = &dto.BucketSpan{
-						Offset: proto.Int32(sp.Offset),
-						Length: proto.Uint32(sp.Length),
+				for j := range s.H.PositiveSpans {
+					protMetric.Histogram.PositiveSpan[j] = &dto.BucketSpan{
+						Offset: &vec[i].H.PositiveSpans[j].Offset,
+						Length: &vec[i].H.PositiveSpans[j].Length,
 					}
 				}
 			}
 			if len(s.H.NegativeSpans) > 0 {
 				protMetric.Histogram.NegativeSpan = make([]*dto.BucketSpan, len(s.H.NegativeSpans))
-				for i, sp := range s.H.NegativeSpans {
-					protMetric.Histogram.NegativeSpan[i] = &dto.BucketSpan{
-						Offset: proto.Int32(sp.Offset),
-						Length: proto.Uint32(sp.Length),
+				for j := range s.H.NegativeSpans {
+					protMetric.Histogram.NegativeSpan[j] = &dto.BucketSpan{
+						Offset: &vec[i].H.NegativeSpans[j].Offset,
+						Length: &vec[i].H.NegativeSpans[j].Length,
 					}
 				}
 			}

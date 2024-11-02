@@ -188,7 +188,7 @@ type Options struct {
 	EnableOverlappingCompaction bool
 
 	// External trigger.
-	ReloadBlocksExternalTrigger ReloadBlocksExternalTrigger
+	ReloadBlocksExternalTrigger ReloadBlocksExternalTrigger // PP_CHANGES.md: rebuild on cpp
 }
 
 type BlocksToDeleteFunc func(blocks []*Block) map[ulid.ULID]struct{}
@@ -216,7 +216,7 @@ type DB struct {
 
 	head *Head
 
-	trigger  ReloadBlocksExternalTrigger
+	trigger  ReloadBlocksExternalTrigger // PP_CHANGES.md: rebuild on cpp
 	compactc chan struct{}
 	donec    chan struct{}
 	stopc    chan struct{}
@@ -787,16 +787,18 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		}
 	}
 
+	// PP_CHANGES.md: rebuild on cpp start
 	trigger := opts.ReloadBlocksExternalTrigger
 	if trigger == nil {
 		trigger = newNoOnReloadBlocksExternalTrigger()
 	}
+	// PP_CHANGES.md: rebuild on cpp end
 
 	db := &DB{
 		dir:            dir,
 		logger:         l,
 		opts:           opts,
-		trigger:        trigger,
+		trigger:        trigger, // PP_CHANGES.md: rebuild on cpp
 		compactc:       make(chan struct{}, 1),
 		donec:          make(chan struct{}),
 		stopc:          make(chan struct{}),
@@ -998,6 +1000,7 @@ func (db *DB) run(ctx context.Context) {
 		}
 
 		select {
+		// PP_CHANGES.md: rebuild on cpp start
 		case <-db.trigger.Chan():
 			db.cmtx.Lock()
 			if err := db.reloadBlocks(); err != nil {
@@ -1009,6 +1012,7 @@ func (db *DB) run(ctx context.Context) {
 			case db.compactc <- struct{}{}:
 			default:
 			}
+		// PP_CHANGES.md: rebuild on cpp end
 		case <-time.After(1 * time.Minute):
 			db.cmtx.Lock()
 			if err := db.reloadBlocks(); err != nil {

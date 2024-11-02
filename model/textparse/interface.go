@@ -61,7 +61,7 @@ type Parser interface {
 	Metric(l *labels.Labels) string
 
 	// MetricToBuilder writes the labels of the current sample into the passed builder.
-	MetricToBuilder(builder Builder)
+	MetricToBuilder(builder Builder) // PP_CHANGES.md: rebuild on cpp
 
 	// Exemplar writes the exemplar of the current sample into the passed
 	// exemplar. It can be called repeatedly to retrieve multiple exemplars

@@ -10,12 +10,12 @@ import (
 	"github.com/alecthomas/units"
 	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
+	relabelerconfig "github.com/prometheus/prometheus/pp/go/relabeler/config"
 	common_config "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/suite"
 	"gopkg.in/yaml.v2"
 
-	relabelerconfig "github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
@@ -147,8 +147,7 @@ func (s *OpConfigSuite) TestGetReceiverConfig() {
 
 	rrCfg, err := c.GetReceiverConfig()
 	s.Require().NoError(err)
-	s.Require().Len(rrCfg.Configs, 2)
-	s.Require().Len(rrCfg.Configs, 2)
+	s.Require().Len(rrCfg.Configs, 3) // 2 in config, 3 - transparent_relabeler
 	s.Require().Equal("scrape_service-x", rrCfg.Configs[1].Name)
 	s.Require().Len(rrCfg.Configs[1].RelabelConfigs, 1)
 }

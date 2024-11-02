@@ -36,7 +36,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
-	"github.com/prometheus/prometheus/op-pkg/scrape"
+	"github.com/prometheus/prometheus/op-pkg/scrape" // PP_CHANGES.md: rebuild on cpp
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -97,7 +97,7 @@ func TestReadyAndHealthy(t *testing.T) {
 
 	opts.Flags = map[string]string{}
 
-	webHandler := New(nil, opts, nil)
+	webHandler := New(nil, opts, nil) // PP_CHANGES.md: rebuild on cpp
 
 	webHandler.config = &config.Config{}
 	webHandler.notifier = &notifier.Manager{}
@@ -219,7 +219,7 @@ func TestRoutePrefix(t *testing.T) {
 
 	opts.Flags = map[string]string{}
 
-	webHandler := New(nil, opts, nil)
+	webHandler := New(nil, opts, nil) // PP_CHANGES.md: rebuild on cpp
 	l, err := webHandler.Listener()
 	if err != nil {
 		panic(fmt.Sprintf("Unable to start web listener: %s", err))
@@ -404,7 +404,7 @@ func TestShutdownWithStaleConnection(t *testing.T) {
 
 	opts.Flags = map[string]string{}
 
-	webHandler := New(nil, opts, nil)
+	webHandler := New(nil, opts, nil) // PP_CHANGES.md: rebuild on cpp
 
 	webHandler.config = &config.Config{}
 	webHandler.notifier = &notifier.Manager{}
@@ -458,7 +458,7 @@ func TestHandleMultipleQuitRequests(t *testing.T) {
 			Path:   "/",
 		},
 	}
-	webHandler := New(nil, opts, nil)
+	webHandler := New(nil, opts, nil) // PP_CHANGES.md: rebuild on cpp
 	webHandler.config = &config.Config{}
 	webHandler.notifier = &notifier.Manager{}
 	l, err := webHandler.Listener()
@@ -536,7 +536,7 @@ func TestAgentAPIEndPoints(t *testing.T) {
 
 	opts.Flags = map[string]string{}
 
-	webHandler := New(nil, opts, nil)
+	webHandler := New(nil, opts, nil) // PP_CHANGES.md: rebuild on cpp
 	webHandler.SetReady(true)
 	webHandler.config = &config.Config{}
 	webHandler.notifier = &notifier.Manager{}

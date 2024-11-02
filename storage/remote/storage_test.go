@@ -32,7 +32,7 @@ func TestStorageLifecycle(t *testing.T) {
 	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
-		RemoteWriteConfigs: []*config.OpRemoteWriteConfig{
+		RemoteWriteConfigs: []*config.OpRemoteWriteConfig{ // PP_CHANGES.md: rebuild on cpp
 			// We need to set URL's so that metric creation doesn't panic.
 			baseRemoteWriteConfig("http://test-storage.com"),
 		},
@@ -128,7 +128,7 @@ func TestIgnoreExternalLabels(t *testing.T) {
 
 // baseRemoteWriteConfig copy values from global Default Write config
 // to avoid change global state and cross impact test execution.
-func baseRemoteWriteConfig(host string) *config.OpRemoteWriteConfig {
+func baseRemoteWriteConfig(host string) *config.OpRemoteWriteConfig { // PP_CHANGES.md: rebuild on cpp
 	cfg := config.DefaultOpRemoteWriteConfig
 	cfg.URL = &common_config.URL{
 		URL: &url.URL{
@@ -165,7 +165,7 @@ func TestWriteStorageApplyConfigsDuringCommit(t *testing.T) {
 			<-start
 			conf := &config.Config{
 				GlobalConfig: config.DefaultGlobalConfig,
-				RemoteWriteConfigs: []*config.OpRemoteWriteConfig{
+				RemoteWriteConfigs: []*config.OpRemoteWriteConfig{ // PP_CHANGES.md: rebuild on cpp
 					baseRemoteWriteConfig(fmt.Sprintf("http://test-%d.com", i)),
 				},
 			}

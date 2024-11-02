@@ -53,8 +53,8 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
-	"github.com/prometheus/prometheus/op-pkg/handler"
-	"github.com/prometheus/prometheus/op-pkg/scrape"
+	"github.com/prometheus/prometheus/op-pkg/handler" // PP_CHANGES.md: rebuild on cpp
+	"github.com/prometheus/prometheus/op-pkg/scrape"  // PP_CHANGES.md: rebuild on cpp
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
@@ -268,7 +268,7 @@ type Options struct {
 }
 
 // New initializes a new web Handler.
-func New(logger log.Logger, o *Options, receiver handler.Receiver) *Handler {
+func New(logger log.Logger, o *Options, receiver handler.Receiver) *Handler { // PP_CHANGES.md: rebuild on cpp
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -322,6 +322,7 @@ func New(logger log.Logger, o *Options, receiver handler.Receiver) *Handler {
 		app = h.storage
 	}
 
+	// PP_CHANGES.md: rebuild on cpp start
 	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, app, h.exemplarStorage, receiver.HeadQueryable(), receiver, factorySPr, factoryTr, factoryAr,
 		func() config.Config {
 			h.mtx.RLock()
@@ -354,6 +355,7 @@ func New(logger log.Logger, o *Options, receiver handler.Receiver) *Handler {
 		o.EnableRemoteWriteReceiver,
 		o.EnableOTLPWriteReceiver,
 	)
+	// PP_CHANGES.md: rebuild on cpp end
 
 	if o.RoutePrefix != "/" {
 		// If the prefix is missing for the root path, prepend it.
@@ -385,7 +387,7 @@ func New(logger log.Logger, o *Options, receiver handler.Receiver) *Handler {
 	router.Get("/metrics", promhttp.Handler().ServeHTTP)
 
 	router.Get("/federate", readyf(httputil.CompressionHandler{
-		Handler: http.HandlerFunc(h.federation),
+		Handler: http.HandlerFunc(h.opFederation), // PP_CHANGES.md: rebuild on cpp
 	}.ServeHTTP))
 
 	router.Get("/consoles/*filepath", readyf(h.consoles))

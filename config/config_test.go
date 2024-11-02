@@ -100,7 +100,7 @@ var expectedConf = &Config{
 		filepath.FromSlash("testdata/my/*.rules"),
 	},
 
-	RemoteWriteConfigs: []*OpRemoteWriteConfig{
+	RemoteWriteConfigs: []*OpRemoteWriteConfig{ // PP_CHANGES.md: rebuild on cpp
 		{
 			Protocol: PrometheusProtocol,
 			RemoteWriteConfig: RemoteWriteConfig{

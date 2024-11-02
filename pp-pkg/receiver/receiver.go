@@ -74,7 +74,6 @@ func (s *HeadConfigStorage) Store(headConfig *HeadConfig) {
 type Receiver struct {
 	ctx context.Context
 
-	headManager         *headmanager.Manager
 	distributor         *distributor.Distributor
 	appender            *appender.QueryableAppender
 	storage             *appender.QueryableStorage
@@ -182,10 +181,7 @@ func NewReceiver(
 
 	queryableStorage := appender.NewQueryableStorageWithWriteNotifier(block.NewBlockWriter(dataDir, block.DefaultChunkSegmentSize, rotationInfo.BlockDuration, registerer), registerer, querierMetrics, triggerNotifier, rotatedHeads...)
 
-	hd, err := appender.NewRotatableHead(activeHead, queryableStorage, headManager)
-	if err != nil {
-		return nil, fmt.Errorf("failed make rotatable head: %w", err)
-	}
+	hd := appender.NewRotatableHead(activeHead, queryableStorage, headManager)
 
 	dstrb := distributor.NewDistributor(*destinationGroups)
 	app := appender.NewQueryableAppender(hd, dstrb, querierMetrics)
@@ -396,12 +392,16 @@ func (rr *Receiver) ApplyConfig(cfg *prom_config.Config) error {
 			return nil
 		}),
 	)
-
 	if err != nil {
 		return err
 	}
 
 	return nil
+}
+
+// GetState create new state.
+func (rr *Receiver) GetState() *cppbridge.State {
+	return cppbridge.NewState(rr.headConfigStorage.Load().numberOfShards)
 }
 
 // RelabelerIDIsExist check on exist relabelerID.
@@ -414,11 +414,6 @@ func (rr *Receiver) RelabelerIDIsExist(relabelerID string) bool {
 	}
 
 	return false
-}
-
-// GetState create new state.
-func (rr *Receiver) GetState() *cppbridge.State {
-	return cppbridge.NewState(rr.headConfigStorage.Load().numberOfShards)
 }
 
 // Run main loop.
@@ -461,6 +456,11 @@ func (rr *Receiver) HeadQueryable() storage.Queryable {
 	return rr.appender
 }
 
+// LowestSentTimestamp returns the lowest sent timestamp across all queues.
+func (*Receiver) LowestSentTimestamp() int64 {
+	return 0
+}
+
 // Shutdown safe shutdown Receiver.
 func (rr *Receiver) Shutdown(ctx context.Context) error {
 	cgogcErr := rr.cgogc.Shutdown(ctx)
@@ -474,12 +474,12 @@ func (rr *Receiver) Shutdown(ctx context.Context) error {
 
 // makeDestinationGroups create DestinationGroups from configs.
 func makeDestinationGroups(
-	ctx context.Context,
-	clock clockwork.Clock,
-	registerer prometheus.Registerer,
-	workingDir, clientID string,
+	_ context.Context, // ctx
+	_ clockwork.Clock, // clock
+	_ prometheus.Registerer, // registerer
+	_, _ string, // workingDir, clientID
 	rwCfgs []*prom_config.OpRemoteWriteConfig,
-	numberOfShards uint16,
+	_ uint16, // numberOfShards
 ) (*relabeler.DestinationGroups, error) {
 	dgs := make(relabeler.DestinationGroups, 0, len(rwCfgs))
 	// DISABLE DestinationGroups
@@ -641,53 +641,53 @@ func makeDialers(
 	return dialers, nil
 }
 
-// encoderSelector selector for constructors for encoders.
-func encoderSelector(isShrinkable bool) relabeler.ManagerEncoderCtor {
-	if isShrinkable {
-		return func(shardID uint16, shardsNumberPower uint8) relabeler.ManagerEncoder {
-			return cppbridge.NewWALEncoderLightweight(shardID, shardsNumberPower)
-		}
-	}
+// // encoderSelector selector for constructors for encoders.
+// func encoderSelector(isShrinkable bool) relabeler.ManagerEncoderCtor {
+// 	if isShrinkable {
+// 		return func(shardID uint16, shardsNumberPower uint8) relabeler.ManagerEncoder {
+// 			return cppbridge.NewWALEncoderLightweight(shardID, shardsNumberPower)
+// 		}
+// 	}
 
-	return func(shardID uint16, shardsNumberPower uint8) relabeler.ManagerEncoder {
-		return cppbridge.NewWALEncoder(shardID, shardsNumberPower)
-	}
-}
+// 	return func(shardID uint16, shardsNumberPower uint8) relabeler.ManagerEncoder {
+// 		return cppbridge.NewWALEncoder(shardID, shardsNumberPower)
+// 	}
+// }
 
-// refillCtor default contructor for refill.
-func refillCtor(
-	workinDir string,
-	blockID uuid.UUID,
-	destinations []string,
-	shardsNumberPower uint8,
-	segmentEncodingVersion uint8,
-	alwaysToRefill bool,
-	name string,
-	registerer prometheus.Registerer,
-) (relabeler.ManagerRefill, error) {
-	return relabeler.NewRefill(
-		workinDir,
-		shardsNumberPower,
-		segmentEncodingVersion,
-		blockID,
-		alwaysToRefill,
-		name,
-		registerer,
-		destinations...,
-	)
-}
+// // refillCtor default contructor for refill.
+// func refillCtor(
+// 	workinDir string,
+// 	blockID uuid.UUID,
+// 	destinations []string,
+// 	shardsNumberPower uint8,
+// 	segmentEncodingVersion uint8,
+// 	alwaysToRefill bool,
+// 	name string,
+// 	registerer prometheus.Registerer,
+// ) (relabeler.ManagerRefill, error) {
+// 	return relabeler.NewRefill(
+// 		workinDir,
+// 		shardsNumberPower,
+// 		segmentEncodingVersion,
+// 		blockID,
+// 		alwaysToRefill,
+// 		name,
+// 		registerer,
+// 		destinations...,
+// 	)
+// }
 
-// refillSenderCtor default contructor for manager sender.
-func refillSenderCtor(
-	rsmCfg relabeler.RefillSendManagerConfig,
-	workingDir string,
-	dialers []relabeler.Dialer,
-	clock clockwork.Clock,
-	name string,
-	registerer prometheus.Registerer,
-) (relabeler.ManagerRefillSender, error) {
-	return relabeler.NewRefillSendManager(rsmCfg, workingDir, dialers, clock, name, registerer)
-}
+// // refillSenderCtor default contructor for manager sender.
+// func refillSenderCtor(
+// 	rsmCfg relabeler.RefillSendManagerConfig,
+// 	workingDir string,
+// 	dialers []relabeler.Dialer,
+// 	clock clockwork.Clock,
+// 	name string,
+// 	registerer prometheus.Registerer,
+// ) (relabeler.ManagerRefillSender, error) {
+// 	return relabeler.NewRefillSendManager(rsmCfg, workingDir, dialers, clock, name, registerer)
+// }
 
 // initLogHandler init log handler for ManagerKeeper.
 func initLogHandler(logger log.Logger) {

@@ -46,7 +46,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/op-pkg/scrape"
+	"github.com/prometheus/prometheus/op-pkg/scrape" // PP_CHANGES.md: rebuild on cpp
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
@@ -336,7 +336,7 @@ var samplePrometheusCfg = config.Config{
 	AlertingConfig:     config.AlertingConfig{},
 	RuleFiles:          []string{},
 	ScrapeConfigs:      []*config.ScrapeConfig{},
-	RemoteWriteConfigs: []*config.OpRemoteWriteConfig{},
+	RemoteWriteConfigs: []*config.OpRemoteWriteConfig{}, // PP_CHANGES.md: rebuild on cpp
 	RemoteReadConfigs:  []*config.RemoteReadConfig{},
 }
 

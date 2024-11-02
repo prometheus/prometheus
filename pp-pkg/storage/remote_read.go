@@ -1,20 +1,6 @@
-// Copyright 2017 The Prometheus Authors
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
-package remote
+package storage
 
 import (
-	"context"
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
@@ -28,66 +14,47 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/util/logging"
 )
 
-// String constants for instrumentation.
-const (
-	namespace  = "prometheus"
-	subsystem  = "remote_storage"
-	remoteName = "remote_name"
-	endpoint   = "url"
-)
-
-type ReadyScrapeManager interface {
-	Get() (*scrape.Manager, error)
-}
-
-// startTimeCallback is a callback func that return the oldest timestamp stored in a storage.
-type startTimeCallback func() (int64, error)
-
-// Storage represents all the remote read and write endpoints.  It implements
-// storage.Storage.
-type Storage struct {
+// RemoteRead represents all the remote read endpoints.
+type RemoteRead struct {
 	logger *logging.Deduper
 	mtx    sync.Mutex
 
-	rws *WriteStorage
-
 	// For reads.
 	queryables             []storage.SampleAndChunkQueryable
-	localStartTimeCallback startTimeCallback
+	localStartTimeCallback func() (int64, error)
+	noOpStorage
 }
 
-// NewStorage returns a remote.Storage.
-func NewStorage(l log.Logger, reg prometheus.Registerer, stCallback startTimeCallback, walDir string, flushDeadline time.Duration, sm ReadyScrapeManager) *Storage {
+// NewRemoteRead returns a RemoteRead.
+func NewRemoteRead(
+	l log.Logger,
+	reg prometheus.Registerer,
+	stCallback func() (int64, error),
+	walDir string,
+	flushDeadline time.Duration,
+) *RemoteRead {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
 	logger := logging.Dedupe(l, 1*time.Minute)
 
-	s := &Storage{
+	s := &RemoteRead{
 		logger:                 logger,
 		localStartTimeCallback: stCallback,
 	}
-	s.rws = NewWriteStorage(s.logger, reg, walDir, flushDeadline, sm)
+
 	return s
 }
 
-func (s *Storage) Notify() {
-	s.rws.Notify()
-}
-
 // ApplyConfig updates the state as the new config requires.
-func (s *Storage) ApplyConfig(conf *config.Config) error {
+func (s *RemoteRead) ApplyConfig(conf *config.Config) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
-
-	if err := s.rws.ApplyConfig(conf); err != nil {
-		return err
-	}
 
 	// Update read clients
 	readHashes := make(map[string]struct{})
@@ -112,7 +79,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 			name = rrConf.Name
 		}
 
-		c, err := NewReadClient(name, &ClientConfig{
+		c, err := remote.NewReadClient(name, &remote.ClientConfig{
 			URL:              rrConf.URL,
 			Timeout:          rrConf.RemoteTimeout,
 			HTTPClientConfig: rrConf.HTTPClientConfig,
@@ -126,7 +93,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 		if !rrConf.FilterExternalLabels {
 			externalLabels = labels.EmptyLabels()
 		}
-		queryables = append(queryables, NewSampleAndChunkQueryableClient(
+		queryables = append(queryables, remote.NewSampleAndChunkQueryableClient(
 			c,
 			externalLabels,
 			labelsToEqualityMatchers(rrConf.RequiredMatchers),
@@ -139,17 +106,22 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 	return nil
 }
 
-// StartTime implements the Storage interface.
-func (s *Storage) StartTime() (int64, error) {
-	return int64(model.Latest), nil
-}
+// // StartTime implements the Storage interface.
+// func (s *RemoteRead) StartTime() (int64, error) {
+// 	return int64(model.Latest), nil
+// }
+
+// // Appender implements the Storage interface.
+// func (s *RemoteRead) Appender(_ context.Context) storage.Appender {
+// 	return noOpAppender{}
+// }
 
 // Querier returns a storage.MergeQuerier combining the remote client queriers
 // of each configured remote read endpoint.
 // Returned querier will never return error as all queryables are assumed best effort.
 // Additionally all returned queriers ensure that its Select's SeriesSets have ready data after first `Next` invoke.
 // This is because Prometheus (fanout and secondary queries) can't handle the stream failing half way through by design.
-func (s *Storage) Querier(mint, maxt int64) (storage.Querier, error) {
+func (s *RemoteRead) Querier(mint, maxt int64) (storage.Querier, error) {
 	s.mtx.Lock()
 	queryables := s.queryables
 	s.mtx.Unlock()
@@ -167,7 +139,7 @@ func (s *Storage) Querier(mint, maxt int64) (storage.Querier, error) {
 
 // ChunkQuerier returns a storage.MergeQuerier combining the remote client queriers
 // of each configured remote read endpoint.
-func (s *Storage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
+func (s *RemoteRead) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
 	s.mtx.Lock()
 	queryables := s.queryables
 	s.mtx.Unlock()
@@ -180,25 +152,17 @@ func (s *Storage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
 		}
 		queriers = append(queriers, q)
 	}
-	return storage.NewMergeChunkQuerier(nil, queriers, storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge)), nil
-}
-
-// Appender implements storage.Storage.
-func (s *Storage) Appender(ctx context.Context) storage.Appender {
-	return s.rws.Appender(ctx)
-}
-
-// LowestSentTimestamp returns the lowest sent timestamp across all queues.
-func (s *Storage) LowestSentTimestamp() int64 {
-	return s.rws.LowestSentTimestamp()
+	return storage.NewMergeChunkQuerier(
+		nil,
+		queriers,
+		storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge),
+	), nil
 }
 
 // Close the background processing of the storage queues.
-func (s *Storage) Close() error {
+func (s *RemoteRead) Close() error {
 	s.logger.Stop()
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
-	return s.rws.Close()
+	return nil
 }
 
 func labelsToEqualityMatchers(ls model.LabelSet) []*labels.Matcher {

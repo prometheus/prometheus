@@ -29,9 +29,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/prometheus/prometheus/pp/go/relabeler"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/regexp"
@@ -46,9 +43,9 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/op-pkg/handler"
-	"github.com/prometheus/prometheus/op-pkg/handler/middleware"
-	"github.com/prometheus/prometheus/op-pkg/scrape"
+	"github.com/prometheus/prometheus/op-pkg/handler"            // PP_CHANGES.md: rebuild on cpp
+	"github.com/prometheus/prometheus/op-pkg/handler/middleware" // PP_CHANGES.md: rebuild on cpp
+	"github.com/prometheus/prometheus/op-pkg/scrape"             // PP_CHANGES.md: rebuild on cpp
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
@@ -194,18 +191,14 @@ type QueryOpts interface {
 	LookbackDelta() time.Duration
 }
 
-type HeadStatusGetter interface {
-	HeadStatus(limit int) relabeler.HeadStatus
-}
-
 // API can register a set of endpoints in a router and handle
 // them using the provided storage and query engine.
 type API struct {
 	Queryable         storage.SampleAndChunkQueryable
 	QueryEngine       QueryEngine
 	ExemplarQueryable storage.ExemplarQueryable
-	HeadQueryable     storage.Queryable
-	headStatusGetter  HeadStatusGetter
+	HeadQueryable     storage.Queryable // PP_CHANGES.md: rebuild on cpp
+	headStatusGetter  HeadStatusGetter  // PP_CHANGES.md: rebuild on cpp
 
 	scrapePoolsRetriever  func(context.Context) ScrapePoolsRetriever
 	targetRetriever       func(context.Context) TargetRetriever
@@ -232,8 +225,9 @@ type API struct {
 	remoteReadHandler  http.Handler
 	otlpWriteHandler   http.Handler
 
-	codecs    []Codec
-	opHandler *handler.OpHandler
+	codecs []Codec
+
+	opHandler *handler.OpHandler // PP_CHANGES.md: rebuild on cpp
 }
 
 // NewAPI returns an initialized API type.
@@ -242,8 +236,8 @@ func NewAPI(
 	q storage.SampleAndChunkQueryable,
 	ap storage.Appendable,
 	eq storage.ExemplarQueryable,
-	hq storage.Queryable,
-	headStatusGetter HeadStatusGetter,
+	hq storage.Queryable, // PP_CHANGES.md: rebuild on cpp
+	headStatusGetter HeadStatusGetter, // PP_CHANGES.md: rebuild on cpp
 	spsr func(context.Context) ScrapePoolsRetriever,
 	tr func(context.Context) TargetRetriever,
 	ar func(context.Context) AlertmanagerRetriever,
@@ -271,11 +265,13 @@ func NewAPI(
 	otlpEnabled bool,
 ) *API {
 	a := &API{
-		QueryEngine:           qe,
-		Queryable:             q,
-		ExemplarQueryable:     eq,
-		HeadQueryable:         hq,
-		headStatusGetter:      headStatusGetter,
+		HeadQueryable:    hq,               // PP_CHANGES.md: rebuild on cpp
+		headStatusGetter: headStatusGetter, // PP_CHANGES.md: rebuild on cpp
+
+		QueryEngine:       qe,
+		Queryable:         q,
+		ExemplarQueryable: eq,
+
 		scrapePoolsRetriever:  spsr,
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
@@ -311,11 +307,7 @@ func NewAPI(
 	}
 
 	if rwEnabled {
-		a.opHandler = handler.NewOpHandler(
-			receiver,
-			logger,
-			registerer,
-		)
+		a.opHandler = handler.NewOpHandler(receiver, logger, registerer) // PP_CHANGES.md: rebuild on cpp
 	}
 	if otlpEnabled {
 		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, ap)
@@ -385,8 +377,6 @@ func (api *API) Register(r *route.Router) {
 	r.Post("/query_range", wrapAgent(api.queryRange))
 	r.Get("/query_exemplars", wrapAgent(api.queryExemplars))
 	r.Post("/query_exemplars", wrapAgent(api.queryExemplars))
-	r.Get("/query_head", wrapAgent(api.queryHead))
-	r.Post("/query_head", wrapAgent(api.queryHead))
 
 	r.Get("/format_query", wrapAgent(api.formatQuery))
 	r.Post("/format_query", wrapAgent(api.formatQuery))
@@ -410,22 +400,14 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/runtimeinfo", wrap(api.serveRuntimeInfo))
 	r.Get("/status/buildinfo", wrap(api.serveBuildInfo))
 	r.Get("/status/flags", wrap(api.serveFlags))
-	r.Get("/status/tsdb", wrapAgent(api.serveHeadStatus))
+	r.Get("/status/tsdb", wrapAgent(api.serveHeadStatus)) // PP_CHANGES.md: rebuild on cpp
 	r.Get("/status/walreplay", api.serveWALReplayStatus)
+	r.Post("/write", api.ready(api.opRemoteWrite(middleware.ResolveMetadataRemoteWriteVanilla))) // PP_CHANGES.md: rebuild on cpp
 	r.Post("/read", api.ready(api.remoteRead))
-	// r.Post("/write", api.ready(api.remoteWrite))
+
 	r.Post("/otlp/v1/metrics", api.ready(api.otlpWrite))
 
-	// RemoteWriteHandler
-	r.Post("/write", api.ready(api.remoteWriteV2(middleware.ResolveMetadataRemoteWriteVanilla)))
-	r.Post("/remote_write", api.ready(api.remoteWriteV2(middleware.ResolveMetadataRemoteWriteFromHeader)))
-	r.Post("/remote_write/:relabeler_id", api.ready(api.remoteWriteV2(middleware.ResolveMetadataRemoteWrite)))
-	// WebsocketHandler
-	r.Get("/websocket", api.ready(api.remoteWriteWebsocket(middleware.ResolveMetadataFromHeader)))
-	r.Get("/websocket/:relabeler_id", api.ready(api.remoteWriteWebsocket(middleware.ResolveMetadata)))
-	// RefillHandler
-	r.Post("/refill", api.ready(api.remoteWriteRefill(middleware.ResolveMetadataFromHeader)))
-	r.Post("/refill/:relabeler_id", api.ready(api.remoteWriteRefill(middleware.ResolveMetadata)))
+	api.opRegister(r, wrapAgent) // PP_CHANGES.md: rebuild on cpp
 
 	r.Get("/alerts", wrapAgent(api.alerts))
 	r.Get("/rules", wrapAgent(api.rules))
@@ -580,7 +562,6 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
-
 	qry, err := api.QueryEngine.NewRangeQuery(ctx, api.Queryable, opts, r.FormValue("query"), start, end, step)
 	if err != nil {
 		return invalidParamError(err, "query")
@@ -648,83 +629,6 @@ func (api *API) queryExemplars(r *http.Request) apiFuncResult {
 	res, err := eq.Select(timestamp.FromTime(start), timestamp.FromTime(end), selectors...)
 	if err != nil {
 		return apiFuncResult{nil, returnAPIError(err), nil, nil}
-	}
-
-	return apiFuncResult{res, nil, nil, nil}
-}
-
-func (api *API) queryHead(r *http.Request) apiFuncResult {
-	start, err := parseTime(r.FormValue("start"))
-	if err != nil {
-		return invalidParamError(err, "start")
-	}
-	end, err := parseTime(r.FormValue("end"))
-	if err != nil {
-		return invalidParamError(err, "end")
-	}
-	if end.Before(start) {
-		return invalidParamError(errors.New("end timestamp must not be before start time"), "end")
-	}
-
-	ctx := r.Context()
-	if to := r.FormValue("timeout"); to != "" {
-		var cancel context.CancelFunc
-		timeout, err := parseDuration(to)
-		if err != nil {
-			return invalidParamError(err, "timeout")
-		}
-
-		ctx, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
-	}
-
-	//metricName := r.FormValue("query")
-
-	expr, err := parser.ParseExpr(r.FormValue("query"))
-	if err != nil {
-		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
-	}
-
-	selectors := parser.ExtractSelectors(expr)
-	if len(selectors) < 1 {
-		return apiFuncResult{nil, nil, nil, nil}
-	}
-	var matchers []*labels.Matcher
-	for _, selector := range selectors {
-		matchers = append(matchers, selector...)
-	}
-
-	q, err := api.HeadQueryable.Querier(start.UnixMilli(), end.UnixMilli())
-	if err != nil {
-		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
-	}
-	defer func() { _ = q.Close() }()
-
-	//seriesSet := q.Select(ctx, false, nil, &labels.Matcher{
-	//	Type:  labels.MatchEqual,
-	//	Name:  "__name__",
-	//	Value: metricName,
-	//})
-
-	seriesSet := q.Select(ctx, false, nil, matchers...)
-
-	var samples []promql.Sample
-	for seriesSet.Next() {
-		series := seriesSet.At()
-		chunkIterator := series.Iterator(nil)
-		for chunkIterator.Next() != chunkenc.ValNone {
-			t, v := chunkIterator.At()
-			labelSet := series.Labels()
-			samples = append(samples, promql.Sample{
-				T:      t,
-				F:      v,
-				Metric: labelSet,
-			})
-		}
-	}
-
-	res := promql.Result{
-		Value: promql.Vector(samples),
 	}
 
 	return apiFuncResult{res, nil, nil, nil}
@@ -1657,18 +1561,6 @@ func TSDBStatsFromIndexStats(stats []index.Stat) []TSDBStat {
 	return result
 }
 
-func (api *API) serveHeadStatus(r *http.Request) apiFuncResult {
-	limit := 10
-	if s := r.FormValue("limit"); s != "" {
-		var err error
-		if limit, err = strconv.Atoi(s); err != nil || limit < 1 {
-			return apiFuncResult{nil, &apiError{errorBadData, errors.New("limit must be a positive number")}, nil, nil}
-		}
-	}
-
-	return apiFuncResult{api.headStatusGetter.HeadStatus(limit), nil, nil, nil}
-}
-
 func (api *API) serveTSDBStatus(r *http.Request) apiFuncResult {
 	limit := 10
 	if s := r.FormValue("limit"); s != "" {
@@ -1743,36 +1635,6 @@ func (api *API) remoteWrite(w http.ResponseWriter, r *http.Request) {
 		api.remoteWriteHandler.ServeHTTP(w, r)
 	} else {
 		http.Error(w, "remote write receiver needs to be enabled with --web.enable-remote-write-receiver", http.StatusNotFound)
-	}
-}
-
-func (api *API) remoteWriteV2(middlewares ...middleware.Middleware) http.HandlerFunc {
-	return func(rw http.ResponseWriter, r *http.Request) {
-		if api.opHandler != nil {
-			api.opHandler.RemoteWrite(middlewares...).ServeHTTP(rw, r)
-		} else {
-			http.Error(rw, "remote write receiver needs to be enabled with --web.enable-remote-write-receiver", http.StatusNotFound)
-		}
-	}
-}
-
-func (api *API) remoteWriteWebsocket(middlewares ...middleware.Middleware) http.HandlerFunc {
-	return func(rw http.ResponseWriter, r *http.Request) {
-		if api.opHandler != nil {
-			api.opHandler.Websocket(middlewares...).ServeHTTP(rw, r)
-		} else {
-			http.Error(rw, "remote write receiver needs to be enabled with --web.enable-remote-write-receiver", http.StatusNotFound)
-		}
-	}
-}
-
-func (api *API) remoteWriteRefill(middlewares ...middleware.Middleware) http.HandlerFunc {
-	return func(rw http.ResponseWriter, r *http.Request) {
-		if api.opHandler != nil {
-			api.opHandler.Refill(middlewares...).ServeHTTP(rw, r)
-		} else {
-			http.Error(rw, "remote write receiver needs to be enabled with --web.enable-remote-write-receiver", http.StatusNotFound)
-		}
 	}
 }
 

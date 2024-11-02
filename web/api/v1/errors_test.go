@@ -31,7 +31,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/op-pkg/scrape"
+	"github.com/prometheus/prometheus/op-pkg/scrape" // PP_CHANGES.md: rebuild on cpp
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
@@ -112,6 +112,8 @@ func createPrometheusAPI(q storage.SampleAndChunkQueryable) *route.Router {
 	api := NewAPI(
 		engine,
 		q,
+		nil,
+		nil,
 		nil,
 		nil,
 		func(context.Context) ScrapePoolsRetriever { return &DummyScrapePoolsRetriever{} },

@@ -35,7 +35,6 @@ import (
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
@@ -224,7 +223,7 @@ type DB struct {
 	mtx    sync.RWMutex
 	logger log.Logger
 	opts   *Options
-	rs     *remote.Storage
+	rs     RemoteWrite // PP_CHANGES.md: rebuild on cpp
 
 	wal    *wlog.WL
 	locker *tsdbutil.DirLocker
@@ -247,7 +246,7 @@ type DB struct {
 }
 
 // Open returns a new agent.DB in the given directory.
-func Open(l log.Logger, reg prometheus.Registerer, rs *remote.Storage, dir string, opts *Options) (*DB, error) {
+func Open(l log.Logger, reg prometheus.Registerer, rs RemoteWrite, dir string, opts *Options) (*DB, error) { // PP_CHANGES.md: rebuild on cpp
 	opts = validateOptions(opts)
 
 	locker, err := tsdbutil.NewDirLocker(dir, "agent", l, reg)

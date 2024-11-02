@@ -62,15 +62,14 @@ import (
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/notifier"
-	"github.com/prometheus/prometheus/op-pkg/receiver"         // PP_CHANGES.md: rebuild on cpp
-	"github.com/prometheus/prometheus/op-pkg/scrape"           // PP_CHANGES.md: rebuild on cpp
-	storage2 "github.com/prometheus/prometheus/op-pkg/storage" // PP_CHANGES.md: rebuild on cpp
-	_ "github.com/prometheus/prometheus/plugins"               // Register plugins.
+	"github.com/prometheus/prometheus/op-pkg/receiver"             // PP_CHANGES.md: rebuild on cpp
+	"github.com/prometheus/prometheus/op-pkg/scrape"               // PP_CHANGES.md: rebuild on cpp
+	oppkgstorage "github.com/prometheus/prometheus/op-pkg/storage" // PP_CHANGES.md: rebuild on cpp
+	_ "github.com/prometheus/prometheus/plugins"                   // Register plugins.
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tracing"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/agent"
@@ -649,17 +648,32 @@ func main() {
 	// PP_CHANGES.md: rebuild on cpp end
 
 	var (
-		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
-		scraper       = &readyScrapeManager{}
-		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper)
-		opStorage     = storage2.NewQueryableStorage(receiver)                            // PP_CHANGES.md: rebuild on cpp
-		fanoutStorage = storage.NewFanout(logger, opStorage, remoteStorage, localStorage) // PP_CHANGES.md: rebuild on cpp
+		localStorage = &readyStorage{stats: tsdb.NewDBStats()}
+		scraper      = &readyScrapeManager{}
+
+		// PP_CHANGES.md: rebuild on cpp start
+		remoteRead = oppkgstorage.NewRemoteRead(
+			log.With(logger, "component", "remote"),
+			prometheus.DefaultRegisterer,
+			localStorage.StartTime,
+			localStoragePath,
+			time.Duration(cfg.RemoteFlushDeadline),
+		)
+		fanoutStorage = storage.NewFanout(
+			logger,
+			oppkgstorage.NewQueryableStorage(receiver),
+			remoteRead,
+			localStorage,
+		)
+		// PP_CHANGES.md: rebuild on cpp end
 	)
 
 	var (
-		ctxWeb, cancelWeb       = context.WithCancel(context.Background())
-		ctxRule                 = context.Background()
-		notifierManager         = notifier.NewManager(&cfg.notifier, log.With(logger, "component", "notifier"))
+		ctxWeb, cancelWeb = context.WithCancel(context.Background())
+		ctxRule           = context.Background()
+
+		notifierManager = notifier.NewManager(&cfg.notifier, log.With(logger, "component", "notifier"))
+
 		ctxScrape, cancelScrape = context.WithCancel(context.Background())
 		ctxNotify, cancelNotify = context.WithCancel(context.Background())
 		discoveryManagerScrape  discoveryManager
@@ -783,8 +797,8 @@ func main() {
 		queryEngine = promql.NewEngine(opts)
 
 		ruleManager = rules.NewManager(&rules.ManagerOptions{
-			Appendable:      receiver,
-			Queryable:       receiver,
+			Appendable:      receiver, // PP_CHANGES.md: rebuild on cpp
+			Queryable:       receiver, // PP_CHANGES.md: rebuild on cpp
 			QueryFunc:       rules.EngineQueryFunc(queryEngine, fanoutStorage),
 			NotifyFunc:      rules.SendAlerts(notifierManager, cfg.web.ExternalURL.String()),
 			Context:         ctxRule,
@@ -836,7 +850,7 @@ func main() {
 	}
 
 	// Depends on cfg.web.ScrapeManager so needs to be after cfg.web.ScrapeManager = scrapeManager.
-	webHandler := web.New(log.With(logger, "component", "web"), &cfg.web, receiver)
+	webHandler := web.New(log.With(logger, "component", "web"), &cfg.web, receiver) // PP_CHANGES.md: rebuild on cpp
 
 	// Monitor outgoing connections on default transport with conntrack.
 	http.DefaultTransport.(*http.Transport).DialContext = conntrack.NewDialContextFunc(
@@ -847,16 +861,16 @@ func main() {
 	externalURL := cfg.web.ExternalURL.String()
 
 	reloaders := []reloader{
-		{
+		{ // PP_CHANGES.md: rebuild on cpp start
 			name:     "receiver",
 			reloader: receiver.ApplyConfig,
-		}, {
+		}, { // PP_CHANGES.md: rebuild on cpp end
 			name:     "db_storage",
 			reloader: localStorage.ApplyConfig,
-		}, {
-			name:     "remote_storage",
-			reloader: remoteStorage.ApplyConfig,
-		}, {
+		}, { // PP_CHANGES.md: rebuild on cpp start
+			name:     "remote_read",
+			reloader: remoteRead.ApplyConfig,
+		}, { // PP_CHANGES.md: rebuild on cpp end
 			name:     "web_handler",
 			reloader: webHandler.ApplyConfig,
 		}, {
@@ -919,7 +933,6 @@ func main() {
 
 				// Get all rule files matching the configuration paths.
 				var files []string
-				fmt.Println("main: cfg.ruleFiles", cfg.RuleFiles)
 				for _, pat := range cfg.RuleFiles {
 					fs, err := filepath.Glob(pat)
 					if err != nil {
@@ -1190,7 +1203,7 @@ func main() {
 
 				startTimeMargin := int64(2 * time.Duration(cfg.tsdb.MinBlockDuration).Seconds() * 1000)
 				localStorage.Set(db, startTimeMargin)
-				db.SetWriteNotified(remoteStorage)
+				// db.SetWriteNotified(remoteStorage) // PP_CHANGES.md: rebuild on cpp
 				close(dbOpen)
 				<-cancel
 				return nil
@@ -1218,7 +1231,7 @@ func main() {
 				db, err := agent.Open(
 					logger,
 					prometheus.DefaultRegisterer,
-					remoteStorage,
+					receiver,
 					localStoragePath,
 					&opts,
 				)
@@ -1244,7 +1257,7 @@ func main() {
 				)
 
 				localStorage.Set(db, 0)
-				db.SetWriteNotified(remoteStorage)
+				// db.SetWriteNotified(remoteStorage) // PP_CHANGES.md: rebuild on cpp
 				close(dbOpen)
 				<-cancel
 				return nil
@@ -1271,7 +1284,7 @@ func main() {
 			},
 		)
 	}
-	{
+	{ // PP_CHANGES.md: rebuild on cpp start
 		// run receiver.
 		g.Add(
 			func() error {
@@ -1288,7 +1301,7 @@ func main() {
 				cancelReceiver()
 			},
 		)
-	}
+	} // PP_CHANGES.md: rebuild on cpp end
 	{
 		// Notifier.
 
@@ -1717,7 +1730,7 @@ type tsdbOptions struct {
 	MaxExemplars                   int64
 	EnableMemorySnapshotOnShutdown bool
 	EnableNativeHistograms         bool
-	ReloadBlocksExternalTrigger    tsdb.ReloadBlocksExternalTrigger
+	ReloadBlocksExternalTrigger    tsdb.ReloadBlocksExternalTrigger // PP_CHANGES.md: rebuild on cpp
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {

@@ -15,7 +15,6 @@ build:
         all:
             - netgo
             - builtinassets
-#            - stringlabels
             - static
             - osusergo
         windows:

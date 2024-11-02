@@ -35,7 +35,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
-	op_config "github.com/prometheus/prometheus/op-pkg/config"
+	op_config "github.com/prometheus/prometheus/op-pkg/config" // PP_CHANGES.md: rebuild on cpp
 	"github.com/prometheus/prometheus/storage/remote/azuread"
 )
 
@@ -223,17 +223,18 @@ var (
 
 // Config is the top-level configuration for Prometheus's config files.
 type Config struct {
-	GlobalConfig      GlobalConfig                        `yaml:"global"`
-	AlertingConfig    AlertingConfig                      `yaml:"alerting,omitempty"`
-	RuleFiles         []string                            `yaml:"rule_files,omitempty"`
-	ScrapeConfigFiles []string                            `yaml:"scrape_config_files,omitempty"`
-	ScrapeConfigs     []*ScrapeConfig                     `yaml:"scrape_configs,omitempty"`
-	StorageConfig     StorageConfig                       `yaml:"storage,omitempty"`
-	TracingConfig     TracingConfig                       `yaml:"tracing,omitempty"`
-	ReceiverConfig    op_config.RemoteWriteReceiverConfig `yaml:",inline,omitempty"`
+	GlobalConfig      GlobalConfig    `yaml:"global"`
+	AlertingConfig    AlertingConfig  `yaml:"alerting,omitempty"`
+	RuleFiles         []string        `yaml:"rule_files,omitempty"`
+	ScrapeConfigFiles []string        `yaml:"scrape_config_files,omitempty"`
+	ScrapeConfigs     []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
+	StorageConfig     StorageConfig   `yaml:"storage,omitempty"`
+	TracingConfig     TracingConfig   `yaml:"tracing,omitempty"`
 
-	RemoteWriteConfigs []*OpRemoteWriteConfig `yaml:"remote_write,omitempty"`
-	RemoteReadConfigs  []*RemoteReadConfig    `yaml:"remote_read,omitempty"`
+	ReceiverConfig     op_config.RemoteWriteReceiverConfig `yaml:",inline,omitempty"`      // PP_CHANGES.md: rebuild on cpp
+	RemoteWriteConfigs []*OpRemoteWriteConfig              `yaml:"remote_write,omitempty"` // PP_CHANGES.md: rebuild on cpp
+
+	RemoteReadConfigs []*RemoteReadConfig `yaml:"remote_read,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -382,11 +383,13 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		rrNames[rrcfg.Name] = struct{}{}
 	}
 
+	// PP_CHANGES.md: rebuild on cpp start
 	if c.ReceiverConfig.IsEmpty() {
 		return nil
 	}
 
 	return c.ReceiverConfig.Validate()
+	// PP_CHANGES.md: rebuild on cpp end
 }
 
 // GlobalConfig configures values that are used across other configuration
@@ -1046,46 +1049,6 @@ type RemoteWriteConfig struct {
 func (c *RemoteWriteConfig) SetDirectory(dir string) {
 	c.HTTPClientConfig.SetDirectory(dir)
 }
-
-// // UnmarshalYAML implements the yaml.Unmarshaler interface.
-// func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-// 	*c = DefaultRemoteWriteConfig
-// 	type plain RemoteWriteConfig
-// 	if err := unmarshal((*plain)(c)); err != nil {
-// 		return err
-// 	}
-// 	if c.URL == nil {
-// 		return errors.New("url for remote_write is empty")
-// 	}
-// 	for _, rlcfg := range c.WriteRelabelConfigs {
-// 		if rlcfg == nil {
-// 			return errors.New("empty or null relabeling rule in remote write config")
-// 		}
-// 	}
-// 	if err := validateHeaders(c.Headers); err != nil {
-// 		return err
-// 	}
-
-// 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
-// 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
-// 	// Thus we just do its validation here.
-// 	if err := c.HTTPClientConfig.Validate(); err != nil {
-// 		return err
-// 	}
-
-// 	httpClientConfigAuthEnabled := c.HTTPClientConfig.BasicAuth != nil ||
-// 		c.HTTPClientConfig.Authorization != nil || c.HTTPClientConfig.OAuth2 != nil
-
-// 	if httpClientConfigAuthEnabled && (c.SigV4Config != nil || c.AzureADConfig != nil) {
-// 		return fmt.Errorf("at most one of basic_auth, authorization, oauth2, sigv4, & azuread must be configured")
-// 	}
-
-// 	if c.SigV4Config != nil && c.AzureADConfig != nil {
-// 		return fmt.Errorf("at most one of basic_auth, authorization, oauth2, sigv4, & azuread must be configured")
-// 	}
-
-// 	return nil
-// }
 
 func validateHeadersForTracing(headers map[string]string) error {
 	for header := range headers {

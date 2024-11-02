@@ -1,3 +1,5 @@
+// Copyright OpCore
+
 package adapter
 
 import (

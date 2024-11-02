@@ -1188,10 +1188,6 @@ loop:
 		return
 	}
 
-	if err = dump(batch); err != nil {
-		return 0, 0, err
-	}
-
 	batched := batch.Len()
 	sl.state.SetStaleNansTS(defTime)
 	if err = sl.receiver.AppendTimeSeries(
@@ -1338,10 +1334,6 @@ func (sl *scrapeLoop) report(
 		}
 	}
 
-	if err = dump(batch); err != nil {
-		return err
-	}
-
 	if err = sl.receiver.AppendTimeSeries(
 		sl.appenderCtx,
 		batch,
@@ -1352,46 +1344,6 @@ func (sl *scrapeLoop) report(
 	}
 
 	return
-}
-
-func dump(batch Batch) error {
-	//file, err := os.Create(fmt.Sprintf("scrape_data_%d", time.Now().UnixMilli()))
-	//if err != nil {
-	//	return err
-	//}
-	//defer func(fileName string) {
-	//	if err != nil {
-	//		_ = os.Remove(fileName)
-	//	}
-	//}(file.Name())
-	//defer file.Close()
-	//
-	//writeTimeSeries := func(file *os.File, timeSeries op_model.TimeSeries) error {
-	//	_, writeErr := file.WriteString(fmt.Sprintf("%s\n", timeSeries.LabelSet.String()))
-	//	if writeErr != nil {
-	//		return writeErr
-	//	}
-	//
-	//	_, writeErr = file.WriteString(fmt.Sprintf("%d\n", timeSeries.Timestamp))
-	//	if writeErr != nil {
-	//		return writeErr
-	//	}
-	//
-	//	_, writeErr = file.WriteString(fmt.Sprintf("%f\n", timeSeries.Value))
-	//	if writeErr != nil {
-	//		return writeErr
-	//	}
-	//
-	//	return nil
-	//}
-	//
-	//for _, timeSeries := range batch.TimeSeries() {
-	//	if err = writeTimeSeries(file, timeSeries); err != nil {
-	//		return err
-	//	}
-	//}
-
-	return nil
 }
 
 func (sl *scrapeLoop) reportStale(start time.Time) (err error) {
@@ -1425,10 +1377,6 @@ func (sl *scrapeLoop) reportStale(start time.Time) (err error) {
 		if err = sl.addReportSample(builder, batch, scrapeBodySizeBytesMetricName, ts, stale); err != nil {
 			return
 		}
-	}
-
-	if err = dump(batch); err != nil {
-		return err
 	}
 
 	if err = sl.receiver.AppendTimeSeries(
