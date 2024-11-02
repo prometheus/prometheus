@@ -202,5 +202,5 @@ func TestBuildCompliantNameWithoutSuffixes(t *testing.T) {
 	require.Equal(t, ":foo::bar", BuildCompliantName(createCounter(":foo::bar", ""), "", false))
 	require.Equal(t, "foo_bar", BuildCompliantName(createGauge("foo.bar", "1"), "", false))
 	require.Equal(t, "system_io", BuildCompliantName(createCounter("system.io", "foo/bar"), "", false))
-	require.Equal(t, "metric_with___foreign_characteres", BuildCompliantName(createCounter("metric_with_字符_foreign_characteres", ""), "", false))
+	require.Equal(t, "metric_with___foreign_characters", BuildCompliantName(createCounter("metric_with_字符_foreign_characters", ""), "", false))
 }

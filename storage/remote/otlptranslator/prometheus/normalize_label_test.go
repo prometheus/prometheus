@@ -29,7 +29,7 @@ func TestNormalizeLabel(t *testing.T) {
 		{"label:with:colons", "label_with_colons"}, // Without UTF-8 support, colons are only allowed in metric names
 		{"LabelWithCapitalLetters", "LabelWithCapitalLetters"},
 		{"label!with&special$chars)", "label_with_special_chars_"},
-		{"label_with_foreign_characteres_字符", "label_with_foreign_characteres___"},
+		{"label_with_foreign_characters_字符", "label_with_foreign_characters___"},
 		{"label.with.dots", "label_with_dots"},
 		{"123label", "key_123label"},
 		{"_label_starting_with_underscore", "key_label_starting_with_underscore"},
