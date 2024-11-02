@@ -31,7 +31,10 @@ if [ "$SANITIZERS" != "with_sanitizers" ]; then
 	fi
 	result="${result}--race"
 else if [ "$SANITIZERS" = "with_sanitizers" ]; then
-	result="${result}-asan"
+	if [ "$result" != "" ]; then
+		result="${result} "
+	fi
+	result="${result}--asan"
 fi
 
 echo "$result"
