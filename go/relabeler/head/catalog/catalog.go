@@ -60,6 +60,7 @@ func New(clock clockwork.Clock, log Log) (*Catalog, error) {
 }
 
 func (c *Catalog) List(filterFn func(record Record) bool, sortLess func(lhs, rhs Record) bool) (records []Record, err error) {
+	records = make([]Record, 0, len(c.records))
 	for _, record := range c.records {
 		if filterFn != nil && !filterFn(record) {
 			continue
@@ -132,7 +133,7 @@ func (c *Catalog) Delete(id string) error {
 }
 
 func (c *Catalog) Compact() error {
-	var records []Record
+	records := make([]Record, 0, len(c.records))
 	for _, record := range c.records {
 		records = append(records, record)
 	}

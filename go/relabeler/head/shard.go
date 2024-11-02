@@ -45,59 +45,6 @@ func (h *Head) reconfigure(
 	return h.reconfigureRelabelersData(inputRelabelerConfigs, numberOfShards)
 }
 
-// reconfiguringStages reconfiguring stages for all shards.
-func (h *Head) reconfigureStages(numberOfShards uint16) {
-	if h.numberOfShards == numberOfShards {
-		return
-	}
-
-	h.stageInputRelabeling = make([]chan *TaskInputRelabeling, numberOfShards)
-	h.stageAppendRelabelerSeries = make([]chan *TaskAppendRelabelerSeries, numberOfShards)
-	h.genericTaskCh = make([]chan *GenericTask, numberOfShards)
-
-	var shardID uint16
-	for ; shardID < numberOfShards; shardID++ {
-		h.stageInputRelabeling[shardID] = make(chan *TaskInputRelabeling, chanBufferSize)
-		h.stageAppendRelabelerSeries[shardID] = make(chan *TaskAppendRelabelerSeries, chanBufferSize)
-		h.genericTaskCh[shardID] = make(chan *GenericTask, chanBufferSize)
-	}
-}
-
-// reconfigureLsses reconfiguring lss for all shards.
-func (h *Head) reconfigureLsses(numberOfShards uint16) {
-	if h.numberOfShards == numberOfShards {
-		return
-	}
-
-	if len(h.lsses) > int(numberOfShards) {
-		for shardID := range h.lsses {
-			if shardID >= int(numberOfShards) {
-				// clear unnecessary
-				h.lsses[shardID] = nil
-				h.memoryInUse.Delete(prometheus.Labels{"allocator": "main_lss", "id": fmt.Sprintf("%d", shardID)})
-				continue
-			}
-		}
-		// cut
-		h.lsses = h.lsses[:numberOfShards]
-		return
-	}
-
-	// resize
-	h.lsses = append(
-		h.lsses,
-		make([]*cppbridge.LabelSetStorage, int(numberOfShards)-len(h.lsses))...,
-	)
-	for shardID := 0; shardID < int(numberOfShards); shardID++ {
-		if h.lsses[shardID] != nil {
-			continue
-		}
-
-		// create if not exist
-		h.lsses[shardID] = cppbridge.NewQueryableLssStorage()
-	}
-}
-
 // reconfigureRelabelersData reconfiguring relabelers data for all shards.
 func (h *Head) reconfigureRelabelersData(
 	inputRelabelerConfigs []*config.InputRelabelerConfig,
@@ -137,41 +84,6 @@ func (h *Head) reconfigureRelabelersData(
 	}
 
 	return nil
-}
-
-func (h *Head) reconfigureDataStorages(numberOfShards uint16) {
-	if h.numberOfShards == numberOfShards {
-		return
-	}
-
-	if len(h.dataStorages) > int(numberOfShards) {
-		for shardID := range h.dataStorages {
-			if shardID >= int(numberOfShards) {
-				h.dataStorages[shardID] = nil
-			}
-		}
-		h.dataStorages = h.dataStorages[:numberOfShards]
-		return
-	}
-
-	h.dataStorages = append(
-		h.dataStorages,
-		make([]*DataStorage, int(numberOfShards)-len(h.dataStorages))...,
-	)
-
-	for shardID := 0; shardID < int(numberOfShards); shardID++ {
-		if h.dataStorages[shardID] != nil {
-			continue
-		}
-
-		dataStorage := cppbridge.NewHeadDataStorage()
-		h.dataStorages[shardID] = &DataStorage{
-			dataStorage: dataStorage,
-			encoder:     cppbridge.NewHeadEncoderWithDataStorage(dataStorage),
-		}
-	}
-
-	return
 }
 
 // shardLoop run relabeling on the shard.
@@ -265,10 +177,10 @@ func (h *Head) shardLoop(shardID uint16, stopc chan struct{}) {
 			task.AddResult(shardID, innerSeries)
 		case task := <-h.genericTaskCh[shardID]:
 			task.ExecuteOnShard(&shard{
-				id:              shardID,
-				dataStorage:     h.dataStorages[shardID],
-				lssWrapper:      &lssWrapper{lss: h.lsses[shardID]},
-				wal:             h.wals[shardID],
+				id:          shardID,
+				dataStorage: h.dataStorages[shardID],
+				lssWrapper:  &lssWrapper{lss: h.lsses[shardID]},
+				wal:         h.wals[shardID],
 			})
 		}
 	}
@@ -306,10 +218,10 @@ func (w *lssWrapper) GetLabelSets(labelSetIDs []uint32) *cppbridge.LabelSetStora
 }
 
 type shard struct {
-	id              uint16
-	lssWrapper      *lssWrapper
-	dataStorage     *DataStorage
-	wal             *ShardWal
+	id          uint16
+	lssWrapper  *lssWrapper
+	dataStorage *DataStorage
+	wal         *ShardWal
 }
 
 func (s *shard) ShardID() uint16 {
@@ -327,4 +239,3 @@ func (s *shard) LSS() relabeler.LSS {
 func (s *shard) Wal() relabeler.Wal {
 	return s.wal
 }
-

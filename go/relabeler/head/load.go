@@ -10,28 +10,24 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 )
 
-var shardFileNameRegexp = regexp.MustCompile(`shard_\d`)
+const (
+	HeadWalEncoderDecoderLogShards uint8 = 0
+)
 
 func Create(id string, generation uint64, dir string, configs []*config.InputRelabelerConfig, numberOfShards uint16, registerer prometheus.Registerer) (_ *Head, err error) {
-	d, err := os.OpenFile(dir, os.O_RDONLY, 0777)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open dir: %w", err)
-	}
-	defer func() { _ = d.Close() }()
-
 	lsses := make([]*cppbridge.LabelSetStorage, numberOfShards)
 	wals := make([]*ShardWal, numberOfShards)
 	dataStorages := make([]*DataStorage, numberOfShards)
 
 	defer func() {
-		if err != nil {
-			for _, wal := range wals {
-				if wal != nil {
-					_ = wal.Close()
-				}
+		if err == nil {
+			return
+		}
+		for _, wal := range wals {
+			if wal != nil {
+				_ = wal.Close()
 			}
 		}
 	}()
@@ -45,7 +41,7 @@ func Create(id string, generation uint64, dir string, configs []*config.InputRel
 		if err != nil {
 			return nil, fmt.Errorf("failed to create shard wal file: %w", err)
 		}
-		shardWalEncoder := cppbridge.NewHeadWalEncoder(shardID, uint8(numberOfShards), lss)
+		shardWalEncoder := cppbridge.NewHeadWalEncoder(shardID, HeadWalEncoderDecoderLogShards, lss)
 		wals[shardID] = newShardWal(shardWalEncoder, false, shardFile)
 		dataStorage := cppbridge.NewHeadDataStorage()
 		dataStorages[shardID] = &DataStorage{
@@ -58,22 +54,17 @@ func Create(id string, generation uint64, dir string, configs []*config.InputRel
 }
 
 func Load(id string, generation uint64, dir string, configs []*config.InputRelabelerConfig, numberOfShards uint16, registerer prometheus.Registerer) (_ *Head, err error) {
-	d, err := os.OpenFile(dir, os.O_RDONLY, 0777)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open dir: %w", err)
-	}
-	defer func() { _ = d.Close() }()
-
 	lsses := make([]*cppbridge.LabelSetStorage, numberOfShards)
 	wals := make([]*ShardWal, numberOfShards)
 	dataStorages := make([]*DataStorage, numberOfShards)
 
 	defer func() {
-		if err != nil {
-			for _, wal := range wals {
-				if wal != nil {
-					_ = wal.Close()
-				}
+		if err == nil {
+			return
+		}
+		for _, wal := range wals {
+			if wal != nil {
+				_ = wal.Close()
 			}
 		}
 	}()

@@ -181,14 +181,12 @@ func New(
 
 	stageInputRelabeling := make([]chan *TaskInputRelabeling, numberOfShards)
 	stageAppendRelabelerSeries := make([]chan *TaskAppendRelabelerSeries, numberOfShards)
-	stageUpdateRelabelerState := make([]chan *TaskUpdateRelabelerState, numberOfShards)
 	genericTaskCh := make([]chan *GenericTask, numberOfShards)
 
 	var shardID uint16
 	for ; shardID < numberOfShards; shardID++ {
 		stageInputRelabeling[shardID] = make(chan *TaskInputRelabeling, chanBufferSize)
 		stageAppendRelabelerSeries[shardID] = make(chan *TaskAppendRelabelerSeries, chanBufferSize)
-		stageUpdateRelabelerState[shardID] = make(chan *TaskUpdateRelabelerState, chanBufferSize)
 		genericTaskCh[shardID] = make(chan *GenericTask, chanBufferSize)
 	}
 
