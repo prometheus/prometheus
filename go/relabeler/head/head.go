@@ -150,10 +150,9 @@ func (rd *RelabelerData) updateOrCreateStatelessRelabeler(
 }
 
 type Head struct {
-	id               string
-	finalizer        *Finalizer
-	referenceCounter relabeler.ReferenceCounter
-	generation       uint64
+	id         string
+	finalizer  *Finalizer
+	generation uint64
 
 	relabelersData             map[string]*RelabelerData
 	dataStorages               []*DataStorage
@@ -197,7 +196,6 @@ func New(
 	h := &Head{
 		id:                         id,
 		finalizer:                  NewFinalizer(),
-		referenceCounter:           relabeler.NewLoggedAtomicReferenceCounter(fmt.Sprintf("HEAD {%d}", generation)),
 		generation:                 generation,
 		lsses:                      lsses,
 		wals:                       wals,
@@ -242,10 +240,6 @@ func (h *Head) ID() string {
 
 func (h *Head) Generation() uint64 {
 	return h.generation
-}
-
-func (h *Head) ReferenceCounter() relabeler.ReferenceCounter {
-	return h.referenceCounter
 }
 
 // Append incoming data to head.

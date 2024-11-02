@@ -35,11 +35,6 @@ func (h *RotatableHead) Generation() uint64 {
 	return h.head.Generation()
 }
 
-// ReferenceCounter - relabeler.Head interface implementation.
-func (h *RotatableHead) ReferenceCounter() relabeler.ReferenceCounter {
-	return h.head.ReferenceCounter()
-}
-
 // Append - relabeler.Head interface implementation.
 func (h *RotatableHead) Append(
 	ctx context.Context,
@@ -147,10 +142,6 @@ func (h *HeapProfileWritableHead) ID() string {
 
 func (h *HeapProfileWritableHead) Generation() uint64 {
 	return h.head.Generation()
-}
-
-func (h *HeapProfileWritableHead) ReferenceCounter() relabeler.ReferenceCounter {
-	return h.head.ReferenceCounter()
 }
 
 func (h *HeapProfileWritableHead) Append(ctx context.Context, incomingData *relabeler.IncomingData, state *cppbridge.State, relabelerID string) ([][]*cppbridge.InnerSeries, error) {

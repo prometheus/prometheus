@@ -49,7 +49,6 @@ type ShardFn func(shard Shard) error
 type Head interface {
 	ID() string
 	Generation() uint64
-	ReferenceCounter() ReferenceCounter
 	Append(
 		ctx context.Context,
 		incomingData *IncomingData,
@@ -108,42 +107,6 @@ func (d *DestructibleIncomingData) Destroy() {
 		return
 	}
 	d.data.Destroy()
-}
-
-type ReferenceCounter interface {
-	Add(delta int64) int64
-	Value() int64
-}
-
-type AtomicReferenceCounter struct {
-	value atomic.Int64
-}
-
-func (rc *AtomicReferenceCounter) Add(delta int64) int64 {
-	return rc.value.Add(delta)
-}
-
-func (rc *AtomicReferenceCounter) Value() int64 {
-	return rc.value.Load()
-}
-
-type LoggedAtomicReferenceCounter struct {
-	prefix string
-	value  atomic.Int64
-}
-
-func NewLoggedAtomicReferenceCounter(prefix string) *LoggedAtomicReferenceCounter {
-	return &LoggedAtomicReferenceCounter{
-		prefix: prefix,
-	}
-}
-
-func (rc *LoggedAtomicReferenceCounter) Add(delta int64) int64 {
-	return rc.value.Add(delta)
-}
-
-func (rc *LoggedAtomicReferenceCounter) Value() int64 {
-	return rc.value.Load()
 }
 
 // HeadStatus holds information about all shards.

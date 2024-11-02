@@ -30,10 +30,6 @@ func (h *DiscardableRotatableHead) Generation() uint64 {
 	return h.head.Generation()
 }
 
-func (h *DiscardableRotatableHead) ReferenceCounter() relabeler.ReferenceCounter {
-	return h.head.ReferenceCounter()
-}
-
 func (h *DiscardableRotatableHead) Append(
 	ctx context.Context,
 	incomingData *relabeler.IncomingData,

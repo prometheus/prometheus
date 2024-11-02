@@ -2,7 +2,6 @@ package appender
 
 import (
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -107,20 +106,13 @@ func (qs *QueryableStorage) loop() {
 func (qs *QueryableStorage) write() {
 	qs.mtx.Lock()
 	var heads []relabeler.Head
-	for i, head := range qs.heads {
-		if head.ReferenceCounter().Value() >= 0 {
-			heads = append(heads, qs.heads[i])
-		}
+	for i := range qs.heads {
+		heads = append(heads, qs.heads[i])
 	}
 	qs.mtx.Unlock()
 
-	var headList []string
-	for _, head := range heads {
-		headList = append(headList, fmt.Sprintf("%d", head.Generation()))
-	}
-
-	logger.Infof("QUERYABLE STORAGE: write: selected { %s } heads", strings.Join(headList, ", "))
 	shouldNotify := false
+	var persisted []string
 	for _, head := range heads {
 		start := time.Now()
 		err := head.ForEachShard(func(shard relabeler.Shard) error {
@@ -134,7 +126,7 @@ func (qs *QueryableStorage) write() {
 		qs.headPersistenceDuration.With(prometheus.Labels{
 			"generation": fmt.Sprintf("%d", head.Generation()),
 		}).Set(float64(time.Since(start).Milliseconds()))
-		head.ReferenceCounter().Add(PersistedHeadValue)
+		persisted = append(persisted, head.ID())
 		shouldNotify = true
 		logger.Infof("QUERYABLE STORAGE: head { %d } persisted, duration: %v", head.Generation(), time.Since(start))
 	}
@@ -143,7 +135,7 @@ func (qs *QueryableStorage) write() {
 		qs.writeNotifier.NotifyWritten()
 	}
 
-	qs.shrink()
+	qs.shrink(persisted...)
 }
 
 // Add - Storage interface implementation.
@@ -168,17 +160,12 @@ func (qs *QueryableStorage) WriteMetrics() {
 	qs.mtx.Lock()
 	var heads []relabeler.Head
 	for _, head := range qs.heads {
-		if head.ReferenceCounter().Add(1) < 0 {
-			head.ReferenceCounter().Add(-1)
-			continue
-		}
 		heads = append(heads, head)
 	}
 	qs.mtx.Unlock()
 
 	for _, head := range heads {
 		head.WriteMetrics()
-		head.ReferenceCounter().Add(-1)
 	}
 
 	qs.shrink()
@@ -187,13 +174,8 @@ func (qs *QueryableStorage) WriteMetrics() {
 // Querier - storage.Queryable interface implementation.
 func (qs *QueryableStorage) Querier(mint, maxt int64) (storage.Querier, error) {
 	qs.mtx.Lock()
-
 	var heads []relabeler.Head
 	for _, head := range qs.heads {
-		if head.ReferenceCounter().Add(1) < 0 {
-			head.ReferenceCounter().Add(-1)
-			continue
-		}
 		heads = append(heads, head)
 	}
 	qs.mtx.Unlock()
@@ -208,10 +190,7 @@ func (qs *QueryableStorage) Querier(mint, maxt int64) (storage.Querier, error) {
 				querier.NoOpShardedDeduplicatorFactory(),
 				mint,
 				maxt,
-				func() error {
-					h.ReferenceCounter().Add(-1)
-					return nil
-				},
+				nil,
 				qs.querierMetrics,
 			),
 		)
@@ -219,26 +198,27 @@ func (qs *QueryableStorage) Querier(mint, maxt int64) (storage.Querier, error) {
 
 	q := querier.NewMultiQuerier(
 		queriers,
-		func() error {
-			qs.shrink()
-			return nil
-		},
+		nil,
 	)
 
 	return q, nil
 }
 
-func (qs *QueryableStorage) shrink() {
+func (qs *QueryableStorage) shrink(persisted ...string) {
 	qs.mtx.Lock()
 	defer qs.mtx.Unlock()
 
+	persistedMap := make(map[string]struct{})
+	for _, headID := range persisted {
+		persistedMap[headID] = struct{}{}
+	}
+
 	var heads []relabeler.Head
 	for _, head := range qs.heads {
-		logger.Infof("QUERYABLE STORAGE: SHRINK: HEAD { %d }: persisted: %v, ref count: %d", head.Generation(), head.ReferenceCounter().Value() < 0, refCount(head.ReferenceCounter().Value()))
-		if head.ReferenceCounter().Value() == PersistedHeadValue {
+		if _, ok := persistedMap[head.ID()]; ok {
 			_ = head.Close()
 			_ = head.Discard()
-			logger.Infof("QUERYABLE STORAGE: head { %d } persisted and closed", head.Generation())
+			logger.Infof("QUERYABLE STORAGE: head { %d } persisted, closed and discarded", head.Generation())
 			continue
 		}
 		heads = append(heads, head)
