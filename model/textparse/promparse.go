@@ -509,7 +509,7 @@ func yoloString(b []byte) string {
 func parseFloat(s string) (float64, error) {
 	// Keep to pre-Go 1.13 float formats.
 	if strings.ContainsAny(s, "pP_") {
-		return 0, fmt.Errorf("unsupported character in float")
+		return 0, errors.New("unsupported character in float")
 	}
 	return strconv.ParseFloat(s, 64)
 }

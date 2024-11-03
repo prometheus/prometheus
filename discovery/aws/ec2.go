@@ -161,7 +161,7 @@ type EC2Discovery struct {
 func NewEC2Discovery(conf *EC2SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*EC2Discovery, error) {
 	m, ok := metrics.(*ec2Metrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	if logger == nil {

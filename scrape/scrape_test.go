@@ -1010,7 +1010,7 @@ func TestScrapeLoopForcedErr(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	sl := newBasicScrapeLoop(t, ctx, scraper, app, time.Second)
 
-	forcedErr := fmt.Errorf("forced err")
+	forcedErr := errors.New("forced err")
 	sl.setForcedError(forcedErr)
 
 	scraper.scrapeFunc = func(context.Context, io.Writer) error {
@@ -1464,7 +1464,7 @@ func TestScrapeLoopCache(t *testing.T) {
 		case 4:
 			cancel()
 		}
-		return fmt.Errorf("scrape failed")
+		return errors.New("scrape failed")
 	}
 
 	go func() {
@@ -3264,7 +3264,7 @@ func TestScrapeReportSingleAppender(t *testing.T) {
 	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
 		numScrapes++
 		if numScrapes%4 == 0 {
-			return fmt.Errorf("scrape failed")
+			return errors.New("scrape failed")
 		}
 		w.Write([]byte("metric_a 44\nmetric_b 44\nmetric_c 44\nmetric_d 44\n"))
 		return nil

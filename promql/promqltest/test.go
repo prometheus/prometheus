@@ -672,7 +672,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 	switch val := result.(type) {
 	case promql.Matrix:
 		if ev.ordered {
-			return fmt.Errorf("expected ordered result, but query returned a matrix")
+			return errors.New("expected ordered result, but query returned a matrix")
 		}
 
 		if ev.expectScalar {

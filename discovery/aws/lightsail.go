@@ -134,7 +134,7 @@ type LightsailDiscovery struct {
 func NewLightsailDiscovery(conf *LightsailSDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*LightsailDiscovery, error) {
 	m, ok := metrics.(*lightsailMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	if logger == nil {

@@ -2047,7 +2047,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		}
 		for i := range mat {
 			if len(mat[i].Floats)+len(mat[i].Histograms) != 1 {
-				panic(fmt.Errorf("unexpected number of samples"))
+				panic(errors.New("unexpected number of samples"))
 			}
 			for ts := ev.startTimestamp + ev.interval; ts <= ev.endTimestamp; ts += ev.interval {
 				if len(mat[i].Floats) > 0 {
@@ -3626,7 +3626,7 @@ func detectHistogramStatsDecoding(expr parser.Expr) {
 		if n, ok := node.(*parser.BinaryExpr); ok {
 			detectHistogramStatsDecoding(n.LHS)
 			detectHistogramStatsDecoding(n.RHS)
-			return fmt.Errorf("stop")
+			return errors.New("stop")
 		}
 
 		n, ok := (node).(*parser.VectorSelector)
@@ -3648,7 +3648,7 @@ func detectHistogramStatsDecoding(expr parser.Expr) {
 				break
 			}
 		}
-		return fmt.Errorf("stop")
+		return errors.New("stop")
 	})
 }
 

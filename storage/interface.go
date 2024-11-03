@@ -41,17 +41,17 @@ var (
 	ErrOutOfOrderExemplar          = errors.New("out of order exemplar")
 	ErrDuplicateExemplar           = errors.New("duplicate exemplar")
 	ErrExemplarLabelLength         = fmt.Errorf("label length for exemplar exceeds maximum of %d UTF-8 characters", exemplar.ExemplarMaxLabelSetLength)
-	ErrExemplarsDisabled           = fmt.Errorf("exemplar storage is disabled or max exemplars is less than or equal to 0")
-	ErrNativeHistogramsDisabled    = fmt.Errorf("native histograms are disabled")
-	ErrOOONativeHistogramsDisabled = fmt.Errorf("out-of-order native histogram ingestion is disabled")
+	ErrExemplarsDisabled           = errors.New("exemplar storage is disabled or max exemplars is less than or equal to 0")
+	ErrNativeHistogramsDisabled    = errors.New("native histograms are disabled")
+	ErrOOONativeHistogramsDisabled = errors.New("out-of-order native histogram ingestion is disabled")
 
 	// ErrOutOfOrderCT indicates failed append of CT to the storage
 	// due to CT being older the then newer sample.
 	// NOTE(bwplotka): This can be both an instrumentation failure or commonly expected
 	// behaviour, and we currently don't have a way to determine this. As a result
 	// it's recommended to ignore this error for now.
-	ErrOutOfOrderCT      = fmt.Errorf("created timestamp out of order, ignoring")
-	ErrCTNewerThanSample = fmt.Errorf("CT is newer or the same as sample's timestamp, ignoring")
+	ErrOutOfOrderCT      = errors.New("created timestamp out of order, ignoring")
+	ErrCTNewerThanSample = errors.New("CT is newer or the same as sample's timestamp, ignoring")
 )
 
 // SeriesRef is a generic series reference. In prometheus it is either a
