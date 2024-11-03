@@ -345,14 +345,13 @@ func (p *MemPostings) Add(id storage.SeriesRef, lset labels.Labels) {
 	p.mtx.Unlock()
 }
 
-func appendWithExponentialGrowth[T any](a []T, v T) (_ []T, copied bool) {
+func appendWithExponentialGrowth[T any](a []T, v T) []T {
 	if cap(a) < len(a)+1 {
 		newList := make([]T, len(a), len(a)*2+1)
 		copy(newList, a)
 		a = newList
-		copied = true
 	}
-	return append(a, v), copied
+	return append(a, v)
 }
 
 func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
@@ -361,26 +360,16 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 		nm = map[string][]storage.SeriesRef{}
 		p.m[l.Name] = nm
 	}
-	list, copied := appendWithExponentialGrowth(nm[l.Value], id)
+	list := appendWithExponentialGrowth(nm[l.Value], id)
 	nm[l.Value] = list
 
-	// Return if it shouldn't be ordered, if it only has one element or if it's already ordered.
-	// The invariant is that the first n-1 items in the list are already sorted.
-	if !p.ordered || len(list) == 1 || list[len(list)-1] >= list[len(list)-2] {
+	if !p.ordered {
 		return
 	}
-
-	if !copied {
-		// We have appended to the existing slice,
-		// and readers may already have a copy of this postings slice,
-		// so we need to copy it before sorting.
-		old := list
-		list = make([]storage.SeriesRef, len(old), cap(old))
-		copy(list, old)
-		nm[l.Value] = list
-	}
-
-	// Repair order violations.
+	// There is no guarantee that no higher ID was inserted before as they may
+	// be generated independently before adding them to postings.
+	// We repair order violations on insert. The invariant is that the first n-1
+	// items in the list are already sorted.
 	for i := len(list) - 1; i >= 1; i-- {
 		if list[i] >= list[i-1] {
 			break
