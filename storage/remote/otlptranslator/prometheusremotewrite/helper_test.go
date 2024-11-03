@@ -48,7 +48,6 @@ func TestCreateAttributes(t *testing.T) {
 		resource.Attributes().PutStr(k, v)
 	}
 	attrs := pcommon.NewMap()
-	attrs.PutStr("__name__", "test_metric")
 	attrs.PutStr("metric-attr", "metric value")
 
 	testCases := []struct {
@@ -162,7 +161,7 @@ func TestCreateAttributes(t *testing.T) {
 			settings := Settings{
 				PromoteResourceAttributes: tc.promoteResourceAttributes,
 			}
-			lbls := createAttributes(resource, attrs, settings, nil, false)
+			lbls := createAttributes(resource, attrs, settings, nil, false, model.MetricNameLabel, "test_metric")
 
 			assert.ElementsMatch(t, lbls, tc.expectedLabels)
 		})
