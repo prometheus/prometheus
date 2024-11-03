@@ -184,8 +184,8 @@ func TestBuildCompliantNameWithNormalize(t *testing.T) {
 	require.Equal(t, "system_network_io_bytes_total", BuildCompliantName(createCounter("network.io", "By"), "system", true))
 	require.Equal(t, "_3_14_digits", BuildCompliantName(createGauge("3.14 digits", ""), "", true))
 	require.Equal(t, "envoy_rule_engine_zlib_buf_error", BuildCompliantName(createGauge("envoy__rule_engine_zlib_buf_error", ""), "", true))
-	require.Equal(t, "foo_bar", BuildCompliantName(createGauge(":foo::bar", ""), "", true))
-	require.Equal(t, "foo_bar_total", BuildCompliantName(createCounter(":foo::bar", ""), "", true))
+	require.Equal(t, ":foo::bar", BuildCompliantName(createGauge(":foo::bar", ""), "", true))
+	require.Equal(t, ":foo::bar_total", BuildCompliantName(createCounter(":foo::bar", ""), "", true))
 	// Gauges with unit 1 are considered ratios.
 	require.Equal(t, "foo_bar_ratio", BuildCompliantName(createGauge("foo.bar", "1"), "", true))
 	// Slashes in units are converted.

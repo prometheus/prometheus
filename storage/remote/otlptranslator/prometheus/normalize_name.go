@@ -114,7 +114,7 @@ func normalizeName(metric pmetric.Metric, namespace string) string {
 	// Split metric name into "tokens" (remove all non-alphanumerics)
 	nameTokens := strings.FieldsFunc(
 		metric.Name(),
-		func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) },
+		func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != ':' },
 	)
 
 	// Split unit at the '/' if any
