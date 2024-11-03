@@ -615,7 +615,7 @@ func TestGetSeries(t *testing.T) {
 			matchers:          []string{`{foo="boo"}`, `{foo="baz"}`},
 			expectedErrorType: errorExec,
 			api: &API{
-				Queryable: errorTestQueryable{err: fmt.Errorf("generic")},
+				Queryable: errorTestQueryable{err: errors.New("generic")},
 			},
 		},
 		{
@@ -623,7 +623,7 @@ func TestGetSeries(t *testing.T) {
 			matchers:          []string{`{foo="boo"}`, `{foo="baz"}`},
 			expectedErrorType: errorInternal,
 			api: &API{
-				Queryable: errorTestQueryable{err: promql.ErrStorage{Err: fmt.Errorf("generic")}},
+				Queryable: errorTestQueryable{err: promql.ErrStorage{Err: errors.New("generic")}},
 			},
 		},
 	} {
@@ -717,7 +717,7 @@ func TestQueryExemplars(t *testing.T) {
 			name:              "should return errorExec upon genetic error",
 			expectedErrorType: errorExec,
 			api: &API{
-				ExemplarQueryable: errorTestQueryable{err: fmt.Errorf("generic")},
+				ExemplarQueryable: errorTestQueryable{err: errors.New("generic")},
 			},
 			query: url.Values{
 				"query": []string{`test_metric3{foo="boo"} - test_metric4{foo="bar"}`},
@@ -729,7 +729,7 @@ func TestQueryExemplars(t *testing.T) {
 			name:              "should return errorInternal err type is ErrStorage",
 			expectedErrorType: errorInternal,
 			api: &API{
-				ExemplarQueryable: errorTestQueryable{err: promql.ErrStorage{Err: fmt.Errorf("generic")}},
+				ExemplarQueryable: errorTestQueryable{err: promql.ErrStorage{Err: errors.New("generic")}},
 			},
 			query: url.Values{
 				"query": []string{`test_metric3{foo="boo"} - test_metric4{foo="bar"}`},
@@ -838,7 +838,7 @@ func TestLabelNames(t *testing.T) {
 			matchers:          []string{`{foo="boo"}`, `{foo="baz"}`},
 			expectedErrorType: errorExec,
 			api: &API{
-				Queryable: errorTestQueryable{err: fmt.Errorf("generic")},
+				Queryable: errorTestQueryable{err: errors.New("generic")},
 			},
 		},
 		{
@@ -846,7 +846,7 @@ func TestLabelNames(t *testing.T) {
 			matchers:          []string{`{foo="boo"}`, `{foo="baz"}`},
 			expectedErrorType: errorInternal,
 			api: &API{
-				Queryable: errorTestQueryable{err: promql.ErrStorage{Err: fmt.Errorf("generic")}},
+				Queryable: errorTestQueryable{err: promql.ErrStorage{Err: errors.New("generic")}},
 			},
 		},
 	} {

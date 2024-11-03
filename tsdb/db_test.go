@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"flag"
 	"fmt"
 	"hash/crc32"
@@ -1432,7 +1433,7 @@ func (*mockCompactorFailing) Plan(string) ([]string, error) {
 
 func (c *mockCompactorFailing) Write(dest string, _ BlockReader, _, _ int64, _ *BlockMeta) ([]ulid.ULID, error) {
 	if len(c.blocks) >= c.max {
-		return []ulid.ULID{}, fmt.Errorf("the compactor already did the maximum allowed blocks so it is time to fail")
+		return []ulid.ULID{}, errors.New("the compactor already did the maximum allowed blocks so it is time to fail")
 	}
 
 	block, err := OpenBlock(nil, createBlock(c.t, dest, genSeries(1, 1, 0, 1)), nil)
@@ -1459,7 +1460,7 @@ func (*mockCompactorFailing) Compact(string, []string, []*Block) ([]ulid.ULID, e
 }
 
 func (*mockCompactorFailing) CompactOOO(string, *OOOCompactionHead) (result []ulid.ULID, err error) {
-	return nil, fmt.Errorf("mock compaction failing CompactOOO")
+	return nil, errors.New("mock compaction failing CompactOOO")
 }
 
 func TestTimeRetention(t *testing.T) {

@@ -16,6 +16,7 @@ package relabel
 import (
 	"crypto/md5"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -114,10 +115,10 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 func (c *Config) Validate() error {
 	if c.Action == "" {
-		return fmt.Errorf("relabel action cannot be empty")
+		return errors.New("relabel action cannot be empty")
 	}
 	if c.Modulus == 0 && c.Action == HashMod {
-		return fmt.Errorf("relabel configuration for hashmod requires non-zero modulus")
+		return errors.New("relabel configuration for hashmod requires non-zero modulus")
 	}
 	if (c.Action == Replace || c.Action == HashMod || c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && c.TargetLabel == "" {
 		return fmt.Errorf("relabel configuration for %s action requires 'target_label' value", c.Action)

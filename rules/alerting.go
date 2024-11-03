@@ -15,6 +15,7 @@ package rules
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -403,7 +404,7 @@ func (r *AlertingRule) Eval(ctx context.Context, queryOffset time.Duration, ts t
 		resultFPs[h] = struct{}{}
 
 		if _, ok := alerts[h]; ok {
-			return nil, fmt.Errorf("vector contains metrics with the same labelset after applying alert labels")
+			return nil, errors.New("vector contains metrics with the same labelset after applying alert labels")
 		}
 
 		alerts[h] = &Alert{

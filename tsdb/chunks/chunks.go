@@ -16,6 +16,7 @@ package chunks
 import (
 	"bufio"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash"
 	"hash/crc32"
@@ -172,7 +173,7 @@ func ChunkFromSamplesGeneric(s Samples) (Meta, error) {
 				return emptyChunk, err
 			}
 			if newChunk != nil {
-				return emptyChunk, fmt.Errorf("did not expect to start a second chunk")
+				return emptyChunk, errors.New("did not expect to start a second chunk")
 			}
 		case chunkenc.ValFloatHistogram:
 			newChunk, _, ca, err = ca.AppendFloatHistogram(nil, s.Get(i).T(), s.Get(i).FH(), false)
@@ -180,7 +181,7 @@ func ChunkFromSamplesGeneric(s Samples) (Meta, error) {
 				return emptyChunk, err
 			}
 			if newChunk != nil {
-				return emptyChunk, fmt.Errorf("did not expect to start a second chunk")
+				return emptyChunk, errors.New("did not expect to start a second chunk")
 			}
 		default:
 			panic(fmt.Sprintf("unknown sample type %s", sampleType.String()))
@@ -250,7 +251,7 @@ func (cm *Meta) OverlapsClosedInterval(mint, maxt int64) bool {
 	return cm.MinTime <= maxt && mint <= cm.MaxTime
 }
 
-var errInvalidSize = fmt.Errorf("invalid size")
+var errInvalidSize = errors.New("invalid size")
 
 var castagnoliTable *crc32.Table
 

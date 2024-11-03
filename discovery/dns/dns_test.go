@@ -15,7 +15,7 @@ package dns
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"log/slog"
 	"net"
 	"testing"
@@ -53,7 +53,7 @@ func TestDNS(t *testing.T) {
 				Type:            "A",
 			},
 			lookup: func(name string, qtype uint16, logger *slog.Logger) (*dns.Msg, error) {
-				return nil, fmt.Errorf("some error")
+				return nil, errors.New("some error")
 			},
 			expected: []*targetgroup.Group{},
 		},
