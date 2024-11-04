@@ -284,59 +284,37 @@ func (h *Histogram) Equals(h2 *Histogram) bool {
 	return true
 }
 
-// spansMatch returns true if both spans represent the same bucket layout
-// after combining zero length spans with the next non-zero length span.
+// spansMatch compares two slices of spans to determine if they represent the same bucket layout.
+// It merges consecutive zero-length spans before comparison.
 func spansMatch(s1, s2 []Span) bool {
-	if len(s1) == 0 && len(s2) == 0 {
-		return true
-	}
+    if len(s1) == 0 && len(s2) == 0 {
+        return true
+    }
 
-	s1idx, s2idx := 0, 0
-	for {
-		if s1idx >= len(s1) {
-			return allEmptySpans(s2[s2idx:])
-		}
-		if s2idx >= len(s2) {
-			return allEmptySpans(s1[s1idx:])
-		}
+    s1idx, s2idx := 0, 0
+    for {
+        if s1idx >= len(s1) {
+            return allEmptySpans(s2[s2idx:])
+        }
+        if s2idx >= len(s2) {
+            return allEmptySpans(s1[s1idx:])
+        }
 
-		currS1, currS2 := s1[s1idx], s2[s2idx]
-		s1idx++
-		s2idx++
-		if currS1.Length == 0 {
-			// This span is zero length, so we add consecutive such spans
-			// until we find a non-zero span.
-			for ; s1idx < len(s1) && s1[s1idx].Length == 0; s1idx++ {
-				currS1.Offset += s1[s1idx].Offset
-			}
-			if s1idx < len(s1) {
-				currS1.Offset += s1[s1idx].Offset
-				currS1.Length = s1[s1idx].Length
-				s1idx++
-			}
-		}
-		if currS2.Length == 0 {
-			// This span is zero length, so we add consecutive such spans
-			// until we find a non-zero span.
-			for ; s2idx < len(s2) && s2[s2idx].Length == 0; s2idx++ {
-				currS2.Offset += s2[s2idx].Offset
-			}
-			if s2idx < len(s2) {
-				currS2.Offset += s2[s2idx].Offset
-				currS2.Length = s2[s2idx].Length
-				s2idx++
-			}
-		}
+        // Merge zero-length spans in s1 and s2
+        var currS1, currS2 Span
+        currS1, s1idx = mergeZeroLengthSpans(s1, s1idx)
+        currS2, s2idx = mergeZeroLengthSpans(s2, s2idx)
 
-		if currS1.Length == 0 && currS2.Length == 0 {
-			// The last spans of both set are zero length. Previous spans match.
-			return true
-		}
+        // If both spans are empty, and we've processed all spans, they match
+        if currS1.Length == 0 && currS2.Length == 0 {
+            return true
+        }
 
-		if currS1.Offset != currS2.Offset || currS1.Length != currS2.Length {
-			return false
-		}
-	}
+        // Compare the current spans
+        if currS1.Offset != currS2.Offset || currS1.Length != currS2.Length {
+            return false
+        }
+    }
 }
 
 func allEmptySpans(s []Span) bool {
