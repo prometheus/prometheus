@@ -300,17 +300,14 @@ func spansMatch(s1, s2 []Span) bool {
             return allEmptySpans(s1[s1idx:])
         }
 
-        // Merge zero-length spans in s1 and s2
         var currS1, currS2 Span
         currS1, s1idx = mergeZeroLengthSpans(s1, s1idx)
         currS2, s2idx = mergeZeroLengthSpans(s2, s2idx)
 
-        // If both spans are empty, and we've processed all spans, they match
         if currS1.Length == 0 && currS2.Length == 0 {
             return true
         }
 
-        // Compare the current spans
         if currS1.Offset != currS2.Offset || currS1.Length != currS2.Length {
             return false
         }
@@ -321,14 +318,12 @@ func spansMatch(s1, s2 []Span) bool {
 // It returns the merged span and the updated index.
 func mergeZeroLengthSpans(spans []Span, idx int) (Span, int) {
     if idx >= len(spans) {
-        // No more spans to process
         return Span{Offset: 0, Length: 0}, idx
     }
 
     currSpan := spans[idx]
     idx++
 
-    // Merge consecutive zero-length spans
     for currSpan.Length == 0 && idx < len(spans) {
         currSpan.Offset += spans[idx].Offset
         currSpan.Length = spans[idx].Length
