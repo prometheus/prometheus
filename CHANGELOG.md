@@ -63,6 +63,10 @@ As is traditional with a beta release, we do **not** recommend users install 3.0
 * [FEATURE] Support config reload automatically - feature flag `auto-reload-config`. #14769
 * [BUGFIX] Scrape: Do not override target parameter labels with config params. #11029
 
+## 2.55.1 / 2024-01-04
+
+* [BUGFIX] `round()` function did not remove `__name__` label. #15250
+
 ## 2.55.0 / 2024-10-22
 
 * [FEATURE] PromQL: Add experimental `info` function. #14495
