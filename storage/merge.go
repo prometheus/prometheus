@@ -745,7 +745,6 @@ type compactChunkIterator struct {
 
 func (c *compactChunkIterator) At() chunks.Meta {
 	chunk := c.curr.Chunk
-	//TODO: only clear if counterreset != unknown?
 	if chunk.Encoding() == chunkenc.EncHistogram && !c.consecutive {
 		hc := chunk.(*chunkenc.HistogramChunk)
 		if hc.GetCounterResetHeader() != chunkenc.GaugeType &&
@@ -830,7 +829,7 @@ func (c *compactChunkIterator) Next() bool {
 		panic("unexpected seriesToChunkEncoder lack of iterations")
 	}
 	c.curr = iter.At()
-	c.consecutive = false // setting as not consecutive whenever we need to merge chunks. this could be true (e.g. multiple chunks from same iterator, the earliest timestamp comes from the previousIterator) but more complex to figure out.
+	c.consecutive = false // setting as not consecutive whenever we need to merge chunks. this could be true (e.g. first sample in merged chunk is from the prevIterator) but more complex to figure out.
 	c.prevIterator = iter
 	if iter.Next() {
 		heap.Push(&c.h, iter)
