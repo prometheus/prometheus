@@ -106,6 +106,10 @@ func Load(s string, logger *slog.Logger) (*Config, error) {
 	if !b.Labels().IsEmpty() {
 		cfg.GlobalConfig.ExternalLabels = b.Labels()
 	}
+
+	if cfg.GlobalConfig.MetricNameValidationScheme == LegacyValidationConfig && cfg.OTLPConfig.TranslationStrategy == NoUTF8EscapingWithSuffixes {
+		return nil, errors.New("otlp translation strategy NoUTF8EscapingWithSuffixes is not allowed when UTF8 is disabled")
+	}
 	return cfg, nil
 }
 
@@ -239,7 +243,9 @@ var (
 	}
 
 	// DefaultOTLPConfig is the default OTLP configuration.
-	DefaultOTLPConfig = OTLPConfig{}
+	DefaultOTLPConfig = OTLPConfig{
+		TranslationStrategy: UnderscoreEscapingWithSuffixes,
+	}
 )
 
 // Config is the top-level configuration for Prometheus's config files.
@@ -1402,9 +1408,20 @@ func getGoGCEnv() int {
 	return DefaultRuntimeConfig.GoGC
 }
 
+type translationStrategyOption string
+
+var (
+	// NoUTF8EscapingWithSuffixes will keep UTF-8 characters as they are, units and type suffixes will still be added.
+	NoUTF8EscapingWithSuffixes translationStrategyOption = "NoUTF8EscapingWithSuffixes"
+	// UnderscoreEscapingWithSuffixes is the default option for translating OTLP to Prometheus.
+	// This option will translate all UTF-8 characters to underscores, while adding units and type suffixes.
+	UnderscoreEscapingWithSuffixes translationStrategyOption = "UnderscoreEscapingWithSuffixes"
+)
+
 // OTLPConfig is the configuration for writing to the OTLP endpoint.
 type OTLPConfig struct {
-	PromoteResourceAttributes []string `yaml:"promote_resource_attributes,omitempty"`
+	PromoteResourceAttributes []string                  `yaml:"promote_resource_attributes,omitempty"`
+	TranslationStrategy       translationStrategyOption `yaml:"translation_strategy,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.

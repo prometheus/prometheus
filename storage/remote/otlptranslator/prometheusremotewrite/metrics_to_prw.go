@@ -38,6 +38,7 @@ type Settings struct {
 	ExportCreatedMetric       bool
 	AddMetricSuffixes         bool
 	SendMetadata              bool
+	AllowUTF8                 bool
 	PromoteResourceAttributes []string
 }
 
@@ -84,7 +85,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					continue
 				}
 
-				promName := prometheustranslator.BuildCompliantName(metric, settings.Namespace, settings.AddMetricSuffixes)
+				promName := prometheustranslator.BuildCompliantName(metric, settings.Namespace, settings.AddMetricSuffixes, settings.AllowUTF8)
 
 				// handle individual metrics based on type
 				//exhaustive:enforce

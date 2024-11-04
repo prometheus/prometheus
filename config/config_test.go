@@ -168,6 +168,7 @@ var expectedConf = &Config{
 		PromoteResourceAttributes: []string{
 			"k8s.cluster.name", "k8s.job.name", "k8s.namespace.name",
 		},
+		TranslationStrategy: UnderscoreEscapingWithSuffixes,
 	},
 
 	RemoteReadConfigs: []*RemoteReadConfig{
@@ -1550,6 +1551,19 @@ func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 		_, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_resource_attributes.bad.yml"), false, promslog.NewNopLogger())
 		require.ErrorContains(t, err, `duplicated promoted OTel resource attribute "k8s.job.name"`)
 		require.ErrorContains(t, err, `empty promoted OTel resource attribute`)
+	})
+}
+
+func TestOTLPAllowUTF8(t *testing.T) {
+	t.Run("good config", func(t *testing.T) {
+		cfg, err := LoadFile(filepath.Join("testdata", "otlp_allow_utf8.good.yml"), false, promslog.NewNopLogger())
+		require.NoError(t, err)
+		require.Equal(t, NoUTF8EscapingWithSuffixes, cfg.OTLPConfig.TranslationStrategy)
+	})
+
+	t.Run("bad config", func(t *testing.T) {
+		_, err := LoadFile(filepath.Join("testdata", "otlp_allow_utf8.bad.yml"), false, promslog.NewNopLogger())
+		require.ErrorContains(t, err, `otlp translation strategy NoUTF8EscapingWithSuffixes is not allowed when UTF8 is disabled`)
 	})
 }
 
