@@ -1193,3 +1193,4 @@ load 10m
     histogram_sample2 {{schema:1 count:12 sum:100 z_bucket:4 z_bucket_w:0.001 buckets:[1 1 0 1 1]}}x1
 
 eval instant at 10m histogram_sample==(histogram_sample1+histogram_sample2)
+    {}
