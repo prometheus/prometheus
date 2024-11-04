@@ -95,9 +95,9 @@ func (c *FloatHistogramChunk) GetCounterResetHeader() CounterResetHeader {
 // ClearCounterReset sets the counter reset header to UnknownCounterReset.
 func (c *FloatHistogramChunk) ClearCounterReset() {
 	// Hacky fix - make copy (needed for read-only slices)
-	writeable := make([]byte, len(c.Bytes()))
-	copy(writeable, c.Bytes())
-	c.Reset(writeable)
+	//writeable := make([]byte, len(c.Bytes()))
+	//copy(writeable, c.Bytes())
+	//c.Reset(writeable)
 	c.Bytes()[2] = (c.Bytes()[2] & (^CounterResetHeaderMask)) | byte(UnknownCounterReset)
 }
 

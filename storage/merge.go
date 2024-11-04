@@ -748,10 +748,16 @@ func (c *compactChunkIterator) At() chunks.Meta {
 	//TODO: only clear if counterreset != unknown?
 	if chunk.Encoding() == chunkenc.EncHistogram && !c.consecutive {
 		hc := chunk.(*chunkenc.HistogramChunk)
-		hc.ClearCounterReset()
+		if hc.GetCounterResetHeader() != chunkenc.GaugeType &&
+			hc.GetCounterResetHeader() != chunkenc.UnknownCounterReset {
+			hc.ClearCounterReset()
+		}
 	} else if chunk.Encoding() == chunkenc.EncFloatHistogram && !c.consecutive {
 		hc := chunk.(*chunkenc.FloatHistogramChunk)
-		hc.ClearCounterReset()
+		if hc.GetCounterResetHeader() != chunkenc.GaugeType &&
+			hc.GetCounterResetHeader() != chunkenc.UnknownCounterReset {
+			hc.ClearCounterReset()
+		}
 	}
 	return c.curr
 }
@@ -762,6 +768,10 @@ func (c *compactChunkIterator) Next() bool {
 			if iter.Next() {
 				heap.Push(&c.h, iter)
 			}
+		}
+		// Trust counter reset for first chunk
+		if len(c.h) > 0 {
+			c.prevIterator = c.h[0]
 		}
 	}
 	if len(c.h) == 0 {
