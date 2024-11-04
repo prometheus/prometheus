@@ -317,6 +317,28 @@ func spansMatch(s1, s2 []Span) bool {
     }
 }
 
+// mergeZeroLengthSpans merges consecutive zero-length spans starting from idx.
+// It returns the merged span and the updated index.
+func mergeZeroLengthSpans(spans []Span, idx int) (Span, int) {
+    if idx >= len(spans) {
+        // No more spans to process
+        return Span{Offset: 0, Length: 0}, idx
+    }
+
+    currSpan := spans[idx]
+    idx++
+
+    // Merge consecutive zero-length spans
+    for currSpan.Length == 0 && idx < len(spans) {
+        currSpan.Offset += spans[idx].Offset
+        currSpan.Length = spans[idx].Length
+        idx++
+    }
+
+    return currSpan, idx
+}
+
+
 func allEmptySpans(s []Span) bool {
 	for _, ss := range s {
 		if ss.Length > 0 {
