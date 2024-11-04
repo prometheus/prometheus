@@ -318,7 +318,7 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}, affected ma
 		i++
 		process(l)
 
-		// From time to time want some readers to go through and read their postings.
+		// From time to time we want some readers to go through and read their postings.
 		// It takes around 50ms to process a 1K series batch, and 120ms to process a 10K series batch (local benchmarks on an M3).
 		// Note that a read query will most likely want to read multiple postings lists, say 5, 10 or 20 (depending on the number of matchers)
 		// And that read query will most likely evaluate only one of those matchers before we unpause here, so we want to pause often.
