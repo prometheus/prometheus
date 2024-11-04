@@ -77,7 +77,7 @@ type mockedLookupHost struct {
 	result  []string
 }
 
-func (lh *mockedLookupHost) lookupHost(context.Context, string) ([]string, error) {
+func (lh *mockedLookupHost) LookupHost(context.Context, string) ([]string, error) {
 	if lh.withErr {
 		return nil, errMockLookupHost
 	}
@@ -98,10 +98,11 @@ func TestDialContextWithRandomConnections(t *testing.T) {
 		"if address contains no port call default DealContext": {
 			addr: testAddrWithoutPort,
 			setup: func() customDialContext {
-				dc := newDialContextWithRandomConnections()
 				mdc = newMockDialContext([]string{testAddrWithoutPort})
-				dc.setDefaultDialContext(mdc.dialContext)
-				return dc
+				return &dialContextWithRandomConnections{
+					dialContext: mdc.dialContext,
+					resolver:    &mockedLookupHost{withErr: false},
+				}
 			},
 			check: func() {
 				require.Equal(t, numberOfRuns, mdc.getCount(testAddrWithoutPort))
@@ -110,11 +111,11 @@ func TestDialContextWithRandomConnections(t *testing.T) {
 		"if lookup host returns error call default DealContext": {
 			addr: testAddrWithPort,
 			setup: func() customDialContext {
-				dc := newDialContextWithRandomConnections()
 				mdc = newMockDialContext([]string{testAddrWithPort})
-				dc.setDefaultDialContext(mdc.dialContext)
-				dc.setResolver(&mockedLookupHost{withErr: true})
-				return dc
+				return &dialContextWithRandomConnections{
+					dialContext: mdc.dialContext,
+					resolver:    &mockedLookupHost{withErr: true},
+				}
 			},
 			check: func() {
 				require.Equal(t, numberOfRuns, mdc.getCount(testAddrWithPort))
@@ -123,11 +124,11 @@ func TestDialContextWithRandomConnections(t *testing.T) {
 		"if lookup host is successful, shuffle results": {
 			addr: testAddrWithPort,
 			setup: func() customDialContext {
-				dc := newDialContextWithRandomConnections()
 				mdc = newMockDialContext(testLookupResultWithPort)
-				dc.setDefaultDialContext(mdc.dialContext)
-				dc.setResolver(&mockedLookupHost{result: testLookupResult})
-				return dc
+				return &dialContextWithRandomConnections{
+					dialContext: mdc.dialContext,
+					resolver:    &mockedLookupHost{result: testLookupResult},
+				}
 			},
 			check: func() {
 				// we ensure that not all runs will choose the first element of the lookup

@@ -23,13 +23,7 @@ import (
 )
 
 type hostResolver interface {
-	lookupHost(context.Context, string) ([]string, error)
-}
-
-type defaultHostResolver struct{}
-
-func (hr *defaultHostResolver) lookupHost(ctx context.Context, host string) ([]string, error) {
-	return net.DefaultResolver.LookupHost(ctx, host)
+	LookupHost(context.Context, string) ([]string, error)
 }
 
 type customDialContext interface {
@@ -44,16 +38,8 @@ type dialContextWithRandomConnections struct {
 func newDialContextWithRandomConnections() *dialContextWithRandomConnections {
 	return &dialContextWithRandomConnections{
 		dialContext: http.DefaultTransport.(*http.Transport).DialContext,
-		resolver:    &defaultHostResolver{},
+		resolver:    net.DefaultResolver,
 	}
-}
-
-func (dc *dialContextWithRandomConnections) setDefaultDialContext(defaultDialContext config.DialContextFunc) {
-	dc.dialContext = defaultDialContext
-}
-
-func (dc *dialContextWithRandomConnections) setResolver(resolver hostResolver) {
-	dc.resolver = resolver
 }
 
 func (dc *dialContextWithRandomConnections) dialContextFn() config.DialContextFunc {
@@ -63,13 +49,15 @@ func (dc *dialContextWithRandomConnections) dialContextFn() config.DialContextFu
 			return dc.dialContext(ctx, network, addr)
 		}
 
-		addrs, err := dc.resolver.lookupHost(ctx, host)
+		addrs, err := dc.resolver.LookupHost(ctx, host)
 		if err != nil {
 			return dc.dialContext(ctx, network, addr)
 		}
 
-		randomAddr := addrs[rand.Intn(len(addrs))]
-		randomAddr = net.JoinHostPort(randomAddr, port)
+		// We deliberately create a connection to a randomly selected IP returned by the lookup.
+		// This way we prevent that in case of a certain number of concurrent remote-write requests
+		// all requests are sent to the same IP.
+		randomAddr := net.JoinHostPort(addrs[rand.Intn(len(addrs))], port)
 		return dc.dialContext(ctx, network, randomAddr)
 	}
 }
