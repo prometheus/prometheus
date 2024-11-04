@@ -1,11 +1,28 @@
-# OOO samples
+# OOO float samples
 
-load 30s 150
-	http_requests{path="/foo"}	1 2 3 4 8 9
+#load 30s 150
+#	http_requests{path="/foo"}	1 2 3 4 8 9
 
-load 30s 0
-    http_requests{path="/foo"}	1 2 3 0 1
+#load 30s 0
+#    http_requests{path="/foo"}	1 2 3 0 1
 
-eval range from 0 to 5m step 30s sum by (path) (http_requests)
-    {path="/foo"} 1 2 3 0 1 1 2 3 4 5
+#eval range from 0 to 5m step 30s sum by (path) (http_requests)
+#    {path="/foo"} 1 2 3 0 1 1 2 3 4 5
 
+### OOO Native Histogram samples
+
+#
+load 1s 1
+    ooo_histograms {{schema:0 sum:50 count:40 buckets:[10 20 10]}}
+
+load 1s 4
+    ooo_histograms {{schema:0 sum:50 count:30 buckets:[10 10 10]}}
+
+load 1s 2
+    ooo_histograms {{schema:0 sum:50 count:40 buckets:[10 20 10]}}
+
+load 1s 3
+    ooo_histograms {{schema:0 sum:10 count:10 buckets:[4 2 4]}}
+
+eval instant at 5s histogram_count(rate(ooo_histograms[5s]))
+    {} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}

@@ -1252,7 +1252,7 @@ func (t *test) clear() {
 	if t.cancelCtx != nil {
 		t.cancelCtx()
 	}
-	t.storage = teststorage.New(t)
+	t.storage = teststorage.New(t, 24*time.Minute.Milliseconds())
 	t.context, t.cancelCtx = context.WithCancel(context.Background())
 }
 
@@ -1338,7 +1338,7 @@ func (ll *LazyLoader) clear() error {
 		ll.cancelCtx()
 	}
 	var err error
-	ll.storage, err = teststorage.NewWithError()
+	ll.storage, err = teststorage.NewWithError(24 * time.Minute.Milliseconds())
 	if err != nil {
 		return err
 	}
