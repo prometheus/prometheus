@@ -155,7 +155,7 @@ type ReadClient interface {
 
 // NewReadClient creates a new client for remote read.
 func NewReadClient(name string, conf *ClientConfig) (ReadClient, error) {
-	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_read_client")
+	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_read_client", config_util.WithDialContextFunc(newDialContextWithRandomConnections().dialContextFn()))
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +180,7 @@ func NewReadClient(name string, conf *ClientConfig) (ReadClient, error) {
 
 // NewWriteClient creates a new client for remote write.
 func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
-	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_write_client")
+	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_write_client", config_util.WithDialContextFunc(newDialContextWithRandomConnections().dialContextFn()))
 	if err != nil {
 		return nil, err
 	}
