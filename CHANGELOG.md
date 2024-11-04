@@ -2,6 +2,10 @@
 
 ## unreleased
 
+## 2.55.1 / 2024-01-04
+
+* [BUGFIX] `round()` function did not remove `__name__` label. #15250
+
 ## 2.55.0 / 2024-10-22
 
 * [FEATURE] PromQL: Add experimental `info` function. #14495
