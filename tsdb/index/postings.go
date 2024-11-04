@@ -290,10 +290,8 @@ func (p *MemPostings) EnsureOrder(numberOfConcurrentProcesses int) {
 // Delete removes all ids in the given map from the postings lists.
 // affectedLabels contains all the labels that are affected by the deletion, there's no need to check other labels.
 func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}, affected map[labels.Label]struct{}) {
-	p.mtx.Lock()
-	defer p.mtx.Unlock()
-
 	process := func(l labels.Label) {
+		p.mtx.RLock()
 		orig := p.m[l.Name][l.Value]
 		repl := make([]storage.SeriesRef, 0, len(orig))
 		for _, id := range orig {
@@ -301,6 +299,25 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}, affected ma
 				repl = append(repl, id)
 			}
 		}
+		p.mtx.RUnlock()
+
+		p.mtx.Lock()
+		// Check if the length of the postings we saw is still the same.
+		if curr := p.m[l.Name][l.Value]; len(orig) != len(curr) {
+			// Bad luck, someone just added a series, let's recalculate repl again.
+			// Since postings aren't always added in-order, we can't just append the tail, we need to figure out what changed.
+			// For example, if orig=[2, 4, 6], repl=[2, 4], and curr=[2, 3, 4, 6], we can't just add the last "6".
+			// We would need to figure out first that everything after "2" has changed.
+			// We could use something like "bookmarks" of which posting was in which position.
+			// But for now we just start with the dumb "recalculate it again" approach.
+			repl = repl[:0]
+			for _, id := range orig {
+				if _, ok := deleted[id]; !ok {
+					repl = append(repl, id)
+				}
+			}
+		}
+
 		if len(repl) > 0 {
 			p.m[l.Name][l.Value] = repl
 		} else {
@@ -310,6 +327,7 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}, affected ma
 				delete(p.m, l.Name)
 			}
 		}
+		p.mtx.Unlock()
 	}
 
 	for l := range affected {
