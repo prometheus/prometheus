@@ -285,7 +285,7 @@ func (h *Histogram) Equals(h2 *Histogram) bool {
 }
 
 // spansMatch compares two slices of spans to determine if they represent the same bucket layout.
-// It merges consecutive zero-length spans before comparison.
+// It merges consecutive zero-length spans before the comparison.
 func spansMatch(s1, s2 []Span) bool {
     if len(s1) == 0 && len(s2) == 0 {
         return true
