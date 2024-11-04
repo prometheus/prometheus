@@ -351,9 +351,17 @@ func getPromExemplars[T exemplarType](ctx context.Context, everyN *everyNTimes, 
 		exemplarRunes := 0
 
 		promExemplar := prompb.Exemplar{
-			Value:     exemplar.DoubleValue(),
 			Timestamp: timestamp.FromTime(exemplar.Timestamp().AsTime()),
 		}
+		switch exemplar.ValueType() {
+		case pmetric.ExemplarValueTypeInt:
+			promExemplar.Value = float64(exemplar.IntValue())
+		case pmetric.ExemplarValueTypeDouble:
+			promExemplar.Value = exemplar.DoubleValue()
+		default:
+			return nil, fmt.Errorf("unsupported exemplar value type: %v", exemplar.ValueType())
+		}
+
 		if traceID := exemplar.TraceID(); !traceID.IsEmpty() {
 			val := hex.EncodeToString(traceID[:])
 			exemplarRunes += utf8.RuneCountInString(traceIDKey) + utf8.RuneCountInString(val)

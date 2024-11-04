@@ -17,8 +17,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -28,11 +30,13 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/teststorage"
@@ -1467,7 +1471,7 @@ load 10s
 		},
 		{
 			// Nested subquery.
-			// Now the outmost subquery produces more samples than inner most rate.
+			// Now the outermost subquery produces more samples than inner most rate.
 			Query:      `rate(rate(bigmetric[10s:1s] @ 10)[100s:25s] @ 1000)[17s:1s] @ 2000`,
 			MaxSamples: 36,
 			Start:      time.Unix(10, 0),
@@ -2014,23 +2018,58 @@ func TestSubquerySelector(t *testing.T) {
 type FakeQueryLogger struct {
 	closed bool
 	logs   []interface{}
+	attrs  []any
 }
 
 func NewFakeQueryLogger() *FakeQueryLogger {
 	return &FakeQueryLogger{
 		closed: false,
 		logs:   make([]interface{}, 0),
+		attrs:  make([]any, 0),
 	}
 }
 
+// It implements the promql.QueryLogger interface.
 func (f *FakeQueryLogger) Close() error {
 	f.closed = true
 	return nil
 }
 
-func (f *FakeQueryLogger) Log(l ...interface{}) error {
-	f.logs = append(f.logs, l...)
-	return nil
+// It implements the promql.QueryLogger interface.
+func (f *FakeQueryLogger) Info(msg string, args ...any) {
+	log := append([]any{msg}, args...)
+	log = append(log, f.attrs...)
+	f.attrs = f.attrs[:0]
+	f.logs = append(f.logs, log...)
+}
+
+// It implements the promql.QueryLogger interface.
+func (f *FakeQueryLogger) Error(msg string, args ...any) {
+	log := append([]any{msg}, args...)
+	log = append(log, f.attrs...)
+	f.attrs = f.attrs[:0]
+	f.logs = append(f.logs, log...)
+}
+
+// It implements the promql.QueryLogger interface.
+func (f *FakeQueryLogger) Warn(msg string, args ...any) {
+	log := append([]any{msg}, args...)
+	log = append(log, f.attrs...)
+	f.attrs = f.attrs[:0]
+	f.logs = append(f.logs, log...)
+}
+
+// It implements the promql.QueryLogger interface.
+func (f *FakeQueryLogger) Debug(msg string, args ...any) {
+	log := append([]any{msg}, args...)
+	log = append(log, f.attrs...)
+	f.attrs = f.attrs[:0]
+	f.logs = append(f.logs, log...)
+}
+
+// It implements the promql.QueryLogger interface.
+func (f *FakeQueryLogger) With(args ...any) {
+	f.attrs = append(f.attrs, args...)
 }
 
 func TestQueryLogger_basic(t *testing.T) {
@@ -2058,9 +2097,8 @@ func TestQueryLogger_basic(t *testing.T) {
 	f1 := NewFakeQueryLogger()
 	engine.SetQueryLogger(f1)
 	queryExec()
-	for i, field := range []interface{}{"params", map[string]interface{}{"query": "test statement"}} {
-		require.Equal(t, field, f1.logs[i])
-	}
+	require.Contains(t, f1.logs, `params`)
+	require.Contains(t, f1.logs, map[string]interface{}{"query": "test statement"})
 
 	l := len(f1.logs)
 	queryExec()
@@ -2106,11 +2144,8 @@ func TestQueryLogger_fields(t *testing.T) {
 	res := query.Exec(ctx)
 	require.NoError(t, res.Err)
 
-	expected := []string{"foo", "bar"}
-	for i, field := range expected {
-		v := f1.logs[len(f1.logs)-len(expected)+i].(string)
-		require.Equal(t, field, v)
-	}
+	require.Contains(t, f1.logs, `foo`)
+	require.Contains(t, f1.logs, `bar`)
 }
 
 func TestQueryLogger_error(t *testing.T) {
@@ -2136,9 +2171,10 @@ func TestQueryLogger_error(t *testing.T) {
 	res := query.Exec(ctx)
 	require.Error(t, res.Err, "query should have failed")
 
-	for i, field := range []interface{}{"params", map[string]interface{}{"query": "test statement"}, "error", testErr} {
-		require.Equal(t, f1.logs[i], field)
-	}
+	require.Contains(t, f1.logs, `params`)
+	require.Contains(t, f1.logs, map[string]interface{}{"query": "test statement"})
+	require.Contains(t, f1.logs, `error`)
+	require.Contains(t, f1.logs, testErr)
 }
 
 func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
@@ -3707,4 +3743,188 @@ histogram {{sum:4 count:4 buckets:[2 2]}} {{sum:6 count:6 buckets:[3 3]}} {{sum:
 			PositiveBuckets: []float64{1},
 		},
 	})
+}
+
+func TestRateAnnotations(t *testing.T) {
+	testCases := map[string]struct {
+		data                       string
+		expr                       string
+		expectedWarningAnnotations []string
+		expectedInfoAnnotations    []string
+	}{
+		"info annotation when two samples are selected": {
+			data: `
+				series 1 2
+			`,
+			expr:                       "rate(series[1m1s])",
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations: []string{
+				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "series" (1:6)`,
+			},
+		},
+		"no info annotations when no samples": {
+			data: `
+				series
+			`,
+			expr:                       "rate(series[1m1s])",
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
+		"no info annotations when selecting one sample": {
+			data: `
+				series 1 2
+			`,
+			expr:                       "rate(series[10s])",
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
+		"no info annotations when no samples due to mixed data types": {
+			data: `
+				series{label="a"} 1 {{schema:1 sum:15 count:10 buckets:[1 2 3]}}
+			`,
+			expr: "rate(series[1m1s])",
+			expectedWarningAnnotations: []string{
+				`PromQL warning: encountered a mix of histograms and floats for metric name "series" (1:6)`,
+			},
+			expectedInfoAnnotations: []string{},
+		},
+		"no info annotations when selecting two native histograms": {
+			data: `
+				series{label="a"} {{schema:1 sum:10 count:5 buckets:[1 2 3]}} {{schema:1 sum:15 count:10 buckets:[1 2 3]}}
+			`,
+			expr:                       "rate(series[1m1s])",
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations:    []string{},
+		},
+	}
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			store := promqltest.LoadedStorage(t, "load 1m\n"+strings.TrimSpace(testCase.data))
+			t.Cleanup(func() { _ = store.Close() })
+
+			engine := newTestEngine(t)
+			query, err := engine.NewInstantQuery(context.Background(), store, nil, testCase.expr, timestamp.Time(0).Add(1*time.Minute))
+			require.NoError(t, err)
+			t.Cleanup(query.Close)
+
+			res := query.Exec(context.Background())
+			require.NoError(t, res.Err)
+
+			warnings, infos := res.Warnings.AsStrings(testCase.expr, 0, 0)
+			testutil.RequireEqual(t, testCase.expectedWarningAnnotations, warnings)
+			testutil.RequireEqual(t, testCase.expectedInfoAnnotations, infos)
+		})
+	}
+}
+
+func TestHistogramRateWithFloatStaleness(t *testing.T) {
+	// Make a chunk with two normal histograms of the same value.
+	h1 := histogram.Histogram{
+		Schema:          2,
+		Count:           10,
+		Sum:             100,
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+		PositiveBuckets: []int64{100},
+	}
+
+	c1 := chunkenc.NewHistogramChunk()
+	app, err := c1.Appender()
+	require.NoError(t, err)
+	var (
+		newc    chunkenc.Chunk
+		recoded bool
+	)
+
+	newc, recoded, app, err = app.AppendHistogram(nil, 0, h1.Copy(), false)
+	require.NoError(t, err)
+	require.False(t, recoded)
+	require.Nil(t, newc)
+
+	newc, recoded, _, err = app.AppendHistogram(nil, 10, h1.Copy(), false)
+	require.NoError(t, err)
+	require.False(t, recoded)
+	require.Nil(t, newc)
+
+	// Make a chunk with a single float stale marker.
+	c2 := chunkenc.NewXORChunk()
+	app, err = c2.Appender()
+	require.NoError(t, err)
+
+	app.Append(20, math.Float64frombits(value.StaleNaN))
+
+	// Make a chunk with two normal histograms that have zero value.
+	h2 := histogram.Histogram{
+		Schema: 2,
+	}
+
+	c3 := chunkenc.NewHistogramChunk()
+	app, err = c3.Appender()
+	require.NoError(t, err)
+
+	newc, recoded, app, err = app.AppendHistogram(nil, 30, h2.Copy(), false)
+	require.NoError(t, err)
+	require.False(t, recoded)
+	require.Nil(t, newc)
+
+	newc, recoded, _, err = app.AppendHistogram(nil, 40, h2.Copy(), false)
+	require.NoError(t, err)
+	require.False(t, recoded)
+	require.Nil(t, newc)
+
+	querier := storage.MockQuerier{
+		SelectMockFunction: func(_ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+			return &singleSeriesSet{
+				series: mockSeries{chunks: []chunkenc.Chunk{c1, c2, c3}, labelSet: []string{"__name__", "foo"}},
+			}
+		},
+	}
+
+	queriable := storage.MockQueryable{MockQuerier: &querier}
+
+	engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
+
+	q, err := engine.NewInstantQuery(context.Background(), &queriable, nil, "rate(foo[40s])", timestamp.Time(45))
+	require.NoError(t, err)
+	defer q.Close()
+
+	res := q.Exec(context.Background())
+	require.NoError(t, res.Err)
+
+	vec, err := res.Vector()
+	require.NoError(t, err)
+
+	// Single sample result.
+	require.Len(t, vec, 1)
+	// The result is a histogram.
+	require.NotNil(t, vec[0].H)
+	// The result should be zero as the histogram has not increased, so the rate is zero.
+	require.Equal(t, 0.0, vec[0].H.Count)
+	require.Equal(t, 0.0, vec[0].H.Sum)
+}
+
+type singleSeriesSet struct {
+	series   storage.Series
+	consumed bool
+}
+
+func (s *singleSeriesSet) Next() bool                       { c := s.consumed; s.consumed = true; return !c }
+func (s singleSeriesSet) At() storage.Series                { return s.series }
+func (s singleSeriesSet) Err() error                        { return nil }
+func (s singleSeriesSet) Warnings() annotations.Annotations { return nil }
+
+type mockSeries struct {
+	chunks   []chunkenc.Chunk
+	labelSet []string
+}
+
+func (s mockSeries) Labels() labels.Labels {
+	return labels.FromStrings(s.labelSet...)
+}
+
+func (s mockSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
+	iterables := []chunkenc.Iterator{}
+	for _, c := range s.chunks {
+		iterables = append(iterables, c.Iterator(nil))
+	}
+	return storage.ChainSampleIteratorFromIterators(it, iterables)
 }

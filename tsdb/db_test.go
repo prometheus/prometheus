@@ -15,13 +15,17 @@ package tsdb
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/binary"
 	"flag"
 	"fmt"
 	"hash/crc32"
+	"log/slog"
 	"math"
 	"math/rand"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path"
 	"path/filepath"
@@ -32,13 +36,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"go.uber.org/goleak"
+
+	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/storage/remote"
+
+	"github.com/gogo/protobuf/proto"
+	"github.com/golang/snappy"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -102,23 +112,9 @@ func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[str
 	for ss.Next() {
 		series := ss.At()
 
-		samples := []chunks.Sample{}
 		it = series.Iterator(it)
-		for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
-			switch typ {
-			case chunkenc.ValFloat:
-				ts, v := it.At()
-				samples = append(samples, sample{t: ts, f: v})
-			case chunkenc.ValHistogram:
-				ts, h := it.AtHistogram(nil)
-				samples = append(samples, sample{t: ts, h: h})
-			case chunkenc.ValFloatHistogram:
-				ts, fh := it.AtFloatHistogram(nil)
-				samples = append(samples, sample{t: ts, fh: fh})
-			default:
-				t.Fatalf("unknown sample type in query %s", typ.String())
-			}
-		}
+		samples, err := storage.ExpandSamples(it, newSample)
+		require.NoError(t, err)
 		require.NoError(t, it.Err())
 
 		if len(samples) == 0 {
@@ -245,8 +241,8 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 func TestNoPanicAfterWALCorruption(t *testing.T) {
 	db := openTestDB(t, &Options{WALSegmentSize: 32 * 1024}, nil)
 
-	// Append until the first mmaped head chunk.
-	// This is to ensure that all samples can be read from the mmaped chunks when the WAL is corrupted.
+	// Append until the first mmapped head chunk.
+	// This is to ensure that all samples can be read from the mmapped chunks when the WAL is corrupted.
 	var expSamples []chunks.Sample
 	var maxt int64
 	ctx := context.Background()
@@ -265,7 +261,7 @@ func TestNoPanicAfterWALCorruption(t *testing.T) {
 
 	// Corrupt the WAL after the first sample of the series so that it has at least one sample and
 	// it is not garbage collected.
-	// The repair deletes all WAL records after the corrupted record and these are read from the mmaped chunk.
+	// The repair deletes all WAL records after the corrupted record and these are read from the mmapped chunk.
 	{
 		walFiles, err := os.ReadDir(path.Join(db.Dir(), "wal"))
 		require.NoError(t, err)
@@ -1140,7 +1136,7 @@ func testWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T, numSamplesBefore
 	require.NoError(t, db.Close())
 
 	// Reopen the DB, replaying the WAL.
-	reopenDB, err := Open(db.Dir(), log.NewLogfmtLogger(os.Stderr), nil, nil, nil)
+	reopenDB, err := Open(db.Dir(), promslog.New(&promslog.Config{}), nil, nil, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, reopenDB.Close())
@@ -1609,7 +1605,7 @@ func TestSizeRetention(t *testing.T) {
 	// Create a WAL checkpoint, and compare sizes.
 	first, last, err := wlog.Segments(db.Head().wal.Dir())
 	require.NoError(t, err)
-	_, err = wlog.Checkpoint(log.NewNopLogger(), db.Head().wal, first, last-1, func(x chunks.HeadSeriesRef) bool { return false }, 0)
+	_, err = wlog.Checkpoint(promslog.NewNopLogger(), db.Head().wal, first, last-1, func(x chunks.HeadSeriesRef) bool { return false }, 0)
 	require.NoError(t, err)
 	blockSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
 	walSize, err = db.Head().wal.Size()
@@ -2350,7 +2346,7 @@ func TestCorrectNumTombstones(t *testing.T) {
 // This ensures that a snapshot that includes the head and creates a block with a custom time range
 // will not overlap with the first block created by the next compaction.
 func TestBlockRanges(t *testing.T) {
-	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+	logger := promslog.New(&promslog.Config{})
 	ctx := context.Background()
 
 	dir := t.TempDir()
@@ -2435,7 +2431,7 @@ func TestBlockRanges(t *testing.T) {
 func TestDBReadOnly(t *testing.T) {
 	var (
 		dbDir     string
-		logger    = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+		logger    = promslog.New(&promslog.Config{})
 		expBlocks []*Block
 		expBlock  *Block
 		expSeries map[string][]chunks.Sample
@@ -2553,7 +2549,7 @@ func TestDBReadOnly(t *testing.T) {
 // all api methods return an ErrClosed.
 func TestDBReadOnlyClosing(t *testing.T) {
 	sandboxDir := t.TempDir()
-	db, err := OpenDBReadOnly(t.TempDir(), sandboxDir, log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)))
+	db, err := OpenDBReadOnly(t.TempDir(), sandboxDir, promslog.New(&promslog.Config{}))
 	require.NoError(t, err)
 	// The sandboxDir was there.
 	require.DirExists(t, db.sandboxDir)
@@ -2570,7 +2566,7 @@ func TestDBReadOnlyClosing(t *testing.T) {
 func TestDBReadOnly_FlushWAL(t *testing.T) {
 	var (
 		dbDir  string
-		logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+		logger = promslog.New(&promslog.Config{})
 		err    error
 		maxt   int
 		ctx    = context.Background()
@@ -2650,7 +2646,7 @@ func TestDBReadOnly_Querier_NoAlteration(t *testing.T) {
 
 	spinUpQuerierAndCheck := func(dir, sandboxDir string, chunksCount int) {
 		dBDirHash := dirHash(dir)
-		// Bootsrap a RO db from the same dir and set up a querier.
+		// Bootstrap a RO db from the same dir and set up a querier.
 		dbReadOnly, err := OpenDBReadOnly(dir, sandboxDir, nil)
 		require.NoError(t, err)
 		require.Equal(t, chunksCount, countChunks(dir))
@@ -2669,7 +2665,7 @@ func TestDBReadOnly_Querier_NoAlteration(t *testing.T) {
 			require.NoError(t, db.Close())
 		}()
 
-		// Append until the first mmaped head chunk.
+		// Append until the first mmapped head chunk.
 		for i := 0; i < 121; i++ {
 			app := db.Appender(context.Background())
 			_, err := app.Append(0, labels.FromStrings("foo", "bar"), int64(i), 0)
@@ -3115,7 +3111,7 @@ func TestCompactHead(t *testing.T) {
 		WALCompression:    wlog.CompressionSnappy,
 	}
 
-	db, err := Open(dbDir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg, nil)
+	db, err := Open(dbDir, promslog.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg, nil)
 	require.NoError(t, err)
 	ctx := context.Background()
 	app := db.Appender(ctx)
@@ -3136,7 +3132,7 @@ func TestCompactHead(t *testing.T) {
 	// Delete everything but the new block and
 	// reopen the db to query it to ensure it includes the head data.
 	require.NoError(t, deleteNonBlocks(db.Dir()))
-	db, err = Open(dbDir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg, nil)
+	db, err = Open(dbDir, promslog.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg, nil)
 	require.NoError(t, err)
 	require.Len(t, db.Blocks(), 1)
 	require.Equal(t, int64(maxt), db.Head().MinTime())
@@ -3163,7 +3159,7 @@ func TestCompactHead(t *testing.T) {
 
 // TestCompactHeadWithDeletion tests https://github.com/prometheus/prometheus/issues/11585.
 func TestCompactHeadWithDeletion(t *testing.T) {
-	db, err := Open(t.TempDir(), log.NewNopLogger(), prometheus.NewRegistry(), nil, nil)
+	db, err := Open(t.TempDir(), promslog.NewNopLogger(), prometheus.NewRegistry(), nil, nil)
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -3276,7 +3272,7 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 		// Regression test: Already removed parent can be still in list, which was causing Open errors.
 		m.Compaction.Parents = append(m.Compaction.Parents, BlockDesc{ULID: ulid.MustParse(filepath.Base(compacted))})
 		m.Compaction.Parents = append(m.Compaction.Parents, BlockDesc{ULID: ulid.MustParse(filepath.Base(compacted))})
-		_, err = writeMetaFile(log.NewLogfmtLogger(os.Stderr), dir, m)
+		_, err = writeMetaFile(promslog.New(&promslog.Config{}), dir, m)
 		require.NoError(t, err)
 	}
 	tmpCheckpointDir := path.Join(tmpDir, "wal/checkpoint.00000001.tmp")
@@ -3288,7 +3284,7 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 
 	opts := DefaultOptions()
 	opts.RetentionDuration = 0
-	db, err := Open(tmpDir, log.NewLogfmtLogger(os.Stderr), nil, opts, nil)
+	db, err := Open(tmpDir, promslog.New(&promslog.Config{}), nil, opts, nil)
 	require.NoError(t, err)
 
 	loadedBlocks := db.Blocks()
@@ -3332,7 +3328,7 @@ func TestOneCheckpointPerCompactCall(t *testing.T) {
 	tmpDir := t.TempDir()
 	ctx := context.Background()
 
-	db, err := Open(tmpDir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg, nil)
+	db, err := Open(tmpDir, promslog.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, db.Close())
@@ -3394,7 +3390,7 @@ func TestOneCheckpointPerCompactCall(t *testing.T) {
 
 	createBlock(t, db.dir, genSeries(1, 1, newBlockMint, newBlockMaxt))
 
-	db, err = Open(db.dir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg, nil)
+	db, err = Open(db.dir, promslog.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg, nil)
 	require.NoError(t, err)
 	db.DisableCompactions()
 
@@ -3443,7 +3439,7 @@ func TestNoPanicOnTSDBOpenError(t *testing.T) {
 	tmpdir := t.TempDir()
 
 	// Taking the lock will cause a TSDB startup error.
-	l, err := tsdbutil.NewDirLocker(tmpdir, "tsdb", log.NewNopLogger(), nil)
+	l, err := tsdbutil.NewDirLocker(tmpdir, "tsdb", promslog.NewNopLogger(), nil)
 	require.NoError(t, err)
 	require.NoError(t, l.Lock())
 
@@ -3996,6 +3992,307 @@ func newTestDB(t *testing.T) *DB {
 }
 
 func TestOOOWALWrite(t *testing.T) {
+	minutes := func(m int64) int64 { return m * time.Minute.Milliseconds() }
+
+	s := labels.NewSymbolTable()
+	scratchBuilder1 := labels.NewScratchBuilderWithSymbolTable(s, 1)
+	scratchBuilder1.Add("l", "v1")
+	s1 := scratchBuilder1.Labels()
+	scratchBuilder2 := labels.NewScratchBuilderWithSymbolTable(s, 1)
+	scratchBuilder2.Add("l", "v2")
+	s2 := scratchBuilder2.Labels()
+
+	scenarios := map[string]struct {
+		appendSample       func(app storage.Appender, l labels.Labels, mins int64) (storage.SeriesRef, error)
+		expectedOOORecords []interface{}
+		expectedInORecords []interface{}
+	}{
+		"float": {
+			appendSample: func(app storage.Appender, l labels.Labels, mins int64) (storage.SeriesRef, error) {
+				seriesRef, err := app.Append(0, l, minutes(mins), float64(mins))
+				require.NoError(t, err)
+				return seriesRef, nil
+			},
+			expectedOOORecords: []interface{}{
+				// The MmapRef in this are not hand calculated, and instead taken from the test run.
+				// What is important here is the order of records, and that MmapRef increases for each record.
+				[]record.RefMmapMarker{
+					{Ref: 1},
+				},
+				[]record.RefSample{
+					{Ref: 1, T: minutes(40), V: 40},
+				},
+
+				[]record.RefMmapMarker{
+					{Ref: 2},
+				},
+				[]record.RefSample{
+					{Ref: 2, T: minutes(42), V: 42},
+				},
+
+				[]record.RefSample{
+					{Ref: 2, T: minutes(45), V: 45},
+					{Ref: 1, T: minutes(35), V: 35},
+				},
+				[]record.RefMmapMarker{ // 3rd sample, hence m-mapped.
+					{Ref: 1, MmapRef: 0x100000000 + 8},
+				},
+				[]record.RefSample{
+					{Ref: 1, T: minutes(36), V: 36},
+					{Ref: 1, T: minutes(37), V: 37},
+				},
+
+				[]record.RefMmapMarker{ // 3rd sample, hence m-mapped.
+					{Ref: 1, MmapRef: 0x100000000 + 58},
+				},
+				[]record.RefSample{ // Does not contain the in-order sample here.
+					{Ref: 1, T: minutes(50), V: 50},
+				},
+
+				// Single commit but multiple OOO records.
+				[]record.RefMmapMarker{
+					{Ref: 2, MmapRef: 0x100000000 + 107},
+				},
+				[]record.RefSample{
+					{Ref: 2, T: minutes(50), V: 50},
+					{Ref: 2, T: minutes(51), V: 51},
+				},
+				[]record.RefMmapMarker{
+					{Ref: 2, MmapRef: 0x100000000 + 156},
+				},
+				[]record.RefSample{
+					{Ref: 2, T: minutes(52), V: 52},
+					{Ref: 2, T: minutes(53), V: 53},
+				},
+			},
+			expectedInORecords: []interface{}{
+				[]record.RefSeries{
+					{Ref: 1, Labels: s1},
+					{Ref: 2, Labels: s2},
+				},
+				[]record.RefSample{
+					{Ref: 1, T: minutes(60), V: 60},
+					{Ref: 2, T: minutes(60), V: 60},
+				},
+				[]record.RefSample{
+					{Ref: 1, T: minutes(40), V: 40},
+				},
+				[]record.RefSample{
+					{Ref: 2, T: minutes(42), V: 42},
+				},
+				[]record.RefSample{
+					{Ref: 2, T: minutes(45), V: 45},
+					{Ref: 1, T: minutes(35), V: 35},
+					{Ref: 1, T: minutes(36), V: 36},
+					{Ref: 1, T: minutes(37), V: 37},
+				},
+				[]record.RefSample{ // Contains both in-order and ooo sample.
+					{Ref: 1, T: minutes(50), V: 50},
+					{Ref: 2, T: minutes(65), V: 65},
+				},
+				[]record.RefSample{
+					{Ref: 2, T: minutes(50), V: 50},
+					{Ref: 2, T: minutes(51), V: 51},
+					{Ref: 2, T: minutes(52), V: 52},
+					{Ref: 2, T: minutes(53), V: 53},
+				},
+			},
+		},
+		"integer histogram": {
+			appendSample: func(app storage.Appender, l labels.Labels, mins int64) (storage.SeriesRef, error) {
+				seriesRef, err := app.AppendHistogram(0, l, minutes(mins), tsdbutil.GenerateTestHistogram(int(mins)), nil)
+				require.NoError(t, err)
+				return seriesRef, nil
+			},
+			expectedOOORecords: []interface{}{
+				// The MmapRef in this are not hand calculated, and instead taken from the test run.
+				// What is important here is the order of records, and that MmapRef increases for each record.
+				[]record.RefMmapMarker{
+					{Ref: 1},
+				},
+				[]record.RefHistogramSample{
+					{Ref: 1, T: minutes(40), H: tsdbutil.GenerateTestHistogram(40)},
+				},
+
+				[]record.RefMmapMarker{
+					{Ref: 2},
+				},
+				[]record.RefHistogramSample{
+					{Ref: 2, T: minutes(42), H: tsdbutil.GenerateTestHistogram(42)},
+				},
+
+				[]record.RefHistogramSample{
+					{Ref: 2, T: minutes(45), H: tsdbutil.GenerateTestHistogram(45)},
+					{Ref: 1, T: minutes(35), H: tsdbutil.GenerateTestHistogram(35)},
+				},
+				[]record.RefMmapMarker{ // 3rd sample, hence m-mapped.
+					{Ref: 1, MmapRef: 0x100000000 + 8},
+				},
+				[]record.RefHistogramSample{
+					{Ref: 1, T: minutes(36), H: tsdbutil.GenerateTestHistogram(36)},
+					{Ref: 1, T: minutes(37), H: tsdbutil.GenerateTestHistogram(37)},
+				},
+
+				[]record.RefMmapMarker{ // 3rd sample, hence m-mapped.
+					{Ref: 1, MmapRef: 0x100000000 + 89},
+				},
+				[]record.RefHistogramSample{ // Does not contain the in-order sample here.
+					{Ref: 1, T: minutes(50), H: tsdbutil.GenerateTestHistogram(50)},
+				},
+
+				// Single commit but multiple OOO records.
+				[]record.RefMmapMarker{
+					{Ref: 2, MmapRef: 0x100000000 + 172},
+				},
+				[]record.RefHistogramSample{
+					{Ref: 2, T: minutes(50), H: tsdbutil.GenerateTestHistogram(50)},
+					{Ref: 2, T: minutes(51), H: tsdbutil.GenerateTestHistogram(51)},
+				},
+				[]record.RefMmapMarker{
+					{Ref: 2, MmapRef: 0x100000000 + 257},
+				},
+				[]record.RefHistogramSample{
+					{Ref: 2, T: minutes(52), H: tsdbutil.GenerateTestHistogram(52)},
+					{Ref: 2, T: minutes(53), H: tsdbutil.GenerateTestHistogram(53)},
+				},
+			},
+			expectedInORecords: []interface{}{
+				[]record.RefSeries{
+					{Ref: 1, Labels: s1},
+					{Ref: 2, Labels: s2},
+				},
+				[]record.RefHistogramSample{
+					{Ref: 1, T: minutes(60), H: tsdbutil.GenerateTestHistogram(60)},
+					{Ref: 2, T: minutes(60), H: tsdbutil.GenerateTestHistogram(60)},
+				},
+				[]record.RefHistogramSample{
+					{Ref: 1, T: minutes(40), H: tsdbutil.GenerateTestHistogram(40)},
+				},
+				[]record.RefHistogramSample{
+					{Ref: 2, T: minutes(42), H: tsdbutil.GenerateTestHistogram(42)},
+				},
+				[]record.RefHistogramSample{
+					{Ref: 2, T: minutes(45), H: tsdbutil.GenerateTestHistogram(45)},
+					{Ref: 1, T: minutes(35), H: tsdbutil.GenerateTestHistogram(35)},
+					{Ref: 1, T: minutes(36), H: tsdbutil.GenerateTestHistogram(36)},
+					{Ref: 1, T: minutes(37), H: tsdbutil.GenerateTestHistogram(37)},
+				},
+				[]record.RefHistogramSample{ // Contains both in-order and ooo sample.
+					{Ref: 1, T: minutes(50), H: tsdbutil.GenerateTestHistogram(50)},
+					{Ref: 2, T: minutes(65), H: tsdbutil.GenerateTestHistogram(65)},
+				},
+				[]record.RefHistogramSample{
+					{Ref: 2, T: minutes(50), H: tsdbutil.GenerateTestHistogram(50)},
+					{Ref: 2, T: minutes(51), H: tsdbutil.GenerateTestHistogram(51)},
+					{Ref: 2, T: minutes(52), H: tsdbutil.GenerateTestHistogram(52)},
+					{Ref: 2, T: minutes(53), H: tsdbutil.GenerateTestHistogram(53)},
+				},
+			},
+		},
+		"float histogram": {
+			appendSample: func(app storage.Appender, l labels.Labels, mins int64) (storage.SeriesRef, error) {
+				seriesRef, err := app.AppendHistogram(0, l, minutes(mins), nil, tsdbutil.GenerateTestFloatHistogram(int(mins)))
+				require.NoError(t, err)
+				return seriesRef, nil
+			},
+			expectedOOORecords: []interface{}{
+				// The MmapRef in this are not hand calculated, and instead taken from the test run.
+				// What is important here is the order of records, and that MmapRef increases for each record.
+				[]record.RefMmapMarker{
+					{Ref: 1},
+				},
+				[]record.RefFloatHistogramSample{
+					{Ref: 1, T: minutes(40), FH: tsdbutil.GenerateTestFloatHistogram(40)},
+				},
+
+				[]record.RefMmapMarker{
+					{Ref: 2},
+				},
+				[]record.RefFloatHistogramSample{
+					{Ref: 2, T: minutes(42), FH: tsdbutil.GenerateTestFloatHistogram(42)},
+				},
+
+				[]record.RefFloatHistogramSample{
+					{Ref: 2, T: minutes(45), FH: tsdbutil.GenerateTestFloatHistogram(45)},
+					{Ref: 1, T: minutes(35), FH: tsdbutil.GenerateTestFloatHistogram(35)},
+				},
+				[]record.RefMmapMarker{ // 3rd sample, hence m-mapped.
+					{Ref: 1, MmapRef: 0x100000000 + 8},
+				},
+				[]record.RefFloatHistogramSample{
+					{Ref: 1, T: minutes(36), FH: tsdbutil.GenerateTestFloatHistogram(36)},
+					{Ref: 1, T: minutes(37), FH: tsdbutil.GenerateTestFloatHistogram(37)},
+				},
+
+				[]record.RefMmapMarker{ // 3rd sample, hence m-mapped.
+					{Ref: 1, MmapRef: 0x100000000 + 177},
+				},
+				[]record.RefFloatHistogramSample{ // Does not contain the in-order sample here.
+					{Ref: 1, T: minutes(50), FH: tsdbutil.GenerateTestFloatHistogram(50)},
+				},
+
+				// Single commit but multiple OOO records.
+				[]record.RefMmapMarker{
+					{Ref: 2, MmapRef: 0x100000000 + 348},
+				},
+				[]record.RefFloatHistogramSample{
+					{Ref: 2, T: minutes(50), FH: tsdbutil.GenerateTestFloatHistogram(50)},
+					{Ref: 2, T: minutes(51), FH: tsdbutil.GenerateTestFloatHistogram(51)},
+				},
+				[]record.RefMmapMarker{
+					{Ref: 2, MmapRef: 0x100000000 + 521},
+				},
+				[]record.RefFloatHistogramSample{
+					{Ref: 2, T: minutes(52), FH: tsdbutil.GenerateTestFloatHistogram(52)},
+					{Ref: 2, T: minutes(53), FH: tsdbutil.GenerateTestFloatHistogram(53)},
+				},
+			},
+			expectedInORecords: []interface{}{
+				[]record.RefSeries{
+					{Ref: 1, Labels: s1},
+					{Ref: 2, Labels: s2},
+				},
+				[]record.RefFloatHistogramSample{
+					{Ref: 1, T: minutes(60), FH: tsdbutil.GenerateTestFloatHistogram(60)},
+					{Ref: 2, T: minutes(60), FH: tsdbutil.GenerateTestFloatHistogram(60)},
+				},
+				[]record.RefFloatHistogramSample{
+					{Ref: 1, T: minutes(40), FH: tsdbutil.GenerateTestFloatHistogram(40)},
+				},
+				[]record.RefFloatHistogramSample{
+					{Ref: 2, T: minutes(42), FH: tsdbutil.GenerateTestFloatHistogram(42)},
+				},
+				[]record.RefFloatHistogramSample{
+					{Ref: 2, T: minutes(45), FH: tsdbutil.GenerateTestFloatHistogram(45)},
+					{Ref: 1, T: minutes(35), FH: tsdbutil.GenerateTestFloatHistogram(35)},
+					{Ref: 1, T: minutes(36), FH: tsdbutil.GenerateTestFloatHistogram(36)},
+					{Ref: 1, T: minutes(37), FH: tsdbutil.GenerateTestFloatHistogram(37)},
+				},
+				[]record.RefFloatHistogramSample{ // Contains both in-order and ooo sample.
+					{Ref: 1, T: minutes(50), FH: tsdbutil.GenerateTestFloatHistogram(50)},
+					{Ref: 2, T: minutes(65), FH: tsdbutil.GenerateTestFloatHistogram(65)},
+				},
+				[]record.RefFloatHistogramSample{
+					{Ref: 2, T: minutes(50), FH: tsdbutil.GenerateTestFloatHistogram(50)},
+					{Ref: 2, T: minutes(51), FH: tsdbutil.GenerateTestFloatHistogram(51)},
+					{Ref: 2, T: minutes(52), FH: tsdbutil.GenerateTestFloatHistogram(52)},
+					{Ref: 2, T: minutes(53), FH: tsdbutil.GenerateTestFloatHistogram(53)},
+				},
+			},
+		},
+	}
+	for name, scenario := range scenarios {
+		t.Run(name, func(t *testing.T) {
+			testOOOWALWrite(t, scenario.appendSample, scenario.expectedOOORecords, scenario.expectedInORecords)
+		})
+	}
+}
+
+func testOOOWALWrite(t *testing.T,
+	appendSample func(app storage.Appender, l labels.Labels, mins int64) (storage.SeriesRef, error),
+	expectedOOORecords []interface{},
+	expectedInORecords []interface{},
+) {
 	dir := t.TempDir()
 
 	opts := DefaultOptions()
@@ -4004,18 +4301,14 @@ func TestOOOWALWrite(t *testing.T) {
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
+	db.EnableNativeHistograms()
+	db.EnableOOONativeHistograms()
 
 	t.Cleanup(func() {
 		require.NoError(t, db.Close())
 	})
 
 	s1, s2 := labels.FromStrings("l", "v1"), labels.FromStrings("l", "v2")
-	minutes := func(m int64) int64 { return m * time.Minute.Milliseconds() }
-
-	appendSample := func(app storage.Appender, l labels.Labels, mins int64) {
-		_, err = app.Append(0, l, minutes(mins), float64(mins))
-		require.NoError(t, err)
-	}
 
 	// Ingest sample at 1h.
 	app := db.Appender(context.Background())
@@ -4055,92 +4348,6 @@ func TestOOOWALWrite(t *testing.T) {
 	appendSample(app, s2, 53)
 	require.NoError(t, app.Commit())
 
-	// The MmapRef in this are not hand calculated, and instead taken from the test run.
-	// What is important here is the order of records, and that MmapRef increases for each record.
-	oooRecords := []interface{}{
-		[]record.RefMmapMarker{
-			{Ref: 1},
-		},
-		[]record.RefSample{
-			{Ref: 1, T: minutes(40), V: 40},
-		},
-
-		[]record.RefMmapMarker{
-			{Ref: 2},
-		},
-		[]record.RefSample{
-			{Ref: 2, T: minutes(42), V: 42},
-		},
-
-		[]record.RefSample{
-			{Ref: 2, T: minutes(45), V: 45},
-			{Ref: 1, T: minutes(35), V: 35},
-		},
-		[]record.RefMmapMarker{ // 3rd sample, hence m-mapped.
-			{Ref: 1, MmapRef: 4294967304},
-		},
-		[]record.RefSample{
-			{Ref: 1, T: minutes(36), V: 36},
-			{Ref: 1, T: minutes(37), V: 37},
-		},
-
-		[]record.RefMmapMarker{ // 3rd sample, hence m-mapped.
-			{Ref: 1, MmapRef: 4294967354},
-		},
-		[]record.RefSample{ // Does not contain the in-order sample here.
-			{Ref: 1, T: minutes(50), V: 50},
-		},
-
-		// Single commit but multiple OOO records.
-		[]record.RefMmapMarker{
-			{Ref: 2, MmapRef: 4294967403},
-		},
-		[]record.RefSample{
-			{Ref: 2, T: minutes(50), V: 50},
-			{Ref: 2, T: minutes(51), V: 51},
-		},
-		[]record.RefMmapMarker{
-			{Ref: 2, MmapRef: 4294967452},
-		},
-		[]record.RefSample{
-			{Ref: 2, T: minutes(52), V: 52},
-			{Ref: 2, T: minutes(53), V: 53},
-		},
-	}
-
-	inOrderRecords := []interface{}{
-		[]record.RefSeries{
-			{Ref: 1, Labels: s1},
-			{Ref: 2, Labels: s2},
-		},
-		[]record.RefSample{
-			{Ref: 1, T: minutes(60), V: 60},
-			{Ref: 2, T: minutes(60), V: 60},
-		},
-		[]record.RefSample{
-			{Ref: 1, T: minutes(40), V: 40},
-		},
-		[]record.RefSample{
-			{Ref: 2, T: minutes(42), V: 42},
-		},
-		[]record.RefSample{
-			{Ref: 2, T: minutes(45), V: 45},
-			{Ref: 1, T: minutes(35), V: 35},
-			{Ref: 1, T: minutes(36), V: 36},
-			{Ref: 1, T: minutes(37), V: 37},
-		},
-		[]record.RefSample{ // Contains both in-order and ooo sample.
-			{Ref: 1, T: minutes(50), V: 50},
-			{Ref: 2, T: minutes(65), V: 65},
-		},
-		[]record.RefSample{
-			{Ref: 2, T: minutes(50), V: 50},
-			{Ref: 2, T: minutes(51), V: 51},
-			{Ref: 2, T: minutes(52), V: 52},
-			{Ref: 2, T: minutes(53), V: 53},
-		},
-	}
-
 	getRecords := func(walDir string) []interface{} {
 		sr, err := wlog.NewSegmentsReader(walDir)
 		require.NoError(t, err)
@@ -4149,10 +4356,8 @@ func TestOOOWALWrite(t *testing.T) {
 			require.NoError(t, sr.Close())
 		}()
 
-		var (
-			records []interface{}
-			dec     record.Decoder = record.NewDecoder(labels.NewSymbolTable())
-		)
+		var records []interface{}
+		dec := record.NewDecoder(nil)
 		for r.Next() {
 			rec := r.Record()
 			switch typ := dec.Type(rec); typ {
@@ -4168,6 +4373,14 @@ func TestOOOWALWrite(t *testing.T) {
 				markers, err := dec.MmapMarkers(rec, nil)
 				require.NoError(t, err)
 				records = append(records, markers)
+			case record.HistogramSamples:
+				histogramSamples, err := dec.HistogramSamples(rec, nil)
+				require.NoError(t, err)
+				records = append(records, histogramSamples)
+			case record.FloatHistogramSamples:
+				floatHistogramSamples, err := dec.FloatHistogramSamples(rec, nil)
+				require.NoError(t, err)
+				records = append(records, floatHistogramSamples)
 			default:
 				t.Fatalf("got a WAL record that is not series or samples: %v", typ)
 			}
@@ -4178,11 +4391,11 @@ func TestOOOWALWrite(t *testing.T) {
 
 	// The normal WAL.
 	actRecs := getRecords(path.Join(dir, "wal"))
-	testutil.RequireEqual(t, inOrderRecords, actRecs)
+	require.Equal(t, expectedInORecords, actRecs)
 
 	// The WBL.
 	actRecs = getRecords(path.Join(dir, wlog.WblDirName))
-	testutil.RequireEqual(t, oooRecords, actRecs)
+	require.Equal(t, expectedOOORecords, actRecs)
 }
 
 // Tests https://github.com/prometheus/prometheus/issues/10291#issuecomment-1044373110.
@@ -4381,7 +4594,7 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 	keep := func(id chunks.HeadSeriesRef) bool {
 		return id != 3
 	}
-	_, err = wlog.Checkpoint(log.NewNopLogger(), w, first, last-1, keep, 0)
+	_, err = wlog.Checkpoint(promslog.NewNopLogger(), w, first, last-1, keep, 0)
 	require.NoError(t, err)
 
 	// Confirm there's been a checkpoint.
@@ -4495,6 +4708,160 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 	require.Equal(t, *reopenDB.head.series.getByHash(s4.Hash(), s4).meta, m4)
 }
 
+// TestMultipleEncodingsCommitOrder mainly serves to demonstrate when happens when committing a batch of samples for the
+// same series when there are multiple encodings. Commit() will process all float samples before histogram samples. This
+// means that if histograms are appended before floats, the histograms could be marked as OOO when they are committed.
+// While possible, this shouldn't happen very often - you need the same series to be ingested as both a float and a
+// histogram in a single write request.
+func TestMultipleEncodingsCommitOrder(t *testing.T) {
+	opts := DefaultOptions()
+	opts.OutOfOrderCapMax = 30
+	opts.OutOfOrderTimeWindow = 24 * time.Hour.Milliseconds()
+
+	series1 := labels.FromStrings("foo", "bar1")
+
+	db := openTestDB(t, opts, nil)
+	db.DisableCompactions()
+	db.EnableNativeHistograms()
+	db.EnableOOONativeHistograms()
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+
+	addSample := func(app storage.Appender, ts int64, valType chunkenc.ValueType) chunks.Sample {
+		if valType == chunkenc.ValFloat {
+			_, err := app.Append(0, labels.FromStrings("foo", "bar1"), ts, float64(ts))
+			require.NoError(t, err)
+			return sample{t: ts, f: float64(ts)}
+		}
+		if valType == chunkenc.ValHistogram {
+			h := tsdbutil.GenerateTestHistogram(int(ts))
+			_, err := app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, h, nil)
+			require.NoError(t, err)
+			return sample{t: ts, h: h}
+		}
+		fh := tsdbutil.GenerateTestFloatHistogram(int(ts))
+		_, err := app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, nil, fh)
+		require.NoError(t, err)
+		return sample{t: ts, fh: fh}
+	}
+
+	verifySamples := func(minT, maxT int64, expSamples []chunks.Sample, oooCount int) {
+		requireEqualOOOSamples(t, oooCount, db)
+
+		// Verify samples querier.
+		querier, err := db.Querier(minT, maxT)
+		require.NoError(t, err)
+		defer querier.Close()
+
+		seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar1"))
+		require.Len(t, seriesSet, 1)
+		gotSamples := seriesSet[series1.String()]
+		requireEqualSamples(t, series1.String(), expSamples, gotSamples, requireEqualSamplesIgnoreCounterResets)
+
+		// Verify chunks querier.
+		chunkQuerier, err := db.ChunkQuerier(minT, maxT)
+		require.NoError(t, err)
+		defer chunkQuerier.Close()
+
+		chks := queryChunks(t, chunkQuerier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar1"))
+		require.NotNil(t, chks[series1.String()])
+		require.Len(t, chks, 1)
+		var gotChunkSamples []chunks.Sample
+		for _, chunk := range chks[series1.String()] {
+			it := chunk.Chunk.Iterator(nil)
+			smpls, err := storage.ExpandSamples(it, newSample)
+			require.NoError(t, err)
+			gotChunkSamples = append(gotChunkSamples, smpls...)
+			require.NoError(t, it.Err())
+		}
+		requireEqualSamples(t, series1.String(), expSamples, gotChunkSamples, requireEqualSamplesIgnoreCounterResets)
+	}
+
+	var expSamples []chunks.Sample
+
+	// Append samples with different encoding types and then commit them at once.
+	app := db.Appender(context.Background())
+
+	for i := 100; i < 105; i++ {
+		s := addSample(app, int64(i), chunkenc.ValFloat)
+		expSamples = append(expSamples, s)
+	}
+	// These samples will be marked as OOO as their timestamps are less than the max timestamp for float samples in the
+	// same batch.
+	for i := 110; i < 120; i++ {
+		s := addSample(app, int64(i), chunkenc.ValHistogram)
+		expSamples = append(expSamples, s)
+	}
+	// These samples will be marked as OOO as their timestamps are less than the max timestamp for float samples in the
+	// same batch.
+	for i := 120; i < 130; i++ {
+		s := addSample(app, int64(i), chunkenc.ValFloatHistogram)
+		expSamples = append(expSamples, s)
+	}
+	// These samples will be marked as in-order as their timestamps are greater than the max timestamp for float
+	// samples in the same batch.
+	for i := 140; i < 150; i++ {
+		s := addSample(app, int64(i), chunkenc.ValFloatHistogram)
+		expSamples = append(expSamples, s)
+	}
+	// These samples will be marked as in-order, even though they're appended after the float histograms from ts 140-150
+	// because float samples are processed first and these samples are in-order wrt to the float samples in the batch.
+	for i := 130; i < 135; i++ {
+		s := addSample(app, int64(i), chunkenc.ValFloat)
+		expSamples = append(expSamples, s)
+	}
+
+	require.NoError(t, app.Commit())
+
+	sort.Slice(expSamples, func(i, j int) bool {
+		return expSamples[i].T() < expSamples[j].T()
+	})
+
+	// oooCount = 20 because the histograms from 120 - 130 and float histograms from 120 - 130 are detected as OOO.
+	verifySamples(100, 150, expSamples, 20)
+
+	// Append and commit some in-order histograms by themselves.
+	app = db.Appender(context.Background())
+	for i := 150; i < 160; i++ {
+		s := addSample(app, int64(i), chunkenc.ValHistogram)
+		expSamples = append(expSamples, s)
+	}
+	require.NoError(t, app.Commit())
+
+	// oooCount remains at 20 as no new OOO samples have been added.
+	verifySamples(100, 160, expSamples, 20)
+
+	// Append and commit samples for all encoding types. This time all samples will be treated as OOO because samples
+	// with newer timestamps have already been committed.
+	app = db.Appender(context.Background())
+	for i := 50; i < 55; i++ {
+		s := addSample(app, int64(i), chunkenc.ValFloat)
+		expSamples = append(expSamples, s)
+	}
+	for i := 60; i < 70; i++ {
+		s := addSample(app, int64(i), chunkenc.ValHistogram)
+		expSamples = append(expSamples, s)
+	}
+	for i := 70; i < 75; i++ {
+		s := addSample(app, int64(i), chunkenc.ValFloat)
+		expSamples = append(expSamples, s)
+	}
+	for i := 80; i < 90; i++ {
+		s := addSample(app, int64(i), chunkenc.ValFloatHistogram)
+		expSamples = append(expSamples, s)
+	}
+	require.NoError(t, app.Commit())
+
+	// Sort samples again because OOO samples have been added.
+	sort.Slice(expSamples, func(i, j int) bool {
+		return expSamples[i].T() < expSamples[j].T()
+	})
+
+	// oooCount = 50 as we've added 30 more OOO samples.
+	verifySamples(50, 160, expSamples, 50)
+}
+
 // TODO(codesome): test more samples incoming once compaction has started. To verify new samples after the start
 //
 //	are not included in this compaction.
@@ -4516,6 +4883,8 @@ func testOOOCompaction(t *testing.T, scenario sampleTypeScenario, addExtraSample
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
+	opts.EnableNativeHistograms = true
+	opts.EnableOOONativeHistograms = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
@@ -4721,6 +5090,8 @@ func testOOOCompactionWithNormalCompaction(t *testing.T, scenario sampleTypeScen
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
 	db.DisableCompactions() // We want to manually call it.
+	db.EnableNativeHistograms()
+	db.EnableOOONativeHistograms()
 	t.Cleanup(func() {
 		require.NoError(t, db.Close())
 	})
@@ -4826,10 +5197,14 @@ func testOOOCompactionWithDisabledWriteLog(t *testing.T, scenario sampleTypeScen
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
 	opts.WALSegmentSize = -1 // disabled WAL and WBL
+	opts.EnableNativeHistograms = true
+	opts.EnableOOONativeHistograms = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
 	db.DisableCompactions() // We want to manually call it.
+	db.EnableNativeHistograms()
+	db.EnableOOONativeHistograms()
 	t.Cleanup(func() {
 		require.NoError(t, db.Close())
 	})
@@ -4935,6 +5310,8 @@ func testOOOQueryAfterRestartWithSnapshotAndRemovedWBL(t *testing.T, scenario sa
 	opts.OutOfOrderCapMax = 10
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
 	opts.EnableMemorySnapshotOnShutdown = true
+	opts.EnableNativeHistograms = true
+	opts.EnableOOONativeHistograms = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
@@ -5034,7 +5411,67 @@ func testOOOQueryAfterRestartWithSnapshotAndRemovedWBL(t *testing.T, scenario sa
 	verifySamples(90, 109)
 }
 
-func Test_Querier_OOOQuery(t *testing.T) {
+func TestQuerierOOOQuery(t *testing.T) {
+	scenarios := map[string]struct {
+		appendFunc func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error)
+		sampleFunc func(ts int64) chunks.Sample
+	}{
+		"float": {
+			appendFunc: func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error) {
+				return app.Append(0, labels.FromStrings("foo", "bar1"), ts, float64(ts))
+			},
+			sampleFunc: func(ts int64) chunks.Sample {
+				return sample{t: ts, f: float64(ts)}
+			},
+		},
+		"integer histogram": {
+			appendFunc: func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error) {
+				h := tsdbutil.GenerateTestHistogram(int(ts))
+				if counterReset {
+					h.CounterResetHint = histogram.CounterReset
+				}
+				return app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, h, nil)
+			},
+			sampleFunc: func(ts int64) chunks.Sample {
+				return sample{t: ts, h: tsdbutil.GenerateTestHistogram(int(ts))}
+			},
+		},
+		"float histogram": {
+			appendFunc: func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error) {
+				fh := tsdbutil.GenerateTestFloatHistogram(int(ts))
+				if counterReset {
+					fh.CounterResetHint = histogram.CounterReset
+				}
+				return app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, nil, fh)
+			},
+			sampleFunc: func(ts int64) chunks.Sample {
+				return sample{t: ts, fh: tsdbutil.GenerateTestFloatHistogram(int(ts))}
+			},
+		},
+		"integer histogram counter resets": {
+			// Adding counter reset to all histograms means each histogram will have its own chunk.
+			appendFunc: func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error) {
+				h := tsdbutil.GenerateTestHistogram(int(ts))
+				h.CounterResetHint = histogram.CounterReset // For this scenario, ignore the counterReset argument.
+				return app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, h, nil)
+			},
+			sampleFunc: func(ts int64) chunks.Sample {
+				return sample{t: ts, h: tsdbutil.GenerateTestHistogram(int(ts))}
+			},
+		},
+	}
+
+	for name, scenario := range scenarios {
+		t.Run(name, func(t *testing.T) {
+			testQuerierOOOQuery(t, scenario.appendFunc, scenario.sampleFunc)
+		})
+	}
+}
+
+func testQuerierOOOQuery(t *testing.T,
+	appendFunc func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error),
+	sampleFunc func(ts int64) chunks.Sample,
+) {
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = 24 * time.Hour.Milliseconds()
 
@@ -5044,16 +5481,16 @@ func Test_Querier_OOOQuery(t *testing.T) {
 	defaultFilterFunc := func(t int64) bool { return true }
 
 	minutes := func(m int64) int64 { return m * time.Minute.Milliseconds() }
-	addSample := func(db *DB, fromMins, toMins, queryMinT, queryMaxT int64, expSamples []chunks.Sample, filter filterFunc) ([]chunks.Sample, int) {
+	addSample := func(db *DB, fromMins, toMins, queryMinT, queryMaxT int64, expSamples []chunks.Sample, filter filterFunc, counterReset bool) ([]chunks.Sample, int) {
 		app := db.Appender(context.Background())
 		totalAppended := 0
 		for m := fromMins; m <= toMins; m += time.Minute.Milliseconds() {
 			if !filter(m / time.Minute.Milliseconds()) {
 				continue
 			}
-			_, err := app.Append(0, series1, m, float64(m))
+			_, err := appendFunc(app, m, counterReset)
 			if m >= queryMinT && m <= queryMaxT {
-				expSamples = append(expSamples, sample{t: m, f: float64(m)})
+				expSamples = append(expSamples, sampleFunc(m))
 			}
 			require.NoError(t, err)
 			totalAppended++
@@ -5064,10 +5501,11 @@ func Test_Querier_OOOQuery(t *testing.T) {
 	}
 
 	type sampleBatch struct {
-		minT   int64
-		maxT   int64
-		filter filterFunc
-		isOOO  bool
+		minT         int64
+		maxT         int64
+		filter       filterFunc
+		counterReset bool
+		isOOO        bool
 	}
 
 	tests := []struct {
@@ -5116,6 +5554,31 @@ func Test_Querier_OOOQuery(t *testing.T) {
 			},
 		},
 		{
+			name:      "alternating OOO batches", // In order: 100-200 normal. out of order first path: 0, 2, 4, ... 98 (no counter reset), second pass: 1, 3, 5, ... 99 (with counter reset).
+			queryMinT: minutes(0),
+			queryMaxT: minutes(200),
+			batches: []sampleBatch{
+				{
+					minT:   minutes(100),
+					maxT:   minutes(200),
+					filter: defaultFilterFunc,
+				},
+				{
+					minT:   minutes(0),
+					maxT:   minutes(99),
+					filter: func(t int64) bool { return t%2 == 0 },
+					isOOO:  true,
+				},
+				{
+					minT:         minutes(0),
+					maxT:         minutes(99),
+					filter:       func(t int64) bool { return t%2 == 1 },
+					counterReset: true,
+					isOOO:        true,
+				},
+			},
+		},
+		{
 			name:      "query overlapping inorder and ooo samples returns all ingested samples at the end of the interval",
 			oooCap:    30,
 			queryMinT: minutes(0),
@@ -5156,7 +5619,7 @@ func Test_Querier_OOOQuery(t *testing.T) {
 			},
 		},
 		{
-			name:      "query inorder contain ooo mmaped samples returns all ingested samples at the beginning of the interval",
+			name:      "query inorder contain ooo mmapped samples returns all ingested samples at the beginning of the interval",
 			oooCap:    5,
 			queryMinT: minutes(0),
 			queryMaxT: minutes(200),
@@ -5169,7 +5632,7 @@ func Test_Querier_OOOQuery(t *testing.T) {
 				},
 				{
 					minT:   minutes(101),
-					maxT:   minutes(101 + (5-1)*2), // Append samples to fit in a single mmmaped OOO chunk and fit inside the first in-order mmaped chunk.
+					maxT:   minutes(101 + (5-1)*2), // Append samples to fit in a single mmapped OOO chunk and fit inside the first in-order mmapped chunk.
 					filter: func(t int64) bool { return t%2 == 1 },
 					isOOO:  true,
 				},
@@ -5182,7 +5645,7 @@ func Test_Querier_OOOQuery(t *testing.T) {
 			},
 		},
 		{
-			name:      "query overlapping inorder and ooo mmaped samples returns all ingested samples at the beginning of the interval",
+			name:      "query overlapping inorder and ooo mmapped samples returns all ingested samples at the beginning of the interval",
 			oooCap:    30,
 			queryMinT: minutes(0),
 			queryMaxT: minutes(200),
@@ -5195,7 +5658,7 @@ func Test_Querier_OOOQuery(t *testing.T) {
 				},
 				{
 					minT:   minutes(101),
-					maxT:   minutes(101 + (30-1)*2), // Append samples to fit in a single mmmaped OOO chunk and overlap the first in-order mmaped chunk.
+					maxT:   minutes(101 + (30-1)*2), // Append samples to fit in a single mmapped OOO chunk and overlap the first in-order mmapped chunk.
 					filter: func(t int64) bool { return t%2 == 1 },
 					isOOO:  true,
 				},
@@ -5213,6 +5676,8 @@ func Test_Querier_OOOQuery(t *testing.T) {
 			opts.OutOfOrderCapMax = tc.oooCap
 			db := openTestDB(t, opts, nil)
 			db.DisableCompactions()
+			db.EnableNativeHistograms()
+			db.EnableOOONativeHistograms()
 			defer func() {
 				require.NoError(t, db.Close())
 			}()
@@ -5221,7 +5686,7 @@ func Test_Querier_OOOQuery(t *testing.T) {
 			var oooSamples, appendedCount int
 
 			for _, batch := range tc.batches {
-				expSamples, appendedCount = addSample(db, batch.minT, batch.maxT, tc.queryMinT, tc.queryMaxT, expSamples, batch.filter)
+				expSamples, appendedCount = addSample(db, batch.minT, batch.maxT, tc.queryMinT, tc.queryMaxT, expSamples, batch.filter, batch.counterReset)
 				if batch.isOOO {
 					oooSamples += appendedCount
 				}
@@ -5236,15 +5701,107 @@ func Test_Querier_OOOQuery(t *testing.T) {
 			defer querier.Close()
 
 			seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar1"))
-			require.NotNil(t, seriesSet[series1.String()])
+			gotSamples := seriesSet[series1.String()]
+			require.NotNil(t, gotSamples)
 			require.Len(t, seriesSet, 1)
-			require.Equal(t, expSamples, seriesSet[series1.String()])
+			requireEqualSamples(t, series1.String(), expSamples, gotSamples, requireEqualSamplesIgnoreCounterResets)
 			requireEqualOOOSamples(t, oooSamples, db)
 		})
 	}
 }
 
-func Test_ChunkQuerier_OOOQuery(t *testing.T) {
+func TestChunkQuerierOOOQuery(t *testing.T) {
+	nBucketHistogram := func(n int64) *histogram.Histogram {
+		h := &histogram.Histogram{
+			Count: uint64(n),
+			Sum:   float64(n),
+		}
+		if n == 0 {
+			h.PositiveSpans = []histogram.Span{}
+			h.PositiveBuckets = []int64{}
+			return h
+		}
+		h.PositiveSpans = []histogram.Span{{Offset: 0, Length: uint32(n)}}
+		h.PositiveBuckets = make([]int64, n)
+		h.PositiveBuckets[0] = 1
+		return h
+	}
+
+	scenarios := map[string]struct {
+		appendFunc       func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error)
+		sampleFunc       func(ts int64) chunks.Sample
+		checkInUseBucket bool
+	}{
+		"float": {
+			appendFunc: func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error) {
+				return app.Append(0, labels.FromStrings("foo", "bar1"), ts, float64(ts))
+			},
+			sampleFunc: func(ts int64) chunks.Sample {
+				return sample{t: ts, f: float64(ts)}
+			},
+		},
+		"integer histogram": {
+			appendFunc: func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error) {
+				h := tsdbutil.GenerateTestHistogram(int(ts))
+				if counterReset {
+					h.CounterResetHint = histogram.CounterReset
+				}
+				return app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, h, nil)
+			},
+			sampleFunc: func(ts int64) chunks.Sample {
+				return sample{t: ts, h: tsdbutil.GenerateTestHistogram(int(ts))}
+			},
+		},
+		"float histogram": {
+			appendFunc: func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error) {
+				fh := tsdbutil.GenerateTestFloatHistogram(int(ts))
+				if counterReset {
+					fh.CounterResetHint = histogram.CounterReset
+				}
+				return app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, nil, fh)
+			},
+			sampleFunc: func(ts int64) chunks.Sample {
+				return sample{t: ts, fh: tsdbutil.GenerateTestFloatHistogram(int(ts))}
+			},
+		},
+		"integer histogram counter resets": {
+			// Adding counter reset to all histograms means each histogram will have its own chunk.
+			appendFunc: func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error) {
+				h := tsdbutil.GenerateTestHistogram(int(ts))
+				h.CounterResetHint = histogram.CounterReset // For this scenario, ignore the counterReset argument.
+				return app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, h, nil)
+			},
+			sampleFunc: func(ts int64) chunks.Sample {
+				return sample{t: ts, h: tsdbutil.GenerateTestHistogram(int(ts))}
+			},
+		},
+		"integer histogram with recode": {
+			// Histograms have increasing number of buckets so their chunks are recoded.
+			appendFunc: func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error) {
+				n := ts / time.Minute.Milliseconds()
+				return app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, nBucketHistogram(n), nil)
+			},
+			sampleFunc: func(ts int64) chunks.Sample {
+				n := ts / time.Minute.Milliseconds()
+				return sample{t: ts, h: nBucketHistogram(n)}
+			},
+			// Only check in-use buckets for this scenario.
+			// Recoding adds empty buckets.
+			checkInUseBucket: true,
+		},
+	}
+	for name, scenario := range scenarios {
+		t.Run(name, func(t *testing.T) {
+			testChunkQuerierOOOQuery(t, scenario.appendFunc, scenario.sampleFunc, scenario.checkInUseBucket)
+		})
+	}
+}
+
+func testChunkQuerierOOOQuery(t *testing.T,
+	appendFunc func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error),
+	sampleFunc func(ts int64) chunks.Sample,
+	checkInUseBuckets bool,
+) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 24 * time.Hour.Milliseconds()
@@ -5255,16 +5812,16 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 	defaultFilterFunc := func(t int64) bool { return true }
 
 	minutes := func(m int64) int64 { return m * time.Minute.Milliseconds() }
-	addSample := func(db *DB, fromMins, toMins, queryMinT, queryMaxT int64, expSamples []chunks.Sample, filter filterFunc) ([]chunks.Sample, int) {
+	addSample := func(db *DB, fromMins, toMins, queryMinT, queryMaxT int64, expSamples []chunks.Sample, filter filterFunc, counterReset bool) ([]chunks.Sample, int) {
 		app := db.Appender(context.Background())
 		totalAppended := 0
 		for m := fromMins; m <= toMins; m += time.Minute.Milliseconds() {
 			if !filter(m / time.Minute.Milliseconds()) {
 				continue
 			}
-			_, err := app.Append(0, series1, m, float64(m))
+			_, err := appendFunc(app, m, counterReset)
 			if m >= queryMinT && m <= queryMaxT {
-				expSamples = append(expSamples, sample{t: m, f: float64(m)})
+				expSamples = append(expSamples, sampleFunc(m))
 			}
 			require.NoError(t, err)
 			totalAppended++
@@ -5275,10 +5832,11 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 	}
 
 	type sampleBatch struct {
-		minT   int64
-		maxT   int64
-		filter filterFunc
-		isOOO  bool
+		minT         int64
+		maxT         int64
+		filter       filterFunc
+		counterReset bool
+		isOOO        bool
 	}
 
 	tests := []struct {
@@ -5327,6 +5885,31 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 			},
 		},
 		{
+			name:      "alternating OOO batches", // In order: 100-200 normal. out of order first path: 0, 2, 4, ... 98 (no counter reset), second pass: 1, 3, 5, ... 99 (with counter reset).
+			queryMinT: minutes(0),
+			queryMaxT: minutes(200),
+			batches: []sampleBatch{
+				{
+					minT:   minutes(100),
+					maxT:   minutes(200),
+					filter: defaultFilterFunc,
+				},
+				{
+					minT:   minutes(0),
+					maxT:   minutes(99),
+					filter: func(t int64) bool { return t%2 == 0 },
+					isOOO:  true,
+				},
+				{
+					minT:         minutes(0),
+					maxT:         minutes(99),
+					filter:       func(t int64) bool { return t%2 == 1 },
+					counterReset: true,
+					isOOO:        true,
+				},
+			},
+		},
+		{
 			name:      "query overlapping inorder and ooo samples returns all ingested samples at the end of the interval",
 			oooCap:    30,
 			queryMinT: minutes(0),
@@ -5367,7 +5950,7 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 			},
 		},
 		{
-			name:      "query inorder contain ooo mmaped samples returns all ingested samples at the beginning of the interval",
+			name:      "query inorder contain ooo mmapped samples returns all ingested samples at the beginning of the interval",
 			oooCap:    5,
 			queryMinT: minutes(0),
 			queryMaxT: minutes(200),
@@ -5380,7 +5963,7 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 				},
 				{
 					minT:   minutes(101),
-					maxT:   minutes(101 + (5-1)*2), // Append samples to fit in a single mmmaped OOO chunk and fit inside the first in-order mmaped chunk.
+					maxT:   minutes(101 + (5-1)*2), // Append samples to fit in a single mmapped OOO chunk and fit inside the first in-order mmapped chunk.
 					filter: func(t int64) bool { return t%2 == 1 },
 					isOOO:  true,
 				},
@@ -5393,7 +5976,7 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 			},
 		},
 		{
-			name:      "query overlapping inorder and ooo mmaped samples returns all ingested samples at the beginning of the interval",
+			name:      "query overlapping inorder and ooo mmapped samples returns all ingested samples at the beginning of the interval",
 			oooCap:    30,
 			queryMinT: minutes(0),
 			queryMaxT: minutes(200),
@@ -5406,7 +5989,7 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 				},
 				{
 					minT:   minutes(101),
-					maxT:   minutes(101 + (30-1)*2), // Append samples to fit in a single mmmaped OOO chunk and overlap the first in-order mmaped chunk.
+					maxT:   minutes(101 + (30-1)*2), // Append samples to fit in a single mmapped OOO chunk and overlap the first in-order mmapped chunk.
 					filter: func(t int64) bool { return t%2 == 1 },
 					isOOO:  true,
 				},
@@ -5424,6 +6007,8 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 			opts.OutOfOrderCapMax = tc.oooCap
 			db := openTestDB(t, opts, nil)
 			db.DisableCompactions()
+			db.EnableNativeHistograms()
+			db.EnableOOONativeHistograms()
 			defer func() {
 				require.NoError(t, db.Close())
 			}()
@@ -5432,7 +6017,7 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 			var oooSamples, appendedCount int
 
 			for _, batch := range tc.batches {
-				expSamples, appendedCount = addSample(db, batch.minT, batch.maxT, tc.queryMinT, tc.queryMaxT, expSamples, batch.filter)
+				expSamples, appendedCount = addSample(db, batch.minT, batch.maxT, tc.queryMinT, tc.queryMaxT, expSamples, batch.filter, batch.counterReset)
 				if batch.isOOO {
 					oooSamples += appendedCount
 				}
@@ -5453,12 +6038,204 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 			var gotSamples []chunks.Sample
 			for _, chunk := range chks[series1.String()] {
 				it := chunk.Chunk.Iterator(nil)
-				for it.Next() == chunkenc.ValFloat {
-					ts, v := it.At()
-					gotSamples = append(gotSamples, sample{t: ts, f: v})
+				smpls, err := storage.ExpandSamples(it, newSample)
+				require.NoError(t, err)
+
+				// Verify that no sample is outside the chunk's time range.
+				for i, s := range smpls {
+					switch i {
+					case 0:
+						require.Equal(t, chunk.MinTime, s.T(), "first sample %v not at chunk min time %v", s, chunk.MinTime)
+					case len(smpls) - 1:
+						require.Equal(t, chunk.MaxTime, s.T(), "last sample %v not at chunk max time %v", s, chunk.MaxTime)
+					default:
+						require.GreaterOrEqual(t, s.T(), chunk.MinTime, "sample %v before chunk min time %v", s, chunk.MinTime)
+						require.LessOrEqual(t, s.T(), chunk.MaxTime, "sample %v after chunk max time %v", s, chunk.MaxTime)
+					}
+				}
+
+				gotSamples = append(gotSamples, smpls...)
+				require.NoError(t, it.Err())
+			}
+			if checkInUseBuckets {
+				requireEqualSamples(t, series1.String(), expSamples, gotSamples, requireEqualSamplesIgnoreCounterResets, requireEqualSamplesInUseBucketCompare)
+			} else {
+				requireEqualSamples(t, series1.String(), expSamples, gotSamples, requireEqualSamplesIgnoreCounterResets)
+			}
+		})
+	}
+}
+
+// TestOOONativeHistogramsWithCounterResets verifies the counter reset headers for in-order and out-of-order samples
+// upon ingestion. Note that when the counter reset(s) occur in OOO samples, the header is set to UnknownCounterReset
+// rather than CounterReset. This is because with OOO native histogram samples, it cannot be definitely
+// determined if a counter reset occurred because the samples are not consecutive, and another sample
+// could potentially come in that would change the status of the header. In this case, the UnknownCounterReset
+// headers would be re-checked at query time and updated as needed. However, this test is checking the counter
+// reset headers at the time of storage.
+func TestOOONativeHistogramsWithCounterResets(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			if name == intHistogram || name == floatHistogram {
+				testOOONativeHistogramsWithCounterResets(t, scenario)
+			}
+		})
+	}
+}
+
+func testOOONativeHistogramsWithCounterResets(t *testing.T, scenario sampleTypeScenario) {
+	opts := DefaultOptions()
+	opts.OutOfOrderCapMax = 30
+	opts.OutOfOrderTimeWindow = 24 * time.Hour.Milliseconds()
+
+	type resetFunc func(v int64) bool
+	defaultResetFunc := func(v int64) bool { return false }
+
+	lbls := labels.FromStrings("foo", "bar1")
+	minutes := func(m int64) int64 { return m * time.Minute.Milliseconds() }
+
+	type sampleBatch struct {
+		from                 int64
+		until                int64
+		shouldReset          resetFunc
+		expCounterResetHints []histogram.CounterResetHint
+	}
+
+	tests := []struct {
+		name            string
+		queryMin        int64
+		queryMax        int64
+		batches         []sampleBatch
+		expectedSamples []chunks.Sample
+	}{
+		{
+			name:     "Counter reset within in-order samples",
+			queryMin: minutes(40),
+			queryMax: minutes(55),
+			batches: []sampleBatch{
+				// In-order samples
+				{
+					from:  40,
+					until: 50,
+					shouldReset: func(v int64) bool {
+						return v == 45
+					},
+					expCounterResetHints: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.CounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset},
+				},
+			},
+		},
+		{
+			name:     "Counter reset right at beginning of OOO samples",
+			queryMin: minutes(40),
+			queryMax: minutes(55),
+			batches: []sampleBatch{
+				// In-order samples
+				{
+					from:                 40,
+					until:                45,
+					shouldReset:          defaultResetFunc,
+					expCounterResetHints: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset},
+				},
+				{
+					from:                 50,
+					until:                55,
+					shouldReset:          defaultResetFunc,
+					expCounterResetHints: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset},
+				},
+				// OOO samples
+				{
+					from:  45,
+					until: 50,
+					shouldReset: func(v int64) bool {
+						return v == 45
+					},
+					expCounterResetHints: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset},
+				},
+			},
+		},
+		{
+			name:     "Counter resets in both in-order and OOO samples",
+			queryMin: minutes(40),
+			queryMax: minutes(55),
+			batches: []sampleBatch{
+				// In-order samples
+				{
+					from:  40,
+					until: 45,
+					shouldReset: func(v int64) bool {
+						return v == 44
+					},
+					expCounterResetHints: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.UnknownCounterReset},
+				},
+				{
+					from:                 50,
+					until:                55,
+					shouldReset:          defaultResetFunc,
+					expCounterResetHints: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset},
+				},
+				// OOO samples
+				{
+					from:  45,
+					until: 50,
+					shouldReset: func(v int64) bool {
+						return v == 49
+					},
+					expCounterResetHints: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.UnknownCounterReset},
+				},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
+			db := openTestDB(t, opts, nil)
+			db.DisableCompactions()
+			db.EnableOOONativeHistograms()
+			defer func() {
+				require.NoError(t, db.Close())
+			}()
+
+			app := db.Appender(context.Background())
+
+			expSamples := make(map[string][]chunks.Sample)
+
+			for _, batch := range tc.batches {
+				j := batch.from
+				smplIdx := 0
+				for i := batch.from; i < batch.until; i++ {
+					resetCount := batch.shouldReset(i)
+					if resetCount {
+						j = 0
+					}
+					_, s, err := scenario.appendFunc(app, lbls, minutes(i), j)
+					require.NoError(t, err)
+					if s.Type() == chunkenc.ValHistogram {
+						s.H().CounterResetHint = batch.expCounterResetHints[smplIdx]
+					} else if s.Type() == chunkenc.ValFloatHistogram {
+						s.FH().CounterResetHint = batch.expCounterResetHints[smplIdx]
+					}
+					expSamples[lbls.String()] = append(expSamples[lbls.String()], s)
+					j++
+					smplIdx++
 				}
 			}
-			require.Equal(t, expSamples, gotSamples)
+
+			require.NoError(t, app.Commit())
+
+			for k, v := range expSamples {
+				sort.Slice(v, func(i, j int) bool {
+					return v[i].T() < v[j].T()
+				})
+				expSamples[k] = v
+			}
+
+			querier, err := db.Querier(tc.queryMin, tc.queryMax)
+			require.NoError(t, err)
+			defer querier.Close()
+
+			seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar1"))
+			require.NotNil(t, seriesSet[lbls.String()])
+			require.Len(t, seriesSet, 1)
+			requireEqualSeries(t, expSamples, seriesSet, false)
 		})
 	}
 }
@@ -5478,6 +6255,8 @@ func testOOOAppendAndQuery(t *testing.T, scenario sampleTypeScenario) {
 
 	db := openTestDB(t, opts, nil)
 	db.DisableCompactions()
+	db.EnableNativeHistograms()
+	db.EnableOOONativeHistograms()
 	t.Cleanup(func() {
 		require.NoError(t, db.Close())
 	})
@@ -5555,9 +6334,9 @@ func testOOOAppendAndQuery(t *testing.T, scenario sampleTypeScenario) {
 	addSample(s2, 255, 265, false)
 	verifyOOOMinMaxTimes(250, 265)
 	testQuery(math.MinInt64, math.MaxInt64)
-	testQuery(minutes(250), minutes(265)) // Test querying ono data time range
-	testQuery(minutes(290), minutes(300)) // Test querying in-order data time range
-	testQuery(minutes(250), minutes(300)) // Test querying the entire range
+	testQuery(minutes(250), minutes(265)) // Test querying ooo data time range.
+	testQuery(minutes(290), minutes(300)) // Test querying in-order data time range.
+	testQuery(minutes(250), minutes(300)) // Test querying the entire range.
 
 	// Out of time window.
 	addSample(s1, 59, 59, true)
@@ -5609,6 +6388,8 @@ func testOOODisabled(t *testing.T, scenario sampleTypeScenario) {
 	opts.OutOfOrderTimeWindow = 0
 	db := openTestDB(t, opts, nil)
 	db.DisableCompactions()
+	db.EnableNativeHistograms()
+	db.EnableOOONativeHistograms()
 	t.Cleanup(func() {
 		require.NoError(t, db.Close())
 	})
@@ -5681,6 +6462,8 @@ func testWBLAndMmapReplay(t *testing.T, scenario sampleTypeScenario) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 4 * time.Hour.Milliseconds()
+	opts.EnableNativeHistograms = true
+	opts.EnableOOONativeHistograms = true
 
 	db := openTestDB(t, opts, nil)
 	db.DisableCompactions()
@@ -5830,7 +6613,7 @@ func testWBLAndMmapReplay(t *testing.T, scenario sampleTypeScenario) {
 		resetMmapToOriginal() // We neet to reset because new duplicate chunks can be written above.
 
 		// Removing m-map markers in WBL by rewriting it.
-		newWbl, err := wlog.New(log.NewNopLogger(), nil, filepath.Join(t.TempDir(), "new_wbl"), wlog.CompressionNone)
+		newWbl, err := wlog.New(promslog.NewNopLogger(), nil, filepath.Join(t.TempDir(), "new_wbl"), wlog.CompressionNone)
 		require.NoError(t, err)
 		sr, err := wlog.NewSegmentsReader(originalWblDir)
 		require.NoError(t, err)
@@ -5861,6 +6644,380 @@ func testWBLAndMmapReplay(t *testing.T, scenario sampleTypeScenario) {
 	})
 }
 
+func TestOOOHistogramCompactionWithCounterResets(t *testing.T) {
+	for _, floatHistogram := range []bool{false, true} {
+		dir := t.TempDir()
+		ctx := context.Background()
+
+		opts := DefaultOptions()
+		opts.OutOfOrderCapMax = 30
+		opts.OutOfOrderTimeWindow = 500 * time.Minute.Milliseconds()
+
+		db, err := Open(dir, nil, nil, opts, nil)
+		require.NoError(t, err)
+		db.DisableCompactions() // We want to manually call it.
+		db.EnableNativeHistograms()
+		db.EnableOOONativeHistograms()
+		t.Cleanup(func() {
+			require.NoError(t, db.Close())
+		})
+
+		series1 := labels.FromStrings("foo", "bar1")
+		series2 := labels.FromStrings("foo", "bar2")
+
+		var series1ExpSamplesPreCompact, series2ExpSamplesPreCompact, series1ExpSamplesPostCompact, series2ExpSamplesPostCompact []chunks.Sample
+
+		addSample := func(ts int64, l labels.Labels, val int, hint histogram.CounterResetHint) sample {
+			app := db.Appender(context.Background())
+			tsMs := ts * time.Minute.Milliseconds()
+			if floatHistogram {
+				h := tsdbutil.GenerateTestFloatHistogram(val)
+				h.CounterResetHint = hint
+				_, err = app.AppendHistogram(0, l, tsMs, nil, h)
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+				return sample{t: tsMs, fh: h.Copy()}
+			}
+
+			h := tsdbutil.GenerateTestHistogram(val)
+			h.CounterResetHint = hint
+			_, err = app.AppendHistogram(0, l, tsMs, h, nil)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			return sample{t: tsMs, h: h.Copy()}
+		}
+
+		// Add an in-order sample to each series.
+		s := addSample(520, series1, 1000000, histogram.UnknownCounterReset)
+		series1ExpSamplesPreCompact = append(series1ExpSamplesPreCompact, s)
+		series1ExpSamplesPostCompact = append(series1ExpSamplesPostCompact, s)
+
+		s = addSample(520, series2, 1000000, histogram.UnknownCounterReset)
+		series2ExpSamplesPreCompact = append(series2ExpSamplesPreCompact, s)
+		series2ExpSamplesPostCompact = append(series2ExpSamplesPostCompact, s)
+
+		// Verify that the in-memory ooo chunk is empty.
+		checkEmptyOOOChunk := func(lbls labels.Labels) {
+			ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
+			require.NoError(t, err)
+			require.False(t, created)
+			require.Nil(t, ms.ooo)
+		}
+
+		checkEmptyOOOChunk(series1)
+		checkEmptyOOOChunk(series2)
+
+		// Add samples for series1. There are three head chunks that will be created:
+		// Chunk 1 - Samples between 100 - 440. One explicit counter reset at ts 250.
+		// Chunk 2 - Samples between 105 - 395. Overlaps with Chunk 1. One detected counter reset at ts 165.
+		// Chunk 3 - Samples between 480 - 509. All within one block boundary. One detected counter reset at 490.
+
+		// Chunk 1.
+		// First add 10 samples.
+		for i := 100; i < 200; i += 10 {
+			s = addSample(int64(i), series1, 100000+i, histogram.UnknownCounterReset)
+			// Before compaction, all the samples have UnknownCounterReset even though they've been added to the same
+			// chunk. This is because they overlap with the samples from chunk two and when merging two chunks on read,
+			// the header is set as unknown when the next sample is not in the same chunk as the previous one.
+			series1ExpSamplesPreCompact = append(series1ExpSamplesPreCompact, s)
+			// After compaction, samples from multiple mmapped chunks will be merged, so there won't be any overlapping
+			// chunks. Therefore, most samples will have the NotCounterReset header.
+			// 100 is the first sample in the first chunk in the blocks, so is still set to UnknownCounterReset.
+			// 120 is a block boundary - after compaction, 120 will be the first sample in a chunk, so is still set to
+			// UnknownCounterReset.
+			if i > 100 && i != 120 {
+				s = copyWithCounterReset(s, histogram.NotCounterReset)
+			}
+			series1ExpSamplesPostCompact = append(series1ExpSamplesPostCompact, s)
+		}
+		// Explicit counter reset - the counter reset header is set to CounterReset but the value is higher
+		// than for the previous timestamp. Explicit counter reset headers are actually ignored though, so when reading
+		// the sample back you actually get unknown/not counter reset. This is as the chainSampleIterator ignores
+		// existing headers and sets the header as UnknownCounterReset if the next sample is not in the same chunk as
+		// the previous one, and counter resets always create a new chunk.
+		// This case has been added to document what's happening, though it might not be the ideal behavior.
+		s = addSample(250, series1, 100000+250, histogram.CounterReset)
+		series1ExpSamplesPreCompact = append(series1ExpSamplesPreCompact, copyWithCounterReset(s, histogram.UnknownCounterReset))
+		series1ExpSamplesPostCompact = append(series1ExpSamplesPostCompact, copyWithCounterReset(s, histogram.NotCounterReset))
+
+		// Add 19 more samples to complete a chunk.
+		for i := 260; i < 450; i += 10 {
+			s = addSample(int64(i), series1, 100000+i, histogram.UnknownCounterReset)
+			// The samples with timestamp less than 410 overlap with the samples from chunk 2, so before compaction,
+			// they're all UnknownCounterReset. Samples greater than or equal to 410 don't overlap with other chunks
+			// so they're always detected as NotCounterReset pre and post compaction/
+			if i >= 410 {
+				s = copyWithCounterReset(s, histogram.NotCounterReset)
+			}
+			series1ExpSamplesPreCompact = append(series1ExpSamplesPreCompact, s)
+			//
+			// 360 is a block boundary, so after compaction its header is still UnknownCounterReset.
+			if i != 360 {
+				s = copyWithCounterReset(s, histogram.NotCounterReset)
+			}
+			series1ExpSamplesPostCompact = append(series1ExpSamplesPostCompact, s)
+		}
+
+		// Chunk 2.
+		// Add six OOO samples.
+		for i := 105; i < 165; i += 10 {
+			s = addSample(int64(i), series1, 100000+i, histogram.UnknownCounterReset)
+			// Samples overlap with chunk 1 so before compaction all headers are UnknownCounterReset.
+			series1ExpSamplesPreCompact = append(series1ExpSamplesPreCompact, s)
+			series1ExpSamplesPostCompact = append(series1ExpSamplesPostCompact, copyWithCounterReset(s, histogram.NotCounterReset))
+		}
+
+		// Add sample that will be detected as a counter reset.
+		s = addSample(165, series1, 100000, histogram.UnknownCounterReset)
+		// Before compaction, sample has an UnknownCounterReset header due to the chainSampleIterator.
+		series1ExpSamplesPreCompact = append(series1ExpSamplesPreCompact, s)
+		// After compaction, the sample's counter reset is properly detected.
+		series1ExpSamplesPostCompact = append(series1ExpSamplesPostCompact, copyWithCounterReset(s, histogram.CounterReset))
+
+		// Add 23 more samples to complete a chunk.
+		for i := 175; i < 405; i += 10 {
+			s = addSample(int64(i), series1, 100000+i, histogram.UnknownCounterReset)
+			// Samples between 205-255 overlap with chunk 1 so before compaction those samples will have the
+			// UnknownCounterReset header.
+			if i >= 205 && i < 255 {
+				s = copyWithCounterReset(s, histogram.NotCounterReset)
+			}
+			series1ExpSamplesPreCompact = append(series1ExpSamplesPreCompact, s)
+			// 245 is the first sample >= the block boundary at 240, so it's still UnknownCounterReset after compaction.
+			if i != 245 {
+				s = copyWithCounterReset(s, histogram.NotCounterReset)
+			} else {
+				s = copyWithCounterReset(s, histogram.UnknownCounterReset)
+			}
+			series1ExpSamplesPostCompact = append(series1ExpSamplesPostCompact, s)
+		}
+
+		// Chunk 3.
+		for i := 480; i < 490; i++ {
+			s = addSample(int64(i), series1, 100000+i, histogram.UnknownCounterReset)
+			// No overlapping samples in other chunks, so all other samples will already be detected as NotCounterReset
+			// before compaction.
+			if i > 480 {
+				s = copyWithCounterReset(s, histogram.NotCounterReset)
+			}
+			series1ExpSamplesPreCompact = append(series1ExpSamplesPreCompact, s)
+			// 480 is block boundary.
+			if i == 480 {
+				s = copyWithCounterReset(s, histogram.UnknownCounterReset)
+			}
+			series1ExpSamplesPostCompact = append(series1ExpSamplesPostCompact, s)
+		}
+		// Counter reset.
+		s = addSample(int64(490), series1, 100000, histogram.UnknownCounterReset)
+		s = copyWithCounterReset(s, histogram.CounterReset)
+		series1ExpSamplesPreCompact = append(series1ExpSamplesPreCompact, s)
+		series1ExpSamplesPostCompact = append(series1ExpSamplesPostCompact, s)
+		// Add some more samples after the counter reset.
+		for i := 491; i < 510; i++ {
+			s = addSample(int64(i), series1, 100000+i, histogram.UnknownCounterReset)
+			s = copyWithCounterReset(s, histogram.NotCounterReset)
+			series1ExpSamplesPreCompact = append(series1ExpSamplesPreCompact, s)
+			series1ExpSamplesPostCompact = append(series1ExpSamplesPostCompact, s)
+		}
+
+		// Add samples for series2 - one chunk with one detected counter reset at 300.
+		for i := 200; i < 300; i += 10 {
+			s = addSample(int64(i), series2, 100000+i, histogram.UnknownCounterReset)
+			if i > 200 {
+				s = copyWithCounterReset(s, histogram.NotCounterReset)
+			}
+			series2ExpSamplesPreCompact = append(series2ExpSamplesPreCompact, s)
+			if i == 240 {
+				s = copyWithCounterReset(s, histogram.UnknownCounterReset)
+			}
+			series2ExpSamplesPostCompact = append(series2ExpSamplesPostCompact, s)
+		}
+		// Counter reset.
+		s = addSample(int64(300), series2, 100000, histogram.UnknownCounterReset)
+		s = copyWithCounterReset(s, histogram.CounterReset)
+		series2ExpSamplesPreCompact = append(series2ExpSamplesPreCompact, s)
+		series2ExpSamplesPostCompact = append(series2ExpSamplesPostCompact, s)
+		// Add some more samples after the counter reset.
+		for i := 310; i < 500; i += 10 {
+			s := addSample(int64(i), series2, 100000+i, histogram.UnknownCounterReset)
+			s = copyWithCounterReset(s, histogram.NotCounterReset)
+			series2ExpSamplesPreCompact = append(series2ExpSamplesPreCompact, s)
+			// 360 and 480 are block boundaries.
+			if i == 360 || i == 480 {
+				s = copyWithCounterReset(s, histogram.UnknownCounterReset)
+			}
+			series2ExpSamplesPostCompact = append(series2ExpSamplesPostCompact, s)
+		}
+
+		// Sort samples (as OOO samples not added in time-order).
+		sort.Slice(series1ExpSamplesPreCompact, func(i, j int) bool {
+			return series1ExpSamplesPreCompact[i].T() < series1ExpSamplesPreCompact[j].T()
+		})
+		sort.Slice(series1ExpSamplesPostCompact, func(i, j int) bool {
+			return series1ExpSamplesPostCompact[i].T() < series1ExpSamplesPostCompact[j].T()
+		})
+		sort.Slice(series2ExpSamplesPreCompact, func(i, j int) bool {
+			return series2ExpSamplesPreCompact[i].T() < series2ExpSamplesPreCompact[j].T()
+		})
+		sort.Slice(series2ExpSamplesPostCompact, func(i, j int) bool {
+			return series2ExpSamplesPostCompact[i].T() < series2ExpSamplesPostCompact[j].T()
+		})
+
+		verifyDBSamples := func(s1Samples, s2Samples []chunks.Sample) {
+			expRes := map[string][]chunks.Sample{
+				series1.String(): s1Samples,
+				series2.String(): s2Samples,
+			}
+
+			q, err := db.Querier(math.MinInt64, math.MaxInt64)
+			require.NoError(t, err)
+			actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
+			requireEqualSeries(t, expRes, actRes, false)
+		}
+
+		// Verify DB samples before compaction.
+		verifyDBSamples(series1ExpSamplesPreCompact, series2ExpSamplesPreCompact)
+
+		// Verify that the in-memory ooo chunk is not empty.
+		checkNonEmptyOOOChunk := func(lbls labels.Labels) {
+			ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls)
+			require.NoError(t, err)
+			require.False(t, created)
+			require.Positive(t, ms.ooo.oooHeadChunk.chunk.NumSamples())
+		}
+
+		checkNonEmptyOOOChunk(series1)
+		checkNonEmptyOOOChunk(series2)
+
+		// No blocks before compaction.
+		require.Empty(t, db.Blocks())
+
+		// There is a 0th WBL file.
+		require.NoError(t, db.head.wbl.Sync()) // syncing to make sure wbl is flushed in windows
+		files, err := os.ReadDir(db.head.wbl.Dir())
+		require.NoError(t, err)
+		require.Len(t, files, 1)
+		require.Equal(t, "00000000", files[0].Name())
+		f, err := files[0].Info()
+		require.NoError(t, err)
+		require.Greater(t, f.Size(), int64(100))
+
+		// OOO compaction happens here.
+		require.NoError(t, db.CompactOOOHead(ctx))
+
+		// Check that blocks are created after compaction.
+		require.Len(t, db.Blocks(), 5)
+
+		// Check samples after compaction.
+		verifyDBSamples(series1ExpSamplesPostCompact, series2ExpSamplesPostCompact)
+
+		// 0th WBL file will be deleted and 1st will be the only present.
+		files, err = os.ReadDir(db.head.wbl.Dir())
+		require.NoError(t, err)
+		require.Len(t, files, 1)
+		require.Equal(t, "00000001", files[0].Name())
+		f, err = files[0].Info()
+		require.NoError(t, err)
+		require.Equal(t, int64(0), f.Size())
+
+		// OOO stuff should not be present in the Head now.
+		checkEmptyOOOChunk(series1)
+		checkEmptyOOOChunk(series2)
+
+		verifyBlockSamples := func(block *Block, fromMins, toMins int64) {
+			var series1Samples, series2Samples []chunks.Sample
+
+			for _, s := range series1ExpSamplesPostCompact {
+				if s.T() >= fromMins*time.Minute.Milliseconds() {
+					// Samples should be sorted, so break out of loop when we reach a timestamp that's too big.
+					if s.T() > toMins*time.Minute.Milliseconds() {
+						break
+					}
+					series1Samples = append(series1Samples, s)
+				}
+			}
+			for _, s := range series2ExpSamplesPostCompact {
+				if s.T() >= fromMins*time.Minute.Milliseconds() {
+					// Samples should be sorted, so break out of loop when we reach a timestamp that's too big.
+					if s.T() > toMins*time.Minute.Milliseconds() {
+						break
+					}
+					series2Samples = append(series2Samples, s)
+				}
+			}
+
+			expRes := map[string][]chunks.Sample{}
+			if len(series1Samples) != 0 {
+				expRes[series1.String()] = series1Samples
+			}
+			if len(series2Samples) != 0 {
+				expRes[series2.String()] = series2Samples
+			}
+
+			q, err := NewBlockQuerier(block, math.MinInt64, math.MaxInt64)
+			require.NoError(t, err)
+
+			actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
+			requireEqualSeries(t, expRes, actRes, false)
+		}
+
+		// Checking for expected data in the blocks.
+		verifyBlockSamples(db.Blocks()[0], 100, 119)
+		verifyBlockSamples(db.Blocks()[1], 120, 239)
+		verifyBlockSamples(db.Blocks()[2], 240, 359)
+		verifyBlockSamples(db.Blocks()[3], 360, 479)
+		verifyBlockSamples(db.Blocks()[4], 480, 509)
+
+		// There should be a single m-map file.
+		mmapDir := mmappedChunksDir(db.head.opts.ChunkDirRoot)
+		files, err = os.ReadDir(mmapDir)
+		require.NoError(t, err)
+		require.Len(t, files, 1)
+
+		// Compact the in-order head and expect another block.
+		// Since this is a forced compaction, this block is not aligned with 2h.
+		err = db.CompactHead(NewRangeHead(db.head, 500*time.Minute.Milliseconds(), 550*time.Minute.Milliseconds()))
+		require.NoError(t, err)
+		require.Len(t, db.Blocks(), 6)
+		verifyBlockSamples(db.Blocks()[5], 520, 520)
+
+		// Blocks created out of normal and OOO head now. But not merged.
+		verifyDBSamples(series1ExpSamplesPostCompact, series2ExpSamplesPostCompact)
+
+		// The compaction also clears out the old m-map files. Including
+		// the file that has ooo chunks.
+		files, err = os.ReadDir(mmapDir)
+		require.NoError(t, err)
+		require.Len(t, files, 1)
+		require.Equal(t, "000001", files[0].Name())
+
+		// This will merge overlapping block.
+		require.NoError(t, db.Compact(ctx))
+
+		require.Len(t, db.Blocks(), 5)
+		verifyBlockSamples(db.Blocks()[0], 100, 119)
+		verifyBlockSamples(db.Blocks()[1], 120, 239)
+		verifyBlockSamples(db.Blocks()[2], 240, 359)
+		verifyBlockSamples(db.Blocks()[3], 360, 479)
+		verifyBlockSamples(db.Blocks()[4], 480, 520) // Merged block.
+
+		// Final state. Blocks from normal and OOO head are merged.
+		verifyDBSamples(series1ExpSamplesPostCompact, series2ExpSamplesPostCompact)
+	}
+}
+
+func copyWithCounterReset(s sample, hint histogram.CounterResetHint) sample {
+	if s.h != nil {
+		h := s.h.Copy()
+		h.CounterResetHint = hint
+		return sample{t: s.t, h: h}
+	}
+
+	h := s.fh.Copy()
+	h.CounterResetHint = hint
+	return sample{t: s.t, fh: h}
+}
+
 func TestOOOCompactionFailure(t *testing.T) {
 	for name, scenario := range sampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
@@ -5880,6 +7037,8 @@ func testOOOCompactionFailure(t *testing.T, scenario sampleTypeScenario) {
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
 	db.DisableCompactions() // We want to manually call it.
+	db.EnableNativeHistograms()
+	db.EnableOOONativeHistograms()
 	t.Cleanup(func() {
 		require.NoError(t, db.Close())
 	})
@@ -5907,7 +7066,7 @@ func testOOOCompactionFailure(t *testing.T, scenario sampleTypeScenario) {
 
 	// There is a 0th WBL file.
 	verifyFirstWBLFileIs0 := func(count int) {
-		require.NoError(t, db.head.wbl.Sync()) // syncing to make sure wbl is flushed in windows
+		require.NoError(t, db.head.wbl.Sync()) // Syncing to make sure wbl is flushed in windows.
 		files, err := os.ReadDir(db.head.wbl.Dir())
 		require.NoError(t, err)
 		require.Len(t, files, count)
@@ -5961,7 +7120,7 @@ func testOOOCompactionFailure(t *testing.T, scenario sampleTypeScenario) {
 	require.Len(t, db.Blocks(), 3)
 	require.Equal(t, oldBlocks, db.Blocks())
 
-	// There should be a single m-map file
+	// There should be a single m-map file.
 	verifyMmapFiles("000001")
 
 	// All but last WBL file will be deleted.
@@ -6057,7 +7216,7 @@ func TestWBLCorruption(t *testing.T) {
 	// should be deleted after replay.
 
 	// Checking where we corrupt it.
-	require.NoError(t, db.head.wbl.Sync()) // syncing to make sure wbl is flushed in windows
+	require.NoError(t, db.head.wbl.Sync()) // Syncing to make sure wbl is flushed in windows.
 	files, err := os.ReadDir(db.head.wbl.Dir())
 	require.NoError(t, err)
 	require.Len(t, files, 2)
@@ -6080,7 +7239,7 @@ func TestWBLCorruption(t *testing.T) {
 	addSamples(310, 320, false)
 
 	// Verifying that we have data after corruption point.
-	require.NoError(t, db.head.wbl.Sync()) // syncing to make sure wbl is flushed in windows
+	require.NoError(t, db.head.wbl.Sync()) // Syncing to make sure wbl is flushed in windows.
 	files, err = os.ReadDir(db.head.wbl.Dir())
 	require.NoError(t, err)
 	require.Len(t, files, 3)
@@ -6167,6 +7326,8 @@ func testOOOMmapCorruption(t *testing.T, scenario sampleTypeScenario) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 10
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
+	opts.EnableNativeHistograms = true
+	opts.EnableOOONativeHistograms = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
@@ -6300,6 +7461,8 @@ func testOutOfOrderRuntimeConfig(t *testing.T, scenario sampleTypeScenario) {
 
 		opts := DefaultOptions()
 		opts.OutOfOrderTimeWindow = oooTimeWindow
+		opts.EnableNativeHistograms = true
+		opts.EnableOOONativeHistograms = true
 
 		db, err := Open(dir, nil, nil, opts, nil)
 		require.NoError(t, err)
@@ -6593,6 +7756,8 @@ func testNoGapAfterRestartWithOOO(t *testing.T, scenario sampleTypeScenario) {
 
 			opts := DefaultOptions()
 			opts.OutOfOrderTimeWindow = 30 * time.Minute.Milliseconds()
+			opts.EnableNativeHistograms = true
+			opts.EnableOOONativeHistograms = true
 
 			db, err := Open(dir, nil, nil, opts, nil)
 			require.NoError(t, err)
@@ -6651,6 +7816,8 @@ func testWblReplayAfterOOODisableAndRestart(t *testing.T, scenario sampleTypeSce
 
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
+	opts.EnableNativeHistograms = true
+	opts.EnableOOONativeHistograms = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
@@ -6718,6 +7885,8 @@ func testPanicOnApplyConfig(t *testing.T, scenario sampleTypeScenario) {
 
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
+	opts.EnableNativeHistograms = true
+	opts.EnableOOONativeHistograms = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
@@ -6775,6 +7944,8 @@ func testDiskFillingUpAfterDisablingOOO(t *testing.T, scenario sampleTypeScenari
 
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
+	opts.EnableNativeHistograms = true
+	opts.EnableOOONativeHistograms = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
@@ -7147,28 +8318,16 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 			createBlock(t, db.Dir(), series)
 
 			for _, s := range series {
-				key := s.Labels().String()
+				lbls := s.Labels().String()
+				slice := exp[lbls]
 				it = s.Iterator(it)
-				slice := exp[key]
-				for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
-					switch typ {
-					case chunkenc.ValFloat:
-						ts, v := it.At()
-						slice = append(slice, sample{t: ts, f: v})
-					case chunkenc.ValHistogram:
-						ts, h := it.AtHistogram(nil)
-						slice = append(slice, sample{t: ts, h: h})
-					case chunkenc.ValFloatHistogram:
-						ts, h := it.AtFloatHistogram(nil)
-						slice = append(slice, sample{t: ts, fh: h})
-					default:
-						t.Fatalf("unexpected sample value type %d", typ)
-					}
-				}
+				smpls, err := storage.ExpandSamples(it, nil)
+				require.NoError(t, err)
+				slice = append(slice, smpls...)
 				sort.Slice(slice, func(i, j int) bool {
 					return slice[i].T() < slice[j].T()
 				})
-				exp[key] = slice
+				exp[lbls] = slice
 			}
 		}
 
@@ -7201,10 +8360,10 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 		// due to origin from different overlapping chunks anymore.
 		for _, ss := range exp {
 			for i, s := range ss[1:] {
-				if s.H() != nil && ss[i].H() != nil && s.H().CounterResetHint == histogram.UnknownCounterReset {
+				if s.Type() == chunkenc.ValHistogram && ss[i].Type() == chunkenc.ValHistogram && s.H().CounterResetHint == histogram.UnknownCounterReset {
 					s.H().CounterResetHint = histogram.NotCounterReset
 				}
-				if s.FH() != nil && ss[i].FH() != nil && s.FH().CounterResetHint == histogram.UnknownCounterReset {
+				if s.Type() == chunkenc.ValFloatHistogram && ss[i].Type() == chunkenc.ValFloatHistogram && s.FH().CounterResetHint == histogram.UnknownCounterReset {
 					s.FH().CounterResetHint = histogram.NotCounterReset
 				}
 			}
@@ -7328,6 +8487,112 @@ func TestNativeHistogramFlag(t *testing.T) {
 	}, act)
 }
 
+func TestOOONativeHistogramFlag(t *testing.T) {
+	h := &histogram.Histogram{
+		Count:         9,
+		ZeroCount:     4,
+		ZeroThreshold: 0.001,
+		Sum:           35.5,
+		Schema:        1,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 2, Length: 2},
+		},
+		PositiveBuckets: []int64{1, 1, -1, 0},
+	}
+
+	l := labels.FromStrings("foo", "bar")
+
+	t.Run("Test OOO native histograms if OOO is disabled", func(t *testing.T) {
+		opts := DefaultOptions()
+		opts.OutOfOrderTimeWindow = 0
+		db := openTestDB(t, opts, []int64{100})
+		defer func() {
+			require.NoError(t, db.Close())
+		}()
+
+		// Enable Native Histograms and OOO Native Histogram ingestion
+		db.EnableNativeHistograms()
+		db.EnableOOONativeHistograms()
+
+		app := db.Appender(context.Background())
+		_, err := app.AppendHistogram(0, l, 100, h, nil)
+		require.NoError(t, err)
+
+		_, err = app.AppendHistogram(0, l, 50, h, nil)
+		require.NoError(t, err) // The OOO sample is not detected until it is committed, so no error is returned
+
+		require.NoError(t, app.Commit())
+
+		q, err := db.Querier(math.MinInt, math.MaxInt64)
+		require.NoError(t, err)
+		act := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+		require.Equal(t, map[string][]chunks.Sample{
+			l.String(): {sample{t: 100, h: h}},
+		}, act)
+	})
+	t.Run("Test OOO Native Histograms if Native Histograms are disabled", func(t *testing.T) {
+		opts := DefaultOptions()
+		opts.OutOfOrderTimeWindow = 100
+		db := openTestDB(t, opts, []int64{100})
+		defer func() {
+			require.NoError(t, db.Close())
+		}()
+
+		// Disable Native Histograms and enable OOO Native Histogram ingestion
+		db.DisableNativeHistograms()
+		db.EnableOOONativeHistograms()
+
+		// Attempt to add an in-order sample
+		app := db.Appender(context.Background())
+		_, err := app.AppendHistogram(0, l, 200, h, nil)
+		require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
+
+		// Attempt to add an OOO sample
+		_, err = app.AppendHistogram(0, l, 100, h, nil)
+		require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
+
+		require.NoError(t, app.Commit())
+
+		q, err := db.Querier(math.MinInt, math.MaxInt64)
+		require.NoError(t, err)
+		act := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+		require.Equal(t, map[string][]chunks.Sample{}, act)
+	})
+	t.Run("Test OOO native histograms when flag is enabled", func(t *testing.T) {
+		opts := DefaultOptions()
+		opts.OutOfOrderTimeWindow = 100
+		db := openTestDB(t, opts, []int64{100})
+		defer func() {
+			require.NoError(t, db.Close())
+		}()
+
+		// Enable Native Histograms and OOO Native Histogram ingestion
+		db.EnableNativeHistograms()
+		db.EnableOOONativeHistograms()
+
+		// Add in-order samples
+		app := db.Appender(context.Background())
+		_, err := app.AppendHistogram(0, l, 200, h, nil)
+		require.NoError(t, err)
+
+		// Add OOO samples
+		_, err = app.AppendHistogram(0, l, 100, h, nil)
+		require.NoError(t, err)
+		_, err = app.AppendHistogram(0, l, 150, h, nil)
+		require.NoError(t, err)
+
+		require.NoError(t, app.Commit())
+
+		q, err := db.Querier(math.MinInt, math.MaxInt64)
+		require.NoError(t, err)
+		act := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+		requireEqualSeries(t, map[string][]chunks.Sample{
+			l.String(): {sample{t: 100, h: h}, sample{t: 150, h: h}, sample{t: 200, h: h}},
+		}, act, true)
+	})
+}
+
 // compareSeries essentially replaces `require.Equal(t, expected, actual) in
 // situations where the actual series might contain more counter reset hints
 // "unknown" than the expected series. This can easily happen for long series
@@ -7343,29 +8608,47 @@ func compareSeries(t require.TestingT, expected, actual map[string][]chunks.Samp
 		// package.
 		require.Equal(t, expected, actual, "number of series differs")
 	}
-	for key, eSamples := range expected {
-		aSamples, ok := actual[key]
+	for key, expSamples := range expected {
+		actSamples, ok := actual[key]
 		if !ok {
 			require.Equal(t, expected, actual, "expected series %q not found", key)
 		}
-		if len(eSamples) != len(aSamples) {
-			require.Equal(t, eSamples, aSamples, "number of samples for series %q differs", key)
+		if len(expSamples) != len(actSamples) {
+			require.Equal(t, expSamples, actSamples, "number of samples for series %q differs", key)
 		}
-		for i, eS := range eSamples {
-			aS := aSamples[i]
-			aH, eH := aS.H(), eS.H()
-			aFH, eFH := aS.FH(), eS.FH()
-			switch {
-			case aH != nil && eH != nil && aH.CounterResetHint == histogram.UnknownCounterReset && eH.CounterResetHint != histogram.GaugeType:
-				eH = eH.Copy()
-				eH.CounterResetHint = histogram.UnknownCounterReset
-				eS = sample{t: eS.T(), h: eH}
-			case aFH != nil && eFH != nil && aFH.CounterResetHint == histogram.UnknownCounterReset && eFH.CounterResetHint != histogram.GaugeType:
-				eFH = eFH.Copy()
-				eFH.CounterResetHint = histogram.UnknownCounterReset
-				eS = sample{t: eS.T(), fh: eFH}
+
+		for i, eS := range expSamples {
+			aS := actSamples[i]
+
+			// Must use the interface as Equal does not work when actual types differ
+			// not only does the type differ, but chunk.Sample.FH() interface may auto convert from chunk.Sample.H()!
+			require.Equal(t, eS.T(), aS.T(), "timestamp of sample %d in series %q differs", i, key)
+
+			require.Equal(t, eS.Type(), aS.Type(), "type of sample %d in series %q differs", i, key)
+
+			switch eS.Type() {
+			case chunkenc.ValFloat:
+				require.Equal(t, eS.F(), aS.F(), "sample %d in series %q differs", i, key)
+			case chunkenc.ValHistogram:
+				eH, aH := eS.H(), aS.H()
+				if aH.CounterResetHint == histogram.UnknownCounterReset && aH.CounterResetHint != histogram.GaugeType {
+					eH = eH.Copy()
+					// It is always safe to set the counter reset hint to UnknownCounterReset
+					eH.CounterResetHint = histogram.UnknownCounterReset
+					eS = sample{t: eS.T(), h: eH}
+				}
+				require.Equal(t, eH, aH, "histogram sample %d in series %q differs", i, key)
+
+			case chunkenc.ValFloatHistogram:
+				eFH, aFH := eS.FH(), aS.FH()
+				if aFH.CounterResetHint == histogram.UnknownCounterReset && aFH.CounterResetHint != histogram.GaugeType {
+					eFH = eFH.Copy()
+					// It is always safe to set the counter reset hint to UnknownCounterReset
+					eFH.CounterResetHint = histogram.UnknownCounterReset
+					eS = sample{t: eS.T(), fh: eFH}
+				}
+				require.Equal(t, eFH, aFH, "float histogram sample %d in series %q differs", i, key)
 			}
-			require.Equal(t, eS, aS, "sample %d in series %q differs", i, key)
 		}
 	}
 }
@@ -7468,7 +8751,7 @@ func TestAbortBlockCompactions(t *testing.T) {
 	defer func() {
 		require.NoError(t, db.Close())
 	}()
-	// It should NOT be compactible at the beginning of the test
+	// It should NOT be compactable at the beginning of the test
 	require.False(t, db.head.compactable(), "head should NOT be compactable")
 
 	// Track the number of compactions run inside db.compactBlocks()
@@ -7478,7 +8761,7 @@ func TestAbortBlockCompactions(t *testing.T) {
 	db.compactor = &mockCompactorFn{
 		planFn: func() ([]string, error) {
 			// On every Plan() run increment compactions. After 4 compactions
-			// update HEAD to make it compactible to force an exit from db.compactBlocks() loop.
+			// update HEAD to make it compactable to force an exit from db.compactBlocks() loop.
 			compactions++
 			if compactions > 3 {
 				chunkRange := db.head.chunkRange.Load()
@@ -7507,7 +8790,7 @@ func TestNewCompactorFunc(t *testing.T) {
 	opts := DefaultOptions()
 	block1 := ulid.MustNew(1, nil)
 	block2 := ulid.MustNew(2, nil)
-	opts.NewCompactorFunc = func(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error) {
+	opts.NewCompactorFunc = func(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error) {
 		return &mockCompactorFn{
 			planFn: func() ([]string, error) {
 				return []string{block1.String(), block2.String()}, nil
@@ -7613,23 +8896,151 @@ func TestBlockQuerierAndBlockChunkQuerier(t *testing.T) {
 }
 
 func TestGenerateCompactionDelay(t *testing.T) {
-	assertDelay := func(delay time.Duration) {
+	assertDelay := func(delay time.Duration, expectedMaxPercentDelay int) {
 		t.Helper()
 		require.GreaterOrEqual(t, delay, time.Duration(0))
-		// Less than 10% of the chunkRange.
-		require.LessOrEqual(t, delay, 6000*time.Millisecond)
+		// Expect to generate a delay up to MaxPercentDelay of the head chunk range
+		require.LessOrEqual(t, delay, (time.Duration(60000*expectedMaxPercentDelay/100) * time.Millisecond))
 	}
 
 	opts := DefaultOptions()
-	opts.EnableDelayedCompaction = true
-	db := openTestDB(t, opts, []int64{60000})
-	defer func() {
-		require.NoError(t, db.Close())
-	}()
-	// The offset is generated and changed while opening.
-	assertDelay(db.opts.CompactionDelay)
+	cases := []struct {
+		compactionDelayPercent int
+	}{
+		{
+			compactionDelayPercent: 1,
+		},
+		{
+			compactionDelayPercent: 10,
+		},
+		{
+			compactionDelayPercent: 60,
+		},
+		{
+			compactionDelayPercent: 100,
+		},
+	}
 
-	for i := 0; i < 1000; i++ {
-		assertDelay(db.generateCompactionDelay())
+	opts.EnableDelayedCompaction = true
+
+	for _, c := range cases {
+		opts.CompactionDelayMaxPercent = c.compactionDelayPercent
+		db := openTestDB(t, opts, []int64{60000})
+		defer func() {
+			require.NoError(t, db.Close())
+		}()
+		// The offset is generated and changed while opening.
+		assertDelay(db.opts.CompactionDelay, c.compactionDelayPercent)
+
+		for i := 0; i < 1000; i++ {
+			assertDelay(db.generateCompactionDelay(), c.compactionDelayPercent)
+		}
+	}
+}
+
+type blockedResponseRecorder struct {
+	r *httptest.ResponseRecorder
+
+	// writeblocked is used to block writing until the test wants it to resume.
+	writeBlocked chan struct{}
+	// writeStarted is closed by blockedResponseRecorder to signal that writing has started.
+	writeStarted chan struct{}
+}
+
+func (br *blockedResponseRecorder) Write(buf []byte) (int, error) {
+	select {
+	case <-br.writeStarted:
+	default:
+		close(br.writeStarted)
+	}
+
+	<-br.writeBlocked
+	return br.r.Write(buf)
+}
+
+func (br *blockedResponseRecorder) Header() http.Header { return br.r.Header() }
+
+func (br *blockedResponseRecorder) WriteHeader(code int) { br.r.WriteHeader(code) }
+
+func (br *blockedResponseRecorder) Flush() { br.r.Flush() }
+
+// TestBlockClosingBlockedDuringRemoteRead ensures that a TSDB Block is not closed while it is being queried
+// through remote read. This is a regression test for https://github.com/prometheus/prometheus/issues/14422.
+// TODO: Ideally, this should reside in storage/remote/read_handler_test.go once the necessary TSDB utils are accessible there.
+func TestBlockClosingBlockedDuringRemoteRead(t *testing.T) {
+	dir := t.TempDir()
+
+	createBlock(t, dir, genSeries(2, 1, 0, 10))
+	db, err := Open(dir, nil, nil, nil, nil)
+	require.NoError(t, err)
+	// No error checking as manually closing the block is supposed to make this fail.
+	defer db.Close()
+
+	readAPI := remote.NewReadHandler(nil, nil, db, func() config.Config {
+		return config.Config{}
+	},
+		0, 1, 0,
+	)
+
+	matcher, err := labels.NewMatcher(labels.MatchRegexp, "__name__", ".*")
+	require.NoError(t, err)
+
+	query, err := remote.ToQuery(0, 10, []*labels.Matcher{matcher}, nil)
+	require.NoError(t, err)
+
+	req := &prompb.ReadRequest{
+		Queries:               []*prompb.Query{query},
+		AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
+	}
+	data, err := proto.Marshal(req)
+	require.NoError(t, err)
+
+	request, err := http.NewRequest(http.MethodPost, "", bytes.NewBuffer(snappy.Encode(nil, data)))
+	require.NoError(t, err)
+
+	blockedRecorder := &blockedResponseRecorder{
+		r:            httptest.NewRecorder(),
+		writeBlocked: make(chan struct{}),
+		writeStarted: make(chan struct{}),
+	}
+
+	readDone := make(chan struct{})
+	go func() {
+		readAPI.ServeHTTP(blockedRecorder, request)
+		require.Equal(t, http.StatusOK, blockedRecorder.r.Code)
+		close(readDone)
+	}()
+
+	// Wait for the read API to start streaming data.
+	<-blockedRecorder.writeStarted
+
+	// Try to close the queried block.
+	blockClosed := make(chan struct{})
+	go func() {
+		for _, block := range db.Blocks() {
+			block.Close()
+		}
+		close(blockClosed)
+	}()
+
+	// Closing the queried block should block.
+	// Wait a little bit to make sure of that.
+	select {
+	case <-time.After(100 * time.Millisecond):
+	case <-readDone:
+		require.Fail(t, "read API should still be streaming data.")
+	case <-blockClosed:
+		require.Fail(t, "Block shouldn't get closed while being queried.")
+	}
+
+	// Resume the read API data streaming.
+	close(blockedRecorder.writeBlocked)
+	<-readDone
+
+	// The block should be no longer needed and closing it should end.
+	select {
+	case <-time.After(10 * time.Millisecond):
+		require.Fail(t, "Closing the block timed out.")
+	case <-blockClosed:
 	}
 }

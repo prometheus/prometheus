@@ -421,6 +421,25 @@ eval instant at 50m histogram_quantile(0.5, rate(request_duration_seconds_bucket
 eval instant at 50m sum(request_duration_seconds)
 	{} {{schema:-53 count:250 custom_values:[0.1 0.2] buckets:[100 90 60]}}
 
+eval instant at 50m sum(request_duration_seconds{job="job1",instance="ins1"} + ignoring(job,instance) request_duration_seconds{job="job1",instance="ins2"} + ignoring(job,instance) request_duration_seconds{job="job2",instance="ins1"} + ignoring(job,instance) request_duration_seconds{job="job2",instance="ins2"})
+	{} {{schema:-53 count:250 custom_values:[0.1 0.2] buckets:[100 90 60]}}
+
+eval instant at 50m avg(request_duration_seconds)
+	{} {{schema:-53 count:62.5 custom_values:[0.1 0.2] buckets:[25 22.5 15]}}
+
+# To verify the result above, calculate from classic histogram as well.
+eval instant at 50m avg (request_duration_seconds_bucket{le="0.1"})
+	{} 25
+
+eval instant at 50m avg (request_duration_seconds_bucket{le="0.2"}) - avg (request_duration_seconds_bucket{le="0.1"})
+	{} 22.5
+
+eval instant at 50m avg (request_duration_seconds_bucket{le="+Inf"}) - avg (request_duration_seconds_bucket{le="0.2"})
+	{} 15
+
+eval instant at 50m count(request_duration_seconds)
+	{} 4
+
 # A histogram with nonmonotonic bucket counts. This may happen when recording
 # rule evaluation or federation races scrape ingestion, causing some buckets
 # counts to be derived from fewer samples.
@@ -504,3 +523,36 @@ eval instant at 5m histogram_quantile(1.0, sum by (le) (rate(const_histogram_buc
 
 eval instant at 5m histogram_quantile(1.0, sum(rate(const_histogram[5m])))
     {} NaN
+
+load_with_nhcb 1m
+    histogram_over_time_bucket{le="0"} 0 1 3 9
+    histogram_over_time_bucket{le="1"} 2 3 3 9
+    histogram_over_time_bucket{le="2"} 3 8 5 10
+    histogram_over_time_bucket{le="4"} 3 10 6 18
+
+# Test custom buckets with sum_over_time, avg_over_time.
+eval instant at 3m sum_over_time(histogram_over_time[4m:1m])
+    {} {{schema:-53 count:37 custom_values:[0 1 2 4] buckets:[13 4 9 11]}}
+
+eval instant at 3m avg_over_time(histogram_over_time[4m:1m])
+    {} {{schema:-53 count:9.25 custom_values:[0 1 2 4] buckets:[3.25 1 2.25 2.75]}}
+
+# Test custom buckets with counter reset
+load_with_nhcb 5m
+    histogram_with_reset_bucket{le="1"} 1  3  9
+    histogram_with_reset_bucket{le="2"} 3  3  9
+    histogram_with_reset_bucket{le="4"} 8  5 12
+    histogram_with_reset_bucket{le="8"} 10  6 18
+    histogram_with_reset_sum{}          36 16 61
+
+eval instant at 10m increase(histogram_with_reset[15m])
+    {} {{schema:-53 count:27 sum:91.5 custom_values:[1 2 4 8] counter_reset_hint:gauge buckets:[13.5 0 4.5 9]}}
+
+eval instant at 10m resets(histogram_with_reset[15m])
+     {} 1
+
+eval instant at 10m histogram_count(increase(histogram_with_reset[15m]))
+     {} 27
+
+eval instant at 10m histogram_sum(increase(histogram_with_reset[15m]))
+     {} 91.5

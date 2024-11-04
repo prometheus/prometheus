@@ -17,14 +17,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"strconv"
 	"strings"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
@@ -44,14 +44,14 @@ type Pod struct {
 	nodeInf          cache.SharedInformer
 	withNodeMetadata bool
 	store            cache.Store
-	logger           log.Logger
+	logger           *slog.Logger
 	queue            *workqueue.Type
 }
 
 // NewPod creates a new pod discovery.
-func NewPod(l log.Logger, pods cache.SharedIndexInformer, nodes cache.SharedInformer, eventCount *prometheus.CounterVec) *Pod {
+func NewPod(l *slog.Logger, pods cache.SharedIndexInformer, nodes cache.SharedInformer, eventCount *prometheus.CounterVec) *Pod {
 	if l == nil {
-		l = log.NewNopLogger()
+		l = promslog.NewNopLogger()
 	}
 
 	podAddCount := eventCount.WithLabelValues(RolePod.String(), MetricLabelRoleAdd)
@@ -81,7 +81,7 @@ func NewPod(l log.Logger, pods cache.SharedIndexInformer, nodes cache.SharedInfo
 		},
 	})
 	if err != nil {
-		level.Error(l).Log("msg", "Error adding pods event handler.", "err", err)
+		l.Error("Error adding pods event handler.", "err", err)
 	}
 
 	if p.withNodeMetadata {
@@ -95,12 +95,15 @@ func NewPod(l log.Logger, pods cache.SharedIndexInformer, nodes cache.SharedInfo
 				p.enqueuePodsForNode(node.Name)
 			},
 			DeleteFunc: func(o interface{}) {
-				node := o.(*apiv1.Node)
-				p.enqueuePodsForNode(node.Name)
+				nodeName, err := nodeName(o)
+				if err != nil {
+					l.Error("Error getting Node name", "err", err)
+				}
+				p.enqueuePodsForNode(nodeName)
 			},
 		})
 		if err != nil {
-			level.Error(l).Log("msg", "Error adding pods event handler.", "err", err)
+			l.Error("Error adding pods event handler.", "err", err)
 		}
 	}
 
@@ -127,7 +130,7 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 
 	if !cache.WaitForCacheSync(ctx.Done(), cacheSyncs...) {
 		if !errors.Is(ctx.Err(), context.Canceled) {
-			level.Error(p.logger).Log("msg", "pod informer unable to sync cache")
+			p.logger.Error("pod informer unable to sync cache")
 		}
 		return
 	}
@@ -164,7 +167,7 @@ func (p *Pod) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool 
 	}
 	pod, err := convertToPod(o)
 	if err != nil {
-		level.Error(p.logger).Log("msg", "converting to Pod object failed", "err", err)
+		p.logger.Error("converting to Pod object failed", "err", err)
 		return true
 	}
 	send(ctx, ch, p.buildPod(pod))
@@ -246,7 +249,7 @@ func (p *Pod) findPodContainerStatus(statuses *[]apiv1.ContainerStatus, containe
 func (p *Pod) findPodContainerID(statuses *[]apiv1.ContainerStatus, containerName string) string {
 	cStatus, err := p.findPodContainerStatus(statuses, containerName)
 	if err != nil {
-		level.Debug(p.logger).Log("msg", "cannot find container ID", "err", err)
+		p.logger.Debug("cannot find container ID", "err", err)
 		return ""
 	}
 	return cStatus.ContainerID
@@ -315,7 +318,7 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 func (p *Pod) enqueuePodsForNode(nodeName string) {
 	pods, err := p.podInf.GetIndexer().ByIndex(nodeIndex, nodeName)
 	if err != nil {
-		level.Error(p.logger).Log("msg", "Error getting pods for node", "node", nodeName, "err", err)
+		p.logger.Error("Error getting pods for node", "node", nodeName, "err", err)
 		return
 	}
 

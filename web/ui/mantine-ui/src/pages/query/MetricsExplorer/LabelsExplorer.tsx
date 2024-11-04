@@ -21,6 +21,7 @@ import {
   Skeleton,
   Stack,
   Table,
+  rem,
 } from "@mantine/core";
 import { escapeString } from "../../../lib/escapeString";
 import serializeNode from "../../../promql/serialize";
@@ -37,6 +38,7 @@ import {
 } from "@tabler/icons-react";
 import { formatNode } from "../../../promql/format";
 import classes from "./LabelsExplorer.module.css";
+import { buttonIconStyle } from "../../../styles";
 
 type LabelsExplorerProps = {
   metricName: string;
@@ -150,7 +152,7 @@ const LabelsExplorer: FC<LabelsExplorerProps> = ({
       <Alert
         color="red"
         title="Error querying series"
-        icon={<IconAlertTriangle size={14} />}
+        icon={<IconAlertTriangle />}
       >
         <strong>Error:</strong> {error.message}
       </Alert>
@@ -177,7 +179,7 @@ const LabelsExplorer: FC<LabelsExplorerProps> = ({
               variant="light"
               size="xs"
               onClick={() => insertText(serializeNode(selector))}
-              leftSection={<IconCodePlus size={18} />}
+              leftSection={<IconCodePlus style={buttonIconStyle} />}
               title="Insert selector at cursor and close explorer"
             >
               Insert
@@ -188,7 +190,11 @@ const LabelsExplorer: FC<LabelsExplorerProps> = ({
                   variant="light"
                   size="xs"
                   leftSection={
-                    copied ? <IconCheck size={18} /> : <IconCopy size={18} />
+                    copied ? (
+                      <IconCheck style={buttonIconStyle} />
+                    ) : (
+                      <IconCopy style={buttonIconStyle} />
+                    )
                   }
                   onClick={copy}
                   title="Copy selector to clipboard"
@@ -228,7 +234,7 @@ const LabelsExplorer: FC<LabelsExplorerProps> = ({
             variant="light"
             size="xs"
             onClick={hideLabelsExplorer}
-            leftSection={<IconArrowLeft size={18} />}
+            leftSection={<IconArrowLeft style={buttonIconStyle} />}
           >
             Back to all metrics
           </Button>
@@ -321,7 +327,9 @@ const LabelsExplorer: FC<LabelsExplorerProps> = ({
                             title="Cancel"
                             style={{ flexShrink: 0 }}
                           >
-                            <IconX size={18} />
+                            <IconX
+                              style={{ width: rem(18), height: rem(18) }}
+                            />
                           </Button>
                         </Group>
                       ) : (

@@ -3,6 +3,7 @@ import { IconSettings } from "@tabler/icons-react";
 import { FC } from "react";
 import { useAppDispatch } from "../state/hooks";
 import { updateSettings, useSettings } from "../state/settingsSlice";
+import { actionIconStyle } from "../styles";
 
 const SettingsMenu: FC = () => {
   const {
@@ -18,8 +19,13 @@ const SettingsMenu: FC = () => {
   return (
     <Popover position="bottom" withArrow shadow="md">
       <Popover.Target>
-        <ActionIcon color="gray" aria-label="Settings" size={32}>
-          <IconSettings size={20} />
+        <ActionIcon
+          color="gray"
+          title="Settings"
+          aria-label="Settings"
+          size={32}
+        >
+          <IconSettings style={actionIconStyle} />
         </ActionIcon>
       </Popover.Target>
       <Popover.Dropdown>

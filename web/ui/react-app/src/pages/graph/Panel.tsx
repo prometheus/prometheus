@@ -136,7 +136,7 @@ class Panel extends Component<PanelProps, PanelState> {
     this.abortInFlightFetch = () => abortController.abort();
     this.setState({ loading: true });
 
-    const endTime = this.getEndTime().valueOf() / 1000; // TODO: shouldn't valueof only work when it's a moment?
+    const endTime = this.getEndTime().valueOf() / 1000; // TODO: shouldn't valueOf only work when it's a moment?
     const startTime = endTime - this.props.options.range / 1000;
     const resolution = this.props.options.resolution || Math.max(Math.floor(this.props.options.range / 250000), 1);
     const params: URLSearchParams = new URLSearchParams({

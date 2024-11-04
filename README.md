@@ -115,7 +115,7 @@ The Makefile provides several targets:
 
 Prometheus is bundled with many service discovery plugins.
 When building Prometheus from source, you can edit the [plugins.yml](./plugins.yml)
-file to disable some service discoveries. The file is a yaml-formated list of go
+file to disable some service discoveries. The file is a yaml-formatted list of go
 import path that will be built into the Prometheus binary.
 
 After you have changed the file, you

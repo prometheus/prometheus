@@ -1,8 +1,10 @@
-import { Card, Group, Stack, Table, Text } from "@mantine/core";
+import { Table } from "@mantine/core";
 import { useSuspenseAPIQuery } from "../api/api";
 import { IconRun, IconWall } from "@tabler/icons-react";
 import { formatTimestamp } from "../lib/formatTime";
 import { useSettings } from "../state/settingsSlice";
+import InfoPageCard from "../components/InfoPageCard";
+import InfoPageStack from "../components/InfoPageStack";
 
 export default function StatusPage() {
   const { data: buildinfo } = useSuspenseAPIQuery<Record<string, string>>({
@@ -42,14 +44,8 @@ export default function StatusPage() {
   };
 
   return (
-    <Stack gap="lg" maw={1000} mx="auto" mt="xs">
-      <Card shadow="xs" withBorder p="md">
-        <Group wrap="nowrap" align="center" ml="xs" mb="sm" gap="xs">
-          <IconWall size={22} />
-          <Text fz="xl" fw={600}>
-            Build information
-          </Text>
-        </Group>
+    <InfoPageStack>
+      <InfoPageCard title="Build information" icon={IconWall}>
         <Table layout="fixed">
           <Table.Tbody>
             {Object.entries(buildinfo.data).map(([k, v]) => (
@@ -60,14 +56,8 @@ export default function StatusPage() {
             ))}
           </Table.Tbody>
         </Table>
-      </Card>
-      <Card shadow="xs" withBorder p="md">
-        <Group wrap="nowrap" align="center" ml="xs" mb="sm" gap="xs">
-          <IconRun size={22} />
-          <Text fz="xl" fw={600}>
-            Runtime information
-          </Text>
-        </Group>
+      </InfoPageCard>
+      <InfoPageCard title="Runtime information" icon={IconRun}>
         <Table layout="fixed">
           <Table.Tbody>
             {Object.entries(runtimeinfo.data).map(([k, v]) => {
@@ -84,7 +74,7 @@ export default function StatusPage() {
             })}
           </Table.Tbody>
         </Table>
-      </Card>
-    </Stack>
+      </InfoPageCard>
+    </InfoPageStack>
   );
 }

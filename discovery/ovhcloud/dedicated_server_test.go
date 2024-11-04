@@ -21,8 +21,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 )
@@ -41,7 +41,7 @@ application_secret: %s
 consumer_key: %s`, mock.URL, ovhcloudApplicationKeyTest, ovhcloudApplicationSecretTest, ovhcloudConsumerKeyTest)
 
 	require.NoError(t, yaml.UnmarshalStrict([]byte(cfgString), &cfg))
-	d, err := newRefresher(&cfg, log.NewNopLogger())
+	d, err := newRefresher(&cfg, promslog.NewNopLogger())
 	require.NoError(t, err)
 	ctx := context.Background()
 	targetGroups, err := d.refresh(ctx)

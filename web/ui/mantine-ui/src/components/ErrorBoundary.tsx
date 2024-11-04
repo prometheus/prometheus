@@ -32,7 +32,7 @@ class ErrorBoundary extends Component<Props, State> {
         <Alert
           color="red"
           title={this.props.title || "Error querying page data"}
-          icon={<IconAlertTriangle size={14} />}
+          icon={<IconAlertTriangle />}
           maw={500}
           mx="auto"
           mt="lg"

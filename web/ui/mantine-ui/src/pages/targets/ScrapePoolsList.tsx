@@ -39,6 +39,7 @@ import TargetLabels from "./TargetLabels";
 import { useDebouncedValue } from "@mantine/hooks";
 import { targetPoolDisplayLimit } from "./TargetsPage";
 import { BooleanParam, useQueryParam, withDefault } from "use-query-params";
+import { badgeIconStyle } from "../../styles";
 
 type ScrapePool = {
   targets: Target[];
@@ -194,10 +195,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
   return (
     <Stack>
       {allPoolNames.length === 0 ? (
-        <Alert
-          title="No scrape pools found"
-          icon={<IconInfoCircle size={14} />}
-        >
+        <Alert title="No scrape pools found" icon={<IconInfoCircle />}>
           No scrape pools found.
         </Alert>
       ) : (
@@ -205,7 +203,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
         allPoolNames.length !== shownPoolNames.length && (
           <Alert
             title="Hiding pools with no matching targets"
-            icon={<IconInfoCircle size={14} />}
+            icon={<IconInfoCircle />}
           >
             Hiding {allPoolNames.length - shownPoolNames.length} empty pools due
             to filters or no targets.
@@ -218,7 +216,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
       {showLimitAlert && (
         <Alert
           title="Found many pools, showing only one"
-          icon={<IconInfoCircle size={14} />}
+          icon={<IconInfoCircle />}
           withCloseButton
           onClose={() => dispatch(setShowLimitAlert(false))}
         >
@@ -307,10 +305,9 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                       <Table>
                         <Table.Thead>
                           <Table.Tr>
-                            <Table.Th w="30%">Endpoint</Table.Th>
+                            <Table.Th w="25%">Endpoint</Table.Th>
                             <Table.Th>Labels</Table.Th>
-                            <Table.Th w="10%">Last scrape</Table.Th>
-                            {/* <Table.Th w="10%">Scrape duration</Table.Th> */}
+                            <Table.Th w={230}>Last scrape</Table.Th>
                             <Table.Th w={100}>State</Table.Th>
                           </Table.Tr>
                         </Table.Thead>
@@ -339,23 +336,20 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                                   />
                                 </Table.Td>
                                 <Table.Td valign="top">
-                                  <Group
-                                    gap="xs"
-                                    wrap="wrap"
-                                    justify="space-between"
-                                  >
+                                  <Group gap="xs" wrap="wrap">
                                     <Tooltip
                                       label="Last target scrape"
                                       withArrow
                                     >
                                       <Badge
-                                        w="max-content"
                                         variant="light"
                                         className={badgeClasses.statsBadge}
                                         styles={{
                                           label: { textTransform: "none" },
                                         }}
-                                        leftSection={<IconRefresh size={12} />}
+                                        leftSection={
+                                          <IconRefresh style={badgeIconStyle} />
+                                        }
                                       >
                                         {humanizeDurationRelative(
                                           target.lastScrape,
@@ -369,14 +363,15 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                                       withArrow
                                     >
                                       <Badge
-                                        w="max-content"
                                         variant="light"
                                         className={badgeClasses.statsBadge}
                                         styles={{
                                           label: { textTransform: "none" },
                                         }}
                                         leftSection={
-                                          <IconHourglass size={12} />
+                                          <IconHourglass
+                                            style={badgeIconStyle}
+                                          />
                                         }
                                       >
                                         {humanizeDuration(
@@ -388,7 +383,6 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                                 </Table.Td>
                                 <Table.Td valign="top">
                                   <Badge
-                                    w="max-content"
                                     className={healthBadgeClass(target.health)}
                                   >
                                     {target.health}
@@ -401,7 +395,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                                     <Alert
                                       color="red"
                                       mb="sm"
-                                      icon={<IconAlertTriangle size={14} />}
+                                      icon={<IconAlertTriangle />}
                                     >
                                       <strong>Error scraping target:</strong>{" "}
                                       {target.lastError}

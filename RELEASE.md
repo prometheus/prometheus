@@ -59,6 +59,7 @@ Release cadence of first pre-releases being cut is 6 weeks.
 | v2.52          | 2024-04-22                                 | Arthur Silva Sens (GitHub: @ArthurSens)     |
 | v2.53 LTS      | 2024-06-03                                 | George Krajcsovits (GitHub: @krajorama)     |
 | v2.54          | 2024-07-17                                 | Bryan Boreham (GitHub: @bboreham)           |
+| v2.55          | 2024-09-17                                 | Bryan Boreham (GitHub: @bboreham)           |
 
 If you are interested in volunteering please create a pull request against the [prometheus/prometheus](https://github.com/prometheus/prometheus) repository and propose yourself for the release series of your choice.
 

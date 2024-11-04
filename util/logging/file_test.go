@@ -34,12 +34,13 @@ func TestJSONFileLogger_basic(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, l, "logger can't be nil")
 
-	err = l.Log("test", "yes")
+	l.Info("test", "hello", "world")
 	require.NoError(t, err)
 	r := make([]byte, 1024)
 	_, err = f.Read(r)
 	require.NoError(t, err)
-	result, err := regexp.Match(`^{"test":"yes","ts":"[^"]+"}\n`, r)
+
+	result, err := regexp.Match(`^{"time":"[^"]+","level":"INFO","source":\{.+\},"msg":"test","hello":"world"}\n`, r)
 	require.NoError(t, err)
 	require.True(t, result, "unexpected content: %s", r)
 
@@ -63,14 +64,14 @@ func TestJSONFileLogger_parallel(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, l, "logger can't be nil")
 
-	err = l.Log("test", "yes")
+	l.Info("test", "hello", "world")
 	require.NoError(t, err)
 
 	l2, err := NewJSONFileLogger(f.Name())
 	require.NoError(t, err)
 	require.NotNil(t, l, "logger can't be nil")
 
-	err = l2.Log("test", "yes")
+	l2.Info("test", "hello", "world")
 	require.NoError(t, err)
 
 	err = l.Close()

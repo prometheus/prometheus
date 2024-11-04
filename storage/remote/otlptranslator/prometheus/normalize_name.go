@@ -17,9 +17,12 @@
 package prometheus
 
 import (
+	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 
+	"github.com/prometheus/prometheus/util/strutil"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 )
 
@@ -84,24 +87,27 @@ var perUnitMap = map[string]string{
 //
 // See rules at https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels,
 // https://prometheus.io/docs/practices/naming/#metric-and-label-naming
-// and https://github.com/open-telemetry/opentelemetry-specification/blob/v1.33.0/specification/compatibility/prometheus_and_openmetrics.md#otlp-metric-points-to-prometheus.
+// and https://github.com/open-telemetry/opentelemetry-specification/blob/v1.38.0/specification/compatibility/prometheus_and_openmetrics.md#otlp-metric-points-to-prometheus.
 func BuildCompliantName(metric pmetric.Metric, namespace string, addMetricSuffixes bool) string {
-	var metricName string
-
 	// Full normalization following standard Prometheus naming conventions
 	if addMetricSuffixes {
 		return normalizeName(metric, namespace)
 	}
 
-	// Simple case (no full normalization, no units, etc.), we simply trim out forbidden chars
-	metricName = RemovePromForbiddenRunes(metric.Name())
+	// Regexp for metric name characters that should be replaced with _.
+	invalidMetricCharRE := regexp.MustCompile(`[^a-zA-Z0-9:_]`)
+
+	// Simple case (no full normalization, no units, etc.).
+	metricName := strings.Join(strings.FieldsFunc(metric.Name(), func(r rune) bool {
+		return invalidMetricCharRE.MatchString(string(r))
+	}), "_")
 
 	// Namespace?
 	if namespace != "" {
 		return namespace + "_" + metricName
 	}
 
-	// Metric name starts with a digit? Prefix it with an underscore
+	// Metric name starts with a digit? Prefix it with an underscore.
 	if metricName != "" && unicode.IsDigit(rune(metricName[0])) {
 		metricName = "_" + metricName
 	}
@@ -109,12 +115,17 @@ func BuildCompliantName(metric pmetric.Metric, namespace string, addMetricSuffix
 	return metricName
 }
 
-// Build a normalized name for the specified metric
+// Build a normalized name for the specified metric.
 func normalizeName(metric pmetric.Metric, namespace string) string {
-	// Split metric name into "tokens" (remove all non-alphanumerics)
+	// Regexp for characters that can't be in a metric name token.
+	nonTokenMetricCharRE := regexp.MustCompile(`[^a-zA-Z0-9:]`)
+
+	// Split metric name into "tokens" (of supported metric name runes).
+	// Note that this has the side effect of replacing multiple consecutive underscores with a single underscore.
+	// This is part of the OTel to Prometheus specification: https://github.com/open-telemetry/opentelemetry-specification/blob/v1.38.0/specification/compatibility/prometheus_and_openmetrics.md#otlp-metric-points-to-prometheus.
 	nameTokens := strings.FieldsFunc(
 		metric.Name(),
-		func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) },
+		func(r rune) bool { return nonTokenMetricCharRE.MatchString(string(r)) },
 	)
 
 	// Split unit at the '/' if any
@@ -123,11 +134,12 @@ func normalizeName(metric pmetric.Metric, namespace string) string {
 	// Main unit
 	// Append if not blank, doesn't contain '{}', and is not present in metric name already
 	if len(unitTokens) > 0 {
+		var mainUnitProm, perUnitProm string
 		mainUnitOTel := strings.TrimSpace(unitTokens[0])
 		if mainUnitOTel != "" && !strings.ContainsAny(mainUnitOTel, "{}") {
-			mainUnitProm := CleanUpString(unitMapGetOrDefault(mainUnitOTel))
-			if mainUnitProm != "" && !contains(nameTokens, mainUnitProm) {
-				nameTokens = append(nameTokens, mainUnitProm)
+			mainUnitProm = cleanUpUnit(unitMapGetOrDefault(mainUnitOTel))
+			if slices.Contains(nameTokens, mainUnitProm) {
+				mainUnitProm = ""
 			}
 		}
 
@@ -136,13 +148,26 @@ func normalizeName(metric pmetric.Metric, namespace string) string {
 		if len(unitTokens) > 1 && unitTokens[1] != "" {
 			perUnitOTel := strings.TrimSpace(unitTokens[1])
 			if perUnitOTel != "" && !strings.ContainsAny(perUnitOTel, "{}") {
-				perUnitProm := CleanUpString(perUnitMapGetOrDefault(perUnitOTel))
-				if perUnitProm != "" && !contains(nameTokens, perUnitProm) {
-					nameTokens = append(nameTokens, "per", perUnitProm)
+				perUnitProm = cleanUpUnit(perUnitMapGetOrDefault(perUnitOTel))
+			}
+			if perUnitProm != "" {
+				perUnitProm = "per_" + perUnitProm
+				if slices.Contains(nameTokens, perUnitProm) {
+					perUnitProm = ""
 				}
 			}
 		}
 
+		if perUnitProm != "" {
+			mainUnitProm = strings.TrimSuffix(mainUnitProm, "_")
+		}
+
+		if mainUnitProm != "" {
+			nameTokens = append(nameTokens, mainUnitProm)
+		}
+		if perUnitProm != "" {
+			nameTokens = append(nameTokens, perUnitProm)
+		}
 	}
 
 	// Append _total for Counters
@@ -235,13 +260,15 @@ func removeSuffix(tokens []string, suffix string) []string {
 	return tokens
 }
 
-// Clean up specified string so it's Prometheus compliant
-func CleanUpString(s string) string {
-	return strings.Join(strings.FieldsFunc(s, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }), "_")
-}
-
-func RemovePromForbiddenRunes(s string) string {
-	return strings.Join(strings.FieldsFunc(s, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != ':' }), "_")
+// cleanUpUnit cleans up unit so it matches model.LabelNameRE.
+func cleanUpUnit(unit string) string {
+	// Multiple consecutive underscores are replaced with a single underscore.
+	// This is part of the OTel to Prometheus specification: https://github.com/open-telemetry/opentelemetry-specification/blob/v1.38.0/specification/compatibility/prometheus_and_openmetrics.md#otlp-metric-points-to-prometheus.
+	multipleUnderscoresRE := regexp.MustCompile(`__+`)
+	return strings.TrimPrefix(multipleUnderscoresRE.ReplaceAllString(
+		strutil.SanitizeLabelName(unit),
+		"_",
+	), "_")
 }
 
 // Retrieve the Prometheus "basic" unit corresponding to the specified "basic" unit
@@ -260,16 +287,6 @@ func perUnitMapGetOrDefault(perUnit string) string {
 		return promPerUnit
 	}
 	return perUnit
-}
-
-// Returns whether the slice contains the specified value
-func contains(slice []string, value string) bool {
-	for _, sliceEntry := range slice {
-		if sliceEntry == value {
-			return true
-		}
-	}
-	return false
 }
 
 // Remove the specified value from the slice

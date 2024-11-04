@@ -17,13 +17,16 @@
 package textparse
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"math"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -72,15 +75,16 @@ func (l *openMetricsLexer) Error(es string) {
 // OpenMetrics text exposition format.
 // This is based on the working draft https://docs.google.com/document/u/1/d/1KwV0mAXwwbvvifBvDKH_LU1YjyXE_wxCkHNoCGq1GX0/edit
 type OpenMetricsParser struct {
-	l       *openMetricsLexer
-	builder labels.ScratchBuilder
-	series  []byte
-	text    []byte
-	mtype   model.MetricType
-	val     float64
-	ts      int64
-	hasTS   bool
-	start   int
+	l         *openMetricsLexer
+	builder   labels.ScratchBuilder
+	series    []byte
+	mfNameLen int // length of metric family name to get from series.
+	text      []byte
+	mtype     model.MetricType
+	val       float64
+	ts        int64
+	hasTS     bool
+	start     int
 	// offsets is a list of offsets into series that describe the positions
 	// of the metric name and label names and values for this series.
 	// p.offsets[0] is the start character of the metric name.
@@ -95,7 +99,15 @@ type OpenMetricsParser struct {
 	exemplarTs    int64
 	hasExemplarTs bool
 
-	skipCTSeries bool
+	// Created timestamp parsing state.
+	ct        int64
+	ctHashSet uint64
+	// ignoreExemplar instructs the parser to not overwrite exemplars (to keep them while peeking ahead).
+	ignoreExemplar bool
+	// visitedMFName is the metric family name of the last visited metric when peeking ahead
+	// for _created series during the execution of the CreatedTimestamp method.
+	visitedMFName []byte
+	skipCTSeries  bool
 }
 
 type openMetricsParserOptions struct {
@@ -201,7 +213,7 @@ func (p *OpenMetricsParser) Metric(l *labels.Labels) string {
 		label := unreplace(s[a:b])
 		c := p.offsets[i+2] - p.start
 		d := p.offsets[i+3] - p.start
-		value := unreplace(s[c:d])
+		value := normalizeFloatsInLabelValues(p.mtype, label, unreplace(s[c:d]))
 
 		p.builder.Add(label, value)
 	}
@@ -252,87 +264,144 @@ func (p *OpenMetricsParser) Exemplar(e *exemplar.Exemplar) bool {
 // CreatedTimestamp returns the created timestamp for a current Metric if exists or nil.
 // NOTE(Maniktherana): Might use additional CPU/mem resources due to deep copy of parser required for peeking given 1.0 OM specification on _created series.
 func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
-	if !TypeRequiresCT(p.mtype) {
+	if !typeRequiresCT(p.mtype) {
 		// Not a CT supported metric type, fast path.
+		p.ctHashSet = 0 // Use ctHashSet as a single way of telling "empty cache"
 		return nil
 	}
 
 	var (
-		currLset                labels.Labels
-		buf                     []byte
-		peekWithoutNameLsetHash uint64
+		buf      []byte
+		currName []byte
 	)
-	p.Metric(&currLset)
-	currFamilyLsetHash, buf := currLset.HashWithoutLabels(buf, labels.MetricName, "le", "quantile")
-	// Search for the _created line for the currFamilyLsetHash using ephemeral parser until
-	// we see EOF or new metric family. We have to do it as we don't know where (and if)
-	// that CT line is.
-	// TODO(bwplotka): Make sure OM 1.1/2.0 pass CT via metadata or exemplar-like to avoid this.
-	peek := deepCopy(p)
-	for {
-		eType, err := peek.Next()
-		if err != nil {
-			// This means peek will give error too later on, so def no CT line found.
-			// This might result in partial scrape with wrong/missing CT, but only
-			// spec improvement would help.
-			// TODO(bwplotka): Make sure OM 1.1/2.0 pass CT via metadata or exemplar-like to avoid this.
-			return nil
-		}
-		if eType != EntrySeries {
-			// Assume we hit different family, no CT line found.
-			return nil
-		}
-
-		var peekedLset labels.Labels
-		peek.Metric(&peekedLset)
-		peekedName := peekedLset.Get(model.MetricNameLabel)
-		if !strings.HasSuffix(peekedName, "_created") {
-			// Not a CT line, search more.
-			continue
-		}
-
-		// We got a CT line here, but let's search if CT line is actually for our series, edge case.
-		peekWithoutNameLsetHash, _ = peekedLset.HashWithoutLabels(buf, labels.MetricName, "le", "quantile")
-		if peekWithoutNameLsetHash != currFamilyLsetHash {
-			// CT line for a different series, for our series no CT.
-			return nil
-		}
-		ct := int64(peek.val)
-		return &ct
+	if len(p.series) > 1 && p.series[0] == '{' && p.series[1] == '"' {
+		// special case for UTF-8 encoded metric family names.
+		currName = p.series[p.offsets[0]-p.start : p.mfNameLen+2]
+	} else {
+		currName = p.series[p.offsets[0]-p.start : p.mfNameLen]
 	}
-}
 
-// TypeRequiresCT returns true if the metric type requires a _created timestamp.
-func TypeRequiresCT(t model.MetricType) bool {
-	switch t {
-	case model.MetricTypeCounter, model.MetricTypeSummary, model.MetricTypeHistogram:
-		return true
-	default:
-		return false
+	currHash := p.seriesHash(&buf, currName)
+	// Check cache, perhaps we fetched something already.
+	if currHash == p.ctHashSet && p.ct > 0 {
+		return &p.ct
 	}
-}
 
-// deepCopy creates a copy of a parser without re-using the slices' original memory addresses.
-func deepCopy(p *OpenMetricsParser) OpenMetricsParser {
-	newB := make([]byte, len(p.l.b))
-	copy(newB, p.l.b)
-
-	newLexer := &openMetricsLexer{
-		b:     newB,
+	// Create a new lexer to reset the parser once this function is done executing.
+	resetLexer := &openMetricsLexer{
+		b:     p.l.b,
 		i:     p.l.i,
 		start: p.l.start,
 		err:   p.l.err,
 		state: p.l.state,
 	}
 
-	newParser := OpenMetricsParser{
-		l:            newLexer,
-		builder:      p.builder,
-		mtype:        p.mtype,
-		val:          p.val,
-		skipCTSeries: false,
+	p.skipCTSeries = false
+
+	p.ignoreExemplar = true
+	savedStart := p.start
+	defer func() {
+		p.ignoreExemplar = false
+		p.start = savedStart
+		p.l = resetLexer
+	}()
+
+	for {
+		eType, err := p.Next()
+		if err != nil {
+			// This means p.Next() will give error too later on, so def no CT line found.
+			// This might result in partial scrape with wrong/missing CT, but only
+			// spec improvement would help.
+			// TODO: Make sure OM 1.1/2.0 pass CT via metadata or exemplar-like to avoid this.
+			p.resetCTParseValues()
+			return nil
+		}
+		if eType != EntrySeries {
+			// Assume we hit different family, no CT line found.
+			p.resetCTParseValues()
+			return nil
+		}
+
+		peekedName := p.series[p.offsets[0]-p.start : p.offsets[1]-p.start]
+		if len(peekedName) < 8 || string(peekedName[len(peekedName)-8:]) != "_created" {
+			// Not a CT line, search more.
+			continue
+		}
+
+		// Remove _created suffix.
+		peekedHash := p.seriesHash(&buf, peekedName[:len(peekedName)-8])
+		if peekedHash != currHash {
+			// Found CT line for a different series, for our series no CT.
+			p.resetCTParseValues()
+			return nil
+		}
+
+		// All timestamps in OpenMetrics are Unix Epoch in seconds. Convert to milliseconds.
+		// https://github.com/OpenObservability/OpenMetrics/blob/main/specification/OpenMetrics.md#timestamps
+		ct := int64(p.val * 1000.0)
+		p.setCTParseValues(ct, currHash, currName, true)
+		return &ct
 	}
-	return newParser
+}
+
+var (
+	leBytes       = []byte{108, 101}
+	quantileBytes = []byte{113, 117, 97, 110, 116, 105, 108, 101}
+)
+
+// seriesHash generates a hash based on the metric family name and the offsets
+// of label names and values from the parsed OpenMetrics data. It skips quantile
+// and le labels for summaries and histograms respectively.
+func (p *OpenMetricsParser) seriesHash(offsetsArr *[]byte, metricFamilyName []byte) uint64 {
+	// Iterate through p.offsets to find the label names and values.
+	for i := 2; i < len(p.offsets); i += 4 {
+		lStart := p.offsets[i] - p.start
+		lEnd := p.offsets[i+1] - p.start
+		label := p.series[lStart:lEnd]
+		// Skip quantile and le labels for summaries and histograms.
+		if p.mtype == model.MetricTypeSummary && bytes.Equal(label, quantileBytes) {
+			continue
+		}
+		if p.mtype == model.MetricTypeHistogram && bytes.Equal(label, leBytes) {
+			continue
+		}
+		*offsetsArr = append(*offsetsArr, p.series[lStart:lEnd]...)
+		vStart := p.offsets[i+2] - p.start
+		vEnd := p.offsets[i+3] - p.start
+		*offsetsArr = append(*offsetsArr, p.series[vStart:vEnd]...)
+	}
+
+	*offsetsArr = append(*offsetsArr, metricFamilyName...)
+	hashedOffsets := xxhash.Sum64(*offsetsArr)
+
+	// Reset the offsets array for later reuse.
+	*offsetsArr = (*offsetsArr)[:0]
+	return hashedOffsets
+}
+
+// setCTParseValues sets the parser to the state after CreatedTimestamp method was called and CT was found.
+// This is useful to prevent re-parsing the same series again and early return the CT value.
+func (p *OpenMetricsParser) setCTParseValues(ct int64, ctHashSet uint64, mfName []byte, skipCTSeries bool) {
+	p.ct = ct
+	p.ctHashSet = ctHashSet
+	p.visitedMFName = mfName
+	p.skipCTSeries = skipCTSeries // Do we need to set it?
+}
+
+// resetCtParseValues resets the parser to the state before CreatedTimestamp method was called.
+func (p *OpenMetricsParser) resetCTParseValues() {
+	p.ctHashSet = 0
+	p.skipCTSeries = true
+}
+
+// typeRequiresCT returns true if the metric type requires a _created timestamp.
+func typeRequiresCT(t model.MetricType) bool {
+	switch t {
+	case model.MetricTypeCounter, model.MetricTypeSummary, model.MetricTypeHistogram:
+		return true
+	default:
+		return false
+	}
 }
 
 // nextToken returns the next token from the openMetricsLexer.
@@ -356,10 +425,12 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 
 	p.start = p.l.i
 	p.offsets = p.offsets[:0]
-	p.eOffsets = p.eOffsets[:0]
-	p.exemplar = p.exemplar[:0]
-	p.exemplarVal = 0
-	p.hasExemplarTs = false
+	if !p.ignoreExemplar {
+		p.eOffsets = p.eOffsets[:0]
+		p.exemplar = p.exemplar[:0]
+		p.exemplarVal = 0
+		p.hasExemplarTs = false
+	}
 
 	switch t := p.nextToken(); t {
 	case tEOFWord:
@@ -378,6 +449,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 				mStart++
 				mEnd--
 			}
+			p.mfNameLen = mEnd - mStart
 			p.offsets = append(p.offsets, mStart, mEnd)
 		default:
 			return EntryInvalid, p.parseError("expected metric name after "+t.String(), t2)
@@ -483,6 +555,16 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 
 func (p *OpenMetricsParser) parseComment() error {
 	var err error
+
+	if p.ignoreExemplar {
+		for t := p.nextToken(); t != tLinebreak; t = p.nextToken() {
+			if t == tEOF {
+				return errors.New("data does not end with # EOF")
+			}
+		}
+		return nil
+	}
+
 	// Parse the labels.
 	p.eOffsets, err = p.parseLVals(p.eOffsets, true)
 	if err != nil {
@@ -591,10 +673,9 @@ func (p *OpenMetricsParser) parseLVals(offsets []int, isExemplar bool) ([]int, e
 
 // isCreatedSeries returns true if the current series is a _created series.
 func (p *OpenMetricsParser) isCreatedSeries() bool {
-	var newLbs labels.Labels
-	p.Metric(&newLbs)
-	name := newLbs.Get(model.MetricNameLabel)
-	if TypeRequiresCT(p.mtype) && strings.HasSuffix(name, "_created") {
+	metricName := p.series[p.offsets[0]-p.start : p.offsets[1]-p.start]
+	// check length so the metric is longer than len("_created")
+	if typeRequiresCT(p.mtype) && len(metricName) >= 8 && string(metricName[len(metricName)-8:]) == "_created" {
 		return true
 	}
 	return false
@@ -662,4 +743,16 @@ func (p *OpenMetricsParser) getFloatValue(t token, after string) (float64, error
 		val = math.Float64frombits(value.NormalNaN)
 	}
 	return val, nil
+}
+
+// normalizeFloatsInLabelValues ensures that values of the "le" labels of classic histograms and "quantile" labels
+// of summaries follow OpenMetrics formatting rules.
+func normalizeFloatsInLabelValues(t model.MetricType, l, v string) string {
+	if (t == model.MetricTypeSummary && l == model.QuantileLabel) || (t == model.MetricTypeHistogram && l == model.BucketLabel) {
+		f, err := strconv.ParseFloat(v, 64)
+		if err == nil {
+			return formatOpenMetricsFloat(f)
+		}
+	}
+	return v
 }

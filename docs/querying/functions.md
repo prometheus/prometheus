@@ -326,45 +326,70 @@ With native histograms, aggregating everything works as usual without any `by` c
 
     histogram_quantile(0.9, sum(rate(http_request_duration_seconds[10m])))
 
-The `histogram_quantile()` function interpolates quantile values by
-assuming a linear distribution within a bucket. 
+In the (common) case that a quantile value does not coincide with a bucket
+boundary, the `histogram_quantile()` function interpolates the quantile value
+within the bucket the quantile value falls into. For classic histograms, for
+native histograms with custom bucket boundaries, and for the zero bucket of
+other native histograms, it assumes a uniform distribution of observations
+within the bucket (also called _linear interpolation_). For the
+non-zero-buckets of native histograms with a standard exponential bucketing
+schema, the interpolation is done under the assumption that the samples within
+the bucket are distributed in a way that they would uniformly populate the
+buckets in a hypothetical histogram with higher resolution. (This is also
+called _exponential interpolation_.)
 
 If `b` has 0 observations, `NaN` is returned. For φ < 0, `-Inf` is
 returned. For φ > 1, `+Inf` is returned. For φ = `NaN`, `NaN` is returned.
 
-The following is only relevant for classic histograms: If `b` contains
-fewer than two buckets, `NaN` is returned. The highest bucket must have an
-upper bound of `+Inf`. (Otherwise, `NaN` is returned.) If a quantile is located
-in the highest bucket, the upper bound of the second highest bucket is
-returned. A lower limit of the lowest bucket is assumed to be 0 if the upper
-bound of that bucket is greater than
-0. In that case, the usual linear interpolation is applied within that
-bucket. Otherwise, the upper bound of the lowest bucket is returned for
-quantiles located in the lowest bucket. 
+Special cases for classic histograms:
 
-You can use `histogram_quantile(0, v instant-vector)` to get the estimated minimum value stored in
-a histogram.
+* If `b` contains fewer than two buckets, `NaN` is returned.
+* The highest bucket must have an upper bound of `+Inf`. (Otherwise, `NaN` is
+  returned.)
+* If a quantile is located in the highest bucket, the upper bound of the second
+  highest bucket is returned.
+* The lower limit of the lowest bucket is assumed to be 0 if the upper bound of
+  that bucket is greater than 0. In that case, the usual linear interpolation
+  is applied within that bucket. Otherwise, the upper bound of the lowest
+  bucket is returned for quantiles located in the lowest bucket.
 
-You can use `histogram_quantile(1, v instant-vector)` to get the estimated maximum value stored in
-a histogram.
+Special cases for native histograms (relevant for the exact interpolation
+happening within the zero bucket):
 
-Buckets of classic histograms are cumulative. Therefore, the following should always be the case:
+* A zero bucket with finite width is assumed to contain no negative
+  observations if the histogram has observations in positive buckets, but none
+  in negative buckets.
+* A zero bucket with finite width is assumed to contain no positive
+  observations if the histogram has observations in negative buckets, but none
+  in positive buckets.
 
-* The counts in the buckets are monotonically increasing (strictly non-decreasing).
-* A lack of observations between the upper limits of two consecutive buckets results in equal counts
-in those two buckets.
+You can use `histogram_quantile(0, v instant-vector)` to get the estimated
+minimum value stored in a histogram.
 
-However, floating point precision issues (e.g. small discrepancies introduced by computing of buckets
-with `sum(rate(...))`) or invalid data might violate these assumptions. In that case,
-`histogram_quantile` would be unable to return meaningful results. To mitigate the issue,
-`histogram_quantile` assumes that tiny relative differences between consecutive buckets are happening
-because of floating point precision errors and ignores them. (The threshold to ignore a difference
-between two buckets is a trillionth (1e-12) of the sum of both buckets.) Furthermore, if there are
-non-monotonic bucket counts even after this adjustment, they are increased to the value of the
-previous buckets to enforce monotonicity. The latter is evidence for an actual issue with the input
-data and is therefore flagged with an informational annotation reading `input to histogram_quantile
-needed to be fixed for monotonicity`. If you encounter this annotation, you should find and remove
-the source of the invalid data.
+You can use `histogram_quantile(1, v instant-vector)` to get the estimated
+maximum value stored in a histogram.
+
+Buckets of classic histograms are cumulative. Therefore, the following should
+always be the case:
+
+* The counts in the buckets are monotonically increasing (strictly
+  non-decreasing).
+* A lack of observations between the upper limits of two consecutive buckets
+  results in equal counts in those two buckets.
+
+However, floating point precision issues (e.g. small discrepancies introduced
+by computing of buckets with `sum(rate(...))`) or invalid data might violate
+these assumptions. In that case, `histogram_quantile` would be unable to return
+meaningful results. To mitigate the issue, `histogram_quantile` assumes that
+tiny relative differences between consecutive buckets are happening because of
+floating point precision errors and ignores them. (The threshold to ignore a
+difference between two buckets is a trillionth (1e-12) of the sum of both
+buckets.) Furthermore, if there are non-monotonic bucket counts even after this
+adjustment, they are increased to the value of the previous buckets to enforce
+monotonicity. The latter is evidence for an actual issue with the input data
+and is therefore flagged with an informational annotation reading `input to
+histogram_quantile needed to be fixed for monotonicity`. If you encounter this
+annotation, you should find and remove the source of the invalid data.
 
 ## `histogram_stddev()` and `histogram_stdvar()`
 
@@ -380,15 +405,22 @@ do not show up in the returned vector.
 Similarly, `histogram_stdvar(v instant-vector)` returns the estimated standard
 variance of observations in a native histogram.
 
-## `holt_winters()`
+## `double_exponential_smoothing()`
 
-`holt_winters(v range-vector, sf scalar, tf scalar)` produces a smoothed value
+**This function has to be enabled via the [feature flag](../feature_flags.md#experimental-promql-functions) `--enable-feature=promql-experimental-functions`.**
+
+`double_exponential_smoothing(v range-vector, sf scalar, tf scalar)` produces a smoothed value
 for time series based on the range in `v`. The lower the smoothing factor `sf`,
 the more importance is given to old data. The higher the trend factor `tf`, the
 more trends in the data is considered. Both `sf` and `tf` must be between 0 and
 1.
+For additional details, refer to [NIST Engineering Statistics Handbook](https://www.itl.nist.gov/div898/handbook/pmc/section4/pmc433.htm).
+In Prometheus V2 this function was called `holt_winters`. This caused confusion
+since the Holt-Winters method usually refers to triple exponential smoothing.
+Double exponential smoothing as implemented here is also referred to as "Holt
+Linear".
 
-`holt_winters` should only be used with gauges.
+`double_exponential_smoothing` should only be used with gauges.
 
 ## `hour()`
 
@@ -431,6 +463,97 @@ components behave like counters. It is syntactic sugar for `rate(v)` multiplied
 by the number of seconds under the specified time range window, and should be
 used primarily for human readability.  Use `rate` in recording rules so that
 increases are tracked consistently on a per-second basis.
+
+## `info()` (experimental)
+
+_The `info` function is an experiment to improve UX
+around including labels from [info metrics](https://grafana.com/blog/2021/08/04/how-to-use-promql-joins-for-more-effective-queries-of-prometheus-metrics-at-scale/#info-metrics).
+The behavior of this function may change in future versions of Prometheus,
+including its removal from PromQL. `info` has to be enabled via the 
+[feature flag](../feature_flags.md#experimental-promql-functions) `--enable-feature=promql-experimental-functions`._
+
+`info(v instant-vector, [data-label-selector instant-vector])` finds, for each time 
+series in `v`, all info series with matching _identifying_ labels (more on
+this later), and adds the union of their _data_ (i.e., non-identifying) labels
+to the time series. The second argument `data-label-selector` is optional.
+It is not a real instant vector, but uses a subset of its syntax.
+It must start and end with curly braces (`{ ... }`) and may only contain label matchers.
+The label matchers are used to constrain which info series to consider
+and which data labels to add to `v`.
+
+Identifying labels of an info series are the subset of labels that uniquely
+identify the info series. The remaining labels are considered
+_data labels_ (also called non-identifying). (Note that Prometheus's concept
+of time series identity always includes _all_ the labels. For the sake of the `info`
+function, we “logically” define info series identity in a different way than
+in the conventional Prometheus view.) The identifying labels of an info series
+are used to join it to regular (non-info) series, i.e. those series that have
+the same labels as the identifying labels of the info series. The data labels, which are
+the ones added to the regular series by the `info` function, effectively encode 
+metadata key value pairs. (This implies that a change in the data labels 
+in the conventional Prometheus view constitutes the end of one info series and
+the beginning of a new info series, while the “logical” view of the `info` function is
+that the same info series continues to exist, just with different “data”.)
+
+The conventional approach of adding data labels is sometimes called a “join query”,
+as illustrated by the following example:
+
+```
+  rate(http_server_request_duration_seconds_count[2m])
+* on (job, instance) group_left (k8s_cluster_name)
+  target_info
+```
+
+The core of the query is the expression `rate(http_server_request_duration_seconds_count[2m])`.
+But to add data labels from an info metric, the user has to use elaborate
+(and not very obvious) syntax to specify which info metric to use (`target_info`), what the
+identifying labels are (`on (job, instance)`), and which data labels to add
+(`group_left (k8s_cluster_name)`).
+
+This query is not only verbose and hard to write, it might also run into an “identity crisis”:
+If any of the data labels of `target_info` changes, Prometheus sees that as a change of series
+(as alluded to above, Prometheus just has no native concept of non-identifying labels).
+If the old `target_info` series is not properly marked as stale (which can happen with certain ingestion paths),
+the query above will fail for up to 5m (the lookback delta) because it will find a conflicting 
+match with both the old and the new version of `target_info`.
+
+The `info` function not only resolves this conflict in favor of the newer series, it also simplifies the syntax
+because it knows about the available info series and what their identifying labels are. The example query
+looks like this with the `info` function:
+
+```
+info(
+  rate(http_server_request_duration_seconds_count[2m]),
+  {k8s_cluster_name=~".+"}
+)
+```
+
+The common case of adding _all_ data labels can be achieved by
+omitting the 2nd argument of the `info` function entirely, simplifying
+the example even more:
+
+```
+info(rate(http_server_request_duration_seconds_count[2m]))
+```
+
+While `info` normally automatically finds all matching info series, it's possible to
+restrict them by providing a `__name__` label matcher, e.g.
+`{__name__="target_info"}`.
+
+### Limitations
+
+In its current iteration, `info` defaults to considering only info series with
+the name `target_info`. It also assumes that the identifying info series labels are
+`instance` and `job`. `info` does support other info series names however, through
+`__name__` label matchers. E.g., one can explicitly say to consider both 
+`target_info` and `build_info` as follows:
+`{__name__=~"(target|build)_info"}`. However, the identifying labels always
+have to be `instance` and `job`.
+
+These limitations are partially defeating the purpose of the `info` function.
+At the current stage, this is an experiment to find out how useful the approach
+turns out to be in practice. A final version of the `info` function will indeed
+consider all matching info series and with their appropriate identifying labels.
 
 ## `irate()`
 

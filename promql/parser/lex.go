@@ -610,6 +610,9 @@ func lexBuckets(l *Lexer) stateFn {
 	case isSpace(r):
 		l.emit(SPACE)
 		return lexSpace
+	case r == '-':
+		l.emit(SUB)
+		return lexNumber
 	case isDigit(r):
 		l.backup()
 		return lexNumber

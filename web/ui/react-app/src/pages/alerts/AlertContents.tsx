@@ -37,6 +37,7 @@ interface RuleGroup {
   file: string;
   rules: Rule[];
   interval: number;
+  labels: Record<string, string>;
 }
 
 const kvSearchRule = new KVSearch<Rule>({
@@ -93,6 +94,7 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
               name: group.name,
               interval: group.interval,
               rules: ruleFilterList.map((value) => value.original),
+              labels: group.labels,
             });
           }
         }
@@ -114,6 +116,7 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
         name: group.name,
         interval: group.interval,
         rules: group.rules.filter((value) => filter[value.state]),
+        labels: group.labels,
       };
       if (newGroup.rules.length > 0) {
         result.push(newGroup);

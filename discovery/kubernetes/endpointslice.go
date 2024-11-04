@@ -17,13 +17,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"strconv"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/discovery/v1"
 	"k8s.io/client-go/tools/cache"
@@ -35,7 +35,7 @@ import (
 
 // EndpointSlice discovers new endpoint targets.
 type EndpointSlice struct {
-	logger log.Logger
+	logger *slog.Logger
 
 	endpointSliceInf cache.SharedIndexInformer
 	serviceInf       cache.SharedInformer
@@ -51,9 +51,9 @@ type EndpointSlice struct {
 }
 
 // NewEndpointSlice returns a new endpointslice discovery.
-func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node cache.SharedInformer, eventCount *prometheus.CounterVec) *EndpointSlice {
+func NewEndpointSlice(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, node cache.SharedInformer, eventCount *prometheus.CounterVec) *EndpointSlice {
 	if l == nil {
-		l = log.NewNopLogger()
+		l = promslog.NewNopLogger()
 	}
 
 	epslAddCount := eventCount.WithLabelValues(RoleEndpointSlice.String(), MetricLabelRoleAdd)
@@ -92,13 +92,13 @@ func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, nod
 		},
 	})
 	if err != nil {
-		level.Error(l).Log("msg", "Error adding endpoint slices event handler.", "err", err)
+		l.Error("Error adding endpoint slices event handler.", "err", err)
 	}
 
 	serviceUpdate := func(o interface{}) {
 		svc, err := convertToService(o)
 		if err != nil {
-			level.Error(e.logger).Log("msg", "converting to Service object failed", "err", err)
+			e.logger.Error("converting to Service object failed", "err", err)
 			return
 		}
 
@@ -108,7 +108,7 @@ func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, nod
 		for _, obj := range e.endpointSliceStore.List() {
 			esa, err := e.getEndpointSliceAdaptor(obj)
 			if err != nil {
-				level.Error(e.logger).Log("msg", "converting to EndpointSlice object failed", "err", err)
+				e.logger.Error("converting to EndpointSlice object failed", "err", err)
 				continue
 			}
 			if lv, exists := esa.labels()[esa.labelServiceName()]; exists && lv == svc.Name {
@@ -131,7 +131,7 @@ func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, nod
 		},
 	})
 	if err != nil {
-		level.Error(l).Log("msg", "Error adding services event handler.", "err", err)
+		l.Error("Error adding services event handler.", "err", err)
 	}
 
 	if e.withNodeMetadata {
@@ -145,12 +145,15 @@ func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, nod
 				e.enqueueNode(node.Name)
 			},
 			DeleteFunc: func(o interface{}) {
-				node := o.(*apiv1.Node)
-				e.enqueueNode(node.Name)
+				nodeName, err := nodeName(o)
+				if err != nil {
+					l.Error("Error getting Node name", "err", err)
+				}
+				e.enqueueNode(nodeName)
 			},
 		})
 		if err != nil {
-			level.Error(l).Log("msg", "Error adding nodes event handler.", "err", err)
+			l.Error("Error adding nodes event handler.", "err", err)
 		}
 	}
 
@@ -160,7 +163,7 @@ func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, nod
 func (e *EndpointSlice) enqueueNode(nodeName string) {
 	endpoints, err := e.endpointSliceInf.GetIndexer().ByIndex(nodeIndex, nodeName)
 	if err != nil {
-		level.Error(e.logger).Log("msg", "Error getting endpoints for node", "node", nodeName, "err", err)
+		e.logger.Error("Error getting endpoints for node", "node", nodeName, "err", err)
 		return
 	}
 
@@ -188,7 +191,7 @@ func (e *EndpointSlice) Run(ctx context.Context, ch chan<- []*targetgroup.Group)
 	}
 	if !cache.WaitForCacheSync(ctx.Done(), cacheSyncs...) {
 		if !errors.Is(ctx.Err(), context.Canceled) {
-			level.Error(e.logger).Log("msg", "endpointslice informer unable to sync cache")
+			e.logger.Error("endpointslice informer unable to sync cache")
 		}
 		return
 	}
@@ -212,13 +215,13 @@ func (e *EndpointSlice) process(ctx context.Context, ch chan<- []*targetgroup.Gr
 
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		level.Error(e.logger).Log("msg", "splitting key failed", "key", key)
+		e.logger.Error("splitting key failed", "key", key)
 		return true
 	}
 
 	o, exists, err := e.endpointSliceStore.GetByKey(key)
 	if err != nil {
-		level.Error(e.logger).Log("msg", "getting object from store failed", "key", key)
+		e.logger.Error("getting object from store failed", "key", key)
 		return true
 	}
 	if !exists {
@@ -228,7 +231,7 @@ func (e *EndpointSlice) process(ctx context.Context, ch chan<- []*targetgroup.Gr
 
 	esa, err := e.getEndpointSliceAdaptor(o)
 	if err != nil {
-		level.Error(e.logger).Log("msg", "converting to EndpointSlice object failed", "err", err)
+		e.logger.Error("converting to EndpointSlice object failed", "err", err)
 		return true
 	}
 
@@ -377,19 +380,23 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 		target = target.Merge(podLabels(pod))
 
 		// Attach potential container port labels matching the endpoint port.
-		for _, c := range pod.Spec.Containers {
+		containers := append(pod.Spec.Containers, pod.Spec.InitContainers...)
+		for i, c := range containers {
 			for _, cport := range c.Ports {
 				if port.port() == nil {
 					continue
 				}
+
 				if *port.port() == cport.ContainerPort {
 					ports := strconv.FormatUint(uint64(*port.port()), 10)
+					isInit := i >= len(pod.Spec.Containers)
 
 					target[podContainerNameLabel] = lv(c.Name)
 					target[podContainerImageLabel] = lv(c.Image)
 					target[podContainerPortNameLabel] = lv(cport.Name)
 					target[podContainerPortNumberLabel] = lv(ports)
 					target[podContainerPortProtocolLabel] = lv(string(cport.Protocol))
+					target[podContainerIsInit] = lv(strconv.FormatBool(isInit))
 					break
 				}
 			}
@@ -417,7 +424,8 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 			continue
 		}
 
-		for _, c := range pe.pod.Spec.Containers {
+		containers := append(pe.pod.Spec.Containers, pe.pod.Spec.InitContainers...)
+		for i, c := range containers {
 			for _, cport := range c.Ports {
 				hasSeenPort := func() bool {
 					for _, eport := range pe.servicePorts {
@@ -437,6 +445,7 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 				a := net.JoinHostPort(pe.pod.Status.PodIP, strconv.FormatUint(uint64(cport.ContainerPort), 10))
 				ports := strconv.FormatUint(uint64(cport.ContainerPort), 10)
 
+				isInit := i >= len(pe.pod.Spec.Containers)
 				target := model.LabelSet{
 					model.AddressLabel:            lv(a),
 					podContainerNameLabel:         lv(c.Name),
@@ -444,6 +453,7 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 					podContainerPortNameLabel:     lv(cport.Name),
 					podContainerPortNumberLabel:   lv(ports),
 					podContainerPortProtocolLabel: lv(string(cport.Protocol)),
+					podContainerIsInit:            lv(strconv.FormatBool(isInit)),
 				}
 				tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod)))
 			}
@@ -457,13 +467,10 @@ func (e *EndpointSlice) resolvePodRef(ref *apiv1.ObjectReference) *apiv1.Pod {
 	if ref == nil || ref.Kind != "Pod" {
 		return nil
 	}
-	p := &apiv1.Pod{}
-	p.Namespace = ref.Namespace
-	p.Name = ref.Name
 
-	obj, exists, err := e.podStore.Get(p)
+	obj, exists, err := e.podStore.GetByKey(namespacedName(ref.Namespace, ref.Name))
 	if err != nil {
-		level.Error(e.logger).Log("msg", "resolving pod ref failed", "err", err)
+		e.logger.Error("resolving pod ref failed", "err", err)
 		return nil
 	}
 	if !exists {
@@ -474,27 +481,27 @@ func (e *EndpointSlice) resolvePodRef(ref *apiv1.ObjectReference) *apiv1.Pod {
 
 func (e *EndpointSlice) addServiceLabels(esa endpointSliceAdaptor, tg *targetgroup.Group) {
 	var (
-		svc   = &apiv1.Service{}
 		found bool
+		name  string
 	)
-	svc.Namespace = esa.namespace()
+	ns := esa.namespace()
 
 	// Every EndpointSlice object has the Service they belong to in the
 	// kubernetes.io/service-name label.
-	svc.Name, found = esa.labels()[esa.labelServiceName()]
+	name, found = esa.labels()[esa.labelServiceName()]
 	if !found {
 		return
 	}
 
-	obj, exists, err := e.serviceStore.Get(svc)
+	obj, exists, err := e.serviceStore.GetByKey(namespacedName(ns, name))
 	if err != nil {
-		level.Error(e.logger).Log("msg", "retrieving service failed", "err", err)
+		e.logger.Error("retrieving service failed", "err", err)
 		return
 	}
 	if !exists {
 		return
 	}
-	svc = obj.(*apiv1.Service)
+	svc := obj.(*apiv1.Service)
 
 	tg.Labels = tg.Labels.Merge(serviceLabels(svc))
 }

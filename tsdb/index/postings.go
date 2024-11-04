@@ -345,13 +345,22 @@ func (p *MemPostings) Add(id storage.SeriesRef, lset labels.Labels) {
 	p.mtx.Unlock()
 }
 
+func appendWithExponentialGrowth[T any](a []T, v T) []T {
+	if cap(a) < len(a)+1 {
+		newList := make([]T, len(a), len(a)*2+1)
+		copy(newList, a)
+		a = newList
+	}
+	return append(a, v)
+}
+
 func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 	nm, ok := p.m[l.Name]
 	if !ok {
 		nm = map[string][]storage.SeriesRef{}
 		p.m[l.Name] = nm
 	}
-	list := append(nm[l.Value], id)
+	list := appendWithExponentialGrowth(nm[l.Value], id)
 	nm[l.Value] = list
 
 	if !p.ordered {

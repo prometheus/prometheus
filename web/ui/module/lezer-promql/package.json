@@ -1,10 +1,11 @@
 {
   "name": "@prometheus-io/lezer-promql",
-  "version": "0.300.0-beta.0",
+  "version": "0.300.0-beta.1",
   "description": "lezer-based PromQL grammar",
   "main": "dist/index.cjs",
   "type": "module",
   "exports": {
+    "types": "./dist/index.d.ts",
     "import": "./dist/index.es.js",
     "require": "./dist/index.cjs"
   },

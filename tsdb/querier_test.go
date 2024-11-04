@@ -2689,6 +2689,7 @@ func TestPostingsForMatchers(t *testing.T) {
 	app.Append(0, labels.FromStrings("n", "1"), 0, 0)
 	app.Append(0, labels.FromStrings("n", "1", "i", "a"), 0, 0)
 	app.Append(0, labels.FromStrings("n", "1", "i", "b"), 0, 0)
+	app.Append(0, labels.FromStrings("n", "1", "i", "\n"), 0, 0)
 	app.Append(0, labels.FromStrings("n", "2"), 0, 0)
 	app.Append(0, labels.FromStrings("n", "2.5"), 0, 0)
 	require.NoError(t, app.Commit())
@@ -2704,6 +2705,7 @@ func TestPostingsForMatchers(t *testing.T) {
 				labels.FromStrings("n", "1"),
 				labels.FromStrings("n", "1", "i", "a"),
 				labels.FromStrings("n", "1", "i", "b"),
+				labels.FromStrings("n", "1", "i", "\n"),
 			},
 		},
 		{
@@ -2722,6 +2724,7 @@ func TestPostingsForMatchers(t *testing.T) {
 				labels.FromStrings("n", "1"),
 				labels.FromStrings("n", "1", "i", "a"),
 				labels.FromStrings("n", "1", "i", "b"),
+				labels.FromStrings("n", "1", "i", "\n"),
 				labels.FromStrings("n", "2"),
 				labels.FromStrings("n", "2.5"),
 			},
@@ -2739,6 +2742,7 @@ func TestPostingsForMatchers(t *testing.T) {
 			exp: []labels.Labels{
 				labels.FromStrings("n", "1", "i", "a"),
 				labels.FromStrings("n", "1", "i", "b"),
+				labels.FromStrings("n", "1", "i", "\n"),
 			},
 		},
 		{
@@ -2750,6 +2754,7 @@ func TestPostingsForMatchers(t *testing.T) {
 			exp: []labels.Labels{
 				labels.FromStrings("n", "1"),
 				labels.FromStrings("n", "1", "i", "b"),
+				labels.FromStrings("n", "1", "i", "\n"),
 			},
 		},
 		{
@@ -2757,6 +2762,7 @@ func TestPostingsForMatchers(t *testing.T) {
 			exp: []labels.Labels{
 				labels.FromStrings("n", "1", "i", "a"),
 				labels.FromStrings("n", "1", "i", "b"),
+				labels.FromStrings("n", "1", "i", "\n"),
 			},
 		},
 		// Regex.
@@ -2766,6 +2772,7 @@ func TestPostingsForMatchers(t *testing.T) {
 				labels.FromStrings("n", "1"),
 				labels.FromStrings("n", "1", "i", "a"),
 				labels.FromStrings("n", "1", "i", "b"),
+				labels.FromStrings("n", "1", "i", "\n"),
 			},
 		},
 		{
@@ -2801,6 +2808,7 @@ func TestPostingsForMatchers(t *testing.T) {
 				labels.FromStrings("n", "1"),
 				labels.FromStrings("n", "1", "i", "a"),
 				labels.FromStrings("n", "1", "i", "b"),
+				labels.FromStrings("n", "1", "i", "\n"),
 			},
 		},
 		{
@@ -2808,6 +2816,7 @@ func TestPostingsForMatchers(t *testing.T) {
 			exp: []labels.Labels{
 				labels.FromStrings("n", "1", "i", "a"),
 				labels.FromStrings("n", "1", "i", "b"),
+				labels.FromStrings("n", "1", "i", "\n"),
 			},
 		},
 		// Not regex.
@@ -2816,6 +2825,7 @@ func TestPostingsForMatchers(t *testing.T) {
 			exp: []labels.Labels{
 				labels.FromStrings("n", "1", "i", "a"),
 				labels.FromStrings("n", "1", "i", "b"),
+				labels.FromStrings("n", "1", "i", "\n"),
 			},
 		},
 		{
@@ -2849,12 +2859,14 @@ func TestPostingsForMatchers(t *testing.T) {
 			exp: []labels.Labels{
 				labels.FromStrings("n", "1"),
 				labels.FromStrings("n", "1", "i", "b"),
+				labels.FromStrings("n", "1", "i", "\n"),
 			},
 		},
 		{
 			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "n", "1"), labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^a?$")},
 			exp: []labels.Labels{
 				labels.FromStrings("n", "1", "i", "b"),
+				labels.FromStrings("n", "1", "i", "\n"),
 			},
 		},
 		{
@@ -2862,6 +2874,7 @@ func TestPostingsForMatchers(t *testing.T) {
 			exp: []labels.Labels{
 				labels.FromStrings("n", "1", "i", "a"),
 				labels.FromStrings("n", "1", "i", "b"),
+				labels.FromStrings("n", "1", "i", "\n"),
 			},
 		},
 		{
@@ -2895,6 +2908,7 @@ func TestPostingsForMatchers(t *testing.T) {
 				labels.FromStrings("n", "1"),
 				labels.FromStrings("n", "1", "i", "a"),
 				labels.FromStrings("n", "1", "i", "b"),
+				labels.FromStrings("n", "1", "i", "\n"),
 				labels.FromStrings("n", "2"),
 			},
 		},
@@ -2941,6 +2955,57 @@ func TestPostingsForMatchers(t *testing.T) {
 				labels.FromStrings("n", "2"),
 				labels.FromStrings("n", "2.5"),
 			},
+		},
+		// Test shortcut for i=~".*"
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", ".*")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1"),
+				labels.FromStrings("n", "1", "i", "a"),
+				labels.FromStrings("n", "1", "i", "b"),
+				labels.FromStrings("n", "1", "i", "\n"),
+				labels.FromStrings("n", "2"),
+				labels.FromStrings("n", "2.5"),
+			},
+		},
+		// Test shortcut for n=~".*" and i=~"^.*$"
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", ".*"), labels.MustNewMatcher(labels.MatchRegexp, "i", "^.*$")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1"),
+				labels.FromStrings("n", "1", "i", "a"),
+				labels.FromStrings("n", "1", "i", "b"),
+				labels.FromStrings("n", "1", "i", "\n"),
+				labels.FromStrings("n", "2"),
+				labels.FromStrings("n", "2.5"),
+			},
+		},
+		// Test shortcut for n=~"^.*$"
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", "^.*$"), labels.MustNewMatcher(labels.MatchEqual, "i", "a")},
+			exp: []labels.Labels{
+				labels.FromStrings("n", "1", "i", "a"),
+			},
+		},
+		// Test shortcut for i!~".*"
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "i", ".*")},
+			exp:      []labels.Labels{},
+		},
+		// Test shortcut for n!~"^.*$",  i!~".*". First one triggers empty result.
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "n", "^.*$"), labels.MustNewMatcher(labels.MatchNotRegexp, "i", ".*")},
+			exp:      []labels.Labels{},
+		},
+		// Test shortcut i!~".*"
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", ".*"), labels.MustNewMatcher(labels.MatchNotRegexp, "i", ".*")},
+			exp:      []labels.Labels{},
+		},
+		// Test shortcut i!~"^.*$"
+		{
+			matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "n", "1"), labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^.*$")},
+			exp:      []labels.Labels{},
 		},
 	}
 
@@ -3170,7 +3235,7 @@ func BenchmarkQueries(b *testing.B) {
 					qHead, err := NewBlockQuerier(NewRangeHead(head, 1, nSamples), 1, nSamples)
 					require.NoError(b, err)
 					isoState := head.oooIso.TrackReadAfter(0)
-					qOOOHead := NewHeadAndOOOQuerier(1, nSamples, head, isoState, qHead)
+					qOOOHead := NewHeadAndOOOQuerier(1, 1, nSamples, head, isoState, qHead)
 
 					queryTypes = append(queryTypes, qt{
 						fmt.Sprintf("_Head_oooPercent:%d", oooPercentage), qOOOHead,
@@ -3235,7 +3300,7 @@ func (m mockMatcherIndex) LabelValueFor(context.Context, storage.SeriesRef, stri
 }
 
 func (m mockMatcherIndex) LabelNamesFor(ctx context.Context, postings index.Postings) ([]string, error) {
-	return nil, errors.New("label names for for called")
+	return nil, errors.New("label names for called")
 }
 
 func (m mockMatcherIndex) Postings(context.Context, string, ...string) (index.Postings, error) {
@@ -3721,4 +3786,36 @@ func (m mockReaderOfLabels) Series(storage.SeriesRef, *labels.ScratchBuilder, *[
 
 func (m mockReaderOfLabels) Symbols() index.StringIter {
 	panic("Series called")
+}
+
+// TestMergeQuerierConcurrentSelectMatchers reproduces the data race bug from
+// https://github.com/prometheus/prometheus/issues/14723, when one of the queriers (blockQuerier in this case)
+// alters the passed matchers.
+func TestMergeQuerierConcurrentSelectMatchers(t *testing.T) {
+	block, err := OpenBlock(nil, createBlock(t, t.TempDir(), genSeries(1, 1, 0, 1)), nil)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, block.Close())
+	}()
+	p, err := NewBlockQuerier(block, 0, 1)
+	require.NoError(t, err)
+
+	// A secondary querier is required to enable concurrent select; a blockQuerier is used for simplicity.
+	s, err := NewBlockQuerier(block, 0, 1)
+	require.NoError(t, err)
+
+	originalMatchers := []*labels.Matcher{
+		labels.MustNewMatcher(labels.MatchRegexp, "baz", ".*"),
+		labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
+	}
+	matchers := append([]*labels.Matcher{}, originalMatchers...)
+
+	mergedQuerier := storage.NewMergeQuerier([]storage.Querier{p}, []storage.Querier{s}, storage.ChainedSeriesMerge)
+	defer func() {
+		require.NoError(t, mergedQuerier.Close())
+	}()
+
+	mergedQuerier.Select(context.Background(), false, nil, matchers...)
+
+	require.Equal(t, originalMatchers, matchers)
 }

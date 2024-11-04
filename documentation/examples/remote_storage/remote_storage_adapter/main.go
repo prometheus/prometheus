@@ -17,6 +17,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	_ "net/http/pprof"
 	"net/url"
@@ -26,16 +27,14 @@ import (
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	influx "github.com/influxdata/influxdb/client/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/common/promlog"
-	"github.com/prometheus/common/promlog/flag"
+	"github.com/prometheus/common/promslog"
+	"github.com/prometheus/common/promslog/flag"
 
 	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/graphite"
 	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/influxdb"
@@ -57,7 +56,7 @@ type config struct {
 	remoteTimeout           time.Duration
 	listenAddr              string
 	telemetryPath           string
-	promlogConfig           promlog.Config
+	promslogConfig          promslog.Config
 }
 
 var (
@@ -105,11 +104,11 @@ func main() {
 	cfg := parseFlags()
 	http.Handle(cfg.telemetryPath, promhttp.Handler())
 
-	logger := promlog.New(&cfg.promlogConfig)
+	logger := promslog.New(&cfg.promslogConfig)
 
 	writers, readers := buildClients(logger, cfg)
 	if err := serve(logger, cfg.listenAddr, writers, readers); err != nil {
-		level.Error(logger).Log("msg", "Failed to listen", "addr", cfg.listenAddr, "err", err)
+		logger.Error("Failed to listen", "addr", cfg.listenAddr, "err", err)
 		os.Exit(1)
 	}
 }
@@ -120,7 +119,7 @@ func parseFlags() *config {
 
 	cfg := &config{
 		influxdbPassword: os.Getenv("INFLUXDB_PW"),
-		promlogConfig:    promlog.Config{},
+		promslogConfig:   promslog.Config{},
 	}
 
 	a.Flag("graphite-address", "The host:port of the Graphite server to send samples to. None, if empty.").
@@ -146,7 +145,7 @@ func parseFlags() *config {
 	a.Flag("web.telemetry-path", "Address to listen on for web endpoints.").
 		Default("/metrics").StringVar(&cfg.telemetryPath)
 
-	flag.AddFlags(a, &cfg.promlogConfig)
+	flag.AddFlags(a, &cfg.promslogConfig)
 
 	_, err := a.Parse(os.Args[1:])
 	if err != nil {
@@ -168,19 +167,19 @@ type reader interface {
 	Name() string
 }
 
-func buildClients(logger log.Logger, cfg *config) ([]writer, []reader) {
+func buildClients(logger *slog.Logger, cfg *config) ([]writer, []reader) {
 	var writers []writer
 	var readers []reader
 	if cfg.graphiteAddress != "" {
 		c := graphite.NewClient(
-			log.With(logger, "storage", "Graphite"),
+			logger.With("storage", "Graphite"),
 			cfg.graphiteAddress, cfg.graphiteTransport,
 			cfg.remoteTimeout, cfg.graphitePrefix)
 		writers = append(writers, c)
 	}
 	if cfg.opentsdbURL != "" {
 		c := opentsdb.NewClient(
-			log.With(logger, "storage", "OpenTSDB"),
+			logger.With("storage", "OpenTSDB"),
 			cfg.opentsdbURL,
 			cfg.remoteTimeout,
 		)
@@ -189,7 +188,7 @@ func buildClients(logger log.Logger, cfg *config) ([]writer, []reader) {
 	if cfg.influxdbURL != "" {
 		url, err := url.Parse(cfg.influxdbURL)
 		if err != nil {
-			level.Error(logger).Log("msg", "Failed to parse InfluxDB URL", "url", cfg.influxdbURL, "err", err)
+			logger.Error("Failed to parse InfluxDB URL", "url", cfg.influxdbURL, "err", err)
 			os.Exit(1)
 		}
 		conf := influx.HTTPConfig{
@@ -199,7 +198,7 @@ func buildClients(logger log.Logger, cfg *config) ([]writer, []reader) {
 			Timeout:  cfg.remoteTimeout,
 		}
 		c := influxdb.NewClient(
-			log.With(logger, "storage", "InfluxDB"),
+			logger.With("storage", "InfluxDB"),
 			conf,
 			cfg.influxdbDatabase,
 			cfg.influxdbRetentionPolicy,
@@ -208,15 +207,15 @@ func buildClients(logger log.Logger, cfg *config) ([]writer, []reader) {
 		writers = append(writers, c)
 		readers = append(readers, c)
 	}
-	level.Info(logger).Log("msg", "Starting up...")
+	logger.Info("Starting up...")
 	return writers, readers
 }
 
-func serve(logger log.Logger, addr string, writers []writer, readers []reader) error {
+func serve(logger *slog.Logger, addr string, writers []writer, readers []reader) error {
 	http.HandleFunc("/write", func(w http.ResponseWriter, r *http.Request) {
 		req, err := remote.DecodeWriteRequest(r.Body)
 		if err != nil {
-			level.Error(logger).Log("msg", "Read error", "err", err.Error())
+			logger.Error("Read error", "err", err.Error())
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -238,21 +237,21 @@ func serve(logger log.Logger, addr string, writers []writer, readers []reader) e
 	http.HandleFunc("/read", func(w http.ResponseWriter, r *http.Request) {
 		compressed, err := io.ReadAll(r.Body)
 		if err != nil {
-			level.Error(logger).Log("msg", "Read error", "err", err.Error())
+			logger.Error("Read error", "err", err.Error())
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		reqBuf, err := snappy.Decode(nil, compressed)
 		if err != nil {
-			level.Error(logger).Log("msg", "Decode error", "err", err.Error())
+			logger.Error("Decode error", "err", err.Error())
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		var req prompb.ReadRequest
 		if err := proto.Unmarshal(reqBuf, &req); err != nil {
-			level.Error(logger).Log("msg", "Unmarshal error", "err", err.Error())
+			logger.Error("Unmarshal error", "err", err.Error())
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -267,7 +266,7 @@ func serve(logger log.Logger, addr string, writers []writer, readers []reader) e
 		var resp *prompb.ReadResponse
 		resp, err = reader.Read(&req)
 		if err != nil {
-			level.Warn(logger).Log("msg", "Error executing query", "query", req, "storage", reader.Name(), "err", err)
+			logger.Warn("Error executing query", "query", req, "storage", reader.Name(), "err", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -283,7 +282,7 @@ func serve(logger log.Logger, addr string, writers []writer, readers []reader) e
 
 		compressed = snappy.Encode(nil, data)
 		if _, err := w.Write(compressed); err != nil {
-			level.Warn(logger).Log("msg", "Error writing response", "storage", reader.Name(), "err", err)
+			logger.Warn("Error writing response", "storage", reader.Name(), "err", err)
 		}
 	})
 
@@ -309,12 +308,12 @@ func protoToSamples(req *prompb.WriteRequest) model.Samples {
 	return samples
 }
 
-func sendSamples(logger log.Logger, w writer, samples model.Samples) {
+func sendSamples(logger *slog.Logger, w writer, samples model.Samples) {
 	begin := time.Now()
 	err := w.Write(samples)
 	duration := time.Since(begin).Seconds()
 	if err != nil {
-		level.Warn(logger).Log("msg", "Error sending samples to remote storage", "err", err, "storage", w.Name(), "num_samples", len(samples))
+		logger.Warn("Error sending samples to remote storage", "err", err, "storage", w.Name(), "num_samples", len(samples))
 		failedSamples.WithLabelValues(w.Name()).Add(float64(len(samples)))
 	}
 	sentSamples.WithLabelValues(w.Name()).Add(float64(len(samples)))

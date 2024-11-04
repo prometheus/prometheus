@@ -93,6 +93,7 @@ type QueryOptions = {
   path: string;
   params?: Record<string, string>;
   enabled?: boolean;
+  refetchInterval?: false | number;
   recordResponseTime?: (time: number) => void;
 };
 
@@ -102,6 +103,7 @@ export const useAPIQuery = <T>({
   params,
   enabled,
   recordResponseTime,
+  refetchInterval,
 }: QueryOptions) => {
   const { pathPrefix } = useSettings();
 
@@ -109,6 +111,7 @@ export const useAPIQuery = <T>({
     queryKey: key !== undefined ? key : [path, params],
     retry: false,
     refetchOnWindowFocus: false,
+    refetchInterval: refetchInterval,
     gcTime: 0,
     enabled,
     queryFn: createQueryFn({ pathPrefix, path, params, recordResponseTime }),

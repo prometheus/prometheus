@@ -20,10 +20,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
+	apiv1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/version"
 	"k8s.io/apimachinery/pkg/watch"
@@ -71,7 +73,7 @@ func makeDiscoveryWithVersion(role Role, nsDiscovery NamespaceDiscovery, k8sVer 
 
 	d := &Discovery{
 		client:             clientset,
-		logger:             log.NewNopLogger(),
+		logger:             promslog.NewNopLogger(),
 		role:               role,
 		namespaceDiscovery: &nsDiscovery,
 		ownNamespace:       "own-ns",
@@ -319,4 +321,19 @@ func TestFailuresCountMetric(t *testing.T) {
 			require.GreaterOrEqual(t, prom_testutil.ToFloat64(n.metrics.failuresCount), float64(tc.minFailedWatches))
 		})
 	}
+}
+
+func TestNodeName(t *testing.T) {
+	node := &apiv1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "foo",
+		},
+	}
+	name, err := nodeName(node)
+	require.NoError(t, err)
+	require.Equal(t, "foo", name)
+
+	name, err = nodeName(cache.DeletedFinalStateUnknown{Key: "bar"})
+	require.NoError(t, err)
+	require.Equal(t, "bar", name)
 }

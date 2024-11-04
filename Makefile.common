@@ -275,3 +275,9 @@ $(1)_precheck:
 		exit 1; \
 	fi
 endef
+
+govulncheck: install-govulncheck
+	govulncheck ./...
+
+install-govulncheck:
+	command -v govulncheck > /dev/null || go install golang.org/x/vuln/cmd/govulncheck@latest

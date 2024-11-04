@@ -1,9 +1,11 @@
-import { Alert, Card, Group, Stack, Table, Text } from "@mantine/core";
+import { Alert, Table } from "@mantine/core";
 import { IconBell, IconBellOff, IconInfoCircle } from "@tabler/icons-react";
 
 import { useSuspenseAPIQuery } from "../api/api";
 import { AlertmanagersResult } from "../api/responseTypes/alertmanagers";
 import EndpointLink from "../components/EndpointLink";
+import InfoPageCard from "../components/InfoPageCard";
+import InfoPageStack from "../components/InfoPageStack";
 
 export const targetPoolDisplayLimit = 20;
 
@@ -18,14 +20,8 @@ export default function AlertmanagerDiscoveryPage() {
   });
 
   return (
-    <Stack gap="lg" maw={1000} mx="auto" mt="xs">
-      <Card shadow="xs" withBorder p="md">
-        <Group wrap="nowrap" align="center" ml="xs" mb="sm" gap="xs">
-          <IconBell size={22} />
-          <Text fz="xl" fw={600}>
-            Active Alertmanagers
-          </Text>
-        </Group>
+    <InfoPageStack>
+      <InfoPageCard title="Active Alertmanagers" icon={IconBell}>
         {activeAlertmanagers.length === 0 ? (
           <Alert title="No active alertmanagers" icon={<IconInfoCircle />}>
             No active alertmanagers found.
@@ -46,14 +42,8 @@ export default function AlertmanagerDiscoveryPage() {
             </Table.Tbody>
           </Table>
         )}
-      </Card>
-      <Card shadow="xs" withBorder p="md">
-        <Group wrap="nowrap" align="center" ml="xs" mb="sm" gap="xs">
-          <IconBellOff size={22} />
-          <Text fz="xl" fw={600}>
-            Dropped Alertmanagers
-          </Text>
-        </Group>
+      </InfoPageCard>
+      <InfoPageCard title="Dropped Alertmanagers" icon={IconBellOff}>
         {droppedAlertmanagers.length === 0 ? (
           <Alert title="No dropped alertmanagers" icon={<IconInfoCircle />}>
             No dropped alertmanagers found.
@@ -74,7 +64,7 @@ export default function AlertmanagerDiscoveryPage() {
             </Table.Tbody>
           </Table>
         )}
-      </Card>
-    </Stack>
+      </InfoPageCard>
+    </InfoPageStack>
   );
 }

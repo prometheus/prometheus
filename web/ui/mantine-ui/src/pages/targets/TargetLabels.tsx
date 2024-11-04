@@ -4,6 +4,7 @@ import { LabelBadges } from "../../components/LabelBadges";
 import { ActionIcon, Collapse, Group, Stack, Text } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { IconChevronDown, IconChevronUp } from "@tabler/icons-react";
+import { actionIconStyle } from "../../styles";
 
 type TargetLabelsProps = {
   labels: Labels;
@@ -26,12 +27,9 @@ const TargetLabels: FC<TargetLabelsProps> = ({ discoveredLabels, labels }) => {
           title={`${showDiscovered ? "Hide" : "Show"} discovered (pre-relabeling) labels`}
         >
           {showDiscovered ? (
-            <IconChevronUp
-              style={{ width: "70%", height: "70%" }}
-              stroke={1.5}
-            />
+            <IconChevronUp style={actionIconStyle} />
           ) : (
-            <IconChevronDown style={{ width: "70%", height: "70%" }} />
+            <IconChevronDown style={actionIconStyle} />
           )}
         </ActionIcon>
       </Group>

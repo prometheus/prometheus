@@ -14,36 +14,14 @@
 package textparse
 
 import (
-	"bytes"
-	"errors"
 	"io"
-	"os"
-	"strings"
 	"testing"
 
-	"github.com/klauspost/compress/gzip"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/common/expfmt"
-	"github.com/prometheus/common/model"
-
-	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/util/testutil"
 )
-
-type expectedParse struct {
-	lset    labels.Labels
-	m       string
-	t       *int64
-	v       float64
-	typ     model.MetricType
-	help    string
-	unit    string
-	comment string
-	e       *exemplar.Exemplar
-	ct      *int64
-}
 
 func TestPromParse(t *testing.T) {
 	input := `# HELP go_gc_duration_seconds A summary of the GC invocation durations.
@@ -53,6 +31,13 @@ go_gc_duration_seconds{quantile="0.25",} 7.424100000000001e-05
 go_gc_duration_seconds{quantile="0.5",a="b"} 8.3835e-05
 go_gc_duration_seconds{quantile="0.8", a="b"} 8.3835e-05
 go_gc_duration_seconds{ quantile="0.9", a="b"} 8.3835e-05
+# HELP prometheus_http_request_duration_seconds Histogram of latencies for HTTP requests.
+# TYPE prometheus_http_request_duration_seconds histogram
+prometheus_http_request_duration_seconds_bucket{handler="/",le="1"} 423
+prometheus_http_request_duration_seconds_bucket{handler="/",le="2"} 1423
+prometheus_http_request_duration_seconds_bucket{handler="/",le="+Inf"} 1423
+prometheus_http_request_duration_seconds_sum{handler="/"} 2000
+prometheus_http_request_duration_seconds_count{handler="/"} 1423
 # Hrandom comment starting with prefix of HELP
 #
 wind_speed{A="2",c="3"} 12345
@@ -72,13 +57,12 @@ some:aggregate:rate5m{a_b="c"}	1
 go_goroutines 33  	123123
 _metric_starting_with_underscore 1
 testmetric{_label_starting_with_underscore="foo"} 1
-testmetric{label="\"bar\""} 1`
+testmetric{label="\"bar\""} 1
+testmetric{le="10"} 1`
 	input += "\n# HELP metric foo\x00bar"
 	input += "\nnull_byte_metric{a=\"abc\x00\"} 1"
 
-	int64p := func(x int64) *int64 { return &x }
-
-	exp := []expectedParse{
+	exp := []parsedEntry{
 		{
 			m:    "go_gc_duration_seconds",
 			help: "A summary of the GC invocation durations.",
@@ -88,7 +72,7 @@ testmetric{label="\"bar\""} 1`
 		}, {
 			m:    `go_gc_duration_seconds{quantile="0"}`,
 			v:    4.9351e-05,
-			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0"),
+			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.0"),
 		}, {
 			m:    `go_gc_duration_seconds{quantile="0.25",}`,
 			v:    7.424100000000001e-05,
@@ -105,6 +89,32 @@ testmetric{label="\"bar\""} 1`
 			m:    `go_gc_duration_seconds{ quantile="0.9", a="b"}`,
 			v:    8.3835e-05,
 			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "0.9", "a", "b"),
+		}, {
+			m:    "prometheus_http_request_duration_seconds",
+			help: "Histogram of latencies for HTTP requests.",
+		}, {
+			m:   "prometheus_http_request_duration_seconds",
+			typ: model.MetricTypeHistogram,
+		}, {
+			m:    `prometheus_http_request_duration_seconds_bucket{handler="/",le="1"}`,
+			v:    423,
+			lset: labels.FromStrings("__name__", "prometheus_http_request_duration_seconds_bucket", "handler", "/", "le", "1.0"),
+		}, {
+			m:    `prometheus_http_request_duration_seconds_bucket{handler="/",le="2"}`,
+			v:    1423,
+			lset: labels.FromStrings("__name__", "prometheus_http_request_duration_seconds_bucket", "handler", "/", "le", "2.0"),
+		}, {
+			m:    `prometheus_http_request_duration_seconds_bucket{handler="/",le="+Inf"}`,
+			v:    1423,
+			lset: labels.FromStrings("__name__", "prometheus_http_request_duration_seconds_bucket", "handler", "/", "le", "+Inf"),
+		}, {
+			m:    `prometheus_http_request_duration_seconds_sum{handler="/"}`,
+			v:    2000,
+			lset: labels.FromStrings("__name__", "prometheus_http_request_duration_seconds_sum", "handler", "/"),
+		}, {
+			m:    `prometheus_http_request_duration_seconds_count{handler="/"}`,
+			v:    1423,
+			lset: labels.FromStrings("__name__", "prometheus_http_request_duration_seconds_count", "handler", "/"),
 		}, {
 			comment: "# Hrandom comment starting with prefix of HELP",
 		}, {
@@ -140,7 +150,7 @@ testmetric{label="\"bar\""} 1`
 			v:    8.3835e-05,
 			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "1.0", "a", "b"),
 		}, {
-			// NOTE: Unlike OpenMetrics, Promparse allows spaces between label terms. This appears to be unintended and should probably be fixed.
+			// NOTE: Unlike OpenMetrics, PromParser allows spaces between label terms. This appears to be unintended and should probably be fixed.
 			m:    `go_gc_duration_seconds { quantile = "2.0" a = "b" }`,
 			v:    8.3835e-05,
 			lset: labels.FromStrings("__name__", "go_gc_duration_seconds", "quantile", "2.0", "a", "b"),
@@ -176,6 +186,10 @@ testmetric{label="\"bar\""} 1`
 			v:    1,
 			lset: labels.FromStrings("__name__", "testmetric", "label", `"bar"`),
 		}, {
+			m:    `testmetric{le="10"}`,
+			v:    1,
+			lset: labels.FromStrings("__name__", "testmetric", "le", "10"),
+		}, {
 			m:    "metric",
 			help: "foo\x00bar",
 		}, {
@@ -186,80 +200,8 @@ testmetric{label="\"bar\""} 1`
 	}
 
 	p := NewPromParser([]byte(input), labels.NewSymbolTable())
-	checkParseResults(t, p, exp)
-}
-
-func checkParseResults(t *testing.T, p Parser, exp []expectedParse) {
-	checkParseResultsWithCT(t, p, exp, false)
-}
-
-func checkParseResultsWithCT(t *testing.T, p Parser, exp []expectedParse, ctLinesRemoved bool) {
-	i := 0
-
-	var res labels.Labels
-
-	for {
-		et, err := p.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		require.NoError(t, err)
-
-		switch et {
-		case EntrySeries:
-			m, ts, v := p.Series()
-
-			p.Metric(&res)
-
-			if ctLinesRemoved {
-				// Are CT series skipped?
-				_, typ := p.Type()
-				if TypeRequiresCT(typ) && strings.HasSuffix(res.Get(labels.MetricName), "_created") {
-					t.Fatalf("we exped created lines skipped")
-				}
-			}
-
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].t, ts)
-			require.Equal(t, exp[i].v, v)
-			testutil.RequireEqual(t, exp[i].lset, res)
-
-			var e exemplar.Exemplar
-			found := p.Exemplar(&e)
-			if exp[i].e == nil {
-				require.False(t, found)
-			} else {
-				require.True(t, found)
-				testutil.RequireEqual(t, *exp[i].e, e)
-			}
-			if ct := p.CreatedTimestamp(); ct != nil {
-				require.Equal(t, *exp[i].ct, *ct)
-			} else {
-				require.Nil(t, exp[i].ct)
-			}
-
-		case EntryType:
-			m, typ := p.Type()
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].typ, typ)
-
-		case EntryHelp:
-			m, h := p.Help()
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].help, string(h))
-
-		case EntryUnit:
-			m, u := p.Unit()
-			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].unit, string(u))
-
-		case EntryComment:
-			require.Equal(t, exp[i].comment, string(p.Comment()))
-		}
-
-		i++
-	}
-	require.Len(t, exp, i)
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
 }
 
 func TestUTF8PromParse(t *testing.T) {
@@ -283,7 +225,7 @@ func TestUTF8PromParse(t *testing.T) {
 {"go.gc_duration_seconds_count"} 99
 {"Heizölrückstoßabdämpfung 10€ metric with \"interesting\" {character\nchoices}","strange©™\n'quoted' \"name\""="6"} 10.0`
 
-	exp := []expectedParse{
+	exp := []parsedEntry{
 		{
 			m:    "go.gc_duration_seconds",
 			help: "A summary of the GC invocation durations.",
@@ -293,7 +235,7 @@ func TestUTF8PromParse(t *testing.T) {
 		}, {
 			m:    `{"go.gc_duration_seconds",quantile="0"}`,
 			v:    4.9351e-05,
-			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "0"),
+			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "0.0"),
 		}, {
 			m:    `{"go.gc_duration_seconds",quantile="0.25",}`,
 			v:    7.424100000000001e-05,
@@ -339,7 +281,8 @@ choices}`, "strange©™\n'quoted' \"name\"", "6"),
 	}
 
 	p := NewPromParser([]byte(input), labels.NewSymbolTable())
-	checkParseResults(t, p, exp)
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
 }
 
 func TestPromParseErrors(t *testing.T) {
@@ -423,8 +366,7 @@ func TestPromParseErrors(t *testing.T) {
 		for err == nil {
 			_, err = p.Next()
 		}
-		require.Error(t, err)
-		require.Equal(t, c.err, err.Error(), "test %d", i)
+		require.EqualError(t, err, c.err, "test %d", i)
 	}
 }
 
@@ -483,194 +425,6 @@ func TestPromNullByteHandling(t *testing.T) {
 			continue
 		}
 
-		require.Error(t, err)
-		require.Equal(t, c.err, err.Error(), "test %d", i)
-	}
-}
-
-const (
-	promtestdataSampleCount = 410
-)
-
-func BenchmarkParse(b *testing.B) {
-	for parserName, parser := range map[string]func([]byte, *labels.SymbolTable) Parser{
-		"prometheus": NewPromParser,
-		"openmetrics": func(b []byte, st *labels.SymbolTable) Parser {
-			return NewOpenMetricsParser(b, st)
-		},
-	} {
-		for _, fn := range []string{"promtestdata.txt", "promtestdata.nometa.txt"} {
-			f, err := os.Open(fn)
-			require.NoError(b, err)
-			defer f.Close()
-
-			buf, err := io.ReadAll(f)
-			require.NoError(b, err)
-
-			b.Run(parserName+"/no-decode-metric/"+fn, func(b *testing.B) {
-				total := 0
-
-				b.SetBytes(int64(len(buf) / promtestdataSampleCount))
-				b.ReportAllocs()
-				b.ResetTimer()
-
-				st := labels.NewSymbolTable()
-				for i := 0; i < b.N; i += promtestdataSampleCount {
-					p := parser(buf, st)
-
-				Outer:
-					for i < b.N {
-						t, err := p.Next()
-						switch t {
-						case EntryInvalid:
-							if errors.Is(err, io.EOF) {
-								break Outer
-							}
-							b.Fatal(err)
-						case EntrySeries:
-							m, _, _ := p.Series()
-							total += len(m)
-							i++
-						}
-					}
-				}
-				_ = total
-			})
-			b.Run(parserName+"/decode-metric/"+fn, func(b *testing.B) {
-				total := 0
-
-				b.SetBytes(int64(len(buf) / promtestdataSampleCount))
-				b.ReportAllocs()
-				b.ResetTimer()
-
-				st := labels.NewSymbolTable()
-				for i := 0; i < b.N; i += promtestdataSampleCount {
-					p := parser(buf, st)
-
-				Outer:
-					for i < b.N {
-						t, err := p.Next()
-						switch t {
-						case EntryInvalid:
-							if errors.Is(err, io.EOF) {
-								break Outer
-							}
-							b.Fatal(err)
-						case EntrySeries:
-							m, _, _ := p.Series()
-
-							var res labels.Labels
-							p.Metric(&res)
-
-							total += len(m)
-							i++
-						}
-					}
-				}
-				_ = total
-			})
-			b.Run(parserName+"/decode-metric-reuse/"+fn, func(b *testing.B) {
-				total := 0
-				var res labels.Labels
-
-				b.SetBytes(int64(len(buf) / promtestdataSampleCount))
-				b.ReportAllocs()
-				b.ResetTimer()
-
-				st := labels.NewSymbolTable()
-				for i := 0; i < b.N; i += promtestdataSampleCount {
-					p := parser(buf, st)
-
-				Outer:
-					for i < b.N {
-						t, err := p.Next()
-						switch t {
-						case EntryInvalid:
-							if errors.Is(err, io.EOF) {
-								break Outer
-							}
-							b.Fatal(err)
-						case EntrySeries:
-							m, _, _ := p.Series()
-
-							p.Metric(&res)
-
-							total += len(m)
-							i++
-						}
-					}
-				}
-				_ = total
-			})
-			b.Run("expfmt-text/"+fn, func(b *testing.B) {
-				if parserName != "prometheus" {
-					b.Skip()
-				}
-				b.SetBytes(int64(len(buf) / promtestdataSampleCount))
-				b.ReportAllocs()
-				b.ResetTimer()
-
-				total := 0
-
-				for i := 0; i < b.N; i += promtestdataSampleCount {
-					decSamples := make(model.Vector, 0, 50)
-					sdec := expfmt.SampleDecoder{
-						Dec: expfmt.NewDecoder(bytes.NewReader(buf), expfmt.NewFormat(expfmt.TypeTextPlain)),
-						Opts: &expfmt.DecodeOptions{
-							Timestamp: model.TimeFromUnixNano(0),
-						},
-					}
-
-					for {
-						if err = sdec.Decode(&decSamples); err != nil {
-							break
-						}
-						total += len(decSamples)
-						decSamples = decSamples[:0]
-					}
-				}
-				_ = total
-			})
-		}
-	}
-}
-
-func BenchmarkGzip(b *testing.B) {
-	for _, fn := range []string{"promtestdata.txt", "promtestdata.nometa.txt"} {
-		b.Run(fn, func(b *testing.B) {
-			f, err := os.Open(fn)
-			require.NoError(b, err)
-			defer f.Close()
-
-			var buf bytes.Buffer
-			gw := gzip.NewWriter(&buf)
-
-			n, err := io.Copy(gw, f)
-			require.NoError(b, err)
-			require.NoError(b, gw.Close())
-
-			gbuf, err := io.ReadAll(&buf)
-			require.NoError(b, err)
-
-			k := b.N / promtestdataSampleCount
-
-			b.ReportAllocs()
-			b.SetBytes(n / promtestdataSampleCount)
-			b.ResetTimer()
-
-			total := 0
-
-			for i := 0; i < k; i++ {
-				gr, err := gzip.NewReader(bytes.NewReader(gbuf))
-				require.NoError(b, err)
-
-				d, err := io.ReadAll(gr)
-				require.NoError(b, err)
-				require.NoError(b, gr.Close())
-
-				total += len(d)
-			}
-			_ = total
-		})
+		require.EqualError(t, err, c.err, "test %d", i)
 	}
 }

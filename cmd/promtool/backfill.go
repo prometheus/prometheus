@@ -21,8 +21,9 @@ import (
 	"math"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
+
+	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
@@ -120,7 +121,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 			// also need to append samples throughout the whole block range. To allow that, we
 			// pretend that the block is twice as large here, but only really add sample in the
 			// original interval later.
-			w, err := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, 2*blockDuration)
+			w, err := tsdb.NewBlockWriter(promslog.NewNopLogger(), outputDir, 2*blockDuration)
 			if err != nil {
 				return fmt.Errorf("block writer: %w", err)
 			}

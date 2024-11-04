@@ -1,4 +1,4 @@
-// Copyright 2019 The Prometheus Authors
+// Copyright 2024 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -11,29 +11,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package logging
+package discovery
 
 import (
-	"github.com/go-kit/log"
-	"golang.org/x/time/rate"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v2"
 )
 
-type ratelimiter struct {
-	limiter *rate.Limiter
-	next    log.Logger
-}
+func TestConfigsCustomUnMarshalMarshal(t *testing.T) {
+	input := `static_configs:
+- targets:
+  - foo:1234
+  - bar:4321
+`
+	cfg := &Configs{}
+	err := yaml.UnmarshalStrict([]byte(input), cfg)
+	require.NoError(t, err)
 
-// RateLimit write to a logger.
-func RateLimit(next log.Logger, limit rate.Limit) log.Logger {
-	return &ratelimiter{
-		limiter: rate.NewLimiter(limit, int(limit)),
-		next:    next,
-	}
-}
-
-func (r *ratelimiter) Log(keyvals ...interface{}) error {
-	if r.limiter.Allow() {
-		return r.next.Log(keyvals...)
-	}
-	return nil
+	output, err := yaml.Marshal(cfg)
+	require.NoError(t, err)
+	require.Equal(t, input, string(output))
 }

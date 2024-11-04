@@ -166,7 +166,7 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, floatHistograms, decFloatHistograms)
 
-	// Gauge ingeger histograms.
+	// Gauge integer histograms.
 	for i := range histograms {
 		histograms[i].H.CounterResetHint = histogram.GaugeType
 	}

@@ -30,6 +30,11 @@ include Makefile.common
 
 DOCKER_IMAGE_NAME       ?= prometheus
 
+# Only build UI if PREBUILT_ASSETS_STATIC_DIR is not set
+ifdef PREBUILT_ASSETS_STATIC_DIR
+  SKIP_UI_BUILD = true
+endif
+
 .PHONY: update-npm-deps
 update-npm-deps:
 	@echo ">> updating npm dependencies"
@@ -75,7 +80,23 @@ ui-lint:
 	cd $(UI_PATH)/react-app && npm run lint
 
 .PHONY: assets
+ifndef SKIP_UI_BUILD
 assets: ui-install ui-build
+
+.PHONY: npm_licenses
+npm_licenses: ui-install
+	@echo ">> bundling npm licenses"
+	rm -f $(REACT_APP_NPM_LICENSES_TARBALL) npm_licenses
+	ln -s . npm_licenses
+	find npm_licenses/$(UI_NODE_MODULES_PATH) -iname "license*" | tar cfj $(REACT_APP_NPM_LICENSES_TARBALL) --files-from=-
+	rm -f npm_licenses
+else
+assets:
+	@echo '>> skipping assets build, pre-built assets provided'
+
+npm_licenses:
+	@echo '>> skipping assets npm licenses, pre-built assets provided'
+endif
 
 .PHONY: assets-compress
 assets-compress: assets
@@ -124,14 +145,6 @@ test: common-test check-go-mod-version
 else
 test: check-generated-parser common-test ui-build-module ui-test ui-lint check-go-mod-version
 endif
-
-.PHONY: npm_licenses
-npm_licenses: ui-install
-	@echo ">> bundling npm licenses"
-	rm -f $(REACT_APP_NPM_LICENSES_TARBALL) npm_licenses
-	ln -s . npm_licenses
-	find npm_licenses/$(UI_NODE_MODULES_PATH) -iname "license*" | tar cfj $(REACT_APP_NPM_LICENSES_TARBALL) --files-from=-
-	rm -f npm_licenses
 
 .PHONY: tarball
 tarball: npm_licenses common-tarball

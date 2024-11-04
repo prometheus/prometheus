@@ -8,7 +8,7 @@ import {
   vectorMatchCardinality,
   VectorMatching,
 } from "./ast";
-import { isComparisonOperator } from "./utils";
+import { isComparisonOperator, isSetOperator } from "./utils";
 
 // We use a special (otherwise invalid) sample value to indicate that
 // a sample has been filtered away by a comparison operator.
@@ -340,20 +340,35 @@ export const computeVectorVectorBinOp = (
 
   // Annotate the match groups with errors (if any) and populate the results.
   Object.values(groups).forEach((mg) => {
-    if (matching.card === vectorMatchCardinality.oneToOne) {
-      if (mg.lhs.length > 1 && mg.rhs.length > 1) {
-        mg.error = { type: MatchErrorType.multipleMatchesOnBothSides };
-      } else if (mg.lhs.length > 1 || mg.rhs.length > 1) {
-        mg.error = {
-          type: MatchErrorType.multipleMatchesForOneToOneMatching,
-          dupeSide: mg.lhs.length > 1 ? "left" : "right",
-        };
-      }
-    } else if (mg.rhs.length > 1) {
-      // Check for dupes on the "one" side in one-to-many or many-to-one matching.
-      mg.error = {
-        type: MatchErrorType.multipleMatchesOnOneSide,
-      };
+    switch (matching.card) {
+      case vectorMatchCardinality.oneToOne:
+        if (mg.lhs.length > 1 && mg.rhs.length > 1) {
+          mg.error = { type: MatchErrorType.multipleMatchesOnBothSides };
+        } else if (mg.lhs.length > 1 || mg.rhs.length > 1) {
+          mg.error = {
+            type: MatchErrorType.multipleMatchesForOneToOneMatching,
+            dupeSide: mg.lhs.length > 1 ? "left" : "right",
+          };
+        }
+        break;
+      case vectorMatchCardinality.oneToMany:
+      case vectorMatchCardinality.manyToOne:
+        if (mg.rhs.length > 1) {
+          mg.error = {
+            type: MatchErrorType.multipleMatchesOnOneSide,
+          };
+        }
+        break;
+      case vectorMatchCardinality.manyToMany:
+        // Should be a set operator - these don't have errors that aren't caught during parsing.
+        if (!isSetOperator(op)) {
+          throw new Error(
+            "unexpected many-to-many matching for non-set operator"
+          );
+        }
+        break;
+      default:
+        throw new Error("unknown vector matching cardinality");
     }
 
     if (mg.error) {
@@ -363,42 +378,79 @@ export const computeVectorVectorBinOp = (
       return;
     }
 
-    // Calculate the results for this match group.
-    mg.rhs.forEach((rs) => {
+    if (isSetOperator(op)) {
+      // Add LHS samples to the result, depending on specific operator condition and RHS length.
       mg.lhs.forEach((ls, lIdx) => {
-        if (!ls.value || !rs.value) {
-          // TODO: Implement native histogram support.
-          throw new Error("native histogram support not implemented yet");
+        if (
+          (op === binaryOperatorType.and && mg.rhs.length > 0) ||
+          (op === binaryOperatorType.unless && mg.rhs.length === 0) ||
+          op === binaryOperatorType.or
+        ) {
+          mg.result.push({
+            sample: {
+              metric: ls.metric,
+              value: ls.value,
+            },
+            manySideIdx: lIdx,
+          });
         }
+      });
 
-        const [vl, vr] =
-          matching.card !== vectorMatchCardinality.oneToMany
-            ? [ls.value[1], rs.value[1]]
-            : [rs.value[1], ls.value[1]];
-        let { value, keep } = vectorElemBinop(
-          op,
-          parsePrometheusFloat(vl),
-          parsePrometheusFloat(vr)
-        );
+      // For OR, also add all RHS samples to the result if the LHS for the group is empty.
+      if (op === binaryOperatorType.or) {
+        mg.rhs.forEach((rs, rIdx) => {
+          if (mg.lhs.length === 0) {
+            mg.result.push({
+              sample: {
+                metric: rs.metric,
+                value: rs.value,
+              },
+              manySideIdx: rIdx,
+            });
+          }
+        });
+      }
+    } else {
+      // Calculate the results for this match group.
+      mg.rhs.forEach((rs) => {
+        mg.lhs.forEach((ls, lIdx) => {
+          if (!ls.value || !rs.value) {
+            // TODO: Implement native histogram support.
+            throw new Error("native histogram support not implemented yet");
+          }
 
-        const metric = resultMetric(ls.metric, rs.metric, op, matching);
-        if (bool) {
-          value = keep ? 1.0 : 0.0;
-          delete metric.__name__;
-        }
+          const [vl, vr] =
+            matching.card !== vectorMatchCardinality.oneToMany
+              ? [ls.value[1], rs.value[1]]
+              : [rs.value[1], ls.value[1]];
 
-        mg.result.push({
-          sample: {
-            metric: metric,
-            value: [
-              ls.value[0],
-              keep || bool ? formatPrometheusFloat(value) : filteredSampleValue,
-            ],
-          },
-          manySideIdx: lIdx,
+          let { value, keep } = vectorElemBinop(
+            op,
+            parsePrometheusFloat(vl),
+            parsePrometheusFloat(vr)
+          );
+
+          const metric = resultMetric(ls.metric, rs.metric, op, matching);
+          if (bool) {
+            value = keep ? 1.0 : 0.0;
+            delete metric.__name__;
+          }
+
+          mg.result.push({
+            sample: {
+              metric: metric,
+              value: [
+                ls.value[0],
+                keep || bool
+                  ? formatPrometheusFloat(value)
+                  : filteredSampleValue,
+              ],
+            },
+            manySideIdx: lIdx,
+          });
         });
       });
-    });
+    }
   });
 
   // If we originally swapped the LHS and RHS, swap them back to the original order.

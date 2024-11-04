@@ -28,13 +28,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
@@ -351,7 +351,7 @@ func TestMetadataDelivery(t *testing.T) {
 
 	require.Equal(t, 0.0, client_testutil.ToFloat64(m.metrics.failedMetadataTotal))
 	require.Len(t, c.receivedMetadata, numMetadata)
-	// One more write than the rounded qoutient should be performed in order to get samples that didn't
+	// One more write than the rounded quotient should be performed in order to get samples that didn't
 	// fit into MaxSamplesPerSend.
 	require.Equal(t, numMetadata/config.DefaultMetadataConfig.MaxSamplesPerSend+1, c.writesReceived)
 	// Make sure the last samples were sent.
@@ -1326,21 +1326,25 @@ func BenchmarkSampleSend(b *testing.B) {
 	cfg.MaxShards = 20
 
 	// todo: test with new proto type(s)
-	m := newTestQueueManager(b, cfg, mcfg, defaultFlushDeadline, c, config.RemoteWriteProtoMsgV1)
-	m.StoreSeries(series, 0)
+	for _, format := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+		b.Run(string(format), func(b *testing.B) {
+			m := newTestQueueManager(b, cfg, mcfg, defaultFlushDeadline, c, format)
+			m.StoreSeries(series, 0)
 
-	// These should be received by the client.
-	m.Start()
-	defer m.Stop()
+			// These should be received by the client.
+			m.Start()
+			defer m.Stop()
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		m.Append(samples)
-		m.UpdateSeriesSegment(series, i+1) // simulate what wlog.Watcher.garbageCollectSeries does
-		m.SeriesReset(i + 1)
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				m.Append(samples)
+				m.UpdateSeriesSegment(series, i+1) // simulate what wlog.Watcher.garbageCollectSeries does
+				m.SeriesReset(i + 1)
+			}
+			// Do not include shutdown
+			b.StopTimer()
+		})
 	}
-	// Do not include shutdown
-	b.StopTimer()
 }
 
 // Check how long it takes to add N series, including external labels processing.
@@ -1414,8 +1418,7 @@ func BenchmarkStartup(b *testing.B) {
 	}
 	sort.Ints(segments)
 
-	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stdout))
-	logger = log.With(logger, "caller", log.DefaultCaller)
+	logger := promslog.New(&promslog.Config{})
 
 	cfg := testDefaultQueueConfig()
 	mcfg := config.DefaultMetadataConfig
@@ -1849,7 +1852,7 @@ func createDummyTimeSeries(instances int) []timeSeries {
 }
 
 func BenchmarkBuildWriteRequest(b *testing.B) {
-	noopLogger := log.NewNopLogger()
+	noopLogger := promslog.NewNopLogger()
 	bench := func(b *testing.B, batch []timeSeries) {
 		buff := make([]byte, 0)
 		seriesBuff := make([]prompb.TimeSeries, len(batch))
@@ -1859,13 +1862,6 @@ func BenchmarkBuildWriteRequest(b *testing.B) {
 		}
 		pBuf := proto.NewBuffer(nil)
 
-		// Warmup buffers
-		for i := 0; i < 10; i++ {
-			populateTimeSeries(batch, seriesBuff, true, true)
-			buildWriteRequest(noopLogger, seriesBuff, nil, pBuf, &buff, nil, "snappy")
-		}
-
-		b.ResetTimer()
 		totalSize := 0
 		for i := 0; i < b.N; i++ {
 			populateTimeSeries(batch, seriesBuff, true, true)
@@ -1896,46 +1892,44 @@ func BenchmarkBuildWriteRequest(b *testing.B) {
 }
 
 func BenchmarkBuildV2WriteRequest(b *testing.B) {
-	noopLogger := log.NewNopLogger()
-	type testcase struct {
-		batch []timeSeries
-	}
-	testCases := []testcase{
-		{createDummyTimeSeries(2)},
-		{createDummyTimeSeries(10)},
-		{createDummyTimeSeries(100)},
-	}
-	for _, tc := range testCases {
+	noopLogger := promslog.NewNopLogger()
+	bench := func(b *testing.B, batch []timeSeries) {
 		symbolTable := writev2.NewSymbolTable()
 		buff := make([]byte, 0)
-		seriesBuff := make([]writev2.TimeSeries, len(tc.batch))
+		seriesBuff := make([]writev2.TimeSeries, len(batch))
 		for i := range seriesBuff {
 			seriesBuff[i].Samples = []writev2.Sample{{}}
 			seriesBuff[i].Exemplars = []writev2.Exemplar{{}}
 		}
 		pBuf := []byte{}
 
-		// Warmup buffers
-		for i := 0; i < 10; i++ {
-			populateV2TimeSeries(&symbolTable, tc.batch, seriesBuff, true, true)
-			buildV2WriteRequest(noopLogger, seriesBuff, symbolTable.Symbols(), &pBuf, &buff, nil, "snappy")
-		}
-
-		b.Run(fmt.Sprintf("%d-instances", len(tc.batch)), func(b *testing.B) {
-			totalSize := 0
-			for j := 0; j < b.N; j++ {
-				populateV2TimeSeries(&symbolTable, tc.batch, seriesBuff, true, true)
-				b.ResetTimer()
-				req, _, _, err := buildV2WriteRequest(noopLogger, seriesBuff, symbolTable.Symbols(), &pBuf, &buff, nil, "snappy")
-				if err != nil {
-					b.Fatal(err)
-				}
-				symbolTable.Reset()
-				totalSize += len(req)
-				b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
+		totalSize := 0
+		for i := 0; i < b.N; i++ {
+			populateV2TimeSeries(&symbolTable, batch, seriesBuff, true, true)
+			req, _, _, err := buildV2WriteRequest(noopLogger, seriesBuff, symbolTable.Symbols(), &pBuf, &buff, nil, "snappy")
+			if err != nil {
+				b.Fatal(err)
 			}
-		})
+			totalSize += len(req)
+			b.ReportMetric(float64(totalSize)/float64(b.N), "compressedSize/op")
+		}
 	}
+
+	twoBatch := createDummyTimeSeries(2)
+	tenBatch := createDummyTimeSeries(10)
+	hundredBatch := createDummyTimeSeries(100)
+
+	b.Run("2 instances", func(b *testing.B) {
+		bench(b, twoBatch)
+	})
+
+	b.Run("10 instances", func(b *testing.B) {
+		bench(b, tenBatch)
+	})
+
+	b.Run("1k instances", func(b *testing.B) {
+		bench(b, hundredBatch)
+	})
 }
 
 func TestDropOldTimeSeries(t *testing.T) {

@@ -98,7 +98,7 @@ func (m *SDMock) SetupHandlers() {
 				if len(query) == 2 {
 					h := sha1.New()
 					h.Write([]byte(query[1]))
-					// Avoing long filenames for Windows.
+					// Avoiding long filenames for Windows.
 					f += "__" + base64.URLEncoding.EncodeToString(h.Sum(nil))[:10]
 				}
 			}

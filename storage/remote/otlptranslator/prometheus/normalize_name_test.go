@@ -148,13 +148,13 @@ func TestNamespace(t *testing.T) {
 	require.Equal(t, "space_test", normalizeName(createGauge("#test", ""), "space"))
 }
 
-func TestCleanUpString(t *testing.T) {
-	require.Equal(t, "", CleanUpString(""))
-	require.Equal(t, "a_b", CleanUpString("a b"))
-	require.Equal(t, "hello_world", CleanUpString("hello, world!"))
-	require.Equal(t, "hello_you_2", CleanUpString("hello you 2"))
-	require.Equal(t, "1000", CleanUpString("$1000"))
-	require.Equal(t, "", CleanUpString("*+$^=)"))
+func TestCleanUpUnit(t *testing.T) {
+	require.Equal(t, "", cleanUpUnit(""))
+	require.Equal(t, "a_b", cleanUpUnit("a b"))
+	require.Equal(t, "hello_world", cleanUpUnit("hello, world"))
+	require.Equal(t, "hello_you_2", cleanUpUnit("hello you 2"))
+	require.Equal(t, "1000", cleanUpUnit("$1000"))
+	require.Equal(t, "", cleanUpUnit("*+$^=)"))
 }
 
 func TestUnitMapGetOrDefault(t *testing.T) {
@@ -179,17 +179,18 @@ func TestRemoveItem(t *testing.T) {
 	require.Equal(t, []string{"b", "c"}, removeItem([]string{"a", "b", "c"}, "a"))
 }
 
-func TestBuildCompliantNameWithNormalize(t *testing.T) {
+func TestBuildCompliantNameWithSuffixes(t *testing.T) {
 	require.Equal(t, "system_io_bytes_total", BuildCompliantName(createCounter("system.io", "By"), "", true))
 	require.Equal(t, "system_network_io_bytes_total", BuildCompliantName(createCounter("network.io", "By"), "system", true))
 	require.Equal(t, "_3_14_digits", BuildCompliantName(createGauge("3.14 digits", ""), "", true))
 	require.Equal(t, "envoy_rule_engine_zlib_buf_error", BuildCompliantName(createGauge("envoy__rule_engine_zlib_buf_error", ""), "", true))
-	require.Equal(t, "foo_bar", BuildCompliantName(createGauge(":foo::bar", ""), "", true))
-	require.Equal(t, "foo_bar_total", BuildCompliantName(createCounter(":foo::bar", ""), "", true))
+	require.Equal(t, ":foo::bar", BuildCompliantName(createGauge(":foo::bar", ""), "", true))
+	require.Equal(t, ":foo::bar_total", BuildCompliantName(createCounter(":foo::bar", ""), "", true))
 	// Gauges with unit 1 are considered ratios.
 	require.Equal(t, "foo_bar_ratio", BuildCompliantName(createGauge("foo.bar", "1"), "", true))
 	// Slashes in units are converted.
 	require.Equal(t, "system_io_foo_per_bar_total", BuildCompliantName(createCounter("system.io", "foo/bar"), "", true))
+	require.Equal(t, "metric_with_foreign_characters_total", BuildCompliantName(createCounter("metric_with_字符_foreign_characters", ""), "", true))
 }
 
 func TestBuildCompliantNameWithoutSuffixes(t *testing.T) {
@@ -202,4 +203,5 @@ func TestBuildCompliantNameWithoutSuffixes(t *testing.T) {
 	require.Equal(t, ":foo::bar", BuildCompliantName(createCounter(":foo::bar", ""), "", false))
 	require.Equal(t, "foo_bar", BuildCompliantName(createGauge("foo.bar", "1"), "", false))
 	require.Equal(t, "system_io", BuildCompliantName(createCounter("system.io", "foo/bar"), "", false))
+	require.Equal(t, "metric_with___foreign_characters", BuildCompliantName(createCounter("metric_with_字符_foreign_characters", ""), "", false))
 }

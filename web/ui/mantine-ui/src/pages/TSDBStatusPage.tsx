@@ -1,8 +1,10 @@
-import { Stack, Card, Table, Text } from "@mantine/core";
+import { Table } from "@mantine/core";
 import { useSuspenseAPIQuery } from "../api/api";
 import { TSDBStatusResult } from "../api/responseTypes/tsdbStatus";
 import { formatTimestamp } from "../lib/formatTime";
 import { useSettings } from "../state/settingsSlice";
+import InfoPageStack from "../components/InfoPageStack";
+import InfoPageCard from "../components/InfoPageCard";
 
 export default function TSDBStatusPage() {
   const {
@@ -41,7 +43,7 @@ export default function TSDBStatusPage() {
   ];
 
   return (
-    <Stack gap="lg" maw={1000} mx="auto" mt="xs">
+    <InfoPageStack>
       {[
         {
           title: "TSDB Head Status",
@@ -70,10 +72,7 @@ export default function TSDBStatusPage() {
           formatAsCode: true,
         },
       ].map(({ title, unit = "Count", stats, formatAsCode }) => (
-        <Card shadow="xs" withBorder p="md">
-          <Text fz="xl" fw={600} ml="xs" mb="sm">
-            {title}
-          </Text>
+        <InfoPageCard title={title}>
           <Table layout="fixed">
             <Table.Thead>
               <Table.Tr>
@@ -82,24 +81,22 @@ export default function TSDBStatusPage() {
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
-              {stats.map(({ name, value }) => {
-                return (
-                  <Table.Tr key={name}>
-                    <Table.Td
-                      style={{
-                        wordBreak: "break-all",
-                      }}
-                    >
-                      {formatAsCode ? <code>{name}</code> : name}
-                    </Table.Td>
-                    <Table.Td>{value}</Table.Td>
-                  </Table.Tr>
-                );
-              })}
+              {stats.map(({ name, value }) => (
+                <Table.Tr key={name}>
+                  <Table.Td
+                    style={{
+                      wordBreak: "break-all",
+                    }}
+                  >
+                    {formatAsCode ? <code>{name}</code> : name}
+                  </Table.Td>
+                  <Table.Td>{value}</Table.Td>
+                </Table.Tr>
+              ))}
             </Table.Tbody>
           </Table>
-        </Card>
+        </InfoPageCard>
       ))}
-    </Stack>
+    </InfoPageStack>
   );
 }

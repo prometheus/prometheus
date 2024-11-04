@@ -361,317 +361,296 @@ const VectorVectorBinaryExprExplainView: FC<
     <>
       <Text size="sm">{explanationText(node)}</Text>
 
-      {!isSetOperator(node.op) && (
-        <>
-          <Group my="lg" justify="flex-end" gap="xl">
-            {/* <Switch
-              label="Break long lines"
-              checked={allowLineBreaks}
-              onChange={(event) =>
-                setAllowLineBreaks(event.currentTarget.checked)
-              }
-            /> */}
-            <Switch
-              label="Show sample values"
-              checked={showSampleValues}
-              onChange={(event) =>
-                setShowSampleValues(event.currentTarget.checked)
-              }
-            />
-          </Group>
+      <Group my="lg" justify="flex-end" gap="xl">
+        <Switch
+          label="Show sample values"
+          checked={showSampleValues}
+          onChange={(event) => setShowSampleValues(event.currentTarget.checked)}
+        />
+      </Group>
 
-          {numGroups > Object.keys(matchGroups).length && (
-            <Alert
-              color="yellow"
-              mb="md"
-              icon={<IconAlertTriangle size={14} />}
-            >
-              Too many match groups to display, only showing{" "}
-              {Object.keys(matchGroups).length} out of {numGroups} groups.
-              <br />
-              <br />
-              <Anchor fz="sm" onClick={() => setMaxGroups(undefined)}>
-                Show all groups
-              </Anchor>
-            </Alert>
-          )}
-
-          {errCount > 0 && (
-            <Alert
-              color="yellow"
-              mb="md"
-              icon={<IconAlertTriangle size={14} />}
-            >
-              Found matching issues in {errCount} match group
-              {errCount > 1 ? "s" : ""}. See below for per-group error details.
-            </Alert>
-          )}
-
-          <Table fz="xs" withRowBorders={false}>
-            <Table.Tbody>
-              {Object.values(matchGroups).map((mg, mgIdx) => {
-                const {
-                  groupLabels,
-                  lhs,
-                  lhsCount,
-                  rhs,
-                  rhsCount,
-                  result,
-                  error,
-                } = mg;
-
-                const matchGroupTitleRow = (color: string) => (
-                  <Table.Tr ta="center">
-                    <Table.Td
-                      colSpan={2}
-                      style={{ backgroundColor: `${color}25` }}
-                    >
-                      <SeriesName labels={groupLabels} format={true} />
-                    </Table.Td>
-                  </Table.Tr>
-                );
-
-                const matchGroupTable = (
-                  series: InstantSample[],
-                  seriesCount: number,
-                  color: string,
-                  colorOffset?: number
-                ) => (
-                  <Box
-                    style={{
-                      borderRadius: 3,
-                      border: "2px solid",
-                      borderColor:
-                        series.length === 0
-                          ? "light-dark(var(--mantine-color-gray-4), var(--mantine-color-gray-7))"
-                          : color,
-                    }}
-                  >
-                    <Table fz="xs" withRowBorders={false} verticalSpacing={5}>
-                      <Table.Tbody>
-                        {series.length === 0 ? (
-                          <Table.Tr>
-                            <Table.Td
-                              ta="center"
-                              c="light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-5))"
-                              py="md"
-                              fw="bold"
-                            >
-                              no matching series
-                            </Table.Td>
-                          </Table.Tr>
-                        ) : (
-                          <>
-                            {matchGroupTitleRow(color)}
-                            {series.map((s, sIdx) => {
-                              if (s.value === undefined) {
-                                // TODO: Figure out how to handle native histograms.
-                                throw new Error(
-                                  "Native histograms are not supported yet"
-                                );
-                              }
-
-                              return (
-                                <Table.Tr key={sIdx}>
-                                  <Table.Td>
-                                    <Group wrap="nowrap" gap={7} align="center">
-                                      {seriesSwatch(
-                                        colorForIndex(sIdx, colorOffset)
-                                      )}
-
-                                      <SeriesName
-                                        labels={noMatchLabels(
-                                          s.metric,
-                                          matching.on,
-                                          matching.labels
-                                        )}
-                                        format={true}
-                                      />
-                                    </Group>
-                                  </Table.Td>
-                                  {showSampleValues && (
-                                    <Table.Td ta="right">{s.value[1]}</Table.Td>
-                                  )}
-                                </Table.Tr>
-                              );
-                            })}
-                          </>
-                        )}
-                        {seriesCount > series.length && (
-                          <Table.Tr>
-                            <Table.Td ta="center" py="md" fw="bold" c="gray.6">
-                              {seriesCount - series.length} more series omitted
-                              &nbsp;&nbsp;–&nbsp;&nbsp;
-                              <Anchor
-                                size="xs"
-                                onClick={() => setMaxSeriesPerGroup(undefined)}
-                              >
-                                Show all series
-                              </Anchor>
-                            </Table.Td>
-                          </Table.Tr>
-                        )}
-                      </Table.Tbody>
-                    </Table>
-                  </Box>
-                );
-
-                const noLHSMatches = lhs.length === 0;
-                const noRHSMatches = rhs.length === 0;
-
-                const groupColor = colorPool[mgIdx % colorPool.length];
-
-                const lhsTable = matchGroupTable(lhs, lhsCount, groupColor);
-                const rhsTable = matchGroupTable(
-                  rhs,
-                  rhsCount,
-                  groupColor,
-                  rhsColorOffset
-                );
-
-                const resultTable = (
-                  <Box
-                    style={{
-                      borderRadius: 3,
-                      border: `2px solid`,
-                      borderColor:
-                        noLHSMatches || noRHSMatches || error !== null
-                          ? "light-dark(var(--mantine-color-gray-4), var(--mantine-color-gray-7))"
-                          : groupColor,
-                    }}
-                  >
-                    <Table fz="xs" withRowBorders={false} verticalSpacing={5}>
-                      <Table.Tbody>
-                        {noLHSMatches || noRHSMatches ? (
-                          <Table.Tr>
-                            <Table.Td
-                              ta="center"
-                              c="light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-5))"
-                              py="md"
-                              fw="bold"
-                            >
-                              dropped
-                            </Table.Td>
-                          </Table.Tr>
-                        ) : error !== null ? (
-                          <Table.Tr>
-                            <Table.Td
-                              ta="center"
-                              c="light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-5))"
-                              py="md"
-                              fw="bold"
-                            >
-                              error, result omitted
-                            </Table.Td>
-                          </Table.Tr>
-                        ) : (
-                          <>
-                            {result.map(({ sample, manySideIdx }, resIdx) => {
-                              if (sample.value === undefined) {
-                                // TODO: Figure out how to handle native histograms.
-                                throw new Error(
-                                  "Native histograms are not supported yet"
-                                );
-                              }
-
-                              const filtered =
-                                sample.value[1] === filteredSampleValue;
-                              const [lIdx, rIdx] =
-                                matching.card ===
-                                vectorMatchCardinality.oneToMany
-                                  ? [0, manySideIdx]
-                                  : [manySideIdx, 0];
-
-                              return (
-                                <Table.Tr key={resIdx}>
-                                  <Table.Td
-                                    style={{ opacity: filtered ? 0.5 : 1 }}
-                                    title={
-                                      filtered
-                                        ? "Series has been filtered by comparison operator"
-                                        : undefined
-                                    }
-                                  >
-                                    <Group
-                                      wrap="nowrap"
-                                      gap="xs"
-                                      align="flex-start"
-                                    >
-                                      <Group wrap="nowrap" gap={0}>
-                                        {seriesSwatch(colorForIndex(lIdx))}
-                                        <span style={{ color: "#aaa" }}>–</span>
-                                        {seriesSwatch(
-                                          colorForIndex(rIdx, rhsColorOffset)
-                                        )}
-                                      </Group>
-
-                                      <SeriesName
-                                        labels={sample.metric}
-                                        format={true}
-                                      />
-                                    </Group>
-                                  </Table.Td>
-                                  {showSampleValues && (
-                                    <Table.Td ta="right">
-                                      {filtered ? (
-                                        <span style={{ color: "grey" }}>
-                                          filtered
-                                        </span>
-                                      ) : (
-                                        <span>{sample.value[1]}</span>
-                                      )}
-                                    </Table.Td>
-                                  )}
-                                </Table.Tr>
-                              );
-                            })}
-                          </>
-                        )}
-                      </Table.Tbody>
-                    </Table>
-                  </Box>
-                );
-
-                return (
-                  <React.Fragment key={mgIdx}>
-                    {mgIdx !== 0 && <tr style={{ height: 30 }}></tr>}
-                    <Table.Tr>
-                      <Table.Td colSpan={5}>
-                        {error && (
-                          <Alert
-                            color="red"
-                            mb="md"
-                            title="Error in match group below"
-                            icon={<IconAlertTriangle size={14} />}
-                          >
-                            {explainError(node, mg, error)}
-                          </Alert>
-                        )}
-                      </Table.Td>
-                    </Table.Tr>
-                    <Table.Tr>
-                      <Table.Td valign="middle" p={0}>
-                        {lhsTable}
-                      </Table.Td>
-                      <Table.Td ta="center">
-                        {node.op}
-                        {node.bool && " bool"}
-                      </Table.Td>
-                      <Table.Td valign="middle" p={0}>
-                        {rhsTable}
-                      </Table.Td>
-                      <Table.Td ta="center">=</Table.Td>
-                      <Table.Td valign="middle" p={0}>
-                        {resultTable}
-                      </Table.Td>
-                    </Table.Tr>
-                  </React.Fragment>
-                );
-              })}
-            </Table.Tbody>
-          </Table>
-        </>
+      {numGroups > Object.keys(matchGroups).length && (
+        <Alert color="yellow" mb="md" icon={<IconAlertTriangle />}>
+          Too many match groups to display, only showing{" "}
+          {Object.keys(matchGroups).length} out of {numGroups} groups.
+          <br />
+          <br />
+          <Anchor fz="sm" onClick={() => setMaxGroups(undefined)}>
+            Show all groups
+          </Anchor>
+        </Alert>
       )}
+
+      {errCount > 0 && (
+        <Alert color="yellow" mb="md" icon={<IconAlertTriangle />}>
+          Found matching issues in {errCount} match group
+          {errCount > 1 ? "s" : ""}. See below for per-group error details.
+        </Alert>
+      )}
+
+      <Table fz="xs" withRowBorders={false}>
+        <Table.Tbody>
+          {Object.values(matchGroups).map((mg, mgIdx) => {
+            const { groupLabels, lhs, lhsCount, rhs, rhsCount, result, error } =
+              mg;
+
+            const matchGroupTitleRow = (color: string) => (
+              <Table.Tr ta="center">
+                <Table.Td colSpan={2} style={{ backgroundColor: `${color}25` }}>
+                  <SeriesName labels={groupLabels} format={true} />
+                </Table.Td>
+              </Table.Tr>
+            );
+
+            const matchGroupTable = (
+              series: InstantSample[],
+              seriesCount: number,
+              color: string,
+              colorOffset?: number
+            ) => (
+              <Box
+                style={{
+                  borderRadius: 3,
+                  border: "2px solid",
+                  borderColor:
+                    seriesCount === 0
+                      ? "light-dark(var(--mantine-color-gray-4), var(--mantine-color-gray-7))"
+                      : color,
+                }}
+              >
+                <Table fz="xs" withRowBorders={false} verticalSpacing={5}>
+                  <Table.Tbody>
+                    {seriesCount === 0 ? (
+                      <Table.Tr>
+                        <Table.Td
+                          ta="center"
+                          c="light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-5))"
+                          py="md"
+                          fw="bold"
+                        >
+                          no matching series
+                        </Table.Td>
+                      </Table.Tr>
+                    ) : (
+                      <>
+                        {matchGroupTitleRow(color)}
+                        {series.map((s, sIdx) => {
+                          if (s.value === undefined) {
+                            // TODO: Figure out how to handle native histograms.
+                            throw new Error(
+                              "Native histograms are not supported yet"
+                            );
+                          }
+
+                          return (
+                            <Table.Tr key={sIdx}>
+                              <Table.Td>
+                                <Group wrap="nowrap" gap={7} align="center">
+                                  {seriesSwatch(
+                                    colorForIndex(sIdx, colorOffset)
+                                  )}
+
+                                  <SeriesName
+                                    labels={noMatchLabels(
+                                      s.metric,
+                                      matching.on,
+                                      matching.labels
+                                    )}
+                                    format={true}
+                                  />
+                                </Group>
+                              </Table.Td>
+                              {showSampleValues && (
+                                <Table.Td ta="right">{s.value[1]}</Table.Td>
+                              )}
+                            </Table.Tr>
+                          );
+                        })}
+                      </>
+                    )}
+                    {seriesCount > series.length && (
+                      <Table.Tr>
+                        <Table.Td ta="center" py="md" fw="bold" c="gray.6">
+                          {seriesCount - series.length} more series omitted
+                          &nbsp;&nbsp;–&nbsp;&nbsp;
+                          <Anchor
+                            size="xs"
+                            onClick={() => setMaxSeriesPerGroup(undefined)}
+                          >
+                            Show all series
+                          </Anchor>
+                        </Table.Td>
+                      </Table.Tr>
+                    )}
+                  </Table.Tbody>
+                </Table>
+              </Box>
+            );
+
+            const groupColor = colorPool[mgIdx % colorPool.length];
+
+            const lhsTable = matchGroupTable(lhs, lhsCount, groupColor);
+            const rhsTable = matchGroupTable(
+              rhs,
+              rhsCount,
+              groupColor,
+              rhsColorOffset
+            );
+
+            const resultTable = (
+              <Box
+                style={{
+                  borderRadius: 3,
+                  border: `2px solid`,
+                  borderColor:
+                    result.length === 0 || error !== null
+                      ? "light-dark(var(--mantine-color-gray-4), var(--mantine-color-gray-7))"
+                      : groupColor,
+                }}
+              >
+                <Table fz="xs" withRowBorders={false} verticalSpacing={5}>
+                  <Table.Tbody>
+                    {error !== null ? (
+                      <Table.Tr>
+                        <Table.Td
+                          ta="center"
+                          c="light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-5))"
+                          py="md"
+                          fw="bold"
+                        >
+                          error, result omitted
+                        </Table.Td>
+                      </Table.Tr>
+                    ) : result.length === 0 ? (
+                      <Table.Tr>
+                        <Table.Td
+                          ta="center"
+                          c="light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-5))"
+                          py="md"
+                          fw="bold"
+                        >
+                          dropped
+                        </Table.Td>
+                      </Table.Tr>
+                    ) : error !== null ? (
+                      <Table.Tr>
+                        <Table.Td
+                          ta="center"
+                          c="light-dark(var(--mantine-color-gray-7), var(--mantine-color-gray-5))"
+                          py="md"
+                          fw="bold"
+                        >
+                          error, result omitted
+                        </Table.Td>
+                      </Table.Tr>
+                    ) : (
+                      <>
+                        {result.map(({ sample, manySideIdx }, resIdx) => {
+                          if (sample.value === undefined) {
+                            // TODO: Figure out how to handle native histograms.
+                            throw new Error(
+                              "Native histograms are not supported yet"
+                            );
+                          }
+
+                          const filtered =
+                            sample.value[1] === filteredSampleValue;
+                          const [lIdx, rIdx] =
+                            matching.card === vectorMatchCardinality.oneToMany
+                              ? [0, manySideIdx]
+                              : [manySideIdx, 0];
+
+                          return (
+                            <Table.Tr key={resIdx}>
+                              <Table.Td
+                                style={{ opacity: filtered ? 0.5 : 1 }}
+                                title={
+                                  filtered
+                                    ? "Series has been filtered by comparison operator"
+                                    : undefined
+                                }
+                              >
+                                <Group
+                                  wrap="nowrap"
+                                  gap="xs"
+                                  align="flex-start"
+                                >
+                                  <Group wrap="nowrap" gap={0}>
+                                    {seriesSwatch(colorForIndex(lIdx))}
+                                    <span style={{ color: "#aaa" }}>–</span>
+                                    {seriesSwatch(
+                                      colorForIndex(rIdx, rhsColorOffset)
+                                    )}
+                                  </Group>
+
+                                  <SeriesName
+                                    labels={sample.metric}
+                                    format={true}
+                                  />
+                                </Group>
+                              </Table.Td>
+                              {showSampleValues && (
+                                <Table.Td ta="right">
+                                  {filtered ? (
+                                    <span style={{ color: "grey" }}>
+                                      filtered
+                                    </span>
+                                  ) : (
+                                    <span>{sample.value[1]}</span>
+                                  )}
+                                </Table.Td>
+                              )}
+                            </Table.Tr>
+                          );
+                        })}
+                      </>
+                    )}
+                  </Table.Tbody>
+                </Table>
+              </Box>
+            );
+
+            return (
+              <React.Fragment key={mgIdx}>
+                {mgIdx !== 0 && <tr style={{ height: 30 }}></tr>}
+                <Table.Tr>
+                  <Table.Td colSpan={5}>
+                    {error && (
+                      <Alert
+                        color="red"
+                        mb="md"
+                        title="Error in match group below"
+                        icon={<IconAlertTriangle />}
+                      >
+                        {explainError(node, mg, error)}
+                      </Alert>
+                    )}
+                  </Table.Td>
+                </Table.Tr>
+                <Table.Tr>
+                  <Table.Td valign="middle" p={0}>
+                    {lhsTable}
+                  </Table.Td>
+                  <Table.Td
+                    ta="center"
+                    fw={isSetOperator(node.op) ? "bold" : undefined}
+                  >
+                    {node.op}
+                    {node.bool && " bool"}
+                  </Table.Td>
+                  <Table.Td valign="middle" p={0}>
+                    {rhsTable}
+                  </Table.Td>
+                  <Table.Td ta="center">=</Table.Td>
+                  <Table.Td valign="middle" p={0}>
+                    {resultTable}
+                  </Table.Td>
+                </Table.Tr>
+              </React.Fragment>
+            );
+          })}
+        </Table.Tbody>
+      </Table>
     </>
   );
 };

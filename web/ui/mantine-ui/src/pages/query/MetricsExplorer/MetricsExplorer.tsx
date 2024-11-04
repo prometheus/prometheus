@@ -99,7 +99,7 @@ const MetricsExplorer: FC<MetricsExplorerProps> = ({
               {items.map((m) => (
                 <Table.Tr key={m.original}>
                   <Table.Td>
-                    <Group justify="space-between">
+                    <Group justify="space-between" wrap="nowrap">
                       {debouncedFilterText === "" ? (
                         m.original
                       ) : (

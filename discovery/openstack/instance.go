@@ -16,17 +16,17 @@ package openstack
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"strconv"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/floatingips"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/pagination"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -52,7 +52,7 @@ type InstanceDiscovery struct {
 	provider     *gophercloud.ProviderClient
 	authOpts     *gophercloud.AuthOptions
 	region       string
-	logger       log.Logger
+	logger       *slog.Logger
 	port         int
 	allTenants   bool
 	availability gophercloud.Availability
@@ -60,10 +60,10 @@ type InstanceDiscovery struct {
 
 // NewInstanceDiscovery returns a new instance discovery.
 func newInstanceDiscovery(provider *gophercloud.ProviderClient, opts *gophercloud.AuthOptions,
-	port int, region string, allTenants bool, availability gophercloud.Availability, l log.Logger,
+	port int, region string, allTenants bool, availability gophercloud.Availability, l *slog.Logger,
 ) *InstanceDiscovery {
 	if l == nil {
-		l = log.NewNopLogger()
+		l = promslog.NewNopLogger()
 	}
 	return &InstanceDiscovery{
 		provider: provider, authOpts: opts,
@@ -134,7 +134,7 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 
 		for _, s := range instanceList {
 			if len(s.Addresses) == 0 {
-				level.Info(i.logger).Log("msg", "Got no IP address", "instance", s.ID)
+				i.logger.Info("Got no IP address", "instance", s.ID)
 				continue
 			}
 
@@ -151,7 +151,7 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 			if !nameOk {
 				flavorID, idOk := s.Flavor["id"].(string)
 				if !idOk {
-					level.Warn(i.logger).Log("msg", "Invalid type for both flavor original_name and flavor id, expected string")
+					i.logger.Warn("Invalid type for both flavor original_name and flavor id, expected string")
 					continue
 				}
 				labels[openstackLabelInstanceFlavor] = model.LabelValue(flavorID)
@@ -171,22 +171,22 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 			for pool, address := range s.Addresses {
 				md, ok := address.([]interface{})
 				if !ok {
-					level.Warn(i.logger).Log("msg", "Invalid type for address, expected array")
+					i.logger.Warn("Invalid type for address, expected array")
 					continue
 				}
 				if len(md) == 0 {
-					level.Debug(i.logger).Log("msg", "Got no IP address", "instance", s.ID)
+					i.logger.Debug("Got no IP address", "instance", s.ID)
 					continue
 				}
 				for _, address := range md {
 					md1, ok := address.(map[string]interface{})
 					if !ok {
-						level.Warn(i.logger).Log("msg", "Invalid type for address, expected dict")
+						i.logger.Warn("Invalid type for address, expected dict")
 						continue
 					}
 					addr, ok := md1["addr"].(string)
 					if !ok {
-						level.Warn(i.logger).Log("msg", "Invalid type for address, expected string")
+						i.logger.Warn("Invalid type for address, expected string")
 						continue
 					}
 					if _, ok := floatingIPPresent[addr]; ok {
