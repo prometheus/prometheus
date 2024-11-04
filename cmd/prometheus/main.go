@@ -190,7 +190,6 @@ type flagConfig struct {
 	queryConcurrency            int
 	queryMaxSamples             int
 	RemoteFlushDeadline         model.Duration
-	nameEscapingScheme          string
 	maxNotificationsSubscribers int
 
 	enableAutoReload   bool
@@ -549,15 +548,6 @@ func main() {
 	if err := cfg.setFeatureListOptions(logger); err != nil {
 		fmt.Fprintln(os.Stderr, fmt.Errorf("Error parsing feature list: %w", err))
 		os.Exit(1)
-	}
-
-	if cfg.nameEscapingScheme != "" {
-		scheme, err := model.ToEscapingScheme(cfg.nameEscapingScheme)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, `Invalid name escaping scheme: %q; Needs to be one of "values", "underscores", or "dots"`, cfg.nameEscapingScheme)
-			os.Exit(1)
-		}
-		model.NameEscapingScheme = scheme
 	}
 
 	if agentMode && len(serverOnlyFlags) > 0 {
