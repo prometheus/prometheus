@@ -84,4 +84,7 @@ import (
 
 	// Register zookeeper plugin.
 	_ "github.com/prometheus/prometheus/discovery/zookeeper"
+
+	// Register aliyun plugin.
+	_ "github.com/prometheus/prometheus/discovery/aliyun"
 )

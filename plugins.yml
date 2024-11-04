@@ -21,3 +21,4 @@
 - github.com/prometheus/prometheus/discovery/vultr
 - github.com/prometheus/prometheus/discovery/xds
 - github.com/prometheus/prometheus/discovery/zookeeper
+- github.com/prometheus/prometheus/discovery/aliyun
