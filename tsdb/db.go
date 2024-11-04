@@ -52,6 +52,9 @@ const (
 	// DefaultBlockDuration in milliseconds.
 	DefaultBlockDuration = int64(2 * time.Hour / time.Millisecond)
 
+	// DefaultCompactionDelayMaxPercent in percentage.
+	DefaultCompactionDelayMaxPercent = 10
+
 	// Block dir suffixes to make deletion and creation operations atomic.
 	// We decided to do suffixes instead of creating meta.json as last (or delete as first) one,
 	// because in error case you still can recover meta.json from the block content within local TSDB dir.
@@ -86,6 +89,7 @@ func DefaultOptions() *Options {
 		EnableOverlappingCompaction: true,
 		EnableSharding:              false,
 		EnableDelayedCompaction:     false,
+		CompactionDelayMaxPercent:   DefaultCompactionDelayMaxPercent,
 		CompactionDelay:             time.Duration(0),
 	}
 }
@@ -204,6 +208,8 @@ type Options struct {
 	// CompactionDelay delays the start time of auto compactions.
 	// It can be increased by up to one minute if the DB does not commit too often.
 	CompactionDelay time.Duration
+	// CompactionDelayMaxPercent is the upper limit for CompactionDelay, specified as a percentage of the head chunk range.
+	CompactionDelayMaxPercent int
 
 	// NewCompactorFunc is a function that returns a TSDB compactor.
 	NewCompactorFunc NewCompactorFunc
@@ -1986,8 +1992,7 @@ func (db *DB) EnableCompactions() {
 }
 
 func (db *DB) generateCompactionDelay() time.Duration {
-	// Up to 10% of the head's chunkRange.
-	return time.Duration(rand.Int63n(db.head.chunkRange.Load()/10)) * time.Millisecond
+	return time.Duration(rand.Int63n(db.head.chunkRange.Load()*int64(db.opts.CompactionDelayMaxPercent)/100)) * time.Millisecond
 }
 
 // ForceHeadMMap is intended for use only in tests and benchmarks.
