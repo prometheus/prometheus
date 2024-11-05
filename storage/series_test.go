@@ -378,7 +378,7 @@ func TestHistogramSeriesToChunks(t *testing.T) {
 				hSample{t: 1, h: h2},
 				hSample{t: 2, h: h1},
 			},
-			expectedCounterResetHeaders: []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.UnknownCounterReset},
+			expectedCounterResetHeaders: []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.CounterReset},
 		},
 		"histogram and stale sample encoded to two chunks": {
 			samples: []chunks.Sample{
@@ -400,7 +400,7 @@ func TestHistogramSeriesToChunks(t *testing.T) {
 				hSample{t: 1, h: h1},
 				hSample{t: 2, h: h2down},
 			},
-			expectedCounterResetHeaders: []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.UnknownCounterReset},
+			expectedCounterResetHeaders: []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.CounterReset},
 		},
 		// Float histograms.
 		"single float histogram to single chunk": {
@@ -432,7 +432,7 @@ func TestHistogramSeriesToChunks(t *testing.T) {
 				fhSample{t: 1, fh: fh2},
 				fhSample{t: 2, fh: fh1},
 			},
-			expectedCounterResetHeaders: []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.UnknownCounterReset},
+			expectedCounterResetHeaders: []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.CounterReset},
 		},
 		"float histogram and stale sample encoded to two chunks": {
 			samples: []chunks.Sample{
@@ -454,7 +454,7 @@ func TestHistogramSeriesToChunks(t *testing.T) {
 				fhSample{t: 1, fh: fh1},
 				fhSample{t: 2, fh: fh2down},
 			},
-			expectedCounterResetHeaders: []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.UnknownCounterReset},
+			expectedCounterResetHeaders: []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.CounterReset},
 		},
 		// Mixed.
 		"histogram and float histogram encoded to two chunks": {

@@ -558,11 +558,12 @@ func counterResetHint(crh CounterResetHeader, numRead uint16) histogram.CounterR
 		// In a counter histogram chunk, there will not be any counter
 		// resets after the first histogram.
 		return histogram.NotCounterReset
-	case crh == CounterReset:
-		// If the chunk was started because of a counter reset, we can
-		// safely return that hint. This histogram always has to be
-		// treated as a counter reset.
-		return histogram.CounterReset
+		// TODO: explain
+	//case crh == CounterReset:
+	// If the chunk was started because of a counter reset, we can
+	// safely return that hint. This histogram always has to be
+	// treated as a counter reset.
+	//return histogram.CounterReset
 	default:
 		// Sadly, we have to return "unknown" as the hint for all other
 		// cases, even if we know that the chunk was started without a

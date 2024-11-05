@@ -4553,9 +4553,6 @@ func testHistogramStaleSampleHelper(t *testing.T, floatHistogram bool) {
 }
 
 func TestHistogramCounterResetHeader(t *testing.T) {
-	// We are currently setting non-gauge histogram chunks to have an UnknownCounterReset
-	// https://github.com/prometheus/prometheus/pull/15342
-
 	for _, floatHisto := range []bool{true} { // FIXME
 		t.Run(fmt.Sprintf("floatHistogram=%t", floatHisto), func(t *testing.T) {
 			l := labels.FromStrings("a", "b")
@@ -4621,7 +4618,7 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 			// Counter reset via Count.
 			h.Count--
 			appendHistogram(h)
-			checkExpCounterResetHeader(chunkenc.UnknownCounterReset)
+			checkExpCounterResetHeader(chunkenc.CounterReset)
 
 			// Add 2 non-counter reset histogram chunks (each chunk targets 1024 bytes which contains ~500 int histogram
 			// samples or ~1000 float histogram samples).
@@ -4633,7 +4630,7 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 				appendHistogram(h)
 			}
 
-			checkExpCounterResetHeader(chunkenc.UnknownCounterReset, chunkenc.UnknownCounterReset)
+			checkExpCounterResetHeader(chunkenc.NotCounterReset, chunkenc.NotCounterReset)
 
 			// Changing schema will cut a new chunk with unknown counter reset.
 			h.Schema++
@@ -4649,29 +4646,29 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 			h.PositiveSpans[1].Length--
 			h.PositiveBuckets = h.PositiveBuckets[1:]
 			appendHistogram(h)
-			checkExpCounterResetHeader(chunkenc.UnknownCounterReset)
+			checkExpCounterResetHeader(chunkenc.CounterReset)
 
 			// Counter reset by removing a negative bucket.
 			h.NegativeSpans[1].Length--
 			h.NegativeBuckets = h.NegativeBuckets[1:]
 			appendHistogram(h)
-			checkExpCounterResetHeader(chunkenc.UnknownCounterReset)
+			checkExpCounterResetHeader(chunkenc.CounterReset)
 
 			// Add 2 non-counter reset histogram chunks. Just to have some non-counter reset chunks in between.
 			for i := 0; i < 2000; i++ {
 				appendHistogram(h)
 			}
-			checkExpCounterResetHeader(chunkenc.UnknownCounterReset, chunkenc.UnknownCounterReset)
+			checkExpCounterResetHeader(chunkenc.NotCounterReset, chunkenc.NotCounterReset)
 
 			// Counter reset with counter reset in a positive bucket.
 			h.PositiveBuckets[len(h.PositiveBuckets)-1]--
 			appendHistogram(h)
-			checkExpCounterResetHeader(chunkenc.UnknownCounterReset)
+			checkExpCounterResetHeader(chunkenc.CounterReset)
 
 			// Counter reset with counter reset in a negative bucket.
 			h.NegativeBuckets[len(h.NegativeBuckets)-1]--
 			appendHistogram(h)
-			checkExpCounterResetHeader(chunkenc.UnknownCounterReset)
+			checkExpCounterResetHeader(chunkenc.CounterReset)
 		})
 	}
 }
@@ -4772,7 +4769,7 @@ func TestOOOHistogramCounterResetHeaders(t *testing.T) {
 					numSamples: 2,
 				},
 				expOOOMmappedChunks{
-					header:     chunkenc.UnknownCounterReset,
+					header:     chunkenc.CounterReset,
 					mint:       122,
 					maxt:       124,
 					numSamples: 3,
@@ -4800,19 +4797,19 @@ func TestOOOHistogramCounterResetHeaders(t *testing.T) {
 					numSamples: 1,
 				},
 				expOOOMmappedChunks{
-					header:     chunkenc.UnknownCounterReset,
+					header:     chunkenc.CounterReset,
 					mint:       205,
 					maxt:       205,
 					numSamples: 1,
 				},
 				expOOOMmappedChunks{
-					header:     chunkenc.UnknownCounterReset,
+					header:     chunkenc.CounterReset,
 					mint:       210,
 					maxt:       210,
 					numSamples: 1,
 				},
 				expOOOMmappedChunks{
-					header:     chunkenc.UnknownCounterReset,
+					header:     chunkenc.CounterReset,
 					mint:       215,
 					maxt:       220,
 					numSamples: 2,
@@ -4828,7 +4825,7 @@ func TestOOOHistogramCounterResetHeaders(t *testing.T) {
 
 			// One mmapped chunk with (ts, val) [(300, 3000), (301, 3001), (302, 3002), (303, 3003), (350, 4000)].
 			checkOOOExpCounterResetHeader(expOOOMmappedChunks{
-				header:     chunkenc.UnknownCounterReset,
+				header:     chunkenc.CounterReset,
 				mint:       300,
 				maxt:       350,
 				numSamples: 5,

@@ -707,17 +707,7 @@ func (a *FloatHistogramAppender) recode(
 		happ.appendFloatHistogram(tOld, hOld)
 	}
 
-	// We are currently not setting non-gauge histogram chunk headers. This will result in all non-gauge histogram
-	// chunks having the UnknownCounterReset header.
-	// Counter reset detection can be buggy when chunks from different sources are merged (e.g. out-of-order, backfill).
-	// It's always safe to set the header to UnknownCounterReset so we are doing that as a quick fix and take the time
-	// to properly resolve the counter reset issues.
-	// See: https://github.com/prometheus/prometheus/pull/15342
-	// The original code for setting the header has been commented out below.
-	if CounterResetHeader(byts[2]&CounterResetHeaderMask) == GaugeType {
-		happ.setCounterResetHeader(GaugeType)
-	}
-	// happ.setCounterResetHeader(CounterResetHeader(byts[2] & CounterResetHeaderMask))
+	happ.setCounterResetHeader(CounterResetHeader(byts[2] & CounterResetHeaderMask))
 	return hc, app
 }
 
@@ -749,28 +739,20 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 			return nil, false, a, nil
 		}
 
-		// We are currently not setting non-gauge histogram chunk headers. This will result in all non-gauge histogram
-		// chunks having the UnknownCounterReset header.
-		// Counter reset detection can be buggy when chunks from different sources are merged (e.g. out-of-order, backfill).
-		// It's always safe to set the header to UnknownCounterReset so we are doing that as a quick fix and take the time
-		// to properly resolve the counter reset issues.
-		// See: https://github.com/prometheus/prometheus/pull/15342
-		// The original code for setting the header has been commented out below.
-		/*
-			switch {
-			case h.CounterResetHint == histogram.CounterReset:
-				// Always honor the explicit counter reset hint.
+		switch {
+		case h.CounterResetHint == histogram.CounterReset:
+			// Always honor the explicit counter reset hint.
+			a.setCounterResetHeader(CounterReset)
+		case prev != nil:
+			// This is a new chunk, but continued from a previous one. We need to calculate the reset header unless already set.
+			_, _, _, _, _, counterReset := prev.appendable(h)
+			if counterReset {
 				a.setCounterResetHeader(CounterReset)
-			case prev != nil:
-				// This is a new chunk, but continued from a previous one. We need to calculate the reset header unless already set.
-				_, _, _, _, _, counterReset := prev.appendable(h)
-				if counterReset {
-					a.setCounterResetHeader(CounterReset)
-				} else {
-					a.setCounterResetHeader(NotCounterReset)
-				}
+			} else {
+				a.setCounterResetHeader(NotCounterReset)
 			}
-		*/
+		}
+
 		return nil, false, a, nil
 	}
 
@@ -790,16 +772,9 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 				panic(err) // This should never happen for an empty float histogram chunk.
 			}
 			happ := app.(*FloatHistogramAppender)
-			// We are currently not setting non-gauge histogram chunk headers. This will result in all non-gauge histogram
-			// chunks having the UnknownCounterReset header.
-			// Counter reset detection can be buggy when chunks from different sources are merged (e.g. out-of-order, backfill).
-			// It's always safe to set the header to UnknownCounterReset so we are doing that as a quick fix and take the time
-			// to properly resolve the counter reset issues.
-			// See: https://github.com/prometheus/prometheus/pull/15342
-			// The original code for setting the header has been commented out below.
-			// if counterReset {
-			// happ.setCounterResetHeader(CounterReset)
-			// }
+			if counterReset {
+				happ.setCounterResetHeader(CounterReset)
+			}
 			happ.appendFloatHistogram(t, h)
 			return newChunk, false, app, nil
 		}
