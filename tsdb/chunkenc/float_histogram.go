@@ -707,7 +707,14 @@ func (a *FloatHistogramAppender) recode(
 		happ.appendFloatHistogram(tOld, hOld)
 	}
 
-	happ.setCounterResetHeader(CounterResetHeader(byts[2] & CounterResetHeaderMask))
+	// We are currently not setting non-gauge histogram chunk headers. This will result in all non-gauge histogram
+	// chunks having the UnknownCounterReset header.
+	// Counter reset detection can be buggy when chunks from different sources are merged (e.g. out-of-order, backfill).
+	// It's always safe to set the header to UnknownCounterReset so we are doing that as a quick fix and take the time
+	// to properly resolve the counter reset issues.
+	// See: TODO: PR link
+	// The original code for setting the header has been commented out below.
+	// happ.setCounterResetHeader(CounterResetHeader(byts[2] & CounterResetHeaderMask))
 	return hc, app
 }
 
@@ -739,19 +746,28 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 			return nil, false, a, nil
 		}
 
-		switch {
-		case h.CounterResetHint == histogram.CounterReset:
-			// Always honor the explicit counter reset hint.
-			a.setCounterResetHeader(CounterReset)
-		case prev != nil:
-			// This is a new chunk, but continued from a previous one. We need to calculate the reset header unless already set.
-			_, _, _, _, _, counterReset := prev.appendable(h)
-			if counterReset {
+		// We are currently not setting non-gauge histogram chunk headers. This will result in all non-gauge histogram
+		// chunks having the UnknownCounterReset header.
+		// Counter reset detection can be buggy when chunks from different sources are merged (e.g. out-of-order, backfill).
+		// It's always safe to set the header to UnknownCounterReset so we are doing that as a quick fix and take the time
+		// to properly resolve the counter reset issues.
+		// See: TODO: PR link
+		// The original code for setting the header has been commented out below.
+		/*
+			switch {
+			case h.CounterResetHint == histogram.CounterReset:
+				// Always honor the explicit counter reset hint.
 				a.setCounterResetHeader(CounterReset)
-			} else {
-				a.setCounterResetHeader(NotCounterReset)
+			case prev != nil:
+				// This is a new chunk, but continued from a previous one. We need to calculate the reset header unless already set.
+				_, _, _, _, _, counterReset := prev.appendable(h)
+				if counterReset {
+					a.setCounterResetHeader(CounterReset)
+				} else {
+					a.setCounterResetHeader(NotCounterReset)
+				}
 			}
-		}
+		*/
 		return nil, false, a, nil
 	}
 
@@ -772,7 +788,14 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 			}
 			happ := app.(*FloatHistogramAppender)
 			if counterReset {
-				happ.setCounterResetHeader(CounterReset)
+				// We are currently not setting non-gauge histogram chunk headers. This will result in all non-gauge histogram
+				// chunks having the UnknownCounterReset header.
+				// Counter reset detection can be buggy when chunks from different sources are merged (e.g. out-of-order, backfill).
+				// It's always safe to set the header to UnknownCounterReset so we are doing that as a quick fix and take the time
+				// to properly resolve the counter reset issues.
+				// See: TODO: PR link
+				// The original code for setting the header has been commented out below.
+				// happ.setCounterResetHeader(CounterReset)
 			}
 			happ.appendFloatHistogram(t, h)
 			return newChunk, false, app, nil
