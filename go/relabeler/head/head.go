@@ -157,7 +157,7 @@ type Head struct {
 	relabelersData             map[string]*RelabelerData
 	dataStorages               []*DataStorage
 	wals                       []*ShardWal
-	lsses                      []*cppbridge.LabelSetStorage
+	lsses                      []*LSS
 	stageInputRelabeling       []chan *TaskInputRelabeling
 	stageAppendRelabelerSeries []chan *TaskAppendRelabelerSeries
 	genericTaskCh              []chan *GenericTask
@@ -173,7 +173,7 @@ func New(
 	id string,
 	generation uint64,
 	inputRelabelerConfigs []*config.InputRelabelerConfig,
-	lsses []*cppbridge.LabelSetStorage,
+	lsses []*LSS,
 	wals []*ShardWal,
 	dataStorages []*DataStorage,
 	numberOfShards uint16,
@@ -485,8 +485,8 @@ func (h *Head) forEachShard(fn relabeler.ShardFn) error {
 		for shardID := uint16(0); shardID < h.numberOfShards; shardID++ {
 			s := &shard{
 				id:          shardID,
+				lss:         h.lsses[shardID],
 				dataStorage: h.dataStorages[shardID],
-				lssWrapper:  &lssWrapper{lss: h.lsses[shardID]},
 			}
 			go func(shard *shard) {
 				task.ExecuteOnShard(shard)
@@ -509,8 +509,8 @@ func (h *Head) onShard(shardID uint16, fn relabeler.ShardFn) error {
 
 		s := &shard{
 			id:          shardID,
+			lss:         h.lsses[shardID],
 			dataStorage: h.dataStorages[shardID],
-			lssWrapper:  &lssWrapper{lss: h.lsses[shardID]},
 		}
 
 		return fn(s)

@@ -21,7 +21,7 @@ TEST_F(TestLabelsBuilder, Reset) {
     ls_.add({lname, lvalue});
   }
 
-  builder_.reset(&ls_view_);
+  builder_.reset(ls_view_);
 
   EXPECT_EQ(builder_.label_view_set(), ls_view_);
   EXPECT_EQ(builder_.label_set(), ls_);
@@ -40,7 +40,7 @@ TEST_F(TestLabelsBuilder, BaseWithEmptyLValue) {
 
   base.add({"lname", ""});
 
-  builder_.reset(&ls_view_);
+  builder_.reset(ls_view_);
 
   EXPECT_EQ(builder_.label_view_set(), ls_view_);
   EXPECT_EQ(builder_.label_set(), ls_);
@@ -196,7 +196,7 @@ TEST_F(TestLabelsBuilder, ResetRange) {
     ls_.add({lvalue, lname});
   }
 
-  builder_.reset(&ls);
+  builder_.reset(ls);
 
   builder_.range([&]<typename LNameType, typename LValueType>(LNameType& lname, LValueType& lvalue) PROMPP_LAMBDA_INLINE -> bool {
     builder_.del(lname);

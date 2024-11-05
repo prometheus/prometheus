@@ -165,7 +165,8 @@ func (s *RelabelerSuite) TestInvalidAction() {
 		},
 	}
 
-	lss := cppbridge.NewQueryableLssStorage()
+	inputLss := cppbridge.NewOrderedLssStorage()
+	targetLss := cppbridge.NewQueryableLssStorage()
 
 	statelessRelabeler, err := cppbridge.NewStatelessRelabeler(rCfgs)
 	s.Require().NoError(err)
@@ -182,7 +183,7 @@ func (s *RelabelerSuite) TestInvalidAction() {
 	shardsRelabeledSeries := cppbridge.NewShardsRelabeledSeries(numberOfShards)
 	cache := cppbridge.NewCache()
 
-	err = psr.InputRelabeling(s.baseCtx, lss, cache, s.options, h, shardsInnerSeries, shardsRelabeledSeries)
+	err = psr.InputRelabeling(s.baseCtx, inputLss, targetLss, cache, s.options, h, shardsInnerSeries, shardsRelabeledSeries)
 	s.Require().Error(err)
 }
 
@@ -224,7 +225,8 @@ func (s *RelabelerSuite) TestInputPerShardRelabeler() {
 		},
 	}
 
-	lss := cppbridge.NewQueryableLssStorage()
+	inputLss := cppbridge.NewOrderedLssStorage()
+	targetLss := cppbridge.NewQueryableLssStorage()
 
 	statelessRelabeler, err := cppbridge.NewStatelessRelabeler(rCfgs)
 	s.Require().NoError(err)
@@ -241,7 +243,7 @@ func (s *RelabelerSuite) TestInputPerShardRelabeler() {
 	shardsRelabeledSeries := cppbridge.NewShardsRelabeledSeries(numberOfShards)
 	cache := cppbridge.NewCache()
 
-	err = psr.InputRelabeling(s.baseCtx, lss, cache, s.options, h, shardsInnerSeries, shardsRelabeledSeries)
+	err = psr.InputRelabeling(s.baseCtx, inputLss, targetLss, cache, s.options, h, shardsInnerSeries, shardsRelabeledSeries)
 	s.Require().NoError(err)
 }
 

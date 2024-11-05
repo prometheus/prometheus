@@ -12,6 +12,38 @@ import (
 
 const chanBufferSize = 64
 
+type LSS struct {
+	input  *cppbridge.LabelSetStorage
+	target *cppbridge.LabelSetStorage
+}
+
+func (w *LSS) Raw() *cppbridge.LabelSetStorage {
+	return w.target
+}
+
+func (w *LSS) AllocatedMemory() uint64 {
+	return w.input.AllocatedMemory() + w.target.AllocatedMemory()
+}
+
+func (w *LSS) QueryLabelValues(
+	label_name string,
+	matchers []model.LabelMatcher,
+) *cppbridge.LSSQueryLabelValuesResult {
+	return w.target.QueryLabelValues(label_name, matchers)
+}
+
+func (w *LSS) QueryLabelNames(matchers []model.LabelMatcher) *cppbridge.LSSQueryLabelNamesResult {
+	return w.target.QueryLabelNames(matchers)
+}
+
+func (w *LSS) Query(matchers []model.LabelMatcher) *cppbridge.LSSQueryResult {
+	return w.target.Query(matchers)
+}
+
+func (w *LSS) GetLabelSets(labelSetIDs []uint32) *cppbridge.LabelSetStorageGetLabelSetsResult {
+	return w.target.GetLabelSets(labelSetIDs)
+}
+
 type DataStorage struct {
 	dataStorage *cppbridge.HeadDataStorage
 	encoder     *cppbridge.HeadEncoder
@@ -104,10 +136,11 @@ func (h *Head) shardLoop(shardID uint16, stopc chan struct{}) {
 			if task.WithStaleNans() {
 				err = task.InputRelabelerByShard(shardID).InputRelabelingWithStalenans(
 					task.Ctx(),
-					h.lsses[shardID],
+					h.lsses[shardID].input,
+					h.lsses[shardID].target,
 					task.CacheByShard(shardID),
 					task.Options(),
-					task.SourceStateByShard(shardID),
+					task.StaleNansStateByShard(shardID),
 					task.StaleNansTS(),
 					task.ShardedData(),
 					shardsInnerSeries,
@@ -116,7 +149,8 @@ func (h *Head) shardLoop(shardID uint16, stopc chan struct{}) {
 			} else {
 				err = task.InputRelabelerByShard(shardID).InputRelabeling(
 					task.Ctx(),
-					h.lsses[shardID],
+					h.lsses[shardID].input,
+					h.lsses[shardID].target,
 					task.CacheByShard(shardID),
 					task.Options(),
 					task.ShardedData(),
@@ -157,7 +191,7 @@ func (h *Head) shardLoop(shardID uint16, stopc chan struct{}) {
 
 			if err := task.InputRelabelerByShard(shardID).AppendRelabelerSeries(
 				task.Ctx(),
-				h.lsses[shardID],
+				h.lsses[shardID].target,
 				relabelerStateUpdate,
 				innerSeries,
 				task.RelabeledSeries(),
@@ -178,48 +212,17 @@ func (h *Head) shardLoop(shardID uint16, stopc chan struct{}) {
 		case task := <-h.genericTaskCh[shardID]:
 			task.ExecuteOnShard(&shard{
 				id:          shardID,
+				lss:         h.lsses[shardID],
 				dataStorage: h.dataStorages[shardID],
-				lssWrapper:  &lssWrapper{lss: h.lsses[shardID]},
 				wal:         h.wals[shardID],
 			})
 		}
 	}
 }
 
-type lssWrapper struct {
-	lss *cppbridge.LabelSetStorage
-}
-
-func (w *lssWrapper) Raw() *cppbridge.LabelSetStorage {
-	return w.lss
-}
-
-func (w *lssWrapper) AllocatedMemory() uint64 {
-	return w.lss.AllocatedMemory()
-}
-
-func (w *lssWrapper) QueryLabelValues(
-	label_name string,
-	matchers []model.LabelMatcher,
-) *cppbridge.LSSQueryLabelValuesResult {
-	return w.lss.QueryLabelValues(label_name, matchers)
-}
-
-func (w *lssWrapper) QueryLabelNames(matchers []model.LabelMatcher) *cppbridge.LSSQueryLabelNamesResult {
-	return w.lss.QueryLabelNames(matchers)
-}
-
-func (w *lssWrapper) Query(matchers []model.LabelMatcher) *cppbridge.LSSQueryResult {
-	return w.lss.Query(matchers)
-}
-
-func (w *lssWrapper) GetLabelSets(labelSetIDs []uint32) *cppbridge.LabelSetStorageGetLabelSetsResult {
-	return w.lss.GetLabelSets(labelSetIDs)
-}
-
 type shard struct {
 	id          uint16
-	lssWrapper  *lssWrapper
+	lss         *LSS
 	dataStorage *DataStorage
 	wal         *ShardWal
 }
@@ -233,7 +236,7 @@ func (s *shard) DataStorage() relabeler.DataStorage {
 }
 
 func (s *shard) LSS() relabeler.LSS {
-	return s.lssWrapper
+	return s.lss
 }
 
 func (s *shard) Wal() relabeler.Wal {

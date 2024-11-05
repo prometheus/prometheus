@@ -957,14 +957,37 @@ func prometheusRelabelerStateUpdateDtor(relabelerStateUpdate *RelabelerStateUpda
 // StalenansState
 //
 
-// prometheusRelabelerStateUpdateDtor wrapper for destructor C-StalenansState.
-func prometheusRelabelerStalenansStateDtor(stalenansState uintptr) {
-	var args = struct {
-		stalenansState uintptr
-	}{stalenansState}
+func prometheusRelabelStaleNansStateCtor() uintptr {
+	var res struct {
+		state uintptr
+	}
 
 	fastcgo.UnsafeCall1(
-		C.prompp_prometheus_stalenans_state_dtor,
+		C.prompp_prometheus_relabel_stalenans_state_ctor,
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.state
+}
+
+func prometheusRelabelStaleNansStateReset(state uintptr) {
+	var args = struct {
+		state uintptr
+	}{state}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_prometheus_relabel_stalenans_state_reset,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
+func prometheusRelabelStaleNansStateDtor(state uintptr) {
+	var args = struct {
+		state uintptr
+	}{state}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_prometheus_relabel_stalenans_state_dtor,
 		uintptr(unsafe.Pointer(&args)),
 	)
 }
@@ -1031,7 +1054,7 @@ func prometheusPerShardRelabelerCacheAllocatedMemory(perShardRelabeler uintptr) 
 
 // prometheusPerShardRelabelerInputRelabeling - wrapper for relabeling incoming hashdex(first stage).
 func prometheusPerShardRelabelerInputRelabeling(
-	perShardRelabeler, lss, cache, hashdex uintptr,
+	perShardRelabeler, inputLss, targetLss, cache, hashdex uintptr,
 	options RelabelerOptions,
 	shardsInnerSeries []*InnerSeries,
 	shardsRelabeledSeries []*RelabeledSeries,
@@ -1043,8 +1066,9 @@ func prometheusPerShardRelabelerInputRelabeling(
 		perShardRelabeler     uintptr
 		hashdex               uintptr
 		cache                 uintptr
-		lss                   uintptr
-	}{shardsInnerSeries, shardsRelabeledSeries, options, perShardRelabeler, hashdex, cache, lss}
+		inputLss              uintptr
+		targetLss             uintptr
+	}{shardsInnerSeries, shardsRelabeledSeries, options, perShardRelabeler, hashdex, cache, inputLss, targetLss}
 	var res struct {
 		exception []byte
 	}
@@ -1064,12 +1088,12 @@ func prometheusPerShardRelabelerInputRelabeling(
 // prometheusPerShardRelabelerInputRelabelingWithStalenans wrapper for relabeling incoming
 // hashdex(first stage) with state stalenans.
 func prometheusPerShardRelabelerInputRelabelingWithStalenans(
-	perShardRelabeler, lss, cache, hashdex, sourceState uintptr,
+	perShardRelabeler, inputLss, targetLss, cache, hashdex, sourceState uintptr,
 	staleNansTS int64,
 	options RelabelerOptions,
 	shardsInnerSeries []*InnerSeries,
 	shardsRelabeledSeries []*RelabeledSeries,
-) (state uintptr, exception []byte) {
+) (exception []byte) {
 	var args = struct {
 		shardsInnerSeries     []*InnerSeries
 		shardsRelabeledSeries []*RelabeledSeries
@@ -1077,13 +1101,13 @@ func prometheusPerShardRelabelerInputRelabelingWithStalenans(
 		perShardRelabeler     uintptr
 		hashdex               uintptr
 		cache                 uintptr
-		lss                   uintptr
-		sourceState           uintptr
+		inputLss              uintptr
+		targetLss             uintptr
+		state                 uintptr
 		staleNansTS           int64
-	}{shardsInnerSeries, shardsRelabeledSeries, options, perShardRelabeler, hashdex, cache, lss, sourceState, staleNansTS}
+	}{shardsInnerSeries, shardsRelabeledSeries, options, perShardRelabeler, hashdex, cache, inputLss, targetLss, sourceState, staleNansTS}
 	var res struct {
-		sourceState uintptr
-		exception   []byte
+		exception []byte
 	}
 	start := time.Now()
 	fastcgo.UnsafeCall2(
@@ -1095,7 +1119,7 @@ func prometheusPerShardRelabelerInputRelabelingWithStalenans(
 		prometheus.Labels{"object": "input_relabeler", "method": "relabeling_with_stalenans"},
 	).Add(float64(time.Since(start).Nanoseconds()))
 
-	return res.sourceState, res.exception
+	return res.exception
 }
 
 // prometheusPerShardRelabelerAppendRelabelerSeries - wrapper for add relabeled ls to lss,

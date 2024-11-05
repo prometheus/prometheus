@@ -477,17 +477,20 @@ class LabelsBuilderStateMap {
   }
 
   // reset - clears all current state for the builder.
+  PROMPP_ALWAYS_INLINE void reset() {
+    building_buf_view_.clear();
+    building_buf_.clear();
+    buffer_.clear();
+  }
+
+  // reset - clears all current state for the builder.
   template <class SomeLabelSet>
-  PROMPP_ALWAYS_INLINE void reset(SomeLabelSet* base) {
+  PROMPP_ALWAYS_INLINE void reset(SomeLabelSet& base) {
     building_buf_view_.clear();
     building_buf_.clear();
     buffer_.clear();
 
-    if (base == nullptr) [[unlikely]] {
-      return;
-    }
-
-    for (const auto& [lname, lvalue] : *base) {
+    for (const auto& [lname, lvalue] : base) {
       if (lvalue == "") {
         continue;
       }
@@ -544,14 +547,11 @@ class LabelsBuilder {
   }
 
   // reset - clears all current state for the builder.
-  template <class SomeLabelSet>
-  PROMPP_ALWAYS_INLINE void reset() {
-    state_.reset(static_cast<SomeLabelSet*>(nullptr));
-  }
+  PROMPP_ALWAYS_INLINE void reset() { state_.reset(); }
 
   // reset - clears all current state for the builder and init from LabelSet.
   template <class SomeLabelSet>
-  PROMPP_ALWAYS_INLINE void reset(SomeLabelSet* ls) {
+  PROMPP_ALWAYS_INLINE void reset(SomeLabelSet& ls) {
     state_.reset(ls);
   }
 

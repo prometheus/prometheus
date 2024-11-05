@@ -17,7 +17,7 @@ const (
 )
 
 func Create(id string, generation uint64, dir string, configs []*config.InputRelabelerConfig, numberOfShards uint16, registerer prometheus.Registerer) (_ *Head, err error) {
-	lsses := make([]*cppbridge.LabelSetStorage, numberOfShards)
+	lsses := make([]*LSS, numberOfShards)
 	wals := make([]*ShardWal, numberOfShards)
 	dataStorages := make([]*DataStorage, numberOfShards)
 
@@ -33,15 +33,19 @@ func Create(id string, generation uint64, dir string, configs []*config.InputRel
 	}()
 
 	for shardID := uint16(0); shardID < numberOfShards; shardID++ {
-		lss := cppbridge.NewQueryableLssStorage()
-		lsses[shardID] = lss
+		inputLss := cppbridge.NewLssStorage()
+		targetLss := cppbridge.NewQueryableLssStorage()
+		lsses[shardID] = &LSS{
+			input:  inputLss,
+			target: targetLss,
+		}
 		shardFilePath := filepath.Join(dir, fmt.Sprintf("shard_%d.wal", shardID))
 		var shardFile *os.File
 		shardFile, err = os.Create(shardFilePath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create shard wal file: %w", err)
 		}
-		shardWalEncoder := cppbridge.NewHeadWalEncoder(shardID, HeadWalEncoderDecoderLogShards, lss)
+		shardWalEncoder := cppbridge.NewHeadWalEncoder(shardID, HeadWalEncoderDecoderLogShards, targetLss)
 		wals[shardID] = newShardWal(shardWalEncoder, false, shardFile)
 		dataStorage := cppbridge.NewHeadDataStorage()
 		dataStorages[shardID] = &DataStorage{
@@ -54,7 +58,7 @@ func Create(id string, generation uint64, dir string, configs []*config.InputRel
 }
 
 func Load(id string, generation uint64, dir string, configs []*config.InputRelabelerConfig, numberOfShards uint16, registerer prometheus.Registerer) (_ *Head, err error) {
-	lsses := make([]*cppbridge.LabelSetStorage, numberOfShards)
+	lsses := make([]*LSS, numberOfShards)
 	wals := make([]*ShardWal, numberOfShards)
 	dataStorages := make([]*DataStorage, numberOfShards)
 
@@ -70,8 +74,12 @@ func Load(id string, generation uint64, dir string, configs []*config.InputRelab
 	}()
 
 	for shardID := uint16(0); shardID < numberOfShards; shardID++ {
-		lss := cppbridge.NewQueryableLssStorage()
-		lsses[shardID] = lss
+		inputLss := cppbridge.NewLssStorage()
+		targetLss := cppbridge.NewQueryableLssStorage()
+		lsses[shardID] = &LSS{
+			input:  inputLss,
+			target: targetLss,
+		}
 		dataStorage := cppbridge.NewHeadDataStorage()
 		dataStorages[shardID] = &DataStorage{
 			dataStorage: dataStorage,
@@ -86,7 +94,7 @@ func Load(id string, generation uint64, dir string, configs []*config.InputRelab
 
 		var offset int
 		var encoder *cppbridge.HeadWalEncoder
-		offset, encoder, err = replayWal(shardFile, lss, dataStorages[shardID])
+		offset, encoder, err = replayWal(shardFile, targetLss, dataStorages[shardID])
 		if err != nil {
 			return nil, fmt.Errorf("failed to replay wal: %w", err)
 		}
