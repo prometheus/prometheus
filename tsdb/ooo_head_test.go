@@ -203,7 +203,7 @@ func TestOOOChunks_ToEncodedChunks(t *testing.T) {
 				{t: 1000, h: h2},
 				{t: 1100, h: h1},
 			},
-			expectedCounterResets: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.CounterReset},
+			expectedCounterResets: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.UnknownCounterReset},
 			expectedChunks: []chunkVerify{
 				{encoding: chunkenc.EncHistogram, minTime: 1000, maxTime: 1000},
 				{encoding: chunkenc.EncHistogram, minTime: 1100, maxTime: 1100},

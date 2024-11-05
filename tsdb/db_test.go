@@ -8044,7 +8044,7 @@ func testHistogramAppendAndQueryHelper(t *testing.T, floatHistogram bool) {
 	})
 
 	ctx := context.Background()
-	appendHistogram := func(
+	appendHistogram := func(t *testing.T,
 		lbls labels.Labels, tsMinute int, h *histogram.Histogram,
 		exp *[]chunks.Sample, expCRH histogram.CounterResetHint,
 	) {
@@ -8065,7 +8065,7 @@ func testHistogramAppendAndQueryHelper(t *testing.T, floatHistogram bool) {
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 	}
-	appendFloat := func(lbls labels.Labels, tsMinute int, val float64, exp *[]chunks.Sample) {
+	appendFloat := func(t *testing.T, lbls labels.Labels, tsMinute int, val float64, exp *[]chunks.Sample) {
 		t.Helper()
 		app := db.Appender(ctx)
 		_, err := app.Append(0, lbls, minute(tsMinute), val)
@@ -8074,7 +8074,7 @@ func testHistogramAppendAndQueryHelper(t *testing.T, floatHistogram bool) {
 		*exp = append(*exp, sample{t: minute(tsMinute), f: val})
 	}
 
-	testQuery := func(name, value string, exp map[string][]chunks.Sample) {
+	testQuery := func(t *testing.T, name, value string, exp map[string][]chunks.Sample) {
 		t.Helper()
 		q, err := db.Querier(math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
@@ -8112,24 +8112,24 @@ func testHistogramAppendAndQueryHelper(t *testing.T, floatHistogram bool) {
 	t.Run("series with only histograms", func(t *testing.T) {
 		h := baseH.Copy() // This is shared across all sub tests.
 
-		appendHistogram(series1, 100, h, &exp1, histogram.UnknownCounterReset)
-		testQuery("foo", "bar1", map[string][]chunks.Sample{series1.String(): exp1})
+		appendHistogram(t, series1, 100, h, &exp1, histogram.UnknownCounterReset)
+		testQuery(t, "foo", "bar1", map[string][]chunks.Sample{series1.String(): exp1})
 
 		h.PositiveBuckets[0]++
 		h.NegativeBuckets[0] += 2
 		h.Count += 10
-		appendHistogram(series1, 101, h, &exp1, histogram.NotCounterReset)
-		testQuery("foo", "bar1", map[string][]chunks.Sample{series1.String(): exp1})
+		appendHistogram(t, series1, 101, h, &exp1, histogram.NotCounterReset)
+		testQuery(t, "foo", "bar1", map[string][]chunks.Sample{series1.String(): exp1})
 
 		t.Run("changing schema", func(t *testing.T) {
 			h.Schema = 2
-			appendHistogram(series1, 102, h, &exp1, histogram.UnknownCounterReset)
-			testQuery("foo", "bar1", map[string][]chunks.Sample{series1.String(): exp1})
+			appendHistogram(t, series1, 102, h, &exp1, histogram.UnknownCounterReset)
+			testQuery(t, "foo", "bar1", map[string][]chunks.Sample{series1.String(): exp1})
 
 			// Schema back to old.
 			h.Schema = 1
-			appendHistogram(series1, 103, h, &exp1, histogram.UnknownCounterReset)
-			testQuery("foo", "bar1", map[string][]chunks.Sample{series1.String(): exp1})
+			appendHistogram(t, series1, 103, h, &exp1, histogram.UnknownCounterReset)
+			testQuery(t, "foo", "bar1", map[string][]chunks.Sample{series1.String(): exp1})
 		})
 
 		t.Run("new buckets incoming", func(t *testing.T) {
@@ -8157,8 +8157,8 @@ func testHistogramAppendAndQueryHelper(t *testing.T, floatHistogram bool) {
 			h.PositiveSpans[1].Length++
 			h.PositiveBuckets = append(h.PositiveBuckets, 1)
 			h.Count += 3
-			appendHistogram(series1, 104, h, &exp1, histogram.NotCounterReset)
-			testQuery("foo", "bar1", map[string][]chunks.Sample{series1.String(): exp1})
+			appendHistogram(t, series1, 104, h, &exp1, histogram.NotCounterReset)
+			testQuery(t, "foo", "bar1", map[string][]chunks.Sample{series1.String(): exp1})
 
 			// Because of the previous two histograms being on the active chunk,
 			// and the next append is only adding a new bucket, the active chunk
@@ -8195,14 +8195,14 @@ func testHistogramAppendAndQueryHelper(t *testing.T, floatHistogram bool) {
 			h.Count += 3
 			// {2, 1, -1, 0, 1} -> {2, 1, 0, -1, 0, 1}
 			h.PositiveBuckets = append(h.PositiveBuckets[:2], append([]int64{0}, h.PositiveBuckets[2:]...)...)
-			appendHistogram(series1, 105, h, &exp1, histogram.NotCounterReset)
-			testQuery("foo", "bar1", map[string][]chunks.Sample{series1.String(): exp1})
+			appendHistogram(t, series1, 105, h, &exp1, histogram.NotCounterReset)
+			testQuery(t, "foo", "bar1", map[string][]chunks.Sample{series1.String(): exp1})
 
 			// We add 4 more histograms to clear out the buffer and see the re-encoded histograms.
-			appendHistogram(series1, 106, h, &exp1, histogram.NotCounterReset)
-			appendHistogram(series1, 107, h, &exp1, histogram.NotCounterReset)
-			appendHistogram(series1, 108, h, &exp1, histogram.NotCounterReset)
-			appendHistogram(series1, 109, h, &exp1, histogram.NotCounterReset)
+			appendHistogram(t, series1, 106, h, &exp1, histogram.NotCounterReset)
+			appendHistogram(t, series1, 107, h, &exp1, histogram.NotCounterReset)
+			appendHistogram(t, series1, 108, h, &exp1, histogram.NotCounterReset)
+			appendHistogram(t, series1, 109, h, &exp1, histogram.NotCounterReset)
 
 			// Update the expected histograms to reflect the re-encoding.
 			if floatHistogram {
@@ -8229,69 +8229,69 @@ func testHistogramAppendAndQueryHelper(t *testing.T, floatHistogram bool) {
 				exp1[l-6] = sample{t: exp1[l-6].T(), h: h6}
 			}
 
-			testQuery("foo", "bar1", map[string][]chunks.Sample{series1.String(): exp1})
+			testQuery(t, "foo", "bar1", map[string][]chunks.Sample{series1.String(): exp1})
 		})
 
 		t.Run("buckets disappearing", func(t *testing.T) {
 			h.PositiveSpans[1].Length--
 			h.PositiveBuckets = h.PositiveBuckets[:len(h.PositiveBuckets)-1]
 			h.Count -= 3
-			appendHistogram(series1, 110, h, &exp1, histogram.CounterReset)
-			testQuery("foo", "bar1", map[string][]chunks.Sample{series1.String(): exp1})
+			appendHistogram(t, series1, 110, h, &exp1, histogram.UnknownCounterReset)
+			testQuery(t, "foo", "bar1", map[string][]chunks.Sample{series1.String(): exp1})
 		})
 	})
 
 	t.Run("series starting with float and then getting histograms", func(t *testing.T) {
-		appendFloat(series2, 100, 100, &exp2)
-		appendFloat(series2, 101, 101, &exp2)
-		appendFloat(series2, 102, 102, &exp2)
-		testQuery("foo", "bar2", map[string][]chunks.Sample{series2.String(): exp2})
+		appendFloat(t, series2, 100, 100, &exp2)
+		appendFloat(t, series2, 101, 101, &exp2)
+		appendFloat(t, series2, 102, 102, &exp2)
+		testQuery(t, "foo", "bar2", map[string][]chunks.Sample{series2.String(): exp2})
 
 		h := baseH.Copy()
-		appendHistogram(series2, 103, h, &exp2, histogram.UnknownCounterReset)
-		appendHistogram(series2, 104, h, &exp2, histogram.NotCounterReset)
-		appendHistogram(series2, 105, h, &exp2, histogram.NotCounterReset)
-		testQuery("foo", "bar2", map[string][]chunks.Sample{series2.String(): exp2})
+		appendHistogram(t, series2, 103, h, &exp2, histogram.UnknownCounterReset)
+		appendHistogram(t, series2, 104, h, &exp2, histogram.NotCounterReset)
+		appendHistogram(t, series2, 105, h, &exp2, histogram.NotCounterReset)
+		testQuery(t, "foo", "bar2", map[string][]chunks.Sample{series2.String(): exp2})
 
 		// Switching between float and histograms again.
-		appendFloat(series2, 106, 106, &exp2)
-		appendFloat(series2, 107, 107, &exp2)
-		testQuery("foo", "bar2", map[string][]chunks.Sample{series2.String(): exp2})
+		appendFloat(t, series2, 106, 106, &exp2)
+		appendFloat(t, series2, 107, 107, &exp2)
+		testQuery(t, "foo", "bar2", map[string][]chunks.Sample{series2.String(): exp2})
 
-		appendHistogram(series2, 108, h, &exp2, histogram.UnknownCounterReset)
-		appendHistogram(series2, 109, h, &exp2, histogram.NotCounterReset)
-		testQuery("foo", "bar2", map[string][]chunks.Sample{series2.String(): exp2})
+		appendHistogram(t, series2, 108, h, &exp2, histogram.UnknownCounterReset)
+		appendHistogram(t, series2, 109, h, &exp2, histogram.NotCounterReset)
+		testQuery(t, "foo", "bar2", map[string][]chunks.Sample{series2.String(): exp2})
 	})
 
 	t.Run("series starting with histogram and then getting float", func(t *testing.T) {
 		h := baseH.Copy()
-		appendHistogram(series3, 101, h, &exp3, histogram.UnknownCounterReset)
-		appendHistogram(series3, 102, h, &exp3, histogram.NotCounterReset)
-		appendHistogram(series3, 103, h, &exp3, histogram.NotCounterReset)
-		testQuery("foo", "bar3", map[string][]chunks.Sample{series3.String(): exp3})
+		appendHistogram(t, series3, 101, h, &exp3, histogram.UnknownCounterReset)
+		appendHistogram(t, series3, 102, h, &exp3, histogram.NotCounterReset)
+		appendHistogram(t, series3, 103, h, &exp3, histogram.NotCounterReset)
+		testQuery(t, "foo", "bar3", map[string][]chunks.Sample{series3.String(): exp3})
 
-		appendFloat(series3, 104, 100, &exp3)
-		appendFloat(series3, 105, 101, &exp3)
-		appendFloat(series3, 106, 102, &exp3)
-		testQuery("foo", "bar3", map[string][]chunks.Sample{series3.String(): exp3})
+		appendFloat(t, series3, 104, 100, &exp3)
+		appendFloat(t, series3, 105, 101, &exp3)
+		appendFloat(t, series3, 106, 102, &exp3)
+		testQuery(t, "foo", "bar3", map[string][]chunks.Sample{series3.String(): exp3})
 
 		// Switching between histogram and float again.
-		appendHistogram(series3, 107, h, &exp3, histogram.UnknownCounterReset)
-		appendHistogram(series3, 108, h, &exp3, histogram.NotCounterReset)
-		testQuery("foo", "bar3", map[string][]chunks.Sample{series3.String(): exp3})
+		appendHistogram(t, series3, 107, h, &exp3, histogram.UnknownCounterReset)
+		appendHistogram(t, series3, 108, h, &exp3, histogram.NotCounterReset)
+		testQuery(t, "foo", "bar3", map[string][]chunks.Sample{series3.String(): exp3})
 
-		appendFloat(series3, 109, 106, &exp3)
-		appendFloat(series3, 110, 107, &exp3)
-		testQuery("foo", "bar3", map[string][]chunks.Sample{series3.String(): exp3})
+		appendFloat(t, series3, 109, 106, &exp3)
+		appendFloat(t, series3, 110, 107, &exp3)
+		testQuery(t, "foo", "bar3", map[string][]chunks.Sample{series3.String(): exp3})
 	})
 
 	t.Run("query mix of histogram and float series", func(t *testing.T) {
 		// A float only series.
-		appendFloat(series4, 100, 100, &exp4)
-		appendFloat(series4, 101, 101, &exp4)
-		appendFloat(series4, 102, 102, &exp4)
+		appendFloat(t, series4, 100, 100, &exp4)
+		appendFloat(t, series4, 101, 101, &exp4)
+		appendFloat(t, series4, 102, 102, &exp4)
 
-		testQuery("foo", "bar.*", map[string][]chunks.Sample{
+		testQuery(t, "foo", "bar.*", map[string][]chunks.Sample{
 			series1.String(): exp1,
 			series2.String(): exp2,
 			series3.String(): exp3,
