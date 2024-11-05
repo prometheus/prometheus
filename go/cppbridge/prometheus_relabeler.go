@@ -488,22 +488,25 @@ type RelabelerOptions struct {
 	HonorLabels  bool
 }
 
-// SourceStaleNansState wrap pointer to source state for stalenans (null on first call).
-type SourceStaleNansState struct {
-	pointer uintptr
+// StaleNansState wrap pointer to source state for stale nans .
+type StaleNansState struct {
+	state uintptr
 }
 
-// NewSourceStaleNansState init new SourceStaleNansState.
-func NewSourceStaleNansState() *SourceStaleNansState {
-	ss := new(SourceStaleNansState)
-	runtime.SetFinalizer(ss, func(s *SourceStaleNansState) {
-		if s.pointer == 0 {
-			return
-		}
-		prometheusRelabelerStalenansStateDtor(s.pointer)
+// NewStaleNansState init new SourceStaleNansState.
+func NewStaleNansState() *StaleNansState {
+	s := &StaleNansState{
+		state: prometheusRelabelStaleNansStateCtor(),
+	}
+	runtime.SetFinalizer(s, func(s *StaleNansState) {
+		prometheusRelabelStaleNansStateDtor(s.state)
 	})
 
-	return ss
+	return s
+}
+
+func (s *StaleNansState) Reset() {
+	prometheusRelabelStaleNansStateReset(s.state)
 }
 
 // InputPerShardRelabeler - go wrapper for C-PerShardRelabeler, relabeler for shard.
@@ -584,7 +587,8 @@ func (ipsr *InputPerShardRelabeler) Generation() uint64 {
 // InputRelabeling - relabeling incoming hashdex(first stage).
 func (ipsr *InputPerShardRelabeler) InputRelabeling(
 	ctx context.Context,
-	lss *LabelSetStorage,
+	inputLss *LabelSetStorage,
+	targetLss *LabelSetStorage,
 	cache *Cache,
 	options RelabelerOptions,
 	shardedData ShardedData,
@@ -601,7 +605,8 @@ func (ipsr *InputPerShardRelabeler) InputRelabeling(
 	}
 	exception := prometheusPerShardRelabelerInputRelabeling(
 		ipsr.cptr,
-		lss.Pointer(),
+		inputLss.Pointer(),
+		targetLss.Pointer(),
 		cache.cPointer,
 		cptrContainer.cptr(),
 		options,
@@ -615,10 +620,11 @@ func (ipsr *InputPerShardRelabeler) InputRelabeling(
 // InputRelabelingWithStalenans relabeling incoming hashdex(first stage) with state stalenans.
 func (ipsr *InputPerShardRelabeler) InputRelabelingWithStalenans(
 	ctx context.Context,
-	lss *LabelSetStorage,
+	inputLss *LabelSetStorage,
+	targetLss *LabelSetStorage,
 	cache *Cache,
 	options RelabelerOptions,
-	sourceState *SourceStaleNansState,
+	staleNansState *StaleNansState,
 	staleNansTS int64,
 	shardedData ShardedData,
 	shardsInnerSeries []*InnerSeries,
@@ -632,12 +638,13 @@ func (ipsr *InputPerShardRelabeler) InputRelabelingWithStalenans(
 	if !ok {
 		return ErrMustImplementCptrable
 	}
-	state, exception := prometheusPerShardRelabelerInputRelabelingWithStalenans(
+	exception := prometheusPerShardRelabelerInputRelabelingWithStalenans(
 		ipsr.cptr,
-		lss.Pointer(),
+		inputLss.Pointer(),
+		targetLss.Pointer(),
 		cache.cPointer,
 		cptrContainer.cptr(),
-		sourceState.pointer,
+		staleNansState.state,
 		staleNansTS,
 		options,
 		shardsInnerSeries,
@@ -647,7 +654,6 @@ func (ipsr *InputPerShardRelabeler) InputRelabelingWithStalenans(
 		return handleException(exception)
 	}
 
-	sourceState.pointer = state
 	return nil
 }
 
@@ -856,7 +862,7 @@ func (c *Cache) ResetTo() {
 type State struct {
 	// relabelerID string
 	caches              []*Cache
-	staleNansStates     []*SourceStaleNansState
+	staleNansStates     []*StaleNansState
 	staleNansTS         int64
 	generationRelabeler uint64
 	generationHead      uint64
@@ -868,6 +874,7 @@ type State struct {
 func NewState(numberOfShards uint16) *State {
 	s := &State{
 		caches:              make([]*Cache, numberOfShards),
+		staleNansStates:     make([]*StaleNansState, numberOfShards),
 		generationRelabeler: math.MaxUint64,
 		generationHead:      math.MaxUint64,
 		trackStaleness:      false,
@@ -894,7 +901,7 @@ func (s *State) CacheByShard(shardID uint16) *Cache {
 }
 
 // StaleNansStateByShard return SourceStaleNansState for shard.
-func (s *State) StaleNansStateByShard(shardID uint16) *SourceStaleNansState {
+func (s *State) StaleNansStateByShard(shardID uint16) *StaleNansState {
 	if int(shardID) >= len(s.staleNansStates) {
 		panic(fmt.Sprintf(
 			"shardID(%d) out of range in staleNansStates(%d)",
@@ -904,7 +911,7 @@ func (s *State) StaleNansStateByShard(shardID uint16) *SourceStaleNansState {
 	}
 
 	if s.staleNansStates[shardID] == nil {
-		s.staleNansStates[shardID] = NewSourceStaleNansState()
+		s.staleNansStates[shardID] = NewStaleNansState()
 	}
 
 	return s.staleNansStates[shardID]
@@ -1002,7 +1009,10 @@ func (s *State) resetStaleNansStates(numberOfShards uint16, equaledGeneration bo
 	}
 
 	for shardID := range s.staleNansStates {
-		s.staleNansStates[shardID] = nil
+		state := s.staleNansStates[shardID]
+		if state != nil {
+			state.Reset()
+		}
 	}
 
 	if len(s.staleNansStates) > int(numberOfShards) {
@@ -1014,7 +1024,7 @@ func (s *State) resetStaleNansStates(numberOfShards uint16, equaledGeneration bo
 		// grow
 		s.staleNansStates = append(
 			s.staleNansStates,
-			make([]*SourceStaleNansState, int(numberOfShards)-len(s.staleNansStates))...,
+			make([]*StaleNansState, int(numberOfShards)-len(s.staleNansStates))...,
 		)
 	}
 }

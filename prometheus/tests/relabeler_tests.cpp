@@ -279,9 +279,9 @@ class LabelsBuilderForTest {
   }
 
   // reset - clears all current state for the builder and init from LabelSet.
-  PROMPP_ALWAYS_INLINE void reset(LabelSet* ls) {
+  PROMPP_ALWAYS_INLINE void reset(LabelSet& ls) {
     reset();
-    base_ = ls;
+    base_ = &ls;
   }
 
   // set - the name/value pair as a label. A value of "" means delete that label.
@@ -717,7 +717,7 @@ TEST_F(TestStatelessRelabeler, KeepEQ) {
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "value"}, {"job", "abc"}});
 
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
@@ -737,7 +737,7 @@ TEST_F(TestStatelessRelabeler, KeepEQHard) {
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "value"}, {"job", "abc"}});
 
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   Relabel::hard_validate(rstatus, builder, nullptr);
@@ -758,7 +758,7 @@ TEST_F(TestStatelessRelabeler, KeepEQHardInvalid) {
   LabelViewSetForTest incoming_labels = make_label_set({{"__value__", "value"}, {"job", "abc"}});
 
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
@@ -775,7 +775,7 @@ TEST_F(TestStatelessRelabeler, KeepEQInvalidLabelLimit) {
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "value"}, {"job", "abc"}, {"jub", "buj"}});
 
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
@@ -815,7 +815,7 @@ TEST_F(TestStatelessRelabeler, KeepRegexpEQ) {
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "boom"}, {"job", "abc"}});
 
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
 
@@ -834,7 +834,7 @@ TEST_F(TestStatelessRelabeler, KeepNE) {
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "value"}, {"job", "abs"}});
 
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsDrop, rstatus);
 }
@@ -848,7 +848,7 @@ TEST_F(TestStatelessRelabeler, KeepNENoLabel) {
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "value"}, {"job", "abs"}});
 
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsDrop, rstatus);
 }
@@ -862,7 +862,7 @@ TEST_F(TestStatelessRelabeler, KeepRegexpNE) {
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "zoom"}, {"job", "abc"}});
 
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsDrop, rstatus);
 }
@@ -876,7 +876,7 @@ TEST_F(TestStatelessRelabeler, DropEQ) {
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "value"}, {"job", "abc"}});
 
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsDrop, rstatus);
 }
@@ -890,7 +890,7 @@ TEST_F(TestStatelessRelabeler, DropRegexpEQ) {
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "boom"}, {"job", "beee"}});
 
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsDrop, rstatus);
 }
@@ -904,7 +904,7 @@ TEST_F(TestStatelessRelabeler, DropNE) {
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "value"}, {"job", "abs"}});
 
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
 
@@ -923,7 +923,7 @@ TEST_F(TestStatelessRelabeler, DropRegexpNE) {
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "boom"}, {"job", "beee"}});
 
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
 
@@ -942,7 +942,7 @@ TEST_F(TestStatelessRelabeler, DropRegexpNENoLabel) {
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "boom"}, {"job", "beee"}});
 
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
 
@@ -961,7 +961,7 @@ TEST_F(TestStatelessRelabeler, DropEqualEQ) {
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "main"}, {"job", "main"}, {"instance", "else"}});
 
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsDrop, rstatus);
 }
@@ -975,7 +975,7 @@ TEST_F(TestStatelessRelabeler, DropEqualNE) {
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "main"}, {"job", "ban"}, {"instance", "else"}});
 
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
 
@@ -994,7 +994,7 @@ TEST_F(TestStatelessRelabeler, KeepEqualEQ) {
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "main"}, {"job", "main"}, {"instance", "else"}});
 
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
@@ -1014,7 +1014,7 @@ TEST_F(TestStatelessRelabeler, KeepEqualNE) {
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "main"}, {"job", "niam"}, {"instance", "else"}});
 
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsDrop, rstatus);
@@ -1029,7 +1029,7 @@ TEST_F(TestStatelessRelabeler, Lowercase) {
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "lOwEr_123_UpPeR_123_cAsE"}});
 
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
@@ -1049,7 +1049,7 @@ TEST_F(TestStatelessRelabeler, Uppercase) {
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "lOwEr_123_UpPeR_123_cAsE"}});
 
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
@@ -1071,7 +1071,7 @@ TEST_F(TestStatelessRelabeler, LowercaseUppercase) {
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "lOwEr_123_UpPeR_123_cAsE"}});
 
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
@@ -1093,7 +1093,7 @@ TEST_F(TestStatelessRelabeler, HashMod) {
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "eman"}, {"job", "boj"}, {"instance", "ecnatsni"}});
 
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
@@ -1114,7 +1114,7 @@ TEST_F(TestStatelessRelabeler, HashMod2) {
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "eman"}, {"job", "boj"}, {"instance", "ecna\ntsni"}});
 
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
@@ -1134,7 +1134,7 @@ TEST_F(TestStatelessRelabeler, LabelMap) {
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "eman"}, {"jab", "baj"}, {"job", "boj"}});
 
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
@@ -1160,7 +1160,7 @@ TEST_F(TestStatelessRelabeler, LabelMap2) {
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "eman"}, {"meta_ng_jab", "baj"}, {"meta_ng_job", "boj"}, {"meta_jzb", "bzj"}});
 
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
@@ -1181,7 +1181,7 @@ TEST_F(TestStatelessRelabeler, LabelDrop) {
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "eman"}, {"jab", "baj"}, {"job", "boj"}});
 
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
@@ -1202,7 +1202,7 @@ TEST_F(TestStatelessRelabeler, LabelDropTransparent) {
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "eman"}, {"hab", "baj"}, {"hob", "boj"}});
 
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
@@ -1224,7 +1224,7 @@ TEST_F(TestStatelessRelabeler, LabelDropFullDrop) {
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "eman"}, {"jab", "baj"}, {"job", "boj"}});
 
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
@@ -1247,7 +1247,7 @@ TEST_F(TestStatelessRelabeler, LabelDropFullDropAndAdd) {
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "eman"}, {"jab", "baj"}, {"job", "boj"}});
 
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
@@ -1265,7 +1265,7 @@ TEST_F(TestStatelessRelabeler, LabelKeep) {
 
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "eman"}, {"jab", "baj"}, {"job", "boj"}});
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
@@ -1284,7 +1284,7 @@ TEST_F(TestStatelessRelabeler, LabelKeepTransparent) {
 
   LabelViewSetForTest incoming_labels = make_label_set({{"jab", "eman"}, {"job", "baj"}, {"jub", "boj"}});
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
@@ -1308,7 +1308,7 @@ TEST_F(TestStatelessRelabeler, ReplaceToNewLS) {
 
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "eoo"}, {"jab", "baj"}, {"job", "boj"}});
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
@@ -1332,7 +1332,7 @@ TEST_F(TestStatelessRelabeler, ReplaceToNewLS2) {
 
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}});
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
@@ -1351,7 +1351,7 @@ TEST_F(TestStatelessRelabeler, ReplaceToNewLS3) {
 
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}});
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
@@ -1375,7 +1375,7 @@ TEST_F(TestStatelessRelabeler, ReplaceFullMatches) {
 
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}});
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
@@ -1399,7 +1399,7 @@ TEST_F(TestStatelessRelabeler, ReplaceNoMatches) {
 
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "bag"}});
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
@@ -1423,7 +1423,7 @@ TEST_F(TestStatelessRelabeler, ReplaceMatches) {
 
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "bag"}});
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
@@ -1447,7 +1447,7 @@ TEST_F(TestStatelessRelabeler, ReplaceNoReplacement) {
 
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}});
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
@@ -1467,7 +1467,7 @@ TEST_F(TestStatelessRelabeler, ReplaceBlankReplacement) {
 
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "jazz"}, {"j", "baj"}});
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
@@ -1490,7 +1490,7 @@ TEST_F(TestStatelessRelabeler, ReplaceCreateNewFromValue) {
 
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "some-job2-boj"}});
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
@@ -1513,7 +1513,7 @@ TEST_F(TestStatelessRelabeler, ReplaceInvalidLabelName) {
 
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "some-2job-boj"}});
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
@@ -1536,7 +1536,7 @@ TEST_F(TestStatelessRelabeler, ReplaceInvalidReplacement) {
 
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "some-job-boj"}});
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
@@ -1571,7 +1571,7 @@ TEST_F(TestStatelessRelabeler, ReplaceInvalidTargetLabels) {
 
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "some-job-0"}});
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
@@ -1606,7 +1606,7 @@ TEST_F(TestStatelessRelabeler, ReplaceComplexLikeUsecase) {
 
   LabelViewSetForTest incoming_labels = make_label_set({{"__meta_sd_tags", "path:/secret,job:some-job,label:jab=baj"}});
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
@@ -1636,7 +1636,7 @@ TEST_F(TestStatelessRelabeler, ReplaceIssues12283) {
   LabelViewSetForTest incoming_labels =
       make_label_set({{"__meta_kubernetes_pod_container_port_name", "foo"}, {"__meta_kubernetes_pod_annotation_XXX_metrics_port", "9091"}});
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
@@ -1668,7 +1668,7 @@ TEST_F(TestStatelessRelabeler, ReplaceWithReplace) {
 
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "eoo"}, {"jab", "baj"}, {"job", "baj"}});
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
@@ -1694,7 +1694,7 @@ TEST_F(TestStatelessRelabeler, DropReplace) {
 
   LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "eoo"}, {"jab", "baj"}, {"job", "baj"}});
   LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(&incoming_labels);
+  builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsDrop, rstatus);
@@ -1820,7 +1820,7 @@ TEST_F(TestPerShardRelabeler, KeepEQ) {
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   make_hashdex(hx_, make_label_set({{"__name__", "value"}, {"job", "abc"}}), make_samples({{1712567046855, 0.1}}));
 
-  prs.input_relabeling(lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss_, lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
   // shard id 1
   EXPECT_EQ(relabeled_results_[0]->size(), 0);
   EXPECT_EQ(relabeled_results_[1]->size(), 0);
@@ -1833,7 +1833,7 @@ TEST_F(TestPerShardRelabeler, KeepEQ) {
   EXPECT_EQ(update_data.size(), 0);
 
   vector_shards_inner_series_[1] = std::make_unique<PromPP::Prometheus::Relabel::InnerSeries>();
-  prs.input_relabeling(lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss_, lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
 }
 
@@ -1844,7 +1844,7 @@ TEST_F(TestPerShardRelabeler, KeepEQ_OrderedEncodingBimap) {
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   make_hashdex(hx_, make_label_set({{"__name__", "value"}, {"job", "abc"}}), make_samples({{1712567046855, 0.1}}));
 
-  prs.input_relabeling(lss, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss, lss, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
   // shard id 1
   EXPECT_EQ(relabeled_results_[0]->size(), 0);
   EXPECT_EQ(relabeled_results_[1]->size(), 0);
@@ -1857,7 +1857,7 @@ TEST_F(TestPerShardRelabeler, KeepEQ_OrderedEncodingBimap) {
   EXPECT_EQ(update_data.size(), 0);
 
   vector_shards_inner_series_[1] = std::make_unique<PromPP::Prometheus::Relabel::InnerSeries>();
-  prs.input_relabeling(lss, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss, lss, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
 }
 
@@ -1867,7 +1867,7 @@ TEST_F(TestPerShardRelabeler, KeepNE) {
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   make_hashdex(hx_, make_label_set({{"__name__", "value"}, {"job", "abc"}}), make_samples({{1712567046855, 0.1}}));
 
-  prs.input_relabeling(lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss_, lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
   // shard id 1
   EXPECT_EQ(relabeled_results_[0]->size(), 0);
   EXPECT_EQ(relabeled_results_[1]->size(), 0);
@@ -1881,7 +1881,7 @@ TEST_F(TestPerShardRelabeler, KeepEQNE) {
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   make_hashdex(hx_, make_label_set({{"__name__", "value"}, {"job", "abc"}}), make_samples({{1712567046855, 0.1}}));
 
-  prs.input_relabeling(lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss_, lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
   // shard id 1
   EXPECT_EQ(relabeled_results_[0]->size(), 0);
   EXPECT_EQ(relabeled_results_[1]->size(), 0);
@@ -1896,7 +1896,7 @@ TEST_F(TestPerShardRelabeler, KeepEQNE) {
   reset();
   hx_.clear();
   make_hashdex(hx_, make_label_set({{"__name__", "value"}, {"job", "abcd"}}), make_samples({{1712567046855, 0.1}}));
-  prs.input_relabeling(lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss_, lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
   // shard id 1 skip
   EXPECT_EQ(relabeled_results_[0]->size(), 0);
   EXPECT_EQ(relabeled_results_[1]->size(), 0);
@@ -1915,7 +1915,7 @@ TEST_F(TestPerShardRelabeler, ReplaceToNewLS2) {
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   make_hashdex(hx_, make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}}), make_samples({{1712567046855, 0.1}}));
 
-  prs.input_relabeling(lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss_, lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
   // shard id 1
   EXPECT_EQ(relabeled_results_[0]->size(), 0);
   EXPECT_EQ(relabeled_results_[1]->size(), 1);
@@ -1941,7 +1941,7 @@ TEST_F(TestPerShardRelabeler, ReplaceToNewLS3) {
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   make_hashdex(hx_, make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}}), make_samples({{1712567046855, 0.1}}));
 
-  prs.input_relabeling(lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss_, lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
   // shard id 1
   EXPECT_EQ(relabeled_results_[0]->size(), 1);
   EXPECT_EQ(relabeled_results_[1]->size(), 0);
@@ -1973,7 +1973,7 @@ TEST_F(TestPerShardRelabeler, ReplaceToNewLS2_OrderedEncodingBimap) {
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   make_hashdex(hx_, make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}}), make_samples({{1712567046855, 0.1}}));
 
-  prs.input_relabeling(lss, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss, lss, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
   // shard id 1
   EXPECT_EQ(relabeled_results_[0]->size(), 0);
   EXPECT_EQ(relabeled_results_[1]->size(), 1);
@@ -1998,10 +1998,9 @@ TEST_F(TestPerShardRelabeler, InputRelabelingWithStalenans) {
   Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   make_hashdex(hx_, make_label_set({{"__name__", "value"}, {"job", "abc"}}), make_samples({{1712567046855, 0.1}}));
-  PromPP::Prometheus::Relabel::SourceState state = nullptr;
+  PromPP::Prometheus::Relabel::StaleNaNsState state{};
 
-  PromPP::Prometheus::Relabel::SourceState newstate =
-      prs.input_relabeling_with_stalenans(lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_, state, 1712567046855);
+  prs.input_relabeling_with_stalenans(lss_, lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_, state, 1712567046855);
 
   // shard id 1
   EXPECT_EQ(relabeled_results_[0]->size(), 0);
@@ -2017,7 +2016,7 @@ TEST_F(TestPerShardRelabeler, InputRelabelingWithStalenans) {
   vector_shards_inner_series_[1] = std::make_unique<PromPP::Prometheus::Relabel::InnerSeries>();
   HashdexTest empty_hx;
   PromPP::Primitives::Timestamp stale_ts = 1712567047055;
-  prs.input_relabeling_with_stalenans(lss_, cache_, empty_hx, o_, shards_inner_series_, relabeled_results_, newstate, stale_ts);
+  prs.input_relabeling_with_stalenans(lss_, lss_, cache_, empty_hx, o_, shards_inner_series_, relabeled_results_, state, stale_ts);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
   EXPECT_EQ(PromPP::Primitives::Sample(stale_ts, PromPP::Prometheus::kStaleNan), shards_inner_series_[1]->data()[0].samples[0]);
 }
@@ -2030,7 +2029,7 @@ TEST_F(TestPerShardRelabeler, TargetLabels_HappyPath) {
   std::vector<std::pair<std::string, std::string>> list_target_labels{{"a_name", "target_a_value"}, {"z_name", "target_z_value"}};
   add_target_labels(list_target_labels);
 
-  prs.input_relabeling(lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss_, lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
   // shard id 1
   EXPECT_EQ(relabeled_results_[0]->size(), 0);
   EXPECT_EQ(relabeled_results_[1]->size(), 1);
@@ -2059,7 +2058,7 @@ TEST_F(TestPerShardRelabeler, TargetLabels_ExportedLabel) {
   std::vector<std::pair<std::string, std::string>> list_target_labels{{"jab", "target_a_value"}, {"z_name", "target_z_value"}};
   add_target_labels(list_target_labels);
 
-  prs.input_relabeling(lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss_, lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
   // shard id 1
   EXPECT_EQ(relabeled_results_[0]->size(), 1);
   EXPECT_EQ(relabeled_results_[1]->size(), 0);
@@ -2089,7 +2088,7 @@ TEST_F(TestPerShardRelabeler, TargetLabels_ExportedLabel_Honor) {
   add_target_labels(list_target_labels);
   o_.honor_labels = true;
 
-  prs.input_relabeling(lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss_, lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
   // shard id 1
   EXPECT_EQ(relabeled_results_[0]->size(), 1);
   EXPECT_EQ(relabeled_results_[1]->size(), 0);
@@ -2139,7 +2138,7 @@ TEST_F(TestProcessExternalLabels, AddingLSEnd) {
   auto labels = make_label_set({{"a_name", "a_value"}});
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
   PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
-  builder.reset(&labels);
+  builder.reset(labels);
 
   Relabel::StatelessRelabeler sr(rcts_);
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
@@ -2159,7 +2158,7 @@ TEST_F(TestProcessExternalLabels, AddingLSBeginning) {
   auto labels = make_label_set({{"c_name", "c_value"}});
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
   PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
-  builder.reset(&labels);
+  builder.reset(labels);
 
   Relabel::StatelessRelabeler sr(rcts_);
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
@@ -2179,7 +2178,7 @@ TEST_F(TestProcessExternalLabels, OverrideExistingLabels) {
   auto labels = make_label_set({{"a_name", "a_value"}});
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
   PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
-  builder.reset(&labels);
+  builder.reset(labels);
 
   Relabel::StatelessRelabeler sr(rcts_);
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
@@ -2199,7 +2198,7 @@ TEST_F(TestProcessExternalLabels, EmptyExternalLabels) {
   auto labels = make_label_set({{"a_name", "a_value"}});
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
   PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
-  builder.reset(&labels);
+  builder.reset(labels);
 
   Relabel::StatelessRelabeler sr(rcts_);
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
@@ -2219,7 +2218,7 @@ TEST_F(TestProcessExternalLabels, EmptyLabels) {
   auto labels = make_label_set({});
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
   PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
-  builder.reset(&labels);
+  builder.reset(labels);
 
   Relabel::StatelessRelabeler sr(rcts_);
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
@@ -2239,7 +2238,7 @@ TEST_F(TestProcessExternalLabels, LabelsLongerExternalLabels) {
   auto labels = make_label_set({{"a_name", "a_value"}, {"b_name", "b_value"}});
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
   PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
-  builder.reset(&labels);
+  builder.reset(labels);
 
   Relabel::StatelessRelabeler sr(rcts_);
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
@@ -2259,7 +2258,7 @@ TEST_F(TestProcessExternalLabels, ExternalLabelsLongerLabels) {
   auto labels = make_label_set({{"b_name", "b_value"}});
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
   PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
-  builder.reset(&labels);
+  builder.reset(labels);
 
   Relabel::StatelessRelabeler sr(rcts_);
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
@@ -2279,7 +2278,7 @@ TEST_F(TestProcessExternalLabels, AddingWithWithoutClashingLabels) {
   auto labels = make_label_set({{"a_name", "a_value"}, {"b_name", "b_value"}});
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
   PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
-  builder.reset(&labels);
+  builder.reset(labels);
 
   Relabel::StatelessRelabeler sr(rcts_);
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
@@ -2324,7 +2323,7 @@ TEST_F(TestTargetLabels, ResolveConflictingExposedLabels_EmptyConflictingLabels)
   auto labels = make_label_set({{"c_name", "c_value"}});
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
   PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
-  builder.reset(&labels);
+  builder.reset(labels);
   Relabel::StatelessRelabeler sr(rcts_);
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   std::vector<PromPP::Primitives::Label> conflicting_exposed_labels{};
@@ -2340,7 +2339,7 @@ TEST_F(TestTargetLabels, ResolveConflictingExposedLabels) {
   auto labels = make_label_set({{"c_name", "c_value"}});
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
   PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
-  builder.reset(&labels);
+  builder.reset(labels);
   Relabel::StatelessRelabeler sr(rcts_);
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   std::vector<PromPP::Primitives::Label> conflicting_exposed_labels{{"c_name", "a_value"}};
@@ -2356,7 +2355,7 @@ TEST_F(TestTargetLabels, ResolveConflictingExposedLabels_ExportedLabel) {
   auto labels = make_label_set({{"c_name", "c_value"}});
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
   PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
-  builder.reset(&labels);
+  builder.reset(labels);
   Relabel::StatelessRelabeler sr(rcts_);
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   std::vector<PromPP::Primitives::Label> conflicting_exposed_labels{{"exported_c_name", "a_value"}};
@@ -2372,7 +2371,7 @@ TEST_F(TestTargetLabels, InjectTargetLabels_EmptyLabels) {
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
   PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
   auto labels = make_label_set({{"c_name", "c_value"}});
-  builder.reset(&labels);
+  builder.reset(labels);
   Relabel::StatelessRelabeler sr(rcts_);
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   LabelViewSetForTest expected_labels = make_label_set({{"c_name", "c_value"}});
@@ -2388,7 +2387,7 @@ TEST_F(TestTargetLabels, InjectTargetLabels_HappyPath) {
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
   PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
   auto labels = make_label_set({{"c_name", "c_value"}});
-  builder.reset(&labels);
+  builder.reset(labels);
   Relabel::StatelessRelabeler sr(rcts_);
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   std::vector<std::pair<std::string, std::string>> list_target_labels{{"a_name", "target_a_value"}, {"b_name", "target_b_value"}};
@@ -2406,7 +2405,7 @@ TEST_F(TestTargetLabels, InjectTargetLabels_ConflictingLabels) {
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
   PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
   auto labels = make_label_set({{"a_name", "a_value"}, {"c_name", "c_value"}});
-  builder.reset(&labels);
+  builder.reset(labels);
   Relabel::StatelessRelabeler sr(rcts_);
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   std::vector<std::pair<std::string, std::string>> list_target_labels{{"a_name", "target_a_value"}, {"b_name", "target_b_value"}};
@@ -2425,7 +2424,7 @@ TEST_F(TestTargetLabels, InjectTargetLabels_ConflictingLabels_ExportedLabel) {
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
   PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
   auto labels = make_label_set({{"a_name", "a_value"}, {"c_name", "c_value"}});
-  builder.reset(&labels);
+  builder.reset(labels);
   Relabel::StatelessRelabeler sr(rcts_);
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   std::vector<std::pair<std::string, std::string>> list_target_labels{{"a_name", "target_a_value"}, {"exported_a_name", "exported_target_a_value"}};
@@ -2444,7 +2443,7 @@ TEST_F(TestTargetLabels, InjectTargetLabels_ConflictingLabels_Honor) {
   PromPP::Primitives::LabelsBuilderStateMap builder_state;
   PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state};
   auto labels = make_label_set({{"a_name", "a_value"}, {"c_name", "c_value"}});
-  builder.reset(&labels);
+  builder.reset(labels);
   Relabel::StatelessRelabeler sr(rcts_);
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   std::vector<std::pair<std::string, std::string>> list_target_labels{{"a_name", "target_a_value"}, {"b_name", "target_b_value"}};
@@ -2528,62 +2527,16 @@ TEST_F(TestLabelsValidator, LabelValueIsInValid) {
 
 struct TestStaleNaNsState : public testing::Test {};
 
-TEST_F(TestStaleNaNsState, ParentEQ) {
-  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap lss;
-
-  PromPP::Prometheus::Relabel::StaleNaNsState* result = new PromPP::Prometheus::Relabel::StaleNaNsState(&lss);
-  EXPECT_TRUE(result->parent_eq(&lss));
-  delete result;
-}
-
-TEST_F(TestStaleNaNsState, NotParentEQ) {
-  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap lss1;
-  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap lss2;
-
-  PromPP::Prometheus::Relabel::StaleNaNsState* result = new PromPP::Prometheus::Relabel::StaleNaNsState(&lss1);
-  EXPECT_FALSE(result->parent_eq(&lss2));
-  delete result;
-}
-
-TEST_F(TestStaleNaNsState, ResetTo) {
-  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap lss1;
-  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap lss2;
-
-  PromPP::Prometheus::Relabel::StaleNaNsState* result = new PromPP::Prometheus::Relabel::StaleNaNsState(&lss1);
-  EXPECT_TRUE(result->parent_eq(&lss1));
-
-  result->reset_to(&lss2);
-  EXPECT_TRUE(result->parent_eq(&lss2));
-  delete result;
-}
-
 TEST_F(TestStaleNaNsState, Swap) {
   PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap lss;
-  PromPP::Prometheus::Relabel::StaleNaNsState* result = new PromPP::Prometheus::Relabel::StaleNaNsState(&lss);
+  PromPP::Prometheus::Relabel::StaleNaNsState* result = new PromPP::Prometheus::Relabel::StaleNaNsState();
 
   uint32_t current_ls_id{42};
-  result->add(current_ls_id);
+  result->add_input(current_ls_id);
 
   auto fn = [&](const uint32_t ls_id) { EXPECT_EQ(ls_id, current_ls_id); };
-  result->swap(fn);
-  result->swap(fn);
-  delete result;
-}
-
-struct TestLSSWithStaleNaNs : public testing::Test {};
-
-TEST_F(TestLSSWithStaleNaNs, FindOrEmplace) {
-  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap lss;
-  PromPP::Prometheus::Relabel::StaleNaNsState* result = new PromPP::Prometheus::Relabel::StaleNaNsState(&lss);
-  PromPP::Prometheus::Relabel::LSSWithStaleNaNs wrapped_lss(lss, result);
-
-  LabelViewSetForTest label_set = make_label_set({{"__name__", "value"}, {"job", "abs"}});
-  uint32_t current_ls_id = wrapped_lss.find_or_emplace(label_set, hash_value(label_set));
-
-  EXPECT_EQ(lss[current_ls_id], label_set);
-  auto fn = [&](const uint32_t ls_id) { EXPECT_EQ(ls_id, current_ls_id); };
-  result->swap(fn);
-  result->swap(fn);
+  result->swap(fn, [&](const uint32_t ls_id [[maybe_unused]]) {});
+  result->swap(fn, [&](const uint32_t ls_id [[maybe_unused]]) {});
   delete result;
 }
 

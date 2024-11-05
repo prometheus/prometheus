@@ -2,6 +2,7 @@
 
 compilation_mode?=opt## Bazel compilation mode opt or dbg
 asan?=false## Build with address sanitizer
+use_docker?=true## Use bazel in docker
 bazel_verbose?=false## More verbose output
 
 # Bazel workspace directory relative to this file
@@ -13,20 +14,22 @@ bazel := bazel
 #
 # For general purpose using alpine (musl runtime bindings) as production build.
 # But musl doesn't support sanitizers and we use based on ubuntu (glibc) environment.
-ifeq (,$(wildcard /.dockerenv))
-ifeq ($(asan),true)
-bazel := ./scripts/run_in_ubuntu.sh $(bazel)
-else
-bazel := ./scripts/run_in_alpine.sh $(bazel)
-endif
+ifeq ($(use_docker),true)
+	ifeq (,$(wildcard /.dockerenv))
+		ifeq ($(asan),true)
+			bazel := ./scripts/run_in_ubuntu.sh $(bazel)
+		else
+			bazel := ./scripts/run_in_alpine.sh $(bazel)
+		endif
+	endif
 endif
 
 bazel_flags = --compilation_mode=$(compilation_mode)
 ifeq ($(asan),true)
-bazel_flags += --asan --strip=never --platform_suffix=asan
+	bazel_flags += --asan --strip=never --platform_suffix=asan
 endif
 ifeq ($(bazel_verbose),true)
-bazel_flags += --subcommands --verbose_failures --sandbox_debug
+	bazel_flags += --subcommands --verbose_failures --sandbox_debug
 endif
 
 # bazel_in_root is a shortcut to run command in project root

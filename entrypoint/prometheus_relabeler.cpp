@@ -128,16 +128,6 @@ extern "C" void prompp_prometheus_relabeler_state_update_dtor(void* args) {
   in->relabeler_state_update->~RelabelerStateUpdate();
 }
 
-extern "C" void prompp_prometheus_stalenans_state_dtor(void* args) {
-  struct Arguments {
-    PromPP::Prometheus::Relabel::StaleNaNsState* source_state;
-  };
-
-  Arguments* in = reinterpret_cast<Arguments*>(args);
-
-  delete in->source_state;
-}
-
 //
 // PerShardRelabeler
 //
@@ -197,7 +187,8 @@ extern "C" void prompp_prometheus_per_shard_relabeler_input_relabeling(void* arg
     PromPP::Prometheus::Relabel::PerShardRelabeler* per_shard_relabeler;
     HashdexVariant* hashdex;
     PromPP::Prometheus::Relabel::Cache* cache;
-    LssVariantPtr lss;
+    LssVariantPtr input_lss;
+    LssVariantPtr target_lss;
   };
   struct Result {
     PromPP::Primitives::Go::Slice<char> error;
@@ -210,16 +201,47 @@ extern "C" void prompp_prometheus_per_shard_relabeler_input_relabeling(void* arg
     std::visit(
         [in](auto& hashdex) PROMPP_LAMBDA_INLINE {
           std::visit(
-              [in, &hashdex](auto& lss) PROMPP_LAMBDA_INLINE {
-                in->per_shard_relabeler->input_relabeling(lss, *in->cache, hashdex, in->options, in->shards_inner_series, in->shards_relabeled_series);
+              [in, &hashdex](auto& input_lss) PROMPP_LAMBDA_INLINE {
+                std::visit(
+                    [in, &hashdex, &input_lss](auto& target_lss) PROMPP_LAMBDA_INLINE {
+                      in->per_shard_relabeler->input_relabeling(input_lss, target_lss, *in->cache, hashdex, in->options, in->shards_inner_series,
+                                                                in->shards_relabeled_series);
+                    },
+                    *in->target_lss);
               },
-              *in->lss);
+              *in->input_lss);
         },
         *in->hashdex);
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
     handle_current_exception(__func__, err_stream);
   }
+}
+
+extern "C" void prompp_prometheus_relabel_stalenans_state_ctor(void* res) {
+  struct Result {
+    PromPP::Prometheus::Relabel::StaleNaNsState* state;
+  };
+  auto out = new (res) Result();
+  out->state = new PromPP::Prometheus::Relabel::StaleNaNsState();
+}
+
+extern "C" void prompp_prometheus_relabel_stalenans_state_dtor(void* args) {
+  struct Arguments {
+    PromPP::Prometheus::Relabel::StaleNaNsState* state;
+  };
+
+  Arguments* in = reinterpret_cast<Arguments*>(args);
+
+  delete in->state;
+}
+
+extern "C" void prompp_prometheus_relabel_stalenans_state_reset(void* args) {
+  struct Arguments {
+    PromPP::Prometheus::Relabel::StaleNaNsState* state;
+  };
+  auto in = static_cast<Arguments*>(args);
+  in->state->reset();
 }
 
 extern "C" void prompp_prometheus_per_shard_relabeler_input_relabeling_with_stalenans(void* args, void* res) {
@@ -230,12 +252,12 @@ extern "C" void prompp_prometheus_per_shard_relabeler_input_relabeling_with_stal
     PromPP::Prometheus::Relabel::PerShardRelabeler* per_shard_relabeler;
     HashdexVariant* hashdex;
     PromPP::Prometheus::Relabel::Cache* cache;
-    LssVariantPtr lss;
-    PromPP::Prometheus::Relabel::SourceState source_state;
+    LssVariantPtr input_lss;
+    LssVariantPtr target_lss;
+    PromPP::Prometheus::Relabel::StaleNaNsState* state;
     PromPP::Primitives::Timestamp stale_ts;
   };
   struct Result {
-    PromPP::Prometheus::Relabel::SourceState source_state;
     PromPP::Primitives::Go::Slice<char> error;
   };
 
@@ -244,15 +266,42 @@ extern "C" void prompp_prometheus_per_shard_relabeler_input_relabeling_with_stal
 
   try {
     std::visit(
-        [in, out](auto& hashdex) PROMPP_LAMBDA_INLINE {
+        [in](auto& hashdex) PROMPP_LAMBDA_INLINE {
           std::visit(
-              [in, out, &hashdex](auto& lss) PROMPP_LAMBDA_INLINE {
-                out->source_state = in->per_shard_relabeler->input_relabeling_with_stalenans(lss, *in->cache, hashdex, in->options, in->shards_inner_series,
-                                                                                             in->shards_relabeled_series, in->source_state, in->stale_ts);
+              [in, &hashdex](auto& input_lss) PROMPP_LAMBDA_INLINE {
+                std::visit(
+                    [in, &hashdex, &input_lss](auto& target_lss) PROMPP_LAMBDA_INLINE {
+                      in->per_shard_relabeler->input_relabeling_with_stalenans(input_lss, target_lss, *in->cache, hashdex, in->options, in->shards_inner_series,
+                                                                               in->shards_relabeled_series, *in->state, in->stale_ts);
+                    },
+                    *in->target_lss);
               },
-              *in->lss);
+              *in->input_lss);
         },
         *in->hashdex);
+  } catch (...) {
+    auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
+    handle_current_exception(__func__, err_stream);
+  }
+}
+
+extern "C" void prompp_prometheus_per_shard_relabeler_input_collect_stalenans(void* args, void* res) {
+  struct Arguments {
+    PromPP::Primitives::Go::SliceView<PromPP::Prometheus::Relabel::InnerSeries*> shards_inner_series;
+    PromPP::Prometheus::Relabel::PerShardRelabeler* per_shard_relabeler;
+    PromPP::Prometheus::Relabel::Cache* cache;
+    PromPP::Prometheus::Relabel::StaleNaNsState* state;
+    PromPP::Primitives::Timestamp stale_ts;
+  };
+  struct Result {
+    PromPP::Primitives::Go::Slice<char> error;
+  };
+
+  auto in = reinterpret_cast<Arguments*>(args);
+  auto out = new (res) Result();
+
+  try {
+    in->per_shard_relabeler->input_collect_stalenans(*in->cache, in->shards_inner_series, *in->state, in->stale_ts);
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
     handle_current_exception(__func__, err_stream);
@@ -392,5 +441,5 @@ extern "C" void prompp_prometheus_cache_reset_to(void* args) {
 
   Arguments* in = reinterpret_cast<Arguments*>(args);
 
-  in->cache->reset_to();
+  in->cache->reset();
 }

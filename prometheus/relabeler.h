@@ -832,86 +832,51 @@ class RelabelerStateUpdate {
   }
 };
 
-// Opaque type for storing state between calls
-using SourceState = void*;
+class NoOpStaleNaNsState {
+ public:
+  PROMPP_ALWAYS_INLINE void add_input([[maybe_unused]] uint32_t id) {}
+  PROMPP_ALWAYS_INLINE void add_target([[maybe_unused]] uint32_t id) {}
+
+  template <typename InputCallback, typename TargetCallback>
+  PROMPP_ALWAYS_INLINE void swap([[maybe_unused]] InputCallback input_fn, [[maybe_unused]] TargetCallback target_fn) {}
+};
 
 // StaleNaNsState state for stale nans.
 class StaleNaNsState {
-  void* parent;
-  roaring::Roaring prev_bitset;
-  roaring::Roaring cur_bitset;
+  roaring::Roaring input_bitset_{};
+  roaring::Roaring target_bitset_{};
+  roaring::Roaring prev_input_bitset_{};
+  roaring::Roaring prev_target_bitset_{};
 
  public:
-  template <typename T>
-  PROMPP_ALWAYS_INLINE explicit StaleNaNsState(T* t) : parent(t) {}
+  PROMPP_ALWAYS_INLINE explicit StaleNaNsState() {}
 
-  PROMPP_ALWAYS_INLINE void add(uint32_t id) { cur_bitset.add(id); }
+  PROMPP_ALWAYS_INLINE void add_input(uint32_t id) { input_bitset_.add(id); }
 
-  template <typename Callback>
-  PROMPP_ALWAYS_INLINE void swap(Callback fn) {
-    prev_bitset -= cur_bitset;
-    for (uint32_t ls_id : prev_bitset) {
-      fn(ls_id);
+  PROMPP_ALWAYS_INLINE void add_target(uint32_t id) { target_bitset_.add(id); }
+
+  template <typename InputCallback, typename TargetCallback>
+  PROMPP_ALWAYS_INLINE void swap(InputCallback input_fn, TargetCallback target_fn) {
+    prev_input_bitset_ -= input_bitset_;
+    for (uint32_t ls_id : prev_input_bitset_) {
+      input_fn(ls_id);
     }
     // drop old, store new..
-    prev_bitset = std::move(cur_bitset);
-  }
+    prev_input_bitset_ = std::move(input_bitset_);
 
-  template <typename T>
-  PROMPP_ALWAYS_INLINE bool parent_eq(T* t) {
-    return parent == t;
-  }
-
-  template <typename T>
-  PROMPP_ALWAYS_INLINE void reset_to(T* t) {
-    parent = t;
-    prev_bitset = roaring::Roaring{};
-    cur_bitset = roaring::Roaring{};
-  }
-};
-
-template <class LSS>
-class LSSWithStaleNaNs {
-  LSS& parent_lss_;
-  StaleNaNsState* state_;
-
- public:
-  using value_type = typename LSS::value_type;
-
-  PROMPP_ALWAYS_INLINE LSSWithStaleNaNs(LSS& lss, StaleNaNsState* state) : parent_lss_{lss}, state_{state} {}
-
-  template <class Class>
-  PROMPP_ALWAYS_INLINE uint32_t find_or_emplace(const Class& c, size_t hashval) noexcept {
-    uint32_t ls_id = parent_lss_.find_or_emplace(c, hashval);
-    state_->add(ls_id);
-    return ls_id;
-  }
-
-  template <class Class>
-  PROMPP_ALWAYS_INLINE std::optional<uint32_t> find(const Class& c) const noexcept {
-    std::optional<uint32_t> ls_id = parent_lss_.find(c);
-    if (!ls_id.has_value()) [[unlikely]] {
-      return {};
+    prev_target_bitset_ -= target_bitset_;
+    for (uint32_t ls_id : prev_target_bitset_) {
+      target_fn(ls_id);
     }
-
-    state_->add(ls_id.value());
-    return ls_id;
+    // drop old, store new..
+    prev_target_bitset_ = std::move(target_bitset_);
   }
 
-  template <class Class>
-  PROMPP_ALWAYS_INLINE std::optional<uint32_t> find(const Class& c, size_t hashval) const noexcept {
-    std::optional<uint32_t> ls_id = parent_lss_.find(c, hashval);
-    if (!ls_id.has_value()) [[unlikely]] {
-      return {};
-    }
-
-    state_->add(ls_id.value());
-    return ls_id;
-  }
-
-  PROMPP_ALWAYS_INLINE value_type operator[](uint32_t i) const noexcept {
-    assert(i < parent_lss_.size());
-    return parent_lss_[i];
+  PROMPP_ALWAYS_INLINE void reset() {
+    input_bitset_ = roaring::Roaring{};
+    target_bitset_ = roaring::Roaring{};
+    prev_input_bitset_ = roaring::Roaring{};
+    prev_target_bitset_ = roaring::Roaring{};
   }
 };
 
@@ -929,8 +894,8 @@ class Cache {
                        std::equal_to<>,
                        BareBones::Allocator<std::pair<const uint32_t, PromPP::Prometheus::Relabel::CacheValue>>>
       cache_relabel_{{}, {}, BareBones::Allocator<std::pair<const uint32_t, PromPP::Prometheus::Relabel::CacheValue>>{cache_allocated_memory_}};
-  roaring::Roaring cache_keep_;
-  roaring::Roaring cache_drop_;
+  roaring::Roaring cache_keep_{};
+  roaring::Roaring cache_drop_{};
 
  public:
   PROMPP_ALWAYS_INLINE explicit Cache() {}
@@ -940,43 +905,73 @@ class Cache {
     return cache_allocated_memory_ + cache_keep_.getSizeInBytes() + cache_drop_.getSizeInBytes();
   }
 
-  // is_drop validate ls id in drop cache.
-  PROMPP_ALWAYS_INLINE bool is_drop(const uint32_t ls_id) const noexcept { return cache_drop_.contains(ls_id); }
+  // add_drop add ls id to drop cache.
+  PROMPP_ALWAYS_INLINE void add_drop(const uint32_t ls_id) { cache_drop_.add(ls_id); }
 
-  // drop_add add ls id to drop cache.
-  PROMPP_ALWAYS_INLINE void drop_add(const uint32_t ls_id) noexcept { cache_drop_.add(ls_id); }
+  // add_keep add ls id to keep cache.
+  PROMPP_ALWAYS_INLINE void add_keep(const uint32_t ls_id) { cache_keep_.add(ls_id); }
 
-  // drop_optimize run optimization on drop bitset caches.
-  PROMPP_ALWAYS_INLINE void drop_optimize() noexcept { cache_drop_.runOptimize(); }
-
-  // is_keep validate ls id in keep cache.
-  PROMPP_ALWAYS_INLINE bool is_keep(const uint32_t ls_id) const noexcept { return cache_keep_.contains(ls_id); }
-
-  // keep_add add ls id to keep cache.
-  PROMPP_ALWAYS_INLINE void keep_add(const uint32_t ls_id) noexcept { cache_keep_.add(ls_id); }
-
-  // keep_optimize run optimization on keep bitset caches.
-  PROMPP_ALWAYS_INLINE void keep_optimize() noexcept { cache_keep_.runOptimize(); }
-
-  // get pointer to CacheValue from relabel cache, if not exist return nullptr.
-  PROMPP_ALWAYS_INLINE const CacheValue* get(const uint32_t ls_id) const noexcept {
-    if (auto it = cache_relabel_.find(ls_id); it != cache_relabel_.end()) [[likely]] {
-      return &it->second;
-    }
-
-    return nullptr;
-  }
-
-  // relabel_add add ls id to relabel cache.
-  PROMPP_ALWAYS_INLINE void relabel_add(const uint32_t ls_id, const uint32_t relabeled_ls_id, const uint16_t relabeled_shard_id) noexcept {
+  // add_relabel add ls id to relabel cache.
+  PROMPP_ALWAYS_INLINE void add_relabel(const uint32_t ls_id, const uint32_t relabeled_ls_id, const uint16_t relabeled_shard_id) noexcept {
     cache_relabel_.emplace(ls_id, CacheValue{.ls_id = relabeled_ls_id, .shard_id = relabeled_shard_id});
   }
 
-  // reset cache and store lss generation.
-  PROMPP_ALWAYS_INLINE void reset_to() {
+  // run optimization on bitset caches.
+  PROMPP_ALWAYS_INLINE void optimize() {
+    cache_keep_.runOptimize();
+    cache_drop_.runOptimize();
+  }
+
+  PROMPP_ALWAYS_INLINE void reset() {
     cache_relabel_.clear();
     cache_keep_ = roaring::Roaring{};
     cache_drop_ = roaring::Roaring{};
+  }
+
+  struct CheckResult {
+    enum Status : uint8_t {
+      kNotFound = 0,
+      kDrop = 1,
+      kKeep = 2,
+      kRelabel = 3,
+    };
+    Status status{Status::kNotFound};
+    uint16_t shard_id{};  // used only for kRelabel status
+    uint32_t ls_id{};
+  };
+
+  template <class InputLSS, class TargetLSS, class LabelSet>
+  PROMPP_ALWAYS_INLINE CheckResult check(const InputLSS& input_lss, const TargetLSS& target_lss, LabelSet& label_set, size_t hash) {
+    if (std::optional<uint32_t> ls_id = input_lss.find(label_set, hash); ls_id.has_value()) {
+      auto res = check_input(ls_id.value());
+      if (res.status != CheckResult::kNotFound) {
+        return res;
+      }
+    }
+    if (std::optional<uint32_t> ls_id = target_lss.find(label_set, hash); ls_id.has_value()) {
+      return check_target(ls_id.value());
+    }
+    return {};
+  }
+
+  PROMPP_ALWAYS_INLINE CheckResult check_input(uint32_t ls_id) {
+    if (cache_drop_.contains(ls_id)) {
+      return {.status = CheckResult::Status::kDrop};
+    }
+
+    if (auto it = cache_relabel_.find(ls_id); it != cache_relabel_.end()) {
+      return {.status = CheckResult::Status::kRelabel, .shard_id = it->second.shard_id, .ls_id = it->second.ls_id};
+    }
+
+    return {};
+  }
+
+  PROMPP_ALWAYS_INLINE CheckResult check_target(uint32_t ls_id) {
+    if (cache_keep_.contains(ls_id)) {
+      return {.status = CheckResult::Status::kKeep, .ls_id = ls_id};
+    }
+
+    return {};
   }
 };
 
@@ -1025,6 +1020,115 @@ class PerShardRelabeler {
   // cache_allocated_memory - return size of allocated memory for cache map.
   PROMPP_ALWAYS_INLINE size_t cache_allocated_memory() const noexcept { return 0; }
 
+ private:
+  template <class InputLSS, class TargetLSS, class Hashdex, class StNaNsState>
+  PROMPP_ALWAYS_INLINE void input_relabeling_internal(InputLSS& input_lss,
+                                                      TargetLSS& target_lss,
+                                                      Cache& cache,
+                                                      const Hashdex& hashdex,
+                                                      const RelabelerOptions& o,
+                                                      PromPP::Primitives::Go::SliceView<InnerSeries*>& shards_inner_series,
+                                                      PromPP::Primitives::Go::SliceView<RelabeledSeries*>& shards_relabeled_series,
+                                                      StNaNsState& stale_nan_state,
+                                                      PromPP::Primitives::Timestamp stale_ts) {
+    assert(number_of_shards_ > 0);
+
+    size_t n = (hashdex.size() * 1.2) / (number_of_shards_ * number_of_shards_);
+    for (auto i = 0; i < number_of_shards_; ++i) {
+      shards_inner_series[i]->reserve(n);
+    }
+
+    PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
+    size_t samples_count{0};
+
+    for (const auto& item : hashdex) {
+      if ((item.hash() % number_of_shards_) != shard_id_) {
+        continue;
+      }
+
+      timeseries_buf_.clear();
+      item.read(timeseries_buf_);
+
+      Cache::CheckResult check_result = cache.check(input_lss, target_lss, timeseries_buf_.label_set(), item.hash());
+      switch (check_result.status) {
+        case Cache::CheckResult::kNotFound: {
+          builder.reset(timeseries_buf_.label_set());
+          auto rstatus = relabel(o, builder);
+          switch (rstatus) {
+            case rsDrop: {
+              cache.add_drop(input_lss.find_or_emplace(timeseries_buf_.label_set(), item.hash()));
+              continue;
+            }
+            case rsInvalid: {
+              cache.add_drop(input_lss.find_or_emplace(timeseries_buf_.label_set(), item.hash()));
+              continue;
+            }
+            case rsKeep: {
+              auto ls_id = target_lss.find_or_emplace(timeseries_buf_.label_set(), item.hash());
+              cache.add_keep(ls_id);
+              stale_nan_state.add_target(ls_id);
+              shards_inner_series[shard_id_]->emplace_back(timeseries_buf_.samples(), ls_id);
+            } break;
+            case rsRelabel: {
+              auto ls_id = input_lss.find_or_emplace(timeseries_buf_.label_set(), item.hash());
+              PromPP::Primitives::LabelSet new_label_set = builder.label_set();
+              size_t new_hash = hash_value(new_label_set);
+              size_t new_shard_id = new_hash % number_of_shards_;
+              stale_nan_state.add_input(ls_id);
+              shards_relabeled_series[new_shard_id]->emplace_back(new_label_set, timeseries_buf_.samples(), new_hash, ls_id);
+            } break;
+          }
+        } break;
+        case Cache::CheckResult::kKeep: {
+          stale_nan_state.add_target(check_result.ls_id);
+          shards_inner_series[shard_id_]->emplace_back(timeseries_buf_.samples(), check_result.ls_id);
+        } break;
+        case Cache::CheckResult::kRelabel: {
+          stale_nan_state.add_input(check_result.ls_id);
+          shards_inner_series[check_result.shard_id]->emplace_back(timeseries_buf_.samples(), check_result.ls_id);
+        } break;
+        default:
+          continue;
+      }
+
+      if (o.metric_limits == nullptr) {
+        continue;
+      }
+
+      samples_count += calculate_samples(timeseries_buf_.samples());
+      if (o.metric_limits->samples_limit_exceeded(samples_count)) {
+        break;
+      }
+    }
+
+    BareBones::Vector<PromPP::Primitives::Sample> smpl{{stale_ts, kStaleNan}};
+    stale_nan_state.swap(
+        [&](uint32_t ls_id) {
+          if (auto res = cache.check_input(ls_id); res.status == Cache::CheckResult::kRelabel) {
+            shards_inner_series[res.shard_id]->emplace_back(smpl, res.ls_id);
+          }
+        },
+        [&](uint32_t ls_id) {
+          if (auto res = cache.check_target(ls_id); res.status == Cache::CheckResult::kKeep) {
+            shards_inner_series[shard_id_]->emplace_back(smpl, res.ls_id);
+          }
+        });
+    cache.optimize();
+  }
+
+  template <class LabelsBuilder>
+  PROMPP_ALWAYS_INLINE relabelStatus relabel(const RelabelerOptions& o, LabelsBuilder& builder) {
+    bool changed = inject_target_labels(builder, o);
+
+    relabelStatus rstatus = stateless_relabeler_->relabeling_process(buf_, builder);
+    hard_validate(rstatus, builder, o.metric_limits);
+    if (changed && rstatus == rsKeep) {
+      rstatus = rsRelabel;
+    }
+
+    return rstatus;
+  }
+
   // calculate_samples counts the number of samples excluding stale_nan.
   PROMPP_ALWAYS_INLINE size_t calculate_samples(const BareBones::Vector<PromPP::Primitives::Sample>& samples) noexcept {
     size_t samples_count{0};
@@ -1038,10 +1142,16 @@ class PerShardRelabeler {
     return samples_count;
   }
 
+ public:
   // inject_target_labels add labels from target to builder.
   template <class LabelsBuilder>
   PROMPP_ALWAYS_INLINE bool inject_target_labels(LabelsBuilder& target_builder, const RelabelerOptions& o) {
+    if (o.target_labels.empty()) {
+      return false;
+    }
+
     bool changed{false};
+
     if (o.honor_labels) {
       for (const auto& [lname, lvalue] : o.target_labels) {
         if (target_builder.contains(static_cast<std::string_view>(lname))) [[unlikely]] {
@@ -1090,161 +1200,48 @@ class PerShardRelabeler {
     }
   }
 
-  // input_relabeling - relabeling incoming hashdex(first stage).
-  template <class LSS, class Hashdex>
-  PROMPP_ALWAYS_INLINE void input_relabeling(LSS& lss,
+  template <class InputLSS, class TargetLSS, class Hashdex>
+  PROMPP_ALWAYS_INLINE void input_relabeling(InputLSS& input_lss,
+                                             TargetLSS& target_lss,
                                              Cache& cache,
                                              const Hashdex& hashdex,
                                              const RelabelerOptions& o,
                                              PromPP::Primitives::Go::SliceView<InnerSeries*>& shards_inner_series,
                                              PromPP::Primitives::Go::SliceView<RelabeledSeries*>& shards_relabeled_series) {
-    assert(number_of_shards_ > 0);
-
-    PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
-
-    size_t samples_count{0};
-    size_t n = (hashdex.size() * 1.2) / (number_of_shards_ * number_of_shards_);
-    for (auto i = 0; i < number_of_shards_; ++i) {
-      shards_inner_series[i]->reserve(n);
-    }
-
-    for (const auto& item : hashdex) {
-      if ((item.hash() % number_of_shards_) != shard_id_) {
-        continue;
-      }
-
-      timeseries_buf_.clear();
-      item.read(timeseries_buf_);
-
-      if (bool added = input_relabel_process(lss, cache, o, builder, timeseries_buf_.label_set(), item.hash(), timeseries_buf_.samples(), shards_inner_series,
-                                             shards_relabeled_series);
-          !added) {
-        continue;
-      }
-
-      if (o.metric_limits == nullptr) {
-        continue;
-      }
-
-      samples_count += calculate_samples(timeseries_buf_.samples());
-      if (o.metric_limits->samples_limit_exceeded(samples_count)) [[unlikely]] {
-        break;
-      }
-    }
-
-    cache.keep_optimize();
-    cache.drop_optimize();
+    NoOpStaleNaNsState state{};
+    input_relabeling_internal(input_lss, target_lss, cache, hashdex, o, shards_inner_series, shards_relabeled_series, state, 0);
   }
 
-  // input_relabeling_with_stalenan relabeling with stalenans incoming hashdex(first stage).
-  template <class LSS, class Hashdex>
-  PROMPP_ALWAYS_INLINE SourceState input_relabeling_with_stalenans(LSS& lss,
-                                                                   Cache& cache,
-                                                                   const Hashdex& hashdex,
-                                                                   const RelabelerOptions& o,
-                                                                   PromPP::Primitives::Go::SliceView<InnerSeries*>& shards_inner_series,
-                                                                   PromPP::Primitives::Go::SliceView<RelabeledSeries*>& shards_relabeled_series,
-                                                                   SourceState state,
-                                                                   PromPP::Primitives::Timestamp stale_ts) {
-    PromPP::Prometheus::Relabel::StaleNaNsState* result =
-        state ? reinterpret_cast<PromPP::Prometheus::Relabel::StaleNaNsState*>(state) : new PromPP::Prometheus::Relabel::StaleNaNsState(&lss);
-    if (!result->parent_eq(&lss)) {
-      // this state is not our state, so cleaning up bits!
-      result->reset_to(&lss);
-    }
+  template <class InputLSS, class TargetLSS, class Hashdex>
+  PROMPP_ALWAYS_INLINE void input_relabeling_with_stalenans(InputLSS& input_lss,
+                                                            TargetLSS& target_lss,
+                                                            Cache& cache,
+                                                            const Hashdex& hashdex,
+                                                            const RelabelerOptions& o,
+                                                            PromPP::Primitives::Go::SliceView<InnerSeries*>& shards_inner_series,
+                                                            PromPP::Primitives::Go::SliceView<RelabeledSeries*>& shards_relabeled_series,
+                                                            StaleNaNsState& state,
+                                                            PromPP::Primitives::Timestamp stale_ts) {
+    input_relabeling_internal(input_lss, target_lss, cache, hashdex, o, shards_inner_series, shards_relabeled_series, state, stale_ts);
+  }
 
-    LSSWithStaleNaNs wrapped_lss(lss, result);
-    input_relabeling(wrapped_lss, cache, hashdex, o, shards_inner_series, shards_relabeled_series);
-
+  PROMPP_ALWAYS_INLINE void input_collect_stalenans(Cache& cache,
+                                                    PromPP::Primitives::Go::SliceView<InnerSeries*>& shards_inner_series,
+                                                    StaleNaNsState& state,
+                                                    PromPP::Primitives::Timestamp stale_ts) {
     BareBones::Vector<PromPP::Primitives::Sample> smpl{{stale_ts, kStaleNan}};
-    result->swap([&](uint32_t ls_id) { input_relabel_from_cache(cache, shards_inner_series, ls_id, smpl); });
-
-    return result;
-  }
-
-  template <class LSS, class LabelSet>
-  PROMPP_ALWAYS_INLINE std::optional<bool> input_relabel_from_cache(const LSS& lss,
-                                                                    const Cache& cache,
-                                                                    PromPP::Primitives::Go::SliceView<InnerSeries*>& shards_inner_series,
-                                                                    LabelSet& label_set,
-                                                                    size_t hash,
-                                                                    BareBones::Vector<PromPP::Primitives::Sample>& samples) {
-    std::optional<uint32_t> ls_id = lss.find(label_set, hash);
-    if (!ls_id.has_value()) [[unlikely]] {
-      return {};
-    }
-    return input_relabel_from_cache(cache, shards_inner_series, ls_id.value(), samples);
-  }
-
-  PROMPP_ALWAYS_INLINE std::optional<bool> input_relabel_from_cache(const Cache& cache,
-                                                                    PromPP::Primitives::Go::SliceView<InnerSeries*>& shards_inner_series,
-                                                                    uint32_t ls_id,
-                                                                    BareBones::Vector<PromPP::Primitives::Sample>& samples) {
-    if (cache.is_drop(ls_id)) {
-      return false;
-    }
-
-    if (cache.is_keep(ls_id)) {
-      shards_inner_series[shard_id_]->emplace_back(samples, ls_id);
-      return true;
-    }
-
-    if (const PromPP::Prometheus::Relabel::CacheValue* cv = cache.get(ls_id); cv != nullptr) {
-      shards_inner_series[cv->shard_id]->emplace_back(samples, cv->ls_id);
-      return true;
-    }
-
-    return {};
-  }
-
-  template <class LSS, class LabelsBuilder>
-  PROMPP_ALWAYS_INLINE bool input_relabel_process(LSS& lss,
-                                                  Cache& cache,
-                                                  const RelabelerOptions& o,
-                                                  LabelsBuilder& builder,
-                                                  PromPP::Primitives::LabelViewSet& label_view_set,
-                                                  size_t hash,
-                                                  BareBones::Vector<PromPP::Primitives::Sample>& samples,
-                                                  PromPP::Primitives::Go::SliceView<InnerSeries*>& shards_inner_series,
-                                                  PromPP::Primitives::Go::SliceView<RelabeledSeries*>& shards_relabeled_series) {
-    if (auto added = input_relabel_from_cache(lss, cache, shards_inner_series, label_view_set, hash, samples); added.has_value()) [[likely]] {
-      return added.value();
-    }
-
-    uint32_t ls_id = lss.find_or_emplace(label_view_set, hash);
-    builder.reset(&label_view_set);
-    bool changed{false};
-    if (!o.target_labels.empty()) {
-      changed = inject_target_labels(builder, o);
-    }
-
-    relabelStatus rstatus = stateless_relabeler_->relabeling_process(buf_, builder);
-    hard_validate(rstatus, builder, o.metric_limits);
-    if (changed && rstatus == rsKeep) {
-      rstatus = rsRelabel;
-    }
-    switch (rstatus) {
-      case rsDrop: {
-        cache.drop_add(ls_id);
-        return false;
-      }
-      case rsInvalid: {
-        cache.drop_add(ls_id);
-        return false;
-      }
-      case rsKeep: {
-        cache.keep_add(ls_id);
-        shards_inner_series[shard_id_]->emplace_back(samples, ls_id);
-        return true;
-      }
-      case rsRelabel: {
-        PromPP::Primitives::LabelSet new_label_set = builder.label_set();
-        size_t new_hash = hash_value(new_label_set);
-        size_t new_shard_id = new_hash % number_of_shards_;
-        shards_relabeled_series[new_shard_id]->emplace_back(new_label_set, samples, new_hash, ls_id);
-      }
-    }
-    return true;
+    state.swap(
+        [&](uint32_t ls_id) {
+          if (auto res = cache.check_input(ls_id); res.status == Cache::CheckResult::kRelabel) {
+            shards_inner_series[res.shard_id]->emplace_back(smpl, res.ls_id);
+          }
+        },
+        [&](uint32_t ls_id) {
+          if (auto res = cache.check_target(ls_id); res.status == Cache::CheckResult::kKeep) {
+            shards_inner_series[shard_id_]->emplace_back(smpl, res.ls_id);
+          }
+        });
+    cache.optimize();
   }
 
   // append_relabeler_series add relabeled ls to lss, add to result and add to cache update(second stage).
@@ -1264,7 +1261,7 @@ class PerShardRelabeler {
   // update_relabeler_state - add to cache relabled data(third stage).
   PROMPP_ALWAYS_INLINE void update_relabeler_state(Cache& cache, const RelabelerStateUpdate* relabeler_state_update, const uint16_t relabeled_shard_id) {
     for (const auto& update : relabeler_state_update->data()) {
-      cache.relabel_add(update.incoming_ls_id, update.relabeled_ls_id, relabeled_shard_id);
+      cache.add_relabel(update.incoming_ls_id, update.relabeled_ls_id, relabeled_shard_id);
     }
   }
 
@@ -1310,12 +1307,13 @@ class PerShardRelabeler {
       PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
 
       std::ranges::for_each(inner_series->data(), [&](const InnerSerie& inner_serie) PROMPP_LAMBDA_INLINE {
-        if (cache.is_drop(inner_serie.ls_id)) {
+        auto res = cache.check_input(inner_serie.ls_id);
+        if (res.status == Cache::CheckResult::kDrop) {
           return;
         }
 
-        if (const PromPP::Prometheus::Relabel::CacheValue* cv = cache.get(inner_serie.ls_id); cv != nullptr) {
-          encoders_inner_series[cv->shard_id]->emplace_back(inner_serie.samples, cv->ls_id);
+        if (res.status == Cache::CheckResult::kRelabel) {
+          encoders_inner_series[res.shard_id]->emplace_back(inner_serie.samples, res.ls_id);
           return;
         }
 
@@ -1323,14 +1321,14 @@ class PerShardRelabeler {
           throw BareBones::Exception(0x7763a97e1717e835, "ls_id out of range: %d size: %d shard_id: %d", inner_serie.ls_id, lss.size(), shard_id_);
         }
         typename LSS::value_type labels = lss[inner_serie.ls_id];
-        builder.reset(&labels);
+        builder.reset(labels);
         process_external_labels(builder);
 
         relabelStatus rstatus = stateless_relabeler_->relabeling_process(buf_, builder);
         soft_validate(rstatus, builder);
         if (rstatus == rsDrop) {
           // cache_drop_.add(inner_serie.ls_id);
-          cache.drop_add(inner_serie.ls_id);
+          cache.add_drop(inner_serie.ls_id);
           return;
         }
 
@@ -1339,7 +1337,7 @@ class PerShardRelabeler {
       });
     });
 
-    cache.drop_optimize();
+    cache.optimize();
   }
 
   // reset set new number_of_shards and external_labels.

@@ -79,8 +79,8 @@ func (t *TaskInputRelabeling) ShardedData() cppbridge.ShardedData {
 	return t.incomingData.Data().ShardedData()
 }
 
-// SourceStateByShard return state for stalenans for shard.
-func (t *TaskInputRelabeling) SourceStateByShard(shardID uint16) *cppbridge.SourceStaleNansState {
+// StaleNansStateByShard return state for stalenans for shard.
+func (t *TaskInputRelabeling) StaleNansStateByShard(shardID uint16) *cppbridge.StaleNansState {
 	return t.state.StaleNansStateByShard(shardID)
 }
 
