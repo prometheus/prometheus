@@ -744,7 +744,10 @@ func (a *HistogramAppender) recode(
 	// to properly resolve the counter reset issues.
 	// See: https://github.com/prometheus/prometheus/pull/15342
 	// The original code for setting the header has been commented out below.
-	//happ.setCounterResetHeader(CounterResetHeader(byts[2] & CounterResetHeaderMask))
+	if CounterResetHeader(byts[2]&CounterResetHeaderMask) == GaugeType {
+		happ.setCounterResetHeader(GaugeType)
+	}
+	// happ.setCounterResetHeader(CounterResetHeader(byts[2] & CounterResetHeaderMask))
 	return hc, app
 }
 
