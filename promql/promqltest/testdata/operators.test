@@ -288,7 +288,7 @@ eval instant at 50m 1 == bool 1
 eval instant at 50m http_requests{job="api-server", instance="0", group="production"} == bool 100
 	{job="api-server", instance="0", group="production"} 1
 
-# should ignore histograms with info annotations in comparison between float and histogram.
+# The histogram is ignored here so the result doesn't change but it has an info annotation now.
 eval_info instant at 5m {job="app-server"} == 80
     http_requests{group="canary", instance="1", job="app-server"} 80
 
@@ -302,7 +302,7 @@ eval_info instant at 5m http_requests_histogram >= 80
 
 eval_info instant at 5m http_requests_histogram <= 80
 
-# should produce valid results in-case of (in)equality between two histograms.
+# Should produce valid results in case of (in)equality between two histograms.
 eval instant at 5m http_requests_histogram == http_requests_histogram
     http_requests_histogram{job="app-server", instance="1", group="production"} {{schema:1 sum:15 count:10 buckets:[3 2 5 7 9]}}
 
