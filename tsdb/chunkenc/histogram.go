@@ -742,7 +742,7 @@ func (a *HistogramAppender) recode(
 	// Counter reset detection can be buggy when chunks from different sources are merged (e.g. out-of-order, backfill).
 	// It's always safe to set the header to UnknownCounterReset so we are doing that as a quick fix and take the time
 	// to properly resolve the counter reset issues.
-	// See: TODO: PR link
+	// See: https://github.com/prometheus/prometheus/pull/15342
 	// The original code for setting the header has been commented out below.
 	//happ.setCounterResetHeader(CounterResetHeader(byts[2] & CounterResetHeaderMask))
 	return hc, app
@@ -785,7 +785,7 @@ func (a *HistogramAppender) AppendHistogram(prev *HistogramAppender, t int64, h 
 		// Counter reset detection can be buggy when chunks from different sources are merged (e.g. out-of-order, backfill).
 		// It's always safe to set the header to UnknownCounterReset so we are doing that as a quick fix and take the time
 		// to properly resolve the counter reset issues.
-		// See: TODO: PR link
+		// See: https://github.com/prometheus/prometheus/pull/15342
 		// The original code for setting the header has been commented out below.
 		/*switch {
 		case h.CounterResetHint == histogram.CounterReset:
@@ -825,7 +825,7 @@ func (a *HistogramAppender) AppendHistogram(prev *HistogramAppender, t int64, h 
 				// Counter reset detection can be buggy when chunks from different sources are merged (e.g. out-of-order, backfill).
 				// It's always safe to set the header to UnknownCounterReset so we are doing that as a quick fix and take the time
 				// to properly resolve the counter reset issues.
-				// See: TODO: PR link
+				// See: https://github.com/prometheus/prometheus/pull/15342
 				// The original code for setting the header has been commented out below.
 				// happ.setCounterResetHeader(CounterReset)
 			}
