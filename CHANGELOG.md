@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.53.3 / 2024-11-04
+
+* [BUGFIX] Scraping: allow multiple samples on same series, with explicit timestamps. #14685, #14740
+
 ## 2.53.2 / 2024-08-09
 
 Fix a bug where Prometheus would crash with a segmentation fault if a remote-read
