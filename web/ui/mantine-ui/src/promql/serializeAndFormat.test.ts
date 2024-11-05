@@ -157,6 +157,20 @@ describe("serializeNode and formatNode", () => {
         },
         output: "metric_name[5m] @ start() offset -10m",
       },
+      {
+        node: {
+          type: nodeType.vectorSelector,
+          name: "", // Test formatting a selector with an empty metric name.
+          matchers: [
+            { type: matchType.equal, name: "label1", value: "value1" },
+          ],
+          offset: 0,
+          timestamp: null,
+          startOrEnd: null,
+        },
+        output:
+          '{label1="value1"}',
+      },
 
       // Aggregations.
       {
