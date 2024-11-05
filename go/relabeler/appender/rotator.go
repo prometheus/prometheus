@@ -3,8 +3,6 @@ package appender
 import (
 	"time"
 
-	"github.com/jonboulle/clockwork"
-	"github.com/prometheus/prometheus/pp/go/relabeler"
 	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 	"github.com/prometheus/prometheus/pp/go/util"
 	"github.com/prometheus/client_golang/prometheus"
@@ -18,28 +16,29 @@ type Rotatable interface {
 	Rotate() error
 }
 
+type RotationTimer interface {
+	Chan() <-chan time.Time
+	Reset()
+	Stop()
+}
+
 // Rotator is a rotation trigger.
 type Rotator struct {
 	rotatable     Rotatable
-	rotateTimer   *relabeler.RotateTimer
+	timer         RotationTimer
 	run           chan struct{}
 	closer        *util.Closer
 	rotateCounter prometheus.Counter
 }
 
 // NewRotator - Rotator constructor.
-func NewRotator(
-	rotatable Rotatable,
-	clock clockwork.Clock,
-	rotateDuration time.Duration,
-	registerer prometheus.Registerer,
-) *Rotator {
+func NewRotator(rotatable Rotatable, timer RotationTimer, registerer prometheus.Registerer) *Rotator {
 	factory := util.NewUnconflictRegisterer(registerer)
 	r := &Rotator{
-		rotatable:   rotatable,
-		rotateTimer: relabeler.NewRotateTimer(clock, rotateDuration),
-		run:         make(chan struct{}),
-		closer:      util.NewCloser(),
+		rotatable: rotatable,
+		timer:     timer,
+		run:       make(chan struct{}),
+		closer:    util.NewCloser(),
 		rotateCounter: factory.NewCounter(
 			prometheus.CounterOpts{
 				Name: "prompp_rotator_rotate_count",
@@ -59,11 +58,10 @@ func (r *Rotator) Run() {
 
 func (r *Rotator) loop() {
 	defer r.closer.Done()
-	defer r.rotateTimer.Stop()
 
 	select {
 	case <-r.run:
-		r.rotateTimer.Reset()
+		r.timer.Reset()
 	case <-r.closer.Signal():
 		return
 	}
@@ -73,14 +71,14 @@ func (r *Rotator) loop() {
 		case <-r.closer.Signal():
 			return
 
-		case <-r.rotateTimer.Chan():
+		case <-r.timer.Chan():
 			logger.Debugf("start rotation")
 			if err := r.rotatable.Rotate(); err != nil {
 				logger.Errorf("rotation failed: %s", err.Error())
 			}
 			r.rotateCounter.Inc()
 
-			r.rotateTimer.Reset()
+			r.timer.Reset()
 		}
 	}
 }

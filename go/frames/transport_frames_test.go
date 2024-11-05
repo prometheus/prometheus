@@ -2,6 +2,7 @@ package frames_test
 
 import (
 	"context"
+	"hash/crc32"
 	"io"
 	"testing"
 	"time"
@@ -26,6 +27,10 @@ func newDataTest(data []byte) *dataTest {
 // Size returns count of bytes in data
 func (dt *dataTest) Size() int64 {
 	return int64(len(dt.data))
+}
+
+func (dt *dataTest) CRC32() uint32 {
+	return crc32.ChecksumIEEE(dt.data)
 }
 
 // WriteTo implements io.WriterTo interface

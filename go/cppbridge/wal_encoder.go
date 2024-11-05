@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"math"
 	"runtime"
@@ -127,6 +128,11 @@ func NewEncodedSegment(b []byte, stats WALEncoderStats) *EncodedSegment {
 // Size - returns len of bytes.
 func (s *EncodedSegment) Size() int64 {
 	return int64(len(s.buf))
+}
+
+// CRC32 - hash.
+func (s *EncodedSegment) CRC32() uint32 {
+	return crc32.ChecksumIEEE(s.buf)
 }
 
 // WriteTo - implements io.WriterTo inerface.

@@ -111,14 +111,12 @@ func (qa *QueryableAppender) Querier(mint, maxt int64) (storage.Querier, error) 
 	qa.lock.Lock()
 	defer qa.lock.Unlock()
 	head := qa.head
-	head.ReferenceCounter().Add(1)
 	return querier.NewQuerier(
 		head,
 		querier.NoOpShardedDeduplicatorFactory(),
 		mint,
 		maxt,
 		func() error {
-			head.ReferenceCounter().Add(-1)
 			return nil
 		},
 		qa.querierMetrics,

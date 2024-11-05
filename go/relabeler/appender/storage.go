@@ -2,7 +2,6 @@ package appender
 
 import (
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -19,6 +18,10 @@ const (
 	PersistedHeadValue = -(1 << 30)
 )
 
+type WriteNotifier interface {
+	NotifyWritten()
+}
+
 // BlockWriter writes block on disk.
 type BlockWriter interface {
 	Write(block block.Block) error
@@ -27,9 +30,10 @@ type BlockWriter interface {
 // QueryableStorage hold reference to finalized heads and writes blocks from them. Also allows query not yet not
 // persisted heads.
 type QueryableStorage struct {
-	blockWriter BlockWriter
-	mtx         sync.Mutex
-	heads       []relabeler.Head
+	blockWriter   BlockWriter
+	writeNotifier WriteNotifier
+	mtx           sync.Mutex
+	heads         []relabeler.Head
 
 	signal chan struct{}
 	closer *util.Closer
@@ -39,16 +43,19 @@ type QueryableStorage struct {
 }
 
 // NewQueryableStorage - QueryableStorage constructor.
-func NewQueryableStorage(
-	blockWriter BlockWriter,
-	registerer prometheus.Registerer,
-	querierMetrics *querier.Metrics,
-) *QueryableStorage {
+func NewQueryableStorage(blockWriter BlockWriter, registerer prometheus.Registerer, querierMetrics *querier.Metrics, heads ...relabeler.Head) *QueryableStorage {
+	return NewQueryableStorageWithWriteNotifier(blockWriter, registerer, querierMetrics, noOpWriteNotifier{}, heads...)
+}
+
+// NewQueryableStorageWithWriteNotifier - QueryableStorage constructor.
+func NewQueryableStorageWithWriteNotifier(blockWriter BlockWriter, registerer prometheus.Registerer, querierMetrics *querier.Metrics, writeNotifier WriteNotifier, heads ...relabeler.Head) *QueryableStorage {
 	factory := util.NewUnconflictRegisterer(registerer)
 	qs := &QueryableStorage{
-		blockWriter: blockWriter,
-		signal:      make(chan struct{}),
-		closer:      util.NewCloser(),
+		blockWriter:   blockWriter,
+		writeNotifier: writeNotifier,
+		heads:         heads,
+		signal:        make(chan struct{}),
+		closer:        util.NewCloser(),
 		headPersistenceDuration: factory.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "prompp_head_persistence_duration_duration",
@@ -67,7 +74,7 @@ func (qs *QueryableStorage) loop() {
 	defer qs.closer.Done()
 
 	var writeFinished chan struct{}
-	writeRequested := false
+	writeRequested := len(qs.heads) > 0
 	closed := false
 
 	for {
@@ -99,19 +106,13 @@ func (qs *QueryableStorage) loop() {
 func (qs *QueryableStorage) write() {
 	qs.mtx.Lock()
 	var heads []relabeler.Head
-	for i, head := range qs.heads {
-		if head.ReferenceCounter().Value() >= 0 {
-			heads = append(heads, qs.heads[i])
-		}
+	for i := range qs.heads {
+		heads = append(heads, qs.heads[i])
 	}
 	qs.mtx.Unlock()
 
-	var headList []string
-	for _, head := range heads {
-		headList = append(headList, fmt.Sprintf("%d", head.Generation()))
-	}
-
-	logger.Infof("QUERYABLE STORAGE: write: selected { %s } heads", strings.Join(headList, ", "))
+	shouldNotify := false
+	var persisted []string
 	for _, head := range heads {
 		start := time.Now()
 		err := head.ForEachShard(func(shard relabeler.Shard) error {
@@ -125,11 +126,16 @@ func (qs *QueryableStorage) write() {
 		qs.headPersistenceDuration.With(prometheus.Labels{
 			"generation": fmt.Sprintf("%d", head.Generation()),
 		}).Set(float64(time.Since(start).Milliseconds()))
-		head.ReferenceCounter().Add(PersistedHeadValue)
+		persisted = append(persisted, head.ID())
+		shouldNotify = true
 		logger.Infof("QUERYABLE STORAGE: head { %d } persisted, duration: %v", head.Generation(), time.Since(start))
 	}
 
-	qs.shrink()
+	if shouldNotify {
+		qs.writeNotifier.NotifyWritten()
+	}
+
+	qs.shrink(persisted...)
 }
 
 // Add - Storage interface implementation.
@@ -154,17 +160,12 @@ func (qs *QueryableStorage) WriteMetrics() {
 	qs.mtx.Lock()
 	var heads []relabeler.Head
 	for _, head := range qs.heads {
-		if head.ReferenceCounter().Add(1) < 0 {
-			head.ReferenceCounter().Add(-1)
-			continue
-		}
 		heads = append(heads, head)
 	}
 	qs.mtx.Unlock()
 
 	for _, head := range heads {
 		head.WriteMetrics()
-		head.ReferenceCounter().Add(-1)
 	}
 
 	qs.shrink()
@@ -173,13 +174,8 @@ func (qs *QueryableStorage) WriteMetrics() {
 // Querier - storage.Queryable interface implementation.
 func (qs *QueryableStorage) Querier(mint, maxt int64) (storage.Querier, error) {
 	qs.mtx.Lock()
-
 	var heads []relabeler.Head
 	for _, head := range qs.heads {
-		if head.ReferenceCounter().Add(1) < 0 {
-			head.ReferenceCounter().Add(-1)
-			continue
-		}
 		heads = append(heads, head)
 	}
 	qs.mtx.Unlock()
@@ -194,10 +190,7 @@ func (qs *QueryableStorage) Querier(mint, maxt int64) (storage.Querier, error) {
 				querier.NoOpShardedDeduplicatorFactory(),
 				mint,
 				maxt,
-				func() error {
-					h.ReferenceCounter().Add(-1)
-					return nil
-				},
+				nil,
 				qs.querierMetrics,
 			),
 		)
@@ -205,34 +198,27 @@ func (qs *QueryableStorage) Querier(mint, maxt int64) (storage.Querier, error) {
 
 	q := querier.NewMultiQuerier(
 		queriers,
-		func() error {
-			qs.shrink()
-			return nil
-		},
+		nil,
 	)
 
 	return q, nil
 }
 
-func (qs *QueryableStorage) shrink() {
+func (qs *QueryableStorage) shrink(persisted ...string) {
 	qs.mtx.Lock()
 	defer qs.mtx.Unlock()
 
+	persistedMap := make(map[string]struct{})
+	for _, headID := range persisted {
+		persistedMap[headID] = struct{}{}
+	}
+
 	var heads []relabeler.Head
 	for _, head := range qs.heads {
-		logger.Infof(
-			"QUERYABLE STORAGE: SHRINK: HEAD { %d }: persisted: %v, ref count: %d",
-			head.Generation(),
-			head.ReferenceCounter().Value() < 0,
-			refCount(head.ReferenceCounter().Value()),
-		)
-		if head.ReferenceCounter().Value() == PersistedHeadValue {
-			errClose := head.Close()
-			if errClose != nil {
-				logger.Infof("QUERYABLE STORAGE: head { %d } closed error: %v", errClose)
-				continue
-			}
-			logger.Infof("QUERYABLE STORAGE: head { %d } persisted and closed", head.Generation())
+		if _, ok := persistedMap[head.ID()]; ok {
+			_ = head.Close()
+			_ = head.Discard()
+			logger.Infof("QUERYABLE STORAGE: head { %d } persisted, closed and discarded", head.Generation())
 			continue
 		}
 		heads = append(heads, head)
@@ -246,3 +232,8 @@ func refCount(value int64) int64 {
 	}
 	return value
 }
+
+type noOpWriteNotifier struct {
+}
+
+func (noOpWriteNotifier) NotifyWritten() {}

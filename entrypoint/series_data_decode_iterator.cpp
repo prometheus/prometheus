@@ -15,7 +15,7 @@ extern "C" void prompp_series_data_decode_iterator_next(void* args, void* res) {
   Arguments* in = reinterpret_cast<Arguments*>(args);
   Result* out = new (res) Result();
 
-  (*in->decode_iterator)++;
+  ++(*in->decode_iterator);
   out->has_value = (*in->decode_iterator) != DecodeIteratorSentinel{};
 }
 

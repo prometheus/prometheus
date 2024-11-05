@@ -19,11 +19,11 @@ var _ cppbridge.Segment = &SegmentMock{}
 //
 //		// make and configure a mocked cppbridge.Segment
 //		mockedSegment := &SegmentMock{
-//			AddFunc: func(ss cppbridge.SegmentStats)  {
-//				panic("mock out the Add method")
-//			},
 //			AllocatedMemoryFunc: func() uint64 {
 //				panic("mock out the AllocatedMemory method")
+//			},
+//			CRC32Func: func() uint32 {
+//				panic("mock out the CRC32 method")
 //			},
 //			EarliestTimestampFunc: func() int64 {
 //				panic("mock out the EarliestTimestamp method")
@@ -53,11 +53,11 @@ var _ cppbridge.Segment = &SegmentMock{}
 //
 //	}
 type SegmentMock struct {
-	// AddFunc mocks the Add method.
-	AddFunc func(ss cppbridge.SegmentStats)
-
 	// AllocatedMemoryFunc mocks the AllocatedMemory method.
 	AllocatedMemoryFunc func() uint64
+
+	// CRC32Func mocks the CRC32 method.
+	CRC32Func func() uint32
 
 	// EarliestTimestampFunc mocks the EarliestTimestamp method.
 	EarliestTimestampFunc func() int64
@@ -82,13 +82,11 @@ type SegmentMock struct {
 
 	// calls tracks calls to the methods.
 	calls struct {
-		// Add holds details about calls to the Add method.
-		Add []struct {
-			// Ss is the ss argument value.
-			Ss cppbridge.SegmentStats
-		}
 		// AllocatedMemory holds details about calls to the AllocatedMemory method.
 		AllocatedMemory []struct {
+		}
+		// CRC32 holds details about calls to the CRC32 method.
+		CRC32 []struct {
 		}
 		// EarliestTimestamp holds details about calls to the EarliestTimestamp method.
 		EarliestTimestamp []struct {
@@ -114,8 +112,8 @@ type SegmentMock struct {
 			W io.Writer
 		}
 	}
-	lockAdd                sync.RWMutex
 	lockAllocatedMemory    sync.RWMutex
+	lockCRC32              sync.RWMutex
 	lockEarliestTimestamp  sync.RWMutex
 	lockLatestTimestamp    sync.RWMutex
 	lockRemainingTableSize sync.RWMutex
@@ -123,38 +121,6 @@ type SegmentMock struct {
 	lockSeries             sync.RWMutex
 	lockSize               sync.RWMutex
 	lockWriteTo            sync.RWMutex
-}
-
-// Add calls AddFunc.
-func (mock *SegmentMock) Add(ss cppbridge.SegmentStats) {
-	if mock.AddFunc == nil {
-		panic("SegmentMock.AddFunc: method is nil but Segment.Add was just called")
-	}
-	callInfo := struct {
-		Ss cppbridge.SegmentStats
-	}{
-		Ss: ss,
-	}
-	mock.lockAdd.Lock()
-	mock.calls.Add = append(mock.calls.Add, callInfo)
-	mock.lockAdd.Unlock()
-	mock.AddFunc(ss)
-}
-
-// AddCalls gets all the calls that were made to Add.
-// Check the length with:
-//
-//	len(mockedSegment.AddCalls())
-func (mock *SegmentMock) AddCalls() []struct {
-	Ss cppbridge.SegmentStats
-} {
-	var calls []struct {
-		Ss cppbridge.SegmentStats
-	}
-	mock.lockAdd.RLock()
-	calls = mock.calls.Add
-	mock.lockAdd.RUnlock()
-	return calls
 }
 
 // AllocatedMemory calls AllocatedMemoryFunc.
@@ -181,6 +147,33 @@ func (mock *SegmentMock) AllocatedMemoryCalls() []struct {
 	mock.lockAllocatedMemory.RLock()
 	calls = mock.calls.AllocatedMemory
 	mock.lockAllocatedMemory.RUnlock()
+	return calls
+}
+
+// CRC32 calls CRC32Func.
+func (mock *SegmentMock) CRC32() uint32 {
+	if mock.CRC32Func == nil {
+		panic("SegmentMock.CRC32Func: method is nil but Segment.CRC32 was just called")
+	}
+	callInfo := struct {
+	}{}
+	mock.lockCRC32.Lock()
+	mock.calls.CRC32 = append(mock.calls.CRC32, callInfo)
+	mock.lockCRC32.Unlock()
+	return mock.CRC32Func()
+}
+
+// CRC32Calls gets all the calls that were made to CRC32.
+// Check the length with:
+//
+//	len(mockedSegment.CRC32Calls())
+func (mock *SegmentMock) CRC32Calls() []struct {
+} {
+	var calls []struct {
+	}
+	mock.lockCRC32.RLock()
+	calls = mock.calls.CRC32
+	mock.lockCRC32.RUnlock()
 	return calls
 }
 

@@ -10,6 +10,7 @@ import (
 // WritePayload is a payload to write in frame
 type WritePayload interface {
 	Size() int64
+	CRC32() uint32
 	io.WriterTo
 }
 

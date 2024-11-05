@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 	"math"
 	"runtime"
 	"sort"
@@ -149,12 +150,13 @@ func (rd *RelabelerData) updateOrCreateStatelessRelabeler(
 }
 
 type Head struct {
-	finalizer        *Finalizer
-	referenceCounter relabeler.ReferenceCounter
-	generation       uint64
+	id         string
+	finalizer  *Finalizer
+	generation uint64
 
 	relabelersData             map[string]*RelabelerData
 	dataStorages               []*DataStorage
+	wals                       []*ShardWal
 	lsses                      []*cppbridge.LabelSetStorage
 	stageInputRelabeling       []chan *TaskInputRelabeling
 	stageAppendRelabelerSeries []chan *TaskAppendRelabelerSeries
@@ -168,18 +170,41 @@ type Head struct {
 }
 
 func New(
+	id string,
 	generation uint64,
 	inputRelabelerConfigs []*config.InputRelabelerConfig,
+	lsses []*cppbridge.LabelSetStorage,
+	wals []*ShardWal,
+	dataStorages []*DataStorage,
 	numberOfShards uint16,
 	registerer prometheus.Registerer) (*Head, error) {
+
+	stageInputRelabeling := make([]chan *TaskInputRelabeling, numberOfShards)
+	stageAppendRelabelerSeries := make([]chan *TaskAppendRelabelerSeries, numberOfShards)
+	genericTaskCh := make([]chan *GenericTask, numberOfShards)
+
+	var shardID uint16
+	for ; shardID < numberOfShards; shardID++ {
+		stageInputRelabeling[shardID] = make(chan *TaskInputRelabeling, chanBufferSize)
+		stageAppendRelabelerSeries[shardID] = make(chan *TaskAppendRelabelerSeries, chanBufferSize)
+		genericTaskCh[shardID] = make(chan *GenericTask, chanBufferSize)
+	}
+
 	factory := util.NewUnconflictRegisterer(registerer)
 	h := &Head{
-		finalizer:        NewFinalizer(),
-		referenceCounter: relabeler.NewLoggedAtomicReferenceCounter(fmt.Sprintf("HEAD {%d}", generation)),
-		generation:       generation,
-		stopc:            make(chan struct{}),
-		wg:               &sync.WaitGroup{},
-		relabelersData:   make(map[string]*RelabelerData, len(inputRelabelerConfigs)),
+		id:                         id,
+		finalizer:                  NewFinalizer(),
+		generation:                 generation,
+		lsses:                      lsses,
+		wals:                       wals,
+		dataStorages:               dataStorages,
+		stageInputRelabeling:       stageInputRelabeling,
+		stageAppendRelabelerSeries: stageAppendRelabelerSeries,
+		genericTaskCh:              genericTaskCh,
+		stopc:                      make(chan struct{}),
+		wg:                         &sync.WaitGroup{},
+		relabelersData:             make(map[string]*RelabelerData, len(inputRelabelerConfigs)),
+		numberOfShards:             numberOfShards,
 		// stat
 		memoryInUse: factory.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -201,18 +226,18 @@ func New(
 	h.run()
 
 	runtime.SetFinalizer(h, func(h *Head) {
-		fmt.Println("HEAD {", h.generation, "} DESTROYED")
+		logger.Debugf("head {%d} destroyed", generation)
 	})
 
 	return h, nil
 }
 
-func (h *Head) Generation() uint64 {
-	return h.generation
+func (h *Head) ID() string {
+	return h.id
 }
 
-func (h *Head) ReferenceCounter() relabeler.ReferenceCounter {
-	return h.referenceCounter
+func (h *Head) Generation() uint64 {
+	return h.generation
 }
 
 // Append incoming data to head.
@@ -254,6 +279,14 @@ func (h *Head) Append(
 
 	inputPromise.UpdateRelabeler()
 
+	err := h.forEachShard(func(shard relabeler.Shard) error {
+		return shard.Wal().Write(inputPromise.ShardsInnerSeries(shard.ShardID()))
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to write wal: %w", err)
+	}
+
 	_ = h.forEachShard(func(shard relabeler.Shard) error {
 		shard.DataStorage().AppendInnerSeriesSlice(inputPromise.ShardsInnerSeries(shard.ShardID()))
 		return nil
@@ -283,13 +316,13 @@ func (h *Head) NumberOfShards() uint16 {
 }
 
 func (h *Head) Finalize() {
+	// todo: wait all tasks on stop
 	_ = h.finalizer.Finalize(func() error {
 		_ = h.forEachShard(func(shard relabeler.Shard) error {
 			shard.DataStorage().MergeOutOfOrderChunks()
 			return nil
 		})
 
-		// todo: wait all tasks on stop
 		h.stop()
 		for relabelerID := range h.relabelersData {
 			// clear unnecessary
@@ -427,7 +460,11 @@ func (h *Head) Close() error {
 	}
 	<-h.finalizer.Done()
 	h.memoryInUse.DeletePartialMatch(prometheus.Labels{"generation": strconv.FormatUint(h.generation, 10)})
-	return nil
+	var err error
+	for _, wal := range h.wals {
+		err = errors.Join(err, wal.Close())
+	}
+	return err
 }
 
 // enqueueInputRelabeling send task to shard for input relabeling.
@@ -435,6 +472,10 @@ func (h *Head) enqueueInputRelabeling(task *TaskInputRelabeling) {
 	for _, s := range h.stageInputRelabeling {
 		s <- task
 	}
+}
+
+func (h *Head) Discard() error {
+	return nil
 }
 
 // enqueueHeadAppending append all series after input relabeling stage to head.
