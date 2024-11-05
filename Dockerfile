@@ -2,6 +2,7 @@ ARG ARCH="amd64"
 ARG OS="linux"
 FROM quay.io/prometheus/busybox-${OS}-${ARCH}:latest
 LABEL maintainer="The Prometheus Authors <prometheus-developers@googlegroups.com>"
+LABEL org.opencontainers.image.source="https://github.com/prometheus/prometheus"
 
 ARG ARCH="amd64"
 ARG OS="linux"
