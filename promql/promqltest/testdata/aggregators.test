@@ -234,21 +234,21 @@ load 5m
 eval instant at 0m max(http_requests)
   {} 4
 
-# should produce same results ignoring histograms with info annotations.
+# The histogram is ignored here so the result doesn't change but it has an info annotation now.
 eval_info instant at 0m max({job="api-server"})
   {} 4
 
-# should produce no result in case of only histograms with info annotations.
+# The histogram is ignored here so there is no result but it has an info annotation now.
 eval_info instant at 0m max(http_requests_histogram)
 
 eval instant at 0m min(http_requests)
   {} 1
 
-# should produce same results ignoring histograms with info annotations.
+# The histogram is ignored here so the result doesn't change but it has an info annotation now.
 eval_info instant at 0m min({job="api-server"})
   {} 1
 
-# should produce no result in case of only histograms with info annotations.
+# The histogram is ignored here so there is no result but it has an info annotation now.
 eval_info instant at 0m min(http_requests_histogram)
 
 eval instant at 0m max by (group) (http_requests)
@@ -403,13 +403,13 @@ eval instant at 1m quantile without(point)(0.8, data)
 	{test="three samples"} 1.6
 	{test="uneven samples"} 2.8
 
-# should produce same results ignoring histograms with info annotations.
-eval_info instant at 1m quantile without(point)(0.8, {__name__=~"^data(_histogram)?$"})
+# The histogram is ignored here so the result doesn't change but it has an info annotation now.
+eval_info instant at 1m quantile without(point)(0.8, {__name__=~"data(_histogram)?"})
 	{test="two samples"} 0.8
 	{test="three samples"} 1.6
 	{test="uneven samples"} 2.8
 
-# should produce no result in case of only histograms with info annotations.
+# The histogram is ignored here so there is no result but it has an info annotation now.
 eval_info instant at 1m quantile(0.8, data_histogram)
 
 # Bug #5276.
@@ -606,14 +606,14 @@ load 5m
 	series{label="b"} 2
 	series{label="c"} {{schema:1 sum:15 count:10 buckets:[3 2 5 7 9]}}
 
-# should produce same results ignoring histograms with info annotations.
+# The histogram is ignored here so the result doesn't change but it has an info annotation now.
 eval_info instant at 0m stddev(series)
 	{} 0.5
 
 eval_info instant at 0m stdvar(series)
 	{} 0.25
 
-# should produce no result in case of only histograms with info annotations.
+# The histogram is ignored here so there is no result but it has an info annotation now.
 eval_info instant at 0m stddev({label="c"})
 
 eval_info instant at 0m stdvar({label="c"})

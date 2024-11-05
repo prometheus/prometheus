@@ -2777,131 +2777,142 @@ func scalarBinop(op parser.ItemType, lhs, rhs float64) float64 {
 
 // vectorElemBinop evaluates a binary operation between two Vector elements.
 func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram, pos posrange.PositionRange) (float64, *histogram.FloatHistogram, bool, error) {
-	switch op {
-	case parser.ADD:
-		if hlhs != nil && hrhs != nil {
-			res, err := hlhs.Copy().Add(hrhs)
-			if err != nil {
-				return 0, nil, false, err
+	opName := parser.ItemTypeStr[op]
+	switch {
+	case hlhs == nil && hrhs == nil:
+		{
+			switch op {
+			case parser.ADD:
+				return lhs + rhs, nil, true, nil
+			case parser.SUB:
+				return lhs - rhs, nil, true, nil
+			case parser.MUL:
+				return lhs * rhs, nil, true, nil
+			case parser.DIV:
+				return lhs / rhs, nil, true, nil
+			case parser.POW:
+				return math.Pow(lhs, rhs), nil, true, nil
+			case parser.MOD:
+				return math.Mod(lhs, rhs), nil, true, nil
+			case parser.EQLC:
+				return lhs, nil, lhs == rhs, nil
+			case parser.NEQ:
+				return lhs, nil, lhs != rhs, nil
+			case parser.GTR:
+				return lhs, nil, lhs > rhs, nil
+			case parser.LSS:
+				return lhs, nil, lhs < rhs, nil
+			case parser.GTE:
+				return lhs, nil, lhs >= rhs, nil
+			case parser.LTE:
+				return lhs, nil, lhs <= rhs, nil
+			case parser.ATAN2:
+				return math.Atan2(lhs, rhs), nil, true, nil
 			}
-			return 0, res.Compact(0), true, nil
 		}
-		if hlhs == nil && hrhs == nil {
-			return lhs + rhs, nil, true, nil
-		}
-		if hlhs != nil {
-			return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", "+", "float", pos)
-		}
-		return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", "+", "histogram", pos)
-	case parser.SUB:
-		if hlhs != nil && hrhs != nil {
-			res, err := hlhs.Copy().Sub(hrhs)
-			if err != nil {
-				return 0, nil, false, err
+	case hlhs == nil && hrhs != nil:
+		{
+			switch op {
+			case parser.ADD:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", opName, "histogram", pos)
+			case parser.SUB:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", opName, "histogram", pos)
+			case parser.MUL:
+				return 0, hrhs.Copy().Mul(lhs), true, nil
+			case parser.DIV:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", opName, "histogram", pos)
+			case parser.POW:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", opName, "histogram", pos)
+			case parser.MOD:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", opName, "histogram", pos)
+			case parser.EQLC:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", opName, "histogram", pos)
+			case parser.NEQ:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", opName, "histogram", pos)
+			case parser.GTR:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", opName, "histogram", pos)
+			case parser.LSS:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", opName, "histogram", pos)
+			case parser.GTE:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", opName, "histogram", pos)
+			case parser.LTE:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", opName, "histogram", pos)
+			case parser.ATAN2:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", opName, "histogram", pos)
 			}
-			return 0, res.Compact(0), true, nil
 		}
-		if hlhs == nil && hrhs == nil {
-			return lhs - rhs, nil, true, nil
-		}
-		if hlhs != nil {
-			return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", "-", "float", pos)
-		}
-		return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", "-", "histogram", pos)
-	case parser.MUL:
-		if hlhs != nil && hrhs == nil {
-			return 0, hlhs.Copy().Mul(rhs), true, nil
-		}
-		if hlhs == nil && hrhs != nil {
-			return 0, hrhs.Copy().Mul(lhs), true, nil
-		}
-		if hlhs != nil && hrhs != nil {
-			return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", "*", "histogram", pos)
-		}
-		return lhs * rhs, nil, true, nil
-	case parser.DIV:
-		if hlhs != nil && hrhs == nil {
-			return 0, hlhs.Copy().Div(rhs), true, nil
-		}
-		if hrhs != nil {
-			if hlhs != nil {
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", "/", "histogram", pos)
+	case hlhs != nil && hrhs == nil:
+		{
+			switch op {
+			case parser.ADD:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "float", pos)
+			case parser.SUB:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "float", pos)
+			case parser.MUL:
+				return 0, hlhs.Copy().Mul(rhs), true, nil
+			case parser.DIV:
+				return 0, hlhs.Copy().Div(rhs), true, nil
+			case parser.POW:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "float", pos)
+			case parser.MOD:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "float", pos)
+			case parser.EQLC:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "float", pos)
+			case parser.NEQ:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "float", pos)
+			case parser.GTR:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "float", pos)
+			case parser.LSS:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "float", pos)
+			case parser.GTE:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "float", pos)
+			case parser.LTE:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "float", pos)
+			case parser.ATAN2:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "float", pos)
 			}
-			return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", "/", "histogram", pos)
 		}
-		return lhs / rhs, nil, true, nil
-	case parser.POW:
-		return math.Pow(lhs, rhs), nil, true, nil
-	case parser.MOD:
-		return math.Mod(lhs, rhs), nil, true, nil
-	case parser.EQLC:
-		if hlhs != nil && hrhs == nil {
-			return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", "==", "float", pos)
+	case hlhs != nil && hrhs != nil:
+		{
+			switch op {
+			case parser.ADD:
+				res, err := hlhs.Copy().Add(hrhs)
+				if err != nil {
+					return 0, nil, false, err
+				}
+				return 0, res.Compact(0), true, nil
+			case parser.SUB:
+				res, err := hlhs.Copy().Sub(hrhs)
+				if err != nil {
+					return 0, nil, false, err
+				}
+				return 0, res.Compact(0), true, nil
+			case parser.MUL:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "histogram", pos)
+			case parser.DIV:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "histogram", pos)
+			case parser.POW:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "histogram", pos)
+			case parser.MOD:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "histogram", pos)
+			case parser.EQLC:
+				//This operation expects that both histograms are compacted.
+				return 0, hlhs, hlhs.Equals(hrhs), nil
+			case parser.NEQ:
+				//This operation expects that both histograms are compacted.
+				return 0, hlhs, !hlhs.Equals(hrhs), nil
+			case parser.GTR:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "histogram", pos)
+			case parser.LSS:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "histogram", pos)
+			case parser.GTE:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "histogram", pos)
+			case parser.LTE:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "histogram", pos)
+			case parser.ATAN2:
+				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "histogram", pos)
+			}
 		}
-		if hlhs == nil && hrhs != nil {
-			return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", "==", "histogram", pos)
-		}
-		if hlhs != nil && hrhs != nil {
-			return 0, hlhs, hlhs.Equals(hrhs), nil
-		}
-		return lhs, nil, lhs == rhs, nil
-	case parser.NEQ:
-		if hlhs != nil && hrhs == nil {
-			return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", "!=", "float", pos)
-		}
-		if hlhs == nil && hrhs != nil {
-			return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", "!=", "histogram", pos)
-		}
-		if hlhs != nil && hrhs != nil {
-			return 0, hlhs, !hlhs.Equals(hrhs), nil
-		}
-		return lhs, nil, lhs != rhs, nil
-	case parser.GTR:
-		if hlhs != nil && hrhs == nil {
-			return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", ">", "float", pos)
-		}
-		if hlhs == nil && hrhs != nil {
-			return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", ">", "histogram", pos)
-		}
-		if hlhs != nil && hrhs != nil {
-			return 0, hlhs, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", ">", "histogram", pos)
-		}
-		return lhs, nil, lhs > rhs, nil
-	case parser.LSS:
-		if hlhs != nil && hrhs == nil {
-			return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", "<", "float", pos)
-		}
-		if hlhs == nil && hrhs != nil {
-			return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", "<", "histogram", pos)
-		}
-		if hlhs != nil && hrhs != nil {
-			return 0, hlhs, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", "<", "histogram", pos)
-		}
-		return lhs, nil, lhs < rhs, nil
-	case parser.GTE:
-		if hlhs != nil && hrhs == nil {
-			return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", ">=", "float", pos)
-		}
-		if hlhs == nil && hrhs != nil {
-			return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", ">=", "histogram", pos)
-		}
-		if hlhs != nil && hrhs != nil {
-			return 0, hlhs, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", ">=", "histogram", pos)
-		}
-		return lhs, nil, lhs >= rhs, nil
-	case parser.LTE:
-		if hlhs != nil && hrhs == nil {
-			return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", "<=", "float", pos)
-		}
-		if hlhs == nil && hrhs != nil {
-			return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", "<=", "histogram", pos)
-		}
-		if hlhs != nil && hrhs != nil {
-			return 0, hlhs, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", "<=", "histogram", pos)
-		}
-		return lhs, nil, lhs <= rhs, nil
-	case parser.ATAN2:
-		return math.Atan2(lhs, rhs), nil, true, nil
 	}
 	panic(fmt.Errorf("operator %q not allowed for operations between Vectors", op))
 }
@@ -2964,9 +2975,9 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 					// Ignore histograms for STDVAR and STDDEV.
 					group.seen = false
 					if op == parser.STDVAR {
-						annos.Add(annotations.NewMixedFloatsHistogramsAggInfo("stdvar", e.Expr.PositionRange()))
+						annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("stdvar", e.Expr.PositionRange()))
 					} else {
-						annos.Add(annotations.NewMixedFloatsHistogramsAggInfo("stddev", e.Expr.PositionRange()))
+						annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("stddev", e.Expr.PositionRange()))
 					}
 				case math.IsNaN(f), math.IsInf(f, 0):
 					group.floatValue = math.NaN()
@@ -2976,7 +2987,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			case parser.QUANTILE:
 				if h != nil {
 					group.seen = false
-					annos.Add(annotations.NewMixedFloatsHistogramsAggInfo("quantile", e.Expr.PositionRange()))
+					annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("quantile", e.Expr.PositionRange()))
 				}
 				group.heap = make(vectorByValueHeap, 1)
 				group.heap[0] = Sample{F: f}
@@ -2986,9 +2997,9 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				if h != nil {
 					group.seen = false
 					if op == parser.MIN {
-						annos.Add(annotations.NewMixedFloatsHistogramsAggInfo("min", e.Expr.PositionRange()))
+						annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("min", e.Expr.PositionRange()))
 					} else {
-						annos.Add(annotations.NewMixedFloatsHistogramsAggInfo("max", e.Expr.PositionRange()))
+						annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("max", e.Expr.PositionRange()))
 					}
 				}
 			}
@@ -3090,7 +3101,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 
 		case parser.MAX:
 			if h != nil {
-				annos.Add(annotations.NewMixedFloatsHistogramsAggInfo("min", e.Expr.PositionRange()))
+				annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("min", e.Expr.PositionRange()))
 				continue
 			}
 			if group.floatValue < f || math.IsNaN(group.floatValue) {
@@ -3099,7 +3110,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 
 		case parser.MIN:
 			if h != nil {
-				annos.Add(annotations.NewMixedFloatsHistogramsAggInfo("max", e.Expr.PositionRange()))
+				annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("max", e.Expr.PositionRange()))
 				continue
 			}
 			if group.floatValue > f || math.IsNaN(group.floatValue) {
@@ -3116,15 +3127,15 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				group.floatMean += delta / group.groupCount
 				group.floatValue += delta * (f - group.floatMean)
 				if op == parser.STDVAR {
-					annos.Add(annotations.NewMixedFloatsHistogramsAggInfo("stdvar", e.Expr.PositionRange()))
+					annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("stdvar", e.Expr.PositionRange()))
 				} else {
-					annos.Add(annotations.NewMixedFloatsHistogramsAggInfo("stddev", e.Expr.PositionRange()))
+					annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("stddev", e.Expr.PositionRange()))
 				}
 			}
 
 		case parser.QUANTILE:
 			if h != nil {
-				annos.Add(annotations.NewMixedFloatsHistogramsAggInfo("quantile", e.Expr.PositionRange()))
+				annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("quantile", e.Expr.PositionRange()))
 				continue
 			}
 			group.heap = append(group.heap, Sample{F: f})
