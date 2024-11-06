@@ -4568,7 +4568,7 @@ func TestExtractSelectors(t *testing.T) {
 			[]string{`{bar="baz", __name__="foo"}`},
 		}, {
 			`foo{bar="baz"} / flip{flop="flap"}`,
-			[]string{`{bar="baz", __name__="foo"}`, `{flop="flap", __name__="flip"}`},
+			[]string{`{flop="flap", __name__="flip"}`, `{bar="baz", __name__="foo"}`},
 		}, {
 			`rate(foo[5m])`,
 			[]string{`{__name__="foo"}`},

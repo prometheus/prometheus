@@ -487,10 +487,11 @@ func (ng *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts
 		return nil, err
 	}
 
+	pExpr.Expr = PreprocessExpr(expr, ts, ts)
+
 	if err := ng.validateOpts(pExpr); err != nil {
 		return nil, err
 	}
-	pExpr.Expr = PreprocessExpr(expr, ts, ts)
 
 	return qry, nil
 }
@@ -509,18 +510,13 @@ func (ng *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts Q
 		return nil, err
 	}
 
-	lookbackDelta := opts.LookbackDelta()
-	if lookbackDelta <= 0 {
-		lookbackDelta = ng.lookbackDelta
-	}
-
+	pExpr.Expr = PreprocessExpr(expr, start, end)
 	if err := ng.validateOpts(pExpr); err != nil {
 		return nil, err
 	}
 	if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
 		return nil, fmt.Errorf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
 	}
-	pExpr.Expr = PreprocessExpr(expr, start, end)
 
 	return qry, nil
 }

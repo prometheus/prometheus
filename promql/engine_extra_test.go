@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
 
 type StubNode struct {
@@ -18,10 +19,14 @@ func (s StubNode) String() string {
 	return fmt.Sprintf("[%d,%d]", s.start, s.end)
 }
 
-func (s StubNode) PositionRange() parser.PositionRange {
-	return parser.PositionRange{
-		Start: parser.Pos(s.start),
-		End:   parser.Pos(s.end),
+func (s StubNode) Pretty(t int) string {
+	return fmt.Sprintf("%d", t)
+}
+
+func (s StubNode) PositionRange() posrange.PositionRange {
+	return posrange.PositionRange{
+		Start: posrange.Pos(s.start),
+		End:   posrange.Pos(s.end),
 	}
 }
 
@@ -36,9 +41,9 @@ func TestFindPathRange(t *testing.T) {
 			path: []parser.Node{StubNode{0, 1}},
 			eRanges: []evalRange{
 				evalRange{
-					Prefix: []parser.PositionRange{
-						parser.PositionRange{parser.Pos(0), parser.Pos(1)},
-						parser.PositionRange{parser.Pos(1), parser.Pos(3)},
+					Prefix: []posrange.PositionRange{
+						{posrange.Pos(0), posrange.Pos(1)},
+						{posrange.Pos(1), posrange.Pos(3)},
 					},
 				},
 			},
