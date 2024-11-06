@@ -205,9 +205,6 @@ func getEndpointInfoForSystems(
 	err := rpcclient.Call(
 		"system.monitoring.listEndpoints",
 		[]interface{}{token, systemIDs}, &endpointInfos)
-	if err != nil {
-		return nil, err
-	}
 	return endpointInfos, err
 }
 
