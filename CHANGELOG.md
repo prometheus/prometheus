@@ -2,6 +2,7 @@
 
 ## unreleased
 
+* [BUGFIX] Scraping: Don't log errors on empty scrapes. #15352
 * [CHANGE] Scraping: Remove implicit fallback to the Prometheus text format in case of invalid/missing Content-Type and fail the scrape instead. Add ability to specify a `fallback_scrape_protocol` in the scrape config. #15136
 * [CHANGE] Remote-write: default enable_http2 to false. #15219
 * [CHANGE] Scraping: normalize "le" and "quantile" label values upon ingestion. #15164
