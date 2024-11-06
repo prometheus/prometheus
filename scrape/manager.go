@@ -94,8 +94,6 @@ type Options struct {
 	skipOffsetting bool
 }
 
-const DefaultNameEscapingScheme = model.ValueEncodingEscaping
-
 // Manager maintains a set of scrape pools and manages start/stop cycles
 // when receiving new target groups from the discovery manager.
 type Manager struct {
