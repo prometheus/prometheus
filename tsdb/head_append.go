@@ -356,8 +356,8 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 		}
 	}
 
+	s.Lock()
 	if value.IsStaleNaN(v) {
-		s.Lock()
 		// TODO(krajorama): reorganize Commit() to handle samples in append order
 		// not floats first and then histograms. Then we could do this conversion
 		// in commit. This code should move into Commit().
@@ -369,8 +369,6 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 			s.Unlock()
 			return a.AppendHistogram(ref, lset, t, nil, &histogram.FloatHistogram{Sum: v})
 		}
-	} else {
-		s.Lock()
 	}
 
 	defer s.Unlock()
