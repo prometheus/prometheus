@@ -13,7 +13,7 @@ jobs:
       # should also be updated.
       image: quay.io/prometheus/golang-builder:1.23-base
     steps:
-      - uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: prometheus/promci@52c7012f5f0070d7281b8db4a119e21341d43c91 # v0.4.5
       - uses: ./.github/promci/actions/setup_environment
         with:
@@ -29,7 +29,7 @@ jobs:
     container:
       image: quay.io/prometheus/golang-builder:1.23-base
     steps:
-      - uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: prometheus/promci@52c7012f5f0070d7281b8db4a119e21341d43c91 # v0.4.5
       - uses: ./.github/promci/actions/setup_environment
       - run: go test --tags=dedupelabels ./...
@@ -48,7 +48,7 @@ jobs:
       # The go version in this image should be N-1 wrt test_go.
       image: quay.io/prometheus/golang-builder:1.22-base
     steps:
-      - uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - run: make build
       # Don't run NPM build; don't run race-detector.
       - run: make test GO_ONLY=1 test-flags=""
@@ -62,7 +62,7 @@ jobs:
       image: quay.io/prometheus/golang-builder:1.23-base
 
     steps:
-      - uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: prometheus/promci@52c7012f5f0070d7281b8db4a119e21341d43c91 # v0.4.5
       - uses: ./.github/promci/actions/setup_environment
         with:
@@ -79,7 +79,7 @@ jobs:
     name: Go tests on Windows
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5.0.2
         with:
           go-version: 1.23.x
@@ -96,7 +96,7 @@ jobs:
     container:
       image: quay.io/prometheus/golang-builder:1.23-base
     steps:
-      - uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - run: go install ./cmd/promtool/.
       - run: go install github.com/google/go-jsonnet/cmd/jsonnet@latest
       - run: go install github.com/google/go-jsonnet/cmd/jsonnetfmt@latest
@@ -121,7 +121,7 @@ jobs:
       matrix:
         thread: [ 0, 1, 2 ]
     steps:
-      - uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: prometheus/promci@52c7012f5f0070d7281b8db4a119e21341d43c91 # v0.4.5
       - uses: ./.github/promci/actions/build
         with:
@@ -146,7 +146,7 @@ jobs:
     # Whenever the Go version is updated here, .promu.yml
     # should also be updated.
     steps:
-      - uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: prometheus/promci@52c7012f5f0070d7281b8db4a119e21341d43c91 # v0.4.5
       - uses: ./.github/promci/actions/build
         with:
@@ -169,7 +169,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Install Go
         uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5.0.2
         with:
@@ -182,7 +182,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Install Go
         uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5.0.2
         with:
@@ -208,7 +208,7 @@ jobs:
     needs: [test_ui, test_go, test_go_more, test_go_oldest, test_windows, golangci, codeql, build_all]
     if: github.event_name == 'push' && github.event.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: prometheus/promci@52c7012f5f0070d7281b8db4a119e21341d43c91 # v0.4.5
       - uses: ./.github/promci/actions/publish_main
         with:
@@ -225,7 +225,7 @@ jobs:
       ||
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v3.'))
     steps:
-      - uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: prometheus/promci@52c7012f5f0070d7281b8db4a119e21341d43c91 # v0.4.5
       - uses: ./.github/promci/actions/publish_release
         with:
@@ -240,7 +240,7 @@ jobs:
     needs: [test_ui, codeql]
     steps:
       - name: Checkout
-        uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: prometheus/promci@52c7012f5f0070d7281b8db4a119e21341d43c91 # v0.4.5
       - name: Install nodejs
         uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
