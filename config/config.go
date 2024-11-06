@@ -30,7 +30,7 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/common/sigv4"
+	"github.com/prometheus/sigv4"
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/discovery"
