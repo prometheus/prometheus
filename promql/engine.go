@@ -3694,7 +3694,7 @@ func detectHistogramStatsDecoding(expr parser.Expr) {
 			}
 		}
 		return errors.New("stop")
-	})
+	}, nil)
 }
 
 func makeInt64Pointer(val int64) *int64 {
