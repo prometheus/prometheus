@@ -538,6 +538,9 @@ func funcRound(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 			continue
 		}
 		f := math.Floor(el.F*toNearestInverse+0.5) / toNearestInverse
+		if !enh.enableDelayedNameRemoval {
+			el.Metric = el.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:   el.Metric,
 			F:        f,
