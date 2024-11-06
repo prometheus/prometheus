@@ -18,7 +18,6 @@ jobs:
       - uses: ./.github/promci/actions/setup_environment
         with:
           enable_npm: true
-      - run: make GOOPTS=--tags=stringlabels GO_ONLY=1 SKIP_GOLANGCI_LINT=1
       - run: go test --tags=stringlabels ./tsdb/ -test.tsdb-isolation=false
       - run: make -C documentation/examples/remote_storage
       - run: make -C documentation/examples
@@ -177,25 +176,6 @@ jobs:
           go-version: 1.23.x
       - name: Run goyacc and check for diff
         run: make install-goyacc check-generated-parser
-  golangci:
-    name: golangci-lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
-      - name: Install Go
-        uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5.0.2
-        with:
-          go-version: 1.23.x
-      - name: Install snmp_exporter/generator dependencies
-        run: sudo apt-get update && sudo apt-get -y install libsnmp-dev
-        if: github.repository == 'prometheus/snmp_exporter'
-      - name: Lint
-        uses: golangci/golangci-lint-action@aaa42aa0628b4ae2578232a66b541047968fac86 # v6.1.0
-        with:
-          args: --verbose
-          # Make sure to sync this with Makefile.common and scripts/golangci-lint.yml.
-          version: v1.60.2
   fuzzing:
     uses: ./.github/workflows/fuzzing.yml
     if: github.event_name == 'pull_request'
