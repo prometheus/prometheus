@@ -18,7 +18,7 @@ jobs:
       - uses: ./.github/promci/actions/setup_environment
         with:
           enable_npm: true
-      - run: make GOOPTS=--tags=stringlabels GO_ONLY=1 SKIP_GOLANGCI_LINT=1 test-flags=""
+      - run: make GOOPTS=--tags=stringlabels GO_ONLY=1 SKIP_GOLANGCI_LINT=1
       - run: go test --tags=stringlabels ./tsdb/ -test.tsdb-isolation=false
       - run: make -C documentation/examples/remote_storage
       - run: make -C documentation/examples
