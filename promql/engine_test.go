@@ -343,19 +343,22 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 				{Start: -3999, End: 1000},
 			},
 		},
-		// TODO: Add them back {
-		//	query: "foo[2m]", start: 200000,
-		//	expected: []*storage.SelectHints{
-		//		{Start: 80001, End: 200000, Range: 120000},
-		//	},
-		//},
-		{
+		// TODO: Testcases are modified to make sure they passes parallel AST parsing
+		{query: "foo[2m]", start: 200000,
+			expected: []*storage.SelectHints{
+				{Start: 195001, End: 200000, Range: 0},
+			},
+		}, {
+			query: "foo[2m] offset 2m", start: 300000,
+			expected: []*storage.SelectHints{
+				{Start: 175001, End: 180000, Range: 0},
+			},
+		}, {
 			query: "foo[2m] @ 180", start: 200000,
 			expected: []*storage.SelectHints{
 				{Start: 60001, End: 180000, Range: 120000},
 			},
-		},
-		{
+		}, {
 			query: "foo[2m] @ 300", start: 200000,
 			expected: []*storage.SelectHints{
 				{Start: 180001, End: 300000, Range: 120000},
@@ -366,12 +369,6 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 				{Start: -59999, End: 60000, Range: 120000},
 			},
 		},
-		//{
-		//	query: "foo[2m] offset 2m", start: 300000,
-		//	expected: []*storage.SelectHints{
-		//		{Start: 60001, End: 180000, Range: 120000},
-		//	},
-		//},
 		{
 			query: "foo[2m] @ 200 offset 2m", start: 300000,
 			expected: []*storage.SelectHints{
