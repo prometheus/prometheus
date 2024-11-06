@@ -672,7 +672,7 @@ func TestCommitErr_V1Message(t *testing.T) {
 	req, err := http.NewRequest("", "", bytes.NewReader(payload))
 	require.NoError(t, err)
 
-	appendable := &mockAppendable{commitErr: fmt.Errorf("commit error")}
+	appendable := &mockAppendable{commitErr: errors.New("commit error")}
 	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
 
 	recorder := httptest.NewRecorder()
@@ -696,7 +696,7 @@ func TestCommitErr_V2Message(t *testing.T) {
 	req.Header.Set("Content-Encoding", string(SnappyBlockCompression))
 	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
 
-	appendable := &mockAppendable{commitErr: fmt.Errorf("commit error")}
+	appendable := &mockAppendable{commitErr: errors.New("commit error")}
 	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2})
 
 	recorder := httptest.NewRecorder()

@@ -109,7 +109,7 @@ linters-settings:
     extra-rules: true
   perfsprint:
      # Optimizes `fmt.Errorf`.
-    errorf: false
+    errorf: true
   revive:
     # By default, revive will enable only the linting rules that are named in the configuration file.
     # So, it's needed to explicitly enable all required rules here.

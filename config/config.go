@@ -1072,7 +1072,7 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 		c.HTTPClientConfig.Authorization != nil || c.HTTPClientConfig.OAuth2 != nil
 
 	if httpClientConfigAuthEnabled && c.SigV4Config != nil {
-		return fmt.Errorf("at most one of basic_auth, authorization, oauth2, & sigv4 must be configured")
+		return errors.New("at most one of basic_auth, authorization, oauth2, & sigv4 must be configured")
 	}
 
 	// Check for users putting URLs in target groups.
@@ -1420,7 +1420,7 @@ func (c *OTLPConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	for i, attr := range c.PromoteResourceAttributes {
 		attr = strings.TrimSpace(attr)
 		if attr == "" {
-			err = errors.Join(err, fmt.Errorf("empty promoted OTel resource attribute"))
+			err = errors.Join(err, errors.New("empty promoted OTel resource attribute"))
 			continue
 		}
 		if _, exists := seen[attr]; exists {

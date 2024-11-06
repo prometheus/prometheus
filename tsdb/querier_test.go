@@ -3324,7 +3324,7 @@ func (m mockMatcherIndex) LabelNames(context.Context, ...*labels.Matcher) ([]str
 }
 
 func (m mockMatcherIndex) PostingsForLabelMatching(context.Context, string, func(string) bool) index.Postings {
-	return index.ErrPostings(fmt.Errorf("PostingsForLabelMatching called"))
+	return index.ErrPostings(errors.New("PostingsForLabelMatching called"))
 }
 
 func TestPostingsForMatcher(t *testing.T) {

@@ -271,7 +271,7 @@ const metricNameRe = /^[a-zA-Z_:][a-zA-Z0-9_:]*$/;
 const labelNameCharsetRe = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 
 export const metricContainsExtendedCharset = (str: string) => {
-  return !metricNameRe.test(str);
+  return str !== "" && !metricNameRe.test(str);
 };
 
 export const labelNameContainsExtendedCharset = (str: string) => {

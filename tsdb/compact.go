@@ -184,7 +184,7 @@ func NewLeveledCompactor(ctx context.Context, r prometheus.Registerer, l *slog.L
 
 func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, opts LeveledCompactorOptions) (*LeveledCompactor, error) {
 	if len(ranges) == 0 {
-		return nil, fmt.Errorf("at least one range must be provided")
+		return nil, errors.New("at least one range must be provided")
 	}
 	if pool == nil {
 		pool = chunkenc.NewPool()

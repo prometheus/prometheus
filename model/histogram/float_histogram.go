@@ -14,6 +14,7 @@
 package histogram
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -784,16 +785,16 @@ func (h *FloatHistogram) Validate() error {
 			return fmt.Errorf("custom buckets: %w", err)
 		}
 		if h.ZeroCount != 0 {
-			return fmt.Errorf("custom buckets: must have zero count of 0")
+			return errors.New("custom buckets: must have zero count of 0")
 		}
 		if h.ZeroThreshold != 0 {
-			return fmt.Errorf("custom buckets: must have zero threshold of 0")
+			return errors.New("custom buckets: must have zero threshold of 0")
 		}
 		if len(h.NegativeSpans) > 0 {
-			return fmt.Errorf("custom buckets: must not have negative spans")
+			return errors.New("custom buckets: must not have negative spans")
 		}
 		if len(h.NegativeBuckets) > 0 {
-			return fmt.Errorf("custom buckets: must not have negative buckets")
+			return errors.New("custom buckets: must not have negative buckets")
 		}
 	} else {
 		if err := checkHistogramSpans(h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
@@ -807,7 +808,7 @@ func (h *FloatHistogram) Validate() error {
 			return fmt.Errorf("negative side: %w", err)
 		}
 		if h.CustomValues != nil {
-			return fmt.Errorf("histogram with exponential schema must not have custom bounds")
+			return errors.New("histogram with exponential schema must not have custom bounds")
 		}
 	}
 	err := checkHistogramBuckets(h.PositiveBuckets, &pCount, false)
@@ -948,10 +949,10 @@ func (h *FloatHistogram) floatBucketIterator(
 	positive bool, absoluteStartValue float64, targetSchema int32,
 ) floatBucketIterator {
 	if h.UsesCustomBuckets() && targetSchema != h.Schema {
-		panic(fmt.Errorf("cannot merge from custom buckets schema to exponential schema"))
+		panic(errors.New("cannot merge from custom buckets schema to exponential schema"))
 	}
 	if !h.UsesCustomBuckets() && IsCustomBucketsSchema(targetSchema) {
-		panic(fmt.Errorf("cannot merge from exponential buckets schema to custom schema"))
+		panic(errors.New("cannot merge from exponential buckets schema to custom schema"))
 	}
 	if targetSchema > h.Schema {
 		panic(fmt.Errorf("cannot merge from schema %d to %d", h.Schema, targetSchema))

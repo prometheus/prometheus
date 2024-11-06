@@ -149,7 +149,7 @@ type Discovery struct {
 func New(logger *slog.Logger, conf *SDConfig, metrics discovery.DiscovererMetrics) (*Discovery, error) {
 	m, ok := metrics.(*tritonMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	tls, err := config.NewTLSConfig(&conf.TLSConfig)

@@ -675,141 +675,141 @@ func (ev *evalCmd) expectMetric(pos int, m labels.Labels, vals ...parser.Sequenc
 
 // compareResult compares the result value with the defined expectation.
 func (ev *evalCmd) compareResult(result parser.Value) error {
-  switch val := result.(type) {
-  case promql.Matrix:
-    if ev.ordered {
-      return fmt.Errorf("expected ordered result, but query returned a matrix")
-    }
+	switch val := result.(type) {
+	case promql.Matrix:
+		if ev.ordered {
+			return errors.New("expected ordered result, but query returned a matrix")
+		}
 
-    if ev.expectScalar {
-      return fmt.Errorf("expected scalar result, but got matrix %s", val.String())
-    }
+		if ev.expectScalar {
+			return fmt.Errorf("expected scalar result, but got matrix %s", val.String())
+		}
 
-    if err := assertMatrixSorted(val); err != nil {
-      return err
-    }
+		if err := assertMatrixSorted(val); err != nil {
+			return err
+		}
 
-    seen := map[uint64]bool{}
-    for _, s := range val {
-      hash := s.Metric.Hash()
-      if _, ok := ev.metrics[hash]; !ok {
-        return fmt.Errorf("unexpected metric %s in result, has %s", s.Metric, formatSeriesResult(s))
-      }
-      seen[hash] = true
-      exp := ev.expected[hash]
+		seen := map[uint64]bool{}
+		for _, s := range val {
+			hash := s.Metric.Hash()
+			if _, ok := ev.metrics[hash]; !ok {
+				return fmt.Errorf("unexpected metric %s in result, has %s", s.Metric, formatSeriesResult(s))
+			}
+			seen[hash] = true
+			exp := ev.expected[hash]
 
-      var expectedFloats []promql.FPoint
-      var expectedHistograms []promql.HPoint
+			var expectedFloats []promql.FPoint
+			var expectedHistograms []promql.HPoint
 
-      for i, e := range exp.vals {
-        ts := ev.start.Add(time.Duration(i) * ev.step)
+			for i, e := range exp.vals {
+				ts := ev.start.Add(time.Duration(i) * ev.step)
 
-        if ts.After(ev.end) {
-          return fmt.Errorf("expected %v points for %s, but query time range cannot return this many points", len(exp.vals), ev.metrics[hash])
-        }
+				if ts.After(ev.end) {
+					return fmt.Errorf("expected %v points for %s, but query time range cannot return this many points", len(exp.vals), ev.metrics[hash])
+				}
 
-        t := ts.UnixNano() / int64(time.Millisecond/time.Nanosecond)
+				t := ts.UnixNano() / int64(time.Millisecond/time.Nanosecond)
 
-        if e.Histogram != nil {
-          expectedHistograms = append(expectedHistograms, promql.HPoint{T: t, H: e.Histogram})
-        } else if !e.Omitted {
-          expectedFloats = append(expectedFloats, promql.FPoint{T: t, F: e.Value})
-        }
-      }
+				if e.Histogram != nil {
+					expectedHistograms = append(expectedHistograms, promql.HPoint{T: t, H: e.Histogram})
+				} else if !e.Omitted {
+					expectedFloats = append(expectedFloats, promql.FPoint{T: t, F: e.Value})
+				}
+			}
 
-      if len(expectedFloats) != len(s.Floats) || len(expectedHistograms) != len(s.Histograms) {
-        return fmt.Errorf("expected %v float points and %v histogram points for %s, but got %s", len(expectedFloats), len(expectedHistograms), ev.metrics[hash], formatSeriesResult(s))
-      }
+			if len(expectedFloats) != len(s.Floats) || len(expectedHistograms) != len(s.Histograms) {
+				return fmt.Errorf("expected %v float points and %v histogram points for %s, but got %s", len(expectedFloats), len(expectedHistograms), ev.metrics[hash], formatSeriesResult(s))
+			}
 
-      for i, expected := range expectedFloats {
-        actual := s.Floats[i]
+			for i, expected := range expectedFloats {
+				actual := s.Floats[i]
 
-        if expected.T != actual.T {
-          return fmt.Errorf("expected float value at index %v for %s to have timestamp %v, but it had timestamp %v (result has %s)", i, ev.metrics[hash], expected.T, actual.T, formatSeriesResult(s))
-        }
+				if expected.T != actual.T {
+					return fmt.Errorf("expected float value at index %v for %s to have timestamp %v, but it had timestamp %v (result has %s)", i, ev.metrics[hash], expected.T, actual.T, formatSeriesResult(s))
+				}
 
-        if !almost.Equal(actual.F, expected.F, defaultEpsilon) {
-          return fmt.Errorf("expected float value at index %v (t=%v) for %s to be %v, but got %v (result has %s)", i, actual.T, ev.metrics[hash], expected.F, actual.F, formatSeriesResult(s))
-        }
-      }
+				if !almost.Equal(actual.F, expected.F, defaultEpsilon) {
+					return fmt.Errorf("expected float value at index %v (t=%v) for %s to be %v, but got %v (result has %s)", i, actual.T, ev.metrics[hash], expected.F, actual.F, formatSeriesResult(s))
+				}
+			}
 
-      for i, expected := range expectedHistograms {
-        actual := s.Histograms[i]
+			for i, expected := range expectedHistograms {
+				actual := s.Histograms[i]
 
-        if expected.T != actual.T {
-          return fmt.Errorf("expected histogram value at index %v for %s to have timestamp %v, but it had timestamp %v (result has %s)", i, ev.metrics[hash], expected.T, actual.T, formatSeriesResult(s))
-        }
+				if expected.T != actual.T {
+					return fmt.Errorf("expected histogram value at index %v for %s to have timestamp %v, but it had timestamp %v (result has %s)", i, ev.metrics[hash], expected.T, actual.T, formatSeriesResult(s))
+				}
 
-        if !compareNativeHistogram(expected.H.Compact(0), actual.H.Compact(0)) {
-          return fmt.Errorf("expected histogram value at index %v (t=%v) for %s to be %v, but got %v (result has %s)", i, actual.T, ev.metrics[hash], expected.H.TestExpression(), actual.H.TestExpression(), formatSeriesResult(s))
-        }
-      }
-    }
+				if !compareNativeHistogram(expected.H.Compact(0), actual.H.Compact(0)) {
+					return fmt.Errorf("expected histogram value at index %v (t=%v) for %s to be %v, but got %v (result has %s)", i, actual.T, ev.metrics[hash], expected.H.TestExpression(), actual.H.TestExpression(), formatSeriesResult(s))
+				}
+			}
+		}
 
-    for hash := range ev.expected {
-      if !seen[hash] {
-        return fmt.Errorf("expected metric %s not found", ev.metrics[hash])
-      }
-    }
+		for hash := range ev.expected {
+			if !seen[hash] {
+				return fmt.Errorf("expected metric %s not found", ev.metrics[hash])
+			}
+		}
 
-  case promql.Vector:
-    if ev.expectScalar {
-      return fmt.Errorf("expected scalar result, but got vector %s", val.String())
-    }
+	case promql.Vector:
+		if ev.expectScalar {
+			return fmt.Errorf("expected scalar result, but got vector %s", val.String())
+		}
 
-    seen := map[uint64]bool{}
-    for pos, v := range val {
-      fp := v.Metric.Hash()
-      if _, ok := ev.metrics[fp]; !ok {
-        if v.H != nil {
-          return fmt.Errorf("unexpected metric %s in result, has value %v", v.Metric, v.H)
-        }
+		seen := map[uint64]bool{}
+		for pos, v := range val {
+			fp := v.Metric.Hash()
+			if _, ok := ev.metrics[fp]; !ok {
+				if v.H != nil {
+					return fmt.Errorf("unexpected metric %s in result, has value %v", v.Metric, v.H)
+				}
 
-        return fmt.Errorf("unexpected metric %s in result, has value %v", v.Metric, v.F)
-      }
-      exp := ev.expected[fp]
-      if ev.ordered && exp.pos != pos+1 {
-        return fmt.Errorf("expected metric %s with %v at position %d but was at %d", v.Metric, exp.vals, exp.pos, pos+1)
-      }
-      exp0 := exp.vals[0]
-      expH := exp0.Histogram
-      if expH == nil && v.H != nil {
-        return fmt.Errorf("expected float value %v for %s but got histogram %s", exp0, v.Metric, HistogramTestExpression(v.H))
-      }
-      if expH != nil && v.H == nil {
-        return fmt.Errorf("expected histogram %s for %s but got float value %v", HistogramTestExpression(expH), v.Metric, v.F)
-      }
-      if expH != nil && !compareNativeHistogram(expH.Compact(0), v.H.Compact(0)) {
-        return fmt.Errorf("expected %v for %s but got %s", HistogramTestExpression(expH), v.Metric, HistogramTestExpression(v.H))
-      }
-      if !almost.Equal(exp0.Value, v.F, defaultEpsilon) {
-        return fmt.Errorf("expected %v for %s but got %v", exp0.Value, v.Metric, v.F)
-      }
+				return fmt.Errorf("unexpected metric %s in result, has value %v", v.Metric, v.F)
+			}
+			exp := ev.expected[fp]
+			if ev.ordered && exp.pos != pos+1 {
+				return fmt.Errorf("expected metric %s with %v at position %d but was at %d", v.Metric, exp.vals, exp.pos, pos+1)
+			}
+			exp0 := exp.vals[0]
+			expH := exp0.Histogram
+			if expH == nil && v.H != nil {
+				return fmt.Errorf("expected float value %v for %s but got histogram %s", exp0, v.Metric, HistogramTestExpression(v.H))
+			}
+			if expH != nil && v.H == nil {
+				return fmt.Errorf("expected histogram %s for %s but got float value %v", HistogramTestExpression(expH), v.Metric, v.F)
+			}
+			if expH != nil && !compareNativeHistogram(expH.Compact(0), v.H.Compact(0)) {
+				return fmt.Errorf("expected %v for %s but got %s", HistogramTestExpression(expH), v.Metric, HistogramTestExpression(v.H))
+			}
+			if !almost.Equal(exp0.Value, v.F, defaultEpsilon) {
+				return fmt.Errorf("expected %v for %s but got %v", exp0.Value, v.Metric, v.F)
+			}
 
-      seen[fp] = true
-    }
-    for fp, expVals := range ev.expected {
-      if !seen[fp] {
-        return fmt.Errorf("expected metric %s with %v not found", ev.metrics[fp], expVals)
-      }
-    }
+			seen[fp] = true
+		}
+		for fp, expVals := range ev.expected {
+			if !seen[fp] {
+				return fmt.Errorf("expected metric %s with %v not found", ev.metrics[fp], expVals)
+			}
+		}
 
-  case promql.Scalar:
-    if !ev.expectScalar {
-      return fmt.Errorf("expected vector or matrix result, but got %s", val.String())
-    }
-    exp0 := ev.expected[0].vals[0]
-    if exp0.Histogram != nil {
-      return fmt.Errorf("expected histogram %v but got %s", exp0.Histogram.TestExpression(), val.String())
-    }
-    if !almost.Equal(exp0.Value, val.V, defaultEpsilon) {
-      return fmt.Errorf("expected scalar %v but got %v", exp0.Value, val.V)
-    }
+	case promql.Scalar:
+		if !ev.expectScalar {
+			return fmt.Errorf("expected vector or matrix result, but got %s", val.String())
+		}
+		exp0 := ev.expected[0].vals[0]
+		if exp0.Histogram != nil {
+			return fmt.Errorf("expected histogram %v but got %s", exp0.Histogram.TestExpression(), val.String())
+		}
+		if !almost.Equal(exp0.Value, val.V, defaultEpsilon) {
+			return fmt.Errorf("expected scalar %v but got %v", exp0.Value, val.V)
+		}
 
-  default:
-    panic(fmt.Errorf("promql.Test.compareResult: unexpected result type %T", result))
-  }
-  return nil
+	default:
+		panic(fmt.Errorf("promql.Test.compareResult: unexpected result type %T", result))
+	}
+	return nil
 }
 
 // compareNativeHistogram is helper function to compare two native histograms
