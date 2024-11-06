@@ -1553,7 +1553,15 @@ type appendErrors struct {
 }
 
 func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
-	p, err := textparse.New(b, contentType, sl.fallbackScrapeProtocol, sl.alwaysScrapeClassicHist, sl.enableCTZeroIngestion, sl.symbolTable)
+	var p textparse.Parser
+
+	if len(b) == 0 {
+		// An empty scrape (such as from a timeout) should not cause errors to be logged or the append to fail.
+		// We treat it as if we received "text/plain" and allow the appender to continue to trigger stale markers.
+		p, err = textparse.New(b, "text/plain", "", sl.alwaysScrapeClassicHist, sl.enableCTZeroIngestion, sl.symbolTable)
+	} else {
+		p, err = textparse.New(b, contentType, sl.fallbackScrapeProtocol, sl.alwaysScrapeClassicHist, sl.enableCTZeroIngestion, sl.symbolTable)
+	}
 	if p == nil {
 		sl.l.Error(
 			"Failed to determine correct type of scrape target.",
@@ -1574,7 +1582,6 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 			"err", err,
 		)
 	}
-
 	var (
 		defTime         = timestamp.FromTime(ts)
 		appErrs         = appendErrors{}
