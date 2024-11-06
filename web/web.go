@@ -593,7 +593,6 @@ func (h *Handler) SetReady(v ReadyStatus) {
 
 	h.ready.Store(uint32(v))
 	h.metrics.readyStatus.Set(0)
-	h.ready.Store(1)
 }
 
 func (h *Handler) GetRouter() *route.Router {
