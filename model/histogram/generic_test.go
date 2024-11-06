@@ -16,6 +16,7 @@ package histogram
 import (
 	"math"
 	"slices"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -104,11 +105,17 @@ func TestGetBoundExponential(t *testing.T) {
 		},
 	}
 
-	for _, s := range scenarios {
-		got := getBoundExponential(s.idx, s.schema)
-		if s.want != got {
-			require.Equal(t, s.want, got, "idx %d, schema %d", s.idx, s.schema)
-		}
+	for i, s := range scenarios {
+		// capture the range variable to avoid issues with concurrency
+		s := s
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			// mark this test case as being run in parallel
+			t.Parallel()
+			got := getBoundExponential(s.idx, s.schema)
+			if s.want != got {
+				require.Equal(t, s.want, got, "idx %d, schema %d", s.idx, s.schema)
+			}
+		})
 	}
 }
 
@@ -140,23 +147,29 @@ func TestReduceResolutionHistogram(t *testing.T) {
 		},
 	}
 
-	for _, tc := range cases {
-		spansCopy, bucketsCopy := slices.Clone(tc.spans), slices.Clone(tc.buckets)
-		spans, buckets := reduceResolution(tc.spans, tc.buckets, tc.schema, tc.targetSchema, true, false)
-		require.Equal(t, tc.expectedSpans, spans)
-		require.Equal(t, tc.expectedBuckets, buckets)
-		// Verify inputs were not mutated:
-		require.Equal(t, spansCopy, tc.spans)
-		require.Equal(t, bucketsCopy, tc.buckets)
+	for i, tc := range cases {
+		// capture the range variable to avoid issues with concurrency
+		tc := tc
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			// mark this test case as being run in parallel
+			t.Parallel()
+			spansCopy, bucketsCopy := slices.Clone(tc.spans), slices.Clone(tc.buckets)
+			spans, buckets := reduceResolution(tc.spans, tc.buckets, tc.schema, tc.targetSchema, true, false)
+			require.Equal(t, tc.expectedSpans, spans)
+			require.Equal(t, tc.expectedBuckets, buckets)
+			// Verify inputs were not mutated:
+			require.Equal(t, spansCopy, tc.spans)
+			require.Equal(t, bucketsCopy, tc.buckets)
 
-		// Output slices reuse input slices:
-		const inplace = true
-		spans, buckets = reduceResolution(tc.spans, tc.buckets, tc.schema, tc.targetSchema, true, inplace)
-		require.Equal(t, tc.expectedSpans, spans)
-		require.Equal(t, tc.expectedBuckets, buckets)
-		// Verify inputs were mutated which is now expected:
-		require.Equal(t, spans, tc.spans[:len(spans)])
-		require.Equal(t, buckets, tc.buckets[:len(buckets)])
+			// Output slices reuse input slices:
+			const inplace = true
+			spans, buckets = reduceResolution(tc.spans, tc.buckets, tc.schema, tc.targetSchema, true, inplace)
+			require.Equal(t, tc.expectedSpans, spans)
+			require.Equal(t, tc.expectedBuckets, buckets)
+			// Verify inputs were mutated which is now expected:
+			require.Equal(t, spans, tc.spans[:len(spans)])
+			require.Equal(t, buckets, tc.buckets[:len(buckets)])
+		})
 	}
 }
 
@@ -188,22 +201,28 @@ func TestReduceResolutionFloatHistogram(t *testing.T) {
 		},
 	}
 
-	for _, tc := range cases {
-		spansCopy, bucketsCopy := slices.Clone(tc.spans), slices.Clone(tc.buckets)
-		spans, buckets := reduceResolution(tc.spans, tc.buckets, tc.schema, tc.targetSchema, false, false)
-		require.Equal(t, tc.expectedSpans, spans)
-		require.Equal(t, tc.expectedBuckets, buckets)
-		// Verify inputs were not mutated:
-		require.Equal(t, spansCopy, tc.spans)
-		require.Equal(t, bucketsCopy, tc.buckets)
+	for i, tc := range cases {
+		// capture the range variable to avoid issues with concurrency
+		tc := tc
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			// mark this test case as being run in parallel
+			t.Parallel()
+			spansCopy, bucketsCopy := slices.Clone(tc.spans), slices.Clone(tc.buckets)
+			spans, buckets := reduceResolution(tc.spans, tc.buckets, tc.schema, tc.targetSchema, false, false)
+			require.Equal(t, tc.expectedSpans, spans)
+			require.Equal(t, tc.expectedBuckets, buckets)
+			// Verify inputs were not mutated:
+			require.Equal(t, spansCopy, tc.spans)
+			require.Equal(t, bucketsCopy, tc.buckets)
 
-		// Output slices reuse input slices:
-		const inplace = true
-		spans, buckets = reduceResolution(tc.spans, tc.buckets, tc.schema, tc.targetSchema, false, inplace)
-		require.Equal(t, tc.expectedSpans, spans)
-		require.Equal(t, tc.expectedBuckets, buckets)
-		// Verify inputs were mutated which is now expected:
-		require.Equal(t, spans, tc.spans[:len(spans)])
-		require.Equal(t, buckets, tc.buckets[:len(buckets)])
+			// Output slices reuse input slices:
+			const inplace = true
+			spans, buckets = reduceResolution(tc.spans, tc.buckets, tc.schema, tc.targetSchema, false, inplace)
+			require.Equal(t, tc.expectedSpans, spans)
+			require.Equal(t, tc.expectedBuckets, buckets)
+			// Verify inputs were mutated which is now expected:
+			require.Equal(t, spans, tc.spans[:len(spans)])
+			require.Equal(t, buckets, tc.buckets[:len(buckets)])
+		})
 	}
 }

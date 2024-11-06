@@ -594,29 +594,35 @@ func TestRelabel(t *testing.T) {
 		},
 	}
 
-	for _, test := range tests {
-		// Setting default fields, mimicking the behaviour in Prometheus.
-		for _, cfg := range test.relabel {
-			if cfg.Action == "" {
-				cfg.Action = DefaultRelabelConfig.Action
+	for i, test := range tests {
+		// capture the range variable to avoid issues with concurrency
+		test := test
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			// mark this test case as being run in parallel
+			t.Parallel()
+			// Setting default fields, mimicking the behaviour in Prometheus.
+			for _, cfg := range test.relabel {
+				if cfg.Action == "" {
+					cfg.Action = DefaultRelabelConfig.Action
+				}
+				if cfg.Separator == "" {
+					cfg.Separator = DefaultRelabelConfig.Separator
+				}
+				if cfg.Regex.Regexp == nil || cfg.Regex.String() == "" {
+					cfg.Regex = DefaultRelabelConfig.Regex
+				}
+				if cfg.Replacement == "" {
+					cfg.Replacement = DefaultRelabelConfig.Replacement
+				}
+				require.NoError(t, cfg.Validate())
 			}
-			if cfg.Separator == "" {
-				cfg.Separator = DefaultRelabelConfig.Separator
-			}
-			if cfg.Regex.Regexp == nil || cfg.Regex.String() == "" {
-				cfg.Regex = DefaultRelabelConfig.Regex
-			}
-			if cfg.Replacement == "" {
-				cfg.Replacement = DefaultRelabelConfig.Replacement
-			}
-			require.NoError(t, cfg.Validate())
-		}
 
-		res, keep := Process(test.input, test.relabel...)
-		require.Equal(t, !test.drop, keep)
-		if keep {
-			testutil.RequireEqual(t, test.output, res)
-		}
+			res, keep := Process(test.input, test.relabel...)
+			require.Equal(t, !test.drop, keep)
+			if keep {
+				testutil.RequireEqual(t, test.output, res)
+			}
+		})
 	}
 }
 
@@ -680,7 +686,11 @@ func TestRelabelValidate(t *testing.T) {
 		},
 	}
 	for i, test := range tests {
+		// capture the range variable to avoid issues with concurrency
+		test := test
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			// mark this test case as being run in parallel
+			t.Parallel()
 			err := test.config.Validate()
 			if test.expected == "" {
 				require.NoError(t, err)
@@ -713,8 +723,14 @@ func TestTargetLabelValidity(t *testing.T) {
 		{"foo${bar}foo", true},
 	}
 	for _, test := range tests {
-		require.Equal(t, test.valid, relabelTarget.Match([]byte(test.str)),
-			"Expected %q to be %v", test.str, test.valid)
+		// capture the range variable to avoid issues with concurrency
+		test := test
+		t.Run(test.str, func(t *testing.T) {
+			// mark this test case as being run in parallel
+			t.Parallel()
+			require.Equal(t, test.valid, relabelTarget.Match([]byte(test.str)),
+				"Expected %q to be %v", test.str, test.valid)
+		})
 	}
 }
 
@@ -939,7 +955,11 @@ action: replace
 		},
 	}
 	for _, test := range tests {
+		// capture the range variable to avoid issues with concurrency
+		test := test
 		t.Run(test.name, func(t *testing.T) {
+			// mark this test case as being run in parallel
+			t.Parallel()
 			unmarshalled := Config{}
 			err := yaml.Unmarshal([]byte(test.inputYaml), &unmarshalled)
 			require.NoError(t, err)
@@ -953,6 +973,8 @@ action: replace
 }
 
 func TestRegexp_ShouldMarshalAndUnmarshalZeroValue(t *testing.T) {
+	// mark this test case as being run in parallel
+	t.Parallel()
 	var zero Regexp
 
 	marshalled, err := yaml.Marshal(&zero)
