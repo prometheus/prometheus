@@ -167,13 +167,19 @@ func TestOptimizeConcatRegex(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		parsed, err := syntax.Parse(c.regex, syntax.Perl|syntax.DotNL)
-		require.NoError(t, err)
+		// capture the range variable to avoid issues with concurrency
+		c := c
+		t.Run(c.regex, func(t *testing.T) {
+			// mark this test case as being run in parallel
+			t.Parallel()
+			parsed, err := syntax.Parse(c.regex, syntax.Perl|syntax.DotNL)
+			require.NoError(t, err)
 
-		prefix, suffix, contains := optimizeConcatRegex(parsed)
-		require.Equal(t, c.prefix, prefix)
-		require.Equal(t, c.suffix, suffix)
-		require.Equal(t, c.contains, contains)
+			prefix, suffix, contains := optimizeConcatRegex(parsed)
+			require.Equal(t, c.prefix, prefix)
+			require.Equal(t, c.suffix, suffix)
+			require.Equal(t, c.contains, contains)
+		})
 	}
 }
 
@@ -266,6 +272,8 @@ func TestFindSetMatches(t *testing.T) {
 }
 
 func TestFastRegexMatcher_SetMatches_ShouldReturnACopy(t *testing.T) {
+	// mark this test case as being run in parallel
+	t.Parallel()
 	m, err := NewFastRegexMatcher("a|b")
 	require.NoError(t, err)
 	require.Equal(t, []string{"a", "b"}, m.SetMatches())
@@ -474,7 +482,11 @@ func TestStringMatcherFromRegexp_LiteralPrefix(t *testing.T) {
 			expectedNotMatches:            []string{"XYZ-aaa", "xyz-aa", "yz-aaa", "aaa"},
 		},
 	} {
+		// capture the range variable to avoid issues with concurrency
+		c := c
 		t.Run(c.pattern, func(t *testing.T) {
+			// mark this test case as being run in parallel
+			t.Parallel()
 			parsed, err := syntax.Parse(c.pattern, syntax.Perl|syntax.DotNL)
 			require.NoError(t, err)
 
@@ -552,7 +564,11 @@ func TestStringMatcherFromRegexp_LiteralSuffix(t *testing.T) {
 			expectedNotMatches:            []string{"AAA", "XXXAAA", "BBBccc", "BBBCCC", "aaaBBB"},
 		},
 	} {
+		// capture the range variable to avoid issues with concurrency
+		c := c
 		t.Run(c.pattern, func(t *testing.T) {
+			// mark this test case as being run in parallel
+			t.Parallel()
 			parsed, err := syntax.Parse(c.pattern, syntax.Perl|syntax.DotNL)
 			require.NoError(t, err)
 
@@ -637,7 +653,11 @@ func TestStringMatcherFromRegexp_Quest(t *testing.T) {
 			expectedNotMatches:        []string{"aa", "Xbbb", "\nbbb"},
 		},
 	} {
+		// capture the range variable to avoid issues with concurrency
+		c := c
 		t.Run(c.pattern, func(t *testing.T) {
+			// mark this test case as being run in parallel
+			t.Parallel()
 			parsed, err := syntax.Parse(c.pattern, syntax.Perl|syntax.DotNL)
 			require.NoError(t, err)
 
@@ -777,7 +797,11 @@ func TestOptimizeEqualOrPrefixStringMatchers(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
+		// capture the range variable to avoid issues with concurrency
+		testData := testData
 		t.Run(testName, func(t *testing.T) {
+			// mark this test case as being run in parallel
+			t.Parallel()
 			actualMatcher := optimizeEqualOrPrefixStringMatchers(testData.input, 0)
 
 			if testData.expectedValues == nil {
@@ -832,7 +856,11 @@ func TestNewEqualMultiStringMatcher(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
+		// capture the range variable to avoid issues with concurrency
+		testData := testData
 		t.Run(testName, func(t *testing.T) {
+			// mark this test case as being run in parallel
+			t.Parallel()
 			// To keep this test simple, we always assume a min prefix length of 1.
 			minPrefixLength := 0
 			if len(testData.caseSensitivePrefixes) > 0 {
@@ -864,6 +892,8 @@ func TestNewEqualMultiStringMatcher(t *testing.T) {
 
 func TestEqualMultiStringMapMatcher_addPrefix(t *testing.T) {
 	t.Run("should panic if the matcher is case sensitive but the prefix is not case sensitive", func(t *testing.T) {
+		// mark this test case as being run in parallel
+		t.Parallel()
 		matcher := newEqualMultiStringMatcher(true, 0, 1, 1)
 
 		require.Panics(t, func() {
@@ -874,6 +904,8 @@ func TestEqualMultiStringMapMatcher_addPrefix(t *testing.T) {
 	})
 
 	t.Run("should panic if the matcher is not case sensitive but the prefix is case sensitive", func(t *testing.T) {
+		// mark this test case as being run in parallel
+		t.Parallel()
 		matcher := newEqualMultiStringMatcher(false, 0, 1, 1)
 
 		require.Panics(t, func() {
@@ -944,7 +976,11 @@ func TestEqualMultiStringMatcher_Matches(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
+		// capture the range variable to avoid issues with concurrency
+		testData := testData
 		t.Run(testName, func(t *testing.T) {
+			// mark this test case as being run in parallel
+			t.Parallel()
 			// To keep this test simple, we always assume a min prefix length of 1.
 			minPrefixLength := 0
 			if len(testData.prefixes) > 0 {
@@ -996,12 +1032,16 @@ func TestFindEqualOrPrefixStringMatchers(t *testing.T) {
 	}
 
 	t.Run("empty matcher", func(t *testing.T) {
+		// mark this test case as being run in parallel
+		t.Parallel()
 		actualMatches, actualOk := findEqualOrPrefixStringMatchersAndCollectMatches(emptyStringMatcher{})
 		require.False(t, actualOk)
 		require.Empty(t, actualMatches)
 	})
 
 	t.Run("concat of literal matchers (case sensitive)", func(t *testing.T) {
+		// mark this test case as being run in parallel
+		t.Parallel()
 		actualMatches, actualOk := findEqualOrPrefixStringMatchersAndCollectMatches(
 			orStringMatcher{
 				&equalStringMatcher{s: "test-1", caseSensitive: true},
@@ -1014,6 +1054,8 @@ func TestFindEqualOrPrefixStringMatchers(t *testing.T) {
 	})
 
 	t.Run("concat of literal matchers (case insensitive)", func(t *testing.T) {
+		// mark this test case as being run in parallel
+		t.Parallel()
 		actualMatches, actualOk := findEqualOrPrefixStringMatchersAndCollectMatches(
 			orStringMatcher{
 				&equalStringMatcher{s: "test-1", caseSensitive: false},
@@ -1026,6 +1068,8 @@ func TestFindEqualOrPrefixStringMatchers(t *testing.T) {
 	})
 
 	t.Run("concat of literal matchers (mixed case)", func(t *testing.T) {
+		// mark this test case as being run in parallel
+		t.Parallel()
 		actualMatches, actualOk := findEqualOrPrefixStringMatchersAndCollectMatches(
 			orStringMatcher{
 				&equalStringMatcher{s: "test-1", caseSensitive: false},
@@ -1038,6 +1082,8 @@ func TestFindEqualOrPrefixStringMatchers(t *testing.T) {
 	})
 
 	t.Run("concat of literal prefix matchers (case sensitive)", func(t *testing.T) {
+		// mark this test case as being run in parallel
+		t.Parallel()
 		actualMatches, actualOk := findEqualOrPrefixStringMatchersAndCollectMatches(
 			orStringMatcher{
 				&literalPrefixSensitiveStringMatcher{prefix: "test-1"},
@@ -1050,6 +1096,8 @@ func TestFindEqualOrPrefixStringMatchers(t *testing.T) {
 	})
 
 	t.Run("concat of literal prefix matchers (case insensitive)", func(t *testing.T) {
+		// mark this test case as being run in parallel
+		t.Parallel()
 		actualMatches, actualOk := findEqualOrPrefixStringMatchersAndCollectMatches(
 			orStringMatcher{
 				&literalPrefixInsensitiveStringMatcher{prefix: "test-1"},
@@ -1062,6 +1110,8 @@ func TestFindEqualOrPrefixStringMatchers(t *testing.T) {
 	})
 
 	t.Run("concat of literal prefix matchers (mixed case)", func(t *testing.T) {
+		// mark this test case as being run in parallel
+		t.Parallel()
 		actualMatches, actualOk := findEqualOrPrefixStringMatchersAndCollectMatches(
 			orStringMatcher{
 				&literalPrefixInsensitiveStringMatcher{prefix: "test-1"},
@@ -1074,6 +1124,8 @@ func TestFindEqualOrPrefixStringMatchers(t *testing.T) {
 	})
 
 	t.Run("concat of literal string and prefix matchers (case sensitive)", func(t *testing.T) {
+		// mark this test case as being run in parallel
+		t.Parallel()
 		actualMatches, actualOk := findEqualOrPrefixStringMatchersAndCollectMatches(
 			orStringMatcher{
 				&equalStringMatcher{s: "test-1", caseSensitive: true},
@@ -1149,6 +1201,8 @@ func BenchmarkOptimizeEqualOrPrefixStringMatchers(b *testing.B) {
 
 func TestZeroOrOneCharacterStringMatcher(t *testing.T) {
 	t.Run("match newline", func(t *testing.T) {
+		// mark this test case as being run in parallel
+		t.Parallel()
 		matcher := &zeroOrOneCharacterStringMatcher{matchNL: true}
 		require.True(t, matcher.Matches(""))
 		require.True(t, matcher.Matches("x"))
@@ -1158,6 +1212,8 @@ func TestZeroOrOneCharacterStringMatcher(t *testing.T) {
 	})
 
 	t.Run("do not match newline", func(t *testing.T) {
+		// mark this test case as being run in parallel
+		t.Parallel()
 		matcher := &zeroOrOneCharacterStringMatcher{matchNL: false}
 		require.True(t, matcher.Matches(""))
 		require.True(t, matcher.Matches("x"))
@@ -1167,6 +1223,8 @@ func TestZeroOrOneCharacterStringMatcher(t *testing.T) {
 	})
 
 	t.Run("unicode", func(t *testing.T) {
+		// mark this test case as being run in parallel
+		t.Parallel()
 		// Just for documentation purposes, emoji1 is 1 rune, emoji2 is 2 runes.
 		// Having this in mind, will make future readers fixing tests easier.
 		emoji1 := "😀"
@@ -1184,6 +1242,8 @@ func TestZeroOrOneCharacterStringMatcher(t *testing.T) {
 	})
 
 	t.Run("invalid unicode", func(t *testing.T) {
+		// mark this test case as being run in parallel
+		t.Parallel()
 		// Just for reference, we also compare to what `^.?$` regular expression matches.
 		re := regexp.MustCompile("^.?$")
 		matcher := &zeroOrOneCharacterStringMatcher{matchNL: true}
@@ -1236,6 +1296,8 @@ func BenchmarkZeroOrOneCharacterStringMatcher(b *testing.B) {
 }
 
 func TestLiteralPrefixSensitiveStringMatcher(t *testing.T) {
+	// mark this test case as being run in parallel
+	t.Parallel()
 	m := &literalPrefixSensitiveStringMatcher{prefix: "mar", right: &emptyStringMatcher{}}
 	require.True(t, m.Matches("mar"))
 	require.False(t, m.Matches("marco"))
@@ -1251,6 +1313,8 @@ func TestLiteralPrefixSensitiveStringMatcher(t *testing.T) {
 }
 
 func TestLiteralPrefixInsensitiveStringMatcher(t *testing.T) {
+	// mark this test case as being run in parallel
+	t.Parallel()
 	m := &literalPrefixInsensitiveStringMatcher{prefix: "mar", right: &emptyStringMatcher{}}
 	require.True(t, m.Matches("mar"))
 	require.False(t, m.Matches("marco"))
@@ -1259,6 +1323,8 @@ func TestLiteralPrefixInsensitiveStringMatcher(t *testing.T) {
 }
 
 func TestLiteralSuffixStringMatcher(t *testing.T) {
+	// mark this test case as being run in parallel
+	t.Parallel()
 	m := &literalSuffixStringMatcher{left: &emptyStringMatcher{}, suffix: "co", suffixCaseSensitive: true}
 	require.True(t, m.Matches("co"))
 	require.False(t, m.Matches("marco"))
@@ -1287,6 +1353,8 @@ func TestLiteralSuffixStringMatcher(t *testing.T) {
 }
 
 func TestHasPrefixCaseInsensitive(t *testing.T) {
+	// mark this test case as being run in parallel
+	t.Parallel()
 	require.True(t, hasPrefixCaseInsensitive("marco", "mar"))
 	require.True(t, hasPrefixCaseInsensitive("mArco", "mar"))
 	require.True(t, hasPrefixCaseInsensitive("marco", "MaR"))
@@ -1298,6 +1366,8 @@ func TestHasPrefixCaseInsensitive(t *testing.T) {
 }
 
 func TestHasSuffixCaseInsensitive(t *testing.T) {
+	// mark this test case as being run in parallel
+	t.Parallel()
 	require.True(t, hasSuffixCaseInsensitive("marco", "rco"))
 	require.True(t, hasSuffixCaseInsensitive("marco", "RcO"))
 	require.True(t, hasSuffixCaseInsensitive("marco", "marco"))
@@ -1306,6 +1376,8 @@ func TestHasSuffixCaseInsensitive(t *testing.T) {
 }
 
 func TestContainsInOrder(t *testing.T) {
+	// mark this test case as being run in parallel
+	t.Parallel()
 	require.True(t, containsInOrder("abcdefghilmno", []string{"ab", "cd", "no"}))
 	require.True(t, containsInOrder("abcdefghilmno", []string{"def", "hil"}))
 
@@ -1391,6 +1463,10 @@ func TestToNormalisedLower(t *testing.T) {
 		"ſſAſſa": "ssassa",
 	}
 	for input, expectedOutput := range testCases {
-		require.Equal(t, expectedOutput, toNormalisedLower(input, nil))
+		t.Run(input, func(t *testing.T) {
+			// mark this test case as being run in parallel
+			t.Parallel()
+			require.Equal(t, expectedOutput, toNormalisedLower(input, nil))
+		})
 	}
 }
