@@ -6240,6 +6240,242 @@ func testOOONativeHistogramsWithCounterResets(t *testing.T, scenario sampleTypeS
 	}
 }
 
+func TestOOOInterleavedImplicitCounterResets(t *testing.T) {
+	for name, scenario := range sampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testOOOInterleavedImplicitCounterResets(t, name, scenario)
+		})
+	}
+}
+
+func testOOOInterleavedImplicitCounterResets(t *testing.T, name string, scenario sampleTypeScenario) {
+	var appendFunc func(app storage.Appender, ts, v int64) error
+
+	if scenario.sampleType != sampleMetricTypeHistogram {
+		return
+	}
+
+	switch name {
+	case intHistogram:
+		appendFunc = func(app storage.Appender, ts, v int64) error {
+			h := &histogram.Histogram{
+				Count:           uint64(v),
+				Sum:             float64(v),
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{v},
+			}
+			_, err := app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, h, nil)
+			return err
+		}
+	case floatHistogram:
+		appendFunc = func(app storage.Appender, ts, v int64) error {
+			fh := &histogram.FloatHistogram{
+				Count:           float64(v),
+				Sum:             float64(v),
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []float64{float64(v)},
+			}
+			_, err := app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, nil, fh)
+			return err
+		}
+	case gaugeIntHistogram, gaugeFloatHistogram:
+		return
+	}
+
+	// Not a sample, we're encoding an integer counter that we convert to a
+	// histogram with a single bucket.
+	type tsValue struct {
+		ts int64
+		v  int64
+	}
+
+	type expectedTsValue struct {
+		ts   int64
+		v    int64
+		hint histogram.CounterResetHint
+	}
+
+	type expectedChunk struct {
+		hint histogram.CounterResetHint
+		size int
+	}
+
+	cases := map[string]struct {
+		samples []tsValue
+		oooCap  int64
+		// The expected samples with counter reset.
+		expectedSamples []expectedTsValue
+		// The expected counter reset hint for each chunk.
+		expectedChunks []expectedChunk
+	}{
+		"counter reset in-order cleared by in-memory OOO chunk": {
+			samples: []tsValue{
+				{1, 40}, // New in In-order. I1.
+				{4, 30}, // In-order counter reset. I2.
+				{2, 40}, // New in OOO. O1.
+				{3, 10}, // OOO counter reset. O2.
+			},
+			oooCap: 30,
+			// Expect all to be set to UnknownCounterReset because we switch between
+			// in-order and out-of-order samples.
+			expectedSamples: []expectedTsValue{
+				{1, 40, histogram.UnknownCounterReset}, // I1.
+				{2, 40, histogram.UnknownCounterReset}, // O1.
+				{3, 10, histogram.UnknownCounterReset}, // O2.
+				{4, 30, histogram.UnknownCounterReset}, // I2. Counter reset cleared by iterator change.
+			},
+			expectedChunks: []expectedChunk{
+				{histogram.UnknownCounterReset, 1}, // I1.
+				{histogram.UnknownCounterReset, 1}, // O1.
+				{histogram.UnknownCounterReset, 1}, // O2.
+				{histogram.UnknownCounterReset, 1}, // I2.
+			},
+		},
+		"counter reset in OOO mmapped chunk cleared by in-memory ooo chunk": {
+			samples: []tsValue{
+				{8, 30}, // In-order, new chunk. I1.
+				{1, 10}, // OOO, new chunk (will be mmapped). MO1.
+				{2, 20}, // OOO, no reset (will be mmapped). MO1.
+				{3, 30}, // OOO, no reset (will be mmapped). MO1.
+				{5, 20}, // OOO, reset (will be mmapped). MO2.
+				{6, 10}, // OOO, reset (will be mmapped). MO3.
+				{7, 20}, // OOO, no reset (will be mmapped). MO3.
+				{4, 10}, // OOO, inserted into memory, triggers mmap. O1.
+			},
+			oooCap: 6,
+			expectedSamples: []expectedTsValue{
+				{1, 10, histogram.UnknownCounterReset}, // MO1.
+				{2, 20, histogram.NotCounterReset},     // MO1.
+				{3, 30, histogram.NotCounterReset},     // MO1.
+				{4, 10, histogram.UnknownCounterReset}, // O1. Counter reset cleared by iterator change.
+				{5, 20, histogram.UnknownCounterReset}, // MO2.
+				{6, 10, histogram.UnknownCounterReset}, // MO3.
+				{7, 20, histogram.NotCounterReset},     // MO3.
+				{8, 30, histogram.UnknownCounterReset}, // I1.
+			},
+			expectedChunks: []expectedChunk{
+				{histogram.UnknownCounterReset, 3}, // MO1.
+				{histogram.UnknownCounterReset, 1}, // O1.
+				{histogram.UnknownCounterReset, 1}, // MO2.
+				{histogram.UnknownCounterReset, 2}, // MO3.
+				{histogram.UnknownCounterReset, 1}, // I1.
+			},
+		},
+		"counter reset in OOO mmapped chunk cleared by another OOO mmapped chunk": {
+			samples: []tsValue{
+				{8, 100}, // In-order, new chunk. I1.
+				{1, 50},  // OOO, new chunk (will be mmapped). MO1.
+				{5, 40},  // OOO, reset (will be mmapped). MO2.
+				{6, 50},  // OOO, no reset (will be mmapped). MO2.
+				{2, 10},  // OOO, new chunk no reset (will be mmapped). MO3.
+				{3, 20},  // OOO, no reset (will be mmapped). MO3.
+				{4, 30},  // OOO, no reset (will be mmapped). MO3.
+				{7, 60},  // OOO, no reset in memory. O1.
+			},
+			oooCap: 3,
+			expectedSamples: []expectedTsValue{
+				{1, 50, histogram.UnknownCounterReset},  // MO1.
+				{2, 10, histogram.UnknownCounterReset},  // MO3.
+				{3, 20, histogram.NotCounterReset},      // MO3.
+				{4, 30, histogram.NotCounterReset},      // MO3.
+				{5, 40, histogram.UnknownCounterReset},  // MO2.
+				{6, 50, histogram.NotCounterReset},      // MO2.
+				{7, 60, histogram.UnknownCounterReset},  // O1.
+				{8, 100, histogram.UnknownCounterReset}, // I1.
+			},
+			expectedChunks: []expectedChunk{
+				{histogram.UnknownCounterReset, 1}, // MO1.
+				{histogram.UnknownCounterReset, 3}, // MO3.
+				{histogram.UnknownCounterReset, 2}, // MO2.
+				{histogram.UnknownCounterReset, 1}, // O1.
+				{histogram.UnknownCounterReset, 1}, // I1.
+			},
+		},
+	}
+
+	for tcName, tc := range cases {
+		t.Run(tcName, func(t *testing.T) {
+			opts := DefaultOptions()
+			opts.OutOfOrderCapMax = tc.oooCap
+			opts.OutOfOrderTimeWindow = 24 * time.Hour.Milliseconds()
+
+			db := openTestDB(t, opts, nil)
+			db.DisableCompactions()
+			db.EnableOOONativeHistograms()
+			defer func() {
+				require.NoError(t, db.Close())
+			}()
+
+			app := db.Appender(context.Background())
+			for _, s := range tc.samples {
+				require.NoError(t, appendFunc(app, s.ts, s.v))
+			}
+			require.NoError(t, app.Commit())
+
+			t.Run("querier", func(t *testing.T) {
+				querier, err := db.Querier(0, 10)
+				require.NoError(t, err)
+				defer querier.Close()
+
+				seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar1"))
+				require.Len(t, seriesSet, 1)
+				samples, ok := seriesSet["{foo=\"bar1\"}"]
+				require.True(t, ok)
+				require.Len(t, samples, len(tc.samples))
+				require.Len(t, samples, len(tc.expectedSamples))
+
+				// We expect all unknown counter resets because we clear the counter reset
+				// hint when we switch between in-order and out-of-order samples.
+				for i, s := range samples {
+					switch name {
+					case intHistogram:
+						require.Equal(t, tc.expectedSamples[i].hint, s.H().CounterResetHint, "sample %d", i)
+						require.Equal(t, tc.expectedSamples[i].v, int64(s.H().Count), "sample %d", i)
+					case floatHistogram:
+						require.Equal(t, tc.expectedSamples[i].hint, s.FH().CounterResetHint, "sample %d", i)
+						require.Equal(t, tc.expectedSamples[i].v, int64(s.FH().Count), "sample %d", i)
+					default:
+						t.Fatalf("unexpected sample type %s", name)
+					}
+				}
+			})
+
+			t.Run("chunk-querier", func(t *testing.T) {
+				querier, err := db.ChunkQuerier(0, 10)
+				require.NoError(t, err)
+				defer querier.Close()
+
+				chunkSet := queryAndExpandChunks(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar1"))
+				require.Len(t, chunkSet, 1)
+				chunks, ok := chunkSet["{foo=\"bar1\"}"]
+				require.True(t, ok)
+				require.Len(t, chunks, len(tc.expectedChunks))
+				idx := 0
+				for i, samples := range chunks {
+					require.Len(t, samples, tc.expectedChunks[i].size)
+					for j, s := range samples {
+						expectHint := tc.expectedChunks[i].hint
+						if j > 0 {
+							expectHint = histogram.NotCounterReset
+						}
+						switch name {
+						case intHistogram:
+							require.Equal(t, expectHint, s.H().CounterResetHint, "sample %d", idx)
+							require.Equal(t, tc.expectedSamples[idx].v, int64(s.H().Count), "sample %d", idx)
+						case floatHistogram:
+							require.Equal(t, expectHint, s.FH().CounterResetHint, "sample %d", idx)
+							require.Equal(t, tc.expectedSamples[idx].v, int64(s.FH().Count), "sample %d", idx)
+						default:
+							t.Fatalf("unexpected sample type %s", name)
+						}
+						idx++
+					}
+				}
+			})
+		})
+	}
+}
+
 func TestOOOAppendAndQuery(t *testing.T) {
 	for name, scenario := range sampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
