@@ -109,12 +109,11 @@ func Load(s string, logger *slog.Logger) (*Config, error) {
 
 	switch cfg.OTLPConfig.TranslationStrategy {
 	case UnderscoreEscapingWithSuffixes:
+	case "":
 	case NoUTF8EscapingWithSuffixes:
 		if cfg.GlobalConfig.MetricNameValidationScheme == LegacyValidationConfig {
 			return nil, errors.New("OTLP translation strategy NoUTF8EscapingWithSuffixes is not allowed when UTF8 is disabled")
 		}
-	case "":
-		cfg.OTLPConfig.TranslationStrategy = DefaultOTLPConfig.TranslationStrategy
 	default:
 		return nil, fmt.Errorf("unsupported OTLP translation strategy %q", cfg.OTLPConfig.TranslationStrategy)
 	}
