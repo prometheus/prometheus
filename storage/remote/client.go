@@ -145,7 +145,7 @@ type ClientConfig struct {
 	RetryOnRateLimit     bool
 	WriteProtoMsg        config.RemoteWriteProtoMsg
 	ChunkedReadLimit     uint64
-	RoundRobinDnsEnabled bool
+	RoundRobinDNSEnabled bool
 }
 
 // ReadClient will request the STREAMED_XOR_CHUNKS method of remote read but can
@@ -182,7 +182,7 @@ func NewReadClient(name string, conf *ClientConfig) (ReadClient, error) {
 // NewWriteClient creates a new client for remote write.
 func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 	var httpOpts []config_util.HTTPClientOption
-	if conf.RoundRobinDnsEnabled {
+	if conf.RoundRobinDNSEnabled {
 		httpOpts = []config_util.HTTPClientOption{config_util.WithDialContextFunc(newDialContextWithRoundRobinDNS().dialContext)}
 	}
 	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_write_client", httpOpts...)

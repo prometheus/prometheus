@@ -180,7 +180,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			GoogleIAMConfig:      rwConf.GoogleIAMConfig,
 			Headers:              rwConf.Headers,
 			RetryOnRateLimit:     rwConf.QueueConfig.RetryOnRateLimit,
-			RoundRobinDnsEnabled: rwConf.RoundRobinDNSEnabled,
+			RoundRobinDNSEnabled: rwConf.RoundRobinDNSEnabled,
 		})
 		if err != nil {
 			return err
