@@ -1,5 +1,6 @@
 #include <gmock/gmock.h>
 
+#include "bare_bones/streams.h"
 #include "series_data/data_storage.h"
 #include "series_data/encoder.h"
 #include "series_data/outdated_sample_encoder.h"
@@ -28,7 +29,7 @@ class SerializerDeserializerTrait {
   std::chrono::system_clock clock_;
   OutdatedSampleEncoder<std::chrono::system_clock> outdated_sample_encoder_{clock_};
   Encoder<decltype(outdated_sample_encoder_)> encoder_{storage_, outdated_sample_encoder_};
-  std::ostringstream stream_;
+  BareBones::ShrinkedToFitOStringStream stream_;
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE std::span<const uint8_t> get_buffer() const noexcept {
     return {reinterpret_cast<const uint8_t*>(stream_.view().data()), stream_.view().size()};
@@ -49,7 +50,7 @@ TEST_F(SerializerDeserializerFixture, EmptyChunksList) {
 
   // Act
   serializer_.serialize({}, stream_);
-  Deserializer deserializer(get_buffer());
+  const Deserializer deserializer(get_buffer());
 
   // Assert
   ASSERT_TRUE(deserializer.is_valid());
@@ -69,7 +70,7 @@ TEST_F(SerializerDeserializerFixture, TwoUint32ConstantChunkWithCommonTimestampS
 
   // Act
   serializer_.serialize({QueriedChunk{0}, QueriedChunk{1}}, stream_);
-  Deserializer deserializer(get_buffer());
+  const Deserializer deserializer(get_buffer());
 
   // Assert
   ASSERT_TRUE(deserializer.is_valid());
@@ -110,7 +111,7 @@ TEST_F(SerializerDeserializerFixture, ThreeUint32ConstantChunkWithCommonAndUniqu
 
   // Act
   serializer_.serialize({QueriedChunk{0}, QueriedChunk{1}, QueriedChunk{2}}, stream_);
-  Deserializer deserializer(get_buffer());
+  const Deserializer deserializer(get_buffer());
 
   // Assert
   ASSERT_TRUE(deserializer.is_valid());
