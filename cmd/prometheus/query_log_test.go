@@ -60,7 +60,7 @@ func (p *queryLogTest) skip(t *testing.T) {
 		t.Skip("changing prefix has no effect on rules")
 	}
 	// Some systems don't support IPv4 or IPv6.
-	l, err := net.Listen("tcp", fmt.Sprintf("%s:0", p.host))
+	l, err := net.Listen("tcp", p.host+":0")
 	if err != nil {
 		t.Skip("ip version not supported")
 	}

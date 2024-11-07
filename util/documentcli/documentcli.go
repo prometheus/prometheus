@@ -82,7 +82,7 @@ func createFlagRow(flag *kingpin.FlagModel) []string {
 	}
 	if valueType.Kind() == reflect.Struct {
 		if _, found := valueType.FieldByName("slice"); found {
-			name = fmt.Sprintf(`%s <code class="text-nowrap">...<code class="text-nowrap">`, name)
+			name += " <code class=\"text-nowrap\">...<code class=\"text-nowrap\">"
 		}
 	}
 
@@ -105,7 +105,7 @@ func writeFlagTable(writer io.Writer, level int, fgm *kingpin.FlagGroupModel) er
 		}
 	}
 
-	return writeTable(writer, rows, fmt.Sprintf("%s Flags", strings.Repeat("#", level+2)))
+	return writeTable(writer, rows, strings.Repeat("#", level+2)+" Flags")
 }
 
 func createArgRow(arg *kingpin.ArgModel) []string {
@@ -136,7 +136,7 @@ func writeArgTable(writer io.Writer, level int, agm *kingpin.ArgGroupModel) erro
 		rows = append(rows, row)
 	}
 
-	return writeTable(writer, rows, fmt.Sprintf("%s Arguments", strings.Repeat("#", level+2)))
+	return writeTable(writer, rows, strings.Repeat("#", level+2)+" Arguments")
 }
 
 func createCmdRow(cmd *kingpin.CmdModel) []string {

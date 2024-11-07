@@ -1646,7 +1646,7 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 						lbls := labels.FromStrings(
 							"__name__", fmt.Sprintf("rpc_durations_%d_histogram_seconds", i),
 							"instance", "localhost:8080",
-							"job", fmt.Sprintf("sparse_histogram_schema_%s", schemaDescription[sid]),
+							"job", "sparse_histogram_schema_"+schemaDescription[sid],
 						)
 						allSparseSeries = append(allSparseSeries, struct {
 							baseLabels labels.Labels
