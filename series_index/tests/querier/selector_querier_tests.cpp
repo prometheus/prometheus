@@ -126,7 +126,7 @@ INSTANTIATE_TEST_SUITE_P(
                                {.name = "job", .value = "", .type = MatcherType::kExactNotMatch}},
             .expected = {.status = QuerierStatus::kMatch,
                          .selector = {.matchers = {{.matches{0}, .label_name_id = 0, .status = MatchStatus::kPartialMatch, .type = MatcherType::kExactMatch},
-                                                   {.label_name_id = 0, .status = MatchStatus::kAllMatch, .type = MatcherType::kExactNotMatch}}}}},
+                                                   {.label_name_id = 0, .status = MatchStatus::kAllMatch, .type = MatcherType::kExactMatch}}}}},
         SelectorQuerierTestCase{
             .label_sets = {{{"job", "cron"}}},
             .label_matchers = {{.name = "job", .value = "^$", .type = MatcherType::kRegexpMatch}},

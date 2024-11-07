@@ -136,6 +136,8 @@ class SelectorQuerier {
       }
     } else {
       if (trie != nullptr) {
+        matcher.convert_to_positive();
+
         matcher.status = MatchStatus::kAllMatch;
       } else {
         matcher.status = MatchStatus::kEmptyMatch;
