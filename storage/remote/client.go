@@ -135,17 +135,17 @@ type Client struct {
 
 // ClientConfig configures a client.
 type ClientConfig struct {
-	URL                  *config_util.URL
-	Timeout              model.Duration
-	HTTPClientConfig     config_util.HTTPClientConfig
-	SigV4Config          *sigv4.SigV4Config
-	AzureADConfig        *azuread.AzureADConfig
-	GoogleIAMConfig      *googleiam.Config
-	Headers              map[string]string
-	RetryOnRateLimit     bool
-	WriteProtoMsg        config.RemoteWriteProtoMsg
-	ChunkedReadLimit     uint64
-	RoundRobinDNSEnabled bool
+	URL              *config_util.URL
+	Timeout          model.Duration
+	HTTPClientConfig config_util.HTTPClientConfig
+	SigV4Config      *sigv4.SigV4Config
+	AzureADConfig    *azuread.AzureADConfig
+	GoogleIAMConfig  *googleiam.Config
+	Headers          map[string]string
+	RetryOnRateLimit bool
+	WriteProtoMsg    config.RemoteWriteProtoMsg
+	ChunkedReadLimit uint64
+	RoundRobinDNS    bool
 }
 
 // ReadClient will request the STREAMED_XOR_CHUNKS method of remote read but can
@@ -182,7 +182,7 @@ func NewReadClient(name string, conf *ClientConfig) (ReadClient, error) {
 // NewWriteClient creates a new client for remote write.
 func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 	var httpOpts []config_util.HTTPClientOption
-	if conf.RoundRobinDNSEnabled {
+	if conf.RoundRobinDNS {
 		httpOpts = []config_util.HTTPClientOption{config_util.WithDialContextFunc(newDialContextWithRoundRobinDNS().dialContext)}
 	}
 	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_write_client", httpOpts...)
