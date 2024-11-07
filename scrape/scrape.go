@@ -1886,7 +1886,7 @@ loop:
 		sl.l.Warn("Error on ingesting out-of-order exemplars", "num_dropped", appErrs.numExemplarOutOfOrder)
 	}
 	if err == nil {
-		sl.updateStaleMarkers(app, defTime)
+		err = sl.updateStaleMarkers(app, defTime)
 	}
 	return
 }
