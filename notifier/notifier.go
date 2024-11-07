@@ -56,7 +56,7 @@ const (
 	alertmanagerLabel = "alertmanager"
 )
 
-var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+var userAgent = "Prometheus/" + version.Version
 
 // Alert is a generic representation of an alert in the Prometheus eco-system.
 type Alert struct {

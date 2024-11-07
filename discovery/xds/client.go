@@ -30,7 +30,7 @@ import (
 	"github.com/prometheus/common/version"
 )
 
-var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+var userAgent = "Prometheus/" + version.Version
 
 // ResourceClient exposes the xDS protocol for a single resource type.
 // See https://www.envoyproxy.io/docs/envoy/latest/api-docs/xds_protocol#rest-json-polling-subscriptions .
@@ -140,7 +140,7 @@ func makeXDSResourceHTTPEndpointURL(protocolVersion ProtocolVersion, serverURL *
 		return nil, errors.New("invalid xDS server URL protocol. must be either 'http' or 'https'")
 	}
 
-	serverURL.Path = path.Join(serverURL.Path, string(protocolVersion), fmt.Sprintf("discovery:%s", resourceType))
+	serverURL.Path = path.Join(serverURL.Path, string(protocolVersion), "discovery:"+resourceType)
 
 	return serverURL, nil
 }
