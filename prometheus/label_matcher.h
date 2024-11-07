@@ -68,6 +68,12 @@ struct Selector {
         type = MatcherType::kRegexpNotMatch;
       }
     }
+
+    PROMPP_ALWAYS_INLINE void convert_to_positive() noexcept {
+      if (type == MatcherType::kExactNotMatch) {
+        type = MatcherType::kExactMatch;
+      }
+    }
   };
 
   std::vector<Matcher> matchers;
