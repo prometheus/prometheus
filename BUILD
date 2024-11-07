@@ -159,7 +159,10 @@ cc_library(
     name = "entrypoint",
     srcs = glob(
         include = ["entrypoint/**/*.cpp"],
-        exclude = ["entrypoint/**/*_tests.cpp"],
+        exclude = [
+            "entrypoint/init/**",
+            "entrypoint/**/*_tests.cpp",
+        ],
     ),
     hdrs = glob([
         "entrypoint/**/*.h",
