@@ -89,7 +89,7 @@ func TestDialContextWithRandomConnections(t *testing.T) {
 	var mdc *mockDialContext
 	testCases := map[string]struct {
 		addr                              string
-		setup                             func() customDialContext
+		setup                             func() dialContextWithRoundRobinDNS
 		check                             func()
 		withLookupHostErr                 bool
 		expectedDefaultContextArguments   []string
@@ -97,9 +97,9 @@ func TestDialContextWithRandomConnections(t *testing.T) {
 	}{
 		"if address contains no port call default DealContext": {
 			addr: testAddrWithoutPort,
-			setup: func() customDialContext {
+			setup: func() dialContextWithRoundRobinDNS {
 				mdc = newMockDialContext([]string{testAddrWithoutPort})
-				return &dialContextWithRandomConnections{
+				return dialContextWithRoundRobinDNS{
 					dialContext: mdc.dialContext,
 					resolver:    &mockedLookupHost{withErr: false},
 				}
@@ -110,9 +110,9 @@ func TestDialContextWithRandomConnections(t *testing.T) {
 		},
 		"if lookup host returns error call default DealContext": {
 			addr: testAddrWithPort,
-			setup: func() customDialContext {
+			setup: func() dialContextWithRoundRobinDNS {
 				mdc = newMockDialContext([]string{testAddrWithPort})
-				return &dialContextWithRandomConnections{
+				return dialContextWithRoundRobinDNS{
 					dialContext: mdc.dialContext,
 					resolver:    &mockedLookupHost{withErr: true},
 				}
@@ -123,9 +123,9 @@ func TestDialContextWithRandomConnections(t *testing.T) {
 		},
 		"if lookup host is successful, shuffle results": {
 			addr: testAddrWithPort,
-			setup: func() customDialContext {
+			setup: func() dialContextWithRoundRobinDNS {
 				mdc = newMockDialContext(testLookupResultWithPort)
-				return &dialContextWithRandomConnections{
+				return dialContextWithRoundRobinDNS{
 					dialContext: mdc.dialContext,
 					resolver:    &mockedLookupHost{result: testLookupResult},
 				}

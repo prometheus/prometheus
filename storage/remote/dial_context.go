@@ -26,23 +26,21 @@ type hostResolver interface {
 	LookupHost(context.Context, string) ([]string, error)
 }
 
-type customDialContext interface {
-	dialContextFn() config.DialContextFunc
-}
-
-type dialContextWithRandomConnections struct {
+// dialContextWithRoundRobinDNS is needed to facilitate testing, because
+// it allows specifying custom dial context functions and host resolvers.
+type dialContextWithRoundRobinDNS struct {
 	dialContext config.DialContextFunc
 	resolver    hostResolver
 }
 
-func newDialContextWithRandomConnections() *dialContextWithRandomConnections {
-	return &dialContextWithRandomConnections{
+func newDialContextWithRoundRobinDNS() *dialContextWithRoundRobinDNS {
+	return &dialContextWithRoundRobinDNS{
 		dialContext: http.DefaultTransport.(*http.Transport).DialContext,
 		resolver:    net.DefaultResolver,
 	}
 }
 
-func (dc *dialContextWithRandomConnections) dialContextFn() config.DialContextFunc {
+func (dc *dialContextWithRoundRobinDNS) dialContextFn() config.DialContextFunc {
 	return func(ctx context.Context, network, addr string) (net.Conn, error) {
 		host, port, err := net.SplitHostPort(addr)
 		if err != nil {
@@ -54,9 +52,6 @@ func (dc *dialContextWithRandomConnections) dialContextFn() config.DialContextFu
 			return dc.dialContext(ctx, network, addr)
 		}
 
-		// We deliberately create a connection to a randomly selected IP returned by the lookup.
-		// This way we prevent that in case of a certain number of concurrent remote-write requests
-		// all requests are sent to the same IP.
 		randomAddr := net.JoinHostPort(addrs[rand.Intn(len(addrs))], port)
 		return dc.dialContext(ctx, network, randomAddr)
 	}

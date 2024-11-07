@@ -171,15 +171,16 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 		}
 
 		c, err := NewWriteClient(name, &ClientConfig{
-			URL:              rwConf.URL,
-			WriteProtoMsg:    rwConf.ProtobufMessage,
-			Timeout:          rwConf.RemoteTimeout,
-			HTTPClientConfig: rwConf.HTTPClientConfig,
-			SigV4Config:      rwConf.SigV4Config,
-			AzureADConfig:    rwConf.AzureADConfig,
-			GoogleIAMConfig:  rwConf.GoogleIAMConfig,
-			Headers:          rwConf.Headers,
-			RetryOnRateLimit: rwConf.QueueConfig.RetryOnRateLimit,
+			URL:                  rwConf.URL,
+			WriteProtoMsg:        rwConf.ProtobufMessage,
+			Timeout:              rwConf.RemoteTimeout,
+			HTTPClientConfig:     rwConf.HTTPClientConfig,
+			SigV4Config:          rwConf.SigV4Config,
+			AzureADConfig:        rwConf.AzureADConfig,
+			GoogleIAMConfig:      rwConf.GoogleIAMConfig,
+			Headers:              rwConf.Headers,
+			RetryOnRateLimit:     rwConf.QueueConfig.RetryOnRateLimit,
+			RoundRobinDnsEnabled: rwConf.RoundRobinDNSEnabled,
 		})
 		if err != nil {
 			return err

@@ -2797,6 +2797,11 @@ write_relabel_configs:
 # For the `io.prometheus.write.v2.Request` message, this option is noop (always true).
 [ send_native_histograms: <boolean> | default = false ]
 
+# When enabled, DNS lookup of URL's host name returns a corresponding IP address in a round robin fashion.
+# More precisely, when a DNS lookup of a host name returns multiple IP addresses, this feature tries to choose a random one and creates a connection to it.
+# This is an experimental feature, and its behavior might still change, or even get removed.
+[ round_robin_dns_enabled: <boolean> | default = false ]
+
 # Optionally configures AWS's Signature Verification 4 signing process to
 # sign requests. Cannot be set at the same time as basic_auth, authorization, oauth2, or azuread.
 # To use the default credentials from the AWS SDK, use `sigv4: {}`.
