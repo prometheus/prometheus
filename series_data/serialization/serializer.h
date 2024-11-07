@@ -3,6 +3,7 @@
 #include "bare_bones/concepts.h"
 #include "series_data/chunk/serialized_chunk.h"
 #include "series_data/data_storage.h"
+#include "series_data/encoder/bit_sequence.h"
 #include "series_data/querier/query.h"
 
 namespace series_data::serialization {
@@ -17,10 +18,9 @@ class Serializer {
     {
       uint32_t data_size = sizeof(uint32_t);
       auto serialized_chunks = create_serialized_chunks(queried_chunks, timestamp_streams_data, data_size);
-      data_size += 9;
 
       if constexpr (BareBones::concepts::has_reserve<Stream>) {
-        stream.reserve(data_size);
+        stream.reserve(data_size + encoder::CompactBitSequence::reserved_size_in_bytes());
       }
 
       write_chunks_count(queried_chunks, stream);
@@ -28,9 +28,9 @@ class Serializer {
     }
 
     write_chunks_data(queried_chunks, timestamp_streams_data, stream);
-    for (size_t i = 0; i < 9; ++i) {
-      stream.put('\0');
-    }
+
+    static constinit std::array<char, encoder::CompactBitSequence::reserved_size_in_bytes()> kReservedBytesForReader{};
+    stream.write(kReservedBytesForReader.data(), kReservedBytesForReader.size());
   }
 
  private:
