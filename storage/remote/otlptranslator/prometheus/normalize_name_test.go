@@ -97,6 +97,24 @@ func TestAllowUTF8(t *testing.T) {
 	})
 }
 
+func TestAllowUTF8KnownBugs(t *testing.T) {
+	// Due to historical reasons, the translator code was copied from OpenTelemetry collector codebase.
+	// Over there, they tried to provide means to translate metric names following Prometheus conventions that are documented here:
+	// https://prometheus.io/docs/practices/naming/
+	//
+	// Althogh not explicitly said, it was implied that words should be separated by a single underscore and the codebase was written
+	// with that in mind.
+	//
+	// Now that we're allowing OTel users to have their original names stored in prometheus without any transformation, we're facing problems
+	// where two (or more) UTF-8 characters are being used to separate words.
+	// TODO(arthursens): Fix it!
+
+	// We're asserting on 'NotEqual', which proves the bug.
+	require.NotEqual(t, "metric....split_=+by_//utf8characters", normalizeName(createGauge("metric....split_=+by_//utf8characters", ""), "", true))
+	// Here we're asserting on 'Equal', showing the current behavior.
+	require.Equal(t, "metric.split_by_utf8characters", normalizeName(createGauge("metric....split_=+by_//utf8characters", ""), "", true))
+}
+
 func TestOTelReceivers(t *testing.T) {
 	require.Equal(t, "active_directory_ds_replication_network_io_bytes_total", normalizeName(createCounter("active_directory.ds.replication.network.io", "By"), "", false))
 	require.Equal(t, "active_directory_ds_replication_sync_object_pending_total", normalizeName(createCounter("active_directory.ds.replication.sync.object.pending", "{objects}"), "", false))
