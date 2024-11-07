@@ -6120,7 +6120,7 @@ func testOOONativeHistogramsWithCounterResets(t *testing.T, scenario sampleTypeS
 					shouldReset: func(v int64) bool {
 						return v == 45
 					},
-					expCounterResetHints: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.CounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset},
+					expCounterResetHints: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.UnknownCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset, histogram.NotCounterReset},
 				},
 			},
 		},
@@ -6745,7 +6745,7 @@ func TestOOOHistogramCompactionWithCounterResets(t *testing.T) {
 			s = addSample(int64(i), series1, 100000+i, histogram.UnknownCounterReset)
 			// The samples with timestamp less than 410 overlap with the samples from chunk 2, so before compaction,
 			// they're all UnknownCounterReset. Samples greater than or equal to 410 don't overlap with other chunks
-			// so they're always detected as NotCounterReset pre and post compaction/
+			// so they're always detected as NotCounterReset pre and post compaction.
 			if i >= 410 {
 				s = copyWithCounterReset(s, histogram.NotCounterReset)
 			}
@@ -6771,8 +6771,10 @@ func TestOOOHistogramCompactionWithCounterResets(t *testing.T) {
 		s = addSample(165, series1, 100000, histogram.UnknownCounterReset)
 		// Before compaction, sample has an UnknownCounterReset header due to the chainSampleIterator.
 		series1ExpSamplesPreCompact = append(series1ExpSamplesPreCompact, s)
-		// After compaction, the sample's counter reset is properly detected.
-		series1ExpSamplesPostCompact = append(series1ExpSamplesPostCompact, copyWithCounterReset(s, histogram.CounterReset))
+		// After compaction, the sample's counter reset is still UnknownCounterReset as we cannot trust CounterReset
+		// headers in chunks at the moment, so when reading the first sample in a chunk, its hint is set to
+		// UnknownCounterReset.
+		series1ExpSamplesPostCompact = append(series1ExpSamplesPostCompact, s)
 
 		// Add 23 more samples to complete a chunk.
 		for i := 175; i < 405; i += 10 {
@@ -6809,7 +6811,6 @@ func TestOOOHistogramCompactionWithCounterResets(t *testing.T) {
 		}
 		// Counter reset.
 		s = addSample(int64(490), series1, 100000, histogram.UnknownCounterReset)
-		s = copyWithCounterReset(s, histogram.CounterReset)
 		series1ExpSamplesPreCompact = append(series1ExpSamplesPreCompact, s)
 		series1ExpSamplesPostCompact = append(series1ExpSamplesPostCompact, s)
 		// Add some more samples after the counter reset.
@@ -6834,7 +6835,6 @@ func TestOOOHistogramCompactionWithCounterResets(t *testing.T) {
 		}
 		// Counter reset.
 		s = addSample(int64(300), series2, 100000, histogram.UnknownCounterReset)
-		s = copyWithCounterReset(s, histogram.CounterReset)
 		series2ExpSamplesPreCompact = append(series2ExpSamplesPreCompact, s)
 		series2ExpSamplesPostCompact = append(series2ExpSamplesPostCompact, s)
 		// Add some more samples after the counter reset.
