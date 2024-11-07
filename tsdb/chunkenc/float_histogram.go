@@ -752,7 +752,6 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 				a.setCounterResetHeader(NotCounterReset)
 			}
 		}
-
 		return nil, false, a, nil
 	}
 
