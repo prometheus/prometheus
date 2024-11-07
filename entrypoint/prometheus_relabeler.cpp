@@ -199,17 +199,11 @@ extern "C" void prompp_prometheus_per_shard_relabeler_input_relabeling(void* arg
 
   try {
     std::visit(
-        [in](auto& hashdex) PROMPP_LAMBDA_INLINE {
-          std::visit(
-              [in, &hashdex](auto& input_lss) PROMPP_LAMBDA_INLINE {
-                std::visit(
-                    [in, &hashdex, &input_lss](auto& target_lss) PROMPP_LAMBDA_INLINE {
-                      in->per_shard_relabeler->input_relabeling(input_lss, target_lss, *in->cache, hashdex, in->options, in->shards_inner_series,
-                                                                in->shards_relabeled_series);
-                    },
-                    *in->target_lss);
-              },
-              *in->input_lss);
+        [in](auto& hashdex) {
+          auto& input_lss = std::get<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>(*in->input_lss);
+          auto& target_lss = std::get<entrypoint::head::QueryableEncodingBimap>(*in->target_lss);
+          in->per_shard_relabeler->input_relabeling(input_lss, target_lss, *in->cache, hashdex, in->options, in->shards_inner_series,
+                                                    in->shards_relabeled_series);
         },
         *in->hashdex);
   } catch (...) {
@@ -266,17 +260,11 @@ extern "C" void prompp_prometheus_per_shard_relabeler_input_relabeling_with_stal
 
   try {
     std::visit(
-        [in](auto& hashdex) PROMPP_LAMBDA_INLINE {
-          std::visit(
-              [in, &hashdex](auto& input_lss) PROMPP_LAMBDA_INLINE {
-                std::visit(
-                    [in, &hashdex, &input_lss](auto& target_lss) PROMPP_LAMBDA_INLINE {
-                      in->per_shard_relabeler->input_relabeling_with_stalenans(input_lss, target_lss, *in->cache, hashdex, in->options, in->shards_inner_series,
-                                                                               in->shards_relabeled_series, *in->state, in->stale_ts);
-                    },
-                    *in->target_lss);
-              },
-              *in->input_lss);
+        [in](auto& hashdex) {
+          auto& input_lss = std::get<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>(*in->input_lss);
+          auto& target_lss = std::get<entrypoint::head::QueryableEncodingBimap>(*in->target_lss);
+          in->per_shard_relabeler->input_relabeling_with_stalenans(input_lss, target_lss, *in->cache, hashdex, in->options, in->shards_inner_series,
+                                                                   in->shards_relabeled_series, *in->state, in->stale_ts);
         },
         *in->hashdex);
   } catch (...) {
@@ -324,10 +312,8 @@ extern "C" void prompp_prometheus_per_shard_relabeler_append_relabeler_series(vo
   auto out = new (res) Result();
 
   try {
-    std::visit(
-        [in](auto& lss)
-            PROMPP_LAMBDA_INLINE { in->per_shard_relabeler->append_relabeler_series(lss, in->inner_series, in->relabeled_series, in->relabeler_state_update); },
-        *in->lss);
+    auto& lss = std::get<entrypoint::head::QueryableEncodingBimap>(*in->lss);
+    in->per_shard_relabeler->append_relabeler_series(lss, in->inner_series, in->relabeled_series, in->relabeler_state_update);
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
     handle_current_exception(__func__, err_stream);
@@ -373,11 +359,8 @@ extern "C" void prompp_prometheus_per_shard_relabeler_output_relabeling(void* ar
   auto out = new (res) Result();
 
   try {
-    std::visit(
-        [in](const auto& lss) PROMPP_LAMBDA_INLINE {
-          in->per_shard_relabeler->output_relabeling(lss, *in->cache, in->relabeled_series, in->incoming_inner_series, in->encoders_inner_series);
-        },
-        *in->lss);
+    auto& lss = std::get<entrypoint::head::QueryableEncodingBimap>(*in->lss);
+    in->per_shard_relabeler->output_relabeling(lss, *in->cache, in->relabeled_series, in->incoming_inner_series, in->encoders_inner_series);
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
     handle_current_exception(__func__, err_stream);

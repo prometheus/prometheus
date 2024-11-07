@@ -38,8 +38,7 @@ extern "C" void prompp_primitives_lss_allocated_memory(void* args, void* res) {
     uint64_t allocated_memory;
   };
 
-  std::visit([res](const auto& lss) PROMPP_LAMBDA_INLINE { new (res) Result{.allocated_memory = lss.allocated_memory()}; },
-             *static_cast<Arguments*>(args)->lss);
+  std::visit([res](const auto& lss) { new (res) Result{.allocated_memory = lss.allocated_memory()}; }, *static_cast<Arguments*>(args)->lss);
 }
 
 extern "C" void prompp_primitives_lss_find_or_emplace(void* args, void* res) {
@@ -52,7 +51,7 @@ extern "C" void prompp_primitives_lss_find_or_emplace(void* args, void* res) {
   };
 
   auto in = static_cast<Arguments*>(args);
-  new (res) Result{.ls_id = std::visit([in](auto& lss) PROMPP_LAMBDA_INLINE { return lss.find_or_emplace(in->label_set); }, *in->lss)};
+  new (res) Result{.ls_id = std::visit([in](auto& lss) { return lss.find_or_emplace(in->label_set); }, *in->lss)};
 }
 
 extern "C" void prompp_primitives_lss_query(void* args, void* res) {
@@ -91,7 +90,7 @@ void prompp_primitives_lss_get_label_sets(void* args, void* res) {
   auto out = new (res) Result();
 
   std::visit(
-      [in, out](auto& lss) PROMPP_LAMBDA_INLINE {
+      [in, out](auto& lss) {
         out->label_sets.resize(in->series_ids.size());
 
         for (size_t i = 0; i < in->series_ids.size(); ++i) {

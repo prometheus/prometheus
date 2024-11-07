@@ -96,8 +96,6 @@ def _impl(ctx):
                                 "-Wall",
                                 "-Wextra",
                                 "-Werror",
-                                "-gdwarf",
-                                "-ggdb",
                                 "-march=" + ctx.attr.march[BuildSettingInfo].value,
                             ],
                         ),
@@ -122,6 +120,7 @@ def _impl(ctx):
                                 # Additional flags for "-c opt"
                                 "-O3",
                                 "-DNDEBUG",
+                                "-g1",
                             ],
                         ),
                     ],
@@ -149,6 +148,23 @@ def _impl(ctx):
                         with_feature_set(
                             features = [
                                 "opt",
+                            ],
+                        ),
+                    ],
+                ),
+                flag_set(
+                    actions = all_compile_actions,
+                    flag_groups = [
+                        flag_group(
+                            flags = [
+                                "-g3",
+                            ],
+                        ),
+                    ],
+                    with_features = [
+                        with_feature_set(
+                            features = [
+                                "dbg",
                             ],
                         ),
                     ],

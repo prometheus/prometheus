@@ -225,7 +225,7 @@ func (s *RelabelerSuite) TestInputPerShardRelabeler() {
 		},
 	}
 
-	inputLss := cppbridge.NewOrderedLssStorage()
+	inputLss := cppbridge.NewLssStorage()
 	targetLss := cppbridge.NewQueryableLssStorage()
 
 	statelessRelabeler, err := cppbridge.NewStatelessRelabeler(rCfgs)
