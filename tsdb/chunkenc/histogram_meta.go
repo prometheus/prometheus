@@ -567,7 +567,7 @@ func counterResetHint(crh CounterResetHeader, numRead uint16) histogram.CounterR
 		//
 		// TODO: If we can detect whether the previous and current chunk are
 		// actually consecutive to the previous chunk then we could trust its
-		// hint: https://github.com/prometheus/prometheus/issues/15346,
+		// hint: https://github.com/prometheus/prometheus/issues/15346.
 		return histogram.UnknownCounterReset
 	}
 }
