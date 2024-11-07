@@ -107,9 +107,18 @@ func Load(s string, logger *slog.Logger) (*Config, error) {
 		cfg.GlobalConfig.ExternalLabels = b.Labels()
 	}
 
-	if cfg.GlobalConfig.MetricNameValidationScheme == LegacyValidationConfig && cfg.OTLPConfig.TranslationStrategy == NoUTF8EscapingWithSuffixes {
-		return nil, errors.New("otlp translation strategy NoUTF8EscapingWithSuffixes is not allowed when UTF8 is disabled")
+	switch cfg.OTLPConfig.TranslationStrategy {
+	case UnderscoreEscapingWithSuffixes:
+	case NoUTF8EscapingWithSuffixes:
+		if cfg.GlobalConfig.MetricNameValidationScheme == LegacyValidationConfig {
+			return nil, errors.New("OTLP translation strategy NoUTF8EscapingWithSuffixes is not allowed when UTF8 is disabled")
+		}
+	case "":
+		cfg.OTLPConfig.TranslationStrategy = DefaultOTLPConfig.TranslationStrategy
+	default:
+		return nil, fmt.Errorf("unsupported OTLP translation strategy %q", cfg.OTLPConfig.TranslationStrategy)
 	}
+
 	return cfg, nil
 }
 

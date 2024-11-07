@@ -1556,14 +1556,62 @@ func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 
 func TestOTLPAllowUTF8(t *testing.T) {
 	t.Run("good config", func(t *testing.T) {
-		cfg, err := LoadFile(filepath.Join("testdata", "otlp_allow_utf8.good.yml"), false, promslog.NewNopLogger())
-		require.NoError(t, err)
-		require.Equal(t, NoUTF8EscapingWithSuffixes, cfg.OTLPConfig.TranslationStrategy)
+		fpath := filepath.Join("testdata", "otlp_allow_utf8.good.yml")
+		verify := func(t *testing.T, conf *Config, err error) {
+			t.Helper()
+			require.NoError(t, err)
+			require.Equal(t, NoUTF8EscapingWithSuffixes, conf.OTLPConfig.TranslationStrategy)
+		}
+
+		t.Run("LoadFile", func(t *testing.T) {
+			conf, err := LoadFile(fpath, false, promslog.NewNopLogger())
+			verify(t, conf, err)
+		})
+		t.Run("Load", func(t *testing.T) {
+			content, err := os.ReadFile(fpath)
+			require.NoError(t, err)
+			conf, err := Load(string(content), promslog.NewNopLogger())
+			verify(t, conf, err)
+		})
+	})
+
+	t.Run("incompatible config", func(t *testing.T) {
+		fpath := filepath.Join("testdata", "otlp_allow_utf8.incompatible.yml")
+		verify := func(t *testing.T, err error) {
+			t.Helper()
+			require.ErrorContains(t, err, `OTLP translation strategy NoUTF8EscapingWithSuffixes is not allowed when UTF8 is disabled`)
+		}
+
+		t.Run("LoadFile", func(t *testing.T) {
+			_, err := LoadFile(fpath, false, promslog.NewNopLogger())
+			verify(t, err)
+		})
+		t.Run("Load", func(t *testing.T) {
+			content, err := os.ReadFile(fpath)
+			require.NoError(t, err)
+			_, err = Load(string(content), promslog.NewNopLogger())
+			t.Log("err", err)
+			verify(t, err)
+		})
 	})
 
 	t.Run("bad config", func(t *testing.T) {
-		_, err := LoadFile(filepath.Join("testdata", "otlp_allow_utf8.bad.yml"), false, promslog.NewNopLogger())
-		require.ErrorContains(t, err, `otlp translation strategy NoUTF8EscapingWithSuffixes is not allowed when UTF8 is disabled`)
+		fpath := filepath.Join("testdata", "otlp_allow_utf8.bad.yml")
+		verify := func(t *testing.T, err error) {
+			t.Helper()
+			require.ErrorContains(t, err, `unsupported OTLP translation strategy "Invalid"`)
+		}
+
+		t.Run("LoadFile", func(t *testing.T) {
+			_, err := LoadFile(fpath, false, promslog.NewNopLogger())
+			verify(t, err)
+		})
+		t.Run("Load", func(t *testing.T) {
+			content, err := os.ReadFile(fpath)
+			require.NoError(t, err)
+			_, err = Load(string(content), promslog.NewNopLogger())
+			verify(t, err)
+		})
 	})
 }
 
