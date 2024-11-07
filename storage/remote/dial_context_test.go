@@ -15,7 +15,7 @@ package remote
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"net"
 	"sync"
 	"testing"
@@ -35,7 +35,7 @@ const (
 )
 
 var (
-	errMockLookupHost        = fmt.Errorf("this is a mocked error")
+	errMockLookupHost        = errors.New("this is a mocked error")
 	testLookupResult         = []string{ip1, ip2, ip3}
 	testLookupResultWithPort = []string{net.JoinHostPort(ip1, testPort), net.JoinHostPort(ip2, testPort), net.JoinHostPort(ip3, testPort)}
 )
