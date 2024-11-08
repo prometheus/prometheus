@@ -2813,62 +2813,20 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 	case hlhs == nil && hrhs != nil:
 		{
 			switch op {
-			case parser.ADD:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", opName, "histogram", pos)
-			case parser.SUB:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", opName, "histogram", pos)
 			case parser.MUL:
-				return 0, hrhs.Copy().Mul(lhs), true, nil
-			case parser.DIV:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", opName, "histogram", pos)
-			case parser.POW:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", opName, "histogram", pos)
-			case parser.MOD:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", opName, "histogram", pos)
-			case parser.EQLC:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", opName, "histogram", pos)
-			case parser.NEQ:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", opName, "histogram", pos)
-			case parser.GTR:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", opName, "histogram", pos)
-			case parser.LSS:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", opName, "histogram", pos)
-			case parser.GTE:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", opName, "histogram", pos)
-			case parser.LTE:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", opName, "histogram", pos)
-			case parser.ATAN2:
+				return 0, hrhs.Copy().Mul(lhs).Compact(0), true, nil
+			case parser.ADD, parser.SUB, parser.DIV, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
 				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", opName, "histogram", pos)
 			}
 		}
 	case hlhs != nil && hrhs == nil:
 		{
 			switch op {
-			case parser.ADD:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "float", pos)
-			case parser.SUB:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "float", pos)
 			case parser.MUL:
-				return 0, hlhs.Copy().Mul(rhs), true, nil
+				return 0, hlhs.Copy().Mul(rhs).Compact(0), true, nil
 			case parser.DIV:
-				return 0, hlhs.Copy().Div(rhs), true, nil
-			case parser.POW:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "float", pos)
-			case parser.MOD:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "float", pos)
-			case parser.EQLC:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "float", pos)
-			case parser.NEQ:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "float", pos)
-			case parser.GTR:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "float", pos)
-			case parser.LSS:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "float", pos)
-			case parser.GTE:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "float", pos)
-			case parser.LTE:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "float", pos)
-			case parser.ATAN2:
+				return 0, hlhs.Copy().Div(rhs).Compact(0), true, nil
+			case parser.ADD, parser.SUB, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
 				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "float", pos)
 			}
 		}
@@ -2887,29 +2845,13 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 					return 0, nil, false, err
 				}
 				return 0, res.Compact(0), true, nil
-			case parser.MUL:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "histogram", pos)
-			case parser.DIV:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "histogram", pos)
-			case parser.POW:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "histogram", pos)
-			case parser.MOD:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "histogram", pos)
 			case parser.EQLC:
 				// This operation expects that both histograms are compacted.
 				return 0, hlhs, hlhs.Equals(hrhs), nil
 			case parser.NEQ:
 				// This operation expects that both histograms are compacted.
 				return 0, hlhs, !hlhs.Equals(hrhs), nil
-			case parser.GTR:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "histogram", pos)
-			case parser.LSS:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "histogram", pos)
-			case parser.GTE:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "histogram", pos)
-			case parser.LTE:
-				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "histogram", pos)
-			case parser.ATAN2:
+			case parser.MUL, parser.DIV, parser.POW, parser.MOD, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
 				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "histogram", pos)
 			}
 		}

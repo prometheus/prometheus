@@ -147,7 +147,7 @@ var (
 	PossibleNonCounterInfo                  = fmt.Errorf("%w: metric might not be a counter, name does not end in _total/_sum/_count/_bucket:", PromQLInfo)
 	HistogramQuantileForcedMonotonicityInfo = fmt.Errorf("%w: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name", PromQLInfo)
 	IncompatibleTypesInBinOpInfo            = fmt.Errorf("%w: incompatible sample types encountered for binary operator", PromQLInfo)
-	HistogramIgnoredInAggregationInfo       = fmt.Errorf("%w: ignored histogram", PromQLInfo)
+	HistogramIgnoredInAggregationInfo       = fmt.Errorf("%w: ignored histogram in", PromQLInfo)
 )
 
 type annoErr struct {
