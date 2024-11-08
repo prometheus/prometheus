@@ -195,7 +195,7 @@ jobs:
         with:
           args: --verbose
           # Make sure to sync this with Makefile.common and scripts/golangci-lint.yml.
-          version: v1.60.2
+          version: v1.61.0
   fuzzing:
     uses: ./.github/workflows/fuzzing.yml
     if: github.event_name == 'pull_request'
