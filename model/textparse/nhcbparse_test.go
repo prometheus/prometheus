@@ -500,8 +500,8 @@ something_bucket{a="b",le="+Inf"} 9 # {id="something-test"} 2e100 123.000
 				Schema:          histogram.CustomBucketsSchema,
 				Count:           9,
 				Sum:             42123.0,
-				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}, {Offset: 1, Length: 1}},
-				PositiveBuckets: []int64{8, -7},
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
+				PositiveBuckets: []int64{8, -8, 1},
 				CustomValues:    []float64{0.0, 1.0}, // We do not store the +Inf boundary.
 			},
 			lset: labels.FromStrings("__name__", "something", "a", "b"),
@@ -936,4 +936,49 @@ test_histogram1_bucket{le="-0.0004899999999999998"} 2 1234568
 test_histogram1_bucket{le="-0.0003899999999999998"} 4 1234568
 test_histogram1_bucket{le="-0.0002899999999999998"} 16 1234568
 test_histogram1_bucket{le="+Inf"} 175 1234568`
+}
+
+func TestNHCBParserErrorHandling(t *testing.T) {
+	input := `# HELP something Histogram with non cumulative buckets
+# TYPE something histogram
+something_count 18
+something_sum 324789.4
+something_created 1520430001
+something_bucket{le="0.0"} 18
+something_bucket{le="+Inf"} 1
+something_count{a="b"} 9
+something_sum{a="b"} 42123
+something_created{a="b"} 1520430002
+something_bucket{a="b",le="0.0"} 1
+something_bucket{a="b",le="+Inf"} 9
+# EOF`
+	exp := []parsedEntry{
+		{
+			m:    "something",
+			help: "Histogram with non cumulative buckets",
+		},
+		{
+			m:   "something",
+			typ: model.MetricTypeHistogram,
+		},
+		// The parser should skip the series with non-cumulative buckets.
+		{
+			m: `something{a="b"}`,
+			shs: &histogram.Histogram{
+				Schema:          histogram.CustomBucketsSchema,
+				Count:           9,
+				Sum:             42123.0,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+				PositiveBuckets: []int64{1, 7},
+				CustomValues:    []float64{0.0}, // We do not store the +Inf boundary.
+			},
+			lset: labels.FromStrings("__name__", "something", "a", "b"),
+			ct:   int64p(1520430002000),
+		},
+	}
+
+	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
+	p = NewNHCBParser(p, labels.NewSymbolTable(), false)
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
 }

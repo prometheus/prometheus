@@ -14,6 +14,7 @@
 package convertnhcb
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -23,129 +24,212 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
+var (
+	errNegativeBucketCount = errors.New("bucket count must be non-negative")
+	errNegativeCount       = errors.New("count must be non-negative")
+	errCountMismatch       = errors.New("count mismatch")
+	errCountNotCumulative  = errors.New("count is not cumulative")
+)
+
+type tempHistogramBucket struct {
+	le    float64
+	count float64
+}
+
 // TempHistogram is used to collect information about classic histogram
 // samples incrementally before creating a histogram.Histogram or
 // histogram.FloatHistogram based on the values collected.
 type TempHistogram struct {
-	BucketCounts map[float64]float64
-	Count        float64
-	Sum          float64
-	HasFloat     bool
+	buckets  []tempHistogramBucket
+	count    float64
+	sum      float64
+	err      error
+	hasCount bool
 }
 
 // NewTempHistogram creates a new TempHistogram to
 // collect information about classic histogram samples.
 func NewTempHistogram() TempHistogram {
 	return TempHistogram{
-		BucketCounts: map[float64]float64{},
+		buckets: make([]tempHistogramBucket, 0, 10),
 	}
 }
 
-func (h TempHistogram) getIntBucketCounts() (map[float64]int64, error) {
-	bucketCounts := map[float64]int64{}
-	for le, count := range h.BucketCounts {
-		intCount := int64(math.Round(count))
-		if float64(intCount) != count {
-			return nil, fmt.Errorf("bucket count %f for le %g is not an integer", count, le)
+func (h TempHistogram) Err() error {
+	return h.err
+}
+
+func (h *TempHistogram) Reset() {
+	h.buckets = h.buckets[:0]
+	h.count = 0
+	h.sum = 0
+	h.err = nil
+	h.hasCount = false
+}
+
+func (h *TempHistogram) SetBucketCount(boundary, count float64) error {
+	if h.err != nil {
+		return h.err
+	}
+	if count < 0 {
+		h.err = fmt.Errorf("%w: le=%g, count=%g", errNegativeBucketCount, boundary, count)
+		return h.err
+	}
+	// Assume that the elements are added in order.
+	switch {
+	case len(h.buckets) == 0:
+		h.buckets = append(h.buckets, tempHistogramBucket{le: boundary, count: count})
+	case h.buckets[len(h.buckets)-1].le < boundary:
+		// Happy case is "<".
+		if count < h.buckets[len(h.buckets)-1].count {
+			h.err = fmt.Errorf("%w: %g < %g", errCountNotCumulative, count, h.buckets[len(h.buckets)-1].count)
+			return h.err
 		}
-		bucketCounts[le] = intCount
-	}
-	return bucketCounts, nil
-}
-
-// ProcessUpperBoundsAndCreateBaseHistogram prepares an integer native
-// histogram with custom buckets based on the provided upper bounds.
-// Everything is set except the bucket counts.
-// The sorted upper bounds are also returned.
-func ProcessUpperBoundsAndCreateBaseHistogram(upperBounds0 []float64, needsDedup bool) ([]float64, *histogram.Histogram) {
-	sort.Float64s(upperBounds0)
-	var upperBounds []float64
-	if needsDedup {
-		upperBounds = make([]float64, 0, len(upperBounds0))
-		prevLE := math.Inf(-1)
-		for _, le := range upperBounds0 {
-			if le != prevLE {
-				upperBounds = append(upperBounds, le)
-				prevLE = le
-			}
+		h.buckets = append(h.buckets, tempHistogramBucket{le: boundary, count: count})
+	case h.buckets[len(h.buckets)-1].le == boundary:
+		// Ignore this, as it is a duplicate sample.
+	default:
+		// Find the correct position to insert.
+		i := sort.Search(len(h.buckets), func(i int) bool {
+			return h.buckets[i].le >= boundary
+		})
+		if h.buckets[i].le == boundary {
+			// Ignore this, as it is a duplicate sample.
+			return nil
 		}
-	} else {
-		upperBounds = upperBounds0
-	}
-	var customBounds []float64
-	if upperBounds[len(upperBounds)-1] == math.Inf(1) {
-		customBounds = upperBounds[:len(upperBounds)-1]
-	} else {
-		customBounds = upperBounds
-	}
-	return upperBounds, &histogram.Histogram{
-		Count:  0,
-		Sum:    0,
-		Schema: histogram.CustomBucketsSchema,
-		PositiveSpans: []histogram.Span{
-			{Offset: 0, Length: uint32(len(upperBounds))},
-		},
-		PositiveBuckets: make([]int64, len(upperBounds)),
-		CustomValues:    customBounds,
-	}
-}
-
-// NewHistogram fills the bucket counts in the provided histogram.Histogram
-// or histogram.FloatHistogram based on the provided temporary histogram and
-// upper bounds.
-func NewHistogram(histogram TempHistogram, upperBounds []float64, hBase *histogram.Histogram, fhBase *histogram.FloatHistogram) (*histogram.Histogram, *histogram.FloatHistogram) {
-	intBucketCounts, err := histogram.getIntBucketCounts()
-	if err != nil {
-		return nil, newFloatHistogram(histogram, upperBounds, histogram.BucketCounts, fhBase)
-	}
-	return newIntegerHistogram(histogram, upperBounds, intBucketCounts, hBase), nil
-}
-
-func newIntegerHistogram(histogram TempHistogram, upperBounds []float64, bucketCounts map[float64]int64, hBase *histogram.Histogram) *histogram.Histogram {
-	h := hBase.Copy()
-	absBucketCounts := make([]int64, len(h.PositiveBuckets))
-	var prevCount, total int64
-	for i, le := range upperBounds {
-		currCount, exists := bucketCounts[le]
-		if !exists {
-			currCount = 0
+		if i > 0 && count < h.buckets[i-1].count {
+			h.err = fmt.Errorf("%w: %g < %g", errCountNotCumulative, count, h.buckets[i-1].count)
+			return h.err
 		}
-		count := currCount - prevCount
-		absBucketCounts[i] = count
-		total += count
-		prevCount = currCount
+		if count > h.buckets[i].count {
+			h.err = fmt.Errorf("%w: %g > %g", errCountNotCumulative, count, h.buckets[i].count)
+			return h.err
+		}
+		// Insert at the correct position unless duplicate.
+		h.buckets = append(h.buckets, tempHistogramBucket{})
+		copy(h.buckets[i+1:], h.buckets[i:])
+		h.buckets[i] = tempHistogramBucket{le: boundary, count: count}
 	}
-	h.PositiveBuckets[0] = absBucketCounts[0]
-	for i := 1; i < len(h.PositiveBuckets); i++ {
-		h.PositiveBuckets[i] = absBucketCounts[i] - absBucketCounts[i-1]
-	}
-	h.Sum = histogram.Sum
-	if histogram.Count != 0 {
-		total = int64(histogram.Count)
-	}
-	h.Count = uint64(total)
-	return h.Compact(0)
+	return nil
 }
 
-func newFloatHistogram(histogram TempHistogram, upperBounds []float64, bucketCounts map[float64]float64, fhBase *histogram.FloatHistogram) *histogram.FloatHistogram {
-	fh := fhBase.Copy()
-	var prevCount, total float64
-	for i, le := range upperBounds {
-		currCount, exists := bucketCounts[le]
-		if !exists {
-			currCount = 0
+func (h *TempHistogram) SetCount(count float64) error {
+	if h.err != nil {
+		return h.err
+	}
+	if count < 0 {
+		h.err = fmt.Errorf("%w: count=%g", errNegativeCount, count)
+		return h.err
+	}
+	h.count = count
+	h.hasCount = true
+	return nil
+}
+
+func (h *TempHistogram) SetSum(sum float64) error {
+	if h.err != nil {
+		return h.err
+	}
+	h.sum = sum
+	return nil
+}
+
+func (h TempHistogram) Convert() (*histogram.Histogram, *histogram.FloatHistogram, error) {
+	if h.err != nil {
+		return nil, nil, h.err
+	}
+
+	if len(h.buckets) == 0 || h.buckets[len(h.buckets)-1].le != math.Inf(1) {
+		// No +Inf bucket.
+		if !h.hasCount && len(h.buckets) > 0 {
+			// No count either, so set count to the last known bucket's count.
+			h.count = h.buckets[len(h.buckets)-1].count
 		}
-		count := currCount - prevCount
-		fh.PositiveBuckets[i] = count
-		total += count
-		prevCount = currCount
+		// Let the last bucket be +Inf with the overall count.
+		h.buckets = append(h.buckets, tempHistogramBucket{le: math.Inf(1), count: h.count})
 	}
-	fh.Sum = histogram.Sum
-	if histogram.Count != 0 {
-		total = histogram.Count
+
+	if !h.hasCount {
+		h.count = h.buckets[len(h.buckets)-1].count
+		h.hasCount = true
 	}
-	fh.Count = total
-	return fh.Compact(0)
+
+	for _, b := range h.buckets {
+		intCount := int64(math.Round(b.count))
+		if b.count != float64(intCount) {
+			return h.convertToFloatHistogram()
+		}
+	}
+
+	intCount := uint64(math.Round(h.count))
+	if h.count != float64(intCount) {
+		return h.convertToFloatHistogram()
+	}
+	return h.convertToIntegerHistogram(intCount)
+}
+
+func (h TempHistogram) convertToIntegerHistogram(count uint64) (*histogram.Histogram, *histogram.FloatHistogram, error) {
+	rh := &histogram.Histogram{
+		Schema:          histogram.CustomBucketsSchema,
+		Count:           count,
+		Sum:             h.sum,
+		PositiveSpans:   []histogram.Span{{Length: uint32(len(h.buckets))}},
+		PositiveBuckets: make([]int64, len(h.buckets)),
+	}
+
+	if len(h.buckets) > 1 {
+		rh.CustomValues = make([]float64, len(h.buckets)-1) // Not storing the last +Inf bucket.
+	}
+
+	prevCount := int64(0)
+	prevDelta := int64(0)
+	for i, b := range h.buckets {
+		// delta is the actual bucket count as the input is cumulative.
+		delta := int64(b.count) - prevCount
+		rh.PositiveBuckets[i] = delta - prevDelta
+		prevCount = int64(b.count)
+		prevDelta = delta
+		if b.le != math.Inf(1) {
+			rh.CustomValues[i] = b.le
+		}
+	}
+
+	if count != uint64(h.buckets[len(h.buckets)-1].count) {
+		h.err = fmt.Errorf("%w: count=%d != le=%g count=%g", errCountMismatch, count, h.buckets[len(h.buckets)-1].le, h.buckets[len(h.buckets)-1].count)
+		return nil, nil, h.err
+	}
+
+	return rh.Compact(2), nil, nil
+}
+
+func (h TempHistogram) convertToFloatHistogram() (*histogram.Histogram, *histogram.FloatHistogram, error) {
+	rh := &histogram.FloatHistogram{
+		Schema:          histogram.CustomBucketsSchema,
+		Count:           h.count,
+		Sum:             h.sum,
+		PositiveSpans:   []histogram.Span{{Length: uint32(len(h.buckets))}},
+		PositiveBuckets: make([]float64, len(h.buckets)),
+	}
+
+	if len(h.buckets) > 1 {
+		rh.CustomValues = make([]float64, len(h.buckets)-1) // Not storing the last +Inf bucket.
+	}
+
+	prevCount := 0.0
+	for i, b := range h.buckets {
+		rh.PositiveBuckets[i] = b.count - prevCount
+		prevCount = b.count
+		if b.le != math.Inf(1) {
+			rh.CustomValues[i] = b.le
+		}
+	}
+
+	if h.count != h.buckets[len(h.buckets)-1].count {
+		h.err = fmt.Errorf("%w: count=%g != le=%g count=%g", errCountMismatch, h.count, h.buckets[len(h.buckets)-1].le, h.buckets[len(h.buckets)-1].count)
+		return nil, nil, h.err
+	}
+
+	return nil, rh.Compact(0), nil
 }
 
 func GetHistogramMetricBase(m labels.Labels, suffix string) labels.Labels {

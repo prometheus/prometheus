@@ -283,18 +283,18 @@ func (p *NHCBParser) handleClassicHistogramSeries(lset labels.Labels) bool {
 		le, err := strconv.ParseFloat(lset.Get(labels.BucketLabel), 64)
 		if err == nil && !math.IsNaN(le) {
 			p.processClassicHistogramSeries(lset, "_bucket", func(hist *convertnhcb.TempHistogram) {
-				hist.BucketCounts[le] = p.value
+				_ = hist.SetBucketCount(le, p.value)
 			})
 			return true
 		}
 	case strings.HasSuffix(mName, "_count"):
 		p.processClassicHistogramSeries(lset, "_count", func(hist *convertnhcb.TempHistogram) {
-			hist.Count = p.value
+			_ = hist.SetCount(p.value)
 		})
 		return true
 	case strings.HasSuffix(mName, "_sum"):
 		p.processClassicHistogramSeries(lset, "_sum", func(hist *convertnhcb.TempHistogram) {
-			hist.Sum = p.value
+			_ = hist.SetSum(p.value)
 		})
 		return true
 	}
@@ -306,8 +306,8 @@ func (p *NHCBParser) processClassicHistogramSeries(lset labels.Labels, suffix st
 		p.storeClassicLabels()
 		p.tempCT = p.parser.CreatedTimestamp()
 		p.state = stateCollecting
+		p.tempLsetNHCB = convertnhcb.GetHistogramMetricBase(lset, suffix)
 	}
-	p.tempLsetNHCB = convertnhcb.GetHistogramMetricBase(lset, suffix)
 	p.storeExemplars()
 	updateHist(&p.tempNHCB)
 }
@@ -335,7 +335,6 @@ func (p *NHCBParser) nextExemplarPtr() *exemplar.Exemplar {
 func (p *NHCBParser) swapExemplars() {
 	p.exemplars = p.tempExemplars[:p.tempExemplarCount]
 	p.tempExemplars = p.tempExemplars[:0]
-	p.tempExemplarCount = 0
 }
 
 // processNHCB converts the collated classic histogram series to NHCB and caches the info
@@ -344,33 +343,32 @@ func (p *NHCBParser) processNHCB() bool {
 	if p.state != stateCollecting {
 		return false
 	}
-	ub := make([]float64, 0, len(p.tempNHCB.BucketCounts))
-	for b := range p.tempNHCB.BucketCounts {
-		ub = append(ub, b)
-	}
-	upperBounds, hBase := convertnhcb.ProcessUpperBoundsAndCreateBaseHistogram(ub, false)
-	fhBase := hBase.ToFloat(nil)
-	h, fh := convertnhcb.NewHistogram(p.tempNHCB, upperBounds, hBase, fhBase)
-	if h != nil {
-		if err := h.Validate(); err != nil {
-			return false
+	h, fh, err := p.tempNHCB.Convert()
+	if err == nil {
+		if h != nil {
+			if err := h.Validate(); err != nil {
+				return false
+			}
+			p.hNHCB = h
+			p.fhNHCB = nil
+		} else if fh != nil {
+			if err := fh.Validate(); err != nil {
+				return false
+			}
+			p.hNHCB = nil
+			p.fhNHCB = fh
 		}
-		p.hNHCB = h
-		p.fhNHCB = nil
-	} else if fh != nil {
-		if err := fh.Validate(); err != nil {
-			return false
-		}
-		p.hNHCB = nil
-		p.fhNHCB = fh
+		p.metricStringNHCB = p.tempLsetNHCB.Get(labels.MetricName) + strings.ReplaceAll(p.tempLsetNHCB.DropMetricName().String(), ", ", ",")
+		p.bytesNHCB = []byte(p.metricStringNHCB)
+		p.lsetNHCB = p.tempLsetNHCB
+		p.swapExemplars()
+		p.ctNHCB = p.tempCT
+		p.state = stateEmitting
+	} else {
+		p.state = stateStart
 	}
-	p.metricStringNHCB = p.tempLsetNHCB.Get(labels.MetricName) + strings.ReplaceAll(p.tempLsetNHCB.DropMetricName().String(), ", ", ",")
-	p.bytesNHCB = []byte(p.metricStringNHCB)
-	p.lsetNHCB = p.tempLsetNHCB
-	p.swapExemplars()
-	p.ctNHCB = p.tempCT
-	p.tempNHCB = convertnhcb.NewTempHistogram()
-	p.state = stateEmitting
+	p.tempNHCB.Reset()
+	p.tempExemplarCount = 0
 	p.tempCT = nil
-	return true
+	return err == nil
 }
