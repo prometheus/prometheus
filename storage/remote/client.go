@@ -183,7 +183,7 @@ func NewReadClient(name string, conf *ClientConfig) (ReadClient, error) {
 func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 	var httpOpts []config_util.HTTPClientOption
 	if conf.RoundRobinDNS {
-		httpOpts = []config_util.HTTPClientOption{config_util.WithDialContextFunc(newDialContextWithRoundRobinDNS().dialContext)}
+		httpOpts = []config_util.HTTPClientOption{config_util.WithDialContextFunc(newDialContextWithRoundRobinDNS().dialContextFn())}
 	}
 	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_write_client", httpOpts...)
 	if err != nil {
