@@ -17,9 +17,11 @@
 
 #ifdef __clang__
 #define DIAGNOSTIC_CLASS_MEMACCESS "-Wdynamic-class-memaccess"
+#define DIAGNOSTIC_MAYBE_UNINITIALIZED "-Wuninitialized"
 #define PRAGMA_DIAGNOSTIC(value) _Pragma(PROMPP_STRINGIFY(clang diagnostic value))
 #elif __GNUC__
 #define DIAGNOSTIC_CLASS_MEMACCESS "-Wclass-memaccess"
+#define DIAGNOSTIC_MAYBE_UNINITIALIZED "-Wmaybe-uninitialized"
 #define PRAGMA_DIAGNOSTIC(value) _Pragma(PROMPP_STRINGIFY(GCC diagnostic value))
 #else
 #error #pragma diagnostic is not supported

@@ -1769,6 +1769,23 @@ func walScraperHashdexParse(hashdex uintptr, buffer []byte, default_timestamp in
 	return res.error
 }
 
+func walScraperHashdexGetMetadata(hashdex uintptr) []WALScraperHashdexMetadata {
+	var args = struct {
+		hashdex uintptr
+	}{hashdex}
+	var res struct {
+		metadata []WALScraperHashdexMetadata
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_wal_scraper_hashdex_get_metadata,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.metadata
+}
+
 func walScraperHashdexDtor(hashdex uintptr) {
 	var args = struct {
 		hashdex uintptr

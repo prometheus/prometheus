@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"unsafe"
 
 	"github.com/prometheus/prometheus/pp/go/model"
 )
@@ -214,33 +215,39 @@ func (h *WALBasicDecoderHashdex) cptr() uintptr {
 }
 
 const (
-	ScraperParseNoError uint32 = iota
-	ScraperParseUnexpectedToken
-	ScraperParseNoMetricName
-	ScraperInvalidUtf8
-	ScraperParseInvalidValue
-	ScraperParseInvalidTimestamp
+	// Error codes from parsing.
+	scraperParseNoError uint32 = iota
+	scraperParseUnexpectedToken
+	scraperParseNoMetricName
+	scraperInvalidUtf8
+	scraperParseInvalidValue
+	scraperParseInvalidTimestamp
 )
 
 var (
-	ErrScraperParseUnexpectedToken  = errors.New("scraper parse unexpected token")
-	ErrScraperParseNoMetricName     = errors.New("scraper parse no metric name")
-	ErrScraperInvalidUtf8           = errors.New("scraper parse invalid utf8")
-	ErrScraperParseInvalidValue     = errors.New("scraper parse invalid value")
+	// ErrScraperParseUnexpectedToken error when parse unexpected token.
+	ErrScraperParseUnexpectedToken = errors.New("scraper parse unexpected token")
+	// ErrScraperParseNoMetricName error when parse no metric name.
+	ErrScraperParseNoMetricName = errors.New("scraper parse no metric name")
+	// ErrScraperInvalidUtf8 error when parse invalid utf8.
+	ErrScraperInvalidUtf8 = errors.New("scraper parse invalid utf8")
+	// ErrScraperParseInvalidValue error when parse invalid value.
+	ErrScraperParseInvalidValue = errors.New("scraper parse invalid value")
+	// ErrScraperParseInvalidTimestamp error when parse invalid timestamp.
 	ErrScraperParseInvalidTimestamp = errors.New("scraper parse invalid timestamp")
 
 	codeToError = map[uint32]error{
-		ScraperParseNoError:          nil,
-		ScraperParseUnexpectedToken:  ErrScraperParseUnexpectedToken,
-		ScraperParseNoMetricName:     ErrScraperParseNoMetricName,
-		ScraperInvalidUtf8:           ErrScraperInvalidUtf8,
-		ScraperParseInvalidValue:     ErrScraperParseInvalidValue,
-		ScraperParseInvalidTimestamp: ErrScraperParseInvalidTimestamp,
+		scraperParseNoError:          nil,
+		scraperParseUnexpectedToken:  ErrScraperParseUnexpectedToken,
+		scraperParseNoMetricName:     ErrScraperParseNoMetricName,
+		scraperInvalidUtf8:           ErrScraperInvalidUtf8,
+		scraperParseInvalidValue:     ErrScraperParseInvalidValue,
+		scraperParseInvalidTimestamp: ErrScraperParseInvalidTimestamp,
 	}
 )
 
 func errorFromCode(code uint32) error {
-	if code == ScraperParseNoError {
+	if code == scraperParseNoError {
 		return nil
 	}
 
@@ -251,13 +258,29 @@ func errorFromCode(code uint32) error {
 	return fmt.Errorf("scraper parse unknown code error: %d", code)
 }
 
+// WALScraperHashdex hashdex for sraped incoming data.
 type WALScraperHashdex struct {
 	hashdex uintptr
 	buffer  []byte
 }
 
+const (
+	// ScraperMetadataHelp type of metadata "Help" from hashdex metadata.
+	ScraperMetadataHelp uint32 = iota
+	// ScraperMetadataType type of metadata "Type" from hashdex metadata.
+	ScraperMetadataType
+)
+
+// WALScraperHashdexMetadata metadata from hashdex.
+type WALScraperHashdexMetadata struct {
+	MetricName string
+	Text       string
+	Type       uint32
+}
+
 var _ ShardedData = (*WALScraperHashdex)(nil)
 
+// NewScraperHashdex init new *WALScraperHashdex.
 func NewScraperHashdex() *WALScraperHashdex {
 	h := &WALScraperHashdex{
 		hashdex: walScraperHashdexCtor(),
@@ -269,9 +292,24 @@ func NewScraperHashdex() *WALScraperHashdex {
 	return h
 }
 
+// Parse parsing incoming slice byte with default timestamp to hashdex.
 func (h *WALScraperHashdex) Parse(buffer []byte, default_timestamp int64) error {
 	h.buffer = buffer
 	return errorFromCode(walScraperHashdexParse(h.hashdex, h.buffer, default_timestamp))
+}
+
+// RangeMetadata calls f sequentially for each metadata present in the hashdex.
+// If f returns false, range stops the iteration.
+func (h *WALScraperHashdex) RangeMetadata(f func(metadata WALScraperHashdexMetadata) bool) {
+	mds := walScraperHashdexGetMetadata(h.hashdex)
+
+	for i := range mds {
+		if !f(mds[i]) {
+			break
+		}
+	}
+
+	freeBytes(*(*[]byte)(unsafe.Pointer(&mds)))
 }
 
 // Cluster get Cluster name.

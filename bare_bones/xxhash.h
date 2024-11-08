@@ -5,7 +5,10 @@
 #include "bare_bones/compiler.h"
 
 #define XXH_INLINE_ALL
+PRAGMA_DIAGNOSTIC(push)
+PRAGMA_DIAGNOSTIC(ignored DIAGNOSTIC_MAYBE_UNINITIALIZED)
 #include "xxHash/xxhash.h"
+PRAGMA_DIAGNOSTIC(pop)
 
 namespace BareBones {
 

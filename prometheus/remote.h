@@ -7,7 +7,7 @@
 #include "third_party/protozero/pbf_writer.hpp"
 
 #include "label_matcher.h"
-#include "types.h"
+#include "query.h"
 
 namespace PromPP::Prometheus::Remote {
 

@@ -124,6 +124,22 @@ void prompp_wal_scraper_hashdex_ctor(void* res);
 void prompp_wal_scraper_hashdex_parse(void* args, void* res);
 
 /**
+ * @brief Parse scraped buffer
+ *
+ * @param args {
+ *     hashdex uintptr
+ * }
+ * @param res {
+ *     metadata []struct {
+ *        metric_name string
+ *        text string
+ *        type uint32
+ *     }
+ * }
+ */
+void prompp_wal_scraper_hashdex_get_metadata(void* args, void* res);
+
+/**
  * @brief Destroy hashdex
  *
  * @param args {

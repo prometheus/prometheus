@@ -2,7 +2,6 @@
 
 #include <unordered_set>
 
-#include "prometheus/types.h"
 #include "querier.h"
 
 namespace series_index::querier {
@@ -51,16 +50,13 @@ class LabelValuesQuerier {
   }
 
   template <class Trie, class ValueHandler>
-  PROMPP_ALWAYS_INLINE void query_matched_unique_label_values(uint32_t name_id,
-                                                              const Trie& trie,
-                                                              series_index::querier::SeriesIdSpan series_ids,
-                                                              ValueHandler&& value_handler) const {
+  PROMPP_ALWAYS_INLINE void query_matched_unique_label_values(uint32_t name_id, const Trie& trie, SeriesIdSpan series_ids, ValueHandler&& value_handler) const {
     auto value_ids = get_unique_value_ids(name_id, series_ids);
     enumerate_label_values(name_id, trie, std::forward<ValueHandler>(value_handler),
                            [&value_ids](uint32_t value_id) PROMPP_LAMBDA_INLINE { return value_ids.contains(value_id); });
   }
 
-  [[nodiscard]] std::unordered_set<uint32_t> get_unique_value_ids(uint32_t name_id, series_index::querier::SeriesIdSpan series_ids) const {
+  [[nodiscard]] std::unordered_set<uint32_t> get_unique_value_ids(uint32_t name_id, SeriesIdSpan series_ids) const {
     std::unordered_set<uint32_t> value_ids;
     value_ids.reserve(series_ids.size());
 

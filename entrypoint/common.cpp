@@ -40,7 +40,7 @@ extern "C" void prompp_mem_info(void* res) {
   mallctl("epoch", &epoch, &sz, &epoch, sz);
   size_t size;
   size_t size_len = sizeof(size);
-  mallctl("stats.allocated", &size, &size_len, NULL, 0);
+  mallctl("stats.active", &size, &size_len, NULL, 0);
   out->in_use = size;
 #else
   struct mallinfo2 mi;

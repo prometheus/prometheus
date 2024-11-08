@@ -423,9 +423,24 @@ testmetric{label="\"bar\""} 1`
 
 	// Act
 	err := s.hasdex.Parse([]byte(input), -1)
+	expectedMetadata := []cppbridge.WALScraperHashdexMetadata{
+		{MetricName: "go_gc_duration_seconds", Text: "A summary of the GC invocation durations.", Type: cppbridge.ScraperMetadataHelp},
+		{MetricName: "go_gc_duration_seconds", Text: "summary", Type: cppbridge.ScraperMetadataType},
+		{MetricName: "nohelp1", Text: "", Type: cppbridge.ScraperMetadataHelp},
+		{MetricName: "nohelp2", Text: "", Type: cppbridge.ScraperMetadataHelp},
+		{MetricName: "go_goroutines", Text: "Number of goroutines that currently exist.", Type: cppbridge.ScraperMetadataHelp},
+		{MetricName: "go_goroutines", Text: "gauge", Type: cppbridge.ScraperMetadataType},
+		{MetricName: "metric", Text: "foo\x00bar", Type: cppbridge.ScraperMetadataHelp},
+	}
+	actualMetadata := make([]cppbridge.WALScraperHashdexMetadata, 0, len(expectedMetadata))
+	s.hasdex.RangeMetadata(func(md cppbridge.WALScraperHashdexMetadata) bool {
+		actualMetadata = append(actualMetadata, md)
+		return true
+	})
 
 	// Assert
 	s.NoError(err)
+	s.Equal(expectedMetadata, actualMetadata)
 }
 
 func (s *ScraperHashdexSuite) TestParseErrScraperParseUnexpectedToken() {
@@ -489,7 +504,13 @@ func (s *ScraperHashdexSuite) TestParseEmptyInput() {
 
 	// Act
 	err := s.hasdex.Parse(input, -1)
+	var actualMetadata []cppbridge.WALScraperHashdexMetadata
+	s.hasdex.RangeMetadata(func(md cppbridge.WALScraperHashdexMetadata) bool {
+		actualMetadata = append(actualMetadata, md)
+		return true
+	})
 
 	// Assert
 	s.NoError(err)
+	s.Equal([]cppbridge.WALScraperHashdexMetadata(nil), actualMetadata)
 }

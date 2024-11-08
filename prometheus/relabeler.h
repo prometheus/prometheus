@@ -9,9 +9,9 @@
 
 // #include <parallel_hashmap/btree.h>
 #include <parallel_hashmap/phmap.h>
+#include <simdutf/simdutf.h>
 #include <roaring/roaring.hh>
 #include "md5/md5.h"
-#include "utf8/utf8.h"
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wold-style-cast"
@@ -222,8 +222,8 @@ PROMPP_ALWAYS_INLINE bool label_name_is_valid(std::string_view name) {
 }
 
 // label_value_is_valid validate label value.
-PROMPP_ALWAYS_INLINE bool label_value_is_valid(std::string_view value) {
-  return UTF8::check_string_view_is_valid(value);
+PROMPP_ALWAYS_INLINE bool label_value_is_valid(std::string_view value) noexcept {
+  return simdutf::validate_utf8(value.data(), value.length());
 }
 
 // metric_name_value_is_valid validate value for metric name(__name__).
