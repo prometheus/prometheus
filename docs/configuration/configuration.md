@@ -2797,9 +2797,13 @@ write_relabel_configs:
 # For the `io.prometheus.write.v2.Request` message, this option is noop (always true).
 [ send_native_histograms: <boolean> | default = false ]
 
-# When enabled, DNS lookup of URL's host name returns a corresponding IP address in a round robin fashion.
-# More precisely, when a DNS lookup of a host name returns multiple IP addresses, this feature tries to choose a random one and creates a connection to it.
-# This is an experimental feature, and its behavior might still change, or even get removed.
+# When disabled, DNS lookup relies on Go's defaults. In that case, when the remote URL's host name is resolved to multiple IPs, 
+# Go sequentially tries to establish a connection to all resolved IPs, choosing the first successfully created one. 
+# Any configured dial timeout is equally spread over all attempts to establish a connection to one of the resolved IPs.
+# When enabled, DNS lookup works in a round robin fashion. More precisely, when the remote-write URL's host name is resolved 
+# to multiple IP addresses, this feature chooses one of them randomly, and tries to establish a connection to it. 
+# In this case, any configured dial timeout is used for this attempt only.
+# This is an experimental feature, it applies to remote-write only, and its behavior might still change, or even get removed.
 [ round_robin_dns: <boolean> | default = false ]
 
 # Optionally configures AWS's Signature Verification 4 signing process to

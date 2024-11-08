@@ -20,6 +20,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/prometheus/common/config"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -84,25 +85,26 @@ func (lh *mockedLookupHost) LookupHost(context.Context, string) ([]string, error
 	return lh.result, nil
 }
 
+func createDialContextWithRoundRobinDNS(dialContext config.DialContextFunc, resolver hostResolver) dialContextWithRoundRobinDNS {
+	return dialContextWithRoundRobinDNS{
+		dialContext: dialContext,
+		resolver:    resolver,
+	}
+}
+
 func TestDialContextWithRandomConnections(t *testing.T) {
 	numberOfRuns := 2 * len(testLookupResult)
 	var mdc *mockDialContext
 	testCases := map[string]struct {
-		addr                              string
-		setup                             func() dialContextWithRoundRobinDNS
-		check                             func()
-		withLookupHostErr                 bool
-		expectedDefaultContextArguments   []string
-		unexpectedDefaultContextArguments []string
+		addr  string
+		setup func() dialContextWithRoundRobinDNS
+		check func()
 	}{
 		"if address contains no port call default DealContext": {
 			addr: testAddrWithoutPort,
 			setup: func() dialContextWithRoundRobinDNS {
 				mdc = newMockDialContext([]string{testAddrWithoutPort})
-				return dialContextWithRoundRobinDNS{
-					dialContext: mdc.dialContext,
-					resolver:    &mockedLookupHost{withErr: false},
-				}
+				return createDialContextWithRoundRobinDNS(mdc.dialContext, &mockedLookupHost{withErr: false})
 			},
 			check: func() {
 				require.Equal(t, numberOfRuns, mdc.getCount(testAddrWithoutPort))
@@ -112,10 +114,7 @@ func TestDialContextWithRandomConnections(t *testing.T) {
 			addr: testAddrWithPort,
 			setup: func() dialContextWithRoundRobinDNS {
 				mdc = newMockDialContext([]string{testAddrWithPort})
-				return dialContextWithRoundRobinDNS{
-					dialContext: mdc.dialContext,
-					resolver:    &mockedLookupHost{withErr: true},
-				}
+				return createDialContextWithRoundRobinDNS(mdc.dialContext, &mockedLookupHost{withErr: true})
 			},
 			check: func() {
 				require.Equal(t, numberOfRuns, mdc.getCount(testAddrWithPort))
@@ -125,10 +124,7 @@ func TestDialContextWithRandomConnections(t *testing.T) {
 			addr: testAddrWithPort,
 			setup: func() dialContextWithRoundRobinDNS {
 				mdc = newMockDialContext(testLookupResultWithPort)
-				return dialContextWithRoundRobinDNS{
-					dialContext: mdc.dialContext,
-					resolver:    &mockedLookupHost{result: testLookupResult},
-				}
+				return createDialContextWithRoundRobinDNS(mdc.dialContext, &mockedLookupHost{result: testLookupResult})
 			},
 			check: func() {
 				// we ensure that not all runs will choose the first element of the lookup
