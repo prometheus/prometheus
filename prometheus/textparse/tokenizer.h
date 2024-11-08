@@ -47,7 +47,7 @@ class Tokenizer {
     }
   }
 
-  Token consume_comment() noexcept;
+  Token consume_comment(Token token = Token::kComment) noexcept;
 
   [[nodiscard]] std::string_view buffer() const noexcept { return {start_ptr_, limit_ptr_}; }
 
@@ -64,6 +64,8 @@ class Tokenizer {
   Token token_{Token::kInvalid};
 
   Token next_impl() noexcept;
+
+  Token consume_escaped_string(Token token) noexcept;
 };
 
 }  // namespace PromPP::Prometheus::textparse

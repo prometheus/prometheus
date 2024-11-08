@@ -38,6 +38,16 @@ git_repository(
     shallow_since = "1656350095 -0400",
 )
 
+http_archive(
+    name = "google_benchmark",
+    patches = [
+        "//third_party/patches/google_benchmark:BUILD.bazel.patch"
+    ],
+    sha256 = "35a77f46cc782b16fac8d3b107fbfbb37dcd645f7c28eee19f3b8e0758b48994",
+    strip_prefix = "benchmark-1.9.0/",
+    url = "https://github.com/google/benchmark/archive/refs/tags/v1.9.0.tar.gz",
+)
+
 git_repository(
     name = "bazel_clang_tidy",
     commit = "11541864afa832ff6721e479c44794e9c9497ae8",
@@ -263,8 +273,8 @@ local_repository(
 )
 
 local_repository(
-    name = "utf8",
-    path = "third_party/utf8",
+    name = "simdutf",
+    path = "third_party/simdutf",
 )
 
 local_repository(

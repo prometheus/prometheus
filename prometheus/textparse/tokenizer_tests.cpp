@@ -28,10 +28,15 @@ struct TokenizerCase {
 
 class TokenizerFixture : public ::testing::TestWithParam<TokenizerCase> {
  protected:
-  static std::vector<Token> tokenize(std::string_view str) noexcept {
+  std::string shrinked_str_;
+
+  std::vector<Token> tokenize(std::string_view str) noexcept {
     std::vector<Token> tokens;
 
-    Tokenizer tokenizer(str);
+    shrinked_str_.assign(str);
+    shrinked_str_.shrink_to_fit();
+
+    Tokenizer tokenizer(shrinked_str_);
     while (tokenizer.next() != Tokenizer::Token::kEOF) {
       tokens.emplace_back(Token{.text = tokenizer.token_str(), .token = tokenizer.token()});
     }
@@ -51,18 +56,42 @@ TEST_P(TokenizerFixture, Test) {
 }
 
 INSTANTIATE_TEST_SUITE_P(EmptyString, TokenizerFixture, testing::Values(TokenizerCase{.str = "", .tokens = {}}, TokenizerCase{.str = "\x00"sv, .tokens = {}}));
+INSTANTIATE_TEST_SUITE_P(LineBreak,
+                         TokenizerFixture,
+                         testing::Values(TokenizerCase{.str = "\n", .tokens = {Token{.text = "\n", .token = Tokenizer::Token::kLinebreak}}}));
 INSTANTIATE_TEST_SUITE_P(Comment,
                          TokenizerFixture,
-                         testing::Values(TokenizerCase{.str = "#HELP\n", .tokens = {Token{.text = "HELP", .token = Tokenizer::Token::kComment}}},
-                                         TokenizerCase{.str = "# ABCD\n", .tokens = {Token{.text = "ABCD", .token = Tokenizer::Token::kComment}}},
-                                         TokenizerCase{.str = "# HELPing\n", .tokens = {Token{.text = "HELPing", .token = Tokenizer::Token::kComment}}},
-                                         TokenizerCase{.str = "#\n", .tokens = {Token{.text = "", .token = Tokenizer::Token::kComment}}},
+                         testing::Values(TokenizerCase{.str = "#HELP\n",
+                                                       .tokens =
+                                                           {
+                                                               Token{.text = "HELP", .token = Tokenizer::Token::kComment},
+                                                               Token{.text = "\n", .token = Tokenizer::Token::kLinebreak},
+                                                           }},
+                                         TokenizerCase{.str = "# ABCD\n",
+                                                       .tokens =
+                                                           {
+                                                               Token{.text = "ABCD", .token = Tokenizer::Token::kComment},
+                                                               Token{.text = "\n", .token = Tokenizer::Token::kLinebreak},
+                                                           }},
+                                         TokenizerCase{.str = "# HELPing\n",
+                                                       .tokens =
+                                                           {
+                                                               Token{.text = "HELPing", .token = Tokenizer::Token::kComment},
+                                                               Token{.text = "\n", .token = Tokenizer::Token::kLinebreak},
+                                                           }},
+                                         TokenizerCase{.str = "#\n",
+                                                       .tokens =
+                                                           {
+                                                               Token{.text = "", .token = Tokenizer::Token::kComment},
+                                                               Token{.text = "\n", .token = Tokenizer::Token::kLinebreak},
+                                                           }},
                                          TokenizerCase{.str = "#\n\n#\n",
                                                        .tokens = {
                                                            Token{.text = "", .token = Tokenizer::Token::kComment},
                                                            Token{.text = "\n", .token = Tokenizer::Token::kLinebreak},
                                                            Token{.text = "\n", .token = Tokenizer::Token::kLinebreak},
                                                            Token{.text = "", .token = Tokenizer::Token::kComment},
+                                                           Token{.text = "\n", .token = Tokenizer::Token::kLinebreak},
                                                        }}));
 INSTANTIATE_TEST_SUITE_P(HelpMeta,
                          TokenizerFixture,
@@ -73,6 +102,7 @@ INSTANTIATE_TEST_SUITE_P(HelpMeta,
                                                                Token{.text = "go_gc_duration_seconds", .token = Tokenizer::Token::kMetricName},
                                                                Token{.text = "A summary of the pause duration of garbage collection cycles.",
                                                                      .token = Tokenizer::Token::kText},
+                                                               Token{.text = "\n", .token = Tokenizer::Token::kLinebreak},
                                                            }},
                                          TokenizerCase{.str = "# HELP go_gc_duration_seconds\n",
                                                        .tokens =
@@ -80,6 +110,7 @@ INSTANTIATE_TEST_SUITE_P(HelpMeta,
                                                                Token{.text = "HELP ", .token = Tokenizer::Token::kHelp},
                                                                Token{.text = "go_gc_duration_seconds", .token = Tokenizer::Token::kMetricName},
                                                                Token{.text = "", .token = Tokenizer::Token::kText},
+                                                               Token{.text = "\n", .token = Tokenizer::Token::kLinebreak},
                                                            }},
                                          TokenizerCase{.str = "# HELP go_gc_duration_seconds  \n",
                                                        .tokens =
@@ -87,13 +118,23 @@ INSTANTIATE_TEST_SUITE_P(HelpMeta,
                                                                Token{.text = "HELP ", .token = Tokenizer::Token::kHelp},
                                                                Token{.text = "go_gc_duration_seconds", .token = Tokenizer::Token::kMetricName},
                                                                Token{.text = "", .token = Tokenizer::Token::kText},
+                                                               Token{.text = "\n", .token = Tokenizer::Token::kLinebreak},
                                                            }},
                                          TokenizerCase{.str = R"(# HELP "go_gc_duration_seconds" Some text and \n some \" escaping)"
                                                               "\n",
+                                                       .tokens =
+                                                           {
+                                                               Token{.text = "HELP ", .token = Tokenizer::Token::kHelp},
+                                                               Token{.text = R"("go_gc_duration_seconds")", .token = Tokenizer::Token::kMetricName},
+                                                               Token{.text = R"(Some text and \n some \" escaping)", .token = Tokenizer::Token::kText},
+                                                               Token{.text = "\n", .token = Tokenizer::Token::kLinebreak},
+                                                           }},
+                                         TokenizerCase{.str = "# HELP metric foo\000bar\n"sv,
                                                        .tokens = {
                                                            Token{.text = "HELP ", .token = Tokenizer::Token::kHelp},
-                                                           Token{.text = R"("go_gc_duration_seconds")", .token = Tokenizer::Token::kMetricName},
-                                                           Token{.text = R"(Some text and \n some \" escaping)", .token = Tokenizer::Token::kText},
+                                                           Token{.text = "metric", .token = Tokenizer::Token::kMetricName},
+                                                           Token{.text = "foo\000bar"sv, .token = Tokenizer::Token::kText},
+                                                           Token{.text = "\n", .token = Tokenizer::Token::kLinebreak},
                                                        }}));
 INSTANTIATE_TEST_SUITE_P(TypeMeta,
                          TokenizerFixture,
@@ -103,6 +144,7 @@ INSTANTIATE_TEST_SUITE_P(TypeMeta,
                                                                Token{.text = "TYPE ", .token = Tokenizer::Token::kType},
                                                                Token{.text = "go_gc_duration_seconds", .token = Tokenizer::Token::kMetricName},
                                                                Token{.text = "summary", .token = Tokenizer::Token::kText},
+                                                               Token{.text = "\n", .token = Tokenizer::Token::kLinebreak},
                                                            }},
                                          TokenizerCase{.str = "# TYPE go_gc_duration_seconds\n",
                                                        .tokens =
@@ -110,6 +152,7 @@ INSTANTIATE_TEST_SUITE_P(TypeMeta,
                                                                Token{.text = "TYPE ", .token = Tokenizer::Token::kType},
                                                                Token{.text = "go_gc_duration_seconds", .token = Tokenizer::Token::kMetricName},
                                                                Token{.text = "", .token = Tokenizer::Token::kText},
+                                                               Token{.text = "\n", .token = Tokenizer::Token::kLinebreak},
                                                            }},
                                          TokenizerCase{.str = "# TYPE go_gc_duration_seconds  \n",
                                                        .tokens =
@@ -117,6 +160,7 @@ INSTANTIATE_TEST_SUITE_P(TypeMeta,
                                                                Token{.text = "TYPE ", .token = Tokenizer::Token::kType},
                                                                Token{.text = "go_gc_duration_seconds", .token = Tokenizer::Token::kMetricName},
                                                                Token{.text = "", .token = Tokenizer::Token::kText},
+                                                               Token{.text = "\n", .token = Tokenizer::Token::kLinebreak},
                                                            }},
                                          TokenizerCase{.str = R"(# TYPE "go_gc_duration_seconds" Some text and \n some \" escaping)"
                                                               "\n",
@@ -124,6 +168,7 @@ INSTANTIATE_TEST_SUITE_P(TypeMeta,
                                                            Token{.text = "TYPE ", .token = Tokenizer::Token::kType},
                                                            Token{.text = R"("go_gc_duration_seconds")", .token = Tokenizer::Token::kMetricName},
                                                            Token{.text = R"(Some text and \n some \" escaping)", .token = Tokenizer::Token::kText},
+                                                           Token{.text = "\n", .token = Tokenizer::Token::kLinebreak},
                                                        }}));
 
 INSTANTIATE_TEST_SUITE_P(Label,

@@ -1,0 +1,11 @@
+--- BUILD.bazel
++++ BUILD.bazel
+@@ -68,7 +68,7 @@ cc_library(
+     }),
+     defines = [
+         "BENCHMARK_STATIC_DEFINE",
+-        "BENCHMARK_VERSION=\\\"" + (module_version() if module_version() != None else "") + "\\\"",
++        "BENCHMARK_VERSION=\\\"" + "" + "\\\"",
+     ] + select({
+         ":perfcounters": ["HAVE_LIBPFM"],
+         "//conditions:default": [],

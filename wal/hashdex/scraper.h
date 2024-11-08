@@ -1,10 +1,11 @@
 #pragma once
 
 #include <fastfloat/fast_float.h>
-#include <utf8/utf8.h>
+#include <simdutf/simdutf.h>
 
 #include "bare_bones/vector.h"
 #include "primitives/primitives.h"
+#include "prometheus/metadata.h"
 #include "prometheus/textparse/escape.h"
 #include "prometheus/textparse/tokenizer.h"
 #include "prometheus/value.h"
@@ -25,7 +26,8 @@ class Scraper {
   };
 
   [[nodiscard]] Error parse(std::span<char> buffer, Primitives::Timestamp default_timestamp) {
-    markup_buffer_.initialize(buffer.size() / 2);
+    metric_buffer_.initialize(buffer.size() / 2);
+    metadata_buffer_.initialize(buffer.size() / 4);
     tokenizer_.tokenize({buffer.data(), buffer.data() + buffer.size()});
 
     while (true) {
@@ -39,17 +41,24 @@ class Scraper {
           break;
         }
 
-        case kComment:
+        case kComment: {
+          tokenizer_.consume_comment();
+          break;
+        }
+
         case kHelp:
         case kType: {
-          tokenizer_.consume_comment();
+          if (const auto error = parse_metadata(); error != Error::kNoError) [[unlikely]] {
+            return error;
+          }
           break;
         }
 
         case kMetricName:
         case kBraceOpen: {
-          if (const auto error = ItemParser{tokenizer_, markup_buffer_, markup_buffer_.add_item(default_timestamp)}.parse(); error != Error::kNoError) {
-            markup_buffer_.remove_item();
+          if (const auto error = MetricParser{tokenizer_, metric_buffer_, metric_buffer_.add_metric(default_timestamp)}.parse(); error != Error::kNoError)
+              [[unlikely]] {
+            metric_buffer_.remove_item();
             return error;
           }
           break;
@@ -62,9 +71,36 @@ class Scraper {
     }
   }
 
-  [[nodiscard]] PROMPP_LAMBDA_INLINE uint32_t size() const noexcept { return markup_buffer_.items_count(); }
-  [[nodiscard]] PROMPP_LAMBDA_INLINE auto begin() const noexcept { return markup_buffer_.begin(tokenizer_.buffer()); }
-  [[nodiscard]] PROMPP_LAMBDA_INLINE static auto end() noexcept { return MarkupBuffer::end(); }
+  class MetricsWrapper {
+   public:
+    explicit MetricsWrapper(const Scraper& scraper) : scraper_(scraper) {}
+
+    [[nodiscard]] PROMPP_LAMBDA_INLINE uint32_t size() const noexcept { return scraper_.metric_buffer_.items_count(); }
+    [[nodiscard]] PROMPP_LAMBDA_INLINE auto begin() const noexcept { return scraper_.metric_buffer_.begin(scraper_.tokenizer_.buffer()); }
+    [[nodiscard]] PROMPP_LAMBDA_INLINE static auto end() noexcept { return MetricMarkupBuffer::end(); }
+
+   private:
+    const Scraper& scraper_;
+  };
+
+  class MetadataWrapper {
+   public:
+    explicit MetadataWrapper(const Scraper& scraper) : scraper_(scraper) {}
+
+    [[nodiscard]] PROMPP_LAMBDA_INLINE uint32_t size() const noexcept { return scraper_.metadata_buffer_.items_count(); }
+    [[nodiscard]] PROMPP_LAMBDA_INLINE auto begin() const noexcept { return scraper_.metadata_buffer_.begin(scraper_.tokenizer_.buffer()); }
+    [[nodiscard]] PROMPP_LAMBDA_INLINE static auto end() noexcept { return MetadataMarkupBuffer::end(); }
+
+   private:
+    const Scraper& scraper_;
+  };
+
+  [[nodiscard]] PROMPP_LAMBDA_INLINE uint32_t size() const noexcept { return metric_buffer_.items_count(); }
+  [[nodiscard]] PROMPP_LAMBDA_INLINE auto begin() const noexcept { return metric_buffer_.begin(tokenizer_.buffer()); }
+  [[nodiscard]] PROMPP_LAMBDA_INLINE static auto end() noexcept { return MetricMarkupBuffer::end(); }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE MetricsWrapper metrics() const noexcept { return MetricsWrapper{*this}; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE MetadataWrapper metadata() const noexcept { return MetadataWrapper{*this}; }
 
  private:
   using enum Tokenizer::Token;
@@ -113,12 +149,12 @@ class Scraper {
     }
   };
 
-  struct MarkedItem {
+  struct MarkedMetric {
     uint64_t hash{};
     Primitives::Sample sample{};
     MarkedLabelSet label_set;
 
-    explicit MarkedItem(Primitives::Timestamp timestamp) : sample(timestamp, 0.0) {}
+    explicit MarkedMetric(Primitives::Timestamp timestamp) : sample(timestamp, 0.0) {}
 
     PROMPP_ALWAYS_INLINE void calculate_hash(const std::string_view& buffer) noexcept {
       label_set.sort(buffer);
@@ -127,35 +163,66 @@ class Scraper {
 
     [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t occupied_size() const noexcept { return sizeof(*this) + sizeof(MarkedLabel) * label_set.count; }
   };
+
+  struct MarkedMetadata {
+    MarkedString metric_name{};
+    MarkedString text{};
+    Prometheus::MetadataType type{};
+
+    [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t occupied_size() const noexcept { return sizeof(*this); }
+  };
 #pragma pack(pop)
 
-  class MarkupBuffer {
+ public:
+  class Metric {
    public:
-    class Item {
-     public:
-      explicit Item(std::string_view buffer, const MarkedItem* item) : buffer_(buffer), item_(item) {}
+    using MarkedItem = MarkedMetric;
 
-      [[nodiscard]] PROMPP_ALWAYS_INLINE const MarkedItem* item() const noexcept { return item_; }
-      PROMPP_ALWAYS_INLINE void set_item(const MarkedItem* item) noexcept { item_ = item; }
+    explicit Metric(std::string_view buffer, const MarkedMetric* item) : buffer_(buffer), item_(item) {}
 
-      [[nodiscard]] PROMPP_ALWAYS_INLINE uint64_t hash() const noexcept { return item_->hash; }
+    [[nodiscard]] PROMPP_ALWAYS_INLINE const MarkedMetric* item() const noexcept { return item_; }
+    PROMPP_ALWAYS_INLINE void set_item(const MarkedMetric* item) noexcept { item_ = item; }
 
-      template <class Timeseries>
-      void read(Timeseries& timeseries) const {
-        timeseries.label_set().reserve(item_->label_set.count);
-        for (uint32_t i = 0; i < item_->label_set.count; ++i) {
-          const auto& [name, value] = item_->label_set.labels[i];
-          timeseries.label_set().append(name.string_view(buffer_), value.string_view(buffer_));
-        }
+    [[nodiscard]] PROMPP_ALWAYS_INLINE uint64_t hash() const noexcept { return item_->hash; }
 
-        timeseries.samples().emplace_back(item_->sample);
+    template <class Timeseries>
+    void read(Timeseries& timeseries) const {
+      timeseries.label_set().reserve(item_->label_set.count);
+      for (uint32_t i = 0; i < item_->label_set.count; ++i) {
+        const auto& [name, value] = item_->label_set.labels[i];
+        timeseries.label_set().append(name.string_view(buffer_), value.string_view(buffer_));
       }
 
-     private:
-      std::string_view buffer_;
-      const MarkedItem* item_{};
-    };
+      timeseries.samples().emplace_back(item_->sample);
+    }
 
+   private:
+    std::string_view buffer_;
+    const MarkedMetric* item_{};
+  };
+
+  class Metadata {
+   public:
+    using MarkedItem = MarkedMetadata;
+
+    explicit Metadata(std::string_view buffer, const MarkedMetadata* item) : buffer_(buffer), item_(item) {}
+
+    [[nodiscard]] PROMPP_ALWAYS_INLINE const MarkedMetadata* item() const noexcept { return item_; }
+    PROMPP_ALWAYS_INLINE void set_item(const MarkedMetadata* item) noexcept { item_ = item; }
+
+    [[nodiscard]] PROMPP_ALWAYS_INLINE Prometheus::MetadataType type() const noexcept { return item_->type; }
+    [[nodiscard]] PROMPP_ALWAYS_INLINE std::string_view metric_name() const noexcept { return item_->metric_name.string_view(buffer_); }
+    [[nodiscard]] PROMPP_ALWAYS_INLINE std::string_view text() const noexcept { return item_->text.string_view(buffer_); }
+
+   private:
+    std::string_view buffer_;
+    const MarkedMetadata* item_{};
+  };
+
+ private:
+  template <class Item>
+  class MarkupBuffer {
+   public:
     class IteratorSentinel {};
 
     class Iterator {
@@ -165,6 +232,7 @@ class Scraper {
       using difference_type = ptrdiff_t;
       using pointer = value_type*;
       using reference = value_type&;
+      using MarkedItem = typename Item::MarkedItem;
 
       Iterator(std::string_view buffer, const MarkupBuffer* markup_buffer)
           : item_(buffer, reinterpret_cast<const MarkedItem*>(markup_buffer->buffer().data())), items_count_(markup_buffer->items_count()) {}
@@ -194,26 +262,7 @@ class Scraper {
     [[nodiscard]] PROMPP_ALWAYS_INLINE const BareBones::Vector<char>& buffer() const noexcept { return buffer_; }
     [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t items_count() const noexcept { return items_count_; }
 
-    PROMPP_ALWAYS_INLINE MarkedItem* add_item(Primitives::Timestamp default_timestamp) noexcept {
-      ++items_count_;
-
-      const auto offset = buffer_.size();
-      buffer_.resize(offset + sizeof(MarkedItem));
-      return new (reinterpret_cast<MarkedItem*>(buffer_.data() + offset)) MarkedItem(default_timestamp);
-    }
-
     PROMPP_ALWAYS_INLINE void remove_item() noexcept { --items_count_; }
-
-    PROMPP_ALWAYS_INLINE void add_label(const MarkedLabel& label, MarkedItem*& item) noexcept {
-      if (label.value.is_empty()) [[unlikely]] {
-        return;
-      }
-
-      const auto offset = reinterpret_cast<const char*>(item) - buffer_.data();
-      buffer_.push_back(reinterpret_cast<const char*>(&label), reinterpret_cast<const char*>(&label) + sizeof(label));
-      item = reinterpret_cast<MarkedItem*>(buffer_.data() + offset);
-      ++item->label_set.count;
-    }
 
     PROMPP_ALWAYS_INLINE void initialize(size_t reserve) noexcept {
       buffer_.clear();
@@ -224,19 +273,57 @@ class Scraper {
     [[nodiscard]] PROMPP_ALWAYS_INLINE Iterator begin(std::string_view buffer) const noexcept { return {buffer, this}; }
     [[nodiscard]] PROMPP_ALWAYS_INLINE static IteratorSentinel end() noexcept { return {}; }
 
-   private:
+   protected:
     BareBones::Vector<char> buffer_;
     uint32_t items_count_{};
   };
 
-  class ItemParser {
+  class MetricMarkupBuffer : public MarkupBuffer<Metric> {
    public:
-    ItemParser(Tokenizer& tokenizer, MarkupBuffer& markup_buffer, MarkedItem* item) : tokenizer_(tokenizer), markup_buffer_(markup_buffer), item_(item) {}
+    PROMPP_ALWAYS_INLINE MarkedMetric* add_metric(Primitives::Timestamp default_timestamp) noexcept {
+      ++items_count_;
+
+      const auto offset = buffer_.size();
+      buffer_.resize(offset + sizeof(MarkedMetric));
+      return new (reinterpret_cast<MarkedMetric*>(buffer_.data() + offset)) MarkedMetric(default_timestamp);
+    }
+
+    PROMPP_ALWAYS_INLINE void add_label(const MarkedLabel& label, MarkedMetric*& metric) noexcept {
+      if (label.value.is_empty()) [[unlikely]] {
+        return;
+      }
+
+      const auto offset = reinterpret_cast<const char*>(metric) - buffer_.data();
+      buffer_.push_back(reinterpret_cast<const char*>(&label), reinterpret_cast<const char*>(&label) + sizeof(label));
+      metric = reinterpret_cast<MarkedMetric*>(buffer_.data() + offset);
+      ++metric->label_set.count;
+    }
+  };
+
+  class MetadataMarkupBuffer : public MarkupBuffer<Metadata> {
+   public:
+    PROMPP_ALWAYS_INLINE void add(MarkedString metric_name, MarkedString text, Prometheus::MetadataType type) noexcept {
+      ++items_count_;
+
+      const auto offset = buffer_.size();
+      buffer_.resize(offset + sizeof(MarkedMetadata));
+      new (reinterpret_cast<MarkedMetadata*>(buffer_.data() + offset)) MarkedMetadata{
+          .metric_name = metric_name,
+          .text = text,
+          .type = type,
+      };
+    }
+  };
+
+  class MetricParser {
+   public:
+    MetricParser(Tokenizer& tokenizer, MetricMarkupBuffer& markup_buffer, MarkedMetric* metric)
+        : tokenizer_(tokenizer), markup_buffer_(markup_buffer), metric_(metric) {}
 
     [[nodiscard]] Error parse() noexcept {
       bool have_metric_name = false;
       if (tokenizer_.token() == kMetricName) [[likely]] {
-        markup_buffer_.add_label(MarkedLabel{.value = create_marked_string(tokenizer_.token_str())}, item_);
+        markup_buffer_.add_label(MarkedLabel{.value = create_marked_string(tokenizer_.token_str(), tokenizer_.buffer())}, metric_);
         have_metric_name = true;
         tokenizer_.next();
       }
@@ -255,21 +342,14 @@ class Scraper {
         tokenizer_.next_non_whitespace();
       }
 
-      item_->calculate_hash(tokenizer_.buffer());
+      metric_->calculate_hash(tokenizer_.buffer());
       return parse_metric_suffix();
     }
 
    private:
     Tokenizer& tokenizer_;
-    MarkupBuffer& markup_buffer_;
-    MarkedItem* item_;
-
-    [[nodiscard]] PROMPP_ALWAYS_INLINE MarkedString create_marked_string(const std::string_view& value) const noexcept {
-      return {
-          .offset = static_cast<uint32_t>(value.data() - tokenizer_.buffer().data()),
-          .length = static_cast<uint32_t>(value.size()),
-      };
-    }
+    MetricMarkupBuffer& markup_buffer_;
+    MarkedMetric* metric_;
 
     [[nodiscard]] Error tokenize_metric_name_and_label_set() noexcept {
       if (tokenizer_.next_non_whitespace() != kQuotedString) {
@@ -280,7 +360,7 @@ class Scraper {
       if (const auto error = get_quoted_value(metric_name.value); error != Error::kNoError) {
         return error;
       }
-      markup_buffer_.add_label(metric_name, item_);
+      markup_buffer_.add_label(metric_name, metric_);
 
       if (tokenizer_.next() == kBraceClose) {
         return Error::kNoError;
@@ -316,7 +396,7 @@ class Scraper {
           return error;
         }
 
-        markup_buffer_.add_label(label, item_);
+        markup_buffer_.add_label(label, metric_);
       } while (tokenizer_.next(), tokenizer_.token() == kComma || tokenizer_.token() == kWhitespace);
 
       return tokenizer_.token() == kBraceClose ? Error::kNoError : Error::kUnexpectedToken;
@@ -324,7 +404,7 @@ class Scraper {
 
     [[nodiscard]] Error get_label_name(MarkedString& label_name) const noexcept {
       if (tokenizer_.token() == kLabelName) [[likely]] {
-        label_name = create_marked_string(tokenizer_.token_str());
+        label_name = create_marked_string(tokenizer_.token_str(), tokenizer_.buffer());
         return Error::kNoError;
       }
       if (tokenizer_.token() == kQuotedString) {
@@ -339,27 +419,20 @@ class Scraper {
       Prometheus::textparse::unquote(value);
 
       auto copy_to = const_cast<char*>(value.data());
-      auto error = Error::kNoError;
-      Prometheus::textparse::unescape_label_value(value, [&copy_to, &error](const std::string_view& piece_of_string) {
-        if (!UTF8::check_string_view_is_valid(piece_of_string)) [[unlikely]] {
-          error = Error::kInvalidUtf8;
-          return false;
-        }
-
+      Prometheus::textparse::unescape_label_value(value, [&copy_to](const std::string_view& piece_of_string) {
         if (copy_to != piece_of_string.data()) [[unlikely]] {
           memmove(copy_to, piece_of_string.data(), piece_of_string.size());
         }
 
         copy_to += piece_of_string.size();
-        return true;
       });
-      if (error != Error::kNoError) [[unlikely]] {
-        return error;
-      }
-
       value.remove_suffix(value.size() - (copy_to - value.data()));
 
-      string = create_marked_string(value);
+      if (!simdutf::validate_utf8(value.data(), value.size())) [[unlikely]] {
+        return Error::kInvalidUtf8;
+      }
+
+      string = create_marked_string(value, tokenizer_.buffer());
       return Error::kNoError;
     }
 
@@ -376,17 +449,17 @@ class Scraper {
     }
 
     [[nodiscard]] Error parse_sample() noexcept {
-      if (!parse_token_value(item_->sample.value())) [[unlikely]] {
+      if (!parse_token_value(metric_->sample.value())) [[unlikely]] {
         return Error::kInvalidValue;
       }
-      if (std::isnan(item_->sample.value())) [[unlikely]] {
-        item_->sample.value() = Prometheus::kNormalNan;
+      if (std::isnan(metric_->sample.value())) [[unlikely]] {
+        metric_->sample.value() = Prometheus::kNormalNan;
       }
 
       tokenizer_.next_non_whitespace();
 
       if (tokenizer_.token() == kTimestamp || (tokenizer_.token() == kEOF && !tokenizer_.token_str().empty())) {
-        if (!parse_token_value(item_->sample.timestamp())) {
+        if (!parse_token_value(metric_->sample.timestamp())) {
           return Error::kInvalidTimestamp;
         }
 
@@ -411,8 +484,45 @@ class Scraper {
     }
   };
 
+  [[nodiscard]] Error parse_metadata() {
+    const auto type = tokenizer_.token();
+
+    if (tokenizer_.next_non_whitespace() != kMetricName) [[unlikely]] {
+      return Error::kUnexpectedToken;
+    }
+
+    auto metric_name = tokenizer_.token_str();
+    Prometheus::textparse::unquote(metric_name);
+
+    if (tokenizer_.next_non_whitespace() != kText) [[unlikely]] {
+      return Error::kUnexpectedToken;
+    }
+
+    const auto text = tokenizer_.token_str();
+    if (const auto token = tokenizer_.next_non_whitespace(); token != kLinebreak) [[unlikely]] {
+      return Error::kUnexpectedToken;
+    }
+
+    if (type == kHelp && !simdutf::validate_utf8(text.data(), text.size())) [[unlikely]] {
+      return Error::kInvalidUtf8;
+    }
+
+    const auto buffer = tokenizer_.buffer();
+    metadata_buffer_.add(create_marked_string(metric_name, buffer), create_marked_string(text, buffer),
+                         type == kHelp ? Prometheus::MetadataType::kHelp : Prometheus::MetadataType::kType);
+    return Error::kNoError;
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE static MarkedString create_marked_string(const std::string_view& value, const std::string_view& buffer) noexcept {
+    return {
+        .offset = static_cast<uint32_t>(value.data() - buffer.data()),
+        .length = static_cast<uint32_t>(value.size()),
+    };
+  }
+
   Prometheus::textparse::Tokenizer tokenizer_;
-  MarkupBuffer markup_buffer_;
+  MetricMarkupBuffer metric_buffer_;
+  MetadataMarkupBuffer metadata_buffer_;
 };
 
 }  // namespace PromPP::WAL::hashdex

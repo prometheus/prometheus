@@ -100,7 +100,7 @@ cc_library(
         "@com_google_absl//absl/crc:crc32c",
         "@md5",
         "@re2",
-        "@utf8",
+        "@simdutf",
     ],
 )
 
@@ -123,7 +123,7 @@ cc_library(
         ":prometheus",
         "@fastfloat",
         "@roaring",
-        "@utf8",
+        "@simdutf",
     ],
 )
 
@@ -133,6 +133,15 @@ cc_test(
     deps = [
         ":wal",
         "@gtest//:gtest_main",
+    ],
+)
+
+cc_binary(
+    name = "wal_benchmark",
+    srcs = glob(["wal/**/*_benchmark.cpp"]),
+    deps = [
+        ":wal",
+        "@google_benchmark//:benchmark_main",
     ],
 )
 

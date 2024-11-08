@@ -1,7 +1,5 @@
-#include <variant>
-
-#include "_helpers.hpp"
 #include "wal_hashdex.h"
+#include "_helpers.hpp"
 
 #include "primitives/go_slice.h"
 #include "wal/decoder.h"
@@ -127,6 +125,33 @@ extern "C" void prompp_wal_scraper_hashdex_parse(void* args, void* res) {
   const auto in = static_cast<Arguments*>(args);
   new (res) Result{
       .error = std::get<PromPP::WAL::hashdex::Scraper>(*in->hashdex).parse({const_cast<char*>(in->buffer.data()), in->buffer.size()}, in->default_timestamp)};
+}
+
+extern "C" void prompp_wal_scraper_hashdex_get_metadata(void* args, void* res) {
+  struct Metadata {
+    PromPP::Primitives::Go::String metric_name;
+    PromPP::Primitives::Go::String text;
+    uint32_t type;
+
+    explicit Metadata(const PromPP::WAL::hashdex::Scraper::Metadata& metadata)
+        : metric_name(metadata.metric_name()), text(metadata.text()), type(static_cast<uint32_t>(metadata.type())) {}
+  };
+
+  struct Arguments {
+    HashdexVariant* hashdex;
+  };
+  struct Result {
+    PromPP::Primitives::Go::Slice<Metadata> metadata;
+  };
+
+  const auto in = static_cast<Arguments*>(args);
+  const auto out = static_cast<Result*>(res);
+
+  const auto metadata = std::get<PromPP::WAL::hashdex::Scraper>(*in->hashdex).metadata();
+  out->metadata.reserve(metadata.size());
+  for (auto& m : metadata) {
+    out->metadata.emplace_back(m);
+  }
 }
 
 extern "C" void prompp_wal_scraper_hashdex_dtor(void* args) {

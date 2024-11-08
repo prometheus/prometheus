@@ -1,5 +1,7 @@
 #include "tokenizer.h"
 
+#include <cstring>
+
 // NOLINTBEGIN
 /*!conditions:re2c*/
 // NOLINTEND
@@ -22,15 +24,33 @@ void Tokenizer::tokenize(std::string_view str) noexcept {
   condition_ = yycinit;
 }
 
-Tokenizer::Token Tokenizer::consume_comment() noexcept {
-  do {
-    if (*cursor_ptr_ == '\n') {
-      condition_ = yycinit;
-      return Token::kComment;
-    }
-  } while (++cursor_ptr_ != limit_ptr_);
+Tokenizer::Token Tokenizer::consume_comment(Token token) noexcept {
+  if (cursor_ptr_ = static_cast<const char*>(std::memchr(cursor_ptr_, '\n', limit_ptr_ - cursor_ptr_)); cursor_ptr_ != nullptr) [[likely]] {
+    condition_ = yycinit;
+    return token;
+  }
 
+  cursor_ptr_ = limit_ptr_;
   return Token::kEOF;
+}
+
+Tokenizer::Token Tokenizer::consume_escaped_string(Token token) noexcept {
+  while (true) {
+    if (cursor_ptr_ = static_cast<const char*>(std::memchr(cursor_ptr_, '"', limit_ptr_ - cursor_ptr_)); cursor_ptr_ == nullptr) [[unlikely]] {
+      cursor_ptr_ = limit_ptr_;
+      return Token::kInvalid;
+    }
+
+    if (cursor_ptr_[-1] == '\\') [[unlikely]] {
+      ++cursor_ptr_;
+      continue;
+    }
+
+    break;
+  }
+
+  ++cursor_ptr_;
+  return token;
 }
 
 // NOLINTBEGIN
@@ -43,7 +63,7 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
       re2c:define:YYCURSOR = cursor_ptr_;
       re2c:define:YYLIMIT = limit_ptr_;
       re2c:define:YYMARKER = marker_ptr_;
-      re2c:define:YYFILL = "{if (limit_ptr_ >= cursor_ptr_) { return Token::kEOF; } }";
+      re2c:define:YYFILL = "{if (limit_ptr_ == cursor_ptr_) { return Token::kEOF; } }";
       re2c:define:YYGETCONDITION = "condition_";
       re2c:define:YYSETCONDITION = "condition_ = @@;";
 
@@ -52,10 +72,7 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
       METRIC_NAME_CHAR = [a-zA-Z_:];
       METRIC_NAME = METRIC_NAME_CHAR(METRIC_NAME_CHAR|DIGIT)*;
       LABEL_NAME = LETTER(LETTER|DIGIT)*;
-      CHAR = .;
       SPACE = [ \t];
-
-      QUOTED_STRING = ["] ([\\]. | [^\\"])* ["];
 
       <init> [\x00] {
         return Token::kEOF;
@@ -90,14 +107,12 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
       <meta_name> METRIC_NAME => meta_text_with_leading_spaces {
         return Token::kMetricName;
       }
-      <meta_name> QUOTED_STRING => meta_text_with_leading_spaces {
-        return Token::kMetricName;
+      <meta_name> ["] => meta_text_with_leading_spaces {
+        return consume_escaped_string(Token::kMetricName);
       }
-      <meta_text_with_leading_spaces> SPACE* => meta_text {
+      <meta_text_with_leading_spaces> SPACE* => init {
         token_ptr_ = cursor_ptr_;
-      }
-      <meta_text> CHAR* => init {
-        return Token::kText;
+        return consume_comment(Token::kText);
       }
 
       // metrics
@@ -113,11 +128,11 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
       <labels> [,] {
         return Token::kComma;
       }
-      <labels> QUOTED_STRING {
-        return Token::kQuotedString;
+      <labels> ["] {
+        return consume_escaped_string(Token::kQuotedString);
       }
-      <label_value> QUOTED_STRING => labels {
-        return Token::kLabelValue;
+      <label_value> ["] => labels {
+        return consume_escaped_string(Token::kLabelValue);
       }
       <labels> [}] => value {
         return Token::kBraceClose;
