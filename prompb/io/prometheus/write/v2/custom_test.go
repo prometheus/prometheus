@@ -77,6 +77,7 @@ func TestOptimizedMarshal(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			// Keep the slice allocated to mimic what std Marshal
 			// would give to sized Marshal.
 			got := make([]byte, 0)

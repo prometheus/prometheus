@@ -45,6 +45,7 @@ func TestInteropV2UnmarshalWithV1_DeterministicEmpty(t *testing.T) {
 		},
 	} {
 		t.Run("", func(t *testing.T) {
+			t.Parallel()
 			in, err := proto.Marshal(tc.incoming)
 			require.NoError(t, err)
 
@@ -80,6 +81,7 @@ func TestInteropV1UnmarshalWithV2_DeterministicEmpty(t *testing.T) {
 		},
 	} {
 		t.Run("", func(t *testing.T) {
+			t.Parallel()
 			in, err := proto.Marshal(tc.incoming)
 			require.NoError(t, err)
 

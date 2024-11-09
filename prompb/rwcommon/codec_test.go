@@ -30,6 +30,7 @@ func TestToLabels(t *testing.T) {
 	expected := labels.FromStrings("__name__", "metric1", "foo", "bar")
 
 	t.Run("v1", func(t *testing.T) {
+		t.Parallel()
 		ts := prompb.TimeSeries{Labels: []prompb.Label{{Name: "__name__", Value: "metric1"}, {Name: "foo", Value: "bar"}}}
 		b := labels.NewScratchBuilder(2)
 		require.Equal(t, expected, ts.ToLabels(&b, nil))
@@ -37,6 +38,7 @@ func TestToLabels(t *testing.T) {
 		require.Equal(t, ts.Labels, prompb.FromLabels(expected, ts.Labels))
 	})
 	t.Run("v2", func(t *testing.T) {
+		t.Parallel()
 		v2Symbols := []string{"", "__name__", "metric1", "foo", "bar"}
 		ts := writev2.TimeSeries{LabelsRefs: []uint32{1, 2, 3, 4}}
 		b := labels.NewScratchBuilder(2)
@@ -73,9 +75,11 @@ func TestFromMetadataType(t *testing.T) {
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Run("v1", func(t *testing.T) {
+				t.Parallel()
 				require.Equal(t, tc.expectedV1, prompb.FromMetadataType(tc.input))
 			})
 			t.Run("v2", func(t *testing.T) {
+				t.Parallel()
 				require.Equal(t, tc.expectedV2, writev2.FromMetadataType(tc.input))
 			})
 		})
@@ -127,6 +131,7 @@ func TestToMetadata(t *testing.T) {
 		},
 	} {
 		t.Run("", func(t *testing.T) {
+			t.Parallel()
 			ts := writev2.TimeSeries{Metadata: tc.input}
 			require.Equal(t, tc.expected, ts.ToMetadata(sym.Symbols()))
 		})
@@ -135,10 +140,12 @@ func TestToMetadata(t *testing.T) {
 
 func TestToHistogram_Empty(t *testing.T) {
 	t.Run("v1", func(t *testing.T) {
+		t.Parallel()
 		require.NotNilf(t, prompb.Histogram{}.ToIntHistogram(), "")
 		require.NotNilf(t, prompb.Histogram{}.ToFloatHistogram(), "")
 	})
 	t.Run("v2", func(t *testing.T) {
+		t.Parallel()
 		require.NotNilf(t, writev2.Histogram{}.ToIntHistogram(), "")
 		require.NotNilf(t, writev2.Histogram{}.ToFloatHistogram(), "")
 	})
@@ -196,6 +203,7 @@ func testFloatHistogram() histogram.FloatHistogram {
 
 func TestFromIntToFloatOrIntHistogram(t *testing.T) {
 	t.Run("v1", func(t *testing.T) {
+		t.Parallel()
 		// v1 does not support nhcb.
 		testIntHistWithoutNHCB := testIntHistogram()
 		testIntHistWithoutNHCB.CustomValues = nil
@@ -209,6 +217,7 @@ func TestFromIntToFloatOrIntHistogram(t *testing.T) {
 		require.Equal(t, testFloatHistWithoutNHCB, *h.ToFloatHistogram())
 	})
 	t.Run("v2", func(t *testing.T) {
+		t.Parallel()
 		testIntHist := testIntHistogram()
 		testFloatHist := testFloatHistogram()
 
@@ -222,6 +231,7 @@ func TestFromIntToFloatOrIntHistogram(t *testing.T) {
 
 func TestFromFloatToFloatHistogram(t *testing.T) {
 	t.Run("v1", func(t *testing.T) {
+		t.Parallel()
 		// v1 does not support nhcb.
 		testFloatHistWithoutNHCB := testFloatHistogram()
 		testFloatHistWithoutNHCB.CustomValues = nil
@@ -233,6 +243,7 @@ func TestFromFloatToFloatHistogram(t *testing.T) {
 		require.Equal(t, testFloatHistWithoutNHCB, *h.ToFloatHistogram())
 	})
 	t.Run("v2", func(t *testing.T) {
+		t.Parallel()
 		testFloatHist := testFloatHistogram()
 
 		h := writev2.FromFloatHistogram(123, &testFloatHist)
@@ -272,6 +283,7 @@ func TestFromIntOrFloatHistogram_ResetHint(t *testing.T) {
 	} {
 		t.Run("", func(t *testing.T) {
 			t.Run("v1", func(t *testing.T) {
+				t.Parallel()
 				h := testIntHistogram()
 				h.CounterResetHint = tc.input
 				got := prompb.FromIntHistogram(1337, &h)
@@ -283,6 +295,7 @@ func TestFromIntOrFloatHistogram_ResetHint(t *testing.T) {
 				require.Equal(t, tc.expectedV1, got2.GetResetHint())
 			})
 			t.Run("v2", func(t *testing.T) {
+				t.Parallel()
 				h := testIntHistogram()
 				h.CounterResetHint = tc.input
 				got := writev2.FromIntHistogram(1337, &h)
