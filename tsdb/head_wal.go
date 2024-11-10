@@ -712,6 +712,7 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 	go func() {
 		defer close(decodedCh)
 		for r.Next() {
+			var err error
 			rec := r.Record()
 			switch dec.Type(rec) {
 			case record.Samples:
