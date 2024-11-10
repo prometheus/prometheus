@@ -3792,7 +3792,7 @@ func (m mockReaderOfLabels) Symbols() index.StringIter {
 // https://github.com/prometheus/prometheus/issues/14723, when one of the queriers (blockQuerier in this case)
 // alters the passed matchers.
 func TestMergeQuerierConcurrentSelectMatchers(t *testing.T) {
-	block, err := OpenBlock(nil, createBlock(t, t.TempDir(), genSeries(1, 1, 0, 1)), nil)
+	block, err := OpenBlock(nil, createBlock(t, t.TempDir(), genSeries(1, 1, 0, 1)), nil, nil)
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, block.Close())
