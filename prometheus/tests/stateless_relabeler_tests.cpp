@@ -1,10 +1,13 @@
 #include <gtest/gtest.h>
+#include <initializer_list>
 
+#include "primitives/primitives.h"
 #include "prometheus/stateless_relabeler.h"
 
 namespace {
 
 using namespace PromPP::Prometheus;  // NOLINT
+using namespace PromPP::Primitives;  // NOLINT
 
 // Incoming relabel config.
 struct RelabelConfigTest {
@@ -17,9 +20,9 @@ struct RelabelConfigTest {
   uint8_t action{0};
 };
 
-PROMPP_ALWAYS_INLINE LabelViewSetForTest make_label_set(std::initializer_list<LabelViewForTest> lvs) {
-  LabelViewSetForTest labels;
-  for (const LabelViewForTest& lv : lvs) {
+PROMPP_ALWAYS_INLINE LabelViewSet make_label_set(std::initializer_list<LabelView> lvs) {
+  LabelViewSet labels;
+  for (const LabelView& lv : lvs) {
     labels.add(lv);
   }
 
@@ -396,133 +399,52 @@ TEST_F(TestRelabelConfig, Dollar) {
 
 struct TestStatelessRelabeler : public testing::Test {
   std::stringstream buf_;
+  PromPP::Primitives::LabelsBuilderStateMap builder_state_;
 };
 
 TEST_F(TestStatelessRelabeler, KeepEQ) {
   RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2};  // Keep
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
-
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "value"}, {"job", "abc"}});
-
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(incoming_labels);
-
-  Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
-  EXPECT_EQ(Relabel::rsKeep, rstatus);
-
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set({{"__name__", "value"}, {"job", "abc"}});
-
-  EXPECT_EQ(rlabels, expected_labels);
-}
-
-TEST_F(TestStatelessRelabeler, KeepEQHard) {
-  RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2};  // Keep
   std::vector<RelabelConfigTest*> rcts{&rct};
   Relabel::StatelessRelabeler sr(rcts);
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "value"}, {"job", "abc"}});
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "value"}, {"job", "abc"}});
 
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
-  Relabel::hard_validate(rstatus, builder, nullptr);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set({{"__name__", "value"}, {"job", "abc"}});
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels = make_label_set({{"__name__", "value"}, {"job", "abc"}});
 
   EXPECT_EQ(rlabels, expected_labels);
-}
-
-TEST_F(TestStatelessRelabeler, KeepEQHardInvalid) {
-  RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2};  // Keep
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
-
-  LabelViewSetForTest incoming_labels = make_label_set({{"__value__", "value"}, {"job", "abc"}});
-
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(incoming_labels);
-
-  Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
-  EXPECT_EQ(Relabel::rsKeep, rstatus);
-  Relabel::hard_validate(rstatus, builder, nullptr);
-  EXPECT_EQ(Relabel::rsInvalid, rstatus);
-}
-
-TEST_F(TestStatelessRelabeler, KeepEQInvalidLabelLimit) {
-  RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2};  // Keep
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
-
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "value"}, {"job", "abc"}, {"jub", "buj"}});
-
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
-  builder.reset(incoming_labels);
-
-  Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
-  EXPECT_EQ(Relabel::rsKeep, rstatus);
-
-  // label_limit 0
-  Relabel::MetricLimits ll{};
-  Relabel::hard_validate(rstatus, builder, &ll);
-  EXPECT_EQ(Relabel::rsKeep, rstatus);
-
-  // label_limit 2
-  ll.label_limit = 2;
-  Relabel::hard_validate(rstatus, builder, &ll);
-  EXPECT_EQ(Relabel::rsInvalid, rstatus);
-
-  // label_name_length_limit 3
-  rstatus = Relabel::rsKeep;
-  ll.label_limit = 3;
-  ll.label_name_length_limit = 3;
-  Relabel::hard_validate(rstatus, builder, &ll);
-  EXPECT_EQ(Relabel::rsInvalid, rstatus);
-
-  // label_value_length_limit 3
-  rstatus = Relabel::rsKeep;
-  ll.label_limit = 3;
-  ll.label_name_length_limit = 10;
-  ll.label_value_length_limit = 3;
-  Relabel::hard_validate(rstatus, builder, &ll);
-  EXPECT_EQ(Relabel::rsInvalid, rstatus);
 }
 
 TEST_F(TestStatelessRelabeler, KeepRegexpEQ) {
   RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"__name__"}, .regex = "b.*", .action = 2};  // Keep
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "boom"}, {"job", "abc"}});
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "boom"}, {"job", "abc"}});
 
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set({{"__name__", "boom"}, {"job", "abc"}});
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels = make_label_set({{"__name__", "boom"}, {"job", "abc"}});
 
   EXPECT_EQ(rlabels, expected_labels);
 }
 
 TEST_F(TestStatelessRelabeler, KeepNE) {
   RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"job"}, .regex = "no-match", .action = 2};  // Keep
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "value"}, {"job", "abs"}});
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "value"}, {"job", "abs"}});
 
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsDrop, rstatus);
@@ -530,13 +452,11 @@ TEST_F(TestStatelessRelabeler, KeepNE) {
 
 TEST_F(TestStatelessRelabeler, KeepNENoLabel) {
   RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"jub"}, .regex = "no-match", .action = 2};  // Keep
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "value"}, {"job", "abs"}});
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "value"}, {"job", "abs"}});
 
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsDrop, rstatus);
@@ -544,13 +464,11 @@ TEST_F(TestStatelessRelabeler, KeepNENoLabel) {
 
 TEST_F(TestStatelessRelabeler, KeepRegexpNE) {
   RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"__name__"}, .regex = "b.*", .action = 2};  // Keep
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "zoom"}, {"job", "abc"}});
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "zoom"}, {"job", "abc"}});
 
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsDrop, rstatus);
@@ -558,13 +476,11 @@ TEST_F(TestStatelessRelabeler, KeepRegexpNE) {
 
 TEST_F(TestStatelessRelabeler, DropEQ) {
   RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 1};  // Drop
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "value"}, {"job", "abc"}});
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "value"}, {"job", "abc"}});
 
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsDrop, rstatus);
@@ -572,13 +488,11 @@ TEST_F(TestStatelessRelabeler, DropEQ) {
 
 TEST_F(TestStatelessRelabeler, DropRegexpEQ) {
   RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"__name__"}, .regex = ".*o.*", .action = 1};  // Drop
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "boom"}, {"job", "beee"}});
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "boom"}, {"job", "beee"}});
 
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsDrop, rstatus);
@@ -586,70 +500,62 @@ TEST_F(TestStatelessRelabeler, DropRegexpEQ) {
 
 TEST_F(TestStatelessRelabeler, DropNE) {
   RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"job"}, .regex = "no-match", .action = 1};  // Drop
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "value"}, {"job", "abs"}});
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "value"}, {"job", "abs"}});
 
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set({{"__name__", "value"}, {"job", "abs"}});
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels = make_label_set({{"__name__", "value"}, {"job", "abs"}});
 
   EXPECT_EQ(rlabels, expected_labels);
 }
 
 TEST_F(TestStatelessRelabeler, DropRegexpNE) {
   RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"__name__"}, .regex = "f|o", .action = 1};  // Drop
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "boom"}, {"job", "beee"}});
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "boom"}, {"job", "beee"}});
 
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set({{"__name__", "boom"}, {"job", "beee"}});
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels = make_label_set({{"__name__", "boom"}, {"job", "beee"}});
 
   EXPECT_EQ(rlabels, expected_labels);
 }
 
 TEST_F(TestStatelessRelabeler, DropRegexpNENoLabel) {
   RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"jub"}, .regex = "f|o", .action = 1};  // Drop
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "boom"}, {"job", "beee"}});
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "boom"}, {"job", "beee"}});
 
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set({{"__name__", "boom"}, {"job", "beee"}});
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels = make_label_set({{"__name__", "boom"}, {"job", "beee"}});
 
   EXPECT_EQ(rlabels, expected_labels);
 }
 
 TEST_F(TestStatelessRelabeler, DropEqualEQ) {
   RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"__name__"}, .target_label = "job", .action = 3};  // DropEqual
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "main"}, {"job", "main"}, {"instance", "else"}});
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "main"}, {"job", "main"}, {"instance", "else"}});
 
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsDrop, rstatus);
@@ -657,52 +563,46 @@ TEST_F(TestStatelessRelabeler, DropEqualEQ) {
 
 TEST_F(TestStatelessRelabeler, DropEqualNE) {
   RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"__name__"}, .target_label = "job", .action = 3};  // DropEqual
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "main"}, {"job", "ban"}, {"instance", "else"}});
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "main"}, {"job", "ban"}, {"instance", "else"}});
 
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set({{"__name__", "main"}, {"job", "ban"}, {"instance", "else"}});
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels = make_label_set({{"__name__", "main"}, {"job", "ban"}, {"instance", "else"}});
 
   EXPECT_EQ(rlabels, expected_labels);
 }
 
 TEST_F(TestStatelessRelabeler, KeepEqualEQ) {
   RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"__name__"}, .target_label = "job", .action = 4};  // KeepEqual
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "main"}, {"job", "main"}, {"instance", "else"}});
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "main"}, {"job", "main"}, {"instance", "else"}});
 
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set({{"__name__", "main"}, {"job", "main"}, {"instance", "else"}});
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels = make_label_set({{"__name__", "main"}, {"job", "main"}, {"instance", "else"}});
 
   EXPECT_EQ(rlabels, expected_labels);
 }
 
 TEST_F(TestStatelessRelabeler, KeepEqualNE) {
   RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"__name__"}, .target_label = "job", .action = 4};  // KeepEqual
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "main"}, {"job", "niam"}, {"instance", "else"}});
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "main"}, {"job", "niam"}, {"instance", "else"}});
 
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
@@ -711,40 +611,36 @@ TEST_F(TestStatelessRelabeler, KeepEqualNE) {
 
 TEST_F(TestStatelessRelabeler, Lowercase) {
   RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"__name__"}, .target_label = "name_lowercase", .action = 6};  // Lowercase
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "lOwEr_123_UpPeR_123_cAsE"}});
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "lOwEr_123_UpPeR_123_cAsE"}});
 
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set({{"__name__", "lOwEr_123_UpPeR_123_cAsE"}, {"name_lowercase", "lower_123_upper_123_case"}});
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels = make_label_set({{"__name__", "lOwEr_123_UpPeR_123_cAsE"}, {"name_lowercase", "lower_123_upper_123_case"}});
 
   EXPECT_EQ(rlabels, expected_labels);
 }
 
 TEST_F(TestStatelessRelabeler, Uppercase) {
   RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"__name__"}, .target_label = "name_uppercase", .action = 7};  // Uppercase
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "lOwEr_123_UpPeR_123_cAsE"}});
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "lOwEr_123_UpPeR_123_cAsE"}});
 
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set({{"__name__", "lOwEr_123_UpPeR_123_cAsE"}, {"name_uppercase", "LOWER_123_UPPER_123_CASE"}});
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels = make_label_set({{"__name__", "lOwEr_123_UpPeR_123_cAsE"}, {"name_uppercase", "LOWER_123_UPPER_123_CASE"}});
 
   EXPECT_EQ(rlabels, expected_labels);
 }
@@ -752,21 +648,18 @@ TEST_F(TestStatelessRelabeler, Uppercase) {
 TEST_F(TestStatelessRelabeler, LowercaseUppercase) {
   RelabelConfigTest lrct{.source_labels = std::vector<std::string_view>{"__name__"}, .target_label = "name_lowercase", .action = 6};  // Lowercase
   RelabelConfigTest urct{.source_labels = std::vector<std::string_view>{"__name__"}, .target_label = "name_uppercase", .action = 7};  // Uppercase
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&lrct);
-  rcts.emplace_back(&urct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&lrct, &urct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "lOwEr_123_UpPeR_123_cAsE"}});
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "lOwEr_123_UpPeR_123_cAsE"}});
 
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set(
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels = make_label_set(
       {{"__name__", "lOwEr_123_UpPeR_123_cAsE"}, {"name_lowercase", "lower_123_upper_123_case"}, {"name_uppercase", "LOWER_123_UPPER_123_CASE"}});
 
   EXPECT_EQ(rlabels, expected_labels);
@@ -775,20 +668,18 @@ TEST_F(TestStatelessRelabeler, LowercaseUppercase) {
 TEST_F(TestStatelessRelabeler, HashMod) {
   RelabelConfigTest rct{
       .source_labels = std::vector<std::string_view>{"instance"}, .separator = ";", .modulus = 1000, .target_label = "hash_mod", .action = 8};  // HashMod
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "eman"}, {"job", "boj"}, {"instance", "ecnatsni"}});
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "eman"}, {"job", "boj"}, {"instance", "ecnatsni"}});
 
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set({{"__name__", "eman"}, {"hash_mod", "72"}, {"job", "boj"}, {"instance", "ecnatsni"}});
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels = make_label_set({{"__name__", "eman"}, {"hash_mod", "72"}, {"job", "boj"}, {"instance", "ecnatsni"}});
 
   EXPECT_EQ(rlabels, expected_labels);
 }
@@ -796,40 +687,36 @@ TEST_F(TestStatelessRelabeler, HashMod) {
 TEST_F(TestStatelessRelabeler, HashMod2) {
   RelabelConfigTest rct{
       .source_labels = std::vector<std::string_view>{"instance"}, .separator = ";", .modulus = 1000, .target_label = "hash_mod", .action = 8};  // HashMod
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "eman"}, {"job", "boj"}, {"instance", "ecna\ntsni"}});
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "eman"}, {"job", "boj"}, {"instance", "ecna\ntsni"}});
 
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set({{"__name__", "eman"}, {"hash_mod", "483"}, {"job", "boj"}, {"instance", "ecna\ntsni"}});
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels = make_label_set({{"__name__", "eman"}, {"hash_mod", "483"}, {"job", "boj"}, {"instance", "ecna\ntsni"}});
 
   EXPECT_EQ(rlabels, expected_labels);
 }
 
 TEST_F(TestStatelessRelabeler, LabelMap) {
   RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{}, .regex = "(j.*)", .replacement = "label_map_${1}", .action = 9};  // LabelMap
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "eman"}, {"jab", "baj"}, {"job", "boj"}});
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "eman"}, {"jab", "baj"}, {"job", "boj"}});
 
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set({
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels = make_label_set({
       {"__name__", "eman"},
       {"jab", "baj"},
       {"job", "boj"},
@@ -842,20 +729,18 @@ TEST_F(TestStatelessRelabeler, LabelMap) {
 
 TEST_F(TestStatelessRelabeler, LabelMap2) {
   RelabelConfigTest rct{.regex = "meta_(ng.*)", .replacement = "${1}", .action = 9};  // LabelMap
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "eman"}, {"meta_ng_jab", "baj"}, {"meta_ng_job", "boj"}, {"meta_jzb", "bzj"}});
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "eman"}, {"meta_ng_jab", "baj"}, {"meta_ng_job", "boj"}, {"meta_jzb", "bzj"}});
 
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels =
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels =
       make_label_set({{"__name__", "eman"}, {"meta_ng_jab", "baj"}, {"meta_ng_job", "boj"}, {"meta_jzb", "bzj"}, {"ng_jab", "baj"}, {"ng_job", "boj"}});
 
   EXPECT_EQ(rlabels, expected_labels);
@@ -863,13 +748,11 @@ TEST_F(TestStatelessRelabeler, LabelMap2) {
 
 TEST_F(TestStatelessRelabeler, LabelDrop) {
   RelabelConfigTest rct{.regex = "(j.*)", .replacement = "label_map_${1}", .action = 10};  // LabelDrop
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "eman"}, {"jab", "baj"}, {"job", "boj"}});
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "eman"}, {"jab", "baj"}, {"job", "boj"}});
 
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
@@ -877,27 +760,25 @@ TEST_F(TestStatelessRelabeler, LabelDrop) {
 
   EXPECT_FALSE(builder.is_empty());
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set({{"__name__", "eman"}});
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels = make_label_set({{"__name__", "eman"}});
   EXPECT_EQ(rlabels, expected_labels);
 }
 
 TEST_F(TestStatelessRelabeler, LabelDropTransparent) {
   RelabelConfigTest rct{.regex = "(j.*)", .replacement = "label_map_${1}", .action = 10};  // LabelDrop
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "eman"}, {"hab", "baj"}, {"hob", "boj"}});
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "eman"}, {"hab", "baj"}, {"hob", "boj"}});
 
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set({{"__name__", "eman"}, {"hab", "baj"}, {"hob", "boj"}});
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels = make_label_set({{"__name__", "eman"}, {"hab", "baj"}, {"hob", "boj"}});
 
   EXPECT_EQ(rlabels, expected_labels);
 }
@@ -905,20 +786,15 @@ TEST_F(TestStatelessRelabeler, LabelDropTransparent) {
 TEST_F(TestStatelessRelabeler, LabelDropFullDrop) {
   RelabelConfigTest rct1{.regex = "(j.*)", .action = 10};   // LabelDrop
   RelabelConfigTest rct2{.regex = "(__.*)", .action = 10};  // LabelDrop
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct1);
-  rcts.emplace_back(&rct2);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct1, &rct2});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "eman"}, {"jab", "baj"}, {"job", "boj"}});
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "eman"}, {"jab", "baj"}, {"job", "boj"}});
 
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
-  soft_validate(rstatus, builder);
-  EXPECT_EQ(Relabel::rsDrop, rstatus);
   EXPECT_TRUE(builder.is_empty());
 }
 
@@ -927,59 +803,51 @@ TEST_F(TestStatelessRelabeler, LabelDropFullDropAndAdd) {
   RelabelConfigTest rct2{.regex = "(__.*)", .action = 10};  // LabelDrop
   RelabelConfigTest rct3{
       .source_labels = std::vector<std::string_view>{"jab"}, .separator = ";", .modulus = 1000, .target_label = "hash_mod", .action = 8};  // HashMod
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct1);
-  rcts.emplace_back(&rct2);
-  rcts.emplace_back(&rct3);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct1, &rct2, &rct3});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "eman"}, {"jab", "baj"}, {"job", "boj"}});
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "eman"}, {"jab", "baj"}, {"job", "boj"}});
 
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
   EXPECT_FALSE(builder.is_empty());
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set({{"hash_mod", "958"}});
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels = make_label_set({{"hash_mod", "958"}});
   EXPECT_EQ(rlabels, expected_labels);
 }
 
 TEST_F(TestStatelessRelabeler, LabelKeep) {
   RelabelConfigTest rct{.regex = "(j.*)", .replacement = "label_map_${1}", .action = 11};  // LabelKeep
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "eman"}, {"jab", "baj"}, {"job", "boj"}});
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "eman"}, {"jab", "baj"}, {"job", "boj"}});
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set({{"jab", "baj"}, {"job", "boj"}});
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels = make_label_set({{"jab", "baj"}, {"job", "boj"}});
 
   EXPECT_EQ(rlabels, expected_labels);
 }
 
 TEST_F(TestStatelessRelabeler, LabelKeepTransparent) {
   RelabelConfigTest rct{.regex = "(j.*)", .replacement = "label_map_${1}", .action = 11};  // LabelKeep
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"jab", "eman"}, {"job", "baj"}, {"jub", "boj"}});
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  LabelViewSet incoming_labels = make_label_set({{"jab", "eman"}, {"job", "baj"}, {"jub", "boj"}});
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set({{"jab", "eman"}, {"job", "baj"}, {"jub", "boj"}});
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels = make_label_set({{"jab", "eman"}, {"job", "baj"}, {"jub", "boj"}});
 
   EXPECT_EQ(rlabels, expected_labels);
 }
@@ -991,19 +859,17 @@ TEST_F(TestStatelessRelabeler, ReplaceToNewLS) {
                         .target_label = "replaced",
                         .replacement = "ch${1}-ch${1}",
                         .action = 5};  // Replace
-  std::vector<RelabelConfigTest*> rcts;
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "eoo"}, {"jab", "baj"}, {"job", "boj"}});
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "eoo"}, {"jab", "baj"}, {"job", "boj"}});
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set({{"__name__", "eoo"}, {"jab", "baj"}, {"job", "boj"}, {"replaced", "choo-choo"}});
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels = make_label_set({{"__name__", "eoo"}, {"jab", "baj"}, {"job", "boj"}, {"replaced", "choo-choo"}});
 
   EXPECT_EQ(rlabels, expected_labels);
 }
@@ -1015,38 +881,34 @@ TEST_F(TestStatelessRelabeler, ReplaceToNewLS2) {
                         .target_label = "replaced",
                         .replacement = "$1",
                         .action = 5};  // Replace
-  std::vector<RelabelConfigTest*> rcts{};
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}});
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}});
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}, {"replaced", "o"}});
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}, {"replaced", "o"}});
 
   EXPECT_EQ(rlabels, expected_labels);
 }
 
 TEST_F(TestStatelessRelabeler, ReplaceToNewLS3) {
   RelabelConfigTest rct{.separator = ";", .regex = ".*", .target_label = "replaced", .replacement = "tag", .action = 5};  // Replace
-  std::vector<RelabelConfigTest*> rcts{};
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}});
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}});
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}, {"replaced", "tag"}});
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}, {"replaced", "tag"}});
 
   EXPECT_EQ(rlabels, expected_labels);
 }
@@ -1058,19 +920,17 @@ TEST_F(TestStatelessRelabeler, ReplaceFullMatches) {
                         .target_label = "replaced",
                         .replacement = "tag",
                         .action = 5};  // Replace
-  std::vector<RelabelConfigTest*> rcts{};
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}});
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}});
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}, {"replaced", "tag"}});
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}, {"replaced", "tag"}});
 
   EXPECT_EQ(rlabels, expected_labels);
 }
@@ -1082,19 +942,17 @@ TEST_F(TestStatelessRelabeler, ReplaceNoMatches) {
                         .target_label = "replaced",
                         .replacement = "tag",
                         .action = 5};  // Replace
-  std::vector<RelabelConfigTest*> rcts{};
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "bag"}});
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "bag"}});
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "bag"}});
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "bag"}});
 
   EXPECT_EQ(rlabels, expected_labels);
 }
@@ -1106,19 +964,17 @@ TEST_F(TestStatelessRelabeler, ReplaceMatches) {
                         .target_label = "replaced",
                         .replacement = "tag",
                         .action = 5};  // Replace
-  std::vector<RelabelConfigTest*> rcts{};
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "bag"}});
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "bag"}});
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "bag"}, {"replaced", "tag"}});
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "bag"}, {"replaced", "tag"}});
 
   EXPECT_EQ(rlabels, expected_labels);
 }
@@ -1130,19 +986,17 @@ TEST_F(TestStatelessRelabeler, ReplaceNoReplacement) {
                         .target_label = "replaced",
                         .replacement = "var",
                         .action = 5};  // Replace
-  std::vector<RelabelConfigTest*> rcts{};
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}});
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}});
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}});
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels = make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}});
 
   EXPECT_EQ(rlabels, expected_labels);
 }
@@ -1150,19 +1004,17 @@ TEST_F(TestStatelessRelabeler, ReplaceNoReplacement) {
 TEST_F(TestStatelessRelabeler, ReplaceBlankReplacement) {
   RelabelConfigTest rct{
       .source_labels = std::vector<std::string_view>{"__name__"}, .regex = "(j).*", .target_label = "$1", .replacement = "$2", .action = 5};  // Replace
-  std::vector<RelabelConfigTest*> rcts{};
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "jazz"}, {"j", "baj"}});
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "jazz"}, {"j", "baj"}});
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set({{"__name__", "jazz"}});
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels = make_label_set({{"__name__", "jazz"}});
 
   EXPECT_EQ(rlabels, expected_labels);
 }
@@ -1173,19 +1025,17 @@ TEST_F(TestStatelessRelabeler, ReplaceCreateNewFromValue) {
                         .target_label = "${1}",
                         .replacement = "${2}",
                         .action = 5};  // Replace
-  std::vector<RelabelConfigTest*> rcts{};
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "some-job2-boj"}});
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "some-job2-boj"}});
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set({{"__name__", "some-job2-boj"}, {"job2", "boj"}});
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels = make_label_set({{"__name__", "some-job2-boj"}, {"job2", "boj"}});
 
   EXPECT_EQ(rlabels, expected_labels);
 }
@@ -1196,19 +1046,17 @@ TEST_F(TestStatelessRelabeler, ReplaceInvalidLabelName) {
                         .target_label = "${1}",
                         .replacement = "${2}",
                         .action = 5};  // Replace
-  std::vector<RelabelConfigTest*> rcts{};
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "some-2job-boj"}});
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "some-2job-boj"}});
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set({{"__name__", "some-2job-boj"}});
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels = make_label_set({{"__name__", "some-2job-boj"}});
 
   EXPECT_EQ(rlabels, expected_labels);
 }
@@ -1219,19 +1067,17 @@ TEST_F(TestStatelessRelabeler, ReplaceInvalidReplacement) {
                         .target_label = "${1}",
                         .replacement = "${3}",
                         .action = 5};  // Replace
-  std::vector<RelabelConfigTest*> rcts{};
-  rcts.emplace_back(&rct);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "some-job-boj"}});
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "some-job-boj"}});
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set({{"__name__", "some-job-boj"}});
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels = make_label_set({{"__name__", "some-job-boj"}});
 
   EXPECT_EQ(rlabels, expected_labels);
 }
@@ -1252,21 +1098,17 @@ TEST_F(TestStatelessRelabeler, ReplaceInvalidTargetLabels) {
                          .target_label = "${3}",
                          .replacement = "${1}",
                          .action = 5};  // Replace
-  std::vector<RelabelConfigTest*> rcts{};
-  rcts.emplace_back(&rct1);
-  rcts.emplace_back(&rct2);
-  rcts.emplace_back(&rct3);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct1, &rct2, &rct3});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "some-job-0"}});
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "some-job-0"}});
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsKeep, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set({{"__name__", "some-job-0"}});
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels = make_label_set({{"__name__", "some-job-0"}});
 
   EXPECT_EQ(rlabels, expected_labels);
 }
@@ -1287,21 +1129,17 @@ TEST_F(TestStatelessRelabeler, ReplaceComplexLikeUsecase) {
                          .target_label = "${1}",
                          .replacement = "${2}",
                          .action = 5};  // Replace
-  std::vector<RelabelConfigTest*> rcts{};
-  rcts.emplace_back(&rct1);
-  rcts.emplace_back(&rct2);
-  rcts.emplace_back(&rct3);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct1, &rct2, &rct3});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__meta_sd_tags", "path:/secret,job:some-job,label:jab=baj"}});
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  LabelViewSet incoming_labels = make_label_set({{"__meta_sd_tags", "path:/secret,job:some-job,label:jab=baj"}});
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels =
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels =
       make_label_set({{"__meta_sd_tags", "path:/secret,job:some-job,label:jab=baj"}, {"__metrics_path__", "/secret"}, {"job", "some-job"}, {"jab", "baj"}});
 
   EXPECT_EQ(rlabels, expected_labels);
@@ -1316,22 +1154,18 @@ TEST_F(TestStatelessRelabeler, ReplaceIssues12283) {
                          .action = 5};  // Replace
   RelabelConfigTest rct3{
       .source_labels = std::vector<std::string_view>{"__meta_kubernetes_pod_container_port_name"}, .regex = "^metrics$", .action = 2};  // Keep
-  std::vector<RelabelConfigTest*> rcts{};
-  rcts.emplace_back(&rct1);
-  rcts.emplace_back(&rct2);
-  rcts.emplace_back(&rct3);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct1, &rct2, &rct3});
 
-  LabelViewSetForTest incoming_labels =
+  LabelViewSet incoming_labels =
       make_label_set({{"__meta_kubernetes_pod_container_port_name", "foo"}, {"__meta_kubernetes_pod_annotation_XXX_metrics_port", "9091"}});
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels =
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels =
       make_label_set({{"__meta_kubernetes_pod_annotation_XXX_metrics_port", "9091"}, {"__meta_kubernetes_pod_container_port_name", "metrics"}});
 
   EXPECT_EQ(rlabels, expected_labels);
@@ -1350,20 +1184,17 @@ TEST_F(TestStatelessRelabeler, ReplaceWithReplace) {
                          .target_label = "replaced",
                          .replacement = "$1$2$2$3",
                          .action = 5};  // Replace
-  std::vector<RelabelConfigTest*> rcts{};
-  rcts.emplace_back(&rct1);
-  rcts.emplace_back(&rct2);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct1, &rct2});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "eoo"}, {"jab", "baj"}, {"job", "baj"}});
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "eoo"}, {"jab", "baj"}, {"job", "baj"}});
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsRelabel, rstatus);
 
-  auto rlabels = builder.labels();
-  LabelViewSetForTest expected_labels = make_label_set({{"__name__", "boobam"}, {"jab", "baj"}, {"job", "baj"}, {"replaced", "boooom"}});
+  auto rlabels = builder.label_view_set();
+  LabelViewSet expected_labels = make_label_set({{"__name__", "boobam"}, {"jab", "baj"}, {"job", "baj"}, {"replaced", "boooom"}});
 
   EXPECT_EQ(rlabels, expected_labels);
 }
@@ -1376,17 +1207,38 @@ TEST_F(TestStatelessRelabeler, DropReplace) {
                          .target_label = "replaced",
                          .replacement = "ch$1-ch$1",
                          .action = 5};  // Replace
-  std::vector<RelabelConfigTest*> rcts{};
-  rcts.emplace_back(&rct1);
-  rcts.emplace_back(&rct2);
-  Relabel::StatelessRelabeler sr(rcts);
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct1, &rct2});
 
-  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "eoo"}, {"jab", "baj"}, {"job", "baj"}});
-  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "eoo"}, {"jab", "baj"}, {"job", "baj"}});
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
   builder.reset(incoming_labels);
 
   Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
   EXPECT_EQ(Relabel::rsDrop, rstatus);
+}
+
+TEST_F(TestStatelessRelabeler, ReplaceWithReplaceJoin) {
+  RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"image", "name", "container"},
+                        .separator = ";",
+                        .regex = "(.+);(.+);",
+                        .target_label = "container",
+                        .replacement = "POD",
+                        .action = 5};  // Replace
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
+
+  LabelViewSet incoming_labels = make_label_set({{"__name__", "fxample_metric"}, {"instance", "127.0.0.1:8080"}, {"image", "abr"}, {"name", "brbr"}});
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
+  builder.reset(incoming_labels);
+
+  Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
+  EXPECT_EQ(Relabel::rsRelabel, rstatus);
+
+  auto rlabels = builder.label_view_set();
+
+  LabelViewSet expected_labels =
+      make_label_set({{"__name__", "fxample_metric"}, {"container", "POD"}, {"instance", "127.0.0.1:8080"}, {"image", "abr"}, {"name", "brbr"}});
+
+  EXPECT_EQ(rlabels, expected_labels);
 }
 
 }  // namespace

@@ -5,7 +5,6 @@
 #include <gtest/gtest.h>
 #include <cstdint>
 #include <initializer_list>
-#include <ostream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -16,6 +15,7 @@
 namespace {
 
 using namespace PromPP::Prometheus;  // NOLINT
+using namespace PromPP::Primitives;  // NOLINT
 
 using LabelViewForTest = std::pair<std::string_view, std::string_view>;
 using LabelForTest = std::pair<std::string, std::string>;
@@ -352,10 +352,6 @@ PROMPP_ALWAYS_INLINE LabelViewSetForTest make_label_set(std::initializer_list<La
   return labels;
 }
 
-//
-// PerShardRelabeler
-//
-
 PROMPP_ALWAYS_INLINE std::vector<SampleForTest> make_samples(std::initializer_list<SampleForTest> samples) {
   std::vector<SampleForTest> sampleses;
   for (const SampleForTest& s : samples) {
@@ -396,6 +392,70 @@ class HashdexTest : public std::vector<ItemTest> {
 PROMPP_ALWAYS_INLINE void make_hashdex(HashdexTest& hx, LabelViewSetForTest label_set, std::vector<SampleForTest> samples) {
   hx.emplace_back(hash_value(label_set), label_set, samples);
 }
+
+//
+// TestValidate
+//
+
+struct TestValidate : public testing::Test {
+  PromPP::Primitives::LabelsBuilderStateMap builder_state_;
+};
+
+TEST_F(TestValidate, HardValid) {
+  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "value"}, {"job", "abc"}});
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
+  builder.reset(incoming_labels);
+
+  Relabel::relabelStatus rstatus{Relabel::rsKeep};
+  Relabel::hard_validate(rstatus, builder, nullptr);
+  EXPECT_EQ(Relabel::rsKeep, rstatus);
+}
+
+TEST_F(TestValidate, HardInvalid) {
+  LabelViewSetForTest incoming_labels = make_label_set({{"__value__", "value"}, {"job", "abc"}});
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
+  builder.reset(incoming_labels);
+
+  Relabel::relabelStatus rstatus{Relabel::rsKeep};
+  Relabel::hard_validate(rstatus, builder, nullptr);
+  EXPECT_EQ(Relabel::rsInvalid, rstatus);
+}
+
+TEST_F(TestValidate, InvalidLabelLimit) {
+  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "value"}, {"job", "abc"}, {"jub", "buj"}});
+  PromPP::Primitives::LabelsBuilder<PromPP::Primitives::LabelsBuilderStateMap> builder{builder_state_};
+  builder.reset(incoming_labels);
+
+  // label_limit 0
+  Relabel::MetricLimits ll{};
+  Relabel::relabelStatus rstatus{Relabel::rsKeep};
+  Relabel::hard_validate(rstatus, builder, &ll);
+  EXPECT_EQ(Relabel::rsKeep, rstatus);
+
+  // label_limit 2
+  ll.label_limit = 2;
+  Relabel::hard_validate(rstatus, builder, &ll);
+  EXPECT_EQ(Relabel::rsInvalid, rstatus);
+
+  // label_name_length_limit 3
+  rstatus = Relabel::rsKeep;
+  ll.label_limit = 3;
+  ll.label_name_length_limit = 3;
+  Relabel::hard_validate(rstatus, builder, &ll);
+  EXPECT_EQ(Relabel::rsInvalid, rstatus);
+
+  // label_value_length_limit 3
+  rstatus = Relabel::rsKeep;
+  ll.label_limit = 3;
+  ll.label_name_length_limit = 10;
+  ll.label_value_length_limit = 3;
+  Relabel::hard_validate(rstatus, builder, &ll);
+  EXPECT_EQ(Relabel::rsInvalid, rstatus);
+}
+
+//
+// PerShardRelabeler
+//
 
 struct TestPerShardRelabeler : public testing::Test {
   // shards_inner_series

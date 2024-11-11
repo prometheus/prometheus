@@ -427,12 +427,13 @@ class RelabelConfig {
   template <class LabelsBuilder>
   PROMPP_ALWAYS_INLINE relabelStatus relabel(std::stringstream& buf, LabelsBuilder& builder) {
     std::string value;
-    for (const auto& ln : source_labels_) {
-      std::string_view lv = builder.get(ln);
-      if (lv.length() == 0) {
+    for (size_t i = 0; i < source_labels_.size(); ++i) {
+      std::string_view lv = builder.get(source_labels_[i]);
+      if (i == 0) {
+        value += std::string(lv);
         continue;
       }
-      value += (value.length() > 0 ? std::string(separator_) : "") + std::string(lv);
+      value += std::string(separator_) + std::string(lv);
     }
 
     switch (action_) {
