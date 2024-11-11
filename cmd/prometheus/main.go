@@ -195,13 +195,14 @@ type flagConfig struct {
 	enableAutoReload   bool
 	autoReloadInterval model.Duration
 
-	featureList   []string
-	memlimitRatio float64
+	memlimitEnable bool
+	memlimitRatio  float64
+
+	featureList []string
 	// These options are extracted from featureList
 	// for ease of use.
 	enablePerStepStats       bool
 	enableAutoGOMAXPROCS     bool
-	enableAutoGOMEMLIMIT     bool
 	enableConcurrentRuleEval bool
 
 	prometheusURL   string
@@ -242,9 +243,6 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 					c.autoReloadInterval, _ = model.ParseDuration("1s")
 				}
 				logger.Info("Enabled automatic configuration file reloading. Checking for configuration changes every", "interval", c.autoReloadInterval)
-			case "auto-gomemlimit":
-				c.enableAutoGOMEMLIMIT = true
-				logger.Info("Automatically set GOMEMLIMIT to match Linux container or system memory limit")
 			case "concurrent-rule-eval":
 				c.enableConcurrentRuleEval = true
 				logger.Info("Experimental concurrent rule evaluation enabled.")
@@ -331,6 +329,8 @@ func main() {
 	a.Flag("web.listen-address", "Address to listen on for UI, API, and telemetry. Can be repeated.").
 		Default("0.0.0.0:9090").StringsVar(&cfg.web.ListenAddresses)
 
+	a.Flag("auto-gomemlimit", "Automatically set GOMEMLIMIT to match Linux container or system memory limit").
+		Default("true").BoolVar(&cfg.memlimitEnable)
 	a.Flag("auto-gomemlimit.ratio", "The ratio of reserved GOMEMLIMIT memory to the detected maximum container or system memory").
 		Default("0.9").FloatVar(&cfg.memlimitRatio)
 
@@ -514,7 +514,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: auto-gomemlimit, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, native-histograms, created-timestamp-zero-ingestion, concurrent-rule-eval, delayed-compaction, old-ui. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, native-histograms, created-timestamp-zero-ingestion, concurrent-rule-eval, delayed-compaction, old-ui. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
@@ -765,7 +765,7 @@ func main() {
 		}
 	}
 
-	if cfg.enableAutoGOMEMLIMIT {
+	if cfg.memlimitEnable {
 		if _, err := memlimit.SetGoMemLimitWithOpts(
 			memlimit.WithRatio(cfg.memlimitRatio),
 			memlimit.WithProvider(

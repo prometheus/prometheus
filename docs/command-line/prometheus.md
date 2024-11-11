@@ -17,6 +17,7 @@ The Prometheus monitoring server
 | <code class="text-nowrap">--config.file</code> | Prometheus configuration file path. | `prometheus.yml` |
 | <code class="text-nowrap">--config.auto-reload-interval</code> | Specifies the interval for checking and automatically reloading the Prometheus configuration file upon detecting changes. | `30s` |
 | <code class="text-nowrap">--web.listen-address</code> <code class="text-nowrap">...<code class="text-nowrap"> | Address to listen on for UI, API, and telemetry. Can be repeated. | `0.0.0.0:9090` |
+| <code class="text-nowrap">--auto-gomemlimit</code> | Automatically set GOMEMLIMIT to match Linux container or system memory limit | `true` |
 | <code class="text-nowrap">--auto-gomemlimit.ratio</code> | The ratio of reserved GOMEMLIMIT memory to the detected maximum container or system memory | `0.9` |
 | <code class="text-nowrap">--web.config.file</code> | [EXPERIMENTAL] Path to configuration file that can enable TLS or authentication. |  |
 | <code class="text-nowrap">--web.read-timeout</code> | Maximum duration before timing out read of the request, and closing idle connections. | `5m` |
@@ -58,7 +59,7 @@ The Prometheus monitoring server
 | <code class="text-nowrap">--query.timeout</code> | Maximum time a query may take before being aborted. Use with server mode only. | `2m` |
 | <code class="text-nowrap">--query.max-concurrency</code> | Maximum number of queries executed concurrently. Use with server mode only. | `20` |
 | <code class="text-nowrap">--query.max-samples</code> | Maximum number of samples a single query can load into memory. Note that queries will fail if they try to load more samples than this into memory, so this also limits the number of samples a query can return. Use with server mode only. | `50000000` |
-| <code class="text-nowrap">--enable-feature</code> <code class="text-nowrap">...<code class="text-nowrap"> | Comma separated feature names to enable. Valid options: auto-gomemlimit, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, native-histograms, created-timestamp-zero-ingestion, concurrent-rule-eval, delayed-compaction, old-ui. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details. |  |
+| <code class="text-nowrap">--enable-feature</code> <code class="text-nowrap">...<code class="text-nowrap"> | Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, native-histograms, created-timestamp-zero-ingestion, concurrent-rule-eval, delayed-compaction, old-ui. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details. |  |
 | <code class="text-nowrap">--agent</code> | Run Prometheus in 'Agent mode'. |  |
 | <code class="text-nowrap">--log.level</code> | Only log messages with the given severity or above. One of: [debug, info, warn, error] | `info` |
 | <code class="text-nowrap">--log.format</code> | Output format of log messages. One of: [logfmt, json] | `logfmt` |
