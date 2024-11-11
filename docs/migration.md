@@ -54,17 +54,13 @@ This document offers guidance on migrating from Prometheus 2.x to Prometheus 3.0
 
 - The `.` pattern in regular expressions in PromQL matches newline characters. 
   With this change a regular expressions like `.*` matches strings that include 
-  `\n`. This applies to matchers in queries and relabel configs. For example the 
-  following regular expressions now match the accompanying strings, whereas in 
-  Prometheus v2 these combinations didn't match.
-
-  | Regex      | Additional matches  |
-  | -----      | ------              |
-  | ".*"       | "foo\n", "Foo\nBar" |
-  | "foo.?bar" | "foo\nbar"          |
-  | "foo.+bar" | "foo\nbar"          |
-
-  If you want Prometheus v3 to behave like v2 did, you will have to change your 
+  `\n`. This applies to matchers in queries and relabel configs.
+  - For example, the following regular expressions now match the accompanying
+  strings, whereas in Prometheus v2 these combinations didn't match.
+      - `.*` additionally matches `foo\n` and `Foo\nBar`
+      - `foo.?bar` additionally matches `foo\nbar`
+      - `foo.+bar` additionally matches `foo\nbar`
+  - If you want Prometheus v3 to behave like v2, you will have to change your
   regular expressions by replacing all `.` patterns with `[^\n]`, e.g.
   `foo[^\n]*`.
 - Lookback and range selectors are left open and right closed (previously left 
@@ -73,11 +69,11 @@ This document offers guidance on migrating from Prometheus 2.x to Prometheus 3.0
   timeseries with evenly spaced samples exactly 1 minute apart. Before Prometheus
   v3, a range query with `5m` would usually return 5 samples. But if the query
   evaluation aligns perfectly with a scrape, it would return 6 samples. In 
-  Prometheus v3 queries like this will always return 5 samples.
+  Prometheus v3 queries like this will always return 5 samples.  
   This change has likely few effects for everyday use, except for some subquery
-  use cases.
+  use cases.  
   Query front-ends that align queries usually align subqueries to multiples of
-  the step size. These subqueries will likely be affected.
+  the step size. These subqueries will likely be affected.  
   Tests are more likely to affected. To fix those either adjust the expected 
   number of samples or extend the range by less than one sample interval.
 - The `holt_winters` function has been renamed to `double_exponential_smoothing` 
