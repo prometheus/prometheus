@@ -1700,6 +1700,32 @@ TEST_F(TestStatelessRelabeler, DropReplace) {
   EXPECT_EQ(Relabel::rsDrop, rstatus);
 }
 
+TEST_F(TestStatelessRelabeler, ReplaceWithReplaceJoin) {
+  RelabelConfigTest rct1{.source_labels = std::vector<std::string_view>{"image", "name", "container"},
+                         .separator = ";",
+                         .regex = "(.+);(.+);",
+                         .target_label = "container",
+                         .replacement = "POD",
+                         .action = 5};  // Replace
+  std::vector<RelabelConfigTest*> rcts{};
+  rcts.emplace_back(&rct1);
+  Relabel::StatelessRelabeler sr(rcts);
+
+  LabelViewSetForTest incoming_labels = make_label_set({{"__name__", "fxample_metric"}, {"instance", "127.0.0.1:8080"}, {"image", "abr"}, {"name", "brbr"}});
+  LabelsBuilderForTest<LabelViewSetForTest> builder;
+  builder.reset(incoming_labels);
+
+  Relabel::relabelStatus rstatus = sr.relabeling_process(buf_, builder);
+  EXPECT_EQ(Relabel::rsRelabel, rstatus);
+
+  auto rlabels = builder.labels();
+
+  LabelViewSetForTest expected_labels =
+      make_label_set({{"__name__", "fxample_metric"}, {"container", "POD"}, {"instance", "127.0.0.1:8080"}, {"image", "abr"}, {"name", "brbr"}});
+
+  EXPECT_EQ(rlabels, expected_labels);
+}
+
 //
 // PerShardRelabeler
 //
