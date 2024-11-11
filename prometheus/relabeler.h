@@ -25,6 +25,7 @@
 #include "bare_bones/vector.h"
 #include "primitives/go_slice.h"
 #include "primitives/primitives.h"
+#include "primitives/snug_composites.h"
 #include "prometheus/value.h"
 
 namespace PromPP::Prometheus::Relabel {
@@ -1353,6 +1354,14 @@ class PerShardRelabeler {
   }
 
   PROMPP_ALWAYS_INLINE ~PerShardRelabeler() = default;
+};
+
+class WALOutputDecoder {
+  PromPP::Primitives::SnugComposites::LabelSet::EncodingTable wal_lss_;
+  StatelessRelabeler* stateless_relabeler_;
+  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap output_lss_;
+  //
+ public:
 };
 
 }  // namespace PromPP::Prometheus::Relabel
