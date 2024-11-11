@@ -244,8 +244,6 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 					c.autoReloadInterval, _ = model.ParseDuration("1s")
 				}
 				logger.Info("Enabled automatic configuration file reloading. Checking for configuration changes every", "interval", c.autoReloadInterval)
-			case "auto-gomemlimit":
-				logger.Warn("Automatically set GOMEMLIMIT to match Linux container or system memory limit (deprecated, ignored)")
 			case "concurrent-rule-eval":
 				c.enableConcurrentRuleEval = true
 				logger.Info("Experimental concurrent rule evaluation enabled.")
