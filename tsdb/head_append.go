@@ -1422,6 +1422,9 @@ func (a *headAppender) Commit() (err error) {
 		a.head.writeNotified.Notify()
 	}
 
+	// Make sure all postings are committed, no matter if they were added by this or another appender.
+	a.head.postings.Commit()
+
 	a.commitExemplars()
 
 	defer a.head.metrics.activeAppenders.Dec()
@@ -1957,7 +1960,8 @@ func (a *headAppender) Rollback() (err error) {
 	a.histograms = nil
 	a.metadata = nil
 
-	// Series are created in the head memory regardless of rollback. Thus we have
-	// to log them to the WAL in any case.
+	// Series are created in the head memory regardless of rollback.
+	// Thus we have to commit them in the postings and to log them to the WAL in any case.
+	a.head.postings.Commit()
 	return a.log()
 }

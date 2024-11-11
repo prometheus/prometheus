@@ -58,6 +58,14 @@ type MemPostings struct {
 	mtx     sync.RWMutex
 	m       map[string]map[string][]storage.SeriesRef
 	ordered bool
+
+	pendingMtx sync.Mutex
+	pending    []pendingMemPostings
+}
+
+type pendingMemPostings struct {
+	id   storage.SeriesRef
+	lset labels.Labels
 }
 
 // NewMemPostings returns a memPostings that's ready for reads and writes.
@@ -356,16 +364,30 @@ func (p *MemPostings) Iter(f func(labels.Label, Postings) error) error {
 	return nil
 }
 
-// Add a label set to the postings index.
+// Add a pending to be committed label set to the postings index.
 func (p *MemPostings) Add(id storage.SeriesRef, lset labels.Labels) {
+	p.pendingMtx.Lock()
+	defer p.pendingMtx.Unlock()
+
+	p.pending = append(p.pending, pendingMemPostings{id: id, lset: lset})
+}
+
+// Commit will create the entries for all series pending to be committed.
+func (p *MemPostings) Commit() {
+	p.pendingMtx.Lock()
+	defer p.pendingMtx.Unlock()
+
 	p.mtx.Lock()
+	defer p.mtx.Unlock()
 
-	lset.Range(func(l labels.Label) {
-		p.addFor(id, l)
-	})
-	p.addFor(id, allPostingsKey)
-
-	p.mtx.Unlock()
+	for i := range p.pending {
+		p.pending[i].lset.Range(func(l labels.Label) {
+			p.addFor(p.pending[i].id, l)
+		})
+		p.addFor(p.pending[i].id, allPostingsKey)
+		p.pending[i] = pendingMemPostings{} // don't retain any kind of references, like labels.Labels.
+	}
+	p.pending = p.pending[:0]
 }
 
 func appendWithExponentialGrowth[T any](a []T, v T) []T {

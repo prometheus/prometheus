@@ -95,6 +95,8 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		}
 	}()
 
+	defer h.postings.Commit()
+
 	wg.Add(concurrency)
 	for i := 0; i < concurrency; i++ {
 		processors[i].setup()
@@ -1507,6 +1509,8 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 		syms             = labels.NewSymbolTable() // New table for the whole snapshot.
 		dec              = record.NewDecoder(syms)
 	)
+
+	defer h.postings.Commit()
 
 	wg.Add(concurrency)
 	for i := 0; i < concurrency; i++ {
