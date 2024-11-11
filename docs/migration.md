@@ -18,19 +18,19 @@ This document offers guidance on migrating from Prometheus 2.x to Prometheus 3.0
   - `remote-write-receiver`
   - `new-service-discovery-manager`
   - `expand-external-labels`
-    Environment variable references `${var}` or `$var` in external label values 
+      - Environment variable references `${var}` or `$var` in external label values 
     are replaced according to the values of the current environment variables.  
-    References to undefined variables are replaced by the empty string.
+      - References to undefined variables are replaced by the empty string.
     The `$` character can be escaped by using `$$`.
   - `no-default-scrape-port`
-    Prometheus v3 will no longer add ports to scrape targets according to the 
+      - Prometheus v3 will no longer add ports to scrape targets according to the 
     specified scheme. Target will now appear in labels as configured.
-    If you rely on scrape targets like 
-    `https://example.com/metrics` or `http://exmaple.com/metrics` to be 
-    represented as `https://example.com/metrics:443` and 
-    `http://example.com/metrics:80` respectively, add them to your target URLs
+      - If you rely on scrape targets like 
+      `https://example.com/metrics` or `http://exmaple.com/metrics` to be 
+      represented as `https://example.com/metrics:443` and 
+      `http://example.com/metrics:80` respectively, add them to your target URLs
   - `agent`
-    Instead use the dedicated `--agent` CLI flag.
+      - Instead use the dedicated `--agent` CLI flag.
 
   Prometheus v3 will log a warning if you continue to pass these to 
   `--enable-feature`.
