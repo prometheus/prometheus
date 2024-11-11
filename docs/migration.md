@@ -31,6 +31,14 @@ This document offers guidance on migrating from Prometheus 2.x to Prometheus 3.0
     `http://example.com/metrics:80` respectively, add them to your target URLs
   - `agent`
     Instead use the dedicated `--agent` CLI flag.
+  - `auto-gomemlimit`
+    Prometheus v3 will automatically set `GOMEMLIMIT` to match the Linux 
+    container memory limit. If there is no container limit, or the process is 
+    running outside of containers, the system memory total is used. To disable 
+    this, `--no-auto-gomemlimit` is available.
+  - `auto-gomaxprocs`
+    Prometheus v3 will automatically set `GOMAXPROCS` to match the Linux 
+    container CPU quota. To disable this, `--no-auto-gomaxprocs` is available.
 
   Prometheus v3 will log a warning if you continue to pass these to 
   `--enable-feature`.
