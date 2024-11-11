@@ -1369,10 +1369,12 @@ func main() {
 			},
 		)
 	}
-	if err := g.Run(); err != nil {
-		logger.Error("Error running goroutines from run.Group", "err", err)
-		os.Exit(1)
-	}
+	func() { // This function exists so the top of the stack is named 'main.main.funcxxx' and not 'oklog'.
+		if err := g.Run(); err != nil {
+			logger.Error("Fatal error", "err", err)
+			os.Exit(1)
+		}
+	}()
 	logger.Info("See you next time!")
 }
 
