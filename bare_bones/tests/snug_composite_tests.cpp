@@ -342,16 +342,16 @@ TYPED_TEST(SnugComposite, should_write_the_same_wal_after_rollback) {
   ASSERT_EQ(wal1.str(), wal2.str());
 }
 
-class EncodingTableFixture : public testing::Test {
+class ShrinkableEncodingBimapFixture : public testing::Test {
  protected:
-  using Table = BareBones::SnugComposite::EncodingTable<TestSnugCompositesStringFilament>;
+  using Table = BareBones::SnugComposite::ShrinkableEncodingBimap<TestSnugCompositesStringFilament>;
 
   static constexpr auto kInvalidId = std::numeric_limits<uint32_t>::max();
 
   Table table_;
 };
 
-TEST_F(EncodingTableFixture, Emplace) {
+TEST_F(ShrinkableEncodingBimapFixture, Emplace) {
   // Arrange
 
   // Act
@@ -363,7 +363,7 @@ TEST_F(EncodingTableFixture, Emplace) {
   EXPECT_EQ(1U, id2);
 }
 
-TEST_F(EncodingTableFixture, EmplaceExisting) {
+TEST_F(ShrinkableEncodingBimapFixture, EmplaceExisting) {
   // Arrange
 
   // Act
@@ -375,7 +375,7 @@ TEST_F(EncodingTableFixture, EmplaceExisting) {
   EXPECT_EQ(0U, id2);
 }
 
-TEST_F(EncodingTableFixture, Checkpoint) {
+TEST_F(ShrinkableEncodingBimapFixture, Checkpoint) {
   // Arrange
   table_.find_or_emplace("1"s);
 
@@ -386,7 +386,7 @@ TEST_F(EncodingTableFixture, Checkpoint) {
   EXPECT_EQ(1U, checkpoint.size());
 }
 
-TEST_F(EncodingTableFixture, ShrinkToCheckpointSize) {
+TEST_F(ShrinkableEncodingBimapFixture, ShrinkToCheckpointSize) {
   // Arrange
   table_.find_or_emplace("1"s);
 
@@ -397,7 +397,7 @@ TEST_F(EncodingTableFixture, ShrinkToCheckpointSize) {
   EXPECT_EQ(0U, table_.size());
 }
 
-TEST_F(EncodingTableFixture, EmplaceAfterShrinkToCheckpointSize) {
+TEST_F(ShrinkableEncodingBimapFixture, EmplaceAfterShrinkToCheckpointSize) {
   // Arrange
   const auto id_before = table_.find_or_emplace("1"s);
 
@@ -411,7 +411,7 @@ TEST_F(EncodingTableFixture, EmplaceAfterShrinkToCheckpointSize) {
   EXPECT_EQ(1U, id_after);
 }
 
-TEST_F(EncodingTableFixture, ShrinkToOutdatedCheckpoint) {
+TEST_F(ShrinkableEncodingBimapFixture, ShrinkToOutdatedCheckpoint) {
   // Arrange
   table_.find_or_emplace("1"s);
   const auto checkpoint = table_.checkpoint();
@@ -424,7 +424,7 @@ TEST_F(EncodingTableFixture, ShrinkToOutdatedCheckpoint) {
   EXPECT_THROW(table_.shrink_to_checkpoint_size(checkpoint), BareBones::Exception);
 }
 
-TEST_F(EncodingTableFixture, LoadCheckpointWithoutShrink) {
+TEST_F(ShrinkableEncodingBimapFixture, LoadCheckpointWithoutShrink) {
   // Arrange
   Table table2;
   std::stringstream stream;
@@ -440,7 +440,7 @@ TEST_F(EncodingTableFixture, LoadCheckpointWithoutShrink) {
   EXPECT_EQ(1U, table2.find("1"s).value_or(kInvalidId));
 }
 
-TEST_F(EncodingTableFixture, LoadCheckpointAfterShrink) {
+TEST_F(ShrinkableEncodingBimapFixture, LoadCheckpointAfterShrink) {
   // Arrange
   Table table2;
   std::stringstream stream;

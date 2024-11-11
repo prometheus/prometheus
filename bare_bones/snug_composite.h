@@ -474,10 +474,10 @@ class DecodingTable {
 
 template <class Filament>
   requires is_shrinkable<typename Filament::data_type>
-class EncodingTable final : public DecodingTable<Filament> {
+class ShrinkableEncodingBimap final : public DecodingTable<Filament> {
  public:
   using Base = DecodingTable<Filament>;
-  using checkpoint_type = typename Base::template Checkpoint<EncodingTable<Filament>>;
+  using checkpoint_type = typename Base::template Checkpoint<ShrinkableEncodingBimap<Filament>>;
   using delta_type = typename checkpoint_type::Delta;
 
   using Base::data;
