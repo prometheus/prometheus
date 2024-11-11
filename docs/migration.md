@@ -95,7 +95,7 @@ header was unparsable or unrecognised. This could lead to incorrect data being
 parsed in the scrape. Prometheus v3 will now fail the scrape in such cases.
 
 If a scrape target is not providing the correct Content-Type header the
-fallback protocol can be specified using the fallback_scrape_protocol
+fallback protocol can be specified using the `fallback_scrape_protocol`
 parameter. See [Prometheus scrape_config documentation.](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#scrape_config)
 
 This is a breaking change as scrapes that may have succeeded with Prometheus v2
