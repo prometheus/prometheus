@@ -16,6 +16,7 @@ package relabel
 import (
 	"crypto/md5"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -205,6 +206,32 @@ func (re Regexp) MarshalYAML() (interface{}, error) {
 		return re.String(), nil
 	}
 	return nil, nil
+}
+
+// UnmarshalJSON implements the json.Unmarshaler interface.
+func (re *Regexp) UnmarshalJSON(b []byte) error {
+	v := struct {
+		Regex string `json:"regex"`
+	}{}
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	r, err := NewRegexp(v.Regex)
+	if err != nil {
+		return err
+	}
+	*re = r
+	return nil
+}
+
+// MarshalJSON implements the json.Marshaler interface.
+func (re Regexp) MarshalJSON() ([]byte, error) {
+	v := &struct {
+		Regex string `json:"regex"`
+	}{
+		Regex: re.String(),
+	}
+	return json.Marshal(v)
 }
 
 // IsZero implements the yaml.IsZeroer interface.
