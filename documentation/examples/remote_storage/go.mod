@@ -6,9 +6,9 @@ require (
 	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/snappy v0.0.4
-	github.com/influxdata/influxdb v1.11.6
-	github.com/prometheus/client_golang v1.20.4
-	github.com/prometheus/common v0.60.0
+	github.com/influxdata/influxdb v1.11.7
+	github.com/prometheus/client_golang v1.20.5
+	github.com/prometheus/common v0.60.1
 	github.com/prometheus/prometheus v0.53.1
 	github.com/stretchr/testify v1.9.0
 )

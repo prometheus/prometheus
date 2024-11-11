@@ -973,69 +973,37 @@ func TestMemPostingsStats(t *testing.T) {
 }
 
 func TestMemPostings_Delete(t *testing.T) {
-	t.Run("some postings", func(t *testing.T) {
-		p := NewMemPostings()
-		p.Add(1, labels.FromStrings("lbl1", "a"))
-		p.Add(2, labels.FromStrings("lbl1", "b"))
-		p.Add(3, labels.FromStrings("lbl2", "a"))
+	p := NewMemPostings()
+	p.Add(1, labels.FromStrings("lbl1", "a"))
+	p.Add(2, labels.FromStrings("lbl1", "b"))
+	p.Add(3, labels.FromStrings("lbl2", "a"))
 
-		before := p.Get(allPostingsKey.Name, allPostingsKey.Value)
-		deletedRefs := map[storage.SeriesRef]struct{}{
-			2: {},
-		}
-		affectedLabels := map[labels.Label]struct{}{
-			{Name: "lbl1", Value: "b"}: {},
-		}
-		p.Delete(deletedRefs, affectedLabels)
-		after := p.Get(allPostingsKey.Name, allPostingsKey.Value)
+	before := p.Get(allPostingsKey.Name, allPostingsKey.Value)
+	deletedRefs := map[storage.SeriesRef]struct{}{
+		2: {},
+	}
+	affectedLabels := map[labels.Label]struct{}{
+		{Name: "lbl1", Value: "b"}: {},
+	}
+	p.Delete(deletedRefs, affectedLabels)
+	after := p.Get(allPostingsKey.Name, allPostingsKey.Value)
 
-		// Make sure postings gotten before the delete have the old data when
-		// iterated over.
-		expanded, err := ExpandPostings(before)
-		require.NoError(t, err)
-		require.Equal(t, []storage.SeriesRef{1, 2, 3}, expanded)
+	// Make sure postings gotten before the delete have the old data when
+	// iterated over.
+	expanded, err := ExpandPostings(before)
+	require.NoError(t, err)
+	require.Equal(t, []storage.SeriesRef{1, 2, 3}, expanded)
 
-		// Make sure postings gotten after the delete have the new data when
-		// iterated over.
-		expanded, err = ExpandPostings(after)
-		require.NoError(t, err)
-		require.Equal(t, []storage.SeriesRef{1, 3}, expanded)
+	// Make sure postings gotten after the delete have the new data when
+	// iterated over.
+	expanded, err = ExpandPostings(after)
+	require.NoError(t, err)
+	require.Equal(t, []storage.SeriesRef{1, 3}, expanded)
 
-		deleted := p.Get("lbl1", "b")
-		expanded, err = ExpandPostings(deleted)
-		require.NoError(t, err)
-		require.Empty(t, expanded, "expected empty postings, got %v", expanded)
-	})
-
-	t.Run("all postings", func(t *testing.T) {
-		p := NewMemPostings()
-		p.Add(1, labels.FromStrings("lbl1", "a"))
-		p.Add(2, labels.FromStrings("lbl1", "b"))
-		p.Add(3, labels.FromStrings("lbl2", "a"))
-
-		deletedRefs := map[storage.SeriesRef]struct{}{1: {}, 2: {}, 3: {}}
-		affectedLabels := map[labels.Label]struct{}{
-			{Name: "lbl1", Value: "a"}: {},
-			{Name: "lbl1", Value: "b"}: {},
-			{Name: "lbl1", Value: "c"}: {},
-		}
-		p.Delete(deletedRefs, affectedLabels)
-		after := p.Get(allPostingsKey.Name, allPostingsKey.Value)
-		expanded, err := ExpandPostings(after)
-		require.NoError(t, err)
-		require.Empty(t, expanded)
-	})
-
-	t.Run("nothing on empty mempostings", func(t *testing.T) {
-		p := NewMemPostings()
-		deletedRefs := map[storage.SeriesRef]struct{}{}
-		affectedLabels := map[labels.Label]struct{}{}
-		p.Delete(deletedRefs, affectedLabels)
-		after := p.Get(allPostingsKey.Name, allPostingsKey.Value)
-		expanded, err := ExpandPostings(after)
-		require.NoError(t, err)
-		require.Empty(t, expanded)
-	})
+	deleted := p.Get("lbl1", "b")
+	expanded, err = ExpandPostings(deleted)
+	require.NoError(t, err)
+	require.Empty(t, expanded, "expected empty postings, got %v", expanded)
 }
 
 // BenchmarkMemPostings_Delete is quite heavy, so consider running it with
@@ -1057,7 +1025,7 @@ func BenchmarkMemPostings_Delete(b *testing.B) {
 		return s
 	}
 
-	const total = 2e6
+	const total = 1e6
 	allSeries := [total]labels.Labels{}
 	nameValues := make([]string, 0, 100)
 	for i := 0; i < total; i++ {
@@ -1506,59 +1474,4 @@ func TestMemPostings_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 	})
 	require.Error(t, p.Err())
 	require.Equal(t, failAfter+1, ctx.Count()) // Plus one for the Err() call that puts the error in the result.
-}
-
-func TestMemPostings_Unordered_Add_Get(t *testing.T) {
-	mp := NewMemPostings()
-	for ref := storage.SeriesRef(1); ref < 8; ref += 2 {
-		// First, add next series.
-		next := ref + 1
-		mp.Add(next, labels.FromStrings(labels.MetricName, "test", "series", strconv.Itoa(int(next))))
-		nextPostings := mp.Get(labels.MetricName, "test")
-
-		// Now add current ref.
-		mp.Add(ref, labels.FromStrings(labels.MetricName, "test", "series", strconv.Itoa(int(ref))))
-
-		// Next postings should still reference the next series.
-		nextExpanded, err := ExpandPostings(nextPostings)
-		require.NoError(t, err)
-		require.Len(t, nextExpanded, int(ref))
-		require.Equal(t, next, nextExpanded[len(nextExpanded)-1])
-	}
-}
-
-func TestMemPostings_Concurrent_Add_Get(t *testing.T) {
-	refs := make(chan storage.SeriesRef)
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-	t.Cleanup(wg.Wait)
-	t.Cleanup(func() { close(refs) })
-
-	mp := NewMemPostings()
-	go func() {
-		defer wg.Done()
-		for ref := range refs {
-			mp.Add(ref, labels.FromStrings(labels.MetricName, "test", "series", strconv.Itoa(int(ref))))
-			p := mp.Get(labels.MetricName, "test")
-
-			_, err := ExpandPostings(p)
-			if err != nil {
-				t.Errorf("unexpected error: %s", err)
-			}
-		}
-	}()
-
-	for ref := storage.SeriesRef(1); ref < 8; ref += 2 {
-		// Add next ref in another goroutine so they would race.
-		refs <- ref + 1
-		// Add current ref here
-		mp.Add(ref, labels.FromStrings(labels.MetricName, "test", "series", strconv.Itoa(int(ref))))
-
-		// We don't read the value of the postings here,
-		// this is tested in TestMemPostings_Unordered_Add_Get where it's easier to achieve the determinism.
-		// This test just checks that there's no data race.
-		p := mp.Get(labels.MetricName, "test")
-		_, err := ExpandPostings(p)
-		require.NoError(t, err)
-	}
 }

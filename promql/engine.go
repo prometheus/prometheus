@@ -739,6 +739,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 			samplesStats:             query.sampleStats,
 			noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 			enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
+			querier:                  querier,
 		}
 		query.sampleStats.InitStepTracking(start, start, 1)
 
@@ -797,6 +798,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		samplesStats:             query.sampleStats,
 		noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 		enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
+		querier:                  querier,
 	}
 	query.sampleStats.InitStepTracking(evaluator.startTimestamp, evaluator.endTimestamp, evaluator.interval)
 	val, warnings, err := evaluator.Eval(ctxInnerEval, s.Expr)
@@ -1069,6 +1071,7 @@ type evaluator struct {
 	samplesStats             *stats.QuerySamples
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 	enableDelayedNameRemoval bool
+	querier                  storage.Querier
 }
 
 // errorf causes a panic with the input formatted into an error.
@@ -1230,38 +1233,17 @@ func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Label
 		ev.currentSamples = tempNumSamples
 		// Gather input vectors for this timestamp.
 		for i := range exprs {
-			vectors[i] = vectors[i][:0]
-
+			var bh []EvalSeriesHelper
+			var sh []EvalSeriesHelper
 			if prepSeries != nil {
-				bufHelpers[i] = bufHelpers[i][:0]
+				bh = bufHelpers[i][:0]
+				sh = seriesHelpers[i]
 			}
-
-			for si, series := range matrixes[i] {
-				switch {
-				case len(series.Floats) > 0 && series.Floats[0].T == ts:
-					vectors[i] = append(vectors[i], Sample{Metric: series.Metric, F: series.Floats[0].F, T: ts, DropName: series.DropName})
-					// Move input vectors forward so we don't have to re-scan the same
-					// past points at the next step.
-					matrixes[i][si].Floats = series.Floats[1:]
-				case len(series.Histograms) > 0 && series.Histograms[0].T == ts:
-					vectors[i] = append(vectors[i], Sample{Metric: series.Metric, H: series.Histograms[0].H, T: ts, DropName: series.DropName})
-					matrixes[i][si].Histograms = series.Histograms[1:]
-				default:
-					continue
-				}
-				if prepSeries != nil {
-					bufHelpers[i] = append(bufHelpers[i], seriesHelpers[i][si])
-				}
-				// Don't add histogram size here because we only
-				// copy the pointer above, not the whole
-				// histogram.
-				ev.currentSamples++
-				if ev.currentSamples > ev.maxSamples {
-					ev.error(ErrTooManySamples(env))
-				}
-			}
+			vectors[i], bh = ev.gatherVector(ts, matrixes[i], vectors[i], bh, sh)
 			args[i] = vectors[i]
-			ev.samplesStats.UpdatePeak(ev.currentSamples)
+			if prepSeries != nil {
+				bufHelpers[i] = bh
+			}
 		}
 
 		// Make the function call.
@@ -1462,19 +1444,18 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 	return result, warnings
 }
 
-// evalVectorSelector generates a Matrix between ev.startTimestamp and ev.endTimestamp (inclusive), each point spaced ev.interval apart, from vs.
-// vs.Series has to be expanded before calling this method.
-// For every series iterator in vs.Series, the method iterates in ev.interval sized steps from ev.startTimestamp until and including ev.endTimestamp,
+// evalSeries generates a Matrix between ev.startTimestamp and ev.endTimestamp (inclusive), each point spaced ev.interval apart, from series given offset.
+// For every storage.Series iterator in series, the method iterates in ev.interval sized steps from ev.startTimestamp until and including ev.endTimestamp,
 // collecting every corresponding sample (obtained via ev.vectorSelectorSingle) into a Series.
 // All of the generated Series are collected into a Matrix, that gets returned.
-func (ev *evaluator) evalVectorSelector(ctx context.Context, vs *parser.VectorSelector) Matrix {
+func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, offset time.Duration, recordOrigT bool) Matrix {
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 
-	mat := make(Matrix, 0, len(vs.Series))
+	mat := make(Matrix, 0, len(series))
 	var prevSS *Series
 	it := storage.NewMemoizedEmptyIterator(durationMilliseconds(ev.lookbackDelta))
 	var chkIter chunkenc.Iterator
-	for _, s := range vs.Series {
+	for _, s := range series {
 		if err := contextDone(ctx, "expression evaluation"); err != nil {
 			ev.error(err)
 		}
@@ -1487,7 +1468,7 @@ func (ev *evaluator) evalVectorSelector(ctx context.Context, vs *parser.VectorSe
 
 		for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
 			step++
-			_, f, h, ok := ev.vectorSelectorSingle(it, vs, ts)
+			origT, f, h, ok := ev.vectorSelectorSingle(it, offset, ts)
 			if !ok {
 				continue
 			}
@@ -1501,8 +1482,18 @@ func (ev *evaluator) evalVectorSelector(ctx context.Context, vs *parser.VectorSe
 				if ss.Floats == nil {
 					ss.Floats = reuseOrGetFPointSlices(prevSS, numSteps)
 				}
+				if recordOrigT {
+					// This is an info metric, where we want to track the original sample timestamp.
+					// Info metric values should be 1 by convention, therefore we can re-use this
+					// space in the sample.
+					f = float64(origT)
+				}
 				ss.Floats = append(ss.Floats, FPoint{F: f, T: ts})
 			} else {
+				if recordOrigT {
+					ev.error(fmt.Errorf("this should be an info metric, with float samples: %s", ss.Metric))
+				}
+
 				point := HPoint{H: h, T: ts}
 				histSize := point.size()
 				ev.currentSamples += histSize
@@ -1672,6 +1663,8 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			return ev.evalLabelReplace(ctx, e.Args)
 		case "label_join":
 			return ev.evalLabelJoin(ctx, e.Args)
+		case "info":
+			return ev.evalInfo(ctx, e.Args)
 		}
 
 		if !matrixArg {
@@ -1963,7 +1956,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		if err != nil {
 			ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
 		}
-		mat := ev.evalVectorSelector(ctx, e)
+		mat := ev.evalSeries(ctx, e.Series, e.Offset, false)
 		return mat, ws
 
 	case *parser.MatrixSelector:
@@ -1984,6 +1977,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			samplesStats:             ev.samplesStats.NewChild(),
 			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
 			enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
+			querier:                  ev.querier,
 		}
 
 		if e.Step != 0 {
@@ -2028,6 +2022,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			samplesStats:             ev.samplesStats.NewChild(),
 			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
 			enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
+			querier:                  ev.querier,
 		}
 		res, ws := newEv.eval(ctx, e.Expr)
 		ev.currentSamples = newEv.currentSamples
@@ -2052,7 +2047,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		}
 		for i := range mat {
 			if len(mat[i].Floats)+len(mat[i].Histograms) != 1 {
-				panic(fmt.Errorf("unexpected number of samples"))
+				panic(errors.New("unexpected number of samples"))
 			}
 			for ts := ev.startTimestamp + ev.interval; ts <= ev.endTimestamp; ts += ev.interval {
 				if len(mat[i].Floats) > 0 {
@@ -2128,7 +2123,7 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 		vec := make(Vector, 0, len(vs.Series))
 		for i, s := range vs.Series {
 			it := seriesIterators[i]
-			t, _, _, ok := ev.vectorSelectorSingle(it, vs, enh.Ts)
+			t, _, _, ok := ev.vectorSelectorSingle(it, vs.Offset, enh.Ts)
 			if !ok {
 				continue
 			}
@@ -2152,10 +2147,10 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 }
 
 // vectorSelectorSingle evaluates an instant vector for the iterator of one time series.
-func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, node *parser.VectorSelector, ts int64) (
+func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, offset time.Duration, ts int64) (
 	int64, float64, *histogram.FloatHistogram, bool,
 ) {
-	refTime := ts - durationMilliseconds(node.Offset)
+	refTime := ts - durationMilliseconds(offset)
 	var t int64
 	var v float64
 	var h *histogram.FloatHistogram
@@ -2926,7 +2921,15 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 					group.hasHistogram = true
 				}
 			case parser.STDVAR, parser.STDDEV:
-				group.floatValue = 0
+				switch {
+				case h != nil:
+					// Ignore histograms for STDVAR and STDDEV.
+					group.seen = false
+				case math.IsNaN(f), math.IsInf(f, 0):
+					group.floatValue = math.NaN()
+				default:
+					group.floatValue = 0
+				}
 			case parser.QUANTILE:
 				group.heap = make(vectorByValueHeap, 1)
 				group.heap[0] = Sample{F: f}
@@ -3623,7 +3626,7 @@ func detectHistogramStatsDecoding(expr parser.Expr) {
 		if n, ok := node.(*parser.BinaryExpr); ok {
 			detectHistogramStatsDecoding(n.LHS)
 			detectHistogramStatsDecoding(n.RHS)
-			return fmt.Errorf("stop")
+			return errors.New("stop")
 		}
 
 		n, ok := (node).(*parser.VectorSelector)
@@ -3645,7 +3648,7 @@ func detectHistogramStatsDecoding(expr parser.Expr) {
 				break
 			}
 		}
-		return fmt.Errorf("stop")
+		return errors.New("stop")
 	})
 }
 
@@ -3715,4 +3718,42 @@ func newHistogramStatsSeries(series storage.Series) *histogramStatsSeries {
 
 func (s histogramStatsSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
 	return NewHistogramStatsIterator(s.Series.Iterator(it))
+}
+
+// gatherVector gathers a Vector for ts from the series in input.
+// output is used as a buffer.
+// If bufHelpers and seriesHelpers are provided, seriesHelpers[i] is appended to bufHelpers for every input index i.
+// The gathered Vector and bufHelper are returned.
+func (ev *evaluator) gatherVector(ts int64, input Matrix, output Vector, bufHelpers, seriesHelpers []EvalSeriesHelper) (Vector, []EvalSeriesHelper) {
+	output = output[:0]
+	for i, series := range input {
+		switch {
+		case len(series.Floats) > 0 && series.Floats[0].T == ts:
+			s := series.Floats[0]
+			output = append(output, Sample{Metric: series.Metric, F: s.F, T: ts, DropName: series.DropName})
+			// Move input vectors forward so we don't have to re-scan the same
+			// past points at the next step.
+			input[i].Floats = series.Floats[1:]
+		case len(series.Histograms) > 0 && series.Histograms[0].T == ts:
+			s := series.Histograms[0]
+			output = append(output, Sample{Metric: series.Metric, H: s.H, T: ts, DropName: series.DropName})
+			input[i].Histograms = series.Histograms[1:]
+		default:
+			continue
+		}
+		if len(seriesHelpers) > 0 {
+			bufHelpers = append(bufHelpers, seriesHelpers[i])
+		}
+
+		// Don't add histogram size here because we only
+		// copy the pointer above, not the whole
+		// histogram.
+		ev.currentSamples++
+		if ev.currentSamples > ev.maxSamples {
+			ev.error(ErrTooManySamples(env))
+		}
+	}
+	ev.samplesStats.UpdatePeak(ev.currentSamples)
+
+	return output, bufHelpers
 }

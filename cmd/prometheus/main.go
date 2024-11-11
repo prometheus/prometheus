@@ -190,21 +190,20 @@ type flagConfig struct {
 	queryConcurrency            int
 	queryMaxSamples             int
 	RemoteFlushDeadline         model.Duration
-	nameEscapingScheme          string
 	maxNotificationsSubscribers int
 
 	enableAutoReload   bool
 	autoReloadInterval model.Duration
 
-	featureList   []string
-	memlimitRatio float64
+	memlimitEnable bool
+	memlimitRatio  float64
+
+	featureList []string
 	// These options are extracted from featureList
 	// for ease of use.
-	enableExpandExternalLabels bool
-	enablePerStepStats         bool
-	enableAutoGOMAXPROCS       bool
-	enableAutoGOMEMLIMIT       bool
-	enableConcurrentRuleEval   bool
+	enablePerStepStats       bool
+	enableAutoGOMAXPROCS     bool
+	enableConcurrentRuleEval bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -220,9 +219,6 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 		opts := strings.Split(f, ",")
 		for _, o := range opts {
 			switch o {
-			case "expand-external-labels":
-				c.enableExpandExternalLabels = true
-				logger.Info("Experimental expand-external-labels enabled")
 			case "exemplar-storage":
 				c.tsdb.EnableExemplarStorage = true
 				logger.Info("Experimental in-memory exemplar storage enabled")
@@ -247,9 +243,6 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 					c.autoReloadInterval, _ = model.ParseDuration("1s")
 				}
 				logger.Info("Enabled automatic configuration file reloading. Checking for configuration changes every", "interval", c.autoReloadInterval)
-			case "auto-gomemlimit":
-				c.enableAutoGOMEMLIMIT = true
-				logger.Info("Automatically set GOMEMLIMIT to match Linux container or system memory limit")
 			case "concurrent-rule-eval":
 				c.enableConcurrentRuleEval = true
 				logger.Info("Experimental concurrent rule evaluation enabled.")
@@ -336,6 +329,8 @@ func main() {
 	a.Flag("web.listen-address", "Address to listen on for UI, API, and telemetry. Can be repeated.").
 		Default("0.0.0.0:9090").StringsVar(&cfg.web.ListenAddresses)
 
+	a.Flag("auto-gomemlimit", "Automatically set GOMEMLIMIT to match Linux container or system memory limit").
+		Default("true").BoolVar(&cfg.memlimitEnable)
 	a.Flag("auto-gomemlimit.ratio", "The ratio of reserved GOMEMLIMIT memory to the detected maximum container or system memory").
 		Default("0.9").FloatVar(&cfg.memlimitRatio)
 
@@ -437,6 +432,9 @@ func main() {
 	serverOnlyFlag(a, "storage.tsdb.samples-per-chunk", "Target number of samples per chunk.").
 		Default("120").Hidden().IntVar(&cfg.tsdb.SamplesPerChunk)
 
+	serverOnlyFlag(a, "storage.tsdb.delayed-compaction.max-percent", "Sets the upper limit for the random compaction delay, specified as a percentage of the head chunk range. 100 means the compaction can be delayed by up to the entire head chunk range. Only effective when the delayed-compaction feature flag is enabled.").
+		Default("10").Hidden().IntVar(&cfg.tsdb.CompactionDelayMaxPercent)
+
 	agentOnlyFlag(a, "storage.agent.path", "Base path for metrics storage.").
 		Default("data-agent/").StringVar(&cfg.agentStoragePath)
 
@@ -516,7 +514,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: auto-gomemlimit, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, native-histograms, created-timestamp-zero-ingestion, concurrent-rule-eval, delayed-compaction, old-ui. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, native-histograms, created-timestamp-zero-ingestion, concurrent-rule-eval, delayed-compaction, old-ui. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
@@ -550,15 +548,6 @@ func main() {
 	if err := cfg.setFeatureListOptions(logger); err != nil {
 		fmt.Fprintln(os.Stderr, fmt.Errorf("Error parsing feature list: %w", err))
 		os.Exit(1)
-	}
-
-	if cfg.nameEscapingScheme != "" {
-		scheme, err := model.ToEscapingScheme(cfg.nameEscapingScheme)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, `Invalid name escaping scheme: %q; Needs to be one of "values", "underscores", or "dots"`, cfg.nameEscapingScheme)
-			os.Exit(1)
-		}
-		model.NameEscapingScheme = scheme
 	}
 
 	if agentMode && len(serverOnlyFlags) > 0 {
@@ -595,7 +584,7 @@ func main() {
 
 	// Throw error for invalid config before starting other components.
 	var cfgFile *config.Config
-	if cfgFile, err = config.LoadFile(cfg.configFile, agentMode, false, promslog.NewNopLogger()); err != nil {
+	if cfgFile, err = config.LoadFile(cfg.configFile, agentMode, promslog.NewNopLogger()); err != nil {
 		absPath, pathErr := filepath.Abs(cfg.configFile)
 		if pathErr != nil {
 			absPath = cfg.configFile
@@ -666,6 +655,12 @@ func main() {
 			}
 
 			cfg.tsdb.MaxBlockDuration = maxBlockDuration
+		}
+
+		// Delayed compaction checks
+		if cfg.tsdb.EnableDelayedCompaction && (cfg.tsdb.CompactionDelayMaxPercent > 100 || cfg.tsdb.CompactionDelayMaxPercent <= 0) {
+			logger.Warn("The --storage.tsdb.delayed-compaction.max-percent should have a value between 1 and 100. Using default", "default", tsdb.DefaultCompactionDelayMaxPercent)
+			cfg.tsdb.CompactionDelayMaxPercent = tsdb.DefaultCompactionDelayMaxPercent
 		}
 	}
 
@@ -770,7 +765,7 @@ func main() {
 		}
 	}
 
-	if cfg.enableAutoGOMEMLIMIT {
+	if cfg.memlimitEnable {
 		if _, err := memlimit.SetGoMemLimitWithOpts(
 			memlimit.WithRatio(cfg.memlimitRatio),
 			memlimit.WithProvider(
@@ -1145,7 +1140,7 @@ func main() {
 				for {
 					select {
 					case <-hup:
-						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
 							logger.Error("Error reloading config", "err", err)
 						} else if cfg.enableAutoReload {
 							if currentChecksum, err := config.GenerateChecksum(cfg.configFile); err == nil {
@@ -1155,7 +1150,7 @@ func main() {
 							}
 						}
 					case rc := <-webHandler.Reload():
-						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
 							logger.Error("Error reloading config", "err", err)
 							rc <- err
 						} else {
@@ -1180,7 +1175,7 @@ func main() {
 						}
 						logger.Info("Configuration file change detected, reloading the configuration.")
 
-						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
 							logger.Error("Error reloading config", "err", err)
 						} else {
 							checksum = currentChecksum
@@ -1210,7 +1205,7 @@ func main() {
 					return nil
 				}
 
-				if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, func(bool) {}, reloaders...); err != nil {
+				if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, func(bool) {}, reloaders...); err != nil {
 					return fmt.Errorf("error loading config from %q: %w", cfg.configFile, err)
 				}
 
@@ -1437,7 +1432,7 @@ type reloader struct {
 	reloader func(*config.Config) error
 }
 
-func reloadConfig(filename string, expandExternalLabels, enableExemplarStorage bool, logger *slog.Logger, noStepSuqueryInterval *safePromQLNoStepSubqueryInterval, callback func(bool), rls ...reloader) (err error) {
+func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logger, noStepSuqueryInterval *safePromQLNoStepSubqueryInterval, callback func(bool), rls ...reloader) (err error) {
 	start := time.Now()
 	timingsLogger := logger
 	logger.Info("Loading configuration file", "filename", filename)
@@ -1453,7 +1448,7 @@ func reloadConfig(filename string, expandExternalLabels, enableExemplarStorage b
 		}
 	}()
 
-	conf, err := config.LoadFile(filename, agentMode, expandExternalLabels, logger)
+	conf, err := config.LoadFile(filename, agentMode, logger)
 	if err != nil {
 		return fmt.Errorf("couldn't load configuration (--config.file=%q): %w", filename, err)
 	}
@@ -1643,6 +1638,9 @@ func (s *readyStorage) Appender(ctx context.Context) storage.Appender {
 
 type notReadyAppender struct{}
 
+// SetOptions does nothing in this appender implementation.
+func (n notReadyAppender) SetOptions(opts *storage.AppendOptions) {}
+
 func (n notReadyAppender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	return 0, tsdb.ErrNotReady
 }
@@ -1797,6 +1795,7 @@ type tsdbOptions struct {
 	EnableMemorySnapshotOnShutdown bool
 	EnableNativeHistograms         bool
 	EnableDelayedCompaction        bool
+	CompactionDelayMaxPercent      int
 	EnableOverlappingCompaction    bool
 	EnableOOONativeHistograms      bool
 }
@@ -1821,6 +1820,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableOOONativeHistograms:      opts.EnableOOONativeHistograms,
 		OutOfOrderTimeWindow:           opts.OutOfOrderTimeWindow,
 		EnableDelayedCompaction:        opts.EnableDelayedCompaction,
+		CompactionDelayMaxPercent:      opts.CompactionDelayMaxPercent,
 		EnableOverlappingCompaction:    opts.EnableOverlappingCompaction,
 	}
 }

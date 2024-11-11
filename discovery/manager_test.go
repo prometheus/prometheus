@@ -15,6 +15,7 @@ package discovery
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -1209,9 +1210,9 @@ func TestGaugeFailedConfigs(t *testing.T) {
 
 	c := map[string]Configs{
 		"prometheus": {
-			errorConfig{fmt.Errorf("tests error 0")},
-			errorConfig{fmt.Errorf("tests error 1")},
-			errorConfig{fmt.Errorf("tests error 2")},
+			errorConfig{errors.New("tests error 0")},
+			errorConfig{errors.New("tests error 1")},
+			errorConfig{errors.New("tests error 2")},
 		},
 	}
 	discoveryManager.ApplyConfig(c)

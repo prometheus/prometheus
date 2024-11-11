@@ -15,14 +15,18 @@ package tsdb
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"flag"
 	"fmt"
 	"hash/crc32"
 	"log/slog"
 	"math"
 	"math/rand"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path"
 	"path/filepath"
@@ -40,6 +44,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"go.uber.org/goleak"
+
+	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/storage/remote"
+
+	"github.com/gogo/protobuf/proto"
+	"github.com/golang/snappy"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -1310,7 +1320,7 @@ func TestTombstoneCleanFail(t *testing.T) {
 	totalBlocks := 2
 	for i := 0; i < totalBlocks; i++ {
 		blockDir := createBlock(t, db.Dir(), genSeries(1, 1, int64(i), int64(i)+1))
-		block, err := OpenBlock(nil, blockDir, nil)
+		block, err := OpenBlock(nil, blockDir, nil, nil)
 		require.NoError(t, err)
 		// Add some fake tombstones to trigger the compaction.
 		tomb := tombstones.NewMemTombstones()
@@ -1365,7 +1375,7 @@ func TestTombstoneCleanRetentionLimitsRace(t *testing.T) {
 			// Generate some blocks with old mint (near epoch).
 			for j := 0; j < totalBlocks; j++ {
 				blockDir := createBlock(t, dbDir, genSeries(10, 1, int64(j), int64(j)+1))
-				block, err := OpenBlock(nil, blockDir, nil)
+				block, err := OpenBlock(nil, blockDir, nil, nil)
 				require.NoError(t, err)
 				// Cover block with tombstones so it can be deleted with CleanTombstones() as well.
 				tomb := tombstones.NewMemTombstones()
@@ -1423,10 +1433,10 @@ func (*mockCompactorFailing) Plan(string) ([]string, error) {
 
 func (c *mockCompactorFailing) Write(dest string, _ BlockReader, _, _ int64, _ *BlockMeta) ([]ulid.ULID, error) {
 	if len(c.blocks) >= c.max {
-		return []ulid.ULID{}, fmt.Errorf("the compactor already did the maximum allowed blocks so it is time to fail")
+		return []ulid.ULID{}, errors.New("the compactor already did the maximum allowed blocks so it is time to fail")
 	}
 
-	block, err := OpenBlock(nil, createBlock(c.t, dest, genSeries(1, 1, 0, 1)), nil)
+	block, err := OpenBlock(nil, createBlock(c.t, dest, genSeries(1, 1, 0, 1)), nil, nil)
 	require.NoError(c.t, err)
 	require.NoError(c.t, block.Close()) // Close block as we won't be using anywhere.
 	c.blocks = append(c.blocks, block)
@@ -1450,7 +1460,7 @@ func (*mockCompactorFailing) Compact(string, []string, []*Block) ([]ulid.ULID, e
 }
 
 func (*mockCompactorFailing) CompactOOO(string, *OOOCompactionHead) (result []ulid.ULID, err error) {
-	return nil, fmt.Errorf("mock compaction failing CompactOOO")
+	return nil, errors.New("mock compaction failing CompactOOO")
 }
 
 func TestTimeRetention(t *testing.T) {
@@ -2499,13 +2509,13 @@ func TestDBReadOnly(t *testing.T) {
 	})
 	t.Run("block", func(t *testing.T) {
 		blockID := expBlock.meta.ULID.String()
-		block, err := dbReadOnly.Block(blockID)
+		block, err := dbReadOnly.Block(blockID, nil)
 		require.NoError(t, err)
 		require.Equal(t, expBlock.Meta(), block.Meta(), "block meta mismatch")
 	})
 	t.Run("invalid block ID", func(t *testing.T) {
 		blockID := "01GTDVZZF52NSWB5SXQF0P2PGF"
-		_, err := dbReadOnly.Block(blockID)
+		_, err := dbReadOnly.Block(blockID, nil)
 		require.Error(t, err)
 	})
 	t.Run("last block ID", func(t *testing.T) {
@@ -4748,7 +4758,7 @@ func TestMultipleEncodingsCommitOrder(t *testing.T) {
 		seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar1"))
 		require.Len(t, seriesSet, 1)
 		gotSamples := seriesSet[series1.String()]
-		requireEqualSamples(t, series1.String(), expSamples, gotSamples, true)
+		requireEqualSamples(t, series1.String(), expSamples, gotSamples, requireEqualSamplesIgnoreCounterResets)
 
 		// Verify chunks querier.
 		chunkQuerier, err := db.ChunkQuerier(minT, maxT)
@@ -4766,7 +4776,7 @@ func TestMultipleEncodingsCommitOrder(t *testing.T) {
 			gotChunkSamples = append(gotChunkSamples, smpls...)
 			require.NoError(t, it.Err())
 		}
-		requireEqualSamples(t, series1.String(), expSamples, gotChunkSamples, true)
+		requireEqualSamples(t, series1.String(), expSamples, gotChunkSamples, requireEqualSamplesIgnoreCounterResets)
 	}
 
 	var expSamples []chunks.Sample
@@ -5695,16 +5705,33 @@ func testQuerierOOOQuery(t *testing.T,
 			gotSamples := seriesSet[series1.String()]
 			require.NotNil(t, gotSamples)
 			require.Len(t, seriesSet, 1)
-			requireEqualSamples(t, series1.String(), expSamples, gotSamples, true)
+			requireEqualSamples(t, series1.String(), expSamples, gotSamples, requireEqualSamplesIgnoreCounterResets)
 			requireEqualOOOSamples(t, oooSamples, db)
 		})
 	}
 }
 
 func TestChunkQuerierOOOQuery(t *testing.T) {
+	nBucketHistogram := func(n int64) *histogram.Histogram {
+		h := &histogram.Histogram{
+			Count: uint64(n),
+			Sum:   float64(n),
+		}
+		if n == 0 {
+			h.PositiveSpans = []histogram.Span{}
+			h.PositiveBuckets = []int64{}
+			return h
+		}
+		h.PositiveSpans = []histogram.Span{{Offset: 0, Length: uint32(n)}}
+		h.PositiveBuckets = make([]int64, n)
+		h.PositiveBuckets[0] = 1
+		return h
+	}
+
 	scenarios := map[string]struct {
-		appendFunc func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error)
-		sampleFunc func(ts int64) chunks.Sample
+		appendFunc       func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error)
+		sampleFunc       func(ts int64) chunks.Sample
+		checkInUseBucket bool
 	}{
 		"float": {
 			appendFunc: func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error) {
@@ -5749,10 +5776,24 @@ func TestChunkQuerierOOOQuery(t *testing.T) {
 				return sample{t: ts, h: tsdbutil.GenerateTestHistogram(int(ts))}
 			},
 		},
+		"integer histogram with recode": {
+			// Histograms have increasing number of buckets so their chunks are recoded.
+			appendFunc: func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error) {
+				n := ts / time.Minute.Milliseconds()
+				return app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, nBucketHistogram(n), nil)
+			},
+			sampleFunc: func(ts int64) chunks.Sample {
+				n := ts / time.Minute.Milliseconds()
+				return sample{t: ts, h: nBucketHistogram(n)}
+			},
+			// Only check in-use buckets for this scenario.
+			// Recoding adds empty buckets.
+			checkInUseBucket: true,
+		},
 	}
 	for name, scenario := range scenarios {
 		t.Run(name, func(t *testing.T) {
-			testChunkQuerierOOOQuery(t, scenario.appendFunc, scenario.sampleFunc)
+			testChunkQuerierOOOQuery(t, scenario.appendFunc, scenario.sampleFunc, scenario.checkInUseBucket)
 		})
 	}
 }
@@ -5760,6 +5801,7 @@ func TestChunkQuerierOOOQuery(t *testing.T) {
 func testChunkQuerierOOOQuery(t *testing.T,
 	appendFunc func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error),
 	sampleFunc func(ts int64) chunks.Sample,
+	checkInUseBuckets bool,
 ) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
@@ -5999,10 +6041,28 @@ func testChunkQuerierOOOQuery(t *testing.T,
 				it := chunk.Chunk.Iterator(nil)
 				smpls, err := storage.ExpandSamples(it, newSample)
 				require.NoError(t, err)
+
+				// Verify that no sample is outside the chunk's time range.
+				for i, s := range smpls {
+					switch i {
+					case 0:
+						require.Equal(t, chunk.MinTime, s.T(), "first sample %v not at chunk min time %v", s, chunk.MinTime)
+					case len(smpls) - 1:
+						require.Equal(t, chunk.MaxTime, s.T(), "last sample %v not at chunk max time %v", s, chunk.MaxTime)
+					default:
+						require.GreaterOrEqual(t, s.T(), chunk.MinTime, "sample %v before chunk min time %v", s, chunk.MinTime)
+						require.LessOrEqual(t, s.T(), chunk.MaxTime, "sample %v after chunk max time %v", s, chunk.MaxTime)
+					}
+				}
+
 				gotSamples = append(gotSamples, smpls...)
 				require.NoError(t, it.Err())
 			}
-			requireEqualSamples(t, series1.String(), expSamples, gotSamples, true)
+			if checkInUseBuckets {
+				requireEqualSamples(t, series1.String(), expSamples, gotSamples, requireEqualSamplesIgnoreCounterResets, requireEqualSamplesInUseBucketCompare)
+			} else {
+				requireEqualSamples(t, series1.String(), expSamples, gotSamples, requireEqualSamplesIgnoreCounterResets)
+			}
 		})
 	}
 }
@@ -8791,7 +8851,7 @@ func TestBlockQuerierAndBlockChunkQuerier(t *testing.T) {
 		// Include blockID into series to identify which block got touched.
 		serieses := []storage.Series{storage.NewListSeries(labels.FromMap(map[string]string{"block": fmt.Sprintf("block-%d", i), labels.MetricName: "test_metric"}), []chunks.Sample{sample{t: 0, f: 1}})}
 		blockDir := createBlock(t, db.Dir(), serieses)
-		b, err := OpenBlock(db.logger, blockDir, db.chunkPool)
+		b, err := OpenBlock(db.logger, blockDir, db.chunkPool, nil)
 		require.NoError(t, err)
 
 		// Overwrite meta.json with compaction section for testing purpose.
@@ -8837,23 +8897,151 @@ func TestBlockQuerierAndBlockChunkQuerier(t *testing.T) {
 }
 
 func TestGenerateCompactionDelay(t *testing.T) {
-	assertDelay := func(delay time.Duration) {
+	assertDelay := func(delay time.Duration, expectedMaxPercentDelay int) {
 		t.Helper()
 		require.GreaterOrEqual(t, delay, time.Duration(0))
-		// Less than 10% of the chunkRange.
-		require.LessOrEqual(t, delay, 6000*time.Millisecond)
+		// Expect to generate a delay up to MaxPercentDelay of the head chunk range
+		require.LessOrEqual(t, delay, (time.Duration(60000*expectedMaxPercentDelay/100) * time.Millisecond))
 	}
 
 	opts := DefaultOptions()
-	opts.EnableDelayedCompaction = true
-	db := openTestDB(t, opts, []int64{60000})
-	defer func() {
-		require.NoError(t, db.Close())
-	}()
-	// The offset is generated and changed while opening.
-	assertDelay(db.opts.CompactionDelay)
+	cases := []struct {
+		compactionDelayPercent int
+	}{
+		{
+			compactionDelayPercent: 1,
+		},
+		{
+			compactionDelayPercent: 10,
+		},
+		{
+			compactionDelayPercent: 60,
+		},
+		{
+			compactionDelayPercent: 100,
+		},
+	}
 
-	for i := 0; i < 1000; i++ {
-		assertDelay(db.generateCompactionDelay())
+	opts.EnableDelayedCompaction = true
+
+	for _, c := range cases {
+		opts.CompactionDelayMaxPercent = c.compactionDelayPercent
+		db := openTestDB(t, opts, []int64{60000})
+		defer func() {
+			require.NoError(t, db.Close())
+		}()
+		// The offset is generated and changed while opening.
+		assertDelay(db.opts.CompactionDelay, c.compactionDelayPercent)
+
+		for i := 0; i < 1000; i++ {
+			assertDelay(db.generateCompactionDelay(), c.compactionDelayPercent)
+		}
+	}
+}
+
+type blockedResponseRecorder struct {
+	r *httptest.ResponseRecorder
+
+	// writeblocked is used to block writing until the test wants it to resume.
+	writeBlocked chan struct{}
+	// writeStarted is closed by blockedResponseRecorder to signal that writing has started.
+	writeStarted chan struct{}
+}
+
+func (br *blockedResponseRecorder) Write(buf []byte) (int, error) {
+	select {
+	case <-br.writeStarted:
+	default:
+		close(br.writeStarted)
+	}
+
+	<-br.writeBlocked
+	return br.r.Write(buf)
+}
+
+func (br *blockedResponseRecorder) Header() http.Header { return br.r.Header() }
+
+func (br *blockedResponseRecorder) WriteHeader(code int) { br.r.WriteHeader(code) }
+
+func (br *blockedResponseRecorder) Flush() { br.r.Flush() }
+
+// TestBlockClosingBlockedDuringRemoteRead ensures that a TSDB Block is not closed while it is being queried
+// through remote read. This is a regression test for https://github.com/prometheus/prometheus/issues/14422.
+// TODO: Ideally, this should reside in storage/remote/read_handler_test.go once the necessary TSDB utils are accessible there.
+func TestBlockClosingBlockedDuringRemoteRead(t *testing.T) {
+	dir := t.TempDir()
+
+	createBlock(t, dir, genSeries(2, 1, 0, 10))
+	db, err := Open(dir, nil, nil, nil, nil)
+	require.NoError(t, err)
+	// No error checking as manually closing the block is supposed to make this fail.
+	defer db.Close()
+
+	readAPI := remote.NewReadHandler(nil, nil, db, func() config.Config {
+		return config.Config{}
+	},
+		0, 1, 0,
+	)
+
+	matcher, err := labels.NewMatcher(labels.MatchRegexp, "__name__", ".*")
+	require.NoError(t, err)
+
+	query, err := remote.ToQuery(0, 10, []*labels.Matcher{matcher}, nil)
+	require.NoError(t, err)
+
+	req := &prompb.ReadRequest{
+		Queries:               []*prompb.Query{query},
+		AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
+	}
+	data, err := proto.Marshal(req)
+	require.NoError(t, err)
+
+	request, err := http.NewRequest(http.MethodPost, "", bytes.NewBuffer(snappy.Encode(nil, data)))
+	require.NoError(t, err)
+
+	blockedRecorder := &blockedResponseRecorder{
+		r:            httptest.NewRecorder(),
+		writeBlocked: make(chan struct{}),
+		writeStarted: make(chan struct{}),
+	}
+
+	readDone := make(chan struct{})
+	go func() {
+		readAPI.ServeHTTP(blockedRecorder, request)
+		require.Equal(t, http.StatusOK, blockedRecorder.r.Code)
+		close(readDone)
+	}()
+
+	// Wait for the read API to start streaming data.
+	<-blockedRecorder.writeStarted
+
+	// Try to close the queried block.
+	blockClosed := make(chan struct{})
+	go func() {
+		for _, block := range db.Blocks() {
+			block.Close()
+		}
+		close(blockClosed)
+	}()
+
+	// Closing the queried block should block.
+	// Wait a little bit to make sure of that.
+	select {
+	case <-time.After(100 * time.Millisecond):
+	case <-readDone:
+		require.Fail(t, "read API should still be streaming data.")
+	case <-blockClosed:
+		require.Fail(t, "Block shouldn't get closed while being queried.")
+	}
+
+	// Resume the read API data streaming.
+	close(blockedRecorder.writeBlocked)
+	<-readDone
+
+	// The block should be no longer needed and closing it should end.
+	select {
+	case <-time.After(10 * time.Millisecond):
+		require.Fail(t, "Closing the block timed out.")
+	case <-blockClosed:
 	}
 }

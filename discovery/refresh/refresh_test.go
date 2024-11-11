@@ -15,7 +15,7 @@ package refresh
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"testing"
 	"time"
 
@@ -64,7 +64,7 @@ func TestRefresh(t *testing.T) {
 		case 2:
 			return tg2, nil
 		}
-		return nil, fmt.Errorf("some error")
+		return nil, errors.New("some error")
 	}
 	interval := time.Millisecond
 

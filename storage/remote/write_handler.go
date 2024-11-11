@@ -513,6 +513,7 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	converter := otlptranslator.NewPrometheusConverter()
 	annots, err := converter.FromMetrics(r.Context(), req.Metrics(), otlptranslator.Settings{
 		AddMetricSuffixes:         true,
+		AllowUTF8:                 otlpCfg.TranslationStrategy == config.NoUTF8EscapingWithSuffixes,
 		PromoteResourceAttributes: otlpCfg.PromoteResourceAttributes,
 	})
 	if err != nil {

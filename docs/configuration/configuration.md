@@ -79,7 +79,11 @@ global:
   [ rule_query_offset: <duration> | default = 0s ]
 
   # The labels to add to any time series or alerts when communicating with
-  # external systems (federation, remote storage, Alertmanager).
+  # external systems (federation, remote storage, Alertmanager). 
+  # Environment variable references `${var}` or `$var` are replaced according 
+  # to the values of the current environment variables. 
+  # References to undefined variables are replaced by the empty string.
+  # The `$` character can be escaped by using `$$`.
   external_labels:
     [ <labelname>: <labelvalue> ... ]
 
@@ -208,12 +212,18 @@ job_name: <job_name>
 
 # The protocols to negotiate during a scrape with the client.
 # Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
-# OpenMetricsText1.0.0, PrometheusText0.0.4.
+# OpenMetricsText1.0.0, PrometheusText0.0.4, PrometheusText1.0.0.
 [ scrape_protocols: [<string>, ...] | default = <global_config.scrape_protocols> ]
 
-# Whether to scrape a classic histogram that is also exposed as a native
+# Fallback protocol to use if a scrape returns blank, unparseable, or otherwise
+# invalid Content-Type.
+# Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
+# OpenMetricsText1.0.0, PrometheusText0.0.4, PrometheusText1.0.0.
+[ fallback_scrape_protocol: <string> ]
+
+# Whether to scrape a classic histogram, even if it is also exposed as a native
 # histogram (has no effect without --enable-feature=native-histograms).
-[ scrape_classic_histograms: <boolean> | default = false ]
+[ always_scrape_classic_histograms: <boolean> | default = false ]
 
 # The HTTP resource path on which to fetch metrics from targets.
 [ metrics_path: <path> | default = /metrics ]
@@ -2879,6 +2889,7 @@ metadata_config:
 
 # HTTP client settings, including authentication methods (such as basic auth and
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.
+# enable_http2 defaults to false for remote-write.
 [ <http_config> ]
 ```
 
@@ -2929,8 +2940,6 @@ with this feature.
 ### `<tsdb>`
 
 `tsdb` lets you configure the runtime-reloadable configuration settings of the TSDB.
-
-NOTE: Out-of-order ingestion is an experimental feature, but you do not need any additional flag to enable it. Setting `out_of_order_time_window` to a positive duration enables it.
 
 ```yaml
 # Configures how old an out-of-order/out-of-bounds sample can be w.r.t. the TSDB max time.

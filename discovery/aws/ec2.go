@@ -30,6 +30,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -148,7 +149,7 @@ type EC2Discovery struct {
 	*refresh.Discovery
 	logger *slog.Logger
 	cfg    *EC2SDConfig
-	ec2    *ec2.EC2
+	ec2    ec2iface.EC2API
 
 	// azToAZID maps this account's availability zones to their underlying AZ
 	// ID, e.g. eu-west-2a -> euw2-az2. Refreshes are performed sequentially, so
@@ -160,7 +161,7 @@ type EC2Discovery struct {
 func NewEC2Discovery(conf *EC2SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*EC2Discovery, error) {
 	m, ok := metrics.(*ec2Metrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	if logger == nil {
@@ -182,7 +183,7 @@ func NewEC2Discovery(conf *EC2SDConfig, logger *slog.Logger, metrics discovery.D
 	return d, nil
 }
 
-func (d *EC2Discovery) ec2Client(context.Context) (*ec2.EC2, error) {
+func (d *EC2Discovery) ec2Client(context.Context) (ec2iface.EC2API, error) {
 	if d.ec2 != nil {
 		return d.ec2, nil
 	}

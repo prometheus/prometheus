@@ -278,11 +278,16 @@ func (rws *WriteStorage) Close() error {
 
 type timestampTracker struct {
 	writeStorage         *WriteStorage
+	appendOptions        *storage.AppendOptions
 	samples              int64
 	exemplars            int64
 	histograms           int64
 	highestTimestamp     int64
 	highestRecvTimestamp *maxTimestamp
+}
+
+func (t *timestampTracker) SetOptions(opts *storage.AppendOptions) {
+	t.appendOptions = opts
 }
 
 // Append implements storage.Appender.
@@ -307,19 +312,29 @@ func (t *timestampTracker) AppendHistogram(_ storage.SeriesRef, _ labels.Labels,
 	return 0, nil
 }
 
-func (t *timestampTracker) AppendHistogramCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	// TODO: Implement
+func (t *timestampTracker) AppendCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, ct int64) (storage.SeriesRef, error) {
+	t.samples++
+	if ct > t.highestTimestamp {
+		// Theoretically, we should never see a CT zero sample with a timestamp higher than the highest timestamp we've seen so far.
+		// However, we're not going to enforce that here, as it is not the responsibility of the tracker to enforce this.
+		t.highestTimestamp = ct
+	}
+	return 0, nil
+}
+
+func (t *timestampTracker) AppendHistogramCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, ct int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	t.histograms++
+	if ct > t.highestTimestamp {
+		// Theoretically, we should never see a CT zero sample with a timestamp higher than the highest timestamp we've seen so far.
+		// However, we're not going to enforce that here, as it is not the responsibility of the tracker to enforce this.
+		t.highestTimestamp = ct
+	}
 	return 0, nil
 }
 
 func (t *timestampTracker) UpdateMetadata(_ storage.SeriesRef, _ labels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
 	// TODO: Add and increment a `metadata` field when we get around to wiring metadata in remote_write.
 	// UpdateMetadata is no-op for remote write (where timestampTracker is being used) for now.
-	return 0, nil
-}
-
-func (t *timestampTracker) AppendCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
-	// AppendCTZeroSample is no-op for remote-write for now.
 	return 0, nil
 }
 

@@ -405,7 +405,7 @@ func openBlock(path, blockID string) (*tsdb.DBReadOnly, tsdb.BlockReader, error)
 		}
 	}
 
-	b, err := db.Block(blockID)
+	b, err := db.Block(blockID, tsdb.DefaultPostingsDecoderFactory)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -662,7 +662,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 				histogramChunkSize = append(histogramChunkSize, len(chk.Bytes()))
 				fhchk, ok := chk.(*chunkenc.FloatHistogramChunk)
 				if !ok {
-					return fmt.Errorf("chunk is not FloatHistogramChunk")
+					return errors.New("chunk is not FloatHistogramChunk")
 				}
 				it := fhchk.Iterator(nil)
 				bucketCount := 0
@@ -677,7 +677,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 				histogramChunkSize = append(histogramChunkSize, len(chk.Bytes()))
 				hchk, ok := chk.(*chunkenc.HistogramChunk)
 				if !ok {
-					return fmt.Errorf("chunk is not HistogramChunk")
+					return errors.New("chunk is not HistogramChunk")
 				}
 				it := hchk.Iterator(nil)
 				bucketCount := 0

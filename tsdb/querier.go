@@ -193,6 +193,11 @@ func selectChunkSeriesSet(ctx context.Context, sortSeries bool, hints *storage.S
 // PostingsForMatchers assembles a single postings iterator against the index reader
 // based on the given matchers. The resulting postings are not ordered by series.
 func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matcher) (index.Postings, error) {
+	if len(ms) == 1 && ms[0].Name == "" && ms[0].Value == "" {
+		k, v := index.AllPostingsKey()
+		return ix.Postings(ctx, k, v)
+	}
+
 	var its, notIts []index.Postings
 	// See which label must be non-empty.
 	// Optimization for case like {l=~".", l!="1"}.
@@ -247,13 +252,10 @@ func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matc
 			return nil, ctx.Err()
 		}
 		switch {
-		case m.Name == "" && m.Value == "": // Special-case for AllPostings, used in tests at least.
-			k, v := index.AllPostingsKey()
-			allPostings, err := ix.Postings(ctx, k, v)
-			if err != nil {
-				return nil, err
-			}
-			its = append(its, allPostings)
+		case m.Name == "" && m.Value == "":
+			// We already handled the case at the top of the function,
+			// and it is unexpected to get all postings again here.
+			return nil, errors.New("unexpected all postings")
 		case m.Type == labels.MatchRegexp && m.Value == ".*":
 			// .* regexp matches any string: do nothing.
 		case m.Type == labels.MatchNotRegexp && m.Value == ".*":
@@ -1022,9 +1024,9 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 		if newChunk != nil {
 			if !recoded {
 				p.chunksFromIterable = append(p.chunksFromIterable, chunks.Meta{Chunk: currentChunk, MinTime: cmint, MaxTime: cmaxt})
+				cmint = t
 			}
 			currentChunk = newChunk
-			cmint = t
 		}
 
 		cmaxt = t

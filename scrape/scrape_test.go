@@ -29,6 +29,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"text/template"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -83,6 +84,97 @@ func TestNewScrapePool(t *testing.T) {
 	require.Equal(t, app, a, "Wrong sample appender.")
 	require.Equal(t, cfg, sp.config, "Wrong scrape config.")
 	require.NotNil(t, sp.newLoop, "newLoop function not initialized.")
+}
+
+func TestStorageHandlesOutOfOrderTimestamps(t *testing.T) {
+	// Test with default OutOfOrderTimeWindow (0)
+	t.Run("Out-Of-Order Sample Disabled", func(t *testing.T) {
+		s := teststorage.New(t)
+		defer s.Close()
+
+		runScrapeLoopTest(t, s, false)
+	})
+
+	// Test with specific OutOfOrderTimeWindow (600000)
+	t.Run("Out-Of-Order Sample Enabled", func(t *testing.T) {
+		s := teststorage.New(t, 600000)
+		defer s.Close()
+
+		runScrapeLoopTest(t, s, true)
+	})
+}
+
+func runScrapeLoopTest(t *testing.T, s *teststorage.TestStorage, expectOutOfOrder bool) {
+	// Create an appender for adding samples to the storage.
+	app := s.Appender(context.Background())
+	capp := &collectResultAppender{next: app}
+	sl := newBasicScrapeLoop(t, context.Background(), nil, func(ctx context.Context) storage.Appender { return capp }, 0)
+
+	// Current time for generating timestamps.
+	now := time.Now()
+
+	// Calculate timestamps for the samples based on the current time.
+	now = now.Truncate(time.Minute) // round down the now timestamp to the nearest minute
+	timestampInorder1 := now
+	timestampOutOfOrder := now.Add(-5 * time.Minute)
+	timestampInorder2 := now.Add(5 * time.Minute)
+
+	slApp := sl.appender(context.Background())
+	_, _, _, err := sl.append(slApp, []byte(`metric_a{a="1",b="1"} 1`), "", timestampInorder1)
+	require.NoError(t, err)
+
+	_, _, _, err = sl.append(slApp, []byte(`metric_a{a="1",b="1"} 2`), "", timestampOutOfOrder)
+	require.NoError(t, err)
+
+	_, _, _, err = sl.append(slApp, []byte(`metric_a{a="1",b="1"} 3`), "", timestampInorder2)
+	require.NoError(t, err)
+
+	require.NoError(t, slApp.Commit())
+
+	// Query the samples back from the storage.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	q, err := s.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
+	require.NoError(t, err)
+	defer q.Close()
+
+	// Use a matcher to filter the metric name.
+	series := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "metric_a"))
+
+	var results []floatSample
+	for series.Next() {
+		it := series.At().Iterator(nil)
+		for it.Next() == chunkenc.ValFloat {
+			t, v := it.At()
+			results = append(results, floatSample{
+				metric: series.At().Labels(),
+				t:      t,
+				f:      v,
+			})
+		}
+		require.NoError(t, it.Err())
+	}
+	require.NoError(t, series.Err())
+
+	// Define the expected results
+	want := []floatSample{
+		{
+			metric: labels.FromStrings("__name__", "metric_a", "a", "1", "b", "1"),
+			t:      timestamp.FromTime(timestampInorder1),
+			f:      1,
+		},
+		{
+			metric: labels.FromStrings("__name__", "metric_a", "a", "1", "b", "1"),
+			t:      timestamp.FromTime(timestampInorder2),
+			f:      3,
+		},
+	}
+
+	if expectOutOfOrder {
+		require.NotEqual(t, want, results, "Expected results to include out-of-order sample:\n%s", results)
+	} else {
+		require.Equal(t, want, results, "Appended samples not as expected:\n%s", results)
+	}
 }
 
 func TestDroppedTargetsList(t *testing.T) {
@@ -685,11 +777,13 @@ func newBasicScrapeLoop(t testing.TB, ctx context.Context, scraper scraper, app 
 		false,
 		false,
 		false,
+		false,
 		nil,
 		false,
 		newTestScrapeMetrics(t),
 		false,
 		model.LegacyValidation,
+		"text/plain",
 	)
 }
 
@@ -828,11 +922,13 @@ func TestScrapeLoopRun(t *testing.T) {
 		false,
 		false,
 		false,
+		false,
 		nil,
 		false,
 		scrapeMetrics,
 		false,
 		model.LegacyValidation,
+		"text/plain",
 	)
 
 	// The loop must terminate during the initial offset if the context
@@ -914,7 +1010,7 @@ func TestScrapeLoopForcedErr(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	sl := newBasicScrapeLoop(t, ctx, scraper, app, time.Second)
 
-	forcedErr := fmt.Errorf("forced err")
+	forcedErr := errors.New("forced err")
 	sl.setForcedError(forcedErr)
 
 	scraper.scrapeFunc = func(context.Context, io.Writer) error {
@@ -973,11 +1069,13 @@ func TestScrapeLoopMetadata(t *testing.T) {
 		false,
 		false,
 		false,
+		false,
 		nil,
 		false,
 		scrapeMetrics,
 		false,
 		model.LegacyValidation,
+		"text/plain",
 	)
 	defer cancel()
 
@@ -1150,6 +1248,87 @@ func BenchmarkScrapeLoopAppendOM(b *testing.B) {
 	}
 }
 
+func TestSetOptionsHandlingStaleness(t *testing.T) {
+	s := teststorage.New(t, 600000)
+	defer s.Close()
+
+	signal := make(chan struct{}, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Function to run the scrape loop
+	runScrapeLoop := func(ctx context.Context, t *testing.T, cue int, action func(*scrapeLoop)) {
+		var (
+			scraper = &testScraper{}
+			app     = func(ctx context.Context) storage.Appender {
+				return s.Appender(ctx)
+			}
+		)
+		sl := newBasicScrapeLoop(t, ctx, scraper, app, 10*time.Millisecond)
+		numScrapes := 0
+		scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
+			numScrapes++
+			if numScrapes == cue {
+				action(sl)
+			}
+			w.Write([]byte(fmt.Sprintf("metric_a{a=\"1\",b=\"1\"} %d\n", 42+numScrapes)))
+			return nil
+		}
+		sl.run(nil)
+	}
+	go func() {
+		runScrapeLoop(ctx, t, 2, func(sl *scrapeLoop) {
+			go sl.stop()
+			// Wait a bit then start a new target.
+			time.Sleep(100 * time.Millisecond)
+			go func() {
+				runScrapeLoop(ctx, t, 4, func(_ *scrapeLoop) {
+					cancel()
+				})
+				signal <- struct{}{}
+			}()
+		})
+	}()
+
+	select {
+	case <-signal:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("Scrape wasn't stopped.")
+	}
+
+	ctx1, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	q, err := s.Querier(0, time.Now().UnixNano())
+
+	require.NoError(t, err)
+	defer q.Close()
+
+	series := q.Select(ctx1, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "metric_a"))
+
+	var results []floatSample
+	for series.Next() {
+		it := series.At().Iterator(nil)
+		for it.Next() == chunkenc.ValFloat {
+			t, v := it.At()
+			results = append(results, floatSample{
+				metric: series.At().Labels(),
+				t:      t,
+				f:      v,
+			})
+		}
+		require.NoError(t, it.Err())
+	}
+	require.NoError(t, series.Err())
+	var c int
+	for _, s := range results {
+		if value.IsStaleNaN(s.f) {
+			c++
+		}
+	}
+	require.Equal(t, 0, c, "invalid count of staleness markers after stopping the engine")
+}
+
 func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 	appender := &collectResultAppender{}
 	var (
@@ -1285,7 +1464,7 @@ func TestScrapeLoopCache(t *testing.T) {
 		case 4:
 			cancel()
 		}
-		return fmt.Errorf("scrape failed")
+		return errors.New("scrape failed")
 	}
 
 	go func() {
@@ -1526,7 +1705,8 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 	fakeRef := storage.SeriesRef(1)
 	expValue := float64(1)
 	metric := []byte(`metric{n="1"} 1`)
-	p, warning := textparse.New(metric, "", false, false, labels.NewSymbolTable())
+	p, warning := textparse.New(metric, "text/plain", "", false, false, labels.NewSymbolTable())
+	require.NotNil(t, p)
 	require.NoError(t, warning)
 
 	var lset labels.Labels
@@ -1846,7 +2026,7 @@ func TestScrapeLoopAppendStalenessIfTrackTimestampStaleness(t *testing.T) {
 func TestScrapeLoopAppendExemplar(t *testing.T) {
 	tests := []struct {
 		title                           string
-		scrapeClassicHistograms         bool
+		alwaysScrapeClassicHist         bool
 		enableNativeHistogramsIngestion bool
 		scrapeText                      string
 		contentType                     string
@@ -2115,7 +2295,7 @@ metric: <
 >
 
 `,
-			scrapeClassicHistograms: true,
+			alwaysScrapeClassicHist: true,
 			contentType:             "application/vnd.google.protobuf",
 			floats: []floatSample{
 				{metric: labels.FromStrings("__name__", "test_histogram_count"), t: 1234568, f: 175},
@@ -2177,7 +2357,7 @@ metric: <
 			sl.reportSampleMutator = func(l labels.Labels) labels.Labels {
 				return mutateReportSampleLabels(l, discoveryLabels)
 			}
-			sl.scrapeClassicHistograms = test.scrapeClassicHistograms
+			sl.alwaysScrapeClassicHist = test.alwaysScrapeClassicHist
 
 			now := time.Now()
 
@@ -3084,7 +3264,7 @@ func TestScrapeReportSingleAppender(t *testing.T) {
 	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
 		numScrapes++
 		if numScrapes%4 == 0 {
-			return fmt.Errorf("scrape failed")
+			return errors.New("scrape failed")
 		}
 		w.Write([]byte("metric_a 44\nmetric_b 44\nmetric_c 44\nmetric_d 44\n"))
 		return nil
@@ -3469,6 +3649,524 @@ test_summary_count 199
 	checkValues("quantile", expectedQuantileValues, series)
 }
 
+// Testing whether we can automatically convert scraped classic histograms into native histograms with custom buckets.
+func TestConvertClassicHistogramsToNHCB(t *testing.T) {
+	genTestCounterText := func(name string, value int, withMetadata bool) string {
+		if withMetadata {
+			return fmt.Sprintf(`
+# HELP %s some help text
+# TYPE %s counter
+%s{address="0.0.0.0",port="5001"} %d
+`, name, name, name, value)
+		}
+		return fmt.Sprintf(`
+%s %d
+`, name, value)
+	}
+	genTestHistText := func(name string, withMetadata bool) string {
+		data := map[string]interface{}{
+			"name": name,
+		}
+		b := &bytes.Buffer{}
+		if withMetadata {
+			template.Must(template.New("").Parse(`
+# HELP {{.name}} This is a histogram with default buckets
+# TYPE {{.name}} histogram
+`)).Execute(b, data)
+		}
+		template.Must(template.New("").Parse(`
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="0.005"} 0
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="0.01"} 0
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="0.025"} 0
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="0.05"} 0
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="0.1"} 0
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="0.25"} 0
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="0.5"} 0
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="1"} 0
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="2.5"} 0
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="5"} 0
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="10"} 1
+{{.name}}_bucket{address="0.0.0.0",port="5001",le="+Inf"} 1
+{{.name}}_sum{address="0.0.0.0",port="5001"} 10
+{{.name}}_count{address="0.0.0.0",port="5001"} 1
+`)).Execute(b, data)
+		return b.String()
+	}
+	genTestCounterProto := func(name string, value int) string {
+		return fmt.Sprintf(`
+name: "%s"
+help: "some help text"
+type: COUNTER
+metric: <
+	label: <
+		name: "address"
+		value: "0.0.0.0"
+	>
+	label: <
+		name: "port"
+		value: "5001"
+	>
+	counter: <
+		value: %d
+	>
+>
+`, name, value)
+	}
+	genTestHistProto := func(name string, hasClassic, hasExponential bool) string {
+		var classic string
+		if hasClassic {
+			classic = `
+bucket: <
+	cumulative_count: 0
+	upper_bound: 0.005
+>
+bucket: <
+	cumulative_count: 0
+	upper_bound: 0.01
+>
+bucket: <
+	cumulative_count: 0
+	upper_bound: 0.025
+>
+bucket: <
+	cumulative_count: 0
+	upper_bound: 0.05
+>
+bucket: <
+	cumulative_count: 0
+	upper_bound: 0.1
+>
+bucket: <
+	cumulative_count: 0
+	upper_bound: 0.25
+>
+bucket: <
+	cumulative_count: 0
+	upper_bound: 0.5
+>
+bucket: <
+	cumulative_count: 0
+	upper_bound: 1
+>
+bucket: <
+	cumulative_count: 0
+	upper_bound: 2.5
+>
+bucket: <
+	cumulative_count: 0
+	upper_bound: 5
+>
+bucket: <
+	cumulative_count: 1
+	upper_bound: 10
+>`
+		}
+		var expo string
+		if hasExponential {
+			expo = `
+schema: 3
+zero_threshold: 2.938735877055719e-39
+zero_count: 0
+positive_span: <
+	offset: 2
+	length: 1
+>
+positive_delta: 1`
+		}
+		return fmt.Sprintf(`
+name: "%s"
+help: "This is a histogram with default buckets"
+type: HISTOGRAM
+metric: <
+	label: <
+		name: "address"
+		value: "0.0.0.0"
+	>
+	label: <
+		name: "port"
+		value: "5001"
+	>
+	histogram: <
+		sample_count: 1
+		sample_sum: 10
+		%s
+		%s
+	>
+	timestamp_ms: 1234568
+>
+`, name, classic, expo)
+	}
+
+	metricsTexts := map[string]struct {
+		text           []string
+		contentType    string
+		hasClassic     bool
+		hasExponential bool
+	}{
+		"text": {
+			text: []string{
+				genTestCounterText("test_metric_1", 1, true),
+				genTestCounterText("test_metric_1_count", 1, true),
+				genTestCounterText("test_metric_1_sum", 1, true),
+				genTestCounterText("test_metric_1_bucket", 1, true),
+				genTestHistText("test_histogram_1", true),
+				genTestCounterText("test_metric_2", 1, true),
+				genTestCounterText("test_metric_2_count", 1, true),
+				genTestCounterText("test_metric_2_sum", 1, true),
+				genTestCounterText("test_metric_2_bucket", 1, true),
+				genTestHistText("test_histogram_2", true),
+				genTestCounterText("test_metric_3", 1, true),
+				genTestCounterText("test_metric_3_count", 1, true),
+				genTestCounterText("test_metric_3_sum", 1, true),
+				genTestCounterText("test_metric_3_bucket", 1, true),
+				genTestHistText("test_histogram_3", true),
+			},
+			hasClassic: true,
+		},
+		"text, in different order": {
+			text: []string{
+				genTestCounterText("test_metric_1", 1, true),
+				genTestCounterText("test_metric_1_count", 1, true),
+				genTestCounterText("test_metric_1_sum", 1, true),
+				genTestCounterText("test_metric_1_bucket", 1, true),
+				genTestHistText("test_histogram_1", true),
+				genTestCounterText("test_metric_2", 1, true),
+				genTestCounterText("test_metric_2_count", 1, true),
+				genTestCounterText("test_metric_2_sum", 1, true),
+				genTestCounterText("test_metric_2_bucket", 1, true),
+				genTestHistText("test_histogram_2", true),
+				genTestHistText("test_histogram_3", true),
+				genTestCounterText("test_metric_3", 1, true),
+				genTestCounterText("test_metric_3_count", 1, true),
+				genTestCounterText("test_metric_3_sum", 1, true),
+				genTestCounterText("test_metric_3_bucket", 1, true),
+			},
+			hasClassic: true,
+		},
+		"protobuf": {
+			text: []string{
+				genTestCounterProto("test_metric_1", 1),
+				genTestCounterProto("test_metric_1_count", 1),
+				genTestCounterProto("test_metric_1_sum", 1),
+				genTestCounterProto("test_metric_1_bucket", 1),
+				genTestHistProto("test_histogram_1", true, false),
+				genTestCounterProto("test_metric_2", 1),
+				genTestCounterProto("test_metric_2_count", 1),
+				genTestCounterProto("test_metric_2_sum", 1),
+				genTestCounterProto("test_metric_2_bucket", 1),
+				genTestHistProto("test_histogram_2", true, false),
+				genTestCounterProto("test_metric_3", 1),
+				genTestCounterProto("test_metric_3_count", 1),
+				genTestCounterProto("test_metric_3_sum", 1),
+				genTestCounterProto("test_metric_3_bucket", 1),
+				genTestHistProto("test_histogram_3", true, false),
+			},
+			contentType: "application/vnd.google.protobuf",
+			hasClassic:  true,
+		},
+		"protobuf, in different order": {
+			text: []string{
+				genTestHistProto("test_histogram_1", true, false),
+				genTestCounterProto("test_metric_1", 1),
+				genTestCounterProto("test_metric_1_count", 1),
+				genTestCounterProto("test_metric_1_sum", 1),
+				genTestCounterProto("test_metric_1_bucket", 1),
+				genTestHistProto("test_histogram_2", true, false),
+				genTestCounterProto("test_metric_2", 1),
+				genTestCounterProto("test_metric_2_count", 1),
+				genTestCounterProto("test_metric_2_sum", 1),
+				genTestCounterProto("test_metric_2_bucket", 1),
+				genTestHistProto("test_histogram_3", true, false),
+				genTestCounterProto("test_metric_3", 1),
+				genTestCounterProto("test_metric_3_count", 1),
+				genTestCounterProto("test_metric_3_sum", 1),
+				genTestCounterProto("test_metric_3_bucket", 1),
+			},
+			contentType: "application/vnd.google.protobuf",
+			hasClassic:  true,
+		},
+		"protobuf, with additional native exponential histogram": {
+			text: []string{
+				genTestCounterProto("test_metric_1", 1),
+				genTestCounterProto("test_metric_1_count", 1),
+				genTestCounterProto("test_metric_1_sum", 1),
+				genTestCounterProto("test_metric_1_bucket", 1),
+				genTestHistProto("test_histogram_1", true, true),
+				genTestCounterProto("test_metric_2", 1),
+				genTestCounterProto("test_metric_2_count", 1),
+				genTestCounterProto("test_metric_2_sum", 1),
+				genTestCounterProto("test_metric_2_bucket", 1),
+				genTestHistProto("test_histogram_2", true, true),
+				genTestCounterProto("test_metric_3", 1),
+				genTestCounterProto("test_metric_3_count", 1),
+				genTestCounterProto("test_metric_3_sum", 1),
+				genTestCounterProto("test_metric_3_bucket", 1),
+				genTestHistProto("test_histogram_3", true, true),
+			},
+			contentType:    "application/vnd.google.protobuf",
+			hasClassic:     true,
+			hasExponential: true,
+		},
+		"protobuf, with only native exponential histogram": {
+			text: []string{
+				genTestCounterProto("test_metric_1", 1),
+				genTestCounterProto("test_metric_1_count", 1),
+				genTestCounterProto("test_metric_1_sum", 1),
+				genTestCounterProto("test_metric_1_bucket", 1),
+				genTestHistProto("test_histogram_1", false, true),
+				genTestCounterProto("test_metric_2", 1),
+				genTestCounterProto("test_metric_2_count", 1),
+				genTestCounterProto("test_metric_2_sum", 1),
+				genTestCounterProto("test_metric_2_bucket", 1),
+				genTestHistProto("test_histogram_2", false, true),
+				genTestCounterProto("test_metric_3", 1),
+				genTestCounterProto("test_metric_3_count", 1),
+				genTestCounterProto("test_metric_3_sum", 1),
+				genTestCounterProto("test_metric_3_bucket", 1),
+				genTestHistProto("test_histogram_3", false, true),
+			},
+			contentType:    "application/vnd.google.protobuf",
+			hasExponential: true,
+		},
+	}
+
+	checkBucketValues := func(expectedCount int, series storage.SeriesSet) {
+		labelName := "le"
+		var expectedValues []string
+		if expectedCount > 0 {
+			expectedValues = []string{"0.005", "0.01", "0.025", "0.05", "0.1", "0.25", "0.5", "1.0", "2.5", "5.0", "10.0", "+Inf"}
+		}
+		foundLeValues := map[string]bool{}
+
+		for series.Next() {
+			s := series.At()
+			v := s.Labels().Get(labelName)
+			require.NotContains(t, foundLeValues, v, "duplicate label value found")
+			foundLeValues[v] = true
+		}
+
+		require.Equal(t, len(expectedValues), len(foundLeValues), "unexpected number of label values, expected %v but found %v", expectedValues, foundLeValues)
+		for _, v := range expectedValues {
+			require.Contains(t, foundLeValues, v, "label value not found")
+		}
+	}
+
+	// Checks that the expected series is present and runs a basic sanity check of the float values.
+	checkFloatSeries := func(series storage.SeriesSet, expectedCount int, expectedFloat float64) {
+		count := 0
+		for series.Next() {
+			i := series.At().Iterator(nil)
+		loop:
+			for {
+				switch i.Next() {
+				case chunkenc.ValNone:
+					break loop
+				case chunkenc.ValFloat:
+					_, f := i.At()
+					require.Equal(t, expectedFloat, f)
+				case chunkenc.ValHistogram:
+					panic("unexpected value type: histogram")
+				case chunkenc.ValFloatHistogram:
+					panic("unexpected value type: float histogram")
+				default:
+					panic("unexpected value type")
+				}
+			}
+			count++
+		}
+		require.Equal(t, expectedCount, count, "number of float series not as expected")
+	}
+
+	// Checks that the expected series is present and runs a basic sanity check of the histogram values.
+	checkHistSeries := func(series storage.SeriesSet, expectedCount int, expectedSchema int32) {
+		count := 0
+		for series.Next() {
+			i := series.At().Iterator(nil)
+		loop:
+			for {
+				switch i.Next() {
+				case chunkenc.ValNone:
+					break loop
+				case chunkenc.ValFloat:
+					panic("unexpected value type: float")
+				case chunkenc.ValHistogram:
+					_, h := i.AtHistogram(nil)
+					require.Equal(t, expectedSchema, h.Schema)
+					require.Equal(t, uint64(1), h.Count)
+					require.Equal(t, 10.0, h.Sum)
+				case chunkenc.ValFloatHistogram:
+					_, h := i.AtFloatHistogram(nil)
+					require.Equal(t, expectedSchema, h.Schema)
+					require.Equal(t, uint64(1), h.Count)
+					require.Equal(t, 10.0, h.Sum)
+				default:
+					panic("unexpected value type")
+				}
+			}
+			count++
+		}
+		require.Equal(t, expectedCount, count, "number of histogram series not as expected")
+	}
+
+	for metricsTextName, metricsText := range metricsTexts {
+		for name, tc := range map[string]struct {
+			alwaysScrapeClassicHistograms bool
+			convertClassicHistToNHCB      bool
+		}{
+			"convert with scrape": {
+				alwaysScrapeClassicHistograms: true,
+				convertClassicHistToNHCB:      true,
+			},
+			"convert without scrape": {
+				alwaysScrapeClassicHistograms: false,
+				convertClassicHistToNHCB:      true,
+			},
+			"scrape without convert": {
+				alwaysScrapeClassicHistograms: true,
+				convertClassicHistToNHCB:      false,
+			},
+			"neither scrape nor convert": {
+				alwaysScrapeClassicHistograms: false,
+				convertClassicHistToNHCB:      false,
+			},
+		} {
+			var expectedClassicHistCount, expectedNativeHistCount int
+			var expectCustomBuckets bool
+			if metricsText.hasExponential {
+				expectedNativeHistCount = 1
+				expectCustomBuckets = false
+				expectedClassicHistCount = 0
+				if metricsText.hasClassic && tc.alwaysScrapeClassicHistograms {
+					expectedClassicHistCount = 1
+				}
+			} else if metricsText.hasClassic {
+				switch {
+				case tc.alwaysScrapeClassicHistograms && tc.convertClassicHistToNHCB:
+					expectedClassicHistCount = 1
+					expectedNativeHistCount = 1
+					expectCustomBuckets = true
+				case !tc.alwaysScrapeClassicHistograms && tc.convertClassicHistToNHCB:
+					expectedClassicHistCount = 0
+					expectedNativeHistCount = 1
+					expectCustomBuckets = true
+				case !tc.convertClassicHistToNHCB:
+					expectedClassicHistCount = 1
+					expectedNativeHistCount = 0
+				}
+			}
+
+			t.Run(fmt.Sprintf("%s with %s", name, metricsTextName), func(t *testing.T) {
+				simpleStorage := teststorage.New(t)
+				defer simpleStorage.Close()
+
+				config := &config.ScrapeConfig{
+					JobName:                        "test",
+					SampleLimit:                    100,
+					Scheme:                         "http",
+					ScrapeInterval:                 model.Duration(50 * time.Millisecond),
+					ScrapeTimeout:                  model.Duration(25 * time.Millisecond),
+					AlwaysScrapeClassicHistograms:  tc.alwaysScrapeClassicHistograms,
+					ConvertClassicHistogramsToNHCB: tc.convertClassicHistToNHCB,
+				}
+
+				scrapeCount := 0
+				scraped := make(chan bool)
+
+				ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if metricsText.contentType != "" {
+						w.Header().Set("Content-Type", `application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited`)
+						for _, text := range metricsText.text {
+							buf := &bytes.Buffer{}
+							// In case of protobuf, we have to create the binary representation.
+							pb := &dto.MetricFamily{}
+							// From text to proto message.
+							require.NoError(t, proto.UnmarshalText(text, pb))
+							// From proto message to binary protobuf.
+							protoBuf, err := proto.Marshal(pb)
+							require.NoError(t, err)
+
+							// Write first length, then binary protobuf.
+							varintBuf := binary.AppendUvarint(nil, uint64(len(protoBuf)))
+							buf.Write(varintBuf)
+							buf.Write(protoBuf)
+							w.Write(buf.Bytes())
+						}
+					} else {
+						for _, text := range metricsText.text {
+							fmt.Fprint(w, text)
+						}
+					}
+					scrapeCount++
+					if scrapeCount > 2 {
+						close(scraped)
+					}
+				}))
+				defer ts.Close()
+
+				sp, err := newScrapePool(config, simpleStorage, 0, nil, nil, &Options{DiscoveryReloadInterval: model.Duration(10 * time.Millisecond), EnableNativeHistogramsIngestion: true}, newTestScrapeMetrics(t))
+				require.NoError(t, err)
+				defer sp.stop()
+
+				testURL, err := url.Parse(ts.URL)
+				require.NoError(t, err)
+				sp.Sync([]*targetgroup.Group{
+					{
+						Targets: []model.LabelSet{{model.AddressLabel: model.LabelValue(testURL.Host)}},
+					},
+				})
+				require.Len(t, sp.ActiveTargets(), 1)
+
+				select {
+				case <-time.After(5 * time.Second):
+					t.Fatalf("target was not scraped")
+				case <-scraped:
+				}
+
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				q, err := simpleStorage.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
+				require.NoError(t, err)
+				defer q.Close()
+
+				var series storage.SeriesSet
+
+				for i := 1; i <= 3; i++ {
+					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_metric_%d", i)))
+					checkFloatSeries(series, 1, 1.)
+
+					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_metric_%d_count", i)))
+					checkFloatSeries(series, 1, 1.)
+
+					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_metric_%d_sum", i)))
+					checkFloatSeries(series, 1, 1.)
+
+					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_metric_%d_bucket", i)))
+					checkFloatSeries(series, 1, 1.)
+
+					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_histogram_%d_count", i)))
+					checkFloatSeries(series, expectedClassicHistCount, 1.)
+
+					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_histogram_%d_sum", i)))
+					checkFloatSeries(series, expectedClassicHistCount, 10.)
+
+					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_histogram_%d_bucket", i)))
+					checkBucketValues(expectedClassicHistCount, series)
+
+					series = q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", fmt.Sprintf("test_histogram_%d", i)))
+
+					var expectedSchema int32
+					if expectCustomBuckets {
+						expectedSchema = histogram.CustomBucketsSchema
+					} else {
+						expectedSchema = 3
+					}
+					checkHistSeries(series, expectedNativeHistCount, expectedSchema)
+				}
+			})
+		}
+	}
+}
+
 func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrapeForTimestampedMetrics(t *testing.T) {
 	appender := &collectResultAppender{}
 	var (
@@ -3506,7 +4204,6 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrapeForTimestampedMetrics(t *
 	case <-time.After(5 * time.Second):
 		t.Fatalf("Scrape wasn't stopped.")
 	}
-
 	// 1 successfully scraped sample, 1 stale marker after first fail, 5 report samples for
 	// each scrape successful or not.
 	require.Len(t, appender.resultFloats, 27, "Appended samples not as expected:\n%s", appender)
@@ -3835,7 +4532,7 @@ scrape_configs:
 
 	mng, err := NewManager(&Options{DiscoveryReloadInterval: model.Duration(10 * time.Millisecond), EnableNativeHistogramsIngestion: true}, nil, nil, s, reg)
 	require.NoError(t, err)
-	cfg, err := config.Load(configStr, false, promslog.NewNopLogger())
+	cfg, err := config.Load(configStr, promslog.NewNopLogger())
 	require.NoError(t, err)
 	mng.ApplyConfig(cfg)
 	tsets := make(chan map[string][]*targetgroup.Group)

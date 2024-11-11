@@ -5178,7 +5178,7 @@ func testWBLReplay(t *testing.T, scenario sampleTypeScenario) {
 	// Passing in true for the 'ignoreCounterResets' parameter prevents differences in counter reset headers
 	// from being factored in to the sample comparison
 	// TODO(fionaliao): understand counter reset behaviour, might want to modify this later
-	requireEqualSamples(t, l.String(), expOOOSamples, actOOOSamples, true)
+	requireEqualSamples(t, l.String(), expOOOSamples, actOOOSamples, requireEqualSamplesIgnoreCounterResets)
 
 	require.NoError(t, h.Close())
 }

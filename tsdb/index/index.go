@@ -118,6 +118,8 @@ type symbolCacheEntry struct {
 
 type PostingsEncoder func(*encoding.Encbuf, []uint32) error
 
+type PostingsDecoder func(encoding.Decbuf) (int, Postings, error)
+
 // Writer implements the IndexWriter interface for the standard
 // serialization format.
 type Writer struct {
@@ -438,7 +440,7 @@ func (w *Writer) AddSeries(ref storage.SeriesRef, lset labels.Labels, chunks ...
 		return err
 	}
 	if labels.Compare(lset, w.lastSeries) <= 0 {
-		return fmt.Errorf("out-of-order series added with label set %q", lset)
+		return fmt.Errorf("out-of-order series added with label set %q, last label set %q", lset, w.lastSeries)
 	}
 
 	if ref < w.lastSeriesRef && !w.lastSeries.IsEmpty() {
@@ -1157,17 +1159,17 @@ func (b realByteSlice) Sub(start, end int) ByteSlice {
 
 // NewReader returns a new index reader on the given byte slice. It automatically
 // handles different format versions.
-func NewReader(b ByteSlice) (*Reader, error) {
-	return newReader(b, io.NopCloser(nil))
+func NewReader(b ByteSlice, decoder PostingsDecoder) (*Reader, error) {
+	return newReader(b, io.NopCloser(nil), decoder)
 }
 
 // NewFileReader returns a new index reader against the given index file.
-func NewFileReader(path string) (*Reader, error) {
+func NewFileReader(path string, decoder PostingsDecoder) (*Reader, error) {
 	f, err := fileutil.OpenMmapFile(path)
 	if err != nil {
 		return nil, err
 	}
-	r, err := newReader(realByteSlice(f.Bytes()), f)
+	r, err := newReader(realByteSlice(f.Bytes()), f, decoder)
 	if err != nil {
 		return nil, tsdb_errors.NewMulti(
 			err,
@@ -1178,7 +1180,7 @@ func NewFileReader(path string) (*Reader, error) {
 	return r, nil
 }
 
-func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
+func newReader(b ByteSlice, c io.Closer, postingsDecoder PostingsDecoder) (*Reader, error) {
 	r := &Reader{
 		b:        b,
 		c:        c,
@@ -1277,7 +1279,7 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 		r.nameSymbols[off] = k
 	}
 
-	r.dec = &Decoder{LookupSymbol: r.lookupSymbol}
+	r.dec = &Decoder{LookupSymbol: r.lookupSymbol, DecodePostings: postingsDecoder}
 
 	return r, nil
 }
@@ -1706,7 +1708,7 @@ func (r *Reader) Postings(ctx context.Context, name string, values ...string) (P
 			}
 			// Read from the postings table.
 			d := encoding.NewDecbufAt(r.b, int(postingsOff), castagnoliTable)
-			_, p, err := r.dec.Postings(d.Get())
+			_, p, err := r.dec.DecodePostings(d)
 			if err != nil {
 				return nil, fmt.Errorf("decode postings: %w", err)
 			}
@@ -1749,7 +1751,7 @@ func (r *Reader) Postings(ctx context.Context, name string, values ...string) (P
 				if val == value {
 					// Read from the postings table.
 					d2 := encoding.NewDecbufAt(r.b, int(postingsOff), castagnoliTable)
-					_, p, err := r.dec.Postings(d2.Get())
+					_, p, err := r.dec.DecodePostings(d2)
 					if err != nil {
 						return false, fmt.Errorf("decode postings: %w", err)
 					}
@@ -1790,7 +1792,7 @@ func (r *Reader) PostingsForLabelMatching(ctx context.Context, name string, matc
 		if match(val) {
 			// We want this postings iterator since the value is a match
 			postingsDec := encoding.NewDecbufAt(r.b, int(postingsOff), castagnoliTable)
-			_, p, err := r.dec.PostingsFromDecbuf(postingsDec)
+			_, p, err := r.dec.DecodePostings(postingsDec)
 			if err != nil {
 				return false, fmt.Errorf("decode postings: %w", err)
 			}
@@ -1823,7 +1825,7 @@ func (r *Reader) postingsForLabelMatchingV1(ctx context.Context, name string, ma
 
 		// Read from the postings table.
 		d := encoding.NewDecbufAt(r.b, int(offset), castagnoliTable)
-		_, p, err := r.dec.PostingsFromDecbuf(d)
+		_, p, err := r.dec.DecodePostings(d)
 		if err != nil {
 			return ErrPostings(fmt.Errorf("decode postings: %w", err))
 		}
@@ -1918,17 +1920,12 @@ func (s stringListIter) Err() error { return nil }
 // It currently does not contain decoding methods for all entry types but can be extended
 // by them if there's demand.
 type Decoder struct {
-	LookupSymbol func(context.Context, uint32) (string, error)
+	LookupSymbol   func(context.Context, uint32) (string, error)
+	DecodePostings PostingsDecoder
 }
 
-// Postings returns a postings list for b and its number of elements.
-func (dec *Decoder) Postings(b []byte) (int, Postings, error) {
-	d := encoding.Decbuf{B: b}
-	return dec.PostingsFromDecbuf(d)
-}
-
-// PostingsFromDecbuf returns a postings list for d and its number of elements.
-func (dec *Decoder) PostingsFromDecbuf(d encoding.Decbuf) (int, Postings, error) {
+// DecodePostingsRaw returns a postings list for d and its number of elements.
+func DecodePostingsRaw(d encoding.Decbuf) (int, Postings, error) {
 	n := d.Be32int()
 	l := d.Get()
 	if d.Err() != nil {

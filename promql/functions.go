@@ -415,22 +415,12 @@ func funcSortDesc(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 
 // === sort_by_label(vector parser.ValueTypeVector, label parser.ValueTypeString...) (Vector, Annotations) ===
 func funcSortByLabel(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	// First, sort by the full label set. This ensures a consistent ordering in case sorting by the
-	// labels provided as arguments is not conclusive.
+	lbls := stringSliceFromArgs(args[1:])
 	slices.SortFunc(vals[0].(Vector), func(a, b Sample) int {
-		return labels.Compare(a.Metric, b.Metric)
-	})
-
-	labels := stringSliceFromArgs(args[1:])
-	// Next, sort by the labels provided as arguments.
-	slices.SortFunc(vals[0].(Vector), func(a, b Sample) int {
-		// Iterate over each given label.
-		for _, label := range labels {
+		for _, label := range lbls {
 			lv1 := a.Metric.Get(label)
 			lv2 := b.Metric.Get(label)
 
-			// If we encounter multiple samples with the same label values, the sorting which was
-			// performed in the first step will act as a "tie breaker".
 			if lv1 == lv2 {
 				continue
 			}
@@ -442,7 +432,8 @@ func funcSortByLabel(vals []parser.Value, args parser.Expressions, enh *EvalNode
 			return +1
 		}
 
-		return 0
+		// If all labels provided as arguments were equal, sort by the full label set. This ensures a consistent ordering.
+		return labels.Compare(a.Metric, b.Metric)
 	})
 
 	return vals[0].(Vector), nil
@@ -450,22 +441,12 @@ func funcSortByLabel(vals []parser.Value, args parser.Expressions, enh *EvalNode
 
 // === sort_by_label_desc(vector parser.ValueTypeVector, label parser.ValueTypeString...) (Vector, Annotations) ===
 func funcSortByLabelDesc(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	// First, sort by the full label set. This ensures a consistent ordering in case sorting by the
-	// labels provided as arguments is not conclusive.
+	lbls := stringSliceFromArgs(args[1:])
 	slices.SortFunc(vals[0].(Vector), func(a, b Sample) int {
-		return labels.Compare(b.Metric, a.Metric)
-	})
-
-	labels := stringSliceFromArgs(args[1:])
-	// Next, sort by the labels provided as arguments.
-	slices.SortFunc(vals[0].(Vector), func(a, b Sample) int {
-		// Iterate over each given label.
-		for _, label := range labels {
+		for _, label := range lbls {
 			lv1 := a.Metric.Get(label)
 			lv2 := b.Metric.Get(label)
 
-			// If we encounter multiple samples with the same label values, the sorting which was
-			// performed in the first step will act as a "tie breaker".
 			if lv1 == lv2 {
 				continue
 			}
@@ -477,7 +458,8 @@ func funcSortByLabelDesc(vals []parser.Value, args parser.Expressions, enh *Eval
 			return -1
 		}
 
-		return 0
+		// If all labels provided as arguments were equal, sort by the full label set. This ensures a consistent ordering.
+		return -labels.Compare(a.Metric, b.Metric)
 	})
 
 	return vals[0].(Vector), nil
@@ -563,7 +545,14 @@ func funcRound(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 	toNearestInverse := 1.0 / toNearest
 
 	for _, el := range vec {
+		if el.H != nil {
+			// Process only float samples.
+			continue
+		}
 		f := math.Floor(el.F*toNearestInverse+0.5) / toNearestInverse
+		if !enh.enableDelayedNameRemoval {
+			el.Metric = el.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:   el.Metric,
 			F:        f,
@@ -1697,6 +1686,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"hour":                         funcHour,
 	"idelta":                       funcIdelta,
 	"increase":                     funcIncrease,
+	"info":                         nil,
 	"irate":                        funcIrate,
 	"label_replace":                nil, // evalLabelReplace not called via this map.
 	"label_join":                   nil, // evalLabelJoin not called via this map.

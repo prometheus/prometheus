@@ -82,7 +82,7 @@ func NewNode(l *slog.Logger, inf cache.SharedInformer, eventCount *prometheus.Co
 }
 
 func (n *Node) enqueue(obj interface{}) {
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+	key, err := nodeName(obj)
 	if err != nil {
 		return
 	}

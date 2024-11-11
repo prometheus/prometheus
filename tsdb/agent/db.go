@@ -763,6 +763,7 @@ func (db *DB) Close() error {
 
 type appender struct {
 	*DB
+	hints *storage.AppendOptions
 
 	pendingSeries          []record.RefSeries
 	pendingSamples         []record.RefSample
@@ -781,6 +782,10 @@ type appender struct {
 	// Pointers to the series referenced by each element of pendingFloatHistograms.
 	// Series lock is not held on elements.
 	floatHistogramSeries []*memSeries
+}
+
+func (a *appender) SetOptions(opts *storage.AppendOptions) {
+	a.hints = opts
 }
 
 func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
@@ -971,19 +976,139 @@ func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int
 	return storage.SeriesRef(series.ref), nil
 }
 
-func (a *appender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	// TODO(bwplotka/arthursens): Wire metadata in the Agent's appender.
-	return 0, nil
-}
-
 func (a *appender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Metadata) (storage.SeriesRef, error) {
 	// TODO: Wire metadata in the Agent's appender.
 	return 0, nil
 }
 
-func (a *appender) AppendCTZeroSample(storage.SeriesRef, labels.Labels, int64, int64) (storage.SeriesRef, error) {
-	// TODO(bwplotka): Wire metadata in the Agent's appender.
-	return 0, nil
+func (a *appender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	if h != nil {
+		if err := h.Validate(); err != nil {
+			return 0, err
+		}
+	}
+	if fh != nil {
+		if err := fh.Validate(); err != nil {
+			return 0, err
+		}
+	}
+	if ct >= t {
+		return 0, storage.ErrCTNewerThanSample
+	}
+
+	series := a.series.GetByID(chunks.HeadSeriesRef(ref))
+	if series == nil {
+		// Ensure no empty labels have gotten through.
+		l = l.WithoutEmpty()
+		if l.IsEmpty() {
+			return 0, fmt.Errorf("empty labelset: %w", tsdb.ErrInvalidSample)
+		}
+
+		if lbl, dup := l.HasDuplicateLabelNames(); dup {
+			return 0, fmt.Errorf(`label name "%s" is not unique: %w`, lbl, tsdb.ErrInvalidSample)
+		}
+
+		var created bool
+		series, created = a.getOrCreate(l)
+		if created {
+			a.pendingSeries = append(a.pendingSeries, record.RefSeries{
+				Ref:    series.ref,
+				Labels: l,
+			})
+			a.metrics.numActiveSeries.Inc()
+		}
+	}
+
+	series.Lock()
+	defer series.Unlock()
+
+	if ct <= a.minValidTime(series.lastTs) {
+		return 0, storage.ErrOutOfOrderCT
+	}
+
+	if ct > series.lastTs {
+		series.lastTs = ct
+	} else {
+		// discard the sample if it's out of order.
+		return 0, storage.ErrOutOfOrderCT
+	}
+
+	switch {
+	case h != nil:
+		zeroHistogram := &histogram.Histogram{}
+		a.pendingHistograms = append(a.pendingHistograms, record.RefHistogramSample{
+			Ref: series.ref,
+			T:   ct,
+			H:   zeroHistogram,
+		})
+		a.histogramSeries = append(a.histogramSeries, series)
+	case fh != nil:
+		a.pendingFloatHistograms = append(a.pendingFloatHistograms, record.RefFloatHistogramSample{
+			Ref: series.ref,
+			T:   ct,
+			FH:  &histogram.FloatHistogram{},
+		})
+		a.floatHistogramSeries = append(a.floatHistogramSeries, series)
+	}
+
+	a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
+	return storage.SeriesRef(series.ref), nil
+}
+
+func (a *appender) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64) (storage.SeriesRef, error) {
+	if ct >= t {
+		return 0, storage.ErrCTNewerThanSample
+	}
+
+	series := a.series.GetByID(chunks.HeadSeriesRef(ref))
+	if series == nil {
+		l = l.WithoutEmpty()
+		if l.IsEmpty() {
+			return 0, fmt.Errorf("empty labelset: %w", tsdb.ErrInvalidSample)
+		}
+
+		if lbl, dup := l.HasDuplicateLabelNames(); dup {
+			return 0, fmt.Errorf(`label name "%s" is not unique: %w`, lbl, tsdb.ErrInvalidSample)
+		}
+
+		newSeries, created := a.getOrCreate(l)
+		if created {
+			a.pendingSeries = append(a.pendingSeries, record.RefSeries{
+				Ref:    newSeries.ref,
+				Labels: l,
+			})
+			a.metrics.numActiveSeries.Inc()
+		}
+
+		series = newSeries
+	}
+
+	series.Lock()
+	defer series.Unlock()
+
+	if t <= a.minValidTime(series.lastTs) {
+		a.metrics.totalOutOfOrderSamples.Inc()
+		return 0, storage.ErrOutOfOrderSample
+	}
+
+	if ct > series.lastTs {
+		series.lastTs = ct
+	} else {
+		// discard the sample if it's out of order.
+		return 0, storage.ErrOutOfOrderCT
+	}
+
+	// NOTE: always modify pendingSamples and sampleSeries together.
+	a.pendingSamples = append(a.pendingSamples, record.RefSample{
+		Ref: series.ref,
+		T:   ct,
+		V:   0,
+	})
+	a.sampleSeries = append(a.sampleSeries, series)
+
+	a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
+
+	return storage.SeriesRef(series.ref), nil
 }
 
 // Commit submits the collected samples and purges the batch.

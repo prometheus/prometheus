@@ -16,6 +16,7 @@ package scrape
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -898,7 +899,7 @@ func doOneScrape(t *testing.T, manager *Manager, appender *collectResultAppender
 		if len(appender.resultFloats) > 0 {
 			return nil
 		}
-		return fmt.Errorf("expected some float samples, got none")
+		return errors.New("expected some float samples, got none")
 	}), "after 1 minute")
 	manager.Stop()
 }
@@ -1061,7 +1062,7 @@ func TestManagerCTZeroIngestionHistogram(t *testing.T) {
 				if len(app.resultHistograms) > 0 {
 					return nil
 				}
-				return fmt.Errorf("expected some histogram samples, got none")
+				return errors.New("expected some histogram samples, got none")
 			}), "after 1 minute")
 			scrapeManager.Stop()
 

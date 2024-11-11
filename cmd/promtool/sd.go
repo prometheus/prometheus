@@ -41,7 +41,7 @@ type sdCheckResult struct {
 func CheckSD(sdConfigFiles, sdJobName string, sdTimeout time.Duration, registerer prometheus.Registerer) int {
 	logger := promslog.New(&promslog.Config{})
 
-	cfg, err := config.LoadFile(sdConfigFiles, false, false, logger)
+	cfg, err := config.LoadFile(sdConfigFiles, false, logger)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Cannot load config", err)
 		return failureExitCode
