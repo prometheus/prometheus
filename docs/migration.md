@@ -104,19 +104,25 @@ may now fail if this fallback protocol is not specified.
 ## Miscellaneous
 
 ### TSDB format and downgrade
-The TSDB format has been changed in Prometheus v2.55 in preparation for changes 
+
+The TSDB format has been changed slightly in Prometheus v2.55 in preparation for changes 
 to the index format. Consequently, a Prometheus v3 TSDB can only be read by a
-Prometheus v2.55 or newer.
-Before upgrading to Prometheus v3 please upgrade to v2.55 first and confirm 
-Prometheus works as expected. Only then continue with the upgrade to v3.
+Prometheus v2.55 or newer. Keep that in mind when upgrading to v3 -- you will be only
+able to downgrade to v2.55, not lower, without loosing your TSDB persitent data.
+
+As an extra safety measure, you could optionally consider upgrading to v2.55 first and
+confirm Prometheus works as expected, before upgrading to v3.
 
 ### TSDB storage contract
+
 TSDB compatible storage is now expected to return results matching the specified 
 selectors. This might impact some third party implementations, most likely 
 implementing `remote_read`.
+
 This contract is not explicitly enforced, but can cause undefined behavior.
 
 ### UTF-8 names
+
 Prometheus v3 supports UTF-8 in metric and label names. This means metric and
 label names can change after upgrading according to what is exposed by
 endpoints. Furthermore, metric and label names that would have previously been
