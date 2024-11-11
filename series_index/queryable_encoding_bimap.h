@@ -91,6 +91,8 @@ class QueryableEncodingBimap : public BareBones::SnugComposite::DecodingTable<Fi
   SortingIndex<LsIdSet> sorting_index_{ls_id_set_};
 
   PROMPP_ALWAYS_INLINE void after_items_load(uint32_t first_loaded_id) noexcept override {
+    ls_id_hash_set_.reserve(Base::items_.size());
+
     for (auto ls_id = first_loaded_id; ls_id < Base::items_.size(); ++ls_id) {
       auto label_set = this->operator[](ls_id);
       update_indexes(ls_id, label_set, phmap_hash(Base::hasher_(label_set)));
