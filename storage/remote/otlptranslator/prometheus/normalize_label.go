@@ -29,9 +29,9 @@ import (
 //
 // Labels that start with non-letter rune will be prefixed with "key_".
 // An exception is made for double-underscores which are allowed.
-func NormalizeLabel(label string) string {
+func NormalizeLabel(label string, allowUTF8 bool) string {
 	// Trivial case
-	if len(label) == 0 {
+	if len(label) == 0 || allowUTF8 {
 		return label
 	}
 
