@@ -143,6 +143,7 @@ scrape_configs:
 ### Log message format
 Prometheus v3 has adopted `log/slog` over the previous `go-kit/log`. This 
 results in a change of log message format. An example of the old log format is:
+
 ```
 ts=2024-10-23T22:01:06.074Z caller=main.go:627 level=info msg="No time or size retention was set so using the default time retention" duration=15d
 ts=2024-10-23T22:01:06.074Z caller=main.go:671 level=info msg="Starting Prometheus Server" mode=server version="(version=, branch=, revision=91d80252c3e528728b0f88d254dd720f6be07cb8-modified)"
@@ -151,6 +152,7 @@ ts=2024-10-23T22:01:06.074Z caller=main.go:677 level=info host_details="(Linux 5
 ```
 
 a similar sequence in the new log format looks like this:
+
 ```
 time=2024-10-24T00:03:07.542+02:00 level=INFO source=/home/user/go/src/github.com/prometheus/prometheus/cmd/prometheus/main.go:640 msg="No time or size retention was set so using the default time retention" duration=15d
 time=2024-10-24T00:03:07.542+02:00 level=INFO source=/home/user/go/src/github.com/prometheus/prometheus/cmd/prometheus/main.go:681 msg="Starting Prometheus Server" mode=server version="(version=, branch=, revision=7c7116fea8343795cae6da42960cacd0207a2af8)"
