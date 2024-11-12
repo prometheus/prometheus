@@ -26,6 +26,7 @@ import (
 )
 
 func TestRulesUnitTest(t *testing.T) {
+	t.Parallel()
 	type args struct {
 		files []string
 	}
@@ -141,12 +142,14 @@ func TestRulesUnitTest(t *testing.T) {
 			reuseCount[tt.want] += len(tt.args.files)
 		}
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got := RulesUnitTest(tt.queryOpts, nil, false, false, tt.args.files...); got != tt.want {
 				t.Errorf("RulesUnitTest() = %v, want %v", got, tt.want)
 			}
 		})
 	}
 	t.Run("Junit xml output ", func(t *testing.T) {
+		t.Parallel()
 		var buf bytes.Buffer
 		if got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, nil, false, false, reuseFiles...); got != 1 {
 			t.Errorf("RulesUnitTestResults() = %v, want 1", got)
@@ -185,6 +188,7 @@ func TestRulesUnitTest(t *testing.T) {
 }
 
 func TestRulesUnitTestRun(t *testing.T) {
+	t.Parallel()
 	type args struct {
 		run   []string
 		files []string
@@ -230,6 +234,7 @@ func TestRulesUnitTestRun(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := RulesUnitTest(tt.queryOpts, tt.args.run, false, false, tt.args.files...)
 			require.Equal(t, tt.want, got)
 		})
