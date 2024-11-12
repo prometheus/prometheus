@@ -31,22 +31,27 @@ func TestFirstFloatHistogramExplicitCounterReset(t *testing.T) {
 	tests := map[string]struct {
 		hint      histogram.CounterResetHint
 		expHeader CounterResetHeader
+		expHint   histogram.CounterResetHint
 	}{
 		"CounterReset": {
 			hint:      histogram.CounterReset,
 			expHeader: CounterReset,
+			expHint:   histogram.UnknownCounterReset,
 		},
 		"NotCounterReset": {
 			hint:      histogram.NotCounterReset,
 			expHeader: UnknownCounterReset,
+			expHint:   histogram.UnknownCounterReset,
 		},
 		"UnknownCounterReset": {
 			hint:      histogram.UnknownCounterReset,
 			expHeader: UnknownCounterReset,
+			expHint:   histogram.UnknownCounterReset,
 		},
 		"Gauge": {
 			hint:      histogram.GaugeType,
 			expHeader: GaugeType,
+			expHint:   histogram.GaugeType,
 		},
 	}
 	for name, test := range tests {
@@ -63,6 +68,7 @@ func TestFirstFloatHistogramExplicitCounterReset(t *testing.T) {
 			require.False(t, recoded)
 			require.Equal(t, app, newApp)
 			require.Equal(t, test.expHeader, chk.GetCounterResetHeader())
+			assertFirstFloatHistogramSampleHint(t, chk, test.expHint)
 		})
 	}
 }
@@ -338,7 +344,7 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		_, _, _, _, ok, _ := hApp.appendable(h2)
 		require.False(t, ok)
 
-		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, UnknownCounterReset)
+		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, UnknownCounterReset, histogram.UnknownCounterReset)
 	}
 
 	{ // Zero threshold change.
@@ -348,7 +354,7 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		_, _, _, _, ok, _ := hApp.appendable(h2)
 		require.False(t, ok)
 
-		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, UnknownCounterReset)
+		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, UnknownCounterReset, histogram.UnknownCounterReset)
 	}
 
 	{ // New histogram that has more buckets.
@@ -397,7 +403,7 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		require.False(t, ok) // Need to cut a new chunk.
 		require.True(t, cr)
 
-		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, CounterReset)
+		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, CounterReset, histogram.UnknownCounterReset)
 	}
 
 	{ // New histogram that has buckets missing but the buckets missing were empty.
@@ -480,7 +486,7 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		require.False(t, ok) // Need to cut a new chunk.
 		require.True(t, cr)
 
-		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, CounterReset)
+		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, CounterReset, histogram.UnknownCounterReset)
 	}
 
 	{ // New histogram that has a counter reset while new buckets were added.
@@ -503,7 +509,7 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		require.False(t, ok) // Need to cut a new chunk.
 		require.True(t, cr)
 
-		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, CounterReset)
+		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, CounterReset, histogram.UnknownCounterReset)
 	}
 
 	{
@@ -532,7 +538,7 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		require.False(t, ok) // Need to cut a new chunk.
 		require.True(t, cr)
 
-		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, CounterReset)
+		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, CounterReset, histogram.UnknownCounterReset)
 	}
 
 	{ // New histogram that has an explicit counter reset.
@@ -540,7 +546,7 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		h2 := h1.Copy()
 		h2.CounterResetHint = histogram.CounterReset
 
-		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, CounterReset)
+		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, CounterReset, histogram.UnknownCounterReset)
 	}
 
 	{ // Start new chunk explicitly, and append a new histogram that is considered appendable to the previous chunk.
@@ -557,6 +563,7 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		require.Equal(t, app, newApp)
 		assertSampleCount(t, nextChunk, 1, ValFloatHistogram)
 		require.Equal(t, NotCounterReset, nextChunk.GetCounterResetHeader())
+		assertFirstFloatHistogramSampleHint(t, nextChunk, histogram.UnknownCounterReset)
 	}
 
 	{ // Start new chunk explicitly, and append a new histogram that is not considered appendable to the previous chunk.
@@ -574,6 +581,7 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		require.Equal(t, app, newApp)
 		assertSampleCount(t, nextChunk, 1, ValFloatHistogram)
 		require.Equal(t, CounterReset, nextChunk.GetCounterResetHeader())
+		assertFirstFloatHistogramSampleHint(t, nextChunk, histogram.UnknownCounterReset)
 	}
 
 	{ // Start new chunk explicitly, and append a new histogram that would need recoding if we added it to the chunk.
@@ -600,6 +608,7 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		require.Equal(t, app, newApp)
 		assertSampleCount(t, nextChunk, 1, ValFloatHistogram)
 		require.Equal(t, NotCounterReset, nextChunk.GetCounterResetHeader())
+		assertFirstFloatHistogramSampleHint(t, nextChunk, histogram.UnknownCounterReset)
 	}
 
 	{
@@ -664,7 +673,7 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		_, _, _, _, ok, _ := hApp.appendable(h2)
 		require.False(t, ok)
 
-		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, CounterReset)
+		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, CounterReset, histogram.UnknownCounterReset)
 	}
 
 	{ // Custom buckets, change only in custom bounds.
@@ -674,7 +683,7 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 		_, _, _, _, ok, _ := hApp.appendable(h2)
 		require.False(t, ok)
 
-		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, CounterReset)
+		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, CounterReset, histogram.UnknownCounterReset)
 	}
 
 	{ // Custom buckets, with more buckets.
@@ -705,7 +714,7 @@ func TestFloatHistogramChunkAppendable(t *testing.T) {
 	}
 }
 
-func assertNewFloatHistogramChunkOnAppend(t *testing.T, oldChunk Chunk, hApp *FloatHistogramAppender, ts int64, h *histogram.FloatHistogram, expectHeader CounterResetHeader) {
+func assertNewFloatHistogramChunkOnAppend(t *testing.T, oldChunk Chunk, hApp *FloatHistogramAppender, ts int64, h *histogram.FloatHistogram, expectHeader CounterResetHeader, expectHint histogram.CounterResetHint) {
 	oldChunkBytes := oldChunk.Bytes()
 	newChunk, recoded, newAppender, err := hApp.AppendFloatHistogram(nil, ts, h, false)
 	require.Equal(t, oldChunkBytes, oldChunk.Bytes()) // Sanity check that previous chunk is untouched.
@@ -717,6 +726,7 @@ func assertNewFloatHistogramChunkOnAppend(t *testing.T, oldChunk Chunk, hApp *Fl
 	require.NotNil(t, newAppender)
 	require.NotEqual(t, hApp, newAppender)
 	assertSampleCount(t, newChunk, 1, ValFloatHistogram)
+	assertFirstFloatHistogramSampleHint(t, newChunk, expectHint)
 }
 
 func assertNoNewFloatHistogramChunkOnAppend(t *testing.T, oldChunk Chunk, hApp *FloatHistogramAppender, ts int64, h *histogram.FloatHistogram, expectHeader CounterResetHeader) {
@@ -1023,7 +1033,7 @@ func TestFloatHistogramChunkAppendableGauge(t *testing.T) {
 		_, _, _, _, _, _, ok := hApp.appendableGauge(h2)
 		require.False(t, ok)
 
-		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, GaugeType)
+		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, GaugeType, histogram.GaugeType)
 	}
 
 	{ // Zero threshold change.
@@ -1033,7 +1043,7 @@ func TestFloatHistogramChunkAppendableGauge(t *testing.T) {
 		_, _, _, _, _, _, ok := hApp.appendableGauge(h2)
 		require.False(t, ok)
 
-		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, GaugeType)
+		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, GaugeType, histogram.GaugeType)
 	}
 
 	{ // New histogram that has more buckets.
@@ -1208,7 +1218,7 @@ func TestFloatHistogramChunkAppendableGauge(t *testing.T) {
 		_, _, _, _, _, _, ok := hApp.appendableGauge(h2)
 		require.False(t, ok)
 
-		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, GaugeType)
+		assertNewFloatHistogramChunkOnAppend(t, c, hApp, ts+1, h2, GaugeType, histogram.GaugeType)
 	}
 
 	{ // Custom buckets, with more buckets.
@@ -1356,4 +1366,11 @@ func TestFloatHistogramUniqueSpansAfterNext(t *testing.T) {
 	// Check that the spans for h1 and h2 are unique slices.
 	require.NotSame(t, &rh1.PositiveSpans[0], &rh2.PositiveSpans[0], "PositiveSpans should be unique between histograms")
 	require.NotSame(t, &rh1.NegativeSpans[0], &rh2.NegativeSpans[0], "NegativeSpans should be unique between histograms")
+}
+
+func assertFirstFloatHistogramSampleHint(t *testing.T, chunk Chunk, expected histogram.CounterResetHint) {
+	it := chunk.Iterator(nil)
+	require.Equal(t, ValFloatHistogram, it.Next())
+	_, v := it.AtFloatHistogram(nil)
+	require.Equal(t, expected, v.CounterResetHint)
 }
