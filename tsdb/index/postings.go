@@ -370,6 +370,8 @@ func (p *MemPostings) Iter(f func(labels.Label, Postings) error) error {
 }
 
 // Add a pending to be committed label set to the postings index.
+// Callers of Add should expect Commit to be called at any time by other goroutines,
+// and they should call Commit themselves to ensure that all pending entries are committed.
 func (p *MemPostings) Add(id storage.SeriesRef, lset labels.Labels) {
 	p.pendingMtx.Lock()
 	defer p.pendingMtx.Unlock()
@@ -378,6 +380,7 @@ func (p *MemPostings) Add(id storage.SeriesRef, lset labels.Labels) {
 }
 
 // Commit will create the entries for all series pending to be committed.
+// Commit is a noop if there are no pending entries.
 func (p *MemPostings) Commit() {
 	p.pendingMtx.Lock()
 	defer p.pendingMtx.Unlock()
