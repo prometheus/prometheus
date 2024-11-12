@@ -986,7 +986,7 @@ func TestRegexp_JSONUnmarshalThenMarshal(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			var unmarshalled Regexp
+			var unmarshalled Config
 			err := json.Unmarshal([]byte(test.input), &unmarshalled)
 			require.NoError(t, err)
 
