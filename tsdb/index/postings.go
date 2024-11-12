@@ -395,7 +395,13 @@ func (p *MemPostings) Commit() {
 		p.addFor(p.pending[i].id, allPostingsKey)
 		p.pending[i] = pendingMemPostings{} // don't retain any kind of references, like labels.Labels.
 	}
-	p.pending = p.pending[:0]
+
+	// If the pending list is too large, discard it, otherwise just reset.
+	if cap(p.pending) > 1e6 {
+		p.pending = nil
+	} else {
+		p.pending = p.pending[:0]
+	}
 }
 
 func appendWithExponentialGrowth[T any](a []T, v T) []T {
