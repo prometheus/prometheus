@@ -1143,9 +1143,8 @@ func main() {
 						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
 							logger.Error("Error reloading config", "err", err)
 						} else if cfg.enableAutoReload {
-							if currentChecksum, err := config.GenerateChecksum(cfg.configFile); err == nil {
-								checksum = currentChecksum
-							} else {
+							checksum, err = config.GenerateChecksum(cfg.configFile)
+							if err != nil {
 								logger.Error("Failed to generate checksum during configuration reload", "err", err)
 							}
 						}
@@ -1156,9 +1155,8 @@ func main() {
 						} else {
 							rc <- nil
 							if cfg.enableAutoReload {
-								if currentChecksum, err := config.GenerateChecksum(cfg.configFile); err == nil {
-									checksum = currentChecksum
-								} else {
+								checksum, err = config.GenerateChecksum(cfg.configFile)
+								if err != nil {
 									logger.Error("Failed to generate checksum during configuration reload", "err", err)
 								}
 							}
@@ -1169,6 +1167,7 @@ func main() {
 						}
 						currentChecksum, err := config.GenerateChecksum(cfg.configFile)
 						if err != nil {
+							checksum = currentChecksum
 							logger.Error("Failed to generate checksum during configuration reload", "err", err)
 						} else if currentChecksum == checksum {
 							continue
