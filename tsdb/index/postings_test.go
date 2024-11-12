@@ -952,6 +952,7 @@ func TestMemPostingsStats(t *testing.T) {
 	p.Add(1, labels.FromStrings("label", "value2"))
 	p.Add(1, labels.FromStrings("label", "value3"))
 	p.Add(2, labels.FromStrings("label", "value1"))
+	p.Commit()
 
 	// call the Stats method to calculate the cardinality statistics
 	stats := p.Stats("label", 10)
@@ -977,6 +978,7 @@ func TestMemPostings_Delete(t *testing.T) {
 	p.Add(1, labels.FromStrings("lbl1", "a"))
 	p.Add(2, labels.FromStrings("lbl1", "b"))
 	p.Add(3, labels.FromStrings("lbl2", "a"))
+	p.Commit()
 
 	before := p.Get(allPostingsKey.Name, allPostingsKey.Value)
 	deletedRefs := map[storage.SeriesRef]struct{}{
@@ -1058,6 +1060,7 @@ func BenchmarkMemPostings_Delete(b *testing.B) {
 					for i := range allSeries {
 						p.Add(storage.SeriesRef(i), allSeries[i])
 					}
+					p.Commit()
 
 					stop := make(chan struct{})
 					wg := sync.WaitGroup{}
@@ -1416,6 +1419,7 @@ func BenchmarkMemPostings_PostingsForLabelMatching(b *testing.B) {
 			for i := 0; i < labelValueCount; i++ {
 				mp.Add(storage.SeriesRef(i), labels.FromStrings("label", strconv.Itoa(i)))
 			}
+			mp.Commit()
 
 			fp, err := ExpandPostings(mp.PostingsForLabelMatching(context.Background(), "label", fast.MatchString))
 			require.NoError(b, err)
@@ -1444,6 +1448,7 @@ func TestMemPostings_PostingsForLabelMatching(t *testing.T) {
 	mp.Add(2, labels.FromStrings("foo", "2"))
 	mp.Add(3, labels.FromStrings("foo", "3"))
 	mp.Add(4, labels.FromStrings("foo", "4"))
+	mp.Commit()
 
 	isEven := func(v string) bool {
 		iv, err := strconv.Atoi(v)
@@ -1466,6 +1471,7 @@ func TestMemPostings_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 	for i := 1; i <= seriesCount; i++ {
 		memP.Add(storage.SeriesRef(i), labels.FromStrings("__name__", fmt.Sprintf("%4d", i)))
 	}
+	memP.Commit()
 
 	failAfter := uint64(seriesCount / 2 / checkContextEveryNIterations)
 	ctx := &testutil.MockContextErrAfter{FailAfter: failAfter}

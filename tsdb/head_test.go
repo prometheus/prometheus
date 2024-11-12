@@ -6236,9 +6236,11 @@ func TestPostingsCardinalityStats(t *testing.T) {
 	head := &Head{postings: index.NewMemPostings()}
 	head.postings.Add(1, labels.FromStrings(labels.MetricName, "t", "n", "v1"))
 	head.postings.Add(2, labels.FromStrings(labels.MetricName, "t", "n", "v2"))
+	head.postings.Commit()
 
 	statsForMetricName := head.PostingsCardinalityStats(labels.MetricName, 10)
 	head.postings.Add(3, labels.FromStrings(labels.MetricName, "t", "n", "v3"))
+	head.postings.Commit()
 	// Using cache.
 	require.Equal(t, statsForMetricName, head.PostingsCardinalityStats(labels.MetricName, 10))
 
@@ -6246,6 +6248,7 @@ func TestPostingsCardinalityStats(t *testing.T) {
 	// Cache should be evicted because of the change of label name.
 	require.NotEqual(t, statsForMetricName, statsForSomeLabel)
 	head.postings.Add(4, labels.FromStrings(labels.MetricName, "t", "n", "v4"))
+	head.postings.Commit()
 	// Using cache.
 	require.Equal(t, statsForSomeLabel, head.PostingsCardinalityStats("n", 10))
 	// Cache should be evicted because of the change of limit parameter.

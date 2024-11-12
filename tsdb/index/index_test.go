@@ -386,6 +386,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 		})
 		postings.Add(storage.SeriesRef(i), s.labels)
 	}
+	postings.Commit()
 
 	for p := range mi.postings {
 		gotp, err := ir.Postings(ctx, p.Name, p.Value)
