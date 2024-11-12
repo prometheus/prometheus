@@ -74,14 +74,18 @@ const (
 	// Exit code 3 is used for "one or more lint issues detected".
 	lintErrExitCode = 3
 
-	lintOptionAll            = "all"
-	lintOptionDuplicateRules = "duplicate-rules"
-	lintOptionNone           = "none"
-	checkHealth              = "/-/healthy"
-	checkReadiness           = "/-/ready"
+	lintOptionAll                = "all"
+	lintOptionDuplicateRules     = "duplicate-rules"
+	lintOptionLongScrapeInterval = "long-scrape-interval"
+	lintOptionNone               = "none"
+	checkHealth                  = "/-/healthy"
+	checkReadiness               = "/-/ready"
 )
 
-var lintOptions = []string{lintOptionAll, lintOptionDuplicateRules, lintOptionNone}
+var (
+	lintRuleOptions   = []string{lintOptionAll, lintOptionDuplicateRules, lintOptionNone}
+	lintConfigOptions = append(lintRuleOptions, lintOptionLongScrapeInterval)
+)
 
 func main() {
 	var (
@@ -114,8 +118,12 @@ func main() {
 	checkConfigSyntaxOnly := checkConfigCmd.Flag("syntax-only", "Only check the config file syntax, ignoring file and content validation referenced in the config").Bool()
 	checkConfigLint := checkConfigCmd.Flag(
 		"lint",
-		"Linting checks to apply to the rules specified in the config. Available options are: "+strings.Join(lintOptions, ", ")+". Use --lint=none to disable linting",
+		"Linting checks to apply to the rules specified in the config. Available options are: "+strings.Join(lintConfigOptions, ", ")+". Use --lint=none to disable linting",
 	).Default(lintOptionDuplicateRules).String()
+	checkConfigLintLookbackDelta := checkConfigCmd.Flag(
+		"lint.lookback-delta",
+		"The maximum lookback duration. This config is only used for config linting checks.",
+	).Default("5m").Duration()
 	checkConfigLintFatal := checkConfigCmd.Flag(
 		"lint-fatal",
 		"Make lint errors exit with exit code 3.").Default("false").Bool()
@@ -141,7 +149,7 @@ func main() {
 	).ExistingFiles()
 	checkRulesLint := checkRulesCmd.Flag(
 		"lint",
-		"Linting checks to apply. Available options are: "+strings.Join(lintOptions, ", ")+". Use --lint=none to disable linting",
+		"Linting checks to apply. Available options are: "+strings.Join(lintRuleOptions, ", ")+". Use --lint=none to disable linting",
 	).Default(lintOptionDuplicateRules).String()
 	checkRulesLintFatal := checkRulesCmd.Flag(
 		"lint-fatal",
@@ -340,7 +348,7 @@ func main() {
 		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout, prometheus.DefaultRegisterer))
 
 	case checkConfigCmd.FullCommand():
-		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newLintConfig(*checkConfigLint, *checkConfigLintFatal), *configFiles...))
+		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newLintConfig(*checkConfigLint, *checkConfigLintFatal, *checkConfigLintLookbackDelta), *configFiles...))
 
 	case checkServerHealthCmd.FullCommand():
 		os.Exit(checkErr(CheckServerStatus(serverURL, checkHealth, httpRoundTripper)))
@@ -352,7 +360,7 @@ func main() {
 		os.Exit(CheckWebConfig(*webConfigFiles...))
 
 	case checkRulesCmd.FullCommand():
-		os.Exit(CheckRules(newLintConfig(*checkRulesLint, *checkRulesLintFatal), *ruleFiles...))
+		os.Exit(CheckRules(newLintConfig(*checkRulesLint, *checkRulesLintFatal, 5*time.Minute), *ruleFiles...))
 
 	case checkMetricsCmd.FullCommand():
 		os.Exit(CheckMetrics(*checkMetricsExtended))
@@ -447,15 +455,18 @@ func checkExperimental(f bool) {
 var errLint = errors.New("lint error")
 
 type lintConfig struct {
-	all            bool
-	duplicateRules bool
-	fatal          bool
+	all                bool
+	duplicateRules     bool
+	fatal              bool
+	longScrapeInterval bool
+	lookbackDelta      model.Duration
 }
 
-func newLintConfig(stringVal string, fatal bool) lintConfig {
+func newLintConfig(stringVal string, fatal bool, lookbackDelta time.Duration) lintConfig {
 	items := strings.Split(stringVal, ",")
 	ls := lintConfig{
-		fatal: fatal,
+		fatal:         fatal,
+		lookbackDelta: model.Duration(lookbackDelta),
 	}
 	for _, setting := range items {
 		switch setting {
@@ -463,6 +474,8 @@ func newLintConfig(stringVal string, fatal bool) lintConfig {
 			ls.all = true
 		case lintOptionDuplicateRules:
 			ls.duplicateRules = true
+		case lintOptionLongScrapeInterval:
+			ls.longScrapeInterval = true
 		case lintOptionNone:
 		default:
 			fmt.Printf("WARNING: unknown lint option %s\n", setting)
@@ -473,6 +486,10 @@ func newLintConfig(stringVal string, fatal bool) lintConfig {
 
 func (ls lintConfig) lintDuplicateRules() bool {
 	return ls.all || ls.duplicateRules
+}
+
+func (ls lintConfig) lintLongScrapeInterval() bool {
+	return ls.all || ls.longScrapeInterval
 }
 
 // CheckServerStatus - healthy & ready.
@@ -518,10 +535,10 @@ func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings lintConfig, files
 	hasErrors := false
 
 	for _, f := range files {
-		ruleFiles, err := checkConfig(agentMode, f, checkSyntaxOnly)
+		ruleFiles, err := checkConfig(agentMode, f, checkSyntaxOnly, lintSettings)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:", err)
-			hasErrors = true
+			hasErrors = !errors.Is(err, errLint)
 			failed = true
 		} else {
 			if len(ruleFiles) > 0 {
@@ -575,7 +592,7 @@ func checkFileExists(fn string) error {
 	return err
 }
 
-func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]string, error) {
+func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool, lintSettings lintConfig) ([]string, error) {
 	fmt.Println("Checking", filename)
 
 	cfg, err := config.LoadFile(filename, agentMode, promslog.NewNopLogger())
@@ -615,6 +632,12 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]strin
 	}
 
 	for _, scfg := range scfgs {
+		if lintSettings.lintLongScrapeInterval() {
+			if scfg.ScrapeInterval >= lintSettings.lookbackDelta {
+				errMessage := fmt.Sprintf("Long Scrape Interval found. Data point will be marked as stale. Job: %s. Interval: %s", scfg.JobName, scfg.ScrapeInterval.String())
+				return nil, fmt.Errorf("%w %s", errLint, errMessage)
+			}
+		}
 		if !checkSyntaxOnly && scfg.HTTPClientConfig.Authorization != nil {
 			if err := checkFileExists(scfg.HTTPClientConfig.Authorization.CredentialsFile); err != nil {
 				return nil, fmt.Errorf("error checking authorization credentials or bearer token file %q: %w", scfg.HTTPClientConfig.Authorization.CredentialsFile, err)
