@@ -18,27 +18,27 @@ This document offers guidance on migrating from Prometheus 2.x to Prometheus 3.0
   - `remote-write-receiver`
   - `new-service-discovery-manager`
   - `expand-external-labels`
-    Environment variable references `${var}` or `$var` in external label values 
+      - Environment variable references `${var}` or `$var` in external label values 
     are replaced according to the values of the current environment variables.  
-    References to undefined variables are replaced by the empty string.
+      - References to undefined variables are replaced by the empty string.
     The `$` character can be escaped by using `$$`.
   - `no-default-scrape-port`
-    Prometheus v3 will no longer add ports to scrape targets according to the 
+      - Prometheus v3 will no longer add ports to scrape targets according to the 
     specified scheme. Target will now appear in labels as configured.
-    If you rely on scrape targets like 
-    `https://example.com/metrics` or `http://exmaple.com/metrics` to be 
-    represented as `https://example.com/metrics:443` and 
-    `http://example.com/metrics:80` respectively, add them to your target URLs
+      - If you rely on scrape targets like 
+      `https://example.com/metrics` or `http://exmaple.com/metrics` to be 
+      represented as `https://example.com/metrics:443` and 
+      `http://example.com/metrics:80` respectively, add them to your target URLs
   - `agent`
-    Instead use the dedicated `--agent` CLI flag.
+      - Instead use the dedicated `--agent` CLI flag.
   - `auto-gomemlimit`
-    Prometheus v3 will automatically set `GOMEMLIMIT` to match the Linux 
-    container memory limit. If there is no container limit, or the process is 
-    running outside of containers, the system memory total is used. To disable 
-    this, `--no-auto-gomemlimit` is available.
+      - Prometheus v3 will automatically set `GOMEMLIMIT` to match the Linux 
+      container memory limit. If there is no container limit, or the process is 
+      running outside of containers, the system memory total is used. To disable 
+      this, `--no-auto-gomemlimit` is available.
   - `auto-gomaxprocs`
-    Prometheus v3 will automatically set `GOMAXPROCS` to match the Linux 
-    container CPU quota. To disable this, `--no-auto-gomaxprocs` is available.
+      - Prometheus v3 will automatically set `GOMAXPROCS` to match the Linux 
+      container CPU quota. To disable this, `--no-auto-gomaxprocs` is available.
 
   Prometheus v3 will log a warning if you continue to pass these to 
   `--enable-feature`.
@@ -62,17 +62,13 @@ This document offers guidance on migrating from Prometheus 2.x to Prometheus 3.0
 
 - The `.` pattern in regular expressions in PromQL matches newline characters. 
   With this change a regular expressions like `.*` matches strings that include 
-  `\n`. This applies to matchers in queries and relabel configs. For example the 
-  following regular expressions now match the accompanying strings, whereas in 
-  Prometheus v2 these combinations didn't match.
-
-  | Regex      | Additional matches  |
-  | -----      | ------              |
-  | ".*"       | "foo\n", "Foo\nBar" |
-  | "foo.?bar" | "foo\nbar"          |
-  | "foo.+bar" | "foo\nbar"          |
-
-  If you want Prometheus v3 to behave like v2 did, you will have to change your 
+  `\n`. This applies to matchers in queries and relabel configs.
+  - For example, the following regular expressions now match the accompanying
+  strings, whereas in Prometheus v2 these combinations didn't match.
+      - `.*` additionally matches `foo\n` and `Foo\nBar`
+      - `foo.?bar` additionally matches `foo\nbar`
+      - `foo.+bar` additionally matches `foo\nbar`
+  - If you want Prometheus v3 to behave like v2, you will have to change your
   regular expressions by replacing all `.` patterns with `[^\n]`, e.g.
   `foo[^\n]*`.
 - Lookback and range selectors are left open and right closed (previously left 
@@ -81,11 +77,11 @@ This document offers guidance on migrating from Prometheus 2.x to Prometheus 3.0
   timeseries with evenly spaced samples exactly 1 minute apart. Before Prometheus
   v3, a range query with `5m` would usually return 5 samples. But if the query
   evaluation aligns perfectly with a scrape, it would return 6 samples. In 
-  Prometheus v3 queries like this will always return 5 samples.
+  Prometheus v3 queries like this will always return 5 samples.  
   This change has likely few effects for everyday use, except for some subquery
-  use cases.
+  use cases.  
   Query front-ends that align queries usually align subqueries to multiples of
-  the step size. These subqueries will likely be affected.
+  the step size. These subqueries will likely be affected.  
   Tests are more likely to affected. To fix those either adjust the expected 
   number of samples or extend the range by less than one sample interval.
 - The `holt_winters` function has been renamed to `double_exponential_smoothing` 
@@ -103,7 +99,7 @@ header was unparsable or unrecognised. This could lead to incorrect data being
 parsed in the scrape. Prometheus v3 will now fail the scrape in such cases.
 
 If a scrape target is not providing the correct Content-Type header the
-fallback protocol can be specified using the fallback_scrape_protocol
+fallback protocol can be specified using the `fallback_scrape_protocol`
 parameter. See [Prometheus scrape_config documentation.](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#scrape_config)
 
 This is a breaking change as scrapes that may have succeeded with Prometheus v2
@@ -157,6 +153,7 @@ scrape_configs:
 ### Log message format
 Prometheus v3 has adopted `log/slog` over the previous `go-kit/log`. This 
 results in a change of log message format. An example of the old log format is:
+
 ```
 ts=2024-10-23T22:01:06.074Z caller=main.go:627 level=info msg="No time or size retention was set so using the default time retention" duration=15d
 ts=2024-10-23T22:01:06.074Z caller=main.go:671 level=info msg="Starting Prometheus Server" mode=server version="(version=, branch=, revision=91d80252c3e528728b0f88d254dd720f6be07cb8-modified)"
@@ -165,6 +162,7 @@ ts=2024-10-23T22:01:06.074Z caller=main.go:677 level=info host_details="(Linux 5
 ```
 
 a similar sequence in the new log format looks like this:
+
 ```
 time=2024-10-24T00:03:07.542+02:00 level=INFO source=/home/user/go/src/github.com/prometheus/prometheus/cmd/prometheus/main.go:640 msg="No time or size retention was set so using the default time retention" duration=15d
 time=2024-10-24T00:03:07.542+02:00 level=INFO source=/home/user/go/src/github.com/prometheus/prometheus/cmd/prometheus/main.go:681 msg="Starting Prometheus Server" mode=server version="(version=, branch=, revision=7c7116fea8343795cae6da42960cacd0207a2af8)"
