@@ -299,6 +299,11 @@ func (p *MemPostings) EnsureOrder(numberOfConcurrentProcesses int) {
 // Delete removes all ids in the given map from the postings lists.
 // affectedLabels contains all the labels that are affected by the deletion, there's no need to check other labels.
 func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}, affected map[labels.Label]struct{}) {
+	// Commit first.
+	// We could instead iterate through the pending postings and see if one of them is deleted,
+	// but in reality we don't expect pending postings to be deleted, so committing them wastes less resources.
+	p.Commit()
+
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
 

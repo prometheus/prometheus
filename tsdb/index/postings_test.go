@@ -973,13 +973,25 @@ func TestMemPostingsStats(t *testing.T) {
 	require.Equal(t, 3, stats.NumLabelPairs)
 }
 
-func TestMemPostings_Delete(t *testing.T) {
+func TestMemPostings_Delete_AllCommitted(t *testing.T) {
 	p := NewMemPostings()
 	p.Add(1, labels.FromStrings("lbl1", "a"))
 	p.Add(2, labels.FromStrings("lbl1", "b"))
 	p.Add(3, labels.FromStrings("lbl2", "a"))
 	p.Commit()
+	testMemPostingsDelete(t, p, []storage.SeriesRef{1, 2, 3})
+}
 
+func TestMemPostings_Delete_Pending(t *testing.T) {
+	p := NewMemPostings()
+	p.Add(1, labels.FromStrings("lbl1", "a"))
+	p.Commit()
+	p.Add(2, labels.FromStrings("lbl1", "b"))
+	p.Add(3, labels.FromStrings("lbl2", "a"))
+	testMemPostingsDelete(t, p, []storage.SeriesRef{1})
+}
+
+func testMemPostingsDelete(t *testing.T, p *MemPostings, committed []storage.SeriesRef) {
 	before := p.Get(allPostingsKey.Name, allPostingsKey.Value)
 	deletedRefs := map[storage.SeriesRef]struct{}{
 		2: {},
@@ -988,13 +1000,16 @@ func TestMemPostings_Delete(t *testing.T) {
 		{Name: "lbl1", Value: "b"}: {},
 	}
 	p.Delete(deletedRefs, affectedLabels)
+
+	// Commit after deleting.
+	p.Commit()
 	after := p.Get(allPostingsKey.Name, allPostingsKey.Value)
 
 	// Make sure postings gotten before the delete have the old data when
 	// iterated over.
 	expanded, err := ExpandPostings(before)
 	require.NoError(t, err)
-	require.Equal(t, []storage.SeriesRef{1, 2, 3}, expanded)
+	require.Equal(t, committed, expanded)
 
 	// Make sure postings gotten after the delete have the new data when
 	// iterated over.
