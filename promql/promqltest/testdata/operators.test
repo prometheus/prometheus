@@ -7,6 +7,7 @@ load 5m
 	http_requests{job="app-server", instance="1", group="production"}	0+60x10
 	http_requests{job="app-server", instance="0", group="canary"}		0+70x10
 	http_requests{job="app-server", instance="1", group="canary"}		0+80x10
+    http_requests_histogram{job="app-server", instance="1", group="production"} {{schema:1 sum:15 count:10 buckets:[3 2 5 7 9]}}x11
 
 load 5m
 	vector_matching_a{l="x"} 0+1x100
@@ -286,6 +287,26 @@ eval instant at 50m 1 == bool 1
 
 eval instant at 50m http_requests{job="api-server", instance="0", group="production"} == bool 100
 	{job="api-server", instance="0", group="production"} 1
+
+# The histogram is ignored here so the result doesn't change but it has an info annotation now.
+eval_info instant at 5m {job="app-server"} == 80
+    http_requests{group="canary", instance="1", job="app-server"} 80
+
+eval_info instant at 5m http_requests_histogram != 80
+
+eval_info instant at 5m http_requests_histogram > 80
+
+eval_info instant at 5m http_requests_histogram < 80
+
+eval_info instant at 5m http_requests_histogram >= 80
+
+eval_info instant at 5m http_requests_histogram <= 80
+
+# Should produce valid results in case of (in)equality between two histograms.
+eval instant at 5m http_requests_histogram == http_requests_histogram
+    http_requests_histogram{job="app-server", instance="1", group="production"} {{schema:1 sum:15 count:10 buckets:[3 2 5 7 9]}}
+
+eval instant at 5m http_requests_histogram != http_requests_histogram
 
 # group_left/group_right.
 
