@@ -195,6 +195,7 @@ type flagConfig struct {
 	enableAutoReload   bool
 	autoReloadInterval model.Duration
 
+	maxprocsEnable bool
 	memlimitEnable bool
 	memlimitRatio  float64
 
@@ -202,7 +203,6 @@ type flagConfig struct {
 	// These options are extracted from featureList
 	// for ease of use.
 	enablePerStepStats       bool
-	enableAutoGOMAXPROCS     bool
 	enableConcurrentRuleEval bool
 
 	prometheusURL   string
@@ -234,9 +234,6 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "promql-per-step-stats":
 				c.enablePerStepStats = true
 				logger.Info("Experimental per-step statistics reporting")
-			case "auto-gomaxprocs":
-				c.enableAutoGOMAXPROCS = true
-				logger.Info("Automatically set GOMAXPROCS to match Linux container CPU quota")
 			case "auto-reload-config":
 				c.enableAutoReload = true
 				if s := time.Duration(c.autoReloadInterval).Seconds(); s > 0 && s < 1 {
@@ -329,6 +326,8 @@ func main() {
 	a.Flag("web.listen-address", "Address to listen on for UI, API, and telemetry. Can be repeated.").
 		Default("0.0.0.0:9090").StringsVar(&cfg.web.ListenAddresses)
 
+	a.Flag("auto-gomaxprocs", "Automatically set GOMAXPROCS to match Linux container CPU quota").
+		Default("true").BoolVar(&cfg.maxprocsEnable)
 	a.Flag("auto-gomemlimit", "Automatically set GOMEMLIMIT to match Linux container or system memory limit").
 		Default("true").BoolVar(&cfg.memlimitEnable)
 	a.Flag("auto-gomemlimit.ratio", "The ratio of reserved GOMEMLIMIT memory to the detected maximum container or system memory").
@@ -756,7 +755,7 @@ func main() {
 		ruleManager *rules.Manager
 	)
 
-	if cfg.enableAutoGOMAXPROCS {
+	if cfg.maxprocsEnable {
 		l := func(format string, a ...interface{}) {
 			logger.Info(fmt.Sprintf(strings.TrimPrefix(format, "maxprocs: "), a...), "component", "automaxprocs")
 		}
