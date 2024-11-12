@@ -44,6 +44,12 @@ func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(i)))
+		// We aren't benchmarking MemPostings here,
+		// but we also don't want pending postings to accumulate there.
+		// So let's just commit from time to time.
+		if i%16 == 0 {
+			h.postings.Commit()
+		}
 	}
 }
 
@@ -63,6 +69,12 @@ func BenchmarkHeadStripeSeriesCreateParallel(b *testing.B) {
 		for pb.Next() {
 			i := count.Inc()
 			h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(int(i))))
+			// We aren't benchmarking MemPostings here,
+			// but we also don't want pending postings to accumulate there.
+			// So let's just commit from time to time.
+			if i%16 == 0 {
+				h.postings.Commit()
+			}
 		}
 	})
 }
@@ -83,6 +95,12 @@ func BenchmarkHeadStripeSeriesCreate_PreCreationFailure(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(i)))
+		// We aren't benchmarking MemPostings here,
+		// but we also don't want pending postings to accumulate there.
+		// So let's just commit from time to time.
+		if i%16 == 0 {
+			h.postings.Commit()
+		}
 	}
 }
 

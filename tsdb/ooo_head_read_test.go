@@ -306,7 +306,7 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 					}()
 					require.NoError(t, h.Init(0))
 
-					s1, _, _ := h.getOrCreate(s1ID, s1Lset)
+					s1, _, _ := getOrCreateAndCommit(h, s1ID, s1Lset)
 					s1.ooo = &memSeriesOOOFields{}
 
 					// define our expected chunks, by looking at the expected ChunkIntervals and setting...
