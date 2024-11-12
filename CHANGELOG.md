@@ -2,7 +2,7 @@
 
 ## unreleased
 
-## 2.55.1 / 2024-01-04
+## 2.55.1 / 2024-11-04
 
 * [BUGFIX] `round()` function did not remove `__name__` label. #15250
 
