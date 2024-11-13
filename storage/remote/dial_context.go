@@ -18,6 +18,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/prometheus/common/config"
 )
@@ -31,12 +32,14 @@ type hostResolver interface {
 type dialContextWithRoundRobinDNS struct {
 	dialContext config.DialContextFunc
 	resolver    hostResolver
+	rand        *rand.Rand
 }
 
 func newDialContextWithRoundRobinDNS() *dialContextWithRoundRobinDNS {
 	return &dialContextWithRoundRobinDNS{
 		dialContext: http.DefaultTransport.(*http.Transport).DialContext,
 		resolver:    net.DefaultResolver,
+		rand:        rand.New(rand.NewSource(time.Now().Unix())),
 	}
 }
 
@@ -52,7 +55,7 @@ func (dc *dialContextWithRoundRobinDNS) dialContextFn() config.DialContextFunc {
 			return dc.dialContext(ctx, network, addr)
 		}
 
-		randomAddr := net.JoinHostPort(addrs[rand.Intn(len(addrs))], port)
+		randomAddr := net.JoinHostPort(addrs[dc.rand.Intn(len(addrs))], port)
 		return dc.dialContext(ctx, network, randomAddr)
 	}
 }
