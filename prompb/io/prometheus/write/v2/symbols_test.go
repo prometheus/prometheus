@@ -50,7 +50,7 @@ func TestSymbolsTable(t *testing.T) {
 	encoded := s.SymbolizeLabels(ls, nil)
 	require.Equal(t, []uint32{1, 3, 4, 5}, encoded)
 	b := labels.NewScratchBuilder(len(encoded))
-	decoded := desymbolizeLabels(&b, encoded, s.Symbols())
+	decoded := DesymbolizeLabels(&b, encoded, s.Symbols())
 	require.Equal(t, ls, decoded)
 
 	// Different buf.

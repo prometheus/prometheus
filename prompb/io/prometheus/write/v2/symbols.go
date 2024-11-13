@@ -72,8 +72,8 @@ func (t *SymbolsTable) Reset() {
 	}
 }
 
-// desymbolizeLabels decodes label references, with given symbols to labels.
-func desymbolizeLabels(b *labels.ScratchBuilder, labelRefs []uint32, symbols []string) labels.Labels {
+// DesymbolizeLabels decodes label references, with given symbols to labels.
+func DesymbolizeLabels(b *labels.ScratchBuilder, labelRefs []uint32, symbols []string) labels.Labels {
 	b.Reset()
 	for i := 0; i < len(labelRefs); i += 2 {
 		b.Add(symbols[labelRefs[i]], symbols[labelRefs[i+1]])

@@ -26,7 +26,7 @@ import (
 
 // ToLabels return model labels.Labels from timeseries' remote labels.
 func (m TimeSeries) ToLabels(b *labels.ScratchBuilder, symbols []string) labels.Labels {
-	return desymbolizeLabels(b, m.GetLabelsRefs(), symbols)
+	return DesymbolizeLabels(b, m.GetLabelsRefs(), symbols)
 }
 
 // ToMetadata return model metadata from timeseries' remote metadata.
@@ -208,7 +208,7 @@ func (m Exemplar) ToExemplar(b *labels.ScratchBuilder, symbols []string) exempla
 	timestamp := m.Timestamp
 
 	return exemplar.Exemplar{
-		Labels: desymbolizeLabels(b, m.LabelsRefs, symbols),
+		Labels: DesymbolizeLabels(b, m.LabelsRefs, symbols),
 		Value:  m.Value,
 		Ts:     timestamp,
 		HasTs:  timestamp != 0,
