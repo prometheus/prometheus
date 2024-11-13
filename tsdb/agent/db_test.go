@@ -193,7 +193,8 @@ func TestCommit(t *testing.T) {
 	)
 	for r.Next() {
 		rec := r.Record()
-		switch dec.Type(rec) {
+		recType := dec.Type(rec)
+		switch recType {
 		case record.Series:
 			var series []record.RefSeries
 			series, err = dec.Series(rec, series)
@@ -206,13 +207,13 @@ func TestCommit(t *testing.T) {
 			require.NoError(t, err)
 			walSamplesCount += len(samples)
 
-		case record.HistogramSamples:
+		case record.HistogramSamples, record.CustomBucketHistogramSamples:
 			var histograms []record.RefHistogramSample
 			histograms, err = dec.HistogramSamples(rec, histograms)
 			require.NoError(t, err)
 			walHistogramCount += len(histograms)
 
-		case record.FloatHistogramSamples:
+		case record.FloatHistogramSamples, record.CustomBucketFloatHistogramSamples:
 			var floatHistograms []record.RefFloatHistogramSample
 			floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms)
 			require.NoError(t, err)

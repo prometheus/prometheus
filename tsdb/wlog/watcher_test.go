@@ -209,19 +209,21 @@ func TestTailSamples(t *testing.T) {
 						NegativeBuckets: []int64{int64(-i) - 1},
 					}
 
-					histogram := enc.HistogramSamples([]record.RefHistogramSample{{
+					histogram, customBucketHistogram := enc.HistogramSamples([]record.RefHistogramSample{{
 						Ref: chunks.HeadSeriesRef(inner),
 						T:   now.UnixNano() + 1,
 						H:   hist,
 					}}, nil)
 					require.NoError(t, w.Log(histogram))
+					require.NoError(t, w.Log(customBucketHistogram))
 
-					floatHistogram := enc.FloatHistogramSamples([]record.RefFloatHistogramSample{{
+					floatHistogram, floatCustomBucketHistogram := enc.FloatHistogramSamples([]record.RefFloatHistogramSample{{
 						Ref: chunks.HeadSeriesRef(inner),
 						T:   now.UnixNano() + 1,
 						FH:  hist.ToFloat(nil),
 					}}, nil)
 					require.NoError(t, w.Log(floatHistogram))
+					require.NoError(t, w.Log(floatCustomBucketHistogram))
 				}
 			}
 

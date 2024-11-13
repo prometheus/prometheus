@@ -463,7 +463,7 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 					return
 				}
 				decoded <- samples
-			case record.HistogramSamples:
+			case record.HistogramSamples, record.CustomBucketHistogramSamples:
 				histograms := histogramsPool.Get()[:0]
 				histograms, err = dec.HistogramSamples(rec, histograms)
 				if err != nil {
@@ -475,7 +475,7 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 					return
 				}
 				decoded <- histograms
-			case record.FloatHistogramSamples:
+			case record.FloatHistogramSamples, record.CustomBucketFloatHistogramSamples:
 				floatHistograms := floatHistogramsPool.Get()[:0]
 				floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms)
 				if err != nil {
@@ -1154,19 +1154,40 @@ func (a *appender) log() error {
 	}
 
 	if len(a.pendingHistograms) > 0 {
-		buf = encoder.HistogramSamples(a.pendingHistograms, buf)
-		if err := a.wal.Log(buf); err != nil {
-			return err
+		buf1, buf2 := encoder.HistogramSamples(a.pendingHistograms, buf)
+		//buf = append(buf1, buf2...)
+		//if err := a.wal.Log(buf); err != nil {
+		//	return err
+		//}
+		if len(buf1) > 0 {
+			buf = buf1[:0]
+			if err := a.wal.Log(buf1); err != nil {
+				return err
+			}
 		}
-		buf = buf[:0]
+		if len(buf2) > 0 {
+			buf = buf2[:0]
+			if err := a.wal.Log(buf2); err != nil {
+				return err
+			}
+		}
 	}
 
 	if len(a.pendingFloatHistograms) > 0 {
-		buf = encoder.FloatHistogramSamples(a.pendingFloatHistograms, buf)
-		if err := a.wal.Log(buf); err != nil {
-			return err
+		buf1, buf2 := encoder.FloatHistogramSamples(a.pendingFloatHistograms, buf)
+		if len(buf1) > 0 {
+			buf = buf1[:0]
+			if err := a.wal.Log(buf1); err != nil {
+				return err
+			}
 		}
-		buf = buf[:0]
+		if len(buf2) > 0 {
+			buf = buf2[:0]
+			if err := a.wal.Log(buf2); err != nil {
+				return err
+			}
+		}
+		//buf = buf[:0]
 	}
 
 	if len(a.pendingExamplars) > 0 {

@@ -104,14 +104,6 @@ func (e *Encbuf) PutHashSum(h hash.Hash) {
 	e.B = h.Sum(e.B)
 }
 
-// IsWholeWhenMultiplied checks to see if the number when multiplied by 1000 can
-// be converted into an integer without losing precision.
-func IsWholeWhenMultiplied(in float64) bool {
-	i := uint(math.Round(in * 1000))
-	out := float64(i) / 1000
-	return in == out
-}
-
 // Decbuf provides safe methods to extract data from a byte slice. It does all
 // necessary bounds checking and advancing of the byte slice.
 // Several datums can be extracted without checking for errors. However, before using

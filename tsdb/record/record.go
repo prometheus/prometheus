@@ -52,6 +52,10 @@ const (
 	HistogramSamples Type = 7
 	// FloatHistogramSamples is used to match WAL records of type Float Histograms.
 	FloatHistogramSamples Type = 8
+	// CustomBucketHistogramSamples is used to match WAL records of type Histogram with custom buckets.
+	CustomBucketHistogramSamples Type = 9
+	// CustomBucketFloatHistogramSamples is used to match WAL records of type Float Histogram with custom buckets.
+	CustomBucketFloatHistogramSamples Type = 10
 )
 
 func (rt Type) String() string {
@@ -68,6 +72,10 @@ func (rt Type) String() string {
 		return "histogram_samples"
 	case FloatHistogramSamples:
 		return "float_histogram_samples"
+	case CustomBucketHistogramSamples:
+		return "custom_bucket_histogram_samples"
+	case CustomBucketFloatHistogramSamples:
+		return "custom_bucket_float_histogram_samples"
 	case MmapMarkers:
 		return "mmapmarkers"
 	case Metadata:
@@ -185,6 +193,10 @@ type RefFloatHistogramSample struct {
 	FH  *histogram.FloatHistogram
 }
 
+type RefCustomBucketHistogramSample struct {
+	RefHistogramSample
+}
+
 // RefMmapMarker marks that the all the samples of the given series until now have been m-mapped to disk.
 type RefMmapMarker struct {
 	Ref     chunks.HeadSeriesRef
@@ -207,7 +219,7 @@ func (d *Decoder) Type(rec []byte) Type {
 		return Unknown
 	}
 	switch t := Type(rec[0]); t {
-	case Series, Samples, Tombstones, Exemplars, MmapMarkers, Metadata, HistogramSamples, FloatHistogramSamples:
+	case Series, Samples, Tombstones, Exemplars, MmapMarkers, Metadata, HistogramSamples, FloatHistogramSamples, CustomBucketHistogramSamples, CustomBucketFloatHistogramSamples:
 		return t
 	}
 	return Unknown
@@ -428,7 +440,7 @@ func (d *Decoder) MmapMarkers(rec []byte, markers []RefMmapMarker) ([]RefMmapMar
 func (d *Decoder) HistogramSamples(rec []byte, histograms []RefHistogramSample) ([]RefHistogramSample, error) {
 	dec := encoding.Decbuf{B: rec}
 	t := Type(dec.Byte())
-	if t != HistogramSamples {
+	if t != HistogramSamples && t != CustomBucketHistogramSamples {
 		return nil, errors.New("invalid record type")
 	}
 	if dec.Len() == 0 {
@@ -509,12 +521,10 @@ func DecodeHistogram(buf *encoding.Decbuf, h *histogram.Histogram) {
 	if histogram.IsCustomBucketsSchema(h.Schema) {
 		l = buf.Uvarint()
 		if l > 0 {
-			if l > 0 {
-				h.CustomValues = make([]float64, l)
-			}
-			for i := range h.CustomValues {
-				h.CustomValues[i] = buf.Be64Float64()
-			}
+			h.CustomValues = make([]float64, l)
+		}
+		for i := range h.CustomValues {
+			h.CustomValues[i] = buf.Be64Float64()
 		}
 	}
 }
@@ -522,7 +532,7 @@ func DecodeHistogram(buf *encoding.Decbuf, h *histogram.Histogram) {
 func (d *Decoder) FloatHistogramSamples(rec []byte, histograms []RefFloatHistogramSample) ([]RefFloatHistogramSample, error) {
 	dec := encoding.Decbuf{B: rec}
 	t := Type(dec.Byte())
-	if t != FloatHistogramSamples {
+	if t != FloatHistogramSamples && t != CustomBucketFloatHistogramSamples {
 		return nil, errors.New("invalid record type")
 	}
 	if dec.Len() == 0 {
@@ -603,12 +613,10 @@ func DecodeFloatHistogram(buf *encoding.Decbuf, fh *histogram.FloatHistogram) {
 	if histogram.IsCustomBucketsSchema(fh.Schema) {
 		l = buf.Uvarint()
 		if l > 0 {
-			if l > 0 {
-				fh.CustomValues = make([]float64, l)
-			}
-			for i := range fh.CustomValues {
-				fh.CustomValues[i] = buf.Be64Float64()
-			}
+			fh.CustomValues = make([]float64, l)
+		}
+		for i := range fh.CustomValues {
+			fh.CustomValues[i] = buf.Be64Float64()
 		}
 	}
 }
@@ -740,12 +748,15 @@ func (e *Encoder) MmapMarkers(markers []RefMmapMarker, b []byte) []byte {
 	return buf.Get()
 }
 
-func (e *Encoder) HistogramSamples(histograms []RefHistogramSample, b []byte) []byte {
+func (e *Encoder) HistogramSamples(histograms []RefHistogramSample, b []byte) ([]byte, []byte) {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(HistogramSamples))
 
+	customBucketHistBuf := encoding.Encbuf{B: b}
+	customBucketHistBuf.PutByte(byte(CustomBucketHistogramSamples))
+
 	if len(histograms) == 0 {
-		return buf.Get()
+		return buf.Get(), customBucketHistBuf.Get()
 	}
 
 	// Store base timestamp and base reference number of first histogram.
@@ -754,14 +765,34 @@ func (e *Encoder) HistogramSamples(histograms []RefHistogramSample, b []byte) []
 	buf.PutBE64(uint64(first.Ref))
 	buf.PutBE64int64(first.T)
 
-	for _, h := range histograms {
-		buf.PutVarint64(int64(h.Ref) - int64(first.Ref))
-		buf.PutVarint64(h.T - first.T)
+	customBucketHistBuf.PutBE64(uint64(first.Ref))
+	customBucketHistBuf.PutBE64int64(first.T)
 
-		EncodeHistogram(&buf, h.H)
+	histsAdded := 0
+	customBucketHistsAdded := 0
+	for _, h := range histograms {
+		if h.H.UsesCustomBuckets() {
+			customBucketHistBuf.PutVarint64(int64(h.Ref) - int64(first.Ref))
+			customBucketHistBuf.PutVarint64(h.T - first.T)
+
+			EncodeHistogram(&customBucketHistBuf, h.H)
+			customBucketHistsAdded++
+		} else {
+			buf.PutVarint64(int64(h.Ref) - int64(first.Ref))
+			buf.PutVarint64(h.T - first.T)
+
+			EncodeHistogram(&buf, h.H)
+			histsAdded++
+		}
 	}
 
-	return buf.Get()
+	if customBucketHistsAdded == 0 {
+		customBucketHistBuf.Reset()
+	} else if histsAdded == 0 {
+		buf.Reset()
+	}
+
+	return buf.Get(), customBucketHistBuf.Get()
 }
 
 // EncodeHistogram encodes a Histogram into a byte slice.
@@ -805,12 +836,15 @@ func EncodeHistogram(buf *encoding.Encbuf, h *histogram.Histogram) {
 	}
 }
 
-func (e *Encoder) FloatHistogramSamples(histograms []RefFloatHistogramSample, b []byte) []byte {
+func (e *Encoder) FloatHistogramSamples(histograms []RefFloatHistogramSample, b []byte) ([]byte, []byte) {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(FloatHistogramSamples))
 
+	customBucketHistBuf := encoding.Encbuf{B: b}
+	customBucketHistBuf.PutByte(byte(CustomBucketFloatHistogramSamples))
+
 	if len(histograms) == 0 {
-		return buf.Get()
+		return buf.Get(), customBucketHistBuf.Get()
 	}
 
 	// Store base timestamp and base reference number of first histogram.
@@ -819,14 +853,34 @@ func (e *Encoder) FloatHistogramSamples(histograms []RefFloatHistogramSample, b 
 	buf.PutBE64(uint64(first.Ref))
 	buf.PutBE64int64(first.T)
 
-	for _, h := range histograms {
-		buf.PutVarint64(int64(h.Ref) - int64(first.Ref))
-		buf.PutVarint64(h.T - first.T)
+	customBucketHistBuf.PutBE64(uint64(first.Ref))
+	customBucketHistBuf.PutBE64int64(first.T)
 
-		EncodeFloatHistogram(&buf, h.FH)
+	histsAdded := 0
+	customBucketHistsAdded := 0
+	for _, h := range histograms {
+		if h.FH.UsesCustomBuckets() {
+			customBucketHistBuf.PutVarint64(int64(h.Ref) - int64(first.Ref))
+			customBucketHistBuf.PutVarint64(h.T - first.T)
+
+			EncodeFloatHistogram(&customBucketHistBuf, h.FH)
+			customBucketHistsAdded++
+		} else {
+			buf.PutVarint64(int64(h.Ref) - int64(first.Ref))
+			buf.PutVarint64(h.T - first.T)
+
+			EncodeFloatHistogram(&buf, h.FH)
+			histsAdded++
+		}
 	}
 
-	return buf.Get()
+	if customBucketHistsAdded == 0 {
+		customBucketHistBuf.Reset()
+	} else if histsAdded == 0 {
+		buf.Reset()
+	}
+
+	return buf.Get(), customBucketHistBuf.Get()
 }
 
 // EncodeFloatHistogram encodes the Float Histogram into a byte slice.

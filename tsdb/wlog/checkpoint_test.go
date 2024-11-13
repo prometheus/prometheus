@@ -208,22 +208,24 @@ func TestCheckpoint(t *testing.T) {
 				require.NoError(t, w.Log(b))
 				samplesInWAL += 4
 				h := makeHistogram(i)
-				b = enc.HistogramSamples([]record.RefHistogramSample{
+				b1, b2 := enc.HistogramSamples([]record.RefHistogramSample{
 					{Ref: 0, T: last, H: h},
 					{Ref: 1, T: last + 10000, H: h},
 					{Ref: 2, T: last + 20000, H: h},
 					{Ref: 3, T: last + 30000, H: h},
 				}, nil)
-				require.NoError(t, w.Log(b))
+				require.NoError(t, w.Log(b1))
+				require.NoError(t, w.Log(b2))
 				histogramsInWAL += 4
 				fh := makeFloatHistogram(i)
-				b = enc.FloatHistogramSamples([]record.RefFloatHistogramSample{
+				b1, b2 = enc.FloatHistogramSamples([]record.RefFloatHistogramSample{
 					{Ref: 0, T: last, FH: fh},
 					{Ref: 1, T: last + 10000, FH: fh},
 					{Ref: 2, T: last + 20000, FH: fh},
 					{Ref: 3, T: last + 30000, FH: fh},
 				}, nil)
-				require.NoError(t, w.Log(b))
+				require.NoError(t, w.Log(b1))
+				require.NoError(t, w.Log(b2))
 				floatHistogramsInWAL += 4
 
 				b = enc.Exemplars([]record.RefExemplar{
