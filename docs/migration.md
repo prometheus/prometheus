@@ -207,6 +207,12 @@ This should **only** be applied to metrics that currently produce such labels.
         regex: (\d+)\.0+;.*_bucket
 ```
 
+### Disallow configuring Alertmanager with the v1 API
+Prometheus 3 no longer supports Alertmanager's v1 API. Effectively Prometheus 3 
+requires [Alertmanager 0.16.0](https://github.com/prometheus/alertmanager/releases/tag/v0.16.0) or later. Users with older Alertmanager
+versions or configurations that use `alerting: alertmanagers: [api_version: v1]` 
+need to upgrade Alertmanager and change their configuration to use `api_version: v2`.
+
 # Prometheus 2.0 migration guide
 
 For the Prometheus 1.8 to 2.0 please refer to the [Prometheus v2.55 documentation](https://prometheus.io/docs/prometheus/2.55/migration/).
