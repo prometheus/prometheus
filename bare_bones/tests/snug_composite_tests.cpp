@@ -53,6 +53,8 @@ class TestSnugCompositesStringFilament {
       }
     };
 
+    uint32_t shift_{};
+
    public:
     using checkpoint_type = Checkpoint;
     inline __attribute__((always_inline)) auto checkpoint() const noexcept { return Checkpoint(size()); }
@@ -70,7 +72,7 @@ class TestSnugCompositesStringFilament {
         in.read(reinterpret_cast<char*>(&first_to_load_i), sizeof(first_to_load_i));
       }
 
-      if (first_to_load_i != size()) {
+      if (first_to_load_i - shift_ != size()) {
         throw std::runtime_error("something went wrong");
       }
 
@@ -79,10 +81,15 @@ class TestSnugCompositesStringFilament {
 
       // read data
       resize(size() + size_to_load);
-      in.read(begin() + first_to_load_i, size_to_load);
+      in.read(begin() + first_to_load_i - shift_, size_to_load);
     }
 
-    void shrink_to(uint32_t size) { resize(size); }
+    void shrink_to(uint32_t size) {
+      shift_ += BareBones::Vector<char>::size();
+      resize(size);
+    }
+
+    [[nodiscard]] uint32_t shift() const noexcept { return shift_; }
   };
 
   using composite_type = std::string_view;
@@ -90,10 +97,10 @@ class TestSnugCompositesStringFilament {
   TestSnugCompositesStringFilament() = default;
   TestSnugCompositesStringFilament(data_type& data, std::string x) : pos_(data.size()), len_(x.length()) { data.push_back(x.begin(), x.end()); }
 
-  const std::string_view composite(const data_type& data) const { return std::string_view(data.begin() + pos_, len_); }
+  const std::string_view composite(const data_type& data) const { return std::string_view(data.begin() + pos_ - data.shift(), len_); }
 
   void validate(const data_type& data) const {
-    if (pos_ + len_ > data.size())
+    if (pos_ + len_ > data.size() + data.shift())
       throw std::runtime_error("something went wrong");
   }
 };
@@ -335,47 +342,51 @@ TYPED_TEST(SnugComposite, should_write_the_same_wal_after_rollback) {
   ASSERT_EQ(wal1.str(), wal2.str());
 }
 
-class EncodingTableFixture : public testing::Test {
+class ShrinkableEncodingBimapFixture : public testing::Test {
  protected:
-  BareBones::SnugComposite::EncodingTable<TestSnugCompositesStringFilament> table_;
+  using Table = BareBones::SnugComposite::ShrinkableEncodingBimap<TestSnugCompositesStringFilament>;
+
+  static constexpr auto kInvalidId = std::numeric_limits<uint32_t>::max();
+
+  Table table_;
 };
 
-TEST_F(EncodingTableFixture, Emplace) {
+TEST_F(ShrinkableEncodingBimapFixture, Emplace) {
   // Arrange
 
   // Act
-  auto id1 = table_.find_or_emplace("1"s);
-  auto id2 = table_.find_or_emplace("2"s);
+  const auto id1 = table_.find_or_emplace("1"s);
+  const auto id2 = table_.find_or_emplace("2"s);
 
   // Assert
   EXPECT_EQ(0U, id1);
   EXPECT_EQ(1U, id2);
 }
 
-TEST_F(EncodingTableFixture, EmplaceExisting) {
+TEST_F(ShrinkableEncodingBimapFixture, EmplaceExisting) {
   // Arrange
 
   // Act
-  auto id1 = table_.find_or_emplace("1"s);
-  auto id2 = table_.find_or_emplace("1"s);
+  const auto id1 = table_.find_or_emplace("1"s);
+  const auto id2 = table_.find_or_emplace("1"s);
 
   // Assert
   EXPECT_EQ(0U, id1);
   EXPECT_EQ(0U, id2);
 }
 
-TEST_F(EncodingTableFixture, Checkpoint) {
+TEST_F(ShrinkableEncodingBimapFixture, Checkpoint) {
   // Arrange
   table_.find_or_emplace("1"s);
 
   // Act
-  auto checkpoint = table_.checkpoint();
+  const auto checkpoint = table_.checkpoint();
 
   // Assert
   EXPECT_EQ(1U, checkpoint.size());
 }
 
-TEST_F(EncodingTableFixture, ShrinkToCheckpointSize) {
+TEST_F(ShrinkableEncodingBimapFixture, ShrinkToCheckpointSize) {
   // Arrange
   table_.find_or_emplace("1"s);
 
@@ -386,13 +397,13 @@ TEST_F(EncodingTableFixture, ShrinkToCheckpointSize) {
   EXPECT_EQ(0U, table_.size());
 }
 
-TEST_F(EncodingTableFixture, EmplaceAfterShrinkToCheckpointSize) {
+TEST_F(ShrinkableEncodingBimapFixture, EmplaceAfterShrinkToCheckpointSize) {
   // Arrange
-  auto id_before = table_.find_or_emplace("1"s);
+  const auto id_before = table_.find_or_emplace("1"s);
 
   // Act
   table_.shrink_to_checkpoint_size(table_.checkpoint());
-  auto id_after = table_.find_or_emplace("1"s);
+  const auto id_after = table_.find_or_emplace("1"s);
 
   // Assert
   EXPECT_EQ(0U, id_before);
@@ -400,10 +411,10 @@ TEST_F(EncodingTableFixture, EmplaceAfterShrinkToCheckpointSize) {
   EXPECT_EQ(1U, id_after);
 }
 
-TEST_F(EncodingTableFixture, ShrinkToOutdatedCheckpoint) {
+TEST_F(ShrinkableEncodingBimapFixture, ShrinkToOutdatedCheckpoint) {
   // Arrange
   table_.find_or_emplace("1"s);
-  auto checkpoint = table_.checkpoint();
+  const auto checkpoint = table_.checkpoint();
 
   // Act
   table_.shrink_to_checkpoint_size(checkpoint);
@@ -411,6 +422,48 @@ TEST_F(EncodingTableFixture, ShrinkToOutdatedCheckpoint) {
 
   // Assert
   EXPECT_THROW(table_.shrink_to_checkpoint_size(checkpoint), BareBones::Exception);
+}
+
+TEST_F(ShrinkableEncodingBimapFixture, LoadCheckpointWithoutShrink) {
+  // Arrange
+  Table table2;
+  std::stringstream stream;
+
+  table_.find_or_emplace("0"s);
+  table_.find_or_emplace("1"s);
+  stream << table_.checkpoint();
+
+  // Act
+  stream >> table2;
+
+  // Assert
+  EXPECT_EQ(1U, table2.find("1"s).value_or(kInvalidId));
+}
+
+TEST_F(ShrinkableEncodingBimapFixture, LoadCheckpointAfterShrink) {
+  // Arrange
+  Table table2;
+  std::stringstream stream;
+
+  // Act
+  table_.find_or_emplace("01"s);
+  table_.find_or_emplace("11"s);
+  table_.find_or_emplace("21"s);
+  table_.find_or_emplace("31"s);
+  const auto checkpoint = table_.checkpoint();
+  stream << checkpoint;
+  stream >> table2;
+  table2.shrink_to_checkpoint_size(table2.checkpoint());
+
+  table_.find_or_emplace("41"s);
+  table_.find_or_emplace("51"s);
+  stream << table_.checkpoint() - checkpoint;
+  stream >> table2;
+
+  // Assert
+  EXPECT_EQ(kInvalidId, table2.find("01"s).value_or(kInvalidId));
+  EXPECT_EQ(4U, table2.find("41"s).value_or(kInvalidId));
+  EXPECT_EQ(5U, table2.find("51"s).value_or(kInvalidId));
 }
 
 }  // namespace

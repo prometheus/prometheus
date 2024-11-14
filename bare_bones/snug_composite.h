@@ -261,7 +261,7 @@ class DecodingTable {
 
   inline __attribute__((always_inline)) const auto& items() const noexcept { return items_; }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t next_item_index() const noexcept { return items_.size(); }
+  [[nodiscard]] virtual uint32_t next_item_index() const noexcept { return items_.size(); }
 
   inline __attribute__((always_inline)) auto checkpoint() const noexcept { return checkpoint_type(*this, items_.size()); }
 
@@ -297,7 +297,7 @@ class DecodingTable {
     if (mode == SerializationMode::DELTA) {
       in.read(reinterpret_cast<char*>(&first_to_load_i), sizeof(first_to_load_i));
     }
-    if (first_to_load_i != items_.size()) {
+    if (first_to_load_i != next_item_index()) {
       if (mode == SerializationMode::SNAPSHOT) {
         throw BareBones::Exception(0x7bcd6011e39bbabc, "Attempt to load snapshot into non-empty DecodingTable");
       } else if (first_to_load_i < items_.size()) {
@@ -319,10 +319,10 @@ class DecodingTable {
     }
 
     // read items
-    auto original_size = items_.size();
+    const auto original_size = items_.size();
     auto sg2 = std::experimental::scope_fail([&]() { items_.resize(original_size); });
     items_.resize(items_.size() + size_to_load);
-    in.read(reinterpret_cast<char*>(&items_[first_to_load_i]), sizeof(Filament) * size_to_load);
+    in.read(reinterpret_cast<char*>(&items_[original_size]), sizeof(Filament) * size_to_load);
 
     // read data
     auto data_checkpoint = data_.checkpoint();
@@ -330,13 +330,13 @@ class DecodingTable {
     data_.load(in);
 
     // validate each item (check ranges, etc)
-    for (auto i = first_to_load_i; i != items_.size(); ++i) {
+    for (auto i = original_size; i != items_.size(); ++i) {
       items_[i].validate(data_);
     }
 
     // post processing
-    static_assert(noexcept(after_items_load(first_to_load_i)));
-    after_items_load(first_to_load_i);
+    static_assert(noexcept(after_items_load(original_size)));
+    after_items_load(original_size);
   }
 
   template <OutputStream S>
@@ -474,10 +474,10 @@ class DecodingTable {
 
 template <class Filament>
   requires is_shrinkable<typename Filament::data_type>
-class EncodingTable : private DecodingTable<Filament> {
+class ShrinkableEncodingBimap final : public DecodingTable<Filament> {
  public:
   using Base = DecodingTable<Filament>;
-  using checkpoint_type = typename Base::template Checkpoint<EncodingTable<Filament>>;
+  using checkpoint_type = typename Base::template Checkpoint<ShrinkableEncodingBimap<Filament>>;
   using delta_type = typename checkpoint_type::Delta;
   using value_type = typename Base::value_type;
 
@@ -523,8 +523,8 @@ class EncodingTable : private DecodingTable<Filament> {
 
   void shrink_to_checkpoint_size(const checkpoint_type& checkpoint) {
     if (checkpoint.next_item_index() != next_item_index()) {
-      throw BareBones::Exception(0x1bf0dbff9fe3d955, "Invalid checkpoint to shrink: checkpoint next_item_index [%u], next_item_index [%u]",
-                                 checkpoint.next_item_index(), next_item_index());
+      throw Exception(0x1bf0dbff9fe3d955, "Invalid checkpoint to shrink: checkpoint next_item_index [%u], next_item_index [%u]", checkpoint.next_item_index(),
+                      next_item_index());
     }
 
     shift_ += Base::items_.size();
@@ -533,14 +533,25 @@ class EncodingTable : private DecodingTable<Filament> {
     set_.clear();
   }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t next_item_index() const noexcept { return shift_ + Base::next_item_index(); }
+  [[nodiscard]] uint32_t next_item_index() const noexcept override { return shift_ + Base::next_item_index(); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return Base::allocated_memory() + set_allocated_memory_; }
 
  private:
   uint32_t set_allocated_memory_{};
-  phmap::flat_hash_set<typename Base::Proxy, typename Base::Hasher, typename Base::EqualityComparator, BareBones::Allocator<typename Base::Proxy, uint32_t>>
-      set_{{}, 0, Base::hasher_, Base::equality_comparator_, BareBones::Allocator<typename Base::Proxy, uint32_t>{set_allocated_memory_}};
+  phmap::flat_hash_set<typename Base::Proxy, typename Base::Hasher, typename Base::EqualityComparator, Allocator<typename Base::Proxy, uint32_t>> set_{
+      {},
+      0,
+      Base::hasher_,
+      Base::equality_comparator_,
+      Allocator<typename Base::Proxy, uint32_t>{set_allocated_memory_}};
   uint32_t shift_{0};
+
+  PROMPP_ALWAYS_INLINE void after_items_load(uint32_t first_loaded_id) noexcept override {
+    set_.reserve(Base::items_.size());
+    for (auto id = first_loaded_id; id != Base::items_.size(); ++id) {
+      set_.emplace(typename Base::Proxy(id));
+    }
+  }
 };
 
 template <class Filament>

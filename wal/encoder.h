@@ -121,6 +121,6 @@ class GenericEncoder {
 };
 
 using Encoder = GenericEncoder<>;
-using EncoderLightweight = GenericEncoder<BasicEncoder<Primitives::SnugComposites::LabelSet::EncodingTable, true>>;
+using EncoderLightweight = GenericEncoder<BasicEncoder<Primitives::SnugComposites::LabelSet::ShrinkableEncodingBimap, true>>;
 
 }  // namespace PromPP::WAL
