@@ -124,7 +124,7 @@ TEST_F(TestWALOutputDecoder, DumpLoadSingleData) {
   Encoder enc{uint16_t{0}, uint8_t{0}};
 
   make_segment({{{{"__name__", "value1"}, {"job", "abc"}}, {10, 1}}}, segment_stream, enc);
-  std::ispanstream inspan(std::string_view(segment_stream.str().data(), segment_stream.str().size()));
+  std::ispanstream inspan(segment_stream.view());
   inspan >> wod;
   wod.process_segment([&](LabelSetID ls_id [[maybe_unused]], Timestamp ts [[maybe_unused]], Sample::value_type v [[maybe_unused]]) {});
 
@@ -151,7 +151,7 @@ TEST_F(TestWALOutputDecoder, DumpLoadDoubleData) {
 
   {
     make_segment({{{{"__name__", "value1"}, {"job", "abc"}}, {10, 1}}}, segment_stream, enc);
-    std::ispanstream inspan(std::string_view(segment_stream.str().data(), segment_stream.str().size()));
+    std::ispanstream inspan(segment_stream.view());
     inspan >> wod;
     wod.process_segment([&](LabelSetID ls_id [[maybe_unused]], Timestamp ts [[maybe_unused]], Sample::value_type v [[maybe_unused]]) {});
     wod.dump_to(dump);
@@ -160,7 +160,7 @@ TEST_F(TestWALOutputDecoder, DumpLoadDoubleData) {
   {
     segment_stream.str("");
     make_segment({{{{"__name__", "value2"}, {"job", "abc"}}, {11, 1}}}, segment_stream, enc);
-    std::ispanstream inspan(std::string_view(segment_stream.str().data(), segment_stream.str().size()));
+    std::ispanstream inspan(segment_stream.view());
     inspan >> wod;
     wod.process_segment([&](LabelSetID ls_id [[maybe_unused]], Timestamp ts [[maybe_unused]], Sample::value_type v [[maybe_unused]]) {});
     wod.dump_to(dump);
@@ -187,7 +187,7 @@ TEST_F(TestWALOutputDecoder, DumpLoadDataEmptyData) {
 
   {
     make_segment({{{{"__name__", "value1"}, {"job", "abc"}}, {10, 1}}}, segment_stream, enc);
-    std::ispanstream inspan(std::string_view(segment_stream.str().data(), segment_stream.str().size()));
+    std::ispanstream inspan(segment_stream.view());
     inspan >> wod;
     wod.process_segment([&](LabelSetID ls_id [[maybe_unused]], Timestamp ts [[maybe_unused]], Sample::value_type v [[maybe_unused]]) {});
     wod.dump_to(dump);
@@ -198,7 +198,7 @@ TEST_F(TestWALOutputDecoder, DumpLoadDataEmptyData) {
   {
     segment_stream.str("");
     make_segment({{{{"__name__", "value2"}, {"job", "abc"}}, {11, 1}}}, segment_stream, enc);
-    std::ispanstream inspan(std::string_view(segment_stream.str().data(), segment_stream.str().size()));
+    std::ispanstream inspan(segment_stream.view());
     inspan >> wod;
     wod.process_segment([&](LabelSetID ls_id [[maybe_unused]], Timestamp ts [[maybe_unused]], Sample::value_type v [[maybe_unused]]) {});
     wod.dump_to(dump);
@@ -230,7 +230,7 @@ TEST_F(TestWALOutputDecoder, ProcessSegment) {
   for (const auto& expected_segment : expected_segments) {
     segment_stream.str("");
     make_segment(expected_segment, segment_stream, enc);
-    std::ispanstream inspan(std::string_view(segment_stream.str().data(), segment_stream.str().size()));
+    std::ispanstream inspan(segment_stream.view());
     inspan >> wod;
     wod.process_segment([&](LabelSetID ls_id, Timestamp ts, Sample::value_type v) {
       EXPECT_LT(ls_id, expected_segment.size());
@@ -255,7 +255,7 @@ TEST_F(TestWALOutputDecoder, ProcessSegmentWithDump) {
   for (const auto& expected_segment : expected_segments) {
     segment_stream.str("");
     make_segment(expected_segment, segment_stream, enc);
-    std::ispanstream inspan(std::string_view(segment_stream.str().data(), segment_stream.str().size()));
+    std::ispanstream inspan(segment_stream.view());
     inspan >> wod;
     wod.process_segment([&](LabelSetID ls_id, Timestamp ts, Sample::value_type v) {
       EXPECT_LT(ls_id, expected_segment.size());
@@ -281,7 +281,7 @@ TEST_F(TestWALOutputDecoder, ProcessSegmentWithDump) {
   for (const auto& expected_segment : expected_segments2) {
     segment_stream.str("");
     make_segment(expected_segment, segment_stream, enc2);
-    std::ispanstream inspan(std::string_view(segment_stream.str().data(), segment_stream.str().size()));
+    std::ispanstream inspan(segment_stream.view());
     inspan >> wod2;
     wod2.process_segment([&](LabelSetID ls_id, Timestamp ts, Sample::value_type v) {
       EXPECT_LT(ls_id, expected_segment.size());
