@@ -474,7 +474,7 @@ class DecodingTable {
 
 template <class Filament>
   requires is_shrinkable<typename Filament::data_type>
-class ShrinkableEncodingBimap final : public DecodingTable<Filament> {
+class ShrinkableEncodingBimap final : private DecodingTable<Filament> {
  public:
   using Base = DecodingTable<Filament>;
   using checkpoint_type = typename Base::template Checkpoint<ShrinkableEncodingBimap<Filament>>;
@@ -485,7 +485,6 @@ class ShrinkableEncodingBimap final : public DecodingTable<Filament> {
   using Base::items;
   using Base::load;
   using Base::size;
-  using Base::operator[];
 
   template <class Class>
   PROMPP_ALWAYS_INLINE uint32_t find_or_emplace(const Class& c) noexcept {
@@ -535,6 +534,11 @@ class ShrinkableEncodingBimap final : public DecodingTable<Filament> {
 
   [[nodiscard]] uint32_t next_item_index() const noexcept override { return shift_ + Base::next_item_index(); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return Base::allocated_memory() + set_allocated_memory_; }
+
+  PROMPP_ALWAYS_INLINE value_type operator[](uint32_t id) const noexcept {
+    assert(id >= shift_);
+    return Base::operator[](id - shift_);
+  }
 
  private:
   uint32_t set_allocated_memory_{};

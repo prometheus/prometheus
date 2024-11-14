@@ -46,15 +46,6 @@ using namespace PromPP::WAL;         // NOLINT
 using namespace PromPP::Primitives;  // NOLINT
 using namespace PromPP::Prometheus;  // NOLINT
 
-// PROMPP_ALWAYS_INLINE LabelViewSet make_label_set(std::initializer_list<LabelView> lvs) {
-//   LabelViewSet labels;
-//   for (const LabelView& lv : lvs) {
-//     labels.add(lv);
-//   }
-
-//   return labels;
-// }
-
 struct EncodeStatistic {
   uint32_t samples;
   uint32_t series;
@@ -79,12 +70,11 @@ struct TestWALOutputDecoder : public testing::Test {
   Go::SliceView<std::pair<PromPP::Primitives::Go::String, PromPP::Primitives::Go::String>> external_labels_;
 
   // Encoder
-  Encoder enc_{uint16_t{0}, uint8_t{0}};
   EncodeStatistic stats_;
 
   // StatelessRelabeler
-  RelabelConfigTest default_rct_{.source_labels = std::vector<std::string_view>{"__name__"}, .regex = ".*", .action = 2};  // Keep
-  std::vector<RelabelConfigTest*> rcts_{&default_rct_};
+  std::vector<RelabelConfigTest> rcts_buf_{{.source_labels = std::vector<std::string_view>{"__name__"}, .regex = ".*", .action = 2}};  // Keep
+  std::vector<RelabelConfigTest*> rcts_{&rcts_buf_[0]};
   Relabel::StatelessRelabeler sr_{rcts_};
 
   // Output LSS
@@ -96,7 +86,7 @@ struct TestWALOutputDecoder : public testing::Test {
   }
 
   template <class SegmentStream>
-  PROMPP_ALWAYS_INLINE void make_segment(std::initializer_list<GoTimeSeries> gtss, SegmentStream& segment_stream) {
+  PROMPP_ALWAYS_INLINE void make_segment(const std::vector<GoTimeSeries>& gtss, SegmentStream& segment_stream, Encoder& enc) {
     // make Hashdex
     PromPP::Primitives::Go::Slice<GoTimeSeries> go_time_series_slice;
     for (const GoTimeSeries& gts : gtss) {
@@ -108,47 +98,43 @@ struct TestWALOutputDecoder : public testing::Test {
     hx.presharding(*go_time_series_slice_view);
 
     // make Segment from encoder
-    enc_.add(hx, &stats_);
-    enc_.finalize(&stats_, segment_stream);
+    enc.add(hx, &stats_);
+    enc.finalize(&stats_, segment_stream);
+  }
+
+  PROMPP_ALWAYS_INLINE void stateless_relabeler_reset_to(std::initializer_list<RelabelConfigTest> cfgs) {
+    rcts_.resize(0);
+    rcts_buf_.resize(0);
+    rcts_.reserve(cfgs.size());
+    rcts_buf_.reserve(cfgs.size());
+    for (const RelabelConfigTest& cfg : cfgs) {
+      rcts_buf_.push_back(cfg);
+    }
+    for (RelabelConfigTest& cfg : rcts_buf_) {
+      rcts_.push_back(&cfg);
+    }
   }
 };
 
-TEST_F(TestWALOutputDecoder, SingleDumpLoad) {
+TEST_F(TestWALOutputDecoder, DumpLoadSingleData) {
+  std::stringstream dump;
   std::stringstream segment_stream;
-  make_segment({{{{"__name__", "value1"}, {"job", "abc"}}, {10, 1}}}, segment_stream);
+  stateless_relabeler_reset_to({{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2}});  // Keep
+  WALOutputDecoder wod(sr_, output_lss_, external_labels_);
+  Encoder enc{uint16_t{0}, uint8_t{0}};
 
-  // // make Hashdex
-  // PromPP::Primitives::Go::Slice<GoTimeSeries> go_time_series_slice;
-  // go_time_series_slice.push_back(GoTimeSeries({{"__name__", "value1"}, {"job", "abc"}}, {10, 1}));
-  // PromPP::Primitives::Go::SliceView<PromPP::Primitives::Go::TimeSeries>* go_time_series_slice_view =
-  //     reinterpret_cast<PromPP::Primitives::Go::SliceView<PromPP::Primitives::Go::TimeSeries>*>(&go_time_series_slice);
-  // PromPP::WAL::GoModelHashdex hx;
-  // hx.presharding(*go_time_series_slice_view);
-
-  // // make Segment from encoder
-  // PromPP::WAL::Encoder enc{uint16_t{0}, uint8_t{0}};
-  // EncodeStatistic stats;
-  // enc.add(hx, &stats);
-  // std::stringstream segment_stream;
-  // enc.finalize(&stats, segment_stream);
-
-  // make StatelessRelabeler
-  RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2};  // Keep
-  std::vector<RelabelConfigTest*> rcts{&rct};
-  Relabel::StatelessRelabeler sr(rcts);
-
-  WALOutputDecoder wod(sr, output_lss_, external_labels_);
+  make_segment({{{{"__name__", "value1"}, {"job", "abc"}}, {10, 1}}}, segment_stream, enc);
   std::ispanstream inspan(std::string_view(segment_stream.str().data(), segment_stream.str().size()));
   inspan >> wod;
   wod.process_segment([&](LabelSetID ls_id [[maybe_unused]], Timestamp ts [[maybe_unused]], Sample::value_type v [[maybe_unused]]) {});
 
-  std::stringstream ss;
-  wod.dump_to(ss);
+  wod.dump_to(dump);
 
   SnugComposites::LabelSet::EncodingBimap output_lss2;
-  WALOutputDecoder wod2(sr, output_lss2, external_labels_);
-  wod2.load_from(ss);
+  WALOutputDecoder wod2(sr_, output_lss2, external_labels_);
+  wod2.load_from(dump);
 
+  EXPECT_EQ(1, wod.cache().size());
   EXPECT_EQ(wod.cache(), wod2.cache());
   EXPECT_EQ(output_lss_.size(), output_lss2.size());
   for (size_t i = 0; i < output_lss_.size(); ++i) {
@@ -156,42 +142,153 @@ TEST_F(TestWALOutputDecoder, SingleDumpLoad) {
   }
 }
 
-TEST_F(TestWALOutputDecoder, Emplace) {
-  // make Hashdex
-  PromPP::Primitives::Go::Slice<GoTimeSeries> go_time_series_slice;
-  go_time_series_slice.push_back(GoTimeSeries({{"__name__", "value1"}, {"job", "abc"}}, {10, 1}));
-  PromPP::Primitives::Go::SliceView<PromPP::Primitives::Go::TimeSeries>* go_time_series_slice_view =
-      reinterpret_cast<PromPP::Primitives::Go::SliceView<PromPP::Primitives::Go::TimeSeries>*>(&go_time_series_slice);
-  PromPP::WAL::GoModelHashdex hx;
-  hx.presharding(*go_time_series_slice_view);
-
-  // make Segment from encoder
-  PromPP::WAL::Encoder enc{uint16_t{0}, uint8_t{0}};
-  EncodeStatistic stats;
-  enc.add(hx, &stats);
+TEST_F(TestWALOutputDecoder, DumpLoadDoubleData) {
+  std::stringstream dump;
   std::stringstream segment_stream;
-  enc.finalize(&stats, segment_stream);
+  stateless_relabeler_reset_to({{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2}});  // Keep
+  WALOutputDecoder wod(sr_, output_lss_, external_labels_);
+  Encoder enc{uint16_t{0}, uint8_t{0}};
 
-  // make StatelessRelabeler
-  RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2};  // Keep
-  std::vector<RelabelConfigTest*> rcts{&rct};
-  Relabel::StatelessRelabeler sr(rcts);
+  {
+    make_segment({{{{"__name__", "value1"}, {"job", "abc"}}, {10, 1}}}, segment_stream, enc);
+    std::ispanstream inspan(std::string_view(segment_stream.str().data(), segment_stream.str().size()));
+    inspan >> wod;
+    wod.process_segment([&](LabelSetID ls_id [[maybe_unused]], Timestamp ts [[maybe_unused]], Sample::value_type v [[maybe_unused]]) {});
+    wod.dump_to(dump);
+  }
 
-  WALOutputDecoder wod(sr, output_lss_, external_labels_);
-  std::ispanstream inspan(std::string_view(segment_stream.str().data(), segment_stream.str().size()));
-  inspan >> wod;
-  wod.process_segment([&](LabelSetID ls_id, Timestamp ts, Sample::value_type v) {
-    std::cout << "process_segment ls_id: " << ls_id << " ts " << ts << " v " << v << std::endl;
-  });
+  {
+    segment_stream.str("");
+    make_segment({{{{"__name__", "value2"}, {"job", "abc"}}, {11, 1}}}, segment_stream, enc);
+    std::ispanstream inspan(std::string_view(segment_stream.str().data(), segment_stream.str().size()));
+    inspan >> wod;
+    wod.process_segment([&](LabelSetID ls_id [[maybe_unused]], Timestamp ts [[maybe_unused]], Sample::value_type v [[maybe_unused]]) {});
+    wod.dump_to(dump);
+  }
 
-  // enc.add(hx, &stats);
-  // segment_stream.str("");
-  // enc.finalize(&stats, segment_stream);
-  // std::ispanstream inspan2(std::string_view(segment_stream.str().data(), segment_stream.str().size()));
-  // inspan2 >> wod;
-  // wod.process_segment([&](LabelSetID ls_id, Timestamp ts, Sample::value_type v) {
-  //   std::cout << "process_segment ls_id: " << ls_id << " ts " << ts << " v " << v << std::endl;
-  // });
+  SnugComposites::LabelSet::EncodingBimap output_lss2;
+  WALOutputDecoder wod2(sr_, output_lss2, external_labels_);
+  wod2.load_from(dump);
+
+  EXPECT_EQ(2, wod.cache().size());
+  EXPECT_EQ(wod.cache(), wod2.cache());
+  EXPECT_EQ(output_lss_.size(), output_lss2.size());
+  for (size_t i = 0; i < output_lss_.size(); ++i) {
+    EXPECT_EQ(output_lss_[i], output_lss2[i]);
+  }
+}
+
+TEST_F(TestWALOutputDecoder, DumpLoadDataEmptyData) {
+  std::stringstream dump;
+  std::stringstream segment_stream;
+  stateless_relabeler_reset_to({{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2}});  // Keep
+  WALOutputDecoder wod(sr_, output_lss_, external_labels_);
+  Encoder enc{uint16_t{0}, uint8_t{0}};
+
+  {
+    make_segment({{{{"__name__", "value1"}, {"job", "abc"}}, {10, 1}}}, segment_stream, enc);
+    std::ispanstream inspan(std::string_view(segment_stream.str().data(), segment_stream.str().size()));
+    inspan >> wod;
+    wod.process_segment([&](LabelSetID ls_id [[maybe_unused]], Timestamp ts [[maybe_unused]], Sample::value_type v [[maybe_unused]]) {});
+    wod.dump_to(dump);
+  }
+
+  wod.dump_to(dump);
+
+  {
+    segment_stream.str("");
+    make_segment({{{{"__name__", "value2"}, {"job", "abc"}}, {11, 1}}}, segment_stream, enc);
+    std::ispanstream inspan(std::string_view(segment_stream.str().data(), segment_stream.str().size()));
+    inspan >> wod;
+    wod.process_segment([&](LabelSetID ls_id [[maybe_unused]], Timestamp ts [[maybe_unused]], Sample::value_type v [[maybe_unused]]) {});
+    wod.dump_to(dump);
+  }
+
+  SnugComposites::LabelSet::EncodingBimap output_lss2;
+  WALOutputDecoder wod2(sr_, output_lss2, external_labels_);
+  wod2.load_from(dump);
+
+  EXPECT_EQ(2, wod.cache().size());
+  EXPECT_EQ(wod.cache(), wod2.cache());
+  EXPECT_EQ(output_lss_.size(), output_lss2.size());
+  for (size_t i = 0; i < output_lss_.size(); ++i) {
+    EXPECT_EQ(output_lss_[i], output_lss2[i]);
+  }
+}
+
+TEST_F(TestWALOutputDecoder, ProcessSegment) {
+  stateless_relabeler_reset_to({{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2}});  // Keep
+  WALOutputDecoder wod(sr_, output_lss_, external_labels_);
+  std::stringstream segment_stream;
+  Encoder enc{uint16_t{0}, uint8_t{0}};
+
+  std::vector<std::vector<GoTimeSeries>> expected_segments{
+      {{{{"__name__", "value1"}, {"job", "abc"}}, {10, 1}}},
+      {},  // load empty data
+      {{{{"__name__", "value1"}, {"job", "abc"}}, {11, 1}}, {{{"__name__", "value2"}, {"job", "abc"}}, {11, 1}}}};
+
+  for (const auto& expected_segment : expected_segments) {
+    segment_stream.str("");
+    make_segment(expected_segment, segment_stream, enc);
+    std::ispanstream inspan(std::string_view(segment_stream.str().data(), segment_stream.str().size()));
+    inspan >> wod;
+    wod.process_segment([&](LabelSetID ls_id, Timestamp ts, Sample::value_type v) {
+      EXPECT_LT(ls_id, expected_segment.size());
+      EXPECT_EQ(expected_segment[ls_id].timestamp, ts);
+      EXPECT_EQ(std::bit_cast<uint64_t>(expected_segment[ls_id].value), std::bit_cast<uint64_t>(v));
+    });
+  }
+}
+
+TEST_F(TestWALOutputDecoder, ProcessSegmentWithDump) {
+  stateless_relabeler_reset_to({{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2}});  // Keep
+  WALOutputDecoder wod(sr_, output_lss_, external_labels_);
+  std::stringstream segment_stream;
+  std::stringstream dump;
+  Encoder enc{uint16_t{0}, uint8_t{0}};
+
+  std::vector<std::vector<GoTimeSeries>> expected_segments{
+      {{{{"__name__", "value1"}, {"job", "abc"}}, {10, 1}}},
+      {},  // load empty data
+      {{{{"__name__", "value1"}, {"job", "abc"}}, {11, 1}}, {{{"__name__", "value2"}, {"job", "abc"}}, {11, 1}}}};
+
+  for (const auto& expected_segment : expected_segments) {
+    segment_stream.str("");
+    make_segment(expected_segment, segment_stream, enc);
+    std::ispanstream inspan(std::string_view(segment_stream.str().data(), segment_stream.str().size()));
+    inspan >> wod;
+    wod.process_segment([&](LabelSetID ls_id, Timestamp ts, Sample::value_type v) {
+      EXPECT_LT(ls_id, expected_segment.size());
+      EXPECT_EQ(expected_segment[ls_id].timestamp, ts);
+      EXPECT_EQ(std::bit_cast<uint64_t>(expected_segment[ls_id].value), std::bit_cast<uint64_t>(v));
+    });
+    wod.dump_to(dump);
+  }
+
+  SnugComposites::LabelSet::EncodingBimap output_lss2;
+  WALOutputDecoder wod2(sr_, output_lss2, external_labels_);
+  wod2.load_from(dump);
+  Encoder enc2{uint16_t{0}, uint8_t{0}};
+
+  std::vector<std::vector<GoTimeSeries>> expected_segments2{
+      {{{{"__name__", "value1"}, {"job", "abc"}}, {10, 1}}},
+      {},  // load empty data
+      {{{{"__name__", "value1"}, {"job", "abc"}}, {11, 1}}, {{{"__name__", "value2"}, {"job", "abc"}}, {11, 1}}},
+      {{{{"__name__", "value1"}, {"job", "abc"}}, {12, 1}},
+       {{{"__name__", "value2"}, {"job", "abc"}}, {12, 1}},
+       {{{"__name__", "value3"}, {"job", "abc"}}, {12, 1}}}};
+
+  for (const auto& expected_segment : expected_segments2) {
+    segment_stream.str("");
+    make_segment(expected_segment, segment_stream, enc2);
+    std::ispanstream inspan(std::string_view(segment_stream.str().data(), segment_stream.str().size()));
+    inspan >> wod2;
+    wod2.process_segment([&](LabelSetID ls_id, Timestamp ts, Sample::value_type v) {
+      EXPECT_LT(ls_id, expected_segment.size());
+      EXPECT_EQ(expected_segment[ls_id].timestamp, ts);
+      EXPECT_EQ(std::bit_cast<uint64_t>(expected_segment[ls_id].value), std::bit_cast<uint64_t>(v));
+    });
+  }
 }
 
 }  // namespace
