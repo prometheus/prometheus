@@ -239,6 +239,7 @@ func expectedPodTargetGroupsWithNodeMeta(ns, nodeName string, nodeLabels map[str
 }
 
 func TestPodDiscoveryBeforeRun(t *testing.T) {
+	t.Parallel()
 	n, c := makeDiscovery(RolePod, NamespaceDiscovery{})
 
 	k8sDiscoveryTest{
@@ -302,6 +303,7 @@ func TestPodDiscoveryBeforeRun(t *testing.T) {
 }
 
 func TestPodDiscoveryInitContainer(t *testing.T) {
+	t.Parallel()
 	n, c := makeDiscovery(RolePod, NamespaceDiscovery{})
 
 	ns := "default"
@@ -329,6 +331,7 @@ func TestPodDiscoveryInitContainer(t *testing.T) {
 }
 
 func TestPodDiscoveryAdd(t *testing.T) {
+	t.Parallel()
 	n, c := makeDiscovery(RolePod, NamespaceDiscovery{})
 
 	k8sDiscoveryTest{
@@ -343,6 +346,7 @@ func TestPodDiscoveryAdd(t *testing.T) {
 }
 
 func TestPodDiscoveryDelete(t *testing.T) {
+	t.Parallel()
 	obj := makePods()
 	n, c := makeDiscovery(RolePod, NamespaceDiscovery{}, obj)
 
@@ -362,6 +366,7 @@ func TestPodDiscoveryDelete(t *testing.T) {
 }
 
 func TestPodDiscoveryUpdate(t *testing.T) {
+	t.Parallel()
 	obj := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testpod",
@@ -403,6 +408,7 @@ func TestPodDiscoveryUpdate(t *testing.T) {
 }
 
 func TestPodDiscoveryUpdateEmptyPodIP(t *testing.T) {
+	t.Parallel()
 	n, c := makeDiscovery(RolePod, NamespaceDiscovery{})
 	initialPod := makePods()
 
@@ -427,6 +433,7 @@ func TestPodDiscoveryUpdateEmptyPodIP(t *testing.T) {
 }
 
 func TestPodDiscoveryNamespaces(t *testing.T) {
+	t.Parallel()
 	n, c := makeDiscovery(RolePod, NamespaceDiscovery{Names: []string{"ns1", "ns2"}})
 
 	expected := expectedPodTargetGroups("ns1")
@@ -448,6 +455,7 @@ func TestPodDiscoveryNamespaces(t *testing.T) {
 }
 
 func TestPodDiscoveryOwnNamespace(t *testing.T) {
+	t.Parallel()
 	n, c := makeDiscovery(RolePod, NamespaceDiscovery{IncludeOwnNamespace: true})
 
 	expected := expectedPodTargetGroups("own-ns")
@@ -466,6 +474,7 @@ func TestPodDiscoveryOwnNamespace(t *testing.T) {
 }
 
 func TestPodDiscoveryWithNodeMetadata(t *testing.T) {
+	t.Parallel()
 	attachMetadata := AttachMetadataConfig{Node: true}
 	n, c := makeDiscoveryWithMetadata(RolePod, NamespaceDiscovery{}, attachMetadata)
 	nodeLbls := map[string]string{"l1": "v1"}
@@ -485,6 +494,7 @@ func TestPodDiscoveryWithNodeMetadata(t *testing.T) {
 }
 
 func TestPodDiscoveryWithNodeMetadataUpdateNode(t *testing.T) {
+	t.Parallel()
 	nodeLbls := map[string]string{"l2": "v2"}
 	attachMetadata := AttachMetadataConfig{Node: true}
 	n, c := makeDiscoveryWithMetadata(RolePod, NamespaceDiscovery{}, attachMetadata)

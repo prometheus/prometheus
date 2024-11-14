@@ -144,6 +144,7 @@ func expectedTargetGroups(ns string, tls TLSMode) map[string]*targetgroup.Group 
 }
 
 func TestIngressDiscoveryAdd(t *testing.T) {
+	t.Parallel()
 	n, c := makeDiscovery(RoleIngress, NamespaceDiscovery{Names: []string{"default"}})
 
 	k8sDiscoveryTest{
@@ -158,6 +159,7 @@ func TestIngressDiscoveryAdd(t *testing.T) {
 }
 
 func TestIngressDiscoveryAddTLS(t *testing.T) {
+	t.Parallel()
 	n, c := makeDiscovery(RoleIngress, NamespaceDiscovery{Names: []string{"default"}})
 
 	k8sDiscoveryTest{
@@ -172,6 +174,7 @@ func TestIngressDiscoveryAddTLS(t *testing.T) {
 }
 
 func TestIngressDiscoveryAddMixed(t *testing.T) {
+	t.Parallel()
 	n, c := makeDiscovery(RoleIngress, NamespaceDiscovery{Names: []string{"default"}})
 
 	k8sDiscoveryTest{
@@ -186,6 +189,7 @@ func TestIngressDiscoveryAddMixed(t *testing.T) {
 }
 
 func TestIngressDiscoveryNamespaces(t *testing.T) {
+	t.Parallel()
 	n, c := makeDiscovery(RoleIngress, NamespaceDiscovery{Names: []string{"ns1", "ns2"}})
 
 	expected := expectedTargetGroups("ns1", TLSNo)
@@ -207,6 +211,7 @@ func TestIngressDiscoveryNamespaces(t *testing.T) {
 }
 
 func TestIngressDiscoveryOwnNamespace(t *testing.T) {
+	t.Parallel()
 	n, c := makeDiscovery(RoleIngress, NamespaceDiscovery{IncludeOwnNamespace: true})
 
 	expected := expectedTargetGroups("own-ns", TLSNo)
