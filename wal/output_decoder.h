@@ -61,22 +61,6 @@ class OutputDecoder : private BaseOutputDecoder {
     in >> wal;
   }
 
- public:
-  // WALOutputDecoder constructor with empty state.
-  PROMPP_ALWAYS_INLINE explicit OutputDecoder(Prometheus::Relabel::StatelessRelabeler& stateless_relabeler,
-                                              Primitives::SnugComposites::LabelSet::EncodingBimap& output_lss,
-                                              Primitives::Go::SliceView<std::pair<Primitives::Go::String, Primitives::Go::String>>& external_labels,
-                                              BasicEncoderVersion encoder_version = WAL::Writer::version) noexcept
-      : BaseOutputDecoder{wal_lss_, encoder_version}, stateless_relabeler_{stateless_relabeler}, output_lss_(output_lss) {
-    external_labels_.reserve(external_labels.size());
-    for (const auto& [ln, lv] : external_labels) {
-      external_labels_.emplace_back(static_cast<std::string_view>(ln), static_cast<std::string_view>(lv));
-    }
-  }
-
-  // cache return current cache.
-  PROMPP_ALWAYS_INLINE const auto& cache() const noexcept { return cache_; }
-
   // dump_cache dump delta cache to output stream.
   template <class OutputStream>
   PROMPP_ALWAYS_INLINE uint32_t dump_cache(uint32_t from, OutputStream& out) {
@@ -101,24 +85,6 @@ class OutputDecoder : private BaseOutputDecoder {
     }
 
     return dumped_ids;
-  }
-
-  // dump_to dump delta state(delta caches and delta checkpoint lss) to output stream.
-  template <class OutputStream>
-  PROMPP_ALWAYS_INLINE void dump_to(OutputStream& out) {
-    auto original_exceptions = out.exceptions();
-    auto sg1 = std::experimental::scope_exit([&]() { out.exceptions(original_exceptions); });
-    out.exceptions(std::ifstream::failbit | std::ifstream::badbit);
-
-    // write dump type lss and write delta checkpoints
-    out.put(dLSS);
-    auto current_cp = output_lss_.checkpoint();
-    out << current_cp - dumped_checkpoint_;
-    dumped_checkpoint_ = std::move(current_cp);
-
-    // write dump type cache and write delta caches
-    out.put(dCache);
-    dumped_cache_size_ += dump_cache(dumped_cache_size_, out);
   }
 
   // load_cache load cache from incoming stream.
@@ -156,6 +122,40 @@ class OutputDecoder : private BaseOutputDecoder {
     size_t last_size{cache_.size()};
     cache_.resize(last_size + static_cast<size_t>(ids_to_read));
     in.read(reinterpret_cast<char*>(&cache_[last_size]), sizeof(uint32_t) * ids_to_read);
+  }
+
+ public:
+  // WALOutputDecoder constructor with empty state.
+  PROMPP_ALWAYS_INLINE explicit OutputDecoder(Prometheus::Relabel::StatelessRelabeler& stateless_relabeler,
+                                              Primitives::SnugComposites::LabelSet::EncodingBimap& output_lss,
+                                              Primitives::Go::SliceView<std::pair<Primitives::Go::String, Primitives::Go::String>>& external_labels,
+                                              BasicEncoderVersion encoder_version = WAL::Writer::version) noexcept
+      : BaseOutputDecoder{wal_lss_, encoder_version}, stateless_relabeler_{stateless_relabeler}, output_lss_(output_lss) {
+    external_labels_.reserve(external_labels.size());
+    for (const auto& [ln, lv] : external_labels) {
+      external_labels_.emplace_back(static_cast<std::string_view>(ln), static_cast<std::string_view>(lv));
+    }
+  }
+
+  // cache return current cache.
+  PROMPP_ALWAYS_INLINE const auto& cache() const noexcept { return cache_; }
+
+  // dump_to dump delta state(delta caches and delta checkpoint lss) to output stream.
+  template <class OutputStream>
+  PROMPP_ALWAYS_INLINE void dump_to(OutputStream& out) {
+    auto original_exceptions = out.exceptions();
+    auto sg1 = std::experimental::scope_exit([&]() { out.exceptions(original_exceptions); });
+    out.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+
+    // write dump type lss and write delta checkpoints
+    out.put(dLSS);
+    auto current_cp = output_lss_.checkpoint();
+    out << current_cp - dumped_checkpoint_;
+    dumped_checkpoint_ = std::move(current_cp);
+
+    // write dump type cache and write delta caches
+    out.put(dCache);
+    dumped_cache_size_ += dump_cache(dumped_cache_size_, out);
   }
 
   // load_from load state(lss and cache) from incoming stream.
