@@ -942,45 +942,30 @@ func (a *headAppender) log() error {
 		}
 	}
 	if len(a.histograms) > 0 {
-		rec1, rec2 := enc.HistogramSamples(a.histograms, buf)
-		//rec = append(rec1, rec2...)
-		//
-		//buf = rec[:0]
-		//
-		//if err := a.head.wal.Log(rec); err != nil {
-		//	return fmt.Errorf("log samples: %w", err)
-		//}
-		if len(rec1) != 0 {
-			buf = rec1[:0]
-			if err := a.head.wal.Log(rec1); err != nil {
-				return fmt.Errorf("log histograms: %w", err)
-			}
+		rec, customBucketsExist := enc.HistogramSamples(a.histograms, buf)
+		buf = rec[:0]
+		if err := a.head.wal.Log(rec); err != nil {
+			return fmt.Errorf("log histograms: %w", err)
 		}
-		if len(rec2) != 0 {
-			buf = rec2[:0]
-			if err := a.head.wal.Log(rec2); err != nil {
+
+		if customBucketsExist {
+			enc.CustomBucketHistogramSamples(a.histograms, buf)
+			buf = rec[:0]
+			if err := a.head.wal.Log(rec); err != nil {
 				return fmt.Errorf("log custom bucket histograms: %w", err)
 			}
 		}
 	}
 	if len(a.floatHistograms) > 0 {
-		rec1, rec2 := enc.FloatHistogramSamples(a.floatHistograms, buf)
-		//rec = append(rec1, rec2...)
-		//
-		//buf = rec[:0]
-		//
-		//if err := a.head.wal.Log(rec); err != nil {
-		//	return fmt.Errorf("log samples: %w", err)
-		//}
-		if len(rec1) != 0 {
-			buf = rec1[:0]
-			if err := a.head.wal.Log(rec1); err != nil {
-				return fmt.Errorf("log float histograms: %w", err)
-			}
+		rec, customBucketsExist := enc.FloatHistogramSamples(a.floatHistograms, buf)
+		buf = rec[:0]
+		if err := a.head.wal.Log(rec); err != nil {
+			return fmt.Errorf("log float histograms: %w", err)
 		}
-		if len(rec2) != 0 {
-			buf = rec2[:0]
-			if err := a.head.wal.Log(rec2); err != nil {
+
+		if customBucketsExist {
+			buf = rec[:0]
+			if err := a.head.wal.Log(rec); err != nil {
 				return fmt.Errorf("log custom bucket float histograms: %w", err)
 			}
 		}

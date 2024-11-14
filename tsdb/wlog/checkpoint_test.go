@@ -127,6 +127,20 @@ func TestCheckpoint(t *testing.T) {
 			PositiveBuckets: []int64{int64(i + 1), 1, -1, 0},
 		}
 	}
+	makeCustomBucketHistogram := func(i int) *histogram.Histogram {
+		return &histogram.Histogram{
+			Count:         5 + uint64(i*4),
+			ZeroCount:     2 + uint64(i),
+			ZeroThreshold: 0.001,
+			Sum:           18.4 * float64(i+1),
+			Schema:        -53,
+			PositiveSpans: []histogram.Span{
+				{Offset: 0, Length: 2},
+				{Offset: 1, Length: 2},
+			},
+			CustomValues: []float64{0, 1, 2, 3, 4},
+		}
+	}
 	makeFloatHistogram := func(i int) *histogram.FloatHistogram {
 		return &histogram.FloatHistogram{
 			Count:         5 + float64(i*4),
@@ -139,6 +153,20 @@ func TestCheckpoint(t *testing.T) {
 				{Offset: 1, Length: 2},
 			},
 			PositiveBuckets: []float64{float64(i + 1), 1, -1, 0},
+		}
+	}
+	makeCustomBucketFloatHistogram := func(i int) *histogram.FloatHistogram {
+		return &histogram.FloatHistogram{
+			Count:         5 + float64(i*4),
+			ZeroCount:     2 + float64(i),
+			ZeroThreshold: 0.001,
+			Sum:           18.4 * float64(i+1),
+			Schema:        -53,
+			PositiveSpans: []histogram.Span{
+				{Offset: 0, Length: 2},
+				{Offset: 1, Length: 2},
+			},
+			CustomValues: []float64{0, 1, 2, 3, 4},
 		}
 	}
 
@@ -208,24 +236,40 @@ func TestCheckpoint(t *testing.T) {
 				require.NoError(t, w.Log(b))
 				samplesInWAL += 4
 				h := makeHistogram(i)
-				b1, b2 := enc.HistogramSamples([]record.RefHistogramSample{
+				b, _ = enc.HistogramSamples([]record.RefHistogramSample{
 					{Ref: 0, T: last, H: h},
 					{Ref: 1, T: last + 10000, H: h},
 					{Ref: 2, T: last + 20000, H: h},
 					{Ref: 3, T: last + 30000, H: h},
 				}, nil)
-				require.NoError(t, w.Log(b1))
-				require.NoError(t, w.Log(b2))
+				require.NoError(t, w.Log(b))
+				histogramsInWAL += 4
+				cbh := makeCustomBucketHistogram(i)
+				b = enc.CustomBucketHistogramSamples([]record.RefHistogramSample{
+					{Ref: 0, T: last, H: cbh},
+					{Ref: 1, T: last + 10000, H: cbh},
+					{Ref: 2, T: last + 20000, H: cbh},
+					{Ref: 3, T: last + 30000, H: cbh},
+				}, nil)
+				require.NoError(t, w.Log(b))
 				histogramsInWAL += 4
 				fh := makeFloatHistogram(i)
-				b1, b2 = enc.FloatHistogramSamples([]record.RefFloatHistogramSample{
+				b, _ = enc.FloatHistogramSamples([]record.RefFloatHistogramSample{
 					{Ref: 0, T: last, FH: fh},
 					{Ref: 1, T: last + 10000, FH: fh},
 					{Ref: 2, T: last + 20000, FH: fh},
 					{Ref: 3, T: last + 30000, FH: fh},
 				}, nil)
-				require.NoError(t, w.Log(b1))
-				require.NoError(t, w.Log(b2))
+				require.NoError(t, w.Log(b))
+				floatHistogramsInWAL += 4
+				cbfh := makeCustomBucketFloatHistogram(i)
+				b = enc.CustomBucketFloatHistogramSamples([]record.RefFloatHistogramSample{
+					{Ref: 0, T: last, FH: cbfh},
+					{Ref: 1, T: last + 10000, FH: cbfh},
+					{Ref: 2, T: last + 20000, FH: cbfh},
+					{Ref: 3, T: last + 30000, FH: cbfh},
+				}, nil)
+				require.NoError(t, w.Log(b))
 				floatHistogramsInWAL += 4
 
 				b = enc.Exemplars([]record.RefExemplar{
@@ -286,14 +330,14 @@ func TestCheckpoint(t *testing.T) {
 						require.GreaterOrEqual(t, s.T, last/2, "sample with wrong timestamp")
 					}
 					samplesInCheckpoint += len(samples)
-				case record.HistogramSamples:
+				case record.HistogramSamples, record.CustomBucketHistogramSamples:
 					histograms, err := dec.HistogramSamples(rec, nil)
 					require.NoError(t, err)
 					for _, h := range histograms {
 						require.GreaterOrEqual(t, h.T, last/2, "histogram with wrong timestamp")
 					}
 					histogramsInCheckpoint += len(histograms)
-				case record.FloatHistogramSamples:
+				case record.FloatHistogramSamples, record.CustomBucketFloatHistogramSamples:
 					floatHistograms, err := dec.FloatHistogramSamples(rec, nil)
 					require.NoError(t, err)
 					for _, h := range floatHistograms {

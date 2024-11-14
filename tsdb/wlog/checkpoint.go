@@ -238,7 +238,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 				}
 			}
 			if len(repl) > 0 {
-				_, buf = enc.HistogramSamples(repl, buf)
+				buf = enc.CustomBucketHistogramSamples(repl, buf)
 			}
 			stats.TotalSamples += len(histogramSamples)
 			stats.DroppedSamples += len(histogramSamples) - len(repl)
@@ -272,7 +272,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 				}
 			}
 			if len(repl) > 0 {
-				_, buf = enc.FloatHistogramSamples(repl, buf)
+				buf = enc.CustomBucketFloatHistogramSamples(repl, buf)
 			}
 			stats.TotalSamples += len(floatHistogramSamples)
 			stats.DroppedSamples += len(floatHistogramSamples) - len(repl)

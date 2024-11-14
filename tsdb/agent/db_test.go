@@ -163,6 +163,18 @@ func TestCommit(t *testing.T) {
 		}
 	}
 
+	lbls = labelsForTest(t.Name()+"_custom_bucket_histogram", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		customBucketHistograms := tsdbutil.GenerateTestCustomBucketsHistograms(numHistograms)
+
+		for i := 0; i < numHistograms; i++ {
+			_, err := app.AppendHistogram(0, lset, int64(i), customBucketHistograms[i], nil)
+			require.NoError(t, err)
+		}
+	}
+
 	lbls = labelsForTest(t.Name()+"_float_histogram", numSeries)
 	for _, l := range lbls {
 		lset := labels.New(l...)
@@ -171,6 +183,18 @@ func TestCommit(t *testing.T) {
 
 		for i := 0; i < numHistograms; i++ {
 			_, err := app.AppendHistogram(0, lset, int64(i), nil, floatHistograms[i])
+			require.NoError(t, err)
+		}
+	}
+
+	lbls = labelsForTest(t.Name()+"custom_bucket_float_histogram", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		customBucketFloatHistograms := tsdbutil.GenerateTestCustomBucketsFloatHistograms(numHistograms)
+
+		for i := 0; i < numHistograms; i++ {
+			_, err := app.AppendHistogram(0, lset, int64(i), nil, customBucketFloatHistograms[i])
 			require.NoError(t, err)
 		}
 	}
@@ -230,11 +254,11 @@ func TestCommit(t *testing.T) {
 	}
 
 	// Check that the WAL contained the same number of committed series/samples/exemplars.
-	require.Equal(t, numSeries*3, walSeriesCount, "unexpected number of series")
+	require.Equal(t, numSeries*5, walSeriesCount, "unexpected number of series")
 	require.Equal(t, numSeries*numDatapoints, walSamplesCount, "unexpected number of samples")
 	require.Equal(t, numSeries*numDatapoints, walExemplarsCount, "unexpected number of exemplars")
-	require.Equal(t, numSeries*numHistograms, walHistogramCount, "unexpected number of histograms")
-	require.Equal(t, numSeries*numHistograms, walFloatHistogramCount, "unexpected number of float histograms")
+	require.Equal(t, numSeries*numHistograms*2, walHistogramCount, "unexpected number of histograms")
+	require.Equal(t, numSeries*numHistograms*2, walFloatHistogramCount, "unexpected number of float histograms")
 }
 
 func TestRollback(t *testing.T) {

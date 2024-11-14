@@ -1154,40 +1154,35 @@ func (a *appender) log() error {
 	}
 
 	if len(a.pendingHistograms) > 0 {
-		buf1, buf2 := encoder.HistogramSamples(a.pendingHistograms, buf)
-		//buf = append(buf1, buf2...)
-		//if err := a.wal.Log(buf); err != nil {
-		//	return err
-		//}
-		if len(buf1) > 0 {
-			buf = buf1[:0]
-			if err := a.wal.Log(buf1); err != nil {
-				return err
-			}
+		var customBucketsExist bool
+		buf, customBucketsExist = encoder.HistogramSamples(a.pendingHistograms, buf)
+		if err := a.wal.Log(buf); err != nil {
+			return err
 		}
-		if len(buf2) > 0 {
-			buf = buf2[:0]
-			if err := a.wal.Log(buf2); err != nil {
+		buf = buf[:0]
+		if customBucketsExist {
+			buf = encoder.CustomBucketHistogramSamples(a.pendingHistograms, buf)
+			if err := a.wal.Log(buf); err != nil {
 				return err
 			}
+			buf = buf[:0]
 		}
 	}
 
 	if len(a.pendingFloatHistograms) > 0 {
-		buf1, buf2 := encoder.FloatHistogramSamples(a.pendingFloatHistograms, buf)
-		if len(buf1) > 0 {
-			buf = buf1[:0]
-			if err := a.wal.Log(buf1); err != nil {
+		var customBucketsExist bool
+		buf, customBucketsExist = encoder.FloatHistogramSamples(a.pendingFloatHistograms, buf)
+		if err := a.wal.Log(buf); err != nil {
+			return err
+		}
+		buf = buf[:0]
+		if customBucketsExist {
+			buf = encoder.CustomBucketFloatHistogramSamples(a.pendingFloatHistograms, buf)
+			if err := a.wal.Log(buf); err != nil {
 				return err
 			}
+			buf = buf[:0]
 		}
-		if len(buf2) > 0 {
-			buf = buf2[:0]
-			if err := a.wal.Log(buf2); err != nil {
-				return err
-			}
-		}
-		//buf = buf[:0]
 	}
 
 	if len(a.pendingExamplars) > 0 {
