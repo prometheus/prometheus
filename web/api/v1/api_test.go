@@ -388,6 +388,7 @@ func TestEndpoints(t *testing.T) {
 			test_metric4{foo="boo", dup="1"} 1+0x100
 			test_metric4{foo="boo"} 1+0x100
 			test_metric5{"host.name"="localhost"} 1+0x100
+			test_metric5{"junk\n{},=:  chars"="bar"} 1+0x100
 	`)
 	t.Cleanup(func() { storage.Close() })
 
@@ -3031,6 +3032,17 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					"localhost",
 				},
 			},
+			// Valid escaped utf8 name parameter for utf8 validation.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "U__junk_0a__7b__7d__2c__3d_:_20__20_chars",
+				},
+				nameValidationScheme: model.UTF8Validation,
+				response: []string{
+					"bar",
+				},
+			},
 			// Start and end before LabelValues starts.
 			{
 				endpoint: api.labelValues,
@@ -3273,7 +3285,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			// Label names.
 			{
 				endpoint: api.labelNames,
-				response: []string{"__name__", "dup", "foo", "host.name"},
+				response: []string{"__name__", "dup", "foo", "host.name", "junk\n{},=:  chars"},
 			},
 			// Start and end before Label names starts.
 			{
@@ -3291,7 +3303,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					"start": []string{"1"},
 					"end":   []string{"100"},
 				},
-				response: []string{"__name__", "dup", "foo", "host.name"},
+				response: []string{"__name__", "dup", "foo", "host.name", "junk\n{},=:  chars"},
 			},
 			// Start before Label names, end within Label names.
 			{
@@ -3300,7 +3312,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					"start": []string{"-1"},
 					"end":   []string{"10"},
 				},
-				response: []string{"__name__", "dup", "foo", "host.name"},
+				response: []string{"__name__", "dup", "foo", "host.name", "junk\n{},=:  chars"},
 			},
 
 			// Start before Label names starts, end after Label names ends.
@@ -3310,7 +3322,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					"start": []string{"-1"},
 					"end":   []string{"100000"},
 				},
-				response: []string{"__name__", "dup", "foo", "host.name"},
+				response: []string{"__name__", "dup", "foo", "host.name", "junk\n{},=:  chars"},
 			},
 			// Start with bad data for Label names, end within Label names.
 			{
@@ -3328,7 +3340,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					"start": []string{"1"},
 					"end":   []string{"1000000006"},
 				},
-				response: []string{"__name__", "dup", "foo", "host.name"},
+				response: []string{"__name__", "dup", "foo", "host.name", "junk\n{},=:  chars"},
 			},
 			// Start and end after Label names ends.
 			{
@@ -3345,7 +3357,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				query: url.Values{
 					"start": []string{"4"},
 				},
-				response: []string{"__name__", "dup", "foo", "host.name"},
+				response: []string{"__name__", "dup", "foo", "host.name", "junk\n{},=:  chars"},
 			},
 			// Only provide End within Label names, don't provide a start time.
 			{
@@ -3353,7 +3365,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				query: url.Values{
 					"end": []string{"20"},
 				},
-				response: []string{"__name__", "dup", "foo", "host.name"},
+				response: []string{"__name__", "dup", "foo", "host.name", "junk\n{},=:  chars"},
 			},
 			// Label names with bad matchers.
 			{
@@ -3421,9 +3433,9 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			{
 				endpoint: api.labelNames,
 				query: url.Values{
-					"limit": []string{"4"},
+					"limit": []string{"5"},
 				},
-				responseLen:   4, // API does not specify which particular values will come back.
+				responseLen:   5, // API does not specify which particular values will come back.
 				warningsCount: 0, // No warnings if limit isn't exceeded.
 			},
 		}...)

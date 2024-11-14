@@ -433,18 +433,40 @@ URL query parameters:
   series from which to read the label values. Optional.
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 
-
 The `data` section of the JSON response is a list of string label values.
 
-This example queries for all label values for the `job` label:
+This example queries for all label values for the `http_status_code` label:
 
 ```json
-$ curl http://localhost:9090/api/v1/label/job/values
+$ curl http://localhost:9090/api/v1/label/http_status_code/values
 {
    "status" : "success",
    "data" : [
-      "node",
-      "prometheus"
+      "200",
+      "504"
+   ]
+}
+```
+
+Label names can optionally be encoded using the Values Escaping method, and is necessary if a name includes the `/` character. To encode a name in this way:
+
+* Prepend the label with `U__`.
+* Letters, numbers, and colons appear as-is.
+* Convert single underscores to double underscores.
+* For all other characters, use the UTF-8 codepoint as a hex integer, surrounded
+  by underscores.  So ` ` becomes `_20_` and a `.` becomes `_2e_`.
+
+ More information about text escaping can be found in the original UTF-8 [Proposal document](https://github.com/prometheus/proposals/blob/main/proposals/2023-08-21-utf8.md#text-escaping).
+
+This example queries for all label values for the `http.status_code` label:
+
+```json
+$ curl http://localhost:9090/api/v1/label/U__http_2e_status_code/values
+{
+   "status" : "success",
+   "data" : [
+      "200",
+      "404"
    ]
 }
 ```
