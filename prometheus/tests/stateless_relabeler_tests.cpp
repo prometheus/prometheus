@@ -1241,4 +1241,121 @@ TEST_F(TestStatelessRelabeler, ReplaceWithReplaceJoin) {
   EXPECT_EQ(rlabels, expected_labels);
 }
 
+//
+// ProcessExternalLabels
+//
+
+struct TestProcessExternalLabels : public testing::Test {
+  // external_labels
+  std::vector<PromPP::Primitives::LabelView> external_labels_{};
+
+  // builder
+  LabelsBuilderStateMap builder_state_;
+  LabelsBuilder<LabelsBuilderStateMap> builder_{builder_state_};
+
+  void add_external_labels(std::initializer_list<LabelView> lvs) {
+    external_labels_.resize(lvs.size());
+    for (const LabelView& lv : lvs) {
+      external_labels_.emplace_back(lv);
+    }
+  }
+};
+
+TEST_F(TestProcessExternalLabels, AddingLSEnd) {
+  add_external_labels({{"c_name", "c_value"}});
+  LabelViewSet labels = make_label_set({{"a_name", "a_value"}});
+  builder_.reset(labels);
+
+  Relabel::process_external_labels(builder_, external_labels_);
+
+  LabelViewSet expected_labels = make_label_set({{"a_name", "a_value"}, {"c_name", "c_value"}});
+  EXPECT_EQ(builder_.label_view_set(), expected_labels);
+  EXPECT_EQ(builder_.label_set(), expected_labels);
+}
+
+TEST_F(TestProcessExternalLabels, AddingLSBeginning) {
+  add_external_labels({{"a_name", "a_value"}});
+  auto labels = make_label_set({{"c_name", "c_value"}});
+  builder_.reset(labels);
+
+  Relabel::process_external_labels(builder_, external_labels_);
+
+  LabelViewSet expected_labels = make_label_set({{"a_name", "a_value"}, {"c_name", "c_value"}});
+  EXPECT_EQ(builder_.label_view_set(), expected_labels);
+  EXPECT_EQ(builder_.label_set(), expected_labels);
+}
+
+TEST_F(TestProcessExternalLabels, OverrideExistingLabels) {
+  add_external_labels({{"a_name", "b_value"}});
+  auto labels = make_label_set({{"a_name", "a_value"}});
+  builder_.reset(labels);
+
+  Relabel::process_external_labels(builder_, external_labels_);
+
+  LabelViewSet expected_labels = make_label_set({{"a_name", "a_value"}});
+  EXPECT_EQ(builder_.label_view_set(), expected_labels);
+  EXPECT_EQ(builder_.label_set(), expected_labels);
+}
+
+TEST_F(TestProcessExternalLabels, EmptyExternalLabels) {
+  std::vector<std::pair<std::string, std::string>> list_external_labels{};
+  add_external_labels({});
+  auto labels = make_label_set({{"a_name", "a_value"}});
+  builder_.reset(labels);
+
+  Relabel::process_external_labels(builder_, external_labels_);
+
+  LabelViewSet expected_labels = make_label_set({{"a_name", "a_value"}});
+  EXPECT_EQ(builder_.label_view_set(), expected_labels);
+  EXPECT_EQ(builder_.label_set(), expected_labels);
+}
+
+TEST_F(TestProcessExternalLabels, EmptyLabels) {
+  add_external_labels({{"a_name", "a_value"}});
+  auto labels = make_label_set({});
+  builder_.reset(labels);
+
+  Relabel::process_external_labels(builder_, external_labels_);
+
+  LabelViewSet expected_labels = make_label_set({{"a_name", "a_value"}});
+  EXPECT_EQ(builder_.label_view_set(), expected_labels);
+  EXPECT_EQ(builder_.label_set(), expected_labels);
+}
+
+TEST_F(TestProcessExternalLabels, LabelsLongerExternalLabels) {
+  add_external_labels({{"c_name", "c_value"}});
+  auto labels = make_label_set({{"a_name", "a_value"}, {"b_name", "b_value"}});
+  builder_.reset(labels);
+
+  Relabel::process_external_labels(builder_, external_labels_);
+
+  LabelViewSet expected_labels = make_label_set({{"a_name", "a_value"}, {"b_name", "b_value"}, {"c_name", "c_value"}});
+  EXPECT_EQ(builder_.label_view_set(), expected_labels);
+  EXPECT_EQ(builder_.label_set(), expected_labels);
+}
+
+TEST_F(TestProcessExternalLabels, ExternalLabelsLongerLabels) {
+  add_external_labels({{"a_name", "a_value"}, {"c_name", "c_value"}});
+  auto labels = make_label_set({{"b_name", "b_value"}});
+  builder_.reset(labels);
+
+  Relabel::process_external_labels(builder_, external_labels_);
+
+  LabelViewSet expected_labels = make_label_set({{"a_name", "a_value"}, {"b_name", "b_value"}, {"c_name", "c_value"}});
+  EXPECT_EQ(builder_.label_view_set(), expected_labels);
+  EXPECT_EQ(builder_.label_set(), expected_labels);
+}
+
+TEST_F(TestProcessExternalLabels, AddingWithWithoutClashingLabels) {
+  add_external_labels({{"a_name", "a1_value"}, {"b_name", "b1_value"}, {"c_name", "c1_value"}});
+  auto labels = make_label_set({{"a_name", "a_value"}, {"b_name", "b_value"}});
+  builder_.reset(labels);
+
+  Relabel::process_external_labels(builder_, external_labels_);
+
+  LabelViewSet expected_labels = make_label_set({{"a_name", "a_value"}, {"b_name", "b_value"}, {"c_name", "c1_value"}});
+  EXPECT_EQ(builder_.label_view_set(), expected_labels);
+  EXPECT_EQ(builder_.label_set(), expected_labels);
+}
+
 }  // namespace

@@ -551,7 +551,7 @@ class LabelsBuilder {
 
   // reset - clears all current state for the builder and init from LabelSet.
   template <class SomeLabelSet>
-  PROMPP_ALWAYS_INLINE void reset(SomeLabelSet& ls) {
+  PROMPP_ALWAYS_INLINE void reset(const SomeLabelSet& ls) {
     state_.reset(ls);
   }
 

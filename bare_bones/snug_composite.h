@@ -479,10 +479,13 @@ class EncodingTable : private DecodingTable<Filament> {
   using Base = DecodingTable<Filament>;
   using checkpoint_type = typename Base::template Checkpoint<EncodingTable<Filament>>;
   using delta_type = typename checkpoint_type::Delta;
+  using value_type = typename Base::value_type;
 
   using Base::data;
   using Base::items;
+  using Base::load;
   using Base::size;
+  using Base::operator[];
 
   template <class Class>
   PROMPP_ALWAYS_INLINE uint32_t find_or_emplace(const Class& c) noexcept {

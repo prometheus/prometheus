@@ -20,19 +20,6 @@
 
 namespace PromPP::Prometheus::Relabel {
 
-// soft_validate on empty validate label set.
-template <class LabelsBuilder>
-PROMPP_ALWAYS_INLINE void soft_validate(relabelStatus& rstatus, LabelsBuilder& builder) {
-  if (rstatus == rsDrop) {
-    return;
-  }
-
-  if (builder.is_empty()) [[unlikely]] {
-    rstatus = rsDrop;
-    return;
-  }
-};
-
 // MetricLimits limits on label set and samples.
 struct MetricLimits {
   size_t label_limit{0};
@@ -651,32 +638,6 @@ class PerShardRelabeler {
     }
   }
 
-  // processExternalLabels merges externalLabels into ls. If ls contains
-  // a label in externalLabels, the value in ls wins.
-  template <class LabelsBuilder>
-  PROMPP_ALWAYS_INLINE void process_external_labels(LabelsBuilder& builder) {
-    if (external_labels_.size() == 0) {
-      return;
-    }
-
-    std::size_t j{0};
-    builder.range([&]<typename LNameType, typename LValueType>(LNameType& lname, [[maybe_unused]] LValueType& lvalue) PROMPP_LAMBDA_INLINE -> bool {
-      for (; j < external_labels_.size() && lname > external_labels_[j].first;) {
-        builder.set(external_labels_[j].first, external_labels_[j].second);
-        ++j;
-      }
-
-      if (j < external_labels_.size() && lname == external_labels_[j].first) {
-        j++;
-      }
-      return true;
-    });
-
-    for (; j < external_labels_.size(); j++) {
-      builder.set(external_labels_[j].first, external_labels_[j].second);
-    }
-  }
-
   // output_relabeling - relabeling output series(fourth stage).
   template <class LSS>
   PROMPP_ALWAYS_INLINE void output_relabeling(const LSS& lss,
@@ -708,12 +669,11 @@ class PerShardRelabeler {
         }
         typename LSS::value_type labels = lss[inner_serie.ls_id];
         builder.reset(labels);
-        process_external_labels(builder);
+        process_external_labels(builder, external_labels_);
 
         relabelStatus rstatus = stateless_relabeler_->relabeling_process(buf_, builder);
         soft_validate(rstatus, builder);
         if (rstatus == rsDrop) {
-          // cache_drop_.add(inner_serie.ls_id);
           cache.add_drop(inner_serie.ls_id);
           return;
         }

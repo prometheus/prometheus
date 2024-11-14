@@ -433,7 +433,8 @@ class RelabelConfig {
         value += std::string(lv);
         continue;
       }
-      value += std::string(separator_) + std::string(lv);
+      value += separator_;
+      value += lv;
     }
 
     switch (action_) {
@@ -626,6 +627,45 @@ class StatelessRelabeler {
   }
 
   PROMPP_ALWAYS_INLINE ~StatelessRelabeler() = default;
+};
+
+// processExternalLabels merges externalLabels into ls. If ls contains
+// a label in externalLabels, the value in ls wins.
+template <class LabelsBuilder, class ExternalLabels>
+PROMPP_ALWAYS_INLINE void process_external_labels(LabelsBuilder& builder, ExternalLabels& external_labels) {
+  if (external_labels.size() == 0) {
+    return;
+  }
+
+  std::size_t j{0};
+  builder.range([&]<typename LNameType, typename LValueType>(LNameType& lname, [[maybe_unused]] LValueType& lvalue) PROMPP_LAMBDA_INLINE -> bool {
+    for (; j < external_labels.size() && lname > external_labels[j].first;) {
+      builder.set(external_labels[j].first, external_labels[j].second);
+      ++j;
+    }
+
+    if (j < external_labels.size() && lname == external_labels[j].first) {
+      j++;
+    }
+    return true;
+  });
+
+  for (; j < external_labels.size(); j++) {
+    builder.set(external_labels[j].first, external_labels[j].second);
+  }
+}
+
+// soft_validate on empty validate label set.
+template <class LabelsBuilder>
+PROMPP_ALWAYS_INLINE void soft_validate(relabelStatus& rstatus, LabelsBuilder& builder) {
+  if (rstatus == rsDrop) {
+    return;
+  }
+
+  if (builder.is_empty()) [[unlikely]] {
+    rstatus = rsDrop;
+    return;
+  }
 };
 
 }  // namespace PromPP::Prometheus::Relabel
