@@ -22,21 +22,22 @@ using BaseOutputDecoder = WAL::BasicDecoder<std::remove_reference_t<Primitives::
 
 class WALOutputDecoder : public BaseOutputDecoder {
   Primitives::SnugComposites::LabelSet::EncodingTable wal_lss_;
-  Primitives::SnugComposites::LabelSet::EncodingBimap output_lss_;
   std::vector<uint32_t> cache_{};
   std::stringstream buf_;
   Primitives::LabelsBuilderStateMap builder_state_;
   std::vector<Primitives::LabelView> external_labels_{};
   Prometheus::Relabel::StatelessRelabeler& stateless_relabeler_;
+  Primitives::SnugComposites::LabelSet::EncodingBimap& output_lss_;
   Primitives::SnugComposites::LabelSet::EncodingBimap::checkpoint_type dumped_checkpoint_{output_lss_.checkpoint()};
   uint32_t dumped_cache_size_{0};
 
  public:
   // WALOutputDecoder constructor with empty state.
   PROMPP_ALWAYS_INLINE explicit WALOutputDecoder(Prometheus::Relabel::StatelessRelabeler& stateless_relabeler,
+                                                 Primitives::SnugComposites::LabelSet::EncodingBimap& output_lss,
                                                  Primitives::Go::SliceView<std::pair<Primitives::Go::String, Primitives::Go::String>>& external_labels,
                                                  BasicEncoderVersion encoder_version = WAL::Writer::version) noexcept
-      : BaseOutputDecoder{wal_lss_, encoder_version}, stateless_relabeler_{stateless_relabeler} {
+      : BaseOutputDecoder{wal_lss_, encoder_version}, stateless_relabeler_{stateless_relabeler}, output_lss_(output_lss) {
     external_labels_.reserve(external_labels.size());
     for (const auto& [ln, lv] : external_labels) {
       external_labels_.emplace_back(static_cast<std::string_view>(ln), static_cast<std::string_view>(lv));
@@ -184,17 +185,12 @@ class WALOutputDecoder : public BaseOutputDecoder {
   __attribute__((flatten)) void process_segment(Callback&& func) {
     align_cache_to_lss();
 
-    BaseOutputDecoder::process_segment([&](Primitives::LabelSetID ls_id, Primitives::Timestamp ts, Primitives::Sample::value_type v) {
-      uint32_t r_ls_id = cache_[ls_id];
-      std::cout << "ls_id: " << ls_id << " r_ls_id " << r_ls_id << std::endl;
-
-      func(r_ls_id, ts, v);
-    });
+    BaseOutputDecoder::process_segment(
+        [&](Primitives::LabelSetID ls_id, Primitives::Timestamp ts, Primitives::Sample::value_type v) { func(cache_[ls_id], ts, v); });
   }
 
-  // DEBUG
-  PROMPP_ALWAYS_INLINE const auto& cache() { return cache_; }
-  PROMPP_ALWAYS_INLINE const auto& output_lss() { return output_lss_; }
+  // cache return current cache.
+  PROMPP_ALWAYS_INLINE const auto& cache() const noexcept { return cache_; }
 };
 
 }  // namespace PromPP::WAL
