@@ -20,7 +20,7 @@ enum dumpType : uint8_t {
 
 using BaseOutputDecoder = WAL::BasicDecoder<std::remove_reference_t<Primitives::SnugComposites::LabelSet::ShrinkableEncodingBimap>>;
 
-class OutputDecoder : public BaseOutputDecoder {
+class OutputDecoder : private BaseOutputDecoder {
   Primitives::SnugComposites::LabelSet::ShrinkableEncodingBimap wal_lss_;
   std::vector<uint32_t> cache_{};
   std::stringstream buf_;

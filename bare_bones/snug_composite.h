@@ -540,6 +540,12 @@ class ShrinkableEncodingBimap final : private DecodingTable<Filament> {
     return Base::operator[](id - shift_);
   }
 
+  template <InputStream S>
+  friend S& operator>>(S& in, ShrinkableEncodingBimap& shrinkable_encoding_bimap) {
+    shrinkable_encoding_bimap.load(in);
+    return in;
+  }
+
  private:
   uint32_t set_allocated_memory_{};
   phmap::flat_hash_set<typename Base::Proxy, typename Base::Hasher, typename Base::EqualityComparator, Allocator<typename Base::Proxy, uint32_t>> set_{
