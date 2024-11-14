@@ -268,3 +268,27 @@ extern "C" void prompp_wal_output_decoder_load_from(void* args, void* res) {
     handle_current_exception(__func__, err_stream);
   }
 }
+
+extern "C" void prompp_wal_output_decoder_decode(void* args, void* res) {
+  struct Arguments {
+    PromPP::Primitives::Go::SliceView<char> segment;
+    PromPP::WAL::OutputDecoder* decoder;
+  };
+
+  using Result = struct {
+    PromPP::Primitives::Go::Slice<PromPP::WAL::RefSample> ref_samples;
+    PromPP::Primitives::Go::Slice<char> error;
+  };
+
+  Arguments* in = reinterpret_cast<Arguments*>(args);
+  Result* out = new (res) Result();
+
+  try {
+    std::ispanstream{static_cast<std::string_view>(in->segment)} >> *in->decoder;
+    in->decoder->process_segment([&](PromPP::Primitives::LabelSetID ls_id, PromPP::Primitives::Timestamp ts, PromPP::Primitives::Sample::value_type v)
+                                     __attribute__((always_inline)) { out->ref_samples.emplace_back(ls_id, ts, v); });
+  } catch (...) {
+    auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
+    handle_current_exception(__func__, err_stream);
+  }
+}

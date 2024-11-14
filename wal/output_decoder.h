@@ -18,6 +18,12 @@ enum dumpType : uint8_t {
   dCache,
 };
 
+struct RefSample {
+  uint32_t id;
+  int64_t t;
+  double v;
+};
+
 using BaseOutputDecoder = WAL::BasicDecoder<std::remove_reference_t<Primitives::SnugComposites::LabelSet::ShrinkableEncodingBimap>>;
 
 class OutputDecoder : private BaseOutputDecoder {

@@ -5,6 +5,7 @@ import (
 	"hash/crc32"
 	"io"
 	"runtime"
+	"unsafe"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/pp/go/frames"
@@ -273,6 +274,21 @@ func NewWALOutputDecoder(
 	return d
 }
 
+// Decode - decodes incoming encoding data and return protobuf.
+func (d *WALOutputDecoder) Decode(ctx context.Context, segment []byte) (*DecodedRefSamples, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	refSamples, exception := walOutputDecoderDecode(segment, d.decoder)
+	return NewDecodedRefSamples(refSamples), handleException(exception)
+}
+
+// LoadFrom load from dump(slice byte) output decoder state(output_lss and cache).
+func (d *WALOutputDecoder) LoadFrom(dump []byte) error {
+	exception := walOutputDecoderLoadFrom(d.decoder, dump)
+	return handleException(exception)
+}
+
 // WriteTo dump output decoder state(output_lss and cache) to writer, implements io.WriterTo interface.
 func (d *WALOutputDecoder) WriteTo(w io.Writer) (int64, error) {
 	dump, exception := walOutputDecoderDumpTo(d.decoder)
@@ -285,8 +301,35 @@ func (d *WALOutputDecoder) WriteTo(w io.Writer) (int64, error) {
 	return int64(n), err
 }
 
-// LoadFrom load from dump(slice byte) output decoder state(output_lss and cache).
-func (d *WALOutputDecoder) LoadFrom(dump []byte) error {
-	exception := walOutputDecoderLoadFrom(d.decoder, dump)
-	return handleException(exception)
+// RefSample is a timestamp/value pair associated with a reference to a series.
+type RefSample struct {
+	ID uint32
+	T  int64
+	V  float64
+}
+
+// DecodedRefSamples go wrapper for slice c-type RefSample.
+type DecodedRefSamples struct {
+	buf []RefSample
+}
+
+// NewDecodedRefSamples init new DecodedRefSamples.
+func NewDecodedRefSamples(b []RefSample) *DecodedRefSamples {
+	drs := &DecodedRefSamples{
+		buf: b,
+	}
+	runtime.SetFinalizer(drs, func(drs *DecodedRefSamples) {
+		freeBytes(*(*[]byte)(unsafe.Pointer(&drs.buf)))
+	})
+	return drs
+}
+
+// Range calls f sequentially for each RefSample present in the DecodedRefSamples.
+// If f returns false, range stops the iteration.
+func (s *DecodedRefSamples) Range(f func(id uint32, t int64, v float64) bool) {
+	for i := range s.buf {
+		if !f(s.buf[i].ID, s.buf[i].T, s.buf[i].V) {
+			return
+		}
+	}
 }

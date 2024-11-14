@@ -179,6 +179,20 @@ void prompp_wal_output_decoder_dump_to(void* args, void* res);
  */
 void prompp_wal_output_decoder_load_from(void* args, void* res);
 
+/**
+ * @brief decode segment to slice RefSample.
+ *
+ * @param args {
+ *     decoder             uintptr      // pointer to constructed output decoder
+ * }
+ *
+ * @param res {
+ *     ref_samples         []RefSample  // slice RefSample
+ *     error               []byte       // error string if thrown
+ * }
+ */
+void prompp_wal_output_decoder_decode(void* args, void* res);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

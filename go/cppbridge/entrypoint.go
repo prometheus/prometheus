@@ -737,6 +737,26 @@ func walOutputDecoderLoadFrom(decoder uintptr, dump []byte) []byte {
 	return res.error
 }
 
+// walOutputDecoderDecode decode segment to slice RefSample.
+func walOutputDecoderDecode(segment []byte, decoder uintptr) (dump []RefSample, err []byte) {
+	var args = struct {
+		segment []byte
+		decoder uintptr
+	}{segment, decoder}
+	var res struct {
+		refSamples []RefSample
+		error      []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_wal_output_decoder_decode,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.refSamples, res.error
+}
+
 //
 // LabelSetStorage EncodingBimap
 //
