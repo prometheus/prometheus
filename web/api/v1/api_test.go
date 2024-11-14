@@ -2899,6 +2899,14 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			errType:  errorBadData,
 			zeroFunc: rulesZeroFunc,
 		},
+		{ // groupNextToken should not be in empty response
+			endpoint: api.rules,
+			query: url.Values{
+				"match[]":     []string{`{testlabel="abc-cannot-find"}`},
+				"group_limit": []string{"1"},
+			},
+			responseAsJSON: `{"groups":[]}`,
+		},
 		{
 			endpoint: api.queryExemplars,
 			query: url.Values{
