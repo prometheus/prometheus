@@ -20,7 +20,7 @@ enum dumpType : uint8_t {
 
 using BaseOutputDecoder = WAL::BasicDecoder<std::remove_reference_t<Primitives::SnugComposites::LabelSet::ShrinkableEncodingBimap>>;
 
-class WALOutputDecoder : public BaseOutputDecoder {
+class OutputDecoder : public BaseOutputDecoder {
   Primitives::SnugComposites::LabelSet::ShrinkableEncodingBimap wal_lss_;
   std::vector<uint32_t> cache_{};
   std::stringstream buf_;
@@ -63,10 +63,10 @@ class WALOutputDecoder : public BaseOutputDecoder {
 
  public:
   // WALOutputDecoder constructor with empty state.
-  PROMPP_ALWAYS_INLINE explicit WALOutputDecoder(Prometheus::Relabel::StatelessRelabeler& stateless_relabeler,
-                                                 Primitives::SnugComposites::LabelSet::EncodingBimap& output_lss,
-                                                 Primitives::Go::SliceView<std::pair<Primitives::Go::String, Primitives::Go::String>>& external_labels,
-                                                 BasicEncoderVersion encoder_version = WAL::Writer::version) noexcept
+  PROMPP_ALWAYS_INLINE explicit OutputDecoder(Prometheus::Relabel::StatelessRelabeler& stateless_relabeler,
+                                              Primitives::SnugComposites::LabelSet::EncodingBimap& output_lss,
+                                              Primitives::Go::SliceView<std::pair<Primitives::Go::String, Primitives::Go::String>>& external_labels,
+                                              BasicEncoderVersion encoder_version = WAL::Writer::version) noexcept
       : BaseOutputDecoder{wal_lss_, encoder_version}, stateless_relabeler_{stateless_relabeler}, output_lss_(output_lss) {
     external_labels_.reserve(external_labels.size());
     for (const auto& [ln, lv] : external_labels) {
@@ -192,7 +192,7 @@ class WALOutputDecoder : public BaseOutputDecoder {
 
   // operator>> override friend operator from BaseOutputDecoder.
   template <class InputStream>
-  friend InputStream& operator>>(InputStream& in, WALOutputDecoder& wal) {
+  friend InputStream& operator>>(InputStream& in, OutputDecoder& wal) {
     wal.load_segment(in, wal);
     wal.align_cache_to_lss();
     return in;

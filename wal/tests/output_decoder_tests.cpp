@@ -120,7 +120,7 @@ TEST_F(TestWALOutputDecoder, DumpLoadSingleData) {
   std::stringstream dump;
   std::stringstream segment_stream;
   stateless_relabeler_reset_to({{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2}});  // Keep
-  WALOutputDecoder wod(sr_, output_lss_, external_labels_);
+  OutputDecoder wod(sr_, output_lss_, external_labels_);
   Encoder enc{uint16_t{0}, uint8_t{0}};
 
   make_segment({{{{"__name__", "value1"}, {"job", "abc"}}, {10, 1}}}, segment_stream, enc);
@@ -131,7 +131,7 @@ TEST_F(TestWALOutputDecoder, DumpLoadSingleData) {
   wod.dump_to(dump);
 
   SnugComposites::LabelSet::EncodingBimap output_lss2;
-  WALOutputDecoder wod2(sr_, output_lss2, external_labels_);
+  OutputDecoder wod2(sr_, output_lss2, external_labels_);
   wod2.load_from(dump);
 
   EXPECT_EQ(1, wod.cache().size());
@@ -146,7 +146,7 @@ TEST_F(TestWALOutputDecoder, DumpLoadDoubleData) {
   std::stringstream dump;
   std::stringstream segment_stream;
   stateless_relabeler_reset_to({{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2}});  // Keep
-  WALOutputDecoder wod(sr_, output_lss_, external_labels_);
+  OutputDecoder wod(sr_, output_lss_, external_labels_);
   Encoder enc{uint16_t{0}, uint8_t{0}};
 
   {
@@ -167,7 +167,7 @@ TEST_F(TestWALOutputDecoder, DumpLoadDoubleData) {
   }
 
   SnugComposites::LabelSet::EncodingBimap output_lss2;
-  WALOutputDecoder wod2(sr_, output_lss2, external_labels_);
+  OutputDecoder wod2(sr_, output_lss2, external_labels_);
   wod2.load_from(dump);
 
   EXPECT_EQ(2, wod.cache().size());
@@ -182,7 +182,7 @@ TEST_F(TestWALOutputDecoder, DumpLoadDataEmptyData) {
   std::stringstream dump;
   std::stringstream segment_stream;
   stateless_relabeler_reset_to({{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2}});  // Keep
-  WALOutputDecoder wod(sr_, output_lss_, external_labels_);
+  OutputDecoder wod(sr_, output_lss_, external_labels_);
   Encoder enc{uint16_t{0}, uint8_t{0}};
 
   {
@@ -205,7 +205,7 @@ TEST_F(TestWALOutputDecoder, DumpLoadDataEmptyData) {
   }
 
   SnugComposites::LabelSet::EncodingBimap output_lss2;
-  WALOutputDecoder wod2(sr_, output_lss2, external_labels_);
+  OutputDecoder wod2(sr_, output_lss2, external_labels_);
   wod2.load_from(dump);
 
   EXPECT_EQ(2, wod.cache().size());
@@ -218,7 +218,7 @@ TEST_F(TestWALOutputDecoder, DumpLoadDataEmptyData) {
 
 TEST_F(TestWALOutputDecoder, ProcessSegment) {
   stateless_relabeler_reset_to({{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2}});  // Keep
-  WALOutputDecoder wod(sr_, output_lss_, external_labels_);
+  OutputDecoder wod(sr_, output_lss_, external_labels_);
   std::stringstream segment_stream;
   Encoder enc{uint16_t{0}, uint8_t{0}};
 
@@ -242,7 +242,7 @@ TEST_F(TestWALOutputDecoder, ProcessSegment) {
 
 TEST_F(TestWALOutputDecoder, ProcessSegmentWithDump) {
   stateless_relabeler_reset_to({{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2}});  // Keep
-  WALOutputDecoder wod(sr_, output_lss_, external_labels_);
+  OutputDecoder wod(sr_, output_lss_, external_labels_);
   std::stringstream segment_stream;
   std::stringstream dump;
   Encoder enc{uint16_t{0}, uint8_t{0}};
@@ -266,7 +266,7 @@ TEST_F(TestWALOutputDecoder, ProcessSegmentWithDump) {
   }
 
   SnugComposites::LabelSet::EncodingBimap output_lss2;
-  WALOutputDecoder wod2(sr_, output_lss2, external_labels_);
+  OutputDecoder wod2(sr_, output_lss2, external_labels_);
   wod2.load_from(dump);
   Encoder enc2{uint16_t{0}, uint8_t{0}};
 

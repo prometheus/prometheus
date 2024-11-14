@@ -1170,6 +1170,31 @@ void prompp_wal_decoder_decode_dry(void* args, void* res);
  */
 void prompp_wal_decoder_restore_from_stream(void* args, void* res);
 
+/**
+ * @brief Construct a new WAL Output Decoder
+ *
+ * @param args {
+ *     external_labels     []Label // slice with external labels;
+ *     stateless_relabeler uintptr // pointer to constructed stateless relabeler;
+ *     output_lss          uintptr // pointer to constructed output label sets;
+ *     encoder_version     uint8_t // basic encoder version
+ * }
+ *
+ * @param res {
+ *     decoder uintptr // pointer to constructed output decoder
+ * }
+ */
+void prompp_wal_output_decoder_ctor(void* args, void* res);
+
+/**
+ * @brief Destroy output decoder
+ *
+ * @param args {
+ *     decoder             uintptr // pointer to constructed output decoder
+ * }
+ */
+void prompp_wal_output_decoder_dtor(void* args);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

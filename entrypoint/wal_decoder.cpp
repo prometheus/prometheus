@@ -3,9 +3,11 @@
 #include "_helpers.hpp"
 #include "wal_decoder.h"
 
+#include "head/lss.h"
 #include "primitives/go_slice.h"
 #include "primitives/go_slice_protozero.h"
 #include "wal/decoder.h"
+#include "wal/output_decoder.h"
 
 extern "C" void prompp_wal_decoder_ctor(void* args, void* res) {
   struct Arguments {
@@ -188,4 +190,37 @@ extern "C" void prompp_wal_decoder_restore_from_stream(void* args, void* res) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
     handle_current_exception(__func__, err_stream);
   }
+}
+
+//
+// OutputDecoder
+//
+
+using entrypoint::head::LssVariantPtr;
+
+extern "C" void prompp_wal_output_decoder_ctor(void* args, void* res) {
+  struct Arguments {
+    PromPP::Primitives::Go::SliceView<std::pair<PromPP::Primitives::Go::String, PromPP::Primitives::Go::String>> external_labels;
+    PromPP::Prometheus::Relabel::StatelessRelabeler* stateless_relabeler;
+    LssVariantPtr output_lss;
+    uint8_t encoder_version;
+  };
+  using Result = struct {
+    PromPP::WAL::OutputDecoder* decoder;
+  };
+
+  auto* in = reinterpret_cast<Arguments*>(args);
+  Result* out = new (res) Result();
+  auto& output_lss = std::get<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>(*in->output_lss);
+  out->decoder =
+      new PromPP::WAL::OutputDecoder(*in->stateless_relabeler, output_lss, in->external_labels, static_cast<PromPP::WAL::BasicEncoderVersion>(in->encoder_version));
+}
+
+extern "C" void prompp_wal_output_decoder_dtor(void* args) {
+  struct Arguments {
+    PromPP::WAL::OutputDecoder* decoder;
+  };
+
+  Arguments* in = reinterpret_cast<Arguments*>(args);
+  delete in->decoder;
 }
