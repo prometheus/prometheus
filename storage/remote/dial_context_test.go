@@ -124,6 +124,16 @@ func TestDialContextWithRandomConnections(t *testing.T) {
 				require.Equal(t, numberOfRuns, mdc.getCount(testAddrWithPort))
 			},
 		},
+		"if lookup returns no addresses call default DealContext": {
+			addr: testAddrWithPort,
+			setup: func() dialContextWithRoundRobinDNS {
+				mdc = newMockDialContext([]string{testAddrWithPort})
+				return createDialContextWithRoundRobinDNS(mdc.dialContext, &mockedLookupHost{}, rand.New(rand.NewSource(time.Now().Unix())))
+			},
+			check: func() {
+				require.Equal(t, numberOfRuns, mdc.getCount(testAddrWithPort))
+			},
+		},
 		"if lookup host is successful, shuffle results": {
 			addr: testAddrWithPort,
 			setup: func() dialContextWithRoundRobinDNS {

@@ -27,14 +27,15 @@ type hostResolver interface {
 	LookupHost(context.Context, string) ([]string, error)
 }
 
-// dialContextWithRoundRobinDNS is needed to facilitate testing, because
-// it allows specifying custom dial context functions and host resolvers.
 type dialContextWithRoundRobinDNS struct {
 	dialContext config.DialContextFunc
 	resolver    hostResolver
 	rand        *rand.Rand
 }
 
+// newDialContextWithRoundRobinDNS creates a new dialContextWithRoundRobinDNS.
+// We discourage creating new instances of struct dialContextWithRoundRobinDNS by explicitly setting its members,
+// except for testing purposes, and recommend using newDialContextWithRoundRobinDNS.
 func newDialContextWithRoundRobinDNS() *dialContextWithRoundRobinDNS {
 	return &dialContextWithRoundRobinDNS{
 		dialContext: http.DefaultTransport.(*http.Transport).DialContext,
@@ -51,7 +52,7 @@ func (dc *dialContextWithRoundRobinDNS) dialContextFn() config.DialContextFunc {
 		}
 
 		addrs, err := dc.resolver.LookupHost(ctx, host)
-		if err != nil {
+		if err != nil || len(addrs) == 0 {
 			return dc.dialContext(ctx, network, addr)
 		}
 
