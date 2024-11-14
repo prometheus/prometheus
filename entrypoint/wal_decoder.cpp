@@ -224,3 +224,47 @@ extern "C" void prompp_wal_output_decoder_dtor(void* args) {
   Arguments* in = reinterpret_cast<Arguments*>(args);
   delete in->decoder;
 }
+
+extern "C" void prompp_wal_output_decoder_dump_to(void* args, void* res) {
+  struct Arguments {
+    PromPP::WAL::OutputDecoder* decoder;
+  };
+
+  using Result = struct {
+    PromPP::Primitives::Go::Slice<char> dump;
+    PromPP::Primitives::Go::Slice<char> error;
+  };
+
+  Arguments* in = reinterpret_cast<Arguments*>(args);
+  Result* out = new (res) Result();
+
+  try {
+    PromPP::Primitives::Go::BytesStream bytes_stream{&out->dump};
+    in->decoder->dump_to(bytes_stream);
+  } catch (...) {
+    auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
+    handle_current_exception(__func__, err_stream);
+  }
+}
+
+extern "C" void prompp_wal_output_decoder_load_from(void* args, void* res) {
+  struct Arguments {
+    PromPP::Primitives::Go::SliceView<char> dump;
+    PromPP::WAL::OutputDecoder* decoder;
+  };
+
+  using Result = struct {
+    PromPP::Primitives::Go::Slice<char> error;
+  };
+
+  Arguments* in = reinterpret_cast<Arguments*>(args);
+  Result* out = new (res) Result();
+
+  try {
+    std::ispanstream bytes_stream(static_cast<std::string_view>(in->dump));
+    in->decoder->load_from(bytes_stream);
+  } catch (...) {
+    auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
+    handle_current_exception(__func__, err_stream);
+  }
+}

@@ -699,6 +699,44 @@ func walOutputDecoderDtor(decoder uintptr) {
 	)
 }
 
+// walOutputDecoderDumpTo dump output decoder state(output_lss and cache) to slice byte.
+func walOutputDecoderDumpTo(decoder uintptr) (dump, err []byte) {
+	var args = struct {
+		decoder uintptr
+	}{decoder}
+	var res struct {
+		dump  []byte
+		error []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_wal_output_decoder_dump_to,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.dump, res.error
+}
+
+// walOutputDecoderLoadFrom load from dump(slice byte) output decoder state(output_lss and cache).
+func walOutputDecoderLoadFrom(decoder uintptr, dump []byte) []byte {
+	var args = struct {
+		dump    []byte
+		decoder uintptr
+	}{dump, decoder}
+	var res struct {
+		error []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_wal_output_decoder_load_from,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.error
+}
+
 //
 // LabelSetStorage EncodingBimap
 //

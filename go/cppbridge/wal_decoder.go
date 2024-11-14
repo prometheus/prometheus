@@ -110,6 +110,7 @@ func (p *DecodedProtobuf) Size() int64 {
 	return int64(len(p.buf))
 }
 
+// CRC32 calculate crc32 sum.
 func (p *DecodedProtobuf) CRC32() uint32 {
 	return crc32.ChecksumIEEE(p.buf)
 }
@@ -242,4 +243,50 @@ func (d *WALDecoder) RestoreFromStream(
 	var exception []byte
 	offset, restoredID, exception = walDecoderRestoreFromStream(d.decoder, buf, requiredSegmentID)
 	return offset, restoredID, handleException(exception)
+}
+
+// WALOutputDecoder - go wrapper for C-WALOutputDecoder.
+//
+//	decoder - pointer to a C++ decoder initiated in C++ memory;
+type WALOutputDecoder struct {
+	decoder uintptr
+}
+
+// NewWALOutputDecoder init new WALOutputDecoder.
+func NewWALOutputDecoder(
+	externalLabels []Label,
+	statelessRelabeler *StatelessRelabeler,
+	outputLss *LabelSetStorage,
+	encodersVersion uint8,
+) *WALOutputDecoder {
+	d := &WALOutputDecoder{
+		decoder: walOutputDecoderCtor(
+			externalLabels,
+			statelessRelabeler.Pointer(),
+			outputLss.Pointer(),
+			encodersVersion,
+		),
+	}
+	runtime.SetFinalizer(d, func(d *WALOutputDecoder) {
+		walOutputDecoderDtor(d.decoder)
+	})
+	return d
+}
+
+// WriteTo dump output decoder state(output_lss and cache) to writer, implements io.WriterTo interface.
+func (d *WALOutputDecoder) WriteTo(w io.Writer) (int64, error) {
+	dump, exception := walOutputDecoderDumpTo(d.decoder)
+	if len(exception) != 0 {
+		return 0, handleException(exception)
+	}
+
+	n, err := w.Write(dump)
+	freeBytes(dump)
+	return int64(n), err
+}
+
+// LoadFrom load from dump(slice byte) output decoder state(output_lss and cache).
+func (d *WALOutputDecoder) LoadFrom(dump []byte) error {
+	exception := walOutputDecoderLoadFrom(d.decoder, dump)
+	return handleException(exception)
 }
