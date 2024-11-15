@@ -206,7 +206,7 @@ func (w *Watcher) Notify() {
 	}
 }
 
-func (w *Watcher) setMetrics() {
+func (w *Watcher) SetMetrics() {
 	// Setup the WAL Watchers metrics. We do this here rather than in the
 	// constructor because of the ordering of creating Queue Managers's,
 	// stopping them, and then starting new ones in storage/remote/storage.go ApplyConfig.
@@ -221,7 +221,7 @@ func (w *Watcher) setMetrics() {
 
 // Start the Watcher.
 func (w *Watcher) Start() {
-	w.setMetrics()
+	w.SetMetrics()
 	w.logger.Info("Starting WAL watcher", "queue", w.name)
 
 	go w.loop()
