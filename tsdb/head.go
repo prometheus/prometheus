@@ -1695,6 +1695,9 @@ func (h *Head) String() string {
 	return "head"
 }
 
+// getOrCreate returns the series for the given hash and labels, creating it if it doesn't exist.
+// The bool return value indicates whether the series was created by this call.
+// If the series was created, its id will be higher than the ids of previously created series by same goroutine.
 func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, error) {
 	// Just using `getOrCreateWithID` below would be semantically sufficient, but we'd create
 	// a new series on every sample inserted via Add(), which causes allocations

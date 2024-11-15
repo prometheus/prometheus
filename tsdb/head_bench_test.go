@@ -48,7 +48,7 @@ func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
 		// but we also don't want pending postings to accumulate there.
 		// So let's just commit from time to time.
 		if i%16 == 0 {
-			h.postings.Commit()
+			h.postings.CommitAll()
 		}
 	}
 }
@@ -73,7 +73,7 @@ func BenchmarkHeadStripeSeriesCreateParallel(b *testing.B) {
 			// but we also don't want pending postings to accumulate there.
 			// So let's just commit from time to time.
 			if i%16 == 0 {
-				h.postings.Commit()
+				h.postings.CommitAll()
 			}
 		}
 	})
@@ -99,7 +99,7 @@ func BenchmarkHeadStripeSeriesCreate_PreCreationFailure(b *testing.B) {
 		// but we also don't want pending postings to accumulate there.
 		// So let's just commit from time to time.
 		if i%16 == 0 {
-			h.postings.Commit()
+			h.postings.CommitAll()
 		}
 	}
 }

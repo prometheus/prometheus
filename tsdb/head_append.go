@@ -330,6 +330,8 @@ type headAppender struct {
 	metadataSeries       []*memSeries                     // Series corresponding to the metadata held by this appender.
 	exemplars            []exemplarWithSeriesRef          // New exemplars held by this appender.
 
+	highestCreatedSeriesRef chunks.HeadSeriesRef
+
 	appendID, cleanupAppendIDsBelow uint64
 	closed                          bool
 	hints                           *storage.AppendOptions
@@ -466,6 +468,7 @@ func (a *headAppender) getOrCreate(lset labels.Labels) (s *memSeries, created bo
 		return nil, false, err
 	}
 	if created {
+		a.highestCreatedSeriesRef = s.ref
 		a.series = append(a.series, record.RefSeries{
 			Ref:    s.ref,
 			Labels: lset,
@@ -1422,9 +1425,6 @@ func (a *headAppender) Commit() (err error) {
 		a.head.writeNotified.Notify()
 	}
 
-	// Make sure all postings are committed, no matter if they were added by this or another appender.
-	a.head.postings.Commit()
-
 	a.commitExemplars()
 
 	defer a.head.metrics.activeAppenders.Dec()
@@ -1435,6 +1435,9 @@ func (a *headAppender) Commit() (err error) {
 	defer a.head.putFloatHistogramBuffer(a.floatHistograms)
 	defer a.head.putMetadataBuffer(a.metadata)
 	defer a.head.iso.closeAppend(a.appendID)
+
+	// Make sure postings for our new series are committed.
+	a.head.postings.Commit(storage.SeriesRef(a.highestCreatedSeriesRef))
 
 	acc := &appenderCommitContext{
 		floatsAppended:     len(a.samples),
@@ -1962,6 +1965,6 @@ func (a *headAppender) Rollback() (err error) {
 
 	// Series are created in the head memory regardless of rollback.
 	// Thus we have to commit them in the postings and to log them to the WAL in any case.
-	a.head.postings.Commit()
+	a.head.postings.Commit(storage.SeriesRef(a.highestCreatedSeriesRef))
 	return a.log()
 }

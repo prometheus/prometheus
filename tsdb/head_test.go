@@ -103,7 +103,7 @@ func BenchmarkCreateSeries(b *testing.B) {
 		getOrCreateAndCommit(h, s.Labels().Hash(), s.Labels())
 		// Commit from time to time.
 		if i%16 == 0 {
-			h.postings.Commit()
+			h.postings.CommitAll()
 		}
 	}
 }
@@ -6236,11 +6236,11 @@ func TestPostingsCardinalityStats(t *testing.T) {
 	head := &Head{postings: index.NewMemPostings()}
 	head.postings.Add(1, labels.FromStrings(labels.MetricName, "t", "n", "v1"))
 	head.postings.Add(2, labels.FromStrings(labels.MetricName, "t", "n", "v2"))
-	head.postings.Commit()
+	head.postings.Commit(2)
 
 	statsForMetricName := head.PostingsCardinalityStats(labels.MetricName, 10)
 	head.postings.Add(3, labels.FromStrings(labels.MetricName, "t", "n", "v3"))
-	head.postings.Commit()
+	head.postings.Commit(3)
 	// Using cache.
 	require.Equal(t, statsForMetricName, head.PostingsCardinalityStats(labels.MetricName, 10))
 
@@ -6248,7 +6248,7 @@ func TestPostingsCardinalityStats(t *testing.T) {
 	// Cache should be evicted because of the change of label name.
 	require.NotEqual(t, statsForMetricName, statsForSomeLabel)
 	head.postings.Add(4, labels.FromStrings(labels.MetricName, "t", "n", "v4"))
-	head.postings.Commit()
+	head.postings.Commit(4)
 	// Using cache.
 	require.Equal(t, statsForSomeLabel, head.PostingsCardinalityStats("n", 10))
 	// Cache should be evicted because of the change of limit parameter.
@@ -6592,6 +6592,6 @@ func testHeadAppendHistogramAndCommitConcurrency(t *testing.T, appendFn func(sto
 // getOrCreateAndCommit is a helper wrapper around Head.getOrCreate() that commits the postings list after the call.
 // This is what the appender would do.
 func getOrCreateAndCommit(head *Head, hash uint64, lbls labels.Labels) (*memSeries, bool, error) {
-	defer head.postings.Commit()
+	defer head.postings.CommitAll()
 	return head.getOrCreate(hash, lbls)
 }
