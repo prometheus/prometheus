@@ -1436,8 +1436,16 @@ func (a *headAppender) Commit() (err error) {
 	defer a.head.putMetadataBuffer(a.metadata)
 	defer a.head.iso.closeAppend(a.appendID)
 
-	// Make sure postings for our new series are committed.
-	a.head.postings.Commit(storage.SeriesRef(a.highestCreatedSeriesRef))
+	// Try to commit the series refs we might have created.
+	if !a.head.postings.TryCommit(storage.SeriesRef(a.highestCreatedSeriesRef)) {
+		// We can't commit right now, but it's okay, we have a lot of things to do here.
+		// We can commit samples, etc. in the meantime, and then commit the index:
+		// if we're lucky enough, someone would've committed them for us in the meantime,
+		// and we won't need to do anything at all.
+		//
+		// The important bit is that we should commit before the head.iso.closeAppend() call deferred above.
+		defer a.head.postings.Commit(storage.SeriesRef(a.highestCreatedSeriesRef))
+	}
 
 	acc := &appenderCommitContext{
 		floatsAppended:     len(a.samples),

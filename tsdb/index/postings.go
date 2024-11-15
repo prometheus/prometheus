@@ -391,6 +391,28 @@ func (p *MemPostings) CommitAll() {
 	p.Commit(math.MaxUint64)
 }
 
+// TryCommit is like Commit but it won't block on pendingMtx,
+// i.e. if some other goroutine might already be committing.
+// It returns true if commit succeeded or if no commit needed to be done (if pendingWatermark is higher than the commitWatermark).
+func (p *MemPostings) TryCommit(commitWatermark storage.SeriesRef) bool {
+	// Do we need to commit anything?
+	if commitWatermark == 0 || storage.SeriesRef(p.pendingWatermark.Load()) > commitWatermark {
+		// No need to commit anything for the watermark provided.
+		return true
+	}
+
+	if !p.pendingMtx.TryLock() {
+		// Can't lock, try again later.
+		return false
+	}
+
+	p.commitPendingMtxLocked(commitWatermark)
+	p.pendingMtx.Unlock()
+
+	// Everything was committed.
+	return true
+}
+
 // Commit will create the entries for all pending series with IDs lower or equal than the watermark provided.
 // Commit is a noop if there are no pending entries with IDs lower or equal than the watermark.
 // In particular, Commit is a noop if the watermark is 0.
@@ -402,8 +424,12 @@ func (p *MemPostings) Commit(commitWatermark storage.SeriesRef) {
 
 	// Okay, we need to commit.
 	p.pendingMtx.Lock()
-	defer p.pendingMtx.Unlock()
+	p.commitPendingMtxLocked(commitWatermark)
+	p.pendingMtx.Unlock()
+}
 
+// commitPendingMtxLocked will commit assuming that pendingMtx already locked.
+func (p *MemPostings) commitPendingMtxLocked(commitWatermark storage.SeriesRef) {
 	// Someone was Add-ing or Commit-ting, that's why we were waiting for the mutex.
 	// Maybe they were Commit-ing? In that case, we probably don't need to take p.mtx
 	// if we check the watermark again.

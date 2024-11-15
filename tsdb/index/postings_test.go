@@ -975,6 +975,14 @@ func TestMemPostingsStats(t *testing.T) {
 	require.Equal(t, 3, stats.NumLabelPairs)
 }
 
+func requireAllPostings(t *testing.T, expected []storage.SeriesRef, p *MemPostings) {
+	t.Helper()
+	ap := p.Get(allPostingsKey.Name, allPostingsKey.Value)
+	ep, err := ExpandPostings(ap)
+	require.NoError(t, err)
+	require.Equal(t, expected, ep, "Expected all postings to be %v, got %v", expected, ep)
+}
+
 func TestMemPostings_Add_Commit(t *testing.T) {
 	// This test messes with mutexes, and if it fails, it deadlocks.
 	// Make debugging easier by failing at 5s here instead of the default 10m.
@@ -982,41 +990,61 @@ func TestMemPostings_Add_Commit(t *testing.T) {
 	t.Cleanup(func() { timer.Stop() })
 
 	p := NewMemPostings()
-	requireAllPostings := func(t *testing.T, expected []storage.SeriesRef) {
-		t.Helper()
-		ap := p.Get(allPostingsKey.Name, allPostingsKey.Value)
-		ep, err := ExpandPostings(ap)
-		require.NoError(t, err)
-		require.Equal(t, expected, ep, "Expected all postings to be %v, got %v", expected, ep)
-	}
-
 	p.Add(1, labels.FromStrings("lbl1", "a"))
 	p.Add(2, labels.FromStrings("lbl1", "b"))
 	p.Add(3, labels.FromStrings("lbl2", "a"))
 	p.Commit(3)
-	requireAllPostings(t, []storage.SeriesRef{1, 2, 3})
+	requireAllPostings(t, []storage.SeriesRef{1, 2, 3}, p)
 
 	// Add 1 more.
 	p.Add(4, labels.FromStrings("lbl1", "c"))
-	requireAllPostings(t, []storage.SeriesRef{1, 2, 3})
+	requireAllPostings(t, []storage.SeriesRef{1, 2, 3}, p)
 
 	// Commit to a lower watermark, postings should be the same.
 	// This call shouldn't lock p.mtx, so we'll take the mutex ourselves.
 	p.mtx.Lock()
 	p.Commit(2)
 	p.mtx.Unlock()
-	requireAllPostings(t, []storage.SeriesRef{1, 2, 3})
+	requireAllPostings(t, []storage.SeriesRef{1, 2, 3}, p)
 
 	// Commit to previous watermark, postings should be the same.
 	// This call shouldn't lock p.mtx, so we'll take the mutex ourselves.
 	p.mtx.Lock()
 	p.Commit(2)
 	p.mtx.Unlock()
-	requireAllPostings(t, []storage.SeriesRef{1, 2, 3})
+	requireAllPostings(t, []storage.SeriesRef{1, 2, 3}, p)
 
 	// This commit will actually commit the new series.
 	p.Commit(4)
-	requireAllPostings(t, []storage.SeriesRef{1, 2, 3, 4})
+	requireAllPostings(t, []storage.SeriesRef{1, 2, 3, 4}, p)
+}
+
+func TestMemPostings_TryCommit(t *testing.T) {
+	p := NewMemPostings()
+	p.Add(1, labels.FromStrings("lbl1", "a"))
+	p.Add(2, labels.FromStrings("lbl1", "b"))
+	p.Commit(2)
+	p.Add(3, labels.FromStrings("lbl2", "a"))
+
+	requireAllPostings(t, []storage.SeriesRef{1, 2}, p)
+
+	// 1 and 2 are already committed.
+	// Simulate someone else holding the pendingMtx.
+	p.pendingMtx.Lock()
+	require.True(t, p.TryCommit(1))
+	require.True(t, p.TryCommit(2))
+	p.pendingMtx.Unlock()
+	requireAllPostings(t, []storage.SeriesRef{1, 2}, p)
+
+	// 3 needs a commit but it can't be done right now because someone is still holding pendingMTx.
+	p.pendingMtx.Lock()
+	require.False(t, p.TryCommit(3))
+	p.pendingMtx.Unlock()
+	requireAllPostings(t, []storage.SeriesRef{1, 2}, p)
+
+	// Finally commit the series 3.
+	require.True(t, p.TryCommit(3))
+	requireAllPostings(t, []storage.SeriesRef{1, 2, 3}, p)
 }
 
 func TestMemPostings_Delete_AllCommitted(t *testing.T) {
