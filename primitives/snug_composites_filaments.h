@@ -608,7 +608,7 @@ class LabelSet {
       if (mode == BareBones::SnugComposite::SerializationMode::DELTA) {
         in.read(reinterpret_cast<char*>(&first_to_load_i), sizeof(first_to_load_i));
       }
-      if (first_to_load_i != symbols_ids_sequences.size()) {
+      if (first_to_load_i != next_item_index_) {
         if (mode == BareBones::SnugComposite::SerializationMode::SNAPSHOT) {
           throw BareBones::Exception(0xefdd57cef4b89243, "Attempt to load snapshot into non-empty LabelSets data vector");
         } else if (first_to_load_i < symbols_ids_sequences.size()) {
@@ -625,10 +625,10 @@ class LabelSet {
       in.read(reinterpret_cast<char*>(&size_to_load), sizeof(size_to_load));
 
       // read data
-      auto original_size = symbols_ids_sequences.size();
+      const auto original_size = symbols_ids_sequences.size();
       auto sg1 = std::experimental::scope_fail([&]() { symbols_ids_sequences.resize(original_size); });
       symbols_ids_sequences.resize(original_size + size_to_load);
-      in.read(reinterpret_cast<char*>(&symbols_ids_sequences[first_to_load_i]), size_to_load * sizeof(symbols_ids_sequences[first_to_load_i]));
+      in.read(reinterpret_cast<char*>(&symbols_ids_sequences[original_size]), size_to_load * sizeof(symbols_ids_sequences[first_to_load_i]));
       next_item_index_ += size_to_load;
 
       // read label name sets table
