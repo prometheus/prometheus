@@ -26,6 +26,8 @@ const (
 	maxEntries          = 1024
 )
 
+var _ slog.Handler = (*Deduper)(nil)
+
 // Deduper implements *slog.Handler, dedupes log lines based on a time duration.
 type Deduper struct {
 	next   *slog.Logger
