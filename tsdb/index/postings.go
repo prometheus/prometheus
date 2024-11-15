@@ -62,7 +62,7 @@ type MemPostings struct {
 
 	pendingMtx       sync.Mutex
 	pending          []pendingMemPostings
-	pendingWatermark atomic.Uint64 // min(p.id for p in pending)
+	pendingWatermark *atomic.Uint64 // min(p.id for p in pending)
 }
 
 type pendingMemPostings struct {
@@ -72,20 +72,23 @@ type pendingMemPostings struct {
 
 // NewMemPostings returns a memPostings that's ready for reads and writes.
 func NewMemPostings() *MemPostings {
-	mp := NewUnorderedMemPostings()
-	mp.ordered = true
-	return mp
+	return &MemPostings{
+		m:       make(map[string]map[string][]storage.SeriesRef, 512),
+		ordered: true,
+
+		pendingWatermark: atomic.NewUint64(math.MaxUint64),
+	}
 }
 
 // NewUnorderedMemPostings returns a memPostings that is not safe to be read from
 // until EnsureOrder() was called once.
 func NewUnorderedMemPostings() *MemPostings {
-	mp := &MemPostings{
+	return &MemPostings{
 		m:       make(map[string]map[string][]storage.SeriesRef, 512),
 		ordered: false,
+
+		pendingWatermark: atomic.NewUint64(math.MaxUint64),
 	}
-	mp.pendingWatermark.Store(math.MaxUint64)
-	return mp
 }
 
 // Symbols returns an iterator over all unique name and value strings, in order.
