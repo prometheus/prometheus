@@ -7,6 +7,8 @@
 
 namespace {
 
+using PromPP::Primitives::kInvalidLabelSetID;
+using PromPP::Primitives::LabelViewSet;
 using FillamentLabelSet =
     PromPP::Primitives::SnugComposites::Filaments::LabelSet<BareBones::SnugComposite::EncodingBimap<PromPP::Primitives::SnugComposites::Filaments::Symbol>,
                                                           BareBones::SnugComposite::EncodingBimap<PromPP::Primitives::SnugComposites::Filaments::LabelNameSet<
@@ -138,9 +140,9 @@ TEST_F(SnugCompositesFilaments, LabelSet) {
   EXPECT_EQ(hash_value(outcomes), hash_value(etalons));
 }
 
-class EncodingTableLabelSetFixture : public testing::Test {
+class ShrinkableEncodingBimapLabelSetFixture : public testing::Test {
  protected:
-  BareBones::SnugComposite::EncodingTable<FillamentLabelSet> encoding_table_;
+  BareBones::SnugComposite::ShrinkableEncodingBimap<FillamentLabelSet> encoding_table_;
   BareBones::SnugComposite::DecodingTable<FillamentLabelSet> decoding_table_;
   std::array<LabelSetForTest, 6> ls_;
 
@@ -156,7 +158,7 @@ class EncodingTableLabelSetFixture : public testing::Test {
     ls_[5].emplace_back("7", "7");
   }
 
-  auto create_and_load_checkpoint(BareBones::SnugComposite::EncodingTable<FillamentLabelSet>::checkpoint_type* from) {
+  auto create_and_load_checkpoint(const BareBones::SnugComposite::ShrinkableEncodingBimap<FillamentLabelSet>::checkpoint_type* from) {
     auto checkpoint = encoding_table_.checkpoint();
     std::stringstream ss;
     checkpoint.save(ss, from);
@@ -165,7 +167,7 @@ class EncodingTableLabelSetFixture : public testing::Test {
     return checkpoint;
   }
 
-  void check_decoding_table() {
+  void check_decoding_table() const {
     ASSERT_EQ(3U, decoding_table_.size());
     {
       auto composite = decoding_table_.items()[0].composite(decoding_table_.data());
@@ -187,20 +189,20 @@ class EncodingTableLabelSetFixture : public testing::Test {
   }
 };
 
-TEST_F(EncodingTableLabelSetFixture, ShrinkAndLoad) {
+TEST_F(ShrinkableEncodingBimapLabelSetFixture, ShrinkAndLoad) {
   // Arrange
 
   // Act
   {
     encoding_table_.find_or_emplace(ls_[0]);
     encoding_table_.find_or_emplace(ls_[1]);
-    auto checkpoint = create_and_load_checkpoint(nullptr);
+    const auto checkpoint = create_and_load_checkpoint(nullptr);
     encoding_table_.shrink_to_checkpoint_size(checkpoint);
   }
   {
-    auto empty_checkpoint = encoding_table_.checkpoint();
+    const auto empty_checkpoint = encoding_table_.checkpoint();
     encoding_table_.find_or_emplace(ls_[2]);
-    auto checkpoint = create_and_load_checkpoint(&empty_checkpoint);
+    const auto checkpoint = create_and_load_checkpoint(&empty_checkpoint);
     encoding_table_.shrink_to_checkpoint_size(checkpoint);
   }
 
@@ -208,7 +210,7 @@ TEST_F(EncodingTableLabelSetFixture, ShrinkAndLoad) {
   check_decoding_table();
 }
 
-TEST_F(EncodingTableLabelSetFixture, LoadWithoutShrink) {
+TEST_F(ShrinkableEncodingBimapLabelSetFixture, LoadWithoutShrink) {
   // Arrange
 
   // Act
@@ -218,7 +220,7 @@ TEST_F(EncodingTableLabelSetFixture, LoadWithoutShrink) {
     create_and_load_checkpoint(nullptr);
   }
   {
-    auto empty_checkpoint = encoding_table_.checkpoint();
+    const auto empty_checkpoint = encoding_table_.checkpoint();
     encoding_table_.find_or_emplace(ls_[2]);
     create_and_load_checkpoint(&empty_checkpoint);
   }
@@ -227,7 +229,32 @@ TEST_F(EncodingTableLabelSetFixture, LoadWithoutShrink) {
   check_decoding_table();
 }
 
-TEST_F(EncodingTableLabelSetFixture, EmptyCheckpointWithShrink) {
+TEST_F(ShrinkableEncodingBimapLabelSetFixture, LoadFromNonShrinkableTable) {
+  // Arrange
+  BareBones::SnugComposite::EncodingBimap<FillamentLabelSet> lss;
+  std::stringstream stream;
+
+  // Act
+  lss.find_or_emplace(LabelViewSet{{"process", "php"}});
+  lss.find_or_emplace(LabelViewSet{{"process", "nodejs"}});
+  lss.find_or_emplace(LabelViewSet{{"process", "python"}});
+  const auto checkpoint = lss.checkpoint();
+  stream << checkpoint;
+  stream >> encoding_table_;
+  encoding_table_.shrink_to_checkpoint_size(encoding_table_.checkpoint());
+
+  const auto nginx_id = lss.find_or_emplace(LabelViewSet{{"process", "nginx"}});
+  const auto apache_id = lss.find_or_emplace(LabelViewSet{{"process", "apache"}});
+  stream << lss.checkpoint() - checkpoint;
+  stream >> encoding_table_;
+
+  // Assert
+  EXPECT_EQ(kInvalidLabelSetID, encoding_table_.find(LabelViewSet{{"process", "php"}}).value_or(kInvalidLabelSetID));
+  EXPECT_EQ(nginx_id, encoding_table_.find(LabelViewSet{{"process", "nginx"}}).value_or(kInvalidLabelSetID));
+  EXPECT_EQ(apache_id, encoding_table_.find(LabelViewSet{{"process", "apache"}}).value_or(kInvalidLabelSetID));
+}
+
+TEST_F(ShrinkableEncodingBimapLabelSetFixture, EmptyCheckpointWithShrink) {
   // Arrange
 
   // Act
@@ -235,11 +262,11 @@ TEST_F(EncodingTableLabelSetFixture, EmptyCheckpointWithShrink) {
     encoding_table_.find_or_emplace(ls_[0]);
     encoding_table_.find_or_emplace(ls_[1]);
     encoding_table_.find_or_emplace(ls_[2]);
-    auto checkpoint = create_and_load_checkpoint(nullptr);
+    const auto checkpoint = create_and_load_checkpoint(nullptr);
     encoding_table_.shrink_to_checkpoint_size(checkpoint);
   }
   {
-    auto empty_checkpoint = encoding_table_.checkpoint();
+    const auto empty_checkpoint = encoding_table_.checkpoint();
     create_and_load_checkpoint(&empty_checkpoint);
   }
 
@@ -247,7 +274,7 @@ TEST_F(EncodingTableLabelSetFixture, EmptyCheckpointWithShrink) {
   check_decoding_table();
 }
 
-TEST_F(EncodingTableLabelSetFixture, EmptyCheckpointWithoutShrink) {
+TEST_F(ShrinkableEncodingBimapLabelSetFixture, EmptyCheckpointWithoutShrink) {
   // Arrange
 
   // Act
@@ -258,7 +285,7 @@ TEST_F(EncodingTableLabelSetFixture, EmptyCheckpointWithoutShrink) {
     create_and_load_checkpoint(nullptr);
   }
   {
-    auto empty_checkpoint = encoding_table_.checkpoint();
+    const auto empty_checkpoint = encoding_table_.checkpoint();
     create_and_load_checkpoint(&empty_checkpoint);
   }
 
@@ -266,9 +293,8 @@ TEST_F(EncodingTableLabelSetFixture, EmptyCheckpointWithoutShrink) {
   check_decoding_table();
 }
 
-TEST_F(EncodingTableLabelSetFixture, CheckSaveSize) {
+TEST_F(ShrinkableEncodingBimapLabelSetFixture, CheckSaveSize) {
   // Arrange
-
   encoding_table_.find_or_emplace(ls_[0]);
   encoding_table_.find_or_emplace(ls_[1]);
 
@@ -288,7 +314,11 @@ TEST_F(EncodingTableLabelSetFixture, CheckSaveSize) {
   std::stringstream ss;
   ss << delta;
 
-  EXPECT_EQ(ss.str().length(), delta.save_size());
+  // Act
+  const auto save_size = delta.save_size();
+
+  // Assert
+  EXPECT_EQ(ss.str().length(), save_size);
 }
 
 }  // namespace
