@@ -23,17 +23,17 @@ struct TimestampEncoderCase {
 class PrometheusGorillaTimestampEncoderFixture : public testing::TestWithParam<TimestampEncoderCase> {
  protected:
   BStream<kAllocationSizesTable> stream_;
-  BareBones::Encoding::Gorilla::TimestampEncoderState state_;
+  TimestampEncoder encoder_;
 
   void encode() {
     uint32_t count = 0;
-    for (auto timestamp : GetParam().timestamps) {
+    for (const auto timestamp : GetParam().timestamps) {
       if (count == 0) {
-        TimestampEncoder::encode(state_, timestamp, stream_);
+        encoder_.encode(timestamp, stream_);
       } else if (count == 1) {
-        TimestampEncoder::encode_delta(state_, timestamp, stream_);
+        encoder_.encode_delta(timestamp, stream_);
       } else {
-        TimestampEncoder::encode_delta_of_delta(state_, timestamp, stream_);
+        encoder_.encode_delta_of_delta(timestamp, stream_);
       }
 
       ++count;
@@ -85,15 +85,15 @@ struct ValuesEncoderCase {
 class PrometheusGorillaValuesEncoderFixture : public testing::TestWithParam<ValuesEncoderCase> {
  protected:
   BStream<kAllocationSizesTable> stream_;
-  BareBones::Encoding::Gorilla::ValuesEncoderState state_;
+  ValuesEncoder encoder_;
 
   void encode() {
     uint32_t count = 0;
-    for (auto value : GetParam().values) {
+    for (const auto value : GetParam().values) {
       if (count == 0) {
-        ValuesEncoder::encode_first(state_, value, stream_);
+        encoder_.encode_first(value, stream_);
       } else {
-        ValuesEncoder::encode(state_, value, stream_);
+        encoder_.encode(value, stream_);
       }
 
       ++count;
@@ -146,7 +146,7 @@ TEST_P(PrometheusGorillaEncoderFixture, Test) {
   encode();
 
   // Assert
-  auto result = stream_.bytes();
+  const auto result = stream_.bytes();
   EXPECT_EQ(GetParam().expected, std::string_view(reinterpret_cast<const char*>(result.data()), result.size()));
 }
 

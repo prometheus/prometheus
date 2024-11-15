@@ -24,7 +24,7 @@ class ValuesGorillaDecodeIterator : public SeparatedTimestampValueDecodeIterator
   }
 
   PROMPP_ALWAYS_INLINE ValuesGorillaDecodeIterator operator++(int) noexcept {
-    auto result = *this;
+    const auto result = *this;
     ++*this;
     return result;
   }
@@ -33,17 +33,17 @@ class ValuesGorillaDecodeIterator : public SeparatedTimestampValueDecodeIterator
   using Decoder = BareBones::Encoding::Gorilla::ValuesDecoder;
 
   BareBones::BitSequenceReader reader_;
-  BareBones::Encoding::Gorilla::ValuesDecoderState state_;
+  Decoder decoder_;
 
   template <bool first>
   void decode_value() noexcept {
     if constexpr (first) {
-      Decoder::decode_first(state_, reader_);
+      decoder_.decode_first(reader_);
     } else {
-      Decoder::decode(state_, reader_);
+      decoder_.decode(reader_);
     }
 
-    sample_.value = state_.last_v;
+    sample_.value = decoder_.value();
   }
 };
 

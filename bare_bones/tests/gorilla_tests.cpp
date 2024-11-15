@@ -14,8 +14,10 @@ using BareBones::Encoding::Gorilla::TimestampDecoder;
 using BareBones::Encoding::Gorilla::TimestampEncoder;
 using BareBones::Encoding::Gorilla::ValuesDecoder;
 using BareBones::Encoding::Gorilla::ValuesEncoder;
+using BareBones::Encoding::Gorilla::ValuesNullDecoder;
 using BareBones::Encoding::Gorilla::ZigZagTimestampDecoder;
 using BareBones::Encoding::Gorilla::ZigZagTimestampEncoder;
+using BareBones::Encoding::Gorilla::ZigZagTimestampNullDecoder;
 
 using samples_sequence_type = std::vector<std::pair<uint64_t, double>>;
 
@@ -293,5 +295,74 @@ TEST(EncoderDecoder, ResetState) {
   EXPECT_EQ(4, decoder.last_timestamp());
   EXPECT_EQ(4524193975976911956ULL, std::bit_cast<uint64_t>(decoder.last_value()));
 }
+
+struct NullDecoderCase {
+  std::vector<Sample> samples_for_skip;
+  std::vector<Sample> samples;
+};
+
+class NullDecoderFixture : public ::testing::TestWithParam<NullDecoderCase> {
+ protected:
+  BitSequence sequence_;
+  StreamDecoder<ZigZagTimestampNullDecoder<>, ValuesNullDecoder> null_decoder_;
+  StreamDecoder<ZigZagTimestampDecoder<>, ValuesDecoder> decoder_;
+
+  void encode_samples(const std::vector<Sample>& samples) {
+    StreamEncoder<ZigZagTimestampEncoder<>, ValuesEncoder> encoder;
+    for (auto& sample : samples) {
+      encoder.encode(sample.timestamp, sample.value, sequence_, sequence_);
+    }
+  }
+
+  void skip_samples(BitSequenceReader& reader) {
+    for ([[maybe_unused]] auto& _ : GetParam().samples_for_skip) {
+      null_decoder_.decode(reader, reader);
+    }
+  }
+
+  std::vector<Sample> decode_samples(BitSequenceReader& reader) {
+    std::vector<Sample> samples;
+
+    while (!reader.eof()) {
+      decoder_.decode(reader, reader);
+      samples.emplace_back(Sample{.timestamp = decoder_.last_timestamp(), .value = decoder_.last_value()});
+    }
+
+    return samples;
+  }
+};
+
+TEST_P(NullDecoderFixture, Test) {
+  // Arrange
+  encode_samples(GetParam().samples_for_skip);
+  encode_samples(GetParam().samples);
+
+  // Act
+  auto reader = sequence_.reader();
+  skip_samples(reader);
+  const auto samples = decode_samples(reader);
+
+  // Assert
+  EXPECT_EQ(GetParam().samples, samples);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Cases,
+    NullDecoderFixture,
+    testing::Values(
+        NullDecoderCase{.samples_for_skip = {{.timestamp = 0, .value = 0}, {.timestamp = 1000, .value = 1000}, {.timestamp = 2000, .value = 2000}},
+                        .samples = {{.timestamp = 0, .value = 0}, {.timestamp = 1000, .value = 1000}, {.timestamp = 2000, .value = 2000}}},
+        NullDecoderCase{.samples_for_skip = {{.timestamp = std::numeric_limits<int64_t>::max(), .value = 0}},
+                        .samples = {{.timestamp = std::numeric_limits<int64_t>::max(), .value = 0}}},
+        NullDecoderCase{.samples_for_skip = {{.timestamp = 0, .value = 0}, {.timestamp = 1000, .value = 1000}, {.timestamp = 2001, .value = 2001}},
+                        .samples = {{.timestamp = 0, .value = 0}, {.timestamp = 1000, .value = 1000}, {.timestamp = 2001, .value = 2001}}},
+        NullDecoderCase{.samples_for_skip = {{.timestamp = 0, .value = 0}, {.timestamp = 1000, .value = 1000}, {.timestamp = 3000, .value = 3000}},
+                        .samples = {{.timestamp = 0, .value = 0}, {.timestamp = 1000, .value = 1000}, {.timestamp = 3000, .value = 3000}}},
+        NullDecoderCase{.samples_for_skip = {{.timestamp = 0, .value = 0}, {.timestamp = 1000, .value = 1000}, {.timestamp = 20000, .value = 20000}},
+                        .samples = {{.timestamp = 0, .value = 0}, {.timestamp = 1000, .value = 1000}, {.timestamp = 20000, .value = 20000}}},
+        NullDecoderCase{.samples_for_skip = {{.timestamp = 0, .value = 0}, {.timestamp = 1000, .value = 1000}, {.timestamp = 200000, .value = 200000}},
+                        .samples = {{.timestamp = 0, .value = 0}, {.timestamp = 1000, .value = 1000}, {.timestamp = 200000, .value = 200000}}},
+        NullDecoderCase{.samples_for_skip = {{.timestamp = 0, .value = 0}, {.timestamp = 1000, .value = 1000}, {.timestamp = 1000, .value = 1000}},
+                        .samples = {{.timestamp = 0, .value = 0}, {.timestamp = 1000, .value = 1000}, {.timestamp = 1000, .value = 1000}}}));
 
 }  // namespace
