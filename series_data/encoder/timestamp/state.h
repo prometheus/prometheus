@@ -11,10 +11,12 @@ namespace series_data::encoder::timestamp {
 
 struct PROMPP_ATTRIBUTE_PACKED State {
   using Id = uint32_t;
+  using TimestampEncoder = BareBones::Encoding::Gorilla::ZigZagTimestampEncoder<>;
+  using TimestampDecoder = BareBones::Encoding::Gorilla::ZigZagTimestampDecoder<>;
 
   static constexpr auto kInvalidId = std::numeric_limits<Id>::max();
 
-  BareBones::Encoding::Gorilla::TimestampEncoderState encoder_state;
+  TimestampEncoder encoder;
   union PROMPP_ATTRIBUTE_PACKED StreamData {
     ~StreamData() {}
 
@@ -29,48 +31,41 @@ struct PROMPP_ATTRIBUTE_PACKED State {
 
   explicit State(Id previous_id) : previous_state_id(previous_id) {}
   ~State() {
-    if (!is_finalized()) {
-      [[likely]];
+    if (!is_finalized()) [[likely]] {
       stream_data.destruct_stream();
     }
   }
 
   State& operator=(const State& other) noexcept {
-    if (&other != this) {
-      [[likely]];
-
-      if (!other.is_finalized()) {
-        [[likely]];
+    if (&other != this) [[likely]] {
+      if (!other.is_finalized()) [[likely]] {
         stream_data.stream = other.stream_data.stream;
       } else {
         stream_data.finalized_stream_id = other.stream_data.finalized_stream_id;
       }
 
-      encoder_state = other.encoder_state;
+      encoder = other.encoder;
     }
 
     return *this;
   }
 
   State& operator=(State&& other) noexcept {
-    if (&other != this) {
-      [[likely]];
-
-      if (!other.is_finalized()) {
-        [[likely]];
+    if (&other != this) [[likely]] {
+      if (!other.is_finalized()) [[likely]] {
         stream_data.stream = std::move(other.stream_data.stream);
       } else {
         stream_data.finalized_stream_id = other.stream_data.finalized_stream_id;
       }
 
-      encoder_state = other.encoder_state;
+      encoder = other.encoder;
     }
 
     return *this;
   }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_finalized() const noexcept { return encoder_state.last_ts_delta == kFinalizedState; }
-  [[nodiscard]] PROMPP_ALWAYS_INLINE int64_t timestamp() const noexcept { return encoder_state.last_ts; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_finalized() const noexcept { return encoder.state.last_ts_delta == kFinalizedState; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE int64_t timestamp() const noexcept { return encoder.timestamp(); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return is_finalized() ? 0 : stream_data.stream.allocated_memory(); }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE BitSequenceWithItemsCount finalize(uint32_t finalized_stream_id) noexcept {
@@ -79,7 +74,7 @@ struct PROMPP_ATTRIBUTE_PACKED State {
     auto result = std::move(stream_data.stream);
     result.stream.shrink_to_fit();
     stream_data.finalized_stream_id = finalized_stream_id;
-    encoder_state.last_ts_delta = kFinalizedState;
+    encoder.state.last_ts_delta = kFinalizedState;
     return result;
   }
 
@@ -112,7 +107,7 @@ class StateTransitions {
     state_transitions_.emplace_with_hash(hash, previous_state_id, state_id);
   }
   [[nodiscard]] const Key* get(Hash hash, int64_t timestamp, State::Id state_id) const noexcept {
-    if (auto it = state_transitions_.find(TimestampKey{.timestamp = timestamp, .state_id = state_id}, hash); it != state_transitions_.end()) {
+    if (const auto it = state_transitions_.find(TimestampKey{.timestamp = timestamp, .state_id = state_id}, hash); it != state_transitions_.end()) {
       return &*it;
     }
 
@@ -142,7 +137,7 @@ class StateTransitions {
 
     [[nodiscard]] PROMPP_ALWAYS_INLINE size_t operator()(const TimestampKey& key) const noexcept { return hash(key.timestamp, key.state_id); }
     [[nodiscard]] PROMPP_ALWAYS_INLINE size_t operator()(const Key& key) const noexcept {
-      return hash(states_[key.state_id].encoder_state.last_ts, key.previous_state_id);
+      return hash(states_[key.state_id].encoder.timestamp(), key.previous_state_id);
     }
 
    private:
@@ -161,7 +156,7 @@ class StateTransitions {
         return false;
       }
 
-      return states_[a.state_id].encoder_state.last_ts == b.timestamp;
+      return states_[a.state_id].encoder.timestamp() == b.timestamp;
     }
 
    private:
@@ -172,7 +167,7 @@ class StateTransitions {
   phmap::flat_hash_set<Key, HashCalculator, EqualTo, BareBones::Allocator<Key>> state_transitions_;
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE static TimestampKey timestamp_key(const State& state) noexcept {
-    return {.timestamp = state.encoder_state.last_ts, .state_id = state.previous_state_id};
+    return {.timestamp = state.encoder.timestamp(), .state_id = state.previous_state_id};
   }
 };
 

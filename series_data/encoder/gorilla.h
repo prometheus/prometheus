@@ -9,26 +9,25 @@ namespace series_data::encoder {
 class PROMPP_ATTRIBUTE_PACKED GorillaEncoder {
  public:
   PROMPP_ALWAYS_INLINE GorillaEncoder(int64_t timestamp, double value) {
-    TimestampEncoder::encode(timestamp_state_, timestamp, stream_.stream);
-    ValuesEncoder::encode_first(values_state_, value, stream_.stream);
+    timestamp_encoder_.encode(timestamp, stream_.stream);
+    values_encoder_.encode_first(value, stream_.stream);
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_actual(double value) const noexcept {
-    return std::bit_cast<uint64_t>(values_state_.last_v) == std::bit_cast<uint64_t>(value);
+    return std::bit_cast<uint64_t>(values_encoder_.value()) == std::bit_cast<uint64_t>(value);
   }
-  [[nodiscard]] PROMPP_ALWAYS_INLINE double last_value() const noexcept { return values_state_.last_v; }
-  [[nodiscard]] PROMPP_ALWAYS_INLINE int64_t timestamp() const noexcept { return timestamp_state_.last_ts; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE double last_value() const noexcept { return values_encoder_.value(); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE int64_t timestamp() const noexcept { return timestamp_encoder_.timestamp(); }
 
   PROMPP_ALWAYS_INLINE uint8_t encode(int64_t timestamp, double value) {
-    auto count = stream_.inc_count();
+    const auto count = stream_.inc_count();
 
-    if (count == 1) {
-      [[unlikely]];
-      TimestampEncoder::encode_delta(timestamp_state_, timestamp, stream_.stream);
-      ValuesEncoder::encode(values_state_, value, stream_.stream);
+    if (count == 1) [[unlikely]] {
+      timestamp_encoder_.encode_delta(timestamp, stream_.stream);
+      values_encoder_.encode(value, stream_.stream);
     } else {
-      TimestampEncoder::encode_delta_of_delta(timestamp_state_, timestamp, stream_.stream);
-      ValuesEncoder::encode(values_state_, value, stream_.stream);
+      timestamp_encoder_.encode_delta_of_delta(timestamp, stream_.stream);
+      values_encoder_.encode(value, stream_.stream);
     }
 
     return count + 1;
@@ -47,8 +46,8 @@ class PROMPP_ATTRIBUTE_PACKED GorillaEncoder {
   using TimestampEncoder = BareBones::Encoding::Gorilla::ZigZagTimestampEncoder<>;
   using ValuesEncoder = BareBones::Encoding::Gorilla::ValuesEncoder;
 
-  BareBones::Encoding::Gorilla::TimestampEncoderState timestamp_state_;
-  BareBones::Encoding::Gorilla::ValuesEncoderState values_state_;
+  TimestampEncoder timestamp_encoder_;
+  ValuesEncoder values_encoder_;
   BitSequenceWithItemsCount stream_;
 };
 

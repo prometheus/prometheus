@@ -10,7 +10,7 @@ static constexpr BareBones::Encoding::Gorilla::DodSignificantLengths kAscInteger
 
 class PROMPP_ATTRIBUTE_PACKED AscIntegerValuesGorillaEncoder {
  public:
-  PROMPP_ALWAYS_INLINE explicit AscIntegerValuesGorillaEncoder(double value) { Encoder::encode(state_, static_cast<int64_t>(value), stream_); }
+  PROMPP_ALWAYS_INLINE explicit AscIntegerValuesGorillaEncoder(double value) { encoder_.encode(static_cast<int64_t>(value), stream_); }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE static bool can_be_encoded(double value1, uint8_t value1_count, double value2, double value3) {
     if (!is_valid_int(value1)) {
@@ -18,8 +18,7 @@ class PROMPP_ATTRIBUTE_PACKED AscIntegerValuesGorillaEncoder {
     }
 
     if (value1_count > 1) {
-      if (BareBones::Encoding::Gorilla::isstalenan(value2)) {
-        [[unlikely]];
+      if (BareBones::Encoding::Gorilla::isstalenan(value2)) [[unlikely]] {
         return is_valid_int_and_ge_than(value3, value1);
       }
     }
@@ -28,24 +27,22 @@ class PROMPP_ATTRIBUTE_PACKED AscIntegerValuesGorillaEncoder {
   }
 
   PROMPP_ALWAYS_INLINE void encode_second(double value) {
-    Encoder::encode_delta(state_, static_cast<int64_t>(value), stream_);
+    encoder_.encode_delta(static_cast<int64_t>(value), stream_);
     last_value_type_ = BareBones::Encoding::Gorilla::get_value_type(value);
   }
 
   PROMPP_ALWAYS_INLINE bool encode(double value) noexcept {
-    if (BareBones::Encoding::Gorilla::isstalenan(value)) {
-      [[unlikely]];
+    if (BareBones::Encoding::Gorilla::isstalenan(value)) [[unlikely]] {
       last_value_type_ = ValueType::kStaleNan;
     } else {
-      if (!is_valid_int_and_ge_than(value, static_cast<double>(state_.last_ts))) {
-        [[unlikely]];
+      if (!is_valid_int_and_ge_than(value, static_cast<double>(encoder_.timestamp()))) [[unlikely]] {
         return false;
       }
 
       last_value_type_ = ValueType::kValue;
     }
 
-    Encoder::encode_delta_of_delta_with_stale_nan(state_, value, stream_);
+    encoder_.encode_delta_of_delta_with_stale_nan(value, stream_);
     return true;
   }
 
@@ -58,7 +55,7 @@ class PROMPP_ATTRIBUTE_PACKED AscIntegerValuesGorillaEncoder {
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE double last_value() const noexcept {
-    return last_value_type_ == ValueType::kStaleNan ? BareBones::Encoding::Gorilla::STALE_NAN : static_cast<double>(state_.last_ts);
+    return last_value_type_ == ValueType::kStaleNan ? BareBones::Encoding::Gorilla::STALE_NAN : static_cast<double>(encoder_.timestamp());
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE const CompactBitSequence& stream() const noexcept { return stream_; }
@@ -68,11 +65,11 @@ class PROMPP_ATTRIBUTE_PACKED AscIntegerValuesGorillaEncoder {
     return stream;
   }
 
- public:
+ private:
   using Encoder = BareBones::Encoding::Gorilla::ZigZagTimestampEncoder<kAscIntegerDodSignificantLengths>;
   using ValueType = BareBones::Encoding::Gorilla::ValueType;
 
-  BareBones::Encoding::Gorilla::TimestampEncoderState state_;
+  Encoder encoder_;
   CompactBitSequence stream_;
   ValueType last_value_type_{ValueType::kValue};
 
