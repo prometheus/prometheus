@@ -1536,6 +1536,7 @@ func TestRemoteWriteRetryOnRateLimit(t *testing.T) {
 
 func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 	t.Run("good config", func(t *testing.T) {
+		t.Parallel()
 		want, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_resource_attributes.good.yml"), false, promslog.NewNopLogger())
 		require.NoError(t, err)
 
@@ -1548,6 +1549,7 @@ func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 	})
 
 	t.Run("bad config", func(t *testing.T) {
+		t.Parallel()
 		_, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_resource_attributes.bad.yml"), false, promslog.NewNopLogger())
 		require.ErrorContains(t, err, `duplicated promoted OTel resource attribute "k8s.job.name"`)
 		require.ErrorContains(t, err, `empty promoted OTel resource attribute`)
@@ -2405,6 +2407,7 @@ func TestGetScrapeConfigs(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			c, err := LoadFile(tc.configFile, false, promslog.NewNopLogger())
 			require.NoError(t, err)
 
@@ -2437,9 +2440,9 @@ func TestScrapeConfigDisableCompression(t *testing.T) {
 
 func TestScrapeConfigNameValidationSettings(t *testing.T) {
 	model.NameValidationScheme = model.UTF8Validation
-	defer func() {
+	defer t.Cleanup(func() {
 		model.NameValidationScheme = model.LegacyValidation
-	}()
+	})
 
 	tests := []struct {
 		name         string
@@ -2470,6 +2473,7 @@ func TestScrapeConfigNameValidationSettings(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			want, err := LoadFile(fmt.Sprintf("testdata/%s.yml", tc.inputFile), false, promslog.NewNopLogger())
 			require.NoError(t, err)
 
@@ -2528,6 +2532,7 @@ func TestScrapeProtocolHeader(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			mediaType := tc.proto.HeaderMediaType()
 
 			require.Equal(t, tc.expectedValue, mediaType)
