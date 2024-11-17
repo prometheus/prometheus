@@ -308,6 +308,13 @@ eval instant at 5m http_requests_histogram == http_requests_histogram
 
 eval instant at 5m http_requests_histogram != http_requests_histogram
 
+# Should produce valid results in case of (in)equality with bool modifier between two histograms.
+eval instant at 5m http_requests_histogram == bool http_requests_histogram
+    {job="app-server", instance="1", group="production"} 1
+
+eval instant at 5m http_requests_histogram != bool http_requests_histogram
+    {job="app-server", instance="1", group="production"} 0
+
 # group_left/group_right.
 
 clear

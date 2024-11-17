@@ -2615,6 +2615,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			} else {
 				floatValue = 0.0
 			}
+			histogramValue = nil
 		case !keep:
 			continue
 		}
