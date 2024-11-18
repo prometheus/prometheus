@@ -16,15 +16,6 @@
 
 namespace PromPP::WAL {
 
-enum dumpType : uint8_t {
-  // dUnknownType - unknown type.
-  dUnknownType = 0,
-  // dLSS lss type.
-  dLSS,
-  // dCache cache type.
-  dCache,
-};
-
 struct RefSample {
   uint32_t id;
   int64_t t;
@@ -51,7 +42,7 @@ class OutputDecoder : private BaseOutputDecoder {
 
   // align_cache_to_lss add new labels from lss via relabeler to cache.
   PROMPP_ALWAYS_INLINE void align_cache_to_lss() {
-    if (wal_lss_.next_item_index() <= cache_.size()) [[likely]] {
+    if (wal_lss_.next_item_index() <= cache_.size()) {
       return;
     }
 
@@ -82,10 +73,6 @@ class OutputDecoder : private BaseOutputDecoder {
   // dump_cache dump delta cache to output stream.
   template <class OutputStream>
   PROMPP_ALWAYS_INLINE uint32_t dump_cache(uint32_t from, OutputStream& out) {
-    auto original_exceptions = out.exceptions();
-    auto sg1 = std::experimental::scope_exit([&]() { out.exceptions(original_exceptions); });
-    out.exceptions(std::ifstream::failbit | std::ifstream::badbit);
-
     // write version
     out.put(1);
 
@@ -108,7 +95,8 @@ class OutputDecoder : private BaseOutputDecoder {
   // load_cache load cache from incoming stream.
   template <class InputStream>
   PROMPP_ALWAYS_INLINE void load_cache(InputStream& in) {
-    auto sg1 = std::experimental::scope_fail([&]() { cache_.clear(); });
+    size_t cache_size_before = cache_.size();
+    auto sg1 = std::experimental::scope_fail([&]() { cache_.resize(cache_size_before); });
 
     // read version
     uint8_t version = in.get();
@@ -166,13 +154,11 @@ class OutputDecoder : private BaseOutputDecoder {
     out.exceptions(std::ifstream::failbit | std::ifstream::badbit);
 
     // write dump type lss and write delta checkpoints
-    out.put(dLSS);
     auto current_cp = output_lss_.checkpoint();
     out << current_cp - dumped_checkpoint_;
     dumped_checkpoint_ = std::move(current_cp);
 
     // write dump type cache and write delta caches
-    out.put(dCache);
     dumped_cache_size_ += dump_cache(dumped_cache_size_, out);
   }
 
@@ -180,31 +166,14 @@ class OutputDecoder : private BaseOutputDecoder {
   template <class InputStream>
   PROMPP_ALWAYS_INLINE void load_from(InputStream& in) {
     while (true) {
-      // read dump type
-      uint8_t dump_type = in.get();
-
       if (in.eof()) {
         dumped_cache_size_ = cache_.size();
         dumped_checkpoint_ = output_lss_.checkpoint();
         return;
       }
 
-      // switch on dump type load
-      switch (dump_type) {
-        case dLSS: {
-          output_lss_.load(in);
-          break;
-        }
-
-        case dCache: {
-          load_cache(in);
-          break;
-        }
-
-        default: {
-          throw BareBones::Exception(0x3f2437abfb3da442, "invalid restore dump type %d while reading from stream", dump_type);
-        }
-      }
+      output_lss_.load(in);
+      load_cache(in);
     }
   }
 
