@@ -2,34 +2,12 @@
 
 #include <string_view>
 
-namespace PromPP::Prometheus::textparse {
+#include "prometheus/textparse/types.h"
+
+namespace PromPP::Prometheus::textparse::OpenMetrics {
 
 class Tokenizer {
  public:
-  enum class Token {
-    kInvalid = -1,
-    kEOF = 0,
-    kLinebreak,
-    kWhitespace,
-    kHelp,
-    kType,
-    kUnit,
-    kEOFWord,
-    kText,
-    kComment,
-    kBlank,
-    kMetricName,
-    kQuotedString,
-    kBraceOpen,
-    kBraceClose,
-    kLabelName,
-    kLabelValue,
-    kComma,
-    kEqual,
-    kTimestamp,
-    kValue,
-  };
-
   Tokenizer();
   explicit Tokenizer(std::string_view str);
 
@@ -68,4 +46,6 @@ class Tokenizer {
   Token consume_escaped_string(Token token) noexcept;
 };
 
-}  // namespace PromPP::Prometheus::textparse
+static_assert(TokenizerInterface<Tokenizer>);
+
+}  // namespace PromPP::Prometheus::textparse::OpenMetrics
