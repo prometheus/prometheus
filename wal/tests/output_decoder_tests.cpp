@@ -303,14 +303,21 @@ TEST_F(TestProtobufEncoder, Encode) {
   output_lsses.push_back(&output_lss0);
   output_lsses.push_back(&output_lss1);
 
-  std::vector<PromPP::WAL::RefSample> ref_samples;
-  ref_samples.emplace_back(output_lss0.find_or_emplace(LabelViewSet{{"__name__", "value1"}, {"job", "abc"}}), 10, 1);
-  ref_samples.emplace_back(output_lss0.find_or_emplace(LabelViewSet{{"__name__", "value2"}, {"job", "abc"}}), 10, 1);
-  ShardRefSample srs;
-  srs.ref_samples.reset_to(ref_samples.data(), ref_samples.size());
-  srs.shard_id = 0;
+  std::vector<PromPP::WAL::RefSample> ref_samples0;
+  ref_samples0.emplace_back(output_lss0.find_or_emplace(LabelViewSet{{"__name__", "value1"}, {"job", "abc"}}), 10, 1);
+  ref_samples0.emplace_back(output_lss0.find_or_emplace(LabelViewSet{{"__name__", "value1"}, {"job", "abc"}}), 9, 2);
+  ref_samples0.emplace_back(output_lss0.find_or_emplace(LabelViewSet{{"__name__", "value2"}, {"job", "abc"}}), 10, 1);
+  ShardRefSample srs0;
+  srs0.ref_samples.reset_to(ref_samples0.data(), ref_samples0.size());
+  srs0.shard_id = 0;
 
-  std::vector<ShardRefSample*> vector_batch{&srs};
+  std::vector<PromPP::WAL::RefSample> ref_samples1;
+  ref_samples1.emplace_back(output_lss1.find_or_emplace(LabelViewSet{{"__name__", "value3"}, {"job", "abc3"}}), 10, 1);
+  ShardRefSample srs1;
+  srs1.ref_samples.reset_to(ref_samples1.data(), ref_samples1.size());
+  srs1.shard_id = 1;
+
+  std::vector<ShardRefSample*> vector_batch{&srs0, &srs1};
   Go::SliceView<ShardRefSample*> batch;
   batch.reset_to(vector_batch.data(), vector_batch.size());
 
@@ -318,6 +325,8 @@ TEST_F(TestProtobufEncoder, Encode) {
   Go::Slice<Go::Slice<char>> out_slices;
   out_slices.resize(2);
   penc.encode(batch, out_slices);
+  EXPECT_EQ(60, out_slices[0].size());
+  EXPECT_EQ(53, out_slices[1].size());
 }
 
 }  // namespace
