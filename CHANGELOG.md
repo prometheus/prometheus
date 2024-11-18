@@ -11,6 +11,7 @@
 * [ENHANCEMENT] Scraping, rules: handle targets reappearing, or rules moving group, when out-of-order is enabled. #14710
 * [ENHANCEMENT] Tools: add debug printouts to promtool rules unit testing #15196
 * [ENHANCEMENT] Scraping: support Created-Timestamp feature on native histograms. #14694
+* [ENHANCEMENT] OTLP receiver: Convert also metric metadata. #15416
 * [BUGFIX] PromQL: Fix stddev+stdvar aggregations to always ignore native histograms. #14941
 * [BUGFIX] PromQL: Fix stddev+stdvar aggregations to treat Infinity consistently. #14941
 * [BUGFIX] OTLP receiver: Preserve colons when generating metric names in suffix adding mode (this mode is always enabled, unless one uses Prometheus as a library). #15251
