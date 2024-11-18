@@ -122,6 +122,13 @@ class BitSequenceReader {
     return consume_bits_u64(size_in_bits);
   }
 
+  PROMPP_ALWAYS_INLINE void ff_u64_svbyte_2468() noexcept {
+    const uint8_t code = consume_bits_u32(2);
+    const uint8_t size_in_bits = (code + 1) << (1 + 3);
+
+    return ff(size_in_bits);
+  }
+
   [[nodiscard]] PROMPP_ALWAYS_INLINE uint64_t consume_u64_svbyte_0248() noexcept {
     const uint8_t code = consume_bits_u32(2);
 
@@ -132,6 +139,14 @@ class BitSequenceReader {
     return 0;
   }
 
+  PROMPP_ALWAYS_INLINE void ff_u64_svbyte_0248() noexcept {
+    const uint8_t code = consume_bits_u32(2);
+
+    if (const uint8_t size_in_bits = (code + (code == 3)) << (1 + 3); size_in_bits > 0) [[likely]] {
+      ff(size_in_bits);
+    }
+  }
+
   [[nodiscard]] PROMPP_ALWAYS_INLINE double consume_d64_svbyte_0468() noexcept {
     const uint8_t code = consume_bits_u32(2);
 
@@ -140,6 +155,14 @@ class BitSequenceReader {
     }
 
     return 0.0;
+  }
+
+  PROMPP_ALWAYS_INLINE void ff_d64_svbyte_0468() noexcept {
+    const uint8_t code = consume_bits_u32(2);
+
+    if (const uint8_t size_in_bits = (code + (code != 0)) << (1 + 3); size_in_bits > 0) [[likely]] {
+      ff(size_in_bits);
+    }
   }
 
  private:
