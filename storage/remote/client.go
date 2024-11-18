@@ -30,8 +30,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/common/sigv4"
 	"github.com/prometheus/common/version"
+	"github.com/prometheus/sigv4"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
@@ -145,6 +145,7 @@ type ClientConfig struct {
 	RetryOnRateLimit bool
 	WriteProtoMsg    config.RemoteWriteProtoMsg
 	ChunkedReadLimit uint64
+	RoundRobinDNS    bool
 }
 
 // ReadClient will request the STREAMED_XOR_CHUNKS method of remote read but can
@@ -180,7 +181,11 @@ func NewReadClient(name string, conf *ClientConfig) (ReadClient, error) {
 
 // NewWriteClient creates a new client for remote write.
 func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
-	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_write_client")
+	var httpOpts []config_util.HTTPClientOption
+	if conf.RoundRobinDNS {
+		httpOpts = []config_util.HTTPClientOption{config_util.WithDialContextFunc(newDialContextWithRoundRobinDNS().dialContextFn())}
+	}
+	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_write_client", httpOpts...)
 	if err != nil {
 		return nil, err
 	}

@@ -111,7 +111,11 @@ func requireEqualSeries(t *testing.T, expected, actual map[string][]chunks.Sampl
 	for name, expectedItem := range expected {
 		actualItem, ok := actual[name]
 		require.True(t, ok, "Expected series %s not found", name)
-		requireEqualSamples(t, name, expectedItem, actualItem, requireEqualSamplesIgnoreCounterResets)
+		if ignoreCounterResets {
+			requireEqualSamples(t, name, expectedItem, actualItem, requireEqualSamplesIgnoreCounterResets)
+		} else {
+			requireEqualSamples(t, name, expectedItem, actualItem)
+		}
 	}
 	for name := range actual {
 		_, ok := expected[name]

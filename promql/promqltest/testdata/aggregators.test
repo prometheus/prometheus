@@ -229,12 +229,27 @@ load 5m
   http_requests{job="api-server", instance="0", group="canary"}		NaN
   http_requests{job="api-server", instance="1", group="canary"}		3
   http_requests{job="api-server", instance="2", group="canary"}		4
+  http_requests_histogram{job="api-server", instance="3", group="canary"} {{schema:2 count:4 sum:10 buckets:[1 0 0 0 1 0 0 1 1]}}
 
 eval instant at 0m max(http_requests)
   {} 4
 
+# The histogram is ignored here so the result doesn't change but it has an info annotation now.
+eval_info instant at 0m max({job="api-server"})
+  {} 4
+
+# The histogram is ignored here so there is no result but it has an info annotation now.
+eval_info instant at 0m max(http_requests_histogram)
+
 eval instant at 0m min(http_requests)
   {} 1
+
+# The histogram is ignored here so the result doesn't change but it has an info annotation now.
+eval_info instant at 0m min({job="api-server"})
+  {} 1
+
+# The histogram is ignored here so there is no result but it has an info annotation now.
+eval_info instant at 0m min(http_requests_histogram)
 
 eval instant at 0m max by (group) (http_requests)
   {group="production"} 2
@@ -380,12 +395,22 @@ load 10s
 	data{test="uneven samples",point="a"} 0
 	data{test="uneven samples",point="b"} 1
 	data{test="uneven samples",point="c"} 4
+	data_histogram{test="histogram sample", point="c"} {{schema:2 count:4 sum:10 buckets:[1 0 0 0 1 0 0 1 1]}}
 	foo .8
 
 eval instant at 1m quantile without(point)(0.8, data)
 	{test="two samples"} 0.8
 	{test="three samples"} 1.6
 	{test="uneven samples"} 2.8
+
+# The histogram is ignored here so the result doesn't change but it has an info annotation now.
+eval_info instant at 1m quantile without(point)(0.8, {__name__=~"data(_histogram)?"})
+	{test="two samples"} 0.8
+	{test="three samples"} 1.6
+	{test="uneven samples"} 2.8
+
+# The histogram is ignored here so there is no result but it has an info annotation now.
+eval_info instant at 1m quantile(0.8, data_histogram)
 
 # Bug #5276.
 eval instant at 1m quantile without(point)(scalar(foo), data)
@@ -581,11 +606,17 @@ load 5m
 	series{label="b"} 2
 	series{label="c"} {{schema:1 sum:15 count:10 buckets:[3 2 5 7 9]}}
 
-eval instant at 0m stddev(series)
+# The histogram is ignored here so the result doesn't change but it has an info annotation now.
+eval_info instant at 0m stddev(series)
 	{} 0.5
 
-eval instant at 0m stdvar(series)
+eval_info instant at 0m stdvar(series)
 	{} 0.25
+
+# The histogram is ignored here so there is no result but it has an info annotation now.
+eval_info instant at 0m stddev({label="c"})
+
+eval_info instant at 0m stdvar({label="c"})
 
 eval instant at 0m stddev by (label) (series)
 	{label="a"} 0

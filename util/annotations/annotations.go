@@ -147,6 +147,7 @@ var (
 	PossibleNonCounterInfo                  = fmt.Errorf("%w: metric might not be a counter, name does not end in _total/_sum/_count/_bucket:", PromQLInfo)
 	HistogramQuantileForcedMonotonicityInfo = fmt.Errorf("%w: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name", PromQLInfo)
 	IncompatibleTypesInBinOpInfo            = fmt.Errorf("%w: incompatible sample types encountered for binary operator", PromQLInfo)
+	HistogramIgnoredInAggregationInfo       = fmt.Errorf("%w: ignored histogram in", PromQLInfo)
 )
 
 type annoErr struct {
@@ -281,5 +282,14 @@ func NewIncompatibleTypesInBinOpInfo(lhsType, operator, rhsType string, pos posr
 	return annoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w %q: %s %s %s", IncompatibleTypesInBinOpInfo, operator, lhsType, operator, rhsType),
+	}
+}
+
+// NewHistogramIgnoredInAggregationInfo is used when a histogram is ignored by
+// an aggregation operator that cannot handle histograms.
+func NewHistogramIgnoredInAggregationInfo(aggregation string, pos posrange.PositionRange) error {
+	return annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w %s aggregation", HistogramIgnoredInAggregationInfo, aggregation),
 	}
 }

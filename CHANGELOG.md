@@ -14,6 +14,7 @@
 * [BUGFIX] PromQL: Fix stddev+stdvar aggregations to always ignore native histograms. #14941
 * [BUGFIX] PromQL: Fix stddev+stdvar aggregations to treat Infinity consistently. #14941
 * [BUGFIX] OTLP receiver: Preserve colons when generating metric names in suffix adding mode (this mode is always enabled, unless one uses Prometheus as a library). #15251
+* [BUGFIX] Clamp functions: Ignore any points with native histograms. #15169
 
 ## 3.0.0-beta.1 / 2024-10-09
 

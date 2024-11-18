@@ -47,20 +47,6 @@ statistics. Currently this is limited to totalQueryableSamples.
 When disabled in either the engine or the query, per-step statistics are not
 computed at all.
 
-## Auto GOMAXPROCS
-
-`--enable-feature=auto-gomaxprocs`
-
-When enabled, GOMAXPROCS variable is automatically set to match Linux container CPU quota.
-
-## Auto GOMEMLIMIT
-
-`--enable-feature=auto-gomemlimit`
-
-When enabled, the GOMEMLIMIT variable is automatically set to match the Linux container memory limit. If there is no container limit, or the process is running outside of containers, the system memory total is used.
-
-There is also an additional tuning flag, `--auto-gomemlimit.ratio`, which allows controlling how much of the memory is used for Prometheus. The remainder is reserved for memory outside the process. For example, kernel page cache. Page cache is important for Prometheus TSDB query performance. The default is `0.9`, which means 90% of the memory limit will be used for Prometheus.
-
 ## Native Histograms
 
 `--enable-feature=native-histograms`

@@ -474,6 +474,10 @@ func funcClamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 		return enh.Out, nil
 	}
 	for _, el := range vec {
+		if el.H != nil {
+			// Process only float samples.
+			continue
+		}
 		if !enh.enableDelayedNameRemoval {
 			el.Metric = el.Metric.DropMetricName()
 		}
@@ -491,6 +495,10 @@ func funcClampMax(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 	vec := vals[0].(Vector)
 	maxVal := vals[1].(Vector)[0].F
 	for _, el := range vec {
+		if el.H != nil {
+			// Process only float samples.
+			continue
+		}
 		if !enh.enableDelayedNameRemoval {
 			el.Metric = el.Metric.DropMetricName()
 		}
@@ -508,6 +516,10 @@ func funcClampMin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 	vec := vals[0].(Vector)
 	minVal := vals[1].(Vector)[0].F
 	for _, el := range vec {
+		if el.H != nil {
+			// Process only float samples.
+			continue
+		}
 		if !enh.enableDelayedNameRemoval {
 			el.Metric = el.Metric.DropMetricName()
 		}

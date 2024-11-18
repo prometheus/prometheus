@@ -34,8 +34,8 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
-	"github.com/prometheus/common/sigv4"
 	"github.com/prometheus/common/version"
+	"github.com/prometheus/sigv4"
 	"go.uber.org/atomic"
 	"gopkg.in/yaml.v2"
 
