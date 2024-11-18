@@ -95,6 +95,13 @@ type metricWithBuckets struct {
 // and another bool to indicate if small differences between buckets (that
 // are likely artifacts of floating point precision issues) have been
 // ignored.
+//
+// Generically speaking, BucketQuantile is for calculating the
+// histogram_quantile() of classic histograms. See also: HistogramQuantile
+// for native histograms.
+//
+// BucketQuantile is exported as a useful quantile function over a set of
+// given buckets. It may be used by other PromQL engine implementations.
 func BucketQuantile(q float64, buckets Buckets) (float64, bool, bool) {
 	if math.IsNaN(q) {
 		return math.NaN(), false, false
@@ -186,6 +193,12 @@ func BucketQuantile(q float64, buckets Buckets) (float64, bool, bool) {
 // If q>1, +Inf is returned.
 //
 // If q is NaN, NaN is returned.
+//
+// HistogramQuantile is for calculating the histogram_quantile() of native
+// histograms. See also: BucketQuantile for classic histograms.
+//
+// HistogramQuantile is exported as it may be used by other PromQL engine
+// implementations.
 func HistogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 	if q < 0 {
 		return math.Inf(-1)
