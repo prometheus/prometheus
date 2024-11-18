@@ -62,6 +62,17 @@ This release includes new features such as a brand new UI and UTF-8 support enab
 * [BUGFIX] Autoreload: Reload invalid yaml files. #14947
 * [BUGFIX] Scrape: Do not override target parameter labels with config params. #11029
 
+## 2.53.3 / 2024-11-04
+
+* [BUGFIX] Scraping: allow multiple samples on same series, with explicit timestamps. #14685, #14740
+
+## 2.53.2 / 2024-08-09
+
+Fix a bug where Prometheus would crash with a segmentation fault if a remote-read
+request accessed a block on disk at about the same time as TSDB created a new block.
+
+[BUGFIX] Remote-Read: Resolve occasional segmentation fault on query. #14515,#14523
+
 ## 2.55.1 / 2024-11-04
 
 * [BUGFIX] `round()` function did not remove `__name__` label. #15250
