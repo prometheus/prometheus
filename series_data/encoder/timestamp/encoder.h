@@ -6,21 +6,15 @@ namespace series_data::encoder::timestamp {
 
 class TimestampEncoder {
  public:
-  static void encode_first(int64_t timestamp, BitSequenceWithItemsCount& stream, BareBones::Encoding::Gorilla::TimestampEncoderState& state) {
-    Encoder::encode(state, timestamp, stream.stream);
-  }
+  static void encode_first(State::TimestampEncoder& encoder, int64_t timestamp, BitSequenceWithItemsCount& stream) { encoder.encode(timestamp, stream.stream); }
 
-  static void encode(int64_t timestamp, BitSequenceWithItemsCount& stream, BareBones::Encoding::Gorilla::TimestampEncoderState& state) {
-    if (stream.inc_count() == 1) {
-      [[unlikely]];
-      Encoder::encode_delta(state, timestamp, stream.stream);
+  static void encode(State::TimestampEncoder& encoder, int64_t timestamp, BitSequenceWithItemsCount& stream) {
+    if (stream.inc_count() == 1) [[unlikely]] {
+      encoder.encode_delta(timestamp, stream.stream);
     } else {
-      Encoder::encode_delta_of_delta(state, timestamp, stream.stream);
+      encoder.encode_delta_of_delta(timestamp, stream.stream);
     }
   }
-
- private:
-  using Encoder = BareBones::Encoding::Gorilla::ZigZagTimestampEncoder<>;
 };
 
 class TimestampDecoder {
@@ -28,27 +22,25 @@ class TimestampDecoder {
   explicit TimestampDecoder(const BareBones::BitSequenceReader& reader) : reader_(reader) {}
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE int64_t decode() noexcept {
-    if (gorilla_state_ == GorillaState::kFirstPoint) {
-      [[unlikely]];
-      Decoder::decode(state_, reader_);
+    if (gorilla_state_ == GorillaState::kFirstPoint) [[unlikely]] {
+      decoder_.decode(reader_);
       gorilla_state_ = GorillaState::kSecondPoint;
-    } else if (gorilla_state_ == GorillaState::kSecondPoint) {
-      [[unlikely]];
-      Decoder::decode_delta(state_, reader_);
+    } else if (gorilla_state_ == GorillaState::kSecondPoint) [[unlikely]] {
+      decoder_.decode_delta(reader_);
       gorilla_state_ = GorillaState::kOtherPoint;
     } else {
-      Decoder::decode_delta_of_delta(state_, reader_);
+      decoder_.decode_delta_of_delta(reader_);
     }
 
-    return state_.last_ts;
+    return decoder_.timestamp();
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE bool eof() const noexcept { return reader_.eof(); }
 
   [[nodiscard]] static int64_t decode_first(BareBones::BitSequenceReader reader) noexcept {
-    BareBones::Encoding::Gorilla::TimestampEncoderState state;
-    Decoder::decode(state, reader);
-    return state.last_ts;
+    State::TimestampDecoder decoder;
+    decoder.decode(reader);
+    return decoder.timestamp();
   }
 
   [[nodiscard]] static BareBones::Vector<int64_t> decode_all(const BareBones::BitSequenceReader& reader, uint8_t count) noexcept {
@@ -64,20 +56,19 @@ class TimestampDecoder {
 
  private:
   using GorillaState = BareBones::Encoding::Gorilla::GorillaState;
-  using Decoder = BareBones::Encoding::Gorilla::ZigZagTimestampDecoder<>;
 
   BareBones::BitSequenceReader reader_;
-  BareBones::Encoding::Gorilla::TimestampEncoderState state_;
+  State::TimestampDecoder decoder_;
   GorillaState gorilla_state_{GorillaState::kFirstPoint};
 };
 
 class Encoder {
  public:
   State::Id encode(State::Id state_id, int64_t timestamp) {
-    auto hash = StateTransitions::hash(timestamp, state_id);
+    const auto hash = StateTransitions::hash(timestamp, state_id);
 
-    if (auto transition = state_transitions_.get(hash, timestamp, state_id); transition != nullptr) {
-      auto new_state_id = transition->state_id;
+    if (const auto transition = state_transitions_.get(hash, timestamp, state_id); transition != nullptr) {
+      const auto new_state_id = transition->state_id;
       if (state_id != State::kInvalidId) {
         decrease_reference_count(states_[state_id], state_id);
       }
@@ -86,11 +77,10 @@ class Encoder {
       return new_state_id;
     }
 
-    auto previous_state_id = state_id;
-    if (state_id == State::kInvalidId) {
-      [[unlikely]];
+    const auto previous_state_id = state_id;
+    if (state_id == State::kInvalidId) [[unlikely]] {
       auto& state = states_.emplace_back(state_id);
-      TimestampEncoder::encode_first(timestamp, state.stream_data.stream, state.encoder_state);
+      TimestampEncoder::encode_first(state.encoder, timestamp, state.stream_data.stream);
       state_id = states_.index_of(state);
     } else {
       auto& new_state = states_.emplace_back(state_id);
@@ -98,8 +88,7 @@ class Encoder {
       auto& state = states_[state_id];
       ++state.child_count;
 
-      if (state.reference_count > 1) {
-        [[likely]];
+      if (state.reference_count > 1) [[likely]] {
         new_state = state;
       } else {
         new_state = std::move(state);
@@ -108,7 +97,7 @@ class Encoder {
       decrease_reference_count(state, state_id);
       state_id = states_.index_of(new_state);
 
-      TimestampEncoder::encode(timestamp, new_state.stream_data.stream, new_state.encoder_state);
+      TimestampEncoder::encode(new_state.encoder, timestamp, new_state.stream_data.stream);
     }
 
     state_transitions_.emplace(hash, previous_state_id, state_id);
@@ -139,9 +128,8 @@ class Encoder {
   }
 
   PROMPP_ALWAYS_INLINE uint32_t process_finalized(State::Id state_id) {
-    if (auto& state = states_[state_id]; state.is_finalized()) {
-      [[unlikely]];
-      auto result = state.stream_data.finalized_stream_id;
+    if (auto& state = states_[state_id]; state.is_finalized()) [[unlikely]] {
+      const auto result = state.stream_data.finalized_stream_id;
       decrease_reference_count(state, state_id);
       return result;
     }
