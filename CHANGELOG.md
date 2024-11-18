@@ -62,7 +62,7 @@ This release includes new features such as a brand new UI and UTF-8 support enab
 * [BUGFIX] Autoreload: Reload invalid yaml files. #14947
 * [BUGFIX] Scrape: Do not override target parameter labels with config params. #11029
 
-## 2.55.1 / 2024-01-04
+## 2.55.1 / 2024-11-04
 
 * [BUGFIX] `round()` function did not remove `__name__` label. #15250
 
