@@ -251,6 +251,7 @@ func (d *WALDecoder) RestoreFromStream(
 //	decoder - pointer to a C++ decoder initiated in C++ memory;
 type WALOutputDecoder struct {
 	decoder uintptr
+	shardID uint16
 }
 
 // NewWALOutputDecoder init new WALOutputDecoder.
@@ -258,6 +259,7 @@ func NewWALOutputDecoder(
 	externalLabels []Label,
 	statelessRelabeler *StatelessRelabeler,
 	outputLss *LabelSetStorage,
+	shardID uint16,
 	encodersVersion uint8,
 ) *WALOutputDecoder {
 	d := &WALOutputDecoder{
@@ -267,6 +269,7 @@ func NewWALOutputDecoder(
 			outputLss.Pointer(),
 			encodersVersion,
 		),
+		shardID: shardID,
 	}
 	runtime.SetFinalizer(d, func(d *WALOutputDecoder) {
 		walOutputDecoderDtor(d.decoder)
@@ -280,7 +283,7 @@ func (d *WALOutputDecoder) Decode(ctx context.Context, segment []byte) (*Decoded
 		return nil, ctx.Err()
 	}
 	refSamples, exception := walOutputDecoderDecode(segment, d.decoder)
-	return NewDecodedRefSamples(refSamples), handleException(exception)
+	return NewDecodedRefSamples(refSamples, d.shardID), handleException(exception)
 }
 
 // LoadFrom load from dump(slice byte) output decoder state(output_lss and cache).
@@ -310,16 +313,18 @@ type RefSample struct {
 
 // DecodedRefSamples go wrapper for slice c-type RefSample.
 type DecodedRefSamples struct {
-	buf []RefSample
+	refSamples []RefSample
+	shardID    uint16
 }
 
 // NewDecodedRefSamples init new DecodedRefSamples.
-func NewDecodedRefSamples(b []RefSample) *DecodedRefSamples {
+func NewDecodedRefSamples(refSamples []RefSample, shardID uint16) *DecodedRefSamples {
 	drs := &DecodedRefSamples{
-		buf: b,
+		refSamples: refSamples,
+		shardID:    shardID,
 	}
 	runtime.SetFinalizer(drs, func(drs *DecodedRefSamples) {
-		freeBytes(*(*[]byte)(unsafe.Pointer(&drs.buf)))
+		freeBytes(*(*[]byte)(unsafe.Pointer(&drs.refSamples)))
 	})
 	return drs
 }
@@ -327,8 +332,8 @@ func NewDecodedRefSamples(b []RefSample) *DecodedRefSamples {
 // Range calls f sequentially for each RefSample present in the DecodedRefSamples.
 // If f returns false, range stops the iteration.
 func (s *DecodedRefSamples) Range(f func(id uint32, t int64, v float64) bool) {
-	for i := range s.buf {
-		if !f(s.buf[i].ID, s.buf[i].T, s.buf[i].V) {
+	for i := range s.refSamples {
+		if !f(s.refSamples[i].ID, s.refSamples[i].T, s.refSamples[i].V) {
 			return
 		}
 	}

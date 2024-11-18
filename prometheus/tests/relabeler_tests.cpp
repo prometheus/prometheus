@@ -823,7 +823,6 @@ TEST_F(TestPerShardRelabeler, TargetLabels_ExportedLabel_Honor) {
 struct TestTargetLabels : public testing::Test {
   // target_labels
   std::vector<std::pair<PromPP::Primitives::Go::String, PromPP::Primitives::Go::String>> vector_target_labels_;
-  // PromPP::Primitives::Go::SliceView<std::pair<PromPP::Primitives::Go::String, PromPP::Primitives::Go::String>> target_labels_;
 
   // Options
   PromPP::Prometheus::Relabel::RelabelerOptions o_;

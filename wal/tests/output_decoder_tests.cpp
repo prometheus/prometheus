@@ -7,6 +7,9 @@
 #include "wal/hashdex.h"
 #include "wal/output_decoder.h"
 
+#define PROTOZERO_USE_VIEW std::string_view
+#include "third_party/protozero/pbf_writer.hpp"
+
 struct GoLabelSet {
   PromPP::Primitives::Go::Slice<char> data;
   PromPP::Primitives::Go::Slice<PromPP::Primitives::Go::LabelView> pairs;
@@ -66,8 +69,8 @@ struct RelabelConfigTest {
 
 struct TestWALOutputDecoder : public testing::Test {
   // external_labels
-  std::vector<std::pair<PromPP::Primitives::Go::String, PromPP::Primitives::Go::String>> vector_external_labels_;
-  Go::SliceView<std::pair<PromPP::Primitives::Go::String, PromPP::Primitives::Go::String>> external_labels_;
+  std::vector<std::pair<Go::String, Go::String>> vector_external_labels_;
+  Go::SliceView<std::pair<Go::String, Go::String>> external_labels_;
 
   // Encoder
   EncodeStatistic stats_;
@@ -88,13 +91,12 @@ struct TestWALOutputDecoder : public testing::Test {
   template <class SegmentStream>
   PROMPP_ALWAYS_INLINE void make_segment(const std::vector<GoTimeSeries>& gtss, SegmentStream& segment_stream, Encoder& enc) {
     // make Hashdex
-    PromPP::Primitives::Go::Slice<GoTimeSeries> go_time_series_slice;
+    Go::Slice<GoTimeSeries> go_time_series_slice;
     for (const GoTimeSeries& gts : gtss) {
       go_time_series_slice.push_back(gts);
     }
-    PromPP::Primitives::Go::SliceView<PromPP::Primitives::Go::TimeSeries>* go_time_series_slice_view =
-        reinterpret_cast<PromPP::Primitives::Go::SliceView<PromPP::Primitives::Go::TimeSeries>*>(&go_time_series_slice);
-    PromPP::WAL::GoModelHashdex hx;
+    Go::SliceView<Go::TimeSeries>* go_time_series_slice_view = reinterpret_cast<Go::SliceView<Go::TimeSeries>*>(&go_time_series_slice);
+    GoModelHashdex hx;
     hx.presharding(*go_time_series_slice_view);
 
     // make Segment from encoder
@@ -289,6 +291,57 @@ TEST_F(TestWALOutputDecoder, ProcessSegmentWithDump) {
       EXPECT_EQ(std::bit_cast<uint64_t>(expected_segment[ls_id].value), std::bit_cast<uint64_t>(v));
     });
   }
+}
+
+//
+// ProtobufEncoder
+//
+
+struct TestProtobufEncoder : public testing::Test {};
+
+TEST_F(TestProtobufEncoder, Encode) {
+  SnugComposites::LabelSet::EncodingBimap output_lss0;
+  uint32_t ls_id = output_lss0.find_or_emplace(LabelViewSet{{"__name__", "value1"}, {"job", "abc"}});
+  SnugComposites::LabelSet::EncodingBimap output_lss1;
+  std::vector<SnugComposites::LabelSet::EncodingBimap*> output_lsses;
+  output_lsses.push_back(&output_lss0);
+  output_lsses.push_back(&output_lss1);
+
+  std::vector<PromPP::WAL::RefSample> ref_samples{{ls_id, 10, 1}};
+  ShardRefSample srs;
+  srs.ref_samples.reset_to(ref_samples.data(), ref_samples.size());
+  srs.shard_id = 0;
+
+  std::vector<ShardRefSample*> vector_batch{&srs};
+  Go::SliceView<ShardRefSample*> batch;
+  batch.reset_to(vector_batch.data(), vector_batch.size());
+
+  ProtobufEncoder penc{output_lsses};
+  penc.encode(batch, 1);
+}
+
+TEST_F(TestProtobufEncoder, Proto) {
+  SnugComposites::LabelSet::EncodingBimap output_lss;
+  LabelViewSet ls({{"__name__", "name"}, {"instance", "hostname"}, {"agent_uuid", "agent_uuid"}, {"job", "some_job"}});
+  uint32_t ls_id = output_lss.find_or_emplace(ls);
+
+  BasicTimeseries<SnugComposites::LabelSet::EncodingBimap::value_type*> timeseries;
+  auto out_ls = output_lss[ls_id];
+  timeseries.set_label_set(&out_ls);
+
+  int64_t ts{10};
+  double value{5};
+  timeseries.samples().emplace_back(ts, value);
+
+  std::string protobuf;
+  protozero::pbf_writer writer(protobuf);
+  RemoteWrite::write_timeseries(writer, timeseries);
+
+  std::cout << "protobuf: " << protobuf << std::endl;
+
+  // for (const auto& [label_name, label_value] : timeseries.label_set()) {
+  //   write_label(label_name, label_value);
+  // }
 }
 
 }  // namespace

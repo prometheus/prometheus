@@ -2,8 +2,14 @@
 
 #include <vector>
 
+#include <parallel_hashmap/btree.h>
+#define PROTOZERO_USE_VIEW std::string_view
+#include "snappy.h"
+#include "third_party/protozero/pbf_writer.hpp"
+
 #include "bare_bones/preprocess.h"
 #include "primitives/snug_composites.h"
+#include "prometheus/remote_write.h"
 #include "prometheus/stateless_relabeler.h"
 #include "wal.h"
 
@@ -22,6 +28,11 @@ struct RefSample {
   uint32_t id;
   int64_t t;
   double v;
+};
+
+struct ShardRefSample {
+  PromPP::Primitives::Go::SliceView<PromPP::WAL::RefSample> ref_samples;
+  uint16_t shard_id{};
 };
 
 using BaseOutputDecoder = WAL::BasicDecoder<std::remove_reference_t<Primitives::SnugComposites::LabelSet::ShrinkableEncodingBimap>>;
@@ -245,6 +256,49 @@ class OutputDecoder : private BaseOutputDecoder {
 
     if (last_ls_id != std::numeric_limits<Primitives::LabelSetID>::max()) {
       func(last_ls_id, timeseries);
+    }
+  }
+};
+
+class ProtobufEncoder {
+  std::vector<Primitives::SnugComposites::LabelSet::EncodingBimap*>& output_lsses_;
+
+ public:
+  // ProtobufEncoder constructor.
+  PROMPP_ALWAYS_INLINE explicit ProtobufEncoder(std::vector<Primitives::SnugComposites::LabelSet::EncodingBimap*>& output_lsses) noexcept
+      : output_lsses_(output_lsses) {}
+
+  PROMPP_ALWAYS_INLINE void encode(PromPP::Primitives::Go::SliceView<ShardRefSample*>& batch, uint16_t shards) {
+    std::cout << "shards: " << shards << std::endl;
+
+    phmap::btree_map<std::pair<uint32_t, uint16_t>, BareBones::Vector<PromPP::Primitives::Sample>> m{};
+    for (const auto* srs : batch) {
+      for (const auto& rs : srs->ref_samples) {
+        m[{rs.id, srs->shard_id}].emplace_back(rs.t, rs.v);
+        std::cout << "rs.t: " << rs.t << " rs.v: " << rs.v << std::endl;
+      }
+    }
+
+    PromPP::Primitives::BasicTimeseries<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap::value_type*, BareBones::Vector<PromPP::Primitives::Sample>*>
+        timeseries;
+    std::vector<std::string> protobufs;
+    protobufs.resize(shards);
+
+    for (auto& [key, samples] : m) {
+      auto out_ls = (*output_lsses_[key.second])[key.first];
+      timeseries.set_label_set(&out_ls);
+      timeseries.set_samples(&samples);
+      protozero::pbf_writer writer(protobufs[0]);
+      PromPP::Prometheus::RemoteWrite::write_timeseries(writer, timeseries);
+      m.erase(key);
+    }
+
+    std::string out;
+    snappy::Compress(protobufs[0].data(), protobufs[0].size(), &out);
+    std::cout << "out: " << out << std::endl;
+
+    for (const auto& [ln, lv] : (*output_lsses_[0])[0]) {
+      std::cout << "ln: " << ln << " lv: " << lv << std::endl;
     }
   }
 };

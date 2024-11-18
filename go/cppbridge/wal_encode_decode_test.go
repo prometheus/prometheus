@@ -541,7 +541,7 @@ func (s *EncoderDecoderSuite) TestEncodeWALOutputDecode() {
 	s.Require().NoError(err)
 	externalLabels := []cppbridge.Label{{"name0", "value0"}, {"name1", "value1"}}
 	outputLss := cppbridge.NewLssStorage()
-	dec := cppbridge.NewWALOutputDecoder(externalLabels, statelessRelabeler, outputLss, cppbridge.EncodersVersion())
+	dec := cppbridge.NewWALOutputDecoder(externalLabels, statelessRelabeler, outputLss, 0, cppbridge.EncodersVersion())
 
 	hlimits := cppbridge.DefaultWALHashdexLimits()
 	enc := cppbridge.NewWALEncoder(0, 0)
