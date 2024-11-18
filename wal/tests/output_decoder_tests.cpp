@@ -7,9 +7,6 @@
 #include "wal/hashdex.h"
 #include "wal/output_decoder.h"
 
-#define PROTOZERO_USE_VIEW std::string_view
-#include "third_party/protozero/pbf_writer.hpp"
-
 struct GoLabelSet {
   PromPP::Primitives::Go::Slice<char> data;
   PromPP::Primitives::Go::Slice<PromPP::Primitives::Go::LabelView> pairs;
@@ -291,6 +288,36 @@ TEST_F(TestWALOutputDecoder, ProcessSegmentWithDump) {
       EXPECT_EQ(std::bit_cast<uint64_t>(expected_segment[ls_id].value), std::bit_cast<uint64_t>(v));
     });
   }
+}
+
+//
+// ProtobufEncoder
+//
+
+struct TestProtobufEncoder : public testing::Test {};
+
+TEST_F(TestProtobufEncoder, Encode) {
+  SnugComposites::LabelSet::EncodingBimap output_lss0;
+  SnugComposites::LabelSet::EncodingBimap output_lss1;
+  std::vector<SnugComposites::LabelSet::EncodingBimap*> output_lsses;
+  output_lsses.push_back(&output_lss0);
+  output_lsses.push_back(&output_lss1);
+
+  std::vector<PromPP::WAL::RefSample> ref_samples;
+  ref_samples.emplace_back(output_lss0.find_or_emplace(LabelViewSet{{"__name__", "value1"}, {"job", "abc"}}), 10, 1);
+  ref_samples.emplace_back(output_lss0.find_or_emplace(LabelViewSet{{"__name__", "value2"}, {"job", "abc"}}), 10, 1);
+  ShardRefSample srs;
+  srs.ref_samples.reset_to(ref_samples.data(), ref_samples.size());
+  srs.shard_id = 0;
+
+  std::vector<ShardRefSample*> vector_batch{&srs};
+  Go::SliceView<ShardRefSample*> batch;
+  batch.reset_to(vector_batch.data(), vector_batch.size());
+
+  ProtobufEncoder penc{output_lsses};
+  Go::Slice<Go::Slice<char>> out_slices;
+  out_slices.resize(2);
+  penc.encode(batch, out_slices);
 }
 
 }  // namespace

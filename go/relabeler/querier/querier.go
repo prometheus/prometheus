@@ -213,7 +213,8 @@ func (q *Querier) Select(ctx context.Context, sortSeries bool, hints *storage.Se
 	return storage.NewMergeSeriesSet(seriesSets, storage.ChainedSeriesMerge)
 }
 
-func convertPrometheusMatchersToOpcoreMatchers(matchers ...*labels.Matcher) (promppMatchers []model.LabelMatcher) {
+func convertPrometheusMatchersToOpcoreMatchers(matchers ...*labels.Matcher) []model.LabelMatcher {
+	promppMatchers := make([]model.LabelMatcher, 0, len(matchers))
 	for _, matcher := range matchers {
 		promppMatchers = append(promppMatchers, model.LabelMatcher{
 			Name:        matcher.Name,
