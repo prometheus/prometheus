@@ -259,7 +259,6 @@ class ProtobufEncoder {
       // if shards scale 0, do nothing
       return;
     }
-    size_t shards = out_slices.size();
 
     // grouping samples by ls id and main shard id
     for (const auto* srs : batch) {
@@ -268,7 +267,8 @@ class ProtobufEncoder {
       }
     }
 
-    // make containers for output protobufs
+    // resize container for output protobufs
+    size_t shards = out_slices.size();
     std::vector<std::string> protobufs;
     protobufs.resize(shards);
 
