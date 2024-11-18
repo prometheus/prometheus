@@ -1795,14 +1795,14 @@ func (r *Reader) postingsForLabelMatching(ctx context.Context, name string, matc
 		return EmptyPostings()
 	}
 
-	postingsCount := 0
+	postingsEstimate := 0
 	if match == nil {
 		// The caller wants all postings for name.
-		postingsCount = len(e) * symbolFactor
+		postingsEstimate = len(e) * symbolFactor
 	}
 
 	lastVal := e[len(e)-1].value
-	its := make([]Postings, 0, postingsCount)
+	its := make([]Postings, 0, postingsEstimate)
 	if err := r.traversePostingOffsets(ctx, e[0].off, func(val string, postingsOff uint64) (bool, error) {
 		if match == nil || match(val) {
 			// We want this postings iterator since the value is a match.
