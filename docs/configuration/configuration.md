@@ -171,8 +171,17 @@ remote_write:
   [ - <remote_write> ... ]
 
 # Settings related to the OTLP receiver feature.
+# See https://prometheus.io/docs/guides/opentelemetry/ for best practices.
 otlp:
   [ promote_resource_attributes: [<string>, ...] | default = [ ] ]
+  # Configures translation of OTLP metrics when received through the OTLP metrics
+  # endpoint. Available values:
+  # - "UnderscoreEscapingWithSuffixes" refers to commonly agreed normalization used
+  #   by OpenTelemetry in https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/pkg/translator/prometheus
+  # - "NoUTF8EscapingWithSuffixes" is a mode that relies on UTF-8 support in Prometheus.
+  #   It preserves all special characters like dots, but it still add required suffixes
+  #   for units and _total like in UnderscoreEscapingWithSuffixes.
+  [ translation_strategy: <string> | default = "UnderscoreEscapingWithSuffixes" ]
 
 # Settings related to the remote read feature.
 remote_read:
