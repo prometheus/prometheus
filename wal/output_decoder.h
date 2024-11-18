@@ -260,47 +260,4 @@ class OutputDecoder : private BaseOutputDecoder {
   }
 };
 
-class ProtobufEncoder {
-  std::vector<Primitives::SnugComposites::LabelSet::EncodingBimap*>& output_lsses_;
-
- public:
-  // ProtobufEncoder constructor.
-  PROMPP_ALWAYS_INLINE explicit ProtobufEncoder(std::vector<Primitives::SnugComposites::LabelSet::EncodingBimap*>& output_lsses) noexcept
-      : output_lsses_(output_lsses) {}
-
-  PROMPP_ALWAYS_INLINE void encode(PromPP::Primitives::Go::SliceView<ShardRefSample*>& batch, uint16_t shards) {
-    std::cout << "shards: " << shards << std::endl;
-
-    phmap::btree_map<std::pair<uint32_t, uint16_t>, BareBones::Vector<PromPP::Primitives::Sample>> m{};
-    for (const auto* srs : batch) {
-      for (const auto& rs : srs->ref_samples) {
-        m[{rs.id, srs->shard_id}].emplace_back(rs.t, rs.v);
-        std::cout << "rs.t: " << rs.t << " rs.v: " << rs.v << std::endl;
-      }
-    }
-
-    PromPP::Primitives::BasicTimeseries<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap::value_type*, BareBones::Vector<PromPP::Primitives::Sample>*>
-        timeseries;
-    std::vector<std::string> protobufs;
-    protobufs.resize(shards);
-
-    for (auto& [key, samples] : m) {
-      auto out_ls = (*output_lsses_[key.second])[key.first];
-      timeseries.set_label_set(&out_ls);
-      timeseries.set_samples(&samples);
-      protozero::pbf_writer writer(protobufs[0]);
-      PromPP::Prometheus::RemoteWrite::write_timeseries(writer, timeseries);
-      m.erase(key);
-    }
-
-    std::string out;
-    snappy::Compress(protobufs[0].data(), protobufs[0].size(), &out);
-    std::cout << "out: " << out << std::endl;
-
-    for (const auto& [ln, lv] : (*output_lsses_[0])[0]) {
-      std::cout << "ln: " << ln << " lv: " << lv << std::endl;
-    }
-  }
-};
-
 }  // namespace PromPP::WAL
