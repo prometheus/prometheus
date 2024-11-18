@@ -2610,6 +2610,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 		}
 		switch {
 		case returnBool:
+			histogramValue = nil
 			if keep {
 				floatValue = 1.0
 			} else {
