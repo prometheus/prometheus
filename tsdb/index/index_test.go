@@ -637,15 +637,26 @@ func TestReader_PostingsForLabelMatching(t *testing.T) {
 	refs, err := ExpandPostings(p)
 	require.NoError(t, err)
 	require.Equal(t, []storage.SeriesRef{4, 6, 8, 10}, refs)
+}
 
-	t.Run("nil match function", func(t *testing.T) {
-		p := ir.PostingsForLabelMatching(context.Background(), "__name__", nil)
-		require.NoError(t, p.Err())
-		refs, err := ExpandPostings(p)
-		require.NoError(t, err)
-		// All postings for the label should be returned.
-		require.Equal(t, []storage.SeriesRef{3, 4, 5, 6, 7, 8, 9, 10, 11}, refs)
-	})
+func TestReader_PostingsForAllLabelValues(t *testing.T) {
+	const seriesCount = 9
+	var input indexWriterSeriesSlice
+	for i := 1; i <= seriesCount; i++ {
+		input = append(input, &indexWriterSeries{
+			labels: labels.FromStrings("__name__", strconv.Itoa(i)),
+			chunks: []chunks.Meta{
+				{Ref: 1, MinTime: 0, MaxTime: 10},
+			},
+		})
+	}
+	ir, _, _ := createFileReader(context.Background(), t, input)
+
+	p := ir.PostingsForAllLabelValues(context.Background(), "__name__")
+	require.NoError(t, p.Err())
+	refs, err := ExpandPostings(p)
+	require.NoError(t, err)
+	require.Equal(t, []storage.SeriesRef{3, 4, 5, 6, 7, 8, 9, 10, 11}, refs)
 }
 
 func TestReader_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
