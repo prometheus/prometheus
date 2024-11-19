@@ -3,9 +3,11 @@ package cppbridge_test
 import (
 	"bytes"
 	"context"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/golang/snappy"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
@@ -277,4 +279,13 @@ func (s *OutputDecoderSuite) TestWALProtobufEncoderEncode() {
 		s.Equal(int64((val+1)*100), actualWr.Timeseries[val].Samples[0].Timestamp)
 		s.Equal(float64(val+1), actualWr.Timeseries[val].Samples[0].Value)
 	}
+
+	runtime.GC()
+	time.Sleep(3 * time.Second)
+
+	runtime.GC()
+	time.Sleep(3 * time.Second)
+
+	runtime.GC()
+	time.Sleep(3 * time.Second)
 }

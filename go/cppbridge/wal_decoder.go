@@ -2,6 +2,7 @@ package cppbridge
 
 import (
 	"context"
+	"fmt"
 	"hash/crc32"
 	"io"
 	"runtime"
@@ -377,8 +378,8 @@ func (e *WALProtobufEncoder) Encode(
 	}
 
 	outSlices := make([]*SnappyProtobufEncodedData, numberOfShards)
-	for i, b := range buffers {
-		outSlices[i] = NewSnappyProtobufEncodedData(b)
+	for i := range buffers {
+		outSlices[i] = NewSnappyProtobufEncodedData(buffers[i])
 	}
 
 	return outSlices, nil
@@ -393,7 +394,9 @@ type SnappyProtobufEncodedData struct {
 func NewSnappyProtobufEncodedData(b []byte) *SnappyProtobufEncodedData {
 	sped := &SnappyProtobufEncodedData{b: b}
 	runtime.SetFinalizer(sped, func(sped *SnappyProtobufEncodedData) {
+		fmt.Println("freeBytes")
 		freeBytes(sped.b)
+		fmt.Println("freeBytes")
 	})
 	return sped
 }
