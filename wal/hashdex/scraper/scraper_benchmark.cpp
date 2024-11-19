@@ -6,7 +6,7 @@
 
 namespace {
 
-using PromPP::WAL::hashdex::Scraper;
+using PromPP::WAL::hashdex::scraper::PrometheusScraper;
 
 void BenchmarkScraper(benchmark::State& state) {
   constexpr auto get_file_name = [] -> std::string {
@@ -20,7 +20,7 @@ void BenchmarkScraper(benchmark::State& state) {
   std::ifstream t(get_file_name());
   std::string str((std::istreambuf_iterator(t)), std::istreambuf_iterator<char>());
 
-  Scraper scraper;
+  PrometheusScraper scraper;
 
   for ([[maybe_unused]] auto _ : state) {
     std::ignore = scraper.parse(str, 0);

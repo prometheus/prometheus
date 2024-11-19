@@ -7,14 +7,14 @@ namespace series_data::encoder::value {
 
 class PROMPP_ATTRIBUTE_PACKED ValuesGorillaEncoder {
  public:
-  PROMPP_ALWAYS_INLINE explicit ValuesGorillaEncoder(double value, uint32_t count) { Encoder::encode_first(state_, value, count, stream_); }
+  PROMPP_ALWAYS_INLINE explicit ValuesGorillaEncoder(double value, uint32_t count) { values_encoder_.encode_first(value, count, stream_); }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_actual(double value) const noexcept { return is_values_strictly_equals(state_.last_v, value); }
-  [[nodiscard]] PROMPP_ALWAYS_INLINE double last_value() const noexcept { return state_.last_v; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_actual(double value) const noexcept { return is_values_strictly_equals(values_encoder_.value(), value); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE double last_value() const noexcept { return values_encoder_.value(); }
 
-  PROMPP_ALWAYS_INLINE void encode(double value) { Encoder::encode(state_, value, stream_); }
+  PROMPP_ALWAYS_INLINE void encode(double value) { values_encoder_.encode(value, stream_); }
 
-  PROMPP_ALWAYS_INLINE void encode(double value, uint32_t count) { Encoder::encode(state_, value, count, stream_); }
+  PROMPP_ALWAYS_INLINE void encode(double value, uint32_t count) { values_encoder_.encode(value, count, stream_); }
 
   bool operator==(const ValuesGorillaEncoder& other) const noexcept { return stream_ == other.stream_; }
 
@@ -29,7 +29,7 @@ class PROMPP_ATTRIBUTE_PACKED ValuesGorillaEncoder {
  private:
   using Encoder = BareBones::Encoding::Gorilla::ValuesEncoder;
 
-  BareBones::Encoding::Gorilla::ValuesEncoderState state_;
+  Encoder values_encoder_;
   BareBones::CompactBitSequence<kAllocationSizesTable> stream_;
 };
 

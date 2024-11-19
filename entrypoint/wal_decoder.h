@@ -122,6 +122,77 @@ void prompp_wal_decoder_decode_dry(void* args, void* res);
  */
 void prompp_wal_decoder_restore_from_stream(void* args, void* res);
 
+//
+// OutputDecoder
+//
+
+/**
+ * @brief Construct a new WAL Output Decoder
+ *
+ * @param args {
+ *     external_labels     []Label // slice with external labels;
+ *     stateless_relabeler uintptr // pointer to constructed stateless relabeler;
+ *     output_lss          uintptr // pointer to constructed output label sets;
+ *     encoder_version     uint8_t // basic encoder version
+ * }
+ *
+ * @param res {
+ *     decoder uintptr // pointer to constructed output decoder
+ * }
+ */
+void prompp_wal_output_decoder_ctor(void* args, void* res);
+
+/**
+ * @brief Destroy output decoder
+ *
+ * @param args {
+ *     decoder             uintptr // pointer to constructed output decoder
+ * }
+ */
+void prompp_wal_output_decoder_dtor(void* args);
+
+/**
+ * @brief Dump output decoder state(output_lss and cache) to slice byte.
+ *
+ * @param args {
+ *     decoder             uintptr // pointer to constructed output decoder
+ * }
+ *
+ * @param res {
+ *     dump                []byte  // stream dump
+ *     error               []byte  // error string if thrown
+ * }
+ */
+void prompp_wal_output_decoder_dump_to(void* args, void* res);
+
+/**
+ * @brief Load from dump(slice byte) output decoder state(output_lss and cache).
+ *
+ * @param args {
+ *     dump                []byte  // stream dump
+ *     decoder             uintptr // pointer to constructed output decoder
+ * }
+ *
+ * @param res {
+ *     error               []byte  // error string if thrown
+ * }
+ */
+void prompp_wal_output_decoder_load_from(void* args, void* res);
+
+/**
+ * @brief decode segment to slice RefSample.
+ *
+ * @param args {
+ *     decoder             uintptr      // pointer to constructed output decoder
+ * }
+ *
+ * @param res {
+ *     ref_samples         []RefSample  // slice RefSample
+ *     error               []byte       // error string if thrown
+ * }
+ */
+void prompp_wal_output_decoder_decode(void* args, void* res);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

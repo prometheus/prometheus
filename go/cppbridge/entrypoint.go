@@ -659,6 +659,105 @@ func walDecoderDtor(decoder uintptr) {
 }
 
 //
+// OutputDecoder
+//
+
+// walOutputDecoderCtor - wrapper for constructor C-WalOutputDecoder.
+func walOutputDecoderCtor(
+	externalLabels []Label,
+	statelessRelabeler, outputLss uintptr,
+	encodersVersion uint8,
+) uintptr {
+	var args = struct {
+		externalLabels     []Label
+		statelessRelabeler uintptr
+		outputLss          uintptr
+		encodersVersion    uint8
+	}{externalLabels, statelessRelabeler, outputLss, encodersVersion}
+	var res struct {
+		decoder uintptr
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_wal_output_decoder_ctor,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.decoder
+}
+
+// walOutputDecoderDtor - wrapper for destructor C-WalOutputDecoder.
+func walOutputDecoderDtor(decoder uintptr) {
+	var args = struct {
+		decoder uintptr
+	}{decoder}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_wal_output_decoder_dtor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
+// walOutputDecoderDumpTo dump output decoder state(output_lss and cache) to slice byte.
+func walOutputDecoderDumpTo(decoder uintptr) (dump, err []byte) {
+	var args = struct {
+		decoder uintptr
+	}{decoder}
+	var res struct {
+		dump  []byte
+		error []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_wal_output_decoder_dump_to,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.dump, res.error
+}
+
+// walOutputDecoderLoadFrom load from dump(slice byte) output decoder state(output_lss and cache).
+func walOutputDecoderLoadFrom(decoder uintptr, dump []byte) []byte {
+	var args = struct {
+		dump    []byte
+		decoder uintptr
+	}{dump, decoder}
+	var res struct {
+		error []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_wal_output_decoder_load_from,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.error
+}
+
+// walOutputDecoderDecode decode segment to slice RefSample.
+func walOutputDecoderDecode(segment []byte, decoder uintptr) (dump []RefSample, err []byte) {
+	var args = struct {
+		segment []byte
+		decoder uintptr
+	}{segment, decoder}
+	var res struct {
+		refSamples []RefSample
+		error      []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_wal_output_decoder_decode,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.refSamples, res.error
+}
+
+//
 // LabelSetStorage EncodingBimap
 //
 
@@ -1105,7 +1204,18 @@ func prometheusPerShardRelabelerInputRelabelingWithStalenans(
 		targetLss             uintptr
 		state                 uintptr
 		staleNansTS           int64
-	}{shardsInnerSeries, shardsRelabeledSeries, options, perShardRelabeler, hashdex, cache, inputLss, targetLss, sourceState, staleNansTS}
+	}{
+		shardsInnerSeries,
+		shardsRelabeledSeries,
+		options,
+		perShardRelabeler,
+		hashdex,
+		cache,
+		inputLss,
+		targetLss,
+		sourceState,
+		staleNansTS,
+	}
 	var res struct {
 		exception []byte
 	}
@@ -1491,7 +1601,7 @@ func seriesDataDeserializerDtor(deserializer uintptr) {
 	)
 }
 
-func seriesDataChunkRecoderCtor(lss uintptr, dataStorage uintptr, timeInterval TimeInterval) uintptr {
+func seriesDataChunkRecoderCtor(lss, dataStorage uintptr, timeInterval TimeInterval) uintptr {
 	var args = struct {
 		lss         uintptr
 		dataStorage uintptr
@@ -1713,7 +1823,7 @@ func indexWriterWriteTableOfContents(writer uintptr, data []byte) []byte {
 	return res.data
 }
 
-func getHeadStatus(lss uintptr, dataStorage uintptr, status *HeadStatus, limit int) {
+func getHeadStatus(lss, dataStorage uintptr, status *HeadStatus, limit int) {
 	var args = struct {
 		lss         uintptr
 		dataStorage uintptr
@@ -1734,20 +1844,24 @@ func freeHeadStatus(status *HeadStatus) {
 	)
 }
 
-func walScraperHashdexCtor() uintptr {
+//
+// Prometheus Scraper
+//
+
+func walPrometheusScraperHashdexCtor() uintptr {
 	var res struct {
 		hashdex uintptr
 	}
 
 	fastcgo.UnsafeCall1(
-		C.prompp_wal_scraper_hashdex_ctor,
+		C.prompp_wal_prometheus_scraper_hashdex_ctor,
 		uintptr(unsafe.Pointer(&res)),
 	)
 
 	return res.hashdex
 }
 
-func walScraperHashdexParse(hashdex uintptr, buffer []byte, default_timestamp int64) uint32 {
+func walPrometheusScraperHashdexParse(hashdex uintptr, buffer []byte, default_timestamp int64) uint32 {
 	var args = struct {
 		hashdex           uintptr
 		buffer            []byte
@@ -1758,7 +1872,7 @@ func walScraperHashdexParse(hashdex uintptr, buffer []byte, default_timestamp in
 	}
 	start := time.Now()
 	fastcgo.UnsafeCall2(
-		C.prompp_wal_scraper_hashdex_parse,
+		C.prompp_wal_prometheus_scraper_hashdex_parse,
 		uintptr(unsafe.Pointer(&args)),
 		uintptr(unsafe.Pointer(&res)),
 	)
@@ -1769,7 +1883,7 @@ func walScraperHashdexParse(hashdex uintptr, buffer []byte, default_timestamp in
 	return res.error
 }
 
-func walScraperHashdexGetMetadata(hashdex uintptr) []WALScraperHashdexMetadata {
+func walPrometheusScraperHashdexGetMetadata(hashdex uintptr) []WALScraperHashdexMetadata {
 	var args = struct {
 		hashdex uintptr
 	}{hashdex}
@@ -1778,7 +1892,7 @@ func walScraperHashdexGetMetadata(hashdex uintptr) []WALScraperHashdexMetadata {
 	}
 
 	fastcgo.UnsafeCall2(
-		C.prompp_wal_scraper_hashdex_get_metadata,
+		C.prompp_wal_prometheus_scraper_hashdex_get_metadata,
 		uintptr(unsafe.Pointer(&args)),
 		uintptr(unsafe.Pointer(&res)),
 	)
@@ -1786,13 +1900,80 @@ func walScraperHashdexGetMetadata(hashdex uintptr) []WALScraperHashdexMetadata {
 	return res.metadata
 }
 
-func walScraperHashdexDtor(hashdex uintptr) {
+func walPrometheusScraperHashdexDtor(hashdex uintptr) {
 	var args = struct {
 		hashdex uintptr
 	}{hashdex}
 
 	fastcgo.UnsafeCall1(
-		C.prompp_wal_scraper_hashdex_dtor,
+		C.prompp_wal_prometheus_scraper_hashdex_dtor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
+//
+// OpenMetrics scraper
+//
+
+func walOpenMetricsScraperHashdexCtor() uintptr {
+	var res struct {
+		hashdex uintptr
+	}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_wal_open_metrics_scraper_hashdex_ctor,
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.hashdex
+}
+
+func walOpenMetricsScraperHashdexParse(hashdex uintptr, buffer []byte, default_timestamp int64) uint32 {
+	var args = struct {
+		hashdex           uintptr
+		buffer            []byte
+		default_timestamp int64
+	}{hashdex, buffer, default_timestamp}
+	var res struct {
+		error uint32
+	}
+	start := time.Now()
+	fastcgo.UnsafeCall2(
+		C.prompp_wal_open_metrics_scraper_hashdex_parse,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+	unsafeCall.With(
+		prometheus.Labels{"object": "hashdex", "method": "parse"},
+	).Add(float64(time.Since(start).Nanoseconds()))
+
+	return res.error
+}
+
+func walOpenMetricsScraperHashdexGetMetadata(hashdex uintptr) []WALScraperHashdexMetadata {
+	var args = struct {
+		hashdex uintptr
+	}{hashdex}
+	var res struct {
+		metadata []WALScraperHashdexMetadata
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_wal_open_metrics_scraper_hashdex_get_metadata,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.metadata
+}
+
+func walOpenMetricsScraperHashdexDtor(hashdex uintptr) {
+	var args = struct {
+		hashdex uintptr
+	}{hashdex}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_wal_open_metrics_scraper_hashdex_dtor,
 		uintptr(unsafe.Pointer(&args)),
 	)
 }

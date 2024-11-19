@@ -136,7 +136,7 @@ class ChunkRecoder {
     });
 
     if (info.samples_count > 0) [[likely]] {
-      info.interval.max = encoder.state().timestamp_encoder.last_ts;
+      info.interval.max = encoder.last_timestamp();
       info.series_id = iterator_->series_id();
     }
   }

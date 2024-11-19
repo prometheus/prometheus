@@ -258,17 +258,13 @@ func errorFromCode(code uint32) error {
 	return fmt.Errorf("scraper parse unknown code error: %d", code)
 }
 
-// WALScraperHashdex hashdex for sraped incoming data.
-type WALScraperHashdex struct {
-	hashdex uintptr
-	buffer  []byte
-}
-
 const (
 	// ScraperMetadataHelp type of metadata "Help" from hashdex metadata.
 	ScraperMetadataHelp uint32 = iota
 	// ScraperMetadataType type of metadata "Type" from hashdex metadata.
 	ScraperMetadataType
+	// ScraperMetadataUnit type of metadata "Unit" from hashdex metadata.
+	ScraperMetadataUnit
 )
 
 // WALScraperHashdexMetadata metadata from hashdex.
@@ -278,30 +274,36 @@ type WALScraperHashdexMetadata struct {
 	Type       uint32
 }
 
-var _ ShardedData = (*WALScraperHashdex)(nil)
+// WALPrometheusScraperHashdex hashdex for sraped incoming data.
+type WALPrometheusScraperHashdex struct {
+	hashdex uintptr
+	buffer  []byte
+}
 
-// NewScraperHashdex init new *WALScraperHashdex.
-func NewScraperHashdex() *WALScraperHashdex {
-	h := &WALScraperHashdex{
-		hashdex: walScraperHashdexCtor(),
+var _ ShardedData = (*WALPrometheusScraperHashdex)(nil)
+
+// NewPrometheusScraperHashdex init new *WALScraperHashdex.
+func NewPrometheusScraperHashdex() *WALPrometheusScraperHashdex {
+	h := &WALPrometheusScraperHashdex{
+		hashdex: walPrometheusScraperHashdexCtor(),
 		buffer:  nil,
 	}
-	runtime.SetFinalizer(h, func(h *WALScraperHashdex) {
-		walScraperHashdexDtor(h.hashdex)
+	runtime.SetFinalizer(h, func(h *WALPrometheusScraperHashdex) {
+		walPrometheusScraperHashdexDtor(h.hashdex)
 	})
 	return h
 }
 
 // Parse parsing incoming slice byte with default timestamp to hashdex.
-func (h *WALScraperHashdex) Parse(buffer []byte, default_timestamp int64) error {
+func (h *WALPrometheusScraperHashdex) Parse(buffer []byte, default_timestamp int64) error {
 	h.buffer = buffer
-	return errorFromCode(walScraperHashdexParse(h.hashdex, h.buffer, default_timestamp))
+	return errorFromCode(walPrometheusScraperHashdexParse(h.hashdex, h.buffer, default_timestamp))
 }
 
 // RangeMetadata calls f sequentially for each metadata present in the hashdex.
 // If f returns false, range stops the iteration.
-func (h *WALScraperHashdex) RangeMetadata(f func(metadata WALScraperHashdexMetadata) bool) {
-	mds := walScraperHashdexGetMetadata(h.hashdex)
+func (h *WALPrometheusScraperHashdex) RangeMetadata(f func(metadata WALScraperHashdexMetadata) bool) {
+	mds := walPrometheusScraperHashdexGetMetadata(h.hashdex)
 
 	for i := range mds {
 		if !f(mds[i]) {
@@ -313,16 +315,71 @@ func (h *WALScraperHashdex) RangeMetadata(f func(metadata WALScraperHashdexMetad
 }
 
 // Cluster get Cluster name.
-func (*WALScraperHashdex) Cluster() string {
+func (*WALPrometheusScraperHashdex) Cluster() string {
 	return ""
 }
 
 // Replica get Replica name.
-func (*WALScraperHashdex) Replica() string {
+func (*WALPrometheusScraperHashdex) Replica() string {
 	return ""
 }
 
 // cptr pointer to underlying c++ object.
-func (h *WALScraperHashdex) cptr() uintptr {
+func (h *WALPrometheusScraperHashdex) cptr() uintptr {
+	return h.hashdex
+}
+
+// WALOpenMetricsScraperHashdex hashdex for sraped incoming data.
+type WALOpenMetricsScraperHashdex struct {
+	hashdex uintptr
+	buffer  []byte
+}
+
+var _ ShardedData = (*WALOpenMetricsScraperHashdex)(nil)
+
+// NewOpenMetricsScraperHashdex init new *WALScraperHashdex.
+func NewOpenMetricsScraperHashdex() *WALOpenMetricsScraperHashdex {
+	h := &WALOpenMetricsScraperHashdex{
+		hashdex: walOpenMetricsScraperHashdexCtor(),
+		buffer:  nil,
+	}
+	runtime.SetFinalizer(h, func(h *WALOpenMetricsScraperHashdex) {
+		walOpenMetricsScraperHashdexDtor(h.hashdex)
+	})
+	return h
+}
+
+// Parse parsing incoming slice byte with default timestamp to hashdex.
+func (h *WALOpenMetricsScraperHashdex) Parse(buffer []byte, default_timestamp int64) error {
+	h.buffer = buffer
+	return errorFromCode(walOpenMetricsScraperHashdexParse(h.hashdex, h.buffer, default_timestamp))
+}
+
+// RangeMetadata calls f sequentially for each metadata present in the hashdex.
+// If f returns false, range stops the iteration.
+func (h *WALOpenMetricsScraperHashdex) RangeMetadata(f func(metadata WALScraperHashdexMetadata) bool) {
+	mds := walOpenMetricsScraperHashdexGetMetadata(h.hashdex)
+
+	for i := range mds {
+		if !f(mds[i]) {
+			break
+		}
+	}
+
+	freeBytes(*(*[]byte)(unsafe.Pointer(&mds)))
+}
+
+// Cluster get Cluster name.
+func (*WALOpenMetricsScraperHashdex) Cluster() string {
+	return ""
+}
+
+// Replica get Replica name.
+func (*WALOpenMetricsScraperHashdex) Replica() string {
+	return ""
+}
+
+// cptr pointer to underlying c++ object.
+func (h *WALOpenMetricsScraperHashdex) cptr() uintptr {
 	return h.hashdex
 }

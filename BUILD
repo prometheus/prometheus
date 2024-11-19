@@ -124,6 +124,7 @@ cc_library(
         "@fastfloat",
         "@roaring",
         "@simdutf",
+        "@snappy",
     ],
 )
 

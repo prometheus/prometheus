@@ -1170,6 +1170,77 @@ void prompp_wal_decoder_decode_dry(void* args, void* res);
  */
 void prompp_wal_decoder_restore_from_stream(void* args, void* res);
 
+//
+// OutputDecoder
+//
+
+/**
+ * @brief Construct a new WAL Output Decoder
+ *
+ * @param args {
+ *     external_labels     []Label // slice with external labels;
+ *     stateless_relabeler uintptr // pointer to constructed stateless relabeler;
+ *     output_lss          uintptr // pointer to constructed output label sets;
+ *     encoder_version     uint8_t // basic encoder version
+ * }
+ *
+ * @param res {
+ *     decoder uintptr // pointer to constructed output decoder
+ * }
+ */
+void prompp_wal_output_decoder_ctor(void* args, void* res);
+
+/**
+ * @brief Destroy output decoder
+ *
+ * @param args {
+ *     decoder             uintptr // pointer to constructed output decoder
+ * }
+ */
+void prompp_wal_output_decoder_dtor(void* args);
+
+/**
+ * @brief Dump output decoder state(output_lss and cache) to slice byte.
+ *
+ * @param args {
+ *     decoder             uintptr // pointer to constructed output decoder
+ * }
+ *
+ * @param res {
+ *     dump                []byte  // stream dump
+ *     error               []byte  // error string if thrown
+ * }
+ */
+void prompp_wal_output_decoder_dump_to(void* args, void* res);
+
+/**
+ * @brief Load from dump(slice byte) output decoder state(output_lss and cache).
+ *
+ * @param args {
+ *     dump                []byte  // stream dump
+ *     decoder             uintptr // pointer to constructed output decoder
+ * }
+ *
+ * @param res {
+ *     error               []byte  // error string if thrown
+ * }
+ */
+void prompp_wal_output_decoder_load_from(void* args, void* res);
+
+/**
+ * @brief decode segment to slice RefSample.
+ *
+ * @param args {
+ *     decoder             uintptr      // pointer to constructed output decoder
+ * }
+ *
+ * @param res {
+ *     ref_samples         []RefSample  // slice RefSample
+ *     error               []byte       // error string if thrown
+ * }
+ */
+void prompp_wal_output_decoder_decode(void* args, void* res);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif
@@ -1531,13 +1602,13 @@ void prompp_wal_go_model_hashdex_presharding(void* args, void* res);
 void prompp_wal_basic_decoder_hashdex_dtor(void* args);
 
 /**
- * @brief Construct a new PromPP::WAL::hashdex::Scraper
+ * @brief Construct a new PromPP::WAL::hashdex::Scraper based on Prometheus parser
  *
  * @param res {
  *     hashdex uintptr // pointer to constructed hashdex
  * }
  */
-void prompp_wal_scraper_hashdex_ctor(void* res);
+void prompp_wal_prometheus_scraper_hashdex_ctor(void* res);
 
 /**
  * @brief Parse scraped buffer
@@ -1551,7 +1622,7 @@ void prompp_wal_scraper_hashdex_ctor(void* res);
  *     error uint32 // value of PromPP::WAL::hashdex::Scraper::Error
  * }
  */
-void prompp_wal_scraper_hashdex_parse(void* args, void* res);
+void prompp_wal_prometheus_scraper_hashdex_parse(void* args, void* res);
 
 /**
  * @brief Parse scraped buffer
@@ -1567,7 +1638,7 @@ void prompp_wal_scraper_hashdex_parse(void* args, void* res);
  *     }
  * }
  */
-void prompp_wal_scraper_hashdex_get_metadata(void* args, void* res);
+void prompp_wal_prometheus_scraper_hashdex_get_metadata(void* args, void* res);
 
 /**
  * @brief Destroy hashdex
@@ -1576,7 +1647,55 @@ void prompp_wal_scraper_hashdex_get_metadata(void* args, void* res);
  *     hashdex uintptr // pointer to constructed hashdex
  * }
  */
-void prompp_wal_scraper_hashdex_dtor(void* args);
+void prompp_wal_prometheus_scraper_hashdex_dtor(void* args);
+
+/**
+ * @brief Construct a new PromPP::WAL::hashdex::Scraper based on OpenMetrics parser
+ *
+ * @param res {
+ *     hashdex uintptr // pointer to constructed hashdex
+ * }
+ */
+void prompp_wal_open_metrics_scraper_hashdex_ctor(void* res);
+
+/**
+ * @brief Parse scraped buffer
+ *
+ * @param args {
+ *     hashdex           uintptr
+ *     buffer            string // buffer will be modified by parser
+ *     default_timestamp int64
+ * }
+ * @param res {
+ *     error uint32 // value of PromPP::WAL::hashdex::Scraper::Error
+ * }
+ */
+void prompp_wal_open_metrics_scraper_hashdex_parse(void* args, void* res);
+
+/**
+ * @brief Parse scraped buffer
+ *
+ * @param args {
+ *     hashdex uintptr
+ * }
+ * @param res {
+ *     metadata []struct {
+ *        metric_name string
+ *        text string
+ *        type uint32
+ *     }
+ * }
+ */
+void prompp_wal_open_metrics_scraper_hashdex_get_metadata(void* args, void* res);
+
+/**
+ * @brief Destroy hashdex
+ *
+ * @param args {
+ *     hashdex uintptr // pointer to constructed hashdex
+ * }
+ */
+void prompp_wal_open_metrics_scraper_hashdex_dtor(void* args);
 
 #ifdef __cplusplus
 }  // extern "C"

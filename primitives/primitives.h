@@ -335,7 +335,7 @@ class BasicTimeseries {
     }
   }
 
-  inline __attribute__((always_inline)) void set_label_set(SamplesType samples) noexcept {
+  inline __attribute__((always_inline)) void set_samples(SamplesType samples) noexcept {
     static_assert(std::is_pointer<SamplesType>::value, "this functions can be used only if SamplesType is a pointer");
     samples_ = samples;
   }
@@ -551,7 +551,7 @@ class LabelsBuilder {
 
   // reset - clears all current state for the builder and init from LabelSet.
   template <class SomeLabelSet>
-  PROMPP_ALWAYS_INLINE void reset(SomeLabelSet& ls) {
+  PROMPP_ALWAYS_INLINE void reset(const SomeLabelSet& ls) {
     state_.reset(ls);
   }
 

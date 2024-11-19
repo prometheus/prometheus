@@ -26,7 +26,7 @@ class AscIntegerValuesGorillaDecodeIterator : public SeparatedTimestampValueDeco
   }
 
   PROMPP_ALWAYS_INLINE AscIntegerValuesGorillaDecodeIterator operator++(int) noexcept {
-    auto result = *this;
+    const auto result = *this;
     ++*this;
     return result;
   }
@@ -36,30 +36,25 @@ class AscIntegerValuesGorillaDecodeIterator : public SeparatedTimestampValueDeco
   using Decoder = BareBones::Encoding::Gorilla::ZigZagTimestampDecoder<encoder::value::kAscIntegerDodSignificantLengths>;
   using ValueType = BareBones::Encoding::Gorilla::ValueType;
 
-  BareBones::Encoding::Gorilla::TimestampEncoderState state_;
+  Decoder decoder_;
   BareBones::BitSequenceReader reader_;
   BareBones::Encoding::Gorilla::GorillaState gorilla_state_{GorillaState::kFirstPoint};
 
   void decode_value() noexcept {
-    if (gorilla_state_ == GorillaState::kFirstPoint) {
-      [[unlikely]];
-
-      Decoder::decode(state_, reader_);
+    if (gorilla_state_ == GorillaState::kFirstPoint) [[unlikely]] {
+      decoder_.decode(reader_);
       gorilla_state_ = GorillaState::kSecondPoint;
-    } else if (gorilla_state_ == GorillaState::kSecondPoint) {
-      [[unlikely]];
-
-      Decoder::decode_delta(state_, reader_);
+    } else if (gorilla_state_ == GorillaState::kSecondPoint) [[unlikely]] {
+      decoder_.decode_delta(reader_);
       gorilla_state_ = GorillaState::kOtherPoint;
     } else {
-      if (auto type = Decoder::decode_delta_of_delta_with_stale_nan(state_, reader_); type == ValueType::kStaleNan) {
-        [[unlikely]];
+      if (const auto type = decoder_.decode_delta_of_delta_with_stale_nan(reader_); type == ValueType::kStaleNan) [[unlikely]] {
         sample_.value = BareBones::Encoding::Gorilla::STALE_NAN;
         return;
       }
     }
 
-    sample_.value = static_cast<double>(state_.last_ts);
+    sample_.value = static_cast<double>(decoder_.timestamp());
   }
 };
 

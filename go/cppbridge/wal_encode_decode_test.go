@@ -529,3 +529,73 @@ func (*EncoderDecoderSuite) metricInjection(wr *prompb.WriteRequest, meta *cppbr
 		},
 	)
 }
+
+func (s *EncoderDecoderSuite) TestEncodeWALOutputDecode() {
+	statelessRelabeler, err := cppbridge.NewStatelessRelabeler([]*cppbridge.RelabelConfig{
+		{
+			SourceLabels: []string{"__name__"},
+			Regex:        ".*",
+			Action:       cppbridge.Keep,
+		},
+	})
+	s.Require().NoError(err)
+	externalLabels := []cppbridge.Label{{"name0", "value0"}, {"name1", "value1"}}
+	outputLss := cppbridge.NewLssStorage()
+	dec := cppbridge.NewWALOutputDecoder(externalLabels, statelessRelabeler, outputLss, 0, cppbridge.EncodersVersion())
+
+	hlimits := cppbridge.DefaultWALHashdexLimits()
+	enc := cppbridge.NewWALEncoder(0, 0)
+
+	expectedWr := &prompb.WriteRequest{
+		Timeseries: []prompb.TimeSeries{
+			{
+				Labels: []prompb.Label{
+					{
+						Name:  "__name__",
+						Value: "test",
+					},
+					{
+						Name:  "job",
+						Value: "tester",
+					},
+				},
+				Samples: []prompb.Sample{
+					{
+						Timestamp: time.Now().UnixMilli(),
+						Value:     4444,
+					},
+				},
+			},
+		},
+	}
+
+	data, err := expectedWr.Marshal()
+	s.Require().NoError(err)
+
+	s.T().Log("sharding protobuf")
+	h, err := cppbridge.NewWALProtobufHashdex(data, hlimits)
+	s.Require().NoError(err)
+
+	s.T().Log("encoding protobuf")
+	_, gos, err := enc.Encode(s.baseCtx, h)
+	s.Require().NoError(err)
+
+	s.EqualValues(1, gos.Series())
+	s.EqualValues(1, gos.Samples())
+
+	s.T().Log("transferring segment")
+	segByte := s.transferringData(gos)
+
+	s.T().Log("decoding to RefSamples")
+	refSamples, err := dec.Decode(s.baseCtx, segByte)
+	s.Require().NoError(err)
+
+	refSamples.Range(func(id uint32, t int64, v float64) bool {
+		if !s.Less(int(id), len(expectedWr.Timeseries)) {
+			return false
+		}
+		s.Equal(expectedWr.Timeseries[id].Samples[0].Timestamp, t)
+		s.Equal(expectedWr.Timeseries[id].Samples[0].Value, v)
+		return true
+	})
+}
