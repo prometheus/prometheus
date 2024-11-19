@@ -781,14 +781,15 @@ func newBasicScrapeLoop(t testing.TB, ctx context.Context, scraper scraper, app 
 		nil,
 		false,
 		newTestScrapeMetrics(t),
-		false,
+		nil,
 		model.LegacyValidation,
 		"text/plain",
+		false,
 	)
 }
 
 func TestScrapeLoopStopBeforeRun(t *testing.T) {
-	scraper := &testScraper{}
+	scraper := &testScraper{offsetDur: time.Second}
 	sl := newBasicScrapeLoop(t, context.Background(), scraper, nil, 1)
 
 	// The scrape pool synchronizes on stopping scrape loops. However, new scrape
@@ -926,9 +927,10 @@ func TestScrapeLoopRun(t *testing.T) {
 		nil,
 		false,
 		scrapeMetrics,
-		false,
+		nil,
 		model.LegacyValidation,
 		"text/plain",
+		false,
 	)
 
 	// The loop must terminate during the initial offset if the context
@@ -1073,9 +1075,10 @@ func TestScrapeLoopMetadata(t *testing.T) {
 		nil,
 		false,
 		scrapeMetrics,
-		false,
+		nil,
 		model.LegacyValidation,
 		"text/plain",
+		false,
 	)
 	defer cancel()
 

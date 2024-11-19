@@ -725,11 +725,12 @@ scrape_configs:
 }
 
 func setupScrapeManager(t *testing.T, honorTimestamps, enableCTZeroIngestion bool) (*collectResultAppender, *Manager) {
+	noOffset := time.Duration(0)
 	app := &collectResultAppender{}
 	scrapeManager, err := NewManager(
 		&Options{
 			EnableCreatedTimestampZeroIngestion: enableCTZeroIngestion,
-			skipOffsetting:                      true,
+			InitialScrapeOffset:                 &noOffset,
 		},
 		promslog.New(&promslog.Config{}),
 		nil,
@@ -978,12 +979,13 @@ func TestManagerCTZeroIngestionHistogram(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			noOffset := time.Duration(0)
 			app := &collectResultAppender{}
 			scrapeManager, err := NewManager(
 				&Options{
 					EnableCreatedTimestampZeroIngestion: tc.enableCTZeroIngestion,
 					EnableNativeHistogramsIngestion:     true,
-					skipOffsetting:                      true,
+					InitialScrapeOffset:                 &noOffset,
 				},
 				promslog.New(&promslog.Config{}),
 				nil,
@@ -1508,4 +1510,116 @@ scrape_configs:
 		false,
 		[]string{fmt.Sprintf("http://%s/metrics", otherJobTargetURL)},
 	)
+}
+
+func TestManagerStopAfterScrapeAttempt(t *testing.T) {
+	noOffset := 0 * time.Nanosecond
+	largeOffset := 99 * time.Hour
+	oneSecondOffset := 1 * time.Second
+	tenSecondOffset := 10 * time.Second
+	interval := 10 * time.Second
+	for _, tcase := range []struct {
+		name                string
+		scrapeOnShutdown    bool
+		initialScrapeOffset *time.Duration
+		stopDelay           time.Duration
+		expectedSamples     int
+	}{
+		{
+			name:                "no scrape on stop, with offset of 10s",
+			initialScrapeOffset: &tenSecondOffset,
+			stopDelay:           5 * time.Second,
+			expectedSamples:     0,
+			scrapeOnShutdown:    false,
+		},
+		{
+			name:                "no scrape on stop, no jitter",
+			initialScrapeOffset: &noOffset,
+			stopDelay:           5 * time.Second,
+			expectedSamples:     1,
+			scrapeOnShutdown:    false,
+		},
+		{
+			name:                "scrape on stop, no jitter",
+			initialScrapeOffset: &noOffset,
+			stopDelay:           5 * time.Second,
+			expectedSamples:     2,
+			scrapeOnShutdown:    true,
+		},
+		{
+			name:                "scrape on stop, with large offset",
+			initialScrapeOffset: &largeOffset,
+			stopDelay:           5 * time.Second,
+			expectedSamples:     1,
+			scrapeOnShutdown:    true,
+		},
+		{
+			name:                "scrape on stop after 5s, with offset of 1s",
+			initialScrapeOffset: &oneSecondOffset,
+			stopDelay:           5 * time.Second,
+			expectedSamples:     2,
+			scrapeOnShutdown:    true,
+		},
+		{
+			name:                "scrape on stop after 5s, with offset of 10s",
+			initialScrapeOffset: &tenSecondOffset,
+			stopDelay:           5 * time.Second,
+			expectedSamples:     1,
+			scrapeOnShutdown:    true,
+		},
+	} {
+		t.Run(tcase.name, func(t *testing.T) {
+			app := &collectResultAppender{}
+			// Setup scrape manager.
+			scrapeManager, err := NewManager(
+				&Options{
+					ScrapeOnShutdown:    tcase.scrapeOnShutdown,
+					InitialScrapeOffset: tcase.initialScrapeOffset,
+				},
+				promslog.New(&promslog.Config{}),
+				nil,
+				&collectResultAppendable{app},
+				prometheus.NewRegistry(),
+			)
+			require.NoError(t, err)
+			require.NoError(t, scrapeManager.ApplyConfig(&config.Config{
+				GlobalConfig: config.GlobalConfig{
+					ScrapeInterval:  model.Duration(interval),
+					ScrapeTimeout:   model.Duration(interval),
+					ScrapeProtocols: []config.ScrapeProtocol{config.PrometheusProto, config.OpenMetricsText1_0_0},
+				},
+				ScrapeConfigs: []*config.ScrapeConfig{{JobName: "test"}},
+			}))
+			// Start fake HTTP target to scrape returning a single metric.
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+					w.Write([]byte("expected_metric 1\n"))
+				}),
+			)
+			defer server.Close()
+			serverURL, err := url.Parse(server.URL)
+			require.NoError(t, err)
+			// Add fake target directly into tsets + reload. Normally users would use
+			// Manager.Run and wait for minimum 5s refresh interval.
+			scrapeManager.updateTsets(map[string][]*targetgroup.Group{
+				"test": {
+					{
+						Targets: []model.LabelSet{{
+							model.SchemeLabel:  model.LabelValue(serverURL.Scheme),
+							model.AddressLabel: model.LabelValue(serverURL.Host),
+						}},
+					},
+				},
+			})
+			scrapeManager.reload()
+
+			// Wait for the defined stop delay, before stopping.
+			time.Sleep(tcase.stopDelay)
+			scrapeManager.Stop()
+
+			// Verify results.
+			require.Len(t, findSamplesForMetric(app.resultFloats, "expected_metric"), tcase.expectedSamples)
+		})
+	}
 }

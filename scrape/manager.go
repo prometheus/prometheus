@@ -90,8 +90,23 @@ type Options struct {
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption
 
-	// private option for testability.
-	skipOffsetting bool
+	// Option to allow a final scrape before the manager is shutdown.  Useful
+	// for serverless flavours of OTel's prometheusreceiver which might require
+	// a final scrape of targets before the instance is shutdown.
+	ScrapeOnShutdown bool
+
+	// InitialScrapeOffset controls how long after startup we should scrape all
+	// targets.  By default, all targets have an offset so we spread the
+	// scraping load evenly within the Prometheus server. Configuring this will
+	// make it so all targets have the same configured offset, which may be
+	// undesirable as load is no longer evenly spread.  This is useful however
+	// in serverless deployments where we're sensitive to the initial offsets
+	// and would like them to be small and configurable.
+	//
+	// NOTE: This option is experimental and not used by Prometheus.  It was
+	// created for serverless flavors of OpenTelemetry contrib's
+	// prometheusreceiver.
+	InitialScrapeOffset *time.Duration
 }
 
 // Manager maintains a set of scrape pools and manages start/stop cycles
