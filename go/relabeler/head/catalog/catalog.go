@@ -6,6 +6,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"io"
 	"sort"
+	"sync"
 )
 
 const (
@@ -40,6 +41,7 @@ type Log interface {
 }
 
 type Catalog struct {
+	mtx     sync.Mutex
 	clock   clockwork.Clock
 	log     Log
 	records map[string]Record
@@ -60,6 +62,8 @@ func New(clock clockwork.Clock, log Log) (*Catalog, error) {
 }
 
 func (c *Catalog) List(filterFn func(record Record) bool, sortLess func(lhs, rhs Record) bool) (records []Record, err error) {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
 	records = make([]Record, 0, len(c.records))
 	for _, record := range c.records {
 		if filterFn != nil && !filterFn(record) {
@@ -78,6 +82,9 @@ func (c *Catalog) List(filterFn func(record Record) bool, sortLess func(lhs, rhs
 }
 
 func (c *Catalog) Create(id, dir string, numberOfShards uint16) (r Record, err error) {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+
 	if _, ok := c.records[id]; ok {
 		return r, fmt.Errorf("already exists: %s", id)
 	}
@@ -97,6 +104,9 @@ func (c *Catalog) Create(id, dir string, numberOfShards uint16) (r Record, err e
 }
 
 func (c *Catalog) SetStatus(id string, status Status) (Record, error) {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+
 	r, ok := c.records[id]
 	if !ok {
 		return r, fmt.Errorf("not found: %s", id)
@@ -115,6 +125,9 @@ func (c *Catalog) SetStatus(id string, status Status) (Record, error) {
 }
 
 func (c *Catalog) Delete(id string) error {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+
 	r, ok := c.records[id]
 	if !ok || r.DeletedAt > 0 {
 		return nil

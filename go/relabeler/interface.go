@@ -29,6 +29,7 @@ type LSS interface {
 
 type Wal interface {
 	Write(innerSeriesSlice []*cppbridge.InnerSeries) error
+	WriteEOF() error
 }
 
 type InputRelabeler interface {

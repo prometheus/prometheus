@@ -50,6 +50,11 @@ func (w *ShardWal) Write(innerSeriesSlice []*cppbridge.InnerSeries) error {
 	return nil
 }
 
+func (w *ShardWal) WriteEOF() error {
+	_, err := WriteSegment(w.writeCloser, EmptySegment{})
+	return err
+}
+
 func (w *ShardWal) Close() error {
 	return w.writeCloser.Close()
 }
@@ -115,6 +120,44 @@ type EncodedSegment interface {
 	CRC32() uint32
 	io.WriterTo
 	cppbridge.SegmentStats
+}
+
+type EmptySegment struct{}
+
+func (EmptySegment) Size() int64 {
+	return 0
+}
+
+func (EmptySegment) CRC32() uint32 {
+	return crc32.ChecksumIEEE(nil)
+}
+
+func (EmptySegment) WriteTo(w io.Writer) (n int64, err error) {
+	return 0, nil
+}
+
+func (EmptySegment) AllocatedMemory() uint64 {
+	return 0
+}
+
+func (EmptySegment) EarliestTimestamp() int64 {
+	return 0
+}
+
+func (EmptySegment) LatestTimestamp() int64 {
+	return 0
+}
+
+func (EmptySegment) RemainingTableSize() uint32 {
+	return 0
+}
+
+func (EmptySegment) Samples() uint32 {
+	return 0
+}
+
+func (EmptySegment) Series() uint32 {
+	return 0
 }
 
 func WriteSegment(writer io.Writer, segment EncodedSegment) (n int, err error) {

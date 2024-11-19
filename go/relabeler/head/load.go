@@ -1,13 +1,11 @@
 package head
 
 import (
-	"errors"
 	"fmt"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 	"github.com/prometheus/client_golang/prometheus"
-	"io"
 	"os"
 	"path/filepath"
 )
@@ -119,12 +117,13 @@ func replayWal(file *os.File, lss *cppbridge.LabelSetStorage, dataStorage *DataS
 		var segment DecodedSegment
 		segment, bytesRead, err = ReadSegment(file)
 		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return offset, decoder.CreateEncoder(), nil
-			}
 			return offset, nil, fmt.Errorf("failed to read segment: %w", err)
 		}
+
 		offset += bytesRead
+		if len(segment.Data()) == 0 {
+			return offset, decoder.CreateEncoder(), nil
+		}
 
 		err = decoder.Decode(segment.Data(), innerSeries)
 		if err != nil {

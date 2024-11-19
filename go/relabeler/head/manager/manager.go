@@ -8,7 +8,6 @@ import (
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head/catalog"
-	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 	"github.com/prometheus/prometheus/pp/go/util"
 	"github.com/prometheus/client_golang/prometheus"
 	"os"
@@ -24,7 +23,6 @@ type Catalog interface {
 	List(filter func(record catalog.Record) bool, sortLess func(lhs, rhs catalog.Record) bool) ([]catalog.Record, error)
 	Create(id, dir string, numberOfShards uint16) (catalog.Record, error)
 	SetStatus(id string, status catalog.Status) (catalog.Record, error)
-	Delete(id string) error
 }
 
 type metrics struct {
@@ -88,16 +86,6 @@ func (m *Manager) Restore(blockDuration time.Duration) (active relabeler.Head, r
 		var h relabeler.Head
 		headDir := filepath.Join(m.dir, headRecord.Dir)
 		if headRecord.Status == catalog.StatusPersisted {
-			if err = os.RemoveAll(headDir); err != nil {
-				// todo: log
-				continue
-			}
-			if err = m.catalog.Delete(headRecord.ID); err != nil {
-				return nil, nil, fmt.Errorf("failed to delete record from catalog: %w", err)
-			}
-
-			m.counter.With(prometheus.Labels{"type": "deleted"}).Inc()
-
 			continue
 		}
 
@@ -127,14 +115,6 @@ func (m *Manager) Restore(blockDuration time.Duration) (active relabeler.Head, r
 					return discardErr
 				}
 				m.counter.With(prometheus.Labels{"type": "persisted"}).Inc()
-				if discardErr = os.RemoveAll(headDir); discardErr != nil {
-					logger.Errorf("FAILED TO DELETE DIR", headDir, discardErr)
-					return discardErr
-				}
-				if discardErr = m.catalog.Delete(id); discardErr != nil {
-					return discardErr
-				}
-				m.counter.With(prometheus.Labels{"type": "deleted"}).Inc()
 				return nil
 			})
 		m.counter.With(prometheus.Labels{"type": "created"}).Inc()
@@ -187,7 +167,7 @@ func (m *Manager) BuildWithConfig(inputRelabelerConfigs []*config.InputRelabeler
 		return nil, fmt.Errorf("failed to create head: %w", err)
 	}
 
-	if _, err = m.catalog.Create(id, id, numberOfShards); err != nil {
+	if _, err = m.catalog.Create(id, headDir, numberOfShards); err != nil {
 		return nil, err
 	}
 
@@ -209,13 +189,6 @@ func (m *Manager) BuildWithConfig(inputRelabelerConfigs []*config.InputRelabeler
 				return discardErr
 			}
 			m.counter.With(prometheus.Labels{"type": "persisted"}).Inc()
-			if discardErr = os.RemoveAll(headDir); discardErr != nil {
-				return discardErr
-			}
-			if discardErr = m.catalog.Delete(id); discardErr != nil {
-				return discardErr
-			}
-			m.counter.With(prometheus.Labels{"type": "deleted"}).Inc()
 			return nil
 		},
 	), nil
