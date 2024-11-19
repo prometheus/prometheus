@@ -3443,7 +3443,7 @@ func handleVectorBinopError(err error, e *parser.BinaryExpr) annotations.Annotat
 	return nil
 }
 
-// groupingKey builds and returns the grouping key for the given metric and
+// generateGroupingKey builds and returns the grouping key for the given metric and
 // grouping labels.
 func generateGroupingKey(metric labels.Labels, grouping []string, without bool, buf []byte) (uint64, []byte) {
 	if without {

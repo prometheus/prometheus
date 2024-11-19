@@ -388,7 +388,7 @@ func (p *OpenMetricsParser) setCTParseValues(ct int64, ctHashSet uint64, mfName 
 	p.skipCTSeries = skipCTSeries // Do we need to set it?
 }
 
-// resetCtParseValues resets the parser to the state before CreatedTimestamp method was called.
+// resetCTParseValues resets the parser to the state before CreatedTimestamp method was called.
 func (p *OpenMetricsParser) resetCTParseValues() {
 	p.ctHashSet = 0
 	p.skipCTSeries = true
