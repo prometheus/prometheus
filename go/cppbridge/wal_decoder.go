@@ -343,7 +343,7 @@ func (s *DecodedRefSamples) Range(f func(id uint32, t int64, v float64) bool) {
 //
 //	decoder - pointer to a C++ decoder initiated in C++ memory;
 type WALProtobufEncoder struct {
-	decoder uintptr
+	encoder uintptr
 }
 
 // NewWALProtobufEncoder init new WALProtobufEncoder.
@@ -353,12 +353,35 @@ func NewWALProtobufEncoder(outputLsses []*LabelSetStorage) *WALProtobufEncoder {
 		outputLssesPtr = append(outputLssesPtr, outputLss.Pointer())
 	}
 	d := &WALProtobufEncoder{
-		decoder: walProtobufEncoderCtor(outputLssesPtr),
+		encoder: walProtobufEncoderCtor(outputLssesPtr),
 	}
 	runtime.SetFinalizer(d, func(d *WALProtobufEncoder) {
-		walProtobufEncoderDtor(d.decoder)
+		walProtobufEncoderDtor(d.encoder)
 	})
 	return d
+}
+
+// Encode batch slice ShardRefSamples to snapped protobufs on shards.
+func (e *WALProtobufEncoder) Encode(
+	ctx context.Context,
+	batch []*DecodedRefSamples,
+	numberOfShards uint16,
+) ([]*SnappyProtobufEncodedData, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	buffers := make([][]byte, numberOfShards)
+	exception := walProtobufEncoderEncode(batch, buffers, e.encoder)
+	if len(exception) != 0 {
+		return nil, handleException(exception)
+	}
+
+	outSlices := make([]*SnappyProtobufEncodedData, numberOfShards)
+	for i, b := range buffers {
+		outSlices[i] = NewSnappyProtobufEncodedData(b)
+	}
+
+	return outSlices, nil
 }
 
 // SnappyProtobufEncodedData encoded to snappy protobuf data from c.
@@ -373,4 +396,11 @@ func NewSnappyProtobufEncodedData(b []byte) *SnappyProtobufEncodedData {
 		freeBytes(sped.b)
 	})
 	return sped
+}
+
+// Do something doing with snapped protobuf.
+func (s *SnappyProtobufEncodedData) Do(f func(buf []byte) error) error {
+	err := f(s.b)
+	runtime.KeepAlive(s)
+	return err
 }

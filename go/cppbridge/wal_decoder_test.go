@@ -3,10 +3,14 @@ package cppbridge_test
 import (
 	"bytes"
 	"context"
+	"slices"
+	"strings"
 	"testing"
 
+	"github.com/golang/snappy"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/frames/framestest"
+	"github.com/prometheus/prometheus/pp/go/model"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/suite"
 )
@@ -167,7 +171,15 @@ func BenchmarkDecoderV3(b *testing.B) {
 	}
 }
 
-func (s *DecoderSuite) TestWALOutputDecoderDump() {
+type OutputDecoderSuite struct {
+	suite.Suite
+}
+
+func TestOutputDecoderSuite(t *testing.T) {
+	suite.Run(t, new(OutputDecoderSuite))
+}
+
+func (s *OutputDecoderSuite) TestWALOutputDecoderDump() {
 	statelessRelabeler, err := cppbridge.NewStatelessRelabeler([]*cppbridge.RelabelConfig{
 		{
 			SourceLabels: []string{"__name__"},
@@ -187,7 +199,7 @@ func (s *DecoderSuite) TestWALOutputDecoderDump() {
 	s.Equal(int64(15), n)
 }
 
-func (s *DecoderSuite) TestWALOutputDecoderEmptyLoad() {
+func (s *OutputDecoderSuite) TestWALOutputDecoderEmptyLoad() {
 	statelessRelabeler, err := cppbridge.NewStatelessRelabeler([]*cppbridge.RelabelConfig{
 		{
 			SourceLabels: []string{"__name__"},
@@ -210,10 +222,59 @@ func (s *DecoderSuite) TestWALOutputDecoderEmptyLoad() {
 	s.Require().NoError(err)
 }
 
-func (s *DecoderSuite) TestWALProtobufEncoderInit() {
+func (s *OutputDecoderSuite) TestWALProtobufEncoderEncode() {
+	labelSets := []model.LabelSet{
+		model.NewLabelSetBuilder().Set("__name__", "name1").Set("job", "doing1").Build(),
+		model.NewLabelSetBuilder().Set("__name__", "name2").Set("job", "doing2").Build(),
+		model.NewLabelSetBuilder().Set("__name__", "name3").Set("job", "doing3").Build(),
+		model.NewLabelSetBuilder().Set("__name__", "name4").Set("job", "doing4").Build(),
+	}
+	batch := make([]*cppbridge.DecodedRefSamples, 0, len(labelSets))
+
 	outputLss := cppbridge.NewLssStorage()
 	dec := cppbridge.NewWALProtobufEncoder(
 		[]*cppbridge.LabelSetStorage{outputLss},
 	)
-	_ = dec
+	for val, labelSet := range labelSets {
+		lsID := outputLss.FindOrEmplace(labelSet)
+		batch = append(
+			batch,
+			cppbridge.NewDecodedRefSamples([]cppbridge.RefSample{
+				{ID: lsID, T: int64((val + 1) * 100), V: float64(val + 1)},
+			}, 0),
+		)
+	}
+
+	data, err := dec.Encode(context.Background(), batch, 1)
+	s.Require().NoError(err)
+
+	var uncompressed []byte
+	err = data[0].Do(func(buf []byte) error {
+		var errDo error
+		uncompressed, errDo = snappy.Decode(nil, buf)
+		if errDo != nil {
+			return errDo
+		}
+		return nil
+	})
+	s.Require().NoError(err)
+
+	actualWr := &prompb.WriteRequest{}
+	err = actualWr.Unmarshal(uncompressed)
+	s.Require().NoError(err)
+
+	slices.SortFunc(
+		actualWr.Timeseries,
+		func(a, b prompb.TimeSeries) int { return strings.Compare(a.String(), b.String()) },
+	)
+
+	for val, labelSet := range labelSets {
+		s.Require().Equal(labelSet.Len(), len(actualWr.Timeseries[val].Labels))
+		for i := range actualWr.Timeseries[val].Labels {
+			s.Equal(actualWr.Timeseries[val].Labels[i].Name, labelSet.Key(i))
+			s.Equal(actualWr.Timeseries[val].Labels[i].Value, labelSet.Value(i))
+		}
+		s.Equal(int64((val+1)*100), actualWr.Timeseries[val].Samples[0].Timestamp)
+		s.Equal(float64(val+1), actualWr.Timeseries[val].Samples[0].Value)
+	}
 }

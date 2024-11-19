@@ -2,7 +2,7 @@
 
 #include <vector>
 
-#include <parallel_hashmap/btree.h>
+#include <parallel_hashmap/phmap.h>
 #include "snappy-sinksource.h"
 #include "snappy.h"
 #define PROTOZERO_USE_VIEW std::string_view
@@ -246,7 +246,7 @@ class GoSliceSink : public snappy::Sink {
 
 class ProtobufEncoder {
   std::vector<Primitives::SnugComposites::LabelSet::EncodingBimap*> output_lsses_;
-  phmap::btree_map<std::pair<uint32_t, uint16_t>, BareBones::Vector<Primitives::Sample>> cache_;
+  phmap::flat_hash_map<std::pair<uint32_t, uint16_t>, BareBones::Vector<Primitives::Sample>> cache_;
 
  public:
   // ProtobufEncoder constructor.

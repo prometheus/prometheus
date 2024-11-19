@@ -323,11 +323,11 @@ extern "C" void prompp_wal_protobuf_encoder_dtor(void* args) {
 extern "C" void prompp_wal_protobuf_encoder_encode(void* args, void* res) {
   struct Arguments {
     PromPP::Primitives::Go::SliceView<PromPP::WAL::ShardRefSample*> batch;
+    PromPP::Primitives::Go::Slice<PromPP::Primitives::Go::Slice<char>> out_slices;
     PromPP::WAL::ProtobufEncoder* encoder;
   };
 
   using Result = struct {
-    PromPP::Primitives::Go::Slice<PromPP::Primitives::Go::Slice<char>> out_slices;
     PromPP::Primitives::Go::Slice<char> error;
   };
 
@@ -335,7 +335,7 @@ extern "C" void prompp_wal_protobuf_encoder_encode(void* args, void* res) {
   Result* out = new (res) Result();
 
   try {
-    in->encoder->encode(in->batch, out->out_slices);
+    in->encoder->encode(in->batch, in->out_slices);
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
     handle_current_exception(__func__, err_stream);

@@ -1268,15 +1268,15 @@ void prompp_wal_protobuf_encoder_ctor(void* args, void* res);
 void prompp_wal_protobuf_encoder_dtor(void* args);
 
 /**
- * @brief encode batch slice to snn.
+ * @brief encode batch slice ShardRefSamples to snapped protobufs on shards.
  *
  * @param args {
  *     batch               []*ShardRefSample // slice with go pointers to ShardRefSample
+ *     out_slices          [][]byte          // slice RefSample
  *     encoder             uintptr           // pointer to constructed output decoder
  * }
  *
  * @param res {
- *     out_slices          [][]byte          // slice RefSample
  *     error               []byte            // error string if thrown
  * }
  */
