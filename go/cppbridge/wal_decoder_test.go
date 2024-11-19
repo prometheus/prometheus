@@ -1,6 +1,7 @@
 package cppbridge_test
 
 import (
+	"bytes"
 	"context"
 	"testing"
 
@@ -164,4 +165,47 @@ func BenchmarkDecoderV3(b *testing.B) {
 		protocont, _ := dec.Decode(ctx, segment[:])
 		_ = protocont
 	}
+}
+
+func (s *DecoderSuite) TestWALOutputDecoderDump() {
+	statelessRelabeler, err := cppbridge.NewStatelessRelabeler([]*cppbridge.RelabelConfig{
+		{
+			SourceLabels: []string{"__name__"},
+			Regex:        ".*",
+			Action:       cppbridge.Keep,
+		},
+	})
+	s.Require().NoError(err)
+	externalLabels := []cppbridge.Label{{"name0", "value0"}, {"name1", "value1"}}
+	outputLss := cppbridge.NewLssStorage()
+
+	dec := cppbridge.NewWALOutputDecoder(externalLabels, statelessRelabeler, outputLss, 0, cppbridge.EncodersVersion())
+
+	file := &bytes.Buffer{}
+	n, err := dec.WriteTo(file)
+	s.Require().NoError(err)
+	s.Equal(int64(15), n)
+}
+
+func (s *DecoderSuite) TestWALOutputDecoderEmptyLoad() {
+	statelessRelabeler, err := cppbridge.NewStatelessRelabeler([]*cppbridge.RelabelConfig{
+		{
+			SourceLabels: []string{"__name__"},
+			Regex:        ".*",
+			Action:       cppbridge.Keep,
+		},
+	})
+	s.Require().NoError(err)
+	externalLabels := []cppbridge.Label{{"name0", "value0"}, {"name1", "value1"}}
+	outputLss := cppbridge.NewLssStorage()
+
+	dec := cppbridge.NewWALOutputDecoder(externalLabels, statelessRelabeler, outputLss, 0, cppbridge.EncodersVersion())
+
+	file := &bytes.Buffer{}
+	n, err := dec.WriteTo(file)
+	s.Require().NoError(err)
+	s.Equal(int64(15), n)
+
+	err = dec.LoadFrom(file.Bytes())
+	s.Require().NoError(err)
 }
