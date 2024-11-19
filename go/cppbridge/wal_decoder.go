@@ -338,3 +338,39 @@ func (s *DecodedRefSamples) Range(f func(id uint32, t int64, v float64) bool) {
 		}
 	}
 }
+
+// WALProtobufEncoder - go wrapper for C-WALProtobufEncoder.
+//
+//	decoder - pointer to a C++ decoder initiated in C++ memory;
+type WALProtobufEncoder struct {
+	decoder uintptr
+}
+
+// NewWALProtobufEncoder init new WALProtobufEncoder.
+func NewWALProtobufEncoder(outputLsses []*LabelSetStorage) *WALProtobufEncoder {
+	outputLssesPtr := make([]uintptr, 0, len(outputLsses))
+	for _, outputLss := range outputLsses {
+		outputLssesPtr = append(outputLssesPtr, outputLss.Pointer())
+	}
+	d := &WALProtobufEncoder{
+		decoder: walProtobufEncoderCtor(outputLssesPtr),
+	}
+	runtime.SetFinalizer(d, func(d *WALProtobufEncoder) {
+		walProtobufEncoderDtor(d.decoder)
+	})
+	return d
+}
+
+// SnappyProtobufEncodedData encoded to snappy protobuf data from c.
+type SnappyProtobufEncodedData struct {
+	b []byte
+}
+
+// NewSnappyProtobufEncodedData init new SnappyProtobufEncodedData.
+func NewSnappyProtobufEncodedData(b []byte) *SnappyProtobufEncodedData {
+	sped := &SnappyProtobufEncodedData{b: b}
+	runtime.SetFinalizer(sped, func(sped *SnappyProtobufEncodedData) {
+		freeBytes(sped.b)
+	})
+	return sped
+}

@@ -1241,6 +1241,28 @@ void prompp_wal_output_decoder_load_from(void* args, void* res);
  */
 void prompp_wal_output_decoder_decode(void* args, void* res);
 
+/**
+ * @brief Construct a new Protobuf Encoder
+ *
+ * @param args {
+ *     output_lsses uintptr // pointer to constructed slice with output label sets;
+ * }
+ *
+ * @param res {
+ *     encoder      uintptr // pointer to constructed Protobuf Encoder
+ * }
+ */
+void prompp_wal_protobuf_encoder_ctor(void* args, void* res);
+
+/**
+ * @brief Destroy Protobuf Encoder
+ *
+ * @param args {
+ *     encoder      uintptr // pointer to constructed Protobuf Encoder
+ * }
+ */
+void prompp_wal_protobuf_encoder_dtor(void* args);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

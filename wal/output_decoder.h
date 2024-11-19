@@ -234,7 +234,7 @@ class GoSliceSink : public snappy::Sink {
   Primitives::Go::Slice<char>& out_;
 
  public:
-  // ProtobufEncoder constructor over go slice.
+  // GoSliceSink constructor over go slice.
   PROMPP_ALWAYS_INLINE explicit GoSliceSink(Primitives::Go::Slice<char>& out) : out_(out) {}
 
   // Append implementation snappy::Sink.
@@ -245,13 +245,20 @@ class GoSliceSink : public snappy::Sink {
 };
 
 class ProtobufEncoder {
-  std::vector<Primitives::SnugComposites::LabelSet::EncodingBimap*>& output_lsses_;
+  std::vector<Primitives::SnugComposites::LabelSet::EncodingBimap*> output_lsses_;
   phmap::btree_map<std::pair<uint32_t, uint16_t>, BareBones::Vector<Primitives::Sample>> cache_;
 
  public:
   // ProtobufEncoder constructor.
-  PROMPP_ALWAYS_INLINE explicit ProtobufEncoder(std::vector<Primitives::SnugComposites::LabelSet::EncodingBimap*>& output_lsses) noexcept
-      : output_lsses_(output_lsses) {}
+  template <class LssVariantPtr>
+  PROMPP_ALWAYS_INLINE explicit ProtobufEncoder(PromPP::Primitives::Go::SliceView<LssVariantPtr>& output_lsses) noexcept {
+    output_lsses_.reserve(output_lsses.size());
+    for (const LssVariantPtr& output_lss : output_lsses) {
+      // auto& lss = std::get<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>(*output_lss);
+      // output_lsses.push_back(&lss);
+      output_lsses_.push_back(&std::get<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>(*output_lss));
+    }
+  }
 
   // encode incoming refsamples to snapped protobufs on shards.
   PROMPP_ALWAYS_INLINE void encode(Primitives::Go::SliceView<ShardRefSample*>& batch, Primitives::Go::Slice<Primitives::Go::Slice<char>>& out_slices) {
@@ -260,17 +267,17 @@ class ProtobufEncoder {
       return;
     }
 
+    // resize container for output protobufs
+    size_t shards = out_slices.size();
+    std::vector<std::string> protobufs;
+    protobufs.resize(shards);
+
     // grouping samples by ls id and main shard id
     for (const auto* srs : batch) {
       for (const auto& rs : srs->ref_samples) {
         cache_[{rs.id, srs->shard_id}].emplace_back(rs.t, rs.v);
       }
     }
-
-    // resize container for output protobufs
-    size_t shards = out_slices.size();
-    std::vector<std::string> protobufs;
-    protobufs.resize(shards);
 
     // make protobufs from group for output shards
     Primitives::BasicTimeseries<Primitives::SnugComposites::LabelSet::EncodingBimap::value_type*, BareBones::Vector<Primitives::Sample>*> timeseries;

@@ -292,3 +292,30 @@ extern "C" void prompp_wal_output_decoder_decode(void* args, void* res) {
     handle_current_exception(__func__, err_stream);
   }
 }
+
+//
+// ProtobufEncoder
+//
+
+extern "C" void prompp_wal_protobuf_encoder_ctor(void* args, void* res) {
+  struct Arguments {
+    PromPP::Primitives::Go::SliceView<LssVariantPtr> output_lsses;
+  };
+  using Result = struct {
+    PromPP::WAL::ProtobufEncoder* encoder;
+  };
+
+  auto* in = reinterpret_cast<Arguments*>(args);
+  Result* out = new (res) Result();
+
+  out->encoder = new PromPP::WAL::ProtobufEncoder(in->output_lsses);
+}
+
+extern "C" void prompp_wal_protobuf_encoder_dtor(void* args) {
+  struct Arguments {
+    PromPP::WAL::ProtobufEncoder* encoder;
+  };
+
+  Arguments* in = reinterpret_cast<Arguments*>(args);
+  delete in->encoder;
+}

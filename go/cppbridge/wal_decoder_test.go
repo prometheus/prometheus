@@ -209,3 +209,11 @@ func (s *DecoderSuite) TestWALOutputDecoderEmptyLoad() {
 	err = dec.LoadFrom(file.Bytes())
 	s.Require().NoError(err)
 }
+
+func (s *DecoderSuite) TestWALProtobufEncoderInit() {
+	outputLss := cppbridge.NewLssStorage()
+	dec := cppbridge.NewWALProtobufEncoder(
+		[]*cppbridge.LabelSetStorage{outputLss},
+	)
+	_ = dec
+}

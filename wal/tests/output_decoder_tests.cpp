@@ -297,22 +297,31 @@ TEST_F(TestWALOutputDecoder, ProcessSegmentWithDump) {
 struct TestProtobufEncoder : public testing::Test {};
 
 TEST_F(TestProtobufEncoder, Encode) {
-  SnugComposites::LabelSet::EncodingBimap output_lss0;
-  SnugComposites::LabelSet::EncodingBimap output_lss1;
-  std::vector<SnugComposites::LabelSet::EncodingBimap*> output_lsses;
-  output_lsses.push_back(&output_lss0);
-  output_lsses.push_back(&output_lss1);
+  using LssVariant = std::variant<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>;
+  using LssVariantPtr = std::unique_ptr<std::variant<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>>;
+
+  std::vector<LssVariantPtr> output_lsses;
+  output_lsses.push_back(std::make_unique<LssVariant>(std::in_place_index<static_cast<int>(0)>));
+  output_lsses.push_back(std::make_unique<LssVariant>(std::in_place_index<static_cast<int>(0)>));
 
   std::vector<PromPP::WAL::RefSample> ref_samples0;
-  ref_samples0.emplace_back(output_lss0.find_or_emplace(LabelViewSet{{"__name__", "value1"}, {"job", "abc"}}), 10, 1);
-  ref_samples0.emplace_back(output_lss0.find_or_emplace(LabelViewSet{{"__name__", "value1"}, {"job", "abc"}}), 9, 2);
-  ref_samples0.emplace_back(output_lss0.find_or_emplace(LabelViewSet{{"__name__", "value2"}, {"job", "abc"}}), 10, 1);
+  ref_samples0.emplace_back(std::get<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>(*output_lsses[0])
+                                .find_or_emplace(LabelViewSet{{"__name__", "value1"}, {"job", "abc"}}),
+                            10, 1);
+  ref_samples0.emplace_back(std::get<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>(*output_lsses[0])
+                                .find_or_emplace(LabelViewSet{{"__name__", "value1"}, {"job", "abc"}}),
+                            9, 2);
+  ref_samples0.emplace_back(std::get<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>(*output_lsses[0])
+                                .find_or_emplace(LabelViewSet{{"__name__", "value2"}, {"job", "abc"}}),
+                            10, 1);
   ShardRefSample srs0;
   srs0.ref_samples.reset_to(ref_samples0.data(), ref_samples0.size());
   srs0.shard_id = 0;
 
   std::vector<PromPP::WAL::RefSample> ref_samples1;
-  ref_samples1.emplace_back(output_lss1.find_or_emplace(LabelViewSet{{"__name__", "value3"}, {"job", "abc3"}}), 10, 1);
+  ref_samples1.emplace_back(std::get<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>(*output_lsses[1])
+                                .find_or_emplace(LabelViewSet{{"__name__", "value3"}, {"job", "abc3"}}),
+                            10, 1);
   ShardRefSample srs1;
   srs1.ref_samples.reset_to(ref_samples1.data(), ref_samples1.size());
   srs1.shard_id = 1;
@@ -321,7 +330,10 @@ TEST_F(TestProtobufEncoder, Encode) {
   Go::SliceView<ShardRefSample*> batch;
   batch.reset_to(vector_batch.data(), vector_batch.size());
 
-  ProtobufEncoder penc{output_lsses};
+  Go::SliceView<LssVariantPtr> output_lsses_slice;
+  output_lsses_slice.reset_to(output_lsses.data(), output_lsses.size());
+
+  ProtobufEncoder penc(output_lsses_slice);
   Go::Slice<Go::Slice<char>> out_slices;
   out_slices.resize(2);
   penc.encode(batch, out_slices);
