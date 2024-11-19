@@ -508,3 +508,302 @@ eval instant at 1m 10 atan2 20
 
 eval instant at 1m 10 atan2 NaN
     NaN
+
+clear
+
+# Test comparison operations with floats and histograms.
+load 6m
+  left_floats  1 2 _ _ 3 stale 4  5  NaN Inf -Inf
+  right_floats 4 _ _ 5 3 7     -1 20 NaN Inf -Inf
+  left_histograms  {{schema:3 sum:4 count:4 buckets:[1 2 1]}} {{schema:3 sum:4.5 count:5 buckets:[1 3 1]}} _                                          _ {{schema:3 sum:4.5 count:5 buckets:[1 3 1]}}
+  right_histograms {{schema:3 sum:4 count:4 buckets:[1 2 1]}} {{schema:3 sum:4 count:4 buckets:[1 2 1]}}   {{schema:3 sum:4 count:4 buckets:[1 2 1]}} _ _
+  right_floats_for_histograms 0 -1 2 3 4
+
+eval range from 0 to 60m step 6m left_floats == right_floats
+  left_floats _ _ _ _ 3 _ _ _ _ Inf -Inf
+
+eval range from 0 to 60m step 6m left_floats == bool right_floats
+  {} 0 _ _ _ 1 _ 0 0 0 1 1
+
+eval range from 0 to 60m step 6m left_floats == does_not_match
+  # No results.
+
+eval range from 0 to 24m step 6m left_histograms == right_histograms
+  left_histograms {{schema:3 sum:4 count:4 buckets:[1 2 1]}} _ _ _ _
+
+eval range from 0 to 24m step 6m left_histograms == bool right_histograms
+  {} 1 0 _ _ _
+
+eval_info range from 0 to 24m step 6m left_histograms == right_floats_for_histograms
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms == bool right_floats_for_histograms
+  # No results.
+
+eval range from 0 to 60m step 6m left_floats != right_floats
+  left_floats 1 _ _ _ _ _ 4 5 NaN _ _
+
+eval range from 0 to 60m step 6m left_floats != bool right_floats
+  {} 1 _ _ _ 0 _ 1 1 1 0 0
+
+eval range from 0 to 24m step 6m left_histograms != right_histograms
+  left_histograms _ {{schema:3 sum:4.5 count:5 buckets:[1 3 1]}} _ _ _
+
+eval range from 0 to 24m step 6m left_histograms != bool right_histograms
+  {} 0 1 _ _ _
+
+eval_info range from 0 to 24m step 6m left_histograms != right_floats_for_histograms
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms != bool right_floats_for_histograms
+  # No results.
+
+eval range from 0 to 60m step 6m left_floats > right_floats
+  left_floats _ _ _ _ _ _ 4 _ _ _ _
+
+eval range from 0 to 60m step 6m left_floats > bool right_floats
+  {} 0 _ _ _ 0 _ 1 0 0 0 0
+
+eval_info range from 0 to 24m step 6m left_histograms > right_histograms
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms > bool right_histograms
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms > right_floats_for_histograms
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms > bool right_floats_for_histograms
+  # No results.
+
+eval range from 0 to 60m step 6m left_floats >= right_floats
+  left_floats _ _ _ _ 3 _ 4 _ _ Inf -Inf
+
+eval range from 0 to 60m step 6m left_floats >= bool right_floats
+  {} 0 _ _ _ 1 _ 1 0 0 1 1
+
+eval_info range from 0 to 24m step 6m left_histograms >= right_histograms
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms >= bool right_histograms
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms >= right_floats_for_histograms
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms >= bool right_floats_for_histograms
+  # No results.
+
+eval range from 0 to 60m step 6m left_floats < right_floats
+  left_floats 1 _ _ _ _ _ _ 5 _ _ _
+
+eval range from 0 to 60m step 6m left_floats < bool right_floats
+  {} 1 _ _ _ 0 _ 0 1 0 0 0
+
+eval_info range from 0 to 24m step 6m left_histograms < right_histograms
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms < bool right_histograms
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms < right_floats_for_histograms
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms < bool right_floats_for_histograms
+  # No results.
+
+eval range from 0 to 60m step 6m left_floats <= right_floats
+  left_floats 1 _ _ _ 3 _ _ 5 _ Inf -Inf
+
+eval range from 0 to 60m step 6m left_floats <= bool right_floats
+  {} 1 _ _ _ 1 _ 0 1 0 1 1
+
+eval_info range from 0 to 24m step 6m left_histograms <= right_histograms
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms <= bool right_histograms
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms <= right_floats_for_histograms
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms <= bool right_floats_for_histograms
+  # No results.
+
+# Vector / scalar combinations with scalar on right side
+eval range from 0 to 60m step 6m left_floats == 3
+  left_floats _ _ _ _ 3 _ _ _ _ _ _
+
+eval range from 0 to 60m step 6m left_floats != 3
+  left_floats 1 2 _ _ _ _ 4 5 NaN Inf -Inf
+
+eval range from 0 to 60m step 6m left_floats > 3
+  left_floats _ _ _ _ _ _ 4 5 _ Inf _
+
+eval range from 0 to 60m step 6m left_floats >= 3
+  left_floats _ _ _ _ 3 _ 4 5 _ Inf _
+
+eval range from 0 to 60m step 6m left_floats < 3
+  left_floats 1 2 _ _ _ _ _ _ _ _ -Inf
+
+eval range from 0 to 60m step 6m left_floats <= 3
+  left_floats 1 2 _ _ 3 _ _ _ _ _ -Inf
+
+eval range from 0 to 60m step 6m left_floats == bool 3
+  {} 0 0 _ _ 1 _ 0 0 0 0 0
+
+eval range from 0 to 60m step 6m left_floats == Inf
+  left_floats _ _ _ _ _ _ _ _ _ Inf _
+
+eval range from 0 to 60m step 6m left_floats == bool Inf
+  {} 0 0 _ _ 0 _ 0 0 0 1 0
+
+eval range from 0 to 60m step 6m left_floats == NaN
+  # No results.
+
+eval range from 0 to 60m step 6m left_floats == bool NaN
+  {} 0 0 _ _ 0 _ 0 0 0 0 0
+
+eval_info range from 0 to 24m step 6m left_histograms == 3
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms == 0
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms != 3
+  # No results.
+
+eval range from 0 to 24m step 6m left_histograms != 0
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms > 3
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms > 0
+  # No results.
+
+eval range from 0 to 24m step 6m left_histograms >= 3
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms >= 0
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms < 3
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms < 0
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms <= 3
+  # No results.
+
+eval range from 0 to 24m step 6m left_histograms <= 0
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms == bool 3
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms == bool 0
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms != bool 3
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms != bool 0
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms > bool 3
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms > bool 0
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms >= bool 3
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms >= bool 0
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms < bool 3
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms < bool 0
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms <= bool 3
+  # No results.
+
+eval_info range from 0 to 24m step 6m left_histograms <= bool 0
+  # No results.
+
+# Vector / scalar combinations with scalar on left side
+eval range from 0 to 60m step 6m 3 == left_floats
+  left_floats _ _ _ _ 3 _ _ _ _ _ _
+
+eval range from 0 to 60m step 6m 3 != left_floats
+  left_floats 1 2 _ _ _ _ 4 5 NaN Inf -Inf
+
+eval range from 0 to 60m step 6m 3 < left_floats
+  left_floats _ _ _ _ _ _ 4 5 _ Inf _
+
+eval range from 0 to 60m step 6m 3 <= left_floats
+  left_floats _ _ _ _ 3 _ 4 5 _ Inf _
+
+eval range from 0 to 60m step 6m 3 > left_floats
+  left_floats 1 2 _ _ _ _ _ _ _ _ -Inf
+
+eval range from 0 to 60m step 6m 3 >= left_floats
+  left_floats 1 2 _ _ 3 _ _ _ _ _ -Inf
+
+eval range from 0 to 60m step 6m 3 == bool left_floats
+  {} 0 0 _ _ 1 _ 0 0 0 0 0
+
+eval range from 0 to 60m step 6m Inf == left_floats
+  left_floats _ _ _ _ _ _ _ _ _ Inf _
+
+eval range from 0 to 60m step 6m Inf == bool left_floats
+  {} 0 0 _ _ 0 _ 0 0 0 1 0
+
+eval range from 0 to 60m step 6m NaN == left_floats
+  # No results.
+
+eval range from 0 to 60m step 6m NaN == bool left_floats
+  {} 0 0 _ _ 0 _ 0 0 0 0 0
+
+eval range from 0 to 24m step 6m 3 == left_histograms
+  # No results.
+
+eval range from 0 to 24m step 6m 0 == left_histograms
+  # No results.
+
+eval range from 0 to 24m step 6m 3 != left_histograms
+  # No results.
+
+eval range from 0 to 24m step 6m 0 != left_histograms
+  # No results.
+
+eval range from 0 to 24m step 6m 3 < left_histograms
+  # No results.
+
+eval range from 0 to 24m step 6m 0 < left_histograms
+  # No results.
+
+eval range from 0 to 24m step 6m 3 < left_histograms
+  # No results.
+
+eval range from 0 to 24m step 6m 0 < left_histograms
+  # No results.
+
+eval range from 0 to 24m step 6m 3 > left_histograms
+  # No results.
+
+eval range from 0 to 24m step 6m 0 > left_histograms
+  # No results.
+
+eval range from 0 to 24m step 6m 3 >= left_histograms
+  # No results.
+
+eval range from 0 to 24m step 6m 0 >= left_histograms
+  # No results.
+
+clear
