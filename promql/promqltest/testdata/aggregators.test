@@ -351,37 +351,41 @@ load 5m
 	version{job="app-server", instance="1", group="production"}	6
 	version{job="app-server", instance="0", group="canary"}		7
 	version{job="app-server", instance="1", group="canary"}		7
+	version{job="app-server", instance="2", group="canary"}		{{schema:0 sum:10 count:20 z_bucket_w:0.001 z_bucket:2 buckets:[1 2] n_buckets:[1 2]}}
+	version{job="app-server", instance="3", group="canary"}		{{schema:0 sum:10 count:20 z_bucket_w:0.001 z_bucket:2 buckets:[1 2] n_buckets:[1 2]}}
 
 eval instant at 1m count_values("version", version)
 	{version="6"} 5
 	{version="7"} 2
 	{version="8"} 2
-
+    {version="{count:20, sum:10, [-2,-1):2, [-1,-0.5):1, [-0.001,0.001]:2, (0.5,1]:1, (1,2]:2}"} 2
 
 eval instant at 1m count_values(((("version"))), version)
-       {version="6"} 5
-       {version="7"} 2
-       {version="8"} 2
-
+    {version="6"} 5
+    {version="7"} 2
+    {version="8"} 2
+    {version="{count:20, sum:10, [-2,-1):2, [-1,-0.5):1, [-0.001,0.001]:2, (0.5,1]:1, (1,2]:2}"} 2
 
 eval instant at 1m count_values without (instance)("version", version)
 	{job="api-server", group="production", version="6"} 3
 	{job="api-server", group="canary", version="8"} 2
 	{job="app-server", group="production", version="6"} 2
 	{job="app-server", group="canary", version="7"} 2
+    {job="app-server", group="canary", version="{count:20, sum:10, [-2,-1):2, [-1,-0.5):1, [-0.001,0.001]:2, (0.5,1]:1, (1,2]:2}"} 2
 
 # Overwrite label with output. Don't do this.
 eval instant at 1m count_values without (instance)("job", version)
 	{job="6", group="production"} 5
 	{job="8", group="canary"} 2
 	{job="7", group="canary"} 2
+    {job="{count:20, sum:10, [-2,-1):2, [-1,-0.5):1, [-0.001,0.001]:2, (0.5,1]:1, (1,2]:2}", group="canary"} 2
 
 # Overwrite label with output. Don't do this.
 eval instant at 1m count_values by (job, group)("job", version)
 	{job="6", group="production"} 5
 	{job="8", group="canary"} 2
 	{job="7", group="canary"} 2
-
+    {job="{count:20, sum:10, [-2,-1):2, [-1,-0.5):1, [-0.001,0.001]:2, (0.5,1]:1, (1,2]:2}", group="canary"} 2
 
 # Tests for quantile.
 clear
@@ -441,12 +445,14 @@ load 10s
 	data{test="uneven samples",point="a"} 0
 	data{test="uneven samples",point="b"} 1
 	data{test="uneven samples",point="c"} 4
+	data{test="histogram sample",point="c"} {{schema:0 sum:0 count:0}}
 	foo .8
 
 eval instant at 1m group without(point)(data)
 	{test="two samples"} 1
 	{test="three samples"} 1
 	{test="uneven samples"} 1
+    {test="histogram sample"} 1
 
 eval instant at 1m group(foo)
 	{} 1
