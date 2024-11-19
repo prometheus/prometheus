@@ -842,7 +842,7 @@ func (c DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compa
 	if len(sets) > 1 {
 		// Merge series using specified chunk series merger.
 		// The default one is the compacting series merger.
-		set = storage.NewMergeChunkSeriesSet(sets, mergeFunc)
+		set = storage.NewMergeChunkSeriesSet(sets, 0, mergeFunc)
 	}
 
 	// Iterate over all sorted chunk series.
