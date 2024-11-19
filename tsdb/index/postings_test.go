@@ -1460,6 +1460,21 @@ func TestMemPostings_PostingsForLabelMatching(t *testing.T) {
 	require.Equal(t, []storage.SeriesRef{2, 4}, refs)
 }
 
+func TestMemPostings_PostingsForAllLabelValues(t *testing.T) {
+	mp := NewMemPostings()
+	mp.Add(1, labels.FromStrings("foo", "1"))
+	mp.Add(2, labels.FromStrings("foo", "2"))
+	mp.Add(3, labels.FromStrings("foo", "3"))
+	mp.Add(4, labels.FromStrings("foo", "4"))
+
+	p := mp.PostingsForAllLabelValues(context.Background(), "foo")
+	require.NoError(t, p.Err())
+	refs, err := ExpandPostings(p)
+	require.NoError(t, err)
+	// All postings for the label should be returned.
+	require.Equal(t, []storage.SeriesRef{1, 2, 3, 4}, refs)
+}
+
 func TestMemPostings_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 	memP := NewMemPostings()
 	seriesCount := 10 * checkContextEveryNIterations
