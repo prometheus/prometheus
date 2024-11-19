@@ -987,7 +987,9 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 			l.RLock()
 			evalRange := findPathRange(path, ranges)
 			l.RUnlock()
-
+			if n.UnexpandedSeriesSet != nil {
+				return nil
+			}
 			start, end := getTimeRangesForSelector(s, n, path, evalRange)
 			interval := ng.getLastSubqueryInterval(path)
 			if interval == 0 {
