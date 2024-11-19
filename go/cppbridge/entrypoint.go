@@ -791,6 +791,26 @@ func walProtobufEncoderDtor(decoder uintptr) {
 	)
 }
 
+// walProtobufEncoderEncode encode batch slice ShardRefSamples to snapped protobufs on shards.
+func walProtobufEncoderEncode(batch []*DecodedRefSamples, encoder uintptr) (dump []RefSample, err []byte) {
+	var args = struct {
+		batch   []*DecodedRefSamples
+		encoder uintptr
+	}{batch, encoder}
+	var res struct {
+		refSamples []RefSample
+		error      []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_wal_output_decoder_decode,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.refSamples, res.error
+}
+
 //
 // LabelSetStorage EncodingBimap
 //

@@ -1241,15 +1241,19 @@ void prompp_wal_output_decoder_load_from(void* args, void* res);
  */
 void prompp_wal_output_decoder_decode(void* args, void* res);
 
+//
+// ProtobufEncoder
+//
+
 /**
  * @brief Construct a new Protobuf Encoder
  *
  * @param args {
- *     output_lsses uintptr // pointer to constructed slice with output label sets;
+ *     output_lsses        uintptr           // pointer to constructed slice with output label sets;
  * }
  *
  * @param res {
- *     encoder      uintptr // pointer to constructed Protobuf Encoder
+ *     encoder             uintptr           // pointer to constructed Protobuf Encoder
  * }
  */
 void prompp_wal_protobuf_encoder_ctor(void* args, void* res);
@@ -1258,10 +1262,25 @@ void prompp_wal_protobuf_encoder_ctor(void* args, void* res);
  * @brief Destroy Protobuf Encoder
  *
  * @param args {
- *     encoder      uintptr // pointer to constructed Protobuf Encoder
+ *     encoder             uintptr           // pointer to constructed Protobuf Encoder
  * }
  */
 void prompp_wal_protobuf_encoder_dtor(void* args);
+
+/**
+ * @brief encode batch slice to snn.
+ *
+ * @param args {
+ *     batch               []*ShardRefSample // slice with go pointers to ShardRefSample
+ *     encoder             uintptr           // pointer to constructed output decoder
+ * }
+ *
+ * @param res {
+ *     out_slices          [][]byte          // slice RefSample
+ *     error               []byte            // error string if thrown
+ * }
+ */
+void prompp_wal_protobuf_encoder_encode(void* args, void* res);
 
 #ifdef __cplusplus
 }  // extern "C"

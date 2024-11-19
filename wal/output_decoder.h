@@ -254,8 +254,6 @@ class ProtobufEncoder {
   PROMPP_ALWAYS_INLINE explicit ProtobufEncoder(PromPP::Primitives::Go::SliceView<LssVariantPtr>& output_lsses) noexcept {
     output_lsses_.reserve(output_lsses.size());
     for (const LssVariantPtr& output_lss : output_lsses) {
-      // auto& lss = std::get<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>(*output_lss);
-      // output_lsses.push_back(&lss);
       output_lsses_.push_back(&std::get<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>(*output_lss));
     }
   }
