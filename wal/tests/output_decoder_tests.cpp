@@ -221,10 +221,12 @@ TEST_F(TestWALOutputDecoder, ProcessSegment) {
   std::stringstream segment_stream;
   Encoder enc{uint16_t{0}, uint8_t{0}};
 
-  std::vector<std::vector<GoTimeSeries>> expected_segments{
-      {{{{"__name__", "value1"}, {"job", "abc"}}, {10, 1}}},
-      {},  // load empty data
-      {{{{"__name__", "value1"}, {"job", "abc"}}, {11, 1}}, {{{"__name__", "value2"}, {"job", "abc"}}, {11, 1}}}};
+  std::vector<std::vector<GoTimeSeries>> expected_segments{{{{{"__name__", "value1"}, {"job", "abc"}}, {10, 1}}},  // keep
+                                                           {},                                                     // load empty data
+                                                           {
+                                                               {{{"__name__", "value1"}, {"job", "abc"}}, {11, 1}},  // keep
+                                                               {{{"__name__", "value2"}, {"job", "abc"}}, {11, 1}},  // keep
+                                                           }};
 
   for (const auto& expected_segment : expected_segments) {
     segment_stream.str("");
@@ -237,6 +239,37 @@ TEST_F(TestWALOutputDecoder, ProcessSegment) {
       EXPECT_EQ(std::bit_cast<uint64_t>(expected_segment[ls_id].value), std::bit_cast<uint64_t>(v));
     });
   }
+}
+
+TEST_F(TestWALOutputDecoder, ProcessSegmentWithDrop) {
+  stateless_relabeler_reset_to({{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2}});  // Keep
+  OutputDecoder wod(sr_, output_lss_, external_labels_);
+  std::stringstream segment_stream;
+  Encoder enc{uint16_t{0}, uint8_t{0}};
+
+  std::vector<std::vector<GoTimeSeries>> expected_segments{
+      {{{{"__name__", "value1"}, {"job", "abc1"}}, {10, 1}}},  // drop
+      {{{{"__name__", "value1"}, {"job", "abc"}}, {11, 1}}},   // keep
+  };
+
+  size_t processed{0};
+  for (size_t i = 0; i < expected_segments.size(); ++i) {
+    if (i == 0) {
+      continue;
+    }
+
+    segment_stream.str("");
+    make_segment(expected_segments[i], segment_stream, enc);
+    std::ispanstream inspan(segment_stream.view());
+    inspan >> wod;
+    wod.process_segment([&](LabelSetID ls_id, Timestamp ts, Sample::value_type v) {
+      EXPECT_LT(ls_id, expected_segments[i].size());
+      EXPECT_EQ(expected_segments[i][ls_id].timestamp, ts);
+      EXPECT_EQ(std::bit_cast<uint64_t>(expected_segments[i][ls_id].value), std::bit_cast<uint64_t>(v));
+    });
+    ++processed;
+  }
+  EXPECT_EQ(1, processed);
 }
 
 TEST_F(TestWALOutputDecoder, ProcessSegmentWithDump) {
