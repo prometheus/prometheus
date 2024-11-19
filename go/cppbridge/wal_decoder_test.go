@@ -184,7 +184,7 @@ func (s *DecoderSuite) TestWALOutputDecoderDump() {
 	file := &bytes.Buffer{}
 	n, err := dec.WriteTo(file)
 	s.Require().NoError(err)
-	s.Equal(int64(17), n)
+	s.Equal(int64(15), n)
 }
 
 func (s *DecoderSuite) TestWALOutputDecoderEmptyLoad() {
@@ -204,7 +204,7 @@ func (s *DecoderSuite) TestWALOutputDecoderEmptyLoad() {
 	file := &bytes.Buffer{}
 	n, err := dec.WriteTo(file)
 	s.Require().NoError(err)
-	s.Equal(int64(17), n)
+	s.Equal(int64(15), n)
 
 	err = dec.LoadFrom(file.Bytes())
 	s.Require().NoError(err)
