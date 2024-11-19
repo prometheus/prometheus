@@ -82,7 +82,7 @@ extern "C" void prompp_wal_decoder_decode_to_hashdex(void* args, void* res) {
   Result* out = new (res) Result();
 
   try {
-    out->hashdex_variant = new HashdexVariant{std::in_place_index<HashdexType::decoder>};
+    out->hashdex_variant = new HashdexVariant{std::in_place_index<HashdexType::kDecoder>};
     auto& hashdex = std::get<PromPP::WAL::BasicDecoderHashdex>(*out->hashdex_variant);
     in->decoder->decode_to_hashdex(in->segment, hashdex, *out);
     auto cluster = hashdex.cluster();
@@ -135,7 +135,7 @@ extern "C" void prompp_wal_decoder_decode_to_hashdex_with_metric_injection(void*
   Result* out = new (res) Result();
 
   try {
-    out->hashdex_variant = new HashdexVariant{std::in_place_index<HashdexType::decoder>};
+    out->hashdex_variant = new HashdexVariant{std::in_place_index<HashdexType::kDecoder>};
     auto& hashdex = std::get<PromPP::WAL::BasicDecoderHashdex>(*out->hashdex_variant);
     in->decoder->decode_to_hashdex(in->segment, hashdex, *out, static_cast<PromPP::WAL::BasicDecoderHashdex::MetaInjection>(*in->meta));
     auto cluster = hashdex.cluster();

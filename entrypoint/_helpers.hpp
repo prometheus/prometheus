@@ -7,7 +7,7 @@
 
 #include "bare_bones/exception.h"
 #include "wal/hashdex.h"
-#include "wal/hashdex/scraper.h"
+#include "wal/hashdex/scraper/scraper.h"
 
 template <class Out>
 inline __attribute__((always_inline)) void handle_current_exception(std::string_view func_name, Out& out) {
@@ -34,9 +34,14 @@ inline __attribute__((always_inline)) void handle_current_exception(std::string_
  * used for indexing HashdexVariant.
  */
 enum HashdexType : uint8_t {
-  protobuf = 0,
-  go_model,
-  decoder,
-  scraper,
+  kProtobuf = 0,
+  kGoModel,
+  kDecoder,
+  kPrometheusScraper,
+  kOpenMetricsScraper,
 };
-using HashdexVariant = std::variant<PromPP::WAL::ProtobufHashdex, PromPP::WAL::GoModelHashdex, PromPP::WAL::BasicDecoderHashdex, PromPP::WAL::hashdex::Scraper>;
+using HashdexVariant = std::variant<PromPP::WAL::ProtobufHashdex,
+                                    PromPP::WAL::GoModelHashdex,
+                                    PromPP::WAL::BasicDecoderHashdex,
+                                    PromPP::WAL::hashdex::scraper::PrometheusScraper,
+                                    PromPP::WAL::hashdex::scraper::OpenMetricsScraper>;

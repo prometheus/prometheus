@@ -17,7 +17,7 @@ enum YYCONDTYPE {
 
 // NOLINTEND
 
-namespace PromPP::Prometheus::textparse {
+namespace PromPP::Prometheus::textparse::Prometheus {
 
 Tokenizer::Tokenizer() : condition_{yycinit} {}
 
@@ -39,7 +39,7 @@ void Tokenizer::tokenize(std::string_view str) noexcept {
   condition_ = yycinit;
 }
 
-Tokenizer::Token Tokenizer::consume_comment(Token token) noexcept {
+Token Tokenizer::consume_comment(Token token) noexcept {
   if (cursor_ptr_ = static_cast<const char*>(std::memchr(cursor_ptr_, '\n', limit_ptr_ - cursor_ptr_)); cursor_ptr_ != nullptr) [[likely]] {
     condition_ = yycinit;
     return token;
@@ -49,7 +49,7 @@ Tokenizer::Token Tokenizer::consume_comment(Token token) noexcept {
   return Token::kEOF;
 }
 
-Tokenizer::Token Tokenizer::consume_escaped_string(Token token) noexcept {
+Token Tokenizer::consume_escaped_string(Token token) noexcept {
   while (true) {
     if (cursor_ptr_ = static_cast<const char*>(std::memchr(cursor_ptr_, '"', limit_ptr_ - cursor_ptr_)); cursor_ptr_ == nullptr) [[unlikely]] {
       cursor_ptr_ = limit_ptr_;
@@ -69,7 +69,7 @@ Tokenizer::Token Tokenizer::consume_escaped_string(Token token) noexcept {
 }
 
 // NOLINTBEGIN
-Tokenizer::Token Tokenizer::next_impl() noexcept {
+Token Tokenizer::next_impl() noexcept {
   token_ptr_ = cursor_ptr_;
 
   {
@@ -727,4 +727,4 @@ Tokenizer::Token Tokenizer::next_impl() noexcept {
 }
 // NOLINTEND
 
-}  // namespace PromPP::Prometheus::textparse
+}  // namespace PromPP::Prometheus::textparse::Prometheus
