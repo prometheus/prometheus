@@ -105,6 +105,33 @@ func (q *mergeGenericQuerier) Select(ctx context.Context, sortSeries bool, hints
 	if len(q.queriers) == 0 {
 		return noopGenericSeriesSet{}
 	}
+
+	// PP_CHANGES.md: rebuild on cpp start
+	// See which label must be non-empty.
+	// Optimization for case like {l=~".", l!="1"}.
+	labelMustBeSet := make(map[string]bool, len(matchers))
+	for _, m := range matchers {
+		if !m.Matches("") {
+			labelMustBeSet[m.Name] = true
+		}
+	}
+
+	isSubtractingMatcher := func(m *labels.Matcher) bool {
+		if !labelMustBeSet[m.Name] {
+			return true
+		}
+		return (m.Type == labels.MatchNotEqual || m.Type == labels.MatchNotRegexp) && m.Matches("")
+	}
+
+	slices.SortStableFunc(matchers, func(i, j *labels.Matcher) int {
+		if !isSubtractingMatcher(i) && isSubtractingMatcher(j) {
+			return -1
+		}
+
+		return +1
+	})
+	// PP_CHANGES.md: rebuild on cpp end
+
 	if len(q.queriers) == 1 {
 		return q.queriers[0].Select(ctx, sortSeries, hints, matchers...)
 	}
