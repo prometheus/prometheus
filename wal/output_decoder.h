@@ -188,8 +188,11 @@ class OutputDecoder : private BaseOutputDecoder {
   template <class Callback>
     requires std::is_invocable_v<Callback, Primitives::LabelSetID, Primitives::Timestamp, Primitives::Sample::value_type>
   __attribute__((flatten)) void process_segment(Callback&& func) {
-    BaseOutputDecoder::process_segment(
-        [&](Primitives::LabelSetID ls_id, Primitives::Timestamp ts, Primitives::Sample::value_type v) { func(cache_[ls_id], ts, v); });
+    BaseOutputDecoder::process_segment([&](Primitives::LabelSetID ls_id, Primitives::Timestamp ts, Primitives::Sample::value_type v) {
+      if (auto id = cache_[ls_id]; id != std::numeric_limits<uint32_t>::max()) {
+        func(id, ts, v);
+      }
+    });
   }
 
   template <class Callback>
