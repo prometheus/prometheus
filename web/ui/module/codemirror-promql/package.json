@@ -34,7 +34,7 @@
   },
   "devDependencies": {
     "@codemirror/autocomplete": "^6.18.1",
-    "@codemirror/language": "^6.10.2",
+    "@codemirror/language": "^6.10.3",
     "@codemirror/lint": "^6.8.1",
     "@codemirror/state": "^6.3.3",
     "@codemirror/view": "^6.34.1",
