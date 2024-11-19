@@ -2730,6 +2730,7 @@ func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scala
 		float, histogram, keep, err := vectorElemBinop(op, lf, rf, lh, rh, pos)
 		if err != nil {
 			lastErr = err
+			continue
 		}
 		// Catch cases where the scalar is the LHS in a scalar-vector comparison operation.
 		// We want to always keep the vector element value as the output value, even if it's on the RHS.
