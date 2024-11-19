@@ -286,7 +286,7 @@ extern "C" void prompp_wal_output_decoder_decode(void* args, void* res) {
   try {
     std::ispanstream{static_cast<std::string_view>(in->segment)} >> *in->decoder;
     in->decoder->process_segment([&](PromPP::Primitives::LabelSetID ls_id, PromPP::Primitives::Timestamp ts, PromPP::Primitives::Sample::value_type v)
-                                     __attribute__((always_inline)) { out->ref_samples.emplace_back(ls_id, ts, v); });
+                                     PROMPP_LAMBDA_INLINE { out->ref_samples.emplace_back(ls_id, ts, v); });
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
     handle_current_exception(__func__, err_stream);

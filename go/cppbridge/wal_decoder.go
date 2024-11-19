@@ -2,7 +2,6 @@ package cppbridge
 
 import (
 	"context"
-	"fmt"
 	"hash/crc32"
 	"io"
 	"runtime"
@@ -330,6 +329,14 @@ func NewDecodedRefSamples(refSamples []RefSample, shardID uint16) *DecodedRefSam
 	return drs
 }
 
+// NewGoDecodedRefSamples init new DecodedRefSamples, for test.
+func NewGoDecodedRefSamples(refSamples []RefSample, shardID uint16) *DecodedRefSamples {
+	return &DecodedRefSamples{
+		refSamples: refSamples,
+		shardID:    shardID,
+	}
+}
+
 // Range calls f sequentially for each RefSample present in the DecodedRefSamples.
 // If f returns false, range stops the iteration.
 func (s *DecodedRefSamples) Range(f func(id uint32, t int64, v float64) bool) {
@@ -394,9 +401,7 @@ type SnappyProtobufEncodedData struct {
 func NewSnappyProtobufEncodedData(b []byte) *SnappyProtobufEncodedData {
 	sped := &SnappyProtobufEncodedData{b: b}
 	runtime.SetFinalizer(sped, func(sped *SnappyProtobufEncodedData) {
-		fmt.Println("freeBytes")
 		freeBytes(sped.b)
-		fmt.Println("freeBytes")
 	})
 	return sped
 }

@@ -27,7 +27,7 @@ struct ShardRefSample {
   uint16_t shard_id{};
 };
 
-using BaseOutputDecoder = BasicDecoder<std::remove_reference_t<Primitives::SnugComposites::LabelSet::ShrinkableEncodingBimap>>;
+using BaseOutputDecoder = BasicDecoder<Primitives::SnugComposites::LabelSet::ShrinkableEncodingBimap>;
 
 class OutputDecoder : private BaseOutputDecoder {
   Primitives::SnugComposites::LabelSet::ShrinkableEncodingBimap wal_lss_;
@@ -47,6 +47,7 @@ class OutputDecoder : private BaseOutputDecoder {
     }
 
     Primitives::LabelsBuilder<Primitives::LabelsBuilderStateMap> builder{builder_state_};
+    cache_.reserve(wal_lss_.next_item_index());
     for (size_t ls_id = cache_.size(); ls_id < wal_lss_.next_item_index(); ++ls_id) {
       builder.reset(wal_lss_[ls_id]);
       Prometheus::Relabel::process_external_labels(builder, external_labels_);
