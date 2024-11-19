@@ -5,6 +5,7 @@ import (
 	"hash/crc32"
 	"io"
 	"runtime"
+	"unsafe"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/pp/go/frames"
@@ -110,6 +111,7 @@ func (p *DecodedProtobuf) Size() int64 {
 	return int64(len(p.buf))
 }
 
+// CRC32 calculate crc32 sum.
 func (p *DecodedProtobuf) CRC32() uint32 {
 	return crc32.ChecksumIEEE(p.buf)
 }
@@ -242,4 +244,97 @@ func (d *WALDecoder) RestoreFromStream(
 	var exception []byte
 	offset, restoredID, exception = walDecoderRestoreFromStream(d.decoder, buf, requiredSegmentID)
 	return offset, restoredID, handleException(exception)
+}
+
+// WALOutputDecoder - go wrapper for C-WALOutputDecoder.
+//
+//	decoder - pointer to a C++ decoder initiated in C++ memory;
+type WALOutputDecoder struct {
+	decoder uintptr
+	shardID uint16
+}
+
+// NewWALOutputDecoder init new WALOutputDecoder.
+func NewWALOutputDecoder(
+	externalLabels []Label,
+	statelessRelabeler *StatelessRelabeler,
+	outputLss *LabelSetStorage,
+	shardID uint16,
+	encodersVersion uint8,
+) *WALOutputDecoder {
+	d := &WALOutputDecoder{
+		decoder: walOutputDecoderCtor(
+			externalLabels,
+			statelessRelabeler.Pointer(),
+			outputLss.Pointer(),
+			encodersVersion,
+		),
+		shardID: shardID,
+	}
+	runtime.SetFinalizer(d, func(d *WALOutputDecoder) {
+		walOutputDecoderDtor(d.decoder)
+	})
+	return d
+}
+
+// Decode - decodes incoming encoding data and return protobuf.
+func (d *WALOutputDecoder) Decode(ctx context.Context, segment []byte) (*DecodedRefSamples, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	refSamples, exception := walOutputDecoderDecode(segment, d.decoder)
+	return NewDecodedRefSamples(refSamples, d.shardID), handleException(exception)
+}
+
+// LoadFrom load from dump(slice byte) output decoder state(output_lss and cache).
+func (d *WALOutputDecoder) LoadFrom(dump []byte) error {
+	exception := walOutputDecoderLoadFrom(d.decoder, dump)
+	return handleException(exception)
+}
+
+// WriteTo dump output decoder state(output_lss and cache) to writer, implements io.WriterTo interface.
+func (d *WALOutputDecoder) WriteTo(w io.Writer) (int64, error) {
+	dump, exception := walOutputDecoderDumpTo(d.decoder)
+	if len(exception) != 0 {
+		return 0, handleException(exception)
+	}
+
+	n, err := w.Write(dump)
+	freeBytes(dump)
+	return int64(n), err
+}
+
+// RefSample is a timestamp/value pair associated with a reference to a series.
+type RefSample struct {
+	ID uint32
+	T  int64
+	V  float64
+}
+
+// DecodedRefSamples go wrapper for slice c-type RefSample.
+type DecodedRefSamples struct {
+	refSamples []RefSample
+	shardID    uint16
+}
+
+// NewDecodedRefSamples init new DecodedRefSamples.
+func NewDecodedRefSamples(refSamples []RefSample, shardID uint16) *DecodedRefSamples {
+	drs := &DecodedRefSamples{
+		refSamples: refSamples,
+		shardID:    shardID,
+	}
+	runtime.SetFinalizer(drs, func(drs *DecodedRefSamples) {
+		freeBytes(*(*[]byte)(unsafe.Pointer(&drs.refSamples)))
+	})
+	return drs
+}
+
+// Range calls f sequentially for each RefSample present in the DecodedRefSamples.
+// If f returns false, range stops the iteration.
+func (s *DecodedRefSamples) Range(f func(id uint32, t int64, v float64) bool) {
+	for i := range s.refSamples {
+		if !f(s.refSamples[i].ID, s.refSamples[i].T, s.refSamples[i].V) {
+			return
+		}
+	}
 }

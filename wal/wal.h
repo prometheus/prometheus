@@ -782,7 +782,7 @@ class BasicDecoder {
     }
 
     ++last_processed_segment_;
-    gorilla_.resize(label_sets_.size());
+    gorilla_.resize(label_sets_.next_item_index());
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE std::istream& get_stream(std::istream& stream) noexcept {

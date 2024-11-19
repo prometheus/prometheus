@@ -474,11 +474,12 @@ class DecodingTable {
 
 template <class Filament>
   requires is_shrinkable<typename Filament::data_type>
-class ShrinkableEncodingBimap final : public DecodingTable<Filament> {
+class ShrinkableEncodingBimap final : private DecodingTable<Filament> {
  public:
   using Base = DecodingTable<Filament>;
   using checkpoint_type = typename Base::template Checkpoint<ShrinkableEncodingBimap<Filament>>;
   using delta_type = typename checkpoint_type::Delta;
+  using value_type = typename Base::value_type;
 
   using Base::data;
   using Base::items;
@@ -533,6 +534,17 @@ class ShrinkableEncodingBimap final : public DecodingTable<Filament> {
 
   [[nodiscard]] uint32_t next_item_index() const noexcept override { return shift_ + Base::next_item_index(); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return Base::allocated_memory() + set_allocated_memory_; }
+
+  PROMPP_ALWAYS_INLINE value_type operator[](uint32_t id) const noexcept {
+    assert(id >= shift_);
+    return Base::operator[](id - shift_);
+  }
+
+  template <InputStream S>
+  friend S& operator>>(S& in, ShrinkableEncodingBimap& shrinkable_encoding_bimap) {
+    shrinkable_encoding_bimap.load(in);
+    return in;
+  }
 
  private:
   uint32_t set_allocated_memory_{};

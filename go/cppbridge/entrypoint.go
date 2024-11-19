@@ -659,6 +659,105 @@ func walDecoderDtor(decoder uintptr) {
 }
 
 //
+// OutputDecoder
+//
+
+// walOutputDecoderCtor - wrapper for constructor C-WalOutputDecoder.
+func walOutputDecoderCtor(
+	externalLabels []Label,
+	statelessRelabeler, outputLss uintptr,
+	encodersVersion uint8,
+) uintptr {
+	var args = struct {
+		externalLabels     []Label
+		statelessRelabeler uintptr
+		outputLss          uintptr
+		encodersVersion    uint8
+	}{externalLabels, statelessRelabeler, outputLss, encodersVersion}
+	var res struct {
+		decoder uintptr
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_wal_output_decoder_ctor,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.decoder
+}
+
+// walOutputDecoderDtor - wrapper for destructor C-WalOutputDecoder.
+func walOutputDecoderDtor(decoder uintptr) {
+	var args = struct {
+		decoder uintptr
+	}{decoder}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_wal_output_decoder_dtor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
+// walOutputDecoderDumpTo dump output decoder state(output_lss and cache) to slice byte.
+func walOutputDecoderDumpTo(decoder uintptr) (dump, err []byte) {
+	var args = struct {
+		decoder uintptr
+	}{decoder}
+	var res struct {
+		dump  []byte
+		error []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_wal_output_decoder_dump_to,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.dump, res.error
+}
+
+// walOutputDecoderLoadFrom load from dump(slice byte) output decoder state(output_lss and cache).
+func walOutputDecoderLoadFrom(decoder uintptr, dump []byte) []byte {
+	var args = struct {
+		dump    []byte
+		decoder uintptr
+	}{dump, decoder}
+	var res struct {
+		error []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_wal_output_decoder_load_from,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.error
+}
+
+// walOutputDecoderDecode decode segment to slice RefSample.
+func walOutputDecoderDecode(segment []byte, decoder uintptr) (dump []RefSample, err []byte) {
+	var args = struct {
+		segment []byte
+		decoder uintptr
+	}{segment, decoder}
+	var res struct {
+		refSamples []RefSample
+		error      []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_wal_output_decoder_decode,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.refSamples, res.error
+}
+
+//
 // LabelSetStorage EncodingBimap
 //
 
@@ -1105,7 +1204,18 @@ func prometheusPerShardRelabelerInputRelabelingWithStalenans(
 		targetLss             uintptr
 		state                 uintptr
 		staleNansTS           int64
-	}{shardsInnerSeries, shardsRelabeledSeries, options, perShardRelabeler, hashdex, cache, inputLss, targetLss, sourceState, staleNansTS}
+	}{
+		shardsInnerSeries,
+		shardsRelabeledSeries,
+		options,
+		perShardRelabeler,
+		hashdex,
+		cache,
+		inputLss,
+		targetLss,
+		sourceState,
+		staleNansTS,
+	}
 	var res struct {
 		exception []byte
 	}
@@ -1491,7 +1601,7 @@ func seriesDataDeserializerDtor(deserializer uintptr) {
 	)
 }
 
-func seriesDataChunkRecoderCtor(lss uintptr, dataStorage uintptr, timeInterval TimeInterval) uintptr {
+func seriesDataChunkRecoderCtor(lss, dataStorage uintptr, timeInterval TimeInterval) uintptr {
 	var args = struct {
 		lss         uintptr
 		dataStorage uintptr
@@ -1713,7 +1823,7 @@ func indexWriterWriteTableOfContents(writer uintptr, data []byte) []byte {
 	return res.data
 }
 
-func getHeadStatus(lss uintptr, dataStorage uintptr, status *HeadStatus, limit int) {
+func getHeadStatus(lss, dataStorage uintptr, status *HeadStatus, limit int) {
 	var args = struct {
 		lss         uintptr
 		dataStorage uintptr
