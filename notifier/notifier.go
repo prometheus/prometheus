@@ -160,7 +160,7 @@ func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen, alertmanag
 			Namespace: namespace,
 			Subsystem: subsystem,
 			Name:      "errors_total",
-			Help:      "Total number of errors sending alert notifications.",
+			Help:      "Total number of sent alerts affected by errors.",
 		},
 			[]string{alertmanagerLabel},
 		),
@@ -619,13 +619,13 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 
 			go func(ctx context.Context, client *http.Client, url string, payload []byte, count int) {
 				if err := n.sendOne(ctx, client, url, payload); err != nil {
-					n.logger.Error("Error sending alert", "alertmanager", url, "count", count, "err", err)
-					n.metrics.errors.WithLabelValues(url).Inc()
+					n.logger.Error("Error sending alerts", "alertmanager", url, "count", count, "err", err)
+					n.metrics.errors.WithLabelValues(url).Add(float64(count))
 				} else {
 					numSuccess.Inc()
 				}
 				n.metrics.latency.WithLabelValues(url).Observe(time.Since(begin).Seconds())
-				n.metrics.sent.WithLabelValues(url).Add(float64(len(amAlerts)))
+				n.metrics.sent.WithLabelValues(url).Add(float64(count))
 
 				wg.Done()
 			}(ctx, ams.client, am.url().String(), payload, len(amAlerts))
