@@ -509,6 +509,8 @@ eval instant at 1m 10 atan2 20
 eval instant at 1m 10 atan2 NaN
     NaN
 
+clear
+
 # Test comparison operations with floats and histograms.
 load 6m
   left_floats  1 2 _ _ 3 stale 4  5  NaN Inf -Inf
