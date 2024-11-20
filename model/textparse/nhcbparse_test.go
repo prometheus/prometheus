@@ -16,6 +16,7 @@ package textparse
 import (
 	"bytes"
 	"encoding/binary"
+	"strconv"
 	"testing"
 
 	"github.com/gogo/protobuf/proto"
@@ -292,14 +293,14 @@ foobar{quantile="0.99"} 150.1`
 			lset: labels.FromStrings("__name__", "foo_total"),
 			t:    int64p(1520879607789),
 			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "counter-test"), Value: 5}},
-			// TODO(krajorama): ct: int64p(1520872607123),
+			ct:   int64p(1520872607123),
 		}, {
 			m:    `foo_total{a="b"}`,
 			v:    17.0,
 			lset: labels.FromStrings("__name__", "foo_total", "a", "b"),
 			t:    int64p(1520879607789),
 			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "counter-test"), Value: 5}},
-			// TODO(krajorama): ct: int64p(1520872607123),
+			ct:   int64p(1520872607123),
 		}, {
 			m:    "bar",
 			help: "Summary with CT at the end, making sure we find CT even if it's multiple lines a far",
@@ -310,22 +311,22 @@ foobar{quantile="0.99"} 150.1`
 			m:    "bar_count",
 			v:    17.0,
 			lset: labels.FromStrings("__name__", "bar_count"),
-			// TODO(krajorama): ct:   int64p(1520872608124),
+			ct:   int64p(1520872608124),
 		}, {
 			m:    "bar_sum",
 			v:    324789.3,
 			lset: labels.FromStrings("__name__", "bar_sum"),
-			// TODO(krajorama): ct:   int64p(1520872608124),
+			ct:   int64p(1520872608124),
 		}, {
 			m:    `bar{quantile="0.95"}`,
 			v:    123.7,
 			lset: labels.FromStrings("__name__", "bar", "quantile", "0.95"),
-			// TODO(krajorama): ct:   int64p(1520872608124),
+			ct:   int64p(1520872608124),
 		}, {
 			m:    `bar{quantile="0.99"}`,
 			v:    150.0,
 			lset: labels.FromStrings("__name__", "bar", "quantile", "0.99"),
-			// TODO(krajorama): ct:   int64p(1520872608124),
+			ct:   int64p(1520872608124),
 		}, {
 			m:    "baz",
 			help: "Histogram with the same objective as above's summary",
@@ -343,7 +344,7 @@ foobar{quantile="0.99"} 150.1`
 				CustomValues:    []float64{0.0}, // We do not store the +Inf boundary.
 			},
 			lset: labels.FromStrings("__name__", "baz"),
-			// TODO(krajorama): ct:   int64p(1520872609125),
+			ct:   int64p(1520872609125),
 		}, {
 			m:    "fizz_created",
 			help: "Gauge which shouldn't be parsed as CT",
@@ -371,7 +372,7 @@ foobar{quantile="0.99"} 150.1`
 				CustomValues:    []float64{0.0}, // We do not store the +Inf boundary.
 			},
 			lset: labels.FromStrings("__name__", "something"),
-			// TODO(krajorama): ct:   int64p(1520430001000),
+			ct:   int64p(1520430001000),
 		}, {
 			m: `something{a="b"}`,
 			shs: &histogram.Histogram{
@@ -383,7 +384,7 @@ foobar{quantile="0.99"} 150.1`
 				CustomValues:    []float64{0.0}, // We do not store the +Inf boundary.
 			},
 			lset: labels.FromStrings("__name__", "something", "a", "b"),
-			// TODO(krajorama): ct:   int64p(1520430002000),
+			ct:   int64p(1520430002000),
 		}, {
 			m:    "yum",
 			help: "Summary with _created between sum and quantiles",
@@ -394,22 +395,22 @@ foobar{quantile="0.99"} 150.1`
 			m:    `yum_count`,
 			v:    20,
 			lset: labels.FromStrings("__name__", "yum_count"),
-			// TODO(krajorama): ct:   int64p(1520430003000),
+			ct:   int64p(1520430003000),
 		}, {
 			m:    `yum_sum`,
 			v:    324789.5,
 			lset: labels.FromStrings("__name__", "yum_sum"),
-			// TODO(krajorama): ct:   int64p(1520430003000),
+			ct:   int64p(1520430003000),
 		}, {
 			m:    `yum{quantile="0.95"}`,
 			v:    123.7,
 			lset: labels.FromStrings("__name__", "yum", "quantile", "0.95"),
-			// TODO(krajorama): ct:   int64p(1520430003000),
+			ct:   int64p(1520430003000),
 		}, {
 			m:    `yum{quantile="0.99"}`,
 			v:    150.0,
 			lset: labels.FromStrings("__name__", "yum", "quantile", "0.99"),
-			// TODO(krajorama): ct:   int64p(1520430003000),
+			ct:   int64p(1520430003000),
 		}, {
 			m:    "foobar",
 			help: "Summary with _created as the first line",
@@ -420,22 +421,22 @@ foobar{quantile="0.99"} 150.1`
 			m:    `foobar_count`,
 			v:    21,
 			lset: labels.FromStrings("__name__", "foobar_count"),
-			// TODO(krajorama): ct:   int64p(1520430004000),
+			ct:   int64p(1520430004000),
 		}, {
 			m:    `foobar_sum`,
 			v:    324789.6,
 			lset: labels.FromStrings("__name__", "foobar_sum"),
-			// TODO(krajorama): ct:   int64p(1520430004000),
+			ct:   int64p(1520430004000),
 		}, {
 			m:    `foobar{quantile="0.95"}`,
 			v:    123.8,
 			lset: labels.FromStrings("__name__", "foobar", "quantile", "0.95"),
-			// TODO(krajorama): ct:   int64p(1520430004000),
+			ct:   int64p(1520430004000),
 		}, {
 			m:    `foobar{quantile="0.99"}`,
 			v:    150.1,
 			lset: labels.FromStrings("__name__", "foobar", "quantile", "0.99"),
-			// TODO(krajorama): ct:   int64p(1520430004000),
+			ct:   int64p(1520430004000),
 		}, {
 			m:    "metric",
 			help: "foo\x00bar",
@@ -493,15 +494,14 @@ something_bucket{a="b",le="+Inf"} 9 # {id="something-test"} 2e100 123.000
 				{Labels: labels.FromStrings("id", "something-test"), Value: 0.5},
 				{Labels: labels.FromStrings("id", "something-test"), Value: 8.0},
 			},
-			// TODO(krajorama): ct:   int64p(1520430001000),
 		}, {
 			m: `something{a="b"}`,
 			shs: &histogram.Histogram{
 				Schema:          histogram.CustomBucketsSchema,
 				Count:           9,
 				Sum:             42123.0,
-				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}, {Offset: 1, Length: 1}},
-				PositiveBuckets: []int64{8, -7},
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
+				PositiveBuckets: []int64{8, -8, 1},
 				CustomValues:    []float64{0.0, 1.0}, // We do not store the +Inf boundary.
 			},
 			lset: labels.FromStrings("__name__", "something", "a", "b"),
@@ -509,7 +509,6 @@ something_bucket{a="b",le="+Inf"} 9 # {id="something-test"} 2e100 123.000
 				{Labels: labels.FromStrings("id", "something-test"), Value: 0.0, HasTs: true, Ts: 123321},
 				{Labels: labels.FromStrings("id", "something-test"), Value: 2e100, HasTs: true, Ts: 123000},
 			},
-			// TODO(krajorama): ct:   int64p(1520430002000),
 		},
 	}
 
@@ -520,107 +519,268 @@ something_bucket{a="b",le="+Inf"} 9 # {id="something-test"} 2e100 123.000
 	requireEntries(t, exp, got)
 }
 
-// Verify that the NHCBParser does not parse the NHCB when the exponential is present.
-func TestNHCBParserProtoBufParser_NoNHCBWhenExponential(t *testing.T) {
-	inputBuf := createTestProtoBufHistogram(t)
-	// Initialize the protobuf parser so that it returns classic histograms as
-	// well when there's both classic and exponential histograms.
-	p := NewProtobufParser(inputBuf.Bytes(), true, labels.NewSymbolTable())
+// Verify the requirement tables from
+// https://github.com/prometheus/prometheus/issues/13532 .
+// "classic" means the option "always_scrape_classic_histograms".
+// "nhcb" means the option "convert_classic_histograms_to_nhcb".
+//
+// Case 1. Only classic histogram is exposed.
+//
+// | Scrape Config             | Expect classic | Expect exponential | Expect NHCB |.
+// | classic=false, nhcb=false | YES            | NO                 | NO          |.
+// | classic=true,  nhcb=false | YES            | NO                 | NO          |.
+// | classic=false, nhcb=true  | NO             | NO                 | YES         |.
+// | classic=true,  nhcb=true  | YES            | NO                 | YES         |.
+//
+// Case 2. Both classic and exponential histograms are exposed.
+//
+// | Scrape Config             | Expect classic | Expect exponential | Expect NHCB |.
+// | classic=false, nhcb=false | NO             | YES                | NO          |.
+// | classic=true,  nhcb=false | YES            | YES                | NO          |.
+// | classic=false, nhcb=true  | NO             | YES                | NO          |.
+// | classic=true,  nhcb=true  | YES            | YES                | NO          |.
+//
+// Case 3. Only exponential histogram is exposed.
+//
+// | Scrape Config             | Expect classic | Expect exponential | Expect NHCB |.
+// | classic=false, nhcb=false | NO             | YES                | NO          |.
+// | classic=true,  nhcb=false | NO             | YES                | NO          |.
+// | classic=false, nhcb=true  | NO             | YES                | NO          |.
+// | classic=true,  nhcb=true  | NO             | YES                | NO          |.
+func TestNHCBParser_NoNHCBWhenExponential(t *testing.T) {
+	type requirement struct {
+		expectClassic     bool
+		expectExponential bool
+		expectNHCB        bool
+	}
 
-	// Initialize the NHCBParser so that it returns classic histograms as well
-	// when there's both classic and exponential histograms.
-	p = NewNHCBParser(p, labels.NewSymbolTable(), true)
-
-	exp := []parsedEntry{
+	cases := []map[string]requirement{
+		// Case 1.
 		{
-			m:    "test_histogram",
-			help: "Test histogram with classic and exponential buckets.",
+			"classic=false, nhcb=false": {expectClassic: true, expectExponential: false, expectNHCB: false},
+			"classic=true, nhcb=false":  {expectClassic: true, expectExponential: false, expectNHCB: false},
+			"classic=false, nhcb=true":  {expectClassic: false, expectExponential: false, expectNHCB: true},
+			"classic=true, nhcb=true":   {expectClassic: true, expectExponential: false, expectNHCB: true},
 		},
+		// Case 2.
 		{
-			m:   "test_histogram",
-			typ: model.MetricTypeHistogram,
+			"classic=false, nhcb=false": {expectClassic: false, expectExponential: true, expectNHCB: false},
+			"classic=true, nhcb=false":  {expectClassic: true, expectExponential: true, expectNHCB: false},
+			"classic=false, nhcb=true":  {expectClassic: false, expectExponential: true, expectNHCB: false},
+			"classic=true, nhcb=true":   {expectClassic: true, expectExponential: true, expectNHCB: false},
 		},
+		// Case 3.
 		{
-			m: "test_histogram",
-			shs: &histogram.Histogram{
-				Schema:          3,
-				Count:           175,
-				Sum:             0.0008280461746287094,
-				ZeroThreshold:   2.938735877055719e-39,
-				ZeroCount:       2,
-				PositiveSpans:   []histogram.Span{{Offset: -161, Length: 1}, {Offset: 8, Length: 3}},
-				NegativeSpans:   []histogram.Span{{Offset: -162, Length: 1}, {Offset: 23, Length: 4}},
-				PositiveBuckets: []int64{1, 2, -1, -1},
-				NegativeBuckets: []int64{1, 3, -2, -1, 1},
-			},
-			lset: labels.FromStrings("__name__", "test_histogram"),
-			t:    int64p(1234568),
-		},
-		{
-			m:    "test_histogram_count",
-			v:    175,
-			lset: labels.FromStrings("__name__", "test_histogram_count"),
-			t:    int64p(1234568),
-		},
-		{
-			m:    "test_histogram_sum",
-			v:    0.0008280461746287094,
-			lset: labels.FromStrings("__name__", "test_histogram_sum"),
-			t:    int64p(1234568),
-		},
-		{
-			m:    "test_histogram_bucket\xffle\xff-0.0004899999999999998",
-			v:    2,
-			lset: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0004899999999999998"),
-			t:    int64p(1234568),
-		},
-		{
-			m:    "test_histogram_bucket\xffle\xff-0.0003899999999999998",
-			v:    4,
-			lset: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0003899999999999998"),
-			t:    int64p(1234568),
-		},
-		{
-			m:    "test_histogram_bucket\xffle\xff-0.0002899999999999998",
-			v:    16,
-			lset: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0002899999999999998"),
-			t:    int64p(1234568),
-		},
-		{
-			m:    "test_histogram_bucket\xffle\xff+Inf",
-			v:    175,
-			lset: labels.FromStrings("__name__", "test_histogram_bucket", "le", "+Inf"),
-			t:    int64p(1234568),
-		},
-		{
-			// TODO(krajorama): optimize: this should not be here. In case there's
-			// an exponential histogram we should not convert the classic histogram
-			// to NHCB. In the end TSDB will throw this away with
-			// storage.errDuplicateSampleForTimestamp error at Commit(), but it
-			// is better to avoid this conversion in the first place.
-			m: "test_histogram{}",
-			shs: &histogram.Histogram{
-				Schema:          histogram.CustomBucketsSchema,
-				Count:           175,
-				Sum:             0.0008280461746287094,
-				PositiveSpans:   []histogram.Span{{Length: 4}},
-				PositiveBuckets: []int64{2, 0, 10, 147},
-				CustomValues:    []float64{-0.0004899999999999998, -0.0003899999999999998, -0.0002899999999999998},
-			},
-			lset: labels.FromStrings("__name__", "test_histogram"),
-			t:    int64p(1234568),
+			"classic=false, nhcb=false": {expectClassic: false, expectExponential: true, expectNHCB: false},
+			"classic=true, nhcb=false":  {expectClassic: false, expectExponential: true, expectNHCB: false},
+			"classic=false, nhcb=true":  {expectClassic: false, expectExponential: true, expectNHCB: false},
+			"classic=true, nhcb=true":   {expectClassic: false, expectExponential: true, expectNHCB: false},
 		},
 	}
-	got := testParse(t, p)
-	requireEntries(t, exp, got)
+
+	// Create parser from keep classic option.
+	type parserFactory func(bool) Parser
+
+	type testCase struct {
+		name    string
+		parser  parserFactory
+		classic bool
+		nhcb    bool
+		exp     []parsedEntry
+	}
+
+	type parserOptions struct {
+		useUTF8sep          bool
+		hasCreatedTimeStamp bool
+	}
+	// Defines the parser name, the Parser factory and the test cases
+	// supported by the parser and parser options.
+	parsers := []func() (string, parserFactory, []int, parserOptions){
+		func() (string, parserFactory, []int, parserOptions) {
+			factory := func(keepClassic bool) Parser {
+				inputBuf := createTestProtoBufHistogram(t)
+				return NewProtobufParser(inputBuf.Bytes(), keepClassic, labels.NewSymbolTable())
+			}
+			return "ProtoBuf", factory, []int{1, 2, 3}, parserOptions{useUTF8sep: true, hasCreatedTimeStamp: true}
+		},
+		func() (string, parserFactory, []int, parserOptions) {
+			factory := func(keepClassic bool) Parser {
+				input := createTestOpenMetricsHistogram()
+				return NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
+			}
+			return "OpenMetrics", factory, []int{1}, parserOptions{hasCreatedTimeStamp: true}
+		},
+		func() (string, parserFactory, []int, parserOptions) {
+			factory := func(keepClassic bool) Parser {
+				input := createTestPromHistogram()
+				return NewPromParser([]byte(input), labels.NewSymbolTable())
+			}
+			return "Prometheus", factory, []int{1}, parserOptions{}
+		},
+	}
+
+	testCases := []testCase{}
+	for _, parser := range parsers {
+		for _, classic := range []bool{false, true} {
+			for _, nhcb := range []bool{false, true} {
+				parserName, parser, supportedCases, options := parser()
+				requirementName := "classic=" + strconv.FormatBool(classic) + ", nhcb=" + strconv.FormatBool(nhcb)
+				tc := testCase{
+					name:    "parser=" + parserName + ", " + requirementName,
+					parser:  parser,
+					classic: classic,
+					nhcb:    nhcb,
+					exp:     []parsedEntry{},
+				}
+				for _, caseNumber := range supportedCases {
+					caseI := cases[caseNumber-1]
+					req, ok := caseI[requirementName]
+					require.True(t, ok, "Case %d does not have requirement %s", caseNumber, requirementName)
+					metric := "test_histogram" + strconv.Itoa(caseNumber)
+					tc.exp = append(tc.exp, parsedEntry{
+						m:    metric,
+						help: "Test histogram " + strconv.Itoa(caseNumber),
+					})
+					tc.exp = append(tc.exp, parsedEntry{
+						m:   metric,
+						typ: model.MetricTypeHistogram,
+					})
+
+					var ct *int64
+					if options.hasCreatedTimeStamp {
+						ct = int64p(1000)
+					}
+
+					var bucketForMetric func(string) string
+					if options.useUTF8sep {
+						bucketForMetric = func(s string) string {
+							return "_bucket\xffle\xff" + s
+						}
+					} else {
+						bucketForMetric = func(s string) string {
+							return "_bucket{le=\"" + s + "\"}"
+						}
+					}
+
+					if req.expectExponential {
+						// Always expect exponential histogram first.
+						exponentialSeries := []parsedEntry{
+							{
+								m: metric,
+								shs: &histogram.Histogram{
+									Schema:          3,
+									Count:           175,
+									Sum:             0.0008280461746287094,
+									ZeroThreshold:   2.938735877055719e-39,
+									ZeroCount:       2,
+									PositiveSpans:   []histogram.Span{{Offset: -161, Length: 1}, {Offset: 8, Length: 3}},
+									NegativeSpans:   []histogram.Span{{Offset: -162, Length: 1}, {Offset: 23, Length: 4}},
+									PositiveBuckets: []int64{1, 2, -1, -1},
+									NegativeBuckets: []int64{1, 3, -2, -1, 1},
+								},
+								lset: labels.FromStrings("__name__", metric),
+								t:    int64p(1234568),
+								ct:   ct,
+							},
+						}
+						tc.exp = append(tc.exp, exponentialSeries...)
+					}
+					if req.expectClassic {
+						// Always expect classic histogram series after exponential.
+						classicSeries := []parsedEntry{
+							{
+								m:    metric + "_count",
+								v:    175,
+								lset: labels.FromStrings("__name__", metric+"_count"),
+								t:    int64p(1234568),
+								ct:   ct,
+							},
+							{
+								m:    metric + "_sum",
+								v:    0.0008280461746287094,
+								lset: labels.FromStrings("__name__", metric+"_sum"),
+								t:    int64p(1234568),
+								ct:   ct,
+							},
+							{
+								m:    metric + bucketForMetric("-0.0004899999999999998"),
+								v:    2,
+								lset: labels.FromStrings("__name__", metric+"_bucket", "le", "-0.0004899999999999998"),
+								t:    int64p(1234568),
+								ct:   ct,
+							},
+							{
+								m:    metric + bucketForMetric("-0.0003899999999999998"),
+								v:    4,
+								lset: labels.FromStrings("__name__", metric+"_bucket", "le", "-0.0003899999999999998"),
+								t:    int64p(1234568),
+								ct:   ct,
+							},
+							{
+								m:    metric + bucketForMetric("-0.0002899999999999998"),
+								v:    16,
+								lset: labels.FromStrings("__name__", metric+"_bucket", "le", "-0.0002899999999999998"),
+								t:    int64p(1234568),
+								ct:   ct,
+							},
+							{
+								m:    metric + bucketForMetric("+Inf"),
+								v:    175,
+								lset: labels.FromStrings("__name__", metric+"_bucket", "le", "+Inf"),
+								t:    int64p(1234568),
+								ct:   ct,
+							},
+						}
+						tc.exp = append(tc.exp, classicSeries...)
+					}
+					if req.expectNHCB {
+						// Always expect NHCB series after classic.
+						nhcbSeries := []parsedEntry{
+							{
+								m: metric + "{}",
+								shs: &histogram.Histogram{
+									Schema:          histogram.CustomBucketsSchema,
+									Count:           175,
+									Sum:             0.0008280461746287094,
+									PositiveSpans:   []histogram.Span{{Length: 4}},
+									PositiveBuckets: []int64{2, 0, 10, 147},
+									CustomValues:    []float64{-0.0004899999999999998, -0.0003899999999999998, -0.0002899999999999998},
+								},
+								lset: labels.FromStrings("__name__", metric),
+								t:    int64p(1234568),
+								ct:   ct,
+							},
+						}
+						tc.exp = append(tc.exp, nhcbSeries...)
+					}
+				}
+				testCases = append(testCases, tc)
+			}
+		}
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := tc.parser(tc.classic)
+			if tc.nhcb {
+				p = NewNHCBParser(p, labels.NewSymbolTable(), tc.classic)
+			}
+			got := testParse(t, p)
+			requireEntries(t, tc.exp, got)
+		})
+	}
 }
 
 func createTestProtoBufHistogram(t *testing.T) *bytes.Buffer {
-	testMetricFamilies := []string{`name: "test_histogram"
-help: "Test histogram with classic and exponential buckets."
+	testMetricFamilies := []string{`name: "test_histogram1"
+help: "Test histogram 1"
 type: HISTOGRAM
 metric: <
   histogram: <
+		created_timestamp: <
+      seconds: 1
+      nanos: 1
+    >
     sample_count: 175
     sample_sum: 0.0008280461746287094
     bucket: <
@@ -635,6 +795,72 @@ metric: <
       cumulative_count: 16
       upper_bound: -0.0002899999999999998
     >
+  >
+  timestamp_ms: 1234568
+>`, `name: "test_histogram2"
+help: "Test histogram 2"
+type: HISTOGRAM
+metric: <
+  histogram: <
+		created_timestamp: <
+      seconds: 1
+      nanos: 1
+    >
+    sample_count: 175
+    sample_sum: 0.0008280461746287094
+    bucket: <
+      cumulative_count: 2
+      upper_bound: -0.0004899999999999998
+    >
+    bucket: <
+      cumulative_count: 4
+      upper_bound: -0.0003899999999999998
+    >
+    bucket: <
+      cumulative_count: 16
+      upper_bound: -0.0002899999999999998
+    >
+    schema: 3
+    zero_threshold: 2.938735877055719e-39
+    zero_count: 2
+    negative_span: <
+      offset: -162
+      length: 1
+    >
+    negative_span: <
+      offset: 23
+      length: 4
+    >
+    negative_delta: 1
+    negative_delta: 3
+    negative_delta: -2
+    negative_delta: -1
+    negative_delta: 1
+    positive_span: <
+      offset: -161
+      length: 1
+    >
+    positive_span: <
+      offset: 8
+      length: 3
+    >
+    positive_delta: 1
+    positive_delta: 2
+    positive_delta: -1
+    positive_delta: -1
+  >
+  timestamp_ms: 1234568
+>`, `name: "test_histogram3"
+help: "Test histogram 3"
+type: HISTOGRAM
+metric: <
+  histogram: <
+		created_timestamp: <
+      seconds: 1
+      nanos: 1
+    >
+    sample_count: 175
+    sample_sum: 0.0008280461746287094
     schema: 3
     zero_threshold: 2.938735877055719e-39
     zero_count: 2
@@ -686,4 +912,73 @@ metric: <
 	}
 
 	return buf
+}
+
+func createTestOpenMetricsHistogram() string {
+	return `# HELP test_histogram1 Test histogram 1
+# TYPE test_histogram1 histogram
+test_histogram1_count 175 1234.568
+test_histogram1_sum 0.0008280461746287094 1234.568
+test_histogram1_bucket{le="-0.0004899999999999998"} 2 1234.568
+test_histogram1_bucket{le="-0.0003899999999999998"} 4 1234.568
+test_histogram1_bucket{le="-0.0002899999999999998"} 16 1234.568
+test_histogram1_bucket{le="+Inf"} 175 1234.568
+test_histogram1_created 1
+# EOF`
+}
+
+func createTestPromHistogram() string {
+	return `# HELP test_histogram1 Test histogram 1
+# TYPE test_histogram1 histogram
+test_histogram1_count 175 1234568
+test_histogram1_sum 0.0008280461746287094 1234768
+test_histogram1_bucket{le="-0.0004899999999999998"} 2 1234568
+test_histogram1_bucket{le="-0.0003899999999999998"} 4 1234568
+test_histogram1_bucket{le="-0.0002899999999999998"} 16 1234568
+test_histogram1_bucket{le="+Inf"} 175 1234568`
+}
+
+func TestNHCBParserErrorHandling(t *testing.T) {
+	input := `# HELP something Histogram with non cumulative buckets
+# TYPE something histogram
+something_count 18
+something_sum 324789.4
+something_created 1520430001
+something_bucket{le="0.0"} 18
+something_bucket{le="+Inf"} 1
+something_count{a="b"} 9
+something_sum{a="b"} 42123
+something_created{a="b"} 1520430002
+something_bucket{a="b",le="0.0"} 1
+something_bucket{a="b",le="+Inf"} 9
+# EOF`
+	exp := []parsedEntry{
+		{
+			m:    "something",
+			help: "Histogram with non cumulative buckets",
+		},
+		{
+			m:   "something",
+			typ: model.MetricTypeHistogram,
+		},
+		// The parser should skip the series with non-cumulative buckets.
+		{
+			m: `something{a="b"}`,
+			shs: &histogram.Histogram{
+				Schema:          histogram.CustomBucketsSchema,
+				Count:           9,
+				Sum:             42123.0,
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+				PositiveBuckets: []int64{1, 7},
+				CustomValues:    []float64{0.0}, // We do not store the +Inf boundary.
+			},
+			lset: labels.FromStrings("__name__", "something", "a", "b"),
+			ct:   int64p(1520430002000),
+		},
+	}
+
+	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
+	p = NewNHCBParser(p, labels.NewSymbolTable(), false)
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
 }

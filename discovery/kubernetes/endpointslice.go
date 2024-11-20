@@ -467,11 +467,8 @@ func (e *EndpointSlice) resolvePodRef(ref *apiv1.ObjectReference) *apiv1.Pod {
 	if ref == nil || ref.Kind != "Pod" {
 		return nil
 	}
-	p := &apiv1.Pod{}
-	p.Namespace = ref.Namespace
-	p.Name = ref.Name
 
-	obj, exists, err := e.podStore.Get(p)
+	obj, exists, err := e.podStore.GetByKey(namespacedName(ref.Namespace, ref.Name))
 	if err != nil {
 		e.logger.Error("resolving pod ref failed", "err", err)
 		return nil
@@ -484,19 +481,19 @@ func (e *EndpointSlice) resolvePodRef(ref *apiv1.ObjectReference) *apiv1.Pod {
 
 func (e *EndpointSlice) addServiceLabels(esa endpointSliceAdaptor, tg *targetgroup.Group) {
 	var (
-		svc   = &apiv1.Service{}
 		found bool
+		name  string
 	)
-	svc.Namespace = esa.namespace()
+	ns := esa.namespace()
 
 	// Every EndpointSlice object has the Service they belong to in the
 	// kubernetes.io/service-name label.
-	svc.Name, found = esa.labels()[esa.labelServiceName()]
+	name, found = esa.labels()[esa.labelServiceName()]
 	if !found {
 		return
 	}
 
-	obj, exists, err := e.serviceStore.Get(svc)
+	obj, exists, err := e.serviceStore.GetByKey(namespacedName(ns, name))
 	if err != nil {
 		e.logger.Error("retrieving service failed", "err", err)
 		return
@@ -504,7 +501,7 @@ func (e *EndpointSlice) addServiceLabels(esa endpointSliceAdaptor, tg *targetgro
 	if !exists {
 		return
 	}
-	svc = obj.(*apiv1.Service)
+	svc := obj.(*apiv1.Service)
 
 	tg.Labels = tg.Labels.Merge(serviceLabels(svc))
 }

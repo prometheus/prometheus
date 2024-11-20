@@ -444,7 +444,7 @@ func checkExperimental(f bool) {
 	}
 }
 
-var errLint = fmt.Errorf("lint error")
+var errLint = errors.New("lint error")
 
 type lintConfig struct {
 	all            bool

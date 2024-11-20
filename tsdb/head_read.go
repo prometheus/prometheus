@@ -123,6 +123,10 @@ func (h *headIndexReader) PostingsForLabelMatching(ctx context.Context, name str
 	return h.head.postings.PostingsForLabelMatching(ctx, name, match)
 }
 
+func (h *headIndexReader) PostingsForAllLabelValues(ctx context.Context, name string) index.Postings {
+	return h.head.postings.PostingsForAllLabelValues(ctx, name)
+}
+
 func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 	series := make([]*memSeries, 0, 128)
 

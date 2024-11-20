@@ -110,7 +110,7 @@ const (
 	Stopping
 )
 
-// withStackTrace logs the stack trace in case the request panics. The function
+// withStackTracer logs the stack trace in case the request panics. The function
 // will re-raise the error which will then be handled by the net/http package.
 // It is needed because the go-kit log package doesn't manage properly the
 // panics from net/http (see https://github.com/go-kit/kit/issues/233).

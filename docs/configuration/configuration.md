@@ -171,8 +171,17 @@ remote_write:
   [ - <remote_write> ... ]
 
 # Settings related to the OTLP receiver feature.
+# See https://prometheus.io/docs/guides/opentelemetry/ for best practices.
 otlp:
   [ promote_resource_attributes: [<string>, ...] | default = [ ] ]
+  # Configures translation of OTLP metrics when received through the OTLP metrics
+  # endpoint. Available values:
+  # - "UnderscoreEscapingWithSuffixes" refers to commonly agreed normalization used
+  #   by OpenTelemetry in https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/pkg/translator/prometheus
+  # - "NoUTF8EscapingWithSuffixes" is a mode that relies on UTF-8 support in Prometheus.
+  #   It preserves all special characters like dots, but it still add required suffixes
+  #   for units and _total like in UnderscoreEscapingWithSuffixes.
+  [ translation_strategy: <string> | default = "UnderscoreEscapingWithSuffixes" ]
 
 # Settings related to the remote read feature.
 remote_read:
@@ -2797,6 +2806,12 @@ write_relabel_configs:
 # For the `io.prometheus.write.v2.Request` message, this option is noop (always true).
 [ send_native_histograms: <boolean> | default = false ]
 
+# When enabled, remote-write will resolve the URL host name via DNS, choose one of the IP addresses at random, and connect to it. 
+# When disabled, remote-write relies on Go's standard behavior, which is to try to connect to each address in turn.
+# The connection timeout applies to the whole operation, i.e. in the latter case it is spread over all attempt.
+# This is an experimental feature, and its behavior might still change, or even get removed.
+[ round_robin_dns: <boolean> | default = false ]
+
 # Optionally configures AWS's Signature Verification 4 signing process to
 # sign requests. Cannot be set at the same time as basic_auth, authorization, oauth2, or azuread.
 # To use the default credentials from the AWS SDK, use `sigv4: {}`.
@@ -2889,6 +2904,7 @@ metadata_config:
 
 # HTTP client settings, including authentication methods (such as basic auth and
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.
+# enable_http2 defaults to false for remote-write.
 [ <http_config> ]
 ```
 
@@ -2939,8 +2955,6 @@ with this feature.
 ### `<tsdb>`
 
 `tsdb` lets you configure the runtime-reloadable configuration settings of the TSDB.
-
-NOTE: Out-of-order ingestion is an experimental feature, but you do not need any additional flag to enable it. Setting `out_of_order_time_window` to a positive duration enables it.
 
 ```yaml
 # Configures how old an out-of-order/out-of-bounds sample can be w.r.t. the TSDB max time.

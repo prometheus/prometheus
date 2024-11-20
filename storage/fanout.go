@@ -147,6 +147,16 @@ type fanoutAppender struct {
 	secondaries []Appender
 }
 
+// SetOptions propagates the hints to both primary and secondary appenders.
+func (f *fanoutAppender) SetOptions(opts *AppendOptions) {
+	if f.primary != nil {
+		f.primary.SetOptions(opts)
+	}
+	for _, appender := range f.secondaries {
+		appender.SetOptions(opts)
+	}
+}
+
 func (f *fanoutAppender) Append(ref SeriesRef, l labels.Labels, t int64, v float64) (SeriesRef, error) {
 	ref, err := f.primary.Append(ref, l, t, v)
 	if err != nil {

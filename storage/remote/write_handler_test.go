@@ -672,7 +672,7 @@ func TestCommitErr_V1Message(t *testing.T) {
 	req, err := http.NewRequest("", "", bytes.NewReader(payload))
 	require.NoError(t, err)
 
-	appendable := &mockAppendable{commitErr: fmt.Errorf("commit error")}
+	appendable := &mockAppendable{commitErr: errors.New("commit error")}
 	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
 
 	recorder := httptest.NewRecorder()
@@ -696,7 +696,7 @@ func TestCommitErr_V2Message(t *testing.T) {
 	req.Header.Set("Content-Encoding", string(SnappyBlockCompression))
 	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
 
-	appendable := &mockAppendable{commitErr: fmt.Errorf("commit error")}
+	appendable := &mockAppendable{commitErr: errors.New("commit error")}
 	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2})
 
 	recorder := httptest.NewRecorder()
@@ -831,6 +831,10 @@ func (m *mockAppendable) Appender(_ context.Context) storage.Appender {
 		m.latestExemplar = map[uint64]int64{}
 	}
 	return m
+}
+
+func (m *mockAppendable) SetOptions(opts *storage.AppendOptions) {
+	panic("unimplemented")
 }
 
 func (m *mockAppendable) Append(_ storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {

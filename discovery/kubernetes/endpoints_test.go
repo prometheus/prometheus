@@ -18,10 +18,12 @@ import (
 	"testing"
 
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/cache"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
@@ -1256,4 +1258,23 @@ func TestEndpointsDiscoverySidecarContainer(t *testing.T) {
 			},
 		},
 	}.Run(t)
+}
+
+func BenchmarkResolvePodRef(b *testing.B) {
+	indexer := cache.NewIndexer(cache.DeletionHandlingMetaNamespaceKeyFunc, nil)
+	e := &Endpoints{
+		podStore: indexer,
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		p := e.resolvePodRef(&v1.ObjectReference{
+			Kind:      "Pod",
+			Name:      "testpod",
+			Namespace: "foo",
+		})
+		require.Nil(b, p)
+	}
 }

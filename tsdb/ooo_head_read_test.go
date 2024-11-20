@@ -509,7 +509,7 @@ func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 			Ref: 0x1800000, Chunk: chunkenc.Chunk(nil), MinTime: 100, MaxTime: 300,
 		})
 		require.Nil(t, iterable)
-		require.Equal(t, err, fmt.Errorf("not found"))
+		require.EqualError(t, err, "not found")
 		require.Nil(t, c)
 	})
 

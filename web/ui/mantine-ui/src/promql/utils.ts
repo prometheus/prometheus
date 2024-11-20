@@ -267,6 +267,21 @@ export const humanizedValueType: Record<valueType, string> = {
   [valueType.matrix]: "range vector",
 };
 
+const metricNameRe = /^[a-zA-Z_:][a-zA-Z0-9_:]*$/;
+const labelNameCharsetRe = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
+export const metricContainsExtendedCharset = (str: string) => {
+  return str !== "" && !metricNameRe.test(str);
+};
+
+export const labelNameContainsExtendedCharset = (str: string) => {
+  return !labelNameCharsetRe.test(str);
+};
+
 export const escapeString = (str: string) => {
   return str.replace(/([\\"])/g, "\\$1");
+};
+
+export const maybeQuoteLabelName = (str: string) => {
+  return labelNameContainsExtendedCharset(str) ? `"${escapeString(str)}"` : str;
 };

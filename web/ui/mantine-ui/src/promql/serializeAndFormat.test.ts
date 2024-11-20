@@ -99,7 +99,7 @@ describe("serializeNode and formatNode", () => {
           timestamp: null,
           startOrEnd: null,
         },
-        output: '{__name__="metric_name"} offset 1m',
+        output: "metric_name offset 1m",
       },
       {
         // Escaping in label values.
@@ -156,6 +156,20 @@ describe("serializeNode and formatNode", () => {
           startOrEnd: "start",
         },
         output: "metric_name[5m] @ start() offset -10m",
+      },
+      {
+        node: {
+          type: nodeType.vectorSelector,
+          name: "", // Test formatting a selector with an empty metric name.
+          matchers: [
+            { type: matchType.equal, name: "label1", value: "value1" },
+          ],
+          offset: 0,
+          timestamp: null,
+          startOrEnd: null,
+        },
+        output:
+          '{label1="value1"}',
       },
 
       // Aggregations.
@@ -641,6 +655,113 @@ describe("serializeNode and formatNode", () => {
         prettyOutput: `  …
 == bool on(label1, label2) group_right(label3)
   …`,
+      },
+      // Test new Prometheus 3.0 UTF-8 support.
+      {
+        node: {
+          bool: false,
+          lhs: {
+            bool: false,
+            lhs: {
+              expr: {
+                matchers: [
+                  {
+                    name: "__name__",
+                    type: matchType.equal,
+                    value: "metric_ä",
+                  },
+                  {
+                    name: "foo",
+                    type: matchType.equal,
+                    value: "bar",
+                  },
+                ],
+                name: "",
+                offset: 0,
+                startOrEnd: null,
+                timestamp: null,
+                type: nodeType.vectorSelector,
+              },
+              grouping: ["a", "ä"],
+              op: aggregationType.sum,
+              param: null,
+              type: nodeType.aggregation,
+              without: false,
+            },
+            matching: {
+              card: vectorMatchCardinality.manyToOne,
+              include: ["c", "ü"],
+              labels: ["b", "ö"],
+              on: true,
+            },
+            op: binaryOperatorType.div,
+            rhs: {
+              expr: {
+                matchers: [
+                  {
+                    name: "__name__",
+                    type: matchType.equal,
+                    value: "metric_ö",
+                  },
+                  {
+                    name: "bar",
+                    type: matchType.equal,
+                    value: "foo",
+                  },
+                ],
+                name: "",
+                offset: 0,
+                startOrEnd: null,
+                timestamp: null,
+                type: nodeType.vectorSelector,
+              },
+              grouping: ["d", "ä"],
+              op: aggregationType.sum,
+              param: null,
+              type: nodeType.aggregation,
+              without: true,
+            },
+            type: nodeType.binaryExpr,
+          },
+          matching: {
+            card: vectorMatchCardinality.oneToOne,
+            include: [],
+            labels: ["e", "ö"],
+            on: false,
+          },
+          op: binaryOperatorType.add,
+          rhs: {
+            expr: {
+              matchers: [
+                {
+                  name: "__name__",
+                  type: matchType.equal,
+                  value: "metric_ü",
+                },
+              ],
+              name: "",
+              offset: 0,
+              startOrEnd: null,
+              timestamp: null,
+              type: nodeType.vectorSelector,
+            },
+            type: nodeType.parenExpr,
+          },
+          type: nodeType.binaryExpr,
+        },
+        output:
+          'sum by(a, "ä") ({"metric_ä",foo="bar"}) / on(b, "ö") group_left(c, "ü") sum without(d, "ä") ({"metric_ö",bar="foo"}) + ignoring(e, "ö") ({"metric_ü"})',
+        prettyOutput: `    sum by(a, "ä") (
+      {"metric_ä",foo="bar"}
+    )
+  / on(b, "ö") group_left(c, "ü")
+    sum without(d, "ä") (
+      {"metric_ö",bar="foo"}
+    )
++ ignoring(e, "ö")
+  (
+    {"metric_ü"}
+  )`,
       },
     ];
 

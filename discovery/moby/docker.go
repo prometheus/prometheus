@@ -15,6 +15,7 @@ package moby
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -110,7 +111,7 @@ func (c *DockerSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 		return err
 	}
 	if c.Host == "" {
-		return fmt.Errorf("host missing")
+		return errors.New("host missing")
 	}
 	if _, err = url.Parse(c.Host); err != nil {
 		return err
@@ -131,7 +132,7 @@ type DockerDiscovery struct {
 func NewDockerDiscovery(conf *DockerSDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*DockerDiscovery, error) {
 	m, ok := metrics.(*dockerMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	d := &DockerDiscovery{

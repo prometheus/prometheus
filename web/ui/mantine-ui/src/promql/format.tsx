@@ -8,14 +8,21 @@ import ASTNode, {
   MatrixSelector,
 } from "./ast";
 import { formatPrometheusDuration } from "../lib/formatTime";
-import { maybeParenthesizeBinopChild, escapeString } from "./utils";
+import {
+  maybeParenthesizeBinopChild,
+  escapeString,
+  maybeQuoteLabelName,
+  metricContainsExtendedCharset,
+} from "./utils";
 
 export const labelNameList = (labels: string[]): React.ReactNode[] => {
   return labels.map((l, i) => {
     return (
       <span key={i}>
         {i !== 0 && ", "}
-        <span className="promql-code promql-label-name">{l}</span>
+        <span className="promql-code promql-label-name">
+          {maybeQuoteLabelName(l)}
+        </span>
       </span>
     );
   });
@@ -69,27 +76,45 @@ const formatAtAndOffset = (
 const formatSelector = (
   node: VectorSelector | MatrixSelector
 ): ReactElement => {
-  const matchLabels = node.matchers
-    .filter(
-      (m) =>
-        !(
-          m.name === "__name__" &&
-          m.type === matchType.equal &&
-          m.value === node.name
-        )
-    )
-    .map((m, i) => (
-      <span key={i}>
-        {i !== 0 && ","}
-        <span className="promql-label-name">{m.name}</span>
-        {m.type}
-        <span className="promql-string">"{escapeString(m.value)}"</span>
+  const matchLabels: JSX.Element[] = [];
+
+  // If the metric name contains the new extended charset, we need to escape it
+  // and add it at the beginning of the matchers list in the curly braces.
+  const metricName =
+    node.name ||
+    node.matchers.find(
+      (m) => m.name === "__name__" && m.type === matchType.equal
+    )?.value ||
+    "";
+  const metricExtendedCharset = metricContainsExtendedCharset(metricName);
+  if (metricExtendedCharset) {
+    matchLabels.push(
+      <span key="__name__">
+        <span className="promql-string">"{escapeString(metricName)}"</span>
       </span>
-    ));
+    );
+  }
+
+  matchLabels.push(
+    ...node.matchers
+      .filter((m) => !(m.name === "__name__" && m.type === matchType.equal))
+      .map((m, i) => (
+        <span key={i}>
+          {(i !== 0 || metricExtendedCharset) && ","}
+          <span className="promql-label-name">
+            {maybeQuoteLabelName(m.name)}
+          </span>
+          {m.type}
+          <span className="promql-string">"{escapeString(m.value)}"</span>
+        </span>
+      ))
+  );
 
   return (
     <>
-      <span className="promql-metric-name">{node.name}</span>
+      {!metricExtendedCharset && (
+        <span className="promql-metric-name">{metricName}</span>
+      )}
       {matchLabels.length > 0 && (
         <>
           {"{"}

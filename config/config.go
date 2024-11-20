@@ -30,7 +30,7 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/common/sigv4"
+	"github.com/prometheus/sigv4"
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/discovery"
@@ -106,6 +106,18 @@ func Load(s string, logger *slog.Logger) (*Config, error) {
 	if !b.Labels().IsEmpty() {
 		cfg.GlobalConfig.ExternalLabels = b.Labels()
 	}
+
+	switch cfg.OTLPConfig.TranslationStrategy {
+	case UnderscoreEscapingWithSuffixes:
+	case "":
+	case NoUTF8EscapingWithSuffixes:
+		if cfg.GlobalConfig.MetricNameValidationScheme == LegacyValidationConfig {
+			return nil, errors.New("OTLP translation strategy NoUTF8EscapingWithSuffixes is not allowed when UTF8 is disabled")
+		}
+	default:
+		return nil, fmt.Errorf("unsupported OTLP translation strategy %q", cfg.OTLPConfig.TranslationStrategy)
+	}
+
 	return cfg, nil
 }
 
@@ -181,13 +193,18 @@ var (
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
 
+	DefaultRemoteWriteHTTPClientConfig = config.HTTPClientConfig{
+		FollowRedirects: true,
+		EnableHTTP2:     false,
+	}
+
 	// DefaultRemoteWriteConfig is the default remote write configuration.
 	DefaultRemoteWriteConfig = RemoteWriteConfig{
 		RemoteTimeout:    model.Duration(30 * time.Second),
 		ProtobufMessage:  RemoteWriteProtoMsgV1,
 		QueueConfig:      DefaultQueueConfig,
 		MetadataConfig:   DefaultMetadataConfig,
-		HTTPClientConfig: config.DefaultHTTPClientConfig,
+		HTTPClientConfig: DefaultRemoteWriteHTTPClientConfig,
 	}
 
 	// DefaultQueueConfig is the default remote queue configuration.
@@ -234,7 +251,9 @@ var (
 	}
 
 	// DefaultOTLPConfig is the default OTLP configuration.
-	DefaultOTLPConfig = OTLPConfig{}
+	DefaultOTLPConfig = OTLPConfig{
+		TranslationStrategy: UnderscoreEscapingWithSuffixes,
+	}
 )
 
 // Config is the top-level configuration for Prometheus's config files.
@@ -1067,7 +1086,7 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 		c.HTTPClientConfig.Authorization != nil || c.HTTPClientConfig.OAuth2 != nil
 
 	if httpClientConfigAuthEnabled && c.SigV4Config != nil {
-		return fmt.Errorf("at most one of basic_auth, authorization, oauth2, & sigv4 must be configured")
+		return errors.New("at most one of basic_auth, authorization, oauth2, & sigv4 must be configured")
 	}
 
 	// Check for users putting URLs in target groups.
@@ -1176,6 +1195,7 @@ type RemoteWriteConfig struct {
 	Name                 string            `yaml:"name,omitempty"`
 	SendExemplars        bool              `yaml:"send_exemplars,omitempty"`
 	SendNativeHistograms bool              `yaml:"send_native_histograms,omitempty"`
+	RoundRobinDNS        bool              `yaml:"round_robin_dns,omitempty"`
 	// ProtobufMessage specifies the protobuf message to use against the remote
 	// receiver as specified in https://prometheus.io/docs/specs/remote_write_spec_2_0/
 	ProtobufMessage RemoteWriteProtoMsg `yaml:"protobuf_message,omitempty"`
@@ -1397,9 +1417,20 @@ func getGoGCEnv() int {
 	return DefaultRuntimeConfig.GoGC
 }
 
+type translationStrategyOption string
+
+var (
+	// NoUTF8EscapingWithSuffixes will keep UTF-8 characters as they are, units and type suffixes will still be added.
+	NoUTF8EscapingWithSuffixes translationStrategyOption = "NoUTF8EscapingWithSuffixes"
+	// UnderscoreEscapingWithSuffixes is the default option for translating OTLP to Prometheus.
+	// This option will translate all UTF-8 characters to underscores, while adding units and type suffixes.
+	UnderscoreEscapingWithSuffixes translationStrategyOption = "UnderscoreEscapingWithSuffixes"
+)
+
 // OTLPConfig is the configuration for writing to the OTLP endpoint.
 type OTLPConfig struct {
-	PromoteResourceAttributes []string `yaml:"promote_resource_attributes,omitempty"`
+	PromoteResourceAttributes []string                  `yaml:"promote_resource_attributes,omitempty"`
+	TranslationStrategy       translationStrategyOption `yaml:"translation_strategy,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -1415,7 +1446,7 @@ func (c *OTLPConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	for i, attr := range c.PromoteResourceAttributes {
 		attr = strings.TrimSpace(attr)
 		if attr == "" {
-			err = errors.Join(err, fmt.Errorf("empty promoted OTel resource attribute"))
+			err = errors.Join(err, errors.New("empty promoted OTel resource attribute"))
 			continue
 		}
 		if _, exists := seen[attr]; exists {
