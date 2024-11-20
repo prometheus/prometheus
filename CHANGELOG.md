@@ -2,6 +2,8 @@
 
 ## unreleased
 
+* [ENHANCEMENT] OTLP receiver: Convert also metric metadata. #15416
+
 ## 3.0.0 / 2024-11-14
 
 This release includes new features such as a brand new UI and UTF-8 support enabled by default. As this marks the first new major version in seven years, several breaking changes are introduced. The breaking changes are mainly around the removal of deprecated feature flags and CLI arguments, and the full list can be found below. For users that want to upgrade we recommend to read through our [migration guide](https://prometheus.io/docs/prometheus/3.0/migration/).
