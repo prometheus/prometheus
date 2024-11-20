@@ -452,14 +452,14 @@ load 5m
     nonmonotonic_bucket{le="1000"}  0+9x10
     nonmonotonic_bucket{le="+Inf"}  0+8x10
 
-# Nonmonotonic buckets
-eval instant at 50m histogram_quantile(0.01, nonmonotonic_bucket)
+# Nonmonotonic buckets, triggering an info annotation.
+eval_info instant at 50m histogram_quantile(0.01, nonmonotonic_bucket)
     {} 0.0045
 
-eval instant at 50m histogram_quantile(0.5, nonmonotonic_bucket)
+eval_info instant at 50m histogram_quantile(0.5, nonmonotonic_bucket)
     {} 8.5
 
-eval instant at 50m histogram_quantile(0.99, nonmonotonic_bucket)
+eval_info instant at 50m histogram_quantile(0.99, nonmonotonic_bucket)
     {} 979.75
 
 # Buckets with different representations of the same upper bound.

@@ -1097,12 +1097,16 @@ func (t *test) execRangeEval(cmd *evalCmd, engine promql.QueryEngine) error {
 	if res.Err == nil && cmd.fail {
 		return fmt.Errorf("expected error evaluating query %q (line %d) but got none", cmd.expr, cmd.line)
 	}
-	countWarnings, _ := res.Warnings.CountWarningsAndInfo()
-	if !cmd.warn && countWarnings > 0 {
+	countWarnings, countInfo := res.Warnings.CountWarningsAndInfo()
+	switch {
+	case !cmd.warn && countWarnings > 0:
 		return fmt.Errorf("unexpected warnings evaluating query %q (line %d): %v", cmd.expr, cmd.line, res.Warnings)
-	}
-	if cmd.warn && countWarnings == 0 {
+	case cmd.warn && countWarnings == 0:
 		return fmt.Errorf("expected warnings evaluating query %q (line %d) but got none", cmd.expr, cmd.line)
+	case !cmd.info && countInfo > 0:
+		return fmt.Errorf("unexpected info annotations evaluating query %q (line %d): %v", cmd.expr, cmd.line, res.Warnings)
+	case cmd.info && countInfo == 0:
+		return fmt.Errorf("expected info annotations evaluating query %q (line %d) but got none", cmd.expr, cmd.line)
 	}
 	defer q.Close()
 
@@ -1148,13 +1152,14 @@ func (t *test) runInstantQuery(iq atModifierTestCase, cmd *evalCmd, engine promq
 		return fmt.Errorf("expected error evaluating query %q (line %d) but got none", iq.expr, cmd.line)
 	}
 	countWarnings, countInfo := res.Warnings.CountWarningsAndInfo()
-	if !cmd.warn && countWarnings > 0 {
+	switch {
+	case !cmd.warn && countWarnings > 0:
 		return fmt.Errorf("unexpected warnings evaluating query %q (line %d): %v", iq.expr, cmd.line, res.Warnings)
-	}
-	if cmd.warn && countWarnings == 0 {
+	case cmd.warn && countWarnings == 0:
 		return fmt.Errorf("expected warnings evaluating query %q (line %d) but got none", iq.expr, cmd.line)
-	}
-	if cmd.info && countInfo == 0 {
+	case !cmd.info && countInfo > 0:
+		return fmt.Errorf("unexpected info annotations evaluating query %q (line %d): %v", iq.expr, cmd.line, res.Warnings)
+	case cmd.info && countInfo == 0:
 		return fmt.Errorf("expected info annotations evaluating query %q (line %d) but got none", iq.expr, cmd.line)
 	}
 	err = cmd.compareResult(res.Value)
