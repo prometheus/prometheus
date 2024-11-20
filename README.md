@@ -158,8 +158,19 @@ This is experimental.
 ### Prometheus code base
 
 In order to comply with [go mod](https://go.dev/ref/mod#versions) rules,
-Prometheus release number do not exactly match Go module releases. For the
-Prometheus v2.y.z releases, we are publishing equivalent v0.y.z tags.
+Prometheus release number do not exactly match Go module releases.
+
+For the
+Prometheus v3.y.z releases, we are publishing equivalent v0.3y.z tags. The y in v0.3y.z is always padded to two digits, with a leading zero if needed.
+
+Therefore, a user that would want to use Prometheus v3.0.0 as a library could do:
+
+```shell
+go get github.com/prometheus/prometheus@v0.300.0
+```
+
+For the
+Prometheus v2.y.z releases, we published the equivalent v0.y.z tags.
 
 Therefore, a user that would want to use Prometheus v2.35.0 as a library could do:
 
@@ -177,7 +188,7 @@ For more information on building, running, and developing on the React-based UI,
 
 ## More information
 
-* Godoc documentation is available via [pkg.go.dev](https://pkg.go.dev/github.com/prometheus/prometheus). Due to peculiarities of Go Modules, v2.x.y will be displayed as v0.x.y.
+* Godoc documentation is available via [pkg.go.dev](https://pkg.go.dev/github.com/prometheus/prometheus). Due to peculiarities of Go Modules, v3.y.z will be displayed as v0.3y.z (the y in v0.3y.z is always padded to two digits, with a leading zero if needed), while v2.y.z will be displayed as v0.y.z.
 * See the [Community page](https://prometheus.io/community) for how to reach the Prometheus developers and users on various communication channels.
 
 ## Contributing
