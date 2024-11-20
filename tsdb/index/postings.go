@@ -430,15 +430,17 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 
 	// Now `vals` only contains the values that matched, get their postings.
 	its := make([]Postings, 0, len(vals))
+	lps := make([]ListPostings, len(vals))
 	p.mtx.RLock()
 	e := p.m[name]
-	for _, v := range vals {
+	for i, v := range vals {
 		if refs, ok := e[v]; ok {
 			// Some of the values may have been garbage-collected in the meantime this is fine, we'll just skip them.
 			// If we didn't let the mutex go, we'd have these postings here, but they would be pointing nowhere
 			// because there would be a `MemPostings.Delete()` call waiting for the lock to delete these labels,
 			// because the series were deleted already.
-			its = append(its, NewListPostings(refs))
+			lps[i] = ListPostings{list: refs}
+			its = append(its, &lps[i])
 		}
 	}
 	// Let the mutex go before merging.
