@@ -272,6 +272,8 @@ load 5m
 	http_requests{job="app-server", instance="1", group="production"}	0+60x10
 	http_requests{job="app-server", instance="0", group="canary"}		0+70x10
 	http_requests{job="app-server", instance="1", group="canary"}		0+80x10
+	http_requests_histogram{job="app-server", instance="2", group="canary"}		{{schema:0 sum:10 count:10}}x11
+	http_requests_histogram{job="api-server", instance="3", group="production"}	{{schema:0 sum:20 count:20}}x11
 	foo 3+0x10
 
 eval_ordered instant at 50m topk(3, http_requests)
@@ -337,6 +339,35 @@ eval_ordered instant at 50m topk(scalar(foo), http_requests)
 	http_requests{group="canary", instance="1", job="app-server"} 800
 	http_requests{group="canary", instance="0", job="app-server"} 700
 	http_requests{group="production", instance="1", job="app-server"} 600
+
+# Tests for histogram: should ignore histograms.
+eval_info instant at 50m topk(100, http_requests_histogram)
+    #empty
+
+eval_info instant at 50m topk(1, {__name__=~"http_requests(_histogram)?"})
+    {__name__="http_requests", group="canary", instance="1", job="app-server"} 800
+
+eval_info instant at 50m count(topk(1000, {__name__=~"http_requests(_histogram)?"}))
+    {} 9
+
+eval_info instant at 50m topk by (instance) (1, {__name__=~"http_requests(_histogram)?"})
+    {__name__="http_requests", group="canary", instance="0", job="app-server"} 700
+    {__name__="http_requests", group="canary", instance="1", job="app-server"} 800
+    {__name__="http_requests", group="production", instance="2", job="api-server"} NaN
+
+eval_info instant at 50m bottomk(100, http_requests_histogram)
+    #empty
+
+eval_info instant at 50m bottomk(1, {__name__=~"http_requests(_histogram)?"})
+    {__name__="http_requests", group="production", instance="0", job="api-server"} 100
+
+eval_info instant at 50m count(bottomk(1000, {__name__=~"http_requests(_histogram)?"}))
+    {} 9
+
+eval_info instant at 50m bottomk by (instance) (1, {__name__=~"http_requests(_histogram)?"})
+    {__name__="http_requests", group="production", instance="0", job="api-server"} 100
+    {__name__="http_requests", group="production", instance="1", job="api-server"} 200
+    {__name__="http_requests", group="production", instance="2", job="api-server"} NaN
 
 clear
 
