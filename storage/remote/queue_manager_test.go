@@ -763,7 +763,7 @@ func TestDisableReshardOnRetry(t *testing.T) {
 				onStoreCalled()
 
 				return WriteResponseStats{}, RecoverableError{
-					error:      fmt.Errorf("fake error"),
+					error:      errors.New("fake error"),
 					retryAfter: model.Duration(retryAfter),
 				}
 			},

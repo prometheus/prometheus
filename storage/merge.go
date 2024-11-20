@@ -19,7 +19,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"slices"
 	"sync"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -136,13 +135,17 @@ func filterChunkQueriers(qs []ChunkQuerier) []ChunkQuerier {
 // Select returns a set of series that matches the given label matchers.
 func (q *mergeGenericQuerier) Select(ctx context.Context, sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) genericSeriesSet {
 	seriesSets := make([]genericSeriesSet, 0, len(q.queriers))
+	var limit int
+	if hints != nil {
+		limit = hints.Limit
+	}
 	if !q.concurrentSelect {
 		for _, querier := range q.queriers {
 			// We need to sort for merge  to work.
 			seriesSets = append(seriesSets, querier.Select(ctx, true, hints, matchers...))
 		}
 		return &lazyGenericSeriesSet{init: func() (genericSeriesSet, bool) {
-			s := newGenericMergeSeriesSet(seriesSets, q.mergeFn)
+			s := newGenericMergeSeriesSet(seriesSets, limit, q.mergeFn)
 			return s, s.Next()
 		}}
 	}
@@ -153,13 +156,18 @@ func (q *mergeGenericQuerier) Select(ctx context.Context, sortSeries bool, hints
 	)
 	// Schedule all Selects for all queriers we know about.
 	for _, querier := range q.queriers {
+		// copy the matchers as some queriers may alter the slice.
+		// See https://github.com/prometheus/prometheus/issues/14723
+		matchersCopy := make([]*labels.Matcher, len(matchers))
+		copy(matchersCopy, matchers)
+
 		wg.Add(1)
-		go func(qr genericQuerier) {
+		go func(qr genericQuerier, m []*labels.Matcher) {
 			defer wg.Done()
 
 			// We need to sort for NewMergeSeriesSet to work.
-			seriesSetChan <- qr.Select(ctx, true, hints, matchers...)
-		}(querier)
+			seriesSetChan <- qr.Select(ctx, true, hints, m...)
+		}(querier, matchersCopy)
 	}
 	go func() {
 		wg.Wait()
@@ -170,7 +178,7 @@ func (q *mergeGenericQuerier) Select(ctx context.Context, sortSeries bool, hints
 		seriesSets = append(seriesSets, r)
 	}
 	return &lazyGenericSeriesSet{init: func() (genericSeriesSet, bool) {
-		s := newGenericMergeSeriesSet(seriesSets, q.mergeFn)
+		s := newGenericMergeSeriesSet(seriesSets, limit, q.mergeFn)
 		return s, s.Next()
 	}}
 }
@@ -188,35 +196,44 @@ func (l labelGenericQueriers) SplitByHalf() (labelGenericQueriers, labelGenericQ
 // If matchers are specified the returned result set is reduced
 // to label values of metrics matching the matchers.
 func (q *mergeGenericQuerier) LabelValues(ctx context.Context, name string, hints *LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	res, ws, err := q.lvals(ctx, q.queriers, name, hints, matchers...)
+	res, ws, err := q.mergeResults(q.queriers, hints, func(q LabelQuerier) ([]string, annotations.Annotations, error) {
+		return q.LabelValues(ctx, name, hints, matchers...)
+	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("LabelValues() from merge generic querier for label %s: %w", name, err)
 	}
 	return res, ws, nil
 }
 
-// lvals performs merge sort for LabelValues from multiple queriers.
-func (q *mergeGenericQuerier) lvals(ctx context.Context, lq labelGenericQueriers, n string, hints *LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+// mergeResults performs merge sort on the results of invoking the resultsFn against multiple queriers.
+func (q *mergeGenericQuerier) mergeResults(lq labelGenericQueriers, hints *LabelHints, resultsFn func(q LabelQuerier) ([]string, annotations.Annotations, error)) ([]string, annotations.Annotations, error) {
 	if lq.Len() == 0 {
 		return nil, nil, nil
 	}
 	if lq.Len() == 1 {
-		return lq.Get(0).LabelValues(ctx, n, hints, matchers...)
+		return resultsFn(lq.Get(0))
 	}
 	a, b := lq.SplitByHalf()
 
 	var ws annotations.Annotations
-	s1, w, err := q.lvals(ctx, a, n, hints, matchers...)
+	s1, w, err := q.mergeResults(a, hints, resultsFn)
 	ws.Merge(w)
 	if err != nil {
 		return nil, ws, err
 	}
-	s2, ws, err := q.lvals(ctx, b, n, hints, matchers...)
+	s2, w, err := q.mergeResults(b, hints, resultsFn)
 	ws.Merge(w)
 	if err != nil {
 		return nil, ws, err
 	}
-	return mergeStrings(s1, s2), ws, nil
+
+	s1 = truncateToLimit(s1, hints)
+	s2 = truncateToLimit(s2, hints)
+
+	merged := mergeStrings(s1, s2)
+	merged = truncateToLimit(merged, hints)
+
+	return merged, ws, nil
 }
 
 func mergeStrings(a, b []string) []string {
@@ -248,33 +265,13 @@ func mergeStrings(a, b []string) []string {
 
 // LabelNames returns all the unique label names present in all queriers in sorted order.
 func (q *mergeGenericQuerier) LabelNames(ctx context.Context, hints *LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	var (
-		labelNamesMap = make(map[string]struct{})
-		warnings      annotations.Annotations
-	)
-	for _, querier := range q.queriers {
-		names, wrn, err := querier.LabelNames(ctx, hints, matchers...)
-		if wrn != nil {
-			// TODO(bwplotka): We could potentially wrap warnings.
-			warnings.Merge(wrn)
-		}
-		if err != nil {
-			return nil, nil, fmt.Errorf("LabelNames() from merge generic querier: %w", err)
-		}
-		for _, name := range names {
-			labelNamesMap[name] = struct{}{}
-		}
+	res, ws, err := q.mergeResults(q.queriers, hints, func(q LabelQuerier) ([]string, annotations.Annotations, error) {
+		return q.LabelNames(ctx, hints, matchers...)
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("LabelNames() from merge generic querier: %w", err)
 	}
-	if len(labelNamesMap) == 0 {
-		return nil, warnings, nil
-	}
-
-	labelNames := make([]string, 0, len(labelNamesMap))
-	for name := range labelNamesMap {
-		labelNames = append(labelNames, name)
-	}
-	slices.Sort(labelNames)
-	return labelNames, warnings, nil
+	return res, ws, nil
 }
 
 // Close releases the resources of the generic querier.
@@ -288,17 +285,25 @@ func (q *mergeGenericQuerier) Close() error {
 	return errs.Err()
 }
 
+func truncateToLimit(s []string, hints *LabelHints) []string {
+	if hints != nil && hints.Limit > 0 && len(s) > hints.Limit {
+		s = s[:hints.Limit]
+	}
+	return s
+}
+
 // VerticalSeriesMergeFunc returns merged series implementation that merges series with same labels together.
 // It has to handle time-overlapped series as well.
 type VerticalSeriesMergeFunc func(...Series) Series
 
 // NewMergeSeriesSet returns a new SeriesSet that merges many SeriesSets together.
-func NewMergeSeriesSet(sets []SeriesSet, mergeFunc VerticalSeriesMergeFunc) SeriesSet {
+// If limit is set, the SeriesSet will be limited up-to the limit. 0 means disabled.
+func NewMergeSeriesSet(sets []SeriesSet, limit int, mergeFunc VerticalSeriesMergeFunc) SeriesSet {
 	genericSets := make([]genericSeriesSet, 0, len(sets))
 	for _, s := range sets {
 		genericSets = append(genericSets, &genericSeriesSetAdapter{s})
 	}
-	return &seriesSetAdapter{newGenericMergeSeriesSet(genericSets, (&seriesMergerAdapter{VerticalSeriesMergeFunc: mergeFunc}).Merge)}
+	return &seriesSetAdapter{newGenericMergeSeriesSet(genericSets, limit, (&seriesMergerAdapter{VerticalSeriesMergeFunc: mergeFunc}).Merge)}
 }
 
 // VerticalChunkSeriesMergeFunc returns merged chunk series implementation that merges potentially time-overlapping
@@ -308,12 +313,12 @@ func NewMergeSeriesSet(sets []SeriesSet, mergeFunc VerticalSeriesMergeFunc) Seri
 type VerticalChunkSeriesMergeFunc func(...ChunkSeries) ChunkSeries
 
 // NewMergeChunkSeriesSet returns a new ChunkSeriesSet that merges many SeriesSet together.
-func NewMergeChunkSeriesSet(sets []ChunkSeriesSet, mergeFunc VerticalChunkSeriesMergeFunc) ChunkSeriesSet {
+func NewMergeChunkSeriesSet(sets []ChunkSeriesSet, limit int, mergeFunc VerticalChunkSeriesMergeFunc) ChunkSeriesSet {
 	genericSets := make([]genericSeriesSet, 0, len(sets))
 	for _, s := range sets {
 		genericSets = append(genericSets, &genericChunkSeriesSetAdapter{s})
 	}
-	return &chunkSeriesSetAdapter{newGenericMergeSeriesSet(genericSets, (&chunkSeriesMergerAdapter{VerticalChunkSeriesMergeFunc: mergeFunc}).Merge)}
+	return &chunkSeriesSetAdapter{newGenericMergeSeriesSet(genericSets, limit, (&chunkSeriesMergerAdapter{VerticalChunkSeriesMergeFunc: mergeFunc}).Merge)}
 }
 
 // genericMergeSeriesSet implements genericSeriesSet.
@@ -321,9 +326,11 @@ type genericMergeSeriesSet struct {
 	currentLabels labels.Labels
 	mergeFunc     genericSeriesMergeFunc
 
-	heap        genericSeriesSetHeap
-	sets        []genericSeriesSet
-	currentSets []genericSeriesSet
+	heap         genericSeriesSetHeap
+	sets         []genericSeriesSet
+	currentSets  []genericSeriesSet
+	seriesLimit  int
+	mergedSeries int // tracks the total number of series merged and returned.
 }
 
 // newGenericMergeSeriesSet returns a new genericSeriesSet that merges (and deduplicates)
@@ -331,7 +338,8 @@ type genericMergeSeriesSet struct {
 // Each series set must return its series in labels order, otherwise
 // merged series set will be incorrect.
 // Overlapped situations are merged using provided mergeFunc.
-func newGenericMergeSeriesSet(sets []genericSeriesSet, mergeFunc genericSeriesMergeFunc) genericSeriesSet {
+// If seriesLimit is set, only limited series are returned.
+func newGenericMergeSeriesSet(sets []genericSeriesSet, seriesLimit int, mergeFunc genericSeriesMergeFunc) genericSeriesSet {
 	if len(sets) == 1 {
 		return sets[0]
 	}
@@ -351,13 +359,19 @@ func newGenericMergeSeriesSet(sets []genericSeriesSet, mergeFunc genericSeriesMe
 		}
 	}
 	return &genericMergeSeriesSet{
-		mergeFunc: mergeFunc,
-		sets:      sets,
-		heap:      h,
+		mergeFunc:   mergeFunc,
+		sets:        sets,
+		heap:        h,
+		seriesLimit: seriesLimit,
 	}
 }
 
 func (c *genericMergeSeriesSet) Next() bool {
+	if c.seriesLimit > 0 && c.mergedSeries >= c.seriesLimit {
+		// Exit early if seriesLimit is set.
+		return false
+	}
+
 	// Run in a loop because the "next" series sets may not be valid anymore.
 	// If, for the current label set, all the next series sets come from
 	// failed remote storage sources, we want to keep trying with the next label set.
@@ -388,6 +402,7 @@ func (c *genericMergeSeriesSet) Next() bool {
 			break
 		}
 	}
+	c.mergedSeries++
 	return true
 }
 

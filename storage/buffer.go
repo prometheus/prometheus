@@ -626,7 +626,7 @@ func addF(s fSample, buf []fSample, r *sampleRing) []fSample {
 	return buf
 }
 
-// addF adds an hSample to a (specialized) hSample buffer.
+// addH adds an hSample to a (specialized) hSample buffer.
 func addH(s hSample, buf []hSample, r *sampleRing) []hSample {
 	l := len(buf)
 	// Grow the ring buffer if it fits no more elements.

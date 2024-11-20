@@ -5178,7 +5178,7 @@ func testWBLReplay(t *testing.T, scenario sampleTypeScenario) {
 	// Passing in true for the 'ignoreCounterResets' parameter prevents differences in counter reset headers
 	// from being factored in to the sample comparison
 	// TODO(fionaliao): understand counter reset behaviour, might want to modify this later
-	requireEqualSamples(t, l.String(), expOOOSamples, actOOOSamples, true)
+	requireEqualSamples(t, l.String(), expOOOSamples, actOOOSamples, requireEqualSamplesIgnoreCounterResets)
 
 	require.NoError(t, h.Close())
 }
@@ -6405,7 +6405,7 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 			expectedSamples: []chunks.Sample{
 				sample{t: 1, h: &histogram.Histogram{}},
 				sample{t: 100, h: testHistogram},
-				sample{t: 101, h: &histogram.Histogram{CounterResetHint: histogram.CounterReset}},
+				sample{t: 101, h: &histogram.Histogram{CounterResetHint: histogram.UnknownCounterReset}},
 				sample{t: 102, h: testHistogram},
 			},
 		},
@@ -6418,7 +6418,7 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 			expectedSamples: []chunks.Sample{
 				sample{t: 1, fh: &histogram.FloatHistogram{}},
 				sample{t: 100, fh: testFloatHistogram},
-				sample{t: 101, fh: &histogram.FloatHistogram{CounterResetHint: histogram.CounterReset}},
+				sample{t: 101, fh: &histogram.FloatHistogram{CounterResetHint: histogram.UnknownCounterReset}},
 				sample{t: 102, fh: testFloatHistogram},
 			},
 		},

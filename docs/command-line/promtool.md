@@ -462,6 +462,7 @@ Unit tests for rules.
 | Flag | Description | Default |
 | --- | --- | --- |
 | <code class="text-nowrap">--run</code> <code class="text-nowrap">...<code class="text-nowrap"> | If set, will only run test groups whose names match the regular expression. Can be specified multiple times. |  |
+| <code class="text-nowrap">--debug</code> | Enable unit test debugging. | `false` |
 | <code class="text-nowrap">--diff</code> | [Experimental] Print colored differential output between expected & received output. | `false` |
 
 

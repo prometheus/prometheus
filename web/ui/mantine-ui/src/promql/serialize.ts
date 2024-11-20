@@ -11,7 +11,13 @@ import {
   aggregatorsWithParam,
   maybeParenthesizeBinopChild,
   escapeString,
+  metricContainsExtendedCharset,
+  maybeQuoteLabelName,
 } from "./utils";
+
+const labelNameList = (labels: string[]): string => {
+  return labels.map((ln) => maybeQuoteLabelName(ln)).join(", ");
+};
 
 const serializeAtAndOffset = (
   timestamp: number | null,
@@ -28,15 +34,23 @@ const serializeAtAndOffset = (
 
 const serializeSelector = (node: VectorSelector | MatrixSelector): string => {
   const matchers = node.matchers
-    .filter(
-      (m) =>
-        !(
-          m.name === "__name__" &&
-          m.type === matchType.equal &&
-          m.value === node.name
-        )
-    )
-    .map((m) => `${m.name}${m.type}"${escapeString(m.value)}"`);
+    .filter((m) => !(m.name === "__name__" && m.type === matchType.equal))
+    .map(
+      (m) => `${maybeQuoteLabelName(m.name)}${m.type}"${escapeString(m.value)}"`
+    );
+
+  // If the metric name contains the new extended charset, we need to escape it
+  // and add it at the beginning of the matchers list in the curly braces.
+  const metricName =
+    node.name ||
+    node.matchers.find(
+      (m) => m.name === "__name__" && m.type === matchType.equal
+    )?.value ||
+    "";
+  const metricExtendedCharset = metricContainsExtendedCharset(metricName);
+  if (metricExtendedCharset) {
+    matchers.unshift(`"${escapeString(metricName)}"`);
+  }
 
   const range =
     node.type === nodeType.matrixSelector
@@ -48,7 +62,7 @@ const serializeSelector = (node: VectorSelector | MatrixSelector): string => {
     node.offset
   );
 
-  return `${node.name}${matchers.length > 0 ? `{${matchers.join(",")}}` : ""}${range}${atAndOffset}`;
+  return `${!metricExtendedCharset ? metricName : ""}${matchers.length > 0 ? `{${matchers.join(",")}}` : ""}${range}${atAndOffset}`;
 };
 
 const serializeNode = (
@@ -68,9 +82,9 @@ const serializeNode = (
     case nodeType.aggregation:
       return `${initialInd}${node.op}${
         node.without
-          ? ` without(${node.grouping.join(", ")}) `
+          ? ` without(${labelNameList(node.grouping)}) `
           : node.grouping.length > 0
-            ? ` by(${node.grouping.join(", ")}) `
+            ? ` by(${labelNameList(node.grouping)}) `
             : ""
       }(${childListSeparator}${
         aggregatorsWithParam.includes(node.op) && node.param !== null
@@ -119,16 +133,16 @@ const serializeNode = (
       const vm = node.matching;
       if (vm !== null && (vm.labels.length > 0 || vm.on)) {
         if (vm.on) {
-          matching = ` on(${vm.labels.join(", ")})`;
+          matching = ` on(${labelNameList(vm.labels)})`;
         } else {
-          matching = ` ignoring(${vm.labels.join(", ")})`;
+          matching = ` ignoring(${labelNameList(vm.labels)})`;
         }
 
         if (
           vm.card === vectorMatchCardinality.manyToOne ||
           vm.card === vectorMatchCardinality.oneToMany
         ) {
-          grouping = ` group_${vm.card === vectorMatchCardinality.manyToOne ? "left" : "right"}(${vm.include.join(",")})`;
+          grouping = ` group_${vm.card === vectorMatchCardinality.manyToOne ? "left" : "right"}(${labelNameList(vm.include)})`;
         }
       }
 

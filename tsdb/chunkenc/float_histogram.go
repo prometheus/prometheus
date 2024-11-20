@@ -15,6 +15,7 @@ package chunkenc
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math"
 
@@ -761,9 +762,9 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 		if !okToAppend || counterReset {
 			if appendOnly {
 				if counterReset {
-					return nil, false, a, fmt.Errorf("float histogram counter reset")
+					return nil, false, a, errors.New("float histogram counter reset")
 				}
-				return nil, false, a, fmt.Errorf("float histogram schema change")
+				return nil, false, a, errors.New("float histogram schema change")
 			}
 			newChunk := NewFloatHistogramChunk()
 			app, err := newChunk.Appender()
@@ -812,7 +813,7 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 	pForwardInserts, nForwardInserts, pBackwardInserts, nBackwardInserts, pMergedSpans, nMergedSpans, okToAppend := a.appendableGauge(h)
 	if !okToAppend {
 		if appendOnly {
-			return nil, false, a, fmt.Errorf("float gauge histogram schema change")
+			return nil, false, a, errors.New("float gauge histogram schema change")
 		}
 		newChunk := NewFloatHistogramChunk()
 		app, err := newChunk.Appender()
