@@ -3862,7 +3862,7 @@ func TestRespondSuccess_DefaultCodecCannotEncodeResponse(t *testing.T) {
 
 	require.Equal(t, http.StatusNotAcceptable, resp.StatusCode)
 	require.Equal(t, "application/json", resp.Header.Get("Content-Type"))
-	require.Equal(t, `{"status":"error","errorType":"not_acceptable","error":"cannot encode response as application/default-format"}`, string(body))
+	require.JSONEq(t, `{"status":"error","errorType":"not_acceptable","error":"cannot encode response as application/default-format"}`, string(body))
 }
 
 func TestRespondError(t *testing.T) {

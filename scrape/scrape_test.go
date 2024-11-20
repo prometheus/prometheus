@@ -2609,7 +2609,7 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			accept := r.Header.Get("Accept")
 			if allowUTF8 {
-				require.Truef(t, strings.Contains(accept, "escaping=allow-utf-8"), "Expected Accept header to allow utf8, got %q", accept)
+				require.Containsf(t, accept, "escaping=allow-utf-8", "Expected Accept header to allow utf8, got %q", accept)
 			}
 			if protobufParsing {
 				require.True(t, strings.HasPrefix(accept, "application/vnd.google.protobuf;"),

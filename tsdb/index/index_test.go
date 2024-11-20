@@ -331,7 +331,7 @@ func TestPostingsMany(t *testing.T) {
 				exp = append(exp, e)
 			}
 		}
-		require.Equal(t, exp, got, fmt.Sprintf("input: %v", c.in))
+		require.Equalf(t, exp, got, "input: %v", c.in)
 	}
 }
 

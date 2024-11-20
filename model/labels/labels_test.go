@@ -954,7 +954,7 @@ func TestMarshaling(t *testing.T) {
 	expectedJSON := "{\"aaa\":\"111\",\"bbb\":\"2222\",\"ccc\":\"33333\"}"
 	b, err := json.Marshal(lbls)
 	require.NoError(t, err)
-	require.Equal(t, expectedJSON, string(b))
+	require.JSONEq(t, expectedJSON, string(b))
 
 	var gotJ Labels
 	err = json.Unmarshal(b, &gotJ)
@@ -964,7 +964,7 @@ func TestMarshaling(t *testing.T) {
 	expectedYAML := "aaa: \"111\"\nbbb: \"2222\"\nccc: \"33333\"\n"
 	b, err = yaml.Marshal(lbls)
 	require.NoError(t, err)
-	require.Equal(t, expectedYAML, string(b))
+	require.YAMLEq(t, expectedYAML, string(b))
 
 	var gotY Labels
 	err = yaml.Unmarshal(b, &gotY)
@@ -980,7 +980,7 @@ func TestMarshaling(t *testing.T) {
 	b, err = json.Marshal(f)
 	require.NoError(t, err)
 	expectedJSONFromStruct := "{\"a_labels\":" + expectedJSON + "}"
-	require.Equal(t, expectedJSONFromStruct, string(b))
+	require.JSONEq(t, expectedJSONFromStruct, string(b))
 
 	var gotFJ foo
 	err = json.Unmarshal(b, &gotFJ)
@@ -990,7 +990,7 @@ func TestMarshaling(t *testing.T) {
 	b, err = yaml.Marshal(f)
 	require.NoError(t, err)
 	expectedYAMLFromStruct := "a_labels:\n  aaa: \"111\"\n  bbb: \"2222\"\n  ccc: \"33333\"\n"
-	require.Equal(t, expectedYAMLFromStruct, string(b))
+	require.YAMLEq(t, expectedYAMLFromStruct, string(b))
 
 	var gotFY foo
 	err = yaml.Unmarshal(b, &gotFY)
