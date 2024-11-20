@@ -447,6 +447,22 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 	return Merge(ctx, its...)
 }
 
+func (p *MemPostings) PostingsForAllLabelValues(ctx context.Context, name string) Postings {
+	p.mtx.RLock()
+
+	e := p.m[name]
+	its := make([]Postings, 0, len(e))
+	for _, refs := range e {
+		if len(refs) > 0 {
+			its = append(its, NewListPostings(refs))
+		}
+	}
+
+	// Let the mutex go before merging.
+	p.mtx.RUnlock()
+	return Merge(ctx, its...)
+}
+
 // labelValues returns a slice of label values for the given label name.
 // It will take the read lock.
 func (p *MemPostings) labelValues(name string) []string {

@@ -2607,9 +2607,11 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 		floatValue, histogramValue, keep, err := vectorElemBinop(op, fl, fr, hl, hr, pos)
 		if err != nil {
 			lastErr = err
+			continue
 		}
 		switch {
 		case returnBool:
+			histogramValue = nil
 			if keep {
 				floatValue = 1.0
 			} else {
@@ -2728,6 +2730,7 @@ func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scala
 		float, histogram, keep, err := vectorElemBinop(op, lf, rf, lh, rh, pos)
 		if err != nil {
 			lastErr = err
+			continue
 		}
 		// Catch cases where the scalar is the LHS in a scalar-vector comparison operation.
 		// We want to always keep the vector element value as the output value, even if it's on the RHS.
@@ -3059,7 +3062,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 
 		case parser.MAX:
 			if h != nil {
-				annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("min", e.Expr.PositionRange()))
+				annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("max", e.Expr.PositionRange()))
 				continue
 			}
 			if group.floatValue < f || math.IsNaN(group.floatValue) {
@@ -3068,7 +3071,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 
 		case parser.MIN:
 			if h != nil {
-				annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("max", e.Expr.PositionRange()))
+				annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("min", e.Expr.PositionRange()))
 				continue
 			}
 			if group.floatValue > f || math.IsNaN(group.floatValue) {
@@ -3084,6 +3087,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				delta := f - group.floatMean
 				group.floatMean += delta / group.groupCount
 				group.floatValue += delta * (f - group.floatMean)
+			} else {
 				if op == parser.STDVAR {
 					annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("stdvar", e.Expr.PositionRange()))
 				} else {

@@ -82,6 +82,10 @@ type IndexReader interface {
 	// If no postings are found having at least one matching label, an empty iterator is returned.
 	PostingsForLabelMatching(ctx context.Context, name string, match func(value string) bool) index.Postings
 
+	// PostingsForAllLabelValues returns a sorted iterator over all postings having a label with the given name.
+	// If no postings are found with the label in question, an empty iterator is returned.
+	PostingsForAllLabelValues(ctx context.Context, name string) index.Postings
+
 	// SortedPostings returns a postings list that is reordered to be sorted
 	// by the label set of the underlying series.
 	SortedPostings(index.Postings) index.Postings
@@ -529,6 +533,10 @@ func (r blockIndexReader) Postings(ctx context.Context, name string, values ...s
 
 func (r blockIndexReader) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) index.Postings {
 	return r.ir.PostingsForLabelMatching(ctx, name, match)
+}
+
+func (r blockIndexReader) PostingsForAllLabelValues(ctx context.Context, name string) index.Postings {
+	return r.ir.PostingsForAllLabelValues(ctx, name)
 }
 
 func (r blockIndexReader) SortedPostings(p index.Postings) index.Postings {

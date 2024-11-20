@@ -1777,6 +1777,15 @@ func (r *Reader) Postings(ctx context.Context, name string, values ...string) (P
 }
 
 func (r *Reader) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) Postings {
+	return r.postingsForLabelMatching(ctx, name, match)
+}
+
+func (r *Reader) PostingsForAllLabelValues(ctx context.Context, name string) Postings {
+	return r.postingsForLabelMatching(ctx, name, nil)
+}
+
+// postingsForLabelMatching implements PostingsForLabelMatching if match is non-nil, and PostingsForAllLabelValues otherwise.
+func (r *Reader) postingsForLabelMatching(ctx context.Context, name string, match func(string) bool) Postings {
 	if r.version == FormatV1 {
 		return r.postingsForLabelMatchingV1(ctx, name, match)
 	}
@@ -1786,11 +1795,17 @@ func (r *Reader) PostingsForLabelMatching(ctx context.Context, name string, matc
 		return EmptyPostings()
 	}
 
+	postingsEstimate := 0
+	if match == nil {
+		// The caller wants all postings for name.
+		postingsEstimate = len(e) * symbolFactor
+	}
+
 	lastVal := e[len(e)-1].value
-	var its []Postings
+	its := make([]Postings, 0, postingsEstimate)
 	if err := r.traversePostingOffsets(ctx, e[0].off, func(val string, postingsOff uint64) (bool, error) {
-		if match(val) {
-			// We want this postings iterator since the value is a match
+		if match == nil || match(val) {
+			// We want this postings iterator since the value is a match.
 			postingsDec := encoding.NewDecbufAt(r.b, int(postingsOff), castagnoliTable)
 			_, p, err := r.dec.DecodePostings(postingsDec)
 			if err != nil {
@@ -1819,7 +1834,7 @@ func (r *Reader) postingsForLabelMatchingV1(ctx context.Context, name string, ma
 			return ErrPostings(ctx.Err())
 		}
 		count++
-		if !match(val) {
+		if match != nil && !match(val) {
 			continue
 		}
 
