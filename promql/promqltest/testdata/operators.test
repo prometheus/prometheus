@@ -807,3 +807,50 @@ eval range from 0 to 24m step 6m 0 >= left_histograms
   # No results.
 
 clear
+
+# Test completely discarding or completely including series in results with "and on"
+load_with_nhcb 5m
+	testhistogram_bucket{le="0.1", id="1"}	0+5x10
+	testhistogram_bucket{le="0.2", id="1"}	0+7x10
+	testhistogram_bucket{le="+Inf", id="1"}	0+12x10
+	testhistogram_bucket{le="0.1", id="2"}	0+4x10
+	testhistogram_bucket{le="0.2", id="2"}	0+6x10
+	testhistogram_bucket{le="+Inf", id="2"}	0+11x10
+
+# Include all series when "and on" with non-empty vector.
+eval instant at 10m (testhistogram_bucket) and on() (vector(1) == 1)
+  {__name__="testhistogram_bucket", le="0.1", id="1"} 10.0
+	{__name__="testhistogram_bucket", le="0.2", id="1"} 14.0
+	{__name__="testhistogram_bucket", le="+Inf", id="1"} 24.0
+	{__name__="testhistogram_bucket", le="0.1", id="2"} 8.0
+	{__name__="testhistogram_bucket", le="0.2", id="2"} 12.0
+	{__name__="testhistogram_bucket", le="+Inf", id="2"} 22.0
+
+eval range from 0 to 10m step 5m (testhistogram_bucket) and on() (vector(1) == 1)
+  {__name__="testhistogram_bucket", le="0.1", id="1"} 0.0 5.0 10.0
+	{__name__="testhistogram_bucket", le="0.2", id="1"} 0.0 7.0 14.0
+	{__name__="testhistogram_bucket", le="+Inf", id="1"} 0.0 12.0 24.0
+	{__name__="testhistogram_bucket", le="0.1", id="2"} 0.0 4.0 8.0
+	{__name__="testhistogram_bucket", le="0.2", id="2"} 0.0 6.0 12.0
+	{__name__="testhistogram_bucket", le="+Inf", id="2"} 0.0 11.0 22.0
+
+# Exclude all series when "and on" with empty vector.
+eval instant at 10m (testhistogram_bucket) and on() (vector(-1) == 1)
+
+eval range from 0 to 10m step 5m (testhistogram_bucket) and on() (vector(-1) == 1)
+
+# Include all native histogram series when "and on" with non-empty vector.
+eval instant at 10m (testhistogram) and on() (vector(1) == 1)
+  {__name__="testhistogram", id="1"} {{schema:-53 sum:0 count:24 buckets:[10 4 10] custom_values:[0.1 0.2]}}
+	{__name__="testhistogram", id="2"} {{schema:-53 sum:0 count:22 buckets:[8 4 10] custom_values:[0.1 0.2]}}
+
+eval range from 0 to 10m step 5m (testhistogram) and on() (vector(1) == 1)
+	{__name__="testhistogram", id="1"} {{schema:-53 sum:0 count:0 custom_values:[0.1 0.2]}} {{schema:-53 sum:0 count:12 buckets:[5 2 5] custom_values:[0.1 0.2]}} {{schema:-53 sum:0 count:24 buckets:[10 4 10] custom_values:[0.1 0.2]}}
+	{__name__="testhistogram", id="2"} {{schema:-53 sum:0 count:0 custom_values:[0.1 0.2]}} {{schema:-53 sum:0 count:11 buckets:[4 2 5] custom_values:[0.1 0.2]}} {{schema:-53 sum:0 count:22 buckets:[8 4 10] custom_values:[0.1 0.2]}}
+
+# Exclude all native histogram series when "and on" with empty vector.
+eval instant at 10m (testhistogram) and on() (vector(-1) == 1)
+
+eval range from 0 to 10m step 5m (testhistogram) and on() (vector(-1) == 1)
+
+clear
