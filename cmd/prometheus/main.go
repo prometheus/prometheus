@@ -27,6 +27,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	goregexp "regexp" //nolint:depguard // The Prometheus client library requires us to pass a regexp from this package.
 	"runtime"
 	"runtime/debug"
 	"strconv"
@@ -295,6 +296,7 @@ func main() {
 				collectors.WithGoCollectorRuntimeMetrics(
 					collectors.MetricsGC,
 					collectors.MetricsScheduler,
+					collectors.GoRuntimeMetricsRule{Matcher: goregexp.MustCompile(`^/sync/mutex/wait/total:seconds$`)},
 				),
 			),
 		)
