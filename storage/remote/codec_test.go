@@ -526,7 +526,7 @@ func TestFromQueryResultWithDuplicates(t *testing.T) {
 
 	require.True(t, isErrSeriesSet, "Expected resulting series to be an errSeriesSet")
 	errMessage := errSeries.Err().Error()
-	require.Equal(t, "duplicate label with name: foo", errMessage, fmt.Sprintf("Expected error to be from duplicate label, but got: %s", errMessage))
+	require.Equalf(t, "duplicate label with name: foo", errMessage, "Expected error to be from duplicate label, but got: %s", errMessage)
 }
 
 func TestNegotiateResponseType(t *testing.T) {
