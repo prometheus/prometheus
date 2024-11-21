@@ -208,7 +208,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			stats.TotalSamples += len(samples)
 			stats.DroppedSamples += len(samples) - len(repl)
 
-		case record.HistogramSamples:
+		case record.HistogramSamples, record.HistogramSamplesLegacy:
 			histogramSamples, err = dec.HistogramSamples(rec, histogramSamples)
 			if err != nil {
 				return nil, fmt.Errorf("decode histogram samples: %w", err)
@@ -221,28 +221,11 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 				}
 			}
 			if len(repl) > 0 {
-				buf, _ = enc.HistogramSamples(repl, buf)
+				buf = enc.HistogramSamples(repl, buf)
 			}
 			stats.TotalSamples += len(histogramSamples)
 			stats.DroppedSamples += len(histogramSamples) - len(repl)
-		case record.CustomBucketHistogramSamples:
-			histogramSamples, err = dec.HistogramSamples(rec, histogramSamples)
-			if err != nil {
-				return nil, fmt.Errorf("decode histogram samples: %w", err)
-			}
-			// Drop irrelevant histogramSamples in place.
-			repl := histogramSamples[:0]
-			for _, h := range histogramSamples {
-				if h.T >= mint {
-					repl = append(repl, h)
-				}
-			}
-			if len(repl) > 0 {
-				buf = enc.CustomBucketHistogramSamples(repl, buf)
-			}
-			stats.TotalSamples += len(histogramSamples)
-			stats.DroppedSamples += len(histogramSamples) - len(repl)
-		case record.FloatHistogramSamples:
+		case record.FloatHistogramSamples, record.FloatHistogramSamplesLegacy:
 			floatHistogramSamples, err = dec.FloatHistogramSamples(rec, floatHistogramSamples)
 			if err != nil {
 				return nil, fmt.Errorf("decode float histogram samples: %w", err)
@@ -255,24 +238,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 				}
 			}
 			if len(repl) > 0 {
-				buf, _ = enc.FloatHistogramSamples(repl, buf)
-			}
-			stats.TotalSamples += len(floatHistogramSamples)
-			stats.DroppedSamples += len(floatHistogramSamples) - len(repl)
-		case record.CustomBucketFloatHistogramSamples:
-			floatHistogramSamples, err = dec.FloatHistogramSamples(rec, floatHistogramSamples)
-			if err != nil {
-				return nil, fmt.Errorf("decode float histogram samples: %w", err)
-			}
-			// Drop irrelevant floatHistogramSamples in place.
-			repl := floatHistogramSamples[:0]
-			for _, fh := range floatHistogramSamples {
-				if fh.T >= mint {
-					repl = append(repl, fh)
-				}
-			}
-			if len(repl) > 0 {
-				buf = enc.CustomBucketFloatHistogramSamples(repl, buf)
+				buf = enc.FloatHistogramSamples(repl, buf)
 			}
 			stats.TotalSamples += len(floatHistogramSamples)
 			stats.DroppedSamples += len(floatHistogramSamples) - len(repl)

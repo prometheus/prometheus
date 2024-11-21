@@ -64,7 +64,6 @@ func GenerateTestCustomBucketsHistograms(n int) (r []*histogram.Histogram) {
 			h.CounterResetHint = histogram.NotCounterReset
 		}
 		r = append(r, h)
-
 	}
 	return r
 }

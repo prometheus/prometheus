@@ -236,7 +236,7 @@ func TestCheckpoint(t *testing.T) {
 				require.NoError(t, w.Log(b))
 				samplesInWAL += 4
 				h := makeHistogram(i)
-				b, _ = enc.HistogramSamples([]record.RefHistogramSample{
+				b = enc.HistogramSamples([]record.RefHistogramSample{
 					{Ref: 0, T: last, H: h},
 					{Ref: 1, T: last + 10000, H: h},
 					{Ref: 2, T: last + 20000, H: h},
@@ -245,7 +245,7 @@ func TestCheckpoint(t *testing.T) {
 				require.NoError(t, w.Log(b))
 				histogramsInWAL += 4
 				cbh := makeCustomBucketHistogram(i)
-				b = enc.CustomBucketHistogramSamples([]record.RefHistogramSample{
+				b = enc.HistogramSamples([]record.RefHistogramSample{
 					{Ref: 0, T: last, H: cbh},
 					{Ref: 1, T: last + 10000, H: cbh},
 					{Ref: 2, T: last + 20000, H: cbh},
@@ -254,7 +254,7 @@ func TestCheckpoint(t *testing.T) {
 				require.NoError(t, w.Log(b))
 				histogramsInWAL += 4
 				fh := makeFloatHistogram(i)
-				b, _ = enc.FloatHistogramSamples([]record.RefFloatHistogramSample{
+				b = enc.FloatHistogramSamples([]record.RefFloatHistogramSample{
 					{Ref: 0, T: last, FH: fh},
 					{Ref: 1, T: last + 10000, FH: fh},
 					{Ref: 2, T: last + 20000, FH: fh},
@@ -263,7 +263,7 @@ func TestCheckpoint(t *testing.T) {
 				require.NoError(t, w.Log(b))
 				floatHistogramsInWAL += 4
 				cbfh := makeCustomBucketFloatHistogram(i)
-				b = enc.CustomBucketFloatHistogramSamples([]record.RefFloatHistogramSample{
+				b = enc.FloatHistogramSamples([]record.RefFloatHistogramSample{
 					{Ref: 0, T: last, FH: cbfh},
 					{Ref: 1, T: last + 10000, FH: cbfh},
 					{Ref: 2, T: last + 20000, FH: cbfh},
@@ -330,14 +330,14 @@ func TestCheckpoint(t *testing.T) {
 						require.GreaterOrEqual(t, s.T, last/2, "sample with wrong timestamp")
 					}
 					samplesInCheckpoint += len(samples)
-				case record.HistogramSamples, record.CustomBucketHistogramSamples:
+				case record.HistogramSamples, record.HistogramSamplesLegacy:
 					histograms, err := dec.HistogramSamples(rec, nil)
 					require.NoError(t, err)
 					for _, h := range histograms {
 						require.GreaterOrEqual(t, h.T, last/2, "histogram with wrong timestamp")
 					}
 					histogramsInCheckpoint += len(histograms)
-				case record.FloatHistogramSamples, record.CustomBucketFloatHistogramSamples:
+				case record.FloatHistogramSamples, record.FloatHistogramSamplesLegacy:
 					floatHistograms, err := dec.FloatHistogramSamples(rec, nil)
 					require.NoError(t, err)
 					for _, h := range floatHistograms {

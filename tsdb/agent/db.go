@@ -463,7 +463,7 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 					return
 				}
 				decoded <- samples
-			case record.HistogramSamples, record.CustomBucketHistogramSamples:
+			case record.HistogramSamples, record.HistogramSamplesLegacy:
 				histograms := histogramsPool.Get()[:0]
 				histograms, err = dec.HistogramSamples(rec, histograms)
 				if err != nil {
@@ -475,7 +475,7 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 					return
 				}
 				decoded <- histograms
-			case record.FloatHistogramSamples, record.CustomBucketFloatHistogramSamples:
+			case record.FloatHistogramSamples, record.FloatHistogramSamplesLegacy:
 				floatHistograms := floatHistogramsPool.Get()[:0]
 				floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms)
 				if err != nil {
@@ -1154,35 +1154,19 @@ func (a *appender) log() error {
 	}
 
 	if len(a.pendingHistograms) > 0 {
-		var customBucketsExist bool
-		buf, customBucketsExist = encoder.HistogramSamples(a.pendingHistograms, buf)
+		buf = encoder.HistogramSamples(a.pendingHistograms, buf)
 		if err := a.wal.Log(buf); err != nil {
 			return err
 		}
 		buf = buf[:0]
-		if customBucketsExist {
-			buf = encoder.CustomBucketHistogramSamples(a.pendingHistograms, buf)
-			if err := a.wal.Log(buf); err != nil {
-				return err
-			}
-			buf = buf[:0]
-		}
 	}
 
 	if len(a.pendingFloatHistograms) > 0 {
-		var customBucketsExist bool
-		buf, customBucketsExist = encoder.FloatHistogramSamples(a.pendingFloatHistograms, buf)
+		buf = encoder.FloatHistogramSamples(a.pendingFloatHistograms, buf)
 		if err := a.wal.Log(buf); err != nil {
 			return err
 		}
 		buf = buf[:0]
-		if customBucketsExist {
-			buf = encoder.CustomBucketFloatHistogramSamples(a.pendingFloatHistograms, buf)
-			if err := a.wal.Log(buf); err != nil {
-				return err
-			}
-			buf = buf[:0]
-		}
 	}
 
 	if len(a.pendingExamplars) > 0 {

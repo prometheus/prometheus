@@ -942,32 +942,17 @@ func (a *headAppender) log() error {
 		}
 	}
 	if len(a.histograms) > 0 {
-		rec, customBucketsExist := enc.HistogramSamples(a.histograms, buf)
+		rec = enc.HistogramSamples(a.histograms, buf)
 		buf = rec[:0]
 		if err := a.head.wal.Log(rec); err != nil {
 			return fmt.Errorf("log histograms: %w", err)
 		}
-
-		if customBucketsExist {
-			enc.CustomBucketHistogramSamples(a.histograms, buf)
-			buf = rec[:0]
-			if err := a.head.wal.Log(rec); err != nil {
-				return fmt.Errorf("log custom bucket histograms: %w", err)
-			}
-		}
 	}
 	if len(a.floatHistograms) > 0 {
-		rec, customBucketsExist := enc.FloatHistogramSamples(a.floatHistograms, buf)
+		rec = enc.FloatHistogramSamples(a.floatHistograms, buf)
 		buf = rec[:0]
 		if err := a.head.wal.Log(rec); err != nil {
 			return fmt.Errorf("log float histograms: %w", err)
-		}
-
-		if customBucketsExist {
-			buf = rec[:0]
-			if err := a.head.wal.Log(rec); err != nil {
-				return fmt.Errorf("log custom bucket float histograms: %w", err)
-			}
 		}
 	}
 	// Exemplars should be logged after samples (float/native histogram/etc),
