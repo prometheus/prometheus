@@ -3494,51 +3494,51 @@ func TestEvaluationWithDelayedNameRemovalDisabled(t *testing.T) {
 
 	promqltest.RunTest(t, `
 load 5m
-	metric{env="1"}	0 60 120
+	metric_total{env="1"}	0 60 120
 	another_metric{env="1"}	60 120 180
 
 # Does not drop __name__ for vector selector
-eval instant at 10m metric{env="1"}
-	metric{env="1"} 120
+eval instant at 10m metric_total{env="1"}
+	metric_total{env="1"} 120
 
 # Drops __name__ for unary operators
-eval instant at 10m -metric
+eval instant at 10m -metric_total
 	{env="1"} -120
 
 # Drops __name__ for binary operators
-eval instant at 10m metric + another_metric
+eval instant at 10m metric_total + another_metric
 	{env="1"} 300
 
 # Does not drop __name__ for binary comparison operators
-eval instant at 10m metric <= another_metric
-	metric{env="1"} 120
+eval instant at 10m metric_total <= another_metric
+	metric_total{env="1"} 120
 
 # Drops __name__ for binary comparison operators with "bool" modifier
-eval instant at 10m metric <= bool another_metric
+eval instant at 10m metric_total <= bool another_metric
 	{env="1"} 1
 
 # Drops __name__ for vector-scalar operations
-eval instant at 10m metric * 2
+eval instant at 10m metric_total * 2
 	{env="1"} 240
 
 # Drops __name__ for instant-vector functions
-eval instant at 10m clamp(metric, 0, 100)
+eval instant at 10m clamp(metric_total, 0, 100)
 	{env="1"} 100
 
 # Drops __name__ for round function
-eval instant at 10m round(metric)
+eval instant at 10m round(metric_total)
 	{env="1"} 120
 
 # Drops __name__ for range-vector functions
-eval instant at 10m rate(metric{env="1"}[10m])
+eval instant at 10m rate(metric_total{env="1"}[10m])
 	{env="1"} 0.2
 
 # Does not drop __name__ for last_over_time function
-eval instant at 10m last_over_time(metric{env="1"}[10m])
-	metric{env="1"} 120
+eval instant at 10m last_over_time(metric_total{env="1"}[10m])
+	metric_total{env="1"} 120
 
 # Drops name for other _over_time functions
-eval instant at 10m max_over_time(metric{env="1"}[10m])
+eval instant at 10m max_over_time(metric_total{env="1"}[10m])
 	{env="1"} 120
 `, engine)
 }

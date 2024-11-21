@@ -83,13 +83,13 @@ clear
 
 # Tests for increase().
 load 5m
-	http_requests{path="/foo"}	0+10x10
-	http_requests{path="/bar"}	0+18x5 0+18x5
-	http_requests{path="/dings"}   10+10x10
-	http_requests{path="/bumms"}    1+10x10
+	http_requests_total{path="/foo"}	0+10x10
+	http_requests_total{path="/bar"}	0+18x5 0+18x5
+	http_requests_total{path="/dings"}   10+10x10
+	http_requests_total{path="/bumms"}    1+10x10
 
 # Tests for increase().
-eval instant at 50m increase(http_requests[50m])
+eval instant at 50m increase(http_requests_total[50m])
 	{path="/foo"}   100
 	{path="/bar"}   160
 	{path="/dings"} 100
@@ -102,7 +102,7 @@ eval instant at 50m increase(http_requests[50m])
 # chosen. However, "bumms" has value 1 at t=0 and would reach 0 at
 # t=-30s. Here the extrapolation to t=-2m30s would reach a negative
 # value, and therefore the extrapolation happens only by 30s.
-eval instant at 50m increase(http_requests[100m])
+eval instant at 50m increase(http_requests_total[100m])
 	{path="/foo"}   100
 	{path="/bar"}   162
 	{path="/dings"} 105
@@ -115,57 +115,57 @@ clear
 # So the sequence 3 2 (decreasing counter = reset) is interpreted the same as 3 0 1 2.
 # Prometheus assumes it missed the intermediate values 0 and 1.
 load 5m
-	http_requests{path="/foo"}	0 1 2 3 2 3 4
+	http_requests_total{path="/foo"}	0 1 2 3 2 3 4
 
-eval instant at 30m increase(http_requests[30m])
+eval instant at 30m increase(http_requests_total[30m])
     {path="/foo"} 7
 
 clear
 
 # Tests for rate().
 load 5m
-	testcounter_reset_middle	0+27x4 0+27x5
-	testcounter_reset_end    	0+10x9 0 10
+	testcounter_reset_middle_total	0+27x4 0+27x5
+	testcounter_reset_end_total  	0+10x9 0 10
 
 # Counter resets at in the middle of range are handled correctly by rate().
-eval instant at 50m rate(testcounter_reset_middle[50m])
+eval instant at 50m rate(testcounter_reset_middle_total[50m])
 	{} 0.08
 
 # Counter resets at end of range are ignored by rate().
-eval instant at 50m rate(testcounter_reset_end[5m])
+eval instant at 50m rate(testcounter_reset_end_total[5m])
 
-eval instant at 50m rate(testcounter_reset_end[6m])
+eval instant at 50m rate(testcounter_reset_end_total[6m])
 	{} 0
 
 clear
 
 load 5m
-	calculate_rate_offset{x="a"}	0+10x10
-	calculate_rate_offset{x="b"}	0+20x10
-	calculate_rate_window		0+80x10
+	calculate_rate_offset_total{x="a"}	0+10x10
+	calculate_rate_offset_total{x="b"}	0+20x10
+	calculate_rate_window_total		0+80x10
 
 # Rates should calculate per-second rates.
-eval instant at 50m rate(calculate_rate_window[50m])
+eval instant at 50m rate(calculate_rate_window_total[50m])
 	{} 0.26666666666666666
 
-eval instant at 50m rate(calculate_rate_offset[10m] offset 5m)
+eval instant at 50m rate(calculate_rate_offset_total[10m] offset 5m)
 	{x="a"} 0.03333333333333333
 	{x="b"} 0.06666666666666667
 
 clear
 
 load 4m
-	testcounter_zero_cutoff{start="0m"}	0+240x10
-	testcounter_zero_cutoff{start="1m"}	60+240x10
-	testcounter_zero_cutoff{start="2m"}	120+240x10
-	testcounter_zero_cutoff{start="3m"}	180+240x10
-	testcounter_zero_cutoff{start="4m"}	240+240x10
-	testcounter_zero_cutoff{start="5m"}	300+240x10
+	testcounter_zero_cutoff_total{start="0m"}	0+240x10
+	testcounter_zero_cutoff_total{start="1m"}	60+240x10
+	testcounter_zero_cutoff_total{start="2m"}	120+240x10
+	testcounter_zero_cutoff_total{start="3m"}	180+240x10
+	testcounter_zero_cutoff_total{start="4m"}	240+240x10
+	testcounter_zero_cutoff_total{start="5m"}	300+240x10
 
 # Zero cutoff for left-side extrapolation happens until we
 # reach half a sampling interval (2m). Beyond that, we only
 # extrapolate by half a sampling interval.
-eval instant at 10m rate(testcounter_zero_cutoff[20m])
+eval instant at 10m rate(testcounter_zero_cutoff_total[20m])
 	{start="0m"} 0.5
 	{start="1m"} 0.55
 	{start="2m"} 0.6
@@ -174,7 +174,7 @@ eval instant at 10m rate(testcounter_zero_cutoff[20m])
 	{start="5m"} 0.6
 
 # Normal half-interval cutoff for left-side extrapolation.
-eval instant at 50m rate(testcounter_zero_cutoff[20m])
+eval instant at 50m rate(testcounter_zero_cutoff_total[20m])
 	{start="0m"} 0.6
 	{start="1m"} 0.6
 	{start="2m"} 0.6
@@ -186,15 +186,15 @@ clear
 
 # Tests for irate().
 load 5m
-	http_requests{path="/foo"}	0+10x10
-	http_requests{path="/bar"}	0+10x5 0+10x5
+	http_requests_total{path="/foo"}	0+10x10
+	http_requests_total{path="/bar"}	0+10x5 0+10x5
 
-eval instant at 50m irate(http_requests[50m])
+eval instant at 50m irate(http_requests_total[50m])
 	{path="/foo"} .03333333333333333333
 	{path="/bar"} .03333333333333333333
 
 # Counter reset.
-eval instant at 30m irate(http_requests[50m])
+eval instant at 30m irate(http_requests_total[50m])
 	{path="/foo"} .03333333333333333333
 	{path="/bar"} 0
 
@@ -224,18 +224,18 @@ clear
 
 # Tests for deriv() and predict_linear().
 load 5m
-	testcounter_reset_middle	0+10x4 0+10x5
-	http_requests{job="app-server", instance="1", group="canary"}		0+80x10
+	testcounter_reset_middle_total	0+10x4 0+10x5
+	http_requests_total{job="app-server", instance="1", group="canary"}		0+80x10
 
 # deriv should return the same as rate in simple cases.
-eval instant at 50m rate(http_requests{group="canary", instance="1", job="app-server"}[50m])
+eval instant at 50m rate(http_requests_total{group="canary", instance="1", job="app-server"}[50m])
 	{group="canary", instance="1", job="app-server"} 0.26666666666666666
 
-eval instant at 50m deriv(http_requests{group="canary", instance="1", job="app-server"}[50m])
+eval instant at 50m deriv(http_requests_total{group="canary", instance="1", job="app-server"}[50m])
 	{group="canary", instance="1", job="app-server"} 0.26666666666666666
 
 # deriv should return correct result.
-eval instant at 50m deriv(testcounter_reset_middle[100m])
+eval instant at 50m deriv(testcounter_reset_middle_total[100m])
 	{} 0.010606060606060607
 
 # predict_linear should return correct result.
@@ -252,31 +252,31 @@ eval instant at 50m deriv(testcounter_reset_middle[100m])
 # intercept at t=0: 6.818181818181818
 # intercept at t=3000: 38.63636363636364
 # intercept at t=3000+3600: 76.81818181818181
-eval instant at 50m predict_linear(testcounter_reset_middle[50m], 3600)
+eval instant at 50m predict_linear(testcounter_reset_middle_total[50m], 3600)
 	{} 70
 
-eval instant at 50m predict_linear(testcounter_reset_middle[50m], 1h)
+eval instant at 50m predict_linear(testcounter_reset_middle_total[50m], 1h)
 	{} 70
 
 # intercept at t = 3000+3600 = 6600
-eval instant at 50m predict_linear(testcounter_reset_middle[55m] @ 3000, 3600)
+eval instant at 50m predict_linear(testcounter_reset_middle_total[55m] @ 3000, 3600)
 	{} 76.81818181818181
 
-eval instant at 50m predict_linear(testcounter_reset_middle[55m] @ 3000, 1h)
+eval instant at 50m predict_linear(testcounter_reset_middle_total[55m] @ 3000, 1h)
 	{} 76.81818181818181
 
 # intercept at t = 600+3600 = 4200
-eval instant at 10m predict_linear(testcounter_reset_middle[55m] @ 3000, 3600)
+eval instant at 10m predict_linear(testcounter_reset_middle_total[55m] @ 3000, 3600)
 	{} 51.36363636363637
 
 # intercept at t = 4200+3600 = 7800
-eval instant at 70m predict_linear(testcounter_reset_middle[55m] @ 3000, 3600)
+eval instant at 70m predict_linear(testcounter_reset_middle_total[55m] @ 3000, 3600)
 	{} 89.54545454545455
 
-# With http_requests, there is a sample value exactly at the end of
+# With http_requests_total, there is a sample value exactly at the end of
 # the range, and it has exactly the predicted value, so predict_linear
 # can be emulated with deriv.
-eval instant at 50m predict_linear(http_requests[50m], 3600) - (http_requests + deriv(http_requests[50m]) * 3600)
+eval instant at 50m predict_linear(http_requests_total[50m], 3600) - (http_requests_total + deriv(http_requests_total[50m]) * 3600)
 	{group="canary", instance="1", job="app-server"} 0
 
 clear
@@ -1073,49 +1073,49 @@ eval instant at 50m absent(rate(nonexistant[5m]))
 clear
 
 # Testdata for absent_over_time()
-eval instant at 1m absent_over_time(http_requests[5m])
+eval instant at 1m absent_over_time(http_requests_total[5m])
     {} 1
 
-eval instant at 1m absent_over_time(http_requests{handler="/foo"}[5m])
+eval instant at 1m absent_over_time(http_requests_total{handler="/foo"}[5m])
     {handler="/foo"} 1
 
-eval instant at 1m absent_over_time(http_requests{handler!="/foo"}[5m])
+eval instant at 1m absent_over_time(http_requests_total{handler!="/foo"}[5m])
     {} 1
 
-eval instant at 1m absent_over_time(http_requests{handler="/foo", handler="/bar", handler="/foobar"}[5m])
+eval instant at 1m absent_over_time(http_requests_total{handler="/foo", handler="/bar", handler="/foobar"}[5m])
     {} 1
 
 eval instant at 1m absent_over_time(rate(nonexistant[5m])[5m:])
     {} 1
 
-eval instant at 1m absent_over_time(http_requests{handler="/foo", handler="/bar", instance="127.0.0.1"}[5m])
+eval instant at 1m absent_over_time(http_requests_total{handler="/foo", handler="/bar", instance="127.0.0.1"}[5m])
     {instance="127.0.0.1"} 1
 
 load 1m
-	http_requests{path="/foo",instance="127.0.0.1",job="httpd"}	1+1x10
-	http_requests{path="/bar",instance="127.0.0.1",job="httpd"}	1+1x10
+	http_requests_total{path="/foo",instance="127.0.0.1",job="httpd"}	1+1x10
+	http_requests_total{path="/bar",instance="127.0.0.1",job="httpd"}	1+1x10
 	httpd_handshake_failures_total{instance="127.0.0.1",job="node"}	1+1x15
 	httpd_log_lines_total{instance="127.0.0.1",job="node"}	1
 	ssl_certificate_expiry_seconds{job="ingress"} NaN NaN NaN NaN NaN
 
-eval instant at 5m absent_over_time(http_requests[5m])
+eval instant at 5m absent_over_time(http_requests_total[5m])
 
-eval instant at 5m absent_over_time(rate(http_requests[5m])[5m:1m])
+eval instant at 5m absent_over_time(rate(http_requests_total[5m])[5m:1m])
 
 eval instant at 0m absent_over_time(httpd_log_lines_total[30s])
 
 eval instant at 1m absent_over_time(httpd_log_lines_total[30s])
     {} 1
 
-eval instant at 15m absent_over_time(http_requests[5m])
+eval instant at 15m absent_over_time(http_requests_total[5m])
     {} 1
 
-eval instant at 15m absent_over_time(http_requests[10m])
+eval instant at 15m absent_over_time(http_requests_total[10m])
 
-eval instant at 16m absent_over_time(http_requests[6m])
+eval instant at 16m absent_over_time(http_requests_total[6m])
     {} 1
 
-eval instant at 16m absent_over_time(http_requests[16m])
+eval instant at 16m absent_over_time(http_requests_total[16m])
 
 eval instant at 16m absent_over_time(httpd_handshake_failures_total[1m])
     {} 1
@@ -1143,30 +1143,30 @@ eval instant at 10m absent_over_time({job="ingress"}[4m])
 clear
 
 # Testdata for present_over_time()
-eval instant at 1m present_over_time(http_requests[5m])
+eval instant at 1m present_over_time(http_requests_total[5m])
 
-eval instant at 1m present_over_time(http_requests{handler="/foo"}[5m])
+eval instant at 1m present_over_time(http_requests_total{handler="/foo"}[5m])
 
-eval instant at 1m present_over_time(http_requests{handler!="/foo"}[5m])
+eval instant at 1m present_over_time(http_requests_total{handler!="/foo"}[5m])
 
-eval instant at 1m present_over_time(http_requests{handler="/foo", handler="/bar", handler="/foobar"}[5m])
+eval instant at 1m present_over_time(http_requests_total{handler="/foo", handler="/bar", handler="/foobar"}[5m])
 
 eval instant at 1m present_over_time(rate(nonexistant[5m])[5m:])
 
-eval instant at 1m present_over_time(http_requests{handler="/foo", handler="/bar", instance="127.0.0.1"}[5m])
+eval instant at 1m present_over_time(http_requests_total{handler="/foo", handler="/bar", instance="127.0.0.1"}[5m])
 
 load 1m
-	http_requests{path="/foo",instance="127.0.0.1",job="httpd"}	1+1x10
-	http_requests{path="/bar",instance="127.0.0.1",job="httpd"}	1+1x10
+	http_requests_total{path="/foo",instance="127.0.0.1",job="httpd"}	1+1x10
+	http_requests_total{path="/bar",instance="127.0.0.1",job="httpd"}	1+1x10
 	httpd_handshake_failures_total{instance="127.0.0.1",job="node"}	1+1x15
 	httpd_log_lines_total{instance="127.0.0.1",job="node"}	1
 	ssl_certificate_expiry_seconds{job="ingress"} NaN NaN NaN NaN NaN
 
-eval instant at 5m present_over_time(http_requests[5m])
+eval instant at 5m present_over_time(http_requests_total[5m])
     {instance="127.0.0.1", job="httpd", path="/bar"} 1
     {instance="127.0.0.1", job="httpd", path="/foo"} 1
 
-eval instant at 5m present_over_time(rate(http_requests[5m])[5m:1m])
+eval instant at 5m present_over_time(rate(http_requests_total[5m])[5m:1m])
     {instance="127.0.0.1", job="httpd", path="/bar"} 1
     {instance="127.0.0.1", job="httpd", path="/foo"} 1
 
@@ -1175,15 +1175,15 @@ eval instant at 0m present_over_time(httpd_log_lines_total[30s])
 
 eval instant at 1m present_over_time(httpd_log_lines_total[30s])
 
-eval instant at 15m present_over_time(http_requests[5m])
+eval instant at 15m present_over_time(http_requests_total[5m])
 
-eval instant at 15m present_over_time(http_requests[10m])
+eval instant at 15m present_over_time(http_requests_total[10m])
     {instance="127.0.0.1", job="httpd", path="/bar"} 1
     {instance="127.0.0.1", job="httpd", path="/foo"} 1
 
-eval instant at 16m present_over_time(http_requests[6m])
+eval instant at 16m present_over_time(http_requests_total[6m])
 
-eval instant at 16m present_over_time(http_requests[16m])
+eval instant at 16m present_over_time(http_requests_total[16m])
     {instance="127.0.0.1", job="httpd", path="/bar"} 1
     {instance="127.0.0.1", job="httpd", path="/foo"} 1
 
