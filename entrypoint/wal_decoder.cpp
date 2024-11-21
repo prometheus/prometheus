@@ -308,7 +308,13 @@ extern "C" void prompp_wal_protobuf_encoder_ctor(void* args, void* res) {
   auto* in = reinterpret_cast<Arguments*>(args);
   Result* out = new (res) Result();
 
-  out->encoder = new PromPP::WAL::ProtobufEncoder(in->output_lsses);
+  std::vector<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap*> output_lsses;
+  output_lsses.reserve(in->output_lsses.size());
+  for (const auto& output_lss : in->output_lsses) {
+    output_lsses.push_back(&std::get<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>(*output_lss));
+  }
+
+  out->encoder = new PromPP::WAL::ProtobufEncoder(output_lsses);
 }
 
 extern "C" void prompp_wal_protobuf_encoder_dtor(void* args) {

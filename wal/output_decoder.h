@@ -251,13 +251,8 @@ class ProtobufEncoder {
 
  public:
   // ProtobufEncoder constructor.
-  template <class LssVariantPtr>
-  PROMPP_ALWAYS_INLINE explicit ProtobufEncoder(PromPP::Primitives::Go::SliceView<LssVariantPtr>& output_lsses) noexcept {
-    output_lsses_.reserve(output_lsses.size());
-    for (const LssVariantPtr& output_lss : output_lsses) {
-      output_lsses_.push_back(&std::get<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>(*output_lss));
-    }
-  }
+  PROMPP_ALWAYS_INLINE explicit ProtobufEncoder(std::vector<Primitives::SnugComposites::LabelSet::EncodingBimap*>& output_lsses) noexcept
+      : output_lsses_{std::move(output_lsses)} {}
 
   // encode incoming refsamples to snapped protobufs on shards.
   PROMPP_ALWAYS_INLINE void encode(Primitives::Go::SliceView<ShardRefSample*>& batch, Primitives::Go::Slice<Primitives::Go::Slice<char>>& out_slices) {
