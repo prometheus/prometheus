@@ -344,11 +344,17 @@ eval_ordered instant at 50m topk(scalar(foo), http_requests)
 eval_info instant at 50m topk(100, http_requests_histogram)
     #empty
 
+eval_info range from 0 to 50m step 5m topk(100, http_requests_histogram)
+    #empty
+
 eval_info instant at 50m topk(1, {__name__=~"http_requests(_histogram)?"})
     {__name__="http_requests", group="canary", instance="1", job="app-server"} 800
 
 eval_info instant at 50m count(topk(1000, {__name__=~"http_requests(_histogram)?"}))
     {} 9
+
+eval_info range from 0 to 50m step 5m count(topk(1000, {__name__=~"http_requests(_histogram)?"}))
+    {} 9x10
 
 eval_info instant at 50m topk by (instance) (1, {__name__=~"http_requests(_histogram)?"})
     {__name__="http_requests", group="canary", instance="0", job="app-server"} 700
@@ -358,11 +364,17 @@ eval_info instant at 50m topk by (instance) (1, {__name__=~"http_requests(_histo
 eval_info instant at 50m bottomk(100, http_requests_histogram)
     #empty
 
+eval_info range from 0 to 50m step 5m bottomk(100, http_requests_histogram)
+    #empty
+
 eval_info instant at 50m bottomk(1, {__name__=~"http_requests(_histogram)?"})
     {__name__="http_requests", group="production", instance="0", job="api-server"} 100
 
 eval_info instant at 50m count(bottomk(1000, {__name__=~"http_requests(_histogram)?"}))
     {} 9
+
+eval_info range from 0 to 50m step 5m count(bottomk(1000, {__name__=~"http_requests(_histogram)?"}))
+    {} 9x10
 
 eval_info instant at 50m bottomk by (instance) (1, {__name__=~"http_requests(_histogram)?"})
     {__name__="http_requests", group="production", instance="0", job="api-server"} 100
