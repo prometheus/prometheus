@@ -99,9 +99,13 @@ type GroupOptions struct {
 
 // NewGroup makes a new Group with the given name, options, and rules.
 func NewGroup(o GroupOptions) *Group {
-	metrics := o.Opts.Metrics
+	opts := o.Opts
+	if opts == nil {
+		opts = &ManagerOptions{}
+	}
+	metrics := opts.Metrics
 	if metrics == nil {
-		metrics = NewGroupMetrics(o.Opts.Registerer)
+		metrics = NewGroupMetrics(opts.Registerer)
 	}
 
 	key := GroupKey(o.File, o.Name)
@@ -120,13 +124,13 @@ func NewGroup(o GroupOptions) *Group {
 		evalIterationFunc = DefaultEvalIterationFunc
 	}
 
-	concurrencyController := o.Opts.RuleConcurrencyController
+	concurrencyController := opts.RuleConcurrencyController
 	if concurrencyController == nil {
 		concurrencyController = sequentialRuleEvalController{}
 	}
 
-	if o.Opts.Logger == nil {
-		promslog.NewNopLogger()
+	if opts.Logger == nil {
+		opts.Logger = promslog.NewNopLogger()
 	}
 
 	return &Group{
@@ -137,12 +141,12 @@ func NewGroup(o GroupOptions) *Group {
 		limit:                 o.Limit,
 		rules:                 o.Rules,
 		shouldRestore:         o.ShouldRestore,
-		opts:                  o.Opts,
+		opts:                  opts,
 		seriesInPreviousEval:  make([]map[string]labels.Labels, len(o.Rules)),
 		done:                  make(chan struct{}),
 		managerDone:           o.done,
 		terminated:            make(chan struct{}),
-		logger:                o.Opts.Logger.With("file", o.File, "group", o.Name),
+		logger:                opts.Logger.With("file", o.File, "group", o.Name),
 		metrics:               metrics,
 		evalIterationFunc:     evalIterationFunc,
 		concurrencyController: concurrencyController,
