@@ -147,7 +147,7 @@ eval range from 0 to 50m step 5m count(limit_ratio(time() % 17/17, http_requests
 
 # Poor man's normality check: ok (loaded samples follow a nice linearity over labels and time)
 # The check giving: 1 (i.e. true)
-eval range from 0 to 50m step 5m abs(avg(limit_ratio(0.5, http_requests{instance!~"histogram_[0-9]"})) - avg(limit_ratio(-0.5, http_requests{instance!~"histogram_[0-9]"}))) <= bool stddev(http_requests)
+eval range from 0 to 50m step 5m abs(avg(limit_ratio(0.5, http_requests{instance!~"histogram_[0-9]"})) - avg(limit_ratio(-0.5, http_requests{instance!~"histogram_[0-9]"}))) <= bool stddev(http_requests{instance!~"histogram_[0-9]"})
 	{} 1+0x10
 
 # All specified histograms are included for r=1.
