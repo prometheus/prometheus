@@ -18,7 +18,7 @@ eval instant at 50m count(limitk by (group) (0, http_requests))
 eval instant at 50m count(limitk by (group) (-1, http_requests))
 # empty
 
-# Exercise k==1 special case (as sample is added before the main series loop)
+# Exercise k==1 special case (as sample is added before the main series loop).
 eval instant at 50m count(limitk by (group) (1, http_requests) and http_requests)
     {} 2
 
@@ -28,7 +28,7 @@ eval instant at 50m count(limitk by (group) (2, http_requests) and http_requests
 eval instant at 50m count(limitk(100, http_requests) and http_requests)
     {} 8
 
-# Exercise k==1 special case (as sample is added before the main series loop)
+# Exercise k==1 special case (as sample is added before the main series loop).
 eval instant at 50m count(limitk by (group) (1, http_requests) and http_requests)
     {} 2
 
@@ -39,7 +39,7 @@ eval instant at 50m count(limitk(100, http_requests) and http_requests)
     {} 8
 
 # Test for histograms.
-# k==1: verify that histogram is included in the result
+# k==1: verify that histogram is included in the result.
 eval instant at 50m limitk(1, http_requests{instance="histogram_1"})
     {__name__="http_requests", group="canary", instance="histogram_1", job="api-server"} {{count:10 sum:10}}
 
@@ -77,7 +77,7 @@ eval range from 0 to 50m step 5m count(limit_ratio(0.0, http_requests))
 eval range from 0 to 50m step 5m count(limitk(2, http_requests) and http_requests)
     {} 2+0x10
 
-# Tests for limit_ratio
+# Tests for limit_ratio.
 #
 # NB: below 0.5 ratio will depend on some hashing "luck" (also there's no guarantee that
 # an integer comes from: total number of series * ratio), as it depends on:
@@ -89,48 +89,48 @@ eval range from 0 to 50m step 5m count(limitk(2, http_requests) and http_request
 #
 # See `AddRatioSample()` in promql/engine.go for more details.
 
-# Half~ish samples: verify we get "near" 3 (of 0.5 * 6)
+# Half~ish samples: verify we get "near" 3 (of 0.5 * 6).
 eval range from 0 to 50m step 5m count(limit_ratio(0.5, http_requests) and http_requests) <= bool (4+1)
     {} 1+0x10
 
 eval range from 0 to 50m step 5m count(limit_ratio(0.5, http_requests) and http_requests) >= bool (4-1)
     {} 1+0x10
 
-# All samples
+# All samples.
 eval range from 0 to 50m step 5m count(limit_ratio(1.0, http_requests) and http_requests)
     {} 8+0x10
 
-# All samples
+# All samples.
 eval range from 0 to 50m step 5m count(limit_ratio(-1.0, http_requests) and http_requests)
     {} 8+0x10
 
-# Capped to 1.0 -> all samples
+# Capped to 1.0 -> all samples.
 eval_warn range from 0 to 50m step 5m count(limit_ratio(1.1, http_requests) and http_requests)
     {} 8+0x10
 
-# Capped to -1.0 -> all samples
+# Capped to -1.0 -> all samples.
 eval_warn range from 0 to 50m step 5m count(limit_ratio(-1.1, http_requests) and http_requests)
     {} 8+0x10
 
-# Verify that limit_ratio(value) and limit_ratio(1.0-value) return the "complement" of each other
-# Complement below for [0.2, -0.8]
+# Verify that limit_ratio(value) and limit_ratio(1.0-value) return the "complement" of each other.
+# Complement below for [0.2, -0.8].
 #
-# Complement 1of2: `or` should return all samples
+# Complement 1of2: `or` should return all samples.
 eval range from 0 to 50m step 5m count(limit_ratio(0.2, http_requests) or limit_ratio(-0.8, http_requests))
     {} 8+0x10
 
-# Complement 2of2: `and` should return no samples
+# Complement 2of2: `and` should return no samples.
 eval range from 0 to 50m step 5m count(limit_ratio(0.2, http_requests) and limit_ratio(-0.8, http_requests))
 # empty
 
-# Complement below for [0.5, -0.5]
+# Complement below for [0.5, -0.5].
 eval range from 0 to 50m step 5m count(limit_ratio(0.5, http_requests) or limit_ratio(-0.5, http_requests))
     {} 8+0x10
 
 eval range from 0 to 50m step 5m count(limit_ratio(0.5, http_requests) and limit_ratio(-0.5, http_requests))
 # empty
 
-# Complement below for [0.8, -0.2]
+# Complement below for [0.8, -0.2].
 eval range from 0 to 50m step 5m count(limit_ratio(0.8, http_requests) or limit_ratio(-0.2, http_requests))
     {} 8+0x10
 
@@ -145,8 +145,8 @@ eval range from 0 to 50m step 5m count(limit_ratio(time() % 17/17, http_requests
 eval range from 0 to 50m step 5m count(limit_ratio(time() % 17/17, http_requests) and limit_ratio(1.0 - (time() % 17/17), http_requests))
 # empty
 
-# Poor man's normality check: ok (loaded samples follow a nice linearity over labels and time)
-# The check giving: 1 (i.e. true)
+# Poor man's normality check: ok (loaded samples follow a nice linearity over labels and time).
+# The check giving: 1 (i.e. true).
 eval range from 0 to 50m step 5m abs(avg(limit_ratio(0.5, http_requests{instance!~"histogram_[0-9]"})) - avg(limit_ratio(-0.5, http_requests{instance!~"histogram_[0-9]"}))) <= bool stddev(http_requests{instance!~"histogram_[0-9]"})
 	{} 1+0x10
 

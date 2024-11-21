@@ -3244,7 +3244,7 @@ seriesLoop:
 			// We build a heap of up to k elements, with the smallest element at heap[0].
 			switch {
 			case s.H != nil:
-				// ignore histogram sample and add info annotation
+				// Ignore histogram sample and add info annotation.
 				annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("topk", e.PosRange))
 			case len(group.heap) < k:
 				heap.Push(&group.heap, &s)
@@ -3260,7 +3260,7 @@ seriesLoop:
 			// We build a heap of up to k elements, with the biggest element at heap[0].
 			switch {
 			case s.H != nil:
-				// ignore histogram sample and add info annotation
+				// Ignore histogram sample and add info annotation.
 				annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("bottomk", e.PosRange))
 			case len(group.heap) < k:
 				heap.Push((*vectorByReverseValueHeap)(&group.heap), &s)
