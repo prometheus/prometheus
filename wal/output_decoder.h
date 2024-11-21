@@ -242,10 +242,7 @@ class GoSliceSink : public snappy::Sink {
   PROMPP_ALWAYS_INLINE explicit GoSliceSink(Primitives::Go::Slice<char>& out) : out_(out) {}
 
   // Append implementation snappy::Sink.
-  PROMPP_ALWAYS_INLINE void Append(const char* data, size_t len) override {
-    out_.reserve(len);
-    out_.push_back(data, data + len);
-  }
+  PROMPP_ALWAYS_INLINE void Append(const char* data, size_t len) override { out_.push_back(data, data + len); }
 };
 
 class ProtobufEncoder {
