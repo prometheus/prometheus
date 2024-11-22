@@ -314,8 +314,8 @@ class ProtobufEncoder {
     // make protobuf from group for output shards
     size_t number_of_shards = out_slices.size();
     std::string protobuf;
-    Primitives::BasicTimeseries<Primitives::SnugComposites::LabelSet::EncodingBimap::value_type*, BareBones::Vector<Primitives::Sample>*> timeseries;
-    std::vector<const RefSample*> buf;
+    Primitives::BasicTimeseries<Primitives::SnugComposites::LabelSet::EncodingBimap::value_type*, BareBones::Vector<Primitives::Sample>> timeseries;
+    std::vector<const RefSample*> refSamples;
 
     for (size_t shard_id = 0; shard_id < number_of_shards; ++shard_id) {
       for (const auto* srs : batch) {
@@ -325,16 +325,26 @@ class ProtobufEncoder {
         }
 
         for (const auto& rs : srs->ref_samples) {
-          buf.push_back(&rs);
+          refSamples.push_back(&rs);
         }
       }
 
-      std::sort(buf.begin(), buf.end(), [](const RefSample* a, const RefSample* b) PROMPP_LAMBDA_INLINE {
-        //
-        if (a->id < b->id && a->t < b->t) {
+      std::ranges::sort(refSamples.begin(), refSamples.end(), [](const RefSample* a, const RefSample* b) PROMPP_LAMBDA_INLINE {
+        if (a->id < b->id) {
+          return true;
         }
-        return a->t < b->t;
+
+        if (a->id == b->id) {
+          return a->t < b->t;
+        }
+
+        return false;
       });
+
+      //
+      for (const RefSample* rsample : refSamples) {
+      }
+
       //
     }
 
