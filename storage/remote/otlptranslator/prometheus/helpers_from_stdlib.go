@@ -63,21 +63,20 @@ func getTokensAndSeparators(s string, f func(rune) bool, allowUTF8 bool) ([]stri
 	a := make([]string, len(tokens))
 	// Separators are infered from the position gaps between tokens.
 	separators := make([]string, 0, len(tokens)-1)
-	for i := 0; i < len(tokens); i++ {
+	a[0] = s[tokens[0].start:tokens[0].end]
+	for i := 1; i < len(tokens); i++ {
 		a[i] = s[tokens[i].start:tokens[i].end]
-		if i > 0 {
-			if allowUTF8 {
-				separators = append(separators, s[tokens[i-1].end:tokens[i].start])
-			} else {
-				sep := ""
-				// We measure the rune count instead of using len because len returns amount of
-				// bytes in the string, and utf-8 runes can be multiple bytes long.
-				runeCount := utf8.RuneCountInString(s[tokens[i-1].end:tokens[i].start])
-				for j := 0; j < runeCount; j++ {
-					sep += "_"
-				}
-				separators = append(separators, sep)
+		if allowUTF8 {
+			separators = append(separators, s[tokens[i-1].end:tokens[i].start])
+		} else {
+			sep := ""
+			// We measure the rune count instead of using len because len returns amount of
+			// bytes in the string, and utf-8 runes can be multiple bytes long.
+			runeCount := utf8.RuneCountInString(s[tokens[i-1].end:tokens[i].start])
+			for j := 0; j < runeCount; j++ {
+				sep += "_"
 			}
+			separators = append(separators, sep)
 		}
 	}
 
