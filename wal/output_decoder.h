@@ -254,6 +254,51 @@ class ProtobufEncoder {
   PROMPP_ALWAYS_INLINE explicit ProtobufEncoder(std::vector<Primitives::SnugComposites::LabelSet::EncodingBimap*>& output_lsses) noexcept
       : output_lsses_{std::move(output_lsses)} {}
 
+  // // encode incoming refsamples to snapped protobufs on shards.
+  // PROMPP_ALWAYS_INLINE void encode(Primitives::Go::SliceView<ShardRefSample*>& batch, Primitives::Go::Slice<Primitives::Go::Slice<char>>& out_slices) {
+  //   if (out_slices.empty()) [[unlikely]] {
+  //     // if shards scale 0, do nothing
+  //     return;
+  //   }
+
+  //   // resize container for output protobufs
+  //   size_t shards = out_slices.size();
+  //   std::vector<std::string> protobufs;
+  //   protobufs.resize(shards);
+
+  //   // grouping samples by ls id and main shard id
+  //   for (const auto* srs : batch) {
+  //     for (const auto& rs : srs->ref_samples) {
+  //       cache_[{rs.id, srs->shard_id}].emplace_back(rs.t, rs.v);
+  //     }
+  //   }
+
+  //   // make protobufs from group for output shards
+  //   Primitives::BasicTimeseries<Primitives::SnugComposites::LabelSet::EncodingBimap::value_type*, BareBones::Vector<Primitives::Sample>*> timeseries;
+  //   for (auto& [key, samples] : cache_) {
+  //     auto out_ls = (*output_lsses_[key.second])[key.first];
+  //     timeseries.set_label_set(&out_ls);
+  //     std::sort(samples.begin(), samples.end(),
+  //               [](Primitives::Sample& a, Primitives::Sample& b) PROMPP_LAMBDA_INLINE { return a.timestamp() < b.timestamp(); });
+  //     timeseries.set_samples(&samples);
+
+  //     protozero::pbf_writer writer(protobufs[static_cast<size_t>(key.first) % shards]);
+  //     Prometheus::RemoteWrite::write_timeseries(writer, timeseries);
+  //     cache_.erase(key);
+  //   }
+
+  //   // compress to snappy
+  //   for (size_t i = 0; i < out_slices.size(); ++i) {
+  //     if (protobufs[i].empty()) [[unlikely]] {
+  //       continue;
+  //     }
+
+  //     GoSliceSink writer(out_slices[i]);
+  //     snappy::ByteArraySource reader(protobufs[i].c_str(), protobufs[i].size());
+  //     snappy::Compress(&reader, &writer);
+  //   }
+  // }
+
   // encode incoming refsamples to snapped protobufs on shards.
   PROMPP_ALWAYS_INLINE void encode(Primitives::Go::SliceView<ShardRefSample*>& batch, Primitives::Go::Slice<Primitives::Go::Slice<char>>& out_slices) {
     if (out_slices.empty()) [[unlikely]] {
