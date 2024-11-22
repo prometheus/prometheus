@@ -261,10 +261,7 @@ class ProtobufEncoder {
       return;
     }
 
-    // resize container for output protobufs
     size_t shards = out_slices.size();
-    std::vector<std::string> protobufs;
-    protobufs.resize(shards);
 
     // grouping samples by ls id and main shard id
     for (const auto* srs : batch) {
@@ -272,6 +269,10 @@ class ProtobufEncoder {
         cache_[{rs.id, srs->shard_id}].emplace_back(rs.t, rs.v);
       }
     }
+
+    // resize container for output protobufs
+    std::vector<std::string> protobufs;
+    protobufs.resize(shards);
 
     // make protobufs from group for output shards
     Primitives::BasicTimeseries<Primitives::SnugComposites::LabelSet::EncodingBimap::value_type*, BareBones::Vector<Primitives::Sample>*> timeseries;
