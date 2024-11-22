@@ -303,6 +303,79 @@ class ProtobufEncoder {
       protobuf.clear();
     }
   }
+
+  // encode incoming refsamples to snapped protobufs on shards.
+  PROMPP_ALWAYS_INLINE void encode2(Primitives::Go::SliceView<ShardRefSample*>& batch, Primitives::Go::Slice<Primitives::Go::Slice<char>>& out_slices) {
+    if (out_slices.empty()) [[unlikely]] {
+      // if shards scale 0, do nothing
+      return;
+    }
+
+    // make protobuf from group for output shards
+    size_t number_of_shards = out_slices.size();
+    std::string protobuf;
+    Primitives::BasicTimeseries<Primitives::SnugComposites::LabelSet::EncodingBimap::value_type*, BareBones::Vector<Primitives::Sample>*> timeseries;
+    std::vector<const RefSample*> buf;
+
+    for (size_t shard_id = 0; shard_id < number_of_shards; ++shard_id) {
+      for (const auto* srs : batch) {
+        if ((static_cast<size_t>(srs->shard_id) % number_of_shards) != shard_id) {
+          // skip data not for this shard
+          continue;
+        }
+
+        for (const auto& rs : srs->ref_samples) {
+          buf.push_back(&rs);
+        }
+      }
+
+      std::sort(buf.begin(), buf.end(), [](const RefSample* a, const RefSample* b) PROMPP_LAMBDA_INLINE {
+        //
+        if (a->id < b->id && a->t < b->t) {
+        }
+        return a->t < b->t;
+      });
+      //
+    }
+
+    // grouping samples by ls id and main shard id
+    for (const auto* srs : batch) {
+      for (const auto& rs : srs->ref_samples) {
+        cache_[{rs.id, srs->shard_id}].emplace_back(rs.t, rs.v);
+      }
+    }
+
+    for (size_t shard_id = 0; shard_id < number_of_shards; ++shard_id) {
+      for (auto& [key, samples] : cache_) {
+        if ((static_cast<size_t>(key.first) % number_of_shards) != shard_id) {
+          // skip data not for this shard
+          continue;
+        }
+
+        auto out_ls = (*output_lsses_[key.second])[key.first];
+        timeseries.set_label_set(&out_ls);
+        std::sort(samples.begin(), samples.end(),
+                  [](Primitives::Sample& a, Primitives::Sample& b) PROMPP_LAMBDA_INLINE { return a.timestamp() < b.timestamp(); });
+        timeseries.set_samples(&samples);
+
+        protozero::pbf_writer writer(protobuf);
+        Prometheus::RemoteWrite::write_timeseries(writer, timeseries);
+        cache_.erase(key);
+      }
+
+      if (protobuf.empty()) [[unlikely]] {
+        // skip empty protobuf
+        continue;
+      }
+
+      // compress to snappy
+      GoSliceSink writer(out_slices[shard_id]);
+      snappy::ByteArraySource reader(protobuf.c_str(), protobuf.size());
+      snappy::Compress(&reader, &writer);
+
+      protobuf.clear();
+    }
+  }
 };
 
 }  // namespace PromPP::WAL
