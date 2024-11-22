@@ -201,7 +201,7 @@ func TestBuildCompliantNameWithSuffixes(t *testing.T) {
 	require.Equal(t, "foo_bar_ratio", BuildCompliantName(createGauge("foo.bar", "1"), "", true, false))
 	// Slashes in units are converted.
 	require.Equal(t, "system_io_foo_per_bar_total", BuildCompliantName(createCounter("system.io", "foo/bar"), "", true, false))
-	require.Equal(t, "metric_with_foreign_characters_total", BuildCompliantName(createCounter("metric_with_字符_foreign_characters", ""), "", true, false))
+	require.Equal(t, "metric_with____foreign_characters_total", BuildCompliantName(createCounter("metric_with_字符_foreign_characters", ""), "", true, false))
 }
 
 func TestBuildCompliantNameWithoutSuffixes(t *testing.T) {

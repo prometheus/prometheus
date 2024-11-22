@@ -16,7 +16,10 @@
 
 package prometheus
 
-import "strings"
+import (
+	"strings"
+	"unicode/utf8"
+)
 
 // getTokensAndSeparators was originally a copy of strings.FieldsFunc from the Go standard library.
 // We've made a few changes to it, making sure we return the separator between tokens. If
@@ -67,7 +70,10 @@ func getTokensAndSeparators(s string, f func(rune) bool, allowUTF8 bool) ([]stri
 				separators = append(separators, s[tokens[i-1].end:tokens[i].start])
 			} else {
 				sep := ""
-				for j := tokens[i-1].end; j < tokens[i].start; j++ {
+				// We measure the rune count instead of using len because len returns amount of
+				// bytes in the string, and utf-8 runes can be multiple bytes long.
+				runeCount := utf8.RuneCountInString(s[tokens[i-1].end:tokens[i].start])
+				for j := 0; j < runeCount; j++ {
 					sep += "_"
 				}
 				separators = append(separators, sep)
