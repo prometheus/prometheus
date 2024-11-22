@@ -18,17 +18,17 @@ package prometheus
 
 import "strings"
 
-// fieldsFunc is a copy of strings.FieldsFunc from the Go standard library,
-// but it also returns the separators as part of the result.
-func fieldsFunc(s string, f func(rune) bool) ([]string, []string) {
-	// A span is used to record a slice of s of the form s[start:end].
+// getTokensAndSeparators was originally a copy of strings.FieldsFunc from the Go standard library.
+// We've made a few changes to it, making sure we return the separator between tokens. If
+// UTF-8 isn't allowed, we replace all runes from the separator with an underscore.
+func getTokensAndSeparators(s string, f func(rune) bool, allowUTF8 bool) ([]string, []string) {
+	// A token is used to record a slice of s of the form s[start:end].
 	// The start index is inclusive and the end index is exclusive.
-	type span struct {
+	type token struct {
 		start int
 		end   int
 	}
-	spans := make([]span, 0, 32)
-	separators := make([]string, 0, 32)
+	tokens := make([]token, 0, 32)
 
 	// Find the field start and end indices.
 	// Doing this in a separate pass (rather than slicing the string s
@@ -38,12 +38,11 @@ func fieldsFunc(s string, f func(rune) bool) ([]string, []string) {
 	for end, rune := range s {
 		if f(rune) {
 			if start >= 0 {
-				spans = append(spans, span{start, end})
+				tokens = append(tokens, token{start, end})
 				// Set start to a negative value.
 				// Note: using -1 here consistently and reproducibly
 				// slows down this code by a several percent on amd64.
 				start = ^start
-				separators = append(separators, string(s[end]))
 			}
 		} else {
 			if start < 0 {
@@ -54,13 +53,26 @@ func fieldsFunc(s string, f func(rune) bool) ([]string, []string) {
 
 	// Last field might end at EOF.
 	if start >= 0 {
-		spans = append(spans, span{start, len(s)})
+		tokens = append(tokens, token{start, len(s)})
 	}
 
 	// Create strings from recorded field indices.
-	a := make([]string, len(spans))
-	for i, span := range spans {
-		a[i] = s[span.start:span.end]
+	a := make([]string, len(tokens))
+	// Separators are infered from the position gaps between tokens.
+	separators := make([]string, 0, len(tokens)-1)
+	for i := 0; i < len(tokens); i++ {
+		a[i] = s[tokens[i].start:tokens[i].end]
+		if i > 0 {
+			if allowUTF8 {
+				separators = append(separators, s[tokens[i-1].end:tokens[i].start])
+			} else {
+				sep := ""
+				for j := tokens[i-1].end; j < tokens[i].start; j++ {
+					sep += "_"
+				}
+				separators = append(separators, sep)
+			}
+		}
 	}
 
 	return a, separators

@@ -130,9 +130,7 @@ func normalizeName(metric pmetric.Metric, namespace string, allowUTF8 bool) stri
 		translationFunc = func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != ':' }
 	}
 	// Split metric name into "tokens" (of supported metric name runes).
-	// Note that this has the side effect of replacing multiple consecutive underscores with a single underscore.
-	// This is part of the OTel to Prometheus specification: https://github.com/open-telemetry/opentelemetry-specification/blob/v1.38.0/specification/compatibility/prometheus_and_openmetrics.md#otlp-metric-points-to-prometheus.
-	nameTokens, separators := fieldsFunc(metric.Name(), translationFunc)
+	nameTokens, separators := getTokensAndSeparators(metric.Name(), translationFunc, allowUTF8)
 
 	// Split unit at the '/' if any
 	unitTokens := strings.SplitN(metric.Unit(), "/", 2)
@@ -202,10 +200,6 @@ func normalizeName(metric pmetric.Metric, namespace string, allowUTF8 bool) stri
 	}
 
 	// Build the string from the tokens + separators.
-	// If UTF-8 isn't allowed, we'll use underscores as separators.
-	if !allowUTF8 {
-		separators = []string{}
-	}
 	normalizedName := join(nameTokens, separators, "_")
 
 	// Metric name cannot start with a digit, so prefix it with "_" in this case
