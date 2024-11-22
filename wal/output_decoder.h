@@ -251,7 +251,7 @@ class ProtobufEncoder {
 
  public:
   // ProtobufEncoder constructor.
-  PROMPP_ALWAYS_INLINE explicit ProtobufEncoder(std::vector<Primitives::SnugComposites::LabelSet::EncodingBimap*>& output_lsses) noexcept
+  PROMPP_ALWAYS_INLINE explicit ProtobufEncoder(std::vector<Primitives::SnugComposites::LabelSet::EncodingBimap*>&& output_lsses) noexcept
       : output_lsses_{std::move(output_lsses)} {}
 
   // encode incoming refsamples to snapped protobufs on shards.

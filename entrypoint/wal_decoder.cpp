@@ -314,7 +314,7 @@ extern "C" void prompp_wal_protobuf_encoder_ctor(void* args, void* res) {
     output_lsses.push_back(&std::get<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>(*output_lss));
   }
 
-  out->encoder = new PromPP::WAL::ProtobufEncoder(output_lsses);
+  out->encoder = new PromPP::WAL::ProtobufEncoder(std::move(output_lsses));
 }
 
 extern "C" void prompp_wal_protobuf_encoder_dtor(void* args) {

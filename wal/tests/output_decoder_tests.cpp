@@ -355,7 +355,7 @@ TEST_F(TestProtobufEncoder, Encode) {
   Go::SliceView<ShardRefSample*> batch;
   batch.reset_to(vector_batch.data(), vector_batch.size());
 
-  ProtobufEncoder penc(output_lsses);
+  ProtobufEncoder penc(std::move(output_lsses));
   Go::Slice<Go::Slice<char>> out_slices;
   out_slices.resize(2);
   penc.encode(batch, out_slices);
