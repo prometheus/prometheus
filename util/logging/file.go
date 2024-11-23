@@ -14,6 +14,7 @@
 package logging
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -57,26 +58,8 @@ func (l *JSONFileLogger) With(args ...any) {
 	l.logger = l.logger.With(args...)
 }
 
-// Info calls the `Info()` method on the underlying `log/slog.Logger` with the
+// Log calls the `Log()` method on the underlying `log/slog.Logger` with the
 // provided msg and args. It implements the promql.QueryLogger interface.
-func (l *JSONFileLogger) Info(msg string, args ...any) {
-	l.logger.Info(msg, args...)
-}
-
-// Error calls the `Error()` method on the underlying `log/slog.Logger` with the
-// provided msg and args. It implements the promql.QueryLogger interface.
-func (l *JSONFileLogger) Error(msg string, args ...any) {
-	l.logger.Error(msg, args...)
-}
-
-// Debug calls the `Debug()` method on the underlying `log/slog.Logger` with the
-// provided msg and args. It implements the promql.QueryLogger interface.
-func (l *JSONFileLogger) Debug(msg string, args ...any) {
-	l.logger.Debug(msg, args...)
-}
-
-// Warn calls the `Warn()` method on the underlying `log/slog.Logger` with the
-// provided msg and args. It implements the promql.QueryLogger interface.
-func (l *JSONFileLogger) Warn(msg string, args ...any) {
-	l.logger.Warn(msg, args...)
+func (l *JSONFileLogger) Log(ctx context.Context, level slog.Level, msg string, args ...any) {
+	l.logger.Log(ctx, level, msg, args...)
 }

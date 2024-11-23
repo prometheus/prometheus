@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"sort"
 	"strconv"
@@ -2169,31 +2170,10 @@ func (f *FakeQueryLogger) Close() error {
 }
 
 // It implements the promql.QueryLogger interface.
-func (f *FakeQueryLogger) Info(msg string, args ...any) {
-	log := append([]any{msg}, args...)
-	log = append(log, f.attrs...)
-	f.attrs = f.attrs[:0]
-	f.logs = append(f.logs, log...)
-}
-
-// It implements the promql.QueryLogger interface.
-func (f *FakeQueryLogger) Error(msg string, args ...any) {
-	log := append([]any{msg}, args...)
-	log = append(log, f.attrs...)
-	f.attrs = f.attrs[:0]
-	f.logs = append(f.logs, log...)
-}
-
-// It implements the promql.QueryLogger interface.
-func (f *FakeQueryLogger) Warn(msg string, args ...any) {
-	log := append([]any{msg}, args...)
-	log = append(log, f.attrs...)
-	f.attrs = f.attrs[:0]
-	f.logs = append(f.logs, log...)
-}
-
-// It implements the promql.QueryLogger interface.
-func (f *FakeQueryLogger) Debug(msg string, args ...any) {
+func (f *FakeQueryLogger) Log(ctx context.Context, level slog.Level, msg string, args ...any) {
+	// Test usage only really cares about existence of keyvals passed in
+	// via args, just append in the log message before handling the
+	// provided args and any embedded kvs added via `.With()` on f.attrs.
 	log := append([]any{msg}, args...)
 	log = append(log, f.attrs...)
 	f.attrs = f.attrs[:0]
