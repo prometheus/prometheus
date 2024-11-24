@@ -178,7 +178,7 @@ against regular expressions. The following label matching operators exist:
 * `=~`: Select labels that regex-match the provided string.
 * `!~`: Select labels that do not regex-match the provided string.
 
-Regex matches are fully anchored. A match of `env=~"foo"` is treated as `env=~"^foo$"`.
+[Regex](#regular-expressions) matches are fully anchored. A match of `env=~"foo"` is treated as `env=~"^foo$"`.
 
 For example, this selects all `http_requests_total` time series for `staging`,
 `testing`, and `development` environments and HTTP methods other than `GET`.
@@ -240,9 +240,6 @@ The metric name must not be one of the keywords `bool`, `on`, `ignoring`, `group
 A workaround for this restriction is to use the `__name__` label:
 
     {__name__="on"} # Good!
-
-All regular expressions in Prometheus use [RE2
-syntax](https://github.com/google/re2/wiki/Syntax).
 
 ### Range Vector Selectors
 
@@ -364,6 +361,12 @@ in detail in the [expression language functions](functions.md) page.
 PromQL supports line comments that start with `#`. Example:
 
         # This is a comment
+
+## Regular expressions
+
+All regular expressions in Prometheus use [RE2 syntax](https://github.com/google/re2/wiki/Syntax).
+
+Regex matches are always fully anchored.
 
 ## Gotchas
 
