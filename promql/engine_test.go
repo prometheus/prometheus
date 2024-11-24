@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"math"
 	"sort"
@@ -2147,9 +2148,13 @@ func TestSubquerySelector(t *testing.T) {
 	}
 }
 
+var _ io.Closer = (*FakeQueryLogger)(nil)
+
+var _ slog.Handler = (*FakeQueryLogger)(nil)
+
 type FakeQueryLogger struct {
 	closed bool
-	logs   []interface{}
+	logs   []any
 	attrs  []any
 }
 
@@ -2161,26 +2166,47 @@ func NewFakeQueryLogger() *FakeQueryLogger {
 	}
 }
 
-// It implements the promql.QueryLogger interface.
 func (f *FakeQueryLogger) Close() error {
 	f.closed = true
 	return nil
 }
 
-// It implements the promql.QueryLogger interface.
-func (f *FakeQueryLogger) Log(ctx context.Context, level slog.Level, msg string, args ...any) {
+func (f *FakeQueryLogger) Enabled(ctx context.Context, level slog.Level) bool {
+	return true
+}
+
+func (f *FakeQueryLogger) Handle(ctx context.Context, r slog.Record) error {
 	// Test usage only really cares about existence of keyvals passed in
 	// via args, just append in the log message before handling the
 	// provided args and any embedded kvs added via `.With()` on f.attrs.
-	log := append([]any{msg}, args...)
-	log = append(log, f.attrs...)
+	log := append([]any{r.Message}, f.attrs...)
 	f.attrs = f.attrs[:0]
+
+	r.Attrs(func(a slog.Attr) bool {
+		log = append(log, a.Key, a.Value.Any())
+		return true
+	})
+
 	f.logs = append(f.logs, log...)
+	return nil
 }
 
-// It implements the promql.QueryLogger interface.
-func (f *FakeQueryLogger) With(args ...any) {
-	f.attrs = append(f.attrs, args...)
+func (f *FakeQueryLogger) WithAttrs(attrs []slog.Attr) slog.Handler {
+	attrPairs := []any{}
+	for _, a := range attrs {
+		attrPairs = append(attrPairs, a.Key, a.Value.Any())
+	}
+
+	return &FakeQueryLogger{
+		closed: f.closed,
+		logs:   f.logs,
+		attrs:  append(f.attrs, attrPairs...),
+	}
+}
+
+func (f *FakeQueryLogger) WithGroup(name string) slog.Handler {
+	// We don't need to support groups for this fake handler in testing.
+	return f
 }
 
 func TestQueryLogger_basic(t *testing.T) {

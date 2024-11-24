@@ -47,6 +47,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/prometheus/prometheus/util/logging"
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/zeropool"
 )
@@ -123,12 +124,13 @@ type QueryEngine interface {
 	NewRangeQuery(ctx context.Context, q storage.Queryable, opts QueryOpts, qs string, start, end time.Time, interval time.Duration) (Query, error)
 }
 
+var _ QueryLogger = (*logging.JSONFileLogger)(nil)
+
 // QueryLogger is an interface that can be used to log all the queries logged
 // by the engine.
 type QueryLogger interface {
-	Log(context.Context, slog.Level, string, ...any)
-	With(args ...any)
-	Close() error
+	slog.Handler
+	io.Closer
 }
 
 // A Query is derived from an a raw query string and can be run against an engine
@@ -626,6 +628,9 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annota
 	defer func() {
 		ng.queryLoggerLock.RLock()
 		if l := ng.queryLogger; l != nil {
+			logger := slog.New(l)
+			f := make([]any, 0, 16) // Probably enough up front to not need to reallocate on append.
+
 			params := make(map[string]interface{}, 4)
 			params["query"] = q.q
 			if eq, ok := q.Statement().(*parser.EvalStmt); ok {
@@ -634,7 +639,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annota
 				// The step provided by the user is in seconds.
 				params["step"] = int64(eq.Interval / (time.Second / time.Nanosecond))
 			}
-			f := []interface{}{"params", params}
+			f = append(f, "params", params)
 			if err != nil {
 				f = append(f, "error", err)
 			}
@@ -647,7 +652,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annota
 					f = append(f, k, v)
 				}
 			}
-			l.Log(context.Background(), slog.LevelInfo, "promql query logged", f...)
+			logger.Info("promql query logged", f...)
 			// TODO: @tjhop -- do we still need this metric/error log if logger doesn't return errors?
 			// ng.metrics.queryLogFailures.Inc()
 			// ng.logger.Error("can't log query", "err", err)
