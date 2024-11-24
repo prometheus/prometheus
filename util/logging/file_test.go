@@ -14,6 +14,8 @@
 package logging
 
 import (
+	"context"
+	"log/slog"
 	"os"
 	"strings"
 	"testing"
@@ -34,7 +36,7 @@ func TestJSONFileLogger_basic(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, l, "logger can't be nil")
 
-	l.Info("test", "hello", "world")
+	l.Log(context.Background(), slog.LevelInfo, "test", "hello", "world")
 	require.NoError(t, err)
 	r := make([]byte, 1024)
 	_, err = f.Read(r)
@@ -64,14 +66,14 @@ func TestJSONFileLogger_parallel(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, l, "logger can't be nil")
 
-	l.Info("test", "hello", "world")
+	l.Log(context.Background(), slog.LevelInfo, "test", "hello", "world")
 	require.NoError(t, err)
 
 	l2, err := NewJSONFileLogger(f.Name())
 	require.NoError(t, err)
 	require.NotNil(t, l, "logger can't be nil")
 
-	l2.Info("test", "hello", "world")
+	l2.Log(context.Background(), slog.LevelInfo, "test", "hello", "world")
 	require.NoError(t, err)
 
 	err = l.Close()
