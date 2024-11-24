@@ -37,7 +37,7 @@ Depending on the use-case (e.g. when graphing vs. displaying the output of an
 expression), only some of these types are legal as the result of a
 user-specified expression. 
 For [instant queries](api.md#instant-queries), any of the above data types are allowed as the root of the expression.
-[Range queries](api.md/#range-queries) only support scalar-typed and instant-vector-typed expressions.
+[Range queries](api.md#range-queries) only support scalar-typed and instant-vector-typed expressions.
 
 _Notes about the experimental native histograms:_
 
@@ -152,7 +152,7 @@ The value returned will be that of the most recent sample at or before the
 query's evaluation timestamp (in the case of an
 [instant query](api.md#instant-queries))
 or the current step within the query (in the case of a
-[range query](api.md/#range-queries)).
+[range query](api.md#range-queries)).
 The [`@` modifier](#modifier) allows overriding the timestamp relative to which
 the selection takes place. Time series are only returned if their most recent sample is less than the [lookback period](#staleness) ago.
 
