@@ -465,11 +465,7 @@ func funcSortByLabelDesc(vals []parser.Value, args parser.Expressions, enh *Eval
 	return vals[0].(Vector), nil
 }
 
-// === clamp(Vector parser.ValueTypeVector, min, max Scalar) (Vector, Annotations) ===
-func funcClamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	vec := vals[0].(Vector)
-	minVal := vals[1].(Vector)[0].F
-	maxVal := vals[2].(Vector)[0].F
+func clamp(vec Vector, minVal, maxVal float64, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	if maxVal < minVal {
 		return enh.Out, nil
 	}
@@ -490,46 +486,26 @@ func funcClamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 	return enh.Out, nil
 }
 
+// === clamp(Vector parser.ValueTypeVector, min, max Scalar) (Vector, Annotations) ===
+func funcClamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	vec := vals[0].(Vector)
+	minVal := vals[1].(Vector)[0].F
+	maxVal := vals[2].(Vector)[0].F
+	return clamp(vec, minVal, maxVal, enh)
+}
+
 // === clamp_max(Vector parser.ValueTypeVector, max Scalar) (Vector, Annotations) ===
 func funcClampMax(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	vec := vals[0].(Vector)
 	maxVal := vals[1].(Vector)[0].F
-	for _, el := range vec {
-		if el.H != nil {
-			// Process only float samples.
-			continue
-		}
-		if !enh.enableDelayedNameRemoval {
-			el.Metric = el.Metric.DropMetricName()
-		}
-		enh.Out = append(enh.Out, Sample{
-			Metric:   el.Metric,
-			F:        math.Min(maxVal, el.F),
-			DropName: true,
-		})
-	}
-	return enh.Out, nil
+	return clamp(vec, math.Inf(-1), maxVal, enh)
 }
 
 // === clamp_min(Vector parser.ValueTypeVector, min Scalar) (Vector, Annotations) ===
 func funcClampMin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	vec := vals[0].(Vector)
 	minVal := vals[1].(Vector)[0].F
-	for _, el := range vec {
-		if el.H != nil {
-			// Process only float samples.
-			continue
-		}
-		if !enh.enableDelayedNameRemoval {
-			el.Metric = el.Metric.DropMetricName()
-		}
-		enh.Out = append(enh.Out, Sample{
-			Metric:   el.Metric,
-			F:        math.Max(minVal, el.F),
-			DropName: true,
-		})
-	}
-	return enh.Out, nil
+	return clamp(vec, minVal, math.Inf(+1), enh)
 }
 
 // === round(Vector parser.ValueTypeVector, toNearest=1 Scalar) (Vector, Annotations) ===
