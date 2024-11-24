@@ -135,7 +135,7 @@ global:
   [ keep_dropped_targets: <int> | default = 0 ]
 
   # Specifies the validation scheme for metric and label names. Either blank or
-  # "utf8" for for full UTF-8 support, or "legacy" for letters, numbers, colons,
+  # "utf8" for full UTF-8 support, or "legacy" for letters, numbers, colons,
   # and underscores.
   [ metric_name_validation_scheme <string> | default "utf8" ]
 
