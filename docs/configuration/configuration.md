@@ -183,7 +183,7 @@ otlp:
   #   for units and _total like in UnderscoreEscapingWithSuffixes.
   [ translation_strategy: <string> | default = "UnderscoreEscapingWithSuffixes" ]
   # Enables adding "service.name", "service.namespace" and "service.instance.id"
-  # resource attributes to the "target_info" metric, on top of conveting
+  # resource attributes to the "target_info" metric, on top of converting
   # them into the "instance" and "job" labels.
   [ keep_identifying_resource_attributes: <boolean> | default = false]
 
