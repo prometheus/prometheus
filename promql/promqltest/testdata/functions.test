@@ -1023,10 +1023,10 @@ eval instant at 1m last_over_time(data[2m])
 	data{type="only_nan"} NaN
 
 eval instant at 1m avg_over_time(data[2m])
+	data{type="some_nan3"} 0.5
 	data{type="numbers"} 1.6666666666666667
 	data{type="some_nan"} 1
 	data{type="some_nan2"} 1.5
-	data{type="some_nan3"} 0.5
 	data{type="only_nan"} NaN
 
 clear
