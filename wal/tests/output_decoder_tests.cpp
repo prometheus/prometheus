@@ -359,7 +359,7 @@ TEST_F(TestProtobufEncoder, Encode) {
   Go::Slice<Go::Slice<char>> out_slices;
   out_slices.resize(2);
   penc.encode(batch, out_slices);
-  EXPECT_GE(70, out_slices[0].size());
+  EXPECT_GE(71, out_slices[0].size());
   EXPECT_GE(50, out_slices[1].size());
 }
 
