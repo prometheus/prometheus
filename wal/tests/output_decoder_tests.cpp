@@ -7,9 +7,6 @@
 #include "wal/hashdex.h"
 #include "wal/output_decoder.h"
 
-#define PROTOZERO_USE_VIEW std::string_view
-#include "third_party/protozero/pbf_writer.hpp"
-
 struct GoLabelSet {
   PromPP::Primitives::Go::Slice<char> data;
   PromPP::Primitives::Go::Slice<PromPP::Primitives::Go::LabelView> pairs;
@@ -224,10 +221,12 @@ TEST_F(TestWALOutputDecoder, ProcessSegment) {
   std::stringstream segment_stream;
   Encoder enc{uint16_t{0}, uint8_t{0}};
 
-  std::vector<std::vector<GoTimeSeries>> expected_segments{
-      {{{{"__name__", "value1"}, {"job", "abc"}}, {10, 1}}},
-      {},  // load empty data
-      {{{{"__name__", "value1"}, {"job", "abc"}}, {11, 1}}, {{{"__name__", "value2"}, {"job", "abc"}}, {11, 1}}}};
+  std::vector<std::vector<GoTimeSeries>> expected_segments{{{{{"__name__", "value1"}, {"job", "abc"}}, {10, 1}}},  // keep
+                                                           {},                                                     // load empty data
+                                                           {
+                                                               {{{"__name__", "value1"}, {"job", "abc"}}, {11, 1}},  // keep
+                                                               {{{"__name__", "value2"}, {"job", "abc"}}, {11, 1}},  // keep
+                                                           }};
 
   for (const auto& expected_segment : expected_segments) {
     segment_stream.str("");
@@ -240,6 +239,37 @@ TEST_F(TestWALOutputDecoder, ProcessSegment) {
       EXPECT_EQ(std::bit_cast<uint64_t>(expected_segment[ls_id].value), std::bit_cast<uint64_t>(v));
     });
   }
+}
+
+TEST_F(TestWALOutputDecoder, ProcessSegmentWithDrop) {
+  stateless_relabeler_reset_to({{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2}});  // Keep
+  OutputDecoder wod(sr_, output_lss_, external_labels_);
+  std::stringstream segment_stream;
+  Encoder enc{uint16_t{0}, uint8_t{0}};
+
+  std::vector<std::vector<GoTimeSeries>> expected_segments{
+      {{{{"__name__", "value1"}, {"job", "abc1"}}, {10, 1}}},  // drop
+      {{{{"__name__", "value1"}, {"job", "abc"}}, {11, 1}}},   // keep
+  };
+
+  size_t processed{0};
+  for (size_t i = 0; i < expected_segments.size(); ++i) {
+    if (i == 0) {
+      continue;
+    }
+
+    segment_stream.str("");
+    make_segment(expected_segments[i], segment_stream, enc);
+    std::ispanstream inspan(segment_stream.view());
+    inspan >> wod;
+    wod.process_segment([&](LabelSetID ls_id, Timestamp ts, Sample::value_type v) {
+      EXPECT_LT(ls_id, expected_segments[i].size());
+      EXPECT_EQ(expected_segments[i][ls_id].timestamp, ts);
+      EXPECT_EQ(std::bit_cast<uint64_t>(expected_segments[i][ls_id].value), std::bit_cast<uint64_t>(v));
+    });
+    ++processed;
+  }
+  EXPECT_EQ(1, processed);
 }
 
 TEST_F(TestWALOutputDecoder, ProcessSegmentWithDump) {
@@ -291,6 +321,46 @@ TEST_F(TestWALOutputDecoder, ProcessSegmentWithDump) {
       EXPECT_EQ(std::bit_cast<uint64_t>(expected_segment[ls_id].value), std::bit_cast<uint64_t>(v));
     });
   }
+}
+
+//
+// ProtobufEncoder
+//
+
+struct TestProtobufEncoder : public testing::Test {};
+
+TEST_F(TestProtobufEncoder, Encode) {
+  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap output_lss0;
+  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap output_lss1;
+  std::vector<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap*> output_lsses;
+  output_lsses.reserve(2);
+  output_lsses.push_back(&output_lss0);
+  output_lsses.push_back(&output_lss1);
+
+  std::vector<PromPP::WAL::RefSample> ref_samples0;
+  ref_samples0.emplace_back(output_lss0.find_or_emplace(LabelViewSet{{"__name__", "value1"}, {"job", "abc"}}), 10, 1);
+  ref_samples0.emplace_back(output_lss0.find_or_emplace(LabelViewSet{{"__name__", "value1"}, {"job", "abc"}}), 9, 2);
+  ref_samples0.emplace_back(output_lss0.find_or_emplace(LabelViewSet{{"__name__", "value2"}, {"job", "abc"}}), 10, 1);
+  ShardRefSample srs0;
+  srs0.ref_samples.reset_to(ref_samples0.data(), ref_samples0.size());
+  srs0.shard_id = 0;
+
+  std::vector<PromPP::WAL::RefSample> ref_samples1;
+  ref_samples1.emplace_back(output_lss1.find_or_emplace(LabelViewSet{{"__name__", "value3"}, {"job", "abc3"}}), 10, 1);
+  ShardRefSample srs1;
+  srs1.ref_samples.reset_to(ref_samples1.data(), ref_samples1.size());
+  srs1.shard_id = 1;
+
+  std::vector<ShardRefSample*> vector_batch{&srs0, &srs1};
+  Go::SliceView<ShardRefSample*> batch;
+  batch.reset_to(vector_batch.data(), vector_batch.size());
+
+  ProtobufEncoder penc(output_lsses);
+  Go::Slice<Go::Slice<char>> out_slices;
+  out_slices.resize(2);
+  penc.encode(batch, out_slices);
+  EXPECT_EQ(85, out_slices[0].size());
+  EXPECT_EQ(49, out_slices[1].size());
 }
 
 }  // namespace

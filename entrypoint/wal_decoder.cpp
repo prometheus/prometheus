@@ -286,7 +286,62 @@ extern "C" void prompp_wal_output_decoder_decode(void* args, void* res) {
   try {
     std::ispanstream{static_cast<std::string_view>(in->segment)} >> *in->decoder;
     in->decoder->process_segment([&](PromPP::Primitives::LabelSetID ls_id, PromPP::Primitives::Timestamp ts, PromPP::Primitives::Sample::value_type v)
-                                     __attribute__((always_inline)) { out->ref_samples.emplace_back(ls_id, ts, v); });
+                                     PROMPP_LAMBDA_INLINE { out->ref_samples.emplace_back(ls_id, ts, v); });
+  } catch (...) {
+    auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
+    handle_current_exception(__func__, err_stream);
+  }
+}
+
+//
+// ProtobufEncoder
+//
+
+extern "C" void prompp_wal_protobuf_encoder_ctor(void* args, void* res) {
+  struct Arguments {
+    PromPP::Primitives::Go::SliceView<LssVariantPtr> output_lsses;
+  };
+  using Result = struct {
+    PromPP::WAL::ProtobufEncoder* encoder;
+  };
+
+  auto* in = reinterpret_cast<Arguments*>(args);
+  Result* out = new (res) Result();
+
+  std::vector<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap*> output_lsses;
+  output_lsses.reserve(in->output_lsses.size());
+  for (const auto& output_lss : in->output_lsses) {
+    output_lsses.push_back(&std::get<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>(*output_lss));
+  }
+
+  out->encoder = new PromPP::WAL::ProtobufEncoder(output_lsses);
+}
+
+extern "C" void prompp_wal_protobuf_encoder_dtor(void* args) {
+  struct Arguments {
+    PromPP::WAL::ProtobufEncoder* encoder;
+  };
+
+  Arguments* in = reinterpret_cast<Arguments*>(args);
+  delete in->encoder;
+}
+
+extern "C" void prompp_wal_protobuf_encoder_encode(void* args, void* res) {
+  struct Arguments {
+    PromPP::Primitives::Go::SliceView<PromPP::WAL::ShardRefSample*> batch;
+    PromPP::Primitives::Go::Slice<PromPP::Primitives::Go::Slice<char>> out_slices;
+    PromPP::WAL::ProtobufEncoder* encoder;
+  };
+
+  using Result = struct {
+    PromPP::Primitives::Go::Slice<char> error;
+  };
+
+  Arguments* in = reinterpret_cast<Arguments*>(args);
+  Result* out = new (res) Result();
+
+  try {
+    in->encoder->encode(in->batch, in->out_slices);
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
     handle_current_exception(__func__, err_stream);
