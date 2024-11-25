@@ -243,7 +243,8 @@ func (p *NHCBParser) compareLabels() bool {
 		// Different metric type.
 		return true
 	}
-	if p.lastHistogramName != convertnhcb.GetHistogramMetricBaseName(p.lset.Get(labels.MetricName)) {
+	_, name := convertnhcb.GetHistogramMetricBaseName(p.lset.Get(labels.MetricName))
+	if p.lastHistogramName != name {
 		// Different metric name.
 		return true
 	}
@@ -253,8 +254,8 @@ func (p *NHCBParser) compareLabels() bool {
 }
 
 // Save the label set of the classic histogram without suffix and bucket `le` label.
-func (p *NHCBParser) storeClassicLabels() {
-	p.lastHistogramName = convertnhcb.GetHistogramMetricBaseName(p.lset.Get(labels.MetricName))
+func (p *NHCBParser) storeClassicLabels(name string) {
+	p.lastHistogramName = name
 	p.lastHistogramLabelsHash, _ = p.lset.HashWithoutLabels(p.hBuffer, labels.BucketLabel)
 	p.lastHistogramExponential = false
 }
@@ -275,25 +276,30 @@ func (p *NHCBParser) handleClassicHistogramSeries(lset labels.Labels) bool {
 	}
 	mName := lset.Get(labels.MetricName)
 	// Sanity check to ensure that the TYPE metadata entry name is the same as the base name.
-	if convertnhcb.GetHistogramMetricBaseName(mName) != string(p.bName) {
+	suffixType, name := convertnhcb.GetHistogramMetricBaseName(mName)
+	if name != string(p.bName) {
 		return false
 	}
-	switch {
-	case strings.HasSuffix(mName, "_bucket") && lset.Has(labels.BucketLabel):
+	switch suffixType {
+	case convertnhcb.SuffixBucket:
+		if !lset.Has(labels.BucketLabel) {
+			// This should not really happen.
+			return false
+		}
 		le, err := strconv.ParseFloat(lset.Get(labels.BucketLabel), 64)
 		if err == nil && !math.IsNaN(le) {
-			p.processClassicHistogramSeries(lset, "_bucket", func(hist *convertnhcb.TempHistogram) {
+			p.processClassicHistogramSeries(lset, name, func(hist *convertnhcb.TempHistogram) {
 				_ = hist.SetBucketCount(le, p.value)
 			})
 			return true
 		}
-	case strings.HasSuffix(mName, "_count"):
-		p.processClassicHistogramSeries(lset, "_count", func(hist *convertnhcb.TempHistogram) {
+	case convertnhcb.SuffixCount:
+		p.processClassicHistogramSeries(lset, name, func(hist *convertnhcb.TempHistogram) {
 			_ = hist.SetCount(p.value)
 		})
 		return true
-	case strings.HasSuffix(mName, "_sum"):
-		p.processClassicHistogramSeries(lset, "_sum", func(hist *convertnhcb.TempHistogram) {
+	case convertnhcb.SuffixSum:
+		p.processClassicHistogramSeries(lset, name, func(hist *convertnhcb.TempHistogram) {
 			_ = hist.SetSum(p.value)
 		})
 		return true
@@ -301,12 +307,12 @@ func (p *NHCBParser) handleClassicHistogramSeries(lset labels.Labels) bool {
 	return false
 }
 
-func (p *NHCBParser) processClassicHistogramSeries(lset labels.Labels, suffix string, updateHist func(*convertnhcb.TempHistogram)) {
+func (p *NHCBParser) processClassicHistogramSeries(lset labels.Labels, name string, updateHist func(*convertnhcb.TempHistogram)) {
 	if p.state != stateCollecting {
-		p.storeClassicLabels()
+		p.storeClassicLabels(name)
 		p.tempCT = p.parser.CreatedTimestamp()
 		p.state = stateCollecting
-		p.tempLsetNHCB = convertnhcb.GetHistogramMetricBase(lset, suffix)
+		p.tempLsetNHCB = convertnhcb.GetHistogramMetricBase(lset, name)
 	}
 	p.storeExemplars()
 	updateHist(&p.tempNHCB)

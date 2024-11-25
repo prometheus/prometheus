@@ -228,26 +228,34 @@ func (h TempHistogram) convertToFloatHistogram() (*histogram.Histogram, *histogr
 	return nil, rh.Compact(0), nil
 }
 
-func GetHistogramMetricBase(m labels.Labels, suffix string) labels.Labels {
-	mName := m.Get(labels.MetricName)
+func GetHistogramMetricBase(m labels.Labels, name string) labels.Labels {
 	return labels.NewBuilder(m).
-		Set(labels.MetricName, strings.TrimSuffix(mName, suffix)).
+		Set(labels.MetricName, name).
 		Del(labels.BucketLabel).
 		Labels()
 }
 
+type SuffixType int
+
+const (
+	SuffixNone SuffixType = iota
+	SuffixBucket
+	SuffixSum
+	SuffixCount
+)
+
 // GetHistogramMetricBaseName removes the suffixes _bucket, _sum, _count from
 // the metric name. We specifically do not remove the _created suffix as that
 // should be removed by the caller.
-func GetHistogramMetricBaseName(s string) string {
+func GetHistogramMetricBaseName(s string) (SuffixType, string) {
 	if r, ok := strings.CutSuffix(s, "_bucket"); ok {
-		return r
+		return SuffixBucket, r
 	}
 	if r, ok := strings.CutSuffix(s, "_sum"); ok {
-		return r
+		return SuffixSum, r
 	}
 	if r, ok := strings.CutSuffix(s, "_count"); ok {
-		return r
+		return SuffixCount, r
 	}
-	return s
+	return SuffixNone, s
 }
