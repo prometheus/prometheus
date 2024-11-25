@@ -2440,7 +2440,7 @@ func TestScrapeConfigDisableCompression(t *testing.T) {
 
 func TestScrapeConfigNameValidationSettings(t *testing.T) {
 	model.NameValidationScheme = model.UTF8Validation
-	defer t.Cleanup(func() {
+	t.Cleanup(func() {
 		model.NameValidationScheme = model.LegacyValidation
 	})
 
