@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"os"
 )
@@ -50,17 +49,13 @@ func (c *Cursor) Read() (data CursorData, err error) {
 		return data, err
 	}
 
-	br := &byteReader{r: c.file}
-	segmentIDU64, err := binary.ReadUvarint(br)
-	if err != nil {
-		return data, err
+	if err = binary.Read(c.file, binary.LittleEndian, &data.SegmentID); err != nil {
+		return data, fmt.Errorf("failed to read segment id: %w", err)
 	}
-	configCRC32U64, err := binary.ReadUvarint(br)
-	if err != nil {
-		return data, err
+	if err = binary.Read(c.file, binary.LittleEndian, &data.ConfigCRC32); err != nil {
+		return data, fmt.Errorf("failed to read config crc32: %w", err)
 	}
-	data.SegmentID = uint32(segmentIDU64)
-	data.ConfigCRC32 = uint32(configCRC32U64)
+
 	return data, nil
 }
 
@@ -70,30 +65,17 @@ func (c *Cursor) Write(data CursorData) error {
 		return err
 	}
 
-	size := binary.PutUvarint(c.buf[:], uint64(data.SegmentID))
-	_, err = c.file.Write(c.buf[:size])
+	if err = binary.Write(c.file, binary.LittleEndian, data.SegmentID); err != nil {
+		return fmt.Errorf("failed to write segment id: %w", err)
+	}
 
-	size = binary.PutUvarint(c.buf[:], uint64(data.ConfigCRC32))
-	_, err = c.file.WriteAt(c.buf[:size], int64(size))
+	if err = binary.Write(c.file, binary.LittleEndian, data.ConfigCRC32); err != nil {
+		return fmt.Errorf("failed to write config crc32: %w", err)
+	}
 
 	return err
 }
 
 func (c *Cursor) Close() error {
 	return c.file.Close()
-}
-
-type byteReader struct {
-	r io.Reader
-	n int
-}
-
-func (r *byteReader) ReadByte() (byte, error) {
-	b := make([]byte, 1)
-	n, err := r.r.Read(b)
-	if err != nil {
-		return 0, err
-	}
-	r.n += n
-	return b[0], nil
 }

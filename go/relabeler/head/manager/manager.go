@@ -84,7 +84,7 @@ func (m *Manager) Restore(blockDuration time.Duration) (active relabeler.Head, r
 
 	for index, headRecord := range headRecords {
 		var h relabeler.Head
-		headDir := filepath.Join(m.dir, headRecord.Dir)
+		headDir := headRecord.Dir
 		if headRecord.Status == catalog.StatusPersisted {
 			continue
 		}

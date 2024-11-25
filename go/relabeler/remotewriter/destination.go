@@ -11,9 +11,9 @@ func (c DestinationConfig) EqualTo(other DestinationConfig) bool {
 	return false
 }
 
-func (c DestinationConfig) Hash() uint32 {
+func (c DestinationConfig) CRC32() (uint32, error) {
 	// todo: implement me
-	return 0
+	return 0, nil
 }
 
 type Destination struct {

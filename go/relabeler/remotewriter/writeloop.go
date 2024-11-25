@@ -1,6 +1,7 @@
 package remotewriter
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head/catalog"
@@ -35,6 +36,7 @@ func (wl *writeLoop) start() {
 			_ = ds.Close()
 		}
 	}()
+	ctx, cancel := context.WithCancel(context.Background())
 
 	var backOff time.Duration
 	for {
@@ -65,13 +67,25 @@ func (wl *writeLoop) start() {
 		}
 
 		var delay time.Duration
+		var stopped bool
+		var iterationFinished bool
 	loop:
 		for {
+
+			if stopped && iterationFinished {
+				cancel()
+				return
+			}
+
 			select {
 			case <-wl.stopc:
-				return
+				stopped = true
+				cancel()
 			case <-time.After(delay):
-				if err = wl.iterate(ds); err != nil {
+				iterationFinished = false
+				err = wl.iterate(ctx, ds)
+				iterationFinished = true
+				if err != nil {
 					if errors.Is(err, io.EOF) {
 						break loop
 					}
@@ -106,7 +120,7 @@ func (wl *writeLoop) nextDataSource() (*dataSource, error) {
 		return nil, fmt.Errorf("failed to find next head: %w", err)
 	}
 
-	ds, err := newDataSource(nextHeadRecord.Dir, nextHeadRecord.NumberOfShards, wl.destination.Config().Name, wl.destination.Config().Hash())
+	ds, err := newDataSource(nextHeadRecord.Dir, nextHeadRecord.NumberOfShards, wl.destination.Config())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create data source: %w", err)
 	}
@@ -118,9 +132,7 @@ func (wl *writeLoop) nextDataSource() (*dataSource, error) {
 
 func nextHead(headCatalog Catalog, headID string) (catalog.Record, error) {
 	headRecords, err := headCatalog.List(
-		func(record catalog.Record) bool {
-			return record.Status != catalog.StatusCorrupted
-		},
+		nil,
 		func(lhs, rhs catalog.Record) bool {
 			return lhs.CreatedAt < rhs.CreatedAt
 		},
@@ -149,9 +161,7 @@ func nextHead(headCatalog Catalog, headID string) (catalog.Record, error) {
 
 func scanForNextHead(headCatalog Catalog, destinationName string) (catalog.Record, error) {
 	headRecords, err := headCatalog.List(
-		func(record catalog.Record) bool {
-			return record.Status != catalog.StatusCorrupted
-		},
+		nil,
 		func(lhs, rhs catalog.Record) bool {
 			return lhs.CreatedAt < rhs.CreatedAt
 		},
@@ -202,12 +212,12 @@ func scanHeadForDestination(headRecord catalog.Record, destinationName string) (
 
 var ErrNoData = errors.New("no data")
 
-func (wl *writeLoop) iterate(ds *dataSource) error {
-	data, err := ds.Next()
+func (wl *writeLoop) iterate(ctx context.Context, ds *dataSource) error {
+	data, segmentID, err := ds.Next(ctx)
 	if err != nil {
 		return err
 	}
 
 	fmt.Println("data", len(data))
-	return ds.Ack(data[0].ID)
+	return ds.Ack(segmentID)
 }

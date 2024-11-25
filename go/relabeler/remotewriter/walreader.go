@@ -9,26 +9,24 @@ import (
 )
 
 type walReader struct {
-	nextSegmentID  uint32
-	file           *os.File
-	encoderVersion uint8
+	nextSegmentID uint32
+	file          *os.File
 }
 
-func newWalReader(fileName string) (*walReader, error) {
+func newWalReader(fileName string) (*walReader, uint8, error) {
 	file, err := os.Open(fileName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read wal file: %w", err)
+		return nil, 0, fmt.Errorf("failed to read wal file: %w", err)
 	}
 
 	_, encoderVersion, _, err := head.ReadHeader(file)
 	if err != nil {
-		return nil, errors.Join(fmt.Errorf("failed to read header: %w", err), file.Close())
+		return nil, 0, errors.Join(fmt.Errorf("failed to read header: %w", err), file.Close())
 	}
 
 	return &walReader{
-		file:           file,
-		encoderVersion: encoderVersion,
-	}, nil
+		file: file,
+	}, encoderVersion, nil
 }
 
 type Segment struct {
@@ -51,7 +49,6 @@ func (r *walReader) Next() (segment Segment, err error) {
 
 	segment.ID = r.nextSegmentID
 	r.nextSegmentID++
-	segment.encoderVersion = r.encoderVersion
 	segment.DecodedSegment = decodedSegment
 
 	return segment, nil
