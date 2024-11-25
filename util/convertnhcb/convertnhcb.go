@@ -139,19 +139,15 @@ func (h TempHistogram) Convert() (*histogram.Histogram, *histogram.FloatHistogra
 		return nil, nil, h.err
 	}
 
-	if len(h.buckets) == 0 || h.buckets[len(h.buckets)-1].le != math.Inf(1) {
-		// No +Inf bucket.
-		if !h.hasCount && len(h.buckets) > 0 {
-			// No count either, so set count to the last known bucket's count.
-			h.count = h.buckets[len(h.buckets)-1].count
-		}
-		// Let the last bucket be +Inf with the overall count.
-		h.buckets = append(h.buckets, tempHistogramBucket{le: math.Inf(1), count: h.count})
+	if !h.hasCount && len(h.buckets) > 0 {
+		// No count, so set count to the highest known bucket's count.
+		h.count = h.buckets[len(h.buckets)-1].count
 	}
 
-	if !h.hasCount {
-		h.count = h.buckets[len(h.buckets)-1].count
-		h.hasCount = true
+	if len(h.buckets) == 0 || h.buckets[len(h.buckets)-1].le != math.Inf(1) {
+		// No +Inf bucket.
+		// Let the last bucket be +Inf with the overall count.
+		h.buckets = append(h.buckets, tempHistogramBucket{le: math.Inf(1), count: h.count})
 	}
 
 	for _, b := range h.buckets {
