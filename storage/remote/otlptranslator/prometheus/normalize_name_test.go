@@ -85,17 +85,17 @@ func TestEmpty(t *testing.T) {
 func TestAllowUTF8(t *testing.T) {
 	t.Run("allow UTF8", func(t *testing.T) {
 		require.Equal(t, "unsupported.metric.temperature_°F", normalizeName(createGauge("unsupported.metric.temperature", "°F"), "", true))
-		require.Equal(t, "unsupported.metric.weird_+=.:,!* & #", normalizeName(createGauge("unsupported.metric.weird", "+=.:,!* & #"), "", true))
+		require.Equal(t, "unsupported.metric.+weird_+=.:,!* & #", normalizeName(createGauge("unsupported.metric.+weird", "+=.:,!* & #"), "", true))
 		require.Equal(t, "unsupported.metric.redundant___test $_per_°C", normalizeName(createGauge("unsupported.metric.redundant", "__test $/°C"), "", true))
 		require.Equal(t, "metric_with_字符_foreign_characters_ど", normalizeName(createGauge("metric_with_字符_foreign_characters", "ど"), "", true))
 		require.Equal(t, "metric....split_=+by_//utf8characters", normalizeName(createGauge("metric....split_=+by_//utf8characters", ""), "", true))
 	})
 	t.Run("disallow UTF8", func(t *testing.T) {
 		require.Equal(t, "unsupported_metric_temperature_F", normalizeName(createGauge("unsupported.metric.temperature", "°F"), "", false))
-		require.Equal(t, "unsupported_metric_weird", normalizeName(createGauge("unsupported.metric.weird", "+=.:,!* & #"), "", false))
+		require.Equal(t, "unsupported_metric_weird", normalizeName(createGauge("unsupported.metric.+weird", "+=.:,!* & #"), "", false))
 		require.Equal(t, "unsupported_metric_redundant_test_per_C", normalizeName(createGauge("unsupported.metric.redundant", "__test $/°C"), "", false))
-		require.Equal(t, "metric_with____foreign_characters", normalizeName(createGauge("metric_with_字符_foreign_characters", "ど"), "", false))
-		require.Equal(t, "metric____split___by___utf8characters", normalizeName(createGauge("metric....split_=+by_//utf8characters", ""), "", false))
+		require.Equal(t, "metric_with_foreign_characters", normalizeName(createGauge("metric_with_字符_foreign_characters", "ど"), "", false))
+		require.Equal(t, "metric_split_by_utf8characters", normalizeName(createGauge("metric....split_=+by_//utf8characters", ""), "", false))
 	})
 }
 
@@ -194,14 +194,14 @@ func TestBuildCompliantNameWithSuffixes(t *testing.T) {
 	require.Equal(t, "system_io_bytes_total", BuildCompliantName(createCounter("system.io", "By"), "", true, false))
 	require.Equal(t, "system_network_io_bytes_total", BuildCompliantName(createCounter("network.io", "By"), "system", true, false))
 	require.Equal(t, "_3_14_digits", BuildCompliantName(createGauge("3.14 digits", ""), "", true, false))
-	require.Equal(t, "envoy__rule_engine_zlib_buf_error", BuildCompliantName(createGauge("envoy__rule_engine_zlib_buf_error", ""), "", true, false))
+	require.Equal(t, "envoy_rule_engine_zlib_buf_error", BuildCompliantName(createGauge("envoy__rule_engine_zlib_buf_error", ""), "", true, false))
 	require.Equal(t, ":foo::bar", BuildCompliantName(createGauge(":foo::bar", ""), "", true, false))
 	require.Equal(t, ":foo::bar_total", BuildCompliantName(createCounter(":foo::bar", ""), "", true, false))
 	// Gauges with unit 1 are considered ratios.
 	require.Equal(t, "foo_bar_ratio", BuildCompliantName(createGauge("foo.bar", "1"), "", true, false))
 	// Slashes in units are converted.
 	require.Equal(t, "system_io_foo_per_bar_total", BuildCompliantName(createCounter("system.io", "foo/bar"), "", true, false))
-	require.Equal(t, "metric_with____foreign_characters_total", BuildCompliantName(createCounter("metric_with_字符_foreign_characters", ""), "", true, false))
+	require.Equal(t, "metric_with_foreign_characters_total", BuildCompliantName(createCounter("metric_with_字符_foreign_characters", ""), "", true, false))
 }
 
 func TestBuildCompliantNameWithoutSuffixes(t *testing.T) {
