@@ -161,7 +161,7 @@ func TestCreateAttributes(t *testing.T) {
 			settings := Settings{
 				PromoteResourceAttributes: tc.promoteResourceAttributes,
 			}
-			lbls := createAttributes(resource, attrs, settings, nil, false, model.MetricNameLabel, "test_metric")
+			lbls := createAttributes(resource, attrs, settings, false, model.MetricNameLabel, "test_metric")
 
 			assert.ElementsMatch(t, lbls, tc.expectedLabels)
 		})
