@@ -3,6 +3,7 @@ package cppbridge_test
 import (
 	"bytes"
 	"context"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -277,4 +278,6 @@ func (s *OutputDecoderSuite) TestWALProtobufEncoderEncode() {
 		s.Equal(int64((val+1)*100), actualWr.Timeseries[val].Samples[0].Timestamp)
 		s.Equal(float64(val+1), actualWr.Timeseries[val].Samples[0].Value)
 	}
+
+	runtime.KeepAlive(outputLss)
 }
