@@ -691,6 +691,7 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		if created && s.lastHistogramValue == nil && s.lastFloatHistogramValue == nil {
 			s.lastHistogramValue = &histogram.Histogram{}
 		}
+
 		// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 		// to skip that sample from the WAL and write only in the WBL.
 		_, delta, err := s.appendableHistogram(t, h, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head.opts.EnableOOONativeHistograms.Load())

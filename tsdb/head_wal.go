@@ -58,7 +58,6 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 	var unknownExemplarRefs atomic.Uint64
 	var unknownHistogramRefs atomic.Uint64
 	var unknownMetadataRefs atomic.Uint64
-
 	// Track number of series records that had overlapping m-map chunks.
 	var mmapOverlappingChunks atomic.Uint64
 
@@ -139,8 +138,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		dec := record.NewDecoder(syms)
 		for r.Next() {
 			rec := r.Record()
-			recType := dec.Type(rec)
-			switch recType {
+			switch dec.Type(rec) {
 			case record.Series:
 				series := seriesPool.Get()[:0]
 				series, err = dec.Series(rec, series)
@@ -618,7 +616,6 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			if s.t <= ms.mmMaxTime {
 				continue
 			}
-
 			var chunkCreated bool
 			if s.h != nil {
 				_, chunkCreated = ms.appendHistogram(s.t, s.h, 0, appendChunkOpts)
