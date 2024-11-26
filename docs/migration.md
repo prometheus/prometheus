@@ -112,7 +112,7 @@ may now fail if this fallback protocol is not specified.
 The TSDB format has been changed slightly in Prometheus v2.55 in preparation for changes 
 to the index format. Consequently, a Prometheus v3 TSDB can only be read by a
 Prometheus v2.55 or newer. Keep that in mind when upgrading to v3 -- you will be only
-able to downgrade to v2.55, not lower, without loosing your TSDB persitent data.
+able to downgrade to v2.55, not lower, without losing your TSDB persitent data.
 
 As an extra safety measure, you could optionally consider upgrading to v2.55 first and
 confirm Prometheus works as expected, before upgrading to v3.
