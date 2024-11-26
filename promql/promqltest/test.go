@@ -491,8 +491,8 @@ func newTempHistogramWrapper() tempHistogramWrapper {
 	}
 }
 
-func processClassicHistogramSeries(m labels.Labels, suffix string, histogramMap map[uint64]tempHistogramWrapper, smpls []promql.Sample, updateHistogram func(*convertnhcb.TempHistogram, float64)) {
-	m2 := convertnhcb.GetHistogramMetricBase(m, suffix)
+func processClassicHistogramSeries(m labels.Labels, name string, histogramMap map[uint64]tempHistogramWrapper, smpls []promql.Sample, updateHistogram func(*convertnhcb.TempHistogram, float64)) {
+	m2 := convertnhcb.GetHistogramMetricBase(m, name)
 	m2hash := m2.Hash()
 	histogramWrapper, exists := histogramMap[m2hash]
 	if !exists {
@@ -523,21 +523,25 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 	for hash, smpls := range cmd.defs {
 		m := cmd.metrics[hash]
 		mName := m.Get(labels.MetricName)
-		switch {
-		case strings.HasSuffix(mName, "_bucket") && m.Has(labels.BucketLabel):
+		suffixType, name := convertnhcb.GetHistogramMetricBaseName(mName)
+		switch suffixType {
+		case convertnhcb.SuffixBucket:
+			if !m.Has(labels.BucketLabel) {
+				panic(fmt.Sprintf("expected bucket label in metric %s", m))
+			}
 			le, err := strconv.ParseFloat(m.Get(labels.BucketLabel), 64)
 			if err != nil || math.IsNaN(le) {
 				continue
 			}
-			processClassicHistogramSeries(m, "_bucket", histogramMap, smpls, func(histogram *convertnhcb.TempHistogram, f float64) {
+			processClassicHistogramSeries(m, name, histogramMap, smpls, func(histogram *convertnhcb.TempHistogram, f float64) {
 				_ = histogram.SetBucketCount(le, f)
 			})
-		case strings.HasSuffix(mName, "_count"):
-			processClassicHistogramSeries(m, "_count", histogramMap, smpls, func(histogram *convertnhcb.TempHistogram, f float64) {
+		case convertnhcb.SuffixCount:
+			processClassicHistogramSeries(m, name, histogramMap, smpls, func(histogram *convertnhcb.TempHistogram, f float64) {
 				_ = histogram.SetCount(f)
 			})
-		case strings.HasSuffix(mName, "_sum"):
-			processClassicHistogramSeries(m, "_sum", histogramMap, smpls, func(histogram *convertnhcb.TempHistogram, f float64) {
+		case convertnhcb.SuffixSum:
+			processClassicHistogramSeries(m, name, histogramMap, smpls, func(histogram *convertnhcb.TempHistogram, f float64) {
 				_ = histogram.SetSum(f)
 			})
 		}

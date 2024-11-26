@@ -139,19 +139,16 @@ func (h TempHistogram) Convert() (*histogram.Histogram, *histogram.FloatHistogra
 		return nil, nil, h.err
 	}
 
-	if len(h.buckets) == 0 || h.buckets[len(h.buckets)-1].le != math.Inf(1) {
-		// No +Inf bucket.
-		if !h.hasCount && len(h.buckets) > 0 {
-			// No count either, so set count to the last known bucket's count.
-			h.count = h.buckets[len(h.buckets)-1].count
-		}
-		// Let the last bucket be +Inf with the overall count.
-		h.buckets = append(h.buckets, tempHistogramBucket{le: math.Inf(1), count: h.count})
-	}
-
-	if !h.hasCount {
+	if !h.hasCount && len(h.buckets) > 0 {
+		// No count, so set count to the highest known bucket's count.
 		h.count = h.buckets[len(h.buckets)-1].count
 		h.hasCount = true
+	}
+
+	if len(h.buckets) == 0 || h.buckets[len(h.buckets)-1].le != math.Inf(1) {
+		// No +Inf bucket.
+		// Let the last bucket be +Inf with the overall count.
+		h.buckets = append(h.buckets, tempHistogramBucket{le: math.Inf(1), count: h.count})
 	}
 
 	for _, b := range h.buckets {
@@ -232,26 +229,34 @@ func (h TempHistogram) convertToFloatHistogram() (*histogram.Histogram, *histogr
 	return nil, rh.Compact(0), nil
 }
 
-func GetHistogramMetricBase(m labels.Labels, suffix string) labels.Labels {
-	mName := m.Get(labels.MetricName)
+func GetHistogramMetricBase(m labels.Labels, name string) labels.Labels {
 	return labels.NewBuilder(m).
-		Set(labels.MetricName, strings.TrimSuffix(mName, suffix)).
+		Set(labels.MetricName, name).
 		Del(labels.BucketLabel).
 		Labels()
 }
 
+type SuffixType int
+
+const (
+	SuffixNone SuffixType = iota
+	SuffixBucket
+	SuffixSum
+	SuffixCount
+)
+
 // GetHistogramMetricBaseName removes the suffixes _bucket, _sum, _count from
 // the metric name. We specifically do not remove the _created suffix as that
 // should be removed by the caller.
-func GetHistogramMetricBaseName(s string) string {
+func GetHistogramMetricBaseName(s string) (SuffixType, string) {
 	if r, ok := strings.CutSuffix(s, "_bucket"); ok {
-		return r
+		return SuffixBucket, r
 	}
 	if r, ok := strings.CutSuffix(s, "_sum"); ok {
-		return r
+		return SuffixSum, r
 	}
 	if r, ok := strings.CutSuffix(s, "_count"); ok {
-		return r
+		return SuffixCount, r
 	}
-	return s
+	return SuffixNone, s
 }
