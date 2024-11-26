@@ -1426,23 +1426,75 @@ func funcResets(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelpe
 	return append(enh.Out, Sample{F: float64(resets)}), nil
 }
 
+// mergeSeries merges the floats and the histograms in a series
+// into a slice of Sample sorted by their timestamp.
+// it assumes that the floats and histograms are sorted by their timestamp.
+func mergeSeries(series Series) []*Sample {
+	floats := series.Floats
+	histograms := series.Histograms
+	samples := make([]*Sample, 0, len(floats)+len(histograms))
+
+	// i for iterating through floats and j for iterating through histograms
+	i, j := 0, 0
+	for i < len(floats) && j < len(histograms) {
+		if floats[i].T < histograms[j].T {
+			samples = append(samples, &Sample{
+				F: floats[i].F,
+			})
+			i++
+		} else {
+			samples = append(samples, &Sample{
+				H: histograms[j].H,
+			})
+			j++
+		}
+	}
+	// Append the remaining samples
+	for i < len(floats) {
+		samples = append(samples, &Sample{
+			F: floats[i].F,
+		})
+		i++
+	}
+	for j < len(histograms) {
+		samples = append(samples, &Sample{
+			H: histograms[j].H,
+		})
+		j++
+	}
+
+	return samples
+}
+
 // === changes(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcChanges(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	floats := vals[0].(Matrix)[0].Floats
+	samples := mergeSeries(vals[0].(Matrix)[0])
 	changes := 0
-
-	if len(floats) == 0 {
-		// TODO(beorn7): Only histogram values, still need to add support.
+	if len(samples) == 0 {
 		return enh.Out, nil
 	}
 
-	prev := floats[0].F
-	for _, sample := range floats[1:] {
-		current := sample.F
-		if current != prev && !(math.IsNaN(current) && math.IsNaN(prev)) {
-			changes++
+	prevSample := samples[0]
+	for _, curSample := range samples[1:] {
+		switch true {
+		case (*prevSample).H == nil && curSample.H == nil:
+			{
+				if curSample.F != prevSample.F && !(math.IsNaN(curSample.F) && math.IsNaN(prevSample.F)) {
+					changes++
+				}
+			}
+		case prevSample.H != nil && curSample.H == nil, prevSample.H == nil && curSample.H != nil:
+			{
+				changes++
+			}
+		case prevSample.H != nil && curSample.H != nil:
+			{
+				if !curSample.H.Equals(prevSample.H) {
+					changes++
+				}
+			}
 		}
-		prev = current
+		prevSample = curSample
 	}
 
 	return append(enh.Out, Sample{F: float64(changes)}), nil
