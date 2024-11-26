@@ -142,6 +142,7 @@ func (h TempHistogram) Convert() (*histogram.Histogram, *histogram.FloatHistogra
 	if !h.hasCount && len(h.buckets) > 0 {
 		// No count, so set count to the highest known bucket's count.
 		h.count = h.buckets[len(h.buckets)-1].count
+		h.hasCount = true
 	}
 
 	if len(h.buckets) == 0 || h.buckets[len(h.buckets)-1].le != math.Inf(1) {
