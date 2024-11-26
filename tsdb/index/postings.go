@@ -454,10 +454,14 @@ func (p *MemPostings) PostingsForAllLabelValues(ctx context.Context, name string
 
 	e := p.m[name]
 	its := make([]Postings, 0, len(e))
+	lps := make([]ListPostings, len(e))
+	i := 0
 	for _, refs := range e {
 		if len(refs) > 0 {
-			its = append(its, NewListPostings(refs))
+			lps[i] = ListPostings{list: refs}
+			its = append(its, &lps[i])
 		}
+		i++
 	}
 
 	// Let the mutex go before merging.
