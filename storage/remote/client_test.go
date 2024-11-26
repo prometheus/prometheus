@@ -90,6 +90,146 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 	}
 }
 
+func TestReadClientUserAgent(t *testing.T) {
+	tests := []struct {
+		name      string
+		userAgent string
+	}{
+		{
+			name:      "default-no-override",
+			userAgent: "",
+		},
+		{
+			name:      "overridden",
+			userAgent: "ArgleBargle/1.2.3",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var called bool
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					called = true
+					receivedHeaders := r.Header
+
+					// Check the X-Prometheus-User-Agent header.
+					require.Equal(t, []string{internalUserAgent}, receivedHeaders.Values("X-Prometheus-User-Agent"),
+						"expected X-Prometheus-User-Agent header to be default value of %q", internalUserAgent)
+
+					if test.userAgent == "" {
+						// Expect original header value.
+						require.Equal(t, []string{internalUserAgent}, receivedHeaders.Values("User-Agent"),
+							"expected User-Agent header to be default value of %q", internalUserAgent)
+					} else {
+						// Expect over-ridden header value.
+						require.Equal(t, []string{test.userAgent}, receivedHeaders.Values("User-Agent"),
+							"expected User-Agent header to be over-ridden value of %q", test.userAgent)
+					}
+					w.Header().Set("Content-Type", "text/plain")
+				}),
+			)
+			defer server.Close()
+
+			u, err := url.Parse(server.URL)
+			require.NoError(t, err)
+
+			conf := &ClientConfig{
+				URL:              &config_util.URL{URL: u},
+				Timeout:          model.Duration(5 * time.Second),
+				ChunkedReadLimit: config.DefaultChunkedReadLimit,
+			}
+
+			// Set the User-Agent.
+			if test.userAgent == "" {
+				// Ensure it is set to the default.
+				SetUserAgent(internalUserAgent)
+			} else {
+				SetUserAgent(test.userAgent)
+			}
+
+			c, err := NewReadClient("test", conf)
+			require.NoError(t, err)
+
+			query := &prompb.Query{}
+
+			_, err = c.Read(context.Background(), query, false)
+
+			require.ErrorContains(t, err, "unsupported content type")
+
+			require.True(t, called, "The remote server wasn't called")
+		})
+	}
+}
+
+func TestWriteClientUserAgent(t *testing.T) {
+	tests := []struct {
+		name      string
+		userAgent string
+	}{
+		{
+			name:      "default-no-override",
+			userAgent: "",
+		},
+		{
+			name:      "overridden",
+			userAgent: "ArgleBargle/1.2.3",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var called bool
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					called = true
+					receivedHeaders := r.Header
+
+					// Check the X-Prometheus-User-Agent header.
+					require.Equal(t, []string{internalUserAgent}, receivedHeaders.Values("X-Prometheus-User-Agent"),
+						"expected X-Prometheus-User-Agent header to be default value of %q", internalUserAgent)
+
+					if test.userAgent == "" {
+						// Expect original header value.
+						require.Equal(t, []string{internalUserAgent}, receivedHeaders.Values("User-Agent"),
+							"expected User-Agent header to be default value of %q", internalUserAgent)
+					} else {
+						// Expect over-ridden header value.
+						require.Equal(t, []string{test.userAgent}, receivedHeaders.Values("User-Agent"),
+							"expected User-Agent header to be over-ridden value of %q", test.userAgent)
+					}
+					// w.Header().Set("Content-Type", "text/plain")
+				}),
+			)
+			defer server.Close()
+
+			serverURL, err := url.Parse(server.URL)
+			require.NoError(t, err)
+
+			conf := &ClientConfig{
+				URL:     &config_util.URL{URL: serverURL},
+				Timeout: model.Duration(time.Second),
+			}
+
+			// Set the User-Agent.
+			if test.userAgent == "" {
+				// Ensure it is set to the default.
+				SetUserAgent(internalUserAgent)
+			} else {
+				SetUserAgent(test.userAgent)
+			}
+
+			hash, err := toHash(conf)
+			require.NoError(t, err)
+			c, err := NewWriteClient(hash, conf)
+			require.NoError(t, err)
+
+			_, err = c.Store(context.Background(), []byte{}, 0)
+			require.NoError(t, err)
+
+			require.True(t, called, "The remote server wasn't called")
+		})
+	}
+}
+
 func TestClientRetryAfter(t *testing.T) {
 	setupServer := func(statusCode int) *httptest.Server {
 		return httptest.NewServer(
