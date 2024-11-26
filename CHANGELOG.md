@@ -115,7 +115,7 @@ request accessed a block on disk at about the same time as TSDB created a new bl
 
 ## 2.54.1 / 2024-08-27
 
-* [BUGFIX] Scraping: allow multiple samples on same series, with explicit timestamps. #14685
+* [BUGFIX] Scraping: allow multiple samples on same series, with explicit timestamps (mixing samples of the same series with and without timestamps is still rejected). #14685
 * [BUGFIX] Docker SD: fix crash in `match_first_network` mode when container is reconnected to a new network. #14654
 * [BUGFIX] PromQL: fix experimental native histograms getting corrupted due to vector selector bug in range queries. #14538
 * [BUGFIX] PromQL: fix experimental native histogram counter reset detection on stale samples. #14514
@@ -197,6 +197,7 @@ This release changes the default for GOGC, the Go runtime control for the trade-
 ## 2.52.0 / 2024-05-07
 
 * [CHANGE] TSDB: Fix the predicate checking for blocks which are beyond the retention period to include the ones right at the retention boundary. #9633
+* [CHANGE] Scrape: Multiple samples (even with different timestamps) are treated as duplicates during one scrape.
 * [FEATURE] Kubernetes SD: Add a new metric `prometheus_sd_kubernetes_failures_total` to track failed requests to Kubernetes API. #13554
 * [FEATURE] Kubernetes SD: Add node and zone metadata labels when using the endpointslice role. #13935
 * [FEATURE] Azure SD/Remote Write: Allow usage of Azure authorization SDK. #13099
