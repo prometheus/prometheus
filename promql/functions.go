@@ -1476,8 +1476,8 @@ func funcChanges(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelp
 
 	prevSample := samples[0]
 	for _, curSample := range samples[1:] {
-		switch true {
-		case (*prevSample).H == nil && curSample.H == nil:
+		switch {
+		case prevSample.H == nil && curSample.H == nil:
 			{
 				if curSample.F != prevSample.F && !(math.IsNaN(curSample.F) && math.IsNaN(prevSample.F)) {
 					changes++
