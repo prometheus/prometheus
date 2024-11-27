@@ -713,6 +713,7 @@ load 10s
   metric8 9.988465674311579e+307 9.988465674311579e+307
   metric9 -9.988465674311579e+307 -9.988465674311579e+307 -9.988465674311579e+307
   metric10 -9.988465674311579e+307 9.988465674311579e+307
+  metric11 1 2 3 NaN NaN
 
 eval instant at 55s avg_over_time(metric[1m])
   {} 3
@@ -805,6 +806,19 @@ eval instant at 45s sum_over_time(metric10[1m])/count_over_time(metric10[1m])
 
 eval instant at 1m sum_over_time(metric10[2m])/count_over_time(metric10[2m])
   {} 0
+
+# NaN behavior.
+eval instant at 20s avg_over_time(metric11[1m])
+  {} 2
+
+eval instant at 30s avg_over_time(metric11[1m])
+  {} NaN
+
+eval instant at 1m avg_over_time(metric11[1m])
+  {} NaN
+
+eval instant at 1m sum_over_time(metric11[1m])/count_over_time(metric11[1m])
+  {} NaN
 
 # Test if very big intermediate values cause loss of detail.
 clear
