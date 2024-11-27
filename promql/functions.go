@@ -32,7 +32,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
-	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/prometheus/prometheus/util/annotations" 
 )
 
 // FunctionCall is the type of a PromQL function implementation
@@ -393,6 +393,12 @@ func funcDoubleExponentialSmoothing(vals []parser.Value, args parser.Expressions
 	}
 
 	return append(enh.Out, Sample{F: s1}), nil
+}
+
+// funcHoltWinters is the alias with a deprecation warning
+func funcHoltWinters(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+    log.Warn("holt_winters is deprecated and will be removed in Prometheus v3. Please use double_exponential_smoothing instead.")
+    return funcDoubleExponentialSmoothing(vals, args, enh)
 }
 
 // === sort(node parser.ValueTypeVector) (Vector, Annotations) ===
@@ -1659,6 +1665,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"histogram_stddev":             funcHistogramStdDev,
 	"histogram_stdvar":             funcHistogramStdVar,
 	"double_exponential_smoothing": funcDoubleExponentialSmoothing,
+	"holt_winters": 				funcDoubleExponentialSmoothing,
 	"hour":                         funcHour,
 	"idelta":                       funcIdelta,
 	"increase":                     funcIncrease,

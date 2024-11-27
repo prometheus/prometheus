@@ -695,6 +695,27 @@ eval instant at 8000s double_exponential_smoothing(http_requests[1m], 0.01, 0.1)
 	{job="api-server", instance="1", group="production"} -16000
 	{job="api-server", instance="0", group="canary"} 24000
 	{job="api-server", instance="1", group="canary"} -32000
+	
+# Tests for holt_winters alias
+eval instant at 8000s holt_winters(http_requests[1m], 0.01, 0.1)
+	{job="api-server", instance="0", group="production"} 8000
+	{job="api-server", instance="1", group="production"} 16000
+	{job="api-server", instance="0", group="canary"} 24000
+	{job="api-server", instance="1", group="canary"} 32000
+
+# negative trends
+clear
+load 10s
+	http_requests{job="api-server", instance="0", group="production"}	8000-10x1000
+	http_requests{job="api-server", instance="1", group="production"}	0-20x1000
+	http_requests{job="api-server", instance="0", group="canary"}		0+30x1000 300-80x1000
+	http_requests{job="api-server", instance="1", group="canary"}		0-40x1000 0+40x1000
+
+eval instant at 8000s holt_winters(http_requests[1m], 0.01, 0.1)
+	{job="api-server", instance="0", group="production"} 0
+	{job="api-server", instance="1", group="production"} -16000
+	{job="api-server", instance="0", group="canary"} 24000
+	{job="api-server", instance="1", group="canary"} -32000	
 
 # Tests for avg_over_time
 clear
