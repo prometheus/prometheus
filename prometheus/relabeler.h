@@ -311,6 +311,7 @@ class Cache {
     Status status{Status::kNotFound};
     uint16_t shard_id{};  // used only for kRelabel status
     uint32_t ls_id{};
+    uint32_t source_ls_id{};  // used only for kRelabel status
   };
 
   template <class InputLSS, class TargetLSS, class LabelSet>
@@ -333,7 +334,7 @@ class Cache {
     }
 
     if (auto it = cache_relabel_.find(ls_id); it != cache_relabel_.end()) {
-      return {.status = CheckResult::Status::kRelabel, .shard_id = it->second.shard_id, .ls_id = it->second.ls_id};
+      return {.status = CheckResult::Status::kRelabel, .shard_id = it->second.shard_id, .ls_id = it->second.ls_id, .source_ls_id = ls_id};
     }
 
     return {};
@@ -457,7 +458,7 @@ class PerShardRelabeler {
           shards_inner_series[shard_id_]->emplace_back(timeseries_buf_.samples(), check_result.ls_id);
         } break;
         case Cache::CheckResult::kRelabel: {
-          stale_nan_state.add_input(check_result.ls_id);
+          stale_nan_state.add_input(check_result.source_ls_id);
           shards_inner_series[check_result.shard_id]->emplace_back(timeseries_buf_.samples(), check_result.ls_id);
         } break;
         default:

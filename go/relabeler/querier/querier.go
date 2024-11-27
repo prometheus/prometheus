@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"runtime"
 	"sort"
-	"strings"
 	"time"
 	"unsafe"
 
@@ -155,6 +154,9 @@ func (q *Querier) Select(ctx context.Context, sortSeries bool, hints *storage.Se
 
 		if lssQueryResult.Status() != cppbridge.LSSQueryStatusMatch {
 			seriesSets[shard.ShardID()] = &SeriesSet{}
+			if lssQueryResult.Status() == cppbridge.LSSQueryStatusNoMatch {
+				return nil
+			}
 			return fmt.Errorf("failed to query from shard: %d, query status: %d", shard.ShardID(), lssQueryResult.Status())
 		}
 
@@ -166,7 +168,7 @@ func (q *Querier) Select(ctx context.Context, sortSeries bool, hints *storage.Se
 
 		if serializedChunks.NumberOfChunks() == 0 {
 			seriesSets[shard.ShardID()] = &SeriesSet{}
-			return fmt.Errorf("failed to query shard: %d, empty", shard.ShardID())
+			return nil
 		}
 
 		chunksIndex := serializedChunks.MakeIndex()
@@ -199,15 +201,14 @@ func (q *Querier) Select(ctx context.Context, sortSeries bool, hints *storage.Se
 			})
 		}
 		runtime.KeepAlive(getLabelSetsResult)
+		runtime.KeepAlive(lssQueryResult)
 
 		seriesSets[shard.ShardID()] = NewSeriesSet(localSeriesSets)
 		return nil
 	})
 	if err != nil {
-		if !strings.Contains(err.Error(), "query status: 2") {
-			logger.Warnf("QUERIER: Select failed: %s", err)
-		}
-		// todo: error
+		logger.Warnf("QUERIER: Select failed: %s", err)
+		return storage.ErrSeriesSet(err)
 	}
 
 	return storage.NewMergeSeriesSet(seriesSets, storage.ChainedSeriesMerge)
