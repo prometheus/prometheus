@@ -16,6 +16,7 @@ package annotations
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/prometheus/common/model"
 
@@ -42,6 +43,10 @@ func (a *Annotations) Add(err error) Annotations {
 	if *a == nil {
 		*a = Annotations{}
 	}
+	prevErr, exists := (*a)[err.Error()]
+	if exists {
+		err = merge(prevErr, err)
+	}
 	(*a)[err.Error()] = err
 	return *a
 }
@@ -56,6 +61,10 @@ func (a *Annotations) Merge(aa Annotations) Annotations {
 		*a = Annotations{}
 	}
 	for key, val := range aa {
+		prevVal, exists := (*a)[key]
+		if exists {
+			val = merge(prevVal, val)
+		}
 		(*a)[key] = val
 	}
 	return *a
@@ -125,6 +134,28 @@ func (a Annotations) CountWarningsAndInfo() (countWarnings, countInfo int) {
 	return
 }
 
+// merge tries to merge two annoErrs into one but only if they have the same structure,
+// i.e. the same error and the same number of min and max values, otherwise it just returns
+// the second error.
+func merge(a, b error) error {
+	var aErr, bErr annoErr
+	if errors.As(a, &aErr) && errors.As(b, &bErr) && aErr.Err.Error() == bErr.Err.Error() && len(aErr.Min) == len(bErr.Min) && len(aErr.Max) == len(bErr.Max) {
+		for i, aMin := range aErr.Min {
+			if aMin < bErr.Min[i] {
+				bErr.Min[i] = aMin
+			}
+		}
+		for i, aMax := range aErr.Max {
+			if aMax > bErr.Max[i] {
+				bErr.Max[i] = aMax
+			}
+		}
+		bErr.Count += aErr.Count + 1
+		return bErr
+	}
+	return b
+}
+
 //nolint:revive // error-naming.
 var (
 	// Currently there are only 2 types, warnings and info.
@@ -154,11 +185,19 @@ type annoErr struct {
 	PositionRange posrange.PositionRange
 	Err           error
 	Query         string
+	Min           []float64
+	Max           []float64
+	Count         int
 }
 
 func (e annoErr) Error() string {
 	if e.Query == "" {
 		return e.Err.Error()
+	}
+	if errors.Is(e.Err, HistogramQuantileForcedMonotonicityInfo) {
+		startTime := time.Unix(int64(e.Min[0]/1000), 0).Format(time.RFC3339)
+		endTime := time.Unix(int64(e.Max[0]/1000), 0).Format(time.RFC3339)
+		return fmt.Sprintf("%s, from buckets %.2f to %.2f, with a max diff of %.2f, over %d samples from %s to %s (%s)", e.Err, e.Min[1], e.Max[1], e.Max[2], e.Count+1, startTime, endTime, e.PositionRange.StartPosInput(e.Query, 0))
 	}
 	return fmt.Sprintf("%s (%s)", e.Err, e.PositionRange.StartPosInput(e.Query, 0))
 }
@@ -269,10 +308,13 @@ func NewPossibleNonCounterInfo(metricName string, pos posrange.PositionRange) er
 
 // NewHistogramQuantileForcedMonotonicityInfo is used when the input (classic histograms) to
 // histogram_quantile needs to be forced to be monotonic.
-func NewHistogramQuantileForcedMonotonicityInfo(metricName string, pos posrange.PositionRange) error {
+func NewHistogramQuantileForcedMonotonicityInfo(metricName string, pos posrange.PositionRange, ts int64, forcedMonotonicMinBucket, forcedMonotonicMaxBucket, forcedMonotonicMaxDiff float64) error {
+	floatTs := float64(ts)
 	return annoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w %q", HistogramQuantileForcedMonotonicityInfo, metricName),
+		Min:           []float64{floatTs, forcedMonotonicMinBucket},
+		Max:           []float64{floatTs, forcedMonotonicMaxBucket, forcedMonotonicMaxDiff},
 	}
 }
 
