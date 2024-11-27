@@ -241,7 +241,7 @@ func (d *Discovery) shouldWatch(name string, tags []string) bool {
 	return d.shouldWatchFromName(name) && d.shouldWatchFromTags(tags)
 }
 
-// shouldWatch returns whether the service of the given name should be watched based on its name.
+// shouldWatchFromName returns whether the service of the given name should be watched based on its name.
 func (d *Discovery) shouldWatchFromName(name string) bool {
 	// If there's no fixed set of watched services, we watch everything.
 	if len(d.watchedServices) == 0 {
@@ -256,7 +256,7 @@ func (d *Discovery) shouldWatchFromName(name string) bool {
 	return false
 }
 
-// shouldWatch returns whether the service of the given name should be watched based on its tags.
+// shouldWatchFromTags returns whether the service of the given name should be watched based on its tags.
 // This gets called when the user doesn't specify a list of services in order to avoid watching
 // *all* services. Details in https://github.com/prometheus/prometheus/pull/3814
 func (d *Discovery) shouldWatchFromTags(tags []string) bool {
