@@ -101,33 +101,101 @@ using GorillaEncoder =
 using GorillaDecoder =
     BareBones::Encoding::Gorilla::StreamDecoder<BareBones::Encoding::Gorilla::ZigZagTimestampDecoder<>, BareBones::Encoding::Gorilla::ValuesDecoder>;
 
+#pragma pack(push, 1)
+class CompactSamplesList {
+ public:
+  using SamplesVector = BareBones::Vector<Primitives::Sample>;
+
+  ~CompactSamplesList() {
+    if (type_ == Type::kPlural) {
+      sample_.plural.~SamplesVector();
+    }
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_single() const noexcept { return type_ == Type::kSingle; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_plural() const noexcept { return type_ == Type::kPlural; }
+
+  void add(const Primitives::Sample& sample) {
+    if (type_ == Type::kNone) [[likely]] {
+      type_ = Type::kSingle;
+      sample_.single = sample;
+    } else if (type_ == Type::kSingle) {
+      type_ = Type::kPlural;
+
+      if (const auto sample_copy = sample_.single; sample.timestamp() >= sample_copy.timestamp()) [[likely]] {
+        new (&sample_.plural) SamplesVector({sample_copy, sample});
+      } else {
+        new (&sample_.plural) SamplesVector({sample, sample_copy});
+      }
+    } else {
+      if (auto& plural = sample_.plural; plural.back().timestamp() <= sample.timestamp()) [[likely]] {
+        plural.emplace_back(sample);
+      } else {
+        const auto it = std::ranges::lower_bound(
+            plural, sample, [](const Primitives::Sample& a, const Primitives::Sample& b) PROMPP_LAMBDA_INLINE { return a.timestamp() <= b.timestamp(); });
+        plural.insert(it, sample);
+      }
+    }
+  }
+
+  [[nodiscard]] PROMPP_LAMBDA_INLINE const Primitives::Sample& sample() const noexcept {
+    assert(type_ == Type::kSingle);
+    return sample_.single;
+  }
+
+  [[nodiscard]] PROMPP_LAMBDA_INLINE const SamplesVector& samples() const noexcept {
+    assert(type_ == Type::kPlural);
+    return sample_.plural;
+  }
+
+ private:
+  enum class Type : uint8_t {
+    kNone = 0,
+    kSingle,
+    kPlural,
+  };
+
+  union SampleUnion {
+    SampleUnion() {}
+    ~SampleUnion() {}
+
+    Primitives::Sample single;
+    SamplesVector plural;
+  } sample_;
+  Type type_{Type::kNone};
+};
+#pragma pack(pop)
+
+}  // namespace PromPP::WAL
+
+template <>
+struct BareBones::IsTriviallyReallocatable<PromPP::WAL::CompactSamplesList> : std::true_type {};
+
+namespace PromPP::WAL {
+
 template <class LabelSetsTable = Primitives::SnugComposites::LabelSet::EncodingBimap, bool shrink_lss = false>
 class BasicEncoder {
  public:
   using checkpoint_type = typename std::remove_reference_t<LabelSetsTable>::checkpoint_type;
 
   class Buffer {
-    BareBones::SparseVector<Primitives::Sample> singular_;
-    BareBones::SparseVector<BareBones::Vector<Primitives::Sample>> plural_;
-    uint32_t samples_count_ = 0;
-    uint32_t series_count_ = 0;
+    BareBones::SparseVector<CompactSamplesList, BareBones::Vector> series_;
     Primitives::Timestamp earliest_sample_ = std::numeric_limits<Primitives::Timestamp>::max();
     Primitives::Timestamp latest_sample_ = 0;
     int64_t first_sample_added_at_tsns_ = 0;
+    uint32_t samples_count_ = 0;
 
    public:
     [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t samples_count() const noexcept { return samples_count_; }
-    [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t series_count() const noexcept { return series_count_; }
+    [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t series_count() const noexcept { return series_.items_count(); }
     [[nodiscard]] PROMPP_ALWAYS_INLINE Primitives::Timestamp earliest_sample() const noexcept { return earliest_sample_; }
     [[nodiscard]] PROMPP_ALWAYS_INLINE Primitives::Timestamp latest_sample() const noexcept { return latest_sample_; }
     [[nodiscard]] PROMPP_ALWAYS_INLINE int64_t first_sample_added_at_ts_ns() const noexcept { return first_sample_added_at_tsns_; }
 
     PROMPP_ALWAYS_INLINE void clear() noexcept {
-      singular_.clear();
-      plural_.clear();
+      series_.clear();
 
       samples_count_ = 0;
-      series_count_ = 0;
 
       earliest_sample_ = std::numeric_limits<Primitives::Timestamp>::max();
       latest_sample_ = 0;
@@ -143,65 +211,26 @@ class BasicEncoder {
 
       earliest_sample_ = std::min(smpl.timestamp(), earliest_sample_);
       latest_sample_ = std::max(smpl.timestamp(), latest_sample_);
-
       ++samples_count_;
-      if (plural_.count(ls_id)) [[unlikely]] {
-        auto& vec = plural_[ls_id];
-        if (vec.back().timestamp() <= smpl.timestamp()) [[likely]] {
-          vec.emplace_back(smpl);
-        } else {
-          auto it = std::lower_bound(vec.begin(), vec.end(), smpl,
-                                     [](const Primitives::Sample& a, const T& b) PROMPP_LAMBDA_INLINE { return a.timestamp() <= b.timestamp(); });
-          vec.insert(it, Primitives::Sample(smpl));
-        }
-      } else if (singular_.count(ls_id)) [[unlikely]] {
-        const auto& first_smpl = singular_[ls_id];
-        if (first_smpl.timestamp() <= smpl.timestamp()) [[likely]] {
-          switch_to_plural_list(ls_id, first_smpl, Primitives::Sample(smpl));
-        } else {
-          switch_to_plural_list(ls_id, Primitives::Sample(smpl), first_smpl);
-        }
-      } else {
-        resize_sparse_vector_if_needed(ls_id, singular_);
 
-        singular_[ls_id] = smpl;
-        ++series_count_;
+      if (ls_id >= series_.size()) [[unlikely]] {
+        series_.resize(ls_id + 1 + 512);
       }
+
+      series_[ls_id].add(smpl);
     }
 
     template <class Callback>
       requires std::is_invocable_v<Callback, Primitives::LabelSetID, Primitives::Timestamp, Primitives::Sample::value_type>
-    __attribute__((flatten)) void for_each(Callback func) const {
-      if (__builtin_expect(plural_.empty(), true)) {
-        for (const auto& [ls_id, s] : singular_) {
-          func(ls_id, s.timestamp(), s.value());
-        }
-      } else {
-        for (const auto& [ls_id, s] : singular_) {
-          if (__builtin_expect(plural_.count(ls_id), true)) {
-            for (const auto& s : plural_[ls_id]) {
-              func(ls_id, s.timestamp(), s.value());
-            }
-          } else {
-            func(ls_id, s.timestamp(), s.value());
+    __attribute__((flatten)) void for_each(Callback&& func) const {
+      for (const auto& [ls_id, sample] : series_) {
+        if (sample.is_single()) [[likely]] {
+          func(ls_id, sample.sample().timestamp(), sample.sample().value());
+        } else if (sample.is_plural()) [[likely]] {
+          for (const auto& [timestamp, value] : sample.samples()) {
+            func(ls_id, timestamp, value);
           }
         }
-      }
-    }
-
-   private:
-    PROMPP_ALWAYS_INLINE void switch_to_plural_list(Primitives::LabelSetID ls_id, const Primitives::Sample& first, const Primitives::Sample& second) {
-      resize_sparse_vector_if_needed(ls_id, plural_);
-
-      auto& vec = plural_[ls_id];
-      vec.emplace_back(first);
-      vec.emplace_back(second);
-    }
-
-    template <class SparseVector>
-    PROMPP_ALWAYS_INLINE void resize_sparse_vector_if_needed(Primitives::LabelSetID ls_id, SparseVector& vector) {
-      if (ls_id >= vector.size()) {
-        vector.resize(ls_id + 1 + 512);
       }
     }
   };
@@ -461,6 +490,11 @@ class BasicEncoder {
       buffer_.add(ls_id, smpl);
     }
     return ls_id;
+  }
+
+  template <typename Sample>
+  PROMPP_ALWAYS_INLINE void add_sample_on_ls_id(uint32_t ls_id, const Sample& sample) {
+    buffer_.add(ls_id, sample);
   }
 
   template <typename Samples>

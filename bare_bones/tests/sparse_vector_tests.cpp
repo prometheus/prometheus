@@ -1,13 +1,15 @@
 #include <iostream>
+#include <random>
 
 #include <gtest/gtest.h>
 
 #include "bare_bones/sparse_vector.h"
+#include "bare_bones/vector.h"
 
 namespace {
 
 TEST(BareBonesSparseVector, should_access_sorted_keys) {
-  BareBones::SparseVector<uint32_t> sv;
+  BareBones::SparseVector<uint32_t, BareBones::Vector> sv;
   sv.resize(3);
   sv[0] = 0;
   sv[1] = 1;
@@ -23,7 +25,7 @@ TEST(BareBonesSparseVector, should_access_sorted_keys) {
 }
 
 TEST(BareBonesSparseVector, valid_clear) {
-  BareBones::SparseVector<uint32_t> sv;
+  BareBones::SparseVector<uint32_t, BareBones::Vector> sv;
   sv.resize(3);
   sv[0] = 0;
   sv[1] = 1;
@@ -40,7 +42,7 @@ TEST(BareBonesSparseVector, valid_clear) {
 
 TEST(BareBonesSparseVector, random_access) {
   const size_t num_values = 10000;
-  BareBones::SparseVector<uint32_t> sv;
+  BareBones::SparseVector<uint32_t, BareBones::Vector> sv;
   std::map<uint32_t, uint32_t> mp;
   std::vector<uint32_t> index;
 
@@ -72,7 +74,7 @@ TEST(BareBonesSparseVector, random_access) {
 }
 
 TEST(BareBonesSparseVector, should_increase_decriase_size) {
-  BareBones::SparseVector<uint32_t> sv;
+  BareBones::SparseVector<uint32_t, BareBones::Vector> sv;
   sv.resize(3);
   sv[0] = 0;
   sv[1] = 1;
@@ -93,7 +95,7 @@ TEST(BareBonesSparseVector, should_increase_decriase_size) {
 }
 
 TEST(BareBonesSparseVector, should_iterate_over_empty) {
-  BareBones::SparseVector<uint32_t> sv;
+  BareBones::SparseVector<uint32_t, BareBones::Vector> sv;
   uint32_t count = 0;
   for (auto i : sv) {
     count += i.second;

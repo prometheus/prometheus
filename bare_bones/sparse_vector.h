@@ -1,55 +1,49 @@
 #pragma once
 
-#include <array>
-#include <bit>
-#include <bitset>
-#include <random>
-#include <ranges>
-#include <thread>
-
 #include "bitset.h"
 #include "type_traits.h"
 #include "vector.h"
 
 namespace BareBones {
-template <class T>
+
+template <class T, template <class> class Container>
 class SparseVector {
   Bitset element_exists_;
   Vector<uint32_t> element_positions_;
-  typename std::tuple_element<static_cast<size_t>(IsTriviallyReallocatable<T>::value), std::tuple<std::vector<T>, Vector<T>>>::type data_;
+  Container<T> data_;
 
  public:
-  inline __attribute__((always_inline)) bool empty() const noexcept { return !element_exists_.size(); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool empty() const noexcept { return !element_exists_.size(); }
 
-  inline __attribute__((always_inline)) size_t size() const noexcept { return element_exists_.size(); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t size() const noexcept { return element_exists_.size(); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t items_count() const noexcept { return data_.size(); }
 
-  inline __attribute__((always_inline)) void resize(size_t size) noexcept {
+  PROMPP_ALWAYS_INLINE void resize(size_t size) noexcept {
     element_exists_.resize(size);
     element_positions_.resize(size);
   }
 
-  inline __attribute__((always_inline)) void clear() noexcept {
+  PROMPP_ALWAYS_INLINE void clear() noexcept {
     element_exists_.clear();
     element_positions_.clear();
     data_.clear();
   }
 
-  inline __attribute__((always_inline)) size_t count(uint32_t key) const noexcept { return element_exists_.count(key); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool exists(uint32_t key) const noexcept { return element_exists_.is_set(key); }
 
-  inline __attribute__((always_inline)) T& operator[](uint32_t key) noexcept {
+  [[nodiscard]] PROMPP_ALWAYS_INLINE T& operator[](uint32_t key) noexcept {
     assert(key < element_exists_.size());
 
-    if (__builtin_expect(element_exists_.count(key), false)) {
+    if (element_exists_.is_set(key)) [[unlikely]] {
       return data_[element_positions_[key]];
-    } else {
-      element_exists_.set(key);
-      element_positions_[key] = data_.size();
-      data_.resize(data_.size() + 1);
-      return data_.back();
     }
+
+    element_exists_.set(key);
+    element_positions_[key] = data_.size();
+    return data_.emplace_back();
   }
 
-  inline __attribute__((always_inline)) const T& operator[](uint32_t key) const noexcept {
+  PROMPP_ALWAYS_INLINE const T& operator[](uint32_t key) const noexcept {
     assert(key < element_exists_.size());
 
     return data_[element_positions_[key]];
@@ -66,33 +60,33 @@ class SparseVector {
     using value_type = std::pair<uint32_t, const T&>;
     using difference_type = std::ptrdiff_t;
 
-    inline __attribute__((always_inline)) Iterator() noexcept = default;
-    inline __attribute__((always_inline)) explicit Iterator(const SparseVector* vec) noexcept : vec_(vec), i_(vec_->element_exists_.begin()) {}
+    PROMPP_ALWAYS_INLINE Iterator() noexcept = default;
+    PROMPP_ALWAYS_INLINE explicit Iterator(const SparseVector* vec) noexcept : vec_(vec), i_(vec_->element_exists_.begin()) {}
 
-    inline __attribute__((always_inline)) auto operator*() noexcept { return std::pair<uint32_t, const T&>(*i_, vec_->data_[vec_->element_positions_[*i_]]); }
-    inline __attribute__((always_inline)) Iterator& operator++() noexcept {
+    PROMPP_ALWAYS_INLINE auto operator*() noexcept { return std::pair<uint32_t, const T&>(*i_, vec_->data_[vec_->element_positions_[*i_]]); }
+    PROMPP_ALWAYS_INLINE Iterator& operator++() noexcept {
       ++i_;
       return *this;
     }
-    inline __attribute__((always_inline)) Iterator operator++(int) noexcept {
+    PROMPP_ALWAYS_INLINE Iterator operator++(int) noexcept {
       Iterator retval = *this;
       ++i_;
       return retval;
     }
-    inline __attribute__((always_inline)) bool operator==(const Iterator& o) const noexcept { return i_ == o.i_; }
-    inline __attribute__((always_inline)) bool operator==(const IteratorSentinel&) const noexcept { return i_ == Bitset::IteratorSentinel(); }
+    PROMPP_ALWAYS_INLINE bool operator==(const Iterator& o) const noexcept { return i_ == o.i_; }
+    PROMPP_ALWAYS_INLINE bool operator==(const IteratorSentinel&) const noexcept { return i_ == Bitset::IteratorSentinel(); }
   };
 
   using const_iterator = Iterator;
 
-  inline __attribute__((always_inline)) auto begin() const noexcept { return Iterator(this); }
-  inline __attribute__((always_inline)) auto end() const noexcept { return IteratorSentinel(); }
+  PROMPP_ALWAYS_INLINE auto begin() const noexcept { return Iterator(this); }
+  PROMPP_ALWAYS_INLINE auto end() const noexcept { return IteratorSentinel(); }
 };
 
-template <class T>
-struct IsTriviallyReallocatable<SparseVector<T>> : std::true_type {};
+template <class T, template <class> class Container>
+struct IsTriviallyReallocatable<SparseVector<T, Container>> : std::true_type {};
 
-template <class T>
-struct IsZeroInitializable<SparseVector<T>> : std::true_type {};
+template <class T, template <class> class Container>
+struct IsZeroInitializable<SparseVector<T, Container>> : std::true_type {};
 
 }  // namespace BareBones

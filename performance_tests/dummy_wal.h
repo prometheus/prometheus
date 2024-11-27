@@ -12,6 +12,7 @@
 
 #include "bare_bones/lz4_stream.h"
 #include "primitives/hash.h"
+#include "primitives/primitives.h"
 
 class DummyWal {
  public:
@@ -116,30 +117,7 @@ class DummyWal {
     Names names() const { return Names(this); }
   };
 
-  class Sample {
-    int64_t timestamp_;
-    double value_;
-
-    friend class Timeseries;
-
-   public:
-    int64_t timestamp() const { return timestamp_; }
-    double value() const { return value_; }
-
-    template <class T>
-    inline __attribute__((always_inline)) Sample& operator=(const T& s) {
-      timestamp_ = s.timestamp();
-      value_ = s.value();
-      return *this;
-    }
-
-    inline __attribute__((always_inline)) Sample(int64_t timestamp, double value) : timestamp_(timestamp), value_(value) {}
-
-    template <class T>
-    inline __attribute__((always_inline)) Sample(const T& s) : timestamp_(s.timestamp()), value_(s.value()) {}
-
-    inline __attribute__((always_inline)) Sample() = default;
-  };
+  using Sample = PromPP::Primitives::Sample;
 
   class Timeseries {
     std::array<Sample, 1> samples_;
@@ -152,10 +130,10 @@ class DummyWal {
     inline char* read_from_bytes(char* bufi) {
       auto bufi_orig = bufi;
 
-      samples_[0].timestamp_ = *reinterpret_cast<int64_t*>(bufi);
+      samples_[0].timestamp() = *reinterpret_cast<int64_t*>(bufi);
       bufi += sizeof(int64_t);
 
-      samples_[0].value_ = *reinterpret_cast<double*>(bufi);
+      samples_[0].value() = *reinterpret_cast<double*>(bufi);
       bufi += sizeof(double);
 
       label_set_.word_positions = std::span<uint16_t>(reinterpret_cast<uint16_t*>(bufi + sizeof(uint16_t)), *reinterpret_cast<uint16_t*>(bufi));
