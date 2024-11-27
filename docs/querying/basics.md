@@ -37,7 +37,7 @@ Depending on the use-case (e.g. when graphing vs. displaying the output of an
 expression), only some of these types are legal as the result of a
 user-specified expression. 
 For [instant queries](api.md#instant-queries), any of the above data types are allowed as the root of the expression.
-[Range queries](api.md/#range-queries) only support scalar-typed and instant-vector-typed expressions.
+[Range queries](api.md#range-queries) only support scalar-typed and instant-vector-typed expressions.
 
 _Notes about the experimental native histograms:_
 
@@ -152,7 +152,7 @@ The value returned will be that of the most recent sample at or before the
 query's evaluation timestamp (in the case of an
 [instant query](api.md#instant-queries))
 or the current step within the query (in the case of a
-[range query](api.md/#range-queries)).
+[range query](api.md#range-queries)).
 The [`@` modifier](#modifier) allows overriding the timestamp relative to which
 the selection takes place. Time series are only returned if their most recent sample is less than the [lookback period](#staleness) ago.
 
@@ -178,7 +178,7 @@ against regular expressions. The following label matching operators exist:
 * `=~`: Select labels that regex-match the provided string.
 * `!~`: Select labels that do not regex-match the provided string.
 
-Regex matches are fully anchored. A match of `env=~"foo"` is treated as `env=~"^foo$"`.
+[Regex](#regular-expressions) matches are fully anchored. A match of `env=~"foo"` is treated as `env=~"^foo$"`.
 
 For example, this selects all `http_requests_total` time series for `staging`,
 `testing`, and `development` environments and HTTP methods other than `GET`.
@@ -240,9 +240,6 @@ The metric name must not be one of the keywords `bool`, `on`, `ignoring`, `group
 A workaround for this restriction is to use the `__name__` label:
 
     {__name__="on"} # Good!
-
-All regular expressions in Prometheus use [RE2
-syntax](https://github.com/google/re2/wiki/Syntax).
 
 ### Range Vector Selectors
 
@@ -364,6 +361,12 @@ in detail in the [expression language functions](functions.md) page.
 PromQL supports line comments that start with `#`. Example:
 
         # This is a comment
+
+## Regular expressions
+
+All regular expressions in Prometheus use [RE2 syntax](https://github.com/google/re2/wiki/Syntax).
+
+Regex matches are always fully anchored.
 
 ## Gotchas
 
