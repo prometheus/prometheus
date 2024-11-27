@@ -54,7 +54,7 @@ type Head interface {
 		incomingData *IncomingData,
 		state *cppbridge.State,
 		relabelerID string,
-	) ([][]*cppbridge.InnerSeries, error)
+	) ([][]*cppbridge.InnerSeries, cppbridge.RelabelerStats, error)
 	ForEachShard(fn ShardFn) error
 	OnShard(shardID uint16, fn ShardFn) error
 	NumberOfShards() uint16

@@ -126,10 +126,12 @@ PROMPP_ALWAYS_INLINE void scraper_hashdex_parse(void* args, void* res) {
   };
   struct Result {
     ScraperError error{ScraperError::kNoError};
+    uint32_t scraped{};
   };
 
   const auto in = static_cast<Arguments*>(args);
-  new (res) Result{.error = std::get<Scraper>(*in->hashdex).parse({const_cast<char*>(in->buffer.data()), in->buffer.size()}, in->default_timestamp)};
+  new (res) Result{.error = std::get<Scraper>(*in->hashdex).parse({const_cast<char*>(in->buffer.data()), in->buffer.size()}, in->default_timestamp),
+                   .scraped = static_cast<uint32_t>(std::get<Scraper>(*in->hashdex).size())};
 }
 
 template <class Scraper>

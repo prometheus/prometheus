@@ -1157,7 +1157,7 @@ func prometheusPerShardRelabelerInputRelabeling(
 	options RelabelerOptions,
 	shardsInnerSeries []*InnerSeries,
 	shardsRelabeledSeries []*RelabeledSeries,
-) []byte {
+) (samplesAdded, seriesAdded uint32, exception []byte) {
 	var args = struct {
 		shardsInnerSeries     []*InnerSeries
 		shardsRelabeledSeries []*RelabeledSeries
@@ -1169,7 +1169,9 @@ func prometheusPerShardRelabelerInputRelabeling(
 		targetLss             uintptr
 	}{shardsInnerSeries, shardsRelabeledSeries, options, perShardRelabeler, hashdex, cache, inputLss, targetLss}
 	var res struct {
-		exception []byte
+		samplesAdded uint32
+		seriesAdded  uint32
+		exception    []byte
 	}
 	start := time.Now()
 	fastcgo.UnsafeCall2(
@@ -1181,7 +1183,7 @@ func prometheusPerShardRelabelerInputRelabeling(
 		prometheus.Labels{"object": "input_relabeler", "method": "input_relabeling"},
 	).Add(float64(time.Since(start).Nanoseconds()))
 
-	return res.exception
+	return res.samplesAdded, res.seriesAdded, res.exception
 }
 
 // prometheusPerShardRelabelerInputRelabelingWithStalenans wrapper for relabeling incoming
@@ -1192,7 +1194,7 @@ func prometheusPerShardRelabelerInputRelabelingWithStalenans(
 	options RelabelerOptions,
 	shardsInnerSeries []*InnerSeries,
 	shardsRelabeledSeries []*RelabeledSeries,
-) (exception []byte) {
+) (samplesAdded, seriesAdded uint32, exception []byte) {
 	var args = struct {
 		shardsInnerSeries     []*InnerSeries
 		shardsRelabeledSeries []*RelabeledSeries
@@ -1217,7 +1219,9 @@ func prometheusPerShardRelabelerInputRelabelingWithStalenans(
 		staleNansTS,
 	}
 	var res struct {
-		exception []byte
+		samplesAdded uint32
+		seriesAdded  uint32
+		exception    []byte
 	}
 	start := time.Now()
 	fastcgo.UnsafeCall2(
@@ -1229,7 +1233,7 @@ func prometheusPerShardRelabelerInputRelabelingWithStalenans(
 		prometheus.Labels{"object": "input_relabeler", "method": "relabeling_with_stalenans"},
 	).Add(float64(time.Since(start).Nanoseconds()))
 
-	return res.exception
+	return res.samplesAdded, res.seriesAdded, res.exception
 }
 
 // prometheusPerShardRelabelerAppendRelabelerSeries - wrapper for add relabeled ls to lss,
@@ -1861,14 +1865,15 @@ func walPrometheusScraperHashdexCtor() uintptr {
 	return res.hashdex
 }
 
-func walPrometheusScraperHashdexParse(hashdex uintptr, buffer []byte, default_timestamp int64) uint32 {
+func walPrometheusScraperHashdexParse(hashdex uintptr, buffer []byte, default_timestamp int64) (uint32, uint32) {
 	var args = struct {
 		hashdex           uintptr
 		buffer            []byte
 		default_timestamp int64
 	}{hashdex, buffer, default_timestamp}
 	var res struct {
-		error uint32
+		error   uint32
+		scraped uint32
 	}
 	start := time.Now()
 	fastcgo.UnsafeCall2(
@@ -1880,7 +1885,7 @@ func walPrometheusScraperHashdexParse(hashdex uintptr, buffer []byte, default_ti
 		prometheus.Labels{"object": "hashdex", "method": "parse"},
 	).Add(float64(time.Since(start).Nanoseconds()))
 
-	return res.error
+	return res.scraped, res.error
 }
 
 func walPrometheusScraperHashdexGetMetadata(hashdex uintptr) []WALScraperHashdexMetadata {
@@ -1928,14 +1933,15 @@ func walOpenMetricsScraperHashdexCtor() uintptr {
 	return res.hashdex
 }
 
-func walOpenMetricsScraperHashdexParse(hashdex uintptr, buffer []byte, default_timestamp int64) uint32 {
+func walOpenMetricsScraperHashdexParse(hashdex uintptr, buffer []byte, default_timestamp int64) (uint32, uint32) {
 	var args = struct {
 		hashdex           uintptr
 		buffer            []byte
 		default_timestamp int64
 	}{hashdex, buffer, default_timestamp}
 	var res struct {
-		error uint32
+		error   uint32
+		scraped uint32
 	}
 	start := time.Now()
 	fastcgo.UnsafeCall2(
@@ -1947,7 +1953,7 @@ func walOpenMetricsScraperHashdexParse(hashdex uintptr, buffer []byte, default_t
 		prometheus.Labels{"object": "hashdex", "method": "parse"},
 	).Add(float64(time.Since(start).Nanoseconds()))
 
-	return res.error
+	return res.scraped, res.error
 }
 
 func walOpenMetricsScraperHashdexGetMetadata(hashdex uintptr) []WALScraperHashdexMetadata {

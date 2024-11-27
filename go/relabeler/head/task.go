@@ -69,6 +69,11 @@ func (t *TaskInputRelabeling) RelabelerData() *RelabelerData {
 	return t.relabelerData
 }
 
+// AddStats add returned relabler stats.
+func (t *TaskInputRelabeling) AddStats(stats cppbridge.RelabelerStats) {
+	t.promise.AddStats(stats)
+}
+
 // State return state for relabeler.
 func (t *TaskInputRelabeling) State() *cppbridge.State {
 	return t.state

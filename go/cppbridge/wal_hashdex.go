@@ -295,9 +295,10 @@ func NewPrometheusScraperHashdex() *WALPrometheusScraperHashdex {
 }
 
 // Parse parsing incoming slice byte with default timestamp to hashdex.
-func (h *WALPrometheusScraperHashdex) Parse(buffer []byte, default_timestamp int64) error {
+func (h *WALPrometheusScraperHashdex) Parse(buffer []byte, default_timestamp int64) (uint32, error) {
 	h.buffer = buffer
-	return errorFromCode(walPrometheusScraperHashdexParse(h.hashdex, h.buffer, default_timestamp))
+	scraped, errorCode := walPrometheusScraperHashdexParse(h.hashdex, h.buffer, default_timestamp)
+	return scraped, errorFromCode(errorCode)
 }
 
 // RangeMetadata calls f sequentially for each metadata present in the hashdex.
@@ -350,9 +351,10 @@ func NewOpenMetricsScraperHashdex() *WALOpenMetricsScraperHashdex {
 }
 
 // Parse parsing incoming slice byte with default timestamp to hashdex.
-func (h *WALOpenMetricsScraperHashdex) Parse(buffer []byte, default_timestamp int64) error {
+func (h *WALOpenMetricsScraperHashdex) Parse(buffer []byte, default_timestamp int64) (uint32, error) {
 	h.buffer = buffer
-	return errorFromCode(walOpenMetricsScraperHashdexParse(h.hashdex, h.buffer, default_timestamp))
+	scraped, errorCode := walOpenMetricsScraperHashdexParse(h.hashdex, h.buffer, default_timestamp)
+	return scraped, errorFromCode(errorCode)
 }
 
 // RangeMetadata calls f sequentially for each metadata present in the hashdex.

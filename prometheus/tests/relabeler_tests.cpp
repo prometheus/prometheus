@@ -457,6 +457,11 @@ TEST_F(TestValidate, InvalidLabelLimit) {
 // PerShardRelabeler
 //
 
+struct Stats {
+  uint32_t samples_added{0};
+  uint32_t series_added{0};
+};
+
 struct TestPerShardRelabeler : public testing::Test {
   // shards_inner_series
   std::vector<std::unique_ptr<PromPP::Prometheus::Relabel::InnerSeries>> vector_shards_inner_series_;
@@ -475,6 +480,9 @@ struct TestPerShardRelabeler : public testing::Test {
 
   // Options
   PromPP::Prometheus::Relabel::RelabelerOptions o_;
+
+  // Stats
+  Stats stats_;
 
   // Hashdex
   HashdexTest hx_;
@@ -532,12 +540,14 @@ TEST_F(TestPerShardRelabeler, KeepEQ) {
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   make_hashdex(hx_, make_label_set({{"__name__", "value"}, {"job", "abc"}}), make_samples({{1712567046855, 0.1}}));
 
-  prs.input_relabeling(lss_, lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss_, lss_, cache_, hx_, o_, stats_, shards_inner_series_, relabeled_results_);
   // shard id 1
   EXPECT_EQ(relabeled_results_[0]->size(), 0);
   EXPECT_EQ(relabeled_results_[1]->size(), 0);
   EXPECT_EQ(shards_inner_series_[0]->size(), 0);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
+  EXPECT_EQ(stats_.samples_added, 1);
+  EXPECT_EQ(stats_.series_added, 1);
 
   PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data{};
   prs.append_relabeler_series(lss_, shards_inner_series_[1], relabeled_results_[1], &update_data);
@@ -545,8 +555,10 @@ TEST_F(TestPerShardRelabeler, KeepEQ) {
   EXPECT_EQ(update_data.size(), 0);
 
   vector_shards_inner_series_[1] = std::make_unique<PromPP::Prometheus::Relabel::InnerSeries>();
-  prs.input_relabeling(lss_, lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss_, lss_, cache_, hx_, o_, stats_, shards_inner_series_, relabeled_results_);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
+  EXPECT_EQ(stats_.samples_added, 2);
+  EXPECT_EQ(stats_.series_added, 1);
 }
 
 TEST_F(TestPerShardRelabeler, KeepEQ_OrderedEncodingBimap) {
@@ -556,12 +568,14 @@ TEST_F(TestPerShardRelabeler, KeepEQ_OrderedEncodingBimap) {
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   make_hashdex(hx_, make_label_set({{"__name__", "value"}, {"job", "abc"}}), make_samples({{1712567046855, 0.1}}));
 
-  prs.input_relabeling(lss, lss, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss, lss, cache_, hx_, o_, stats_, shards_inner_series_, relabeled_results_);
   // shard id 1
   EXPECT_EQ(relabeled_results_[0]->size(), 0);
   EXPECT_EQ(relabeled_results_[1]->size(), 0);
   EXPECT_EQ(shards_inner_series_[0]->size(), 0);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
+  EXPECT_EQ(stats_.samples_added, 1);
+  EXPECT_EQ(stats_.series_added, 1);
 
   PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data{};
   prs.append_relabeler_series(lss_, shards_inner_series_[1], relabeled_results_[1], &update_data);
@@ -569,8 +583,10 @@ TEST_F(TestPerShardRelabeler, KeepEQ_OrderedEncodingBimap) {
   EXPECT_EQ(update_data.size(), 0);
 
   vector_shards_inner_series_[1] = std::make_unique<PromPP::Prometheus::Relabel::InnerSeries>();
-  prs.input_relabeling(lss, lss, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss, lss, cache_, hx_, o_, stats_, shards_inner_series_, relabeled_results_);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
+  EXPECT_EQ(stats_.samples_added, 2);
+  EXPECT_EQ(stats_.series_added, 1);
 }
 
 TEST_F(TestPerShardRelabeler, KeepNE) {
@@ -579,12 +595,14 @@ TEST_F(TestPerShardRelabeler, KeepNE) {
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   make_hashdex(hx_, make_label_set({{"__name__", "value"}, {"job", "abc"}}), make_samples({{1712567046855, 0.1}}));
 
-  prs.input_relabeling(lss_, lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss_, lss_, cache_, hx_, o_, stats_, shards_inner_series_, relabeled_results_);
   // shard id 1
   EXPECT_EQ(relabeled_results_[0]->size(), 0);
   EXPECT_EQ(relabeled_results_[1]->size(), 0);
   EXPECT_EQ(shards_inner_series_[0]->size(), 0);
   EXPECT_EQ(shards_inner_series_[1]->size(), 0);
+  EXPECT_EQ(stats_.samples_added, 0);
+  EXPECT_EQ(stats_.series_added, 0);
 }
 
 TEST_F(TestPerShardRelabeler, KeepEQNE) {
@@ -593,12 +611,14 @@ TEST_F(TestPerShardRelabeler, KeepEQNE) {
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   make_hashdex(hx_, make_label_set({{"__name__", "value"}, {"job", "abc"}}), make_samples({{1712567046855, 0.1}}));
 
-  prs.input_relabeling(lss_, lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss_, lss_, cache_, hx_, o_, stats_, shards_inner_series_, relabeled_results_);
   // shard id 1
   EXPECT_EQ(relabeled_results_[0]->size(), 0);
   EXPECT_EQ(relabeled_results_[1]->size(), 0);
   EXPECT_EQ(shards_inner_series_[0]->size(), 0);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
+  EXPECT_EQ(stats_.samples_added, 1);
+  EXPECT_EQ(stats_.series_added, 1);
 
   PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data{};
   prs.append_relabeler_series(lss_, shards_inner_series_[1], relabeled_results_[1], &update_data);
@@ -608,12 +628,14 @@ TEST_F(TestPerShardRelabeler, KeepEQNE) {
   reset();
   hx_.clear();
   make_hashdex(hx_, make_label_set({{"__name__", "value"}, {"job", "abcd"}}), make_samples({{1712567046855, 0.1}}));
-  prs.input_relabeling(lss_, lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss_, lss_, cache_, hx_, o_, stats_, shards_inner_series_, relabeled_results_);
   // shard id 1 skip
   EXPECT_EQ(relabeled_results_[0]->size(), 0);
   EXPECT_EQ(relabeled_results_[1]->size(), 0);
   EXPECT_EQ(shards_inner_series_[0]->size(), 0);
   EXPECT_EQ(shards_inner_series_[1]->size(), 0);
+  EXPECT_EQ(stats_.samples_added, 1);
+  EXPECT_EQ(stats_.series_added, 1);
 }
 
 TEST_F(TestPerShardRelabeler, ReplaceToNewLS2) {
@@ -627,12 +649,14 @@ TEST_F(TestPerShardRelabeler, ReplaceToNewLS2) {
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   make_hashdex(hx_, make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}}), make_samples({{1712567046855, 0.1}}));
 
-  prs.input_relabeling(lss_, lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss_, lss_, cache_, hx_, o_, stats_, shards_inner_series_, relabeled_results_);
   // shard id 1
   EXPECT_EQ(relabeled_results_[0]->size(), 0);
   EXPECT_EQ(relabeled_results_[1]->size(), 1);
   EXPECT_EQ(shards_inner_series_[0]->size(), 0);
   EXPECT_EQ(shards_inner_series_[1]->size(), 0);
+  EXPECT_EQ(stats_.samples_added, 1);
+  EXPECT_EQ(stats_.series_added, 1);
 
   PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data{};
   prs.append_relabeler_series(lss_, shards_inner_series_[1], relabeled_results_[1], &update_data);
@@ -653,12 +677,14 @@ TEST_F(TestPerShardRelabeler, ReplaceToNewLS3) {
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   make_hashdex(hx_, make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}}), make_samples({{1712567046855, 0.1}}));
 
-  prs.input_relabeling(lss_, lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss_, lss_, cache_, hx_, o_, stats_, shards_inner_series_, relabeled_results_);
   // shard id 1
   EXPECT_EQ(relabeled_results_[0]->size(), 1);
   EXPECT_EQ(relabeled_results_[1]->size(), 0);
   EXPECT_EQ(shards_inner_series_[0]->size(), 0);
   EXPECT_EQ(shards_inner_series_[1]->size(), 0);
+  EXPECT_EQ(stats_.samples_added, 1);
+  EXPECT_EQ(stats_.series_added, 1);
 
   PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data{};
   prs.append_relabeler_series(lss_, shards_inner_series_[0], relabeled_results_[0], &update_data);
@@ -685,12 +711,14 @@ TEST_F(TestPerShardRelabeler, ReplaceToNewLS2_OrderedEncodingBimap) {
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
   make_hashdex(hx_, make_label_set({{"__name__", "booom"}, {"jab", "baj"}, {"job", "baj"}}), make_samples({{1712567046855, 0.1}}));
 
-  prs.input_relabeling(lss, lss, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss, lss, cache_, hx_, o_, stats_, shards_inner_series_, relabeled_results_);
   // shard id 1
   EXPECT_EQ(relabeled_results_[0]->size(), 0);
   EXPECT_EQ(relabeled_results_[1]->size(), 1);
   EXPECT_EQ(shards_inner_series_[0]->size(), 0);
   EXPECT_EQ(shards_inner_series_[1]->size(), 0);
+  EXPECT_EQ(stats_.samples_added, 1);
+  EXPECT_EQ(stats_.series_added, 1);
 
   PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data{};
   prs.append_relabeler_series(lss, shards_inner_series_[1], relabeled_results_[1], &update_data);
@@ -712,13 +740,15 @@ TEST_F(TestPerShardRelabeler, InputRelabelingWithStalenans) {
   make_hashdex(hx_, make_label_set({{"__name__", "value"}, {"job", "abc"}}), make_samples({{1712567046855, 0.1}}));
   PromPP::Prometheus::Relabel::StaleNaNsState state{};
 
-  prs.input_relabeling_with_stalenans(lss_, lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_, state, 1712567046855);
+  prs.input_relabeling_with_stalenans(lss_, lss_, cache_, hx_, o_, stats_, shards_inner_series_, relabeled_results_, state, 1712567046855);
 
   // shard id 1
   EXPECT_EQ(relabeled_results_[0]->size(), 0);
   EXPECT_EQ(relabeled_results_[1]->size(), 0);
   EXPECT_EQ(shards_inner_series_[0]->size(), 0);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
+  EXPECT_EQ(stats_.samples_added, 1);
+  EXPECT_EQ(stats_.series_added, 1);
 
   PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data{};
   prs.append_relabeler_series(lss_, shards_inner_series_[1], relabeled_results_[1], &update_data);
@@ -728,9 +758,11 @@ TEST_F(TestPerShardRelabeler, InputRelabelingWithStalenans) {
   vector_shards_inner_series_[1] = std::make_unique<PromPP::Prometheus::Relabel::InnerSeries>();
   HashdexTest empty_hx;
   PromPP::Primitives::Timestamp stale_ts = 1712567047055;
-  prs.input_relabeling_with_stalenans(lss_, lss_, cache_, empty_hx, o_, shards_inner_series_, relabeled_results_, state, stale_ts);
+  prs.input_relabeling_with_stalenans(lss_, lss_, cache_, empty_hx, o_, stats_, shards_inner_series_, relabeled_results_, state, stale_ts);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
   EXPECT_EQ(PromPP::Primitives::Sample(stale_ts, PromPP::Prometheus::kStaleNan), shards_inner_series_[1]->data()[0].samples[0]);
+  EXPECT_EQ(stats_.samples_added, 1);
+  EXPECT_EQ(stats_.series_added, 1);
 }
 
 TEST_F(TestPerShardRelabeler, TargetLabels_HappyPath) {
@@ -741,12 +773,14 @@ TEST_F(TestPerShardRelabeler, TargetLabels_HappyPath) {
   std::vector<std::pair<std::string, std::string>> list_target_labels{{"a_name", "target_a_value"}, {"z_name", "target_z_value"}};
   add_target_labels(list_target_labels);
 
-  prs.input_relabeling(lss_, lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss_, lss_, cache_, hx_, o_, stats_, shards_inner_series_, relabeled_results_);
   // shard id 1
   EXPECT_EQ(relabeled_results_[0]->size(), 0);
   EXPECT_EQ(relabeled_results_[1]->size(), 1);
   EXPECT_EQ(shards_inner_series_[0]->size(), 0);
   EXPECT_EQ(shards_inner_series_[1]->size(), 0);
+  EXPECT_EQ(stats_.samples_added, 1);
+  EXPECT_EQ(stats_.series_added, 1);
 
   PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data{};
   prs.append_relabeler_series(lss_, shards_inner_series_[1], relabeled_results_[1], &update_data);
@@ -770,12 +804,14 @@ TEST_F(TestPerShardRelabeler, TargetLabels_ExportedLabel) {
   std::vector<std::pair<std::string, std::string>> list_target_labels{{"jab", "target_a_value"}, {"z_name", "target_z_value"}};
   add_target_labels(list_target_labels);
 
-  prs.input_relabeling(lss_, lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss_, lss_, cache_, hx_, o_, stats_, shards_inner_series_, relabeled_results_);
   // shard id 1
   EXPECT_EQ(relabeled_results_[0]->size(), 1);
   EXPECT_EQ(relabeled_results_[1]->size(), 0);
   EXPECT_EQ(shards_inner_series_[0]->size(), 0);
   EXPECT_EQ(shards_inner_series_[1]->size(), 0);
+  EXPECT_EQ(stats_.samples_added, 1);
+  EXPECT_EQ(stats_.series_added, 1);
 
   PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data{};
   prs.append_relabeler_series(lss_, shards_inner_series_[0], relabeled_results_[0], &update_data);
@@ -800,12 +836,14 @@ TEST_F(TestPerShardRelabeler, TargetLabels_ExportedLabel_Honor) {
   add_target_labels(list_target_labels);
   o_.honor_labels = true;
 
-  prs.input_relabeling(lss_, lss_, cache_, hx_, o_, shards_inner_series_, relabeled_results_);
+  prs.input_relabeling(lss_, lss_, cache_, hx_, o_, stats_, shards_inner_series_, relabeled_results_);
   // shard id 1
   EXPECT_EQ(relabeled_results_[0]->size(), 1);
   EXPECT_EQ(relabeled_results_[1]->size(), 0);
   EXPECT_EQ(shards_inner_series_[0]->size(), 0);
   EXPECT_EQ(shards_inner_series_[1]->size(), 0);
+  EXPECT_EQ(stats_.samples_added, 1);
+  EXPECT_EQ(stats_.series_added, 1);
 
   PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data{};
   prs.append_relabeler_series(lss_, shards_inner_series_[0], relabeled_results_[0], &update_data);

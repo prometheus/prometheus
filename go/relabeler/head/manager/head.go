@@ -3,6 +3,7 @@ package manager
 import (
 	"context"
 	"errors"
+
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler"
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
@@ -34,7 +35,7 @@ func (h *DiscardableRotatableHead) Append(
 	ctx context.Context,
 	incomingData *relabeler.IncomingData,
 	state *cppbridge.State,
-	relabelerID string) ([][]*cppbridge.InnerSeries, error) {
+	relabelerID string) ([][]*cppbridge.InnerSeries, cppbridge.RelabelerStats, error) {
 	return h.head.Append(ctx, incomingData, state, relabelerID)
 }
 
