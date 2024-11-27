@@ -543,6 +543,7 @@ load 10s
 	data{test="bigzero",point="b"} -9.988465674311579e+307
 	data{test="bigzero",point="c"} 9.988465674311579e+307
 	data{test="bigzero",point="d"} 9.988465674311579e+307
+	data{test="value is nan"} NaN
 
 eval instant at 1m avg(data{test="ten"})
 	{} 10
@@ -576,6 +577,10 @@ eval instant at 1m avg(data{test="-big"})
 
 eval instant at 1m avg(data{test="bigzero"})
 	{} 0
+
+# If NaN is in the mix, the result is NaN.
+eval instant at 1m avg(data)
+	{} NaN
 
 # Test summing and averaging extreme values.
 clear
