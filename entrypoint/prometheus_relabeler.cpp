@@ -191,6 +191,8 @@ extern "C" void prompp_prometheus_per_shard_relabeler_input_relabeling(void* arg
     LssVariantPtr target_lss;
   };
   struct Result {
+    uint32_t samples_added{0};
+    uint32_t series_added{0};
     PromPP::Primitives::Go::Slice<char> error;
   };
 
@@ -199,10 +201,10 @@ extern "C" void prompp_prometheus_per_shard_relabeler_input_relabeling(void* arg
 
   try {
     std::visit(
-        [in](auto& hashdex) {
+        [in, out](auto& hashdex) {
           auto& input_lss = std::get<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>(*in->input_lss);
           auto& target_lss = std::get<entrypoint::head::QueryableEncodingBimap>(*in->target_lss);
-          in->per_shard_relabeler->input_relabeling(input_lss, target_lss, *in->cache, hashdex, in->options, in->shards_inner_series,
+          in->per_shard_relabeler->input_relabeling(input_lss, target_lss, *in->cache, hashdex, in->options, *out, in->shards_inner_series,
                                                     in->shards_relabeled_series);
         },
         *in->hashdex);
@@ -252,6 +254,8 @@ extern "C" void prompp_prometheus_per_shard_relabeler_input_relabeling_with_stal
     PromPP::Primitives::Timestamp stale_ts;
   };
   struct Result {
+    uint32_t samples_added{0};
+    uint32_t series_added{0};
     PromPP::Primitives::Go::Slice<char> error;
   };
 
@@ -260,10 +264,10 @@ extern "C" void prompp_prometheus_per_shard_relabeler_input_relabeling_with_stal
 
   try {
     std::visit(
-        [in](auto& hashdex) {
+        [in, out](auto& hashdex) {
           auto& input_lss = std::get<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>(*in->input_lss);
           auto& target_lss = std::get<entrypoint::head::QueryableEncodingBimap>(*in->target_lss);
-          in->per_shard_relabeler->input_relabeling_with_stalenans(input_lss, target_lss, *in->cache, hashdex, in->options, in->shards_inner_series,
+          in->per_shard_relabeler->input_relabeling_with_stalenans(input_lss, target_lss, *in->cache, hashdex, in->options, *out, in->shards_inner_series,
                                                                    in->shards_relabeled_series, *in->state, in->stale_ts);
         },
         *in->hashdex);

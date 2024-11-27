@@ -349,6 +349,6 @@ func appendTimeSeries(t *testing.T, ctx context.Context, h *head.Head, timeSerie
 
 	incomingData := &relabeler.IncomingData{Hashdex: hx, Data: tsd}
 
-	_, err = h.Append(ctx, incomingData, cppbridge.NewState(h.NumberOfShards()), "transparent_relabeler")
+	_, _, err = h.Append(ctx, incomingData, cppbridge.NewState(h.NumberOfShards()), "transparent_relabeler")
 	return err
 }

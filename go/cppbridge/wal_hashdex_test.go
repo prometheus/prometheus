@@ -422,7 +422,7 @@ testmetric{label="\"bar\""} 1`
 	input += "\nnull_byte_metric{a=\"abc\x00\"} 1\n"
 
 	// Act
-	err := s.hasdex.Parse([]byte(input), -1)
+	scraped, err := s.hasdex.Parse([]byte(input), -1)
 	expectedMetadata := []cppbridge.WALScraperHashdexMetadata{
 		{MetricName: "go_gc_duration_seconds", Text: "A summary of the GC invocation durations.", Type: cppbridge.ScraperMetadataHelp},
 		{MetricName: "go_gc_duration_seconds", Text: "summary", Type: cppbridge.ScraperMetadataType},
@@ -440,6 +440,7 @@ testmetric{label="\"bar\""} 1`
 
 	// Assert
 	s.NoError(err)
+	s.Equal(uint32(18), scraped)
 	s.Equal(expectedMetadata, actualMetadata)
 }
 
@@ -448,10 +449,11 @@ func (s *PrometheusScraperHashdexSuite) TestParseErrScraperParseUnexpectedToken(
 	input := []byte("a{b='c'} 1\n")
 
 	// Act
-	err := s.hasdex.Parse(input, -1)
+	scraped, err := s.hasdex.Parse(input, -1)
 
 	// Assert
 	s.ErrorIs(err, cppbridge.ErrScraperParseUnexpectedToken)
+	s.Equal(uint32(0), scraped)
 }
 
 func (s *PrometheusScraperHashdexSuite) TestParseErrScraperParseNoMetricName() {
@@ -459,10 +461,11 @@ func (s *PrometheusScraperHashdexSuite) TestParseErrScraperParseNoMetricName() {
 	input := []byte("{b=\"c\"} 1\n")
 
 	// Act
-	err := s.hasdex.Parse(input, -1)
+	scraped, err := s.hasdex.Parse(input, -1)
 
 	// Assert
 	s.ErrorIs(err, cppbridge.ErrScraperParseNoMetricName)
+	s.Equal(uint32(0), scraped)
 }
 
 func (s *PrometheusScraperHashdexSuite) TestParseErrScraperInvalidUtf8() {
@@ -470,10 +473,11 @@ func (s *PrometheusScraperHashdexSuite) TestParseErrScraperInvalidUtf8() {
 	input := []byte("a{b=\"\x80\"} 1\n")
 
 	// Act
-	err := s.hasdex.Parse(input, -1)
+	scraped, err := s.hasdex.Parse(input, -1)
 
 	// Assert
 	s.ErrorIs(err, cppbridge.ErrScraperInvalidUtf8)
+	s.Equal(uint32(0), scraped)
 }
 
 func (s *PrometheusScraperHashdexSuite) TestParseErrScraperParseInvalidValue() {
@@ -481,10 +485,11 @@ func (s *PrometheusScraperHashdexSuite) TestParseErrScraperParseInvalidValue() {
 	input := []byte("a{b=\"c\"} v\n")
 
 	// Act
-	err := s.hasdex.Parse(input, -1)
+	scraped, err := s.hasdex.Parse(input, -1)
 
 	// Assert
 	s.ErrorIs(err, cppbridge.ErrScraperParseInvalidValue)
+	s.Equal(uint32(0), scraped)
 }
 
 func (s *PrometheusScraperHashdexSuite) TestParseErrScraperParseInvalidTimestamp() {
@@ -492,10 +497,11 @@ func (s *PrometheusScraperHashdexSuite) TestParseErrScraperParseInvalidTimestamp
 	input := []byte("a{b=\"c\"} 1 9223372036854775808\n")
 
 	// Act
-	err := s.hasdex.Parse(input, -1)
+	scraped, err := s.hasdex.Parse(input, -1)
 
 	// Assert
 	s.ErrorIs(err, cppbridge.ErrScraperParseInvalidTimestamp)
+	s.Equal(uint32(0), scraped)
 }
 
 func (s *PrometheusScraperHashdexSuite) TestParseEmptyInput() {
@@ -503,7 +509,7 @@ func (s *PrometheusScraperHashdexSuite) TestParseEmptyInput() {
 	input := []byte{}
 
 	// Act
-	err := s.hasdex.Parse(input, -1)
+	scraped, err := s.hasdex.Parse(input, -1)
 	var actualMetadata []cppbridge.WALScraperHashdexMetadata
 	s.hasdex.RangeMetadata(func(md cppbridge.WALScraperHashdexMetadata) bool {
 		actualMetadata = append(actualMetadata, md)
@@ -513,6 +519,7 @@ func (s *PrometheusScraperHashdexSuite) TestParseEmptyInput() {
 	// Assert
 	s.NoError(err)
 	s.Equal([]cppbridge.WALScraperHashdexMetadata(nil), actualMetadata)
+	s.Equal(uint32(0), scraped)
 }
 
 type OpenMetricsScraperHashdexSuite struct {
@@ -576,7 +583,7 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 	input += "\n# EOF\n"
 
 	// Act
-	err := s.hasdex.Parse([]byte(input), -1)
+	scraped, err := s.hasdex.Parse([]byte(input), -1)
 	expectedMetadata := []cppbridge.WALScraperHashdexMetadata{
 		{MetricName: "go_gc_duration_seconds", Text: "A summary of the GC invocation durations.", Type: cppbridge.ScraperMetadataHelp},
 		{MetricName: "go_gc_duration_seconds", Text: "summary", Type: cppbridge.ScraperMetadataType},
@@ -605,5 +612,6 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 
 	// Assert
 	s.NoError(err)
+	s.Equal(uint32(24), scraped)
 	s.Equal(expectedMetadata, actualMetadata)
 }

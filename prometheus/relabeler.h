@@ -394,12 +394,13 @@ class PerShardRelabeler {
   PROMPP_ALWAYS_INLINE size_t cache_allocated_memory() const noexcept { return 0; }
 
  private:
-  template <class InputLSS, class TargetLSS, class Hashdex, class StNaNsState>
+  template <class InputLSS, class TargetLSS, class Hashdex, class StNaNsState, class Stats>
   PROMPP_ALWAYS_INLINE void input_relabeling_internal(InputLSS& input_lss,
                                                       TargetLSS& target_lss,
                                                       Cache& cache,
                                                       const Hashdex& hashdex,
                                                       const RelabelerOptions& o,
+                                                      Stats& stats,
                                                       PromPP::Primitives::Go::SliceView<InnerSeries*>& shards_inner_series,
                                                       PromPP::Primitives::Go::SliceView<RelabeledSeries*>& shards_relabeled_series,
                                                       StNaNsState& stale_nan_state,
@@ -441,6 +442,7 @@ class PerShardRelabeler {
               cache.add_keep(ls_id);
               stale_nan_state.add_target(ls_id);
               shards_inner_series[shard_id_]->emplace_back(timeseries_buf_.samples(), ls_id);
+              ++stats.series_added;
             } break;
             case rsRelabel: {
               auto ls_id = input_lss.find_or_emplace(timeseries_buf_.label_set(), item.hash());
@@ -449,6 +451,7 @@ class PerShardRelabeler {
               size_t new_shard_id = new_hash % number_of_shards_;
               stale_nan_state.add_input(ls_id);
               shards_relabeled_series[new_shard_id]->emplace_back(new_label_set, timeseries_buf_.samples(), new_hash, ls_id);
+              ++stats.series_added;
             } break;
           }
         } break;
@@ -463,6 +466,8 @@ class PerShardRelabeler {
         default:
           continue;
       }
+
+      stats.samples_added += static_cast<uint32_t>(timeseries_buf_.samples().size());
 
       if (o.metric_limits == nullptr) {
         continue;
@@ -573,29 +578,31 @@ class PerShardRelabeler {
     }
   }
 
-  template <class InputLSS, class TargetLSS, class Hashdex>
+  template <class InputLSS, class TargetLSS, class Hashdex, class Stats>
   PROMPP_ALWAYS_INLINE void input_relabeling(InputLSS& input_lss,
                                              TargetLSS& target_lss,
                                              Cache& cache,
                                              const Hashdex& hashdex,
                                              const RelabelerOptions& o,
+                                             Stats& stats,
                                              PromPP::Primitives::Go::SliceView<InnerSeries*>& shards_inner_series,
                                              PromPP::Primitives::Go::SliceView<RelabeledSeries*>& shards_relabeled_series) {
     NoOpStaleNaNsState state{};
-    input_relabeling_internal(input_lss, target_lss, cache, hashdex, o, shards_inner_series, shards_relabeled_series, state, 0);
+    input_relabeling_internal(input_lss, target_lss, cache, hashdex, o, stats, shards_inner_series, shards_relabeled_series, state, 0);
   }
 
-  template <class InputLSS, class TargetLSS, class Hashdex>
+  template <class InputLSS, class TargetLSS, class Hashdex, class Stats>
   PROMPP_ALWAYS_INLINE void input_relabeling_with_stalenans(InputLSS& input_lss,
                                                             TargetLSS& target_lss,
                                                             Cache& cache,
                                                             const Hashdex& hashdex,
                                                             const RelabelerOptions& o,
+                                                            Stats& stats,
                                                             PromPP::Primitives::Go::SliceView<InnerSeries*>& shards_inner_series,
                                                             PromPP::Primitives::Go::SliceView<RelabeledSeries*>& shards_relabeled_series,
                                                             StaleNaNsState& state,
                                                             PromPP::Primitives::Timestamp stale_ts) {
-    input_relabeling_internal(input_lss, target_lss, cache, hashdex, o, shards_inner_series, shards_relabeled_series, state, stale_ts);
+    input_relabeling_internal(input_lss, target_lss, cache, hashdex, o, stats, shards_inner_series, shards_relabeled_series, state, stale_ts);
   }
 
   PROMPP_ALWAYS_INLINE void input_collect_stalenans(Cache& cache,

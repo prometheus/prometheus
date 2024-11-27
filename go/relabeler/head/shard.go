@@ -132,9 +132,12 @@ func (h *Head) shardLoop(shardID uint16, stopc chan struct{}) {
 			shardsInnerSeries := cppbridge.NewShardsInnerSeries(h.numberOfShards)
 			shardsRelabeledSeries := cppbridge.NewShardsRelabeledSeries(h.numberOfShards)
 
-			var err error
+			var (
+				err   error
+				stats cppbridge.RelabelerStats
+			)
 			if task.WithStaleNans() {
-				err = task.InputRelabelerByShard(shardID).InputRelabelingWithStalenans(
+				stats, err = task.InputRelabelerByShard(shardID).InputRelabelingWithStalenans(
 					task.Ctx(),
 					h.lsses[shardID].input,
 					h.lsses[shardID].target,
@@ -147,7 +150,7 @@ func (h *Head) shardLoop(shardID uint16, stopc chan struct{}) {
 					shardsRelabeledSeries,
 				)
 			} else {
-				err = task.InputRelabelerByShard(shardID).InputRelabeling(
+				stats, err = task.InputRelabelerByShard(shardID).InputRelabeling(
 					task.Ctx(),
 					h.lsses[shardID].input,
 					h.lsses[shardID].target,
@@ -165,6 +168,7 @@ func (h *Head) shardLoop(shardID uint16, stopc chan struct{}) {
 				continue
 			}
 
+			task.AddStats(stats)
 			for sid, relabeledSeries := range shardsRelabeledSeries {
 				if relabeledSeries.Size() == 0 {
 					task.AddResult(uint16(sid), nil)
