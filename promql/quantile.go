@@ -343,6 +343,9 @@ func HistogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 // If lower or upper is NaN, NaN is returned.
 //
 // If lower >= upper and the histogram has at least 1 observation, zero is returned.
+//
+// HistogramFraction is exported as it may be used by other PromQL engine
+// implementations.
 func HistogramFraction(lower, upper float64, h *histogram.FloatHistogram) float64 {
 	if h.Count == 0 || math.IsNaN(lower) || math.IsNaN(upper) {
 		return math.NaN()
