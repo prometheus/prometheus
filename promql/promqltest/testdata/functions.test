@@ -2,7 +2,10 @@
 load 5m
 	http_requests{path="/foo"}	1 2 3 0 1 0 0 1 2 0
 	http_requests{path="/bar"}	1 2 3 4 5 1 2 3 4 5
-	http_requests{path="/biz"}	0 0 0 0 0 1 1 1 1 1
+	http_requests{path="/biz"}  0 0 0 0 0 1 1 1 1 1
+    http_requests_histogram{path="/foo"}    {{schema:0 sum:1 count:1}}x9
+    http_requests_histogram{path="/bar"}    0 0 0 0 0 0 0 0 {{schema:0 sum:1 count:1}} {{schema:0 sum:1 count:1}}
+    http_requests_histogram{path="/biz"}    0 1 0 2 0 3 0 {{schema:0 sum:1 count:1}} {{schema:0 sum:2 count:2}} {{schema:0 sum:1 count:1}}
 
 # Tests for resets().
 eval instant at 50m resets(http_requests[5m])
@@ -68,6 +71,21 @@ eval instant at 50m changes((http_requests[50m]))
 	{path="/biz"} 1
 
 eval instant at 50m changes(nonexistent_metric[50m])
+
+# Test for mix of floats and histograms.
+# Because of bug #14172 we are not able to test more complex cases like below:
+# 0 1 2 {{schema:0 sum:1 count:1}} 3 {{schema:0 sum:2 count:2}} 4 {{schema:0 sum:3 count:3}}.
+eval instant at 50m changes(http_requests_histogram[5m])
+
+eval instant at 50m changes(http_requests_histogram[6m])
+    {path="/foo"} 0
+    {path="/bar"} 0
+    {path="/biz"} 0
+
+eval instant at 50m changes(http_requests_histogram[60m])
+    {path="/foo"} 0
+    {path="/bar"} 1
+    {path="/biz"} 9
 
 clear
 

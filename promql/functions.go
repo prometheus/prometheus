@@ -1429,20 +1429,53 @@ func funcResets(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelpe
 // === changes(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcChanges(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	floats := vals[0].(Matrix)[0].Floats
+	histograms := vals[0].(Matrix)[0].Histograms
 	changes := 0
-
-	if len(floats) == 0 {
-		// TODO(beorn7): Only histogram values, still need to add support.
+	if len(floats) == 0 && len(histograms) == 0 {
 		return enh.Out, nil
 	}
 
-	prev := floats[0].F
-	for _, sample := range floats[1:] {
-		current := sample.F
-		if current != prev && !(math.IsNaN(current) && math.IsNaN(prev)) {
-			changes++
+	var prevSample, curSample Sample
+	for iFloat, iHistogram := 0, 0; iFloat < len(floats) || iHistogram < len(histograms); {
+		switch {
+		// Process a float sample if no histogram sample remains or its timestamp is earlier.
+		// Process a histogram sample if no float sample remains or its timestamp is earlier.
+		case iHistogram >= len(histograms) || iFloat < len(floats) && floats[iFloat].T < histograms[iHistogram].T:
+			{
+				curSample.F = floats[iFloat].F
+				curSample.H = nil
+				iFloat++
+			}
+		case iFloat >= len(floats) || iHistogram < len(histograms) && floats[iFloat].T > histograms[iHistogram].T:
+			{
+				curSample.H = histograms[iHistogram].H
+				iHistogram++
+			}
 		}
-		prev = current
+		// Skip the comparison for the first sample, just initialize prevSample.
+		if iFloat+iHistogram == 1 {
+			prevSample = curSample
+			continue
+		}
+		switch {
+		case prevSample.H == nil && curSample.H == nil:
+			{
+				if curSample.F != prevSample.F && !(math.IsNaN(curSample.F) && math.IsNaN(prevSample.F)) {
+					changes++
+				}
+			}
+		case prevSample.H != nil && curSample.H == nil, prevSample.H == nil && curSample.H != nil:
+			{
+				changes++
+			}
+		case prevSample.H != nil && curSample.H != nil:
+			{
+				if !curSample.H.Equals(prevSample.H) {
+					changes++
+				}
+			}
+		}
+		prevSample = curSample
 	}
 
 	return append(enh.Out, Sample{F: float64(changes)}), nil
