@@ -2691,6 +2691,10 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 
 	if shouldDropMetricName(op) {
 		enh.lb.Del(labels.MetricName)
+	} else if matching.Card == parser.CardOneToMany {
+		// Preserve the metric name from the "one"-side (passed to this function as the RHS).
+		// If there is no metric name on the "one"-side, we should remove the metric name, which is also handled by this.
+		enh.lb.Set(labels.MetricName, rhs.Get(labels.MetricName))
 	}
 
 	if matching.Card == parser.CardOneToOne {

@@ -854,3 +854,83 @@ eval instant at 10m (testhistogram) and on() (vector(-1) == 1)
 eval range from 0 to 10m step 5m (testhistogram) and on() (vector(-1) == 1)
 
 clear
+
+# Comparison operations with group_left / group_right.
+
+load 6m
+  side_a{env="test", pod="a", region="au"} 1 2 3 9 10
+  side_a{env="test", pod="a", region="us"} 6 7 8 4 5
+  side_b{env="test", dc="1"}               2 _ _ 5 _
+  side_b{env="test", dc="2"}               _ 3 _ _ 6
+
+eval range from 0 to 24m step 6m side_a < on(env) group_left(dc) side_b
+  side_a{env="test", pod="a", region="au", dc="1"} 1 _ _ _ _
+  side_a{env="test", pod="a", region="au", dc="2"} _ 2 _ _ _
+  side_a{env="test", pod="a", region="us", dc="1"} _ _ _ 4 _
+  side_a{env="test", pod="a", region="us", dc="2"} _ _ _ _ 5
+
+eval range from 0 to 24m step 6m sum without () (side_a) < on(env) group_left(dc) side_b
+  {env="test", pod="a", region="au", dc="1"} 1 _ _ _ _
+  {env="test", pod="a", region="au", dc="2"} _ 2 _ _ _
+  {env="test", pod="a", region="us", dc="1"} _ _ _ 4 _
+  {env="test", pod="a", region="us", dc="2"} _ _ _ _ 5
+
+eval range from 0 to 24m step 6m side_a < bool on(env) group_left(dc) side_b
+  {env="test", pod="a", region="au", dc="1"} 1 _ _ 0 _
+  {env="test", pod="a", region="au", dc="2"} _ 1 _ _ 0
+  {env="test", pod="a", region="us", dc="1"} 0 _ _ 1 _
+  {env="test", pod="a", region="us", dc="2"} _ 0 _ _ 1
+
+eval range from 0 to 24m step 6m side_a < ignoring(pod, region, dc) group_left(dc) side_b
+  side_a{env="test", pod="a", region="au", dc="1"} 1 _ _ _ _
+  side_a{env="test", pod="a", region="au", dc="2"} _ 2 _ _ _
+  side_a{env="test", pod="a", region="us", dc="1"} _ _ _ 4 _
+  side_a{env="test", pod="a", region="us", dc="2"} _ _ _ _ 5
+
+eval range from 0 to 24m step 6m sum without () (side_a) < ignoring(pod, region, dc) group_left(dc) side_b
+  {env="test", pod="a", region="au", dc="1"} 1 _ _ _ _
+  {env="test", pod="a", region="au", dc="2"} _ 2 _ _ _
+  {env="test", pod="a", region="us", dc="1"} _ _ _ 4 _
+  {env="test", pod="a", region="us", dc="2"} _ _ _ _ 5
+
+eval range from 0 to 24m step 6m side_a < bool ignoring(pod, region, dc) group_left(dc) side_b
+  {env="test", pod="a", region="au", dc="1"} 1 _ _ 0 _
+  {env="test", pod="a", region="au", dc="2"} _ 1 _ _ 0
+  {env="test", pod="a", region="us", dc="1"} 0 _ _ 1 _
+  {env="test", pod="a", region="us", dc="2"} _ 0 _ _ 1
+
+eval range from 0 to 24m step 6m side_b > on(env) group_right(dc) side_a
+  side_b{env="test", pod="a", region="au", dc="1"} 2 _ _ _ _
+  side_b{env="test", pod="a", region="au", dc="2"} _ 3 _ _ _
+  side_b{env="test", pod="a", region="us", dc="1"} _ _ _ 5 _
+  side_b{env="test", pod="a", region="us", dc="2"} _ _ _ _ 6
+
+eval range from 0 to 24m step 6m sum without () (side_b) > on(env) group_right(dc) side_a
+  {env="test", pod="a", region="au", dc="1"} 2 _ _ _ _
+  {env="test", pod="a", region="au", dc="2"} _ 3 _ _ _
+  {env="test", pod="a", region="us", dc="1"} _ _ _ 5 _
+  {env="test", pod="a", region="us", dc="2"} _ _ _ _ 6
+
+eval range from 0 to 24m step 6m side_b > bool on(env) group_right(dc) side_a
+  {env="test", pod="a", region="au", dc="1"} 1 _ _ 0 _
+  {env="test", pod="a", region="au", dc="2"} _ 1 _ _ 0
+  {env="test", pod="a", region="us", dc="1"} 0 _ _ 1 _
+  {env="test", pod="a", region="us", dc="2"} _ 0 _ _ 1
+
+eval range from 0 to 24m step 6m side_b > ignoring(pod, region, dc) group_right(dc) side_a
+  side_b{env="test", pod="a", region="au", dc="1"} 2 _ _ _ _
+  side_b{env="test", pod="a", region="au", dc="2"} _ 3 _ _ _
+  side_b{env="test", pod="a", region="us", dc="1"} _ _ _ 5 _
+  side_b{env="test", pod="a", region="us", dc="2"} _ _ _ _ 6
+
+eval range from 0 to 24m step 6m sum without () (side_b) > ignoring(pod, region, dc) group_right(dc) side_a
+  {env="test", pod="a", region="au", dc="1"} 2 _ _ _ _
+  {env="test", pod="a", region="au", dc="2"} _ 3 _ _ _
+  {env="test", pod="a", region="us", dc="1"} _ _ _ 5 _
+  {env="test", pod="a", region="us", dc="2"} _ _ _ _ 6
+
+eval range from 0 to 24m step 6m side_b > bool ignoring(pod, region, dc) group_right(dc) side_a
+  {env="test", pod="a", region="au", dc="1"} 1 _ _ 0 _
+  {env="test", pod="a", region="au", dc="2"} _ 1 _ _ 0
+  {env="test", pod="a", region="us", dc="1"} 0 _ _ 1 _
+  {env="test", pod="a", region="us", dc="2"} _ 0 _ _ 1
