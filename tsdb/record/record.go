@@ -48,9 +48,9 @@ const (
 	MmapMarkers Type = 5
 	// Metadata is used to match WAL records of type Metadata.
 	Metadata Type = 6
-	// HistogramSamplesLegacy is used to match WAL records of type Histograms prior to intrdocuing support of custom buckets, to maintain backwards compatibility.
+	// HistogramSamplesLegacy is used to match WAL records of type Histograms prior to introducing support of custom buckets, for backwards compatibility.
 	HistogramSamplesLegacy Type = 7
-	// FloatHistogramSamplesLegacy is used to match WAL records of type Float Histograms proior to introducing support of custom buckets, to maintain backwards compatibility.
+	// FloatHistogramSamplesLegacy is used to match WAL records of type Float Histograms prior to introducing support of custom buckets, for backwards compatibility.
 	FloatHistogramSamplesLegacy Type = 8
 	// HistogramSamples is used to match WAL records of type Histogram, and supports custom buckets.
 	HistogramSamples Type = 9
@@ -73,7 +73,7 @@ func (rt Type) String() string {
 	case FloatHistogramSamplesLegacy:
 		return "float_histogram_samples_legacy"
 	case HistogramSamples:
-		return "histogram_sample"
+		return "histogram_samples"
 	case FloatHistogramSamples:
 		return "float_histogram_samples"
 	case MmapMarkers:
