@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
+	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 	"github.com/prometheus/prometheus/model/labels"
+	"io"
 	"os"
 )
 
@@ -39,6 +41,15 @@ func NewDecoder(
 		if err = cache.Truncate(0); err != nil {
 			return nil, errors.Join(fmt.Errorf("failed to discard cache: %w", err), cache.Close())
 		}
+	} else {
+		cacheData, err := io.ReadAll(cache)
+		if err != nil {
+			logger.Errorf("failed to read cache file: %w", err)
+		}
+
+		if err = outputDecoder.LoadFrom(cacheData); err != nil {
+			logger.Errorf("failed to load from cache data: %w", err)
+		}
 	}
 
 	d := &Decoder{
@@ -56,15 +67,10 @@ func labelsToCppBridgeLabels(labels labels.Labels) []cppbridge.Label {
 }
 
 func (d *Decoder) Decode(ctx context.Context, segment []byte) (*cppbridge.DecodedRefSamples, error) {
-	samples, err := d.outputDecoder.Decode(ctx, segment)
-	if err != nil {
-		return nil, err
-	}
-
-	return samples, d.writeCache()
+	return d.outputDecoder.Decode(ctx, segment)
 }
 
-func (d *Decoder) writeCache() (err error) {
+func (d *Decoder) WriteCache() (err error) {
 	if _, err = d.cache.Seek(0, 0); err != nil {
 		return fmt.Errorf("failed to set cache file offset: %w", err)
 	}
@@ -72,9 +78,5 @@ func (d *Decoder) writeCache() (err error) {
 	if err = d.cache.Truncate(bytesWritten); err != nil {
 		return fmt.Errorf("failed to truncate cache file: %w", err)
 	}
-	return nil
-}
-
-func (d *Decoder) Restore(ctx context.Context) error {
 	return nil
 }

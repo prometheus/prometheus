@@ -43,6 +43,7 @@ func (r *walReader) Next() (segment Segment, err error) {
 		}
 		return segment, fmt.Errorf("failed to read segment: %w", err)
 	}
+
 	if len(decodedSegment.Data()) == 0 {
 		return segment, io.EOF
 	}

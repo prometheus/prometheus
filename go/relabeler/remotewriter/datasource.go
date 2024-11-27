@@ -6,24 +6,42 @@ import (
 	"fmt"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/scaleway/scaleway-sdk-go/logger"
+	"io"
+	"os"
 	"path/filepath"
 	"sync"
 )
 
 type dataSourceShard struct {
+	corrupted bool
 	walReader *walReader
 	decoder   *Decoder
 }
 
 func (s *dataSourceShard) Next(ctx context.Context) (*cppbridge.DecodedRefSamples, error) {
+	if s.corrupted {
+		return nil, ErrCorrupted
+	}
+
 	segment, err := s.walReader.Next()
 	if err != nil {
-		return nil, fmt.Errorf("failed to read next segment: %w", err)
+		if errors.Is(err, ErrNoData) || errors.Is(err, io.EOF) {
+			return nil, err
+		}
+
+		s.corrupted = true
+		return nil, ErrCorrupted
 	}
 
 	samples, err := s.decoder.Decode(ctx, segment.Data())
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode segment: %w", err)
+		s.corrupted = true
+		return nil, errors.Join(err, ErrCorrupted)
+	}
+
+	if err = s.decoder.WriteCache(); err != nil {
+		logger.Errorf("failed to write cache: %w", err)
 	}
 
 	return samples, nil
@@ -38,39 +56,23 @@ func (s *dataSourceShard) Close() error {
 }
 
 type dataSource struct {
-	ID          string
-	ConfigCRC32 uint32
-	shards      []*dataSourceShard
-	cursor      *Cursor
-	restored    bool
+	ID              string
+	shards          []*dataSourceShard
+	writeCompletion func() error
+	closed          bool
+	completed       bool
+	corrupted       bool
+	restored        bool
 }
 
-func newDataSource(dataDir string, numberOfShards uint16, config DestinationConfig) (*dataSource, error) {
-	cursor, err := NewCursor(filepath.Join(dataDir, fmt.Sprintf("%s.cursor", config.Name)))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create cursor: %w", err)
-	}
-
-	cursorData, err := cursor.Read()
-	if err != nil {
-		return nil, errors.Join(fmt.Errorf("failed to read cursor"), cursor.Close())
-	}
-
-	configCrc32, err := config.CRC32()
-	if err != nil {
-		return nil, errors.Join(fmt.Errorf("failed to calculate config crc32: %w", err), cursor.Close())
-	}
-
-	var configChanged bool
-	if cursorData.ConfigCRC32 != configCrc32 {
-		configChanged = true
-	}
-
+func newDataSource(dataDir string, numberOfShards uint16, config DestinationConfig, discardCache bool) (*dataSource, error) {
 	ds := &dataSource{
-		ConfigCRC32: configCrc32,
-		cursor:      cursor,
+		writeCompletion: func() error {
+			return os.WriteFile(filepath.Join(dataDir, fmt.Sprintf("%s.completed", config.Name)), nil, 0600)
+		},
 	}
 
+	var err error
 	for shardID := uint16(0); shardID < numberOfShards; shardID++ {
 		var wr *walReader
 		var encoderVersion uint8
@@ -84,14 +86,14 @@ func newDataSource(dataDir string, numberOfShards uint16, config DestinationConf
 		var convertedRelabelConfigs []*cppbridge.RelabelConfig
 		convertedRelabelConfigs, err = convertRelabelConfigs(config.WriteRelabelConfigs...)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert relabel configs: %w", err)
+			return nil, errors.Join(fmt.Errorf("failed to convert relabel configs: %w", err), ds.Close())
 		}
 
 		decoder, err = NewDecoder(
 			nil,
 			convertedRelabelConfigs,
 			cacheFileName,
-			configChanged,
+			discardCache,
 			shardID,
 			encoderVersion,
 		)
@@ -99,10 +101,12 @@ func newDataSource(dataDir string, numberOfShards uint16, config DestinationConf
 			return nil, errors.Join(fmt.Errorf("failed to create decoder: %w", err), ds.Close())
 		}
 
-		ds.shards = append(ds.shards, &dataSourceShard{
+		shard := &dataSourceShard{
 			walReader: wr,
 			decoder:   decoder,
-		})
+		}
+
+		ds.shards = append(ds.shards, shard)
 	}
 
 	return ds, nil
@@ -137,11 +141,27 @@ func convertRelabelConfigs(relabelConfigs ...*relabel.Config) ([]*cppbridge.Rela
 }
 
 func (ds *dataSource) Close() error {
+	if ds.closed {
+		return nil
+	}
+	ds.closed = true
 	var err error
 	for _, shard := range ds.shards {
 		err = errors.Join(err, shard.Close())
 	}
 	return err
+}
+
+func (ds *dataSource) IsCompleted() bool {
+	return ds.completed
+}
+
+func (ds *dataSource) WriteCompletion() error {
+	if ds.completed && ds.writeCompletion != nil {
+		return ds.writeCompletion()
+	}
+
+	return nil
 }
 
 type dataSourceNextResult struct {
@@ -156,20 +176,6 @@ type nextSegmentResult struct {
 }
 
 func (ds *dataSource) Next(ctx context.Context) ([]*cppbridge.DecodedRefSamples, uint32, error) {
-	//if !ds.restored {
-	//	wg := &sync.WaitGroup{}
-	//	errs := make([]error, len(ds.shards))
-	//	for _, shard := range ds.shards {
-	//		wg.Add(1)
-	//		go func(shard *dataSourceShard) {
-	//			defer wg.Done()
-	//
-	//		}(shard)
-	//	}
-	//	wg.Wait()
-	//	ds.restored = true
-	//}
-
 	wg := &sync.WaitGroup{}
 	nextSegmentResults := make([]nextSegmentResult, len(ds.shards))
 	for i := 0; i < len(ds.shards); i++ {
@@ -196,9 +202,10 @@ func (ds *dataSource) Next(ctx context.Context) ([]*cppbridge.DecodedRefSamples,
 	return segments, segmentID, err
 }
 
-func (ds *dataSource) Ack(segmentID uint32) error {
-	return ds.cursor.Write(CursorData{
-		SegmentID:   segmentID,
-		ConfigCRC32: ds.ConfigCRC32,
-	})
+func (ds *dataSource) LSSes() []*cppbridge.LabelSetStorage {
+	lsses := make([]*cppbridge.LabelSetStorage, len(ds.shards))
+	for i := 0; i < len(ds.shards); i++ {
+		lsses[i] = ds.shards[i].decoder.lss
+	}
+	return lsses
 }

@@ -170,8 +170,10 @@ func TestWriteLoopIterate(t *testing.T) {
 		},
 	})
 	wl := newWriteLoop(destination, testHeads.Catalog)
-	ds, err := wl.nextDataSource()
+	ds, err := wl.nextDataSource(ctx)
 	require.NoError(t, err)
 
-	err = wl.iterate(ctx, ds)
+	b := &batch{limit: 5000}
+
+	err = wl.iterate(ctx, ds, b)
 }

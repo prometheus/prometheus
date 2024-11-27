@@ -25,6 +25,10 @@ func (d *Destination) Config() DestinationConfig {
 	return d.config
 }
 
+func (d *Destination) ResetConfig(config DestinationConfig) {
+	d.config = config
+}
+
 func NewDestination(config DestinationConfig) *Destination {
 	return &Destination{config: config}
 }

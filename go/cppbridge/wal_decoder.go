@@ -347,6 +347,10 @@ func (s *DecodedRefSamples) Range(f func(id uint32, t int64, v float64) bool) {
 	}
 }
 
+func (s *DecodedRefSamples) Size() int {
+	return len(s.refSamples)
+}
+
 // WALProtobufEncoder - go wrapper for C-WALProtobufEncoder.
 //
 //	decoder - pointer to a C++ decoder initiated in C++ memory;

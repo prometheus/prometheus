@@ -6,7 +6,7 @@ import (
 	"github.com/prometheus/prometheus/pp/go/relabeler/head/catalog"
 	"os"
 	"strings"
-	"sync"
+	"time"
 )
 
 type Catalog interface {
@@ -19,77 +19,95 @@ type destinationWriteLoop struct {
 }
 
 type RemoteWriter struct {
-	mtx          sync.Mutex
-	destinations map[string]*destinationWriteLoop
-
-	catalog Catalog
+	configQueue chan []DestinationConfig
+	catalog     Catalog
 }
 
 func New(catalog Catalog) *RemoteWriter {
 	return &RemoteWriter{
-		catalog:      catalog,
-		destinations: make(map[string]*destinationWriteLoop),
+		catalog:     catalog,
+		configQueue: make(chan []DestinationConfig),
 	}
 }
 
 func (rw *RemoteWriter) Run(ctx context.Context) error {
-	<-ctx.Done()
-	return nil
-}
+	writeLoopRunners := make(map[string]*writeLoopRunner)
+	defer func() {
+		for _, wlr := range writeLoopRunners {
+			wlr.stop()
+		}
+	}()
 
-func (rw *RemoteWriter) Stop() {
-	rw.mtx.Lock()
-	defer rw.mtx.Unlock()
-	for _, destination := range rw.destinations {
-		destination.writeLoop.stop()
+	destinations := make(map[string]*Destination)
+
+	const gcInterval = time.Minute * 5
+	gcTicker := time.NewTicker(gcInterval)
+	defer gcTicker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case configs := <-rw.configQueue:
+			for _, config := range configs {
+				destination, ok := destinations[config.Name]
+				if !ok {
+					destination = NewDestination(config)
+					wl := newWriteLoop(destination, rw.catalog)
+					wlr := newWriteLoopRunner(wl)
+					writeLoopRunners[config.Name] = wlr
+					destinations[config.Name] = destination
+					go wlr.run(ctx)
+					continue
+				}
+
+				if config.EqualTo(destination.Config()) {
+					continue
+				}
+
+				wlr := writeLoopRunners[config.Name]
+				wlr.stop()
+				destination.ResetConfig(config)
+				wl := newWriteLoop(destination, rw.catalog)
+				wlr = newWriteLoopRunner(wl)
+				writeLoopRunners[config.Name] = wlr
+				go wlr.run(ctx)
+			}
+
+			destinationConfigs := make(map[string]DestinationConfig)
+			for _, destinationConfig := range configs {
+				destinationConfigs[destinationConfig.Name] = destinationConfig
+			}
+
+			for _, destination := range destinations {
+				name := destination.Config().Name
+				if _, ok := destinationConfigs[name]; !ok {
+					wlr := writeLoopRunners[name]
+					wlr.stop()
+					delete(destinations, name)
+					delete(writeLoopRunners, name)
+				}
+			}
+
+		case <-gcTicker.C:
+			if err := rw.gc(destinations); err != nil {
+				// todo: log?
+			}
+		}
 	}
 }
 
 func (rw *RemoteWriter) ApplyConfig(configs ...DestinationConfig) (err error) {
-	rw.mtx.Lock()
-	defer rw.mtx.Unlock()
-
-	destinationConfigs := make(map[string]DestinationConfig)
-	for _, destinationConfig := range configs {
-		destinationConfigs[destinationConfig.Name] = destinationConfig
+	// todo: validate?
+	select {
+	case rw.configQueue <- configs:
+		return nil
+	case <-time.After(time.Minute):
+		return fmt.Errorf("failed to apply remote write configs, timeout")
 	}
-
-	for name, destinationConfig := range destinationConfigs {
-		dwl, ok := rw.destinations[name]
-		if !ok {
-			destination := NewDestination(destinationConfig)
-			wl := newWriteLoop(destination, rw.catalog)
-			rw.destinations[name] = &destinationWriteLoop{
-				destination: destination,
-				writeLoop:   wl,
-			}
-			go wl.start()
-			continue
-		}
-
-		if dwl.destination.Config().EqualTo(destinationConfig) {
-			continue
-		}
-
-		dwl.writeLoop.stop()
-		wl := newWriteLoop(dwl.destination, rw.catalog)
-		dwl.writeLoop = wl
-		go wl.start()
-	}
-
-	for name, dwl := range rw.destinations {
-		_, ok := destinationConfigs[name]
-		if ok {
-			continue
-		}
-		dwl.writeLoop.stop()
-		delete(rw.destinations, name)
-	}
-
-	return rw.gc()
 }
 
-func (rw *RemoteWriter) gc() error {
+func (rw *RemoteWriter) gc(runners map[string]*Destination) error {
 	headRecords, err := rw.catalog.List(
 		func(record catalog.Record) bool {
 			return record.Status != catalog.StatusCorrupted
@@ -128,14 +146,43 @@ func (rw *RemoteWriter) cleanUpDir(dir string) error {
 			continue
 		}
 
-		destination := strings.TrimSuffix(fileName, ".cursor")
+		//destination := strings.TrimSuffix(fileName, ".cursor")
 
-		if _, ok := rw.destinations[destination]; !ok {
-			if err = os.RemoveAll(fileName); err != nil {
-				return fmt.Errorf("failed to delete file: %w", err)
-			}
-		}
+		//if _, ok := rw.destinations[destination]; !ok {
+		//	if err = os.RemoveAll(fileName); err != nil {
+		//		return fmt.Errorf("failed to delete file: %w", err)
+		//	}
+		//}
 	}
 
 	return nil
+}
+
+type writeLoopRunner struct {
+	wl       *writeLoop
+	stopc    chan struct{}
+	stoppedc chan struct{}
+}
+
+func newWriteLoopRunner(wl *writeLoop) *writeLoopRunner {
+	return &writeLoopRunner{
+		wl:       wl,
+		stopc:    make(chan struct{}),
+		stoppedc: make(chan struct{}),
+	}
+}
+
+func (r *writeLoopRunner) run(ctx context.Context) {
+	ctx, cancel := context.WithCancel(ctx)
+	go func() {
+		<-r.stopc
+		cancel()
+	}()
+	r.wl.run(ctx)
+	close(r.stoppedc)
+}
+
+func (r *writeLoopRunner) stop() {
+	close(r.stopc)
+	<-r.stoppedc
 }

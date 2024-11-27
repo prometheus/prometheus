@@ -77,5 +77,11 @@ func (c *Cursor) Write(data CursorData) error {
 }
 
 func (c *Cursor) Close() error {
-	return c.file.Close()
+	if c.file != nil {
+		err := c.file.Close()
+		c.file = nil
+		return err
+	}
+
+	return nil
 }
