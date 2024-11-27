@@ -1426,56 +1426,37 @@ func funcResets(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelpe
 	return append(enh.Out, Sample{F: float64(resets)}), nil
 }
 
-// mergeSeries merges the floats and the histograms in a series
-// into a slice of Sample sorted by their timestamp.
-// it assumes that the floats and histograms are sorted by their timestamp.
-func mergeSeries(series Series) []*Sample {
-	floats := series.Floats
-	histograms := series.Histograms
-	samples := make([]*Sample, 0, len(floats)+len(histograms))
-
-	// i for iterating through floats and j for iterating through histograms
-	i, j := 0, 0
-	for i < len(floats) && j < len(histograms) {
-		if floats[i].T < histograms[j].T {
-			samples = append(samples, &Sample{
-				F: floats[i].F,
-			})
-			i++
-		} else {
-			samples = append(samples, &Sample{
-				H: histograms[j].H,
-			})
-			j++
-		}
-	}
-	// Append the remaining samples
-	for i < len(floats) {
-		samples = append(samples, &Sample{
-			F: floats[i].F,
-		})
-		i++
-	}
-	for j < len(histograms) {
-		samples = append(samples, &Sample{
-			H: histograms[j].H,
-		})
-		j++
-	}
-
-	return samples
-}
-
 // === changes(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcChanges(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	samples := mergeSeries(vals[0].(Matrix)[0])
+	floats := vals[0].(Matrix)[0].Floats
+	histograms := vals[0].(Matrix)[0].Histograms
 	changes := 0
-	if len(samples) == 0 {
+	if len(floats) == 0 && len(histograms) == 0 {
 		return enh.Out, nil
 	}
 
-	prevSample := samples[0]
-	for _, curSample := range samples[1:] {
+	var prevSample, curSample Sample
+	for iFloat, iHistogram := 0, 0; iFloat < len(floats) || iHistogram < len(histograms); {
+		switch {
+		// Process a float sample if no histogram sample remains or its timestamp is earlier.
+		// Process a histogram sample if no float sample remains or its timestamp is earlier.
+		case iHistogram >= len(histograms) || iFloat < len(floats) && floats[iFloat].T < histograms[iHistogram].T:
+			{
+				curSample.F = floats[iFloat].F
+				curSample.H = nil
+				iFloat++
+			}
+		case iFloat >= len(floats) || iHistogram < len(histograms) && floats[iFloat].T > histograms[iHistogram].T:
+			{
+				curSample.H = histograms[iHistogram].H
+				iHistogram++
+			}
+		}
+		// Skip the comparison for the first sample, just initialize prevSample.
+		if iFloat+iHistogram == 1 {
+			prevSample = curSample
+			continue
+		}
 		switch {
 		case prevSample.H == nil && curSample.H == nil:
 			{
