@@ -126,10 +126,7 @@ type QueryEngine interface {
 // QueryLogger is an interface that can be used to log all the queries logged
 // by the engine.
 type QueryLogger interface {
-	Error(msg string, args ...any)
-	Info(msg string, args ...any)
-	Debug(msg string, args ...any)
-	Warn(msg string, args ...any)
+	Log(context.Context, slog.Level, string, ...any)
 	With(args ...any)
 	Close() error
 }
@@ -637,20 +634,20 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annota
 				// The step provided by the user is in seconds.
 				params["step"] = int64(eq.Interval / (time.Second / time.Nanosecond))
 			}
-			l.With("params", params)
+			f := []interface{}{"params", params}
 			if err != nil {
-				l.With("error", err)
+				f = append(f, "error", err)
 			}
-			l.With("stats", stats.NewQueryStats(q.Stats()))
+			f = append(f, "stats", stats.NewQueryStats(q.Stats()))
 			if span := trace.SpanFromContext(ctx); span != nil {
-				l.With("spanID", span.SpanContext().SpanID())
+				f = append(f, "spanID", span.SpanContext().SpanID())
 			}
 			if origin := ctx.Value(QueryOrigin{}); origin != nil {
 				for k, v := range origin.(map[string]interface{}) {
-					l.With(k, v)
+					f = append(f, k, v)
 				}
 			}
-			l.Info("promql query logged")
+			l.Log(context.Background(), slog.LevelInfo, "promql query logged", f...)
 			// TODO: @tjhop -- do we still need this metric/error log if logger doesn't return errors?
 			// ng.metrics.queryLogFailures.Inc()
 			// ng.logger.Error("can't log query", "err", err)
@@ -1524,7 +1521,7 @@ func (ev *evaluator) evalSubquery(ctx context.Context, subq *parser.SubqueryExpr
 	// Avoid double counting samples when running a subquery, those samples will be counted in later stage.
 	ev.samplesStats = ev.samplesStats.NewChild()
 	val, ws := ev.eval(ctx, subq)
-	// But do incorporate the peak from the subquery
+	// But do incorporate the peak from the subquery.
 	samplesStats.UpdatePeakFromSubquery(ev.samplesStats)
 	ev.samplesStats = samplesStats
 	mat := val.(Matrix)
@@ -1989,7 +1986,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		// Start with the first timestamp after (ev.startTimestamp - offset - range)
 		// that is aligned with the step (multiple of 'newEv.interval').
 		newEv.startTimestamp = newEv.interval * ((ev.startTimestamp - offsetMillis - rangeMillis) / newEv.interval)
-		if newEv.startTimestamp < (ev.startTimestamp - offsetMillis - rangeMillis) {
+		if newEv.startTimestamp <= (ev.startTimestamp - offsetMillis - rangeMillis) {
 			newEv.startTimestamp += newEv.interval
 		}
 

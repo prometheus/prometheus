@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"sort"
 	"strings"
@@ -1426,23 +1427,23 @@ load 10s
 		},
 		{
 			// The peak samples in memory is during the first evaluation:
-			//   - Subquery takes 22 samples, 11 for each bigmetric, but samples on the left bound won't be evaluated.
+			//   - Subquery takes 20 samples, 10 for each bigmetric.
 			//   - Result is calculated per series where the series samples is buffered, hence 10 more here.
 			//   - The result of two series is added before the last series buffer is discarded, so 2 more here.
-			//   Hence at peak it is 22 (subquery) + 10 (buffer of a series) + 2 (result from 2 series).
+			//   Hence at peak it is 20 (subquery) + 10 (buffer of a series) + 2 (result from 2 series).
 			// The subquery samples and the buffer is discarded before duplicating.
 			Query:      `rate(bigmetric[10s:1s] @ 10)`,
-			MaxSamples: 34,
+			MaxSamples: 32,
 			Start:      time.Unix(0, 0),
 			End:        time.Unix(10, 0),
 			Interval:   5 * time.Second,
 		},
 		{
 			// Here the reasoning is same as above. But LHS and RHS are done one after another.
-			// So while one of them takes 34 samples at peak, we need to hold the 2 sample
+			// So while one of them takes 32 samples at peak, we need to hold the 2 sample
 			// result of the other till then.
 			Query:      `rate(bigmetric[10s:1s] @ 10) + rate(bigmetric[10s:1s] @ 30)`,
-			MaxSamples: 36,
+			MaxSamples: 34,
 			Start:      time.Unix(0, 0),
 			End:        time.Unix(10, 0),
 			Interval:   5 * time.Second,
@@ -1450,28 +1451,28 @@ load 10s
 		{
 			// promql.Sample as above but with only 1 part as step invariant.
 			// Here the peak is caused by the non-step invariant part as it touches more time range.
-			// Hence at peak it is 2*21 (subquery from 0s to 20s)
+			// Hence at peak it is 2*20 (subquery from 0s to 20s)
 			//                     + 10 (buffer of a series per evaluation)
 			//                     + 6 (result from 2 series at 3 eval times).
 			Query:      `rate(bigmetric[10s:1s]) + rate(bigmetric[10s:1s] @ 30)`,
-			MaxSamples: 58,
+			MaxSamples: 56,
 			Start:      time.Unix(10, 0),
 			End:        time.Unix(20, 0),
 			Interval:   5 * time.Second,
 		},
 		{
 			// Nested subquery.
-			// We saw that innermost rate takes 34 samples which is still the peak
+			// We saw that innermost rate takes 32 samples which is still the peak
 			// since the other two subqueries just duplicate the result.
-			Query:      `rate(rate(bigmetric[10s:1s] @ 10)[100s:25s] @ 1000)[100s:20s] @ 2000`,
-			MaxSamples: 34,
+			Query:      `rate(rate(bigmetric[10:1s] @ 10)[100s:25s] @ 1000)[100s:20s] @ 2000`,
+			MaxSamples: 32,
 			Start:      time.Unix(10, 0),
 		},
 		{
 			// Nested subquery.
-			// Now the outermost subquery produces more samples than inner most rate.
+			// Now the outermost subquery produces more samples than innermost rate.
 			Query:      `rate(rate(bigmetric[10s:1s] @ 10)[100s:25s] @ 1000)[17s:1s] @ 2000`,
-			MaxSamples: 36,
+			MaxSamples: 34,
 			Start:      time.Unix(10, 0),
 		},
 	}
@@ -1618,6 +1619,19 @@ load 1ms
 			start: 100,
 			result: promql.Matrix{
 				promql.Series{
+					Floats: []promql.FPoint{{F: 22, T: 225000}, {F: 25, T: 250000}, {F: 27, T: 275000}, {F: 30, T: 300000}},
+					Metric: lbls1,
+				},
+				promql.Series{
+					Floats: []promql.FPoint{{F: 44, T: 225000}, {F: 50, T: 250000}, {F: 54, T: 275000}, {F: 60, T: 300000}},
+					Metric: lbls2,
+				},
+			},
+		}, {
+			query: "metric[100s1ms:25s] @ 300", // Add 1ms to the range to see the legacy behavior of the previous test.
+			start: 100,
+			result: promql.Matrix{
+				promql.Series{
 					Floats: []promql.FPoint{{F: 20, T: 200000}, {F: 22, T: 225000}, {F: 25, T: 250000}, {F: 27, T: 275000}, {F: 30, T: 300000}},
 					Metric: lbls1,
 				},
@@ -1631,6 +1645,15 @@ load 1ms
 			start: 100,
 			result: promql.Matrix{
 				promql.Series{
+					Floats: []promql.FPoint{{F: 26, T: -25000}, {F: 1, T: 0}},
+					Metric: lblsneg,
+				},
+			},
+		}, {
+			query: "metric_neg[50s1ms:25s] @ 0", // Add 1ms to the range to see the legacy behavior of the previous test.
+			start: 100,
+			result: promql.Matrix{
+				promql.Series{
 					Floats: []promql.FPoint{{F: 51, T: -50000}, {F: 26, T: -25000}, {F: 1, T: 0}},
 					Metric: lblsneg,
 				},
@@ -1640,12 +1663,21 @@ load 1ms
 			start: 100,
 			result: promql.Matrix{
 				promql.Series{
+					Floats: []promql.FPoint{{F: 126, T: -125000}, {F: 101, T: -100000}},
+					Metric: lblsneg,
+				},
+			},
+		}, {
+			query: "metric_neg[50s1ms:25s] @ -100", // Add 1ms to the range to see the legacy behavior of the previous test.
+			start: 100,
+			result: promql.Matrix{
+				promql.Series{
 					Floats: []promql.FPoint{{F: 151, T: -150000}, {F: 126, T: -125000}, {F: 101, T: -100000}},
 					Metric: lblsneg,
 				},
 			},
 		}, {
-			query: `metric_ms[100ms:25ms] @ 2.345`,
+			query: `metric_ms[101ms:25ms] @ 2.345`,
 			start: 100,
 			result: promql.Matrix{
 				promql.Series{
@@ -1830,7 +1862,7 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						promql.Matrix{
 							promql.Series{
-								Floats: []promql.FPoint{{F: 2, T: 10000}, {F: 2, T: 15000}, {F: 2, T: 20000}, {F: 2, T: 25000}, {F: 2, T: 30000}},
+								Floats: []promql.FPoint{{F: 2, T: 15000}, {F: 2, T: 20000}, {F: 2, T: 25000}, {F: 2, T: 30000}},
 								Metric: labels.FromStrings("__name__", "metric"),
 							},
 						},
@@ -1881,6 +1913,20 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						promql.Matrix{
 							promql.Series{
+								Floats: []promql.FPoint{{F: 10000, T: 10000000}, {F: 100, T: 10010000}, {F: 130, T: 10020000}},
+								Metric: labels.FromStrings("__name__", "http_requests", "job", "api-server", "instance", "0", "group", "production"),
+							},
+						},
+						nil,
+					},
+					Start: time.Unix(10020, 0),
+				},
+				{ // Normal selector. Add 1ms to the range to see the legacy behavior of the previous test.
+					Query: `http_requests{group=~"pro.*",instance="0"}[30s1ms:10s]`,
+					Result: promql.Result{
+						nil,
+						promql.Matrix{
+							promql.Series{
 								Floats: []promql.FPoint{{F: 9990, T: 9990000}, {F: 10000, T: 10000000}, {F: 100, T: 10010000}, {F: 130, T: 10020000}},
 								Metric: labels.FromStrings("__name__", "http_requests", "job", "api-server", "instance", "0", "group", "production"),
 							},
@@ -1923,6 +1969,36 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						promql.Matrix{
 							promql.Series{
+								Floats:   []promql.FPoint{{F: 3, T: 7990000}, {F: 3, T: 7995000}, {F: 3, T: 8000000}},
+								Metric:   labels.FromStrings("job", "api-server", "instance", "0", "group", "canary"),
+								DropName: true,
+							},
+							promql.Series{
+								Floats:   []promql.FPoint{{F: 4, T: 7990000}, {F: 4, T: 7995000}, {F: 4, T: 8000000}},
+								Metric:   labels.FromStrings("job", "api-server", "instance", "1", "group", "canary"),
+								DropName: true,
+							},
+							promql.Series{
+								Floats:   []promql.FPoint{{F: 1, T: 7990000}, {F: 1, T: 7995000}, {F: 1, T: 8000000}},
+								Metric:   labels.FromStrings("job", "api-server", "instance", "0", "group", "production"),
+								DropName: true,
+							},
+							promql.Series{
+								Floats:   []promql.FPoint{{F: 2, T: 7990000}, {F: 2, T: 7995000}, {F: 2, T: 8000000}},
+								Metric:   labels.FromStrings("job", "api-server", "instance", "1", "group", "production"),
+								DropName: true,
+							},
+						},
+						nil,
+					},
+					Start: time.Unix(8000, 0),
+				},
+				{
+					Query: `rate(http_requests[1m])[15s1ms:5s]`, // Add 1ms to the range to see the legacy behavior of the previous test.
+					Result: promql.Result{
+						nil,
+						promql.Matrix{
+							promql.Series{
 								Floats:   []promql.FPoint{{F: 3, T: 7985000}, {F: 3, T: 7990000}, {F: 3, T: 7995000}, {F: 3, T: 8000000}},
 								Metric:   labels.FromStrings("job", "api-server", "instance", "0", "group", "canary"),
 								DropName: true,
@@ -1953,6 +2029,35 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						promql.Matrix{
 							promql.Series{
+								Floats: []promql.FPoint{{F: 300, T: 100000}, {F: 330, T: 110000}, {F: 360, T: 120000}},
+								Metric: labels.EmptyLabels(),
+							},
+						},
+						nil,
+					},
+					Start: time.Unix(120, 0),
+				},
+				{
+					Query: `sum(http_requests{group=~"pro.*"})[30s:10s]`,
+					Result: promql.Result{
+						nil,
+						promql.Matrix{
+							promql.Series{
+								Floats: []promql.FPoint{{F: 300, T: 100000}, {F: 330, T: 110000}, {F: 360, T: 120000}},
+								Metric: labels.EmptyLabels(),
+							},
+						},
+						nil,
+					},
+					Start: time.Unix(121, 0), // 1s later doesn't change the result.
+				},
+				{
+					// Add 1ms to the range to see the legacy behavior of the previous test.
+					Query: `sum(http_requests{group=~"pro.*"})[30s1ms:10s]`,
+					Result: promql.Result{
+						nil,
+						promql.Matrix{
+							promql.Series{
 								Floats: []promql.FPoint{{F: 270, T: 90000}, {F: 300, T: 100000}, {F: 330, T: 110000}, {F: 360, T: 120000}},
 								Metric: labels.EmptyLabels(),
 							},
@@ -1967,6 +2072,20 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						promql.Matrix{
 							promql.Series{
+								Floats: []promql.FPoint{{F: 900, T: 90000}, {F: 1000, T: 100000}, {F: 1100, T: 110000}, {F: 1200, T: 120000}},
+								Metric: labels.EmptyLabels(),
+							},
+						},
+						nil,
+					},
+					Start: time.Unix(120, 0),
+				},
+				{
+					Query: `sum(http_requests)[40s1ms:10s]`, // Add 1ms to the range to see the legacy behavior of the previous test.
+					Result: promql.Result{
+						nil,
+						promql.Matrix{
+							promql.Series{
 								Floats: []promql.FPoint{{F: 800, T: 80000}, {F: 900, T: 90000}, {F: 1000, T: 100000}, {F: 1100, T: 110000}, {F: 1200, T: 120000}},
 								Metric: labels.EmptyLabels(),
 							},
@@ -1977,6 +2096,21 @@ func TestSubquerySelector(t *testing.T) {
 				},
 				{
 					Query: `(sum(http_requests{group=~"p.*"})+sum(http_requests{group=~"c.*"}))[20s:5s]`,
+					Result: promql.Result{
+						nil,
+						promql.Matrix{
+							promql.Series{
+								Floats: []promql.FPoint{{F: 1000, T: 105000}, {F: 1100, T: 110000}, {F: 1100, T: 115000}, {F: 1200, T: 120000}},
+								Metric: labels.EmptyLabels(),
+							},
+						},
+						nil,
+					},
+					Start: time.Unix(120, 0),
+				},
+				{
+					// Add 1ms to the range to see the legacy behavior of the previous test.
+					Query: `(sum(http_requests{group=~"p.*"})+sum(http_requests{group=~"c.*"}))[20s1ms:5s]`,
 					Result: promql.Result{
 						nil,
 						promql.Matrix{
@@ -2034,31 +2168,10 @@ func (f *FakeQueryLogger) Close() error {
 }
 
 // It implements the promql.QueryLogger interface.
-func (f *FakeQueryLogger) Info(msg string, args ...any) {
-	log := append([]any{msg}, args...)
-	log = append(log, f.attrs...)
-	f.attrs = f.attrs[:0]
-	f.logs = append(f.logs, log...)
-}
-
-// It implements the promql.QueryLogger interface.
-func (f *FakeQueryLogger) Error(msg string, args ...any) {
-	log := append([]any{msg}, args...)
-	log = append(log, f.attrs...)
-	f.attrs = f.attrs[:0]
-	f.logs = append(f.logs, log...)
-}
-
-// It implements the promql.QueryLogger interface.
-func (f *FakeQueryLogger) Warn(msg string, args ...any) {
-	log := append([]any{msg}, args...)
-	log = append(log, f.attrs...)
-	f.attrs = f.attrs[:0]
-	f.logs = append(f.logs, log...)
-}
-
-// It implements the promql.QueryLogger interface.
-func (f *FakeQueryLogger) Debug(msg string, args ...any) {
+func (f *FakeQueryLogger) Log(ctx context.Context, level slog.Level, msg string, args ...any) {
+	// Test usage only really cares about existence of keyvals passed in
+	// via args, just append in the log message before handling the
+	// provided args and any embedded kvs added via `.With()` on f.attrs.
 	log := append([]any{msg}, args...)
 	log = append(log, f.attrs...)
 	f.attrs = f.attrs[:0]
