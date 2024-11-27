@@ -51,7 +51,8 @@ var excludedLabels = []string{
 	labels.BucketLabel,
 }
 
-// Bucket is exported for potential use in other PromQL engines.
+// Bucket represents a bucket of a classic histogram. It is used internally by the promql
+// package, but it is nevertheless exported for potential use in other PromQL engines.
 type Bucket struct {
 	UpperBound float64
 	Count      float64
