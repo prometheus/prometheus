@@ -933,6 +933,9 @@ eval_warn instant at 1m (quantile_over_time(2, (data[2m])))
 clear
 
 # Test time-related functions.
+load 5m
+    histogram_sample {{schema:0 sum:1 count:1}}
+
 eval instant at 0m year()
   {} 1970
 
@@ -1013,6 +1016,23 @@ eval instant at 0m days_in_month(vector(1454284800))
 # February 1st 2017 not in leap year.
 eval instant at 0m days_in_month(vector(1485907200))
   {} 28
+
+# Test for histograms.
+eval instant at 0m day_of_month(histogram_sample)
+
+eval instant at 0m day_of_week(histogram_sample)
+
+eval instant at 0m day_of_year(histogram_sample)
+
+eval instant at 0m days_in_month(histogram_sample)
+
+eval instant at 0m hour(histogram_sample)
+
+eval instant at 0m minute(histogram_sample)
+
+eval instant at 0m month(histogram_sample)
+
+eval instant at 0m year(histogram_sample)
 
 clear
 
