@@ -352,22 +352,23 @@ TEST_F(TestProtobufEncoder, Encode) {
   out_slices.resize(2);
   penc.encode(batch, out_slices);
 
-  std::string expected_proto1{10,  58, 10,  18, 10, 8,   95,  95, 110, 97, 109, 101, 95, 95, 18,  6,  118, 97,  108, 117, 101, 49, 10,  10,  10,  3,   106,
-                              111, 98, 18,  3,  97, 98,  99,  18, 11,  9,  0,   0,   0,  0,  0,   0,  0,   64,  16,  9,   18,  11, 9,   0,   0,   0,   0,
-                              0,   0,  -16, 63, 16, 10,  10,  46, 10,  18, 10,  8,   95, 95, 110, 97, 109, 101, 95,  95,  18,  6,  118, 97,  108, 117, 101,
-                              51,  10, 11,  10, 3,  106, 111, 98, 18,  4,  97,  98,  99, 51, 18,  11, 9,   0,   0,   0,   0,   0,  0,   -16, 63,  16,  10};
-  std::string expected_proto2{10, 45, 10,  18,  10, 8,  95, 95, 110, 97, 109, 101, 95, 95, 18, 6, 118, 97, 108, 117, 101, 50, 10, 10,
-                              10, 3,  106, 111, 98, 18, 3,  97, 98,  99, 18,  11,  9,  0,  0,  0, 0,   0,  0,   -16, 63,  16, 10};
+  std::vector<int8_t> expected_proto1{10, 58, 10,  18, 10,  8,   95, 95, 110, 97, 109, 101, 95,  95,  18,  6,  118, 97, 108, 117, 101, 49,
+                                      10, 10, 10,  3,  106, 111, 98, 18, 3,   97, 98,  99,  18,  11,  9,   0,  0,   0,  0,   0,   0,   0,
+                                      64, 16, 9,   18, 11,  9,   0,  0,  0,   0,  0,   0,   -16, 63,  16,  10, 10,  46, 10,  18,  10,  8,
+                                      95, 95, 110, 97, 109, 101, 95, 95, 18,  6,  118, 97,  108, 117, 101, 51, 10,  11, 10,  3,   106, 111,
+                                      98, 18, 4,   97, 98,  99,  51, 18, 11,  9,  0,   0,   0,   0,   0,   0,  -16, 63, 16,  10};
+  std::vector<int8_t> expected_proto2{10, 45, 10,  18,  10, 8,  95, 95, 110, 97, 109, 101, 95, 95, 18, 6, 118, 97, 108, 117, 101, 50, 10, 10,
+                                      10, 3,  106, 111, 98, 18, 3,  97, 98,  99, 18,  11,  9,  0,  0,  0, 0,   0,  0,   -16, 63,  16, 10};
 
   std::string proto1;
   bool ok = snappy::Uncompress(out_slices[0].data(), out_slices[0].size(), &proto1);
   EXPECT_TRUE(ok);
-  EXPECT_EQ(expected_proto1, proto1);
+  EXPECT_EQ(expected_proto1, std::vector<int8_t>(proto1.begin(), proto1.end()));
 
   std::string proto2;
   ok = snappy::Uncompress(out_slices[1].data(), out_slices[1].size(), &proto2);
   EXPECT_TRUE(ok);
-  EXPECT_EQ(expected_proto2, proto2);
+  EXPECT_EQ(expected_proto2, std::vector<int8_t>(proto2.begin(), proto2.end()));
 }
 
 }  // namespace
