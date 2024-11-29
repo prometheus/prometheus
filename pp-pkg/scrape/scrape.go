@@ -94,7 +94,7 @@ func TargetFromContext(ctx context.Context) (*Target, bool) {
 // ScraperHashdex hashdex for sraped incoming data.
 type ScraperHashdex interface {
 	// Parse parsing incoming slice byte with default timestamp to hashdex.
-	Parse(buffer []byte, defaultTimestamp int64) error
+	Parse(buffer []byte, defaultTimestamp int64) (uint32, error)
 	// RangeMetadata calls f sequentially for each metadata present in the hashdex.
 	// If f returns false, range stops the iteration.
 	RangeMetadata(f func(metadata cppbridge.WALScraperHashdexMetadata) bool)
@@ -937,11 +937,13 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 		)
 	}
 
-	var total, added, bytesRead int
+	var scraped uint32
+	var stats cppbridge.RelabelerStats
+	var bytesRead int
 	var appErr, scrapeErr error
 
 	defer func() {
-		if err := sl.report(appendTime, time.Since(start), total, added, bytesRead, scrapeErr); err != nil {
+		if err := sl.report(appendTime, time.Since(start), stats, scraped, bytesRead, scrapeErr); err != nil {
 			level.Warn(sl.logger).Log("msg", "Appending scrape report failed", "err", err)
 		}
 	}()
@@ -994,8 +996,8 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 
 	// A failed scrape is the same as an empty scrape,
 	// we still call sl.append to trigger stale markers.
-	total, added, appErr = sl.appendCpp(b, contentType, appendTime)
-	level.Debug(sl.logger).Log("msg", "scrape append", "total", total, "added", added)
+	scraped, stats, appErr = sl.appendCpp(b, contentType, appendTime)
+	level.Debug(sl.logger).Log("msg", "scrape append", "total", scraped, "stats", stats)
 	if appErr != nil {
 		level.Error(sl.logger).Log("msg", "Append failed", "err", appErr)
 		sl.metrics.appendError.Inc()
@@ -1068,7 +1070,7 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 	// sl.context would have been cancelled, hence using sl.appenderCtx.
 	emptyBatch := sl.bufferBatches.get()
 	sl.state.SetStaleNansTS(timestamp.FromTime(staleTime))
-	if err := sl.receiver.AppendTimeSeries(
+	if _, err := sl.receiver.AppendTimeSeries(
 		sl.appenderCtx,
 		emptyBatch,
 		sl.state,
@@ -1098,16 +1100,21 @@ func (sl *scrapeLoop) getCache() *scrapeCache {
 }
 
 // TODO Delete.
-func (sl *scrapeLoop) append(b []byte, contentType string, ts time.Time) (total, added int, err error) {
+func (sl *scrapeLoop) append(
+	b []byte,
+	contentType string,
+	ts time.Time,
+) (total uint32, stats cppbridge.RelabelerStats, err error) {
 	// if input is empty for stalenan
 	if len(b) == 0 {
 		sl.state.SetStaleNansTS(timestamp.FromTime(ts))
-		return 0, 0, sl.receiver.AppendTimeSeries(
+		_, err = sl.receiver.AppendTimeSeries(
 			sl.appenderCtx,
 			sl.bufferBatches.get(),
 			sl.state,
 			sl.scrapeName,
 		)
+		return 0, stats, err
 	}
 	p, err := textparse.New(b, contentType, sl.scrapeClassicHistograms, sl.symbolTable)
 	if err != nil {
@@ -1198,21 +1205,25 @@ loop:
 		return
 	}
 
-	batched := batch.Len()
 	sl.state.SetStaleNansTS(defTime)
-	if err = sl.receiver.AppendTimeSeries(
+	stats, err = sl.receiver.AppendTimeSeries(
 		sl.appenderCtx,
 		batch,
 		sl.state,
 		sl.scrapeName,
-	); err != nil {
+	)
+	if err != nil {
 		return
 	}
-	added = batched
+
 	return
 }
 
-func (sl *scrapeLoop) appendCpp(b []byte, contentType string, ts time.Time) (total, added int, err error) {
+func (sl *scrapeLoop) appendCpp(
+	b []byte,
+	contentType string,
+	ts time.Time,
+) (scraped uint32, stats cppbridge.RelabelerStats, err error) {
 	defer func() {
 		if err != nil {
 			sl.cache.iterDone(false)
@@ -1238,25 +1249,28 @@ func (sl *scrapeLoop) appendCpp(b []byte, contentType string, ts time.Time) (tot
 
 	// parsing series via cpp parser
 	defTime := timestamp.FromTime(ts)
-	if err = hashdex.Parse(b, defTime); err != nil {
-		return 0, 0, fmt.Errorf("failed hashdex parse: %w", err)
+	scraped, err = hashdex.Parse(b, defTime)
+	if err != nil {
+		return 0, stats, fmt.Errorf("failed hashdex parse: %w", err)
 	}
 
+	// add metadata
 	if err = sl.appendMetadata(hashdex); err != nil {
-		return 0, 0, fmt.Errorf("failed append metadata: %w", err)
+		return 0, stats, fmt.Errorf("failed append metadata: %w", err)
 	}
 
 	sl.state.SetStaleNansTS(defTime)
-	if err = sl.receiver.AppendTimeSeriesHashdex(
+	stats, err = sl.receiver.AppendTimeSeriesHashdex(
 		sl.appenderCtx,
 		hashdex,
 		sl.state,
 		sl.scrapeName,
-	); err != nil {
-		return 0, 0, fmt.Errorf("failed receiver append hashdex: %w", err)
+	)
+	if err != nil {
+		return 0, stats, fmt.Errorf("failed receiver append hashdex: %w", err)
 	}
 
-	return total, added, nil
+	return scraped, stats, nil
 }
 
 // appendMetadata append metadata from hashdex.
@@ -1314,6 +1328,7 @@ var (
 	scrapeDurationMetricName      = "scrape_duration_seconds"
 	scrapeSamplesMetricName       = "scrape_samples_scraped"
 	samplesPostRelabelMetricName  = "scrape_samples_post_metric_relabeling"
+	scrapeSeriesAddedMetricName   = "scrape_series_added"
 	scrapeTimeoutMetricName       = "scrape_timeout_seconds"
 	scrapeSampleLimitMetricName   = "scrape_sample_limit"
 	scrapeBodySizeBytesMetricName = "scrape_body_size_bytes"
@@ -1322,7 +1337,9 @@ var (
 func (sl *scrapeLoop) report(
 	start time.Time,
 	duration time.Duration,
-	scraped, added, bytes int,
+	stats cppbridge.RelabelerStats,
+	scraped uint32,
+	bytes int,
 	scrapeErr error,
 ) (err error) {
 	sl.scraper.Report(start, duration, scrapeErr)
@@ -1346,7 +1363,23 @@ func (sl *scrapeLoop) report(
 	if err = sl.addReportSample(builder, batch, scrapeSamplesMetricName, ts, float64(scraped)); err != nil {
 		return
 	}
-	if err = sl.addReportSample(builder, batch, samplesPostRelabelMetricName, ts, float64(added)); err != nil {
+	if err = sl.addReportSample(
+		builder,
+		batch,
+		samplesPostRelabelMetricName,
+		ts,
+		float64(stats.SamplesAdded),
+	); err != nil {
+		return
+	}
+
+	if err = sl.addReportSample(
+		builder,
+		batch,
+		scrapeSeriesAddedMetricName,
+		ts,
+		float64(stats.SeriesAdded),
+	); err != nil {
 		return
 	}
 
@@ -1368,7 +1401,7 @@ func (sl *scrapeLoop) report(
 		}
 	}
 
-	if err = sl.receiver.AppendTimeSeries(
+	if _, err = sl.receiver.AppendTimeSeries(
 		sl.appenderCtx,
 		batch,
 		sl.reportState,
@@ -1400,6 +1433,9 @@ func (sl *scrapeLoop) reportStale(start time.Time) (err error) {
 	if err = sl.addReportSample(builder, batch, samplesPostRelabelMetricName, ts, stale); err != nil {
 		return
 	}
+	if err = sl.addReportSample(builder, batch, scrapeSeriesAddedMetricName, ts, stale); err != nil {
+		return
+	}
 
 	if sl.reportExtraMetrics {
 		if err = sl.addReportSample(builder, batch, scrapeTimeoutMetricName, ts, stale); err != nil {
@@ -1413,7 +1449,7 @@ func (sl *scrapeLoop) reportStale(start time.Time) (err error) {
 		}
 	}
 
-	if err = sl.receiver.AppendTimeSeries(
+	if _, err = sl.receiver.AppendTimeSeries(
 		sl.appenderCtx,
 		batch,
 		sl.reportState,
