@@ -560,10 +560,8 @@ github.com/nats-io/nkeys v0.1.3/go.mod h1:xpnFELMwJABBLVhffcfd1MZx6VsNRFpEugbxzi
 github.com/nats-io/nuid v1.0.1/go.mod h1:19wcPz3Ph3q0Jbyiqsd0kePYG7A95tJPxeL+1OSON2c=
 github.com/nsf/jsondiff v0.0.0-20230430225905-43f6cf3098c1 h1:dOYG7LS/WK00RWZc8XGgcUTlTxpp3mKhdR2Q9z9HbXM=
 github.com/nsf/jsondiff v0.0.0-20230430225905-43f6cf3098c1/go.mod h1:mpRZBD8SJ55OIICQ3iWH0Yz3cjzA61JdqMLoWXeB2+8=
-github.com/prometheus/prometheus/pp/go v0.0.0-20241111080311-f5d6d7701c67 h1:HWF3MdCIn+W8mooQpDgkCUc+1Z/iaa/sBybfugv4L0E=
-github.com/prometheus/prometheus/pp/go v0.0.0-20241111080311-f5d6d7701c67/go.mod h1:ER9u3QnTJyyl3viw3Sczgfd+UYsZg7GUmP0p35tIY+0=
-github.com/prometheus/prometheus/pp/go v0.0.0-20241111133919-d0e56c54d6ef h1:awtRv1sgLsG1DVJLb0Uw4v9yDoroxeyyvGChGTp7pts=
-github.com/prometheus/prometheus/pp/go v0.0.0-20241111133919-d0e56c54d6ef/go.mod h1:ER9u3QnTJyyl3viw3Sczgfd+UYsZg7GUmP0p35tIY+0=
+github.com/prometheus/prometheus/pp/go v0.0.0-20241119170036-49e462037edb h1:LW80/slNHj7m2SU5HTWXeFlL4p5wfczrF5iivJUS6sA=
+github.com/prometheus/prometheus/pp/go v0.0.0-20241119170036-49e462037edb/go.mod h1:ER9u3QnTJyyl3viw3Sczgfd+UYsZg7GUmP0p35tIY+0=
 github.com/oklog/oklog v0.3.2/go.mod h1:FCV+B7mhrz4o+ueLpx+KqkyXRGMWOYEvfiXtdGtbWGs=
 github.com/oklog/run v1.0.0/go.mod h1:dlhp/R75TPv97u0XWUtDeV/lRKWPKSdTuV0TZvrmrQA=
 github.com/oklog/run v1.1.0 h1:GEenZ1cK0+q0+wsJew9qUg/DyD8k3JzYsZAi5gYi2mA=

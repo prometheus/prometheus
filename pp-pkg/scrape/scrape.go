@@ -91,6 +91,19 @@ func TargetFromContext(ctx context.Context) (*Target, bool) {
 	return t, ok
 }
 
+// ScraperHashdex hashdex for sraped incoming data.
+type ScraperHashdex interface {
+	// Parse parsing incoming slice byte with default timestamp to hashdex.
+	Parse(buffer []byte, defaultTimestamp int64) error
+	// RangeMetadata calls f sequentially for each metadata present in the hashdex.
+	// If f returns false, range stops the iteration.
+	RangeMetadata(f func(metadata cppbridge.WALScraperHashdexMetadata) bool)
+	// Cluster get Cluster name.
+	Cluster() string
+	// Replica get Replica name.
+	Replica() string
+}
+
 type scrapeLoopOptions struct {
 	target                   *Target
 	scraper                  scraper
@@ -687,8 +700,8 @@ func (s *targetScraper) readResponse(ctx context.Context, resp *http.Response, w
 			return "", err
 		}
 	}
-
 	n, err := io.Copy(w, io.LimitReader(s.gzipr, s.bodySizeLimit))
+
 	s.gzipr.Close()
 	if err != nil {
 		return "", err
@@ -1210,14 +1223,21 @@ func (sl *scrapeLoop) appendCpp(b []byte, contentType string, ts time.Time) (tot
 		sl.cache.iterDone(len(b) > 0)
 	}()
 
-	if mediaType, _, err := mime.ParseMediaType(contentType); err == nil &&
-		(mediaType == "application/openmetrics-text" || mediaType == "application/vnd.google.protobuf") {
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err == nil && mediaType == "application/vnd.google.protobuf" {
 		return sl.append(b, contentType, ts)
+	}
+
+	var hashdex ScraperHashdex
+	switch mediaType {
+	case "application/openmetrics-text":
+		hashdex = cppbridge.NewOpenMetricsScraperHashdex()
+	default:
+		hashdex = cppbridge.NewPrometheusScraperHashdex()
 	}
 
 	// parsing series via cpp parser
 	defTime := timestamp.FromTime(ts)
-	hashdex := cppbridge.NewScraperHashdex()
 	if err = hashdex.Parse(b, defTime); err != nil {
 		return 0, 0, fmt.Errorf("failed hashdex parse: %w", err)
 	}
@@ -1240,7 +1260,7 @@ func (sl *scrapeLoop) appendCpp(b []byte, contentType string, ts time.Time) (tot
 }
 
 // appendMetadata append metadata from hashdex.
-func (sl *scrapeLoop) appendMetadata(hashdex *cppbridge.WALScraperHashdex) error {
+func (sl *scrapeLoop) appendMetadata(hashdex ScraperHashdex) error {
 	var err error
 	hashdex.RangeMetadata(func(md cppbridge.WALScraperHashdexMetadata) bool {
 		switch md.Type {
@@ -1254,14 +1274,24 @@ func (sl *scrapeLoop) appendMetadata(hashdex *cppbridge.WALScraperHashdex) error
 				sl.cache.setType(yoloBytes(&md.MetricName), model.MetricTypeGauge)
 			case "histogram":
 				sl.cache.setType(yoloBytes(&md.MetricName), model.MetricTypeHistogram)
+			case "gaugehistogram":
+				sl.cache.setType(yoloBytes(&md.MetricName), model.MetricTypeGaugeHistogram)
 			case "summary":
 				sl.cache.setType(yoloBytes(&md.MetricName), model.MetricTypeSummary)
+			case "info":
+				sl.cache.setType(yoloBytes(&md.MetricName), model.MetricTypeInfo)
+			case "stateset":
+				sl.cache.setType(yoloBytes(&md.MetricName), model.MetricTypeStateset)
+			case "unknown":
+				sl.cache.setType(yoloBytes(&md.MetricName), model.MetricTypeUnknown)
 			case "untyped":
 				sl.cache.setType(yoloBytes(&md.MetricName), model.MetricTypeUnknown)
 			default:
 				err = fmt.Errorf("invalid metric type %q", md.Text)
 				return false
 			}
+		case cppbridge.ScraperMetadataUnit:
+			sl.cache.setUnit(yoloBytes(&md.MetricName), yoloBytes(&md.Text))
 		default:
 			err = fmt.Errorf("invalid metadata type '%d'", md.Type)
 			return false
