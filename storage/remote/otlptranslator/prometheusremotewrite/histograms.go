@@ -54,6 +54,7 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 			resource,
 			pt.Attributes(),
 			settings,
+			nil,
 			true,
 			model.MetricNameLabel,
 			promName,

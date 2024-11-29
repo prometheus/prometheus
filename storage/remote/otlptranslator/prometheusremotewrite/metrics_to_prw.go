@@ -39,6 +39,7 @@ type Settings struct {
 	AddMetricSuffixes         bool
 	AllowUTF8                 bool
 	PromoteResourceAttributes []string
+	ServiceNameInTargetInfo   bool
 }
 
 // PrometheusConverter converts from OTel write format to Prometheus remote write format.

@@ -1431,6 +1431,7 @@ var (
 type OTLPConfig struct {
 	PromoteResourceAttributes []string                  `yaml:"promote_resource_attributes,omitempty"`
 	TranslationStrategy       translationStrategyOption `yaml:"translation_strategy,omitempty"`
+	ServiceNameInTargetInfo   bool                      `yaml:"service_name_in_target_info,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
