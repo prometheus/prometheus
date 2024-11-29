@@ -32,14 +32,14 @@ import (
 )
 
 type Settings struct {
-	Namespace                 string
-	ExternalLabels            map[string]string
-	DisableTargetInfo         bool
-	ExportCreatedMetric       bool
-	AddMetricSuffixes         bool
-	AllowUTF8                 bool
-	PromoteResourceAttributes []string
-	ServiceNameInTargetInfo   bool
+	Namespace                         string
+	ExternalLabels                    map[string]string
+	DisableTargetInfo                 bool
+	ExportCreatedMetric               bool
+	AddMetricSuffixes                 bool
+	AllowUTF8                         bool
+	PromoteResourceAttributes         []string
+	KeepIdentifyingResourceAttributes bool
 }
 
 // PrometheusConverter converts from OTel write format to Prometheus remote write format.

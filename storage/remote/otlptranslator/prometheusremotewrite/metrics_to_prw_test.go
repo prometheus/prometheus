@@ -35,8 +35,8 @@ import (
 
 func TestFromMetrics(t *testing.T) {
 
-	for _, serviceNameInTargetInfo := range []bool{false, true} {
-		t.Run(fmt.Sprintf("successful/keepIdentifyingAttributes=%v", serviceNameInTargetInfo), func(t *testing.T) {
+	for _, keepIdentifyingResourceAttributes := range []bool{false, true} {
+		t.Run(fmt.Sprintf("successful/keepIdentifyingAttributes=%v", keepIdentifyingResourceAttributes), func(t *testing.T) {
 			converter := NewPrometheusConverter()
 			payload := createExportRequest(5, 128, 128, 2, 0)
 			var expMetadata []prompb.MetricMetadata
@@ -61,7 +61,7 @@ func TestFromMetrics(t *testing.T) {
 			annots, err := converter.FromMetrics(
 				context.Background(),
 				payload.Metrics(),
-				Settings{ServiceNameInTargetInfo: serviceNameInTargetInfo},
+				Settings{KeepIdentifyingResourceAttributes: keepIdentifyingResourceAttributes},
 			)
 			require.NoError(t, err)
 			require.Empty(t, annots)
@@ -81,7 +81,7 @@ func TestFromMetrics(t *testing.T) {
 					target_info_count++
 					require.Equal(t, "test-namespace/test-service", lbls.Get("job"))
 					require.Equal(t, "id1234", lbls.Get("instance"))
-					if serviceNameInTargetInfo {
+					if keepIdentifyingResourceAttributes {
 						require.Equal(t, "test-service", lbls.Get("service_name"))
 						require.Equal(t, "test-namespace", lbls.Get("service_namespace"))
 						require.Equal(t, "id1234", lbls.Get("service_instance_id"))

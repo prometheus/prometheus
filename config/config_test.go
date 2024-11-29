@@ -1556,7 +1556,7 @@ func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 
 func TestOTLPAllowServiceNameInTargetInfo(t *testing.T) {
 	t.Run("good config", func(t *testing.T) {
-		want, err := LoadFile(filepath.Join("testdata", "otlp_allow_service_name_in_target_info.good.yml"), false, promslog.NewNopLogger())
+		want, err := LoadFile(filepath.Join("testdata", "otlp_allow_keep_identifying_resource_attributes.good.yml"), false, promslog.NewNopLogger())
 		require.NoError(t, err)
 
 		out, err := yaml.Marshal(want)
@@ -1564,7 +1564,7 @@ func TestOTLPAllowServiceNameInTargetInfo(t *testing.T) {
 		var got Config
 		require.NoError(t, yaml.UnmarshalStrict(out, &got))
 
-		require.Equal(t, true, got.OTLPConfig.ServiceNameInTargetInfo)
+		require.Equal(t, true, got.OTLPConfig.KeepIdentifyingResourceAttributes)
 	})
 }
 

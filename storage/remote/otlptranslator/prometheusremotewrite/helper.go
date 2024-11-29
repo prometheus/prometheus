@@ -600,7 +600,7 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timesta
 	}
 
 	settings.PromoteResourceAttributes = nil
-	if settings.ServiceNameInTargetInfo {
+	if settings.KeepIdentifyingResourceAttributes {
 		// Do not pass identifying attributes as ignoreAttrs below.
 		identifyingAttrs = nil
 	}
