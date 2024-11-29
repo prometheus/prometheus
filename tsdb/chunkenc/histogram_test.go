@@ -1497,7 +1497,7 @@ func TestHistogramAppendOnlyErrors(t *testing.T) {
 	})
 }
 
-func TestHistogramUniqueSpansAfterNext(t *testing.T) {
+func TestHistogramUniqueSpansAfterNextWithAtHistogram(t *testing.T) {
 	// Create two histograms with the same schema and spans.
 	h1 := &histogram.Histogram{
 		Schema:        1,
@@ -1597,6 +1597,98 @@ func TestHistogramUniqueSpansAfterNextWithAtFloatHistogram(t *testing.T) {
 	// Check that the spans for h1 and h2 are unique slices.
 	require.NotSame(t, &rh1.PositiveSpans[0], &rh2.PositiveSpans[0], "PositiveSpans should be unique between histograms")
 	require.NotSame(t, &rh1.NegativeSpans[0], &rh2.NegativeSpans[0], "NegativeSpans should be unique between histograms")
+}
+
+func TestHistogramUniqueCustomValuesAfterNextWithAtHistogram(t *testing.T) {
+	// Create two histograms with the same schema and custom values.
+	h1 := &histogram.Histogram{
+		Schema: -53,
+		Count:  10,
+		Sum:    15.0,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []int64{1, 2, 3, 4},
+		CustomValues:    []float64{10, 11, 12, 13},
+	}
+
+	h2 := h1.Copy()
+
+	// Create a chunk and append both histograms.
+	c := NewHistogramChunk()
+	app, err := c.Appender()
+	require.NoError(t, err)
+
+	_, _, _, err = app.AppendHistogram(nil, 0, h1, false)
+	require.NoError(t, err)
+
+	_, _, _, err = app.AppendHistogram(nil, 1, h2, false)
+	require.NoError(t, err)
+
+	// Create an iterator and advance to the first histogram.
+	it := c.Iterator(nil)
+	require.Equal(t, ValHistogram, it.Next())
+	_, rh1 := it.AtHistogram(nil)
+
+	// Advance to the second histogram and retrieve it.
+	require.Equal(t, ValHistogram, it.Next())
+	_, rh2 := it.AtHistogram(nil)
+
+	require.Equal(t, rh1.PositiveSpans, h1.PositiveSpans, "Returned positive spans are as expected")
+	require.Equal(t, rh1.CustomValues, h1.CustomValues, "Returned custom values are as expected")
+	require.Equal(t, rh2.PositiveSpans, h1.PositiveSpans, "Returned positive spans are as expected")
+	require.Equal(t, rh2.CustomValues, h1.CustomValues, "Returned custom values are as expected")
+
+	// Check that the spans and custom values for h1 and h2 are unique slices.
+	require.NotSame(t, &rh1.PositiveSpans[0], &rh2.PositiveSpans[0], "PositiveSpans should be unique between histograms")
+	require.NotSame(t, &rh1.CustomValues[0], &rh2.CustomValues[0], "CustomValues should be unique between histograms")
+}
+
+func TestHistogramUniqueCustomValuesAfterNextWithAtFloatHistogram(t *testing.T) {
+	// Create two histograms with the same schema and custom values.
+	h1 := &histogram.Histogram{
+		Schema: -53,
+		Count:  10,
+		Sum:    15.0,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []int64{1, 2, 3, 4},
+		CustomValues:    []float64{10, 11, 12, 13},
+	}
+
+	h2 := h1.Copy()
+
+	// Create a chunk and append both histograms.
+	c := NewHistogramChunk()
+	app, err := c.Appender()
+	require.NoError(t, err)
+
+	_, _, _, err = app.AppendHistogram(nil, 0, h1, false)
+	require.NoError(t, err)
+
+	_, _, _, err = app.AppendHistogram(nil, 1, h2, false)
+	require.NoError(t, err)
+
+	// Create an iterator and advance to the first histogram.
+	it := c.Iterator(nil)
+	require.Equal(t, ValHistogram, it.Next())
+	_, rh1 := it.AtFloatHistogram(nil)
+
+	// Advance to the second histogram and retrieve it.
+	require.Equal(t, ValHistogram, it.Next())
+	_, rh2 := it.AtFloatHistogram(nil)
+
+	require.Equal(t, rh1.PositiveSpans, h1.PositiveSpans, "Returned positive spans are as expected")
+	require.Equal(t, rh1.CustomValues, h1.CustomValues, "Returned custom values are as expected")
+	require.Equal(t, rh2.PositiveSpans, h1.PositiveSpans, "Returned positive spans are as expected")
+	require.Equal(t, rh2.CustomValues, h1.CustomValues, "Returned custom values are as expected")
+
+	// Check that the spans and custom values for h1 and h2 are unique slices.
+	require.NotSame(t, &rh1.PositiveSpans[0], &rh2.PositiveSpans[0], "PositiveSpans should be unique between histograms")
+	require.NotSame(t, &rh1.CustomValues[0], &rh2.CustomValues[0], "CustomValues should be unique between histograms")
 }
 
 func BenchmarkAppendable(b *testing.B) {
