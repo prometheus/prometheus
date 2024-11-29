@@ -161,6 +161,9 @@ func mustParseURL(u string) *common_config.URL {
 }
 
 var expectedConf = &config.Config{
+	Runtime: config.RuntimeConfig{
+		GoGC: 75,
+	},
 	GlobalConfig: config.GlobalConfig{
 		ScrapeInterval:     model.Duration(15 * time.Second),
 		ScrapeTimeout:      config.DefaultGlobalConfig.ScrapeTimeout,

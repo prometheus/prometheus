@@ -109,6 +109,25 @@ var expectedConf = &Config{
 	RemoteWriteConfigs: []*OpRemoteWriteConfig{ // PP_CHANGES.md: rebuild on cpp
 		{
 			Protocol: PrometheusProtocol,
+			Destinations: []*OpDestinationConfig{
+				{
+					Name: "drop_expensive",
+					URL:  mustParseURL("http://remote1/push"),
+					HTTPClientConfig: config.HTTPClientConfig{
+						OAuth2: &config.OAuth2{
+							ClientID:     "123",
+							ClientSecret: "456",
+							TokenURL:     "http://remote1/auth",
+							TLSConfig: config.TLSConfig{
+								CertFile: filepath.FromSlash("testdata/testdata/valid_cert_file"),
+								KeyFile:  filepath.FromSlash("testdata/testdata/valid_key_file"),
+							},
+						},
+						FollowRedirects: true,
+						EnableHTTP2:     true,
+					},
+				},
+			},
 			RemoteWriteConfig: RemoteWriteConfig{
 				URL:           mustParseURL("http://remote1/push"),
 				RemoteTimeout: model.Duration(30 * time.Second),
@@ -130,8 +149,8 @@ var expectedConf = &Config{
 						ClientSecret: "456",
 						TokenURL:     "http://remote1/auth",
 						TLSConfig: config.TLSConfig{
-							CertFile: filepath.FromSlash("testdata/valid_cert_file"),
-							KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
+							CertFile: filepath.FromSlash("testdata/testdata/valid_cert_file"),
+							KeyFile:  filepath.FromSlash("testdata/testdata/valid_key_file"),
 						},
 					},
 					FollowRedirects: true,
@@ -141,6 +160,20 @@ var expectedConf = &Config{
 		},
 		{
 			Protocol: PrometheusProtocol,
+			Destinations: []*OpDestinationConfig{
+				{
+					Name: "rw_tls",
+					URL:  mustParseURL("http://remote2/push"),
+					HTTPClientConfig: config.HTTPClientConfig{
+						TLSConfig: config.TLSConfig{
+							CertFile: filepath.FromSlash("testdata/valid_cert_file"),
+							KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
+						},
+						FollowRedirects: true,
+						EnableHTTP2:     true,
+					},
+				},
+			},
 			RemoteWriteConfig: RemoteWriteConfig{
 				URL:            mustParseURL("http://remote2/push"),
 				RemoteTimeout:  model.Duration(30 * time.Second),
@@ -1506,7 +1539,7 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	require.Len(t, matches, 22, "wrong number of secret matches found")
+	require.Len(t, matches, 23, "wrong number of secret matches found")
 	require.NotContains(t, yamlConfig, "mysecret",
 		"yaml marshal reveals authentication credentials.")
 }

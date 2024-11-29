@@ -132,8 +132,17 @@ func (c *OpRemoteWriteConfig) Validate() error {
 	}
 
 	for _, d := range c.Destinations {
-		if err := d.Validate(); err != nil {
-			return err
+		switch c.Protocol {
+		case ProtocolOdarix:
+			if err := d.OpValidate(); err != nil {
+				return err
+			}
+		case PrometheusProtocol:
+			if err := d.Validate(); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("unknown remote write protocol: %s", c.Protocol)
 		}
 	}
 
@@ -206,7 +215,13 @@ func (c *OpDestinationConfig) Validate() error {
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
 	// Thus we just do its validation here.
-	if err := c.HTTPClientConfig.Validate(); err != nil {
+	return c.HTTPClientConfig.Validate()
+}
+
+// OpValidate validates OpDestinationConfig, but also fills relevant default values from global config if needed.
+// Validate op protocol.
+func (c *OpDestinationConfig) OpValidate() error {
+	if err := c.Validate(); err != nil {
 		return err
 	}
 
