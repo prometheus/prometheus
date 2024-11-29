@@ -1564,7 +1564,7 @@ func TestOTLPAllowServiceNameInTargetInfo(t *testing.T) {
 		var got Config
 		require.NoError(t, yaml.UnmarshalStrict(out, &got))
 
-		require.Equal(t, true, got.OTLPConfig.KeepIdentifyingResourceAttributes)
+		require.True(t, got.OTLPConfig.KeepIdentifyingResourceAttributes)
 	})
 }
 
