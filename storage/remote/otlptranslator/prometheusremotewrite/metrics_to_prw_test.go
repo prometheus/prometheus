@@ -34,7 +34,6 @@ import (
 )
 
 func TestFromMetrics(t *testing.T) {
-
 	for _, keepIdentifyingResourceAttributes := range []bool{false, true} {
 		t.Run(fmt.Sprintf("successful/keepIdentifyingAttributes=%v", keepIdentifyingResourceAttributes), func(t *testing.T) {
 			converter := NewPrometheusConverter()
