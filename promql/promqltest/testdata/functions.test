@@ -494,6 +494,7 @@ load 5m
 	test_sgn{src="sgn-d"}	-50
 	test_sgn{src="sgn-e"}	0
 	test_sgn{src="sgn-f"}	100
+    test_sgn{src="sgn-histogram"} {{schema:1 sum:1 count:1}}
 
 eval instant at 0m sgn(test_sgn)
 	{src="sgn-a"}	-1
@@ -1239,8 +1240,13 @@ clear
 load 5m
 	exp_root_log{l="x"} 10
 	exp_root_log{l="y"} 20
+    exp_root_log_h{l="z"} {{schema:1 sum:1 count:1}}
 
 eval instant at 1m exp(exp_root_log)
+	{l="x"} 22026.465794806718
+	{l="y"} 485165195.4097903
+
+eval instant at 1m exp({__name__=~"exp_root_log(_h)?"})
 	{l="x"} 22026.465794806718
 	{l="y"} 485165195.4097903
 
@@ -1256,6 +1262,10 @@ eval instant at 1m ln(exp_root_log)
 	{l="x"} 2.302585092994046
 	{l="y"} 2.995732273553991
 
+eval instant at 1m ln({__name__=~"exp_root_log(_h)?"})
+	{l="x"} 2.302585092994046
+	{l="y"} 2.995732273553991
+
 eval instant at 1m ln(exp_root_log - 10)
 	{l="y"} 2.302585092994046
 	{l="x"} -Inf
@@ -1268,11 +1278,23 @@ eval instant at 1m exp(ln(exp_root_log))
 	{l="y"} 20
 	{l="x"} 10
 
+eval instant at 1m exp(ln({__name__=~"exp_root_log(_h)?"}))
+	{l="y"} 20
+	{l="x"} 10
+
 eval instant at 1m sqrt(exp_root_log)
 	{l="x"} 3.1622776601683795
 	{l="y"} 4.47213595499958
 
+eval instant at 1m sqrt({__name__=~"exp_root_log(_h)?"})
+	{l="x"} 3.1622776601683795
+	{l="y"} 4.47213595499958
+
 eval instant at 1m log2(exp_root_log)
+	{l="x"} 3.3219280948873626
+	{l="y"} 4.321928094887363
+
+eval instant at 1m log2({__name__=~"exp_root_log(_h)?"})
 	{l="x"} 3.3219280948873626
 	{l="y"} 4.321928094887363
 
@@ -1285,6 +1307,10 @@ eval instant at 1m log2(exp_root_log - 20)
 	{l="y"} -Inf
 
 eval instant at 1m log10(exp_root_log)
+	{l="x"} 1
+	{l="y"} 1.301029995663981
+
+eval instant at 1m log10({__name__=~"exp_root_log(_h)?"})
 	{l="x"} 1
 	{l="y"} 1.301029995663981
 
