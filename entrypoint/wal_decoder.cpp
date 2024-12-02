@@ -273,9 +273,11 @@ extern "C" void prompp_wal_output_decoder_decode(void* args, void* res) {
   struct Arguments {
     PromPP::Primitives::Go::SliceView<char> segment;
     PromPP::WAL::OutputDecoder* decoder;
+    int64_t lower_limit_timestamp;
   };
 
-  using Result = struct {
+  struct Result {
+    int64_t max_timestamp{};
     PromPP::Primitives::Go::Slice<PromPP::WAL::RefSample> ref_samples;
     PromPP::Primitives::Go::Slice<char> error;
   };
@@ -285,8 +287,19 @@ extern "C" void prompp_wal_output_decoder_decode(void* args, void* res) {
 
   try {
     std::ispanstream{static_cast<std::string_view>(in->segment)} >> *in->decoder;
-    in->decoder->process_segment([&](PromPP::Primitives::LabelSetID ls_id, PromPP::Primitives::Timestamp ts, PromPP::Primitives::Sample::value_type v)
-                                     PROMPP_LAMBDA_INLINE { out->ref_samples.emplace_back(ls_id, ts, v); });
+    in->decoder->process_segment([in, out](PromPP::Primitives::LabelSetID ls_id, PromPP::Primitives::Timestamp ts, PromPP::Primitives::Sample::value_type v)
+                                     PROMPP_LAMBDA_INLINE {
+                                       if (ts < in->lower_limit_timestamp) {
+                                         // skip sample lower limit timestamp
+                                         return;
+                                       }
+
+                                       if (out->max_timestamp < ts) {
+                                         out->max_timestamp = ts;
+                                       }
+
+                                       out->ref_samples.emplace_back(ls_id, ts, v);
+                                     });
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
     handle_current_exception(__func__, err_stream);

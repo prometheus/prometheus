@@ -587,9 +587,10 @@ func (s *EncoderDecoderSuite) TestEncodeWALOutputDecode() {
 	segByte := s.transferringData(gos)
 
 	s.T().Log("decoding to RefSamples")
-	refSamples, err := dec.Decode(s.baseCtx, segByte)
+	refSamples, maxTimestamp, err := dec.Decode(s.baseCtx, segByte, 0)
 	s.Require().NoError(err)
 
+	s.Equal(expectedWr.Timeseries[0].Samples[0].Timestamp, maxTimestamp)
 	refSamples.Range(func(id uint32, t int64, v float64) bool {
 		if !s.Less(int(id), len(expectedWr.Timeseries)) {
 			return false
@@ -598,4 +599,78 @@ func (s *EncoderDecoderSuite) TestEncodeWALOutputDecode() {
 		s.Equal(expectedWr.Timeseries[id].Samples[0].Value, v)
 		return true
 	})
+}
+
+func (s *EncoderDecoderSuite) TestEncodeWALOutputDecodeWithLimit() {
+	statelessRelabeler, err := cppbridge.NewStatelessRelabeler([]*cppbridge.RelabelConfig{
+		{
+			SourceLabels: []string{"__name__"},
+			Regex:        ".*",
+			Action:       cppbridge.Keep,
+		},
+	})
+	s.Require().NoError(err)
+	externalLabels := []cppbridge.Label{{"name0", "value0"}, {"name1", "value1"}}
+	outputLss := cppbridge.NewLssStorage()
+	dec := cppbridge.NewWALOutputDecoder(externalLabels, statelessRelabeler, outputLss, 0, cppbridge.EncodersVersion())
+
+	hlimits := cppbridge.DefaultWALHashdexLimits()
+	enc := cppbridge.NewWALEncoder(0, 0)
+
+	expectedWr := &prompb.WriteRequest{
+		Timeseries: []prompb.TimeSeries{
+			{
+				Labels: []prompb.Label{
+					{
+						Name:  "__name__",
+						Value: "test",
+					},
+					{
+						Name:  "job",
+						Value: "tester",
+					},
+				},
+				Samples: []prompb.Sample{
+					{
+						Timestamp: time.Now().UnixMilli(),
+						Value:     4444,
+					},
+				},
+			},
+		},
+	}
+
+	data, err := expectedWr.Marshal()
+	s.Require().NoError(err)
+
+	s.T().Log("sharding protobuf")
+	h, err := cppbridge.NewWALProtobufHashdex(data, hlimits)
+	s.Require().NoError(err)
+
+	s.T().Log("encoding protobuf")
+	_, gos, err := enc.Encode(s.baseCtx, h)
+	s.Require().NoError(err)
+
+	s.EqualValues(1, gos.Series())
+	s.EqualValues(1, gos.Samples())
+
+	s.T().Log("transferring segment")
+	segByte := s.transferringData(gos)
+
+	s.T().Log("decoding to RefSamples")
+
+	refSamples, maxTimestamp, err := dec.Decode(s.baseCtx, segByte, time.Now().UnixMilli()+1)
+	s.Require().NoError(err)
+
+	count := 0
+	s.Equal(int64(0), maxTimestamp)
+	refSamples.Range(func(id uint32, t int64, v float64) bool {
+		if !s.Less(int(id), len(expectedWr.Timeseries)) {
+			return false
+		}
+		count++
+		return true
+	})
+
+	s.Equal(0, count)
 }
