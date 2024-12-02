@@ -600,6 +600,10 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timesta
 	}
 
 	settings.PromoteResourceAttributes = nil
+	if settings.KeepIdentifyingResourceAttributes {
+		// Do not pass identifying attributes as ignoreAttrs below.
+		identifyingAttrs = nil
+	}
 	labels := createAttributes(resource, attributes, settings, identifyingAttrs, false, model.MetricNameLabel, name)
 	haveIdentifier := false
 	for _, l := range labels {

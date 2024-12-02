@@ -182,6 +182,10 @@ otlp:
   #   It preserves all special characters like dots, but it still add required suffixes
   #   for units and _total like in UnderscoreEscapingWithSuffixes.
   [ translation_strategy: <string> | default = "UnderscoreEscapingWithSuffixes" ]
+  # Enables adding "service.name", "service.namespace" and "service.instance.id"
+  # resource attributes to the "target_info" metric, on top of converting
+  # them into the "instance" and "job" labels.
+  [ keep_identifying_resource_attributes: <boolean> | default = false]
 
 # Settings related to the remote read feature.
 remote_read:
