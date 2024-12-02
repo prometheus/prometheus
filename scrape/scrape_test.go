@@ -65,10 +65,15 @@ func TestMain(m *testing.M) {
 	testutil.TolerantVerifyLeak(m)
 }
 
-func newTestScrapeMetrics(t testing.TB) *scrapeMetrics {
+func newTestRegistryAndScrapeMetrics(t testing.TB) (*prometheus.Registry, *scrapeMetrics) {
 	reg := prometheus.NewRegistry()
 	metrics, err := newScrapeMetrics(reg)
 	require.NoError(t, err)
+	return reg, metrics
+}
+
+func newTestScrapeMetrics(t testing.TB) *scrapeMetrics {
+	_, metrics := newTestRegistryAndScrapeMetrics(t)
 	return metrics
 }
 
@@ -370,6 +375,7 @@ func TestScrapePoolReload(t *testing.T) {
 		return l
 	}
 
+	reg, metrics := newTestRegistryAndScrapeMetrics(t)
 	sp := &scrapePool{
 		appendable:    &nopAppendable{},
 		activeTargets: map[uint64]*Target{},
@@ -377,7 +383,7 @@ func TestScrapePoolReload(t *testing.T) {
 		newLoop:       newLoop,
 		logger:        nil,
 		client:        http.DefaultClient,
-		metrics:       newTestScrapeMetrics(t),
+		metrics:       metrics,
 		symbolTable:   labels.NewSymbolTable(),
 	}
 
@@ -432,6 +438,12 @@ func TestScrapePoolReload(t *testing.T) {
 
 	require.Equal(t, sp.activeTargets, beforeTargets, "Reloading affected target states unexpectedly")
 	require.Len(t, sp.loops, numTargets, "Unexpected number of stopped loops after reload")
+
+	got, err := gatherLabels(reg, "prometheus_target_reload_length_seconds")
+	require.NoError(t, err)
+	expectedName, expectedValue := "interval", "3s"
+	require.Equal(t, [][]*dto.LabelPair{{{Name: &expectedName, Value: &expectedValue}}}, got)
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(sp.metrics.targetScrapePoolReloads))
 }
 
 func TestScrapePoolReloadPreserveRelabeledIntervalTimeout(t *testing.T) {
@@ -447,6 +459,7 @@ func TestScrapePoolReloadPreserveRelabeledIntervalTimeout(t *testing.T) {
 		}
 		return l
 	}
+	reg, metrics := newTestRegistryAndScrapeMetrics(t)
 	sp := &scrapePool{
 		appendable: &nopAppendable{},
 		activeTargets: map[uint64]*Target{
@@ -460,7 +473,7 @@ func TestScrapePoolReloadPreserveRelabeledIntervalTimeout(t *testing.T) {
 		newLoop:     newLoop,
 		logger:      nil,
 		client:      http.DefaultClient,
-		metrics:     newTestScrapeMetrics(t),
+		metrics:     metrics,
 		symbolTable: labels.NewSymbolTable(),
 	}
 
@@ -468,6 +481,30 @@ func TestScrapePoolReloadPreserveRelabeledIntervalTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to reload configuration: %s", err)
 	}
+	// Check that the reload metric is labeled with the pool interval, not the overridden interval.
+	got, err := gatherLabels(reg, "prometheus_target_reload_length_seconds")
+	require.NoError(t, err)
+	expectedName, expectedValue := "interval", "3s"
+	require.Equal(t, [][]*dto.LabelPair{{{Name: &expectedName, Value: &expectedValue}}}, got)
+}
+
+// Gather metrics from the provided Gatherer with specified familyName,
+// and return all sets of name/value pairs.
+func gatherLabels(g prometheus.Gatherer, familyName string) ([][]*dto.LabelPair, error) {
+	families, err := g.Gather()
+	if err != nil {
+		return nil, err
+	}
+	ret := make([][]*dto.LabelPair, 0)
+	for _, f := range families {
+		if f.GetName() == familyName {
+			for _, m := range f.GetMetric() {
+				ret = append(ret, m.GetLabel())
+			}
+			break
+		}
+	}
+	return ret, nil
 }
 
 func TestScrapePoolTargetLimit(t *testing.T) {
