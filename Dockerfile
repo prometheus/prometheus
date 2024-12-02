@@ -14,7 +14,7 @@ COPY NOTICE                                 /NOTICE
 COPY npm_licenses.tar.bz2                   /npm_licenses.tar.bz2
 
 WORKDIR /prometheus
-RUN chown -R nobody:nobody /etc/prometheus /prometheus
+RUN chgrp -R 0 /etc/prometheus /prometheus && chmod -R g=u /etc/prometheus /prometheus
 
 USER       nobody
 EXPOSE     9090
