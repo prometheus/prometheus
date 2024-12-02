@@ -4794,3 +4794,58 @@ func newScrapableServer(scrapeText string) (s *httptest.Server, scrapedTwice cha
 		}
 	})), scrapedTwice
 }
+
+type srvSameResp struct {
+	resp []byte
+}
+
+func (s *srvSameResp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Write(s.resp)
+}
+
+func TestTargetScraperSegfault(t *testing.T) {
+	emptySrv := &srvSameResp{
+		resp: []byte{0x42, 0x42},
+	}
+	h := httptest.NewServer(emptySrv)
+	t.Cleanup(h.Close)
+
+	cfg := &config.ScrapeConfig{
+		BodySizeLimit:     1,
+		JobName:           "test",
+		Scheme:            "http",
+		ScrapeInterval:    model.Duration(100 * time.Millisecond),
+		ScrapeTimeout:     model.Duration(100 * time.Millisecond),
+		EnableCompression: false,
+		ServiceDiscoveryConfigs: discovery.Configs{
+			&discovery.StaticConfig{
+				{
+					Targets: []model.LabelSet{{model.AddressLabel: model.LabelValue(h.URL)}},
+				},
+			},
+		},
+	}
+
+	p, err := newScrapePool(
+		cfg,
+		&nopAppendable{},
+		0,
+		nil,
+		pool.New(1e3, 100e6, 3, func(sz int) interface{} { return make([]byte, 0, sz) }),
+		&Options{},
+		newTestScrapeMetrics(t),
+	)
+	require.NoError(t, err)
+	t.Cleanup(p.stop)
+
+	p.Sync([]*targetgroup.Group{
+		{
+			Targets: []model.LabelSet{{model.AddressLabel: model.LabelValue(strings.TrimPrefix(h.URL, "http://"))}},
+			Source:  "test",
+		},
+	})
+
+	require.NoError(t, p.reload(cfg))
+
+	<-time.After(1 * time.Second)
+}
