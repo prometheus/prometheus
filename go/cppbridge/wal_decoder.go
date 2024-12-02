@@ -277,13 +277,19 @@ func NewWALOutputDecoder(
 	return d
 }
 
-// Decode - decodes incoming encoding data and return protobuf.
-func (d *WALOutputDecoder) Decode(ctx context.Context, segment []byte) (*DecodedRefSamples, error) {
+// Decode - decodes incoming encoding data and return protobuf, lowerLimitTimestamp - timestamp in milliseconds,
+// skip sample lower limit timestamp.
+func (d *WALOutputDecoder) Decode(
+	ctx context.Context,
+	segment []byte,
+	lowerLimitTimestamp int64,
+) (*DecodedRefSamples, int64, error) {
 	if ctx.Err() != nil {
-		return nil, ctx.Err()
+		return nil, 0, ctx.Err()
 	}
-	refSamples, exception := walOutputDecoderDecode(segment, d.decoder)
-	return NewDecodedRefSamples(refSamples, d.shardID), handleException(exception)
+
+	maxTimestamp, refSamples, exception := walOutputDecoderDecode(segment, d.decoder, lowerLimitTimestamp)
+	return newDecodedRefSamples(refSamples, d.shardID), maxTimestamp, handleException(exception)
 }
 
 // LoadFrom load from dump(slice byte) output decoder state(output_lss and cache).
@@ -317,8 +323,8 @@ type DecodedRefSamples struct {
 	shardID    uint16
 }
 
-// NewDecodedRefSamples init new DecodedRefSamples.
-func NewDecodedRefSamples(refSamples []RefSample, shardID uint16) *DecodedRefSamples {
+// newDecodedRefSamples init new DecodedRefSamples.
+func newDecodedRefSamples(refSamples []RefSample, shardID uint16) *DecodedRefSamples {
 	drs := &DecodedRefSamples{
 		refSamples: refSamples,
 		shardID:    shardID,
