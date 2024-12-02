@@ -629,7 +629,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annota
 		ng.queryLoggerLock.RLock()
 		if l := ng.queryLogger; l != nil {
 			logger := slog.New(l)
-			f := make([]any, 0, 16) // Probably enough up front to not need to reallocate on append.
+			f := make([]slog.Attr, 0, 16) // Probably enough up front to not need to reallocate on append.
 
 			params := make(map[string]interface{}, 4)
 			params["query"] = q.q
@@ -639,20 +639,20 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annota
 				// The step provided by the user is in seconds.
 				params["step"] = int64(eq.Interval / (time.Second / time.Nanosecond))
 			}
-			f = append(f, "params", params)
+			f = append(f, slog.Any("params", params))
 			if err != nil {
-				f = append(f, "error", err)
+				f = append(f, slog.Any("error", err))
 			}
-			f = append(f, "stats", stats.NewQueryStats(q.Stats()))
+			f = append(f, slog.Any("stats", stats.NewQueryStats(q.Stats())))
 			if span := trace.SpanFromContext(ctx); span != nil {
-				f = append(f, "spanID", span.SpanContext().SpanID())
+				f = append(f, slog.Any("spanID", span.SpanContext().SpanID()))
 			}
 			if origin := ctx.Value(QueryOrigin{}); origin != nil {
 				for k, v := range origin.(map[string]interface{}) {
-					f = append(f, k, v)
+					f = append(f, slog.Any(k, v))
 				}
 			}
-			logger.Info("promql query logged", f...)
+			logger.LogAttrs(context.Background(), slog.LevelInfo, "promql query logged", f...)
 			// TODO: @tjhop -- do we still need this metric/error log if logger doesn't return errors?
 			// ng.metrics.queryLogFailures.Inc()
 			// ng.logger.Error("can't log query", "err", err)
