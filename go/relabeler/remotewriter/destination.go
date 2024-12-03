@@ -1,9 +1,13 @@
 package remotewriter
 
-import "github.com/prometheus/prometheus/config"
+import (
+	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/labels"
+)
 
 type DestinationConfig struct {
 	config.RemoteWriteConfig
+	ExternalLabels labels.Labels
 }
 
 func (c DestinationConfig) EqualTo(other DestinationConfig) bool {

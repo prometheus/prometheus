@@ -6,9 +6,13 @@ import (
 )
 
 var (
-	ErrCorrupted    = errors.New("corrupted")
-	ErrNoData       = errors.New("no data")
-	ErrDecodeFailed = errors.New("decode failed")
+	ErrShardIsCorrupted  = errors.New("shard is corrupted")
+	ErrNoData            = errors.New("no data")
+	ErrCursorIsCorrupted = errors.New("cursor is corrupted")
+	ErrEndOfBlock        = errors.New("end of block")
+	ErrPartialReadResult = errors.New("partial read result")
+	ErrEmptyReadResult   = errors.New("empty read result")
+	ErrBlockIsCorrupted  = errors.New("block is corrupted")
 )
 
 // CloseAll closes all given closers.

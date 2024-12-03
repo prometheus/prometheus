@@ -35,8 +35,8 @@ type Segment struct {
 	head.DecodedSegment
 }
 
-func (r *walReader) Next() (segment Segment, err error) {
-	decodedSegment, _, err := head.ReadSegment(r.file)
+func (r *walReader) Read() (segment Segment, err error) {
+	decodedSegment, err := head.TryReadSegment(r.file)
 	if err != nil {
 		if errors.Is(err, io.EOF) {
 			return segment, ErrNoData

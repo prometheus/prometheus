@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -108,7 +109,37 @@ func (th *TestHeads) Close() error {
 	return errors.Join(th.Head.Close(), th.FileLog.Close())
 }
 
-func TestWriteLoopIterate(t *testing.T) {
+type remoteClient struct {
+	mtx  sync.Mutex
+	data [][]byte
+	name string
+}
+
+func (c *remoteClient) Store(_ context.Context, bytes []byte, _ int) error {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+	c.data = append(c.data, bytes)
+	return nil
+}
+
+func (c *remoteClient) Name() string {
+	return c.name
+}
+
+func (c *remoteClient) Endpoint() string {
+	return ""
+}
+
+type testWriter struct {
+	data []*cppbridge.DecodedRefSamples
+}
+
+func (w *testWriter) Write(ctx context.Context, numberOfShards int, samples []*cppbridge.DecodedRefSamples) error {
+	w.data = append(w.data, samples...)
+	return ctx.Err()
+}
+
+func TestWriteLoopWrite(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "write_loop_iterate_test")
 	require.NoError(t, err)
 	defer func() { _ = os.RemoveAll(tmpDir) }()
@@ -172,8 +203,8 @@ func TestWriteLoopIterate(t *testing.T) {
 	wl := newWriteLoop(destination, testHeads.Catalog)
 	ds, err := wl.nextDataSource(ctx)
 	require.NoError(t, err)
-
-	b := &batch{limit: 5000}
-
-	err = wl.iterate(ctx, ds, b)
+	b := &batch{capacity: 3}
+	w := &testWriter{}
+	err = wl.iterate(ctx, ds, b, w)
+	require.NoError(t, err)
 }

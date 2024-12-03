@@ -278,10 +278,7 @@ func NewWALOutputDecoder(
 }
 
 // Decode - decodes incoming encoding data and return protobuf.
-func (d *WALOutputDecoder) Decode(ctx context.Context, segment []byte) (*DecodedRefSamples, error) {
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
+func (d *WALOutputDecoder) Decode(segment []byte) (*DecodedRefSamples, error) {
 	refSamples, exception := walOutputDecoderDecode(segment, d.decoder)
 	return NewDecodedRefSamples(refSamples, d.shardID), handleException(exception)
 }

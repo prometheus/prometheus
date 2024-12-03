@@ -2,7 +2,6 @@ package remotewriter
 
 import (
 	"github.com/stretchr/testify/require"
-	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -16,24 +15,44 @@ func TestNewCursor(t *testing.T) {
 		_ = os.RemoveAll(filePath)
 	}()
 
-	c, err := NewCursor(filePath)
+	crw, err := NewCursorReadWriter(filePath)
 	require.NoError(t, err)
 
-	data, err := c.Read()
+	cursor, err := crw.Read()
 	require.NoError(t, err)
-	require.Equal(t, uint32(math.MaxUint32), data.SegmentID)
-	require.Equal(t, uint32(math.MaxUint32), data.ConfigCRC32)
+	require.Nil(t, cursor.SegmentID)
+	require.Nil(t, cursor.ConfigCRC32)
 
-	var segmentID uint32 = 1
 	var configCRC32 uint32 = 5
 
-	require.NoError(t, c.Write(CursorData{
-		SegmentID:   segmentID,
-		ConfigCRC32: configCRC32,
-	}))
+	require.NoError(t, crw.Write(nil, &configCRC32))
 
-	data, err = c.Read()
+	cursor, err = crw.Read()
 	require.NoError(t, err)
-	require.Equal(t, segmentID, data.SegmentID)
-	require.Equal(t, configCRC32, data.ConfigCRC32)
+	require.Nil(t, cursor.SegmentID)
+	require.NotNil(t, cursor.ConfigCRC32)
+	require.Equal(t, configCRC32, *cursor.ConfigCRC32)
+
+	var segmentID uint32 = 32
+
+	require.NoError(t, crw.Write(&segmentID, &configCRC32))
+
+	cursor, err = crw.Read()
+	require.NoError(t, err)
+	require.NotNil(t, cursor.SegmentID)
+	require.Equal(t, segmentID, *cursor.SegmentID)
+	require.NotNil(t, cursor.ConfigCRC32)
+	require.Equal(t, configCRC32, *cursor.ConfigCRC32)
+
+	require.NoError(t, crw.Close())
+
+	crw, err = NewCursorReadWriter(filePath)
+	require.NoError(t, err)
+
+	cursor, err = crw.Read()
+	require.NoError(t, err)
+	require.NotNil(t, cursor.SegmentID)
+	require.Equal(t, segmentID, *cursor.SegmentID)
+	require.NotNil(t, cursor.ConfigCRC32)
+	require.Equal(t, configCRC32, *cursor.ConfigCRC32)
 }

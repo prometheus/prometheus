@@ -243,3 +243,44 @@ func ReadSegment(reader io.Reader) (decodedSegment DecodedSegment, n int, err er
 
 	return decodedSegment, n, nil
 }
+
+func TryReadSegment(source io.ReadSeeker) (decodedSegment DecodedSegment, err error) {
+	br := &byteReader{r: source}
+	var size uint64
+	size, err = binary.ReadUvarint(br)
+	if err != nil {
+		return decodedSegment, fmt.Errorf("failed to read segment size: %w", err)
+	}
+
+	crc32HashU64, err := binary.ReadUvarint(br)
+	if err != nil {
+		return decodedSegment, fmt.Errorf("failed to read segment crc32 hash: %w", err)
+	}
+	crc32Hash := uint32(crc32HashU64)
+
+	sampleCountU64, err := binary.ReadUvarint(br)
+	if err != nil {
+		return decodedSegment, fmt.Errorf("failed to read segment sample count: %w", err)
+	}
+	decodedSegment.sampleCount = uint32(sampleCountU64)
+
+	decodedSegment.data = make([]byte, size)
+	bytesRead, err := source.Read(decodedSegment.data)
+	if err != nil {
+		return decodedSegment, fmt.Errorf("failed to read segment data: %w", err)
+	}
+	offset := bytesRead + br.n
+
+	if uint64(bytesRead) != size {
+		if _, err = source.Seek(-int64(offset), io.SeekCurrent); err != nil {
+			return decodedSegment, fmt.Errorf("try read segment set offset failed: %w", err)
+		}
+		return decodedSegment, io.ErrUnexpectedEOF
+	}
+
+	if crc32Hash != crc32.ChecksumIEEE(decodedSegment.data) {
+		return decodedSegment, fmt.Errorf("crc32 did not match, want: %d, have: %d", crc32Hash, crc32.ChecksumIEEE(decodedSegment.data))
+	}
+
+	return decodedSegment, nil
+}
