@@ -29,16 +29,16 @@ in-file offset (lower 4 bytes) and segment sequence number (upper 4 bytes).
 # Chunk
 
 ```
-┌───────────────┬───────────────────┬──────────────┬─────────────────┐
-│ len <uvarint> │ encoding <1 byte> │ data <bytes> │ CRC32C <4 byte> │
-└───────────────┴───────────────────┴──────────────┴─────────────────┘
+┌───────────────┬───────────────────┬──────────────┬───────────────────┐
+│ len <uvarint> │ encoding <1 byte> │ data <bytes> │ checksum <4 byte> │
+└───────────────┴───────────────────┴──────────────┴───────────────────┘
 ```
 
 Notes:
-* `<uvarint>` has 1 to 10 bytes, from [`encoding/binary`](https://go.dev/src/encoding/binary/varint.go).
+* `len`: Chunk size in bytes. Encoded using 1 to 10 bytes, using the [`<uvarint>` encoding](https://go.dev/src/encoding/binary/varint.go).
 * `encoding`: Currently either `XOR` (1), `histogram` (2), or `float histogram` (3).
 * `data`: See below for each encoding.
-* `CRC32C`: CRC32 Castagnoli of `encoding` and `data`, serialised as an unsigned 32 bits big endian.
+* `checksum`: Checksum of `encoding` and `data`. It's a [cyclic redudancy check](https://en.wikipedia.org/wiki/Cyclic_redundancy_check) with the Castagnoli polynomial, serialised as an unsigned 32 bits big endian number. Can be refered as a `CRC-32C`.
 
 ## XOR chunk data
 
