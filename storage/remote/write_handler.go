@@ -548,11 +548,19 @@ func NewOTLPWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appenda
 
 	pl, err := otel.Use(reg, steps...)
 	if err != nil {
-		panic(err) // TODO: how to handle?
+		// err only occurs on during OTel component construction. this is
+		// currently only deltatocumulative, which does not error itself. if
+		// passed a bad metrics.Meter it errors, but util/otel ensures this
+		// never happens.
+		//
+		// we assume this branch is never reached. if it is, our assumptions are
+		// broken in which case a panic seems acceptable.
+		panic(err)
 	}
 
-	if err := pl.Start(context.TODO(), nil); err != nil {
-		panic(err) // TODO: how to handle?
+	if err := pl.Start(context.Background(), nil); err != nil {
+		// deltatocumulative does not error on start. see above for panic reasoning
+		panic(err)
 	}
 
 	return &otlpWriteHandler{logger: logger, pipeline: pl}
