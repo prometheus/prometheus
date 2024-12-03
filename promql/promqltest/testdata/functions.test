@@ -5,7 +5,7 @@ load 5m
 	http_requests{path="/biz"}  0 0 0 0 0 1 1 1 1 1
     http_requests_histogram{path="/foo"}    {{schema:0 sum:1 count:1}}x9
     http_requests_histogram{path="/bar"}    0 0 0 0 0 0 0 0 {{schema:0 sum:1 count:1}} {{schema:0 sum:1 count:1}}
-    http_requests_histogram{path="/biz"}    0 1 0 2 0 3 0 {{schema:0 sum:1 count:1}} {{schema:0 sum:2 count:2}} {{schema:0 sum:1 count:1}}
+    http_requests_histogram{path="/biz"}    0 1 0 2 0 3 0 {{schema:0 sum:1 count:1 z_bucket_w:0.001 z_bucket:2}} {{schema:0 sum:2 count:2 z_bucket_w:0.001 z_bucket:1}} {{schema:0 sum:1 count:1 z_bucket_w:0.001 z_bucket:2}}
 
 # Tests for resets().
 eval instant at 50m resets(http_requests[5m])
@@ -41,6 +41,18 @@ eval instant at 50m resets(http_requests[50m])
 	{path="/biz"} 0
 
 eval instant at 50m resets(nonexistent_metric[50m])
+
+# Test for mix of floats and histograms.
+
+eval instant at 50m resets(http_requests_histogram[6m])
+    {path="/foo"} 0
+    {path="/bar"} 0
+    {path="/biz"} 0
+
+eval instant at 50m resets(http_requests_histogram[60m])
+    {path="/foo"} 0
+    {path="/bar"} 1
+    {path="/biz"} 6
 
 # Tests for changes().
 eval instant at 50m changes(http_requests[5m])
