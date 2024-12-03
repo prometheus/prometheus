@@ -112,6 +112,8 @@ struct TestWALOutputDecoder : public testing::Test {
     for (RelabelConfigTest& cfg : rcts_buf_) {
       rcts_.push_back(&cfg);
     }
+
+    sr_.reset_to(rcts_);
   }
 };
 
@@ -123,8 +125,7 @@ TEST_F(TestWALOutputDecoder, DumpLoadSingleData) {
   Encoder enc{uint16_t{0}, uint8_t{0}};
 
   make_segment({{{{"__name__", "value1"}, {"job", "abc"}}, {10, 1}}}, segment_stream, enc);
-  std::ispanstream inspan(segment_stream.view());
-  inspan >> wod;
+  segment_stream >> wod;
   wod.process_segment([&](LabelSetID ls_id [[maybe_unused]], Timestamp ts [[maybe_unused]], Sample::value_type v [[maybe_unused]]) {});
 
   wod.dump_to(dump);
@@ -150,8 +151,7 @@ TEST_F(TestWALOutputDecoder, DumpLoadDoubleData) {
 
   {
     make_segment({{{{"__name__", "value1"}, {"job", "abc"}}, {10, 1}}}, segment_stream, enc);
-    std::ispanstream inspan(segment_stream.view());
-    inspan >> wod;
+    segment_stream >> wod;
     wod.process_segment([&](LabelSetID ls_id [[maybe_unused]], Timestamp ts [[maybe_unused]], Sample::value_type v [[maybe_unused]]) {});
     wod.dump_to(dump);
   }
@@ -159,8 +159,7 @@ TEST_F(TestWALOutputDecoder, DumpLoadDoubleData) {
   {
     segment_stream.str("");
     make_segment({{{{"__name__", "value2"}, {"job", "abc"}}, {11, 1}}}, segment_stream, enc);
-    std::ispanstream inspan(segment_stream.view());
-    inspan >> wod;
+    segment_stream >> wod;
     wod.process_segment([&](LabelSetID ls_id [[maybe_unused]], Timestamp ts [[maybe_unused]], Sample::value_type v [[maybe_unused]]) {});
     wod.dump_to(dump);
   }
@@ -186,8 +185,7 @@ TEST_F(TestWALOutputDecoder, DumpLoadDataEmptyData) {
 
   {
     make_segment({{{{"__name__", "value1"}, {"job", "abc"}}, {10, 1}}}, segment_stream, enc);
-    std::ispanstream inspan(segment_stream.view());
-    inspan >> wod;
+    segment_stream >> wod;
     wod.process_segment([&](LabelSetID ls_id [[maybe_unused]], Timestamp ts [[maybe_unused]], Sample::value_type v [[maybe_unused]]) {});
     wod.dump_to(dump);
   }
@@ -197,8 +195,7 @@ TEST_F(TestWALOutputDecoder, DumpLoadDataEmptyData) {
   {
     segment_stream.str("");
     make_segment({{{{"__name__", "value2"}, {"job", "abc"}}, {11, 1}}}, segment_stream, enc);
-    std::ispanstream inspan(segment_stream.view());
-    inspan >> wod;
+    segment_stream >> wod;
     wod.process_segment([&](LabelSetID ls_id [[maybe_unused]], Timestamp ts [[maybe_unused]], Sample::value_type v [[maybe_unused]]) {});
     wod.dump_to(dump);
   }
@@ -221,24 +218,23 @@ TEST_F(TestWALOutputDecoder, ProcessSegment) {
   std::stringstream segment_stream;
   Encoder enc{uint16_t{0}, uint8_t{0}};
 
-  std::vector<std::vector<GoTimeSeries>> expected_segments{{{{{"__name__", "value1"}, {"job", "abc"}}, {10, 1}}},  // keep
+  std::vector<std::vector<GoTimeSeries>> incoming_segments{{{{{"__name__", "value1"}, {"job", "abc"}}, {10, 1}}},  // keep
                                                            {},                                                     // load empty data
                                                            {
                                                                {{{"__name__", "value1"}, {"job", "abc"}}, {11, 1}},  // keep
                                                                {{{"__name__", "value2"}, {"job", "abc"}}, {11, 1}},  // keep
                                                            }};
-
-  for (const auto& expected_segment : expected_segments) {
+  std::vector<RefSample> actual_ref_samples;
+  actual_ref_samples.reserve(3);
+  for (const auto& segment : incoming_segments) {
     segment_stream.str("");
-    make_segment(expected_segment, segment_stream, enc);
-    std::ispanstream inspan(segment_stream.view());
-    inspan >> wod;
-    wod.process_segment([&](LabelSetID ls_id, Timestamp ts, Sample::value_type v) {
-      EXPECT_LT(ls_id, expected_segment.size());
-      EXPECT_EQ(expected_segment[ls_id].timestamp, ts);
-      EXPECT_EQ(std::bit_cast<uint64_t>(expected_segment[ls_id].value), std::bit_cast<uint64_t>(v));
-    });
+    make_segment(segment, segment_stream, enc);
+    segment_stream >> wod;
+    wod.process_segment([&](LabelSetID ls_id, Timestamp ts, Sample::value_type v) { actual_ref_samples.emplace_back(ls_id, ts, v); });
   }
+
+  std::vector<RefSample> expected_ref_samples{{.id = 0, .t = 10, .v = 1}, {.id = 0, .t = 11, .v = 1}, {.id = 1, .t = 11, .v = 1}};
+  EXPECT_EQ(expected_ref_samples, actual_ref_samples);
 }
 
 TEST_F(TestWALOutputDecoder, ProcessSegmentWithDrop) {
@@ -247,28 +243,26 @@ TEST_F(TestWALOutputDecoder, ProcessSegmentWithDrop) {
   std::stringstream segment_stream;
   Encoder enc{uint16_t{0}, uint8_t{0}};
 
-  std::vector<std::vector<GoTimeSeries>> expected_segments{
+  std::vector<std::vector<GoTimeSeries>> incoming_segments{
       {{{{"__name__", "value1"}, {"job", "abc1"}}, {10, 1}}},  // drop
       {{{{"__name__", "value1"}, {"job", "abc"}}, {11, 1}}},   // keep
   };
 
+  std::vector<RefSample> actual_ref_samples;
+  actual_ref_samples.reserve(1);
   size_t processed{0};
-  for (size_t i = 0; i < expected_segments.size(); ++i) {
-    if (i == 0) {
-      continue;
-    }
-
+  for (size_t i = 0; i < incoming_segments.size(); ++i) {
     segment_stream.str("");
-    make_segment(expected_segments[i], segment_stream, enc);
-    std::ispanstream inspan(segment_stream.view());
-    inspan >> wod;
+    make_segment(incoming_segments[i], segment_stream, enc);
+    segment_stream >> wod;
     wod.process_segment([&](LabelSetID ls_id, Timestamp ts, Sample::value_type v) {
-      EXPECT_LT(ls_id, expected_segments[i].size());
-      EXPECT_EQ(expected_segments[i][ls_id].timestamp, ts);
-      EXPECT_EQ(std::bit_cast<uint64_t>(expected_segments[i][ls_id].value), std::bit_cast<uint64_t>(v));
+      actual_ref_samples.emplace_back(ls_id, ts, v);
+      ++processed;
     });
-    ++processed;
   }
+
+  std::vector<RefSample> expected_ref_samples{{.id = 0, .t = 11, .v = 1}};
+  EXPECT_EQ(expected_ref_samples, actual_ref_samples);
   EXPECT_EQ(1, processed);
 }
 
@@ -279,30 +273,30 @@ TEST_F(TestWALOutputDecoder, ProcessSegmentWithDump) {
   std::stringstream dump;
   Encoder enc{uint16_t{0}, uint8_t{0}};
 
-  std::vector<std::vector<GoTimeSeries>> expected_segments{
+  std::vector<std::vector<GoTimeSeries>> incoming_segments{
       {{{{"__name__", "value1"}, {"job", "abc"}}, {10, 1}}},
       {},  // load empty data
       {{{{"__name__", "value1"}, {"job", "abc"}}, {11, 1}}, {{{"__name__", "value2"}, {"job", "abc"}}, {11, 1}}}};
 
-  for (const auto& expected_segment : expected_segments) {
+  std::vector<RefSample> actual_ref_samples;
+  actual_ref_samples.reserve(3);
+  for (const auto& segment : incoming_segments) {
     segment_stream.str("");
-    make_segment(expected_segment, segment_stream, enc);
-    std::ispanstream inspan(segment_stream.view());
-    inspan >> wod;
-    wod.process_segment([&](LabelSetID ls_id, Timestamp ts, Sample::value_type v) {
-      EXPECT_LT(ls_id, expected_segment.size());
-      EXPECT_EQ(expected_segment[ls_id].timestamp, ts);
-      EXPECT_EQ(std::bit_cast<uint64_t>(expected_segment[ls_id].value), std::bit_cast<uint64_t>(v));
-    });
+    make_segment(segment, segment_stream, enc);
+    segment_stream >> wod;
+    wod.process_segment([&](LabelSetID ls_id, Timestamp ts, Sample::value_type v) { actual_ref_samples.emplace_back(ls_id, ts, v); });
     wod.dump_to(dump);
   }
+
+  std::vector<RefSample> expected_ref_samples{{.id = 0, .t = 10, .v = 1}, {.id = 0, .t = 11, .v = 1}, {.id = 1, .t = 11, .v = 1}};
+  EXPECT_EQ(expected_ref_samples, actual_ref_samples);
 
   SnugComposites::LabelSet::EncodingBimap output_lss2;
   OutputDecoder wod2(sr_, output_lss2, external_labels_);
   wod2.load_from(dump);
   Encoder enc2{uint16_t{0}, uint8_t{0}};
 
-  std::vector<std::vector<GoTimeSeries>> expected_segments2{
+  std::vector<std::vector<GoTimeSeries>> incoming_segments_2{
       {{{{"__name__", "value1"}, {"job", "abc"}}, {10, 1}}},
       {},  // load empty data
       {{{{"__name__", "value1"}, {"job", "abc"}}, {11, 1}}, {{{"__name__", "value2"}, {"job", "abc"}}, {11, 1}}},
@@ -310,17 +304,18 @@ TEST_F(TestWALOutputDecoder, ProcessSegmentWithDump) {
        {{{"__name__", "value2"}, {"job", "abc"}}, {12, 1}},
        {{{"__name__", "value3"}, {"job", "abc"}}, {12, 1}}}};
 
-  for (const auto& expected_segment : expected_segments2) {
+  actual_ref_samples.clear();
+  actual_ref_samples.reserve(6);
+  for (const auto& segment : incoming_segments_2) {
     segment_stream.str("");
-    make_segment(expected_segment, segment_stream, enc2);
-    std::ispanstream inspan(segment_stream.view());
-    inspan >> wod2;
-    wod2.process_segment([&](LabelSetID ls_id, Timestamp ts, Sample::value_type v) {
-      EXPECT_LT(ls_id, expected_segment.size());
-      EXPECT_EQ(expected_segment[ls_id].timestamp, ts);
-      EXPECT_EQ(std::bit_cast<uint64_t>(expected_segment[ls_id].value), std::bit_cast<uint64_t>(v));
-    });
+    make_segment(segment, segment_stream, enc2);
+    segment_stream >> wod2;
+    wod2.process_segment([&](LabelSetID ls_id, Timestamp ts, Sample::value_type v) { actual_ref_samples.emplace_back(ls_id, ts, v); });
   }
+
+  std::vector<RefSample> expected_ref_samples_2{{.id = 0, .t = 10, .v = 1}, {.id = 0, .t = 11, .v = 1}, {.id = 1, .t = 11, .v = 1},
+                                                {.id = 0, .t = 12, .v = 1}, {.id = 1, .t = 12, .v = 1}, {.id = 2, .t = 12, .v = 1}};
+  EXPECT_EQ(expected_ref_samples_2, actual_ref_samples);
 }
 
 //
@@ -332,10 +327,7 @@ struct TestProtobufEncoder : public testing::Test {};
 TEST_F(TestProtobufEncoder, Encode) {
   PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap output_lss0;
   PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap output_lss1;
-  std::vector<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap*> output_lsses;
-  output_lsses.reserve(2);
-  output_lsses.push_back(&output_lss0);
-  output_lsses.push_back(&output_lss1);
+  std::vector<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap*> output_lsses{&output_lss0, &output_lss1};
 
   std::vector<PromPP::WAL::RefSample> ref_samples0;
   ref_samples0.emplace_back(output_lss0.find_or_emplace(LabelViewSet{{"__name__", "value1"}, {"job", "abc"}}), 10, 1);
@@ -355,12 +347,28 @@ TEST_F(TestProtobufEncoder, Encode) {
   Go::SliceView<ShardRefSample*> batch;
   batch.reset_to(vector_batch.data(), vector_batch.size());
 
-  ProtobufEncoder penc(output_lsses);
+  ProtobufEncoder penc(std::move(output_lsses));
   Go::Slice<Go::Slice<char>> out_slices;
   out_slices.resize(2);
   penc.encode(batch, out_slices);
-  EXPECT_EQ(85, out_slices[0].size());
-  EXPECT_EQ(49, out_slices[1].size());
+
+  std::vector<int8_t> expected_proto1{10, 58, 10,  18, 10,  8,   95, 95, 110, 97, 109, 101, 95,  95,  18,  6,  118, 97, 108, 117, 101, 49,
+                                      10, 10, 10,  3,  106, 111, 98, 18, 3,   97, 98,  99,  18,  11,  9,   0,  0,   0,  0,   0,   0,   0,
+                                      64, 16, 9,   18, 11,  9,   0,  0,  0,   0,  0,   0,   -16, 63,  16,  10, 10,  46, 10,  18,  10,  8,
+                                      95, 95, 110, 97, 109, 101, 95, 95, 18,  6,  118, 97,  108, 117, 101, 51, 10,  11, 10,  3,   106, 111,
+                                      98, 18, 4,   97, 98,  99,  51, 18, 11,  9,  0,   0,   0,   0,   0,   0,  -16, 63, 16,  10};
+  std::vector<int8_t> expected_proto2{10, 45, 10,  18,  10, 8,  95, 95, 110, 97, 109, 101, 95, 95, 18, 6, 118, 97, 108, 117, 101, 50, 10, 10,
+                                      10, 3,  106, 111, 98, 18, 3,  97, 98,  99, 18,  11,  9,  0,  0,  0, 0,   0,  0,   -16, 63,  16, 10};
+
+  std::string proto1;
+  bool ok = snappy::Uncompress(out_slices[0].data(), out_slices[0].size(), &proto1);
+  EXPECT_TRUE(ok);
+  EXPECT_EQ(expected_proto1, std::vector<int8_t>(proto1.begin(), proto1.end()));
+
+  std::string proto2;
+  ok = snappy::Uncompress(out_slices[1].data(), out_slices[1].size(), &proto2);
+  EXPECT_TRUE(ok);
+  EXPECT_EQ(expected_proto2, std::vector<int8_t>(proto2.begin(), proto2.end()));
 }
 
 }  // namespace

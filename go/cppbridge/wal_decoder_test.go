@@ -3,6 +3,7 @@ package cppbridge_test
 import (
 	"bytes"
 	"context"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -231,20 +232,19 @@ func (s *OutputDecoderSuite) TestWALProtobufEncoderEncode() {
 	}
 	batch := make([]*cppbridge.DecodedRefSamples, 0, len(labelSets))
 
-	outputLss := cppbridge.NewLssStorage()
-	dec := cppbridge.NewWALProtobufEncoder(
-		[]*cppbridge.LabelSetStorage{outputLss},
-	)
+	outputLsses := []*cppbridge.LabelSetStorage{cppbridge.NewLssStorage(), cppbridge.NewLssStorage()}
 	for val, labelSet := range labelSets {
-		lsID := outputLss.FindOrEmplace(labelSet)
+		lsID := outputLsses[val%len(outputLsses)].FindOrEmplace(labelSet)
+
 		batch = append(
 			batch,
 			cppbridge.NewGoDecodedRefSamples([]cppbridge.RefSample{
 				{ID: lsID, T: int64((val + 1) * 100), V: float64(val + 1)},
-			}, 0),
+			}, uint16(val%len(outputLsses))),
 		)
 	}
 
+	dec := cppbridge.NewWALProtobufEncoder(outputLsses)
 	data, err := dec.Encode(context.Background(), batch, 1)
 	s.Require().NoError(err)
 
@@ -252,10 +252,7 @@ func (s *OutputDecoderSuite) TestWALProtobufEncoderEncode() {
 	err = data[0].Do(func(buf []byte) error {
 		var errDo error
 		uncompressed, errDo = snappy.Decode(nil, buf)
-		if errDo != nil {
-			return errDo
-		}
-		return nil
+		return errDo
 	})
 	s.Require().NoError(err)
 
@@ -268,13 +265,17 @@ func (s *OutputDecoderSuite) TestWALProtobufEncoderEncode() {
 		func(a, b prompb.TimeSeries) int { return strings.Compare(a.String(), b.String()) },
 	)
 
+	s.Require().Equal(len(labelSets), len(actualWr.Timeseries))
+
 	for val, labelSet := range labelSets {
 		s.Require().Equal(labelSet.Len(), len(actualWr.Timeseries[val].Labels))
 		for i := range actualWr.Timeseries[val].Labels {
-			s.Equal(actualWr.Timeseries[val].Labels[i].Name, labelSet.Key(i))
-			s.Equal(actualWr.Timeseries[val].Labels[i].Value, labelSet.Value(i))
+			s.Equal(labelSet.Key(i), actualWr.Timeseries[val].Labels[i].Name)
+			s.Equal(labelSet.Value(i), actualWr.Timeseries[val].Labels[i].Value)
 		}
 		s.Equal(int64((val+1)*100), actualWr.Timeseries[val].Samples[0].Timestamp)
 		s.Equal(float64(val+1), actualWr.Timeseries[val].Samples[0].Value)
 	}
+
+	runtime.KeepAlive(outputLsses)
 }

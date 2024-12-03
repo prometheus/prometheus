@@ -183,12 +183,14 @@ void prompp_wal_output_decoder_load_from(void* args, void* res);
  * @brief decode segment to slice RefSample.
  *
  * @param args {
- *     decoder             uintptr      // pointer to constructed output decoder
+ *     decoder               uintptr     // pointer to constructed output decoder
+ *     lower_limit_timestamp int64       // lower limit timestamp
  * }
  *
  * @param res {
- *     ref_samples         []RefSample  // slice RefSample
- *     error               []byte       // error string if thrown
+ *     max_timestamp         int64       // max timestamp in slice RefSample
+ *     ref_samples           []RefSample // slice RefSample
+ *     error                 []byte      // error string if thrown
  * }
  */
 void prompp_wal_output_decoder_decode(void* args, void* res);
