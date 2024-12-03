@@ -56,6 +56,10 @@ const (
 	DefaultMaxSamplesPerQuery = 10000
 )
 
+func init() {
+	model.NameValidationScheme = model.UTF8Validation
+}
+
 type TBRun interface {
 	testing.TB
 	Run(string, func(*testing.T)) bool

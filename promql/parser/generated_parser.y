@@ -669,13 +669,13 @@ label_set_item  : IDENTIFIER EQL STRING
                         { $$ = labels.Label{Name: $1.Val, Value: yylex.(*parser).unquoteString($3.Val) } }
                 | string_identifier EQL STRING
                         { $$ = labels.Label{Name: $1.Val, Value: yylex.(*parser).unquoteString($3.Val) } }
+                | string_identifier
+                        { $$ = labels.Label{Name: labels.MetricName, Value: $1.Val} }
                 | IDENTIFIER EQL error
                         { yylex.(*parser).unexpected("label set", "string"); $$ = labels.Label{}}
                 | string_identifier EQL error
                         { yylex.(*parser).unexpected("label set", "string"); $$ = labels.Label{}}
                 | IDENTIFIER error
-                        { yylex.(*parser).unexpected("label set", "\"=\""); $$ = labels.Label{}}
-                | string_identifier error
                         { yylex.(*parser).unexpected("label set", "\"=\""); $$ = labels.Label{}}
                 | error
                         { yylex.(*parser).unexpected("label set", "identifier or \"}\""); $$ = labels.Label{} }
