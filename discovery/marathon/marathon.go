@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math/rand"
 	"net"
 	"net/http"
@@ -27,7 +28,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -140,10 +140,10 @@ type Discovery struct {
 }
 
 // NewDiscovery returns a new Marathon Discovery.
-func NewDiscovery(conf SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+func NewDiscovery(conf SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
 	m, ok := metrics.(*marathonMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "marathon_sd")

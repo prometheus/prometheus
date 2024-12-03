@@ -667,9 +667,15 @@ label_set_list  : label_set_list COMMA label_set_item
 
 label_set_item  : IDENTIFIER EQL STRING
                         { $$ = labels.Label{Name: $1.Val, Value: yylex.(*parser).unquoteString($3.Val) } }
+                | string_identifier EQL STRING
+                        { $$ = labels.Label{Name: $1.Val, Value: yylex.(*parser).unquoteString($3.Val) } }
                 | IDENTIFIER EQL error
                         { yylex.(*parser).unexpected("label set", "string"); $$ = labels.Label{}}
+                | string_identifier EQL error
+                        { yylex.(*parser).unexpected("label set", "string"); $$ = labels.Label{}}
                 | IDENTIFIER error
+                        { yylex.(*parser).unexpected("label set", "\"=\""); $$ = labels.Label{}}
+                | string_identifier error
                         { yylex.(*parser).unexpected("label set", "\"=\""); $$ = labels.Label{}}
                 | error
                         { yylex.(*parser).unexpected("label set", "identifier or \"}\""); $$ = labels.Label{} }
@@ -818,12 +824,12 @@ histogram_desc_item
                    $$ = yylex.(*parser).newMap()
                    $$["sum"] = $3
                 }
-                | COUNT_DESC COLON number
+                | COUNT_DESC COLON signed_or_unsigned_number
                 {
                    $$ = yylex.(*parser).newMap()
                    $$["count"] = $3
                 }
-                | ZERO_BUCKET_DESC COLON number
+                | ZERO_BUCKET_DESC COLON signed_or_unsigned_number
                 {
                    $$ = yylex.(*parser).newMap()
                    $$["z_bucket"] = $3
@@ -875,11 +881,11 @@ bucket_set      : LEFT_BRACKET bucket_set_list SPACE RIGHT_BRACKET
                 }
                 ;
 
-bucket_set_list : bucket_set_list SPACE number
+bucket_set_list : bucket_set_list SPACE signed_or_unsigned_number
                 {
                   $$ = append($1, $3)
                 }
-                | number
+                | signed_or_unsigned_number
                 {
                   $$ = []float64{$1}
                 }

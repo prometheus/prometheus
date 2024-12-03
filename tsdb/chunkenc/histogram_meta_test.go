@@ -14,7 +14,7 @@
 // The code in this file was largely written by Damian Gryski as part of
 // https://github.com/dgryski/go-tsz and published under the license below.
 // It was modified to accommodate reading from byte slices without modifying
-// the underlying bytes, which would panic when reading from mmap'd
+// the underlying bytes, which would panic when reading from mmapped
 // read-only byte slices.
 package chunkenc
 

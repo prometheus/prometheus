@@ -21,8 +21,6 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/go-kit/log/level"
-
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -125,6 +123,10 @@ func (h *headIndexReader) PostingsForLabelMatching(ctx context.Context, name str
 	return h.head.postings.PostingsForLabelMatching(ctx, name, match)
 }
 
+func (h *headIndexReader) PostingsForAllLabelValues(ctx context.Context, name string) index.Postings {
+	return h.head.postings.PostingsForAllLabelValues(ctx, name)
+}
+
 func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 	series := make([]*memSeries, 0, 128)
 
@@ -132,7 +134,7 @@ func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 	for p.Next() {
 		s := h.head.series.getByID(chunks.HeadSeriesRef(p.At()))
 		if s == nil {
-			level.Debug(h.head.logger).Log("msg", "Looked up series not found")
+			h.head.logger.Debug("Looked up series not found")
 		} else {
 			series = append(series, s)
 		}
@@ -165,7 +167,7 @@ func (h *headIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCou
 	for p.Next() {
 		s := h.head.series.getByID(chunks.HeadSeriesRef(p.At()))
 		if s == nil {
-			level.Debug(h.head.logger).Log("msg", "Looked up series not found")
+			h.head.logger.Debug("Looked up series not found")
 			continue
 		}
 

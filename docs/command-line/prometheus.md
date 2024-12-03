@@ -15,11 +15,15 @@ The Prometheus monitoring server
 | <code class="text-nowrap">-h</code>, <code class="text-nowrap">--help</code> | Show context-sensitive help (also try --help-long and --help-man). |  |
 | <code class="text-nowrap">--version</code> | Show application version. |  |
 | <code class="text-nowrap">--config.file</code> | Prometheus configuration file path. | `prometheus.yml` |
+| <code class="text-nowrap">--config.auto-reload-interval</code> | Specifies the interval for checking and automatically reloading the Prometheus configuration file upon detecting changes. | `30s` |
 | <code class="text-nowrap">--web.listen-address</code> <code class="text-nowrap">...<code class="text-nowrap"> | Address to listen on for UI, API, and telemetry. Can be repeated. | `0.0.0.0:9090` |
+| <code class="text-nowrap">--auto-gomaxprocs</code> | Automatically set GOMAXPROCS to match Linux container CPU quota | `true` |
+| <code class="text-nowrap">--auto-gomemlimit</code> | Automatically set GOMEMLIMIT to match Linux container or system memory limit | `true` |
 | <code class="text-nowrap">--auto-gomemlimit.ratio</code> | The ratio of reserved GOMEMLIMIT memory to the detected maximum container or system memory | `0.9` |
 | <code class="text-nowrap">--web.config.file</code> | [EXPERIMENTAL] Path to configuration file that can enable TLS or authentication. |  |
 | <code class="text-nowrap">--web.read-timeout</code> | Maximum duration before timing out read of the request, and closing idle connections. | `5m` |
 | <code class="text-nowrap">--web.max-connections</code> | Maximum number of simultaneous connections across all listeners. | `512` |
+| <code class="text-nowrap">--web.max-notifications-subscribers</code> | Limits the maximum number of subscribers that can concurrently receive live notifications. If the limit is reached, new subscription requests will be denied until existing connections close. | `16` |
 | <code class="text-nowrap">--web.external-url</code> | The URL under which Prometheus is externally reachable (for example, if Prometheus is served via a reverse proxy). Used for generating relative and absolute links back to Prometheus itself. If the URL has a path portion, it will be used to prefix all HTTP endpoints served by Prometheus. If omitted, relevant URL components will be derived automatically. |  |
 | <code class="text-nowrap">--web.route-prefix</code> | Prefix for the internal routes of web endpoints. Defaults to path of --web.external-url. |  |
 | <code class="text-nowrap">--web.user-assets</code> | Path to static asset directory, available at /user. |  |
@@ -27,13 +31,13 @@ The Prometheus monitoring server
 | <code class="text-nowrap">--web.enable-admin-api</code> | Enable API endpoints for admin control actions. | `false` |
 | <code class="text-nowrap">--web.enable-remote-write-receiver</code> | Enable API endpoint accepting remote write requests. | `false` |
 | <code class="text-nowrap">--web.remote-write-receiver.accepted-protobuf-messages</code> | List of the remote write protobuf messages to accept when receiving the remote writes. Supported values: prometheus.WriteRequest, io.prometheus.write.v2.Request | `prometheus.WriteRequest` |
+| <code class="text-nowrap">--web.enable-otlp-receiver</code> | Enable API endpoint accepting OTLP write requests. | `false` |
 | <code class="text-nowrap">--web.console.templates</code> | Path to the console template directory, available at /consoles. | `consoles` |
 | <code class="text-nowrap">--web.console.libraries</code> | Path to the console library directory. | `console_libraries` |
 | <code class="text-nowrap">--web.page-title</code> | Document title of Prometheus instance. | `Prometheus Time Series Collection and Processing Server` |
 | <code class="text-nowrap">--web.cors.origin</code> | Regex for CORS origin. It is fully anchored. Example: 'https?://(domain1\|domain2)\.com' | `.*` |
 | <code class="text-nowrap">--storage.tsdb.path</code> | Base path for metrics storage. Use with server mode only. | `data/` |
-| <code class="text-nowrap">--storage.tsdb.retention</code> | [DEPRECATED] How long to retain samples in storage. This flag has been deprecated, use "storage.tsdb.retention.time" instead. Use with server mode only. |  |
-| <code class="text-nowrap">--storage.tsdb.retention.time</code> | How long to retain samples in storage. When this flag is set it overrides "storage.tsdb.retention". If neither this flag nor "storage.tsdb.retention" nor "storage.tsdb.retention.size" is set, the retention time defaults to 15d. Units Supported: y, w, d, h, m, s, ms. Use with server mode only. |  |
+| <code class="text-nowrap">--storage.tsdb.retention.time</code> | How long to retain samples in storage. If neither this flag nor "storage.tsdb.retention.size" is set, the retention time defaults to 15d. Units Supported: y, w, d, h, m, s, ms. Use with server mode only. |  |
 | <code class="text-nowrap">--storage.tsdb.retention.size</code> | Maximum number of bytes that can be stored for blocks. A unit is required, supported units: B, KB, MB, GB, TB, PB, EB. Ex: "512MB". Based on powers-of-2, so 1KB is 1024B. Use with server mode only. |  |
 | <code class="text-nowrap">--storage.tsdb.no-lockfile</code> | Do not create lockfile in data directory. Use with server mode only. | `false` |
 | <code class="text-nowrap">--storage.tsdb.head-chunks-write-queue-size</code> | Size of the queue through which head chunks are written to the disk to be m-mapped, 0 disables the queue completely. Experimental. Use with server mode only. | `0` |
@@ -56,8 +60,8 @@ The Prometheus monitoring server
 | <code class="text-nowrap">--query.timeout</code> | Maximum time a query may take before being aborted. Use with server mode only. | `2m` |
 | <code class="text-nowrap">--query.max-concurrency</code> | Maximum number of queries executed concurrently. Use with server mode only. | `20` |
 | <code class="text-nowrap">--query.max-samples</code> | Maximum number of samples a single query can load into memory. Note that queries will fail if they try to load more samples than this into memory, so this also limits the number of samples a query can return. Use with server mode only. | `50000000` |
-| <code class="text-nowrap">--scrape.name-escaping-scheme</code> | Method for escaping legacy invalid names when sending to Prometheus that does not support UTF-8. Can be one of "values", "underscores", or "dots". | `values` |
-| <code class="text-nowrap">--enable-feature</code> <code class="text-nowrap">...<code class="text-nowrap"> | Comma separated feature names to enable. Valid options: agent, auto-gomaxprocs, auto-gomemlimit, concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, expand-external-labels, extra-scrape-metrics, memory-snapshot-on-shutdown, native-histograms, new-service-discovery-manager, no-default-scrape-port, otlp-write-receiver, promql-experimental-functions, promql-delayed-name-removal, promql-per-step-stats, remote-write-receiver (DEPRECATED), utf8-names. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details. |  |
+| <code class="text-nowrap">--enable-feature</code> <code class="text-nowrap">...<code class="text-nowrap"> | Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, native-histograms, created-timestamp-zero-ingestion, concurrent-rule-eval, delayed-compaction, old-ui. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details. |  |
+| <code class="text-nowrap">--agent</code> | Run Prometheus in 'Agent mode'. |  |
 | <code class="text-nowrap">--log.level</code> | Only log messages with the given severity or above. One of: [debug, info, warn, error] | `info` |
 | <code class="text-nowrap">--log.format</code> | Output format of log messages. One of: [logfmt, json] | `logfmt` |
 

@@ -14,34 +14,45 @@
 package logging
 
 import (
+	"bytes"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 )
 
-type counter int
-
-func (c *counter) Log(...interface{}) error {
-	(*c)++
-	return nil
-}
-
 func TestDedupe(t *testing.T) {
-	var c counter
-	d := Dedupe(&c, 100*time.Millisecond)
+	var buf bytes.Buffer
+	d := Dedupe(promslog.New(&promslog.Config{Writer: &buf}), 100*time.Millisecond)
+	dlog := slog.New(d)
 	defer d.Stop()
 
 	// Log 10 times quickly, ensure they are deduped.
 	for i := 0; i < 10; i++ {
-		err := d.Log("msg", "hello")
-		require.NoError(t, err)
+		dlog.Info("test", "hello", "world")
 	}
-	require.Equal(t, 1, int(c))
+
+	// Trim empty lines
+	lines := []string{}
+	for _, line := range strings.Split(buf.String(), "\n") {
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	require.Len(t, lines, 1)
 
 	// Wait, then log again, make sure it is logged.
 	time.Sleep(200 * time.Millisecond)
-	err := d.Log("msg", "hello")
-	require.NoError(t, err)
-	require.Equal(t, 2, int(c))
+	dlog.Info("test", "hello", "world")
+	// Trim empty lines
+	lines = []string{}
+	for _, line := range strings.Split(buf.String(), "\n") {
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	require.Len(t, lines, 2)
 }

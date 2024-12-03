@@ -81,7 +81,7 @@ func TestPool(t *testing.T) {
 
 	t.Run("does not allocate", func(t *testing.T) {
 		pool := zeropool.New(func() []byte { return make([]byte, 1024) })
-		// Warm up, this will alloate one slice.
+		// Warm up, this will allocate one slice.
 		slice := pool.Get()
 		pool.Put(slice)
 

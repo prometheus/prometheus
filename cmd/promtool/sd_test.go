@@ -29,6 +29,7 @@ import (
 )
 
 func TestSDCheckResult(t *testing.T) {
+	t.Parallel()
 	targetGroups := []*targetgroup.Group{{
 		Targets: []model.LabelSet{
 			map[model.LabelName]model.LabelValue{"__address__": "localhost:8080", "foo": "bar"},
@@ -70,5 +71,5 @@ func TestSDCheckResult(t *testing.T) {
 		},
 	}
 
-	testutil.RequireEqual(t, expectedSDCheckResult, getSDCheckResult(targetGroups, scrapeConfig, true))
+	testutil.RequireEqual(t, expectedSDCheckResult, getSDCheckResult(targetGroups, scrapeConfig))
 }

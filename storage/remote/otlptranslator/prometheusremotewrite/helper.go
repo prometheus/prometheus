@@ -17,6 +17,7 @@
 package prometheusremotewrite
 
 import (
+	"context"
 	"encoding/hex"
 	"fmt"
 	"log"
@@ -156,7 +157,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 	// map ensures no duplicate label names.
 	l := make(map[string]string, maxLabelCount)
 	for _, label := range labels {
-		var finalKey = prometheustranslator.NormalizeLabel(label.Name)
+		var finalKey = prometheustranslator.NormalizeLabel(label.Name, settings.AllowUTF8)
 		if existingValue, alreadyExists := l[finalKey]; alreadyExists {
 			l[finalKey] = existingValue + ";" + label.Value
 		} else {
@@ -165,7 +166,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 	}
 
 	for _, lbl := range promotedAttrs {
-		normalized := prometheustranslator.NormalizeLabel(lbl.Name)
+		normalized := prometheustranslator.NormalizeLabel(lbl.Name, settings.AllowUTF8)
 		if _, exists := l[normalized]; !exists {
 			l[normalized] = lbl.Value
 		}
@@ -204,7 +205,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 		}
 		// internal labels should be maintained
 		if !(len(name) > 4 && name[:2] == "__" && name[len(name)-2:] == "__") {
-			name = prometheustranslator.NormalizeLabel(name)
+			name = prometheustranslator.NormalizeLabel(name, settings.AllowUTF8)
 		}
 		l[name] = extras[i+1]
 	}
@@ -241,9 +242,13 @@ func isValidAggregationTemporality(metric pmetric.Metric) bool {
 // with the user defined bucket boundaries of non-exponential OTel histograms.
 // However, work is under way to resolve this shortcoming through a feature called native histograms custom buckets:
 // https://github.com/prometheus/prometheus/issues/13485.
-func (c *PrometheusConverter) addHistogramDataPoints(dataPoints pmetric.HistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, baseName string) {
+func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPoints pmetric.HistogramDataPointSlice,
+	resource pcommon.Resource, settings Settings, baseName string) error {
 	for x := 0; x < dataPoints.Len(); x++ {
+		if err := c.everyN.checkContext(ctx); err != nil {
+			return err
+		}
+
 		pt := dataPoints.At(x)
 		timestamp := convertTimeStamp(pt.Timestamp())
 		baseLabels := createAttributes(resource, pt.Attributes(), settings, nil, false)
@@ -284,6 +289,10 @@ func (c *PrometheusConverter) addHistogramDataPoints(dataPoints pmetric.Histogra
 
 		// process each bound, based on histograms proto definition, # of buckets = # of explicit bounds + 1
 		for i := 0; i < pt.ExplicitBounds().Len() && i < pt.BucketCounts().Len(); i++ {
+			if err := c.everyN.checkContext(ctx); err != nil {
+				return err
+			}
+
 			bound := pt.ExplicitBounds().At(i)
 			cumulativeCount += pt.BucketCounts().At(i)
 			bucket := &prompb.Sample{
@@ -312,7 +321,9 @@ func (c *PrometheusConverter) addHistogramDataPoints(dataPoints pmetric.Histogra
 		ts := c.addSample(infBucket, infLabels)
 
 		bucketBounds = append(bucketBounds, bucketBoundsData{ts: ts, bound: math.Inf(1)})
-		c.addExemplars(pt, bucketBounds)
+		if err := c.addExemplars(ctx, pt, bucketBounds); err != nil {
+			return err
+		}
 
 		startTimestamp := pt.StartTimestamp()
 		if settings.ExportCreatedMetric && startTimestamp != 0 {
@@ -320,6 +331,8 @@ func (c *PrometheusConverter) addHistogramDataPoints(dataPoints pmetric.Histogra
 			c.addTimeSeriesIfNeeded(labels, startTimestamp, pt.Timestamp())
 		}
 	}
+
+	return nil
 }
 
 type exemplarType interface {
@@ -327,16 +340,28 @@ type exemplarType interface {
 	Exemplars() pmetric.ExemplarSlice
 }
 
-func getPromExemplars[T exemplarType](pt T) []prompb.Exemplar {
+func getPromExemplars[T exemplarType](ctx context.Context, everyN *everyNTimes, pt T) ([]prompb.Exemplar, error) {
 	promExemplars := make([]prompb.Exemplar, 0, pt.Exemplars().Len())
 	for i := 0; i < pt.Exemplars().Len(); i++ {
+		if err := everyN.checkContext(ctx); err != nil {
+			return nil, err
+		}
+
 		exemplar := pt.Exemplars().At(i)
 		exemplarRunes := 0
 
 		promExemplar := prompb.Exemplar{
-			Value:     exemplar.DoubleValue(),
 			Timestamp: timestamp.FromTime(exemplar.Timestamp().AsTime()),
 		}
+		switch exemplar.ValueType() {
+		case pmetric.ExemplarValueTypeInt:
+			promExemplar.Value = float64(exemplar.IntValue())
+		case pmetric.ExemplarValueTypeDouble:
+			promExemplar.Value = exemplar.DoubleValue()
+		default:
+			return nil, fmt.Errorf("unsupported exemplar value type: %v", exemplar.ValueType())
+		}
+
 		if traceID := exemplar.TraceID(); !traceID.IsEmpty() {
 			val := hex.EncodeToString(traceID[:])
 			exemplarRunes += utf8.RuneCountInString(traceIDKey) + utf8.RuneCountInString(val)
@@ -379,7 +404,7 @@ func getPromExemplars[T exemplarType](pt T) []prompb.Exemplar {
 		promExemplars = append(promExemplars, promExemplar)
 	}
 
-	return promExemplars
+	return promExemplars, nil
 }
 
 // mostRecentTimestampInMetric returns the latest timestamp in a batch of metrics
@@ -417,9 +442,13 @@ func mostRecentTimestampInMetric(metric pmetric.Metric) pcommon.Timestamp {
 	return ts
 }
 
-func (c *PrometheusConverter) addSummaryDataPoints(dataPoints pmetric.SummaryDataPointSlice, resource pcommon.Resource,
-	settings Settings, baseName string) {
+func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoints pmetric.SummaryDataPointSlice, resource pcommon.Resource,
+	settings Settings, baseName string) error {
 	for x := 0; x < dataPoints.Len(); x++ {
+		if err := c.everyN.checkContext(ctx); err != nil {
+			return err
+		}
+
 		pt := dataPoints.At(x)
 		timestamp := convertTimeStamp(pt.Timestamp())
 		baseLabels := createAttributes(resource, pt.Attributes(), settings, nil, false)
@@ -468,6 +497,8 @@ func (c *PrometheusConverter) addSummaryDataPoints(dataPoints pmetric.SummaryDat
 			c.addTimeSeriesIfNeeded(createdLabels, startTimestamp, pt.Timestamp())
 		}
 	}
+
+	return nil
 }
 
 // createLabels returns a copy of baseLabels, adding to it the pair model.MetricNameLabel=name.
@@ -569,6 +600,10 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timesta
 	}
 
 	settings.PromoteResourceAttributes = nil
+	if settings.KeepIdentifyingResourceAttributes {
+		// Do not pass identifying attributes as ignoreAttrs below.
+		identifyingAttrs = nil
+	}
 	labels := createAttributes(resource, attributes, settings, identifyingAttrs, false, model.MetricNameLabel, name)
 	haveIdentifier := false
 	for _, l := range labels {

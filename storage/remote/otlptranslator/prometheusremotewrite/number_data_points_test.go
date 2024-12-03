@@ -17,14 +17,16 @@
 package prometheusremotewrite
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
+
+	"github.com/prometheus/prometheus/prompb"
 )
 
 func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
@@ -66,6 +68,7 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 			converter := NewPrometheusConverter()
 
 			converter.addGaugeNumberDataPoints(
+				context.Background(),
 				metric.Gauge().DataPoints(),
 				pcommon.NewResource(),
 				Settings{
@@ -242,6 +245,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			converter := NewPrometheusConverter()
 
 			converter.addSumNumberDataPoints(
+				context.Background(),
 				metric.Sum().DataPoints(),
 				pcommon.NewResource(),
 				metric,

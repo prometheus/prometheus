@@ -20,7 +20,9 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strconv"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"github.com/gogo/protobuf/proto"
@@ -33,6 +35,15 @@ import (
 
 	dto "github.com/prometheus/prometheus/prompb/io/prometheus/client"
 )
+
+// floatFormatBufPool is exclusively used in formatOpenMetricsFloat.
+var floatFormatBufPool = sync.Pool{
+	New: func() interface{} {
+		// To contain at most 17 digits and additional syntax for a float64.
+		b := make([]byte, 0, 24)
+		return &b
+	},
+}
 
 // ProtobufParser is a very inefficient way of unmarshaling the old Prometheus
 // protobuf format and then present it as it if were parsed by a
@@ -457,6 +468,12 @@ func (p *ProtobufParser) Next() (Entry, error) {
 
 		p.state = EntryHelp
 	case EntryHelp:
+		if p.mf.Unit != "" {
+			p.state = EntryUnit
+		} else {
+			p.state = EntryType
+		}
+	case EntryUnit:
 		p.state = EntryType
 	case EntryType:
 		t := p.mf.GetType()
@@ -604,7 +621,7 @@ func readDelimited(b []byte, mf *dto.MetricFamily) (n int, err error) {
 	return totalLength, mf.Unmarshal(b[varIntLength:totalLength])
 }
 
-// formatOpenMetricsFloat works like the usual Go string formatting of a fleat
+// formatOpenMetricsFloat works like the usual Go string formatting of a float
 // but appends ".0" if the resulting number would otherwise contain neither a
 // "." nor an "e".
 func formatOpenMetricsFloat(f float64) string {
@@ -623,11 +640,15 @@ func formatOpenMetricsFloat(f float64) string {
 	case math.IsInf(f, -1):
 		return "-Inf"
 	}
-	s := fmt.Sprint(f)
-	if strings.ContainsAny(s, "e.") {
-		return s
+	bp := floatFormatBufPool.Get().(*[]byte)
+	defer floatFormatBufPool.Put(bp)
+
+	*bp = strconv.AppendFloat((*bp)[:0], f, 'g', -1, 64)
+	if bytes.ContainsAny(*bp, "e.") {
+		return string(*bp)
 	}
-	return s + ".0"
+	*bp = append(*bp, '.', '0')
+	return string(*bp)
 }
 
 // isNativeHistogram returns false iff the provided histograms has no spans at

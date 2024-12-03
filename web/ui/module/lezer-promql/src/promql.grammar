@@ -141,10 +141,11 @@ FunctionIdentifier {
   HistogramStdVar |
   HistogramSum |
   HistogramAvg |
-  HoltWinters |
+  DoubleExponentialSmoothing |
   Hour |
   Idelta |
   Increase |
+  Info |
   Irate |
   LabelReplace |
   LabelJoin |
@@ -388,10 +389,11 @@ NumberDurationLiteralInDurationContext {
   HistogramStdDev { condFn<"histogram_stddev"> }
   HistogramStdVar { condFn<"histogram_stdvar"> }
   HistogramSum { condFn<"histogram_sum"> }
-  HoltWinters { condFn<"holt_winters"> }
+  DoubleExponentialSmoothing { condFn<"double_exponential_smoothing"> }
   Hour { condFn<"hour"> }
   Idelta { condFn<"idelta"> }
   Increase { condFn<"increase"> }
+  Info { condFn<"info"> }
   Irate { condFn<"irate"> }
   LabelReplace { condFn<"label_replace"> }
   LabelJoin { condFn<"label_join"> }

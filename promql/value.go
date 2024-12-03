@@ -526,7 +526,7 @@ func (ssi *storageSeriesIterator) Next() chunkenc.ValueType {
 		ssi.currH = p.H
 		return chunkenc.ValFloatHistogram
 	default:
-		panic("storageSeriesIterater.Next failed to pick value type")
+		panic("storageSeriesIterator.Next failed to pick value type")
 	}
 }
 

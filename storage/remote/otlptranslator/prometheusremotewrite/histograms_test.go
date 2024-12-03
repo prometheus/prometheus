@@ -17,16 +17,18 @@
 package prometheusremotewrite
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
+
+	"github.com/prometheus/prometheus/prompb"
 
 	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
 )
@@ -170,7 +172,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					},
 					// Downscale:
 					// 4+2+0+2, 0+0+0+0, 0+0+0+0, 0+0+0+0, 1+0+0+0 = 8, 0, 0, 0, 1
-					// Check from sclaing from previous: 6+2, 0+0, 0+0, 0+0, 1+0 = 8, 0, 0, 0, 1
+					// Check from scaling from previous: 6+2, 0+0, 0+0, 0+0, 1+0 = 8, 0, 0, 0, 1
 					wantDeltas: []int64{8, -7},
 				},
 			},
@@ -221,7 +223,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					},
 					// Downscale:
 					// 4+2+0+2, 0+0+0+0, 0+0+0+0, 1+0+0+0 = 8, 0, 0, 1
-					// Check from sclaing from previous: 6+2, 0+0, 0+0, 1+0 = 8, 0, 0, 1
+					// Check from scaling from previous: 6+2, 0+0, 0+0, 1+0 = 8, 0, 0, 1
 					wantDeltas: []int64{8, -8, 0, 1},
 				},
 			},
@@ -754,12 +756,13 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 
 			converter := NewPrometheusConverter()
 			annots, err := converter.addExponentialHistogramDataPoints(
+				context.Background(),
 				metric.ExponentialHistogram().DataPoints(),
 				pcommon.NewResource(),
 				Settings{
 					ExportCreatedMetric: true,
 				},
-				prometheustranslator.BuildCompliantName(metric, "", true),
+				prometheustranslator.BuildCompliantName(metric, "", true, true),
 			)
 			require.NoError(t, err)
 			require.Empty(t, annots)

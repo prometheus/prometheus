@@ -20,9 +20,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
@@ -253,8 +253,7 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 		t.Run(test.description, func(t *testing.T) {
 			err := validateLabelsAndMetricName(test.input)
 			if test.expectedErr != "" {
-				require.Error(t, err)
-				require.Equal(t, test.expectedErr, err.Error())
+				require.EqualError(t, err, test.expectedErr)
 			} else {
 				require.NoError(t, err)
 			}
@@ -527,7 +526,7 @@ func TestFromQueryResultWithDuplicates(t *testing.T) {
 
 	require.True(t, isErrSeriesSet, "Expected resulting series to be an errSeriesSet")
 	errMessage := errSeries.Err().Error()
-	require.Equal(t, "duplicate label with name: foo", errMessage, fmt.Sprintf("Expected error to be from duplicate label, but got: %s", errMessage))
+	require.Equalf(t, "duplicate label with name: foo", errMessage, "Expected error to be from duplicate label, but got: %s", errMessage)
 }
 
 func TestNegotiateResponseType(t *testing.T) {
@@ -551,7 +550,7 @@ func TestNegotiateResponseType(t *testing.T) {
 
 	_, err = NegotiateResponseType([]prompb.ReadRequest_ResponseType{20})
 	require.Error(t, err, "expected error due to not supported requested response types")
-	require.Equal(t, "server does not support any of the requested response types: [20]; supported: map[SAMPLES:{} STREAMED_XOR_CHUNKS:{}]", err.Error())
+	require.EqualError(t, err, "server does not support any of the requested response types: [20]; supported: map[SAMPLES:{} STREAMED_XOR_CHUNKS:{}]")
 }
 
 func TestMergeLabels(t *testing.T) {
@@ -583,7 +582,7 @@ func TestDecodeWriteRequest(t *testing.T) {
 }
 
 func TestDecodeWriteV2Request(t *testing.T) {
-	buf, _, _, err := buildV2WriteRequest(log.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
+	buf, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
 	actual, err := DecodeWriteV2Request(bytes.NewReader(buf))

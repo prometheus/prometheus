@@ -18,15 +18,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
-
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -94,11 +92,11 @@ const checkpointPrefix = "checkpoint."
 // segmented format as the original WAL itself.
 // This makes it easy to read it through the WAL package and concatenate
 // it with the original WAL.
-func Checkpoint(logger log.Logger, w *WL, from, to int, keep func(id chunks.HeadSeriesRef) bool, mint int64) (*CheckpointStats, error) {
+func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.HeadSeriesRef) bool, mint int64) (*CheckpointStats, error) {
 	stats := &CheckpointStats{}
 	var sgmReader io.ReadCloser
 
-	level.Info(logger).Log("msg", "Creating checkpoint", "from_segment", from, "to_segment", to, "mint", mint)
+	logger.Info("Creating checkpoint", "from_segment", from, "to_segment", to, "mint", mint)
 
 	{
 		var sgmRange []SegmentRange

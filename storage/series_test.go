@@ -14,7 +14,6 @@
 package storage
 
 import (
-	"fmt"
 	"math"
 	"testing"
 
@@ -612,36 +611,36 @@ func testHistogramsSeriesToChunks(t *testing.T, test histogramTest) {
 		encodedSample := encodedSamples[i]
 		switch expectedSample := s.(type) {
 		case hSample:
-			require.Equal(t, chunkenc.ValHistogram, encodedSample.Type(), "expect histogram", fmt.Sprintf("at idx %d", i))
+			require.Equalf(t, chunkenc.ValHistogram, encodedSample.Type(), "expect histogram at idx %d", i)
 			h := encodedSample.H()
 			// Ignore counter reset if not gauge here, will check on chunk level.
 			if expectedSample.h.CounterResetHint != histogram.GaugeType {
 				h.CounterResetHint = histogram.UnknownCounterReset
 			}
 			if value.IsStaleNaN(expectedSample.h.Sum) {
-				require.True(t, value.IsStaleNaN(h.Sum), fmt.Sprintf("at idx %d", i))
+				require.Truef(t, value.IsStaleNaN(h.Sum), "at idx %d", i)
 				continue
 			}
-			require.Equal(t, *expectedSample.h, *h, fmt.Sprintf("at idx %d", i))
+			require.Equalf(t, *expectedSample.h, *h, "at idx %d", i)
 		case fhSample:
-			require.Equal(t, chunkenc.ValFloatHistogram, encodedSample.Type(), "expect float histogram", fmt.Sprintf("at idx %d", i))
+			require.Equalf(t, chunkenc.ValFloatHistogram, encodedSample.Type(), "expect float histogram at idx %d", i)
 			fh := encodedSample.FH()
 			// Ignore counter reset if not gauge here, will check on chunk level.
 			if expectedSample.fh.CounterResetHint != histogram.GaugeType {
 				fh.CounterResetHint = histogram.UnknownCounterReset
 			}
 			if value.IsStaleNaN(expectedSample.fh.Sum) {
-				require.True(t, value.IsStaleNaN(fh.Sum), fmt.Sprintf("at idx %d", i))
+				require.Truef(t, value.IsStaleNaN(fh.Sum), "at idx %d", i)
 				continue
 			}
-			require.Equal(t, *expectedSample.fh, *fh, fmt.Sprintf("at idx %d", i))
+			require.Equalf(t, *expectedSample.fh, *fh, "at idx %d", i)
 		default:
 			t.Error("internal error, unexpected type")
 		}
 	}
 
 	for i, expectedCounterResetHint := range test.expectedCounterResetHeaders {
-		require.Equal(t, expectedCounterResetHint, getCounterResetHint(chks[i]), fmt.Sprintf("chunk at index %d", i))
+		require.Equalf(t, expectedCounterResetHint, getCounterResetHint(chks[i]), "chunk at index %d", i)
 	}
 }
 

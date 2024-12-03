@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -32,8 +33,9 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
-	"github.com/go-kit/log"
 	"go.uber.org/atomic"
+
+	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -60,7 +62,7 @@ type writeBenchmark struct {
 	memprof   *os.File
 	blockprof *os.File
 	mtxprof   *os.File
-	logger    log.Logger
+	logger    *slog.Logger
 }
 
 func benchmarkWrite(outPath, samplesFile string, numMetrics, numScrapes int) error {
@@ -68,7 +70,7 @@ func benchmarkWrite(outPath, samplesFile string, numMetrics, numScrapes int) err
 		outPath:     outPath,
 		samplesFile: samplesFile,
 		numMetrics:  numMetrics,
-		logger:      log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)),
+		logger:      promslog.New(&promslog.Config{}),
 	}
 	if b.outPath == "" {
 		dir, err := os.MkdirTemp("", "tsdb_bench")
@@ -87,9 +89,7 @@ func benchmarkWrite(outPath, samplesFile string, numMetrics, numScrapes int) err
 
 	dir := filepath.Join(b.outPath, "storage")
 
-	l := log.With(b.logger, "ts", log.DefaultTimestampUTC, "caller", log.DefaultCaller)
-
-	st, err := tsdb.Open(dir, l, nil, &tsdb.Options{
+	st, err := tsdb.Open(dir, b.logger, nil, &tsdb.Options{
 		RetentionDuration: int64(15 * 24 * time.Hour / time.Millisecond),
 		MinBlockDuration:  int64(2 * time.Hour / time.Millisecond),
 	}, tsdb.NewDBStats())
@@ -367,25 +367,25 @@ func printBlocks(blocks []tsdb.BlockReader, writeHeader, humanReadable bool) {
 		fmt.Fprintf(tw,
 			"%v\t%v\t%v\t%v\t%v\t%v\t%v\t%v\n",
 			meta.ULID,
-			getFormatedTime(meta.MinTime, humanReadable),
-			getFormatedTime(meta.MaxTime, humanReadable),
+			getFormattedTime(meta.MinTime, humanReadable),
+			getFormattedTime(meta.MaxTime, humanReadable),
 			time.Duration(meta.MaxTime-meta.MinTime)*time.Millisecond,
 			meta.Stats.NumSamples,
 			meta.Stats.NumChunks,
 			meta.Stats.NumSeries,
-			getFormatedBytes(b.Size(), humanReadable),
+			getFormattedBytes(b.Size(), humanReadable),
 		)
 	}
 }
 
-func getFormatedTime(timestamp int64, humanReadable bool) string {
+func getFormattedTime(timestamp int64, humanReadable bool) string {
 	if humanReadable {
 		return time.Unix(timestamp/1000, 0).UTC().String()
 	}
 	return strconv.FormatInt(timestamp, 10)
 }
 
-func getFormatedBytes(bytes int64, humanReadable bool) string {
+func getFormattedBytes(bytes int64, humanReadable bool) string {
 	if humanReadable {
 		return units.Base2Bytes(bytes).String()
 	}
@@ -405,7 +405,7 @@ func openBlock(path, blockID string) (*tsdb.DBReadOnly, tsdb.BlockReader, error)
 		}
 	}
 
-	b, err := db.Block(blockID)
+	b, err := db.Block(blockID, tsdb.DefaultPostingsDecoderFactory)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -589,7 +589,10 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 		if err != nil {
 			return err
 		}
-		postings = index.Intersect(postings, index.NewListPostings(refs))
+		// Only intersect postings if matchers are specified.
+		if len(matchers) > 0 {
+			postings = index.Intersect(postings, index.NewListPostings(refs))
+		}
 		count := 0
 		for postings.Next() {
 			count++
@@ -662,7 +665,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 				histogramChunkSize = append(histogramChunkSize, len(chk.Bytes()))
 				fhchk, ok := chk.(*chunkenc.FloatHistogramChunk)
 				if !ok {
-					return fmt.Errorf("chunk is not FloatHistogramChunk")
+					return errors.New("chunk is not FloatHistogramChunk")
 				}
 				it := fhchk.Iterator(nil)
 				bucketCount := 0
@@ -677,7 +680,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 				histogramChunkSize = append(histogramChunkSize, len(chk.Bytes()))
 				hchk, ok := chk.(*chunkenc.HistogramChunk)
 				if !ok {
-					return fmt.Errorf("chunk is not HistogramChunk")
+					return errors.New("chunk is not HistogramChunk")
 				}
 				it := hchk.Iterator(nil)
 				bucketCount := 0
@@ -733,7 +736,7 @@ func dumpSamples(ctx context.Context, dbDir, sandboxDirRoot string, mint, maxt i
 		for _, mset := range matcherSets {
 			sets = append(sets, q.Select(ctx, true, nil, mset...))
 		}
-		ss = storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
+		ss = storage.NewMergeSeriesSet(sets, 0, storage.ChainedSeriesMerge)
 	} else {
 		ss = q.Select(ctx, false, nil, matcherSets[0]...)
 	}

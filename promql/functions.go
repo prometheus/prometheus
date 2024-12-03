@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -130,10 +131,18 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	sampledInterval := float64(lastT-firstT) / 1000
 	averageDurationBetweenSamples := sampledInterval / float64(numSamplesMinusOne)
 
-	// If the first/last samples are close to the boundaries of the range,
-	// extrapolate the result. This is as we expect that another sample
-	// will exist given the spacing between samples we've seen thus far,
-	// with an allowance for noise.
+	// If samples are close enough to the (lower or upper) boundary of the
+	// range, we extrapolate the rate all the way to the boundary in
+	// question. "Close enough" is defined as "up to 10% more than the
+	// average duration between samples within the range", see
+	// extrapolationThreshold below. Essentially, we are assuming a more or
+	// less regular spacing between samples, and if we don't see a sample
+	// where we would expect one, we assume the series does not cover the
+	// whole range, but starts and/or ends within the range. We still
+	// extrapolate the rate in this case, but not all the way to the
+	// boundary, but only by half of the average duration between samples
+	// (which is our guess for where the series actually starts or ends).
+
 	extrapolationThreshold := averageDurationBetweenSamples * 1.1
 	extrapolateToInterval := sampledInterval
 
@@ -341,7 +350,7 @@ func calcTrendValue(i int, tf, s0, s1, b float64) float64 {
 // data. A lower smoothing factor increases the influence of historical data. The trend factor (0 < tf < 1) affects
 // how trends in historical data will affect the current data. A higher trend factor increases the influence.
 // of trends. Algorithm taken from https://en.wikipedia.org/wiki/Exponential_smoothing titled: "Double exponential smoothing".
-func funcHoltWinters(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func funcDoubleExponentialSmoothing(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	samples := vals[0].(Matrix)[0]
 
 	// The smoothing factor argument.
@@ -406,22 +415,12 @@ func funcSortDesc(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 
 // === sort_by_label(vector parser.ValueTypeVector, label parser.ValueTypeString...) (Vector, Annotations) ===
 func funcSortByLabel(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	// First, sort by the full label set. This ensures a consistent ordering in case sorting by the
-	// labels provided as arguments is not conclusive.
+	lbls := stringSliceFromArgs(args[1:])
 	slices.SortFunc(vals[0].(Vector), func(a, b Sample) int {
-		return labels.Compare(a.Metric, b.Metric)
-	})
-
-	labels := stringSliceFromArgs(args[1:])
-	// Next, sort by the labels provided as arguments.
-	slices.SortFunc(vals[0].(Vector), func(a, b Sample) int {
-		// Iterate over each given label.
-		for _, label := range labels {
+		for _, label := range lbls {
 			lv1 := a.Metric.Get(label)
 			lv2 := b.Metric.Get(label)
 
-			// If we encounter multiple samples with the same label values, the sorting which was
-			// performed in the first step will act as a "tie breaker".
 			if lv1 == lv2 {
 				continue
 			}
@@ -433,7 +432,8 @@ func funcSortByLabel(vals []parser.Value, args parser.Expressions, enh *EvalNode
 			return +1
 		}
 
-		return 0
+		// If all labels provided as arguments were equal, sort by the full label set. This ensures a consistent ordering.
+		return labels.Compare(a.Metric, b.Metric)
 	})
 
 	return vals[0].(Vector), nil
@@ -441,22 +441,12 @@ func funcSortByLabel(vals []parser.Value, args parser.Expressions, enh *EvalNode
 
 // === sort_by_label_desc(vector parser.ValueTypeVector, label parser.ValueTypeString...) (Vector, Annotations) ===
 func funcSortByLabelDesc(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	// First, sort by the full label set. This ensures a consistent ordering in case sorting by the
-	// labels provided as arguments is not conclusive.
+	lbls := stringSliceFromArgs(args[1:])
 	slices.SortFunc(vals[0].(Vector), func(a, b Sample) int {
-		return labels.Compare(b.Metric, a.Metric)
-	})
-
-	labels := stringSliceFromArgs(args[1:])
-	// Next, sort by the labels provided as arguments.
-	slices.SortFunc(vals[0].(Vector), func(a, b Sample) int {
-		// Iterate over each given label.
-		for _, label := range labels {
+		for _, label := range lbls {
 			lv1 := a.Metric.Get(label)
 			lv2 := b.Metric.Get(label)
 
-			// If we encounter multiple samples with the same label values, the sorting which was
-			// performed in the first step will act as a "tie breaker".
 			if lv1 == lv2 {
 				continue
 			}
@@ -468,21 +458,22 @@ func funcSortByLabelDesc(vals []parser.Value, args parser.Expressions, enh *Eval
 			return -1
 		}
 
-		return 0
+		// If all labels provided as arguments were equal, sort by the full label set. This ensures a consistent ordering.
+		return -labels.Compare(a.Metric, b.Metric)
 	})
 
 	return vals[0].(Vector), nil
 }
 
-// === clamp(Vector parser.ValueTypeVector, min, max Scalar) (Vector, Annotations) ===
-func funcClamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	vec := vals[0].(Vector)
-	minVal := vals[1].(Vector)[0].F
-	maxVal := vals[2].(Vector)[0].F
+func clamp(vec Vector, minVal, maxVal float64, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	if maxVal < minVal {
 		return enh.Out, nil
 	}
 	for _, el := range vec {
+		if el.H != nil {
+			// Process only float samples.
+			continue
+		}
 		if !enh.enableDelayedNameRemoval {
 			el.Metric = el.Metric.DropMetricName()
 		}
@@ -495,38 +486,26 @@ func funcClamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 	return enh.Out, nil
 }
 
+// === clamp(Vector parser.ValueTypeVector, min, max Scalar) (Vector, Annotations) ===
+func funcClamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	vec := vals[0].(Vector)
+	minVal := vals[1].(Vector)[0].F
+	maxVal := vals[2].(Vector)[0].F
+	return clamp(vec, minVal, maxVal, enh)
+}
+
 // === clamp_max(Vector parser.ValueTypeVector, max Scalar) (Vector, Annotations) ===
 func funcClampMax(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	vec := vals[0].(Vector)
 	maxVal := vals[1].(Vector)[0].F
-	for _, el := range vec {
-		if !enh.enableDelayedNameRemoval {
-			el.Metric = el.Metric.DropMetricName()
-		}
-		enh.Out = append(enh.Out, Sample{
-			Metric:   el.Metric,
-			F:        math.Min(maxVal, el.F),
-			DropName: true,
-		})
-	}
-	return enh.Out, nil
+	return clamp(vec, math.Inf(-1), maxVal, enh)
 }
 
 // === clamp_min(Vector parser.ValueTypeVector, min Scalar) (Vector, Annotations) ===
 func funcClampMin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	vec := vals[0].(Vector)
 	minVal := vals[1].(Vector)[0].F
-	for _, el := range vec {
-		if !enh.enableDelayedNameRemoval {
-			el.Metric = el.Metric.DropMetricName()
-		}
-		enh.Out = append(enh.Out, Sample{
-			Metric:   el.Metric,
-			F:        math.Max(minVal, el.F),
-			DropName: true,
-		})
-	}
-	return enh.Out, nil
+	return clamp(vec, minVal, math.Inf(+1), enh)
 }
 
 // === round(Vector parser.ValueTypeVector, toNearest=1 Scalar) (Vector, Annotations) ===
@@ -542,7 +521,14 @@ func funcRound(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 	toNearestInverse := 1.0 / toNearest
 
 	for _, el := range vec {
+		if el.H != nil {
+			// Process only float samples.
+			continue
+		}
 		f := math.Floor(el.F*toNearestInverse+0.5) / toNearestInverse
+		if !enh.enableDelayedNameRemoval {
+			el.Metric = el.Metric.DropMetricName()
+		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:   el.Metric,
 			F:        f,
@@ -1314,7 +1300,7 @@ func funcHistogramFraction(vals []parser.Value, args parser.Expressions, enh *Ev
 		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:   sample.Metric,
-			F:        histogramFraction(lower, upper, sample.H),
+			F:        HistogramFraction(lower, upper, sample.H),
 			DropName: true,
 		})
 	}
@@ -1366,7 +1352,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			mb = &metricWithBuckets{sample.Metric, nil}
 			enh.signatureToMetricWithBuckets[string(enh.lblBuf)] = mb
 		}
-		mb.buckets = append(mb.buckets, bucket{upperBound, sample.F})
+		mb.buckets = append(mb.buckets, Bucket{upperBound, sample.F})
 	}
 
 	// Now deal with the histograms.
@@ -1388,14 +1374,14 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:   sample.Metric,
-			F:        histogramQuantile(q, sample.H),
+			F:        HistogramQuantile(q, sample.H),
 			DropName: true,
 		})
 	}
 
 	for _, mb := range enh.signatureToMetricWithBuckets {
 		if len(mb.buckets) > 0 {
-			res, forcedMonotonicity, _ := bucketQuantile(q, mb.buckets)
+			res, forcedMonotonicity, _ := BucketQuantile(q, mb.buckets)
 			enh.Out = append(enh.Out, Sample{
 				Metric: mb.metric,
 				F:      res,
@@ -1443,27 +1429,60 @@ func funcResets(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelpe
 // === changes(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcChanges(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	floats := vals[0].(Matrix)[0].Floats
+	histograms := vals[0].(Matrix)[0].Histograms
 	changes := 0
-
-	if len(floats) == 0 {
-		// TODO(beorn7): Only histogram values, still need to add support.
+	if len(floats) == 0 && len(histograms) == 0 {
 		return enh.Out, nil
 	}
 
-	prev := floats[0].F
-	for _, sample := range floats[1:] {
-		current := sample.F
-		if current != prev && !(math.IsNaN(current) && math.IsNaN(prev)) {
-			changes++
+	var prevSample, curSample Sample
+	for iFloat, iHistogram := 0, 0; iFloat < len(floats) || iHistogram < len(histograms); {
+		switch {
+		// Process a float sample if no histogram sample remains or its timestamp is earlier.
+		// Process a histogram sample if no float sample remains or its timestamp is earlier.
+		case iHistogram >= len(histograms) || iFloat < len(floats) && floats[iFloat].T < histograms[iHistogram].T:
+			{
+				curSample.F = floats[iFloat].F
+				curSample.H = nil
+				iFloat++
+			}
+		case iFloat >= len(floats) || iHistogram < len(histograms) && floats[iFloat].T > histograms[iHistogram].T:
+			{
+				curSample.H = histograms[iHistogram].H
+				iHistogram++
+			}
 		}
-		prev = current
+		// Skip the comparison for the first sample, just initialize prevSample.
+		if iFloat+iHistogram == 1 {
+			prevSample = curSample
+			continue
+		}
+		switch {
+		case prevSample.H == nil && curSample.H == nil:
+			{
+				if curSample.F != prevSample.F && !(math.IsNaN(curSample.F) && math.IsNaN(prevSample.F)) {
+					changes++
+				}
+			}
+		case prevSample.H != nil && curSample.H == nil, prevSample.H == nil && curSample.H != nil:
+			{
+				changes++
+			}
+		case prevSample.H != nil && curSample.H != nil:
+			{
+				if !curSample.H.Equals(prevSample.H) {
+					changes++
+				}
+			}
+		}
+		prevSample = curSample
 	}
 
 	return append(enh.Out, Sample{F: float64(changes)}), nil
 }
 
 // label_replace function operates only on series; does not look at timestamps or values.
-func (ev *evaluator) evalLabelReplace(args parser.Expressions) (parser.Value, annotations.Annotations) {
+func (ev *evaluator) evalLabelReplace(ctx context.Context, args parser.Expressions) (parser.Value, annotations.Annotations) {
 	var (
 		dst      = stringFromArg(args[1])
 		repl     = stringFromArg(args[2])
@@ -1471,7 +1490,7 @@ func (ev *evaluator) evalLabelReplace(args parser.Expressions) (parser.Value, an
 		regexStr = stringFromArg(args[4])
 	)
 
-	regex, err := regexp.Compile("^(?:" + regexStr + ")$")
+	regex, err := regexp.Compile("^(?s:" + regexStr + ")$")
 	if err != nil {
 		panic(fmt.Errorf("invalid regular expression in label_replace(): %s", regexStr))
 	}
@@ -1479,7 +1498,7 @@ func (ev *evaluator) evalLabelReplace(args parser.Expressions) (parser.Value, an
 		panic(fmt.Errorf("invalid destination label name in label_replace(): %s", dst))
 	}
 
-	val, ws := ev.eval(args[0])
+	val, ws := ev.eval(ctx, args[0])
 	matrix := val.(Matrix)
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
@@ -1505,11 +1524,6 @@ func (ev *evaluator) evalLabelReplace(args parser.Expressions) (parser.Value, an
 	return matrix, ws
 }
 
-// === label_replace(Vector parser.ValueTypeVector, dst_label, replacement, src_labelname, regex parser.ValueTypeString) (Vector, Annotations) ===
-func funcLabelReplace(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	panic("funcLabelReplace wrong implementation called")
-}
-
 // === Vector(s Scalar) (Vector, Annotations) ===
 func funcVector(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return append(enh.Out,
@@ -1520,7 +1534,7 @@ func funcVector(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelpe
 }
 
 // label_join function operates only on series; does not look at timestamps or values.
-func (ev *evaluator) evalLabelJoin(args parser.Expressions) (parser.Value, annotations.Annotations) {
+func (ev *evaluator) evalLabelJoin(ctx context.Context, args parser.Expressions) (parser.Value, annotations.Annotations) {
 	var (
 		dst       = stringFromArg(args[1])
 		sep       = stringFromArg(args[2])
@@ -1537,7 +1551,7 @@ func (ev *evaluator) evalLabelJoin(args parser.Expressions) (parser.Value, annot
 		panic(fmt.Errorf("invalid destination label name in label_join(): %s", dst))
 	}
 
-	val, ws := ev.eval(args[0])
+	val, ws := ev.eval(ctx, args[0])
 	matrix := val.(Matrix)
 	srcVals := make([]string, len(srcLabels))
 	lb := labels.NewBuilder(labels.EmptyLabels())
@@ -1561,11 +1575,6 @@ func (ev *evaluator) evalLabelJoin(args parser.Expressions) (parser.Value, annot
 	return matrix, ws
 }
 
-// === label_join(vector model.ValVector, dest_labelname, separator, src_labelname...) (Vector, Annotations) ===
-func funcLabelJoin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	panic("funcLabelReplace wrong implementation called")
-}
-
 // Common code for date related functions.
 func dateWrapper(vals []parser.Value, enh *EvalNodeHelper, f func(time.Time) float64) Vector {
 	if len(vals) == 0 {
@@ -1577,6 +1586,10 @@ func dateWrapper(vals []parser.Value, enh *EvalNodeHelper, f func(time.Time) flo
 	}
 
 	for _, el := range vals[0].(Vector) {
+		if el.H != nil {
+			// Ignore histogram sample.
+			continue
+		}
 		t := time.Unix(int64(el.F), 0).UTC()
 		if !enh.enableDelayedNameRemoval {
 			el.Metric = el.Metric.DropMetricName()
@@ -1648,82 +1661,83 @@ func funcYear(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper)
 
 // FunctionCalls is a list of all functions supported by PromQL, including their types.
 var FunctionCalls = map[string]FunctionCall{
-	"abs":                funcAbs,
-	"absent":             funcAbsent,
-	"absent_over_time":   funcAbsentOverTime,
-	"acos":               funcAcos,
-	"acosh":              funcAcosh,
-	"asin":               funcAsin,
-	"asinh":              funcAsinh,
-	"atan":               funcAtan,
-	"atanh":              funcAtanh,
-	"avg_over_time":      funcAvgOverTime,
-	"ceil":               funcCeil,
-	"changes":            funcChanges,
-	"clamp":              funcClamp,
-	"clamp_max":          funcClampMax,
-	"clamp_min":          funcClampMin,
-	"cos":                funcCos,
-	"cosh":               funcCosh,
-	"count_over_time":    funcCountOverTime,
-	"days_in_month":      funcDaysInMonth,
-	"day_of_month":       funcDayOfMonth,
-	"day_of_week":        funcDayOfWeek,
-	"day_of_year":        funcDayOfYear,
-	"deg":                funcDeg,
-	"delta":              funcDelta,
-	"deriv":              funcDeriv,
-	"exp":                funcExp,
-	"floor":              funcFloor,
-	"histogram_avg":      funcHistogramAvg,
-	"histogram_count":    funcHistogramCount,
-	"histogram_fraction": funcHistogramFraction,
-	"histogram_quantile": funcHistogramQuantile,
-	"histogram_sum":      funcHistogramSum,
-	"histogram_stddev":   funcHistogramStdDev,
-	"histogram_stdvar":   funcHistogramStdVar,
-	"holt_winters":       funcHoltWinters,
-	"hour":               funcHour,
-	"idelta":             funcIdelta,
-	"increase":           funcIncrease,
-	"irate":              funcIrate,
-	"label_replace":      funcLabelReplace,
-	"label_join":         funcLabelJoin,
-	"ln":                 funcLn,
-	"log10":              funcLog10,
-	"log2":               funcLog2,
-	"last_over_time":     funcLastOverTime,
-	"mad_over_time":      funcMadOverTime,
-	"max_over_time":      funcMaxOverTime,
-	"min_over_time":      funcMinOverTime,
-	"minute":             funcMinute,
-	"month":              funcMonth,
-	"pi":                 funcPi,
-	"predict_linear":     funcPredictLinear,
-	"present_over_time":  funcPresentOverTime,
-	"quantile_over_time": funcQuantileOverTime,
-	"rad":                funcRad,
-	"rate":               funcRate,
-	"resets":             funcResets,
-	"round":              funcRound,
-	"scalar":             funcScalar,
-	"sgn":                funcSgn,
-	"sin":                funcSin,
-	"sinh":               funcSinh,
-	"sort":               funcSort,
-	"sort_desc":          funcSortDesc,
-	"sort_by_label":      funcSortByLabel,
-	"sort_by_label_desc": funcSortByLabelDesc,
-	"sqrt":               funcSqrt,
-	"stddev_over_time":   funcStddevOverTime,
-	"stdvar_over_time":   funcStdvarOverTime,
-	"sum_over_time":      funcSumOverTime,
-	"tan":                funcTan,
-	"tanh":               funcTanh,
-	"time":               funcTime,
-	"timestamp":          funcTimestamp,
-	"vector":             funcVector,
-	"year":               funcYear,
+	"abs":                          funcAbs,
+	"absent":                       funcAbsent,
+	"absent_over_time":             funcAbsentOverTime,
+	"acos":                         funcAcos,
+	"acosh":                        funcAcosh,
+	"asin":                         funcAsin,
+	"asinh":                        funcAsinh,
+	"atan":                         funcAtan,
+	"atanh":                        funcAtanh,
+	"avg_over_time":                funcAvgOverTime,
+	"ceil":                         funcCeil,
+	"changes":                      funcChanges,
+	"clamp":                        funcClamp,
+	"clamp_max":                    funcClampMax,
+	"clamp_min":                    funcClampMin,
+	"cos":                          funcCos,
+	"cosh":                         funcCosh,
+	"count_over_time":              funcCountOverTime,
+	"days_in_month":                funcDaysInMonth,
+	"day_of_month":                 funcDayOfMonth,
+	"day_of_week":                  funcDayOfWeek,
+	"day_of_year":                  funcDayOfYear,
+	"deg":                          funcDeg,
+	"delta":                        funcDelta,
+	"deriv":                        funcDeriv,
+	"exp":                          funcExp,
+	"floor":                        funcFloor,
+	"histogram_avg":                funcHistogramAvg,
+	"histogram_count":              funcHistogramCount,
+	"histogram_fraction":           funcHistogramFraction,
+	"histogram_quantile":           funcHistogramQuantile,
+	"histogram_sum":                funcHistogramSum,
+	"histogram_stddev":             funcHistogramStdDev,
+	"histogram_stdvar":             funcHistogramStdVar,
+	"double_exponential_smoothing": funcDoubleExponentialSmoothing,
+	"hour":                         funcHour,
+	"idelta":                       funcIdelta,
+	"increase":                     funcIncrease,
+	"info":                         nil,
+	"irate":                        funcIrate,
+	"label_replace":                nil, // evalLabelReplace not called via this map.
+	"label_join":                   nil, // evalLabelJoin not called via this map.
+	"ln":                           funcLn,
+	"log10":                        funcLog10,
+	"log2":                         funcLog2,
+	"last_over_time":               funcLastOverTime,
+	"mad_over_time":                funcMadOverTime,
+	"max_over_time":                funcMaxOverTime,
+	"min_over_time":                funcMinOverTime,
+	"minute":                       funcMinute,
+	"month":                        funcMonth,
+	"pi":                           funcPi,
+	"predict_linear":               funcPredictLinear,
+	"present_over_time":            funcPresentOverTime,
+	"quantile_over_time":           funcQuantileOverTime,
+	"rad":                          funcRad,
+	"rate":                         funcRate,
+	"resets":                       funcResets,
+	"round":                        funcRound,
+	"scalar":                       funcScalar,
+	"sgn":                          funcSgn,
+	"sin":                          funcSin,
+	"sinh":                         funcSinh,
+	"sort":                         funcSort,
+	"sort_desc":                    funcSortDesc,
+	"sort_by_label":                funcSortByLabel,
+	"sort_by_label_desc":           funcSortByLabelDesc,
+	"sqrt":                         funcSqrt,
+	"stddev_over_time":             funcStddevOverTime,
+	"stdvar_over_time":             funcStdvarOverTime,
+	"sum_over_time":                funcSumOverTime,
+	"tan":                          funcTan,
+	"tanh":                         funcTanh,
+	"time":                         funcTime,
+	"timestamp":                    funcTimestamp,
+	"vector":                       funcVector,
+	"year":                         funcYear,
 }
 
 // AtModifierUnsafeFunctions are the functions whose result

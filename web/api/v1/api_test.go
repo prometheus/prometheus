@@ -34,12 +34,11 @@ import (
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/testutil"
 
-	"github.com/go-kit/log"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/common/promlog"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/route"
 	"github.com/stretchr/testify/require"
 
@@ -238,7 +237,7 @@ func (m *rulesRetrieverMock) CreateAlertingRules() {
 		labels.Labels{},
 		"",
 		true,
-		log.NewNopLogger(),
+		promslog.NewNopLogger(),
 	)
 	rule2 := rules.NewAlertingRule(
 		"test_metric4",
@@ -250,7 +249,7 @@ func (m *rulesRetrieverMock) CreateAlertingRules() {
 		labels.Labels{},
 		"",
 		true,
-		log.NewNopLogger(),
+		promslog.NewNopLogger(),
 	)
 	rule3 := rules.NewAlertingRule(
 		"test_metric5",
@@ -262,7 +261,7 @@ func (m *rulesRetrieverMock) CreateAlertingRules() {
 		labels.FromStrings("name", "tm5"),
 		"",
 		false,
-		log.NewNopLogger(),
+		promslog.NewNopLogger(),
 	)
 	rule4 := rules.NewAlertingRule(
 		"test_metric6",
@@ -274,7 +273,7 @@ func (m *rulesRetrieverMock) CreateAlertingRules() {
 		labels.Labels{},
 		"",
 		true,
-		log.NewNopLogger(),
+		promslog.NewNopLogger(),
 	)
 	rule5 := rules.NewAlertingRule(
 		"test_metric7",
@@ -286,7 +285,7 @@ func (m *rulesRetrieverMock) CreateAlertingRules() {
 		labels.Labels{},
 		"",
 		true,
-		log.NewNopLogger(),
+		promslog.NewNopLogger(),
 	)
 	var r []*rules.AlertingRule
 	r = append(r, rule1)
@@ -314,7 +313,7 @@ func (m *rulesRetrieverMock) CreateRuleGroups() {
 		QueryFunc:  rules.EngineQueryFunc(engine, storage),
 		Appendable: storage,
 		Context:    context.Background(),
-		Logger:     log.NewNopLogger(),
+		Logger:     promslog.NewNopLogger(),
 		NotifyFunc: func(ctx context.Context, expr string, alerts ...*rules.Alert) {},
 	}
 
@@ -339,7 +338,15 @@ func (m *rulesRetrieverMock) CreateRuleGroups() {
 		ShouldRestore: false,
 		Opts:          opts,
 	})
-	m.ruleGroups = []*rules.Group{group}
+	group2 := rules.NewGroup(rules.GroupOptions{
+		Name:          "grp2",
+		File:          "/path/to/file",
+		Interval:      time.Second,
+		Rules:         []rules.Rule{r[0]},
+		ShouldRestore: false,
+		Opts:          opts,
+	})
+	m.ruleGroups = []*rules.Group{group, group2}
 }
 
 func (m *rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
@@ -380,6 +387,8 @@ func TestEndpoints(t *testing.T) {
 			test_metric4{foo="bar", dup="1"} 1+0x100
 			test_metric4{foo="boo", dup="1"} 1+0x100
 			test_metric4{foo="boo"} 1+0x100
+			test_metric5{"host.name"="localhost"} 1+0x100
+			test_metric5{"junk\n{},=:  chars"="bar"} 1+0x100
 	`)
 	t.Cleanup(func() { storage.Close() })
 
@@ -471,20 +480,20 @@ func TestEndpoints(t *testing.T) {
 		u, err := url.Parse(server.URL)
 		require.NoError(t, err)
 
-		al := promlog.AllowedLevel{}
+		al := promslog.AllowedLevel{}
 		require.NoError(t, al.Set("debug"))
 
-		af := promlog.AllowedFormat{}
+		af := promslog.AllowedFormat{}
 		require.NoError(t, af.Set("logfmt"))
 
-		promlogConfig := promlog.Config{
+		promslogConfig := promslog.Config{
 			Level:  &al,
 			Format: &af,
 		}
 
 		dbDir := t.TempDir()
 
-		remote := remote.NewStorage(promlog.New(&promlogConfig), prometheus.DefaultRegisterer, func() (int64, error) {
+		remote := remote.NewStorage(promslog.New(&promslogConfig), prometheus.DefaultRegisterer, func() (int64, error) {
 			return 0, nil
 		}, dbDir, 1*time.Second, nil, false)
 
@@ -608,7 +617,7 @@ func TestGetSeries(t *testing.T) {
 			matchers:          []string{`{foo="boo"}`, `{foo="baz"}`},
 			expectedErrorType: errorExec,
 			api: &API{
-				Queryable: errorTestQueryable{err: fmt.Errorf("generic")},
+				Queryable: errorTestQueryable{err: errors.New("generic")},
 			},
 		},
 		{
@@ -616,7 +625,7 @@ func TestGetSeries(t *testing.T) {
 			matchers:          []string{`{foo="boo"}`, `{foo="baz"}`},
 			expectedErrorType: errorInternal,
 			api: &API{
-				Queryable: errorTestQueryable{err: promql.ErrStorage{Err: fmt.Errorf("generic")}},
+				Queryable: errorTestQueryable{err: promql.ErrStorage{Err: errors.New("generic")}},
 			},
 		},
 	} {
@@ -710,7 +719,7 @@ func TestQueryExemplars(t *testing.T) {
 			name:              "should return errorExec upon genetic error",
 			expectedErrorType: errorExec,
 			api: &API{
-				ExemplarQueryable: errorTestQueryable{err: fmt.Errorf("generic")},
+				ExemplarQueryable: errorTestQueryable{err: errors.New("generic")},
 			},
 			query: url.Values{
 				"query": []string{`test_metric3{foo="boo"} - test_metric4{foo="bar"}`},
@@ -722,7 +731,7 @@ func TestQueryExemplars(t *testing.T) {
 			name:              "should return errorInternal err type is ErrStorage",
 			expectedErrorType: errorInternal,
 			api: &API{
-				ExemplarQueryable: errorTestQueryable{err: promql.ErrStorage{Err: fmt.Errorf("generic")}},
+				ExemplarQueryable: errorTestQueryable{err: promql.ErrStorage{Err: errors.New("generic")}},
 			},
 			query: url.Values{
 				"query": []string{`test_metric3{foo="boo"} - test_metric4{foo="bar"}`},
@@ -831,7 +840,7 @@ func TestLabelNames(t *testing.T) {
 			matchers:          []string{`{foo="boo"}`, `{foo="baz"}`},
 			expectedErrorType: errorExec,
 			api: &API{
-				Queryable: errorTestQueryable{err: fmt.Errorf("generic")},
+				Queryable: errorTestQueryable{err: errors.New("generic")},
 			},
 		},
 		{
@@ -839,7 +848,7 @@ func TestLabelNames(t *testing.T) {
 			matchers:          []string{`{foo="boo"}`, `{foo="baz"}`},
 			expectedErrorType: errorInternal,
 			api: &API{
-				Queryable: errorTestQueryable{err: promql.ErrStorage{Err: fmt.Errorf("generic")}},
+				Queryable: errorTestQueryable{err: promql.ErrStorage{Err: errors.New("generic")}},
 			},
 		},
 	} {
@@ -1110,6 +1119,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 		metadata              []targetMetadata
 		exemplars             []exemplar.QueryResult
 		zeroFunc              func(interface{})
+		nameValidationScheme  model.ValidationScheme
 	}
 
 	rulesZeroFunc := func(i interface{}) {
@@ -2242,6 +2252,25 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 							},
 						},
 					},
+					{
+						Name:     "grp2",
+						File:     "/path/to/file",
+						Interval: 1,
+						Limit:    0,
+						Rules: []Rule{
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric3",
+								Query:       "absent(test_metric3) != 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "ok",
+								Type:        "alerting",
+							},
+						},
+					},
 				},
 			},
 			zeroFunc: rulesZeroFunc,
@@ -2330,6 +2359,25 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 							},
 						},
 					},
+					{
+						Name:     "grp2",
+						File:     "/path/to/file",
+						Interval: 1,
+						Limit:    0,
+						Rules: []Rule{
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric3",
+								Query:       "absent(test_metric3) != 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      nil,
+								Health:      "ok",
+								Type:        "alerting",
+							},
+						},
+					},
 				},
 			},
 			zeroFunc: rulesZeroFunc,
@@ -2404,6 +2452,25 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Query:       "up == 1",
 								Duration:    1,
 								Labels:      labels.FromStrings("templatedlabel", "{{ $externalURL }}"),
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "ok",
+								Type:        "alerting",
+							},
+						},
+					},
+					{
+						Name:     "grp2",
+						File:     "/path/to/file",
+						Interval: 1,
+						Limit:    0,
+						Rules: []Rule{
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric3",
+								Query:       "absent(test_metric3) != 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
 								Annotations: labels.Labels{},
 								Alerts:      []*Alert{},
 								Health:      "ok",
@@ -2683,6 +2750,167 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			zeroFunc: rulesZeroFunc,
 		},
 		{
+			endpoint: api.rules,
+			query: url.Values{
+				"group_limit": []string{"1"},
+			},
+			response: &RuleDiscovery{
+				GroupNextToken: getRuleGroupNextToken("/path/to/file", "grp2"),
+				RuleGroups: []*RuleGroup{
+					{
+						Name:     "grp",
+						File:     "/path/to/file",
+						Interval: 1,
+						Limit:    0,
+						Rules: []Rule{
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric3",
+								Query:       "absent(test_metric3) != 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "ok",
+								Type:        "alerting",
+							},
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric4",
+								Query:       "up == 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "ok",
+								Type:        "alerting",
+							},
+							AlertingRule{
+								State:       "pending",
+								Name:        "test_metric5",
+								Query:       "vector(1)",
+								Duration:    1,
+								Labels:      labels.FromStrings("name", "tm5"),
+								Annotations: labels.Labels{},
+								Alerts: []*Alert{
+									{
+										Labels:      labels.FromStrings("alertname", "test_metric5", "name", "tm5"),
+										Annotations: labels.Labels{},
+										State:       "pending",
+										Value:       "1e+00",
+									},
+								},
+								Health: "ok",
+								Type:   "alerting",
+							},
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric6",
+								Query:       "up == 1",
+								Duration:    1,
+								Labels:      labels.FromStrings("testlabel", "rule"),
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "ok",
+								Type:        "alerting",
+							},
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric7",
+								Query:       "up == 1",
+								Duration:    1,
+								Labels:      labels.FromStrings("templatedlabel", "{{ $externalURL }}"),
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "ok",
+								Type:        "alerting",
+							},
+							RecordingRule{
+								Name:   "recording-rule-1",
+								Query:  "vector(1)",
+								Labels: labels.Labels{},
+								Health: "ok",
+								Type:   "recording",
+							},
+							RecordingRule{
+								Name:   "recording-rule-2",
+								Query:  "vector(1)",
+								Labels: labels.FromStrings("testlabel", "rule"),
+								Health: "ok",
+								Type:   "recording",
+							},
+						},
+					},
+				},
+			},
+			zeroFunc: rulesZeroFunc,
+		},
+		{
+			endpoint: api.rules,
+			query: url.Values{
+				"group_limit":      []string{"1"},
+				"group_next_token": []string{getRuleGroupNextToken("/path/to/file", "grp2")},
+			},
+			response: &RuleDiscovery{
+				RuleGroups: []*RuleGroup{
+					{
+						Name:     "grp2",
+						File:     "/path/to/file",
+						Interval: 1,
+						Limit:    0,
+						Rules: []Rule{
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric3",
+								Query:       "absent(test_metric3) != 1",
+								Duration:    1,
+								Labels:      labels.Labels{},
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "ok",
+								Type:        "alerting",
+							},
+						},
+					},
+				},
+			},
+			zeroFunc: rulesZeroFunc,
+		},
+		{ // invalid pagination request
+			endpoint: api.rules,
+			query: url.Values{
+				"group_next_token": []string{getRuleGroupNextToken("/path/to/file", "grp2")},
+			},
+			errType:  errorBadData,
+			zeroFunc: rulesZeroFunc,
+		},
+		{ // invalid group_limit
+			endpoint: api.rules,
+			query: url.Values{
+				"group_limit":      []string{"0"},
+				"group_next_token": []string{getRuleGroupNextToken("/path/to/file", "grp2")},
+			},
+			errType:  errorBadData,
+			zeroFunc: rulesZeroFunc,
+		},
+		{ // Pagination token is invalid due to changes in the rule groups
+			endpoint: api.rules,
+			query: url.Values{
+				"group_limit":      []string{"1"},
+				"group_next_token": []string{getRuleGroupNextToken("/removed/file", "notfound")},
+			},
+			errType:  errorBadData,
+			zeroFunc: rulesZeroFunc,
+		},
+		{ // groupNextToken should not be in empty response
+			endpoint: api.rules,
+			query: url.Values{
+				"match[]":     []string{`{testlabel="abc-cannot-find"}`},
+				"group_limit": []string{"1"},
+			},
+			responseAsJSON: `{"groups":[]}`,
+		},
+		{
 			endpoint: api.queryExemplars,
 			query: url.Values{
 				"query": []string{`test_metric3{foo="boo"} - test_metric4{foo="bar"}`},
@@ -2779,6 +3007,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					"test_metric2",
 					"test_metric3",
 					"test_metric4",
+					"test_metric5",
 				},
 			},
 			{
@@ -2791,13 +3020,36 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					"boo",
 				},
 			},
-			// Bad name parameter.
+			// Bad name parameter for legacy validation.
 			{
 				endpoint: api.labelValues,
 				params: map[string]string{
-					"name": "not!!!allowed",
+					"name": "host.name",
 				},
-				errType: errorBadData,
+				nameValidationScheme: model.LegacyValidation,
+				errType:              errorBadData,
+			},
+			// Valid utf8 name parameter for utf8 validation.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "host.name",
+				},
+				nameValidationScheme: model.UTF8Validation,
+				response: []string{
+					"localhost",
+				},
+			},
+			// Valid escaped utf8 name parameter for utf8 validation.
+			{
+				endpoint: api.labelValues,
+				params: map[string]string{
+					"name": "U__junk_0a__7b__7d__2c__3d_:_20__20_chars",
+				},
+				nameValidationScheme: model.UTF8Validation,
+				response: []string{
+					"bar",
+				},
 			},
 			// Start and end before LabelValues starts.
 			{
@@ -3033,15 +3285,15 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					"name": "__name__",
 				},
 				query: url.Values{
-					"limit": []string{"4"},
+					"limit": []string{"5"},
 				},
-				responseLen:   4, // API does not specify which particular values will come back.
+				responseLen:   5, // API does not specify which particular values will come back.
 				warningsCount: 0, // No warnings if limit isn't exceeded.
 			},
 			// Label names.
 			{
 				endpoint: api.labelNames,
-				response: []string{"__name__", "dup", "foo"},
+				response: []string{"__name__", "dup", "foo", "host.name", "junk\n{},=:  chars"},
 			},
 			// Start and end before Label names starts.
 			{
@@ -3059,7 +3311,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					"start": []string{"1"},
 					"end":   []string{"100"},
 				},
-				response: []string{"__name__", "dup", "foo"},
+				response: []string{"__name__", "dup", "foo", "host.name", "junk\n{},=:  chars"},
 			},
 			// Start before Label names, end within Label names.
 			{
@@ -3068,7 +3320,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					"start": []string{"-1"},
 					"end":   []string{"10"},
 				},
-				response: []string{"__name__", "dup", "foo"},
+				response: []string{"__name__", "dup", "foo", "host.name", "junk\n{},=:  chars"},
 			},
 
 			// Start before Label names starts, end after Label names ends.
@@ -3078,7 +3330,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					"start": []string{"-1"},
 					"end":   []string{"100000"},
 				},
-				response: []string{"__name__", "dup", "foo"},
+				response: []string{"__name__", "dup", "foo", "host.name", "junk\n{},=:  chars"},
 			},
 			// Start with bad data for Label names, end within Label names.
 			{
@@ -3096,7 +3348,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					"start": []string{"1"},
 					"end":   []string{"1000000006"},
 				},
-				response: []string{"__name__", "dup", "foo"},
+				response: []string{"__name__", "dup", "foo", "host.name", "junk\n{},=:  chars"},
 			},
 			// Start and end after Label names ends.
 			{
@@ -3113,7 +3365,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				query: url.Values{
 					"start": []string{"4"},
 				},
-				response: []string{"__name__", "dup", "foo"},
+				response: []string{"__name__", "dup", "foo", "host.name", "junk\n{},=:  chars"},
 			},
 			// Only provide End within Label names, don't provide a start time.
 			{
@@ -3121,7 +3373,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				query: url.Values{
 					"end": []string{"20"},
 				},
-				response: []string{"__name__", "dup", "foo"},
+				response: []string{"__name__", "dup", "foo", "host.name", "junk\n{},=:  chars"},
 			},
 			// Label names with bad matchers.
 			{
@@ -3189,9 +3441,9 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			{
 				endpoint: api.labelNames,
 				query: url.Values{
-					"limit": []string{"3"},
+					"limit": []string{"5"},
 				},
-				responseLen:   3, // API does not specify which particular values will come back.
+				responseLen:   5, // API does not specify which particular values will come back.
 				warningsCount: 0, // No warnings if limit isn't exceeded.
 			},
 		}...)
@@ -3226,6 +3478,8 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					for p, v := range test.params {
 						ctx = route.WithParam(ctx, p, v)
 					}
+
+					model.NameValidationScheme = test.nameValidationScheme
 
 					req, err := request(method, test.query)
 					require.NoError(t, err)
@@ -3530,7 +3784,7 @@ func TestAdminEndpoints(t *testing.T) {
 
 func TestRespondSuccess(t *testing.T) {
 	api := API{
-		logger: log.NewNopLogger(),
+		logger: promslog.NewNopLogger(),
 	}
 
 	api.ClearCodecs()
@@ -3622,7 +3876,7 @@ func TestRespondSuccess(t *testing.T) {
 
 func TestRespondSuccess_DefaultCodecCannotEncodeResponse(t *testing.T) {
 	api := API{
-		logger: log.NewNopLogger(),
+		logger: promslog.NewNopLogger(),
 	}
 
 	api.ClearCodecs()
@@ -3645,7 +3899,7 @@ func TestRespondSuccess_DefaultCodecCannotEncodeResponse(t *testing.T) {
 
 	require.Equal(t, http.StatusNotAcceptable, resp.StatusCode)
 	require.Equal(t, "application/json", resp.Header.Get("Content-Type"))
-	require.Equal(t, `{"status":"error","errorType":"not_acceptable","error":"cannot encode response as application/default-format"}`, string(body))
+	require.JSONEq(t, `{"status":"error","errorType":"not_acceptable","error":"cannot encode response as application/default-format"}`, string(body))
 }
 
 func TestRespondError(t *testing.T) {
@@ -4034,13 +4288,13 @@ func TestGetGlobalURL(t *testing.T) {
 			false,
 		},
 		{
-			mustParseURL(t, "http://exemple.com"),
+			mustParseURL(t, "http://example.com"),
 			GlobalURLOptions{
 				ListenAddress: "127.0.0.1:9090",
 				Host:          "prometheus.io",
 				Scheme:        "https",
 			},
-			mustParseURL(t, "http://exemple.com"),
+			mustParseURL(t, "http://example.com"),
 			false,
 		},
 		{
@@ -4176,7 +4430,7 @@ func TestExtractQueryOpts(t *testing.T) {
 			if test.err == nil {
 				require.NoError(t, err)
 			} else {
-				require.Equal(t, test.err.Error(), err.Error())
+				require.EqualError(t, err, test.err.Error())
 			}
 		})
 	}

@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"strconv"
 	"strings"
@@ -29,10 +30,10 @@ import (
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/lightsail"
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
@@ -130,14 +131,14 @@ type LightsailDiscovery struct {
 }
 
 // NewLightsailDiscovery returns a new LightsailDiscovery which periodically refreshes its targets.
-func NewLightsailDiscovery(conf *LightsailSDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*LightsailDiscovery, error) {
+func NewLightsailDiscovery(conf *LightsailSDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*LightsailDiscovery, error) {
 	m, ok := metrics.(*lightsailMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	if logger == nil {
-		logger = log.NewNopLogger()
+		logger = promslog.NewNopLogger()
 	}
 
 	d := &LightsailDiscovery{

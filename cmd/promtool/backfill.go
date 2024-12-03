@@ -21,8 +21,9 @@ import (
 	"math"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
+
+	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
@@ -48,7 +49,7 @@ func getMinAndMaxTimestamps(p textparse.Parser) (int64, int64, error) {
 
 		_, ts, _ := p.Series()
 		if ts == nil {
-			return 0, 0, fmt.Errorf("expected timestamp for series got none")
+			return 0, 0, errors.New("expected timestamp for series got none")
 		}
 
 		if *ts > maxt {
@@ -120,7 +121,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 			// also need to append samples throughout the whole block range. To allow that, we
 			// pretend that the block is twice as large here, but only really add sample in the
 			// original interval later.
-			w, err := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, 2*blockDuration)
+			w, err := tsdb.NewBlockWriter(promslog.NewNopLogger(), outputDir, 2*blockDuration)
 			if err != nil {
 				return fmt.Errorf("block writer: %w", err)
 			}

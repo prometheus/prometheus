@@ -20,9 +20,8 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"log/slog"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/golang/snappy"
 	"github.com/klauspost/compress/zstd"
 	"github.com/prometheus/client_golang/prometheus"
@@ -51,7 +50,7 @@ func NewLiveReaderMetrics(reg prometheus.Registerer) *LiveReaderMetrics {
 }
 
 // NewLiveReader returns a new live reader.
-func NewLiveReader(logger log.Logger, metrics *LiveReaderMetrics, r io.Reader) *LiveReader {
+func NewLiveReader(logger *slog.Logger, metrics *LiveReaderMetrics, r io.Reader) *LiveReader {
 	// Calling zstd.NewReader with a nil io.Reader and no options cannot return an error.
 	zstdReader, _ := zstd.NewReader(nil)
 
@@ -73,7 +72,7 @@ func NewLiveReader(logger log.Logger, metrics *LiveReaderMetrics, r io.Reader) *
 // that are still in the process of being written, and returns records as soon
 // as they can be read.
 type LiveReader struct {
-	logger      log.Logger
+	logger      *slog.Logger
 	rdr         io.Reader
 	err         error
 	rec         []byte
@@ -311,7 +310,7 @@ func (r *LiveReader) readRecord() ([]byte, int, error) {
 			return nil, 0, fmt.Errorf("record would overflow current page: %d > %d", r.readIndex+recordHeaderSize+length, pageSize)
 		}
 		r.metrics.readerCorruptionErrors.WithLabelValues("record_span_page").Inc()
-		level.Warn(r.logger).Log("msg", "Record spans page boundaries", "start", r.readIndex, "end", recordHeaderSize+length, "pageSize", pageSize)
+		r.logger.Warn("Record spans page boundaries", "start", r.readIndex, "end", recordHeaderSize+length, "pageSize", pageSize)
 	}
 	if recordHeaderSize+length > pageSize {
 		return nil, 0, fmt.Errorf("record length greater than a single page: %d > %d", recordHeaderSize+length, pageSize)

@@ -28,9 +28,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -434,7 +434,7 @@ func TestRangeWithFailedCompactionWontGetSelected(t *testing.T) {
 }
 
 func TestCompactionFailWillCleanUpTempDir(t *testing.T) {
-	compactor, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{
+	compactor, err := NewLeveledCompactor(context.Background(), nil, promslog.NewNopLogger(), []int64{
 		20,
 		60,
 		240,
@@ -1045,8 +1045,7 @@ func TestCompaction_populateBlock(t *testing.T) {
 			}
 			err = blockPopulator.PopulateBlock(c.ctx, c.metrics, c.logger, c.chunkPool, c.mergeFunc, blocks, meta, iw, nopChunkWriter{}, irPostingsFunc)
 			if tc.expErr != nil {
-				require.Error(t, err)
-				require.Equal(t, tc.expErr.Error(), err.Error())
+				require.EqualError(t, err, tc.expErr.Error())
 				return
 			}
 			require.NoError(t, err)
@@ -1154,7 +1153,7 @@ func BenchmarkCompaction(b *testing.B) {
 			blockDirs := make([]string, 0, len(c.ranges))
 			var blocks []*Block
 			for _, r := range c.ranges {
-				block, err := OpenBlock(nil, createBlock(b, dir, genSeries(nSeries, 10, r[0], r[1])), nil)
+				block, err := OpenBlock(nil, createBlock(b, dir, genSeries(nSeries, 10, r[0], r[1])), nil, nil)
 				require.NoError(b, err)
 				blocks = append(blocks, block)
 				defer func() {
@@ -1163,7 +1162,7 @@ func BenchmarkCompaction(b *testing.B) {
 				blockDirs = append(blockDirs, block.Dir())
 			}
 
-			c, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{0}, nil, nil)
+			c, err := NewLeveledCompactor(context.Background(), nil, promslog.NewNopLogger(), []int64{0}, nil, nil)
 			require.NoError(b, err)
 
 			b.ResetTimer()
@@ -1319,7 +1318,7 @@ func TestCancelCompactions(t *testing.T) {
 	// Measure the compaction time without interrupting it.
 	var timeCompactionUninterrupted time.Duration
 	{
-		db, err := open(tmpdir, log.NewNopLogger(), nil, DefaultOptions(), []int64{1, 2000}, nil)
+		db, err := open(tmpdir, promslog.NewNopLogger(), nil, DefaultOptions(), []int64{1, 2000}, nil)
 		require.NoError(t, err)
 		require.Len(t, db.Blocks(), 3, "initial block count mismatch")
 		require.Equal(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran), "initial compaction counter mismatch")
@@ -1338,7 +1337,7 @@ func TestCancelCompactions(t *testing.T) {
 	}
 	// Measure the compaction time when closing the db in the middle of compaction.
 	{
-		db, err := open(tmpdirCopy, log.NewNopLogger(), nil, DefaultOptions(), []int64{1, 2000}, nil)
+		db, err := open(tmpdirCopy, promslog.NewNopLogger(), nil, DefaultOptions(), []int64{1, 2000}, nil)
 		require.NoError(t, err)
 		require.Len(t, db.Blocks(), 3, "initial block count mismatch")
 		require.Equal(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran), "initial compaction counter mismatch")
@@ -1359,7 +1358,7 @@ func TestCancelCompactions(t *testing.T) {
 		// This checks that the `context.Canceled` error is properly checked at all levels:
 		// - tsdb_errors.NewMulti() should have the Is() method implemented for correct checks.
 		// - callers should check with errors.Is() instead of ==.
-		readOnlyDB, err := OpenDBReadOnly(tmpdirCopy, "", log.NewNopLogger())
+		readOnlyDB, err := OpenDBReadOnly(tmpdirCopy, "", promslog.NewNopLogger())
 		require.NoError(t, err)
 		blocks, err := readOnlyDB.Blocks()
 		require.NoError(t, err)
@@ -1371,7 +1370,7 @@ func TestCancelCompactions(t *testing.T) {
 }
 
 // TestDeleteCompactionBlockAfterFailedReload ensures that a failed reloadBlocks immediately after a compaction
-// deletes the resulting block to avoid creatings blocks with the same time range.
+// deletes the resulting block to avoid creating blocks with the same time range.
 func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 	tests := map[string]func(*DB) int{
 		"Test Head Compaction": func(db *DB) int {
@@ -1550,7 +1549,7 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 			require.Len(t, ids, 1)
 
 			// Open the block and query it and check the histograms.
-			block, err := OpenBlock(nil, path.Join(head.opts.ChunkDirRoot, ids[0].String()), nil)
+			block, err := OpenBlock(nil, path.Join(head.opts.ChunkDirRoot, ids[0].String()), nil, nil)
 			require.NoError(t, err)
 			t.Cleanup(func() {
 				require.NoError(t, block.Close())
@@ -1912,13 +1911,13 @@ func TestCompactEmptyResultBlockWithTombstone(t *testing.T) {
 	ctx := context.Background()
 	tmpdir := t.TempDir()
 	blockDir := createBlock(t, tmpdir, genSeries(1, 1, 0, 10))
-	block, err := OpenBlock(nil, blockDir, nil)
+	block, err := OpenBlock(nil, blockDir, nil, nil)
 	require.NoError(t, err)
 	// Write tombstone covering the whole block.
 	err = block.Delete(ctx, 0, 10, labels.MustNewMatcher(labels.MatchEqual, defaultLabelName, "0"))
 	require.NoError(t, err)
 
-	c, err := NewLeveledCompactor(ctx, nil, log.NewNopLogger(), []int64{0}, nil, nil)
+	c, err := NewLeveledCompactor(ctx, nil, promslog.NewNopLogger(), []int64{0}, nil, nil)
 	require.NoError(t, err)
 
 	ulids, err := c.Compact(tmpdir, []string{blockDir}, []*Block{block})
@@ -2114,7 +2113,7 @@ func TestDelayedCompactionDoesNotBlockUnrelatedOps(t *testing.T) {
 			t.Parallel()
 
 			tmpdir := t.TempDir()
-			// Some blocks that need compation are present.
+			// Some blocks that need compaction are present.
 			createBlock(t, tmpdir, genSeries(1, 1, 0, 100))
 			createBlock(t, tmpdir, genSeries(1, 1, 100, 200))
 			createBlock(t, tmpdir, genSeries(1, 1, 200, 300))
@@ -2122,7 +2121,7 @@ func TestDelayedCompactionDoesNotBlockUnrelatedOps(t *testing.T) {
 			options := DefaultOptions()
 			// This will make the test timeout if compaction really waits for it.
 			options.CompactionDelay = time.Hour
-			db, err := open(tmpdir, log.NewNopLogger(), nil, options, []int64{10, 200}, nil)
+			db, err := open(tmpdir, promslog.NewNopLogger(), nil, options, []int64{10, 200}, nil)
 			require.NoError(t, err)
 			defer func() {
 				require.NoError(t, db.Close())

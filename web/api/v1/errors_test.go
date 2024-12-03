@@ -23,9 +23,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/route"
 	"github.com/stretchr/testify/require"
 
@@ -105,7 +105,7 @@ func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable) *route
 	t.Helper()
 
 	engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
-		Logger:             log.NewNopLogger(),
+		Logger:             promslog.NewNopLogger(),
 		Reg:                nil,
 		ActiveQueryTracker: nil,
 		MaxSamples:         100,
@@ -127,13 +127,15 @@ func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable) *route
 		nil,   // Only needed for admin APIs.
 		"",    // This is for snapshots, which is disabled when admin APIs are disabled. Hence empty.
 		false, // Disable admin APIs.
-		log.NewNopLogger(),
+		promslog.NewNopLogger(),
 		func(context.Context) RulesRetriever { return &DummyRulesRetriever{} },
 		0, 0, 0, // Remote read samples and concurrency limit.
 		false, // Not an agent.
 		regexp.MustCompile(".*"),
 		func() (RuntimeInfo, error) { return RuntimeInfo{}, errors.New("not implemented") },
 		&PrometheusVersion{},
+		nil,
+		nil,
 		prometheus.DefaultGatherer,
 		nil,
 		nil,
