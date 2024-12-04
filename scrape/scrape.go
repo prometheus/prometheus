@@ -330,6 +330,8 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 		trackTimestampsStaleness = sp.config.TrackTimestampsStaleness
 		mrc                      = sp.config.MetricRelabelConfigs
 		fallbackScrapeProtocol   = sp.config.ScrapeFallbackProtocol.HeaderMediaType()
+		alwaysScrapeClassicHist  = sp.config.AlwaysScrapeClassicHistograms
+		convertClassicHistToNHCB = sp.config.ConvertClassicHistogramsToNHCB
 	)
 
 	validationScheme := model.UTF8Validation
@@ -377,6 +379,8 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 				timeout:                  targetTimeout,
 				validationScheme:         validationScheme,
 				fallbackScrapeProtocol:   fallbackScrapeProtocol,
+				alwaysScrapeClassicHist:  alwaysScrapeClassicHist,
+				convertClassicHistToNHCB: convertClassicHistToNHCB,
 			})
 		)
 		if err != nil {
