@@ -58,15 +58,17 @@ func init() {
 }
 
 func TestPopulateLabels(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
+		name    string
 		in      labels.Labels
 		cfg     *config.ScrapeConfig
 		res     labels.Labels
 		resOrig labels.Labels
 		err     string
 	}{
-		// Regular population of scrape config options.
 		{
+			name: "Regular population of scrape config options",
 			in: labels.FromMap(map[string]string{
 				model.AddressLabel: "1.2.3.4:1000",
 				"custom":           "value",
@@ -98,9 +100,9 @@ func TestPopulateLabels(t *testing.T) {
 				model.ScrapeTimeoutLabel:  "1s",
 			}),
 		},
-		// Pre-define/overwrite scrape config labels.
-		// Leave out port and expect it to be defaulted to scheme.
 		{
+			name: "Pre-define/overwrite scrape config labels",
+			// Leave out port and expect it to be defaulted to scheme.
 			in: labels.FromMap(map[string]string{
 				model.AddressLabel:        "1.2.3.4",
 				model.SchemeLabel:         "http",
@@ -134,8 +136,8 @@ func TestPopulateLabels(t *testing.T) {
 				model.ScrapeTimeoutLabel:  "2s",
 			}),
 		},
-		// Provide instance label. HTTPS port default for IPv6.
 		{
+			name: "Provide instance label. HTTPS port default for IPv6",
 			in: labels.FromMap(map[string]string{
 				model.AddressLabel:  "[::1]",
 				model.InstanceLabel: "custom-instance",
@@ -166,9 +168,9 @@ func TestPopulateLabels(t *testing.T) {
 				model.ScrapeTimeoutLabel:  "1s",
 			}),
 		},
-		// Address label missing.
 		{
-			in: labels.FromStrings("custom", "value"),
+			name: "Address label missing",
+			in:   labels.FromStrings("custom", "value"),
 			cfg: &config.ScrapeConfig{
 				Scheme:         "https",
 				MetricsPath:    "/metrics",
@@ -180,9 +182,9 @@ func TestPopulateLabels(t *testing.T) {
 			resOrig: labels.EmptyLabels(),
 			err:     "no address",
 		},
-		// Address label missing, but added in relabelling.
 		{
-			in: labels.FromStrings("custom", "host:1234"),
+			name: "Address label missing, but added in relabelling",
+			in:   labels.FromStrings("custom", "host:1234"),
 			cfg: &config.ScrapeConfig{
 				Scheme:         "https",
 				MetricsPath:    "/metrics",
@@ -218,9 +220,9 @@ func TestPopulateLabels(t *testing.T) {
 				"custom":                  "host:1234",
 			}),
 		},
-		// Address label missing, but added in relabelling.
 		{
-			in: labels.FromStrings("custom", "host:1234"),
+			name: "Address label missing, but added in relabelling",
+			in:   labels.FromStrings("custom", "host:1234"),
 			cfg: &config.ScrapeConfig{
 				Scheme:         "https",
 				MetricsPath:    "/metrics",
@@ -256,8 +258,8 @@ func TestPopulateLabels(t *testing.T) {
 				"custom":                  "host:1234",
 			}),
 		},
-		// Invalid UTF-8 in label.
 		{
+			name: "Invalid UTF-8 in label",
 			in: labels.FromMap(map[string]string{
 				model.AddressLabel: "1.2.3.4:1000",
 				"custom":           "\xbd",
@@ -273,8 +275,8 @@ func TestPopulateLabels(t *testing.T) {
 			resOrig: labels.EmptyLabels(),
 			err:     "invalid label value for \"custom\": \"\\xbd\"",
 		},
-		// Invalid duration in interval label.
 		{
+			name: "Invalid duration in interval label",
 			in: labels.FromMap(map[string]string{
 				model.AddressLabel:        "1.2.3.4:1000",
 				model.ScrapeIntervalLabel: "2notseconds",
@@ -290,8 +292,8 @@ func TestPopulateLabels(t *testing.T) {
 			resOrig: labels.EmptyLabels(),
 			err:     "error parsing scrape interval: unknown unit \"notseconds\" in duration \"2notseconds\"",
 		},
-		// Invalid duration in timeout label.
 		{
+			name: "Invalid duration in timeout label",
 			in: labels.FromMap(map[string]string{
 				model.AddressLabel:       "1.2.3.4:1000",
 				model.ScrapeTimeoutLabel: "2notseconds",
@@ -307,8 +309,8 @@ func TestPopulateLabels(t *testing.T) {
 			resOrig: labels.EmptyLabels(),
 			err:     "error parsing scrape timeout: unknown unit \"notseconds\" in duration \"2notseconds\"",
 		},
-		// 0 interval in timeout label.
 		{
+			name: "0 interval in timeout label",
 			in: labels.FromMap(map[string]string{
 				model.AddressLabel:        "1.2.3.4:1000",
 				model.ScrapeIntervalLabel: "0s",
@@ -324,8 +326,8 @@ func TestPopulateLabels(t *testing.T) {
 			resOrig: labels.EmptyLabels(),
 			err:     "scrape interval cannot be 0",
 		},
-		// 0 duration in timeout label.
 		{
+			name: "0 duration in timeout label",
 			in: labels.FromMap(map[string]string{
 				model.AddressLabel:       "1.2.3.4:1000",
 				model.ScrapeTimeoutLabel: "0s",
@@ -341,8 +343,8 @@ func TestPopulateLabels(t *testing.T) {
 			resOrig: labels.EmptyLabels(),
 			err:     "scrape timeout cannot be 0",
 		},
-		// Timeout less than interval.
 		{
+			name: "Timeout less than interval",
 			in: labels.FromMap(map[string]string{
 				model.AddressLabel:        "1.2.3.4:1000",
 				model.ScrapeIntervalLabel: "1s",
@@ -359,8 +361,8 @@ func TestPopulateLabels(t *testing.T) {
 			resOrig: labels.EmptyLabels(),
 			err:     "scrape timeout cannot be greater than scrape interval (\"2s\" > \"1s\")",
 		},
-		// Don't attach default port.
 		{
+			name: "Don't attach default port",
 			in: labels.FromMap(map[string]string{
 				model.AddressLabel: "1.2.3.4",
 			}),
@@ -389,8 +391,8 @@ func TestPopulateLabels(t *testing.T) {
 				model.ScrapeTimeoutLabel:  "1s",
 			}),
 		},
-		// verify that the default port is not removed (http).
 		{
+			name: "verify that the default port is not removed (http)",
 			in: labels.FromMap(map[string]string{
 				model.AddressLabel: "1.2.3.4:80",
 			}),
@@ -419,8 +421,8 @@ func TestPopulateLabels(t *testing.T) {
 				model.ScrapeTimeoutLabel:  "1s",
 			}),
 		},
-		// verify that the default port is not removed (https).
 		{
+			name: "verify that the default port is not removed (https)",
 			in: labels.FromMap(map[string]string{
 				model.AddressLabel: "1.2.3.4:443",
 			}),
@@ -451,17 +453,20 @@ func TestPopulateLabels(t *testing.T) {
 		},
 	}
 	for _, c := range cases {
-		in := c.in.Copy()
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			in := c.in.Copy()
 
-		res, orig, err := PopulateLabels(labels.NewBuilder(c.in), c.cfg)
-		if c.err != "" {
-			require.EqualError(t, err, c.err)
-		} else {
-			require.NoError(t, err)
-		}
-		require.Equal(t, c.in, in)
-		testutil.RequireEqual(t, c.res, res)
-		testutil.RequireEqual(t, c.resOrig, orig)
+			res, orig, err := PopulateLabels(labels.NewBuilder(c.in), c.cfg)
+			if c.err != "" {
+				require.EqualError(t, err, c.err)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, c.in, in)
+			testutil.RequireEqual(t, c.res, res)
+			testutil.RequireEqual(t, c.resOrig, orig)
+		})
 	}
 }
 
@@ -582,6 +587,7 @@ scrape_configs:
 }
 
 func TestManagerTargetsUpdates(t *testing.T) {
+	t.Parallel()
 	opts := Options{}
 	testRegistry := prometheus.NewRegistry()
 	m, err := NewManager(&opts, nil, nil, nil, testRegistry)
@@ -621,6 +627,7 @@ func TestManagerTargetsUpdates(t *testing.T) {
 }
 
 func TestSetOffsetSeed(t *testing.T) {
+	t.Parallel()
 	getConfig := func(prometheus string) *config.Config {
 		cfgText := `
 global:
@@ -1086,6 +1093,7 @@ func TestManagerCTZeroIngestionHistogram(t *testing.T) {
 }
 
 func TestUnregisterMetrics(t *testing.T) {
+	t.Parallel()
 	reg := prometheus.NewRegistry()
 	// Check that all metrics can be unregistered, allowing a second manager to be created.
 	for i := 0; i < 2; i++ {

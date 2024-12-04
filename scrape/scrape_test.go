@@ -78,6 +78,7 @@ func newTestScrapeMetrics(t testing.TB) *scrapeMetrics {
 }
 
 func TestNewScrapePool(t *testing.T) {
+	t.Parallel()
 	var (
 		app   = &nopAppendable{}
 		cfg   = &config.ScrapeConfig{}
@@ -92,8 +93,10 @@ func TestNewScrapePool(t *testing.T) {
 }
 
 func TestStorageHandlesOutOfOrderTimestamps(t *testing.T) {
+	t.Parallel()
 	// Test with default OutOfOrderTimeWindow (0)
 	t.Run("Out-Of-Order Sample Disabled", func(t *testing.T) {
+		t.Parallel()
 		s := teststorage.New(t)
 		defer s.Close()
 
@@ -102,6 +105,7 @@ func TestStorageHandlesOutOfOrderTimestamps(t *testing.T) {
 
 	// Test with specific OutOfOrderTimeWindow (600000)
 	t.Run("Out-Of-Order Sample Enabled", func(t *testing.T) {
+		t.Parallel()
 		s := teststorage.New(t, 600000)
 		defer s.Close()
 
@@ -183,6 +187,7 @@ func runScrapeLoopTest(t *testing.T, s *teststorage.TestStorage, expectOutOfOrde
 }
 
 func TestDroppedTargetsList(t *testing.T) {
+	t.Parallel()
 	var (
 		app = &nopAppendable{}
 		cfg = &config.ScrapeConfig{
@@ -224,6 +229,7 @@ func TestDroppedTargetsList(t *testing.T) {
 // TestDiscoveredLabelsUpdate checks that DiscoveredLabels are updated
 // even when new labels don't affect the target `hash`.
 func TestDiscoveredLabelsUpdate(t *testing.T) {
+	t.Parallel()
 	sp := &scrapePool{
 		metrics: newTestScrapeMetrics(t),
 	}
@@ -292,6 +298,7 @@ func (l *testLoop) getCache() *scrapeCache {
 }
 
 func TestScrapePoolStop(t *testing.T) {
+	t.Parallel()
 	sp := &scrapePool{
 		activeTargets: map[uint64]*Target{},
 		loops:         map[uint64]loop{},
@@ -350,6 +357,7 @@ func TestScrapePoolStop(t *testing.T) {
 }
 
 func TestScrapePoolReload(t *testing.T) {
+	t.Parallel()
 	var mtx sync.Mutex
 	numTargets := 20
 
@@ -447,6 +455,7 @@ func TestScrapePoolReload(t *testing.T) {
 }
 
 func TestScrapePoolReloadPreserveRelabeledIntervalTimeout(t *testing.T) {
+	t.Parallel()
 	reloadCfg := &config.ScrapeConfig{
 		ScrapeInterval: model.Duration(3 * time.Second),
 		ScrapeTimeout:  model.Duration(2 * time.Second),
@@ -508,6 +517,7 @@ func gatherLabels(g prometheus.Gatherer, familyName string) ([][]*dto.LabelPair,
 }
 
 func TestScrapePoolTargetLimit(t *testing.T) {
+	t.Parallel()
 	var wg sync.WaitGroup
 	// On starting to run, new loops created on reload check whether their preceding
 	// equivalents have been stopped.
@@ -636,6 +646,7 @@ func TestScrapePoolTargetLimit(t *testing.T) {
 }
 
 func TestScrapePoolAppender(t *testing.T) {
+	t.Parallel()
 	cfg := &config.ScrapeConfig{}
 	app := &nopAppendable{}
 	sp, _ := newScrapePool(cfg, app, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
@@ -706,6 +717,7 @@ func TestScrapePoolAppender(t *testing.T) {
 }
 
 func TestScrapePoolRaces(t *testing.T) {
+	t.Parallel()
 	interval, _ := model.ParseDuration("1s")
 	timeout, _ := model.ParseDuration("500ms")
 	newConfig := func() *config.ScrapeConfig {
@@ -743,6 +755,7 @@ func TestScrapePoolRaces(t *testing.T) {
 }
 
 func TestScrapePoolScrapeLoopsStarted(t *testing.T) {
+	t.Parallel()
 	var wg sync.WaitGroup
 	newLoop := func(opts scrapeLoopOptions) loop {
 		wg.Add(1)
@@ -829,6 +842,7 @@ func newBasicScrapeLoopWithFallback(t testing.TB, ctx context.Context, scraper s
 }
 
 func TestScrapeLoopStopBeforeRun(t *testing.T) {
+	t.Parallel()
 	scraper := &testScraper{}
 	sl := newBasicScrapeLoop(t, context.Background(), scraper, nil, 1)
 
@@ -878,6 +892,7 @@ func TestScrapeLoopStopBeforeRun(t *testing.T) {
 func nopMutator(l labels.Labels) labels.Labels { return l }
 
 func TestScrapeLoopStop(t *testing.T) {
+	t.Parallel()
 	var (
 		signal   = make(chan struct{}, 1)
 		appender = &collectResultAppender{}
@@ -933,6 +948,7 @@ func TestScrapeLoopStop(t *testing.T) {
 }
 
 func TestScrapeLoopRun(t *testing.T) {
+	t.Parallel()
 	var (
 		signal = make(chan struct{}, 1)
 		errc   = make(chan error)
@@ -1041,6 +1057,7 @@ func TestScrapeLoopRun(t *testing.T) {
 }
 
 func TestScrapeLoopForcedErr(t *testing.T) {
+	t.Parallel()
 	var (
 		signal = make(chan struct{}, 1)
 		errc   = make(chan error)
@@ -1081,6 +1098,7 @@ func TestScrapeLoopForcedErr(t *testing.T) {
 }
 
 func TestScrapeLoopMetadata(t *testing.T) {
+	t.Parallel()
 	var (
 		signal        = make(chan struct{})
 		scraper       = &testScraper{}
@@ -1165,6 +1183,7 @@ func simpleTestScrapeLoop(t testing.TB) (context.Context, *scrapeLoop) {
 }
 
 func TestScrapeLoopSeriesAdded(t *testing.T) {
+	t.Parallel()
 	ctx, sl := simpleTestScrapeLoop(t)
 
 	slApp := sl.appender(ctx)
@@ -1184,6 +1203,7 @@ func TestScrapeLoopSeriesAdded(t *testing.T) {
 	require.Equal(t, 0, seriesAdded)
 }
 
+// TestScrapeLoopFailWithInvalidLabelsAfterRelabel can not run in parallel due model.NameValidationScheme shared variable.
 func TestScrapeLoopFailWithInvalidLabelsAfterRelabel(t *testing.T) {
 	model.NameValidationScheme = model.LegacyValidation
 	s := teststorage.New(t)
@@ -1214,6 +1234,7 @@ func TestScrapeLoopFailWithInvalidLabelsAfterRelabel(t *testing.T) {
 	require.Equal(t, 0, seriesAdded)
 }
 
+// TestScrapeLoopFailLegacyUnderUTF8 can not run in parallel due model.NameValidationScheme shared variable.
 func TestScrapeLoopFailLegacyUnderUTF8(t *testing.T) {
 	// Test that scrapes fail when default validation is utf8 but scrape config is
 	// legacy.
@@ -1291,6 +1312,7 @@ func BenchmarkScrapeLoopAppendOM(b *testing.B) {
 }
 
 func TestSetOptionsHandlingStaleness(t *testing.T) {
+	t.Parallel()
 	s := teststorage.New(t, 600000)
 	defer s.Close()
 
@@ -1372,6 +1394,7 @@ func TestSetOptionsHandlingStaleness(t *testing.T) {
 }
 
 func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
+	t.Parallel()
 	appender := &collectResultAppender{}
 	var (
 		signal  = make(chan struct{}, 1)
@@ -1418,6 +1441,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 }
 
 func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
+	t.Parallel()
 	appender := &collectResultAppender{}
 	var (
 		signal     = make(chan struct{}, 1)
@@ -1466,6 +1490,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 }
 
 func TestScrapeLoopCache(t *testing.T) {
+	t.Parallel()
 	s := teststorage.New(t)
 	defer s.Close()
 
@@ -1529,6 +1554,7 @@ func TestScrapeLoopCache(t *testing.T) {
 }
 
 func TestScrapeLoopCacheMemoryExhaustionProtection(t *testing.T) {
+	t.Parallel()
 	s := teststorage.New(t)
 	defer s.Close()
 
@@ -1575,6 +1601,7 @@ func TestScrapeLoopCacheMemoryExhaustionProtection(t *testing.T) {
 }
 
 func TestScrapeLoopAppend(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		title           string
 		honorLabels     bool
@@ -1669,6 +1696,7 @@ func requireEqual(t *testing.T, expected, actual interface{}, msgAndArgs ...inte
 }
 
 func TestScrapeLoopAppendForConflictingPrefixedLabels(t *testing.T) {
+	t.Parallel()
 	testcases := map[string]struct {
 		targetLabels  []string
 		exposedLabels string
@@ -1720,6 +1748,7 @@ func TestScrapeLoopAppendForConflictingPrefixedLabels(t *testing.T) {
 
 	for name, tc := range testcases {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			app := &collectResultAppender{}
 			sl := newBasicScrapeLoop(t, context.Background(), nil, func(ctx context.Context) storage.Appender { return app }, 0)
 			sl.sampleMutator = func(l labels.Labels) labels.Labels {
@@ -1743,6 +1772,7 @@ func TestScrapeLoopAppendForConflictingPrefixedLabels(t *testing.T) {
 }
 
 func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
+	t.Parallel()
 	// collectResultAppender's AddFast always returns ErrNotFound if we don't give it a next.
 	app := &collectResultAppender{}
 	sl := newBasicScrapeLoop(t, context.Background(), nil, func(ctx context.Context) storage.Appender { return app }, 0)
@@ -1780,6 +1810,7 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 }
 
 func TestScrapeLoopAppendSampleLimit(t *testing.T) {
+	t.Parallel()
 	resApp := &collectResultAppender{}
 	app := &limitAppender{Appender: resApp, limit: 1}
 
@@ -1839,6 +1870,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 }
 
 func TestScrapeLoop_HistogramBucketLimit(t *testing.T) {
+	t.Parallel()
 	resApp := &collectResultAppender{}
 	app := &bucketLimitAppender{Appender: resApp, limit: 2}
 
@@ -1947,6 +1979,7 @@ func TestScrapeLoop_HistogramBucketLimit(t *testing.T) {
 }
 
 func TestScrapeLoop_ChangingMetricString(t *testing.T) {
+	t.Parallel()
 	// This is a regression test for the scrape loop cache not properly maintaining
 	// IDs when the string representation of a metric changes across a scrape. Thus
 	// we use a real storage appender here.
@@ -2010,6 +2043,7 @@ func TestScrapeLoopAppendEmptyWithNoContentType(t *testing.T) {
 }
 
 func TestScrapeLoopAppendStaleness(t *testing.T) {
+	t.Parallel()
 	app := &collectResultAppender{}
 
 	sl := newBasicScrapeLoop(t, context.Background(), nil, func(ctx context.Context) storage.Appender { return app }, 0)
@@ -2041,6 +2075,7 @@ func TestScrapeLoopAppendStaleness(t *testing.T) {
 }
 
 func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
+	t.Parallel()
 	app := &collectResultAppender{}
 	sl := newBasicScrapeLoop(t, context.Background(), nil, func(ctx context.Context) storage.Appender { return app }, 0)
 	now := time.Now()
@@ -2065,6 +2100,7 @@ func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
 }
 
 func TestScrapeLoopAppendStalenessIfTrackTimestampStaleness(t *testing.T) {
+	t.Parallel()
 	app := &collectResultAppender{}
 	sl := newBasicScrapeLoop(t, context.Background(), nil, func(ctx context.Context) storage.Appender { return app }, 0)
 	sl.trackTimestampsStaleness = true
@@ -2096,6 +2132,7 @@ func TestScrapeLoopAppendStalenessIfTrackTimestampStaleness(t *testing.T) {
 }
 
 func TestScrapeLoopAppendExemplar(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		title                           string
 		alwaysScrapeClassicHist         bool
@@ -2415,6 +2452,7 @@ metric: <
 
 	for _, test := range tests {
 		t.Run(test.title, func(t *testing.T) {
+			t.Parallel()
 			app := &collectResultAppender{}
 
 			discoveryLabels := &Target{
@@ -2476,6 +2514,7 @@ metric: <
 }
 
 func TestScrapeLoopAppendExemplarSeries(t *testing.T) {
+	t.Parallel()
 	scrapeText := []string{`metric_total{n="1"} 1 # {t="1"} 1.0 10000
 # EOF`, `metric_total{n="1"} 2 # {t="2"} 2.0 20000
 # EOF`}
@@ -2530,6 +2569,7 @@ func TestScrapeLoopAppendExemplarSeries(t *testing.T) {
 }
 
 func TestScrapeLoopRunReportsTargetDownOnScrapeError(t *testing.T) {
+	t.Parallel()
 	var (
 		scraper  = &testScraper{}
 		appender = &collectResultAppender{}
@@ -2549,6 +2589,7 @@ func TestScrapeLoopRunReportsTargetDownOnScrapeError(t *testing.T) {
 }
 
 func TestScrapeLoopRunReportsTargetDownOnInvalidUTF8(t *testing.T) {
+	t.Parallel()
 	var (
 		scraper  = &testScraper{}
 		appender = &collectResultAppender{}
@@ -2586,6 +2627,7 @@ func (app *errorAppender) Append(ref storage.SeriesRef, lset labels.Labels, t in
 }
 
 func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T) {
+	t.Parallel()
 	app := &errorAppender{}
 	sl := newBasicScrapeLoop(t, context.Background(), nil, func(ctx context.Context) storage.Appender { return app }, 0)
 
@@ -2609,6 +2651,7 @@ func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T
 }
 
 func TestScrapeLoopOutOfBoundsTimeError(t *testing.T) {
+	t.Parallel()
 	app := &collectResultAppender{}
 	sl := newBasicScrapeLoop(t, context.Background(), nil,
 		func(ctx context.Context) storage.Appender {
@@ -2631,6 +2674,7 @@ func TestScrapeLoopOutOfBoundsTimeError(t *testing.T) {
 }
 
 func TestTargetScraperScrapeOK(t *testing.T) {
+	t.Parallel()
 	const (
 		configTimeout   = 1500 * time.Millisecond
 		expectedTimeout = "1.5"
@@ -2719,6 +2763,7 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 }
 
 func TestTargetScrapeScrapeCancel(t *testing.T) {
+	t.Parallel()
 	block := make(chan struct{})
 
 	server := httptest.NewServer(
@@ -2776,6 +2821,7 @@ func TestTargetScrapeScrapeCancel(t *testing.T) {
 }
 
 func TestTargetScrapeScrapeNotFound(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
@@ -2806,6 +2852,7 @@ func TestTargetScrapeScrapeNotFound(t *testing.T) {
 }
 
 func TestTargetScraperBodySizeLimit(t *testing.T) {
+	t.Parallel()
 	const (
 		bodySizeLimit = 15
 		responseBody  = "metric_a 1\nmetric_b 2\n"
@@ -2913,6 +2960,7 @@ func (ts *testScraper) readResponse(ctx context.Context, resp *http.Response, w 
 }
 
 func TestScrapeLoop_RespectTimestamps(t *testing.T) {
+	t.Parallel()
 	s := teststorage.New(t)
 	defer s.Close()
 
@@ -2937,6 +2985,7 @@ func TestScrapeLoop_RespectTimestamps(t *testing.T) {
 }
 
 func TestScrapeLoop_DiscardTimestamps(t *testing.T) {
+	t.Parallel()
 	s := teststorage.New(t)
 	defer s.Close()
 
@@ -2964,6 +3013,7 @@ func TestScrapeLoop_DiscardTimestamps(t *testing.T) {
 }
 
 func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
+	t.Parallel()
 	s := teststorage.New(t)
 	defer s.Close()
 
@@ -3001,6 +3051,7 @@ func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
 }
 
 func TestScrapeLoopDiscardUnnamedMetrics(t *testing.T) {
+	t.Parallel()
 	s := teststorage.New(t)
 	defer s.Close()
 
@@ -3030,6 +3081,7 @@ func TestScrapeLoopDiscardUnnamedMetrics(t *testing.T) {
 }
 
 func TestReusableConfig(t *testing.T) {
+	t.Parallel()
 	variants := []*config.ScrapeConfig{
 		{
 			JobName:       "prometheus",
@@ -3097,6 +3149,7 @@ func TestReusableConfig(t *testing.T) {
 }
 
 func TestReuseScrapeCache(t *testing.T) {
+	t.Parallel()
 	var (
 		app = &nopAppendable{}
 		cfg = &config.ScrapeConfig{
@@ -3255,6 +3308,7 @@ func TestReuseScrapeCache(t *testing.T) {
 }
 
 func TestScrapeAddFast(t *testing.T) {
+	t.Parallel()
 	s := teststorage.New(t)
 	defer s.Close()
 
@@ -3280,6 +3334,7 @@ func TestScrapeAddFast(t *testing.T) {
 }
 
 func TestReuseCacheRace(t *testing.T) {
+	t.Parallel()
 	var (
 		app = &nopAppendable{}
 		cfg = &config.ScrapeConfig{
@@ -3313,6 +3368,7 @@ func TestReuseCacheRace(t *testing.T) {
 }
 
 func TestCheckAddError(t *testing.T) {
+	t.Parallel()
 	var appErrs appendErrors
 	sl := scrapeLoop{l: promslog.NewNopLogger(), metrics: newTestScrapeMetrics(t)}
 	sl.checkAddError(nil, storage.ErrOutOfOrderSample, nil, nil, &appErrs)
@@ -3320,6 +3376,7 @@ func TestCheckAddError(t *testing.T) {
 }
 
 func TestScrapeReportSingleAppender(t *testing.T) {
+	t.Parallel()
 	s := teststorage.New(t)
 	defer s.Close()
 
@@ -3375,6 +3432,7 @@ func TestScrapeReportSingleAppender(t *testing.T) {
 }
 
 func TestScrapeReportLimit(t *testing.T) {
+	t.Parallel()
 	s := teststorage.New(t)
 	defer s.Close()
 
@@ -3429,6 +3487,7 @@ func TestScrapeReportLimit(t *testing.T) {
 	require.True(t, found)
 }
 
+// TestScrapeUTF8 can not run in parallel due model.NameValidationScheme shared variable.
 func TestScrapeUTF8(t *testing.T) {
 	s := teststorage.New(t)
 	defer s.Close()
@@ -3476,6 +3535,7 @@ func TestScrapeUTF8(t *testing.T) {
 }
 
 func TestScrapeLoopLabelLimit(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		title           string
 		scrapeLabels    string
@@ -3570,6 +3630,7 @@ func TestScrapeLoopLabelLimit(t *testing.T) {
 }
 
 func TestTargetScrapeIntervalAndTimeoutRelabel(t *testing.T) {
+	t.Parallel()
 	interval, _ := model.ParseDuration("2s")
 	timeout, _ := model.ParseDuration("500ms")
 	config := &config.ScrapeConfig{
@@ -3608,6 +3669,7 @@ func TestTargetScrapeIntervalAndTimeoutRelabel(t *testing.T) {
 
 // Testing whether we can remove trailing .0 from histogram 'le' and summary 'quantile' labels.
 func TestLeQuantileReLabel(t *testing.T) {
+	t.Parallel()
 	simpleStorage := teststorage.New(t)
 	defer simpleStorage.Close()
 
@@ -3724,6 +3786,7 @@ test_summary_count 199
 
 // Testing whether we can automatically convert scraped classic histograms into native histograms with custom buckets.
 func TestConvertClassicHistogramsToNHCB(t *testing.T) {
+	t.Parallel()
 	genTestCounterText := func(name string, value int, withMetadata bool) string {
 		if withMetadata {
 			return fmt.Sprintf(`
@@ -4241,6 +4304,7 @@ metric: <
 }
 
 func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrapeForTimestampedMetrics(t *testing.T) {
+	t.Parallel()
 	appender := &collectResultAppender{}
 	var (
 		signal  = make(chan struct{}, 1)
@@ -4287,6 +4351,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrapeForTimestampedMetrics(t *
 }
 
 func TestScrapeLoopCompression(t *testing.T) {
+	t.Parallel()
 	simpleStorage := teststorage.New(t)
 	defer simpleStorage.Close()
 
@@ -4306,6 +4371,7 @@ func TestScrapeLoopCompression(t *testing.T) {
 		},
 	} {
 		t.Run(fmt.Sprintf("compression=%v,acceptEncoding=%s", tc.enableCompression, tc.acceptEncoding), func(t *testing.T) {
+			t.Parallel()
 			scraped := make(chan bool)
 
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -4347,6 +4413,7 @@ func TestScrapeLoopCompression(t *testing.T) {
 }
 
 func TestPickSchema(t *testing.T) {
+	t.Parallel()
 	tcs := []struct {
 		factor float64
 		schema int32
@@ -4492,6 +4559,7 @@ func BenchmarkTargetScraperGzip(b *testing.B) {
 // When a scrape contains multiple instances for the same time series we should increment
 // prometheus_target_scrapes_sample_duplicate_timestamp_total metric.
 func TestScrapeLoopSeriesAddedDuplicates(t *testing.T) {
+	t.Parallel()
 	ctx, sl := simpleTestScrapeLoop(t)
 
 	slApp := sl.appender(ctx)
@@ -4527,6 +4595,7 @@ func TestScrapeLoopSeriesAddedDuplicates(t *testing.T) {
 // This tests running a full scrape loop and checking that the scrape option
 // `native_histogram_min_bucket_factor` is used correctly.
 func TestNativeHistogramMaxSchemaSet(t *testing.T) {
+	t.Parallel()
 	testcases := map[string]struct {
 		minBucketFactor string
 		expectedSchema  int32
@@ -4662,6 +4731,7 @@ scrape_configs:
 }
 
 func TestTargetScrapeConfigWithLabels(t *testing.T) {
+	t.Parallel()
 	const (
 		configTimeout        = 1500 * time.Millisecond
 		expectedTimeout      = "1.5"
@@ -4810,6 +4880,7 @@ func TestTargetScrapeConfigWithLabels(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			select {
 			case <-run(t, c.cfg, c.targets):
 			case <-time.After(10 * time.Second):
