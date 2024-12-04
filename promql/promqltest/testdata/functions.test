@@ -494,7 +494,7 @@ load 5m
 	test_sgn{src="sgn-d"}	-50
 	test_sgn{src="sgn-e"}	0
 	test_sgn{src="sgn-f"}	100
-    test_sgn{src="sgn-histogram"} {{schema:1 sum:1 count:1}}
+	test_sgn{src="sgn-histogram"} {{schema:1 sum:1 count:1}}
 
 eval instant at 0m sgn(test_sgn)
 	{src="sgn-a"}	-1
@@ -1240,7 +1240,7 @@ clear
 load 5m
 	exp_root_log{l="x"} 10
 	exp_root_log{l="y"} 20
-    exp_root_log_h{l="z"} {{schema:1 sum:1 count:1}}
+	exp_root_log_h{l="z"} {{schema:1 sum:1 count:1}}
 
 eval instant at 1m exp(exp_root_log)
 	{l="x"} 22026.465794806718
