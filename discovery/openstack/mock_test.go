@@ -747,7 +747,6 @@ func (m *SDMock) HandleLoadBalancerListSuccessfully() {
 	})
 }
 
-
 const listenerListBody = `
 {
 	"listeners": [
