@@ -401,7 +401,7 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		if h.ingestCTZeroSample && len(ts.Samples) > 0 {
 			// CT only needs to be ingested for the first sample, it will be considered
 			// out of order for the rest.
-			ref, err = h.handleCTZeroSample(app, ref, ls, ts.Samples[0], ts.CreatedTimestamp, rs)
+			ref, err = h.handleCTZeroSample(app, ref, ls, ts.Samples[0], ts.CreatedTimestamp)
 			if err != nil {
 				h.logger.Debug("Error when appending CT in remote write request", "err", err, "series", ls.String(), "created_timestamp", ts.CreatedTimestamp, "timestamp", ts.Samples[0].Timestamp)
 			}
@@ -426,15 +426,15 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		}
 
 		// Native Histograms.
-		if h.ingestCTZeroSample && len(ts.Histograms) > 0 {
-			// CT only needs to be ingested for the first histogram, it will be considered
-			// out of order for the rest.
-			ref, err = h.handleHistogramZeroSample(app, ref, ls, ts.Histograms[0], ts.CreatedTimestamp, rs)
-			if err != nil {
-				h.logger.Debug("Error when appending CT in remote write request", "err", err, "series", ls.String(), "created_timestamp", ts.CreatedTimestamp, "timestamp", ts.Histograms[0].Timestamp)
-			}
-		}
 		for _, hp := range ts.Histograms {
+			if h.ingestCTZeroSample {
+				// Differently from samples, we need to handle CT for each histogram instead of just the first one.
+				// This is because histograms and float histograms are stored separately, even if they have the same labels.
+				ref, err = h.handleHistogramZeroSample(app, ref, ls, hp, ts.CreatedTimestamp)
+				if err != nil {
+					h.logger.Debug("Error when appending CT in remote write request", "err", err, "series", ls.String(), "created_timestamp", ts.CreatedTimestamp, "timestamp", hp.Timestamp)
+				}
+			}
 			if hp.IsFloatHistogram() {
 				ref, err = app.AppendHistogram(ref, ls, hp.Timestamp, nil, hp.ToFloatHistogram())
 			} else {
@@ -501,13 +501,10 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 
 // handleCTZeroSample appends CT as a zero-value sample with CT value as the sample timestamp.
 // It doens't return errors in case of out of order CT.
-func (h *writeHandler) handleCTZeroSample(app storage.Appender, ref storage.SeriesRef, l labels.Labels, sample writev2.Sample, ct int64, rs *WriteResponseStats) (storage.SeriesRef, error) {
+func (h *writeHandler) handleCTZeroSample(app storage.Appender, ref storage.SeriesRef, l labels.Labels, sample writev2.Sample, ct int64) (storage.SeriesRef, error) {
 	var err error
 	if sample.Timestamp != 0 && ct != 0 {
 		ref, err = app.AppendCTZeroSample(ref, l, sample.Timestamp, ct)
-		if err == nil {
-			rs.Samples++
-		}
 		if err != nil && errors.Is(err, storage.ErrOutOfOrderCT) {
 			// Even for the first sample OOO is a common scenario because
 			// we can't tell if a CT was already ingested in a previous request.
@@ -520,16 +517,13 @@ func (h *writeHandler) handleCTZeroSample(app storage.Appender, ref storage.Seri
 
 // handleHistogramZeroSample appends CT as a zero-value sample with CT value as the sample timestamp.
 // It doens't return errors in case of out of order CT.
-func (h *writeHandler) handleHistogramZeroSample(app storage.Appender, ref storage.SeriesRef, l labels.Labels, hist writev2.Histogram, ct int64, rs *WriteResponseStats) (storage.SeriesRef, error) {
+func (h *writeHandler) handleHistogramZeroSample(app storage.Appender, ref storage.SeriesRef, l labels.Labels, hist writev2.Histogram, ct int64) (storage.SeriesRef, error) {
 	var err error
 	if hist.Timestamp != 0 && ct != 0 {
 		if hist.IsFloatHistogram() {
 			ref, err = app.AppendHistogramCTZeroSample(ref, l, hist.Timestamp, ct, nil, hist.ToFloatHistogram())
 		} else {
 			ref, err = app.AppendHistogramCTZeroSample(ref, l, hist.Timestamp, ct, hist.ToIntHistogram(), nil)
-		}
-		if err == nil {
-			rs.Histograms++
 		}
 		if err != nil && errors.Is(err, storage.ErrOutOfOrderCT) {
 			// Even for the first sample OOO is a common scenario because

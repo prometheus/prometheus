@@ -482,11 +482,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 
 			// Double check mandatory 2.0 stats.
 			// writeV2RequestFixture has 2 series with 1 sample, 2 histograms, 1 exemplar each.
-			if tc.ingestCTZeroSample {
-				expectHeaderValue(t, 3, resp.Header.Get(rw20WrittenSamplesHeader))
-			} else {
-				expectHeaderValue(t, 2, resp.Header.Get(rw20WrittenSamplesHeader))
-			}
+			expectHeaderValue(t, 2, resp.Header.Get(rw20WrittenSamplesHeader))
 			expectHeaderValue(t, 4, resp.Header.Get(rw20WrittenHistogramsHeader))
 			if tc.appendExemplarErr != nil {
 				expectHeaderValue(t, 0, resp.Header.Get(rw20WrittenExemplarsHeader))
@@ -513,9 +509,17 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				for _, hp := range ts.Histograms {
 					if hp.IsFloatHistogram() {
 						fh := hp.ToFloatHistogram()
+						if ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
+							requireEqual(t, mockHistogram{ls, ts.CreatedTimestamp, nil, &histogram.FloatHistogram{}}, appendable.histograms[k])
+							k++
+						}
 						requireEqual(t, mockHistogram{ls, hp.Timestamp, nil, fh}, appendable.histograms[k])
 					} else {
 						h := hp.ToIntHistogram()
+						if ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
+							requireEqual(t, mockHistogram{ls, ts.CreatedTimestamp, &histogram.Histogram{}, nil}, appendable.histograms[k])
+							k++
+						}
 						requireEqual(t, mockHistogram{ls, hp.Timestamp, h, nil}, appendable.histograms[k])
 					}
 					k++
@@ -532,6 +536,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 					requireEqual(t, mockMetadata{ls, expectedMeta}, appendable.metadata[m])
 					m++
 				}
+
 			}
 		})
 	}
@@ -793,6 +798,7 @@ type mockAppendable struct {
 	latestExemplar  map[uint64]int64
 	exemplars       []mockExemplar
 	latestHistogram map[uint64]int64
+	latestFloatHist map[uint64]int64
 	histograms      []mockHistogram
 	metadata        []mockMetadata
 
@@ -845,6 +851,9 @@ func (m *mockAppendable) Appender(_ context.Context) storage.Appender {
 	}
 	if m.latestHistogram == nil {
 		m.latestHistogram = map[uint64]int64{}
+	}
+	if m.latestFloatHist == nil {
+		m.latestFloatHist = map[uint64]int64{}
 	}
 	if m.latestExemplar == nil {
 		m.latestExemplar = map[uint64]int64{}
@@ -919,7 +928,12 @@ func (m *mockAppendable) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t
 		return 0, m.appendHistogramErr
 	}
 
-	latestTs := m.latestHistogram[l.Hash()]
+	var latestTs int64
+	if h != nil {
+		latestTs = m.latestHistogram[l.Hash()]
+	} else {
+		latestTs = m.latestFloatHist[l.Hash()]
+	}
 	if t < latestTs {
 		return 0, storage.ErrOutOfOrderSample
 	}
@@ -934,15 +948,53 @@ func (m *mockAppendable) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t
 		return 0, tsdb.ErrInvalidSample
 	}
 
-	m.latestHistogram[l.Hash()] = t
+	if h != nil {
+		m.latestHistogram[l.Hash()] = t
+	} else {
+		m.latestFloatHist[l.Hash()] = t
+	}
 	m.histograms = append(m.histograms, mockHistogram{l, t, h, fh})
 	return 0, nil
 }
 
 func (m *mockAppendable) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	// AppendCTZeroSample is no-op for remote-write for now.
-	// TODO(bwplotka/arthursens): Add support for PRW 2.0 for CT zero feature (but also we might
-	// replace this with in-metadata CT storage, see https://github.com/prometheus/prometheus/issues/14218).
+	if m.appendCTZeroSampleErr != nil {
+		return 0, m.appendCTZeroSampleErr
+	}
+
+	// Created Timestamp can't be higher than the original sample's timestamp.
+	if ct > t {
+		return 0, storage.ErrOutOfOrderSample
+	}
+
+	var latestTs int64
+	if h != nil {
+		latestTs = m.latestHistogram[l.Hash()]
+	} else {
+		latestTs = m.latestFloatHist[l.Hash()]
+	}
+	if ct < latestTs {
+		return 0, storage.ErrOutOfOrderSample
+	}
+	if ct == latestTs {
+		return 0, storage.ErrDuplicateSampleForTimestamp
+	}
+
+	if l.IsEmpty() {
+		return 0, tsdb.ErrInvalidSample
+	}
+
+	if _, hasDuplicates := l.HasDuplicateLabelNames(); hasDuplicates {
+		return 0, tsdb.ErrInvalidSample
+	}
+
+	if h != nil {
+		m.latestHistogram[l.Hash()] = ct
+		m.histograms = append(m.histograms, mockHistogram{l, ct, &histogram.Histogram{}, nil})
+	} else {
+		m.latestFloatHist[l.Hash()] = ct
+		m.histograms = append(m.histograms, mockHistogram{l, ct, nil, &histogram.FloatHistogram{}})
+	}
 	return 0, nil
 }
 
