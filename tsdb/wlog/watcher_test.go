@@ -493,7 +493,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 
 	const segments = 1
 	const seriesCount = 20
-	const samplesCount = 300
+	const samplesCount = 350
 
 	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
 		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
@@ -569,8 +569,8 @@ func TestCheckpointSeriesReset(t *testing.T) {
 		compress CompressionType
 		segments int
 	}{
-		{compress: CompressionNone, segments: 14},
-		{compress: CompressionSnappy, segments: 13},
+		{compress: CompressionNone, segments: 15},
+		{compress: CompressionSnappy, segments: 14},
 	}
 
 	for _, tc := range testCases {

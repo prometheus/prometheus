@@ -183,6 +183,20 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	require.Equal(t, floatHistograms, decFloatHistograms)
 }
 
+func TestRecord_EncodeDecodeCT(t *testing.T) {
+	var enc Encoder
+	dec := NewDecoder(labels.NewSymbolTable())
+
+	samples := []RefSample{
+		{Ref: 0, T: 122, V: 123, CT: 12345},
+		{Ref: 0, T: 123, V: 123, CT: -12345},
+		{Ref: 0, T: 123, V: 123, CT: 0},
+	}
+	decSamples, err := dec.Samples(enc.Samples(samples, nil), nil)
+	require.NoError(t, err)
+	require.Equal(t, samples, decSamples)
+}
+
 // TestRecord_Corrupted ensures that corrupted records return the correct error.
 // Bugfix check for pull/521 and pull/523.
 func TestRecord_Corrupted(t *testing.T) {
