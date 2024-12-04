@@ -108,8 +108,16 @@ linters-settings:
   gofumpt:
     extra-rules: true
   perfsprint:
-     # Optimizes `fmt.Errorf`.
+    # Optimizes even if it requires an int or uint type cast.
+    int-conversion: true
+    # Optimizes into `err.Error()` even if it is only equivalent for non-nil errors.
+    err-error: true
+    # Optimizes `fmt.Errorf`.
     errorf: true
+    # Optimizes `fmt.Sprintf` with only one argument.
+    sprintf1: true
+    # Optimizes into strings concatenation.
+    strconcat: false
   revive:
     # By default, revive will enable only the linting rules that are named in the configuration file.
     # So, it's needed to explicitly enable all required rules here.

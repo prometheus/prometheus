@@ -58,7 +58,7 @@ func (e *AggregateExpr) Pretty(level int) string {
 	s += "(\n"
 
 	if e.Op.IsAggregatorWithParam() {
-		s += fmt.Sprintf("%s,\n", e.Param.Pretty(level+1))
+		s += e.Param.Pretty(level+1) + ",\n"
 	}
 	s += fmt.Sprintf("%s\n%s)", e.Expr.Pretty(level+1), indent(level))
 	return s
@@ -97,7 +97,7 @@ func (e Expressions) Pretty(level int) string {
 	// Do not prefix the indent since respective nodes will indent itself.
 	s := ""
 	for i := range e {
-		s += fmt.Sprintf("%s,\n", e[i].Pretty(level))
+		s += e[i].Pretty(level) + ",\n"
 	}
 	return s[:len(s)-2]
 }

@@ -38,7 +38,7 @@ const (
 	swarmLabel = model.MetaLabelPrefix + "dockerswarm_"
 )
 
-var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+var userAgent = "Prometheus/" + version.Version
 
 // DefaultDockerSwarmSDConfig is the default Docker Swarm SD configuration.
 var DefaultDockerSwarmSDConfig = DockerSwarmSDConfig{

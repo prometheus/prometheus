@@ -61,7 +61,7 @@ const (
 
 var (
 	// Http header.
-	userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+	userAgent = "Prometheus/" + version.Version
 	// DefaultSDConfig is the default Kubernetes SD configuration.
 	DefaultSDConfig = SDConfig{
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
