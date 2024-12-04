@@ -44,7 +44,7 @@ const (
 	openstackLabelLoadBalancerTags             = openstackLabelPrefix + "loadbalancer_tags"
 )
 
-// InstanceDiscovery discovers OpenStack instances.
+// LoadBalancerDiscovery discovers OpenStack load balancers.
 type LoadBalancerDiscovery struct {
 	provider     *gophercloud.ProviderClient
 	authOpts     *gophercloud.AuthOptions
@@ -53,7 +53,7 @@ type LoadBalancerDiscovery struct {
 	availability gophercloud.Availability
 }
 
-// NewInstanceDiscovery returns a new instance discovery.
+// NewLoadBalancerDiscovery returns a new loadbalancer discovery.
 func newLoadBalancerDiscovery(provider *gophercloud.ProviderClient, opts *gophercloud.AuthOptions,
 	region string, availability gophercloud.Availability, l *slog.Logger,
 ) *LoadBalancerDiscovery {
