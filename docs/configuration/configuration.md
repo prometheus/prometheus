@@ -1211,7 +1211,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_openstack_loadbalancer_status`: the status of the OpenStack load balancer.
 * `__meta_openstack_loadbalancer_tags`: comma separated list of the OpenStack load balancer.
 * `__meta_openstack_loadbalancer_vip`: the VIP of the OpenStack load balancer.
-* `__meta_openstack_project_id`: the project (tenant) owning this instance.
+* `__meta_openstack_project_id`: the project (tenant) owning this load balancer.
 
 See below for the configuration options for OpenStack discovery:
 
