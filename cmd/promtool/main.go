@@ -927,11 +927,11 @@ func checkDuplicates(groups []rulefmt.RuleGroup) []compareRuleType {
 	return duplicates
 }
 
-func ruleMetric(rule rulefmt.RuleNode) string {
-	if rule.Alert.Value != "" {
-		return rule.Alert.Value
+func ruleMetric(rule rulefmt.Rule) string {
+	if rule.Alert != "" {
+		return rule.Alert
 	}
-	return rule.Record.Value
+	return rule.Record
 }
 
 var checkMetricsUsage = strings.TrimSpace(`
