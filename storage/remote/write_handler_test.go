@@ -536,7 +536,6 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 					requireEqual(t, mockMetadata{ls, expectedMeta}, appendable.metadata[m])
 					m++
 				}
-
 			}
 		})
 	}
