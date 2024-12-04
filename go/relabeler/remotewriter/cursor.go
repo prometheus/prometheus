@@ -82,11 +82,28 @@ func (crw *CursorReadWriter) Write(segmentID *uint32, configCRC32 *uint32) error
 func (crw *CursorReadWriter) Close() error {
 	if crw.file != nil {
 		err := crw.file.Close()
-		if err != nil {
+		if err == nil {
 			crw.file = nil
 		}
 		return err
 	}
 
 	return nil
+}
+
+type acknowledger struct {
+	crw         *CursorReadWriter
+	configCRC32 uint32
+}
+
+func newAcknowledger(crw *CursorReadWriter, configCRC32 uint32) *acknowledger {
+	return &acknowledger{crw: crw, configCRC32: configCRC32}
+}
+
+func (a *acknowledger) Ack(segmentID uint32) error {
+	return a.crw.Write(&segmentID, &a.configCRC32)
+}
+
+func (a *acknowledger) Close() error {
+	return a.crw.Close()
 }

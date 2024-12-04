@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/prometheus/pp/go/relabeler/head/manager"
 	"github.com/prometheus/client_golang/prometheus"
 	config3 "github.com/prometheus/common/config"
+	model2 "github.com/prometheus/common/model"
 	config2 "github.com/prometheus/prometheus/config"
 	"github.com/stretchr/testify/require"
 	"os"
@@ -131,11 +132,11 @@ func (c *remoteClient) Endpoint() string {
 }
 
 type testWriter struct {
-	data []*cppbridge.DecodedRefSamples
+	data []*cppbridge.SnappyProtobufEncodedData
 }
 
-func (w *testWriter) Write(ctx context.Context, numberOfShards int, samples []*cppbridge.DecodedRefSamples) error {
-	w.data = append(w.data, samples...)
+func (w *testWriter) Write(ctx context.Context, protobuf *cppbridge.SnappyProtobufEncodedData) error {
+	w.data = append(w.data, protobuf)
 	return ctx.Err()
 }
 
@@ -172,12 +173,13 @@ func TestWriteLoopWrite(t *testing.T) {
 		model.NewLabelSetBuilder().Set("__name__", "test_metric_3").Build(),
 	}
 
+	ts := clock.Now().UnixMilli()
 	batches := [][]model.TimeSeries{
 		{
-			{LabelSet: labelSets[0], Timestamp: 0, Value: 0},
-			{LabelSet: labelSets[1], Timestamp: 0, Value: 1000},
-			{LabelSet: labelSets[2], Timestamp: 0, Value: 1000000},
-			{LabelSet: labelSets[3], Timestamp: 0, Value: 1000000000},
+			{LabelSet: labelSets[0], Timestamp: uint64(ts), Value: 0},
+			{LabelSet: labelSets[1], Timestamp: uint64(ts), Value: 1000},
+			{LabelSet: labelSets[2], Timestamp: uint64(ts), Value: 1000000},
+			{LabelSet: labelSets[3], Timestamp: uint64(ts), Value: 1000000000},
 		},
 	}
 
@@ -194,17 +196,21 @@ func TestWriteLoopWrite(t *testing.T) {
 			SendExemplars:        false,
 			SendNativeHistograms: false,
 			HTTPClientConfig:     config3.HTTPClientConfig{},
-			QueueConfig:          config2.QueueConfig{},
-			MetadataConfig:       config2.MetadataConfig{},
-			SigV4Config:          nil,
-			AzureADConfig:        nil,
+			QueueConfig: config2.QueueConfig{
+				MaxSamplesPerSend: 5,
+				SampleAgeLimit:    model2.Duration(time.Hour),
+			},
+			MetadataConfig: config2.MetadataConfig{},
+			SigV4Config:    nil,
+			AzureADConfig:  nil,
 		},
 	})
-	wl := newWriteLoop(destination, testHeads.Catalog)
-	ds, err := wl.nextDataSource(ctx)
-	require.NoError(t, err)
-	b := &batch{capacity: 3}
+
+	wl := newWriteLoop(destination, testHeads.Catalog, clock)
 	w := &testWriter{}
-	err = wl.iterate(ctx, ds, b, w)
+	i, err := wl.nextIterator(ctx, w)
+	require.NoError(t, err)
+
+	require.NoError(t, i.Next(ctx))
 	require.NoError(t, err)
 }

@@ -41,6 +41,9 @@ func (r *walReader) Read() (segment Segment, err error) {
 		if errors.Is(err, io.EOF) {
 			return segment, ErrNoData
 		}
+		if errors.Is(err, io.ErrUnexpectedEOF) {
+			return segment, ErrNoData
+		}
 		return segment, fmt.Errorf("failed to read segment: %w", err)
 	}
 

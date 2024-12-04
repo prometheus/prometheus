@@ -78,12 +78,12 @@ func newShard(
 	return s, nil
 }
 
-func (s *shard) Read(ctx context.Context, segmentID uint32) (*cppbridge.DecodedRefSamples, error) {
+func (s *shard) Read(ctx context.Context, targetSegmentID uint32, minTimestamp int64) (*DecodedSegment, error) {
 	if s.corrupted {
 		return nil, ErrShardIsCorrupted
 	}
 
-	if s.lastReadSegmentID != nil && *s.lastReadSegmentID >= segmentID {
+	if s.lastReadSegmentID != nil && *s.lastReadSegmentID >= targetSegmentID {
 		return nil, nil
 	}
 
@@ -97,14 +97,11 @@ func (s *shard) Read(ctx context.Context, segmentID uint32) (*cppbridge.DecodedR
 			if errors.Is(err, ErrNoData) || errors.Is(err, io.EOF) {
 				return nil, err
 			}
-			if errors.Is(err, io.ErrUnexpectedEOF) {
-				return nil, ErrNoData
-			}
 			s.corrupted = true
 			return nil, ErrShardIsCorrupted
 		}
 
-		samples, err := s.decoder.Decode(segment.Data())
+		decodedSegment, err := s.decoder.Decode(segment.Data(), minTimestamp)
 		if err != nil {
 			s.corrupted = true
 			return nil, errors.Join(err, ErrShardIsCorrupted)
@@ -114,14 +111,16 @@ func (s *shard) Read(ctx context.Context, segmentID uint32) (*cppbridge.DecodedR
 
 		if s.lastWrittenStateBySegmentID == nil || *s.lastWrittenStateBySegmentID < segment.ID {
 			if _, err = s.decoder.WriteTo(s.decoderStateFile); err != nil {
+				// todo: i che delat' to s oshibkoi???
 				logger.Errorf("failed to write decoder state: %w", err)
 			} else {
 				s.lastWrittenStateBySegmentID = &segment.ID
 			}
 		}
 
-		if segment.ID == segmentID {
-			return samples, nil
+		if segment.ID == targetSegmentID {
+			decodedSegment.ID = segment.ID
+			return decodedSegment, nil
 		}
 	}
 }
@@ -225,18 +224,13 @@ func (b *block) WriteCompletion() error {
 }
 
 type readShardResult struct {
-	segment *cppbridge.DecodedRefSamples
+	segment *DecodedSegment
 	err     error
 }
 
-type BlockReadResult struct {
-	SegmentID uint32
-	Samples   []*cppbridge.DecodedRefSamples
-}
-
-func (b *block) Read(ctx context.Context, segmentID uint32) ([]*cppbridge.DecodedRefSamples, error) {
+func (b *block) Read(ctx context.Context, segmentID uint32, minTimestamp int64) ([]*DecodedSegment, error) {
 	if b.completed {
-		return nil, io.EOF
+		return nil, ErrEndOfBlock
 	}
 
 	wg := &sync.WaitGroup{}
@@ -249,13 +243,13 @@ func (b *block) Read(ctx context.Context, segmentID uint32) ([]*cppbridge.Decode
 		wg.Add(1)
 		go func(index int) {
 			defer wg.Done()
-			segment, err := b.shards[index].Read(ctx, segmentID)
+			segment, err := b.shards[index].Read(ctx, segmentID, minTimestamp)
 			readShardResults[index] = readShardResult{segment: segment, err: err}
 		}(i)
 	}
 	wg.Wait()
 
-	segments := make([]*cppbridge.DecodedRefSamples, 0, len(b.shards))
+	segments := make([]*DecodedSegment, 0, len(b.shards))
 	errs := make([]error, 0, len(b.shards))
 	for _, result := range readShardResults {
 		if result.segment != nil {
@@ -315,6 +309,6 @@ func (b *block) LSSes() []*cppbridge.LabelSetStorage {
 	return lsses
 }
 
-func (b *block) NumberOfShards() int {
-	return len(b.shards)
+func (b *block) NumberOfShards() uint16 {
+	return uint16(len(b.shards))
 }

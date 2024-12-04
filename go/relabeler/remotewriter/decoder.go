@@ -26,21 +26,36 @@ func NewDecoder(
 	lss := cppbridge.NewLssStorage()
 	outputDecoder := cppbridge.NewWALOutputDecoder(labelsToCppBridgeLabels(externalLabels), relabeler, lss, shardID, encoderVersion)
 
-	d := &Decoder{
+	return &Decoder{
 		relabeler:     relabeler,
 		lss:           lss,
 		outputDecoder: outputDecoder,
-	}
-
-	return d, nil
+	}, nil
 }
 
 func labelsToCppBridgeLabels(labels labels.Labels) []cppbridge.Label {
-	return nil
+	result := make([]cppbridge.Label, 0, len(labels))
+	for _, label := range labels {
+		result = append(result, cppbridge.Label{
+			Name:  label.Name,
+			Value: label.Value,
+		})
+	}
+	return result
 }
 
-func (d *Decoder) Decode(segment []byte) (*cppbridge.DecodedRefSamples, error) {
-	return d.outputDecoder.Decode(segment)
+type DecodedSegment struct {
+	ID           uint32
+	Samples      *cppbridge.DecodedRefSamples
+	MaxTimestamp int64
+}
+
+func (d *Decoder) Decode(segment []byte, minTimestamp int64) (*DecodedSegment, error) {
+	samples, maxTimestamp, err := d.outputDecoder.Decode(segment, minTimestamp)
+	if err != nil {
+		return nil, err
+	}
+	return &DecodedSegment{Samples: samples, MaxTimestamp: maxTimestamp}, nil
 }
 
 func (d *Decoder) LoadFrom(reader io.Reader) error {

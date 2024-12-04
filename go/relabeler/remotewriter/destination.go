@@ -1,23 +1,29 @@
 package remotewriter
 
 import (
+	"bytes"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
+	"gopkg.in/yaml.v2"
+	"hash/crc32"
 )
 
 type DestinationConfig struct {
 	config.RemoteWriteConfig
-	ExternalLabels labels.Labels
+	ExternalLabels labels.Labels `yaml:"external_labels"`
 }
 
 func (c DestinationConfig) EqualTo(other DestinationConfig) bool {
-	// todo: implement me
-	return false
+	return c.ExternalLabels.Hash() == other.ExternalLabels.Hash() && remoteWriteConfigsAreEqual(c.RemoteWriteConfig, other.RemoteWriteConfig)
 }
 
 func (c DestinationConfig) CRC32() (uint32, error) {
-	// todo: implement me
-	return 0, nil
+	data, err := yaml.Marshal(c)
+	if err != nil {
+		return 0, err
+	}
+
+	return crc32.ChecksumIEEE(data), nil
 }
 
 type Destination struct {
@@ -35,4 +41,10 @@ func (d *Destination) ResetConfig(config DestinationConfig) {
 
 func NewDestination(config DestinationConfig) *Destination {
 	return &Destination{config: config}
+}
+
+func remoteWriteConfigsAreEqual(lrwc, rwrc config.RemoteWriteConfig) bool {
+	ldata, _ := yaml.Marshal(lrwc)
+	rdata, _ := yaml.Marshal(rwrc)
+	return bytes.Equal(ldata, rdata)
 }

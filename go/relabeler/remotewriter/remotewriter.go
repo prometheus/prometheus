@@ -3,6 +3,7 @@ package remotewriter
 import (
 	"context"
 	"fmt"
+	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head/catalog"
 	"os"
 	"strings"
@@ -13,19 +14,16 @@ type Catalog interface {
 	List(filterFn func(record catalog.Record) bool, sortLess func(lhs, rhs catalog.Record) bool) (records []catalog.Record, err error)
 }
 
-type destinationWriteLoop struct {
-	destination *Destination
-	writeLoop   *writeLoop
-}
-
 type RemoteWriter struct {
 	configQueue chan []DestinationConfig
 	catalog     Catalog
+	clock       clockwork.Clock
 }
 
-func New(catalog Catalog) *RemoteWriter {
+func New(catalog Catalog, clock clockwork.Clock) *RemoteWriter {
 	return &RemoteWriter{
 		catalog:     catalog,
+		clock:       clock,
 		configQueue: make(chan []DestinationConfig),
 	}
 }
@@ -49,31 +47,6 @@ func (rw *RemoteWriter) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case configs := <-rw.configQueue:
-			for _, config := range configs {
-				destination, ok := destinations[config.Name]
-				if !ok {
-					destination = NewDestination(config)
-					wl := newWriteLoop(destination, rw.catalog)
-					wlr := newWriteLoopRunner(wl)
-					writeLoopRunners[config.Name] = wlr
-					destinations[config.Name] = destination
-					go wlr.run(ctx)
-					continue
-				}
-
-				if config.EqualTo(destination.Config()) {
-					continue
-				}
-
-				wlr := writeLoopRunners[config.Name]
-				wlr.stop()
-				destination.ResetConfig(config)
-				wl := newWriteLoop(destination, rw.catalog)
-				wlr = newWriteLoopRunner(wl)
-				writeLoopRunners[config.Name] = wlr
-				go wlr.run(ctx)
-			}
-
 			destinationConfigs := make(map[string]DestinationConfig)
 			for _, destinationConfig := range configs {
 				destinationConfigs[destinationConfig.Name] = destinationConfig
@@ -89,6 +62,30 @@ func (rw *RemoteWriter) Run(ctx context.Context) error {
 				}
 			}
 
+			for _, config := range configs {
+				destination, ok := destinations[config.Name]
+				if !ok {
+					destination = NewDestination(config)
+					wl := newWriteLoop(destination, rw.catalog, rw.clock)
+					wlr := newWriteLoopRunner(wl)
+					writeLoopRunners[config.Name] = wlr
+					destinations[config.Name] = destination
+					go wlr.run(ctx)
+					continue
+				}
+
+				if config.EqualTo(destination.Config()) {
+					continue
+				}
+
+				wlr := writeLoopRunners[config.Name]
+				wlr.stop()
+				destination.ResetConfig(config)
+				wl := newWriteLoop(destination, rw.catalog, rw.clock)
+				wlr = newWriteLoopRunner(wl)
+				writeLoopRunners[config.Name] = wlr
+				go wlr.run(ctx)
+			}
 		case <-gcTicker.C:
 			if err := rw.gc(destinations); err != nil {
 				// todo: log?

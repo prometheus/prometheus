@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/prometheus/prometheus/pp/go/cppbridge"
+	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head/catalog"
 	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 	"github.com/prometheus/prometheus/storage/remote"
@@ -13,15 +13,19 @@ import (
 	"time"
 )
 
+const defaultDelay = time.Second * 5
+
 type writeLoop struct {
 	destination *Destination
 	catalog     Catalog
+	clock       clockwork.Clock
 }
 
-func newWriteLoop(destination *Destination, catalog Catalog) *writeLoop {
+func newWriteLoop(destination *Destination, catalog Catalog, clock clockwork.Clock) *writeLoop {
 	return &writeLoop{
 		destination: destination,
 		catalog:     catalog,
+		clock:       clock,
 	}
 }
 
@@ -29,11 +33,11 @@ func (wl *writeLoop) run(ctx context.Context) {
 	var delay time.Duration
 	var err error
 	var client remote.WriteClient
-	var ds *dataSource
+	var i *Iterator
 
 	defer func() {
-		if ds != nil {
-			_ = ds.Close()
+		if i != nil {
+			_ = i.Close()
 		}
 	}()
 
@@ -41,7 +45,7 @@ func (wl *writeLoop) run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(delay):
+		case <-wl.clock.After(delay):
 			delay = 0
 		}
 
@@ -49,39 +53,39 @@ func (wl *writeLoop) run(ctx context.Context) {
 			client, err = createClient(wl.destination.Config())
 			if err != nil {
 				logger.Errorf("failed to create client: %w", err)
-				delay = time.Second * 5
+				delay = defaultDelay
 				continue
 			}
 		}
 
-		if ds == nil {
-			ds, err = wl.nextDataSource(ctx)
+		if i == nil {
+			i, err = wl.nextIterator(ctx, newWriter(client))
 			if err != nil {
 				logger.Errorf("failed to get next data source: %w", err)
-				delay = time.Second * 5
+				delay = defaultDelay
 				continue
 			}
 		}
 
-		if err = wl.write(ctx, ds, client); err != nil {
+		if err = wl.write(ctx, i); err != nil {
 			logger.Errorf("failed to write data source: %w", err)
-			delay = time.Second * 5
+			delay = defaultDelay
 			continue
 		}
 
-		if err = ds.Close(); err != nil {
+		if err = i.Close(); err != nil {
 			logger.Errorf("failed to close data source: %w", err)
-			delay = time.Second * 5
+			delay = defaultDelay
 			continue
 		}
 
-		if err = ds.WriteCompletion(); err != nil {
+		if err = i.WriteCompletion(); err != nil {
 			logger.Errorf("failed to write data source completion: %w", err)
-			delay = time.Second * 5
+			delay = defaultDelay
 			continue
 		}
 
-		ds = nil
+		i = nil
 	}
 }
 
@@ -104,108 +108,32 @@ func createClient(config DestinationConfig) (client remote.WriteClient, err erro
 	return client, nil
 }
 
-func (wl *writeLoop) write(ctx context.Context, ds *dataSource, client remote.WriteClient) error {
+func (wl *writeLoop) write(ctx context.Context, iterator *Iterator) error {
 	var err error
 	var delay time.Duration
-
-	// todo: make scaler
-	b := &batch{capacity: wl.destination.Config().QueueConfig.MaxSamplesPerSend * ds.NumberOfShards()}
 
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(delay):
+		case <-wl.clock.After(delay):
 			delay = 0
 		}
 
-		if err = wl.iterate(ctx, ds, b, newWriter(client, cppbridge.NewWALProtobufEncoder(ds.LSSes()))); err != nil {
+		err = iterator.Next(ctx)
+		if err != nil {
 			if errors.Is(err, ErrEndOfBlock) {
 				return nil
 			}
-			if errors.Is(err, ErrNoData) {
-				delay = time.Second * 5
-				continue
-			}
-			if errors.Is(err, ErrBlockIsCorrupted) {
-				return err
-			}
 
 			logger.Errorf("iteration failed: %w", err)
-			delay = time.Second * 5
+			delay = defaultDelay
 			continue
 		}
 	}
 }
 
-type Writer interface {
-	Write(ctx context.Context, numberOfShards int, samples []*cppbridge.DecodedRefSamples) error
-}
-
-func (wl *writeLoop) iterate(ctx context.Context, ds *dataSource, b *batch, w Writer) error {
-	var delay time.Duration
-	var endOfBlockReached bool
-
-	var targetSegmentID uint32
-	if ds.lastAcknowledgedSegmentID != nil {
-		targetSegmentID = *ds.lastAcknowledgedSegmentID + 1
-	}
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(delay):
-			delay = 0
-		}
-
-		if b.HasDataToSend() {
-			data, segmentID := b.DataToSend()
-			if err := w.Write(ctx, ds.NumberOfShards(), data); err != nil {
-				return fmt.Errorf("write failed: %w", err)
-			}
-			if err := ds.Ack(segmentID); err != nil {
-				return fmt.Errorf("failed to ack: %w", err)
-			}
-			b.Reset()
-			return nil
-		} else {
-			if endOfBlockReached {
-				return ErrEndOfBlock
-			}
-		}
-
-		if !endOfBlockReached {
-			samples, err := ds.Read(ctx, targetSegmentID)
-			if err != nil {
-				if errors.Is(err, ErrPartialReadResult) {
-					if len(samples) > 0 {
-						b.Add(targetSegmentID, samples)
-					}
-					delay = time.Second * 5
-					continue
-				}
-				if errors.Is(err, ErrEmptyReadResult) {
-					delay = time.Second * 5
-					continue
-				}
-				if errors.Is(err, ErrEndOfBlock) {
-					endOfBlockReached = true
-					continue
-				}
-
-				logger.Errorf("unexpected block read error: %w", err)
-				delay = time.Second * 5
-				continue
-			}
-
-			b.Add(targetSegmentID, samples)
-			targetSegmentID++
-		}
-	}
-}
-
-func (wl *writeLoop) nextDataSource(ctx context.Context) (*dataSource, error) {
+func (wl *writeLoop) nextIterator(ctx context.Context, writer Writer) (*Iterator, error) {
 	var nextHeadRecord catalog.Record
 	var err error
 	if wl.destination.HeadID != nil {
@@ -248,12 +176,7 @@ func (wl *writeLoop) nextDataSource(ctx context.Context) (*dataSource, error) {
 
 	b.ID = nextHeadRecord.ID
 
-	return &dataSource{
-		block:                     b,
-		crw:                       crw,
-		lastAcknowledgedSegmentID: cursor.SegmentID,
-		configCRC32:               crc32,
-	}, nil
+	return newIterator(wl.clock, wl.destination.Config().QueueConfig, b, writer, newAcknowledger(crw, crc32), cursor.SegmentID), nil
 }
 
 func nextHead(ctx context.Context, headCatalog Catalog, headID string) (catalog.Record, error) {
@@ -344,57 +267,6 @@ func scanHeadForDestination(headRecord catalog.Record, destinationName string) (
 	return false, nil
 }
 
-//	type batch struct {
-//		limit    int
-//		segments []SegmentedDecodedRefSamples
-//	}
-//
-//	func (b *batch) Add(segmentID uint32, shardedData []*cppbridge.DecodedRefSamples) {
-//		b.segments = append(b.segments, SegmentedDecodedRefSamples{
-//			SegmentID:   segmentID,
-//			ShardedData: shardedData,
-//		})
-//	}
-//
-//	func (b *batch) Size() (size int) {
-//		for _, segment := range b.segments {
-//			for _, samples := range segment.ShardedData {
-//				size += samples.Size()
-//			}
-//		}
-//		return size
-//	}
-//
-//	func (b *batch) DataToSend() ([]*cppbridge.DecodedRefSamples, uint32) {
-//		var data []*cppbridge.DecodedRefSamples
-//		var lastSegmentID uint32
-//		var numberOfSamples int
-//		for index, segment := range b.segments {
-//			var nextSegmentSize int
-//			if index < len(b.segments)-1 {
-//				nextSegmentSize = func(segment SegmentedDecodedRefSamples) int {
-//					size := 0
-//					for _, samples := range segment.ShardedData {
-//						size += samples.Size()
-//					}
-//					return size
-//				}(segment)
-//			}
-//
-//			if index != 0 && numberOfSamples+nextSegmentSize > b.limit {
-//				return data, lastSegmentID
-//			}
-//
-//			for _, samples := range segment.ShardedData {
-//				numberOfSamples += samples.Size()
-//				data = append(data, samples)
-//			}
-//
-//			lastSegmentID = segment.SegmentID
-//		}
-//
-//		return data, lastSegmentID
-//	}
 func contextErr(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
@@ -403,24 +275,3 @@ func contextErr(ctx context.Context) error {
 		return nil
 	}
 }
-
-//
-//type RetryableError struct {
-//	err error
-//}
-//
-//func IsRetryableError(err error) bool {
-//	return errors.As(err, &RetryableError{})
-//}
-//
-//func NewRetryableError(err error) RetryableError {
-//	return RetryableError{err: err}
-//}
-//
-//func (e RetryableError) Error() string {
-//	return e.err.Error()
-//}
-//
-//func (e RetryableError) Cause() error {
-//	return e.err
-//}
