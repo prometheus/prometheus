@@ -2130,7 +2130,8 @@ The following meta labels are available on targets during [relabeling](#relabel_
 [ namespace: <string> | default = default ]
 [ refresh_interval: <duration> | default = 60s ]
 [ region: <string> | default = global ]
-[ server: <host> ]
+# The URL to connect to the API.
+[ server: <string> ]
 [ tag_separator: <string> | default = ,]
 
 # HTTP client settings, including authentication methods (such as basic auth and
