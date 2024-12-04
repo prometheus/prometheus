@@ -16,16 +16,21 @@ package promql
 import (
 	"context"
 	"os"
+	"path"
 	"path/filepath"
 	"testing"
 
 	"github.com/grafana/regexp"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 )
 
 func TestQueryLogging(t *testing.T) {
 	fileAsBytes := make([]byte, 4096)
+	isRunning := &atomic.Bool{}
+	isRunning.Store(true)
 	queryLogger := ActiveQueryTracker{
+		isRunning:    isRunning,
 		mmappedFile:  fileAsBytes,
 		logger:       nil,
 		getNextIndex: make(chan int, 4),
@@ -69,7 +74,10 @@ func TestQueryLogging(t *testing.T) {
 
 func TestIndexReuse(t *testing.T) {
 	queryBytes := make([]byte, 1+3*entrySize)
+	isRunning := &atomic.Bool{}
+	isRunning.Store(true)
 	queryLogger := ActiveQueryTracker{
+		isRunning:    isRunning,
 		mmappedFile:  queryBytes,
 		logger:       nil,
 		getNextIndex: make(chan int, 3),
@@ -161,5 +169,67 @@ func TestParseBrokenJSON(t *testing.T) {
 				require.Equal(t, tc.out, out)
 			}
 		})
+	}
+}
+
+// Closing ActiveQueryTracker instance shouldn't cause panic if the engine still tries to log queries.
+func TestActiveQueryTrackerClose(t *testing.T) {
+	dir := t.TempDir()
+
+	maxConcurrent := 10
+	fileAsBytes, closer, err := getMMappedFile(path.Join(dir, "queries.active"), 1+maxConcurrent*entrySize, nil)
+	require.NoError(t, err)
+
+	isRunning := &atomic.Bool{}
+	isRunning.Store(true)
+
+	queryLogger := ActiveQueryTracker{
+		isRunning:     isRunning,
+		maxConcurrent: maxConcurrent,
+		mmappedFile:   fileAsBytes,
+		closer:        closer,
+		logger:        nil,
+		getNextIndex:  make(chan int, 4),
+	}
+
+	queryLogger.generateIndices(4)
+	veryLongString := "MassiveQueryThatNeverEndsAndExceedsTwoHundredBytesWhichIsTheSizeOfEntrySizeAndShouldThusBeTruncatedAndIamJustGoingToRepeatTheSameCharactersAgainProbablyBecauseWeAreStillOnlyHalfWayDoneOrMaybeNotOrMaybeMassiveQueryThatNeverEndsAndExceedsTwoHundredBytesWhichIsTheSizeOfEntrySizeAndShouldThusBeTruncatedAndIamJustGoingToRepeatTheSameCharactersAgainProbablyBecauseWeAreStillOnlyHalfWayDoneOrMaybeNotOrMaybeMassiveQueryThatNeverEndsAndExceedsTwoHundredBytesWhichIsTheSizeOfEntrySizeAndShouldThusBeTruncatedAndIamJustGoingToRepeatTheSameCharactersAgainProbablyBecauseWeAreStillOnlyHalfWayDoneOrMaybeNotOrMaybeMassiveQueryThatNeverEndsAndExceedsTwoHundredBytesWhichIsTheSizeOfEntrySizeAndShouldThusBeTruncatedAndIamJustGoingToRepeatTheSameCharactersAgainProbablyBecauseWeAreStillOnlyHalfWayDoneOrMaybeNotOrMaybeMassiveQueryThatNeverEndsAndExceedsTwoHundredBytesWhichIsTheSizeOfEntrySizeAndShouldThusBeTruncatedAndIamJustGoingToRepeatTheSameCharactersAgainProbablyBecauseWeAreStillOnlyHalfWayDoneOrMaybeNotOrMaybe"
+	queries := []string{
+		"TestQuery",
+		veryLongString,
+		"",
+		"SpecialCharQuery{host=\"2132132\", id=123123}",
+	}
+
+	want := []string{
+		`^{"query":"TestQuery","timestamp_sec":\d+}\x00*,$`,
+		`^{"query":"` + trimStringByBytes(veryLongString, entrySize-40) + `","timestamp_sec":\d+}\x00*,$`,
+		`^{"query":"","timestamp_sec":\d+}\x00*,$`,
+		`^{"query":"SpecialCharQuery{host=\\"2132132\\", id=123123}","timestamp_sec":\d+}\x00*,$`,
+	}
+
+	// Check for inserts of queries.
+	for i := 0; i < 4; i++ {
+		start := 1 + i*entrySize
+		end := start + entrySize
+
+		queryLogger.Insert(context.Background(), queries[i])
+
+		have := string(fileAsBytes[start:end])
+		require.True(t, regexp.MustCompile(want[i]).MatchString(have),
+			"Query not written correctly: %s", queries[i])
+	}
+
+	// Delete first 2 queries
+	for i := 0; i < 2; i++ {
+		queryLogger.Delete(1 + i*entrySize)
+	}
+
+	// Close the query logger
+	require.NoError(t, queryLogger.Close())
+
+	// Try to delete last 2 queries
+	for i := 2; i < 4; i++ {
+		queryLogger.Delete(1 + i*entrySize)
 	}
 }

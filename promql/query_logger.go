@@ -27,9 +27,11 @@ import (
 	"unicode/utf8"
 
 	"github.com/edsrzf/mmap-go"
+	"go.uber.org/atomic"
 )
 
 type ActiveQueryTracker struct {
+	isRunning     *atomic.Bool
 	mmappedFile   []byte
 	getNextIndex  chan int
 	logger        *slog.Logger
@@ -145,8 +147,12 @@ func NewActiveQueryTracker(localStoragePath string, maxConcurrent int, logger *s
 		panic("Unable to create mmap-ed active query log")
 	}
 
+	isRunning := &atomic.Bool{}
+	isRunning.Store(true)
+
 	copy(fileAsBytes, "[")
 	activeQueryTracker := ActiveQueryTracker{
+		isRunning:     isRunning,
 		mmappedFile:   fileAsBytes,
 		closer:        closer,
 		getNextIndex:  make(chan int, maxConcurrent),
@@ -205,11 +211,17 @@ func (tracker ActiveQueryTracker) GetMaxConcurrent() int {
 }
 
 func (tracker ActiveQueryTracker) Delete(insertIndex int) {
+	if !tracker.isRunning.Load() {
+		return
+	}
 	copy(tracker.mmappedFile[insertIndex:], strings.Repeat("\x00", entrySize))
 	tracker.getNextIndex <- insertIndex
 }
 
 func (tracker ActiveQueryTracker) Insert(ctx context.Context, query string) (int, error) {
+	if !tracker.isRunning.Load() {
+		return 0, errors.New("ActiveQueryTracker is stopped")
+	}
 	select {
 	case i := <-tracker.getNextIndex:
 		fileBytes := tracker.mmappedFile
@@ -229,6 +241,7 @@ func (tracker *ActiveQueryTracker) Close() error {
 	if tracker == nil || tracker.closer == nil {
 		return nil
 	}
+	tracker.isRunning.Store(false)
 	if err := tracker.closer.Close(); err != nil {
 		return fmt.Errorf("close ActiveQueryTracker.closer: %w", err)
 	}
