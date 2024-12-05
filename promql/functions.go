@@ -395,6 +395,12 @@ func funcDoubleExponentialSmoothing(vals []parser.Value, args parser.Expressions
 	return append(enh.Out, Sample{F: s1}), nil
 }
 
+// funcHoltWinters is the alias with a deprecation warning
+func funcHoltWinters(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	log.Warn("holt_winters is deprecated and will be removed in Prometheus v3. Please use double_exponential_smoothing instead.")
+	return funcDoubleExponentialSmoothing(vals, args, enh)
+}
+
 // === sort(node parser.ValueTypeVector) (Vector, Annotations) ===
 func funcSort(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	// NaN should sort to the bottom, so take descending sort with NaN first and
@@ -1700,6 +1706,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"histogram_stddev":             funcHistogramStdDev,
 	"histogram_stdvar":             funcHistogramStdVar,
 	"double_exponential_smoothing": funcDoubleExponentialSmoothing,
+	"holt_winters":                 funcDoubleExponentialSmoothing,
 	"hour":                         funcHour,
 	"idelta":                       funcIdelta,
 	"increase":                     funcIncrease,
