@@ -59,6 +59,8 @@ const (
 	instanceRegionLabel            = instanceLabelPrefix + "region"
 )
 
+var userAgent = version.PrometheusUserAgent()
+
 type instanceDiscovery struct {
 	*refresh.Discovery
 	client     *scw.Client
@@ -104,7 +106,7 @@ func newInstanceDiscovery(conf *SDConfig) (*instanceDiscovery, error) {
 			Transport: rt,
 			Timeout:   time.Duration(conf.RefreshInterval),
 		}),
-		scw.WithUserAgent(fmt.Sprintf("Prometheus/%s", version.Version)),
+		scw.WithUserAgent(userAgent),
 		scw.WithProfile(profile),
 	)
 	if err != nil {
