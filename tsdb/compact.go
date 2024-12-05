@@ -85,6 +85,7 @@ type LeveledCompactor struct {
 	chunkPool                   chunkenc.Pool
 	ctx                         context.Context
 	maxBlockChunkSegmentSize    int64
+	useDirectIO                 bool
 	mergeFunc                   storage.VerticalChunkSeriesMergeFunc
 	postingsEncoder             index.PostingsEncoder
 	postingsDecoderFactory      PostingsDecoderFactory
@@ -169,6 +170,8 @@ type LeveledCompactorOptions struct {
 	// EnableOverlappingCompaction enables compaction of overlapping blocks. In Prometheus it is always enabled.
 	// It is useful for downstream projects like Mimir, Cortex, Thanos where they have a separate component that does compaction.
 	EnableOverlappingCompaction bool
+	// UseDirectIO XXX
+	UseDirectIO bool
 }
 
 type PostingsDecoderFactory func(meta *BlockMeta) index.PostingsDecoder
@@ -221,6 +224,7 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 		metrics:                     NewCompactorMetrics(r),
 		ctx:                         ctx,
 		maxBlockChunkSegmentSize:    maxBlockChunkSegmentSize,
+		useDirectIO:                 opts.UseDirectIO,
 		mergeFunc:                   mergeFunc,
 		postingsEncoder:             pe,
 		postingsDecoderFactory:      opts.PD,
@@ -646,7 +650,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 	// data of all blocks.
 	var chunkw ChunkWriter
 
-	chunkw, err = chunks.NewWriterWithSegSize(chunkDir(tmp), c.maxBlockChunkSegmentSize)
+	chunkw, err = chunks.NewWriter(chunkDir(tmp), chunks.WithSegmentSize(c.maxBlockChunkSegmentSize), chunks.WithDirectIO(c.useDirectIO))
 	if err != nil {
 		return fmt.Errorf("open chunk writer: %w", err)
 	}
