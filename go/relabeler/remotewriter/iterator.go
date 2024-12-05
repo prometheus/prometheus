@@ -45,8 +45,10 @@ type Iterator struct {
 
 	decodedSegments []*DecodedSegment
 
-	message      *Message
-	writeResultc chan struct{}
+	message *Message
+
+	readTimeout            time.Duration
+	lastIterationStartedAt *time.Time
 }
 
 type Message struct {
@@ -59,7 +61,7 @@ func (m *Message) IsObsoleted(minTimestamp int64) bool {
 	return m.MaxTimestamp < minTimestamp
 }
 
-func newIterator(clock clockwork.Clock, queueConfig config.QueueConfig, blockReader BlockReader, writer Writer, acknowledger Acknowledger, lastAcknowledgedSegmentID *uint32) *Iterator {
+func newIterator(clock clockwork.Clock, queueConfig config.QueueConfig, blockReader BlockReader, writer Writer, acknowledger Acknowledger, lastAcknowledgedSegmentID *uint32, readTimeout time.Duration) *Iterator {
 	var targetSegmentID uint32 = 0
 	if lastAcknowledgedSegmentID != nil {
 		targetSegmentID = *lastAcknowledgedSegmentID + 1
@@ -71,6 +73,7 @@ func newIterator(clock clockwork.Clock, queueConfig config.QueueConfig, blockRea
 		writer:          writer,
 		acknowledger:    acknowledger,
 		targetSegmentID: targetSegmentID,
+		readTimeout:     readTimeout,
 	}
 }
 
@@ -84,7 +87,7 @@ func (i *Iterator) Next(ctx context.Context) error {
 		return i.writeMessage(ctx)
 	}
 
-	if i.hasDataToSend() {
+	if i.dataSize() > 0 {
 		return i.writeData(ctx)
 	}
 
@@ -101,7 +104,7 @@ func (i *Iterator) read(ctx context.Context) (bool, error) {
 	}
 
 	var delay time.Duration = 0
-	deadline := i.clock.NewTimer(time.Second * 30)
+	deadline := i.clock.NewTimer(i.readTimeout)
 	defer func() {
 		deadline.Stop()
 	}()
@@ -168,6 +171,7 @@ func (i *Iterator) writeMessage(ctx context.Context) error {
 	for shardID, encodedProtobuf := range i.message.EncodedProtobuf {
 		wg.Add(1)
 		go func(shardID int, encodedProtobuf *cppbridge.SnappyProtobufEncodedData) {
+			defer wg.Done()
 			errs[shardID] = i.writer.Write(ctx, encodedProtobuf)
 		}(shardID, encodedProtobuf)
 	}
@@ -232,6 +236,7 @@ func (i *Iterator) writeData(ctx context.Context) error {
 		MaxTimestamp:    maxTimestamp,
 		EncodedProtobuf: encodedProtobuf,
 	}
+	i.decodedSegments = nil
 
 	return i.writeMessage(ctx)
 }
@@ -283,10 +288,19 @@ func (i *Iterator) hasDataToSend() bool {
 	return i.message != nil || i.dataSize() >= int(i.blockReader.NumberOfShards())*i.queueConfig.MaxSamplesPerSend
 }
 
-func (i *Iterator) Close() error {
-	return errors.Join(i.blockReader.Close(), i.acknowledger.Close())
+func (i *Iterator) getIterationDeadline() time.Time {
+	if i.lastIterationStartedAt == nil {
+		now := i.clock.Now()
+		i.lastIterationStartedAt = &now
+		return now.Add(i.readTimeout)
+	}
+
+	deadline := (*i.lastIterationStartedAt).Add(i.readTimeout * time.Duration(2))
+	currentStartTime := (*i.lastIterationStartedAt).Add(i.readTimeout)
+	i.lastIterationStartedAt = &currentStartTime
+	return deadline
 }
 
-func (i *Iterator) WriteCompletion() error {
-	return nil
+func (i *Iterator) Close() error {
+	return errors.Join(i.blockReader.Close(), i.acknowledger.Close())
 }

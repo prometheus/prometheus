@@ -14,7 +14,7 @@ const (
 )
 
 type Encoder interface {
-	Encode(writer io.Writer, r Record) error
+	Encode(writer io.Writer, r *Record) error
 }
 
 type Decoder interface {
@@ -60,7 +60,7 @@ func NewFileLog(fileName string, encoder Encoder, decoder Decoder) (l *FileLog, 
 	}, nil
 }
 
-func (l *FileLog) Write(r Record) error {
+func (l *FileLog) Write(r *Record) error {
 	if err := l.encoder.Encode(l.file, r); err != nil {
 		return fmt.Errorf("failed encode record: %w", err)
 	}
@@ -68,7 +68,7 @@ func (l *FileLog) Write(r Record) error {
 	return nil
 }
 
-func (l *FileLog) ReWrite(records ...Record) error {
+func (l *FileLog) ReWrite(records ...*Record) error {
 	buffer := bytes.NewBuffer(nil)
 	version := LogFileVersion
 	if err := binary.Write(buffer, binary.LittleEndian, version); err != nil {

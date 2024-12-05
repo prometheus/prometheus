@@ -174,6 +174,7 @@ func TestWriteLoopWrite(t *testing.T) {
 	}
 
 	ts := clock.Now().UnixMilli()
+	t.Log(ts)
 	batches := [][]model.TimeSeries{
 		{
 			{LabelSet: labelSets[0], Timestamp: uint64(ts), Value: 0},
@@ -197,7 +198,7 @@ func TestWriteLoopWrite(t *testing.T) {
 			SendNativeHistograms: false,
 			HTTPClientConfig:     config3.HTTPClientConfig{},
 			QueueConfig: config2.QueueConfig{
-				MaxSamplesPerSend: 5,
+				MaxSamplesPerSend: 2,
 				SampleAgeLimit:    model2.Duration(time.Hour),
 			},
 			MetadataConfig: config2.MetadataConfig{},
@@ -213,4 +214,8 @@ func TestWriteLoopWrite(t *testing.T) {
 
 	require.NoError(t, i.Next(ctx))
 	require.NoError(t, err)
+
+	require.NoError(t, testHeads.Rotate())
+
+	require.ErrorIs(t, i.Next(ctx), ErrEndOfBlock)
 }

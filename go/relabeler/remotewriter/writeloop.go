@@ -79,12 +79,6 @@ func (wl *writeLoop) run(ctx context.Context) {
 			continue
 		}
 
-		if err = i.WriteCompletion(); err != nil {
-			logger.Errorf("failed to write data source completion: %w", err)
-			delay = defaultDelay
-			continue
-		}
-
 		i = nil
 	}
 }
@@ -134,7 +128,7 @@ func (wl *writeLoop) write(ctx context.Context, iterator *Iterator) error {
 }
 
 func (wl *writeLoop) nextIterator(ctx context.Context, writer Writer) (*Iterator, error) {
-	var nextHeadRecord catalog.Record
+	var nextHeadRecord *catalog.Record
 	var err error
 	if wl.destination.HeadID != nil {
 		nextHeadRecord, err = nextHead(ctx, wl.catalog, *wl.destination.HeadID)
@@ -145,7 +139,7 @@ func (wl *writeLoop) nextIterator(ctx context.Context, writer Writer) (*Iterator
 		return nil, fmt.Errorf("failed to find next head: %w", err)
 	}
 
-	crw, err := NewCursorReadWriter(filepath.Join(nextHeadRecord.Dir, fmt.Sprintf("%s.cursor", wl.destination.Config().Name)))
+	crw, err := NewCursorReadWriter(filepath.Join(nextHeadRecord.Dir(), fmt.Sprintf("%s.cursor", wl.destination.Config().Name)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cursor: %w", err)
 	}
@@ -169,39 +163,52 @@ func (wl *writeLoop) nextIterator(ctx context.Context, writer Writer) (*Iterator
 		discardCache = *cursor.ConfigCRC32 != crc32
 	}
 
-	b, err := newBlock(nextHeadRecord.Dir, nextHeadRecord.NumberOfShards, wl.destination.Config(), cursor.SegmentID, discardCache)
+	b, err := newBlock(nextHeadRecord.Dir(), nextHeadRecord.NumberOfShards(), wl.destination.Config(), cursor.SegmentID, discardCache, wl.makeCorruptMarker(), nextHeadRecord)
 	if err != nil {
 		return nil, errors.Join(fmt.Errorf("failed to create data source: %w", err), crw.Close())
 	}
 
-	b.ID = nextHeadRecord.ID
+	b.ID = nextHeadRecord.ID()
 
-	return newIterator(wl.clock, wl.destination.Config().QueueConfig, b, writer, newAcknowledger(crw, crc32), cursor.SegmentID), nil
+	return newIterator(wl.clock, wl.destination.Config().QueueConfig, b, writer, newAcknowledger(crw, crc32), cursor.SegmentID, time.Second*30), nil
 }
 
-func nextHead(ctx context.Context, headCatalog Catalog, headID string) (catalog.Record, error) {
+type CorruptMarkerFn func(headID string) error
+
+func (fn CorruptMarkerFn) MarkCorrupted(headID string) error {
+	return fn(headID)
+}
+
+func (wl *writeLoop) makeCorruptMarker() CorruptMarker {
+	return CorruptMarkerFn(func(headID string) error {
+		_, err := wl.catalog.SetStatus(headID, catalog.StatusCorrupted)
+		return err
+	})
+}
+
+func nextHead(ctx context.Context, headCatalog Catalog, headID string) (*catalog.Record, error) {
 	if err := contextErr(ctx); err != nil {
-		return catalog.Record{}, err
+		return nil, err
 	}
 
 	headRecords, err := headCatalog.List(
 		nil,
-		func(lhs, rhs catalog.Record) bool {
-			return lhs.CreatedAt < rhs.CreatedAt
+		func(lhs, rhs *catalog.Record) bool {
+			return lhs.CreatedAt() < rhs.CreatedAt()
 		},
 	)
 	if err != nil {
-		return catalog.Record{}, fmt.Errorf("failed to list head records: %w", err)
+		return nil, fmt.Errorf("failed to list head records: %w", err)
 	}
 
 	if len(headRecords) == 0 {
-		return catalog.Record{}, fmt.Errorf("no new heads")
+		return nil, fmt.Errorf("no new heads")
 	}
 
 	for index, headRecord := range headRecords {
-		if headRecord.ID == headID {
+		if headRecord.ID() == headID {
 			if index == len(headRecords)-1 {
-				return catalog.Record{}, fmt.Errorf("no new heads")
+				return nil, fmt.Errorf("no new heads")
 			}
 
 			return headRecords[index+1], nil
@@ -212,23 +219,23 @@ func nextHead(ctx context.Context, headCatalog Catalog, headID string) (catalog.
 	return headRecords[len(headRecords)-1], nil
 }
 
-func scanForNextHead(ctx context.Context, headCatalog Catalog, destinationName string) (catalog.Record, error) {
+func scanForNextHead(ctx context.Context, headCatalog Catalog, destinationName string) (*catalog.Record, error) {
 	if err := contextErr(ctx); err != nil {
-		return catalog.Record{}, err
+		return nil, err
 	}
 
 	headRecords, err := headCatalog.List(
 		nil,
-		func(lhs, rhs catalog.Record) bool {
-			return lhs.CreatedAt > rhs.CreatedAt
+		func(lhs, rhs *catalog.Record) bool {
+			return lhs.CreatedAt() > rhs.CreatedAt()
 		},
 	)
 	if err != nil {
-		return catalog.Record{}, fmt.Errorf("failed to list head records: %w", err)
+		return nil, fmt.Errorf("failed to list head records: %w", err)
 	}
 
 	if len(headRecords) == 0 {
-		return catalog.Record{}, fmt.Errorf("no new heads")
+		return nil, fmt.Errorf("no new heads")
 	}
 
 	var headFound bool
@@ -246,8 +253,8 @@ func scanForNextHead(ctx context.Context, headCatalog Catalog, destinationName s
 	return headRecords[len(headRecords)-1], nil
 }
 
-func scanHeadForDestination(headRecord catalog.Record, destinationName string) (bool, error) {
-	dir, err := os.Open(headRecord.Dir)
+func scanHeadForDestination(headRecord *catalog.Record, destinationName string) (bool, error) {
+	dir, err := os.Open(headRecord.Dir())
 	if err != nil {
 		return false, fmt.Errorf("failed to open head dir: %w", err)
 	}

@@ -20,9 +20,9 @@ type ConfigSource interface {
 }
 
 type Catalog interface {
-	List(filter func(record catalog.Record) bool, sortLess func(lhs, rhs catalog.Record) bool) ([]catalog.Record, error)
-	Create(id, dir string, numberOfShards uint16) (catalog.Record, error)
-	SetStatus(id string, status catalog.Status) (catalog.Record, error)
+	List(filter func(record *catalog.Record) bool, sortLess func(lhs, rhs *catalog.Record) bool) ([]*catalog.Record, error)
+	Create(id, dir string, numberOfShards uint16) (*catalog.Record, error)
+	SetStatus(id string, status catalog.Status) (*catalog.Record, error)
 }
 
 type metrics struct {
@@ -71,11 +71,11 @@ func New(dir string, configSource ConfigSource, catalog Catalog, registerer prom
 
 func (m *Manager) Restore(blockDuration time.Duration) (active relabeler.Head, rotated []relabeler.Head, err error) {
 	headRecords, err := m.catalog.List(
-		func(record catalog.Record) bool {
-			return record.DeletedAt == 0 && record.Status != catalog.StatusCorrupted
+		func(record *catalog.Record) bool {
+			return record.DeletedAt() == 0 && record.Status() != catalog.StatusCorrupted
 		},
-		func(lhs, rhs catalog.Record) bool {
-			return lhs.CreatedAt < rhs.CreatedAt
+		func(lhs, rhs *catalog.Record) bool {
+			return lhs.CreatedAt() < rhs.CreatedAt()
 		},
 	)
 	if err != nil {
@@ -84,15 +84,15 @@ func (m *Manager) Restore(blockDuration time.Duration) (active relabeler.Head, r
 
 	for index, headRecord := range headRecords {
 		var h relabeler.Head
-		headDir := headRecord.Dir
-		if headRecord.Status == catalog.StatusPersisted {
+		headDir := headRecord.Dir()
+		if headRecord.Status() == catalog.StatusPersisted {
 			continue
 		}
 
 		cfgs, _ := m.configSource.Get()
-		h, err = head.Load(headRecord.ID, m.generation, headDir, cfgs, headRecord.NumberOfShards, m.registerer)
+		h, err = head.Load(headRecord.ID(), m.generation, headDir, cfgs, headRecord.NumberOfShards(), m.registerer)
 		if err != nil {
-			_, setStatusErr := m.catalog.SetStatus(headRecord.ID, catalog.StatusCorrupted)
+			_, setStatusErr := m.catalog.SetStatus(headRecord.ID(), catalog.StatusCorrupted)
 			if setStatusErr != nil {
 				return nil, nil, errors.Join(err, setStatusErr)
 			}
@@ -118,13 +118,13 @@ func (m *Manager) Restore(blockDuration time.Duration) (active relabeler.Head, r
 				return nil
 			})
 		m.counter.With(prometheus.Labels{"type": "created"}).Inc()
-		if index == len(headRecords)-1 && time.Now().Sub(time.UnixMilli(headRecord.CreatedAt)).Milliseconds() < blockDuration.Milliseconds() {
+		if index == len(headRecords)-1 && time.Now().Sub(time.UnixMilli(headRecord.CreatedAt())).Milliseconds() < blockDuration.Milliseconds() {
 			active = h
 			continue
 		}
 		h.Finalize()
-		if headRecord.Status != catalog.StatusRotated {
-			if _, err = m.catalog.SetStatus(headRecord.ID, catalog.StatusRotated); err != nil {
+		if headRecord.Status() != catalog.StatusRotated {
+			if _, err = m.catalog.SetStatus(headRecord.ID(), catalog.StatusRotated); err != nil {
 				return nil, nil, fmt.Errorf("failed to set status: %w", err)
 			}
 			m.counter.With(prometheus.Labels{"type": "rotated"}).Inc()

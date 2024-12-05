@@ -5,26 +5,28 @@ import (
 	"fmt"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head/catalog"
-	"os"
-	"strings"
+	"github.com/prometheus/prometheus/pp/go/relabeler/head/ready"
 	"time"
 )
 
 type Catalog interface {
-	List(filterFn func(record catalog.Record) bool, sortLess func(lhs, rhs catalog.Record) bool) (records []catalog.Record, err error)
+	List(filterFn func(record *catalog.Record) bool, sortLess func(lhs, rhs *catalog.Record) bool) (records []*catalog.Record, err error)
+	SetStatus(id string, status catalog.Status) (*catalog.Record, error)
 }
 
 type RemoteWriter struct {
-	configQueue chan []DestinationConfig
-	catalog     Catalog
-	clock       clockwork.Clock
+	configQueue   chan []DestinationConfig
+	catalog       Catalog
+	clock         clockwork.Clock
+	readyNotifier ready.Notifier
 }
 
-func New(catalog Catalog, clock clockwork.Clock) *RemoteWriter {
+func New(catalog Catalog, clock clockwork.Clock, readyNotifier ready.Notifier) *RemoteWriter {
 	return &RemoteWriter{
-		catalog:     catalog,
-		clock:       clock,
-		configQueue: make(chan []DestinationConfig),
+		catalog:       catalog,
+		clock:         clock,
+		configQueue:   make(chan []DestinationConfig),
+		readyNotifier: readyNotifier,
 	}
 }
 
@@ -86,10 +88,7 @@ func (rw *RemoteWriter) Run(ctx context.Context) error {
 				writeLoopRunners[config.Name] = wlr
 				go wlr.run(ctx)
 			}
-		case <-gcTicker.C:
-			if err := rw.gc(destinations); err != nil {
-				// todo: log?
-			}
+			rw.readyNotifier.NotifyReady()
 		}
 	}
 }
@@ -102,57 +101,6 @@ func (rw *RemoteWriter) ApplyConfig(configs ...DestinationConfig) (err error) {
 	case <-time.After(time.Minute):
 		return fmt.Errorf("failed to apply remote write configs, timeout")
 	}
-}
-
-func (rw *RemoteWriter) gc(runners map[string]*Destination) error {
-	headRecords, err := rw.catalog.List(
-		func(record catalog.Record) bool {
-			return record.Status != catalog.StatusCorrupted
-		},
-		func(lhs, rhs catalog.Record) bool {
-			return lhs.CreatedAt < rhs.CreatedAt
-		},
-	)
-
-	if err != nil {
-		return fmt.Errorf("failed to list head records: %w", err)
-	}
-
-	for _, headRecord := range headRecords {
-		if err = rw.cleanUpDir(headRecord.Dir); err != nil {
-			return fmt.Errorf("failed to clean up dir: %w", err)
-		}
-	}
-	return nil
-}
-
-func (rw *RemoteWriter) cleanUpDir(dir string) error {
-	dirFile, err := os.Open(dir)
-	if err != nil {
-		return fmt.Errorf("failed to open dir: %w", err)
-	}
-	defer func() { _ = dirFile.Close() }()
-
-	fileNames, err := dirFile.Readdirnames(-1)
-	if err != nil {
-		return fmt.Errorf("failed to read dir names: %w", err)
-	}
-
-	for _, fileName := range fileNames {
-		if !strings.HasSuffix(fileName, ".cursor") {
-			continue
-		}
-
-		//destination := strings.TrimSuffix(fileName, ".cursor")
-
-		//if _, ok := rw.destinations[destination]; !ok {
-		//	if err = os.RemoveAll(fileName); err != nil {
-		//		return fmt.Errorf("failed to delete file: %w", err)
-		//	}
-		//}
-	}
-
-	return nil
 }
 
 type writeLoopRunner struct {

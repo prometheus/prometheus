@@ -26,7 +26,7 @@ func (DefaultDecoder) Decode(reader io.Reader, r *Record) (err error) {
 	if _, err = reader.Read(buf); err != nil {
 		return fmt.Errorf("failed to read id: %w", err)
 	}
-	r.ID = string(buf)
+	r.id = string(buf)
 
 	if err = binary.Read(reader, binary.LittleEndian, &size); err != nil {
 		return fmt.Errorf("failed to read dir size: %w", err)
@@ -36,25 +36,25 @@ func (DefaultDecoder) Decode(reader io.Reader, r *Record) (err error) {
 	if _, err = reader.Read(buf); err != nil {
 		return fmt.Errorf("failed to read dir: %w", err)
 	}
-	r.Dir = string(buf)
+	r.dir = string(buf)
 
-	if err = binary.Read(reader, binary.LittleEndian, &r.NumberOfShards); err != nil {
+	if err = binary.Read(reader, binary.LittleEndian, &r.numberOfShards); err != nil {
 		return fmt.Errorf("failed to read number of shards: %w", err)
 	}
 
-	if err = binary.Read(reader, binary.LittleEndian, &r.CreatedAt); err != nil {
+	if err = binary.Read(reader, binary.LittleEndian, &r.createdAt); err != nil {
 		return fmt.Errorf("failed to read created at: %w", err)
 	}
 
-	if err = binary.Read(reader, binary.LittleEndian, &r.UpdatedAt); err != nil {
+	if err = binary.Read(reader, binary.LittleEndian, &r.updatedAt); err != nil {
 		return fmt.Errorf("failed to read updated at: %w", err)
 	}
 
-	if err = binary.Read(reader, binary.LittleEndian, &r.DeletedAt); err != nil {
+	if err = binary.Read(reader, binary.LittleEndian, &r.deletedAt); err != nil {
 		return fmt.Errorf("failed to read deleted at: %w", err)
 	}
 
-	if err = binary.Read(reader, binary.LittleEndian, &r.Status); err != nil {
+	if err = binary.Read(reader, binary.LittleEndian, &r.status); err != nil {
 		return fmt.Errorf("failed to read status: %w", err)
 	}
 

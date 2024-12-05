@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
+	"github.com/prometheus/prometheus/pp/go/relabeler/head/catalog"
 	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
@@ -13,6 +14,10 @@ import (
 	"path/filepath"
 	"sync"
 )
+
+type CorruptMarker interface {
+	MarkCorrupted(headID string) error
+}
 
 type shard struct {
 	corrupted                   bool
@@ -29,7 +34,8 @@ func newShard(
 	resetDecoderState bool,
 	lastWrittenStateBySegmentID *uint32,
 	externalLabels labels.Labels,
-	relabelConfigs []*cppbridge.RelabelConfig) (*shard, error) {
+	relabelConfigs []*cppbridge.RelabelConfig,
+) (*shard, error) {
 	var err error
 	var wr *walReader
 	var encoderVersion uint8
@@ -98,7 +104,7 @@ func (s *shard) Read(ctx context.Context, targetSegmentID uint32, minTimestamp i
 				return nil, err
 			}
 			s.corrupted = true
-			return nil, ErrShardIsCorrupted
+			return nil, errors.Join(err, ErrShardIsCorrupted)
 		}
 
 		decodedSegment, err := s.decoder.Decode(segment.Data(), minTimestamp)
@@ -130,15 +136,16 @@ func (s *shard) Close() error {
 }
 
 type block struct {
-	ID              string
-	shards          []*shard
-	writeCompletion func() error
-	closed          bool
-	completed       bool
-	corrupted       bool
+	ID            string
+	headRecord    *catalog.Record
+	shards        []*shard
+	corruptMarker CorruptMarker
+	closed        bool
+	completed     bool
+	corrupted     bool
 }
 
-func newBlock(dataDir string, numberOfShards uint16, config DestinationConfig, lastAcknowledgedSegmentID *uint32, discardCache bool) (*block, error) {
+func newBlock(dataDir string, numberOfShards uint16, config DestinationConfig, lastAcknowledgedSegmentID *uint32, discardCache bool, corruptMarker CorruptMarker, headRecord *catalog.Record) (*block, error) {
 	var err error
 	var convertedRelabelConfigs []*cppbridge.RelabelConfig
 	convertedRelabelConfigs, err = convertRelabelConfigs(config.WriteRelabelConfigs...)
@@ -147,9 +154,8 @@ func newBlock(dataDir string, numberOfShards uint16, config DestinationConfig, l
 	}
 
 	b := &block{
-		writeCompletion: func() error {
-			return os.WriteFile(filepath.Join(dataDir, fmt.Sprintf("%s.completed", config.Name)), nil, 0600)
-		},
+		headRecord:    headRecord,
+		corruptMarker: corruptMarker,
 	}
 
 	for shardID := uint16(0); shardID < numberOfShards; shardID++ {
@@ -210,19 +216,6 @@ func (b *block) IsCompleted() bool {
 	return b.completed
 }
 
-func (b *block) WriteCompletion() error {
-	if b.completed && b.writeCompletion != nil {
-		err := b.writeCompletion()
-		if err != nil {
-			return err
-		}
-		b.writeCompletion = nil
-		return nil
-	}
-
-	return nil
-}
-
 type readShardResult struct {
 	segment *DecodedSegment
 	err     error
@@ -280,8 +273,19 @@ func (b *block) handle(errs []error) error {
 		resultErr = errors.Join(resultErr, err)
 	}
 
+	if numberOfShardIsCorruptedErrors > 0 {
+		b.corrupted = true
+		if b.corruptMarker != nil {
+			if err := b.corruptMarker.MarkCorrupted(b.ID); err != nil {
+				return fmt.Errorf("failed to mark block corrupted: %w", err)
+			}
+			b.corruptMarker = nil
+		}
+	}
+
 	if numberOfShardIsCorruptedErrors == len(b.shards) {
 		b.corrupted = true
+
 		return ErrEndOfBlock
 	}
 

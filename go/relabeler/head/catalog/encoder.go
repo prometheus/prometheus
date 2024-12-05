@@ -9,32 +9,32 @@ import (
 type DefaultEncoder struct {
 }
 
-func (DefaultEncoder) Encode(writer io.Writer, r Record) (err error) {
-	if err = encodeString(writer, r.ID); err != nil {
+func (DefaultEncoder) Encode(writer io.Writer, r *Record) (err error) {
+	if err = encodeString(writer, r.id); err != nil {
 		return fmt.Errorf("failed to encode id: %w", err)
 	}
 
-	if err = encodeString(writer, r.Dir); err != nil {
+	if err = encodeString(writer, r.dir); err != nil {
 		return fmt.Errorf("failed to encode dir: %w", err)
 	}
 
-	if err = binary.Write(writer, binary.LittleEndian, &r.NumberOfShards); err != nil {
+	if err = binary.Write(writer, binary.LittleEndian, &r.numberOfShards); err != nil {
 		return fmt.Errorf("failed to write number of shards: %w", err)
 	}
 
-	if err = binary.Write(writer, binary.LittleEndian, &r.CreatedAt); err != nil {
+	if err = binary.Write(writer, binary.LittleEndian, &r.createdAt); err != nil {
 		return fmt.Errorf("failed to write created at: %w", err)
 	}
 
-	if err = binary.Write(writer, binary.LittleEndian, &r.UpdatedAt); err != nil {
+	if err = binary.Write(writer, binary.LittleEndian, &r.updatedAt); err != nil {
 		return fmt.Errorf("failed to write updated at: %w", err)
 	}
 
-	if err = binary.Write(writer, binary.LittleEndian, &r.DeletedAt); err != nil {
+	if err = binary.Write(writer, binary.LittleEndian, &r.deletedAt); err != nil {
 		return fmt.Errorf("failed to write deleted at: %w", err)
 	}
 
-	if err = binary.Write(writer, binary.LittleEndian, &r.Status); err != nil {
+	if err = binary.Write(writer, binary.LittleEndian, &r.status); err != nil {
 		return fmt.Errorf("failed to write status: %w", err)
 	}
 

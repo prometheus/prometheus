@@ -4,17 +4,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/prometheus/prometheus/pp/go/relabeler/head/ready"
 	"os"
 	"time"
 )
 
 type GC struct {
-	catalog *Catalog
+	catalog         *Catalog
+	readyNotifiable ready.Notifiable
+	targetRecordID  *string
 }
 
-func NewGC(catalog *Catalog) *GC {
+func NewGC(catalog *Catalog, readyNotifiable ready.Notifiable) *GC {
 	return &GC{
-		catalog: catalog,
+		catalog:         catalog,
+		readyNotifiable: readyNotifiable,
 	}
 }
 
@@ -22,7 +26,12 @@ func (gc *GC) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			return ctx.Err()
+		case <-gc.readyNotifiable.ReadyChan():
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
 		case <-time.After(time.Minute):
 			gc.run()
 		}
@@ -31,11 +40,9 @@ func (gc *GC) Run(ctx context.Context) error {
 
 func (gc *GC) run() {
 	records, err := gc.catalog.List(
-		func(record Record) bool {
-			return record.Status == StatusPersisted
-		},
-		func(lhs, rhs Record) bool {
-			return lhs.CreatedAt < rhs.CreatedAt
+		nil,
+		func(lhs, rhs *Record) bool {
+			return lhs.CreatedAt() < rhs.CreatedAt()
 		},
 	)
 	if err != nil {
@@ -44,28 +51,19 @@ func (gc *GC) run() {
 	}
 
 	for _, record := range records {
-		var deletable bool
-		deletable, err = isDeletable(record)
-		if err != nil {
-			fmt.Println("catalog gc failed", err)
-			return
+		if gc.targetRecordID == nil {
+			recordID := record.ID()
+			gc.targetRecordID = &recordID
 		}
-		if !deletable {
-			return
+		if *gc.targetRecordID == record.ID() {
+
 		}
-		if err = os.RemoveAll(record.Dir); err != nil {
-			fmt.Println("catalog gc failed", err)
-			return
-		}
-		if err = gc.catalog.Delete(record.ID); err != nil {
-			fmt.Println("catalog gc failed", err)
-			return
-		}
+
 	}
 }
 
-func isDeletable(record Record) (bool, error) {
-	dir, err := os.Open(record.Dir)
+func isDeletable(record *Record) (bool, error) {
+	dir, err := os.Open(record.Dir())
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return true, nil
@@ -79,5 +77,5 @@ func isDeletable(record Record) (bool, error) {
 		return false, err
 	}
 
-	return len(files) == int(record.NumberOfShards), nil
+	return len(files) == int(record.NumberOfShards()), nil
 }

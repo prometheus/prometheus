@@ -14,28 +14,9 @@ const (
 	MaxLogFileSize = 32 * 1024
 )
 
-type Status uint8
-
-const (
-	StatusNew Status = iota
-	StatusRotated
-	StatusCorrupted
-	StatusPersisted
-)
-
-type Record struct {
-	ID             string // uuid
-	Dir            string // location
-	NumberOfShards uint16 // number of shards
-	CreatedAt      int64  // time of record creation
-	UpdatedAt      int64
-	DeletedAt      int64
-	Status         Status // status
-}
-
 type Log interface {
-	Write(record Record) error
-	ReWrite(records ...Record) error
+	Write(record *Record) error
+	ReWrite(records ...*Record) error
 	Read(record *Record) error
 	Size() int
 }
@@ -44,14 +25,14 @@ type Catalog struct {
 	mtx     sync.Mutex
 	clock   clockwork.Clock
 	log     Log
-	records map[string]Record
+	records map[string]*Record
 }
 
 func New(clock clockwork.Clock, log Log) (*Catalog, error) {
 	catalog := &Catalog{
 		clock:   clock,
 		log:     log,
-		records: make(map[string]Record),
+		records: make(map[string]*Record),
 	}
 
 	if err := catalog.sync(); err != nil {
@@ -61,10 +42,10 @@ func New(clock clockwork.Clock, log Log) (*Catalog, error) {
 	return catalog, nil
 }
 
-func (c *Catalog) List(filterFn func(record Record) bool, sortLess func(lhs, rhs Record) bool) (records []Record, err error) {
+func (c *Catalog) List(filterFn func(record *Record) bool, sortLess func(lhs, rhs *Record) bool) (records []*Record, err error) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
-	records = make([]Record, 0, len(c.records))
+	records = make([]*Record, 0, len(c.records))
 	for _, record := range c.records {
 		if filterFn != nil && !filterFn(record) {
 			continue
@@ -81,7 +62,7 @@ func (c *Catalog) List(filterFn func(record Record) bool, sortLess func(lhs, rhs
 	return records, nil
 }
 
-func (c *Catalog) Create(id, dir string, numberOfShards uint16) (r Record, err error) {
+func (c *Catalog) Create(id, dir string, numberOfShards uint16) (r *Record, err error) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
@@ -89,12 +70,17 @@ func (c *Catalog) Create(id, dir string, numberOfShards uint16) (r Record, err e
 		return r, fmt.Errorf("already exists: %s", id)
 	}
 
-	r.ID = id
-	r.Dir = dir
-	r.NumberOfShards = numberOfShards
-	r.CreatedAt = c.clock.Now().UnixMilli()
-	r.UpdatedAt = r.CreatedAt
-	r.Status = StatusNew
+	now := c.clock.Now().UnixMilli()
+	r = &Record{
+		id:             id,
+		dir:            dir,
+		numberOfShards: numberOfShards,
+		createdAt:      now,
+		updatedAt:      now,
+		deletedAt:      0,
+		status:         StatusNew,
+	}
+
 	if err = c.log.Write(r); err != nil {
 		return r, fmt.Errorf("failed to write log: %w", err)
 	}
@@ -103,20 +89,20 @@ func (c *Catalog) Create(id, dir string, numberOfShards uint16) (r Record, err e
 	return r, c.compactIfNeeded()
 }
 
-func (c *Catalog) SetStatus(id string, status Status) (Record, error) {
+func (c *Catalog) SetStatus(id string, status Status) (*Record, error) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
 	r, ok := c.records[id]
 	if !ok {
-		return r, fmt.Errorf("not found: %s", id)
+		return nil, fmt.Errorf("not found: %s", id)
 	}
 
-	r.Status = status
-	r.UpdatedAt = c.clock.Now().UnixMilli()
+	r.status = status
+	r.updatedAt = c.clock.Now().UnixMilli()
 
 	if err := c.log.Write(r); err != nil {
-		return r, fmt.Errorf("failed to write log: %w", err)
+		return nil, fmt.Errorf("failed to write log: %w", err)
 	}
 
 	c.records[id] = r
@@ -129,39 +115,39 @@ func (c *Catalog) Delete(id string) error {
 	defer c.mtx.Unlock()
 
 	r, ok := c.records[id]
-	if !ok || r.DeletedAt > 0 {
+	if !ok || r.deletedAt > 0 {
 		return nil
 	}
 
-	r.DeletedAt = c.clock.Now().UnixMilli()
-	r.UpdatedAt = r.DeletedAt
+	r.deletedAt = c.clock.Now().UnixMilli()
+	r.updatedAt = r.deletedAt
 
 	if err := c.log.Write(r); err != nil {
 		return fmt.Errorf("failed to write log: %w", err)
 	}
 
-	delete(c.records, r.ID)
+	delete(c.records, r.id)
 
 	return c.compactIfNeeded()
 }
 
 func (c *Catalog) Compact() error {
-	records := make([]Record, 0, len(c.records))
+	records := make([]*Record, 0, len(c.records))
 	for _, record := range c.records {
 		records = append(records, record)
 	}
 
 	sort.Slice(records, func(i, j int) bool {
-		return records[i].CreatedAt < records[j].CreatedAt
+		return records[i].createdAt < records[j].createdAt
 	})
 
 	return c.log.ReWrite(records...)
 }
 
 func (c *Catalog) sync() error {
-	var r Record
-	var err error
 	for {
+		var r Record
+		var err error
 		err = c.log.Read(&r)
 		if err != nil {
 			if !errors.Is(err, io.EOF) {
@@ -169,7 +155,7 @@ func (c *Catalog) sync() error {
 			}
 			return nil
 		}
-		c.records[r.ID] = r
+		c.records[r.id] = &r
 	}
 }
 

@@ -300,6 +300,7 @@ extern "C" void prompp_wal_output_decoder_decode(void* args, void* res) {
 
                                        out->ref_samples.emplace_back(ls_id, ts, v);
                                      });
+    std::cout << "max timestamp: "<< out->max_timestamp << std::endl;
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
     handle_current_exception(__func__, err_stream);
