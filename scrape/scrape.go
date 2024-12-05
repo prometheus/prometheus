@@ -792,7 +792,7 @@ func acceptEncodingHeader(enableCompression bool) string {
 	return "identity"
 }
 
-var UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+var UserAgent = version.PrometheusUserAgent()
 
 func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 	if s.req == nil {
