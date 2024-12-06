@@ -166,9 +166,13 @@ func TestRecord_EncodeDecode(t *testing.T) {
 		},
 	}
 
-	histSamples := enc.HistogramSamples(histograms, nil)
+	histSamples, customBucketsHistograms := enc.HistogramSamples(histograms, nil)
+	customBucketsHistSamples := enc.CustomBucketsHistogramSamples(customBucketsHistograms, nil)
 	decHistograms, err := dec.HistogramSamples(histSamples, nil)
 	require.NoError(t, err)
+	decCustomBucketsHistograms, err := dec.HistogramSamples(customBucketsHistSamples, nil)
+	require.NoError(t, err)
+	decHistograms = append(decHistograms, decCustomBucketsHistograms...)
 	require.Equal(t, histograms, decHistograms)
 
 	floatHistograms := make([]RefFloatHistogramSample, len(histograms))
@@ -179,9 +183,13 @@ func TestRecord_EncodeDecode(t *testing.T) {
 			FH:  h.H.ToFloat(nil),
 		}
 	}
-	floatHistSamples := enc.FloatHistogramSamples(floatHistograms, nil)
+	floatHistSamples, customBucketsFloatHistograms := enc.FloatHistogramSamples(floatHistograms, nil)
+	customBucketsFloatHistSamples := enc.CustomBucketsFloatHistogramSamples(customBucketsFloatHistograms, nil)
 	decFloatHistograms, err := dec.FloatHistogramSamples(floatHistSamples, nil)
 	require.NoError(t, err)
+	decCustomBucketsFloatHistograms, err := dec.FloatHistogramSamples(customBucketsFloatHistSamples, nil)
+	require.NoError(t, err)
+	decFloatHistograms = append(decFloatHistograms, decCustomBucketsFloatHistograms...)
 	require.Equal(t, floatHistograms, decFloatHistograms)
 
 	// Gauge integer histograms.
@@ -189,9 +197,13 @@ func TestRecord_EncodeDecode(t *testing.T) {
 		histograms[i].H.CounterResetHint = histogram.GaugeType
 	}
 
-	gaugeHistSamples := enc.HistogramSamples(histograms, nil)
+	gaugeHistSamples, customBucketsGaugeHistograms := enc.HistogramSamples(histograms, nil)
+	customBucketsGaugeHistSamples := enc.CustomBucketsHistogramSamples(customBucketsGaugeHistograms, nil)
 	decGaugeHistograms, err := dec.HistogramSamples(gaugeHistSamples, nil)
 	require.NoError(t, err)
+	decCustomBucketsGaugeHistograms, err := dec.HistogramSamples(customBucketsGaugeHistSamples, nil)
+	require.NoError(t, err)
+	decGaugeHistograms = append(decGaugeHistograms, decCustomBucketsGaugeHistograms...)
 	require.Equal(t, histograms, decGaugeHistograms)
 
 	// Gauge float histograms.
@@ -199,9 +211,12 @@ func TestRecord_EncodeDecode(t *testing.T) {
 		floatHistograms[i].FH.CounterResetHint = histogram.GaugeType
 	}
 
-	gaugeFloatHistSamples := enc.FloatHistogramSamples(floatHistograms, nil)
+	gaugeFloatHistSamples, customBucketsGaugeFloatHistograms := enc.FloatHistogramSamples(floatHistograms, nil)
+	customBucketsGaugeFloatHistSamples := enc.CustomBucketsFloatHistogramSamples(customBucketsGaugeFloatHistograms, nil)
 	decGaugeFloatHistograms, err := dec.FloatHistogramSamples(gaugeFloatHistSamples, nil)
 	require.NoError(t, err)
+	decCustomBucketsGaugeFloatHistograms, err := dec.FloatHistogramSamples(customBucketsGaugeFloatHistSamples, nil)
+	decGaugeFloatHistograms = append(decGaugeFloatHistograms, decCustomBucketsGaugeFloatHistograms...)
 	require.Equal(t, floatHistograms, decGaugeFloatHistograms)
 }
 
@@ -303,9 +318,13 @@ func TestRecord_Corrupted(t *testing.T) {
 			},
 		}
 
-		corruptedHists := enc.HistogramSamples(histograms, nil)
+		corruptedHists, customBucketsHists := enc.HistogramSamples(histograms, nil)
 		corruptedHists = corruptedHists[:8]
+		corruptedCustomBucketsHists := enc.CustomBucketsHistogramSamples(customBucketsHists, nil)
+		corruptedCustomBucketsHists = corruptedCustomBucketsHists[:8]
 		_, err := dec.HistogramSamples(corruptedHists, nil)
+		require.ErrorIs(t, err, encoding.ErrInvalidSize)
+		_, err = dec.HistogramSamples(corruptedCustomBucketsHists, nil)
 		require.ErrorIs(t, err, encoding.ErrInvalidSize)
 	})
 }
@@ -364,9 +383,12 @@ func TestRecord_Type(t *testing.T) {
 			},
 		},
 	}
-	hists := enc.HistogramSamples(histograms, nil)
+	hists, customBucketsHistograms := enc.HistogramSamples(histograms, nil)
 	recordType = dec.Type(hists)
 	require.Equal(t, HistogramSamples, recordType)
+	customBucketsHists := enc.CustomBucketsHistogramSamples(customBucketsHistograms, nil)
+	recordType = dec.Type(customBucketsHists)
+	require.Equal(t, CustomBucketsHistogramSamples, recordType)
 
 	recordType = dec.Type(nil)
 	require.Equal(t, Unknown, recordType)

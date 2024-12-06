@@ -29,13 +29,13 @@ import (
 )
 
 const (
-	float                      = "float"
-	intHistogram               = "integer histogram"
-	floatHistogram             = "float histogram"
-	customBucketIntHistogram   = "custom bucket int histogram"
-	customBucketFloatHistogram = "custom bucket float histogram"
-	gaugeIntHistogram          = "gauge int histogram"
-	gaugeFloatHistogram        = "gauge float histogram"
+	float                       = "float"
+	intHistogram                = "integer histogram"
+	floatHistogram              = "float histogram"
+	customBucketsIntHistogram   = "custom buckets int histogram"
+	customBucketsFloatHistogram = "custom buckets float histogram"
+	gaugeIntHistogram           = "gauge int histogram"
+	gaugeFloatHistogram         = "gauge float histogram"
 )
 
 type testValue struct {
@@ -84,7 +84,7 @@ var sampleTypeScenarios = map[string]sampleTypeScenario{
 			return sample{t: ts, fh: tsdbutil.GenerateTestFloatHistogram(int(value))}
 		},
 	},
-	customBucketIntHistogram: {
+	customBucketsIntHistogram: {
 		sampleType: sampleMetricTypeHistogram,
 		appendFunc: func(appender storage.Appender, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error) {
 			s := sample{t: ts, h: tsdbutil.GenerateTestCustomBucketsHistogram(int(value))}
@@ -95,7 +95,7 @@ var sampleTypeScenarios = map[string]sampleTypeScenario{
 			return sample{t: ts, h: tsdbutil.GenerateTestCustomBucketsHistogram(int(value))}
 		},
 	},
-	customBucketFloatHistogram: {
+	customBucketsFloatHistogram: {
 		sampleType: sampleMetricTypeHistogram,
 		appendFunc: func(appender storage.Appender, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error) {
 			s := sample{t: ts, fh: tsdbutil.GenerateTestCustomBucketsFloatHistogram(int(value))}

@@ -217,8 +217,7 @@ func TestCommit(t *testing.T) {
 	)
 	for r.Next() {
 		rec := r.Record()
-		recType := dec.Type(rec)
-		switch recType {
+		switch dec.Type(rec) {
 		case record.Series:
 			var series []record.RefSeries
 			series, err = dec.Series(rec, series)
@@ -231,13 +230,13 @@ func TestCommit(t *testing.T) {
 			require.NoError(t, err)
 			walSamplesCount += len(samples)
 
-		case record.HistogramSamples, record.HistogramSamplesLegacy:
+		case record.HistogramSamples, record.CustomBucketsHistogramSamples:
 			var histograms []record.RefHistogramSample
 			histograms, err = dec.HistogramSamples(rec, histograms)
 			require.NoError(t, err)
 			walHistogramCount += len(histograms)
 
-		case record.FloatHistogramSamples, record.FloatHistogramSamplesLegacy:
+		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
 			var floatHistograms []record.RefFloatHistogramSample
 			floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms)
 			require.NoError(t, err)
@@ -370,13 +369,13 @@ func TestRollback(t *testing.T) {
 			require.NoError(t, err)
 			walExemplarsCount += len(exemplars)
 
-		case record.HistogramSamples, record.HistogramSamplesLegacy:
+		case record.HistogramSamples, record.CustomBucketsHistogramSamples:
 			var histograms []record.RefHistogramSample
 			histograms, err = dec.HistogramSamples(rec, histograms)
 			require.NoError(t, err)
 			walHistogramCount += len(histograms)
 
-		case record.FloatHistogramSamples, record.FloatHistogramSamplesLegacy:
+		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
 			var floatHistograms []record.RefFloatHistogramSample
 			floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms)
 			require.NoError(t, err)

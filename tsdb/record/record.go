@@ -48,14 +48,14 @@ const (
 	MmapMarkers Type = 5
 	// Metadata is used to match WAL records of type Metadata.
 	Metadata Type = 6
-	// HistogramSamplesLegacy is used to match WAL records of type Histograms prior to introducing support of custom buckets, for backwards compatibility.
-	HistogramSamplesLegacy Type = 7
-	// FloatHistogramSamplesLegacy is used to match WAL records of type Float Histograms prior to introducing support of custom buckets, for backwards compatibility.
-	FloatHistogramSamplesLegacy Type = 8
-	// HistogramSamples is used to match WAL records of type Histogram, and supports custom buckets.
-	HistogramSamples Type = 9
-	// FloatHistogramSamples is used to match WAL records of type Float Histogram, and supports custom buckets.
-	FloatHistogramSamples Type = 10
+	// HistogramSamples is used to match WAL records of type Histograms.
+	HistogramSamples Type = 7
+	// FloatHistogramSamples is used to match WAL records of type Float Histograms.
+	FloatHistogramSamples Type = 8
+	// CustomBucketsHistogramSamples is used to match WAL records of type Histogram with custom buckets.
+	CustomBucketsHistogramSamples Type = 9
+	// CustomBucketsFloatHistogramSamples is used to match WAL records of type Float Histogram with custom buckets.
+	CustomBucketsFloatHistogramSamples Type = 10
 )
 
 func (rt Type) String() string {
@@ -68,14 +68,14 @@ func (rt Type) String() string {
 		return "tombstones"
 	case Exemplars:
 		return "exemplars"
-	case HistogramSamplesLegacy:
-		return "histogram_samples_legacy"
-	case FloatHistogramSamplesLegacy:
-		return "float_histogram_samples_legacy"
 	case HistogramSamples:
 		return "histogram_samples"
 	case FloatHistogramSamples:
 		return "float_histogram_samples"
+	case CustomBucketsHistogramSamples:
+		return "custom_buckets_histogram_samples"
+	case CustomBucketsFloatHistogramSamples:
+		return "custom_buckets_float_histogram_samples"
 	case MmapMarkers:
 		return "mmapmarkers"
 	case Metadata:
@@ -215,7 +215,7 @@ func (d *Decoder) Type(rec []byte) Type {
 		return Unknown
 	}
 	switch t := Type(rec[0]); t {
-	case Series, Samples, Tombstones, Exemplars, MmapMarkers, Metadata, HistogramSamplesLegacy, FloatHistogramSamplesLegacy, HistogramSamples, FloatHistogramSamples:
+	case Series, Samples, Tombstones, Exemplars, MmapMarkers, Metadata, HistogramSamples, FloatHistogramSamples, CustomBucketsHistogramSamples, CustomBucketsFloatHistogramSamples:
 		return t
 	}
 	return Unknown
@@ -436,7 +436,7 @@ func (d *Decoder) MmapMarkers(rec []byte, markers []RefMmapMarker) ([]RefMmapMar
 func (d *Decoder) HistogramSamples(rec []byte, histograms []RefHistogramSample) ([]RefHistogramSample, error) {
 	dec := encoding.Decbuf{B: rec}
 	t := Type(dec.Byte())
-	if t != HistogramSamples && t != HistogramSamplesLegacy {
+	if t != HistogramSamples && t != CustomBucketsHistogramSamples {
 		return nil, errors.New("invalid record type")
 	}
 	if dec.Len() == 0 {
@@ -528,7 +528,7 @@ func DecodeHistogram(buf *encoding.Decbuf, h *histogram.Histogram) {
 func (d *Decoder) FloatHistogramSamples(rec []byte, histograms []RefFloatHistogramSample) ([]RefFloatHistogramSample, error) {
 	dec := encoding.Decbuf{B: rec}
 	t := Type(dec.Byte())
-	if t != FloatHistogramSamples && t != FloatHistogramSamplesLegacy {
+	if t != FloatHistogramSamples && t != CustomBucketsFloatHistogramSamples {
 		return nil, errors.New("invalid record type")
 	}
 	if dec.Len() == 0 {
@@ -744,9 +744,43 @@ func (e *Encoder) MmapMarkers(markers []RefMmapMarker, b []byte) []byte {
 	return buf.Get()
 }
 
-func (e *Encoder) HistogramSamples(histograms []RefHistogramSample, b []byte) []byte {
+func (e *Encoder) HistogramSamples(histograms []RefHistogramSample, b []byte) ([]byte, []RefHistogramSample) {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(HistogramSamples))
+
+	if len(histograms) == 0 {
+		return buf.Get(), nil
+	}
+	var customBucketHistograms []RefHistogramSample
+
+	// Store base timestamp and base reference number of first histogram.
+	// All histograms encode their timestamp and ref as delta to those.
+	first := histograms[0]
+	buf.PutBE64(uint64(first.Ref))
+	buf.PutBE64int64(first.T)
+
+	for _, h := range histograms {
+		if h.H.UsesCustomBuckets() {
+			customBucketHistograms = append(customBucketHistograms, h)
+			continue
+		}
+		buf.PutVarint64(int64(h.Ref) - int64(first.Ref))
+		buf.PutVarint64(h.T - first.T)
+
+		EncodeHistogram(&buf, h.H)
+	}
+
+	// Reset buffer if only custom bucket histograms existed in list of histogram samples
+	if len(histograms) == len(customBucketHistograms) {
+		buf.Reset()
+	}
+
+	return buf.Get(), customBucketHistograms
+}
+
+func (e *Encoder) CustomBucketsHistogramSamples(histograms []RefHistogramSample, b []byte) []byte {
+	buf := encoding.Encbuf{B: b}
+	buf.PutByte(byte(CustomBucketsHistogramSamples))
 
 	if len(histograms) == 0 {
 		return buf.Get()
@@ -809,9 +843,44 @@ func EncodeHistogram(buf *encoding.Encbuf, h *histogram.Histogram) {
 	}
 }
 
-func (e *Encoder) FloatHistogramSamples(histograms []RefFloatHistogramSample, b []byte) []byte {
+func (e *Encoder) FloatHistogramSamples(histograms []RefFloatHistogramSample, b []byte) ([]byte, []RefFloatHistogramSample) {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(FloatHistogramSamples))
+
+	if len(histograms) == 0 {
+		return buf.Get(), nil
+	}
+
+	var customBucketsFloatHistograms []RefFloatHistogramSample
+
+	// Store base timestamp and base reference number of first histogram.
+	// All histograms encode their timestamp and ref as delta to those.
+	first := histograms[0]
+	buf.PutBE64(uint64(first.Ref))
+	buf.PutBE64int64(first.T)
+
+	for _, h := range histograms {
+		if h.FH.UsesCustomBuckets() {
+			customBucketsFloatHistograms = append(customBucketsFloatHistograms, h)
+			continue
+		}
+		buf.PutVarint64(int64(h.Ref) - int64(first.Ref))
+		buf.PutVarint64(h.T - first.T)
+
+		EncodeFloatHistogram(&buf, h.FH)
+	}
+
+	// Reset buffer if only custom bucket histograms existed in list of histogram samples
+	if len(histograms) == len(customBucketsFloatHistograms) {
+		buf.Reset()
+	}
+
+	return buf.Get(), customBucketsFloatHistograms
+}
+
+func (e *Encoder) CustomBucketsFloatHistogramSamples(histograms []RefFloatHistogramSample, b []byte) []byte {
+	buf := encoding.Encbuf{B: b}
+	buf.PutByte(byte(CustomBucketsFloatHistogramSamples))
 
 	if len(histograms) == 0 {
 		return buf.Get()

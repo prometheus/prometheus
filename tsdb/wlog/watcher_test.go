@@ -209,7 +209,7 @@ func TestTailSamples(t *testing.T) {
 						NegativeBuckets: []int64{int64(-i) - 1},
 					}
 
-					histograms := enc.HistogramSamples([]record.RefHistogramSample{{
+					histograms, _ := enc.HistogramSamples([]record.RefHistogramSample{{
 						Ref: chunks.HeadSeriesRef(inner),
 						T:   now.UnixNano() + 1,
 						H:   hist,
@@ -226,21 +226,21 @@ func TestTailSamples(t *testing.T) {
 						CustomValues:  []float64{float64(i) + 2},
 					}
 
-					customBucketHistograms := enc.HistogramSamples([]record.RefHistogramSample{{
+					customBucketHistograms := enc.CustomBucketsHistogramSamples([]record.RefHistogramSample{{
 						Ref: chunks.HeadSeriesRef(inner),
 						T:   now.UnixNano() + 1,
 						H:   customBucketHist,
 					}}, nil)
 					require.NoError(t, w.Log(customBucketHistograms))
 
-					floatHistograms := enc.FloatHistogramSamples([]record.RefFloatHistogramSample{{
+					floatHistograms, _ := enc.FloatHistogramSamples([]record.RefFloatHistogramSample{{
 						Ref: chunks.HeadSeriesRef(inner),
 						T:   now.UnixNano() + 1,
 						FH:  hist.ToFloat(nil),
 					}}, nil)
 					require.NoError(t, w.Log(floatHistograms))
 
-					customBucketFloatHistograms := enc.FloatHistogramSamples([]record.RefFloatHistogramSample{{
+					customBucketFloatHistograms := enc.CustomBucketsFloatHistogramSamples([]record.RefFloatHistogramSample{{
 						Ref: chunks.HeadSeriesRef(inner),
 						T:   now.UnixNano() + 1,
 						FH:  customBucketHist.ToFloat(nil),
