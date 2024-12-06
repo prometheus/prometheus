@@ -6469,7 +6469,7 @@ func testOOOInterleavedImplicitCounterResets(t *testing.T, name string, scenario
 				Sum:             float64(v),
 				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
 				PositiveBuckets: []int64{v},
-				CustomValues:    []float64{float64(v)},
+				CustomValues:    []float64{float64(1), float64(2), float64(3)},
 			}
 			_, err := app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, h, nil)
 			return err
@@ -6482,7 +6482,7 @@ func testOOOInterleavedImplicitCounterResets(t *testing.T, name string, scenario
 				Sum:             float64(v),
 				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
 				PositiveBuckets: []float64{float64(v)},
-				CustomValues:    []float64{float64(v)},
+				CustomValues:    []float64{float64(1), float64(2), float64(3)},
 			}
 			_, err := app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, nil, fh)
 			return err
@@ -6517,29 +6517,29 @@ func testOOOInterleavedImplicitCounterResets(t *testing.T, name string, scenario
 		// The expected counter reset hint for each chunk.
 		expectedChunks []expectedChunk
 	}{
-		//"counter reset in-order cleared by in-memory OOO chunk": {
-		//	samples: []tsValue{
-		//		{1, 40}, // New in In-order. I1.
-		//		{4, 30}, // In-order counter reset. I2.
-		//		{2, 40}, // New in OOO. O1.
-		//		{3, 10}, // OOO counter reset. O2.
-		//	},
-		//	oooCap: 30,
-		//	// Expect all to be set to UnknownCounterReset because we switch between
-		//	// in-order and out-of-order samples.
-		//	expectedSamples: []expectedTsValue{
-		//		{1, 40, histogram.UnknownCounterReset}, // I1.
-		//		{2, 40, histogram.UnknownCounterReset}, // O1.
-		//		{3, 10, histogram.UnknownCounterReset}, // O2.
-		//		{4, 30, histogram.UnknownCounterReset}, // I2. Counter reset cleared by iterator change.
-		//	},
-		//	expectedChunks: []expectedChunk{
-		//		{histogram.UnknownCounterReset, 1}, // I1.
-		//		{histogram.UnknownCounterReset, 1}, // O1.
-		//		{histogram.UnknownCounterReset, 1}, // O2.
-		//		{histogram.UnknownCounterReset, 1}, // I2.
-		//	},
-		//},
+		"counter reset in-order cleared by in-memory OOO chunk": {
+			samples: []tsValue{
+				{1, 40}, // New in In-order. I1.
+				{4, 30}, // In-order counter reset. I2.
+				{2, 40}, // New in OOO. O1.
+				{3, 10}, // OOO counter reset. O2.
+			},
+			oooCap: 30,
+			// Expect all to be set to UnknownCounterReset because we switch between
+			// in-order and out-of-order samples.
+			expectedSamples: []expectedTsValue{
+				{1, 40, histogram.UnknownCounterReset}, // I1.
+				{2, 40, histogram.UnknownCounterReset}, // O1.
+				{3, 10, histogram.UnknownCounterReset}, // O2.
+				{4, 30, histogram.UnknownCounterReset}, // I2. Counter reset cleared by iterator change.
+			},
+			expectedChunks: []expectedChunk{
+				{histogram.UnknownCounterReset, 1}, // I1.
+				{histogram.UnknownCounterReset, 1}, // O1.
+				{histogram.UnknownCounterReset, 1}, // O2.
+				{histogram.UnknownCounterReset, 1}, // I2.
+			},
+		},
 		"counter reset in OOO mmapped chunk cleared by in-memory ooo chunk": {
 			samples: []tsValue{
 				{8, 30}, // In-order, new chunk. I1.
@@ -6570,36 +6570,36 @@ func testOOOInterleavedImplicitCounterResets(t *testing.T, name string, scenario
 				{histogram.UnknownCounterReset, 1}, // I1.
 			},
 		},
-		//"counter reset in OOO mmapped chunk cleared by another OOO mmapped chunk": {
-		//	samples: []tsValue{
-		//		{8, 100}, // In-order, new chunk. I1.
-		//		{1, 50},  // OOO, new chunk (will be mmapped). MO1.
-		//		{5, 40},  // OOO, reset (will be mmapped). MO2.
-		//		{6, 50},  // OOO, no reset (will be mmapped). MO2.
-		//		{2, 10},  // OOO, new chunk no reset (will be mmapped). MO3.
-		//		{3, 20},  // OOO, no reset (will be mmapped). MO3.
-		//		{4, 30},  // OOO, no reset (will be mmapped). MO3.
-		//		{7, 60},  // OOO, no reset in memory. O1.
-		//	},
-		//	oooCap: 3,
-		//	expectedSamples: []expectedTsValue{
-		//		{1, 50, histogram.UnknownCounterReset},  // MO1.
-		//		{2, 10, histogram.UnknownCounterReset},  // MO3.
-		//		{3, 20, histogram.NotCounterReset},      // MO3.
-		//		{4, 30, histogram.NotCounterReset},      // MO3.
-		//		{5, 40, histogram.UnknownCounterReset},  // MO2.
-		//		{6, 50, histogram.NotCounterReset},      // MO2.
-		//		{7, 60, histogram.UnknownCounterReset},  // O1.
-		//		{8, 100, histogram.UnknownCounterReset}, // I1.
-		//	},
-		//	expectedChunks: []expectedChunk{
-		//		{histogram.UnknownCounterReset, 1}, // MO1.
-		//		{histogram.UnknownCounterReset, 3}, // MO3.
-		//		{histogram.UnknownCounterReset, 2}, // MO2.
-		//		{histogram.UnknownCounterReset, 1}, // O1.
-		//		{histogram.UnknownCounterReset, 1}, // I1.
-		//	},
-		//},
+		"counter reset in OOO mmapped chunk cleared by another OOO mmapped chunk": {
+			samples: []tsValue{
+				{8, 100}, // In-order, new chunk. I1.
+				{1, 50},  // OOO, new chunk (will be mmapped). MO1.
+				{5, 40},  // OOO, reset (will be mmapped). MO2.
+				{6, 50},  // OOO, no reset (will be mmapped). MO2.
+				{2, 10},  // OOO, new chunk no reset (will be mmapped). MO3.
+				{3, 20},  // OOO, no reset (will be mmapped). MO3.
+				{4, 30},  // OOO, no reset (will be mmapped). MO3.
+				{7, 60},  // OOO, no reset in memory. O1.
+			},
+			oooCap: 3,
+			expectedSamples: []expectedTsValue{
+				{1, 50, histogram.UnknownCounterReset},  // MO1.
+				{2, 10, histogram.UnknownCounterReset},  // MO3.
+				{3, 20, histogram.NotCounterReset},      // MO3.
+				{4, 30, histogram.NotCounterReset},      // MO3.
+				{5, 40, histogram.UnknownCounterReset},  // MO2.
+				{6, 50, histogram.NotCounterReset},      // MO2.
+				{7, 60, histogram.UnknownCounterReset},  // O1.
+				{8, 100, histogram.UnknownCounterReset}, // I1.
+			},
+			expectedChunks: []expectedChunk{
+				{histogram.UnknownCounterReset, 1}, // MO1.
+				{histogram.UnknownCounterReset, 3}, // MO3.
+				{histogram.UnknownCounterReset, 2}, // MO2.
+				{histogram.UnknownCounterReset, 1}, // O1.
+				{histogram.UnknownCounterReset, 1}, // I1.
+			},
+		},
 	}
 
 	for tcName, tc := range cases {
