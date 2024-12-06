@@ -1,16 +1,16 @@
 load 5m
-  http_requests{job="api-server", instance="0", group="production"} 0+10x10
-  http_requests{job="api-server", instance="1", group="production"} 0+20x10
-  http_requests{job="api-server", instance="0", group="canary"}   0+30x10
-  http_requests{job="api-server", instance="1", group="canary"}   0+40x10
-  http_requests{job="app-server", instance="0", group="production"} 0+50x10
-  http_requests{job="app-server", instance="1", group="production"} 0+60x10
-  http_requests{job="app-server", instance="0", group="canary"}   0+70x10
-  http_requests{job="app-server", instance="1", group="canary"}   0+80x10
+  http_requests{__type__="counter",__unit__="a",job="api-server",instance="0",group="production"} 0+10x10
+  http_requests{__type__="counter",__unit__="b",job="api-server",instance="1",group="production"} 0+20x10
+  http_requests{__type__="counter",__unit__="c",job="api-server",instance="0",group="canary"}   0+30x10
+  http_requests{__type__="counter",__unit__="d",job="api-server",instance="1",group="canary"}   0+40x10
+  http_requests{__type__="counter",__unit__="e",job="app-server",instance="0",group="production"} 0+50x10
+  http_requests{__type__="counter",__unit__="f",job="app-server",instance="1",group="production"} 0+60x10
+  http_requests{__type__="counter",__unit__="g",job="app-server",instance="0",group="canary"}   0+70x10
+  http_requests{__type__="counter",__unit__="h",job="app-server",instance="1",group="canary"}   0+80x10
 
 load 5m
-  foo{job="api-server", instance="0", region="europe"} 0+90x10
-  foo{job="api-server"} 0+100x10
+  foo{__type__="gauge",__unit__="i",job="api-server",instance="0",region="europe"} 0+90x10
+  foo{__type__="gauge",__unit__="j",job="api-server"} 0+100x10
 
 # Simple sum.
 eval instant at 50m SUM BY (group) (http_requests{job="api-server"})
@@ -98,10 +98,10 @@ eval instant at 50m COUNT(http_requests) BY (job)
 	{job="app-server"} 4
 
 eval instant at 50m SUM(http_requests) BY (job, group)
-	{group="canary", job="api-server"} 700
-	{group="canary", job="app-server"} 1500
-	{group="production", job="api-server"} 300
-	{group="production", job="app-server"} 1100
+	{group="canary",job="api-server"} 700
+	{group="canary",job="app-server"} 1500
+	{group="production",job="api-server"} 300
+	{group="production",job="app-server"} 1100
 
 eval instant at 50m AVG(http_requests) BY (job)
 	{job="api-server"} 250
@@ -116,69 +116,69 @@ eval instant at 50m MAX(http_requests) BY (job)
 	{job="app-server"} 800
 
 eval instant at 50m abs(-1 * http_requests{group="production",job="api-server"})
-	{group="production", instance="0", job="api-server"} 100
-	{group="production", instance="1", job="api-server"} 200
+	{group="production",instance="0",job="api-server"} 100
+	{group="production",instance="1",job="api-server"} 200
 
 eval instant at 50m floor(0.004 * http_requests{group="production",job="api-server"})
-	{group="production", instance="0", job="api-server"} 0
-	{group="production", instance="1", job="api-server"} 0
+	{group="production",instance="0",job="api-server"} 0
+	{group="production",instance="1",job="api-server"} 0
 
 eval instant at 50m ceil(0.004 * http_requests{group="production",job="api-server"})
-	{group="production", instance="0", job="api-server"} 1
-	{group="production", instance="1", job="api-server"} 1
+	{group="production",instance="0",job="api-server"} 1
+	{group="production",instance="1",job="api-server"} 1
 
 eval instant at 50m round(0.004 * http_requests{group="production",job="api-server"})
-	{group="production", instance="0", job="api-server"} 0
-	{group="production", instance="1", job="api-server"} 1
+	{group="production",instance="0",job="api-server"} 0
+	{group="production",instance="1",job="api-server"} 1
 
 # Round should correctly handle negative numbers.
 eval instant at 50m round(-1 * (0.004 * http_requests{group="production",job="api-server"}))
-	{group="production", instance="0", job="api-server"} 0
-	{group="production", instance="1", job="api-server"} -1
+	{group="production",instance="0",job="api-server"} 0
+	{group="production",instance="1",job="api-server"} -1
 
 # Round should round half up.
 eval instant at 50m round(0.005 * http_requests{group="production",job="api-server"})
-	{group="production", instance="0", job="api-server"} 1
-	{group="production", instance="1", job="api-server"} 1
+	{group="production",instance="0",job="api-server"} 1
+	{group="production",instance="1",job="api-server"} 1
 
 eval instant at 50m round(-1 * (0.005 * http_requests{group="production",job="api-server"}))
-	{group="production", instance="0", job="api-server"} 0
-	{group="production", instance="1", job="api-server"} -1
+	{group="production",instance="0",job="api-server"} 0
+	{group="production",instance="1",job="api-server"} -1
 
 eval instant at 50m round(1 + 0.005 * http_requests{group="production",job="api-server"})
-	{group="production", instance="0", job="api-server"} 2
-	{group="production", instance="1", job="api-server"} 2
+	{group="production",instance="0",job="api-server"} 2
+	{group="production",instance="1",job="api-server"} 2
 
 eval instant at 50m round(-1 * (1 + 0.005 * http_requests{group="production",job="api-server"}))
-	{group="production", instance="0", job="api-server"} -1
-	{group="production", instance="1", job="api-server"} -2
+	{group="production",instance="0",job="api-server"} -1
+	{group="production",instance="1",job="api-server"} -2
 
 # Round should accept the number to round nearest to.
 eval instant at 50m round(0.0005 * http_requests{group="production",job="api-server"}, 0.1)
-	{group="production", instance="0", job="api-server"} 0.1
-	{group="production", instance="1", job="api-server"} 0.1
+	{group="production",instance="0",job="api-server"} 0.1
+	{group="production",instance="1",job="api-server"} 0.1
 
 eval instant at 50m round(2.1 + 0.0005 * http_requests{group="production",job="api-server"}, 0.1)
-	{group="production", instance="0", job="api-server"} 2.2
-	{group="production", instance="1", job="api-server"} 2.2
+	{group="production",instance="0",job="api-server"} 2.2
+	{group="production",instance="1",job="api-server"} 2.2
 
 eval instant at 50m round(5.2 + 0.0005 * http_requests{group="production",job="api-server"}, 0.1)
-	{group="production", instance="0", job="api-server"} 5.3
-	{group="production", instance="1", job="api-server"} 5.3
+	{group="production",instance="0",job="api-server"} 5.3
+	{group="production",instance="1",job="api-server"} 5.3
 
 # Round should work correctly with negative numbers and multiple decimal places.
 eval instant at 50m round(-1 * (5.2 + 0.0005 * http_requests{group="production",job="api-server"}), 0.1)
-	{group="production", instance="0", job="api-server"} -5.2
-	{group="production", instance="1", job="api-server"} -5.3
+	{group="production",instance="0",job="api-server"} -5.2
+	{group="production",instance="1",job="api-server"} -5.3
 
 # Round should work correctly with big toNearests.
 eval instant at 50m round(0.025 * http_requests{group="production",job="api-server"}, 5)
-	{group="production", instance="0", job="api-server"} 5
-	{group="production", instance="1", job="api-server"} 5
+	{group="production",instance="0",job="api-server"} 5
+	{group="production",instance="1",job="api-server"} 5
 
 eval instant at 50m round(0.045 * http_requests{group="production",job="api-server"}, 5)
-	{group="production", instance="0", job="api-server"} 5
-	{group="production", instance="1", job="api-server"} 10
+	{group="production",instance="0",job="api-server"} 5
+	{group="production",instance="1",job="api-server"} 10
 
 # Standard deviation and variance.
 eval instant at 50m stddev(http_requests)
@@ -198,9 +198,9 @@ eval instant at 50m stdvar by (instance)(http_requests)
 # Float precision test for standard deviation and variance
 clear
 load 5m
-  http_requests{job="api-server", instance="0", group="production"} 0+1.33x10
-  http_requests{job="api-server", instance="1", group="production"} 0+1.33x10
-  http_requests{job="api-server", instance="0", group="canary"} 0+1.33x10
+  http_requests{__type__="counter",__unit__="a",job="api-server",instance="0",group="production"} 0+1.33x10
+  http_requests{__type__="counter",__unit__="b",job="api-server",instance="1",group="production"} 0+1.33x10
+  http_requests{__type__="counter",__unit__="c",job="api-server",instance="0",group="canary"} 0+1.33x10
 
 eval instant at 50m stddev(http_requests)
   {} 0.0
@@ -212,23 +212,23 @@ eval instant at 50m stdvar(http_requests)
 # Regression test for missing separator byte in labelsToGroupingKey.
 clear
 load 5m
-  label_grouping_test{a="aa", b="bb"} 0+10x10
-  label_grouping_test{a="a", b="abb"} 0+20x10
+  label_grouping_test{__type__="aa",__unit__="aa",a="aa",b="bb"} 0+10x10
+  label_grouping_test{__type__="ab",__unit__="b",a="a",b="abb"} 0+20x10
 
 eval instant at 50m sum(label_grouping_test) by (a, b)
-  {a="a", b="abb"} 200
-  {a="aa", b="bb"} 100
+  {a="a",b="abb"} 200
+  {a="aa",b="bb"} 100
 
 
 
 # Tests for min/max.
 clear
 load 5m
-  http_requests{job="api-server", instance="0", group="production"}	1
-  http_requests{job="api-server", instance="1", group="production"}	2
-  http_requests{job="api-server", instance="0", group="canary"}		NaN
-  http_requests{job="api-server", instance="1", group="canary"}		3
-  http_requests{job="api-server", instance="2", group="canary"}		4
+  http_requests{__type__="counter",__unit__="a",job="api-server",instance="0",group="production"}	1
+  http_requests{__type__="counter",__unit__="b",job="api-server",instance="1",group="production"}	2
+  http_requests{__type__="counter",__unit__="c",job="api-server",instance="0",group="canary"}		NaN
+  http_requests{__type__="counter",__unit__="d",job="api-server",instance="1",group="canary"}		3
+  http_requests{__type__="counter",__unit__="e",job="api-server",instance="2",group="canary"}		4
 
 eval instant at 0m max(http_requests)
   {} 4
@@ -248,96 +248,96 @@ clear
 
 # Tests for topk/bottomk.
 load 5m
-	http_requests{job="api-server", instance="0", group="production"}	0+10x10
-	http_requests{job="api-server", instance="1", group="production"}	0+20x10
-	http_requests{job="api-server", instance="2", group="production"}	NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN
-	http_requests{job="api-server", instance="0", group="canary"}		0+30x10
-	http_requests{job="api-server", instance="1", group="canary"}		0+40x10
-	http_requests{job="app-server", instance="0", group="production"}	0+50x10
-	http_requests{job="app-server", instance="1", group="production"}	0+60x10
-	http_requests{job="app-server", instance="0", group="canary"}		0+70x10
-	http_requests{job="app-server", instance="1", group="canary"}		0+80x10
-	foo 3+0x10
+	http_requests{__type__="counter",__unit__="a",job="api-server",instance="0",group="production"}	0+10x10
+	http_requests{__type__="counter",__unit__="b",job="api-server",instance="1",group="production"}	0+20x10
+	http_requests{__type__="counter",__unit__="c",job="api-server",instance="2",group="production"}	NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN
+	http_requests{__type__="counter",__unit__="d",job="api-server",instance="0",group="canary"}		0+30x10
+	http_requests{__type__="counter",__unit__="e",job="api-server",instance="1",group="canary"}		0+40x10
+	http_requests{__type__="counter",__unit__="f",job="app-server",instance="0",group="production"}	0+50x10
+	http_requests{__type__="counter",__unit__="g",job="app-server",instance="1",group="production"}	0+60x10
+	http_requests{__type__="counter",__unit__="h",job="app-server",instance="0",group="canary"}		0+70x10
+	http_requests{__type__="counter",__unit__="i",job="app-server",instance="1",group="canary"}		0+80x10
+	foo{__type__="gauge"} 3+0x10
 
 eval_ordered instant at 50m topk(3, http_requests)
-	http_requests{group="canary", instance="1", job="app-server"} 800
-	http_requests{group="canary", instance="0", job="app-server"} 700
-	http_requests{group="production", instance="1", job="app-server"} 600
+	http_requests{__type__="counter",__unit__="i",group="canary",instance="1",job="app-server"} 800
+	http_requests{__type__="counter",__unit__="h",group="canary",instance="0",job="app-server"} 700
+	http_requests{__type__="counter",__unit__="g",group="production",instance="1",job="app-server"} 600
 
 eval_ordered instant at 50m topk((3), (http_requests))
-	http_requests{group="canary", instance="1", job="app-server"} 800
-	http_requests{group="canary", instance="0", job="app-server"} 700
-	http_requests{group="production", instance="1", job="app-server"} 600
+	http_requests{__type__="counter",__unit__="i",group="canary",instance="1",job="app-server"} 800
+	http_requests{__type__="counter",__unit__="h",group="canary",instance="0",job="app-server"} 700
+	http_requests{__type__="counter",__unit__="g",group="production",instance="1",job="app-server"} 600
 
 eval_ordered instant at 50m topk(5, http_requests{group="canary",job="app-server"})
-	http_requests{group="canary", instance="1", job="app-server"} 800
-	http_requests{group="canary", instance="0", job="app-server"} 700
+	http_requests{__type__="counter",__unit__="i",group="canary",instance="1",job="app-server"} 800
+	http_requests{__type__="counter",__unit__="h",group="canary",instance="0",job="app-server"} 700
 
 eval_ordered instant at 50m bottomk(3, http_requests)
-	http_requests{group="production", instance="0", job="api-server"} 100
-	http_requests{group="production", instance="1", job="api-server"} 200
-	http_requests{group="canary", instance="0", job="api-server"} 300
+	http_requests{__type__="counter",__unit__="a",group="production",instance="0",job="api-server"} 100
+	http_requests{__type__="counter",__unit__="b",group="production",instance="1",job="api-server"} 200
+	http_requests{__type__="counter",__unit__="d",group="canary",instance="0",job="api-server"} 300
 
 eval_ordered instant at 50m bottomk(5, http_requests{group="canary",job="app-server"})
-	http_requests{group="canary", instance="0", job="app-server"} 700
-	http_requests{group="canary", instance="1", job="app-server"} 800
+	http_requests{__type__="counter",__unit__="h",group="canary",instance="0",job="app-server"} 700
+	http_requests{__type__="counter",__unit__="i",group="canary",instance="1",job="app-server"} 800
 
 eval instant at 50m topk by (group) (1, http_requests)
-  http_requests{group="production", instance="1", job="app-server"} 600
-  http_requests{group="canary", instance="1", job="app-server"} 800
+  http_requests{__type__="counter",__unit__="g",group="production",instance="1",job="app-server"} 600
+  http_requests{__type__="counter",__unit__="i",group="canary",instance="1",job="app-server"} 800
 
 eval instant at 50m bottomk by (group) (2, http_requests)
-  http_requests{group="canary", instance="0", job="api-server"} 300
-  http_requests{group="canary", instance="1", job="api-server"} 400
-  http_requests{group="production", instance="0", job="api-server"} 100
-  http_requests{group="production", instance="1", job="api-server"} 200
+  http_requests{__type__="counter",__unit__="d",group="canary",instance="0",job="api-server"} 300
+  http_requests{__type__="counter",__unit__="e",group="canary",instance="1",job="api-server"} 400
+  http_requests{__type__="counter",__unit__="a",group="production",instance="0",job="api-server"} 100
+  http_requests{__type__="counter",__unit__="b",group="production",instance="1",job="api-server"} 200
 
 eval_ordered instant at 50m bottomk by (group) (2, http_requests{group="production"})
-  http_requests{group="production", instance="0", job="api-server"} 100
-  http_requests{group="production", instance="1", job="api-server"} 200
+  http_requests{__type__="counter",__unit__="a",group="production",instance="0",job="api-server"} 100
+  http_requests{__type__="counter",__unit__="b",group="production",instance="1",job="api-server"} 200
 
 # Test NaN is sorted away from the top/bottom.
 eval_ordered instant at 50m topk(3, http_requests{job="api-server",group="production"})
-	http_requests{job="api-server", instance="1", group="production"}	200
-	http_requests{job="api-server", instance="0", group="production"}	100
-	http_requests{job="api-server", instance="2", group="production"}	NaN
+	http_requests{__type__="counter",__unit__="b",job="api-server",instance="1",group="production"}	200
+	http_requests{__type__="counter",__unit__="a",job="api-server",instance="0",group="production"}	100
+	http_requests{__type__="counter",__unit__="c",job="api-server",instance="2",group="production"}	NaN
 
 eval_ordered instant at 50m bottomk(3, http_requests{job="api-server",group="production"})
-	http_requests{job="api-server", instance="0", group="production"}	100
-	http_requests{job="api-server", instance="1", group="production"}	200
-	http_requests{job="api-server", instance="2", group="production"}	NaN
+	http_requests{__type__="counter",__unit__="a",job="api-server",instance="0",group="production"}	100
+	http_requests{__type__="counter",__unit__="b",job="api-server",instance="1",group="production"}	200
+	http_requests{__type__="counter",__unit__="c",job="api-server",instance="2",group="production"}	NaN
 
 # Test topk and bottomk allocate min(k, input_vector) for results vector
 eval_ordered instant at 50m bottomk(9999999999, http_requests{job="app-server",group="canary"})
-	http_requests{group="canary", instance="0", job="app-server"} 700
-	http_requests{group="canary", instance="1", job="app-server"} 800
+	http_requests{__type__="counter",__unit__="h",group="canary",instance="0",job="app-server"} 700
+	http_requests{__type__="counter",__unit__="i",group="canary",instance="1",job="app-server"} 800
 
 eval_ordered instant at 50m topk(9999999999, http_requests{job="api-server",group="production"})
-	http_requests{job="api-server", instance="1", group="production"}	200
-	http_requests{job="api-server", instance="0", group="production"}	100
-	http_requests{job="api-server", instance="2", group="production"}	NaN
+	http_requests{__type__="counter",__unit__="b",job="api-server",instance="1",group="production"}	200
+	http_requests{__type__="counter",__unit__="a",job="api-server",instance="0",group="production"}	100
+	http_requests{__type__="counter",__unit__="c",job="api-server",instance="2",group="production"}	NaN
 
 # Bug #5276.
 eval_ordered instant at 50m topk(scalar(foo), http_requests)
-	http_requests{group="canary", instance="1", job="app-server"} 800
-	http_requests{group="canary", instance="0", job="app-server"} 700
-	http_requests{group="production", instance="1", job="app-server"} 600
+	http_requests{__type__="counter",__unit__="i",group="canary",instance="1",job="app-server"} 800
+	http_requests{__type__="counter",__unit__="h",group="canary",instance="0",job="app-server"} 700
+	http_requests{__type__="counter",__unit__="g",group="production",instance="1",job="app-server"} 600
 
 clear
 
 # Tests for count_values.
 load 5m
-	version{job="api-server", instance="0", group="production"}	6
-	version{job="api-server", instance="1", group="production"}	6
-	version{job="api-server", instance="2", group="production"}	6
-	version{job="api-server", instance="0", group="canary"}		8
-	version{job="api-server", instance="1", group="canary"}		8
-	version{job="app-server", instance="0", group="production"}	6
-	version{job="app-server", instance="1", group="production"}	6
-	version{job="app-server", instance="0", group="canary"}		7
-	version{job="app-server", instance="1", group="canary"}		7
+	version{__type__="gauge",__unit__="a",job="api-server",instance="0",group="production"}	6
+	version{__type__="gauge",__unit__="b",job="api-server",instance="1",group="production"}	6
+	version{__type__="gauge",__unit__="c",job="api-server",instance="2",group="production"}	6
+	version{__type__="gauge",__unit__="d",job="api-server",instance="0",group="canary"}		8
+	version{__type__="gauge",__unit__="e",job="api-server",instance="1",group="canary"}		8
+	version{__type__="gauge",__unit__="f",job="app-server",instance="0",group="production"}	6
+	version{__type__="gauge",__unit__="g",job="app-server",instance="1",group="production"}	6
+	version{__type__="gauge",__unit__="h",job="app-server",instance="0",group="canary"}		7
+	version{__type__="gauge",__unit__="i",job="app-server",instance="1",group="canary"}		7
 
-eval instant at 1m count_values("version", version)
+eval instant at 1m count_values("version",version)
 	{version="6"} 5
 	{version="7"} 2
 	{version="8"} 2
@@ -349,38 +349,38 @@ eval instant at 1m count_values(((("version"))), version)
        {version="8"} 2
 
 
-eval instant at 1m count_values without (instance)("version", version)
-	{job="api-server", group="production", version="6"} 3
-	{job="api-server", group="canary", version="8"} 2
-	{job="app-server", group="production", version="6"} 2
-	{job="app-server", group="canary", version="7"} 2
+eval instant at 1m count_values without (instance)("version",version)
+	{job="api-server",group="production",version="6"} 3
+	{job="api-server",group="canary",version="8"} 2
+	{job="app-server",group="production",version="6"} 2
+	{job="app-server",group="canary",version="7"} 2
 
 # Overwrite label with output. Don't do this.
-eval instant at 1m count_values without (instance)("job", version)
-	{job="6", group="production"} 5
-	{job="8", group="canary"} 2
-	{job="7", group="canary"} 2
+eval instant at 1m count_values without (instance)("job",version)
+	{job="6",group="production"} 5
+	{job="8",group="canary"} 2
+	{job="7",group="canary"} 2
 
 # Overwrite label with output. Don't do this.
-eval instant at 1m count_values by (job, group)("job", version)
-	{job="6", group="production"} 5
-	{job="8", group="canary"} 2
-	{job="7", group="canary"} 2
+eval instant at 1m count_values by (job, group)("job",version)
+	{job="6",group="production"} 5
+	{job="8",group="canary"} 2
+	{job="7",group="canary"} 2
 
 
 # Tests for quantile.
 clear
 
 load 10s
-	data{test="two samples",point="a"} 0
-	data{test="two samples",point="b"} 1
-	data{test="three samples",point="a"} 0
-	data{test="three samples",point="b"} 1
-	data{test="three samples",point="c"} 2
-	data{test="uneven samples",point="a"} 0
-	data{test="uneven samples",point="b"} 1
-	data{test="uneven samples",point="c"} 4
-	foo .8
+	data{__type__="counter",__unit__="a",test="two samples",point="a"} 0
+	data{__type__="counter",__unit__="b",test="two samples",point="b"} 1
+	data{__type__="counter",__unit__="c",test="three samples",point="a"} 0
+	data{__type__="counter",__unit__="d",test="three samples",point="b"} 1
+	data{__type__="counter",__unit__="e",test="three samples",point="c"} 2
+	data{__type__="counter",__unit__="f",test="uneven samples",point="a"} 0
+	data{__type__="counter",__unit__="g",test="uneven samples",point="b"} 1
+	data{__type__="counter",__unit__="h",test="uneven samples",point="c"} 4
+	foo{__type__="gauge",__unit__="seconds"} .8
 
 eval instant at 1m quantile without(point)(0.8, data)
 	{test="two samples"} 0.8
@@ -408,15 +408,15 @@ eval_warn instant at 1m quantile without(point)(NaN, data)
 clear
 
 load 10s
-	data{test="two samples",point="a"} 0
-	data{test="two samples",point="b"} 1
-	data{test="three samples",point="a"} 0
-	data{test="three samples",point="b"} 1
-	data{test="three samples",point="c"} 2
-	data{test="uneven samples",point="a"} 0
-	data{test="uneven samples",point="b"} 1
-	data{test="uneven samples",point="c"} 4
-	foo .8
+	data{__type__="counter",__unit__="a",test="two samples",point="a"} 0
+	data{__type__="counter",__unit__="b",test="two samples",point="b"} 1
+	data{__type__="counter",__unit__="c",test="three samples",point="a"} 0
+	data{__type__="counter",__unit__="d",test="three samples",point="b"} 1
+	data{__type__="counter",__unit__="e",test="three samples",point="c"} 2
+	data{__type__="counter",__unit__="f",test="uneven samples",point="a"} 0
+	data{__type__="counter",__unit__="g",test="uneven samples",point="b"} 1
+	data{__type__="counter",__unit__="h",test="uneven samples",point="c"} 4
+	foo{__type__="gauge",__unit__="seconds"} .8
 
 eval instant at 1m group without(point)(data)
 	{test="two samples"} 1
@@ -430,45 +430,45 @@ eval instant at 1m group(foo)
 clear
 
 load 10s
-	data{test="ten",point="a"} 8
-	data{test="ten",point="b"} 10
-	data{test="ten",point="c"} 12
-	data{test="inf",point="a"} 0
-	data{test="inf",point="b"} Inf
-	data{test="inf",point="d"} Inf
-	data{test="inf",point="c"} 0
-	data{test="-inf",point="a"} -Inf
-	data{test="-inf",point="b"} -Inf
-	data{test="-inf",point="c"} 0
-	data{test="inf2",point="a"} Inf
-	data{test="inf2",point="b"} 0
-	data{test="inf2",point="c"} Inf
-	data{test="-inf2",point="a"} -Inf
-	data{test="-inf2",point="b"} 0
-	data{test="-inf2",point="c"} -Inf
-	data{test="inf3",point="b"} Inf
-	data{test="inf3",point="d"} Inf
-	data{test="inf3",point="c"} Inf
-	data{test="inf3",point="d"} -Inf
-	data{test="-inf3",point="b"} -Inf
-	data{test="-inf3",point="d"} -Inf
-	data{test="-inf3",point="c"} -Inf
-	data{test="-inf3",point="c"} Inf
-	data{test="nan",point="a"} -Inf
-	data{test="nan",point="b"} 0
-	data{test="nan",point="c"} Inf
-	data{test="big",point="a"} 9.988465674311579e+307
-	data{test="big",point="b"} 9.988465674311579e+307
-	data{test="big",point="c"} 9.988465674311579e+307
-	data{test="big",point="d"} 9.988465674311579e+307
-	data{test="-big",point="a"} -9.988465674311579e+307
-	data{test="-big",point="b"} -9.988465674311579e+307
-	data{test="-big",point="c"} -9.988465674311579e+307
-	data{test="-big",point="d"} -9.988465674311579e+307
-	data{test="bigzero",point="a"} -9.988465674311579e+307
-	data{test="bigzero",point="b"} -9.988465674311579e+307
-	data{test="bigzero",point="c"} 9.988465674311579e+307
-	data{test="bigzero",point="d"} 9.988465674311579e+307
+	data{__type__="counter",__unit__="a",test="ten",point="a"} 8
+	data{__type__="counter",__unit__="b",test="ten",point="b"} 10
+	data{__type__="counter",__unit__="c",test="ten",point="c"} 12
+	data{__type__="counter",__unit__="d",test="inf",point="a"} 0
+	data{__type__="counter",__unit__="e",test="inf",point="b"} Inf
+	data{__type__="counter",__unit__="f",test="inf",point="d"} Inf
+	data{__type__="counter",__unit__="g",test="inf",point="c"} 0
+	data{__type__="counter",__unit__="h",test="-inf",point="a"} -Inf
+	data{__type__="counter",__unit__="i",test="-inf",point="b"} -Inf
+	data{__type__="counter",__unit__="j",test="-inf",point="c"} 0
+	data{__type__="counter",__unit__="k",test="inf2",point="a"} Inf
+	data{__type__="counter",__unit__="l",test="inf2",point="b"} 0
+	data{__type__="counter",__unit__="m",test="inf2",point="c"} Inf
+	data{__type__="counter",__unit__="n",test="-inf2",point="a"} -Inf
+	data{__type__="counter",__unit__="o",test="-inf2",point="b"} 0
+	data{__type__="counter",__unit__="p",test="-inf2",point="c"} -Inf
+	data{__type__="counter",__unit__="q",test="inf3",point="b"} Inf
+	data{__type__="counter",__unit__="r",test="inf3",point="d"} Inf
+	data{__type__="counter",__unit__="s",test="inf3",point="c"} Inf
+	data{__type__="counter",__unit__="t",test="inf3",point="d"} -Inf
+	data{__type__="counter",__unit__="u",test="-inf3",point="b"} -Inf
+	data{__type__="counter",__unit__="v",test="-inf3",point="d"} -Inf
+	data{__type__="counter",__unit__="w",test="-inf3",point="c"} -Inf
+	data{__type__="counter",__unit__="x",test="-inf3",point="c"} Inf
+	data{__type__="counter",__unit__="y",test="nan",point="a"} -Inf
+	data{__type__="counter",__unit__="z",test="nan",point="b"} 0
+	data{__type__="counter",__unit__="aa",test="nan",point="c"} Inf
+	data{__type__="counter",__unit__="bb",test="big",point="a"} 9.988465674311579e+307
+	data{__type__="counter",__unit__="cc",test="big",point="b"} 9.988465674311579e+307
+	data{__type__="counter",__unit__="dd",test="big",point="c"} 9.988465674311579e+307
+	data{__type__="counter",__unit__="ee",test="big",point="d"} 9.988465674311579e+307
+	data{__type__="counter",__unit__="ff",test="-big",point="a"} -9.988465674311579e+307
+	data{__type__="counter",__unit__="gg",test="-big",point="b"} -9.988465674311579e+307
+	data{__type__="counter",__unit__="hh",test="-big",point="c"} -9.988465674311579e+307
+	data{__type__="counter",__unit__="ii",test="-big",point="d"} -9.988465674311579e+307
+	data{__type__="counter",__unit__="jj",test="bigzero",point="a"} -9.988465674311579e+307
+	data{__type__="counter",__unit__="kk",test="bigzero",point="b"} -9.988465674311579e+307
+	data{__type__="counter",__unit__="ll",test="bigzero",point="c"} 9.988465674311579e+307
+	data{__type__="counter",__unit__="mm",test="bigzero",point="d"} 9.988465674311579e+307
 
 eval instant at 1m avg(data{test="ten"})
 	{} 10
@@ -507,24 +507,24 @@ eval instant at 1m avg(data{test="bigzero"})
 clear
 
 load 10s
-	data{test="ten",point="a"} 2
-	data{test="ten",point="b"} 8
-	data{test="ten",point="c"} 1e+100
-	data{test="ten",point="d"} -1e100
-	data{test="pos_inf",group="1",point="a"} Inf
-	data{test="pos_inf",group="1",point="b"} 2
-	data{test="pos_inf",group="2",point="a"} 2
-	data{test="pos_inf",group="2",point="b"} Inf
-	data{test="neg_inf",group="1",point="a"} -Inf
-	data{test="neg_inf",group="1",point="b"} 2
-	data{test="neg_inf",group="2",point="a"} 2
-	data{test="neg_inf",group="2",point="b"} -Inf
-	data{test="inf_inf",point="a"} Inf
-	data{test="inf_inf",point="b"} -Inf
-	data{test="nan",group="1",point="a"} NaN
-	data{test="nan",group="1",point="b"} 2
-	data{test="nan",group="2",point="a"} 2
-	data{test="nan",group="2",point="b"} NaN
+	data{__type__="counter",__unit__="a",test="ten",point="a"} 2
+	data{__type__="counter",__unit__="b",test="ten",point="b"} 8
+	data{__type__="counter",__unit__="c",test="ten",point="c"} 1e+100
+	data{__type__="counter",__unit__="d",test="ten",point="d"} -1e100
+	data{__type__="counter",__unit__="e",test="pos_inf",group="1",point="a"} Inf
+	data{__type__="counter",__unit__="f",test="pos_inf",group="1",point="b"} 2
+	data{__type__="counter",__unit__="g",test="pos_inf",group="2",point="a"} 2
+	data{__type__="counter",__unit__="h",test="pos_inf",group="2",point="b"} Inf
+	data{__type__="counter",__unit__="i",test="neg_inf",group="1",point="a"} -Inf
+	data{__type__="counter",__unit__="j",test="neg_inf",group="1",point="b"} 2
+	data{__type__="counter",__unit__="k",test="neg_inf",group="2",point="a"} 2
+	data{__type__="counter",__unit__="l",test="neg_inf",group="2",point="b"} -Inf
+	data{__type__="counter",__unit__="m",test="inf_inf",point="a"} Inf
+	data{__type__="counter",__unit__="n",test="inf_inf",point="b"} -Inf
+	data{__type__="counter",__unit__="o",test="nan",group="1",point="a"} NaN
+	data{__type__="counter",__unit__="p",test="nan",group="1",point="b"} 2
+	data{__type__="counter",__unit__="q",test="nan",group="2",point="a"} 2
+	data{__type__="counter",__unit__="r",test="nan",group="2",point="b"} NaN
 
 eval instant at 1m sum(data{test="ten"})
 	{} 10
@@ -567,8 +567,8 @@ clear
 # Test that aggregations are deterministic.
 # Commented because it is flaky in range mode.
 #load 10s
-#	up{job="prometheus"} 1
-#	up{job="prometheus2"} 1
+#	up{__type__="gauge",__unit__="a",job="prometheus"} 1
+#	up{__type__="gauge",__unit__="b",job="prometheus2"} 1
 #
 #eval instant at 1m count(topk(1,max(up) without()) == topk(1,max(up) without()) == topk(1,max(up) without()) == topk(1,max(up) without()) == topk(1,max(up) without()))
 #	{} 1

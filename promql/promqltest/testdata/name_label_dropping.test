@@ -1,11 +1,11 @@
 # Test for __name__ label drop.
 load 5m
-	metric{env="1"}	0 60 120
-	another_metric{env="1"}	60 120 180
+	metric{__type__="gauge",__unit__="a",env="1"}	0 60 120
+	another_metric{__type__="counter",__unit__="b",env="1"}	60 120 180
 
 # Does not drop __name__ for vector selector
 eval instant at 10m metric{env="1"}
-	metric{env="1"} 120
+	metric{__type__="gauge",__unit__="a",env="1"} 120
 
 # Drops __name__ for unary operators
 eval instant at 10m -metric

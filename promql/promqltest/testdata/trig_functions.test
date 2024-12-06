@@ -1,9 +1,9 @@
 # Testing sin() cos() tan() asin() acos() atan() sinh() cosh() tanh() rad() deg() pi().
 
 load 5m
-	trig{l="x"} 10
-	trig{l="y"} 20
-	trig{l="NaN"} NaN
+	trig{__type__="gauge",__unit__="a",l="x"} 10
+	trig{__type__="gauge",__unit__="b",l="y"} 20
+	trig{__type__="gauge",__unit__="c",l="NaN"} NaN
 
 eval instant at 1m sin(trig)
 	{l="x"} -0.5440211108893699

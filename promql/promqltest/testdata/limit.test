@@ -3,12 +3,12 @@
 # NB: those many `and http_requests` are to ensure that the series _are_ indeed
 # a subset of the original series.
 load 5m
-	http_requests{job="api-server", instance="0", group="production"}	0+10x10
-	http_requests{job="api-server", instance="1", group="production"}	0+20x10
-	http_requests{job="api-server", instance="0", group="canary"}		0+30x10
-	http_requests{job="api-server", instance="1", group="canary"}		0+40x10
-	http_requests{job="api-server", instance="2", group="canary"}		0+50x10
-	http_requests{job="api-server", instance="3", group="canary"}		0+60x10
+	http_requests{__type__="counter",__unit__="a",job="api-server", instance="0", group="production"}	0+10x10
+	http_requests{__type__="counter",__unit__="b",job="api-server", instance="1", group="production"}	0+20x10
+	http_requests{__type__="counter",__unit__="c",job="api-server", instance="0", group="canary"}		0+30x10
+	http_requests{__type__="counter",__unit__="d",job="api-server", instance="1", group="canary"}		0+40x10
+	http_requests{__type__="counter",__unit__="e",job="api-server", instance="2", group="canary"}		0+50x10
+	http_requests{__type__="counter",__unit__="f",job="api-server", instance="3", group="canary"}		0+60x10
 
 eval instant at 50m count(limitk by (group) (0, http_requests))
 # empty

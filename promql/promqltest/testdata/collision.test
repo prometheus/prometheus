@@ -1,9 +1,9 @@
 
 load 1s
-      node_namespace_pod:kube_pod_info:{namespace="observability",node="gke-search-infra-custom-96-253440-fli-d135b119-jx00",pod="node-exporter-l454v"} 1
-      node_cpu_seconds_total{cpu="10",endpoint="https",instance="10.253.57.87:9100",job="node-exporter",mode="idle",namespace="observability",pod="node-exporter-l454v",service="node-exporter"} 449
-      node_cpu_seconds_total{cpu="35",endpoint="https",instance="10.253.57.87:9100",job="node-exporter",mode="idle",namespace="observability",pod="node-exporter-l454v",service="node-exporter"} 449
-      node_cpu_seconds_total{cpu="89",endpoint="https",instance="10.253.57.87:9100",job="node-exporter",mode="idle",namespace="observability",pod="node-exporter-l454v",service="node-exporter"} 449
+      node_namespace_pod:kube_pod_info:{__type__="gauge",__unit__="a",namespace="observability",node="gke-search-infra-custom-96-253440-fli-d135b119-jx00",pod="node-exporter-l454v"} 1
+      node_cpu_seconds_total{__type__="counter",__unit__="a",cpu="10",endpoint="https",instance="10.253.57.87:9100",job="node-exporter",mode="idle",namespace="observability",pod="node-exporter-l454v",service="node-exporter"} 449
+      node_cpu_seconds_total{__type__="counter",__unit__="b",cpu="35",endpoint="https",instance="10.253.57.87:9100",job="node-exporter",mode="idle",namespace="observability",pod="node-exporter-l454v",service="node-exporter"} 449
+      node_cpu_seconds_total{__type__="counter",__unit__="c",cpu="89",endpoint="https",instance="10.253.57.87:9100",job="node-exporter",mode="idle",namespace="observability",pod="node-exporter-l454v",service="node-exporter"} 449
 
 eval instant at 4s count by(namespace, pod, cpu) (node_cpu_seconds_total{cpu=~".*",job="node-exporter",mode="idle",namespace="observability",pod="node-exporter-l454v"}) * on(namespace, pod) group_left(node) node_namespace_pod:kube_pod_info:{namespace="observability",pod="node-exporter-l454v"}
     {cpu="10",namespace="observability",node="gke-search-infra-custom-96-253440-fli-d135b119-jx00",pod="node-exporter-l454v"} 1
@@ -14,8 +14,8 @@ clear
 
 # Test duplicate labelset in promql output.
 load 5m
-  testmetric1{src="a",dst="b"} 0
-  testmetric2{src="a",dst="b"} 1
+  testmetric1{__type__="gauge",__unit__="a",src="a",dst="b"} 0
+  testmetric2{__type__="gauge",__unit__="b",src="a",dst="b"} 1
 
 eval_fail instant at 0m ceil({__name__=~'testmetric1|testmetric2'})
 

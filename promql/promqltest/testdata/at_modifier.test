@@ -1,62 +1,62 @@
 load 10s
-  metric{job="1"} 0+1x1000
-  metric{job="2"} 0+2x1000
+  metric{__type__="counter",__unit__="a", job="1"} 0+1x1000
+  metric{__type__="counter",__unit__="b", job="2"} 0+2x1000
 
 load 1ms
-  metric_ms 0+1x10000
+  metric_ms{__type__="counter", __unit__="milliseconds"} 0+1x10000
 
 # Instant vector selectors.
 eval instant at 10s metric @ 100
-  metric{job="1"} 10
-  metric{job="2"} 20
+  metric{__type__="counter",__unit__="a",job="1"} 10
+  metric{__type__="counter",__unit__="b",job="2"} 20
 
 eval instant at 10s metric @ 100s
-  metric{job="1"} 10
-  metric{job="2"} 20
+  metric{__type__="counter",__unit__="a",job="1"} 10
+  metric{__type__="counter",__unit__="b",job="2"} 20
 
 eval instant at 10s metric @ 1m40s
-  metric{job="1"} 10
-  metric{job="2"} 20
+  metric{__type__="counter",__unit__="a",job="1"} 10
+  metric{__type__="counter",__unit__="b",job="2"} 20
 
 eval instant at 10s metric @ 100 offset 50s
-  metric{job="1"} 5
-  metric{job="2"} 10
+  metric{__type__="counter",__unit__="a",job="1"} 5
+  metric{__type__="counter",__unit__="b",job="2"} 10
 
 eval instant at 10s metric @ 100 offset 50
-  metric{job="1"} 5
-  metric{job="2"} 10
+  metric{__type__="counter",__unit__="a",job="1"} 5
+  metric{__type__="counter",__unit__="b",job="2"} 10
 
 eval instant at 10s metric offset 50s @ 100
-  metric{job="1"} 5
-  metric{job="2"} 10
+  metric{__type__="counter",__unit__="a",job="1"} 5
+  metric{__type__="counter",__unit__="b",job="2"} 10
 
 eval instant at 10s metric offset 50 @ 100
-  metric{job="1"} 5
-  metric{job="2"} 10
+  metric{__type__="counter",__unit__="a",job="1"} 5
+  metric{__type__="counter",__unit__="b",job="2"} 10
 
 eval instant at 10s metric @ 0 offset -50s
-  metric{job="1"} 5
-  metric{job="2"} 10
+  metric{__type__="counter",__unit__="a",job="1"} 5
+  metric{__type__="counter",__unit__="b",job="2"} 10
 
 eval instant at 10s metric @ 0 offset -50
-  metric{job="1"} 5
-  metric{job="2"} 10
+  metric{__type__="counter",__unit__="a",job="1"} 5
+  metric{__type__="counter",__unit__="b",job="2"} 10
 
 eval instant at 10s metric offset -50s @ 0
-  metric{job="1"} 5
-  metric{job="2"} 10
+  metric{__type__="counter",__unit__="a",job="1"} 5
+  metric{__type__="counter",__unit__="b",job="2"} 10
 
 eval instant at 10s metric offset -50 @ 0
-  metric{job="1"} 5
-  metric{job="2"} 10
+  metric{__type__="counter",__unit__="a",job="1"} 5
+  metric{__type__="counter",__unit__="b",job="2"} 10
 
 eval instant at 10s metric @ 0 offset -50s
-  metric{job="1"} 5
-  metric{job="2"} 10
+  metric{__type__="counter",__unit__="a",job="1"} 5
+  metric{__type__="counter",__unit__="b",job="2"} 10
 
 eval instant at 10s metric @ 0 offset -50
-  metric{job="1"} 5
-  metric{job="2"} 10
+  metric{__type__="counter",__unit__="a",job="1"} 5
+  metric{__type__="counter",__unit__="b",job="2"} 10
 
 eval instant at 10s -metric @ 100
   {job="1"} -10
@@ -68,7 +68,7 @@ eval instant at 10s ---metric @ 100
 
 # Millisecond precision.
 eval instant at 100s metric_ms @ 1.234
-  metric_ms 1234
+  metric_ms{__type__="counter",__unit__="milliseconds"} 1234
 
 # Range vector selectors.
 eval instant at 25s sum_over_time(metric{job="1"}[100s] @ 100)

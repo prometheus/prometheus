@@ -1,8 +1,8 @@
 # Testdata for resets() and changes().
 load 5m
-	http_requests{path="/foo"}	1 2 3 0 1 0 0 1 2 0
-	http_requests{path="/bar"}	1 2 3 4 5 1 2 3 4 5
-	http_requests{path="/biz"}	0 0 0 0 0 1 1 1 1 1
+	http_requests{__type__="counter",__unit__="a",path="/foo"}	1 2 3 0 1 0 0 1 2 0
+	http_requests{__type__="counter",__unit__="b",path="/bar"}	1 2 3 4 5 1 2 3 4 5
+	http_requests{__type__="counter",__unit__="c",path="/biz"}	0 0 0 0 0 1 1 1 1 1
 
 # Tests for resets().
 eval instant at 50m resets(http_requests[5m])
@@ -72,8 +72,8 @@ eval instant at 50m changes(nonexistent_metric[50m])
 clear
 
 load 5m
-  x{a="b"} NaN NaN NaN
-  x{a="c"} 0 NaN 0
+  x{__type__="gauge",__unit__="a",a="b"} NaN NaN NaN
+  x{__type__="gauge",__unit__="b",a="c"} 0 NaN 0
 
 eval instant at 15m changes(x[20m])
   {a="b"} 0
@@ -83,10 +83,10 @@ clear
 
 # Tests for increase().
 load 5m
-	http_requests{path="/foo"}	0+10x10
-	http_requests{path="/bar"}	0+18x5 0+18x5
-	http_requests{path="/dings"}   10+10x10
-	http_requests{path="/bumms"}    1+10x10
+	http_requests{__type__="counter",__unit__="a",path="/foo"}	0+10x10
+	http_requests{__type__="counter",__unit__="b",path="/bar"}	0+18x5 0+18x5
+	http_requests{__type__="counter",__unit__="c",path="/dings"}   10+10x10
+	http_requests{__type__="counter",__unit__="d",path="/bumms"}    1+10x10
 
 # Tests for increase().
 eval instant at 50m increase(http_requests[50m])
@@ -115,7 +115,7 @@ clear
 # So the sequence 3 2 (decreasing counter = reset) is interpreted the same as 3 0 1 2.
 # Prometheus assumes it missed the intermediate values 0 and 1.
 load 5m
-	http_requests{path="/foo"}	0 1 2 3 2 3 4
+	http_requests{__type__="counter",__unit__="a",path="/foo"}	0 1 2 3 2 3 4
 
 eval instant at 30m increase(http_requests[30m])
     {path="/foo"} 7
@@ -124,8 +124,8 @@ clear
 
 # Tests for rate().
 load 5m
-	testcounter_reset_middle	0+27x4 0+27x5
-	testcounter_reset_end    	0+10x9 0 10
+	testcounter_reset_middle{__type__="counter",__unit__="a"}	0+27x4 0+27x5
+	testcounter_reset_end{__type__="counter",__unit__="b"}    	0+10x9 0 10
 
 # Counter resets at in the middle of range are handled correctly by rate().
 eval instant at 50m rate(testcounter_reset_middle[50m])
@@ -140,9 +140,9 @@ eval instant at 50m rate(testcounter_reset_end[6m])
 clear
 
 load 5m
-	calculate_rate_offset{x="a"}	0+10x10
-	calculate_rate_offset{x="b"}	0+20x10
-	calculate_rate_window		0+80x10
+	calculate_rate_offset{__type__="counter",__unit__="a",x="a"}	0+10x10
+	calculate_rate_offset{__type__="counter",__unit__="b",x="b"}	0+20x10
+	calculate_rate_window{__type__="gauge",__unit__="c"}		0+80x10
 
 # Rates should calculate per-second rates.
 eval instant at 50m rate(calculate_rate_window[50m])
@@ -155,12 +155,12 @@ eval instant at 50m rate(calculate_rate_offset[10m] offset 5m)
 clear
 
 load 4m
-	testcounter_zero_cutoff{start="0m"}	0+240x10
-	testcounter_zero_cutoff{start="1m"}	60+240x10
-	testcounter_zero_cutoff{start="2m"}	120+240x10
-	testcounter_zero_cutoff{start="3m"}	180+240x10
-	testcounter_zero_cutoff{start="4m"}	240+240x10
-	testcounter_zero_cutoff{start="5m"}	300+240x10
+	testcounter_zero_cutoff{__type__="gauge",__unit__="a",start="0m"}	0+240x10
+	testcounter_zero_cutoff{__type__="gauge",__unit__="b",start="1m"}	60+240x10
+	testcounter_zero_cutoff{__type__="gauge",__unit__="c",start="2m"}	120+240x10
+	testcounter_zero_cutoff{__type__="gauge",__unit__="d",start="3m"}	180+240x10
+	testcounter_zero_cutoff{__type__="gauge",__unit__="e",start="4m"}	240+240x10
+	testcounter_zero_cutoff{__type__="gauge",__unit__="f",start="5m"}	300+240x10
 
 # Zero cutoff for left-side extrapolation happens until we
 # reach half a sampling interval (2m). Beyond that, we only
@@ -186,8 +186,8 @@ clear
 
 # Tests for irate().
 load 5m
-	http_requests{path="/foo"}	0+10x10
-	http_requests{path="/bar"}	0+10x5 0+10x5
+	http_requests{__type__="counter",__unit__="a",path="/foo"}	0+10x10
+	http_requests{__type__="counter",__unit__="b",path="/bar"}	0+10x5 0+10x5
 
 eval instant at 50m irate(http_requests[50m])
 	{path="/foo"} .03333333333333333333
@@ -202,8 +202,8 @@ clear
 
 # Tests for delta().
 load 5m
-	http_requests{path="/foo"}	0 50 100 150 200
-	http_requests{path="/bar"}	200 150 100 50 0
+	http_requests{__type__="counter",__unit__="a",path="/foo"}	0 50 100 150 200
+	http_requests{__type__="counter",__unit__="b",path="/bar"}	200 150 100 50 0
 
 eval instant at 20m delta(http_requests[20m])
 	{path="/foo"} 200
@@ -213,8 +213,8 @@ clear
 
 # Tests for idelta().
 load 5m
-	http_requests{path="/foo"}	0 50 100 150
-	http_requests{path="/bar"}	0 50 100 50
+	http_requests{__type__="counter",__unit__="a",path="/foo"}	0 50 100 150
+	http_requests{__type__="counter",__unit__="b",path="/bar"}	0 50 100 50
 
 eval instant at 20m idelta(http_requests[20m])
 	{path="/foo"} 50
@@ -224,8 +224,8 @@ clear
 
 # Tests for deriv() and predict_linear().
 load 5m
-	testcounter_reset_middle	0+10x4 0+10x5
-	http_requests{job="app-server", instance="1", group="canary"}		0+80x10
+	testcounter_reset_middle{__type__="gauge",__unit__="a"}	0+10x4 0+10x5
+	http_requests{__type__="counter",__unit__="b",job="app-server", instance="1", group="canary"}		0+80x10
 
 # deriv should return the same as rate in simple cases.
 eval instant at 50m rate(http_requests{group="canary", instance="1", job="app-server"}[50m])
@@ -277,56 +277,56 @@ eval instant at 70m predict_linear(testcounter_reset_middle[55m] @ 3000, 3600)
 # the range, and it has exactly the predicted value, so predict_linear
 # can be emulated with deriv.
 eval instant at 50m predict_linear(http_requests[50m], 3600) - (http_requests + deriv(http_requests[50m]) * 3600)
-	{group="canary", instance="1", job="app-server"} 0
+ 	{group="canary", instance="1", job="app-server"} 0
 
 clear
 
 # Tests for label_replace.
 load 5m
-  testmetric{src="source-value-10",dst="original-destination-value"} 0
-  testmetric{src="source-value-20",dst="original-destination-value"} 1
+  testmetric{__type__="gauge",__unit__="a",src="source-value-10",dst="original-destination-value"} 0
+  testmetric{__type__="gauge",__unit__="a",src="source-value-20",dst="original-destination-value"} 1
 
 # label_replace does a full-string match and replace.
 eval instant at 0m label_replace(testmetric, "dst", "destination-value-$1", "src", "source-value-(.*)")
-  testmetric{src="source-value-10",dst="destination-value-10"} 0
-  testmetric{src="source-value-20",dst="destination-value-20"} 1
+  testmetric{__type__="gauge",__unit__="a",src="source-value-10",dst="destination-value-10"} 0
+  testmetric{__type__="gauge",__unit__="a",src="source-value-20",dst="destination-value-20"} 1
 
 # label_replace does not do a sub-string match.
 eval instant at 0m label_replace(testmetric, "dst", "destination-value-$1", "src", "value-(.*)")
-  testmetric{src="source-value-10",dst="original-destination-value"} 0
-  testmetric{src="source-value-20",dst="original-destination-value"} 1
+  testmetric{__type__="gauge",__unit__="a",src="source-value-10",dst="original-destination-value"} 0
+  testmetric{__type__="gauge",__unit__="a",src="source-value-20",dst="original-destination-value"} 1
 
 # label_replace works with multiple capture groups.
 eval instant at 0m label_replace(testmetric, "dst", "$1-value-$2", "src", "(.*)-value-(.*)")
-  testmetric{src="source-value-10",dst="source-value-10"} 0
-  testmetric{src="source-value-20",dst="source-value-20"} 1
+  testmetric{__type__="gauge",__unit__="a",src="source-value-10",dst="source-value-10"} 0
+  testmetric{__type__="gauge",__unit__="a",src="source-value-20",dst="source-value-20"} 1
 
 # label_replace does not overwrite the destination label if the source label
 # does not exist.
 eval instant at 0m label_replace(testmetric, "dst", "value-$1", "nonexistent-src", "source-value-(.*)")
-  testmetric{src="source-value-10",dst="original-destination-value"} 0
-  testmetric{src="source-value-20",dst="original-destination-value"} 1
+  testmetric{__type__="gauge",__unit__="a",src="source-value-10",dst="original-destination-value"} 0
+  testmetric{__type__="gauge",__unit__="a",src="source-value-20",dst="original-destination-value"} 1
 
 # label_replace overwrites the destination label if the source label is empty,
 # but matched.
 eval instant at 0m label_replace(testmetric, "dst", "value-$1", "nonexistent-src", "(.*)")
-  testmetric{src="source-value-10",dst="value-"} 0
-  testmetric{src="source-value-20",dst="value-"} 1
+  testmetric{__type__="gauge",__unit__="a",src="source-value-10",dst="value-"} 0
+  testmetric{__type__="gauge",__unit__="a",src="source-value-20",dst="value-"} 1
 
 # label_replace does not overwrite the destination label if the source label
 # is not matched.
 eval instant at 0m label_replace(testmetric, "dst", "value-$1", "src", "non-matching-regex")
-  testmetric{src="source-value-10",dst="original-destination-value"} 0
-  testmetric{src="source-value-20",dst="original-destination-value"} 1
+  testmetric{__type__="gauge",__unit__="a",src="source-value-10",dst="original-destination-value"} 0
+  testmetric{__type__="gauge",__unit__="a",src="source-value-20",dst="original-destination-value"} 1
 
 eval instant at 0m label_replace((((testmetric))), (("dst")), (("value-$1")), (("src")), (("non-matching-regex")))
-  testmetric{src="source-value-10",dst="original-destination-value"} 0
-  testmetric{src="source-value-20",dst="original-destination-value"} 1
+  testmetric{__type__="gauge",__unit__="a",src="source-value-10",dst="original-destination-value"} 0
+  testmetric{__type__="gauge",__unit__="a",src="source-value-20",dst="original-destination-value"} 1
 
 # label_replace drops labels that are set to empty values.
 eval instant at 0m label_replace(testmetric, "dst", "", "dst", ".*")
-  testmetric{src="source-value-10"} 0
-  testmetric{src="source-value-20"} 1
+  testmetric{__type__="gauge",__unit__="a",src="source-value-10"} 0
+  testmetric{__type__="gauge",__unit__="a",src="source-value-20"} 1
 
 # label_replace fails when the regex is invalid.
 eval_fail instant at 0m label_replace(testmetric, "dst", "value-$1", "src", "(.*")
@@ -341,7 +341,7 @@ clear
 
 # Tests for vector, time and timestamp.
 load 10s
-  metric 1 1
+  metric{__type__="gauge"} 1 1
 
 eval instant at 0s timestamp(metric)
   {} 0
@@ -360,38 +360,38 @@ eval instant at 10s timestamp(((metric)))
 
 # Tests for label_join.
 load 5m
-  testmetric{src="a",src1="b",src2="c",dst="original-destination-value"} 0
-  testmetric{src="d",src1="e",src2="f",dst="original-destination-value"} 1
+  testmetric{__type__="gauge",__unit__="a",src="a",src1="b",src2="c",dst="original-destination-value"} 0
+  testmetric{__type__="gauge",__unit__="b",src="d",src1="e",src2="f",dst="original-destination-value"} 1
 
 # label_join joins all src values in order.
 eval instant at 0m label_join(testmetric, "dst", "-", "src", "src1", "src2")
-  testmetric{src="a",src1="b",src2="c",dst="a-b-c"} 0
-  testmetric{src="d",src1="e",src2="f",dst="d-e-f"} 1
+  testmetric{__type__="gauge",__unit__="a",src="a",src1="b",src2="c",dst="a-b-c"} 0
+  testmetric{__type__="gauge",__unit__="b",src="d",src1="e",src2="f",dst="d-e-f"} 1
 
 # label_join treats non existent src labels as empty strings.
 eval instant at 0m label_join(testmetric, "dst", "-", "src", "src3", "src1")
-  testmetric{src="a",src1="b",src2="c",dst="a--b"} 0
-  testmetric{src="d",src1="e",src2="f",dst="d--e"} 1
+  testmetric{__type__="gauge",__unit__="a",src="a",src1="b",src2="c",dst="a--b"} 0
+  testmetric{__type__="gauge",__unit__="b",src="d",src1="e",src2="f",dst="d--e"} 1
 
 # label_join overwrites the destination label even if the resulting dst label is empty string
 eval instant at 0m label_join(testmetric, "dst", "", "emptysrc", "emptysrc1", "emptysrc2")
-  testmetric{src="a",src1="b",src2="c"} 0
-  testmetric{src="d",src1="e",src2="f"} 1
+  testmetric{__type__="gauge",__unit__="a",src="a",src1="b",src2="c"} 0
+  testmetric{__type__="gauge",__unit__="b",src="d",src1="e",src2="f"} 1
 
 # test without src label for label_join
 eval instant at 0m label_join(testmetric, "dst", ", ")
-	  testmetric{src="a",src1="b",src2="c"} 0
-	  testmetric{src="d",src1="e",src2="f"} 1
+	  testmetric{__type__="gauge",__unit__="a",src="a",src1="b",src2="c"} 0
+	  testmetric{__type__="gauge",__unit__="b",src="d",src1="e",src2="f"} 1
 
 # test without dst label for label_join
 load 5m
-  testmetric1{src="foo",src1="bar",src2="foobar"} 0
-  testmetric1{src="fizz",src1="buzz",src2="fizzbuzz"} 1
+  testmetric1{__type__="gauge",__unit__="a",src="foo",src1="bar",src2="foobar"} 0
+  testmetric1{__type__="gauge",__unit__="b",src="fizz",src1="buzz",src2="fizzbuzz"} 1
 
 # label_join creates dst label if not present.
 eval instant at 0m label_join(testmetric1, "dst", ", ", "src", "src1", "src2")
-  testmetric1{src="foo",src1="bar",src2="foobar",dst="foo, bar, foobar"} 0
-  testmetric1{src="fizz",src1="buzz",src2="fizzbuzz",dst="fizz, buzz, fizzbuzz"} 1
+  testmetric1{__type__="gauge",__unit__="a",src="foo",src1="bar",src2="foobar",dst="foo, bar, foobar"} 0
+  testmetric1{__type__="gauge",__unit__="b",src="fizz",src1="buzz",src2="fizzbuzz",dst="fizz, buzz, fizzbuzz"} 1
 
 clear
 
@@ -411,9 +411,9 @@ eval instant at 60m vector(time())
 
 # Tests for clamp_max, clamp_min(), and clamp().
 load 5m
-	test_clamp{src="clamp-a"}	-50
-	test_clamp{src="clamp-b"}	0
-	test_clamp{src="clamp-c"}	100
+	test_clamp{__type__="gauge",__unit__="a",src="clamp-a"}	-50
+	test_clamp{__type__="gauge",__unit__="b",src="clamp-b"}	0
+	test_clamp{__type__="gauge",__unit__="c",src="clamp-c"}	100
 
 eval instant at 0m clamp_max(test_clamp, 75)
 	{src="clamp-a"}	-50
@@ -455,12 +455,12 @@ eval instant at 0m clamp(test_clamp, 5, -5)
 # Test cases for sgn.
 clear
 load 5m
-	test_sgn{src="sgn-a"}	-Inf
-	test_sgn{src="sgn-b"}	Inf
-	test_sgn{src="sgn-c"}	NaN
-	test_sgn{src="sgn-d"}	-50
-	test_sgn{src="sgn-e"}	0
-	test_sgn{src="sgn-f"}	100
+	test_sgn{__type__="gauge",__unit__="a",src="sgn-a"}	-Inf
+	test_sgn{__type__="gauge",__unit__="b",src="sgn-b"}	Inf
+	test_sgn{__type__="gauge",__unit__="c",src="sgn-c"}	NaN
+	test_sgn{__type__="gauge",__unit__="d",src="sgn-d"}	-50
+	test_sgn{__type__="gauge",__unit__="e",src="sgn-e"}	0
+	test_sgn{__type__="gauge",__unit__="f",src="sgn-f"}	100
 
 eval instant at 0m sgn(test_sgn)
 	{src="sgn-a"}	-1
@@ -474,192 +474,192 @@ eval instant at 0m sgn(test_sgn)
 # Tests for sort/sort_desc.
 clear
 load 5m
-	http_requests{job="api-server", instance="0", group="production"}	0+10x10
-	http_requests{job="api-server", instance="1", group="production"}	0+20x10
-	http_requests{job="api-server", instance="0", group="canary"}		0+30x10
-	http_requests{job="api-server", instance="1", group="canary"}		0+40x10
-	http_requests{job="api-server", instance="2", group="canary"}		NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN
-	http_requests{job="app-server", instance="0", group="production"}	0+50x10
-	http_requests{job="app-server", instance="1", group="production"}	0+60x10
-	http_requests{job="app-server", instance="0", group="canary"}		0+70x10
-	http_requests{job="app-server", instance="1", group="canary"}		0+80x10
+	http_requests{__type__="counter",__unit__="a",job="api-server", instance="0", group="production"}	0+10x10
+	http_requests{__type__="counter",__unit__="b",job="api-server", instance="1", group="production"}	0+20x10
+	http_requests{__type__="counter",__unit__="c",job="api-server", instance="0", group="canary"}		0+30x10
+	http_requests{__type__="counter",__unit__="d",job="api-server", instance="1", group="canary"}		0+40x10
+	http_requests{__type__="counter",__unit__="e",job="api-server", instance="2", group="canary"}		NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN
+	http_requests{__type__="counter",__unit__="f",job="app-server", instance="0", group="production"}	0+50x10
+	http_requests{__type__="counter",__unit__="g",job="app-server", instance="1", group="production"}	0+60x10
+	http_requests{__type__="counter",__unit__="h",job="app-server", instance="0", group="canary"}		0+70x10
+	http_requests{__type__="counter",__unit__="i",job="app-server", instance="1", group="canary"}		0+80x10
 
 eval_ordered instant at 50m sort(http_requests)
-	http_requests{group="production", instance="0", job="api-server"} 100
-	http_requests{group="production", instance="1", job="api-server"} 200
-	http_requests{group="canary", instance="0", job="api-server"} 300
-	http_requests{group="canary", instance="1", job="api-server"} 400
-	http_requests{group="production", instance="0", job="app-server"} 500
-	http_requests{group="production", instance="1", job="app-server"} 600
-	http_requests{group="canary", instance="0", job="app-server"} 700
-	http_requests{group="canary", instance="1", job="app-server"} 800
-	http_requests{group="canary", instance="2", job="api-server"} NaN
+	http_requests{__type__="counter",__unit__="a",group="production", instance="0", job="api-server"} 100
+	http_requests{__type__="counter",__unit__="b",group="production", instance="1", job="api-server"} 200
+	http_requests{__type__="counter",__unit__="c",group="canary", instance="0", job="api-server"} 300
+	http_requests{__type__="counter",__unit__="d",group="canary", instance="1", job="api-server"} 400
+	http_requests{__type__="counter",__unit__="f",group="production", instance="0", job="app-server"} 500
+	http_requests{__type__="counter",__unit__="g",group="production", instance="1", job="app-server"} 600
+	http_requests{__type__="counter",__unit__="h",group="canary", instance="0", job="app-server"} 700
+	http_requests{__type__="counter",__unit__="i",group="canary", instance="1", job="app-server"} 800
+	http_requests{__type__="counter",__unit__="e",group="canary", instance="2", job="api-server"} NaN
 
 eval_ordered instant at 50m sort_desc(http_requests)
-	http_requests{group="canary", instance="1", job="app-server"} 800
-	http_requests{group="canary", instance="0", job="app-server"} 700
-	http_requests{group="production", instance="1", job="app-server"} 600
-	http_requests{group="production", instance="0", job="app-server"} 500
-	http_requests{group="canary", instance="1", job="api-server"} 400
-	http_requests{group="canary", instance="0", job="api-server"} 300
-	http_requests{group="production", instance="1", job="api-server"} 200
-	http_requests{group="production", instance="0", job="api-server"} 100
-	http_requests{group="canary", instance="2", job="api-server"} NaN
+	http_requests{__type__="counter",__unit__="i",group="canary", instance="1", job="app-server"} 800
+	http_requests{__type__="counter",__unit__="h",group="canary", instance="0", job="app-server"} 700
+	http_requests{__type__="counter",__unit__="g",group="production", instance="1", job="app-server"} 600
+	http_requests{__type__="counter",__unit__="f",group="production", instance="0", job="app-server"} 500
+	http_requests{__type__="counter",__unit__="d",group="canary", instance="1", job="api-server"} 400
+	http_requests{__type__="counter",__unit__="c",group="canary", instance="0", job="api-server"} 300
+	http_requests{__type__="counter",__unit__="b",group="production", instance="1", job="api-server"} 200
+	http_requests{__type__="counter",__unit__="a",group="production", instance="0", job="api-server"} 100
+	http_requests{__type__="counter",__unit__="e",group="canary", instance="2", job="api-server"} NaN
 
 # Tests for sort_by_label/sort_by_label_desc.
 clear
 load 5m
-	http_requests{job="api-server", instance="0", group="production"}	0+10x10
-	http_requests{job="api-server", instance="1", group="production"}	0+20x10
-	http_requests{job="api-server", instance="0", group="canary"}		0+30x10
-	http_requests{job="api-server", instance="1", group="canary"}		0+40x10
-	http_requests{job="api-server", instance="2", group="canary"}		NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN
-	http_requests{job="app-server", instance="0", group="production"}	0+50x10
-	http_requests{job="app-server", instance="1", group="production"}	0+60x10
-	http_requests{job="app-server", instance="0", group="canary"}		0+70x10
-	http_requests{job="app-server", instance="1", group="canary"}		0+80x10
-	http_requests{job="api-server", instance="2", group="production"}	0+10x10
-	cpu_time_total{job="cpu", cpu="0"} 0+10x10
-	cpu_time_total{job="cpu", cpu="1"} 0+10x10
-	cpu_time_total{job="cpu", cpu="2"} 0+10x10
-	cpu_time_total{job="cpu", cpu="3"} 0+10x10
-	cpu_time_total{job="cpu", cpu="10"} 0+10x10
-	cpu_time_total{job="cpu", cpu="11"} 0+10x10
-	cpu_time_total{job="cpu", cpu="12"} 0+10x10
-	cpu_time_total{job="cpu", cpu="20"} 0+10x10
-	cpu_time_total{job="cpu", cpu="21"} 0+10x10
-	cpu_time_total{job="cpu", cpu="100"} 0+10x10
-	node_uname_info{job="node_exporter", instance="4m600", release="1.2.3"} 0+10x10
-	node_uname_info{job="node_exporter", instance="4m5", release="1.11.3"} 0+10x10
-	node_uname_info{job="node_exporter", instance="4m1000", release="1.111.3"} 0+10x10
+	http_requests{__type__="counter",__unit__="a",job="api-server", instance="0", group="production"}	0+10x10
+	http_requests{__type__="counter",__unit__="b",job="api-server", instance="1", group="production"}	0+20x10
+	http_requests{__type__="counter",__unit__="c",job="api-server", instance="0", group="canary"}		0+30x10
+	http_requests{__type__="counter",__unit__="d",job="api-server", instance="1", group="canary"}		0+40x10
+	http_requests{__type__="counter",__unit__="e",job="api-server", instance="2", group="canary"}		NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN
+	http_requests{__type__="counter",__unit__="f",job="app-server", instance="0", group="production"}	0+50x10
+	http_requests{__type__="counter",__unit__="g",job="app-server", instance="1", group="production"}	0+60x10
+	http_requests{__type__="counter",__unit__="h",job="app-server", instance="0", group="canary"}		0+70x10
+	http_requests{__type__="counter",__unit__="i",job="app-server", instance="1", group="canary"}		0+80x10
+	http_requests{__type__="counter",__unit__="j",job="api-server", instance="2", group="production"}	0+10x10
+	cpu_time_total{__type__="counter",__unit__="k",job="cpu", cpu="0"} 0+10x10
+	cpu_time_total{__type__="counter",__unit__="l",job="cpu", cpu="1"} 0+10x10
+	cpu_time_total{__type__="counter",__unit__="m",job="cpu", cpu="2"} 0+10x10
+	cpu_time_total{__type__="counter",__unit__="n",job="cpu", cpu="3"} 0+10x10
+	cpu_time_total{__type__="counter",__unit__="o",job="cpu", cpu="10"} 0+10x10
+	cpu_time_total{__type__="counter",__unit__="p",job="cpu", cpu="11"} 0+10x10
+	cpu_time_total{__type__="counter",__unit__="q",job="cpu", cpu="12"} 0+10x10
+	cpu_time_total{__type__="counter",__unit__="r",job="cpu", cpu="20"} 0+10x10
+	cpu_time_total{__type__="counter",__unit__="s",job="cpu", cpu="21"} 0+10x10
+	cpu_time_total{__type__="counter",__unit__="t",job="cpu", cpu="100"} 0+10x10
+	node_uname_info{__type__="gauge",__unit__="u",job="node_exporter", instance="4m600", release="1.2.3"} 0+10x10
+	node_uname_info{__type__="gauge",__unit__="v",job="node_exporter", instance="4m5", release="1.11.3"} 0+10x10
+	node_uname_info{__type__="gauge",__unit__="w",job="node_exporter", instance="4m1000", release="1.111.3"} 0+10x10
 
 eval_ordered instant at 50m sort_by_label(http_requests, "instance")
-	http_requests{group="canary", instance="0", job="api-server"} 300
-	http_requests{group="canary", instance="0", job="app-server"} 700
-	http_requests{group="production", instance="0", job="api-server"} 100
-	http_requests{group="production", instance="0", job="app-server"} 500
-	http_requests{group="canary", instance="1", job="api-server"} 400
-	http_requests{group="canary", instance="1", job="app-server"} 800
-	http_requests{group="production", instance="1", job="api-server"} 200
-	http_requests{group="production", instance="1", job="app-server"} 600
-	http_requests{group="canary", instance="2", job="api-server"} NaN
-	http_requests{group="production", instance="2", job="api-server"} 100
+	http_requests{__type__="counter",__unit__="a",group="production", instance="0", job="api-server"} 100
+	http_requests{__type__="counter",__unit__="c",group="canary", instance="0", job="api-server"} 300
+	http_requests{__type__="counter",__unit__="f",group="production", instance="0", job="app-server"} 500
+	http_requests{__type__="counter",__unit__="h",group="canary", instance="0", job="app-server"} 700
+	http_requests{__type__="counter",__unit__="b",group="production", instance="1", job="api-server"} 200
+	http_requests{__type__="counter",__unit__="d",group="canary", instance="1", job="api-server"} 400
+	http_requests{__type__="counter",__unit__="g",group="production", instance="1", job="app-server"} 600
+	http_requests{__type__="counter",__unit__="i",group="canary", instance="1", job="app-server"} 800
+	http_requests{__type__="counter",__unit__="e",group="canary", instance="2", job="api-server"} NaN
+	http_requests{__type__="counter",__unit__="j",group="production", instance="2", job="api-server"} 100
 
 eval_ordered instant at 50m sort_by_label(http_requests, "instance", "group")
-	http_requests{group="canary", instance="0", job="api-server"} 300
-	http_requests{group="canary", instance="0", job="app-server"} 700
-	http_requests{group="production", instance="0", job="api-server"} 100
-	http_requests{group="production", instance="0", job="app-server"} 500
-	http_requests{group="canary", instance="1", job="api-server"} 400
-	http_requests{group="canary", instance="1", job="app-server"} 800
-	http_requests{group="production", instance="1", job="api-server"} 200
-	http_requests{group="production", instance="1", job="app-server"} 600
-	http_requests{group="canary", instance="2", job="api-server"} NaN
-	http_requests{group="production", instance="2", job="api-server"} 100
+	http_requests{__type__="counter",__unit__="c",group="canary", instance="0", job="api-server"} 300
+	http_requests{__type__="counter",__unit__="h",group="canary", instance="0", job="app-server"} 700
+	http_requests{__type__="counter",__unit__="a",group="production", instance="0", job="api-server"} 100
+	http_requests{__type__="counter",__unit__="f",group="production", instance="0", job="app-server"} 500
+	http_requests{__type__="counter",__unit__="d",group="canary", instance="1", job="api-server"} 400
+	http_requests{__type__="counter",__unit__="i",group="canary", instance="1", job="app-server"} 800
+	http_requests{__type__="counter",__unit__="b",group="production", instance="1", job="api-server"} 200
+	http_requests{__type__="counter",__unit__="g",group="production", instance="1", job="app-server"} 600
+	http_requests{__type__="counter",__unit__="e",group="canary", instance="2", job="api-server"} NaN
+	http_requests{__type__="counter",__unit__="j",group="production", instance="2", job="api-server"} 100
 
 eval_ordered instant at 50m sort_by_label(http_requests, "instance", "group")
-	http_requests{group="canary", instance="0", job="api-server"} 300
-	http_requests{group="canary", instance="0", job="app-server"} 700
-	http_requests{group="production", instance="0", job="api-server"} 100
-	http_requests{group="production", instance="0", job="app-server"} 500
-	http_requests{group="canary", instance="1", job="api-server"} 400
-	http_requests{group="canary", instance="1", job="app-server"} 800
-	http_requests{group="production", instance="1", job="api-server"} 200
-	http_requests{group="production", instance="1", job="app-server"} 600
-	http_requests{group="canary", instance="2", job="api-server"} NaN
-	http_requests{group="production", instance="2", job="api-server"} 100
+	http_requests{__type__="counter",__unit__="c",group="canary", instance="0", job="api-server"} 300
+	http_requests{__type__="counter",__unit__="h",group="canary", instance="0", job="app-server"} 700
+	http_requests{__type__="counter",__unit__="a",group="production", instance="0", job="api-server"} 100
+	http_requests{__type__="counter",__unit__="f",group="production", instance="0", job="app-server"} 500
+	http_requests{__type__="counter",__unit__="d",group="canary", instance="1", job="api-server"} 400
+	http_requests{__type__="counter",__unit__="i",group="canary", instance="1", job="app-server"} 800
+	http_requests{__type__="counter",__unit__="b",group="production", instance="1", job="api-server"} 200
+	http_requests{__type__="counter",__unit__="g",group="production", instance="1", job="app-server"} 600
+	http_requests{__type__="counter",__unit__="e",group="canary", instance="2", job="api-server"} NaN
+	http_requests{__type__="counter",__unit__="j",group="production", instance="2", job="api-server"} 100
 
 eval_ordered instant at 50m sort_by_label(http_requests, "group", "instance", "job")
-	http_requests{group="canary", instance="0", job="api-server"} 300
-	http_requests{group="canary", instance="0", job="app-server"} 700
-	http_requests{group="canary", instance="1", job="api-server"} 400
-	http_requests{group="canary", instance="1", job="app-server"} 800
-	http_requests{group="canary", instance="2", job="api-server"} NaN
-	http_requests{group="production", instance="0", job="api-server"} 100
-	http_requests{group="production", instance="0", job="app-server"} 500
-	http_requests{group="production", instance="1", job="api-server"} 200
-	http_requests{group="production", instance="1", job="app-server"} 600
-	http_requests{group="production", instance="2", job="api-server"} 100
+	http_requests{__type__="counter",__unit__="c",group="canary", instance="0", job="api-server"} 300
+	http_requests{__type__="counter",__unit__="h",group="canary", instance="0", job="app-server"} 700
+	http_requests{__type__="counter",__unit__="d",group="canary", instance="1", job="api-server"} 400
+	http_requests{__type__="counter",__unit__="i",group="canary", instance="1", job="app-server"} 800
+	http_requests{__type__="counter",__unit__="e",group="canary", instance="2", job="api-server"} NaN
+	http_requests{__type__="counter",__unit__="a",group="production", instance="0", job="api-server"} 100
+	http_requests{__type__="counter",__unit__="f",group="production", instance="0", job="app-server"} 500
+	http_requests{__type__="counter",__unit__="b",group="production", instance="1", job="api-server"} 200
+	http_requests{__type__="counter",__unit__="g",group="production", instance="1", job="app-server"} 600
+	http_requests{__type__="counter",__unit__="j",group="production", instance="2", job="api-server"} 100
 
 eval_ordered instant at 50m sort_by_label(http_requests, "job", "instance", "group")
-	http_requests{group="canary", instance="0", job="api-server"} 300
-	http_requests{group="production", instance="0", job="api-server"} 100
-	http_requests{group="canary", instance="1", job="api-server"} 400
-	http_requests{group="production", instance="1", job="api-server"} 200
-	http_requests{group="canary", instance="2", job="api-server"} NaN
-	http_requests{group="production", instance="2", job="api-server"} 100
-	http_requests{group="canary", instance="0", job="app-server"} 700
-	http_requests{group="production", instance="0", job="app-server"} 500
-	http_requests{group="canary", instance="1", job="app-server"} 800
-	http_requests{group="production", instance="1", job="app-server"} 600
+	http_requests{__type__="counter",__unit__="c",group="canary", instance="0", job="api-server"} 300
+	http_requests{__type__="counter",__unit__="a",group="production", instance="0", job="api-server"} 100
+	http_requests{__type__="counter",__unit__="d",group="canary", instance="1", job="api-server"} 400
+	http_requests{__type__="counter",__unit__="b",group="production", instance="1", job="api-server"} 200
+	http_requests{__type__="counter",__unit__="e",group="canary", instance="2", job="api-server"} NaN
+	http_requests{__type__="counter",__unit__="j",group="production", instance="2", job="api-server"} 100
+	http_requests{__type__="counter",__unit__="h",group="canary", instance="0", job="app-server"} 700
+	http_requests{__type__="counter",__unit__="f",group="production", instance="0", job="app-server"} 500
+	http_requests{__type__="counter",__unit__="i",group="canary", instance="1", job="app-server"} 800
+	http_requests{__type__="counter",__unit__="g",group="production", instance="1", job="app-server"} 600
 
 eval_ordered instant at 50m sort_by_label_desc(http_requests, "instance")
-	http_requests{group="production", instance="2", job="api-server"} 100
-	http_requests{group="canary", instance="2", job="api-server"} NaN
-	http_requests{group="production", instance="1", job="app-server"} 600
-	http_requests{group="production", instance="1", job="api-server"} 200
-	http_requests{group="canary", instance="1", job="app-server"} 800
-	http_requests{group="canary", instance="1", job="api-server"} 400
-	http_requests{group="production", instance="0", job="app-server"} 500
-	http_requests{group="production", instance="0", job="api-server"} 100
-	http_requests{group="canary", instance="0", job="app-server"} 700
-	http_requests{group="canary", instance="0", job="api-server"} 300
+	http_requests{__type__="counter",__unit__="j",group="production", instance="2", job="api-server"} 100
+	http_requests{__type__="counter",__unit__="e",group="canary", instance="2", job="api-server"} NaN
+	http_requests{__type__="counter",__unit__="i",group="canary", instance="1", job="app-server"} 800
+	http_requests{__type__="counter",__unit__="g",group="production", instance="1", job="app-server"} 600
+	http_requests{__type__="counter",__unit__="d",group="canary", instance="1", job="api-server"} 400
+	http_requests{__type__="counter",__unit__="b",group="production", instance="1", job="api-server"} 200
+	http_requests{__type__="counter",__unit__="h",group="canary", instance="0", job="app-server"} 700
+	http_requests{__type__="counter",__unit__="f",group="production", instance="0", job="app-server"} 500
+	http_requests{__type__="counter",__unit__="c",group="canary", instance="0", job="api-server"} 300
+	http_requests{__type__="counter",__unit__="a",group="production", instance="0", job="api-server"} 100
 
 eval_ordered instant at 50m sort_by_label_desc(http_requests, "instance", "group")
-	http_requests{group="production", instance="2", job="api-server"} 100
-	http_requests{group="canary", instance="2", job="api-server"} NaN
-	http_requests{group="production", instance="1", job="app-server"} 600
-	http_requests{group="production", instance="1", job="api-server"} 200
-	http_requests{group="canary", instance="1", job="app-server"} 800
-	http_requests{group="canary", instance="1", job="api-server"} 400
-	http_requests{group="production", instance="0", job="app-server"} 500
-	http_requests{group="production", instance="0", job="api-server"} 100
-	http_requests{group="canary", instance="0", job="app-server"} 700
-	http_requests{group="canary", instance="0", job="api-server"} 300
+	http_requests{__type__="counter",__unit__="j",group="production", instance="2", job="api-server"} 100
+	http_requests{__type__="counter",__unit__="e",group="canary", instance="2", job="api-server"} NaN
+	http_requests{__type__="counter",__unit__="g",group="production", instance="1", job="app-server"} 600
+	http_requests{__type__="counter",__unit__="b",group="production", instance="1", job="api-server"} 200
+	http_requests{__type__="counter",__unit__="i",group="canary", instance="1", job="app-server"} 800
+	http_requests{__type__="counter",__unit__="d",group="canary", instance="1", job="api-server"} 400
+	http_requests{__type__="counter",__unit__="f",group="production", instance="0", job="app-server"} 500
+	http_requests{__type__="counter",__unit__="a",group="production", instance="0", job="api-server"} 100
+	http_requests{__type__="counter",__unit__="h",group="canary", instance="0", job="app-server"} 700
+	http_requests{__type__="counter",__unit__="c",group="canary", instance="0", job="api-server"} 300
 
 eval_ordered instant at 50m sort_by_label_desc(http_requests, "instance", "group", "job")
-	http_requests{group="production", instance="2", job="api-server"} 100
-	http_requests{group="canary", instance="2", job="api-server"} NaN
-	http_requests{group="production", instance="1", job="app-server"} 600
-	http_requests{group="production", instance="1", job="api-server"} 200
-	http_requests{group="canary", instance="1", job="app-server"} 800
-	http_requests{group="canary", instance="1", job="api-server"} 400
-	http_requests{group="production", instance="0", job="app-server"} 500
-	http_requests{group="production", instance="0", job="api-server"} 100
-	http_requests{group="canary", instance="0", job="app-server"} 700
-	http_requests{group="canary", instance="0", job="api-server"} 300
+	http_requests{__type__="counter",__unit__="j",group="production", instance="2", job="api-server"} 100
+	http_requests{__type__="counter",__unit__="e",group="canary", instance="2", job="api-server"} NaN
+	http_requests{__type__="counter",__unit__="g",group="production", instance="1", job="app-server"} 600
+	http_requests{__type__="counter",__unit__="b",group="production", instance="1", job="api-server"} 200
+	http_requests{__type__="counter",__unit__="i",group="canary", instance="1", job="app-server"} 800
+	http_requests{__type__="counter",__unit__="d",group="canary", instance="1", job="api-server"} 400
+	http_requests{__type__="counter",__unit__="f",group="production", instance="0", job="app-server"} 500
+	http_requests{__type__="counter",__unit__="a",group="production", instance="0", job="api-server"} 100
+	http_requests{__type__="counter",__unit__="h",group="canary", instance="0", job="app-server"} 700
+	http_requests{__type__="counter",__unit__="c",group="canary", instance="0", job="api-server"} 300
 
 eval_ordered instant at 50m sort_by_label(cpu_time_total, "cpu")
-	cpu_time_total{job="cpu", cpu="0"} 100
-	cpu_time_total{job="cpu", cpu="1"} 100
-	cpu_time_total{job="cpu", cpu="2"} 100
-	cpu_time_total{job="cpu", cpu="3"} 100
-	cpu_time_total{job="cpu", cpu="10"} 100
-	cpu_time_total{job="cpu", cpu="11"} 100
-	cpu_time_total{job="cpu", cpu="12"} 100
-	cpu_time_total{job="cpu", cpu="20"} 100
-	cpu_time_total{job="cpu", cpu="21"} 100
-	cpu_time_total{job="cpu", cpu="100"} 100
+	cpu_time_total{__type__="counter",__unit__="k",job="cpu", cpu="0"} 100
+	cpu_time_total{__type__="counter",__unit__="l",job="cpu", cpu="1"} 100
+	cpu_time_total{__type__="counter",__unit__="m",job="cpu", cpu="2"} 100
+	cpu_time_total{__type__="counter",__unit__="n",job="cpu", cpu="3"} 100
+	cpu_time_total{__type__="counter",__unit__="o",job="cpu", cpu="10"} 100
+	cpu_time_total{__type__="counter",__unit__="p",job="cpu", cpu="11"} 100
+	cpu_time_total{__type__="counter",__unit__="q",job="cpu", cpu="12"} 100
+	cpu_time_total{__type__="counter",__unit__="r",job="cpu", cpu="20"} 100
+	cpu_time_total{__type__="counter",__unit__="s",job="cpu", cpu="21"} 100
+	cpu_time_total{__type__="counter",__unit__="t",job="cpu", cpu="100"} 100
 
 eval_ordered instant at 50m sort_by_label(node_uname_info, "instance")
-	node_uname_info{job="node_exporter", instance="4m5", release="1.11.3"} 100
-	node_uname_info{job="node_exporter", instance="4m600", release="1.2.3"} 100
-	node_uname_info{job="node_exporter", instance="4m1000", release="1.111.3"} 100
+	node_uname_info{__type__="gauge",__unit__="v",job="node_exporter", instance="4m5", release="1.11.3"} 100
+	node_uname_info{__type__="gauge",__unit__="u",job="node_exporter", instance="4m600", release="1.2.3"} 100
+	node_uname_info{__type__="gauge",__unit__="w",job="node_exporter", instance="4m1000", release="1.111.3"} 100
 
 eval_ordered instant at 50m sort_by_label(node_uname_info, "release")
-	node_uname_info{job="node_exporter", instance="4m600", release="1.2.3"} 100
-	node_uname_info{job="node_exporter", instance="4m5", release="1.11.3"} 100
-	node_uname_info{job="node_exporter", instance="4m1000", release="1.111.3"} 100
+	node_uname_info{__type__="gauge",__unit__="u",job="node_exporter", instance="4m600", release="1.2.3"} 100
+	node_uname_info{__type__="gauge",__unit__="v",job="node_exporter", instance="4m5", release="1.11.3"} 100
+	node_uname_info{__type__="gauge",__unit__="w",job="node_exporter", instance="4m1000", release="1.111.3"} 100
 
 # Tests for double_exponential_smoothing
 clear
 
 # positive trends
 load 10s
-	http_requests{job="api-server", instance="0", group="production"}	0+10x1000 100+30x1000
-	http_requests{job="api-server", instance="1", group="production"}	0+20x1000 200+30x1000
-	http_requests{job="api-server", instance="0", group="canary"}		0+30x1000 300+80x1000
-	http_requests{job="api-server", instance="1", group="canary"}		0+40x2000
+	http_requests{__type__="counter",__unit__="a",job="api-server", instance="0", group="production"}	0+10x1000 100+30x1000
+	http_requests{__type__="counter",__unit__="b",job="api-server", instance="1", group="production"}	0+20x1000 200+30x1000
+	http_requests{__type__="counter",__unit__="c",job="api-server", instance="0", group="canary"}		0+30x1000 300+80x1000
+	http_requests{__type__="counter",__unit__="d",job="api-server", instance="1", group="canary"}		0+40x2000
 
 eval instant at 8000s double_exponential_smoothing(http_requests[1m], 0.01, 0.1)
 	{job="api-server", instance="0", group="production"} 8000
@@ -670,10 +670,10 @@ eval instant at 8000s double_exponential_smoothing(http_requests[1m], 0.01, 0.1)
 # negative trends
 clear
 load 10s
-	http_requests{job="api-server", instance="0", group="production"}	8000-10x1000
-	http_requests{job="api-server", instance="1", group="production"}	0-20x1000
-	http_requests{job="api-server", instance="0", group="canary"}		0+30x1000 300-80x1000
-	http_requests{job="api-server", instance="1", group="canary"}		0-40x1000 0+40x1000
+	http_requests{__type__="counter",__unit__="a",job="api-server", instance="0", group="production"}	8000-10x1000
+	http_requests{__type__="counter",__unit__="b",job="api-server", instance="1", group="production"}	0-20x1000
+	http_requests{__type__="counter",__unit__="c",job="api-server", instance="0", group="canary"}		0+30x1000 300-80x1000
+	http_requests{__type__="counter",__unit__="d",job="api-server", instance="1", group="canary"}		0-40x1000 0+40x1000
 
 eval instant at 8000s double_exponential_smoothing(http_requests[1m], 0.01, 0.1)
 	{job="api-server", instance="0", group="production"} 0
@@ -684,20 +684,20 @@ eval instant at 8000s double_exponential_smoothing(http_requests[1m], 0.01, 0.1)
 # Tests for avg_over_time
 clear
 load 10s
-  metric 1 2 3 4 5
-  metric2 1 2 3 4 Inf
-  metric3 1 2 3 4 -Inf
-  metric4 1 2 3 Inf -Inf
-  metric5 Inf 0 Inf
-  metric5b Inf 0 Inf
-  metric5c Inf Inf Inf -Inf
-  metric6 1 2 3 -Inf -Inf
-  metric6b -Inf 0 -Inf
-  metric6c -Inf -Inf -Inf Inf
-  metric7 1 2 -Inf -Inf Inf
-  metric8 9.988465674311579e+307 9.988465674311579e+307
-  metric9 -9.988465674311579e+307 -9.988465674311579e+307 -9.988465674311579e+307
-  metric10 -9.988465674311579e+307 9.988465674311579e+307
+  metric{__type__="gauge",__unit__="a"} 1 2 3 4 5
+  metric2{__type__="gauge",__unit__="b"} 1 2 3 4 Inf
+  metric3{__type__="gauge",__unit__="c"} 1 2 3 4 -Inf
+  metric4{__type__="gauge",__unit__="d"} 1 2 3 Inf -Inf
+  metric5{__type__="gauge",__unit__="e"} Inf 0 Inf
+  metric5b{__type__="gauge",__unit__="f"} Inf 0 Inf
+  metric5c{__type__="gauge",__unit__="g"} Inf Inf Inf -Inf
+  metric6{__type__="gauge",__unit__="h"} 1 2 3 -Inf -Inf
+  metric6b{__type__="gauge",__unit__="i"} -Inf 0 -Inf
+  metric6c{__type__="gauge",__unit__="j"} -Inf -Inf -Inf Inf
+  metric7{__type__="gauge",__unit__="k"} 1 2 -Inf -Inf Inf
+  metric8{__type__="gauge",__unit__="l"} 9.988465674311579e+307 9.988465674311579e+307
+  metric9{__type__="gauge",__unit__="m"} -9.988465674311579e+307 -9.988465674311579e+307 -9.988465674311579e+307
+  metric10{__type__="gauge",__unit__="n"} -9.988465674311579e+307 9.988465674311579e+307
 
 eval instant at 55s avg_over_time(metric[1m])
   {} 3
@@ -794,7 +794,7 @@ eval instant at 1m sum_over_time(metric10[2m])/count_over_time(metric10[2m])
 # Test if very big intermediate values cause loss of detail.
 clear
 load 10s
-  metric 1 1e100 1 -1e100
+  metric{__type__="gauge",__unit__="a"} 1 1e100 1 -1e100
 
 eval instant at 1m sum_over_time(metric[2m])
   {} 2
@@ -805,7 +805,7 @@ eval instant at 1m avg_over_time(metric[2m])
 # Tests for stddev_over_time and stdvar_over_time.
 clear
 load 10s
-  metric 0 8 8 2 3
+  metric{__type__="gauge",__unit__="a"} 0 8 8 2 3
 
 eval instant at 1m stdvar_over_time(metric[2m])
   {} 10.56
@@ -819,7 +819,7 @@ eval instant at 1m stddev_over_time((metric[2m]))
 # Tests for stddev_over_time and stdvar_over_time #4927.
 clear
 load 10s
-  metric 1.5990505637277868 1.5990505637277868 1.5990505637277868
+  metric{__type__="gauge",__unit__="a"} 1.5990505637277868 1.5990505637277868 1.5990505637277868
 
 eval instant at 1m stdvar_over_time(metric[1m])
   {} 0
@@ -830,7 +830,7 @@ eval instant at 1m stddev_over_time(metric[1m])
 # Tests for mad_over_time.
 clear
 load 10s
-  metric 4 6 2 1 999 1 2
+  metric{__type__="gauge",__unit__="a"} 4 6 2 1 999 1 2
 
 eval instant at 70s mad_over_time(metric[70s])
   {} 1
@@ -839,9 +839,9 @@ eval instant at 70s mad_over_time(metric[70s])
 clear
 
 load 10s
-	data{test="two samples"} 0 1
-	data{test="three samples"} 0 1 2
-	data{test="uneven samples"} 0 1 4
+	data{__type__="gauge",__unit__="a",test="two samples"} 0 1
+	data{__type__="gauge",__unit__="b",test="three samples"} 0 1 2
+	data{__type__="gauge",__unit__="c",test="uneven samples"} 0 1 4
 
 eval instant at 1m quantile_over_time(0, data[2m])
 	{test="two samples"} 0
@@ -971,8 +971,8 @@ clear
 
 # Test duplicate labelset in promql output.
 load 5m
-  testmetric1{src="a",dst="b"} 0
-  testmetric2{src="a",dst="b"} 1
+  testmetric1{__type__="gauge",__unit__="a",src="a",dst="b"} 0
+  testmetric2{__type__="gauge",__unit__="b",src="a",dst="b"} 1
 
 eval_fail instant at 0m changes({__name__=~'testmetric1|testmetric2'}[5m])
 
@@ -980,11 +980,11 @@ eval_fail instant at 0m changes({__name__=~'testmetric1|testmetric2'}[5m])
 clear
 
 load 10s
-	data{type="numbers"} 2 0 3
-	data{type="some_nan"} 2 0 NaN
-	data{type="some_nan2"} 2 NaN 1
-	data{type="some_nan3"} NaN 0 1
-	data{type="only_nan"} NaN NaN NaN
+	data{__type__="gauge",__unit__="a",type="numbers"} 2 0 3
+	data{__type__="gauge",__unit__="b",type="some_nan"} 2 0 NaN
+	data{__type__="gauge",__unit__="c",type="some_nan2"} 2 NaN 1
+	data{__type__="gauge",__unit__="d",type="some_nan3"} NaN 0 1
+	data{__type__="gauge",__unit__="e",type="only_nan"} NaN NaN NaN
 
 eval instant at 1m min_over_time(data[2m])
 	{type="numbers"} 0
@@ -1029,7 +1029,7 @@ clear
 
 # Don't return anything when there's something there.
 load 5m
-	http_requests{job="api-server", instance="0", group="production"}	0+10x10
+	http_requests{__type__="counter",__unit__="a",job="api-server", instance="0", group="production"}	0+10x10
 
 eval instant at 50m absent(http_requests)
 
@@ -1077,11 +1077,11 @@ eval instant at 1m absent_over_time(http_requests{handler="/foo", handler="/bar"
     {instance="127.0.0.1"} 1
 
 load 1m
-	http_requests{path="/foo",instance="127.0.0.1",job="httpd"}	1+1x10
-	http_requests{path="/bar",instance="127.0.0.1",job="httpd"}	1+1x10
-	httpd_handshake_failures_total{instance="127.0.0.1",job="node"}	1+1x15
-	httpd_log_lines_total{instance="127.0.0.1",job="node"}	1
-	ssl_certificate_expiry_seconds{job="ingress"} NaN NaN NaN NaN NaN
+	http_requests{__type__="counter",__unit__="a",path="/foo",instance="127.0.0.1",job="httpd"}	1+1x10
+	http_requests{__type__="counter",__unit__="b",path="/bar",instance="127.0.0.1",job="httpd"}	1+1x10
+	httpd_handshake_failures_total{__type__="counter",__unit__="c",instance="127.0.0.1",job="node"}	1+1x15
+	httpd_log_lines_total{__type__="counter",__unit__="d",instance="127.0.0.1",job="node"}	1
+	ssl_certificate_expiry_seconds{__type__="gauge",__unit__="e",job="ingress"} NaN NaN NaN NaN NaN
 
 eval instant at 5m absent_over_time(http_requests[5m])
 
@@ -1141,11 +1141,11 @@ eval instant at 1m present_over_time(rate(nonexistant[5m])[5m:])
 eval instant at 1m present_over_time(http_requests{handler="/foo", handler="/bar", instance="127.0.0.1"}[5m])
 
 load 1m
-	http_requests{path="/foo",instance="127.0.0.1",job="httpd"}	1+1x10
-	http_requests{path="/bar",instance="127.0.0.1",job="httpd"}	1+1x10
-	httpd_handshake_failures_total{instance="127.0.0.1",job="node"}	1+1x15
-	httpd_log_lines_total{instance="127.0.0.1",job="node"}	1
-	ssl_certificate_expiry_seconds{job="ingress"} NaN NaN NaN NaN NaN
+	http_requests{__type__="counter",__unit__="a",path="/foo",instance="127.0.0.1",job="httpd"}	1+1x10
+	http_requests{__type__="counter",__unit__="b",path="/bar",instance="127.0.0.1",job="httpd"}	1+1x10
+	httpd_handshake_failures_total{__type__="counter",__unit__="c",instance="127.0.0.1",job="node"}	1+1x15
+	httpd_log_lines_total{__type__="counter",__unit__="d",instance="127.0.0.1",job="node"}	1
+	ssl_certificate_expiry_seconds{__type__="gauge",__unit__="e",job="ingress"} NaN NaN NaN NaN NaN
 
 eval instant at 5m present_over_time(http_requests[5m])
     {instance="127.0.0.1", job="httpd", path="/bar"} 1
@@ -1190,8 +1190,8 @@ clear
 
 # Testing exp() sqrt() log2() log10() ln()
 load 5m
-	exp_root_log{l="x"} 10
-	exp_root_log{l="y"} 20
+	exp_root_log{__type__="gauge",__unit__="a",l="x"} 10
+	exp_root_log{__type__="gauge",__unit__="b",l="y"} 20
 
 eval instant at 1m exp(exp_root_log)
 	{l="x"} 22026.465794806718
@@ -1253,7 +1253,7 @@ clear
 
 # Test that timestamp() handles the scenario where there are more steps than samples.
 load 1m
-  metric 0+1x1000
+  metric{__type__="gauge",__unit__="a"} 0+1x1000
 
 # We expect the value to be 0 for t=0s to t=59s (inclusive), then 60 for t=60s and t=61s.
 eval range from 0 to 61s step 1s timestamp(metric)
