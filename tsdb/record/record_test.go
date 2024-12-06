@@ -148,10 +148,31 @@ func TestRecord_EncodeDecode(t *testing.T) {
 				NegativeBuckets: []int64{1, 2, -1},
 			},
 		},
+		{
+			Ref: 67,
+			T:   5678,
+			H: &histogram.Histogram{
+				Count:         8,
+				ZeroThreshold: 0.001,
+				Sum:           35.5,
+				Schema:        -53,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 2, Length: 2},
+				},
+				PositiveBuckets: []int64{2, -1, 2, 0},
+				CustomValues:    []float64{0, 2, 4, 6, 8},
+			},
+		},
 	}
 
-	decHistograms, err := dec.HistogramSamples(enc.HistogramSamples(histograms, nil), nil)
+	histSamples, customBucketsHistograms := enc.HistogramSamples(histograms, nil)
+	customBucketsHistSamples := enc.CustomBucketsHistogramSamples(customBucketsHistograms, nil)
+	decHistograms, err := dec.HistogramSamples(histSamples, nil)
 	require.NoError(t, err)
+	decCustomBucketsHistograms, err := dec.HistogramSamples(customBucketsHistSamples, nil)
+	require.NoError(t, err)
+	decHistograms = append(decHistograms, decCustomBucketsHistograms...)
 	require.Equal(t, histograms, decHistograms)
 
 	floatHistograms := make([]RefFloatHistogramSample, len(histograms))
@@ -162,25 +183,41 @@ func TestRecord_EncodeDecode(t *testing.T) {
 			FH:  h.H.ToFloat(nil),
 		}
 	}
-	decFloatHistograms, err := dec.FloatHistogramSamples(enc.FloatHistogramSamples(floatHistograms, nil), nil)
+	floatHistSamples, customBucketsFloatHistograms := enc.FloatHistogramSamples(floatHistograms, nil)
+	customBucketsFloatHistSamples := enc.CustomBucketsFloatHistogramSamples(customBucketsFloatHistograms, nil)
+	decFloatHistograms, err := dec.FloatHistogramSamples(floatHistSamples, nil)
 	require.NoError(t, err)
+	decCustomBucketsFloatHistograms, err := dec.FloatHistogramSamples(customBucketsFloatHistSamples, nil)
+	require.NoError(t, err)
+	decFloatHistograms = append(decFloatHistograms, decCustomBucketsFloatHistograms...)
 	require.Equal(t, floatHistograms, decFloatHistograms)
 
 	// Gauge integer histograms.
 	for i := range histograms {
 		histograms[i].H.CounterResetHint = histogram.GaugeType
 	}
-	decHistograms, err = dec.HistogramSamples(enc.HistogramSamples(histograms, nil), nil)
+
+	gaugeHistSamples, customBucketsGaugeHistograms := enc.HistogramSamples(histograms, nil)
+	customBucketsGaugeHistSamples := enc.CustomBucketsHistogramSamples(customBucketsGaugeHistograms, nil)
+	decGaugeHistograms, err := dec.HistogramSamples(gaugeHistSamples, nil)
 	require.NoError(t, err)
-	require.Equal(t, histograms, decHistograms)
+	decCustomBucketsGaugeHistograms, err := dec.HistogramSamples(customBucketsGaugeHistSamples, nil)
+	require.NoError(t, err)
+	decGaugeHistograms = append(decGaugeHistograms, decCustomBucketsGaugeHistograms...)
+	require.Equal(t, histograms, decGaugeHistograms)
 
 	// Gauge float histograms.
 	for i := range floatHistograms {
 		floatHistograms[i].FH.CounterResetHint = histogram.GaugeType
 	}
-	decFloatHistograms, err = dec.FloatHistogramSamples(enc.FloatHistogramSamples(floatHistograms, nil), nil)
+
+	gaugeFloatHistSamples, customBucketsGaugeFloatHistograms := enc.FloatHistogramSamples(floatHistograms, nil)
+	customBucketsGaugeFloatHistSamples := enc.CustomBucketsFloatHistogramSamples(customBucketsGaugeFloatHistograms, nil)
+	decGaugeFloatHistograms, err := dec.FloatHistogramSamples(gaugeFloatHistSamples, nil)
 	require.NoError(t, err)
-	require.Equal(t, floatHistograms, decFloatHistograms)
+	decCustomBucketsGaugeFloatHistograms, err := dec.FloatHistogramSamples(customBucketsGaugeFloatHistSamples, nil)
+	decGaugeFloatHistograms = append(decGaugeFloatHistograms, decCustomBucketsGaugeFloatHistograms...)
+	require.Equal(t, floatHistograms, decGaugeFloatHistograms)
 }
 
 // TestRecord_Corrupted ensures that corrupted records return the correct error.
@@ -263,10 +300,31 @@ func TestRecord_Corrupted(t *testing.T) {
 					PositiveBuckets: []int64{1, 1, -1, 0},
 				},
 			},
+			{
+				Ref: 67,
+				T:   5678,
+				H: &histogram.Histogram{
+					Count:         8,
+					ZeroThreshold: 0.001,
+					Sum:           35.5,
+					Schema:        -53,
+					PositiveSpans: []histogram.Span{
+						{Offset: 0, Length: 2},
+						{Offset: 2, Length: 2},
+					},
+					PositiveBuckets: []int64{2, -1, 2, 0},
+					CustomValues:    []float64{0, 2, 4, 6, 8},
+				},
+			},
 		}
 
-		corrupted := enc.HistogramSamples(histograms, nil)[:8]
-		_, err := dec.HistogramSamples(corrupted, nil)
+		corruptedHists, customBucketsHists := enc.HistogramSamples(histograms, nil)
+		corruptedHists = corruptedHists[:8]
+		corruptedCustomBucketsHists := enc.CustomBucketsHistogramSamples(customBucketsHists, nil)
+		corruptedCustomBucketsHists = corruptedCustomBucketsHists[:8]
+		_, err := dec.HistogramSamples(corruptedHists, nil)
+		require.ErrorIs(t, err, encoding.ErrInvalidSize)
+		_, err = dec.HistogramSamples(corruptedCustomBucketsHists, nil)
 		require.ErrorIs(t, err, encoding.ErrInvalidSize)
 	})
 }
@@ -308,9 +366,29 @@ func TestRecord_Type(t *testing.T) {
 				PositiveBuckets: []int64{1, 1, -1, 0},
 			},
 		},
+		{
+			Ref: 67,
+			T:   5678,
+			H: &histogram.Histogram{
+				Count:         8,
+				ZeroThreshold: 0.001,
+				Sum:           35.5,
+				Schema:        -53,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 2, Length: 2},
+				},
+				PositiveBuckets: []int64{2, -1, 2, 0},
+				CustomValues:    []float64{0, 2, 4, 6, 8},
+			},
+		},
 	}
-	recordType = dec.Type(enc.HistogramSamples(histograms, nil))
+	hists, customBucketsHistograms := enc.HistogramSamples(histograms, nil)
+	recordType = dec.Type(hists)
 	require.Equal(t, HistogramSamples, recordType)
+	customBucketsHists := enc.CustomBucketsHistogramSamples(customBucketsHistograms, nil)
+	recordType = dec.Type(customBucketsHists)
+	require.Equal(t, CustomBucketsHistogramSamples, recordType)
 
 	recordType = dec.Type(nil)
 	require.Equal(t, Unknown, recordType)
