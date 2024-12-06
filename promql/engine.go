@@ -1748,6 +1748,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			if !ev.enableDelayedNameRemoval && dropName {
 				metric = metric.DropMetricName()
 			}
+			metric = metric.DropMetricLabel(labels.MetricType).DropMetricLabel(labels.MetricUnit)
 			ss := Series{
 				Metric:   metric,
 				DropName: dropName,
@@ -1887,6 +1888,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				if !ev.enableDelayedNameRemoval {
 					mat[i].Metric = mat[i].Metric.DropMetricName()
 				}
+				mat[i].Metric = mat[i].Metric.DropMetricLabel(labels.MetricType).DropMetricLabel(labels.MetricUnit)
 				mat[i].DropName = true
 				for j := range mat[i].Floats {
 					mat[i].Floats[j].F = -mat[i].Floats[j].F
@@ -2627,6 +2629,8 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 		if !ev.enableDelayedNameRemoval && returnBool {
 			metric = metric.DropMetricName()
 		}
+		// TODO: Should this only happen if returnBool==true?
+		metric = metric.DropMetricLabel(labels.MetricType).DropMetricLabel(labels.MetricUnit)
 		insertedSigs, exists := matchedSigs[sig]
 		if matching.Card == parser.CardOneToOne {
 			if exists {
@@ -2665,7 +2669,7 @@ func signatureFunc(on bool, b []byte, names ...string) func(labels.Labels) strin
 			return string(lset.BytesWithLabels(b, names...))
 		}
 	}
-	names = append([]string{labels.MetricName}, names...)
+	names = append([]string{labels.MetricName, labels.MetricType, labels.MetricUnit}, names...)
 	slices.Sort(names)
 	return func(lset labels.Labels) string {
 		return string(lset.BytesWithoutLabels(b, names...))
@@ -2695,6 +2699,9 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 	if shouldDropMetricName(op) {
 		enh.lb.Del(labels.MetricName)
 	}
+	// This always drops metric type and unit. We eventually want to keep these in some cases.
+	enh.lb.Del(labels.MetricType)
+	enh.lb.Del(labels.MetricUnit)
 
 	if matching.Card == parser.CardOneToOne {
 		if matching.On {
@@ -2757,6 +2764,8 @@ func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scala
 				}
 				lhsSample.DropName = true
 			}
+			// This assumes we always drop type and unit. We eventually want to preserve this in some cases.
+			lhsSample.Metric = lhsSample.Metric.DropMetricLabel(labels.MetricType).DropMetricLabel(labels.MetricUnit)
 			enh.Out = append(enh.Out, lhsSample)
 		}
 	}
@@ -3402,6 +3411,7 @@ func handleVectorBinopError(err error, e *parser.BinaryExpr) annotations.Annotat
 // grouping labels.
 func generateGroupingKey(metric labels.Labels, grouping []string, without bool, buf []byte) (uint64, []byte) {
 	if without {
+		grouping = append([]string{labels.MetricType, labels.MetricUnit}, grouping...)
 		return metric.HashWithoutLabels(buf, grouping...)
 	}
 
@@ -3419,6 +3429,8 @@ func generateGroupingLabels(enh *EvalNodeHelper, metric labels.Labels, without b
 	case without:
 		enh.lb.Del(grouping...)
 		enh.lb.Del(labels.MetricName)
+		enh.lb.Del(labels.MetricType)
+		enh.lb.Del(labels.MetricUnit)
 		return enh.lb.Labels()
 	case len(grouping) > 0:
 		enh.lb.Keep(grouping...)
@@ -3676,7 +3688,9 @@ func (s *HashRatioSampler) sampleOffset(ts int64, sample *Sample) float64 {
 	const (
 		float64MaxUint64 = float64(math.MaxUint64)
 	)
-	return float64(sample.Metric.Hash()) / float64MaxUint64
+	b := make([]byte, 0, 1024)
+	h, _ := sample.Metric.HashWithoutLabels(b, labels.MetricType, labels.MetricUnit)
+	return float64(h) / float64MaxUint64
 }
 
 func (s *HashRatioSampler) AddRatioSample(ratioLimit float64, sample *Sample) bool {
