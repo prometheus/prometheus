@@ -243,24 +243,24 @@ func parseLoad(lines []string, i int) (int, *loadCmd, error) {
 			i--
 			break
 		}
-		metric, vals, err := parseSeries(defLine, i)
+		metric, vals, exemplars, err := parseSeries(defLine, i)
 		if err != nil {
 			return i, nil, err
 		}
-		cmd.set(metric, vals...)
+		cmd.set(metric, vals, exemplars)
 	}
 	return i, cmd, nil
 }
 
-func parseSeries(defLine string, line int) (labels.Labels, []parser.SequenceValue, error) {
-	metric, vals, err := parser.ParseSeriesDesc(defLine)
+func parseSeries(defLine string, line int) (labels.Labels, []parser.SequenceValue, []parser.Exemplar, error) {
+	metric, vals, exemplars, err := parser.ParseSeriesDesc(defLine)
 	if err != nil {
 		parser.EnrichParseError(err, func(parseErr *parser.ParseErr) {
 			parseErr.LineOffset = line
 		})
-		return labels.Labels{}, nil, err
+		return labels.Labels{}, nil, nil, err
 	}
-	return metric, vals, nil
+	return metric, vals, exemplars, nil
 }
 
 func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
@@ -379,7 +379,7 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 			cmd.expect(0, parser.SequenceValue{Value: f})
 			break
 		}
-		metric, vals, err := parseSeries(defLine, i)
+		metric, vals, _, err := parseSeries(defLine, i)
 		if err != nil {
 			return i, nil, err
 		}
@@ -471,7 +471,7 @@ func (cmd loadCmd) String() string {
 }
 
 // set a sequence of sample values for the given metric.
-func (cmd *loadCmd) set(m labels.Labels, vals ...parser.SequenceValue) {
+func (cmd *loadCmd) set(m labels.Labels, vals []parser.SequenceValue, ex []parser.Exemplar) {
 	h := m.Hash()
 
 	samples := make([]promql.Sample, 0, len(vals))
@@ -486,18 +486,39 @@ func (cmd *loadCmd) set(m labels.Labels, vals ...parser.SequenceValue) {
 		}
 		ts = ts.Add(cmd.gap)
 	}
+
+	exemplars := make([]exemplar.Exemplar, 0, len(ex))
+	for _, e := range ex {
+		ts = testStartTime.Add(time.Millisecond * time.Duration(cmd.gap.Milliseconds()*int64(e.Sequence)))
+		exemplars = append(exemplars, exemplar.Exemplar{
+			Labels: e.Labels,
+			Value:  e.Value,
+			Ts:     ts.UnixNano() / int64(time.Millisecond/time.Nanosecond),
+			HasTs:  true,
+		})
+	}
+
 	cmd.defs[h] = samples
 	cmd.metrics[h] = m
+	cmd.exemplars[h] = exemplars
 }
 
 // append the defined time series to the storage.
-func (cmd *loadCmd) append(a storage.Appender) error {
+func (cmd *loadCmd) append(a storage.Appender, ea storage.ExemplarAppender) error {
 	for h, smpls := range cmd.defs {
 		m := cmd.metrics[h]
 
 		for _, s := range smpls {
 			if err := appendSample(a, s, m); err != nil {
 				return err
+			}
+		}
+
+		if expls, ok := cmd.exemplars[h]; ok {
+			for _, e := range expls {
+				if err := appendExemplar(ea, e, m); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -614,6 +635,13 @@ func appendSample(a storage.Appender, s promql.Sample, m labels.Labels) error {
 		if _, err := a.Append(0, m, s.T, s.F); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func appendExemplar(a storage.ExemplarAppender, e exemplar.Exemplar, m labels.Labels) error {
+	if _, err := a.AppendExemplar(0, m, e); err != nil {
+		return err
 	}
 	return nil
 }
@@ -1086,7 +1114,7 @@ func (t *test) exec(tc testCommand, engine promql.QueryEngine) error {
 
 	case *loadCmd:
 		app := t.storage.Appender(t.context)
-		if err := cmd.append(app); err != nil {
+		if err := cmd.append(app, t.storage.(*teststorage.TestStorage).ExemplarAppender()); err != nil {
 			app.Rollback()
 			return err
 		}

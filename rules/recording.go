@@ -18,7 +18,10 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"sync"
 	"time"
+
+	"github.com/prometheus/prometheus/model/exemplar"
 
 	"go.uber.org/atomic"
 	"gopkg.in/yaml.v2"
@@ -31,9 +34,10 @@ import (
 
 // A RecordingRule records its vector expression into new timeseries.
 type RecordingRule struct {
-	name   string
-	vector parser.Expr
-	labels labels.Labels
+	name          string
+	vector        parser.Expr
+	nameSelectors [][]*labels.Matcher
+	labels        labels.Labels
 	// The health of the recording rule.
 	health *atomic.String
 	// Timestamp of last evaluation of the recording rule.
@@ -45,21 +49,34 @@ type RecordingRule struct {
 
 	noDependentRules  *atomic.Bool
 	noDependencyRules *atomic.Bool
+
+	// exemplarsCacheMtx Protects the `matchedExemplarHashes` map.
+	exemplarsCacheMtx sync.Mutex
+	// A set of combination of time series label hashes and exemplar label hashes that have already been matched successfully.
+	matchedExemplarHashes map[*hashTuple]struct{}
+}
+
+type hashTuple struct {
+	seriesHash   uint64
+	exemplarHash uint64
 }
 
 // NewRecordingRule returns a new recording rule.
 func NewRecordingRule(name string, vector parser.Expr, lset labels.Labels) *RecordingRule {
-	return &RecordingRule{
-		name:                name,
-		vector:              vector,
-		labels:              lset,
-		health:              atomic.NewString(string(HealthUnknown)),
-		evaluationTimestamp: atomic.NewTime(time.Time{}),
-		evaluationDuration:  atomic.NewDuration(0),
-		lastError:           atomic.NewError(nil),
-		noDependentRules:    atomic.NewBool(false),
-		noDependencyRules:   atomic.NewBool(false),
+	result := &RecordingRule{
+		name:                  name,
+		vector:                vector,
+		labels:                lset,
+		health:                atomic.NewString(string(HealthUnknown)),
+		evaluationTimestamp:   atomic.NewTime(time.Time{}),
+		evaluationDuration:    atomic.NewDuration(0),
+		lastError:             atomic.NewError(nil),
+		noDependentRules:      atomic.NewBool(false),
+		noDependencyRules:     atomic.NewBool(false),
+		matchedExemplarHashes: map[*hashTuple]struct{}{},
 	}
+	result.loadNameSelectors()
+	return result
 }
 
 // Name returns the rule name.
@@ -77,6 +94,100 @@ func (rule *RecordingRule) Labels() labels.Labels {
 	return rule.labels
 }
 
+// EvalWithExemplars will include exemplars in the Eval results. This is accomplished by matching the underlying
+// exemplars of the referenced time series against the result labels of the recording rule, before renaming labels
+// according to the rule's configuration.
+// Note that this feature won't be able to match exemplars for certain label renaming scenarios, such as
+// 1. When the recording rule renames labels via label_replace or label_join functions.
+// 2. When the recording rule in turn references other recording rules that have renamed their labels as part of
+// their configuration.
+func (rule *RecordingRule) EvalWithExemplars(ctx context.Context, queryOffset time.Duration, ts time.Time, query QueryFunc,
+	exemplarQuery ExemplarQueryFunc, _ *url.URL, limit int,
+) (promql.Vector, []exemplar.QueryResult, error) {
+	ctx = NewOriginContext(ctx, NewRuleDetail(rule))
+	vector, err := query(ctx, rule.vector.String(), ts.Add(-queryOffset))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var resultExemplars []exemplar.QueryResult
+	if len(vector) < 1 {
+		return vector, nil, nil
+	}
+
+	// Query all the raw exemplars that match the query. Exemplars "match" the query if and only if they
+	// satisfy the query's selectors, i.e., belong to the same referenced time series and interval.
+	exemplars, err := exemplarQuery(ctx, rule.nameSelectors, ts, queryOffset)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if len(exemplars) > 0 {
+		// Loop through each of the new series and try matching the new series labels against the exemplar series labels.
+		// If they match, replace the exemplar series labels with the incoming series labels. This is to ensure that the
+		// exemplars are stored against the refID of the new series. If there is no match then drop the exemplar.
+		// There will only ever be one exemplar per sample; in case of multiple matches, the winner is determined
+		// according to the order of the exemplar query result.
+		for _, sample := range vector {
+			sampleHash := sample.Metric.Hash()
+			sampleMatchers := make([]*labels.Matcher, 0, sample.Metric.Len())
+
+			for _, ex := range exemplars {
+				exemplarHash := ex.SeriesLabels.Hash()
+				if rule.hasAlreadyBeenMatchedSuccessfully(sampleHash, exemplarHash) {
+					ex.SeriesLabels = sample.Metric
+					resultExemplars = append(resultExemplars, ex)
+					break
+				}
+				if len(sampleMatchers) == 0 {
+					sample.Metric.Range(func(l labels.Label) {
+						sampleMatchers = append(sampleMatchers, labels.MustNewMatcher(labels.MatchEqual, l.Name, l.Value))
+					})
+				}
+				if ok := matches(ex.SeriesLabels, sampleMatchers...); ok {
+					rule.recordMatch(sampleHash, exemplarHash)
+					ex.SeriesLabels = sample.Metric
+					resultExemplars = append(resultExemplars, ex)
+					break
+				}
+			}
+		}
+	}
+
+	if err = rule.applyVectorLabels(vector); err != nil {
+		return nil, nil, err
+	}
+	if err = rule.limit(vector, limit); err != nil {
+		return nil, nil, err
+	}
+	if len(resultExemplars) > 0 {
+		rule.applyExemplarLabels(resultExemplars)
+	}
+
+	rule.SetHealth(HealthGood)
+	rule.SetLastError(err)
+	return vector, resultExemplars, nil
+}
+
+// applyExemplarLabels applies labels from the rule and sets the metric name for the exemplar result.
+func (rule *RecordingRule) applyExemplarLabels(ex []exemplar.QueryResult) {
+	// Override the metric name and labels.
+	lb := labels.NewBuilder(labels.EmptyLabels())
+	for i := range ex {
+		e := &ex[i]
+		e.SeriesLabels = rule.applyLabels(lb, e.SeriesLabels)
+	}
+}
+
+func (rule *RecordingRule) applyLabels(lb *labels.Builder, ls labels.Labels) labels.Labels {
+	lb.Reset(ls)
+	lb.Set(labels.MetricName, rule.name)
+	rule.labels.Range(func(l labels.Label) {
+		lb.Set(l.Name, l.Value)
+	})
+	return lb.Labels()
+}
+
 // Eval evaluates the rule and then overrides the metric names and labels accordingly.
 func (rule *RecordingRule) Eval(ctx context.Context, queryOffset time.Duration, ts time.Time, query QueryFunc, _ *url.URL, limit int) (promql.Vector, error) {
 	ctx = NewOriginContext(ctx, NewRuleDetail(rule))
@@ -85,6 +196,22 @@ func (rule *RecordingRule) Eval(ctx context.Context, queryOffset time.Duration, 
 		return nil, err
 	}
 
+	// Override the metric name and labels.
+	if err = rule.applyVectorLabels(vector); err != nil {
+		return nil, err
+	}
+
+	if err = rule.limit(vector, limit); err != nil {
+		return nil, err
+	}
+
+	rule.SetHealth(HealthGood)
+	rule.SetLastError(err)
+	return vector, nil
+}
+
+// applyVectorLabels applies labels from the rule and sets the metric name for the vector.
+func (rule *RecordingRule) applyVectorLabels(vector promql.Vector) error {
 	// Override the metric name and labels.
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
@@ -104,17 +231,55 @@ func (rule *RecordingRule) Eval(ctx context.Context, queryOffset time.Duration, 
 	// Check that the rule does not produce identical metrics after applying
 	// labels.
 	if vector.ContainsSameLabelset() {
-		return nil, errors.New("vector contains metrics with the same labelset after applying rule labels")
+		return errors.New("vector contains metrics with the same labelset after applying rule labels")
 	}
 
+	return nil
+}
+
+// limit ensures that any limits being set on the rules for series limit are enforced.
+func (*RecordingRule) limit(vector promql.Vector, limit int) error {
 	numSeries := len(vector)
 	if limit > 0 && numSeries > limit {
-		return nil, fmt.Errorf("exceeded limit of %d with %d series", limit, numSeries)
+		return fmt.Errorf("exceeded limit of %d with %d series", limit, numSeries)
 	}
 
-	rule.SetHealth(HealthGood)
-	rule.SetLastError(err)
-	return vector, nil
+	return nil
+}
+
+func (rule *RecordingRule) loadNameSelectors() {
+	if rule.vector == nil {
+		rule.nameSelectors = [][]*labels.Matcher{}
+		return
+	}
+	selectors := parser.ExtractSelectors(rule.vector)
+	// Only include selectors with __name__ matcher. Otherwise, we would potentially select exemplars across
+	// all time series.
+	nameSelectors := make([][]*labels.Matcher, 0, len(selectors))
+	for _, selector := range selectors {
+		for _, matcher := range selector {
+			if matcher.Name == labels.MetricName {
+				nameSelectors = append(nameSelectors, selector)
+				break
+			}
+		}
+	}
+	rule.nameSelectors = nameSelectors
+}
+
+func (rule *RecordingRule) hasAlreadyBeenMatchedSuccessfully(seriesHash, exemplarHash uint64) bool {
+	rule.exemplarsCacheMtx.Lock()
+	defer rule.exemplarsCacheMtx.Unlock()
+
+	_, ok := rule.matchedExemplarHashes[&hashTuple{seriesHash: seriesHash, exemplarHash: exemplarHash}]
+	return ok
+}
+
+func (rule *RecordingRule) recordMatch(seriesHash, exemplarHash uint64) {
+	rule.exemplarsCacheMtx.Lock()
+	defer rule.exemplarsCacheMtx.Unlock()
+
+	rule.matchedExemplarHashes[&hashTuple{seriesHash: seriesHash, exemplarHash: exemplarHash}] = struct{}{}
 }
 
 func (rule *RecordingRule) String() string {
