@@ -239,13 +239,21 @@ func (v SequenceValue) String() string {
 	return fmt.Sprintf("%f", v.Value)
 }
 
+// Exemplar is an optional sample for a sequence of time series values.
+type Exemplar struct {
+	Labels   labels.Labels
+	Value    float64
+	Sequence uint64
+}
+
 type seriesDescription struct {
-	labels labels.Labels
-	values []SequenceValue
+	labels    labels.Labels
+	values    []SequenceValue
+	exemplars []Exemplar
 }
 
 // ParseSeriesDesc parses the description of a time series.
-func ParseSeriesDesc(input string) (labels labels.Labels, values []SequenceValue, err error) {
+func ParseSeriesDesc(input string) (labels labels.Labels, values []SequenceValue, exemplars []Exemplar, err error) {
 	p := NewParser(input)
 	p.lex.seriesDesc = true
 
@@ -258,13 +266,14 @@ func ParseSeriesDesc(input string) (labels labels.Labels, values []SequenceValue
 
 		labels = result.labels
 		values = result.values
+		exemplars = result.exemplars
 	}
 
 	if len(p.parseErrors) != 0 {
 		err = p.parseErrors
 	}
 
-	return labels, values, err
+	return labels, values, exemplars, err
 }
 
 // addParseErrf formats the error and appends it to the list of parsing errors.
