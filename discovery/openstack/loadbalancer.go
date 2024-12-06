@@ -16,7 +16,6 @@ package openstack
 import (
 	"context"
 	"fmt"
-	"log"
 	"log/slog"
 	"net"
 	"strconv"
@@ -120,7 +119,6 @@ func (i *LoadBalancerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Gro
 	// Fetch all floating IPs with pagination
 	fipPages, err := floatingips.List(networkClient, floatingips.ListOpts{}).AllPages()
 	if err != nil {
-		log.Printf("Error calling OpenStack API: %v", err)
 		return nil, fmt.Errorf("failed to list all fips: %w", err)
 	}
 	if err != nil {

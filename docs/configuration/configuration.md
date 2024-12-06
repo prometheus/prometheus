@@ -1197,9 +1197,9 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 #### `loadbalancer`
 
-The `loadbalancer` role discovers one target per `PROMETHEUS` listener of
-Octavia loa dbalancer. The target address defaults to the VIP address of the
-load balancer.
+The `loadbalancer` role discovers one target per Octavia loadbalancer with a 
+`PROMETHEUS` listener. The target address defaults to the VIP address
+of the load balancer.
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
