@@ -66,7 +66,7 @@ var testStartTime = time.Unix(0, 0).UTC()
 // LoadedStorage returns storage with generated data using the provided load statements.
 // Non-load statements will cause test errors.
 func LoadedStorage(t testutil.T, input string) *teststorage.TestStorage {
-	test, err := newTest(t, input)
+	test, err := newTest(t, input, false)
 	require.NoError(t, err)
 
 	for _, cmd := range test.cmds {
@@ -125,11 +125,17 @@ func RunBuiltinTests(t TBRun, engine promql.QueryEngine) {
 
 // RunTest parses and runs the test against the provided engine.
 func RunTest(t testutil.T, input string, engine promql.QueryEngine) {
-	require.NoError(t, runTest(t, input, engine))
+	require.NoError(t, runTest(t, input, engine, false))
 }
 
-func runTest(t testutil.T, input string, engine promql.QueryEngine) error {
-	test, err := newTest(t, input)
+// testTest allows tests to be run in "test-the-test" mode (true for
+// testingMode). This is a special mode for testing test code execution itself.
+func testTest(t testutil.T, input string, engine promql.QueryEngine) error {
+	return runTest(t, input, engine, true)
+}
+
+func runTest(t testutil.T, input string, engine promql.QueryEngine, testingMode bool) error {
+	test, err := newTest(t, input, testingMode)
 
 	// Why do this before checking err? newTest() can create the test storage and then return an error,
 	// and we want to make sure to clean that up to avoid leaking goroutines.
@@ -164,6 +170,8 @@ func runTest(t testutil.T, input string, engine promql.QueryEngine) error {
 // against a test storage.
 type test struct {
 	testutil.T
+	// testingMode distinguishes between normal execution and test-execution mode.
+	testingMode bool
 
 	cmds []testCommand
 
@@ -174,10 +182,11 @@ type test struct {
 }
 
 // newTest returns an initialized empty Test.
-func newTest(t testutil.T, input string) (*test, error) {
+func newTest(t testutil.T, input string, testingMode bool) (*test, error) {
 	test := &test{
-		T:    t,
-		cmds: []testCommand{},
+		T:           t,
+		cmds:        []testCommand{},
+		testingMode: testingMode,
 	}
 	err := test.parse(input)
 	test.clear()
@@ -1078,11 +1087,25 @@ func (t *test) exec(tc testCommand, engine promql.QueryEngine) error {
 }
 
 func (t *test) execEval(cmd *evalCmd, engine promql.QueryEngine) error {
-	if cmd.isRange {
-		return t.execRangeEval(cmd, engine)
+	do := func() error {
+		if cmd.isRange {
+			return t.execRangeEval(cmd, engine)
+		}
+
+		return t.execInstantEval(cmd, engine)
 	}
 
-	return t.execInstantEval(cmd, engine)
+	if t.testingMode {
+		return do()
+	}
+
+	if tt, ok := t.T.(*testing.T); ok {
+		tt.Run(fmt.Sprintf("line %d/%s", cmd.line, cmd.expr), func(t *testing.T) {
+			require.NoError(t, do())
+		})
+		return nil
+	}
+	return errors.New("t.T is not testing.T")
 }
 
 func (t *test) execRangeEval(cmd *evalCmd, engine promql.QueryEngine) error {

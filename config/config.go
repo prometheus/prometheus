@@ -1429,8 +1429,9 @@ var (
 
 // OTLPConfig is the configuration for writing to the OTLP endpoint.
 type OTLPConfig struct {
-	PromoteResourceAttributes []string                  `yaml:"promote_resource_attributes,omitempty"`
-	TranslationStrategy       translationStrategyOption `yaml:"translation_strategy,omitempty"`
+	PromoteResourceAttributes         []string                  `yaml:"promote_resource_attributes,omitempty"`
+	TranslationStrategy               translationStrategyOption `yaml:"translation_strategy,omitempty"`
+	KeepIdentifyingResourceAttributes bool                      `yaml:"keep_identifying_resource_attributes,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.

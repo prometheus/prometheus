@@ -28,41 +28,72 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
 )
 
 func TestFromMetrics(t *testing.T) {
-	t.Run("successful", func(t *testing.T) {
-		converter := NewPrometheusConverter()
-		payload := createExportRequest(5, 128, 128, 2, 0)
-		var expMetadata []prompb.MetricMetadata
-		resourceMetricsSlice := payload.Metrics().ResourceMetrics()
-		for i := 0; i < resourceMetricsSlice.Len(); i++ {
-			scopeMetricsSlice := resourceMetricsSlice.At(i).ScopeMetrics()
-			for j := 0; j < scopeMetricsSlice.Len(); j++ {
-				metricSlice := scopeMetricsSlice.At(j).Metrics()
-				for k := 0; k < metricSlice.Len(); k++ {
-					metric := metricSlice.At(k)
-					promName := prometheustranslator.BuildCompliantName(metric, "", false, false)
-					expMetadata = append(expMetadata, prompb.MetricMetadata{
-						Type:             otelMetricTypeToPromMetricType(metric),
-						MetricFamilyName: promName,
-						Help:             metric.Description(),
-						Unit:             metric.Unit(),
-					})
+	for _, keepIdentifyingResourceAttributes := range []bool{false, true} {
+		t.Run(fmt.Sprintf("successful/keepIdentifyingAttributes=%v", keepIdentifyingResourceAttributes), func(t *testing.T) {
+			converter := NewPrometheusConverter()
+			payload := createExportRequest(5, 128, 128, 2, 0)
+			var expMetadata []prompb.MetricMetadata
+			resourceMetricsSlice := payload.Metrics().ResourceMetrics()
+			for i := 0; i < resourceMetricsSlice.Len(); i++ {
+				scopeMetricsSlice := resourceMetricsSlice.At(i).ScopeMetrics()
+				for j := 0; j < scopeMetricsSlice.Len(); j++ {
+					metricSlice := scopeMetricsSlice.At(j).Metrics()
+					for k := 0; k < metricSlice.Len(); k++ {
+						metric := metricSlice.At(k)
+						promName := prometheustranslator.BuildCompliantName(metric, "", false, false)
+						expMetadata = append(expMetadata, prompb.MetricMetadata{
+							Type:             otelMetricTypeToPromMetricType(metric),
+							MetricFamilyName: promName,
+							Help:             metric.Description(),
+							Unit:             metric.Unit(),
+						})
+					}
 				}
 			}
-		}
 
-		annots, err := converter.FromMetrics(context.Background(), payload.Metrics(), Settings{})
-		require.NoError(t, err)
-		require.Empty(t, annots)
+			annots, err := converter.FromMetrics(
+				context.Background(),
+				payload.Metrics(),
+				Settings{KeepIdentifyingResourceAttributes: keepIdentifyingResourceAttributes},
+			)
+			require.NoError(t, err)
+			require.Empty(t, annots)
 
-		if diff := cmp.Diff(expMetadata, converter.Metadata()); diff != "" {
-			t.Errorf("mismatch (-want +got):\n%s", diff)
-		}
-	})
+			if diff := cmp.Diff(expMetadata, converter.Metadata()); diff != "" {
+				t.Errorf("mismatch (-want +got):\n%s", diff)
+			}
+
+			ts := converter.TimeSeries()
+			require.Len(t, ts, 1408+1) // +1 for the target_info.
+
+			target_info_count := 0
+			for _, s := range ts {
+				b := labels.NewScratchBuilder(2)
+				lbls := s.ToLabels(&b, nil)
+				if lbls.Get(labels.MetricName) == "target_info" {
+					target_info_count++
+					require.Equal(t, "test-namespace/test-service", lbls.Get("job"))
+					require.Equal(t, "id1234", lbls.Get("instance"))
+					if keepIdentifyingResourceAttributes {
+						require.Equal(t, "test-service", lbls.Get("service_name"))
+						require.Equal(t, "test-namespace", lbls.Get("service_namespace"))
+						require.Equal(t, "id1234", lbls.Get("service_instance_id"))
+					} else {
+						require.False(t, lbls.Has("service_name"))
+						require.False(t, lbls.Has("service_namespace"))
+						require.False(t, lbls.Has("service_instance_id"))
+					}
+				}
+			}
+			require.Equal(t, 1, target_info_count)
+		})
+	}
 
 	t.Run("context cancellation", func(t *testing.T) {
 		converter := NewPrometheusConverter()
@@ -168,6 +199,15 @@ func createExportRequest(resourceAttributeCount, histogramCount, nonHistogramCou
 
 	rm := request.Metrics().ResourceMetrics().AppendEmpty()
 	generateAttributes(rm.Resource().Attributes(), "resource", resourceAttributeCount)
+
+	// Fake some resource attributes.
+	for k, v := range map[string]string{
+		"service.name":        "test-service",
+		"service.namespace":   "test-namespace",
+		"service.instance.id": "id1234",
+	} {
+		rm.Resource().Attributes().PutStr(k, v)
+	}
 
 	metrics := rm.ScopeMetrics().AppendEmpty().Metrics()
 	ts := pcommon.NewTimestampFromTime(time.Now())
