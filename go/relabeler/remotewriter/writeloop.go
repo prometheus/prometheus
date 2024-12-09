@@ -209,7 +209,7 @@ func (fn CorruptMarkerFn) MarkCorrupted(headID string) error {
 
 func (wl *writeLoop) makeCorruptMarker() CorruptMarker {
 	return CorruptMarkerFn(func(headID string) error {
-		_, err := wl.catalog.SetStatus(headID, catalog.StatusCorrupted)
+		_, err := wl.catalog.SetCorrupted(headID)
 		return err
 	})
 }

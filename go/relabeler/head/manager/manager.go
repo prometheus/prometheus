@@ -8,6 +8,7 @@ import (
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head/catalog"
+	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 	"github.com/prometheus/prometheus/pp/go/util"
 	"github.com/prometheus/client_golang/prometheus"
 	"os"
@@ -23,6 +24,7 @@ type Catalog interface {
 	List(filter func(record *catalog.Record) bool, sortLess func(lhs, rhs *catalog.Record) bool) ([]*catalog.Record, error)
 	Create(id, dir string, numberOfShards uint16) (*catalog.Record, error)
 	SetStatus(id string, status catalog.Status) (*catalog.Record, error)
+	SetCorrupted(id string) (*catalog.Record, error)
 }
 
 type metrics struct {
@@ -72,7 +74,7 @@ func New(dir string, configSource ConfigSource, catalog Catalog, registerer prom
 func (m *Manager) Restore(blockDuration time.Duration) (active relabeler.Head, rotated []relabeler.Head, err error) {
 	headRecords, err := m.catalog.List(
 		func(record *catalog.Record) bool {
-			return record.DeletedAt() == 0 && record.Status() != catalog.StatusCorrupted
+			return record.DeletedAt() == 0
 		},
 		func(lhs, rhs *catalog.Record) bool {
 			return lhs.CreatedAt() < rhs.CreatedAt()
@@ -90,15 +92,20 @@ func (m *Manager) Restore(blockDuration time.Duration) (active relabeler.Head, r
 		}
 
 		cfgs, _ := m.configSource.Get()
-		h, err = head.Load(headRecord.ID(), m.generation, headDir, cfgs, headRecord.NumberOfShards(), m.registerer)
+		var corrupted bool
+		h, corrupted, err = head.Load(headRecord.ID(), m.generation, headDir, cfgs, headRecord.NumberOfShards(), m.registerer)
 		if err != nil {
-			_, setStatusErr := m.catalog.SetStatus(headRecord.ID(), catalog.StatusCorrupted)
-			if setStatusErr != nil {
-				return nil, nil, errors.Join(err, setStatusErr)
-			}
+			logger.Errorf("head load totally failed: %v", err)
 			m.counter.With(prometheus.Labels{"type": "corrupted"}).Inc()
 			continue
 		}
+
+		if corrupted {
+			if _, setCorruptedErr := m.catalog.SetCorrupted(headRecord.ID()); setCorruptedErr != nil {
+				return nil, nil, errors.Join(err, setCorruptedErr)
+			}
+		}
+
 		m.generation++
 		headReleaseFn := headRecord.Acquire()
 		h = NewDiscardableRotatableHead(
@@ -124,7 +131,7 @@ func (m *Manager) Restore(blockDuration time.Duration) (active relabeler.Head, r
 			},
 		)
 		m.counter.With(prometheus.Labels{"type": "created"}).Inc()
-		if index == len(headRecords)-1 && time.Now().Sub(time.UnixMilli(headRecord.CreatedAt())).Milliseconds() < blockDuration.Milliseconds() {
+		if !corrupted && index == len(headRecords)-1 && time.Now().Sub(time.UnixMilli(headRecord.CreatedAt())).Milliseconds() < blockDuration.Milliseconds() {
 			active = h
 			continue
 		}

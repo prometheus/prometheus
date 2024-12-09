@@ -11,7 +11,7 @@ import (
 
 type Catalog interface {
 	List(filterFn func(record *catalog.Record) bool, sortLess func(lhs, rhs *catalog.Record) bool) (records []*catalog.Record, err error)
-	SetStatus(id string, status catalog.Status) (*catalog.Record, error)
+	SetCorrupted(id string) (*catalog.Record, error)
 }
 
 type RemoteWriter struct {

@@ -10,13 +10,13 @@ import (
 	"time"
 )
 
-func TestName(t *testing.T) {
+func TestCatalog(t *testing.T) {
 	tmpFile, err := os.CreateTemp("", "log_file")
 	require.NoError(t, err)
 	logFileName := tmpFile.Name()
 	require.NoError(t, tmpFile.Close())
 
-	l, err := catalog.NewFileLog(logFileName, catalog.DefaultEncoder{}, catalog.DefaultDecoder{})
+	l, err := catalog.NewFileLogV2(logFileName)
 	require.NoError(t, err)
 
 	clock := clockwork.NewFakeClockAt(time.Now())
@@ -63,7 +63,7 @@ func TestName(t *testing.T) {
 	c = nil
 	require.NoError(t, l.Close())
 
-	l, err = catalog.NewFileLog(logFileName, catalog.DefaultEncoder{}, catalog.DefaultDecoder{})
+	l, err = catalog.NewFileLogV2(logFileName)
 	require.NoError(t, err)
 	c, err = catalog.New(clock, l)
 	require.NoError(t, err)

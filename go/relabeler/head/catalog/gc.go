@@ -53,6 +53,10 @@ func (gc *GC) Run(ctx context.Context) error {
 
 func (gc *GC) Iterate() {
 	fmt.Println("CATALOG GC ITERATION STARTED")
+	defer func() {
+		fmt.Println("CATALOG GC ITERATION ENDED")
+	}()
+
 	records, err := gc.catalog.List(
 		nil,
 		func(lhs, rhs *Record) bool {
@@ -70,7 +74,7 @@ func (gc *GC) Iterate() {
 			return
 		}
 
-		if record.Status() == StatusCorrupted {
+		if record.Corrupted() {
 			fmt.Println("CATALOG GC ITERATION: HEAD", record.ID(), "CORRUPTED")
 			continue
 		}

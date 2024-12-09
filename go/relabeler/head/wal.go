@@ -9,6 +9,7 @@ import (
 )
 
 type ShardWal struct {
+	corrupted           bool
 	encoder             *cppbridge.HeadWalEncoder
 	writeCloser         io.WriteCloser
 	fileHeaderIsWritten bool
@@ -23,7 +24,17 @@ func newShardWal(encoder *cppbridge.HeadWalEncoder, fileHeaderIsWritten bool, wr
 	}
 }
 
+func newCorruptedShardWal() *ShardWal {
+	return &ShardWal{
+		corrupted: true,
+	}
+}
+
 func (w *ShardWal) Write(innerSeriesSlice []*cppbridge.InnerSeries) error {
+	if w.corrupted {
+		return fmt.Errorf("writing in corrupted wal")
+	}
+
 	err := w.encoder.Encode(innerSeriesSlice)
 	if err != nil {
 		return fmt.Errorf("failed to encode inner series: %w", err)
@@ -51,7 +62,15 @@ func (w *ShardWal) Write(innerSeriesSlice []*cppbridge.InnerSeries) error {
 }
 
 func (w *ShardWal) Close() error {
-	return w.writeCloser.Close()
+	if w.writeCloser != nil {
+		return w.writeCloser.Close()
+	}
+
+	return nil
+}
+
+type CorruptedShardWal struct {
+	writeCloser io.WriteCloser
 }
 
 func WriteHeader(writer io.Writer, fileFormatVersion uint8, encoderVersion uint8) (n int, err error) {

@@ -57,7 +57,7 @@ func Create(id string, generation uint64, dir string, configs []*config.InputRel
 	return New(id, generation, configs, lsses, wals, dataStorages, numberOfShards, registerer)
 }
 
-func Load(id string, generation uint64, dir string, configs []*config.InputRelabelerConfig, numberOfShards uint16, registerer prometheus.Registerer) (_ *Head, err error) {
+func Load(id string, generation uint64, dir string, configs []*config.InputRelabelerConfig, numberOfShards uint16, registerer prometheus.Registerer) (_ *Head, corrupted bool, err error) {
 	lsses := make([]*LSS, numberOfShards)
 	wals := make([]*ShardWal, numberOfShards)
 	dataStorages := make([]*DataStorage, numberOfShards)
@@ -85,23 +85,45 @@ func Load(id string, generation uint64, dir string, configs []*config.InputRelab
 			dataStorage: dataStorage,
 			encoder:     cppbridge.NewHeadEncoderWithDataStorage(dataStorage),
 		}
-		shardFilePath := filepath.Join(dir, fmt.Sprintf("shard_%d.wal", shardID))
-		var shardFile *os.File
-		shardFile, err = os.OpenFile(shardFilePath, os.O_CREATE|os.O_RDWR, 0666)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create shard wal file: %w", err)
-		}
 
-		var offset int
-		var encoder *cppbridge.HeadWalEncoder
-		offset, encoder, err = replayWal(shardFile, targetLss, dataStorages[shardID])
+		shardFilePath := filepath.Join(dir, fmt.Sprintf("shard_%d.wal", shardID))
+		var shardWal *ShardWal
+		var isCorrupted bool
+		shardWal, isCorrupted, err = createWal(shardFilePath, targetLss, dataStorages[shardID])
 		if err != nil {
-			return nil, fmt.Errorf("failed to replay wal: %w", err)
+			return nil, corrupted, err
 		}
-		wals[shardID] = newShardWal(encoder, offset != 0, shardFile)
+		if isCorrupted && !corrupted {
+			corrupted = true
+		}
+		wals[shardID] = shardWal
 	}
 
-	return New(id, generation, configs, lsses, wals, dataStorages, numberOfShards, registerer)
+	h, err := New(id, generation, configs, lsses, wals, dataStorages, numberOfShards, registerer)
+	if err != nil {
+		return nil, corrupted, fmt.Errorf("failed to create head: %w", err)
+	}
+
+	return h, corrupted, nil
+}
+
+func createWal(shardFilePath string, lss *cppbridge.LabelSetStorage, dataStorage *DataStorage) (_ *ShardWal, corrupted bool, err error) {
+	var shardFile *os.File
+	shardFile, err = os.OpenFile(shardFilePath, os.O_CREATE|os.O_RDWR, 0666)
+	if err != nil {
+		return nil, corrupted, fmt.Errorf("failed to create shard wal file: %w", err)
+	}
+
+	var offset int
+	var encoder *cppbridge.HeadWalEncoder
+	offset, encoder, err = replayWal(shardFile, lss, dataStorage)
+	if err != nil {
+		logger.Errorf(fmt.Errorf("failed to replay wal: %w", err).Error())
+		corrupted = true
+		return newCorruptedShardWal(), corrupted, shardFile.Close()
+	}
+
+	return newShardWal(encoder, offset != 0, shardFile), corrupted, nil
 }
 
 func replayWal(file *os.File, lss *cppbridge.LabelSetStorage, dataStorage *DataStorage) (offset int, encoder *cppbridge.HeadWalEncoder, err error) {

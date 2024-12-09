@@ -110,6 +110,31 @@ func (c *Catalog) SetStatus(id string, status Status) (*Record, error) {
 	return r, c.compactIfNeeded()
 }
 
+func (c *Catalog) SetCorrupted(id string) (*Record, error) {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+
+	r, ok := c.records[id]
+	if !ok {
+		return nil, fmt.Errorf("not found: %s", id)
+	}
+
+	if r.corrupted {
+		return r, nil
+	}
+
+	r.corrupted = true
+	r.updatedAt = c.clock.Now().UnixMilli()
+
+	if err := c.log.Write(r); err != nil {
+		return nil, fmt.Errorf("failed to write log: %w", err)
+	}
+
+	c.records[id] = r
+
+	return r, c.compactIfNeeded()
+}
+
 func (c *Catalog) Delete(id string) error {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
@@ -146,16 +171,16 @@ func (c *Catalog) Compact() error {
 
 func (c *Catalog) sync() error {
 	for {
-		var r Record
+		r := NewRecord()
 		var err error
-		err = c.log.Read(&r)
+		err = c.log.Read(r)
 		if err != nil {
 			if !errors.Is(err, io.EOF) {
 				return fmt.Errorf("failed to read log: %w", err)
 			}
 			return nil
 		}
-		c.records[r.id] = &r
+		c.records[r.id] = r
 	}
 }
 
