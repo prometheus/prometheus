@@ -31,7 +31,7 @@ require (
 	github.com/google/go-cmp v0.6.0
 	github.com/google/pprof v0.0.0-20240711041743-f6c9dda6c6da
 	github.com/google/uuid v1.6.0
-	github.com/gophercloud/gophercloud v1.14.1
+	github.com/gophercloud/gophercloud/v2 v2.3.0
 	github.com/grafana/regexp v0.0.0-20240518133315-a468a5bfb3bc
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
 	github.com/hashicorp/consul/api v1.30.0
@@ -75,9 +75,9 @@ require (
 	go.uber.org/goleak v1.3.0
 	go.uber.org/multierr v1.11.0
 	golang.org/x/oauth2 v0.24.0
-	golang.org/x/sync v0.9.0
-	golang.org/x/sys v0.27.0
-	golang.org/x/text v0.20.0
+	golang.org/x/sync v0.10.0
+	golang.org/x/sys v0.28.0
+	golang.org/x/text v0.21.0
 	golang.org/x/tools v0.27.0
 	google.golang.org/api v0.204.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20241104194629-dd2ea8efbc28
@@ -187,11 +187,11 @@ require (
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/otel/metric v1.32.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.3.1 // indirect
-	golang.org/x/crypto v0.29.0 // indirect
+	golang.org/x/crypto v0.30.0 // indirect
 	golang.org/x/exp v0.0.0-20240119083558-1b970713d09a // indirect
 	golang.org/x/mod v0.22.0 // indirect
 	golang.org/x/net v0.31.0 // indirect
-	golang.org/x/term v0.26.0 // indirect
+	golang.org/x/term v0.27.0 // indirect
 	golang.org/x/time v0.7.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20241104194629-dd2ea8efbc28 // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.12.0 // indirect
