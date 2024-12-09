@@ -21,11 +21,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gophercloud/gophercloud"
-	"github.com/gophercloud/gophercloud/openstack"
-	"github.com/gophercloud/gophercloud/openstack/loadbalancer/v2/listeners"
-	"github.com/gophercloud/gophercloud/openstack/loadbalancer/v2/loadbalancers"
-	"github.com/gophercloud/gophercloud/openstack/networking/v2/extensions/layer3/floatingips"
+	"github.com/gophercloud/gophercloud/v2"
+	"github.com/gophercloud/gophercloud/v2/openstack"
+	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/listeners"
+	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/loadbalancers"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/floatingips"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 
@@ -67,8 +67,7 @@ func newLoadBalancerDiscovery(provider *gophercloud.ProviderClient, opts *gopher
 }
 
 func (i *LoadBalancerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	i.provider.Context = ctx
-	err := openstack.Authenticate(i.provider, *i.authOpts)
+	err := openstack.Authenticate(ctx, i.provider, *i.authOpts)
 	if err != nil {
 		return nil, fmt.Errorf("could not authenticate to OpenStack: %w", err)
 	}
@@ -87,7 +86,7 @@ func (i *LoadBalancerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Gro
 		return nil, fmt.Errorf("could not create OpenStack network session: %w", err)
 	}
 
-	allPages, err := loadbalancers.List(client, loadbalancers.ListOpts{}).AllPages()
+	allPages, err := loadbalancers.List(client, loadbalancers.ListOpts{}).AllPages(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list load balancers: %w", err)
 	}
@@ -98,7 +97,7 @@ func (i *LoadBalancerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Gro
 	}
 
 	// Fetch all listeners in one API call
-	listenerPages, err := listeners.List(client, listeners.ListOpts{}).AllPages()
+	listenerPages, err := listeners.List(client, listeners.ListOpts{}).AllPages(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list all listeners: %w", err)
 	}
@@ -118,7 +117,7 @@ func (i *LoadBalancerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Gro
 	}
 
 	// Fetch all floating IPs
-	fipPages, err := floatingips.List(networkClient, floatingips.ListOpts{}).AllPages()
+	fipPages, err := floatingips.List(networkClient, floatingips.ListOpts{}).AllPages(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list all fips: %w", err)
 	}
