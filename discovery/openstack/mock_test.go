@@ -124,7 +124,7 @@ func (m *SDMock) HandleAuthSuccessfully() {
                 "type": "identity",
                 "name": "keystone"
             },
-	    {
+            {
                 "endpoints": [
                     {
                         "id": "e2ffee808abc4a60916715b1d4b489dd",
@@ -136,8 +136,20 @@ func (m *SDMock) HandleAuthSuccessfully() {
                 ],
                 "id": "b7f2a5b1a019459cb956e43a8cb41e31",
                 "type": "compute"
-            }
-
+            },
+            {
+                "endpoints": [
+                    {
+                        "id": "39dc322ce86c4111b4f06c2eeae0841b",
+                        "interface": "public",
+                        "region": "RegionOne",
+                        "region_id": "RegionOne",
+                        "url": "%s"
+                    }
+                ],
+                "id": "c609fc430175452290b62a4242e8a7e8",
+                "type": "network"
+        }
         ],
         "expires_at": "2013-02-27T18:30:59.999999Z",
         "is_domain": false,
@@ -174,7 +186,7 @@ func (m *SDMock) HandleAuthSuccessfully() {
         }
     }
 }
-	`, m.Endpoint())
+	`, m.Endpoint(), m.Endpoint())
 	})
 }
 
@@ -554,35 +566,84 @@ func (m *SDMock) HandleServerListSuccessfully() {
 
 const listOutput = `
 {
-    "floating_ips": [
-        {
-            "fixed_ip": null,
-            "id": "1",
-            "instance_id": null,
-            "ip": "10.10.10.1",
-            "pool": "nova"
-        },
-        {
-            "fixed_ip": "10.0.0.32",
-            "id": "2",
-            "instance_id": "ef079b0c-e610-4dfb-b1aa-b49f07ac48e5",
-            "ip": "10.10.10.2",
-            "pool": "nova"
-        },
-        {
-            "fixed_ip": "10.0.0.34",
-            "id": "3",
-            "instance_id": "9e5476bd-a4ec-4653-93d6-72c93aa682bb",
-            "ip": "10.10.10.4",
-            "pool": "nova"
-        }
-    ]
+	"floatingips": [
+		{
+			"id": "03a77860-ae03-46c4-b502-caea11467a79",
+			"tenant_id": "fcad67a6189847c4aecfa3c81a05783b",
+			"floating_ip_address": "10.10.10.1",
+			"floating_network_id": "d02c4f18-d606-4864-b12a-1c9b39a46be2",
+			"router_id": "f03af93b-4e8f-4f55-adcf-a0317782ede2",
+			"port_id": "d5597901-48c8-4a69-a041-cfc5be158a04",
+			"fixed_ip_address": null,
+			"status": "ACTIVE",
+			"description": "",
+			"port_details": null,
+			"dns_domain": "",
+			"dns_name": "",
+			"port_forwardings": [],
+			"tags": [],
+			"created_at": "2023-08-30T16:30:27Z",
+			"updated_at": "2023-08-30T16:30:28Z"
+		},
+		{
+			"id": "03e28c79-5a4c-491e-a4fe-3ff6bba830c6",
+			"tenant_id": "fcad67a6189847c4aecfa3c81a05783b",
+			"floating_ip_address": "10.10.10.2",
+			"floating_network_id": "d02c4f18-d606-4864-b12a-1c9b39a46be2",
+			"router_id": "f03af93b-4e8f-4f55-adcf-a0317782ede2",
+			"port_id": "4a45b012-0478-484d-8cf3-c8abdb194d08",
+			"fixed_ip_address": "10.0.0.32",
+			"status": "ACTIVE",
+			"description": "",
+			"port_details": {
+			  "name": "ovn-lb-vip-c8f1d76f-1560-4445-8412-b817b0f0b922",
+			  "network_id": "03200a39-b399-44f3-a778-6dbb93343a31",
+			  "mac_address": "fa:16:3e:23:12:a3",
+			  "admin_state_up": true,
+			  "status": "ACTIVE",
+			  "device_id": "",
+			  "device_owner": ""
+			},
+			"dns_domain": "",
+			"dns_name": "",
+			"port_forwardings": [],
+			"tags": [],
+			"created_at": "2023-09-06T15:45:36Z",
+			"updated_at": "2023-09-06T15:45:36Z"
+		},
+		{
+			"id": "087fcdd2-1d13-4f72-9c0e-c759e796d558",
+			"tenant_id": "fcad67a6189847c4aecfa3c81a05783b",
+			"floating_ip_address": "10.10.10.4",
+			"floating_network_id": "d02c4f18-d606-4864-b12a-1c9b39a46be2",
+			"router_id": "f03af93b-4e8f-4f55-adcf-a0317782ede2",
+			"port_id": "a0e244e8-7910-4427-b8d1-20470cad4f8a",
+			"fixed_ip_address": "10.0.0.34",
+			"status": "ACTIVE",
+			"description": "",
+			"port_details": {
+			  "name": "ovn-lb-vip-5c0791f0-3878-41fb-a1c7-08c278828fe6",
+			  "network_id": "03200a39-b399-44f3-a778-6dbb93343a31",
+			  "mac_address": "fa:16:3e:5f:43:10",
+			  "admin_state_up": true,
+			  "status": "ACTIVE",
+			  "device_id": "",
+			  "device_owner": ""
+			},
+			"dns_domain": "",
+			"dns_name": "",
+			"port_forwardings": [],
+			"tags": [],
+			"created_at": "2024-01-24T13:30:50Z",
+			"updated_at": "2024-01-24T13:30:51Z"
+		}
+	]
 }
 `
 
 // HandleFloatingIPListSuccessfully mocks floating ips call.
 func (m *SDMock) HandleFloatingIPListSuccessfully() {
-	m.Mux.HandleFunc("/os-floating-ips", func(w http.ResponseWriter, r *http.Request) {
+	m.Mux.HandleFunc("/v2.0/floatingips", func(w http.ResponseWriter, r *http.Request) {
 		testMethod(m.t, r, http.MethodGet)
 		testHeader(m.t, r, "X-Auth-Token", tokenID)
 
