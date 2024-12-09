@@ -154,21 +154,21 @@ func init() {
 // serverOnlyFlag creates server-only kingpin flag.
 func serverOnlyFlag(app *kingpin.Application, name, help string) *kingpin.FlagClause {
 	return app.Flag(name, fmt.Sprintf("%s Use with server mode only.", help)).
-		PreAction(func(parseContext *kingpin.ParseContext) error {
-			// This will be invoked only if flag is actually provided by user.
-			serverOnlyFlags = append(serverOnlyFlags, "--"+name)
-			return nil
-		})
+			PreAction(func(parseContext *kingpin.ParseContext) error {
+				// This will be invoked only if flag is actually provided by user.
+				serverOnlyFlags = append(serverOnlyFlags, "--"+name)
+				return nil
+			})
 }
 
 // agentOnlyFlag creates agent-only kingpin flag.
 func agentOnlyFlag(app *kingpin.Application, name, help string) *kingpin.FlagClause {
 	return app.Flag(name, fmt.Sprintf("%s Use with agent mode only.", help)).
-		PreAction(func(parseContext *kingpin.ParseContext) error {
-			// This will be invoked only if flag is actually provided by user.
-			agentOnlyFlags = append(agentOnlyFlags, "--"+name)
-			return nil
-		})
+			PreAction(func(parseContext *kingpin.ParseContext) error {
+				// This will be invoked only if flag is actually provided by user.
+				agentOnlyFlags = append(agentOnlyFlags, "--"+name)
+				return nil
+			})
 }
 
 type flagConfig struct {
@@ -427,6 +427,9 @@ func main() {
 	serverOnlyFlag(a, "storage.tsdb.wal-compression-type", "Compression algorithm for the tsdb WAL.").
 		Hidden().Default(string(wlog.CompressionSnappy)).EnumVar(&cfg.tsdb.WALCompressionType, string(wlog.CompressionSnappy), string(wlog.CompressionZstd))
 
+	serverOnlyFlag(a, "storage.tsdb.wal-version", fmt.Sprintf("Version for the new WAL segments. Supported versions: %v", wlog.ReleasedSupportedSegmentVersions())).
+		Default(fmt.Sprintf("%v", wlog.DefaultSegmentVersion)).Uint32Var(&cfg.tsdb.WALSegmentVersion)
+
 	serverOnlyFlag(a, "storage.tsdb.head-chunks-write-queue-size", "Size of the queue through which head chunks are written to the disk to be m-mapped, 0 disables the queue completely. Experimental.").
 		Default("0").IntVar(&cfg.tsdb.HeadChunksWriteQueueSize)
 
@@ -443,11 +446,14 @@ func main() {
 		"Size at which to split WAL segment files. Example: 100MB").
 		Hidden().PlaceHolder("<bytes>").BytesVar(&cfg.agent.WALSegmentSize)
 
-	agentOnlyFlag(a, "storage.agent.wal-compression", "Compress the agent WAL.").
+	agentOnlyFlag(a, "storage.agent.wal-compression", "Compress the new WAL segments.").
 		Default("true").BoolVar(&cfg.agent.WALCompression)
 
 	agentOnlyFlag(a, "storage.agent.wal-compression-type", "Compression algorithm for the agent WAL.").
 		Hidden().Default(string(wlog.CompressionSnappy)).EnumVar(&cfg.agent.WALCompressionType, string(wlog.CompressionSnappy), string(wlog.CompressionZstd))
+
+	agentOnlyFlag(a, "storage.agent.wal-version", fmt.Sprintf("Version for the new WAL segments. Supported versions: %v", wlog.ReleasedSupportedSegmentVersions())).
+		Default(fmt.Sprintf("%v", wlog.DefaultSegmentVersion)).Uint32Var(&cfg.agent.WALSegmentVersion)
 
 	agentOnlyFlag(a, "storage.agent.wal-truncate-frequency",
 		"The frequency at which to truncate the WAL and remove old data.").
@@ -1229,6 +1235,10 @@ func main() {
 		g.Add(
 			func() error {
 				logger.Info("Starting TSDB ...")
+				if !wlog.SegmentVersion(cfg.tsdb.WALSegmentVersion).IsReleased() {
+					return fmt.Errorf("flag 'storage.tsdb.wal-version' was set to unsupported WAL segment version %v; supported versions %v", cfg.tsdb.WALSegmentVersion, wlog.ReleasedSupportedSegmentVersions())
+				}
+
 				if cfg.tsdb.WALSegmentSize != 0 {
 					if cfg.tsdb.WALSegmentSize < 10*1024*1024 || cfg.tsdb.WALSegmentSize > 256*1024*1024 {
 						return errors.New("flag 'storage.tsdb.wal-segment-size' must be set between 10MB and 256MB")
@@ -1285,6 +1295,10 @@ func main() {
 		g.Add(
 			func() error {
 				logger.Info("Starting WAL storage ...")
+				if !wlog.SegmentVersion(cfg.agent.WALSegmentVersion).IsReleased() {
+					return fmt.Errorf("flag 'storage.agent.wal-version' was set to unsupported WAL segment version %v; supported versions %v", cfg.tsdb.WALSegmentVersion, wlog.ReleasedSupportedSegmentVersions())
+				}
+
 				if cfg.agent.WALSegmentSize != 0 {
 					if cfg.agent.WALSegmentSize < 10*1024*1024 || cfg.agent.WALSegmentSize > 256*1024*1024 {
 						return errors.New("flag 'storage.agent.wal-segment-size' must be set between 10MB and 256MB")
@@ -1492,7 +1506,7 @@ func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logg
 
 func startsOrEndsWithQuote(s string) bool {
 	return strings.HasPrefix(s, "\"") || strings.HasPrefix(s, "'") ||
-		strings.HasSuffix(s, "\"") || strings.HasSuffix(s, "'")
+			strings.HasSuffix(s, "\"") || strings.HasSuffix(s, "'")
 }
 
 // compileCORSRegexString compiles given string and adds anchors.
@@ -1780,6 +1794,7 @@ func (rm *readyScrapeManager) Get() (*scrape.Manager, error) {
 // This is required as tsdb.Option fields are unit agnostic (time).
 type tsdbOptions struct {
 	WALSegmentSize                 units.Base2Bytes
+	WALSegmentVersion              uint32
 	MaxBlockChunkSegmentSize       units.Base2Bytes
 	RetentionDuration              model.Duration
 	MaxBytes                       units.Base2Bytes
@@ -1804,12 +1819,15 @@ type tsdbOptions struct {
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 	return tsdb.Options{
-		WALSegmentSize:                 int(opts.WALSegmentSize),
+		WALSegment: wlog.SegmentOptions{
+			Version:     wlog.SegmentVersion(opts.WALSegmentVersion),
+			Compression: wlog.ParseCompressionType(opts.WALCompression, opts.WALCompressionType),
+			Size:        int(opts.WALSegmentSize),
+		},
 		MaxBlockChunkSegmentSize:       int64(opts.MaxBlockChunkSegmentSize),
 		RetentionDuration:              int64(time.Duration(opts.RetentionDuration) / time.Millisecond),
 		MaxBytes:                       int64(opts.MaxBytes),
 		NoLockfile:                     opts.NoLockfile,
-		WALCompression:                 wlog.ParseCompressionType(opts.WALCompression, opts.WALCompressionType),
 		HeadChunksWriteQueueSize:       opts.HeadChunksWriteQueueSize,
 		SamplesPerChunk:                opts.SamplesPerChunk,
 		StripeSize:                     opts.StripeSize,
@@ -1833,6 +1851,7 @@ type agentOptions struct {
 	WALSegmentSize         units.Base2Bytes
 	WALCompression         bool
 	WALCompressionType     string
+	WALSegmentVersion      uint32
 	StripeSize             int
 	TruncateFrequency      model.Duration
 	MinWALTime, MaxWALTime model.Duration
@@ -1845,8 +1864,11 @@ func (opts agentOptions) ToAgentOptions(outOfOrderTimeWindow int64) agent.Option
 		outOfOrderTimeWindow = 0
 	}
 	return agent.Options{
-		WALSegmentSize:       int(opts.WALSegmentSize),
-		WALCompression:       wlog.ParseCompressionType(opts.WALCompression, opts.WALCompressionType),
+		WALSegment: wlog.SegmentOptions{
+			Version:     wlog.SegmentVersion(opts.WALSegmentVersion),
+			Compression: wlog.ParseCompressionType(opts.WALCompression, opts.WALCompressionType),
+			Size:        int(opts.WALSegmentSize),
+		},
 		StripeSize:           opts.StripeSize,
 		TruncateFrequency:    time.Duration(opts.TruncateFrequency),
 		MinWALTime:           durationToInt64Millis(time.Duration(opts.MinWALTime)),

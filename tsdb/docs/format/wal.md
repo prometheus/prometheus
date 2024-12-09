@@ -2,18 +2,48 @@
 
 This document describes the official Prometheus WAL format.
 
-The write ahead log operates in segments that are numbered and sequential,
+The write aheacond log operates in segments that are versioned, numbered and sequential,
 and are limited to 128MB by default.
 
 ## Segment filename
 
-The sequence number is captured in the segment filename,
-e.g. `000000`, `000001`, `000002`, etc. The first unsigned integer represents
-the sequence number of the segment, typically encoded with six digits.
+Both the sequence number and version are captured in the segment filename,
+e.g. `000000`, `000001-v2`, `000002-v4`, etc. The exact format:
 
-## Segment encoding
+```
+<uint>[-v<uint>]`
+```
 
-This section describes the segment encoding.
+The first unsigned integer represents the sequence number of the segment, 
+typically encoded with six digits. The second unsigned integer, 
+after `-v` string represents the segment version. If the segment does not
+contain `-v<uint>`, it means a `1` version.
+
+## Segment `v1`
+
+This section describes the encoding of the version 1 of the segment encoding.
+
+A segment encodes an array of records. It does not contain any header. A segment
+is written to pages of 32KB. Only the last page of the most recent segment
+This document describes the official Prometheus WAL format.
+
+The write ahead log operates in segments that are versioned, numbered and sequential,
+and are limited to 128MB by default.
+
+## Segment filename
+ 
+Both the sequence number and version are captured in the segment filename,
+e.g. `000000`, `000001-v2`, `000002-v4`, etc. The exact format:
+ 
+```
+<uint>[-v<uint>]`
+```
+
+The first unsigned integer represents the sequence number of the segment, typically encoded with six digits. The second unsigned integer, after `-v` string represents the segment version. If the segment does not contain `-v<uint>`, it means a `1` version.
+
+## Segment `v1`
+
+This section describes the encoding of the version 1 of the segment encoding.
 
 A segment encodes an array of records. It does not contain any header. A segment
 is written to pages of 32KB. Only the last page of the most recent segment
@@ -58,7 +88,8 @@ All float values are represented using the [IEEE 754 format](https://en.wikipedi
 ### Record types
 
 In the following sections, all the known record types are described. New types,
-can be added in the future.
+can be added in the future, in the same version. Removal or breaking change of
+an existing type require another segment version.
 
 #### Series records
 

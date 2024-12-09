@@ -640,7 +640,7 @@ func (h *Head) Init(minValidTime int64) error {
 		// to be outdated.
 		loadSnapshot := true
 		if h.wal != nil {
-			_, endAt, err := wlog.Segments(h.wal.Dir())
+			_, endAt, err := wlog.SegmentsRange(h.wal.Dir())
 			if err != nil {
 				return fmt.Errorf("finding WAL segments: %w", err)
 			}
@@ -730,7 +730,7 @@ func (h *Head) Init(minValidTime int64) error {
 	}
 
 	// Find the last segment.
-	_, endAt, e := wlog.Segments(h.wal.Dir())
+	_, endAt, e := wlog.SegmentsRange(h.wal.Dir())
 	if e != nil {
 		return fmt.Errorf("finding WAL segments: %w", e)
 	}
@@ -800,7 +800,7 @@ func (h *Head) Init(minValidTime int64) error {
 	wblReplayStart := time.Now()
 	if h.wbl != nil {
 		// Replay WBL.
-		startFrom, endAt, e = wlog.Segments(h.wbl.Dir())
+		startFrom, endAt, e = wlog.SegmentsRange(h.wbl.Dir())
 		if e != nil {
 			return &errLoadWbl{fmt.Errorf("finding WBL segments: %w", e)}
 		}
@@ -1263,7 +1263,7 @@ func (h *Head) truncateWAL(mint int64) error {
 	start := time.Now()
 	h.lastWALTruncationTime.Store(mint)
 
-	first, last, err := wlog.Segments(h.wal.Dir())
+	first, last, err := wlog.SegmentsRange(h.wal.Dir())
 	if err != nil {
 		return fmt.Errorf("get segment range: %w", err)
 	}
@@ -1584,7 +1584,7 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 	h.tombstones.TruncateBefore(mint)
 
 	if h.wal != nil {
-		_, last, _ := wlog.Segments(h.wal.Dir())
+		_, last, _ := wlog.SegmentsRange(h.wal.Dir())
 		h.deletedMtx.Lock()
 		// Keep series records until we're past segment 'last'
 		// because the WAL will still have samples records with

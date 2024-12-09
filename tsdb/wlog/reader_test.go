@@ -299,7 +299,7 @@ func allSegments(dir string) (io.ReadCloser, error) {
 	var readers []io.Reader
 	var closers []io.Closer
 	for _, r := range seg {
-		f, err := os.Open(filepath.Join(dir, r.name))
+		f, err := os.Open(filepath.Join(dir, r.fName))
 		if err != nil {
 			return nil, err
 		}
@@ -315,136 +315,145 @@ func allSegments(dir string) (io.ReadCloser, error) {
 
 func TestReaderFuzz(t *testing.T) {
 	for name, fn := range readerConstructors {
-		for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
-			t.Run(fmt.Sprintf("%s,compress=%s", name, compress), func(t *testing.T) {
-				dir := t.TempDir()
-
-				w, err := NewSize(nil, nil, dir, 128*pageSize, compress)
-				require.NoError(t, err)
-
-				// Buffering required as we're not reading concurrently.
-				input := make(chan []byte, fuzzLen)
-				err = generateRandomEntries(w, input)
-				require.NoError(t, err)
-				close(input)
-
-				err = w.Close()
-				require.NoError(t, err)
-
-				sr, err := allSegments(w.Dir())
-				require.NoError(t, err)
-				defer sr.Close()
-
-				reader := fn(sr)
-				for expected := range input {
-					require.True(t, reader.Next(), "expected record: %v", reader.Err())
-					r := reader.Record()
-					// Expected value may come as nil or empty slice, so it requires special comparison.
-					if len(expected) == 0 {
-						require.Empty(t, r)
-					} else {
-						require.Equal(t, expected, r, "read wrong record")
+		for _, v := range supportedSegmentVersions() {
+			for _, compress := range SupportedCompressions() {
+				t.Run(fmt.Sprintf("%s/v=%v/compress=%s", name, v, compress), func(t *testing.T) {
+					dir := t.TempDir()
+					opts := SegmentOptions{
+						Size: 128 * pageSize,
 					}
-				}
-				require.False(t, reader.Next(), "unexpected record")
-			})
+
+					w, err := New(nil, nil, dir, opts)
+					require.NoError(t, err)
+
+					// Buffering required as we're not reading concurrently.
+					input := make(chan []byte, fuzzLen)
+					err = generateRandomEntries(w, input)
+					require.NoError(t, err)
+					close(input)
+
+					err = w.Close()
+					require.NoError(t, err)
+
+					sr, err := allSegments(w.Dir())
+					require.NoError(t, err)
+					defer sr.Close()
+
+					reader := fn(sr)
+					for expected := range input {
+						require.True(t, reader.Next(), "expected record: %v", reader.Err())
+						r := reader.Record()
+						// Expected value may come as nil or empty slice, so it requires special comparison.
+						if len(expected) == 0 {
+							require.Empty(t, r)
+						} else {
+							require.Equal(t, expected, r, "read wrong record")
+						}
+					}
+					require.False(t, reader.Next(), "unexpected record")
+				})
+			}
 		}
 	}
 }
 
 func TestReaderFuzz_Live(t *testing.T) {
-	logger := promslog.NewNopLogger()
-	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
-		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
-			dir := t.TempDir()
+	for _, v := range supportedSegmentVersions() {
+		for _, compress := range SupportedCompressions() {
+			t.Run(fmt.Sprintf("v=%v/compress=%s", v, compress), func(t *testing.T) {
+				dir := t.TempDir()
+				opts := SegmentOptions{
+					Size:    128 * pageSize,
+					Version: v,
+				}
 
-			w, err := NewSize(nil, nil, dir, 128*pageSize, compress)
-			require.NoError(t, err)
-			defer w.Close()
-
-			// In the background, generate a stream of random records and write them
-			// to the WAL.
-			input := make(chan []byte, fuzzLen/10) // buffering required as we sometimes batch WAL writes.
-			done := make(chan struct{})
-			go func() {
-				err := generateRandomEntries(w, input)
+				w, err := New(nil, nil, dir, opts)
 				require.NoError(t, err)
-				time.Sleep(100 * time.Millisecond)
-				close(done)
-			}()
+				defer w.Close()
 
-			// Tail the WAL and compare the results.
-			m, _, err := Segments(w.Dir())
-			require.NoError(t, err)
+				// In the background, generate a stream of random records and write them
+				// to the WAL.
+				input := make(chan []byte, fuzzLen/10) // buffering required as we sometimes batch WAL writes.
+				done := make(chan struct{})
+				go func() {
+					err := generateRandomEntries(w, input)
+					require.NoError(t, err)
+					time.Sleep(100 * time.Millisecond)
+					close(done)
+				}()
 
-			seg, err := OpenReadSegment(SegmentName(dir, m))
-			require.NoError(t, err)
-			defer seg.Close()
+				// Tail the WAL and compare the results.
+				m, _, err := SegmentsRange(w.Dir())
+				require.NoError(t, err)
 
-			r := NewLiveReader(logger, nil, seg)
-			segmentTicker := time.NewTicker(100 * time.Millisecond)
-			readTicker := time.NewTicker(10 * time.Millisecond)
+				seg, err := OpenReadSegmentByIndex(w.Dir(), m)
+				require.NoError(t, err)
+				defer seg.Close()
 
-			readSegment := func(r *LiveReader) bool {
-				for r.Next() {
-					rec := r.Record()
-					expected, ok := <-input
-					require.True(t, ok, "unexpected record")
-					// Expected value may come as nil or empty slice, so it requires special comparison.
-					if len(expected) == 0 {
-						require.Empty(t, rec)
-					} else {
-						require.Equal(t, expected, rec, "record does not match expected")
+				r := NewLiveReader(nil, nil, seg)
+				segmentTicker := time.NewTicker(100 * time.Millisecond)
+				readTicker := time.NewTicker(10 * time.Millisecond)
+
+				readSegment := func(r *LiveReader) bool {
+					for r.Next() {
+						rec := r.Record()
+						expected, ok := <-input
+						require.True(t, ok, "unexpected record")
+						// Expected value may come as nil or empty slice, so it requires special comparison.
+						if len(expected) == 0 {
+							require.Empty(t, rec)
+						} else {
+							require.Equal(t, expected, rec, "record does not match expected")
+						}
+					}
+					require.Equal(t, io.EOF, r.Err(), "expected EOF, got: %v", r.Err())
+					return true
+				}
+
+			outer:
+				for {
+					select {
+					case <-segmentTicker.C:
+						// check if new segments exist
+						_, last, err := SegmentsRange(w.Dir())
+						require.NoError(t, err)
+						if last <= seg.i {
+							continue
+						}
+
+						// read to end of segment.
+						readSegment(r)
+
+						fi, err := os.Stat(SegmentName(dir, seg.i, v))
+						require.NoError(t, err)
+						require.Equal(t, r.Offset(), fi.Size(), "expected to have read whole segment, but read %d of %d", r.Offset(), fi.Size())
+
+						seg, err = OpenReadSegmentByIndex(dir, seg.i+1)
+						require.NoError(t, err)
+						defer seg.Close()
+						r = NewLiveReader(nil, nil, seg)
+
+					case <-readTicker.C:
+						readSegment(r)
+
+					case <-done:
+						readSegment(r)
+						break outer
 					}
 				}
-				require.Equal(t, io.EOF, r.Err(), "expected EOF, got: %v", r.Err())
-				return true
-			}
 
-		outer:
-			for {
-				select {
-				case <-segmentTicker.C:
-					// check if new segments exist
-					_, last, err := Segments(w.Dir())
-					require.NoError(t, err)
-					if last <= seg.i {
-						continue
-					}
-
-					// read to end of segment.
-					readSegment(r)
-
-					fi, err := os.Stat(SegmentName(dir, seg.i))
-					require.NoError(t, err)
-					require.Equal(t, r.Offset(), fi.Size(), "expected to have read whole segment, but read %d of %d", r.Offset(), fi.Size())
-
-					seg, err = OpenReadSegment(SegmentName(dir, seg.i+1))
-					require.NoError(t, err)
-					defer seg.Close()
-					r = NewLiveReader(logger, nil, seg)
-
-				case <-readTicker.C:
-					readSegment(r)
-
-				case <-done:
-					readSegment(r)
-					break outer
-				}
-			}
-
-			require.Equal(t, io.EOF, r.Err(), "expected EOF")
-		})
+				require.Equal(t, io.EOF, r.Err(), "expected EOF")
+			})
+		}
 	}
 }
 
 func TestLiveReaderCorrupt_ShortFile(t *testing.T) {
 	// Write a corrupt WAL segment, there is one record of pageSize in length,
 	// but the segment is only half written.
-	logger := promslog.NewNopLogger()
 	dir := t.TempDir()
 
-	w, err := NewSize(nil, nil, dir, pageSize, CompressionNone)
+	w, err := New(nil, nil, dir, SegmentOptions{Size: pageSize})
 	require.NoError(t, err)
 
 	rec := make([]byte, pageSize-recordHeaderSize)
@@ -467,24 +476,23 @@ func TestLiveReaderCorrupt_ShortFile(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try and LiveReader it.
-	m, _, err := Segments(w.Dir())
+	m, _, err := SegmentsRange(w.Dir())
 	require.NoError(t, err)
 
-	seg, err := OpenReadSegment(SegmentName(dir, m))
+	seg, err := OpenReadSegmentByIndex(dir, m)
 	require.NoError(t, err)
 	defer seg.Close()
 
-	r := NewLiveReader(logger, nil, seg)
+	r := NewLiveReader(nil, nil, seg)
 	require.False(t, r.Next(), "expected no records")
 	require.Equal(t, io.EOF, r.Err(), "expected error, got: %v", r.Err())
 }
 
 func TestLiveReaderCorrupt_RecordTooLongAndShort(t *testing.T) {
 	// Write a corrupt WAL segment, when record len > page size.
-	logger := promslog.NewNopLogger()
 	dir := t.TempDir()
 
-	w, err := NewSize(nil, nil, dir, pageSize*2, CompressionNone)
+	w, err := New(nil, nil, dir, SegmentOptions{Size: 2 * pageSize})
 	require.NoError(t, err)
 
 	rec := make([]byte, pageSize-recordHeaderSize)
@@ -511,14 +519,14 @@ func TestLiveReaderCorrupt_RecordTooLongAndShort(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try and LiveReader it.
-	m, _, err := Segments(w.Dir())
+	m, _, err := SegmentsRange(w.Dir())
 	require.NoError(t, err)
 
-	seg, err := OpenReadSegment(SegmentName(dir, m))
+	seg, err := OpenReadSegmentByIndex(dir, m)
 	require.NoError(t, err)
 	defer seg.Close()
 
-	r := NewLiveReader(logger, NewLiveReaderMetrics(nil), seg)
+	r := NewLiveReader(nil, NewLiveReaderMetrics(nil), seg)
 	require.False(t, r.Next(), "expected no records")
 	require.EqualError(t, r.Err(), "record length greater than a single page: 65542 > 32768", "expected error, got: %v", r.Err())
 }
@@ -531,7 +539,7 @@ func TestReaderData(t *testing.T) {
 
 	for name, fn := range readerConstructors {
 		t.Run(name, func(t *testing.T) {
-			w, err := New(nil, nil, dir, CompressionSnappy)
+			w, err := New(nil, nil, dir, SegmentOptions{Compression: CompressionSnappy})
 			require.NoError(t, err)
 
 			sr, err := allSegments(dir)

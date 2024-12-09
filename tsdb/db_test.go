@@ -240,7 +240,7 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 // TestNoPanicAfterWALCorruption ensures that querying the db after a WAL corruption doesn't cause a panic.
 // https://github.com/prometheus/prometheus/issues/7548
 func TestNoPanicAfterWALCorruption(t *testing.T) {
-	db := openTestDB(t, &Options{WALSegmentSize: 32 * 1024}, nil)
+	db := openTestDB(t, &Options{WALSegment: wlog.SegmentOptions{Size: 32 * 1024}}, nil)
 
 	// Append until the first mmapped head chunk.
 	// This is to ensure that all samples can be read from the mmapped chunks when the WAL is corrupted.
@@ -1023,10 +1023,10 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 			}
 			// All the full segment files (all but the last) should match the segment size option.
 			for _, f := range files[:len(files)-1] {
-				require.Equal(t, int64(DefaultOptions().WALSegmentSize), f.Size(), "WAL file size doesn't match WALSegmentSize option, filename: %v", f.Name())
+				require.Equal(t, int64(wlog.DefaultSegmentSize), f.Size(), "WAL file size doesn't match WALSegmentSize option, filename: %v", f.Name())
 			}
 			lastFile := files[len(files)-1]
-			require.Greater(t, int64(DefaultOptions().WALSegmentSize), lastFile.Size(), "last WAL file size is not smaller than the WALSegmentSize option, filename: %v", lastFile.Name())
+			require.Greater(t, int64(wlog.DefaultSegmentVersion), lastFile.Size(), "last WAL file size is not smaller than the WALSegmentSize option, filename: %v", lastFile.Name())
 		},
 		// Custom Wal Size.
 		2 * 32 * 1024: func(dbDir string, segmentSize int) {
@@ -1061,7 +1061,7 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 	for segmentSize, testFunc := range tests {
 		t.Run(fmt.Sprintf("WALSegmentSize %d test", segmentSize), func(t *testing.T) {
 			opts := DefaultOptions()
-			opts.WALSegmentSize = segmentSize
+			opts.WALSegment = wlog.SegmentOptions{Size: segmentSize}
 			db := openTestDB(t, opts, nil)
 
 			for i := int64(0); i < 155; i++ {
@@ -1077,7 +1077,7 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 
 			dbDir := db.Dir()
 			require.NoError(t, db.Close())
-			testFunc(dbDir, opts.WALSegmentSize)
+			testFunc(dbDir, opts.WALSegment.Size)
 		})
 	}
 }
@@ -1604,7 +1604,7 @@ func TestSizeRetention(t *testing.T) {
 	require.Equal(t, expSize, actSize, "registered size doesn't match actual disk size")
 
 	// Create a WAL checkpoint, and compare sizes.
-	first, last, err := wlog.Segments(db.Head().wal.Dir())
+	first, last, err := wlog.SegmentsRange(db.Head().wal.Dir())
 	require.NoError(t, err)
 	_, err = wlog.Checkpoint(promslog.NewNopLogger(), db.Head().wal, first, last-1, func(x chunks.HeadSeriesRef) bool { return false }, 0)
 	require.NoError(t, err)
@@ -2015,7 +2015,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		dir := t.TempDir()
 
 		require.NoError(t, os.MkdirAll(path.Join(dir, "wal"), 0o777))
-		w, err := wlog.New(nil, nil, path.Join(dir, "wal"), wlog.CompressionNone)
+		w, err := wlog.New(nil, nil, path.Join(dir, "wal"), wlog.SegmentOptions{})
 		require.NoError(t, err)
 
 		var enc record.Encoder
@@ -2059,7 +2059,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		createBlock(t, dir, genSeries(1, 1, 1000, 6000))
 
 		require.NoError(t, os.MkdirAll(path.Join(dir, "wal"), 0o777))
-		w, err := wlog.New(nil, nil, path.Join(dir, "wal"), wlog.CompressionNone)
+		w, err := wlog.New(nil, nil, path.Join(dir, "wal"), wlog.SegmentOptions{})
 		require.NoError(t, err)
 
 		var enc record.Encoder
@@ -2458,7 +2458,7 @@ func TestDBReadOnly(t *testing.T) {
 		}
 
 		// Add head to test DBReadOnly WAL reading capabilities.
-		w, err := wlog.New(logger, nil, filepath.Join(dbDir, "wal"), wlog.CompressionSnappy)
+		w, err := wlog.New(logger, nil, filepath.Join(dbDir, "wal"), wlog.SegmentOptions{Compression: wlog.CompressionSnappy})
 		require.NoError(t, err)
 		h := createHead(t, w, genSeries(1, 1, 16, 18), dbDir)
 		require.NoError(t, h.Close())
@@ -3353,7 +3353,7 @@ func TestOneCheckpointPerCompactCall(t *testing.T) {
 	require.NoError(t, app.Commit())
 
 	// Check the existing WAL files.
-	first, last, err := wlog.Segments(db.head.wal.Dir())
+	first, last, err := wlog.SegmentsRange(db.head.wal.Dir())
 	require.NoError(t, err)
 	require.Equal(t, 0, first)
 	require.Equal(t, 60, last)
@@ -3368,7 +3368,7 @@ func TestOneCheckpointPerCompactCall(t *testing.T) {
 	require.Equal(t, 58.0, prom_testutil.ToFloat64(db.head.metrics.headTruncateTotal))
 
 	// The compaction should have only truncated first 2/3 of WAL (while also rotating the files).
-	first, last, err = wlog.Segments(db.head.wal.Dir())
+	first, last, err = wlog.SegmentsRange(db.head.wal.Dir())
 	require.NoError(t, err)
 	require.Equal(t, 40, first)
 	require.Equal(t, 61, last)
@@ -3411,7 +3411,7 @@ func TestOneCheckpointPerCompactCall(t *testing.T) {
 	require.Equal(t, newBlockMaxt, db.head.MinTime())
 
 	// Another WAL file was rotated.
-	first, last, err = wlog.Segments(db.head.wal.Dir())
+	first, last, err = wlog.SegmentsRange(db.head.wal.Dir())
 	require.NoError(t, err)
 	require.Equal(t, 40, first)
 	require.Equal(t, 62, last)
@@ -3424,7 +3424,7 @@ func TestOneCheckpointPerCompactCall(t *testing.T) {
 	require.Len(t, db.Blocks(), 59)
 
 	// The compaction should have only truncated first 2/3 of WAL (while also rotating the files).
-	first, last, err = wlog.Segments(db.head.wal.Dir())
+	first, last, err = wlog.SegmentsRange(db.head.wal.Dir())
 	require.NoError(t, err)
 	require.Equal(t, 55, first)
 	require.Equal(t, 63, last)
@@ -4590,7 +4590,7 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 	require.NoError(t, app.Commit())
 
 	// Let's create a checkpoint.
-	first, last, err := wlog.Segments(w.Dir())
+	first, last, err := wlog.SegmentsRange(w.Dir())
 	require.NoError(t, err)
 	keep := func(id chunks.HeadSeriesRef) bool {
 		return id != 3

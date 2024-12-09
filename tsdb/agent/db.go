@@ -60,13 +60,8 @@ var (
 
 // Options of the WAL storage.
 type Options struct {
-	// Segments (wal files) max size.
-	// WALSegmentSize <= 0, segment size is default size.
-	// WALSegmentSize > 0, segment size is WALSegmentSize.
-	WALSegmentSize int
-
-	// WALCompression configures the compression type to use on records in the WAL.
-	WALCompression wlog.CompressionType
+	// WALSegment represents WAL segment options.
+	WALSegment wlog.SegmentOptions
 
 	// StripeSize is the size (power of 2) in entries of the series hash map. Reducing the size will save memory but impact performance.
 	StripeSize int
@@ -89,8 +84,7 @@ type Options struct {
 // millisecond-precision timestamps.
 func DefaultOptions() *Options {
 	return &Options{
-		WALSegmentSize:       wlog.DefaultSegmentSize,
-		WALCompression:       wlog.CompressionNone,
+		WALSegment:           wlog.SegmentOptions{}, // wlog.New will set the correct defaults
 		StripeSize:           tsdb.DefaultStripeSize,
 		TruncateFrequency:    DefaultTruncateFrequency,
 		MinWALTime:           DefaultMinWALTime,
@@ -266,7 +260,7 @@ func Open(l *slog.Logger, reg prometheus.Registerer, rs *remote.Storage, dir str
 	// remote_write expects WAL to be stored in a "wal" subdirectory of the main storage.
 	dir = filepath.Join(dir, "wal")
 
-	w, err := wlog.NewSize(l, reg, dir, opts.WALSegmentSize, opts.WALCompression)
+	w, err := wlog.New(l, reg, dir, opts.WALSegment)
 	if err != nil {
 		return nil, fmt.Errorf("creating WAL: %w", err)
 	}
@@ -326,14 +320,6 @@ func validateOptions(opts *Options) *Options {
 	if opts == nil {
 		opts = DefaultOptions()
 	}
-	if opts.WALSegmentSize <= 0 {
-		opts.WALSegmentSize = wlog.DefaultSegmentSize
-	}
-
-	if opts.WALCompression == "" {
-		opts.WALCompression = wlog.CompressionNone
-	}
-
 	// Revert StripeSize to DefaultStripeSize if StripeSize is either 0 or not a power of 2.
 	if opts.StripeSize <= 0 || ((opts.StripeSize & (opts.StripeSize - 1)) != 0) {
 		opts.StripeSize = tsdb.DefaultStripeSize
@@ -389,14 +375,14 @@ func (db *DB) replayWAL() error {
 	}
 
 	// Find the last segment.
-	_, last, err := wlog.Segments(db.wal.Dir())
+	_, last, err := wlog.SegmentsRange(db.wal.Dir())
 	if err != nil {
 		return fmt.Errorf("finding WAL segments: %w", err)
 	}
 
 	// Backfill segments from the most recent checkpoint onwards.
 	for i := startFrom; i <= last; i++ {
-		seg, err := wlog.OpenReadSegment(wlog.SegmentName(db.wal.Dir(), i))
+		seg, err := wlog.OpenReadSegmentByIndex(db.wal.Dir(), i)
 		if err != nil {
 			return fmt.Errorf("open WAL segment: %d: %w", i, err)
 		}
@@ -443,10 +429,12 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 				series := seriesPool.Get()[:0]
 				series, err = dec.Series(rec, series)
 				if err != nil {
+					i, v := r.Segment()
 					errCh <- &wlog.CorruptionErr{
-						Err:     fmt.Errorf("decode series: %w", err),
-						Segment: r.Segment(),
-						Offset:  r.Offset(),
+						Err:            fmt.Errorf("decode series: %w", err),
+						SegmentIndex:   i,
+						SegmentVersion: v,
+						Offset:         r.Offset(),
 					}
 					return
 				}
@@ -455,10 +443,12 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 				samples := samplesPool.Get()[:0]
 				samples, err = dec.Samples(rec, samples)
 				if err != nil {
+					i, v := r.Segment()
 					errCh <- &wlog.CorruptionErr{
-						Err:     fmt.Errorf("decode samples: %w", err),
-						Segment: r.Segment(),
-						Offset:  r.Offset(),
+						Err:            fmt.Errorf("decode samples: %w", err),
+						SegmentIndex:   i,
+						SegmentVersion: v,
+						Offset:         r.Offset(),
 					}
 					return
 				}
@@ -467,10 +457,12 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 				histograms := histogramsPool.Get()[:0]
 				histograms, err = dec.HistogramSamples(rec, histograms)
 				if err != nil {
+					i, v := r.Segment()
 					errCh <- &wlog.CorruptionErr{
-						Err:     fmt.Errorf("decode histogram samples: %w", err),
-						Segment: r.Segment(),
-						Offset:  r.Offset(),
+						Err:            fmt.Errorf("decode histogram samples: %w", err),
+						SegmentIndex:   i,
+						SegmentVersion: v,
+						Offset:         r.Offset(),
 					}
 					return
 				}
@@ -479,10 +471,12 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 				floatHistograms := floatHistogramsPool.Get()[:0]
 				floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms)
 				if err != nil {
+					i, v := r.Segment()
 					errCh <- &wlog.CorruptionErr{
-						Err:     fmt.Errorf("decode float histogram samples: %w", err),
-						Segment: r.Segment(),
-						Offset:  r.Offset(),
+						Err:            fmt.Errorf("decode float histogram samples: %w", err),
+						SegmentIndex:   i,
+						SegmentVersion: v,
+						Offset:         r.Offset(),
 					}
 					return
 				}
@@ -493,10 +487,12 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 				// stripeSeries.exemplars in the next block by using setLatestExemplar.
 				continue
 			default:
+				i, v := r.Segment()
 				errCh <- &wlog.CorruptionErr{
-					Err:     fmt.Errorf("invalid record type %v", dec.Type(rec)),
-					Segment: r.Segment(),
-					Offset:  r.Offset(),
+					Err:            fmt.Errorf("invalid record type %v", dec.Type(rec)),
+					SegmentIndex:   i,
+					SegmentVersion: v,
+					Offset:         r.Offset(),
 				}
 			}
 		}
@@ -632,7 +628,7 @@ func (db *DB) truncate(mint int64) error {
 	db.gc(mint)
 	db.logger.Info("series GC completed", "duration", time.Since(start))
 
-	first, last, err := wlog.Segments(db.wal.Dir())
+	first, last, err := wlog.SegmentsRange(db.wal.Dir())
 	if err != nil {
 		return fmt.Errorf("get segment range: %w", err)
 	}
@@ -711,7 +707,7 @@ func (db *DB) gc(mint int64) {
 	deleted := db.series.GC(mint)
 	db.metrics.numActiveSeries.Sub(float64(len(deleted)))
 
-	_, last, _ := wlog.Segments(db.wal.Dir())
+	_, last, _ := wlog.SegmentsRange(db.wal.Dir())
 
 	// We want to keep series records for any newly deleted series
 	// until we've passed the last recorded segment. This prevents

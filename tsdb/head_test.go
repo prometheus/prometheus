@@ -2388,19 +2388,19 @@ func TestNewWalSegmentOnTruncate(t *testing.T) {
 	}
 
 	add(0)
-	_, last, err := wlog.Segments(wal.Dir())
+	_, last, err := wlog.SegmentsRange(wal.Dir())
 	require.NoError(t, err)
 	require.Equal(t, 0, last)
 
 	add(1)
 	require.NoError(t, h.Truncate(1))
-	_, last, err = wlog.Segments(wal.Dir())
+	_, last, err = wlog.SegmentsRange(wal.Dir())
 	require.NoError(t, err)
 	require.Equal(t, 1, last)
 
 	add(2)
 	require.NoError(t, h.Truncate(2))
-	_, last, err = wlog.Segments(wal.Dir())
+	_, last, err = wlog.SegmentsRange(wal.Dir())
 	require.NoError(t, err)
 	require.Equal(t, 2, last)
 }

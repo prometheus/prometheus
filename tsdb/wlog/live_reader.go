@@ -25,6 +25,7 @@ import (
 	"github.com/golang/snappy"
 	"github.com/klauspost/compress/zstd"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/promslog"
 )
 
 // LiveReaderMetrics holds all metrics exposed by the LiveReader.
@@ -51,6 +52,9 @@ func NewLiveReaderMetrics(reg prometheus.Registerer) *LiveReaderMetrics {
 
 // NewLiveReader returns a new live reader.
 func NewLiveReader(logger *slog.Logger, metrics *LiveReaderMetrics, r io.Reader) *LiveReader {
+	if logger == nil {
+		logger = promslog.NewNopLogger()
+	}
 	// Calling zstd.NewReader with a nil io.Reader and no options cannot return an error.
 	zstdReader, _ := zstd.NewReader(nil)
 

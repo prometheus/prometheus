@@ -173,16 +173,17 @@ func (r *Reader) Err() error {
 	}
 	if b, ok := r.rdr.(*segmentBufReader); ok {
 		return &CorruptionErr{
-			Err:     r.err,
-			Dir:     b.segs[b.cur].Dir(),
-			Segment: b.segs[b.cur].Index(),
-			Offset:  int64(b.off),
+			Err:            r.err,
+			Dir:            b.segs[b.cur].Dir(),
+			SegmentIndex:   b.segs[b.cur].Index(),
+			SegmentVersion: b.segs[b.cur].Version(),
+			Offset:         int64(b.off),
 		}
 	}
 	return &CorruptionErr{
-		Err:     r.err,
-		Segment: -1,
-		Offset:  r.total,
+		Err:          r.err,
+		SegmentIndex: -1,
+		Offset:       r.total,
 	}
 }
 
@@ -193,11 +194,11 @@ func (r *Reader) Record() []byte {
 }
 
 // Segment returns the current segment being read.
-func (r *Reader) Segment() int {
+func (r *Reader) Segment() (int, SegmentVersion) {
 	if b, ok := r.rdr.(*segmentBufReader); ok {
-		return b.segs[b.cur].Index()
+		return b.segs[b.cur].Index(), b.segs[b.cur].Version()
 	}
-	return -1
+	return -1, 0
 }
 
 // Offset returns the current position of the segment being read.
