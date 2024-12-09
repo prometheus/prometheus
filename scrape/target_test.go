@@ -43,8 +43,8 @@ const (
 func TestTargetLabels(t *testing.T) {
 	target := newTestTarget("example.com:80", 0, labels.FromStrings("job", "some_job", "foo", "bar"))
 	want := labels.FromStrings(model.JobLabel, "some_job", "foo", "bar")
-	b := labels.NewScratchBuilder(0)
-	got := target.Labels(&b)
+	b := labels.NewBuilder(labels.EmptyLabels())
+	got := target.Labels(b)
 	require.Equal(t, want, got)
 	i := 0
 	target.LabelsRange(func(l labels.Label) {
@@ -103,9 +103,11 @@ func TestTargetOffset(t *testing.T) {
 }
 
 func TestTargetURL(t *testing.T) {
-	params := url.Values{
-		"abc": []string{"foo", "bar", "baz"},
-		"xyz": []string{"hoo"},
+	scrapeConfig := &config.ScrapeConfig{
+		Params: url.Values{
+			"abc": []string{"foo", "bar", "baz"},
+			"xyz": []string{"hoo"},
+		},
 	}
 	labels := labels.FromMap(map[string]string{
 		model.AddressLabel:     "example.com:1234",
@@ -114,7 +116,7 @@ func TestTargetURL(t *testing.T) {
 		"__param_abc":          "overwrite",
 		"__param_cde":          "huu",
 	})
-	target := NewTarget(labels, labels, params)
+	target := NewTarget(labels, scrapeConfig, nil, nil)
 
 	// The reserved labels are concatenated into a full URL. The first value for each
 	// URL query parameter can be set/modified via labels as well.
@@ -139,7 +141,7 @@ func newTestTarget(targetURL string, _ time.Duration, lbls labels.Labels) *Targe
 	lb.Set(model.AddressLabel, strings.TrimPrefix(targetURL, "http://"))
 	lb.Set(model.MetricsPathLabel, "/metrics")
 
-	return &Target{labels: lb.Labels()}
+	return &Target{labels: lb.Labels(), scrapeConfig: &config.ScrapeConfig{}}
 }
 
 func TestNewHTTPBearerToken(t *testing.T) {
