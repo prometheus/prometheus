@@ -4795,7 +4795,8 @@ func newScrapableServer(scrapeText string) (s *httptest.Server, scrapedTwice cha
 	})), scrapedTwice
 }
 
-func TestTargetScraperSetsMetricsField(t *testing.T) {
+// Regression test for the panic fixed in https://github.com/prometheus/prometheus/pull/15523.
+func TestScrapePoolScrapeAfterReload(t *testing.T) {
 	h := httptest.NewServer(http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte{0x42, 0x42})
