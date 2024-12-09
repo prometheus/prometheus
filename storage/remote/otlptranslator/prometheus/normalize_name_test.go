@@ -85,34 +85,18 @@ func TestEmpty(t *testing.T) {
 func TestAllowUTF8(t *testing.T) {
 	t.Run("allow UTF8", func(t *testing.T) {
 		require.Equal(t, "unsupported.metric.temperature_°F", normalizeName(createGauge("unsupported.metric.temperature", "°F"), "", true))
-		require.Equal(t, "unsupported.metric.weird_+=.:,!* & #", normalizeName(createGauge("unsupported.metric.weird", "+=.:,!* & #"), "", true))
+		require.Equal(t, "unsupported.metric.+weird_+=.:,!* & #", normalizeName(createGauge("unsupported.metric.+weird", "+=.:,!* & #"), "", true))
 		require.Equal(t, "unsupported.metric.redundant___test $_per_°C", normalizeName(createGauge("unsupported.metric.redundant", "__test $/°C"), "", true))
 		require.Equal(t, "metric_with_字符_foreign_characters_ど", normalizeName(createGauge("metric_with_字符_foreign_characters", "ど"), "", true))
+		require.Equal(t, "metric....split_=+by_//utf8characters", normalizeName(createGauge("metric....split_=+by_//utf8characters", ""), "", true))
 	})
 	t.Run("disallow UTF8", func(t *testing.T) {
 		require.Equal(t, "unsupported_metric_temperature_F", normalizeName(createGauge("unsupported.metric.temperature", "°F"), "", false))
-		require.Equal(t, "unsupported_metric_weird", normalizeName(createGauge("unsupported.metric.weird", "+=.:,!* & #"), "", false))
+		require.Equal(t, "unsupported_metric_weird", normalizeName(createGauge("unsupported.metric.+weird", "+=.:,!* & #"), "", false))
 		require.Equal(t, "unsupported_metric_redundant_test_per_C", normalizeName(createGauge("unsupported.metric.redundant", "__test $/°C"), "", false))
 		require.Equal(t, "metric_with_foreign_characters", normalizeName(createGauge("metric_with_字符_foreign_characters", "ど"), "", false))
+		require.Equal(t, "metric_split_by_utf8characters", normalizeName(createGauge("metric....split_=+by_//utf8characters", ""), "", false))
 	})
-}
-
-func TestAllowUTF8KnownBugs(t *testing.T) {
-	// Due to historical reasons, the translator code was copied from OpenTelemetry collector codebase.
-	// Over there, they tried to provide means to translate metric names following Prometheus conventions that are documented here:
-	// https://prometheus.io/docs/practices/naming/
-	//
-	// Althogh not explicitly said, it was implied that words should be separated by a single underscore and the codebase was written
-	// with that in mind.
-	//
-	// Now that we're allowing OTel users to have their original names stored in prometheus without any transformation, we're facing problems
-	// where two (or more) UTF-8 characters are being used to separate words.
-	// TODO(arthursens): Fix it!
-
-	// We're asserting on 'NotEqual', which proves the bug.
-	require.NotEqual(t, "metric....split_=+by_//utf8characters", normalizeName(createGauge("metric....split_=+by_//utf8characters", ""), "", true))
-	// Here we're asserting on 'Equal', showing the current behavior.
-	require.Equal(t, "metric.split_by_utf8characters", normalizeName(createGauge("metric....split_=+by_//utf8characters", ""), "", true))
 }
 
 func TestOTelReceivers(t *testing.T) {
