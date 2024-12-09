@@ -20,11 +20,13 @@ import (
 	"net"
 	"strconv"
 
-	"github.com/gophercloud/gophercloud"
-	"github.com/gophercloud/gophercloud/openstack"
-	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/floatingips"
-	"github.com/gophercloud/gophercloud/openstack/compute/v2/servers"
-	"github.com/gophercloud/gophercloud/pagination"
+	"github.com/gophercloud/gophercloud/v2"
+	"github.com/gophercloud/gophercloud/v2/openstack"
+	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/floatingips"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/networks"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/ports"
+	"github.com/gophercloud/gophercloud/v2/pagination"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 
@@ -72,41 +74,46 @@ func newInstanceDiscovery(provider *gophercloud.ProviderClient, opts *gopherclou
 }
 
 type floatingIPKey struct {
-	id    string
-	fixed string
+	portID string
+	fixed  string
 }
 
 func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	i.provider.Context = ctx
-	err := openstack.Authenticate(i.provider, *i.authOpts)
+	err := openstack.Authenticate(ctx, i.provider, *i.authOpts)
 	if err != nil {
 		return nil, fmt.Errorf("could not authenticate to OpenStack: %w", err)
 	}
 
-	client, err := openstack.NewComputeV2(i.provider, gophercloud.EndpointOpts{
+	computeClient, err := openstack.NewComputeV2(i.provider, gophercloud.EndpointOpts{
 		Region: i.region, Availability: i.availability,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("could not create OpenStack compute session: %w", err)
 	}
+	networkClient, err := openstack.NewNetworkV2(i.provider, gophercloud.EndpointOpts{
+		Region: i.region, Availability: i.availability,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("could not create OpenStack networking session: %w", err)
+	}
 
 	// OpenStack API reference
 	// https://developer.openstack.org/api-ref/compute/#list-floating-ips
-	pagerFIP := floatingips.List(client)
+	pagerFIP := floatingips.List(networkClient, nil)
 	floatingIPList := make(map[floatingIPKey]string)
 	floatingIPPresent := make(map[string]struct{})
-	err = pagerFIP.EachPage(func(page pagination.Page) (bool, error) {
+	err = pagerFIP.EachPage(ctx, func(ctx context.Context, page pagination.Page) (bool, error) {
 		result, err := floatingips.ExtractFloatingIPs(page)
 		if err != nil {
 			return false, fmt.Errorf("could not extract floatingips: %w", err)
 		}
-		for _, ip := range result {
+		for _, fip := range result {
 			// Skip not associated ips
-			if ip.InstanceID == "" || ip.FixedIP == "" {
+			if fip.FixedIP == "" {
 				continue
 			}
-			floatingIPList[floatingIPKey{id: ip.InstanceID, fixed: ip.FixedIP}] = ip.IP
-			floatingIPPresent[ip.IP] = struct{}{}
+			floatingIPList[floatingIPKey{portID: fip.PortID, fixed: fip.FixedIP}] = fip.FloatingIP
+			floatingIPPresent[fip.FloatingIP] = struct{}{}
 		}
 		return true, nil
 	})
@@ -119,11 +126,11 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 	opts := servers.ListOpts{
 		AllTenants: i.allTenants,
 	}
-	pager := servers.List(client, opts)
+	pager := servers.List(computeClient, opts)
 	tg := &targetgroup.Group{
 		Source: "OS_" + i.region,
 	}
-	err = pager.EachPage(func(page pagination.Page) (bool, error) {
+	err = pager.EachPage(ctx, func(ctx context.Context, page pagination.Page) (bool, error) {
 		if ctx.Err() != nil {
 			return false, fmt.Errorf("could not extract instances: %w", ctx.Err())
 		}
@@ -168,41 +175,42 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 				name := strutil.SanitizeLabelName(k)
 				labels[openstackLabelTagPrefix+model.LabelName(name)] = model.LabelValue(v)
 			}
-			for pool, address := range s.Addresses {
-				md, ok := address.([]interface{})
-				if !ok {
-					i.logger.Warn("Invalid type for address, expected array")
-					continue
+
+			allPages, err := ports.List(networkClient, ports.ListOpts{DeviceID: s.ID}).AllPages(ctx)
+			if err != nil {
+				return false, fmt.Errorf("could not get instance ports: %w", err)
+			}
+
+			allPorts, err := ports.ExtractPorts(allPages)
+			if err != nil {
+				return false, fmt.Errorf("could not get instance ports: %w", err)
+			}
+			if len(allPorts) == 0 {
+				i.logger.Debug("Got no IP address", "instance", s.ID)
+				continue
+			}
+
+			for _, port := range allPorts {
+				network, err := networks.Get(ctx, networkClient, port.NetworkID).Extract()
+				if err != nil {
+					return false, fmt.Errorf("could not get the network of the instance port: %w", err)
 				}
-				if len(md) == 0 {
-					i.logger.Debug("Got no IP address", "instance", s.ID)
-					continue
-				}
-				for _, address := range md {
-					md1, ok := address.(map[string]interface{})
-					if !ok {
-						i.logger.Warn("Invalid type for address, expected dict")
-						continue
-					}
-					addr, ok := md1["addr"].(string)
-					if !ok {
-						i.logger.Warn("Invalid type for address, expected string")
-						continue
-					}
-					if _, ok := floatingIPPresent[addr]; ok {
+
+				for _, fixedIP := range port.FixedIPs {
+					if _, ok := floatingIPPresent[fixedIP.IPAddress]; ok {
 						continue
 					}
 					lbls := make(model.LabelSet, len(labels))
 					for k, v := range labels {
 						lbls[k] = v
 					}
-					lbls[openstackLabelAddressPool] = model.LabelValue(pool)
-					lbls[openstackLabelPrivateIP] = model.LabelValue(addr)
-					if val, ok := floatingIPList[floatingIPKey{id: s.ID, fixed: addr}]; ok {
+					lbls[openstackLabelAddressPool] = model.LabelValue(network.Name)
+					lbls[openstackLabelPrivateIP] = model.LabelValue(fixedIP.IPAddress)
+					if val, ok := floatingIPList[floatingIPKey{portID: port.ID, fixed: fixedIP.IPAddress}]; ok {
 						lbls[openstackLabelPublicIP] = model.LabelValue(val)
 					}
-					addr = net.JoinHostPort(addr, strconv.Itoa(i.port))
-					lbls[model.AddressLabel] = model.LabelValue(addr)
+					hostport := net.JoinHostPort(fixedIP.IPAddress, strconv.Itoa(i.port))
+					lbls[model.AddressLabel] = model.LabelValue(hostport)
 
 					tg.Targets = append(tg.Targets, lbls)
 				}
