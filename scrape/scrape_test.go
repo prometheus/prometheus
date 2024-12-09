@@ -4795,19 +4795,12 @@ func newScrapableServer(scrapeText string) (s *httptest.Server, scrapedTwice cha
 	})), scrapedTwice
 }
 
-type srvSameResp struct {
-	resp []byte
-}
-
-func (s *srvSameResp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.Write(s.resp)
-}
-
-func TestTargetScraperSegfault(t *testing.T) {
-	emptySrv := &srvSameResp{
-		resp: []byte{0x42, 0x42},
-	}
-	h := httptest.NewServer(emptySrv)
+func TestTargetScraperSetsMetricsField(t *testing.T) {
+	h := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Write([]byte{0x42, 0x42})
+		},
+	))
 	t.Cleanup(h.Close)
 
 	cfg := &config.ScrapeConfig{
@@ -4826,15 +4819,7 @@ func TestTargetScraperSegfault(t *testing.T) {
 		},
 	}
 
-	p, err := newScrapePool(
-		cfg,
-		&nopAppendable{},
-		0,
-		nil,
-		pool.New(1e3, 100e6, 3, func(sz int) interface{} { return make([]byte, 0, sz) }),
-		&Options{},
-		newTestScrapeMetrics(t),
-	)
+	p, err := newScrapePool(cfg, &nopAppendable{}, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
 	require.NoError(t, err)
 	t.Cleanup(p.stop)
 
