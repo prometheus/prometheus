@@ -84,7 +84,7 @@ func (m *Manager) Restore(blockDuration time.Duration) (active relabeler.Head, r
 
 	for index, headRecord := range headRecords {
 		var h relabeler.Head
-		headDir := headRecord.Dir()
+		headDir := filepath.Join(m.dir, headRecord.Dir())
 		if headRecord.Status() == catalog.StatusPersisted {
 			continue
 		}
@@ -100,6 +100,7 @@ func (m *Manager) Restore(blockDuration time.Duration) (active relabeler.Head, r
 			continue
 		}
 		m.generation++
+		headReleaseFn := headRecord.Acquire()
 		h = NewDiscardableRotatableHead(
 			h,
 			func(id string, err error) error {
@@ -116,7 +117,12 @@ func (m *Manager) Restore(blockDuration time.Duration) (active relabeler.Head, r
 				}
 				m.counter.With(prometheus.Labels{"type": "persisted"}).Inc()
 				return nil
-			})
+			},
+			func(id string) error {
+				headReleaseFn()
+				return nil
+			},
+		)
 		m.counter.With(prometheus.Labels{"type": "created"}).Inc()
 		if index == len(headRecords)-1 && time.Now().Sub(time.UnixMilli(headRecord.CreatedAt())).Milliseconds() < blockDuration.Milliseconds() {
 			active = h
@@ -167,11 +173,12 @@ func (m *Manager) BuildWithConfig(inputRelabelerConfigs []*config.InputRelabeler
 		return nil, fmt.Errorf("failed to create head: %w", err)
 	}
 
-	if _, err = m.catalog.Create(id, headDir, numberOfShards); err != nil {
+	record, err := m.catalog.Create(id, id, numberOfShards)
+	if err != nil {
 		return nil, err
 	}
-
 	m.generation++
+	releaseHeadFn := record.Acquire()
 
 	m.counter.With(prometheus.Labels{"type": "created"}).Inc()
 	return NewDiscardableRotatableHead(
@@ -189,6 +196,10 @@ func (m *Manager) BuildWithConfig(inputRelabelerConfigs []*config.InputRelabeler
 				return discardErr
 			}
 			m.counter.With(prometheus.Labels{"type": "persisted"}).Inc()
+			return nil
+		},
+		func(id string) error {
+			releaseHeadFn()
 			return nil
 		},
 	), nil

@@ -320,8 +320,7 @@ func (h *Head) Finalize() {
 	_ = h.finalizer.Finalize(func() error {
 		_ = h.forEachShard(func(shard relabeler.Shard) error {
 			shard.DataStorage().MergeOutOfOrderChunks()
-			// todo: duplicate writes possible, but irrelevant?
-			return shard.Wal().WriteEOF()
+			return nil
 		})
 
 		h.stop()

@@ -6,11 +6,13 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"gopkg.in/yaml.v2"
 	"hash/crc32"
+	"time"
 )
 
 type DestinationConfig struct {
 	config.RemoteWriteConfig
 	ExternalLabels labels.Labels `yaml:"external_labels"`
+	ReadTimeout    time.Duration
 }
 
 func (c DestinationConfig) EqualTo(other DestinationConfig) bool {

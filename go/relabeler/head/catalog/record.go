@@ -1,6 +1,9 @@
 package catalog
 
-import "sync/atomic"
+import (
+	"sync"
+	"sync/atomic"
+)
 
 type Status uint8
 
@@ -50,37 +53,16 @@ func (r *Record) Status() Status {
 	return r.status
 }
 
-func (r *Record) ReferenceCounter() *ReferenceCounter {
-	return NewReferenceCounter(&r.referenceCounter)
+func (r *Record) ReferenceCount() int64 {
+	return r.referenceCounter.Load()
 }
 
-func NewReferenceCounter(global *atomic.Int64) *ReferenceCounter {
-	return &ReferenceCounter{
-		local:  atomic.Int64{},
-		global: global,
+func (r *Record) Acquire() func() {
+	r.referenceCounter.Add(1)
+	var onceRelease sync.Once
+	return func() {
+		onceRelease.Do(func() {
+			r.referenceCounter.Add(-1)
+		})
 	}
-}
-
-type ReferenceCounter struct {
-	local  atomic.Int64
-	global *atomic.Int64
-}
-
-func (rc *ReferenceCounter) Inc() int64 {
-	if rc.local.Add(1) > 0 {
-		return rc.global.Add(1)
-	}
-
-	return rc.global.Load()
-}
-
-func (rc *ReferenceCounter) Dec() int64 {
-	if rc.local.Add(-1) >= 0 {
-		return rc.global.Add(-1)
-	}
-	return rc.global.Load()
-}
-
-func (rc *ReferenceCounter) Value() int64 {
-	return rc.global.Load()
 }

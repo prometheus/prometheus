@@ -84,7 +84,7 @@ func newShard(
 	return s, nil
 }
 
-func (s *shard) Read(ctx context.Context, targetSegmentID uint32, minTimestamp int64) (*DecodedSegment, error) {
+func (s *shard) Read(ctx context.Context, targetSegmentID uint32, minTimestamp int64, isActiveHead bool) (*DecodedSegment, error) {
 	if s.corrupted {
 		return nil, ErrShardIsCorrupted
 	}
@@ -100,8 +100,11 @@ func (s *shard) Read(ctx context.Context, targetSegmentID uint32, minTimestamp i
 
 		segment, err := s.walReader.Read()
 		if err != nil {
-			if errors.Is(err, ErrNoData) || errors.Is(err, io.EOF) {
-				return nil, err
+			if errors.Is(err, io.EOF) {
+				return nil, io.EOF
+			}
+			if errors.Is(err, io.ErrUnexpectedEOF) && isActiveHead {
+				return nil, io.EOF
 			}
 			s.corrupted = true
 			return nil, errors.Join(err, ErrShardIsCorrupted)
@@ -118,7 +121,7 @@ func (s *shard) Read(ctx context.Context, targetSegmentID uint32, minTimestamp i
 		if s.lastWrittenStateBySegmentID == nil || *s.lastWrittenStateBySegmentID < segment.ID {
 			if _, err = s.decoder.WriteTo(s.decoderStateFile); err != nil {
 				// todo: i che delat' to s oshibkoi???
-				logger.Errorf("failed to write decoder state: %w", err)
+				logger.Errorf("failed to write decoder state: %v", err)
 			} else {
 				s.lastWrittenStateBySegmentID = &segment.ID
 			}
@@ -135,17 +138,18 @@ func (s *shard) Close() error {
 	return errors.Join(s.walReader.Close(), s.decoderStateFile.Close())
 }
 
-type block struct {
-	ID            string
-	headRecord    *catalog.Record
-	shards        []*shard
-	corruptMarker CorruptMarker
-	closed        bool
-	completed     bool
-	corrupted     bool
+type dataSource struct {
+	ID              string
+	headRecord      *catalog.Record
+	shards          []*shard
+	corruptMarker   CorruptMarker
+	closed          bool
+	completed       bool
+	corrupted       bool
+	headReleaseFunc func()
 }
 
-func newBlock(dataDir string, numberOfShards uint16, config DestinationConfig, lastAcknowledgedSegmentID *uint32, discardCache bool, corruptMarker CorruptMarker, headRecord *catalog.Record) (*block, error) {
+func newDataSource(dataDir string, numberOfShards uint16, config DestinationConfig, lastAcknowledgedSegmentID *uint32, discardCache bool, corruptMarker CorruptMarker, headRecord *catalog.Record) (*dataSource, error) {
 	var err error
 	var convertedRelabelConfigs []*cppbridge.RelabelConfig
 	convertedRelabelConfigs, err = convertRelabelConfigs(config.WriteRelabelConfigs...)
@@ -153,9 +157,11 @@ func newBlock(dataDir string, numberOfShards uint16, config DestinationConfig, l
 		return nil, fmt.Errorf("failed to convert relabel configs: %w", err)
 	}
 
-	b := &block{
-		headRecord:    headRecord,
-		corruptMarker: corruptMarker,
+	headReleaseFunc := headRecord.Acquire()
+	b := &dataSource{
+		headRecord:      headRecord,
+		corruptMarker:   corruptMarker,
+		headReleaseFunc: headReleaseFunc,
 	}
 
 	for shardID := uint16(0); shardID < numberOfShards; shardID++ {
@@ -200,20 +206,21 @@ func convertRelabelConfigs(relabelConfigs ...*relabel.Config) ([]*cppbridge.Rela
 	return convertedConfigs, nil
 }
 
-func (b *block) Close() error {
-	if b.closed {
+func (ds *dataSource) Close() error {
+	if ds.closed {
 		return nil
 	}
-	b.closed = true
+	ds.closed = true
 	var err error
-	for _, s := range b.shards {
+	for _, s := range ds.shards {
 		err = errors.Join(err, s.Close())
 	}
+	ds.headReleaseFunc()
 	return err
 }
 
-func (b *block) IsCompleted() bool {
-	return b.completed
+func (ds *dataSource) IsCompleted() bool {
+	return ds.completed
 }
 
 type readShardResult struct {
@@ -221,29 +228,31 @@ type readShardResult struct {
 	err     error
 }
 
-func (b *block) Read(ctx context.Context, segmentID uint32, minTimestamp int64) ([]*DecodedSegment, error) {
-	if b.completed {
+func (ds *dataSource) Read(ctx context.Context, segmentID uint32, minTimestamp int64) ([]*DecodedSegment, error) {
+	if ds.completed {
 		return nil, ErrEndOfBlock
 	}
 
+	isActiveHead := ds.headRecord.Status() == catalog.StatusNew
+
 	wg := &sync.WaitGroup{}
-	readShardResults := make([]readShardResult, len(b.shards))
-	for i := 0; i < len(b.shards); i++ {
-		if b.shards[i].corrupted {
+	readShardResults := make([]readShardResult, len(ds.shards))
+	for i := 0; i < len(ds.shards); i++ {
+		if ds.shards[i].corrupted {
 			readShardResults[i] = readShardResult{segment: nil, err: ErrShardIsCorrupted}
 			continue
 		}
 		wg.Add(1)
 		go func(index int) {
 			defer wg.Done()
-			segment, err := b.shards[index].Read(ctx, segmentID, minTimestamp)
+			segment, err := ds.shards[index].Read(ctx, segmentID, minTimestamp, isActiveHead)
 			readShardResults[index] = readShardResult{segment: segment, err: err}
 		}(i)
 	}
 	wg.Wait()
 
-	segments := make([]*DecodedSegment, 0, len(b.shards))
-	errs := make([]error, 0, len(b.shards))
+	segments := make([]*DecodedSegment, 0, len(ds.shards))
+	errs := make([]error, 0, len(ds.shards))
 	for _, result := range readShardResults {
 		if result.segment != nil {
 			segments = append(segments, result.segment)
@@ -253,20 +262,17 @@ func (b *block) Read(ctx context.Context, segmentID uint32, minTimestamp int64) 
 		}
 	}
 
-	return segments, b.handle(errs)
+	return segments, ds.handle(errs, isActiveHead)
 }
 
-func (b *block) handle(errs []error) error {
+func (ds *dataSource) handle(errs []error, isActiveHead bool) error {
 	var numberOfShardIsCorruptedErrors int
-	var numberOfNoDataErrors int
 	var numberOfEOFs int
 	var resultErr error
 	for _, err := range errs {
 		switch {
 		case errors.Is(err, ErrShardIsCorrupted):
 			numberOfShardIsCorruptedErrors++
-		case errors.Is(err, ErrNoData):
-			numberOfNoDataErrors++
 		case errors.Is(err, io.EOF):
 			numberOfEOFs++
 		}
@@ -274,45 +280,44 @@ func (b *block) handle(errs []error) error {
 	}
 
 	if numberOfShardIsCorruptedErrors > 0 {
-		b.corrupted = true
-		if b.corruptMarker != nil {
-			if err := b.corruptMarker.MarkCorrupted(b.ID); err != nil {
-				return fmt.Errorf("failed to mark block corrupted: %w", err)
+		ds.corrupted = true
+		if ds.corruptMarker != nil {
+			if err := ds.corruptMarker.MarkCorrupted(ds.ID); err != nil {
+				return fmt.Errorf("failed to mark head corrupted: %w", err)
 			}
-			b.corruptMarker = nil
+			ds.corruptMarker = nil
 		}
 	}
 
-	if numberOfShardIsCorruptedErrors == len(b.shards) {
-		b.corrupted = true
-
+	if numberOfShardIsCorruptedErrors == len(ds.shards) {
+		ds.completed = true
 		return ErrEndOfBlock
 	}
 
-	if numberOfEOFs+numberOfShardIsCorruptedErrors == len(b.shards) {
-		b.completed = true
+	if numberOfEOFs+numberOfShardIsCorruptedErrors == len(ds.shards) {
+		if isActiveHead {
+			return ErrEmptyReadResult
+		}
+		ds.completed = true
 		return ErrEndOfBlock
 	}
 
-	if numberOfNoDataErrors+numberOfShardIsCorruptedErrors == len(b.shards) {
-		return ErrEmptyReadResult
-	}
-
-	if numberOfNoDataErrors > 0 {
-		return ErrPartialReadResult
+	if numberOfEOFs > 0 {
+		if isActiveHead {
+			return ErrPartialReadResult
+		}
+		// shards contains different number of segments
+		logger.Errorf("head %s contains shards with different number of segments", ds.ID)
+		return nil
 	}
 
 	return resultErr
 }
 
-func (b *block) LSSes() []*cppbridge.LabelSetStorage {
-	lsses := make([]*cppbridge.LabelSetStorage, len(b.shards))
-	for i := 0; i < len(b.shards); i++ {
-		lsses[i] = b.shards[i].decoder.lss
+func (ds *dataSource) LSSes() []*cppbridge.LabelSetStorage {
+	lsses := make([]*cppbridge.LabelSetStorage, len(ds.shards))
+	for i := 0; i < len(ds.shards); i++ {
+		lsses[i] = ds.shards[i].decoder.lss
 	}
 	return lsses
-}
-
-func (b *block) NumberOfShards() uint16 {
-	return uint16(len(b.shards))
 }

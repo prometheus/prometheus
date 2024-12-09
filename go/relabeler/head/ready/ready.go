@@ -62,12 +62,14 @@ func (b *Builder) Build() *MultiNotifiable {
 		closed: make(chan struct{}),
 	}
 
+	mn.counter.Add(int64(len(b.input)))
 	for _, notifiable := range b.input {
-		mn.counter.Add(1)
 		go func(notifiable Notifiable) {
 			select {
 			case <-notifiable.ReadyChan():
-				mn.counter.Add(-1)
+				if mn.counter.Add(-1) == 0 {
+					mn.setReady()
+				}
 			case <-mn.closed:
 			}
 		}(notifiable)

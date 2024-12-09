@@ -39,16 +39,12 @@ func (r *walReader) Read() (segment Segment, err error) {
 	decodedSegment, err := head.TryReadSegment(r.file)
 	if err != nil {
 		if errors.Is(err, io.EOF) {
-			return segment, ErrNoData
+			return segment, io.EOF
 		}
 		if errors.Is(err, io.ErrUnexpectedEOF) {
-			return segment, ErrNoData
+			return segment, io.ErrUnexpectedEOF
 		}
 		return segment, fmt.Errorf("failed to read segment: %w", err)
-	}
-
-	if len(decodedSegment.Data()) == 0 {
-		return segment, io.EOF
 	}
 
 	segment.ID = r.nextSegmentID

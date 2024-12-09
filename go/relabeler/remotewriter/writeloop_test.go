@@ -3,10 +3,12 @@ package remotewriter
 import (
 	"context"
 	"errors"
+	"github.com/golang/snappy"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/model"
 	"github.com/prometheus/prometheus/pp/go/relabeler"
+	"github.com/prometheus/prometheus/pp/go/relabeler/appender"
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head/catalog"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head/manager"
@@ -14,6 +16,8 @@ import (
 	config3 "github.com/prometheus/common/config"
 	model2 "github.com/prometheus/common/model"
 	config2 "github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/require"
 	"os"
 	"path/filepath"
@@ -38,6 +42,23 @@ func (s *ConfigSource) Get() (inputRelabelConfigs []*config.InputRelabelerConfig
 	return s.inputRelabelConfigs, s.numberOfShards
 }
 
+type NoOpStorage struct {
+	heads []relabeler.Head
+}
+
+func (s *NoOpStorage) Add(head relabeler.Head) {
+	s.heads = append(s.heads, head)
+}
+
+func (s *NoOpStorage) Close() error {
+	var err error
+	for _, head := range s.heads {
+		err = errors.Join(err, head.Close())
+	}
+	s.heads = nil
+	return err
+}
+
 type TestHeads struct {
 	Dir            string
 	clock          clockwork.Clock
@@ -46,6 +67,7 @@ type TestHeads struct {
 	ConfigSource   *ConfigSource
 	Manager        *manager.Manager
 	NumberOfShards uint8
+	Storage        *NoOpStorage
 	Head           relabeler.Head
 }
 
@@ -74,10 +96,13 @@ func NewTestHeads(dir string, inputRelabelConfigs []*config.InputRelabelerConfig
 		return nil, errors.Join(err, th.Close())
 	}
 
-	th.Head, err = th.Manager.Build()
+	activeHead, _, err := th.Manager.Restore(time.Hour)
 	if err != nil {
 		return nil, errors.Join(err, th.Close())
 	}
+
+	th.Storage = &NoOpStorage{}
+	th.Head = appender.NewRotatableHead(activeHead, th.Storage, th.Manager)
 
 	return th, nil
 }
@@ -93,21 +118,11 @@ func (th *TestHeads) Append(ctx context.Context, timeSeriesSlice []model.TimeSer
 }
 
 func (th *TestHeads) Rotate() error {
-	cfg, nos := th.ConfigSource.Get()
-	head, err := th.Manager.BuildWithConfig(cfg, nos)
-	if err != nil {
-		return err
-	}
-	th.Head.Finalize()
-	if err = th.Head.Close(); err != nil {
-		return err
-	}
-	th.Head = head
-	return nil
+	return th.Head.Rotate()
 }
 
 func (th *TestHeads) Close() error {
-	return errors.Join(th.Head.Close(), th.FileLog.Close())
+	return errors.Join(th.Storage.Close(), th.Head.Close(), th.FileLog.Close())
 }
 
 type remoteClient struct {
@@ -199,15 +214,21 @@ func TestWriteLoopWrite(t *testing.T) {
 			HTTPClientConfig:     config3.HTTPClientConfig{},
 			QueueConfig: config2.QueueConfig{
 				MaxSamplesPerSend: 2,
+				MinShards:         3,
+				MaxShards:         5,
 				SampleAgeLimit:    model2.Duration(time.Hour),
 			},
 			MetadataConfig: config2.MetadataConfig{},
 			SigV4Config:    nil,
 			AzureADConfig:  nil,
 		},
+		ExternalLabels: labels.Labels{
+			{Name: "lol", Value: "kek"},
+		},
+		ReadTimeout: time.Second * 3,
 	})
 
-	wl := newWriteLoop(destination, testHeads.Catalog, clock)
+	wl := newWriteLoop(tmpDir, destination, testHeads.Catalog, clock)
 	w := &testWriter{}
 	i, err := wl.nextIterator(ctx, w)
 	require.NoError(t, err)
@@ -218,4 +239,18 @@ func TestWriteLoopWrite(t *testing.T) {
 	require.NoError(t, testHeads.Rotate())
 
 	require.ErrorIs(t, i.Next(ctx), ErrEndOfBlock)
+
+	for _, data := range w.data {
+		wr := prompb.WriteRequest{}
+		err = data.Do(func(buf []byte) error {
+			var decoded []byte
+			decoded, err = snappy.Decode(nil, buf)
+			if err != nil {
+				return err
+			}
+			return wr.Unmarshal(decoded)
+		})
+		require.NoError(t, err)
+		t.Log(wr.String())
+	}
 }

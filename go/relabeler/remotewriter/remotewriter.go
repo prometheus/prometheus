@@ -15,14 +15,16 @@ type Catalog interface {
 }
 
 type RemoteWriter struct {
+	dataDir       string
 	configQueue   chan []DestinationConfig
 	catalog       Catalog
 	clock         clockwork.Clock
 	readyNotifier ready.Notifier
 }
 
-func New(catalog Catalog, clock clockwork.Clock, readyNotifier ready.Notifier) *RemoteWriter {
+func New(dataDir string, catalog Catalog, clock clockwork.Clock, readyNotifier ready.Notifier) *RemoteWriter {
 	return &RemoteWriter{
+		dataDir:       dataDir,
 		catalog:       catalog,
 		clock:         clock,
 		configQueue:   make(chan []DestinationConfig),
@@ -68,7 +70,7 @@ func (rw *RemoteWriter) Run(ctx context.Context) error {
 				destination, ok := destinations[config.Name]
 				if !ok {
 					destination = NewDestination(config)
-					wl := newWriteLoop(destination, rw.catalog, rw.clock)
+					wl := newWriteLoop(rw.dataDir, destination, rw.catalog, rw.clock)
 					wlr := newWriteLoopRunner(wl)
 					writeLoopRunners[config.Name] = wlr
 					destinations[config.Name] = destination
@@ -83,7 +85,7 @@ func (rw *RemoteWriter) Run(ctx context.Context) error {
 				wlr := writeLoopRunners[config.Name]
 				wlr.stop()
 				destination.ResetConfig(config)
-				wl := newWriteLoop(destination, rw.catalog, rw.clock)
+				wl := newWriteLoop(rw.dataDir, destination, rw.catalog, rw.clock)
 				wlr = newWriteLoopRunner(wl)
 				writeLoopRunners[config.Name] = wlr
 				go wlr.run(ctx)

@@ -7,7 +7,6 @@ import (
 
 var (
 	ErrShardIsCorrupted  = errors.New("shard is corrupted")
-	ErrNoData            = errors.New("no data")
 	ErrCursorIsCorrupted = errors.New("cursor is corrupted")
 	ErrEndOfBlock        = errors.New("end of block")
 	ErrPartialReadResult = errors.New("partial read result")

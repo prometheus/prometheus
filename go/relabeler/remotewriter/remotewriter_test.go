@@ -7,6 +7,6 @@ import (
 )
 
 func TestRemoteWriter_Run(t *testing.T) {
-	rw := New(nil, clockwork.NewFakeClock(), ready.NoOpNotifier{})
+	rw := New("", nil, clockwork.NewFakeClock(), ready.NoOpNotifier{})
 	_ = rw
 }

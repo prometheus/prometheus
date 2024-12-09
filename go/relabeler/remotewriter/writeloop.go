@@ -16,13 +16,15 @@ import (
 const defaultDelay = time.Second * 5
 
 type writeLoop struct {
+	dataDir     string
 	destination *Destination
 	catalog     Catalog
 	clock       clockwork.Clock
 }
 
-func newWriteLoop(destination *Destination, catalog Catalog, clock clockwork.Clock) *writeLoop {
+func newWriteLoop(dataDir string, destination *Destination, catalog Catalog, clock clockwork.Clock) *writeLoop {
 	return &writeLoop{
+		dataDir:     dataDir,
 		destination: destination,
 		catalog:     catalog,
 		clock:       clock,
@@ -34,10 +36,14 @@ func (wl *writeLoop) run(ctx context.Context) {
 	var err error
 	var client remote.WriteClient
 	var i *Iterator
+	var nextI *Iterator
 
 	defer func() {
 		if i != nil {
 			_ = i.Close()
+		}
+		if nextI != nil {
+			_ = nextI.Close()
 		}
 	}()
 
@@ -52,29 +58,43 @@ func (wl *writeLoop) run(ctx context.Context) {
 		if client == nil {
 			client, err = createClient(wl.destination.Config())
 			if err != nil {
-				logger.Errorf("failed to create client: %w", err)
+				logger.Errorf("failed to create client: %v", err)
 				delay = defaultDelay
 				continue
 			}
 		}
 
 		if i == nil {
-			i, err = wl.nextIterator(ctx, newWriter(client))
+			if nextI != nil {
+				i = nextI
+				nextI = nil
+			} else {
+				i, err = wl.nextIterator(ctx, newWriter(client))
+				if err != nil {
+					logger.Errorf("failed to get next iterator: %v", err)
+					delay = defaultDelay
+					continue
+				}
+			}
+		}
+
+		if err = wl.write(ctx, i); err != nil {
+			logger.Errorf("failed to write iterator: %v", err)
+			delay = defaultDelay
+			continue
+		}
+
+		if nextI == nil {
+			nextI, err = wl.nextIterator(ctx, newWriter(client))
 			if err != nil {
-				logger.Errorf("failed to get next data source: %w", err)
+				logger.Errorf("failed to get next iterator: %v", err)
 				delay = defaultDelay
 				continue
 			}
 		}
 
-		if err = wl.write(ctx, i); err != nil {
-			logger.Errorf("failed to write data source: %w", err)
-			delay = defaultDelay
-			continue
-		}
-
 		if err = i.Close(); err != nil {
-			logger.Errorf("failed to close data source: %w", err)
+			logger.Errorf("failed to close iterator: %v", err)
 			delay = defaultDelay
 			continue
 		}
@@ -120,7 +140,7 @@ func (wl *writeLoop) write(ctx context.Context, iterator *Iterator) error {
 				return nil
 			}
 
-			logger.Errorf("iteration failed: %w", err)
+			logger.Errorf("iteration failed: %v", err)
 			delay = defaultDelay
 			continue
 		}
@@ -133,13 +153,13 @@ func (wl *writeLoop) nextIterator(ctx context.Context, writer Writer) (*Iterator
 	if wl.destination.HeadID != nil {
 		nextHeadRecord, err = nextHead(ctx, wl.catalog, *wl.destination.HeadID)
 	} else {
-		nextHeadRecord, err = scanForNextHead(ctx, wl.catalog, wl.destination.Config().Name)
+		nextHeadRecord, err = scanForNextHead(ctx, wl.dataDir, wl.catalog, wl.destination.Config().Name)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to find next head: %w", err)
 	}
-
-	crw, err := NewCursorReadWriter(filepath.Join(nextHeadRecord.Dir(), fmt.Sprintf("%s.cursor", wl.destination.Config().Name)))
+	headDir := filepath.Join(wl.dataDir, nextHeadRecord.Dir())
+	crw, err := NewCursorReadWriter(filepath.Join(headDir, fmt.Sprintf("%s.cursor", wl.destination.Config().Name)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cursor: %w", err)
 	}
@@ -163,14 +183,22 @@ func (wl *writeLoop) nextIterator(ctx context.Context, writer Writer) (*Iterator
 		discardCache = *cursor.ConfigCRC32 != crc32
 	}
 
-	b, err := newBlock(nextHeadRecord.Dir(), nextHeadRecord.NumberOfShards(), wl.destination.Config(), cursor.SegmentID, discardCache, wl.makeCorruptMarker(), nextHeadRecord)
+	ds, err := newDataSource(headDir, nextHeadRecord.NumberOfShards(), wl.destination.Config(), cursor.SegmentID, discardCache, wl.makeCorruptMarker(), nextHeadRecord)
 	if err != nil {
 		return nil, errors.Join(fmt.Errorf("failed to create data source: %w", err), crw.Close())
 	}
 
-	b.ID = nextHeadRecord.ID()
+	headID := nextHeadRecord.ID()
+	ds.ID = headID
 
-	return newIterator(wl.clock, wl.destination.Config().QueueConfig, b, writer, newAcknowledger(crw, crc32), cursor.SegmentID, time.Second*30), nil
+	i, err := newIterator(wl.clock, wl.destination.Config().QueueConfig, ds, writer, newAcknowledger(crw, crc32), cursor.SegmentID, wl.destination.Config().ReadTimeout)
+	if err != nil {
+		return nil, errors.Join(fmt.Errorf("failed to create data source: %w", err), crw.Close(), ds.Close())
+	}
+
+	wl.destination.HeadID = &headID
+
+	return i, nil
 }
 
 type CorruptMarkerFn func(headID string) error
@@ -219,7 +247,7 @@ func nextHead(ctx context.Context, headCatalog Catalog, headID string) (*catalog
 	return headRecords[len(headRecords)-1], nil
 }
 
-func scanForNextHead(ctx context.Context, headCatalog Catalog, destinationName string) (*catalog.Record, error) {
+func scanForNextHead(ctx context.Context, dataDir string, headCatalog Catalog, destinationName string) (*catalog.Record, error) {
 	if err := contextErr(ctx); err != nil {
 		return nil, err
 	}
@@ -240,7 +268,7 @@ func scanForNextHead(ctx context.Context, headCatalog Catalog, destinationName s
 
 	var headFound bool
 	for _, headRecord := range headRecords {
-		headFound, err = scanHeadForDestination(headRecord, destinationName)
+		headFound, err = scanHeadForDestination(filepath.Join(dataDir, headRecord.Dir()), destinationName)
 		if err != nil {
 			return headRecord, err
 		}
@@ -253,8 +281,8 @@ func scanForNextHead(ctx context.Context, headCatalog Catalog, destinationName s
 	return headRecords[len(headRecords)-1], nil
 }
 
-func scanHeadForDestination(headRecord *catalog.Record, destinationName string) (bool, error) {
-	dir, err := os.Open(headRecord.Dir())
+func scanHeadForDestination(dirPath string, destinationName string) (bool, error) {
+	dir, err := os.Open(dirPath)
 	if err != nil {
 		return false, fmt.Errorf("failed to open head dir: %w", err)
 	}

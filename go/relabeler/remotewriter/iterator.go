@@ -13,9 +13,9 @@ import (
 	"time"
 )
 
-type BlockReader interface {
+type DataSource interface {
 	Read(ctx context.Context, targetSegmentID uint32, minTimestamp int64) ([]*DecodedSegment, error)
-	NumberOfShards() uint16
+	//NumberOfShards() uint16
 	LSSes() []*cppbridge.LabelSetStorage
 	Close() error
 }
@@ -29,10 +29,43 @@ type Writer interface {
 	Write(ctx context.Context, data *cppbridge.SnappyProtobufEncodedData) error
 }
 
+type sharder struct {
+	opened         bool
+	min            int
+	max            int
+	numberOfShards int
+}
+
+func newSharder(min, max int) (*sharder, error) {
+	if min > max || min <= 0 {
+		return nil, fmt.Errorf("failed to create sharder, min: %d, max: %d", min, max)
+	}
+	return &sharder{
+		min:            min,
+		max:            max,
+		numberOfShards: min,
+	}, nil
+}
+
+func (s *sharder) inc() int {
+	if s.numberOfShards+1 <= s.max {
+		s.numberOfShards += 1
+	}
+	return s.numberOfShards
+}
+
+func (s *sharder) dec() int {
+	if s.numberOfShards-1 >= s.min {
+		s.numberOfShards -= 1
+	}
+
+	return s.numberOfShards
+}
+
 type Iterator struct {
 	clock        clockwork.Clock
 	queueConfig  config.QueueConfig
-	blockReader  BlockReader
+	dataSource   DataSource
 	writer       Writer
 	acknowledger Acknowledger
 
@@ -45,7 +78,9 @@ type Iterator struct {
 
 	decodedSegments []*DecodedSegment
 
-	message *Message
+	outputSharder        *sharder
+	numberOfOutputShards int
+	message              *Message
 
 	readTimeout            time.Duration
 	lastIterationStartedAt *time.Time
@@ -61,30 +96,43 @@ func (m *Message) IsObsoleted(minTimestamp int64) bool {
 	return m.MaxTimestamp < minTimestamp
 }
 
-func newIterator(clock clockwork.Clock, queueConfig config.QueueConfig, blockReader BlockReader, writer Writer, acknowledger Acknowledger, lastAcknowledgedSegmentID *uint32, readTimeout time.Duration) *Iterator {
+func newIterator(clock clockwork.Clock, queueConfig config.QueueConfig, dataSource DataSource, writer Writer, acknowledger Acknowledger, lastAcknowledgedSegmentID *uint32, readTimeout time.Duration) (*Iterator, error) {
+	outputSharder, err := newSharder(queueConfig.MinShards, queueConfig.MaxShards)
+	if err != nil {
+		return nil, err
+	}
+
 	var targetSegmentID uint32 = 0
 	if lastAcknowledgedSegmentID != nil {
 		targetSegmentID = *lastAcknowledgedSegmentID + 1
 	}
 	return &Iterator{
-		clock:           clock,
-		queueConfig:     queueConfig,
-		blockReader:     blockReader,
-		writer:          writer,
-		acknowledger:    acknowledger,
-		targetSegmentID: targetSegmentID,
-		readTimeout:     readTimeout,
-	}
+		clock:                clock,
+		queueConfig:          queueConfig,
+		dataSource:           dataSource,
+		writer:               writer,
+		acknowledger:         acknowledger,
+		targetSegmentID:      targetSegmentID,
+		readTimeout:          readTimeout,
+		outputSharder:        outputSharder,
+		numberOfOutputShards: outputSharder.min,
+	}, nil
 }
 
 func (i *Iterator) Next(ctx context.Context) error {
-	_, err := i.read(ctx)
+	if i.message != nil {
+		return i.writeMessage(ctx)
+	}
+
+	deadlineReached, err := i.read(ctx)
 	if err != nil {
 		return err
 	}
 
-	if i.message != nil {
-		return i.writeMessage(ctx)
+	if deadlineReached {
+		i.outputSharder.dec()
+	} else {
+		i.outputSharder.inc()
 	}
 
 	if i.dataSize() > 0 {
@@ -124,7 +172,7 @@ func (i *Iterator) read(ctx context.Context) (bool, error) {
 			return false, nil
 		}
 
-		decodedSegments, err := i.blockReader.Read(ctx, i.targetSegmentID, i.minTimestamp())
+		decodedSegments, err := i.dataSource.Read(ctx, i.targetSegmentID, i.minTimestamp())
 		if err != nil {
 			if errors.Is(err, ErrEndOfBlock) {
 				i.endOfBlockReached = true
@@ -182,7 +230,7 @@ func (i *Iterator) writeMessage(ctx context.Context) error {
 	for shardID, err := range errs {
 		if err != nil {
 			encodedProtobuf = append(encodedProtobuf, i.message.EncodedProtobuf[shardID])
-			logger.Errorf("failed to send protobuf: %w", err)
+			logger.Errorf("failed to send protobuf: %v", err)
 			sendErr = errors.Join(sendErr, err)
 			continue
 		}
@@ -225,8 +273,8 @@ func (i *Iterator) writeData(ctx context.Context) error {
 		batchToEncode = append(batchToEncode, segment.Samples)
 	}
 
-	protobufEncoder := cppbridge.NewWALProtobufEncoder(i.blockReader.LSSes())
-	encodedProtobuf, err := protobufEncoder.Encode(ctx, batchToEncode, i.blockReader.NumberOfShards())
+	protobufEncoder := cppbridge.NewWALProtobufEncoder(i.dataSource.LSSes())
+	encodedProtobuf, err := protobufEncoder.Encode(ctx, batchToEncode, uint16(i.outputSharder.numberOfShards))
 	if err != nil {
 		return fmt.Errorf("failed to encode protobuf: %w", err)
 	}
@@ -251,6 +299,7 @@ func (i *Iterator) ack(ctx context.Context) error {
 	}
 
 	i.segmentIDToAck = nil
+	i.numberOfOutputShards = i.outputSharder.numberOfShards
 	return nil
 }
 
@@ -285,7 +334,7 @@ func (i *Iterator) dataSize() int {
 
 func (i *Iterator) hasDataToSend() bool {
 	i.trimData(i.minTimestamp())
-	return i.message != nil || i.dataSize() >= int(i.blockReader.NumberOfShards())*i.queueConfig.MaxSamplesPerSend
+	return i.message != nil || i.dataSize() >= i.numberOfOutputShards*i.queueConfig.MaxSamplesPerSend
 }
 
 func (i *Iterator) getIterationDeadline() time.Time {
@@ -302,5 +351,5 @@ func (i *Iterator) getIterationDeadline() time.Time {
 }
 
 func (i *Iterator) Close() error {
-	return errors.Join(i.blockReader.Close(), i.acknowledger.Close())
+	return errors.Join(i.dataSource.Close(), i.acknowledger.Close())
 }
