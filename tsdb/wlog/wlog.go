@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -38,11 +39,32 @@ import (
 )
 
 const (
-	DefaultSegmentSize = 128 * 1024 * 1024 // DefaultSegmentSize is 128 MB.
-	pageSize           = 32 * 1024         // pageSize is 32KB.
-	recordHeaderSize   = 7
-	WblDirName         = "wbl"
+	DefaultSegmentSize    = 128 * 1024 * 1024 // DefaultSegmentSize is 128 MB.
+	DefaultSegmentVersion = SegmentFormatV1
+
+	pageSize         = 32 * 1024 // pageSize is 32KB.
+	recordHeaderSize = 7
+
+	WblDirName = "wbl"
 )
+
+// SegmentVersion represents the WAL segment format version.
+// See: https://github.com/prometheus/proposals/pull/40
+// Version is encoded in the segment filename, following the <...>_v2 format.
+type SegmentVersion uint32
+
+const (
+	// SegmentFormatV1 represents version 1 of the WAL segment format.
+	SegmentFormatV1 SegmentVersion = 1
+	// SegmentFormatV2 represents version 2 of the WAL segment format.
+	SegmentFormatV2 SegmentVersion = 2
+)
+
+// SupportedSegmentVersions returns the segment versions this package supports,
+// in ascending order.
+func SupportedSegmentVersions() []SegmentVersion {
+	return []SegmentVersion{SegmentFormatV1, SegmentFormatV2}
+}
 
 // The table gets initialized with sync.Once but may still cause a race
 // with any other use of the crc32 package anywhere. Thus we initialize it
@@ -89,11 +111,17 @@ type Segment struct {
 	SegmentFile
 	dir string
 	i   int
+	v   SegmentVersion
 }
 
 // Index returns the index of the segment.
 func (s *Segment) Index() int {
 	return s.i
+}
+
+// Version returns segment version.
+func (s *Segment) Version() SegmentVersion {
+	return s.v
 }
 
 // Dir returns the directory of the segment.
@@ -103,70 +131,56 @@ func (s *Segment) Dir() string {
 
 // CorruptionErr is an error that's returned when corruption is encountered.
 type CorruptionErr struct {
-	Dir     string
-	Segment int
-	Offset  int64
-	Err     error
+	Dir            string
+	SegmentIndex   int
+	SegmentVersion SegmentVersion
+	Offset         int64
+	Err            error
 }
 
 func (e *CorruptionErr) Error() string {
-	if e.Segment < 0 {
+	if e.SegmentIndex < 0 {
 		return fmt.Sprintf("corruption after %d bytes: %s", e.Offset, e.Err)
 	}
-	return fmt.Sprintf("corruption in segment %s at %d: %s", SegmentName(e.Dir, e.Segment), e.Offset, e.Err)
+	return fmt.Sprintf("corruption in segment %s at %d: %s", e.SegmentName(), e.Offset, e.Err)
+}
+
+func (e *CorruptionErr) SegmentName() string {
+	if e.SegmentIndex < 0 {
+		return ""
+	}
+	return SegmentName(e.Dir, e.SegmentIndex, e.SegmentVersion)
 }
 
 func (e *CorruptionErr) Unwrap() error {
 	return e.Err
 }
 
-// OpenWriteSegment opens segment k in dir. The returned segment is ready for new appends.
-func OpenWriteSegment(logger *slog.Logger, dir string, k int) (*Segment, error) {
-	segName := SegmentName(dir, k)
-	f, err := os.OpenFile(segName, os.O_WRONLY|os.O_APPEND, 0o666)
-	if err != nil {
-		return nil, err
-	}
-	stat, err := f.Stat()
-	if err != nil {
-		f.Close()
-		return nil, err
-	}
-	// If the last page is torn, fill it with zeros.
-	// In case it was torn after all records were written successfully, this
-	// will just pad the page and everything will be fine.
-	// If it was torn mid-record, a full read (which the caller should do anyway
-	// to ensure integrity) will detect it as a corruption by the end.
-	if d := stat.Size() % pageSize; d != 0 {
-		logger.Warn("Last page of the wlog is torn, filling it with zeros", "segment", segName)
-		if _, err := f.Write(make([]byte, pageSize-d)); err != nil {
-			f.Close()
-			return nil, fmt.Errorf("zero-pad torn page: %w", err)
-		}
-	}
-	return &Segment{SegmentFile: f, i: k, dir: dir}, nil
-}
-
 // CreateSegment creates a new segment k in dir.
-func CreateSegment(dir string, k int) (*Segment, error) {
-	f, err := os.OpenFile(SegmentName(dir, k), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o666)
+func CreateSegment(dir string, k int, v SegmentVersion) (*Segment, error) {
+	f, err := os.OpenFile(SegmentName(dir, k, v), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o666)
 	if err != nil {
 		return nil, err
 	}
-	return &Segment{SegmentFile: f, i: k, dir: dir}, nil
+	return &Segment{SegmentFile: f, i: k, v: v, dir: dir}, nil
 }
 
 // OpenReadSegment opens the segment with the given filename.
 func OpenReadSegment(fn string) (*Segment, error) {
-	k, err := strconv.Atoi(filepath.Base(fn))
+	k, v, err := ParseSegmentName(filepath.Base(fn))
 	if err != nil {
-		return nil, errors.New("not a valid filename")
+		return nil, err
 	}
+
+	if vs := SupportedSegmentVersions(); v > vs[len(vs)-1] {
+		return nil, fmt.Errorf("unsupported WAL segment version %v; supported versions %v", v, vs)
+	}
+
 	f, err := os.Open(fn)
 	if err != nil {
 		return nil, err
 	}
-	return &Segment{SegmentFile: f, i: k, dir: filepath.Dir(fn)}, nil
+	return &Segment{SegmentFile: f, i: k, v: v, dir: filepath.Dir(fn)}, nil
 }
 
 type CompressionType string
@@ -200,19 +214,20 @@ func ParseCompressionType(compress bool, compressType string) CompressionType {
 // safely truncated. It also ensures that torn writes never corrupt records
 // beyond the most recent segment.
 type WL struct {
-	dir         string
-	logger      *slog.Logger
-	segmentSize int
-	mtx         sync.RWMutex
-	segment     *Segment // Active segment.
-	donePages   int      // Pages written to the segment.
-	page        *page    // Active page.
-	stopc       chan chan struct{}
-	actorc      chan func()
-	closed      bool // To allow calling Close() more than once without blocking.
-	compress    CompressionType
-	compressBuf []byte
-	zstdWriter  *zstd.Encoder
+	dir                  string
+	logger               *slog.Logger
+	segmentSize          int
+	segmentFormatVersion SegmentVersion
+	mtx                  sync.RWMutex
+	segment              *Segment // Active segment.
+	donePages            int      // Pages written to the segment.
+	page                 *page    // Active page.
+	stopc                chan chan struct{}
+	actorc               chan func()
+	closed               bool // To allow calling Close() more than once without blocking.
+	compress             CompressionType
+	compressBuf          []byte
+	zstdWriter           *zstd.Encoder
 
 	WriteNotified WriteNotified
 
@@ -309,13 +324,13 @@ func newWLMetrics(w *WL, r prometheus.Registerer) *wlMetrics {
 }
 
 // New returns a new WAL over the given directory.
-func New(logger *slog.Logger, reg prometheus.Registerer, dir string, compress CompressionType) (*WL, error) {
-	return NewSize(logger, reg, dir, DefaultSegmentSize, compress)
+func New(logger *slog.Logger, reg prometheus.Registerer, dir string, compress CompressionType, v SegmentVersion) (*WL, error) {
+	return NewSize(logger, reg, dir, DefaultSegmentSize, compress, v)
 }
 
 // NewSize returns a new write log over the given directory.
 // New segments are created with the specified size.
-func NewSize(logger *slog.Logger, reg prometheus.Registerer, dir string, segmentSize int, compress CompressionType) (*WL, error) {
+func NewSize(logger *slog.Logger, reg prometheus.Registerer, dir string, segmentSize int, compress CompressionType, v SegmentVersion) (*WL, error) {
 	if segmentSize%pageSize != 0 {
 		return nil, errors.New("invalid segment size")
 	}
@@ -336,14 +351,15 @@ func NewSize(logger *slog.Logger, reg prometheus.Registerer, dir string, segment
 	}
 
 	w := &WL{
-		dir:         dir,
-		logger:      logger,
-		segmentSize: segmentSize,
-		page:        &page{},
-		actorc:      make(chan func(), 100),
-		stopc:       make(chan chan struct{}),
-		compress:    compress,
-		zstdWriter:  zstdWriter,
+		dir:                  dir,
+		logger:               logger,
+		segmentSize:          segmentSize,
+		segmentFormatVersion: v,
+		page:                 &page{},
+		actorc:               make(chan func(), 100),
+		stopc:                make(chan chan struct{}),
+		compress:             compress,
+		zstdWriter:           zstdWriter,
 	}
 	prefix := "prometheus_tsdb_wal_"
 	if filepath.Base(dir) == WblDirName {
@@ -363,7 +379,7 @@ func NewSize(logger *slog.Logger, reg prometheus.Registerer, dir string, segment
 		writeSegmentIndex = last + 1
 	}
 
-	segment, err := CreateSegment(w.Dir(), writeSegmentIndex)
+	segment, err := CreateSegment(w.Dir(), writeSegmentIndex, v)
 	if err != nil {
 		return nil, err
 	}
@@ -378,6 +394,7 @@ func NewSize(logger *slog.Logger, reg prometheus.Registerer, dir string, segment
 }
 
 // Open an existing WAL.
+// TODO(bwplotka): It seems this is a read only WAL, safe-guard this?
 func Open(logger *slog.Logger, dir string) (*WL, error) {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
@@ -388,9 +405,10 @@ func Open(logger *slog.Logger, dir string) (*WL, error) {
 	}
 
 	w := &WL{
-		dir:        dir,
-		logger:     logger,
-		zstdWriter: zstdWriter,
+		dir:                  dir,
+		logger:               logger,
+		zstdWriter:           zstdWriter,
+		segmentFormatVersion: DefaultSegmentVersion,
 	}
 
 	return w, nil
@@ -440,18 +458,18 @@ func (w *WL) Repair(origErr error) error {
 	if !errors.As(origErr, &cerr) {
 		return fmt.Errorf("cannot handle error: %w", origErr)
 	}
-	if cerr.Segment < 0 {
+	if cerr.SegmentIndex < 0 {
 		return errors.New("corruption error does not specify position")
 	}
 	w.logger.Warn("Starting corruption repair",
-		"segment", cerr.Segment, "offset", cerr.Offset)
+		"segment", cerr.SegmentName(), "offset", cerr.Offset)
 
 	// All segments behind the corruption can no longer be used.
 	segs, err := listSegments(w.Dir())
 	if err != nil {
 		return fmt.Errorf("list segments: %w", err)
 	}
-	w.logger.Warn("Deleting all segments newer than corrupted segment", "segment", cerr.Segment)
+	w.logger.Warn("Deleting all segments newer than corrupted segment", "segment", cerr.SegmentName())
 
 	for _, s := range segs {
 		if w.segment.i == s.index {
@@ -463,7 +481,7 @@ func (w *WL) Repair(origErr error) error {
 				return fmt.Errorf("close active segment: %w", err)
 			}
 		}
-		if s.index <= cerr.Segment {
+		if s.index <= cerr.SegmentIndex {
 			continue
 		}
 		if err := os.Remove(filepath.Join(w.Dir(), s.name)); err != nil {
@@ -473,16 +491,16 @@ func (w *WL) Repair(origErr error) error {
 	// Regardless of the corruption offset, no record reaches into the previous segment.
 	// So we can safely repair the WAL by removing the segment and re-inserting all
 	// its records up to the corruption.
-	w.logger.Warn("Rewrite corrupted segment", "segment", cerr.Segment)
+	w.logger.Warn("Rewrite corrupted segment", "segment", cerr.SegmentName())
 
-	fn := SegmentName(w.Dir(), cerr.Segment)
+	fn := SegmentName(w.Dir(), cerr.SegmentIndex, w.segmentFormatVersion)
 	tmpfn := fn + ".repair"
 
 	if err := fileutil.Rename(fn, tmpfn); err != nil {
 		return err
 	}
 	// Create a clean segment and make it the active one.
-	s, err := CreateSegment(w.Dir(), cerr.Segment)
+	s, err := CreateSegment(w.Dir(), cerr.SegmentIndex, w.segmentFormatVersion)
 	if err != nil {
 		return err
 	}
@@ -525,21 +543,48 @@ func (w *WL) Repair(origErr error) error {
 	}
 
 	// Explicitly close the segment we just repaired to avoid issues with Windows.
-	s.Close()
+	_ = s.Close()
 
 	// We always want to start writing to a new Segment rather than an existing
 	// Segment, which is handled by NewSize, but earlier in Repair we're deleting
 	// all segments that come after the corrupted Segment. Recreate a new Segment here.
-	s, err = CreateSegment(w.Dir(), cerr.Segment+1)
+	s, err = CreateSegment(w.Dir(), cerr.SegmentIndex+1, w.segmentFormatVersion)
 	if err != nil {
 		return err
 	}
 	return w.setSegment(s)
 }
 
-// SegmentName builds a segment name for the directory.
-func SegmentName(dir string, i int) string {
-	return filepath.Join(dir, fmt.Sprintf("%08d", i))
+// SegmentName builds a segment filename for the directory.
+func SegmentName(dir string, i int, v SegmentVersion) string {
+	if v == SegmentFormatV1 {
+		return filepath.Join(dir, fmt.Sprintf("%08d", i))
+	}
+	return filepath.Join(dir, fmt.Sprintf("%08d-%d", i, v))
+}
+
+// ParseSegmentName parses segment sequence and version from the segment filename.
+func ParseSegmentName(name string) (int, SegmentVersion, error) {
+	s := strings.Split(name, "-")
+	if len(s) > 2 {
+		// Parsing is strict, changing filename syntax requires another version.
+		return 0, 0, fmt.Errorf("invalid segment filename %v; expected one or two parts", name)
+	}
+
+	k, err := strconv.Atoi(s[0])
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid segment filename %v; first part is not a number: %w", name, err)
+	}
+	v := SegmentFormatV1
+	if len(s) == 1 {
+		return k, v, nil
+	}
+
+	ver, err := strconv.Atoi(s[1])
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid segment filename %v; second -v part is not a number: %w", name, err)
+	}
+	return k, SegmentVersion(ver), nil
 }
 
 // NextSegment creates the next segment and closes the previous one asynchronously.
@@ -571,7 +616,7 @@ func (w *WL) nextSegment(async bool) (int, error) {
 			return 0, err
 		}
 	}
-	next, err := CreateSegment(w.Dir(), w.segment.Index()+1)
+	next, err := CreateSegment(w.Dir(), w.segment.Index()+1, w.segmentFormatVersion)
 	if err != nil {
 		return 0, fmt.Errorf("create new segment file: %w", err)
 	}
@@ -926,8 +971,11 @@ func listSegments(dir string) (refs []segmentRef, err error) {
 	}
 	for _, f := range files {
 		fn := f.Name()
-		k, err := strconv.Atoi(fn)
+
+		k, _, err := ParseSegmentName(f.Name())
 		if err != nil {
+			// Malformed segment filenames are skipped.
+			// TODO(bwplotka): Log?
 			continue
 		}
 		refs = append(refs, segmentRef{name: fn, index: k})
