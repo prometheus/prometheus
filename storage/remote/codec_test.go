@@ -163,6 +163,11 @@ func TestWriteV2RequestFixture(t *testing.T) {
 }
 
 func TestValidateLabelsAndMetricName(t *testing.T) {
+	oldScheme := model.NameValidationScheme
+	model.NameValidationScheme = model.LegacyValidation
+	defer func() {
+		model.NameValidationScheme = oldScheme
+	}()
 	tests := []struct {
 		input       []prompb.Label
 		expectedErr string

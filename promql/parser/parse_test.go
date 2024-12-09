@@ -2398,7 +2398,7 @@ var testExpr = []struct {
 		},
 	},
 	{
-		input: `sum by ("foo")({"some.metric"})`,
+		input: `sum by ("foo bar")({"some.metric"})`,
 		expected: &AggregateExpr{
 			Op: SUM,
 			Expr: &VectorSelector{
@@ -2406,14 +2406,14 @@ var testExpr = []struct {
 					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some.metric"),
 				},
 				PosRange: posrange.PositionRange{
-					Start: 15,
-					End:   30,
+					Start: 19,
+					End:   34,
 				},
 			},
-			Grouping: []string{"foo"},
+			Grouping: []string{"foo bar"},
 			PosRange: posrange.PositionRange{
 				Start: 0,
-				End:   31,
+				End:   35,
 			},
 		},
 	},
@@ -4018,6 +4018,76 @@ func TestParseExpressions(t *testing.T) {
 					require.LessOrEqual(t, e.PositionRange.Start, e.PositionRange.End, "parse error has negative length\nExpression '%s'\nError: %v", test.input, e)
 					require.LessOrEqual(t, e.PositionRange.End, posrange.Pos(len(test.input)), "parse error is not contained in input\nExpression '%s'\nError: %v", test.input, e)
 				}
+			}
+		})
+	}
+}
+
+func TestParseSeriesDesc(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          string
+		expectedLabels labels.Labels
+		expectedValues []SequenceValue
+		expectError    string
+	}{
+		{
+			name:           "empty string",
+			expectedLabels: labels.EmptyLabels(),
+			expectedValues: []SequenceValue{},
+		},
+		{
+			name:  "simple line",
+			input: `http_requests{job="api-server", instance="0", group="production"}`,
+			expectedLabels: labels.FromStrings(
+				"__name__", "http_requests",
+				"group", "production",
+				"instance", "0",
+				"job", "api-server",
+			),
+			expectedValues: []SequenceValue{},
+		},
+		{
+			name:  "label name characters that require quoting",
+			input: `{"http.requests", "service.name"="api-server", instance="0", group="canary"}		0+50x2`,
+			expectedLabels: labels.FromStrings(
+				"__name__", "http.requests",
+				"group", "canary",
+				"instance", "0",
+				"service.name", "api-server",
+			),
+			expectedValues: []SequenceValue{
+				{Value: 0, Omitted: false, Histogram: (*histogram.FloatHistogram)(nil)},
+				{Value: 50, Omitted: false, Histogram: (*histogram.FloatHistogram)(nil)},
+				{Value: 100, Omitted: false, Histogram: (*histogram.FloatHistogram)(nil)},
+			},
+		},
+		{
+			name:        "confirm failure on junk after identifier",
+			input:       `{"http.requests"xx}		0+50x2`,
+			expectError: `parse error: unexpected identifier "xx" in label set, expected "," or "}"`,
+		},
+		{
+			name:        "confirm failure on bare operator after identifier",
+			input:       `{"http.requests"=, x="y"}		0+50x2`,
+			expectError: `parse error: unexpected "," in label set, expected string`,
+		},
+		{
+			name:        "confirm failure on unterminated string identifier",
+			input:       `{"http.requests}		0+50x2`,
+			expectError: `parse error: unterminated quoted string`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			l, v, err := ParseSeriesDesc(tc.input)
+			if tc.expectError != "" {
+				require.Contains(t, err.Error(), tc.expectError)
+			} else {
+				require.NoError(t, err)
+				require.True(t, labels.Equal(tc.expectedLabels, l))
+				require.Equal(t, tc.expectedValues, v)
 			}
 		})
 	}
