@@ -631,6 +631,7 @@ func TestPartialTruncateWAL(t *testing.T) {
 	s.truncate(lastTs - 1)
 
 	m := gatherFamily(t, reg, "prometheus_agent_deleted_series")
+	require.Len(t, m.Metric, 1)
 	require.Equal(t, float64(numSeries*5), m.Metric[0].Gauge.GetValue(), "agent wal truncate mismatch of deleted series count")
 }
 
