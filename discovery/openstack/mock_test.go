@@ -140,14 +140,14 @@ func (m *SDMock) HandleAuthSuccessfully() {
             {
                 "endpoints": [
                     {
-                        "id": "39dc322ce86c4111b4f06c2eeae0841b",
+                        "id": "5448e46679564d7d95466c2bef54c296",
                         "interface": "public",
                         "region": "RegionOne",
                         "region_id": "RegionOne",
                         "url": "%s"
                     }
                 ],
-                "id": "c609fc430175452290b62a4242e8a7e8",
+                "id": "589f3d99a3d94f5f871e9f5cf206d2e8",
                 "type": "network"
         }
         ],
@@ -473,82 +473,159 @@ const serverListBody = `
 			"metadata": {}
 		},
 		{
-		"status": "ACTIVE",
-		"updated": "2014-09-25T13:04:49Z",
-		"hostId": "29d3c8c896a45aa4c34e52247875d7fefc3d94bbcc9f622b5d204362",
-		"OS-EXT-SRV-ATTR:host": "devstack",
-		"addresses": {
-			"private": [
-				{
-					"version": 4,
-					"addr": "10.0.0.33",
-					"OS-EXT-IPS:type": "fixed"
-				},
-				{
-					"version": 4,
-					"addr": "10.0.0.34",
-					"OS-EXT-IPS:type": "fixed"
-				},
-				{
-					"version": 4,
-					"addr": "10.10.10.4",
-					"OS-EXT-IPS:type": "floating"
-				}
-			]
-		},
-		"links": [
-			{
-				"href": "http://104.130.131.164:8774/v2/fcad67a6189847c4aecfa3c81a05783b/servers/9e5476bd-a4ec-4653-93d6-72c93aa682ba",
-				"rel": "self"
+			"status": "ACTIVE",
+			"updated": "2014-09-25T13:04:49Z",
+			"hostId": "29d3c8c896a45aa4c34e52247875d7fefc3d94bbcc9f622b5d204362",
+			"OS-EXT-SRV-ATTR:host": "devstack",
+			"addresses": {
+				"private": [
+					{
+						"version": 4,
+						"addr": "10.0.0.33",
+						"OS-EXT-IPS:type": "fixed"
+					},
+					{
+						"version": 4,
+						"addr": "10.0.0.34",
+						"OS-EXT-IPS:type": "fixed"
+					},
+					{
+						"version": 4,
+						"addr": "10.10.10.4",
+						"OS-EXT-IPS:type": "floating"
+					}
+				]
 			},
-			{
-				"href": "http://104.130.131.164:8774/fcad67a6189847c4aecfa3c81a05783b/servers/9e5476bd-a4ec-4653-93d6-72c93aa682ba",
-				"rel": "bookmark"
-			}
-		],
-		"key_name": null,
-		"image": "",
-		"OS-EXT-STS:task_state": null,
-		"OS-EXT-STS:vm_state": "active",
-		"OS-EXT-SRV-ATTR:instance_name": "instance-0000001d",
-		"OS-SRV-USG:launched_at": "2014-09-25T13:04:49.000000",
-		"OS-EXT-SRV-ATTR:hypervisor_hostname": "devstack",
-		"flavor": {
-			"vcpus": 2,
-			"ram": 4096,
-			"disk": 0,
-			"ephemeral": 0,
-			"swap": 0,
-			"original_name": "m1.small",
-			"extra_specs": {
-			  "aggregate_instance_extra_specs:general": "true",
-			  "hw:mem_page_size": "large",
-			  "hw:vif_multiqueue_enabled": "true"
+			"links": [
+				{
+					"href": "http://104.130.131.164:8774/v2/fcad67a6189847c4aecfa3c81a05783b/servers/9e5476bd-a4ec-4653-93d6-72c93aa682ba",
+					"rel": "self"
+				},
+				{
+					"href": "http://104.130.131.164:8774/fcad67a6189847c4aecfa3c81a05783b/servers/9e5476bd-a4ec-4653-93d6-72c93aa682ba",
+					"rel": "bookmark"
+				}
+			],
+			"key_name": null,
+			"image": "",
+			"OS-EXT-STS:task_state": null,
+			"OS-EXT-STS:vm_state": "active",
+			"OS-EXT-SRV-ATTR:instance_name": "instance-0000001d",
+			"OS-SRV-USG:launched_at": "2014-09-25T13:04:49.000000",
+			"OS-EXT-SRV-ATTR:hypervisor_hostname": "devstack",
+			"flavor": {
+				"vcpus": 2,
+				"ram": 4096,
+				"disk": 0,
+				"ephemeral": 0,
+				"swap": 0,
+				"original_name": "m1.small",
+				"extra_specs": {
+				"aggregate_instance_extra_specs:general": "true",
+				"hw:mem_page_size": "large",
+				"hw:vif_multiqueue_enabled": "true"
+				}
+			},
+			"id": "9e5476bd-a4ec-4653-93d6-72c93aa682bb",
+			"security_groups": [
+				{
+					"name": "default"
+				}
+			],
+			"OS-SRV-USG:terminated_at": null,
+			"OS-EXT-AZ:availability_zone": "nova",
+			"user_id": "9349aff8be7545ac9d2f1d00999a23cd",
+			"name": "merp",
+			"created": "2014-09-25T13:04:41Z",
+			"tenant_id": "fcad67a6189847c4aecfa3c81a05783b",
+			"OS-DCF:diskConfig": "MANUAL",
+			"os-extended-volumes:volumes_attached": [],
+			"accessIPv4": "",
+			"accessIPv6": "",
+			"progress": 0,
+			"OS-EXT-STS:power_state": 1,
+			"config_drive": "",
+			"metadata": {
+				"env": "prod"
 			}
 		},
-		"id": "9e5476bd-a4ec-4653-93d6-72c93aa682bb",
-		"security_groups": [
-			{
-				"name": "default"
+		{
+			"status": "ACTIVE",
+			"updated": "2014-09-25T13:04:49Z",
+			"hostId": "29d3c8c896a45aa4c34e52247875d7fefc3d94bbcc9f622b5d204362",
+			"OS-EXT-SRV-ATTR:host": "devstack",
+			"addresses": {
+				"private": [
+					{
+						"version": 4,
+						"addr": "10.0.0.33",
+						"OS-EXT-IPS:type": "fixed"
+					},
+					{
+						"version": 4,
+						"addr": "10.0.0.34",
+						"OS-EXT-IPS:type": "fixed"
+					},
+					{
+						"version": 4,
+						"addr": "10.10.10.24",
+						"OS-EXT-IPS:type": "floating"
+					}
+				]
+			},
+			"links": [
+				{
+					"href": "http://104.130.131.164:8774/v2/b78fef2305934dbbbeb9a10b4c326f7a/servers/9e5476bd-a4ec-4653-93d6-72c93aa682ba",
+					"rel": "self"
+				},
+				{
+					"href": "http://104.130.131.164:8774/b78fef2305934dbbbeb9a10b4c326f7a/servers/9e5476bd-a4ec-4653-93d6-72c93aa682ba",
+					"rel": "bookmark"
+				}
+			],
+			"key_name": null,
+			"image": "",
+			"OS-EXT-STS:task_state": null,
+			"OS-EXT-STS:vm_state": "active",
+			"OS-EXT-SRV-ATTR:instance_name": "instance-0000002d",
+			"OS-SRV-USG:launched_at": "2014-09-25T13:04:49.000000",
+			"OS-EXT-SRV-ATTR:hypervisor_hostname": "devstack",
+			"flavor": {
+				"vcpus": 2,
+				"ram": 4096,
+				"disk": 0,
+				"ephemeral": 0,
+				"swap": 0,
+				"original_name": "m1.small",
+				"extra_specs": {
+				"aggregate_instance_extra_specs:general": "true",
+				"hw:mem_page_size": "large",
+				"hw:vif_multiqueue_enabled": "true"
+				}
+			},
+			"id": "87caf8ed-d92a-41f6-9dcd-d1399e39899f",
+			"security_groups": [
+				{
+					"name": "default"
+				}
+			],
+			"OS-SRV-USG:terminated_at": null,
+			"OS-EXT-AZ:availability_zone": "nova",
+			"user_id": "9349aff8be7545ac9d2f1d00999a23cd",
+			"name": "merp-project2",
+			"created": "2014-09-25T13:04:41Z",
+			"tenant_id": "b78fef2305934dbbbeb9a10b4c326f7a",
+			"OS-DCF:diskConfig": "MANUAL",
+			"os-extended-volumes:volumes_attached": [],
+			"accessIPv4": "",
+			"accessIPv6": "",
+			"progress": 0,
+			"OS-EXT-STS:power_state": 1,
+			"config_drive": "",
+			"metadata": {
+				"env": "prod"
 			}
-		],
-		"OS-SRV-USG:terminated_at": null,
-		"OS-EXT-AZ:availability_zone": "nova",
-		"user_id": "9349aff8be7545ac9d2f1d00999a23cd",
-		"name": "merp",
-		"created": "2014-09-25T13:04:41Z",
-		"tenant_id": "fcad67a6189847c4aecfa3c81a05783b",
-		"OS-DCF:diskConfig": "MANUAL",
-		"os-extended-volumes:volumes_attached": [],
-		"accessIPv4": "",
-		"accessIPv6": "",
-		"progress": 0,
-		"OS-EXT-STS:power_state": 1,
-		"config_drive": "",
-		"metadata": {
-			"env": "prod"
 		}
-	}
 	]
 }
 `
@@ -596,7 +673,7 @@ const listOutput = `
 			"status": "ACTIVE",
 			"description": "",
 			"port_details": {
-			  "name": "ovn-lb-vip-c8f1d76f-1560-4445-8412-b817b0f0b922",
+			  "name": "ovn-lb-vip-0980c8de-58c3-481d-89e3-ed81f44286c0",
 			  "network_id": "03200a39-b399-44f3-a778-6dbb93343a31",
 			  "mac_address": "fa:16:3e:23:12:a3",
 			  "admin_state_up": true,
@@ -622,9 +699,35 @@ const listOutput = `
 			"status": "ACTIVE",
 			"description": "",
 			"port_details": {
-			  "name": "ovn-lb-vip-5c0791f0-3878-41fb-a1c7-08c278828fe6",
+			  "name": "ovn-lb-vip-26c0ccb1-3036-4345-99e8-d8f34a8ba6b2",
 			  "network_id": "03200a39-b399-44f3-a778-6dbb93343a31",
 			  "mac_address": "fa:16:3e:5f:43:10",
+			  "admin_state_up": true,
+			  "status": "ACTIVE",
+			  "device_id": "",
+			  "device_owner": ""
+			},
+			"dns_domain": "",
+			"dns_name": "",
+			"port_forwardings": [],
+			"tags": [],
+			"created_at": "2024-01-24T13:30:50Z",
+			"updated_at": "2024-01-24T13:30:51Z"
+		},
+		{
+			"id": "b23df91a-a74a-4f75-b252-750aff4a5a0c",
+			"tenant_id": "b78fef2305934dbbbeb9a10b4c326f7a",
+			"floating_ip_address": "10.10.10.24",
+			"floating_network_id": "b19ff5bc-a49a-46cc-8d14-ca5f1e94791f",
+			"router_id": "65a5e5af-17f0-4124-9a81-c08b44f5b8a7",
+			"port_id": "b926ab68-ec54-46d8-8c50-1c07aafd5ae9",
+			"fixed_ip_address": "10.0.0.34",
+			"status": "ACTIVE",
+			"description": "",
+			"port_details": {
+			  "name": "dummy-port",
+			  "network_id": "03200a39-b399-44f3-a778-6dbb93343a31",
+			  "mac_address": "fa:16:3e:5f:12:10",
 			  "admin_state_up": true,
 			  "status": "ACTIVE",
 			  "device_id": "",
@@ -649,5 +752,142 @@ func (m *SDMock) HandleFloatingIPListSuccessfully() {
 
 		w.Header().Add("Content-Type", "application/json")
 		fmt.Fprint(w, listOutput)
+	})
+}
+
+const portsListBody = `
+{
+	"ports": [
+		{
+			"id": "d5597901-48c8-4a69-a041-cfc5be158a04",
+			"name": "",
+			"network_id": "d02c4f18-d606-4864-b12a-1c9b39a46be2",
+			"tenant_id": "fcad67a6189847c4aecfa3c81a05783b",
+			"mac_address": "",
+			"admin_state_up": true,
+			"status": "DOWN",
+			"device_id": "",
+			"device_owner": "",
+			"fixed_ips": [],
+			"allowed_address_pairs": [],
+			"extra_dhcp_opts": [],
+			"security_groups": [],
+			"description": "",
+			"binding:vnic_type": "normal",
+			"port_security_enabled": true,
+			"dns_name": "",
+			"dns_assignment": [],
+			"dns_domain": "",
+			"tags": [],
+			"created_at": "2023-08-30T16:30:27Z",
+			"updated_at": "2023-08-30T16:30:28Z",
+			"revision_number": 0,
+			"project_id": "fcad67a6189847c4aecfa3c81a05783b"
+		},
+		{
+			"id": "4a45b012-0478-484d-8cf3-c8abdb194d08",
+			"name": "ovn-lb-vip-0980c8de-58c3-481d-89e3-ed81f44286c0",
+			"network_id": "03200a39-b399-44f3-a778-6dbb93343a31",
+			"tenant_id": "fcad67a6189847c4aecfa3c81a05783b",
+			"mac_address": "fa:16:3e:23:12:a3",
+			"admin_state_up": true,
+			"status": "ACTIVE",
+			"device_id": "ef079b0c-e610-4dfb-b1aa-b49f07ac48e5",
+			"device_owner": "",
+			"fixed_ips": [
+				{
+					"subnet_id": "",
+					"ip_address": "10.10.10.2"
+				}
+			],
+			"allowed_address_pairs": [],
+			"extra_dhcp_opts": [],
+			"security_groups": [],
+			"description": "",
+			"binding:vnic_type": "normal",
+			"port_security_enabled": true,
+			"dns_name": "",
+			"dns_assignment": [],
+			"dns_domain": "",
+			"tags": [],
+			"created_at": "2023-09-06T15:45:36Z",
+			"updated_at": "2023-09-06T15:45:36Z",
+			"revision_number": 0,
+			"project_id": "fcad67a6189847c4aecfa3c81a05783b"
+		},
+		{
+			"id": "a0e244e8-7910-4427-b8d1-20470cad4f8a",
+			"name": "ovn-lb-vip-26c0ccb1-3036-4345-99e8-d8f34a8ba6b2",
+			"network_id": "03200a39-b399-44f3-a778-6dbb93343a31",
+			"tenant_id": "fcad67a6189847c4aecfa3c81a05783b",
+			"mac_address": "fa:16:3e:5f:43:10",
+			"admin_state_up": true,
+			"status": "ACTIVE",
+			"device_id": "9e5476bd-a4ec-4653-93d6-72c93aa682bb",
+			"device_owner": "",
+			"fixed_ips": [
+				{
+					"subnet_id": "",
+					"ip_address": "10.10.10.4"
+				}
+			],
+			"allowed_address_pairs": [],
+			"extra_dhcp_opts": [],
+			"security_groups": [],
+			"description": "",
+			"binding:vnic_type": "normal",
+			"port_security_enabled": true,
+			"dns_name": "",
+			"dns_assignment": [],
+			"dns_domain": "",
+			"tags": [],
+			"created_at": "2024-01-24T13:30:50Z",
+			"updated_at": "2024-01-24T13:30:51Z",
+			"revision_number": 0,
+			"project_id": "fcad67a6189847c4aecfa3c81a05783b"
+		},
+		{
+			"id": "b926ab68-ec54-46d8-8c50-1c07aafd5ae9",
+			"name": "dummy-port",
+			"network_id": "03200a39-b399-44f3-a778-6dbb93343a31",
+			"tenant_id": "b78fef2305934dbbbeb9a10b4c326f7a",
+			"mac_address": "fa:16:3e:5f:12:10",
+			"admin_state_up": true,
+			"status": "ACTIVE",
+			"device_id": "87caf8ed-d92a-41f6-9dcd-d1399e39899f",
+			"device_owner": "",
+			"fixed_ips": [
+				{
+					"subnet_id": "",
+					"ip_address": "10.10.10.24"
+				}
+			],
+			"allowed_address_pairs": [],
+			"extra_dhcp_opts": [],
+			"security_groups": [],
+			"description": "",
+			"binding:vnic_type": "normal",
+			"port_security_enabled": true,
+			"dns_name": "",
+			"dns_assignment": [],
+			"dns_domain": "",
+			"tags": [],
+			"created_at": "2024-01-24T13:30:50Z",
+			"updated_at": "2024-01-24T13:30:51Z",
+			"revision_number": 0,
+			"project_id": "b78fef2305934dbbbeb9a10b4c326f7a"
+		}
+	]
+}
+`
+
+// HandlePortsListSuccessfully mocks the ports list API.
+func (m *SDMock) HandlePortsListSuccessfully() {
+	m.Mux.HandleFunc("/v2.0/ports", func(w http.ResponseWriter, r *http.Request) {
+		testMethod(m.t, r, http.MethodGet)
+		testHeader(m.t, r, "X-Auth-Token", tokenID)
+
+		w.Header().Add("Content-Type", "application/json")
+		fmt.Fprint(w, portsListBody)
 	})
 }

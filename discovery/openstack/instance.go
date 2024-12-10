@@ -24,6 +24,7 @@ import (
 	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/openstack/networking/v2/extensions/layer3/floatingips"
+	"github.com/gophercloud/gophercloud/openstack/networking/v2/ports"
 	"github.com/gophercloud/gophercloud/pagination"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
@@ -73,7 +74,13 @@ func newInstanceDiscovery(provider *gophercloud.ProviderClient, opts *gopherclou
 
 type floatingIPKey struct {
 	tenantID string
+	deviceID string
 	fixed    string
+}
+
+type portKey struct {
+	tenantID string
+	deviceID string
 }
 
 func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
@@ -98,6 +105,23 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 	}
 
 	// OpenStack API reference
+	// https://docs.openstack.org/api-ref/network/v2/index.html#list-ports
+	portPages, err := ports.List(networkClient, ports.ListOpts{}).AllPages()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list all ports: %w", err)
+	}
+
+	allPorts, err := ports.ExtractPorts(portPages)
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract Ports: %w", err)
+	}
+
+	portList := make(map[string]portKey)
+	for _, port := range allPorts {
+		portList[port.ID] = portKey{tenantID: port.TenantID, deviceID: port.DeviceID}
+	}
+
+	// OpenStack API reference
 	// https://docs.openstack.org/api-ref/network/v2/index.html#list-floating-ips
 	pagerFIP := floatingips.List(networkClient, floatingips.ListOpts{})
 	floatingIPList := make(map[floatingIPKey]string)
@@ -112,7 +136,21 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 			if ip.PortID == "" || ip.FixedIP == "" {
 				continue
 			}
-			floatingIPList[floatingIPKey{tenantID: ip.TenantID, fixed: ip.FixedIP}] = ip.FloatingIP
+
+			// Fetch deviceID from portList
+			portKey, ok := portList[ip.PortID]
+			if !ok {
+				i.logger.Warn("Floating IP PortID not found in portList", "PortID", ip.PortID)
+				continue
+			}
+
+			key := floatingIPKey{
+				tenantID: ip.TenantID,
+				deviceID: portKey.deviceID,
+				fixed:    ip.FixedIP,
+			}
+
+			floatingIPList[key] = ip.FloatingIP
 			floatingIPPresent[ip.FloatingIP] = struct{}{}
 		}
 		return true, nil
@@ -205,7 +243,7 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 					}
 					lbls[openstackLabelAddressPool] = model.LabelValue(pool)
 					lbls[openstackLabelPrivateIP] = model.LabelValue(addr)
-					if val, ok := floatingIPList[floatingIPKey{tenantID: s.TenantID, fixed: addr}]; ok {
+					if val, ok := floatingIPList[floatingIPKey{tenantID: s.TenantID, deviceID: s.ID, fixed: addr}]; ok {
 						lbls[openstackLabelPublicIP] = model.LabelValue(val)
 					}
 					addr = net.JoinHostPort(addr, strconv.Itoa(i.port))

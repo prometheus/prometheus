@@ -32,6 +32,7 @@ func (s *OpenstackSDInstanceTestSuite) SetupTest(t *testing.T) {
 
 	s.Mock.HandleServerListSuccessfully()
 	s.Mock.HandleFloatingIPListSuccessfully()
+	s.Mock.HandlePortsListSuccessfully()
 
 	s.Mock.HandleVersionsSuccessfully()
 	s.Mock.HandleAuthSuccessfully()
@@ -66,7 +67,7 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 	tg := tgs[0]
 	require.NotNil(t, tg)
 	require.NotNil(t, tg.Targets)
-	require.Len(t, tg.Targets, 4)
+	require.Len(t, tg.Targets, 6)
 
 	for i, lbls := range []model.LabelSet{
 		{
@@ -117,6 +118,31 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 			"__meta_openstack_tag_env":         model.LabelValue("prod"),
 			"__meta_openstack_public_ip":       model.LabelValue("10.10.10.4"),
 			"__meta_openstack_project_id":      model.LabelValue("fcad67a6189847c4aecfa3c81a05783b"),
+			"__meta_openstack_user_id":         model.LabelValue("9349aff8be7545ac9d2f1d00999a23cd"),
+		},
+		{
+			"__address__":                      model.LabelValue("10.0.0.33:0"),
+			"__meta_openstack_instance_flavor": model.LabelValue("m1.small"),
+			"__meta_openstack_instance_id":     model.LabelValue("87caf8ed-d92a-41f6-9dcd-d1399e39899f"),
+			"__meta_openstack_instance_status": model.LabelValue("ACTIVE"),
+			"__meta_openstack_instance_name":   model.LabelValue("merp-project2"),
+			"__meta_openstack_private_ip":      model.LabelValue("10.0.0.33"),
+			"__meta_openstack_address_pool":    model.LabelValue("private"),
+			"__meta_openstack_tag_env":         model.LabelValue("prod"),
+			"__meta_openstack_project_id":      model.LabelValue("b78fef2305934dbbbeb9a10b4c326f7a"),
+			"__meta_openstack_user_id":         model.LabelValue("9349aff8be7545ac9d2f1d00999a23cd"),
+		},
+		{
+			"__address__":                      model.LabelValue("10.0.0.34:0"),
+			"__meta_openstack_instance_flavor": model.LabelValue("m1.small"),
+			"__meta_openstack_instance_id":     model.LabelValue("87caf8ed-d92a-41f6-9dcd-d1399e39899f"),
+			"__meta_openstack_instance_status": model.LabelValue("ACTIVE"),
+			"__meta_openstack_instance_name":   model.LabelValue("merp-project2"),
+			"__meta_openstack_private_ip":      model.LabelValue("10.0.0.34"),
+			"__meta_openstack_address_pool":    model.LabelValue("private"),
+			"__meta_openstack_tag_env":         model.LabelValue("prod"),
+			"__meta_openstack_public_ip":       model.LabelValue("10.10.10.24"),
+			"__meta_openstack_project_id":      model.LabelValue("b78fef2305934dbbbeb9a10b4c326f7a"),
 			"__meta_openstack_user_id":         model.LabelValue("9349aff8be7545ac9d2f1d00999a23cd"),
 		},
 	} {
