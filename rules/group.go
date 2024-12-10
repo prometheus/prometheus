@@ -1058,29 +1058,32 @@ func buildDependencyMap(rules []Rule) dependencyMap {
 	inputs := make(map[string][]Rule, len(rules))
 	outputs := make(map[string][]Rule, len(rules))
 
-	var indeterminate bool
-
 	for _, rule := range rules {
-		if indeterminate {
-			break
-		}
-
 		name := rule.Name()
 		outputs[name] = append(outputs[name], rule)
 
 		parser.Inspect(rule.Query(), func(node parser.Node, path []parser.Node) error {
 			if n, ok := node.(*parser.VectorSelector); ok {
-				// A wildcard metric expression means we cannot reliably determine if this rule depends on any other,
-				// which means we cannot safely run any rules concurrently.
+				// A wildcard metric expression means we cannot reliably determine if this rule depends on another.
+				// Therefore, we make it dependent on all other rules in the group.
 				if n.Name == "" && len(n.LabelMatchers) > 0 {
-					indeterminate = true
+					for _, otherRule := range rules {
+						if otherRule != rule {
+							dependencies[rule] = append(dependencies[rule], otherRule)
+						}
+					}
 					return nil
 				}
 
 				// Rules which depend on "meta-metrics" like ALERTS and ALERTS_FOR_STATE will have undefined behaviour
 				// if they run concurrently.
+				// Therefore, we make this rule dependent on all other rules in the group.
 				if n.Name == alertMetricName || n.Name == alertForStateMetricName {
-					indeterminate = true
+					for _, otherRule := range rules {
+						if otherRule != rule {
+							dependencies[rule] = append(dependencies[rule], otherRule)
+						}
+					}
 					return nil
 				}
 
@@ -1088,10 +1091,6 @@ func buildDependencyMap(rules []Rule) dependencyMap {
 			}
 			return nil
 		})
-	}
-
-	if indeterminate {
-		return nil
 	}
 
 	for output, outRules := range outputs {
