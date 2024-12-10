@@ -71,31 +71,49 @@ func (a Annotations) AsErrors() []error {
 	return arr
 }
 
-// AsStrings is a convenience function to return the annotations map as a slice
-// of strings. The query string is used to get the line number and character offset
-// positioning info of the elements which trigger an annotation. We limit the number
-// of annotations returned here with maxAnnos (0 for no limit).
-func (a Annotations) AsStrings(query string, maxAnnos int) []string {
-	arr := make([]string, 0, len(a))
+// AsStrings is a convenience function to return the annotations map as 2 slices
+// of strings, separated into warnings and infos. The query string is used to get the
+// line number and character offset positioning info of the elements which trigger an
+// annotation. We limit the number of warnings and infos returned here with maxWarnings
+// and maxInfos respectively (0 for no limit).
+func (a Annotations) AsStrings(query string, maxWarnings, maxInfos int) (warnings, infos []string) {
+	warnings = make([]string, 0, maxWarnings+1)
+	infos = make([]string, 0, maxInfos+1)
+	warnSkipped := 0
+	infoSkipped := 0
 	for _, err := range a {
-		if maxAnnos > 0 && len(arr) >= maxAnnos {
-			break
-		}
 		var anErr annoErr
 		if errors.As(err, &anErr) {
 			anErr.Query = query
 			err = anErr
 		}
-		arr = append(arr, err.Error())
+		switch {
+		case errors.Is(err, PromQLInfo):
+			if maxInfos == 0 || len(infos) < maxInfos {
+				infos = append(infos, err.Error())
+			} else {
+				infoSkipped++
+			}
+		default:
+			if maxWarnings == 0 || len(warnings) < maxWarnings {
+				warnings = append(warnings, err.Error())
+			} else {
+				warnSkipped++
+			}
+		}
 	}
-	if maxAnnos > 0 && len(a) > maxAnnos {
-		arr = append(arr, fmt.Sprintf("%d more annotations omitted", len(a)-maxAnnos))
+	if warnSkipped > 0 {
+		warnings = append(warnings, fmt.Sprintf("%d more warning annotations omitted", warnSkipped))
 	}
-	return arr
+	if infoSkipped > 0 {
+		infos = append(infos, fmt.Sprintf("%d more info annotations omitted", infoSkipped))
+	}
+	return
 }
 
-func (a Annotations) CountWarningsAndInfo() (int, int) {
-	var countWarnings, countInfo int
+// CountWarningsAndInfo counts and returns the number of warnings and infos in the
+// annotations wrapper.
+func (a Annotations) CountWarningsAndInfo() (countWarnings, countInfo int) {
 	for _, err := range a {
 		if errors.Is(err, PromQLWarning) {
 			countWarnings++
@@ -104,7 +122,7 @@ func (a Annotations) CountWarningsAndInfo() (int, int) {
 			countInfo++
 		}
 	}
-	return countWarnings, countInfo
+	return
 }
 
 //nolint:revive // error-naming.
@@ -116,6 +134,7 @@ var (
 	PromQLInfo    = errors.New("PromQL info")
 	PromQLWarning = errors.New("PromQL warning")
 
+	InvalidRatioWarning                        = fmt.Errorf("%w: ratio value should be between -1 and 1", PromQLWarning)
 	InvalidQuantileWarning                     = fmt.Errorf("%w: quantile value should be between 0 and 1", PromQLWarning)
 	BadBucketLabelWarning                      = fmt.Errorf("%w: bucket label %q is missing or has a malformed value", PromQLWarning, model.BucketLabel)
 	MixedFloatsHistogramsWarning               = fmt.Errorf("%w: encountered a mix of histograms and floats for", PromQLWarning)
@@ -127,6 +146,8 @@ var (
 
 	PossibleNonCounterInfo                  = fmt.Errorf("%w: metric might not be a counter, name does not end in _total/_sum/_count/_bucket:", PromQLInfo)
 	HistogramQuantileForcedMonotonicityInfo = fmt.Errorf("%w: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name", PromQLInfo)
+	IncompatibleTypesInBinOpInfo            = fmt.Errorf("%w: incompatible sample types encountered for binary operator", PromQLInfo)
+	HistogramIgnoredInAggregationInfo       = fmt.Errorf("%w: ignored histogram in", PromQLInfo)
 )
 
 type annoErr struct {
@@ -152,6 +173,15 @@ func NewInvalidQuantileWarning(q float64, pos posrange.PositionRange) error {
 	return annoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w, got %g", InvalidQuantileWarning, q),
+	}
+}
+
+// NewInvalidRatioWarning is used when the user specifies an invalid ratio
+// value, i.e. a float that is outside the range [-1, 1] or NaN.
+func NewInvalidRatioWarning(q, to float64, pos posrange.PositionRange) error {
+	return annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w, got %g, capping to %g", InvalidRatioWarning, q, to),
 	}
 }
 
@@ -243,5 +273,23 @@ func NewHistogramQuantileForcedMonotonicityInfo(metricName string, pos posrange.
 	return annoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w %q", HistogramQuantileForcedMonotonicityInfo, metricName),
+	}
+}
+
+// NewIncompatibleTypesInBinOpInfo is used if binary operators act on a
+// combination of types that doesn't work and therefore returns no result.
+func NewIncompatibleTypesInBinOpInfo(lhsType, operator, rhsType string, pos posrange.PositionRange) error {
+	return annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w %q: %s %s %s", IncompatibleTypesInBinOpInfo, operator, lhsType, operator, rhsType),
+	}
+}
+
+// NewHistogramIgnoredInAggregationInfo is used when a histogram is ignored by
+// an aggregation operator that cannot handle histograms.
+func NewHistogramIgnoredInAggregationInfo(aggregation string, pos posrange.PositionRange) error {
+	return annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w %s aggregation", HistogramIgnoredInAggregationInfo, aggregation),
 	}
 }

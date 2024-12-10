@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -25,12 +26,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/google/go-cmp/cmp"
 	"github.com/grafana/regexp"
 	"github.com/nsf/jsondiff"
-	"github.com/prometheus/common/model"
 	"gopkg.in/yaml.v2"
+
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -39,12 +41,18 @@ import (
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/junitxml"
 )
 
 // RulesUnitTest does unit testing of rules based on the unit testing files provided.
 // More info about the file format can be found in the docs.
-func RulesUnitTest(queryOpts promqltest.LazyLoaderOpts, runStrings []string, diffFlag bool, files ...string) int {
+func RulesUnitTest(queryOpts promqltest.LazyLoaderOpts, runStrings []string, diffFlag, debug bool, files ...string) int {
+	return RulesUnitTestResult(io.Discard, queryOpts, runStrings, diffFlag, debug, files...)
+}
+
+func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts, runStrings []string, diffFlag, debug bool, files ...string) int {
 	failed := false
+	junit := &junitxml.JUnitXML{}
 
 	var run *regexp.Regexp
 	if runStrings != nil {
@@ -52,7 +60,7 @@ func RulesUnitTest(queryOpts promqltest.LazyLoaderOpts, runStrings []string, dif
 	}
 
 	for _, f := range files {
-		if errs := ruleUnitTest(f, queryOpts, run, diffFlag); errs != nil {
+		if errs := ruleUnitTest(f, queryOpts, run, diffFlag, debug, junit.Suite(f)); errs != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
 				fmt.Fprintln(os.Stderr, e.Error())
@@ -64,25 +72,30 @@ func RulesUnitTest(queryOpts promqltest.LazyLoaderOpts, runStrings []string, dif
 		}
 		fmt.Println()
 	}
+	err := junit.WriteXML(results)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to write JUnit XML: %s\n", err)
+	}
 	if failed {
 		return failureExitCode
 	}
 	return successExitCode
 }
 
-func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *regexp.Regexp, diffFlag bool) []error {
-	fmt.Println("Unit Testing: ", filename)
-
+func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *regexp.Regexp, diffFlag, debug bool, ts *junitxml.TestSuite) []error {
 	b, err := os.ReadFile(filename)
 	if err != nil {
+		ts.Abort(err)
 		return []error{err}
 	}
 
 	var unitTestInp unitTestFile
 	if err := yaml.UnmarshalStrict(b, &unitTestInp); err != nil {
+		ts.Abort(err)
 		return []error{err}
 	}
 	if err := resolveAndGlobFilepaths(filepath.Dir(filename), &unitTestInp); err != nil {
+		ts.Abort(err)
 		return []error{err}
 	}
 
@@ -91,29 +104,38 @@ func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *reg
 	}
 
 	evalInterval := time.Duration(unitTestInp.EvaluationInterval)
-
+	ts.Settime(time.Now().Format("2006-01-02T15:04:05"))
 	// Giving number for groups mentioned in the file for ordering.
 	// Lower number group should be evaluated before higher number group.
 	groupOrderMap := make(map[string]int)
 	for i, gn := range unitTestInp.GroupEvalOrder {
 		if _, ok := groupOrderMap[gn]; ok {
-			return []error{fmt.Errorf("group name repeated in evaluation order: %s", gn)}
+			err := fmt.Errorf("group name repeated in evaluation order: %s", gn)
+			ts.Abort(err)
+			return []error{err}
 		}
 		groupOrderMap[gn] = i
 	}
 
 	// Testing.
 	var errs []error
-	for _, t := range unitTestInp.Tests {
+	for i, t := range unitTestInp.Tests {
 		if !matchesRun(t.TestGroupName, run) {
 			continue
 		}
-
+		testname := t.TestGroupName
+		if testname == "" {
+			testname = fmt.Sprintf("unnamed#%d", i)
+		}
+		tc := ts.Case(testname)
 		if t.Interval == 0 {
 			t.Interval = unitTestInp.EvaluationInterval
 		}
-		ers := t.test(evalInterval, groupOrderMap, queryOpts, diffFlag, unitTestInp.RuleFiles...)
+		ers := t.test(testname, evalInterval, groupOrderMap, queryOpts, diffFlag, debug, unitTestInp.RuleFiles...)
 		if ers != nil {
+			for _, e := range ers {
+				tc.Fail(e.Error())
+			}
 			errs = append(errs, ers...)
 		}
 	}
@@ -176,7 +198,14 @@ type testGroup struct {
 }
 
 // test performs the unit tests.
-func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]int, queryOpts promqltest.LazyLoaderOpts, diffFlag bool, ruleFiles ...string) (outErr []error) {
+func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrderMap map[string]int, queryOpts promqltest.LazyLoaderOpts, diffFlag, debug bool, ruleFiles ...string) (outErr []error) {
+	if debug {
+		testStart := time.Now()
+		fmt.Printf("DEBUG: Starting test %s\n", testname)
+		defer func() {
+			fmt.Printf("DEBUG: Test %s finished, took %v\n", testname, time.Since(testStart))
+		}()
+	}
 	// Setup testing suite.
 	suite, err := promqltest.NewLazyLoader(tg.seriesLoadingString(), queryOpts)
 	if err != nil {
@@ -196,7 +225,7 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 		Appendable: suite.Storage(),
 		Context:    context.Background(),
 		NotifyFunc: func(ctx context.Context, expr string, alerts ...*rules.Alert) {},
-		Logger:     log.NewNopLogger(),
+		Logger:     promslog.NewNopLogger(),
 	}
 	m := rules.NewManager(opts)
 	groupsMap, ers := m.LoadGroups(time.Duration(tg.Interval), tg.ExternalLabels, tg.ExternalURL, nil, ruleFiles...)
@@ -457,6 +486,32 @@ Outer:
 		if !cmp.Equal(expSamples, gotSamples, cmp.Comparer(labels.Equal)) {
 			errs = append(errs, fmt.Errorf("    expr: %q, time: %s,\n        exp: %v\n        got: %v", testCase.Expr,
 				testCase.EvalTime.String(), parsedSamplesString(expSamples), parsedSamplesString(gotSamples)))
+		}
+	}
+
+	if debug {
+		ts := tg.maxEvalTime()
+		// Potentially a test can be specified at a time with fractional seconds,
+		// which PromQL cannot represent, so round up to the next whole second.
+		ts = (ts + time.Second).Truncate(time.Second)
+		expr := fmt.Sprintf(`{__name__=~".+"}[%v]`, ts)
+		q, err := suite.QueryEngine().NewInstantQuery(context.Background(), suite.Queryable(), nil, expr, mint.Add(ts))
+		if err != nil {
+			fmt.Printf("DEBUG: Failed querying, expr: %q, err: %v\n", expr, err)
+			return errs
+		}
+		res := q.Exec(suite.Context())
+		if res.Err != nil {
+			fmt.Printf("DEBUG: Failed query exec, expr: %q, err: %v\n", expr, res.Err)
+			return errs
+		}
+		switch v := res.Value.(type) {
+		case promql.Matrix:
+			fmt.Printf("DEBUG: Dump of all data (input_series and rules) at %v:\n", ts)
+			fmt.Println(v.String())
+		default:
+			fmt.Printf("DEBUG: Got unexpected type %T\n", v)
+			return errs
 		}
 	}
 

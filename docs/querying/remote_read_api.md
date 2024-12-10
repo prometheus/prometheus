@@ -17,7 +17,8 @@ Request are made to the following endpoint.
 
 ### Samples
 
-This returns a message that includes a list of raw samples.
+This returns a message that includes a list of raw samples matching the 
+requested query.
 
 ### Streamed Chunks
 

@@ -17,7 +17,6 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
-	"net"
 	"net/url"
 	"strings"
 	"sync"
@@ -424,7 +423,7 @@ func (app *maxSchemaAppender) AppendHistogram(ref storage.SeriesRef, lset labels
 // PopulateLabels builds a label set from the given label set and scrape configuration.
 // It returns a label set before relabeling was applied as the second return value.
 // Returns the original discovered label set found before relabelling was applied if the target is dropped during relabeling.
-func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, noDefaultPort bool) (res, orig labels.Labels, err error) {
+func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig) (res, orig labels.Labels, err error) {
 	// Copy labels into the labelset for the target if they are not set already.
 	scrapeLabels := []labels.Label{
 		{Name: model.JobLabel, Value: cfg.JobName},
@@ -441,8 +440,8 @@ func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, noDefaultPort 
 	}
 	// Encode scrape query parameters as labels.
 	for k, v := range cfg.Params {
-		if len(v) > 0 {
-			lb.Set(model.ParamLabelPrefix+k, v[0])
+		if name := model.ParamLabelPrefix + k; len(v) > 0 && lb.Get(name) == "" {
+			lb.Set(name, v[0])
 		}
 	}
 
@@ -457,51 +456,7 @@ func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, noDefaultPort 
 		return labels.EmptyLabels(), labels.EmptyLabels(), errors.New("no address")
 	}
 
-	// addPort checks whether we should add a default port to the address.
-	// If the address is not valid, we don't append a port either.
-	addPort := func(s string) (string, string, bool) {
-		// If we can split, a port exists and we don't have to add one.
-		if host, port, err := net.SplitHostPort(s); err == nil {
-			return host, port, false
-		}
-		// If adding a port makes it valid, the previous error
-		// was not due to an invalid address and we can append a port.
-		_, _, err := net.SplitHostPort(s + ":1234")
-		return "", "", err == nil
-	}
-
 	addr := lb.Get(model.AddressLabel)
-	scheme := lb.Get(model.SchemeLabel)
-	host, port, add := addPort(addr)
-	// If it's an address with no trailing port, infer it based on the used scheme
-	// unless the no-default-scrape-port feature flag is present.
-	if !noDefaultPort && add {
-		// Addresses reaching this point are already wrapped in [] if necessary.
-		switch scheme {
-		case "http", "":
-			addr += ":80"
-		case "https":
-			addr += ":443"
-		default:
-			return labels.EmptyLabels(), labels.EmptyLabels(), fmt.Errorf("invalid scheme: %q", cfg.Scheme)
-		}
-		lb.Set(model.AddressLabel, addr)
-	}
-
-	if noDefaultPort {
-		// If it's an address with a trailing default port and the
-		// no-default-scrape-port flag is present, remove the port.
-		switch port {
-		case "80":
-			if scheme == "http" {
-				lb.Set(model.AddressLabel, host)
-			}
-		case "443":
-			if scheme == "https" {
-				lb.Set(model.AddressLabel, host)
-			}
-		}
-	}
 
 	if err := config.CheckTargetAddress(model.LabelValue(addr)); err != nil {
 		return labels.EmptyLabels(), labels.EmptyLabels(), err
@@ -557,7 +512,7 @@ func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, noDefaultPort 
 }
 
 // TargetsFromGroup builds targets based on the given TargetGroup and config.
-func TargetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig, noDefaultPort bool, targets []*Target, lb *labels.Builder) ([]*Target, []error) {
+func TargetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig, targets []*Target, lb *labels.Builder) ([]*Target, []error) {
 	targets = targets[:0]
 	failures := []error{}
 
@@ -573,7 +528,7 @@ func TargetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig, noDefault
 			}
 		}
 
-		lset, origLabels, err := PopulateLabels(lb, cfg, noDefaultPort)
+		lset, origLabels, err := PopulateLabels(lb, cfg)
 		if err != nil {
 			failures = append(failures, fmt.Errorf("instance %d in group %s: %w", i, tg, err))
 		}

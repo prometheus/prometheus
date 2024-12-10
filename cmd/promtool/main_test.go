@@ -31,11 +31,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
+	"github.com/prometheus/prometheus/promql/promqltest"
 )
+
+func init() {
+	// This can be removed when the default validation scheme in common is updated.
+	model.NameValidationScheme = model.UTF8Validation
+}
 
 var promtoolPath = os.Args[0]
 
@@ -53,6 +60,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestQueryRange(t *testing.T) {
+	t.Parallel()
 	s, getRequest := mockServer(200, `{"status": "success", "data": {"resultType": "matrix", "result": []}}`)
 	defer s.Close()
 
@@ -76,6 +84,7 @@ func TestQueryRange(t *testing.T) {
 }
 
 func TestQueryInstant(t *testing.T) {
+	t.Parallel()
 	s, getRequest := mockServer(200, `{"status": "success", "data": {"resultType": "vector", "result": []}}`)
 	defer s.Close()
 
@@ -107,6 +116,7 @@ func mockServer(code int, body string) (*httptest.Server, func() *http.Request) 
 }
 
 func TestCheckSDFile(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		file string
@@ -137,9 +147,10 @@ func TestCheckSDFile(t *testing.T) {
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			_, err := checkSDFile(test.file)
 			if test.err != "" {
-				require.Equalf(t, test.err, err.Error(), "Expected error %q, got %q", test.err, err.Error())
+				require.EqualErrorf(t, err, test.err, "Expected error %q, got %q", test.err, err.Error())
 				return
 			}
 			require.NoError(t, err)
@@ -148,6 +159,7 @@ func TestCheckSDFile(t *testing.T) {
 }
 
 func TestCheckDuplicates(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name         string
 		ruleFile     string
@@ -172,6 +184,7 @@ func TestCheckDuplicates(t *testing.T) {
 	for _, test := range cases {
 		c := test
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			rgs, err := rulefmt.ParseFile(c.ruleFile)
 			require.Empty(t, err)
 			dups := checkDuplicates(rgs.Groups)
@@ -191,6 +204,7 @@ func BenchmarkCheckDuplicates(b *testing.B) {
 }
 
 func TestCheckTargetConfig(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		file string
@@ -219,9 +233,10 @@ func TestCheckTargetConfig(t *testing.T) {
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			_, err := checkConfig(false, "testdata/"+test.file, false)
 			if test.err != "" {
-				require.Equalf(t, test.err, err.Error(), "Expected error %q, got %q", test.err, err.Error())
+				require.EqualErrorf(t, err, test.err, "Expected error %q, got %q", test.err, err.Error())
 				return
 			}
 			require.NoError(t, err)
@@ -230,6 +245,7 @@ func TestCheckTargetConfig(t *testing.T) {
 }
 
 func TestCheckConfigSyntax(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name       string
 		file       string
@@ -302,13 +318,14 @@ func TestCheckConfigSyntax(t *testing.T) {
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			_, err := checkConfig(false, "testdata/"+test.file, test.syntaxOnly)
 			expectedErrMsg := test.err
 			if strings.Contains(runtime.GOOS, "windows") {
 				expectedErrMsg = test.errWindows
 			}
 			if expectedErrMsg != "" {
-				require.Equalf(t, expectedErrMsg, err.Error(), "Expected error %q, got %q", test.err, err.Error())
+				require.EqualErrorf(t, err, expectedErrMsg, "Expected error %q, got %q", test.err, err.Error())
 				return
 			}
 			require.NoError(t, err)
@@ -317,6 +334,7 @@ func TestCheckConfigSyntax(t *testing.T) {
 }
 
 func TestAuthorizationConfig(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		file string
@@ -336,9 +354,10 @@ func TestAuthorizationConfig(t *testing.T) {
 
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			_, err := checkConfig(false, "testdata/"+test.file, false)
 			if test.err != "" {
-				require.Contains(t, err.Error(), test.err, "Expected error to contain %q, got %q", test.err, err.Error())
+				require.ErrorContains(t, err, test.err, "Expected error to contain %q, got %q", test.err, err.Error())
 				return
 			}
 			require.NoError(t, err)
@@ -350,6 +369,7 @@ func TestCheckMetricsExtended(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Skipping on windows")
 	}
+	t.Parallel()
 
 	f, err := os.Open("testdata/metrics-test.prom")
 	require.NoError(t, err)
@@ -386,6 +406,7 @@ func TestExitCodes(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
 	}
+	t.Parallel()
 
 	for _, c := range []struct {
 		file      string
@@ -410,8 +431,10 @@ func TestExitCodes(t *testing.T) {
 		},
 	} {
 		t.Run(c.file, func(t *testing.T) {
+			t.Parallel()
 			for _, lintFatal := range []bool{true, false} {
 				t.Run(strconv.FormatBool(lintFatal), func(t *testing.T) {
+					t.Parallel()
 					args := []string{"-test.main", "check", "config", "testdata/" + c.file}
 					if lintFatal {
 						args = append(args, "--lint-fatal")
@@ -442,6 +465,7 @@ func TestDocumentation(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.SkipNow()
 	}
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -535,17 +559,65 @@ func TestCheckRules(t *testing.T) {
 
 func TestCheckRulesWithRuleFiles(t *testing.T) {
 	t.Run("rules-good", func(t *testing.T) {
+		t.Parallel()
 		exitCode := CheckRules(newLintConfig(lintOptionDuplicateRules, false), "./testdata/rules.yml")
 		require.Equal(t, successExitCode, exitCode, "")
 	})
 
 	t.Run("rules-bad", func(t *testing.T) {
+		t.Parallel()
 		exitCode := CheckRules(newLintConfig(lintOptionDuplicateRules, false), "./testdata/rules-bad.yml")
 		require.Equal(t, failureExitCode, exitCode, "")
 	})
 
 	t.Run("rules-lint-fatal", func(t *testing.T) {
+		t.Parallel()
 		exitCode := CheckRules(newLintConfig(lintOptionDuplicateRules, true), "./testdata/prometheus-rules.lint.yml")
 		require.Equal(t, lintErrExitCode, exitCode, "")
 	})
+}
+
+func TestTSDBDumpCommand(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+	t.Parallel()
+
+	storage := promqltest.LoadedStorage(t, `
+	load 1m
+		metric{foo="bar"} 1 2 3
+	`)
+	t.Cleanup(func() { storage.Close() })
+
+	for _, c := range []struct {
+		name           string
+		subCmd         string
+		sandboxDirRoot string
+	}{
+		{
+			name:   "dump",
+			subCmd: "dump",
+		},
+		{
+			name:           "dump with sandbox dir root",
+			subCmd:         "dump",
+			sandboxDirRoot: t.TempDir(),
+		},
+		{
+			name:   "dump-openmetrics",
+			subCmd: "dump-openmetrics",
+		},
+		{
+			name:           "dump-openmetrics with sandbox dir root",
+			subCmd:         "dump-openmetrics",
+			sandboxDirRoot: t.TempDir(),
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			args := []string{"-test.main", "tsdb", c.subCmd, storage.Dir()}
+			cmd := exec.Command(promtoolPath, args...)
+			require.NoError(t, cmd.Run())
+		})
+	}
 }

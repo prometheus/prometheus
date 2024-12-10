@@ -16,14 +16,13 @@ package eureka
 import (
 	"context"
 	"errors"
-	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -126,10 +125,10 @@ type Discovery struct {
 }
 
 // NewDiscovery creates a new Eureka discovery for the given role.
-func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
 	m, ok := metrics.(*eurekaMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "eureka_sd")

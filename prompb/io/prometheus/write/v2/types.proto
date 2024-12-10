@@ -1,0 +1,255 @@
+// Copyright 2024 Prometheus Team
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// NOTE: This file is also available on https://buf.build/prometheus/prometheus/docs/main:io.prometheus.write.v2
+
+syntax = "proto3";
+package io.prometheus.write.v2;
+
+option go_package = "writev2";
+
+import "gogoproto/gogo.proto";
+
+// Request represents a request to write the given timeseries to a remote destination.
+// This message was introduced in the Remote Write 2.0 specification:
+// https://prometheus.io/docs/concepts/remote_write_spec_2_0/
+//
+// The canonical Content-Type request header value for this message is
+// "application/x-protobuf;proto=io.prometheus.write.v2.Request"
+//
+// NOTE: gogoproto options might change in future for this file, they
+// are not part of the spec proto (they only modify the generated Go code, not
+// the serialized message). See: https://github.com/prometheus/prometheus/issues/11908
+message Request {
+  // Since Request supersedes 1.0 spec's prometheus.WriteRequest, we reserve the top-down message
+  // for the deterministic interop between those two, see types_test.go for details.
+  // Generally it's not needed, because Receivers must use the Content-Type header, but we want to
+  // be sympathetic to adopters with mistaken implementations and have deterministic error (empty
+  // message if you use the wrong proto schema).
+  reserved 1 to 3;
+
+  // symbols contains a de-duplicated array of string elements used for various
+  // items in a Request message, like labels and metadata items. For the sender's convenience
+  // around empty values for optional fields like unit_ref, symbols array MUST start with
+  // empty string.
+  //
+  // To decode each of the symbolized strings, referenced, by "ref(s)" suffix, you
+  // need to lookup the actual string by index from symbols array. The order of
+  // strings is up to the sender. The receiver should not assume any particular encoding.
+  repeated string symbols = 4;
+  // timeseries represents an array of distinct series with 0 or more samples.
+  repeated TimeSeries timeseries = 5 [(gogoproto.nullable) = false];
+}
+
+// TimeSeries represents a single series.
+message TimeSeries {
+  // labels_refs is a list of label name-value pair references, encoded
+  // as indices to the Request.symbols array. This list's length is always
+  // a multiple of two, and the underlying labels should be sorted lexicographically.
+  //
+  // Note that there might be multiple TimeSeries objects in the same
+  // Requests with the same labels e.g. for different exemplars, metadata
+  // or created timestamp.
+  repeated uint32 labels_refs = 1;
+
+  // Timeseries messages can either specify samples or (native) histogram samples
+  // (histogram field), but not both. For a typical sender (real-time metric
+  // streaming), in healthy cases, there will be only one sample or histogram.
+  //
+  // Samples and histograms are sorted by timestamp (older first).
+  repeated Sample samples = 2 [(gogoproto.nullable) = false];
+  repeated Histogram histograms = 3 [(gogoproto.nullable) = false];
+
+  // exemplars represents an optional set of exemplars attached to this series' samples.
+  repeated Exemplar exemplars = 4 [(gogoproto.nullable) = false];
+
+  // metadata represents the metadata associated with the given series' samples.
+  Metadata metadata = 5 [(gogoproto.nullable) = false];
+
+  // created_timestamp represents an optional created timestamp associated with
+  // this series' samples in ms format, typically for counter or histogram type
+  // metrics. Created timestamp represents the time when the counter started
+  // counting (sometimes referred to as start timestamp), which can increase
+  // the accuracy of query results.
+  //
+  // Note that some receivers might require this and in return fail to
+  // ingest such samples within the Request.
+  //
+  // For Go, see github.com/prometheus/prometheus/model/timestamp/timestamp.go
+  // for conversion from/to time.Time to Prometheus timestamp.
+  //
+  // Note that the "optional" keyword is omitted due to
+  // https://cloud.google.com/apis/design/design_patterns.md#optional_primitive_fields
+  // Zero value means value not set. If you need to use exactly zero value for
+  // the timestamp, use 1 millisecond before or after.
+  int64 created_timestamp = 6;
+}
+
+// Exemplar is an additional information attached to some series' samples.
+// It is typically used to attach an example trace or request ID associated with
+// the metric changes.
+message Exemplar {
+  // labels_refs is an optional list of label name-value pair references, encoded
+  // as indices to the Request.symbols array. This list's len is always
+  // a multiple of 2, and the underlying labels should be sorted lexicographically.
+  // If the exemplar references a trace it should use the `trace_id` label name, as a best practice.
+  repeated uint32 labels_refs = 1;
+  // value represents an exact example value. This can be useful when the exemplar
+  // is attached to a histogram, which only gives an estimated value through buckets.
+  double value = 2;
+  // timestamp represents the timestamp of the exemplar in ms.
+  //
+  // For Go, see github.com/prometheus/prometheus/model/timestamp/timestamp.go
+  // for conversion from/to time.Time to Prometheus timestamp.
+  int64 timestamp = 3;
+}
+
+// Sample represents series sample.
+message Sample {
+  // value of the sample.
+  double value = 1;
+  // timestamp represents timestamp of the sample in ms.
+  //
+  // For Go, see github.com/prometheus/prometheus/model/timestamp/timestamp.go
+  // for conversion from/to time.Time to Prometheus timestamp.
+  int64 timestamp = 2;
+}
+
+// Metadata represents the metadata associated with the given series' samples.
+message Metadata {
+  enum MetricType {
+    METRIC_TYPE_UNSPECIFIED    = 0;
+    METRIC_TYPE_COUNTER        = 1;
+    METRIC_TYPE_GAUGE          = 2;
+    METRIC_TYPE_HISTOGRAM      = 3;
+    METRIC_TYPE_GAUGEHISTOGRAM = 4;
+    METRIC_TYPE_SUMMARY        = 5;
+    METRIC_TYPE_INFO           = 6;
+    METRIC_TYPE_STATESET       = 7;
+  }
+  MetricType type = 1;
+  // help_ref is a reference to the Request.symbols array representing help
+  // text for the metric. Help is optional, reference should point to an empty string in
+  // such a case.
+  uint32 help_ref = 3;
+  // unit_ref is a reference to the Request.symbols array representing a unit
+  // for the metric. Unit is optional, reference should point to an empty string in
+  // such a case.
+  uint32 unit_ref = 4;
+}
+
+// A native histogram, also known as a sparse histogram.
+// Original design doc:
+// https://docs.google.com/document/d/1cLNv3aufPZb3fNfaJgdaRBZsInZKKIHo9E6HinJVbpM/edit
+// The appendix of this design doc also explains the concept of float
+// histograms. This Histogram message can represent both, the usual
+// integer histogram as well as a float histogram.
+message Histogram {
+  enum ResetHint {
+    RESET_HINT_UNSPECIFIED = 0; // Need to test for a counter reset explicitly.
+    RESET_HINT_YES     = 1; // This is the 1st histogram after a counter reset.
+    RESET_HINT_NO      = 2; // There was no counter reset between this and the previous Histogram.
+    RESET_HINT_GAUGE   = 3; // This is a gauge histogram where counter resets don't happen.
+  }
+
+  oneof count { // Count of observations in the histogram.
+    uint64 count_int   = 1;
+    double count_float = 2;
+  }
+  double sum = 3; // Sum of observations in the histogram.
+
+  // The schema defines the bucket schema. Currently, valid numbers
+  // are -53 and numbers in range of -4 <= n <= 8. More valid numbers might be
+  // added in future for new bucketing layouts.
+  //
+  // The schema equal to -53 means custom buckets. See
+  // custom_values field description for more details.
+  //
+  // Values between -4 and 8 represent base-2 bucket schema, where 1
+  // is a bucket boundary in each case, and then each power of two is
+  // divided into 2^n (n is schema value) logarithmic buckets. Or in other words,
+  // each bucket boundary is the previous boundary times 2^(2^-n).
+  sint32 schema             = 4;
+  double zero_threshold     = 5; // Breadth of the zero bucket.
+  oneof zero_count { // Count in zero bucket.
+    uint64 zero_count_int     = 6;
+    double zero_count_float   = 7;
+  }
+
+  // Negative Buckets.
+  repeated BucketSpan negative_spans =  8 [(gogoproto.nullable) = false];
+  // Use either "negative_deltas" or "negative_counts", the former for
+  // regular histograms with integer counts, the latter for
+  // float histograms.
+  repeated sint64 negative_deltas    =  9; // Count delta of each bucket compared to previous one (or to zero for 1st bucket).
+  repeated double negative_counts    = 10; // Absolute count of each bucket.
+
+  // Positive Buckets.
+  //
+  // In case of custom buckets (-53 schema value) the positive buckets are interpreted as follows:
+  // * The span offset+length points to an the index of the custom_values array
+  // or +Inf if pointing to the len of the array.
+  // * The counts and deltas have the same meaning as for exponential histograms.
+  repeated BucketSpan positive_spans = 11 [(gogoproto.nullable) = false];
+  // Use either "positive_deltas" or "positive_counts", the former for
+  // regular histograms with integer counts, the latter for
+  // float histograms.
+  repeated sint64 positive_deltas    = 12; // Count delta of each bucket compared to previous one (or to zero for 1st bucket).
+  repeated double positive_counts    = 13; // Absolute count of each bucket.
+
+  ResetHint reset_hint               = 14;
+  // timestamp represents timestamp of the sample in ms.
+  //
+  // For Go, see github.com/prometheus/prometheus/model/timestamp/timestamp.go
+  // for conversion from/to time.Time to Prometheus timestamp.
+  int64 timestamp = 15;
+
+  // custom_values is an additional field used by non-exponential bucketing layouts.
+  //
+  // For custom buckets (-53 schema value) custom_values specify monotonically
+  // increasing upper inclusive boundaries for the bucket counts with arbitrary
+  // widths for this histogram. In other words, custom_values represents custom,
+  // explicit bucketing that could have been converted from the classic histograms.
+  //
+  // Those bounds are then referenced by spans in positive_spans with corresponding positive
+  // counts of deltas (refer to positive_spans for more details). This way we can
+  // have encode sparse histograms with custom bucketing (many buckets are often
+  // not used).
+  //
+  // Note that for custom bounds, even negative observations are placed in the positive
+  // counts to simplify the implementation and avoid ambiguity of where to place
+  // an underflow bucket, e.g. (-2, 1]. Therefore negative buckets and
+  // the zero bucket are unused, if the schema indicates custom bucketing.
+  //
+  // For each upper boundary the previous boundary represent the lower exclusive
+  // boundary for that bucket. The first element is the upper inclusive boundary
+  // for the first bucket, which implicitly has a lower inclusive bound of -Inf.
+  // This is similar to "le" label semantics on classic histograms. You may add a
+  // bucket with an upper bound of 0 to make sure that you really have no negative
+  // observations, but in practice, native histogram rendering will show both with
+  // or without first upper boundary 0 and no negative counts as the same case.
+  //
+  // The last element is not only the upper inclusive bound of the last regular
+  // bucket, but implicitly the lower exclusive bound of the +Inf bucket.
+  repeated double custom_values = 16;
+}
+
+// A BucketSpan defines a number of consecutive buckets with their
+// offset. Logically, it would be more straightforward to include the
+// bucket counts in the Span. However, the protobuf representation is
+// more compact in the way the data is structured here (with all the
+// buckets in a single array separate from the Spans).
+message BucketSpan {
+  sint32 offset = 1; // Gap to previous span, or starting point for 1st span (which can be negative).
+  uint32 length = 2; // Length of consecutive buckets.
+}

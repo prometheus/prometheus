@@ -14,6 +14,8 @@
 package textparse
 
 import (
+	"errors"
+	"fmt"
 	"mime"
 
 	"github.com/prometheus/common/model"
@@ -23,8 +25,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-// Parser parses samples from a byte slice of samples in the official
-// Prometheus and OpenMetrics text exposition formats.
+// Parser parses samples from a byte slice of samples in different exposition formats.
 type Parser interface {
 	// Series returns the bytes of a series with a simple float64 as a
 	// value, the timestamp if set, and the value of the current sample.
@@ -58,6 +59,8 @@ type Parser interface {
 
 	// Metric writes the labels of the current sample into the passed labels.
 	// It returns the string from which the metric was parsed.
+	// The values of the "le" labels of classic histograms and "quantile" labels
+	// of summaries should follow the OpenMetrics formatting rules.
 	Metric(l *labels.Labels) string
 
 	// Exemplar writes the exemplar of the current sample into the passed
@@ -69,6 +72,8 @@ type Parser interface {
 	// CreatedTimestamp returns the created timestamp (in milliseconds) for the
 	// current sample. It returns nil if it is unknown e.g. if it wasn't set,
 	// if the scrape protocol or metric type does not support created timestamps.
+	// Assume the CreatedTimestamp returned pointer is only valid until
+	// the Next iteration.
 	CreatedTimestamp() *int64
 
 	// Next advances the parser to the next sample.
@@ -76,26 +81,65 @@ type Parser interface {
 	Next() (Entry, error)
 }
 
-// New returns a new parser of the byte slice.
-//
-// This function always returns a valid parser, but might additionally
-// return an error if the content type cannot be parsed.
-func New(b []byte, contentType string, parseClassicHistograms bool, st *labels.SymbolTable) (Parser, error) {
+// extractMediaType returns the mediaType of a required parser. It tries first to
+// extract a valid and supported mediaType from contentType. If that fails,
+// the provided fallbackType (possibly an empty string) is returned, together with
+// an error. fallbackType is used as-is without further validation.
+func extractMediaType(contentType, fallbackType string) (string, error) {
 	if contentType == "" {
-		return NewPromParser(b, st), nil
+		if fallbackType == "" {
+			return "", errors.New("non-compliant scrape target sending blank Content-Type and no fallback_scrape_protocol specified for target")
+		}
+		return fallbackType, fmt.Errorf("non-compliant scrape target sending blank Content-Type, using fallback_scrape_protocol %q", fallbackType)
 	}
 
+	// We have a contentType, parse it.
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err != nil {
-		return NewPromParser(b, st), err
+		if fallbackType == "" {
+			retErr := fmt.Errorf("cannot parse Content-Type %q and no fallback_scrape_protocol for target", contentType)
+			return "", errors.Join(retErr, err)
+		}
+		retErr := fmt.Errorf("could not parse received Content-Type %q, using fallback_scrape_protocol %q", contentType, fallbackType)
+		return fallbackType, errors.Join(retErr, err)
 	}
+
+	// We have a valid media type, either we recognise it and can use it
+	// or we have to error.
+	switch mediaType {
+	case "application/openmetrics-text", "application/vnd.google.protobuf", "text/plain":
+		return mediaType, nil
+	}
+	// We're here because we have no recognised mediaType.
+	if fallbackType == "" {
+		return "", fmt.Errorf("received unsupported Content-Type %q and no fallback_scrape_protocol specified for target", contentType)
+	}
+	return fallbackType, fmt.Errorf("received unsupported Content-Type %q, using fallback_scrape_protocol %q", contentType, fallbackType)
+}
+
+// New returns a new parser of the byte slice.
+//
+// This function no longer guarantees to return a valid parser.
+//
+// It only returns a valid parser if the supplied contentType and fallbackType allow.
+// An error may also be returned if fallbackType had to be used or there was some
+// other error parsing the supplied Content-Type.
+// If the returned parser is nil then the scrape must fail.
+func New(b []byte, contentType, fallbackType string, parseClassicHistograms, skipOMCTSeries bool, st *labels.SymbolTable) (Parser, error) {
+	mediaType, err := extractMediaType(contentType, fallbackType)
+	// err may be nil or something we want to warn about.
+
 	switch mediaType {
 	case "application/openmetrics-text":
-		return NewOpenMetricsParser(b, st), nil
+		return NewOpenMetricsParser(b, st, func(o *openMetricsParserOptions) {
+			o.SkipCTSeries = skipOMCTSeries
+		}), err
 	case "application/vnd.google.protobuf":
-		return NewProtobufParser(b, parseClassicHistograms, st), nil
+		return NewProtobufParser(b, parseClassicHistograms, st), err
+	case "text/plain":
+		return NewPromParser(b, st), err
 	default:
-		return NewPromParser(b, st), nil
+		return nil, err
 	}
 }
 
@@ -106,8 +150,8 @@ const (
 	EntryInvalid   Entry = -1
 	EntryType      Entry = 0
 	EntryHelp      Entry = 1
-	EntrySeries    Entry = 2 // A series with a simple float64 as value.
+	EntrySeries    Entry = 2 // EntrySeries marks a series with a simple float64 as value.
 	EntryComment   Entry = 3
 	EntryUnit      Entry = 4
-	EntryHistogram Entry = 5 // A series with a native histogram as a value.
+	EntryHistogram Entry = 5 // EntryHistogram marks a series with a native histogram as a value.
 )

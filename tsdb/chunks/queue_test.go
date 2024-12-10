@@ -69,16 +69,16 @@ func TestQueuePushPopSingleGoroutine(t *testing.T) {
 	const maxSize = 500
 	const maxIters = 50
 
-	for max := 1; max < maxSize; max++ {
-		queue := newWriteJobQueue(max, 1+(r.Int()%max))
+	for maxCount := 1; maxCount < maxSize; maxCount++ {
+		queue := newWriteJobQueue(maxCount, 1+(r.Int()%maxCount))
 
 		elements := 0 // total elements in the queue
 		lastWriteID := 0
 		lastReadID := 0
 
 		for iter := 0; iter < maxIters; iter++ {
-			if elements < max {
-				toWrite := r.Int() % (max - elements)
+			if elements < maxCount {
+				toWrite := r.Int() % (maxCount - elements)
 				if toWrite == 0 {
 					toWrite = 1
 				}

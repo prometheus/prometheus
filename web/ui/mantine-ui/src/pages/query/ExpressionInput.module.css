@@ -1,0 +1,13 @@
+.input {
+  /* border: calc(0.0625rem * var(--mantine-scale)) solid var(--input-bd); */
+  border-radius: var(--mantine-radius-default);
+  flex: auto;
+  /* padding: 4px 0 0 8px; */
+  /* font-size: 15px; */
+  /* font-family: "DejaVu Sans Mono"; */
+
+  &:focus-within {
+    outline: rem(1.3px) solid var(--mantine-color-blue-filled);
+    border-color: transparent;
+  }
+}

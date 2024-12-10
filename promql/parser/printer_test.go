@@ -16,6 +16,7 @@ package parser
 import (
 	"testing"
 
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -43,6 +44,14 @@ func TestExprString(t *testing.T) {
 		{
 			in:  `sum without(instance) (task:errors:rate10s{job="s"})`,
 			out: `sum without (instance) (task:errors:rate10s{job="s"})`,
+		},
+		{
+			in:  `sum by("foo.bar") (task:errors:rate10s{job="s"})`,
+			out: `sum by ("foo.bar") (task:errors:rate10s{job="s"})`,
+		},
+		{
+			in:  `sum without("foo.bar") (task:errors:rate10s{job="s"})`,
+			out: `sum without ("foo.bar") (task:errors:rate10s{job="s"})`,
 		},
 		{
 			in: `topk(5, task:errors:rate10s{job="s"})`,
@@ -156,6 +165,8 @@ func TestExprString(t *testing.T) {
 			out: `{""="0"}`,
 		},
 	}
+
+	model.NameValidationScheme = model.UTF8Validation
 
 	for _, test := range inputs {
 		expr, err := ParseExpr(test.in)

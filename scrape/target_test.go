@@ -348,10 +348,84 @@ func TestTargetsFromGroup(t *testing.T) {
 		ScrapeInterval: model.Duration(1 * time.Minute),
 	}
 	lb := labels.NewBuilder(labels.EmptyLabels())
-	targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: []model.LabelSet{{}, {model.AddressLabel: "localhost:9090"}}}, &cfg, false, nil, lb)
+	targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: []model.LabelSet{{}, {model.AddressLabel: "localhost:9090"}}}, &cfg, nil, lb)
 	require.Len(t, targets, 1)
 	require.Len(t, failures, 1)
 	require.EqualError(t, failures[0], expectedError)
+}
+
+// TestTargetsFromGroupWithLabelKeepDrop aims to demonstrate and reinforce the current behavior: relabeling's "labelkeep" and "labeldrop"
+// are applied to all labels of a target, including internal ones (labels starting with "__" such as "__address__").
+// This will be helpful for cases like https://github.com/prometheus/prometheus/issues/12355.
+func TestTargetsFromGroupWithLabelKeepDrop(t *testing.T) {
+	tests := []struct {
+		name             string
+		cfgText          string
+		targets          []model.LabelSet
+		shouldDropTarget bool
+	}{
+		{
+			name: "no relabeling",
+			cfgText: `
+global:
+  metric_name_validation_scheme: legacy
+scrape_configs:
+  - job_name: job1
+    static_configs:
+      - targets: ["localhost:9090"]
+`,
+			targets: []model.LabelSet{{model.AddressLabel: "localhost:9090"}},
+		},
+		{
+			name: "labelkeep",
+			cfgText: `
+global:
+  metric_name_validation_scheme: legacy
+scrape_configs:
+  - job_name: job1
+    static_configs:
+      - targets: ["localhost:9090"]
+    relabel_configs:
+      - regex: 'foo'
+        action: labelkeep
+`,
+			targets:          []model.LabelSet{{model.AddressLabel: "localhost:9090"}},
+			shouldDropTarget: true,
+		},
+		{
+			name: "labeldrop",
+			cfgText: `
+global:
+  metric_name_validation_scheme: legacy
+scrape_configs:
+  - job_name: job1
+    static_configs:
+      - targets: ["localhost:9090"]
+    relabel_configs:
+      - regex: '__address__'
+        action: labeldrop
+`,
+			targets:          []model.LabelSet{{model.AddressLabel: "localhost:9090"}},
+			shouldDropTarget: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := loadConfiguration(t, tt.cfgText)
+			lb := labels.NewBuilder(labels.EmptyLabels())
+			targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: tt.targets}, config.ScrapeConfigs[0], nil, lb)
+
+			if tt.shouldDropTarget {
+				require.Len(t, failures, 1)
+				require.EqualError(t, failures[0], "instance 0 in group : no address")
+				require.Empty(t, targets)
+			} else {
+				require.Empty(t, failures)
+				require.Len(t, targets, 1)
+			}
+		})
+	}
 }
 
 func BenchmarkTargetsFromGroup(b *testing.B) {
@@ -435,7 +509,7 @@ scrape_configs:
 			lb := labels.NewBuilder(labels.EmptyLabels())
 			group := &targetgroup.Group{Targets: targets}
 			for i := 0; i < b.N; i++ {
-				tgets, _ = TargetsFromGroup(group, config.ScrapeConfigs[0], false, tgets, lb)
+				tgets, _ = TargetsFromGroup(group, config.ScrapeConfigs[0], tgets, lb)
 				if len(targets) != nTargets {
 					b.Fatalf("Expected %d targets, got %d", nTargets, len(targets))
 				}

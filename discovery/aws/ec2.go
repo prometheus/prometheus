@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"strconv"
 	"strings"
@@ -29,11 +30,11 @@ import (
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
+	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
@@ -146,9 +147,9 @@ func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // the Discoverer interface.
 type EC2Discovery struct {
 	*refresh.Discovery
-	logger log.Logger
+	logger *slog.Logger
 	cfg    *EC2SDConfig
-	ec2    *ec2.EC2
+	ec2    ec2iface.EC2API
 
 	// azToAZID maps this account's availability zones to their underlying AZ
 	// ID, e.g. eu-west-2a -> euw2-az2. Refreshes are performed sequentially, so
@@ -157,14 +158,14 @@ type EC2Discovery struct {
 }
 
 // NewEC2Discovery returns a new EC2Discovery which periodically refreshes its targets.
-func NewEC2Discovery(conf *EC2SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*EC2Discovery, error) {
+func NewEC2Discovery(conf *EC2SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*EC2Discovery, error) {
 	m, ok := metrics.(*ec2Metrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	if logger == nil {
-		logger = log.NewNopLogger()
+		logger = promslog.NewNopLogger()
 	}
 	d := &EC2Discovery{
 		logger: logger,
@@ -182,7 +183,7 @@ func NewEC2Discovery(conf *EC2SDConfig, logger log.Logger, metrics discovery.Dis
 	return d, nil
 }
 
-func (d *EC2Discovery) ec2Client(context.Context) (*ec2.EC2, error) {
+func (d *EC2Discovery) ec2Client(context.Context) (ec2iface.EC2API, error) {
 	if d.ec2 != nil {
 		return d.ec2, nil
 	}
@@ -254,8 +255,8 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 	// Prometheus requires a reload if AWS adds a new AZ to the region.
 	if d.azToAZID == nil {
 		if err := d.refreshAZIDs(ctx); err != nil {
-			level.Debug(d.logger).Log(
-				"msg", "Unable to describe availability zones",
+			d.logger.Debug(
+				"Unable to describe availability zones",
 				"err", err)
 		}
 	}
@@ -296,8 +297,8 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 				labels[ec2LabelAZ] = model.LabelValue(*inst.Placement.AvailabilityZone)
 				azID, ok := d.azToAZID[*inst.Placement.AvailabilityZone]
 				if !ok && d.azToAZID != nil {
-					level.Debug(d.logger).Log(
-						"msg", "Availability zone ID not found",
+					d.logger.Debug(
+						"Availability zone ID not found",
 						"az", *inst.Placement.AvailabilityZone)
 				}
 				labels[ec2LabelAZID] = model.LabelValue(azID)

@@ -19,8 +19,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -36,16 +36,19 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-var testEngine = promql.NewEngine(promql.EngineOpts{
-	Logger:                   nil,
-	Reg:                      nil,
-	MaxSamples:               10000,
-	Timeout:                  100 * time.Second,
-	NoStepSubqueryIntervalFn: func(int64) int64 { return 60 * 1000 },
-	EnableAtModifier:         true,
-	EnableNegativeOffset:     true,
-	EnablePerStepStats:       true,
-})
+func testEngine(tb testing.TB) *promql.Engine {
+	tb.Helper()
+	return promqltest.NewTestEngineWithOpts(tb, promql.EngineOpts{
+		Logger:                   nil,
+		Reg:                      nil,
+		MaxSamples:               10000,
+		Timeout:                  100 * time.Second,
+		NoStepSubqueryIntervalFn: func(int64) int64 { return 60 * 1000 },
+		EnableAtModifier:         true,
+		EnableNegativeOffset:     true,
+		EnablePerStepStats:       true,
+	})
+}
 
 func TestAlertingRuleState(t *testing.T) {
 	tests := []struct {
@@ -225,12 +228,14 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 		},
 	}
 
+	ng := testEngine(t)
+
 	baseTime := time.Unix(0, 0)
 	for i, result := range results {
 		t.Logf("case %d", i)
 		evalTime := baseTime.Add(time.Duration(i) * time.Minute)
 		result[0].T = timestamp.FromTime(evalTime)
-		res, err := rule.Eval(context.TODO(), 0, evalTime, EngineQueryFunc(testEngine, storage), nil, 0)
+		res, err := rule.Eval(context.TODO(), 0, evalTime, EngineQueryFunc(ng, storage), nil, 0)
 		require.NoError(t, err)
 
 		var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
@@ -247,7 +252,7 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 		testutil.RequireEqual(t, result, filteredRes)
 	}
 	evalTime := baseTime.Add(time.Duration(len(results)) * time.Minute)
-	res, err := rule.Eval(context.TODO(), 0, evalTime, EngineQueryFunc(testEngine, storage), nil, 0)
+	res, err := rule.Eval(context.TODO(), 0, evalTime, EngineQueryFunc(ng, storage), nil, 0)
 	require.NoError(t, err)
 	require.Empty(t, res)
 }
@@ -271,7 +276,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	ruleWithExternalLabels := NewAlertingRule(
 		"ExternalLabelExists",
@@ -282,7 +287,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.FromStrings("foo", "bar", "dings", "bums"),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	result := promql.Vector{
 		promql.Sample{
@@ -309,13 +314,15 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 		},
 	}
 
+	ng := testEngine(t)
+
 	evalTime := time.Unix(0, 0)
 	result[0].T = timestamp.FromTime(evalTime)
 	result[1].T = timestamp.FromTime(evalTime)
 
 	var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
 	res, err := ruleWithoutExternalLabels.Eval(
-		context.TODO(), 0, evalTime, EngineQueryFunc(testEngine, storage), nil, 0,
+		context.TODO(), 0, evalTime, EngineQueryFunc(ng, storage), nil, 0,
 	)
 	require.NoError(t, err)
 	for _, smpl := range res {
@@ -329,7 +336,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 	}
 
 	res, err = ruleWithExternalLabels.Eval(
-		context.TODO(), 0, evalTime, EngineQueryFunc(testEngine, storage), nil, 0,
+		context.TODO(), 0, evalTime, EngineQueryFunc(ng, storage), nil, 0,
 	)
 	require.NoError(t, err)
 	for _, smpl := range res {
@@ -364,7 +371,7 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	ruleWithExternalURL := NewAlertingRule(
 		"ExternalURLExists",
@@ -375,7 +382,7 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"http://localhost:1234",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	result := promql.Vector{
 		promql.Sample{
@@ -406,9 +413,11 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 	result[0].T = timestamp.FromTime(evalTime)
 	result[1].T = timestamp.FromTime(evalTime)
 
+	ng := testEngine(t)
+
 	var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
 	res, err := ruleWithoutExternalURL.Eval(
-		context.TODO(), 0, evalTime, EngineQueryFunc(testEngine, storage), nil, 0,
+		context.TODO(), 0, evalTime, EngineQueryFunc(ng, storage), nil, 0,
 	)
 	require.NoError(t, err)
 	for _, smpl := range res {
@@ -422,7 +431,7 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 	}
 
 	res, err = ruleWithExternalURL.Eval(
-		context.TODO(), 0, evalTime, EngineQueryFunc(testEngine, storage), nil, 0,
+		context.TODO(), 0, evalTime, EngineQueryFunc(ng, storage), nil, 0,
 	)
 	require.NoError(t, err)
 	for _, smpl := range res {
@@ -457,7 +466,7 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	result := promql.Vector{
 		promql.Sample{
@@ -475,9 +484,11 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 	evalTime := time.Unix(0, 0)
 	result[0].T = timestamp.FromTime(evalTime)
 
+	ng := testEngine(t)
+
 	var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
 	res, err := rule.Eval(
-		context.TODO(), 0, evalTime, EngineQueryFunc(testEngine, storage), nil, 0,
+		context.TODO(), 0, evalTime, EngineQueryFunc(ng, storage), nil, 0,
 	)
 	require.NoError(t, err)
 	for _, smpl := range res {
@@ -516,9 +527,11 @@ instance: {{ $v.Labels.instance }}, value: {{ printf "%.0f" $v.Value }};
 `),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	evalTime := time.Unix(0, 0)
+
+	ng := testEngine(t)
 
 	startQueryCh := make(chan struct{})
 	getDoneCh := make(chan struct{})
@@ -533,7 +546,7 @@ instance: {{ $v.Labels.instance }}, value: {{ printf "%.0f" $v.Value }};
 				require.Fail(t, "unexpected blocking when template expanding.")
 			}
 		}
-		return EngineQueryFunc(testEngine, storage)(ctx, q, ts)
+		return EngineQueryFunc(ng, storage)(ctx, q, ts)
 	}
 	go func() {
 		<-startQueryCh
@@ -578,7 +591,7 @@ func TestAlertingRuleDuplicate(t *testing.T) {
 		Timeout:    10 * time.Second,
 	}
 
-	engine := promql.NewEngine(opts)
+	engine := promqltest.NewTestEngineWithOpts(t, opts)
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 
@@ -594,7 +607,7 @@ func TestAlertingRuleDuplicate(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	_, err := rule.Eval(ctx, 0, now, EngineQueryFunc(engine, storage), nil, 0)
 	require.Error(t, err)
@@ -638,17 +651,17 @@ func TestAlertingRuleLimit(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 
 	evalTime := time.Unix(0, 0)
-
+	ng := testEngine(t)
 	for _, test := range tests {
-		switch _, err := rule.Eval(context.TODO(), 0, evalTime, EngineQueryFunc(testEngine, storage), nil, test.limit); {
+		switch _, err := rule.Eval(context.TODO(), 0, evalTime, EngineQueryFunc(ng, storage), nil, test.limit); {
 		case err != nil:
 			require.EqualError(t, err, test.err)
 		case test.err != "":
-			t.Errorf("Expected errror %s, got none", test.err)
+			t.Errorf("Expected error %s, got none", test.err)
 		}
 	}
 }
@@ -766,7 +779,7 @@ func TestSendAlertsDontAffectActiveAlerts(t *testing.T) {
 			},
 		},
 	}
-	nm := notifier.NewManager(&opts, log.NewNopLogger())
+	nm := notifier.NewManager(&opts, promslog.NewNopLogger())
 
 	f := SendAlerts(nm, "")
 	notifyFunc := func(ctx context.Context, expr string, alerts ...*Alert) {
@@ -866,12 +879,13 @@ func TestKeepFiringFor(t *testing.T) {
 		},
 	}
 
+	ng := testEngine(t)
 	baseTime := time.Unix(0, 0)
 	for i, result := range results {
 		t.Logf("case %d", i)
 		evalTime := baseTime.Add(time.Duration(i) * time.Minute)
 		result[0].T = timestamp.FromTime(evalTime)
-		res, err := rule.Eval(context.TODO(), 0, evalTime, EngineQueryFunc(testEngine, storage), nil, 0)
+		res, err := rule.Eval(context.TODO(), 0, evalTime, EngineQueryFunc(ng, storage), nil, 0)
 		require.NoError(t, err)
 
 		var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
@@ -888,7 +902,7 @@ func TestKeepFiringFor(t *testing.T) {
 		testutil.RequireEqual(t, result, filteredRes)
 	}
 	evalTime := baseTime.Add(time.Duration(len(results)) * time.Minute)
-	res, err := rule.Eval(context.TODO(), 0, evalTime, EngineQueryFunc(testEngine, storage), nil, 0)
+	res, err := rule.Eval(context.TODO(), 0, evalTime, EngineQueryFunc(ng, storage), nil, 0)
 	require.NoError(t, err)
 	require.Empty(t, res)
 }
@@ -923,9 +937,10 @@ func TestPendingAndKeepFiringFor(t *testing.T) {
 		F: 1,
 	}
 
+	ng := testEngine(t)
 	baseTime := time.Unix(0, 0)
 	result.T = timestamp.FromTime(baseTime)
-	res, err := rule.Eval(context.TODO(), 0, baseTime, EngineQueryFunc(testEngine, storage), nil, 0)
+	res, err := rule.Eval(context.TODO(), 0, baseTime, EngineQueryFunc(ng, storage), nil, 0)
 	require.NoError(t, err)
 
 	require.Len(t, res, 2)
@@ -940,7 +955,7 @@ func TestPendingAndKeepFiringFor(t *testing.T) {
 	}
 
 	evalTime := baseTime.Add(time.Minute)
-	res, err = rule.Eval(context.TODO(), 0, evalTime, EngineQueryFunc(testEngine, storage), nil, 0)
+	res, err = rule.Eval(context.TODO(), 0, evalTime, EngineQueryFunc(ng, storage), nil, 0)
 	require.NoError(t, err)
 	require.Empty(t, res)
 }
@@ -971,7 +986,7 @@ func TestAlertingEvalWithOrigin(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 
 	_, err = rule.Eval(ctx, 0, now, func(ctx context.Context, qs string, _ time.Time) (promql.Vector, error) {
@@ -993,7 +1008,7 @@ func TestAlertingRule_SetNoDependentRules(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	require.False(t, rule.NoDependentRules())
 
@@ -1014,7 +1029,7 @@ func TestAlertingRule_SetNoDependencyRules(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	require.False(t, rule.NoDependencyRules())
 

@@ -30,15 +30,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/rules"
 )
+
+func init() {
+	// This can be removed when the default validation scheme in common is updated.
+	model.NameValidationScheme = model.UTF8Validation
+}
 
 const startupTime = 10 * time.Second
 
@@ -118,6 +125,7 @@ func TestFailedStartupExitCode(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
 	}
+	t.Parallel()
 
 	fakeInputFile := "fake-input-file"
 	expectedExitStatus := 2
@@ -204,83 +212,125 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
 	}
+	t.Parallel()
 
-	for size, expectedExitStatus := range map[string]int{"9MB": 1, "257MB": 1, "10": 2, "1GB": 1, "12MB": 0} {
-		prom := exec.Command(promPath, "-test.main", "--storage.tsdb.wal-segment-size="+size, "--web.listen-address=0.0.0.0:0", "--config.file="+promConfig, "--storage.tsdb.path="+filepath.Join(t.TempDir(), "data"))
+	for _, tc := range []struct {
+		size     string
+		exitCode int
+	}{
+		{
+			size:     "9MB",
+			exitCode: 1,
+		},
+		{
+			size:     "257MB",
+			exitCode: 1,
+		},
+		{
+			size:     "10",
+			exitCode: 2,
+		},
+		{
+			size:     "1GB",
+			exitCode: 1,
+		},
+		{
+			size:     "12MB",
+			exitCode: 0,
+		},
+	} {
+		t.Run(tc.size, func(t *testing.T) {
+			t.Parallel()
+			prom := exec.Command(promPath, "-test.main", "--storage.tsdb.wal-segment-size="+tc.size, "--web.listen-address=0.0.0.0:0", "--config.file="+promConfig, "--storage.tsdb.path="+filepath.Join(t.TempDir(), "data"))
 
-		// Log stderr in case of failure.
-		stderr, err := prom.StderrPipe()
-		require.NoError(t, err)
-		go func() {
-			slurp, _ := io.ReadAll(stderr)
-			t.Log(string(slurp))
-		}()
+			// Log stderr in case of failure.
+			stderr, err := prom.StderrPipe()
+			require.NoError(t, err)
+			go func() {
+				slurp, _ := io.ReadAll(stderr)
+				t.Log(string(slurp))
+			}()
 
-		err = prom.Start()
-		require.NoError(t, err)
+			err = prom.Start()
+			require.NoError(t, err)
 
-		if expectedExitStatus == 0 {
-			done := make(chan error, 1)
-			go func() { done <- prom.Wait() }()
-			select {
-			case err := <-done:
-				require.Fail(t, "prometheus should be still running: %v", err)
-			case <-time.After(startupTime):
-				prom.Process.Kill()
-				<-done
+			if tc.exitCode == 0 {
+				done := make(chan error, 1)
+				go func() { done <- prom.Wait() }()
+				select {
+				case err := <-done:
+					require.Fail(t, "prometheus should be still running: %v", err)
+				case <-time.After(startupTime):
+					prom.Process.Kill()
+					<-done
+				}
+				return
 			}
-			continue
-		}
 
-		err = prom.Wait()
-		require.Error(t, err)
-		var exitError *exec.ExitError
-		require.ErrorAs(t, err, &exitError)
-		status := exitError.Sys().(syscall.WaitStatus)
-		require.Equal(t, expectedExitStatus, status.ExitStatus())
+			err = prom.Wait()
+			require.Error(t, err)
+			var exitError *exec.ExitError
+			require.ErrorAs(t, err, &exitError)
+			status := exitError.Sys().(syscall.WaitStatus)
+			require.Equal(t, tc.exitCode, status.ExitStatus())
+		})
 	}
 }
 
 func TestMaxBlockChunkSegmentSizeBounds(t *testing.T) {
-	t.Parallel()
-
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
 	}
+	t.Parallel()
 
-	for size, expectedExitStatus := range map[string]int{"512KB": 1, "1MB": 0} {
-		prom := exec.Command(promPath, "-test.main", "--storage.tsdb.max-block-chunk-segment-size="+size, "--web.listen-address=0.0.0.0:0", "--config.file="+promConfig, "--storage.tsdb.path="+filepath.Join(t.TempDir(), "data"))
+	for _, tc := range []struct {
+		size     string
+		exitCode int
+	}{
+		{
+			size:     "512KB",
+			exitCode: 1,
+		},
+		{
+			size:     "1MB",
+			exitCode: 0,
+		},
+	} {
+		t.Run(tc.size, func(t *testing.T) {
+			t.Parallel()
+			prom := exec.Command(promPath, "-test.main", "--storage.tsdb.max-block-chunk-segment-size="+tc.size, "--web.listen-address=0.0.0.0:0", "--config.file="+promConfig, "--storage.tsdb.path="+filepath.Join(t.TempDir(), "data"))
 
-		// Log stderr in case of failure.
-		stderr, err := prom.StderrPipe()
-		require.NoError(t, err)
-		go func() {
-			slurp, _ := io.ReadAll(stderr)
-			t.Log(string(slurp))
-		}()
+			// Log stderr in case of failure.
+			stderr, err := prom.StderrPipe()
+			require.NoError(t, err)
+			go func() {
+				slurp, _ := io.ReadAll(stderr)
+				t.Log(string(slurp))
+			}()
 
-		err = prom.Start()
-		require.NoError(t, err)
+			err = prom.Start()
+			require.NoError(t, err)
 
-		if expectedExitStatus == 0 {
-			done := make(chan error, 1)
-			go func() { done <- prom.Wait() }()
-			select {
-			case err := <-done:
-				require.Fail(t, "prometheus should be still running: %v", err)
-			case <-time.After(startupTime):
-				prom.Process.Kill()
-				<-done
+			if tc.exitCode == 0 {
+				done := make(chan error, 1)
+				go func() { done <- prom.Wait() }()
+				select {
+				case err := <-done:
+					require.Fail(t, "prometheus should be still running: %v", err)
+				case <-time.After(startupTime):
+					prom.Process.Kill()
+					<-done
+				}
+				return
 			}
-			continue
-		}
 
-		err = prom.Wait()
-		require.Error(t, err)
-		var exitError *exec.ExitError
-		require.ErrorAs(t, err, &exitError)
-		status := exitError.Sys().(syscall.WaitStatus)
-		require.Equal(t, expectedExitStatus, status.ExitStatus())
+			err = prom.Wait()
+			require.Error(t, err)
+			var exitError *exec.ExitError
+			require.ErrorAs(t, err, &exitError)
+			status := exitError.Sys().(syscall.WaitStatus)
+			require.Equal(t, tc.exitCode, status.ExitStatus())
+		})
 	}
 }
 
@@ -288,7 +338,7 @@ func TestTimeMetrics(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	reg := prometheus.NewRegistry()
-	db, err := openDBWithMetrics(tmpDir, log.NewNopLogger(), reg, nil, nil)
+	db, err := openDBWithMetrics(tmpDir, promslog.NewNopLogger(), reg, nil, nil)
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, db.Close())
@@ -346,7 +396,9 @@ func getCurrentGaugeValuesFor(t *testing.T, reg prometheus.Gatherer, metricNames
 }
 
 func TestAgentSuccessfulStartup(t *testing.T) {
-	prom := exec.Command(promPath, "-test.main", "--enable-feature=agent", "--web.listen-address=0.0.0.0:0", "--config.file="+agentConfig)
+	t.Parallel()
+
+	prom := exec.Command(promPath, "-test.main", "--agent", "--web.listen-address=0.0.0.0:0", "--config.file="+agentConfig)
 	require.NoError(t, prom.Start())
 
 	actualExitStatus := 0
@@ -364,7 +416,9 @@ func TestAgentSuccessfulStartup(t *testing.T) {
 }
 
 func TestAgentFailedStartupWithServerFlag(t *testing.T) {
-	prom := exec.Command(promPath, "-test.main", "--enable-feature=agent", "--storage.tsdb.path=.", "--web.listen-address=0.0.0.0:0", "--config.file="+promConfig)
+	t.Parallel()
+
+	prom := exec.Command(promPath, "-test.main", "--agent", "--storage.tsdb.path=.", "--web.listen-address=0.0.0.0:0", "--config.file="+promConfig)
 
 	output := bytes.Buffer{}
 	prom.Stderr = &output
@@ -391,7 +445,9 @@ func TestAgentFailedStartupWithServerFlag(t *testing.T) {
 }
 
 func TestAgentFailedStartupWithInvalidConfig(t *testing.T) {
-	prom := exec.Command(promPath, "-test.main", "--enable-feature=agent", "--web.listen-address=0.0.0.0:0", "--config.file="+promConfig)
+	t.Parallel()
+
+	prom := exec.Command(promPath, "-test.main", "--agent", "--web.listen-address=0.0.0.0:0", "--config.file="+promConfig)
 	require.NoError(t, prom.Start())
 
 	actualExitStatus := 0
@@ -412,6 +468,7 @@ func TestModeSpecificFlags(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
 	}
+	t.Parallel()
 
 	testcases := []struct {
 		mode       string
@@ -426,10 +483,11 @@ func TestModeSpecificFlags(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(fmt.Sprintf("%s mode with option %s", tc.mode, tc.arg), func(t *testing.T) {
+			t.Parallel()
 			args := []string{"-test.main", tc.arg, t.TempDir(), "--web.listen-address=0.0.0.0:0"}
 
 			if tc.mode == "agent" {
-				args = append(args, "--enable-feature=agent", "--config.file="+agentConfig)
+				args = append(args, "--agent", "--config.file="+agentConfig)
 			} else {
 				args = append(args, "--config.file="+promConfig)
 			}
@@ -477,6 +535,8 @@ func TestDocumentation(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.SkipNow()
 	}
+	t.Parallel()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -498,4 +558,68 @@ func TestDocumentation(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, string(expectedContent), generatedContent, "Generated content does not match documentation. Hint: run `make cli-documentation`.")
+}
+
+func TestRwProtoMsgFlagParser(t *testing.T) {
+	t.Parallel()
+
+	defaultOpts := config.RemoteWriteProtoMsgs{
+		config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2,
+	}
+
+	for _, tcase := range []struct {
+		args        []string
+		expected    []config.RemoteWriteProtoMsg
+		expectedErr error
+	}{
+		{
+			args:     nil,
+			expected: defaultOpts,
+		},
+		{
+			args:        []string{"--test-proto-msgs", "test"},
+			expectedErr: errors.New("unknown remote write protobuf message test, supported: prometheus.WriteRequest, io.prometheus.write.v2.Request"),
+		},
+		{
+			args:     []string{"--test-proto-msgs", "io.prometheus.write.v2.Request"},
+			expected: config.RemoteWriteProtoMsgs{config.RemoteWriteProtoMsgV2},
+		},
+		{
+			args: []string{
+				"--test-proto-msgs", "io.prometheus.write.v2.Request",
+				"--test-proto-msgs", "io.prometheus.write.v2.Request",
+			},
+			expectedErr: errors.New("duplicated io.prometheus.write.v2.Request flag value, got [io.prometheus.write.v2.Request] already"),
+		},
+		{
+			args: []string{
+				"--test-proto-msgs", "io.prometheus.write.v2.Request",
+				"--test-proto-msgs", "prometheus.WriteRequest",
+			},
+			expected: config.RemoteWriteProtoMsgs{config.RemoteWriteProtoMsgV2, config.RemoteWriteProtoMsgV1},
+		},
+		{
+			args: []string{
+				"--test-proto-msgs", "io.prometheus.write.v2.Request",
+				"--test-proto-msgs", "prometheus.WriteRequest",
+				"--test-proto-msgs", "io.prometheus.write.v2.Request",
+			},
+			expectedErr: errors.New("duplicated io.prometheus.write.v2.Request flag value, got [io.prometheus.write.v2.Request prometheus.WriteRequest] already"),
+		},
+	} {
+		t.Run(strings.Join(tcase.args, ","), func(t *testing.T) {
+			a := kingpin.New("test", "")
+			var opt []config.RemoteWriteProtoMsg
+			a.Flag("test-proto-msgs", "").Default(defaultOpts.Strings()...).SetValue(rwProtoMsgFlagValue(&opt))
+
+			_, err := a.Parse(tcase.args)
+			if tcase.expectedErr != nil {
+				require.Error(t, err)
+				require.Equal(t, tcase.expectedErr, err)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tcase.expected, opt)
+			}
+		})
+	}
 }
