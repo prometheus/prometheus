@@ -70,14 +70,17 @@ const (
 	regionFilterTemplate = `{"region": "%s"}`
 )
 
-// DefaultSDConfig is the default Linode SD configuration.
-var DefaultSDConfig = SDConfig{
-	TagSeparator:     ",",
-	Port:             80,
-	Region:           "",
-	RefreshInterval:  model.Duration(60 * time.Second),
-	HTTPClientConfig: config.DefaultHTTPClientConfig,
-}
+var (
+	// DefaultSDConfig is the default Linode SD configuration.
+	DefaultSDConfig = SDConfig{
+		TagSeparator:     ",",
+		Port:             80,
+		Region:           "",
+		RefreshInterval:  model.Duration(60 * time.Second),
+		HTTPClientConfig: config.DefaultHTTPClientConfig,
+	}
+	userAgent = version.PrometheusUserAgent()
+)
 
 func init() {
 	discovery.RegisterConfig(&SDConfig{})
@@ -165,7 +168,7 @@ func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.Discove
 			Timeout:   time.Duration(conf.RefreshInterval),
 		},
 	)
-	client.SetUserAgent(fmt.Sprintf("Prometheus/%s", version.Version))
+	client.SetUserAgent(userAgent)
 	d.client = &client
 
 	d.Discovery = refresh.NewDiscovery(

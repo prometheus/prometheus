@@ -24,7 +24,6 @@ import (
 
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/common/version"
 	"github.com/scaleway/scaleway-sdk-go/api/baremetal/v1"
 	"github.com/scaleway/scaleway-sdk-go/scw"
 
@@ -93,7 +92,7 @@ func newBaremetalDiscovery(conf *SDConfig) (*baremetalDiscovery, error) {
 			Transport: rt,
 			Timeout:   time.Duration(conf.RefreshInterval),
 		}),
-		scw.WithUserAgent(fmt.Sprintf("Prometheus/%s", version.Version)),
+		scw.WithUserAgent(userAgent),
 		scw.WithProfile(profile),
 	)
 	if err != nil {

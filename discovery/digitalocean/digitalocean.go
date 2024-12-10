@@ -53,12 +53,15 @@ const (
 	separator          = ","
 )
 
-// DefaultSDConfig is the default DigitalOcean SD configuration.
-var DefaultSDConfig = SDConfig{
-	Port:             80,
-	RefreshInterval:  model.Duration(60 * time.Second),
-	HTTPClientConfig: config.DefaultHTTPClientConfig,
-}
+var (
+	// DefaultSDConfig is the default DigitalOcean SD configuration.
+	DefaultSDConfig = SDConfig{
+		Port:             80,
+		RefreshInterval:  model.Duration(60 * time.Second),
+		HTTPClientConfig: config.DefaultHTTPClientConfig,
+	}
+	userAgent = version.PrometheusUserAgent()
+)
 
 func init() {
 	discovery.RegisterConfig(&SDConfig{})
@@ -132,7 +135,7 @@ func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.Discove
 			Transport: rt,
 			Timeout:   time.Duration(conf.RefreshInterval),
 		},
-		godo.SetUserAgent(fmt.Sprintf("Prometheus/%s", version.Version)),
+		godo.SetUserAgent(userAgent),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error setting up digital ocean agent: %w", err)

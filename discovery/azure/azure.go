@@ -71,7 +71,7 @@ const (
 )
 
 var (
-	userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+	userAgent = version.PrometheusUserAgent()
 
 	// DefaultSDConfig is the default Azure SD configuration.
 	DefaultSDConfig = SDConfig{

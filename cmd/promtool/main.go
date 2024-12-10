@@ -81,7 +81,10 @@ const (
 	checkReadiness           = "/-/ready"
 )
 
-var lintOptions = []string{lintOptionAll, lintOptionDuplicateRules, lintOptionNone}
+var (
+	lintOptions = []string{lintOptionAll, lintOptionDuplicateRules, lintOptionNone}
+	userAgent   = version.ComponentUserAgent("promtool")
+)
 
 func main() {
 	var (
@@ -317,7 +320,7 @@ func main() {
 			kingpin.Fatalf("Failed to load HTTP config file: %v", err)
 		}
 
-		httpRoundTripper, err = promconfig.NewRoundTripperFromConfig(*httpConfig, "promtool", config_util.WithUserAgent("promtool/"+version.Version))
+		httpRoundTripper, err = promconfig.NewRoundTripperFromConfig(*httpConfig, "promtool", config_util.WithUserAgent(userAgent))
 		if err != nil {
 			kingpin.Fatalf("Failed to create a new HTTP round tripper: %v", err)
 		}

@@ -64,7 +64,7 @@ var (
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
 	matchContentType = regexp.MustCompile(`^(?i:application\/json(;\s*charset=("utf-8"|utf-8))?)$`)
-	userAgent        = fmt.Sprintf("Prometheus/%s", version.Version)
+	userAgent        = version.PrometheusUserAgent()
 )
 
 func init() {
