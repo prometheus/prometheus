@@ -2110,6 +2110,45 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 			require.EqualValues(t, ruleCount, testutil.ToFloat64(group.metrics.GroupSamples))
 		}
 	})
+
+	t.Run("asynchronous evaluation of independent rules, with indeterminate. Should be synchronous", func(t *testing.T) {
+		t.Parallel()
+		storage := teststorage.New(t)
+		t.Cleanup(func() { storage.Close() })
+		inflightQueries := atomic.Int32{}
+		maxInflight := atomic.Int32{}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+
+		ruleCount := 7
+		opts := optsFactory(storage, &maxInflight, &inflightQueries, 0)
+
+		// Configure concurrency settings.
+		opts.ConcurrentEvalsEnabled = true
+		opts.MaxConcurrentEvals = int64(ruleCount) * 2
+		opts.RuleConcurrencyController = nil
+		ruleManager := NewManager(opts)
+
+		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, []string{"fixtures/rules_indeterminates.yaml"}...)
+		require.Empty(t, errs)
+		require.Len(t, groups, 1)
+
+		for _, group := range groups {
+			require.Len(t, group.rules, ruleCount)
+
+			start := time.Now()
+
+			group.Eval(ctx, start)
+
+			// Never expect more than 1 inflight query at a time.
+			require.EqualValues(t, 1, maxInflight.Load())
+			// Each rule should take at least 1 second to execute sequentially.
+			require.GreaterOrEqual(t, time.Since(start).Seconds(), (time.Duration(ruleCount) * artificialDelay).Seconds())
+			// Each rule produces one vector.
+			require.EqualValues(t, ruleCount, testutil.ToFloat64(group.metrics.GroupSamples))
+		}
+	})
 }
 
 func TestBoundedRuleEvalConcurrency(t *testing.T) {
