@@ -56,3 +56,27 @@ func TestDedupe(t *testing.T) {
 	}
 	require.Len(t, lines, 2)
 }
+
+func TestDedupeConcurrent(t *testing.T) {
+	d := Dedupe(promslog.New(&promslog.Config{}), 250*time.Millisecond)
+	dlog := slog.New(d)
+	defer d.Stop()
+
+	concurrentWriteFunc := func() {
+		go func() {
+			dlog1 := dlog.With("writer", 1)
+			for i := 0; i < 10; i++ {
+				dlog1.With("foo", "bar").Info("test", "hello", "world")
+			}
+		}()
+
+		go func() {
+			dlog2 := dlog.With("writer", 2)
+			for i := 0; i < 10; i++ {
+				dlog2.With("foo", "bar").Info("test", "hello", "world")
+			}
+		}()
+	}
+
+	require.NotPanics(t, func() { concurrentWriteFunc() })
+}
