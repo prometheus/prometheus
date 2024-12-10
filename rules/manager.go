@@ -118,6 +118,7 @@ type ManagerOptions struct {
 	GroupLoader               GroupLoader
 	DefaultRuleQueryOffset    func() time.Duration
 	MaxConcurrentEvals        int64
+	SortRulesForConcurrency   bool
 	ConcurrentEvalsEnabled    bool
 	RuleConcurrencyController RuleConcurrencyController
 	RuleDependencyController  RuleDependencyController
@@ -137,7 +138,9 @@ func NewManager(o *ManagerOptions) *Manager {
 	}
 
 	if o.RuleConcurrencyController == nil {
-		if o.ConcurrentEvalsEnabled {
+		if o.ConcurrentEvalsEnabled && o.SortRulesForConcurrency {
+			o.RuleConcurrencyController = newSortedRuleConcurrencyController(o.MaxConcurrentEvals)
+		} else if o.ConcurrentEvalsEnabled {
 			o.RuleConcurrencyController = newRuleConcurrencyController(o.MaxConcurrentEvals)
 		} else {
 			o.RuleConcurrencyController = sequentialRuleEvalController{}
@@ -343,6 +346,10 @@ func (m *Manager) LoadGroups(
 			// Check dependencies between rules and store it on the Rule itself.
 			m.opts.RuleDependencyController.AnalyseRules(rules)
 
+			if sorter, ok := m.opts.RuleConcurrencyController.(RuleSortingController); ok {
+				sorter.SortRules(rules)
+			}
+
 			groups[GroupKey(fn, rg.Name)] = NewGroup(GroupOptions{
 				Name:              rg.Name,
 				File:              fn,
@@ -472,6 +479,15 @@ type RuleConcurrencyController interface {
 	Done(ctx context.Context)
 }
 
+type RuleSortingController interface {
+	// SortRules sorts the rules in-place based on their dependencies.
+	// Rules with no dependencies and some dependents are placed first.
+	// Rules with both are placed in the middle.
+	// Rules with dependencies and no dependents are placed last.
+	// Alerts are always placed last, after all recording rules.
+	SortRules(rules []Rule)
+}
+
 // concurrentRuleEvalController holds a weighted semaphore which controls the concurrent evaluation of rules.
 type concurrentRuleEvalController struct {
 	sema *semaphore.Weighted
@@ -497,6 +513,52 @@ func (c *concurrentRuleEvalController) Allow(_ context.Context, _ *Group, rule R
 
 func (c *concurrentRuleEvalController) Done(_ context.Context) {
 	c.sema.Release(1)
+}
+
+var (
+	_ RuleConcurrencyController = &sortedConcurrentRuleEvalController{}
+	_ RuleSortingController     = &sortedConcurrentRuleEvalController{}
+)
+
+// sortedConcurrentRuleEvalController is a RuleConcurrencyController that first sorts the rules based on their dependencies
+// and then evaluates them concurrently.
+// By sorting first, we can evaluate all rules that have dependents sequentially and then evaluate the rest concurrently.
+type sortedConcurrentRuleEvalController struct {
+	sema *semaphore.Weighted
+}
+
+func newSortedRuleConcurrencyController(maxConcurrency int64) RuleConcurrencyController {
+	return &sortedConcurrentRuleEvalController{
+		sema: semaphore.NewWeighted(maxConcurrency),
+	}
+}
+
+func (s *sortedConcurrentRuleEvalController) Allow(_ context.Context, _ *Group, rule Rule) bool {
+	// Since the rules are sorted, where rules with dependents run first,
+	// for a rule to be executed concurrently, we need 2 conditions:
+	// 1. The rule must not have any rules that depend on it.
+	// 2. If 1 & 2 are true, then and only then we should try to acquire the concurrency slot.
+	if rule.NoDependentRules() {
+		return s.sema.TryAcquire(1)
+	}
+
+	return false
+}
+
+func (s *sortedConcurrentRuleEvalController) Done(_ context.Context) {
+	s.sema.Release(1)
+}
+
+func (s *sortedConcurrentRuleEvalController) SortRules(rules []Rule) {
+	slices.SortFunc(rules, func(a, b Rule) int {
+		if a.NoDependentRules() && !b.NoDependentRules() {
+			return 1
+		}
+		if !a.NoDependentRules() && b.NoDependentRules() {
+			return -1
+		}
+		return 0
+	})
 }
 
 // sequentialRuleEvalController is a RuleConcurrencyController that runs every rule sequentially.

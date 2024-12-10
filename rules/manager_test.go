@@ -2110,6 +2110,117 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 			require.EqualValues(t, ruleCount, testutil.ToFloat64(group.metrics.GroupSamples))
 		}
 	})
+
+	t.Run("asynchronous evaluation of rules, no sorting", func(t *testing.T) {
+		t.Parallel()
+		storage := teststorage.New(t)
+		t.Cleanup(func() { storage.Close() })
+		inflightQueries := atomic.Int32{}
+		maxInflight := atomic.Int32{}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+
+		ruleCount := 8
+		opts := optsFactory(storage, &maxInflight, &inflightQueries, 0)
+
+		// Configure concurrency settings.
+		opts.ConcurrentEvalsEnabled = true
+		opts.MaxConcurrentEvals = int64(ruleCount) * 2
+		opts.RuleConcurrencyController = nil
+		ruleManager := NewManager(opts)
+
+		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, []string{"fixtures/rules_multiple_dependents_on_base.yaml"}...)
+		require.Empty(t, errs)
+		require.Len(t, groups, 1)
+		var group *Group
+		for _, g := range groups {
+			group = g
+		}
+
+		// Original rule order
+		checkRuleOrder(t, group.rules, []string{
+			"job:http_requests:rate1m",
+			"job1:http_requests:rate1m",
+			"job2:http_requests:rate1m",
+			"job3:http_requests:rate1m",
+			"job:http_requests:rate5m",
+			"job1:http_requests:rate5m",
+			"job2:http_requests:rate5m",
+			"job3:http_requests:rate5m",
+		})
+
+		start := time.Now()
+
+		group.Eval(ctx, start)
+
+		// Inflight queries should be limited to 1 at a time because all rules have dependencies or dependents.
+		require.Equal(t, maxInflight.Load(), int32(1))
+		// Each rule produces one vector.
+		require.EqualValues(t, ruleCount, testutil.ToFloat64(group.metrics.GroupSamples))
+	})
+
+	t.Run("asynchronous evaluation of rules, sorted", func(t *testing.T) {
+		t.Parallel()
+		storage := teststorage.New(t)
+		t.Cleanup(func() { storage.Close() })
+		inflightQueries := atomic.Int32{}
+		maxInflight := atomic.Int32{}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+
+		ruleCount := 8
+		opts := optsFactory(storage, &maxInflight, &inflightQueries, 0)
+
+		// Configure concurrency settings.
+		opts.ConcurrentEvalsEnabled = true
+		opts.SortRulesForConcurrency = true
+		opts.MaxConcurrentEvals = int64(ruleCount) * 2
+		opts.RuleConcurrencyController = nil
+		ruleManager := NewManager(opts)
+
+		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, []string{"fixtures/rules_multiple_dependents_on_base.yaml"}...)
+		require.Empty(t, errs)
+		require.Len(t, groups, 1)
+		var group *Group
+		for _, g := range groups {
+			group = g
+		}
+
+		// Modified rule order
+		checkRuleOrder(t, group.rules, []string{
+			"job:http_requests:rate1m",
+			"job:http_requests:rate5m",
+			"job1:http_requests:rate1m",
+			"job2:http_requests:rate1m",
+			"job3:http_requests:rate1m",
+			"job1:http_requests:rate5m",
+			"job2:http_requests:rate5m",
+			"job3:http_requests:rate5m",
+		})
+
+		start := time.Now()
+
+		group.Eval(ctx, start)
+
+		// Inflight queries should be greater than 1 because some rules can be executed concurrently.
+		require.Greater(t, int(maxInflight.Load()), 1)
+		require.LessOrEqual(t, int(maxInflight.Load()), 6) // Only 6 rules can be executed concurrently.
+		// Some rules should execute concurrently so should complete quicker.
+		require.Less(t, time.Since(start).Seconds(), (time.Duration(ruleCount) * artificialDelay).Seconds())
+		// Each rule produces one vector.
+		require.EqualValues(t, ruleCount, testutil.ToFloat64(group.metrics.GroupSamples))
+	})
+}
+
+func checkRuleOrder(t *testing.T, rules []Rule, expectedOrder []string) {
+	gotOrder := make([]string, 0, len(rules))
+	for _, r := range rules {
+		gotOrder = append(gotOrder, r.Name())
+	}
+
+	require.Equal(t, expectedOrder, gotOrder)
 }
 
 func TestBoundedRuleEvalConcurrency(t *testing.T) {
