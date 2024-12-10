@@ -5,61 +5,15 @@ This page describes the release process and the currently planned schedule for u
 ## Release schedule
 
 Release cadence of first pre-releases being cut is 6 weeks.
+Please see [the v2.55 RELEASE.md](https://github.com/prometheus/prometheus/blob/release-2.55/RELEASE.md) for the v2 release series schedule.
 
-| release series | date of first pre-release (year-month-day) | release shepherd                            |
-|----------------|--------------------------------------------|---------------------------------------------|
-| v2.4           | 2018-09-06                                 | Goutham Veeramachaneni (GitHub: @gouthamve) |
-| v2.5           | 2018-10-24                                 | Frederic Branczyk (GitHub: @brancz)         |
-| v2.6           | 2018-12-05                                 | Simon Pasquier (GitHub: @simonpasquier)     |
-| v2.7           | 2019-01-16                                 | Goutham Veeramachaneni (GitHub: @gouthamve) |
-| v2.8           | 2019-02-27                                 | Ganesh Vernekar (GitHub: @codesome)         |
-| v2.9           | 2019-04-10                                 | Brian Brazil (GitHub: @brian-brazil)        |
-| v2.10          | 2019-05-22                                 | Björn Rabenstein (GitHub: @beorn7)          |
-| v2.11          | 2019-07-03                                 | Frederic Branczyk (GitHub: @brancz)         |
-| v2.12          | 2019-08-14                                 | Julius Volz (GitHub: @juliusv)              |
-| v2.13          | 2019-09-25                                 | Krasi Georgiev (GitHub: @krasi-georgiev)    |
-| v2.14          | 2019-11-06                                 | Chris Marchbanks (GitHub: @csmarchbanks)    |
-| v2.15          | 2019-12-18                                 | Bartek Plotka (GitHub: @bwplotka)           |
-| v2.16          | 2020-01-29                                 | Callum Styan (GitHub: @cstyan)              |
-| v2.17          | 2020-03-11                                 | Julien Pivotto (GitHub: @roidelapluie)      |
-| v2.18          | 2020-04-22                                 | Bartek Plotka (GitHub: @bwplotka)           |
-| v2.19          | 2020-06-03                                 | Ganesh Vernekar (GitHub: @codesome)         |
-| v2.20          | 2020-07-15                                 | Björn Rabenstein (GitHub: @beorn7)          |
-| v2.21          | 2020-08-26                                 | Julien Pivotto (GitHub: @roidelapluie)      |
-| v2.22          | 2020-10-07                                 | Frederic Branczyk (GitHub: @brancz)         |
-| v2.23          | 2020-11-18                                 | Ganesh Vernekar (GitHub: @codesome)         |
-| v2.24          | 2020-12-30                                 | Björn Rabenstein (GitHub: @beorn7)          |
-| v2.25          | 2021-02-10                                 | Julien Pivotto (GitHub: @roidelapluie)      |
-| v2.26          | 2021-03-24                                 | Bartek Plotka (GitHub: @bwplotka)           |
-| v2.27          | 2021-05-05                                 | Chris Marchbanks (GitHub: @csmarchbanks)    |
-| v2.28          | 2021-06-16                                 | Julius Volz (GitHub: @juliusv)              |
-| v2.29          | 2021-07-28                                 | Frederic Branczyk (GitHub: @brancz)         |
-| v2.30          | 2021-09-08                                 | Ganesh Vernekar (GitHub: @codesome)         |
-| v2.31          | 2021-10-20                                 | Julien Pivotto (GitHub: @roidelapluie)      |
-| v2.32          | 2021-12-01                                 | Julius Volz (GitHub: @juliusv)              |
-| v2.33          | 2022-01-12                                 | Björn Rabenstein (GitHub: @beorn7)          |
-| v2.34          | 2022-02-23                                 | Chris Marchbanks (GitHub: @csmarchbanks)    |
-| v2.35          | 2022-04-06                                 | Augustin Husson (GitHub: @nexucis)          |
-| v2.36          | 2022-05-18                                 | Matthias Loibl (GitHub: @metalmatze)        |
-| v2.37 LTS      | 2022-06-29                                 | Julien Pivotto (GitHub: @roidelapluie)      |
-| v2.38          | 2022-08-10                                 | Julius Volz (GitHub: @juliusv)              |
-| v2.39          | 2022-09-21                                 | Ganesh Vernekar (GitHub: @codesome)         |
-| v2.40          | 2022-11-02                                 | Ganesh Vernekar (GitHub: @codesome)         |
-| v2.41          | 2022-12-14                                 | Julien Pivotto (GitHub: @roidelapluie)      |
-| v2.42          | 2023-01-25                                 | Kemal Akkoyun (GitHub: @kakkoyun)           |
-| v2.43          | 2023-03-08                                 | Julien Pivotto (GitHub: @roidelapluie)      |
-| v2.44          | 2023-04-19                                 | Bryan Boreham (GitHub: @bboreham)           |
-| v2.45 LTS      | 2023-05-31                                 | Jesus Vazquez (Github: @jesusvazquez)       |
-| v2.46          | 2023-07-12                                 | Julien Pivotto (GitHub: @roidelapluie)      |
-| v2.47          | 2023-08-23                                 | Bryan Boreham (GitHub: @bboreham)           |
-| v2.48          | 2023-10-04                                 | Levi Harrison (GitHub: @LeviHarrison)       |
-| v2.49          | 2023-12-05                                 | Bartek Plotka (GitHub: @bwplotka)           |
-| v2.50          | 2024-01-16                                 | Augustin Husson (GitHub: @nexucis)          |
-| v2.51          | 2024-03-07                                 | Bryan Boreham (GitHub: @bboreham)           |
-| v2.52          | 2024-04-22                                 | Arthur Silva Sens (GitHub: @ArthurSens)     |
-| v2.53 LTS      | 2024-06-03                                 | George Krajcsovits (GitHub: @krajorama)     |
-| v2.54          | 2024-07-17                                 | Bryan Boreham (GitHub: @bboreham)           |
-| v2.55          | 2024-09-17                                 | Bryan Boreham (GitHub: @bboreham)           |
+| release series | date of first pre-release (year-month-day) | release shepherd                  |
+|----------------|--------------------------------------------|-----------------------------------|
+| v3.0           | 2024-11-14                                 | Jan Fajerski (GitHub: @jan--f)    |
+| v3.1           | 2024-12-17                                 | Bryan Boreham (GitHub: @bboreham) |
+| v3.2           | 2025-01-28                                 | Jan Fajerski (GitHub: @jan--f)    |
+| v3.3           | 2025-03-11                                 | Ayoub Mrini (Github: @machine424) |
+| v3.4           | 2025-04-22                                 | **volunteer welcome**             |
 
 If you are interested in volunteering please create a pull request against the [prometheus/prometheus](https://github.com/prometheus/prometheus) repository and propose yourself for the release series of your choice.
 
@@ -204,7 +158,7 @@ Then release with `git tag-release`.
 
 Signing a tag with a GPG key is appreciated, but in case you can't add a GPG key to your Github account using the following [procedure](https://help.github.com/articles/generating-a-gpg-key/), you can replace the `-s` flag by `-a` flag of the `git tag` command to only annotate the tag without signing.
 
-Once a tag is created, the release process through CircleCI will be triggered for this tag and Circle CI will draft the GitHub release using the `prombot` account.
+Once a tag is created, the release process through Github Actions will be triggered for this tag and Github Actions will draft the GitHub release using the `prombot` account.
 
 Finally, wait for the build step for the tag to finish. The point here is to wait for tarballs to be uploaded to the Github release and the container images to be pushed to the Docker Hub and Quay.io. Once that has happened, click _Publish release_, which will make the release publicly visible and create a GitHub notification.
 **Note:** for a release candidate version ensure the _This is a pre-release_ box is checked when drafting the release in the Github UI. The CI job should take care of this but it's a good idea to double check before clicking _Publish release_.`
