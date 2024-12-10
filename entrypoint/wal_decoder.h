@@ -183,15 +183,58 @@ void prompp_wal_output_decoder_load_from(void* args, void* res);
  * @brief decode segment to slice RefSample.
  *
  * @param args {
- *     decoder             uintptr      // pointer to constructed output decoder
+ *     decoder               uintptr     // pointer to constructed output decoder
+ *     lower_limit_timestamp int64       // lower limit timestamp
  * }
  *
  * @param res {
- *     ref_samples         []RefSample  // slice RefSample
- *     error               []byte       // error string if thrown
+ *     max_timestamp         int64       // max timestamp in slice RefSample
+ *     ref_samples           []RefSample // slice RefSample
+ *     error                 []byte      // error string if thrown
  * }
  */
 void prompp_wal_output_decoder_decode(void* args, void* res);
+
+//
+// ProtobufEncoder
+//
+
+/**
+ * @brief Construct a new Protobuf Encoder
+ *
+ * @param args {
+ *     output_lsses        uintptr           // pointer to constructed slice with output label sets;
+ * }
+ *
+ * @param res {
+ *     encoder             uintptr           // pointer to constructed Protobuf Encoder
+ * }
+ */
+void prompp_wal_protobuf_encoder_ctor(void* args, void* res);
+
+/**
+ * @brief Destroy Protobuf Encoder
+ *
+ * @param args {
+ *     encoder             uintptr           // pointer to constructed Protobuf Encoder
+ * }
+ */
+void prompp_wal_protobuf_encoder_dtor(void* args);
+
+/**
+ * @brief encode batch slice ShardRefSamples to snapped protobufs on shards.
+ *
+ * @param args {
+ *     batch               []*ShardRefSample // slice with go pointers to ShardRefSample
+ *     out_slices          [][]byte          // slice RefSample
+ *     encoder             uintptr           // pointer to constructed output decoder
+ * }
+ *
+ * @param res {
+ *     error               []byte            // error string if thrown
+ * }
+ */
+void prompp_wal_protobuf_encoder_encode(void* args, void* res);
 
 #ifdef __cplusplus
 }  // extern "C"

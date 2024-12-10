@@ -3,10 +3,15 @@ package cppbridge_test
 import (
 	"bytes"
 	"context"
+	"runtime"
+	"slices"
+	"strings"
 	"testing"
 
+	"github.com/golang/snappy"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/frames/framestest"
+	"github.com/prometheus/prometheus/pp/go/model"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/suite"
 )
@@ -167,27 +172,15 @@ func BenchmarkDecoderV3(b *testing.B) {
 	}
 }
 
-func (s *DecoderSuite) TestWALOutputDecoderDump() {
-	statelessRelabeler, err := cppbridge.NewStatelessRelabeler([]*cppbridge.RelabelConfig{
-		{
-			SourceLabels: []string{"__name__"},
-			Regex:        ".*",
-			Action:       cppbridge.Keep,
-		},
-	})
-	s.Require().NoError(err)
-	externalLabels := []cppbridge.Label{{"name0", "value0"}, {"name1", "value1"}}
-	outputLss := cppbridge.NewLssStorage()
-
-	dec := cppbridge.NewWALOutputDecoder(externalLabels, statelessRelabeler, outputLss, 0, cppbridge.EncodersVersion())
-
-	file := &bytes.Buffer{}
-	n, err := dec.WriteTo(file)
-	s.Require().NoError(err)
-	s.Equal(int64(15), n)
+type OutputDecoderSuite struct {
+	suite.Suite
 }
 
-func (s *DecoderSuite) TestWALOutputDecoderEmptyLoad() {
+func TestOutputDecoderSuite(t *testing.T) {
+	suite.Run(t, new(OutputDecoderSuite))
+}
+
+func (s *OutputDecoderSuite) TestWALOutputDecoderDump() {
 	statelessRelabeler, err := cppbridge.NewStatelessRelabeler([]*cppbridge.RelabelConfig{
 		{
 			SourceLabels: []string{"__name__"},
@@ -204,8 +197,85 @@ func (s *DecoderSuite) TestWALOutputDecoderEmptyLoad() {
 	file := &bytes.Buffer{}
 	n, err := dec.WriteTo(file)
 	s.Require().NoError(err)
-	s.Equal(int64(15), n)
+	s.EqualValues(0, n)
+}
+
+func (s *OutputDecoderSuite) TestWALOutputDecoderEmptyLoad() {
+	statelessRelabeler, err := cppbridge.NewStatelessRelabeler([]*cppbridge.RelabelConfig{
+		{
+			SourceLabels: []string{"__name__"},
+			Regex:        ".*",
+			Action:       cppbridge.Keep,
+		},
+	})
+	s.Require().NoError(err)
+	externalLabels := []cppbridge.Label{{"name0", "value0"}, {"name1", "value1"}}
+	outputLss := cppbridge.NewLssStorage()
+
+	dec := cppbridge.NewWALOutputDecoder(externalLabels, statelessRelabeler, outputLss, 0, cppbridge.EncodersVersion())
+
+	file := &bytes.Buffer{}
+	n, err := dec.WriteTo(file)
+	s.Require().NoError(err)
+	s.EqualValues(0, n)
 
 	err = dec.LoadFrom(file.Bytes())
 	s.Require().NoError(err)
+}
+
+func (s *OutputDecoderSuite) TestWALProtobufEncoderEncode() {
+	labelSets := []model.LabelSet{
+		model.NewLabelSetBuilder().Set("__name__", "name1").Set("job", "doing1").Build(),
+		model.NewLabelSetBuilder().Set("__name__", "name2").Set("job", "doing2").Build(),
+		model.NewLabelSetBuilder().Set("__name__", "name3").Set("job", "doing3").Build(),
+		model.NewLabelSetBuilder().Set("__name__", "name4").Set("job", "doing4").Build(),
+	}
+	batch := make([]*cppbridge.DecodedRefSamples, 0, len(labelSets))
+
+	outputLsses := []*cppbridge.LabelSetStorage{cppbridge.NewLssStorage(), cppbridge.NewLssStorage()}
+	for val, labelSet := range labelSets {
+		lsID := outputLsses[val%len(outputLsses)].FindOrEmplace(labelSet)
+
+		batch = append(
+			batch,
+			cppbridge.NewGoDecodedRefSamples([]cppbridge.RefSample{
+				{ID: lsID, T: int64((val + 1) * 100), V: float64(val + 1)},
+			}, uint16(val%len(outputLsses))),
+		)
+	}
+
+	dec := cppbridge.NewWALProtobufEncoder(outputLsses)
+	data, err := dec.Encode(context.Background(), batch, 1)
+	s.Require().NoError(err)
+
+	var uncompressed []byte
+	err = data[0].Do(func(buf []byte) error {
+		var errDo error
+		uncompressed, errDo = snappy.Decode(nil, buf)
+		return errDo
+	})
+	s.Require().NoError(err)
+
+	actualWr := &prompb.WriteRequest{}
+	err = actualWr.Unmarshal(uncompressed)
+	s.Require().NoError(err)
+
+	slices.SortFunc(
+		actualWr.Timeseries,
+		func(a, b prompb.TimeSeries) int { return strings.Compare(a.String(), b.String()) },
+	)
+
+	s.Require().Equal(len(labelSets), len(actualWr.Timeseries))
+
+	for val, labelSet := range labelSets {
+		s.Require().Equal(labelSet.Len(), len(actualWr.Timeseries[val].Labels))
+		for i := range actualWr.Timeseries[val].Labels {
+			s.Equal(labelSet.Key(i), actualWr.Timeseries[val].Labels[i].Name)
+			s.Equal(labelSet.Value(i), actualWr.Timeseries[val].Labels[i].Value)
+		}
+		s.Equal(int64((val+1)*100), actualWr.Timeseries[val].Samples[0].Timestamp)
+		s.Equal(float64(val+1), actualWr.Timeseries[val].Samples[0].Value)
+	}
+
+	runtime.KeepAlive(outputLsses)
 }

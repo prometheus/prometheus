@@ -738,14 +738,20 @@ func walOutputDecoderLoadFrom(decoder uintptr, dump []byte) []byte {
 }
 
 // walOutputDecoderDecode decode segment to slice RefSample.
-func walOutputDecoderDecode(segment []byte, decoder uintptr) (dump []RefSample, err []byte) {
+func walOutputDecoderDecode(
+	segment []byte,
+	decoder uintptr,
+	lowerLimitTimestamp int64,
+) (maxTimestamp int64, dump []RefSample, err []byte) {
 	var args = struct {
-		segment []byte
-		decoder uintptr
-	}{segment, decoder}
+		segment             []byte
+		decoder             uintptr
+		lowerLimitTimestamp int64
+	}{segment, decoder, lowerLimitTimestamp}
 	var res struct {
-		refSamples []RefSample
-		error      []byte
+		maxTimestamp int64
+		refSamples   []RefSample
+		error        []byte
 	}
 
 	fastcgo.UnsafeCall2(
@@ -754,7 +760,65 @@ func walOutputDecoderDecode(segment []byte, decoder uintptr) (dump []RefSample, 
 		uintptr(unsafe.Pointer(&res)),
 	)
 
-	return res.refSamples, res.error
+	return res.maxTimestamp, res.refSamples, res.error
+}
+
+//
+// ProtobufEncoder
+//
+
+// walProtobufEncoderCtor - wrapper for constructor C-ProtobufEncoder.
+func walProtobufEncoderCtor(outputLsses []uintptr) uintptr {
+	var args = struct {
+		outputLsses []uintptr
+	}{outputLsses}
+	var res struct {
+		decoder uintptr
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_wal_protobuf_encoder_ctor,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.decoder
+}
+
+// walProtobufEncoderDtor - wrapper for destructor C-ProtobufEncoder.
+func walProtobufEncoderDtor(decoder uintptr) {
+	var args = struct {
+		decoder uintptr
+	}{decoder}
+
+	fastcgo.UnsafeCall1(
+		C.prompp_wal_protobuf_encoder_dtor,
+		uintptr(unsafe.Pointer(&args)),
+	)
+}
+
+// walProtobufEncoderEncode encode batch slice ShardRefSamples to snapped protobufs on shards.
+func walProtobufEncoderEncode(
+	batch []*DecodedRefSamples,
+	outSlices [][]byte,
+	encoder uintptr,
+) []byte {
+	var args = struct {
+		batch     []*DecodedRefSamples
+		outSlices [][]byte
+		encoder   uintptr
+	}{batch, outSlices, encoder}
+	var res struct {
+		error []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_wal_protobuf_encoder_encode,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.error
 }
 
 //
