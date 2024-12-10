@@ -39,6 +39,10 @@ func TestLabels_String(t *testing.T) {
 			labels:   Labels{},
 			expected: "{}",
 		},
+		{
+			labels:   FromStrings("service.name", "t1", "whatever\\whatever", "t2"),
+			expected: `{"service.name"="t1", "whatever\\whatever"="t2"}`,
+		},
 	}
 	for _, c := range cases {
 		str := c.labels.String()
