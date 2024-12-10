@@ -216,6 +216,7 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	decGaugeFloatHistograms, err := dec.FloatHistogramSamples(gaugeFloatHistSamples, nil)
 	require.NoError(t, err)
 	decCustomBucketsGaugeFloatHistograms, err := dec.FloatHistogramSamples(customBucketsGaugeFloatHistSamples, nil)
+	require.NoError(t, err)
 	decGaugeFloatHistograms = append(decGaugeFloatHistograms, decCustomBucketsGaugeFloatHistograms...)
 	require.Equal(t, floatHistograms, decGaugeFloatHistograms)
 }

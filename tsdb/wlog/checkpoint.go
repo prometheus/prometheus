@@ -227,6 +227,9 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			stats.DroppedSamples += len(histogramSamples) - len(repl)
 		case record.CustomBucketsHistogramSamples:
 			histogramSamples, err = dec.HistogramSamples(rec, histogramSamples)
+			if err != nil {
+				return nil, fmt.Errorf("decode histogram samples: %w", err)
+			}
 			// Drop irrelevant histogramSamples in place.
 			repl := histogramSamples[:0]
 			for _, h := range histogramSamples {
