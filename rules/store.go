@@ -11,14 +11,17 @@ import (
 
 // FileStore implements the AlertStore interface.
 type FileStore struct {
-	logger       *slog.Logger
 	alertsByRule map[uint64][]*Alert
+	logger       *slog.Logger
 	// protects the `alertsByRule` map.
 	stateMtx         sync.RWMutex
 	path             string
-	registerer       prometheus.Registerer
 	storeInitErrors  prometheus.Counter
 	alertStoreErrors *prometheus.CounterVec
+}
+
+type FileData struct {
+	Alerts map[uint64][]*Alert `json:"alerts"`
 }
 
 func NewFileStore(l *slog.Logger, storagePath string, registerer prometheus.Registerer) *FileStore {
@@ -26,7 +29,6 @@ func NewFileStore(l *slog.Logger, storagePath string, registerer prometheus.Regi
 		logger:       l,
 		alertsByRule: make(map[uint64][]*Alert),
 		path:         storagePath,
-		registerer:   registerer,
 	}
 	s.storeInitErrors = prometheus.NewCounter(
 		prometheus.CounterOpts{
@@ -43,16 +45,16 @@ func NewFileStore(l *slog.Logger, storagePath string, registerer prometheus.Regi
 		},
 		[]string{"rule_group"},
 	)
-	s.initState()
+	s.initState(registerer)
 	return s
 }
 
 // initState reads the state from file storage into the alertsByRule map.
-func (s *FileStore) initState() {
-	if s.registerer != nil {
-		s.registerer.MustRegister(s.alertStoreErrors, s.storeInitErrors)
+func (s *FileStore) initState(registerer prometheus.Registerer) {
+	if registerer != nil {
+		registerer.MustRegister(s.alertStoreErrors, s.storeInitErrors)
 	}
-	file, err := os.OpenFile(s.path, os.O_RDWR|os.O_CREATE, 0o666)
+	file, err := os.OpenFile(s.path, os.O_RDWR|os.O_CREATE, 0o644)
 	if err != nil {
 		s.logger.Error("Failed reading alerts state from file", "err", err)
 		s.storeInitErrors.Inc()
@@ -60,14 +62,16 @@ func (s *FileStore) initState() {
 	}
 	defer file.Close()
 
-	var alertsByRule map[uint64][]*Alert
-	err = json.NewDecoder(file).Decode(&alertsByRule)
+	var data *FileData
+	err = json.NewDecoder(file).Decode(&data)
 	if err != nil {
+		data = nil
 		s.logger.Error("Failed reading alerts state from file", "err", err)
 		s.storeInitErrors.Inc()
 	}
-	if alertsByRule == nil {
-		alertsByRule = make(map[uint64][]*Alert)
+	alertsByRule := make(map[uint64][]*Alert)
+	if data != nil && data.Alerts != nil {
+		alertsByRule = data.Alerts
 	}
 	s.alertsByRule = alertsByRule
 }
@@ -101,6 +105,8 @@ func (s *FileStore) SetAlerts(key uint64, groupKey string, alerts []*Alert) erro
 	// Update in memory
 	if alerts != nil {
 		s.alertsByRule[key] = alerts
+	} else {
+		return nil
 	}
 	// flush in memory state to file storage
 	file, err := os.Create(s.path)
@@ -111,7 +117,10 @@ func (s *FileStore) SetAlerts(key uint64, groupKey string, alerts []*Alert) erro
 	defer file.Close()
 
 	encoder := json.NewEncoder(file)
-	err = encoder.Encode(s.alertsByRule)
+	data := FileData{
+		Alerts: s.alertsByRule,
+	}
+	err = encoder.Encode(data)
 	if err != nil {
 		s.alertStoreErrors.WithLabelValues(groupKey).Inc()
 		return err
