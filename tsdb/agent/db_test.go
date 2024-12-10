@@ -488,7 +488,6 @@ func TestPartialTruncateWAL(t *testing.T) {
 	)
 
 	opts := DefaultOptions()
-	opts.TruncateFrequency = time.Minute * 2
 
 	reg := prometheus.NewRegistry()
 	s := createTestAgentDB(t, reg, opts)
