@@ -2,9 +2,9 @@
 
 #include <vector>
 
-#include <parallel_hashmap/btree.h>
-#define PROTOZERO_USE_VIEW std::string_view
+#include "snappy-sinksource.h"
 #include "snappy.h"
+#define PROTOZERO_USE_VIEW std::string_view
 #include "third_party/protozero/pbf_writer.hpp"
 
 #include "bare_bones/preprocess.h"
@@ -19,14 +19,16 @@ struct RefSample {
   uint32_t id;
   int64_t t;
   double v;
+
+  PROMPP_ALWAYS_INLINE bool operator==(const RefSample&) const noexcept = default;
 };
 
 struct ShardRefSample {
-  PromPP::Primitives::Go::SliceView<PromPP::WAL::RefSample> ref_samples;
+  Primitives::Go::SliceView<RefSample> ref_samples;
   uint16_t shard_id{};
 };
 
-using BaseOutputDecoder = WAL::BasicDecoder<std::remove_reference_t<Primitives::SnugComposites::LabelSet::ShrinkableEncodingBimap>>;
+using BaseOutputDecoder = BasicDecoder<Primitives::SnugComposites::LabelSet::ShrinkableEncodingBimap>;
 
 class OutputDecoder : private BaseOutputDecoder {
   Primitives::SnugComposites::LabelSet::ShrinkableEncodingBimap wal_lss_;
@@ -46,6 +48,7 @@ class OutputDecoder : private BaseOutputDecoder {
     }
 
     Primitives::LabelsBuilder<Primitives::LabelsBuilderStateMap> builder{builder_state_};
+    cache_.reserve(wal_lss_.next_item_index());
     for (size_t ls_id = cache_.size(); ls_id < wal_lss_.next_item_index(); ++ls_id) {
       builder.reset(wal_lss_[ls_id]);
       Prometheus::Relabel::process_external_labels(builder, external_labels_);
@@ -134,7 +137,7 @@ class OutputDecoder : private BaseOutputDecoder {
   PROMPP_ALWAYS_INLINE explicit OutputDecoder(Prometheus::Relabel::StatelessRelabeler& stateless_relabeler,
                                               Primitives::SnugComposites::LabelSet::EncodingBimap& output_lss,
                                               Primitives::Go::SliceView<std::pair<Primitives::Go::String, Primitives::Go::String>>& external_labels,
-                                              BasicEncoderVersion encoder_version = WAL::Writer::version) noexcept
+                                              BasicEncoderVersion encoder_version = Writer::version) noexcept
       : BaseOutputDecoder{wal_lss_, encoder_version}, stateless_relabeler_{stateless_relabeler}, output_lss_(output_lss) {
     external_labels_.reserve(external_labels.size());
     for (const auto& [ln, lv] : external_labels) {
@@ -152,9 +155,17 @@ class OutputDecoder : private BaseOutputDecoder {
     auto sg1 = std::experimental::scope_exit([&]() { out.exceptions(original_exceptions); });
     out.exceptions(std::ifstream::failbit | std::ifstream::badbit);
 
-    // write dump type lss and write delta checkpoints
+    // take current checkpoint and delta with current and previous checkpoints
     auto current_cp = output_lss_.checkpoint();
-    out << current_cp - dumped_checkpoint_;
+    auto delta_cp = current_cp - dumped_checkpoint_;
+
+    // no changes - do nothing
+    if (delta_cp.empty() && dumped_cache_size_ >= cache_.size()) [[unlikely]] {
+      return;
+    }
+
+    // write dump type lss and write delta checkpoints
+    out << delta_cp;
     dumped_checkpoint_ = std::move(current_cp);
 
     // write dump type cache and write delta caches
@@ -229,6 +240,165 @@ class OutputDecoder : private BaseOutputDecoder {
     if (last_ls_id != std::numeric_limits<Primitives::LabelSetID>::max()) {
       func(last_ls_id, timeseries);
     }
+  }
+};
+
+class GoSliceSink : public snappy::Sink {
+  Primitives::Go::Slice<char>& out_;
+
+ public:
+  // GoSliceSink constructor over go slice.
+  PROMPP_ALWAYS_INLINE explicit GoSliceSink(Primitives::Go::Slice<char>& out) : out_(out) {}
+
+  // Append implementation snappy::Sink.
+  PROMPP_ALWAYS_INLINE void Append(const char* data, size_t len) override { out_.push_back(data, data + len); }
+};
+
+class ProtobufEncoder {
+  Primitives::BasicTimeseries<Primitives::SnugComposites::LabelSet::EncodingBimap::value_type*, BareBones::Vector<Primitives::Sample>> timeseries_;
+  std::string protobuffer_;
+  std::vector<Primitives::SnugComposites::LabelSet::EncodingBimap*> output_lsses_;
+  std::vector<std::vector<const RefSample*>> shards_ref_samples_;
+  std::vector<size_t> max_size_shards_ref_samples_;
+  size_t lss_number_of_shards_{0};
+  size_t max_size_timeseries_samples_{0};
+  size_t max_size_protobuffer_{0};
+
+  // write_compressed_protobuf write timeseries to protobuf and compress to snappy.
+  PROMPP_ALWAYS_INLINE void write_compressed_protobuf(Primitives::Go::Slice<char>& compressed) {
+    // make protobuf
+    protozero::pbf_writer pb_writer(protobuffer_);
+    Primitives::SnugComposites::LabelSet::EncodingBimap::value_type last_ls;  // composite_type
+
+    for (size_t lss_shard_id = 0; lss_shard_id < lss_number_of_shards_; ++lss_shard_id) {
+      // sort by ls id and timestamp
+      std::ranges::sort(shards_ref_samples_[lss_shard_id].begin(), shards_ref_samples_[lss_shard_id].end(),
+                        [](const RefSample* a, const RefSample* b) PROMPP_LAMBDA_INLINE {
+                          if (a->id < b->id) {
+                            return true;
+                          }
+
+                          if (a->id == b->id) {
+                            return a->t < b->t;
+                          }
+
+                          return false;
+                        });
+      uint32_t last_ls_id = PromPP::Primitives::kInvalidLabelSetID;
+
+      for (const RefSample* rsample : shards_ref_samples_[lss_shard_id]) {
+        if (rsample->id != last_ls_id) {
+          if (last_ls_id != PromPP::Primitives::kInvalidLabelSetID) {
+            Prometheus::RemoteWrite::write_timeseries(pb_writer, timeseries_);
+          }
+
+          last_ls = (*output_lsses_[lss_shard_id])[rsample->id];
+          timeseries_.set_label_set(&last_ls);
+          timeseries_.samples().clear();
+          last_ls_id = rsample->id;
+        }
+
+        timeseries_.samples().emplace_back(rsample->t, rsample->v);
+      }
+
+      if (last_ls_id != PromPP::Primitives::kInvalidLabelSetID) {
+        Prometheus::RemoteWrite::write_timeseries(pb_writer, timeseries_);
+      }
+    }
+
+    if (protobuffer_.empty()) [[unlikely]] {
+      // skip empty protobuf
+      return;
+    }
+
+    // compress to snappy
+    GoSliceSink writer(compressed);
+    snappy::ByteArraySource reader(protobuffer_.c_str(), protobuffer_.size());
+    snappy::Compress(&reader, &writer);
+  }
+
+  // clear_state clear state and maximum size recording.
+  PROMPP_ALWAYS_INLINE void clear_state() noexcept {
+    max_size_timeseries_samples_ = std::max(max_size_timeseries_samples_, timeseries_.samples().size());
+    timeseries_.set_label_set(nullptr);
+    timeseries_.samples().clear();
+
+    for (size_t i = 0; i < lss_number_of_shards_; ++i) {
+      max_size_shards_ref_samples_[i] = std::max(max_size_shards_ref_samples_[i], shards_ref_samples_[i].size());
+      shards_ref_samples_[i].clear();
+    }
+
+    max_size_protobuffer_ = std::max(max_size_protobuffer_, protobuffer_.size());
+    protobuffer_.clear();
+  }
+
+  // shrink_if_need if need shrink state.
+  PROMPP_ALWAYS_INLINE void shrink_if_need() noexcept {
+    // shrink timeseries samples
+    auto& samples = timeseries_.samples();
+    if (samples.capacity() != 15 && samples.capacity() > 1.2 * max_size_timeseries_samples_) [[unlikely]] {
+      samples.shrink_to_fit();
+      samples.reserve(1.1 * max_size_timeseries_samples_);
+    }
+
+    // shrink shards_ref_samples
+    for (size_t i = 0; i < lss_number_of_shards_; ++i) {
+      if (shards_ref_samples_[i].capacity() > 1.2 * max_size_shards_ref_samples_[i]) [[unlikely]] {
+        shards_ref_samples_[i].shrink_to_fit();
+        shards_ref_samples_[i].reserve(1.1 * max_size_timeseries_samples_);
+      }
+    }
+
+    // shrink protobuffer
+    if (protobuffer_.capacity() > 1 * max_size_protobuffer_) [[unlikely]] {
+      protobuffer_.shrink_to_fit();
+      protobuffer_.reserve(1.1 * max_size_protobuffer_);
+    }
+  }
+
+ public:
+  // ProtobufEncoder constructor.
+  PROMPP_ALWAYS_INLINE explicit ProtobufEncoder(std::vector<Primitives::SnugComposites::LabelSet::EncodingBimap*>&& output_lsses) noexcept
+      : output_lsses_{std::move(output_lsses)}, lss_number_of_shards_{output_lsses_.size()} {
+    shards_ref_samples_.resize(lss_number_of_shards_);
+    max_size_shards_ref_samples_.resize(lss_number_of_shards_);
+  }
+
+  // encode incoming refsamples to snapped protobufs on shards.
+  // the best algorithm was selected during the tests (comparisons were made with the map cache)
+  PROMPP_ALWAYS_INLINE void encode(Primitives::Go::SliceView<ShardRefSample*>& batch, Primitives::Go::Slice<Primitives::Go::Slice<char>>& out_slices) {
+    if (out_slices.empty()) [[unlikely]] {
+      // if shards scale 0, do nothing
+      return;
+    }
+
+    // reset max sizes
+    std::ranges::for_each(max_size_shards_ref_samples_, [](auto& max_size) { max_size = 0; });
+    max_size_timeseries_samples_ = 0;
+    max_size_protobuffer_ = 0;
+
+    // make protobuf from group for output shards
+    size_t number_of_shards = out_slices.size();
+    for (size_t shard_id = 0; shard_id < number_of_shards; ++shard_id) {
+      for (const auto* srs : batch) {
+        for (const auto& rs : srs->ref_samples) {
+          if ((static_cast<size_t>(rs.id) % number_of_shards) != shard_id) {
+            // skip data not for this shard
+            continue;
+          }
+
+          shards_ref_samples_[srs->shard_id].push_back(&rs);
+        }
+      }
+
+      write_compressed_protobuf(out_slices[shard_id]);
+
+      // clear state
+      clear_state();
+    }
+
+    // shrink state if need
+    shrink_if_need();
   }
 };
 

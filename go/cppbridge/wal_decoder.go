@@ -277,13 +277,19 @@ func NewWALOutputDecoder(
 	return d
 }
 
-// Decode - decodes incoming encoding data and return protobuf.
-func (d *WALOutputDecoder) Decode(ctx context.Context, segment []byte) (*DecodedRefSamples, error) {
+// Decode - decodes incoming encoding data and return protobuf, lowerLimitTimestamp - timestamp in milliseconds,
+// skip sample lower limit timestamp.
+func (d *WALOutputDecoder) Decode(
+	ctx context.Context,
+	segment []byte,
+	lowerLimitTimestamp int64,
+) (*DecodedRefSamples, int64, error) {
 	if ctx.Err() != nil {
-		return nil, ctx.Err()
+		return nil, 0, ctx.Err()
 	}
-	refSamples, exception := walOutputDecoderDecode(segment, d.decoder)
-	return NewDecodedRefSamples(refSamples, d.shardID), handleException(exception)
+
+	maxTimestamp, refSamples, exception := walOutputDecoderDecode(segment, d.decoder, lowerLimitTimestamp)
+	return newDecodedRefSamples(refSamples, d.shardID), maxTimestamp, handleException(exception)
 }
 
 // LoadFrom load from dump(slice byte) output decoder state(output_lss and cache).
@@ -297,6 +303,10 @@ func (d *WALOutputDecoder) WriteTo(w io.Writer) (int64, error) {
 	dump, exception := walOutputDecoderDumpTo(d.decoder)
 	if len(exception) != 0 {
 		return 0, handleException(exception)
+	}
+
+	if len(dump) == 0 {
+		return 0, nil
 	}
 
 	n, err := w.Write(dump)
@@ -317,8 +327,8 @@ type DecodedRefSamples struct {
 	shardID    uint16
 }
 
-// NewDecodedRefSamples init new DecodedRefSamples.
-func NewDecodedRefSamples(refSamples []RefSample, shardID uint16) *DecodedRefSamples {
+// newDecodedRefSamples init new DecodedRefSamples.
+func newDecodedRefSamples(refSamples []RefSample, shardID uint16) *DecodedRefSamples {
 	drs := &DecodedRefSamples{
 		refSamples: refSamples,
 		shardID:    shardID,
@@ -329,6 +339,14 @@ func NewDecodedRefSamples(refSamples []RefSample, shardID uint16) *DecodedRefSam
 	return drs
 }
 
+// NewGoDecodedRefSamples init new DecodedRefSamples, for test.
+func NewGoDecodedRefSamples(refSamples []RefSample, shardID uint16) *DecodedRefSamples {
+	return &DecodedRefSamples{
+		refSamples: refSamples,
+		shardID:    shardID,
+	}
+}
+
 // Range calls f sequentially for each RefSample present in the DecodedRefSamples.
 // If f returns false, range stops the iteration.
 func (s *DecodedRefSamples) Range(f func(id uint32, t int64, v float64) bool) {
@@ -337,4 +355,70 @@ func (s *DecodedRefSamples) Range(f func(id uint32, t int64, v float64) bool) {
 			return
 		}
 	}
+}
+
+// WALProtobufEncoder - go wrapper for C-WALProtobufEncoder.
+//
+//	decoder - pointer to a C++ decoder initiated in C++ memory;
+type WALProtobufEncoder struct {
+	encoder uintptr
+}
+
+// NewWALProtobufEncoder init new WALProtobufEncoder.
+func NewWALProtobufEncoder(outputLsses []*LabelSetStorage) *WALProtobufEncoder {
+	outputLssesPtr := make([]uintptr, 0, len(outputLsses))
+	for _, outputLss := range outputLsses {
+		outputLssesPtr = append(outputLssesPtr, outputLss.Pointer())
+	}
+	d := &WALProtobufEncoder{
+		encoder: walProtobufEncoderCtor(outputLssesPtr),
+	}
+	runtime.SetFinalizer(d, func(d *WALProtobufEncoder) {
+		walProtobufEncoderDtor(d.encoder)
+	})
+	return d
+}
+
+// Encode batch slice ShardRefSamples to snapped protobufs on shards.
+func (e *WALProtobufEncoder) Encode(
+	ctx context.Context,
+	batch []*DecodedRefSamples,
+	numberOfShards uint16,
+) ([]*SnappyProtobufEncodedData, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	buffers := make([][]byte, numberOfShards)
+	exception := walProtobufEncoderEncode(batch, buffers, e.encoder)
+	if len(exception) != 0 {
+		return nil, handleException(exception)
+	}
+
+	outSlices := make([]*SnappyProtobufEncodedData, numberOfShards)
+	for i := range buffers {
+		outSlices[i] = NewSnappyProtobufEncodedData(buffers[i])
+	}
+
+	return outSlices, nil
+}
+
+// SnappyProtobufEncodedData encoded to snappy protobuf data from c.
+type SnappyProtobufEncodedData struct {
+	b []byte
+}
+
+// NewSnappyProtobufEncodedData init new SnappyProtobufEncodedData.
+func NewSnappyProtobufEncodedData(b []byte) *SnappyProtobufEncodedData {
+	sped := &SnappyProtobufEncodedData{b: b}
+	runtime.SetFinalizer(sped, func(sped *SnappyProtobufEncodedData) {
+		freeBytes(sped.b)
+	})
+	return sped
+}
+
+// Do something doing with snapped protobuf.
+func (s *SnappyProtobufEncodedData) Do(f func(buf []byte) error) error {
+	err := f(s.b)
+	runtime.KeepAlive(s)
+	return err
 }
