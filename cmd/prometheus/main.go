@@ -181,6 +181,7 @@ type flagConfig struct {
 	outageTolerance             model.Duration
 	resendDelay                 model.Duration
 	maxConcurrentEvals          int64
+	sortRulesForConcurrentEval  bool
 	web                         web.Options
 	scrape                      scrape.Options
 	tsdb                        tsdbOptions
@@ -487,6 +488,9 @@ func main() {
 
 	serverOnlyFlag(a, "rules.max-concurrent-evals", "Global concurrency limit for independent rules that can run concurrently. When set, \"query.max-concurrency\" may need to be adjusted accordingly.").
 		Default("4").Int64Var(&cfg.maxConcurrentEvals)
+
+	serverOnlyFlag(a, "rules.sort-for-concurrent-eval", "Sorts rules in order to make more of them available for concurrent evaluation.").
+		Default("false").BoolVar(&cfg.sortRulesForConcurrentEval)
 
 	a.Flag("scrape.adjust-timestamps", "Adjust scrape timestamps by up to `scrape.timestamp-tolerance` to align them to the intended schedule. See https://github.com/prometheus/prometheus/issues/7846 for more context. Experimental. This flag will be removed in a future release.").
 		Hidden().Default("true").BoolVar(&scrape.AlignScrapeTimestamps)
@@ -800,19 +804,20 @@ func main() {
 		queryEngine = promql.NewEngine(opts)
 
 		ruleManager = rules.NewManager(&rules.ManagerOptions{
-			Appendable:             fanoutStorage,
-			Queryable:              localStorage,
-			QueryFunc:              rules.EngineQueryFunc(queryEngine, fanoutStorage),
-			NotifyFunc:             rules.SendAlerts(notifierManager, cfg.web.ExternalURL.String()),
-			Context:                ctxRule,
-			ExternalURL:            cfg.web.ExternalURL,
-			Registerer:             prometheus.DefaultRegisterer,
-			Logger:                 logger.With("component", "rule manager"),
-			OutageTolerance:        time.Duration(cfg.outageTolerance),
-			ForGracePeriod:         time.Duration(cfg.forGracePeriod),
-			ResendDelay:            time.Duration(cfg.resendDelay),
-			MaxConcurrentEvals:     cfg.maxConcurrentEvals,
-			ConcurrentEvalsEnabled: cfg.enableConcurrentRuleEval,
+			Appendable:              fanoutStorage,
+			Queryable:               localStorage,
+			QueryFunc:               rules.EngineQueryFunc(queryEngine, fanoutStorage),
+			NotifyFunc:              rules.SendAlerts(notifierManager, cfg.web.ExternalURL.String()),
+			Context:                 ctxRule,
+			ExternalURL:             cfg.web.ExternalURL,
+			Registerer:              prometheus.DefaultRegisterer,
+			Logger:                  logger.With("component", "rule manager"),
+			OutageTolerance:         time.Duration(cfg.outageTolerance),
+			ForGracePeriod:          time.Duration(cfg.forGracePeriod),
+			ResendDelay:             time.Duration(cfg.resendDelay),
+			MaxConcurrentEvals:      cfg.maxConcurrentEvals,
+			SortRulesForConcurrency: cfg.sortRulesForConcurrentEval,
+			ConcurrentEvalsEnabled:  cfg.enableConcurrentRuleEval,
 			DefaultRuleQueryOffset: func() time.Duration {
 				return time.Duration(cfgFile.GlobalConfig.RuleQueryOffset)
 			},
