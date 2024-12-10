@@ -138,11 +138,12 @@ func NewManager(o *ManagerOptions) *Manager {
 	}
 
 	if o.RuleConcurrencyController == nil {
-		if o.ConcurrentEvalsEnabled && o.SortRulesForConcurrency {
+		switch {
+		case o.ConcurrentEvalsEnabled && o.SortRulesForConcurrency:
 			o.RuleConcurrencyController = newSortedRuleConcurrencyController(o.MaxConcurrentEvals)
-		} else if o.ConcurrentEvalsEnabled {
+		case o.ConcurrentEvalsEnabled:
 			o.RuleConcurrencyController = newRuleConcurrencyController(o.MaxConcurrentEvals)
-		} else {
+		default:
 			o.RuleConcurrencyController = sequentialRuleEvalController{}
 		}
 	}

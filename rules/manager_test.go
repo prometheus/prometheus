@@ -2155,7 +2155,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 		group.Eval(ctx, start)
 
 		// Inflight queries should be limited to 1 at a time because all rules have dependencies or dependents.
-		require.Equal(t, maxInflight.Load(), int32(1))
+		require.EqualValues(t, 1, maxInflight.Load())
 		// Each rule produces one vector.
 		require.EqualValues(t, ruleCount, testutil.ToFloat64(group.metrics.GroupSamples))
 	})
