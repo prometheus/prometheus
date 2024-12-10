@@ -195,7 +195,7 @@ func TestCheckpoint(t *testing.T) {
 			require.NoError(t, w.Close())
 
 			// Start a WAL and write records to it as usual.
-			w, err = NewSize(nil, nil, dir, 64*1024, compress)
+			w, err = NewSize(nil, nil, dir, 128*1024, compress)
 			require.NoError(t, err)
 
 			samplesInWAL, histogramsInWAL, floatHistogramsInWAL := 0, 0, 0
