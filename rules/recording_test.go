@@ -119,6 +119,14 @@ func setUpRuleEvalTest(t require.TestingT) *teststorage.TestStorage {
 	`)
 }
 
+func setUpRuleExemplarsEvalTest(t require.TestingT) *teststorage.TestStorage {
+	return promqltest.LoadedStorage(t, `
+		load 1m
+			metric{label_a="1",label_b="3"} 1 # {trace_id="1234"} 1 0
+			metric{label_a="2",label_b="4"} 10 # {trace_id="2345"} 10 0
+	`)
+}
+
 func TestRuleEval(t *testing.T) {
 	storage := setUpRuleEvalTest(t)
 	t.Cleanup(func() { storage.Close() })
@@ -130,6 +138,85 @@ func TestRuleEval(t *testing.T) {
 			result, err := rule.Eval(context.TODO(), 0, ruleEvaluationTime, EngineQueryFunc(ng, storage), nil, 0)
 			require.NoError(t, err)
 			testutil.RequireEqual(t, scenario.expected, result)
+		})
+	}
+}
+
+func TestRuleEvalWithZeroExemplars(t *testing.T) {
+	storage := setUpRuleEvalTest(t)
+	t.Cleanup(func() { storage.Close() })
+
+	ng := testEngine(t)
+	for _, scenario := range ruleEvalTestScenarios {
+		t.Run(scenario.name, func(t *testing.T) {
+			rule := NewRecordingRule("test_rule", scenario.expr, scenario.ruleLabels)
+			result, _, err := rule.EvalWithExemplars(context.TODO(), 0, ruleEvaluationTime, EngineQueryFunc(ng, storage),
+				ExemplarQuerierQueryFunc(storage.ExemplarQueryable()), nil, 0)
+			require.NoError(t, err)
+			testutil.RequireEqual(t, scenario.expected, result)
+		})
+	}
+}
+
+func TestRuleEvalWithExemplars(t *testing.T) {
+	storage := setUpRuleExemplarsEvalTest(t)
+	t.Cleanup(func() { storage.Close() })
+
+	ng := testEngine(t)
+	interval := time.Second * 60
+	for _, scenario := range ruleEvalTestScenarios {
+		t.Run(scenario.name, func(t *testing.T) {
+			rule := NewRecordingRule("test_rule", scenario.expr, scenario.ruleLabels)
+			result, ex, err := rule.EvalWithExemplars(context.TODO(), interval, ruleEvaluationTime.Add(interval), EngineQueryFunc(ng, storage),
+				ExemplarQuerierQueryFunc(storage.ExemplarQueryable()), nil, 0)
+			require.NoError(t, err)
+			require.Len(t, ex, 2)
+			testutil.RequireEqual(t, scenario.expected, result)
+		})
+	}
+}
+
+func BenchmarkRuleEvalWithNoExemplars(b *testing.B) {
+	storage := setUpRuleEvalTest(b)
+	b.Cleanup(func() { storage.Close() })
+
+	ng := testEngine(b)
+	for _, scenario := range ruleEvalTestScenarios {
+		b.Run(scenario.name, func(b *testing.B) {
+			rule := NewRecordingRule("test_rule", scenario.expr, scenario.ruleLabels)
+
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i++ {
+				_, _, err := rule.EvalWithExemplars(context.TODO(), 0, ruleEvaluationTime, EngineQueryFunc(ng, storage),
+					ExemplarQuerierQueryFunc(storage.ExemplarQueryable()), nil, 0)
+				if err != nil {
+					require.NoError(b, err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkRuleEvalWithExemplars(b *testing.B) {
+	storage := setUpRuleExemplarsEvalTest(b)
+	b.Cleanup(func() { storage.Close() })
+
+	ng := testEngine(b)
+	interval := time.Second * 60
+	for _, scenario := range ruleEvalTestScenarios {
+		b.Run(scenario.name, func(b *testing.B) {
+			rule := NewRecordingRule("test_rule", scenario.expr, scenario.ruleLabels)
+
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i++ {
+				_, _, err := rule.EvalWithExemplars(context.TODO(), interval, ruleEvaluationTime.Add(interval), EngineQueryFunc(ng, storage),
+					ExemplarQuerierQueryFunc(storage.ExemplarQueryable()), nil, 0)
+				if err != nil {
+					require.NoError(b, err)
+				}
+			}
 		})
 	}
 }

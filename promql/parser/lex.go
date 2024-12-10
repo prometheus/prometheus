@@ -181,6 +181,7 @@ var ItemTypeStr = map[ItemType]string{
 	BLANK:         "_",
 	TIMES:         "x",
 	SPACE:         "<space>",
+	HASH:          "#",
 
 	SUB:       "-",
 	ADD:       "+",
@@ -282,6 +283,7 @@ type Lexer struct {
 	// series description variables for internal PromQL testing framework as well as in promtool rules unit tests.
 	// see https://prometheus.io/docs/prometheus/latest/configuration/unit_testing_rules/#series
 	seriesDesc     bool           // Whether we are lexing a series description.
+	exemplars      bool           // Whether we are lexing exemplars (inside a series description).
 	histogramState histogramState // Determines whether or not inside of a histogram description.
 }
 
@@ -387,6 +389,9 @@ func lexStatements(l *Lexer) stateFn {
 	}
 	if l.braceOpen {
 		return lexInsideBraces
+	}
+	if l.exemplars {
+		return lexExemplars
 	}
 	if strings.HasPrefix(l.input[l.pos:], lineComment) {
 		return lexLineComment
@@ -687,6 +692,9 @@ func lexInsideBraces(l *Lexer) stateFn {
 		l.braceOpen = false
 
 		if l.seriesDesc {
+			if l.exemplars {
+				return lexExemplars
+			}
 			return lexValueSequence
 		}
 		return lexStatements
@@ -721,6 +729,10 @@ func lexValueSequence(l *Lexer) stateFn {
 		l.emit(SUB)
 	case r == 'x':
 		l.emit(TIMES)
+	case r == '#':
+		l.emit(HASH)
+		l.exemplars = true
+		return lexExemplars
 	case r == '_':
 		l.emit(BLANK)
 	case isDigit(r) || (r == '.' && isDigit(l.peek())):
@@ -734,6 +746,39 @@ func lexValueSequence(l *Lexer) stateFn {
 		return l.errorf("unexpected character in series sequence: %q", r)
 	}
 	return lexValueSequence
+}
+
+// lexExemplars scans a sequence of exemplars as part of a series description.
+func lexExemplars(l *Lexer) stateFn {
+	switch r := l.next(); {
+	case r == eof:
+		l.backup()
+		l.exemplars = false
+		return lexStatements
+	case r == '{':
+		l.emit(LEFT_BRACE)
+		l.braceOpen = true
+		return lexInsideBraces
+	case isSpace(r):
+		l.emit(SPACE)
+		lexSpace(l)
+	case r == '+':
+		l.emit(ADD)
+	case r == '-':
+		l.emit(SUB)
+	case r == '#':
+		l.emit(HASH)
+	case isDigit(r) || (r == '.' && isDigit(l.peek())):
+		l.backup()
+		lexNumber(l)
+	case isAlpha(r):
+		l.backup()
+		// We might lex invalid Items here but this will be caught by the parser.
+		return lexKeywordOrIdentifier
+	default:
+		return l.errorf("unexpected character in exemplars: %q", r)
+	}
+	return lexExemplars
 }
 
 // lexEscape scans a string escape sequence. The initial escaping character (\)
@@ -1048,6 +1093,9 @@ Loop:
 		}
 	}
 	if l.seriesDesc && l.peek() != '{' {
+		if l.exemplars {
+			return lexExemplars
+		}
 		return lexValueSequence
 	}
 	return lexStatements
