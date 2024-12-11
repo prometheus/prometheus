@@ -25,119 +25,86 @@ import (
 )
 
 func TestByte(t *testing.T) {
-	require.Equal(t, "system_filesystem_usage_bytes", normalizeName(createGauge("system.filesystem.usage", "By"), "", false))
+	require.Equal(t, "system_filesystem_usage_bytes", normalizeName(createGauge("system.filesystem.usage", "By"), ""))
 }
 
 func TestByteCounter(t *testing.T) {
-	require.Equal(t, "system_io_bytes_total", normalizeName(createCounter("system.io", "By"), "", false))
-	require.Equal(t, "network_transmitted_bytes_total", normalizeName(createCounter("network_transmitted_bytes_total", "By"), "", false))
+	require.Equal(t, "system_io_bytes_total", normalizeName(createCounter("system.io", "By"), ""))
+	require.Equal(t, "network_transmitted_bytes_total", normalizeName(createCounter("network_transmitted_bytes_total", "By"), ""))
 }
 
 func TestWhiteSpaces(t *testing.T) {
-	require.Equal(t, "system_filesystem_usage_bytes", normalizeName(createGauge("\t system.filesystem.usage       ", "  By\t"), "", false))
+	require.Equal(t, "system_filesystem_usage_bytes", normalizeName(createGauge("\t system.filesystem.usage       ", "  By\t"), ""))
 }
 
 func TestNonStandardUnit(t *testing.T) {
-	require.Equal(t, "system_network_dropped", normalizeName(createGauge("system.network.dropped", "{packets}"), "", false))
+	require.Equal(t, "system_network_dropped", normalizeName(createGauge("system.network.dropped", "{packets}"), ""))
 }
 
 func TestNonStandardUnitCounter(t *testing.T) {
-	require.Equal(t, "system_network_dropped_total", normalizeName(createCounter("system.network.dropped", "{packets}"), "", false))
+	require.Equal(t, "system_network_dropped_total", normalizeName(createCounter("system.network.dropped", "{packets}"), ""))
 }
 
 func TestBrokenUnit(t *testing.T) {
-	require.Equal(t, "system_network_dropped_packets", normalizeName(createGauge("system.network.dropped", "packets"), "", false))
-	require.Equal(t, "system_network_packets_dropped", normalizeName(createGauge("system.network.packets.dropped", "packets"), "", false))
-	require.Equal(t, "system_network_packets", normalizeName(createGauge("system.network.packets", "packets"), "", false))
+	require.Equal(t, "system_network_dropped_packets", normalizeName(createGauge("system.network.dropped", "packets"), ""))
+	require.Equal(t, "system_network_packets_dropped", normalizeName(createGauge("system.network.packets.dropped", "packets"), ""))
+	require.Equal(t, "system_network_packets", normalizeName(createGauge("system.network.packets", "packets"), ""))
 }
 
 func TestBrokenUnitCounter(t *testing.T) {
-	require.Equal(t, "system_network_dropped_packets_total", normalizeName(createCounter("system.network.dropped", "packets"), "", false))
-	require.Equal(t, "system_network_packets_dropped_total", normalizeName(createCounter("system.network.packets.dropped", "packets"), "", false))
-	require.Equal(t, "system_network_packets_total", normalizeName(createCounter("system.network.packets", "packets"), "", false))
+	require.Equal(t, "system_network_dropped_packets_total", normalizeName(createCounter("system.network.dropped", "packets"), ""))
+	require.Equal(t, "system_network_packets_dropped_total", normalizeName(createCounter("system.network.packets.dropped", "packets"), ""))
+	require.Equal(t, "system_network_packets_total", normalizeName(createCounter("system.network.packets", "packets"), ""))
 }
 
 func TestRatio(t *testing.T) {
-	require.Equal(t, "hw_gpu_memory_utilization_ratio", normalizeName(createGauge("hw.gpu.memory.utilization", "1"), "", false))
-	require.Equal(t, "hw_fan_speed_ratio", normalizeName(createGauge("hw.fan.speed_ratio", "1"), "", false))
-	require.Equal(t, "objects_total", normalizeName(createCounter("objects", "1"), "", false))
+	require.Equal(t, "hw_gpu_memory_utilization_ratio", normalizeName(createGauge("hw.gpu.memory.utilization", "1"), ""))
+	require.Equal(t, "hw_fan_speed_ratio", normalizeName(createGauge("hw.fan.speed_ratio", "1"), ""))
+	require.Equal(t, "objects_total", normalizeName(createCounter("objects", "1"), ""))
 }
 
 func TestHertz(t *testing.T) {
-	require.Equal(t, "hw_cpu_speed_limit_hertz", normalizeName(createGauge("hw.cpu.speed_limit", "Hz"), "", false))
+	require.Equal(t, "hw_cpu_speed_limit_hertz", normalizeName(createGauge("hw.cpu.speed_limit", "Hz"), ""))
 }
 
 func TestPer(t *testing.T) {
-	require.Equal(t, "broken_metric_speed_km_per_hour", normalizeName(createGauge("broken.metric.speed", "km/h"), "", false))
-	require.Equal(t, "astro_light_speed_limit_meters_per_second", normalizeName(createGauge("astro.light.speed_limit", "m/s"), "", false))
+	require.Equal(t, "broken_metric_speed_km_per_hour", normalizeName(createGauge("broken.metric.speed", "km/h"), ""))
+	require.Equal(t, "astro_light_speed_limit_meters_per_second", normalizeName(createGauge("astro.light.speed_limit", "m/s"), ""))
 }
 
 func TestPercent(t *testing.T) {
-	require.Equal(t, "broken_metric_success_ratio_percent", normalizeName(createGauge("broken.metric.success_ratio", "%"), "", false))
-	require.Equal(t, "broken_metric_success_percent", normalizeName(createGauge("broken.metric.success_percent", "%"), "", false))
+	require.Equal(t, "broken_metric_success_ratio_percent", normalizeName(createGauge("broken.metric.success_ratio", "%"), ""))
+	require.Equal(t, "broken_metric_success_percent", normalizeName(createGauge("broken.metric.success_percent", "%"), ""))
 }
 
 func TestEmpty(t *testing.T) {
-	require.Equal(t, "test_metric_no_unit", normalizeName(createGauge("test.metric.no_unit", ""), "", false))
-	require.Equal(t, "test_metric_spaces", normalizeName(createGauge("test.metric.spaces", "   \t  "), "", false))
-}
-
-func TestAllowUTF8(t *testing.T) {
-	t.Run("allow UTF8", func(t *testing.T) {
-		require.Equal(t, "unsupported.metric.temperature_°F", normalizeName(createGauge("unsupported.metric.temperature", "°F"), "", true))
-		require.Equal(t, "unsupported.metric.weird_+=.:,!* & #", normalizeName(createGauge("unsupported.metric.weird", "+=.:,!* & #"), "", true))
-		require.Equal(t, "unsupported.metric.redundant___test $_per_°C", normalizeName(createGauge("unsupported.metric.redundant", "__test $/°C"), "", true))
-		require.Equal(t, "metric_with_字符_foreign_characters_ど", normalizeName(createGauge("metric_with_字符_foreign_characters", "ど"), "", true))
-	})
-	t.Run("disallow UTF8", func(t *testing.T) {
-		require.Equal(t, "unsupported_metric_temperature_F", normalizeName(createGauge("unsupported.metric.temperature", "°F"), "", false))
-		require.Equal(t, "unsupported_metric_weird", normalizeName(createGauge("unsupported.metric.weird", "+=.:,!* & #"), "", false))
-		require.Equal(t, "unsupported_metric_redundant_test_per_C", normalizeName(createGauge("unsupported.metric.redundant", "__test $/°C"), "", false))
-		require.Equal(t, "metric_with_foreign_characters", normalizeName(createGauge("metric_with_字符_foreign_characters", "ど"), "", false))
-	})
-}
-
-func TestAllowUTF8KnownBugs(t *testing.T) {
-	// Due to historical reasons, the translator code was copied from OpenTelemetry collector codebase.
-	// Over there, they tried to provide means to translate metric names following Prometheus conventions that are documented here:
-	// https://prometheus.io/docs/practices/naming/
-	//
-	// Althogh not explicitly said, it was implied that words should be separated by a single underscore and the codebase was written
-	// with that in mind.
-	//
-	// Now that we're allowing OTel users to have their original names stored in prometheus without any transformation, we're facing problems
-	// where two (or more) UTF-8 characters are being used to separate words.
-	// TODO(arthursens): Fix it!
-
-	// We're asserting on 'NotEqual', which proves the bug.
-	require.NotEqual(t, "metric....split_=+by_//utf8characters", normalizeName(createGauge("metric....split_=+by_//utf8characters", ""), "", true))
-	// Here we're asserting on 'Equal', showing the current behavior.
-	require.Equal(t, "metric.split_by_utf8characters", normalizeName(createGauge("metric....split_=+by_//utf8characters", ""), "", true))
+	require.Equal(t, "test_metric_no_unit", normalizeName(createGauge("test.metric.no_unit", ""), ""))
+	require.Equal(t, "test_metric_spaces", normalizeName(createGauge("test.metric.spaces", "   \t  "), ""))
 }
 
 func TestOTelReceivers(t *testing.T) {
-	require.Equal(t, "active_directory_ds_replication_network_io_bytes_total", normalizeName(createCounter("active_directory.ds.replication.network.io", "By"), "", false))
-	require.Equal(t, "active_directory_ds_replication_sync_object_pending_total", normalizeName(createCounter("active_directory.ds.replication.sync.object.pending", "{objects}"), "", false))
-	require.Equal(t, "active_directory_ds_replication_object_rate_per_second", normalizeName(createGauge("active_directory.ds.replication.object.rate", "{objects}/s"), "", false))
-	require.Equal(t, "active_directory_ds_name_cache_hit_rate_percent", normalizeName(createGauge("active_directory.ds.name_cache.hit_rate", "%"), "", false))
-	require.Equal(t, "active_directory_ds_ldap_bind_last_successful_time_milliseconds", normalizeName(createGauge("active_directory.ds.ldap.bind.last_successful.time", "ms"), "", false))
-	require.Equal(t, "apache_current_connections", normalizeName(createGauge("apache.current_connections", "connections"), "", false))
-	require.Equal(t, "apache_workers_connections", normalizeName(createGauge("apache.workers", "connections"), "", false))
-	require.Equal(t, "apache_requests_total", normalizeName(createCounter("apache.requests", "1"), "", false))
-	require.Equal(t, "bigip_virtual_server_request_count_total", normalizeName(createCounter("bigip.virtual_server.request.count", "{requests}"), "", false))
-	require.Equal(t, "system_cpu_utilization_ratio", normalizeName(createGauge("system.cpu.utilization", "1"), "", false))
-	require.Equal(t, "system_disk_operation_time_seconds_total", normalizeName(createCounter("system.disk.operation_time", "s"), "", false))
-	require.Equal(t, "system_cpu_load_average_15m_ratio", normalizeName(createGauge("system.cpu.load_average.15m", "1"), "", false))
-	require.Equal(t, "memcached_operation_hit_ratio_percent", normalizeName(createGauge("memcached.operation_hit_ratio", "%"), "", false))
-	require.Equal(t, "mongodbatlas_process_asserts_per_second", normalizeName(createGauge("mongodbatlas.process.asserts", "{assertions}/s"), "", false))
-	require.Equal(t, "mongodbatlas_process_journaling_data_files_mebibytes", normalizeName(createGauge("mongodbatlas.process.journaling.data_files", "MiBy"), "", false))
-	require.Equal(t, "mongodbatlas_process_network_io_bytes_per_second", normalizeName(createGauge("mongodbatlas.process.network.io", "By/s"), "", false))
-	require.Equal(t, "mongodbatlas_process_oplog_rate_gibibytes_per_hour", normalizeName(createGauge("mongodbatlas.process.oplog.rate", "GiBy/h"), "", false))
-	require.Equal(t, "mongodbatlas_process_db_query_targeting_scanned_per_returned", normalizeName(createGauge("mongodbatlas.process.db.query_targeting.scanned_per_returned", "{scanned}/{returned}"), "", false))
-	require.Equal(t, "nginx_requests", normalizeName(createGauge("nginx.requests", "requests"), "", false))
-	require.Equal(t, "nginx_connections_accepted", normalizeName(createGauge("nginx.connections_accepted", "connections"), "", false))
-	require.Equal(t, "nsxt_node_memory_usage_kilobytes", normalizeName(createGauge("nsxt.node.memory.usage", "KBy"), "", false))
-	require.Equal(t, "redis_latest_fork_microseconds", normalizeName(createGauge("redis.latest_fork", "us"), "", false))
+	require.Equal(t, "active_directory_ds_replication_network_io_bytes_total", normalizeName(createCounter("active_directory.ds.replication.network.io", "By"), ""))
+	require.Equal(t, "active_directory_ds_replication_sync_object_pending_total", normalizeName(createCounter("active_directory.ds.replication.sync.object.pending", "{objects}"), ""))
+	require.Equal(t, "active_directory_ds_replication_object_rate_per_second", normalizeName(createGauge("active_directory.ds.replication.object.rate", "{objects}/s"), ""))
+	require.Equal(t, "active_directory_ds_name_cache_hit_rate_percent", normalizeName(createGauge("active_directory.ds.name_cache.hit_rate", "%"), ""))
+	require.Equal(t, "active_directory_ds_ldap_bind_last_successful_time_milliseconds", normalizeName(createGauge("active_directory.ds.ldap.bind.last_successful.time", "ms"), ""))
+	require.Equal(t, "apache_current_connections", normalizeName(createGauge("apache.current_connections", "connections"), ""))
+	require.Equal(t, "apache_workers_connections", normalizeName(createGauge("apache.workers", "connections"), ""))
+	require.Equal(t, "apache_requests_total", normalizeName(createCounter("apache.requests", "1"), ""))
+	require.Equal(t, "bigip_virtual_server_request_count_total", normalizeName(createCounter("bigip.virtual_server.request.count", "{requests}"), ""))
+	require.Equal(t, "system_cpu_utilization_ratio", normalizeName(createGauge("system.cpu.utilization", "1"), ""))
+	require.Equal(t, "system_disk_operation_time_seconds_total", normalizeName(createCounter("system.disk.operation_time", "s"), ""))
+	require.Equal(t, "system_cpu_load_average_15m_ratio", normalizeName(createGauge("system.cpu.load_average.15m", "1"), ""))
+	require.Equal(t, "memcached_operation_hit_ratio_percent", normalizeName(createGauge("memcached.operation_hit_ratio", "%"), ""))
+	require.Equal(t, "mongodbatlas_process_asserts_per_second", normalizeName(createGauge("mongodbatlas.process.asserts", "{assertions}/s"), ""))
+	require.Equal(t, "mongodbatlas_process_journaling_data_files_mebibytes", normalizeName(createGauge("mongodbatlas.process.journaling.data_files", "MiBy"), ""))
+	require.Equal(t, "mongodbatlas_process_network_io_bytes_per_second", normalizeName(createGauge("mongodbatlas.process.network.io", "By/s"), ""))
+	require.Equal(t, "mongodbatlas_process_oplog_rate_gibibytes_per_hour", normalizeName(createGauge("mongodbatlas.process.oplog.rate", "GiBy/h"), ""))
+	require.Equal(t, "mongodbatlas_process_db_query_targeting_scanned_per_returned", normalizeName(createGauge("mongodbatlas.process.db.query_targeting.scanned_per_returned", "{scanned}/{returned}"), ""))
+	require.Equal(t, "nginx_requests", normalizeName(createGauge("nginx.requests", "requests"), ""))
+	require.Equal(t, "nginx_connections_accepted", normalizeName(createGauge("nginx.connections_accepted", "connections"), ""))
+	require.Equal(t, "nsxt_node_memory_usage_kilobytes", normalizeName(createGauge("nsxt.node.memory.usage", "KBy"), ""))
+	require.Equal(t, "redis_latest_fork_microseconds", normalizeName(createGauge("redis.latest_fork", "us"), ""))
 }
 
 func TestTrimPromSuffixes(t *testing.T) {
@@ -171,8 +138,8 @@ func TestTrimPromSuffixes(t *testing.T) {
 }
 
 func TestNamespace(t *testing.T) {
-	require.Equal(t, "space_test", normalizeName(createGauge("test", ""), "space", false))
-	require.Equal(t, "space_test", normalizeName(createGauge("#test", ""), "space", false))
+	require.Equal(t, "space_test", normalizeName(createGauge("test", ""), "space"))
+	require.Equal(t, "space_test", normalizeName(createGauge("#test", ""), "space"))
 }
 
 func TestCleanUpUnit(t *testing.T) {
@@ -207,28 +174,28 @@ func TestRemoveItem(t *testing.T) {
 }
 
 func TestBuildCompliantNameWithSuffixes(t *testing.T) {
-	require.Equal(t, "system_io_bytes_total", BuildCompliantName(createCounter("system.io", "By"), "", true, false))
-	require.Equal(t, "system_network_io_bytes_total", BuildCompliantName(createCounter("network.io", "By"), "system", true, false))
-	require.Equal(t, "_3_14_digits", BuildCompliantName(createGauge("3.14 digits", ""), "", true, false))
-	require.Equal(t, "envoy_rule_engine_zlib_buf_error", BuildCompliantName(createGauge("envoy__rule_engine_zlib_buf_error", ""), "", true, false))
-	require.Equal(t, ":foo::bar", BuildCompliantName(createGauge(":foo::bar", ""), "", true, false))
-	require.Equal(t, ":foo::bar_total", BuildCompliantName(createCounter(":foo::bar", ""), "", true, false))
+	require.Equal(t, "system_io_bytes_total", BuildCompliantName(createCounter("system.io", "By"), "", true))
+	require.Equal(t, "system_network_io_bytes_total", BuildCompliantName(createCounter("network.io", "By"), "system", true))
+	require.Equal(t, "_3_14_digits", BuildCompliantName(createGauge("3.14 digits", ""), "", true))
+	require.Equal(t, "envoy_rule_engine_zlib_buf_error", BuildCompliantName(createGauge("envoy__rule_engine_zlib_buf_error", ""), "", true))
+	require.Equal(t, ":foo::bar", BuildCompliantName(createGauge(":foo::bar", ""), "", true))
+	require.Equal(t, ":foo::bar_total", BuildCompliantName(createCounter(":foo::bar", ""), "", true))
 	// Gauges with unit 1 are considered ratios.
-	require.Equal(t, "foo_bar_ratio", BuildCompliantName(createGauge("foo.bar", "1"), "", true, false))
+	require.Equal(t, "foo_bar_ratio", BuildCompliantName(createGauge("foo.bar", "1"), "", true))
 	// Slashes in units are converted.
-	require.Equal(t, "system_io_foo_per_bar_total", BuildCompliantName(createCounter("system.io", "foo/bar"), "", true, false))
-	require.Equal(t, "metric_with_foreign_characters_total", BuildCompliantName(createCounter("metric_with_字符_foreign_characters", ""), "", true, false))
+	require.Equal(t, "system_io_foo_per_bar_total", BuildCompliantName(createCounter("system.io", "foo/bar"), "", true))
+	require.Equal(t, "metric_with_foreign_characters_total", BuildCompliantName(createCounter("metric_with_字符_foreign_characters", ""), "", true))
 }
 
 func TestBuildCompliantNameWithoutSuffixes(t *testing.T) {
-	require.Equal(t, "system_io", BuildCompliantName(createCounter("system.io", "By"), "", false, false))
-	require.Equal(t, "system_network_io", BuildCompliantName(createCounter("network.io", "By"), "system", false, false))
-	require.Equal(t, "system_network_I_O", BuildCompliantName(createCounter("network (I/O)", "By"), "system", false, false))
-	require.Equal(t, "_3_14_digits", BuildCompliantName(createGauge("3.14 digits", "By"), "", false, false))
-	require.Equal(t, "envoy__rule_engine_zlib_buf_error", BuildCompliantName(createGauge("envoy__rule_engine_zlib_buf_error", ""), "", false, false))
-	require.Equal(t, ":foo::bar", BuildCompliantName(createGauge(":foo::bar", ""), "", false, false))
-	require.Equal(t, ":foo::bar", BuildCompliantName(createCounter(":foo::bar", ""), "", false, false))
-	require.Equal(t, "foo_bar", BuildCompliantName(createGauge("foo.bar", "1"), "", false, false))
-	require.Equal(t, "system_io", BuildCompliantName(createCounter("system.io", "foo/bar"), "", false, false))
-	require.Equal(t, "metric_with___foreign_characters", BuildCompliantName(createCounter("metric_with_字符_foreign_characters", ""), "", false, false))
+	require.Equal(t, "system_io", BuildCompliantName(createCounter("system.io", "By"), "", false))
+	require.Equal(t, "system_network_io", BuildCompliantName(createCounter("network.io", "By"), "system", false))
+	require.Equal(t, "system_network_I_O", BuildCompliantName(createCounter("network (I/O)", "By"), "system", false))
+	require.Equal(t, "_3_14_digits", BuildCompliantName(createGauge("3.14 digits", "By"), "", false))
+	require.Equal(t, "envoy__rule_engine_zlib_buf_error", BuildCompliantName(createGauge("envoy__rule_engine_zlib_buf_error", ""), "", false))
+	require.Equal(t, ":foo::bar", BuildCompliantName(createGauge(":foo::bar", ""), "", false))
+	require.Equal(t, ":foo::bar", BuildCompliantName(createCounter(":foo::bar", ""), "", false))
+	require.Equal(t, "foo_bar", BuildCompliantName(createGauge("foo.bar", "1"), "", false))
+	require.Equal(t, "system_io", BuildCompliantName(createCounter("system.io", "foo/bar"), "", false))
+	require.Equal(t, "metric_with___foreign_characters", BuildCompliantName(createCounter("metric_with_字符_foreign_characters", ""), "", false))
 }
