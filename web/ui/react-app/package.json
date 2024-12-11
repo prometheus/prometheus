@@ -69,7 +69,7 @@
     "@types/enzyme": "^3.10.18",
     "@types/flot": "0.0.36",
     "@types/jest": "^29.5.14",
-    "@types/jquery": "^3.5.30",
+    "@types/jquery": "^3.5.32",
     "@types/node": "^20.14.9",
     "@types/react": "^17.0.71",
     "@types/react-copy-to-clipboard": "^5.0.7",
