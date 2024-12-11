@@ -179,8 +179,8 @@ otlp:
   # - "UnderscoreEscapingWithSuffixes" refers to commonly agreed normalization used
   #   by OpenTelemetry in https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/pkg/translator/prometheus
   # - "NoUTF8EscapingWithSuffixes" is a mode that relies on UTF-8 support in Prometheus.
-  #   It preserves all special characters like dots, but it still add required suffixes
-  #   for units and _total like in UnderscoreEscapingWithSuffixes.
+  #   It preserves all special characters like dots, but still adds required metric name suffixes
+  #   for units and _total, as UnderscoreEscapingWithSuffixes does.
   [ translation_strategy: <string> | default = "UnderscoreEscapingWithSuffixes" ]
   # Enables adding "service.name", "service.namespace" and "service.instance.id"
   # resource attributes to the "target_info" metric, on top of converting

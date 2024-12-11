@@ -22,7 +22,7 @@ otlp:
     - k8s.pod.name
     - k8s.replicaset.name
     - k8s.statefulset.name
-  # Ingest OTLP data keeping UTF-8 characters in metric/label names.
+  # Ingest OTLP data keeping all characters in metric/label names.
   translation_strategy: NoUTF8EscapingWithSuffixes
 
 storage:
