@@ -345,11 +345,14 @@ func calcTrendValue(i int, tf, s0, s1, b float64) float64 {
 	return x + y
 }
 
-// Holt-Winters is similar to a weighted moving average, where historical data has exponentially less influence on the current data.
-// Holt-Winter also accounts for trends in data. The smoothing factor (0 < sf < 1) affects how historical data will affect the current
-// data. A lower smoothing factor increases the influence of historical data. The trend factor (0 < tf < 1) affects
-// how trends in historical data will affect the current data. A higher trend factor increases the influence.
-// of trends. Algorithm taken from https://en.wikipedia.org/wiki/Exponential_smoothing titled: "Double exponential smoothing".
+// Double exponential smoothing is similar to a weighted moving average, where
+// historical data has exponentially less influence on the current data. It also
+// accounts for trends in data. The smoothing factor (0 < sf < 1) affects how
+// historical data will affect the current data. A lower smoothing factor
+// increases the influence of historical data. The trend factor (0 < tf < 1)
+// affects how trends in historical data will affect the current data. A higher
+// trend factor increases the influence. of trends. Algorithm taken from
+// https://en.wikipedia.org/wiki/Exponential_smoothing .
 func funcDoubleExponentialSmoothing(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	samples := vals[0].(Matrix)[0]
 
