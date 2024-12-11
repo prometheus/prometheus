@@ -25,6 +25,10 @@ updates:
       - manteen-ui
     schedule:
       interval: "monthly"
+    groups:
+      new-ui:
+        patterns:
+          - "*"
     open-pull-requests-limit: 20
   # Old react-app packages.
   - package-ecosystem: "npm"
@@ -35,6 +39,10 @@ updates:
       - old-react-ui
     schedule:
       interval: "monthly"
+    groups:
+      old-ui:
+        patterns:
+          - "*"
     open-pull-requests-limit: 20
   - package-ecosystem: "github-actions"
     directory: "/"
