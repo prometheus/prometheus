@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -10,11 +11,11 @@ type EncoderV1 struct {
 }
 
 func (EncoderV1) Encode(writer io.Writer, r *Record) (err error) {
-	if err = encodeString(writer, r.id); err != nil {
+	if err = encodeString(writer, r.id.String()); err != nil {
 		return fmt.Errorf("failed to encode id: %w", err)
 	}
 
-	if err = encodeString(writer, r.dir); err != nil {
+	if err = encodeString(writer, r.id.String()); err != nil {
 		return fmt.Errorf("failed to encode dir: %w", err)
 	}
 
@@ -56,36 +57,67 @@ func encodeString(writer io.Writer, value string) (err error) {
 type EncoderV2 struct{}
 
 func (EncoderV2) Encode(writer io.Writer, r *Record) (err error) {
-	if err = encodeString(writer, r.id); err != nil {
+	body := bytes.NewBuffer(nil)
+
+	if err = binary.Write(body, binary.LittleEndian, r.id); err != nil {
 		return fmt.Errorf("failed to encode id: %w", err)
 	}
 
-	if err = encodeString(writer, r.dir); err != nil {
-		return fmt.Errorf("failed to encode dir: %w", err)
-	}
-
-	if err = binary.Write(writer, binary.LittleEndian, &r.numberOfShards); err != nil {
+	if err = binary.Write(body, binary.LittleEndian, &r.numberOfShards); err != nil {
 		return fmt.Errorf("failed to write number of shards: %w", err)
 	}
 
-	if err = binary.Write(writer, binary.LittleEndian, &r.createdAt); err != nil {
+	if err = binary.Write(body, binary.LittleEndian, &r.createdAt); err != nil {
 		return fmt.Errorf("failed to write created at: %w", err)
 	}
 
-	if err = binary.Write(writer, binary.LittleEndian, &r.updatedAt); err != nil {
+	if err = binary.Write(body, binary.LittleEndian, &r.updatedAt); err != nil {
 		return fmt.Errorf("failed to write updated at: %w", err)
 	}
 
-	if err = binary.Write(writer, binary.LittleEndian, &r.deletedAt); err != nil {
+	if err = binary.Write(body, binary.LittleEndian, &r.deletedAt); err != nil {
 		return fmt.Errorf("failed to write deleted at: %w", err)
 	}
 
-	if err = binary.Write(writer, binary.LittleEndian, &r.corrupted); err != nil {
+	if err = binary.Write(body, binary.LittleEndian, &r.corrupted); err != nil {
 		return fmt.Errorf("failed to write corrupted: %w", err)
 	}
 
-	if err = binary.Write(writer, binary.LittleEndian, &r.status); err != nil {
+	if err = binary.Write(body, binary.LittleEndian, &r.status); err != nil {
 		return fmt.Errorf("failed to write status: %w", err)
+	}
+
+	if err = encodeNilableValue(body, binary.LittleEndian, r.lastAppendedSegmentID); err != nil {
+		return fmt.Errorf("failed to write last written segment id: %w", err)
+	}
+
+	writeBuffer := bytes.NewBuffer(nil)
+	if err = binary.Write(writeBuffer, binary.LittleEndian, uint8(body.Len())); err != nil {
+		return fmt.Errorf("failed to write size: %w", err)
+	}
+
+	if _, err = body.WriteTo(writeBuffer); err != nil {
+		return fmt.Errorf("failed to write body: %w", err)
+	}
+
+	if _, err = writeBuffer.WriteTo(writer); err != nil {
+		return fmt.Errorf("failed to write record: %w", err)
+	}
+
+	return nil
+}
+
+func encodeNilableValue[T any](writer io.Writer, byteOrder binary.ByteOrder, value *T) (err error) {
+	var nilIndicator uint8
+	if value == nil {
+		return binary.Write(writer, byteOrder, nilIndicator)
+	}
+	nilIndicator = 1
+	if err = binary.Write(writer, byteOrder, nilIndicator); err != nil {
+		return err
+	}
+	if err = binary.Write(writer, byteOrder, *value); err != nil {
+		return err
 	}
 
 	return nil

@@ -1,6 +1,7 @@
 package catalog_test
 
 import (
+	"github.com/google/uuid"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head/catalog"
 	"github.com/stretchr/testify/require"
@@ -25,18 +26,16 @@ func TestCatalog(t *testing.T) {
 	require.NoError(t, err)
 
 	now := clock.Now().UnixMilli()
-	id1 := "id_1"
-	dir1 := "dir_1"
+	id1 := uuid.New()
 	var nos1 uint16 = 2
-	id2 := "id_2"
-	dir2 := "dir_2"
+	id2 := uuid.New()
 	var nos2 uint16 = 4
 
-	r1, err := c.Create(id1, dir1, nos1)
+	r1, err := c.Create(id1, nos1)
 	require.NoError(t, err)
 
 	require.Equal(t, r1.ID(), id1)
-	require.Equal(t, r1.Dir(), dir1)
+	require.Equal(t, r1.Dir(), id1.String())
 	require.Equal(t, r1.NumberOfShards(), nos1)
 	require.Equal(t, r1.CreatedAt(), now)
 	require.Equal(t, r1.UpdatedAt(), now)
@@ -46,11 +45,11 @@ func TestCatalog(t *testing.T) {
 	clock.Advance(time.Second)
 	now = clock.Now().UnixMilli()
 
-	r2, err := c.Create(id2, dir2, nos2)
+	r2, err := c.Create(id2, nos2)
 	require.NoError(t, err)
 
 	require.Equal(t, r2.ID(), id2)
-	require.Equal(t, r2.Dir(), dir2)
+	require.Equal(t, r2.Dir(), id2.String())
 	require.Equal(t, r2.NumberOfShards(), nos2)
 	require.Equal(t, r2.CreatedAt(), now)
 	require.Equal(t, r2.UpdatedAt(), now)

@@ -2,6 +2,7 @@ package relabeler
 
 import (
 	"context"
+	"github.com/google/uuid"
 	"sync/atomic"
 
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
@@ -47,7 +48,7 @@ type Shard interface {
 type ShardFn func(shard Shard) error
 
 type Head interface {
-	ID() string
+	ID() uuid.UUID
 	Generation() uint64
 	Append(
 		ctx context.Context,

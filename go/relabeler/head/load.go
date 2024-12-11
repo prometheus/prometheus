@@ -3,6 +3,7 @@ package head
 import (
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
@@ -16,7 +17,7 @@ const (
 	HeadWalEncoderDecoderLogShards uint8 = 0
 )
 
-func Create(id string, generation uint64, dir string, configs []*config.InputRelabelerConfig, numberOfShards uint16, registerer prometheus.Registerer) (_ *Head, err error) {
+func Create(id uuid.UUID, generation uint64, dir string, configs []*config.InputRelabelerConfig, numberOfShards uint16, lastAppendedSegmentIDSetter LastAppendedSegmentIDSetter, registerer prometheus.Registerer) (_ *Head, err error) {
 	lsses := make([]*LSS, numberOfShards)
 	wals := make([]*ShardWal, numberOfShards)
 	dataStorages := make([]*DataStorage, numberOfShards)
@@ -54,10 +55,10 @@ func Create(id string, generation uint64, dir string, configs []*config.InputRel
 		}
 	}
 
-	return New(id, generation, configs, lsses, wals, dataStorages, numberOfShards, registerer)
+	return New(id, generation, configs, lsses, wals, dataStorages, numberOfShards, nil, lastAppendedSegmentIDSetter, registerer)
 }
 
-func Load(id string, generation uint64, dir string, configs []*config.InputRelabelerConfig, numberOfShards uint16, registerer prometheus.Registerer) (_ *Head, corrupted bool, err error) {
+func Load(id uuid.UUID, generation uint64, dir string, configs []*config.InputRelabelerConfig, numberOfShards uint16, lastAppendedSegmentIDSetter LastAppendedSegmentIDSetter, registerer prometheus.Registerer) (_ *Head, corrupted bool, err error) {
 	lsses := make([]*LSS, numberOfShards)
 	wals := make([]*ShardWal, numberOfShards)
 	dataStorages := make([]*DataStorage, numberOfShards)
@@ -73,6 +74,7 @@ func Load(id string, generation uint64, dir string, configs []*config.InputRelab
 		}
 	}()
 
+	lastAppendedSegmentIDs := make([]*uint32, numberOfShards)
 	for shardID := uint16(0); shardID < numberOfShards; shardID++ {
 		inputLss := cppbridge.NewLssStorage()
 		targetLss := cppbridge.NewQueryableLssStorage()
@@ -89,7 +91,8 @@ func Load(id string, generation uint64, dir string, configs []*config.InputRelab
 		shardFilePath := filepath.Join(dir, fmt.Sprintf("shard_%d.wal", shardID))
 		var shardWal *ShardWal
 		var isCorrupted bool
-		shardWal, isCorrupted, err = createWal(shardFilePath, targetLss, dataStorages[shardID])
+		var lastSegmentID *uint32
+		shardWal, lastSegmentID, isCorrupted, err = createWal(shardFilePath, targetLss, dataStorages[shardID])
 		if err != nil {
 			return nil, corrupted, err
 		}
@@ -97,9 +100,35 @@ func Load(id string, generation uint64, dir string, configs []*config.InputRelab
 			corrupted = true
 		}
 		wals[shardID] = shardWal
+		lastAppendedSegmentIDs[shardID] = lastSegmentID
 	}
 
-	h, err := New(id, generation, configs, lsses, wals, dataStorages, numberOfShards, registerer)
+	var lastAppendedSegmentID *uint32
+	{
+		isNotSet := true
+		for _, shardSegmentID := range lastAppendedSegmentIDs {
+			if shardSegmentID == nil {
+				if !isNotSet {
+					corrupted = true
+				}
+				continue
+			}
+			isNotSet = false
+			if lastAppendedSegmentID == nil {
+				lastAppendedSegmentID = &(*shardSegmentID)
+				continue
+			}
+
+			if *lastAppendedSegmentID != *shardSegmentID {
+				corrupted = true
+				if *lastAppendedSegmentID < *shardSegmentID {
+					lastAppendedSegmentID = &(*shardSegmentID)
+				}
+			}
+		}
+	}
+
+	h, err := New(id, generation, configs, lsses, wals, dataStorages, numberOfShards, lastAppendedSegmentID, lastAppendedSegmentIDSetter, registerer)
 	if err != nil {
 		return nil, corrupted, fmt.Errorf("failed to create head: %w", err)
 	}
@@ -107,30 +136,30 @@ func Load(id string, generation uint64, dir string, configs []*config.InputRelab
 	return h, corrupted, nil
 }
 
-func createWal(shardFilePath string, lss *cppbridge.LabelSetStorage, dataStorage *DataStorage) (_ *ShardWal, corrupted bool, err error) {
+func createWal(shardFilePath string, lss *cppbridge.LabelSetStorage, dataStorage *DataStorage) (_ *ShardWal, lastSegmentID *uint32, corrupted bool, err error) {
 	var shardFile *os.File
 	shardFile, err = os.OpenFile(shardFilePath, os.O_CREATE|os.O_RDWR, 0666)
 	if err != nil {
-		return nil, corrupted, fmt.Errorf("failed to create shard wal file: %w", err)
+		return nil, lastSegmentID, corrupted, fmt.Errorf("failed to create shard wal file: %w", err)
 	}
 
 	var offset int
 	var encoder *cppbridge.HeadWalEncoder
-	offset, encoder, err = replayWal(shardFile, lss, dataStorage)
+	offset, lastSegmentID, encoder, err = replayWal(shardFile, lss, dataStorage)
 	if err != nil {
 		logger.Errorf(fmt.Errorf("failed to replay wal: %w", err).Error())
 		corrupted = true
-		return newCorruptedShardWal(), corrupted, shardFile.Close()
+		return newCorruptedShardWal(), lastSegmentID, corrupted, shardFile.Close()
 	}
 
-	return newShardWal(encoder, offset != 0, shardFile), corrupted, nil
+	return newShardWal(encoder, offset != 0, shardFile), lastSegmentID, corrupted, nil
 }
 
-func replayWal(file *os.File, lss *cppbridge.LabelSetStorage, dataStorage *DataStorage) (offset int, encoder *cppbridge.HeadWalEncoder, err error) {
+func replayWal(file *os.File, lss *cppbridge.LabelSetStorage, dataStorage *DataStorage) (offset int, lastSegmentID *uint32, encoder *cppbridge.HeadWalEncoder, err error) {
 	logger.Debugf("replaying wal file", file.Name())
 	_, encoderVersion, _, err := ReadHeader(file)
 	if err != nil {
-		return offset, nil, fmt.Errorf("failed to read header: %w", err)
+		return offset, lastSegmentID, nil, fmt.Errorf("failed to read header: %w", err)
 	}
 
 	decoder := cppbridge.NewHeadWalDecoder(lss, encoderVersion)
@@ -142,19 +171,25 @@ func replayWal(file *os.File, lss *cppbridge.LabelSetStorage, dataStorage *DataS
 		segment, bytesRead, err = ReadSegment(file)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				return offset, decoder.CreateEncoder(), nil
+				return offset, lastSegmentID, decoder.CreateEncoder(), nil
 			}
-			return offset, nil, fmt.Errorf("failed to read segment: %w", err)
+			return offset, lastSegmentID, nil, fmt.Errorf("failed to read segment: %w", err)
 		}
 
 		offset += bytesRead
 
 		err = decoder.Decode(segment.Data(), innerSeries)
 		if err != nil {
-			return offset, nil, fmt.Errorf("failed to decode segment: %w", err)
+			return offset, lastSegmentID, nil, fmt.Errorf("failed to decode segment: %w", err)
 		}
 
 		dataStorage.AppendInnerSeriesSlice([]*cppbridge.InnerSeries{innerSeries})
-	}
 
+		if lastSegmentID == nil {
+			var segmentID uint32
+			lastSegmentID = &segmentID
+		} else {
+			*lastSegmentID++
+		}
+	}
 }

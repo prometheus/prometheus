@@ -2,6 +2,7 @@ package appender
 
 import (
 	"fmt"
+	"github.com/google/uuid"
 	"sync"
 	"time"
 
@@ -112,7 +113,7 @@ func (qs *QueryableStorage) write() {
 	qs.mtx.Unlock()
 
 	shouldNotify := false
-	var persisted []string
+	var persisted []uuid.UUID
 	for _, head := range heads {
 		start := time.Now()
 		err := head.ForEachShard(func(shard relabeler.Shard) error {
@@ -204,11 +205,11 @@ func (qs *QueryableStorage) Querier(mint, maxt int64) (storage.Querier, error) {
 	return q, nil
 }
 
-func (qs *QueryableStorage) shrink(persisted ...string) {
+func (qs *QueryableStorage) shrink(persisted ...uuid.UUID) {
 	qs.mtx.Lock()
 	defer qs.mtx.Unlock()
 
-	persistedMap := make(map[string]struct{})
+	persistedMap := make(map[uuid.UUID]struct{})
 	for _, headID := range persisted {
 		persistedMap[headID] = struct{}{}
 	}

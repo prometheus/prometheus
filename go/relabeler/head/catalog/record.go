@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"github.com/google/uuid"
 	"sync"
 	"sync/atomic"
 )
@@ -15,16 +16,17 @@ const (
 	StatusPersisted
 )
 
+// size (1) + 16 +2 + 8 + 8 + 8 + 1 + 1 + (1 + 4)
 type Record struct {
-	id               string // uuid
-	dir              string // location
-	numberOfShards   uint16 // number of shards
-	createdAt        int64  // time of record creation
-	updatedAt        int64
-	deletedAt        int64
-	corrupted        bool
-	referenceCounter *atomic.Int64
-	status           Status // status
+	id                    uuid.UUID // uuid
+	numberOfShards        uint16    // number of shards
+	createdAt             int64     // time of record creation
+	updatedAt             int64
+	deletedAt             int64
+	corrupted             bool
+	lastAppendedSegmentID *uint32
+	referenceCounter      *atomic.Int64
+	status                Status // status
 }
 
 func NewRecord() *Record {
@@ -33,12 +35,12 @@ func NewRecord() *Record {
 	}
 }
 
-func (r *Record) ID() string {
+func (r *Record) ID() uuid.UUID {
 	return r.id
 }
 
 func (r *Record) Dir() string {
-	return r.dir
+	return r.id.String()
 }
 
 func (r *Record) NumberOfShards() uint16 {
@@ -79,26 +81,35 @@ func (r *Record) Acquire() func() {
 	}
 }
 
-func NewRecordWithData(id string,
-	dir string,
+func (r *Record) LastAppendedSegmentID() *uint32 {
+	return r.lastAppendedSegmentID
+}
+
+func (r *Record) SetLastAppendedSegmentID(segmentID uint32) {
+	r.lastAppendedSegmentID = &segmentID
+}
+
+func NewRecordWithData(id uuid.UUID,
 	numberOfShards uint16,
 	createdAt int64,
 	updatedAt int64,
 	deletedAt int64,
 	corrupted bool,
 	referenceCount int64,
-	status Status) *Record {
+	status Status,
+	lastAppendedSegmentID *uint32,
+) *Record {
 	rc := atomic.Int64{}
 	rc.Add(referenceCount)
 	return &Record{
-		id:               id,
-		dir:              dir,
-		numberOfShards:   numberOfShards,
-		createdAt:        createdAt,
-		updatedAt:        updatedAt,
-		deletedAt:        deletedAt,
-		corrupted:        corrupted,
-		referenceCounter: &rc,
-		status:           status,
+		id:                    id,
+		numberOfShards:        numberOfShards,
+		createdAt:             createdAt,
+		updatedAt:             updatedAt,
+		deletedAt:             deletedAt,
+		corrupted:             corrupted,
+		referenceCounter:      &rc,
+		status:                status,
+		lastAppendedSegmentID: lastAppendedSegmentID,
 	}
 }

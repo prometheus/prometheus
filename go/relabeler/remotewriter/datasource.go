@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head/catalog"
 	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
@@ -16,7 +17,7 @@ import (
 )
 
 type CorruptMarker interface {
-	MarkCorrupted(headID string) error
+	MarkCorrupted(headID uuid.UUID) error
 }
 
 type shard struct {
@@ -139,7 +140,7 @@ func (s *shard) Close() error {
 }
 
 type dataSource struct {
-	ID              string
+	ID              uuid.UUID
 	headRecord      *catalog.Record
 	shards          []*shard
 	corruptMarker   CorruptMarker

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head/catalog"
 	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
@@ -150,10 +151,13 @@ func (wl *writeLoop) write(ctx context.Context, iterator *Iterator) error {
 func (wl *writeLoop) nextIterator(ctx context.Context, writer Writer) (*Iterator, error) {
 	var nextHeadRecord *catalog.Record
 	var err error
+	var cleanStart bool
 	if wl.destination.HeadID != nil {
 		nextHeadRecord, err = nextHead(ctx, wl.catalog, *wl.destination.HeadID)
 	} else {
-		nextHeadRecord, err = scanForNextHead(ctx, wl.dataDir, wl.catalog, wl.destination.Config().Name)
+		var headFound bool
+		nextHeadRecord, headFound, err = scanForNextHead(ctx, wl.dataDir, wl.catalog, wl.destination.Config().Name)
+		cleanStart = !headFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to find next head: %w", err)
@@ -191,7 +195,12 @@ func (wl *writeLoop) nextIterator(ctx context.Context, writer Writer) (*Iterator
 	headID := nextHeadRecord.ID()
 	ds.ID = headID
 
-	i, err := newIterator(wl.clock, wl.destination.Config().QueueConfig, ds, writer, newAcknowledger(crw, crc32), cursor.SegmentID, wl.destination.Config().ReadTimeout)
+	var startSegmentID *uint32
+	if cleanStart {
+		startSegmentID = nextHeadRecord.LastAppendedSegmentID()
+	}
+
+	i, err := newIterator(wl.clock, wl.destination.Config().QueueConfig, ds, writer, newAcknowledger(crw, crc32), cursor.SegmentID, startSegmentID, wl.destination.Config().ReadTimeout)
 	if err != nil {
 		return nil, errors.Join(fmt.Errorf("failed to create data source: %w", err), crw.Close(), ds.Close())
 	}
@@ -201,20 +210,20 @@ func (wl *writeLoop) nextIterator(ctx context.Context, writer Writer) (*Iterator
 	return i, nil
 }
 
-type CorruptMarkerFn func(headID string) error
+type CorruptMarkerFn func(headID uuid.UUID) error
 
-func (fn CorruptMarkerFn) MarkCorrupted(headID string) error {
+func (fn CorruptMarkerFn) MarkCorrupted(headID uuid.UUID) error {
 	return fn(headID)
 }
 
 func (wl *writeLoop) makeCorruptMarker() CorruptMarker {
-	return CorruptMarkerFn(func(headID string) error {
+	return CorruptMarkerFn(func(headID uuid.UUID) error {
 		_, err := wl.catalog.SetCorrupted(headID)
 		return err
 	})
 }
 
-func nextHead(ctx context.Context, headCatalog Catalog, headID string) (*catalog.Record, error) {
+func nextHead(ctx context.Context, headCatalog Catalog, headID uuid.UUID) (*catalog.Record, error) {
 	if err := contextErr(ctx); err != nil {
 		return nil, err
 	}
@@ -247,9 +256,9 @@ func nextHead(ctx context.Context, headCatalog Catalog, headID string) (*catalog
 	return headRecords[len(headRecords)-1], nil
 }
 
-func scanForNextHead(ctx context.Context, dataDir string, headCatalog Catalog, destinationName string) (*catalog.Record, error) {
+func scanForNextHead(ctx context.Context, dataDir string, headCatalog Catalog, destinationName string) (*catalog.Record, bool, error) {
 	if err := contextErr(ctx); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	headRecords, err := headCatalog.List(
@@ -259,26 +268,26 @@ func scanForNextHead(ctx context.Context, dataDir string, headCatalog Catalog, d
 		},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list head records: %w", err)
+		return nil, false, fmt.Errorf("failed to list head records: %w", err)
 	}
 
 	if len(headRecords) == 0 {
-		return nil, fmt.Errorf("no new heads")
+		return nil, false, fmt.Errorf("no new heads")
 	}
 
 	var headFound bool
 	for _, headRecord := range headRecords {
 		headFound, err = scanHeadForDestination(filepath.Join(dataDir, headRecord.Dir()), destinationName)
 		if err != nil {
-			return headRecord, err
+			return headRecord, false, err
 		}
 		if headFound {
-			return headRecord, nil
+			return headRecord, true, nil
 		}
 	}
 
 	// track of the previous destination not found, selecting last head
-	return headRecords[len(headRecords)-1], nil
+	return headRecords[len(headRecords)-1], false, nil
 }
 
 func scanHeadForDestination(dirPath string, destinationName string) (bool, error) {

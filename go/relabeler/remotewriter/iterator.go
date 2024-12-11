@@ -96,7 +96,7 @@ func (m *Message) IsObsoleted(minTimestamp int64) bool {
 	return m.MaxTimestamp < minTimestamp
 }
 
-func newIterator(clock clockwork.Clock, queueConfig config.QueueConfig, dataSource DataSource, writer Writer, acknowledger Acknowledger, lastAcknowledgedSegmentID *uint32, readTimeout time.Duration) (*Iterator, error) {
+func newIterator(clock clockwork.Clock, queueConfig config.QueueConfig, dataSource DataSource, writer Writer, acknowledger Acknowledger, lastAcknowledgedSegmentID *uint32, startSegmentID *uint32, readTimeout time.Duration) (*Iterator, error) {
 	outputSharder, err := newSharder(queueConfig.MinShards, queueConfig.MaxShards)
 	if err != nil {
 		return nil, err
@@ -106,6 +106,10 @@ func newIterator(clock clockwork.Clock, queueConfig config.QueueConfig, dataSour
 	if lastAcknowledgedSegmentID != nil {
 		targetSegmentID = *lastAcknowledgedSegmentID + 1
 	}
+	if startSegmentID != nil {
+		targetSegmentID = *startSegmentID
+	}
+
 	return &Iterator{
 		clock:                clock,
 		queueConfig:          queueConfig,
@@ -304,7 +308,11 @@ func (i *Iterator) ack(ctx context.Context) error {
 }
 
 func (i *Iterator) minTimestamp() int64 {
-	return i.clock.Now().Add(-time.Duration(i.queueConfig.SampleAgeLimit)).UnixMilli()
+	sampleAgeLimit := time.Duration(i.queueConfig.SampleAgeLimit)
+	if sampleAgeLimit == 0 {
+		sampleAgeLimit = time.Hour * 24 * 30
+	}
+	return i.clock.Now().Add(-sampleAgeLimit).UnixMilli()
 }
 
 func (i *Iterator) add(decodedSegments []*DecodedSegment) {

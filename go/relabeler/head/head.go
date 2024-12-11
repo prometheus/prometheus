@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 	"math"
 	"runtime"
@@ -149,10 +150,17 @@ func (rd *RelabelerData) updateOrCreateStatelessRelabeler(
 	return sr, nil
 }
 
+type LastAppendedSegmentIDSetter interface {
+	SetLastAppendedSegmentID(segmentID uint32)
+}
+
 type Head struct {
-	id         string
+	id         uuid.UUID
 	finalizer  *Finalizer
 	generation uint64
+
+	lastAppendedSegmentID       *uint32
+	lastAppendedSegmentIDSetter LastAppendedSegmentIDSetter
 
 	relabelersData             map[string]*RelabelerData
 	dataStorages               []*DataStorage
@@ -170,13 +178,15 @@ type Head struct {
 }
 
 func New(
-	id string,
+	id uuid.UUID,
 	generation uint64,
 	inputRelabelerConfigs []*config.InputRelabelerConfig,
 	lsses []*LSS,
 	wals []*ShardWal,
 	dataStorages []*DataStorage,
 	numberOfShards uint16,
+	lastAppendedSegmentID *uint32,
+	lastAppendedSegmentIDSetter LastAppendedSegmentIDSetter,
 	registerer prometheus.Registerer) (*Head, error) {
 
 	stageInputRelabeling := make([]chan *TaskInputRelabeling, numberOfShards)
@@ -192,19 +202,21 @@ func New(
 
 	factory := util.NewUnconflictRegisterer(registerer)
 	h := &Head{
-		id:                         id,
-		finalizer:                  NewFinalizer(),
-		generation:                 generation,
-		lsses:                      lsses,
-		wals:                       wals,
-		dataStorages:               dataStorages,
-		stageInputRelabeling:       stageInputRelabeling,
-		stageAppendRelabelerSeries: stageAppendRelabelerSeries,
-		genericTaskCh:              genericTaskCh,
-		stopc:                      make(chan struct{}),
-		wg:                         &sync.WaitGroup{},
-		relabelersData:             make(map[string]*RelabelerData, len(inputRelabelerConfigs)),
-		numberOfShards:             numberOfShards,
+		id:                          id,
+		finalizer:                   NewFinalizer(),
+		generation:                  generation,
+		lsses:                       lsses,
+		wals:                        wals,
+		dataStorages:                dataStorages,
+		lastAppendedSegmentID:       lastAppendedSegmentID,
+		lastAppendedSegmentIDSetter: lastAppendedSegmentIDSetter,
+		stageInputRelabeling:        stageInputRelabeling,
+		stageAppendRelabelerSeries:  stageAppendRelabelerSeries,
+		genericTaskCh:               genericTaskCh,
+		stopc:                       make(chan struct{}),
+		wg:                          &sync.WaitGroup{},
+		relabelersData:              make(map[string]*RelabelerData, len(inputRelabelerConfigs)),
+		numberOfShards:              numberOfShards,
 		// stat
 		memoryInUse: factory.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -232,7 +244,7 @@ func New(
 	return h, nil
 }
 
-func (h *Head) ID() string {
+func (h *Head) ID() uuid.UUID {
 	return h.id
 }
 
@@ -291,6 +303,14 @@ func (h *Head) Append(
 		shard.DataStorage().AppendInnerSeriesSlice(inputPromise.ShardsInnerSeries(shard.ShardID()))
 		return nil
 	})
+
+	if h.lastAppendedSegmentID == nil {
+		var segmentID uint32 = 0
+		h.lastAppendedSegmentID = &segmentID
+	} else {
+		*h.lastAppendedSegmentID++
+	}
+	h.lastAppendedSegmentIDSetter.SetLastAppendedSegmentID(*h.lastAppendedSegmentID)
 
 	return inputPromise.data, nil
 }

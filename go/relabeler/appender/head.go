@@ -2,6 +2,7 @@ package appender
 
 import (
 	"context"
+	"github.com/google/uuid"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler"
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
@@ -26,7 +27,7 @@ type RotatableHead struct {
 }
 
 // ID - relabeler.Head interface implementation.
-func (h *RotatableHead) ID() string {
+func (h *RotatableHead) ID() uuid.UUID {
 	return h.head.ID()
 }
 
@@ -136,7 +137,7 @@ type HeapProfileWritableHead struct {
 	heapProfileWriter HeapProfileWriter
 }
 
-func (h *HeapProfileWritableHead) ID() string {
+func (h *HeapProfileWritableHead) ID() uuid.UUID {
 	return h.head.ID()
 }
 

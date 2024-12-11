@@ -3,10 +3,12 @@ package catalog
 import (
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"github.com/jonboulle/clockwork"
 	"io"
 	"sort"
 	"sync"
+	"sync/atomic"
 )
 
 const (
@@ -25,14 +27,14 @@ type Catalog struct {
 	mtx     sync.Mutex
 	clock   clockwork.Clock
 	log     Log
-	records map[string]*Record
+	records map[uuid.UUID]*Record
 }
 
 func New(clock clockwork.Clock, log Log) (*Catalog, error) {
 	catalog := &Catalog{
 		clock:   clock,
 		log:     log,
-		records: make(map[string]*Record),
+		records: make(map[uuid.UUID]*Record),
 	}
 
 	if err := catalog.sync(); err != nil {
@@ -62,7 +64,7 @@ func (c *Catalog) List(filterFn func(record *Record) bool, sortLess func(lhs, rh
 	return records, nil
 }
 
-func (c *Catalog) Create(id, dir string, numberOfShards uint16) (r *Record, err error) {
+func (c *Catalog) Create(id uuid.UUID, numberOfShards uint16) (r *Record, err error) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
@@ -72,13 +74,13 @@ func (c *Catalog) Create(id, dir string, numberOfShards uint16) (r *Record, err 
 
 	now := c.clock.Now().UnixMilli()
 	r = &Record{
-		id:             id,
-		dir:            dir,
-		numberOfShards: numberOfShards,
-		createdAt:      now,
-		updatedAt:      now,
-		deletedAt:      0,
-		status:         StatusNew,
+		id:               id,
+		numberOfShards:   numberOfShards,
+		createdAt:        now,
+		updatedAt:        now,
+		deletedAt:        0,
+		referenceCounter: &atomic.Int64{},
+		status:           StatusNew,
 	}
 
 	if err = c.log.Write(r); err != nil {
@@ -89,7 +91,19 @@ func (c *Catalog) Create(id, dir string, numberOfShards uint16) (r *Record, err 
 	return r, c.compactIfNeeded()
 }
 
-func (c *Catalog) SetStatus(id string, status Status) (*Record, error) {
+func (c *Catalog) Get(id uuid.UUID) (*Record, error) {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+
+	r, ok := c.records[id]
+	if !ok {
+		return nil, fmt.Errorf("not found: %s", id)
+	}
+
+	return r, nil
+}
+
+func (c *Catalog) SetStatus(id uuid.UUID, status Status) (*Record, error) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
@@ -110,7 +124,7 @@ func (c *Catalog) SetStatus(id string, status Status) (*Record, error) {
 	return r, c.compactIfNeeded()
 }
 
-func (c *Catalog) SetCorrupted(id string) (*Record, error) {
+func (c *Catalog) SetCorrupted(id uuid.UUID) (*Record, error) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
@@ -135,7 +149,7 @@ func (c *Catalog) SetCorrupted(id string) (*Record, error) {
 	return r, c.compactIfNeeded()
 }
 
-func (c *Catalog) Delete(id string) error {
+func (c *Catalog) Delete(id uuid.UUID) error {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
@@ -157,16 +171,9 @@ func (c *Catalog) Delete(id string) error {
 }
 
 func (c *Catalog) Compact() error {
-	records := make([]*Record, 0, len(c.records))
-	for _, record := range c.records {
-		records = append(records, record)
-	}
-
-	sort.Slice(records, func(i, j int) bool {
-		return records[i].createdAt < records[j].createdAt
-	})
-
-	return c.log.ReWrite(records...)
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+	return c.compact()
 }
 
 func (c *Catalog) sync() error {
@@ -189,5 +196,20 @@ func (c *Catalog) compactIfNeeded() error {
 		return nil
 	}
 
-	return c.Compact()
+	return c.compact()
+}
+
+func (c *Catalog) compact() error {
+	records := make([]*Record, 0, len(c.records))
+	for _, record := range c.records {
+		if record.deletedAt == 0 {
+			records = append(records, record)
+		}
+	}
+
+	sort.Slice(records, func(i, j int) bool {
+		return records[i].createdAt < records[j].createdAt
+	})
+
+	return c.log.ReWrite(records...)
 }

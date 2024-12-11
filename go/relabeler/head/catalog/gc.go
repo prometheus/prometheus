@@ -45,7 +45,7 @@ func (gc *GC) Run(ctx context.Context) error {
 			return ctx.Err()
 		case <-time.After(time.Minute):
 			gc.Iterate()
-		case <-gc.stopped:
+		case <-gc.stop:
 			return errors.New("stopped")
 		}
 	}
@@ -58,7 +58,9 @@ func (gc *GC) Iterate() {
 	}()
 
 	records, err := gc.catalog.List(
-		nil,
+		func(record *Record) bool {
+			return record.DeletedAt() == 0
+		},
 		func(lhs, rhs *Record) bool {
 			return lhs.CreatedAt() < rhs.CreatedAt()
 		},

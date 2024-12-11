@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"io"
 	"os"
 )
@@ -19,7 +20,7 @@ type Encoder interface {
 }
 
 type Decoder interface {
-	Decode(reader io.Reader, r *Record) error
+	Decode(reader io.ReadSeeker, r *Record) error
 }
 
 type FileLog struct {
@@ -109,7 +110,7 @@ func migrate(file *FileHandler, from, to uint64) error {
 	}
 
 	decoder := DecoderV1{}
-	records := make(map[string]*Record)
+	records := make(map[uuid.UUID]*Record)
 	for {
 		record := Record{}
 		if err := decoder.Decode(file, &record); err != nil {
