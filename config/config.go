@@ -121,7 +121,8 @@ func Load(s string, logger *slog.Logger) (*Config, error) {
 	return cfg, nil
 }
 
-// LoadFile parses the given YAML file into a Config.
+// LoadFile parses and validates the given YAML file into a read-only Config.
+// Callers should never write to or shallow copy the returned Config.
 func LoadFile(filename string, agentMode bool, logger *slog.Logger) (*Config, error) {
 	content, err := os.ReadFile(filename)
 	if err != nil {
@@ -146,7 +147,7 @@ func LoadFile(filename string, agentMode bool, logger *slog.Logger) (*Config, er
 		}
 	}
 
-	cfg.SetDirectory(filepath.Dir(filename))
+	cfg.setDirectory(filepath.Dir(filename))
 	return cfg, nil
 }
 
@@ -257,6 +258,7 @@ var (
 )
 
 // Config is the top-level configuration for Prometheus's config files.
+// NOTE(bwplotka): No public method other than UnmarshalYAML should write to Config.
 type Config struct {
 	GlobalConfig      GlobalConfig    `yaml:"global"`
 	Runtime           RuntimeConfig   `yaml:"runtime,omitempty"`
@@ -272,8 +274,8 @@ type Config struct {
 	OTLPConfig         OTLPConfig           `yaml:"otlp,omitempty"`
 }
 
-// SetDirectory joins any relative file paths with dir.
-func (c *Config) SetDirectory(dir string) {
+// setDirectory joins any relative file paths with dir.
+func (c *Config) setDirectory(dir string) {
 	c.GlobalConfig.SetDirectory(dir)
 	c.AlertingConfig.SetDirectory(dir)
 	c.TracingConfig.SetDirectory(dir)
@@ -302,24 +304,23 @@ func (c Config) String() string {
 	return string(b)
 }
 
-// GetScrapeConfigs returns the scrape configurations.
+// GetScrapeConfigs returns the read-only scrape configurations including
+// the ones from the scrape_config_files.
+// This method:
+// * does not write to c *Config (the pointer receiver is for efficiency).
+// * assumes c.ScrapeConfigs is already validated (in UnmarshalYAML) to avoid writes.
 func (c *Config) GetScrapeConfigs() ([]*ScrapeConfig, error) {
 	scfgs := make([]*ScrapeConfig, len(c.ScrapeConfigs))
 
 	jobNames := map[string]string{}
 	for i, scfg := range c.ScrapeConfigs {
-		// We do these checks for library users that would not call validate in
-		// Unmarshal.
-		if err := scfg.Validate(c.GlobalConfig); err != nil {
-			return nil, err
-		}
-
-		if _, ok := jobNames[scfg.JobName]; ok {
-			return nil, fmt.Errorf("found multiple scrape configs with job name %q", scfg.JobName)
-		}
+		// We don't check for duplicates here, we have to assume the main config is
+		// already validated to avoid writing.
 		jobNames[scfg.JobName] = "main config file"
 		scfgs[i] = scfg
 	}
+
+	// Re-read and validate the dynamic scrape config rules.
 	for _, pat := range c.ScrapeConfigFiles {
 		fs, err := filepath.Glob(pat)
 		if err != nil {
