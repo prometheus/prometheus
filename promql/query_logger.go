@@ -220,7 +220,7 @@ func (tracker ActiveQueryTracker) Delete(insertIndex int) {
 
 func (tracker ActiveQueryTracker) Insert(ctx context.Context, query string) (int, error) {
 	if !tracker.isRunning.Load() {
-		return 0, errors.New("ActiveQueryTracker is stopped")
+		return 0, nil
 	}
 	select {
 	case i := <-tracker.getNextIndex:
