@@ -153,6 +153,7 @@ type RefSample struct {
 	Ref chunks.HeadSeriesRef
 	T   int64
 	V   float64
+	CT  int64
 }
 
 // RefMetadata is the metadata associated with a series ID.
@@ -304,8 +305,9 @@ func (d *Decoder) Samples(rec []byte, samples []RefSample) ([]RefSample, error) 
 		return samples, nil
 	}
 	var (
-		baseRef  = dec.Be64()
-		baseTime = dec.Be64int64()
+		baseRef         = dec.Be64()
+		baseTime        = dec.Be64int64()
+		baseCreatedTime = dec.Be64int64()
 	)
 	// Allow 1 byte for each varint and 8 for the value; the output slice must be at least that big.
 	if minSize := dec.Len() / (1 + 1 + 8); cap(samples) < minSize {
@@ -314,12 +316,14 @@ func (d *Decoder) Samples(rec []byte, samples []RefSample) ([]RefSample, error) 
 	for len(dec.B) > 0 && dec.Err() == nil {
 		dref := dec.Varint64()
 		dtime := dec.Varint64()
+		dcreatedTime := dec.Varint64()
 		val := dec.Be64()
 
 		samples = append(samples, RefSample{
 			Ref: chunks.HeadSeriesRef(int64(baseRef) + dref),
 			T:   baseTime + dtime,
 			V:   math.Float64frombits(val),
+			CT:  baseCreatedTime + dcreatedTime,
 		})
 	}
 
@@ -645,16 +649,20 @@ func (e *Encoder) Samples(samples []RefSample, b []byte) []byte {
 		return buf.Get()
 	}
 
-	// Store base timestamp and base reference number of first sample.
-	// All samples encode their timestamp and ref as delta to those.
+	// Store base base reference number, timestamp and created timestamp of
+	// first sample.  All samples encode their ref, timestamp and created
+	// timestamp as delta to those.
+	// TODO(ridwanmsharif): Can the timestamp be encoded as a delta with the CT?
 	first := samples[0]
 
 	buf.PutBE64(uint64(first.Ref))
 	buf.PutBE64int64(first.T)
+	buf.PutBE64int64(first.CT)
 
 	for _, s := range samples {
 		buf.PutVarint64(int64(s.Ref) - int64(first.Ref))
 		buf.PutVarint64(s.T - first.T)
+		buf.PutVarint64(s.CT - first.CT)
 		buf.PutBE64(math.Float64bits(s.V))
 	}
 	return buf.Get()
