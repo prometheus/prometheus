@@ -1569,7 +1569,7 @@ void prompp_wal_protobuf_hashdex_ctor(void* args, void* res);
  *     hashdex uintptr // pointer to constructed hashdex
  * }
  */
-void prompp_wal_protobuf_hashdex_dtor(void* args);
+void prompp_wal_hashdex_dtor(void* args);
 
 /**
  * @brief Fill hashdex from protobuf
@@ -1607,15 +1607,6 @@ void prompp_wal_protobuf_hashdex_presharding(void* args, void* res);
 void prompp_wal_go_model_hashdex_ctor(void* args, void* res);
 
 /**
- * @brief Destroy hashdex
- *
- * @param args {
- *     hashdex uintptr // pointer to constructed hashdex
- * }
- */
-void prompp_wal_go_model_hashdex_dtor(void* args);
-
-/**
  * @brief Fill hashdex from Go memory
  *
  * Hashdex only indexing go memory (model.TimeSeries) and doesn't copy all data.
@@ -1634,15 +1625,6 @@ void prompp_wal_go_model_hashdex_dtor(void* args);
  * }
  */
 void prompp_wal_go_model_hashdex_presharding(void* args, void* res);
-
-/**
- * @brief Destroy hashdex
- *
- * @param args {
- *     hashdex uintptr // pointer to constructed hashdex
- * }
- */
-void prompp_wal_basic_decoder_hashdex_dtor(void* args);
 
 /**
  * @brief Construct a new PromPP::WAL::hashdex::Scraper based on Prometheus parser
@@ -1684,15 +1666,6 @@ void prompp_wal_prometheus_scraper_hashdex_parse(void* args, void* res);
 void prompp_wal_prometheus_scraper_hashdex_get_metadata(void* args, void* res);
 
 /**
- * @brief Destroy hashdex
- *
- * @param args {
- *     hashdex uintptr // pointer to constructed hashdex
- * }
- */
-void prompp_wal_prometheus_scraper_hashdex_dtor(void* args);
-
-/**
  * @brief Construct a new PromPP::WAL::hashdex::Scraper based on OpenMetrics parser
  *
  * @param res {
@@ -1730,15 +1703,6 @@ void prompp_wal_open_metrics_scraper_hashdex_parse(void* args, void* res);
  * }
  */
 void prompp_wal_open_metrics_scraper_hashdex_get_metadata(void* args, void* res);
-
-/**
- * @brief Destroy hashdex
- *
- * @param args {
- *     hashdex uintptr // pointer to constructed hashdex
- * }
- */
-void prompp_wal_open_metrics_scraper_hashdex_dtor(void* args);
 
 #ifdef __cplusplus
 }  // extern "C"

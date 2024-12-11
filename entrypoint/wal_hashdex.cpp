@@ -22,17 +22,13 @@ extern "C" void prompp_wal_protobuf_hashdex_ctor(void* args, void* res) {
   out->hashdex = new HashdexVariant{std::in_place_index<HashdexType::kProtobuf>, in->limits};
 }
 
-void prompp_wal_hashdex_dtor(void* args) {
+extern "C" void prompp_wal_hashdex_dtor(void* args) {
   struct Arguments {
     HashdexVariant* hashdex;
   };
 
   Arguments* in = reinterpret_cast<Arguments*>(args);
   delete in->hashdex;
-}
-
-extern "C" void prompp_wal_protobuf_hashdex_dtor(void* args) {
-  prompp_wal_hashdex_dtor(args);
 }
 
 extern "C" void prompp_wal_protobuf_hashdex_presharding(void* args, void* res) {
@@ -74,10 +70,6 @@ extern "C" void prompp_wal_go_model_hashdex_ctor(void* args, void* res) {
   out->hashdex = new HashdexVariant{std::in_place_index<HashdexType::kGoModel>, in->limits};
 }
 
-extern "C" void prompp_wal_go_model_hashdex_dtor(void* args) {
-  prompp_wal_hashdex_dtor(args);
-}
-
 extern "C" void prompp_wal_go_model_hashdex_presharding(void* args, void* res) {
   struct Arguments {
     HashdexVariant* hashdex_variant;
@@ -102,10 +94,6 @@ extern "C" void prompp_wal_go_model_hashdex_presharding(void* args, void* res) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
     handle_current_exception(__func__, err_stream);
   }
-}
-
-extern "C" void prompp_wal_basic_decoder_hashdex_dtor(void* args) {
-  prompp_wal_hashdex_dtor(args);
 }
 
 template <size_t hashdex_type>
@@ -174,10 +162,6 @@ extern "C" void prompp_wal_prometheus_scraper_hashdex_get_metadata(void* args, v
   scraper_hashdex_get_metadata<PrometheusScraper>(args, res);
 }
 
-extern "C" void prompp_wal_prometheus_scraper_hashdex_dtor(void* args) {
-  prompp_wal_hashdex_dtor(args);
-}
-
 extern "C" void prompp_wal_open_metrics_scraper_hashdex_ctor(void* res) {
   scraper_hashdex_ctor<HashdexType::kOpenMetricsScraper>(res);
 }
@@ -188,8 +172,4 @@ extern "C" void prompp_wal_open_metrics_scraper_hashdex_parse(void* args, void* 
 
 extern "C" void prompp_wal_open_metrics_scraper_hashdex_get_metadata(void* args, void* res) {
   scraper_hashdex_get_metadata<OpenMetricsScraper>(args, res);
-}
-
-extern "C" void prompp_wal_open_metrics_scraper_hashdex_dtor(void* args) {
-  prompp_wal_hashdex_dtor(args);
 }
