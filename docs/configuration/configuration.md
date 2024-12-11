@@ -676,7 +676,7 @@ http_headers:
 
 Azure SD configurations allow retrieving scrape targets from Azure VMs.
 
-The following Azure permissions apply to Azure SD:
+The discovery requires at least the following permissions:
 
 * `Microsoft.Compute/virtualMachines/read`: Required for VM discovery
 * `Microsoft.Network/networkInterfaces/read`: Required for VM discovery
