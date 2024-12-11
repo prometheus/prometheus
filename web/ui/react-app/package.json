@@ -88,7 +88,7 @@
     "mutationobserver-shim": "^0.3.7",
     "prettier": "^2.8.8",
     "react-scripts": "^5.0.1",
-    "sinon": "^18.0.0",
+    "sinon": "^19.0.2",
     "ts-jest": "^29.2.2"
   },
   "jest": {
