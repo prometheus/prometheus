@@ -87,6 +87,7 @@ const (
 )
 
 var expectedConf = &Config{
+	loaded: true,
 	GlobalConfig: GlobalConfig{
 		ScrapeInterval:       model.Duration(15 * time.Second),
 		ScrapeTimeout:        DefaultGlobalConfig.ScrapeTimeout,
@@ -1512,10 +1513,10 @@ func TestYAMLRoundtrip(t *testing.T) {
 	require.NoError(t, err)
 
 	out, err := yaml.Marshal(want)
-
 	require.NoError(t, err)
-	got := &Config{}
-	require.NoError(t, yaml.UnmarshalStrict(out, got))
+
+	got, err := Load(string(out), promslog.NewNopLogger())
+	require.NoError(t, err)
 
 	require.Equal(t, want, got)
 }
@@ -1525,10 +1526,10 @@ func TestRemoteWriteRetryOnRateLimit(t *testing.T) {
 	require.NoError(t, err)
 
 	out, err := yaml.Marshal(want)
-
 	require.NoError(t, err)
-	got := &Config{}
-	require.NoError(t, yaml.UnmarshalStrict(out, got))
+
+	got, err := Load(string(out), promslog.NewNopLogger())
+	require.NoError(t, err)
 
 	require.True(t, got.RemoteWriteConfigs[0].QueueConfig.RetryOnRateLimit)
 	require.False(t, got.RemoteWriteConfigs[1].QueueConfig.RetryOnRateLimit)
@@ -2219,6 +2220,7 @@ func TestEmptyConfig(t *testing.T) {
 	c, err := Load("", promslog.NewNopLogger())
 	require.NoError(t, err)
 	exp := DefaultConfig
+	exp.loaded = true
 	require.Equal(t, exp, *c)
 }
 
@@ -2268,6 +2270,7 @@ func TestEmptyGlobalBlock(t *testing.T) {
 	require.NoError(t, err)
 	exp := DefaultConfig
 	exp.Runtime = DefaultRuntimeConfig
+	exp.loaded = true
 	require.Equal(t, exp, *c)
 }
 
@@ -2547,4 +2550,19 @@ func TestScrapeProtocolHeader(t *testing.T) {
 			require.Equal(t, tc.expectedValue, mediaType)
 		})
 	}
+}
+
+// Regression test against https://github.com/prometheus/prometheus/issues/15538
+func TestGetScrapeConfigs_Loaded(t *testing.T) {
+	t.Run("without load", func(t *testing.T) {
+		c := &Config{}
+		_, err := c.GetScrapeConfigs()
+		require.EqualError(t, err, "main config scrape configs was not validated and loaded; GetScrapeConfigs method can only be used on configuration from the config.Load or config.LoadFile")
+	})
+	t.Run("with load", func(t *testing.T) {
+		c, err := Load("", promslog.NewNopLogger())
+		require.NoError(t, err)
+		_, err = c.GetScrapeConfigs()
+		require.NoError(t, err)
+	})
 }
