@@ -289,6 +289,7 @@ type Options struct {
 	RemoteReadBytesInFrame     int
 	EnableRemoteWriteReceiver  bool
 	EnableOTLPWriteReceiver    bool
+	ConvertOTLPDelta           bool
 	IsAgent                    bool
 	AppName                    string
 
@@ -386,6 +387,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		o.EnableRemoteWriteReceiver,
 		o.AcceptRemoteWriteProtoMsgs,
 		o.EnableOTLPWriteReceiver,
+		o.ConvertOTLPDelta,
 	)
 
 	if o.RoutePrefix != "/" {
