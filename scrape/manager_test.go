@@ -620,6 +620,64 @@ func TestManagerTargetsUpdates(t *testing.T) {
 	}
 }
 
+func BenchmarkManagerReload(b *testing.B) {
+	opts := Options{}
+	testRegistry := prometheus.NewRegistry()
+	m, err := NewManager(&opts, nil, nil, testRegistry)
+	require.NoError(b, err)
+
+	m.scrapePools = map[string]*scrapePool{}
+	sp := &scrapePool{
+		activeTargets: map[uint64]*Target{},
+	}
+
+	for i := 0; i < 10000; i++ {
+		sp.activeTargets[uint64(i)] = &Target{
+			discoveredLabels: labels.FromStrings("__address__", fmt.Sprintf("foo-%d", i)),
+			labels:           labels.FromStrings("label_key", fmt.Sprintf("foo-%d", i)),
+		}
+	}
+
+	m.scrapePools["default"] = sp
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		m.reload()
+	}
+}
+
+func TestManagerDuplicateAfterRelabellingWarning(t *testing.T) {
+	var output []interface{}
+	logger := log.Logger(log.LoggerFunc(func(keyvals ...interface{}) error {
+		output = keyvals
+		return nil
+	}))
+
+	opts := Options{}
+	testRegistry := prometheus.NewRegistry()
+	m, err := NewManager(&opts, logger, nil, testRegistry)
+	require.NoError(t, err)
+
+	m.scrapePools = map[string]*scrapePool{}
+	sp := &scrapePool{
+		activeTargets: map[uint64]*Target{},
+	}
+	sp.activeTargets[uint64(0)] = &Target{
+		discoveredLabels: labels.FromStrings("__address__", "foo"),
+		labels:           labels.FromStrings("label_key", "label_value"),
+	}
+	sp.activeTargets[uint64(1)] = &Target{
+		discoveredLabels: labels.FromStrings("__address__", "bar"),
+		labels:           labels.FromStrings("label_key", "label_value"),
+	}
+	m.scrapePools["default"] = sp
+
+	m.reload()
+	require.Contains(t, output, "Found targets with same labels after relabelling")
+	require.Contains(t, output, "foo")
+	require.Contains(t, output, "bar")
+	require.Contains(t, output, `{label_key="label_value"}`)
+}
+
 func TestSetOffsetSeed(t *testing.T) {
 	getConfig := func(prometheus string) *config.Config {
 		cfgText := `
