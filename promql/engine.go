@@ -3471,7 +3471,7 @@ func handleVectorBinopError(err error, e *parser.BinaryExpr) annotations.Annotat
 	metricName := ""
 	pos := e.PositionRange()
 	if errors.Is(err, annotations.PromQLInfo) || errors.Is(err, annotations.PromQLWarning) {
-		return annotations.New().Add(err)
+		return annotations.New().AddRaw(err)
 	}
 	if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 		return annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
