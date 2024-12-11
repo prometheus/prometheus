@@ -36,7 +36,7 @@
     "@codemirror/autocomplete": "^6.18.1",
     "@codemirror/language": "^6.10.6",
     "@codemirror/lint": "^6.8.1",
-    "@codemirror/state": "^6.3.3",
+    "@codemirror/state": "^6.5.0",
     "@codemirror/view": "^6.34.1",
     "@lezer/common": "^1.2.3",
     "@lezer/highlight": "^1.2.0",
