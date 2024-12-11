@@ -96,7 +96,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					continue
 				}
 
-				promName := prometheustranslator.BuildCompliantName(metric, settings.Namespace, settings.AddMetricSuffixes, settings.AllowUTF8)
+				promName := prometheustranslator.BuildCompliantName(metric, settings.Namespace, settings.AddMetricSuffixes)
 				c.metadata = append(c.metadata, prompb.MetricMetadata{
 					Type:             otelMetricTypeToPromMetricType(metric),
 					MetricFamilyName: promName,
