@@ -173,29 +173,66 @@ func TestRemoveItem(t *testing.T) {
 	require.Equal(t, []string{"b", "c"}, removeItem([]string{"a", "b", "c"}, "a"))
 }
 
-func TestBuildCompliantNameWithSuffixes(t *testing.T) {
-	require.Equal(t, "system_io_bytes_total", BuildCompliantName(createCounter("system.io", "By"), "", true))
-	require.Equal(t, "system_network_io_bytes_total", BuildCompliantName(createCounter("network.io", "By"), "system", true))
-	require.Equal(t, "_3_14_digits", BuildCompliantName(createGauge("3.14 digits", ""), "", true))
-	require.Equal(t, "envoy_rule_engine_zlib_buf_error", BuildCompliantName(createGauge("envoy__rule_engine_zlib_buf_error", ""), "", true))
-	require.Equal(t, ":foo::bar", BuildCompliantName(createGauge(":foo::bar", ""), "", true))
-	require.Equal(t, ":foo::bar_total", BuildCompliantName(createCounter(":foo::bar", ""), "", true))
+func TestBuildCompliantMetricNameWithSuffixes(t *testing.T) {
+	require.Equal(t, "system_io_bytes_total", BuildCompliantMetricName(createCounter("system.io", "By"), "", true))
+	require.Equal(t, "system_network_io_bytes_total", BuildCompliantMetricName(createCounter("network.io", "By"), "system", true))
+	require.Equal(t, "_3_14_digits", BuildCompliantMetricName(createGauge("3.14 digits", ""), "", true))
+	require.Equal(t, "envoy_rule_engine_zlib_buf_error", BuildCompliantMetricName(createGauge("envoy__rule_engine_zlib_buf_error", ""), "", true))
+	require.Equal(t, ":foo::bar", BuildCompliantMetricName(createGauge(":foo::bar", ""), "", true))
+	require.Equal(t, ":foo::bar_total", BuildCompliantMetricName(createCounter(":foo::bar", ""), "", true))
 	// Gauges with unit 1 are considered ratios.
-	require.Equal(t, "foo_bar_ratio", BuildCompliantName(createGauge("foo.bar", "1"), "", true))
+	require.Equal(t, "foo_bar_ratio", BuildCompliantMetricName(createGauge("foo.bar", "1"), "", true))
 	// Slashes in units are converted.
-	require.Equal(t, "system_io_foo_per_bar_total", BuildCompliantName(createCounter("system.io", "foo/bar"), "", true))
-	require.Equal(t, "metric_with_foreign_characters_total", BuildCompliantName(createCounter("metric_with_字符_foreign_characters", ""), "", true))
+	require.Equal(t, "system_io_foo_per_bar_total", BuildCompliantMetricName(createCounter("system.io", "foo/bar"), "", true))
+	require.Equal(t, "metric_with_foreign_characters_total", BuildCompliantMetricName(createCounter("metric_with_字符_foreign_characters", ""), "", true))
 }
 
-func TestBuildCompliantNameWithoutSuffixes(t *testing.T) {
-	require.Equal(t, "system_io", BuildCompliantName(createCounter("system.io", "By"), "", false))
-	require.Equal(t, "system_network_io", BuildCompliantName(createCounter("network.io", "By"), "system", false))
-	require.Equal(t, "system_network_I_O", BuildCompliantName(createCounter("network (I/O)", "By"), "system", false))
-	require.Equal(t, "_3_14_digits", BuildCompliantName(createGauge("3.14 digits", "By"), "", false))
-	require.Equal(t, "envoy__rule_engine_zlib_buf_error", BuildCompliantName(createGauge("envoy__rule_engine_zlib_buf_error", ""), "", false))
-	require.Equal(t, ":foo::bar", BuildCompliantName(createGauge(":foo::bar", ""), "", false))
-	require.Equal(t, ":foo::bar", BuildCompliantName(createCounter(":foo::bar", ""), "", false))
-	require.Equal(t, "foo_bar", BuildCompliantName(createGauge("foo.bar", "1"), "", false))
-	require.Equal(t, "system_io", BuildCompliantName(createCounter("system.io", "foo/bar"), "", false))
-	require.Equal(t, "metric_with___foreign_characters", BuildCompliantName(createCounter("metric_with_字符_foreign_characters", ""), "", false))
+func TestBuildCompliantMetricNameWithoutSuffixes(t *testing.T) {
+	require.Equal(t, "system_io", BuildCompliantMetricName(createCounter("system.io", "By"), "", false))
+	require.Equal(t, "system_network_io", BuildCompliantMetricName(createCounter("network.io", "By"), "system", false))
+	require.Equal(t, "system_network_I_O", BuildCompliantMetricName(createCounter("network (I/O)", "By"), "system", false))
+	require.Equal(t, "_3_14_digits", BuildCompliantMetricName(createGauge("3.14 digits", "By"), "", false))
+	require.Equal(t, "envoy__rule_engine_zlib_buf_error", BuildCompliantMetricName(createGauge("envoy__rule_engine_zlib_buf_error", ""), "", false))
+	require.Equal(t, ":foo::bar", BuildCompliantMetricName(createGauge(":foo::bar", ""), "", false))
+	require.Equal(t, ":foo::bar", BuildCompliantMetricName(createCounter(":foo::bar", ""), "", false))
+	require.Equal(t, "foo_bar", BuildCompliantMetricName(createGauge("foo.bar", "1"), "", false))
+	require.Equal(t, "system_io", BuildCompliantMetricName(createCounter("system.io", "foo/bar"), "", false))
+	require.Equal(t, "metric_with___foreign_characters", BuildCompliantMetricName(createCounter("metric_with_字符_foreign_characters", ""), "", false))
+}
+
+func TestBuildMetricNameWithSuffixes(t *testing.T) {
+	require.Equal(t, "system.io_bytes_total", BuildMetricName(createCounter("system.io", "By"), "", true))
+	require.Equal(t, "system_network.io_bytes_total", BuildMetricName(createCounter("network.io", "By"), "system", true))
+	require.Equal(t, "3.14 digits", BuildMetricName(createGauge("3.14 digits", ""), "", true))
+	require.Equal(t, "envoy__rule_engine_zlib_buf_error", BuildMetricName(createGauge("envoy__rule_engine_zlib_buf_error", ""), "", true))
+	require.Equal(t, ":foo::bar", BuildMetricName(createGauge(":foo::bar", ""), "", true))
+	require.Equal(t, ":foo::bar_total", BuildMetricName(createCounter(":foo::bar", ""), "", true))
+	// Gauges with unit 1 are considered ratios.
+	require.Equal(t, "foo.bar_ratio", BuildMetricName(createGauge("foo.bar", "1"), "", true))
+	// Slashes in units are converted.
+	require.Equal(t, "system.io_foo_per_bar_total", BuildMetricName(createCounter("system.io", "foo/bar"), "", true))
+	require.Equal(t, "metric_with_字符_foreign_characters_total", BuildMetricName(createCounter("metric_with_字符_foreign_characters", ""), "", true))
+
+	// Tests below show weird interactions that users can have with the metric names.
+	// With BuildMetricName we don't check if units/type suffixes are already present in the metric name, we always add them.
+	require.Equal(t, "system_io_seconds_seconds", BuildMetricName(createGauge("system_io_seconds", "s"), "", true))
+	require.Equal(t, "system_io_total_total", BuildMetricName(createCounter("system_io_total", ""), "", true))
+}
+
+func TestBuildMetricNameWithoutSuffixes(t *testing.T) {
+	require.Equal(t, "system.io", BuildMetricName(createCounter("system.io", "By"), "", false))
+	require.Equal(t, "system_network.io", BuildMetricName(createCounter("network.io", "By"), "system", false))
+	require.Equal(t, "3.14 digits", BuildMetricName(createGauge("3.14 digits", ""), "", false))
+	require.Equal(t, "envoy__rule_engine_zlib_buf_error", BuildMetricName(createGauge("envoy__rule_engine_zlib_buf_error", ""), "", false))
+	require.Equal(t, ":foo::bar", BuildMetricName(createGauge(":foo::bar", ""), "", false))
+	require.Equal(t, ":foo::bar", BuildMetricName(createCounter(":foo::bar", ""), "", false))
+	// Gauges with unit 1 are considered ratios.
+	require.Equal(t, "foo.bar", BuildMetricName(createGauge("foo.bar", "1"), "", false))
+	// Slashes in units are converted.
+	require.Equal(t, "system.io", BuildMetricName(createCounter("system.io", "foo/bar"), "", false))
+	require.Equal(t, "metric_with_字符_foreign_characters", BuildMetricName(createCounter("metric_with_字符_foreign_characters", ""), "", false))
+
+	
+	require.Equal(t, "system_io_seconds", BuildMetricName(createGauge("system_io_seconds", "s"), "", false))
+	require.Equal(t, "system_io_total", BuildMetricName(createCounter("system_io_total", ""), "", false))
 }

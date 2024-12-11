@@ -79,7 +79,7 @@ var perUnitMap = map[string]string{
 	"y":  "year",
 }
 
-// BuildCompliantName builds a Prometheus-compliant metric name for the specified metric.
+// BuildCompliantMetricName builds a Prometheus-compliant metric name for the specified metric.
 //
 // Metric name is prefixed with specified namespace and underscore (if any).
 // Namespace is not cleaned up. Make sure specified namespace follows Prometheus
@@ -88,7 +88,7 @@ var perUnitMap = map[string]string{
 // See rules at https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels,
 // https://prometheus.io/docs/practices/naming/#metric-and-label-naming
 // and https://github.com/open-telemetry/opentelemetry-specification/blob/v1.38.0/specification/compatibility/prometheus_and_openmetrics.md#otlp-metric-points-to-prometheus.
-func BuildCompliantName(metric pmetric.Metric, namespace string, addMetricSuffixes bool) string {
+func BuildCompliantMetricName(metric pmetric.Metric, namespace string, addMetricSuffixes bool) string {
 	// Full normalization following standard Prometheus naming conventions
 	if addMetricSuffixes {
 		return normalizeName(metric, namespace)
@@ -123,46 +123,12 @@ func normalizeName(metric pmetric.Metric, namespace string) string {
 		func(r rune) bool { return nonTokenMetricCharRE.MatchString(string(r)) },
 	)
 
-	// Split unit at the '/' if any
-	unitTokens := strings.SplitN(metric.Unit(), "/", 2)
-
-	// Main unit
-	// Append if not blank, doesn't contain '{}', and is not present in metric name already
-	if len(unitTokens) > 0 {
-		var mainUnitProm, perUnitProm string
-		mainUnitOTel := strings.TrimSpace(unitTokens[0])
-		if mainUnitOTel != "" && !strings.ContainsAny(mainUnitOTel, "{}") {
-			mainUnitProm = cleanUpUnit(unitMapGetOrDefault(mainUnitOTel))
-			if slices.Contains(nameTokens, mainUnitProm) {
-				mainUnitProm = ""
-			}
-		}
-
-		// Per unit
-		// Append if not blank, doesn't contain '{}', and is not present in metric name already
-		if len(unitTokens) > 1 && unitTokens[1] != "" {
-			perUnitOTel := strings.TrimSpace(unitTokens[1])
-			if perUnitOTel != "" && !strings.ContainsAny(perUnitOTel, "{}") {
-				perUnitProm = perUnitMapGetOrDefault(perUnitOTel)
-			}
-			if perUnitProm != "" {
-				perUnitProm = "per_" + perUnitProm
-				if slices.Contains(nameTokens, perUnitProm) {
-					perUnitProm = ""
-				}
-			}
-		}
-
-		if perUnitProm != "" {
-			mainUnitProm = strings.TrimSuffix(mainUnitProm, "_")
-		}
-
-		if mainUnitProm != "" {
-			nameTokens = append(nameTokens, mainUnitProm)
-		}
-		if perUnitProm != "" {
-			nameTokens = append(nameTokens, perUnitProm)
-		}
+	mainUnitSuffix, perUnitSuffix := buildUnitSuffixes(metric.Unit())
+	if mainUnitSuffix != "" && !slices.Contains(nameTokens, mainUnitSuffix) {
+		nameTokens = append(nameTokens, mainUnitSuffix)
+	}
+	if perUnitSuffix != "" && !slices.Contains(nameTokens, perUnitSuffix) {
+		nameTokens = append(nameTokens, perUnitSuffix)
 	}
 
 	// Append _total for Counters
@@ -293,4 +259,73 @@ func removeItem(slice []string, value string) []string {
 		}
 	}
 	return newSlice
+}
+
+// BuildMetricName builds a valid metric name but without following Prometheus naming conventions.
+// It doesn't do any character transformation, it only prefixes the metric name with the namespace, if any,
+// and adds metric type suffixes, e.g. "_total" for counters and unit suffixes.
+//
+// Differently from BuildCompliantMetricName, it doesn't pre-check the presence of unit and type suffixes.
+// If "addMetricSuffixes" is true, it will add them anyway.
+//
+// Please use BuildCompliantMetricName for a metric name that follows Prometheus naming conventions.
+func BuildMetricName(metric pmetric.Metric, namespace string, addMetricSuffixes bool) string {
+	metricName := metric.Name()
+
+	if namespace != "" {
+		metricName = namespace + "_" + metricName
+	}
+
+	if addMetricSuffixes {
+		mainUnitSuffix, perUnitSuffix := buildUnitSuffixes(metric.Unit())
+		if mainUnitSuffix != "" {
+			metricName = metricName + "_" + mainUnitSuffix
+		}
+		if perUnitSuffix != "" {
+			metricName = metricName + "_" + perUnitSuffix
+		}
+
+		// Append _total for Counters
+		if metric.Type() == pmetric.MetricTypeSum && metric.Sum().IsMonotonic() {
+			metricName = metricName + "_total"
+		}
+
+		// Append _ratio for metrics with unit "1"
+		// Some OTel receivers improperly use unit "1" for counters of objects
+		// See https://github.com/open-telemetry/opentelemetry-collector-contrib/issues?q=is%3Aissue+some+metric+units+don%27t+follow+otel+semantic+conventions
+		// Until these issues have been fixed, we're appending `_ratio` for gauges ONLY
+		// Theoretically, counters could be ratios as well, but it's absurd (for mathematical reasons)
+		if metric.Unit() == "1" && metric.Type() == pmetric.MetricTypeGauge {
+			metricName = metricName + "_ratio"
+		}
+	}
+	return metricName
+}
+
+func buildUnitSuffixes(unit string) (mainUnitSuffix, perUnitSuffix string) {
+	// Split unit at the '/' if any
+	unitTokens := strings.SplitN(unit, "/", 2)
+
+	if len(unitTokens) > 0 {
+		mainUnitOTel := strings.TrimSpace(unitTokens[0])
+		if mainUnitOTel != "" && !strings.ContainsAny(mainUnitOTel, "{}") {
+			mainUnitSuffix = cleanUpUnit(unitMapGetOrDefault(mainUnitOTel))
+		}
+
+		if len(unitTokens) > 1 && unitTokens[1] != "" {
+			perUnitOTel := strings.TrimSpace(unitTokens[1])
+			if perUnitOTel != "" && !strings.ContainsAny(perUnitOTel, "{}") {
+				perUnitSuffix = perUnitMapGetOrDefault(perUnitOTel)
+			}
+			if perUnitSuffix != "" {
+				perUnitSuffix = "per_" + perUnitSuffix
+			}
+		}
+
+		if perUnitSuffix != "" {
+			mainUnitSuffix = strings.TrimSuffix(mainUnitSuffix, "_")
+		}
+	}
+
+	return mainUnitSuffix, perUnitSuffix
 }
