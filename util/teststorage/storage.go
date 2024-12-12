@@ -14,6 +14,7 @@
 package teststorage
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"time"
@@ -73,8 +74,21 @@ func NewWithError(outOfOrderTimeWindow ...int64) (*TestStorage, error) {
 	return &TestStorage{DB: db, exemplarStorage: es, dir: dir}, nil
 }
 
+type DB interface {
+	Dir() string
+	ForceHeadMMap()
+	Compact(ctx context.Context) error
+	DisableCompactions()
+	EnableNativeHistograms()
+	storage.Storage
+	CleanTombstones() error
+	storage.ExemplarQueryable
+	Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Matcher) error
+	Snapshot(dir string, withHead bool) error
+}
+
 type TestStorage struct {
-	*tsdb.DB
+	DB
 	exemplarStorage tsdb.ExemplarStorage
 	dir             string
 }

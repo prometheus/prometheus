@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -49,11 +50,13 @@ func TestMain(m *testing.M) {
 }
 
 type dbAdapter struct {
-	*tsdb.DB
+	teststorage.DB
 }
 
 func (a *dbAdapter) Stats(statsByLabelName string, limit int) (*tsdb.Stats, error) {
-	return a.Head().Stats(statsByLabelName, limit), nil
+	// TODO:(genrest)
+	// return a.Head().Stats(statsByLabelName, limit), nil
+	return nil, nil
 }
 
 func (a *dbAdapter) WALReplayStatus() (tsdb.WALReplayStatus, error) {

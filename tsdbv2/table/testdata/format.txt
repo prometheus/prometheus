@@ -1,0 +1,4 @@
+base          name  value bit
+fields.Labels foo   bar   1
+fields.Labels foo   baz   2
+fields.Labels alpha baz   1
