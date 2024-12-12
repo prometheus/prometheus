@@ -15,14 +15,13 @@ package promql
 
 import (
 	"context"
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
-	"github.com/prometheus/prometheus/tsdb"
-	"go.opentelemetry.io/otel"
-	"os"
 	"runtime"
 	"testing"
 	"time"
+
+	"github.com/prometheus/common/promslog"
+	"github.com/prometheus/prometheus/tsdb"
+	"go.opentelemetry.io/otel"
 )
 
 func BenchmarkCountSingleInstance(b *testing.B) {
@@ -42,11 +41,9 @@ func BenchmarkCountAllOver1h(b *testing.B) {
 }
 
 func benchmarkQuery(query string, b *testing.B) {
-	// Open a TSDB for reading and/or writing.
-	l := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
-	l = level.NewFilter(l, level.AllowError())
+	l := promslog.NewNopLogger()
 	// TSDB contains a single production block, containing a high cardinality series (~150K)
-	db, err := tsdb.Open("/temp/test-tsdb", l, nil, tsdb.DefaultOptions(), nil)
+	db, err := tsdb.Open("/temp/test-tsdb", nil, nil, tsdb.DefaultOptions(), nil)
 	noErr(err)
 
 	// Create engine for querying
@@ -76,7 +73,6 @@ func benchmarkQuery(query string, b *testing.B) {
 
 	var memstats runtime.MemStats
 	runtime.ReadMemStats(&memstats)
-	memstats.Sys
 	b.ReportMetric(float64(memstats.Sys), "sys_memory")
 
 	// Clean up any last resources when done.
