@@ -309,11 +309,13 @@ func (c Config) String() string {
 // GetScrapeConfigs returns the read-only, validated scrape configurations including
 // the ones from the scrape_config_files.
 // This method does not write to config, and it's concurrency safe (the pointer receiver is for efficiency).
-// This method also assumes the Config was created by Load, due to races,
+// This method also assumes the Config was created by Load or LoadFile function, it returns error
+// if it was not. We can't re-validate or apply globals here due to races,
 // read more https://github.com/prometheus/prometheus/issues/15538.
 func (c *Config) GetScrapeConfigs() ([]*ScrapeConfig, error) {
 	if !c.loaded {
-		return nil, errors.New("config was not validated and loaded; GetScrapeConfigs method can only be used on configuration from the config.Load or config.LoadFile")
+		// Programmatic error, we warn before more confusing errors would happen due to lack of the globalization.
+		return nil, errors.New("scrape config cannot be fetched, main config was not validated and loaded correctly; should not happen")
 	}
 
 	scfgs := make([]*ScrapeConfig, len(c.ScrapeConfigs))

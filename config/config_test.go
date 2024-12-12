@@ -2557,7 +2557,7 @@ func TestGetScrapeConfigs_Loaded(t *testing.T) {
 	t.Run("without load", func(t *testing.T) {
 		c := &Config{}
 		_, err := c.GetScrapeConfigs()
-		require.EqualError(t, err, "main config scrape configs was not validated and loaded; GetScrapeConfigs method can only be used on configuration from the config.Load or config.LoadFile")
+		require.EqualError(t, err, "scrape config cannot be fetched, main config was not validated and loaded correctly; should not happen")
 	})
 	t.Run("with load", func(t *testing.T) {
 		c, err := Load("", promslog.NewNopLogger())
