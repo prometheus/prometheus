@@ -17,11 +17,13 @@ package record
 import (
 	"fmt"
 	"math/rand"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -523,7 +525,7 @@ func BenchmarkWAL_HistogramEncoding(b *testing.B) {
 			}
 			lbls[model.MetricNameLabel] = fmt.Sprintf("series_%d_bucket", i)
 			for j := range buckets {
-				lbls[model.BucketLabel] = fmt.Sprintf("%d", j)
+				lbls[model.BucketLabel] = fmt.Sprintf("%g", j)
 				series = append(series, RefSeries{
 					Ref:    ref,
 					Labels: labels.FromMap(lbls),
