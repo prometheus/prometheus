@@ -15,8 +15,6 @@
 package blob
 
 import (
-	"slices"
-
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -28,7 +26,7 @@ func ExemplarToProto(ex *exemplar.Exemplar) ([]byte, error) {
 	px := &prompb.Exemplar{
 		Value:     ex.Value,
 		Timestamp: ex.Ts,
-		Labels:    prompb.FromLabels(ex.Labels, nil),
+		Labels:    prompb.FromLabels(ex.Labels, make([]prompb.Label, 0, len(ex.Labels))),
 	}
 	return px.Marshal()
 }
@@ -37,7 +35,7 @@ func ProtoToExemplar(ex *prompb.Exemplar, o []exemplar.Exemplar) []exemplar.Exem
 	return append(o, exemplar.Exemplar{
 		Value:  ex.Value,
 		Ts:     ex.Timestamp,
-		Labels: ProtoToLabels(ex.Labels, nil),
+		Labels: ProtoToLabels(ex.Labels, make(labels.Labels, 0, len(ex.Labels))),
 	})
 }
 
@@ -49,7 +47,6 @@ func LabelsToProto(la labels.Labels) ([]byte, error) {
 }
 
 func ProtoToLabels(la []prompb.Label, e labels.Labels) labels.Labels {
-	e = slices.Grow(e, len(la))
 	for i := range la {
 		e = append(e, labels.Label{
 			Name:  la[i].Name,
