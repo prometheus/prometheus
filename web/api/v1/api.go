@@ -84,7 +84,11 @@ const (
 	errorNotAcceptable errorType = "not_acceptable"
 )
 
-var LocalhostRepresentations = []string{"127.0.0.1", "localhost", "::1"}
+var (
+	LocalhostRepresentations = []string{"127.0.0.1", "localhost", "::1"}
+
+	errResultsTruncatedLimit = errors.New("results truncated due to limit")
+)
 
 type apiError struct {
 	typ errorType
@@ -735,7 +739,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 
 	if limit > 0 && len(names) > limit {
 		names = names[:limit]
-		warnings = warnings.Add(errors.New("results truncated due to limit"))
+		warnings = warnings.AddRaw(errResultsTruncatedLimit)
 	}
 	return apiFuncResult{names, nil, warnings, nil}
 }
@@ -833,7 +837,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 
 	if limit > 0 && len(vals) > limit {
 		vals = vals[:limit]
-		warnings = warnings.Add(errors.New("results truncated due to limit"))
+		warnings = warnings.AddRaw(errResultsTruncatedLimit)
 	}
 
 	return apiFuncResult{vals, nil, warnings, closer}
@@ -940,7 +944,7 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 
 		if limit > 0 && len(metrics) > limit {
 			metrics = metrics[:limit]
-			warnings.Add(errors.New("results truncated due to limit"))
+			warnings.AddRaw(errResultsTruncatedLimit)
 			return apiFuncResult{metrics, nil, warnings, closer}
 		}
 	}
