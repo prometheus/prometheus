@@ -463,7 +463,7 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 					return
 				}
 				decoded <- samples
-			case record.HistogramSamples:
+			case record.HistogramSamples, record.CustomBucketsHistogramSamples:
 				histograms := histogramsPool.Get()[:0]
 				histograms, err = dec.HistogramSamples(rec, histograms)
 				if err != nil {
@@ -475,7 +475,7 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 					return
 				}
 				decoded <- histograms
-			case record.FloatHistogramSamples:
+			case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
 				floatHistograms := floatHistogramsPool.Get()[:0]
 				floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms)
 				if err != nil {
@@ -1154,19 +1154,39 @@ func (a *appender) log() error {
 	}
 
 	if len(a.pendingHistograms) > 0 {
-		buf = encoder.HistogramSamples(a.pendingHistograms, buf)
-		if err := a.wal.Log(buf); err != nil {
-			return err
+		var customBucketsHistograms []record.RefHistogramSample
+		buf, customBucketsHistograms = encoder.HistogramSamples(a.pendingHistograms, buf)
+		if len(buf) > 0 {
+			if err := a.wal.Log(buf); err != nil {
+				return err
+			}
+			buf = buf[:0]
 		}
-		buf = buf[:0]
+		if len(customBucketsHistograms) > 0 {
+			buf = encoder.CustomBucketsHistogramSamples(customBucketsHistograms, nil)
+			if err := a.wal.Log(buf); err != nil {
+				return err
+			}
+			buf = buf[:0]
+		}
 	}
 
 	if len(a.pendingFloatHistograms) > 0 {
-		buf = encoder.FloatHistogramSamples(a.pendingFloatHistograms, buf)
-		if err := a.wal.Log(buf); err != nil {
-			return err
+		var customBucketsFloatHistograms []record.RefFloatHistogramSample
+		buf, customBucketsFloatHistograms = encoder.FloatHistogramSamples(a.pendingFloatHistograms, buf)
+		if len(buf) > 0 {
+			if err := a.wal.Log(buf); err != nil {
+				return err
+			}
+			buf = buf[:0]
 		}
-		buf = buf[:0]
+		if len(customBucketsFloatHistograms) > 0 {
+			buf = encoder.CustomBucketsFloatHistogramSamples(customBucketsFloatHistograms, nil)
+			if err := a.wal.Log(buf); err != nil {
+				return err
+			}
+			buf = buf[:0]
+		}
 	}
 
 	if len(a.pendingExamplars) > 0 {
