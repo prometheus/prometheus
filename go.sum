@@ -503,10 +503,10 @@ go.mongodb.org/mongo-driver v1.14.0 h1:P98w8egYRjYe3XDjxhYJagTokP/H6HzlsnojRgZRd
 go.mongodb.org/mongo-driver v1.14.0/go.mod h1:Vzb0Mk/pa7e6cWw85R4F/endUC3u0U9jGcNU603k65c=
 go.opencensus.io v0.24.0 h1:y73uSU6J157QMP2kn2r30vwW1A2W2WFwSCGnAVxeaD0=
 go.opencensus.io v0.24.0/go.mod h1:vNK8G9p7aAivkbmorf4v+7Hgx+Zs0yY+0fOtgBfjQKo=
-go.opentelemetry.io/collector/pdata v1.20.0 h1:ePcwt4bdtISP0loHaE+C9xYoU2ZkIvWv89Fob16o9SM=
-go.opentelemetry.io/collector/pdata v1.20.0/go.mod h1:Ox1YVLe87cZDB/TL30i4SUz1cA5s6AM6SpFMfY61ICs=
-go.opentelemetry.io/collector/semconv v0.114.0 h1:/eKcCJwZepQUtEuFuxa0thx2XIOvhFpaf214ZG1a11k=
-go.opentelemetry.io/collector/semconv v0.114.0/go.mod h1:zCJ5njhWpejR+A40kiEoeFm1xq1uzyZwMnRNX6/D82A=
+go.opentelemetry.io/collector/pdata v1.21.0 h1:PG+UbiFMJ35X/WcAR7Rf/PWmWtRdW0aHlOidsR6c5MA=
+go.opentelemetry.io/collector/pdata v1.21.0/go.mod h1:GKb1/zocKJMvxKbS+sl0W85lxhYBTFJ6h6I1tphVyDU=
+go.opentelemetry.io/collector/semconv v0.115.0 h1:SoqMvg4ZEB3mz2EdAb6XYa+TuMo5Mir5FRBr3nVFUDY=
+go.opentelemetry.io/collector/semconv v0.115.0/go.mod h1:N6XE8Q0JKgBN2fAhkUQtqK9LT7rEGR6+Wu/Rtbal1iI=
 go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.57.0 h1:7F3XCD6WYzDkwbi8I8N+oYJWquPVScnRosKGgqjsR8c=
 go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.57.0/go.mod h1:Dk3C0BfIlZDZ5c6eVS7TYiH2vssuyUU3vUsgbrR+5V4=
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.57.0 h1:DheMAlT6POBP+gh8RUH19EOTnQIor5QE0uSRPtzCpSw=
