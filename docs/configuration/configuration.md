@@ -676,6 +676,13 @@ http_headers:
 
 Azure SD configurations allow retrieving scrape targets from Azure VMs.
 
+The discovery requires at least the following permissions:
+
+* `Microsoft.Compute/virtualMachines/read`: Required for VM discovery
+* `Microsoft.Network/networkInterfaces/read`: Required for VM discovery
+* `Microsoft.Compute/virtualMachineScaleSets/virtualMachines/read`: Required for scale set (VMSS) discovery
+* `Microsoft.Compute/virtualMachineScaleSets/virtualMachines/networkInterfaces/read`: Required for scale set (VMSS) discovery
+
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
 * `__meta_azure_machine_id`: the machine ID
