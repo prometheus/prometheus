@@ -128,7 +128,7 @@ type ManagerOptions struct {
 	RuleDependencyController  RuleDependencyController
 	AlertStore                AlertStore
 
-	Metrics                   *Metrics
+	Metrics *Metrics
 }
 
 // NewManager returns an implementation of Manager, ready to be started
