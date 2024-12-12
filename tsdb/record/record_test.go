@@ -15,13 +15,16 @@
 package record
 
 import (
+	"fmt"
 	"math/rand"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -463,4 +466,141 @@ func TestRecord_MetadataDecodeUnknownExtraFields(t *testing.T) {
 	decMetadata, err := dec.Metadata(enc.Get(), nil)
 	require.NoError(t, err)
 	require.Equal(t, expectedMetadata, decMetadata)
+}
+
+type recordsMaker struct {
+	name string
+	init func(int, int, int)
+}
+
+// BenchmarkWAL_HistogramLog measures efficiency of encoding classic
+// histograms and native historgrams with custom buckets (NHCB).
+func BenchmarkWAL_HistogramEncoding(b *testing.B) {
+	// Cache for the refs.
+	var series []RefSeries
+	var samples []RefSample
+	var nhcbs []RefHistogramSample
+
+	resetCache := func() {
+		series = nil
+		samples = nil
+		nhcbs = nil
+	}
+
+	initClassicRefs := func(labelCount, histograms, buckets int) {
+		ref := chunks.HeadSeriesRef(0)
+		lbls := map[string]string{}
+		for i := range labelCount {
+			lbls[fmt.Sprintf("l%d", i)] = fmt.Sprintf("v%d", i)
+		}
+		for i := range histograms {
+			lbls[model.MetricNameLabel] = fmt.Sprintf("series_%d_count", i)
+			series = append(series, RefSeries{
+				Ref:    ref,
+				Labels: labels.FromMap(lbls),
+			})
+			samples = append(samples, RefSample{
+				Ref: ref,
+				T:   100,
+				V:   float64(i),
+			})
+			ref++
+
+			lbls[model.MetricNameLabel] = fmt.Sprintf("series_%d_sum", i)
+			series = append(series, RefSeries{
+				Ref:    ref,
+				Labels: labels.FromMap(lbls),
+			})
+			samples = append(samples, RefSample{
+				Ref: ref,
+				T:   100,
+				V:   float64(i),
+			})
+			ref++
+
+			if buckets == 0 {
+				continue
+			}
+			lbls[model.MetricNameLabel] = fmt.Sprintf("series_%d_bucket", i)
+			for j := range buckets {
+				lbls[model.BucketLabel] = fmt.Sprintf("%d", j)
+				series = append(series, RefSeries{
+					Ref:    ref,
+					Labels: labels.FromMap(lbls),
+				})
+				samples = append(samples, RefSample{
+					Ref: ref,
+					T:   100,
+					V:   float64(i + j),
+				})
+				ref++
+			}
+			delete(lbls, model.BucketLabel)
+		}
+	}
+
+	initNHCBRefs := func(labelCount, histograms, buckets int) {
+		ref := chunks.HeadSeriesRef(0)
+		lbls := map[string]string{}
+		for i := range labelCount {
+			lbls[fmt.Sprintf("l%d", i)] = fmt.Sprintf("v%d", i)
+		}
+		for i := range histograms {
+			lbls[model.MetricNameLabel] = fmt.Sprintf("series_%d", i)
+			series = append(series, RefSeries{
+				Ref:    ref,
+				Labels: labels.FromMap(lbls),
+			})
+			h := &histogram.Histogram{
+				Schema:          histogram.CustomBucketsSchema,
+				Count:           uint64(i),
+				Sum:             float64(i),
+				PositiveSpans:   []histogram.Span{{Length: uint32(buckets)}},
+				PositiveBuckets: make([]int64, buckets+1),
+				CustomValues:    make([]float64, buckets),
+			}
+			for j := range buckets {
+				h.PositiveBuckets[j] = int64(i + j)
+			}
+			nhcbs = append(nhcbs, RefHistogramSample{
+				Ref: ref,
+				T:   100,
+				H:   h,
+			})
+			ref++
+		}
+	}
+
+	for _, maker := range []recordsMaker{
+		{
+			name: "classic",
+			init: initClassicRefs,
+		},
+		{
+			name: "nhcb",
+			init: initNHCBRefs,
+		},
+	} {
+		for _, labelCount := range []int{0, 10, 50} {
+			for _, histograms := range []int{10, 100, 1000} {
+				for _, buckets := range []int{0, 1, 10, 100} {
+					b.Run(fmt.Sprintf("%s labels=%d histograms=%d buckets=%d", maker.name, labelCount, histograms, buckets), func(b *testing.B) {
+						resetCache()
+						maker.init(labelCount, histograms, buckets)
+						enc := Encoder{}
+						for range b.N {
+							var buf []byte
+							enc.Series(series, buf)
+							enc.Samples(samples, buf)
+							var leftOver []RefHistogramSample
+							_, leftOver = enc.HistogramSamples(nhcbs, buf)
+							if len(leftOver) > 0 {
+								enc.CustomBucketsHistogramSamples(leftOver, buf)
+							}
+						}
+					})
+				}
+			}
+		}
+	}
 }
