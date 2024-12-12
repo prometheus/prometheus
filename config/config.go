@@ -117,11 +117,12 @@ func Load(s string, logger *slog.Logger) (*Config, error) {
 	default:
 		return nil, fmt.Errorf("unsupported OTLP translation strategy %q", cfg.OTLPConfig.TranslationStrategy)
 	}
-
+	cfg.loaded = true
 	return cfg, nil
 }
 
-// LoadFile parses the given YAML file into a Config.
+// LoadFile parses and validates the given YAML file into a read-only Config.
+// Callers should never write to or shallow copy the returned Config.
 func LoadFile(filename string, agentMode bool, logger *slog.Logger) (*Config, error) {
 	content, err := os.ReadFile(filename)
 	if err != nil {
@@ -270,9 +271,12 @@ type Config struct {
 	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
 	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
 	OTLPConfig         OTLPConfig           `yaml:"otlp,omitempty"`
+
+	loaded bool // Certain methods require configuration to use Load validation.
 }
 
 // SetDirectory joins any relative file paths with dir.
+// This method writes to config, and it's not concurrency safe.
 func (c *Config) SetDirectory(dir string) {
 	c.GlobalConfig.SetDirectory(dir)
 	c.AlertingConfig.SetDirectory(dir)
@@ -302,24 +306,26 @@ func (c Config) String() string {
 	return string(b)
 }
 
-// GetScrapeConfigs returns the scrape configurations.
+// GetScrapeConfigs returns the read-only, validated scrape configurations including
+// the ones from the scrape_config_files.
+// This method does not write to config, and it's concurrency safe (the pointer receiver is for efficiency).
+// This method also assumes the Config was created by Load or LoadFile function, it returns error
+// if it was not. We can't re-validate or apply globals here due to races,
+// read more https://github.com/prometheus/prometheus/issues/15538.
 func (c *Config) GetScrapeConfigs() ([]*ScrapeConfig, error) {
-	scfgs := make([]*ScrapeConfig, len(c.ScrapeConfigs))
+	if !c.loaded {
+		// Programmatic error, we warn before more confusing errors would happen due to lack of the globalization.
+		return nil, errors.New("scrape config cannot be fetched, main config was not validated and loaded correctly; should not happen")
+	}
 
+	scfgs := make([]*ScrapeConfig, len(c.ScrapeConfigs))
 	jobNames := map[string]string{}
 	for i, scfg := range c.ScrapeConfigs {
-		// We do these checks for library users that would not call validate in
-		// Unmarshal.
-		if err := scfg.Validate(c.GlobalConfig); err != nil {
-			return nil, err
-		}
-
-		if _, ok := jobNames[scfg.JobName]; ok {
-			return nil, fmt.Errorf("found multiple scrape configs with job name %q", scfg.JobName)
-		}
 		jobNames[scfg.JobName] = "main config file"
 		scfgs[i] = scfg
 	}
+
+	// Re-read and validate the dynamic scrape config rules.
 	for _, pat := range c.ScrapeConfigFiles {
 		fs, err := filepath.Glob(pat)
 		if err != nil {
@@ -355,6 +361,7 @@ func (c *Config) GetScrapeConfigs() ([]*ScrapeConfig, error) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
+// NOTE: This method should not be used outside of this package. Use Load or LoadFile instead.
 func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultConfig
 	// We want to set c to the defaults and then overwrite it with the input.
@@ -391,18 +398,18 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		}
 	}
 
-	// Do global overrides and validate unique names.
+	// Do global overrides and validation.
 	jobNames := map[string]struct{}{}
 	for _, scfg := range c.ScrapeConfigs {
 		if err := scfg.Validate(c.GlobalConfig); err != nil {
 			return err
 		}
-
 		if _, ok := jobNames[scfg.JobName]; ok {
 			return fmt.Errorf("found multiple scrape configs with job name %q", scfg.JobName)
 		}
 		jobNames[scfg.JobName] = struct{}{}
 	}
+
 	rwNames := map[string]struct{}{}
 	for _, rwcfg := range c.RemoteWriteConfigs {
 		if rwcfg == nil {
