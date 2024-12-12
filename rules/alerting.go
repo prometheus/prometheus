@@ -42,6 +42,7 @@ const (
 	alertMetricName = "ALERTS"
 	// AlertForStateMetricName is the metric name for 'for' state of alert.
 	alertForStateMetricName = "ALERTS_FOR_STATE"
+
 	// AlertStateLabel is the label name indicating the state of an alert.
 	alertStateLabel = "alertstate"
 )
@@ -610,6 +611,8 @@ func (r *AlertingRule) sendAlerts(ctx context.Context, ts time.Time, resendDelay
 	notifyFunc(ctx, r.vector.String(), alerts...)
 }
 
+// Note that changing format of String() changes value of GetFingerprint() leading to loss of persisted state
+// when the `alert-state-persistence` feature is enabled.
 func (r *AlertingRule) String() string {
 	ar := rulefmt.Rule{
 		Alert:         r.name,
