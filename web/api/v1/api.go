@@ -2120,7 +2120,7 @@ func toHintLimit(limit int) int {
 }
 
 // truncateResults truncates result for queryRange() and query().
-// No truncation for other types. (Scalars or Strings)
+// No truncation for other types(Scalars or Strings).
 func truncateResults(result *promql.Result, limit int) *promql.Result {
 	switch v := result.Value.(type) {
 	case promql.Matrix:
