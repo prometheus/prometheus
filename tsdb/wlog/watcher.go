@@ -265,9 +265,9 @@ func (w *Watcher) loop() {
 // Run the watcher, which will tail the WAL until the quit channel is closed
 // or an error case is hit.
 func (w *Watcher) Run() error {
-	_, lastSegment, err := Segments(w.walDir)
+	_, lastSegment, err := SegmentsRange(w.walDir)
 	if err != nil {
-		return fmt.Errorf("Segments: %w", err)
+		return fmt.Errorf("segments range: %w", err)
 	}
 
 	// We want to ensure this is false across iterations since
@@ -296,51 +296,54 @@ func (w *Watcher) Run() error {
 
 	w.logger.Debug("Tailing WAL", "lastCheckpoint", lastCheckpoint, "checkpointIndex", checkpointIndex, "currentSegment", currentSegment, "lastSegment", lastSegment)
 	for !isClosed(w.quit) {
-		w.currentSegmentMetric.Set(float64(currentSegment))
+		w.currentSegmentMetric.Set(float64(currentSegment.index))
 
 		// On start, after reading the existing WAL for series records, we have a pointer to what is the latest segment.
 		// On subsequent calls to this function, currentSegment will have been incremented and we should open that segment.
 		w.logger.Debug("Processing segment", "currentSegment", currentSegment)
-		if err := w.watch(currentSegment, currentSegment >= lastSegment); err != nil && !errors.Is(err, ErrIgnorable) {
-			return err
+		if err := w.watch(currentSegment, currentSegment.index >= lastSegment); err != nil && !errors.Is(err, ErrIgnorable) {
+			return fmt.Errorf("watching the last segment %v: %w", currentSegment, err)
 		}
 
 		// For testing: stop when you hit a specific segment.
-		if currentSegment == w.MaxSegment {
+		if currentSegment.index == w.MaxSegment {
 			return nil
 		}
 
-		currentSegment++
+		currentSegment, err = segmentByIndex(w.walDir, currentSegment.index+1)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
 // findSegmentForIndex finds the first segment greater than or equal to index.
-func (w *Watcher) findSegmentForIndex(index int) (int, error) {
+func (w *Watcher) findSegmentForIndex(index int) (segmentRef, error) {
 	refs, err := listSegments(w.walDir)
 	if err != nil {
-		return -1, err
+		return segmentRef{}, err
 	}
 
 	for _, r := range refs {
 		if r.index >= index {
-			return r.index, nil
+			return r, nil
 		}
 	}
 
-	return -1, errors.New("failed to find segment for index")
+	return segmentRef{}, fmt.Errorf("failed to find segment for index %v", index)
 }
 
-func (w *Watcher) readAndHandleError(r *LiveReader, segmentNum int, tail bool, size int64) error {
-	err := w.readSegment(r, segmentNum, tail)
+func (w *Watcher) readAndHandleError(r *LiveReader, s segmentRef, tail bool, size int64) error {
+	err := w.readSegment(r, s.index, tail)
 
 	// Ignore all errors reading to end of segment whilst replaying the WAL.
 	if !tail {
 		if err != nil && !errors.Is(err, io.EOF) {
-			w.logger.Warn("Ignoring error reading to end of segment, may have dropped data", "segment", segmentNum, "err", err)
+			w.logger.Warn("Ignoring error reading to end of segment, may have dropped data", "segment", s, "err", err)
 		} else if r.Offset() != size {
-			w.logger.Warn("Expected to have read whole segment, may have dropped data", "segment", segmentNum, "read", r.Offset(), "size", size)
+			w.logger.Warn("Expected to have read whole segment, may have dropped data", "segment", s, "read", r.Offset(), "size", size)
 		}
 		return ErrIgnorable
 	}
@@ -355,8 +358,8 @@ func (w *Watcher) readAndHandleError(r *LiveReader, segmentNum int, tail bool, s
 // Use tail true to indicate that the reader is currently on a segment that is
 // actively being written to. If false, assume it's a full segment and we're
 // replaying it on start to cache the series records.
-func (w *Watcher) watch(segmentNum int, tail bool) error {
-	segment, err := OpenReadSegment(SegmentName(w.walDir, segmentNum))
+func (w *Watcher) watch(s segmentRef, tail bool) error {
+	segment, err := OpenReadSegment(filepath.Join(w.walDir, s.fName))
 	if err != nil {
 		return err
 	}
@@ -367,12 +370,12 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 	size := int64(math.MaxInt64)
 	if !tail {
 		var err error
-		size, err = getSegmentSize(w.walDir, segmentNum)
+		size, err = getFileSize(filepath.Join(w.walDir, s.fName))
 		if err != nil {
-			return fmt.Errorf("getSegmentSize: %w", err)
+			return fmt.Errorf("get segment file size: %w", err)
 		}
 
-		return w.readAndHandleError(reader, segmentNum, tail, size)
+		return w.readAndHandleError(reader, s, tail, size)
 	}
 
 	checkpointTicker := time.NewTicker(checkpointPeriod)
@@ -402,7 +405,7 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 					defer func() {
 						<-gcSem
 					}()
-					if err := w.garbageCollectSeries(segmentNum); err != nil {
+					if err := w.garbageCollectSeries(s); err != nil {
 						w.logger.Warn("Error process checkpoint", "err", err)
 					}
 				}()
@@ -412,20 +415,20 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 
 		// if a newer segment is produced, read the current one until the end and move on.
 		case <-segmentTicker.C:
-			_, last, err := Segments(w.walDir)
+			_, last, err := SegmentsRange(w.walDir)
 			if err != nil {
-				return fmt.Errorf("Segments: %w", err)
+				return fmt.Errorf("list segments: %w", err)
 			}
 
-			if last > segmentNum {
-				return w.readAndHandleError(reader, segmentNum, tail, size)
+			if last > s.index {
+				return w.readAndHandleError(reader, s, tail, size)
 			}
 			continue
 
 		// we haven't read due to a notification in quite some time, try reading anyways
 		case <-readTicker.C:
 			w.logger.Debug("Watcher is reading the WAL due to timeout, haven't received any write notifications recently", "timeout", readTimeout)
-			err := w.readAndHandleError(reader, segmentNum, tail, size)
+			err := w.readAndHandleError(reader, s, tail, size)
 			if err != nil {
 				return err
 			}
@@ -433,7 +436,7 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 			readTicker.Reset(readTimeout)
 
 		case <-w.readNotify:
-			err := w.readAndHandleError(reader, segmentNum, tail, size)
+			err := w.readAndHandleError(reader, s, tail, size)
 			if err != nil {
 				return err
 			}
@@ -443,7 +446,7 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 	}
 }
 
-func (w *Watcher) garbageCollectSeries(segmentNum int) error {
+func (w *Watcher) garbageCollectSeries(s segmentRef) error {
 	dir, _, err := LastCheckpoint(w.walDir)
 	if err != nil && !errors.Is(err, record.ErrNotFound) {
 		return fmt.Errorf("tsdb.LastCheckpoint: %w", err)
@@ -459,12 +462,12 @@ func (w *Watcher) garbageCollectSeries(segmentNum int) error {
 		return fmt.Errorf("error parsing checkpoint filename: %w", err)
 	}
 
-	if index >= segmentNum {
-		w.logger.Debug("Current segment is behind the checkpoint, skipping reading of checkpoint", "current", fmt.Sprintf("%08d", segmentNum), "checkpoint", dir)
+	if index >= s.index {
+		w.logger.Debug("Current segment is behind the checkpoint, skipping reading of checkpoint", "current", s, "checkpoint", dir)
 		return nil
 	}
 
-	w.logger.Debug("New checkpoint detected", "new", dir, "currentSegment", segmentNum)
+	w.logger.Debug("New checkpoint detected", "new", dir, "currentSegment", s)
 
 	if err = w.readCheckpoint(dir, (*Watcher).readSegmentForGC); err != nil {
 		return fmt.Errorf("readCheckpoint: %w", err)
@@ -477,7 +480,7 @@ func (w *Watcher) garbageCollectSeries(segmentNum int) error {
 
 // Read from a segment and pass the details to w.writer.
 // Also used with readCheckpoint - implements segmentReadFn.
-func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
+func (w *Watcher) readSegment(r *LiveReader, index int, tail bool) error {
 	var (
 		dec                   = record.NewDecoder(labels.NewSymbolTable()) // One table per WAL segment means it won't grow indefinitely.
 		series                []record.RefSeries
@@ -501,7 +504,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				w.recordDecodeFailsMetric.Inc()
 				return err
 			}
-			w.writer.StoreSeries(series, segmentNum)
+			w.writer.StoreSeries(series, index)
 
 		case record.Samples:
 			// If we're not tailing a segment we can ignore any samples records we see.
@@ -622,14 +625,14 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 		}
 	}
 	if err := r.Err(); err != nil {
-		return fmt.Errorf("segment %d: %w", segmentNum, err)
+		return fmt.Errorf("segment %d: %w", index, err)
 	}
 	return nil
 }
 
-// Go through all series in a segment updating the segmentNum, so we can delete older series.
+// Go through all series in a segment updating the index, so we can delete older series.
 // Used with readCheckpoint - implements segmentReadFn.
-func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _ bool) error {
+func (w *Watcher) readSegmentForGC(r *LiveReader, index int, _ bool) error {
 	var (
 		dec    = record.NewDecoder(labels.NewSymbolTable()) // Needed for decoding; labels do not outlive this function.
 		series []record.RefSeries
@@ -645,7 +648,7 @@ func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _ bool) error 
 				w.recordDecodeFailsMetric.Inc()
 				return err
 			}
-			w.writer.UpdateSeriesSegment(series, segmentNum)
+			w.writer.UpdateSeriesSegment(series, index)
 
 		case record.Unknown:
 			// Could be corruption, or reading from a WAL from a newer Prometheus.
@@ -656,7 +659,7 @@ func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _ bool) error 
 		}
 	}
 	if err := r.Err(); err != nil {
-		return fmt.Errorf("segment %d: %w", segmentNum, err)
+		return fmt.Errorf("segment %d: %w", index, err)
 	}
 	return nil
 }
@@ -666,7 +669,7 @@ func (w *Watcher) SetStartTime(t time.Time) {
 	w.startTimestamp = timestamp.FromTime(t)
 }
 
-type segmentReadFn func(w *Watcher, r *LiveReader, segmentNum int, tail bool) error
+type segmentReadFn func(w *Watcher, r *LiveReader, index int, tail bool) error
 
 // Read all the series records from a Checkpoint directory.
 func (w *Watcher) readCheckpoint(checkpointDir string, readFn segmentReadFn) error {
@@ -679,15 +682,16 @@ func (w *Watcher) readCheckpoint(checkpointDir string, readFn segmentReadFn) err
 	// Ensure we read the whole contents of every segment in the checkpoint dir.
 	segs, err := listSegments(checkpointDir)
 	if err != nil {
-		return fmt.Errorf("Unable to get segments checkpoint dir: %w", err)
+		return fmt.Errorf("list segments in the checkpoint dir: %w", err)
 	}
 	for _, segRef := range segs {
-		size, err := getSegmentSize(checkpointDir, segRef.index)
+		fn := filepath.Join(checkpointDir, segRef.fName)
+		size, err := getFileSize(fn)
 		if err != nil {
-			return fmt.Errorf("getSegmentSize: %w", err)
+			return fmt.Errorf("segment size: %w", err)
 		}
 
-		sr, err := OpenReadSegment(SegmentName(checkpointDir, segRef.index))
+		sr, err := OpenReadSegment(fn)
 		if err != nil {
 			return fmt.Errorf("unable to open segment: %w", err)
 		}
@@ -700,7 +704,7 @@ func (w *Watcher) readCheckpoint(checkpointDir string, readFn segmentReadFn) err
 		}
 
 		if r.Offset() != size {
-			return fmt.Errorf("readCheckpoint wasn't able to read all data from the checkpoint %s/%08d, size: %d, totalRead: %d", checkpointDir, segRef.index, size, r.Offset())
+			return fmt.Errorf("readCheckpoint wasn't able to read all data from the checkpoint %s/%v, size: %d, totalRead: %d", checkpointDir, segRef, size, r.Offset())
 		}
 	}
 
@@ -724,10 +728,10 @@ func checkpointNum(dir string) (int, error) {
 	return result, nil
 }
 
-// Get size of segment.
-func getSegmentSize(dir string, index int) (int64, error) {
+// Get size of a file.
+func getFileSize(fname string) (int64, error) {
 	i := int64(-1)
-	fi, err := os.Stat(SegmentName(dir, index))
+	fi, err := os.Stat(fname)
 	if err == nil {
 		i = fi.Size()
 	}
