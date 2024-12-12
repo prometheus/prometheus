@@ -480,8 +480,10 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
 	}
 
+	var warnings annotations.Annotations
 	if limit > 0 {
 		res = truncateResults(res, limit)
+		warnings = warnings.Add(errors.New("results truncated due to limit"))
 	}
 	// Optional stats field in response if parameter "stats" is not empty.
 	sr := api.statsRenderer
@@ -494,7 +496,7 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 		ResultType: res.Value.Type(),
 		Result:     res.Value,
 		Stats:      qs,
-	}, nil, res.Warnings, qry.Close}
+	}, nil, warnings, qry.Close}
 }
 
 func (api *API) formatQuery(r *http.Request) (result apiFuncResult) {
@@ -598,8 +600,10 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
 	}
 
+	var warnings annotations.Annotations
 	if limit > 0 {
 		res = truncateResults(res, limit)
+		warnings = warnings.Add(errors.New("results truncated due to limit"))
 	}
 
 	// Optional stats field in response if parameter "stats" is not empty.
@@ -613,7 +617,7 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 		ResultType: res.Value.Type(),
 		Result:     res.Value,
 		Stats:      qs,
-	}, nil, res.Warnings, qry.Close}
+	}, nil, warnings, qry.Close}
 }
 
 func (api *API) queryExemplars(r *http.Request) apiFuncResult {
@@ -2115,6 +2119,8 @@ func toHintLimit(limit int) int {
 	return limit
 }
 
+// truncateResults truncates result for queryRange() and query().
+// No truncation for other types. (Scalars or Strings)
 func truncateResults(result *promql.Result, limit int) *promql.Result {
 	switch v := result.Value.(type) {
 	case promql.Matrix:
@@ -2125,11 +2131,7 @@ func truncateResults(result *promql.Result, limit int) *promql.Result {
 		if len(v) > limit {
 			result.Value = v[:limit]
 		}
-	default:
-		// No truncation for other types (Scalars or Strings)
-		return result
 	}
-
-	// Return the modified result
+	// Return the modified result. Unchanged for other types.
 	return result
 }
