@@ -524,7 +524,7 @@ func BenchmarkWAL_HistogramEncoding(b *testing.B) {
 			}
 			lbls[model.MetricNameLabel] = fmt.Sprintf("series_%d_bucket", i)
 			for j := range buckets {
-				lbls[model.BucketLabel] = fmt.Sprintf("%g", j)
+				lbls[model.BucketLabel] = fmt.Sprintf("%d.0", j)
 				series = append(series, RefSeries{
 					Ref:    ref,
 					Labels: labels.FromMap(lbls),
