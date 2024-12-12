@@ -64,6 +64,34 @@ cc_toolchain(
     toolchain_identifier = "g++-12_toolchain",
 )
 
+toolchain(
+    name = "cc_toolchain_for_g++-12_toolchain_x86_64",
+    toolchain = ":g++-12_toolchain_x86_64",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+)
+
+toolchain(
+    name = "cc_toolchain_for_g++-12_toolchain_aarch64",
+    toolchain = ":g++-12_toolchain_aarch64",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+    exec_compatible_with = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:linux",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:linux",
+    ],
+)
+
 cc_toolchain_config(
     name = "g++-12_toolchain_config_x86_64",
     builtin_include_directories = [
