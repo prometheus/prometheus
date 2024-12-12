@@ -1,0 +1,6 @@
+//  Name      DataType
+//  series    BSI
+//  kind      Equality
+//  labels    Equality
+//  timestamp BSI
+//  value     BSI
