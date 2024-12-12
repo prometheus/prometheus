@@ -232,7 +232,6 @@ func TestBuildMetricNameWithoutSuffixes(t *testing.T) {
 	require.Equal(t, "system.io", BuildMetricName(createCounter("system.io", "foo/bar"), "", false))
 	require.Equal(t, "metric_with_字符_foreign_characters", BuildMetricName(createCounter("metric_with_字符_foreign_characters", ""), "", false))
 
-	
 	require.Equal(t, "system_io_seconds", BuildMetricName(createGauge("system_io_seconds", "s"), "", false))
 	require.Equal(t, "system_io_total", BuildMetricName(createCounter("system_io_total", ""), "", false))
 }
