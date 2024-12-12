@@ -56,10 +56,10 @@ func NewReadHandler(logger *slog.Logger, r prometheus.Registerer, queryable stor
 		marshalPool:               &sync.Pool{},
 
 		queries: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: "prometheus",
-			Subsystem: "api", // TODO: changes to storage in Prometheus 3.0.
-			Name:      "remote_read_queries",
-			Help:      "The current number of remote read queries being executed or waiting.",
+			Namespace: namespace,
+			Subsystem: "remote_read_handler",
+			Name:      "queries",
+			Help:      "The current number of remote read queries that are either in execution or queued on the handler.",
 		}),
 	}
 	if r != nil {
