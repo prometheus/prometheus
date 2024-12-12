@@ -1106,7 +1106,7 @@ clear
 # Don't return anything when there's something there.
 load 5m
 	http_requests{job="api-server", instance="0", group="production"}	0+10x10
-    http_requests_histogram{job="api-server", instance="0", group="production"} {{schema:0 sum:1 count:1}}x11
+	http_requests_histogram{job="api-server", instance="0", group="production"} {{schema:0 sum:1 count:1}}x11
 
 eval instant at 50m absent(http_requests)
 
@@ -1163,7 +1163,7 @@ load 1m
 	httpd_handshake_failures_total{instance="127.0.0.1",job="node"}	1+1x15
 	httpd_log_lines_total{instance="127.0.0.1",job="node"}	1
 	ssl_certificate_expiry_seconds{job="ingress"} NaN NaN NaN NaN NaN
-    http_requests_histogram{path="/foo",instance="127.0.0.1",job="httpd"} {{schema:0 sum:1 count:1}}x11
+	http_requests_histogram{path="/foo",instance="127.0.0.1",job="httpd"} {{schema:0 sum:1 count:1}}x11
 
 eval instant at 5m absent_over_time(http_requests_total[5m])
 
