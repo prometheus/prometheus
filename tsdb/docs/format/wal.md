@@ -126,7 +126,7 @@ The first row stores the starting id and the starting timestamp.
 Series reference and timestamp are encoded as deltas w.r.t the first exemplar.
 The first exemplar record begins at the second row.
 
-See: https://github.com/OpenObservability/OpenMetrics/blob/main/specification/OpenMetrics.md#exemplars
+See: https://github.com/prometheus/OpenMetrics/blob/v1.0.0/specification/OpenMetrics.md#exemplars
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐

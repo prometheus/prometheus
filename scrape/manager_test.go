@@ -836,7 +836,7 @@ scrape_configs:
 								require.Len(t, createdSeriesSamples, 1)
 								// Conversion taken from common/expfmt.writeOpenMetricsFloat.
 								// We don't check the ct timestamp as explicit ts was not implemented in expfmt.Encoder,
-								// but exists in OM https://github.com/OpenObservability/OpenMetrics/blob/main/specification/OpenMetrics.md#:~:text=An%20example%20with%20a%20Metric%20with%20no%20labels%2C%20and%20a%20MetricPoint%20with%20a%20timestamp%20and%20a%20created
+								// but exists in OM https://github.com/prometheus/OpenMetrics/blob/v1.0.0/specification/OpenMetrics.md#:~:text=An%20example%20with%20a%20Metric%20with%20no%20labels%2C%20and%20a%20MetricPoint%20with%20a%20timestamp%20and%20a%20created
 								// We can implement this, but we want to potentially get rid of OM 1.0 CT lines
 								require.Equal(t, float64(timestamppb.New(ctTs).AsTime().UnixNano())/1e9, createdSeriesSamples[0].f)
 							} else {
