@@ -246,6 +246,7 @@ load 5m
 	http_requests_total{job="app-server", instance="1", group="canary"}		0+80x10
 	testcounter_reset_middle_mix	0+10x4 0+10x5 {{schema:0 sum:1 count:1}} {{schema:1 sum:2 count:2}}
 	http_requests_mix{job="app-server", instance="1", group="canary"}		0+80x10 {{schema:0 sum:1 count:1}}
+    http_requests_histogram{job="app-server", instance="1", group="canary"}		{{schema:0 sum:1 count:2}}x10
 
 # deriv should return the same as rate in simple cases.
 eval instant at 50m rate(http_requests_total{group="canary", instance="1", job="app-server"}[50m])
@@ -264,6 +265,9 @@ eval instant at 110m deriv(http_requests_mix{group="canary", instance="1", job="
 
 eval instant at 100m deriv(testcounter_reset_middle_mix[110m])
 	{} 0.010606060606060607
+
+eval instant at 50m deriv(http_requests_histogram[60m])
+    #empty
 
 # predict_linear should return correct result.
 # X/s = [  0, 300, 600, 900,1200,1500,1800,2100,2400,2700,3000]
