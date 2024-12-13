@@ -87,6 +87,7 @@ const (
 )
 
 var expectedConf = &Config{
+	loaded: true,
 	GlobalConfig: GlobalConfig{
 		ScrapeInterval:       model.Duration(15 * time.Second),
 		ScrapeTimeout:        DefaultGlobalConfig.ScrapeTimeout,
@@ -1512,10 +1513,10 @@ func TestYAMLRoundtrip(t *testing.T) {
 	require.NoError(t, err)
 
 	out, err := yaml.Marshal(want)
-
 	require.NoError(t, err)
-	got := &Config{}
-	require.NoError(t, yaml.UnmarshalStrict(out, got))
+
+	got, err := Load(string(out), promslog.NewNopLogger())
+	require.NoError(t, err)
 
 	require.Equal(t, want, got)
 }
@@ -1525,10 +1526,10 @@ func TestRemoteWriteRetryOnRateLimit(t *testing.T) {
 	require.NoError(t, err)
 
 	out, err := yaml.Marshal(want)
-
 	require.NoError(t, err)
-	got := &Config{}
-	require.NoError(t, yaml.UnmarshalStrict(out, got))
+
+	got, err := Load(string(out), promslog.NewNopLogger())
+	require.NoError(t, err)
 
 	require.True(t, got.RemoteWriteConfigs[0].QueueConfig.RetryOnRateLimit)
 	require.False(t, got.RemoteWriteConfigs[1].QueueConfig.RetryOnRateLimit)
@@ -1551,6 +1552,20 @@ func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 		_, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_resource_attributes.bad.yml"), false, promslog.NewNopLogger())
 		require.ErrorContains(t, err, `duplicated promoted OTel resource attribute "k8s.job.name"`)
 		require.ErrorContains(t, err, `empty promoted OTel resource attribute`)
+	})
+}
+
+func TestOTLPAllowServiceNameInTargetInfo(t *testing.T) {
+	t.Run("good config", func(t *testing.T) {
+		want, err := LoadFile(filepath.Join("testdata", "otlp_allow_keep_identifying_resource_attributes.good.yml"), false, promslog.NewNopLogger())
+		require.NoError(t, err)
+
+		out, err := yaml.Marshal(want)
+		require.NoError(t, err)
+		var got Config
+		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+
+		require.True(t, got.OTLPConfig.KeepIdentifyingResourceAttributes)
 	})
 }
 
@@ -2205,6 +2220,7 @@ func TestEmptyConfig(t *testing.T) {
 	c, err := Load("", promslog.NewNopLogger())
 	require.NoError(t, err)
 	exp := DefaultConfig
+	exp.loaded = true
 	require.Equal(t, exp, *c)
 }
 
@@ -2254,6 +2270,7 @@ func TestEmptyGlobalBlock(t *testing.T) {
 	require.NoError(t, err)
 	exp := DefaultConfig
 	exp.Runtime = DefaultRuntimeConfig
+	exp.loaded = true
 	require.Equal(t, exp, *c)
 }
 
@@ -2533,4 +2550,19 @@ func TestScrapeProtocolHeader(t *testing.T) {
 			require.Equal(t, tc.expectedValue, mediaType)
 		})
 	}
+}
+
+// Regression test against https://github.com/prometheus/prometheus/issues/15538
+func TestGetScrapeConfigs_Loaded(t *testing.T) {
+	t.Run("without load", func(t *testing.T) {
+		c := &Config{}
+		_, err := c.GetScrapeConfigs()
+		require.EqualError(t, err, "scrape config cannot be fetched, main config was not validated and loaded correctly; should not happen")
+	})
+	t.Run("with load", func(t *testing.T) {
+		c, err := Load("", promslog.NewNopLogger())
+		require.NoError(t, err)
+		_, err = c.GetScrapeConfigs()
+		require.NoError(t, err)
+	})
 }

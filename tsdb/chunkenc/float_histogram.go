@@ -976,6 +976,7 @@ func (it *floatHistogramIterator) Reset(b []byte) {
 		it.atFloatHistogramCalled = false
 		it.pBuckets, it.nBuckets = nil, nil
 		it.pSpans, it.nSpans = nil, nil
+		it.customValues = nil
 	} else {
 		it.pBuckets, it.nBuckets = it.pBuckets[:0], it.nBuckets[:0]
 	}
@@ -1071,7 +1072,7 @@ func (it *floatHistogramIterator) Next() ValueType {
 	// The case for the 2nd sample with single deltas is implicitly handled correctly with the double delta code,
 	// so we don't need a separate single delta logic for the 2nd sample.
 
-	// Recycle bucket and span slices that have not been returned yet. Otherwise, copy them.
+	// Recycle bucket, span and custom value slices that have not been returned yet. Otherwise, copy them.
 	// We can always recycle the slices for leading and trailing bits as they are
 	// never returned to the caller.
 	if it.atFloatHistogramCalled {
@@ -1103,6 +1104,13 @@ func (it *floatHistogramIterator) Next() ValueType {
 			it.nSpans = newSpans
 		} else {
 			it.nSpans = nil
+		}
+		if len(it.customValues) > 0 {
+			newCustomValues := make([]float64, len(it.customValues))
+			copy(newCustomValues, it.customValues)
+			it.customValues = newCustomValues
+		} else {
+			it.customValues = nil
 		}
 	}
 

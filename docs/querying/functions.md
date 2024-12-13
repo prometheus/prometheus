@@ -598,7 +598,7 @@ label_join(up{job="api-server",src1="a",src2="b",src3="c"}, "foo", ",", "src1", 
 ## `label_replace()`
 
 For each timeseries in `v`, `label_replace(v instant-vector, dst_label string, replacement string, src_label string, regex string)`
-matches the [regular expression](https://github.com/google/re2/wiki/Syntax) `regex` against the value of the label `src_label`. If it
+matches the [regular expression](./basics.md#regular-expressions) `regex` against the value of the label `src_label`. If it
 matches, the value of the label `dst_label` in the returned timeseries will be the expansion
 of `replacement`, together with the original labels in the input. Capturing groups in the
 regular expression can be referenced with `$1`, `$2`, etc. Named capturing groups in the regular expression can be referenced with `$name` (where `name` is the  capturing group name). If the regular expression doesn't match then the timeseries is returned unchanged.

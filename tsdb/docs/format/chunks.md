@@ -25,20 +25,20 @@ in-file offset (lower 4 bytes) and segment sequence number (upper 4 bytes).
 └──────────────────────────────┘
 ```
 
-
 # Chunk
 
 ```
-┌───────────────┬───────────────────┬─────────────┬────────────────┐
-│ len <uvarint> │ encoding <1 byte> │ data <data> │ CRC32 <4 byte> │
-└───────────────┴───────────────────┴─────────────┴────────────────┘
+┌───────────────┬───────────────────┬─────────────┬───────────────────┐
+│ len <uvarint> │ encoding <1 byte> │ data <data> │ checksum <4 byte> │
+└───────────────┴───────────────────┴─────────────┴───────────────────┘
 ```
 
 Notes:
-* `<uvarint>` has 1 to 10 bytes.
-* `encoding`: Currently either `XOR`, `histogram`, or `floathistogram`, see 
-  [code for numerical values](https://github.com/prometheus/prometheus/blob/02d0de9987ad99dee5de21853715954fadb3239f/tsdb/chunkenc/chunk.go#L28-L47).
+
+* `len`: Chunk size in bytes. 1 to 10 bytes long using the [`<uvarint>` encoding](https://go.dev/src/encoding/binary/varint.go).
+* `encoding`: Currently either `XOR`, `histogram`, or `floathistogram`, see [code for numerical values](https://github.com/prometheus/prometheus/blob/02d0de9987ad99dee5de21853715954fadb3239f/tsdb/chunkenc/chunk.go#L28-L47).
 * `data`: See below for each encoding.
+* `checksum`: Checksum of `encoding` and `data`. It's a [cyclic redudancy check](https://en.wikipedia.org/wiki/Cyclic_redundancy_check) with the Castagnoli polynomial, serialised as an unsigned 32 bits big endian number. Can be refered as a `CRC-32C`.
 
 ## XOR chunk data
 
@@ -176,7 +176,6 @@ by humans as decimal numbers with not very many decimal places. In most cases,
 the encoding will therefore result in a short varbit representation. The upper
 bound of 33554430 is picked so that the varbit encoded value will take at most
 4 bytes.
-
 
 ## Float histogram chunk data
 

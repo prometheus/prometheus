@@ -20,6 +20,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"path"
 	"runtime/pprof"
 	"sort"
 	"strconv"
@@ -48,6 +49,7 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/runutil"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -1407,12 +1409,12 @@ func BenchmarkStartup(b *testing.B) {
 
 	// Find the second largest segment; we will replay up to this.
 	// (Second largest as WALWatcher will start tailing the largest).
-	dirents, err := os.ReadDir(dir)
+	dirents, err := os.ReadDir(path.Join(dir, "wal"))
 	require.NoError(b, err)
 
 	var segments []int
 	for _, dirent := range dirents {
-		if i, err := strconv.Atoi(dirent.Name()); err != nil {
+		if i, err := strconv.Atoi(dirent.Name()); err == nil {
 			segments = append(segments, i)
 		}
 	}
@@ -1424,13 +1426,15 @@ func BenchmarkStartup(b *testing.B) {
 	mcfg := config.DefaultMetadataConfig
 	for n := 0; n < b.N; n++ {
 		metrics := newQueueManagerMetrics(nil, "", "")
+		watcherMetrics := wlog.NewWatcherMetrics(nil)
 		c := NewTestBlockedWriteClient()
 		// todo: test with new proto type(s)
-		m := NewQueueManager(metrics, nil, nil, logger, dir,
+		m := NewQueueManager(metrics, watcherMetrics, nil, logger, dir,
 			newEWMARate(ewmaWeight, shardUpdateDuration),
 			cfg, mcfg, labels.EmptyLabels(), nil, c, 1*time.Minute, newPool(), newHighestTimestampMetric(), nil, false, false, config.RemoteWriteProtoMsgV1)
 		m.watcher.SetStartTime(timestamp.Time(math.MaxInt64))
 		m.watcher.MaxSegment = segments[len(segments)-2]
+		m.watcher.SetMetrics()
 		err := m.watcher.Run()
 		require.NoError(b, err)
 	}

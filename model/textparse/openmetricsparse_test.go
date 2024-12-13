@@ -486,9 +486,12 @@ func TestUTF8OpenMetricsParse(t *testing.T) {
 {"http.status",q="0.9",a="b"} 8.3835e-05
 {q="0.9","http.status",a="b"} 8.3835e-05
 {"go.gc_duration_seconds_sum"} 0.004304266
-{"Heizölrückstoßabdämpfung 10€ metric with \"interesting\" {character\nchoices}","strange©™\n'quoted' \"name\""="6"} 10.0`
+{"Heizölrückstoßabdämpfung 10€ metric with \"interesting\" {character\nchoices}","strange©™\n'quoted' \"name\""="6"} 10.0
+quotedexemplar_count 1 # {"id.thing"="histogram-count-test"} 4
+quotedexemplar2_count 1 # {"id.thing"="histogram-count-test",other="hello"} 4
+`
 
-	input += "\n# EOF\n"
+	input += "# EOF\n"
 
 	exp := []parsedEntry{
 		{
@@ -535,6 +538,20 @@ func TestUTF8OpenMetricsParse(t *testing.T) {
 			v: 10.0,
 			lset: labels.FromStrings("__name__", `Heizölrückstoßabdämpfung 10€ metric with "interesting" {character
 choices}`, "strange©™\n'quoted' \"name\"", "6"),
+		}, {
+			m:    `quotedexemplar_count`,
+			v:    1,
+			lset: labels.FromStrings("__name__", "quotedexemplar_count"),
+			es: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("id.thing", "histogram-count-test"), Value: 4},
+			},
+		}, {
+			m:    `quotedexemplar2_count`,
+			v:    1,
+			lset: labels.FromStrings("__name__", "quotedexemplar2_count"),
+			es: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("id.thing", "histogram-count-test", "other", "hello"), Value: 4},
+			},
 		},
 	}
 

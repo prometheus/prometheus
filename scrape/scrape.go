@@ -330,6 +330,8 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 		trackTimestampsStaleness = sp.config.TrackTimestampsStaleness
 		mrc                      = sp.config.MetricRelabelConfigs
 		fallbackScrapeProtocol   = sp.config.ScrapeFallbackProtocol.HeaderMediaType()
+		alwaysScrapeClassicHist  = sp.config.AlwaysScrapeClassicHistograms
+		convertClassicHistToNHCB = sp.config.ConvertClassicHistogramsToNHCB
 	)
 
 	validationScheme := model.UTF8Validation
@@ -350,15 +352,16 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 		}
 
 		t := sp.activeTargets[fp]
-		interval, timeout, err := t.intervalAndTimeout(interval, timeout)
+		targetInterval, targetTimeout, err := t.intervalAndTimeout(interval, timeout)
 		var (
 			s = &targetScraper{
 				Target:               t,
 				client:               sp.client,
-				timeout:              timeout,
+				timeout:              targetTimeout,
 				bodySizeLimit:        bodySizeLimit,
 				acceptHeader:         acceptHeader(sp.config.ScrapeProtocols, validationScheme),
 				acceptEncodingHeader: acceptEncodingHeader(enableCompression),
+				metrics:              sp.metrics,
 			}
 			newLoop = sp.newLoop(scrapeLoopOptions{
 				target:                   t,
@@ -373,10 +376,12 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 				trackTimestampsStaleness: trackTimestampsStaleness,
 				mrc:                      mrc,
 				cache:                    cache,
-				interval:                 interval,
-				timeout:                  timeout,
+				interval:                 targetInterval,
+				timeout:                  targetTimeout,
 				validationScheme:         validationScheme,
 				fallbackScrapeProtocol:   fallbackScrapeProtocol,
+				alwaysScrapeClassicHist:  alwaysScrapeClassicHist,
+				convertClassicHistToNHCB: convertClassicHistToNHCB,
 			})
 		)
 		if err != nil {
@@ -1421,7 +1426,7 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 		sl.l.Debug("Scrape failed", "err", scrapeErr)
 		sl.scrapeFailureLoggerMtx.RLock()
 		if sl.scrapeFailureLogger != nil {
-			sl.scrapeFailureLogger.Error(scrapeErr.Error())
+			sl.scrapeFailureLogger.Log(context.Background(), slog.LevelError, scrapeErr.Error())
 		}
 		sl.scrapeFailureLoggerMtx.RUnlock()
 		if errc != nil {

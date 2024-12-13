@@ -115,13 +115,12 @@ time series you scrape (fewer targets or fewer series per target), or you
 can increase the scrape interval. However, reducing the number of series is
 likely more effective, due to compression of samples within a series.
 
-If your local storage becomes corrupted for whatever reason, the best
-strategy to address the problem is to shut down Prometheus then remove the
-entire storage directory. You can also try removing individual block directories,
-or the WAL directory to resolve the problem. Note that this means losing
-approximately two hours data per block directory. Again, Prometheus's local
-storage is not intended to be durable long-term storage; external solutions
-offer extended retention and data durability.
+If your local storage becomes corrupted to the point where Prometheus will not
+start it is recommended to backup the storage directory and restore the
+corrupted block directories from your backups. If you do not have backups the
+last resort is to remove the corrupted files. For example you can try removing
+individual block directories or the write-ahead-log (wal) files. Note that this
+means losing the data for the time range those blocks or wal covers.
 
 CAUTION: Non-POSIX compliant filesystems are not supported for Prometheus'
 local storage as unrecoverable corruptions may happen. NFS filesystems

@@ -126,10 +126,7 @@ type QueryEngine interface {
 // QueryLogger is an interface that can be used to log all the queries logged
 // by the engine.
 type QueryLogger interface {
-	Error(msg string, args ...any)
-	Info(msg string, args ...any)
-	Debug(msg string, args ...any)
-	Warn(msg string, args ...any)
+	Log(context.Context, slog.Level, string, ...any)
 	With(args ...any)
 	Close() error
 }
@@ -637,20 +634,20 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annota
 				// The step provided by the user is in seconds.
 				params["step"] = int64(eq.Interval / (time.Second / time.Nanosecond))
 			}
-			l.With("params", params)
+			f := []interface{}{"params", params}
 			if err != nil {
-				l.With("error", err)
+				f = append(f, "error", err)
 			}
-			l.With("stats", stats.NewQueryStats(q.Stats()))
+			f = append(f, "stats", stats.NewQueryStats(q.Stats()))
 			if span := trace.SpanFromContext(ctx); span != nil {
-				l.With("spanID", span.SpanContext().SpanID())
+				f = append(f, "spanID", span.SpanContext().SpanID())
 			}
 			if origin := ctx.Value(QueryOrigin{}); origin != nil {
 				for k, v := range origin.(map[string]interface{}) {
-					l.With(k, v)
+					f = append(f, k, v)
 				}
 			}
-			l.Info("promql query logged")
+			l.Log(context.Background(), slog.LevelInfo, "promql query logged", f...)
 			// TODO: @tjhop -- do we still need this metric/error log if logger doesn't return errors?
 			// ng.metrics.queryLogFailures.Inc()
 			// ng.logger.Error("can't log query", "err", err)
@@ -1524,7 +1521,7 @@ func (ev *evaluator) evalSubquery(ctx context.Context, subq *parser.SubqueryExpr
 	// Avoid double counting samples when running a subquery, those samples will be counted in later stage.
 	ev.samplesStats = ev.samplesStats.NewChild()
 	val, ws := ev.eval(ctx, subq)
-	// But do incorporate the peak from the subquery
+	// But do incorporate the peak from the subquery.
 	samplesStats.UpdatePeakFromSubquery(ev.samplesStats)
 	ev.samplesStats = samplesStats
 	mat := val.(Matrix)
@@ -1989,7 +1986,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		// Start with the first timestamp after (ev.startTimestamp - offset - range)
 		// that is aligned with the step (multiple of 'newEv.interval').
 		newEv.startTimestamp = newEv.interval * ((ev.startTimestamp - offsetMillis - rangeMillis) / newEv.interval)
-		if newEv.startTimestamp < (ev.startTimestamp - offsetMillis - rangeMillis) {
+		if newEv.startTimestamp <= (ev.startTimestamp - offsetMillis - rangeMillis) {
 			newEv.startTimestamp += newEv.interval
 		}
 
@@ -3187,18 +3184,19 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int, r float64, inp
 
 seriesLoop:
 	for si := range inputMatrix {
-		f, _, ok := ev.nextValues(enh.Ts, &inputMatrix[si])
+		f, h, ok := ev.nextValues(enh.Ts, &inputMatrix[si])
 		if !ok {
 			continue
 		}
-		s = Sample{Metric: inputMatrix[si].Metric, F: f, DropName: inputMatrix[si].DropName}
+		s = Sample{Metric: inputMatrix[si].Metric, F: f, H: h, DropName: inputMatrix[si].DropName}
 
 		group := &groups[seriesToResult[si]]
 		// Initialize this group if it's the first time we've seen it.
 		if !group.seen {
 			// LIMIT_RATIO is a special case, as we may not add this very sample to the heap,
 			// while we also don't know the final size of it.
-			if op == parser.LIMIT_RATIO {
+			switch op {
+			case parser.LIMIT_RATIO:
 				*group = groupedAggregation{
 					seen: true,
 					heap: make(vectorByValueHeap, 0),
@@ -3206,12 +3204,34 @@ seriesLoop:
 				if ratiosampler.AddRatioSample(r, &s) {
 					heap.Push(&group.heap, &s)
 				}
-			} else {
+			case parser.LIMITK:
 				*group = groupedAggregation{
 					seen: true,
 					heap: make(vectorByValueHeap, 1, k),
 				}
 				group.heap[0] = s
+			case parser.TOPK:
+				*group = groupedAggregation{
+					seen: true,
+					heap: make(vectorByValueHeap, 0, k),
+				}
+				if s.H != nil {
+					group.seen = false
+					annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("topk", e.PosRange))
+				} else {
+					heap.Push(&group.heap, &s)
+				}
+			case parser.BOTTOMK:
+				*group = groupedAggregation{
+					seen: true,
+					heap: make(vectorByValueHeap, 0, k),
+				}
+				if s.H != nil {
+					group.seen = false
+					annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("bottomk", e.PosRange))
+				} else {
+					heap.Push(&group.heap, &s)
+				}
 			}
 			continue
 		}
@@ -3220,6 +3240,9 @@ seriesLoop:
 		case parser.TOPK:
 			// We build a heap of up to k elements, with the smallest element at heap[0].
 			switch {
+			case s.H != nil:
+				// Ignore histogram sample and add info annotation.
+				annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("topk", e.PosRange))
 			case len(group.heap) < k:
 				heap.Push(&group.heap, &s)
 			case group.heap[0].F < s.F || (math.IsNaN(group.heap[0].F) && !math.IsNaN(s.F)):
@@ -3233,6 +3256,9 @@ seriesLoop:
 		case parser.BOTTOMK:
 			// We build a heap of up to k elements, with the biggest element at heap[0].
 			switch {
+			case s.H != nil:
+				// Ignore histogram sample and add info annotation.
+				annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("bottomk", e.PosRange))
 			case len(group.heap) < k:
 				heap.Push((*vectorByReverseValueHeap)(&group.heap), &s)
 			case group.heap[0].F > s.F || (math.IsNaN(group.heap[0].F) && !math.IsNaN(s.F)):
@@ -3275,10 +3301,14 @@ seriesLoop:
 		mat = make(Matrix, 0, len(groups))
 	}
 
-	add := func(lbls labels.Labels, f float64, dropName bool) {
+	add := func(lbls labels.Labels, f float64, h *histogram.FloatHistogram, dropName bool) {
 		// If this could be an instant query, add directly to the matrix so the result is in consistent order.
 		if ev.endTimestamp == ev.startTimestamp {
-			mat = append(mat, Series{Metric: lbls, Floats: []FPoint{{T: enh.Ts, F: f}}, DropName: dropName})
+			if h != nil {
+				mat = append(mat, Series{Metric: lbls, Histograms: []HPoint{{T: enh.Ts, H: h}}, DropName: dropName})
+			} else {
+				mat = append(mat, Series{Metric: lbls, Floats: []FPoint{{T: enh.Ts, F: f}}, DropName: dropName})
+			}
 		} else {
 			// Otherwise the results are added into seriess elements.
 			hash := lbls.Hash()
@@ -3286,7 +3316,7 @@ seriesLoop:
 			if !ok {
 				ss = Series{Metric: lbls, DropName: dropName}
 			}
-			addToSeries(&ss, enh.Ts, f, nil, numSteps)
+			addToSeries(&ss, enh.Ts, f, h, numSteps)
 			seriess[hash] = ss
 		}
 	}
@@ -3301,7 +3331,7 @@ seriesLoop:
 				sort.Sort(sort.Reverse(aggr.heap))
 			}
 			for _, v := range aggr.heap {
-				add(v.Metric, v.F, v.DropName)
+				add(v.Metric, v.F, v.H, v.DropName)
 			}
 
 		case parser.BOTTOMK:
@@ -3310,12 +3340,12 @@ seriesLoop:
 				sort.Sort(sort.Reverse((*vectorByReverseValueHeap)(&aggr.heap)))
 			}
 			for _, v := range aggr.heap {
-				add(v.Metric, v.F, v.DropName)
+				add(v.Metric, v.F, v.H, v.DropName)
 			}
 
 		case parser.LIMITK, parser.LIMIT_RATIO:
 			for _, v := range aggr.heap {
-				add(v.Metric, v.F, v.DropName)
+				add(v.Metric, v.F, v.H, v.DropName)
 			}
 		}
 	}

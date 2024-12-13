@@ -234,7 +234,7 @@ func TestTailSamples(t *testing.T) {
 			watcher.SetStartTime(now)
 
 			// Set the Watcher's metrics so they're not nil pointers.
-			watcher.setMetrics()
+			watcher.SetMetrics()
 			for i := first; i <= last; i++ {
 				segment, err := OpenReadSegment(SegmentName(watcher.walDir, i))
 				require.NoError(t, err)
@@ -548,7 +548,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 			watcher.MaxSegment = -1
 
 			// Set the Watcher's metrics so they're not nil pointers.
-			watcher.setMetrics()
+			watcher.SetMetrics()
 
 			lastCheckpoint, _, err := LastCheckpoint(watcher.walDir)
 			require.NoError(t, err)
@@ -699,7 +699,7 @@ func TestRun_StartupTime(t *testing.T) {
 			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
 			watcher.MaxSegment = segments
 
-			watcher.setMetrics()
+			watcher.SetMetrics()
 			startTime := time.Now()
 
 			err = watcher.Run()
@@ -768,7 +768,7 @@ func TestRun_AvoidNotifyWhenBehind(t *testing.T) {
 			// Set up the watcher and run it in the background.
 			wt := newWriteToMock(time.Millisecond)
 			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
-			watcher.setMetrics()
+			watcher.SetMetrics()
 			watcher.MaxSegment = segmentsToRead
 
 			var g errgroup.Group

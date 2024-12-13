@@ -593,12 +593,14 @@ func main() {
 		logger.Error(fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "file", absPath, "err", err)
 		os.Exit(2)
 	}
+	// Get scrape configs to validate dynamically loaded scrape_config_files.
+	// They can change over time, but do the extra validation on startup for better experience.
 	if _, err := cfgFile.GetScrapeConfigs(); err != nil {
 		absPath, pathErr := filepath.Abs(cfg.configFile)
 		if pathErr != nil {
 			absPath = cfg.configFile
 		}
-		logger.Error(fmt.Sprintf("Error loading scrape config files from config (--config.file=%q)", cfg.configFile), "file", absPath, "err", err)
+		logger.Error(fmt.Sprintf("Error loading dynamic scrape config files from config (--config.file=%q)", cfg.configFile), "file", absPath, "err", err)
 		os.Exit(2)
 	}
 	if cfg.tsdb.EnableExemplarStorage {
@@ -1369,10 +1371,12 @@ func main() {
 			},
 		)
 	}
-	if err := g.Run(); err != nil {
-		logger.Error("Error running goroutines from run.Group", "err", err)
-		os.Exit(1)
-	}
+	func() { // This function exists so the top of the stack is named 'main.main.funcxxx' and not 'oklog'.
+		if err := g.Run(); err != nil {
+			logger.Error("Fatal error", "err", err)
+			os.Exit(1)
+		}
+	}()
 	logger.Info("See you next time!")
 }
 

@@ -744,7 +744,12 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 	ctx := r.Context()
 	name := route.Param(ctx, "name")
 
-	if !model.LabelNameRE.MatchString(name) {
+	if strings.HasPrefix(name, "U__") {
+		name = model.UnescapeName(name, model.ValueEncodingEscaping)
+	}
+
+	label := model.LabelName(name)
+	if !label.IsValid() {
 		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("invalid label name: %q", name)}, nil, nil}
 	}
 
@@ -1374,7 +1379,7 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 // RuleDiscovery has info for all rules.
 type RuleDiscovery struct {
 	RuleGroups     []*RuleGroup `json:"groups"`
-	GroupNextToken string       `json:"groupNextToken:omitempty"`
+	GroupNextToken string       `json:"groupNextToken,omitempty"`
 }
 
 // RuleGroup has info for rules which are part of a group.

@@ -135,7 +135,7 @@ global:
   [ keep_dropped_targets: <int> | default = 0 ]
 
   # Specifies the validation scheme for metric and label names. Either blank or
-  # "utf8" for for full UTF-8 support, or "legacy" for letters, numbers, colons,
+  # "utf8" for full UTF-8 support, or "legacy" for letters, numbers, colons,
   # and underscores.
   [ metric_name_validation_scheme <string> | default "utf8" ]
 
@@ -182,6 +182,10 @@ otlp:
   #   It preserves all special characters like dots, but it still add required suffixes
   #   for units and _total like in UnderscoreEscapingWithSuffixes.
   [ translation_strategy: <string> | default = "UnderscoreEscapingWithSuffixes" ]
+  # Enables adding "service.name", "service.namespace" and "service.instance.id"
+  # resource attributes to the "target_info" metric, on top of converting
+  # them into the "instance" and "job" labels.
+  [ keep_identifying_resource_attributes: <boolean> | default = false]
 
 # Settings related to the remote read feature.
 remote_read:
@@ -671,6 +675,13 @@ http_headers:
 ### `<azure_sd_config>`
 
 Azure SD configurations allow retrieving scrape targets from Azure VMs.
+
+The discovery requires at least the following permissions:
+
+* `Microsoft.Compute/virtualMachines/read`: Required for VM discovery
+* `Microsoft.Network/networkInterfaces/read`: Required for VM discovery
+* `Microsoft.Compute/virtualMachineScaleSets/virtualMachines/read`: Required for scale set (VMSS) discovery
+* `Microsoft.Compute/virtualMachineScaleSets/virtualMachines/networkInterfaces/read`: Required for scale set (VMSS) discovery
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
@@ -2126,7 +2137,8 @@ The following meta labels are available on targets during [relabeling](#relabel_
 [ namespace: <string> | default = default ]
 [ refresh_interval: <duration> | default = 60s ]
 [ region: <string> | default = global ]
-[ server: <host> ]
+# The URL to connect to the API.
+[ server: <string> ]
 [ tag_separator: <string> | default = ,]
 
 # HTTP client settings, including authentication methods (such as basic auth and
