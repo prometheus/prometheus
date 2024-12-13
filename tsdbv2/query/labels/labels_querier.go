@@ -156,10 +156,13 @@ func Match(iter *pebble.Iterator, tenantID uint64, m *labels.Matcher, f func(key
 }
 
 func exact(iter *pebble.Iterator, tenantID uint64, name, value string, f func(key, value []byte) bool) {
-	prefix := encoding.MakeLabelTranslationKey(tenantID, &labels.Label{
+	key := encoding.MakeLabelTranslationKey(tenantID, &labels.Label{
 		Name: name, Value: value,
 	})
-	walk(iter, prefix, f)
+
+	if iter.SeekGE(key) && iter.Valid() && bytes.Equal(iter.Key(), key) {
+		_ = f(iter.Key(), iter.Value())
+	}
 }
 
 func names(iter *pebble.Iterator, tenantID uint64, name string, f func(key, value []byte) bool) {
@@ -175,12 +178,8 @@ func global(iter *pebble.Iterator, tenantID uint64, f func(key, value []byte) bo
 }
 
 func walk(iter *pebble.Iterator, prefix []byte, f func(key, value []byte) bool) {
-	for iter.SeekGE(prefix); iter.Valid(); iter.Next() {
-		key := iter.Key()
-		if !bytes.HasPrefix(key, prefix) {
-			return
-		}
-		if !f(key, iter.Value()) {
+	for iter.SeekGE(prefix); iter.Valid() && bytes.HasPrefix(iter.Key(), prefix); iter.Next() {
+		if !f(iter.Key(), iter.Value()) {
 			return
 		}
 	}

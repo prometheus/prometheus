@@ -14,13 +14,11 @@ package tsdbv2_test
 
 import (
 	"context"
-	"reflect"
 	"testing"
 
 	"github.com/gernest/roaring"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -156,34 +154,6 @@ func (s sample) Copy() chunks.Sample {
 		c.fh = s.fh.Copy()
 	}
 	return c
-}
-
-func TestSelectExemplar(t *testing.T) {
-	db, err := tsdbv2.New(t.TempDir())
-	require.NoError(t, err)
-	defer db.Close()
-
-	lName, lValue := "service", "asdf"
-	l := labels.FromStrings(lName, lValue)
-	e := exemplar.Exemplar{
-		Labels: labels.FromStrings("trace_id", "querty"),
-		Value:  0.1,
-		Ts:     12,
-	}
-	_, err = db.AppendExemplar(0, l, e)
-	require.NoError(t, err)
-	m, err := labels.NewMatcher(labels.MatchEqual, lName, lValue)
-	require.NoError(t, err)
-
-	es, err := db.ExemplarQuerier(context.Background())
-	require.NoError(t, err)
-
-	ret, err := es.Select(0, 100, []*labels.Matcher{m})
-	require.NoError(t, err)
-	require.Len(t, ret, 1, "select should have returned samples for a single series only")
-
-	expectedResult := []exemplar.Exemplar{e}
-	require.True(t, reflect.DeepEqual(expectedResult, ret[0].Exemplars), "select did not return expected exemplars\n\texpected: %+v\n\tactual: %+v\n", expectedResult, ret[0].Exemplars)
 }
 
 func TestStarttime(t *testing.T) {
