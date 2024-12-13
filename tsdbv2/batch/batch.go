@@ -15,7 +15,6 @@ package batch
 
 import (
 	"encoding/binary"
-	"sync"
 
 	"github.com/cockroachdb/pebble"
 	"github.com/gernest/roaring"
@@ -43,10 +42,6 @@ type batchKey struct {
 }
 
 type Batch struct {
-	*base
-}
-
-type base struct {
 	tr               DB
 	ba               *pebble.Batch
 	fields           map[batchKey]*roaring.Bitmap
@@ -63,49 +58,23 @@ type base struct {
 	defaultRootTenant bool
 }
 
-var basePool = &sync.Pool{New: func() any {
-	return &base{
-		fields:           make(map[batchKey]*roaring.Bitmap),
-		seq:              make(seqBatch),
-		shards:           roaring.NewBitmap(),
-		shard:            make(map[uint64]uint64),
-		baseFieldMapping: make(fields.BaseMapping),
-	}
-}}
-
-func newBase() *base {
-	return basePool.Get().(*base)
-}
-
-func (b *base) Release() {
-	b.Reset(nil, nil, false)
-	basePool.Put(b)
-}
-
-func (b *base) Reset(db DB, ba *pebble.Batch, defaultRootTenant bool) {
-	b.tr = db
-	b.ba = ba
-	clear(b.seq)
-	b.defaultRootTenant = defaultRootTenant
-	b.shards.Containers.Reset()
-	clear(b.shard)
-	clear(b.baseFieldMapping)
-	b.defaultRootTenant = defaultRootTenant
-}
-
 func New(ba *pebble.Batch, tr DB, root bool) *Batch {
-	bs := newBase()
-	bs.Reset(tr, ba, root)
-	return &Batch{base: bs}
+	return &Batch{
+		tr:                tr,
+		ba:                ba,
+		defaultRootTenant: root,
+		fields:            make(map[batchKey]*roaring.Bitmap),
+		seq:               make(seqBatch),
+		shards:            roaring.NewBitmap(),
+		shard:             make(map[uint64]uint64),
+		baseFieldMapping:  make(fields.BaseMapping),
+	}
 }
 
 var _ storage.Appender = (*Batch)(nil)
 
 func (ba *Batch) Release() {
-	if ba.base != nil {
-		ba.base.Release()
-		*ba = Batch{}
-	}
+	*ba = Batch{}
 }
 
 func (ba *Batch) nextSeq(tenant, field uint64) (uint64, error) {
