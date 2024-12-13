@@ -256,6 +256,9 @@ clear
 load 5m
 	testcounter_reset_middle_total	0+10x4 0+10x5
 	http_requests_total{job="app-server", instance="1", group="canary"}		0+80x10
+	testcounter_reset_middle_mix	0+10x4 0+10x5 {{schema:0 sum:1 count:1}} {{schema:1 sum:2 count:2}}
+	http_requests_mix{job="app-server", instance="1", group="canary"}		0+80x10 {{schema:0 sum:1 count:1}}
+    http_requests_histogram{job="app-server", instance="1", group="canary"}		{{schema:0 sum:1 count:2}}x10
 
 # deriv should return the same as rate in simple cases.
 eval instant at 50m rate(http_requests_total{group="canary", instance="1", job="app-server"}[50m])
@@ -267,6 +270,16 @@ eval instant at 50m deriv(http_requests_total{group="canary", instance="1", job=
 # deriv should return correct result.
 eval instant at 50m deriv(testcounter_reset_middle_total[100m])
 	{} 0.010606060606060607
+
+# deriv should ignore histograms.
+eval instant at 110m deriv(http_requests_mix{group="canary", instance="1", job="app-server"}[110m])
+	{group="canary", instance="1", job="app-server"} 0.26666666666666666
+
+eval instant at 100m deriv(testcounter_reset_middle_mix[110m])
+	{} 0.010606060606060607
+
+eval instant at 50m deriv(http_requests_histogram[60m])
+    #empty
 
 # predict_linear should return correct result.
 # X/s = [  0, 300, 600, 900,1200,1500,1800,2100,2400,2700,3000]
@@ -1110,10 +1123,15 @@ clear
 # Don't return anything when there's something there.
 load 5m
 	http_requests{job="api-server", instance="0", group="production"}	0+10x10
+	http_requests_histogram{job="api-server", instance="0", group="production"} {{schema:0 sum:1 count:1}}x11
 
 eval instant at 50m absent(http_requests)
 
 eval instant at 50m absent(sum(http_requests))
+
+eval instant at 50m absent(http_requests_histogram)
+
+eval instant at 50m absent(sum(http_requests_histogram))
 
 clear
 
@@ -1162,6 +1180,7 @@ load 1m
 	httpd_handshake_failures_total{instance="127.0.0.1",job="node"}	1+1x15
 	httpd_log_lines_total{instance="127.0.0.1",job="node"}	1
 	ssl_certificate_expiry_seconds{job="ingress"} NaN NaN NaN NaN NaN
+	http_requests_histogram{path="/foo",instance="127.0.0.1",job="httpd"} {{schema:0 sum:1 count:1}}x11
 
 eval instant at 5m absent_over_time(http_requests_total[5m])
 
@@ -1204,6 +1223,16 @@ eval instant at 5m absent_over_time({job="ingress"}[4m])
 
 eval instant at 10m absent_over_time({job="ingress"}[4m])
 	{job="ingress"} 1
+
+eval instant at 10m absent_over_time(http_requests_histogram[5m])
+
+eval instant at 10m absent_over_time(rate(http_requests_histogram[5m])[5m:1m])
+
+eval instant at 20m absent_over_time(http_requests_histogram[5m])
+    {} 1
+
+eval instant at 20m absent_over_time(rate(http_requests_histogram[5m])[5m:1m])
+    {} 1
 
 clear
 
