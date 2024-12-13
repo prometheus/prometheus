@@ -112,9 +112,9 @@ func TestReadClientUserAgent(t *testing.T) {
 					called = true
 					receivedHeaders := r.Header
 
-					// Check the X-Prometheus-User-Agent header.
-					require.Equal(t, []string{internalUserAgent}, receivedHeaders.Values("X-Prometheus-User-Agent"),
-						"expected X-Prometheus-User-Agent header to be default value of %q", internalUserAgent)
+					// Check the X-Prometheus-Library-Version header.
+					require.Equal(t, []string{internalUserAgent}, receivedHeaders.Values("X-Prometheus-Library-Version"),
+						"expected X-Prometheus-Library-Version header to be default value of %q", internalUserAgent)
 
 					if test.userAgent == "" {
 						// Expect original header value.
@@ -183,9 +183,9 @@ func TestWriteClientUserAgent(t *testing.T) {
 					called = true
 					receivedHeaders := r.Header
 
-					// Check the X-Prometheus-User-Agent header.
-					require.Equal(t, []string{internalUserAgent}, receivedHeaders.Values("X-Prometheus-User-Agent"),
-						"expected X-Prometheus-User-Agent header to be default value of %q", internalUserAgent)
+					// Check the X-Prometheus-Library-Version header.
+					require.Equal(t, []string{internalUserAgent}, receivedHeaders.Values("X-Prometheus-Library-Version"),
+						"expected X-Prometheus-Library-Version header to be default value of %q", internalUserAgent)
 
 					if test.userAgent == "" {
 						// Expect original header value.

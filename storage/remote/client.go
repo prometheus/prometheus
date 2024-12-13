@@ -67,7 +67,7 @@ const (
 var (
 	// internalUserAgent should not be modified as it is to allow tracking of the
 	// specific Prometheus version in use if UserAgent below is over-ridden.
-	// This value is used to set the X-Prometheus-User-Agent header.
+	// This value is used to set the X-Prometheus-Library-Version header.
 	internalUserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
 	// UserAgent represents Prometheus version to use for the User-Agent header.
@@ -284,7 +284,7 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) (WriteRespo
 	httpReq.Header.Add("Content-Encoding", string(c.writeCompression))
 	httpReq.Header.Set("Content-Type", remoteWriteContentTypeHeaders[c.writeProtoMsg])
 	httpReq.Header.Set("User-Agent", UserAgent)
-	httpReq.Header.Set("X-Prometheus-User-Agent", internalUserAgent)
+	httpReq.Header.Set("X-Prometheus-Library-Version", internalUserAgent)
 	if c.writeProtoMsg == config.RemoteWriteProtoMsgV1 {
 		// Compatibility mode for 1.0.
 		httpReq.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion1HeaderValue)
@@ -386,7 +386,7 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query, sortSeries bool)
 	httpReq.Header.Add("Accept-Encoding", "snappy")
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
 	httpReq.Header.Set("User-Agent", UserAgent)
-	httpReq.Header.Set("X-Prometheus-User-Agent", internalUserAgent)
+	httpReq.Header.Set("X-Prometheus-Library-Version", internalUserAgent)
 	httpReq.Header.Set("X-Prometheus-Remote-Read-Version", "0.1.0")
 
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)

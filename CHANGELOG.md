@@ -2,7 +2,7 @@
 
 ## unreleased
 
-* [CHANGE] Remote-Write: Ability to set User-Agent #15201
+* [ENHANCEMENT] Remote-Write: Ability to set User-Agent #15201
 * [ENHANCEMENT] OTLP receiver: Convert also metric metadata. #15416
 
 ## 3.0.0 / 2024-11-14
