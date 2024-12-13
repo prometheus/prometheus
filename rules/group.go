@@ -372,14 +372,14 @@ func (g *Group) setEvaluationTime(dur time.Duration) {
 	g.evaluationTime = dur
 }
 
-// GetRuleEvaluationTimeSum returns the sum of the time in seconds it took to evaluate each rule in the group irrespective of concurrency.
+// GetRuleEvaluationTimeSum returns the sum of the time it took to evaluate each rule in the group irrespective of concurrency.
 func (g *Group) GetRuleEvaluationTimeSum() time.Duration {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
 	return g.evaluationRuleTimeSum
 }
 
-// updateRuleEvaluationTimeSum updates evaluationRuleTimeSum which is the sum of the time in seconds it took to evaluate each rule in the group irrespective of concurrency.
+// updateRuleEvaluationTimeSum updates evaluationRuleTimeSum which is the sum of the time it took to evaluate each rule in the group irrespective of concurrency.
 // It collects the times from the rules themselves.
 func (g *Group) updateRuleEvaluationTimeSum() {
 	var sum time.Duration
