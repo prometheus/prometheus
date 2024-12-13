@@ -981,7 +981,7 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 			prometheus.GaugeOpts{
 				Namespace: namespace,
 				Name:      "rule_group_last_rule_duration_sum_seconds",
-				Help:      "The sum of the evaluation durations of all rules during the last evaluation. This will be higher than the group duration if rules are evaluated concurrently.",
+				Help:      "The sum of time in seconds it took to evaluate each rule in the group regardless of concurrency. This should be higher than the group duration if rules are evaluated concurrently.",
 			},
 			[]string{"rule_group"},
 		),
