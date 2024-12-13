@@ -18,10 +18,11 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdbv2"
-	"github.com/stretchr/testify/require"
 )
 
 func TestSelectExemplar(t *testing.T) {
