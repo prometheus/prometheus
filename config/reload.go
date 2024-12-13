@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v2"
 )
@@ -49,10 +50,15 @@ func GenerateChecksum(yamlFilePath string) (string, error) {
 	dir := filepath.Dir(yamlFilePath)
 
 	for i, file := range config.RuleFiles {
-		config.RuleFiles[i] = filepath.Join(dir, file)
+		if !strings.Contains(config.RuleFiles[i], dir) {
+			config.RuleFiles[i] = filepath.Join(dir, file) // Join the directory only if the parent directory is not present in the config
+		}
 	}
+
 	for i, file := range config.ScrapeConfigFiles {
-		config.ScrapeConfigFiles[i] = filepath.Join(dir, file)
+		if !strings.Contains(config.ScrapeConfigFiles[i], dir) {
+			config.ScrapeConfigFiles[i] = filepath.Join(dir, file) // Join the directory only if the parent directory is not present in the config
+		}
 	}
 
 	files := map[string][]string{
