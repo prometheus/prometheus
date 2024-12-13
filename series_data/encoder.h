@@ -17,8 +17,7 @@ class Encoder {
   PROMPP_ALWAYS_INLINE void encode(uint32_t ls_id, int64_t timestamp, double value) {
     ++storage_.samples_count;
 
-    if (storage_.open_chunks.size() <= ls_id) {
-      [[unlikely]];
+    if (storage_.open_chunks.size() <= ls_id) [[unlikely]] {
       storage_.open_chunks.resize(ls_id + 1);
     }
 
@@ -26,8 +25,7 @@ class Encoder {
   }
 
   PROMPP_ALWAYS_INLINE void encode(uint32_t ls_id, int64_t timestamp, double value, chunk::DataChunk& chunk) {
-    if (chunk.encoding_type == chunk::DataChunk::EncodingType::kGorilla) {
-      [[unlikely]];
+    if (chunk.encoding_type == chunk::DataChunk::EncodingType::kGorilla) [[unlikely]] {
       encode_gorilla(ls_id, timestamp, value, chunk);
     } else {
       encode_timestamp_and_value_separately(ls_id, timestamp, value, chunk);
@@ -39,10 +37,8 @@ class Encoder {
   OutdatedSampleEncoder& outdated_sample_encoder_;
 
   void encode_gorilla(uint32_t ls_id, int64_t timestamp, double value, chunk::DataChunk& chunk) {
-    if (auto& encoder = storage_.gorilla_encoders[chunk.encoder.gorilla]; timestamp > encoder.timestamp()) {
-      [[likely]];
-      if (encoder.stream().count() >= kSamplesPerChunk) {
-        [[unlikely]];
+    if (auto& encoder = storage_.gorilla_encoders[chunk.encoder.gorilla]; timestamp > encoder.timestamp()) [[likely]] {
+      if (encoder.stream().count() >= kSamplesPerChunk) [[unlikely]] {
         ChunkFinalizer::finalize(storage_, ls_id, chunk);
         encode_timestamp_and_value_separately(ls_id, timestamp, value, chunk);
       } else {
@@ -54,20 +50,12 @@ class Encoder {
   }
 
   void encode_timestamp_and_value_separately(uint32_t ls_id, int64_t timestamp, double value, chunk::DataChunk& chunk) {
-    if (chunk.timestamp_encoder_state_id != encoder::timestamp::State::kInvalidId) {
-      [[likely]];
-
-      if (auto& state = storage_.timestamp_encoder.get_state(chunk.timestamp_encoder_state_id); timestamp > state.timestamp()) {
-        [[likely]];
-
-        if (auto finalized_stream_id = storage_.timestamp_encoder.process_finalized(chunk.timestamp_encoder_state_id);
-            finalized_stream_id != encoder::timestamp::State::kInvalidId) {
-          [[unlikely]];
-          ++storage_.finalized_timestamp_streams[finalized_stream_id].reference_count;
-          ChunkFinalizer::finalize(storage_, ls_id, chunk, finalized_stream_id);
-        } else if (state.stream_data.stream.count() >= kSamplesPerChunk) {
-          [[unlikely]];
-          ChunkFinalizer::finalize(storage_, ls_id, chunk);
+    if (chunk.timestamp_encoder_state_id != encoder::timestamp::State::kInvalidId) [[likely]] {
+      if (const auto& state = storage_.timestamp_encoder.get_state(chunk.timestamp_encoder_state_id); timestamp > state.timestamp()) [[likely]] {
+        if (!ChunkFinalizer::finalize_if_timestamp_finalized(storage_, ls_id, chunk)) [[likely]] {
+          if (state.stream_data.stream.count() >= kSamplesPerChunk) [[unlikely]] {
+            ChunkFinalizer::finalize(storage_, ls_id, chunk);
+          }
         }
       } else {
         if (timestamp < state.timestamp()) {
@@ -85,9 +73,7 @@ class Encoder {
   }
 
   void encode_value(uint32_t ls_id, chunk::DataChunk& chunk, int64_t timestamp, double value) const {
-    if (chunk.encoding_type == chunk::DataChunk::EncodingType::kUnknown) {
-      [[unlikely]];
-
+    if (chunk.encoding_type == chunk::DataChunk::EncodingType::kUnknown) [[unlikely]] {
       if (encoder::value::Uint32ConstantEncoder::can_be_encoded(value)) {
         chunk.encoding_type = chunk::DataChunk::EncodingType::kUint32Constant;
         new (&chunk.encoder) encoder::value::Uint32ConstantEncoder(value);
@@ -99,17 +85,16 @@ class Encoder {
         switch_to_two_constant_encoder(chunk, chunk.encoder.uint32_constant.value(), value);
       }
     } else if (chunk.encoding_type == chunk::DataChunk::EncodingType::kDoubleConstant) {
-      if (auto& encoder = storage_.double_constant_encoders[chunk.encoder.double_constant]; !encoder.encode(value)) {
-        auto encoder_id = chunk.encoder.double_constant;
+      if (const auto& encoder = storage_.double_constant_encoders[chunk.encoder.double_constant]; !encoder.encode(value)) {
+        const auto encoder_id = chunk.encoder.double_constant;
         switch_to_two_constant_encoder(chunk, encoder.value(), value);
         storage_.double_constant_encoders.erase(encoder_id);
       }
     } else if (chunk.encoding_type == chunk::DataChunk::EncodingType::kTwoDoubleConstant) {
-      if (auto& encoder = storage_.two_double_constant_encoders[chunk.encoder.two_double_constant]; !encoder.encode(value)) {
-        auto encoder_id = chunk.encoder.two_double_constant;
+      if (const auto& encoder = storage_.two_double_constant_encoders[chunk.encoder.two_double_constant]; !encoder.encode(value)) {
+        const auto encoder_id = chunk.encoder.two_double_constant;
 
-        if (encoder::value::AscIntegerValuesGorillaEncoder::can_be_encoded(encoder.value1(), encoder.value1_count(), encoder.value2(), value)) {
-          [[likely]];
+        if (encoder::value::AscIntegerValuesGorillaEncoder::can_be_encoded(encoder.value1(), encoder.value1_count(), encoder.value2(), value)) [[likely]] {
           switch_to_asc_integer_values_gorilla(chunk, encoder, value);
         } else if (!storage_.timestamp_encoder.is_unique_state(chunk.timestamp_encoder_state_id)) {
           switch_to_values_gorilla(chunk, encoder, value);
@@ -121,7 +106,7 @@ class Encoder {
       }
     } else if (chunk.encoding_type == chunk::DataChunk::EncodingType::kAscIntegerValuesGorilla) {
       if (!storage_.asc_integer_values_gorilla_encoders[chunk.encoder.asc_integer_values_gorilla].encode(value)) {
-        ChunkFinalizer::finalize_timestamp_state_and_chunk<ChunkFinalizer::FinalizeTimestampStateMode::kFinalizeOrCopy>(storage_, ls_id, chunk);
+        ChunkFinalizer::finalize_timestamp_and_chunk_separately<ChunkFinalizer::FinalizeTimestampStateMode::kFinalizeOrCopy>(storage_, ls_id, chunk);
 
         switch_to_double_constant_encoder(chunk, value);
       }
@@ -132,12 +117,12 @@ class Encoder {
 
   PROMPP_ALWAYS_INLINE void switch_to_double_constant_encoder(chunk::DataChunk& chunk, double value) const {
     chunk.encoding_type = chunk::DataChunk::EncodingType::kDoubleConstant;
-    auto& encoder = storage_.double_constant_encoders.emplace_back(value);
+    const auto& encoder = storage_.double_constant_encoders.emplace_back(value);
     chunk.encoder.double_constant = storage_.double_constant_encoders.index_of(encoder);
   }
 
   PROMPP_ALWAYS_INLINE void switch_to_two_constant_encoder(chunk::DataChunk& chunk, double value1, double value2) const {
-    auto& encoder =
+    const auto& encoder =
         storage_.two_double_constant_encoders.emplace_back(value1, value2, storage_.timestamp_encoder.get_stream(chunk.timestamp_encoder_state_id).count());
     chunk.encoding_type = chunk::DataChunk::EncodingType::kTwoDoubleConstant;
     chunk.encoder.two_double_constant = storage_.two_double_constant_encoders.index_of(encoder);
@@ -145,7 +130,7 @@ class Encoder {
 
   void switch_to_asc_integer_values_gorilla(chunk::DataChunk& data, const encoder::value::TwoDoubleConstantEncoder& constant_encoder, double value) const {
     auto& encoder = storage_.asc_integer_values_gorilla_encoders.emplace_back(constant_encoder.value1());
-    auto value1_count = constant_encoder.value1_count();
+    const auto value1_count = constant_encoder.value1_count();
     auto value2_count = static_cast<uint8_t>(storage_.timestamp_encoder.get_stream(data.timestamp_encoder_state_id).count() - constant_encoder.value1_count());
 
     if (value1_count > 1) {
@@ -171,7 +156,7 @@ class Encoder {
   void switch_to_values_gorilla(chunk::DataChunk& data, const encoder::value::TwoDoubleConstantEncoder& constant_encoder, double value) const {
     auto& encoder = storage_.values_gorilla_encoders.emplace_back(constant_encoder.value1(), constant_encoder.value1_count());
 
-    auto value2_count = storage_.timestamp_encoder.get_stream(data.timestamp_encoder_state_id).count() - constant_encoder.value1_count();
+    const auto value2_count = storage_.timestamp_encoder.get_stream(data.timestamp_encoder_state_id).count() - constant_encoder.value1_count();
     encoder.encode(constant_encoder.value2(), value2_count);
 
     encoder.encode(value);
@@ -183,7 +168,7 @@ class Encoder {
   void switch_to_gorilla(chunk::DataChunk& chunk, const encoder::value::TwoDoubleConstantEncoder& constant_encoder, int64_t timestamp, double value) const {
     auto& timestamp_stream = storage_.timestamp_encoder.get_stream(chunk.timestamp_encoder_state_id);
     encoder::timestamp::TimestampDecoder timestamp_decoder(timestamp_stream.reader());
-    uint8_t value2_count = timestamp_stream.count() - constant_encoder.value1_count();
+    const uint8_t value2_count = timestamp_stream.count() - constant_encoder.value1_count();
 
     auto& encoder = storage_.gorilla_encoders.emplace_back(timestamp_decoder.decode(), constant_encoder.value1());
 
