@@ -954,6 +954,7 @@ func TestMemPostingsStats(t *testing.T) {
 	p.Add(2, labels.FromStrings("label", "value1"))
 
 	// call the Stats method to calculate the cardinality statistics
+	// passing a fake calculation so we get the same result regardless of compilation -tags.
 	stats := p.Stats("label", 10, func(name, value string, n uint64) uint64 { return uint64(len(name)+len(value)) * n })
 
 	// assert that the expected statistics were calculated
