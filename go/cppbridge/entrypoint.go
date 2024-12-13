@@ -102,13 +102,13 @@ func walProtobufHashdexCtor(limits WALHashdexLimits) uintptr {
 	return res.hashdex
 }
 
-func walProtobufHashdexDtor(hashdex uintptr) {
+func walHashdexDtor(hashdex uintptr) {
 	var args = struct {
 		hashdex uintptr
 	}{hashdex}
 
 	fastcgo.UnsafeCall1(
-		C.prompp_wal_protobuf_hashdex_dtor,
+		C.prompp_wal_hashdex_dtor,
 		uintptr(unsafe.Pointer(&args)),
 	)
 }
@@ -145,28 +145,6 @@ func walGoModelHashdexCtor(limits WALHashdexLimits) uintptr {
 	)
 
 	return res.hashdex
-}
-
-func walGoModelHashdexDtor(hashdex uintptr) {
-	var args = struct {
-		hashdex uintptr
-	}{hashdex}
-
-	fastcgo.UnsafeCall1(
-		C.prompp_wal_go_model_hashdex_dtor,
-		uintptr(unsafe.Pointer(&args)),
-	)
-}
-
-func walBasicDecoderHashdexDtor(hashdex uintptr) {
-	var args = struct {
-		hashdex uintptr
-	}{hashdex}
-
-	fastcgo.UnsafeCall1(
-		C.prompp_wal_basic_decoder_hashdex_dtor,
-		uintptr(unsafe.Pointer(&args)),
-	)
 }
 
 func walGoModelHashdexPresharding(hashdex uintptr, data []model.TimeSeries) (cluster, replica string, err []byte) {
@@ -1969,17 +1947,6 @@ func walPrometheusScraperHashdexGetMetadata(hashdex uintptr) []WALScraperHashdex
 	return res.metadata
 }
 
-func walPrometheusScraperHashdexDtor(hashdex uintptr) {
-	var args = struct {
-		hashdex uintptr
-	}{hashdex}
-
-	fastcgo.UnsafeCall1(
-		C.prompp_wal_prometheus_scraper_hashdex_dtor,
-		uintptr(unsafe.Pointer(&args)),
-	)
-}
-
 //
 // OpenMetrics scraper
 //
@@ -2035,17 +2002,6 @@ func walOpenMetricsScraperHashdexGetMetadata(hashdex uintptr) []WALScraperHashde
 	)
 
 	return res.metadata
-}
-
-func walOpenMetricsScraperHashdexDtor(hashdex uintptr) {
-	var args = struct {
-		hashdex uintptr
-	}{hashdex}
-
-	fastcgo.UnsafeCall1(
-		C.prompp_wal_open_metrics_scraper_hashdex_dtor,
-		uintptr(unsafe.Pointer(&args)),
-	)
 }
 
 //

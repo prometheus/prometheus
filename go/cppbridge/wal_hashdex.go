@@ -92,7 +92,7 @@ func NewWALProtobufHashdex(protoData []byte, limits WALHashdexLimits) (ShardedDa
 	}
 	runtime.SetFinalizer(h, func(h *WALProtobufHashdex) {
 		runtime.KeepAlive(h.data)
-		walProtobufHashdexDtor(h.hashdex)
+		walHashdexDtor(h.hashdex)
 	})
 	var exception []byte
 	h.cluster, h.replica, exception = walProtobufHashdexPresharding(h.hashdex, protoData)
@@ -145,7 +145,7 @@ func NewWALGoModelHashdex(limits WALHashdexLimits, data []model.TimeSeries) (Sha
 	}
 	runtime.SetFinalizer(h, func(h *WALGoModelHashdex) {
 		runtime.KeepAlive(h.data)
-		walGoModelHashdexDtor(h.hashdex)
+		walHashdexDtor(h.hashdex)
 	})
 	var exception []byte
 	h.cluster, h.replica, exception = walGoModelHashdexPresharding(h.hashdex, data)
@@ -194,7 +194,7 @@ func NewWALBasicDecoderHashdex(hashdex uintptr, meta *MetaInjection, cluster, re
 		if h.hashdex == 0 {
 			return
 		}
-		walBasicDecoderHashdexDtor(h.hashdex)
+		walHashdexDtor(h.hashdex)
 	})
 	return h
 }
@@ -289,7 +289,7 @@ func NewPrometheusScraperHashdex() *WALPrometheusScraperHashdex {
 		buffer:  nil,
 	}
 	runtime.SetFinalizer(h, func(h *WALPrometheusScraperHashdex) {
-		walPrometheusScraperHashdexDtor(h.hashdex)
+		walHashdexDtor(h.hashdex)
 	})
 	return h
 }
@@ -345,7 +345,7 @@ func NewOpenMetricsScraperHashdex() *WALOpenMetricsScraperHashdex {
 		buffer:  nil,
 	}
 	runtime.SetFinalizer(h, func(h *WALOpenMetricsScraperHashdex) {
-		walOpenMetricsScraperHashdexDtor(h.hashdex)
+		walHashdexDtor(h.hashdex)
 	})
 	return h
 }
