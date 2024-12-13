@@ -82,6 +82,7 @@ func DefaultEvalIterationFunc(ctx context.Context, g *Group, evalTimestamp time.
 	timeSinceStart := time.Since(start)
 
 	g.metrics.IterationDuration.Observe(timeSinceStart.Seconds())
+	g.updateRuleEvaluationTimeSum()
 	g.setEvaluationTime(timeSinceStart)
 	g.setLastEvaluation(start)
 	g.setLastEvalTimestamp(evalTimestamp)

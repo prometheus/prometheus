@@ -1985,7 +1985,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 			require.Len(t, group.rules, ruleCount)
 
 			start := time.Now()
-			group.Eval(ctx, start)
+			DefaultEvalIterationFunc(ctx, group, start)
 
 			// Never expect more than 1 inflight query at a time.
 			require.EqualValues(t, 1, maxInflight.Load())
@@ -1993,6 +1993,8 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 			require.GreaterOrEqual(t, time.Since(start).Seconds(), (time.Duration(ruleCount) * artificialDelay).Seconds())
 			// Each rule produces one vector.
 			require.EqualValues(t, ruleCount, testutil.ToFloat64(group.metrics.GroupSamples))
+			// Group duration is higher than the sum of rule durations (group overhead).
+			require.GreaterOrEqual(t, group.GetEvaluationTime(), group.GetRuleEvaluationTimeSum())
 		}
 	})
 
@@ -2023,7 +2025,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 			require.Len(t, group.rules, ruleCount)
 
 			start := time.Now()
-			group.Eval(ctx, start)
+			DefaultEvalIterationFunc(ctx, group, start)
 
 			// Max inflight can be 1 synchronous eval and up to MaxConcurrentEvals concurrent evals.
 			require.EqualValues(t, opts.MaxConcurrentEvals+1, maxInflight.Load())
@@ -2061,7 +2063,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 			require.Len(t, group.rules, ruleCount)
 
 			start := time.Now()
-			group.Eval(ctx, start)
+			DefaultEvalIterationFunc(ctx, group, start)
 
 			// Max inflight can be 1 synchronous eval and up to MaxConcurrentEvals concurrent evals.
 			require.EqualValues(t, opts.MaxConcurrentEvals+1, maxInflight.Load())
@@ -2100,7 +2102,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 
 			start := time.Now()
 
-			group.Eval(ctx, start)
+			DefaultEvalIterationFunc(ctx, group, start)
 
 			// Max inflight can be up to MaxConcurrentEvals concurrent evals, since there is sufficient concurrency to run all rules at once.
 			require.LessOrEqual(t, int64(maxInflight.Load()), opts.MaxConcurrentEvals)
@@ -2108,6 +2110,8 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 			require.Less(t, time.Since(start).Seconds(), (time.Duration(ruleCount) * artificialDelay).Seconds())
 			// Each rule produces one vector.
 			require.EqualValues(t, ruleCount, testutil.ToFloat64(group.metrics.GroupSamples))
+			// Group duration is less than the sum of rule durations
+			require.Less(t, group.GetEvaluationTime(), group.GetRuleEvaluationTimeSum())
 		}
 	})
 }
