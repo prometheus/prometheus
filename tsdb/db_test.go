@@ -4101,7 +4101,7 @@ func TestOOOWALWrite(t *testing.T) {
 		},
 		"integer histogram": {
 			appendSample: func(app storage.Appender, l labels.Labels, mins int64) (storage.SeriesRef, error) {
-				seriesRef, err := app.AppendHistogram(0, l, minutes(mins), tsdbutil.GenerateTestHistogram(int(mins)), nil)
+				seriesRef, err := app.AppendHistogram(0, l, minutes(mins), tsdbutil.GenerateTestHistogram(mins), nil)
 				require.NoError(t, err)
 				return seriesRef, nil
 			},
@@ -4192,7 +4192,7 @@ func TestOOOWALWrite(t *testing.T) {
 		},
 		"float histogram": {
 			appendSample: func(app storage.Appender, l labels.Labels, mins int64) (storage.SeriesRef, error) {
-				seriesRef, err := app.AppendHistogram(0, l, minutes(mins), nil, tsdbutil.GenerateTestFloatHistogram(int(mins)))
+				seriesRef, err := app.AppendHistogram(0, l, minutes(mins), nil, tsdbutil.GenerateTestFloatHistogram(mins))
 				require.NoError(t, err)
 				return seriesRef, nil
 			},
@@ -4736,12 +4736,12 @@ func TestMultipleEncodingsCommitOrder(t *testing.T) {
 			return sample{t: ts, f: float64(ts)}
 		}
 		if valType == chunkenc.ValHistogram {
-			h := tsdbutil.GenerateTestHistogram(int(ts))
+			h := tsdbutil.GenerateTestHistogram(ts)
 			_, err := app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, h, nil)
 			require.NoError(t, err)
 			return sample{t: ts, h: h}
 		}
-		fh := tsdbutil.GenerateTestFloatHistogram(int(ts))
+		fh := tsdbutil.GenerateTestFloatHistogram(ts)
 		_, err := app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, nil, fh)
 		require.NoError(t, err)
 		return sample{t: ts, fh: fh}
@@ -5427,37 +5427,37 @@ func TestQuerierOOOQuery(t *testing.T) {
 		},
 		"integer histogram": {
 			appendFunc: func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error) {
-				h := tsdbutil.GenerateTestHistogram(int(ts))
+				h := tsdbutil.GenerateTestHistogram(ts)
 				if counterReset {
 					h.CounterResetHint = histogram.CounterReset
 				}
 				return app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, h, nil)
 			},
 			sampleFunc: func(ts int64) chunks.Sample {
-				return sample{t: ts, h: tsdbutil.GenerateTestHistogram(int(ts))}
+				return sample{t: ts, h: tsdbutil.GenerateTestHistogram(ts)}
 			},
 		},
 		"float histogram": {
 			appendFunc: func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error) {
-				fh := tsdbutil.GenerateTestFloatHistogram(int(ts))
+				fh := tsdbutil.GenerateTestFloatHistogram(ts)
 				if counterReset {
 					fh.CounterResetHint = histogram.CounterReset
 				}
 				return app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, nil, fh)
 			},
 			sampleFunc: func(ts int64) chunks.Sample {
-				return sample{t: ts, fh: tsdbutil.GenerateTestFloatHistogram(int(ts))}
+				return sample{t: ts, fh: tsdbutil.GenerateTestFloatHistogram(ts)}
 			},
 		},
 		"integer histogram counter resets": {
 			// Adding counter reset to all histograms means each histogram will have its own chunk.
 			appendFunc: func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error) {
-				h := tsdbutil.GenerateTestHistogram(int(ts))
+				h := tsdbutil.GenerateTestHistogram(ts)
 				h.CounterResetHint = histogram.CounterReset // For this scenario, ignore the counterReset argument.
 				return app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, h, nil)
 			},
 			sampleFunc: func(ts int64) chunks.Sample {
-				return sample{t: ts, h: tsdbutil.GenerateTestHistogram(int(ts))}
+				return sample{t: ts, h: tsdbutil.GenerateTestHistogram(ts)}
 			},
 		},
 	}
@@ -5743,37 +5743,37 @@ func TestChunkQuerierOOOQuery(t *testing.T) {
 		},
 		"integer histogram": {
 			appendFunc: func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error) {
-				h := tsdbutil.GenerateTestHistogram(int(ts))
+				h := tsdbutil.GenerateTestHistogram(ts)
 				if counterReset {
 					h.CounterResetHint = histogram.CounterReset
 				}
 				return app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, h, nil)
 			},
 			sampleFunc: func(ts int64) chunks.Sample {
-				return sample{t: ts, h: tsdbutil.GenerateTestHistogram(int(ts))}
+				return sample{t: ts, h: tsdbutil.GenerateTestHistogram(ts)}
 			},
 		},
 		"float histogram": {
 			appendFunc: func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error) {
-				fh := tsdbutil.GenerateTestFloatHistogram(int(ts))
+				fh := tsdbutil.GenerateTestFloatHistogram(ts)
 				if counterReset {
 					fh.CounterResetHint = histogram.CounterReset
 				}
 				return app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, nil, fh)
 			},
 			sampleFunc: func(ts int64) chunks.Sample {
-				return sample{t: ts, fh: tsdbutil.GenerateTestFloatHistogram(int(ts))}
+				return sample{t: ts, fh: tsdbutil.GenerateTestFloatHistogram(ts)}
 			},
 		},
 		"integer histogram counter resets": {
 			// Adding counter reset to all histograms means each histogram will have its own chunk.
 			appendFunc: func(app storage.Appender, ts int64, counterReset bool) (storage.SeriesRef, error) {
-				h := tsdbutil.GenerateTestHistogram(int(ts))
+				h := tsdbutil.GenerateTestHistogram(ts)
 				h.CounterResetHint = histogram.CounterReset // For this scenario, ignore the counterReset argument.
 				return app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, h, nil)
 			},
 			sampleFunc: func(ts int64) chunks.Sample {
-				return sample{t: ts, h: tsdbutil.GenerateTestHistogram(int(ts))}
+				return sample{t: ts, h: tsdbutil.GenerateTestHistogram(ts)}
 			},
 		},
 		"integer histogram with recode": {
@@ -6908,7 +6908,7 @@ func TestOOOHistogramCompactionWithCounterResets(t *testing.T) {
 			app := db.Appender(context.Background())
 			tsMs := ts * time.Minute.Milliseconds()
 			if floatHistogram {
-				h := tsdbutil.GenerateTestFloatHistogram(val)
+				h := tsdbutil.GenerateTestFloatHistogram(int64(val))
 				h.CounterResetHint = hint
 				_, err = app.AppendHistogram(0, l, tsMs, nil, h)
 				require.NoError(t, err)
@@ -6916,7 +6916,7 @@ func TestOOOHistogramCompactionWithCounterResets(t *testing.T) {
 				return sample{t: tsMs, fh: h.Copy()}
 			}
 
-			h := tsdbutil.GenerateTestHistogram(val)
+			h := tsdbutil.GenerateTestHistogram(int64(val))
 			h.CounterResetHint = hint
 			_, err = app.AppendHistogram(0, l, tsMs, h, nil)
 			require.NoError(t, err)
@@ -7267,14 +7267,14 @@ func TestInterleavedInOrderAndOOOHistogramCompactionWithCounterResets(t *testing
 			app := db.Appender(context.Background())
 			tsMs := ts
 			if floatHistogram {
-				h := tsdbutil.GenerateTestFloatHistogram(val)
+				h := tsdbutil.GenerateTestFloatHistogram(int64(val))
 				_, err = app.AppendHistogram(0, l, tsMs, nil, h)
 				require.NoError(t, err)
 				require.NoError(t, app.Commit())
 				return sample{t: tsMs, fh: h.Copy()}
 			}
 
-			h := tsdbutil.GenerateTestHistogram(val)
+			h := tsdbutil.GenerateTestHistogram(int64(val))
 			_, err = app.AppendHistogram(0, l, tsMs, h, nil)
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
