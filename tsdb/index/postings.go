@@ -72,7 +72,7 @@ type MemPostings struct {
 	// lvs holds the label values for each label name.
 	// lvs[name] is essentially an unsorted append-only list of all keys in m[name]
 	// mtx must be held when interacting with lvs.
-	// Since it's append-only, it is safe to the label values slice after releasing the lock.
+	// Since it's append-only, it is safe to read the label values slice after releasing the lock.
 	lvs map[string][]string
 
 	ordered bool
