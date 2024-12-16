@@ -2077,7 +2077,7 @@ func createTimeseriesWithOldSamples(numSamples, numSeries int, extraLabels ...la
 		for j := 0; j < numSamples/2; j++ {
 			sample := record.RefSample{
 				Ref: chunks.HeadSeriesRef(i),
-				T:   int64(int(time.Now().UnixMilli()) + j),
+				T:   time.Now().UnixMilli() + int64(j),
 				V:   float64(i),
 			}
 			samples = append(samples, sample)
