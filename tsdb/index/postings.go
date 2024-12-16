@@ -812,8 +812,9 @@ func (rp *removedPostings) Err() error {
 
 // ListPostings implements the Postings interface over a plain list.
 type ListPostings struct {
-	list []storage.SeriesRef
-	cur  storage.SeriesRef
+	list   []storage.SeriesRef
+	cur    storage.SeriesRef
+	length int
 }
 
 func NewListPostings(list []storage.SeriesRef) Postings {
@@ -821,7 +822,7 @@ func NewListPostings(list []storage.SeriesRef) Postings {
 }
 
 func newListPostings(list ...storage.SeriesRef) *ListPostings {
-	return &ListPostings{list: list}
+	return &ListPostings{list: list, length: len(list)}
 }
 
 func (it *ListPostings) At() storage.SeriesRef {
@@ -864,7 +865,7 @@ func (it *ListPostings) Err() error {
 
 // Len returns the number of postings in the list.
 func (it *ListPostings) Len() int {
-	return len(it.list)
+	return it.length
 }
 
 // bigEndianPostings implements the Postings interface over a byte stream of

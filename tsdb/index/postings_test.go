@@ -1247,6 +1247,7 @@ func TestListPostings(t *testing.T) {
 		require.False(t, p.Seek(10))
 		require.False(t, p.Next())
 		require.NoError(t, p.Err())
+		require.Equal(t, 0, p.(*ListPostings).Len())
 	})
 
 	t.Run("one posting", func(t *testing.T) {
@@ -1256,6 +1257,7 @@ func TestListPostings(t *testing.T) {
 			require.Equal(t, storage.SeriesRef(10), p.At())
 			require.False(t, p.Next())
 			require.NoError(t, p.Err())
+			require.Equal(t, 1, p.(*ListPostings).Len())
 		})
 		t.Run("seek less", func(t *testing.T) {
 			p := NewListPostings([]storage.SeriesRef{10})
@@ -1265,6 +1267,7 @@ func TestListPostings(t *testing.T) {
 			require.Equal(t, storage.SeriesRef(10), p.At())
 			require.False(t, p.Next())
 			require.NoError(t, p.Err())
+			require.Equal(t, 1, p.(*ListPostings).Len())
 		})
 		t.Run("seek equal", func(t *testing.T) {
 			p := NewListPostings([]storage.SeriesRef{10})
@@ -1272,12 +1275,14 @@ func TestListPostings(t *testing.T) {
 			require.Equal(t, storage.SeriesRef(10), p.At())
 			require.False(t, p.Next())
 			require.NoError(t, p.Err())
+			require.Equal(t, 1, p.(*ListPostings).Len())
 		})
 		t.Run("seek more", func(t *testing.T) {
 			p := NewListPostings([]storage.SeriesRef{10})
 			require.False(t, p.Seek(15))
 			require.False(t, p.Next())
 			require.NoError(t, p.Err())
+			require.Equal(t, 1, p.(*ListPostings).Len())
 		})
 		t.Run("seek after next", func(t *testing.T) {
 			p := NewListPostings([]storage.SeriesRef{10})
@@ -1285,6 +1290,7 @@ func TestListPostings(t *testing.T) {
 			require.False(t, p.Seek(15))
 			require.False(t, p.Next())
 			require.NoError(t, p.Err())
+			require.Equal(t, 1, p.(*ListPostings).Len())
 		})
 	})
 
@@ -1297,6 +1303,7 @@ func TestListPostings(t *testing.T) {
 			require.Equal(t, storage.SeriesRef(20), p.At())
 			require.False(t, p.Next())
 			require.NoError(t, p.Err())
+			require.Equal(t, 2, p.(*ListPostings).Len())
 		})
 		t.Run("seek", func(t *testing.T) {
 			p := NewListPostings([]storage.SeriesRef{10, 20})
@@ -1314,23 +1321,27 @@ func TestListPostings(t *testing.T) {
 			require.Equal(t, storage.SeriesRef(20), p.At())
 			require.False(t, p.Next())
 			require.NoError(t, p.Err())
+			require.Equal(t, 2, p.(*ListPostings).Len())
 		})
 		t.Run("seek lest than last", func(t *testing.T) {
 			p := NewListPostings([]storage.SeriesRef{10, 20, 30, 40, 50})
 			require.True(t, p.Seek(45))
 			require.Equal(t, storage.SeriesRef(50), p.At())
 			require.False(t, p.Next())
+			require.Equal(t, 5, p.(*ListPostings).Len())
 		})
 		t.Run("seek exactly last", func(t *testing.T) {
 			p := NewListPostings([]storage.SeriesRef{10, 20, 30, 40, 50})
 			require.True(t, p.Seek(50))
 			require.Equal(t, storage.SeriesRef(50), p.At())
 			require.False(t, p.Next())
+			require.Equal(t, 5, p.(*ListPostings).Len())
 		})
 		t.Run("seek more than last", func(t *testing.T) {
 			p := NewListPostings([]storage.SeriesRef{10, 20, 30, 40, 50})
 			require.False(t, p.Seek(60))
 			require.False(t, p.Next())
+			require.Equal(t, 5, p.(*ListPostings).Len())
 		})
 	})
 
