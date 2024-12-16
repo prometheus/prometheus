@@ -111,6 +111,7 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 	iStar1Star := labels.MustNewMatcher(labels.MatchRegexp, "i", ".*1.*")
 	iPlus := labels.MustNewMatcher(labels.MatchRegexp, "i", ".+")
 	i1Plus := labels.MustNewMatcher(labels.MatchRegexp, "i", "1.+")
+	iNot1Plus := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "1.+")
 	iEmptyRe := labels.MustNewMatcher(labels.MatchRegexp, "i", "")
 	iNotEmpty := labels.MustNewMatcher(labels.MatchNotEqual, "i", "")
 	iNot2 := labels.MustNewMatcher(labels.MatchNotEqual, "i", "2"+postingsBenchSuffix)
@@ -122,6 +123,14 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 	iCharSet := labels.MustNewMatcher(labels.MatchRegexp, "i", "1[0-9]")
 	iAlternate := labels.MustNewMatcher(labels.MatchRegexp, "i", "(1|2|3|4|5|6|20|55)")
 	iNotAlternate := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "(1|2|3|4|5|6|20|55)")
+	iNotRe1 := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "1")
+	iNotRe2 := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "2")
+	iNotRe3 := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "3")
+	iNotRe4 := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "4")
+	iNotRe5 := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "5")
+	iNotRe6 := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "6")
+	iNotRe20 := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "20")
+	iNotRe55 := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "55")
 	iXYZ := labels.MustNewMatcher(labels.MatchRegexp, "i", "X|Y|Z")
 	iNotXYZ := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "X|Y|Z")
 	cases := []struct {
@@ -142,6 +151,7 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 		{`j=~"X.+"`, []*labels.Matcher{jXplus}},
 		{`i=~"(1|2|3|4|5|6|20|55)"`, []*labels.Matcher{iAlternate}},
 		{`i!~"(1|2|3|4|5|6|20|55)"`, []*labels.Matcher{iNotAlternate}},
+		{`RUN i!~"1",...,i!~"55"`, []*labels.Matcher{iNotRe1, iNotRe2, iNotRe3, iNotRe4, iNotRe5, iNotRe6, iNotRe20, iNotRe55}},
 		{`i=~"X|Y|Z"`, []*labels.Matcher{iXYZ}},
 		{`i!~"X|Y|Z"`, []*labels.Matcher{iNotXYZ}},
 		{`i=~".*"`, []*labels.Matcher{iStar}},
@@ -149,6 +159,7 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 		{`i=~".*1"`, []*labels.Matcher{iStar1}},
 		{`i=~".+"`, []*labels.Matcher{iPlus}},
 		{`i=~".+",j=~"X.+"`, []*labels.Matcher{iPlus, jXplus}},
+		{`RUN i!~"1.+",i!~".*2.*",i!="2"`, []*labels.Matcher{iNot1Plus, iNotStar2Star, iNot2}},
 		{`i=~""`, []*labels.Matcher{iEmptyRe}},
 		{`i!=""`, []*labels.Matcher{iNotEmpty}},
 		{`n="1",i=~".*",j="foo"`, []*labels.Matcher{n1, iStar, jFoo}},

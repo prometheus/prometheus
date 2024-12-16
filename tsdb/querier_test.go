@@ -31,6 +31,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -3825,4 +3826,40 @@ func TestMergeQuerierConcurrentSelectMatchers(t *testing.T) {
 	mergedQuerier.Select(context.Background(), false, nil, matchers...)
 
 	require.Equal(t, originalMatchers, matchers)
+}
+
+func TestJoinNegatedMatchers(t *testing.T) {
+	for _, tc := range []struct {
+		in  string
+		out string
+	}{
+		{
+			in:  `{a!="1",b!="2"}`,
+			out: `{a!="1",b!="2"}`,
+		},
+		{
+			in:  `{a!="1",a!="2"}`,
+			out: `{a!~"1|2"}`,
+		},
+		{
+			in:  `{x="3",a!="1",a=~"5.+",a!="2"}`,
+			out: `{a!~"1|2",a=~"5.+",x="3"}`,
+		},
+		{
+			in:  `{a!="1",a!="2",b!="3"}`,
+			out: `{a!~"1|2",b!="3"}`,
+		},
+		{
+			in:  `{a=~"1.+",a!="1",a!~"2[a-z]"}`,
+			out: `{a!~"1|2[a-z]",a=~"1.+"}`,
+		},
+	} {
+		t.Run(tc.in, func(t *testing.T) {
+			ms, err := parser.ParseMetricSelector(tc.in)
+			require.NoError(t, err)
+			ms = joinNegatedMatchers(ms)
+			got := (&parser.VectorSelector{LabelMatchers: ms}).String()
+			require.Equal(t, tc.out, got)
+		})
+	}
 }

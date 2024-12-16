@@ -20,6 +20,7 @@ import (
 	"math"
 	"slices"
 
+	"github.com/grafana/regexp/syntax"
 	"github.com/oklog/ulid"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -197,6 +198,7 @@ func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matc
 		k, v := index.AllPostingsKey()
 		return ix.Postings(ctx, k, v)
 	}
+	ms = joinNegatedMatchers(ms)
 
 	var its, notIts []index.Postings
 	// See which label must be non-empty.
@@ -462,6 +464,64 @@ func labelNamesWithMatchers(ctx context.Context, r IndexReader, matchers ...*lab
 		return nil, err
 	}
 	return r.LabelNamesFor(ctx, p)
+}
+
+func joinNegatedMatchers(ms []*labels.Matcher) []*labels.Matcher {
+	labelNot := make(map[string]int, len(ms))
+	for _, m := range ms {
+		if m.Type == labels.MatchNotEqual || m.Type == labels.MatchNotRegexp {
+			labelNot[m.Name]++
+		}
+	}
+	found := false
+	for _, c := range labelNot {
+		if c > 1 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return ms
+	}
+
+	result := make([]*labels.Matcher, 0, len(ms))
+	for l, c := range labelNot {
+		if c == 1 {
+			continue
+		}
+		// Find all != and !~ matchers for this label name.
+		r := syntax.Regexp{Op: syntax.OpAlternate}
+		for _, m := range ms {
+			if m.Name != l {
+				continue
+			}
+			if m.Type == labels.MatchNotEqual {
+				r.Sub = append(r.Sub, &syntax.Regexp{Op: syntax.OpLiteral, Rune: []rune(m.Value)})
+			} else if m.Type == labels.MatchNotRegexp {
+				parsed, err := syntax.Parse(m.Value, syntax.Perl|syntax.DotNL)
+				if err != nil {
+					// Silently abort.
+					return ms
+				}
+				r.Sub = append(r.Sub, parsed)
+			}
+		}
+		m, err := labels.NewMatcher(labels.MatchNotRegexp, l, r.String())
+		if err != nil {
+			// Silently abort.
+			return ms
+		}
+		result = append(result, m)
+	}
+
+	for _, m := range ms {
+		if labelNot[m.Name] > 1 && (m.Type == labels.MatchNotEqual || m.Type == labels.MatchNotRegexp) {
+			// We already processed this.
+			continue
+		}
+		result = append(result, m)
+	}
+	return result
 }
 
 // seriesData, used inside other iterators, are updated when we move from one series to another.
