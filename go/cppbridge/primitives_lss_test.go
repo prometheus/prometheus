@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/pp/go/model"
-	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/stretchr/testify/suite"
@@ -140,7 +139,7 @@ func (s *QueryableLSSSuite) TestGetLabelSets() {
 	}
 }
 
-func isLabelSetEqualsToLabels(labelSet model.LabelSet, labels labels.Labels) bool {
+func isLabelSetEqualsToLabels(labelSet model.LabelSet, labels cppbridge.Labels) bool {
 	labelSetString := labelSet.String()
 	labelsString := ""
 	for _, label := range labels {

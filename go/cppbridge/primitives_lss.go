@@ -5,7 +5,6 @@ import (
 	"unsafe"
 
 	"github.com/prometheus/prometheus/pp/go/model"
-	"github.com/prometheus/prometheus/model/labels"
 )
 
 const (
@@ -123,10 +122,10 @@ func (lss *LabelSetStorage) QueryLabelValues(label_name string, matchers []model
 }
 
 type LabelSetStorageGetLabelSetsResult struct {
-	labelSets []labels.Labels // c allocated
+	labelSets []Labels // c allocated
 }
 
-func (r *LabelSetStorageGetLabelSetsResult) LabelsSets() []labels.Labels {
+func (r *LabelSetStorageGetLabelSetsResult) LabelsSets() []Labels {
 	return r.labelSets
 }
 

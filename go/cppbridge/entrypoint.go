@@ -45,7 +45,6 @@ import (
 	"github.com/prometheus/prometheus/pp/go/model"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/prometheus/model/labels"
 )
 
 var (
@@ -888,13 +887,13 @@ func primitivesLSSQuery(lss uintptr, matchers []model.LabelMatcher) (uint32, []u
 	return res.status, res.matches
 }
 
-func primitivesLSSGetLabelSets(lss uintptr, labelSetIDs []uint32) []labels.Labels {
+func primitivesLSSGetLabelSets(lss uintptr, labelSetIDs []uint32) []Labels {
 	var args = struct {
 		lss         uintptr
 		labelSetIDs []uint32
 	}{lss, labelSetIDs}
 	var res struct {
-		labelSets []labels.Labels
+		labelSets []Labels
 	}
 
 	fastcgo.UnsafeCall2(
@@ -906,9 +905,9 @@ func primitivesLSSGetLabelSets(lss uintptr, labelSetIDs []uint32) []labels.Label
 	return res.labelSets
 }
 
-func primitivesLSSFreeLabelSets(labelSets []labels.Labels) {
+func primitivesLSSFreeLabelSets(labelSets []Labels) {
 	var args = struct {
-		labelSets []labels.Labels
+		labelSets []Labels
 	}{labelSets}
 
 	fastcgo.UnsafeCall1(
