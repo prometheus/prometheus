@@ -6,7 +6,6 @@ import (
 	"runtime"
 	"sort"
 	"time"
-	"unsafe"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -174,7 +173,7 @@ func (q *Querier) Select(ctx context.Context, sortSeries bool, hints *storage.Se
 		chunksIndex := serializedChunks.MakeIndex()
 		getLabelSetsResult := shard.LSS().GetLabelSets(lssQueryResult.Matches())
 
-		labelSetBySeriesID := make(map[uint32]labels.Labels)
+		labelSetBySeriesID := make(map[uint32]cppbridge.Labels)
 		for index, labelSetID := range lssQueryResult.Matches() {
 			if chunksIndex.Has(labelSetID) {
 				labelSetBySeriesID[labelSetID] = getLabelSetsResult.LabelsSets()[index]
@@ -227,24 +226,10 @@ func convertPrometheusMatchersToOpcoreMatchers(matchers ...*labels.Matcher) []mo
 	return promppMatchers
 }
 
-func cloneLabelSet(labelSet labels.Labels) labels.Labels {
-	n := 0
+func cloneLabelSet(labelSet cppbridge.Labels) labels.Labels {
+	builder := labels.NewScratchBuilder(len(labelSet))
 	for i := range labelSet {
-		n += len(labelSet[i].Name) + len(labelSet[i].Value)
+		builder.Add(labelSet[i].Name, labelSet[i].Value)
 	}
-	buf := make([]byte, n)
-	offset := 0
-	result := make(labels.Labels, len(labelSet))
-	for i := range labelSet {
-		n = copy(buf[offset:], labelSet[i].Name)
-		nb := buf[offset : offset+n]
-		result[i].Name = *(*string)(unsafe.Pointer(&nb))
-		offset += n
-
-		n = copy(buf[offset:], labelSet[i].Value)
-		vb := buf[offset : offset+n]
-		result[i].Value = *(*string)(unsafe.Pointer(&vb))
-		offset += n
-	}
-	return result
+	return builder.Labels()
 }
