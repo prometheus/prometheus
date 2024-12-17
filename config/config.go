@@ -1427,10 +1427,13 @@ func getGoGCEnv() int {
 type translationStrategyOption string
 
 var (
-	// NoUTF8EscapingWithSuffixes will keep UTF-8 characters as they are, units and type suffixes will still be added.
+	// NoUTF8EscapingWithSuffixes will accept metric/label names as they are.
+	// Unit and type suffixes may be added to metric names, according to certain rules.
 	NoUTF8EscapingWithSuffixes translationStrategyOption = "NoUTF8EscapingWithSuffixes"
 	// UnderscoreEscapingWithSuffixes is the default option for translating OTLP to Prometheus.
-	// This option will translate all UTF-8 characters to underscores, while adding units and type suffixes.
+	// This option will translate metric name characters that are not alphanumerics/underscores/colons to underscores,
+	// and label name characters that are not alphanumerics/underscores to underscores.
+	// Unit and type suffixes may be appended to metric names, according to certain rules.
 	UnderscoreEscapingWithSuffixes translationStrategyOption = "UnderscoreEscapingWithSuffixes"
 )
 
