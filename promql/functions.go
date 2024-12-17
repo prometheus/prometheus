@@ -355,7 +355,7 @@ func calcTrendValue(i int, tf, s0, s1, b float64) float64 {
 // https://en.wikipedia.org/wiki/Exponential_smoothing .
 func funcDoubleExponentialSmoothing(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	samples := vals[0].(Matrix)[0]
-
+	var annos annotations.Annotations
 	// The smoothing factor argument.
 	sf := vals[1].(Vector)[0].F
 
@@ -370,11 +370,16 @@ func funcDoubleExponentialSmoothing(vals []parser.Value, args parser.Expressions
 		panic(fmt.Errorf("invalid trend factor. Expected: 0 < tf < 1, got: %f", tf))
 	}
 
+	// Add info annotation for ignoring histogram.
+	if len(samples.Histograms) > 0 {
+		annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("deriv", args.PositionRange()))
+	}
+
 	l := len(samples.Floats)
 
 	// Can't do the smoothing operation with less than two points.
 	if l < 2 {
-		return enh.Out, nil
+		return enh.Out, annos
 	}
 
 	var s0, s1, b float64
@@ -395,7 +400,7 @@ func funcDoubleExponentialSmoothing(vals []parser.Value, args parser.Expressions
 		s0, s1 = s1, x+y
 	}
 
-	return append(enh.Out, Sample{F: s1}), nil
+	return append(enh.Out, Sample{F: s1}), annos
 }
 
 // === sort(node parser.ValueTypeVector) (Vector, Annotations) ===
@@ -1110,32 +1115,41 @@ func linearRegression(samples []FPoint, interceptTime int64) (slope, intercept f
 // === deriv(node parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcDeriv(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	samples := vals[0].(Matrix)[0]
-
+	var annos annotations.Annotations
+	// Add info annotation for ignoring histogram.
+	if len(samples.Histograms) > 0 {
+		annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("deriv", args.PositionRange()))
+	}
 	// No sense in trying to compute a derivative without at least two points.
 	// Drop this Vector element.
 	if len(samples.Floats) < 2 {
-		return enh.Out, nil
+		return enh.Out, annos
 	}
 
 	// We pass in an arbitrary timestamp that is near the values in use
 	// to avoid floating point accuracy issues, see
 	// https://github.com/prometheus/prometheus/issues/2674
 	slope, _ := linearRegression(samples.Floats, samples.Floats[0].T)
-	return append(enh.Out, Sample{F: slope}), nil
+	return append(enh.Out, Sample{F: slope}), annos
 }
 
 // === predict_linear(node parser.ValueTypeMatrix, k parser.ValueTypeScalar) (Vector, Annotations) ===
 func funcPredictLinear(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	samples := vals[0].(Matrix)[0]
 	duration := vals[1].(Vector)[0].F
+	var annos annotations.Annotations
+	// Add info annotation for ignoring histogram.
+	if len(samples.Histograms) > 0 {
+		annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("deriv", args.PositionRange()))
+	}
 	// No sense in trying to predict anything without at least two points.
 	// Drop this Vector element.
 	if len(samples.Floats) < 2 {
-		return enh.Out, nil
+		return enh.Out, annos
 	}
 	slope, intercept := linearRegression(samples.Floats, enh.Ts)
 
-	return append(enh.Out, Sample{F: slope*duration + intercept}), nil
+	return append(enh.Out, Sample{F: slope*duration + intercept}), annos
 }
 
 // === histogram_count(Vector parser.ValueTypeVector) (Vector, Annotations) ===
