@@ -15,6 +15,8 @@ import (
 type ShardedData interface {
 	Cluster() string
 	Replica() string
+
+	RangeMetadata(f func(metadata WALScraperHashdexMetadata) bool)
 }
 
 // WALProtobufHashdex - Presharding data, GO wrapper for WALProtobufHashdex, init from GO and filling from C/C++.
@@ -114,12 +116,31 @@ func (h *WALProtobufHashdex) Replica() string {
 	return strings.Clone(h.replica)
 }
 
+// RangeMetadata calls f sequentially for each metadata present in the hashdex.
+// If f returns false, range stops the iteration.
+func (h *WALProtobufHashdex) RangeMetadata(f func(metadata WALScraperHashdexMetadata) bool) {
+	mds := walProtobufHashdexGetMetadata(h.hashdex)
+
+	for i := range mds {
+		if !f(mds[i]) {
+			break
+		}
+	}
+
+	freeBytes(*(*[]byte)(unsafe.Pointer(&mds)))
+}
+
 // WALGoModelHashdex - Go wrapper for PromPP::WAL::GoModelHashdex..
 type WALGoModelHashdex struct {
 	hashdex uintptr
 	data    []model.TimeSeries
 	cluster string
 	replica string
+}
+
+func (h *WALGoModelHashdex) RangeMetadata(f func(metadata WALScraperHashdexMetadata) bool) {
+	//TODO implement me
+	panic("implement me")
 }
 
 // cptr - pointer to underlying c++ object.
@@ -179,6 +200,11 @@ type WALBasicDecoderHashdex struct {
 	metadata *MetaInjection
 	cluster  string
 	replica  string
+}
+
+func (h *WALBasicDecoderHashdex) RangeMetadata(f func(metadata WALScraperHashdexMetadata) bool) {
+	//TODO implement me
+	panic("implement me")
 }
 
 // NewWALBasicDecoderHashdex init new WALBasicDecoderHashdex with c-pointer PromPP::WAL::WALBasicDecoderHashdex.
@@ -259,12 +285,12 @@ func errorFromCode(code uint32) error {
 }
 
 const (
-	// ScraperMetadataHelp type of metadata "Help" from hashdex metadata.
-	ScraperMetadataHelp uint32 = iota
-	// ScraperMetadataType type of metadata "Type" from hashdex metadata.
-	ScraperMetadataType
-	// ScraperMetadataUnit type of metadata "Unit" from hashdex metadata.
-	ScraperMetadataUnit
+	// HashdexMetadataHelp type of metadata "Help" from hashdex metadata.
+	HashdexMetadataHelp uint32 = iota
+	// HashdexMetadataType type of metadata "Type" from hashdex metadata.
+	HashdexMetadataType
+	// HashdexMetadataUnit type of metadata "Unit" from hashdex metadata.
+	HashdexMetadataUnit
 )
 
 // WALScraperHashdexMetadata metadata from hashdex.

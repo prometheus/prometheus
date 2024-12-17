@@ -132,6 +132,23 @@ func walProtobufHashdexPresharding(hashdex uintptr, protobuf []byte) (cluster, r
 	return res.cluster, res.replica, res.exception
 }
 
+func walProtobufHashdexGetMetadata(hashdex uintptr) []WALScraperHashdexMetadata {
+	var args = struct {
+		hashdex uintptr
+	}{hashdex}
+	var res struct {
+		metadata []WALScraperHashdexMetadata
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_wal_protobuf_hashdex_get_metadata,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return res.metadata
+}
+
 func walGoModelHashdexCtor(limits WALHashdexLimits) uintptr {
 	var res struct {
 		hashdex uintptr
