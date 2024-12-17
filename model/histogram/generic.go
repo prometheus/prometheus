@@ -866,6 +866,130 @@ func mustReduceResolution[IBC InternalBucketCount](
 	return targetSpans, targetBuckets
 }
 
+// kahanReduceResolution works like reduceResolution but it is used in FloatHistogram's KahanAdd method and takes
+// an additional argument, originCompBuckets, representing the compensation buckets for the origin histogram.
+// This function modifies both the buckets of the origin histogram and its corresponding compensation histogram.
+func kahanReduceResolution(
+	originSpans []Span,
+	originReceivingBuckets []float64,
+	originCompBuckets []float64,
+	originSchema,
+	targetSchema int32,
+	deltaBuckets bool,
+	inplace bool,
+) ([]Span, []float64, []float64) {
+	var (
+		targetSpans                    []Span    // The spans in the target schema.
+		targetReceivingBuckets         []float64 // The receiving bucket counts in the target schema.
+		targetCompBuckets              []float64 // The compensation bucket counts in the target schema.
+		bucketIdx                      int32     // The index of bucket in the origin schema.
+		bucketCountIdx                 int       // The position of a bucket in origin bucket count slice `originBuckets`.
+		targetBucketIdx                int32     // The index of bucket in the target schema.
+		lastReceivingBucketCount       float64   // The last visited receiving bucket's count in the origin schema.
+		lastCompBucketCount            float64   // The last visited compensation bucket's count in the origin schema.
+		lastTargetBucketIdx            int32     // The index of the last added target bucket.
+		lastTargetReceivingBucketCount float64
+		lastTargetCompBucketCount      float64
+	)
+
+	if inplace {
+		// Slice reuse is safe because when reducing the resolution,
+		// target slices don't grow faster than origin slices are being read.
+		targetSpans = originSpans[:0]
+		targetReceivingBuckets = originReceivingBuckets[:0]
+		targetCompBuckets = originCompBuckets[:0]
+	}
+
+	for _, span := range originSpans {
+		// Determine the index of the first bucket in this span.
+		bucketIdx += span.Offset
+		for j := 0; j < int(span.Length); j++ {
+			// Determine the index of the bucket in the target schema from the index in the original schema.
+			targetBucketIdx = targetIdx(bucketIdx, originSchema, targetSchema)
+
+			switch {
+			case len(targetSpans) == 0:
+				// This is the first span in the targetSpans.
+				span := Span{
+					Offset: targetBucketIdx,
+					Length: 1,
+				}
+				targetSpans = append(targetSpans, span)
+				targetReceivingBuckets = append(targetReceivingBuckets, originReceivingBuckets[bucketCountIdx])
+				lastTargetBucketIdx = targetBucketIdx
+				lastReceivingBucketCount = originReceivingBuckets[bucketCountIdx]
+				lastTargetReceivingBucketCount = originReceivingBuckets[bucketCountIdx]
+
+				targetCompBuckets = append(targetCompBuckets, originCompBuckets[bucketCountIdx])
+				lastCompBucketCount = originCompBuckets[bucketCountIdx]
+				lastTargetCompBucketCount = originCompBuckets[bucketCountIdx]
+
+			case lastTargetBucketIdx == targetBucketIdx:
+				// The current bucket has to be merged into the same target bucket as the previous bucket.
+				if deltaBuckets {
+					lastReceivingBucketCount += originReceivingBuckets[bucketCountIdx]
+					targetReceivingBuckets[len(targetReceivingBuckets)-1] += lastReceivingBucketCount
+					lastTargetReceivingBucketCount += lastReceivingBucketCount
+
+					lastCompBucketCount += originCompBuckets[bucketCountIdx]
+					targetCompBuckets[len(targetCompBuckets)-1] += lastCompBucketCount
+					lastTargetCompBucketCount += lastCompBucketCount
+				} else {
+					targetReceivingBuckets[len(targetReceivingBuckets)-1] += originReceivingBuckets[bucketCountIdx]
+					targetCompBuckets[len(targetCompBuckets)-1] += originCompBuckets[bucketCountIdx]
+				}
+
+			case (lastTargetBucketIdx + 1) == targetBucketIdx:
+				// The current bucket has to go into a new target bucket,
+				// and that bucket is next to the previous target bucket,
+				// so we add it to the current target span.
+				targetSpans[len(targetSpans)-1].Length++
+				lastTargetBucketIdx++
+				if deltaBuckets {
+					lastReceivingBucketCount += originReceivingBuckets[bucketCountIdx]
+					targetReceivingBuckets = append(targetReceivingBuckets, lastReceivingBucketCount-lastTargetReceivingBucketCount)
+					lastTargetReceivingBucketCount = lastReceivingBucketCount
+
+					lastCompBucketCount += originCompBuckets[bucketCountIdx]
+					targetCompBuckets = append(targetCompBuckets, lastCompBucketCount-lastTargetCompBucketCount)
+					lastTargetCompBucketCount = lastCompBucketCount
+				} else {
+					targetReceivingBuckets = append(targetReceivingBuckets, originReceivingBuckets[bucketCountIdx])
+					targetCompBuckets = append(targetCompBuckets, originCompBuckets[bucketCountIdx])
+				}
+
+			case (lastTargetBucketIdx + 1) < targetBucketIdx:
+				// The current bucket has to go into a new target bucket,
+				// and that bucket is separated by a gap from the previous target bucket,
+				// so we need to add a new target span.
+				span := Span{
+					Offset: targetBucketIdx - lastTargetBucketIdx - 1,
+					Length: 1,
+				}
+				targetSpans = append(targetSpans, span)
+				lastTargetBucketIdx = targetBucketIdx
+				if deltaBuckets {
+					lastReceivingBucketCount += originReceivingBuckets[bucketCountIdx]
+					targetReceivingBuckets = append(targetReceivingBuckets, lastReceivingBucketCount-lastTargetReceivingBucketCount)
+					lastTargetReceivingBucketCount = lastReceivingBucketCount
+
+					lastCompBucketCount += originCompBuckets[bucketCountIdx]
+					targetCompBuckets = append(targetCompBuckets, lastCompBucketCount-lastTargetCompBucketCount)
+					lastTargetCompBucketCount = lastCompBucketCount
+				} else {
+					targetReceivingBuckets = append(targetReceivingBuckets, originReceivingBuckets[bucketCountIdx])
+					targetCompBuckets = append(targetCompBuckets, originCompBuckets[bucketCountIdx])
+				}
+			}
+
+			bucketIdx++
+			bucketCountIdx++
+		}
+	}
+
+	return targetSpans, targetReceivingBuckets, targetCompBuckets
+}
+
 func clearIfNotNil[T any](items []T) []T {
 	if items == nil {
 		return nil

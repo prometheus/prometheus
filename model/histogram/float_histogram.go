@@ -1401,6 +1401,138 @@ func addBuckets(
 	return spansA, bucketsA
 }
 
+// kahanAddBuckets works like addBuckets but it is used in FloatHistogram's KahanAdd/KahanSub methods
+// and takes an additional argument, bucketsC, representing buckets of the compensation histogram.
+// It returns the resulting spans/buckets and compensation buckets.
+func kahanAddBuckets(
+	schema int32, threshold float64, negative bool,
+	spansA []Span, bucketsA []float64,
+	spansB []Span, bucketsB []float64,
+	bucketsC []float64,
+) ([]Span, []float64, []float64) {
+	var (
+		iSpan              = -1
+		iBucket            = -1
+		iInSpan            int32
+		indexA             int32
+		indexB             int32
+		bIdxB              int
+		bucketB            float64
+		deltaIndex         int32
+		lowerThanThreshold = true
+	)
+
+	for _, spanB := range spansB {
+		indexB += spanB.Offset
+		for j := 0; j < int(spanB.Length); j++ {
+			if lowerThanThreshold && IsExponentialSchema(schema) && getBoundExponential(indexB, schema) <= threshold {
+				goto nextLoop
+			}
+			lowerThanThreshold = false
+
+			bucketB = bucketsB[bIdxB]
+			if negative {
+				bucketB *= -1
+			}
+
+			if iSpan == -1 {
+				if len(spansA) == 0 || spansA[0].Offset > indexB {
+					// Add bucket before all others.
+					bucketsA = append(bucketsA, 0)
+					copy(bucketsA[1:], bucketsA)
+					bucketsA[0] = bucketB
+					bucketsC = append(bucketsC, 0)
+					copy(bucketsC[1:], bucketsC)
+					bucketsC[0] = 0
+					if len(spansA) > 0 && spansA[0].Offset == indexB+1 {
+						spansA[0].Length++
+						spansA[0].Offset--
+						goto nextLoop
+					}
+					spansA = append(spansA, Span{})
+					copy(spansA[1:], spansA)
+					spansA[0] = Span{Offset: indexB, Length: 1}
+					if len(spansA) > 1 {
+						// Convert the absolute offset in the formerly
+						// first span to a relative offset.
+						spansA[1].Offset -= indexB + 1
+					}
+					goto nextLoop
+				} else if spansA[0].Offset == indexB {
+					// Just add to first bucket.
+					bucketsA[0], bucketsC[0] = kahanSumInc(bucketB, bucketsA[0], bucketsC[0])
+					goto nextLoop
+				}
+				iSpan, iBucket, iInSpan = 0, 0, 0
+				indexA = spansA[0].Offset
+			}
+			deltaIndex = indexB - indexA
+			for {
+				remainingInSpan := int32(spansA[iSpan].Length) - iInSpan
+				if deltaIndex < remainingInSpan {
+					// Bucket is in current span.
+					iBucket += int(deltaIndex)
+					iInSpan += deltaIndex
+					bucketsA[iBucket], bucketsC[iBucket] = kahanSumInc(bucketB, bucketsA[iBucket], bucketsC[iBucket])
+					break
+				}
+				deltaIndex -= remainingInSpan
+				iBucket += int(remainingInSpan)
+				iSpan++
+				if iSpan == len(spansA) || deltaIndex < spansA[iSpan].Offset {
+					// Bucket is in gap behind previous span (or there are no further spans).
+					bucketsA = append(bucketsA, 0)
+					copy(bucketsA[iBucket+1:], bucketsA[iBucket:])
+					bucketsA[iBucket] = bucketB
+					bucketsC = append(bucketsC, 0)
+					copy(bucketsC[iBucket+1:], bucketsC[iBucket:])
+					bucketsC[iBucket] = 0
+					switch {
+					case deltaIndex == 0:
+						// Directly after previous span, extend previous span.
+						if iSpan < len(spansA) {
+							spansA[iSpan].Offset--
+						}
+						iSpan--
+						iInSpan = int32(spansA[iSpan].Length)
+						spansA[iSpan].Length++
+						// spansC[iSpan].Length++
+						goto nextLoop
+					case iSpan < len(spansA) && deltaIndex == spansA[iSpan].Offset-1:
+						// Directly before next span, extend next span.
+						iInSpan = 0
+						spansA[iSpan].Offset--
+						spansA[iSpan].Length++
+						goto nextLoop
+					default:
+						// No next span, or next span is not directly adjacent to new bucket.
+						// Add new span.
+						iInSpan = 0
+						if iSpan < len(spansA) {
+							spansA[iSpan].Offset -= deltaIndex + 1
+						}
+						spansA = append(spansA, Span{})
+						copy(spansA[iSpan+1:], spansA[iSpan:])
+						spansA[iSpan] = Span{Length: 1, Offset: deltaIndex}
+						goto nextLoop
+					}
+				} else {
+					// Try start of next span.
+					deltaIndex -= spansA[iSpan].Offset
+					iInSpan = 0
+				}
+			}
+
+		nextLoop:
+			indexA = indexB
+			indexB++
+			bIdxB++
+		}
+	}
+
+	return spansA, bucketsA, bucketsC
+}
+
 // floatBucketsMatch compares bucket values of two float histograms using binary float comparison
 // and returns true if all values match.
 func floatBucketsMatch(b1, b2 []float64) bool {
