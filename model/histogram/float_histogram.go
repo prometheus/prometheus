@@ -1691,3 +1691,22 @@ func (h *FloatHistogram) adjustCounterReset(other *FloatHistogram) (counterReset
 	}
 	return false
 }
+
+// NewCompensationHistogram initializes a new compensation histogram that can be used
+// alongside the current FloatHistogram in Kahan summation.
+// The compensation histogram is structured to match the receiving histogram's bucket
+// layout including its schema and custom values, and it shares spans with the receiving histogram.
+// However, the bucket values in the compensation histogram are initialized to zero.
+func (h *FloatHistogram) NewCompensationHistogram() *FloatHistogram {
+	c := &FloatHistogram{
+		Schema:          h.Schema,
+		CustomValues:    h.CustomValues,
+		PositiveBuckets: make([]float64, len(h.PositiveBuckets)),
+		PositiveSpans:   h.PositiveSpans,
+		NegativeSpans:   h.NegativeSpans,
+	}
+	if !h.UsesCustomBuckets() {
+		c.NegativeBuckets = make([]float64, len(h.NegativeBuckets))
+	}
+	return c
+}
