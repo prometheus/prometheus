@@ -24,6 +24,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/timestamp"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
 	"golang.org/x/sync/semaphore"
@@ -88,6 +91,32 @@ func DefaultEvalIterationFunc(ctx context.Context, g *Group, evalTimestamp time.
 	g.setLastEvalTimestamp(evalTimestamp)
 }
 
+// ExemplarQueryFunc extracts exemplars for a given expression and time range.
+type ExemplarQueryFunc func(ctx context.Context, expr parser.Expr, ts time.Time, interval time.Duration) ([]exemplar.QueryResult, error)
+
+// ExemplarQuerierQueryFunc creates a new ExemplarQueryFunc from given exemplar storage.
+func ExemplarQuerierQueryFunc(q storage.ExemplarQueryable) ExemplarQueryFunc {
+	return func(ctx context.Context, expr parser.Expr, ts time.Time, interval time.Duration) ([]exemplar.QueryResult, error) {
+		selectors := parser.ExtractSelectors(expr)
+		if len(selectors) < 1 {
+			return nil, errors.New("no selectors found on exemplar query")
+		}
+
+		eq, err := q.ExemplarQuerier(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		// Query all the raw exemplars that match the query
+		ex, err := eq.Select(timestamp.FromTime(ts.Add(-interval)), timestamp.FromTime(ts), selectors...)
+		if err != nil {
+			return nil, err
+		}
+
+		return ex, nil
+	}
+}
+
 // The Manager manages recording and alerting rules.
 type Manager struct {
 	opts     *ManagerOptions
@@ -107,6 +136,7 @@ type NotifyFunc func(ctx context.Context, expr string, alerts ...*Alert)
 type ManagerOptions struct {
 	ExternalURL               *url.URL
 	QueryFunc                 QueryFunc
+	ExemplarQueryFunc         ExemplarQueryFunc
 	NotifyFunc                NotifyFunc
 	Context                   context.Context
 	Appendable                storage.Appendable
