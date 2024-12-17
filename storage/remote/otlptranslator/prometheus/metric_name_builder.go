@@ -129,14 +129,7 @@ func normalizeName(metric pmetric.Metric, namespace string) string {
 	)
 
 	mainUnitSuffix, perUnitSuffix := buildUnitSuffixes(metric.Unit())
-	mainUnitSuffix = cleanUpUnit(mainUnitSuffix)
-	perUnitSuffix = cleanUpUnit(perUnitSuffix)
-	if mainUnitSuffix != "" && !slices.Contains(nameTokens, mainUnitSuffix) {
-		nameTokens = append(nameTokens, mainUnitSuffix)
-	}
-	if perUnitSuffix != "" && !slices.Contains(nameTokens, perUnitSuffix) {
-		nameTokens = append(nameTokens, perUnitSuffix)
-	}
+	nameTokens = addUnitTokens(nameTokens, cleanUpUnit(mainUnitSuffix), cleanUpUnit(perUnitSuffix))
 
 	// Append _total for Counters
 	if metric.Type() == pmetric.MetricTypeSum && metric.Sum().IsMonotonic() {
@@ -166,6 +159,31 @@ func normalizeName(metric pmetric.Metric, namespace string) string {
 	}
 
 	return normalizedName
+}
+
+// addUnitTokens will add the suffixes to the nameTokens if they are not already present.
+// It will also remove trailing underscores from the main suffix to avoid double underscores
+// when joining the tokens.
+func addUnitTokens(nameTokens []string, mainUnitSuffix, perUnitSuffix string) []string {
+	if slices.Contains(nameTokens, mainUnitSuffix) {
+		mainUnitSuffix = ""
+	}
+
+	if slices.Contains(nameTokens, perUnitSuffix) {
+		perUnitSuffix = ""
+	}
+
+	if perUnitSuffix != "" {
+		mainUnitSuffix = strings.TrimSuffix(mainUnitSuffix, "_")
+	}
+
+	if mainUnitSuffix != "" {
+		nameTokens = append(nameTokens, mainUnitSuffix)
+	}
+	if perUnitSuffix != "" {
+		nameTokens = append(nameTokens, perUnitSuffix)
+	}
+	return nameTokens
 }
 
 // cleanUpUnit cleans up unit so it matches model.LabelNameRE.
@@ -248,20 +266,23 @@ func BuildMetricName(metric pmetric.Metric, namespace string, addMetricSuffixes 
 	return metricName
 }
 
+// buildUnitSuffixes builds the main and per unit suffixes for the specified unit
+// but doesn't do any special character transformation to accommodate Prometheus naming conventions.
+// Removing trailing underscores or appending suffixes is done in the caller.
 func buildUnitSuffixes(unit string) (mainUnitSuffix, perUnitSuffix string) {
 	// Split unit at the '/' if any
 	unitTokens := strings.SplitN(unit, "/", 2)
 
 	if len(unitTokens) > 0 {
 		// Main unit
-		// Append if not blank and doesn't contain '{}'
+		// Update if not blank and doesn't contain '{}'
 		mainUnitOTel := strings.TrimSpace(unitTokens[0])
 		if mainUnitOTel != "" && !strings.ContainsAny(mainUnitOTel, "{}") {
 			mainUnitSuffix = unitMapGetOrDefault(mainUnitOTel)
 		}
 
 		// Per unit
-		// Append if not blank and doesn't contain '{}'
+		// Update if not blank and doesn't contain '{}'
 		if len(unitTokens) > 1 && unitTokens[1] != "" {
 			perUnitOTel := strings.TrimSpace(unitTokens[1])
 			if perUnitOTel != "" && !strings.ContainsAny(perUnitOTel, "{}") {
@@ -269,7 +290,6 @@ func buildUnitSuffixes(unit string) (mainUnitSuffix, perUnitSuffix string) {
 			}
 			if perUnitSuffix != "" {
 				perUnitSuffix = "per_" + perUnitSuffix
-				mainUnitSuffix = strings.TrimSuffix(mainUnitSuffix, "_")
 			}
 		}
 	}

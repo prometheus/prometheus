@@ -139,6 +139,49 @@ func TestPerUnitMapGetOrDefault(t *testing.T) {
 	require.Equal(t, "invalid", perUnitMapGetOrDefault("invalid"))
 }
 
+func TestBuildUnitSuffixes(t *testing.T) {
+	tests := []struct {
+		unit         string
+		expectedMain string
+		expectedPer  string
+	}{
+		{"", "", ""},
+		{"s", "seconds", ""},
+		{"By/s", "bytes", "per_second"},
+		{"requests/m", "requests", "per_minute"},
+		{"{invalid}/second", "", "per_second"},
+		{"bytes/{invalid}", "bytes", ""},
+	}
+
+	for _, test := range tests {
+		mainUnitSuffix, perUnitSuffix := buildUnitSuffixes(test.unit)
+		require.Equal(t, test.expectedMain, mainUnitSuffix)
+		require.Equal(t, test.expectedPer, perUnitSuffix)
+	}
+}
+
+func TestAddUnitTokens(t *testing.T) {
+	tests := []struct {
+		nameTokens     []string
+		mainUnitSuffix string
+		perUnitSuffix  string
+		expected       []string
+	}{
+		{[]string{}, "", "", []string{}},
+		{[]string{"token1"}, "main", "", []string{"token1", "main"}},
+		{[]string{"token1"}, "", "per", []string{"token1", "per"}},
+		{[]string{"token1"}, "main", "per", []string{"token1", "main", "per"}},
+		{[]string{"token1", "per"}, "main", "per", []string{"token1", "per", "main"}},
+		{[]string{"token1", "main"}, "main", "per", []string{"token1", "main", "per"}},
+		{[]string{"token1"}, "main_", "per", []string{"token1", "main", "per"}},
+	}
+
+	for _, test := range tests {
+		result := addUnitTokens(test.nameTokens, test.mainUnitSuffix, test.perUnitSuffix)
+		require.Equal(t, test.expected, result)
+	}
+}
+
 func TestRemoveItem(t *testing.T) {
 	require.Equal(t, []string{}, removeItem([]string{}, "test"))
 	require.Equal(t, []string{}, removeItem([]string{}, ""))
