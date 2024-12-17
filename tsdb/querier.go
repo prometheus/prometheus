@@ -198,7 +198,7 @@ func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matc
 		k, v := index.AllPostingsKey()
 		return ix.Postings(ctx, k, v)
 	}
-	ms = joinNegatedMatchers(ms)
+	ms = mergeNegatedMatchers(ms)
 
 	var its, notIts []index.Postings
 	// See which label must be non-empty.
@@ -466,7 +466,7 @@ func labelNamesWithMatchers(ctx context.Context, r IndexReader, matchers ...*lab
 	return r.LabelNamesFor(ctx, p)
 }
 
-func joinNegatedMatchers(ms []*labels.Matcher) []*labels.Matcher {
+func mergeNegatedMatchers(ms []*labels.Matcher) []*labels.Matcher {
 	labelNot := make(map[string]int, len(ms))
 	for _, m := range ms {
 		if m.Type == labels.MatchNotEqual || m.Type == labels.MatchNotRegexp {

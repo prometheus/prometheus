@@ -3828,7 +3828,7 @@ func TestMergeQuerierConcurrentSelectMatchers(t *testing.T) {
 	require.Equal(t, originalMatchers, matchers)
 }
 
-func TestJoinNegatedMatchers(t *testing.T) {
+func TestMergeNegatedMatchers(t *testing.T) {
 	for _, tc := range []struct {
 		in  string
 		out string
@@ -3857,7 +3857,7 @@ func TestJoinNegatedMatchers(t *testing.T) {
 		t.Run(tc.in, func(t *testing.T) {
 			ms, err := parser.ParseMetricSelector(tc.in)
 			require.NoError(t, err)
-			ms = joinNegatedMatchers(ms)
+			ms = mergeNegatedMatchers(ms)
 			got := (&parser.VectorSelector{LabelMatchers: ms}).String()
 			require.Equal(t, tc.out, got)
 		})
