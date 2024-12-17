@@ -15,6 +15,8 @@ env:
   PR_NUMBER: ${{ github.event.client_payload.PR_NUMBER }}
   PROVIDER: gke
   RELEASE: ${{ github.event.client_payload.RELEASE }}
+  BENCHMARK_VERSION: ${{ github.event.client_payload.BENCHMARK_VERSION }}
+  BENCHMARK_DIRECTORY: ${{ github.event.client_payload.BENCHMARK_DIRECTORY }}
   ZONE: europe-west3-a
 jobs:
   benchmark_start:
