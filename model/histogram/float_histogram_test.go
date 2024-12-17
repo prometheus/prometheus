@@ -2514,6 +2514,8 @@ func TestFloatHistogramAdd(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			testHistogramAdd(t, c.in1, c.in2, c.expected, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
 			testHistogramAdd(t, c.in2, c.in1, c.expected, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
+			testHistogramKahanAdd(t, c.in1, c.in2, c.expected, c.expErrMsg)
+			testHistogramKahanAdd(t, c.in2, c.in1, c.expected, c.expErrMsg)
 		})
 	}
 }
@@ -2542,6 +2544,51 @@ func testHistogramAdd(t *testing.T, a, b, expected *FloatHistogram, expErrMsg st
 	// Check that the warnings are correct.
 	require.Equal(t, expCounterResetCollision, counterResetCollision)
 	require.Equal(t, expNHCBBoundsReconciled, nhcbBoundsReconciled)
+
+	if expected != nil {
+		res.Compact(0)
+		expectedCopy.Compact(0)
+
+		require.Equal(t, expectedCopy, res)
+
+		// Has it also happened in-place?
+		require.Equal(t, expectedCopy, aCopy)
+
+		// Check that the argument was not mutated.
+		require.Equal(t, b, bCopy)
+	}
+}
+
+func testHistogramKahanAdd(t *testing.T, a, b, expected *FloatHistogram, expErrMsg string) {
+	var (
+		aCopy        = a.Copy()
+		bCopy        = b.Copy()
+		expectedCopy *FloatHistogram
+	)
+
+	if expected != nil {
+		expectedCopy = expected.Copy()
+	}
+
+	var res *FloatHistogram
+	comp := aCopy.NewCompensationHistogram()
+	var err error
+
+	res, comp, err = aCopy.KahanAdd(bCopy, comp)
+	if expErrMsg != "" {
+		require.EqualError(t, err, expErrMsg)
+	} else {
+		require.NoError(t, err)
+	}
+
+	if res != nil {
+		res, _, err = res.Add(comp)
+		if expErrMsg != "" {
+			require.EqualError(t, err, expErrMsg)
+		} else {
+			require.NoError(t, err)
+		}
+	}
 
 	if expected != nil {
 		res.Compact(0)
@@ -2734,6 +2781,7 @@ func TestFloatHistogramSub(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			testFloatHistogramSub(t, c.in1, c.in2, c.expected, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
+			testHistogramKahanSub(t, c.in1, c.in2, c.expected, c.expErrMsg)
 
 			var expectedNegative *FloatHistogram
 			if c.expected != nil {
@@ -2744,6 +2792,7 @@ func TestFloatHistogramSub(t *testing.T) {
 				expectedNegative.CounterResetHint = c.expected.CounterResetHint
 			}
 			testFloatHistogramSub(t, c.in2, c.in1, expectedNegative, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
+			testHistogramKahanSub(t, c.in2, c.in1, expectedNegative, c.expErrMsg)
 		})
 	}
 }
@@ -2784,6 +2833,51 @@ func testFloatHistogramSub(t *testing.T, a, b, expected *FloatHistogram, expErrM
 		// Check that the warnings are correct.
 		require.Equal(t, expCounterResetCollision, counterResetCollision)
 		require.Equal(t, expNHCBBoundsReconciled, nhcbBoundsReconciled)
+	}
+}
+
+func testHistogramKahanSub(t *testing.T, a, b, expected *FloatHistogram, expErrMsg string) {
+	var (
+		aCopy        = a.Copy()
+		bCopy        = b.Copy()
+		expectedCopy *FloatHistogram
+	)
+
+	if expected != nil {
+		expectedCopy = expected.Copy()
+	}
+
+	var res *FloatHistogram
+	comp := aCopy.NewCompensationHistogram()
+	var err error
+
+	res, comp, err = aCopy.KahanSub(bCopy, comp)
+	if expErrMsg != "" {
+		require.EqualError(t, err, expErrMsg)
+	} else {
+		require.NoError(t, err)
+	}
+
+	if res != nil {
+		res, _, err = res.Sub(comp)
+		if expErrMsg != "" {
+			require.EqualError(t, err, expErrMsg)
+		} else {
+			require.NoError(t, err)
+		}
+	}
+
+	if expected != nil {
+		res.Compact(0)
+		expectedCopy.Compact(0)
+
+		require.Equal(t, expectedCopy, res)
+
+		// Has it also happened in-place?
+		require.Equal(t, expectedCopy, aCopy)
+
+		// Check that the argument was not mutated.
+		require.Equal(t, b, bCopy)
 	}
 }
 
