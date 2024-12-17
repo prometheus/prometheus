@@ -408,6 +408,38 @@ func (h *FloatHistogram) Add(other *FloatHistogram) (res *FloatHistogram, counte
 	return h, counterResetCollision, nhcbBoundsReconciled, nil
 }
 
+// kahanSumInc performs addition of two floating-point numbers using the Kahan summation algorithm.
+func kahanSumInc(inc, sum, c float64) (newSum, newC float64) {
+	t := sum + inc
+	switch {
+	case math.IsInf(t, 0):
+		c = 0
+
+	// Using Neumaier improvement, swap if next term larger than sum.
+	case math.Abs(sum) >= math.Abs(inc):
+		c += (sum - t) + inc
+	default:
+		c += (inc - t) + sum
+	}
+	return t, c
+}
+
+// kahanSumDec performs subtraction of one floating-point number from another using the Kahan summation algorithm.
+func kahanSumDec(dec, sum, c float64) (newSum, newC float64) {
+	t := sum - dec
+	switch {
+	case math.IsInf(t, 0):
+		c = 0
+
+	// Using Neumaier improvement, swap if next term larger than sum.
+	case math.Abs(sum) >= math.Abs(dec):
+		c += (sum - t) - dec
+	default:
+		c += (-dec - t) + sum
+	}
+	return t, c
+}
+
 // Sub works like Add but subtracts the other histogram. It uses the same logic
 // to adjust the counter reset hint. This is useful where this method is used
 // for incremental mean calculation. However, if it is used for the actual "-"
