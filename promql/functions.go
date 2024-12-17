@@ -372,7 +372,7 @@ func funcDoubleExponentialSmoothing(vals []parser.Value, args parser.Expressions
 
 	// Add info annotation for ignoring histogram.
 	if len(samples.Histograms) > 0 {
-		annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("deriv", args.PositionRange()))
+		annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("double_exponential_smoothing", args.PositionRange()))
 	}
 
 	l := len(samples.Floats)
@@ -1140,7 +1140,7 @@ func funcPredictLinear(vals []parser.Value, args parser.Expressions, enh *EvalNo
 	var annos annotations.Annotations
 	// Add info annotation for ignoring histogram.
 	if len(samples.Histograms) > 0 {
-		annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("deriv", args.PositionRange()))
+		annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("predict_linear", args.PositionRange()))
 	}
 	// No sense in trying to predict anything without at least two points.
 	// Drop this Vector element.
