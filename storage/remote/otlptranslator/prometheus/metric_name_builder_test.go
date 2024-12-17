@@ -161,6 +161,7 @@ func TestBuildCompliantMetricNameWithSuffixes(t *testing.T) {
 	// Slashes in units are converted.
 	require.Equal(t, "system_io_foo_per_bar_total", BuildCompliantMetricName(createCounter("system.io", "foo/bar"), "", true))
 	require.Equal(t, "metric_with_foreign_characters_total", BuildCompliantMetricName(createCounter("metric_with_字符_foreign_characters", ""), "", true))
+	require.Equal(t, "temperature_C", BuildCompliantMetricName(createGauge("temperature", "%*()°C"), "", true)) // Removes non aplhanumerical characters from units
 }
 
 func TestBuildCompliantMetricNameWithoutSuffixes(t *testing.T) {
@@ -188,6 +189,7 @@ func TestBuildMetricNameWithSuffixes(t *testing.T) {
 	// Slashes in units are converted.
 	require.Equal(t, "system.io_foo_per_bar_total", BuildMetricName(createCounter("system.io", "foo/bar"), "", true))
 	require.Equal(t, "metric_with_字符_foreign_characters_total", BuildMetricName(createCounter("metric_with_字符_foreign_characters", ""), "", true))
+	require.Equal(t, "temperature_%*()°C", BuildMetricName(createGauge("temperature", "%*()°C"), "", true)) // Keeps the all characters in unit
 
 	// Tests below show weird interactions that users can have with the metric names.
 	// With BuildMetricName we don't check if units/type suffixes are already present in the metric name, we always add them.

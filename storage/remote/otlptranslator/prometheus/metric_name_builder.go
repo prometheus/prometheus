@@ -120,12 +120,17 @@ var (
 
 // Build a normalized name for the specified metric.
 func normalizeName(metric pmetric.Metric, namespace string) string {
-	var nameTokens = strings.FieldsFunc(
+	// Split metric name into "tokens" (of supported metric name runes).
+	// Note that this has the side effect of replacing multiple consecutive underscores with a single underscore.
+	// This is part of the OTel to Prometheus specification: https://github.com/open-telemetry/opentelemetry-specification/blob/v1.38.0/specification/compatibility/prometheus_and_openmetrics.md#otlp-metric-points-to-prometheus.
+	nameTokens := strings.FieldsFunc(
 		metric.Name(),
 		func(r rune) bool { return nonMetricNameCharRE.MatchString(string(r)) },
 	)
 
 	mainUnitSuffix, perUnitSuffix := buildUnitSuffixes(metric.Unit())
+	mainUnitSuffix = cleanUpUnit(mainUnitSuffix)
+	perUnitSuffix = cleanUpUnit(perUnitSuffix)
 	if mainUnitSuffix != "" && !slices.Contains(nameTokens, mainUnitSuffix) {
 		nameTokens = append(nameTokens, mainUnitSuffix)
 	}
@@ -248,11 +253,15 @@ func buildUnitSuffixes(unit string) (mainUnitSuffix, perUnitSuffix string) {
 	unitTokens := strings.SplitN(unit, "/", 2)
 
 	if len(unitTokens) > 0 {
+		// Main unit
+		// Append if not blank and doesn't contain '{}'
 		mainUnitOTel := strings.TrimSpace(unitTokens[0])
 		if mainUnitOTel != "" && !strings.ContainsAny(mainUnitOTel, "{}") {
-			mainUnitSuffix = cleanUpUnit(unitMapGetOrDefault(mainUnitOTel))
+			mainUnitSuffix = unitMapGetOrDefault(mainUnitOTel)
 		}
 
+		// Per unit
+		// Append if not blank and doesn't contain '{}'
 		if len(unitTokens) > 1 && unitTokens[1] != "" {
 			perUnitOTel := strings.TrimSpace(unitTokens[1])
 			if perUnitOTel != "" && !strings.ContainsAny(perUnitOTel, "{}") {
@@ -260,11 +269,8 @@ func buildUnitSuffixes(unit string) (mainUnitSuffix, perUnitSuffix string) {
 			}
 			if perUnitSuffix != "" {
 				perUnitSuffix = "per_" + perUnitSuffix
+				mainUnitSuffix = strings.TrimSuffix(mainUnitSuffix, "_")
 			}
-		}
-
-		if perUnitSuffix != "" {
-			mainUnitSuffix = strings.TrimSuffix(mainUnitSuffix, "_")
 		}
 	}
 
