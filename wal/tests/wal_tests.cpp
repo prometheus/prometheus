@@ -422,7 +422,7 @@ TEST_F(WalFixture, Snapshots) {
   reader_sbuf1 << decoder.label_sets().checkpoint();
   reader_sbuf2 << decoder2.label_sets().checkpoint();
   EXPECT_EQ(reader_sbuf1.view(), reader_sbuf2.view());
-  EXPECT_EQ(decoder.decoders(), decoder2.decoders());
+  EXPECT_EQ(decoder.sample_decoder().gorilla(), decoder2.sample_decoder().gorilla());
 }
 
 TEST_F(WalFixture, BasicEncoderMany) {
@@ -541,8 +541,8 @@ TEST_F(CreateBasicEncoderFromBasicDecoderFixture, Test) {
   encode_decode_segment(Sample(1, 1.0), kLabelSet1, encoder1_, {&decoder1_, &decoder2_}, nop_handler);
   encode_decode_segment(Sample(2, 2.0), kLabelSet1, encoder1_, {&decoder1_, &decoder2_}, nop_handler);
 
-  Encoder encoder2(decoder1_.gorilla(), decoder_lss1_, decoder1_.shard_id(), decoder1_.pow_two_of_total_shards(), decoder1_.last_processed_segment() + 1,
-                   decoder1_.ts_base());
+  Encoder encoder2(decoder1_.sample_decoder().gorilla(), decoder_lss1_, decoder1_.shard_id(), decoder1_.pow_two_of_total_shards(),
+                   decoder1_.last_processed_segment() + 1, decoder1_.sample_decoder().timestamp_base);
 
   static const Sample kThirdSample(3, 3.0);
   DecodedPoint third_point{};

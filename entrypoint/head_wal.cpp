@@ -45,8 +45,9 @@ extern "C" void prompp_head_wal_encoder_ctor_from_decoder(void* args, void* res)
 
   const auto& generic_decoder = static_cast<Arguments*>(args)->decoder;
   const auto& decoder = generic_decoder->decoder();
-  new (res) Result{.encoder = std::make_unique<Encoder>(decoder.gorilla(), generic_decoder->label_set(), decoder.shard_id(), decoder.pow_two_of_total_shards(),
-                                                        decoder.last_processed_segment() + 1, decoder.ts_base())};
+  new (res) Result{.encoder = std::make_unique<Encoder>(decoder.sample_decoder().gorilla(), generic_decoder->label_set(), decoder.shard_id(),
+                                                        decoder.pow_two_of_total_shards(), decoder.last_processed_segment() + 1,
+                                                        decoder.sample_decoder().timestamp_base)};
 }
 
 extern "C" void prompp_head_wal_encoder_dtor(void* args) {
