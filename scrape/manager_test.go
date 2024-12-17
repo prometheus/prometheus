@@ -458,13 +458,11 @@ func TestPopulateLabels(t *testing.T) {
 			require.EqualError(t, err, c.err)
 		} else {
 			require.NoError(t, err)
-		}
-		require.Equal(t, c.in, in)
-		testutil.RequireEqual(t, c.res, res)
-		if err == nil {
+			testutil.RequireEqual(t, c.res, res)
 			PopulateDiscoveredLabels(lb, c.cfg, c.in, nil)
 			testutil.RequireEqual(t, c.resOrig, lb.Labels())
 		}
+		require.Equal(t, c.in, in) // Check this wasn't altered by PopulateLabels().
 	}
 }
 
