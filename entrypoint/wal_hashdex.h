@@ -48,6 +48,22 @@ void prompp_wal_protobuf_hashdex_dtor(void* args);
 void prompp_wal_protobuf_hashdex_presharding(void* args, void* res);
 
 /**
+ * @brief Get parsed metadata
+ *
+ * @param args {
+ *     hashdex uintptr
+ * }
+ * @param res {
+ *     metadata []struct {
+ *        metric_name string
+ *        text string
+ *        type uint32
+ *     }
+ * }
+ */
+void prompp_wal_protobuf_hashdex_get_metadata(void* args, void* res);
+
+/**
  * @brief Construct a new WAL GoModelHashdex
  *
  * @param args { // limits for incoming data
@@ -124,7 +140,7 @@ void prompp_wal_prometheus_scraper_hashdex_ctor(void* res);
 void prompp_wal_prometheus_scraper_hashdex_parse(void* args, void* res);
 
 /**
- * @brief Parse scraped buffer
+ * @brief Get scraped metadata
  *
  * @param args {
  *     hashdex uintptr
@@ -172,7 +188,7 @@ void prompp_wal_open_metrics_scraper_hashdex_ctor(void* res);
 void prompp_wal_open_metrics_scraper_hashdex_parse(void* args, void* res);
 
 /**
- * @brief Parse scraped buffer
+ * @brief Get scraped metadata
  *
  * @param args {
  *     hashdex uintptr

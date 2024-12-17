@@ -9,9 +9,40 @@ using PromPP::WAL::hashdex::scraper::OpenMetricsScraper;
 using PromPP::WAL::hashdex::scraper::PrometheusScraper;
 using ScraperError = PromPP::WAL::hashdex::scraper::Error;
 
+struct GoMetadata {
+  PromPP::Primitives::Go::String metric_name;
+  PromPP::Primitives::Go::String text;
+  uint32_t type;
+
+  template <class Metadata>
+  explicit GoMetadata(const Metadata& metadata) : metric_name(metadata.metric_name()), text(metadata.text()), type(static_cast<uint32_t>(metadata.type())) {}
+
+  explicit GoMetadata(const PromPP::WAL::hashdex::Metadata& metadata)
+      : metric_name(metadata.metric_name), text(metadata.text), type(static_cast<uint32_t>(metadata.type)) {}
+};
+
+template <class HashdexType>
+void get_metadata(void* args, void* res) {
+  struct Arguments {
+    HashdexVariant* hashdex;
+  };
+  struct Result {
+    PromPP::Primitives::Go::Slice<GoMetadata> metadata;
+  };
+
+  const auto in = static_cast<Arguments*>(args);
+  const auto out = static_cast<Result*>(res);
+
+  const auto metadata = std::get<HashdexType>(*in->hashdex).metadata();
+  out->metadata.reserve(metadata.size());
+  for (auto& m : metadata) {
+    out->metadata.emplace_back(m);
+  }
+}
+
 extern "C" void prompp_wal_protobuf_hashdex_ctor(void* args, void* res) {
   struct Arguments {
-    PromPP::WAL::HashdexLimits limits;
+    PromPP::WAL::hashdex::Limits limits;
   };
   struct Result {
     HashdexVariant* hashdex;
@@ -49,8 +80,8 @@ extern "C" void prompp_wal_protobuf_hashdex_presharding(void* args, void* res) {
   Result* out = new (res) Result();
 
   try {
-    auto& hashdex = std::get<PromPP::WAL::ProtobufHashdex>(*in->hashdex_variant);
-    hashdex.presharding(in->protobuf.data(), in->protobuf.size());
+    auto& hashdex = std::get<PromPP::WAL::hashdex::Protobuf>(*in->hashdex_variant);
+    hashdex.presharding(static_cast<std::string_view>(in->protobuf));
     auto cluster = hashdex.cluster();
     out->cluster.reset_to(cluster.data(), cluster.size());
     auto replica = hashdex.replica();
@@ -61,9 +92,13 @@ extern "C" void prompp_wal_protobuf_hashdex_presharding(void* args, void* res) {
   }
 }
 
+extern "C" void prompp_wal_protobuf_hashdex_get_metadata(void* args, void* res) {
+  get_metadata<PromPP::WAL::hashdex::Protobuf>(args, res);
+}
+
 extern "C" void prompp_wal_go_model_hashdex_ctor(void* args, void* res) {
   struct Arguments {
-    PromPP::WAL::HashdexLimits limits;
+    PromPP::WAL::hashdex::Limits limits;
   };
   struct Result {
     HashdexVariant* hashdex;
@@ -136,30 +171,7 @@ PROMPP_ALWAYS_INLINE void scraper_hashdex_parse(void* args, void* res) {
 
 template <class Scraper>
 PROMPP_ALWAYS_INLINE void scraper_hashdex_get_metadata(void* args, void* res) {
-  struct Metadata {
-    PromPP::Primitives::Go::String metric_name;
-    PromPP::Primitives::Go::String text;
-    uint32_t type;
-
-    explicit Metadata(const typename Scraper::Metadata& metadata)
-        : metric_name(metadata.metric_name()), text(metadata.text()), type(static_cast<uint32_t>(metadata.type())) {}
-  };
-
-  struct Arguments {
-    HashdexVariant* hashdex;
-  };
-  struct Result {
-    PromPP::Primitives::Go::Slice<Metadata> metadata;
-  };
-
-  const auto in = static_cast<Arguments*>(args);
-  const auto out = static_cast<Result*>(res);
-
-  const auto metadata = std::get<Scraper>(*in->hashdex).metadata();
-  out->metadata.reserve(metadata.size());
-  for (auto& m : metadata) {
-    out->metadata.emplace_back(m);
-  }
+  get_metadata<Scraper>(args, res);
 }
 
 extern "C" void prompp_wal_prometheus_scraper_hashdex_ctor(void* res) {
