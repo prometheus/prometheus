@@ -280,7 +280,7 @@ eval_info instant at 100m deriv(testcounter_reset_middle_mix[110m])
 	{} 0.010606060606060607
 
 eval_info instant at 50m deriv(http_requests_histogram[60m])
-    #empty
+	#empty
 
 # deriv should return NaN in case of +Inf or -Inf found.
 eval instant at 100m deriv(http_requests_inf[100m])
