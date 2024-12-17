@@ -74,9 +74,7 @@ type Group struct {
 	// defaults to DefaultEvalIterationFunc.
 	evalIterationFunc GroupEvalIterationFunc
 
-	// concurrencyController controls the rules evaluation concurrency.
-	concurrencyController RuleConcurrencyController
-	appOpts               *storage.AppendOptions
+	appOpts *storage.AppendOptions
 }
 
 // GroupEvalIterationFunc is used to implement and extend rule group
@@ -126,33 +124,27 @@ func NewGroup(o GroupOptions) *Group {
 		evalIterationFunc = DefaultEvalIterationFunc
 	}
 
-	concurrencyController := opts.RuleConcurrencyController
-	if concurrencyController == nil {
-		concurrencyController = sequentialRuleEvalController{}
-	}
-
 	if opts.Logger == nil {
 		opts.Logger = promslog.NewNopLogger()
 	}
 
 	return &Group{
-		name:                  o.Name,
-		file:                  o.File,
-		interval:              o.Interval,
-		queryOffset:           o.QueryOffset,
-		limit:                 o.Limit,
-		rules:                 o.Rules,
-		shouldRestore:         o.ShouldRestore,
-		opts:                  opts,
-		seriesInPreviousEval:  make([]map[string]labels.Labels, len(o.Rules)),
-		done:                  make(chan struct{}),
-		managerDone:           o.done,
-		terminated:            make(chan struct{}),
-		logger:                opts.Logger.With("file", o.File, "group", o.Name),
-		metrics:               metrics,
-		evalIterationFunc:     evalIterationFunc,
-		concurrencyController: concurrencyController,
-		appOpts:               &storage.AppendOptions{DiscardOutOfOrder: true},
+		name:                 o.Name,
+		file:                 o.File,
+		interval:             o.Interval,
+		queryOffset:          o.QueryOffset,
+		limit:                o.Limit,
+		rules:                o.Rules,
+		shouldRestore:        o.ShouldRestore,
+		opts:                 opts,
+		seriesInPreviousEval: make([]map[string]labels.Labels, len(o.Rules)),
+		done:                 make(chan struct{}),
+		managerDone:          o.done,
+		terminated:           make(chan struct{}),
+		logger:               opts.Logger.With("file", o.File, "group", o.Name),
+		metrics:              metrics,
+		evalIterationFunc:    evalIterationFunc,
+		appOpts:              &storage.AppendOptions{DiscardOutOfOrder: true},
 	}
 }
 
@@ -647,25 +639,32 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 	}
 
 	var wg sync.WaitGroup
-	for i, rule := range g.rules {
-		select {
-		case <-g.done:
-			return
-		default:
-		}
-
-		if ctrl := g.concurrencyController; ctrl.Allow(ctx, g, rule) {
-			wg.Add(1)
-
-			go eval(i, rule, func() {
-				wg.Done()
-				ctrl.Done(ctx)
-			})
-		} else {
-			eval(i, rule, nil)
-		}
+	ctrl := g.opts.RuleConcurrencyController
+	if ctrl == nil {
+		ctrl = sequentialRuleEvalController{}
 	}
-	wg.Wait()
+	for _, concurrentRules := range ctrl.Sort(ctx, g) {
+		for _, ruleIdx := range concurrentRules {
+			select {
+			case <-g.done:
+				return
+			default:
+			}
+
+			rule := g.rules[ruleIdx]
+			if len(concurrentRules) > 1 && ctrl.Allow(ctx, g, rule) {
+				wg.Add(1)
+
+				go eval(ruleIdx, rule, func() {
+					wg.Done()
+					ctrl.Done(ctx)
+				})
+			} else {
+				eval(ruleIdx, rule, nil)
+			}
+		}
+		wg.Wait()
+	}
 
 	g.metrics.GroupSamples.WithLabelValues(GroupKey(g.File(), g.Name())).Set(samplesTotal.Load())
 	g.cleanupStaleSeries(ctx, ts)

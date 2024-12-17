@@ -465,10 +465,18 @@ func (c ruleDependencyController) AnalyseRules(rules []Rule) {
 	}
 }
 
+// ConcurrentRules represents a slice of indexes of rules that can be evaluated concurrently.
+type ConcurrentRules []int
+
 // RuleConcurrencyController controls concurrency for rules that are safe to be evaluated concurrently.
 // Its purpose is to bound the amount of concurrency in rule evaluations to avoid overwhelming the Prometheus
 // server with additional query load. Concurrency is controlled globally, not on a per-group basis.
 type RuleConcurrencyController interface {
+	// Sort returns a slice of ConcurrentRules, which are batches of rules that can be evaluated concurrently.
+	// The rules are represented by their index in the original list of rules of the group.
+	// We need the original index to update the group's state and we don't want to mutate the group's rules.
+	Sort(ctx context.Context, group *Group) []ConcurrentRules
+
 	// Allow determines if the given rule is allowed to be evaluated concurrently.
 	// If Allow() returns true, then Done() must be called to release the acquired slot and corresponding cleanup is done.
 	// It is important that both *Group and Rule are not retained and only be used for the duration of the call.
@@ -490,26 +498,64 @@ func newRuleConcurrencyController(maxConcurrency int64) RuleConcurrencyControlle
 }
 
 func (c *concurrentRuleEvalController) Allow(_ context.Context, _ *Group, rule Rule) bool {
-	// To allow a rule to be executed concurrently, we need 3 conditions:
-	// 1. The rule must not have any rules that depend on it.
-	// 2. The rule itself must not depend on any other rules.
-	// 3. If 1 & 2 are true, then and only then we should try to acquire the concurrency slot.
-	if rule.NoDependentRules() && rule.NoDependencyRules() {
-		return c.sema.TryAcquire(1)
+	return c.sema.TryAcquire(1)
+}
+
+func (c *concurrentRuleEvalController) Sort(_ context.Context, g *Group) []ConcurrentRules {
+	// Using the rule dependency controller information (rules being identified as having no dependencies or no dependants),
+	// we can safely run the following concurrent groups:
+	// 1. Concurrently, all rules that have no dependencies
+	// 2. Sequentially, all rules that have both dependencies and dependants
+	// 3. Concurrently, all rules that have no dependants
+
+	var noDependencies []int
+	var dependenciesAndDependants []int
+	var noDependants []int
+
+	for i, r := range g.rules {
+		switch {
+		case r.NoDependencyRules():
+			noDependencies = append(noDependencies, i)
+		case !r.NoDependentRules() && !r.NoDependencyRules():
+			dependenciesAndDependants = append(dependenciesAndDependants, i)
+		case r.NoDependentRules():
+			noDependants = append(noDependants, i)
+		}
 	}
 
-	return false
+	var order []ConcurrentRules
+	if len(noDependencies) > 0 {
+		order = append(order, noDependencies)
+	}
+	for _, r := range dependenciesAndDependants {
+		order = append(order, []int{r})
+	}
+	if len(noDependants) > 0 {
+		order = append(order, noDependants)
+	}
+
+	return order
 }
 
 func (c *concurrentRuleEvalController) Done(_ context.Context) {
 	c.sema.Release(1)
 }
 
+var _ RuleConcurrencyController = &sequentialRuleEvalController{}
+
 // sequentialRuleEvalController is a RuleConcurrencyController that runs every rule sequentially.
 type sequentialRuleEvalController struct{}
 
 func (c sequentialRuleEvalController) Allow(_ context.Context, _ *Group, _ Rule) bool {
 	return false
+}
+
+func (c sequentialRuleEvalController) Sort(_ context.Context, g *Group) []ConcurrentRules {
+	order := make([]ConcurrentRules, len(g.rules))
+	for i := range g.rules {
+		order[i] = []int{i}
+	}
+	return order
 }
 
 func (c sequentialRuleEvalController) Done(_ context.Context) {}
