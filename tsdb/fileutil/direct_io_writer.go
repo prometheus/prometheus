@@ -26,12 +26,15 @@ import (
 )
 
 const (
-	requiredAlignment = 4096
-	blockSizeUnit     = requiredAlignment
-	defaultBufSize    = blockSizeUnit
+	// defaultAligment overestimated but it should be safe and we count on statx being available to more accuracy.
+	defaultAligment = 4096
+	defaultBufSize  = 4096
 )
 
-var errWriterInvalid = errors.New("the last flush resulted in an unaligned offset, the writer can no longer ensure contiguous writes")
+var (
+	errWriterInvalid     = errors.New("the last flush resulted in an unaligned offset, the writer can no longer ensure contiguous writes")
+	errStatxNotSupported = errors.New("the statx syscall with STATX_DIOALIGN is not supported. At least Linux kernel 6.1 is needed")
+)
 
 // directIOWriter is a specialized bufio.Writer that supports Direct IO to a file
 // by ensuring all alignment restrictions are satisfied.
@@ -46,27 +49,38 @@ type directIOWriter struct {
 	// offsetAlignmentGap represents the number of bytes needed to reach the nearest
 	// offset alignment, making Direct IO possible.
 	offsetAlignmentGap int
+	alignmentRqmts     *directIORqmts
 
 	err     error
 	invalid bool
 }
 
 func newDirectIOWriter(f *os.File, size int) (*directIOWriter, error) {
+	alignmentRqmts, err := fetchdirectIORqmts(f.Fd())
+	switch {
+	case errors.Is(err, errStatxNotSupported):
+		// Use the default requirements
+		alignmentRqmts = defaultDirectIORqmts()
+	case err != nil:
+		return nil, err
+	}
+
 	if size <= 0 {
 		size = defaultBufSize
 	}
-	if size%blockSizeUnit != 0 {
-		return nil, fmt.Errorf("size %d should be a multiple of %d", size, blockSizeUnit)
+	if size%alignmentRqmts.offsetAlign != 0 {
+		return nil, fmt.Errorf("size %d should be a multiple of %d", size, alignmentRqmts.offsetAlign)
 	}
-	gap, err := checkInitialUnalignedOffset(f)
+	gap, err := checkInitialUnalignedOffset(f, alignmentRqmts)
 	if err != nil {
 		return nil, err
 	}
 
 	return &directIOWriter{
-		buf:                alignedBlock(size, requiredAlignment),
+		buf:                alignedBlock(size, alignmentRqmts),
 		f:                  f,
 		offsetAlignmentGap: gap,
+		alignmentRqmts:     alignmentRqmts,
 	}, nil
 }
 
@@ -118,7 +132,7 @@ func (b *directIOWriter) directIOWrite(p []byte, padding int) (int, error) {
 		}
 	}
 
-	if relevant%blockSizeUnit != 0 {
+	if relevant%b.alignmentRqmts.offsetAlign != 0 {
 		b.invalid = true
 	}
 	return relevant, err
@@ -127,7 +141,7 @@ func (b *directIOWriter) directIOWrite(p []byte, padding int) (int, error) {
 // canDirectIOWrite returns true when all Direct IO alignment restrictions
 // are met for the p block to be written into the file.
 func (b *directIOWriter) canDirectIOWrite(p []byte) bool {
-	return isAligned(p) && b.offsetAlignmentGap == 0
+	return isAligned(p, b.alignmentRqmts) && b.offsetAlignmentGap == 0
 }
 
 func (b *directIOWriter) Write(p []byte) (nn int, err error) {
@@ -181,12 +195,12 @@ func (b *directIOWriter) flush() error {
 		return nil
 	}
 
-	// Ensure the block alignment restriction is met.
-	// If the buffer length isn't a multiple of blockSizeUnit, round
+	// Ensure the segment length alignment restriction is met.
+	// If the buffer length isn't a multiple of offsetAlign, round
 	// it to the nearest upper multiple and add zero padding.
 	uOffset := b.n
-	if uOffset%blockSizeUnit != 0 {
-		uOffset = ((uOffset / blockSizeUnit) + 1) * blockSizeUnit
+	if uOffset%b.alignmentRqmts.offsetAlign != 0 {
+		uOffset = ((uOffset / b.alignmentRqmts.offsetAlign) + 1) * b.alignmentRqmts.offsetAlign
 		for i := b.n; i < uOffset; i++ {
 			b.buf[i] = 0
 		}
@@ -217,9 +231,9 @@ func (b *directIOWriter) Flush() error {
 
 func (b *directIOWriter) Reset(f *os.File) error {
 	if b.buf == nil {
-		b.buf = alignedBlock(defaultBufSize, requiredAlignment)
+		b.buf = alignedBlock(defaultBufSize, b.alignmentRqmts)
 	}
-	gap, err := checkInitialUnalignedOffset(f)
+	gap, err := checkInitialUnalignedOffset(f, b.alignmentRqmts)
 	if err != nil {
 		return err
 	}
@@ -231,7 +245,7 @@ func (b *directIOWriter) Reset(f *os.File) error {
 	return nil
 }
 
-func alignmentOffset(block []byte) int {
+func alignmentOffset(block []byte, requiredAlignment int) int {
 	return computeAlignmentOffset(block, requiredAlignment)
 }
 
@@ -245,31 +259,31 @@ func computeAlignmentOffset(block []byte, alignment int) int {
 	return int(uintptr(unsafe.Pointer(&block[0])) & uintptr(alignment-1))
 }
 
-// isAligned checks if the length of the block is a multiple of blockSizeUnit
-// and if its address is aligned with requiredAlignment.
-func isAligned(block []byte) bool {
-	return alignmentOffset(block) == 0 && len(block)%blockSizeUnit == 0
+// isAligned checks if the length of the block is a multiple of offsetAlign
+// and if its address is aligned with memoryAlign.
+func isAligned(block []byte, alignmentRqmts *directIORqmts) bool {
+	return alignmentOffset(block, alignmentRqmts.memoryAlign) == 0 && len(block)%alignmentRqmts.offsetAlign == 0
 }
 
 // alignedBlock returns a block whose address is alignment aligned.
-// The size should be a multiple of blockSizeUnit.
-func alignedBlock(size, alignment int) []byte {
-	if size == 0 || size%blockSizeUnit != 0 {
-		panic(fmt.Errorf("size %d should be > 0 and a multiple of blockSizeUnit=%d", size, blockSizeUnit))
+// The size should be a multiple of offsetAlign.
+func alignedBlock(size int, alignmentRqmts *directIORqmts) []byte {
+	if size == 0 || size%alignmentRqmts.offsetAlign != 0 {
+		panic(fmt.Errorf("size %d should be > 0 and a multiple of offsetAlign=%d", size, alignmentRqmts.offsetAlign))
 	}
-	if alignment == 0 {
+	if alignmentRqmts.memoryAlign == 0 {
 		return make([]byte, size)
 	}
 
-	block := make([]byte, size+alignment)
-	a := alignmentOffset(block)
+	block := make([]byte, size+alignmentRqmts.memoryAlign)
+	a := alignmentOffset(block, alignmentRqmts.memoryAlign)
 	if a == 0 {
 		return block[:size]
 	}
 
-	offset := alignment - a
+	offset := alignmentRqmts.memoryAlign - a
 	block = block[offset : offset+size]
-	if !isAligned(block) {
+	if !isAligned(block, alignmentRqmts) {
 		// Assuming this to be rare, if not impossible.
 		panic("cannot create an aligned block")
 	}
@@ -313,16 +327,60 @@ func enableDirectIO(fd uintptr) error {
 // checkInitialUnalignedOffset returns the gap between the current offset of the file
 // and the nearest aligned offset.
 // If the current offset is aligned, Direct IO is enabled on the file.
-func checkInitialUnalignedOffset(f *os.File) (int, error) {
+func checkInitialUnalignedOffset(f *os.File, alignmentRqmts *directIORqmts) (int, error) {
 	offset, err := currentFileOffset(f)
 	if err != nil {
 		return 0, err
 	}
-	gap := (requiredAlignment - offset%requiredAlignment) % requiredAlignment
+	alignment := alignmentRqmts.memoryAlign
+	gap := (alignment - offset%alignment) % alignment
 	if gap == 0 {
 		if err := enableDirectIO(f.Fd()); err != nil {
 			return 0, err
 		}
 	}
 	return gap, nil
+}
+
+// directIORqmts holds the alignment requirements for direct I/O.
+// All fields are in bytes.
+type directIORqmts struct {
+	// The required alignment for memory buffers.
+	memoryAlign int
+	// The required alignment for I/O segment lengths and file offsets.
+	offsetAlign int
+}
+
+func defaultDirectIORqmts() *directIORqmts {
+	return &directIORqmts{
+		memoryAlign: defaultAligment,
+		offsetAlign: defaultAligment,
+	}
+}
+
+func fetchdirectIORqmts(fd uintptr) (*directIORqmts, error) {
+	var stat unix.Statx_t
+	flags := unix.AT_SYMLINK_NOFOLLOW | unix.AT_EMPTY_PATH | unix.AT_STATX_DONT_SYNC
+	mask := unix.STATX_DIOALIGN
+	if err := unix.Statx(int(fd), "", flags, unix.STATX_DIOALIGN, &stat); err != nil {
+		if err == unix.ENOSYS {
+			return nil, fmt.Errorf("%w: %w", errStatxNotSupported, err)
+		} else {
+			return nil, fmt.Errorf("statx failed on fd %d: %w", fd, err)
+		}
+	}
+
+	if stat.Mask&uint32(mask) == 0 {
+		return nil, errStatxNotSupported
+	}
+
+	if stat.Dio_mem_align == 0 || stat.Dio_offset_align == 0 {
+		return nil, fmt.Errorf("%w: kernel may be old or the file may be on an unsupported FS", errDirectIOUnsupported)
+	}
+
+	return &directIORqmts{
+		memoryAlign: int(stat.Dio_mem_align),
+		offsetAlign: int(stat.Dio_offset_align),
+	}, nil
+
 }

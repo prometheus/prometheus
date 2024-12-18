@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// This enables seamless testing of the Direct I/O writer across all tsdb tests.
+// This allows seamless testing of the Direct I/O writer across all tsdb tests.
 
 //go:build linux && forcedirectio
 

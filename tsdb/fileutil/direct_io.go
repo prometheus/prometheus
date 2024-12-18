@@ -15,8 +15,11 @@ package fileutil
 
 import (
 	"bufio"
+	"errors"
 	"os"
 )
+
+var errDirectIOUnsupported = errors.New("direct IO is unsupported")
 
 type BufWriter interface {
 	Write([]byte) (int, error)

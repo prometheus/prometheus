@@ -16,7 +16,6 @@
 package fileutil
 
 import (
-	"bufio"
 	"io"
 	"os"
 	"path"
@@ -40,24 +39,27 @@ func TestAlignedBlockEarlyPanic(t *testing.T) {
 		size  int
 		align int
 	}{
-		{"Zero size", 0, blockSizeUnit},
-		{"Size not multiple of block unit", 9999, blockSizeUnit},
+		{"Zero size", 0, defaultAligment},
+		{"Size not multiple of block unit", 9999, defaultAligment},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
 			require.Panics(t, func() {
-				alignedBlock(tc.size, tc.align)
+				alignedBlock(tc.size, &directIORqmts{
+					memoryAlign: defaultAligment,
+					offsetAlign: defaultAligment,
+				})
 			})
 		})
 	}
 }
 
 func TestAlignedBloc(t *testing.T) {
-	block := alignedBlock(5*blockSizeUnit, blockSizeUnit)
-	require.True(t, isAligned(block))
-	require.Len(t, block, 5*blockSizeUnit)
-	require.False(t, isAligned(block[1:]))
+	block := alignedBlock(5*defaultAligment, defaultDirectIORqmts())
+	require.True(t, isAligned(block, defaultDirectIORqmts()))
+	require.Len(t, block, 5*defaultAligment)
+	require.False(t, isAligned(block[1:], defaultDirectIORqmts()))
 }
 
 func TestDirectIOWriter(t *testing.T) {
@@ -72,61 +74,61 @@ func TestDirectIOWriter(t *testing.T) {
 	}{
 		{
 			name:         "data equal to buffer",
-			bufferSize:   8 * blockSizeUnit,
-			dataSize:     8 * blockSizeUnit,
-			writtenBytes: 8 * blockSizeUnit,
+			bufferSize:   8 * defaultAligment,
+			dataSize:     8 * defaultAligment,
+			writtenBytes: 8 * defaultAligment,
 		},
 		{
 			name:         "data exceeds buffer",
-			bufferSize:   4 * blockSizeUnit,
-			dataSize:     64 * blockSizeUnit,
-			writtenBytes: 64 * blockSizeUnit,
+			bufferSize:   4 * defaultAligment,
+			dataSize:     64 * defaultAligment,
+			writtenBytes: 64 * defaultAligment,
 		},
 		{
 			name:             "data exceeds buffer + final offset unaligned",
-			bufferSize:       2 * blockSizeUnit,
-			dataSize:         4*blockSizeUnit + 33,
-			writtenBytes:     4*blockSizeUnit + blockSizeUnit,
+			bufferSize:       2 * defaultAligment,
+			dataSize:         4*defaultAligment + 33,
+			writtenBytes:     4*defaultAligment + defaultAligment,
 			shouldInvalidate: true,
 		},
 		{
 			name:         "data smaller than buffer",
-			bufferSize:   8 * blockSizeUnit,
-			dataSize:     3 * blockSizeUnit,
-			writtenBytes: 3 * blockSizeUnit,
+			bufferSize:   8 * defaultAligment,
+			dataSize:     3 * defaultAligment,
+			writtenBytes: 3 * defaultAligment,
 		},
 		{
 			name:             "data smaller than buffer + final offset unaligned",
-			bufferSize:       4 * blockSizeUnit,
-			dataSize:         blockSizeUnit + 70,
-			writtenBytes:     blockSizeUnit + blockSizeUnit,
+			bufferSize:       4 * defaultAligment,
+			dataSize:         defaultAligment + 70,
+			writtenBytes:     defaultAligment + defaultAligment,
 			shouldInvalidate: true,
 		},
 		{
 			name:          "offset aligned",
-			initialOffset: requiredAlignment,
-			bufferSize:    8 * blockSizeUnit,
-			dataSize:      blockSizeUnit,
-			writtenBytes:  blockSizeUnit,
+			initialOffset: defaultAligment,
+			bufferSize:    8 * defaultAligment,
+			dataSize:      defaultAligment,
+			writtenBytes:  defaultAligment,
 		},
 		{
 			name:             "initial offset unaligned + final offset unaligned",
 			initialOffset:    8,
-			bufferSize:       8 * blockSizeUnit,
-			dataSize:         64 * blockSizeUnit,
-			writtenBytes:     64*blockSizeUnit + (blockSizeUnit - 8),
+			bufferSize:       8 * defaultAligment,
+			dataSize:         64 * defaultAligment,
+			writtenBytes:     64*defaultAligment + (defaultAligment - 8),
 			shouldInvalidate: true,
 		},
 		{
 			name:          "offset unaligned + final offset aligned",
 			initialOffset: 8,
-			bufferSize:    4 * blockSizeUnit,
-			dataSize:      4*blockSizeUnit + (blockSizeUnit - 8),
-			writtenBytes:  4*blockSizeUnit + (blockSizeUnit - 8),
+			bufferSize:    4 * defaultAligment,
+			dataSize:      4*defaultAligment + (defaultAligment - 8),
+			writtenBytes:  4*defaultAligment + (defaultAligment - 8),
 		},
 		{
 			name:       "empty data",
-			bufferSize: 4 * blockSizeUnit,
+			bufferSize: 4 * defaultAligment,
 		},
 	}
 
@@ -196,7 +198,7 @@ func BenchmarkDirectIOWriter(b *testing.B) {
 	// Ensure the block is not aligned to ensure the worst-case scenario for
 	// the Direct I/O Writer.
 	// This approach also helps to achieve a deterministic behavior.
-	if isAligned(data) {
+	if isAligned(data, defaultDirectIORqmts()) {
 		data = data[1:]
 	}
 	chunks := []int{0, 1, 2, 3, 5, 11, 63, 128, 280, 333, 450, 500, 512}
@@ -216,11 +218,11 @@ func BenchmarkDirectIOWriter(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	//bw, err := newDirectIOWriter(file, 8*1024*1024)
-	//require.NoError(b, err)
+	bw, err := newDirectIOWriter(file, 8*1024*1024)
+	require.NoError(b, err)
 
 	// Uncomment to compare to bufio's Writer.
-	bw := bufio.NewWriterSize(file, 8*1024*1024)
+	// bw := bufio.NewWriterSize(file, 8*1024*1024)
 
 	for i := 0; i < b.N; i++ {
 		// Write the data in multiple steps.

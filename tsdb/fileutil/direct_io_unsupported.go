@@ -17,16 +17,13 @@ package fileutil
 
 import (
 	"bufio"
-	"errors"
 	"os"
 )
-
-var errUnsupported = errors.New("direct IO is unsupported")
 
 func NewBufioWriterWithSeek(f *os.File, size int) (BufWriter, error) {
 	return &writer{bufio.NewWriterSize(f, size)}, nil
 }
 
 func NewDirectIOWriter(f *os.File, size int) (BufWriter, error) {
-	return nil, errUnsupported
+	return nil, errDirectIOUnsupported
 }
