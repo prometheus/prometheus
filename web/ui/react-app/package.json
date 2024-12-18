@@ -20,7 +20,7 @@
     "@nexucis/fuzzy": "^0.5.1",
     "@nexucis/kvsearch": "^0.9.1",
     "@prometheus-io/codemirror-promql": "0.300.1",
-    "bootstrap": "^4.6.2",
+    "bootstrap": "^5.3.3",
     "css.escape": "^1.5.1",
     "downshift": "^9.0.8",
     "http-proxy-middleware": "^3.0.3",
