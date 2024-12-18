@@ -3,7 +3,6 @@ package remotewriter
 import (
 	"context"
 	"fmt"
-	"github.com/google/uuid"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head/catalog"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head/ready"
@@ -12,7 +11,7 @@ import (
 
 type Catalog interface {
 	List(filterFn func(record *catalog.Record) bool, sortLess func(lhs, rhs *catalog.Record) bool) (records []*catalog.Record, err error)
-	SetCorrupted(id uuid.UUID) (*catalog.Record, error)
+	SetCorrupted(id string) (*catalog.Record, error)
 }
 
 type RemoteWriter struct {

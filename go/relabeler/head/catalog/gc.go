@@ -71,6 +71,9 @@ func (gc *GC) Iterate() {
 	}
 
 	for _, record := range records {
+		if record.deletedAt != 0 {
+			continue
+		}
 		fmt.Println("CATALOG GC ITERATION: HEAD", record.ID())
 		if record.ReferenceCount() > 0 {
 			return

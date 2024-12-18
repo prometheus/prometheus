@@ -115,7 +115,7 @@ func (s *AppenderSuite) TestManagerRelabelerKeep() {
 	}()
 
 	headID := "head_id"
-	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, head.NoOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
 	require.NoError(s.T(), err)
 	defer func() { _ = hd.Close() }()
 
@@ -256,7 +256,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabeling() {
 	}()
 
 	headID := "head_id"
-	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, head.NoOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
 	require.NoError(s.T(), err)
 	defer func() { _ = hd.Close() }()
 	s.T().Log("make appender")
@@ -407,7 +407,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingAddNewLabel() {
 	}()
 
 	headID := "head_id"
-	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, head.NoOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
 	require.NoError(s.T(), err)
 	defer func() { _ = hd.Close() }()
 	s.T().Log("make appender")
@@ -562,7 +562,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsEnd() {
 	}()
 
 	headID := "head_id"
-	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, head.NoOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
 	require.NoError(s.T(), err)
 	defer func() { _ = hd.Close() }()
 	require.NoError(s.T(), err)
@@ -717,7 +717,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsRelabel(
 	}()
 
 	headID := "head_id"
-	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, head.NoOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
 	require.NoError(s.T(), err)
 	defer func() { _ = hd.Close() }()
 	s.T().Log("make appender")
@@ -876,7 +876,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels() {
 	}()
 
 	headID := "head_id"
-	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, head.NoOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
 	require.NoError(s.T(), err)
 	defer func() { _ = hd.Close() }()
 	s.T().Log("make appender")
@@ -1065,7 +1065,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels_Conflicti
 	}()
 
 	headID := "head_id"
-	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, head.NoOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
 	require.NoError(s.T(), err)
 	defer func() { _ = hd.Close() }()
 	s.T().Log("make appender")
@@ -1255,7 +1255,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels_Conflicti
 	}()
 
 	headID := "head_id"
-	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, head.NoOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
 	require.NoError(s.T(), err)
 	defer func() { _ = hd.Close() }()
 	s.T().Log("make appender")
@@ -1451,7 +1451,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 	var generation uint64 = 0
 
 	headID := "head_id"
-	hd, err := head.Create(headID, generation, tmpDir, inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+	hd, err := head.Create(headID, generation, tmpDir, inputRelabelerConfigs, numberOfShards, head.NoOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
 	require.NoError(s.T(), err)
 	headsToClose = append(headsToClose, hd)
 
@@ -1467,14 +1467,14 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 			tmpDirsToRemove = append(tmpDirsToRemove, newDir)
 			newHeadID := "head_id"
 			generation++
-			newHead, err := head.Create(newHeadID, generation, newDir, inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+			newHead, err := head.Create(newHeadID, generation, newDir, inputRelabelerConfigs, numberOfShards, head.NoOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
 			require.NoError(s.T(), err)
 			headsToClose = append(headsToClose, newHead)
 			return newHead, nil
 		},
 	)
 
-	rotatableHead := appender.NewRotatableHead(hd, noOpStorage{}, builder)
+	rotatableHead := appender.NewRotatableHead(hd, noOpStorage{}, builder, appender.NoOpHeadActivator{})
 	s.T().Log("make appender")
 	metrics := querier.NewMetrics(prometheus.DefaultRegisterer)
 	app := appender.NewQueryableAppender(rotatableHead, dstrb, metrics)
@@ -1922,7 +1922,7 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans() {
 	}()
 
 	headID := "head_id"
-	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, head.NoOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
 	require.NoError(s.T(), err)
 	defer func() { _ = hd.Close() }()
 	s.T().Log("make appender")
@@ -2085,7 +2085,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 	var generation uint64 = 0
 
 	headID := fmt.Sprintf("head_id_%d", generation)
-	hd, err := head.Create(headID, generation, tmpDir, inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+	hd, err := head.Create(headID, generation, tmpDir, inputRelabelerConfigs, numberOfShards, head.NoOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
 	require.NoError(s.T(), err)
 	headsToClose = append(headsToClose, hd)
 
@@ -2101,14 +2101,14 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 			tmpDirsToRemove = append(tmpDirsToRemove, newDir)
 			generation++
 			newHeadID := fmt.Sprintf("head_id_%d", generation)
-			newHead, buildErr := head.Create(newHeadID, generation, newDir, inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+			newHead, buildErr := head.Create(newHeadID, generation, newDir, inputRelabelerConfigs, numberOfShards, head.NoOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
 			require.NoError(s.T(), buildErr)
 			headsToClose = append(headsToClose, newHead)
 			return newHead, nil
 		},
 	)
 
-	rotatableHead := appender.NewRotatableHead(hd, noOpStorage{}, builder)
+	rotatableHead := appender.NewRotatableHead(hd, noOpStorage{}, builder, appender.NoOpHeadActivator{})
 
 	s.T().Log("make appender")
 	metrics := querier.NewMetrics(prometheus.DefaultRegisterer)

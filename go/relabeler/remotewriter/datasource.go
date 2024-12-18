@@ -1,10 +1,10 @@
 package remotewriter
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head/catalog"
 	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
@@ -17,23 +17,22 @@ import (
 )
 
 type CorruptMarker interface {
-	MarkCorrupted(headID uuid.UUID) error
+	MarkCorrupted(headID string) error
 }
 
 type shard struct {
-	corrupted                   bool
-	lastReadSegmentID           *uint32
-	walReader                   *walReader
-	decoder                     *Decoder
-	lastWrittenStateBySegmentID *uint32
-	decoderStateFile            *os.File
+	corrupted         bool
+	lastReadSegmentID *uint32
+	walReader         *walReader
+	decoder           *Decoder
+	decoderStateFile  *os.File
 }
 
 func newShard(
 	shardID uint16,
 	shardFileName, decoderStateFileName string,
 	resetDecoderState bool,
-	lastWrittenStateBySegmentID *uint32,
+	targetSegmentID uint32,
 	externalLabels labels.Labels,
 	relabelConfigs []*cppbridge.RelabelConfig,
 ) (*shard, error) {
@@ -77,8 +76,9 @@ func newShard(
 		if err = decoder.LoadFrom(decoderStateFile); err != nil {
 			return nil, errors.Join(fmt.Errorf("failed to restore from cache: %w", err), s.Close())
 		}
-		if lastWrittenStateBySegmentID != nil {
-			s.lastWrittenStateBySegmentID = &(*lastWrittenStateBySegmentID)
+	} else {
+		if err = decoderStateFile.Truncate(0); err != nil {
+			return nil, errors.Join(fmt.Errorf("failed to truncate decoder state file: %w", err), s.Close())
 		}
 	}
 
@@ -119,15 +119,6 @@ func (s *shard) Read(ctx context.Context, targetSegmentID uint32, minTimestamp i
 
 		s.lastReadSegmentID = &segment.ID
 
-		if s.lastWrittenStateBySegmentID == nil || *s.lastWrittenStateBySegmentID < segment.ID {
-			if _, err = s.decoder.WriteTo(s.decoderStateFile); err != nil {
-				// todo: i che delat' to s oshibkoi???
-				logger.Errorf("failed to write decoder state: %v", err)
-			} else {
-				s.lastWrittenStateBySegmentID = &segment.ID
-			}
-		}
-
 		if segment.ID == targetSegmentID {
 			decodedSegment.ID = segment.ID
 			return decodedSegment, nil
@@ -140,7 +131,7 @@ func (s *shard) Close() error {
 }
 
 type dataSource struct {
-	ID              uuid.UUID
+	ID              string
 	headRecord      *catalog.Record
 	shards          []*shard
 	corruptMarker   CorruptMarker
@@ -148,9 +139,11 @@ type dataSource struct {
 	completed       bool
 	corrupted       bool
 	headReleaseFunc func()
+
+	cacheWriter *cacheWriter
 }
 
-func newDataSource(dataDir string, numberOfShards uint16, config DestinationConfig, lastAcknowledgedSegmentID *uint32, discardCache bool, corruptMarker CorruptMarker, headRecord *catalog.Record) (*dataSource, error) {
+func newDataSource(dataDir string, numberOfShards uint16, config DestinationConfig, targetSegmentID uint32, discardCache bool, corruptMarker CorruptMarker, headRecord *catalog.Record) (*dataSource, error) {
 	var err error
 	var convertedRelabelConfigs []*cppbridge.RelabelConfig
 	convertedRelabelConfigs, err = convertRelabelConfigs(config.WriteRelabelConfigs...)
@@ -169,7 +162,7 @@ func newDataSource(dataDir string, numberOfShards uint16, config DestinationConf
 		shardFileName := filepath.Join(dataDir, fmt.Sprintf("shard_%d.wal", shardID))
 		decoderStateFileName := filepath.Join(dataDir, fmt.Sprintf("%s_shard_%d.state", config.Name, shardID))
 		var s *shard
-		s, err = newShard(shardID, shardFileName, decoderStateFileName, discardCache, lastAcknowledgedSegmentID, config.ExternalLabels, convertedRelabelConfigs)
+		s, err = newShard(shardID, shardFileName, decoderStateFileName, discardCache, targetSegmentID, config.ExternalLabels, convertedRelabelConfigs)
 		if err != nil {
 			return nil, errors.Join(fmt.Errorf("failed to create shard: %w", err), b.Close())
 		}
@@ -213,6 +206,9 @@ func (ds *dataSource) Close() error {
 	}
 	ds.closed = true
 	var err error
+	if ds.cacheWriter != nil {
+		err = errors.Join(err, ds.cacheWriter.Close())
+	}
 	for _, s := range ds.shards {
 		err = errors.Join(err, s.Close())
 	}
@@ -234,7 +230,7 @@ func (ds *dataSource) Read(ctx context.Context, segmentID uint32, minTimestamp i
 		return nil, ErrEndOfBlock
 	}
 
-	isActiveHead := ds.headRecord.Status() == catalog.StatusNew
+	isActiveHead := ds.headRecord.Status() == catalog.StatusNew || ds.headRecord.Status() == catalog.StatusActive
 
 	wg := &sync.WaitGroup{}
 	readShardResults := make([]readShardResult, len(ds.shards))
@@ -307,7 +303,7 @@ func (ds *dataSource) handle(errs []error, isActiveHead bool) error {
 		if isActiveHead {
 			return ErrPartialReadResult
 		}
-		// shards contains different number of segments
+		// todo: mark corrupted shard which returned Eof
 		logger.Errorf("head %s contains shards with different number of segments", ds.ID)
 		return nil
 	}
@@ -321,4 +317,69 @@ func (ds *dataSource) LSSes() []*cppbridge.LabelSetStorage {
 		lsses[i] = ds.shards[i].decoder.lss
 	}
 	return lsses
+}
+
+type cacheWriter struct {
+	caches []*bytes.Buffer
+	files  []*os.File
+	close  chan struct{}
+	closed chan struct{}
+}
+
+func newCacheWriter(caches []*bytes.Buffer, files []*os.File) *cacheWriter {
+	cw := &cacheWriter{
+		caches: caches,
+		files:  files,
+		close:  make(chan struct{}),
+		closed: make(chan struct{}),
+	}
+
+	go cw.write()
+	return cw
+}
+
+func (cw *cacheWriter) write() {
+	defer close(cw.closed)
+}
+
+func (cw *cacheWriter) Close() error {
+	close(cw.close)
+	<-cw.closed
+	return nil
+}
+
+func (cw *cacheWriter) Closed() <-chan struct{} {
+	return cw.closed
+
+}
+
+func (ds *dataSource) WriteCaches() {
+	if ds.cacheWriter != nil {
+		select {
+		case <-ds.cacheWriter.Closed():
+			ds.cacheWriter = nil
+		default:
+			return
+		}
+	}
+
+	caches := make([]*bytes.Buffer, len(ds.shards))
+	files := make([]*os.File, len(ds.shards))
+	wg := &sync.WaitGroup{}
+	for shardID := range ds.shards {
+		wg.Add(1)
+		go func(shardID uint16, shrd *shard) {
+			defer wg.Done()
+			buffer := bytes.NewBuffer(nil)
+			if _, err := shrd.decoder.WriteTo(buffer); err != nil {
+				logger.Errorf("failed to write cache: %w", err)
+				return
+			}
+			caches[shardID] = buffer
+			files[shardID] = shrd.decoderStateFile
+		}(uint16(shardID), ds.shards[shardID])
+
+	}
+	wg.Wait()
+	ds.cacheWriter = newCacheWriter(caches, files)
 }

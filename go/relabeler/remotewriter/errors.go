@@ -12,6 +12,7 @@ var (
 	ErrPartialReadResult = errors.New("partial read result")
 	ErrEmptyReadResult   = errors.New("empty read result")
 	ErrBlockIsCorrupted  = errors.New("block is corrupted")
+	ErrDataIsObsoleted   = errors.New("data is obsoleted")
 )
 
 // CloseAll closes all given closers.

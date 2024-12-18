@@ -30,6 +30,20 @@ func newCorruptedShardWal() *ShardWal {
 	}
 }
 
+func (w *ShardWal) WriteHeader() error {
+	if w.fileHeaderIsWritten {
+		return nil
+	}
+
+	_, err := WriteHeader(w.writeCloser, 1, w.encoder.Version())
+	if err != nil {
+		return fmt.Errorf("failed to write file header: %w", err)
+	}
+
+	w.fileHeaderIsWritten = true
+	return nil
+}
+
 func (w *ShardWal) Write(innerSeriesSlice []*cppbridge.InnerSeries) error {
 	if w.corrupted {
 		return fmt.Errorf("writing in corrupted wal")
@@ -43,14 +57,6 @@ func (w *ShardWal) Write(innerSeriesSlice []*cppbridge.InnerSeries) error {
 	segment, err := w.encoder.Finalize()
 	if err != nil {
 		return fmt.Errorf("failed to finalize segment: %w", err)
-	}
-
-	if !w.fileHeaderIsWritten {
-		_, err = WriteHeader(w.writeCloser, 1, w.encoder.Version())
-		if err != nil {
-			return fmt.Errorf("failed to write file header: %w", err)
-		}
-		w.fileHeaderIsWritten = true
 	}
 
 	_, err = WriteSegment(w.writeCloser, segment)

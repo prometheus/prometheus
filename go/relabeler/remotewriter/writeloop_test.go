@@ -76,7 +76,7 @@ func NewTestHeads(dir string, inputRelabelConfigs []*config.InputRelabelerConfig
 		Dir: dir,
 	}
 	var err error
-	th.FileLog, err = catalog.NewFileLog(filepath.Join(dir, "catalog"), catalog.DefaultEncoder{}, catalog.DefaultDecoder{})
+	th.FileLog, err = catalog.NewFileLogV2(filepath.Join(dir, "catalog"))
 	if err != nil {
 		return nil, err
 	}
@@ -189,7 +189,6 @@ func TestWriteLoopWrite(t *testing.T) {
 	}
 
 	ts := clock.Now().UnixMilli()
-	t.Log(ts)
 	batches := [][]model.TimeSeries{
 		{
 			{LabelSet: labelSets[0], Timestamp: uint64(ts), Value: 0},

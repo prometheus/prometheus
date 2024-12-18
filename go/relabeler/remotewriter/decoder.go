@@ -5,19 +5,22 @@ import (
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/model/labels"
 	"io"
+	"os"
 )
 
 type Decoder struct {
 	relabeler     *cppbridge.StatelessRelabeler
 	lss           *cppbridge.LabelSetStorage
 	outputDecoder *cppbridge.WALOutputDecoder
+	state         *os.File
 }
 
 func NewDecoder(
 	externalLabels labels.Labels,
 	relabelConfigs []*cppbridge.RelabelConfig,
 	shardID uint16,
-	encoderVersion uint8) (*Decoder, error) {
+	encoderVersion uint8,
+) (*Decoder, error) {
 	relabeler, err := cppbridge.NewStatelessRelabeler(relabelConfigs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create stateless relabeler: %w", err)

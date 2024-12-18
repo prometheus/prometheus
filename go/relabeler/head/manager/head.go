@@ -3,7 +3,6 @@ package manager
 import (
 	"context"
 	"errors"
-	"github.com/google/uuid"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler"
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
@@ -11,12 +10,12 @@ import (
 
 type DiscardableRotatableHead struct {
 	head      relabeler.Head
-	onRotate  func(id uuid.UUID, err error) error
-	onDiscard func(id uuid.UUID) error
-	onClose   func(id uuid.UUID) error
+	onRotate  func(id string, err error) error
+	onDiscard func(id string) error
+	onClose   func(id string) error
 }
 
-func NewDiscardableRotatableHead(head relabeler.Head, onRotate func(id uuid.UUID, err error) error, onDiscard func(id uuid.UUID) error, onClose func(id uuid.UUID) error) *DiscardableRotatableHead {
+func NewDiscardableRotatableHead(head relabeler.Head, onRotate func(id string, err error) error, onDiscard func(id string) error, onClose func(id string) error) *DiscardableRotatableHead {
 	return &DiscardableRotatableHead{
 		head:      head,
 		onRotate:  onRotate,
@@ -25,7 +24,7 @@ func NewDiscardableRotatableHead(head relabeler.Head, onRotate func(id uuid.UUID
 	}
 }
 
-func (h *DiscardableRotatableHead) ID() uuid.UUID {
+func (h *DiscardableRotatableHead) ID() string {
 	return h.head.ID()
 }
 

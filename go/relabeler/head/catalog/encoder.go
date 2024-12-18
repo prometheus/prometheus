@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"github.com/prometheus/prometheus/pp/go/util/optional"
 	"io"
 )
 
@@ -87,7 +88,7 @@ func (EncoderV2) Encode(writer io.Writer, r *Record) (err error) {
 		return fmt.Errorf("failed to write status: %w", err)
 	}
 
-	if err = encodeNilableValue(body, binary.LittleEndian, r.lastAppendedSegmentID); err != nil {
+	if err = encodeOptionalValue(body, binary.LittleEndian, r.lastAppendedSegmentID); err != nil {
 		return fmt.Errorf("failed to write last written segment id: %w", err)
 	}
 
@@ -107,16 +108,16 @@ func (EncoderV2) Encode(writer io.Writer, r *Record) (err error) {
 	return nil
 }
 
-func encodeNilableValue[T any](writer io.Writer, byteOrder binary.ByteOrder, value *T) (err error) {
+func encodeOptionalValue[T any](writer io.Writer, byteOrder binary.ByteOrder, value optional.Optional[T]) (err error) {
 	var nilIndicator uint8
-	if value == nil {
+	if value.IsNil() {
 		return binary.Write(writer, byteOrder, nilIndicator)
 	}
 	nilIndicator = 1
 	if err = binary.Write(writer, byteOrder, nilIndicator); err != nil {
 		return err
 	}
-	if err = binary.Write(writer, byteOrder, *value); err != nil {
+	if err = binary.Write(writer, byteOrder, value.Value()); err != nil {
 		return err
 	}
 

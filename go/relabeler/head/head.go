@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
 	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 	"math"
 	"runtime"
@@ -154,8 +153,12 @@ type LastAppendedSegmentIDSetter interface {
 	SetLastAppendedSegmentID(segmentID uint32)
 }
 
+type NoOpLastAppendedSegmentIDSetter struct{}
+
+func (NoOpLastAppendedSegmentIDSetter) SetLastAppendedSegmentID(segmentID uint32) {}
+
 type Head struct {
-	id         uuid.UUID
+	id         string
 	finalizer  *Finalizer
 	generation uint64
 
@@ -178,7 +181,7 @@ type Head struct {
 }
 
 func New(
-	id uuid.UUID,
+	id string,
 	generation uint64,
 	inputRelabelerConfigs []*config.InputRelabelerConfig,
 	lsses []*LSS,
@@ -244,7 +247,7 @@ func New(
 	return h, nil
 }
 
-func (h *Head) ID() uuid.UUID {
+func (h *Head) ID() string {
 	return h.id
 }
 

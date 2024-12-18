@@ -27,14 +27,14 @@ type Catalog struct {
 	mtx     sync.Mutex
 	clock   clockwork.Clock
 	log     Log
-	records map[uuid.UUID]*Record
+	records map[string]*Record
 }
 
 func New(clock clockwork.Clock, log Log) (*Catalog, error) {
 	catalog := &Catalog{
 		clock:   clock,
 		log:     log,
-		records: make(map[uuid.UUID]*Record),
+		records: make(map[string]*Record),
 	}
 
 	if err := catalog.sync(); err != nil {
@@ -64,14 +64,11 @@ func (c *Catalog) List(filterFn func(record *Record) bool, sortLess func(lhs, rh
 	return records, nil
 }
 
-func (c *Catalog) Create(id uuid.UUID, numberOfShards uint16) (r *Record, err error) {
+func (c *Catalog) Create(numberOfShards uint16) (r *Record, err error) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
-	if _, ok := c.records[id]; ok {
-		return r, fmt.Errorf("already exists: %s", id)
-	}
-
+	id := uuid.New()
 	now := c.clock.Now().UnixMilli()
 	r = &Record{
 		id:               id,
@@ -86,12 +83,12 @@ func (c *Catalog) Create(id uuid.UUID, numberOfShards uint16) (r *Record, err er
 	if err = c.log.Write(r); err != nil {
 		return r, fmt.Errorf("failed to write log: %w", err)
 	}
-	c.records[id] = r
+	c.records[id.String()] = r
 
 	return r, c.compactIfNeeded()
 }
 
-func (c *Catalog) Get(id uuid.UUID) (*Record, error) {
+func (c *Catalog) Get(id string) (*Record, error) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
@@ -103,7 +100,7 @@ func (c *Catalog) Get(id uuid.UUID) (*Record, error) {
 	return r, nil
 }
 
-func (c *Catalog) SetStatus(id uuid.UUID, status Status) (*Record, error) {
+func (c *Catalog) SetStatus(id string, status Status) (*Record, error) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
@@ -124,7 +121,7 @@ func (c *Catalog) SetStatus(id uuid.UUID, status Status) (*Record, error) {
 	return r, c.compactIfNeeded()
 }
 
-func (c *Catalog) SetCorrupted(id uuid.UUID) (*Record, error) {
+func (c *Catalog) SetCorrupted(id string) (*Record, error) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
@@ -149,7 +146,7 @@ func (c *Catalog) SetCorrupted(id uuid.UUID) (*Record, error) {
 	return r, c.compactIfNeeded()
 }
 
-func (c *Catalog) Delete(id uuid.UUID) error {
+func (c *Catalog) Delete(id string) error {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
@@ -165,7 +162,7 @@ func (c *Catalog) Delete(id uuid.UUID) error {
 		return fmt.Errorf("failed to write log: %w", err)
 	}
 
-	delete(c.records, r.id)
+	delete(c.records, r.id.String())
 
 	return c.compactIfNeeded()
 }
@@ -187,7 +184,7 @@ func (c *Catalog) sync() error {
 			}
 			return nil
 		}
-		c.records[r.id] = r
+		c.records[r.id.String()] = r
 	}
 }
 

@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"github.com/google/uuid"
+	"github.com/prometheus/prometheus/pp/go/util/optional"
 	"sync"
 	"sync/atomic"
 )
@@ -14,9 +15,9 @@ const (
 	// Deprecated
 	StatusCorrupted
 	StatusPersisted
+	StatusActive
 )
 
-// size (1) + 16 +2 + 8 + 8 + 8 + 1 + 1 + (1 + 4)
 type Record struct {
 	id                    uuid.UUID // uuid
 	numberOfShards        uint16    // number of shards
@@ -24,7 +25,7 @@ type Record struct {
 	updatedAt             int64
 	deletedAt             int64
 	corrupted             bool
-	lastAppendedSegmentID *uint32
+	lastAppendedSegmentID optional.Optional[uint32]
 	referenceCounter      *atomic.Int64
 	status                Status // status
 }
@@ -35,8 +36,8 @@ func NewRecord() *Record {
 	}
 }
 
-func (r *Record) ID() uuid.UUID {
-	return r.id
+func (r *Record) ID() string {
+	return r.id.String()
 }
 
 func (r *Record) Dir() string {
@@ -82,11 +83,11 @@ func (r *Record) Acquire() func() {
 }
 
 func (r *Record) LastAppendedSegmentID() *uint32 {
-	return r.lastAppendedSegmentID
+	return r.lastAppendedSegmentID.RawValue()
 }
 
 func (r *Record) SetLastAppendedSegmentID(segmentID uint32) {
-	r.lastAppendedSegmentID = &segmentID
+	r.lastAppendedSegmentID.Set(segmentID)
 }
 
 func NewRecordWithData(id uuid.UUID,
@@ -110,6 +111,6 @@ func NewRecordWithData(id uuid.UUID,
 		corrupted:             corrupted,
 		referenceCounter:      &rc,
 		status:                status,
-		lastAppendedSegmentID: lastAppendedSegmentID,
+		lastAppendedSegmentID: optional.WithRawValue(lastAppendedSegmentID),
 	}
 }

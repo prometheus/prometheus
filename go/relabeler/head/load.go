@@ -3,7 +3,6 @@ package head
 import (
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
@@ -17,7 +16,7 @@ const (
 	HeadWalEncoderDecoderLogShards uint8 = 0
 )
 
-func Create(id uuid.UUID, generation uint64, dir string, configs []*config.InputRelabelerConfig, numberOfShards uint16, lastAppendedSegmentIDSetter LastAppendedSegmentIDSetter, registerer prometheus.Registerer) (_ *Head, err error) {
+func Create(id string, generation uint64, dir string, configs []*config.InputRelabelerConfig, numberOfShards uint16, lastAppendedSegmentIDSetter LastAppendedSegmentIDSetter, registerer prometheus.Registerer) (_ *Head, err error) {
 	lsses := make([]*LSS, numberOfShards)
 	wals := make([]*ShardWal, numberOfShards)
 	dataStorages := make([]*DataStorage, numberOfShards)
@@ -47,7 +46,11 @@ func Create(id uuid.UUID, generation uint64, dir string, configs []*config.Input
 			return nil, fmt.Errorf("failed to create shard wal file: %w", err)
 		}
 		shardWalEncoder := cppbridge.NewHeadWalEncoder(shardID, HeadWalEncoderDecoderLogShards, targetLss)
-		wals[shardID] = newShardWal(shardWalEncoder, false, shardFile)
+		shardWal := newShardWal(shardWalEncoder, false, shardFile)
+		if err = shardWal.WriteHeader(); err != nil {
+			return nil, fmt.Errorf("failed to write shard wal header: %w", err)
+		}
+		wals[shardID] = shardWal
 		dataStorage := cppbridge.NewHeadDataStorage()
 		dataStorages[shardID] = &DataStorage{
 			dataStorage: dataStorage,
@@ -58,7 +61,7 @@ func Create(id uuid.UUID, generation uint64, dir string, configs []*config.Input
 	return New(id, generation, configs, lsses, wals, dataStorages, numberOfShards, nil, lastAppendedSegmentIDSetter, registerer)
 }
 
-func Load(id uuid.UUID, generation uint64, dir string, configs []*config.InputRelabelerConfig, numberOfShards uint16, lastAppendedSegmentIDSetter LastAppendedSegmentIDSetter, registerer prometheus.Registerer) (_ *Head, corrupted bool, err error) {
+func Load(id string, generation uint64, dir string, configs []*config.InputRelabelerConfig, numberOfShards uint16, lastAppendedSegmentIDSetter LastAppendedSegmentIDSetter, registerer prometheus.Registerer) (_ *Head, corrupted bool, err error) {
 	lsses := make([]*LSS, numberOfShards)
 	wals := make([]*ShardWal, numberOfShards)
 	dataStorages := make([]*DataStorage, numberOfShards)

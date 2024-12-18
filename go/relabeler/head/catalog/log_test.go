@@ -106,8 +106,8 @@ func TestFileLog_Migrate(t *testing.T) {
 	c, err := New(clock, fl2)
 	require.NoError(t, err)
 	idToDelete := id3
-	require.NoError(t, c.Delete(idToDelete))
-	r, err := c.Get(id1)
+	require.NoError(t, c.Delete(idToDelete.String()))
+	r, err := c.Get(id1.String())
 	require.NoError(t, err)
 	r.SetLastAppendedSegmentID(lastWrittenSegmentIDForID1)
 	require.NoError(t, c.Compact())

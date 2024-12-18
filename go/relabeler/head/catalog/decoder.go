@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/google/uuid"
+	"github.com/prometheus/prometheus/pp/go/util/optional"
 	"io"
 )
 
@@ -124,14 +125,14 @@ func (DecoderV2) Decode(reader io.ReadSeeker, r *Record) (err error) {
 		return fmt.Errorf("failed to read status: %w", err)
 	}
 
-	if err = decodeNilableValue(rReader, binary.LittleEndian, &r.lastAppendedSegmentID); err != nil {
+	if err = decodeOptionalValue(rReader, binary.LittleEndian, &r.lastAppendedSegmentID); err != nil {
 		return fmt.Errorf("failed to read last written segment id: %w", err)
 	}
 
 	return nil
 }
 
-func decodeNilableValue[T any](reader io.Reader, byteOrder binary.ByteOrder, valueRef **T) (err error) {
+func decodeOptionalValue[T any](reader io.Reader, byteOrder binary.ByteOrder, valueRef *optional.Optional[T]) (err error) {
 	var nilIndicator uint8
 	if err = binary.Read(reader, byteOrder, &nilIndicator); err != nil {
 		return err
@@ -140,10 +141,10 @@ func decodeNilableValue[T any](reader io.Reader, byteOrder binary.ByteOrder, val
 		return nil
 	}
 
-	value := new(T)
-	if err = binary.Read(reader, byteOrder, value); err != nil {
+	var value T
+	if err = binary.Read(reader, byteOrder, &value); err != nil {
 		return err
 	}
-	*valueRef = value
+	valueRef.Set(value)
 	return nil
 }

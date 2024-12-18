@@ -17,11 +17,13 @@ type DataSource interface {
 	Read(ctx context.Context, targetSegmentID uint32, minTimestamp int64) ([]*DecodedSegment, error)
 	//NumberOfShards() uint16
 	LSSes() []*cppbridge.LabelSetStorage
+	WriteCaches()
 	Close() error
 }
 
-type Acknowledger interface {
-	Ack(segmentID uint32) error
+type TargetSegmentIDSetCloser interface {
+	SetTargetSegmentID(segmentID uint32) error
+	// todo: move
 	Close() error
 }
 
@@ -63,11 +65,11 @@ func (s *sharder) dec() int {
 }
 
 type Iterator struct {
-	clock        clockwork.Clock
-	queueConfig  config.QueueConfig
-	dataSource   DataSource
-	writer       Writer
-	acknowledger Acknowledger
+	clock                    clockwork.Clock
+	queueConfig              config.QueueConfig
+	dataSource               DataSource
+	writer                   Writer
+	targetSegmentIDSetCloser TargetSegmentIDSetCloser
 
 	endOfBlockReached bool
 	blockIsCorrupted  bool
@@ -96,30 +98,22 @@ func (m *Message) IsObsoleted(minTimestamp int64) bool {
 	return m.MaxTimestamp < minTimestamp
 }
 
-func newIterator(clock clockwork.Clock, queueConfig config.QueueConfig, dataSource DataSource, writer Writer, acknowledger Acknowledger, lastAcknowledgedSegmentID *uint32, startSegmentID *uint32, readTimeout time.Duration) (*Iterator, error) {
+func newIterator(clock clockwork.Clock, queueConfig config.QueueConfig, dataSource DataSource, writer Writer, targetSegmentIDSetCloser TargetSegmentIDSetCloser, targetSegmentID uint32, readTimeout time.Duration) (*Iterator, error) {
 	outputSharder, err := newSharder(queueConfig.MinShards, queueConfig.MaxShards)
 	if err != nil {
 		return nil, err
 	}
 
-	var targetSegmentID uint32 = 0
-	if lastAcknowledgedSegmentID != nil {
-		targetSegmentID = *lastAcknowledgedSegmentID + 1
-	}
-	if startSegmentID != nil {
-		targetSegmentID = *startSegmentID
-	}
-
 	return &Iterator{
-		clock:                clock,
-		queueConfig:          queueConfig,
-		dataSource:           dataSource,
-		writer:               writer,
-		acknowledger:         acknowledger,
-		targetSegmentID:      targetSegmentID,
-		readTimeout:          readTimeout,
-		outputSharder:        outputSharder,
-		numberOfOutputShards: outputSharder.min,
+		clock:                    clock,
+		queueConfig:              queueConfig,
+		dataSource:               dataSource,
+		writer:                   writer,
+		targetSegmentIDSetCloser: targetSegmentIDSetCloser,
+		targetSegmentID:          targetSegmentID,
+		readTimeout:              readTimeout,
+		outputSharder:            outputSharder,
+		numberOfOutputShards:     outputSharder.min,
 	}, nil
 }
 
@@ -140,6 +134,7 @@ func (i *Iterator) Next(ctx context.Context) error {
 	}
 
 	if i.dataSize() > 0 {
+		i.writeCaches()
 		return i.writeData(ctx)
 	}
 
@@ -148,6 +143,10 @@ func (i *Iterator) Next(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (i *Iterator) writeCaches() {
+	i.dataSource.WriteCaches()
 }
 
 func (i *Iterator) read(ctx context.Context) (bool, error) {
@@ -214,8 +213,11 @@ func (i *Iterator) read(ctx context.Context) (bool, error) {
 func (i *Iterator) writeMessage(ctx context.Context) error {
 	if i.message.IsObsoleted(i.minTimestamp()) {
 		i.segmentIDToAck = i.message.MaxSegmentID
+		if err := i.ack(ctx); err != nil {
+			return fmt.Errorf("failed to ack: %w", err)
+		}
 		i.message = nil
-		return i.ack(ctx)
+		return ErrDataIsObsoleted
 	}
 
 	wg := &sync.WaitGroup{}
@@ -298,7 +300,7 @@ func (i *Iterator) ack(ctx context.Context) error {
 		return nil
 	}
 
-	if err := i.acknowledger.Ack(*i.segmentIDToAck); err != nil {
+	if err := i.targetSegmentIDSetCloser.SetTargetSegmentID(*i.segmentIDToAck + 1); err != nil {
 		return fmt.Errorf("failed to ack segment id: %w", err)
 	}
 
@@ -359,5 +361,5 @@ func (i *Iterator) getIterationDeadline() time.Time {
 }
 
 func (i *Iterator) Close() error {
-	return errors.Join(i.dataSource.Close(), i.acknowledger.Close())
+	return errors.Join(i.dataSource.Close(), i.targetSegmentIDSetCloser.Close())
 }

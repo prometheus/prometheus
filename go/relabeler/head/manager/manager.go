@@ -3,7 +3,6 @@ package manager
 import (
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
 	"github.com/prometheus/prometheus/pp/go/relabeler"
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head"
@@ -22,9 +21,9 @@ type ConfigSource interface {
 
 type Catalog interface {
 	List(filter func(record *catalog.Record) bool, sortLess func(lhs, rhs *catalog.Record) bool) ([]*catalog.Record, error)
-	Create(id uuid.UUID, numberOfShards uint16) (*catalog.Record, error)
-	SetStatus(id uuid.UUID, status catalog.Status) (*catalog.Record, error)
-	SetCorrupted(id uuid.UUID) (*catalog.Record, error)
+	Create(numberOfShards uint16) (*catalog.Record, error)
+	SetStatus(id string, status catalog.Status) (*catalog.Record, error)
+	SetCorrupted(id string) (*catalog.Record, error)
 }
 
 type metrics struct {
@@ -126,14 +125,14 @@ func (m *Manager) Restore(blockDuration time.Duration) (active relabeler.Head, r
 		headReleaseFn := headRecord.Acquire()
 		h = NewDiscardableRotatableHead(
 			h,
-			func(id uuid.UUID, err error) error {
+			func(id string, err error) error {
 				if _, rotateErr := m.catalog.SetStatus(id, catalog.StatusRotated); rotateErr != nil {
 					return errors.Join(err, rotateErr)
 				}
 				m.counter.With(prometheus.Labels{"type": "rotated"}).Inc()
 				return err
 			},
-			func(id uuid.UUID) error {
+			func(id string) error {
 				var discardErr error
 				if _, discardErr = m.catalog.SetStatus(id, catalog.StatusPersisted); discardErr != nil {
 					return discardErr
@@ -141,7 +140,7 @@ func (m *Manager) Restore(blockDuration time.Duration) (active relabeler.Head, r
 				m.counter.With(prometheus.Labels{"type": "persisted"}).Inc()
 				return nil
 			},
-			func(id uuid.UUID) error {
+			func(id string) error {
 				headReleaseFn()
 				return nil
 			},
@@ -178,8 +177,12 @@ func (m *Manager) Build() (relabeler.Head, error) {
 }
 
 func (m *Manager) BuildWithConfig(inputRelabelerConfigs []*config.InputRelabelerConfig, numberOfShards uint16) (h relabeler.Head, err error) {
-	id := uuid.New()
-	headDir := filepath.Join(m.dir, id.String())
+	headRecord, err := m.catalog.Create(numberOfShards)
+	if err != nil {
+		return nil, err
+	}
+
+	headDir := filepath.Join(m.dir, headRecord.ID())
 	if err = os.Mkdir(headDir, 0777); err != nil {
 		return nil, err
 	}
@@ -190,9 +193,8 @@ func (m *Manager) BuildWithConfig(inputRelabelerConfigs []*config.InputRelabeler
 	}()
 
 	generation := m.generation
-	var headRecord *catalog.Record
 	h, err = head.Create(
-		id,
+		headRecord.ID(),
 		generation,
 		headDir,
 		inputRelabelerConfigs,
@@ -205,25 +207,20 @@ func (m *Manager) BuildWithConfig(inputRelabelerConfigs []*config.InputRelabeler
 		return nil, fmt.Errorf("failed to create head: %w", err)
 	}
 
-	record, err := m.catalog.Create(id, numberOfShards)
-	if err != nil {
-		return nil, err
-	}
 	m.generation++
-	releaseHeadFn := record.Acquire()
-	headRecord = record
+	releaseHeadFn := headRecord.Acquire()
 
 	m.counter.With(prometheus.Labels{"type": "created"}).Inc()
 	return NewDiscardableRotatableHead(
 		h,
-		func(id uuid.UUID, err error) error {
+		func(id string, err error) error {
 			if _, rotateErr := m.catalog.SetStatus(id, catalog.StatusRotated); rotateErr != nil {
 				return errors.Join(err, rotateErr)
 			}
 			m.counter.With(prometheus.Labels{"type": "rotated"}).Inc()
 			return err
 		},
-		func(id uuid.UUID) error {
+		func(id string) error {
 			var discardErr error
 			if _, discardErr = m.catalog.SetStatus(id, catalog.StatusPersisted); discardErr != nil {
 				return discardErr
@@ -231,7 +228,7 @@ func (m *Manager) BuildWithConfig(inputRelabelerConfigs []*config.InputRelabeler
 			m.counter.With(prometheus.Labels{"type": "persisted"}).Inc()
 			return nil
 		},
-		func(id uuid.UUID) error {
+		func(id string) error {
 			releaseHeadFn()
 			return nil
 		},

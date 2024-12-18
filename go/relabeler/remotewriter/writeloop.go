@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
+	"github.com/cenkalti/backoff/v4"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head/catalog"
 	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
@@ -56,15 +56,6 @@ func (wl *writeLoop) run(ctx context.Context) {
 			delay = 0
 		}
 
-		if client == nil {
-			client, err = createClient(wl.destination.Config())
-			if err != nil {
-				logger.Errorf("failed to create client: %v", err)
-				delay = defaultDelay
-				continue
-			}
-		}
-
 		if i == nil {
 			if nextI != nil {
 				i = nextI
@@ -76,6 +67,15 @@ func (wl *writeLoop) run(ctx context.Context) {
 					delay = defaultDelay
 					continue
 				}
+			}
+		}
+
+		if client == nil {
+			client, err = createClient(wl.destination.Config())
+			if err != nil {
+				logger.Errorf("failed to create client: %v", err)
+				delay = defaultDelay
+				continue
 			}
 		}
 
@@ -126,13 +126,19 @@ func createClient(config DestinationConfig) (client remote.WriteClient, err erro
 func (wl *writeLoop) write(ctx context.Context, iterator *Iterator) error {
 	var err error
 	var delay time.Duration
+	var bf backoff.BackOff = backoff.NewExponentialBackOff(
+		backoff.WithInitialInterval(defaultDelay),
+		backoff.WithMaxElapsedTime(0),
+		backoff.WithClockProvider(wl.clock),
+	)
+
+	bf = backoff.WithContext(bf, ctx)
 
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-wl.clock.After(delay):
-			delay = 0
 		}
 
 		err = iterator.Next(ctx)
@@ -142,9 +148,12 @@ func (wl *writeLoop) write(ctx context.Context, iterator *Iterator) error {
 			}
 
 			logger.Errorf("iteration failed: %v", err)
-			delay = defaultDelay
+			delay = bf.NextBackOff()
 			continue
 		}
+
+		bf.Reset()
+		delay = bf.NextBackOff()
 	}
 }
 
@@ -163,14 +172,9 @@ func (wl *writeLoop) nextIterator(ctx context.Context, writer Writer) (*Iterator
 		return nil, fmt.Errorf("failed to find next head: %w", err)
 	}
 	headDir := filepath.Join(wl.dataDir, nextHeadRecord.Dir())
-	crw, err := NewCursorReadWriter(filepath.Join(headDir, fmt.Sprintf("%s.cursor", wl.destination.Config().Name)))
+	crw, err := NewCursorReadWriter(filepath.Join(headDir, fmt.Sprintf("%s.cursor", wl.destination.Config().Name)), nextHeadRecord.NumberOfShards())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cursor: %w", err)
-	}
-
-	cursor, err := crw.Read()
-	if err != nil {
-		return nil, errors.Join(fmt.Errorf("failed to read cursor: %w", err), crw.Close())
 	}
 
 	crc32, err := wl.destination.Config().CRC32()
@@ -179,15 +183,14 @@ func (wl *writeLoop) nextIterator(ctx context.Context, writer Writer) (*Iterator
 	}
 
 	var discardCache bool
-	if cursor.ConfigCRC32 == nil {
-		if err = crw.Write(nil, &crc32); err != nil {
+	if crw.GetConfigCRC32() != crc32 {
+		if err = crw.SetConfigCRC32(crc32); err != nil {
 			return nil, errors.Join(fmt.Errorf("failed to write crc32: %w", err), crw.Close())
 		}
-	} else {
-		discardCache = *cursor.ConfigCRC32 != crc32
+		discardCache = true
 	}
 
-	ds, err := newDataSource(headDir, nextHeadRecord.NumberOfShards(), wl.destination.Config(), cursor.SegmentID, discardCache, wl.makeCorruptMarker(), nextHeadRecord)
+	ds, err := newDataSource(headDir, nextHeadRecord.NumberOfShards(), wl.destination.Config(), crw.GetTargetSegmentID(), discardCache, wl.makeCorruptMarker(), nextHeadRecord)
 	if err != nil {
 		return nil, errors.Join(fmt.Errorf("failed to create data source: %w", err), crw.Close())
 	}
@@ -195,12 +198,18 @@ func (wl *writeLoop) nextIterator(ctx context.Context, writer Writer) (*Iterator
 	headID := nextHeadRecord.ID()
 	ds.ID = headID
 
-	var startSegmentID *uint32
+	var targetSegmentID uint32
 	if cleanStart {
-		startSegmentID = nextHeadRecord.LastAppendedSegmentID()
+		if nextHeadRecord.LastAppendedSegmentID() != nil {
+			targetSegmentID = *nextHeadRecord.LastAppendedSegmentID()
+		} else {
+			targetSegmentID = crw.GetTargetSegmentID()
+		}
+	} else {
+		targetSegmentID = crw.GetTargetSegmentID()
 	}
 
-	i, err := newIterator(wl.clock, wl.destination.Config().QueueConfig, ds, writer, newAcknowledger(crw, crc32), cursor.SegmentID, startSegmentID, wl.destination.Config().ReadTimeout)
+	i, err := newIterator(wl.clock, wl.destination.Config().QueueConfig, ds, writer, crw, targetSegmentID, wl.destination.Config().ReadTimeout)
 	if err != nil {
 		return nil, errors.Join(fmt.Errorf("failed to create data source: %w", err), crw.Close(), ds.Close())
 	}
@@ -210,20 +219,20 @@ func (wl *writeLoop) nextIterator(ctx context.Context, writer Writer) (*Iterator
 	return i, nil
 }
 
-type CorruptMarkerFn func(headID uuid.UUID) error
+type CorruptMarkerFn func(headID string) error
 
-func (fn CorruptMarkerFn) MarkCorrupted(headID uuid.UUID) error {
+func (fn CorruptMarkerFn) MarkCorrupted(headID string) error {
 	return fn(headID)
 }
 
 func (wl *writeLoop) makeCorruptMarker() CorruptMarker {
-	return CorruptMarkerFn(func(headID uuid.UUID) error {
+	return CorruptMarkerFn(func(headID string) error {
 		_, err := wl.catalog.SetCorrupted(headID)
 		return err
 	})
 }
 
-func nextHead(ctx context.Context, headCatalog Catalog, headID uuid.UUID) (*catalog.Record, error) {
+func nextHead(ctx context.Context, headCatalog Catalog, headID string) (*catalog.Record, error) {
 	if err := contextErr(ctx); err != nil {
 		return nil, err
 	}

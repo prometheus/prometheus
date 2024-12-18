@@ -2,7 +2,6 @@ package remotewriter
 
 import (
 	"bytes"
-	"github.com/google/uuid"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"gopkg.in/yaml.v2"
@@ -31,7 +30,7 @@ func (c DestinationConfig) CRC32() (uint32, error) {
 
 type Destination struct {
 	config DestinationConfig
-	HeadID *uuid.UUID
+	HeadID *string
 }
 
 func (d *Destination) Config() DestinationConfig {
