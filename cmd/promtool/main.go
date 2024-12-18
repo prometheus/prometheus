@@ -34,6 +34,7 @@ import (
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/google/pprof/profile"
 	"github.com/prometheus/client_golang/api"
+	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil/promlint"
 	config_util "github.com/prometheus/common/config"
@@ -299,6 +300,23 @@ func main() {
 
 	parsedCmd := kingpin.MustParse(app.Parse(os.Args[1:]))
 
+	queryRange := v1.Range{}
+	var err error
+
+	switch parsedCmd {
+	case queryInstantCmd.FullCommand():
+		queryRange, err = newQueryRange(*queryInstantTime, "", time.Second)
+	case queryRangeCmd.FullCommand():
+		queryRange, err = newQueryRange(*queryRangeBegin, *queryRangeEnd, *queryRangeStep)
+	case querySeriesCmd.FullCommand():
+		queryRange, err = newQueryRange(*querySeriesBegin, *querySeriesEnd, 0)
+	case queryLabelsCmd.FullCommand():
+		queryRange, err = newQueryRange(*queryLabelsBegin, *queryLabelsEnd, 0)
+	}
+	if err != nil {
+		kingpin.Fatalf("Failed to parse query range: %v", err)
+	}
+
 	var p printer
 	switch *queryCmdFmt {
 	case "json":
@@ -306,8 +324,7 @@ func main() {
 	case "promql":
 		p = &promqlPrinter{}
 	case "unittest":
-		// TODO pick out default value used in query range (L892)
-		p = &unittestPrinter{Step: model.Duration(*queryRangeStep)}
+		p = &unittestPrinter{Step: model.Duration(queryRange.Step)}
 	}
 
 	if httpConfigFilePath != "" {
@@ -364,13 +381,13 @@ func main() {
 		os.Exit(PushMetrics(remoteWriteURL, httpRoundTripper, *pushMetricsHeaders, *pushMetricsTimeout, *pushMetricsLabels, *metricFiles...))
 
 	case queryInstantCmd.FullCommand():
-		os.Exit(QueryInstant(serverURL, httpRoundTripper, *queryInstantExpr, *queryInstantTime, p))
+		os.Exit(QueryInstant(serverURL, httpRoundTripper, *queryInstantExpr, queryRange, p))
 
 	case queryRangeCmd.FullCommand():
-		os.Exit(QueryRange(serverURL, httpRoundTripper, *queryRangeHeaders, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd, *queryRangeStep, p))
+		os.Exit(QueryRange(serverURL, httpRoundTripper, *queryRangeHeaders, *queryRangeExpr, queryRange, p))
 
 	case querySeriesCmd.FullCommand():
-		os.Exit(QuerySeries(serverURL, httpRoundTripper, *querySeriesMatch, *querySeriesBegin, *querySeriesEnd, p))
+		os.Exit(QuerySeries(serverURL, httpRoundTripper, *querySeriesMatch, queryRange, p))
 
 	case debugPprofCmd.FullCommand():
 		os.Exit(debugPprof(*debugPprofServer))
@@ -382,7 +399,7 @@ func main() {
 		os.Exit(debugAll(*debugAllServer))
 
 	case queryLabelsCmd.FullCommand():
-		os.Exit(QueryLabels(serverURL, httpRoundTripper, *queryLabelsMatch, *queryLabelsName, *queryLabelsBegin, *queryLabelsEnd, p))
+		os.Exit(QueryLabels(serverURL, httpRoundTripper, *queryLabelsMatch, *queryLabelsName, queryRange, p))
 
 	case testRulesCmd.FullCommand():
 		results := io.Discard
@@ -1169,6 +1186,10 @@ func (u *unittestPrinter) printValue(v model.Value) {
 				samples[metricName] = []string{}
 			}
 
+			if samplePair.Histogram != nil {
+				panic("histograms are not supported")
+			}
+
 			samples[metricName] = append(samples[metricName], strconv.FormatFloat(float64(samplePair.Value), 'f', -1, 64))
 		}
 
@@ -1178,6 +1199,10 @@ func (u *unittestPrinter) printValue(v model.Value) {
 
 			if _, ok := samples[metricName]; !ok {
 				samples[metricName] = []string{}
+			}
+
+			if len(stream.Histograms) > 0 {
+				panic("histograms are not supported")
 			}
 
 			for _, samplePair := range stream.Values {
@@ -1192,7 +1217,6 @@ func (u *unittestPrinter) printValue(v model.Value) {
 		inputSeries = append(inputSeries, series{Series: metric, Values: strings.Join(value, " ")})
 	}
 
-	// TODO do we want to use `yaml.FutureLineWrap()`
 	if err := yaml.NewEncoder(os.Stdout).Encode(unitTestFile{Tests: []testGroup{{Interval: u.Step, InputSeries: inputSeries}}}); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(failureExitCode)
