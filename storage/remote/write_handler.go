@@ -398,11 +398,14 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		var ref storage.SeriesRef
 
 		// Samples.
-		if h.ingestCTZeroSample && len(ts.Samples) > 0 {
+		if h.ingestCTZeroSample && len(ts.Samples) > 0 && ts.Samples[0].Timestamp != 0 && ts.CreatedTimestamp != 0 {
 			// CT only needs to be ingested for the first sample, it will be considered
 			// out of order for the rest.
-			ref, err = h.handleCTZeroSample(app, ref, ls, ts.Samples[0], ts.CreatedTimestamp)
-			if err != nil {
+			ref, err = app.AppendCTZeroSample(ref, ls, ts.Samples[0].Timestamp, ts.CreatedTimestamp)
+			if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) {
+				// Even for the first sample OOO is a common scenario because
+				// we can't tell if a CT was already ingested in a previous request.
+				// We ignore the error.
 				h.logger.Debug("Error when appending CT in remote write request", "err", err, "series", ls.String(), "created_timestamp", ts.CreatedTimestamp, "timestamp", ts.Samples[0].Timestamp)
 			}
 		}
@@ -427,11 +430,14 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 
 		// Native Histograms.
 		for _, hp := range ts.Histograms {
-			if h.ingestCTZeroSample {
+			if h.ingestCTZeroSample && hp.Timestamp != 0 && ts.CreatedTimestamp != 0 {
 				// Differently from samples, we need to handle CT for each histogram instead of just the first one.
 				// This is because histograms and float histograms are stored separately, even if they have the same labels.
 				ref, err = h.handleHistogramZeroSample(app, ref, ls, hp, ts.CreatedTimestamp)
-				if err != nil {
+				if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) {
+					// Even for the first sample OOO is a common scenario because
+					// we can't tell if a CT was already ingested in a previous request.
+					// We ignore the error.
 					h.logger.Debug("Error when appending CT in remote write request", "err", err, "series", ls.String(), "created_timestamp", ts.CreatedTimestamp, "timestamp", hp.Timestamp)
 				}
 			}
@@ -499,38 +505,14 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 	return samplesWithoutMetadata, http.StatusBadRequest, errors.Join(badRequestErrs...)
 }
 
-// handleCTZeroSample appends CT as a zero-value sample with CT value as the sample timestamp.
-// It doens't return errors in case of out of order CT.
-func (h *writeHandler) handleCTZeroSample(app storage.Appender, ref storage.SeriesRef, l labels.Labels, sample writev2.Sample, ct int64) (storage.SeriesRef, error) {
-	var err error
-	if sample.Timestamp != 0 && ct != 0 {
-		ref, err = app.AppendCTZeroSample(ref, l, sample.Timestamp, ct)
-		if err != nil && errors.Is(err, storage.ErrOutOfOrderCT) {
-			// Even for the first sample OOO is a common scenario because
-			// we can't tell if a CT was already ingested in a previous request.
-			// We ignore the error.
-			err = nil
-		}
-	}
-	return ref, err
-}
-
 // handleHistogramZeroSample appends CT as a zero-value sample with CT value as the sample timestamp.
 // It doens't return errors in case of out of order CT.
 func (h *writeHandler) handleHistogramZeroSample(app storage.Appender, ref storage.SeriesRef, l labels.Labels, hist writev2.Histogram, ct int64) (storage.SeriesRef, error) {
 	var err error
-	if hist.Timestamp != 0 && ct != 0 {
-		if hist.IsFloatHistogram() {
-			ref, err = app.AppendHistogramCTZeroSample(ref, l, hist.Timestamp, ct, nil, hist.ToFloatHistogram())
-		} else {
-			ref, err = app.AppendHistogramCTZeroSample(ref, l, hist.Timestamp, ct, hist.ToIntHistogram(), nil)
-		}
-		if err != nil && errors.Is(err, storage.ErrOutOfOrderCT) {
-			// Even for the first sample OOO is a common scenario because
-			// we can't tell if a CT was already ingested in a previous request.
-			// We ignore the error.
-			err = nil
-		}
+	if hist.IsFloatHistogram() {
+		ref, err = app.AppendHistogramCTZeroSample(ref, l, hist.Timestamp, ct, nil, hist.ToFloatHistogram())
+	} else {
+		ref, err = app.AppendHistogramCTZeroSample(ref, l, hist.Timestamp, ct, hist.ToIntHistogram(), nil)
 	}
 	return ref, err
 }
