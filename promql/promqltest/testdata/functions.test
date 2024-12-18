@@ -236,7 +236,7 @@ load 5m
 	http_requests{path="/bar"}	200 150 100 50 0
 	http_requests_gauge{path="/foo"} {{schema:0 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}}+{{schema:0 sum:1 count:2 buckets:[1 1 1] counter_reset_hint:gauge}}x5
 	http_requests_counter{path="/foo"} {{schema:0 sum:0 count:0 buckets:[0 0 0]}}+{{schema:0 sum:1 count:2 buckets:[1 1 1]}}x5
-	http_requests_mix{path="/foo"} 0 50 100 {{schema:0 sum:0 count:0 buckets:[0 0 0]}} {{schema:0 sum:1 count:2 buckets:[1 1 1]}}
+	http_requests_mix{path="/foo"} 0 50 100 {{schema:0 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}} {{schema:0 sum:1 count:2 buckets:[1 1 1] counter_reset_hint:gauge}}
 
 eval instant at 20m delta(http_requests[20m])
 	{path="/foo"} 200
