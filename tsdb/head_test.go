@@ -4732,7 +4732,7 @@ func TestOOOHistogramCounterResetHeaders(t *testing.T) {
 
 			// OOO histogram
 			for i := 1; i <= 5; i++ {
-				appendHistogram(100+int64(i), tsdbutil.GenerateTestHistogram(1000+i))
+				appendHistogram(100+int64(i), tsdbutil.GenerateTestHistogram(1000+int64(i)))
 			}
 			// Nothing mmapped yet.
 			checkOOOExpCounterResetHeader()
@@ -4820,7 +4820,7 @@ func TestOOOHistogramCounterResetHeaders(t *testing.T) {
 			appendHistogram(300, tsdbutil.SetHistogramCounterReset(tsdbutil.GenerateTestHistogram(3000)))
 
 			for i := 1; i <= 4; i++ {
-				appendHistogram(300+int64(i), tsdbutil.GenerateTestHistogram(3000+i))
+				appendHistogram(300+int64(i), tsdbutil.GenerateTestHistogram(3000+int64(i)))
 			}
 
 			// One mmapped chunk with (ts, val) [(300, 3000), (301, 3001), (302, 3002), (303, 3003), (350, 4000)].

@@ -385,13 +385,13 @@ func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 }
 
 func histogramSample(ts int64, hint histogram.CounterResetHint) hSample {
-	h := tsdbutil.GenerateTestHistogram(int(ts + 1))
+	h := tsdbutil.GenerateTestHistogram(ts + 1)
 	h.CounterResetHint = hint
 	return hSample{t: ts, h: h}
 }
 
 func floatHistogramSample(ts int64, hint histogram.CounterResetHint) fhSample {
-	fh := tsdbutil.GenerateTestFloatHistogram(int(ts + 1))
+	fh := tsdbutil.GenerateTestFloatHistogram(ts + 1)
 	fh.CounterResetHint = hint
 	return fhSample{t: ts, fh: fh}
 }

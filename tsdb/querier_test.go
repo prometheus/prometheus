@@ -1826,12 +1826,12 @@ func checkCurrVal(t *testing.T, valType chunkenc.ValueType, it *populateWithDelS
 		ts, h := it.AtHistogram(nil)
 		require.Equal(t, int64(expectedTs), ts)
 		h.CounterResetHint = histogram.UnknownCounterReset
-		require.Equal(t, tsdbutil.GenerateTestHistogram(expectedValue), h)
+		require.Equal(t, tsdbutil.GenerateTestHistogram(int64(expectedValue)), h)
 	case chunkenc.ValFloatHistogram:
 		ts, h := it.AtFloatHistogram(nil)
 		require.Equal(t, int64(expectedTs), ts)
 		h.CounterResetHint = histogram.UnknownCounterReset
-		require.Equal(t, tsdbutil.GenerateTestFloatHistogram(expectedValue), h)
+		require.Equal(t, tsdbutil.GenerateTestFloatHistogram(int64(expectedValue)), h)
 	default:
 		panic("unexpected value type")
 	}
@@ -3588,16 +3588,16 @@ func TestQueryWithDeletedHistograms(t *testing.T) {
 	ctx := context.Background()
 	testcases := map[string]func(int) (*histogram.Histogram, *histogram.FloatHistogram){
 		"intCounter": func(i int) (*histogram.Histogram, *histogram.FloatHistogram) {
-			return tsdbutil.GenerateTestHistogram(i), nil
+			return tsdbutil.GenerateTestHistogram(int64(i)), nil
 		},
 		"intgauge": func(i int) (*histogram.Histogram, *histogram.FloatHistogram) {
-			return tsdbutil.GenerateTestGaugeHistogram(rand.Int() % 1000), nil
+			return tsdbutil.GenerateTestGaugeHistogram(rand.Int63() % 1000), nil
 		},
 		"floatCounter": func(i int) (*histogram.Histogram, *histogram.FloatHistogram) {
-			return nil, tsdbutil.GenerateTestFloatHistogram(i)
+			return nil, tsdbutil.GenerateTestFloatHistogram(int64(i))
 		},
 		"floatGauge": func(i int) (*histogram.Histogram, *histogram.FloatHistogram) {
-			return nil, tsdbutil.GenerateTestGaugeFloatHistogram(rand.Int() % 1000)
+			return nil, tsdbutil.GenerateTestGaugeFloatHistogram(rand.Int63() % 1000)
 		},
 	}
 
