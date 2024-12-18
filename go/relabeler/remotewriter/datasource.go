@@ -140,6 +140,7 @@ type dataSource struct {
 	corrupted       bool
 	headReleaseFunc func()
 
+	mtx         sync.Mutex
 	cacheWriter *cacheWriter
 }
 

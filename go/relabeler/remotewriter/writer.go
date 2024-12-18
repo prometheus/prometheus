@@ -18,7 +18,7 @@ func newWriter(client remote.WriteClient) *writer {
 
 func (w *writer) Write(ctx context.Context, protobuf *cppbridge.SnappyProtobufEncodedData) error {
 	return protobuf.Do(func(buf []byte) error {
-		return w.client.Store(ctx, buf, 5)
+		return w.client.Store(ctx, buf, 0)
 	})
 }
 

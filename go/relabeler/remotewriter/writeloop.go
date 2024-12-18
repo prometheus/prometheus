@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/cenkalti/backoff/v4"
 	"github.com/jonboulle/clockwork"
+	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head/catalog"
 	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 	"github.com/prometheus/prometheus/storage/remote"
@@ -21,6 +21,7 @@ type writeLoop struct {
 	destination *Destination
 	catalog     Catalog
 	clock       clockwork.Clock
+	client      remote.WriteClient
 }
 
 func newWriteLoop(dataDir string, destination *Destination, catalog Catalog, clock clockwork.Clock) *writeLoop {
@@ -35,9 +36,10 @@ func newWriteLoop(dataDir string, destination *Destination, catalog Catalog, clo
 func (wl *writeLoop) run(ctx context.Context) {
 	var delay time.Duration
 	var err error
-	var client remote.WriteClient
 	var i *Iterator
 	var nextI *Iterator
+
+	rw := &readyWriter{}
 
 	defer func() {
 		if i != nil {
@@ -61,7 +63,7 @@ func (wl *writeLoop) run(ctx context.Context) {
 				i = nextI
 				nextI = nil
 			} else {
-				i, err = wl.nextIterator(ctx, newWriter(client))
+				i, err = wl.nextIterator(ctx, rw)
 				if err != nil {
 					logger.Errorf("failed to get next iterator: %v", err)
 					delay = defaultDelay
@@ -70,13 +72,15 @@ func (wl *writeLoop) run(ctx context.Context) {
 			}
 		}
 
-		if client == nil {
-			client, err = createClient(wl.destination.Config())
+		if wl.client == nil {
+			wl.client, err = createClient(wl.destination.Config())
 			if err != nil {
 				logger.Errorf("failed to create client: %v", err)
 				delay = defaultDelay
 				continue
 			}
+
+			rw.SetWriter(newWriter(wl.client))
 		}
 
 		if err = wl.write(ctx, i); err != nil {
@@ -86,7 +90,7 @@ func (wl *writeLoop) run(ctx context.Context) {
 		}
 
 		if nextI == nil {
-			nextI, err = wl.nextIterator(ctx, newWriter(client))
+			nextI, err = wl.nextIterator(ctx, rw)
 			if err != nil {
 				logger.Errorf("failed to get next iterator: %v", err)
 				delay = defaultDelay
@@ -124,36 +128,20 @@ func createClient(config DestinationConfig) (client remote.WriteClient, err erro
 }
 
 func (wl *writeLoop) write(ctx context.Context, iterator *Iterator) error {
-	var err error
-	var delay time.Duration
-	var bf backoff.BackOff = backoff.NewExponentialBackOff(
-		backoff.WithInitialInterval(defaultDelay),
-		backoff.WithMaxElapsedTime(0),
-		backoff.WithClockProvider(wl.clock),
-	)
-
-	bf = backoff.WithContext(bf, ctx)
-
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-wl.clock.After(delay):
-		}
-
-		err = iterator.Next(ctx)
-		if err != nil {
-			if errors.Is(err, ErrEndOfBlock) {
-				return nil
+		default:
+			err := iterator.Next(ctx)
+			if err != nil {
+				if errors.Is(err, ErrEndOfBlock) {
+					return nil
+				}
+				logger.Errorf("iteration failed: %v", err)
 			}
-
-			logger.Errorf("iteration failed: %v", err)
-			delay = bf.NextBackOff()
-			continue
 		}
 
-		bf.Reset()
-		delay = bf.NextBackOff()
 	}
 }
 
@@ -209,7 +197,7 @@ func (wl *writeLoop) nextIterator(ctx context.Context, writer Writer) (*Iterator
 		targetSegmentID = crw.GetTargetSegmentID()
 	}
 
-	i, err := newIterator(wl.clock, wl.destination.Config().QueueConfig, ds, writer, crw, targetSegmentID, wl.destination.Config().ReadTimeout)
+	i, err := newIterator(wl.clock, wl.destination.Config().QueueConfig, ds, crw, targetSegmentID, wl.destination.Config().ReadTimeout, writer)
 	if err != nil {
 		return nil, errors.Join(fmt.Errorf("failed to create data source: %w", err), crw.Close(), ds.Close())
 	}
@@ -327,4 +315,16 @@ func contextErr(ctx context.Context) error {
 	default:
 		return nil
 	}
+}
+
+type readyWriter struct {
+	writer Writer
+}
+
+func (rw *readyWriter) SetWriter(writer Writer) {
+	rw.writer = writer
+}
+
+func (rw *readyWriter) Write(ctx context.Context, protobuf *cppbridge.SnappyProtobufEncodedData) error {
+	return rw.writer.Write(ctx, protobuf)
 }

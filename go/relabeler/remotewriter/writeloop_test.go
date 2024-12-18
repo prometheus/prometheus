@@ -102,7 +102,7 @@ func NewTestHeads(dir string, inputRelabelConfigs []*config.InputRelabelerConfig
 	}
 
 	th.Storage = &NoOpStorage{}
-	th.Head = appender.NewRotatableHead(activeHead, th.Storage, th.Manager)
+	th.Head = appender.NewRotatableHead(activeHead, th.Storage, th.Manager, appender.NoOpHeadActivator{})
 
 	return th, nil
 }
@@ -147,10 +147,13 @@ func (c *remoteClient) Endpoint() string {
 }
 
 type testWriter struct {
+	mtx  sync.Mutex
 	data []*cppbridge.SnappyProtobufEncodedData
 }
 
 func (w *testWriter) Write(ctx context.Context, protobuf *cppbridge.SnappyProtobufEncodedData) error {
+	w.mtx.Lock()
+	defer w.mtx.Unlock()
 	w.data = append(w.data, protobuf)
 	return ctx.Err()
 }
