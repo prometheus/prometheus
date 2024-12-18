@@ -212,7 +212,7 @@ Run query against a Prometheus server.
 
 | Flag | Description | Default |
 | --- | --- | --- |
-| <code class="text-nowrap">-o</code>, <code class="text-nowrap">--format</code> | Output format of the query. | `promql` |
+| <code class="text-nowrap">-o</code>, <code class="text-nowrap">--format</code> | Output format of the query: promql, json, unittest. Unittest output is experimental. | `promql` |
 | <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. |  |
 
 

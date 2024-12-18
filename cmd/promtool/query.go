@@ -61,25 +61,20 @@ func newAPI(url *url.URL, roundTripper http.RoundTripper, headers map[string]str
 }
 
 // QueryInstant performs an instant query against a Prometheus server.
-func QueryInstant(url *url.URL, roundTripper http.RoundTripper, query, evalTime string, p printer) int {
+func QueryInstant(url *url.URL, roundTripper http.RoundTripper, query string, qr v1.Range, p printer) int {
 	api, err := newAPI(url, roundTripper, nil)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error creating API client:", err)
 		return failureExitCode
 	}
 
-	eTime := time.Now()
-	if evalTime != "" {
-		eTime, err = parseTime(evalTime)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error parsing evaluation time:", err)
-			return failureExitCode
-		}
+	if qr.Start.Equal(minTime) {
+		qr.Start = time.Now()
 	}
 
 	// Run query against client.
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, _, err := api.Query(ctx, query, eTime) // Ignoring warnings for now.
+	val, _, err := api.Query(ctx, query, qr.Start) // Ignoring warnings for now.
 	cancel()
 	if err != nil {
 		return handleAPIError(err)
@@ -91,50 +86,24 @@ func QueryInstant(url *url.URL, roundTripper http.RoundTripper, query, evalTime 
 }
 
 // QueryRange performs a range query against a Prometheus server.
-func QueryRange(url *url.URL, roundTripper http.RoundTripper, headers map[string]string, query, start, end string, step time.Duration, p printer) int {
+func QueryRange(url *url.URL, roundTripper http.RoundTripper, headers map[string]string, query string, qr v1.Range, p printer) int {
 	api, err := newAPI(url, roundTripper, headers)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error creating API client:", err)
 		return failureExitCode
 	}
 
-	var stime, etime time.Time
-
-	if end == "" {
-		etime = time.Now()
-	} else {
-		etime, err = parseTime(end)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error parsing end time:", err)
-			return failureExitCode
-		}
+	if qr.End.Equal(maxTime) {
+		qr.End = time.Now()
 	}
 
-	if start == "" {
-		stime = etime.Add(-5 * time.Minute)
-	} else {
-		stime, err = parseTime(start)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error parsing start time:", err)
-			return failureExitCode
-		}
-	}
-
-	if !stime.Before(etime) {
-		fmt.Fprintln(os.Stderr, "start time is not before end time")
-		return failureExitCode
-	}
-
-	if step == 0 {
-		resolution := math.Max(math.Floor(etime.Sub(stime).Seconds()/250), 1)
-		// Convert seconds to nanoseconds such that time.Duration parses correctly.
-		step = time.Duration(resolution) * time.Second
+	if qr.Start.Equal(minTime) {
+		qr.Start = qr.End.Add(-5 * time.Minute)
 	}
 
 	// Run query against client.
-	r := v1.Range{Start: stime, End: etime, Step: step}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, _, err := api.QueryRange(ctx, query, r) // Ignoring warnings for now.
+	val, _, err := api.QueryRange(ctx, query, qr) // Ignoring warnings for now.
 	cancel()
 
 	if err != nil {
@@ -146,22 +115,16 @@ func QueryRange(url *url.URL, roundTripper http.RoundTripper, headers map[string
 }
 
 // QuerySeries queries for a series against a Prometheus server.
-func QuerySeries(url *url.URL, roundTripper http.RoundTripper, matchers []string, start, end string, p printer) int {
+func QuerySeries(url *url.URL, roundTripper http.RoundTripper, matchers []string, qr v1.Range, p printer) int {
 	api, err := newAPI(url, roundTripper, nil)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error creating API client:", err)
 		return failureExitCode
 	}
 
-	stime, etime, err := parseStartTimeAndEndTime(start, end)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return failureExitCode
-	}
-
 	// Run query against client.
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, _, err := api.Series(ctx, matchers, stime, etime) // Ignoring warnings for now.
+	val, _, err := api.Series(ctx, matchers, qr.Start, qr.End) // Ignoring warnings for now.
 	cancel()
 
 	if err != nil {
@@ -173,22 +136,16 @@ func QuerySeries(url *url.URL, roundTripper http.RoundTripper, matchers []string
 }
 
 // QueryLabels queries for label values against a Prometheus server.
-func QueryLabels(url *url.URL, roundTripper http.RoundTripper, matchers []string, name, start, end string, p printer) int {
+func QueryLabels(url *url.URL, roundTripper http.RoundTripper, matchers []string, name string, qr v1.Range, p printer) int {
 	api, err := newAPI(url, roundTripper, nil)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error creating API client:", err)
 		return failureExitCode
 	}
 
-	stime, etime, err := parseStartTimeAndEndTime(start, end)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return failureExitCode
-	}
-
 	// Run query against client.
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, warn, err := api.LabelValues(ctx, name, matchers, stime, etime)
+	val, warn, err := api.LabelValues(ctx, name, matchers, qr.Start, qr.End)
 	cancel()
 
 	for _, v := range warn {
@@ -213,12 +170,31 @@ func handleAPIError(err error) int {
 	return failureExitCode
 }
 
+func newQueryRange(start, end string, step time.Duration) (v1.Range, error) {
+	qr := v1.Range{}
+	var err error
+	qr.Start, qr.End, err = parseStartTimeAndEndTime(start, end)
+
+	if !qr.Start.Before(qr.End) {
+		return qr, errors.New("start time is not before end time")
+	}
+
+	if step == 0 {
+		resolution := math.Max(math.Floor(qr.End.Sub(qr.Start).Seconds()/250), 1)
+		// Convert seconds to nanoseconds such that time.Duration parses correctly.
+		step = time.Duration(resolution) * time.Second
+	}
+
+	qr.Step = step
+
+	return qr, err
+}
+
+var minTime = time.Now().Add(-9999 * time.Hour)
+var maxTime = time.Now().Add(9999 * time.Hour)
+
 func parseStartTimeAndEndTime(start, end string) (time.Time, time.Time, error) {
-	var (
-		minTime = time.Now().Add(-9999 * time.Hour)
-		maxTime = time.Now().Add(9999 * time.Hour)
-		err     error
-	)
+	var err error
 
 	stime := minTime
 	etime := maxTime
