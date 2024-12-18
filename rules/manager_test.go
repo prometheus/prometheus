@@ -842,7 +842,7 @@ func TestUpdate(t *testing.T) {
 	// Change group rules and reload.
 	for i, g := range rgs.Groups {
 		for j, r := range g.Rules {
-			rgs.Groups[i].Rules[j].Expr.SetString(fmt.Sprintf("%s * 0", r.Expr.Value))
+			rgs.Groups[i].Rules[j].Expr = fmt.Sprintf("%s * 0", r.Expr)
 		}
 	}
 	reloadAndValidate(rgs, t, tmpFile, ruleManager, ogs)
@@ -869,9 +869,9 @@ func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
 		rtmp := []rulefmt.Rule{}
 		for _, r := range g.Rules {
 			rtmp = append(rtmp, rulefmt.Rule{
-				Record:      r.Record.Value,
-				Alert:       r.Alert.Value,
-				Expr:        r.Expr.Value,
+				Record:      r.Record,
+				Alert:       r.Alert,
+				Expr:        r.Expr,
 				For:         r.For,
 				Labels:      r.Labels,
 				Annotations: r.Annotations,
