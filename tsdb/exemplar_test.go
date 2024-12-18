@@ -211,14 +211,14 @@ func TestSelectExemplar_MultiSeries(t *testing.T) {
 	ret, err := es.Select(100, 200, []*labels.Matcher{m})
 	require.NoError(t, err)
 	require.Len(t, ret, 1, "select should have returned samples for a single series only")
-	require.Len(t, ret[0].Exemplars, 3, "didn't get expected 8 exemplars, got %d", len(ret[0].Exemplars))
+	require.Len(t, ret[0].Exemplars, 3, "didn't get expected 3 exemplars, got %d", len(ret[0].Exemplars))
 
 	m, err = labels.NewMatcher(labels.MatchEqual, labels.MetricName, l1Name)
 	require.NoError(t, err, "error creating label matcher for exemplar query")
 	ret, err = es.Select(100, 200, []*labels.Matcher{m})
 	require.NoError(t, err)
 	require.Len(t, ret, 1, "select should have returned samples for a single series only")
-	require.Len(t, ret[0].Exemplars, 2, "didn't get expected 8 exemplars, got %d", len(ret[0].Exemplars))
+	require.Len(t, ret[0].Exemplars, 2, "didn't get expected 2 exemplars, got %d", len(ret[0].Exemplars))
 }
 
 func TestSelectExemplar_TimeRange(t *testing.T) {
