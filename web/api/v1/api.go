@@ -480,7 +480,7 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
 	}
 
-	var warnings annotations.Annotations
+	warnings := res.Warnings
 	if limit > 0 {
 		res = truncateResults(res, limit)
 		warnings = warnings.Add(errors.New("results truncated due to limit"))
