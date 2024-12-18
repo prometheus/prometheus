@@ -482,8 +482,12 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 
 	warnings := res.Warnings
 	if limit > 0 {
-		res = truncateResults(res, limit)
-		warnings = warnings.Add(errors.New("results truncated due to limit"))
+		var isTruncated bool
+
+		res, isTruncated = truncateResults(res, limit)
+		if isTruncated {
+			warnings = warnings.Add(errors.New("results truncated due to limit"))
+		}
 	}
 	// Optional stats field in response if parameter "stats" is not empty.
 	sr := api.statsRenderer
@@ -600,10 +604,14 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
 	}
 
-	var warnings annotations.Annotations
+	warnings := res.Warnings
 	if limit > 0 {
-		res = truncateResults(res, limit)
-		warnings = warnings.Add(errors.New("results truncated due to limit"))
+		var isTruncated bool
+
+		res, isTruncated = truncateResults(res, limit)
+		if isTruncated {
+			warnings = warnings.Add(errors.New("results truncated due to limit"))
+		}
 	}
 
 	// Optional stats field in response if parameter "stats" is not empty.
@@ -2121,17 +2129,22 @@ func toHintLimit(limit int) int {
 
 // truncateResults truncates result for queryRange() and query().
 // No truncation for other types(Scalars or Strings).
-func truncateResults(result *promql.Result, limit int) *promql.Result {
+func truncateResults(result *promql.Result, limit int) (*promql.Result, bool) {
+	isTruncated := false
+
 	switch v := result.Value.(type) {
 	case promql.Matrix:
 		if len(v) > limit {
 			result.Value = v[:limit]
+			isTruncated = true
 		}
 	case promql.Vector:
 		if len(v) > limit {
 			result.Value = v[:limit]
+			isTruncated = true
 		}
 	}
+
 	// Return the modified result. Unchanged for other types.
-	return result
+	return result, isTruncated
 }
