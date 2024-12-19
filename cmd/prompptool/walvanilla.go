@@ -60,6 +60,8 @@ func (cmd *cmdWALVanillaToBlock) Do(ctx context.Context, workingDir string, logg
 		}
 	}
 
+	opts := tsdb.DefaultHeadOptions()
+	opts.ChunkDirRoot = workingDir
 	head, err := tsdb.NewHead(nil, logger, wal, wbl, tsdb.DefaultHeadOptions(), nil)
 	if err != nil {
 		return fmt.Errorf("create head: %w", err)
@@ -98,5 +100,6 @@ func (cmd *cmdWALVanillaToBlock) Do(ctx context.Context, workingDir string, logg
 			level.Error(logger).Log("msg", "rename wbl", "error", err.Error())
 		}
 	}
-	return os.Rename(walDir, walDir+".bak")
+	suffix := fmt.Sprintf(".%s.bak", time.Now().Format("2006010215040500"))
+	return os.Rename(walDir, walDir+suffix)
 }
