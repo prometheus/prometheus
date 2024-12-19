@@ -1,3 +1,33 @@
+## Why running patched version of Prometheus?
+
+In version 3.0.0 or 3.0.1 Prometheus stopped accepting empty `Content-Type` when scraping metrics. Prometheus of course have configuration properties to set fallback scrape protogol, but this is no longer default. This is a problem when you use prometeus-operator on openshift since the configuration is locked down and the CRDs are locked in by `openshift-metrics`.
+
+So in the `PLATTFORM-2288-set-a-global-fallback`-branch, branched from `v3.0.1`, I've implemented default fallback protocol again. 
+
+## How to build
+
+First build the prometheus version with: 
+
+```bash
+make build
+```
+
+Create the docker build directory and copy the binaries there: 
+
+```bash
+mkdir -p .build/linux-amd64
+cp prometheus promtool .build/linux-amd64/
+```
+
+Then build the new docker image; change tag-version for new builds:
+
+```bash
+docker build -t ghcr.io/domstolene/prometheus:v3.0.1-DA .
+docker push ghcr.io/domstolene/prometheus:v3.0.1-DA
+```
+
+---
+
 <h1 align="center" style="border-bottom: none">
     <a href="https://prometheus.io" target="_blank"><img alt="Prometheus" src="/documentation/images/prometheus-logo.svg"></a><br>Prometheus
 </h1>
