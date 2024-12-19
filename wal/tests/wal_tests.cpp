@@ -14,22 +14,6 @@ using PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap;
 using PromPP::WAL::BasicDecoder;
 using PromPP::WAL::BasicEncoder;
 
-class SampleForTest {
-  PromPP::Primitives::Timestamp timestamp_;
-  double value_;
-
- public:
-  PromPP::Primitives::Timestamp timestamp() const { return timestamp_; }
-  PromPP::Primitives::Timestamp timestamp() { return timestamp_; }
-
-  double value() const { return value_; }
-  double& value() { return value_; }
-
-  SampleForTest(const SampleForTest& s) : timestamp_(s.timestamp()), value_(s.value()) {}
-  SampleForTest(const PromPP::Primitives::Timestamp ts, const double val) : timestamp_(ts), value_(val) {}
-  SampleForTest() = default;
-};
-
 class NamesSetForTest : public std::vector<std::string> {
   using Base = std::vector<std::string>;
 
@@ -66,12 +50,12 @@ class TimeSeriesForTest {
 
  private:
   PrimaryCompositeType label_set_;
-  std::vector<SampleForTest> samples_;
+  std::vector<Sample> samples_;
   PrimaryLS::data_type data_;
 
  public:
   TimeSeriesForTest() = default;
-  TimeSeriesForTest(const LabelSetForTest& label_set, const std::vector<SampleForTest>& samples) : samples_(samples) {
+  TimeSeriesForTest(const LabelSetForTest& label_set, const std::vector<Sample>& samples) : samples_(samples) {
     label_set_ = PrimaryLS(data_, label_set).composite(data_);
   }
 
@@ -85,7 +69,7 @@ class TimeSeriesForTest {
   auto& data() { return data_; }
 };
 
-using samples_sequence_type = std::vector<SampleForTest>;
+using samples_sequence_type = std::vector<Sample>;
 const size_t NUM_VALUES = 10;
 const uint64_t START_TS = 1660828400000;
 const char SYMBOLS_DATA[89] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-+=/|.,\\?<>!@#$%^&*()\"':;";
@@ -375,7 +359,7 @@ TEST_F(WalFixture, BasicEncoderBasicDecoder) {
 
   // check reader samples
   samples_sequence_type outcomes_reader_samples;
-  reader.process_segment([&](uint32_t, uint64_t ts, double v) { outcomes_reader_samples.push_back(SampleForTest(ts, v)); });
+  reader.process_segment([&](uint32_t, uint64_t ts, double v) { outcomes_reader_samples.push_back(Sample(ts, v)); });
 
   auto etalon_sample_reader = etalons_samples.begin();
   auto outcome_sample_reader = outcomes_reader_samples.begin();
@@ -438,7 +422,7 @@ TEST_F(WalFixture, Snapshots) {
   reader_sbuf1 << decoder.label_sets().checkpoint();
   reader_sbuf2 << decoder2.label_sets().checkpoint();
   EXPECT_EQ(reader_sbuf1.view(), reader_sbuf2.view());
-  EXPECT_EQ(decoder.decoders(), decoder2.decoders());
+  EXPECT_EQ(decoder.sample_decoder().gorilla(), decoder2.sample_decoder().gorilla());
 }
 
 TEST_F(WalFixture, BasicEncoderMany) {
@@ -473,7 +457,7 @@ TEST_F(WalFixture, BasicEncoderMany) {
 
   struct Item {
     uint32_t ls_id;
-    SampleForTest sample;
+    Sample sample;
     Item(uint32_t id, PromPP::Primitives::Timestamp ts, double v) : ls_id(id), sample(ts, v) {}
   };
 
@@ -557,8 +541,8 @@ TEST_F(CreateBasicEncoderFromBasicDecoderFixture, Test) {
   encode_decode_segment(Sample(1, 1.0), kLabelSet1, encoder1_, {&decoder1_, &decoder2_}, nop_handler);
   encode_decode_segment(Sample(2, 2.0), kLabelSet1, encoder1_, {&decoder1_, &decoder2_}, nop_handler);
 
-  Encoder encoder2(decoder1_.gorilla(), decoder_lss1_, decoder1_.shard_id(), decoder1_.pow_two_of_total_shards(), decoder1_.last_processed_segment() + 1,
-                   decoder1_.ts_base());
+  Encoder encoder2(decoder1_.sample_decoder().gorilla(), decoder_lss1_, decoder1_.shard_id(), decoder1_.pow_two_of_total_shards(),
+                   decoder1_.last_processed_segment() + 1, decoder1_.sample_decoder().timestamp_base);
 
   static const Sample kThirdSample(3, 3.0);
   DecodedPoint third_point{};

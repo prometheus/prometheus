@@ -117,6 +117,18 @@ struct TestWALOutputDecoder : public testing::Test {
   }
 };
 
+TEST_F(TestWALOutputDecoder, DumpEmptyData) {
+  std::stringstream dump;
+  std::stringstream segment_stream;
+  stateless_relabeler_reset_to({{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2}});  // Keep
+  OutputDecoder wod(sr_, output_lss_, external_labels_);
+  Encoder enc{uint16_t{0}, uint8_t{0}};
+
+  wod.dump_to(dump);
+
+  EXPECT_EQ(0, dump.str().size());
+}
+
 TEST_F(TestWALOutputDecoder, DumpLoadSingleData) {
   std::stringstream dump;
   std::stringstream segment_stream;

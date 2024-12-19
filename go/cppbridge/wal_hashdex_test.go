@@ -184,7 +184,8 @@ func (s *HashdexSuite) TestHashdexWithVeryHardLimitsOnTimeseries() {
 	_ = h
 }
 
-func TestHashdex_ClusterReplica(t *testing.T) {
+func TestHashdex_SuccessfulParse(t *testing.T) {
+	// Arrange
 	wr := &prompb.WriteRequest{
 		Timeseries: []prompb.TimeSeries{
 			{
@@ -210,15 +211,44 @@ func TestHashdex_ClusterReplica(t *testing.T) {
 				},
 			},
 		},
+		Metadata: []prompb.MetricMetadata{
+			{
+				MetricFamilyName: "test1",
+				Help:             "test counter",
+			},
+			{
+				MetricFamilyName: "test2",
+				Unit:             "test unit",
+			},
+			{
+				MetricFamilyName: "test3",
+				Type:             prompb.MetricMetadata_COUNTER,
+			},
+		},
 	}
 	b, err := wr.Marshal()
 	require.NoError(t, err)
 
+	// Act
 	hlimits := cppbridge.DefaultWALHashdexLimits()
 	h, err := cppbridge.NewWALProtobufHashdex(b, hlimits)
 	require.NoError(t, err)
 	cluster := h.Cluster()
 	replica := h.Replica()
+
+	// Assert
+	expectedMetadata := []cppbridge.WALScraperHashdexMetadata{
+		{MetricName: "test1", Text: "test counter", Type: cppbridge.HashdexMetadataHelp},
+		{MetricName: "test2", Text: "test unit", Type: cppbridge.HashdexMetadataUnit},
+		{MetricName: "test3", Text: "COUNTER", Type: cppbridge.HashdexMetadataType},
+	}
+	actualMetadata := make([]cppbridge.WALScraperHashdexMetadata, 0, len(expectedMetadata))
+	h.RangeMetadata(func(md cppbridge.WALScraperHashdexMetadata) bool {
+		actualMetadata = append(actualMetadata, md)
+		return true
+	})
+	assert.Equal(t, expectedMetadata, actualMetadata)
+
 	t.Log("clean source protobuf message")
 	copy(b, make([]byte, len(b)))
 	t.Log("check that cluster and replica stay unchanged")
@@ -422,15 +452,15 @@ testmetric{label="\"bar\""} 1`
 	input += "\nnull_byte_metric{a=\"abc\x00\"} 1\n"
 
 	// Act
-	err := s.hasdex.Parse([]byte(input), -1)
+	scraped, err := s.hasdex.Parse([]byte(input), -1)
 	expectedMetadata := []cppbridge.WALScraperHashdexMetadata{
-		{MetricName: "go_gc_duration_seconds", Text: "A summary of the GC invocation durations.", Type: cppbridge.ScraperMetadataHelp},
-		{MetricName: "go_gc_duration_seconds", Text: "summary", Type: cppbridge.ScraperMetadataType},
-		{MetricName: "nohelp1", Text: "", Type: cppbridge.ScraperMetadataHelp},
-		{MetricName: "nohelp2", Text: "", Type: cppbridge.ScraperMetadataHelp},
-		{MetricName: "go_goroutines", Text: "Number of goroutines that currently exist.", Type: cppbridge.ScraperMetadataHelp},
-		{MetricName: "go_goroutines", Text: "gauge", Type: cppbridge.ScraperMetadataType},
-		{MetricName: "metric", Text: "foo\x00bar", Type: cppbridge.ScraperMetadataHelp},
+		{MetricName: "go_gc_duration_seconds", Text: "A summary of the GC invocation durations.", Type: cppbridge.HashdexMetadataHelp},
+		{MetricName: "go_gc_duration_seconds", Text: "summary", Type: cppbridge.HashdexMetadataType},
+		{MetricName: "nohelp1", Text: "", Type: cppbridge.HashdexMetadataHelp},
+		{MetricName: "nohelp2", Text: "", Type: cppbridge.HashdexMetadataHelp},
+		{MetricName: "go_goroutines", Text: "Number of goroutines that currently exist.", Type: cppbridge.HashdexMetadataHelp},
+		{MetricName: "go_goroutines", Text: "gauge", Type: cppbridge.HashdexMetadataType},
+		{MetricName: "metric", Text: "foo\x00bar", Type: cppbridge.HashdexMetadataHelp},
 	}
 	actualMetadata := make([]cppbridge.WALScraperHashdexMetadata, 0, len(expectedMetadata))
 	s.hasdex.RangeMetadata(func(md cppbridge.WALScraperHashdexMetadata) bool {
@@ -440,6 +470,7 @@ testmetric{label="\"bar\""} 1`
 
 	// Assert
 	s.NoError(err)
+	s.Equal(uint32(18), scraped)
 	s.Equal(expectedMetadata, actualMetadata)
 }
 
@@ -448,10 +479,11 @@ func (s *PrometheusScraperHashdexSuite) TestParseErrScraperParseUnexpectedToken(
 	input := []byte("a{b='c'} 1\n")
 
 	// Act
-	err := s.hasdex.Parse(input, -1)
+	scraped, err := s.hasdex.Parse(input, -1)
 
 	// Assert
 	s.ErrorIs(err, cppbridge.ErrScraperParseUnexpectedToken)
+	s.Equal(uint32(0), scraped)
 }
 
 func (s *PrometheusScraperHashdexSuite) TestParseErrScraperParseNoMetricName() {
@@ -459,10 +491,11 @@ func (s *PrometheusScraperHashdexSuite) TestParseErrScraperParseNoMetricName() {
 	input := []byte("{b=\"c\"} 1\n")
 
 	// Act
-	err := s.hasdex.Parse(input, -1)
+	scraped, err := s.hasdex.Parse(input, -1)
 
 	// Assert
 	s.ErrorIs(err, cppbridge.ErrScraperParseNoMetricName)
+	s.Equal(uint32(0), scraped)
 }
 
 func (s *PrometheusScraperHashdexSuite) TestParseErrScraperInvalidUtf8() {
@@ -470,10 +503,11 @@ func (s *PrometheusScraperHashdexSuite) TestParseErrScraperInvalidUtf8() {
 	input := []byte("a{b=\"\x80\"} 1\n")
 
 	// Act
-	err := s.hasdex.Parse(input, -1)
+	scraped, err := s.hasdex.Parse(input, -1)
 
 	// Assert
 	s.ErrorIs(err, cppbridge.ErrScraperInvalidUtf8)
+	s.Equal(uint32(0), scraped)
 }
 
 func (s *PrometheusScraperHashdexSuite) TestParseErrScraperParseInvalidValue() {
@@ -481,10 +515,11 @@ func (s *PrometheusScraperHashdexSuite) TestParseErrScraperParseInvalidValue() {
 	input := []byte("a{b=\"c\"} v\n")
 
 	// Act
-	err := s.hasdex.Parse(input, -1)
+	scraped, err := s.hasdex.Parse(input, -1)
 
 	// Assert
 	s.ErrorIs(err, cppbridge.ErrScraperParseInvalidValue)
+	s.Equal(uint32(0), scraped)
 }
 
 func (s *PrometheusScraperHashdexSuite) TestParseErrScraperParseInvalidTimestamp() {
@@ -492,10 +527,11 @@ func (s *PrometheusScraperHashdexSuite) TestParseErrScraperParseInvalidTimestamp
 	input := []byte("a{b=\"c\"} 1 9223372036854775808\n")
 
 	// Act
-	err := s.hasdex.Parse(input, -1)
+	scraped, err := s.hasdex.Parse(input, -1)
 
 	// Assert
 	s.ErrorIs(err, cppbridge.ErrScraperParseInvalidTimestamp)
+	s.Equal(uint32(0), scraped)
 }
 
 func (s *PrometheusScraperHashdexSuite) TestParseEmptyInput() {
@@ -503,7 +539,7 @@ func (s *PrometheusScraperHashdexSuite) TestParseEmptyInput() {
 	input := []byte{}
 
 	// Act
-	err := s.hasdex.Parse(input, -1)
+	scraped, err := s.hasdex.Parse(input, -1)
 	var actualMetadata []cppbridge.WALScraperHashdexMetadata
 	s.hasdex.RangeMetadata(func(md cppbridge.WALScraperHashdexMetadata) bool {
 		actualMetadata = append(actualMetadata, md)
@@ -513,6 +549,7 @@ func (s *PrometheusScraperHashdexSuite) TestParseEmptyInput() {
 	// Assert
 	s.NoError(err)
 	s.Equal([]cppbridge.WALScraperHashdexMetadata(nil), actualMetadata)
+	s.Equal(uint32(0), scraped)
 }
 
 type OpenMetricsScraperHashdexSuite struct {
@@ -576,26 +613,26 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 	input += "\n# EOF\n"
 
 	// Act
-	err := s.hasdex.Parse([]byte(input), -1)
+	scraped, err := s.hasdex.Parse([]byte(input), -1)
 	expectedMetadata := []cppbridge.WALScraperHashdexMetadata{
-		{MetricName: "go_gc_duration_seconds", Text: "A summary of the GC invocation durations.", Type: cppbridge.ScraperMetadataHelp},
-		{MetricName: "go_gc_duration_seconds", Text: "summary", Type: cppbridge.ScraperMetadataType},
-		{MetricName: "go_gc_duration_seconds", Text: "seconds", Type: cppbridge.ScraperMetadataUnit},
-		{MetricName: "nohelp1", Text: "", Type: cppbridge.ScraperMetadataHelp},
-		{MetricName: "help2", Text: `escape \ \n \\ \" \x chars`, Type: cppbridge.ScraperMetadataHelp},
-		{MetricName: "nounit", Text: "", Type: cppbridge.ScraperMetadataUnit},
-		{MetricName: "go_goroutines", Text: "Number of goroutines that currently exist.", Type: cppbridge.ScraperMetadataHelp},
-		{MetricName: "go_goroutines", Text: "gauge", Type: cppbridge.ScraperMetadataType},
-		{MetricName: "hh", Text: "histogram", Type: cppbridge.ScraperMetadataType},
-		{MetricName: "gh", Text: "gaugehistogram", Type: cppbridge.ScraperMetadataType},
-		{MetricName: "hhh", Text: "histogram", Type: cppbridge.ScraperMetadataType},
-		{MetricName: "ggh", Text: "gaugehistogram", Type: cppbridge.ScraperMetadataType},
-		{MetricName: "smr_seconds", Text: "summary", Type: cppbridge.ScraperMetadataType},
-		{MetricName: "ii", Text: "info", Type: cppbridge.ScraperMetadataType},
-		{MetricName: "ss", Text: "stateset", Type: cppbridge.ScraperMetadataType},
-		{MetricName: "un", Text: "unknown", Type: cppbridge.ScraperMetadataType},
-		{MetricName: "foo", Text: "counter", Type: cppbridge.ScraperMetadataType},
-		{MetricName: "metric", Text: "foo\x00bar", Type: cppbridge.ScraperMetadataHelp},
+		{MetricName: "go_gc_duration_seconds", Text: "A summary of the GC invocation durations.", Type: cppbridge.HashdexMetadataHelp},
+		{MetricName: "go_gc_duration_seconds", Text: "summary", Type: cppbridge.HashdexMetadataType},
+		{MetricName: "go_gc_duration_seconds", Text: "seconds", Type: cppbridge.HashdexMetadataUnit},
+		{MetricName: "nohelp1", Text: "", Type: cppbridge.HashdexMetadataHelp},
+		{MetricName: "help2", Text: `escape \ \n \\ \" \x chars`, Type: cppbridge.HashdexMetadataHelp},
+		{MetricName: "nounit", Text: "", Type: cppbridge.HashdexMetadataUnit},
+		{MetricName: "go_goroutines", Text: "Number of goroutines that currently exist.", Type: cppbridge.HashdexMetadataHelp},
+		{MetricName: "go_goroutines", Text: "gauge", Type: cppbridge.HashdexMetadataType},
+		{MetricName: "hh", Text: "histogram", Type: cppbridge.HashdexMetadataType},
+		{MetricName: "gh", Text: "gaugehistogram", Type: cppbridge.HashdexMetadataType},
+		{MetricName: "hhh", Text: "histogram", Type: cppbridge.HashdexMetadataType},
+		{MetricName: "ggh", Text: "gaugehistogram", Type: cppbridge.HashdexMetadataType},
+		{MetricName: "smr_seconds", Text: "summary", Type: cppbridge.HashdexMetadataType},
+		{MetricName: "ii", Text: "info", Type: cppbridge.HashdexMetadataType},
+		{MetricName: "ss", Text: "stateset", Type: cppbridge.HashdexMetadataType},
+		{MetricName: "un", Text: "unknown", Type: cppbridge.HashdexMetadataType},
+		{MetricName: "foo", Text: "counter", Type: cppbridge.HashdexMetadataType},
+		{MetricName: "metric", Text: "foo\x00bar", Type: cppbridge.HashdexMetadataHelp},
 	}
 	actualMetadata := make([]cppbridge.WALScraperHashdexMetadata, 0, len(expectedMetadata))
 	s.hasdex.RangeMetadata(func(md cppbridge.WALScraperHashdexMetadata) bool {
@@ -605,5 +642,6 @@ foo_total 17.0 1520879607.789 # {id="counter-test"} 5`
 
 	// Assert
 	s.NoError(err)
+	s.Equal(uint32(24), scraped)
 	s.Equal(expectedMetadata, actualMetadata)
 }

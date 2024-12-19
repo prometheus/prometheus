@@ -7,6 +7,7 @@
 
 #include "bare_bones/exception.h"
 #include "wal/hashdex.h"
+#include "wal/hashdex/protobuf.h"
 #include "wal/hashdex/scraper/scraper.h"
 
 template <class Out>
@@ -40,7 +41,7 @@ enum HashdexType : uint8_t {
   kPrometheusScraper,
   kOpenMetricsScraper,
 };
-using HashdexVariant = std::variant<PromPP::WAL::ProtobufHashdex,
+using HashdexVariant = std::variant<PromPP::WAL::hashdex::Protobuf,
                                     PromPP::WAL::GoModelHashdex,
                                     PromPP::WAL::BasicDecoderHashdex,
                                     PromPP::WAL::hashdex::scraper::PrometheusScraper,

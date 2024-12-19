@@ -100,6 +100,80 @@ using GorillaEncoder =
     BareBones::Encoding::Gorilla::StreamEncoder<BareBones::Encoding::Gorilla::ZigZagTimestampEncoder<>, BareBones::Encoding::Gorilla::ValuesEncoder>;
 using GorillaDecoder =
     BareBones::Encoding::Gorilla::StreamDecoder<BareBones::Encoding::Gorilla::ZigZagTimestampDecoder<>, BareBones::Encoding::Gorilla::ValuesDecoder>;
+using NullGorillaDecoder =
+    BareBones::Encoding::Gorilla::StreamDecoder<BareBones::Encoding::Gorilla::ZigZagTimestampNullDecoder<>, BareBones::Encoding::Gorilla::ValuesNullDecoder>;
+
+#pragma pack(push, 1)
+class CompactSamplesList {
+ public:
+  using SamplesVector = BareBones::Vector<Primitives::Sample>;
+
+  ~CompactSamplesList() {
+    if (type_ == Type::kPlural) {
+      sample_.plural.~SamplesVector();
+    }
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_single() const noexcept { return type_ == Type::kSingle; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_plural() const noexcept { return type_ == Type::kPlural; }
+
+  void add(const Primitives::Sample& sample) {
+    if (type_ == Type::kNone) [[likely]] {
+      type_ = Type::kSingle;
+      sample_.single = sample;
+    } else if (type_ == Type::kSingle) {
+      type_ = Type::kPlural;
+
+      if (const auto sample_copy = sample_.single; sample.timestamp() >= sample_copy.timestamp()) [[likely]] {
+        new (&sample_.plural) SamplesVector({sample_copy, sample});
+      } else {
+        new (&sample_.plural) SamplesVector({sample, sample_copy});
+      }
+    } else {
+      if (auto& plural = sample_.plural; plural.back().timestamp() <= sample.timestamp()) [[likely]] {
+        plural.emplace_back(sample);
+      } else {
+        const auto it = std::ranges::lower_bound(
+            plural, sample, [](const Primitives::Sample& a, const Primitives::Sample& b) PROMPP_LAMBDA_INLINE { return a.timestamp() <= b.timestamp(); });
+        plural.insert(it, sample);
+      }
+    }
+  }
+
+  [[nodiscard]] PROMPP_LAMBDA_INLINE const Primitives::Sample& sample() const noexcept {
+    assert(type_ == Type::kSingle);
+    return sample_.single;
+  }
+
+  [[nodiscard]] PROMPP_LAMBDA_INLINE const SamplesVector& samples() const noexcept {
+    assert(type_ == Type::kPlural);
+    return sample_.plural;
+  }
+
+ private:
+  enum class Type : uint8_t {
+    kNone = 0,
+    kSingle,
+    kPlural,
+  };
+
+  union SampleUnion {
+    SampleUnion() {}
+    ~SampleUnion() {}
+
+    Primitives::Sample single;
+    SamplesVector plural;
+  } sample_;
+  Type type_{Type::kNone};
+};
+#pragma pack(pop)
+
+}  // namespace PromPP::WAL
+
+template <>
+struct BareBones::IsTriviallyReallocatable<PromPP::WAL::CompactSamplesList> : std::true_type {};
+
+namespace PromPP::WAL {
 
 template <class LabelSetsTable = Primitives::SnugComposites::LabelSet::EncodingBimap, bool shrink_lss = false>
 class BasicEncoder {
@@ -107,27 +181,23 @@ class BasicEncoder {
   using checkpoint_type = typename std::remove_reference_t<LabelSetsTable>::checkpoint_type;
 
   class Buffer {
-    BareBones::SparseVector<Primitives::Sample> singular_;
-    BareBones::SparseVector<BareBones::Vector<Primitives::Sample>> plural_;
-    uint32_t samples_count_ = 0;
-    uint32_t series_count_ = 0;
+    BareBones::SparseVector<CompactSamplesList, BareBones::Vector> series_;
     Primitives::Timestamp earliest_sample_ = std::numeric_limits<Primitives::Timestamp>::max();
     Primitives::Timestamp latest_sample_ = 0;
     int64_t first_sample_added_at_tsns_ = 0;
+    uint32_t samples_count_ = 0;
 
    public:
     [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t samples_count() const noexcept { return samples_count_; }
-    [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t series_count() const noexcept { return series_count_; }
+    [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t series_count() const noexcept { return series_.items_count(); }
     [[nodiscard]] PROMPP_ALWAYS_INLINE Primitives::Timestamp earliest_sample() const noexcept { return earliest_sample_; }
     [[nodiscard]] PROMPP_ALWAYS_INLINE Primitives::Timestamp latest_sample() const noexcept { return latest_sample_; }
     [[nodiscard]] PROMPP_ALWAYS_INLINE int64_t first_sample_added_at_ts_ns() const noexcept { return first_sample_added_at_tsns_; }
 
     PROMPP_ALWAYS_INLINE void clear() noexcept {
-      singular_.clear();
-      plural_.clear();
+      series_.clear();
 
       samples_count_ = 0;
-      series_count_ = 0;
 
       earliest_sample_ = std::numeric_limits<Primitives::Timestamp>::max();
       latest_sample_ = 0;
@@ -143,65 +213,26 @@ class BasicEncoder {
 
       earliest_sample_ = std::min(smpl.timestamp(), earliest_sample_);
       latest_sample_ = std::max(smpl.timestamp(), latest_sample_);
-
       ++samples_count_;
-      if (plural_.count(ls_id)) [[unlikely]] {
-        auto& vec = plural_[ls_id];
-        if (vec.back().timestamp() <= smpl.timestamp()) [[likely]] {
-          vec.emplace_back(smpl);
-        } else {
-          auto it = std::lower_bound(vec.begin(), vec.end(), smpl,
-                                     [](const Primitives::Sample& a, const T& b) PROMPP_LAMBDA_INLINE { return a.timestamp() <= b.timestamp(); });
-          vec.insert(it, Primitives::Sample(smpl));
-        }
-      } else if (singular_.count(ls_id)) [[unlikely]] {
-        const auto& first_smpl = singular_[ls_id];
-        if (first_smpl.timestamp() <= smpl.timestamp()) [[likely]] {
-          switch_to_plural_list(ls_id, first_smpl, Primitives::Sample(smpl));
-        } else {
-          switch_to_plural_list(ls_id, Primitives::Sample(smpl), first_smpl);
-        }
-      } else {
-        resize_sparse_vector_if_needed(ls_id, singular_);
 
-        singular_[ls_id] = smpl;
-        ++series_count_;
+      if (ls_id >= series_.size()) [[unlikely]] {
+        series_.resize(ls_id + 1 + 512);
       }
+
+      series_[ls_id].add(smpl);
     }
 
     template <class Callback>
       requires std::is_invocable_v<Callback, Primitives::LabelSetID, Primitives::Timestamp, Primitives::Sample::value_type>
-    __attribute__((flatten)) void for_each(Callback func) const {
-      if (__builtin_expect(plural_.empty(), true)) {
-        for (const auto& [ls_id, s] : singular_) {
-          func(ls_id, s.timestamp(), s.value());
-        }
-      } else {
-        for (const auto& [ls_id, s] : singular_) {
-          if (__builtin_expect(plural_.count(ls_id), true)) {
-            for (const auto& s : plural_[ls_id]) {
-              func(ls_id, s.timestamp(), s.value());
-            }
-          } else {
-            func(ls_id, s.timestamp(), s.value());
+    __attribute__((flatten)) void for_each(Callback&& func) const {
+      for (const auto& [ls_id, sample] : series_) {
+        if (sample.is_single()) [[likely]] {
+          func(ls_id, sample.sample().timestamp(), sample.sample().value());
+        } else if (sample.is_plural()) [[likely]] {
+          for (const auto& [timestamp, value] : sample.samples()) {
+            func(ls_id, timestamp, value);
           }
         }
-      }
-    }
-
-   private:
-    PROMPP_ALWAYS_INLINE void switch_to_plural_list(Primitives::LabelSetID ls_id, const Primitives::Sample& first, const Primitives::Sample& second) {
-      resize_sparse_vector_if_needed(ls_id, plural_);
-
-      auto& vec = plural_[ls_id];
-      vec.emplace_back(first);
-      vec.emplace_back(second);
-    }
-
-    template <class SparseVector>
-    PROMPP_ALWAYS_INLINE void resize_sparse_vector_if_needed(Primitives::LabelSetID ls_id, SparseVector& vector) {
-      if (ls_id >= vector.size()) {
-        vector.resize(ls_id + 1 + 512);
       }
     }
   };
@@ -463,6 +494,11 @@ class BasicEncoder {
     return ls_id;
   }
 
+  template <typename Sample>
+  PROMPP_ALWAYS_INLINE void add_sample_on_ls_id(uint32_t ls_id, const Sample& sample) {
+    buffer_.add(ls_id, sample);
+  }
+
   template <typename Samples>
   PROMPP_ALWAYS_INLINE void add_samples_on_ls_id(uint32_t ls_id, const Samples& samples) {
     for (const auto& smpl : samples) {
@@ -671,16 +707,118 @@ class BasicEncoder {
   }
 };
 
-template <class LabelSetsTable = Primitives::SnugComposites::LabelSet::DecodingTable, size_t LZ4DecompressedBufferSize = 256>
-class BasicDecoder {
+struct SampleCrc {
+  enum class ValidationResult : uint8_t {
+    kValid = 0,
+    kInvalidTimestamp,
+    kInvalidValue,
+  };
+
+  BareBones::CRC32 timestamp{};
+  BareBones::CRC32 values{};
+
+  PROMPP_ALWAYS_INLINE void clear() noexcept {
+    timestamp.clear();
+    values.clear();
+  }
+};
+
+template <class SampleDecoder>
+concept SampleDecoderInterface =
+    requires(SampleDecoder& decoder, const SampleDecoder& const_decoder, SampleCrc& crc, BareBones::BitSequenceReader& reader, std::istream& istream) {
+      { decoder.load(istream) } -> std::same_as<void>;
+
+      { decoder.decode(Primitives::LabelSetID(), Primitives::Timestamp(), reader, crc) } -> std::same_as<Primitives::Sample>;
+      { decoder.decode(Primitives::LabelSetID(), reader, reader, crc) } -> std::same_as<Primitives::Sample>;
+
+      { decoder.timestamp_base } -> std::same_as<Primitives::Timestamp&>;
+      { const_decoder.allocated_memory() } -> std::same_as<uint32_t>;
+
+      { decoder.set_series_count(Primitives::LabelSetID()) } -> std::same_as<void>;
+
+      { const_decoder.validate_crc(SampleCrc(), SampleCrc()) } -> std::same_as<SampleCrc::ValidationResult>;
+    };
+
+class GorillaSampleDecoder {
+ public:
+  Primitives::Timestamp timestamp_base{std::numeric_limits<Primitives::Timestamp>::max()};
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const BareBones::Vector<GorillaDecoder>& gorilla() const noexcept { return gorilla_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t allocated_memory() const noexcept { return gorilla_.allocated_memory(); }
+
+  PROMPP_ALWAYS_INLINE void load(std::istream& stream) {
+    uint32_t gorilla_count = 0;
+    stream.read(reinterpret_cast<char*>(&gorilla_count), sizeof(gorilla_count));
+    set_series_count(gorilla_count);
+
+    for (auto& decoder : gorilla_) {
+      decoder.load(stream);
+    }
+  }
+
+  PROMPP_ALWAYS_INLINE void set_series_count(Primitives::LabelSetID value) { gorilla_.resize(value); }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE Primitives::Sample decode(Primitives::LabelSetID ls_id,
+                                                               Primitives::Timestamp timestamp,
+                                                               BareBones::BitSequenceReader& value_sequence,
+                                                               SampleCrc& crc) noexcept {
+    return decode_impl(ls_id, timestamp, value_sequence, crc);
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE Primitives::Sample decode(Primitives::LabelSetID ls_id,
+                                                               BareBones::BitSequenceReader& timestamp_sequence,
+                                                               BareBones::BitSequenceReader& value_sequence,
+                                                               SampleCrc& crc) noexcept {
+    return decode_impl(ls_id, timestamp_sequence, value_sequence, crc);
+  }
+
+  PROMPP_ALWAYS_INLINE static SampleCrc::ValidationResult validate_crc(SampleCrc actual, SampleCrc expected) noexcept {
+    using enum SampleCrc::ValidationResult;
+
+    if (actual.timestamp != expected.timestamp) [[unlikely]] {
+      return kInvalidTimestamp;
+    }
+    if (actual.values != expected.values) [[unlikely]] {
+      return kInvalidValue;
+    }
+
+    return kValid;
+  }
+
+ private:
   BareBones::Vector<GorillaDecoder> gorilla_;
+
+  template <class Timestamp>
+  [[nodiscard]] PROMPP_ALWAYS_INLINE Primitives::Sample decode_impl(Primitives::LabelSetID ls_id,
+                                                                    Timestamp&& timestamp,
+                                                                    BareBones::BitSequenceReader& value_sequence,
+                                                                    SampleCrc& crc) {
+    if (ls_id >= gorilla_.size()) [[unlikely]] {
+      throw BareBones::Exception(0xf0e57d2a0e5ce7ed, "Error while processing segment LabelSets: Unknown segment's LabelSet's id %d", ls_id);
+    }
+
+    auto& gorilla = gorilla_[ls_id];
+    gorilla.decode(timestamp, value_sequence);
+
+    crc.timestamp << (gorilla.last_timestamp() + timestamp_base);
+    crc.values << gorilla.last_value();
+
+    return {gorilla.last_timestamp() + timestamp_base, gorilla.last_value()};
+  }
+};
+
+static_assert(SampleDecoderInterface<GorillaSampleDecoder>);
+
+template <class LabelSetsTable = Primitives::SnugComposites::LabelSet::DecodingTable,
+          SampleDecoderInterface SampleDecoder = GorillaSampleDecoder,
+          size_t LZ4DecompressedBufferSize = 256>
+class BasicDecoder {
+  SampleDecoder sample_decoder_;
   BareBones::LZ4Stream::basic_istream<LZ4DecompressedBufferSize> lz4stream_{nullptr};
   LabelSetsTable& label_sets_;
 
   uuids::uuid uuid_;
   uint32_t last_processed_segment_ = std::numeric_limits<uint32_t>::max();
-
-  Primitives::Timestamp ts_base_ = std::numeric_limits<Primitives::Timestamp>::max();
 
   BareBones::BitSequence segment_gorilla_ts_bitseq_;
   BareBones::BitSequence segment_gorilla_v_bitseq_;
@@ -688,8 +826,7 @@ class BasicDecoder {
   BareBones::EncodedSequence<BareBones::Encoding::DeltaZigZagRLE<>> segment_ts_delta_rle_seq_{};
 
   BareBones::CRC32 segment_ls_id_crc_;
-  BareBones::CRC32 segment_ts_crc_;
-  BareBones::CRC32 segment_v_crc_;
+  SampleCrc segment_sample_crc_;
   uint16_t shard_id_ = 0;
   uint8_t pow_two_of_total_shards_ = 0;
   Primitives::Timestamp created_at_tsns_ = 0;
@@ -705,8 +842,7 @@ class BasicDecoder {
     segment_ls_id_delta_rle_seq_.clear();
     segment_ts_delta_rle_seq_.clear();
     segment_ls_id_crc_.clear();
-    segment_ts_crc_.clear();
-    segment_v_crc_.clear();
+    segment_sample_crc_.clear();
   }
 
   template <typename InputStream>
@@ -764,17 +900,17 @@ class BasicDecoder {
       in >> segment_ls_id_delta_rle_seq_ >> segment_ls_id_crc_;
 
       // read ts base
-      in.read(reinterpret_cast<char*>(&ts_base_), sizeof(ts_base_));
+      in.read(reinterpret_cast<char*>(&sample_decoder_.timestamp_base), sizeof(sample_decoder_.timestamp_base));
 
       // read ts
       if (in.get() == 0) {
-        in >> segment_ts_delta_rle_seq_ >> segment_ts_crc_;
+        in >> segment_ts_delta_rle_seq_ >> segment_sample_crc_.timestamp;
       } else {
-        in >> segment_gorilla_ts_bitseq_ >> segment_ts_crc_;
+        in >> segment_gorilla_ts_bitseq_ >> segment_sample_crc_.timestamp;
       }
 
       // read values
-      in >> segment_gorilla_v_bitseq_ >> segment_v_crc_;
+      in >> segment_gorilla_v_bitseq_ >> segment_sample_crc_.values;
     } catch (...) {
       clear_segment();
       invalidate();
@@ -782,7 +918,7 @@ class BasicDecoder {
     }
 
     ++last_processed_segment_;
-    gorilla_.resize(label_sets_.next_item_index());
+    sample_decoder_.set_series_count(label_sets_.next_item_index());
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE std::istream& get_stream(std::istream& stream) noexcept {
@@ -797,7 +933,8 @@ class BasicDecoder {
  public:
   BasicDecoder(LabelSetsTable& label_sets, BasicEncoderVersion encoder_version) : label_sets_(label_sets), encoder_version_(encoder_version) {}
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE const BareBones::Vector<GorillaDecoder>& gorilla() const noexcept { return gorilla_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const SampleDecoder& sample_decoder() const noexcept { return sample_decoder_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE SampleDecoder& sample_decoder() noexcept { return sample_decoder_; }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_empty() const noexcept { return last_processed_segment_ == std::numeric_limits<uint32_t>::max(); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_valid() const noexcept { return encoder_version_ != BasicEncoderVersion::kUnknown; }
@@ -809,7 +946,7 @@ class BasicDecoder {
   PROMPP_ALWAYS_INLINE void invalidate() noexcept { encoder_version_ = BasicEncoderVersion::kUnknown; }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept {
-    return gorilla_.allocated_memory() + lz4stream_.allocated_memory() + segment_gorilla_ts_bitseq_.allocated_memory() +
+    return sample_decoder_.allocated_memory() + lz4stream_.allocated_memory() + segment_gorilla_ts_bitseq_.allocated_memory() +
            segment_gorilla_v_bitseq_.allocated_memory() + segment_ls_id_delta_rle_seq_.allocated_memory() + segment_ts_delta_rle_seq_.allocated_memory();
   }
 
@@ -865,19 +1002,12 @@ class BasicDecoder {
     label_sets_.load(in);
 
     // read decoders
-    uint32_t decoders_count = 0;
-    in.read(reinterpret_cast<char*>(&decoders_count), sizeof(decoders_count));
-    gorilla_.resize(decoders_count);
-    for (auto& decoder : gorilla_) {
-      decoder.load(in);
-    }
+    sample_decoder_.load(in);
   }
 
   inline __attribute__((always_inline)) const LabelSetsTable& label_sets() const { return label_sets_; }
 
   inline __attribute__((always_inline)) uint32_t series() const { return label_sets_.size(); }
-
-  inline __attribute__((always_inline)) const auto& decoders() const noexcept { return gorilla_; }
 
   /// \Returns Total processed samples count.
   /// \seealso \ref process_segment().
@@ -888,8 +1018,6 @@ class BasicDecoder {
   inline __attribute__((always_inline)) uint8_t pow_two_of_total_shards() const noexcept { return pow_two_of_total_shards_; }
 
   inline __attribute__((always_inline)) uint32_t last_processed_segment() const { return last_processed_segment_; }
-
-  inline __attribute__((always_inline)) Primitives::Timestamp ts_base() const { return ts_base_; }
 
   inline __attribute__((always_inline)) int64_t created_at_tsns() const { return created_at_tsns_; }
 
@@ -907,122 +1035,89 @@ class BasicDecoder {
   template <class Callback>
     requires std::is_invocable_v<Callback, Primitives::LabelSetID, Primitives::Timestamp, Primitives::Sample::value_type>
   __attribute__((flatten)) void process_segment(Callback&& func) {
-    if (__builtin_expect(segment_gorilla_v_bitseq_.empty(), false))
+    if (segment_gorilla_v_bitseq_.empty()) [[unlikely]] {
       return;
+    }
 
     BareBones::CRC32 ls_id_crc;
-    BareBones::CRC32 ts_crc;
-    BareBones::CRC32 v_crc;
+    SampleCrc actual_sample_crc;
+
+    auto g_v_bitseq_reader = segment_gorilla_v_bitseq_.reader();
+
+    const auto decode_sample = [&](Primitives::LabelSetID ls_id, auto&& timestamp_reader) {
+      if (g_v_bitseq_reader.eof()) [[unlikely]] {
+        throw BareBones::Exception(0xe667122e5d11ba4c,
+                                   "Decoder %s exhausted label set values data prematurely, but segment processing expects more LabelSets' values",
+                                   uuids::to_string(uuid_).c_str());
+      }
+
+      ls_id_crc << ls_id;
+
+      const auto sample = sample_decoder_.decode(ls_id, timestamp_reader, g_v_bitseq_reader, actual_sample_crc);
+      ++samples_;
+
+      earliest_sample_ = std::min(sample.timestamp(), earliest_sample_);
+      latest_sample_ = std::max(sample.timestamp(), latest_sample_);
+
+      func(ls_id, sample.timestamp(), sample.value());
+    };
 
     if (segment_gorilla_ts_bitseq_.empty()) {
       auto ts_i = segment_ts_delta_rle_seq_.begin();
-      auto g_v_bitseq_reader = segment_gorilla_v_bitseq_.reader();
 
       for (Primitives::LabelSetID ls_id : segment_ls_id_delta_rle_seq_) {
-        if (__builtin_expect(ls_id >= gorilla_.size(), false)) {
-          throw BareBones::Exception(0xf0e57d2a0e5ce7ed, "Error while processing segment LabelSets: Unknown segment's LabelSet's id %d", ls_id);
-        }
-
-        if (__builtin_expect(g_v_bitseq_reader.left() == 0, false)) {
-          throw BareBones::Exception(0xa5cc1f527d80b20f,
-                                     "Decoder %s exhausted label set values data prematurely, but segment processing expects more LabelSets' values",
-                                     uuids::to_string(uuid_).c_str());
-        }
-
-        auto& g = gorilla_[ls_id];
-
-        g.decode(*ts_i, g_v_bitseq_reader);
-
-        ls_id_crc << ls_id;
-        ts_crc << (g.last_timestamp() + ts_base_);
-        v_crc << g.last_value();
-
+        decode_sample(ls_id, *ts_i);
         ++ts_i;
-        ++samples_;
-
-        auto timestamp = g.last_timestamp() + ts_base_;
-        earliest_sample_ = std::min(timestamp, earliest_sample_);
-        latest_sample_ = std::max(timestamp, latest_sample_);
-
-        func(ls_id, timestamp, g.last_value());
       }
 
       // there are remaining timestamps in Decoder/segment (ls_id), which is unexpected.
-      if (ts_i != segment_ts_delta_rle_seq_.end()) {
+      if (ts_i != segment_ts_delta_rle_seq_.end()) [[unlikely]] {
         throw BareBones::Exception(0x6b534297844a47c9,
                                    "Decoder %s got an error after processing segment LabelSets: segment ls_id timestamps counts mismatch, there are "
                                    "remaining timestamp data",
                                    uuids::to_string(uuid_).c_str());
       }
-
-      if (g_v_bitseq_reader.left() != 0) {
-        throw BareBones::Exception(0x934f6048d089ae64,
-                                   "Decoder %s got an error after processing segment LabelSets: segment ls_id values (%zd) and Decoder's values (%zd) counts "
-                                   "mismatch, there are remaining values data",
-                                   uuids::to_string(uuid_).c_str(), g_v_bitseq_reader.left(), segment_gorilla_v_bitseq_.size());
-      }
     } else {
       // process non-empty ts
       auto g_ts_bitseq_reader = segment_gorilla_ts_bitseq_.reader();
-      auto g_v_bitseq_reader = segment_gorilla_v_bitseq_.reader();
 
       for (Primitives::LabelSetID ls_id : segment_ls_id_delta_rle_seq_) {
-        // same checks as in prev. ls_id parsing.
-        // TODO: Merge it?
-        if (__builtin_expect(ls_id >= gorilla_.size(), false)) {
-          throw BareBones::Exception(0x19884e9893440316, "Error while processing segment LabelSets: Unknown segment's LabelSet's id %d", ls_id);
-        }
-
-        if (__builtin_expect(g_ts_bitseq_reader.left() == 0, false)) {
+        if (g_ts_bitseq_reader.eof()) [[unlikely]] {
           throw BareBones::Exception(0xf837b80ba182e441,
                                      "Decoder %s exhausted label set values data prematurely, but segment processing expects more LabelSets' timestamps",
                                      uuids::to_string(uuid_).c_str());
         }
 
-        if (__builtin_expect(g_v_bitseq_reader.left() == 0, false)) {
-          throw BareBones::Exception(0xe667122e5d11ba4c,
-                                     "Decoder %s exhausted label set values data prematurely, but segment processing expects more LabelSets' values",
-                                     uuids::to_string(uuid_).c_str());
-        }
-
-        auto& g = gorilla_[ls_id];
-
-        g.decode(g_ts_bitseq_reader, g_v_bitseq_reader);
-
-        ls_id_crc << ls_id;
-        ts_crc << (g.last_timestamp() + ts_base_);
-        v_crc << g.last_value();
-
-        ++samples_;
-        auto timestamp = g.last_timestamp() + ts_base_;
-        earliest_sample_ = std::min(timestamp, earliest_sample_);
-        latest_sample_ = std::max(timestamp, latest_sample_);
-
-        func(ls_id, timestamp, g.last_value());
+        decode_sample(ls_id, g_ts_bitseq_reader);
       }
 
-      if (g_ts_bitseq_reader.left() != 0) {
+      if (!g_ts_bitseq_reader.eof()) [[unlikely]] {
         throw BareBones::Exception(0x5352e912e73554c1, "Decoder %s got error after parsing LabelSets: there are more remaining timestamps data",
                                    uuids::to_string(uuid_).c_str());
       }
-
-      if (g_v_bitseq_reader.left() != 0) {
-        throw BareBones::Exception(0x71811aa3dc793602, "Decoder %s got error after parsing LabelSets: there are more remaining values data",
-                                   uuids::to_string(uuid_).c_str());
-      }
     }
 
-    if (ls_id_crc != segment_ls_id_crc_) {
+    if (!g_v_bitseq_reader.eof()) [[unlikely]] {
+      throw BareBones::Exception(0x934f6048d089ae64,
+                                 "Decoder %s got an error after processing segment LabelSets: segment ls_id values (%zd) and Decoder's values (%zd) counts "
+                                 "mismatch, there are remaining values data",
+                                 uuids::to_string(uuid_).c_str(), g_v_bitseq_reader.left(), segment_gorilla_v_bitseq_.size());
+    }
+
+    if (ls_id_crc != segment_ls_id_crc_) [[unlikely]] {
       throw BareBones::Exception(0x6ea4e8b039aea0e8, "Decoder %s got error: CRC for LabelSet's ids mismatch: Decoder ls_id CRC: %u, segment ls_id CRC: %u",
                                  uuids::to_string(uuid_).c_str(), static_cast<uint32_t>(segment_ls_id_crc_), static_cast<uint32_t>(ls_id_crc));
     }
-    if (ts_crc != segment_ts_crc_) {
+
+    if (auto status = sample_decoder_.validate_crc(actual_sample_crc, segment_sample_crc_); status == SampleCrc::ValidationResult::kInvalidTimestamp)
+        [[unlikely]] {
       throw BareBones::Exception(0x0fd1fbf569f6c3c5, "Decoder %s got error: CRC for LabelSet's timestamps mismatch: Decoder ts CRC: %u, segment ts CRC: %u",
-                                 uuids::to_string(uuid_).c_str(), static_cast<uint32_t>(segment_ts_crc_), static_cast<uint32_t>(ts_crc));
-    }
-    if (v_crc != segment_v_crc_) {
-      throw BareBones::Exception(0x0ee2b199218aaf7d, "Decoder %s got error: CRC for LabelSet's timestamps mismatch: Decoder v CRC: %u, segment v CRC: %u",
-                                 uuids::to_string(uuid_).c_str(), static_cast<uint32_t>(segment_v_crc_), static_cast<uint32_t>(v_crc));
+                                 uuids::to_string(uuid_).c_str(), static_cast<uint32_t>(segment_sample_crc_.timestamp),
+                                 static_cast<uint32_t>(actual_sample_crc.timestamp));
+    } else if (status == SampleCrc::ValidationResult::kInvalidValue) [[unlikely]] {
+      throw BareBones::Exception(0x0ee2b199218aaf7d, "Decoder %s got error: CRC for LabelSet's values mismatch: Decoder v CRC: %u, segment v CRC: %u",
+                                 uuids::to_string(uuid_).c_str(), static_cast<uint32_t>(segment_sample_crc_.values),
+                                 static_cast<uint32_t>(actual_sample_crc.values));
     }
 
     clear_segment();

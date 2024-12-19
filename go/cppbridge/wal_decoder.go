@@ -280,9 +280,14 @@ func NewWALOutputDecoder(
 // Decode - decodes incoming encoding data and return protobuf, lowerLimitTimestamp - timestamp in milliseconds,
 // skip sample lower limit timestamp.
 func (d *WALOutputDecoder) Decode(
+	ctx context.Context,
 	segment []byte,
 	lowerLimitTimestamp int64,
 ) (*DecodedRefSamples, int64, error) {
+	if ctx.Err() != nil {
+		return nil, 0, ctx.Err()
+	}
+
 	maxTimestamp, refSamples, exception := walOutputDecoderDecode(segment, d.decoder, lowerLimitTimestamp)
 	return newDecodedRefSamples(refSamples, d.shardID), maxTimestamp, handleException(exception)
 }
@@ -298,6 +303,10 @@ func (d *WALOutputDecoder) WriteTo(w io.Writer) (int64, error) {
 	dump, exception := walOutputDecoderDumpTo(d.decoder)
 	if len(exception) != 0 {
 		return 0, handleException(exception)
+	}
+
+	if len(dump) == 0 {
+		return 0, nil
 	}
 
 	n, err := w.Write(dump)

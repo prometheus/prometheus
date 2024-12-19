@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 	"math"
 	"runtime"
 	"sort"
 	"strconv"
 	"sync"
+
+	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler"
@@ -261,14 +262,14 @@ func (h *Head) Append(
 	incomingData *relabeler.IncomingData,
 	state *cppbridge.State,
 	relabelerID string,
-) ([][]*cppbridge.InnerSeries, error) {
+) ([][]*cppbridge.InnerSeries, cppbridge.RelabelerStats, error) {
 	if h.finalizer.FinalizeCalled() {
-		return nil, errors.New("appending to a finalized head")
+		return nil, cppbridge.RelabelerStats{}, errors.New("appending to a finalized head")
 	}
 
 	rd, ok := h.relabelersData[relabelerID]
 	if !ok {
-		return nil, fmt.Errorf("relabeler ID not exist: %s", relabelerID)
+		return nil, cppbridge.RelabelerStats{}, fmt.Errorf("relabeler ID not exist: %s", relabelerID)
 	}
 
 	if state != nil {
@@ -289,7 +290,7 @@ func (h *Head) Append(
 	))
 	if err := inputPromise.Wait(ctx); err != nil {
 		// reset msr.rotateWG on error
-		return nil, fmt.Errorf("failed input promise: %s", err)
+		return nil, cppbridge.RelabelerStats{}, fmt.Errorf("failed input promise: %s", err)
 	}
 
 	inputPromise.UpdateRelabeler()
@@ -299,7 +300,7 @@ func (h *Head) Append(
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to write wal: %w", err)
+		return nil, cppbridge.RelabelerStats{}, fmt.Errorf("failed to write wal: %w", err)
 	}
 
 	_ = h.forEachShard(func(shard relabeler.Shard) error {
@@ -315,7 +316,7 @@ func (h *Head) Append(
 	}
 	h.lastAppendedSegmentIDSetter.SetLastAppendedSegmentID(*h.lastAppendedSegmentID)
 
-	return inputPromise.data, nil
+	return inputPromise.data, inputPromise.Stats(), nil
 }
 
 func (h *Head) ForEachShard(fn relabeler.ShardFn) error {

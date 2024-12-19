@@ -141,8 +141,9 @@ func (s *AppenderSuite) TestManagerRelabelerKeep() {
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, nil, relabelerID)
+	stats, err := app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
+	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
 	time.AfterFunc(100*time.Millisecond, func() {
 		clock.Advance(500 * time.Millisecond)
@@ -168,8 +169,9 @@ func (s *AppenderSuite) TestManagerRelabelerKeep() {
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, nil, relabelerID)
+	stats, err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
+	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 0}, stats)
 
 	time.AfterFunc(100*time.Millisecond, func() {
 		clock.Advance(500 * time.Millisecond)
@@ -281,8 +283,9 @@ func (s *AppenderSuite) TestManagerRelabelerRelabeling() {
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, nil, relabelerID)
+	stats, err := app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
+	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
 	time.AfterFunc(100*time.Millisecond, func() {
 		clock.Advance(500 * time.Millisecond)
@@ -319,8 +322,9 @@ func (s *AppenderSuite) TestManagerRelabelerRelabeling() {
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, nil, relabelerID)
+	stats, err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
+	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 0}, stats)
 
 	time.AfterFunc(100*time.Millisecond, func() {
 		clock.Advance(500 * time.Millisecond)
@@ -432,8 +436,9 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingAddNewLabel() {
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, nil, relabelerID)
+	stats, err := app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
+	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
 	time.AfterFunc(100*time.Millisecond, func() {
 		clock.Advance(500 * time.Millisecond)
@@ -470,8 +475,9 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingAddNewLabel() {
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, nil, relabelerID)
+	stats, err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
+	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 0}, stats)
 
 	time.AfterFunc(100*time.Millisecond, func() {
 		clock.Advance(500 * time.Millisecond)
@@ -587,8 +593,9 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsEnd() {
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, nil, relabelerID)
+	stats, err := app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
+	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
 	time.AfterFunc(100*time.Millisecond, func() {
 		clock.Advance(500 * time.Millisecond)
@@ -625,8 +632,9 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsEnd() {
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, nil, relabelerID)
+	stats, err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
+	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 0}, stats)
 
 	time.AfterFunc(100*time.Millisecond, func() {
 		clock.Advance(500 * time.Millisecond)
@@ -742,8 +750,9 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsRelabel(
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, nil, relabelerID)
+	stats, err := app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
+	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
 	time.AfterFunc(100*time.Millisecond, func() {
 		clock.Advance(500 * time.Millisecond)
@@ -780,8 +789,9 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsRelabel(
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, nil, relabelerID)
+	stats, err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
+	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 0}, stats)
 
 	time.AfterFunc(100*time.Millisecond, func() {
 		clock.Advance(500 * time.Millisecond)
@@ -901,8 +911,9 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels() {
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, state, relabelerID)
+	stats, err := app.Append(s.baseCtx, h, state, relabelerID)
 	s.Require().NoError(err)
+	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
 	time.AfterFunc(100*time.Millisecond, func() {
 		clock.Advance(500 * time.Millisecond)
@@ -955,8 +966,9 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels() {
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, state, relabelerID)
+	stats, err = app.Append(s.baseCtx, h, state, relabelerID)
 	s.Require().NoError(err)
+	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 0}, stats)
 
 	time.AfterFunc(100*time.Millisecond, func() {
 		clock.Advance(500 * time.Millisecond)
@@ -1090,8 +1102,9 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels_Conflicti
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, state, relabelerID)
+	stats, err := app.Append(s.baseCtx, h, state, relabelerID)
 	s.Require().NoError(err)
+	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
 	time.AfterFunc(100*time.Millisecond, func() {
 		clock.Advance(500 * time.Millisecond)
@@ -1144,8 +1157,9 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels_Conflicti
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, state, relabelerID)
+	stats, err = app.Append(s.baseCtx, h, state, relabelerID)
 	s.Require().NoError(err)
+	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 0}, stats)
 
 	time.AfterFunc(100*time.Millisecond, func() {
 		clock.Advance(500 * time.Millisecond)
@@ -1280,8 +1294,9 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels_Conflicti
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, state, relabelerID)
+	stats, err := app.Append(s.baseCtx, h, state, relabelerID)
 	s.Require().NoError(err)
+	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
 	time.AfterFunc(100*time.Millisecond, func() {
 		clock.Advance(500 * time.Millisecond)
@@ -1333,8 +1348,9 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels_Conflicti
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, state, relabelerID)
+	stats, err = app.Append(s.baseCtx, h, state, relabelerID)
 	s.Require().NoError(err)
+	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 0}, stats)
 
 	time.AfterFunc(100*time.Millisecond, func() {
 		clock.Advance(500 * time.Millisecond)
@@ -1503,8 +1519,9 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, nil, relabelerID)
+	stats, err := app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
+	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
 	time.AfterFunc(100*time.Millisecond, func() {
 		clock.Advance(500 * time.Millisecond)
@@ -1550,8 +1567,9 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, nil, relabelerID)
+	stats, err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
+	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
 	time.AfterFunc(100*time.Millisecond, func() {
 		clock.Advance(500 * time.Millisecond)
@@ -1589,8 +1607,9 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	err = app.Append(s.baseCtx, h, nil, relabelerID)
+	stats, err = app.Append(s.baseCtx, h, nil, relabelerID)
 	s.Require().NoError(err)
+	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 0}, stats)
 
 	time.AfterFunc(100*time.Millisecond, func() {
 		clock.Advance(500 * time.Millisecond)
@@ -1952,8 +1971,9 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans() {
 	state.EnableTrackStaleness()
 	state.SetStaleNansTS(time.Now().UnixMilli())
 
-	err = app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID)
+	stats, err := app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID)
 	s.Require().NoError(err)
+	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
 	time.AfterFunc(100*time.Millisecond, func() {
 		clock.Advance(500 * time.Millisecond)
@@ -1981,8 +2001,9 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans() {
 
 	h = s.makeIncomingData(secondWr, hlimits)
 	state.SetStaleNansTS(time.Now().UnixMilli())
-	err = app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID)
+	stats, err = app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID)
 	s.Require().NoError(err)
+	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
 	time.AfterFunc(100*time.Millisecond, func() {
 		clock.Advance(500 * time.Millisecond)
@@ -2141,8 +2162,9 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 	state := cppbridge.NewState(numberOfShards)
 	state.EnableTrackStaleness()
 	state.SetStaleNansTS(time.Now().UnixMilli())
-	err = app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID)
+	stats, err := app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID)
 	s.Require().NoError(err)
+	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
 	time.AfterFunc(100*time.Millisecond, func() {
 		clock.Advance(500 * time.Millisecond)
@@ -2189,8 +2211,9 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 	}
 	h = s.makeIncomingData(secondWr, hlimits)
 	state.SetStaleNansTS(time.Now().UnixMilli())
-	err = app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID)
+	stats, err = app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID)
 	s.Require().NoError(err)
+	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
 	time.AfterFunc(100*time.Millisecond, func() {
 		clock.Advance(500 * time.Millisecond)
@@ -2229,8 +2252,9 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 	}
 	h = s.makeIncomingData(thirdWr, hlimits)
 	state.SetStaleNansTS(time.Now().UnixMilli())
-	err = app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID)
+	stats, err = app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID)
 	s.Require().NoError(err)
+	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
 	time.AfterFunc(100*time.Millisecond, func() {
 		clock.Advance(500 * time.Millisecond)

@@ -183,8 +183,9 @@ func (s *RelabelerSuite) TestInvalidAction() {
 	shardsRelabeledSeries := cppbridge.NewShardsRelabeledSeries(numberOfShards)
 	cache := cppbridge.NewCache()
 
-	err = psr.InputRelabeling(s.baseCtx, inputLss, targetLss, cache, s.options, h, shardsInnerSeries, shardsRelabeledSeries)
+	stats, err := psr.InputRelabeling(s.baseCtx, inputLss, targetLss, cache, s.options, h, shardsInnerSeries, shardsRelabeledSeries)
 	s.Require().Error(err)
+	s.Equal(cppbridge.RelabelerStats{}, stats)
 }
 
 func (s *RelabelerSuite) TestPerShardRelabelerWithNullPtrStatelessRelabeler() {
@@ -243,8 +244,9 @@ func (s *RelabelerSuite) TestInputPerShardRelabeler() {
 	shardsRelabeledSeries := cppbridge.NewShardsRelabeledSeries(numberOfShards)
 	cache := cppbridge.NewCache()
 
-	err = psr.InputRelabeling(s.baseCtx, inputLss, targetLss, cache, s.options, h, shardsInnerSeries, shardsRelabeledSeries)
+	stats, err := psr.InputRelabeling(s.baseCtx, inputLss, targetLss, cache, s.options, h, shardsInnerSeries, shardsRelabeledSeries)
 	s.Require().NoError(err)
+	s.Equal(cppbridge.RelabelerStats{1, 1}, stats)
 }
 
 func (s *RelabelerSuite) TestOutputPerShardRelabeler() {

@@ -12,10 +12,12 @@ import (
 // InputRelabelingPromise - promise for processing incoming data.
 type InputRelabelingPromise struct {
 	mx                   *sync.Mutex
+	statsMX              *sync.Mutex
 	done                 chan struct{}
 	data                 [][]*cppbridge.InnerSeries
 	updateRelabelerTasks []*TaskUpdateRelabelerState
 	errors               []error
+	stats                cppbridge.RelabelerStats
 	shardDone            uint16
 }
 
@@ -34,6 +36,7 @@ func NewInputRelabelingPromise(numberOfShards uint16) *InputRelabelingPromise {
 		shardDone:            numberOfShards,
 		done:                 make(chan struct{}),
 		mx:                   new(sync.Mutex),
+		statsMX:              new(sync.Mutex),
 	}
 }
 
@@ -66,7 +69,7 @@ func (p *InputRelabelingPromise) AddResult(shardID uint16, innerSeries *cppbridg
 	p.mx.Unlock()
 }
 
-// AddUpdateTasks add to promise UpdateTasks.
+// AddUpdateRelabelerTasks add to promise TaskUpdateRelabelerState.
 func (p *InputRelabelingPromise) AddUpdateRelabelerTasks(updateTask *TaskUpdateRelabelerState) {
 	p.mx.Lock()
 	p.updateRelabelerTasks = append(p.updateRelabelerTasks, updateTask)
@@ -80,6 +83,19 @@ func (p *InputRelabelingPromise) UpdateRelabeler() {
 			logger.Errorf("failed input update relabeler state: %s", err)
 		}
 	}
+}
+
+// AddStats add returned relabler stats.
+func (p *InputRelabelingPromise) AddStats(stats cppbridge.RelabelerStats) {
+	p.statsMX.Lock()
+	p.stats.SamplesAdded += stats.SamplesAdded
+	p.stats.SeriesAdded += stats.SeriesAdded
+	p.statsMX.Unlock()
+}
+
+// Stats return relabler stats.
+func (p *InputRelabelingPromise) Stats() cppbridge.RelabelerStats {
+	return p.stats
 }
 
 // ShardsInnerSeries - return slice with the results of relabeling per shards.

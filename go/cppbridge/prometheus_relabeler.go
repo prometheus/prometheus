@@ -509,6 +509,12 @@ func (s *StaleNansState) Reset() {
 	prometheusRelabelStaleNansStateReset(s.state)
 }
 
+// RelabelerStats statistics return from relabeler.
+type RelabelerStats struct {
+	SamplesAdded uint32
+	SeriesAdded  uint32
+}
+
 // InputPerShardRelabeler - go wrapper for C-PerShardRelabeler, relabeler for shard.
 //
 //	cptr               - pointer to C-InputPerShardRelabeler;
@@ -594,16 +600,16 @@ func (ipsr *InputPerShardRelabeler) InputRelabeling(
 	shardedData ShardedData,
 	shardsInnerSeries []*InnerSeries,
 	shardsRelabeledSeries []*RelabeledSeries,
-) error {
+) (RelabelerStats, error) {
 	if ctx.Err() != nil {
-		return ctx.Err()
+		return RelabelerStats{}, ctx.Err()
 	}
 
 	cptrContainer, ok := shardedData.(cptrable)
 	if !ok {
-		return ErrMustImplementCptrable
+		return RelabelerStats{}, ErrMustImplementCptrable
 	}
-	exception := prometheusPerShardRelabelerInputRelabeling(
+	samplesAdded, seriesAdded, exception := prometheusPerShardRelabelerInputRelabeling(
 		ipsr.cptr,
 		inputLss.Pointer(),
 		targetLss.Pointer(),
@@ -614,7 +620,7 @@ func (ipsr *InputPerShardRelabeler) InputRelabeling(
 		shardsRelabeledSeries,
 	)
 
-	return handleException(exception)
+	return RelabelerStats{SamplesAdded: samplesAdded, SeriesAdded: seriesAdded}, handleException(exception)
 }
 
 // InputRelabelingWithStalenans relabeling incoming hashdex(first stage) with state stalenans.
@@ -629,16 +635,16 @@ func (ipsr *InputPerShardRelabeler) InputRelabelingWithStalenans(
 	shardedData ShardedData,
 	shardsInnerSeries []*InnerSeries,
 	shardsRelabeledSeries []*RelabeledSeries,
-) error {
+) (RelabelerStats, error) {
 	if ctx.Err() != nil {
-		return ctx.Err()
+		return RelabelerStats{}, ctx.Err()
 	}
 
 	cptrContainer, ok := shardedData.(cptrable)
 	if !ok {
-		return ErrMustImplementCptrable
+		return RelabelerStats{}, ErrMustImplementCptrable
 	}
-	exception := prometheusPerShardRelabelerInputRelabelingWithStalenans(
+	samplesAdded, seriesAdded, exception := prometheusPerShardRelabelerInputRelabelingWithStalenans(
 		ipsr.cptr,
 		inputLss.Pointer(),
 		targetLss.Pointer(),
@@ -650,11 +656,8 @@ func (ipsr *InputPerShardRelabeler) InputRelabelingWithStalenans(
 		shardsInnerSeries,
 		shardsRelabeledSeries,
 	)
-	if exception != nil {
-		return handleException(exception)
-	}
 
-	return nil
+	return RelabelerStats{SamplesAdded: samplesAdded, SeriesAdded: seriesAdded}, handleException(exception)
 }
 
 // NumberOfShards return current numberOfShards.

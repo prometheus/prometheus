@@ -4,7 +4,7 @@
 
 #include "bare_bones/vector.h"
 #include "parser.h"
-#include "prometheus/metadata.h"
+#include "prometheus/metric.h"
 #include "prometheus/textparse/escape.h"
 #include "prometheus/value.h"
 

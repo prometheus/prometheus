@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"runtime"
 	"sort"
-	"strings"
 	"time"
-	"unsafe"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -155,6 +153,9 @@ func (q *Querier) Select(ctx context.Context, sortSeries bool, hints *storage.Se
 
 		if lssQueryResult.Status() != cppbridge.LSSQueryStatusMatch {
 			seriesSets[shard.ShardID()] = &SeriesSet{}
+			if lssQueryResult.Status() == cppbridge.LSSQueryStatusNoMatch {
+				return nil
+			}
 			return fmt.Errorf("failed to query from shard: %d, query status: %d", shard.ShardID(), lssQueryResult.Status())
 		}
 
@@ -166,13 +167,13 @@ func (q *Querier) Select(ctx context.Context, sortSeries bool, hints *storage.Se
 
 		if serializedChunks.NumberOfChunks() == 0 {
 			seriesSets[shard.ShardID()] = &SeriesSet{}
-			return fmt.Errorf("failed to query shard: %d, empty", shard.ShardID())
+			return nil
 		}
 
 		chunksIndex := serializedChunks.MakeIndex()
 		getLabelSetsResult := shard.LSS().GetLabelSets(lssQueryResult.Matches())
 
-		labelSetBySeriesID := make(map[uint32]labels.Labels)
+		labelSetBySeriesID := make(map[uint32]cppbridge.Labels)
 		for index, labelSetID := range lssQueryResult.Matches() {
 			if chunksIndex.Has(labelSetID) {
 				labelSetBySeriesID[labelSetID] = getLabelSetsResult.LabelsSets()[index]
@@ -199,15 +200,14 @@ func (q *Querier) Select(ctx context.Context, sortSeries bool, hints *storage.Se
 			})
 		}
 		runtime.KeepAlive(getLabelSetsResult)
+		runtime.KeepAlive(lssQueryResult)
 
 		seriesSets[shard.ShardID()] = NewSeriesSet(localSeriesSets)
 		return nil
 	})
 	if err != nil {
-		if !strings.Contains(err.Error(), "query status: 2") {
-			logger.Warnf("QUERIER: Select failed: %s", err)
-		}
-		// todo: error
+		logger.Warnf("QUERIER: Select failed: %s", err)
+		return storage.ErrSeriesSet(err)
 	}
 
 	return storage.NewMergeSeriesSet(seriesSets, storage.ChainedSeriesMerge)
@@ -226,24 +226,10 @@ func convertPrometheusMatchersToOpcoreMatchers(matchers ...*labels.Matcher) []mo
 	return promppMatchers
 }
 
-func cloneLabelSet(labelSet labels.Labels) labels.Labels {
-	n := 0
+func cloneLabelSet(labelSet cppbridge.Labels) labels.Labels {
+	builder := labels.NewScratchBuilder(len(labelSet))
 	for i := range labelSet {
-		n += len(labelSet[i].Name) + len(labelSet[i].Value)
+		builder.Add(labelSet[i].Name, labelSet[i].Value)
 	}
-	buf := make([]byte, n)
-	offset := 0
-	result := make(labels.Labels, len(labelSet))
-	for i := range labelSet {
-		n = copy(buf[offset:], labelSet[i].Name)
-		nb := buf[offset : offset+n]
-		result[i].Name = *(*string)(unsafe.Pointer(&nb))
-		offset += n
-
-		n = copy(buf[offset:], labelSet[i].Value)
-		vb := buf[offset : offset+n]
-		result[i].Value = *(*string)(unsafe.Pointer(&vb))
-		offset += n
-	}
-	return result
+	return builder.Labels()
 }

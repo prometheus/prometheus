@@ -35,7 +35,7 @@ func (qa *QueryableAppender) Append(
 	incomingData *relabeler.IncomingData,
 	state *cppbridge.State,
 	relabelerID string,
-) error {
+) (cppbridge.RelabelerStats, error) {
 	return qa.AppendWithStaleNans(ctx, incomingData, state, relabelerID)
 }
 
@@ -44,20 +44,20 @@ func (qa *QueryableAppender) AppendWithStaleNans(
 	incomingData *relabeler.IncomingData,
 	state *cppbridge.State,
 	relabelerID string,
-) error {
+) (cppbridge.RelabelerStats, error) {
 	qa.lock.Lock()
 	defer qa.lock.Unlock()
 
-	data, err := qa.head.Append(ctx, incomingData, state, relabelerID)
+	data, stats, err := qa.head.Append(ctx, incomingData, state, relabelerID)
 	if err != nil {
-		return err
+		return cppbridge.RelabelerStats{}, err
 	}
 
 	if err = qa.distributor.Send(ctx, qa.head, data); err != nil {
-		return err
+		return stats, err
 	}
 
-	return nil
+	return stats, nil
 }
 
 func (qa *QueryableAppender) WriteMetrics() {
