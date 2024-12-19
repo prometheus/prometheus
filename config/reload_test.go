@@ -40,8 +40,12 @@ func TestGenerateChecksum(t *testing.T) {
 	yamlContent := `
 rule_files:
   - rule_file.yml
+  - /etc/prometheus/rules/rule_file.yml
+  - /etc/prometheus/rules/glob/*.yml
 scrape_config_files:
   - scrape_config.yml
+  - /etc/prometheus/scrape_config_files/scrape_config.yml
+  - /etc/prometheus/scrape_config_files/glob/*.yml
 `
 
 	// Write initial content to files.
@@ -123,8 +127,12 @@ global:
   scrape_interval: 3s
 rule_files:
   - rule_file.yml
+  - /etc/prometheus/rules/rule_file.yml
+  - /etc/prometheus/rules/glob/*.yml
 scrape_config_files:
   - scrape_config.yml
+  - /etc/prometheus/scrape_config_files/scrape_config.yml
+  - /etc/prometheus/scrape_config_files/glob/*.yml
 `
 		require.NoError(t, os.WriteFile(yamlFilePath, []byte(modifiedYamlContent), 0o644))
 
@@ -145,6 +153,8 @@ scrape_config_files:
 		modifiedYamlContent := `
 scrape_config_files:
   - scrape_config.yml
+  - /etc/prometheus/scrape_config_files/scrape_config.yml
+  - /etc/prometheus/scrape_config_files/glob/*.yml
 `
 		require.NoError(t, os.WriteFile(yamlFilePath, []byte(modifiedYamlContent), 0o644))
 
@@ -165,6 +175,8 @@ scrape_config_files:
 		modifiedYamlContent := `
 rule_files:
   - rule_file.yml
+  - /etc/prometheus/rules/rule_file.yml
+  - /etc/prometheus/rules/glob/*.yml
 `
 		require.NoError(t, os.WriteFile(yamlFilePath, []byte(modifiedYamlContent), 0o644))
 
