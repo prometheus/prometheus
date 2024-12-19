@@ -562,6 +562,8 @@ github.com/nsf/jsondiff v0.0.0-20230430225905-43f6cf3098c1 h1:dOYG7LS/WK00RWZc8X
 github.com/nsf/jsondiff v0.0.0-20230430225905-43f6cf3098c1/go.mod h1:mpRZBD8SJ55OIICQ3iWH0Yz3cjzA61JdqMLoWXeB2+8=
 github.com/prometheus/prometheus/pp/go v0.0.0-20241128081132-ec0d99943493 h1:n3u8FHbeVpaaAir1BW4bxTdzNmwTA4XBvBBHhDdzcHo=
 github.com/prometheus/prometheus/pp/go v0.0.0-20241128081132-ec0d99943493/go.mod h1:ER9u3QnTJyyl3viw3Sczgfd+UYsZg7GUmP0p35tIY+0=
+github.com/prometheus/prometheus/pp/go v0.0.0-20241219072614-88112328f524 h1:P42h1maP9lm49aaJWdPnt1F70zieWJ18bus6livjig0=
+github.com/prometheus/prometheus/pp/go v0.0.0-20241219072614-88112328f524/go.mod h1:ER9u3QnTJyyl3viw3Sczgfd+UYsZg7GUmP0p35tIY+0=
 github.com/oklog/oklog v0.3.2/go.mod h1:FCV+B7mhrz4o+ueLpx+KqkyXRGMWOYEvfiXtdGtbWGs=
 github.com/oklog/run v1.0.0/go.mod h1:dlhp/R75TPv97u0XWUtDeV/lRKWPKSdTuV0TZvrmrQA=
 github.com/oklog/run v1.1.0 h1:GEenZ1cK0+q0+wsJew9qUg/DyD8k3JzYsZAi5gYi2mA=

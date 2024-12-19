@@ -1278,9 +1278,9 @@ func (sl *scrapeLoop) appendMetadata(hashdex ScraperHashdex) error {
 	var err error
 	hashdex.RangeMetadata(func(md cppbridge.WALScraperHashdexMetadata) bool {
 		switch md.Type {
-		case cppbridge.ScraperMetadataHelp:
+		case cppbridge.HashdexMetadataHelp:
 			sl.cache.setHelp(yoloBytes(&md.MetricName), yoloBytes(&md.Text))
-		case cppbridge.ScraperMetadataType:
+		case cppbridge.HashdexMetadataType:
 			switch md.Text {
 			case "counter":
 				sl.cache.setType(yoloBytes(&md.MetricName), model.MetricTypeCounter)
@@ -1304,7 +1304,7 @@ func (sl *scrapeLoop) appendMetadata(hashdex ScraperHashdex) error {
 				err = fmt.Errorf("invalid metric type %q", md.Text)
 				return false
 			}
-		case cppbridge.ScraperMetadataUnit:
+		case cppbridge.HashdexMetadataUnit:
 			sl.cache.setUnit(yoloBytes(&md.MetricName), yoloBytes(&md.Text))
 		default:
 			err = fmt.Errorf("invalid metadata type '%d'", md.Type)

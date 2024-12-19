@@ -136,7 +136,6 @@ func createPrometheusAPI(q storage.SampleAndChunkQueryable) *route.Router {
 		prometheus.DefaultGatherer,
 		nil,
 		nil,
-		nil,
 		false,
 		false,
 	)
