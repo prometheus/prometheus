@@ -2,8 +2,51 @@
 
 ## unreleased
 
-* [CHANGE] Notifier: Increment the prometheus_notifications_errors_total metric by the number of affected alerts rather than by one per batch of affected alerts. #15428
-* [ENHANCEMENT] OTLP receiver: Convert also metric metadata. #15416
+## 3.1.0 / 2024-12-18
+
+ * [SECURITY] upgrade golang.org/x/crypto to address reported CVE-2024-45337. #15691
+ * [CHANGE] Notifier: Increment prometheus_notifications_errors_total by the number of affected alerts rather than per batch. #15428
+ * [CHANGE] API: list rules field "groupNextToken:omitempty" renamed to "groupNextToken". #15400
+ * [ENHANCEMENT] OTLP translate: keep identifying attributes in target_info. #15448
+ * [ENHANCEMENT] Paginate rule groups, add infinite scroll to rules within groups. #15677
+ * [ENHANCEMENT] TSDB: Improve calculation of space used by labels. #13880
+ * [ENHANCEMENT] Rules: new metric rule_group_last_rule_duration_sum_seconds. #15672
+ * [ENHANCEMENT] Observability: Export 'go_sync_mutex_wait_total_seconds_total' metric. #15339
+ * [ENHANCEMEN] Remote-Write: optionally use a DNS resolver that picks a random IP. #15329
+ * [PERF] Optimize `l=~".+"` matcher. #15474, #15684
+ * [PERF] TSDB: Cache all symbols for compaction . #15455
+ * [PERF] TSDB: MemPostings: keep a map of label values slices. #15426
+ * [PERF] Remote-Write: Remove interning hook. #15456
+ * [PERF] Scrape: optimize string manipulation for experimental native histograms with custom buckets. #15453
+ * [PERF] TSDB: reduce memory allocations. #15465, #15427
+ * [PERF] Storage: Implement limit in mergeGenericQuerier. #14489
+ * [PERF] TSDB: Optimize inverse matching. #14144
+ * [PERF] Regex: use stack memory for lowercase copy of string. #15210
+ * [PERF] TSDB: When deleting from postings index, pause to unlock and let readers read. #15242
+ * [BUGFIX] Rules: Do not run rules concurrently if uncertain about dependencies. #15560
+ * [BUGFIX] PromQL: Adds test for `absent`, `absent_over_time` and `deriv` func with histograms. #15667
+ * [BUGFIX] PromQL: Fix various bugs related to quoting UTF-8 characters. #15531
+ * [BUGFIX] Scrape: fix nil panic after scrape loop reload. #15563
+ * [BUGFIX] Remote-write: fix panic on repeated log message. #15562
+ * [BUGFIX] Scrape: reload would ignore always_scrape_classic_histograms and convert_classic_histograms_to_nhcb configs. #15489
+ * [BUGFIX] TSDB: fix data corruption in experimental native histograms. #15482
+ * [BUGFIX] PromQL: Ignore histograms in all time related functions. #15479
+ * [BUGFIX] OTLP receiver: Convert metric metadata. #15416
+ * [BUGFIX] PromQL: Fix `resets` function for histograms. #15527
+ * [BUGFIX] PromQL: Fix behaviour of `changes()` for mix of histograms and floats. #15469
+ * [BUGFIX] PromQL: Fix behaviour of some aggregations with histograms. #15432
+ * [BUGFIX] allow quoted exemplar keys in openmetrics text format. #15260
+ * [BUGFIX] TSDB: fixes for rare conditions when loading write-behind-log (WBL). #15380
+ * [BUGFIX] `round()` function did not remove `__name__` label. #15250
+ * [BUGFIX] Promtool: analyze block shows metric name with 0 cardinality. #15438
+ * [BUGFIX] PromQL: Fix `count_values` for histograms. #15422
+ * [BUGFIX] PromQL: fix issues with comparison binary operations with `bool` modifier and native histograms. #15413
+ * [BUGFIX] PromQL: fix incorrect "native histogram ignored in aggregation" annotations. #15414
+ * [BUGFIX] PromQL: Corrects the behaviour of some operator and aggregators with Native Histograms. #15245
+ * [BUGFIX] TSDB: Always return unknown hint for first sample in non-gauge histogram chunk. #15343
+ * [BUGFIX] PromQL: Clamp functions: Ignore any points with native histograms. #15169
+ * [BUGFIX] TSDB: Fix race on stale values in headAppender. #15322
+ * [BUGFIX] UI: Fix selector / series formatting for empty metric names. #15340
 
 ## 3.0.1 / 2024-11-28
 
@@ -36,14 +79,14 @@ This release includes new features such as a brand new UI and UTF-8 support enab
 * [CHANGE] PromQL: Range selectors and the lookback delta are now left-open, i.e. a sample coinciding with the lower time limit is excluded rather than included. #13904
 * [CHANGE] Kubernetes SD: Remove support for `discovery.k8s.io/v1beta1` API version of EndpointSlice. This version is no longer served as of Kubernetes v1.25. #14365
 * [CHANGE] Kubernetes SD: Remove support for `networking.k8s.io/v1beta1` API version of Ingress. This version is no longer served as of Kubernetes v1.22. #14365
-* [CHANGE] UTF-8: Enable UTF-8 support by default. Prometheus now allows all UTF-8 characters in metric and label names. The corresponding `utf8-name` feature flag has been removed. #14705
+* [CHANGE] UTF-8: Enable UTF-8 support by default. Prometheus now allows all UTF-8 characters in metric and label names. The corresponding `utf8-name` feature flag has been removed. #14705, #15258
 * [CHANGE] Console: Remove example files for the console feature. Users can continue using the console feature by supplying their own JavaScript and templates. #14807
 * [CHANGE] SD: Enable the new service discovery manager by default. This SD manager does not restart unchanged discoveries upon reloading. This makes reloads faster and reduces pressure on service discoveries' sources. The corresponding `new-service-discovery-manager` feature flag has been removed. #14770
 * [CHANGE] Agent mode has been promoted to stable. The feature flag `agent` has been removed. To run Prometheus in Agent mode, use the new `--agent` cmdline arg instead. #14747
 * [CHANGE] Remove deprecated `remote-write-receiver`,`promql-at-modifier`, and `promql-negative-offset` feature flags. #13456, #14526
 * [CHANGE] Remove deprecated `storage.tsdb.allow-overlapping-blocks`, `alertmanager.timeout`, and `storage.tsdb.retention` flags. #14640, #14643
 * [FEATURE] OTLP receiver: Ability to skip UTF-8 normalization using `otlp.translation_strategy = NoUTF8EscapingWithSuffixes` configuration option. #15384
-* [FEATURE] Support config reload automatically - feature flag `auto-reload-config`. #14769
+* [FEATURE] Support config reload automatically - feature flag `auto-reload-config`. #14769, #15011
 * [ENHANCEMENT] Scraping, rules: handle targets reappearing, or rules moving group, when out-of-order is enabled. #14710
 * [ENHANCEMENT] Tools: add debug printouts to promtool rules unit testing #15196
 * [ENHANCEMENT] Scraping: support Created-Timestamp feature on native histograms. #14694
