@@ -62,13 +62,14 @@ func (cmd *cmdWALVanillaToBlock) Do(ctx context.Context, workingDir string, logg
 
 	opts := tsdb.DefaultHeadOptions()
 	opts.ChunkDirRoot = workingDir
-	head, err := tsdb.NewHead(nil, logger, wal, wbl, tsdb.DefaultHeadOptions(), nil)
+	head, err := tsdb.NewHead(nil, logger, wal, wbl, opts, nil)
 	if err != nil {
 		return fmt.Errorf("create head: %w", err)
 	}
 	if err := head.Init(int64(math.MinInt64)); err != nil {
 		return fmt.Errorf("init head: %w", err)
 	}
+	head.Index()
 
 	blockDuration := int64(time.Duration(cmd.blockDuration) / time.Millisecond)
 	compactor, err := tsdb.NewLeveledCompactorWithOptions(ctx, nil, logger, []int64{blockDuration}, nil, tsdb.LeveledCompactorOptions{})
@@ -78,17 +79,14 @@ func (cmd *cmdWALVanillaToBlock) Do(ctx context.Context, workingDir string, logg
 
 	mint := (head.MinTime() / blockDuration) * blockDuration
 	maxt := mint + blockDuration
-	for {
+	for mint < head.MaxTime() {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		rh := tsdb.NewRangeHeadWithIsolationDisabled(head, mint, maxt)
-		uids, err := compactor.Write(workingDir, rh, mint, maxt, nil)
+		rh := tsdb.NewRangeHead(head, mint, maxt)
+		_, err := compactor.Write(workingDir, rh, mint, maxt, nil)
 		if err != nil {
 			return fmt.Errorf("write block: %w", err)
-		}
-		if len(uids) == 0 {
-			break
 		}
 		mint, maxt = maxt, maxt+blockDuration
 	}

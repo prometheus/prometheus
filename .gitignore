@@ -13,6 +13,7 @@ benchmark.txt
 /cmd/prometheus/debug
 /benchout
 /cmd/promtool/data
+/cmd/prompptool/data
 /opdata
 
 !/.travis.yml

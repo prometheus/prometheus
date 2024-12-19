@@ -128,8 +128,14 @@ func (h *headIndexReader) PostingsForLabelMatching(ctx context.Context, name str
 func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 	series := make([]*memSeries, 0, 128)
 
+	uniq := map[storage.SeriesRef]bool{}
 	// Fetch all the series only once.
 	for p.Next() {
+		if uniq[p.At()] {
+			level.Debug(h.head.logger).Log("msg", "duplicate series ref", "ref", p.At())
+			continue
+		}
+		uniq[p.At()] = true
 		s := h.head.series.getByID(chunks.HeadSeriesRef(p.At()))
 		if s == nil {
 			level.Debug(h.head.logger).Log("msg", "Looked up series not found")
