@@ -31,7 +31,7 @@ type Deduper struct {
 	next   *slog.Logger
 	repeat time.Duration
 	quit   chan struct{}
-	mtx    sync.RWMutex
+	mtx    *sync.RWMutex
 	seen   map[string]time.Time
 }
 
@@ -41,6 +41,7 @@ func Dedupe(next *slog.Logger, repeat time.Duration) *Deduper {
 		next:   next,
 		repeat: repeat,
 		quit:   make(chan struct{}),
+		mtx:    new(sync.RWMutex),
 		seen:   map[string]time.Time{},
 	}
 	go d.run()
@@ -86,6 +87,7 @@ func (d *Deduper) WithAttrs(attrs []slog.Attr) slog.Handler {
 		repeat: d.repeat,
 		quit:   d.quit,
 		seen:   d.seen,
+		mtx:    d.mtx,
 	}
 }
 
@@ -101,6 +103,7 @@ func (d *Deduper) WithGroup(name string) slog.Handler {
 		repeat: d.repeat,
 		quit:   d.quit,
 		seen:   d.seen,
+		mtx:    d.mtx,
 	}
 }
 
