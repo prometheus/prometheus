@@ -280,14 +280,9 @@ func NewWALOutputDecoder(
 // Decode - decodes incoming encoding data and return protobuf, lowerLimitTimestamp - timestamp in milliseconds,
 // skip sample lower limit timestamp.
 func (d *WALOutputDecoder) Decode(
-	ctx context.Context,
 	segment []byte,
 	lowerLimitTimestamp int64,
 ) (*DecodedRefSamples, int64, error) {
-	if ctx.Err() != nil {
-		return nil, 0, ctx.Err()
-	}
-
 	maxTimestamp, refSamples, exception := walOutputDecoderDecode(segment, d.decoder, lowerLimitTimestamp)
 	return newDecodedRefSamples(refSamples, d.shardID), maxTimestamp, handleException(exception)
 }
@@ -385,13 +380,9 @@ func NewWALProtobufEncoder(outputLsses []*LabelSetStorage) *WALProtobufEncoder {
 
 // Encode batch slice ShardRefSamples to snapped protobufs on shards.
 func (e *WALProtobufEncoder) Encode(
-	ctx context.Context,
 	batch []*DecodedRefSamples,
 	numberOfShards uint16,
 ) ([]*SnappyProtobufEncodedData, error) {
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
 	buffers := make([][]byte, numberOfShards)
 	exception := walProtobufEncoderEncode(batch, buffers, e.encoder)
 	if len(exception) != 0 {

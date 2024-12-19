@@ -3,7 +3,6 @@ package head_test
 import (
 	"context"
 	"fmt"
-	"github.com/google/uuid"
 	"os"
 	"testing"
 	"time"
@@ -20,10 +19,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type noOnLastAppendedSegmentIDSetter struct {
+type noOpLastAppendedSegmentIDSetter struct {
 }
 
-func (noOnLastAppendedSegmentIDSetter) SetLastAppendedSegmentID(segmentID uint32) {
+func (noOpLastAppendedSegmentIDSetter) SetLastAppendedSegmentID(segmentID uint32) {
 	fmt.Println("last appended segment id:", segmentID)
 }
 
@@ -51,8 +50,8 @@ func TestLoad(t *testing.T) {
 	}
 	var numberOfShards uint16 = 2
 
-	headID := uuid.New()
-	h, err := head.Create(headID, 0, tmpDir, cfgs, numberOfShards, noOnLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
+	headID := "test_head_id"
+	h, err := head.Create(headID, 0, tmpDir, cfgs, numberOfShards, noOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
 	require.NoError(t, err)
 
 	ls := model.NewLabelSetBuilder().Set("__name__", "wal_metric").Set("job", "test").Build()
@@ -124,7 +123,7 @@ func TestLoad(t *testing.T) {
 	h.Finalize()
 	require.NoError(t, h.Close())
 	var corrupted bool
-	h, corrupted, err = head.Load(headID, 0, tmpDir, cfgs, numberOfShards, noOnLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
+	h, corrupted, err = head.Load(headID, 0, tmpDir, cfgs, numberOfShards, noOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
 	require.NoError(t, err)
 	require.False(t, corrupted)
 
@@ -226,7 +225,7 @@ func TestLoad(t *testing.T) {
 	h.Finalize()
 	require.NoError(t, h.Close())
 
-	h, corrupted, err = head.Load(headID, 0, tmpDir, cfgs, numberOfShards, noOnLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
+	h, corrupted, err = head.Load(headID, 0, tmpDir, cfgs, numberOfShards, noOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
 	require.NoError(t, err)
 	require.False(t, corrupted)
 

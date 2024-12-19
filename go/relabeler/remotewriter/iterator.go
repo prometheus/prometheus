@@ -168,7 +168,7 @@ readLoop:
 
 	i.writeCaches()
 
-	msg, err := i.encode(ctx, b.Data(), uint16(numberOfShards))
+	msg, err := i.encode(b.Data(), uint16(numberOfShards))
 	if err != nil {
 		// todo: only ctx.Err()?
 		return err
@@ -227,7 +227,7 @@ func (i *Iterator) writeCaches() {
 	i.dataSource.WriteCaches()
 }
 
-func (i *Iterator) encode(ctx context.Context, segments []*DecodedSegment, numberOfShards uint16) (*Message, error) {
+func (i *Iterator) encode(segments []*DecodedSegment, numberOfShards uint16) (*Message, error) {
 	var maxTimestamp int64
 	var batchToEncode []*cppbridge.DecodedRefSamples
 	for _, segment := range segments {
@@ -239,7 +239,7 @@ func (i *Iterator) encode(ctx context.Context, segments []*DecodedSegment, numbe
 	}
 
 	protobufEncoder := cppbridge.NewWALProtobufEncoder(i.dataSource.LSSes())
-	encodedProtobuf, err := protobufEncoder.Encode(ctx, batchToEncode, numberOfShards)
+	encodedProtobuf, err := protobufEncoder.Encode(batchToEncode, numberOfShards)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode protobuf: %w", err)
 	}
