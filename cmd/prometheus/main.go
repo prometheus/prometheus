@@ -203,8 +203,9 @@ type flagConfig struct {
 	featureList []string
 	// These options are extracted from featureList
 	// for ease of use.
-	enablePerStepStats       bool
-	enableConcurrentRuleEval bool
+	enablePerStepStats              bool
+	enableConcurrentRuleEval        bool
+	enableExemplarsInRecordingRules bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -269,6 +270,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "promql-delayed-name-removal":
 				c.promqlEnableDelayedNameRemoval = true
 				logger.Info("Experimental PromQL delayed name removal enabled.")
+			case "exemplars-in-recording-rules":
+				c.enableExemplarsInRecordingRules = true
+				logger.Info("Experimental exemplars support in recording rules enabled.")
 			case "":
 				continue
 			case "old-ui":
@@ -801,10 +805,16 @@ func main() {
 
 		queryEngine = promql.NewEngine(opts)
 
+		var exemplarQueryFunc rules.ExemplarQueryFunc
+		if cfg.enableExemplarsInRecordingRules {
+			exemplarQueryFunc = rules.ExemplarQuerierQueryFunc(localStorage)
+		}
+
 		ruleManager = rules.NewManager(&rules.ManagerOptions{
 			Appendable:             fanoutStorage,
 			Queryable:              localStorage,
 			QueryFunc:              rules.EngineQueryFunc(queryEngine, fanoutStorage),
+			ExemplarQueryFunc:      exemplarQueryFunc,
 			NotifyFunc:             rules.SendAlerts(notifierManager, cfg.web.ExternalURL.String()),
 			Context:                ctxRule,
 			ExternalURL:            cfg.web.ExternalURL,

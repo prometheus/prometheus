@@ -4081,7 +4081,7 @@ func TestParseSeriesDesc(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			l, v, err := ParseSeriesDesc(tc.input)
+			l, v, _, err := ParseSeriesDesc(tc.input)
 			if tc.expectError != "" {
 				require.Contains(t, err.Error(), tc.expectError)
 			} else {
@@ -4104,10 +4104,11 @@ func TestNaNExpression(t *testing.T) {
 }
 
 var testSeries = []struct {
-	input          string
-	expectedMetric labels.Labels
-	expectedValues []SequenceValue
-	fail           bool
+	input             string
+	expectedMetric    labels.Labels
+	expectedValues    []SequenceValue
+	expectedExemplars []Exemplar
+	fail              bool
 }{
 	{
 		input:          `{} 1 2 3`,
@@ -4186,6 +4187,14 @@ var testSeries = []struct {
 		input:          `my_metric{a="\u70ac = torch"} 1 2 3`,
 		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", `炬 = torch`),
 		expectedValues: newSeq(1, 2, 3),
+	}, {
+		input:          `my_metric{a="b"} 1 2 3+1x4 # {trace_id="1234"} 4 0 # {trace_id="2345", span_id="1122"} 5 1`,
+		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
+		expectedValues: newSeq(1, 2, 3, 4, 5, 6, 7),
+		expectedExemplars: []Exemplar{
+			{Labels: labels.FromStrings("trace_id", "1234"), Value: 4, Sequence: 0},
+			{Labels: labels.FromStrings("trace_id", "2345", "span_id", "1122"), Value: 5, Sequence: 1},
+		},
 	}, {
 		input: `my_metric{a="b"} -3-3 -3`,
 		fail:  true,
@@ -4462,7 +4471,7 @@ func TestParseHistogramSeries(t *testing.T) {
 		{
 			name:          "space after {{",
 			input:         `{} {{ schema:1}}`,
-			expectedError: `1:7: parse error: unexpected "<Item 57372>" "schema" in series values`,
+			expectedError: `1:7: parse error: unexpected "<Item 57373>" "schema" in series values`,
 		},
 		{
 			name:          "invalid counter reset hint value",
@@ -4499,7 +4508,7 @@ func TestParseHistogramSeries(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			_, vals, err := ParseSeriesDesc(test.input)
+			_, vals, _, err := ParseSeriesDesc(test.input)
 			if test.expectedError != "" {
 				require.EqualError(t, err, test.expectedError)
 				return
@@ -4571,7 +4580,7 @@ func TestHistogramTestExpression(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			expression := test.input.TestExpression()
 			require.Equal(t, test.expected, expression)
-			_, vals, err := ParseSeriesDesc("{} " + expression)
+			_, vals, _, err := ParseSeriesDesc("{} " + expression)
 			require.NoError(t, err)
 			require.Len(t, vals, 1)
 			canonical := vals[0].Histogram
@@ -4583,15 +4592,20 @@ func TestHistogramTestExpression(t *testing.T) {
 
 func TestParseSeries(t *testing.T) {
 	for _, test := range testSeries {
-		metric, vals, err := ParseSeriesDesc(test.input)
+		metric, vals, exemplars, err := ParseSeriesDesc(test.input)
 
 		// Unexpected errors are always caused by a bug.
 		require.NotEqual(t, err, errUnexpected, "unexpected error occurred")
 
 		if !test.fail {
 			require.NoError(t, err)
-			testutil.RequireEqual(t, test.expectedMetric, metric, "error on input '%s'", test.input)
+			testutil.RequireEqual(t, test.expectedMetric, metric, "error in input '%s'", test.input)
 			require.Equal(t, test.expectedValues, vals, "error in input '%s'", test.input)
+			if test.expectedExemplars == nil {
+				require.Empty(t, exemplars, "error in input '%s'", test.input)
+			} else {
+				require.Equal(t, test.expectedExemplars, exemplars, "error in input '%s'", test.input)
+			}
 		} else {
 			require.Error(t, err)
 		}
