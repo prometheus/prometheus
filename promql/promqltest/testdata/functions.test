@@ -258,7 +258,7 @@ load 5m
 	http_requests_total{job="app-server", instance="1", group="canary"}		0+80x10
 	testcounter_reset_middle_mix	0+10x4 0+10x5 {{schema:0 sum:1 count:1}} {{schema:1 sum:2 count:2}}
 	http_requests_mix{job="app-server", instance="1", group="canary"}		0+80x10 {{schema:0 sum:1 count:1}}
-    http_requests_histogram{job="app-server", instance="1", group="canary"}		{{schema:0 sum:1 count:2}}x10
+	http_requests_histogram{job="app-server", instance="1", group="canary"}		{{schema:0 sum:1 count:2}}x10
 	http_requests_inf{job="app-server", instance="1", group="canary"}	-Inf 0+80x10 Inf
 
 # deriv should return the same as rate in simple cases.
@@ -279,7 +279,7 @@ eval_info instant at 110m deriv(http_requests_mix{group="canary", instance="1", 
 eval_info instant at 100m deriv(testcounter_reset_middle_mix[110m])
 	{} 0.010606060606060607
 
-eval_info instant at 50m deriv(http_requests_histogram[60m])
+eval instant at 50m deriv(http_requests_histogram[60m])
 	#empty
 
 # deriv should return NaN in case of +Inf or -Inf found.
@@ -327,6 +327,9 @@ eval_info instant at 60m predict_linear(testcounter_reset_middle_mix[60m], 3000)
 
 eval_info instant at 60m predict_linear(testcounter_reset_middle_mix[60m], 50m)
 	{} 70
+
+eval instant at 60m predict_linear(http_requests_histogram[60m], 50m)
+	#empty
 
 # predict_linear should return NaN in case of +Inf or -Inf found.
 eval instant at 100m predict_linear(http_requests_inf[100m], 6000)
@@ -754,7 +757,7 @@ eval_info instant at 20010s double_exponential_smoothing(http_requests_mix[1m], 
 	{job="api-server", instance="0", group="canary"} 80300
 	{job="api-server", instance="1", group="canary"} 80000
 
-eval_info instant at 10000s double_exponential_smoothing(http_requests_histogram[1m], 0.01, 0.1)
+eval instant at 10000s double_exponential_smoothing(http_requests_histogram[1m], 0.01, 0.1)
 	#empty
 
 # negative trends
