@@ -355,7 +355,7 @@ func calcTrendValue(i int, tf, s0, s1, b float64) float64 {
 // https://en.wikipedia.org/wiki/Exponential_smoothing .
 func funcDoubleExponentialSmoothing(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	samples := vals[0].(Matrix)[0]
-
+	metricName := samples.Metric.Get(labels.MetricName)
 	// The smoothing factor argument.
 	sf := vals[1].(Vector)[0].F
 
@@ -374,6 +374,10 @@ func funcDoubleExponentialSmoothing(vals []parser.Value, args parser.Expressions
 
 	// Can't do the smoothing operation with less than two points.
 	if l < 2 {
+		// Annotate mix of float and histogram.
+		if l == 1 && len(samples.Histograms) > 0 {
+			return enh.Out, annotations.New().Add(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, args[0].PositionRange()))
+		}
 		return enh.Out, nil
 	}
 
@@ -394,7 +398,9 @@ func funcDoubleExponentialSmoothing(vals []parser.Value, args parser.Expressions
 
 		s0, s1 = s1, x+y
 	}
-
+	if len(samples.Histograms) > 0 {
+		return append(enh.Out, Sample{F: s1}), annotations.New().Add(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, args[0].PositionRange()))
+	}
 	return append(enh.Out, Sample{F: s1}), nil
 }
 
@@ -1110,10 +1116,15 @@ func linearRegression(samples []FPoint, interceptTime int64) (slope, intercept f
 // === deriv(node parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcDeriv(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	samples := vals[0].(Matrix)[0]
+	metricName := samples.Metric.Get(labels.MetricName)
 
-	// No sense in trying to compute a derivative without at least two points.
+	// No sense in trying to compute a derivative without at least two float points.
 	// Drop this Vector element.
 	if len(samples.Floats) < 2 {
+		// Annotate mix of float and histogram.
+		if len(samples.Floats) == 1 && len(samples.Histograms) > 0 {
+			return enh.Out, annotations.New().Add(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, args[0].PositionRange()))
+		}
 		return enh.Out, nil
 	}
 
@@ -1121,6 +1132,9 @@ func funcDeriv(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 	// to avoid floating point accuracy issues, see
 	// https://github.com/prometheus/prometheus/issues/2674
 	slope, _ := linearRegression(samples.Floats, samples.Floats[0].T)
+	if len(samples.Histograms) > 0 {
+		return append(enh.Out, Sample{F: slope}), annotations.New().Add(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, args[0].PositionRange()))
+	}
 	return append(enh.Out, Sample{F: slope}), nil
 }
 
@@ -1128,13 +1142,22 @@ func funcDeriv(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 func funcPredictLinear(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	samples := vals[0].(Matrix)[0]
 	duration := vals[1].(Vector)[0].F
-	// No sense in trying to predict anything without at least two points.
+	metricName := samples.Metric.Get(labels.MetricName)
+
+	// No sense in trying to predict anything without at least two float points.
 	// Drop this Vector element.
 	if len(samples.Floats) < 2 {
+		// Annotate mix of float and histogram.
+		if len(samples.Floats) == 1 && len(samples.Histograms) > 0 {
+			return enh.Out, annotations.New().Add(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, args[0].PositionRange()))
+		}
 		return enh.Out, nil
 	}
-	slope, intercept := linearRegression(samples.Floats, enh.Ts)
 
+	slope, intercept := linearRegression(samples.Floats, enh.Ts)
+	if len(samples.Histograms) > 0 {
+		return append(enh.Out, Sample{F: slope*duration + intercept}), annotations.New().Add(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, args[0].PositionRange()))
+	}
 	return append(enh.Out, Sample{F: slope*duration + intercept}), nil
 }
 

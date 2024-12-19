@@ -148,6 +148,7 @@ var (
 	HistogramQuantileForcedMonotonicityInfo = fmt.Errorf("%w: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name", PromQLInfo)
 	IncompatibleTypesInBinOpInfo            = fmt.Errorf("%w: incompatible sample types encountered for binary operator", PromQLInfo)
 	HistogramIgnoredInAggregationInfo       = fmt.Errorf("%w: ignored histogram in", PromQLInfo)
+	HistogramIgnoredInMixedRangeInfo        = fmt.Errorf("%w: ignored histograms in a range containing both floats and histograms for metric name", PromQLInfo)
 )
 
 type annoErr struct {
@@ -291,5 +292,12 @@ func NewHistogramIgnoredInAggregationInfo(aggregation string, pos posrange.Posit
 	return annoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w %s aggregation", HistogramIgnoredInAggregationInfo, aggregation),
+	}
+}
+
+func NewHistogramIgnoredInMixedRangeInfo(metricName string, pos posrange.PositionRange) error {
+	return annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w %q", HistogramIgnoredInMixedRangeInfo, metricName),
 	}
 }
