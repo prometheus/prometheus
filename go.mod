@@ -212,3 +212,6 @@ exclude (
 	github.com/grpc-ecosystem/grpc-gateway v1.14.7
 	google.golang.org/api v0.30.0
 )
+
+// Pin until https://github.com/fsnotify/fsnotify/issues/656 is resolved.
+replace github.com/fsnotify/fsnotify v1.8.0 => github.com/fsnotify/fsnotify v1.7.0
