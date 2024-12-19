@@ -286,13 +286,14 @@ eval instant at 50m deriv(http_requests_total{group="canary", instance="1", job=
 eval instant at 50m deriv(testcounter_reset_middle_total[100m])
 	{} 0.010606060606060607
 
-# deriv should ignore histograms with info annotation.
+# deriv should ignore histograms in a mixed range of floats and histograms, flagged by an info annotation.
 eval_info instant at 110m deriv(http_requests_mix{group="canary", instance="1", job="app-server"}[110m])
 	{group="canary", instance="1", job="app-server"} 0.26666666666666666
 
 eval_info instant at 100m deriv(testcounter_reset_middle_mix[110m])
 	{} 0.010606060606060607
 
+# deriv should silently ignore ranges consisting only of histograms.
 eval instant at 50m deriv(http_requests_histogram[60m])
 	#empty
 
@@ -335,13 +336,14 @@ eval instant at 10m predict_linear(testcounter_reset_middle_total[55m] @ 3000, 3
 eval instant at 70m predict_linear(testcounter_reset_middle_total[55m] @ 3000, 3600)
 	{} 89.54545454545455
 
-# predict_linear should ignore histogram with info annotation.
+# predict_linear should ignore histograms in a mixed range of floats and histograms, flagged by an info annotation.
 eval_info instant at 60m predict_linear(testcounter_reset_middle_mix[60m], 3000)
 	{} 70
 
 eval_info instant at 60m predict_linear(testcounter_reset_middle_mix[60m], 50m)
 	{} 70
 
+# predict_linear should silently ignore ranges consisting only of histograms.
 eval instant at 60m predict_linear(http_requests_histogram[60m], 50m)
 	#empty
 
@@ -764,13 +766,14 @@ eval instant at 8000s double_exponential_smoothing(http_requests[1m], 0.01, 0.1)
 	{job="api-server", instance="0", group="canary"} 24000
 	{job="api-server", instance="1", group="canary"} 32000
 
-# double_exponential_smoothing should ignore histogram with info annotation.
+# double_exponential_smoothing should ignore histograms in a mixed range of floats and histograms, flagged by an info annotation.
 eval_info instant at 20010s double_exponential_smoothing(http_requests_mix[1m], 0.01, 0.1)
 	{job="api-server", instance="0", group="production"} 30100
 	{job="api-server", instance="1", group="production"} 30200
 	{job="api-server", instance="0", group="canary"} 80300
 	{job="api-server", instance="1", group="canary"} 80000
 
+# double_exponential_smoothing should silently ignore ranges consisting only of histograms.
 eval instant at 10000s double_exponential_smoothing(http_requests_histogram[1m], 0.01, 0.1)
 	#empty
 
