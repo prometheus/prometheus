@@ -127,6 +127,7 @@ func main() {
 	checkConfigLintFatal := checkConfigCmd.Flag(
 		"lint-fatal",
 		"Make lint errors exit with exit code 3.").Default("false").Bool()
+	checkConfigIgnoreUnknownFields := checkConfigCmd.Flag("ignore-unknown-fields", "Ignore unknown fields in the rule groups read by the config files. This is useful when you want to extend rule files with custom metadata. Ensure that those fields are removed before loading them into the Prometheus server as it performs strict checks by default.").Default("false").Bool()
 
 	checkWebConfigCmd := checkCmd.Command("web-config", "Check if the web config files are valid or not.")
 	webConfigFiles := checkWebConfigCmd.Arg(
@@ -154,6 +155,7 @@ func main() {
 	checkRulesLintFatal := checkRulesCmd.Flag(
 		"lint-fatal",
 		"Make lint errors exit with exit code 3.").Default("false").Bool()
+	checkRulesIgnoreUnknownFields := checkRulesCmd.Flag("ignore-unknown-fields", "Ignore unknown fields in the rule files. This is useful when you want to extend rule files with custom metadata. Ensure that those fields are removed before loading them into the Prometheus server as it performs strict checks by default.").Default("false").Bool()
 
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
 	checkMetricsExtended := checkCmd.Flag("extended", "Print extended information related to the cardinality of the metrics.").Bool()
@@ -227,6 +229,7 @@ func main() {
 	).Required().ExistingFiles()
 	testRulesDebug := testRulesCmd.Flag("debug", "Enable unit test debugging.").Default("false").Bool()
 	testRulesDiff := testRulesCmd.Flag("diff", "[Experimental] Print colored differential output between expected & received output.").Default("false").Bool()
+	testRulesIgnoreUnknownFields := testRulesCmd.Flag("ignore-unknown-fields", "Ignore unknown fields in the test files. This is useful when you want to extend rule files with custom metadata. Ensure that those fields are removed before loading them into the Prometheus server as it performs strict checks by default.").Default("false").Bool()
 
 	defaultDBPath := "data/"
 	tsdbCmd := app.Command("tsdb", "Run tsdb commands.")
@@ -348,7 +351,7 @@ func main() {
 		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout, prometheus.DefaultRegisterer))
 
 	case checkConfigCmd.FullCommand():
-		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newConfigLintConfig(*checkConfigLint, *checkConfigLintFatal, model.Duration(*checkLookbackDelta)), *configFiles...))
+		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newConfigLintConfig(*checkConfigLint, *checkConfigLintFatal, *checkConfigIgnoreUnknownFields, model.Duration(*checkLookbackDelta)), *configFiles...))
 
 	case checkServerHealthCmd.FullCommand():
 		os.Exit(checkErr(CheckServerStatus(serverURL, checkHealth, httpRoundTripper)))
@@ -360,7 +363,7 @@ func main() {
 		os.Exit(CheckWebConfig(*webConfigFiles...))
 
 	case checkRulesCmd.FullCommand():
-		os.Exit(CheckRules(newRulesLintConfig(*checkRulesLint, *checkRulesLintFatal), *ruleFiles...))
+		os.Exit(CheckRules(newRulesLintConfig(*checkRulesLint, *checkRulesLintFatal, *checkRulesIgnoreUnknownFields), *ruleFiles...))
 
 	case checkMetricsCmd.FullCommand():
 		os.Exit(CheckMetrics(*checkMetricsExtended))
@@ -402,6 +405,7 @@ func main() {
 			*testRulesRun,
 			*testRulesDiff,
 			*testRulesDebug,
+			*testRulesIgnoreUnknownFields,
 			*testRulesFiles...),
 		)
 
@@ -455,15 +459,17 @@ func checkExperimental(f bool) {
 var errLint = errors.New("lint error")
 
 type rulesLintConfig struct {
-	all            bool
-	duplicateRules bool
-	fatal          bool
+	all                 bool
+	duplicateRules      bool
+	fatal               bool
+	ignoreUnknownFields bool
 }
 
-func newRulesLintConfig(stringVal string, fatal bool) rulesLintConfig {
+func newRulesLintConfig(stringVal string, fatal, ignoreUnknownFields bool) rulesLintConfig {
 	items := strings.Split(stringVal, ",")
 	ls := rulesLintConfig{
-		fatal: fatal,
+		fatal:               fatal,
+		ignoreUnknownFields: ignoreUnknownFields,
 	}
 	for _, setting := range items {
 		switch setting {
@@ -489,7 +495,7 @@ type configLintConfig struct {
 	lookbackDelta model.Duration
 }
 
-func newConfigLintConfig(optionsStr string, fatal bool, lookbackDelta model.Duration) configLintConfig {
+func newConfigLintConfig(optionsStr string, fatal, ignoreUnknownFields bool, lookbackDelta model.Duration) configLintConfig {
 	c := configLintConfig{
 		rulesLintConfig: rulesLintConfig{
 			fatal: fatal,
@@ -518,7 +524,7 @@ func newConfigLintConfig(optionsStr string, fatal bool, lookbackDelta model.Dura
 	}
 
 	if len(rulesOptions) > 0 {
-		c.rulesLintConfig = newRulesLintConfig(strings.Join(rulesOptions, ","), fatal)
+		c.rulesLintConfig = newRulesLintConfig(strings.Join(rulesOptions, ","), fatal, ignoreUnknownFields)
 	}
 
 	return c
@@ -839,7 +845,7 @@ func checkRulesFromStdin(ls rulesLintConfig) (bool, bool) {
 		fmt.Fprintln(os.Stderr, "  FAILED:", err)
 		return true, true
 	}
-	rgs, errs := rulefmt.Parse(data)
+	rgs, errs := rulefmt.Parse(data, ls.ignoreUnknownFields)
 	if errs != nil {
 		failed = true
 		fmt.Fprintln(os.Stderr, "  FAILED:")
@@ -873,7 +879,7 @@ func checkRules(files []string, ls rulesLintConfig) (bool, bool) {
 	hasErrors := false
 	for _, f := range files {
 		fmt.Println("Checking", f)
-		rgs, errs := rulefmt.ParseFile(f)
+		rgs, errs := rulefmt.ParseFile(f, ls.ignoreUnknownFields)
 		if errs != nil {
 			failed = true
 			fmt.Fprintln(os.Stderr, "  FAILED:")
