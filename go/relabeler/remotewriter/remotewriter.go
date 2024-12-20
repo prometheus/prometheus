@@ -6,6 +6,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head/catalog"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head/ready"
+	"github.com/prometheus/client_golang/prometheus"
 	"time"
 )
 
@@ -20,15 +21,17 @@ type RemoteWriter struct {
 	catalog       Catalog
 	clock         clockwork.Clock
 	readyNotifier ready.Notifier
+	registerer    prometheus.Registerer
 }
 
-func New(dataDir string, catalog Catalog, clock clockwork.Clock, readyNotifier ready.Notifier) *RemoteWriter {
+func New(dataDir string, catalog Catalog, clock clockwork.Clock, readyNotifier ready.Notifier, registerer prometheus.Registerer) *RemoteWriter {
 	return &RemoteWriter{
 		dataDir:       dataDir,
 		catalog:       catalog,
 		clock:         clock,
 		configQueue:   make(chan []DestinationConfig),
 		readyNotifier: readyNotifier,
+		registerer:    registerer,
 	}
 }
 
@@ -41,10 +44,6 @@ func (rw *RemoteWriter) Run(ctx context.Context) error {
 	}()
 
 	destinations := make(map[string]*Destination)
-
-	const gcInterval = time.Minute * 5
-	gcTicker := time.NewTicker(gcInterval)
-	defer gcTicker.Stop()
 
 	for {
 		select {
@@ -61,6 +60,7 @@ func (rw *RemoteWriter) Run(ctx context.Context) error {
 				if _, ok := destinationConfigs[name]; !ok {
 					wlr := writeLoopRunners[name]
 					wlr.stop()
+					destination.UnregisterMetrics(rw.registerer)
 					delete(destinations, name)
 					delete(writeLoopRunners, name)
 				}
@@ -70,6 +70,7 @@ func (rw *RemoteWriter) Run(ctx context.Context) error {
 				destination, ok := destinations[config.Name]
 				if !ok {
 					destination = NewDestination(config)
+					destination.RegisterMetrics(rw.registerer)
 					wl := newWriteLoop(rw.dataDir, destination, rw.catalog, rw.clock)
 					wlr := newWriteLoopRunner(wl)
 					writeLoopRunners[config.Name] = wlr

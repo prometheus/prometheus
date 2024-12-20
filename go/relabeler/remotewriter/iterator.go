@@ -63,12 +63,12 @@ func (s *sharder) NumberOfShards() int {
 }
 
 type Iterator struct {
-	clock                    clockwork.Clock
-	queueConfig              config.QueueConfig
-	dataSource               DataSource
-	writer                   Writer
-	targetSegmentIDSetCloser TargetSegmentIDSetCloser
-
+	clock                        clockwork.Clock
+	queueConfig                  config.QueueConfig
+	dataSource                   DataSource
+	writer                       Writer
+	targetSegmentIDSetCloser     TargetSegmentIDSetCloser
+	metrics                      *DestinationMetrics
 	targetSegmentID              uint32
 	targetSegmentIsPartiallyRead bool
 
@@ -86,7 +86,27 @@ func (m *Message) IsObsoleted(minTimestamp int64) bool {
 	return m.MaxTimestamp < minTimestamp
 }
 
-func newIterator(clock clockwork.Clock, queueConfig config.QueueConfig, dataSource DataSource, targetSegmentIDSetCloser TargetSegmentIDSetCloser, targetSegmentID uint32, readTimeout time.Duration, writer Writer) (*Iterator, error) {
+func (m *Message) SizeInBytes() int {
+	size := 0
+	for _, protobuf := range m.EncodedProtobuf {
+		_ = protobuf.Do(func(buf []byte) error {
+			size += len(buf)
+			return nil
+		})
+	}
+	return size
+}
+
+func newIterator(
+	clock clockwork.Clock,
+	queueConfig config.QueueConfig,
+	dataSource DataSource,
+	targetSegmentIDSetCloser TargetSegmentIDSetCloser,
+	targetSegmentID uint32,
+	readTimeout time.Duration,
+	writer Writer,
+	metrics *DestinationMetrics,
+) (*Iterator, error) {
 	outputSharder, err := newSharder(queueConfig.MinShards, queueConfig.MaxShards)
 	if err != nil {
 		return nil, err
@@ -98,6 +118,7 @@ func newIterator(clock clockwork.Clock, queueConfig config.QueueConfig, dataSour
 		dataSource:               dataSource,
 		writer:                   writer,
 		targetSegmentIDSetCloser: targetSegmentIDSetCloser,
+		metrics:                  metrics,
 		targetSegmentID:          targetSegmentID,
 		readTimeout:              readTimeout,
 		outputSharder:            outputSharder,
@@ -109,6 +130,7 @@ func (i *Iterator) Next(ctx context.Context) error {
 	var deadlineReached bool
 	var delay time.Duration
 	numberOfShards := i.outputSharder.NumberOfShards()
+	i.metrics.numShards.Set(float64(numberOfShards))
 	b := newBatch(numberOfShards, i.queueConfig.MaxSamplesPerSend)
 
 readLoop:
@@ -166,6 +188,8 @@ readLoop:
 		i.outputSharder.Apply(float64(i.readTimeout) / float64(readDuration))
 	}
 
+	i.metrics.desiredNumShards.Set(float64(i.outputSharder.NumberOfShards()))
+
 	i.writeCaches()
 
 	msg, err := i.encode(b.Data(), uint16(numberOfShards))
@@ -174,12 +198,18 @@ readLoop:
 		return err
 	}
 
+	numberOfSamples := b.NumberOfSamples()
+	sizeInBytes := msg.SizeInBytes()
+
 	b = nil
 
 	err = backoff.Retry(func() error {
 		if msg.IsObsoleted(i.minTimestamp()) {
+			i.metrics.droppedSamplesTotal.WithLabelValues(reasonTooOld).Add(float64(numberOfSamples))
 			return nil
 		}
+
+		i.metrics.samplesTotal.Add(float64(numberOfSamples))
 
 		errs := make([]error, len(msg.EncodedProtobuf))
 		wg := &sync.WaitGroup{}
@@ -190,7 +220,9 @@ readLoop:
 			wg.Add(1)
 			go func(shardID int, protobuf *cppbridge.SnappyProtobufEncodedData) {
 				defer wg.Done()
+				begin := i.clock.Now()
 				errs[shardID] = i.writer.Write(ctx, protobuf)
+				i.metrics.sentBatchDuration.Observe(i.clock.Since(begin).Seconds())
 			}(shardID, protobuf)
 		}
 		wg.Wait()
@@ -203,7 +235,14 @@ readLoop:
 			msg.EncodedProtobuf[shardID] = nil
 		}
 
-		return errors.Join(errs...)
+		resultErr := errors.Join(errs...)
+		if resultErr != nil {
+			i.metrics.failedSamplesTotal.Add(float64(numberOfSamples))
+		} else {
+			i.metrics.sentBytesTotal.Add(float64(sizeInBytes))
+			i.metrics.highestSentTimestamp.Set(float64(msg.MaxTimestamp))
+		}
+		return resultErr
 	},
 		backoff.WithContext(
 			backoff.NewExponentialBackOff(

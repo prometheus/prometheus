@@ -41,6 +41,9 @@ func (wl *writeLoop) run(ctx context.Context) {
 
 	rw := &readyWriter{}
 
+	wl.destination.metrics.maxNumShards.Set(float64(wl.destination.Config().QueueConfig.MaxShards))
+	wl.destination.metrics.minNumShards.Set(float64(wl.destination.Config().QueueConfig.MinShards))
+
 	defer func() {
 		if i != nil {
 			_ = i.Close()
@@ -197,7 +200,7 @@ func (wl *writeLoop) nextIterator(ctx context.Context, writer Writer) (*Iterator
 		targetSegmentID = crw.GetTargetSegmentID()
 	}
 
-	i, err := newIterator(wl.clock, wl.destination.Config().QueueConfig, ds, crw, targetSegmentID, wl.destination.Config().ReadTimeout, writer)
+	i, err := newIterator(wl.clock, wl.destination.Config().QueueConfig, ds, crw, targetSegmentID, wl.destination.Config().ReadTimeout, writer, wl.destination.metrics)
 	if err != nil {
 		return nil, errors.Join(fmt.Errorf("failed to create data source: %w", err), crw.Close(), ds.Close())
 	}

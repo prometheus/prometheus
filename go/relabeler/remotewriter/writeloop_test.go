@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/require"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
@@ -113,7 +114,7 @@ func (th *TestHeads) Append(ctx context.Context, timeSeriesSlice []model.TimeSer
 		return err
 	}
 
-	_, err = th.Head.Append(ctx, &relabeler.IncomingData{Hashdex: hx}, nil, relabelerID)
+	_, _, err = th.Head.Append(ctx, &relabeler.IncomingData{Hashdex: hx}, nil, relabelerID)
 	return err
 }
 
@@ -204,9 +205,12 @@ func TestWriteLoopWrite(t *testing.T) {
 	err = testHeads.Append(ctx, batches[0], transparentRelabelerName)
 	require.NoError(t, err)
 
+	u, err := url.Parse("http://localhost:8080")
+	require.NoError(t, err)
+
 	destination := NewDestination(DestinationConfig{
 		RemoteWriteConfig: config2.RemoteWriteConfig{
-			URL:                  nil,
+			URL:                  &config3.URL{u},
 			RemoteTimeout:        0,
 			Headers:              nil,
 			WriteRelabelConfigs:  nil,
