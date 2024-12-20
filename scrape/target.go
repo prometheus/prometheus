@@ -49,8 +49,8 @@ type Target struct {
 	labels labels.Labels
 	// ScrapeConfig used to create this target.
 	scrapeConfig *config.ScrapeConfig
-	// Labels from SD and TargetGroup used to create this target.
-	tlset, tgLabels model.LabelSet
+	// Target and TargetGroup labels used to create this target.
+	tLabels, tgLabels model.LabelSet
 
 	mtx                sync.RWMutex
 	lastError          error
@@ -61,10 +61,10 @@ type Target struct {
 }
 
 // NewTarget creates a reasonably configured target for querying.
-func NewTarget(labels labels.Labels, scrapeConfig *config.ScrapeConfig, tlset, tgLabels model.LabelSet) *Target {
+func NewTarget(labels labels.Labels, scrapeConfig *config.ScrapeConfig, tLabels, tgLabels model.LabelSet) *Target {
 	return &Target{
 		labels:       labels,
-		tlset:        tlset,
+		tLabels:      tLabels,
 		tgLabels:     tgLabels,
 		scrapeConfig: scrapeConfig,
 		health:       HealthUnknown,
@@ -191,18 +191,18 @@ func (t *Target) LabelsRange(f func(l labels.Label)) {
 // DiscoveredLabels returns a copy of the target's labels before any processing.
 func (t *Target) DiscoveredLabels(lb *labels.Builder) labels.Labels {
 	t.mtx.Lock()
-	cfg, tlset, tgLabels := t.scrapeConfig, t.tlset, t.tgLabels
+	cfg, tLabels, tgLabels := t.scrapeConfig, t.tLabels, t.tgLabels
 	t.mtx.Unlock()
-	PopulateDiscoveredLabels(lb, cfg, tlset, tgLabels)
+	PopulateDiscoveredLabels(lb, cfg, tLabels, tgLabels)
 	return lb.Labels()
 }
 
 // SetScrapeConfig sets new ScrapeConfig.
-func (t *Target) SetScrapeConfig(scrapeConfig *config.ScrapeConfig, tlset, tgLabels model.LabelSet) {
+func (t *Target) SetScrapeConfig(scrapeConfig *config.ScrapeConfig, tLabels, tgLabels model.LabelSet) {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()
 	t.scrapeConfig = scrapeConfig
-	t.tlset = tlset
+	t.tLabels = tLabels
 	t.tgLabels = tgLabels
 }
 
@@ -428,14 +428,15 @@ func (app *maxSchemaAppender) AppendHistogram(ref storage.SeriesRef, lset labels
 	return ref, nil
 }
 
-func PopulateDiscoveredLabels(lb *labels.Builder, cfg *config.ScrapeConfig, tlset, tgLabels model.LabelSet) {
+// PopulateDiscoveredLabels sets base labels on lb from target and group labels and scrape configuration, before relabeling.
+func PopulateDiscoveredLabels(lb *labels.Builder, cfg *config.ScrapeConfig, tLabels, tgLabels model.LabelSet) {
 	lb.Reset(labels.EmptyLabels())
 
-	for ln, lv := range tlset {
+	for ln, lv := range tLabels {
 		lb.Set(string(ln), string(lv))
 	}
 	for ln, lv := range tgLabels {
-		if _, ok := tlset[ln]; !ok {
+		if _, ok := tLabels[ln]; !ok {
 			lb.Set(string(ln), string(lv))
 		}
 	}
@@ -462,10 +463,11 @@ func PopulateDiscoveredLabels(lb *labels.Builder, cfg *config.ScrapeConfig, tlse
 	}
 }
 
-// PopulateLabels builds a label set from the given label set and scrape configuration.
+// PopulateLabels builds labels from target and group labels and scrape configuration,
+// performs defined relabeling, checks validity, and adds Prometheus standard labels such as 'instance'.
 // A return of empty labels and nil error means the target was dropped by relabeling.
-func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, tlset, tgLabels model.LabelSet) (res labels.Labels, err error) {
-	PopulateDiscoveredLabels(lb, cfg, tlset, tgLabels)
+func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, tLabels, tgLabels model.LabelSet) (res labels.Labels, err error) {
+	PopulateDiscoveredLabels(lb, cfg, tLabels, tgLabels)
 	keep := relabel.ProcessBuilder(lb, cfg.RelabelConfigs...)
 
 	// Check if the target was dropped.
@@ -536,12 +538,12 @@ func TargetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig, targets [
 	targets = targets[:0]
 	failures := []error{}
 
-	for i, tlset := range tg.Targets {
-		lset, err := PopulateLabels(lb, cfg, tlset, tg.Labels)
+	for i, tLabels := range tg.Targets {
+		lset, err := PopulateLabels(lb, cfg, tLabels, tg.Labels)
 		if err != nil {
 			failures = append(failures, fmt.Errorf("instance %d in group %s: %w", i, tg, err))
 		} else {
-			targets = append(targets, NewTarget(lset, cfg, tlset, tg.Labels))
+			targets = append(targets, NewTarget(lset, cfg, tLabels, tg.Labels))
 		}
 	}
 	return targets, failures

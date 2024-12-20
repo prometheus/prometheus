@@ -550,7 +550,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 			}
 			// Need to keep the most updated ScrapeConfig for
 			// displaying labels in the Service Discovery web page.
-			sp.activeTargets[hash].SetScrapeConfig(sp.config, t.tlset, t.tgLabels)
+			sp.activeTargets[hash].SetScrapeConfig(sp.config, t.tLabels, t.tgLabels)
 		}
 	}
 

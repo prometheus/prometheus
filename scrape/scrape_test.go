@@ -231,13 +231,13 @@ func TestDiscoveredLabelsUpdate(t *testing.T) {
 	}
 	sp.activeTargets = make(map[uint64]*Target)
 	t1 := &Target{
-		tlset:        model.LabelSet{"label": "name"},
+		tLabels:      model.LabelSet{"label": "name"},
 		scrapeConfig: sp.config,
 	}
 	sp.activeTargets[t1.hash()] = t1
 
 	t2 := &Target{
-		tlset:        model.LabelSet{"labelNew": "nameNew"},
+		tLabels:      model.LabelSet{"labelNew": "nameNew"},
 		scrapeConfig: sp.config,
 	}
 	sp.sync([]*Target{t2})
