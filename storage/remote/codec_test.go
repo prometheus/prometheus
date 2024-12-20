@@ -104,9 +104,10 @@ var (
 					HelpRef: 15, // Symbolized writeV2RequestSeries1Metadata.Help.
 					UnitRef: 16, // Symbolized writeV2RequestSeries1Metadata.Unit.
 				},
-				Samples:    []writev2.Sample{{Value: 1, Timestamp: 1}},
-				Exemplars:  []writev2.Exemplar{{LabelsRefs: []uint32{11, 12}, Value: 1, Timestamp: 1}},
-				Histograms: []writev2.Histogram{writev2.FromIntHistogram(1, &testHistogram), writev2.FromFloatHistogram(2, testHistogram.ToFloat(nil))},
+				Samples:          []writev2.Sample{{Value: 1, Timestamp: 10}},
+				Exemplars:        []writev2.Exemplar{{LabelsRefs: []uint32{11, 12}, Value: 1, Timestamp: 10}},
+				Histograms:       []writev2.Histogram{writev2.FromIntHistogram(10, &testHistogram), writev2.FromFloatHistogram(20, testHistogram.ToFloat(nil))},
+				CreatedTimestamp: 1, // CT needs to be lower than the sample's timestamp.
 			},
 			{
 				LabelsRefs: []uint32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, // Same series as first.
@@ -116,9 +117,9 @@ var (
 					HelpRef: 17, // Symbolized writeV2RequestSeries2Metadata.Help.
 					// No unit.
 				},
-				Samples:    []writev2.Sample{{Value: 2, Timestamp: 2}},
-				Exemplars:  []writev2.Exemplar{{LabelsRefs: []uint32{13, 14}, Value: 2, Timestamp: 2}},
-				Histograms: []writev2.Histogram{writev2.FromIntHistogram(3, &testHistogram), writev2.FromFloatHistogram(4, testHistogram.ToFloat(nil))},
+				Samples:    []writev2.Sample{{Value: 2, Timestamp: 20}},
+				Exemplars:  []writev2.Exemplar{{LabelsRefs: []uint32{13, 14}, Value: 2, Timestamp: 20}},
+				Histograms: []writev2.Histogram{writev2.FromIntHistogram(30, &testHistogram), writev2.FromFloatHistogram(40, testHistogram.ToFloat(nil))},
 			},
 		},
 	}
@@ -140,9 +141,10 @@ func TestWriteV2RequestFixture(t *testing.T) {
 					HelpRef: st.Symbolize(writeV2RequestSeries1Metadata.Help),
 					UnitRef: st.Symbolize(writeV2RequestSeries1Metadata.Unit),
 				},
-				Samples:    []writev2.Sample{{Value: 1, Timestamp: 1}},
-				Exemplars:  []writev2.Exemplar{{LabelsRefs: exemplar1LabelRefs, Value: 1, Timestamp: 1}},
-				Histograms: []writev2.Histogram{writev2.FromIntHistogram(1, &testHistogram), writev2.FromFloatHistogram(2, testHistogram.ToFloat(nil))},
+				Samples:          []writev2.Sample{{Value: 1, Timestamp: 10}},
+				Exemplars:        []writev2.Exemplar{{LabelsRefs: exemplar1LabelRefs, Value: 1, Timestamp: 10}},
+				Histograms:       []writev2.Histogram{writev2.FromIntHistogram(10, &testHistogram), writev2.FromFloatHistogram(20, testHistogram.ToFloat(nil))},
+				CreatedTimestamp: 1,
 			},
 			{
 				LabelsRefs: labelRefs,
@@ -151,9 +153,9 @@ func TestWriteV2RequestFixture(t *testing.T) {
 					HelpRef: st.Symbolize(writeV2RequestSeries2Metadata.Help),
 					// No unit.
 				},
-				Samples:    []writev2.Sample{{Value: 2, Timestamp: 2}},
-				Exemplars:  []writev2.Exemplar{{LabelsRefs: exemplar2LabelRefs, Value: 2, Timestamp: 2}},
-				Histograms: []writev2.Histogram{writev2.FromIntHistogram(3, &testHistogram), writev2.FromFloatHistogram(4, testHistogram.ToFloat(nil))},
+				Samples:    []writev2.Sample{{Value: 2, Timestamp: 20}},
+				Exemplars:  []writev2.Exemplar{{LabelsRefs: exemplar2LabelRefs, Value: 2, Timestamp: 20}},
+				Histograms: []writev2.Histogram{writev2.FromIntHistogram(30, &testHistogram), writev2.FromFloatHistogram(40, testHistogram.ToFloat(nil))},
 			},
 		},
 		Symbols: st.Symbols(),
