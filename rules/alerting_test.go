@@ -998,7 +998,7 @@ func TestAlertingEvalWithOrigin(t *testing.T) {
 	require.Equal(t, detail, NewRuleDetail(rule))
 }
 
-func TestAlertingRule_SetNoDependentRules(t *testing.T) {
+func TestAlertingRule_SetDependentRules(t *testing.T) {
 	rule := NewAlertingRule(
 		"test",
 		&parser.NumberLiteral{Val: 1},
@@ -1012,14 +1012,16 @@ func TestAlertingRule_SetNoDependentRules(t *testing.T) {
 	)
 	require.False(t, rule.NoDependentRules())
 
-	rule.SetNoDependentRules(false)
+	rule.SetDependentRules([]Rule{NewRecordingRule("test1", nil, labels.EmptyLabels())})
 	require.False(t, rule.NoDependentRules())
+	require.Equal(t, map[string]struct{}{"test1": {}}, rule.DependentRules())
 
-	rule.SetNoDependentRules(true)
+	rule.SetDependentRules([]Rule{})
 	require.True(t, rule.NoDependentRules())
+	require.Empty(t, rule.DependentRules())
 }
 
-func TestAlertingRule_SetNoDependencyRules(t *testing.T) {
+func TestAlertingRule_SetDependencyRules(t *testing.T) {
 	rule := NewAlertingRule(
 		"test",
 		&parser.NumberLiteral{Val: 1},
@@ -1033,11 +1035,13 @@ func TestAlertingRule_SetNoDependencyRules(t *testing.T) {
 	)
 	require.False(t, rule.NoDependencyRules())
 
-	rule.SetNoDependencyRules(false)
+	rule.SetDependencyRules([]Rule{NewRecordingRule("test1", nil, labels.EmptyLabels())})
 	require.False(t, rule.NoDependencyRules())
+	require.Equal(t, map[string]struct{}{"test1": {}}, rule.DependencyRules())
 
-	rule.SetNoDependencyRules(true)
+	rule.SetDependencyRules([]Rule{})
 	require.True(t, rule.NoDependencyRules())
+	require.Empty(t, rule.DependencyRules())
 }
 
 func TestAlertingRule_ActiveAlertsCount(t *testing.T) {
