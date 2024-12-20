@@ -933,21 +933,6 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		db.blockChunkQuerierFunc = opts.BlockChunkQuerierFunc
 	}
 
-	// store the current blocksToDeleteFunc and replace it with a startup specific one.
-	originalBlocksToDelete := db.blocksToDelete
-	db.blocksToDelete = func(blocks []*Block) map[ulid.ULID]struct{} {
-		return deletableBlocks(db, blocks, beyondStartupTimeRetention, BeyondSizeRetention)
-	}
-	// Reload blocks so the retention policy is applied to the blocks.
-	// based on the current blocksToDeleteFunc.
-	err = db.reloadBlocks()
-	if err != nil {
-		return nil, err
-	}
-
-	// Restore the original blocksToDeleteFunc.
-	db.blocksToDelete = originalBlocksToDelete
-
 	var wal, wbl *wlog.WL
 	segmentSize := wlog.DefaultSegmentSize
 	// Wal is enabled.
@@ -1017,9 +1002,21 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	db.metrics.maxBytes.Set(float64(maxBytes))
 	db.metrics.retentionDuration.Set((time.Duration(opts.RetentionDuration) * time.Millisecond).Seconds())
 
+	// store the current blocksToDeleteFunc and replace it with a startup specific one.
+	originalBlocksToDelete := db.blocksToDelete
+
+	// Using a custom deletableBlocks so we can delete blocks that are beyond the startup time retention.
+	db.blocksToDelete = func(blocks []*Block) map[ulid.ULID]struct{} {
+		return deletableBlocks(db, blocks, beyondStartupTimeRetention, BeyondSizeRetention)
+	}
+
 	if err := db.reload(); err != nil {
 		return nil, err
 	}
+
+	// Restore the original blocksToDeleteFunc after applying the startup specific one.
+	db.blocksToDelete = originalBlocksToDelete
+
 	// Set the min valid time for the ingested samples
 	// to be no lower than the maxt of the last block.
 	minValidTime := int64(math.MinInt64)
@@ -1771,7 +1768,7 @@ func beyondStartupTimeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULI
 
 	deletable = make(map[ulid.ULID]struct{})
 	for _, block := range blocks {
-		if block.Meta().MaxTime >= int64(db.opts.StartupMinRetentionTime) {
+		if block.Meta().MaxTime >= db.opts.StartupMinRetentionTime {
 			for _, b := range blocks {
 				deletable[b.meta.ULID] = struct{}{}
 			}
