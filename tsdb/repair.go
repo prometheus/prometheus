@@ -72,7 +72,7 @@ func repairBadIndexVersion(logger *slog.Logger, dir string) error {
 		}
 		tmpFiles = append(tmpFiles, repl.Name())
 
-		broken, err := os.Open(filepath.Join(d, indexFilename))
+		broken, err := os.Open(indexFile(d))
 		if err != nil {
 			return fmt.Errorf("open broken index for block dir: %v: %w", d, err)
 		}
