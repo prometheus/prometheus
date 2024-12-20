@@ -1919,6 +1919,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableOverlappingCompaction:    opts.EnableOverlappingCompaction,
 		UseUncachedIO:                  opts.UseUncachedIO,
 		BlockCompactionExcludeFunc:     opts.BlockCompactionExcludeFunc,
+		StartupMinRetentionTime:        time.Now(),
 	}
 }
 
