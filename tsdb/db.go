@@ -1771,7 +1771,7 @@ func beyondStartupTimeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULI
 
 	deletable = make(map[ulid.ULID]struct{})
 	for _, block := range blocks {
-		if block.Meta().MaxTime >= int64(db.opts.StartupMinRetentionTime) {
+		if block.Meta().MaxTime >= db.opts.StartupMinRetentionTime {
 			for _, b := range blocks {
 				deletable[b.meta.ULID] = struct{}{}
 			}
