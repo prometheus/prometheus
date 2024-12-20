@@ -92,6 +92,7 @@ func DefaultOptions() *Options {
 		CompactionDelayMaxPercent:   DefaultCompactionDelayMaxPercent,
 		CompactionDelay:             time.Duration(0),
 		PostingsDecoderFactory:      DefaultPostingsDecoderFactory,
+		StartupMinRetentionTime:     time.Now().Add(-15 * 24 * time.Hour / time.Millisecond).UnixMilli(),
 	}
 }
 
@@ -224,6 +225,10 @@ type Options struct {
 	// PostingsDecoderFactory allows users to customize postings decoders based on BlockMeta.
 	// By default, DefaultPostingsDecoderFactory will be used to create raw posting decoder.
 	PostingsDecoderFactory PostingsDecoderFactory
+
+	// StartupMinRetentionTime is the used to delete blocks and ignore samples from the WAL
+	// during the startup of the TSDB.
+	StartupMinRetentionTime int64
 }
 
 type NewCompactorFunc func(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error)
@@ -814,6 +819,10 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 	if opts.OutOfOrderTimeWindow < 0 {
 		opts.OutOfOrderTimeWindow = 0
 	}
+	if opts.StartupMinRetentionTime == 0 {
+		minStartupDuration := time.Now().Add(-time.Duration(opts.RetentionDuration) / time.Millisecond)
+		opts.StartupMinRetentionTime = int64(time.Duration(minStartupDuration.UnixMilli()))
+	}
 
 	if len(rngs) == 0 {
 		// Start with smallest block duration and create exponential buckets until the exceed the
@@ -885,10 +894,6 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		returnedErr = errs.Err()
 	}()
 
-	if db.blocksToDelete == nil {
-		db.blocksToDelete = DefaultBlocksToDelete(db)
-	}
-
 	var err error
 	db.locker, err = tsdbutil.NewDirLocker(dir, "tsdb", db.logger, r)
 	if err != nil {
@@ -928,6 +933,21 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		db.blockChunkQuerierFunc = opts.BlockChunkQuerierFunc
 	}
 
+	// store the current blocksToDeleteFunc and replace it with a startup specific one.
+	originalBlocksToDelete := db.blocksToDelete
+	db.blocksToDelete = func(blocks []*Block) map[ulid.ULID]struct{} {
+		return deletableBlocks(db, blocks, beyondStartupTimeRetention, BeyondSizeRetention)
+	}
+	// Reload blocks so the retention policy is applied to the blocks.
+	// based on the current blocksToDeleteFunc.
+	err = db.reloadBlocks()
+	if err != nil {
+		return nil, err
+	}
+
+	// Restore the original blocksToDeleteFunc.
+	db.blocksToDelete = originalBlocksToDelete
+
 	var wal, wbl *wlog.WL
 	segmentSize := wlog.DefaultSegmentSize
 	// Wal is enabled.
@@ -952,6 +972,11 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 			}
 		}
 	}
+
+	if db.blocksToDelete == nil {
+		db.blocksToDelete = DefaultBlocksToDelete(db)
+	}
+
 	db.oooWasEnabled.Store(opts.OutOfOrderTimeWindow > 0)
 	headOpts := DefaultHeadOptions()
 	headOpts.ChunkRange = rngs[0]
@@ -1701,12 +1726,14 @@ func openBlocks(l *slog.Logger, dir string, loaded []*Block, chunkPool chunkenc.
 // retention from the options of the db.
 func DefaultBlocksToDelete(db *DB) BlocksToDeleteFunc {
 	return func(blocks []*Block) map[ulid.ULID]struct{} {
-		return deletableBlocks(db, blocks)
+		return deletableBlocks(db, blocks, BeyondSizeRetention, BeyondTimeRetention)
 	}
 }
 
+type DeletableFilterFunc func(db *DB, blocks []*Block) (deletable map[ulid.ULID]struct{})
+
 // deletableBlocks returns all currently loaded blocks past retention policy or already compacted into a new block.
-func deletableBlocks(db *DB, blocks []*Block) map[ulid.ULID]struct{} {
+func deletableBlocks(db *DB, blocks []*Block, filterFuncs ...DeletableFilterFunc) map[ulid.ULID]struct{} {
 	deletable := make(map[ulid.ULID]struct{})
 
 	// Sort the blocks by time - newest to oldest (largest to smallest timestamp).
@@ -1728,15 +1755,31 @@ func deletableBlocks(db *DB, blocks []*Block) map[ulid.ULID]struct{} {
 		}
 	}
 
-	for ulid := range BeyondTimeRetention(db, blocks) {
-		deletable[ulid] = struct{}{}
-	}
-
-	for ulid := range BeyondSizeRetention(db, blocks) {
-		deletable[ulid] = struct{}{}
+	for _, filterFunc := range filterFuncs {
+		for ulid := range filterFunc(db, blocks) {
+			deletable[ulid] = struct{}{}
+		}
 	}
 
 	return deletable
+}
+
+func beyondStartupTimeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struct{}) {
+	if len(blocks) == 0 || db.opts.StartupMinRetentionTime == 0 {
+		return
+	}
+
+	deletable = make(map[ulid.ULID]struct{})
+	for _, block := range blocks {
+		if block.Meta().MaxTime >= db.opts.StartupMinRetentionTime {
+			for _, b := range blocks {
+				deletable[b.meta.ULID] = struct{}{}
+			}
+			db.metrics.timeRetentionCount.Inc()
+		}
+	}
+
+	return
 }
 
 // BeyondTimeRetention returns those blocks which are beyond the time retention
