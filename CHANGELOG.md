@@ -4,6 +4,7 @@
 
 * [CHANGE] Notifier: Increment the prometheus_notifications_errors_total metric by the number of affected alerts rather than by one per batch of affected alerts. #15428
 * [ENHANCEMENT] OTLP receiver: Convert also metric metadata. #15416
+* [BUGFIX] OTLP receiver: Allow colons in non-standard units. #15710
 
 ## 3.0.1 / 2024-11-28
 
