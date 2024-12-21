@@ -253,6 +253,8 @@ const (
 
 func chunkDir(dir string) string { return filepath.Join(dir, "chunks") }
 
+func indexFile(dir string) string { return filepath.Join(dir, indexFilename) }
+
 func readMetaFile(dir string) (*BlockMeta, int64, error) {
 	b, err := os.ReadFile(filepath.Join(dir, metaFilename))
 	if err != nil {
@@ -359,7 +361,7 @@ func OpenBlock(logger *slog.Logger, dir string, pool chunkenc.Pool, postingsDeco
 	if postingsDecoderFactory != nil {
 		decoder = postingsDecoderFactory(meta)
 	}
-	ir, err := index.NewFileReader(filepath.Join(dir, indexFilename), decoder)
+	ir, err := index.NewFileReader(indexFile(dir), decoder)
 	if err != nil {
 		return nil, err
 	}
