@@ -103,12 +103,12 @@ type testTargetRetriever struct {
 }
 
 type testTargetParams struct {
-	Identifier       string
-	Labels           labels.Labels
-	DiscoveredLabels labels.Labels
-	Params           url.Values
-	Reports          []*testReport
-	Active           bool
+	Identifier   string
+	Labels       labels.Labels
+	targetLabels model.LabelSet
+	Params       url.Values
+	Reports      []*testReport
+	Active       bool
 }
 
 type testReport struct {
@@ -124,7 +124,7 @@ func newTestTargetRetriever(targetsInfo []*testTargetParams) *testTargetRetrieve
 	droppedTargets = make(map[string][]*scrape.Target)
 
 	for _, t := range targetsInfo {
-		nt := scrape.NewTarget(t.Labels, t.DiscoveredLabels, t.Params)
+		nt := scrape.NewTarget(t.Labels, &config.ScrapeConfig{Params: t.Params}, t.targetLabels, nil)
 
 		for _, r := range t.Reports {
 			nt.Report(r.Start, r.Duration, r.Error)
@@ -1004,10 +1004,9 @@ func setupTestTargetRetriever(t *testing.T) *testTargetRetriever {
 				model.ScrapeIntervalLabel: "15s",
 				model.ScrapeTimeoutLabel:  "5s",
 			}),
-			DiscoveredLabels: labels.EmptyLabels(),
-			Params:           url.Values{},
-			Reports:          []*testReport{{scrapeStart, 70 * time.Millisecond, nil}},
-			Active:           true,
+			Params:  url.Values{},
+			Reports: []*testReport{{scrapeStart, 70 * time.Millisecond, nil}},
+			Active:  true,
 		},
 		{
 			Identifier: "blackbox",
@@ -1019,22 +1018,21 @@ func setupTestTargetRetriever(t *testing.T) *testTargetRetriever {
 				model.ScrapeIntervalLabel: "20s",
 				model.ScrapeTimeoutLabel:  "10s",
 			}),
-			DiscoveredLabels: labels.EmptyLabels(),
-			Params:           url.Values{"target": []string{"example.com"}},
-			Reports:          []*testReport{{scrapeStart, 100 * time.Millisecond, errors.New("failed")}},
-			Active:           true,
+			Params:  url.Values{"target": []string{"example.com"}},
+			Reports: []*testReport{{scrapeStart, 100 * time.Millisecond, errors.New("failed")}},
+			Active:  true,
 		},
 		{
 			Identifier: "blackbox",
 			Labels:     labels.EmptyLabels(),
-			DiscoveredLabels: labels.FromMap(map[string]string{
+			targetLabels: model.LabelSet{
 				model.SchemeLabel:         "http",
 				model.AddressLabel:        "http://dropped.example.com:9115",
 				model.MetricsPathLabel:    "/probe",
 				model.JobLabel:            "blackbox",
 				model.ScrapeIntervalLabel: "30s",
 				model.ScrapeTimeoutLabel:  "15s",
-			}),
+			},
 			Params: url.Values{},
 			Active: false,
 		},
@@ -1507,7 +1505,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			response: &TargetDiscovery{
 				ActiveTargets: []*Target{
 					{
-						DiscoveredLabels:   labels.FromStrings(),
+						DiscoveredLabels:   labels.FromStrings("__param_target", "example.com", "__scrape_interval__", "0s", "__scrape_timeout__", "0s"),
 						Labels:             labels.FromStrings("job", "blackbox"),
 						ScrapePool:         "blackbox",
 						ScrapeURL:          "http://localhost:9115/probe?target=example.com",
@@ -1520,7 +1518,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						ScrapeTimeout:      "10s",
 					},
 					{
-						DiscoveredLabels:   labels.FromStrings(),
+						DiscoveredLabels:   labels.FromStrings("__scrape_interval__", "0s", "__scrape_timeout__", "0s"),
 						Labels:             labels.FromStrings("job", "test"),
 						ScrapePool:         "test",
 						ScrapeURL:          "http://example.com:8080/metrics",
@@ -1556,7 +1554,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			response: &TargetDiscovery{
 				ActiveTargets: []*Target{
 					{
-						DiscoveredLabels:   labels.FromStrings(),
+						DiscoveredLabels:   labels.FromStrings("__param_target", "example.com", "__scrape_interval__", "0s", "__scrape_timeout__", "0s"),
 						Labels:             labels.FromStrings("job", "blackbox"),
 						ScrapePool:         "blackbox",
 						ScrapeURL:          "http://localhost:9115/probe?target=example.com",
@@ -1569,7 +1567,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						ScrapeTimeout:      "10s",
 					},
 					{
-						DiscoveredLabels:   labels.FromStrings(),
+						DiscoveredLabels:   labels.FromStrings("__scrape_interval__", "0s", "__scrape_timeout__", "0s"),
 						Labels:             labels.FromStrings("job", "test"),
 						ScrapePool:         "test",
 						ScrapeURL:          "http://example.com:8080/metrics",
@@ -1605,7 +1603,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			response: &TargetDiscovery{
 				ActiveTargets: []*Target{
 					{
-						DiscoveredLabels:   labels.FromStrings(),
+						DiscoveredLabels:   labels.FromStrings("__param_target", "example.com", "__scrape_interval__", "0s", "__scrape_timeout__", "0s"),
 						Labels:             labels.FromStrings("job", "blackbox"),
 						ScrapePool:         "blackbox",
 						ScrapeURL:          "http://localhost:9115/probe?target=example.com",
@@ -1618,7 +1616,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						ScrapeTimeout:      "10s",
 					},
 					{
-						DiscoveredLabels:   labels.FromStrings(),
+						DiscoveredLabels:   labels.FromStrings("__scrape_interval__", "0s", "__scrape_timeout__", "0s"),
 						Labels:             labels.FromStrings("job", "test"),
 						ScrapePool:         "test",
 						ScrapeURL:          "http://example.com:8080/metrics",

@@ -212,7 +212,8 @@ func TestDroppedTargetsList(t *testing.T) {
 	sp.Sync(tgs)
 	require.Len(t, sp.droppedTargets, expectedLength)
 	require.Equal(t, expectedLength, sp.droppedTargetsCount)
-	require.Equal(t, expectedLabelSetString, sp.droppedTargets[0].DiscoveredLabels().String())
+	lb := labels.NewBuilder(labels.EmptyLabels())
+	require.Equal(t, expectedLabelSetString, sp.droppedTargets[0].DiscoveredLabels(lb).String())
 
 	// Check that count is still correct when we don't retain all dropped targets.
 	sp.config.KeepDroppedTargets = 1
@@ -235,16 +236,19 @@ func TestDiscoveredLabelsUpdate(t *testing.T) {
 	}
 	sp.activeTargets = make(map[uint64]*Target)
 	t1 := &Target{
-		discoveredLabels: labels.FromStrings("label", "name"),
+		tLabels:      model.LabelSet{"label": "name"},
+		scrapeConfig: sp.config,
 	}
 	sp.activeTargets[t1.hash()] = t1
 
 	t2 := &Target{
-		discoveredLabels: labels.FromStrings("labelNew", "nameNew"),
+		tLabels:      model.LabelSet{"labelNew": "nameNew"},
+		scrapeConfig: sp.config,
 	}
 	sp.sync([]*Target{t2})
 
-	require.Equal(t, t2.DiscoveredLabels(), sp.activeTargets[t1.hash()].DiscoveredLabels())
+	lb := labels.NewBuilder(labels.EmptyLabels())
+	require.Equal(t, t2.DiscoveredLabels(lb), sp.activeTargets[t1.hash()].DiscoveredLabels(lb))
 }
 
 type testLoop struct {
@@ -309,7 +313,8 @@ func TestScrapePoolStop(t *testing.T) {
 
 	for i := 0; i < numTargets; i++ {
 		t := &Target{
-			labels: labels.FromStrings(model.AddressLabel, fmt.Sprintf("example.com:%d", i)),
+			labels:       labels.FromStrings(model.AddressLabel, fmt.Sprintf("example.com:%d", i)),
+			scrapeConfig: &config.ScrapeConfig{},
 		}
 		l := &testLoop{}
 		d := time.Duration((i+1)*20) * time.Millisecond
@@ -394,8 +399,8 @@ func TestScrapePoolReload(t *testing.T) {
 	for i := 0; i < numTargets; i++ {
 		labels := labels.FromStrings(model.AddressLabel, fmt.Sprintf("example.com:%d", i))
 		t := &Target{
-			labels:           labels,
-			discoveredLabels: labels,
+			labels:       labels,
+			scrapeConfig: &config.ScrapeConfig{},
 		}
 		l := &testLoop{}
 		d := time.Duration((i+1)*20) * time.Millisecond
@@ -2689,6 +2694,7 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 					model.SchemeLabel, serverURL.Scheme,
 					model.AddressLabel, serverURL.Host,
 				),
+				scrapeConfig: &config.ScrapeConfig{},
 			},
 			client:       http.DefaultClient,
 			timeout:      configTimeout,
@@ -2739,6 +2745,7 @@ func TestTargetScrapeScrapeCancel(t *testing.T) {
 				model.SchemeLabel, serverURL.Scheme,
 				model.AddressLabel, serverURL.Host,
 			),
+			scrapeConfig: &config.ScrapeConfig{},
 		},
 		client:       http.DefaultClient,
 		acceptHeader: acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, model.LegacyValidation),
@@ -2794,6 +2801,7 @@ func TestTargetScrapeScrapeNotFound(t *testing.T) {
 				model.SchemeLabel, serverURL.Scheme,
 				model.AddressLabel, serverURL.Host,
 			),
+			scrapeConfig: &config.ScrapeConfig{},
 		},
 		client:       http.DefaultClient,
 		acceptHeader: acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, model.LegacyValidation),
@@ -2837,6 +2845,7 @@ func TestTargetScraperBodySizeLimit(t *testing.T) {
 				model.SchemeLabel, serverURL.Scheme,
 				model.AddressLabel, serverURL.Host,
 			),
+			scrapeConfig: &config.ScrapeConfig{},
 		},
 		client:        http.DefaultClient,
 		bodySizeLimit: bodySizeLimit,
@@ -3107,7 +3116,8 @@ func TestReuseScrapeCache(t *testing.T) {
 		}
 		sp, _ = newScrapePool(cfg, app, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
 		t1    = &Target{
-			discoveredLabels: labels.FromStrings("labelNew", "nameNew", "labelNew1", "nameNew1", "labelNew2", "nameNew2"),
+			labels:       labels.FromStrings("labelNew", "nameNew", "labelNew1", "nameNew1", "labelNew2", "nameNew2"),
+			scrapeConfig: &config.ScrapeConfig{},
 		}
 		proxyURL, _ = url.Parse("http://localhost:2128")
 	)
@@ -3291,7 +3301,8 @@ func TestReuseCacheRace(t *testing.T) {
 		buffers = pool.New(1e3, 100e6, 3, func(sz int) interface{} { return make([]byte, 0, sz) })
 		sp, _   = newScrapePool(cfg, app, 0, nil, buffers, &Options{}, newTestScrapeMetrics(t))
 		t1      = &Target{
-			discoveredLabels: labels.FromStrings("labelNew", "nameNew"),
+			labels:       labels.FromStrings("labelNew", "nameNew"),
+			scrapeConfig: &config.ScrapeConfig{},
 		}
 	)
 	defer sp.stop()
@@ -4475,7 +4486,9 @@ func BenchmarkTargetScraperGzip(b *testing.B) {
 						model.SchemeLabel, serverURL.Scheme,
 						model.AddressLabel, serverURL.Host,
 					),
-					params: url.Values{"count": []string{strconv.Itoa(scenario.metricsCount)}},
+					scrapeConfig: &config.ScrapeConfig{
+						Params: url.Values{"count": []string{strconv.Itoa(scenario.metricsCount)}},
+					},
 				},
 				client:  client,
 				timeout: time.Second,
