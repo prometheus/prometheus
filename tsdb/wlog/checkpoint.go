@@ -81,7 +81,8 @@ func DeleteCheckpoints(dir string, maxIndex int) error {
 	return errs.Err()
 }
 
-const checkpointPrefix = "checkpoint."
+// CheckpointPrefix is the prefix used for checkpoint files.
+const CheckpointPrefix = "checkpoint."
 
 // Checkpoint creates a compacted checkpoint of segments in range [from, to] in the given WAL.
 // It includes the most recent checkpoint if it exists.
@@ -363,7 +364,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 }
 
 func checkpointDir(dir string, i int) string {
-	return filepath.Join(dir, fmt.Sprintf(checkpointPrefix+"%08d", i))
+	return filepath.Join(dir, fmt.Sprintf(CheckpointPrefix+"%08d", i))
 }
 
 type checkpointRef struct {
@@ -379,13 +380,13 @@ func listCheckpoints(dir string) (refs []checkpointRef, err error) {
 
 	for i := 0; i < len(files); i++ {
 		fi := files[i]
-		if !strings.HasPrefix(fi.Name(), checkpointPrefix) {
+		if !strings.HasPrefix(fi.Name(), CheckpointPrefix) {
 			continue
 		}
 		if !fi.IsDir() {
 			return nil, fmt.Errorf("checkpoint %s is not a directory", fi.Name())
 		}
-		idx, err := strconv.Atoi(fi.Name()[len(checkpointPrefix):])
+		idx, err := strconv.Atoi(fi.Name()[len(CheckpointPrefix):])
 		if err != nil {
 			continue
 		}
