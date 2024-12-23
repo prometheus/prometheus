@@ -246,6 +246,30 @@ func (d *WALDecoder) RestoreFromStream(
 	return offset, restoredID, handleException(exception)
 }
 
+//
+// OutputDecoderStats
+//
+
+// OutputDecoderStats stats data for output decoded segment.
+type OutputDecoderStats struct {
+	maxTimestamp   int64
+	droppedSamples uint64
+}
+
+// MaxTimestamp return max timestamp in decoded segment.
+func (s OutputDecoderStats) MaxTimestamp() int64 {
+	return s.maxTimestamp
+}
+
+// DroppedSamples return count dropped samples.
+func (s OutputDecoderStats) DroppedSamples() uint64 {
+	return s.droppedSamples
+}
+
+//
+// WALOutputDecoder
+//
+
 // WALOutputDecoder - go wrapper for C-WALOutputDecoder.
 //
 //	decoder - pointer to a C++ decoder initiated in C++ memory;
@@ -277,19 +301,19 @@ func NewWALOutputDecoder(
 	return d
 }
 
-// Decode - decodes incoming encoding data and return protobuf, lowerLimitTimestamp - timestamp in milliseconds,
-// skip sample lower limit timestamp.
+// Decode - decodes incoming encoding data and return DecodedRefSamples,
+// lowerLimitTimestamp - timestamp in milliseconds, skip sample lower limit timestamp.
 func (d *WALOutputDecoder) Decode(
 	ctx context.Context,
 	segment []byte,
 	lowerLimitTimestamp int64,
-) (*DecodedRefSamples, int64, error) {
+) (*DecodedRefSamples, OutputDecoderStats, error) {
 	if ctx.Err() != nil {
-		return nil, 0, ctx.Err()
+		return nil, OutputDecoderStats{}, ctx.Err()
 	}
 
-	maxTimestamp, refSamples, exception := walOutputDecoderDecode(segment, d.decoder, lowerLimitTimestamp)
-	return newDecodedRefSamples(refSamples, d.shardID), maxTimestamp, handleException(exception)
+	stats, refSamples, exception := walOutputDecoderDecode(segment, d.decoder, lowerLimitTimestamp)
+	return newDecodedRefSamples(refSamples, d.shardID), stats, handleException(exception)
 }
 
 // LoadFrom load from dump(slice byte) output decoder state(output_lss and cache).

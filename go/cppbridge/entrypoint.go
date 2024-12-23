@@ -736,16 +736,16 @@ func walOutputDecoderDecode(
 	segment []byte,
 	decoder uintptr,
 	lowerLimitTimestamp int64,
-) (maxTimestamp int64, dump []RefSample, err []byte) {
+) (stats OutputDecoderStats, dump []RefSample, err []byte) {
 	var args = struct {
 		segment             []byte
 		decoder             uintptr
 		lowerLimitTimestamp int64
 	}{segment, decoder, lowerLimitTimestamp}
 	var res struct {
-		maxTimestamp int64
-		refSamples   []RefSample
-		error        []byte
+		OutputDecoderStats
+		refSamples []RefSample
+		error      []byte
 	}
 
 	fastcgo.UnsafeCall2(
@@ -754,7 +754,7 @@ func walOutputDecoderDecode(
 		uintptr(unsafe.Pointer(&res)),
 	)
 
-	return res.maxTimestamp, res.refSamples, res.error
+	return res.OutputDecoderStats, res.refSamples, res.error
 }
 
 //

@@ -236,12 +236,23 @@ class OutputDecoder : private BaseOutputDecoder {
   }
 
   template <class Callback>
-    requires std::is_invocable_v<Callback, Primitives::LabelSetID, Primitives::Timestamp, Primitives::Sample::value_type>
+    requires std::is_invocable_v<Callback, Primitives::LabelSetID, Primitives::Timestamp, Primitives::Sample::value_type, bool>
   __attribute__((flatten)) void process_segment(Callback&& func) {
     BaseOutputDecoder::process_segment([&](Primitives::LabelSetID ls_id, Primitives::Timestamp ts, Primitives::Sample::value_type v) {
-      if (auto id = sample_decoder().cache()[ls_id]; id != OutputDecoderCache::kIsDropped) {
-        func(id, ts, v);
+      auto id = sample_decoder().cache()[ls_id];
+      func(id, ts, v, id == OutputDecoderCache::kIsDropped);
+    });
+  }
+
+  template <class Callback>
+    requires std::is_invocable_v<Callback, Primitives::LabelSetID, Primitives::Timestamp, Primitives::Sample::value_type>
+  __attribute__((flatten)) void process_segment(Callback&& func) {
+    process_segment([&](Primitives::LabelSetID ls_id, Primitives::Timestamp ts, Primitives::Sample::value_type v, bool is_dropped) {
+      if (is_dropped) {
+        return;
       }
+
+      func(ls_id, ts, v);
     });
   }
 
