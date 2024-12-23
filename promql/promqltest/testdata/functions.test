@@ -934,13 +934,13 @@ load 10s
 	metric_histogram{type="mix"} 1 1 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}}
 
 eval instant at 1m stdvar_over_time(metric[2m])
-  {} 10.56
+	{} 10.56
 
 eval instant at 1m stddev_over_time(metric[2m])
-  {} 3.249615
+	{} 3.249615
 
 eval instant at 1m stddev_over_time((metric[2m]))
-  {} 3.249615
+	{} 3.249615
 
 # Tests for stddev_over_time and stdvar_over_time with histograms.
 eval instant at 1m stddev_over_time(metric_histogram{type="only_histogram"}[2m])
@@ -958,13 +958,13 @@ eval_info instant at 1m stdvar_over_time(metric_histogram{type="mix"}[2m])
 # Tests for stddev_over_time and stdvar_over_time #4927.
 clear
 load 10s
-  metric 1.5990505637277868 1.5990505637277868 1.5990505637277868
+	metric 1.5990505637277868 1.5990505637277868 1.5990505637277868
 
 eval instant at 1m stdvar_over_time(metric[1m])
-  {} 0
+	{} 0
 
 eval instant at 1m stddev_over_time(metric[1m])
-  {} 0
+	{} 0
 
 # Tests for mad_over_time.
 clear
@@ -974,7 +974,7 @@ load 10s
 	metric_histogram{type="mix"} 1 1 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}}
 
 eval instant at 70s mad_over_time(metric[70s])
-  {} 1
+	{} 1
 
 eval instant at 70s mad_over_time(metric_histogram{type="only_histogram"}[70s])
 	#empty
