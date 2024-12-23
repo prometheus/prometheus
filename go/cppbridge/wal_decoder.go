@@ -252,8 +252,8 @@ func (d *WALDecoder) RestoreFromStream(
 
 // OutputDecoderStats stats for output decoded segment.
 type OutputDecoderStats struct {
-	maxTimestamp   int64
-	droppedSamples uint64
+	maxTimestamp       int64
+	droppedSampleCount uint64
 }
 
 // MaxTimestamp return max timestamp in decoded segment.
@@ -261,9 +261,9 @@ func (s OutputDecoderStats) MaxTimestamp() int64 {
 	return s.maxTimestamp
 }
 
-// DroppedSamples return count dropped samples.
-func (s OutputDecoderStats) DroppedSamples() uint64 {
-	return s.droppedSamples
+// DroppedSampleCount return count dropped samples.
+func (s OutputDecoderStats) DroppedSampleCount() uint64 {
+	return s.droppedSampleCount
 }
 
 //

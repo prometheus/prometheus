@@ -278,7 +278,7 @@ extern "C" void prompp_wal_output_decoder_decode(void* args, void* res) {
 
   struct Result {
     int64_t max_timestamp{};
-    uint64_t dropped_samples{};
+    uint64_t dropped_sample_count{};
     PromPP::Primitives::Go::Slice<PromPP::WAL::RefSample> ref_samples;
     PromPP::Primitives::Go::Slice<char> error;
   };

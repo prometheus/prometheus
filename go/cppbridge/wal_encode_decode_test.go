@@ -591,7 +591,7 @@ func (s *EncoderDecoderSuite) TestEncodeWALOutputDecode() {
 	s.Require().NoError(err)
 
 	s.Equal(expectedWr.Timeseries[0].Samples[0].Timestamp, stats.MaxTimestamp())
-	s.Equal(uint64(0), stats.DroppedSamples())
+	s.Equal(uint64(0), stats.DroppedSampleCount())
 	refSamples.Range(func(id uint32, t int64, v float64) bool {
 		if !s.Less(int(id), len(expectedWr.Timeseries)) {
 			return false
@@ -665,7 +665,7 @@ func (s *EncoderDecoderSuite) TestEncodeWALOutputDecodeWithLimit() {
 
 	count := 0
 	s.Equal(int64(0), stats.MaxTimestamp())
-	s.Equal(uint64(1), stats.DroppedSamples())
+	s.Equal(uint64(1), stats.DroppedSampleCount())
 	refSamples.Range(func(id uint32, t int64, v float64) bool {
 		if !s.Less(int(id), len(expectedWr.Timeseries)) {
 			return false
