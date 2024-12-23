@@ -47,8 +47,8 @@ func newSharder(min, max int) (*sharder, error) {
 	}, nil
 }
 
-func (s *sharder) Apply(multiplier float64) {
-	newValue := int(math.Ceil(float64(s.numberOfShards) * multiplier))
+func (s *sharder) Apply(value float64) {
+	newValue := int(math.Ceil(value))
 	if newValue < s.min {
 		newValue = s.min
 	} else if newValue > s.max {
@@ -74,7 +74,7 @@ type Iterator struct {
 
 	outputSharder *sharder
 
-	readTimeout time.Duration
+	scrapeInterval time.Duration
 }
 
 type Message struct {
@@ -120,7 +120,7 @@ func newIterator(
 		targetSegmentIDSetCloser: targetSegmentIDSetCloser,
 		metrics:                  metrics,
 		targetSegmentID:          targetSegmentID,
-		readTimeout:              readTimeout,
+		scrapeInterval:           readTimeout,
 		outputSharder:            outputSharder,
 	}, nil
 }
@@ -138,12 +138,13 @@ readLoop:
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-i.clock.After(i.readTimeout):
+		case <-i.clock.After(i.scrapeInterval):
 			deadlineReached = true
 			break readLoop
 		case <-i.clock.After(delay):
 		}
 
+		// todo: output decoder may drop samples (droppedSamplesTotal)
 		decodedSegments, err := i.dataSource.Read(ctx, i.targetSegmentID, i.minTimestamp())
 		if err != nil {
 			if errors.Is(err, ErrEndOfBlock) {
@@ -182,13 +183,14 @@ readLoop:
 		return nil
 	}
 
+	var desiredNumberOfShards float64
 	if deadlineReached {
-		i.outputSharder.Apply(float64(b.NumberOfSamples()) / (float64(b.MaxNumberOfSamplesPerShard()) * float64(b.NumberOfShards())))
+		desiredNumberOfShards = math.Ceil(float64(b.NumberOfSamples()) / float64(b.MaxNumberOfSamplesPerShard()) * float64(numberOfShards))
 	} else {
-		i.outputSharder.Apply(float64(i.readTimeout) / float64(readDuration))
+		desiredNumberOfShards = math.Ceil(float64(i.scrapeInterval) / float64(readDuration) * float64(numberOfShards))
 	}
-
-	i.metrics.desiredNumShards.Set(float64(i.outputSharder.NumberOfShards()))
+	i.outputSharder.Apply(desiredNumberOfShards)
+	i.metrics.desiredNumShards.Set(desiredNumberOfShards)
 
 	i.writeCaches()
 
@@ -199,13 +201,14 @@ readLoop:
 	}
 
 	numberOfSamples := b.NumberOfSamples()
-	sizeInBytes := msg.SizeInBytes()
+	//sizeInBytes := msg.SizeInBytes()
 
 	b = nil
 
 	err = backoff.Retry(func() error {
 		if msg.IsObsoleted(i.minTimestamp()) {
-			i.metrics.droppedSamplesTotal.WithLabelValues(reasonTooOld).Add(float64(numberOfSamples))
+			// todo: calculate samples per protobuf
+			// i.metrics.droppedSamplesTotal.WithLabelValues(reasonTooOld).Add(float64(numberOfSamples))
 			return nil
 		}
 
@@ -221,8 +224,9 @@ readLoop:
 			go func(shardID int, protobuf *cppbridge.SnappyProtobufEncodedData) {
 				defer wg.Done()
 				begin := i.clock.Now()
-				errs[shardID] = i.writer.Write(ctx, protobuf)
+				writeErr := i.writer.Write(ctx, protobuf)
 				i.metrics.sentBatchDuration.Observe(i.clock.Since(begin).Seconds())
+				errs[shardID] = writeErr
 			}(shardID, protobuf)
 		}
 		wg.Wait()
@@ -237,16 +241,21 @@ readLoop:
 
 		resultErr := errors.Join(errs...)
 		if resultErr != nil {
-			i.metrics.failedSamplesTotal.Add(float64(numberOfSamples))
+			// todo: per protobuf (failedSamplesTotal)
+			// i.metrics.failedSamplesTotal.Add(float64(numberOfSamples))
 		} else {
-			i.metrics.sentBytesTotal.Add(float64(sizeInBytes))
-			i.metrics.highestSentTimestamp.Set(float64(msg.MaxTimestamp))
+			// todo: per protobuf (sentBytesTotal)
+			// i.metrics.sentBytesTotal.Add(float64(sizeInBytes))
+			// todo: per protobuf (highestSentTimestamp, retriedSamplesTotal, maxSamplesPerSend)
+			// i.metrics.highestSentTimestamp.Set(float64(msg.MaxTimestamp))
 		}
 		return resultErr
 	},
 		backoff.WithContext(
 			backoff.NewExponentialBackOff(
 				backoff.WithClockProvider(i.clock),
+				backoff.WithMaxElapsedTime(0),
+				backoff.WithMaxInterval(i.scrapeInterval),
 			),
 			ctx,
 		),
