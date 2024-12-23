@@ -292,13 +292,13 @@ extern "C" void prompp_wal_output_decoder_decode(void* args, void* res) {
                                            bool is_dropped) PROMPP_LAMBDA_INLINE {
       if (is_dropped) {
         // skip dropped sample
-        ++out->dropped_samples;
+        ++out->dropped_sample_count;
         return;
       }
 
       if (ts < in->lower_limit_timestamp) {
         // skip sample lower limit timestamp
-        ++out->dropped_samples;
+        ++out->dropped_sample_count;
         return;
       }
 
