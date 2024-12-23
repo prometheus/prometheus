@@ -795,13 +795,15 @@ func walProtobufEncoderDtor(decoder uintptr) {
 func walProtobufEncoderEncode(
 	batch []*DecodedRefSamples,
 	outSlices [][]byte,
+	stats []protobufEncoderStats,
 	encoder uintptr,
 ) []byte {
 	var args = struct {
 		batch     []*DecodedRefSamples
 		outSlices [][]byte
+		stats     []protobufEncoderStats
 		encoder   uintptr
-	}{batch, outSlices, encoder}
+	}{batch, outSlices, stats, encoder}
 	var res struct {
 		error []byte
 	}

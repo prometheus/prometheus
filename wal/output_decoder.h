@@ -305,6 +305,13 @@ class GoSliceSink : public snappy::Sink {
   PROMPP_ALWAYS_INLINE void Append(const char* data, size_t len) override { out_.push_back(data, data + len); }
 };
 
+// ProtobufEncoderStats stats for encoded to snappy protobuf data.
+struct ProtobufEncoderStats {
+  int64_t max_timestamp{};
+  size_t samples_count{};
+};
+
+// ProtobufEncoder encoder for snapped protobuf from refSamples.
 class ProtobufEncoder {
   Primitives::BasicTimeseries<Primitives::SnugComposites::LabelSet::EncodingBimap::value_type*, BareBones::Vector<Primitives::Sample>> timeseries_;
   std::string protobuffer_;
@@ -316,12 +323,14 @@ class ProtobufEncoder {
   size_t max_size_protobuffer_{0};
 
   // write_compressed_protobuf write timeseries to protobuf and compress to snappy.
-  PROMPP_ALWAYS_INLINE void write_compressed_protobuf(Primitives::Go::Slice<char>& compressed) {
+  PROMPP_ALWAYS_INLINE void write_compressed_protobuf(Primitives::Go::Slice<char>& compressed, WAL::ProtobufEncoderStats& stats) {
     // make protobuf
     protozero::pbf_writer pb_writer(protobuffer_);
     Primitives::SnugComposites::LabelSet::EncodingBimap::value_type last_ls;  // composite_type
 
     for (size_t lss_shard_id = 0; lss_shard_id < lss_number_of_shards_; ++lss_shard_id) {
+      // calculate samples
+      stats.samples_count += shards_ref_samples_[lss_shard_id].size();
       // sort by ls id and timestamp
       std::ranges::sort(shards_ref_samples_[lss_shard_id].begin(), shards_ref_samples_[lss_shard_id].end(),
                         [](const RefSample* a, const RefSample* b) PROMPP_LAMBDA_INLINE {
@@ -350,6 +359,11 @@ class ProtobufEncoder {
         }
 
         timeseries_.samples().emplace_back(rsample->t, rsample->v);
+
+        // max_timestamp in protobuf
+        if (stats.max_timestamp < rsample->t) {
+          stats.max_timestamp = rsample->t;
+        }
       }
 
       if (last_ls_id != PromPP::Primitives::kInvalidLabelSetID) {
@@ -417,7 +431,9 @@ class ProtobufEncoder {
 
   // encode incoming refsamples to snapped protobufs on shards.
   // the best algorithm was selected during the tests (comparisons were made with the map cache)
-  PROMPP_ALWAYS_INLINE void encode(Primitives::Go::SliceView<ShardRefSample*>& batch, Primitives::Go::Slice<Primitives::Go::Slice<char>>& out_slices) {
+  PROMPP_ALWAYS_INLINE void encode(Primitives::Go::SliceView<ShardRefSample*>& batch,
+                                   Primitives::Go::Slice<Primitives::Go::Slice<char>>& out_slices,
+                                   Primitives::Go::Slice<WAL::ProtobufEncoderStats>& stats) {
     if (out_slices.empty()) [[unlikely]] {
       // if shards scale 0, do nothing
       return;
@@ -442,7 +458,7 @@ class ProtobufEncoder {
         }
       }
 
-      write_compressed_protobuf(out_slices[shard_id]);
+      write_compressed_protobuf(out_slices[shard_id], stats[shard_id]);
 
       // clear state
       clear_state();

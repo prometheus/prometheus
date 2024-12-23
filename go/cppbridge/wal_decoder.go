@@ -250,7 +250,7 @@ func (d *WALDecoder) RestoreFromStream(
 // OutputDecoderStats
 //
 
-// OutputDecoderStats stats data for output decoded segment.
+// OutputDecoderStats stats for output decoded segment.
 type OutputDecoderStats struct {
 	maxTimestamp   int64
 	droppedSamples uint64
@@ -338,12 +338,20 @@ func (d *WALOutputDecoder) WriteTo(w io.Writer) (int64, error) {
 	return int64(n), err
 }
 
+//
+// RefSample
+//
+
 // RefSample is a timestamp/value pair associated with a reference to a series.
 type RefSample struct {
 	ID uint32
 	T  int64
 	V  float64
 }
+
+//
+// DecodedRefSamples
+//
 
 // DecodedRefSamples go wrapper for slice c-type RefSample.
 type DecodedRefSamples struct {
@@ -381,6 +389,10 @@ func (s *DecodedRefSamples) Range(f func(id uint32, t int64, v float64) bool) {
 	}
 }
 
+//
+// WALProtobufEncoder
+//
+
 // WALProtobufEncoder - go wrapper for C-WALProtobufEncoder.
 //
 //	decoder - pointer to a C++ decoder initiated in C++ memory;
@@ -413,30 +425,60 @@ func (e *WALProtobufEncoder) Encode(
 		return nil, ctx.Err()
 	}
 	buffers := make([][]byte, numberOfShards)
-	exception := walProtobufEncoderEncode(batch, buffers, e.encoder)
+	stats := make([]protobufEncoderStats, numberOfShards)
+	exception := walProtobufEncoderEncode(batch, buffers, stats, e.encoder)
 	if len(exception) != 0 {
 		return nil, handleException(exception)
 	}
 
 	outSlices := make([]*SnappyProtobufEncodedData, numberOfShards)
 	for i := range buffers {
-		outSlices[i] = NewSnappyProtobufEncodedData(buffers[i])
+		outSlices[i] = NewSnappyProtobufEncodedData(stats[i], buffers[i])
 	}
 
 	return outSlices, nil
 }
 
+//
+// ProtobufEncoderStats
+//
+
+// protobufEncoderStats stats for encoded to snappy protobuf data.
+type protobufEncoderStats struct {
+	maxTimestamp int64
+	samplesCount uint64
+}
+
+// MaxTimestamp return max timestamp in snapped protobuf.
+func (s protobufEncoderStats) MaxTimestamp() int64 {
+	return s.maxTimestamp
+}
+
+// SamplesCount return count of snapped protobuf samples.
+func (s protobufEncoderStats) SamplesCount() uint64 {
+	return s.samplesCount
+}
+
+//
+// SnappyProtobufEncodedData
+//
+
 // SnappyProtobufEncodedData encoded to snappy protobuf data from c.
 type SnappyProtobufEncodedData struct {
+	protobufEncoderStats
 	b []byte
 }
 
 // NewSnappyProtobufEncodedData init new SnappyProtobufEncodedData.
-func NewSnappyProtobufEncodedData(b []byte) *SnappyProtobufEncodedData {
-	sped := &SnappyProtobufEncodedData{b: b}
+func NewSnappyProtobufEncodedData(stats protobufEncoderStats, b []byte) *SnappyProtobufEncodedData {
+	sped := &SnappyProtobufEncodedData{
+		protobufEncoderStats: stats,
+		b:                    b,
+	}
 	runtime.SetFinalizer(sped, func(sped *SnappyProtobufEncodedData) {
 		freeBytes(sped.b)
 	})
+
 	return sped
 }
 

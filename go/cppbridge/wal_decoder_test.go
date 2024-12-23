@@ -248,6 +248,9 @@ func (s *OutputDecoderSuite) TestWALProtobufEncoderEncode() {
 	data, err := dec.Encode(context.Background(), batch, 1)
 	s.Require().NoError(err)
 
+	s.Equal(int64(400), data[0].MaxTimestamp())
+	s.Equal(uint64(4), data[0].SamplesCount())
+
 	var uncompressed []byte
 	err = data[0].Do(func(buf []byte) error {
 		var errDo error
