@@ -14,6 +14,7 @@ benchmark.txt
 /cmd/prometheus/debug
 /benchout
 /cmd/promtool/data
+_CodeSignature
 
 !/.travis.yml
 !/.promu.yml
