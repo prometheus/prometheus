@@ -1,5 +1,4 @@
 #include <gtest/gtest.h>
-#include <spanstream>
 
 #include "bare_bones/type_traits.h"
 #include "primitives/go_model.h"
@@ -362,7 +361,15 @@ TEST_F(TestProtobufEncoder, Encode) {
   ProtobufEncoder penc(std::move(output_lsses));
   Go::Slice<Go::Slice<char>> out_slices;
   out_slices.resize(2);
-  penc.encode(batch, out_slices);
+  Go::Slice<PromPP::WAL::ProtobufEncoderStats> stats;
+  stats.resize(2);
+  penc.encode(batch, out_slices, stats);
+
+  EXPECT_EQ(10, stats[0].max_timestamp);
+  EXPECT_EQ(3, stats[0].samples_count);
+
+  EXPECT_EQ(10, stats[1].max_timestamp);
+  EXPECT_EQ(1, stats[1].samples_count);
 
   std::vector<int8_t> expected_proto1{10, 58, 10,  18, 10,  8,   95, 95, 110, 97, 109, 101, 95,  95,  18,  6,  118, 97, 108, 117, 101, 49,
                                       10, 10, 10,  3,  106, 111, 98, 18, 3,   97, 98,  99,  18,  11,  9,   0,  0,   0,  0,   0,   0,   0,
