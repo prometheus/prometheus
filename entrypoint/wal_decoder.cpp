@@ -278,6 +278,7 @@ extern "C" void prompp_wal_output_decoder_decode(void* args, void* res) {
 
   struct Result {
     int64_t max_timestamp{};
+    uint64_t too_old_sample_count{};
     uint64_t dropped_sample_count{};
     PromPP::Primitives::Go::Slice<PromPP::WAL::RefSample> ref_samples;
     PromPP::Primitives::Go::Slice<char> error;
@@ -298,7 +299,7 @@ extern "C" void prompp_wal_output_decoder_decode(void* args, void* res) {
 
       if (ts < in->lower_limit_timestamp) {
         // skip sample lower limit timestamp
-        ++out->dropped_sample_count;
+        ++out->too_old_sample_count;
         return;
       }
 
