@@ -1,0 +1,10 @@
+###############################################################################
+# Bazel now uses Bzlmod by default to manage external dependencies.
+# Please consider migrating your external dependencies from WORKSPACE to MODULE.bazel.
+#
+# For more details, please check https://github.com/bazelbuild/bazel/issues/18958
+###############################################################################
+register_toolchains(
+    "//bazel/toolchain:cc_toolchain_for_g++-12_toolchain_aarch64",
+    "//bazel/toolchain:cc_toolchain_for_g++-12_toolchain_x86_64",
+)
