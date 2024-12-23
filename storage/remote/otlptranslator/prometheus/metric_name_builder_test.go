@@ -204,7 +204,9 @@ func TestBuildCompliantMetricNameWithSuffixes(t *testing.T) {
 	// Slashes in units are converted.
 	require.Equal(t, "system_io_foo_per_bar_total", BuildCompliantMetricName(createCounter("system.io", "foo/bar"), "", true))
 	require.Equal(t, "metric_with_foreign_characters_total", BuildCompliantMetricName(createCounter("metric_with_字符_foreign_characters", ""), "", true))
-	require.Equal(t, "temperature_C", BuildCompliantMetricName(createGauge("temperature", "%*()°C"), "", true)) // Removes non aplhanumerical characters from units
+
+	// Removes non aplhanumerical characters from units, but leaves colons.
+	require.Equal(t, "temperature_:C", BuildCompliantMetricName(createGauge("temperature", "%*()°:C"), "", true)) 
 }
 
 func TestBuildCompliantMetricNameWithoutSuffixes(t *testing.T) {
