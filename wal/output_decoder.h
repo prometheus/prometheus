@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+#include <ranges>
 #include <vector>
 
 #include "snappy-sinksource.h"
@@ -8,6 +10,7 @@
 #include "third_party/protozero/pbf_writer.hpp"
 
 #include "bare_bones/preprocess.h"
+#include "bare_bones/serializer.h"
 #include "primitives/snug_composites.h"
 #include "prometheus/remote_write.h"
 #include "prometheus/stateless_relabeler.h"
@@ -28,42 +31,144 @@ struct ShardRefSample {
   uint16_t shard_id{};
 };
 
-using BaseOutputDecoder = BasicDecoder<Primitives::SnugComposites::LabelSet::ShrinkableEncodingBimap>;
+class OutputDecoderCache {
+ public:
+  static constexpr auto kIsDropped = Primitives::kInvalidLabelSetID;
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t allocated_memory() const noexcept { return cache_.allocated_memory(); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t size() const noexcept { return cache_.size(); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool have_changes() const noexcept { return cache_.size() > dumped_cache_size_; }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE Primitives::LabelSetID operator[](Primitives::LabelSetID source_ls_id) const noexcept { return cache_[source_ls_id]; }
+
+  PROMPP_ALWAYS_INLINE void reserve(uint32_t size) noexcept { cache_.reserve(size); }
+  PROMPP_ALWAYS_INLINE void add_dropped() noexcept { add(kIsDropped); }
+  PROMPP_ALWAYS_INLINE void add(Primitives::LabelSetID ls_id) noexcept { cache_.emplace_back(ls_id); }
+
+  PROMPP_ALWAYS_INLINE void dump_changes(std::ostream& out) {
+    BareBones::serialize(out, std::span{&cache_[dumped_cache_size_], cache_.size() - dumped_cache_size_});
+    dumped_cache_size_ = cache_.size();
+  }
+
+  PROMPP_ALWAYS_INLINE void load_changes(std::istream& in) {
+    BareBones::deserialize(in, cache_);
+    dumped_cache_size_ = cache_.size();
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE Primitives::LabelSetID max_ls_id() const noexcept {
+    const auto reverse_cache_view = std::ranges::reverse_view(cache_);
+    const auto it = std::ranges::find_if(reverse_cache_view, [](Primitives::LabelSetID ls_id) PROMPP_LAMBDA_INLINE { return ls_id != kIsDropped; });
+    return it != reverse_cache_view.end() ? *it : kIsDropped;
+  }
+
+  bool operator==(const OutputDecoderCache& other) const noexcept { return cache_ == other.cache_; }
+
+ private:
+  BareBones::Vector<uint32_t> cache_{};
+  uint32_t dumped_cache_size_{};
+};
+
+class GorillaSampleDecoderWithSkips {
+ public:
+  Primitives::Timestamp timestamp_base{std::numeric_limits<Primitives::Timestamp>::max()};
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE OutputDecoderCache& cache() noexcept { return cache_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const OutputDecoderCache& cache() const noexcept { return cache_; }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t allocated_memory() const noexcept {
+    return cache_.allocated_memory() + gorilla_decoders_.allocated_memory() + null_gorilla_decoders_.allocated_memory();
+  }
+
+  PROMPP_ALWAYS_INLINE static void load(std::istream&) {}
+
+  PROMPP_ALWAYS_INLINE static void set_series_count(Primitives::LabelSetID) {}
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE Primitives::Sample decode(Primitives::LabelSetID ls_id,
+                                                               Primitives::Timestamp timestamp,
+                                                               BareBones::BitSequenceReader& value_sequence,
+                                                               SampleCrc&) noexcept {
+    return decode_impl(ls_id, timestamp, value_sequence);
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE Primitives::Sample decode(Primitives::LabelSetID ls_id,
+                                                               BareBones::BitSequenceReader& timestamp_sequence,
+                                                               BareBones::BitSequenceReader& value_sequence,
+                                                               SampleCrc&) noexcept {
+    return decode_impl(ls_id, timestamp_sequence, value_sequence);
+  }
+
+  PROMPP_ALWAYS_INLINE static SampleCrc::ValidationResult validate_crc(SampleCrc, SampleCrc) noexcept { return SampleCrc::ValidationResult::kValid; }
+
+  PROMPP_ALWAYS_INLINE void sync_decoders_with_cache() {
+    null_gorilla_decoders_.resize(cache_.size());
+
+    if (const auto max_ls_id = cache_.max_ls_id(); max_ls_id != OutputDecoderCache::kIsDropped) {
+      gorilla_decoders_.resize(max_ls_id + 1);
+    }
+  }
+
+ private:
+  OutputDecoderCache cache_;
+  BareBones::Vector<GorillaDecoder> gorilla_decoders_;
+  BareBones::Vector<NullGorillaDecoder> null_gorilla_decoders_;
+
+  template <class Timestamp>
+  [[nodiscard]] PROMPP_ALWAYS_INLINE Primitives::Sample decode_impl(Primitives::LabelSetID source_ls_id,
+                                                                    Timestamp&& timestamp,
+                                                                    BareBones::BitSequenceReader& value_sequence) {
+    if (source_ls_id >= cache_.size()) [[unlikely]] {
+      throw BareBones::Exception(0xf0e57d2a0e5ce7ed, "Error while processing segment LabelSets: Unknown segment's LabelSet's id %d", source_ls_id);
+    }
+
+    if (const auto id = cache_[source_ls_id]; id != OutputDecoderCache::kIsDropped) {
+      auto& gorilla = gorilla_decoders_[id];
+      gorilla.decode(timestamp, value_sequence);
+      return {gorilla.last_timestamp() + timestamp_base, gorilla.last_value()};
+    }
+
+    null_gorilla_decoders_[source_ls_id].decode(timestamp, value_sequence);
+    return {};
+  }
+};
+
+static_assert(SampleDecoderInterface<GorillaSampleDecoderWithSkips>);
+
+using BaseOutputDecoder = BasicDecoder<Primitives::SnugComposites::LabelSet::ShrinkableEncodingBimap, GorillaSampleDecoderWithSkips>;
 
 class OutputDecoder : private BaseOutputDecoder {
   Primitives::SnugComposites::LabelSet::ShrinkableEncodingBimap wal_lss_;
-  std::vector<uint32_t> cache_{};
   std::stringstream buf_;
   Primitives::LabelsBuilderStateMap builder_state_;
   std::vector<Primitives::LabelView> external_labels_{};
   Prometheus::Relabel::StatelessRelabeler& stateless_relabeler_;
   Primitives::SnugComposites::LabelSet::EncodingBimap& output_lss_;
   Primitives::SnugComposites::LabelSet::EncodingBimap::checkpoint_type dumped_checkpoint_{output_lss_.checkpoint()};
-  uint32_t dumped_cache_size_{0};
 
   // align_cache_to_lss add new labels from lss via relabeler to cache.
   PROMPP_ALWAYS_INLINE void align_cache_to_lss() {
-    if (wal_lss_.next_item_index() <= cache_.size()) {
+    auto& cache = sample_decoder().cache();
+    if (wal_lss_.next_item_index() <= cache.size()) {
       return;
     }
 
-    Primitives::LabelsBuilder<Primitives::LabelsBuilderStateMap> builder{builder_state_};
-    cache_.reserve(wal_lss_.next_item_index());
-    for (size_t ls_id = cache_.size(); ls_id < wal_lss_.next_item_index(); ++ls_id) {
+    Primitives::LabelsBuilder builder{builder_state_};
+
+    cache.reserve(wal_lss_.next_item_index());
+    for (size_t ls_id = cache.size(); ls_id < wal_lss_.next_item_index(); ++ls_id) {
       builder.reset(wal_lss_[ls_id]);
       Prometheus::Relabel::process_external_labels(builder, external_labels_);
       Prometheus::Relabel::relabelStatus rstatus = stateless_relabeler_.relabeling_process(buf_, builder);
       Prometheus::Relabel::soft_validate(rstatus, builder);
 
       if (rstatus == Prometheus::Relabel::rsDrop) {
-        cache_.emplace_back(std::numeric_limits<uint32_t>::max());
-        continue;
+        cache.add_dropped();
+      } else {
+        cache.add(output_lss_.find_or_emplace(builder.label_view_set()));
       }
-
-      cache_.emplace_back(output_lss_.find_or_emplace(builder.label_view_set()));
     }
 
     wal_lss_.shrink_to_checkpoint_size(wal_lss_.checkpoint());
+    sample_decoder().sync_decoders_with_cache();
   }
 
   // load_segment override private load_segment from BaseOutputDecoder.
@@ -72,72 +177,12 @@ class OutputDecoder : private BaseOutputDecoder {
     in >> wal;
   }
 
-  // dump_cache dump delta cache to output stream.
-  template <class OutputStream>
-  PROMPP_ALWAYS_INLINE uint32_t dump_cache(uint32_t from, OutputStream& out) {
-    // write version
-    out.put(1);
-
-    // write size
-    uint32_t dumped_ids{0};
-    if (from < cache_.size()) [[likely]] {
-      dumped_ids = static_cast<uint32_t>(cache_.size()) - from;
-    }
-    out.write(reinterpret_cast<const char*>(&dumped_ids), sizeof(dumped_ids));
-
-    // if there are no items to write, we finish here
-    if (dumped_ids) [[likely]] {
-      // write data
-      out.write(reinterpret_cast<const char*>(&cache_[from]), sizeof(uint32_t) * dumped_ids);
-    }
-
-    return dumped_ids;
-  }
-
-  // load_cache load cache from incoming stream.
-  template <class InputStream>
-  PROMPP_ALWAYS_INLINE void load_cache(InputStream& in) {
-    size_t cache_size_before = cache_.size();
-    auto sg1 = std::experimental::scope_fail([&]() { cache_.resize(cache_size_before); });
-
-    // read version
-    uint8_t version = in.get();
-
-    // return successfully, if stream is empty
-    if (in.eof()) {
-      return;
-    }
-
-    // check version
-    if (version != 1) {
-      throw BareBones::Exception(0x3f2437abfb3da442, "Invalid cache format version %d while reading from stream, only version 1 is supported", version);
-    }
-
-    auto original_exceptions = in.exceptions();
-    auto sg2 = std::experimental::scope_exit([&]() { in.exceptions(original_exceptions); });
-    in.exceptions(std::ifstream::failbit | std::ifstream::badbit | std::ifstream::eofbit);
-
-    // read size
-    uint32_t ids_to_read{0};
-    in.read(reinterpret_cast<char*>(&ids_to_read), sizeof(ids_to_read));
-
-    // read is completed, if there are no items
-    if (!ids_to_read) {
-      return;
-    }
-
-    // read data
-    size_t last_size{cache_.size()};
-    cache_.resize(last_size + static_cast<size_t>(ids_to_read));
-    in.read(reinterpret_cast<char*>(&cache_[last_size]), sizeof(uint32_t) * ids_to_read);
-  }
-
  public:
   // WALOutputDecoder constructor with empty state.
   PROMPP_ALWAYS_INLINE explicit OutputDecoder(Prometheus::Relabel::StatelessRelabeler& stateless_relabeler,
                                               Primitives::SnugComposites::LabelSet::EncodingBimap& output_lss,
                                               Primitives::Go::SliceView<std::pair<Primitives::Go::String, Primitives::Go::String>>& external_labels,
-                                              BasicEncoderVersion encoder_version = Writer::version) noexcept
+                                              BasicEncoderVersion encoder_version = Writer::version)
       : BaseOutputDecoder{wal_lss_, encoder_version}, stateless_relabeler_{stateless_relabeler}, output_lss_(output_lss) {
     external_labels_.reserve(external_labels.size());
     for (const auto& [ln, lv] : external_labels) {
@@ -146,21 +191,16 @@ class OutputDecoder : private BaseOutputDecoder {
   }
 
   // cache return current cache.
-  PROMPP_ALWAYS_INLINE const auto& cache() const noexcept { return cache_; }
+  PROMPP_ALWAYS_INLINE const auto& cache() const noexcept { return sample_decoder().cache(); }
 
   // dump_to dump delta state(delta caches and delta checkpoint lss) to output stream.
-  template <class OutputStream>
-  PROMPP_ALWAYS_INLINE void dump_to(OutputStream& out) {
-    auto original_exceptions = out.exceptions();
-    auto sg1 = std::experimental::scope_exit([&]() { out.exceptions(original_exceptions); });
-    out.exceptions(std::ifstream::failbit | std::ifstream::badbit);
-
+  PROMPP_ALWAYS_INLINE void dump_to(std::ostream& out) {
     // take current checkpoint and delta with current and previous checkpoints
     auto current_cp = output_lss_.checkpoint();
-    auto delta_cp = current_cp - dumped_checkpoint_;
+    const auto delta_cp = current_cp - dumped_checkpoint_;
 
     // no changes - do nothing
-    if (delta_cp.empty() && dumped_cache_size_ >= cache_.size()) [[unlikely]] {
+    if (delta_cp.empty() && !cache().have_changes()) [[unlikely]] {
       return;
     }
 
@@ -169,7 +209,7 @@ class OutputDecoder : private BaseOutputDecoder {
     dumped_checkpoint_ = std::move(current_cp);
 
     // write dump type cache and write delta caches
-    dumped_cache_size_ += dump_cache(dumped_cache_size_, out);
+    sample_decoder().cache().dump_changes(out);
   }
 
   // load_from load state(lss and cache) from incoming stream.
@@ -177,13 +217,13 @@ class OutputDecoder : private BaseOutputDecoder {
   PROMPP_ALWAYS_INLINE void load_from(InputStream& in) {
     while (true) {
       if (in.eof()) {
-        dumped_cache_size_ = cache_.size();
         dumped_checkpoint_ = output_lss_.checkpoint();
+        sample_decoder().sync_decoders_with_cache();
         return;
       }
 
       output_lss_.load(in);
-      load_cache(in);
+      sample_decoder().cache().load_changes(in);
     }
   }
 
@@ -199,7 +239,7 @@ class OutputDecoder : private BaseOutputDecoder {
     requires std::is_invocable_v<Callback, Primitives::LabelSetID, Primitives::Timestamp, Primitives::Sample::value_type>
   __attribute__((flatten)) void process_segment(Callback&& func) {
     BaseOutputDecoder::process_segment([&](Primitives::LabelSetID ls_id, Primitives::Timestamp ts, Primitives::Sample::value_type v) {
-      if (auto id = cache_[ls_id]; id != std::numeric_limits<uint32_t>::max()) {
+      if (auto id = sample_decoder().cache()[ls_id]; id != OutputDecoderCache::kIsDropped) {
         func(id, ts, v);
       }
     });

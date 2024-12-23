@@ -25,7 +25,7 @@ void prompp_wal_protobuf_hashdex_ctor(void* args, void* res);
  *     hashdex uintptr // pointer to constructed hashdex
  * }
  */
-void prompp_wal_protobuf_hashdex_dtor(void* args);
+void prompp_wal_hashdex_dtor(void* args);
 
 /**
  * @brief Fill hashdex from protobuf
@@ -48,6 +48,22 @@ void prompp_wal_protobuf_hashdex_dtor(void* args);
 void prompp_wal_protobuf_hashdex_presharding(void* args, void* res);
 
 /**
+ * @brief Get parsed metadata
+ *
+ * @param args {
+ *     hashdex uintptr
+ * }
+ * @param res {
+ *     metadata []struct {
+ *        metric_name string
+ *        text string
+ *        type uint32
+ *     }
+ * }
+ */
+void prompp_wal_protobuf_hashdex_get_metadata(void* args, void* res);
+
+/**
  * @brief Construct a new WAL GoModelHashdex
  *
  * @param args { // limits for incoming data
@@ -61,15 +77,6 @@ void prompp_wal_protobuf_hashdex_presharding(void* args, void* res);
  * }
  */
 void prompp_wal_go_model_hashdex_ctor(void* args, void* res);
-
-/**
- * @brief Destroy hashdex
- *
- * @param args {
- *     hashdex uintptr // pointer to constructed hashdex
- * }
- */
-void prompp_wal_go_model_hashdex_dtor(void* args);
 
 /**
  * @brief Fill hashdex from Go memory
@@ -90,15 +97,6 @@ void prompp_wal_go_model_hashdex_dtor(void* args);
  * }
  */
 void prompp_wal_go_model_hashdex_presharding(void* args, void* res);
-
-/**
- * @brief Destroy hashdex
- *
- * @param args {
- *     hashdex uintptr // pointer to constructed hashdex
- * }
- */
-void prompp_wal_basic_decoder_hashdex_dtor(void* args);
 
 /**
  * @brief Construct a new PromPP::WAL::hashdex::Scraper based on Prometheus parser
@@ -124,7 +122,7 @@ void prompp_wal_prometheus_scraper_hashdex_ctor(void* res);
 void prompp_wal_prometheus_scraper_hashdex_parse(void* args, void* res);
 
 /**
- * @brief Parse scraped buffer
+ * @brief Get scraped metadata
  *
  * @param args {
  *     hashdex uintptr
@@ -138,15 +136,6 @@ void prompp_wal_prometheus_scraper_hashdex_parse(void* args, void* res);
  * }
  */
 void prompp_wal_prometheus_scraper_hashdex_get_metadata(void* args, void* res);
-
-/**
- * @brief Destroy hashdex
- *
- * @param args {
- *     hashdex uintptr // pointer to constructed hashdex
- * }
- */
-void prompp_wal_prometheus_scraper_hashdex_dtor(void* args);
 
 /**
  * @brief Construct a new PromPP::WAL::hashdex::Scraper based on OpenMetrics parser
@@ -172,7 +161,7 @@ void prompp_wal_open_metrics_scraper_hashdex_ctor(void* res);
 void prompp_wal_open_metrics_scraper_hashdex_parse(void* args, void* res);
 
 /**
- * @brief Parse scraped buffer
+ * @brief Get scraped metadata
  *
  * @param args {
  *     hashdex uintptr
@@ -186,15 +175,6 @@ void prompp_wal_open_metrics_scraper_hashdex_parse(void* args, void* res);
  * }
  */
 void prompp_wal_open_metrics_scraper_hashdex_get_metadata(void* args, void* res);
-
-/**
- * @brief Destroy hashdex
- *
- * @param args {
- *     hashdex uintptr // pointer to constructed hashdex
- * }
- */
-void prompp_wal_open_metrics_scraper_hashdex_dtor(void* args);
 
 #ifdef __cplusplus
 }  // extern "C"

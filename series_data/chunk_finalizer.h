@@ -16,7 +16,7 @@ class ChunkFinalizer {
     if (chunk.encoding_type == chunk::DataChunk::EncodingType::kGorilla) [[unlikely]] {
       finalize(storage, ls_id, chunk, encoder::timestamp::State::kInvalidId);
     } else {
-      finalize_timestamp_state_and_chunk<FinalizeTimestampStateMode::kFinalize>(storage, ls_id, chunk);
+      finalize_timestamp_and_chunk_separately<FinalizeTimestampStateMode::kFinalize>(storage, ls_id, chunk);
     }
   }
 
@@ -43,23 +43,43 @@ class ChunkFinalizer {
   }
 
   template <FinalizeTimestampStateMode mode>
-  PROMPP_ALWAYS_INLINE static void finalize_timestamp_state_and_chunk(DataStorage& storage, uint32_t ls_id, chunk::DataChunk& chunk) {
-    auto& finalized_timestamp_stream = storage.finalized_timestamp_streams.emplace_back();
-    const auto finalized_timestamp_stream_id = storage.finalized_timestamp_streams.index_of(finalized_timestamp_stream);
-    if constexpr (mode == FinalizeTimestampStateMode::kFinalize) {
-      storage.timestamp_encoder.finalize(chunk.timestamp_encoder_state_id, finalized_timestamp_stream.stream, finalized_timestamp_stream_id);
-    } else {
-      storage.timestamp_encoder.finalize_or_copy(chunk.timestamp_encoder_state_id, finalized_timestamp_stream.stream, finalized_timestamp_stream_id);
+  PROMPP_ALWAYS_INLINE static void finalize_timestamp_and_chunk_separately(DataStorage& storage, uint32_t ls_id, chunk::DataChunk& chunk) {
+    if (!finalize_if_timestamp_finalized(storage, ls_id, chunk)) [[likely]] {
+      finalize(storage, ls_id, chunk, finalize_timestamp<mode>(storage, chunk));
     }
-    finalize(storage, ls_id, chunk, finalized_timestamp_stream_id);
+  }
+
+  PROMPP_ALWAYS_INLINE static bool finalize_if_timestamp_finalized(DataStorage& storage, uint32_t ls_id, chunk::DataChunk& chunk) {
+    if (const auto finalized_timestamp_stream_id = storage.timestamp_encoder.process_finalized(chunk.timestamp_encoder_state_id);
+        finalized_timestamp_stream_id != encoder::timestamp::State::kInvalidId) [[unlikely]] {
+      ++storage.finalized_timestamp_streams[finalized_timestamp_stream_id].reference_count;
+      finalize(storage, ls_id, chunk, finalized_timestamp_stream_id);
+      return true;
+    }
+
+    return false;
   }
 
  private:
-  PROMPP_ALWAYS_INLINE static void emplace_finalized_chunk(DataStorage& storage, uint32_t ls_id, chunk::DataChunk& chunk) {
+  PROMPP_ALWAYS_INLINE static void emplace_finalized_chunk(DataStorage& storage, uint32_t ls_id, const chunk::DataChunk& chunk) {
     storage.finalized_chunks.try_emplace(ls_id, storage.finalized_chunks_map_allocated_memory)
         .first->second.emplace(chunk, [&storage](const chunk::DataChunk& chunk) PROMPP_LAMBDA_INLINE {
           return Decoder::get_chunk_first_timestamp<chunk::DataChunk::Type::kFinalized>(storage, chunk);
         });
+  }
+
+  template <FinalizeTimestampStateMode mode>
+  PROMPP_ALWAYS_INLINE static encoder::timestamp::State::Id finalize_timestamp(DataStorage& storage, chunk::DataChunk& chunk) {
+    auto& finalized_stream = storage.finalized_timestamp_streams.emplace_back();
+    const auto finalized_stream_id = storage.finalized_timestamp_streams.index_of(finalized_stream);
+
+    if constexpr (mode == FinalizeTimestampStateMode::kFinalize) {
+      storage.timestamp_encoder.finalize(chunk.timestamp_encoder_state_id, finalized_stream.stream, finalized_stream_id);
+    } else {
+      storage.timestamp_encoder.finalize_or_copy(chunk.timestamp_encoder_state_id, finalized_stream.stream, finalized_stream_id);
+    }
+
+    return finalized_stream_id;
   }
 };
 

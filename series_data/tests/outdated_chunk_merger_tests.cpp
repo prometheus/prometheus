@@ -249,7 +249,63 @@ TEST_P(OutdatedChunkMergerInFinalizedConstantChunkFixture, Test) {
 INSTANTIATE_TEST_SUITE_P(Uint32ConstantChunk, OutdatedChunkMergerInFinalizedConstantChunkFixture, testing::Values(1.0));
 INSTANTIATE_TEST_SUITE_P(DoubleConstantChunk, OutdatedChunkMergerInFinalizedConstantChunkFixture, testing::Values(1.1));
 
-class OutdatedChunkMergerInFinalizedChunkFixture : public OutdatedChunkMergerTrait<4>, public testing::Test {};
+class OutdatedChunkMergerWithFinalizationFixture : public OutdatedChunkMergerTrait<4>, public testing::Test {};
+
+TEST_F(OutdatedChunkMergerWithFinalizationFixture, UseFinlizedTimestampStreamAfterMerge) {
+  // Arrange
+  encode({{.ls_id = 0, .sample = {.timestamp = 1, .value = 1.0}},
+
+          {.ls_id = 1, .sample = {.timestamp = 1, .value = 1.0}},
+          {.ls_id = 1, .sample = {.timestamp = 2, .value = 1.0}},
+
+          {.ls_id = 2, .sample = {.timestamp = 1, .value = 1.0}},
+          {.ls_id = 2, .sample = {.timestamp = 2, .value = 1.0}},
+          {.ls_id = 2, .sample = {.timestamp = 3, .value = 1.0}},
+
+          {.ls_id = 3, .sample = {.timestamp = 1, .value = 1.0}},
+          {.ls_id = 3, .sample = {.timestamp = 2, .value = 1.0}},
+          {.ls_id = 3, .sample = {.timestamp = 3, .value = 1.0}},
+          {.ls_id = 3, .sample = {.timestamp = 4, .value = 1.0}},
+
+          {.ls_id = 4, .sample = {.timestamp = 1, .value = 1.0}},
+          {.ls_id = 4, .sample = {.timestamp = 2, .value = 1.0}},
+          {.ls_id = 4, .sample = {.timestamp = 3, .value = 1.0}},
+          {.ls_id = 4, .sample = {.timestamp = 4, .value = 1.0}},
+          {.ls_id = 4, .sample = {.timestamp = 5, .value = 1.0}},
+
+          {.ls_id = 5, .sample = {.timestamp = 1, .value = 1.0}},
+          {.ls_id = 5, .sample = {.timestamp = 2, .value = 1.0}},
+          {.ls_id = 5, .sample = {.timestamp = 3, .value = 1.0}},
+          {.ls_id = 5, .sample = {.timestamp = 4, .value = 1.0}}});
+  encode_outdated({
+      {.ls_id = 5, .sample = {.timestamp = 3, .value = 1.0}},
+  });
+
+  // Act
+  merger_.merge();
+  encode({
+      {.ls_id = 5, .sample = {.timestamp = 5, .value = 1.0}},
+  });
+
+  // Assert
+  const auto finalized = get_finalized_chunks(5);
+  ASSERT_NE(nullptr, finalized);
+  EXPECT_TRUE(std::ranges::equal(
+      ExpectedListOfSampleList{
+          {
+              {.timestamp = 1, .value = 1.0},
+              {.timestamp = 2, .value = 1.0},
+              {.timestamp = 3, .value = 1.0},
+              {.timestamp = 4, .value = 1.0},
+          },
+          {
+              {.timestamp = 5, .value = 1.0},
+          },
+      },
+      Decoder::decode_chunks(storage_, *finalized, get_open_chunk(5))));
+}
+
+class OutdatedChunkMergerInFinalizedChunkFixture : public OutdatedChunkMergerWithFinalizationFixture {};
 
 TEST_F(OutdatedChunkMergerInFinalizedChunkFixture, MergeInTwoDoubleConstantsChunk) {
   // Arrange
@@ -454,6 +510,52 @@ TEST_F(OutdatedChunkMergerInFinalizedChunkFixture, MergeInChunkWithFinalizedTime
           },
       },
       Decoder::decode_chunks(storage_, *finalized, get_open_chunk(1))));
+}
+
+TEST_F(OutdatedChunkMergerInFinalizedChunkFixture, UseFinlizedTimestampStreamAfterMerge) {
+  // Arrange
+  encode({{.ls_id = 0, .sample = {.timestamp = 1, .value = 1.0}},
+
+          {.ls_id = 1, .sample = {.timestamp = 1, .value = 1.0}},
+          {.ls_id = 1, .sample = {.timestamp = 2, .value = 1.0}},
+
+          {.ls_id = 2, .sample = {.timestamp = 1, .value = 1.0}},
+          {.ls_id = 2, .sample = {.timestamp = 2, .value = 1.0}},
+          {.ls_id = 2, .sample = {.timestamp = 3, .value = 1.0}},
+
+          {.ls_id = 3, .sample = {.timestamp = 1, .value = 1.0}},
+          {.ls_id = 3, .sample = {.timestamp = 2, .value = 1.0}},
+          {.ls_id = 3, .sample = {.timestamp = 3, .value = 1.0}},
+          {.ls_id = 3, .sample = {.timestamp = 4, .value = 1.0}},
+
+          {.ls_id = 4, .sample = {.timestamp = 1, .value = 1.0}},
+          {.ls_id = 4, .sample = {.timestamp = 2, .value = 1.0}},
+          {.ls_id = 4, .sample = {.timestamp = 3, .value = 1.0}},
+          {.ls_id = 4, .sample = {.timestamp = 4, .value = 1.0}},
+          {.ls_id = 4, .sample = {.timestamp = 5, .value = 1.0}}});
+  encode_outdated({
+      {.ls_id = 4, .sample = {.timestamp = 4, .value = 1.0}},
+  });
+
+  // Act
+  merger_.merge();
+
+  // Assert
+  const auto finalized = get_finalized_chunks(4);
+  ASSERT_NE(nullptr, finalized);
+  EXPECT_TRUE(std::ranges::equal(
+      ExpectedListOfSampleList{
+          {
+              {.timestamp = 1, .value = 1.0},
+              {.timestamp = 2, .value = 1.0},
+              {.timestamp = 3, .value = 1.0},
+              {.timestamp = 4, .value = 1.0},
+          },
+          {
+              {.timestamp = 5, .value = 1.0},
+          },
+      },
+      Decoder::decode_chunks(storage_, *finalized, get_open_chunk(4))));
 }
 
 class OutdatedChunkMergerFixture : public OutdatedChunkMergerTrait<series_data::kSamplesPerChunkDefault>, public testing::Test {};

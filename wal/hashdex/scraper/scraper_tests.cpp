@@ -1,63 +1,28 @@
 #include <gtest/gtest.h>
 
 #include "scraper.h"
+#include "wal/hashdex/metric.h"
+#include "wal/hashdex/test_fixture.h"
 
 namespace {
 
 using PromPP::Primitives::LabelViewSet;
 using PromPP::Primitives::Sample;
-using PromPP::Primitives::TimeseriesSemiview;
 using PromPP::Primitives::Timestamp;
 using PromPP::Prometheus::MetadataType;
+using PromPP::WAL::hashdex::Metadata;
+using PromPP::WAL::hashdex::Metric;
 using PromPP::WAL::hashdex::scraper::Error;
 using PromPP::WAL::hashdex::scraper::OpenMetricsScraper;
 using PromPP::WAL::hashdex::scraper::PrometheusScraper;
 using std::operator""sv;
 using std::operator""s;
 
-struct ScrapedMetric {
-  TimeseriesSemiview timeseries{};
-  uint64_t hash{};
-
-  bool operator==(const ScrapedMetric&) const noexcept = default;
-};
-
-struct ScrapedMetadata {
-  std::string_view metric_name{};
-  std::string_view text{};
-  MetadataType type{};
-
-  bool operator==(const ScrapedMetadata&) const noexcept = default;
-};
-
-std::ostream& operator<<(std::ostream& stream, const ScrapedMetric& item) {
-  stream << "hash: " << item.hash << ", labels: { ";
-
-  for (const auto& [name, value] : item.timeseries.label_set()) {
-    stream << name << " = " << value << ", ";
-  }
-
-  stream << " }, samples: { ";
-
-  for (const auto& [timestamp, value] : item.timeseries.samples()) {
-    stream << timestamp << " => " << value << ", ";
-  }
-
-  stream << " }";
-
-  return stream;
-}
-
-std::ostream& operator<<(std::ostream& stream, const ScrapedMetadata& item) {
-  stream << "[" << static_cast<int>(item.type) << "] " << item.metric_name << ": " << item.text;
-  return stream;
-}
-
 struct ScraperCase {
   std::string_view buffer;
   Error result;
-  std::vector<ScrapedMetadata> metadata{};
-  std::vector<ScrapedMetric> metrics{};
+  std::vector<Metadata> metadata{};
+  std::vector<Metric> metrics{};
 };
 
 constexpr Timestamp kDefaultTimestamp = std::numeric_limits<Timestamp>::max();
@@ -67,34 +32,8 @@ class ScraperFixture : public ::testing::TestWithParam<ScraperCase> {
  protected:
   Scraper scraper_;
 
-  static void calculate_labelset_hash(std::vector<ScrapedMetric>& metrics) noexcept {
-    for (auto& item : metrics) {
-      item.hash = PromPP::Primitives::hash::hash_of_label_set(item.timeseries.label_set());
-    }
-  }
-
-  [[nodiscard]] std::vector<ScrapedMetric> get_metrics() const noexcept {
-    std::vector<ScrapedMetric> items;
-    items.reserve(scraper_.metrics().size());
-
-    for (auto& item : scraper_.metrics()) {
-      auto& scraped_item = items.emplace_back(ScrapedMetric{.hash = item.hash()});
-      item.read(scraped_item.timeseries);
-    }
-
-    return items;
-  }
-
-  [[nodiscard]] std::vector<ScrapedMetadata> get_metadata() const noexcept {
-    std::vector<ScrapedMetadata> items;
-    items.reserve(scraper_.metadata().size());
-
-    for (auto& item : scraper_.metadata()) {
-      items.emplace_back(ScrapedMetadata{.metric_name = item.metric_name(), .text = item.text(), .type = item.type()});
-    }
-
-    return items;
-  }
+  [[nodiscard]] std::vector<Metric> get_metrics() const noexcept { return PromPP::WAL::hashdex::get_metrics(scraper_.metrics()); }
+  [[nodiscard]] std::vector<Metadata> get_metadata() const noexcept { return PromPP::WAL::hashdex::get_metadata(scraper_.metadata()); }
 };
 
 class PrometheusScraperFixture : public ScraperFixture<PrometheusScraper> {
@@ -126,62 +65,60 @@ INSTANTIATE_TEST_SUITE_P(HelpMetadata,
                          PrometheusScraperFixture,
                          testing::Values(ScraperCase{.buffer = "# HELP go_goroutines Number of goroutines that currently exist.\n",
                                                      .result = Error::kNoError,
-                                                     .metadata = {ScrapedMetadata{.metric_name = "go_goroutines",
-                                                                                  .text = "Number of goroutines that currently exist.",
-                                                                                  .type = MetadataType::kHelp}}},
+                                                     .metadata = {Metadata{.metric_name = "go_goroutines",
+                                                                           .text = "Number of goroutines that currently exist.",
+                                                                           .type = MetadataType::kHelp}}},
                                          ScraperCase{.buffer = "# HELP go_goroutines\n",
                                                      .result = Error::kNoError,
-                                                     .metadata = {ScrapedMetadata{.metric_name = "go_goroutines", .text = "", .type = MetadataType::kHelp}}},
+                                                     .metadata = {Metadata{.metric_name = "go_goroutines", .text = "", .type = MetadataType::kHelp}}},
                                          ScraperCase{.buffer = "# HELP go_goroutines \t \n",
                                                      .result = Error::kNoError,
-                                                     .metadata = {ScrapedMetadata{.metric_name = "go_goroutines", .text = "", .type = MetadataType::kHelp}}}));
+                                                     .metadata = {Metadata{.metric_name = "go_goroutines", .text = "", .type = MetadataType::kHelp}}}));
 
 INSTANTIATE_TEST_SUITE_P(
     TypeMetadata,
     PrometheusScraperFixture,
     testing::Values(ScraperCase{.buffer = "# TYPE go_goroutines gauge\n",
                                 .result = Error::kNoError,
-                                .metadata = {ScrapedMetadata{.metric_name = "go_goroutines", .text = "gauge", .type = MetadataType::kType}}},
-                    ScraperCase{
-                        .buffer = "      # TYPE extended_monitoring_annotations gauge\n",
-                        .result = Error::kNoError,
-                        .metadata = {ScrapedMetadata{.metric_name = "extended_monitoring_annotations", .text = "gauge", .type = MetadataType::kType}}}));
+                                .metadata = {Metadata{.metric_name = "go_goroutines", .text = "gauge", .type = MetadataType::kType}}},
+                    ScraperCase{.buffer = "      # TYPE extended_monitoring_annotations gauge\n",
+                                .result = Error::kNoError,
+                                .metadata = {Metadata{.metric_name = "extended_monitoring_annotations", .text = "gauge", .type = MetadataType::kType}}}));
 
 INSTANTIATE_TEST_SUITE_P(MetricNameInsideLabelSet,
                          PrometheusScraperFixture,
-                         testing::Values(ScraperCase{
-                             .buffer = "{q=\"0.9\",\"http.status\",a=\"b\"} 8.3835e-05\n"sv,
-                             .result = Error::kNoError,
-                             .metrics = {ScrapedMetric{.timeseries = {LabelViewSet{
-                                                                          {"q", "0.9"},
-                                                                          {"__name__", "http.status"},
-                                                                          {"a", "b"},
-                                                                      },
-                                                                      BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}}}}));
+                         testing::Values(ScraperCase{.buffer = "{q=\"0.9\",\"http.status\",a=\"b\"} 8.3835e-05\n"sv,
+                                                     .result = Error::kNoError,
+                                                     .metrics = {Metric{.timeseries = {LabelViewSet{
+                                                                                           {"q", "0.9"},
+                                                                                           {"__name__", "http.status"},
+                                                                                           {"a", "b"},
+                                                                                       },
+                                                                                       BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}}}}));
 
 INSTANTIATE_TEST_SUITE_P(NullByte,
                          PrometheusScraperFixture,
                          testing::Values(ScraperCase{.buffer = "null_byte_metric{a=\"abc\x00\"} 1\n"sv,
                                                      .result = Error::kNoError,
-                                                     .metrics = {ScrapedMetric{.timeseries = {LabelViewSet{
-                                                                                                  {"__name__", "null_byte_metric"},
-                                                                                                  {"a", "abc\x00"sv},
-                                                                                              },
-                                                                                              BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}}}},
+                                                     .metrics = {Metric{.timeseries = {LabelViewSet{
+                                                                                           {"__name__", "null_byte_metric"},
+                                                                                           {"a", "abc\x00"sv},
+                                                                                       },
+                                                                                       BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}}}},
                                          ScraperCase{.buffer = "a{b=\"\x00ss\"} 1\n"sv,
                                                      .result = Error::kNoError,
-                                                     .metrics = {ScrapedMetric{.timeseries = {LabelViewSet{
-                                                                                                  {"__name__", "a"},
-                                                                                                  {"b", "\x00ss"sv},
-                                                                                              },
-                                                                                              BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}}}},
+                                                     .metrics = {Metric{.timeseries = {LabelViewSet{
+                                                                                           {"__name__", "a"},
+                                                                                           {"b", "\x00ss"sv},
+                                                                                       },
+                                                                                       BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}}}},
                                          ScraperCase{.buffer = "a{b=\"\x00\"} 1\n"sv,
                                                      .result = Error::kNoError,
-                                                     .metrics = {ScrapedMetric{.timeseries = {LabelViewSet{
-                                                                                                  {"__name__", "a"},
-                                                                                                  {"b", "\x00"sv},
-                                                                                              },
-                                                                                              BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}}}},
+                                                     .metrics = {Metric{.timeseries = {LabelViewSet{
+                                                                                           {"__name__", "a"},
+                                                                                           {"b", "\x00"sv},
+                                                                                       },
+                                                                                       BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}}}},
                                          ScraperCase{.buffer = "a{b=\x00\"ssss\"} 1\n"sv, .result = Error::kUnexpectedToken, .metrics = {}},
                                          ScraperCase{.buffer = "a{b=\"\x00\n"sv, .result = Error::kUnexpectedToken, .metrics = {}},
                                          ScraperCase{.buffer = "a{b\x00=\"hiih\"}	\n"sv, .result = Error::kUnexpectedToken, .metrics = {}},
@@ -224,35 +161,35 @@ INSTANTIATE_TEST_SUITE_P(Labels,
                          PrometheusScraperFixture,
                          testing::Values(ScraperCase{.buffer = "go_gc_duration_seconds_count 8437\n",
                                                      .result = Error::kNoError,
-                                                     .metrics = {ScrapedMetric{.timeseries = {LabelViewSet{{"__name__", "go_gc_duration_seconds_count"}},
-                                                                                              BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8437}}}}}},
+                                                     .metrics = {Metric{.timeseries = {LabelViewSet{{"__name__", "go_gc_duration_seconds_count"}},
+                                                                                       BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8437}}}}}},
                                          ScraperCase{.buffer = "example_metric{value=\"1\", z=\"\"} 0.144\n",
                                                      .result = Error::kNoError,
-                                                     .metrics = {ScrapedMetric{.timeseries = {LabelViewSet{{"__name__", "example_metric"}, {"value", "1"}},
-                                                                                              BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 0.144}}}}}},
+                                                     .metrics = {Metric{.timeseries = {LabelViewSet{{"__name__", "example_metric"}, {"value", "1"}},
+                                                                                       BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 0.144}}}}}},
                                          ScraperCase{.buffer = "go_gc_duration_seconds_count 8437 12345\n",
                                                      .result = Error::kNoError,
-                                                     .metrics = {ScrapedMetric{.timeseries = {LabelViewSet{{"__name__", "go_gc_duration_seconds_count"}},
-                                                                                              BareBones::Vector<Sample>{Sample{12345, 8437}}}}}},
+                                                     .metrics = {Metric{.timeseries = {LabelViewSet{{"__name__", "go_gc_duration_seconds_count"}},
+                                                                                       BareBones::Vector<Sample>{Sample{12345, 8437}}}}}},
                                          ScraperCase{.buffer = "go_gc_duration_seconds_count{} 0\n",
                                                      .result = Error::kNoError,
-                                                     .metrics = {ScrapedMetric{.timeseries = {LabelViewSet{{"__name__", "go_gc_duration_seconds_count"}},
-                                                                                              BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 0}}}}}},
+                                                     .metrics = {Metric{.timeseries = {LabelViewSet{{"__name__", "go_gc_duration_seconds_count"}},
+                                                                                       BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 0}}}}}},
                                          ScraperCase{.buffer = "go_info{version=\"go1.23.1\"} 1\n",
                                                      .result = Error::kNoError,
-                                                     .metrics = {ScrapedMetric{.timeseries = {LabelViewSet{
-                                                                                                  {"__name__", "go_info"},
-                                                                                                  {"version", "go1.23.1"},
-                                                                                              },
-                                                                                              BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}}}},
+                                                     .metrics = {Metric{.timeseries = {LabelViewSet{
+                                                                                           {"__name__", "go_info"},
+                                                                                           {"version", "go1.23.1"},
+                                                                                       },
+                                                                                       BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}}}},
                                          ScraperCase{.buffer = "go_info{version=\"go1.23.1\", os=\"linux\"} 1\n",
                                                      .result = Error::kNoError,
-                                                     .metrics = {ScrapedMetric{.timeseries = {LabelViewSet{
-                                                                                                  {"__name__", "go_info"},
-                                                                                                  {"version", "go1.23.1"},
-                                                                                                  {"os", "linux"},
-                                                                                              },
-                                                                                              BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}}}}));
+                                                     .metrics = {Metric{.timeseries = {LabelViewSet{
+                                                                                           {"__name__", "go_info"},
+                                                                                           {"version", "go1.23.1"},
+                                                                                           {"os", "linux"},
+                                                                                       },
+                                                                                       BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}}}}));
 INSTANTIATE_TEST_SUITE_P(
     PromTest,
     PrometheusScraperFixture,
@@ -288,109 +225,109 @@ INSTANTIATE_TEST_SUITE_P(
                   "# HELP metric foo\000bar\n"
                   "null_byte_metric{a=\"abc\000\"} 1\n"sv,
         .result = Error::kNoError,
-        .metadata = {ScrapedMetadata{.metric_name = "go_gc_duration_seconds", .text = "A summary of the GC invocation durations.", .type = MetadataType::kHelp},
-                     ScrapedMetadata{.metric_name = "go_gc_duration_seconds", .text = "summary", .type = MetadataType::kType},
-                     ScrapedMetadata{.metric_name = "nohelp1", .text = "", .type = MetadataType::kHelp},
-                     ScrapedMetadata{.metric_name = "nohelp2", .text = "", .type = MetadataType::kHelp},
-                     ScrapedMetadata{.metric_name = "go_goroutines", .text = "Number of goroutines that currently exist.", .type = MetadataType::kHelp},
-                     ScrapedMetadata{.metric_name = "go_goroutines", .text = "gauge", .type = MetadataType::kType},
-                     ScrapedMetadata{.metric_name = "metric", .text = "foo\000bar"sv, .type = MetadataType::kHelp}},
-        .metrics = {ScrapedMetric{.timeseries = {LabelViewSet{
-                                                     {"__name__", "go_gc_duration_seconds"},
-                                                     {"quantile", "0"},
-                                                 },
-                                                 BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 4.9351e-05}}}},
-                    ScrapedMetric{.timeseries = {LabelViewSet{
-                                                     {"__name__", "go_gc_duration_seconds"},
-                                                     {"quantile", "0.25"},
-                                                 },
-                                                 BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 7.424100000000001e-05}}}},
-                    ScrapedMetric{.timeseries = {LabelViewSet{
-                                                     {"__name__", "go_gc_duration_seconds"},
-                                                     {"quantile", "0.5"},
-                                                     {"a", "b"},
-                                                 },
-                                                 BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
-                    ScrapedMetric{.timeseries = {LabelViewSet{
-                                                     {"__name__", "go_gc_duration_seconds"},
-                                                     {"quantile", "0.8"},
-                                                     {"a", "b"},
-                                                 },
-                                                 BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
-                    ScrapedMetric{.timeseries = {LabelViewSet{
-                                                     {"__name__", "go_gc_duration_seconds"},
-                                                     {"quantile", "0.9"},
-                                                     {"a", "b"},
-                                                 },
-                                                 BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
-                    ScrapedMetric{.timeseries = {LabelViewSet{
-                                                     {"__name__", "wind_speed"},
-                                                     {"A", "2"},
-                                                     {"c", "3"},
-                                                 },
-                                                 BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 12345}}}},
-                    ScrapedMetric{.timeseries = {LabelViewSet{
-                                                     {"__name__", "go_gc_duration_seconds"},
-                                                     {"quantile", "1.0"},
-                                                     {"a", "b"},
-                                                 },
-                                                 BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
-                    ScrapedMetric{.timeseries = {LabelViewSet{
-                                                     {"__name__", "go_gc_duration_seconds"},
-                                                     {"quantile", "1.0"},
-                                                     {"a", "b"},
-                                                 },
-                                                 BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
-                    ScrapedMetric{.timeseries = {LabelViewSet{
-                                                     {"__name__", "go_gc_duration_seconds"},
-                                                     {"quantile", "1.0"},
-                                                     {"a", "b"},
-                                                 },
-                                                 BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
-                    ScrapedMetric{.timeseries = {LabelViewSet{
-                                                     {"__name__", "go_gc_duration_seconds"},
-                                                     {"quantile", "1.0"},
-                                                     {"a", "b"},
-                                                 },
-                                                 BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
-                    ScrapedMetric{.timeseries = {LabelViewSet{
-                                                     {"__name__", "go_gc_duration_seconds"},
-                                                     {"quantile", "2.0"},
-                                                     {"a", "b"},
-                                                 },
-                                                 BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
-                    ScrapedMetric{.timeseries = {LabelViewSet{
-                                                     {"__name__", "go_gc_duration_seconds_count"},
-                                                 },
-                                                 BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 99}}}},
-                    ScrapedMetric{.timeseries = {LabelViewSet{
-                                                     {"__name__", "some:aggregate:rate5m"},
-                                                     {"a_b", "c"},
-                                                 },
-                                                 BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
-                    ScrapedMetric{.timeseries = {LabelViewSet{
-                                                     {"__name__", "go_goroutines"},
-                                                 },
-                                                 BareBones::Vector<Sample>{Sample{123123, 33}}}},
-                    ScrapedMetric{.timeseries = {LabelViewSet{
-                                                     {"__name__", "_metric_starting_with_underscore"},
-                                                 },
-                                                 BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
-                    ScrapedMetric{.timeseries = {LabelViewSet{
-                                                     {"__name__", "testmetric"},
-                                                     {"_label_starting_with_underscore", "foo"},
-                                                 },
-                                                 BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
-                    ScrapedMetric{.timeseries = {LabelViewSet{
-                                                     {"__name__", "testmetric"},
-                                                     {"label", "\"bar\""},
-                                                 },
-                                                 BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
-                    ScrapedMetric{.timeseries = {LabelViewSet{
-                                                     {"__name__", "null_byte_metric"},
-                                                     {"a", "abc\000"sv},
-                                                 },
-                                                 BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}}}}));
+        .metadata = {Metadata{.metric_name = "go_gc_duration_seconds", .text = "A summary of the GC invocation durations.", .type = MetadataType::kHelp},
+                     Metadata{.metric_name = "go_gc_duration_seconds", .text = "summary", .type = MetadataType::kType},
+                     Metadata{.metric_name = "nohelp1", .text = "", .type = MetadataType::kHelp},
+                     Metadata{.metric_name = "nohelp2", .text = "", .type = MetadataType::kHelp},
+                     Metadata{.metric_name = "go_goroutines", .text = "Number of goroutines that currently exist.", .type = MetadataType::kHelp},
+                     Metadata{.metric_name = "go_goroutines", .text = "gauge", .type = MetadataType::kType},
+                     Metadata{.metric_name = "metric", .text = "foo\000bar"sv, .type = MetadataType::kHelp}},
+        .metrics = {Metric{.timeseries = {LabelViewSet{
+                                              {"__name__", "go_gc_duration_seconds"},
+                                              {"quantile", "0"},
+                                          },
+                                          BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 4.9351e-05}}}},
+                    Metric{.timeseries = {LabelViewSet{
+                                              {"__name__", "go_gc_duration_seconds"},
+                                              {"quantile", "0.25"},
+                                          },
+                                          BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 7.424100000000001e-05}}}},
+                    Metric{.timeseries = {LabelViewSet{
+                                              {"__name__", "go_gc_duration_seconds"},
+                                              {"quantile", "0.5"},
+                                              {"a", "b"},
+                                          },
+                                          BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
+                    Metric{.timeseries = {LabelViewSet{
+                                              {"__name__", "go_gc_duration_seconds"},
+                                              {"quantile", "0.8"},
+                                              {"a", "b"},
+                                          },
+                                          BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
+                    Metric{.timeseries = {LabelViewSet{
+                                              {"__name__", "go_gc_duration_seconds"},
+                                              {"quantile", "0.9"},
+                                              {"a", "b"},
+                                          },
+                                          BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
+                    Metric{.timeseries = {LabelViewSet{
+                                              {"__name__", "wind_speed"},
+                                              {"A", "2"},
+                                              {"c", "3"},
+                                          },
+                                          BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 12345}}}},
+                    Metric{.timeseries = {LabelViewSet{
+                                              {"__name__", "go_gc_duration_seconds"},
+                                              {"quantile", "1.0"},
+                                              {"a", "b"},
+                                          },
+                                          BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
+                    Metric{.timeseries = {LabelViewSet{
+                                              {"__name__", "go_gc_duration_seconds"},
+                                              {"quantile", "1.0"},
+                                              {"a", "b"},
+                                          },
+                                          BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
+                    Metric{.timeseries = {LabelViewSet{
+                                              {"__name__", "go_gc_duration_seconds"},
+                                              {"quantile", "1.0"},
+                                              {"a", "b"},
+                                          },
+                                          BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
+                    Metric{.timeseries = {LabelViewSet{
+                                              {"__name__", "go_gc_duration_seconds"},
+                                              {"quantile", "1.0"},
+                                              {"a", "b"},
+                                          },
+                                          BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
+                    Metric{.timeseries = {LabelViewSet{
+                                              {"__name__", "go_gc_duration_seconds"},
+                                              {"quantile", "2.0"},
+                                              {"a", "b"},
+                                          },
+                                          BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
+                    Metric{.timeseries = {LabelViewSet{
+                                              {"__name__", "go_gc_duration_seconds_count"},
+                                          },
+                                          BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 99}}}},
+                    Metric{.timeseries = {LabelViewSet{
+                                              {"__name__", "some:aggregate:rate5m"},
+                                              {"a_b", "c"},
+                                          },
+                                          BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
+                    Metric{.timeseries = {LabelViewSet{
+                                              {"__name__", "go_goroutines"},
+                                          },
+                                          BareBones::Vector<Sample>{Sample{123123, 33}}}},
+                    Metric{.timeseries = {LabelViewSet{
+                                              {"__name__", "_metric_starting_with_underscore"},
+                                          },
+                                          BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
+                    Metric{.timeseries = {LabelViewSet{
+                                              {"__name__", "testmetric"},
+                                              {"_label_starting_with_underscore", "foo"},
+                                          },
+                                          BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
+                    Metric{.timeseries = {LabelViewSet{
+                                              {"__name__", "testmetric"},
+                                              {"label", "\"bar\""},
+                                          },
+                                          BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
+                    Metric{.timeseries = {LabelViewSet{
+                                              {"__name__", "null_byte_metric"},
+                                              {"a", "abc\000"sv},
+                                          },
+                                          BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}}}}));
 
 INSTANTIATE_TEST_SUITE_P(
     Utf8PromTest,
@@ -414,67 +351,66 @@ INSTANTIATE_TEST_SUITE_P(
             "\x6e\x67\x5c\x22\x20\x7b\x63\x68\x61\x72\x61\x63\x74\x65\x72\x5c\x6e\x63\x68\x6f\x69\x63\x65\x73\x7d\", "
             "\"\x73\x74\x72\x61\x6e\x67\x65\xc2\xa9\xe2\x84\xa2\x5c\x6e\x27\x71\x75\x6f\x74\x65\x64\x27\x20\x5c\x22\x6e\x61\x6d\x65\x5c\x22\"=\"6\"} 10.0\n",
         .result = Error::kNoError,
-        .metadata = {ScrapedMetadata{.metric_name = "go.gc_duration_seconds", .text = "A summary of the GC invocation durations.", .type = MetadataType::kHelp},
-                     ScrapedMetadata{.metric_name = "go.gc_duration_seconds", .text = "summary", .type = MetadataType::kType}},
-        .metrics = {
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "go.gc_duration_seconds"},
-                                             {"quantile", "0"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 4.9351e-05}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "go.gc_duration_seconds"},
-                                             {"quantile", "0.25"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 7.424100000000001e-05}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "go.gc_duration_seconds"},
-                                             {"quantile", "0.5"},
-                                             {"a", "b"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "go.gc_duration_seconds"},
-                                             {"quantile", "0.8"},
-                                             {"a", "b"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "go.gc_duration_seconds"},
-                                             {"quantile", "0.9"},
-                                             {"a", "b"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "go.gc_duration_seconds"},
-                                             {"quantile", "1.0"},
-                                             {"a", "b"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "go.gc_duration_seconds"},
-                                             {"quantile", "1.0"},
-                                             {"a", "b"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "go.gc_duration_seconds"},
-                                             {"quantile", "1.0"},
-                                             {"a", "b"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "go.gc_duration_seconds"},
-                                             {"quantile", "1.0"},
-                                             {"a", "b"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "go.gc_duration_seconds_count"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 99}}}},
-            ScrapedMetric{
-                .timeseries = {LabelViewSet{
+        .metadata = {Metadata{.metric_name = "go.gc_duration_seconds", .text = "A summary of the GC invocation durations.", .type = MetadataType::kHelp},
+                     Metadata{.metric_name = "go.gc_duration_seconds", .text = "summary", .type = MetadataType::kType}},
+        .metrics = {Metric{.timeseries = {LabelViewSet{
+                                              {"__name__", "go.gc_duration_seconds"},
+                                              {"quantile", "0"},
+                                          },
+                                          BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 4.9351e-05}}}},
+                    Metric{.timeseries = {LabelViewSet{
+                                              {"__name__", "go.gc_duration_seconds"},
+                                              {"quantile", "0.25"},
+                                          },
+                                          BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 7.424100000000001e-05}}}},
+                    Metric{.timeseries = {LabelViewSet{
+                                              {"__name__", "go.gc_duration_seconds"},
+                                              {"quantile", "0.5"},
+                                              {"a", "b"},
+                                          },
+                                          BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
+                    Metric{.timeseries = {LabelViewSet{
+                                              {"__name__", "go.gc_duration_seconds"},
+                                              {"quantile", "0.8"},
+                                              {"a", "b"},
+                                          },
+                                          BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
+                    Metric{.timeseries = {LabelViewSet{
+                                              {"__name__", "go.gc_duration_seconds"},
+                                              {"quantile", "0.9"},
+                                              {"a", "b"},
+                                          },
+                                          BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
+                    Metric{.timeseries = {LabelViewSet{
+                                              {"__name__", "go.gc_duration_seconds"},
+                                              {"quantile", "1.0"},
+                                              {"a", "b"},
+                                          },
+                                          BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
+                    Metric{.timeseries = {LabelViewSet{
+                                              {"__name__", "go.gc_duration_seconds"},
+                                              {"quantile", "1.0"},
+                                              {"a", "b"},
+                                          },
+                                          BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
+                    Metric{.timeseries = {LabelViewSet{
+                                              {"__name__", "go.gc_duration_seconds"},
+                                              {"quantile", "1.0"},
+                                              {"a", "b"},
+                                          },
+                                          BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
+                    Metric{.timeseries = {LabelViewSet{
+                                              {"__name__", "go.gc_duration_seconds"},
+                                              {"quantile", "1.0"},
+                                              {"a", "b"},
+                                          },
+                                          BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
+                    Metric{.timeseries = {LabelViewSet{
+                                              {"__name__", "go.gc_duration_seconds_count"},
+                                          },
+                                          BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 99}}}},
+                    Metric{.timeseries = {
+                               LabelViewSet{
                                    {"__name__",
                                     "\x48\x65\x69\x7a\xc3\xb6\x6c\x72\xc3\xbc\x63\x6b\x73\x74\x6f\xc3\x9f\x61\x62\x64\xc3\xa4\x6d\x70\x66\x75\x6e\x67\x20\x31"
                                     "\x30\xe2\x82\xac\x20\x6d\x65\x74\x72\x69\x63\x20\x77\x69\x74\x68\x20\x22\x69\x6e\x74\x65\x72\x65\x73\x74\x69\x6e\x67\x22"
@@ -492,31 +428,31 @@ INSTANTIATE_TEST_SUITE_P(
                   "rest_client_exec_plugin_ttl_seconds +Inf\n"
                   "rest_client_exec_plugin_ttl_seconds -Inf\n",
         .result = Error::kNoError,
-        .metrics = {ScrapedMetric{.timeseries = {LabelViewSet{{"__name__", "test_nan"}},
-                                                 BareBones::Vector<Sample>{Sample{kDefaultTimestamp, PromPP::Prometheus::kNormalNan}}}},
-                    ScrapedMetric{.timeseries = {LabelViewSet{{"__name__", "rest_client_exec_plugin_ttl_seconds"}},
-                                                 BareBones::Vector<Sample>{Sample{kDefaultTimestamp, std::numeric_limits<double>::infinity()}}}},
-                    ScrapedMetric{.timeseries = {LabelViewSet{{"__name__", "rest_client_exec_plugin_ttl_seconds"}},
-                                                 BareBones::Vector<Sample>{Sample{kDefaultTimestamp, std::numeric_limits<double>::infinity()}}}},
-                    ScrapedMetric{.timeseries = {LabelViewSet{{"__name__", "rest_client_exec_plugin_ttl_seconds"}},
-                                                 BareBones::Vector<Sample>{Sample{kDefaultTimestamp, -std::numeric_limits<double>::infinity()}}}}}}));
+        .metrics = {
+            Metric{.timeseries = {LabelViewSet{{"__name__", "test_nan"}}, BareBones::Vector<Sample>{Sample{kDefaultTimestamp, PromPP::Prometheus::kNormalNan}}}},
+            Metric{.timeseries = {LabelViewSet{{"__name__", "rest_client_exec_plugin_ttl_seconds"}},
+                                  BareBones::Vector<Sample>{Sample{kDefaultTimestamp, std::numeric_limits<double>::infinity()}}}},
+            Metric{.timeseries = {LabelViewSet{{"__name__", "rest_client_exec_plugin_ttl_seconds"}},
+                                  BareBones::Vector<Sample>{Sample{kDefaultTimestamp, std::numeric_limits<double>::infinity()}}}},
+            Metric{.timeseries = {LabelViewSet{{"__name__", "rest_client_exec_plugin_ttl_seconds"}},
+                                  BareBones::Vector<Sample>{Sample{kDefaultTimestamp, -std::numeric_limits<double>::infinity()}}}}}}));
 
 INSTANTIATE_TEST_SUITE_P(NoNewLine,
                          PrometheusScraperFixture,
                          testing::Values(ScraperCase{.buffer = "extended_monitoring_enabled{namespace=\"kube-system\"} 1",
                                                      .result = Error::kNoError,
-                                                     .metrics = {ScrapedMetric{.timeseries = {LabelViewSet{
-                                                                                                  {"__name__", "extended_monitoring_enabled"},
-                                                                                                  {"namespace", "kube-system"},
-                                                                                              },
-                                                                                              BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}}}},
+                                                     .metrics = {Metric{.timeseries = {LabelViewSet{
+                                                                                           {"__name__", "extended_monitoring_enabled"},
+                                                                                           {"namespace", "kube-system"},
+                                                                                       },
+                                                                                       BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}}}},
                                          ScraperCase{.buffer = "extended_monitoring_enabled{namespace=\"kube-system\"} 1 12345",
                                                      .result = Error::kNoError,
-                                                     .metrics = {ScrapedMetric{.timeseries = {LabelViewSet{
-                                                                                                  {"__name__", "extended_monitoring_enabled"},
-                                                                                                  {"namespace", "kube-system"},
-                                                                                              },
-                                                                                              BareBones::Vector<Sample>{Sample{12345, 1}}}}}}));
+                                                     .metrics = {Metric{.timeseries = {LabelViewSet{
+                                                                                           {"__name__", "extended_monitoring_enabled"},
+                                                                                           {"namespace", "kube-system"},
+                                                                                       },
+                                                                                       BareBones::Vector<Sample>{Sample{12345, 1}}}}}}));
 
 class OpenMetricsScraperFixture : public ScraperFixture<OpenMetricsScraper> {
  protected:
@@ -554,16 +490,15 @@ INSTANTIATE_TEST_SUITE_P(
         ScraperCase{.buffer = "metric 1", .result = Error::kUnexpectedToken, .metrics = {}},
         ScraperCase{.buffer = "metric 1\n",
                     .result = Error::kUnexpectedToken,
-                    .metrics = {ScrapedMetric{.timeseries = {LabelViewSet{{"__name__", "metric"}}, BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}}}},
-        ScraperCase{
-            .buffer = R"(metric_total 1 # {aa="bb"} 4)",
-            .result = Error::kUnexpectedToken,
-            .metrics = {ScrapedMetric{.timeseries = {LabelViewSet{{"__name__", "metric_total"}}, BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}}}},
+                    .metrics = {Metric{.timeseries = {LabelViewSet{{"__name__", "metric"}}, BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}}}},
+        ScraperCase{.buffer = R"(metric_total 1 # {aa="bb"} 4)",
+                    .result = Error::kUnexpectedToken,
+                    .metrics = {Metric{.timeseries = {LabelViewSet{{"__name__", "metric_total"}}, BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}}}},
         ScraperCase{.buffer = "a\n#EOF\n", .result = Error::kUnexpectedToken, .metrics = {}},
         ScraperCase{.buffer = "\n\n#EOF\n", .result = Error::kUnexpectedToken, .metrics = {}},
         ScraperCase{.buffer = "a 1\n#EOF\n",
                     .result = Error::kUnexpectedToken,
-                    .metrics = {ScrapedMetric{.timeseries = {LabelViewSet{{"__name__", "a"}}, BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}}}},
+                    .metrics = {Metric{.timeseries = {LabelViewSet{{"__name__", "a"}}, BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}}}},
         ScraperCase{.buffer = "9\n#EOF\n", .result = Error::kUnexpectedToken, .metrics = {}},
         ScraperCase{.buffer = "# TYPE \n#EOF\n", .result = Error::kUnexpectedToken, .metrics = {}},
         ScraperCase{.buffer = "# UNIT \n#EOF\n", .result = Error::kUnexpectedToken, .metrics = {}},
@@ -680,140 +615,140 @@ INSTANTIATE_TEST_SUITE_P(
         .result = Error::kNoError,
         .metadata =
             {
-                ScrapedMetadata{.metric_name = "go_gc_duration_seconds", .text = "A summary of the GC invocation durations.", .type = MetadataType::kHelp},
-                ScrapedMetadata{.metric_name = "go_gc_duration_seconds", .text = "summary", .type = MetadataType::kType},
-                ScrapedMetadata{.metric_name = "go_gc_duration_seconds", .text = "seconds", .type = MetadataType::kUnit},
-                ScrapedMetadata{.metric_name = "nohelp1", .text = "", .type = MetadataType::kHelp},
-                ScrapedMetadata{.metric_name = "help2", .text = R"(escape \ \n \\ \" \x chars)", .type = MetadataType::kHelp},
-                ScrapedMetadata{.metric_name = "nounit", .text = "", .type = MetadataType::kUnit},
-                ScrapedMetadata{.metric_name = "go_goroutines", .text = "Number of goroutines that currently exist.", .type = MetadataType::kHelp},
-                ScrapedMetadata{.metric_name = "go_goroutines", .text = "gauge", .type = MetadataType::kType},
-                ScrapedMetadata{.metric_name = "hh", .text = "histogram", .type = MetadataType::kType},
-                ScrapedMetadata{.metric_name = "gh", .text = "gaugehistogram", .type = MetadataType::kType},
-                ScrapedMetadata{.metric_name = "hhh", .text = "histogram", .type = MetadataType::kType},
-                ScrapedMetadata{.metric_name = "ggh", .text = "gaugehistogram", .type = MetadataType::kType},
-                ScrapedMetadata{.metric_name = "smr_seconds", .text = "summary", .type = MetadataType::kType},
-                ScrapedMetadata{.metric_name = "ii", .text = "info", .type = MetadataType::kType},
-                ScrapedMetadata{.metric_name = "ss", .text = "stateset", .type = MetadataType::kType},
-                ScrapedMetadata{.metric_name = "un", .text = "unknown", .type = MetadataType::kType},
-                ScrapedMetadata{.metric_name = "foo", .text = "counter", .type = MetadataType::kType},
-                ScrapedMetadata{.metric_name = "metric", .text = "foo\0bar"sv, .type = MetadataType::kHelp},
+                Metadata{.metric_name = "go_gc_duration_seconds", .text = "A summary of the GC invocation durations.", .type = MetadataType::kHelp},
+                Metadata{.metric_name = "go_gc_duration_seconds", .text = "summary", .type = MetadataType::kType},
+                Metadata{.metric_name = "go_gc_duration_seconds", .text = "seconds", .type = MetadataType::kUnit},
+                Metadata{.metric_name = "nohelp1", .text = "", .type = MetadataType::kHelp},
+                Metadata{.metric_name = "help2", .text = R"(escape \ \n \\ \" \x chars)", .type = MetadataType::kHelp},
+                Metadata{.metric_name = "nounit", .text = "", .type = MetadataType::kUnit},
+                Metadata{.metric_name = "go_goroutines", .text = "Number of goroutines that currently exist.", .type = MetadataType::kHelp},
+                Metadata{.metric_name = "go_goroutines", .text = "gauge", .type = MetadataType::kType},
+                Metadata{.metric_name = "hh", .text = "histogram", .type = MetadataType::kType},
+                Metadata{.metric_name = "gh", .text = "gaugehistogram", .type = MetadataType::kType},
+                Metadata{.metric_name = "hhh", .text = "histogram", .type = MetadataType::kType},
+                Metadata{.metric_name = "ggh", .text = "gaugehistogram", .type = MetadataType::kType},
+                Metadata{.metric_name = "smr_seconds", .text = "summary", .type = MetadataType::kType},
+                Metadata{.metric_name = "ii", .text = "info", .type = MetadataType::kType},
+                Metadata{.metric_name = "ss", .text = "stateset", .type = MetadataType::kType},
+                Metadata{.metric_name = "un", .text = "unknown", .type = MetadataType::kType},
+                Metadata{.metric_name = "foo", .text = "counter", .type = MetadataType::kType},
+                Metadata{.metric_name = "metric", .text = "foo\0bar"sv, .type = MetadataType::kHelp},
             },
         .metrics = {
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "go_gc_duration_seconds"},
-                                             {"quantile", "0"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 4.9351e-05}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "go_gc_duration_seconds"},
-                                             {"quantile", "0.25"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 7.424100000000001e-05}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "go_gc_duration_seconds"},
-                                             {"quantile", "0.5"},
-                                             {"a", "b"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "go_gc_duration_seconds"},
-                                             {"quantile", "1.0"},
-                                             {"a", "b"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "go_gc_duration_seconds_count"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 99}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "some:aggregate:rate5m"},
-                                             {"a_b", "c"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "go_goroutines"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{123123, 33}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "hh_bucket"},
-                                             {"le", "+Inf"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "gh_bucket"},
-                                             {"le", "+Inf"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "hhh_bucket"},
-                                             {"le", "+Inf"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "hhh_count"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "ggh_bucket"},
-                                             {"le", "+Inf"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "ggh_count"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "smr_seconds_count"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 2}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "smr_seconds_sum"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 42}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "ii"},
-                                             {"foo", "bar"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "ss"},
-                                             {"ss", "foo"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "ss"},
-                                             {"ss", "bar"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 0}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "ss"},
-                                             {"A", "a"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 0}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "_metric_starting_with_underscore"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "testmetric"},
-                                             {"_label_starting_with_underscore", "foo"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "testmetric"},
-                                             {"label", "\"bar\""},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "foo_total"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{1520879607789, 17.0}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "null_byte_metric"},
-                                             {"a", "abc\0"sv},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
+            Metric{.timeseries = {LabelViewSet{
+                                      {"__name__", "go_gc_duration_seconds"},
+                                      {"quantile", "0"},
+                                  },
+                                  BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 4.9351e-05}}}},
+            Metric{.timeseries = {LabelViewSet{
+                                      {"__name__", "go_gc_duration_seconds"},
+                                      {"quantile", "0.25"},
+                                  },
+                                  BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 7.424100000000001e-05}}}},
+            Metric{.timeseries = {LabelViewSet{
+                                      {"__name__", "go_gc_duration_seconds"},
+                                      {"quantile", "0.5"},
+                                      {"a", "b"},
+                                  },
+                                  BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
+            Metric{.timeseries = {LabelViewSet{
+                                      {"__name__", "go_gc_duration_seconds"},
+                                      {"quantile", "1.0"},
+                                      {"a", "b"},
+                                  },
+                                  BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
+            Metric{.timeseries = {LabelViewSet{
+                                      {"__name__", "go_gc_duration_seconds_count"},
+                                  },
+                                  BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 99}}}},
+            Metric{.timeseries = {LabelViewSet{
+                                      {"__name__", "some:aggregate:rate5m"},
+                                      {"a_b", "c"},
+                                  },
+                                  BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
+            Metric{.timeseries = {LabelViewSet{
+                                      {"__name__", "go_goroutines"},
+                                  },
+                                  BareBones::Vector<Sample>{Sample{123123, 33}}}},
+            Metric{.timeseries = {LabelViewSet{
+                                      {"__name__", "hh_bucket"},
+                                      {"le", "+Inf"},
+                                  },
+                                  BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
+            Metric{.timeseries = {LabelViewSet{
+                                      {"__name__", "gh_bucket"},
+                                      {"le", "+Inf"},
+                                  },
+                                  BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
+            Metric{.timeseries = {LabelViewSet{
+                                      {"__name__", "hhh_bucket"},
+                                      {"le", "+Inf"},
+                                  },
+                                  BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
+            Metric{.timeseries = {LabelViewSet{
+                                      {"__name__", "hhh_count"},
+                                  },
+                                  BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
+            Metric{.timeseries = {LabelViewSet{
+                                      {"__name__", "ggh_bucket"},
+                                      {"le", "+Inf"},
+                                  },
+                                  BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
+            Metric{.timeseries = {LabelViewSet{
+                                      {"__name__", "ggh_count"},
+                                  },
+                                  BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
+            Metric{.timeseries = {LabelViewSet{
+                                      {"__name__", "smr_seconds_count"},
+                                  },
+                                  BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 2}}}},
+            Metric{.timeseries = {LabelViewSet{
+                                      {"__name__", "smr_seconds_sum"},
+                                  },
+                                  BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 42}}}},
+            Metric{.timeseries = {LabelViewSet{
+                                      {"__name__", "ii"},
+                                      {"foo", "bar"},
+                                  },
+                                  BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
+            Metric{.timeseries = {LabelViewSet{
+                                      {"__name__", "ss"},
+                                      {"ss", "foo"},
+                                  },
+                                  BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
+            Metric{.timeseries = {LabelViewSet{
+                                      {"__name__", "ss"},
+                                      {"ss", "bar"},
+                                  },
+                                  BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 0}}}},
+            Metric{.timeseries = {LabelViewSet{
+                                      {"__name__", "ss"},
+                                      {"A", "a"},
+                                  },
+                                  BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 0}}}},
+            Metric{.timeseries = {LabelViewSet{
+                                      {"__name__", "_metric_starting_with_underscore"},
+                                  },
+                                  BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
+            Metric{.timeseries = {LabelViewSet{
+                                      {"__name__", "testmetric"},
+                                      {"_label_starting_with_underscore", "foo"},
+                                  },
+                                  BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
+            Metric{.timeseries = {LabelViewSet{
+                                      {"__name__", "testmetric"},
+                                      {"label", "\"bar\""},
+                                  },
+                                  BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
+            Metric{.timeseries = {LabelViewSet{
+                                      {"__name__", "foo_total"},
+                                  },
+                                  BareBones::Vector<Sample>{Sample{1520879607789, 17.0}}}},
+            Metric{.timeseries = {LabelViewSet{
+                                      {"__name__", "null_byte_metric"},
+                                      {"a", "abc\0"sv},
+                                  },
+                                  BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}},
         }}));
 
 INSTANTIATE_TEST_SUITE_P(
@@ -837,43 +772,43 @@ INSTANTIATE_TEST_SUITE_P(
         .result = Error::kNoError,
         .metadata =
             {
-                ScrapedMetadata{.metric_name = "go.gc_duration_seconds", .text = "A summary of the GC invocation durations.", .type = MetadataType::kHelp},
-                ScrapedMetadata{.metric_name = "go.gc_duration_seconds", .text = "summary", .type = MetadataType::kType},
+                Metadata{.metric_name = "go.gc_duration_seconds", .text = "A summary of the GC invocation durations.", .type = MetadataType::kHelp},
+                Metadata{.metric_name = "go.gc_duration_seconds", .text = "summary", .type = MetadataType::kType},
             },
         .metrics = {
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "go.gc_duration_seconds"},
-                                             {"quantile", "0"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 4.9351e-05}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "go.gc_duration_seconds"},
-                                             {"quantile", "0.25"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 7.424100000000001e-05}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "go.gc_duration_seconds"},
-                                             {"quantile", "0.5"},
-                                             {"a", "b"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "http.status"},
-                                             {"q", "0.9"},
-                                             {"a", "b"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"q", "0.9"},
-                                             {"__name__", "http.status"},
-                                             {"a", "b"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
-            ScrapedMetric{.timeseries = {LabelViewSet{
-                                             {"__name__", "go.gc_duration_seconds_sum"},
-                                         },
-                                         BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 0.004304266}}}},
-            ScrapedMetric{
+            Metric{.timeseries = {LabelViewSet{
+                                      {"__name__", "go.gc_duration_seconds"},
+                                      {"quantile", "0"},
+                                  },
+                                  BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 4.9351e-05}}}},
+            Metric{.timeseries = {LabelViewSet{
+                                      {"__name__", "go.gc_duration_seconds"},
+                                      {"quantile", "0.25"},
+                                  },
+                                  BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 7.424100000000001e-05}}}},
+            Metric{.timeseries = {LabelViewSet{
+                                      {"__name__", "go.gc_duration_seconds"},
+                                      {"quantile", "0.5"},
+                                      {"a", "b"},
+                                  },
+                                  BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
+            Metric{.timeseries = {LabelViewSet{
+                                      {"__name__", "http.status"},
+                                      {"q", "0.9"},
+                                      {"a", "b"},
+                                  },
+                                  BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
+            Metric{.timeseries = {LabelViewSet{
+                                      {"q", "0.9"},
+                                      {"__name__", "http.status"},
+                                      {"a", "b"},
+                                  },
+                                  BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 8.3835e-05}}}},
+            Metric{.timeseries = {LabelViewSet{
+                                      {"__name__", "go.gc_duration_seconds_sum"},
+                                  },
+                                  BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 0.004304266}}}},
+            Metric{
                 .timeseries = {LabelViewSet{
                                    {"__name__",
                                     "\x48\x65\x69\x7a\xc3\xb6\x6c\x72\xc3\xbc\x63\x6b\x73\x74\x6f\xc3\x9f\x61\x62\x64\xc3\xa4\x6d\x70\x66\x75\x6e\x67\x20\x31"
@@ -888,25 +823,25 @@ INSTANTIATE_TEST_SUITE_P(NullByte,
                          OpenMetricsScraperFixture,
                          testing::Values(ScraperCase{.buffer = "null_byte_metric{a=\"abc\x00\"} 1\n# EOF\n"sv,
                                                      .result = Error::kNoError,
-                                                     .metrics = {ScrapedMetric{.timeseries = {LabelViewSet{
-                                                                                                  {"__name__", "null_byte_metric"},
-                                                                                                  {"a", "abc\x00"sv},
-                                                                                              },
-                                                                                              BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}}}},
+                                                     .metrics = {Metric{.timeseries = {LabelViewSet{
+                                                                                           {"__name__", "null_byte_metric"},
+                                                                                           {"a", "abc\x00"sv},
+                                                                                       },
+                                                                                       BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}}}},
                                          ScraperCase{.buffer = "null_byte_metric{a=\"abc\x00\"} 1\n# EOF\n"sv,
                                                      .result = Error::kNoError,
-                                                     .metrics = {ScrapedMetric{.timeseries = {LabelViewSet{
-                                                                                                  {"__name__", "null_byte_metric"},
-                                                                                                  {"a", "abc\x00"sv},
-                                                                                              },
-                                                                                              BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}}}},
+                                                     .metrics = {Metric{.timeseries = {LabelViewSet{
+                                                                                           {"__name__", "null_byte_metric"},
+                                                                                           {"a", "abc\x00"sv},
+                                                                                       },
+                                                                                       BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}}}},
                                          ScraperCase{.buffer = "a{b=\"\x00\"} 1\n# EOF\n"sv,
                                                      .result = Error::kNoError,
-                                                     .metrics = {ScrapedMetric{.timeseries = {LabelViewSet{
-                                                                                                  {"__name__", "a"},
-                                                                                                  {"b", "\x00"sv},
-                                                                                              },
-                                                                                              BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}}}},
+                                                     .metrics = {Metric{.timeseries = {LabelViewSet{
+                                                                                           {"__name__", "a"},
+                                                                                           {"b", "\x00"sv},
+                                                                                       },
+                                                                                       BareBones::Vector<Sample>{Sample{kDefaultTimestamp, 1}}}}}},
                                          ScraperCase{.buffer = "a{b=\x00\"ssss\"} 1\n# EOF\n"sv, .result = Error::kUnexpectedToken, .metrics = {}}));
 
 }  // namespace

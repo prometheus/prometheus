@@ -15,6 +15,8 @@ import (
 type ShardedData interface {
 	Cluster() string
 	Replica() string
+
+	RangeMetadata(f func(metadata WALScraperHashdexMetadata) bool)
 }
 
 // WALProtobufHashdex - Presharding data, GO wrapper for WALProtobufHashdex, init from GO and filling from C/C++.
@@ -92,7 +94,7 @@ func NewWALProtobufHashdex(protoData []byte, limits WALHashdexLimits) (ShardedDa
 	}
 	runtime.SetFinalizer(h, func(h *WALProtobufHashdex) {
 		runtime.KeepAlive(h.data)
-		walProtobufHashdexDtor(h.hashdex)
+		walHashdexDtor(h.hashdex)
 	})
 	var exception []byte
 	h.cluster, h.replica, exception = walProtobufHashdexPresharding(h.hashdex, protoData)
@@ -114,12 +116,31 @@ func (h *WALProtobufHashdex) Replica() string {
 	return strings.Clone(h.replica)
 }
 
+// RangeMetadata calls f sequentially for each metadata present in the hashdex.
+// If f returns false, range stops the iteration.
+func (h *WALProtobufHashdex) RangeMetadata(f func(metadata WALScraperHashdexMetadata) bool) {
+	mds := walProtobufHashdexGetMetadata(h.hashdex)
+
+	for i := range mds {
+		if !f(mds[i]) {
+			break
+		}
+	}
+
+	freeBytes(*(*[]byte)(unsafe.Pointer(&mds)))
+}
+
 // WALGoModelHashdex - Go wrapper for PromPP::WAL::GoModelHashdex..
 type WALGoModelHashdex struct {
 	hashdex uintptr
 	data    []model.TimeSeries
 	cluster string
 	replica string
+}
+
+func (h *WALGoModelHashdex) RangeMetadata(f func(metadata WALScraperHashdexMetadata) bool) {
+	//TODO implement me
+	panic("implement me")
 }
 
 // cptr - pointer to underlying c++ object.
@@ -145,7 +166,7 @@ func NewWALGoModelHashdex(limits WALHashdexLimits, data []model.TimeSeries) (Sha
 	}
 	runtime.SetFinalizer(h, func(h *WALGoModelHashdex) {
 		runtime.KeepAlive(h.data)
-		walGoModelHashdexDtor(h.hashdex)
+		walHashdexDtor(h.hashdex)
 	})
 	var exception []byte
 	h.cluster, h.replica, exception = walGoModelHashdexPresharding(h.hashdex, data)
@@ -181,6 +202,11 @@ type WALBasicDecoderHashdex struct {
 	replica  string
 }
 
+func (h *WALBasicDecoderHashdex) RangeMetadata(f func(metadata WALScraperHashdexMetadata) bool) {
+	//TODO implement me
+	panic("implement me")
+}
+
 // NewWALBasicDecoderHashdex init new WALBasicDecoderHashdex with c-pointer PromPP::WAL::WALBasicDecoderHashdex.
 func NewWALBasicDecoderHashdex(hashdex uintptr, meta *MetaInjection, cluster, replica string) *WALBasicDecoderHashdex {
 	h := &WALBasicDecoderHashdex{
@@ -194,7 +220,7 @@ func NewWALBasicDecoderHashdex(hashdex uintptr, meta *MetaInjection, cluster, re
 		if h.hashdex == 0 {
 			return
 		}
-		walBasicDecoderHashdexDtor(h.hashdex)
+		walHashdexDtor(h.hashdex)
 	})
 	return h
 }
@@ -259,12 +285,12 @@ func errorFromCode(code uint32) error {
 }
 
 const (
-	// ScraperMetadataHelp type of metadata "Help" from hashdex metadata.
-	ScraperMetadataHelp uint32 = iota
-	// ScraperMetadataType type of metadata "Type" from hashdex metadata.
-	ScraperMetadataType
-	// ScraperMetadataUnit type of metadata "Unit" from hashdex metadata.
-	ScraperMetadataUnit
+	// HashdexMetadataHelp type of metadata "Help" from hashdex metadata.
+	HashdexMetadataHelp uint32 = iota
+	// HashdexMetadataType type of metadata "Type" from hashdex metadata.
+	HashdexMetadataType
+	// HashdexMetadataUnit type of metadata "Unit" from hashdex metadata.
+	HashdexMetadataUnit
 )
 
 // WALScraperHashdexMetadata metadata from hashdex.
@@ -289,7 +315,7 @@ func NewPrometheusScraperHashdex() *WALPrometheusScraperHashdex {
 		buffer:  nil,
 	}
 	runtime.SetFinalizer(h, func(h *WALPrometheusScraperHashdex) {
-		walPrometheusScraperHashdexDtor(h.hashdex)
+		walHashdexDtor(h.hashdex)
 	})
 	return h
 }
@@ -345,7 +371,7 @@ func NewOpenMetricsScraperHashdex() *WALOpenMetricsScraperHashdex {
 		buffer:  nil,
 	}
 	runtime.SetFinalizer(h, func(h *WALOpenMetricsScraperHashdex) {
-		walOpenMetricsScraperHashdexDtor(h.hashdex)
+		walHashdexDtor(h.hashdex)
 	})
 	return h
 }
