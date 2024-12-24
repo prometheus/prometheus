@@ -61,9 +61,10 @@ func (d *Decoder) Decode(segment []byte, minTimestamp int64) (*DecodedSegment, e
 		return nil, err
 	}
 	return &DecodedSegment{
-		Samples:             samples,
-		MaxTimestamp:        stats.MaxTimestamp(),
-		DroppedSamplesCount: stats.DroppedSampleCount(),
+		Samples:              samples,
+		MaxTimestamp:         stats.MaxTimestamp(),
+		OutdatedSamplesCount: stats.OutdatedSampleCount(),
+		DroppedSamplesCount:  stats.DroppedSampleCount(),
 	}, nil
 }
 
