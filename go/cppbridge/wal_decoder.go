@@ -313,10 +313,6 @@ func (d *WALOutputDecoder) Decode(
 	segment []byte,
 	lowerLimitTimestamp int64,
 ) (*DecodedRefSamples, OutputDecoderStats, error) {
-	if ctx.Err() != nil {
-		return nil, OutputDecoderStats{}, ctx.Err()
-	}
-
 	stats, refSamples, exception := walOutputDecoderDecode(segment, d.decoder, lowerLimitTimestamp)
 	return newDecodedRefSamples(refSamples, d.shardID), stats, handleException(exception)
 }

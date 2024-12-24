@@ -18,7 +18,8 @@ const (
 	remoteName = "remote_name"
 	endpoint   = "url"
 
-	reasonTooOld = "too_old"
+	reasonTooOld        = "too_old"
+	reasonDroppedSeries = "dropped_series"
 )
 
 type DestinationConfig struct {

@@ -48,17 +48,23 @@ func labelsToCppBridgeLabels(labels labels.Labels) []cppbridge.Label {
 }
 
 type DecodedSegment struct {
-	ID           uint32
-	Samples      *cppbridge.DecodedRefSamples
-	MaxTimestamp int64
+	ID                   uint32
+	Samples              *cppbridge.DecodedRefSamples
+	MaxTimestamp         int64
+	OutdatedSamplesCount uint64
+	DroppedSamplesCount  uint64
 }
 
 func (d *Decoder) Decode(segment []byte, minTimestamp int64) (*DecodedSegment, error) {
-	samples, maxTimestamp, err := d.outputDecoder.Decode(segment, minTimestamp)
+	samples, stats, err := d.outputDecoder.Decode(segment, minTimestamp)
 	if err != nil {
 		return nil, err
 	}
-	return &DecodedSegment{Samples: samples, MaxTimestamp: maxTimestamp}, nil
+	return &DecodedSegment{
+		Samples:             samples,
+		MaxTimestamp:        stats.MaxTimestamp(),
+		DroppedSamplesCount: stats.DroppedSampleCount(),
+	}, nil
 }
 
 func (d *Decoder) LoadFrom(reader io.Reader) error {

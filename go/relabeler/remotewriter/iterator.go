@@ -77,24 +77,31 @@ type Iterator struct {
 	scrapeInterval time.Duration
 }
 
+type MessageShard struct {
+	Protobuf      *cppbridge.SnappyProtobufEncodedData
+	Size          uint64
+	SampleCount   uint64
+	MaxTimestamp  int64
+	Delivered     bool
+	PostProcessed bool
+}
+
 type Message struct {
-	MaxTimestamp    int64
-	EncodedProtobuf []*cppbridge.SnappyProtobufEncodedData
+	MaxTimestamp int64
+	Shards       []*MessageShard
+}
+
+func (m *Message) HasDataToDeliver() bool {
+	for _, shrd := range m.Shards {
+		if !shrd.Delivered {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Message) IsObsoleted(minTimestamp int64) bool {
 	return m.MaxTimestamp < minTimestamp
-}
-
-func (m *Message) SizeInBytes() int {
-	size := 0
-	for _, protobuf := range m.EncodedProtobuf {
-		_ = protobuf.Do(func(buf []byte) error {
-			size += len(buf)
-			return nil
-		})
-	}
-	return size
 }
 
 func newIterator(
@@ -144,7 +151,6 @@ readLoop:
 		case <-i.clock.After(delay):
 		}
 
-		// todo: output decoder may drop samples (droppedSamplesTotal)
 		decodedSegments, err := i.dataSource.Read(ctx, i.targetSegmentID, i.minTimestamp())
 		if err != nil {
 			if errors.Is(err, ErrEndOfBlock) {
@@ -170,7 +176,7 @@ readLoop:
 		i.targetSegmentID++
 		i.targetSegmentIsPartiallyRead = false
 
-		if b.filled() {
+		if b.IsFilled() {
 			break readLoop
 		}
 
@@ -179,7 +185,12 @@ readLoop:
 
 	readDuration := i.clock.Since(startTime)
 
-	if b.isEmpty() {
+	if b.HasDroppedSamples() {
+		i.metrics.droppedSamplesTotal.WithLabelValues(reasonTooOld).Add(float64(b.OutdatedSamplesCount()))
+		i.metrics.droppedSamplesTotal.WithLabelValues(reasonDroppedSeries).Add(float64(b.DroppedSamplesCount()))
+	}
+
+	if b.IsEmpty() {
 		return nil
 	}
 
@@ -196,60 +207,84 @@ readLoop:
 
 	msg, err := i.encode(b.Data(), uint16(numberOfShards))
 	if err != nil {
-		// todo: only ctx.Err()?
 		return err
 	}
 
 	numberOfSamples := b.NumberOfSamples()
-	//sizeInBytes := msg.SizeInBytes()
 
 	b = nil
 
+	sendIteration := 0
 	err = backoff.Retry(func() error {
+		defer func() { sendIteration++ }()
 		if msg.IsObsoleted(i.minTimestamp()) {
-			// todo: calculate samples per protobuf
-			// i.metrics.droppedSamplesTotal.WithLabelValues(reasonTooOld).Add(float64(numberOfSamples))
+			for _, messageShard := range msg.Shards {
+				if messageShard.Delivered {
+					continue
+				}
+				i.metrics.droppedSamplesTotal.WithLabelValues(reasonTooOld).Add(float64(messageShard.SampleCount))
+			}
 			return nil
 		}
 
 		i.metrics.samplesTotal.Add(float64(numberOfSamples))
 
-		errs := make([]error, len(msg.EncodedProtobuf))
 		wg := &sync.WaitGroup{}
-		for shardID, protobuf := range msg.EncodedProtobuf {
-			if protobuf == nil {
+		for _, shrd := range msg.Shards {
+			if shrd.Delivered {
 				continue
 			}
 			wg.Add(1)
-			go func(shardID int, protobuf *cppbridge.SnappyProtobufEncodedData) {
+			go func(shrd *MessageShard) {
 				defer wg.Done()
 				begin := i.clock.Now()
-				writeErr := i.writer.Write(ctx, protobuf)
+				writeErr := i.writer.Write(ctx, shrd.Protobuf)
 				i.metrics.sentBatchDuration.Observe(i.clock.Since(begin).Seconds())
-				errs[shardID] = writeErr
-			}(shardID, protobuf)
+				if writeErr != nil {
+					logger.Errorf("failed to send protobuf: %v", err)
+					return
+				}
+				shrd.Delivered = true
+			}(shrd)
 		}
 		wg.Wait()
 
-		for shardID, writeErr := range errs {
-			if writeErr != nil {
-				logger.Errorf("failed to write: %v", writeErr)
+		var failedSamplesTotal uint64
+		var sentBytesTotal uint64
+		var highestSentTimestamp int64
+		var retriedSamplesTotal uint64
+		for _, shrd := range msg.Shards {
+			if shrd.Delivered {
+				if shrd.PostProcessed {
+					continue
+				}
+				// delivered on this iteration
+				shrd.PostProcessed = true
+				retriedSamplesTotal += shrd.SampleCount
+				sentBytesTotal += shrd.Size
+				if highestSentTimestamp < shrd.MaxTimestamp {
+					highestSentTimestamp = shrd.MaxTimestamp
+				}
 				continue
 			}
-			msg.EncodedProtobuf[shardID] = nil
+			// delivery failed bool
+			retriedSamplesTotal += shrd.SampleCount
+			failedSamplesTotal += shrd.SampleCount
 		}
 
-		resultErr := errors.Join(errs...)
-		if resultErr != nil {
-			// todo: per protobuf (failedSamplesTotal)
-			// i.metrics.failedSamplesTotal.Add(float64(numberOfSamples))
-		} else {
-			// todo: per protobuf (sentBytesTotal)
-			// i.metrics.sentBytesTotal.Add(float64(sizeInBytes))
-			// todo: per protobuf (highestSentTimestamp, retriedSamplesTotal, maxSamplesPerSend)
-			// i.metrics.highestSentTimestamp.Set(float64(msg.MaxTimestamp))
+		i.metrics.failedSamplesTotal.Add(float64(failedSamplesTotal))
+		i.metrics.sentBytesTotal.Add(float64(sentBytesTotal))
+		i.metrics.highestSentTimestamp.Set(float64(highestSentTimestamp))
+
+		if sendIteration > 0 {
+			i.metrics.retriedSamplesTotal.Add(float64(retriedSamplesTotal))
 		}
-		return resultErr
+
+		if msg.HasDataToDeliver() {
+			return errors.New("not all data delivered")
+		}
+
+		return nil
 	},
 		backoff.WithContext(
 			backoff.NewExponentialBackOff(
@@ -287,14 +322,29 @@ func (i *Iterator) encode(segments []*DecodedSegment, numberOfShards uint16) (*M
 	}
 
 	protobufEncoder := cppbridge.NewWALProtobufEncoder(i.dataSource.LSSes())
-	encodedProtobuf, err := protobufEncoder.Encode(batchToEncode, numberOfShards)
+	protobufs, err := protobufEncoder.Encode(batchToEncode, numberOfShards)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode protobuf: %w", err)
 	}
-
+	shards := make([]*MessageShard, 0, len(protobufs))
+	for _, protobuf := range protobufs {
+		proto := protobuf
+		var size uint64
+		_ = proto.Do(func(buf []byte) error {
+			size = uint64(len(buf))
+			return nil
+		})
+		shards = append(shards, &MessageShard{
+			Protobuf:     protobuf,
+			Size:         size,
+			SampleCount:  protobuf.SamplesCount(),
+			MaxTimestamp: protobuf.MaxTimestamp(),
+			Delivered:    false,
+		})
+	}
 	return &Message{
-		MaxTimestamp:    maxTimestamp,
-		EncodedProtobuf: encodedProtobuf,
+		MaxTimestamp: maxTimestamp,
+		Shards:       shards,
 	}, nil
 }
 
@@ -331,6 +381,8 @@ type batch struct {
 	segments                   []*DecodedSegment
 	numberOfShards             int
 	numberOfSamples            int
+	outdatedSamplesCount       uint64
+	droppedSamplesCount        uint64
 	maxNumberOfSamplesPerShard int
 }
 
@@ -345,15 +397,29 @@ func (b *batch) add(segments []*DecodedSegment) {
 	for _, segment := range segments {
 		b.segments = append(b.segments, segment)
 		b.numberOfSamples += segment.Samples.Size()
+		b.outdatedSamplesCount += segment.OutdatedSamplesCount
+		b.droppedSamplesCount += segment.DroppedSamplesCount
 	}
 }
 
-func (b *batch) filled() bool {
+func (b *batch) IsFilled() bool {
 	return b.numberOfSamples > b.numberOfShards*b.maxNumberOfSamplesPerShard
 }
 
-func (b *batch) isEmpty() bool {
+func (b *batch) IsEmpty() bool {
 	return b.numberOfSamples == 0
+}
+
+func (b *batch) HasDroppedSamples() bool {
+	return b.droppedSamplesCount > 0 || b.outdatedSamplesCount > 0
+}
+
+func (b *batch) OutdatedSamplesCount() uint64 {
+	return b.outdatedSamplesCount
+}
+
+func (b *batch) DroppedSamplesCount() uint64 {
+	return b.droppedSamplesCount
 }
 
 func (b *batch) NumberOfSamples() int {
