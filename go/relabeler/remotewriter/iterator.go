@@ -139,13 +139,14 @@ func (i *Iterator) Next(ctx context.Context) error {
 	numberOfShards := i.outputSharder.NumberOfShards()
 	i.metrics.numShards.Set(float64(numberOfShards))
 	b := newBatch(numberOfShards, i.queueConfig.MaxSamplesPerSend)
+	deadline := i.clock.After(i.scrapeInterval)
 
 readLoop:
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-i.clock.After(i.scrapeInterval):
+		case <-deadline:
 			deadlineReached = true
 			break readLoop
 		case <-i.clock.After(delay):
@@ -241,7 +242,7 @@ readLoop:
 				writeErr := i.writer.Write(ctx, shrd.Protobuf)
 				i.metrics.sentBatchDuration.Observe(i.clock.Since(begin).Seconds())
 				if writeErr != nil {
-					logger.Errorf("failed to send protobuf: %v", err)
+					logger.Errorf("failed to send protobuf: %v", writeErr)
 					return
 				}
 				shrd.Delivered = true
