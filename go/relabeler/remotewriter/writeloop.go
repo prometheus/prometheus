@@ -276,10 +276,21 @@ func scanForNextHead(ctx context.Context, dataDir string, headCatalog Catalog, d
 	}
 
 	var headFound bool
-	for _, headRecord := range headRecords {
+	for index, headRecord := range headRecords {
 		headFound, err = scanHeadForDestination(filepath.Join(dataDir, headRecord.Dir()), destinationName)
 		if err != nil {
-			return headRecord, false, err
+			if !headRecord.Corrupted() {
+				logger.Errorf("head %s is corrupted: %v", headRecord.ID(), err)
+				if _, corruptErr := headCatalog.SetCorrupted(headRecord.ID()); corruptErr != nil {
+					logger.Errorf("failed to set corrupted state: %v", corruptErr)
+				}
+			}
+
+			if index == len(headRecords)-1 {
+				return nil, false, fmt.Errorf("no new heads")
+			}
+
+			continue
 		}
 		if headFound {
 			return headRecord, true, nil
