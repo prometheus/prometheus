@@ -276,7 +276,7 @@ func scanForNextHead(ctx context.Context, dataDir string, headCatalog Catalog, d
 	}
 
 	var headFound bool
-	for index, headRecord := range headRecords {
+	for _, headRecord := range headRecords {
 		headFound, err = scanHeadForDestination(filepath.Join(dataDir, headRecord.Dir()), destinationName)
 		if err != nil {
 			if !headRecord.Corrupted() {
@@ -284,10 +284,6 @@ func scanForNextHead(ctx context.Context, dataDir string, headCatalog Catalog, d
 				if _, corruptErr := headCatalog.SetCorrupted(headRecord.ID()); corruptErr != nil {
 					logger.Errorf("failed to set corrupted state: %v", corruptErr)
 				}
-			}
-
-			if index == len(headRecords)-1 {
-				return nil, false, fmt.Errorf("no new heads")
 			}
 
 			continue
@@ -298,7 +294,7 @@ func scanForNextHead(ctx context.Context, dataDir string, headCatalog Catalog, d
 	}
 
 	// track of the previous destination not found, selecting last head
-	return headRecords[len(headRecords)-1], false, nil
+	return headRecords[0], false, nil
 }
 
 func scanHeadForDestination(dirPath string, destinationName string) (bool, error) {
