@@ -770,7 +770,7 @@ func (e *Encoder) HistogramSamples(histograms []RefHistogramSample, b []byte) ([
 		EncodeHistogram(&buf, h.H)
 	}
 
-	// Reset buffer if only custom bucket histograms existed in list of histogram samples
+	// Reset buffer if only custom bucket histograms existed in list of histogram samples.
 	if len(histograms) == len(customBucketHistograms) {
 		buf.Reset()
 	}

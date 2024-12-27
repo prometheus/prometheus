@@ -585,7 +585,7 @@ func BenchmarkWAL_HistogramEncoding(b *testing.B) {
 		for _, labelCount := range []int{0, 10, 50} {
 			for _, histograms := range []int{10, 100, 1000} {
 				for _, buckets := range []int{0, 1, 10, 100} {
-					b.Run(fmt.Sprintf("%s labels=%d histograms=%d buckets=%d", maker.name, labelCount, histograms, buckets), func(b *testing.B) {
+					b.Run(fmt.Sprintf("type=%s/labels=%d/histograms=%d/buckets=%d", maker.name, labelCount, histograms, buckets), func(b *testing.B) {
 						resetCache()
 						maker.init(labelCount, histograms, buckets)
 						enc := Encoder{}
@@ -598,6 +598,7 @@ func BenchmarkWAL_HistogramEncoding(b *testing.B) {
 							if len(leftOver) > 0 {
 								enc.CustomBucketsHistogramSamples(leftOver, buf)
 							}
+							b.ReportMetric(float64(len(buf)), "recordBytes/ops")
 						}
 					})
 				}
