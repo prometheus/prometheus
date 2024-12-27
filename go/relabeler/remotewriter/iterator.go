@@ -4,14 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"sync"
+	"time"
+
 	"github.com/cenkalti/backoff/v4"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 	"github.com/prometheus/prometheus/config"
-	"math"
-	"sync"
-	"time"
+	"github.com/prometheus/prometheus/storage/remote"
 )
 
 type DataSource interface {
@@ -243,9 +245,9 @@ readLoop:
 				i.metrics.sentBatchDuration.Observe(i.clock.Since(begin).Seconds())
 				if writeErr != nil {
 					logger.Errorf("failed to send protobuf: %v", writeErr)
-					return
 				}
-				shrd.Delivered = true
+
+				shrd.Delivered = !errors.Is(writeErr, remote.RecoverableError{})
 			}(shrd)
 		}
 		wg.Wait()

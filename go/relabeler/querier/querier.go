@@ -67,6 +67,7 @@ func (q *Querier) LabelValues(ctx context.Context, name string, matchers ...*lab
 		}
 
 		dedup.Add(shard.ShardID(), queryLabelValuesResult.Values()...)
+		runtime.KeepAlive(queryLabelValuesResult)
 		return nil
 	})
 
@@ -107,6 +108,7 @@ func (q *Querier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) (
 		}
 
 		dedup.Add(shard.ShardID(), queryLabelNamesResult.Names()...)
+		runtime.KeepAlive(queryLabelNamesResult)
 		return nil
 	})
 
