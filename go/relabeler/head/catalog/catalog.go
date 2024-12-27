@@ -8,7 +8,6 @@ import (
 	"io"
 	"sort"
 	"sync"
-	"sync/atomic"
 )
 
 const (
@@ -76,7 +75,7 @@ func (c *Catalog) Create(numberOfShards uint16) (r *Record, err error) {
 		createdAt:      now,
 		updatedAt:      now,
 		deletedAt:      0,
-		referenceCount: &atomic.Int64{},
+		referenceCount: 0,
 		status:         StatusNew,
 	}
 

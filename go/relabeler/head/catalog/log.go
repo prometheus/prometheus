@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/binary"
 	"errors"
@@ -11,6 +12,8 @@ import (
 )
 
 const (
+	defaultBufferSize = 4096
+
 	LogFileVersionV1 uint64 = 1
 	LogFileVersionV2 uint64 = 2
 )
@@ -194,9 +197,10 @@ func (fl *FileLog) Close() error {
 }
 
 type FileHandler struct {
-	file   *os.File
-	size   int
-	offset int
+	file           *os.File
+	bufferedReader *bufio.Reader
+	size           int
+	offset         int
 }
 
 func (fh *FileHandler) WriteAt(p []byte, off int64) (n int, err error) {
@@ -214,6 +218,8 @@ func (fh *FileHandler) WriteAt(p []byte, off int64) (n int, err error) {
 	if err = fh.file.Truncate(int64(fh.size)); err != nil {
 		return n, err
 	}
+
+	fh.bufferedReader.Reset(fh.file)
 
 	return n, nil
 }
@@ -234,7 +240,11 @@ func NewFileHandler(fileName string) (*FileHandler, error) {
 		return nil, fmt.Errorf("failed to read file info: %w", err)
 	}
 
-	return &FileHandler{file: file, size: int(fileInfo.Size())}, nil
+	return &FileHandler{
+		file:           file,
+		bufferedReader: bufio.NewReaderSize(file, defaultBufferSize),
+		size:           int(fileInfo.Size()),
+	}, nil
 }
 
 func (fh *FileHandler) Write(p []byte) (n int, err error) {
@@ -245,7 +255,7 @@ func (fh *FileHandler) Write(p []byte) (n int, err error) {
 }
 
 func (fh *FileHandler) Read(p []byte) (n int, err error) {
-	n, err = fh.file.Read(p)
+	n, err = fh.bufferedReader.Read(p)
 	fh.offset += n
 	return n, err
 }
@@ -255,6 +265,7 @@ func (fh *FileHandler) Seek(offset int64, whence int) (ret int64, err error) {
 	if err != nil {
 		return ret, err
 	}
+	fh.bufferedReader.Reset(fh.file)
 	fh.offset = int(ret)
 	return ret, nil
 }
