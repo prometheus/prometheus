@@ -258,6 +258,7 @@ func NewAPI(
 	rwEnabled bool,
 	acceptRemoteWriteProtoMsgs []config.RemoteWriteProtoMsg,
 	otlpEnabled bool,
+	ctZeroIngestionEnabled bool,
 ) *API {
 	a := &API{
 		QueryEngine:       qe,
@@ -301,7 +302,7 @@ func NewAPI(
 	}
 
 	if rwEnabled {
-		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, acceptRemoteWriteProtoMsgs)
+		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, acceptRemoteWriteProtoMsgs, ctZeroIngestionEnabled)
 	}
 	if otlpEnabled {
 		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, ap, configFunc)
