@@ -1007,9 +1007,10 @@ func (t *QueueManager) StoreMetadata(meta []record.RefMetadata) {
 	defer t.seriesMtx.Unlock()
 	for _, m := range meta {
 		t.seriesMetadata[m.Ref] = &metadata.Metadata{
-			Type: record.ToMetricType(m.Type),
-			Unit: m.Unit,
-			Help: m.Help,
+			Type:             record.ToMetricType(m.Type),
+			Unit:             m.Unit,
+			Help:             m.Help,
+			CreatedTimestamp: m.CreatedTimestamp,
 		}
 	}
 }
@@ -1943,11 +1944,12 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 	var nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata int
 	for nPending, d := range batch {
 		pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
-		// todo: should we also safeguard against empty metadata here?
+		// TODO: should we also safeguard against empty metadata here?
 		if d.metadata != nil {
 			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(d.metadata.Type)
 			pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Help)
 			pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Unit)
+			pendingData[nPending].CreatedTimestamp = d.metadata.CreatedTimestamp
 			nPendingMetadata++
 		}
 
