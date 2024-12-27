@@ -368,9 +368,6 @@ func (i *Iterator) tryAck(_ context.Context) error {
 
 func (i *Iterator) minTimestamp() int64 {
 	sampleAgeLimit := time.Duration(i.queueConfig.SampleAgeLimit)
-	if sampleAgeLimit == 0 {
-		sampleAgeLimit = time.Hour * 24 * 30
-	}
 	return i.clock.Now().Add(-sampleAgeLimit).UnixMilli()
 }
 

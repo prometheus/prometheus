@@ -97,7 +97,6 @@ func (rw *RemoteWriter) Run(ctx context.Context) error {
 }
 
 func (rw *RemoteWriter) ApplyConfig(configs ...DestinationConfig) (err error) {
-	// todo: validate?
 	select {
 	case rw.configQueue <- configs:
 		return nil

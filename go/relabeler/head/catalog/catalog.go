@@ -71,13 +71,13 @@ func (c *Catalog) Create(numberOfShards uint16) (r *Record, err error) {
 	id := uuid.New()
 	now := c.clock.Now().UnixMilli()
 	r = &Record{
-		id:               id,
-		numberOfShards:   numberOfShards,
-		createdAt:        now,
-		updatedAt:        now,
-		deletedAt:        0,
-		referenceCounter: &atomic.Int64{},
-		status:           StatusNew,
+		id:             id,
+		numberOfShards: numberOfShards,
+		createdAt:      now,
+		updatedAt:      now,
+		deletedAt:      0,
+		referenceCount: &atomic.Int64{},
+		status:         StatusNew,
 	}
 
 	if err = c.log.Write(r); err != nil {

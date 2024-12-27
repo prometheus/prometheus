@@ -3,6 +3,7 @@ package remotewriter
 import (
 	"bytes"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"gopkg.in/yaml.v2"
@@ -20,6 +21,8 @@ const (
 
 	reasonTooOld        = "too_old"
 	reasonDroppedSeries = "dropped_series"
+
+	DefaultSampleAgeLimit = model.Duration(time.Hour * 24 * 30)
 )
 
 type DestinationConfig struct {
@@ -55,13 +58,16 @@ func (d *Destination) ResetConfig(config DestinationConfig) {
 	d.config = config
 }
 
-func NewDestination(config DestinationConfig) *Destination {
+func NewDestination(cfg DestinationConfig) *Destination {
 	constLabels := prometheus.Labels{
-		remoteName: config.Name,
-		endpoint:   config.URL.Redacted(),
+		remoteName: cfg.Name,
+		endpoint:   cfg.URL.Redacted(),
+	}
+	if cfg.QueueConfig.SampleAgeLimit == 0 {
+		cfg.QueueConfig.SampleAgeLimit = DefaultSampleAgeLimit
 	}
 	return &Destination{
-		config: config,
+		config: cfg,
 		metrics: &DestinationMetrics{
 			samplesTotal: prometheus.NewCounter(prometheus.CounterOpts{
 				Namespace:   namespace,

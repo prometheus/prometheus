@@ -26,14 +26,12 @@ type Record struct {
 	deletedAt             int64
 	corrupted             bool
 	lastAppendedSegmentID optional.Optional[uint32]
-	referenceCounter      *atomic.Int64
+	referenceCount        int64
 	status                Status // status
 }
 
 func NewRecord() *Record {
-	return &Record{
-		referenceCounter: &atomic.Int64{},
-	}
+	return &Record{}
 }
 
 func (r *Record) ID() string {
@@ -69,15 +67,15 @@ func (r *Record) Status() Status {
 }
 
 func (r *Record) ReferenceCount() int64 {
-	return r.referenceCounter.Load()
+	return atomic.LoadInt64(&r.referenceCount)
 }
 
 func (r *Record) Acquire() func() {
-	r.referenceCounter.Add(1)
+	atomic.AddInt64(&r.referenceCount, 1)
 	var onceRelease sync.Once
 	return func() {
 		onceRelease.Do(func() {
-			r.referenceCounter.Add(-1)
+			atomic.AddInt64(&r.referenceCount, -1)
 		})
 	}
 }
@@ -100,8 +98,6 @@ func NewRecordWithData(id uuid.UUID,
 	status Status,
 	lastAppendedSegmentID *uint32,
 ) *Record {
-	rc := atomic.Int64{}
-	rc.Add(referenceCount)
 	return &Record{
 		id:                    id,
 		numberOfShards:        numberOfShards,
@@ -109,7 +105,7 @@ func NewRecordWithData(id uuid.UUID,
 		updatedAt:             updatedAt,
 		deletedAt:             deletedAt,
 		corrupted:             corrupted,
-		referenceCounter:      &rc,
+		referenceCount:        referenceCount,
 		status:                status,
 		lastAppendedSegmentID: optional.WithRawValue(lastAppendedSegmentID),
 	}
