@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 #include "regexp_searcher_test_cases.h"
 #include "series_index/querier/regexp_searcher.h"
 #include "series_index/trie/cedarpp_tree.h"
@@ -14,54 +16,55 @@ using series_index::trie::CedarTrie;
 using std::operator""sv;
 using std::operator""s;
 
-class CedarTrieFixture : public testing::Test {
- protected:
-  CedarTrie trie_;
+struct TrieItem {
+  std::string key;
+  uint32_t value;
+
+  bool operator==(const TrieItem&) const noexcept = default;
+  bool operator<(const TrieItem& other) const noexcept { return key < other.key; }
 };
 
-TEST_F(CedarTrieFixture, InsertAndLookupStringWithZeroBytes) {
+class CedarTrieFixture {
+ protected:
+  CedarTrie trie_;
+
+  [[nodiscard]] static std::vector<TrieItem> items(const CedarTrie& trie) {
+    std::vector<TrieItem> actual;
+    for (auto it = trie.make_enumerative_iterator(); it.is_valid(); ++it) {
+      actual.emplace_back(TrieItem{.key = std::string(it.key()), .value = it.value()});
+    }
+    return actual;
+  }
+};
+
+class CedarTrieZeroByteSupportFixture : public CedarTrieFixture, public testing::Test {};
+
+TEST_F(CedarTrieZeroByteSupportFixture, InsertAndLookupStringWithZeroBytes) {
   // Arrange
   static constexpr auto kKey = "HetznerFinland:\x00:nova"sv;
   static constexpr auto kValue = 123U;
 
   // Act
   trie_.insert(kKey, kValue);
-  auto value1 = trie_.lookup(kKey);
-  auto value2 = trie_.lookup("HetznerFinland:");
+  const auto value1 = trie_.lookup(kKey);
+  const auto value2 = trie_.lookup("HetznerFinland:");
 
   // Assert
   EXPECT_EQ(kValue, value1.value_or(0));
   EXPECT_FALSE(value2);
 }
 
-struct TrieItem {
-  std::string key;
-  uint32_t value;
-
-  bool operator==(const TrieItem&) const noexcept = default;
-};
-
 struct CedarEnumerativeIteratorCase {
   std::vector<TrieItem> items;
   std::vector<TrieItem> expected;
 };
 
-class CedarEnumerativeIteratorFixture : public testing::TestWithParam<CedarEnumerativeIteratorCase> {
+class CedarEnumerativeIteratorFixture : public CedarTrieFixture, public testing::TestWithParam<CedarEnumerativeIteratorCase> {
  protected:
-  CedarTrie trie_;
-
   void SetUp() final {
     for (auto& item : GetParam().items) {
       trie_.insert(item.key, item.value);
     }
-  }
-
-  std::vector<TrieItem> items() {
-    std::vector<TrieItem> actual;
-    for (auto it = trie_.make_enumerative_iterator(); it.is_valid(); ++it) {
-      actual.emplace_back(TrieItem{.key = std::string(it.key()), .value = it.value()});
-    }
-    return actual;
   }
 };
 
@@ -69,7 +72,7 @@ TEST_P(CedarEnumerativeIteratorFixture, Test) {
   // Arrange
 
   // Act
-  auto actual = items();
+  const auto actual = items(trie_);
 
   // Assert
   EXPECT_EQ(GetParam().expected, actual);
@@ -119,9 +122,8 @@ INSTANTIATE_TEST_SUITE_P(ValueWithZeroByte,
                                                                           {.key = "\x01"s, .value = 0},
                                                                       }}));
 
-class CedarTrieRegexpSearcherFixture : public testing::TestWithParam<RegexpSearcherTestCase> {
+class CedarTrieRegexpSearcherFixture : public CedarTrieFixture, public testing::TestWithParam<RegexpSearcherTestCase> {
  protected:
-  CedarTrie trie_;
   CedarMatchesList::SeriesIdList matches_;
   CedarMatchesList matches_list_{matches_};
   RegexpSearcher<CedarTrie, CedarMatchesList> searcher_{matches_list_};
@@ -133,7 +135,7 @@ class CedarTrieRegexpSearcherFixture : public testing::TestWithParam<RegexpSearc
     }
   }
 
-  CedarMatchesList::SeriesIdList get_expected_matches() {
+  [[nodiscard]] CedarMatchesList::SeriesIdList get_expected_matches() const {
     CedarMatchesList::SeriesIdList expected_matches;
     for (auto& key : GetParam().matches) {
       expected_matches.push_back(trie_.lookup(key).value_or(std::numeric_limits<uint32_t>::max()));
@@ -151,11 +153,49 @@ TEST_P(CedarTrieRegexpSearcherFixture, Test) {
   std::ignore = searcher_.search(trie_, RegexpParser::parse(GetParam().regexp));
 
   // Assert
-  std::sort(expected_matches.begin(), expected_matches.end());
-  std::sort(matches_.begin(), matches_.end());
+  std::ranges::sort(expected_matches);
+  std::ranges::sort(matches_);
   EXPECT_EQ(expected_matches, matches_);
 }
 
 INSTANTIATE_REGEXP_SEARCHER_TEST_SUITE_P(CedarTrieRegexpSearcherFixture);
+
+struct SerializeDeserializeCase {
+  std::vector<TrieItem> items;
+};
+
+class CedarTrieSerializeDeserializeFixture : public CedarTrieFixture, public ::testing::TestWithParam<SerializeDeserializeCase> {
+ protected:
+  void SetUp() final {
+    for (const auto& [key, value] : GetParam().items) {
+      trie_.insert(key, value);
+    }
+  }
+};
+
+TEST_P(CedarTrieSerializeDeserializeFixture, Test) {
+  // Arrange
+  std::stringstream stream;
+  CedarTrie trie2;
+
+  // Act
+  stream << trie_;
+  stream >> trie2;
+
+  // Assert
+  auto& sorted_items = const_cast<SerializeDeserializeCase&>(GetParam()).items;
+  std::sort(sorted_items.begin(), sorted_items.end());
+  EXPECT_EQ(GetParam().items, items(trie2));
+}
+
+INSTANTIATE_TEST_SUITE_P(EmptyTrie, CedarTrieSerializeDeserializeFixture, testing::Values(SerializeDeserializeCase{}));
+INSTANTIATE_TEST_SUITE_P(Cases,
+                         CedarTrieSerializeDeserializeFixture,
+                         testing::Values(SerializeDeserializeCase{.items = {{.key = "key", .value = 1}}},
+                                         SerializeDeserializeCase{.items = {
+                                                                      {.key = "key1", .value = 1},
+                                                                      {.key = "key2", .value = 2},
+                                                                      {.key = "key3", .value = 3},
+                                                                  }}));
 
 }  // namespace
