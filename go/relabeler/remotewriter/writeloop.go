@@ -4,24 +4,26 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head/catalog"
 	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 	"github.com/prometheus/prometheus/storage/remote"
-	"os"
-	"path/filepath"
-	"time"
 )
 
 const defaultDelay = time.Second * 5
 
 type writeLoop struct {
-	dataDir     string
-	destination *Destination
-	catalog     Catalog
-	clock       clockwork.Clock
-	client      remote.WriteClient
+	dataDir       string
+	destination   *Destination
+	currentHeadID *string
+	catalog       Catalog
+	clock         clockwork.Clock
+	client        remote.WriteClient
 }
 
 func newWriteLoop(dataDir string, destination *Destination, catalog Catalog, clock clockwork.Clock) *writeLoop {
@@ -152,8 +154,8 @@ func (wl *writeLoop) nextIterator(ctx context.Context, writer Writer) (*Iterator
 	var nextHeadRecord *catalog.Record
 	var err error
 	var cleanStart bool
-	if wl.destination.HeadID != nil {
-		nextHeadRecord, err = nextHead(ctx, wl.catalog, *wl.destination.HeadID)
+	if wl.currentHeadID != nil {
+		nextHeadRecord, err = nextHead(ctx, wl.catalog, *wl.currentHeadID)
 	} else {
 		var headFound bool
 		nextHeadRecord, headFound, err = scanForNextHead(ctx, wl.dataDir, wl.catalog, wl.destination.Config().Name)
@@ -205,7 +207,7 @@ func (wl *writeLoop) nextIterator(ctx context.Context, writer Writer) (*Iterator
 		return nil, errors.Join(fmt.Errorf("failed to create data source: %w", err), crw.Close(), ds.Close())
 	}
 
-	wl.destination.HeadID = &headID
+	wl.currentHeadID = &headID
 
 	return i, nil
 }

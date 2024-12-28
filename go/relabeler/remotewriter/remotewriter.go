@@ -3,11 +3,12 @@ package remotewriter
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head/catalog"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head/ready"
 	"github.com/prometheus/client_golang/prometheus"
-	"time"
 )
 
 type Catalog interface {

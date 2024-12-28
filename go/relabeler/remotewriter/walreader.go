@@ -3,9 +3,10 @@ package remotewriter
 import (
 	"errors"
 	"fmt"
-	"github.com/prometheus/prometheus/pp/go/relabeler/head"
 	"io"
 	"os"
+
+	"github.com/prometheus/prometheus/pp/go/relabeler/head"
 )
 
 type walReader struct {

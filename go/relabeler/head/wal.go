@@ -3,9 +3,10 @@ package head
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"hash/crc32"
 	"io"
+
+	"github.com/prometheus/prometheus/pp/go/cppbridge"
 )
 
 type ShardWal struct {
@@ -247,7 +248,7 @@ func TryReadSegment(source io.ReadSeeker) (decodedSegment DecodedSegment, err er
 	decodedSegment.sampleCount = uint32(sampleCountU64)
 
 	decodedSegment.data = make([]byte, size)
-	bytesRead, err := source.Read(decodedSegment.data)
+	bytesRead, err := io.ReadFull(source, decodedSegment.data)
 	if err != nil {
 		return decodedSegment, fmt.Errorf("failed to read segment data: %w", err)
 	}

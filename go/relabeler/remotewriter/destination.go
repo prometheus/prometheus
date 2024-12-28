@@ -2,14 +2,15 @@ package remotewriter
 
 import (
 	"bytes"
+	"hash/crc32"
+	"sync"
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"gopkg.in/yaml.v2"
-	"hash/crc32"
-	"sync"
-	"time"
 )
 
 // String constants for instrumentation.
@@ -32,7 +33,9 @@ type DestinationConfig struct {
 }
 
 func (c DestinationConfig) EqualTo(other DestinationConfig) bool {
-	return c.ExternalLabels.Hash() == other.ExternalLabels.Hash() && remoteWriteConfigsAreEqual(c.RemoteWriteConfig, other.RemoteWriteConfig)
+	return c.ExternalLabels.Hash() == other.ExternalLabels.Hash() &&
+		c.ReadTimeout == other.ReadTimeout &&
+		remoteWriteConfigsAreEqual(c.RemoteWriteConfig, other.RemoteWriteConfig)
 }
 
 func (c DestinationConfig) CRC32() (uint32, error) {
@@ -47,7 +50,6 @@ func (c DestinationConfig) CRC32() (uint32, error) {
 type Destination struct {
 	config  DestinationConfig
 	metrics *DestinationMetrics
-	HeadID  *string
 }
 
 func (d *Destination) Config() DestinationConfig {
@@ -63,9 +65,7 @@ func NewDestination(cfg DestinationConfig) *Destination {
 		remoteName: cfg.Name,
 		endpoint:   cfg.URL.Redacted(),
 	}
-	if cfg.QueueConfig.SampleAgeLimit == 0 {
-		cfg.QueueConfig.SampleAgeLimit = DefaultSampleAgeLimit
-	}
+
 	return &Destination{
 		config: cfg,
 		metrics: &DestinationMetrics{
