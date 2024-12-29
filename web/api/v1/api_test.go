@@ -1166,6 +1166,23 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				},
 			},
 		},
+		// Only matrix and vector responses are limited/truncated. String and scalar responses aren't truncated.
+		{
+			endpoint: api.query,
+			query: url.Values{
+				"query": []string{"2"},
+				"time":  []string{"123.4"},
+				"limit": []string{"1"},
+			},
+			response: &QueryData{
+				ResultType: parser.ValueTypeScalar,
+				Result: promql.Scalar{
+					V: 2,
+					T: timestamp.FromTime(start.Add(123*time.Second + 400*time.Millisecond)),
+				},
+			},
+			warningsCount: 0,
+		},
 		// When limit = 0, limit is disabled.
 		{
 			endpoint: api.query,
@@ -1234,6 +1251,31 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 		},
 		{
+			endpoint: api.query,
+			query: url.Values{
+				"query": []string{
+					`label_replace(vector(42), "foo", "bar", "", "") or label_replace(vector(3.1415), "dings", "bums", "", "")`,
+				},
+			},
+			responseAsJSON: `{
+		"resultType": "vector",
+		"result": [
+			{
+				"metric": {
+					"foo": "bar"
+				},
+				"value": [0, "42"]
+			},
+			{
+				"metric": {
+					"dings": "bums"
+				},
+				"value": [0, "3.1415"]
+			}
+		]
+	}`,
+		},
+		{
 			endpoint: api.queryRange,
 			query: url.Values{
 				"query": []string{"time()"},
@@ -1287,6 +1329,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 			responseAsJSON: `{"resultType":"vector","result":[]}`,
 		},
+		// limit disabled
 		{
 			endpoint: api.queryRange,
 			query: url.Values{
