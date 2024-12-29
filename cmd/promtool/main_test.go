@@ -579,45 +579,43 @@ func TestCheckRulesWithRuleFiles(t *testing.T) {
 
 func TestCheckScrapeConfigs(t *testing.T) {
 	for _, tc := range []struct {
-		name            string
-		lookbackDelta   model.Duration
-		fatal           bool
-		checkSyntaxOnly bool
-		expectedCode    int
+		name          string
+		lookbackDelta model.Duration
+		expectError   bool
 	}{
+		{
+			name:          "scrape interval less than lookback delta",
+			lookbackDelta: model.Duration(11 * time.Minute),
+			expectError:   false,
+		},
 		{
 			name:          "scrape interval greater than lookback delta",
 			lookbackDelta: model.Duration(5 * time.Minute),
-			expectedCode:  successExitCode,
-		},
-		{
-			name:          "scrape interval greater than lookback delta, fatal",
-			lookbackDelta: model.Duration(5 * time.Minute),
-			fatal:         true,
-			expectedCode:  lintErrExitCode,
-		},
-		{
-			name:            "scrape interval greater than lookback delta, fatal, checkSyntaxOnly",
-			lookbackDelta:   model.Duration(5 * time.Minute),
-			fatal:           true,
-			checkSyntaxOnly: true,
-			expectedCode:    successExitCode,
+			expectError:   true,
 		},
 		{
 			name:          "scrape interval same as lookback delta",
 			lookbackDelta: model.Duration(10 * time.Minute),
-			expectedCode:  successExitCode,
-		},
-		{
-			name:          "scrape interval less than lookback delta, fatal",
-			lookbackDelta: model.Duration(20 * time.Minute),
-			fatal:         true,
-			expectedCode:  successExitCode,
+			expectError:   true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			code := CheckConfig(false, tc.checkSyntaxOnly, newConfigLintConfig(lintOptionTooLongScrapeInterval, tc.fatal, tc.lookbackDelta), "./testdata/prometheus-config.lint.too_long_scrape_interval.yml")
-			require.Equal(t, tc.expectedCode, code)
+			// Non-fatal linting.
+			code := CheckConfig(false, false, newConfigLintConfig(lintOptionTooLongScrapeInterval, false, tc.lookbackDelta), "./testdata/prometheus-config.lint.too_long_scrape_interval.yml")
+			require.Equal(t, successExitCode, code, "Non-fatal linting should return success")
+			// Fatal linting.
+			code = CheckConfig(false, false, newConfigLintConfig(lintOptionTooLongScrapeInterval, true, tc.lookbackDelta), "./testdata/prometheus-config.lint.too_long_scrape_interval.yml")
+			if tc.expectError {
+				require.Equal(t, lintErrExitCode, code, "Fatal linting should return error")
+			} else {
+				require.Equal(t, successExitCode, code, "Fatal linting should return success when there are no problems")
+			}
+			// Check syntax only, no linting.
+			code = CheckConfig(false, true, newConfigLintConfig(lintOptionTooLongScrapeInterval, true, tc.lookbackDelta), "./testdata/prometheus-config.lint.too_long_scrape_interval.yml")
+			require.Equal(t, successExitCode, code, "Fatal linting should return success when checking syntax only")
+			// Lint option "none" should disable linting.
+			code = CheckConfig(false, false, newConfigLintConfig(lintOptionNone+","+lintOptionTooLongScrapeInterval, true, tc.lookbackDelta), "./testdata/prometheus-config.lint.too_long_scrape_interval.yml")
+			require.Equal(t, successExitCode, code, `Fatal linting should return success when lint option "none" is specified`)
 		})
 	}
 }

@@ -488,12 +488,13 @@ type configLintConfig struct {
 	rulesLintConfig
 
 	lookbackDelta model.Duration
-	fatal         bool
 }
 
 func newConfigLintConfig(optionsStr string, fatal bool, lookbackDelta model.Duration) configLintConfig {
 	c := configLintConfig{
-		fatal: fatal,
+		rulesLintConfig: rulesLintConfig{
+			fatal: fatal,
+		},
 	}
 
 	lintNone := false
