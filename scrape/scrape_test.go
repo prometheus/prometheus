@@ -32,7 +32,6 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
@@ -43,6 +42,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
@@ -2501,12 +2502,11 @@ metric: <
 	}
 }
 
-func textToProto(text string, buf *bytes.Buffer) error {
+func textToProto(text string, buf io.Writer) error {
 	// In case of protobuf, we have to create the binary representation.
 	pb := &dto.MetricFamily{}
 	// From text to proto message.
-	err := proto.UnmarshalText(text, pb)
-	if err != nil {
+	if err := prototext.Unmarshal([]byte(text), pb); err != nil {
 		return err
 	}
 	// From proto message to binary protobuf.
@@ -4201,20 +4201,7 @@ metric: <
 					if metricsText.contentType != "" {
 						w.Header().Set("Content-Type", `application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited`)
 						for _, text := range metricsText.text {
-							buf := &bytes.Buffer{}
-							// In case of protobuf, we have to create the binary representation.
-							pb := &dto.MetricFamily{}
-							// From text to proto message.
-							require.NoError(t, proto.UnmarshalText(text, pb))
-							// From proto message to binary protobuf.
-							protoBuf, err := proto.Marshal(pb)
-							require.NoError(t, err)
-
-							// Write first length, then binary protobuf.
-							varintBuf := binary.AppendUvarint(nil, uint64(len(protoBuf)))
-							buf.Write(varintBuf)
-							buf.Write(protoBuf)
-							w.Write(buf.Bytes())
+							require.NoError(t, textToProto(text, w))
 						}
 					} else {
 						for _, text := range metricsText.text {
