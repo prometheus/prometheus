@@ -589,7 +589,7 @@ func (r *AlertingRule) String() string {
 
 	byt, err := yaml.Marshal(ar)
 	if err != nil {
-		return fmt.Sprintf("error marshaling alerting rule: %s", err.Error())
+		return "error marshaling alerting rule: " + err.Error()
 	}
 
 	return string(byt)

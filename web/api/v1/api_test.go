@@ -3462,7 +3462,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			r.RemoteAddr = "127.0.0.1:20201"
 			return r, err
 		}
-		r, err := http.NewRequest(m, fmt.Sprintf("http://example.com?%s", q.Encode()), nil)
+		r, err := http.NewRequest(m, "http://example.com?"+q.Encode(), nil)
 		r.RemoteAddr = "127.0.0.1:20201"
 		return r, err
 	}
@@ -3771,7 +3771,7 @@ func TestAdminEndpoints(t *testing.T) {
 			}
 
 			endpoint := tc.endpoint(api)
-			req, err := http.NewRequest(tc.method, fmt.Sprintf("?%s", tc.values.Encode()), nil)
+			req, err := http.NewRequest(tc.method, "?"+tc.values.Encode(), nil)
 			require.NoError(t, err)
 
 			res := setUnavailStatusOnTSDBNotReady(endpoint(req))
@@ -4147,7 +4147,7 @@ func TestTSDBStatus(t *testing.T) {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			api := &API{db: tc.db, gatherer: prometheus.DefaultGatherer}
 			endpoint := tc.endpoint(api)
-			req, err := http.NewRequest(tc.method, fmt.Sprintf("?%s", tc.values.Encode()), nil)
+			req, err := http.NewRequest(tc.method, "?"+tc.values.Encode(), nil)
 			require.NoError(t, err, "Error when creating test request")
 			res := endpoint(req)
 			assertAPIError(t, res.err, tc.errType)
@@ -4477,7 +4477,7 @@ func TestQueryTimeout(t *testing.T) {
 				"timeout": []string{"1s"},
 			}
 			ctx := context.Background()
-			req, err := http.NewRequest(tc.method, fmt.Sprintf("http://example.com?%s", query.Encode()), nil)
+			req, err := http.NewRequest(tc.method, "http://example.com?"+query.Encode(), nil)
 			require.NoError(t, err)
 			req.RemoteAddr = "127.0.0.1:20201"
 
