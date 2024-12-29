@@ -39,6 +39,7 @@ import (
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
@@ -1265,72 +1266,64 @@ func makeTestMetrics(n int) []byte {
 	return sb.Bytes()
 }
 
+func promTextToProto(tb testing.TB, text []byte) []byte {
+	tb.Helper()
+
+	d := expfmt.NewDecoder(bytes.NewReader(text), expfmt.TextVersion)
+
+	pb := &dto.MetricFamily{}
+	if err := d.Decode(pb); err != nil {
+		tb.Fatal(err)
+	}
+	o, err := proto.Marshal(pb)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	buf := bytes.Buffer{}
+	// Write first length, then binary protobuf.
+	varintBuf := binary.AppendUvarint(nil, uint64(len(o)))
+	buf.Write(varintBuf)
+	buf.Write(o)
+	return buf.Bytes()
+}
+
+/*
+	export bench=scrape-loop-v1 && go test \
+		-run '^$' -bench '^BenchmarkScrapeLoopAppend' \
+		-benchtime 5s -count 6 -cpu 2 -timeout 999m \
+		| tee ${bench}.txt
+*/
 func BenchmarkScrapeLoopAppend(b *testing.B) {
-	ctx, sl := simpleTestScrapeLoop(b)
+	metricsText := makeTestMetrics(100)
 
-	slApp := sl.appender(ctx)
-	metrics := makeTestMetrics(100)
-	ts := time.Time{}
+	// Create proto representation.
+	metricsProto := promTextToProto(b, metricsText)
 
-	b.ResetTimer()
+	for _, bcase := range []struct {
+		name        string
+		contentType string
+		parsable    []byte
+	}{
+		{name: "PromText", contentType: "text/plain", parsable: metricsText},
+		{name: "OMText", contentType: "application/openmetrics-text", parsable: metricsText},
+		{name: "PromProto", contentType: "application/vnd.google.protobuf", parsable: metricsProto},
+	} {
+		b.Run(fmt.Sprintf("fmt=%v", bcase.name), func(b *testing.B) {
+			ctx, sl := simpleTestScrapeLoop(b)
 
-	for i := 0; i < b.N; i++ {
-		ts = ts.Add(time.Second)
-		_, _, _, _ = sl.append(slApp, metrics, "text/plain", ts)
-	}
-}
+			slApp := sl.appender(ctx)
+			ts := time.Time{}
 
-func BenchmarkScrapeLoopAppendOM(b *testing.B) {
-	ctx, sl := simpleTestScrapeLoop(b)
-
-	slApp := sl.appender(ctx)
-	metrics := makeTestMetrics(100)
-	ts := time.Time{}
-
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		ts = ts.Add(time.Second)
-		_, _, _, _ = sl.append(slApp, metrics, "application/openmetrics-text", ts)
-	}
-}
-
-func BenchmarkScrapeLoopAppendProto(b *testing.B) {
-	ctx, sl := simpleTestScrapeLoop(b)
-
-	slApp := sl.appender(ctx)
-
-	// Construct a metrics string to parse
-	sb := bytes.Buffer{}
-	fmt.Fprintf(&sb, "type: GAUGE\n")
-	fmt.Fprintf(&sb, "help: \"metric_a help text\"\n")
-	fmt.Fprintf(&sb, "name: \"metric_a\"\n")
-	for i := 0; i < 100; i++ {
-		fmt.Fprintf(&sb, `metric: <
-  label: <
-    name: "foo"
-    value: "%d"
-  >
-  label: <
-    name: "bar"
-    value: "%d"
-  >
-  gauge: <
-    value: 1
-  >
->
-`, i, i*100)
-	}
-	// From text to proto message.
-	pb := bytes.Buffer{}
-	require.NoError(b, textToProto(sb.String(), &pb))
-	ts := time.Time{}
-
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		ts = ts.Add(time.Second)
-		_, _, _, _ = sl.append(slApp, pb.Bytes(), "application/vnd.google.protobuf", ts)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				ts = ts.Add(time.Second)
+				_, _, _, err := sl.append(slApp, bcase.parsable, bcase.contentType, ts)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 	}
 }
 
