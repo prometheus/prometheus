@@ -1419,8 +1419,8 @@ func (ll *LazyLoader) appendTill(ts int64) error {
 
 // WithSamplesTill loads the samples till given timestamp and executes the given function.
 func (ll *LazyLoader) WithSamplesTill(ts time.Time, fn func(error)) {
-	tsMilli := ts.Sub(time.Unix(0, 0).UTC()) / time.Millisecond
-	fn(ll.appendTill(int64(tsMilli)))
+	till := ts.Sub(time.Unix(0, 0).UTC()) / time.Millisecond
+	fn(ll.appendTill(int64(till)))
 }
 
 // QueryEngine returns the LazyLoader's query engine.

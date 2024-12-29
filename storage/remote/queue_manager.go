@@ -2119,7 +2119,7 @@ func compressPayload(tmpbuf *[]byte, inp []byte, enc Compression) (compressed []
 		}
 		return compressed, nil
 	default:
-		return compressed, fmt.Errorf("Unknown compression scheme [%v]", enc)
+		return compressed, fmt.Errorf("unknown compression scheme [%v]", enc)
 	}
 }
 
