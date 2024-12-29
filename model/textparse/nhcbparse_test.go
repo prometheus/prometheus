@@ -15,11 +15,9 @@ package textparse
 
 import (
 	"bytes"
-	"encoding/binary"
 	"strconv"
 	"testing"
 
-	"github.com/gogo/protobuf/proto"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/common/model"
@@ -27,7 +25,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	dto "github.com/prometheus/prometheus/prompb/io/prometheus/client"
+	clientv1 "github.com/prometheus/prometheus/prompb/io/prometheus/client/v1"
 )
 
 func TestNHCBParserOnOMParser(t *testing.T) {
@@ -894,23 +892,10 @@ metric: <
 >
 `}
 
-	varintBuf := make([]byte, binary.MaxVarintLen32)
 	buf := &bytes.Buffer{}
-
 	for _, tmf := range testMetricFamilies {
-		pb := &dto.MetricFamily{}
-		// From text to proto message.
-		require.NoError(t, proto.UnmarshalText(tmf, pb))
-		// From proto message to binary protobuf.
-		protoBuf, err := proto.Marshal(pb)
-		require.NoError(t, err)
-
-		// Write first length, then binary protobuf.
-		varintLength := binary.PutUvarint(varintBuf, uint64(len(protoBuf)))
-		buf.Write(varintBuf[:varintLength])
-		buf.Write(protoBuf)
+		require.NoError(t, clientv1.MetricFamilyFromTextToDelimitedProto([]byte(tmf), buf))
 	}
-
 	return buf
 }
 

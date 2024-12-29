@@ -1,0 +1,11 @@
+version: v2
+
+plugins:
+- remote: buf.build/protocolbuffers/go:v1.36.1
+  out: .
+  opt:
+  - Mio/prometheus/client/v1/metrics.proto=io/prometheus/client/v1
+  - default_api_level=API_OPAQUE
+
+inputs:
+- directory: . # Pointing to the module in the buf.yaml.

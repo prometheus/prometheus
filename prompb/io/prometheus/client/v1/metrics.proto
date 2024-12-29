@@ -1,4 +1,4 @@
-// Copyright 2013 Prometheus Team
+// Copyright 2024 Prometheus Team
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -13,15 +13,19 @@
 
 // This is copied and lightly edited from
 // github.com/prometheus/client_model/io/prometheus/client/metrics.proto
-// and finally converted to proto3 syntax to make it usable for the
-// gogo-protobuf approach taken within prometheus/prometheus.
+// and finally converted to proto3 syntax. Initially to make it usable for the
+// gogo-protobuf approach taken within prometheus/prometheus, but now this copy
+// is actually source of the truth for Prometheus protobuf 1.0 encoding.
+//
+// From now client_model is deprecated and used only for dto, client_golang
+// needs for v1 compatibility (due to opaque API breaking it).
 
-syntax = "proto3";
+edition = "2023";
 
-package io.prometheus.client;
-option go_package = "io_prometheus_client";
+package io.prometheus.client.v1;
 
-import "gogoproto/gogo.proto";
+option go_package = "clientv1";
+
 import "google/protobuf/timestamp.proto";
 
 message LabelPair {
@@ -50,7 +54,7 @@ message Gauge {
 
 message Counter {
   double   value    = 1;
-  Exemplar exemplar = 2;
+  Exemplar exemplar = 2 [lazy = true];
 
   google.protobuf.Timestamp  created_timestamp = 3;
 }
@@ -63,7 +67,7 @@ message Quantile {
 message Summary {
   uint64            sample_count = 1;
   double            sample_sum   = 2;
-  repeated Quantile quantile     = 3 [(gogoproto.nullable) = false];
+  repeated Quantile quantile     = 3;
 
   google.protobuf.Timestamp  created_timestamp = 4;
 }
@@ -77,7 +81,7 @@ message Histogram {
   double sample_count_float = 4; // Overrides sample_count if > 0.
   double sample_sum         = 2;
   // Buckets for the classic histogram.
-  repeated Bucket bucket = 3 [(gogoproto.nullable) = false]; // Ordered in increasing order of upper_bound, +Inf bucket is optional.
+  repeated Bucket bucket = 3; // Ordered in increasing order of upper_bound, +Inf bucket is optional.
 
   google.protobuf.Timestamp created_timestamp = 15;
 
@@ -95,7 +99,7 @@ message Histogram {
   double zero_count_float = 8; // Overrides sb_zero_count if > 0.
 
   // Negative buckets for the native histogram.
-  repeated BucketSpan negative_span = 9 [(gogoproto.nullable) = false];
+  repeated BucketSpan negative_span = 9;
   // Use either "negative_delta" or "negative_count", the former for
   // regular histograms with integer counts, the latter for float
   // histograms.
@@ -106,7 +110,7 @@ message Histogram {
   // Use a no-op span (offset 0, length 0) for a native histogram without any
   // observations yet and with a zero_threshold of 0. Otherwise, it would be
   // indistinguishable from a classic histogram.
-  repeated BucketSpan positive_span = 12 [(gogoproto.nullable) = false];
+  repeated BucketSpan positive_span = 12;
   // Use either "positive_delta" or "positive_count", the former for
   // regular histograms with integer counts, the latter for float
   // histograms.
@@ -114,14 +118,14 @@ message Histogram {
   repeated double positive_count = 14; // Absolute count of each bucket.
 
   // Only used for native histograms. These exemplars MUST have a timestamp.
-  repeated Exemplar exemplars = 16;
+  repeated Exemplar exemplars = 16 [lazy = true];
 }
 
 message Bucket {
   uint64   cumulative_count       = 1; // Cumulative in increasing order.
   double   cumulative_count_float = 4; // Overrides cumulative_count if > 0.
   double   upper_bound            = 2; // Inclusive.
-  Exemplar exemplar               = 3;
+  Exemplar exemplar               = 3 [lazy = true];
 }
 
 // A BucketSpan defines a number of consecutive buckets in a native
@@ -136,18 +140,18 @@ message BucketSpan {
 }
 
 message Exemplar {
-  repeated LabelPair        label     = 1 [(gogoproto.nullable) = false];
+  repeated LabelPair        label     = 1;
   double                    value     = 2;
   google.protobuf.Timestamp timestamp = 3; // OpenMetrics-style.
 }
 
 message Metric {
-  repeated LabelPair label        = 1 [(gogoproto.nullable) = false];
-  Gauge              gauge        = 2;
-  Counter            counter      = 3;
-  Summary            summary      = 4;
-  Untyped            untyped      = 5;
-  Histogram          histogram    = 7;
+  repeated LabelPair label        = 1 [lazy = true];
+  Gauge              gauge        = 2 [lazy = true];
+  Counter            counter      = 3 [lazy = true];
+  Summary            summary      = 4 [lazy = true];
+  Untyped            untyped      = 5 [lazy = true];
+  Histogram          histogram    = 7 [lazy = true];
   int64              timestamp_ms = 6;
 }
 
@@ -155,6 +159,6 @@ message MetricFamily {
   string          name   = 1;
   string          help   = 2;
   MetricType      type   = 3;
-  repeated Metric metric = 4 [(gogoproto.nullable) = false];
+  repeated Metric metric = 4 [lazy = true];
   string          unit   = 5;
 }

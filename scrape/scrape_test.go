@@ -32,7 +32,6 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
@@ -43,6 +42,9 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
+
+	clientv1 "github.com/prometheus/prometheus/prompb/io/prometheus/client/v1"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
@@ -2486,7 +2488,7 @@ metric: <
 
 			buf := &bytes.Buffer{}
 			if test.contentType == "application/vnd.google.protobuf" {
-				require.NoError(t, textToProto(test.scrapeText, buf))
+				require.NoError(t, clientv1.MetricFamilyFromTextToDelimitedProto([]byte(test.scrapeText), buf))
 			} else {
 				buf.WriteString(test.scrapeText)
 			}
@@ -2499,26 +2501,6 @@ metric: <
 			requireEqual(t, test.exemplars, app.resultExemplars)
 		})
 	}
-}
-
-func textToProto(text string, buf *bytes.Buffer) error {
-	// In case of protobuf, we have to create the binary representation.
-	pb := &dto.MetricFamily{}
-	// From text to proto message.
-	err := proto.UnmarshalText(text, pb)
-	if err != nil {
-		return err
-	}
-	// From proto message to binary protobuf.
-	protoBuf, err := proto.Marshal(pb)
-	if err != nil {
-		return err
-	}
-	// Write first length, then binary protobuf.
-	varintBuf := binary.AppendUvarint(nil, uint64(len(protoBuf)))
-	buf.Write(varintBuf)
-	buf.Write(protoBuf)
-	return nil
 }
 
 func TestScrapeLoopAppendExemplarSeries(t *testing.T) {
@@ -4201,20 +4183,7 @@ metric: <
 					if metricsText.contentType != "" {
 						w.Header().Set("Content-Type", `application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited`)
 						for _, text := range metricsText.text {
-							buf := &bytes.Buffer{}
-							// In case of protobuf, we have to create the binary representation.
-							pb := &dto.MetricFamily{}
-							// From text to proto message.
-							require.NoError(t, proto.UnmarshalText(text, pb))
-							// From proto message to binary protobuf.
-							protoBuf, err := proto.Marshal(pb)
-							require.NoError(t, err)
-
-							// Write first length, then binary protobuf.
-							varintBuf := binary.AppendUvarint(nil, uint64(len(protoBuf)))
-							buf.Write(varintBuf)
-							buf.Write(protoBuf)
-							w.Write(buf.Bytes())
+							require.NoError(t, clientv1.MetricFamilyFromTextToDelimitedProto([]byte(text), w))
 						}
 					} else {
 						for _, text := range metricsText.text {
