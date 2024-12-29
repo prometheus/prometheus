@@ -679,7 +679,7 @@ func (w *Watcher) readCheckpoint(checkpointDir string, readFn segmentReadFn) err
 	// Ensure we read the whole contents of every segment in the checkpoint dir.
 	segs, err := listSegments(checkpointDir)
 	if err != nil {
-		return fmt.Errorf("Unable to get segments checkpoint dir: %w", err)
+		return fmt.Errorf("unable to get segments checkpoint dir: %w", err)
 	}
 	for _, segRef := range segs {
 		size, err := getSegmentSize(checkpointDir, segRef.index)

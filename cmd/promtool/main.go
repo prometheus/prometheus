@@ -36,16 +36,14 @@ import (
 	"github.com/prometheus/client_golang/api"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil/promlint"
-	config_util "github.com/prometheus/common/config"
+	dto "github.com/prometheus/client_model/go"
+	promconfig "github.com/prometheus/common/config"
+	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/version"
 	"github.com/prometheus/exporter-toolkit/web"
 	"gopkg.in/yaml.v2"
-
-	dto "github.com/prometheus/client_model/go"
-	promconfig "github.com/prometheus/common/config"
-	"github.com/prometheus/common/expfmt"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
@@ -312,12 +310,12 @@ func main() {
 			kingpin.Fatalf("Cannot set base auth in the server URL and use a http.config.file at the same time")
 		}
 		var err error
-		httpConfig, _, err := config_util.LoadHTTPConfigFile(httpConfigFilePath)
+		httpConfig, _, err := promconfig.LoadHTTPConfigFile(httpConfigFilePath)
 		if err != nil {
 			kingpin.Fatalf("Failed to load HTTP config file: %v", err)
 		}
 
-		httpRoundTripper, err = promconfig.NewRoundTripperFromConfig(*httpConfig, "promtool", config_util.WithUserAgent("promtool/"+version.Version))
+		httpRoundTripper, err = promconfig.NewRoundTripperFromConfig(*httpConfig, "promtool", promconfig.WithUserAgent("promtool/"+version.Version))
 		if err != nil {
 			kingpin.Fatalf("Failed to create a new HTTP round tripper: %v", err)
 		}
@@ -702,7 +700,7 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]strin
 	return ruleFiles, nil
 }
 
-func checkTLSConfig(tlsConfig config_util.TLSConfig, checkSyntaxOnly bool) error {
+func checkTLSConfig(tlsConfig promconfig.TLSConfig, checkSyntaxOnly bool) error {
 	if len(tlsConfig.CertFile) > 0 && len(tlsConfig.KeyFile) == 0 {
 		return fmt.Errorf("client cert file %q specified without client key file", tlsConfig.CertFile)
 	}
