@@ -2,6 +2,8 @@
 
 ## unreleased
 
+## 3.1.0-rc.1 / 2024-12-30
+
 * [BUGFIX] OTLP receiver: Allow colons in non-standard units. #15710
 
 ## 3.1.0-rc.0 / 2024-12-18
