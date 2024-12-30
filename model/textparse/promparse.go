@@ -504,6 +504,10 @@ func yoloString(b []byte) string {
 	return unsafe.String(unsafe.SliceData(b), len(b))
 }
 
+func yoloBytes(b string) []byte {
+	return unsafe.Slice(unsafe.StringData(b), len(b))
+}
+
 func parseFloat(s string) (float64, error) {
 	// Keep to pre-Go 1.13 float formats.
 	if strings.ContainsAny(s, "pP_") {

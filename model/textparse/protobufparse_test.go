@@ -1246,7 +1246,7 @@ func TestProtobufParse(t *testing.T) {
 					),
 				},
 				{
-					m: "rpc_durations_seconds\xffservice\xffexponential\xffquantile\xff0.5",
+					m: "rpc_durations_seconds\xffquantile\xff0.5\xffservice\xffexponential",
 					v: 6.442786329648548e-07,
 					lset: labels.FromStrings(
 						"__name__", "rpc_durations_seconds",
@@ -1255,7 +1255,7 @@ func TestProtobufParse(t *testing.T) {
 					),
 				},
 				{
-					m: "rpc_durations_seconds\xffservice\xffexponential\xffquantile\xff0.9",
+					m: "rpc_durations_seconds\xffquantile\xff0.9\xffservice\xffexponential",
 					v: 1.9435742936658396e-06,
 					lset: labels.FromStrings(
 						"__name__", "rpc_durations_seconds",
@@ -1264,7 +1264,7 @@ func TestProtobufParse(t *testing.T) {
 					),
 				},
 				{
-					m: "rpc_durations_seconds\xffservice\xffexponential\xffquantile\xff0.99",
+					m: "rpc_durations_seconds\xffquantile\xff0.99\xffservice\xffexponential",
 					v: 4.0471608667037015e-06,
 					lset: labels.FromStrings(
 						"__name__", "rpc_durations_seconds",
@@ -2199,7 +2199,7 @@ func TestProtobufParse(t *testing.T) {
 					),
 				},
 				{
-					m: "rpc_durations_seconds\xffservice\xffexponential\xffquantile\xff0.5",
+					m: "rpc_durations_seconds\xffquantile\xff0.5\xffservice\xffexponential",
 					v: 6.442786329648548e-07,
 					lset: labels.FromStrings(
 						"__name__", "rpc_durations_seconds",
@@ -2208,7 +2208,7 @@ func TestProtobufParse(t *testing.T) {
 					),
 				},
 				{
-					m: "rpc_durations_seconds\xffservice\xffexponential\xffquantile\xff0.9",
+					m: "rpc_durations_seconds\xffquantile\xff0.9\xffservice\xffexponential",
 					v: 1.9435742936658396e-06,
 					lset: labels.FromStrings(
 						"__name__", "rpc_durations_seconds",
@@ -2217,7 +2217,7 @@ func TestProtobufParse(t *testing.T) {
 					),
 				},
 				{
-					m: "rpc_durations_seconds\xffservice\xffexponential\xffquantile\xff0.99",
+					m: "rpc_durations_seconds\xffquantile\xff0.99\xffservice\xffexponential",
 					v: 4.0471608667037015e-06,
 					lset: labels.FromStrings(
 						"__name__", "rpc_durations_seconds",
