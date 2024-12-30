@@ -18,10 +18,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/request"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -43,6 +41,10 @@ func int64ptr(i int64) *int64 {
 	return &i
 }
 
+func int32ptr(i int32) *int32 {
+	return &i
+}
+
 // Struct for test data.
 type ec2DataStore struct {
 	region string
@@ -51,7 +53,7 @@ type ec2DataStore struct {
 
 	ownerID string
 
-	instances []*ec2.Instance
+	instances []types.Instance
 }
 
 // The tests itself.
@@ -121,7 +123,7 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 					"azname-b": "azid-2",
 					"azname-c": "azid-3",
 				},
-				instances: []*ec2.Instance{
+				instances: []types.Instance{
 					{
 						InstanceId: strptr("instance-id-noprivateip"),
 					},
@@ -143,26 +145,26 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 					"azname-c": "azid-3",
 				},
 				ownerID: "owner-id-novpc",
-				instances: []*ec2.Instance{
+				instances: []types.Instance{
 					{
 						// set every possible options and test them here
-						Architecture:      strptr("architecture-novpc"),
+						Architecture:      "architecture-novpc",
 						ImageId:           strptr("ami-novpc"),
 						InstanceId:        strptr("instance-id-novpc"),
-						InstanceLifecycle: strptr("instance-lifecycle-novpc"),
-						InstanceType:      strptr("instance-type-novpc"),
-						Placement:         &ec2.Placement{AvailabilityZone: strptr("azname-b")},
-						Platform:          strptr("platform-novpc"),
+						InstanceLifecycle: "instance-lifecycle-novpc",
+						InstanceType:      "instance-type-novpc",
+						Placement:         &types.Placement{AvailabilityZone: strptr("azname-b")},
+						Platform:          "platform-novpc",
 						PrivateDnsName:    strptr("private-dns-novpc"),
 						PrivateIpAddress:  strptr("1.2.3.4"),
 						PublicDnsName:     strptr("public-dns-novpc"),
 						PublicIpAddress:   strptr("42.42.42.2"),
-						State:             &ec2.InstanceState{Name: strptr("running")},
+						State:             &types.InstanceState{Name: "running"},
 						// test tags once and for all
-						Tags: []*ec2.Tag{
+						Tags: []types.Tag{
 							{Key: strptr("tag-1-key"), Value: strptr("tag-1-value")},
 							{Key: strptr("tag-2-key"), Value: strptr("tag-2-value")},
-							nil,
+							{},
 							{Value: strptr("tag-4-value")},
 							{Key: strptr("tag-5-key")},
 						},
@@ -206,22 +208,22 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 					"azname-b": "azid-2",
 					"azname-c": "azid-3",
 				},
-				instances: []*ec2.Instance{
+				instances: []types.Instance{
 					{
 						// just the minimum needed for the refresh work
 						ImageId:          strptr("ami-ipv4"),
 						InstanceId:       strptr("instance-id-ipv4"),
-						InstanceType:     strptr("instance-type-ipv4"),
-						Placement:        &ec2.Placement{AvailabilityZone: strptr("azname-c")},
+						InstanceType:     "instance-type-ipv4",
+						Placement:        &types.Placement{AvailabilityZone: strptr("azname-c")},
 						PrivateIpAddress: strptr("5.6.7.8"),
-						State:            &ec2.InstanceState{Name: strptr("running")},
+						State:            &types.InstanceState{Name: "running"},
 						SubnetId:         strptr("azid-3"),
 						VpcId:            strptr("vpc-ipv4"),
 						// network intefaces
-						NetworkInterfaces: []*ec2.InstanceNetworkInterface{
+						NetworkInterfaces: []types.InstanceNetworkInterface{
 							// interface without subnet -> should be ignored
 							{
-								Ipv6Addresses: []*ec2.InstanceIpv6Address{
+								Ipv6Addresses: []types.InstanceIpv6Address{
 									{
 										Ipv6Address:   strptr("2001:db8:1::1"),
 										IsPrimaryIpv6: boolptr(true),
@@ -230,12 +232,12 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 							},
 							// interface with subnet, no IPv6
 							{
-								Ipv6Addresses: []*ec2.InstanceIpv6Address{},
+								Ipv6Addresses: []types.InstanceIpv6Address{},
 								SubnetId:      strptr("azid-3"),
 							},
 							// interface with another subnet, no IPv6
 							{
-								Ipv6Addresses: []*ec2.InstanceIpv6Address{},
+								Ipv6Addresses: []types.InstanceIpv6Address{},
 								SubnetId:      strptr("azid-1"),
 							},
 						},
@@ -274,25 +276,25 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 					"azname-b": "azid-2",
 					"azname-c": "azid-3",
 				},
-				instances: []*ec2.Instance{
+				instances: []types.Instance{
 					{
 						// just the minimum needed for the refresh work
 						ImageId:          strptr("ami-ipv6"),
 						InstanceId:       strptr("instance-id-ipv6"),
-						InstanceType:     strptr("instance-type-ipv6"),
-						Placement:        &ec2.Placement{AvailabilityZone: strptr("azname-b")},
+						InstanceType:     "instance-type-ipv6",
+						Placement:        &types.Placement{AvailabilityZone: strptr("azname-b")},
 						PrivateIpAddress: strptr("9.10.11.12"),
-						State:            &ec2.InstanceState{Name: strptr("running")},
+						State:            &types.InstanceState{Name: "running"},
 						SubnetId:         strptr("azid-2"),
 						VpcId:            strptr("vpc-ipv6"),
 						// network intefaces
-						NetworkInterfaces: []*ec2.InstanceNetworkInterface{
+						NetworkInterfaces: []types.InstanceNetworkInterface{
 							// interface without primary IPv6, index 2
 							{
-								Attachment: &ec2.InstanceNetworkInterfaceAttachment{
-									DeviceIndex: int64ptr(3),
+								Attachment: &types.InstanceNetworkInterfaceAttachment{
+									DeviceIndex: int32ptr(3),
 								},
-								Ipv6Addresses: []*ec2.InstanceIpv6Address{
+								Ipv6Addresses: []types.InstanceIpv6Address{
 									{
 										Ipv6Address:   strptr("2001:db8:2::1:1"),
 										IsPrimaryIpv6: boolptr(false),
@@ -302,10 +304,10 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 							},
 							// interface with primary IPv6, index 1
 							{
-								Attachment: &ec2.InstanceNetworkInterfaceAttachment{
-									DeviceIndex: int64ptr(1),
+								Attachment: &types.InstanceNetworkInterfaceAttachment{
+									DeviceIndex: int32ptr(1),
 								},
-								Ipv6Addresses: []*ec2.InstanceIpv6Address{
+								Ipv6Addresses: []types.InstanceIpv6Address{
 									{
 										Ipv6Address:   strptr("2001:db8:2::2:1"),
 										IsPrimaryIpv6: boolptr(false),
@@ -319,10 +321,10 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 							},
 							// interface with primary IPv6, index 3
 							{
-								Attachment: &ec2.InstanceNetworkInterfaceAttachment{
-									DeviceIndex: int64ptr(3),
+								Attachment: &types.InstanceNetworkInterfaceAttachment{
+									DeviceIndex: int32ptr(3),
 								},
-								Ipv6Addresses: []*ec2.InstanceIpv6Address{
+								Ipv6Addresses: []types.InstanceIpv6Address{
 									{
 										Ipv6Address:   strptr("2001:db8:2::3:1"),
 										IsPrimaryIpv6: boolptr(true),
@@ -332,10 +334,10 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 							},
 							// interface without primary IPv6, index 0
 							{
-								Attachment: &ec2.InstanceNetworkInterfaceAttachment{
-									DeviceIndex: int64ptr(0),
+								Attachment: &types.InstanceNetworkInterfaceAttachment{
+									DeviceIndex: int32ptr(0),
 								},
-								Ipv6Addresses: []*ec2.InstanceIpv6Address{},
+								Ipv6Addresses: []types.InstanceIpv6Address{},
 								SubnetId:      strptr("azid-3"),
 							},
 						},
@@ -388,27 +390,30 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 
 // EC2 client mock.
 type mockEC2Client struct {
-	ec2iface.EC2API
 	ec2Data ec2DataStore
 }
 
-func newMockEC2Client(ec2Data *ec2DataStore) *mockEC2Client {
-	client := mockEC2Client{
-		ec2Data: *ec2Data,
-	}
-	return &client
+func (m *mockEC2Client) DescribeInstances(ctx context.Context, input *ec2.DescribeInstancesInput, f ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+	r := types.Reservation{}
+	r.Instances = append(r.Instances, m.ec2Data.instances...)
+	r.OwnerId = strptr(m.ec2Data.ownerID)
+
+	o := ec2.DescribeInstancesOutput{}
+	o.Reservations = []types.Reservation{r}
+
+	return &o, nil
 }
 
-func (m *mockEC2Client) DescribeAvailabilityZonesWithContext(ctx aws.Context, input *ec2.DescribeAvailabilityZonesInput, opts ...request.Option) (*ec2.DescribeAvailabilityZonesOutput, error) {
+func (m *mockEC2Client) DescribeAvailabilityZones(ctx context.Context, params *ec2.DescribeAvailabilityZonesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAvailabilityZonesOutput, error) {
 	if len(m.ec2Data.azToAZID) == 0 {
 		return nil, errors.New("No AZs found")
 	}
 
-	azs := make([]*ec2.AvailabilityZone, len(m.ec2Data.azToAZID))
+	azs := make([]types.AvailabilityZone, len(m.ec2Data.azToAZID))
 
 	i := 0
 	for k, v := range m.ec2Data.azToAZID {
-		azs[i] = &ec2.AvailabilityZone{
+		azs[i] = types.AvailabilityZone{
 			ZoneName: strptr(k),
 			ZoneId:   strptr(v),
 		}
@@ -420,15 +425,9 @@ func (m *mockEC2Client) DescribeAvailabilityZonesWithContext(ctx aws.Context, in
 	}, nil
 }
 
-func (m *mockEC2Client) DescribeInstancesPagesWithContext(ctx aws.Context, input *ec2.DescribeInstancesInput, fn func(*ec2.DescribeInstancesOutput, bool) bool, opts ...request.Option) error {
-	r := ec2.Reservation{}
-	r.SetInstances(m.ec2Data.instances)
-	r.SetOwnerId(m.ec2Data.ownerID)
-
-	o := ec2.DescribeInstancesOutput{}
-	o.SetReservations([]*ec2.Reservation{&r})
-
-	_ = fn(&o, true)
-
-	return nil
+func newMockEC2Client(ec2Data *ec2DataStore) *mockEC2Client {
+	client := mockEC2Client{
+		ec2Data: *ec2Data,
+	}
+	return &client
 }

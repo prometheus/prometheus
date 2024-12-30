@@ -23,19 +23,20 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
-	"github.com/aws/aws-sdk-go/aws/ec2metadata"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsConfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/aws/smithy-go"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
-
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -124,16 +125,16 @@ func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if c.Region == "" {
-		sess, err := session.NewSession()
+		cfg, err := awsConfig.LoadDefaultConfig(context.TODO())
 		if err != nil {
 			return err
 		}
-		metadata := ec2metadata.New(sess)
-		region, err := metadata.Region()
+		client := imds.NewFromConfig(cfg)
+		result, err := client.GetRegion(context.Background(), &imds.GetRegionInput{})
 		if err != nil {
 			return errors.New("EC2 SD configuration requires a region")
 		}
-		c.Region = region
+		c.Region = result.Region
 	}
 	for _, f := range c.Filters {
 		if len(f.Values) == 0 {
@@ -143,13 +144,18 @@ func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return c.HTTPClientConfig.Validate()
 }
 
+type ec2Client interface {
+	ec2.DescribeInstancesAPIClient
+	DescribeAvailabilityZones(ctx context.Context, params *ec2.DescribeAvailabilityZonesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAvailabilityZonesOutput, error)
+}
+
 // EC2Discovery periodically performs EC2-SD requests. It implements
 // the Discoverer interface.
 type EC2Discovery struct {
 	*refresh.Discovery
 	logger *slog.Logger
 	cfg    *EC2SDConfig
-	ec2    ec2iface.EC2API
+	ec2    ec2Client
 
 	// azToAZID maps this account's availability zones to their underlying AZ
 	// ID, e.g. eu-west-2a -> euw2-az2. Refreshes are performed sequentially, so
@@ -183,14 +189,31 @@ func NewEC2Discovery(conf *EC2SDConfig, logger *slog.Logger, metrics discovery.D
 	return d, nil
 }
 
-func (d *EC2Discovery) ec2Client(context.Context) (ec2iface.EC2API, error) {
+func (d *EC2Discovery) ec2Client(ctx context.Context) (ec2Client, error) {
 	if d.ec2 != nil {
 		return d.ec2, nil
 	}
 
-	creds := credentials.NewStaticCredentials(d.cfg.AccessKey, string(d.cfg.SecretKey), "")
+	var creds aws.CredentialsProvider
+	creds = aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(d.cfg.AccessKey, string(d.cfg.SecretKey), ""))
+
 	if d.cfg.AccessKey == "" && d.cfg.SecretKey == "" {
 		creds = nil
+	}
+
+	cfg, err := awsConfig.LoadDefaultConfig(ctx, func(options *awsConfig.LoadOptions) error {
+		options.Region = d.cfg.Region
+		options.Credentials = creds
+		options.SharedConfigProfile = d.cfg.Profile
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("could not create aws config: %w", err)
+	}
+
+	if d.cfg.RoleARN != "" {
+		creds = stscreds.NewAssumeRoleProvider(sts.NewFromConfig(cfg), d.cfg.RoleARN)
 	}
 
 	client, err := config.NewClientFromConfig(d.cfg.HTTPClientConfig, "ec2_sd")
@@ -198,31 +221,17 @@ func (d *EC2Discovery) ec2Client(context.Context) (ec2iface.EC2API, error) {
 		return nil, err
 	}
 
-	sess, err := session.NewSessionWithOptions(session.Options{
-		Config: aws.Config{
-			Endpoint:    &d.cfg.Endpoint,
-			Region:      &d.cfg.Region,
-			Credentials: creds,
-			HTTPClient:  client,
-		},
-		Profile: d.cfg.Profile,
+	d.ec2 = ec2.NewFromConfig(cfg, func(options *ec2.Options) {
+		options.Credentials = creds
+		options.BaseEndpoint = &d.cfg.Endpoint
+		options.HTTPClient = client
 	})
-	if err != nil {
-		return nil, fmt.Errorf("could not create aws session: %w", err)
-	}
-
-	if d.cfg.RoleARN != "" {
-		creds := stscreds.NewCredentials(sess, d.cfg.RoleARN)
-		d.ec2 = ec2.New(sess, &aws.Config{Credentials: creds})
-	} else {
-		d.ec2 = ec2.New(sess)
-	}
 
 	return d.ec2, nil
 }
 
 func (d *EC2Discovery) refreshAZIDs(ctx context.Context) error {
-	azs, err := d.ec2.DescribeAvailabilityZonesWithContext(ctx, &ec2.DescribeAvailabilityZonesInput{})
+	azs, err := d.ec2.DescribeAvailabilityZones(ctx, &ec2.DescribeAvailabilityZonesInput{})
 	if err != nil {
 		return err
 	}
@@ -243,11 +252,11 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 		Source: d.cfg.Region,
 	}
 
-	var filters []*ec2.Filter
+	var filters []types.Filter
 	for _, f := range d.cfg.Filters {
-		filters = append(filters, &ec2.Filter{
+		filters = append(filters, types.Filter{
 			Name:   aws.String(f.Name),
-			Values: aws.StringSlice(f.Values),
+			Values: f.Values,
 		})
 	}
 
@@ -262,7 +271,16 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 	}
 
 	input := &ec2.DescribeInstancesInput{Filters: filters}
-	if err := ec2Client.DescribeInstancesPagesWithContext(ctx, input, func(p *ec2.DescribeInstancesOutput, lastPage bool) bool {
+	paginator := ec2.NewDescribeInstancesPaginator(ec2Client, input)
+	for paginator.HasMorePages() {
+		p, err := paginator.NextPage(context.TODO())
+		if err != nil {
+			var awsErr smithy.APIError
+			if errors.As(err, &awsErr) && (awsErr.ErrorCode() == "AuthFailure" || awsErr.ErrorCode() == "UnauthorizedOperation") {
+				d.ec2 = nil
+			}
+			return nil, fmt.Errorf("could not describe instances: %w", err)
+		}
 		for _, r := range p.Reservations {
 			for _, inst := range r.Instances {
 				if inst.PrivateIpAddress == nil {
@@ -285,8 +303,8 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 				addr := net.JoinHostPort(*inst.PrivateIpAddress, strconv.Itoa(d.cfg.Port))
 				labels[model.AddressLabel] = model.LabelValue(addr)
 
-				if inst.Platform != nil {
-					labels[ec2LabelPlatform] = model.LabelValue(*inst.Platform)
+				if inst.Platform != "" {
+					labels[ec2LabelPlatform] = model.LabelValue(inst.Platform)
 				}
 
 				if inst.PublicIpAddress != nil {
@@ -302,15 +320,15 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 						"az", *inst.Placement.AvailabilityZone)
 				}
 				labels[ec2LabelAZID] = model.LabelValue(azID)
-				labels[ec2LabelInstanceState] = model.LabelValue(*inst.State.Name)
-				labels[ec2LabelInstanceType] = model.LabelValue(*inst.InstanceType)
+				labels[ec2LabelInstanceState] = model.LabelValue(inst.State.Name)
+				labels[ec2LabelInstanceType] = model.LabelValue(inst.InstanceType)
 
-				if inst.InstanceLifecycle != nil {
-					labels[ec2LabelInstanceLifecycle] = model.LabelValue(*inst.InstanceLifecycle)
+				if inst.InstanceLifecycle != "" {
+					labels[ec2LabelInstanceLifecycle] = model.LabelValue(inst.InstanceLifecycle)
 				}
 
-				if inst.Architecture != nil {
-					labels[ec2LabelArch] = model.LabelValue(*inst.Architecture)
+				if inst.Architecture != "" {
+					labels[ec2LabelArch] = model.LabelValue(inst.Architecture)
 				}
 
 				if inst.VpcId != nil {
@@ -337,7 +355,7 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 								// we might have to extend the slice with more than one element
 								// that could leave empty strings in the list which is intentional
 								// to keep the position/device index information
-								for int64(len(primaryipv6addrs)) <= *eni.Attachment.DeviceIndex {
+								for int32(len(primaryipv6addrs)) <= *eni.Attachment.DeviceIndex {
 									primaryipv6addrs = append(primaryipv6addrs, "")
 								}
 								primaryipv6addrs[*eni.Attachment.DeviceIndex] = *ipv6addr.Ipv6Address
@@ -363,7 +381,7 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 				}
 
 				for _, t := range inst.Tags {
-					if t == nil || t.Key == nil || t.Value == nil {
+					if t.Key == nil || t.Value == nil {
 						continue
 					}
 					name := strutil.SanitizeLabelName(*t.Key)
@@ -372,13 +390,6 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 				tg.Targets = append(tg.Targets, labels)
 			}
 		}
-		return true
-	}); err != nil {
-		var awsErr awserr.Error
-		if errors.As(err, &awsErr) && (awsErr.Code() == "AuthFailure" || awsErr.Code() == "UnauthorizedOperation") {
-			d.ec2 = nil
-		}
-		return nil, fmt.Errorf("could not describe instances: %w", err)
 	}
 	return []*targetgroup.Group{tg}, nil
 }
