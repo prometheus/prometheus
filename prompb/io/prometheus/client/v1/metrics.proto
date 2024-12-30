@@ -54,7 +54,7 @@ message Gauge {
 
 message Counter {
   double   value    = 1;
-  Exemplar exemplar = 2 [lazy = true];
+  Exemplar exemplar = 2;
 
   google.protobuf.Timestamp  created_timestamp = 3;
 }
@@ -118,14 +118,14 @@ message Histogram {
   repeated double positive_count = 14; // Absolute count of each bucket.
 
   // Only used for native histograms. These exemplars MUST have a timestamp.
-  repeated Exemplar exemplars = 16 [lazy = true];
+  repeated Exemplar exemplars = 16;
 }
 
 message Bucket {
   uint64   cumulative_count       = 1; // Cumulative in increasing order.
   double   cumulative_count_float = 4; // Overrides cumulative_count if > 0.
   double   upper_bound            = 2; // Inclusive.
-  Exemplar exemplar               = 3 [lazy = true];
+  Exemplar exemplar               = 3;
 }
 
 // A BucketSpan defines a number of consecutive buckets in a native
@@ -147,11 +147,11 @@ message Exemplar {
 
 message Metric {
   repeated LabelPair label        = 1 [lazy = true];
-  Gauge              gauge        = 2 [lazy = true];
-  Counter            counter      = 3 [lazy = true];
-  Summary            summary      = 4 [lazy = true];
-  Untyped            untyped      = 5 [lazy = true];
-  Histogram          histogram    = 7 [lazy = true];
+  Gauge              gauge        = 2;
+  Counter            counter      = 3;
+  Summary            summary      = 4;
+  Untyped            untyped      = 5;
+  Histogram          histogram    = 7;
   int64              timestamp_ms = 6;
 }
 
@@ -159,6 +159,6 @@ message MetricFamily {
   string          name   = 1;
   string          help   = 2;
   MetricType      type   = 3;
-  repeated Metric metric = 4 [lazy = true];
+  repeated Metric metric = 4;
   string          unit   = 5;
 }

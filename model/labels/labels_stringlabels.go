@@ -630,7 +630,7 @@ func (b *ScratchBuilder) Add(name, value string) {
 	b.add = append(b.add, Label{Name: name, Value: value})
 }
 
-// Add a name/value pair, using []byte instead of string to reduce memory allocations.
+// UnsafeAddBytes a name/value pair, using []byte instead of string to reduce memory allocations.
 // The values must remain live until Labels() is called.
 func (b *ScratchBuilder) UnsafeAddBytes(name, value []byte) {
 	b.add = append(b.add, Label{Name: yoloString(name), Value: yoloString(value)})

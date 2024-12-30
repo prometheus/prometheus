@@ -79,16 +79,15 @@ type ProtobufParser struct {
 	// that we have to decode the next MetricFamily.
 	state Entry
 
-	builder labels.ScratchBuilder // held here to reduce allocations when building Labels
+	builder         labels.ScratchBuilder // held here to reduce allocations when building Labels
+	currLset        labels.Labels
+	currMetricBytes []byte // This is mostly to satisfy parser interface, assuming it's only for cache key.
 
 	mf *clientv1.MetricFamily
 
 	// Whether to also parse a classic histogram that is also present as a
 	// native histogram.
 	parseClassicHistograms bool
-
-	// The following are just shenanigans to satisfy the Parser interface.
-	metricBytes *bytes.Buffer // A somewhat fluid representation of the current metric.
 }
 
 // NewProtobufParser returns a parser for the payload in the byte slice.
@@ -97,7 +96,6 @@ func NewProtobufParser(b []byte, parseClassicHistograms bool, st *labels.SymbolT
 		in:                     b,
 		state:                  EntryInvalid,
 		mf:                     &clientv1.MetricFamily{},
-		metricBytes:            &bytes.Buffer{},
 		parseClassicHistograms: parseClassicHistograms,
 		builder:                labels.NewScratchBuilderWithSymbolTable(st, 16),
 	}
@@ -161,7 +159,7 @@ func (p *ProtobufParser) Series() ([]byte, *int64, float64) {
 		panic("encountered unexpected metric type, this is a bug")
 	}
 	if ts != 0 {
-		return p.metricBytes.Bytes(), &ts, v
+		return p.currMetricBytes, &ts, v
 	}
 	// TODO(beorn7): We assume here that ts==0 means no timestamp. That's
 	// not true in general, but proto3 originally has no distinction between
@@ -172,7 +170,7 @@ func (p *ProtobufParser) Series() ([]byte, *int64, float64) {
 	// away from gogo-protobuf to an actively maintained protobuf
 	// implementation. Once that's done, we can simply use the `optional`
 	// keyword and check for the unset state explicitly.
-	return p.metricBytes.Bytes(), nil, v
+	return p.currMetricBytes, nil, v
 }
 
 // Histogram returns the bytes of a series with a native histogram as a value,
@@ -220,12 +218,12 @@ func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram, *his
 		}
 		fh.Compact(0)
 		if ts != 0 {
-			return p.metricBytes.Bytes(), &ts, nil, &fh
+			return p.currMetricBytes, &ts, nil, &fh
 		}
 		// Nasty hack: Assume that ts==0 means no timestamp. That's not true in
 		// general, but proto3 has no distinction between unset and
 		// default. Need to avoid in the final format.
-		return p.metricBytes.Bytes(), nil, nil, &fh
+		return p.currMetricBytes, nil, nil, &fh
 	}
 
 	sh := histogram.Histogram{
@@ -252,23 +250,23 @@ func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram, *his
 	}
 	sh.Compact(0)
 	if ts != 0 {
-		return p.metricBytes.Bytes(), &ts, &sh, nil
+		return p.currMetricBytes, &ts, &sh, nil
 	}
-	return p.metricBytes.Bytes(), nil, &sh, nil
+	return p.currMetricBytes, nil, &sh, nil
 }
 
 // Help returns the metric name and help text in the current entry.
 // Must only be called after Next returned a help entry.
 // The returned byte slices become invalid after the next call to Next.
 func (p *ProtobufParser) Help() ([]byte, []byte) {
-	return p.metricBytes.Bytes(), []byte(p.mf.GetHelp())
+	return p.currMetricBytes, []byte(p.mf.GetHelp())
 }
 
 // Type returns the metric name and type in the current entry.
 // Must only be called after Next returned a type entry.
 // The returned byte slices become invalid after the next call to Next.
 func (p *ProtobufParser) Type() ([]byte, model.MetricType) {
-	n := p.metricBytes.Bytes()
+	n := p.currMetricBytes
 	switch p.mf.GetType() {
 	case clientv1.MetricType_COUNTER:
 		return n, model.MetricTypeCounter
@@ -288,7 +286,7 @@ func (p *ProtobufParser) Type() ([]byte, model.MetricType) {
 // Must only be called after Next returned a unit entry.
 // The returned byte slices become invalid after the next call to Next.
 func (p *ProtobufParser) Unit() ([]byte, []byte) {
-	return p.metricBytes.Bytes(), []byte(p.mf.GetUnit())
+	return p.currMetricBytes, []byte(p.mf.GetUnit())
 }
 
 // Comment always returns nil because comments aren't supported by the protobuf
@@ -297,24 +295,46 @@ func (p *ProtobufParser) Comment() []byte {
 	return nil
 }
 
-// Metric writes the labels of the current sample into the passed labels.
-// It returns the string from which the metric was parsed.
-func (p *ProtobufParser) Metric(l *labels.Labels) string {
+func (p *ProtobufParser) updateLset() error {
 	p.builder.Reset()
 	p.builder.Add(labels.MetricName, p.getMagicName())
 
-	for _, lp := range p.mf.GetMetric()[p.metricPos].GetLabel() {
-		p.builder.Add(lp.GetName(), lp.GetValue())
+	if err := p.mf.GetMetric()[p.metricPos].ParseLabels(&p.builder); err != nil {
+		return err
 	}
+
 	if needed, name, value := p.getMagicLabel(); needed {
 		p.builder.Add(name, value)
 	}
 
+	// TODO(bwplotka): Check validity metric as it was done previously?
+	//for _, lp := range p.mf.GetMetric()[p.metricPos].GetLabel() {
+	//	b.WriteByte(model.SeparatorByte)
+	//	n := lp.GetName()
+	//	if !model.LabelName(n).IsValid() {
+	//		return fmt.Errorf("invalid label name: %s", n)
+	//	}
+	//	b.WriteString(n)
+	//	b.WriteByte(model.SeparatorByte)
+	//	v := lp.GetValue()
+	//	if !utf8.ValidString(v) {
+	//		return fmt.Errorf("invalid label value: %s", v)
+	//	}
+	//	b.WriteString(v)
+	//}
+
 	// Sort labels to maintain the sorted labels invariant.
 	p.builder.Sort()
-	*l = p.builder.Labels()
+	p.currLset = p.builder.Labels()
+	p.currMetricBytes = p.currLset.Bytes(p.currMetricBytes)
+	return nil
+}
 
-	return p.metricBytes.String()
+// Metric writes the labels of the current sample into the passed labels.
+// It returns the string from which the metric was parsed.
+func (p *ProtobufParser) Metric(l *labels.Labels) string {
+	*l = p.currLset
+	return yoloString(p.currMetricBytes)
 }
 
 // Exemplar writes the exemplar of the current sample into the passed
@@ -462,8 +482,8 @@ func (p *ProtobufParser) Next() (Entry, error) {
 				return EntryInvalid, fmt.Errorf("unit %q not a suffix of metric %q", unit, name)
 			}
 		}
-		p.metricBytes.Reset()
-		p.metricBytes.WriteString(name)
+		p.currMetricBytes = p.currMetricBytes[:0]
+		p.currMetricBytes = append(p.currMetricBytes, []byte(name)...)
 
 		p.state = EntryHelp
 	case EntryHelp:
@@ -482,7 +502,7 @@ func (p *ProtobufParser) Next() (Entry, error) {
 		} else {
 			p.state = EntrySeries
 		}
-		if err := p.updateMetricBytes(); err != nil {
+		if err := p.updateLset(); err != nil {
 			return EntryInvalid, err
 		}
 	case EntryHistogram, EntrySeries:
@@ -516,40 +536,13 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			p.state = EntryInvalid
 			return p.Next()
 		}
-		if err := p.updateMetricBytes(); err != nil {
+		if err := p.updateLset(); err != nil {
 			return EntryInvalid, err
 		}
 	default:
 		return EntryInvalid, fmt.Errorf("invalid protobuf parsing state: %d", p.state)
 	}
 	return p.state, nil
-}
-
-func (p *ProtobufParser) updateMetricBytes() error {
-	b := p.metricBytes
-	b.Reset()
-	b.WriteString(p.getMagicName())
-	for _, lp := range p.mf.GetMetric()[p.metricPos].GetLabel() {
-		b.WriteByte(model.SeparatorByte)
-		n := lp.GetName()
-		if !model.LabelName(n).IsValid() {
-			return fmt.Errorf("invalid label name: %s", n)
-		}
-		b.WriteString(n)
-		b.WriteByte(model.SeparatorByte)
-		v := lp.GetValue()
-		if !utf8.ValidString(v) {
-			return fmt.Errorf("invalid label value: %s", v)
-		}
-		b.WriteString(v)
-	}
-	if needed, n, v := p.getMagicLabel(); needed {
-		b.WriteByte(model.SeparatorByte)
-		b.WriteString(n)
-		b.WriteByte(model.SeparatorByte)
-		b.WriteString(v)
-	}
-	return nil
 }
 
 // getMagicName usually just returns p.mf.GetType() but adds a magic suffix
