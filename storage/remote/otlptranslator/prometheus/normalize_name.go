@@ -95,9 +95,6 @@ func BuildCompliantName(metric pmetric.Metric, namespace string, addMetricSuffix
 
 	var metricName string
 	if !allowUTF8 {
-		// Regexp for metric name characters that should be replaced with _.
-		invalidMetricCharRE := regexp.MustCompile(`[^a-zA-Z0-9:_]`)
-
 		// Simple case (no full normalization, no units, etc.).
 		metricName = strings.Join(strings.FieldsFunc(metric.Name(), func(r rune) bool {
 			return invalidMetricCharRE.MatchString(string(r))
@@ -119,7 +116,12 @@ func BuildCompliantName(metric pmetric.Metric, namespace string, addMetricSuffix
 	return metricName
 }
 
-var nonMetricNameCharRE = regexp.MustCompile(`[^a-zA-Z0-9:]`)
+var (
+	nonMetricNameCharRE = regexp.MustCompile(`[^a-zA-Z0-9:]`)
+	// Regexp for metric name characters that should be replaced with _.
+	invalidMetricCharRE   = regexp.MustCompile(`[^a-zA-Z0-9:_]`)
+	multipleUnderscoresRE = regexp.MustCompile(`__+`)
+)
 
 // Build a normalized name for the specified metric.
 func normalizeName(metric pmetric.Metric, namespace string, allowUTF8 bool) string {
@@ -227,7 +229,6 @@ func normalizeName(metric pmetric.Metric, namespace string, allowUTF8 bool) stri
 func cleanUpUnit(unit string) string {
 	// Multiple consecutive underscores are replaced with a single underscore.
 	// This is part of the OTel to Prometheus specification: https://github.com/open-telemetry/opentelemetry-specification/blob/v1.38.0/specification/compatibility/prometheus_and_openmetrics.md#otlp-metric-points-to-prometheus.
-	multipleUnderscoresRE := regexp.MustCompile(`__+`)
 	return strings.TrimPrefix(multipleUnderscoresRE.ReplaceAllString(
 		nonMetricNameCharRE.ReplaceAllString(unit, "_"),
 		"_",
