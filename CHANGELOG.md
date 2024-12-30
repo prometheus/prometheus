@@ -2,6 +2,8 @@
 
 ## unreleased
 
+* [BUGFIX] OTLP receiver: Allow colons in non-standard units. #15710
+
 ## 3.1.0-rc.0 / 2024-12-18
 
  * [SECURITY] upgrade golang.org/x/crypto to address reported CVE-2024-45337. #15691

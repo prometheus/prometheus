@@ -39,6 +39,8 @@ func TestWhiteSpaces(t *testing.T) {
 
 func TestNonStandardUnit(t *testing.T) {
 	require.Equal(t, "system_network_dropped", normalizeName(createGauge("system.network.dropped", "{packets}"), "", false))
+	// The normal metric name character set is allowed in non-standard units.
+	require.Equal(t, "system_network_dropped_nonstandard:_1", normalizeName(createGauge("system.network.dropped", "nonstandard:_1"), "", false))
 }
 
 func TestNonStandardUnitCounter(t *testing.T) {
@@ -70,6 +72,12 @@ func TestHertz(t *testing.T) {
 func TestPer(t *testing.T) {
 	require.Equal(t, "broken_metric_speed_km_per_hour", normalizeName(createGauge("broken.metric.speed", "km/h"), "", false))
 	require.Equal(t, "astro_light_speed_limit_meters_per_second", normalizeName(createGauge("astro.light.speed_limit", "m/s"), "", false))
+	// The normal metric name character set is allowed in non-standard units.
+	require.Equal(t, "system_network_dropped_non_per_standard:_1", normalizeName(createGauge("system.network.dropped", "non/standard:_1"), "", false))
+
+	t.Run("invalid per unit", func(t *testing.T) {
+		require.Equal(t, "broken_metric_speed_km", normalizeName(createGauge("broken.metric.speed", "km/°"), "", false))
+	})
 }
 
 func TestPercent(t *testing.T) {
@@ -91,7 +99,7 @@ func TestAllowUTF8(t *testing.T) {
 	})
 	t.Run("disallow UTF8", func(t *testing.T) {
 		require.Equal(t, "unsupported_metric_temperature_F", normalizeName(createGauge("unsupported.metric.temperature", "°F"), "", false))
-		require.Equal(t, "unsupported_metric_weird", normalizeName(createGauge("unsupported.metric.weird", "+=.:,!* & #"), "", false))
+		require.Equal(t, "unsupported_metric_weird", normalizeName(createGauge("unsupported.metric.weird", "+=.,!* & #"), "", false))
 		require.Equal(t, "unsupported_metric_redundant_test_per_C", normalizeName(createGauge("unsupported.metric.redundant", "__test $/°C"), "", false))
 		require.Equal(t, "metric_with_foreign_characters", normalizeName(createGauge("metric_with_字符_foreign_characters", "ど"), "", false))
 	})
