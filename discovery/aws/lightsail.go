@@ -172,7 +172,6 @@ func (d *LightsailDiscovery) lightsailClient(ctx context.Context) (*lightsail.Cl
 		options.SharedConfigProfile = d.cfg.Profile
 		return nil
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("could not create aws config: %w", err)
 	}
@@ -241,9 +240,7 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 
 		if len(inst.Ipv6Addresses) > 0 {
 			var ipv6addrs []string
-			for _, ipv6addr := range inst.Ipv6Addresses {
-				ipv6addrs = append(ipv6addrs, ipv6addr)
-			}
+			ipv6addrs = append(ipv6addrs, inst.Ipv6Addresses...)
 			labels[lightsailLabelIPv6Addresses] = model.LabelValue(
 				lightsailLabelSeparator +
 					strings.Join(ipv6addrs, lightsailLabelSeparator) +

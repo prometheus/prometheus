@@ -37,10 +37,6 @@ func boolptr(b bool) *bool {
 	return &b
 }
 
-func int64ptr(i int64) *int64 {
-	return &i
-}
-
 func int32ptr(i int32) *int32 {
 	return &i
 }

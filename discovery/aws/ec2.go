@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
+
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -207,7 +208,6 @@ func (d *EC2Discovery) ec2Client(ctx context.Context) (ec2Client, error) {
 		options.SharedConfigProfile = d.cfg.Profile
 		return nil
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("could not create aws config: %w", err)
 	}
