@@ -61,6 +61,7 @@ type Parser interface {
 	// It returns the string from which the metric was parsed.
 	// The values of the "le" labels of classic histograms and "quantile" labels
 	// of summaries should follow the OpenMetrics formatting rules.
+	// TODO(bwplotka): Remove return argument, no one is using this.
 	Metric(l *labels.Labels) string
 
 	// Exemplar writes the exemplar of the current sample into the passed
