@@ -209,6 +209,11 @@ type parsedEntry struct {
 func requireEntries(t *testing.T, exp, got []parsedEntry) {
 	t.Helper()
 
+	for i := range exp {
+		testutil.RequireEqualWithOptions(t, exp[i], got[i], []cmp.Option{
+			cmp.AllowUnexported(parsedEntry{}),
+		}, "on case %v", i)
+	}
 	testutil.RequireEqualWithOptions(t, exp, got, []cmp.Option{
 		cmp.AllowUnexported(parsedEntry{}),
 	})
@@ -230,15 +235,18 @@ func testParse(t *testing.T, p Parser) (ret []parsedEntry) {
 		case EntryInvalid:
 			t.Fatal("entry invalid not expected")
 		case EntrySeries, EntryHistogram:
+			var ts *int64
 			if et == EntrySeries {
-				m, got.t, got.v = p.Series()
-				got.m = string(m)
+				m, ts, got.v = p.Series()
 			} else {
-				m, got.t, got.shs, got.fhs = p.Histogram()
-				got.m = string(m)
+				m, ts, got.shs, got.fhs = p.Histogram()
 			}
-
+			if ts != nil {
+				got.t = int64p(*ts) // Change to 0, it's ridiculous.
+			}
+			got.m = string(m)
 			p.Metric(&got.lset)
+
 			// Parser reuses int pointer.
 			if ct := p.CreatedTimestamp(); ct != nil {
 				got.ct = int64p(*ct)
