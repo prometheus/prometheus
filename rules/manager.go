@@ -444,8 +444,8 @@ func SendAlerts(s Sender, externalURL string) NotifyFunc {
 // RuleDependencyController controls whether a set of rules have dependencies between each other.
 type RuleDependencyController interface {
 	// AnalyseRules analyses dependencies between the input rules. For each rule that it's guaranteed
-	// not having any dependants and/or dependency, this function should call Rule.SetNoDependentRules(true)
-	// and/or Rule.SetNoDependencyRules(true).
+	// not having any dependants and/or dependency, this function should call Rule.SetDependentRules(...)
+	// and/or Rule.SetDependencyRules(...).
 	AnalyseRules(rules []Rule)
 }
 
@@ -460,8 +460,8 @@ func (c ruleDependencyController) AnalyseRules(rules []Rule) {
 	}
 
 	for _, r := range rules {
-		r.SetNoDependentRules(depMap.dependents(r) == 0)
-		r.SetNoDependencyRules(depMap.dependencies(r) == 0)
+		r.SetDependentRules(depMap.dependents(r))
+		r.SetDependencyRules(depMap.dependencies(r))
 	}
 }
 
