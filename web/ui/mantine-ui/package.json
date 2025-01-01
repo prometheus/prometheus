@@ -62,7 +62,7 @@
     "eslint": "^9.16.0",
     "eslint-plugin-react-hooks": "^5.1.0",
     "eslint-plugin-react-refresh": "^0.4.16",
-    "globals": "^15.13.0",
+    "globals": "^15.14.0",
     "jsdom": "^25.0.1",
     "postcss": "^8.4.47",
     "postcss-preset-mantine": "^1.17.0",
