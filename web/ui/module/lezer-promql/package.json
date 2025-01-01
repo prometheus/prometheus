@@ -34,7 +34,7 @@
     "@lezer/generator": "^1.7.2",
     "@lezer/highlight": "^1.2.0",
     "@lezer/lr": "^1.4.2",
-    "@rollup/plugin-node-resolve": "^15.3.0"
+    "@rollup/plugin-node-resolve": "^16.0.0"
   },
   "peerDependencies": {
     "@lezer/highlight": "^1.1.2",
