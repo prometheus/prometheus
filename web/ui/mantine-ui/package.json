@@ -36,7 +36,7 @@
     "@testing-library/react": "^16.1.0",
     "@types/lodash": "^4.17.13",
     "@types/sanitize-html": "^2.13.0",
-    "@uiw/react-codemirror": "^4.23.6",
+    "@uiw/react-codemirror": "^4.23.7",
     "clsx": "^2.1.1",
     "dayjs": "^1.11.10",
     "lodash": "^4.17.21",
