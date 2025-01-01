@@ -20,7 +20,7 @@ require (
 	github.com/digitalocean/godo v1.132.0
 	github.com/docker/docker v27.4.1+incompatible
 	github.com/edsrzf/mmap-go v1.2.0
-	github.com/envoyproxy/go-control-plane v0.13.1
+	github.com/envoyproxy/go-control-plane/envoy v1.32.2
 	github.com/envoyproxy/protoc-gen-validate v1.1.0
 	github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
 	github.com/fsnotify/fsnotify v1.8.0
