@@ -46,6 +46,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
@@ -440,27 +441,41 @@ func BenchmarkLoadWLs(b *testing.B) {
 
 // BenchmarkLoadRealWLs will be skipped unless the BENCHMARK_LOAD_REAL_WLS_DIR environment variable is set.
 // BENCHMARK_LOAD_REAL_WLS_DIR should be the folder where `wal` and `chunks_head` are located.
+//
+// Using an absolute path for BENCHMARK_LOAD_REAL_WLS_DIR is recommended.
+//
+// Because WLs loading may alter BENCHMARK_LOAD_REAL_WLS_DIR which can affect benchmark results and to ensure consistency,
+// a copy of BENCHMARK_LOAD_REAL_WLS_DIR is made for each iteration and deleted at the end.
+// Make sure there is sufficient disk space for that.
 func BenchmarkLoadRealWLs(b *testing.B) {
-	dir := os.Getenv("BENCHMARK_LOAD_REAL_WLS_DIR")
-	if dir == "" {
+	srcDir := os.Getenv("BENCHMARK_LOAD_REAL_WLS_DIR")
+	if srcDir == "" {
 		b.SkipNow()
 	}
 
-	wal, err := wlog.New(nil, nil, filepath.Join(dir, "wal"), wlog.CompressionNone)
-	require.NoError(b, err)
-	b.Cleanup(func() { wal.Close() })
-
-	wbl, err := wlog.New(nil, nil, filepath.Join(dir, "wbl"), wlog.CompressionNone)
-	require.NoError(b, err)
-	b.Cleanup(func() { wbl.Close() })
-
 	// Load the WAL.
 	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		dir := b.TempDir()
+		require.NoError(b, fileutil.CopyDirs(srcDir, dir))
+
+		wal, err := wlog.New(nil, nil, filepath.Join(dir, "wal"), wlog.CompressionNone)
+		require.NoError(b, err)
+		b.Cleanup(func() { wal.Close() })
+
+		wbl, err := wlog.New(nil, nil, filepath.Join(dir, "wbl"), wlog.CompressionNone)
+		require.NoError(b, err)
+		b.Cleanup(func() { wbl.Close() })
+		b.StartTimer()
+
 		opts := DefaultHeadOptions()
 		opts.ChunkDirRoot = dir
 		h, err := NewHead(nil, nil, wal, wbl, opts, nil)
 		require.NoError(b, err)
 		require.NoError(b, h.Init(0))
+
+		b.StopTimer()
+		require.NoError(b, os.RemoveAll(dir))
 	}
 }
 
