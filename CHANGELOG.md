@@ -23,6 +23,7 @@
  * [PERF] TSDB: Optimize inverse matching. #14144
  * [PERF] Regex: use stack memory for lowercase copy of string. #15210
  * [PERF] TSDB: When deleting from postings index, pause to unlock and let readers read. #15242
+ * [BUGFIX] Main: Avoid possible segfault at exit. (#15724)
  * [BUGFIX] Rules: Do not run rules concurrently if uncertain about dependencies. #15560
  * [BUGFIX] PromQL: Adds test for `absent`, `absent_over_time` and `deriv` func with histograms. #15667
  * [BUGFIX] PromQL: Fix various bugs related to quoting UTF-8 characters. #15531
