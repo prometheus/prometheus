@@ -21,6 +21,7 @@ import (
 )
 
 func Test_EndpointSliceAdaptor_v1(t *testing.T) {
+	t.Parallel()
 	endpointSlice := makeEndpointSliceV1()
 	adaptor := newEndpointSliceAdaptorFromV1(endpointSlice)
 

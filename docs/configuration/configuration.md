@@ -182,6 +182,10 @@ otlp:
   #   It preserves all special characters like dots, but it still add required suffixes
   #   for units and _total like in UnderscoreEscapingWithSuffixes.
   [ translation_strategy: <string> | default = "UnderscoreEscapingWithSuffixes" ]
+  # Enables adding "service.name", "service.namespace" and "service.instance.id"
+  # resource attributes to the "target_info" metric, on top of converting
+  # them into the "instance" and "job" labels.
+  [ keep_identifying_resource_attributes: <boolean> | default = false]
 
 # Settings related to the remote read feature.
 remote_read:
@@ -2146,7 +2150,8 @@ The following meta labels are available on targets during [relabeling](#relabel_
 [ namespace: <string> | default = default ]
 [ refresh_interval: <duration> | default = 60s ]
 [ region: <string> | default = global ]
-[ server: <host> ]
+# The URL to connect to the API.
+[ server: <string> ]
 [ tag_separator: <string> | default = ,]
 
 # HTTP client settings, including authentication methods (such as basic auth and

@@ -127,19 +127,37 @@ func (m *SDMock) HandleServiceHashiCupsGet() {
 }
 
 func TestConfiguredService(t *testing.T) {
-	conf := &SDConfig{
-		Server: "http://localhost:4646",
+	testCases := []struct {
+		name        string
+		server      string
+		acceptedURL bool
+	}{
+		{"invalid hostname URL", "http://foo.bar:4646", true},
+		{"invalid even though accepted by parsing", "foo.bar:4646", true},
+		{"valid address URL", "http://172.30.29.23:4646", true},
+		{"invalid URL", "172.30.29.23:4646", false},
 	}
 
-	reg := prometheus.NewRegistry()
-	refreshMetrics := discovery.NewRefreshMetrics(reg)
-	metrics := conf.NewDiscovererMetrics(reg, refreshMetrics)
-	require.NoError(t, metrics.Register())
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			conf := &SDConfig{
+				Server: tc.server,
+			}
 
-	_, err := NewDiscovery(conf, nil, metrics)
-	require.NoError(t, err)
+			reg := prometheus.NewRegistry()
+			refreshMetrics := discovery.NewRefreshMetrics(reg)
+			metrics := conf.NewDiscovererMetrics(reg, refreshMetrics)
+			require.NoError(t, metrics.Register())
+			defer metrics.Unregister()
 
-	metrics.Unregister()
+			_, err := NewDiscovery(conf, nil, metrics)
+			if tc.acceptedURL {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+		})
+	}
 }
 
 func TestNomadSDRefresh(t *testing.T) {

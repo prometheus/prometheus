@@ -5,7 +5,7 @@ load 5m
 	http_requests{path="/biz"}  0 0 0 0 0 1 1 1 1 1
     http_requests_histogram{path="/foo"}    {{schema:0 sum:1 count:1}}x9
     http_requests_histogram{path="/bar"}    0 0 0 0 0 0 0 0 {{schema:0 sum:1 count:1}} {{schema:0 sum:1 count:1}}
-    http_requests_histogram{path="/biz"}    0 1 0 2 0 3 0 {{schema:0 sum:1 count:1}} {{schema:0 sum:2 count:2}} {{schema:0 sum:1 count:1}}
+    http_requests_histogram{path="/biz"}    0 1 0 2 0 3 0 {{schema:0 sum:1 count:1 z_bucket_w:0.001 z_bucket:2}} {{schema:0 sum:2 count:2 z_bucket_w:0.001 z_bucket:1}} {{schema:0 sum:1 count:1 z_bucket_w:0.001 z_bucket:2}}
 
 # Tests for resets().
 eval instant at 50m resets(http_requests[5m])
@@ -41,6 +41,18 @@ eval instant at 50m resets(http_requests[50m])
 	{path="/biz"} 0
 
 eval instant at 50m resets(nonexistent_metric[50m])
+
+# Test for mix of floats and histograms.
+
+eval instant at 50m resets(http_requests_histogram[6m])
+    {path="/foo"} 0
+    {path="/bar"} 0
+    {path="/biz"} 0
+
+eval instant at 50m resets(http_requests_histogram[60m])
+    {path="/foo"} 0
+    {path="/bar"} 1
+    {path="/biz"} 6
 
 # Tests for changes().
 eval instant at 50m changes(http_requests[5m])
@@ -494,6 +506,7 @@ load 5m
 	test_sgn{src="sgn-d"}	-50
 	test_sgn{src="sgn-e"}	0
 	test_sgn{src="sgn-f"}	100
+	test_sgn{src="sgn-histogram"} {{schema:1 sum:1 count:1}}
 
 eval instant at 0m sgn(test_sgn)
 	{src="sgn-a"}	-1
@@ -1259,8 +1272,13 @@ clear
 load 5m
 	exp_root_log{l="x"} 10
 	exp_root_log{l="y"} 20
+	exp_root_log_h{l="z"} {{schema:1 sum:1 count:1}}
 
 eval instant at 1m exp(exp_root_log)
+	{l="x"} 22026.465794806718
+	{l="y"} 485165195.4097903
+
+eval instant at 1m exp({__name__=~"exp_root_log(_h)?"})
 	{l="x"} 22026.465794806718
 	{l="y"} 485165195.4097903
 
@@ -1276,6 +1294,10 @@ eval instant at 1m ln(exp_root_log)
 	{l="x"} 2.302585092994046
 	{l="y"} 2.995732273553991
 
+eval instant at 1m ln({__name__=~"exp_root_log(_h)?"})
+	{l="x"} 2.302585092994046
+	{l="y"} 2.995732273553991
+
 eval instant at 1m ln(exp_root_log - 10)
 	{l="y"} 2.302585092994046
 	{l="x"} -Inf
@@ -1288,11 +1310,23 @@ eval instant at 1m exp(ln(exp_root_log))
 	{l="y"} 20
 	{l="x"} 10
 
+eval instant at 1m exp(ln({__name__=~"exp_root_log(_h)?"}))
+	{l="y"} 20
+	{l="x"} 10
+
 eval instant at 1m sqrt(exp_root_log)
 	{l="x"} 3.1622776601683795
 	{l="y"} 4.47213595499958
 
+eval instant at 1m sqrt({__name__=~"exp_root_log(_h)?"})
+	{l="x"} 3.1622776601683795
+	{l="y"} 4.47213595499958
+
 eval instant at 1m log2(exp_root_log)
+	{l="x"} 3.3219280948873626
+	{l="y"} 4.321928094887363
+
+eval instant at 1m log2({__name__=~"exp_root_log(_h)?"})
 	{l="x"} 3.3219280948873626
 	{l="y"} 4.321928094887363
 
@@ -1305,6 +1339,10 @@ eval instant at 1m log2(exp_root_log - 20)
 	{l="y"} -Inf
 
 eval instant at 1m log10(exp_root_log)
+	{l="x"} 1
+	{l="y"} 1.301029995663981
+
+eval instant at 1m log10({__name__=~"exp_root_log(_h)?"})
 	{l="x"} 1
 	{l="y"} 1.301029995663981
 

@@ -273,6 +273,7 @@ func (s *Service) hasSynced() bool {
 }
 
 func TestRetryOnError(t *testing.T) {
+	t.Parallel()
 	for _, successAt := range []int{1, 2, 3} {
 		var called int
 		f := func() error {
@@ -288,6 +289,7 @@ func TestRetryOnError(t *testing.T) {
 }
 
 func TestFailuresCountMetric(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		role             Role
 		minFailedWatches int
@@ -324,6 +326,7 @@ func TestFailuresCountMetric(t *testing.T) {
 }
 
 func TestNodeName(t *testing.T) {
+	t.Parallel()
 	node := &apiv1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "foo",

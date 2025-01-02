@@ -1688,7 +1688,7 @@ func (s *shards) updateMetrics(_ context.Context, err error, sampleCount, exempl
 	s.enqueuedHistograms.Sub(int64(histogramCount))
 }
 
-// sendSamples to the remote storage with backoff for recoverable errors.
+// sendSamplesWithBackoff to the remote storage with backoff for recoverable errors.
 func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount, metadataCount int, pBuf *proto.Buffer, buf *[]byte, enc Compression) (WriteResponseStats, error) {
 	// Build the WriteRequest with no metadata.
 	req, highest, lowest, err := buildWriteRequest(s.qm.logger, samples, nil, pBuf, buf, nil, enc)
@@ -1802,7 +1802,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 	return accumulatedStats, err
 }
 
-// sendV2Samples to the remote storage with backoff for recoverable errors.
+// sendV2SamplesWithBackoff to the remote storage with backoff for recoverable errors.
 func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2.TimeSeries, labels []string, sampleCount, exemplarCount, histogramCount, metadataCount int, pBuf, buf *[]byte, enc Compression) (WriteResponseStats, error) {
 	// Build the WriteRequest with no metadata.
 	req, highest, lowest, err := buildV2WriteRequest(s.qm.logger, samples, labels, pBuf, buf, nil, enc)

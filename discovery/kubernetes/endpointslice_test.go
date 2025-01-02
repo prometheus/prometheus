@@ -114,6 +114,7 @@ func makeEndpointSliceV1() *v1.EndpointSlice {
 }
 
 func TestEndpointSliceDiscoveryBeforeRun(t *testing.T) {
+	t.Parallel()
 	n, c := makeDiscovery(RoleEndpointSlice, NamespaceDiscovery{Names: []string{"default"}})
 
 	k8sDiscoveryTest{
@@ -195,6 +196,7 @@ func TestEndpointSliceDiscoveryBeforeRun(t *testing.T) {
 }
 
 func TestEndpointSliceDiscoveryAdd(t *testing.T) {
+	t.Parallel()
 	obj := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testpod",
@@ -322,6 +324,7 @@ func TestEndpointSliceDiscoveryAdd(t *testing.T) {
 }
 
 func TestEndpointSliceDiscoveryDelete(t *testing.T) {
+	t.Parallel()
 	n, c := makeDiscovery(RoleEndpointSlice, NamespaceDiscovery{Names: []string{"default"}}, makeEndpointSliceV1())
 
 	k8sDiscoveryTest{
@@ -340,6 +343,7 @@ func TestEndpointSliceDiscoveryDelete(t *testing.T) {
 }
 
 func TestEndpointSliceDiscoveryUpdate(t *testing.T) {
+	t.Parallel()
 	n, c := makeDiscovery(RoleEndpointSlice, NamespaceDiscovery{Names: []string{"default"}}, makeEndpointSliceV1())
 
 	k8sDiscoveryTest{
@@ -396,6 +400,7 @@ func TestEndpointSliceDiscoveryUpdate(t *testing.T) {
 }
 
 func TestEndpointSliceDiscoveryEmptyEndpoints(t *testing.T) {
+	t.Parallel()
 	n, c := makeDiscovery(RoleEndpointSlice, NamespaceDiscovery{Names: []string{"default"}}, makeEndpointSliceV1())
 
 	k8sDiscoveryTest{
@@ -424,6 +429,7 @@ func TestEndpointSliceDiscoveryEmptyEndpoints(t *testing.T) {
 }
 
 func TestEndpointSliceDiscoveryWithService(t *testing.T) {
+	t.Parallel()
 	n, c := makeDiscovery(RoleEndpointSlice, NamespaceDiscovery{Names: []string{"default"}}, makeEndpointSliceV1())
 
 	k8sDiscoveryTest{
@@ -516,6 +522,7 @@ func TestEndpointSliceDiscoveryWithService(t *testing.T) {
 }
 
 func TestEndpointSliceDiscoveryWithServiceUpdate(t *testing.T) {
+	t.Parallel()
 	n, c := makeDiscovery(RoleEndpointSlice, NamespaceDiscovery{Names: []string{"default"}}, makeEndpointSliceV1())
 
 	k8sDiscoveryTest{
@@ -623,6 +630,7 @@ func TestEndpointSliceDiscoveryWithServiceUpdate(t *testing.T) {
 }
 
 func TestEndpointsSlicesDiscoveryWithNodeMetadata(t *testing.T) {
+	t.Parallel()
 	metadataConfig := AttachMetadataConfig{Node: true}
 	nodeLabels1 := map[string]string{"az": "us-east1"}
 	nodeLabels2 := map[string]string{"az": "us-west2"}
@@ -722,6 +730,7 @@ func TestEndpointsSlicesDiscoveryWithNodeMetadata(t *testing.T) {
 }
 
 func TestEndpointsSlicesDiscoveryWithUpdatedNodeMetadata(t *testing.T) {
+	t.Parallel()
 	metadataConfig := AttachMetadataConfig{Node: true}
 	nodeLabels1 := map[string]string{"az": "us-east1"}
 	nodeLabels2 := map[string]string{"az": "us-west2"}
@@ -827,6 +836,7 @@ func TestEndpointsSlicesDiscoveryWithUpdatedNodeMetadata(t *testing.T) {
 }
 
 func TestEndpointSliceDiscoveryNamespaces(t *testing.T) {
+	t.Parallel()
 	epOne := makeEndpointSliceV1()
 	epOne.Namespace = "ns1"
 	objs := []runtime.Object{
@@ -1003,6 +1013,7 @@ func TestEndpointSliceDiscoveryNamespaces(t *testing.T) {
 }
 
 func TestEndpointSliceDiscoveryOwnNamespace(t *testing.T) {
+	t.Parallel()
 	epOne := makeEndpointSliceV1()
 	epOne.Namespace = "own-ns"
 
@@ -1123,6 +1134,7 @@ func TestEndpointSliceDiscoveryOwnNamespace(t *testing.T) {
 }
 
 func TestEndpointSliceDiscoveryEmptyPodStatus(t *testing.T) {
+	t.Parallel()
 	ep := makeEndpointSliceV1()
 	ep.Namespace = "ns"
 
@@ -1169,6 +1181,7 @@ func TestEndpointSliceDiscoveryEmptyPodStatus(t *testing.T) {
 // sets up indexing for the main Kube informer only when needed.
 // See: https://github.com/prometheus/prometheus/pull/13554#discussion_r1490965817
 func TestEndpointSliceInfIndexersCount(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name             string
 		withNodeMetadata bool
@@ -1179,6 +1192,7 @@ func TestEndpointSliceInfIndexersCount(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			var (
 				n                    *Discovery
 				mainInfIndexersCount int
@@ -1204,6 +1218,7 @@ func TestEndpointSliceInfIndexersCount(t *testing.T) {
 }
 
 func TestEndpointSliceDiscoverySidecarContainer(t *testing.T) {
+	t.Parallel()
 	objs := []runtime.Object{
 		&v1.EndpointSlice{
 			ObjectMeta: metav1.ObjectMeta{

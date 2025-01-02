@@ -1554,6 +1554,20 @@ func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 	})
 }
 
+func TestOTLPAllowServiceNameInTargetInfo(t *testing.T) {
+	t.Run("good config", func(t *testing.T) {
+		want, err := LoadFile(filepath.Join("testdata", "otlp_allow_keep_identifying_resource_attributes.good.yml"), false, promslog.NewNopLogger())
+		require.NoError(t, err)
+
+		out, err := yaml.Marshal(want)
+		require.NoError(t, err)
+		var got Config
+		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+
+		require.True(t, got.OTLPConfig.KeepIdentifyingResourceAttributes)
+	})
+}
+
 func TestOTLPAllowUTF8(t *testing.T) {
 	t.Run("good config", func(t *testing.T) {
 		fpath := filepath.Join("testdata", "otlp_allow_utf8.good.yml")
