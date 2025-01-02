@@ -73,7 +73,7 @@ var ErrNotReady = errors.New("TSDB not ready")
 // millisecond precision timestamps.
 func DefaultOptions() *Options {
 	return &Options{
-		WALSegmentSize:              wlog.DefaultSegmentSize,
+		WALSegment:                  wlog.SegmentOptions{}, // wlog.New sets the correct defaults.
 		MaxBlockChunkSegmentSize:    chunks.DefaultChunkSegmentSize,
 		RetentionDuration:           int64(15 * 24 * time.Hour / time.Millisecond),
 		MinBlockDuration:            DefaultBlockDuration,
@@ -97,11 +97,10 @@ func DefaultOptions() *Options {
 
 // Options of the DB storage.
 type Options struct {
-	// Segments (wal files) max size.
-	// WALSegmentSize = 0, segment size is default size.
-	// WALSegmentSize > 0, segment size is WALSegmentSize.
-	// WALSegmentSize < 0, wal is disabled.
-	WALSegmentSize int
+	// WALSegment represents segment options.
+	WALSegment wlog.SegmentOptions
+	// DisableWAL disables WAL.
+	DisableWAL bool
 
 	// MaxBlockChunkSegmentSize is the max size of block chunk segment files.
 	// MaxBlockChunkSegmentSize = 0, chunk segment size is default size.
@@ -929,14 +928,10 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	}
 
 	var wal, wbl *wlog.WL
-	segmentSize := wlog.DefaultSegmentSize
+
 	// Wal is enabled.
-	if opts.WALSegmentSize >= 0 {
-		// Wal is set to a custom size.
-		if opts.WALSegmentSize > 0 {
-			segmentSize = opts.WALSegmentSize
-		}
-		wal, err = wlog.NewSize(l, r, walDir, segmentSize, opts.WALCompression)
+	if !opts.DisableWAL {
+		wal, err = wlog.New(l, r, walDir, opts.WALSegment)
 		if err != nil {
 			return nil, err
 		}
@@ -946,7 +941,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 			return nil, err
 		}
 		if opts.OutOfOrderTimeWindow > 0 || wblSize > 0 {
-			wbl, err = wlog.NewSize(l, r, wblDir, segmentSize, opts.WALCompression)
+			wbl, err = wlog.New(l, r, wblDir, opts.WALSegment)
 			if err != nil {
 				return nil, err
 			}
@@ -1159,14 +1154,9 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 	case db.head.wbl != nil:
 		// The existing WBL from the disk might have been replayed while OOO was disabled.
 		wblog = db.head.wbl
-	case !db.oooWasEnabled.Load() && oooTimeWindow > 0 && db.opts.WALSegmentSize >= 0:
-		segmentSize := wlog.DefaultSegmentSize
-		// Wal is set to a custom size.
-		if db.opts.WALSegmentSize > 0 {
-			segmentSize = db.opts.WALSegmentSize
-		}
+	case !db.oooWasEnabled.Load() && oooTimeWindow > 0 && !db.opts.DisableWAL:
 		oooWalDir := filepath.Join(db.dir, wlog.WblDirName)
-		wblog, err = wlog.NewSize(db.logger, db.registerer, oooWalDir, segmentSize, db.opts.WALCompression)
+		wblog, err = wlog.New(db.logger, db.registerer, oooWalDir, db.opts.WALSegment)
 		if err != nil {
 			return err
 		}

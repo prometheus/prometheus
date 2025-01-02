@@ -137,380 +137,31 @@ func newWriteToMock(delay time.Duration) *writeToMock {
 }
 
 func TestTailSamples(t *testing.T) {
-	pageSize := 32 * 1024
 	const seriesCount = 10
 	const samplesCount = 250
 	const exemplarsCount = 25
 	const histogramsCount = 50
-	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
-		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
-			now := time.Now()
 
-			dir := t.TempDir()
+	for _, v := range supportedSegmentVersions() {
+		for _, compress := range SupportedCompressions() {
+			t.Run(fmt.Sprintf("v=%v/compress=%s", v, compress), func(t *testing.T) {
+				now := time.Now()
 
-			wdir := path.Join(dir, "wal")
-			err := os.Mkdir(wdir, 0o777)
-			require.NoError(t, err)
-
-			enc := record.Encoder{}
-			w, err := NewSize(nil, nil, wdir, 128*pageSize, compress)
-			require.NoError(t, err)
-			defer func() {
-				require.NoError(t, w.Close())
-			}()
-
-			// Write to the initial segment then checkpoint.
-			for i := 0; i < seriesCount; i++ {
-				ref := i + 100
-				series := enc.Series([]record.RefSeries{
-					{
-						Ref:    chunks.HeadSeriesRef(ref),
-						Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
-					},
-				}, nil)
-				require.NoError(t, w.Log(series))
-
-				for j := 0; j < samplesCount; j++ {
-					inner := rand.Intn(ref + 1)
-					sample := enc.Samples([]record.RefSample{
-						{
-							Ref: chunks.HeadSeriesRef(inner),
-							T:   now.UnixNano() + 1,
-							V:   float64(i),
-						},
-					}, nil)
-					require.NoError(t, w.Log(sample))
-				}
-
-				for j := 0; j < exemplarsCount; j++ {
-					inner := rand.Intn(ref + 1)
-					exemplar := enc.Exemplars([]record.RefExemplar{
-						{
-							Ref:    chunks.HeadSeriesRef(inner),
-							T:      now.UnixNano() + 1,
-							V:      float64(i),
-							Labels: labels.FromStrings("trace_id", fmt.Sprintf("trace-%d", inner)),
-						},
-					}, nil)
-					require.NoError(t, w.Log(exemplar))
-				}
-
-				for j := 0; j < histogramsCount; j++ {
-					inner := rand.Intn(ref + 1)
-					hist := &histogram.Histogram{
-						Schema:          2,
-						ZeroThreshold:   1e-128,
-						ZeroCount:       0,
-						Count:           2,
-						Sum:             0,
-						PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-						PositiveBuckets: []int64{int64(i) + 1},
-						NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-						NegativeBuckets: []int64{int64(-i) - 1},
-					}
-
-					histogram := enc.HistogramSamples([]record.RefHistogramSample{{
-						Ref: chunks.HeadSeriesRef(inner),
-						T:   now.UnixNano() + 1,
-						H:   hist,
-					}}, nil)
-					require.NoError(t, w.Log(histogram))
-
-					floatHistogram := enc.FloatHistogramSamples([]record.RefFloatHistogramSample{{
-						Ref: chunks.HeadSeriesRef(inner),
-						T:   now.UnixNano() + 1,
-						FH:  hist.ToFloat(nil),
-					}}, nil)
-					require.NoError(t, w.Log(floatHistogram))
-				}
-			}
-
-			// Start read after checkpoint, no more data written.
-			first, last, err := Segments(w.Dir())
-			require.NoError(t, err)
-
-			wt := newWriteToMock(0)
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, true, true, true)
-			watcher.SetStartTime(now)
-
-			// Set the Watcher's metrics so they're not nil pointers.
-			watcher.SetMetrics()
-			for i := first; i <= last; i++ {
-				segment, err := OpenReadSegment(SegmentName(watcher.walDir, i))
+				dir := t.TempDir()
+				wdir := path.Join(dir, "wal")
+				err := os.Mkdir(wdir, 0o777)
 				require.NoError(t, err)
 
-				reader := NewLiveReader(nil, NewLiveReaderMetrics(nil), segment)
-				// Use tail true so we can ensure we got the right number of samples.
-				watcher.readSegment(reader, i, true)
-				require.NoError(t, segment.Close())
-			}
+				enc := record.Encoder{}
+				w, err := New(nil, nil, wdir, SegmentOptions{Compression: compress, Version: v})
+				require.NoError(t, err)
+				defer func() {
+					require.NoError(t, w.Close())
+				}()
 
-			expectedSeries := seriesCount
-			expectedSamples := seriesCount * samplesCount
-			expectedExemplars := seriesCount * exemplarsCount
-			expectedHistograms := seriesCount * histogramsCount
-			retry(t, defaultRetryInterval, defaultRetries, func() bool {
-				return wt.checkNumSeries() >= expectedSeries
-			})
-			require.Equal(t, expectedSeries, wt.checkNumSeries(), "did not receive the expected number of series")
-			require.Equal(t, expectedSamples, wt.samplesAppended, "did not receive the expected number of samples")
-			require.Equal(t, expectedExemplars, wt.exemplarsAppended, "did not receive the expected number of exemplars")
-			require.Equal(t, expectedHistograms, wt.histogramsAppended, "did not receive the expected number of histograms")
-			require.Equal(t, expectedHistograms, wt.floatHistogramsAppended, "did not receive the expected number of float histograms")
-		})
-	}
-}
-
-func TestReadToEndNoCheckpoint(t *testing.T) {
-	pageSize := 32 * 1024
-	const seriesCount = 10
-	const samplesCount = 250
-
-	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
-		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
-			dir := t.TempDir()
-			wdir := path.Join(dir, "wal")
-			err := os.Mkdir(wdir, 0o777)
-			require.NoError(t, err)
-
-			w, err := NewSize(nil, nil, wdir, 128*pageSize, compress)
-			require.NoError(t, err)
-			defer func() {
-				require.NoError(t, w.Close())
-			}()
-
-			var recs [][]byte
-
-			enc := record.Encoder{}
-
-			for i := 0; i < seriesCount; i++ {
-				series := enc.Series([]record.RefSeries{
-					{
-						Ref:    chunks.HeadSeriesRef(i),
-						Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
-					},
-				}, nil)
-				recs = append(recs, series)
-				for j := 0; j < samplesCount; j++ {
-					sample := enc.Samples([]record.RefSample{
-						{
-							Ref: chunks.HeadSeriesRef(j),
-							T:   int64(i),
-							V:   float64(i),
-						},
-					}, nil)
-
-					recs = append(recs, sample)
-
-					// Randomly batch up records.
-					if rand.Intn(4) < 3 {
-						require.NoError(t, w.Log(recs...))
-						recs = recs[:0]
-					}
-				}
-			}
-			require.NoError(t, w.Log(recs...))
-			overwriteReadTimeout(t, time.Second)
-			_, _, err = Segments(w.Dir())
-			require.NoError(t, err)
-
-			wt := newWriteToMock(0)
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
-			go watcher.Start()
-
-			expected := seriesCount
-			require.Eventually(t, func() bool {
-				return wt.checkNumSeries() == expected
-			}, 20*time.Second, 1*time.Second)
-			watcher.Stop()
-		})
-	}
-}
-
-func TestReadToEndWithCheckpoint(t *testing.T) {
-	segmentSize := 32 * 1024
-	// We need something similar to this # of series and samples
-	// in order to get enough segments for us to checkpoint.
-	const seriesCount = 10
-	const samplesCount = 250
-
-	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
-		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
-			dir := t.TempDir()
-
-			wdir := path.Join(dir, "wal")
-			err := os.Mkdir(wdir, 0o777)
-			require.NoError(t, err)
-
-			enc := record.Encoder{}
-			w, err := NewSize(nil, nil, wdir, segmentSize, compress)
-			require.NoError(t, err)
-			defer func() {
-				require.NoError(t, w.Close())
-			}()
-
-			// Write to the initial segment then checkpoint.
-			for i := 0; i < seriesCount; i++ {
-				ref := i + 100
-				series := enc.Series([]record.RefSeries{
-					{
-						Ref:    chunks.HeadSeriesRef(ref),
-						Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
-					},
-				}, nil)
-				require.NoError(t, w.Log(series))
-				// Add in an unknown record type, which should be ignored.
-				require.NoError(t, w.Log([]byte{255}))
-
-				for j := 0; j < samplesCount; j++ {
-					inner := rand.Intn(ref + 1)
-					sample := enc.Samples([]record.RefSample{
-						{
-							Ref: chunks.HeadSeriesRef(inner),
-							T:   int64(i),
-							V:   float64(i),
-						},
-					}, nil)
-					require.NoError(t, w.Log(sample))
-				}
-			}
-
-			Checkpoint(promslog.NewNopLogger(), w, 0, 1, func(x chunks.HeadSeriesRef) bool { return true }, 0)
-			w.Truncate(1)
-
-			// Write more records after checkpointing.
-			for i := 0; i < seriesCount; i++ {
-				series := enc.Series([]record.RefSeries{
-					{
-						Ref:    chunks.HeadSeriesRef(i),
-						Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
-					},
-				}, nil)
-				require.NoError(t, w.Log(series))
-
-				for j := 0; j < samplesCount; j++ {
-					sample := enc.Samples([]record.RefSample{
-						{
-							Ref: chunks.HeadSeriesRef(j),
-							T:   int64(i),
-							V:   float64(i),
-						},
-					}, nil)
-					require.NoError(t, w.Log(sample))
-				}
-			}
-
-			_, _, err = Segments(w.Dir())
-			require.NoError(t, err)
-			overwriteReadTimeout(t, time.Second)
-			wt := newWriteToMock(0)
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
-			go watcher.Start()
-
-			expected := seriesCount * 2
-
-			require.Eventually(t, func() bool {
-				return wt.checkNumSeries() == expected
-			}, 10*time.Second, 1*time.Second)
-			watcher.Stop()
-		})
-	}
-}
-
-func TestReadCheckpoint(t *testing.T) {
-	pageSize := 32 * 1024
-	const seriesCount = 10
-	const samplesCount = 250
-
-	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
-		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
-			dir := t.TempDir()
-
-			wdir := path.Join(dir, "wal")
-			err := os.Mkdir(wdir, 0o777)
-			require.NoError(t, err)
-
-			f, err := os.Create(SegmentName(wdir, 30))
-			require.NoError(t, err)
-			require.NoError(t, f.Close())
-
-			enc := record.Encoder{}
-			w, err := NewSize(nil, nil, wdir, 128*pageSize, compress)
-			require.NoError(t, err)
-			t.Cleanup(func() {
-				require.NoError(t, w.Close())
-			})
-
-			// Write to the initial segment then checkpoint.
-			for i := 0; i < seriesCount; i++ {
-				ref := i + 100
-				series := enc.Series([]record.RefSeries{
-					{
-						Ref:    chunks.HeadSeriesRef(ref),
-						Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
-					},
-				}, nil)
-				require.NoError(t, w.Log(series))
-
-				for j := 0; j < samplesCount; j++ {
-					inner := rand.Intn(ref + 1)
-					sample := enc.Samples([]record.RefSample{
-						{
-							Ref: chunks.HeadSeriesRef(inner),
-							T:   int64(i),
-							V:   float64(i),
-						},
-					}, nil)
-					require.NoError(t, w.Log(sample))
-				}
-			}
-			_, err = w.NextSegmentSync()
-			require.NoError(t, err)
-			_, err = Checkpoint(promslog.NewNopLogger(), w, 30, 31, func(x chunks.HeadSeriesRef) bool { return true }, 0)
-			require.NoError(t, err)
-			require.NoError(t, w.Truncate(32))
-
-			// Start read after checkpoint, no more data written.
-			_, _, err = Segments(w.Dir())
-			require.NoError(t, err)
-
-			wt := newWriteToMock(0)
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
-			go watcher.Start()
-
-			expectedSeries := seriesCount
-			retry(t, defaultRetryInterval, defaultRetries, func() bool {
-				return wt.checkNumSeries() >= expectedSeries
-			})
-			watcher.Stop()
-			require.Equal(t, expectedSeries, wt.checkNumSeries())
-		})
-	}
-}
-
-func TestReadCheckpointMultipleSegments(t *testing.T) {
-	pageSize := 32 * 1024
-
-	const segments = 1
-	const seriesCount = 20
-	const samplesCount = 300
-
-	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
-		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
-			dir := t.TempDir()
-
-			wdir := path.Join(dir, "wal")
-			err := os.Mkdir(wdir, 0o777)
-			require.NoError(t, err)
-
-			enc := record.Encoder{}
-			w, err := NewSize(nil, nil, wdir, pageSize, compress)
-			require.NoError(t, err)
-
-			// Write a bunch of data.
-			for i := 0; i < segments; i++ {
-				for j := 0; j < seriesCount; j++ {
-					ref := j + (i * 100)
+				// Write to the initial segment then checkpoint.
+				for i := 0; i < seriesCount; i++ {
+					ref := i + 100
 					series := enc.Series([]record.RefSeries{
 						{
 							Ref:    chunks.HeadSeriesRef(ref),
@@ -519,7 +170,205 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 					}, nil)
 					require.NoError(t, w.Log(series))
 
-					for k := 0; k < samplesCount; k++ {
+					for j := 0; j < samplesCount; j++ {
+						inner := rand.Intn(ref + 1)
+						sample := enc.Samples([]record.RefSample{
+							{
+								Ref: chunks.HeadSeriesRef(inner),
+								T:   now.UnixNano() + 1,
+								V:   float64(i),
+							},
+						}, nil)
+						require.NoError(t, w.Log(sample))
+					}
+
+					for j := 0; j < exemplarsCount; j++ {
+						inner := rand.Intn(ref + 1)
+						exemplar := enc.Exemplars([]record.RefExemplar{
+							{
+								Ref:    chunks.HeadSeriesRef(inner),
+								T:      now.UnixNano() + 1,
+								V:      float64(i),
+								Labels: labels.FromStrings("trace_id", fmt.Sprintf("trace-%d", inner)),
+							},
+						}, nil)
+						require.NoError(t, w.Log(exemplar))
+					}
+
+					for j := 0; j < histogramsCount; j++ {
+						inner := rand.Intn(ref + 1)
+						hist := &histogram.Histogram{
+							Schema:          2,
+							ZeroThreshold:   1e-128,
+							ZeroCount:       0,
+							Count:           2,
+							Sum:             0,
+							PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+							PositiveBuckets: []int64{int64(i) + 1},
+							NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+							NegativeBuckets: []int64{int64(-i) - 1},
+						}
+
+						histogram := enc.HistogramSamples([]record.RefHistogramSample{{
+							Ref: chunks.HeadSeriesRef(inner),
+							T:   now.UnixNano() + 1,
+							H:   hist,
+						}}, nil)
+						require.NoError(t, w.Log(histogram))
+
+						floatHistogram := enc.FloatHistogramSamples([]record.RefFloatHistogramSample{{
+							Ref: chunks.HeadSeriesRef(inner),
+							T:   now.UnixNano() + 1,
+							FH:  hist.ToFloat(nil),
+						}}, nil)
+						require.NoError(t, w.Log(floatHistogram))
+					}
+				}
+
+				// Start read after checkpoint, no more data written.
+				first, last, err := SegmentsRange(w.Dir())
+				require.NoError(t, err)
+
+				wt := newWriteToMock(0)
+				watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, true, true, true)
+				watcher.SetStartTime(now)
+
+				// Set the Watcher's metrics so they're not nil pointers.
+				watcher.SetMetrics()
+				for i := first; i <= last; i++ {
+					segment, err := OpenReadSegmentByIndex(watcher.walDir, i)
+					require.NoError(t, err)
+
+					reader := NewLiveReader(nil, NewLiveReaderMetrics(nil), segment)
+					// Use tail true so we can ensure we got the right number of samples.
+					watcher.readSegment(reader, i, true)
+					require.NoError(t, segment.Close())
+				}
+
+				expectedSeries := seriesCount
+				expectedSamples := seriesCount * samplesCount
+				expectedExemplars := seriesCount * exemplarsCount
+				expectedHistograms := seriesCount * histogramsCount
+				retry(t, defaultRetryInterval, defaultRetries, func() bool {
+					return wt.checkNumSeries() >= expectedSeries
+				})
+				require.Equal(t, expectedSeries, wt.checkNumSeries(), "did not receive the expected number of series")
+				require.Equal(t, expectedSamples, wt.samplesAppended, "did not receive the expected number of samples")
+				require.Equal(t, expectedExemplars, wt.exemplarsAppended, "did not receive the expected number of exemplars")
+				require.Equal(t, expectedHistograms, wt.histogramsAppended, "did not receive the expected number of histograms")
+				require.Equal(t, expectedHistograms, wt.floatHistogramsAppended, "did not receive the expected number of float histograms")
+			})
+		}
+	}
+}
+
+func TestReadToEndNoCheckpoint(t *testing.T) {
+	const (
+		seriesCount  = 10
+		samplesCount = 250
+	)
+
+	for _, v := range supportedSegmentVersions() {
+		for _, compress := range SupportedCompressions() {
+			t.Run(fmt.Sprintf("v=%v/compress=%s", v, compress), func(t *testing.T) {
+				dir := t.TempDir()
+				wdir := path.Join(dir, "wal")
+				err := os.Mkdir(wdir, 0o777)
+				require.NoError(t, err)
+
+				w, err := New(nil, nil, wdir, SegmentOptions{Compression: compress, Version: v})
+				require.NoError(t, err)
+				defer func() {
+					require.NoError(t, w.Close())
+				}()
+
+				var (
+					recs [][]byte
+					enc  = record.Encoder{}
+				)
+				for i := 0; i < seriesCount; i++ {
+					series := enc.Series([]record.RefSeries{
+						{
+							Ref:    chunks.HeadSeriesRef(i),
+							Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
+						},
+					}, nil)
+					recs = append(recs, series)
+					for j := 0; j < samplesCount; j++ {
+						sample := enc.Samples([]record.RefSample{
+							{Ref: chunks.HeadSeriesRef(j), T: int64(i), V: float64(i)},
+						}, nil)
+						recs = append(recs, sample)
+
+						// Randomly batch up records.
+						if rand.Intn(4) < 3 {
+							require.NoError(t, w.Log(recs...))
+							recs = recs[:0]
+						}
+					}
+				}
+				require.NoError(t, w.Log(recs...))
+				overwriteReadTimeout(t, time.Second)
+
+				_, _, err = SegmentsRange(w.Dir())
+				require.NoError(t, err)
+
+				wt := newWriteToMock(0)
+				watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
+				go watcher.Start()
+
+				expected := seriesCount
+				require.Eventually(t, func() bool {
+					return wt.checkNumSeries() == expected
+				}, 20*time.Second, 1*time.Second)
+				watcher.Stop()
+			})
+		}
+	}
+}
+
+func TestReadToEndWithCheckpoint(t *testing.T) {
+	const (
+		// We need something similar to this # of series and samples
+		// in order to get enough segments for us to checkpoint.
+		seriesCount  = 10
+		samplesCount = 250
+		segmentSize  = 32 * 1024
+	)
+
+	for _, v := range supportedSegmentVersions() {
+		for _, compress := range SupportedCompressions() {
+			t.Run(fmt.Sprintf("v=%v/compress=%s", v, compress), func(t *testing.T) {
+				dir := t.TempDir()
+				wdir := path.Join(dir, "wal")
+				err := os.Mkdir(wdir, 0o777)
+				require.NoError(t, err)
+
+				enc := record.Encoder{}
+				w, err := New(nil, nil, wdir, SegmentOptions{
+					Compression: compress,
+					Version:     v,
+					Size:        segmentSize,
+				})
+				require.NoError(t, err)
+				defer func() {
+					require.NoError(t, w.Close())
+				}()
+
+				// Write to the initial segment then checkpoint it.
+				for i := 0; i < seriesCount; i++ {
+					ref := i + 100
+					series := enc.Series([]record.RefSeries{
+						{
+							Ref:    chunks.HeadSeriesRef(ref),
+							Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
+						},
+					}, nil)
+					require.NoError(t, w.Log(series))
+					// Add in an unknown record type, which should be ignored.
+					require.NoError(t, w.Log([]byte{255}))
+
+					for j := 0; j < samplesCount; j++ {
 						inner := rand.Intn(ref + 1)
 						sample := enc.Samples([]record.RefSample{
 							{
@@ -531,31 +380,195 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 						require.NoError(t, w.Log(sample))
 					}
 				}
-			}
-			require.NoError(t, w.Close())
 
-			// At this point we should have at least 6 segments, lets create a checkpoint dir of the first 5.
-			checkpointDir := dir + "/wal/checkpoint.000004"
-			err = os.Mkdir(checkpointDir, 0o777)
-			require.NoError(t, err)
-			for i := 0; i <= 4; i++ {
-				err := os.Rename(SegmentName(dir+"/wal", i), SegmentName(checkpointDir, i))
+				_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1, func(x chunks.HeadSeriesRef) bool { return true }, 0)
 				require.NoError(t, err)
-			}
+				require.NoError(t, w.Truncate(1))
 
-			wt := newWriteToMock(0)
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
-			watcher.MaxSegment = -1
+				// Write more records after checkpointing.
+				for i := 0; i < seriesCount; i++ {
+					series := enc.Series([]record.RefSeries{
+						{
+							Ref:    chunks.HeadSeriesRef(i),
+							Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
+						},
+					}, nil)
+					require.NoError(t, w.Log(series))
 
-			// Set the Watcher's metrics so they're not nil pointers.
-			watcher.SetMetrics()
+					for j := 0; j < samplesCount; j++ {
+						sample := enc.Samples([]record.RefSample{
+							{
+								Ref: chunks.HeadSeriesRef(j),
+								T:   int64(i),
+								V:   float64(i),
+							},
+						}, nil)
+						require.NoError(t, w.Log(sample))
+					}
+				}
 
-			lastCheckpoint, _, err := LastCheckpoint(watcher.walDir)
-			require.NoError(t, err)
+				_, _, err = SegmentsRange(w.Dir())
+				require.NoError(t, err)
+				overwriteReadTimeout(t, time.Second)
+				wt := newWriteToMock(0)
+				watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
+				go watcher.Start()
 
-			err = watcher.readCheckpoint(lastCheckpoint, (*Watcher).readSegment)
-			require.NoError(t, err)
-		})
+				expected := seriesCount * 2
+
+				require.Eventually(t, func() bool {
+					fmt.Println(wt.checkNumSeries())
+					return wt.checkNumSeries() == expected
+				}, 10*time.Second, 1*time.Second)
+				watcher.Stop()
+			})
+		}
+	}
+}
+
+func TestReadCheckpoint(t *testing.T) {
+	const seriesCount = 10
+	const samplesCount = 250
+
+	for _, v := range supportedSegmentVersions() {
+		for _, compress := range SupportedCompressions() {
+			t.Run(fmt.Sprintf("v=%v/compress=%s", v, compress), func(t *testing.T) {
+				dir := t.TempDir()
+
+				wdir := path.Join(dir, "wal")
+				err := os.Mkdir(wdir, 0o777)
+				require.NoError(t, err)
+
+				f, err := os.Create(SegmentName(wdir, 30, v))
+				require.NoError(t, err)
+				require.NoError(t, f.Close())
+
+				enc := record.Encoder{}
+				w, err := New(nil, nil, wdir, SegmentOptions{Compression: compress, Version: v})
+				require.NoError(t, err)
+				t.Cleanup(func() {
+					require.NoError(t, w.Close())
+				})
+
+				// Write to the initial segment then checkpoint.
+				for i := 0; i < seriesCount; i++ {
+					ref := i + 100
+					series := enc.Series([]record.RefSeries{
+						{
+							Ref:    chunks.HeadSeriesRef(ref),
+							Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
+						},
+					}, nil)
+					require.NoError(t, w.Log(series))
+
+					for j := 0; j < samplesCount; j++ {
+						inner := rand.Intn(ref + 1)
+						sample := enc.Samples([]record.RefSample{
+							{Ref: chunks.HeadSeriesRef(inner), T: int64(i), V: float64(i)},
+						}, nil)
+						require.NoError(t, w.Log(sample))
+					}
+				}
+				_, err = w.NextSegmentSync()
+				require.NoError(t, err)
+				_, err = Checkpoint(promslog.NewNopLogger(), w, 30, 31, func(x chunks.HeadSeriesRef) bool { return true }, 0)
+				require.NoError(t, err)
+				require.NoError(t, w.Truncate(32))
+
+				// Start read after checkpoint, no more data written.
+				_, _, err = SegmentsRange(w.Dir())
+				require.NoError(t, err)
+
+				wt := newWriteToMock(0)
+				watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
+				go watcher.Start()
+
+				expectedSeries := seriesCount
+				retry(t, defaultRetryInterval, defaultRetries, func() bool {
+					return wt.checkNumSeries() >= expectedSeries
+				})
+				watcher.Stop()
+				require.Equal(t, expectedSeries, wt.checkNumSeries())
+			})
+		}
+	}
+}
+
+func TestReadCheckpointMultipleSegments(t *testing.T) {
+	pageSize := 32 * 1024
+
+	const segments = 1
+	const seriesCount = 20
+	const samplesCount = 300
+
+	for _, v := range supportedSegmentVersions() {
+		for _, compress := range SupportedCompressions() {
+			t.Run(fmt.Sprintf("v=%v/compress=%s", v, compress), func(t *testing.T) {
+
+				dir := t.TempDir()
+
+				wdir := path.Join(dir, "wal")
+				err := os.Mkdir(wdir, 0o777)
+				require.NoError(t, err)
+
+				enc := record.Encoder{}
+				w, err := New(nil, nil, wdir, SegmentOptions{
+					Compression: compress,
+					Version:     v,
+					Size:        pageSize,
+				})
+				require.NoError(t, err)
+
+				// Write a bunch of data.
+				for i := 0; i < segments; i++ {
+					for j := 0; j < seriesCount; j++ {
+						ref := j + (i * 100)
+						series := enc.Series([]record.RefSeries{
+							{
+								Ref:    chunks.HeadSeriesRef(ref),
+								Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
+							},
+						}, nil)
+						require.NoError(t, w.Log(series))
+
+						for k := 0; k < samplesCount; k++ {
+							inner := rand.Intn(ref + 1)
+							sample := enc.Samples([]record.RefSample{
+								{
+									Ref: chunks.HeadSeriesRef(inner),
+									T:   int64(i),
+									V:   float64(i),
+								},
+							}, nil)
+							require.NoError(t, w.Log(sample))
+						}
+					}
+				}
+				require.NoError(t, w.Close())
+
+				// At this point we should have at least 6 segments, lets create a checkpoint dir of the first 5.
+				checkpointDir := dir + "/wal/checkpoint.000004"
+				err = os.Mkdir(checkpointDir, 0o777)
+				require.NoError(t, err)
+				for i := 0; i <= 4; i++ {
+					err := os.Rename(SegmentName(dir+"/wal", i, v), SegmentName(checkpointDir, i, v))
+					require.NoError(t, err)
+				}
+
+				wt := newWriteToMock(0)
+				watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
+				watcher.MaxSegment = -1
+
+				// Set the Watcher's metrics so they're not nil pointers.
+				watcher.SetMetrics()
+
+				lastCheckpoint, _, err := LastCheckpoint(watcher.walDir)
+				require.NoError(t, err)
+
+				err = watcher.readCheckpoint(lastCheckpoint, (*Watcher).readSegment)
+				require.NoError(t, err)
+			})
+		}
 	}
 }
 
@@ -565,15 +578,14 @@ func TestCheckpointSeriesReset(t *testing.T) {
 	// in order to get enough segments for us to checkpoint.
 	const seriesCount = 20
 	const samplesCount = 350
-	testCases := []struct {
+
+	for _, tc := range []struct {
 		compress CompressionType
 		segments int
 	}{
 		{compress: CompressionNone, segments: 14},
 		{compress: CompressionSnappy, segments: 13},
-	}
-
-	for _, tc := range testCases {
+	} {
 		t.Run(fmt.Sprintf("compress=%s", tc.compress), func(t *testing.T) {
 			dir := t.TempDir()
 
@@ -582,7 +594,10 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			require.NoError(t, err)
 
 			enc := record.Encoder{}
-			w, err := NewSize(nil, nil, wdir, segmentSize, tc.compress)
+			w, err := New(nil, nil, wdir, SegmentOptions{
+				Compression: tc.compress,
+				Size:        segmentSize,
+			})
 			require.NoError(t, err)
 			defer func() {
 				require.NoError(t, w.Close())
@@ -612,7 +627,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 				}
 			}
 
-			_, _, err = Segments(w.Dir())
+			_, _, err = SegmentsRange(w.Dir())
 			require.NoError(t, err)
 
 			overwriteReadTimeout(t, time.Second)
@@ -637,7 +652,11 @@ func TestCheckpointSeriesReset(t *testing.T) {
 
 			_, cpi, err := LastCheckpoint(path.Join(dir, "wal"))
 			require.NoError(t, err)
-			err = watcher.garbageCollectSeries(cpi + 1)
+
+			s, err := segmentByIndex(path.Join(dir, "wal"), cpi+1)
+			require.NoError(t, err)
+
+			err = watcher.garbageCollectSeries(s)
 			require.NoError(t, err)
 
 			watcher.Stop()
@@ -657,55 +676,61 @@ func TestRun_StartupTime(t *testing.T) {
 	const seriesCount = 20
 	const samplesCount = 300
 
-	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
-		t.Run(string(compress), func(t *testing.T) {
-			dir := t.TempDir()
+	for _, v := range supportedSegmentVersions() {
+		for _, compress := range SupportedCompressions() {
+			t.Run(fmt.Sprintf("v=%v/compress=%s", v, compress), func(t *testing.T) {
+				dir := t.TempDir()
 
-			wdir := path.Join(dir, "wal")
-			err := os.Mkdir(wdir, 0o777)
-			require.NoError(t, err)
+				wdir := path.Join(dir, "wal")
+				err := os.Mkdir(wdir, 0o777)
+				require.NoError(t, err)
 
-			enc := record.Encoder{}
-			w, err := NewSize(nil, nil, wdir, pageSize, compress)
-			require.NoError(t, err)
+				enc := record.Encoder{}
+				w, err := New(nil, nil, wdir, SegmentOptions{
+					Compression: compress,
+					Version:     v,
+					Size:        pageSize,
+				})
+				require.NoError(t, err)
 
-			for i := 0; i < segments; i++ {
-				for j := 0; j < seriesCount; j++ {
-					ref := j + (i * 100)
-					series := enc.Series([]record.RefSeries{
-						{
-							Ref:    chunks.HeadSeriesRef(ref),
-							Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
-						},
-					}, nil)
-					require.NoError(t, w.Log(series))
-
-					for k := 0; k < samplesCount; k++ {
-						inner := rand.Intn(ref + 1)
-						sample := enc.Samples([]record.RefSample{
+				for i := 0; i < segments; i++ {
+					for j := 0; j < seriesCount; j++ {
+						ref := j + (i * 100)
+						series := enc.Series([]record.RefSeries{
 							{
-								Ref: chunks.HeadSeriesRef(inner),
-								T:   int64(i),
-								V:   float64(i),
+								Ref:    chunks.HeadSeriesRef(ref),
+								Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
 							},
 						}, nil)
-						require.NoError(t, w.Log(sample))
+						require.NoError(t, w.Log(series))
+
+						for k := 0; k < samplesCount; k++ {
+							inner := rand.Intn(ref + 1)
+							sample := enc.Samples([]record.RefSample{
+								{
+									Ref: chunks.HeadSeriesRef(inner),
+									T:   int64(i),
+									V:   float64(i),
+								},
+							}, nil)
+							require.NoError(t, w.Log(sample))
+						}
 					}
 				}
-			}
-			require.NoError(t, w.Close())
+				require.NoError(t, w.Close())
 
-			wt := newWriteToMock(0)
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
-			watcher.MaxSegment = segments
+				wt := newWriteToMock(0)
+				watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
+				watcher.MaxSegment = segments
 
-			watcher.SetMetrics()
-			startTime := time.Now()
+				watcher.SetMetrics()
+				startTime := time.Now()
 
-			err = watcher.Run()
-			require.Less(t, time.Since(startTime), readTimeout)
-			require.NoError(t, err)
-		})
+				err = watcher.Run()
+				require.Less(t, time.Since(startTime), readTimeout)
+				require.NoError(t, err)
+			})
+		}
 	}
 }
 
@@ -750,61 +775,67 @@ func TestRun_AvoidNotifyWhenBehind(t *testing.T) {
 	const seriesCount = 10
 	const samplesCount = 50
 
-	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
-		t.Run(string(compress), func(t *testing.T) {
-			dir := t.TempDir()
+	for _, v := range supportedSegmentVersions() {
+		for _, compress := range SupportedCompressions() {
+			t.Run(fmt.Sprintf("v=%v/compress=%s", v, compress), func(t *testing.T) {
+				dir := t.TempDir()
 
-			wdir := path.Join(dir, "wal")
-			err := os.Mkdir(wdir, 0o777)
-			require.NoError(t, err)
+				wdir := path.Join(dir, "wal")
+				err := os.Mkdir(wdir, 0o777)
+				require.NoError(t, err)
 
-			w, err := NewSize(nil, nil, wdir, segmentSize, compress)
-			require.NoError(t, err)
-			// Write to 00000000, the watcher will read series from it.
-			require.NoError(t, generateWALRecords(w, 0, seriesCount, samplesCount))
-			// Create 00000001, the watcher will tail it once started.
-			w.NextSegment()
-
-			// Set up the watcher and run it in the background.
-			wt := newWriteToMock(time.Millisecond)
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
-			watcher.SetMetrics()
-			watcher.MaxSegment = segmentsToRead
-
-			var g errgroup.Group
-			g.Go(func() error {
-				startTime := time.Now()
-				err = watcher.Run()
-				if err != nil {
-					return err
-				}
-				// If the watcher was to wait for readTicker to read every new segment, it would need readTimeout * segmentsToRead.
-				d := time.Since(startTime)
-				if d > readTimeout {
-					return fmt.Errorf("watcher ran for %s, it shouldn't rely on readTicker=%s to read the new segments", d, readTimeout)
-				}
-				return nil
-			})
-
-			// The watcher went through 00000000 and is tailing the next one.
-			retry(t, defaultRetryInterval, defaultRetries, func() bool {
-				return wt.checkNumSeries() == seriesCount
-			})
-
-			// In the meantime, add some new segments in bulk.
-			// We should end up with segmentsToWrite + 1 segments now.
-			for i := 1; i < segmentsToWrite; i++ {
-				require.NoError(t, generateWALRecords(w, i, seriesCount, samplesCount))
+				w, err := New(nil, nil, wdir, SegmentOptions{
+					Compression: compress,
+					Version:     v,
+					Size:        pageSize,
+				})
+				require.NoError(t, err)
+				// Write to 00000000, the watcher will read series from it.
+				require.NoError(t, generateWALRecords(w, 0, seriesCount, samplesCount))
+				// Create 00000001, the watcher will tail it once started.
 				w.NextSegment()
-			}
 
-			// Wait for the watcher.
-			require.NoError(t, g.Wait())
+				// Set up the watcher and run it in the background.
+				wt := newWriteToMock(time.Millisecond)
+				watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
+				watcher.SetMetrics()
+				watcher.MaxSegment = segmentsToRead
 
-			// All series and samples were read.
-			require.Equal(t, (segmentsToRead+1)*seriesCount, wt.checkNumSeries()) // Series from 00000000 are also read.
-			require.Equal(t, segmentsToRead*seriesCount*samplesCount, wt.samplesAppended)
-			require.NoError(t, w.Close())
-		})
+				var g errgroup.Group
+				g.Go(func() error {
+					startTime := time.Now()
+					err = watcher.Run()
+					if err != nil {
+						return err
+					}
+					// If the watcher was to wait for readTicker to read every new segment, it would need readTimeout * segmentsToRead.
+					d := time.Since(startTime)
+					if d > readTimeout {
+						return fmt.Errorf("watcher ran for %s, it shouldn't rely on readTicker=%s to read the new segments", d, readTimeout)
+					}
+					return nil
+				})
+
+				// The watcher went through 00000000 and is tailing the next one.
+				retry(t, defaultRetryInterval, defaultRetries, func() bool {
+					return wt.checkNumSeries() == seriesCount
+				})
+
+				// In the meantime, add some new segments in bulk.
+				// We should end up with segmentsToWrite + 1 segments now.
+				for i := 1; i < segmentsToWrite; i++ {
+					require.NoError(t, generateWALRecords(w, i, seriesCount, samplesCount))
+					w.NextSegment()
+				}
+
+				// Wait for the watcher.
+				require.NoError(t, g.Wait())
+
+				// All series and samples were read.
+				require.Equal(t, (segmentsToRead+1)*seriesCount, wt.checkNumSeries()) // Series from 00000000 are also read.
+				require.Equal(t, segmentsToRead*seriesCount*samplesCount, wt.samplesAppended)
+				require.NoError(t, w.Close())
+			})
+		}
 	}
 }
