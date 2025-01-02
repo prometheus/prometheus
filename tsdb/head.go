@@ -94,6 +94,18 @@ type Head struct {
 	bytesPool           zeropool.Pool[[]byte]
 	memChunkPool        sync.Pool
 
+	// These resources are only used during WAL replay and are reset at the end to free the underlying memory.
+	walReplayProcessors          []walSubsetProcessor
+	walReplayShards              [][]record.RefSample
+	walReplayHistogramShards     [][]histogramRecord
+	walReplaySeriesPool          zeropool.Pool[[]record.RefSeries]
+	walReplaySamplesPool         zeropool.Pool[[]record.RefSample]
+	walReplaytStonesPool         zeropool.Pool[[]tombstones.Stone]
+	walReplayExemplarsPool       zeropool.Pool[[]record.RefExemplar]
+	walReplayHistogramsPool      zeropool.Pool[[]record.RefHistogramSample]
+	walReplayFloatHistogramsPool zeropool.Pool[[]record.RefFloatHistogramSample]
+	walReplayMetadataPool        zeropool.Pool[[]record.RefMetadata]
+
 	// All series addressable by their ID or hash.
 	series *stripeSeries
 
@@ -280,6 +292,10 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 		opts.WALReplayConcurrency = defaultWALReplayConcurrency
 	}
 
+	h.walReplayProcessors = make([]walSubsetProcessor, opts.WALReplayConcurrency)
+	h.walReplayShards = make([][]record.RefSample, opts.WALReplayConcurrency)
+	h.walReplayHistogramShards = make([][]histogramRecord, opts.WALReplayConcurrency)
+
 	h.chunkDiskMapper, err = chunks.NewChunkDiskMapper(
 		r,
 		mmappedChunksDir(opts.ChunkDirRoot),
@@ -339,6 +355,19 @@ func (h *Head) resetInMemoryState() error {
 	h.lastWALTruncationTime.Store(math.MinInt64)
 	h.lastMemoryTruncationTime.Store(math.MinInt64)
 	return nil
+}
+
+func (h *Head) resetWALReplayResources() {
+	h.walReplayProcessors = nil
+	h.walReplayShards = nil
+	h.walReplayHistogramShards = nil
+	h.walReplaySeriesPool = zeropool.Pool[[]record.RefSeries]{}
+	h.walReplaySamplesPool = zeropool.Pool[[]record.RefSample]{}
+	h.walReplaytStonesPool = zeropool.Pool[[]tombstones.Stone]{}
+	h.walReplayExemplarsPool = zeropool.Pool[[]record.RefExemplar]{}
+	h.walReplayHistogramsPool = zeropool.Pool[[]record.RefHistogramSample]{}
+	h.walReplayFloatHistogramsPool = zeropool.Pool[[]record.RefFloatHistogramSample]{}
+	h.walReplayMetadataPool = zeropool.Pool[[]record.RefMetadata]{}
 }
 
 type headMetrics struct {
@@ -613,6 +642,7 @@ const cardinalityCacheExpirationTime = time.Duration(30) * time.Second
 // limits the ingested samples to the head min valid time.
 func (h *Head) Init(minValidTime int64) error {
 	h.minValidTime.Store(minValidTime)
+	defer h.resetWALReplayResources()
 	defer func() {
 		h.postings.EnsureOrder(h.opts.WALReplayConcurrency)
 	}()
