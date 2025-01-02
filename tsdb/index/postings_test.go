@@ -392,8 +392,8 @@ func BenchmarkMerge(t *testing.B) {
 		refs = append(refs, temp)
 	}
 
-	its := make([]Postings, len(refs))
-	for _, nSeries := range []int{1, 10, 100, 1000, 10000, 100000} {
+	its := make([]*ListPostings, len(refs))
+	for _, nSeries := range []int{1, 10, 10000, 100000} {
 		t.Run(strconv.Itoa(nSeries), func(bench *testing.B) {
 			ctx := context.Background()
 			for i := 0; i < bench.N; i++ {
@@ -979,7 +979,7 @@ func TestMemPostings_Delete(t *testing.T) {
 	p.Add(2, labels.FromStrings("lbl1", "b"))
 	p.Add(3, labels.FromStrings("lbl2", "a"))
 
-	before := p.Get(allPostingsKey.Name, allPostingsKey.Value)
+	before := p.Postings(context.Background(), allPostingsKey.Name, allPostingsKey.Value)
 	deletedRefs := map[storage.SeriesRef]struct{}{
 		2: {},
 	}
@@ -987,7 +987,7 @@ func TestMemPostings_Delete(t *testing.T) {
 		{Name: "lbl1", Value: "b"}: {},
 	}
 	p.Delete(deletedRefs, affectedLabels)
-	after := p.Get(allPostingsKey.Name, allPostingsKey.Value)
+	after := p.Postings(context.Background(), allPostingsKey.Name, allPostingsKey.Value)
 
 	// Make sure postings gotten before the delete have the old data when
 	// iterated over.
@@ -1001,7 +1001,7 @@ func TestMemPostings_Delete(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []storage.SeriesRef{1, 3}, expanded)
 
-	deleted := p.Get("lbl1", "b")
+	deleted := p.Postings(context.Background(), "lbl1", "b")
 	expanded, err = ExpandPostings(deleted)
 	require.NoError(t, err)
 	require.Empty(t, expanded, "expected empty postings, got %v", expanded)
@@ -1073,7 +1073,7 @@ func BenchmarkMemPostings_Delete(b *testing.B) {
 									return
 								default:
 									// Get a random value of this label.
-									p.Get(lbl, itoa(rand.Intn(10000))).Next()
+									p.Postings(context.Background(), lbl, itoa(rand.Intn(10000))).Next()
 								}
 							}
 						}(i)
@@ -1410,12 +1410,15 @@ func BenchmarkMemPostings_PostingsForLabelMatching(b *testing.B) {
 	slowRegexp := "^" + slowRegexpString() + "$"
 	b.Logf("Slow regexp length = %d", len(slowRegexp))
 	slow := regexp.MustCompile(slowRegexp)
+	const seriesPerLabel = 10
 
 	for _, labelValueCount := range []int{1_000, 10_000, 100_000} {
 		b.Run(fmt.Sprintf("labels=%d", labelValueCount), func(b *testing.B) {
 			mp := NewMemPostings()
 			for i := 0; i < labelValueCount; i++ {
-				mp.Add(storage.SeriesRef(i), labels.FromStrings("label", strconv.Itoa(i)))
+				for j := 0; j < seriesPerLabel; j++ {
+					mp.Add(storage.SeriesRef(i*seriesPerLabel+j), labels.FromStrings("__name__", strconv.Itoa(j), "label", strconv.Itoa(i)))
+				}
 			}
 
 			fp, err := ExpandPostings(mp.PostingsForLabelMatching(context.Background(), "label", fast.MatchString))
@@ -1433,6 +1436,18 @@ func BenchmarkMemPostings_PostingsForLabelMatching(b *testing.B) {
 			b.Run("matcher=slow", func(b *testing.B) {
 				for i := 0; i < b.N; i++ {
 					mp.PostingsForLabelMatching(context.Background(), "label", slow.MatchString).Next()
+				}
+			})
+
+			b.Run("matcher=all", func(b *testing.B) {
+				for i := 0; i < b.N; i++ {
+					// Match everything.
+					p := mp.PostingsForLabelMatching(context.Background(), "label", func(_ string) bool { return true })
+					var sum storage.SeriesRef
+					// Iterate through all results to exercise merge function.
+					for p.Next() {
+						sum += p.At()
+					}
 				}
 			})
 		})

@@ -235,25 +235,9 @@ func (p *MemPostings) Stats(label string, limit int, labelSizeFunc func(string, 
 	}
 }
 
-// Get returns a postings list for the given label pair.
-func (p *MemPostings) Get(name, value string) Postings {
-	var lp []storage.SeriesRef
-	p.mtx.RLock()
-	l := p.m[name]
-	if l != nil {
-		lp = l[value]
-	}
-	p.mtx.RUnlock()
-
-	if lp == nil {
-		return EmptyPostings()
-	}
-	return newListPostings(lp...)
-}
-
 // All returns a postings list over all documents ever added.
 func (p *MemPostings) All() Postings {
-	return p.Get(AllPostingsKey())
+	return p.Postings(context.Background(), allPostingsKey.Name, allPostingsKey.Value)
 }
 
 // EnsureOrder ensures that all postings lists are sorted. After it returns all further
@@ -490,7 +474,7 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 	}
 
 	// Now `vals` only contains the values that matched, get their postings.
-	its := make([]Postings, 0, len(vals))
+	its := make([]*ListPostings, 0, len(vals))
 	lps := make([]ListPostings, len(vals))
 	p.mtx.RLock()
 	e := p.m[name]
@@ -510,11 +494,27 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 	return Merge(ctx, its...)
 }
 
+// Postings returns a postings iterator for the given label values.
+func (p *MemPostings) Postings(ctx context.Context, name string, values ...string) Postings {
+	res := make([]*ListPostings, 0, len(values))
+	lps := make([]ListPostings, len(values))
+	p.mtx.RLock()
+	postingsMapForName := p.m[name]
+	for i, value := range values {
+		if lp := postingsMapForName[value]; lp != nil {
+			lps[i] = ListPostings{list: lp}
+			res = append(res, &lps[i])
+		}
+	}
+	p.mtx.RUnlock()
+	return Merge(ctx, res...)
+}
+
 func (p *MemPostings) PostingsForAllLabelValues(ctx context.Context, name string) Postings {
 	p.mtx.RLock()
 
 	e := p.m[name]
-	its := make([]Postings, 0, len(e))
+	its := make([]*ListPostings, 0, len(e))
 	lps := make([]ListPostings, len(e))
 	i := 0
 	for _, refs := range e {
@@ -660,7 +660,7 @@ func (it *intersectPostings) Err() error {
 }
 
 // Merge returns a new iterator over the union of the input iterators.
-func Merge(_ context.Context, its ...Postings) Postings {
+func Merge[T Postings](_ context.Context, its ...T) Postings {
 	if len(its) == 0 {
 		return EmptyPostings()
 	}
@@ -675,19 +675,19 @@ func Merge(_ context.Context, its ...Postings) Postings {
 	return p
 }
 
-type mergedPostings struct {
-	p   []Postings
-	h   *loser.Tree[storage.SeriesRef, Postings]
+type mergedPostings[T Postings] struct {
+	p   []T
+	h   *loser.Tree[storage.SeriesRef, T]
 	cur storage.SeriesRef
 }
 
-func newMergedPostings(p []Postings) (m *mergedPostings, nonEmpty bool) {
+func newMergedPostings[T Postings](p []T) (m *mergedPostings[T], nonEmpty bool) {
 	const maxVal = storage.SeriesRef(math.MaxUint64) // This value must be higher than all real values used in the tree.
 	lt := loser.New(p, maxVal)
-	return &mergedPostings{p: p, h: lt}, true
+	return &mergedPostings[T]{p: p, h: lt}, true
 }
 
-func (it *mergedPostings) Next() bool {
+func (it *mergedPostings[T]) Next() bool {
 	for {
 		if !it.h.Next() {
 			return false
@@ -701,7 +701,7 @@ func (it *mergedPostings) Next() bool {
 	}
 }
 
-func (it *mergedPostings) Seek(id storage.SeriesRef) bool {
+func (it *mergedPostings[T]) Seek(id storage.SeriesRef) bool {
 	for !it.h.IsEmpty() && it.h.At() < id {
 		finished := !it.h.Winner().Seek(id)
 		it.h.Fix(finished)
@@ -713,11 +713,11 @@ func (it *mergedPostings) Seek(id storage.SeriesRef) bool {
 	return true
 }
 
-func (it mergedPostings) At() storage.SeriesRef {
+func (it mergedPostings[T]) At() storage.SeriesRef {
 	return it.cur
 }
 
-func (it mergedPostings) Err() error {
+func (it mergedPostings[T]) Err() error {
 	for _, p := range it.p {
 		if err := p.Err(); err != nil {
 			return err
