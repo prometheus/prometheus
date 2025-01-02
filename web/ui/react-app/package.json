@@ -12,7 +12,7 @@
     "@codemirror/view": "^6.35.3",
     "@forevolve/bootstrap-dark": "^4.0.2",
     "@fortawesome/fontawesome-svg-core": "6.5.2",
-    "@fortawesome/free-solid-svg-icons": "6.5.2",
+    "@fortawesome/free-solid-svg-icons": "6.7.2",
     "@fortawesome/react-fontawesome": "0.2.2",
     "@lezer/common": "^1.2.3",
     "@lezer/highlight": "^1.2.1",
