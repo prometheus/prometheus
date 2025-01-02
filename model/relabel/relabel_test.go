@@ -596,10 +596,7 @@ func TestRelabel(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		// capture the range variable to avoid issues with concurrency
-		test := test
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			// Setting default fields, mimicking the behaviour in Prometheus.
 			for _, cfg := range test.relabel {
@@ -687,10 +684,7 @@ func TestRelabelValidate(t *testing.T) {
 		},
 	}
 	for i, test := range tests {
-		// capture the range variable to avoid issues with concurrency
-		test := test
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			err := test.config.Validate()
 			if test.expected == "" {
@@ -724,10 +718,7 @@ func TestTargetLabelValidity(t *testing.T) {
 		{"foo${bar}foo", true},
 	}
 	for _, test := range tests {
-		// capture the range variable to avoid issues with concurrency
-		test := test
 		t.Run(test.str, func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			require.Equal(t, test.valid, relabelTarget.Match([]byte(test.str)),
 				"Expected %q to be %v", test.str, test.valid)
@@ -956,10 +947,7 @@ action: replace
 		},
 	}
 	for _, test := range tests {
-		// capture the range variable to avoid issues with concurrency
-		test := test
 		t.Run(test.name, func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			unmarshalled := Config{}
 			err := yaml.Unmarshal([]byte(test.inputYaml), &unmarshalled)
@@ -974,7 +962,6 @@ action: replace
 }
 
 func TestRegexp_ShouldMarshalAndUnmarshalZeroValue(t *testing.T) {
-	// mark this test case as being run in parallel
 	t.Parallel()
 	var zero Regexp
 

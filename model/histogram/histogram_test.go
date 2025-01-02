@@ -87,10 +87,7 @@ func TestHistogramString(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		// capture the range variable to avoid issues with concurrency
-		c := c
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			actualString := c.histogram.String()
 			require.Equal(t, c.expectedString, actualString)
@@ -250,10 +247,7 @@ func TestCumulativeBucketIterator(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		// capture the range variable to avoid issues with concurrency
-		c := c
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			it := c.histogram.CumulativeBucketIterator()
 			actualBuckets := make([]Bucket[uint64], 0, len(c.expectedBuckets))
@@ -470,10 +464,7 @@ func TestRegularBucketIterator(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		// capture the range variable to avoid issues with concurrency
-		c := c
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			it := c.histogram.PositiveBucketIterator()
 			actualPositiveBuckets := make([]Bucket[uint64], 0, len(c.expectedPositiveBuckets))
@@ -557,10 +548,7 @@ func TestHistogramToFloat(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		// capture the range variable to avoid issues with concurrency
-		c := c
 		t.Run(c.name, func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			fh := h.ToFloat(c.fh)
 			require.Equal(t, h.String(), fh.String())
@@ -628,10 +616,7 @@ func TestCustomBucketsHistogramToFloat(t *testing.T) {
 
 	require.NoError(t, h.Validate())
 	for _, c := range cases {
-		// capture the range variable to avoid issues with concurrency
-		c := c
 		t.Run(c.name, func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			hStr := h.String()
 			fh := h.ToFloat(c.fh)
@@ -644,7 +629,6 @@ func TestCustomBucketsHistogramToFloat(t *testing.T) {
 
 // TestHistogramEquals tests both Histogram and FloatHistogram.
 func TestHistogramEquals(t *testing.T) {
-	// mark this test case as being run in parallel
 	t.Parallel()
 	h1 := Histogram{
 		Schema:        3,
@@ -889,10 +873,7 @@ func TestHistogramCopy(t *testing.T) {
 	}
 
 	for _, tcase := range cases {
-		// capture the range variable to avoid issues with concurrency
-		tcase := tcase
 		t.Run(tcase.name, func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			hCopy := tcase.orig.Copy()
 
@@ -958,10 +939,7 @@ func TestHistogramCopyTo(t *testing.T) {
 	}
 
 	for _, tcase := range cases {
-		// capture the range variable to avoid issues with concurrency
-		tcase := tcase
 		t.Run(tcase.name, func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			hCopy := &Histogram{}
 			tcase.orig.CopyTo(hCopy)
@@ -1324,10 +1302,7 @@ func TestHistogramCompact(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		// capture the range variable to avoid issues with concurrency
-		c := c
 		t.Run(c.name, func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			require.Equal(t, c.expected, c.in.Compact(c.maxEmptyBuckets))
 			// Compact has happened in-place, too.
@@ -1603,10 +1578,7 @@ func TestHistogramValidation(t *testing.T) {
 	}
 
 	for testName, tc := range tests {
-		// capture the range variable to avoid issues with concurrency
-		tc := tc
 		t.Run(testName, func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			if err := tc.h.Validate(); tc.errMsg != "" {
 				require.EqualError(t, err, tc.errMsg)
@@ -1673,8 +1645,6 @@ func TestHistogramReduceResolution(t *testing.T) {
 	}
 
 	for caseName, tc := range tcs {
-		// capture the range variable to avoid issues with concurrency
-		tc := tc
 		t.Run(caseName, func(t *testing.T) {
 			target := tc.origin.ReduceResolution(tc.target.Schema)
 			require.Equal(t, tc.target, target)

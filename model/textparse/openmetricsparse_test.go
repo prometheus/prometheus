@@ -29,7 +29,6 @@ import (
 func int64p(x int64) *int64 { return &x }
 
 func TestOpenMetricsParse(t *testing.T) {
-	// mark this test case as being run in parallel
 	t.Parallel()
 	input := `# HELP go_gc_duration_seconds A summary of the GC invocation durations.
 # TYPE go_gc_duration_seconds summary
@@ -855,10 +854,7 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		// capture the range variable to avoid issues with concurrency
-		c := c
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			p := NewOpenMetricsParser([]byte(c.input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
 			var err error
@@ -926,10 +922,7 @@ func TestOMNullByteHandling(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		// capture the range variable to avoid issues with concurrency
-		c := c
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			p := NewOpenMetricsParser([]byte(c.input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
 			var err error
@@ -1035,10 +1028,7 @@ foo_created{a="b"} 1520872608.123
 			},
 		},
 	} {
-		// capture the range variable to avoid issues with concurrency
-		tcase := tcase
 		t.Run(fmt.Sprintf("case=%v", tcase.name), func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			p := NewOpenMetricsParser([]byte(tcase.input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
 			got := testParse(t, p)

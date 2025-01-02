@@ -31,7 +31,6 @@ import (
 )
 
 func TestNHCBParserOnOMParser(t *testing.T) {
-	// mark this test case as being run in parallel
 	t.Parallel()
 	// The input is taken originally from TestOpenMetricsParse, with additional tests for the NHCBParser.
 
@@ -456,7 +455,6 @@ foobar{quantile="0.99"} 150.1`
 }
 
 func TestNHCBParserOMParser_MultipleHistograms(t *testing.T) {
-	// mark this test case as being run in parallel
 	t.Parallel()
 	// The input is taken originally from TestOpenMetricsParse, with additional tests for the NHCBParser.
 
@@ -764,10 +762,7 @@ func TestNHCBParser_NoNHCBWhenExponential(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		// capture the range variable to avoid issues with concurrency
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			p := tc.parser(tc.classic)
 			if tc.nhcb {
