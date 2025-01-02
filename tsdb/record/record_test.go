@@ -469,26 +469,17 @@ func TestRecord_MetadataDecodeUnknownExtraFields(t *testing.T) {
 	require.Equal(t, expectedMetadata, decMetadata)
 }
 
+type refsCreateFn func(labelCount, histograms, buckets int) ([]RefSeries, []RefSample, []RefHistogramSample)
+
 type recordsMaker struct {
 	name string
-	init func(int, int, int)
+	make refsCreateFn
 }
 
 // BenchmarkWAL_HistogramLog measures efficiency of encoding classic
 // histograms and native historgrams with custom buckets (NHCB).
 func BenchmarkWAL_HistogramEncoding(b *testing.B) {
-	// Cache for the refs.
-	var series []RefSeries
-	var samples []RefSample
-	var nhcbs []RefHistogramSample
-
-	resetCache := func() {
-		series = nil
-		samples = nil
-		nhcbs = nil
-	}
-
-	initClassicRefs := func(labelCount, histograms, buckets int) {
+	initClassicRefs := func(labelCount, histograms, buckets int) (series []RefSeries, floatSamples []RefSample, histSamples []RefHistogramSample) {
 		ref := chunks.HeadSeriesRef(0)
 		lbls := map[string]string{}
 		for i := range labelCount {
@@ -500,7 +491,7 @@ func BenchmarkWAL_HistogramEncoding(b *testing.B) {
 				Ref:    ref,
 				Labels: labels.FromMap(lbls),
 			})
-			samples = append(samples, RefSample{
+			floatSamples = append(floatSamples, RefSample{
 				Ref: ref,
 				T:   100,
 				V:   float64(i),
@@ -512,7 +503,7 @@ func BenchmarkWAL_HistogramEncoding(b *testing.B) {
 				Ref:    ref,
 				Labels: labels.FromMap(lbls),
 			})
-			samples = append(samples, RefSample{
+			floatSamples = append(floatSamples, RefSample{
 				Ref: ref,
 				T:   100,
 				V:   float64(i),
@@ -529,7 +520,7 @@ func BenchmarkWAL_HistogramEncoding(b *testing.B) {
 					Ref:    ref,
 					Labels: labels.FromMap(lbls),
 				})
-				samples = append(samples, RefSample{
+				floatSamples = append(floatSamples, RefSample{
 					Ref: ref,
 					T:   100,
 					V:   float64(i + j),
@@ -538,9 +529,10 @@ func BenchmarkWAL_HistogramEncoding(b *testing.B) {
 			}
 			delete(lbls, model.BucketLabel)
 		}
+		return
 	}
 
-	initNHCBRefs := func(labelCount, histograms, buckets int) {
+	initNHCBRefs := func(labelCount, histograms, buckets int) (series []RefSeries, floatSamples []RefSample, histSamples []RefHistogramSample) {
 		ref := chunks.HeadSeriesRef(0)
 		lbls := map[string]string{}
 		for i := range labelCount {
@@ -563,31 +555,31 @@ func BenchmarkWAL_HistogramEncoding(b *testing.B) {
 			for j := range buckets {
 				h.PositiveBuckets[j] = int64(i + j)
 			}
-			nhcbs = append(nhcbs, RefHistogramSample{
+			histSamples = append(histSamples, RefHistogramSample{
 				Ref: ref,
 				T:   100,
 				H:   h,
 			})
 			ref++
 		}
+		return
 	}
 
 	for _, maker := range []recordsMaker{
 		{
 			name: "classic",
-			init: initClassicRefs,
+			make: initClassicRefs,
 		},
 		{
 			name: "nhcb",
-			init: initNHCBRefs,
+			make: initNHCBRefs,
 		},
 	} {
 		for _, labelCount := range []int{0, 10, 50} {
 			for _, histograms := range []int{10, 100, 1000} {
 				for _, buckets := range []int{0, 1, 10, 100} {
 					b.Run(fmt.Sprintf("type=%s/labels=%d/histograms=%d/buckets=%d", maker.name, labelCount, histograms, buckets), func(b *testing.B) {
-						resetCache()
-						maker.init(labelCount, histograms, buckets)
+						series, samples, nhcbs := maker.make(labelCount, histograms, buckets)
 						enc := Encoder{}
 						for range b.N {
 							var buf []byte
