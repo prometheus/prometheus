@@ -207,7 +207,7 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 	default:
 	}
 
-	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, groupEvalIterationFunc, files...)
+	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, groupEvalIterationFunc, false, files...)
 
 	if errs != nil {
 		for _, e := range errs {
@@ -276,7 +276,7 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 
 // GroupLoader is responsible for loading rule groups from arbitrary sources and parsing them.
 type GroupLoader interface {
-	Load(identifier string) (*rulefmt.RuleGroups, []error)
+	Load(identifier string, ignoreUnknownFields bool) (*rulefmt.RuleGroups, []error)
 	Parse(query string) (parser.Expr, error)
 }
 
@@ -284,22 +284,22 @@ type GroupLoader interface {
 // and parser.ParseExpr.
 type FileLoader struct{}
 
-func (FileLoader) Load(identifier string) (*rulefmt.RuleGroups, []error) {
-	return rulefmt.ParseFile(identifier)
+func (FileLoader) Load(identifier string, ignoreUnknownFields bool) (*rulefmt.RuleGroups, []error) {
+	return rulefmt.ParseFile(identifier, ignoreUnknownFields)
 }
 
 func (FileLoader) Parse(query string) (parser.Expr, error) { return parser.ParseExpr(query) }
 
 // LoadGroups reads groups from a list of files.
 func (m *Manager) LoadGroups(
-	interval time.Duration, externalLabels labels.Labels, externalURL string, groupEvalIterationFunc GroupEvalIterationFunc, filenames ...string,
+	interval time.Duration, externalLabels labels.Labels, externalURL string, groupEvalIterationFunc GroupEvalIterationFunc, ignoreUnknownFields bool, filenames ...string,
 ) (map[string]*Group, []error) {
 	groups := make(map[string]*Group)
 
 	shouldRestore := !m.restored
 
 	for _, fn := range filenames {
-		rgs, errs := m.opts.GroupLoader.Load(fn)
+		rgs, errs := m.opts.GroupLoader.Load(fn, ignoreUnknownFields)
 		if errs != nil {
 			return nil, errs
 		}
