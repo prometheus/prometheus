@@ -9,7 +9,7 @@
     "@codemirror/lint": "^6.8.4",
     "@codemirror/search": "^6.5.8",
     "@codemirror/state": "^6.3.3",
-    "@codemirror/view": "^6.35.3",
+    "@codemirror/view": "^6.36.1",
     "@forevolve/bootstrap-dark": "^4.0.2",
     "@fortawesome/fontawesome-svg-core": "6.5.2",
     "@fortawesome/free-solid-svg-icons": "6.5.2",
