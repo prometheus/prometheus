@@ -192,3 +192,11 @@ update-all-go-deps:
 		$(GO) get -d $$m; \
 	done
 	@cd ./documentation/examples/remote_storage/ && $(GO) mod tidy
+
+.PHONY: release-note-check
+release-note-check:
+	@cd ./scripts/release-note && $(GO) mod tidy && $(GO) run main.go check
+
+.PHONY: release-note-generate
+release-note-generate:
+	@cd ./scripts/release-note && $(GO) mod tidy && $(GO) run main.go generate
