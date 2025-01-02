@@ -2,7 +2,7 @@
 
 ## unreleased
 
-## 3.1.0 2025-01-02
+## 3.1.0 / 2025-01-02
 
  * [SECURITY] upgrade golang.org/x/crypto to address reported CVE-2024-45337. #15691
  * [CHANGE] Notifier: Increment prometheus_notifications_errors_total by the number of affected alerts rather than per batch. #15428
