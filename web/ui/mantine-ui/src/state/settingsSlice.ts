@@ -14,6 +14,8 @@ interface Settings {
   enableSyntaxHighlighting: boolean;
   enableLinter: boolean;
   showAnnotations: boolean;
+  ruleGroupsPerPage: number;
+  alertGroupsPerPage: number;
 }
 
 // Declared/defined in public/index.html, value replaced by Prometheus when serving bundle.
@@ -29,6 +31,8 @@ export const localStorageKeyEnableSyntaxHighlighting =
   "settings.enableSyntaxHighlighting";
 export const localStorageKeyEnableLinter = "settings.enableLinter";
 export const localStorageKeyShowAnnotations = "settings.showAnnotations";
+export const localStorageKeyRuleGroupsPerPage = "settings.ruleGroupsPerPage";
+export const localStorageKeyAlertGroupsPerPage = "settings.alertGroupsPerPage";
 
 // This dynamically/generically determines the pathPrefix by stripping the first known
 // endpoint suffix from the window location path. It works out of the box for both direct
@@ -94,6 +98,14 @@ export const initialState: Settings = {
   showAnnotations: initializeFromLocalStorage<boolean>(
     localStorageKeyShowAnnotations,
     true
+  ),
+  ruleGroupsPerPage: initializeFromLocalStorage<number>(
+    localStorageKeyRuleGroupsPerPage,
+    10
+  ),
+  alertGroupsPerPage: initializeFromLocalStorage<number>(
+    localStorageKeyAlertGroupsPerPage,
+    10
   ),
 };
 

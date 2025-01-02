@@ -18,7 +18,7 @@ import "github.com/prometheus/prometheus/model/labels"
 // ExemplarMaxLabelSetLength is defined by OpenMetrics: "The combined length of
 // the label names and values of an Exemplar's LabelSet MUST NOT exceed 128
 // UTF-8 characters."
-// https://github.com/OpenObservability/OpenMetrics/blob/main/specification/OpenMetrics.md#exemplars
+// https://github.com/prometheus/OpenMetrics/blob/v1.0.0/specification/OpenMetrics.md#exemplars
 const ExemplarMaxLabelSetLength = 128
 
 // Exemplar is additional information associated with a time series.

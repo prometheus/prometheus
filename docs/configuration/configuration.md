@@ -179,8 +179,8 @@ otlp:
   # - "UnderscoreEscapingWithSuffixes" refers to commonly agreed normalization used
   #   by OpenTelemetry in https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/pkg/translator/prometheus
   # - "NoUTF8EscapingWithSuffixes" is a mode that relies on UTF-8 support in Prometheus.
-  #   It preserves all special characters like dots, but it still add required suffixes
-  #   for units and _total like in UnderscoreEscapingWithSuffixes.
+  #   It preserves all special characters like dots, but still adds required metric name suffixes
+  #   for units and _total, as UnderscoreEscapingWithSuffixes does.
   [ translation_strategy: <string> | default = "UnderscoreEscapingWithSuffixes" ]
   # Enables adding "service.name", "service.namespace" and "service.instance.id"
   # resource attributes to the "target_info" metric, on top of converting
@@ -675,6 +675,13 @@ http_headers:
 ### `<azure_sd_config>`
 
 Azure SD configurations allow retrieving scrape targets from Azure VMs.
+
+The discovery requires at least the following permissions:
+
+* `Microsoft.Compute/virtualMachines/read`: Required for VM discovery
+* `Microsoft.Network/networkInterfaces/read`: Required for VM discovery
+* `Microsoft.Compute/virtualMachineScaleSets/virtualMachines/read`: Required for scale set (VMSS) discovery
+* `Microsoft.Compute/virtualMachineScaleSets/virtualMachines/networkInterfaces/read`: Required for scale set (VMSS) discovery
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
