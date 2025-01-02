@@ -2,11 +2,7 @@
 
 ## unreleased
 
-## 3.1.0-rc.1 / 2024-12-30
-
-* [BUGFIX] OTLP receiver: Allow colons in non-standard units. #15710
-
-## 3.1.0-rc.0 / 2024-12-18
+## 3.1.0 2025-01-02
 
  * [SECURITY] upgrade golang.org/x/crypto to address reported CVE-2024-45337. #15691
  * [CHANGE] Notifier: Increment prometheus_notifications_errors_total by the number of affected alerts rather than per batch. #15428
@@ -51,6 +47,7 @@
  * [BUGFIX] PromQL: Clamp functions: Ignore any points with native histograms. #15169
  * [BUGFIX] TSDB: Fix race on stale values in headAppender. #15322
  * [BUGFIX] UI: Fix selector / series formatting for empty metric names. #15340
+ * [BUGFIX] OTLP receiver: Allow colons in non-standard units. #15710
 
 ## 3.0.1 / 2024-11-28
 
