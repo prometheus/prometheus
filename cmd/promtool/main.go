@@ -119,7 +119,7 @@ func main() {
 	checkConfigLintFatal := checkConfigCmd.Flag(
 		"lint-fatal",
 		"Make lint errors exit with exit code 3.").Default("false").Bool()
-	checkConfigIgnoreUnknownFields := checkConfigCmd.Flag("ignore-unknown-fields", "Ignore unknown fields in the rule groups read by the config files.").Default("false").Bool()
+	checkConfigIgnoreUnknownFields := checkConfigCmd.Flag("ignore-unknown-fields", "Ignore unknown fields in the rule groups read by the config files. This is useful when you want to extend rule files with custom metadata. Ensure that those fields are removed before loading them into the Prometheus server as it performs strict checks by default.").Default("false").Bool()
 
 	checkWebConfigCmd := checkCmd.Command("web-config", "Check if the web config files are valid or not.")
 	webConfigFiles := checkWebConfigCmd.Arg(
@@ -147,7 +147,7 @@ func main() {
 	checkRulesLintFatal := checkRulesCmd.Flag(
 		"lint-fatal",
 		"Make lint errors exit with exit code 3.").Default("false").Bool()
-	checkRulesIgnoreUnknownFields := checkRulesCmd.Flag("ignore-unknown-fields", "Ignore unknown fields in the rule files.").Default("false").Bool()
+	checkRulesIgnoreUnknownFields := checkRulesCmd.Flag("ignore-unknown-fields", "Ignore unknown fields in the rule files. This is useful when you want to extend rule files with custom metadata. Ensure that those fields are removed before loading them into the Prometheus server as it performs strict checks by default.").Default("false").Bool()
 
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
 	checkMetricsExtended := checkCmd.Flag("extended", "Print extended information related to the cardinality of the metrics.").Bool()
@@ -221,7 +221,7 @@ func main() {
 	).Required().ExistingFiles()
 	testRulesDebug := testRulesCmd.Flag("debug", "Enable unit test debugging.").Default("false").Bool()
 	testRulesDiff := testRulesCmd.Flag("diff", "[Experimental] Print colored differential output between expected & received output.").Default("false").Bool()
-	testRulesIgnoreUnknownFields := testRulesCmd.Flag("ignore-unknown-fields", "Ignore unknown fields in the test file.").Default("false").Bool()
+	testRulesIgnoreUnknownFields := testRulesCmd.Flag("ignore-unknown-fields", "Ignore unknown fields in the test files. This is useful when you want to extend rule files with custom metadata. Ensure that those fields are removed before loading them into the Prometheus server as it performs strict checks by default.").Default("false").Bool()
 
 	defaultDBPath := "data/"
 	tsdbCmd := app.Command("tsdb", "Run tsdb commands.")
