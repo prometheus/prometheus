@@ -22,6 +22,7 @@ import (
 )
 
 func TestVarint(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		v        int
 		expected []byte
@@ -39,6 +40,7 @@ func TestVarint(t *testing.T) {
 	}
 	var buf [16]byte
 	for _, c := range cases {
+		// tests cases cannot use parallelism because reusing the buffer causes a possible race condition
 		n := encodeVarint(buf[:], len(buf), c.v)
 		require.Equal(t, len(c.expected), len(buf)-n)
 		require.Equal(t, c.expected, buf[n:])

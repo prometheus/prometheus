@@ -44,9 +44,12 @@ func TestLabels_String(t *testing.T) {
 			expected: `{"service.name"="t1", "whatever\\whatever"="t2"}`,
 		},
 	}
-	for _, c := range cases {
-		str := c.labels.String()
-		require.Equal(t, c.expected, str)
+	for i, c := range cases {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			t.Parallel()
+			str := c.labels.String()
+			require.Equal(t, c.expected, str)
+		})
 	}
 }
 
@@ -127,8 +130,11 @@ func TestLabels_MatchLabels(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		got := labels.MatchLabels(test.on, test.providedNames...)
-		require.True(t, Equal(test.expected, got), "unexpected labelset for test case %d", i)
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			t.Parallel()
+			got := labels.MatchLabels(test.on, test.providedNames...)
+			require.True(t, Equal(test.expected, got), "unexpected labelset for test case %d", i)
+		})
 	}
 }
 
@@ -149,14 +155,17 @@ func TestLabels_HasDuplicateLabelNames(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		l, d := c.Input.HasDuplicateLabelNames()
-		require.Equal(t, c.Duplicate, d, "test %d: incorrect duplicate bool", i)
-		require.Equal(t, c.LabelName, l, "test %d: incorrect label name", i)
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			t.Parallel()
+			l, d := c.Input.HasDuplicateLabelNames()
+			require.Equal(t, c.Duplicate, d, "test %d: incorrect duplicate bool", i)
+			require.Equal(t, c.LabelName, l, "test %d: incorrect label name", i)
+		})
 	}
 }
 
 func TestLabels_WithoutEmpty(t *testing.T) {
-	for _, test := range []struct {
+	for i, test := range []struct {
 		input    Labels
 		expected Labels
 	}{
@@ -220,14 +229,15 @@ func TestLabels_WithoutEmpty(t *testing.T) {
 				"job", "check"),
 		},
 	} {
-		t.Run("", func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			t.Parallel()
 			require.True(t, Equal(test.expected, test.input.WithoutEmpty()))
 		})
 	}
 }
 
 func TestLabels_IsValid(t *testing.T) {
-	for _, test := range []struct {
+	for i, test := range []struct {
 		input    Labels
 		expected bool
 	}{
@@ -276,13 +286,15 @@ func TestLabels_IsValid(t *testing.T) {
 			expected: false,
 		},
 	} {
-		t.Run("", func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			t.Parallel()
 			require.Equal(t, test.expected, test.input.IsValid(model.LegacyValidation))
 		})
 	}
 }
 
 func TestLabels_ValidationModes(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		input      Labels
 		globalMode model.ValidationScheme
@@ -352,6 +364,7 @@ func TestLabels_ValidationModes(t *testing.T) {
 			expected:   false,
 		},
 	} {
+		// this test cannot use parallelism due to race condition by changing NameValidationScheme
 		model.NameValidationScheme = test.globalMode
 		require.Equal(t, test.expected, test.input.IsValid(test.callMode))
 	}
@@ -394,12 +407,16 @@ func TestLabels_Equal(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		got := Equal(labels, test.compared)
-		require.Equal(t, test.expected, got, "unexpected comparison result for test case %d", i)
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			t.Parallel()
+			got := Equal(labels, test.compared)
+			require.Equal(t, test.expected, got, "unexpected comparison result for test case %d", i)
+		})
 	}
 }
 
 func TestLabels_FromStrings(t *testing.T) {
+	t.Parallel()
 	labels := FromStrings("aaa", "111", "bbb", "222")
 	x := 0
 	labels.Range(func(l Label) {
@@ -498,10 +515,13 @@ func TestLabels_Compare(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		got := Compare(labels, test.compared)
-		require.Equal(t, sign(test.expected), sign(got), "unexpected comparison result for test case %d", i)
-		got = Compare(test.compared, labels)
-		require.Equal(t, -sign(test.expected), sign(got), "unexpected comparison result for reverse test case %d", i)
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			t.Parallel()
+			got := Compare(labels, test.compared)
+			require.Equal(t, sign(test.expected), sign(got), "unexpected comparison result for test case %d", i)
+			got = Compare(test.compared, labels)
+			require.Equal(t, -sign(test.expected), sign(got), "unexpected comparison result for reverse test case %d", i)
+		})
 	}
 }
 
@@ -525,18 +545,23 @@ func TestLabels_Has(t *testing.T) {
 		"bbb", "222")
 
 	for i, test := range tests {
-		got := labelsSet.Has(test.input)
-		require.Equal(t, test.expected, got, "unexpected comparison result for test case %d", i)
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			t.Parallel()
+			got := labelsSet.Has(test.input)
+			require.Equal(t, test.expected, got, "unexpected comparison result for test case %d", i)
+		})
 	}
 }
 
 func TestLabels_Get(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "", FromStrings("aaa", "111", "bbb", "222").Get("foo"))
 	require.Equal(t, "111", FromStrings("aaaa", "111", "bbb", "222").Get("aaaa"))
 	require.Equal(t, "222", FromStrings("aaaa", "111", "bbb", "222").Get("bbb"))
 }
 
 func TestLabels_DropMetricName(t *testing.T) {
+	t.Parallel()
 	require.True(t, Equal(FromStrings("aaa", "111", "bbb", "222"), FromStrings("aaa", "111", "bbb", "222").DropMetricName()))
 	require.True(t, Equal(FromStrings("aaa", "111"), FromStrings(MetricName, "myname", "aaa", "111").DropMetricName()))
 
@@ -685,19 +710,23 @@ func BenchmarkLabels_Compare(b *testing.B) {
 }
 
 func TestLabels_Copy(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, FromStrings("aaa", "111", "bbb", "222"), FromStrings("aaa", "111", "bbb", "222").Copy())
 }
 
 func TestLabels_Map(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, map[string]string{"aaa": "111", "bbb": "222"}, FromStrings("aaa", "111", "bbb", "222").Map())
 }
 
 func TestLabels_BytesWithLabels(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, FromStrings("aaa", "111", "bbb", "222").Bytes(nil), FromStrings("aaa", "111", "bbb", "222", "ccc", "333").BytesWithLabels(nil, "aaa", "bbb"))
 	require.Equal(t, FromStrings().Bytes(nil), FromStrings("aaa", "111", "bbb", "222", "ccc", "333").BytesWithLabels(nil))
 }
 
 func TestLabels_BytesWithoutLabels(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, FromStrings("aaa", "111").Bytes(nil), FromStrings("aaa", "111", "bbb", "222", "ccc", "333").BytesWithoutLabels(nil, "bbb", "ccc"))
 	require.Equal(t, FromStrings(MetricName, "333", "aaa", "111").Bytes(nil), FromStrings(MetricName, "333", "aaa", "111", "bbb", "222").BytesWithoutLabels(nil, "bbb"))
 	require.Equal(t, FromStrings("aaa", "111").Bytes(nil), FromStrings(MetricName, "333", "aaa", "111", "bbb", "222").BytesWithoutLabels(nil, MetricName, "bbb"))
@@ -705,6 +734,7 @@ func TestLabels_BytesWithoutLabels(t *testing.T) {
 
 func TestBuilder(t *testing.T) {
 	reuseBuilder := NewBuilderWithSymbolTable(NewSymbolTable())
+
 	for i, tcase := range []struct {
 		base Labels
 		del  []string
@@ -779,6 +809,7 @@ func TestBuilder(t *testing.T) {
 			want: FromStrings("aaa", "111", "ddd", "444"),
 		},
 	} {
+		tcase := tcase
 		test := func(t *testing.T, b *Builder) {
 			for _, lbl := range tcase.set {
 				b.Set(lbl.Name, lbl.Value)
@@ -798,19 +829,23 @@ func TestBuilder(t *testing.T) {
 			require.Equal(t, tcase.want.BytesWithoutLabels(nil, "aaa", "bbb"), b.Labels().Bytes(nil))
 		}
 		t.Run(fmt.Sprintf("NewBuilder %d", i), func(t *testing.T) {
+			t.Parallel()
 			test(t, NewBuilder(tcase.base))
 		})
 		t.Run(fmt.Sprintf("NewSymbolTable %d", i), func(t *testing.T) {
+			t.Parallel()
 			b := NewBuilderWithSymbolTable(NewSymbolTable())
 			b.Reset(tcase.base)
 			test(t, b)
 		})
 		t.Run(fmt.Sprintf("reuseBuilder %d", i), func(t *testing.T) {
+			// test cannot run in parallel due to a possible race condition with the builder
 			reuseBuilder.Reset(tcase.base)
 			test(t, reuseBuilder)
 		})
 	}
 	t.Run("set_after_del", func(t *testing.T) {
+		t.Parallel()
 		b := NewBuilder(FromStrings("aaa", "111"))
 		b.Del("bbb")
 		b.Set("bbb", "222")
@@ -846,6 +881,7 @@ func TestScratchBuilder(t *testing.T) {
 		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			t.Parallel()
 			b := NewScratchBuilder(len(tcase.add))
 			for _, lbl := range tcase.add {
 				b.Add(lbl.Name, lbl.Value)
@@ -859,6 +895,7 @@ func TestScratchBuilder(t *testing.T) {
 }
 
 func TestLabels_Hash(t *testing.T) {
+	t.Parallel()
 	lbls := FromStrings("foo", "bar", "baz", "qux")
 	hash1, hash2 := lbls.Hash(), lbls.Hash()
 	require.Equal(t, hash1, hash2)
@@ -954,6 +991,7 @@ func BenchmarkLabels_Copy(b *testing.B) {
 }
 
 func TestMarshaling(t *testing.T) {
+	t.Parallel()
 	lbls := FromStrings("aaa", "111", "bbb", "2222", "ccc", "33333")
 	expectedJSON := "{\"aaa\":\"111\",\"bbb\":\"2222\",\"ccc\":\"33333\"}"
 	b, err := json.Marshal(lbls)
