@@ -1209,6 +1209,8 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_openstack_loadbalancer_name`: the OpenStack load balancer name.
 * `__meta_openstack_loadbalancer_provider`: the Octavia provider of the OpenStack load balancer.
 * `__meta_openstack_loadbalancer_status`: the status of the OpenStack load balancer.
+* `__meta_openstack_loadbalancer_operating_status`: the operating status of the OpenStack load balancer.
+* `__meta_openstack_loadbalancer_provisioning_status`: the provisioning status of the OpenStack load balancer.
 * `__meta_openstack_loadbalancer_tags`: comma separated list of the OpenStack load balancer.
 * `__meta_openstack_loadbalancer_vip`: the VIP of the OpenStack load balancer.
 * `__meta_openstack_project_id`: the project (tenant) owning this load balancer.

@@ -33,14 +33,15 @@ import (
 )
 
 const (
-	openstackLabelLoadBalancerID               = openstackLabelPrefix + "loadbalancer_id"
-	openstackLabelLoadBalancerName             = openstackLabelPrefix + "loadbalancer_name"
-	openstackLabelLoadBalancerStatus           = openstackLabelPrefix + "loadbalancer_status"
-	openstackLabelLoadBalancerAvailabilityZone = openstackLabelPrefix + "loadbalancer_availability_zone"
-	openstackLabelLoadBalancerFloatingIP       = openstackLabelPrefix + "loadbalancer_floating_ip"
-	openstackLabelLoadBalancerVIP              = openstackLabelPrefix + "loadbalancer_vip"
-	openstackLabelLoadBalancerProvider         = openstackLabelPrefix + "loadbalancer_provider"
-	openstackLabelLoadBalancerTags             = openstackLabelPrefix + "loadbalancer_tags"
+	openstackLabelLoadBalancerID                 = openstackLabelPrefix + "loadbalancer_id"
+	openstackLabelLoadBalancerName               = openstackLabelPrefix + "loadbalancer_name"
+	openstackLabelLoadBalancerOperatingStatus    = openstackLabelPrefix + "loadbalancer_operating_status"
+	openstackLabelLoadBalancerProvisioningStatus = openstackLabelPrefix + "loadbalancer_provisioning_status"
+	openstackLabelLoadBalancerAvailabilityZone   = openstackLabelPrefix + "loadbalancer_availability_zone"
+	openstackLabelLoadBalancerFloatingIP         = openstackLabelPrefix + "loadbalancer_floating_ip"
+	openstackLabelLoadBalancerVIP                = openstackLabelPrefix + "loadbalancer_vip"
+	openstackLabelLoadBalancerProvider           = openstackLabelPrefix + "loadbalancer_provider"
+	openstackLabelLoadBalancerTags               = openstackLabelPrefix + "loadbalancer_tags"
 )
 
 // LoadBalancerDiscovery discovers OpenStack load balancers.
@@ -174,7 +175,8 @@ func (i *LoadBalancerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Gro
 		labels[model.AddressLabel] = model.LabelValue(addr)
 		labels[openstackLabelLoadBalancerID] = model.LabelValue(lb.ID)
 		labels[openstackLabelLoadBalancerName] = model.LabelValue(lb.Name)
-		labels[openstackLabelLoadBalancerStatus] = model.LabelValue(lb.ProvisioningStatus)
+		labels[openstackLabelLoadBalancerOperatingStatus] = model.LabelValue(lb.OperatingStatus)
+		labels[openstackLabelLoadBalancerProvisioningStatus] = model.LabelValue(lb.ProvisioningStatus)
 		labels[openstackLabelLoadBalancerAvailabilityZone] = model.LabelValue(lb.AvailabilityZone)
 		labels[openstackLabelLoadBalancerVIP] = model.LabelValue(lb.VipAddress)
 		labels[openstackLabelLoadBalancerProvider] = model.LabelValue(lb.Provider)
