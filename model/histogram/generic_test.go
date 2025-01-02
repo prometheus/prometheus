@@ -106,10 +106,7 @@ func TestGetBoundExponential(t *testing.T) {
 	}
 
 	for i, s := range scenarios {
-		// capture the range variable to avoid issues with concurrency
-		s := s
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			got := getBoundExponential(s.idx, s.schema)
 			if s.want != got {
@@ -148,10 +145,7 @@ func TestReduceResolutionHistogram(t *testing.T) {
 	}
 
 	for i, tc := range cases {
-		// capture the range variable to avoid issues with concurrency
-		tc := tc
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			spansCopy, bucketsCopy := slices.Clone(tc.spans), slices.Clone(tc.buckets)
 			spans, buckets := reduceResolution(tc.spans, tc.buckets, tc.schema, tc.targetSchema, true, false)
@@ -202,10 +196,7 @@ func TestReduceResolutionFloatHistogram(t *testing.T) {
 	}
 
 	for i, tc := range cases {
-		// capture the range variable to avoid issues with concurrency
-		tc := tc
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			spansCopy, bucketsCopy := slices.Clone(tc.spans), slices.Clone(tc.buckets)
 			spans, buckets := reduceResolution(tc.spans, tc.buckets, tc.schema, tc.targetSchema, false, false)

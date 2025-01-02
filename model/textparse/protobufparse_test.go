@@ -2532,10 +2532,7 @@ func TestProtobufParse(t *testing.T) {
 	}
 
 	for _, scenario := range scenarios {
-		// capture the range variable to avoid issues with concurrency
-		scenario := scenario
 		t.Run(scenario.name, func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			got := testParse(t, scenario.parser)
 			requireEntries(t, scenario.expected, got)

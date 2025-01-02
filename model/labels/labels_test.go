@@ -45,10 +45,7 @@ func TestLabels_String(t *testing.T) {
 		},
 	}
 	for i, c := range cases {
-		// capture the range variable to avoid issues with concurrency
-		c := c
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			str := c.labels.String()
 			require.Equal(t, c.expected, str)
@@ -133,10 +130,7 @@ func TestLabels_MatchLabels(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		// capture the range variable to avoid issues with concurrency
-		test := test
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			got := labels.MatchLabels(test.on, test.providedNames...)
 			require.True(t, Equal(test.expected, got), "unexpected labelset for test case %d", i)
@@ -161,10 +155,7 @@ func TestLabels_HasDuplicateLabelNames(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		// capture the range variable to avoid issues with concurrency
-		c := c
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			l, d := c.Input.HasDuplicateLabelNames()
 			require.Equal(t, c.Duplicate, d, "test %d: incorrect duplicate bool", i)
@@ -238,10 +229,7 @@ func TestLabels_WithoutEmpty(t *testing.T) {
 				"job", "check"),
 		},
 	} {
-		// capture the range variable to avoid issues with concurrency
-		test := test
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			require.True(t, Equal(test.expected, test.input.WithoutEmpty()))
 		})
@@ -298,10 +286,7 @@ func TestLabels_IsValid(t *testing.T) {
 			expected: false,
 		},
 	} {
-		// capture the range variable to avoid issues with concurrency
-		test := test
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			require.Equal(t, test.expected, test.input.IsValid(model.LegacyValidation))
 		})
@@ -309,7 +294,6 @@ func TestLabels_IsValid(t *testing.T) {
 }
 
 func TestLabels_ValidationModes(t *testing.T) {
-	// mark this test case as being run in parallel
 	t.Parallel()
 	for _, test := range []struct {
 		input      Labels
@@ -423,10 +407,7 @@ func TestLabels_Equal(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		// capture the range variable to avoid issues with concurrency
-		test := test
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			got := Equal(labels, test.compared)
 			require.Equal(t, test.expected, got, "unexpected comparison result for test case %d", i)
@@ -435,7 +416,6 @@ func TestLabels_Equal(t *testing.T) {
 }
 
 func TestLabels_FromStrings(t *testing.T) {
-	// mark this test case as being run in parallel
 	t.Parallel()
 	labels := FromStrings("aaa", "111", "bbb", "222")
 	x := 0
@@ -535,10 +515,7 @@ func TestLabels_Compare(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		// capture the range variable to avoid issues with concurrency
-		test := test
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			got := Compare(labels, test.compared)
 			require.Equal(t, sign(test.expected), sign(got), "unexpected comparison result for test case %d", i)
@@ -568,10 +545,7 @@ func TestLabels_Has(t *testing.T) {
 		"bbb", "222")
 
 	for i, test := range tests {
-		// capture the range variable to avoid issues with concurrency
-		test := test
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			got := labelsSet.Has(test.input)
 			require.Equal(t, test.expected, got, "unexpected comparison result for test case %d", i)
@@ -580,7 +554,6 @@ func TestLabels_Has(t *testing.T) {
 }
 
 func TestLabels_Get(t *testing.T) {
-	// mark this test case as being run in parallel
 	t.Parallel()
 	require.Equal(t, "", FromStrings("aaa", "111", "bbb", "222").Get("foo"))
 	require.Equal(t, "111", FromStrings("aaaa", "111", "bbb", "222").Get("aaaa"))
@@ -588,7 +561,6 @@ func TestLabels_Get(t *testing.T) {
 }
 
 func TestLabels_DropMetricName(t *testing.T) {
-	// mark this test case as being run in parallel
 	t.Parallel()
 	require.True(t, Equal(FromStrings("aaa", "111", "bbb", "222"), FromStrings("aaa", "111", "bbb", "222").DropMetricName()))
 	require.True(t, Equal(FromStrings("aaa", "111"), FromStrings(MetricName, "myname", "aaa", "111").DropMetricName()))
@@ -738,26 +710,22 @@ func BenchmarkLabels_Compare(b *testing.B) {
 }
 
 func TestLabels_Copy(t *testing.T) {
-	// mark this test case as being run in parallel
 	t.Parallel()
 	require.Equal(t, FromStrings("aaa", "111", "bbb", "222"), FromStrings("aaa", "111", "bbb", "222").Copy())
 }
 
 func TestLabels_Map(t *testing.T) {
-	// mark this test case as being run in parallel
 	t.Parallel()
 	require.Equal(t, map[string]string{"aaa": "111", "bbb": "222"}, FromStrings("aaa", "111", "bbb", "222").Map())
 }
 
 func TestLabels_BytesWithLabels(t *testing.T) {
-	// mark this test case as being run in parallel
 	t.Parallel()
 	require.Equal(t, FromStrings("aaa", "111", "bbb", "222").Bytes(nil), FromStrings("aaa", "111", "bbb", "222", "ccc", "333").BytesWithLabels(nil, "aaa", "bbb"))
 	require.Equal(t, FromStrings().Bytes(nil), FromStrings("aaa", "111", "bbb", "222", "ccc", "333").BytesWithLabels(nil))
 }
 
 func TestLabels_BytesWithoutLabels(t *testing.T) {
-	// mark this test case as being run in parallel
 	t.Parallel()
 	require.Equal(t, FromStrings("aaa", "111").Bytes(nil), FromStrings("aaa", "111", "bbb", "222", "ccc", "333").BytesWithoutLabels(nil, "bbb", "ccc"))
 	require.Equal(t, FromStrings(MetricName, "333", "aaa", "111").Bytes(nil), FromStrings(MetricName, "333", "aaa", "111", "bbb", "222").BytesWithoutLabels(nil, "bbb"))
@@ -861,12 +829,10 @@ func TestBuilder(t *testing.T) {
 			require.Equal(t, tcase.want.BytesWithoutLabels(nil, "aaa", "bbb"), b.Labels().Bytes(nil))
 		}
 		t.Run(fmt.Sprintf("NewBuilder %d", i), func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			test(t, NewBuilder(tcase.base))
 		})
 		t.Run(fmt.Sprintf("NewSymbolTable %d", i), func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			b := NewBuilderWithSymbolTable(NewSymbolTable())
 			b.Reset(tcase.base)
@@ -879,7 +845,6 @@ func TestBuilder(t *testing.T) {
 		})
 	}
 	t.Run("set_after_del", func(t *testing.T) {
-		// mark this test case as being run in parallel
 		t.Parallel()
 		b := NewBuilder(FromStrings("aaa", "111"))
 		b.Del("bbb")
@@ -915,10 +880,7 @@ func TestScratchBuilder(t *testing.T) {
 			want: FromStrings("ddd", "444"),
 		},
 	} {
-		// capture the range variable to avoid issues with concurrency
-		tcase := tcase
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			b := NewScratchBuilder(len(tcase.add))
 			for _, lbl := range tcase.add {
@@ -933,7 +895,6 @@ func TestScratchBuilder(t *testing.T) {
 }
 
 func TestLabels_Hash(t *testing.T) {
-	// mark this test case as being run in parallel
 	t.Parallel()
 	lbls := FromStrings("foo", "bar", "baz", "qux")
 	hash1, hash2 := lbls.Hash(), lbls.Hash()
@@ -1030,7 +991,6 @@ func BenchmarkLabels_Copy(b *testing.B) {
 }
 
 func TestMarshaling(t *testing.T) {
-	// mark this test case as being run in parallel
 	t.Parallel()
 	lbls := FromStrings("aaa", "111", "bbb", "2222", "ccc", "33333")
 	expectedJSON := "{\"aaa\":\"111\",\"bbb\":\"2222\",\"ccc\":\"33333\"}"

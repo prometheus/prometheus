@@ -25,7 +25,6 @@ import (
 )
 
 func TestPromParse(t *testing.T) {
-	// mark this test case as being run in parallel
 	t.Parallel()
 	input := `# HELP go_gc_duration_seconds A summary of the GC invocation durations.
 # 	TYPE go_gc_duration_seconds summary
@@ -365,10 +364,7 @@ func TestPromParseErrors(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		// capture the range variable to avoid issues with concurrency
-		c := c
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			p := NewPromParser([]byte(c.input), labels.NewSymbolTable())
 			var err error
@@ -424,10 +420,7 @@ func TestPromNullByteHandling(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		// capture the range variable to avoid issues with concurrency
-		c := c
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			p := NewPromParser([]byte(c.input), labels.NewSymbolTable())
 			var err error

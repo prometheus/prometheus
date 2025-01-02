@@ -102,10 +102,7 @@ func TestMatcher(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		// capture the range variable to avoid issues with concurrency
-		test := test
 		t.Run(fmt.Sprintf("%d: %s", i, test.matcher), func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			require.Equal(t, test.matcher.Matches(test.value), test.match)
 		})
@@ -136,10 +133,7 @@ func TestInverse(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		// capture the range variable to avoid issues with concurrency
-		test := test
 		t.Run(fmt.Sprintf("%d: %s", i, test.matcher), func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			result, err := test.matcher.Inverse()
 			require.NoError(t, err)
@@ -194,10 +188,7 @@ func TestPrefix(t *testing.T) {
 			prefix:  "",
 		},
 	} {
-		// capture the range variable to avoid issues with concurrency
-		tc := tc
 		t.Run(fmt.Sprintf("%d: %s", i, tc.matcher), func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			require.Equal(t, tc.prefix, tc.matcher.Prefix())
 		})
@@ -222,10 +213,7 @@ func TestIsRegexOptimized(t *testing.T) {
 			isRegexOptimized: true,
 		},
 	} {
-		// capture the range variable to avoid issues with concurrency
-		tc := tc
 		t.Run(fmt.Sprintf("%d: %s", i, tc.matcher), func(t *testing.T) {
-			// mark this test case as being run in parallel
 			t.Parallel()
 			require.Equal(t, tc.isRegexOptimized, tc.matcher.IsRegexOptimized())
 		})

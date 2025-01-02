@@ -159,7 +159,6 @@ func TestNewParser(t *testing.T) {
 			err:                    "received unsupported Content-Type \"text/html\", using fallback_scrape_protocol \"text/plain\"",
 		},
 	} {
-		tt := tt // Copy to local variable before going parallel.
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
