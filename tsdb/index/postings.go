@@ -863,6 +863,11 @@ func (it *ListPostings) Err() error {
 	return nil
 }
 
+// Len returns the remaining number of postings in the list.
+func (it *ListPostings) Len() int {
+	return len(it.list)
+}
+
 // bigEndianPostings implements the Postings interface over a byte stream of
 // big endian numbers.
 type bigEndianPostings struct {
