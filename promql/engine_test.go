@@ -751,7 +751,7 @@ load 10s
 			Interval: 5 * time.Second,
 		},
 		{
-			Query:       `count_values("wrong label!", metric)`,
+			Query:       `count_values("wrong label!\xff", metric)`,
 			ShouldError: true,
 		},
 	}

@@ -259,6 +259,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				logger.Info("Experimental out-of-order native histogram ingestion enabled. This will only take effect if OutOfOrderTimeWindow is > 0 and if EnableNativeHistograms = true")
 			case "created-timestamp-zero-ingestion":
 				c.scrape.EnableCreatedTimestampZeroIngestion = true
+				c.web.CTZeroIngestionEnabled = true
 				// Change relevant global variables. Hacky, but it's hard to pass a new option or default to unmarshallers.
 				config.DefaultConfig.GlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
@@ -593,12 +594,14 @@ func main() {
 		logger.Error(fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "file", absPath, "err", err)
 		os.Exit(2)
 	}
+	// Get scrape configs to validate dynamically loaded scrape_config_files.
+	// They can change over time, but do the extra validation on startup for better experience.
 	if _, err := cfgFile.GetScrapeConfigs(); err != nil {
 		absPath, pathErr := filepath.Abs(cfg.configFile)
 		if pathErr != nil {
 			absPath = cfg.configFile
 		}
-		logger.Error(fmt.Sprintf("Error loading scrape config files from config (--config.file=%q)", cfg.configFile), "file", absPath, "err", err)
+		logger.Error(fmt.Sprintf("Error loading dynamic scrape config files from config (--config.file=%q)", cfg.configFile), "file", absPath, "err", err)
 		os.Exit(2)
 	}
 	if cfg.tsdb.EnableExemplarStorage {
@@ -986,18 +989,12 @@ func main() {
 	listeners, err := webHandler.Listeners()
 	if err != nil {
 		logger.Error("Unable to start web listener", "err", err)
-		if err := queryEngine.Close(); err != nil {
-			logger.Warn("Closing query engine failed", "err", err)
-		}
 		os.Exit(1)
 	}
 
 	err = toolkit_web.Validate(*webConfig)
 	if err != nil {
 		logger.Error("Unable to validate web configuration file", "err", err)
-		if err := queryEngine.Close(); err != nil {
-			logger.Warn("Closing query engine failed", "err", err)
-		}
 		os.Exit(1)
 	}
 
@@ -1018,9 +1015,6 @@ func main() {
 					logger.Warn("Received termination request via web service, exiting gracefully...")
 				case <-cancel:
 					reloadReady.Close()
-				}
-				if err := queryEngine.Close(); err != nil {
-					logger.Warn("Closing query engine failed", "err", err)
 				}
 				return nil
 			},
