@@ -65,22 +65,10 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 	var (
 		wg             sync.WaitGroup
 		concurrency    = h.opts.WALReplayConcurrency
-		processors     = make([]walSubsetProcessor, concurrency)
 		exemplarsInput chan record.RefExemplar
-
-		shards          = make([][]record.RefSample, concurrency)
-		histogramShards = make([][]histogramRecord, concurrency)
 
 		decoded                      = make(chan interface{}, 10)
 		decodeErr, seriesCreationErr error
-
-		seriesPool          zeropool.Pool[[]record.RefSeries]
-		samplesPool         zeropool.Pool[[]record.RefSample]
-		tstonesPool         zeropool.Pool[[]tombstones.Stone]
-		exemplarsPool       zeropool.Pool[[]record.RefExemplar]
-		histogramsPool      zeropool.Pool[[]record.RefHistogramSample]
-		floatHistogramsPool zeropool.Pool[[]record.RefFloatHistogramSample]
-		metadataPool        zeropool.Pool[[]record.RefMetadata]
 	)
 
 	defer func() {
@@ -88,7 +76,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		_, ok := err.(*wlog.CorruptionErr)
 		if ok || seriesCreationErr != nil {
 			for i := 0; i < concurrency; i++ {
-				processors[i].closeAndDrain()
+				h.walReplayProcessors[i].closeAndDrain()
 			}
 			close(exemplarsInput)
 			wg.Wait()
@@ -97,7 +85,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 
 	wg.Add(concurrency)
 	for i := 0; i < concurrency; i++ {
-		processors[i].setup()
+		h.walReplayProcessors[i].setup()
 
 		go func(wp *walSubsetProcessor) {
 			unknown, unknownHistograms, overlapping := wp.processWALSamples(h, mmappedChunks, oooMmappedChunks)
@@ -105,7 +93,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 			mmapOverlappingChunks.Add(overlapping)
 			unknownHistogramRefs.Add(unknownHistograms)
 			wg.Done()
-		}(&processors[i])
+		}(&h.walReplayProcessors[i])
 	}
 
 	wg.Add(1)
@@ -140,7 +128,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 			rec := r.Record()
 			switch dec.Type(rec) {
 			case record.Series:
-				series := seriesPool.Get()[:0]
+				series := h.walReplaySeriesPool.Get()[:0]
 				series, err = dec.Series(rec, series)
 				if err != nil {
 					decodeErr = &wlog.CorruptionErr{
@@ -152,7 +140,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 				}
 				decoded <- series
 			case record.Samples:
-				samples := samplesPool.Get()[:0]
+				samples := h.walReplaySamplesPool.Get()[:0]
 				samples, err = dec.Samples(rec, samples)
 				if err != nil {
 					decodeErr = &wlog.CorruptionErr{
@@ -164,7 +152,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 				}
 				decoded <- samples
 			case record.Tombstones:
-				tstones := tstonesPool.Get()[:0]
+				tstones := h.walReplaytStonesPool.Get()[:0]
 				tstones, err = dec.Tombstones(rec, tstones)
 				if err != nil {
 					decodeErr = &wlog.CorruptionErr{
@@ -176,7 +164,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 				}
 				decoded <- tstones
 			case record.Exemplars:
-				exemplars := exemplarsPool.Get()[:0]
+				exemplars := h.walReplayExemplarsPool.Get()[:0]
 				exemplars, err = dec.Exemplars(rec, exemplars)
 				if err != nil {
 					decodeErr = &wlog.CorruptionErr{
@@ -188,7 +176,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 				}
 				decoded <- exemplars
 			case record.HistogramSamples:
-				hists := histogramsPool.Get()[:0]
+				hists := h.walReplayHistogramsPool.Get()[:0]
 				hists, err = dec.HistogramSamples(rec, hists)
 				if err != nil {
 					decodeErr = &wlog.CorruptionErr{
@@ -200,7 +188,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 				}
 				decoded <- hists
 			case record.FloatHistogramSamples:
-				hists := floatHistogramsPool.Get()[:0]
+				hists := h.walReplayFloatHistogramsPool.Get()[:0]
 				hists, err = dec.FloatHistogramSamples(rec, hists)
 				if err != nil {
 					decodeErr = &wlog.CorruptionErr{
@@ -212,7 +200,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 				}
 				decoded <- hists
 			case record.Metadata:
-				meta := metadataPool.Get()[:0]
+				meta := h.walReplayMetadataPool.Get()[:0]
 				meta, err := dec.Metadata(rec, meta)
 				if err != nil {
 					decodeErr = &wlog.CorruptionErr{
@@ -249,9 +237,9 @@ Outer:
 				}
 
 				idx := uint64(mSeries.ref) % uint64(concurrency)
-				processors[idx].input <- walSubsetProcessorInputItem{walSeriesRef: walSeries.Ref, existingSeries: mSeries}
+				h.walReplayProcessors[idx].input <- walSubsetProcessorInputItem{walSeriesRef: walSeries.Ref, existingSeries: mSeries}
 			}
-			seriesPool.Put(v)
+			h.walReplaySeriesPool.Put(v)
 		case []record.RefSample:
 			samples := v
 			minValidTime := h.minValidTime.Load()
@@ -265,8 +253,8 @@ Outer:
 					m = len(samples)
 				}
 				for i := 0; i < concurrency; i++ {
-					if shards[i] == nil {
-						shards[i] = processors[i].reuseBuf()
+					if h.walReplayShards[i] == nil {
+						h.walReplayShards[i] = h.walReplayProcessors[i].reuseBuf()
 					}
 				}
 				for _, sam := range samples[:m] {
@@ -277,17 +265,17 @@ Outer:
 						sam.Ref = r
 					}
 					mod := uint64(sam.Ref) % uint64(concurrency)
-					shards[mod] = append(shards[mod], sam)
+					h.walReplayShards[mod] = append(h.walReplayShards[mod], sam)
 				}
 				for i := 0; i < concurrency; i++ {
-					if len(shards[i]) > 0 {
-						processors[i].input <- walSubsetProcessorInputItem{samples: shards[i]}
-						shards[i] = nil
+					if len(h.walReplayShards[i]) > 0 {
+						h.walReplayProcessors[i].input <- walSubsetProcessorInputItem{samples: h.walReplayShards[i]}
+						h.walReplayShards[i] = nil
 					}
 				}
 				samples = samples[m:]
 			}
-			samplesPool.Put(v)
+			h.walReplaySamplesPool.Put(v)
 		case []tombstones.Stone:
 			for _, s := range v {
 				for _, itv := range s.Intervals {
@@ -301,12 +289,12 @@ Outer:
 					h.tombstones.AddInterval(s.Ref, itv)
 				}
 			}
-			tstonesPool.Put(v)
+			h.walReplaytStonesPool.Put(v)
 		case []record.RefExemplar:
 			for _, e := range v {
 				exemplarsInput <- e
 			}
-			exemplarsPool.Put(v)
+			h.walReplayExemplarsPool.Put(v)
 		case []record.RefHistogramSample:
 			samples := v
 			minValidTime := h.minValidTime.Load()
@@ -320,8 +308,8 @@ Outer:
 					m = len(samples)
 				}
 				for i := 0; i < concurrency; i++ {
-					if histogramShards[i] == nil {
-						histogramShards[i] = processors[i].reuseHistogramBuf()
+					if h.walReplayHistogramShards[i] == nil {
+						h.walReplayHistogramShards[i] = h.walReplayProcessors[i].reuseHistogramBuf()
 					}
 				}
 				for _, sam := range samples[:m] {
@@ -332,17 +320,17 @@ Outer:
 						sam.Ref = r
 					}
 					mod := uint64(sam.Ref) % uint64(concurrency)
-					histogramShards[mod] = append(histogramShards[mod], histogramRecord{ref: sam.Ref, t: sam.T, h: sam.H})
+					h.walReplayHistogramShards[mod] = append(h.walReplayHistogramShards[mod], histogramRecord{ref: sam.Ref, t: sam.T, h: sam.H})
 				}
 				for i := 0; i < concurrency; i++ {
-					if len(histogramShards[i]) > 0 {
-						processors[i].input <- walSubsetProcessorInputItem{histogramSamples: histogramShards[i]}
-						histogramShards[i] = nil
+					if len(h.walReplayHistogramShards[i]) > 0 {
+						h.walReplayProcessors[i].input <- walSubsetProcessorInputItem{histogramSamples: h.walReplayHistogramShards[i]}
+						h.walReplayHistogramShards[i] = nil
 					}
 				}
 				samples = samples[m:]
 			}
-			histogramsPool.Put(v)
+			h.walReplayHistogramsPool.Put(v)
 		case []record.RefFloatHistogramSample:
 			samples := v
 			minValidTime := h.minValidTime.Load()
@@ -356,8 +344,8 @@ Outer:
 					m = len(samples)
 				}
 				for i := 0; i < concurrency; i++ {
-					if histogramShards[i] == nil {
-						histogramShards[i] = processors[i].reuseHistogramBuf()
+					if h.walReplayHistogramShards[i] == nil {
+						h.walReplayHistogramShards[i] = h.walReplayProcessors[i].reuseHistogramBuf()
 					}
 				}
 				for _, sam := range samples[:m] {
@@ -368,17 +356,17 @@ Outer:
 						sam.Ref = r
 					}
 					mod := uint64(sam.Ref) % uint64(concurrency)
-					histogramShards[mod] = append(histogramShards[mod], histogramRecord{ref: sam.Ref, t: sam.T, fh: sam.FH})
+					h.walReplayHistogramShards[mod] = append(h.walReplayHistogramShards[mod], histogramRecord{ref: sam.Ref, t: sam.T, fh: sam.FH})
 				}
 				for i := 0; i < concurrency; i++ {
-					if len(histogramShards[i]) > 0 {
-						processors[i].input <- walSubsetProcessorInputItem{histogramSamples: histogramShards[i]}
-						histogramShards[i] = nil
+					if len(h.walReplayHistogramShards[i]) > 0 {
+						h.walReplayProcessors[i].input <- walSubsetProcessorInputItem{histogramSamples: h.walReplayHistogramShards[i]}
+						h.walReplayHistogramShards[i] = nil
 					}
 				}
 				samples = samples[m:]
 			}
-			floatHistogramsPool.Put(v)
+			h.walReplayFloatHistogramsPool.Put(v)
 		case []record.RefMetadata:
 			for _, m := range v {
 				s := h.series.getByID(m.Ref)
@@ -392,7 +380,7 @@ Outer:
 					Help: m.Help,
 				}
 			}
-			metadataPool.Put(v)
+			h.walReplayMetadataPool.Put(v)
 		default:
 			panic(fmt.Errorf("unexpected decoded type: %T", d))
 		}
@@ -410,7 +398,7 @@ Outer:
 
 	// Signal termination to each worker and wait for it to close its output channel.
 	for i := 0; i < concurrency; i++ {
-		processors[i].closeAndDrain()
+		h.walReplayProcessors[i].closeAndDrain()
 	}
 	close(exemplarsInput)
 	wg.Wait()
