@@ -172,14 +172,14 @@ func addUnitTokens(nameTokens []string, mainUnitSuffix, perUnitSuffix string) []
 		mainUnitSuffix = ""
 	}
 
-	if slices.Contains(nameTokens, perUnitSuffix) {
-		perUnitSuffix = ""
-	}
-
 	if perUnitSuffix == "per_" {
 		perUnitSuffix = ""
+	} else {
+		perUnitSuffix = strings.TrimSuffix(perUnitSuffix, "_")
+		if slices.Contains(nameTokens, perUnitSuffix) {
+			perUnitSuffix = ""
+		}
 	}
-	perUnitSuffix = strings.TrimSuffix(perUnitSuffix, "_")
 
 	if perUnitSuffix != "" {
 		mainUnitSuffix = strings.TrimSuffix(mainUnitSuffix, "_")
