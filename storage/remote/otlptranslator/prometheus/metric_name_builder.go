@@ -164,6 +164,9 @@ func normalizeName(metric pmetric.Metric, namespace string) string {
 // addUnitTokens will add the suffixes to the nameTokens if they are not already present.
 // It will also remove trailing underscores from the main suffix to avoid double underscores
 // when joining the tokens.
+//
+// If the 'per' unit ends with underscore, the underscore will be removed. If the per unit is just
+// 'per_', it will be entirely removed.
 func addUnitTokens(nameTokens []string, mainUnitSuffix, perUnitSuffix string) []string {
 	if slices.Contains(nameTokens, mainUnitSuffix) {
 		mainUnitSuffix = ""
@@ -172,6 +175,11 @@ func addUnitTokens(nameTokens []string, mainUnitSuffix, perUnitSuffix string) []
 	if slices.Contains(nameTokens, perUnitSuffix) {
 		perUnitSuffix = ""
 	}
+
+	if perUnitSuffix == "per_" {
+		perUnitSuffix = ""
+	}
+	perUnitSuffix = strings.TrimSuffix(perUnitSuffix, "_")
 
 	if perUnitSuffix != "" {
 		mainUnitSuffix = strings.TrimSuffix(mainUnitSuffix, "_")

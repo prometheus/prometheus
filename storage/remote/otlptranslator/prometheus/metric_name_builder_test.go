@@ -174,6 +174,9 @@ func TestAddUnitTokens(t *testing.T) {
 		{[]string{"token1", "per"}, "main", "per", []string{"token1", "per", "main"}},
 		{[]string{"token1", "main"}, "main", "per", []string{"token1", "main", "per"}},
 		{[]string{"token1"}, "main_", "per", []string{"token1", "main", "per"}},
+
+		{[]string{"token1"}, "main_unit", "per_seconds_", []string{"token1", "main_unit", "per_seconds"}}, // trailing underscores are removed
+		{[]string{"token1"}, "main_unit", "per_", []string{"token1", "main_unit"}}, // 'per_' is removed enterily
 	}
 
 	for _, test := range tests {
