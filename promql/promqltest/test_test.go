@@ -25,6 +25,18 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
+func TestOption_WithSkipEvalInfo(t *testing.T) {
+	o := &options{}
+	WithSkipEvalInfo(true).apply(o)
+	require.True(t, o.skipEvalInfo)
+}
+
+func TestOption_WithSkipEvalWarn(t *testing.T) {
+	o := &options{}
+	WithSkipEvalWarn(true).apply(o)
+	require.True(t, o.skipEvalWarn)
+}
+
 func TestLazyLoader_WithSamplesTill(t *testing.T) {
 	type testCase struct {
 		ts             time.Time
