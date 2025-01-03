@@ -38,11 +38,13 @@ import (
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/storage"
 	otlptranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
-	"github.com/prometheus/prometheus/util/otel"
 
 	deltatocumulative "github.com/open-telemetry/opentelemetry-collector-contrib/processor/deltatocumulativeprocessor"
+	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/pdata/pmetric"
+	"go.opentelemetry.io/collector/processor"
+	"go.opentelemetry.io/otel/metric/noop"
 )
 
 type writeHandler struct {
@@ -538,32 +540,31 @@ func NewOTLPWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appenda
 		config: configFunc,
 	}
 
-	steps := []otel.Step{otel.Sink(ex)}
+	wh := &otlpWriteHandler{logger: logger, pipeline: ex}
+
 	if opts.ConvertDelta {
-		steps = []otel.Step{
-			otel.Processor(deltatocumulative.NewFactory(), nil),
-			otel.Sink(ex),
+		fac := deltatocumulative.NewFactory()
+		set := processor.Settings{TelemetrySettings: component.TelemetrySettings{MeterProvider: noop.NewMeterProvider()}}
+		d2c, err := fac.CreateMetrics(context.Background(), set, fac.CreateDefaultConfig(), wh.pipeline)
+		if err != nil {
+			// fac.CreateMetrics directly calls [deltatocumulativeprocessor.createMetricsProcessor],
+			// which only errors if:
+			//   - cfg.(type) != *Config
+			//   - telemetry.New fails due to bad set.TelemetrySettings
+			//
+			// both cannot be the case, as we pass a valid *Config and valid TelemetrySettings.
+			// as such, we assume this error to never occur.
+			// if it is, our assumptions are broken in which case a panic seems acceptable.
+			panic(err)
 		}
+		if err := d2c.Start(context.Background(), nil); err != nil {
+			// deltatocumulative does not error on start. see above for panic reasoning
+			panic(err)
+		}
+		wh.pipeline = d2c
 	}
 
-	pl, err := otel.Use(reg, steps...)
-	if err != nil {
-		// err only occurs on during OTel component construction. this is
-		// currently only deltatocumulative, which does not error itself. if
-		// passed a bad metrics.Meter it errors, but util/otel ensures this
-		// never happens.
-		//
-		// we assume this branch is never reached. if it is, our assumptions are
-		// broken in which case a panic seems acceptable.
-		panic(err)
-	}
-
-	if err := pl.Start(context.Background(), nil); err != nil {
-		// deltatocumulative does not error on start. see above for panic reasoning
-		panic(err)
-	}
-
-	return &otlpWriteHandler{logger: logger, pipeline: pl}
+	return wh
 }
 
 type rwExporter struct {
