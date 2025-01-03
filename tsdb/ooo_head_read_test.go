@@ -963,7 +963,7 @@ func testOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 			},
 		},
 		{
-			name:                 "After Series() prev head gets mmapped after getting samples, new head gets new samples also overlapping, none of these should appear in response.",
+			name:                 "After Series() prev head mmapped after getting samples, new head gets new samples also overlapping, none should appear in response.",
 			queryMinT:            minutes(0),
 			queryMaxT:            minutes(100),
 			firstInOrderSampleAt: minutes(120),

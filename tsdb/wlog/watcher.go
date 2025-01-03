@@ -546,7 +546,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 			w.writer.AppendExemplars(exemplars)
 
-		case record.HistogramSamples:
+		case record.HistogramSamples, record.CustomBucketsHistogramSamples:
 			// Skip if experimental "histograms over remote write" is not enabled.
 			if !w.sendHistograms {
 				break
@@ -574,7 +574,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				histogramsToSend = histogramsToSend[:0]
 			}
 
-		case record.FloatHistogramSamples:
+		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
 			// Skip if experimental "histograms over remote write" is not enabled.
 			if !w.sendHistograms {
 				break
