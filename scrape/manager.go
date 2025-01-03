@@ -94,6 +94,9 @@ type Options struct {
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption
 
+	// Option to warn if targets relabelled to same labels
+	EnableWarnIfTargetsRelabelledToSameLabels bool
+
 	// private option for testability.
 	skipOffsetting bool
 }
@@ -210,7 +213,9 @@ func (m *Manager) reload() {
 	m.mtxScrape.Unlock()
 	wg.Wait()
 
-	m.warnIfTargetsRelabelledToSameLabels()
+	if m.opts.EnableWarnIfTargetsRelabelledToSameLabels {
+		m.warnIfTargetsRelabelledToSameLabels()
+	}
 }
 
 func (m *Manager) warnIfTargetsRelabelledToSameLabels() {
@@ -224,6 +229,7 @@ func (m *Manager) warnIfTargetsRelabelledToSameLabels() {
 
 	activeTargets := make(map[string]*Target, totalTargets)
 	buf := [1024]byte{}
+	builder := labels.NewBuilder(labels.EmptyLabels())
 	for _, scrapePool := range m.scrapePools {
 		for _, target := range scrapePool.activeTargets {
 			lStr := string(target.labels.Bytes(buf[:]))
@@ -232,10 +238,10 @@ func (m *Manager) warnIfTargetsRelabelledToSameLabels() {
 				activeTargets[lStr] = target
 				continue
 			}
-			level.Warn(m.logger).Log(
-				"msg", "Found targets with same labels after relabelling",
-				"target_one", t.DiscoveredLabels().Get(model.AddressLabel),
-				"target_two", target.DiscoveredLabels().Get(model.AddressLabel),
+			m.logger.Warn(
+				"Found targets with same labels after relabelling",
+				"target_one", t.DiscoveredLabels(builder).Get(model.AddressLabel),
+				"target_two", target.DiscoveredLabels(builder).Get(model.AddressLabel),
 				"labels", target.labels.String(),
 			)
 		}
