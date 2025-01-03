@@ -24,7 +24,7 @@
     "@mantine/core": "^7.11.2",
     "@mantine/dates": "^7.15.0",
     "@mantine/hooks": "^7.11.2",
-    "@mantine/notifications": "^7.15.0",
+    "@mantine/notifications": "^7.15.2",
     "@microsoft/fetch-event-source": "^2.0.1",
     "@nexucis/fuzzy": "^0.5.1",
     "@nexucis/kvsearch": "^0.9.1",
