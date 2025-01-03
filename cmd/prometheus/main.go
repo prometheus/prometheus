@@ -1818,6 +1818,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableDelayedCompaction:        opts.EnableDelayedCompaction,
 		CompactionDelayMaxPercent:      opts.CompactionDelayMaxPercent,
 		EnableOverlappingCompaction:    opts.EnableOverlappingCompaction,
+		StartupMinRetentionTime:        int64(time.Duration(time.Now().Add(-time.Duration(opts.RetentionDuration) / time.Millisecond).UnixMilli())),
 	}
 }
 
