@@ -540,12 +540,12 @@ func NewOTLPWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appenda
 		config: configFunc,
 	}
 
-	wh := &otlpWriteHandler{logger: logger, pipeline: ex}
+	wh := &otlpWriteHandler{logger: logger, cumul: ex, delta: ex}
 
 	if opts.ConvertDelta {
 		fac := deltatocumulative.NewFactory()
 		set := processor.Settings{TelemetrySettings: component.TelemetrySettings{MeterProvider: noop.NewMeterProvider()}}
-		d2c, err := fac.CreateMetrics(context.Background(), set, fac.CreateDefaultConfig(), wh.pipeline)
+		d2c, err := fac.CreateMetrics(context.Background(), set, fac.CreateDefaultConfig(), wh.delta)
 		if err != nil {
 			// err only occurs on during OTel component construction. this is
 			// currently only deltatocumulative, which does not error itself. if
@@ -560,7 +560,7 @@ func NewOTLPWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appenda
 			// deltatocumulative does not error on start. see above for panic reasoning
 			panic(err)
 		}
-		wh.pipeline = d2c
+		wh.delta = d2c
 	}
 
 	return wh
@@ -601,8 +601,10 @@ func (rw *rwExporter) Capabilities() consumer.Capabilities {
 }
 
 type otlpWriteHandler struct {
-	logger   *slog.Logger
-	pipeline consumer.Metrics
+	logger *slog.Logger
+
+	cumul consumer.Metrics // only cumulative
+	delta consumer.Metrics // delta capable
 }
 
 func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -614,7 +616,11 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	md := req.Metrics()
-	err = h.pipeline.ConsumeMetrics(r.Context(), md)
+	if hasDelta(md) {
+		err = h.delta.ConsumeMetrics(r.Context(), md)
+	} else {
+		err = h.cumul.ConsumeMetrics(r.Context(), md)
+	}
 
 	switch {
 	case err == nil:
@@ -629,6 +635,31 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
+}
+
+func hasDelta(md pmetric.Metrics) bool {
+	for i := range md.ResourceMetrics().Len() {
+		sms := md.ResourceMetrics().At(i).ScopeMetrics()
+		for i := range sms.Len() {
+			ms := sms.At(i).Metrics()
+			for i := range ms.Len() {
+				temporality := pmetric.AggregationTemporalityUnspecified
+				m := ms.At(i)
+				switch ms.At(i).Type() {
+				case pmetric.MetricTypeSum:
+					temporality = m.Sum().AggregationTemporality()
+				case pmetric.MetricTypeExponentialHistogram:
+					temporality = m.ExponentialHistogram().AggregationTemporality()
+				case pmetric.MetricTypeHistogram:
+					temporality = m.Histogram().AggregationTemporality()
+				}
+				if temporality == pmetric.AggregationTemporalityDelta {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 type timeLimitAppender struct {
