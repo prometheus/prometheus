@@ -174,9 +174,8 @@ func TestAddUnitTokens(t *testing.T) {
 		{[]string{"token1", "per"}, "main", "per", []string{"token1", "per", "main"}},
 		{[]string{"token1", "main"}, "main", "per", []string{"token1", "main", "per"}},
 		{[]string{"token1"}, "main_", "per", []string{"token1", "main", "per"}},
-
 		{[]string{"token1"}, "main_unit", "per_seconds_", []string{"token1", "main_unit", "per_seconds"}}, // trailing underscores are removed
-		{[]string{"token1"}, "main_unit", "per_", []string{"token1", "main_unit"}},                        // 'per_' is removed enterily
+		{[]string{"token1"}, "main_unit", "per_", []string{"token1", "main_unit"}},                        // 'per_' is removed entirely
 	}
 
 	for _, test := range tests {
@@ -207,7 +206,6 @@ func TestBuildCompliantMetricNameWithSuffixes(t *testing.T) {
 	// Slashes in units are converted.
 	require.Equal(t, "system_io_foo_per_bar_total", BuildCompliantMetricName(createCounter("system.io", "foo/bar"), "", true))
 	require.Equal(t, "metric_with_foreign_characters_total", BuildCompliantMetricName(createCounter("metric_with_字符_foreign_characters", ""), "", true))
-
 	// Removes non aplhanumerical characters from units, but leaves colons.
 	require.Equal(t, "temperature_:C", BuildCompliantMetricName(createGauge("temperature", "%*()°:C"), "", true))
 }

@@ -237,7 +237,7 @@ func removeItem(slice []string, value string) []string {
 // It doesn't do any character transformation, it only prefixes the metric name with the namespace, if any,
 // and adds metric type suffixes, e.g. "_total" for counters and unit suffixes.
 //
-// Differently from BuildCompliantMetricName, it doesn't pre-check the presence of unit and type suffixes.
+// Differently from BuildCompliantMetricName, it doesn't check for the presence of unit and type suffixes.
 // If "addMetricSuffixes" is true, it will add them anyway.
 //
 // Please use BuildCompliantMetricName for a metric name that follows Prometheus naming conventions.
