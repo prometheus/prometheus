@@ -330,7 +330,7 @@ func (m *Manager) LoadGroups(
 						externalLabels,
 						externalURL,
 						m.restored,
-						m.logger.With("alert", r.Alert),
+						m.logger.With("alert", r.Alert.Value),
 					))
 					continue
 				}
