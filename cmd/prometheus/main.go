@@ -534,7 +534,7 @@ func main() {
 
 	_, err := a.Parse(os.Args[1:])
 	if err != nil {
-		fmt.Fprintln(os.Stderr, fmt.Errorf("Error parsing command line arguments: %w", err))
+		fmt.Fprintf(os.Stderr, "Error parsing command line arguments: %s\n", err)
 		a.Usage(os.Args[1:])
 		os.Exit(2)
 	}
@@ -548,7 +548,7 @@ func main() {
 	notifs.AddNotification(notifications.StartingUp)
 
 	if err := cfg.setFeatureListOptions(logger); err != nil {
-		fmt.Fprintln(os.Stderr, fmt.Errorf("Error parsing feature list: %w", err))
+		fmt.Fprintf(os.Stderr, "Error parsing feature list: %s\n", err)
 		os.Exit(1)
 	}
 
@@ -1742,7 +1742,7 @@ func (s *readyStorage) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 }
 
 // ErrNotReady is returned if the underlying scrape manager is not ready yet.
-var ErrNotReady = errors.New("Scrape manager not ready")
+var ErrNotReady = errors.New("scrape manager not ready")
 
 // ReadyScrapeManager allows a scrape manager to be retrieved. Even if it's set at a later point in time.
 type readyScrapeManager struct {
