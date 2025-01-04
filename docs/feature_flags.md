@@ -151,3 +151,9 @@ Configuration reloads are triggered by detecting changes in the checksum of the
 main configuration file or any referenced files, such as rule and scrape
 configurations. To ensure consistency and avoid issues during reloads, it's
 recommended to update these files atomically.
+
+## Use Direct IO
+
+`--enable-feature=use-direct-io`
+
+TODO
