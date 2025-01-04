@@ -2,6 +2,8 @@
 
 ## unreleased
 
+* [ENHANCEMENT] promtool: Support linting of scrape interval, through lint option `too-long-scrape-interval`. #15719
+
 ## 3.1.0 / 2025-01-02
 
  * [SECURITY] upgrade golang.org/x/crypto to address reported CVE-2024-45337. #15691
