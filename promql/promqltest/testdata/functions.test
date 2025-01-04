@@ -1452,3 +1452,22 @@ load 1m
 
 eval range from 0 to 5m step 1m round(mixed_metric)
 	{} _ 1 2 3
+
+clear
+
+# check vanish
+load 1m
+	metric{a="1"} 0x100 _x100 0x100
+	metric{a="2"} 0x100 _x100 _x100
+
+eval instant at 100m vanish(metric[30m])
+	{a="1"} 0
+	{a="2"} 0
+
+eval instant at 150m vanish(metric[100m])
+	{a="1"} 1
+	{a="2"} 1
+
+eval instant at 300m vanish(metric[300m])
+	{a="1"} 0
+	{a="2"} 1

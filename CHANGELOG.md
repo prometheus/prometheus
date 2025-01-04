@@ -1,6 +1,7 @@
 # Changelog
 
 ## unreleased
+ * [FEATURE] PromQL: Add experimental `vanish` function. #1234
 
 ## 3.1.0 / 2025-01-02
 

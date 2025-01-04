@@ -420,6 +420,13 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
 	},
+	"vanish": {
+		Name:         "vanish",
+		ArgTypes:     []ValueType{ValueTypeMatrix, ValueTypeScalar},
+		Variadic:     1,
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
 	"vector": {
 		Name:       "vector",
 		ArgTypes:   []ValueType{ValueTypeScalar},

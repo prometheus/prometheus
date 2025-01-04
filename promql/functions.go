@@ -1554,6 +1554,50 @@ func (ev *evaluator) evalLabelReplace(ctx context.Context, args parser.Expressio
 	return matrix, ws
 }
 
+// === vanish(node parser.ValueTypeMatrix) (Vector, Annotations) ===
+func funcVanish(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	// TODO: make it use the real LookbackDelta value
+	threshold := defaultLookbackDelta.Milliseconds()
+	if len(args) >= 2 {
+		threshold = int64(vals[1].(Vector)[0].F) * 1000
+	}
+
+	floats := vals[0].(Matrix)[0].Floats
+	histograms := vals[0].(Matrix)[0].Histograms
+	vanish := 0
+	if len(floats) == 0 && len(histograms) == 0 {
+		return enh.Out, nil
+	}
+
+	// get the first and last values
+	var firstT, lastT int64
+
+	switch {
+	case len(floats) > 0 && len(histograms) == 0: // Floats
+		firstT = floats[0].T
+		lastT = floats[len(floats)-1].T
+	case len(histograms) > 0 && len(floats) == 0: // Histograms
+		firstT = histograms[0].T
+		lastT = histograms[len(histograms)-1].T
+	default: // mixed Floats/Histograms
+		firstT = min(floats[0].T, histograms[0].T)
+		lastT = max(floats[len(floats)-1].T, histograms[len(histograms)-1].T)
+	}
+
+	// if evaluation time is older than first value
+	// we can't say if it vanishes or not
+	// not sure it can happen
+	if enh.Ts < firstT {
+		return enh.Out, nil
+	}
+
+	if enh.Ts-lastT > threshold {
+		vanish = 1
+	}
+
+	return append(enh.Out, Sample{F: float64(vanish)}), nil
+}
+
 // === Vector(s Scalar) (Vector, Annotations) ===
 func funcVector(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return append(enh.Out,
@@ -1766,6 +1810,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"tanh":                         funcTanh,
 	"time":                         funcTime,
 	"timestamp":                    funcTimestamp,
+	"vanish":                       funcVanish,
 	"vector":                       funcVector,
 	"year":                         funcYear,
 }
@@ -1783,6 +1828,8 @@ var AtModifierUnsafeFunctions = map[string]struct{}{
 	// Uses timestamp of the argument for the result,
 	// hence unsafe to use with @ modifier.
 	"timestamp": {},
+	// vanish rely on expression evaluation timestamp
+	"vanish": {},
 }
 
 type vectorByValueHeap Vector
