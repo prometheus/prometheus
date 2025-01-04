@@ -661,7 +661,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 		}
 	}
 
-	indexw, err := index.NewWriterWithEncoder(c.ctx, filepath.Join(tmp, indexFilename), c.postingsEncoder)
+	indexw, err := index.NewWriterWithEncoder(c.ctx, indexFile(tmp), c.postingsEncoder)
 	if err != nil {
 		return fmt.Errorf("open index writer: %w", err)
 	}
