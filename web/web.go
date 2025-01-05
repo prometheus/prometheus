@@ -804,6 +804,13 @@ func (h *Handler) runtimeInfo() (api_v1.RuntimeInfo, error) {
 		GODEBUG:        os.Getenv("GODEBUG"),
 	}
 
+	hostname, err := os.Hostname()
+	if err != nil {
+		return status, fmt.Errorf("Error getting hostname: %w", err)
+	}
+	status.Hostname = hostname
+	status.ServerTime = time.Now().UTC()
+
 	if h.options.TSDBRetentionDuration != 0 {
 		status.StorageRetention = h.options.TSDBRetentionDuration.String()
 	}

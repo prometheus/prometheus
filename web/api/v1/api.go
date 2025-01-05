@@ -144,6 +144,8 @@ type PrometheusVersion struct {
 type RuntimeInfo struct {
 	StartTime           time.Time `json:"startTime"`
 	CWD                 string    `json:"CWD"`
+	Hostname            string    `json:"hostname"`
+	ServerTime          time.Time `json:"serverTime"`
 	ReloadConfigSuccess bool      `json:"reloadConfigSuccess"`
 	LastConfigTime      time.Time `json:"lastConfigTime"`
 	CorruptionCount     int64     `json:"corruptionCount"`
