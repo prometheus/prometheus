@@ -2508,3 +2508,26 @@ func TestRuleDependencyController_AnalyseRules(t *testing.T) {
 		})
 	}
 }
+
+func BenchmarkRuleDependencyController_AnalyseRules(b *testing.B) {
+	storage := teststorage.New(b)
+	b.Cleanup(func() { storage.Close() })
+
+	ruleManager := NewManager(&ManagerOptions{
+		Context:    context.Background(),
+		Logger:     promslog.NewNopLogger(),
+		Appendable: storage,
+		QueryFunc:  func(ctx context.Context, q string, ts time.Time) (promql.Vector, error) { return nil, nil },
+	})
+
+	groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, "fixtures/rules_multiple.yaml")
+	require.Empty(b, errs)
+	require.Len(b, groups, 1)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for _, g := range groups {
+			ruleManager.opts.RuleDependencyController.AnalyseRules(g.rules)
+		}
+	}
+}
