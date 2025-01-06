@@ -18,6 +18,8 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/prometheus/prometheus/model/exemplar"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -41,6 +43,9 @@ type Rule interface {
 	Labels() labels.Labels
 	// Eval evaluates the rule, including any associated recording or alerting actions.
 	Eval(ctx context.Context, queryOffset time.Duration, evaluationTime time.Time, queryFunc QueryFunc, externalURL *url.URL, limit int) (promql.Vector, error)
+	// EvalWithExemplars evaluates the rule, including any associated recording or alerting actions, and matching exemplars.
+	EvalWithExemplars(ctx context.Context, queryOffset time.Duration, evaluationTime time.Time, queryFunc QueryFunc,
+		exemplarQueryFunc ExemplarQueryFunc, externalURL *url.URL, limit int) (promql.Vector, []exemplar.QueryResult, error)
 	// String returns a human-readable string representation of the rule.
 	String() string
 	// Query returns the rule query expression.

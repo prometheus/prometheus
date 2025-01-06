@@ -34,6 +34,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
@@ -537,7 +538,17 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 		g.metrics.EvalTotal.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
 
-		vector, err := rule.Eval(ctx, ruleQueryOffset, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
+		var (
+			vector promql.Vector
+			eqr    []exemplar.QueryResult
+			err    error
+		)
+		if g.opts.ExemplarQueryFunc != nil {
+			vector, eqr, err = rule.EvalWithExemplars(ctx, ruleQueryOffset, ts, g.opts.QueryFunc, g.opts.ExemplarQueryFunc, g.opts.ExternalURL, g.Limit())
+		} else {
+			vector, err = rule.Eval(ctx, ruleQueryOffset, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
+		}
+
 		if err != nil {
 			rule.SetHealth(HealthBad)
 			rule.SetLastError(err)
@@ -622,6 +633,17 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		}
 		if numDuplicates > 0 {
 			logger.Warn("Error on ingesting results from rule evaluation with different value but same timestamp", "num_dropped", numDuplicates)
+		}
+
+		// For each series, append exemplars. Reuse the ref for faster appends.
+		for _, eq := range eqr {
+			var ref storage.SeriesRef
+			for _, e := range eq.Exemplars {
+				ref, err = app.AppendExemplar(ref, eq.SeriesLabels, e)
+				if err != nil {
+					logger.Warn("Rule evaluation exemplar discarded", "err", err, "exemplar", e)
+				}
+			}
 		}
 
 		for metric, lset := range g.seriesInPreviousEval[i] {

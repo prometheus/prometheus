@@ -452,7 +452,7 @@ Outer:
 			lb, err := parser.ParseMetric(s.Labels)
 			var hist *histogram.FloatHistogram
 			if err == nil && s.Histogram != "" {
-				_, values, parseErr := parser.ParseSeriesDesc("{} " + s.Histogram)
+				_, values, _, parseErr := parser.ParseSeriesDesc("{} " + s.Histogram)
 				switch {
 				case parseErr != nil:
 					err = parseErr

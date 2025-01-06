@@ -19,6 +19,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/model/exemplar"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/common/promslog"
@@ -34,6 +36,12 @@ func (u unknownRule) Name() string          { return "" }
 func (u unknownRule) Labels() labels.Labels { return labels.EmptyLabels() }
 func (u unknownRule) Eval(context.Context, time.Duration, time.Time, QueryFunc, *url.URL, int) (promql.Vector, error) {
 	return nil, nil
+}
+
+func (u unknownRule) EvalWithExemplars(context.Context, time.Duration, time.Time, QueryFunc,
+	ExemplarQueryFunc, *url.URL, int,
+) (promql.Vector, []exemplar.QueryResult, error) {
+	return nil, nil, nil
 }
 func (u unknownRule) String() string                       { return "" }
 func (u unknownRule) Query() parser.Expr                   { return nil }
