@@ -4,6 +4,15 @@
 
 * [CHANGE] Notifier: Increment the prometheus_notifications_errors_total metric by the number of affected alerts rather than by one per batch of affected alerts. #15428
 * [ENHANCEMENT] OTLP receiver: Convert also metric metadata. #15416
+* [BUGFIX] OTLP receiver: Allow colons in non-standard units. #15710
+
+## 3.0.1 / 2024-11-28
+
+The first bug fix release for Prometheus 3.
+
+* [BUGFIX] Promql: Make subqueries left open. #15431
+* [BUGFIX] Fix memory leak when query log is enabled. #15434
+* [BUGFIX] Support utf8 names on /v1/label/:name/values endpoint. #15399
 
 ## 3.0.0 / 2024-11-14
 

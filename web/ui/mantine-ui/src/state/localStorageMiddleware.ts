@@ -63,6 +63,7 @@ startAppListening({
         case "enableSyntaxHighlighting":
         case "enableLinter":
         case "showAnnotations":
+        case "ruleGroupsPerPage":
           return persistToLocalStorage(`settings.${key}`, value);
       }
     });

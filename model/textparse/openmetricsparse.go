@@ -337,7 +337,7 @@ func (p *OpenMetricsParser) CreatedTimestamp() *int64 {
 		}
 
 		// All timestamps in OpenMetrics are Unix Epoch in seconds. Convert to milliseconds.
-		// https://github.com/OpenObservability/OpenMetrics/blob/main/specification/OpenMetrics.md#timestamps
+		// https://github.com/prometheus/OpenMetrics/blob/v1.0.0/specification/OpenMetrics.md#timestamps
 		ct := int64(p.val * 1000.0)
 		p.setCTParseValues(ct, currHash, currName, true)
 		return &ct

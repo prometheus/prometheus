@@ -271,7 +271,7 @@ func PostingsForMatchers(ctx context.Context, ix IndexReader, ms ...*labels.Matc
 			its = append(its, it)
 		case m.Type == labels.MatchNotRegexp && m.Value == ".+":
 			// .+ regexp matches any non-empty string: get postings for all label values and remove them.
-			its = append(notIts, ix.PostingsForAllLabelValues(ctx, m.Name))
+			notIts = append(notIts, ix.PostingsForAllLabelValues(ctx, m.Name))
 
 		case labelMustBeSet[m.Name]:
 			// If this matcher must be non-empty, we can be smarter.
