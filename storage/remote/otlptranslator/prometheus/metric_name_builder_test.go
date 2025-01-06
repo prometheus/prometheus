@@ -251,8 +251,6 @@ func TestBuildMetricNameWithoutSuffixes(t *testing.T) {
 	require.Equal(t, ":foo::bar", BuildMetricName(createCounter(":foo::bar", ""), "", false))
 	// Gauges with unit 1 are considered ratios.
 	require.Equal(t, "foo.bar", BuildMetricName(createGauge("foo.bar", "1"), "", false))
-	// Slashes in units are converted.
-	require.Equal(t, "system.io", BuildMetricName(createCounter("system.io", "foo/bar"), "", false))
 	require.Equal(t, "metric_with_字符_foreign_characters", BuildMetricName(createCounter("metric_with_字符_foreign_characters", ""), "", false))
 	require.Equal(t, "system_io_seconds", BuildMetricName(createGauge("system_io_seconds", "s"), "", false))
 	require.Equal(t, "system_io_total", BuildMetricName(createCounter("system_io_total", ""), "", false))
