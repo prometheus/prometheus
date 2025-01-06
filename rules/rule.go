@@ -70,8 +70,8 @@ type Rule interface {
 	// means there may or may not be other rules depending on this one.
 	NoDependentRules() bool
 
-	// DependentRules returns the rules (names) which depend on the output of this rule.
-	DependentRules() map[string]struct{}
+	// DependentRules returns the rules which depend on the output of this rule.
+	DependentRules() []Rule
 
 	// SetDependencyRules sets rules on which this rule depends.
 	SetDependencyRules(rules []Rule)
@@ -81,6 +81,6 @@ type Rule interface {
 	// means the rule may or may not depend on other rules.
 	NoDependencyRules() bool
 
-	// DependencyRules returns the rules (names) on which this rule depends.
-	DependencyRules() map[string]struct{}
+	// DependencyRules returns the rules on which this rule depends.
+	DependencyRules() []Rule
 }

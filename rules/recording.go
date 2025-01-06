@@ -45,8 +45,8 @@ type RecordingRule struct {
 	evaluationDuration *atomic.Duration
 
 	dependenciesMutex sync.RWMutex
-	dependentRules    map[string]struct{}
-	dependencyRules   map[string]struct{}
+	dependentRules    []Rule
+	dependencyRules   []Rule
 }
 
 // NewRecordingRule returns a new recording rule.
@@ -176,10 +176,8 @@ func (rule *RecordingRule) SetDependentRules(dependents []Rule) {
 	rule.dependenciesMutex.Lock()
 	defer rule.dependenciesMutex.Unlock()
 
-	rule.dependentRules = make(map[string]struct{})
-	for _, r := range dependents {
-		rule.dependentRules[r.Name()] = struct{}{}
-	}
+	rule.dependentRules = make([]Rule, len(dependents))
+	copy(rule.dependentRules, dependents)
 }
 
 func (rule *RecordingRule) NoDependentRules() bool {
@@ -193,7 +191,7 @@ func (rule *RecordingRule) NoDependentRules() bool {
 	return len(rule.dependentRules) == 0
 }
 
-func (rule *RecordingRule) DependentRules() map[string]struct{} {
+func (rule *RecordingRule) DependentRules() []Rule {
 	rule.dependenciesMutex.RLock()
 	defer rule.dependenciesMutex.RUnlock()
 	return rule.dependentRules
@@ -203,10 +201,8 @@ func (rule *RecordingRule) SetDependencyRules(dependencies []Rule) {
 	rule.dependenciesMutex.Lock()
 	defer rule.dependenciesMutex.Unlock()
 
-	rule.dependencyRules = make(map[string]struct{})
-	for _, r := range dependencies {
-		rule.dependencyRules[r.Name()] = struct{}{}
-	}
+	rule.dependencyRules = make([]Rule, len(dependencies))
+	copy(rule.dependencyRules, dependencies)
 }
 
 func (rule *RecordingRule) NoDependencyRules() bool {
@@ -220,7 +216,7 @@ func (rule *RecordingRule) NoDependencyRules() bool {
 	return len(rule.dependencyRules) == 0
 }
 
-func (rule *RecordingRule) DependencyRules() map[string]struct{} {
+func (rule *RecordingRule) DependencyRules() []Rule {
 	rule.dependenciesMutex.RLock()
 	defer rule.dependenciesMutex.RUnlock()
 	return rule.dependencyRules

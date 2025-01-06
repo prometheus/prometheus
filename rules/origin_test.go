@@ -47,10 +47,10 @@ func (u unknownRule) SetEvaluationTimestamp(time.Time)     {}
 func (u unknownRule) GetEvaluationTimestamp() time.Time    { return time.Time{} }
 func (u unknownRule) SetDependentRules([]Rule)             {}
 func (u unknownRule) NoDependentRules() bool               { return false }
-func (u unknownRule) DependentRules() map[string]struct{}  { return nil }
+func (u unknownRule) DependentRules() []Rule               { return nil }
 func (u unknownRule) SetDependencyRules([]Rule)            {}
 func (u unknownRule) NoDependencyRules() bool              { return false }
-func (u unknownRule) DependencyRules() map[string]struct{} { return nil }
+func (u unknownRule) DependencyRules() []Rule              { return nil }
 
 func TestNewRuleDetailPanics(t *testing.T) {
 	require.PanicsWithValue(t, `unknown rule type "rules.unknownRule"`, func() {

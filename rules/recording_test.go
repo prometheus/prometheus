@@ -256,12 +256,14 @@ func TestRecordingEvalWithOrigin(t *testing.T) {
 }
 
 func TestRecordingRule_SetDependentRules(t *testing.T) {
+	dependentRule := NewRecordingRule("test1", nil, labels.EmptyLabels())
+
 	rule := NewRecordingRule("1", &parser.NumberLiteral{Val: 1}, labels.EmptyLabels())
 	require.False(t, rule.NoDependentRules())
 
-	rule.SetDependentRules([]Rule{NewRecordingRule("test1", nil, labels.EmptyLabels())})
+	rule.SetDependentRules([]Rule{dependentRule})
 	require.False(t, rule.NoDependentRules())
-	require.Equal(t, map[string]struct{}{"test1": {}}, rule.DependentRules())
+	require.Equal(t, []Rule{dependentRule}, rule.DependentRules())
 
 	rule.SetDependentRules([]Rule{})
 	require.True(t, rule.NoDependentRules())
@@ -269,12 +271,14 @@ func TestRecordingRule_SetDependentRules(t *testing.T) {
 }
 
 func TestRecordingRule_SetDependencyRules(t *testing.T) {
+	dependencyRule := NewRecordingRule("test1", nil, labels.EmptyLabels())
+
 	rule := NewRecordingRule("1", &parser.NumberLiteral{Val: 1}, labels.EmptyLabels())
 	require.False(t, rule.NoDependencyRules())
 
-	rule.SetDependencyRules([]Rule{NewRecordingRule("test1", nil, labels.EmptyLabels())})
+	rule.SetDependencyRules([]Rule{dependencyRule})
 	require.False(t, rule.NoDependencyRules())
-	require.Equal(t, map[string]struct{}{"test1": {}}, rule.DependencyRules())
+	require.Equal(t, []Rule{dependencyRule}, rule.DependencyRules())
 
 	rule.SetDependencyRules([]Rule{})
 	require.True(t, rule.NoDependencyRules())

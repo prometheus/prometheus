@@ -144,8 +144,8 @@ type AlertingRule struct {
 	logger *slog.Logger
 
 	dependenciesMutex sync.RWMutex
-	dependentRules    map[string]struct{}
-	dependencyRules   map[string]struct{}
+	dependentRules    []Rule
+	dependencyRules   []Rule
 }
 
 // NewAlertingRule constructs a new AlertingRule.
@@ -319,10 +319,8 @@ func (r *AlertingRule) SetDependentRules(dependents []Rule) {
 	r.dependenciesMutex.Lock()
 	defer r.dependenciesMutex.Unlock()
 
-	r.dependentRules = make(map[string]struct{})
-	for _, dependent := range dependents {
-		r.dependentRules[dependent.Name()] = struct{}{}
-	}
+	r.dependentRules = make([]Rule, len(dependents))
+	copy(r.dependentRules, dependents)
 }
 
 func (r *AlertingRule) NoDependentRules() bool {
@@ -336,7 +334,7 @@ func (r *AlertingRule) NoDependentRules() bool {
 	return len(r.dependentRules) == 0
 }
 
-func (r *AlertingRule) DependentRules() map[string]struct{} {
+func (r *AlertingRule) DependentRules() []Rule {
 	r.dependenciesMutex.RLock()
 	defer r.dependenciesMutex.RUnlock()
 	return r.dependentRules
@@ -346,10 +344,8 @@ func (r *AlertingRule) SetDependencyRules(dependencies []Rule) {
 	r.dependenciesMutex.Lock()
 	defer r.dependenciesMutex.Unlock()
 
-	r.dependencyRules = make(map[string]struct{})
-	for _, dependency := range dependencies {
-		r.dependencyRules[dependency.Name()] = struct{}{}
-	}
+	r.dependencyRules = make([]Rule, len(dependencies))
+	copy(r.dependencyRules, dependencies)
 }
 
 func (r *AlertingRule) NoDependencyRules() bool {
@@ -363,7 +359,7 @@ func (r *AlertingRule) NoDependencyRules() bool {
 	return len(r.dependencyRules) == 0
 }
 
-func (r *AlertingRule) DependencyRules() map[string]struct{} {
+func (r *AlertingRule) DependencyRules() []Rule {
 	r.dependenciesMutex.RLock()
 	defer r.dependenciesMutex.RUnlock()
 	return r.dependencyRules
