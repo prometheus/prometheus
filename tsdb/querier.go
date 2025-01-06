@@ -79,11 +79,13 @@ func newBlockBaseQuerier(b BlockReader, mint, maxt int64) (*blockBaseQuerier, er
 
 func (q *blockBaseQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	res, err := q.index.SortedLabelValues(ctx, name, matchers...)
+	res = truncateToLimit(res, hints)
 	return res, nil, err
 }
 
 func (q *blockBaseQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	res, err := q.index.LabelNames(ctx, matchers...)
+	res = truncateToLimit(res, hints)
 	return res, nil, err
 }
 
@@ -99,6 +101,13 @@ func (q *blockBaseQuerier) Close() error {
 	)
 	q.closed = true
 	return errs.Err()
+}
+
+func truncateToLimit(s []string, hints *storage.LabelHints) []string {
+	if hints != nil && hints.Limit > 0 && len(s) > hints.Limit {
+		s = s[:hints.Limit]
+	}
+	return s
 }
 
 type blockQuerier struct {
@@ -119,33 +128,34 @@ func (q *blockQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 }
 
 func selectSeriesSet(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms []*labels.Matcher,
-	index IndexReader, chunks ChunkReader, tombstones tombstones.Reader, mint, maxt int64,
+	ir IndexReader, chunks ChunkReader, tombstones tombstones.Reader, mint, maxt int64,
 ) storage.SeriesSet {
 	disableTrimming := false
 	sharded := hints != nil && hints.ShardCount > 0
 
-	p, err := PostingsForMatchers(ctx, index, ms...)
+	p, err := PostingsForMatchers(ctx, ir, ms...)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
 	if sharded {
-		p = index.ShardedPostings(p, hints.ShardIndex, hints.ShardCount)
+		p = ir.ShardedPostings(p, hints.ShardIndex, hints.ShardCount)
 	}
 	if sortSeries {
-		p = index.SortedPostings(p)
+		p = ir.SortedPostings(p)
 	}
 
 	if hints != nil {
 		mint = hints.Start
 		maxt = hints.End
 		disableTrimming = hints.DisableTrimming
+		p = index.NewLimitedPostings(p, hints.Limit)
 		if hints.Func == "series" {
 			// When you're only looking up metadata (for example series API), you don't need to load any chunks.
-			return newBlockSeriesSet(index, newNopChunkReader(), tombstones, p, mint, maxt, disableTrimming)
+			return newBlockSeriesSet(ir, newNopChunkReader(), tombstones, p, mint, maxt, disableTrimming)
 		}
 	}
 
-	return newBlockSeriesSet(index, chunks, tombstones, p, mint, maxt, disableTrimming)
+	return newBlockSeriesSet(ir, chunks, tombstones, p, mint, maxt, disableTrimming)
 }
 
 // blockChunkQuerier provides chunk querying access to a single block database.
