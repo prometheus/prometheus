@@ -1989,7 +1989,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 
 			// Expected evaluation order
 			order := group.opts.RuleConcurrencyController.SplitGroupIntoBatches(ctx, group)
-			require.Equal(t, []ConcurrentRules{
+			requireConcurrentRulesEqual(t, []ConcurrentRules{
 				{0},
 				{1},
 				{2},
@@ -2076,7 +2076,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 
 			// Expected evaluation order (isn't affected by concurrency settings)
 			order := group.opts.RuleConcurrencyController.SplitGroupIntoBatches(ctx, group)
-			require.Equal(t, []ConcurrentRules{
+			requireConcurrentRulesEqual(t, []ConcurrentRules{
 				{0, 1, 2, 3, 4, 5},
 			}, order)
 
@@ -2121,7 +2121,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 
 			// Expected evaluation order
 			order := group.opts.RuleConcurrencyController.SplitGroupIntoBatches(ctx, group)
-			require.Equal(t, []ConcurrentRules{
+			requireConcurrentRulesEqual(t, []ConcurrentRules{
 				{0, 1, 2, 3, 4, 5},
 			}, order)
 
@@ -2206,7 +2206,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 
 		// Expected evaluation order
 		order := group.opts.RuleConcurrencyController.SplitGroupIntoBatches(ctx, group)
-		require.Equal(t, []ConcurrentRules{
+		requireConcurrentRulesEqual(t, []ConcurrentRules{
 			{0, 4},
 			{1, 2, 3, 5, 6, 7},
 		}, order)
@@ -2252,16 +2252,63 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 
 		// Expected evaluation order
 		order := group.opts.RuleConcurrencyController.SplitGroupIntoBatches(ctx, group)
-		require.Equal(t, []ConcurrentRules{
+		requireConcurrentRulesEqual(t, []ConcurrentRules{
 			{0, 1},
 			{2},
-			{3},
-			{4, 5, 6},
+			{3, 4},
+			{5, 6},
 		}, order)
 
 		group.Eval(ctx, start)
 
-		require.EqualValues(t, 3, maxInflight.Load())
+		require.EqualValues(t, 2, maxInflight.Load())
+		// Some rules should execute concurrently so should complete quicker.
+		require.Less(t, time.Since(start).Seconds(), (time.Duration(ruleCount) * artificialDelay).Seconds())
+		// Each rule produces one vector.
+		require.EqualValues(t, ruleCount, testutil.ToFloat64(group.metrics.GroupSamples))
+	})
+
+	t.Run("attempted asynchronous evaluation of highly parallelizable group", func(t *testing.T) {
+		t.Parallel()
+		storage := teststorage.New(t)
+		t.Cleanup(func() { storage.Close() })
+		inflightQueries := atomic.Int32{}
+		maxInflight := atomic.Int32{}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+
+		ruleCount := 59
+		opts := optsFactory(storage, &maxInflight, &inflightQueries, 0)
+
+		// Configure concurrency settings.
+		opts.ConcurrentEvalsEnabled = true
+		opts.MaxConcurrentEvals = int64(ruleCount) * 2
+		opts.RuleConcurrencyController = nil
+		ruleManager := NewManager(opts)
+
+		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, []string{"fixtures/rules_topological_sort_needed.json"}...)
+		require.Empty(t, errs)
+		require.Len(t, groups, 1)
+		var group *Group
+		for _, g := range groups {
+			group = g
+		}
+
+		start := time.Now()
+
+		// Expected evaluation order
+		order := group.opts.RuleConcurrencyController.SplitGroupIntoBatches(ctx, group)
+		requireConcurrentRulesEqual(t, []ConcurrentRules{
+			{0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 37, 38, 58},
+			{1, 2, 5, 6, 9, 10, 13, 14, 17, 18, 21, 22, 25, 26, 29, 30, 33, 34, 39, 40, 41, 42, 45, 46, 51, 52, 55, 56},
+			{3, 7, 11, 15, 19, 23, 27, 31, 35},
+			{43, 44, 47, 48, 49, 50, 53, 54, 57},
+		}, order)
+
+		group.Eval(ctx, start)
+
+		require.EqualValues(t, 28, maxInflight.Load())
 		// Some rules should execute concurrently so should complete quicker.
 		require.Less(t, time.Since(start).Seconds(), (time.Duration(ruleCount) * artificialDelay).Seconds())
 		// Each rule produces one vector.
@@ -2529,5 +2576,16 @@ func BenchmarkRuleDependencyController_AnalyseRules(b *testing.B) {
 		for _, g := range groups {
 			ruleManager.opts.RuleDependencyController.AnalyseRules(g.rules)
 		}
+	}
+}
+
+func requireConcurrentRulesEqual(t *testing.T, expected, actual []ConcurrentRules) {
+	t.Helper()
+
+	// Like require.Equals but ignores the order of elements in the slices.
+	require.Len(t, actual, len(expected))
+	for i, expectedBatch := range expected {
+		actualBatch := actual[i]
+		require.ElementsMatch(t, expectedBatch, actualBatch)
 	}
 }

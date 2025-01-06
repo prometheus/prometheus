@@ -1,0 +1,246 @@
+{
+  "groups": [
+    {
+      "name": "test-group",
+      "rules": [
+        {
+          "record": "pf:nginx_http_requests:rate5m",
+          "expr": "sum by (lp_service, k8scluster) (rate(nginx_http_requests_total{k8scluster=\"sy-kube01\",lp_service=~\"lp-(csds|mtls|rtbf|encryptionmgmt)-web\"}[5m]))"
+        },
+        {
+          "record": "pf:nginx_http_requests:rate5m:avg_over_time_1w",
+          "expr": "avg_over_time(pf:nginx_http_requests:rate5m[1w])"
+        },
+        {
+          "record": "pf:nginx_http_requests:rate5m:stddev_over_time_1w",
+          "expr": "stddev_over_time(pf:nginx_http_requests:rate5m[1w])"
+        },
+        {
+          "record": "pf:nginx_http_requests:rate5m_prediction",
+          "expr": "clamp_min(quantile without (offset) (0.5, label_replace(avg_over_time(pf:nginx_http_requests:rate5m[4h] offset 6d22h) + pf:nginx_http_requests:rate5m:avg_over_time_1w - pf:nginx_http_requests:rate5m:avg_over_time_1w offset 1w, \"offset\", \"1w\", \"\", \"\") or label_replace(avg_over_time(pf:nginx_http_requests:rate5m[4h] offset 13d22h) + pf:nginx_http_requests:rate5m:avg_over_time_1w - pf:nginx_http_requests:rate5m:avg_over_time_1w offset 2w, \"offset\", \"2w\", \"\", \"\") or label_replace(avg_over_time(pf:nginx_http_requests:rate5m[4h] offset 20d22h) + pf:nginx_http_requests:rate5m:avg_over_time_1w - pf:nginx_http_requests:rate5m:avg_over_time_1w offset 3w, \"offset\", \"3w\", \"\", \"\")), 0)"
+        },
+        {
+          "record": "pf:nginx_response_time:avg_over_time_5m",
+          "expr": "sum by (lp_service, k8scluster) (rate(nginx_http_request_duration_seconds_sum{k8scluster=\"sy-kube01\",lp_service=~\"lp-(csds|mtls|rtbf|encryptionmgmt)-web\"}[5m])) / sum by (lp_service, k8scluster) (rate(nginx_http_request_duration_seconds_count{k8scluster=\"sy-kube01\",lp_service=~\"lp-(csds|mtls|rtbf|encryptionmgmt)-web\"}[5m]))"
+        },
+        {
+          "record": "pf:nginx_response_time:avg_over_time_5m:avg_over_time_1w",
+          "expr": "avg_over_time(pf:nginx_response_time:avg_over_time_5m[1w])"
+        },
+        {
+          "record": "pf:nginx_response_time:avg_over_time_5m:stddev_over_time_1w",
+          "expr": "stddev_over_time(pf:nginx_response_time:avg_over_time_5m[1w])"
+        },
+        {
+          "record": "pf:nginx_response_time:avg_over_time_5m_prediction",
+          "expr": "clamp_min(quantile without (offset) (0.5, label_replace(avg_over_time(pf:nginx_response_time:avg_over_time_5m[4h] offset 6d22h) + pf:nginx_response_time:avg_over_time_5m:avg_over_time_1w - pf:nginx_response_time:avg_over_time_5m:avg_over_time_1w offset 1w, \"offset\", \"1w\", \"\", \"\") or label_replace(avg_over_time(pf:nginx_response_time:avg_over_time_5m[4h] offset 13d22h) + pf:nginx_response_time:avg_over_time_5m:avg_over_time_1w - pf:nginx_response_time:avg_over_time_5m:avg_over_time_1w offset 2w, \"offset\", \"2w\", \"\", \"\") or label_replace(avg_over_time(pf:nginx_response_time:avg_over_time_5m[4h] offset 20d22h) + pf:nginx_response_time:avg_over_time_5m:avg_over_time_1w - pf:nginx_response_time:avg_over_time_5m:avg_over_time_1w offset 3w, \"offset\", \"3w\", \"\", \"\")), 0)"
+        },
+        {
+          "record": "pf:nginx_http_4xx_responses:rate5m",
+          "expr": "sum by (lp_service, k8scluster) (rate(nginx_http_requests_total{k8scluster=\"sy-kube01\",lp_service=~\"lp-(csds|mtls|rtbf|encryptionmgmt)-web\",status=~\"4.*\"}[5m]))"
+        },
+        {
+          "record": "pf:nginx_http_4xx_responses:rate5m:avg_over_time_1w",
+          "expr": "avg_over_time(pf:nginx_http_4xx_responses:rate5m[1w])"
+        },
+        {
+          "record": "pf:nginx_http_4xx_responses:rate5m:stddev_over_time_1w",
+          "expr": "stddev_over_time(pf:nginx_http_4xx_responses:rate5m[1w])"
+        },
+        {
+          "record": "pf:nginx_http_4xx_responses:rate5m_prediction",
+          "expr": "clamp_min(quantile without (offset) (0.5, label_replace(avg_over_time(pf:nginx_http_4xx_responses:rate5m[4h] offset 6d22h) + pf:nginx_http_4xx_responses:rate5m:avg_over_time_1w - pf:nginx_http_4xx_responses:rate5m:avg_over_time_1w offset 1w, \"offset\", \"1w\", \"\", \"\") or label_replace(avg_over_time(pf:nginx_http_4xx_responses:rate5m[4h] offset 13d22h) + pf:nginx_http_4xx_responses:rate5m:avg_over_time_1w - pf:nginx_http_4xx_responses:rate5m:avg_over_time_1w offset 2w, \"offset\", \"2w\", \"\", \"\") or label_replace(avg_over_time(pf:nginx_http_4xx_responses:rate5m[4h] offset 20d22h) + pf:nginx_http_4xx_responses:rate5m:avg_over_time_1w - pf:nginx_http_4xx_responses:rate5m:avg_over_time_1w offset 3w, \"offset\", \"3w\", \"\", \"\")), 0)"
+        },
+        {
+          "record": "pf:nginx_http_5xx_responses:rate5m",
+          "expr": "sum by (lp_service, k8scluster) (rate(nginx_http_requests_total{k8scluster=\"sy-kube01\",lp_service=~\"lp-(csds|mtls|rtbf|encryptionmgmt)-web\",status=~\"5.*\"}[5m]))"
+        },
+        {
+          "record": "pf:nginx_http_5xx_responses:rate5m:avg_over_time_1w",
+          "expr": "avg_over_time(pf:nginx_http_5xx_responses:rate5m[1w])"
+        },
+        {
+          "record": "pf:nginx_http_5xx_responses:rate5m:stddev_over_time_1w",
+          "expr": "stddev_over_time(pf:nginx_http_5xx_responses:rate5m[1w])"
+        },
+        {
+          "record": "pf:nginx_http_5xx_responses:rate5m_prediction",
+          "expr": "clamp_min(quantile without (offset) (0.5, label_replace(avg_over_time(pf:nginx_http_5xx_responses:rate5m[4h] offset 6d22h) + pf:nginx_http_5xx_responses:rate5m:avg_over_time_1w - pf:nginx_http_5xx_responses:rate5m:avg_over_time_1w offset 1w, \"offset\", \"1w\", \"\", \"\") or label_replace(avg_over_time(pf:nginx_http_5xx_responses:rate5m[4h] offset 13d22h) + pf:nginx_http_5xx_responses:rate5m:avg_over_time_1w - pf:nginx_http_5xx_responses:rate5m:avg_over_time_1w offset 2w, \"offset\", \"2w\", \"\", \"\") or label_replace(avg_over_time(pf:nginx_http_5xx_responses:rate5m[4h] offset 20d22h) + pf:nginx_http_5xx_responses:rate5m:avg_over_time_1w - pf:nginx_http_5xx_responses:rate5m:avg_over_time_1w offset 3w, \"offset\", \"3w\", \"\", \"\")), 0)"
+        },
+        {
+          "record": "pf:app_http_requests:rate5m",
+          "expr": "sum by (application, k8scluster) (rate(http_server_requests_seconds_count{application=~\"lp-(csds|mtls|rtbf|encryptionmgmt|acdefaults|acprovision|acsitesetting|acdomainprotection|rollover|providersubscription|providersubscriptionv2)-app\",k8scluster=\"sy-kube01\"}[5m]))"
+        },
+        {
+          "record": "pf:app_http_requests:rate5m:avg_over_time_1w",
+          "expr": "avg_over_time(pf:app_http_requests:rate5m[1w])"
+        },
+        {
+          "record": "pf:app_http_requests:rate5m:stddev_over_time_1w",
+          "expr": "stddev_over_time(pf:app_http_requests:rate5m[1w])"
+        },
+        {
+          "record": "pf:app_http_requests:rate5m_prediction",
+          "expr": "clamp_min(quantile without (offset) (0.5, label_replace(avg_over_time(pf:app_http_requests:rate5m[4h] offset 6d22h) + pf:app_http_requests:rate5m:avg_over_time_1w - pf:app_http_requests:rate5m:avg_over_time_1w offset 1w, \"offset\", \"1w\", \"\", \"\") or label_replace(avg_over_time(pf:app_http_requests:rate5m[4h] offset 13d22h) + pf:app_http_requests:rate5m:avg_over_time_1w - pf:app_http_requests:rate5m:avg_over_time_1w offset 2w, \"offset\", \"2w\", \"\", \"\") or label_replace(avg_over_time(pf:app_http_requests:rate5m[4h] offset 20d22h) + pf:app_http_requests:rate5m:avg_over_time_1w - pf:app_http_requests:rate5m:avg_over_time_1w offset 3w, \"offset\", \"3w\", \"\", \"\")), 0)"
+        },
+        {
+          "record": "pf:app_response_time:avg_over_time_5m",
+          "expr": "sum by (application, k8scluster) (rate(http_server_requests_seconds_sum{application=~\"lp-(csds|mtls|rtbf|encryptionmgmt|acdefaults|acprovision|acsitesetting|acdomainprotection|rollover|providersubscription|providersubscriptionv2)-app\",k8scluster=\"sy-kube01\"}[5m])) / sum by (application, k8scluster) (rate(http_server_requests_seconds_count{application=~\"lp-(csds|mtls|rtbf|encryptionmgmt|acdefaults|acprovision|acsitesetting|acdomainprotection|rollover|providersubscription|providersubscriptionv2)-app\",k8scluster=\"sy-kube01\"}[5m]))"
+        },
+        {
+          "record": "pf:app_response_time:avg_over_time_5m:avg_over_time_1w",
+          "expr": "avg_over_time(pf:app_response_time:avg_over_time_5m[1w])"
+        },
+        {
+          "record": "pf:app_response_time:avg_over_time_5m:stddev_over_time_1w",
+          "expr": "stddev_over_time(pf:app_response_time:avg_over_time_5m[1w])"
+        },
+        {
+          "record": "pf:app_response_time:avg_over_time_5m_prediction",
+          "expr": "clamp_min(quantile without (offset) (0.5, label_replace(avg_over_time(pf:app_response_time:avg_over_time_5m[4h] offset 6d22h) + pf:app_response_time:avg_over_time_5m:avg_over_time_1w - pf:app_response_time:avg_over_time_5m:avg_over_time_1w offset 1w, \"offset\", \"1w\", \"\", \"\") or label_replace(avg_over_time(pf:app_response_time:avg_over_time_5m[4h] offset 13d22h) + pf:app_response_time:avg_over_time_5m:avg_over_time_1w - pf:app_response_time:avg_over_time_5m:avg_over_time_1w offset 2w, \"offset\", \"2w\", \"\", \"\") or label_replace(avg_over_time(pf:app_response_time:avg_over_time_5m[4h] offset 20d22h) + pf:app_response_time:avg_over_time_5m:avg_over_time_1w - pf:app_response_time:avg_over_time_5m:avg_over_time_1w offset 3w, \"offset\", \"3w\", \"\", \"\")), 0)"
+        },
+        {
+          "record": "pf:app_http_4xx_responses:rate5m",
+          "expr": "sum by (application, k8scluster) (rate(http_server_requests_seconds_count{application=~\"lp-(csds|mtls|rtbf|encryptionmgmt|acdefaults|acprovision|acsitesetting|acdomainprotection|rollover|providersubscription|providersubscriptionv2)-app\",k8scluster=\"sy-kube01\",status=~\"4.*\"}[5m]))"
+        },
+        {
+          "record": "pf:app_http_4xx_responses:rate5m:avg_over_time_1w",
+          "expr": "avg_over_time(pf:app_http_4xx_responses:rate5m[1w])"
+        },
+        {
+          "record": "pf:app_http_4xx_responses:rate5m:stddev_over_time_1w",
+          "expr": "stddev_over_time(pf:app_http_4xx_responses:rate5m[1w])"
+        },
+        {
+          "record": "pf:app_http_4xx_responses:rate5m_prediction",
+          "expr": "clamp_min(quantile without (offset) (0.5, label_replace(avg_over_time(pf:app_http_4xx_responses:rate5m[4h] offset 6d22h) + pf:app_http_4xx_responses:rate5m:avg_over_time_1w - pf:app_http_4xx_responses:rate5m:avg_over_time_1w offset 1w, \"offset\", \"1w\", \"\", \"\") or label_replace(avg_over_time(pf:app_http_4xx_responses:rate5m[4h] offset 13d22h) + pf:app_http_4xx_responses:rate5m:avg_over_time_1w - pf:app_http_4xx_responses:rate5m:avg_over_time_1w offset 2w, \"offset\", \"2w\", \"\", \"\") or label_replace(avg_over_time(pf:app_http_4xx_responses:rate5m[4h] offset 20d22h) + pf:app_http_4xx_responses:rate5m:avg_over_time_1w - pf:app_http_4xx_responses:rate5m:avg_over_time_1w offset 3w, \"offset\", \"3w\", \"\", \"\")), 0)"
+        },
+        {
+          "record": "pf:app_http_5xx_responses:rate5m",
+          "expr": "sum by (application, k8scluster) (rate(http_server_requests_seconds_count{application=~\"lp-(csds|mtls|rtbf|encryptionmgmt|acdefaults|acprovision|acsitesetting|acdomainprotection|rollover|providersubscription|providersubscriptionv2)-app\",k8scluster=\"sy-kube01\",status=~\"5.*\"}[5m]))"
+        },
+        {
+          "record": "pf:app_http_5xx_responses:rate5m:avg_over_time_1w",
+          "expr": "avg_over_time(pf:app_http_5xx_responses:rate5m[1w])"
+        },
+        {
+          "record": "pf:app_http_5xx_responses:rate5m:stddev_over_time_1w",
+          "expr": "stddev_over_time(pf:app_http_5xx_responses:rate5m[1w])"
+        },
+        {
+          "record": "pf:app_http_5xx_responses:rate5m_prediction",
+          "expr": "clamp_min(quantile without (offset) (0.5, label_replace(avg_over_time(pf:app_http_5xx_responses:rate5m[4h] offset 6d22h) + pf:app_http_5xx_responses:rate5m:avg_over_time_1w - pf:app_http_5xx_responses:rate5m:avg_over_time_1w offset 1w, \"offset\", \"1w\", \"\", \"\") or label_replace(avg_over_time(pf:app_http_5xx_responses:rate5m[4h] offset 13d22h) + pf:app_http_5xx_responses:rate5m:avg_over_time_1w - pf:app_http_5xx_responses:rate5m:avg_over_time_1w offset 2w, \"offset\", \"2w\", \"\", \"\") or label_replace(avg_over_time(pf:app_http_5xx_responses:rate5m[4h] offset 20d22h) + pf:app_http_5xx_responses:rate5m:avg_over_time_1w - pf:app_http_5xx_responses:rate5m:avg_over_time_1w offset 3w, \"offset\", \"3w\", \"\", \"\")), 0)"
+        },
+        {
+          "record": "pf:app_log_events:rate5m",
+          "expr": "sum by (lp_service, level, k8scluster) (rate(log4j2_events_total{k8scluster=\"sy-kube01\",level=~\"error|warn\",lp_service=~\"lp-(csds|mtls|rtbf|encryptionmgmt|acdefaults|acprovision|acsitesetting|acdomainprotection|rollover|providersubscription|providersubscriptionv2)-app\"}[5m]))"
+        },
+        {
+          "record": "pf:app_log_events:rate5m:avg_over_time_1w",
+          "expr": "avg_over_time(pf:app_log_events:rate5m[1w])"
+        },
+        {
+          "record": "pf:app_log_events:rate5m:stddev_over_time_1w",
+          "expr": "stddev_over_time(pf:app_log_events:rate5m[1w])"
+        },
+        {
+          "record": "pf:app_log_events:rate5m_prediction",
+          "expr": "clamp_min(quantile without (offset) (0.5, label_replace(avg_over_time(pf:app_log_events:rate5m[4h] offset 6d22h) + pf:app_log_events:rate5m:avg_over_time_1w - pf:app_log_events:rate5m:avg_over_time_1w offset 1w, \"offset\", \"1w\", \"\", \"\") or label_replace(avg_over_time(pf:app_log_events:rate5m[4h] offset 13d22h) + pf:app_log_events:rate5m:avg_over_time_1w - pf:app_log_events:rate5m:avg_over_time_1w offset 2w, \"offset\", \"2w\", \"\", \"\") or label_replace(avg_over_time(pf:app_log_events:rate5m[4h] offset 20d22h) + pf:app_log_events:rate5m:avg_over_time_1w - pf:app_log_events:rate5m:avg_over_time_1w offset 3w, \"offset\", \"3w\", \"\", \"\")), 0)"
+        },
+        {
+          "record": "pf_pods_restart_too_much",
+          "expr": "rate(kube_pod_container_status_restarts_total{k8scluster=\"sy-kube01\",lp_service=~\"lp-(csds|mtls|rtbf|encryptionmgmt|acdefaults|acprovision|acsitesetting|acdomainprotection)-(web|app)\"}[5m]) > 0"
+        },
+        {
+          "record": "pf_pods_are_unhealthy",
+          "expr": "health{k8scluster=\"sy-kube01\",lp_service=~\"lp-(csds|mtls|rtbf|encryptionmgmt|acdefaults|acprovision|acsitesetting|acdomainprotection)-(web|app)\"} > 0"
+        },
+        {
+          "record": "pf_pod_dependencies_are_unhealthy",
+          "expr": "health_dependency{k8scluster=\"sy-kube01\",lp_service=~\"lp-(csds|mtls|rtbf|encryptionmgmt|acdefaults|acprovision|acsitesetting|acdomainprotection)-(web|app)\"} > 0"
+        },
+        {
+          "record": "pf_nginx_request_rate_is_too_low",
+          "expr": "pf:nginx_http_requests:rate5m == 0"
+        },
+        {
+          "record": "pf_app_request_rate_is_too_low",
+          "expr": "pf:app_http_requests:rate5m{application!~\"(lp-encryptionmgmt-app|lp-rtbf-app)\"} == 0"
+        },
+        {
+          "record": "pf_nginx_request_rate_is_too_high",
+          "expr": "pf:nginx_http_requests:rate5m > 10000"
+        },
+        {
+          "record": "pf_app_request_rate_is_too_high",
+          "expr": "pf:app_http_requests:rate5m > 10000"
+        },
+        {
+          "record": "pf_nginx_request_rate_is_outside_normal_range",
+          "expr": "abs((pf:nginx_http_requests:rate5m - pf:nginx_http_requests:rate5m_prediction) / pf:nginx_http_requests:rate5m:stddev_over_time_1w) > 2"
+        },
+        {
+          "record": "pf_app_request_rate_is_outside_normal_range",
+          "expr": "abs((pf:app_http_requests:rate5m - pf:app_http_requests:rate5m_prediction) / pf:app_http_requests:rate5m:stddev_over_time_1w) > 2"
+        },
+        {
+          "record": "pf_nginx_response_time_is_too_high",
+          "expr": "pf:nginx_response_time:avg_over_time_5m > 0.5"
+        },
+        {
+          "record": "pf_app_response_time_is_too_high",
+          "expr": "pf:app_response_time:avg_over_time_5m > 0.5"
+        },
+        {
+          "record": "pf_nginx_response_time_is_outside_normal_range",
+          "expr": "abs((pf:nginx_response_time:avg_over_time_5m - pf:nginx_response_time:avg_over_time_5m_prediction) / pf:nginx_response_time:avg_over_time_5m:stddev_over_time_1w) > 2"
+        },
+        {
+          "record": "pf_app_response_time_is_outside_normal_range",
+          "expr": "abs((pf:app_response_time:avg_over_time_5m - pf:app_response_time:avg_over_time_5m_prediction) / pf:app_response_time:avg_over_time_5m:stddev_over_time_1w) > 2"
+        },
+        {
+          "record": "pf_nginx_4xx_rate_is_outside_normal_range",
+          "expr": "abs((pf:nginx_http_4xx_responses:rate5m - pf:nginx_http_4xx_responses:rate5m_prediction) / pf:nginx_http_4xx_responses:rate5m:stddev_over_time_1w) > 2"
+        },
+        {
+          "record": "pf_app_4xx_rate_is_outside_normal_range",
+          "expr": "abs((pf:app_http_4xx_responses:rate5m - pf:app_http_4xx_responses:rate5m_prediction) / pf:app_http_4xx_responses:rate5m:stddev_over_time_1w) > 2"
+        },
+        {
+          "record": "pf_nginx_4xx_ratio_exceeds_20%",
+          "expr": "pf:nginx_http_4xx_responses:rate5m / pf:nginx_http_requests:rate5m > 20"
+        },
+        {
+          "record": "pf_app_4xx_ratio_exceeds_20%",
+          "expr": "pf:app_http_4xx_responses:rate5m / pf:app_http_requests:rate5m > 20"
+        },
+        {
+          "record": "pf_nginx_5xx_rate_is_outside_normal_range",
+          "expr": "abs((pf:nginx_http_5xx_responses:rate5m - pf:nginx_http_5xx_responses:rate5m_prediction) / pf:nginx_http_5xx_responses:rate5m:stddev_over_time_1w) > 2"
+        },
+        {
+          "record": "pf_app_5xx_rate_is_outside_normal_range",
+          "expr": "abs((pf:app_http_5xx_responses:rate5m - pf:app_http_5xx_responses:rate5m_prediction) / pf:app_http_5xx_responses:rate5m:stddev_over_time_1w) > 2"
+        },
+        {
+          "record": "pf_nginx_5xx_ratio_exceeds_20%",
+          "expr": "pf:nginx_http_5xx_responses:rate5m / pf:nginx_http_requests:rate5m > 20"
+        },
+        {
+          "record": "pf_app_5xx_ratio_exceeds_20%",
+          "expr": "pf:app_http_5xx_responses:rate5m / pf:app_http_requests:rate5m > 20"
+        },
+        {
+          "record": "pf_log_rate_is_outside_normal_range",
+          "expr": "abs((pf:app_log_events:rate5m - pf:app_log_events:rate5m_prediction) / pf:app_log_events:rate5m:stddev_over_time_1w) > 2"
+        },
+        {
+          "record": "pf_app_heap_usage_too_high",
+          "expr": "100 * (avg by (k8scluster, lp_service, kubernetes_pod_name) (container_memory_working_set_bytes{k8scluster=\"sy-kube01\",lp_service=~\"lp-(csds|mtls|rtbf|encryptionmgmt|acdefaults|acprovision|acsitesetting|acdomainprotection|rollover|providersubscription|providersubscriptionv2)-app\"}) / avg by (k8scluster, lp_service, kubernetes_pod_name) (container_spec_memory_limit_bytes{k8scluster=\"sy-kube01\",lp_service=~\"lp-(csds|mtls|rtbf|encryptionmgmt|acdefaults|acprovision|acsitesetting|acdomainprotection|rollover|providersubscription|providersubscriptionv2)-app\"})) > 90"
+        }
+      ],
+      "interval": "60s"
+    }
+  ]
+}

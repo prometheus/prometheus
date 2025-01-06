@@ -137,9 +137,13 @@ func NewManager(o *ManagerOptions) *Manager {
 		o.GroupLoader = FileLoader{}
 	}
 
+	if o.Logger == nil {
+		o.Logger = promslog.NewNopLogger()
+	}
+
 	if o.RuleConcurrencyController == nil {
 		if o.ConcurrentEvalsEnabled {
-			o.RuleConcurrencyController = newRuleConcurrencyController(o.MaxConcurrentEvals)
+			o.RuleConcurrencyController = newRuleConcurrencyController(o.MaxConcurrentEvals, o.Logger)
 		} else {
 			o.RuleConcurrencyController = sequentialRuleEvalController{}
 		}
@@ -147,10 +151,6 @@ func NewManager(o *ManagerOptions) *Manager {
 
 	if o.RuleDependencyController == nil {
 		o.RuleDependencyController = ruleDependencyController{}
-	}
-
-	if o.Logger == nil {
-		o.Logger = promslog.NewNopLogger()
 	}
 
 	m := &Manager{
@@ -487,12 +487,14 @@ type RuleConcurrencyController interface {
 
 // concurrentRuleEvalController holds a weighted semaphore which controls the concurrent evaluation of rules.
 type concurrentRuleEvalController struct {
-	sema *semaphore.Weighted
+	sema   *semaphore.Weighted
+	logger *slog.Logger
 }
 
-func newRuleConcurrencyController(maxConcurrency int64) RuleConcurrencyController {
+func newRuleConcurrencyController(maxConcurrency int64, logger *slog.Logger) RuleConcurrencyController {
 	return &concurrentRuleEvalController{
-		sema: semaphore.NewWeighted(maxConcurrency),
+		sema:   semaphore.NewWeighted(maxConcurrency),
+		logger: logger,
 	}
 }
 
@@ -501,36 +503,65 @@ func (c *concurrentRuleEvalController) Allow(_ context.Context, _ *Group, rule R
 }
 
 func (c *concurrentRuleEvalController) SplitGroupIntoBatches(_ context.Context, g *Group) []ConcurrentRules {
-	// Using the rule dependency controller information (rules being identified as having no dependencies or no dependants),
-	// we can safely run the following concurrent groups:
-	// 1. Concurrently, all rules that have no dependencies
-	// 2. Sequentially, all rules that have both dependencies and dependants
-	// 3. Concurrently, all rules that have no dependants
+	sequentialController := sequentialRuleEvalController{}
 
-	var noDependencies []int
-	var dependenciesAndDependants []int
-	var noDependants []int
-
+	type ruleInfo struct {
+		ruleIdx                 int
+		unevaluatedDependencies map[Rule]struct{}
+	}
+	remainingRules := make(map[Rule]ruleInfo)
+	firstBatch := ConcurrentRules{}
 	for i, r := range g.rules {
-		switch {
-		case r.NoDependencyRules():
-			noDependencies = append(noDependencies, i)
-		case !r.NoDependentRules() && !r.NoDependencyRules():
-			dependenciesAndDependants = append(dependenciesAndDependants, i)
-		case r.NoDependentRules():
-			noDependants = append(noDependants, i)
+		if r.NoDependencyRules() {
+			firstBatch = append(firstBatch, i)
+			continue
 		}
+		// Initialize the rule info with the rule's dependencies.
+		// Use a copy of the dependencies to avoid mutating the rule.
+		info := ruleInfo{ruleIdx: i, unevaluatedDependencies: map[Rule]struct{}{}}
+		for _, dep := range r.DependencyRules() {
+			info.unevaluatedDependencies[dep] = struct{}{}
+		}
+		remainingRules[r] = info
 	}
+	if len(firstBatch) == 0 {
+		// There are no rules without dependencies.
+		// Fall back to sequential evaluation.
+		c.logger.With("group", g.Name()).Info("No rules without dependencies found, falling back to sequential rule evaluation. This may be due to indeterminate rule dependencies.")
+		return sequentialController.SplitGroupIntoBatches(context.Background(), g)
+	}
+	order := []ConcurrentRules{firstBatch}
 
-	var order []ConcurrentRules
-	if len(noDependencies) > 0 {
-		order = append(order, noDependencies)
-	}
-	for _, r := range dependenciesAndDependants {
-		order = append(order, []int{r})
-	}
-	if len(noDependants) > 0 {
-		order = append(order, noDependants)
+	// Build the order of rules to evaluate based on dependencies.
+	for len(remainingRules) > 0 {
+		previousBatch := order[len(order)-1]
+		// Remove the batch's rules from the dependencies of its dependents.
+		for _, idx := range previousBatch {
+			rule := g.rules[idx]
+			for _, dependent := range rule.DependentRules() {
+				dependentInfo := remainingRules[dependent]
+				delete(dependentInfo.unevaluatedDependencies, rule)
+			}
+		}
+
+		var batch ConcurrentRules
+		// Find rules that have no remaining dependencies.
+		for name, info := range remainingRules {
+			if len(info.unevaluatedDependencies) == 0 {
+				batch = append(batch, info.ruleIdx)
+				delete(remainingRules, name)
+			}
+		}
+
+		if len(batch) == 0 {
+			// There is a cycle in the rules' dependencies.
+			// We can't evaluate them concurrently.
+			// Fall back to sequential evaluation.
+			c.logger.With("group", g.Name()).Warn("Cyclic rule dependencies detected, falling back to sequential rule evaluation")
+			return sequentialController.SplitGroupIntoBatches(context.Background(), g)
+		}
+
+		order = append(order, batch)
 	}
 
 	return order
