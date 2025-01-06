@@ -473,8 +473,7 @@ type ConcurrentRules []int
 // server with additional query load. Concurrency is controlled globally, not on a per-group basis.
 type RuleConcurrencyController interface {
 	// SplitGroupIntoBatches returns an ordered slice of of ConcurrentRules, which are batches of rules that can be evaluated concurrently.
-	// The rules are represented by their index in the original list of rules of the group.
-	// We need the original index to update the group's state and we don't want to mutate the group's rules.
+	// The rules are represented by their index from the input rule group.
 	SplitGroupIntoBatches(ctx context.Context, group *Group) []ConcurrentRules
 
 	// Allow determines if the given rule is allowed to be evaluated concurrently.
