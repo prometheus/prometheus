@@ -1987,6 +1987,15 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 			start := time.Now()
 			DefaultEvalIterationFunc(ctx, group, start)
 
+			// Expected evaluation order
+			order := group.opts.RuleConcurrencyController.SplitGroupIntoBatches(ctx, group)
+			require.Equal(t, []ConcurrentRules{
+				{0},
+				{1},
+				{2},
+				{3},
+			}, order)
+
 			// Never expect more than 1 inflight query at a time.
 			require.EqualValues(t, 1, maxInflight.Load())
 			// Each rule should take at least 1 second to execute sequentially.
@@ -2065,6 +2074,12 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 			start := time.Now()
 			DefaultEvalIterationFunc(ctx, group, start)
 
+			// Expected evaluation order (isn't affected by concurrency settings)
+			order := group.opts.RuleConcurrencyController.SplitGroupIntoBatches(ctx, group)
+			require.Equal(t, []ConcurrentRules{
+				{0, 1, 2, 3, 4, 5},
+			}, order)
+
 			// Max inflight can be 1 synchronous eval and up to MaxConcurrentEvals concurrent evals.
 			require.EqualValues(t, opts.MaxConcurrentEvals+1, maxInflight.Load())
 			// Some rules should execute concurrently so should complete quicker.
@@ -2103,6 +2118,12 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 			start := time.Now()
 
 			DefaultEvalIterationFunc(ctx, group, start)
+
+			// Expected evaluation order
+			order := group.opts.RuleConcurrencyController.SplitGroupIntoBatches(ctx, group)
+			require.Equal(t, []ConcurrentRules{
+				{0, 1, 2, 3, 4, 5},
+			}, order)
 
 			// Max inflight can be up to MaxConcurrentEvals concurrent evals, since there is sufficient concurrency to run all rules at once.
 			require.LessOrEqual(t, int64(maxInflight.Load()), opts.MaxConcurrentEvals)
@@ -2152,6 +2173,99 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 			// Each rule produces one vector.
 			require.EqualValues(t, ruleCount, testutil.ToFloat64(group.metrics.GroupSamples))
 		}
+	})
+
+	t.Run("asynchronous evaluation of rules that benefit from reordering", func(t *testing.T) {
+		t.Parallel()
+		storage := teststorage.New(t)
+		t.Cleanup(func() { storage.Close() })
+		inflightQueries := atomic.Int32{}
+		maxInflight := atomic.Int32{}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+
+		ruleCount := 8
+		opts := optsFactory(storage, &maxInflight, &inflightQueries, 0)
+
+		// Configure concurrency settings.
+		opts.ConcurrentEvalsEnabled = true
+		opts.MaxConcurrentEvals = int64(ruleCount) * 2
+		opts.RuleConcurrencyController = nil
+		ruleManager := NewManager(opts)
+
+		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, []string{"fixtures/rules_multiple_dependents_on_base.yaml"}...)
+		require.Empty(t, errs)
+		require.Len(t, groups, 1)
+		var group *Group
+		for _, g := range groups {
+			group = g
+		}
+
+		start := time.Now()
+
+		// Expected evaluation order
+		order := group.opts.RuleConcurrencyController.SplitGroupIntoBatches(ctx, group)
+		require.Equal(t, []ConcurrentRules{
+			{0, 4},
+			{1, 2, 3, 5, 6, 7},
+		}, order)
+
+		group.Eval(ctx, start)
+
+		// Inflight queries should be equal to 6. This is the size of the second batch of rules that can be executed concurrently.
+		require.EqualValues(t, 6, maxInflight.Load())
+		// Some rules should execute concurrently so should complete quicker.
+		require.Less(t, time.Since(start).Seconds(), (time.Duration(ruleCount) * artificialDelay).Seconds())
+		// Each rule produces one vector.
+		require.EqualValues(t, ruleCount, testutil.ToFloat64(group.metrics.GroupSamples))
+	})
+
+	t.Run("attempted asynchronous evaluation of chained rules", func(t *testing.T) {
+		t.Parallel()
+		storage := teststorage.New(t)
+		t.Cleanup(func() { storage.Close() })
+		inflightQueries := atomic.Int32{}
+		maxInflight := atomic.Int32{}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+
+		ruleCount := 7
+		opts := optsFactory(storage, &maxInflight, &inflightQueries, 0)
+
+		// Configure concurrency settings.
+		opts.ConcurrentEvalsEnabled = true
+		opts.MaxConcurrentEvals = int64(ruleCount) * 2
+		opts.RuleConcurrencyController = nil
+		ruleManager := NewManager(opts)
+
+		groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, []string{"fixtures/rules_chain.yaml"}...)
+		require.Empty(t, errs)
+		require.Len(t, groups, 1)
+		var group *Group
+		for _, g := range groups {
+			group = g
+		}
+
+		start := time.Now()
+
+		// Expected evaluation order
+		order := group.opts.RuleConcurrencyController.SplitGroupIntoBatches(ctx, group)
+		require.Equal(t, []ConcurrentRules{
+			{0, 1},
+			{2},
+			{3},
+			{4, 5, 6},
+		}, order)
+
+		group.Eval(ctx, start)
+
+		require.EqualValues(t, 3, maxInflight.Load())
+		// Some rules should execute concurrently so should complete quicker.
+		require.Less(t, time.Since(start).Seconds(), (time.Duration(ruleCount) * artificialDelay).Seconds())
+		// Each rule produces one vector.
+		require.EqualValues(t, ruleCount, testutil.ToFloat64(group.metrics.GroupSamples))
 	})
 }
 
