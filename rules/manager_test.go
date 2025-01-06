@@ -1988,7 +1988,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 			DefaultEvalIterationFunc(ctx, group, start)
 
 			// Expected evaluation order
-			order := group.opts.RuleConcurrencyController.Sort(ctx, group)
+			order := group.opts.RuleConcurrencyController.SplitGroupIntoBatches(ctx, group)
 			require.Equal(t, []ConcurrentRules{
 				{0},
 				{1},
@@ -2075,7 +2075,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 			DefaultEvalIterationFunc(ctx, group, start)
 
 			// Expected evaluation order (isn't affected by concurrency settings)
-			order := group.opts.RuleConcurrencyController.Sort(ctx, group)
+			order := group.opts.RuleConcurrencyController.SplitGroupIntoBatches(ctx, group)
 			require.Equal(t, []ConcurrentRules{
 				{0, 1, 2, 3, 4, 5},
 			}, order)
@@ -2120,7 +2120,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 			DefaultEvalIterationFunc(ctx, group, start)
 
 			// Expected evaluation order
-			order := group.opts.RuleConcurrencyController.Sort(ctx, group)
+			order := group.opts.RuleConcurrencyController.SplitGroupIntoBatches(ctx, group)
 			require.Equal(t, []ConcurrentRules{
 				{0, 1, 2, 3, 4, 5},
 			}, order)
@@ -2205,7 +2205,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 		start := time.Now()
 
 		// Expected evaluation order
-		order := group.opts.RuleConcurrencyController.Sort(ctx, group)
+		order := group.opts.RuleConcurrencyController.SplitGroupIntoBatches(ctx, group)
 		require.Equal(t, []ConcurrentRules{
 			{0, 4},
 			{1, 2, 3, 5, 6, 7},
@@ -2251,7 +2251,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 		start := time.Now()
 
 		// Expected evaluation order
-		order := group.opts.RuleConcurrencyController.Sort(ctx, group)
+		order := group.opts.RuleConcurrencyController.SplitGroupIntoBatches(ctx, group)
 		require.Equal(t, []ConcurrentRules{
 			{0, 1},
 			{2},

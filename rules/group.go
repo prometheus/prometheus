@@ -643,26 +643,27 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 	if ctrl == nil {
 		ctrl = sequentialRuleEvalController{}
 	}
-	for _, concurrentRules := range ctrl.Sort(ctx, g) {
-		for _, ruleIdx := range concurrentRules {
+	for _, batch := range ctrl.SplitGroupIntoBatches(ctx, g) {
+		for _, ruleIndex := range batch {
 			select {
 			case <-g.done:
 				return
 			default:
 			}
 
-			rule := g.rules[ruleIdx]
-			if len(concurrentRules) > 1 && ctrl.Allow(ctx, g, rule) {
+			rule := g.rules[ruleIndex]
+			if len(batch) > 1 && ctrl.Allow(ctx, g, rule) {
 				wg.Add(1)
 
-				go eval(ruleIdx, rule, func() {
+				go eval(ruleIndex, rule, func() {
 					wg.Done()
 					ctrl.Done(ctx)
 				})
 			} else {
-				eval(ruleIdx, rule, nil)
+				eval(ruleIndex, rule, nil)
 			}
 		}
+		// It is important that we finish processing any rules in this current batch - before we move into the next one.
 		wg.Wait()
 	}
 

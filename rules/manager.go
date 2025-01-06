@@ -472,10 +472,10 @@ type ConcurrentRules []int
 // Its purpose is to bound the amount of concurrency in rule evaluations to avoid overwhelming the Prometheus
 // server with additional query load. Concurrency is controlled globally, not on a per-group basis.
 type RuleConcurrencyController interface {
-	// Sort returns a slice of ConcurrentRules, which are batches of rules that can be evaluated concurrently.
+	// SplitGroupIntoBatches returns an ordered slice of of ConcurrentRules, which are batches of rules that can be evaluated concurrently.
 	// The rules are represented by their index in the original list of rules of the group.
 	// We need the original index to update the group's state and we don't want to mutate the group's rules.
-	Sort(ctx context.Context, group *Group) []ConcurrentRules
+	SplitGroupIntoBatches(ctx context.Context, group *Group) []ConcurrentRules
 
 	// Allow determines if the given rule is allowed to be evaluated concurrently.
 	// If Allow() returns true, then Done() must be called to release the acquired slot and corresponding cleanup is done.
@@ -501,7 +501,7 @@ func (c *concurrentRuleEvalController) Allow(_ context.Context, _ *Group, rule R
 	return c.sema.TryAcquire(1)
 }
 
-func (c *concurrentRuleEvalController) Sort(_ context.Context, g *Group) []ConcurrentRules {
+func (c *concurrentRuleEvalController) SplitGroupIntoBatches(_ context.Context, g *Group) []ConcurrentRules {
 	// Using the rule dependency controller information (rules being identified as having no dependencies or no dependants),
 	// we can safely run the following concurrent groups:
 	// 1. Concurrently, all rules that have no dependencies
@@ -550,7 +550,7 @@ func (c sequentialRuleEvalController) Allow(_ context.Context, _ *Group, _ Rule)
 	return false
 }
 
-func (c sequentialRuleEvalController) Sort(_ context.Context, g *Group) []ConcurrentRules {
+func (c sequentialRuleEvalController) SplitGroupIntoBatches(_ context.Context, g *Group) []ConcurrentRules {
 	order := make([]ConcurrentRules, len(g.rules))
 	for i := range g.rules {
 		order[i] = []int{i}
