@@ -8173,6 +8173,8 @@ func testNoGapAfterRestartWithOOO(t *testing.T, scenario sampleTypeScenario) {
 
 			opts := DefaultOptions()
 			opts.OutOfOrderTimeWindow = 30 * time.Minute.Milliseconds()
+			opts.StartupMinRetentionTime = 0
+
 			db := newTestDB(t, withOpts(opts))
 			db.DisableCompactions()
 
