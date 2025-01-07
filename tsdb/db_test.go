@@ -2038,7 +2038,9 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, w.Close())
 
-		db, err := Open(dir, nil, nil, nil, nil)
+		opts := DefaultOptions()
+		opts.StartupMinRetentionTime = 0
+		db, err := Open(dir, nil, nil, opts, nil)
 		require.NoError(t, err)
 		defer db.Close()
 
@@ -2084,7 +2086,9 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 
 		r := prometheus.NewRegistry()
 
-		db, err := Open(dir, nil, r, nil, nil)
+		opts := DefaultOptions()
+		opts.StartupMinRetentionTime = 0
+		db, err := Open(dir, nil, r, opts, nil)
 		require.NoError(t, err)
 		defer db.Close()
 
