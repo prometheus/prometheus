@@ -183,7 +183,9 @@ func queryChunks(t testing.TB, q storage.ChunkQuerier, matchers ...*labels.Match
 // Ensure that blocks are held in memory in their time order
 // and not in ULID order as they are read from the directory.
 func TestDB_reloadOrder(t *testing.T) {
-	db := openTestDB(t, nil, nil)
+	db := openTestDB(t, &Options{
+		StartupMinRetentionTime: 0,
+	}, nil)
 	defer func() {
 		require.NoError(t, db.Close())
 	}()
