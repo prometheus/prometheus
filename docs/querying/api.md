@@ -1158,6 +1158,8 @@ $ curl http://localhost:9090/api/v1/status/runtimeinfo
   "data": {
     "startTime": "2019-11-02T17:23:59.301361365+01:00",
     "CWD": "/",
+    "hostname" : "DESKTOP-717H17Q",
+    "serverTime": "2025-01-05T18:27:33Z",
     "reloadConfigSuccess": true,
     "lastConfigTime": "2019-11-02T17:23:59+01:00",
     "timeSeriesCount": 873,

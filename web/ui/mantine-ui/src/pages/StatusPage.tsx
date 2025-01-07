@@ -29,6 +29,12 @@ export default function StatusPage() {
         formatTimestamp(new Date(v as string).valueOf() / 1000, useLocalTime),
     },
     CWD: { title: "Working directory" },
+    hostname: { title: "Hostname" },
+    serverTime: {
+      title: "Server Time",
+      formatValue: (v: string | boolean) =>
+        formatTimestamp(new Date(v as string).valueOf() / 1000, useLocalTime),
+    },
     reloadConfigSuccess: {
       title: "Configuration reload",
       formatValue: (v: string | boolean) => (v ? "Successful" : "Unsuccessful"),
