@@ -983,6 +983,8 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.OutOfOrderTimeWindow.Store(opts.OutOfOrderTimeWindow)
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
 	headOpts.EnableSharding = opts.EnableSharding
+	headOpts.StartupMinRetentionTime = db.opts.StartupMinRetentionTime
+
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
 	}
@@ -1007,7 +1009,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 
 	// Using a custom deletableBlocks so we can delete blocks that are beyond the startup time retention.
 	db.blocksToDelete = func(blocks []*Block) map[ulid.ULID]struct{} {
-		return deletableBlocks(db, blocks, beyondStartupTimeRetention, BeyondSizeRetention)
+		return deletableBlocks(db, blocks, BeyondStartupTimeRetention, BeyondSizeRetention)
 	}
 
 	// Calling db.reload() calls db.reloadBlocks() which requires cmtx to be locked.
@@ -1788,7 +1790,7 @@ func deletableBlocks(db *DB, blocks []*Block, filterFuncs ...DeletableFilterFunc
 	return deletable
 }
 
-func beyondStartupTimeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struct{}) {
+func BeyondStartupTimeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struct{}) {
 	if len(blocks) == 0 || db.opts.StartupMinRetentionTime == 0 {
 		return
 	}
