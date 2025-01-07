@@ -1200,10 +1200,17 @@ func testWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T, numSamplesBefore
 		require.NoError(t, app.Commit())
 	}
 
+	dbDir := db.Dir()
+	dbOpts := db.opts
 	require.NoError(t, db.Close())
 
 	// Reopen the DB, replaying the WAL.
-	db = newTestDB(t, withDir(db.Dir()))
+	var err error
+	db, err = Open(dbDir, promslog.New(&promslog.Config{}), nil, dbOpts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
 
 	// Query back chunks for all series.
 	q, err := db.ChunkQuerier(math.MinInt64, math.MaxInt64)
