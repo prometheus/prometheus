@@ -1047,7 +1047,9 @@ func TestDB_e2e(t *testing.T) {
 }
 
 func TestWALFlushedOnDBClose(t *testing.T) {
-	db := newTestDB(t)
+	db := newTestDB(t, withOpts(&Options{
+		StartupMinRetentionTime: 0,
+	}))
 
 	lbls := labels.FromStrings("labelname", "labelvalue")
 
@@ -1166,7 +1168,9 @@ func TestWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T) {
 func testWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T, numSamplesBeforeSeriesCreation, numSamplesAfterSeriesCreation int) {
 	const numSeries = 1000
 
-	db := newTestDB(t)
+	db := newTestDB(t, withOpts(&Options{
+		StartupMinRetentionTime: 0,
+	}))
 	db.DisableCompactions()
 
 	for seriesRef := 1; seriesRef <= numSeries; seriesRef++ {
@@ -2390,7 +2394,9 @@ func TestBlockRanges(t *testing.T) {
 	// when a non standard block already exists.
 	firstBlockMaxT := int64(3)
 	createBlock(t, dir, genSeries(1, 1, 0, firstBlockMaxT))
-	db, err := open(dir, logger, nil, DefaultOptions(), []int64{10000}, nil)
+	opts := DefaultOptions()
+	opts.StartupMinRetentionTime = 0
+	db, err := open(dir, logger, nil, opts, []int64{10000}, nil)
 	require.NoError(t, err)
 
 	rangeToTriggerCompaction := db.compactor.(*LeveledCompactor).ranges[0]/2*3 + 1
@@ -2498,7 +2504,9 @@ func TestDBReadOnly(t *testing.T) {
 
 	// Open a normal db to use for a comparison.
 	{
-		dbWritable := newTestDB(t, withDir(dbDir))
+		dbWritable := newTestDB(t, withDir(dbDir), withOpts(&Options{
+			StartupMinRetentionTime: 0,
+		}))
 		dbWritable.DisableCompactions()
 
 		dbSizeBeforeAppend, err := fileutil.DirSize(dbWritable.Dir())
@@ -4780,7 +4788,9 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	db := newTestDB(t)
+	db := newTestDB(t, withOpts(&Options{
+		StartupMinRetentionTime: 0,
+	}))
 	ctx := context.Background()
 
 	// Add some series so we can append metadata to them.
