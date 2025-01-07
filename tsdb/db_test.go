@@ -8332,6 +8332,7 @@ func testNoGapAfterRestartWithOOO(t *testing.T, scenario sampleTypeScenario) {
 			opts.OutOfOrderTimeWindow = 30 * time.Minute.Milliseconds()
 			opts.EnableNativeHistograms = true
 			opts.EnableOOONativeHistograms = true
+			opts.StartupMinRetentionTime = 0
 
 			db, err := Open(dir, nil, nil, opts, nil)
 			require.NoError(t, err)
