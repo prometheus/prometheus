@@ -8168,6 +8168,7 @@ func testWblReplayAfterOOODisableAndRestart(t *testing.T, scenario sampleTypeSce
 	opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
 	opts.EnableNativeHistograms = true
 	opts.EnableOOONativeHistograms = true
+	opts.StartupMinRetentionTime = 0
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
