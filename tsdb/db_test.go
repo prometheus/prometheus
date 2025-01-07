@@ -2459,7 +2459,7 @@ func TestBlockRanges(t *testing.T) {
 	thirdBlockMaxt := secondBlockMaxt + 2
 	createBlock(t, dir, genSeries(1, 1, secondBlockMaxt+1, thirdBlockMaxt))
 
-	db, err = open(dir, logger, nil, DefaultOptions(), []int64{10000}, nil)
+	db, err = open(dir, logger, nil, db.opts, []int64{10000}, nil)
 	require.NoError(t, err)
 
 	defer db.Close()
@@ -4863,12 +4863,20 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 	require.Equal(t, *series3.meta, m3)
 	require.Equal(t, *series4.meta, m4)
 
+	dbDir := db.Dir()
+	dbOpts := db.opts
 	require.NoError(t, db.Close())
 
 	// Reopen the DB, replaying the WAL. The Head must have been replayed
 	// correctly in memory.
-	db = newTestDB(t, withDir(db.Dir()))
-	_, err := db.head.wal.Size()
+	var err error
+	db, err = Open(dbDir, nil, nil, dbOpts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
+
+	_, err = db.head.wal.Size()
 	require.NoError(t, err)
 
 	require.Equal(t, *db.head.series.getByHash(s1.Hash(), s1).meta, m1)
