@@ -822,10 +822,6 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 	if opts.OutOfOrderTimeWindow < 0 {
 		opts.OutOfOrderTimeWindow = 0
 	}
-	if opts.StartupMinRetentionTime == 0 {
-		minStartupDuration := time.Now().Add(-time.Duration(opts.RetentionDuration) / time.Millisecond)
-		opts.StartupMinRetentionTime = int64(time.Duration(minStartupDuration.UnixMilli()))
-	}
 
 	if len(rngs) == 0 {
 		// Start with smallest block duration and create exponential buckets until the exceed the

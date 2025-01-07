@@ -225,7 +225,9 @@ func queryChunks(t testing.TB, q storage.ChunkQuerier, matchers ...*labels.Match
 // Ensure that blocks are held in memory in their time order
 // and not in ULID order as they are read from the directory.
 func TestDB_reloadOrder(t *testing.T) {
-	db := newTestDB(t)
+	db := newTestDB(t, withOpts(&Options{
+		StartupMinRetentionTime: 0,
+	}))
 
 	metas := []BlockMeta{
 		{MinTime: 90, MaxTime: 100},
