@@ -8223,6 +8223,7 @@ func TestWblReplayAfterOOODisableAndRestart(t *testing.T) {
 func testWblReplayAfterOOODisableAndRestart(t *testing.T, scenario sampleTypeScenario) {
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
+	opts.StartupMinRetentionTime = 0
 
 	db := newTestDB(t, withOpts(opts))
 
