@@ -69,8 +69,12 @@ var testStartTime = time.Unix(0, 0).UTC()
 
 // LoadedStorage returns storage with generated data using the provided load statements.
 // Non-load statements will cause test errors.
-func LoadedStorage(t testutil.T, input string) *teststorage.TestStorage {
-	test, err := newTest(t, input, false, newTestStorage)
+func LoadedStorage(t testutil.T, input string, opts ...Option) *teststorage.TestStorage {
+	options := options{}
+	for _, o := range opts {
+		o.apply(&options)
+	}
+	test, err := newTest(t, input, false, newTestStorage, options)
 	require.NoError(t, err)
 
 	for _, cmd := range test.cmds {
@@ -111,12 +115,12 @@ func NewTestEngineWithOpts(tb testing.TB, opts promql.EngineOpts) *promql.Engine
 }
 
 // RunBuiltinTests runs an acceptance test suite against the provided engine.
-func RunBuiltinTests(t TBRun, engine promql.QueryEngine) {
-	RunBuiltinTestsWithStorage(t, engine, newTestStorage)
+func RunBuiltinTests(t TBRun, engine promql.QueryEngine, options ...Option) {
+	RunBuiltinTestsWithStorage(t, engine, newTestStorage, options)
 }
 
 // RunBuiltinTestsWithStorage runs an acceptance test suite against the provided engine and storage.
-func RunBuiltinTestsWithStorage(t TBRun, engine promql.QueryEngine, newStorage func(testutil.T) storage.Storage) {
+func RunBuiltinTestsWithStorage(t TBRun, engine promql.QueryEngine, newStorage func(testutil.T) storage.Storage, options []Option) {
 	t.Cleanup(func() { parser.EnableExperimentalFunctions = false })
 	parser.EnableExperimentalFunctions = true
 
@@ -127,29 +131,33 @@ func RunBuiltinTestsWithStorage(t TBRun, engine promql.QueryEngine, newStorage f
 		t.Run(fn, func(t *testing.T) {
 			content, err := fs.ReadFile(testsFs, fn)
 			require.NoError(t, err)
-			RunTestWithStorage(t, string(content), engine, newStorage)
+			RunTestWithStorage(t, string(content), engine, newStorage, options)
 		})
 	}
 }
 
 // RunTest parses and runs the test against the provided engine.
-func RunTest(t testutil.T, input string, engine promql.QueryEngine) {
-	RunTestWithStorage(t, input, engine, newTestStorage)
+func RunTest(t testutil.T, input string, engine promql.QueryEngine, options ...Option) {
+	RunTestWithStorage(t, input, engine, newTestStorage, options)
 }
 
 // RunTestWithStorage parses and runs the test against the provided engine and storage.
-func RunTestWithStorage(t testutil.T, input string, engine promql.QueryEngine, newStorage func(testutil.T) storage.Storage) {
-	require.NoError(t, runTest(t, input, engine, newStorage, false))
+func RunTestWithStorage(t testutil.T, input string, engine promql.QueryEngine, newStorage func(testutil.T) storage.Storage, options []Option) {
+	require.NoError(t, runTest(t, input, engine, newStorage, false, options))
 }
 
 // testTest allows tests to be run in "test-the-test" mode (true for
 // testingMode). This is a special mode for testing test code execution itself.
-func testTest(t testutil.T, input string, engine promql.QueryEngine) error {
-	return runTest(t, input, engine, newTestStorage, true)
+func testTest(t testutil.T, input string, engine promql.QueryEngine, options ...Option) error {
+	return runTest(t, input, engine, newTestStorage, true, options)
 }
 
-func runTest(t testutil.T, input string, engine promql.QueryEngine, newStorage func(testutil.T) storage.Storage, testingMode bool) error {
-	test, err := newTest(t, input, testingMode, newStorage)
+func runTest(t testutil.T, input string, engine promql.QueryEngine, newStorage func(testutil.T) storage.Storage, testingMode bool, opts []Option) error {
+	options := options{}
+	for _, o := range opts {
+		o.apply(&options)
+	}
+	test, err := newTest(t, input, testingMode, newStorage, options)
 
 	// Why do this before checking err? newTest() can create the test storage and then return an error,
 	// and we want to make sure to clean that up to avoid leaking goroutines.
@@ -180,6 +188,33 @@ func runTest(t testutil.T, input string, engine promql.QueryEngine, newStorage f
 	return nil
 }
 
+type Option interface {
+	apply(*options)
+}
+
+type options struct {
+	skipEvalInfo bool
+	skipEvalWarn bool
+}
+
+type optionFunc func(*options)
+
+func (f optionFunc) apply(o *options) {
+	f(o)
+}
+
+func WithSkipEvalInfo(skipEvalInfo bool) Option {
+	return optionFunc(func(o *options) {
+		o.skipEvalInfo = skipEvalInfo
+	})
+}
+
+func WithSkipEvalWarn(skipEvalWarn bool) Option {
+	return optionFunc(func(o *options) {
+		o.skipEvalWarn = skipEvalWarn
+	})
+}
+
 // test is a sequence of read and write commands that are run
 // against a test storage.
 type test struct {
@@ -194,15 +229,18 @@ type test struct {
 
 	context   context.Context
 	cancelCtx context.CancelFunc
+
+	options options
 }
 
 // newTest returns an initialized empty Test.
-func newTest(t testutil.T, input string, testingMode bool, newStorage func(testutil.T) storage.Storage) (*test, error) {
+func newTest(t testutil.T, input string, testingMode bool, newStorage func(testutil.T) storage.Storage, options options) (*test, error) {
 	test := &test{
 		T:           t,
 		cmds:        []testCommand{},
 		testingMode: testingMode,
 		open:        newStorage,
+		options:     options,
 	}
 	err := test.parse(input)
 	test.clear()
@@ -1145,12 +1183,24 @@ func (t *test) execRangeEval(cmd *evalCmd, engine promql.QueryEngine) error {
 	countWarnings, countInfo := res.Warnings.CountWarningsAndInfo()
 	switch {
 	case !cmd.warn && countWarnings > 0:
+		if t.options.skipEvalWarn {
+			return nil
+		}
 		return fmt.Errorf("unexpected warnings evaluating query %q (line %d): %v", cmd.expr, cmd.line, res.Warnings)
 	case cmd.warn && countWarnings == 0:
+		if t.options.skipEvalWarn {
+			return nil
+		}
 		return fmt.Errorf("expected warnings evaluating query %q (line %d) but got none", cmd.expr, cmd.line)
 	case !cmd.info && countInfo > 0:
+		if t.options.skipEvalInfo {
+			return nil
+		}
 		return fmt.Errorf("unexpected info annotations evaluating query %q (line %d): %v", cmd.expr, cmd.line, res.Warnings)
 	case cmd.info && countInfo == 0:
+		if t.options.skipEvalInfo {
+			return nil
+		}
 		return fmt.Errorf("expected info annotations evaluating query %q (line %d) but got none", cmd.expr, cmd.line)
 	}
 	defer q.Close()
@@ -1199,12 +1249,24 @@ func (t *test) runInstantQuery(iq atModifierTestCase, cmd *evalCmd, engine promq
 	countWarnings, countInfo := res.Warnings.CountWarningsAndInfo()
 	switch {
 	case !cmd.warn && countWarnings > 0:
+		if t.options.skipEvalWarn {
+			return nil
+		}
 		return fmt.Errorf("unexpected warnings evaluating query %q (line %d): %v", iq.expr, cmd.line, res.Warnings)
 	case cmd.warn && countWarnings == 0:
+		if t.options.skipEvalWarn {
+			return nil
+		}
 		return fmt.Errorf("expected warnings evaluating query %q (line %d) but got none", iq.expr, cmd.line)
 	case !cmd.info && countInfo > 0:
+		if t.options.skipEvalInfo {
+			return nil
+		}
 		return fmt.Errorf("unexpected info annotations evaluating query %q (line %d): %v", iq.expr, cmd.line, res.Warnings)
 	case cmd.info && countInfo == 0:
+		if t.options.skipEvalInfo {
+			return nil
+		}
 		return fmt.Errorf("expected info annotations evaluating query %q (line %d) but got none", iq.expr, cmd.line)
 	}
 	err = cmd.compareResult(res.Value)
