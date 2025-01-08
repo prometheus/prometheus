@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	// defaultAlignment overestimated but it should be safe and we count on statx being available to more accuracy.
+	// defaultAlignment is deliberately set higher to cover most setups. We rely on statx for more precise alignment.
 	defaultAlignment = 4096
 	defaultBufSize   = 4096
 )
@@ -56,12 +56,8 @@ type directIOWriter struct {
 }
 
 func newDirectIOWriter(f *os.File, size int) (*directIOWriter, error) {
-	alignmentRqmts, err := fetchDirectIORqmts(f.Fd())
-	switch {
-	case errors.Is(err, errStatxNotSupported):
-		// Use the default requirements
-		alignmentRqmts = defaultDirectIORqmts()
-	case err != nil:
+	alignmentRqmts, err := fileDirectIORqmts(f)
+	if err != nil {
 		return nil, err
 	}
 
@@ -230,6 +226,12 @@ func (b *directIOWriter) Flush() error {
 }
 
 func (b *directIOWriter) Reset(f *os.File) error {
+	alignmentRqmts, err := fileDirectIORqmts(f)
+	if err != nil {
+		return err
+	}
+	b.alignmentRqmts = alignmentRqmts
+
 	if b.buf == nil {
 		b.buf = alignedBlock(defaultBufSize, b.alignmentRqmts)
 	}
@@ -237,12 +239,28 @@ func (b *directIOWriter) Reset(f *os.File) error {
 	if err != nil {
 		return err
 	}
+	b.offsetAlignmentGap = gap
 	b.err = nil
 	b.invalid = false
 	b.n = 0
 	b.f = f
-	b.offsetAlignmentGap = gap
 	return nil
+}
+
+func fileDirectIORqmts(f *os.File) (*directIORqmts, error) {
+	alignmentRqmts, err := fetchDirectIORqmts(f.Fd())
+	switch {
+	case errors.Is(err, errStatxNotSupported):
+		alignmentRqmts = defaultDirectIORqmts()
+	case err != nil:
+		return nil, err
+	}
+
+	if alignmentRqmts.memoryAlign == 0 || alignmentRqmts.offsetAlign == 0 {
+		// This may require some extra testing.
+		return nil, fmt.Errorf("zero alignment requirement is not supported %+v", alignmentRqmts)
+	}
+	return alignmentRqmts, nil
 }
 
 func alignmentOffset(block []byte, requiredAlignment int) int {
@@ -384,5 +402,4 @@ func fetchDirectIORqmts(fd uintptr) (*directIORqmts, error) {
 		memoryAlign: int(stat.Dio_mem_align),
 		offsetAlign: int(stat.Dio_offset_align),
 	}, nil
-
 }

@@ -16,6 +16,7 @@
 package fileutil
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path"
@@ -24,11 +25,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func directIORqmtsForTest(t *testing.T) *directIORqmts {
-	f, err := os.OpenFile(path.Join(t.TempDir(), "foo"), os.O_CREATE|os.O_WRONLY, 0o666)
-	require.NoError(t, err)
+func directIORqmtsForTest(tb testing.TB) *directIORqmts {
+	f, err := os.OpenFile(path.Join(tb.TempDir(), "foo"), os.O_CREATE|os.O_WRONLY, 0o666)
+	require.NoError(tb, err)
 	alignmentRqmts, err := fetchDirectIORqmts(f.Fd())
-	require.NoError(t, err)
+	require.NoError(tb, err)
 	return alignmentRqmts
 }
 
@@ -196,20 +197,8 @@ func TestDirectIOWriter(t *testing.T) {
 	}
 }
 
-// BenchmarkDirectIOWriter XXX
-func BenchmarkDirectIOWriter(b *testing.B) {
-	data := make([]byte, 512*1024*1024+1)
-	for i := 0; i < len(data); i++ {
-		data[i] = byte(i % 251)
-	}
-	// Ensure the block is not aligned to ensure the worst-case scenario for
-	// the Direct I/O Writer.
-	// This approach also helps to achieve a deterministic behavior.
-	if isAligned(data, defaultDirectIORqmts()) {
-		data = data[1:]
-	}
-	chunks := []int{0, 1, 2, 3, 5, 11, 63, 128, 280, 333, 450, 500, 512}
-
+// BenchmarkBufWriter XXX
+func BenchmarkBufWriter(b *testing.B) {
 	newFile := func() *os.File {
 		fileName := path.Join(b.TempDir(), "test")
 		f, err := os.OpenFile(fileName, os.O_CREATE|os.O_WRONLY, 0o666)
@@ -219,31 +208,47 @@ func BenchmarkDirectIOWriter(b *testing.B) {
 		require.NoError(b, err)
 		return f
 	}
-	file := newFile()
 
-	b.SetBytes(int64(len(data)))
-	b.ReportAllocs()
-	b.ResetTimer()
-
-	bw, err := newDirectIOWriter(file, 8*1024*1024)
-	require.NoError(b, err)
-
-	// Uncomment to compare to bufio's Writer.
-	// bw := bufio.NewWriterSize(file, 8*1024*1024)
-
-	for i := 0; i < b.N; i++ {
-		// Write the data in multiple steps.
-		for i := range len(chunks) - 1 {
-			bw.Write(data[chunks[i]*1024*1024 : chunks[i+1]*1024*1024])
-		}
-		bw.Flush()
-		require.NoError(b, file.Sync())
-
-		// Reset to a new file.
-		b.StopTimer()
-		os.Remove(file.Name())
-		file = newFile()
-		b.StartTimer()
-		bw.Reset(file)
+	for _, writer := range []string{"bufioWriter", "directIOWriter"} {
+		b.Run(fmt.Sprintf("sample=%s", writer), func(b *testing.B) {
+			data := make([]byte, 16*1024*1024+1)
+			for i := 0; i < len(data); i++ {
+				data[i] = byte(i % 251)
+			}
+			// Ensure the block is not aligned to always ensure the worst-case
+			// scenario for directIOWriter.
+			if isAligned(data, directIORqmtsForTest(b)) {
+				data = data[1:]
+			}
+			chunks := []int{0, 1, 2, 3, 5, 11, 63, 128, 280, 333, 450, 500, 512}
+		
+			file := newFile()
+		
+			b.SetBytes(int64(len(data)))
+			b.ReportAllocs()
+			b.ResetTimer()
+		
+			bw, err := newDirectIOWriter(file, 8*1024*1024)
+			require.NoError(b, err)
+		
+			// Uncomment to compare to bufio's Writer.
+			// bw := bufio.NewWriterSize(file, 8*1024*1024)
+		
+			for i := 0; i < b.N; i++ {
+				// Write the data in multiple steps.
+				for i := range len(chunks) - 1 {
+					bw.Write(data[chunks[i]*1024*1024 : chunks[i+1]*1024*1024])
+				}
+				bw.Flush()
+				require.NoError(b, file.Sync())
+		
+				// Reset to a new file.
+				b.StopTimer()
+				os.Remove(file.Name())
+				file = newFile()
+				b.StartTimer()
+				bw.Reset(file)
+			}
+		})
 	}
 }
