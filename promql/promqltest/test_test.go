@@ -353,6 +353,44 @@ eval_ordered instant at 50m sort(http_requests)
 `,
 			expectedError: `error in eval sort(http_requests) (line 10): unexpected metric {__name__="http_requests", group="canary", instance="1", job="api-server"} in result, has value 400`,
 		},
+		"instant query with results expected to match provided order, result is in expected order and info annotation is ignored": {
+			input: testData + `
+eval_ordered instant at 50m sort(rate(http_requests[10m]))
+	{group="production", instance="0", job="api-server"} 0.03333333333333333
+	{group="production", instance="1", job="api-server"} 0.06666666666666667
+	{group="canary", instance="0", job="api-server"} 0.1
+	{group="canary", instance="1", job="api-server"} 0.13333333333333333
+`,
+		},
+		"instant query with expected info annotation": {
+			input: testData + `
+eval_info instant at 50m sort(rate(http_requests[10m]))
+	{group="production", instance="0", job="api-server"} 0.03333333333333333
+	{group="production", instance="1", job="api-server"} 0.06666666666666667
+	{group="canary", instance="0", job="api-server"} 0.1
+	{group="canary", instance="1", job="api-server"} 0.13333333333333333
+`,
+		},
+		"instant query with unexpected info annotation": {
+			input: testData + `
+eval instant at 50m sort(rate(http_requests[10m]))
+	{group="production", instance="0", job="api-server"} 0.03333333333333333
+	{group="production", instance="1", job="api-server"} 0.06666666666666667
+	{group="canary", instance="0", job="api-server"} 0.1
+	{group="canary", instance="1", job="api-server"} 0.13333333333333333
+`,
+			expectedError: `unexpected info annotations evaluating query "sort(rate(http_requests[10m]))" (line 10): [PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "http_requests"]`,
+		},
+		"instant query with unexpectedly missing warn annotation": {
+			input: testData + `
+eval_warn instant at 50m sort(rate(http_requests[10m]))
+	{group="production", instance="0", job="api-server"} 0.03333333333333333
+	{group="production", instance="1", job="api-server"} 0.06666666666666667
+	{group="canary", instance="0", job="api-server"} 0.1
+	{group="canary", instance="1", job="api-server"} 0.13333333333333333
+`,
+			expectedError: `expected warnings evaluating query "sort(rate(http_requests[10m]))" (line 10) but got none`,
+		},
 		"instant query with invalid timestamp": {
 			input:         `eval instant at abc123 vector(0)`,
 			expectedError: `error in eval vector(0) (line 1): invalid timestamp definition "abc123": not a valid duration string: "abc123"`,

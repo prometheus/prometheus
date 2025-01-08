@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/almost"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/convertnhcb"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -692,6 +693,24 @@ func (ev *evalCmd) expectMetric(pos int, m labels.Labels, vals ...parser.Sequenc
 	ev.expected[h] = entry{pos: pos, vals: vals}
 }
 
+// checkAnnotations asserts if the annotations match the expectations.
+func (ev *evalCmd) checkAnnotations(expr string, annos annotations.Annotations) error {
+	countWarnings, countInfo := annos.CountWarningsAndInfo()
+	switch {
+	case ev.ordered:
+		// Ignore annotations if testing for order.
+	case !ev.warn && countWarnings > 0:
+		return fmt.Errorf("unexpected warnings evaluating query %q (line %d): %v", expr, ev.line, annos.AsErrors())
+	case ev.warn && countWarnings == 0:
+		return fmt.Errorf("expected warnings evaluating query %q (line %d) but got none", expr, ev.line)
+	case !ev.info && countInfo > 0:
+		return fmt.Errorf("unexpected info annotations evaluating query %q (line %d): %v", expr, ev.line, annos.AsErrors())
+	case ev.info && countInfo == 0:
+		return fmt.Errorf("expected info annotations evaluating query %q (line %d) but got none", expr, ev.line)
+	}
+	return nil
+}
+
 // compareResult compares the result value with the defined expectation.
 func (ev *evalCmd) compareResult(result parser.Value) error {
 	switch val := result.(type) {
@@ -1131,6 +1150,7 @@ func (t *test) execRangeEval(cmd *evalCmd, engine promql.QueryEngine) error {
 	if err != nil {
 		return fmt.Errorf("error creating range query for %q (line %d): %w", cmd.expr, cmd.line, err)
 	}
+	defer q.Close()
 	res := q.Exec(t.context)
 	if res.Err != nil {
 		if cmd.fail {
@@ -1142,18 +1162,9 @@ func (t *test) execRangeEval(cmd *evalCmd, engine promql.QueryEngine) error {
 	if res.Err == nil && cmd.fail {
 		return fmt.Errorf("expected error evaluating query %q (line %d) but got none", cmd.expr, cmd.line)
 	}
-	countWarnings, countInfo := res.Warnings.CountWarningsAndInfo()
-	switch {
-	case !cmd.warn && countWarnings > 0:
-		return fmt.Errorf("unexpected warnings evaluating query %q (line %d): %v", cmd.expr, cmd.line, res.Warnings)
-	case cmd.warn && countWarnings == 0:
-		return fmt.Errorf("expected warnings evaluating query %q (line %d) but got none", cmd.expr, cmd.line)
-	case !cmd.info && countInfo > 0:
-		return fmt.Errorf("unexpected info annotations evaluating query %q (line %d): %v", cmd.expr, cmd.line, res.Warnings)
-	case cmd.info && countInfo == 0:
-		return fmt.Errorf("expected info annotations evaluating query %q (line %d) but got none", cmd.expr, cmd.line)
+	if err := cmd.checkAnnotations(cmd.expr, res.Warnings); err != nil {
+		return err
 	}
-	defer q.Close()
 
 	if err := cmd.compareResult(res.Value); err != nil {
 		return fmt.Errorf("error in %s %s (line %d): %w", cmd, cmd.expr, cmd.line, err)
@@ -1196,16 +1207,8 @@ func (t *test) runInstantQuery(iq atModifierTestCase, cmd *evalCmd, engine promq
 	if res.Err == nil && cmd.fail {
 		return fmt.Errorf("expected error evaluating query %q (line %d) but got none", iq.expr, cmd.line)
 	}
-	countWarnings, countInfo := res.Warnings.CountWarningsAndInfo()
-	switch {
-	case !cmd.warn && countWarnings > 0:
-		return fmt.Errorf("unexpected warnings evaluating query %q (line %d): %v", iq.expr, cmd.line, res.Warnings)
-	case cmd.warn && countWarnings == 0:
-		return fmt.Errorf("expected warnings evaluating query %q (line %d) but got none", iq.expr, cmd.line)
-	case !cmd.info && countInfo > 0:
-		return fmt.Errorf("unexpected info annotations evaluating query %q (line %d): %v", iq.expr, cmd.line, res.Warnings)
-	case cmd.info && countInfo == 0:
-		return fmt.Errorf("expected info annotations evaluating query %q (line %d) but got none", iq.expr, cmd.line)
+	if err := cmd.checkAnnotations(iq.expr, res.Warnings); err != nil {
+		return err
 	}
 	err = cmd.compareResult(res.Value)
 	if err != nil {
@@ -1218,11 +1221,11 @@ func (t *test) runInstantQuery(iq atModifierTestCase, cmd *evalCmd, engine promq
 	if err != nil {
 		return fmt.Errorf("error creating range query for %q (line %d): %w", cmd.expr, cmd.line, err)
 	}
+	defer q.Close()
 	rangeRes := q.Exec(t.context)
 	if rangeRes.Err != nil {
 		return fmt.Errorf("error evaluating query %q (line %d) in range mode: %w", iq.expr, cmd.line, rangeRes.Err)
 	}
-	defer q.Close()
 	if cmd.ordered {
 		// Range queries are always sorted by labels, so skip this test case that expects results in a particular order.
 		return nil
