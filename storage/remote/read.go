@@ -311,7 +311,6 @@ func mergeSeriesWithExemplars(ss storage.SeriesSet, exemplars []exemplar.QueryRe
 		}
 	}
 
-	// Wrap the original SeriesSet to inject exemplars into the series.
 	return &seriesSetWithExemplars{
 		SeriesSet:   ss,
 		exemplarMap: exemplarMap,
@@ -323,7 +322,6 @@ type seriesSetWithExemplars struct {
 	exemplarMap map[uint64][]prompb.Exemplar
 }
 
-// At returns a series with exemplars if they exist for the series' labels.
 func (sswe *seriesSetWithExemplars) At() storage.Series {
 	series := sswe.SeriesSet.At()
 	key := series.Labels().Hash()
