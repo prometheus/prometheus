@@ -436,6 +436,8 @@ func NewEngine(opts EngineOpts) *Engine {
 }
 
 // Close closes ng.
+// Callers must ensure the engine is really no longer in use before calling this to avoid
+// issues failures like in https://github.com/prometheus/prometheus/issues/15232
 func (ng *Engine) Close() error {
 	if ng == nil {
 		return nil

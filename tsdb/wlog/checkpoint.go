@@ -81,7 +81,8 @@ func DeleteCheckpoints(dir string, maxIndex int) error {
 	return errs.Err()
 }
 
-const checkpointPrefix = "checkpoint."
+// CheckpointPrefix is the prefix used for checkpoint files.
+const CheckpointPrefix = "checkpoint."
 
 // Checkpoint creates a compacted checkpoint of segments in range [from, to] in the given WAL.
 // It includes the most recent checkpoint if it exists.
@@ -221,11 +222,27 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 				}
 			}
 			if len(repl) > 0 {
-				buf = enc.HistogramSamples(repl, buf)
+				buf, _ = enc.HistogramSamples(repl, buf)
 			}
 			stats.TotalSamples += len(histogramSamples)
 			stats.DroppedSamples += len(histogramSamples) - len(repl)
-
+		case record.CustomBucketsHistogramSamples:
+			histogramSamples, err = dec.HistogramSamples(rec, histogramSamples)
+			if err != nil {
+				return nil, fmt.Errorf("decode histogram samples: %w", err)
+			}
+			// Drop irrelevant histogramSamples in place.
+			repl := histogramSamples[:0]
+			for _, h := range histogramSamples {
+				if h.T >= mint {
+					repl = append(repl, h)
+				}
+			}
+			if len(repl) > 0 {
+				buf = enc.CustomBucketsHistogramSamples(repl, buf)
+			}
+			stats.TotalSamples += len(histogramSamples)
+			stats.DroppedSamples += len(histogramSamples) - len(repl)
 		case record.FloatHistogramSamples:
 			floatHistogramSamples, err = dec.FloatHistogramSamples(rec, floatHistogramSamples)
 			if err != nil {
@@ -239,11 +256,27 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 				}
 			}
 			if len(repl) > 0 {
-				buf = enc.FloatHistogramSamples(repl, buf)
+				buf, _ = enc.FloatHistogramSamples(repl, buf)
 			}
 			stats.TotalSamples += len(floatHistogramSamples)
 			stats.DroppedSamples += len(floatHistogramSamples) - len(repl)
-
+		case record.CustomBucketsFloatHistogramSamples:
+			floatHistogramSamples, err = dec.FloatHistogramSamples(rec, floatHistogramSamples)
+			if err != nil {
+				return nil, fmt.Errorf("decode float histogram samples: %w", err)
+			}
+			// Drop irrelevant floatHistogramSamples in place.
+			repl := floatHistogramSamples[:0]
+			for _, fh := range floatHistogramSamples {
+				if fh.T >= mint {
+					repl = append(repl, fh)
+				}
+			}
+			if len(repl) > 0 {
+				buf = enc.CustomBucketsFloatHistogramSamples(repl, buf)
+			}
+			stats.TotalSamples += len(floatHistogramSamples)
+			stats.DroppedSamples += len(floatHistogramSamples) - len(repl)
 		case record.Tombstones:
 			tstones, err = dec.Tombstones(rec, tstones)
 			if err != nil {
@@ -363,7 +396,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 }
 
 func checkpointDir(dir string, i int) string {
-	return filepath.Join(dir, fmt.Sprintf(checkpointPrefix+"%08d", i))
+	return filepath.Join(dir, fmt.Sprintf(CheckpointPrefix+"%08d", i))
 }
 
 type checkpointRef struct {
@@ -379,13 +412,13 @@ func listCheckpoints(dir string) (refs []checkpointRef, err error) {
 
 	for i := 0; i < len(files); i++ {
 		fi := files[i]
-		if !strings.HasPrefix(fi.Name(), checkpointPrefix) {
+		if !strings.HasPrefix(fi.Name(), CheckpointPrefix) {
 			continue
 		}
 		if !fi.IsDir() {
 			return nil, fmt.Errorf("checkpoint %s is not a directory", fi.Name())
 		}
-		idx, err := strconv.Atoi(fi.Name()[len(checkpointPrefix):])
+		idx, err := strconv.Atoi(fi.Name()[len(CheckpointPrefix):])
 		if err != nil {
 			continue
 		}

@@ -943,17 +943,37 @@ func (a *headAppender) log() error {
 		}
 	}
 	if len(a.histograms) > 0 {
-		rec = enc.HistogramSamples(a.histograms, buf)
+		var customBucketsHistograms []record.RefHistogramSample
+		rec, customBucketsHistograms = enc.HistogramSamples(a.histograms, buf)
 		buf = rec[:0]
-		if err := a.head.wal.Log(rec); err != nil {
-			return fmt.Errorf("log histograms: %w", err)
+		if len(rec) > 0 {
+			if err := a.head.wal.Log(rec); err != nil {
+				return fmt.Errorf("log histograms: %w", err)
+			}
+		}
+
+		if len(customBucketsHistograms) > 0 {
+			rec = enc.CustomBucketsHistogramSamples(customBucketsHistograms, buf)
+			if err := a.head.wal.Log(rec); err != nil {
+				return fmt.Errorf("log custom buckets histograms: %w", err)
+			}
 		}
 	}
 	if len(a.floatHistograms) > 0 {
-		rec = enc.FloatHistogramSamples(a.floatHistograms, buf)
+		var customBucketsFloatHistograms []record.RefFloatHistogramSample
+		rec, customBucketsFloatHistograms = enc.FloatHistogramSamples(a.floatHistograms, buf)
 		buf = rec[:0]
-		if err := a.head.wal.Log(rec); err != nil {
-			return fmt.Errorf("log float histograms: %w", err)
+		if len(rec) > 0 {
+			if err := a.head.wal.Log(rec); err != nil {
+				return fmt.Errorf("log float histograms: %w", err)
+			}
+		}
+
+		if len(customBucketsFloatHistograms) > 0 {
+			rec = enc.CustomBucketsFloatHistogramSamples(customBucketsFloatHistograms, buf)
+			if err := a.head.wal.Log(rec); err != nil {
+				return fmt.Errorf("log custom buckets float histograms: %w", err)
+			}
 		}
 	}
 	// Exemplars should be logged after samples (float/native histogram/etc),
@@ -1070,12 +1090,24 @@ func (acc *appenderCommitContext) collectOOORecords(a *headAppender) {
 		acc.oooRecords = append(acc.oooRecords, r)
 	}
 	if len(acc.wblHistograms) > 0 {
-		r := acc.enc.HistogramSamples(acc.wblHistograms, a.head.getBytesBuffer())
-		acc.oooRecords = append(acc.oooRecords, r)
+		r, customBucketsHistograms := acc.enc.HistogramSamples(acc.wblHistograms, a.head.getBytesBuffer())
+		if len(r) > 0 {
+			acc.oooRecords = append(acc.oooRecords, r)
+		}
+		if len(customBucketsHistograms) > 0 {
+			r := acc.enc.CustomBucketsHistogramSamples(customBucketsHistograms, a.head.getBytesBuffer())
+			acc.oooRecords = append(acc.oooRecords, r)
+		}
 	}
 	if len(acc.wblFloatHistograms) > 0 {
-		r := acc.enc.FloatHistogramSamples(acc.wblFloatHistograms, a.head.getBytesBuffer())
-		acc.oooRecords = append(acc.oooRecords, r)
+		r, customBucketsFloatHistograms := acc.enc.FloatHistogramSamples(acc.wblFloatHistograms, a.head.getBytesBuffer())
+		if len(r) > 0 {
+			acc.oooRecords = append(acc.oooRecords, r)
+		}
+		if len(customBucketsFloatHistograms) > 0 {
+			r := acc.enc.CustomBucketsFloatHistogramSamples(customBucketsFloatHistograms, a.head.getBytesBuffer())
+			acc.oooRecords = append(acc.oooRecords, r)
+		}
 	}
 
 	acc.wblSamples = nil

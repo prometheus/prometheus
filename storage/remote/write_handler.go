@@ -48,6 +48,8 @@ type writeHandler struct {
 	samplesAppendedWithoutMetadata prometheus.Counter
 
 	acceptedProtoMsgs map[config.RemoteWriteProtoMsg]struct{}
+
+	ingestCTZeroSample bool
 }
 
 const maxAheadTime = 10 * time.Minute
@@ -57,7 +59,7 @@ const maxAheadTime = 10 * time.Minute
 //
 // NOTE(bwplotka): When accepting v2 proto and spec, partial writes are possible
 // as per https://prometheus.io/docs/specs/remote_write_spec_2_0/#partial-write.
-func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedProtoMsgs []config.RemoteWriteProtoMsg) http.Handler {
+func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedProtoMsgs []config.RemoteWriteProtoMsg, ingestCTZeroSample bool) http.Handler {
 	protoMsgs := map[config.RemoteWriteProtoMsg]struct{}{}
 	for _, acc := range acceptedProtoMsgs {
 		protoMsgs[acc] = struct{}{}
@@ -78,6 +80,8 @@ func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable 
 			Name:      "remote_write_without_metadata_appended_samples_total",
 			Help:      "The total number of received remote write samples (and histogram samples) which were ingested without corresponding metadata.",
 		}),
+
+		ingestCTZeroSample: ingestCTZeroSample,
 	}
 	return h
 }
@@ -394,6 +398,17 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		var ref storage.SeriesRef
 
 		// Samples.
+		if h.ingestCTZeroSample && len(ts.Samples) > 0 && ts.Samples[0].Timestamp != 0 && ts.CreatedTimestamp != 0 {
+			// CT only needs to be ingested for the first sample, it will be considered
+			// out of order for the rest.
+			ref, err = app.AppendCTZeroSample(ref, ls, ts.Samples[0].Timestamp, ts.CreatedTimestamp)
+			if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) {
+				// Even for the first sample OOO is a common scenario because
+				// we can't tell if a CT was already ingested in a previous request.
+				// We ignore the error.
+				h.logger.Debug("Error when appending CT in remote write request", "err", err, "series", ls.String(), "created_timestamp", ts.CreatedTimestamp, "timestamp", ts.Samples[0].Timestamp)
+			}
+		}
 		for _, s := range ts.Samples {
 			ref, err = app.Append(ref, ls, s.GetTimestamp(), s.GetValue())
 			if err == nil {
@@ -415,6 +430,17 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 
 		// Native Histograms.
 		for _, hp := range ts.Histograms {
+			if h.ingestCTZeroSample && hp.Timestamp != 0 && ts.CreatedTimestamp != 0 {
+				// Differently from samples, we need to handle CT for each histogram instead of just the first one.
+				// This is because histograms and float histograms are stored separately, even if they have the same labels.
+				ref, err = h.handleHistogramZeroSample(app, ref, ls, hp, ts.CreatedTimestamp)
+				if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) {
+					// Even for the first sample OOO is a common scenario because
+					// we can't tell if a CT was already ingested in a previous request.
+					// We ignore the error.
+					h.logger.Debug("Error when appending CT in remote write request", "err", err, "series", ls.String(), "created_timestamp", ts.CreatedTimestamp, "timestamp", hp.Timestamp)
+				}
+			}
 			if hp.IsFloatHistogram() {
 				ref, err = app.AppendHistogram(ref, ls, hp.Timestamp, nil, hp.ToFloatHistogram())
 			} else {
@@ -477,6 +503,18 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 	}
 	// TODO(bwplotka): Better concat formatting? Perhaps add size limit?
 	return samplesWithoutMetadata, http.StatusBadRequest, errors.Join(badRequestErrs...)
+}
+
+// handleHistogramZeroSample appends CT as a zero-value sample with CT value as the sample timestamp.
+// It doens't return errors in case of out of order CT.
+func (h *writeHandler) handleHistogramZeroSample(app storage.Appender, ref storage.SeriesRef, l labels.Labels, hist writev2.Histogram, ct int64) (storage.SeriesRef, error) {
+	var err error
+	if hist.IsFloatHistogram() {
+		ref, err = app.AppendHistogramCTZeroSample(ref, l, hist.Timestamp, ct, nil, hist.ToFloatHistogram())
+	} else {
+		ref, err = app.AppendHistogramCTZeroSample(ref, l, hist.Timestamp, ct, hist.ToIntHistogram(), nil)
+	}
+	return ref, err
 }
 
 // NewOTLPWriteHandler creates a http.Handler that accepts OTLP write requests and

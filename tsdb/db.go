@@ -2358,7 +2358,7 @@ func isTmpDir(fi fs.DirEntry) bool {
 	fn := fi.Name()
 	ext := filepath.Ext(fn)
 	if ext == tmpForDeletionBlockDirSuffix || ext == tmpForCreationBlockDirSuffix || ext == tmpLegacy {
-		if strings.HasPrefix(fn, "checkpoint.") {
+		if strings.HasPrefix(fn, wlog.CheckpointPrefix) {
 			return true
 		}
 		if strings.HasPrefix(fn, chunkSnapshotPrefix) {

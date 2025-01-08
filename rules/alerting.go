@@ -143,8 +143,9 @@ type AlertingRule struct {
 
 	logger *slog.Logger
 
-	noDependentRules  *atomic.Bool
-	noDependencyRules *atomic.Bool
+	dependenciesMutex sync.RWMutex
+	dependentRules    []Rule
+	dependencyRules   []Rule
 }
 
 // NewAlertingRule constructs a new AlertingRule.
@@ -171,8 +172,6 @@ func NewAlertingRule(
 		evaluationTimestamp: atomic.NewTime(time.Time{}),
 		evaluationDuration:  atomic.NewDuration(0),
 		lastError:           atomic.NewError(nil),
-		noDependentRules:    atomic.NewBool(false),
-		noDependencyRules:   atomic.NewBool(false),
 	}
 }
 
@@ -316,20 +315,54 @@ func (r *AlertingRule) Restored() bool {
 	return r.restored.Load()
 }
 
-func (r *AlertingRule) SetNoDependentRules(noDependentRules bool) {
-	r.noDependentRules.Store(noDependentRules)
+func (r *AlertingRule) SetDependentRules(dependents []Rule) {
+	r.dependenciesMutex.Lock()
+	defer r.dependenciesMutex.Unlock()
+
+	r.dependentRules = make([]Rule, len(dependents))
+	copy(r.dependentRules, dependents)
 }
 
 func (r *AlertingRule) NoDependentRules() bool {
-	return r.noDependentRules.Load()
+	r.dependenciesMutex.RLock()
+	defer r.dependenciesMutex.RUnlock()
+
+	if r.dependentRules == nil {
+		return false // We don't know if there are dependent rules.
+	}
+
+	return len(r.dependentRules) == 0
 }
 
-func (r *AlertingRule) SetNoDependencyRules(noDependencyRules bool) {
-	r.noDependencyRules.Store(noDependencyRules)
+func (r *AlertingRule) DependentRules() []Rule {
+	r.dependenciesMutex.RLock()
+	defer r.dependenciesMutex.RUnlock()
+	return r.dependentRules
+}
+
+func (r *AlertingRule) SetDependencyRules(dependencies []Rule) {
+	r.dependenciesMutex.Lock()
+	defer r.dependenciesMutex.Unlock()
+
+	r.dependencyRules = make([]Rule, len(dependencies))
+	copy(r.dependencyRules, dependencies)
 }
 
 func (r *AlertingRule) NoDependencyRules() bool {
-	return r.noDependencyRules.Load()
+	r.dependenciesMutex.RLock()
+	defer r.dependenciesMutex.RUnlock()
+
+	if r.dependencyRules == nil {
+		return false // We don't know if there are dependency rules.
+	}
+
+	return len(r.dependencyRules) == 0
+}
+
+func (r *AlertingRule) DependencyRules() []Rule {
+	r.dependenciesMutex.RLock()
+	defer r.dependenciesMutex.RUnlock()
+	return r.dependencyRules
 }
 
 // resolvedRetention is the duration for which a resolved alert instance
