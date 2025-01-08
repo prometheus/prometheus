@@ -1059,9 +1059,13 @@ func TestWALFlushedOnDBClose(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
+	dbDir := db.Dir()
+	dbOpts := db.opts
 	require.NoError(t, db.Close())
 
-	db = newTestDB(t, withDir(db.Dir()))
+	db, err = Open(dbDir, nil, nil, dbOpts, nil)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, db.Close()) }()
 
 	q, err := db.Querier(0, 1)
 	require.NoError(t, err)
@@ -6842,6 +6846,7 @@ func testWBLAndMmapReplay(t *testing.T, scenario sampleTypeScenario) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 4 * time.Hour.Milliseconds()
+	opts.StartupMinRetentionTime = 0
 
 	db := newTestDB(t, withOpts(opts))
 	db.DisableCompactions()
@@ -7759,6 +7764,7 @@ func testOOOMmapCorruption(t *testing.T, scenario sampleTypeScenario) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 10
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
+	opts.StartupMinRetentionTime = 0
 
 	db := newTestDB(t, withOpts(opts))
 
