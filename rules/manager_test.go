@@ -2326,6 +2326,41 @@ func TestUpdateWhenStopped(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestGroup_Eval_RaceConditionOnStoppingGroupEvaluationWhileRulesAreEvaluatedConcurrently(t *testing.T) {
+	storage := teststorage.New(t)
+	t.Cleanup(func() { storage.Close() })
+
+	var (
+		inflightQueries atomic.Int32
+		maxInflight     atomic.Int32
+		maxConcurrency  int64 = 10
+	)
+
+	files := []string{"fixtures/rules_multiple_groups.yaml"}
+	files2 := []string{"fixtures/rules.yaml"}
+
+	ruleManager := NewManager(optsFactory(storage, &maxInflight, &inflightQueries, maxConcurrency))
+	go func() {
+		ruleManager.Run()
+	}()
+	<-ruleManager.block
+
+	// Update the group a decent number of times to simulate start and stopping in the middle of an evaluation.
+	for i := 0; i < 10; i++ {
+		err := ruleManager.Update(time.Second, files, labels.EmptyLabels(), "", nil)
+		require.NoError(t, err)
+
+		// Wait half of the query execution duration and then change the rule groups loaded by the manager
+		// so that the previous rule group will be interrupted while the query is executing.
+		time.Sleep(artificialDelay / 2)
+
+		err = ruleManager.Update(time.Second, files2, labels.EmptyLabels(), "", nil)
+		require.NoError(t, err)
+	}
+
+	ruleManager.Stop()
+}
+
 const artificialDelay = 250 * time.Millisecond
 
 func optsFactory(storage storage.Storage, maxInflight, inflightQueries *atomic.Int32, maxConcurrent int64) *ManagerOptions {
