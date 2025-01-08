@@ -7747,6 +7747,7 @@ func TestWBLCorruption(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
+	opts.StartupMinRetentionTime = 0
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
