@@ -344,7 +344,7 @@ func (m *Manager) LoadGroups(
 			// Check dependencies between rules and store it on the Rule itself.
 			m.opts.RuleDependencyController.AnalyseRules(rules)
 
-			groups[GroupKey(fn, rg.Name)] = NewGroup(GroupOptions{
+			g := NewGroup(GroupOptions{
 				Name:              rg.Name,
 				File:              fn,
 				Interval:          itv,
@@ -356,6 +356,14 @@ func (m *Manager) LoadGroups(
 				done:              m.done,
 				EvalIterationFunc: groupEvalIterationFunc,
 			})
+
+			// Calculate the group's concurrency batches.
+			if ctrl := m.opts.RuleConcurrencyController; ctrl != nil {
+				g.concurrencyBatches = ctrl.SplitGroupIntoBatches(m.opts.Context, g)
+				m.logger.Info("calculated concurrency batches", "group", g.name, "rules", len(g.rules), "batches", len(g.concurrencyBatches))
+			}
+
+			groups[GroupKey(fn, rg.Name)] = g
 		}
 	}
 
@@ -550,11 +558,7 @@ func (c sequentialRuleEvalController) Allow(_ context.Context, _ *Group, _ Rule)
 }
 
 func (c sequentialRuleEvalController) SplitGroupIntoBatches(_ context.Context, g *Group) []ConcurrentRules {
-	order := make([]ConcurrentRules, len(g.rules))
-	for i := range g.rules {
-		order[i] = []int{i}
-	}
-	return order
+	return nil // When a zero-value slice is used, the rules are evaluated sequentially.
 }
 
 func (c sequentialRuleEvalController) Done(_ context.Context) {}

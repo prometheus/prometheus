@@ -59,6 +59,10 @@ type Group struct {
 	lastEvaluation        time.Time     // Wall-clock time of most recent evaluation.
 	lastEvalTimestamp     time.Time     // Time slot used for most recent evaluation.
 
+	// If set, rules will be evaluated concurrently.
+	// This is calculated when the group is loaded by the RuleConcurrencyController.
+	concurrencyBatches []ConcurrentRules
+
 	shouldRestore bool
 
 	markStale   bool
@@ -638,12 +642,27 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		}
 	}
 
-	var wg sync.WaitGroup
 	ctrl := g.opts.RuleConcurrencyController
+	concurrencyBatches := g.concurrencyBatches
 	if ctrl == nil {
+		g.logger.With("group", g.Name()).Warn("Rule concurrency controller not set, but concurrencyBatches are, this shouldn't happen. Evaluating rules sequentially.")
 		ctrl = sequentialRuleEvalController{}
+		concurrencyBatches = nil
 	}
-	for _, batch := range ctrl.SplitGroupIntoBatches(ctx, g) {
+
+	// Evaluate rules sequentially.
+	if len(concurrencyBatches) == 0 {
+		for i, rule := range g.rules {
+			eval(i, rule, nil)
+		}
+		g.metrics.GroupSamples.WithLabelValues(GroupKey(g.File(), g.Name())).Set(samplesTotal.Load())
+		g.cleanupStaleSeries(ctx, ts)
+		return
+	}
+
+	// Evaluate rules concurrently.
+	var wg sync.WaitGroup
+	for _, batch := range g.concurrencyBatches {
 		for _, ruleIndex := range batch {
 			select {
 			case <-g.done:

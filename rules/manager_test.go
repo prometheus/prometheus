@@ -1988,13 +1988,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 			DefaultEvalIterationFunc(ctx, group, start)
 
 			// Expected evaluation order
-			order := group.opts.RuleConcurrencyController.SplitGroupIntoBatches(ctx, group)
-			require.Equal(t, []ConcurrentRules{
-				{0},
-				{1},
-				{2},
-				{3},
-			}, order)
+			require.Nil(t, group.concurrencyBatches)
 
 			// Never expect more than 1 inflight query at a time.
 			require.EqualValues(t, 1, maxInflight.Load())
@@ -2075,10 +2069,9 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 			DefaultEvalIterationFunc(ctx, group, start)
 
 			// Expected evaluation order (isn't affected by concurrency settings)
-			order := group.opts.RuleConcurrencyController.SplitGroupIntoBatches(ctx, group)
 			require.Equal(t, []ConcurrentRules{
 				{0, 1, 2, 3, 4, 5},
-			}, order)
+			}, group.concurrencyBatches)
 
 			// Max inflight can be 1 synchronous eval and up to MaxConcurrentEvals concurrent evals.
 			require.EqualValues(t, opts.MaxConcurrentEvals+1, maxInflight.Load())
@@ -2120,10 +2113,9 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 			DefaultEvalIterationFunc(ctx, group, start)
 
 			// Expected evaluation order
-			order := group.opts.RuleConcurrencyController.SplitGroupIntoBatches(ctx, group)
 			require.Equal(t, []ConcurrentRules{
 				{0, 1, 2, 3, 4, 5},
-			}, order)
+			}, group.concurrencyBatches)
 
 			// Max inflight can be up to MaxConcurrentEvals concurrent evals, since there is sufficient concurrency to run all rules at once.
 			require.LessOrEqual(t, int64(maxInflight.Load()), opts.MaxConcurrentEvals)
@@ -2205,11 +2197,10 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 		start := time.Now()
 
 		// Expected evaluation order
-		order := group.opts.RuleConcurrencyController.SplitGroupIntoBatches(ctx, group)
 		require.Equal(t, []ConcurrentRules{
 			{0, 4},
 			{1, 2, 3, 5, 6, 7},
-		}, order)
+		}, group.concurrencyBatches)
 
 		group.Eval(ctx, start)
 
@@ -2251,13 +2242,12 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 		start := time.Now()
 
 		// Expected evaluation order
-		order := group.opts.RuleConcurrencyController.SplitGroupIntoBatches(ctx, group)
 		require.Equal(t, []ConcurrentRules{
 			{0, 1},
 			{2},
 			{3},
 			{4, 5, 6},
-		}, order)
+		}, group.concurrencyBatches)
 
 		group.Eval(ctx, start)
 
