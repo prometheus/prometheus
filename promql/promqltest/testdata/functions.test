@@ -929,35 +929,58 @@ eval instant at 1m avg_over_time(metric[2m])
 # Tests for stddev_over_time and stdvar_over_time.
 clear
 load 10s
-  metric 0 8 8 2 3
+	metric 0 8 8 2 3
+	metric_histogram{type="only_histogram"} {{schema:1 sum:2 count:3}}x5
+	metric_histogram{type="mix"} 1 1 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}}
 
 eval instant at 1m stdvar_over_time(metric[2m])
-  {} 10.56
+	{} 10.56
 
 eval instant at 1m stddev_over_time(metric[2m])
-  {} 3.249615
+	{} 3.249615
 
 eval instant at 1m stddev_over_time((metric[2m]))
-  {} 3.249615
+	{} 3.249615
+
+# Tests for stddev_over_time and stdvar_over_time with histograms.
+eval instant at 1m stddev_over_time(metric_histogram{type="only_histogram"}[2m])
+	#empty
+
+eval_info instant at 1m stddev_over_time(metric_histogram{type="mix"}[2m])
+	{type="mix"} 0
+
+eval instant at 1m stdvar_over_time(metric_histogram{type="only_histogram"}[2m])
+	#empty
+
+eval_info instant at 1m stdvar_over_time(metric_histogram{type="mix"}[2m])
+	{type="mix"} 0
 
 # Tests for stddev_over_time and stdvar_over_time #4927.
 clear
 load 10s
-  metric 1.5990505637277868 1.5990505637277868 1.5990505637277868
+	metric 1.5990505637277868 1.5990505637277868 1.5990505637277868
 
 eval instant at 1m stdvar_over_time(metric[1m])
-  {} 0
+	{} 0
 
 eval instant at 1m stddev_over_time(metric[1m])
-  {} 0
+	{} 0
 
 # Tests for mad_over_time.
 clear
 load 10s
-  metric 4 6 2 1 999 1 2
+	metric 4 6 2 1 999 1 2
+	metric_histogram{type="only_histogram"} {{schema:1 sum:2 count:3}}x5
+	metric_histogram{type="mix"} 1 1 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}}
 
 eval instant at 70s mad_over_time(metric[70s])
-  {} 1
+	{} 1
+
+eval instant at 70s mad_over_time(metric_histogram{type="only_histogram"}[70s])
+	#empty
+
+eval_info instant at 70s mad_over_time(metric_histogram{type="mix"}[70s])
+	{type="mix"} 0
 
 # Tests for quantile_over_time
 clear
@@ -966,6 +989,8 @@ load 10s
 	data{test="two samples"} 0 1
 	data{test="three samples"} 0 1 2
 	data{test="uneven samples"} 0 1 4
+	data_histogram{test="only histogram samples"} {{schema:0 sum:1 count:2}}x4
+	data_histogram{test="mix samples"} 0 1 2 {{schema:0 sum:1 count:2}}x2
 
 eval instant at 1m quantile_over_time(0, data[2m])
 	{test="two samples"} 0
@@ -1006,6 +1031,12 @@ eval_warn instant at 1m (quantile_over_time(2, (data[2m])))
 	{test="two samples"} +Inf
 	{test="three samples"} +Inf
 	{test="uneven samples"} +Inf
+
+eval instant at 1m quantile_over_time(0.5, data_histogram{test="only histogram samples"}[2m])
+	#empty
+
+eval_info instant at 1m quantile_over_time(0.5, data_histogram{test="mix samples"}[2m])
+	{test="mix samples"} 1
 
 clear
 
@@ -1120,15 +1151,17 @@ load 5m
 
 eval_fail instant at 0m changes({__name__=~'testmetric1|testmetric2'}[5m])
 
-# Tests for *_over_time
 clear
 
+# Tests for *_over_time
 load 10s
 	data{type="numbers"} 2 0 3
 	data{type="some_nan"} 2 0 NaN
 	data{type="some_nan2"} 2 NaN 1
 	data{type="some_nan3"} NaN 0 1
 	data{type="only_nan"} NaN NaN NaN
+	data_histogram{type="only_histogram"} {{schema:0 sum:1 count:2}} {{schema:0 sum:2 count:3}} {{schema:0 sum:3 count:4}}
+	data_histogram{type="mix_samples"} 0 1 {{schema:0 sum:1 count:2}} {{schema:0 sum:2 count:3}}
 
 eval instant at 1m min_over_time(data[2m])
 	{type="numbers"} 0
@@ -1137,6 +1170,12 @@ eval instant at 1m min_over_time(data[2m])
 	{type="some_nan3"} 0
 	{type="only_nan"} NaN
 
+eval instant at 1m min_over_time(data_histogram{type="only_histogram"}[2m])
+	#empty
+
+eval_info instant at 1m min_over_time(data_histogram{type="mix_samples"}[2m])
+	{type="mix_samples"} 0
+
 eval instant at 1m max_over_time(data[2m])
 	{type="numbers"} 3
 	{type="some_nan"} 2
@@ -1144,12 +1183,29 @@ eval instant at 1m max_over_time(data[2m])
 	{type="some_nan3"} 1
 	{type="only_nan"} NaN
 
-eval instant at 1m last_over_time(data[2m])
+eval instant at 1m max_over_time(data_histogram{type="only_histogram"}[2m])
+	#empty
+
+eval_info instant at 1m max_over_time(data_histogram{type="mix_samples"}[2m])
+	{type="mix_samples"} 1
+
+eval instant at 1m last_over_time({__name__=~"data(_histogram)?"}[2m])
 	data{type="numbers"} 3
 	data{type="some_nan"} NaN
 	data{type="some_nan2"} 1
 	data{type="some_nan3"} 1
 	data{type="only_nan"} NaN
+	data_histogram{type="only_histogram"} {{schema:0 sum:3 count:4}}
+	data_histogram{type="mix_samples"} {{schema:0 sum:2 count:3}}
+
+eval instant at 1m count_over_time({__name__=~"data(_histogram)?"}[2m])
+	{type="numbers"} 3
+	{type="some_nan"} 3
+	{type="some_nan2"} 3
+	{type="some_nan3"} 3
+	{type="only_nan"} 3
+	{type="only_histogram"} 3
+	{type="mix_samples"} 4
 
 clear
 

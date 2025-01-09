@@ -1164,6 +1164,49 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				},
 			},
 		},
+		// Only matrix and vector responses are limited/truncated. String and scalar responses aren't truncated.
+		{
+			endpoint: api.query,
+			query: url.Values{
+				"query": []string{"2"},
+				"time":  []string{"123.4"},
+				"limit": []string{"1"},
+			},
+			response: &QueryData{
+				ResultType: parser.ValueTypeScalar,
+				Result: promql.Scalar{
+					V: 2,
+					T: timestamp.FromTime(start.Add(123*time.Second + 400*time.Millisecond)),
+				},
+			},
+			warningsCount: 0,
+		},
+		// When limit = 0, limit is disabled.
+		{
+			endpoint: api.query,
+			query: url.Values{
+				"query": []string{"2"},
+				"time":  []string{"123.4"},
+				"limit": []string{"0"},
+			},
+			response: &QueryData{
+				ResultType: parser.ValueTypeScalar,
+				Result: promql.Scalar{
+					V: 2,
+					T: timestamp.FromTime(start.Add(123*time.Second + 400*time.Millisecond)),
+				},
+			},
+			warningsCount: 0,
+		},
+		{
+			endpoint: api.query,
+			query: url.Values{
+				"query": []string{"2"},
+				"time":  []string{"123.4"},
+				"limit": []string{"-1"},
+			},
+			errType: errorBadData,
+		},
 		{
 			endpoint: api.query,
 			query: url.Values{
@@ -1206,6 +1249,179 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 		},
 		{
+			endpoint: api.query,
+			query: url.Values{
+				"query": []string{
+					`label_replace(vector(42), "foo", "bar", "", "") or label_replace(vector(3.1415), "dings", "bums", "", "")`,
+				},
+				"time":  []string{"123.4"},
+				"limit": []string{"2"},
+			},
+			warningsCount: 0,
+			responseAsJSON: `{
+		"resultType": "vector",
+		"result": [
+			{
+				"metric": {
+					"foo": "bar"
+				},
+				"value": [123.4, "42"]
+			},
+			{
+				"metric": {
+					"dings": "bums"
+				},
+				"value": [123.4, "3.1415"]
+			}
+		]
+	}`,
+		},
+		{
+			endpoint: api.query,
+			query: url.Values{
+				"query": []string{
+					`label_replace(vector(42), "foo", "bar", "", "") or label_replace(vector(3.1415), "dings", "bums", "", "")`,
+				},
+				"time":  []string{"123.4"},
+				"limit": []string{"1"},
+			},
+			warningsCount: 1,
+			responseAsJSON: `{
+		"resultType": "vector",
+		"result": [
+			{
+				"metric": {
+					"foo": "bar"
+				},
+				"value": [123.4, "42"]
+			}
+		]
+	}`,
+		},
+		{
+			endpoint: api.query,
+			query: url.Values{
+				"query": []string{
+					`label_replace(vector(42), "foo", "bar", "", "") or label_replace(vector(3.1415), "dings", "bums", "", "")`,
+				},
+				"time":  []string{"123.4"},
+				"limit": []string{"0"},
+			},
+			responseAsJSON: `{
+		"resultType": "vector",
+		"result": [
+			{
+				"metric": {
+					"foo": "bar"
+				},
+				"value": [123.4, "42"]
+			},
+			{
+				"metric": {
+					"dings": "bums"
+				},
+				"value": [123.4, "3.1415"]
+			}
+		]
+	}`,
+			warningsCount: 0,
+		},
+		// limit=0 means no limit.
+		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query": []string{
+					`label_replace(vector(42), "foo", "bar", "", "") or label_replace(vector(3.1415), "dings", "bums", "", "")`,
+				},
+				"start": []string{"0"},
+				"end":   []string{"2"},
+				"step":  []string{"1"},
+				"limit": []string{"0"},
+			},
+			response: &QueryData{
+				ResultType: parser.ValueTypeMatrix,
+				Result: promql.Matrix{
+					promql.Series{
+						Metric: labels.FromMap(map[string]string{"dings": "bums"}),
+						Floats: []promql.FPoint{
+							{F: 3.1415, T: timestamp.FromTime(start)},
+							{F: 3.1415, T: timestamp.FromTime(start.Add(1 * time.Second))},
+							{F: 3.1415, T: timestamp.FromTime(start.Add(2 * time.Second))},
+						},
+					},
+					promql.Series{
+						Metric: labels.FromMap(map[string]string{"foo": "bar"}),
+						Floats: []promql.FPoint{
+							{F: 42, T: timestamp.FromTime(start)},
+							{F: 42, T: timestamp.FromTime(start.Add(1 * time.Second))},
+							{F: 42, T: timestamp.FromTime(start.Add(2 * time.Second))},
+						},
+					},
+				},
+			},
+			warningsCount: 0,
+		},
+		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query": []string{
+					`label_replace(vector(42), "foo", "bar", "", "") or label_replace(vector(3.1415), "dings", "bums", "", "")`,
+				},
+				"start": []string{"0"},
+				"end":   []string{"2"},
+				"step":  []string{"1"},
+				"limit": []string{"1"},
+			},
+			response: &QueryData{
+				ResultType: parser.ValueTypeMatrix,
+				Result: promql.Matrix{
+					promql.Series{
+						Metric: labels.FromMap(map[string]string{"dings": "bums"}),
+						Floats: []promql.FPoint{
+							{F: 3.1415, T: timestamp.FromTime(start)},
+							{F: 3.1415, T: timestamp.FromTime(start.Add(1 * time.Second))},
+							{F: 3.1415, T: timestamp.FromTime(start.Add(2 * time.Second))},
+						},
+					},
+				},
+			},
+			warningsCount: 1,
+		},
+		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query": []string{
+					`label_replace(vector(42), "foo", "bar", "", "") or label_replace(vector(3.1415), "dings", "bums", "", "")`,
+				},
+				"start": []string{"0"},
+				"end":   []string{"2"},
+				"step":  []string{"1"},
+				"limit": []string{"2"},
+			},
+			response: &QueryData{
+				ResultType: parser.ValueTypeMatrix,
+				Result: promql.Matrix{
+					promql.Series{
+						Metric: labels.FromMap(map[string]string{"dings": "bums"}),
+						Floats: []promql.FPoint{
+							{F: 3.1415, T: timestamp.FromTime(start)},
+							{F: 3.1415, T: timestamp.FromTime(start.Add(1 * time.Second))},
+							{F: 3.1415, T: timestamp.FromTime(start.Add(2 * time.Second))},
+						},
+					},
+					promql.Series{
+						Metric: labels.FromMap(map[string]string{"foo": "bar"}),
+						Floats: []promql.FPoint{
+							{F: 42, T: timestamp.FromTime(start)},
+							{F: 42, T: timestamp.FromTime(start.Add(1 * time.Second))},
+							{F: 42, T: timestamp.FromTime(start.Add(2 * time.Second))},
+						},
+					},
+				},
+			},
+			warningsCount: 0,
+		},
+		{
 			endpoint: api.queryRange,
 			query: url.Values{
 				"query": []string{"time()"},
@@ -1222,7 +1438,6 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 							{F: 1, T: timestamp.FromTime(start.Add(1 * time.Second))},
 							{F: 2, T: timestamp.FromTime(start.Add(2 * time.Second))},
 						},
-						// No Metric returned - use zero value for comparison.
 					},
 				},
 			},
@@ -1234,6 +1449,17 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				"query": []string{"bottomk(2, notExists)"},
 			},
 			responseAsJSON: `{"resultType":"vector","result":[]}`,
+		},
+		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query": []string{"bottomk(2, notExists)"},
+				"start": []string{"0"},
+				"end":   []string{"2"},
+				"step":  []string{"1"},
+				"limit": []string{"-1"},
+			},
+			errType: errorBadData,
 		},
 		// Test empty matrix result
 		{
@@ -3960,7 +4186,7 @@ func TestParseTimeParam(t *testing.T) {
 				asTime: time.Time{},
 				asError: func() error {
 					_, err := parseTime("baz")
-					return fmt.Errorf("Invalid time value for '%s': %w", "foo", err)
+					return fmt.Errorf("invalid time value for '%s': %w", "foo", err)
 				},
 			},
 		},

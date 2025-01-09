@@ -1128,6 +1128,39 @@ eval_warn range from 0 to 12m step 6m sum(metric)
 eval_warn range from 0 to 12m step 6m avg(metric)
   {} _ {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} _
 
+# Test incompatible schemas with additional aggregation operators
+eval range from 0 to 12m step 6m count(metric)
+  {} 2 2 3
+
+eval range from 0 to 12m step 6m group(metric)
+  {} 1 1 1
+
+eval range from 0 to 12m step 6m count(limitk(1, metric))
+  {} 1 1 1
+
+eval range from 0 to 12m step 6m limitk(3, metric)
+  metric{series="1"} _                                                             {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+  metric{series="2"} {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}}    _                                                             {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}}
+  metric{series="3"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+
+eval range from 0 to 12m step 6m limit_ratio(1, metric)
+  metric{series="1"} _                                                             {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+  metric{series="2"} {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}}    _                                                             {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}}
+  metric{series="3"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+
+# Test incompatible schemas with and/or
+eval range from 0 to 12m step 6m metric{series="1"} and ignoring(series) metric{series="2"}
+  metric{series="1"} _ _ {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+
+eval range from 0 to 12m step 6m metric{series="1"} or ignoring(series) metric{series="2"}
+  metric{series="1"} _                                                          {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+  metric{series="2"} {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}} _                                                             _
+
+# Test incompatible schemas with arithmetic binary operators
+eval_warn range from 0 to 12m step 6m metric{series="2"} + ignoring (series) metric{series="3"}
+
+eval_warn range from 0 to 12m step 6m metric{series="2"} - ignoring (series) metric{series="3"}
+
 clear
 
 load 1m
