@@ -643,28 +643,46 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 	if ctrl == nil {
 		ctrl = sequentialRuleEvalController{}
 	}
-	for _, batch := range ctrl.SplitGroupIntoBatches(ctx, g) {
-		for _, ruleIndex := range batch {
+
+	batches := ctrl.SplitGroupIntoBatches(ctx, g)
+	if len(batches) == 0 {
+		// Sequential evaluation when batches aren't set.
+		// This is the behaviour without a defined RuleConcurrencyController
+		for i, rule := range g.rules {
+			// Check if the group has been stopped.
 			select {
 			case <-g.done:
 				return
 			default:
 			}
-
-			rule := g.rules[ruleIndex]
-			if len(batch) > 1 && ctrl.Allow(ctx, g, rule) {
-				wg.Add(1)
-
-				go eval(ruleIndex, rule, func() {
-					wg.Done()
-					ctrl.Done(ctx)
-				})
-			} else {
-				eval(ruleIndex, rule, nil)
-			}
+			eval(i, rule, nil)
 		}
-		// It is important that we finish processing any rules in this current batch - before we move into the next one.
-		wg.Wait()
+	} else {
+		// Concurrent evaluation.
+		for _, batch := range batches {
+			for _, ruleIndex := range batch {
+				// Check if the group has been stopped.
+				select {
+				case <-g.done:
+					wg.Wait()
+					return
+				default:
+				}
+				rule := g.rules[ruleIndex]
+				if len(batch) > 1 && ctrl.Allow(ctx, g, rule) {
+					wg.Add(1)
+
+					go eval(ruleIndex, rule, func() {
+						wg.Done()
+						ctrl.Done(ctx)
+					})
+				} else {
+					eval(ruleIndex, rule, nil)
+				}
+			}
+			// It is important that we finish processing any rules in this current batch - before we move into the next one.
+			wg.Wait()
+		}
 	}
 
 	g.metrics.GroupSamples.WithLabelValues(GroupKey(g.File(), g.Name())).Set(samplesTotal.Load())
