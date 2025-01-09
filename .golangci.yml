@@ -24,7 +24,6 @@ linters:
     - whitespace
     - loggercheck
     - sloglint
-    - staticcheck
 
 issues:
   max-issues-per-linter: 0
