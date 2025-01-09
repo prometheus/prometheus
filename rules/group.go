@@ -507,13 +507,6 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		ruleQueryOffset = g.QueryOffset()
 	)
 	eval := func(i int, rule Rule, cleanup func()) {
-		// Check if the group has been stopped.
-		select {
-		case <-g.done:
-			return
-		default:
-		}
-
 		if cleanup != nil {
 			defer cleanup()
 		}
@@ -652,15 +645,28 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 	}
 
 	batches := ctrl.SplitGroupIntoBatches(ctx, g)
-	if batches == nil || len(batches) == len(g.rules) {
-		// Sequential evaluation.
+	if len(batches) == 0 {
+		// Sequential evaluation when batches aren't set.
+		// This is the behaviour without a defined RuleConcurrencyController
 		for i, rule := range g.rules {
+			// Check if the group has been stopped.
+			select {
+			case <-g.done:
+				return
+			default:
+			}
 			eval(i, rule, nil)
 		}
 	} else {
 		// Concurrent evaluation.
 		for _, batch := range ctrl.SplitGroupIntoBatches(ctx, g) {
 			for _, ruleIndex := range batch {
+				// Check if the group has been stopped.
+				select {
+				case <-g.done:
+					return
+				default:
+				}
 				rule := g.rules[ruleIndex]
 				if len(batch) > 1 && ctrl.Allow(ctx, g, rule) {
 					wg.Add(1)
