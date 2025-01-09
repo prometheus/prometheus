@@ -286,46 +286,79 @@ func funcIncrease(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 
 // === irate(node parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcIrate(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return instantValue(vals, enh.Out, true)
+	return instantValue(vals, args, enh.Out, true)
 }
 
 // === idelta(node model.ValMatrix) (Vector, Annotations) ===
 func funcIdelta(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return instantValue(vals, enh.Out, false)
+	return instantValue(vals, args, enh.Out, false)
 }
 
-func instantValue(vals []parser.Value, out Vector, isRate bool) (Vector, annotations.Annotations) {
+func instantValue(vals []parser.Value, args parser.Expressions, out Vector, isRate bool) (Vector, annotations.Annotations) {
 	samples := vals[0].(Matrix)[0]
-	// No sense in trying to compute a rate without at least two points. Drop
-	// this Vector element.
-	// TODO: add RangeTooShortWarning
-	if len(samples.Floats) < 2 {
+	metricName := samples.Metric.Get(labels.MetricName)
+	floats := samples.Floats
+	histograms := samples.Histograms
+	// do for custom buckets as well
+	// Action plan-
+	// Error handling
+	// Add tests for both custom and normal
+	// Annotations for counter an and gauge
+	// irate for counter and idelta for gauge
+
+	var lastSample, previousSample, resultSample Sample
+	var sampledInterval int64
+	switch true {
+	case len(floats) > 0 && len(histograms) > 0:
+		return out, annotations.New().Add(annotations.NewMixedFloatsHistogramsWarning(metricName, args[0].PositionRange()))
+	case len(floats) < 2 || len(histograms) < 2:
+		// No sense in trying to compute a rate without at least two points. Drop
+		// this Vector element.
+		// TODO: add RangeTooShortWarning
 		return out, nil
+	case len(floats) > 0:
+		lastSample.F = samples.Floats[floatsLen-1].F
+		previousSample.F = samples.Floats[floatsLen-2].F
+		sampledInterval = samples.Floats[floatsLen-1].T - samples.Floats[floatsLen-2].T
+		if isRate && lastSample.F < previousSample.F {
+			// Counter reset.
+			resultSample.F = lastSample.F
+		} else {
+			resultSample.F = lastSample.F - previousSample.F
+		}
+		if sampledInterval == 0 {
+			// Avoid dividing by 0.
+			return out, nil
+		}
+		if isRate {
+			// Convert to per-second.
+			resultSample.F /= float64(sampledInterval) / 1000
+		}
+	case len(histograms) > 0:
+		// Contains only histograms.
+		lastSample.H = samples.Histograms[histogramsLen-1].H
+		previousSample.H = samples.Histograms[histogramsLen-2].H
+		sampledInterval = samples.Histograms[histogramsLen-1].T - samples.Histograms[histogramsLen-2].T
+		resultSample.H = lastSample.H.Copy()
+		if isRate && lastSample.H.DetectReset(previousSample.H) {
+			// Counter reset.
+		} else {
+			_, err := resultSample.H.Sub(previousSample.H)
+			if err != nil {
+				// handle error for custom buckets or mix
+				return out, annotations.New().Add(err)
+			}
+		}
+		if sampledInterval == 0 {
+			// Avoid dividing by 0.
+			return out, nil
+		}
+		if isRate {
+			// Convert to per-second.
+			resultSample.H.Div(float64(sampledInterval) / 1000)
+		}
 	}
-
-	lastSample := samples.Floats[len(samples.Floats)-1]
-	previousSample := samples.Floats[len(samples.Floats)-2]
-
-	var resultValue float64
-	if isRate && lastSample.F < previousSample.F {
-		// Counter reset.
-		resultValue = lastSample.F
-	} else {
-		resultValue = lastSample.F - previousSample.F
-	}
-
-	sampledInterval := lastSample.T - previousSample.T
-	if sampledInterval == 0 {
-		// Avoid dividing by 0.
-		return out, nil
-	}
-
-	if isRate {
-		// Convert to per-second.
-		resultValue /= float64(sampledInterval) / 1000
-	}
-
-	return append(out, Sample{F: resultValue}), nil
+	return append(out, resultSample), nil
 }
 
 // Calculate the trend value at the given index i in raw data d.
