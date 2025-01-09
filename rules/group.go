@@ -659,11 +659,12 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		}
 	} else {
 		// Concurrent evaluation.
-		for _, batch := range ctrl.SplitGroupIntoBatches(ctx, g) {
+		for _, batch := range batches {
 			for _, ruleIndex := range batch {
 				// Check if the group has been stopped.
 				select {
 				case <-g.done:
+					wg.Wait()
 					return
 				default:
 				}
