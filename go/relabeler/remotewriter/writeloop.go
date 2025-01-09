@@ -183,7 +183,16 @@ func (wl *writeLoop) nextIterator(ctx context.Context, writer Writer) (*Iterator
 		discardCache = true
 	}
 
-	ds, err := newDataSource(headDir, nextHeadRecord.NumberOfShards(), wl.destination.Config(), discardCache, wl.makeCorruptMarker(), nextHeadRecord)
+	ds, err := newDataSource(
+		headDir,
+		nextHeadRecord.NumberOfShards(),
+		wl.destination.Config(),
+		discardCache,
+		wl.makeCorruptMarker(),
+		nextHeadRecord,
+		wl.destination.metrics.unexpectedEOFCount,
+		wl.destination.metrics.segmentSizeBytes,
+	)
 	if err != nil {
 		return nil, errors.Join(fmt.Errorf("failed to create data source: %w", err), crw.Close())
 	}

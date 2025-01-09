@@ -12,6 +12,7 @@ import (
 type walReader struct {
 	nextSegmentID uint32
 	file          *os.File
+	reader        io.ReadSeeker
 }
 
 func newWalReader(fileName string) (*walReader, uint8, error) {

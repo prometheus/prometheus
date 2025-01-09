@@ -278,6 +278,26 @@ func NewDestination(cfg DestinationConfig) *Destination {
 				Help:        "The maximum number of samples to be sent, in a single request, to the remote storage. Note that, when sending of exemplars over remote write is enabled, exemplars count towards this limt.",
 				ConstLabels: constLabels,
 			}),
+			unexpectedEOFCount: prometheus.NewCounterVec(
+				prometheus.CounterOpts{
+					Namespace:   namespace,
+					Subsystem:   subsystem,
+					Name:        "unexpected_eof_count",
+					Help:        "Number of eof occurred during reading active head wal",
+					ConstLabels: constLabels,
+				},
+				[]string{"head_id", "shard_id", "segment_id"},
+			),
+			segmentSizeBytes: prometheus.NewHistogramVec(
+				prometheus.HistogramOpts{
+					Namespace:   namespace,
+					Subsystem:   subsystem,
+					Name:        "segment_size_bytes",
+					Help:        "Size of segment.",
+					ConstLabels: constLabels,
+				},
+				[]string{"head_id", "shard_id", "segment_id"},
+			),
 		},
 	}
 }
@@ -312,6 +332,8 @@ func (d *Destination) RegisterMetrics(registerer prometheus.Registerer) {
 	registerer.MustRegister(d.metrics.sentBytesTotal)
 	registerer.MustRegister(d.metrics.metadataBytesTotal)
 	registerer.MustRegister(d.metrics.maxSamplesPerSend)
+	registerer.MustRegister(d.metrics.unexpectedEOFCount)
+	registerer.MustRegister(d.metrics.segmentSizeBytes)
 }
 
 func (d *Destination) UnregisterMetrics(registerer prometheus.Registerer) {
@@ -344,6 +366,8 @@ func (d *Destination) UnregisterMetrics(registerer prometheus.Registerer) {
 	registerer.Unregister(d.metrics.sentBytesTotal)
 	registerer.Unregister(d.metrics.metadataBytesTotal)
 	registerer.Unregister(d.metrics.maxSamplesPerSend)
+	registerer.Unregister(d.metrics.unexpectedEOFCount)
+	registerer.Unregister(d.metrics.segmentSizeBytes)
 }
 
 func remoteWriteConfigsAreEqual(lrwc, rwrc config.RemoteWriteConfig) bool {
@@ -409,4 +433,6 @@ type DestinationMetrics struct {
 	sentBytesTotal         prometheus.Counter
 	metadataBytesTotal     prometheus.Counter
 	maxSamplesPerSend      prometheus.Gauge
+	unexpectedEOFCount     *prometheus.CounterVec
+	segmentSizeBytes       *prometheus.HistogramVec
 }
