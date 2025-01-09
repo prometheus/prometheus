@@ -295,12 +295,12 @@ func (t *Target) intervalAndTimeout(defaultInterval, defaultDuration time.Durati
 	intervalLabel := t.labels.Get(model.ScrapeIntervalLabel)
 	interval, err := model.ParseDuration(intervalLabel)
 	if err != nil {
-		return defaultInterval, defaultDuration, fmt.Errorf("Error parsing interval label %q: %w", intervalLabel, err)
+		return defaultInterval, defaultDuration, fmt.Errorf("error parsing interval label %q: %w", intervalLabel, err)
 	}
 	timeoutLabel := t.labels.Get(model.ScrapeTimeoutLabel)
 	timeout, err := model.ParseDuration(timeoutLabel)
 	if err != nil {
-		return defaultInterval, defaultDuration, fmt.Errorf("Error parsing timeout label %q: %w", timeoutLabel, err)
+		return defaultInterval, defaultDuration, fmt.Errorf("error parsing timeout label %q: %w", timeoutLabel, err)
 	}
 
 	return time.Duration(interval), time.Duration(timeout), nil
