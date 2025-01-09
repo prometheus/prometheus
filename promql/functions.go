@@ -692,12 +692,12 @@ func funcLastOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNod
 // === mad_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcMadOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	samples := vals[0].(Matrix)[0]
-	metricName := samples.Metric.Get(labels.MetricName)
 	var annos annotations.Annotations
 	if len(samples.Floats) == 0 {
 		return enh.Out, nil
 	}
 	if len(samples.Histograms) > 0 {
+		metricName := samples.Metric.Get(labels.MetricName)
 		annos.Add(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, args[0].PositionRange()))
 	}
 	return aggrOverTime(vals, enh, func(s Series) float64 {
@@ -717,12 +717,12 @@ func funcMadOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 // === max_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcMaxOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	samples := vals[0].(Matrix)[0]
-	metricName := samples.Metric.Get(labels.MetricName)
 	var annos annotations.Annotations
 	if len(samples.Floats) == 0 {
 		return enh.Out, nil
 	}
 	if len(samples.Histograms) > 0 {
+		metricName := samples.Metric.Get(labels.MetricName)
 		annos.Add(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, args[0].PositionRange()))
 	}
 	return aggrOverTime(vals, enh, func(s Series) float64 {
@@ -739,12 +739,12 @@ func funcMaxOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 // === min_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcMinOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	samples := vals[0].(Matrix)[0]
-	metricName := samples.Metric.Get(labels.MetricName)
 	var annos annotations.Annotations
 	if len(samples.Floats) == 0 {
 		return enh.Out, nil
 	}
 	if len(samples.Histograms) > 0 {
+		metricName := samples.Metric.Get(labels.MetricName)
 		annos.Add(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, args[0].PositionRange()))
 	}
 	return aggrOverTime(vals, enh, func(s Series) float64 {
@@ -803,7 +803,6 @@ func funcSumOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 func funcQuantileOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	q := vals[0].(Vector)[0].F
 	el := vals[1].(Matrix)[0]
-	metricName := el.Metric.Get(labels.MetricName)
 	if len(el.Floats) == 0 {
 		return enh.Out, nil
 	}
@@ -813,6 +812,7 @@ func funcQuantileOverTime(vals []parser.Value, args parser.Expressions, enh *Eva
 		annos.Add(annotations.NewInvalidQuantileWarning(q, args[0].PositionRange()))
 	}
 	if len(el.Histograms) > 0 {
+		metricName := el.Metric.Get(labels.MetricName)
 		annos.Add(annotations.NewHistogramIgnoredInAggregationInfo(metricName, args[0].PositionRange()))
 	}
 	values := make(vectorByValueHeap, 0, len(el.Floats))
@@ -825,12 +825,12 @@ func funcQuantileOverTime(vals []parser.Value, args parser.Expressions, enh *Eva
 // === stddev_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcStddevOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	samples := vals[0].(Matrix)[0]
-	metricName := samples.Metric.Get(labels.MetricName)
 	var annos annotations.Annotations
 	if len(samples.Floats) == 0 {
 		return enh.Out, nil
 	}
 	if len(samples.Histograms) > 0 {
+		metricName := samples.Metric.Get(labels.MetricName)
 		annos.Add(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, args[0].PositionRange()))
 	}
 	return aggrOverTime(vals, enh, func(s Series) float64 {
@@ -850,12 +850,12 @@ func funcStddevOverTime(vals []parser.Value, args parser.Expressions, enh *EvalN
 // === stdvar_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcStdvarOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	samples := vals[0].(Matrix)[0]
-	metricName := samples.Metric.Get(labels.MetricName)
 	var annos annotations.Annotations
 	if len(samples.Floats) == 0 {
 		return enh.Out, nil
 	}
 	if len(samples.Histograms) > 0 {
+		metricName := samples.Metric.Get(labels.MetricName)
 		annos.Add(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, args[0].PositionRange()))
 	}
 	return aggrOverTime(vals, enh, func(s Series) float64 {
