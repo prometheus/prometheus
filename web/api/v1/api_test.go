@@ -1256,8 +1256,10 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				"query": []string{
 					`label_replace(vector(42), "foo", "bar", "", "") or label_replace(vector(3.1415), "dings", "bums", "", "")`,
 				},
-				"time": []string{"123.4"},
+				"time":  []string{"123.4"},
+				"limit": []string{"2"},
 			},
+			warningsCount: 0,
 			responseAsJSON: `{
 		"resultType": "vector",
 		"result": [
@@ -1277,6 +1279,56 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 	}`,
 		},
 		{
+			endpoint: api.query,
+			query: url.Values{
+				"query": []string{
+					`label_replace(vector(42), "foo", "bar", "", "") or label_replace(vector(3.1415), "dings", "bums", "", "")`,
+				},
+				"time":  []string{"123.4"},
+				"limit": []string{"1"},
+			},
+			warningsCount: 1,
+			responseAsJSON: `{
+		"resultType": "vector",
+		"result": [
+			{
+				"metric": {
+					"foo": "bar"
+				},
+				"value": [123.4, "42"]
+			}
+		]
+	}`,
+		},
+		{
+			endpoint: api.query,
+			query: url.Values{
+				"query": []string{
+					`label_replace(vector(42), "foo", "bar", "", "") or label_replace(vector(3.1415), "dings", "bums", "", "")`,
+				},
+				"time":  []string{"123.4"},
+				"limit": []string{"0"},
+			},
+			responseAsJSON: `{
+		"resultType": "vector",
+		"result": [
+			{
+				"metric": {
+					"foo": "bar"
+				},
+				"value": [123.4, "42"]
+			},
+			{
+				"metric": {
+					"dings": "bums"
+				},
+				"value": [123.4, "3.1415"]
+			}
+		]
+	}`,
+			warningsCount: 0,
+		},
+		{
 			endpoint: api.queryRange,
 			query: url.Values{
 				"query": []string{"time()"},
@@ -1294,7 +1346,30 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 							{F: 1, T: timestamp.FromTime(start.Add(1 * time.Second))},
 							{F: 2, T: timestamp.FromTime(start.Add(2 * time.Second))},
 						},
-						// No Metric returned - use zero value for comparison.
+					},
+				},
+			},
+			warningsCount: 0,
+		},
+		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query": []string{"time()"},
+				"start": []string{"0"},
+				"end":   []string{"2"},
+				"step":  []string{"1"},
+				"limit": []string{"0"},
+			},
+			response: &QueryData{
+				ResultType: parser.ValueTypeMatrix,
+				Result: promql.Matrix{
+					promql.Series{
+						Metric: labels.Labels{},
+						Floats: []promql.FPoint{
+							{F: 0, T: timestamp.FromTime(start)},
+							{F: 1, T: timestamp.FromTime(start.Add(1 * time.Second))},
+							{F: 2, T: timestamp.FromTime(start.Add(2 * time.Second))},
+						},
 					},
 				},
 			},
@@ -1317,7 +1392,6 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 							{F: 1, T: timestamp.FromTime(start.Add(1 * time.Second))},
 							{F: 2, T: timestamp.FromTime(start.Add(2 * time.Second))},
 						},
-						// No Metric returned - use zero value for comparison.
 					},
 				},
 			},
@@ -1330,43 +1404,6 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 			responseAsJSON: `{"resultType":"vector","result":[]}`,
 		},
-		// limit disabled
-		{
-			endpoint: api.queryRange,
-			query: url.Values{
-				"query": []string{"bottomk(2, notExists)"},
-				"start": []string{"0"},
-				"end":   []string{"2"},
-				"step":  []string{"1"},
-				"limit": []string{"0"},
-			},
-			responseAsJSON: `{"resultType":"matrix","result":[]}`,
-			warningsCount:  0,
-		},
-		{
-			endpoint: api.queryRange,
-			query: url.Values{
-				"query": []string{"bottomk(2, notExists)"},
-				"start": []string{"0"},
-				"end":   []string{"2"},
-				"step":  []string{"1"},
-				"limit": []string{"1"},
-			},
-			responseAsJSON: `{"resultType":"matrix","result":[]}`,
-			warningsCount:  0,
-		},
-		{
-			endpoint: api.queryRange,
-			query: url.Values{
-				"query": []string{"bottomk(2, notExists)"},
-				"start": []string{"0"},
-				"end":   []string{"2"},
-				"step":  []string{"1"},
-				"limit": []string{"0"},
-			},
-			responseAsJSON: `{"resultType":"matrix","result":[]}`,
-			warningsCount:  0,
-		},
 		{
 			endpoint: api.queryRange,
 			query: url.Values{
@@ -1377,18 +1414,6 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				"limit": []string{"-1"},
 			},
 			errType: errorBadData,
-		},
-		{
-			endpoint: api.queryRange,
-			query: url.Values{
-				"query": []string{"bottomk(2, notExists)"},
-				"start": []string{"0"},
-				"end":   []string{"2"},
-				"step":  []string{"1"},
-				"limit": []string{"0"},
-			},
-			responseAsJSON: `{"resultType":"matrix","result":[]}`,
-			warningsCount:  0,
 		},
 		// Test empty matrix result
 		{
