@@ -5,15 +5,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"sync"
+
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head/catalog"
 	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
-	"io"
-	"os"
-	"path/filepath"
-	"sync"
 )
 
 type CorruptMarker interface {
@@ -172,7 +173,8 @@ func (s *shard) Read(ctx context.Context, targetSegmentID uint32, minTimestamp i
 			return nil, errors.Join(err, ErrShardIsCorrupted)
 		}
 
-		s.lastReadSegmentID = &segment.ID
+		segID := segment.ID
+		s.lastReadSegmentID = &segID
 
 		if segment.ID == targetSegmentID {
 			decodedSegment.ID = segment.ID
