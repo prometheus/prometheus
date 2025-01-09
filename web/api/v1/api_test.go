@@ -1344,9 +1344,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				ResultType: parser.ValueTypeMatrix,
 				Result: promql.Matrix{
 					promql.Series{
-						Metric: labels.Labels{
-							{Name: "dings", Value: "bums"},
-						},
+						Metric: labels.FromMap(map[string]string{"dings": "bums"}),
 						Floats: []promql.FPoint{
 							{F: 3.1415, T: timestamp.FromTime(start)},
 							{F: 3.1415, T: timestamp.FromTime(start.Add(1 * time.Second))},
@@ -1354,9 +1352,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						},
 					},
 					promql.Series{
-						Metric: labels.Labels{
-							{Name: "foo", Value: "bar"},
-						},
+						Metric: labels.FromMap(map[string]string{"foo": "bar"}),
 						Floats: []promql.FPoint{
 							{F: 42, T: timestamp.FromTime(start)},
 							{F: 42, T: timestamp.FromTime(start.Add(1 * time.Second))},
@@ -1382,9 +1378,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				ResultType: parser.ValueTypeMatrix,
 				Result: promql.Matrix{
 					promql.Series{
-						Metric: labels.Labels{
-							{Name: "dings", Value: "bums"},
-						},
+						Metric: labels.FromMap(map[string]string{"dings": "bums"}),
 						Floats: []promql.FPoint{
 							{F: 3.1415, T: timestamp.FromTime(start)},
 							{F: 3.1415, T: timestamp.FromTime(start.Add(1 * time.Second))},
@@ -1410,9 +1404,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				ResultType: parser.ValueTypeMatrix,
 				Result: promql.Matrix{
 					promql.Series{
-						Metric: labels.Labels{
-							{Name: "dings", Value: "bums"},
-						},
+						Metric: labels.FromMap(map[string]string{"dings": "bums"}),
 						Floats: []promql.FPoint{
 							{F: 3.1415, T: timestamp.FromTime(start)},
 							{F: 3.1415, T: timestamp.FromTime(start.Add(1 * time.Second))},
@@ -1420,9 +1412,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						},
 					},
 					promql.Series{
-						Metric: labels.Labels{
-							{Name: "foo", Value: "bar"},
-						},
+						Metric: labels.FromMap(map[string]string{"foo": "bar"}),
 						Floats: []promql.FPoint{
 							{F: 42, T: timestamp.FromTime(start)},
 							{F: 42, T: timestamp.FromTime(start.Add(1 * time.Second))},
