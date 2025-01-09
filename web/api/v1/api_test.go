@@ -1328,33 +1328,13 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 	}`,
 			warningsCount: 0,
 		},
+		// limit=0 means no limit.
 		{
 			endpoint: api.queryRange,
 			query: url.Values{
-				"query": []string{"time()"},
-				"start": []string{"0"},
-				"end":   []string{"2"},
-				"step":  []string{"1"},
-				"limit": []string{"1"},
-			},
-			response: &QueryData{
-				ResultType: parser.ValueTypeMatrix,
-				Result: promql.Matrix{
-					promql.Series{
-						Floats: []promql.FPoint{
-							{F: 0, T: timestamp.FromTime(start)},
-							{F: 1, T: timestamp.FromTime(start.Add(1 * time.Second))},
-							{F: 2, T: timestamp.FromTime(start.Add(2 * time.Second))},
-						},
-					},
+				"query": []string{
+					`label_replace(vector(42), "foo", "bar", "", "") or label_replace(vector(3.1415), "dings", "bums", "", "")`,
 				},
-			},
-			warningsCount: 0,
-		},
-		{
-			endpoint: api.queryRange,
-			query: url.Values{
-				"query": []string{"time()"},
 				"start": []string{"0"},
 				"end":   []string{"2"},
 				"step":  []string{"1"},
@@ -1364,11 +1344,89 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				ResultType: parser.ValueTypeMatrix,
 				Result: promql.Matrix{
 					promql.Series{
-						Metric: labels.Labels{},
+						Metric: labels.Labels{
+							{Name: "dings", Value: "bums"},
+						},
 						Floats: []promql.FPoint{
-							{F: 0, T: timestamp.FromTime(start)},
-							{F: 1, T: timestamp.FromTime(start.Add(1 * time.Second))},
-							{F: 2, T: timestamp.FromTime(start.Add(2 * time.Second))},
+							{F: 3.1415, T: timestamp.FromTime(start)},
+							{F: 3.1415, T: timestamp.FromTime(start.Add(1 * time.Second))},
+							{F: 3.1415, T: timestamp.FromTime(start.Add(2 * time.Second))},
+						},
+					},
+					promql.Series{
+						Metric: labels.Labels{
+							{Name: "foo", Value: "bar"},
+						},
+						Floats: []promql.FPoint{
+							{F: 42, T: timestamp.FromTime(start)},
+							{F: 42, T: timestamp.FromTime(start.Add(1 * time.Second))},
+							{F: 42, T: timestamp.FromTime(start.Add(2 * time.Second))},
+						},
+					},
+				},
+			},
+			warningsCount: 0,
+		},
+		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query": []string{
+					`label_replace(vector(42), "foo", "bar", "", "") or label_replace(vector(3.1415), "dings", "bums", "", "")`,
+				},
+				"start": []string{"0"},
+				"end":   []string{"2"},
+				"step":  []string{"1"},
+				"limit": []string{"1"},
+			},
+			response: &QueryData{
+				ResultType: parser.ValueTypeMatrix,
+				Result: promql.Matrix{
+					promql.Series{
+						Metric: labels.Labels{
+							{Name: "dings", Value: "bums"},
+						},
+						Floats: []promql.FPoint{
+							{F: 3.1415, T: timestamp.FromTime(start)},
+							{F: 3.1415, T: timestamp.FromTime(start.Add(1 * time.Second))},
+							{F: 3.1415, T: timestamp.FromTime(start.Add(2 * time.Second))},
+						},
+					},
+				},
+			},
+			warningsCount: 1,
+		},
+		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query": []string{
+					`label_replace(vector(42), "foo", "bar", "", "") or label_replace(vector(3.1415), "dings", "bums", "", "")`,
+				},
+				"start": []string{"0"},
+				"end":   []string{"2"},
+				"step":  []string{"1"},
+				"limit": []string{"2"},
+			},
+			response: &QueryData{
+				ResultType: parser.ValueTypeMatrix,
+				Result: promql.Matrix{
+					promql.Series{
+						Metric: labels.Labels{
+							{Name: "dings", Value: "bums"},
+						},
+						Floats: []promql.FPoint{
+							{F: 3.1415, T: timestamp.FromTime(start)},
+							{F: 3.1415, T: timestamp.FromTime(start.Add(1 * time.Second))},
+							{F: 3.1415, T: timestamp.FromTime(start.Add(2 * time.Second))},
+						},
+					},
+					promql.Series{
+						Metric: labels.Labels{
+							{Name: "foo", Value: "bar"},
+						},
+						Floats: []promql.FPoint{
+							{F: 42, T: timestamp.FromTime(start)},
+							{F: 42, T: timestamp.FromTime(start.Add(1 * time.Second))},
+							{F: 42, T: timestamp.FromTime(start.Add(2 * time.Second))},
 						},
 					},
 				},
