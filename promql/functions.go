@@ -691,8 +691,14 @@ func funcLastOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNod
 
 // === mad_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcMadOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	if len(vals[0].(Matrix)[0].Floats) == 0 {
+	samples := vals[0].(Matrix)[0]
+	var annos annotations.Annotations
+	if len(samples.Floats) == 0 {
 		return enh.Out, nil
+	}
+	if len(samples.Histograms) > 0 {
+		metricName := samples.Metric.Get(labels.MetricName)
+		annos.Add(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, args[0].PositionRange()))
 	}
 	return aggrOverTime(vals, enh, func(s Series) float64 {
 		values := make(vectorByValueHeap, 0, len(s.Floats))
@@ -705,17 +711,19 @@ func funcMadOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 			values = append(values, Sample{F: math.Abs(f.F - median)})
 		}
 		return quantile(0.5, values)
-	}), nil
+	}), annos
 }
 
 // === max_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcMaxOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	if len(vals[0].(Matrix)[0].Floats) == 0 {
-		// TODO(beorn7): The passed values only contain
-		// histograms. max_over_time ignores histograms for now. If
-		// there are only histograms, we have to return without adding
-		// anything to enh.Out.
+	samples := vals[0].(Matrix)[0]
+	var annos annotations.Annotations
+	if len(samples.Floats) == 0 {
 		return enh.Out, nil
+	}
+	if len(samples.Histograms) > 0 {
+		metricName := samples.Metric.Get(labels.MetricName)
+		annos.Add(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, args[0].PositionRange()))
 	}
 	return aggrOverTime(vals, enh, func(s Series) float64 {
 		maxVal := s.Floats[0].F
@@ -725,17 +733,19 @@ func funcMaxOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 			}
 		}
 		return maxVal
-	}), nil
+	}), annos
 }
 
 // === min_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcMinOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	if len(vals[0].(Matrix)[0].Floats) == 0 {
-		// TODO(beorn7): The passed values only contain
-		// histograms. min_over_time ignores histograms for now. If
-		// there are only histograms, we have to return without adding
-		// anything to enh.Out.
+	samples := vals[0].(Matrix)[0]
+	var annos annotations.Annotations
+	if len(samples.Floats) == 0 {
 		return enh.Out, nil
+	}
+	if len(samples.Histograms) > 0 {
+		metricName := samples.Metric.Get(labels.MetricName)
+		annos.Add(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, args[0].PositionRange()))
 	}
 	return aggrOverTime(vals, enh, func(s Series) float64 {
 		minVal := s.Floats[0].F
@@ -745,7 +755,7 @@ func funcMinOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 			}
 		}
 		return minVal
-	}), nil
+	}), annos
 }
 
 // === sum_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
@@ -794,10 +804,6 @@ func funcQuantileOverTime(vals []parser.Value, args parser.Expressions, enh *Eva
 	q := vals[0].(Vector)[0].F
 	el := vals[1].(Matrix)[0]
 	if len(el.Floats) == 0 {
-		// TODO(beorn7): The passed values only contain
-		// histograms. quantile_over_time ignores histograms for now. If
-		// there are only histograms, we have to return without adding
-		// anything to enh.Out.
 		return enh.Out, nil
 	}
 
@@ -805,7 +811,10 @@ func funcQuantileOverTime(vals []parser.Value, args parser.Expressions, enh *Eva
 	if math.IsNaN(q) || q < 0 || q > 1 {
 		annos.Add(annotations.NewInvalidQuantileWarning(q, args[0].PositionRange()))
 	}
-
+	if len(el.Histograms) > 0 {
+		metricName := el.Metric.Get(labels.MetricName)
+		annos.Add(annotations.NewHistogramIgnoredInAggregationInfo(metricName, args[0].PositionRange()))
+	}
 	values := make(vectorByValueHeap, 0, len(el.Floats))
 	for _, f := range el.Floats {
 		values = append(values, Sample{F: f.F})
@@ -815,12 +824,14 @@ func funcQuantileOverTime(vals []parser.Value, args parser.Expressions, enh *Eva
 
 // === stddev_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcStddevOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	if len(vals[0].(Matrix)[0].Floats) == 0 {
-		// TODO(beorn7): The passed values only contain
-		// histograms. stddev_over_time ignores histograms for now. If
-		// there are only histograms, we have to return without adding
-		// anything to enh.Out.
+	samples := vals[0].(Matrix)[0]
+	var annos annotations.Annotations
+	if len(samples.Floats) == 0 {
 		return enh.Out, nil
+	}
+	if len(samples.Histograms) > 0 {
+		metricName := samples.Metric.Get(labels.MetricName)
+		annos.Add(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, args[0].PositionRange()))
 	}
 	return aggrOverTime(vals, enh, func(s Series) float64 {
 		var count float64
@@ -833,17 +844,19 @@ func funcStddevOverTime(vals []parser.Value, args parser.Expressions, enh *EvalN
 			aux, cAux = kahanSumInc(delta*(f.F-(mean+cMean)), aux, cAux)
 		}
 		return math.Sqrt((aux + cAux) / count)
-	}), nil
+	}), annos
 }
 
 // === stdvar_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcStdvarOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	if len(vals[0].(Matrix)[0].Floats) == 0 {
-		// TODO(beorn7): The passed values only contain
-		// histograms. stdvar_over_time ignores histograms for now. If
-		// there are only histograms, we have to return without adding
-		// anything to enh.Out.
+	samples := vals[0].(Matrix)[0]
+	var annos annotations.Annotations
+	if len(samples.Floats) == 0 {
 		return enh.Out, nil
+	}
+	if len(samples.Histograms) > 0 {
+		metricName := samples.Metric.Get(labels.MetricName)
+		annos.Add(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, args[0].PositionRange()))
 	}
 	return aggrOverTime(vals, enh, func(s Series) float64 {
 		var count float64
@@ -856,7 +869,7 @@ func funcStdvarOverTime(vals []parser.Value, args parser.Expressions, enh *EvalN
 			aux, cAux = kahanSumInc(delta*(f.F-(mean+cMean)), aux, cAux)
 		}
 		return (aux + cAux) / count
-	}), nil
+	}), annos
 }
 
 // === absent(Vector parser.ValueTypeVector) (Vector, Annotations) ===
