@@ -24,6 +24,8 @@ linters:
     - whitespace
     - loggercheck
     - sloglint
+    - exptostd
+    - nilnesserr
 
 issues:
   max-issues-per-linter: 0
