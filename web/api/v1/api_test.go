@@ -1256,6 +1256,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				"query": []string{
 					`label_replace(vector(42), "foo", "bar", "", "") or label_replace(vector(3.1415), "dings", "bums", "", "")`,
 				},
+				"time": []string{"123.4"},
 			},
 			responseAsJSON: `{
 		"resultType": "vector",
@@ -1264,13 +1265,13 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				"metric": {
 					"foo": "bar"
 				},
-				"value": [0, "42"]
+				"value": [123.4, "42"]
 			},
 			{
 				"metric": {
 					"dings": "bums"
 				},
-				"value": [0, "3.1415"]
+				"value": [123.4, "3.1415"]
 			}
 		]
 	}`,
