@@ -5,7 +5,7 @@ import {
   Checkbox,
   Stack,
   Group,
-  NumberInput,
+  NumberInput
 } from "@mantine/core";
 import { IconSettings } from "@tabler/icons-react";
 import { FC } from "react";
@@ -21,8 +21,9 @@ const SettingsMenu: FC = () => {
     enableSyntaxHighlighting,
     enableLinter,
     showAnnotations,
+    hideEmptyGroups,
     ruleGroupsPerPage,
-    alertGroupsPerPage,
+    alertGroupsPerPage
   } = useSettings();
   const dispatch = useAppDispatch();
 
@@ -48,7 +49,7 @@ const SettingsMenu: FC = () => {
                 onChange={(event) =>
                   dispatch(
                     updateSettings({
-                      useLocalTime: event.currentTarget.checked,
+                      useLocalTime: event.currentTarget.checked
                     })
                   )
                 }
@@ -63,7 +64,7 @@ const SettingsMenu: FC = () => {
                   onChange={(event) =>
                     dispatch(
                       updateSettings({
-                        enableQueryHistory: event.currentTarget.checked,
+                        enableQueryHistory: event.currentTarget.checked
                       })
                     )
                   }
@@ -74,7 +75,7 @@ const SettingsMenu: FC = () => {
                   onChange={(event) =>
                     dispatch(
                       updateSettings({
-                        enableAutocomplete: event.currentTarget.checked,
+                        enableAutocomplete: event.currentTarget.checked
                       })
                     )
                   }
@@ -85,7 +86,7 @@ const SettingsMenu: FC = () => {
                   onChange={(event) =>
                     dispatch(
                       updateSettings({
-                        enableSyntaxHighlighting: event.currentTarget.checked,
+                        enableSyntaxHighlighting: event.currentTarget.checked
                       })
                     )
                   }
@@ -96,7 +97,7 @@ const SettingsMenu: FC = () => {
                   onChange={(event) =>
                     dispatch(
                       updateSettings({
-                        enableLinter: event.currentTarget.checked,
+                        enableLinter: event.currentTarget.checked
                       })
                     )
                   }
@@ -107,17 +108,30 @@ const SettingsMenu: FC = () => {
 
           <Stack>
             <Fieldset p="md" legend="Alerts page settings">
-              <Checkbox
-                checked={showAnnotations}
-                label="Show expanded annotations"
-                onChange={(event) =>
-                  dispatch(
-                    updateSettings({
-                      showAnnotations: event.currentTarget.checked,
-                    })
-                  )
-                }
-              />
+              <Stack>
+                <Checkbox
+                  checked={showAnnotations}
+                  label="Show expanded annotations"
+                  onChange={(event) =>
+                    dispatch(
+                      updateSettings({
+                        showAnnotations: event.currentTarget.checked
+                      })
+                    )
+                  }
+                />
+                <Checkbox
+                  checked={hideEmptyGroups}
+                  label="Hide empty groups"
+                  onChange={(event) =>
+                    dispatch(
+                      updateSettings({
+                        hideEmptyGroups: event.currentTarget.checked
+                      })
+                    )
+                  }
+                />
+              </Stack>
             </Fieldset>
             <Fieldset p="md" legend="Alerts page settings">
               <NumberInput
@@ -132,7 +146,7 @@ const SettingsMenu: FC = () => {
 
                   dispatch(
                     updateSettings({
-                      alertGroupsPerPage: value,
+                      alertGroupsPerPage: value
                     })
                   );
                 }}
@@ -151,7 +165,7 @@ const SettingsMenu: FC = () => {
 
                   dispatch(
                     updateSettings({
-                      ruleGroupsPerPage: value,
+                      ruleGroupsPerPage: value
                     })
                   );
                 }}

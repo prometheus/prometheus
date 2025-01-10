@@ -13,6 +13,7 @@ interface Settings {
   enableAutocomplete: boolean;
   enableSyntaxHighlighting: boolean;
   enableLinter: boolean;
+  hideEmptyGroups: boolean;
   showAnnotations: boolean;
   ruleGroupsPerPage: number;
   alertGroupsPerPage: number;
@@ -30,6 +31,7 @@ export const localStorageKeyEnableAutocomplete = "settings.enableAutocomplete";
 export const localStorageKeyEnableSyntaxHighlighting =
   "settings.enableSyntaxHighlighting";
 export const localStorageKeyEnableLinter = "settings.enableLinter";
+export const localStorageKeyHideEmptyGroups = "settings.hideEmptyGroups";
 export const localStorageKeyShowAnnotations = "settings.showAnnotations";
 export const localStorageKeyRuleGroupsPerPage = "settings.ruleGroupsPerPage";
 export const localStorageKeyAlertGroupsPerPage = "settings.alertGroupsPerPage";
@@ -53,7 +55,7 @@ const getPathPrefix = (path: string) => {
     "/flags",
     "/config",
     "/alertmanager-discovery",
-    "/agent",
+    "/agent"
   ];
 
   const pagePath = pagePaths.find((p) => path.endsWith(p));
@@ -95,6 +97,10 @@ export const initialState: Settings = {
     localStorageKeyEnableLinter,
     true
   ),
+  hideEmptyGroups: initializeFromLocalStorage<boolean>(
+    localStorageKeyHideEmptyGroups,
+    false
+  ),
   showAnnotations: initializeFromLocalStorage<boolean>(
     localStorageKeyShowAnnotations,
     true
@@ -106,7 +112,7 @@ export const initialState: Settings = {
   alertGroupsPerPage: initializeFromLocalStorage<number>(
     localStorageKeyAlertGroupsPerPage,
     10
-  ),
+  )
 };
 
 export const settingsSlice = createSlice({
@@ -115,8 +121,8 @@ export const settingsSlice = createSlice({
   reducers: {
     updateSettings: (state, { payload }: PayloadAction<Partial<Settings>>) => {
       Object.assign(state, payload);
-    },
-  },
+    }
+  }
 });
 
 export const { updateSettings } = settingsSlice.actions;

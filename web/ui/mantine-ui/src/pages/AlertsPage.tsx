@@ -11,7 +11,7 @@ import {
   Alert,
   TextInput,
   Anchor,
-  Pagination,
+  Pagination
 } from "@mantine/core";
 import { useSuspenseAPIQuery } from "../api/api";
 import { AlertingRule, AlertingRulesResult } from "../api/responseTypes/rules";
@@ -23,14 +23,14 @@ import { Fragment, useEffect, useMemo } from "react";
 import { StateMultiSelect } from "../components/StateMultiSelect";
 import { IconInfoCircle, IconSearch } from "@tabler/icons-react";
 import { LabelBadges } from "../components/LabelBadges";
-import { useSettings } from "../state/settingsSlice";
+import { useSettings, updateSettings } from "../state/settingsSlice";
+import { useAppDispatch } from "../state/hooks";
 import {
   ArrayParam,
-  BooleanParam,
   NumberParam,
   StringParam,
   useQueryParam,
-  withDefault,
+  withDefault
 } from "use-query-params";
 import { useDebouncedValue } from "@mantine/hooks";
 import { KVSearch } from "@nexucis/kvsearch";
@@ -67,7 +67,7 @@ type AlertsPageData = {
 
 const kvSearch = new KVSearch<AlertingRule>({
   shouldSort: true,
-  indexedKeys: ["name", "labels", ["labels", /.*/]],
+  indexedKeys: ["name", "labels", ["labels", /.*/]]
 });
 
 const buildAlertsPageData = (
@@ -79,9 +79,9 @@ const buildAlertsPageData = (
     globalCounts: {
       inactive: 0,
       pending: 0,
-      firing: 0,
+      firing: 0
     },
-    groups: [],
+    groups: []
   };
 
   for (const group of data.groups) {
@@ -89,7 +89,7 @@ const buildAlertsPageData = (
       total: 0,
       inactive: 0,
       pending: 0,
-      firing: 0,
+      firing: 0
     };
 
     for (const r of group.rules) {
@@ -126,9 +126,9 @@ const buildAlertsPageData = (
         rule: r,
         counts: {
           firing: r.alerts.filter((a) => a.state === "firing").length,
-          pending: r.alerts.filter((a) => a.state === "pending").length,
-        },
-      })),
+          pending: r.alerts.filter((a) => a.state === "pending").length
+        }
+      }))
     });
   }
 
@@ -146,11 +146,12 @@ export default function AlertsPage() {
   const { data } = useSuspenseAPIQuery<AlertingRulesResult>({
     path: `/rules`,
     params: {
-      type: "alert",
-    },
+      type: "alert"
+    }
   });
 
-  const { showAnnotations } = useSettings();
+  const { hideEmptyGroups, showAnnotations } = useSettings();
+  const dispatch = useAppDispatch();
 
   // Define URL query params.
   const [stateFilter, setStateFilter] = useQueryParam(
@@ -162,10 +163,6 @@ export default function AlertsPage() {
     withDefault(StringParam, "")
   );
   const [debouncedSearch] = useDebouncedValue<string>(searchFilter.trim(), 250);
-  const [showEmptyGroups, setShowEmptyGroups] = useQueryParam(
-    "showEmptyGroups",
-    withDefault(BooleanParam, true)
-  );
 
   const { alertGroupsPerPage } = useSettings();
   const [activePage, setActivePage] = useQueryParam(
@@ -181,10 +178,10 @@ export default function AlertsPage() {
 
   const shownGroups = useMemo(
     () =>
-      showEmptyGroups
+      !hideEmptyGroups
         ? alertsPageData.groups
         : alertsPageData.groups.filter((g) => g.rules.length > 0),
-    [alertsPageData.groups, showEmptyGroups]
+    [alertsPageData.groups, hideEmptyGroups]
   );
 
   // If we were e.g. on page 10 and the number of total pages decreases to 5 (due to filtering
@@ -255,7 +252,13 @@ export default function AlertsPage() {
               <Anchor
                 ml="md"
                 fz="1em"
-                onClick={() => setShowEmptyGroups(false)}
+                onClick={() => {
+                  dispatch(
+                    updateSettings({
+                      hideEmptyGroups: true
+                    })
+                  );
+                }}
               >
                 Hide empty groups
               </Anchor>
@@ -267,7 +270,13 @@ export default function AlertsPage() {
               <Anchor
                 ml="md"
                 fz="1em"
-                onClick={() => setShowEmptyGroups(false)}
+                onClick={() => {
+                  dispatch(
+                    updateSettings({
+                      hideEmptyGroups: true
+                    })
+                  );
+                }}
               >
                 Hide empty groups
               </Anchor>
@@ -286,8 +295,8 @@ export default function AlertsPage() {
                             // have a different background color than their surrounding group card in dark mode,
                             // but it would be better to use CSS to override the light/dark colors for
                             // collapsed/expanded accordion items.
-                            backgroundColor: "#c0c0c015",
-                          },
+                            backgroundColor: "#c0c0c015"
+                          }
                         }}
                         key={j}
                         value={j.toString()}
@@ -403,7 +412,7 @@ export default function AlertsPage() {
           )}
         </Card>
       )),
-    [currentPageGroups, showAnnotations, setShowEmptyGroups]
+    [currentPageGroups, showAnnotations, dispatch]
   );
 
   return (
@@ -442,7 +451,7 @@ export default function AlertsPage() {
           No rules found.
         </Alert>
       ) : (
-        !showEmptyGroups &&
+        hideEmptyGroups &&
         alertsPageData.groups.length !== shownGroups.length && (
           <Alert
             title="Hiding groups with no matching rules"
@@ -450,7 +459,13 @@ export default function AlertsPage() {
           >
             Hiding {alertsPageData.groups.length - shownGroups.length} empty
             groups due to filters or no rules.
-            <Anchor ml="md" fz="1em" onClick={() => setShowEmptyGroups(true)}>
+            <Anchor
+              ml="md"
+              fz="1em"
+              onClick={() =>
+                dispatch(updateSettings({ hideEmptyGroups: false }))
+              }
+            >
               Show empty groups
             </Anchor>
           </Alert>

@@ -37,7 +37,7 @@ startAppListening({
   effect: ({ payload }) => {
     persistToLocalStorage(
       localStorageKeyServiceDiscoveryPageCollapsedPools,
-      payload
+      payload,
     );
   },
 });
@@ -47,7 +47,7 @@ startAppListening({
   effect: (_, { getState }) => {
     persistToLocalStorage(
       localStorageKeyQueryHistory,
-      getState().queryPage.queryHistory
+      getState().queryPage.queryHistory,
     );
   },
 });
@@ -62,6 +62,7 @@ startAppListening({
         case "enableAutocomplete":
         case "enableSyntaxHighlighting":
         case "enableLinter":
+        case "hideEmptyGroups":
         case "showAnnotations":
         case "ruleGroupsPerPage":
           return persistToLocalStorage(`settings.${key}`, value);
