@@ -306,7 +306,7 @@ func instantValue(vals []parser.Value, args parser.Expressions, out Vector, isRa
 	switch true {
 	case len(floats) > 0 && len(histograms) > 0:
 		return out, annos.Add(annotations.NewMixedFloatsHistogramsWarning(metricName, args[0].PositionRange()))
-	case len(floats) < 2 || len(histograms) < 2:
+	case (len(floats) > 0 && len(floats) < 2) || (len(histograms) > 0 && len(histograms) < 2):
 		// No sense in trying to compute a rate without at least two points. Drop
 		// this Vector element.
 		// TODO: add RangeTooShortWarning
