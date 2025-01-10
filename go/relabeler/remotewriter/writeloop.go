@@ -70,7 +70,7 @@ func (wl *writeLoop) run(ctx context.Context) {
 			} else {
 				i, err = wl.nextIterator(ctx, rw)
 				if err != nil {
-					logger.Errorf("failed to get next iterator: %v", err)
+					logger.Errorf("failed to get current next iterator: %v", err)
 					delay = defaultDelay
 					continue
 				}
