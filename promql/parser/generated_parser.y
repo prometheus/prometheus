@@ -368,7 +368,7 @@ grouping_label  : maybe_label
                         $$ = $1
                         }
                 | STRING {
-                         if !model.LabelName(yylex.(*parser).unquoteString($1.Val)).IsValid() && $1.Val[0] != '"' {
+                        if !model.LabelName(yylex.(*parser).unquoteString($1.Val)).IsValid() && $1.Val[0] != '"' {
                                 yylex.(*parser).unexpected("grouping opts", "label")
                         }
                         $$ = $1
