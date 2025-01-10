@@ -191,7 +191,7 @@ func (wl *writeLoop) nextIterator(ctx context.Context, writer Writer) (*Iterator
 		wl.makeCorruptMarker(),
 		nextHeadRecord,
 		wl.destination.metrics.unexpectedEOFCount,
-		wl.destination.metrics.segmentSizeBytes,
+		wl.destination.metrics.segmentSizeInBytes,
 	)
 	if err != nil {
 		return nil, errors.Join(fmt.Errorf("failed to create data source: %w", err), crw.Close())

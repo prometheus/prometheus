@@ -5,13 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/prometheus/prometheus/pp/go/util/optional"
+	"github.com/prometheus/client_golang/prometheus"
 	"io"
 	"os"
 	"path/filepath"
 	"sync"
-
-	"github.com/prometheus/prometheus/pp/go/util/optional"
-	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head/catalog"
@@ -69,15 +68,15 @@ func (NoOpDecoderStateWriteCloser) Write(i []byte) (int, error) { return len(i),
 func (NoOpDecoderStateWriteCloser) Close() error                { return nil }
 
 type shard struct {
-	headID                  string
-	shardID                 uint16
-	corrupted               bool
-	lastReadSegmentID       optional.Optional[uint32]
-	walReader               ShardWalReader
-	decoder                 *Decoder
-	decoderStateFile        DecoderStateWriteCloser
-	unexpectedEOFCounterVec *prometheus.CounterVec
-	segmentSizeHistogramVec *prometheus.HistogramVec
+	headID             string
+	shardID            uint16
+	corrupted          bool
+	lastReadSegmentID  optional.Optional[uint32]
+	walReader          ShardWalReader
+	decoder            *Decoder
+	decoderStateFile   DecoderStateWriteCloser
+	unexpectedEOFCount prometheus.Counter
+	segmentSize        prometheus.Histogram
 }
 
 func newShard(
@@ -87,8 +86,8 @@ func newShard(
 	resetDecoderState bool,
 	externalLabels labels.Labels,
 	relabelConfigs []*cppbridge.RelabelConfig,
-	unexpectedEOFCounterVec *prometheus.CounterVec,
-	segmentSizeHistogramVec *prometheus.HistogramVec,
+	unexpectedEOFCount prometheus.Counter,
+	segmentSize prometheus.Histogram,
 ) (*shard, error) {
 	var err error
 	var wr *walReader
@@ -121,13 +120,13 @@ func newShard(
 	}
 
 	s := &shard{
-		headID:                  headID,
-		shardID:                 shardID,
-		walReader:               wr,
-		decoder:                 decoder,
-		decoderStateFile:        decoderStateFile,
-		unexpectedEOFCounterVec: unexpectedEOFCounterVec,
-		segmentSizeHistogramVec: segmentSizeHistogramVec,
+		headID:             headID,
+		shardID:            shardID,
+		walReader:          wr,
+		decoder:            decoder,
+		decoderStateFile:   decoderStateFile,
+		unexpectedEOFCount: unexpectedEOFCount,
+		segmentSize:        segmentSize,
 	}
 
 	if !resetDecoderState {
@@ -175,25 +174,15 @@ func (s *shard) Read(ctx context.Context, targetSegmentID uint32, minTimestamp i
 				return nil, io.EOF
 			}
 			if errors.Is(err, io.ErrUnexpectedEOF) && isActiveHead {
-				var segmentID uint32 = 0
-				if !s.lastReadSegmentID.IsNil() {
-					segmentID = s.lastReadSegmentID.Value() + 1
-				}
-				s.unexpectedEOFCounterVec.WithLabelValues(
-					s.headID,
-					fmt.Sprintf("%d", s.shardID),
-					fmt.Sprintf("%d", segmentID),
-				).Inc()
+				s.unexpectedEOFCount.Inc()
 				return nil, io.EOF
 			}
 			s.corrupted = true
+			logger.Errorf("shard is corrupted: %v", err)
 			return nil, errors.Join(err, ErrShardIsCorrupted)
 		}
 
-		s.segmentSizeHistogramVec.WithLabelValues(
-			s.headID,
-			fmt.Sprintf("%d", s.shardID),
-		).Observe(float64(len(segment.Data())))
+		s.segmentSize.Observe(float64(len(segment.Data())))
 
 		decodedSegment, err := s.decoder.Decode(segment.Data(), minTimestamp)
 		if err != nil {
@@ -227,8 +216,8 @@ type dataSource struct {
 	mtx         sync.Mutex
 	cacheWriter *cacheWriter
 
-	unexpectedEOFCounterVec *prometheus.CounterVec
-	segmentSizeHistogramVec *prometheus.HistogramVec
+	unexpectedEOFCount prometheus.Counter
+	segmentSize        prometheus.Histogram
 }
 
 func newDataSource(dataDir string,
@@ -237,8 +226,8 @@ func newDataSource(dataDir string,
 	discardCache bool,
 	corruptMarker CorruptMarker,
 	headRecord *catalog.Record,
-	unexpectedEOFCounterVec *prometheus.CounterVec,
-	segmentSizeHistogramVec *prometheus.HistogramVec,
+	unexpectedEOFCount prometheus.Counter,
+	segmentSize prometheus.Histogram,
 ) (*dataSource, error) {
 	var err error
 	var convertedRelabelConfigs []*cppbridge.RelabelConfig
@@ -249,11 +238,11 @@ func newDataSource(dataDir string,
 
 	headReleaseFunc := headRecord.Acquire()
 	b := &dataSource{
-		headRecord:              headRecord,
-		corruptMarker:           corruptMarker,
-		headReleaseFunc:         headReleaseFunc,
-		unexpectedEOFCounterVec: unexpectedEOFCounterVec,
-		segmentSizeHistogramVec: segmentSizeHistogramVec,
+		headRecord:         headRecord,
+		corruptMarker:      corruptMarker,
+		headReleaseFunc:    headReleaseFunc,
+		unexpectedEOFCount: unexpectedEOFCount,
+		segmentSize:        segmentSize,
 	}
 
 	for shardID := uint16(0); shardID < numberOfShards; shardID++ {
@@ -268,8 +257,8 @@ func newDataSource(dataDir string,
 			discardCache,
 			config.ExternalLabels,
 			convertedRelabelConfigs,
-			b.unexpectedEOFCounterVec,
-			b.segmentSizeHistogramVec,
+			b.unexpectedEOFCount,
+			b.segmentSize,
 		)
 		if err != nil {
 			return nil, errors.Join(fmt.Errorf("failed to create shard: %w", err), b.Close())
@@ -287,8 +276,8 @@ func createShard(
 	resetDecoderState bool,
 	externalLabels labels.Labels,
 	relabelConfigs []*cppbridge.RelabelConfig,
-	unexpectedEOFCounterVec *prometheus.CounterVec,
-	segmentSizeHistogramVec *prometheus.HistogramVec,
+	unexpectedEOFCount prometheus.Counter,
+	segmentSize prometheus.Histogram,
 ) (*shard, error) {
 	s, err := newShard(
 		headID,
@@ -298,8 +287,8 @@ func createShard(
 		resetDecoderState,
 		externalLabels,
 		relabelConfigs,
-		unexpectedEOFCounterVec,
-		segmentSizeHistogramVec,
+		unexpectedEOFCount,
+		segmentSize,
 	)
 	if err != nil {
 		logger.Errorf("failed to create shard: %v", err)
@@ -311,8 +300,8 @@ func createShard(
 			true,
 			externalLabels,
 			relabelConfigs,
-			unexpectedEOFCounterVec,
-			segmentSizeHistogramVec,
+			unexpectedEOFCount,
+			segmentSize,
 		)
 	}
 	return s, nil
