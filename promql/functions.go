@@ -299,27 +299,22 @@ func instantValue(vals []parser.Value, args parser.Expressions, out Vector, isRa
 	metricName := samples.Metric.Get(labels.MetricName)
 	floats := samples.Floats
 	histograms := samples.Histograms
-	// do for custom buckets as well
-	// Action plan-
-	// Error handling
-	// Add tests for both custom and normal
-	// Annotations for counter an and gauge
-	// irate for counter and idelta for gauge
 
+	var annos annotations.Annotations
 	var lastSample, previousSample, resultSample Sample
 	var sampledInterval int64
 	switch true {
 	case len(floats) > 0 && len(histograms) > 0:
-		return out, annotations.New().Add(annotations.NewMixedFloatsHistogramsWarning(metricName, args[0].PositionRange()))
+		return out, annos.Add(annotations.NewMixedFloatsHistogramsWarning(metricName, args[0].PositionRange()))
 	case len(floats) < 2 || len(histograms) < 2:
 		// No sense in trying to compute a rate without at least two points. Drop
 		// this Vector element.
 		// TODO: add RangeTooShortWarning
-		return out, nil
+		return out, annos
 	case len(floats) > 0:
-		lastSample.F = samples.Floats[floatsLen-1].F
-		previousSample.F = samples.Floats[floatsLen-2].F
-		sampledInterval = samples.Floats[floatsLen-1].T - samples.Floats[floatsLen-2].T
+		lastSample.F = floats[len(floats)-1].F
+		previousSample.F = floats[len(floats)-2].F
+		sampledInterval = floats[len(floats)-1].T - floats[len(floats)-2].T
 		if isRate && lastSample.F < previousSample.F {
 			// Counter reset.
 			resultSample.F = lastSample.F
@@ -336,29 +331,40 @@ func instantValue(vals []parser.Value, args parser.Expressions, out Vector, isRa
 		}
 	case len(histograms) > 0:
 		// Contains only histograms.
-		lastSample.H = samples.Histograms[histogramsLen-1].H
-		previousSample.H = samples.Histograms[histogramsLen-2].H
-		sampledInterval = samples.Histograms[histogramsLen-1].T - samples.Histograms[histogramsLen-2].T
+		lastSample.H = histograms[len(histograms)-1].H
+		previousSample.H = histograms[len(histograms)-2].H
+		sampledInterval = histograms[len(histograms)-1].T - histograms[len(histograms)-2].T
 		resultSample.H = lastSample.H.Copy()
+		// irate should only be applied to counters.
+		if isRate && (lastSample.H.CounterResetHint == histogram.GaugeType || previousSample.H.CounterResetHint == histogram.GaugeType) {
+			annos.Add(annotations.NewNativeHistogramNotCounterWarning(metricName, args.PositionRange()))
+		}
+		// idelta should only be applied to gauges.
+		if !isRate && (lastSample.H.CounterResetHint != histogram.GaugeType || previousSample.H.CounterResetHint != histogram.GaugeType) {
+			annos.Add(annotations.NewNativeHistogramNotGaugeWarning(metricName, args.PositionRange()))
+		}
 		if isRate && lastSample.H.DetectReset(previousSample.H) {
 			// Counter reset.
 		} else {
 			_, err := resultSample.H.Sub(previousSample.H)
 			if err != nil {
-				// handle error for custom buckets or mix
-				return out, annotations.New().Add(err)
+				if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
+					return out, annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, args.PositionRange()))
+				} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
+					return out, annos.Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, args.PositionRange()))
+				}
 			}
 		}
 		if sampledInterval == 0 {
 			// Avoid dividing by 0.
-			return out, nil
+			return out, annos
 		}
 		if isRate {
 			// Convert to per-second.
 			resultSample.H.Div(float64(sampledInterval) / 1000)
 		}
 	}
-	return append(out, resultSample), nil
+	return append(out, resultSample), annos
 }
 
 // Calculate the trend value at the given index i in raw data d.
