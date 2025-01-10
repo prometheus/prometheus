@@ -2410,10 +2410,31 @@ var testExpr = []struct {
 					End:   34,
 				},
 			},
-			Grouping: []string{"foo bar"},
+			Grouping: []string{`"foo bar"`},
 			PosRange: posrange.PositionRange{
 				Start: 0,
 				End:   35,
+			},
+		},
+	},
+	{
+		input: `sum by("utf8.job") (http_requests_total)`,
+		expected: &AggregateExpr{
+			Op: SUM,
+			Expr: &VectorSelector{
+				Name: "http_requests_total",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_total"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 20,
+					End:   39,
+				},
+			},
+			Grouping: []string{`"utf8.job"`},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   40,
 			},
 		},
 	},
@@ -2435,7 +2456,7 @@ var testExpr = []struct {
 					End:   42,
 				},
 			},
-			Grouping: []string{"foo", "bar", "baz"},
+			Grouping: []string{`"foo"`, "bar", "baz"},
 			PosRange: posrange.PositionRange{
 				Start: 0,
 				End:   43,

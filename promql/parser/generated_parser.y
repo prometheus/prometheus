@@ -368,12 +368,15 @@ grouping_label  : maybe_label
                         $$ = $1
                         }
                 | STRING {
-                        if !model.LabelName(yylex.(*parser).unquoteString($1.Val)).IsValid() {
+                         if !model.LabelName(yylex.(*parser).unquoteString($1.Val)).IsValid() && $1.Val[0] != '"' {
                                 yylex.(*parser).unexpected("grouping opts", "label")
                         }
                         $$ = $1
                         $$.Pos++
-                        $$.Val = yylex.(*parser).unquoteString($$.Val)
+                        if $1.Val[0] != '"' {
+                                $$.Val = yylex.(*parser).unquoteString($$.Val)
+                        }
+                        $$.Val = $$.Val
                         }
                 | error
                         { yylex.(*parser).unexpected("grouping opts", "label"); $$ = Item{} }

@@ -1266,12 +1266,15 @@ yydefault:
 	case 59:
 		yyDollar = yyS[yypt-1 : yypt+1]
 		{
-			if !model.LabelName(yylex.(*parser).unquoteString(yyDollar[1].item.Val)).IsValid() {
+			if !model.LabelName(yylex.(*parser).unquoteString(yyDollar[1].item.Val)).IsValid() && yyDollar[1].item.Val[0] != '"' {
 				yylex.(*parser).unexpected("grouping opts", "label")
 			}
 			yyVAL.item = yyDollar[1].item
 			yyVAL.item.Pos++
-			yyVAL.item.Val = yylex.(*parser).unquoteString(yyVAL.item.Val)
+			if yyDollar[1].item.Val[0] != '"' {
+				yyVAL.item.Val = yylex.(*parser).unquoteString(yyVAL.item.Val)
+			}
+			yyVAL.item.Val = yyVAL.item.Val
 		}
 	case 60:
 		yyDollar = yyS[yypt-1 : yypt+1]
