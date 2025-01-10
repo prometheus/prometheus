@@ -250,13 +250,13 @@ func nextHead(ctx context.Context, headCatalog Catalog, headID string) (*catalog
 	}
 
 	if len(headRecords) == 0 {
-		return nil, fmt.Errorf("no new heads")
+		return nil, fmt.Errorf("nextHead: no new heads: empty head records")
 	}
 
 	for index, headRecord := range headRecords {
 		if headRecord.ID() == headID {
 			if index == len(headRecords)-1 {
-				return nil, fmt.Errorf("no new heads")
+				return nil, fmt.Errorf("no new heads: last head record: %s", headID)
 			}
 
 			return headRecords[index+1], nil
@@ -283,7 +283,7 @@ func scanForNextHead(ctx context.Context, dataDir string, headCatalog Catalog, d
 	}
 
 	if len(headRecords) == 0 {
-		return nil, false, fmt.Errorf("no new heads")
+		return nil, false, fmt.Errorf("scanForNextHead: no new heads: empty head records")
 	}
 
 	var headFound bool

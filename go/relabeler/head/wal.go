@@ -109,7 +109,7 @@ type byteReader struct {
 
 func (r *byteReader) ReadByte() (byte, error) {
 	b := make([]byte, 1)
-	n, err := r.r.Read(b)
+	n, err := io.ReadFull(r.r, b)
 	if err != nil {
 		return 0, err
 	}

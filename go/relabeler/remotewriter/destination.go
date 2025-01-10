@@ -296,7 +296,7 @@ func NewDestination(cfg DestinationConfig) *Destination {
 					Help:        "Size of segment.",
 					ConstLabels: constLabels,
 				},
-				[]string{"head_id", "shard_id", "segment_id"},
+				[]string{"head_id", "shard_id"},
 			),
 		},
 	}

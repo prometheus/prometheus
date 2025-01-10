@@ -5,12 +5,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/prometheus/prometheus/pp/go/util/optional"
-	"github.com/prometheus/client_golang/prometheus"
 	"io"
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/prometheus/prometheus/pp/go/util/optional"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head/catalog"
@@ -192,7 +193,6 @@ func (s *shard) Read(ctx context.Context, targetSegmentID uint32, minTimestamp i
 		s.segmentSizeHistogramVec.WithLabelValues(
 			s.headID,
 			fmt.Sprintf("%d", s.shardID),
-			fmt.Sprintf("%d", segment.ID),
 		).Observe(float64(len(segment.Data())))
 
 		decodedSegment, err := s.decoder.Decode(segment.Data(), minTimestamp)
