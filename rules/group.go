@@ -298,6 +298,14 @@ func (g *Group) run(ctx context.Context) {
 	}
 }
 
+func (g *Group) stopAsync() {
+	close(g.done)
+}
+
+func (g *Group) awaitStopped() {
+	<-g.terminated
+}
+
 func (g *Group) stop() {
 	close(g.done)
 	<-g.terminated

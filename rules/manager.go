@@ -178,7 +178,11 @@ func (m *Manager) Stop() {
 	level.Info(m.logger).Log("msg", "Stopping rule manager...")
 
 	for _, eg := range m.groups {
-		eg.stop()
+		eg.stopAsync()
+	}
+
+	for _, eg := range m.groups {
+		eg.awaitStopped()
 	}
 
 	// Shut down the groups waiting multiple evaluation intervals to write
