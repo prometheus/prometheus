@@ -1989,12 +1989,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 
 			// Expected evaluation order
 			order := group.opts.RuleConcurrencyController.SplitGroupIntoBatches(ctx, group)
-			require.Equal(t, []ConcurrentRules{
-				{0},
-				{1},
-				{2},
-				{3},
-			}, order)
+			require.Nil(t, order)
 
 			// Never expect more than 1 inflight query at a time.
 			require.EqualValues(t, 1, maxInflight.Load())

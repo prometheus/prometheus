@@ -550,11 +550,7 @@ func (c sequentialRuleEvalController) Allow(_ context.Context, _ *Group, _ Rule)
 }
 
 func (c sequentialRuleEvalController) SplitGroupIntoBatches(_ context.Context, g *Group) []ConcurrentRules {
-	order := make([]ConcurrentRules, len(g.rules))
-	for i := range g.rules {
-		order[i] = []int{i}
-	}
-	return order
+	return nil
 }
 
 func (c sequentialRuleEvalController) Done(_ context.Context) {}
