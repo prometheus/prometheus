@@ -107,36 +107,36 @@ const SettingsMenu: FC = () => {
 
           <Stack>
             <Fieldset p="md" legend="Alerts page settings">
-              <Checkbox
-                checked={showAnnotations}
-                label="Show expanded annotations"
-                onChange={(event) =>
-                  dispatch(
-                    updateSettings({
-                      showAnnotations: event.currentTarget.checked,
-                    })
-                  )
-                }
-              />
-            </Fieldset>
-            <Fieldset p="md" legend="Alerts page settings">
-              <NumberInput
-                min={1}
-                allowDecimal={false}
-                label="Alert groups per page"
-                value={alertGroupsPerPage}
-                onChange={(value) => {
-                  if (typeof value !== "number") {
-                    return;
+              <Stack>
+                <Checkbox
+                  checked={showAnnotations}
+                  label="Show expanded annotations"
+                  onChange={(event) =>
+                    dispatch(
+                      updateSettings({
+                        showAnnotations: event.currentTarget.checked,
+                      })
+                    )
                   }
+                />
+                <NumberInput
+                  min={1}
+                  allowDecimal={false}
+                  label="Alert groups per page"
+                  value={alertGroupsPerPage}
+                  onChange={(value) => {
+                    if (typeof value !== "number") {
+                      return;
+                    }
 
-                  dispatch(
-                    updateSettings({
-                      alertGroupsPerPage: value,
-                    })
-                  );
-                }}
-              />
+                    dispatch(
+                      updateSettings({
+                        alertGroupsPerPage: value,
+                      })
+                    );
+                  }}
+                />
+              </Stack>
             </Fieldset>
             <Fieldset p="md" legend="Rules page settings">
               <NumberInput
