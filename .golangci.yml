@@ -8,11 +8,13 @@ linters:
   enable:
     - depguard
     - errorlint
+    - exptostd
     - gocritic
     - godot
     - gofumpt
     - goimports
     - misspell
+    - nilnesserr
     - nolintlint
     - perfsprint
     - predeclared
@@ -24,8 +26,6 @@ linters:
     - whitespace
     - loggercheck
     - sloglint
-    - exptostd
-    - nilnesserr
 
 issues:
   max-issues-per-linter: 0
