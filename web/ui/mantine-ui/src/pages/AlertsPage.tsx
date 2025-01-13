@@ -163,7 +163,7 @@ export default function AlertsPage() {
   );
   const [debouncedSearch] = useDebouncedValue<string>(searchFilter.trim(), 250);
   const [showEmptyGroups, setShowEmptyGroups] = useLocalStorage<boolean>({
-    key: "alerts-page-show-empty-groups",
+    key: "alertsPage.showEmptyGroups",
     defaultValue: true,
   });
 
