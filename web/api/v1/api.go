@@ -68,6 +68,9 @@ const (
 	// Non-standard status code (originally introduced by nginx) for the case when a client closes
 	// the connection while the server is still processing the request.
 	statusClientClosedConnection = 499
+
+	// checkContextEveryNIterations is used in some tight loops to check if the context is done.
+	checkContextEveryNIterations = 128
 )
 
 type errorType string
@@ -962,10 +965,15 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 
 	warnings := set.Warnings()
 
+	i := 1
 	for set.Next() {
-		if err := ctx.Err(); err != nil {
-			return apiFuncResult{nil, returnAPIError(err), warnings, closer}
+		if i%checkContextEveryNIterations == 0 {
+			if err := ctx.Err(); err != nil {
+				return apiFuncResult{nil, returnAPIError(err), warnings, closer}
+			}
 		}
+		i++
+
 		metrics = append(metrics, set.At().Labels())
 
 		if limit > 0 && len(metrics) > limit {
