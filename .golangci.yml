@@ -5,6 +5,7 @@ output:
   sort-results: true
 
 linters:
+  # Keep this list sorted alphabetically
   enable:
     - depguard
     - errorlint
@@ -13,19 +14,19 @@ linters:
     - godot
     - gofumpt
     - goimports
+    - loggercheck
     - misspell
     - nilnesserr
     - nolintlint
     - perfsprint
     - predeclared
     - revive
+    - sloglint
     - testifylint
     - unconvert
     - unused
     - usestdlibvars
     - whitespace
-    - loggercheck
-    - sloglint
 
 issues:
   max-issues-per-linter: 0
