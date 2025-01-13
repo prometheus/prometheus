@@ -175,10 +175,11 @@ func (s *shard) Read(ctx context.Context, targetSegmentID uint32, minTimestamp i
 			}
 			if errors.Is(err, io.ErrUnexpectedEOF) && isActiveHead {
 				s.unexpectedEOFCount.Inc()
+				logger.Errorf("remotewritedebug %s/%d unexpected eof: %v", s.headID, s.shardID, err)
 				return nil, io.EOF
 			}
 			s.corrupted = true
-			logger.Errorf("shard is corrupted: %v", err)
+			logger.Errorf("remotewritedebug shard %s/%d is corrupted: %v", s.headID, s.shardID, err)
 			return nil, errors.Join(err, ErrShardIsCorrupted)
 		}
 

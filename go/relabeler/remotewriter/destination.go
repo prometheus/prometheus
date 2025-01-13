@@ -294,6 +294,7 @@ func NewDestination(cfg DestinationConfig) *Destination {
 					Name:        "segment_size_bytes",
 					Help:        "Size of segment.",
 					ConstLabels: constLabels,
+					Buckets:     []float64{1 << 10, 1 << 11, 1 << 12, 1 << 13, 1 << 14, 1 << 15, 1 << 16, 1 << 17, 1 << 18, 1 << 19, 1 << 20},
 				},
 			),
 		},

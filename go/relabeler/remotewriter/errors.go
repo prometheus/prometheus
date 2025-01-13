@@ -7,12 +7,9 @@ import (
 
 var (
 	ErrShardIsCorrupted  = errors.New("shard is corrupted")
-	ErrCursorIsCorrupted = errors.New("cursor is corrupted")
 	ErrEndOfBlock        = errors.New("end of block")
 	ErrPartialReadResult = errors.New("partial read result")
 	ErrEmptyReadResult   = errors.New("empty read result")
-	ErrBlockIsCorrupted  = errors.New("block is corrupted")
-	ErrDataIsObsoleted   = errors.New("data is obsoleted")
 )
 
 // CloseAll closes all given closers.
