@@ -198,6 +198,11 @@ http_archive(
     sha256 = "b62bd839ea6c28265af9a1f68393eda37fab3611425d3b28882d8e424535ec9d",
     strip_prefix = "boost-1.82.0/",
     url = "https://github.com/boostorg/boost/releases/download/boost-1.82.0/boost-1.82.0.tar.gz",
+    patch_cmds = [
+        # Remove directories with `build` name
+        # Workaround for https://github.com/bazelbuild/bazel/issues/22484
+        "find ./libs -type d -wholename '*/build' | xargs rm -rf"
+    ]
 )
 
 local_repository(
