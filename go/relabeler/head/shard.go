@@ -144,7 +144,7 @@ func (h *Head) shardLoop(shardID uint16, stopc chan struct{}) {
 					task.CacheByShard(shardID),
 					task.Options(),
 					task.StaleNansStateByShard(shardID),
-					task.StaleNansTS(),
+					task.DefTimestamp(),
 					task.ShardedData(),
 					shardsInnerSeries,
 					shardsRelabeledSeries,

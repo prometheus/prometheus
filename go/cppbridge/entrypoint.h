@@ -675,7 +675,7 @@ void prompp_prometheus_relabel_stalenans_state_reset(void* args);
  *     input_lss               uintptr            // pointer to constructed input label sets;
  *     target_lss              uintptr            // pointer to constructed target label sets;
  *     state                   uintptr            // pointer to source state
- *     stale_ts                int64              // timestamp for StaleNaNs
+ *     def_timestamp           int64              // timestamp for metrics and StaleNaNs
  * }
  *
  * @param res {

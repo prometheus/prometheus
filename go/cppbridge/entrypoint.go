@@ -1248,7 +1248,7 @@ func prometheusPerShardRelabelerInputRelabeling(
 // hashdex(first stage) with state stalenans.
 func prometheusPerShardRelabelerInputRelabelingWithStalenans(
 	perShardRelabeler, inputLss, targetLss, cache, hashdex, sourceState uintptr,
-	staleNansTS int64,
+	defTimestamp int64,
 	options RelabelerOptions,
 	shardsInnerSeries []*InnerSeries,
 	shardsRelabeledSeries []*RelabeledSeries,
@@ -1263,7 +1263,7 @@ func prometheusPerShardRelabelerInputRelabelingWithStalenans(
 		inputLss              uintptr
 		targetLss             uintptr
 		state                 uintptr
-		staleNansTS           int64
+		defTimestamp          int64
 	}{
 		shardsInnerSeries,
 		shardsRelabeledSeries,
@@ -1274,7 +1274,7 @@ func prometheusPerShardRelabelerInputRelabelingWithStalenans(
 		inputLss,
 		targetLss,
 		sourceState,
-		staleNansTS,
+		defTimestamp,
 	}
 	var res struct {
 		samplesAdded uint32

@@ -24,6 +24,8 @@ using LabelView = std::pair<SymbolView, SymbolView>;
 
 using Timestamp = int64_t;
 
+constexpr Timestamp kNullTimestamp = std::numeric_limits<int64_t>::min();
+
 struct TimeInterval {
   static constexpr Timestamp kMin = std::numeric_limits<int64_t>::max();
   static constexpr Timestamp kMax = std::numeric_limits<int64_t>::min();
