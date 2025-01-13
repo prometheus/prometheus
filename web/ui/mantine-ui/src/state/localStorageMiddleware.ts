@@ -37,7 +37,7 @@ startAppListening({
   effect: ({ payload }) => {
     persistToLocalStorage(
       localStorageKeyServiceDiscoveryPageCollapsedPools,
-      payload,
+      payload
     );
   },
 });
@@ -47,7 +47,7 @@ startAppListening({
   effect: (_, { getState }) => {
     persistToLocalStorage(
       localStorageKeyQueryHistory,
-      getState().queryPage.queryHistory,
+      getState().queryPage.queryHistory
     );
   },
 });
@@ -65,6 +65,7 @@ startAppListening({
         case "hideEmptyGroups":
         case "showAnnotations":
         case "ruleGroupsPerPage":
+        case "showEmptyPools":
           return persistToLocalStorage(`settings.${key}`, value);
       }
     });

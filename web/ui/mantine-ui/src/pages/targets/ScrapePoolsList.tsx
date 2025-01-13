@@ -30,6 +30,7 @@ import {
   setCollapsedPools,
   setShowLimitAlert,
 } from "../../state/targetsPageSlice";
+import { useSettings, updateSettings } from "../../state/settingsSlice";
 import EndpointLink from "../../components/EndpointLink";
 import CustomInfiniteScroll from "../../components/CustomInfiniteScroll";
 
@@ -38,7 +39,6 @@ import panelClasses from "../../Panel.module.css";
 import TargetLabels from "./TargetLabels";
 import { useDebouncedValue } from "@mantine/hooks";
 import { targetPoolDisplayLimit } from "./TargetsPage";
-import { BooleanParam, useQueryParam, withDefault } from "use-query-params";
 import { badgeIconStyle } from "../../styles";
 
 type ScrapePool = {
@@ -164,11 +164,8 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
     },
   });
 
+  const { showEmptyPools } = useSettings();
   const dispatch = useAppDispatch();
-  const [showEmptyPools, setShowEmptyPools] = useQueryParam(
-    "showEmptyPools",
-    withDefault(BooleanParam, true)
-  );
 
   const { collapsedPools, showLimitAlert } = useAppSelector(
     (state) => state.targetsPage
@@ -207,7 +204,11 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
           >
             Hiding {allPoolNames.length - shownPoolNames.length} empty pools due
             to filters or no targets.
-            <Anchor ml="md" fz="1em" onClick={() => setShowEmptyPools(true)}>
+            <Anchor
+              ml="md"
+              fz="1em"
+              onClick={() => dispatch(updateSettings({ showEmptyPools: true }))}
+            >
               Show empty pools
             </Anchor>
           </Alert>
@@ -281,7 +282,9 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                     <Anchor
                       ml="md"
                       fz="1em"
-                      onClick={() => setShowEmptyPools(false)}
+                      onClick={() =>
+                        dispatch(updateSettings({ showEmptyPools: false }))
+                      }
                     >
                       Hide empty pools
                     </Anchor>
@@ -293,7 +296,9 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                     <Anchor
                       ml="md"
                       fz="1em"
-                      onClick={() => setShowEmptyPools(false)}
+                      onClick={() =>
+                        dispatch(updateSettings({ showEmptyPools: false }))
+                      }
                     >
                       Hide empty pools
                     </Anchor>

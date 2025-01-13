@@ -5,7 +5,7 @@ import {
   Checkbox,
   Stack,
   Group,
-  NumberInput
+  NumberInput,
 } from "@mantine/core";
 import { IconSettings } from "@tabler/icons-react";
 import { FC } from "react";
@@ -23,7 +23,8 @@ const SettingsMenu: FC = () => {
     showAnnotations,
     hideEmptyGroups,
     ruleGroupsPerPage,
-    alertGroupsPerPage
+    alertGroupsPerPage,
+    showEmptyPools,
   } = useSettings();
   const dispatch = useAppDispatch();
 
@@ -49,7 +50,7 @@ const SettingsMenu: FC = () => {
                 onChange={(event) =>
                   dispatch(
                     updateSettings({
-                      useLocalTime: event.currentTarget.checked
+                      useLocalTime: event.currentTarget.checked,
                     })
                   )
                 }
@@ -64,7 +65,7 @@ const SettingsMenu: FC = () => {
                   onChange={(event) =>
                     dispatch(
                       updateSettings({
-                        enableQueryHistory: event.currentTarget.checked
+                        enableQueryHistory: event.currentTarget.checked,
                       })
                     )
                   }
@@ -75,7 +76,7 @@ const SettingsMenu: FC = () => {
                   onChange={(event) =>
                     dispatch(
                       updateSettings({
-                        enableAutocomplete: event.currentTarget.checked
+                        enableAutocomplete: event.currentTarget.checked,
                       })
                     )
                   }
@@ -86,7 +87,7 @@ const SettingsMenu: FC = () => {
                   onChange={(event) =>
                     dispatch(
                       updateSettings({
-                        enableSyntaxHighlighting: event.currentTarget.checked
+                        enableSyntaxHighlighting: event.currentTarget.checked,
                       })
                     )
                   }
@@ -97,12 +98,25 @@ const SettingsMenu: FC = () => {
                   onChange={(event) =>
                     dispatch(
                       updateSettings({
-                        enableLinter: event.currentTarget.checked
+                        enableLinter: event.currentTarget.checked,
                       })
                     )
                   }
                 />
               </Stack>
+            </Fieldset>
+            <Fieldset p="md" legend="Targets page settings">
+              <Checkbox
+                checked={showEmptyPools}
+                label="Show empty pools"
+                onChange={(event) =>
+                  dispatch(
+                    updateSettings({
+                      showEmptyPools: event.currentTarget.checked,
+                    })
+                  )
+                }
+              />
             </Fieldset>
           </Stack>
 
@@ -115,7 +129,7 @@ const SettingsMenu: FC = () => {
                   onChange={(event) =>
                     dispatch(
                       updateSettings({
-                        showAnnotations: event.currentTarget.checked
+                        showAnnotations: event.currentTarget.checked,
                       })
                     )
                   }
@@ -126,7 +140,7 @@ const SettingsMenu: FC = () => {
                   onChange={(event) =>
                     dispatch(
                       updateSettings({
-                        hideEmptyGroups: event.currentTarget.checked
+                        hideEmptyGroups: event.currentTarget.checked,
                       })
                     )
                   }
@@ -146,7 +160,7 @@ const SettingsMenu: FC = () => {
 
                   dispatch(
                     updateSettings({
-                      alertGroupsPerPage: value
+                      alertGroupsPerPage: value,
                     })
                   );
                 }}
@@ -165,7 +179,7 @@ const SettingsMenu: FC = () => {
 
                   dispatch(
                     updateSettings({
-                      ruleGroupsPerPage: value
+                      ruleGroupsPerPage: value,
                     })
                   );
                 }}

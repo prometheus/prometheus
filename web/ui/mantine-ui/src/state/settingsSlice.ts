@@ -17,6 +17,7 @@ interface Settings {
   showAnnotations: boolean;
   ruleGroupsPerPage: number;
   alertGroupsPerPage: number;
+  showEmptyPools: boolean;
 }
 
 // Declared/defined in public/index.html, value replaced by Prometheus when serving bundle.
@@ -35,6 +36,7 @@ export const localStorageKeyHideEmptyGroups = "settings.hideEmptyGroups";
 export const localStorageKeyShowAnnotations = "settings.showAnnotations";
 export const localStorageKeyRuleGroupsPerPage = "settings.ruleGroupsPerPage";
 export const localStorageKeyAlertGroupsPerPage = "settings.alertGroupsPerPage";
+export const localStorageKeyShowEmptyPools = "settings.showEmptyPools";
 
 // This dynamically/generically determines the pathPrefix by stripping the first known
 // endpoint suffix from the window location path. It works out of the box for both direct
@@ -55,7 +57,7 @@ const getPathPrefix = (path: string) => {
     "/flags",
     "/config",
     "/alertmanager-discovery",
-    "/agent"
+    "/agent",
   ];
 
   const pagePath = pagePaths.find((p) => path.endsWith(p));
@@ -112,7 +114,11 @@ export const initialState: Settings = {
   alertGroupsPerPage: initializeFromLocalStorage<number>(
     localStorageKeyAlertGroupsPerPage,
     10
-  )
+  ),
+  showEmptyPools: initializeFromLocalStorage<boolean>(
+    localStorageKeyShowEmptyPools,
+    true
+  ),
 };
 
 export const settingsSlice = createSlice({
@@ -121,8 +127,8 @@ export const settingsSlice = createSlice({
   reducers: {
     updateSettings: (state, { payload }: PayloadAction<Partial<Settings>>) => {
       Object.assign(state, payload);
-    }
-  }
+    },
+  },
 });
 
 export const { updateSettings } = settingsSlice.actions;

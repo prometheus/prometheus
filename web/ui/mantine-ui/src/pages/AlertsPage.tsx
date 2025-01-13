@@ -11,7 +11,7 @@ import {
   Alert,
   TextInput,
   Anchor,
-  Pagination
+  Pagination,
 } from "@mantine/core";
 import { useSuspenseAPIQuery } from "../api/api";
 import { AlertingRule, AlertingRulesResult } from "../api/responseTypes/rules";
@@ -30,7 +30,7 @@ import {
   NumberParam,
   StringParam,
   useQueryParam,
-  withDefault
+  withDefault,
 } from "use-query-params";
 import { useDebouncedValue } from "@mantine/hooks";
 import { KVSearch } from "@nexucis/kvsearch";
@@ -67,7 +67,7 @@ type AlertsPageData = {
 
 const kvSearch = new KVSearch<AlertingRule>({
   shouldSort: true,
-  indexedKeys: ["name", "labels", ["labels", /.*/]]
+  indexedKeys: ["name", "labels", ["labels", /.*/]],
 });
 
 const buildAlertsPageData = (
@@ -79,9 +79,9 @@ const buildAlertsPageData = (
     globalCounts: {
       inactive: 0,
       pending: 0,
-      firing: 0
+      firing: 0,
     },
-    groups: []
+    groups: [],
   };
 
   for (const group of data.groups) {
@@ -89,7 +89,7 @@ const buildAlertsPageData = (
       total: 0,
       inactive: 0,
       pending: 0,
-      firing: 0
+      firing: 0,
     };
 
     for (const r of group.rules) {
@@ -126,9 +126,9 @@ const buildAlertsPageData = (
         rule: r,
         counts: {
           firing: r.alerts.filter((a) => a.state === "firing").length,
-          pending: r.alerts.filter((a) => a.state === "pending").length
-        }
-      }))
+          pending: r.alerts.filter((a) => a.state === "pending").length,
+        },
+      })),
     });
   }
 
@@ -146,8 +146,8 @@ export default function AlertsPage() {
   const { data } = useSuspenseAPIQuery<AlertingRulesResult>({
     path: `/rules`,
     params: {
-      type: "alert"
-    }
+      type: "alert",
+    },
   });
 
   const { hideEmptyGroups, showAnnotations } = useSettings();
@@ -255,7 +255,7 @@ export default function AlertsPage() {
                 onClick={() => {
                   dispatch(
                     updateSettings({
-                      hideEmptyGroups: true
+                      hideEmptyGroups: true,
                     })
                   );
                 }}
@@ -273,7 +273,7 @@ export default function AlertsPage() {
                 onClick={() => {
                   dispatch(
                     updateSettings({
-                      hideEmptyGroups: true
+                      hideEmptyGroups: true,
                     })
                   );
                 }}
@@ -295,8 +295,8 @@ export default function AlertsPage() {
                             // have a different background color than their surrounding group card in dark mode,
                             // but it would be better to use CSS to override the light/dark colors for
                             // collapsed/expanded accordion items.
-                            backgroundColor: "#c0c0c015"
-                          }
+                            backgroundColor: "#c0c0c015",
+                          },
                         }}
                         key={j}
                         value={j.toString()}
