@@ -133,8 +133,8 @@ eval instant at 50m increase(http_requests_total[50m])
 # t=-30s. Here the extrapolation to t=-2m30s would reach a negative
 # value, and therefore the extrapolation happens only by 30s.
 eval instant at 50m increase(http_requests_total[100m])
-	{path="/foo"}   100
-	{path="/bar"}   162
+	{path="/foo"}   105
+	{path="/bar"}   170.1
 	{path="/dings"} 105
 	{path="/bumms"} 101
 
@@ -196,7 +196,7 @@ load 4m
 # reach half a sampling interval (2m). Beyond that, we only
 # extrapolate by half a sampling interval.
 eval instant at 10m rate(testcounter_zero_cutoff_total[20m])
-	{start="0m"} 0.5
+	{start="0m"} 0.6
 	{start="1m"} 0.55
 	{start="2m"} 0.6
 	{start="3m"} 0.6
