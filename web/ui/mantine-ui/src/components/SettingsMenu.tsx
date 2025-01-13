@@ -21,10 +21,8 @@ const SettingsMenu: FC = () => {
     enableSyntaxHighlighting,
     enableLinter,
     showAnnotations,
-    hideEmptyGroups,
     ruleGroupsPerPage,
     alertGroupsPerPage,
-    showEmptyPools,
   } = useSettings();
   const dispatch = useAppDispatch();
 
@@ -105,47 +103,21 @@ const SettingsMenu: FC = () => {
                 />
               </Stack>
             </Fieldset>
-            <Fieldset p="md" legend="Targets page settings">
-              <Checkbox
-                checked={showEmptyPools}
-                label="Show empty pools"
-                onChange={(event) =>
-                  dispatch(
-                    updateSettings({
-                      showEmptyPools: event.currentTarget.checked,
-                    })
-                  )
-                }
-              />
-            </Fieldset>
           </Stack>
 
           <Stack>
             <Fieldset p="md" legend="Alerts page settings">
-              <Stack>
-                <Checkbox
-                  checked={showAnnotations}
-                  label="Show expanded annotations"
-                  onChange={(event) =>
-                    dispatch(
-                      updateSettings({
-                        showAnnotations: event.currentTarget.checked,
-                      })
-                    )
-                  }
-                />
-                <Checkbox
-                  checked={hideEmptyGroups}
-                  label="Hide empty groups"
-                  onChange={(event) =>
-                    dispatch(
-                      updateSettings({
-                        hideEmptyGroups: event.currentTarget.checked,
-                      })
-                    )
-                  }
-                />
-              </Stack>
+              <Checkbox
+                checked={showAnnotations}
+                label="Show expanded annotations"
+                onChange={(event) =>
+                  dispatch(
+                    updateSettings({
+                      showAnnotations: event.currentTarget.checked,
+                    })
+                  )
+                }
+              />
             </Fieldset>
             <Fieldset p="md" legend="Alerts page settings">
               <NumberInput

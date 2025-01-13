@@ -25,12 +25,12 @@ import {
   humanizeDuration,
   now,
 } from "../../lib/formatTime";
+import { useLocalStorage } from "@mantine/hooks";
 import { useAppDispatch, useAppSelector } from "../../state/hooks";
 import {
   setCollapsedPools,
   setShowLimitAlert,
 } from "../../state/targetsPageSlice";
-import { useSettings, updateSettings } from "../../state/settingsSlice";
 import EndpointLink from "../../components/EndpointLink";
 import CustomInfiniteScroll from "../../components/CustomInfiniteScroll";
 
@@ -164,8 +164,11 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
     },
   });
 
-  const { showEmptyPools } = useSettings();
   const dispatch = useAppDispatch();
+  const [showEmptyPools, setShowEmptyPools] = useLocalStorage<boolean>({
+    key: "targets-page-show-empty-pools",
+    defaultValue: true,
+  });
 
   const { collapsedPools, showLimitAlert } = useAppSelector(
     (state) => state.targetsPage
@@ -204,11 +207,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
           >
             Hiding {allPoolNames.length - shownPoolNames.length} empty pools due
             to filters or no targets.
-            <Anchor
-              ml="md"
-              fz="1em"
-              onClick={() => dispatch(updateSettings({ showEmptyPools: true }))}
-            >
+            <Anchor ml="md" fz="1em" onClick={() => setShowEmptyPools(true)}>
               Show empty pools
             </Anchor>
           </Alert>
@@ -282,9 +281,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                     <Anchor
                       ml="md"
                       fz="1em"
-                      onClick={() =>
-                        dispatch(updateSettings({ showEmptyPools: false }))
-                      }
+                      onClick={() => setShowEmptyPools(false)}
                     >
                       Hide empty pools
                     </Anchor>
@@ -296,9 +293,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                     <Anchor
                       ml="md"
                       fz="1em"
-                      onClick={() =>
-                        dispatch(updateSettings({ showEmptyPools: false }))
-                      }
+                      onClick={() => setShowEmptyPools(false)}
                     >
                       Hide empty pools
                     </Anchor>

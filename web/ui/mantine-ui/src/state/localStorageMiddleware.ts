@@ -62,10 +62,8 @@ startAppListening({
         case "enableAutocomplete":
         case "enableSyntaxHighlighting":
         case "enableLinter":
-        case "hideEmptyGroups":
         case "showAnnotations":
         case "ruleGroupsPerPage":
-        case "showEmptyPools":
           return persistToLocalStorage(`settings.${key}`, value);
       }
     });

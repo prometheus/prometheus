@@ -23,8 +23,8 @@ import { Fragment, useEffect, useMemo } from "react";
 import { StateMultiSelect } from "../components/StateMultiSelect";
 import { IconInfoCircle, IconSearch } from "@tabler/icons-react";
 import { LabelBadges } from "../components/LabelBadges";
-import { useSettings, updateSettings } from "../state/settingsSlice";
-import { useAppDispatch } from "../state/hooks";
+import { useLocalStorage } from "@mantine/hooks";
+import { useSettings } from "../state/settingsSlice";
 import {
   ArrayParam,
   NumberParam,
@@ -150,8 +150,7 @@ export default function AlertsPage() {
     },
   });
 
-  const { hideEmptyGroups, showAnnotations } = useSettings();
-  const dispatch = useAppDispatch();
+  const { showAnnotations } = useSettings();
 
   // Define URL query params.
   const [stateFilter, setStateFilter] = useQueryParam(
@@ -163,6 +162,10 @@ export default function AlertsPage() {
     withDefault(StringParam, "")
   );
   const [debouncedSearch] = useDebouncedValue<string>(searchFilter.trim(), 250);
+  const [showEmptyGroups, setShowEmptyGroups] = useLocalStorage<boolean>({
+    key: "alerts-page-show-empty-groups",
+    defaultValue: true,
+  });
 
   const { alertGroupsPerPage } = useSettings();
   const [activePage, setActivePage] = useQueryParam(
@@ -178,10 +181,10 @@ export default function AlertsPage() {
 
   const shownGroups = useMemo(
     () =>
-      !hideEmptyGroups
+      showEmptyGroups
         ? alertsPageData.groups
         : alertsPageData.groups.filter((g) => g.rules.length > 0),
-    [alertsPageData.groups, hideEmptyGroups]
+    [alertsPageData.groups, showEmptyGroups]
   );
 
   // If we were e.g. on page 10 and the number of total pages decreases to 5 (due to filtering
@@ -252,13 +255,7 @@ export default function AlertsPage() {
               <Anchor
                 ml="md"
                 fz="1em"
-                onClick={() => {
-                  dispatch(
-                    updateSettings({
-                      hideEmptyGroups: true,
-                    })
-                  );
-                }}
+                onClick={() => setShowEmptyGroups(false)}
               >
                 Hide empty groups
               </Anchor>
@@ -270,13 +267,7 @@ export default function AlertsPage() {
               <Anchor
                 ml="md"
                 fz="1em"
-                onClick={() => {
-                  dispatch(
-                    updateSettings({
-                      hideEmptyGroups: true,
-                    })
-                  );
-                }}
+                onClick={() => setShowEmptyGroups(false)}
               >
                 Hide empty groups
               </Anchor>
@@ -412,7 +403,7 @@ export default function AlertsPage() {
           )}
         </Card>
       )),
-    [currentPageGroups, showAnnotations, dispatch]
+    [currentPageGroups, showAnnotations, setShowEmptyGroups]
   );
 
   return (
@@ -451,7 +442,7 @@ export default function AlertsPage() {
           No rules found.
         </Alert>
       ) : (
-        hideEmptyGroups &&
+        !showEmptyGroups &&
         alertsPageData.groups.length !== shownGroups.length && (
           <Alert
             title="Hiding groups with no matching rules"
@@ -459,13 +450,7 @@ export default function AlertsPage() {
           >
             Hiding {alertsPageData.groups.length - shownGroups.length} empty
             groups due to filters or no rules.
-            <Anchor
-              ml="md"
-              fz="1em"
-              onClick={() =>
-                dispatch(updateSettings({ hideEmptyGroups: false }))
-              }
-            >
+            <Anchor ml="md" fz="1em" onClick={() => setShowEmptyGroups(true)}>
               Show empty groups
             </Anchor>
           </Alert>

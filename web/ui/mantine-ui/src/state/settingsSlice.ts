@@ -13,11 +13,9 @@ interface Settings {
   enableAutocomplete: boolean;
   enableSyntaxHighlighting: boolean;
   enableLinter: boolean;
-  hideEmptyGroups: boolean;
   showAnnotations: boolean;
   ruleGroupsPerPage: number;
   alertGroupsPerPage: number;
-  showEmptyPools: boolean;
 }
 
 // Declared/defined in public/index.html, value replaced by Prometheus when serving bundle.
@@ -32,11 +30,9 @@ export const localStorageKeyEnableAutocomplete = "settings.enableAutocomplete";
 export const localStorageKeyEnableSyntaxHighlighting =
   "settings.enableSyntaxHighlighting";
 export const localStorageKeyEnableLinter = "settings.enableLinter";
-export const localStorageKeyHideEmptyGroups = "settings.hideEmptyGroups";
 export const localStorageKeyShowAnnotations = "settings.showAnnotations";
 export const localStorageKeyRuleGroupsPerPage = "settings.ruleGroupsPerPage";
 export const localStorageKeyAlertGroupsPerPage = "settings.alertGroupsPerPage";
-export const localStorageKeyShowEmptyPools = "settings.showEmptyPools";
 
 // This dynamically/generically determines the pathPrefix by stripping the first known
 // endpoint suffix from the window location path. It works out of the box for both direct
@@ -99,10 +95,6 @@ export const initialState: Settings = {
     localStorageKeyEnableLinter,
     true
   ),
-  hideEmptyGroups: initializeFromLocalStorage<boolean>(
-    localStorageKeyHideEmptyGroups,
-    false
-  ),
   showAnnotations: initializeFromLocalStorage<boolean>(
     localStorageKeyShowAnnotations,
     true
@@ -114,10 +106,6 @@ export const initialState: Settings = {
   alertGroupsPerPage: initializeFromLocalStorage<number>(
     localStorageKeyAlertGroupsPerPage,
     10
-  ),
-  showEmptyPools: initializeFromLocalStorage<boolean>(
-    localStorageKeyShowEmptyPools,
-    true
   ),
 };
 
