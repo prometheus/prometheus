@@ -16,6 +16,7 @@ package textparse
 import (
 	"fmt"
 	"io"
+	"strconv"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -28,6 +29,7 @@ import (
 func int64p(x int64) *int64 { return &x }
 
 func TestOpenMetricsParse(t *testing.T) {
+	t.Parallel()
 	input := `# HELP go_gc_duration_seconds A summary of the GC invocation durations.
 # TYPE go_gc_duration_seconds summary
 # UNIT go_gc_duration_seconds seconds
@@ -469,6 +471,7 @@ foobar{quantile="0.99"} 150.1`
 }
 
 func TestUTF8OpenMetricsParse(t *testing.T) {
+	// this test cannot use parallelism due to race condition by changing NameValidationScheme
 	oldValidationScheme := model.NameValidationScheme
 	model.NameValidationScheme = model.UTF8Validation
 	defer func() {
@@ -851,12 +854,15 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		p := NewOpenMetricsParser([]byte(c.input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
-		var err error
-		for err == nil {
-			_, err = p.Next()
-		}
-		require.Equal(t, c.err, err.Error(), "test %d: %s", i, c.input)
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			t.Parallel()
+			p := NewOpenMetricsParser([]byte(c.input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
+			var err error
+			for err == nil {
+				_, err = p.Next()
+			}
+			require.Equal(t, c.err, err.Error(), "test %d: %s", i, c.input)
+		})
 	}
 }
 
@@ -916,18 +922,21 @@ func TestOMNullByteHandling(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		p := NewOpenMetricsParser([]byte(c.input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
-		var err error
-		for err == nil {
-			_, err = p.Next()
-		}
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			t.Parallel()
+			p := NewOpenMetricsParser([]byte(c.input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
+			var err error
+			for err == nil {
+				_, err = p.Next()
+			}
 
-		if c.err == "" {
-			require.ErrorIs(t, err, io.EOF, "test %d", i)
-			continue
-		}
+			if c.err == "" {
+				require.ErrorIs(t, err, io.EOF, "test %d", i)
+				return
+			}
 
-		require.EqualError(t, err, c.err, "test %d", i)
+			require.EqualError(t, err, c.err, "test %d", i)
+		})
 	}
 }
 
@@ -1020,6 +1029,7 @@ foo_created{a="b"} 1520872608.123
 		},
 	} {
 		t.Run(fmt.Sprintf("case=%v", tcase.name), func(t *testing.T) {
+			t.Parallel()
 			p := NewOpenMetricsParser([]byte(tcase.input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
 			got := testParse(t, p)
 			resetValAndLset(got) // Keep this test focused on metric, basic entries and CT only.
