@@ -15,6 +15,8 @@ import (
 	"github.com/prometheus/common/model"
 )
 
+const NullTimestamp = math.MinInt64
+
 var (
 	// ErrLSSNullPointer - error when lss is null pointer
 	ErrLSSNullPointer = errors.New("lss is null pointer")
@@ -483,9 +485,11 @@ type MetricLimits struct {
 
 // RelabelerOptions relabeling options.
 type RelabelerOptions struct {
-	TargetLabels []Label
-	MetricLimits *MetricLimits
-	HonorLabels  bool
+	TargetLabels             []Label
+	MetricLimits             *MetricLimits
+	HonorLabels              bool
+	TrackTimestampsStaleness bool
+	HonorTimestamps          bool
 }
 
 // StaleNansState wrap pointer to source state for stale nans .
@@ -631,7 +635,7 @@ func (ipsr *InputPerShardRelabeler) InputRelabelingWithStalenans(
 	cache *Cache,
 	options RelabelerOptions,
 	staleNansState *StaleNansState,
-	staleNansTS int64,
+	defTimestamp int64,
 	shardedData ShardedData,
 	shardsInnerSeries []*InnerSeries,
 	shardsRelabeledSeries []*RelabeledSeries,
@@ -651,7 +655,7 @@ func (ipsr *InputPerShardRelabeler) InputRelabelingWithStalenans(
 		cache.cPointer,
 		cptrContainer.cptr(),
 		staleNansState.state,
-		staleNansTS,
+		defTimestamp,
 		options,
 		shardsInnerSeries,
 		shardsRelabeledSeries,
@@ -863,10 +867,9 @@ func (c *Cache) ResetTo() {
 
 // State state of relabelers per shard.
 type State struct {
-	// relabelerID string
 	caches              []*Cache
 	staleNansStates     []*StaleNansState
-	staleNansTS         int64
+	defTimestamp        int64
 	generationRelabeler uint64
 	generationHead      uint64
 	options             RelabelerOptions
@@ -920,18 +923,18 @@ func (s *State) StaleNansStateByShard(shardID uint16) *StaleNansState {
 	return s.staleNansStates[shardID]
 }
 
-// StaleNansTS return timestamp for stalenan.
-func (s *State) StaleNansTS() int64 {
-	if s.staleNansTS == 0 {
+// DefTimestamp return timestamp for scrape time and stalenan.
+func (s *State) DefTimestamp() int64 {
+	if s.defTimestamp == 0 {
 		return time.Now().UnixMilli()
 	}
 
-	return s.staleNansTS
+	return s.defTimestamp
 }
 
-// SetStaleNansTS set timestamp for stalenan.
-func (s *State) SetStaleNansTS(ts int64) {
-	s.staleNansTS = ts
+// SetDefTimestamp set timestamp for scrape time and stalenan.
+func (s *State) SetDefTimestamp(ts int64) {
+	s.defTimestamp = ts
 }
 
 // EnableTrackStaleness enable track stalenans.

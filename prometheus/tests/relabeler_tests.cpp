@@ -733,20 +733,161 @@ TEST_F(TestPerShardRelabeler, ReplaceToNewLS2_OrderedEncodingBimap) {
   EXPECT_EQ(rlabels, expected_labels);
 }
 
-TEST_F(TestPerShardRelabeler, InputRelabelingWithStalenans) {
+TEST_F(TestPerShardRelabeler, InputRelabelingWithStalenans_Default) {
   RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2};  // Keep
   Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
-  make_hashdex(hx_, make_label_set({{"__name__", "value"}, {"job", "abc"}}), make_samples({{1712567046855, 0.1}}));
+  make_hashdex(hx_, make_label_set({{"__name__", "value"}, {"job", "abc"}}), make_samples({{PromPP::Primitives::kNullTimestamp, 0.1}}));
   PromPP::Prometheus::Relabel::StaleNaNsState state{};
+  PromPP::Primitives::Timestamp def_timestamp{1712567046955};
 
-  prs.input_relabeling_with_stalenans(lss_, lss_, cache_, hx_, o_, stats_, shards_inner_series_, relabeled_results_, state, 1712567046855);
+  prs.input_relabeling_with_stalenans(lss_, lss_, cache_, hx_, o_, stats_, shards_inner_series_, relabeled_results_, state, def_timestamp);
 
   // shard id 1
   EXPECT_EQ(relabeled_results_[0]->size(), 0);
   EXPECT_EQ(relabeled_results_[1]->size(), 0);
   EXPECT_EQ(shards_inner_series_[0]->size(), 0);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
+  EXPECT_EQ(shards_inner_series_[1]->data()[0].samples[0].timestamp(), def_timestamp);
+  EXPECT_EQ(stats_.samples_added, 1);
+  EXPECT_EQ(stats_.series_added, 1);
+
+  PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data{};
+  prs.append_relabeler_series(lss_, shards_inner_series_[1], relabeled_results_[1], &update_data);
+  EXPECT_EQ(shards_inner_series_[1]->size(), 1);
+  EXPECT_EQ(update_data.size(), 0);
+
+  vector_shards_inner_series_[1] = std::make_unique<PromPP::Prometheus::Relabel::InnerSeries>();
+  HashdexTest empty_hx;
+  PromPP::Primitives::Timestamp stale_ts = 1712567047055;
+  prs.input_relabeling_with_stalenans(lss_, lss_, cache_, empty_hx, o_, stats_, shards_inner_series_, relabeled_results_, state, stale_ts);
+  EXPECT_EQ(shards_inner_series_[1]->size(), 1);
+  EXPECT_EQ(PromPP::Primitives::Sample(stale_ts, PromPP::Prometheus::kStaleNan), shards_inner_series_[1]->data()[0].samples[0]);
+  EXPECT_EQ(stats_.samples_added, 1);
+  EXPECT_EQ(stats_.series_added, 1);
+}
+
+TEST_F(TestPerShardRelabeler, InputRelabelingWithStalenans_DefaultHonorTimestamps) {
+  RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2};  // Keep
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
+  make_hashdex(hx_, make_label_set({{"__name__", "value"}, {"job", "abc"}}), make_samples({{PromPP::Primitives::kNullTimestamp, 0.1}}));
+  PromPP::Prometheus::Relabel::StaleNaNsState state{};
+  PromPP::Primitives::Timestamp def_timestamp{1712567046955};
+  o_.honor_timestamps = true;
+
+  prs.input_relabeling_with_stalenans(lss_, lss_, cache_, hx_, o_, stats_, shards_inner_series_, relabeled_results_, state, def_timestamp);
+
+  // shard id 1
+  EXPECT_EQ(relabeled_results_[0]->size(), 0);
+  EXPECT_EQ(relabeled_results_[1]->size(), 0);
+  EXPECT_EQ(shards_inner_series_[0]->size(), 0);
+  EXPECT_EQ(shards_inner_series_[1]->size(), 1);
+  EXPECT_EQ(shards_inner_series_[1]->data()[0].samples[0].timestamp(), def_timestamp);
+  EXPECT_EQ(stats_.samples_added, 1);
+  EXPECT_EQ(stats_.series_added, 1);
+
+  PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data{};
+  prs.append_relabeler_series(lss_, shards_inner_series_[1], relabeled_results_[1], &update_data);
+  EXPECT_EQ(shards_inner_series_[1]->size(), 1);
+  EXPECT_EQ(update_data.size(), 0);
+
+  vector_shards_inner_series_[1] = std::make_unique<PromPP::Prometheus::Relabel::InnerSeries>();
+  HashdexTest empty_hx;
+  PromPP::Primitives::Timestamp stale_ts = 1712567047055;
+  prs.input_relabeling_with_stalenans(lss_, lss_, cache_, empty_hx, o_, stats_, shards_inner_series_, relabeled_results_, state, stale_ts);
+  EXPECT_EQ(shards_inner_series_[1]->size(), 1);
+  EXPECT_EQ(PromPP::Primitives::Sample(stale_ts, PromPP::Prometheus::kStaleNan), shards_inner_series_[1]->data()[0].samples[0]);
+  EXPECT_EQ(stats_.samples_added, 1);
+  EXPECT_EQ(stats_.series_added, 1);
+}
+
+TEST_F(TestPerShardRelabeler, InputRelabelingWithStalenans_WithMetricTimestamp) {
+  RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2};  // Keep
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
+  make_hashdex(hx_, make_label_set({{"__name__", "value"}, {"job", "abc"}}), make_samples({{1712567046855, 0.1}}));
+  PromPP::Prometheus::Relabel::StaleNaNsState state{};
+  PromPP::Primitives::Timestamp def_timestamp{1712567046955};
+
+  prs.input_relabeling_with_stalenans(lss_, lss_, cache_, hx_, o_, stats_, shards_inner_series_, relabeled_results_, state, def_timestamp);
+
+  // shard id 1
+  EXPECT_EQ(relabeled_results_[0]->size(), 0);
+  EXPECT_EQ(relabeled_results_[1]->size(), 0);
+  EXPECT_EQ(shards_inner_series_[0]->size(), 0);
+  EXPECT_EQ(shards_inner_series_[1]->size(), 1);
+  EXPECT_EQ(shards_inner_series_[1]->data()[0].samples[0].timestamp(), def_timestamp);
+  EXPECT_EQ(stats_.samples_added, 1);
+  EXPECT_EQ(stats_.series_added, 1);
+
+  PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data{};
+  prs.append_relabeler_series(lss_, shards_inner_series_[1], relabeled_results_[1], &update_data);
+  EXPECT_EQ(shards_inner_series_[1]->size(), 1);
+  EXPECT_EQ(update_data.size(), 0);
+
+  vector_shards_inner_series_[1] = std::make_unique<PromPP::Prometheus::Relabel::InnerSeries>();
+  HashdexTest empty_hx;
+  PromPP::Primitives::Timestamp stale_ts = 1712567047055;
+  prs.input_relabeling_with_stalenans(lss_, lss_, cache_, empty_hx, o_, stats_, shards_inner_series_, relabeled_results_, state, stale_ts);
+  EXPECT_EQ(shards_inner_series_[1]->size(), 1);
+  EXPECT_EQ(PromPP::Primitives::Sample(stale_ts, PromPP::Prometheus::kStaleNan), shards_inner_series_[1]->data()[0].samples[0]);
+  EXPECT_EQ(stats_.samples_added, 1);
+  EXPECT_EQ(stats_.series_added, 1);
+}
+
+TEST_F(TestPerShardRelabeler, InputRelabelingWithStalenans_HonorTimestamps) {
+  RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2};  // Keep
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
+  PromPP::Primitives::Timestamp metric_timestamp{1712567046955};
+  make_hashdex(hx_, make_label_set({{"__name__", "value"}, {"job", "abc"}}), make_samples({{metric_timestamp, 0.1}}));
+  PromPP::Prometheus::Relabel::StaleNaNsState state{};
+  PromPP::Primitives::Timestamp def_timestamp{1712567046955};
+  o_.honor_timestamps = true;
+
+  prs.input_relabeling_with_stalenans(lss_, lss_, cache_, hx_, o_, stats_, shards_inner_series_, relabeled_results_, state, def_timestamp);
+
+  // shard id 1
+  EXPECT_EQ(relabeled_results_[0]->size(), 0);
+  EXPECT_EQ(relabeled_results_[1]->size(), 0);
+  EXPECT_EQ(shards_inner_series_[0]->size(), 0);
+  EXPECT_EQ(shards_inner_series_[1]->size(), 1);
+  EXPECT_EQ(shards_inner_series_[1]->data()[0].samples[0].timestamp(), metric_timestamp);
+  EXPECT_EQ(stats_.samples_added, 1);
+  EXPECT_EQ(stats_.series_added, 1);
+
+  PromPP::Prometheus::Relabel::RelabelerStateUpdate update_data{};
+  prs.append_relabeler_series(lss_, shards_inner_series_[1], relabeled_results_[1], &update_data);
+  EXPECT_EQ(shards_inner_series_[1]->size(), 1);
+  EXPECT_EQ(update_data.size(), 0);
+
+  vector_shards_inner_series_[1] = std::make_unique<PromPP::Prometheus::Relabel::InnerSeries>();
+  HashdexTest empty_hx;
+  PromPP::Primitives::Timestamp stale_ts = 1712567047055;
+  prs.input_relabeling_with_stalenans(lss_, lss_, cache_, empty_hx, o_, stats_, shards_inner_series_, relabeled_results_, state, stale_ts);
+  EXPECT_EQ(shards_inner_series_[1]->size(), 0);
+}
+
+TEST_F(TestPerShardRelabeler, InputRelabelingWithStalenans_HonorTimestampsAndTrackStaleness) {
+  RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2};  // Keep
+  Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
+  PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
+  PromPP::Primitives::Timestamp metric_timestamp{1712567046955};
+  make_hashdex(hx_, make_label_set({{"__name__", "value"}, {"job", "abc"}}), make_samples({{metric_timestamp, 0.1}}));
+  PromPP::Prometheus::Relabel::StaleNaNsState state{};
+  PromPP::Primitives::Timestamp def_timestamp{1712567046955};
+  o_.honor_timestamps = true;
+  o_.track_timestamps_staleness = true;
+
+  prs.input_relabeling_with_stalenans(lss_, lss_, cache_, hx_, o_, stats_, shards_inner_series_, relabeled_results_, state, def_timestamp);
+
+  // shard id 1
+  EXPECT_EQ(relabeled_results_[0]->size(), 0);
+  EXPECT_EQ(relabeled_results_[1]->size(), 0);
+  EXPECT_EQ(shards_inner_series_[0]->size(), 0);
+  EXPECT_EQ(shards_inner_series_[1]->size(), 1);
+  EXPECT_EQ(shards_inner_series_[1]->data()[0].samples[0].timestamp(), metric_timestamp);
   EXPECT_EQ(stats_.samples_added, 1);
   EXPECT_EQ(stats_.series_added, 1);
 
