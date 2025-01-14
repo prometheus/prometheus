@@ -203,8 +203,10 @@ func newScrapePool(
 		}
 
 		targetOptions := &cppbridge.RelabelerOptions{
-			MetricLimits: opts.metricLimits,
-			HonorLabels:  opts.honorLabels,
+			MetricLimits:             opts.metricLimits,
+			HonorLabels:              opts.honorLabels,
+			TrackTimestampsStaleness: opts.trackTimestampsStaleness,
+			HonorTimestamps:          opts.honorTimestamps,
 		}
 
 		opts.target.LabelsRange(func(l labels.Label) {
@@ -230,8 +232,6 @@ func newScrapePool(
 			sp.symbolTable,
 			config.ScrapePrefix+cfg.JobName,
 			offsetSeed,
-			opts.honorTimestamps,
-			opts.trackTimestampsStaleness,
 			opts.enableCompression,
 			opts.interval,
 			opts.timeout,
@@ -727,27 +727,25 @@ type loop interface {
 }
 
 type scrapeLoop struct {
-	scraper                  scraper
-	receiver                 Receiver
-	logger                   log.Logger
-	state                    *cppbridge.State
-	reportState              *cppbridge.State
-	cache                    *scrapeCache
-	buffers                  *pool.Pool
-	bufferBuilders           *buildersPool
-	bufferBatches            *batchesPool
-	symbolTable              *labels.SymbolTable
-	lastScrapeSize           int
-	offsetSeed               uint64
-	honorTimestamps          bool
-	trackTimestampsStaleness bool
-	enableCompression        bool
-	forcedErr                error
-	forcedErrMtx             sync.Mutex
-	interval                 time.Duration
-	timeout                  time.Duration
-	scrapeClassicHistograms  bool
-	enableCTZeroIngestion    bool
+	scraper                 scraper
+	receiver                Receiver
+	logger                  log.Logger
+	state                   *cppbridge.State
+	reportState             *cppbridge.State
+	cache                   *scrapeCache
+	buffers                 *pool.Pool
+	bufferBuilders          *buildersPool
+	bufferBatches           *batchesPool
+	symbolTable             *labels.SymbolTable
+	lastScrapeSize          int
+	offsetSeed              uint64
+	enableCompression       bool
+	forcedErr               error
+	forcedErrMtx            sync.Mutex
+	interval                time.Duration
+	timeout                 time.Duration
+	scrapeClassicHistograms bool
+	enableCTZeroIngestion   bool
 
 	scrapeName string
 
@@ -780,8 +778,6 @@ func newScrapeLoop(
 	symbolTable *labels.SymbolTable,
 	scrapeName string,
 	offsetSeed uint64,
-	honorTimestamps bool,
-	trackTimestampsStaleness bool,
 	enableCompression bool,
 	interval time.Duration,
 	timeout time.Duration,
@@ -820,35 +816,36 @@ func newScrapeLoop(
 	state.SetRelabelerOptions(options)
 
 	reportState := receiver.GetState()
-	reportState.SetRelabelerOptions(&cppbridge.RelabelerOptions{TargetLabels: options.TargetLabels})
+	reportState.SetRelabelerOptions(&cppbridge.RelabelerOptions{
+		TargetLabels:    options.TargetLabels,
+		HonorTimestamps: true,
+	})
 
 	sl := &scrapeLoop{
-		scraper:                  sc,
-		receiver:                 receiver,
-		logger:                   logger,
-		state:                    state,
-		reportState:              reportState,
-		cache:                    cache,
-		buffers:                  buffers,
-		bufferBuilders:           bufferBuilders,
-		bufferBatches:            bufferBatches,
-		symbolTable:              symbolTable,
-		scrapeName:               scrapeName,
-		stopped:                  make(chan struct{}),
-		offsetSeed:               offsetSeed,
-		parentCtx:                ctx,
-		appenderCtx:              appenderCtx,
-		honorTimestamps:          honorTimestamps,
-		trackTimestampsStaleness: trackTimestampsStaleness,
-		enableCompression:        enableCompression,
-		interval:                 interval,
-		timeout:                  timeout,
-		scrapeClassicHistograms:  scrapeClassicHistograms,
-		enableCTZeroIngestion:    enableCTZeroIngestion,
-		reportExtraMetrics:       reportExtraMetrics,
-		appendMetadataToWAL:      appendMetadataToWAL,
-		metrics:                  metrics,
-		skipOffsetting:           skipOffsetting,
+		scraper:                 sc,
+		receiver:                receiver,
+		logger:                  logger,
+		state:                   state,
+		reportState:             reportState,
+		cache:                   cache,
+		buffers:                 buffers,
+		bufferBuilders:          bufferBuilders,
+		bufferBatches:           bufferBatches,
+		symbolTable:             symbolTable,
+		scrapeName:              scrapeName,
+		stopped:                 make(chan struct{}),
+		offsetSeed:              offsetSeed,
+		parentCtx:               ctx,
+		appenderCtx:             appenderCtx,
+		enableCompression:       enableCompression,
+		interval:                interval,
+		timeout:                 timeout,
+		scrapeClassicHistograms: scrapeClassicHistograms,
+		enableCTZeroIngestion:   enableCTZeroIngestion,
+		reportExtraMetrics:      reportExtraMetrics,
+		appendMetadataToWAL:     appendMetadataToWAL,
+		metrics:                 metrics,
+		skipOffsetting:          skipOffsetting,
 	}
 	sl.ctx, sl.cancel = context.WithCancel(ctx)
 
@@ -1069,7 +1066,7 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 	// stale markers will be out of order and ignored.
 	// sl.context would have been cancelled, hence using sl.appenderCtx.
 	emptyBatch := sl.bufferBatches.get()
-	sl.state.SetStaleNansTS(timestamp.FromTime(staleTime))
+	sl.state.SetDefTimestamp(timestamp.FromTime(staleTime))
 	if _, err := sl.receiver.AppendTimeSeries(
 		sl.appenderCtx,
 		emptyBatch,
@@ -1107,7 +1104,7 @@ func (sl *scrapeLoop) append(
 ) (total uint32, stats cppbridge.RelabelerStats, err error) {
 	// if input is empty for stalenan
 	if len(b) == 0 {
-		sl.state.SetStaleNansTS(timestamp.FromTime(ts))
+		sl.state.SetDefTimestamp(timestamp.FromTime(ts))
 		_, err = sl.receiver.AppendTimeSeries(
 			sl.appenderCtx,
 			sl.bufferBatches.get(),
@@ -1167,7 +1164,7 @@ loop:
 
 		t := defTime
 		met, parsedTimestamp, val = p.Series()
-		if !sl.honorTimestamps {
+		if !sl.state.RelabelerOptions().HonorTimestamps {
 			parsedTimestamp = nil
 		}
 		if parsedTimestamp != nil {
@@ -1205,7 +1202,7 @@ loop:
 		return
 	}
 
-	sl.state.SetStaleNansTS(defTime)
+	sl.state.SetDefTimestamp(defTime)
 	stats, err = sl.receiver.AppendTimeSeries(
 		sl.appenderCtx,
 		batch,
@@ -1248,8 +1245,7 @@ func (sl *scrapeLoop) appendCpp(
 	}
 
 	// parsing series via cpp parser
-	defTime := timestamp.FromTime(ts)
-	scraped, err = hashdex.Parse(b, defTime)
+	scraped, err = hashdex.Parse(b, cppbridge.NullTimestamp)
 	if err != nil {
 		return 0, stats, fmt.Errorf("failed hashdex parse: %w", err)
 	}
@@ -1259,7 +1255,7 @@ func (sl *scrapeLoop) appendCpp(
 		return 0, stats, fmt.Errorf("failed append metadata: %w", err)
 	}
 
-	sl.state.SetStaleNansTS(defTime)
+	sl.state.SetDefTimestamp(timestamp.FromTime(ts))
 	stats, err = sl.receiver.AppendTimeSeriesHashdex(
 		sl.appenderCtx,
 		hashdex,
