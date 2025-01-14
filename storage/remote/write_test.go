@@ -15,13 +15,23 @@ package remote
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"fmt"
+	"log/slog"
+	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"reflect"
+	"runtime"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
 	common_config "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -31,8 +41,10 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/storage"
 )
 
 func testRemoteWriteConfig() *config.RemoteWriteConfig {
@@ -379,11 +391,11 @@ func TestOTLPWriteHandler(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-protobuf")
 
 	appendable := &mockAppendable{}
-	handler := NewOTLPWriteHandler(nil, appendable, func() config.Config {
+	handler := NewOTLPWriteHandler(nil, nil, appendable, func() config.Config {
 		return config.Config{
 			OTLPConfig: config.DefaultOTLPConfig,
 		}
-	})
+	}, OTLPOptions{})
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -475,4 +487,365 @@ func generateOTLPWriteRequest() pmetricotlp.ExportRequest {
 	exponentialHistogramDataPoint.Attributes().PutStr("foo.bar", "baz")
 
 	return pmetricotlp.NewExportRequestFromMetrics(d)
+}
+
+func TestOTLPDelta(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	appendable := &mockAppendable{}
+	cfg := func() config.Config {
+		return config.Config{OTLPConfig: config.DefaultOTLPConfig}
+	}
+	handler := NewOTLPWriteHandler(log, nil, appendable, cfg, OTLPOptions{ConvertDelta: true})
+
+	md := pmetric.NewMetrics()
+	ms := md.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics()
+
+	m := ms.AppendEmpty()
+	m.SetName("some.delta.total")
+
+	sum := m.SetEmptySum()
+	sum.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+
+	ts := time.Date(2000, 1, 2, 3, 4, 0, 0, time.UTC)
+	for i := range 3 {
+		dp := sum.DataPoints().AppendEmpty()
+		dp.SetIntValue(int64(i))
+		dp.SetTimestamp(pcommon.NewTimestampFromTime(ts.Add(time.Duration(i) * time.Second)))
+	}
+
+	proto, err := pmetricotlp.NewExportRequestFromMetrics(md).MarshalProto()
+	require.NoError(t, err)
+
+	req, err := http.NewRequest("", "", bytes.NewReader(proto))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/x-protobuf")
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Result().StatusCode)
+
+	ls := labels.FromStrings("__name__", "some_delta_total")
+	milli := func(sec int) int64 {
+		return time.Date(2000, 1, 2, 3, 4, sec, 0, time.UTC).UnixMilli()
+	}
+
+	want := []mockSample{
+		{t: milli(0), l: ls, v: 0}, // +0
+		{t: milli(1), l: ls, v: 1}, // +1
+		{t: milli(2), l: ls, v: 3}, // +2
+	}
+	if diff := cmp.Diff(want, appendable.samples, cmp.Exporter(func(_ reflect.Type) bool { return true })); diff != "" {
+		t.Fatal(diff)
+	}
+}
+
+func BenchmarkOTLP(b *testing.B) {
+	start := time.Date(2000, 1, 2, 3, 4, 5, 0, time.UTC)
+
+	type Type struct {
+		name string
+		data func(mode pmetric.AggregationTemporality, dpc, epoch int) []pmetric.Metric
+	}
+	types := []Type{{
+		name: "sum",
+		data: func() func(mode pmetric.AggregationTemporality, dpc, epoch int) []pmetric.Metric {
+			cumul := make(map[int]float64)
+			return func(mode pmetric.AggregationTemporality, dpc, epoch int) []pmetric.Metric {
+				m := pmetric.NewMetric()
+				sum := m.SetEmptySum()
+				sum.SetAggregationTemporality(mode)
+				dps := sum.DataPoints()
+				for id := range dpc {
+					dp := dps.AppendEmpty()
+					dp.SetStartTimestamp(pcommon.NewTimestampFromTime(start))
+					dp.SetTimestamp(pcommon.NewTimestampFromTime(start.Add(time.Duration(epoch) * time.Minute)))
+					dp.Attributes().PutStr("id", strconv.Itoa(id))
+					v := float64(rand.IntN(100)) / 10
+					switch mode {
+					case pmetric.AggregationTemporalityDelta:
+						dp.SetDoubleValue(v)
+					case pmetric.AggregationTemporalityCumulative:
+						cumul[id] += v
+						dp.SetDoubleValue(cumul[id])
+					}
+				}
+				return []pmetric.Metric{m}
+			}
+		}(),
+	}, {
+		name: "histogram",
+		data: func() func(mode pmetric.AggregationTemporality, dpc, epoch int) []pmetric.Metric {
+			bounds := [4]float64{1, 10, 100, 1000}
+			type state struct {
+				counts [4]uint64
+				count  uint64
+				sum    float64
+			}
+			var cumul []state
+			return func(mode pmetric.AggregationTemporality, dpc, epoch int) []pmetric.Metric {
+				if cumul == nil {
+					cumul = make([]state, dpc)
+				}
+				m := pmetric.NewMetric()
+				hist := m.SetEmptyHistogram()
+				hist.SetAggregationTemporality(mode)
+				dps := hist.DataPoints()
+				for id := range dpc {
+					dp := dps.AppendEmpty()
+					dp.SetStartTimestamp(pcommon.NewTimestampFromTime(start))
+					dp.SetTimestamp(pcommon.NewTimestampFromTime(start.Add(time.Duration(epoch) * time.Minute)))
+					dp.Attributes().PutStr("id", strconv.Itoa(id))
+					dp.ExplicitBounds().FromRaw(bounds[:])
+
+					var obs *state
+					switch mode {
+					case pmetric.AggregationTemporalityDelta:
+						obs = new(state)
+					case pmetric.AggregationTemporalityCumulative:
+						obs = &cumul[id]
+					}
+
+					for i := range obs.counts {
+						v := uint64(rand.IntN(10))
+						obs.counts[i] += v
+						obs.count++
+						obs.sum += float64(v)
+					}
+
+					dp.SetCount(obs.count)
+					dp.SetSum(obs.sum)
+					dp.BucketCounts().FromRaw(obs.counts[:])
+				}
+				return []pmetric.Metric{m}
+			}
+		}(),
+	}, {
+		name: "exponential",
+		data: func() func(mode pmetric.AggregationTemporality, dpc, epoch int) []pmetric.Metric {
+			type state struct {
+				counts [4]uint64
+				count  uint64
+				sum    float64
+			}
+			var cumul []state
+			return func(mode pmetric.AggregationTemporality, dpc, epoch int) []pmetric.Metric {
+				if cumul == nil {
+					cumul = make([]state, dpc)
+				}
+				m := pmetric.NewMetric()
+				ex := m.SetEmptyExponentialHistogram()
+				ex.SetAggregationTemporality(mode)
+				dps := ex.DataPoints()
+				for id := range dpc {
+					dp := dps.AppendEmpty()
+					dp.SetStartTimestamp(pcommon.NewTimestampFromTime(start))
+					dp.SetTimestamp(pcommon.NewTimestampFromTime(start.Add(time.Duration(epoch) * time.Minute)))
+					dp.Attributes().PutStr("id", strconv.Itoa(id))
+					dp.SetScale(2)
+
+					var obs *state
+					switch mode {
+					case pmetric.AggregationTemporalityDelta:
+						obs = new(state)
+					case pmetric.AggregationTemporalityCumulative:
+						obs = &cumul[id]
+					}
+
+					for i := range obs.counts {
+						v := uint64(rand.IntN(10))
+						obs.counts[i] += v
+						obs.count++
+						obs.sum += float64(v)
+					}
+
+					dp.Positive().BucketCounts().FromRaw(obs.counts[:])
+					dp.SetCount(obs.count)
+					dp.SetSum(obs.sum)
+				}
+
+				return []pmetric.Metric{m}
+			}
+		}(),
+	}}
+
+	modes := []struct {
+		name string
+		data func(func(pmetric.AggregationTemporality, int, int) []pmetric.Metric, int) []pmetric.Metric
+	}{{
+		name: "cumulative",
+		data: func(data func(pmetric.AggregationTemporality, int, int) []pmetric.Metric, epoch int) []pmetric.Metric {
+			return data(pmetric.AggregationTemporalityCumulative, 10, epoch)
+		},
+	}, {
+		name: "delta",
+		data: func(data func(pmetric.AggregationTemporality, int, int) []pmetric.Metric, epoch int) []pmetric.Metric {
+			return data(pmetric.AggregationTemporalityDelta, 10, epoch)
+		},
+	}, {
+		name: "mixed",
+		data: func(data func(pmetric.AggregationTemporality, int, int) []pmetric.Metric, epoch int) []pmetric.Metric {
+			cumul := data(pmetric.AggregationTemporalityCumulative, 5, epoch)
+			delta := data(pmetric.AggregationTemporalityDelta, 5, epoch)
+			out := append(cumul, delta...)
+			rand.Shuffle(len(out), func(i, j int) { out[i], out[j] = out[j], out[i] })
+			return out
+		},
+	}}
+
+	configs := []struct {
+		name string
+		opts OTLPOptions
+	}{
+		{name: "default"},
+		{name: "convert", opts: OTLPOptions{ConvertDelta: true}},
+	}
+
+	Workers := runtime.GOMAXPROCS(0)
+	for _, cs := range types {
+		for _, mode := range modes {
+			for _, cfg := range configs {
+				b.Run(fmt.Sprintf("type=%s/temporality=%s/cfg=%s", cs.name, mode.name, cfg.name), func(b *testing.B) {
+					if !cfg.opts.ConvertDelta && (mode.name == "delta" || mode.name == "mixed") {
+						b.Skip("not possible")
+					}
+
+					var total int
+
+					// reqs is a [b.N]*http.Request, divided across the workers.
+					// deltatocumulative requires timestamps to be strictly in
+					// order on a per-series basis. to ensure this, each reqs[k]
+					// contains samples of differently named series, sorted
+					// strictly in time order
+					reqs := make([][]*http.Request, Workers)
+					for n := range b.N {
+						k := n % Workers
+
+						md := pmetric.NewMetrics()
+						ms := md.ResourceMetrics().AppendEmpty().
+							ScopeMetrics().AppendEmpty().
+							Metrics()
+
+						for i, m := range mode.data(cs.data, n) {
+							m.SetName(fmt.Sprintf("benchmark_%d_%d", k, i))
+							m.MoveTo(ms.AppendEmpty())
+						}
+
+						total += sampleCount(md)
+
+						ex := pmetricotlp.NewExportRequestFromMetrics(md)
+						data, err := ex.MarshalProto()
+						require.NoError(b, err)
+
+						req, err := http.NewRequest("", "", bytes.NewReader(data))
+						require.NoError(b, err)
+						req.Header.Set("Content-Type", "application/x-protobuf")
+
+						reqs[k] = append(reqs[k], req)
+					}
+
+					log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+					mock := new(mockAppendable)
+					appendable := syncAppendable{Appendable: mock, lock: new(sync.Mutex)}
+					cfgfn := func() config.Config {
+						return config.Config{OTLPConfig: config.DefaultOTLPConfig}
+					}
+					handler := NewOTLPWriteHandler(log, nil, appendable, cfgfn, cfg.opts)
+
+					fail := make(chan struct{})
+					done := make(chan struct{})
+
+					b.ResetTimer()
+					b.ReportAllocs()
+
+					// we use multiple workers to mimic a real-world scenario
+					// where multiple OTel collectors are sending their
+					// time-series in parallel.
+					// this is necessary to exercise potential lock-contention
+					// in this benchmark
+					for k := range Workers {
+						go func() {
+							rec := httptest.NewRecorder()
+							for _, req := range reqs[k] {
+								handler.ServeHTTP(rec, req)
+								if rec.Result().StatusCode != http.StatusOK {
+									fail <- struct{}{}
+									return
+								}
+							}
+							done <- struct{}{}
+						}()
+					}
+
+					for range Workers {
+						select {
+						case <-fail:
+							b.FailNow()
+						case <-done:
+						}
+					}
+
+					require.Equal(b, total, len(mock.samples)+len(mock.histograms))
+				})
+			}
+		}
+	}
+}
+
+func sampleCount(md pmetric.Metrics) int {
+	var total int
+	rms := md.ResourceMetrics()
+	for i := range rms.Len() {
+		sms := rms.At(i).ScopeMetrics()
+		for i := range sms.Len() {
+			ms := sms.At(i).Metrics()
+			for i := range ms.Len() {
+				m := ms.At(i)
+				switch m.Type() {
+				case pmetric.MetricTypeSum:
+					total += m.Sum().DataPoints().Len()
+				case pmetric.MetricTypeGauge:
+					total += m.Gauge().DataPoints().Len()
+				case pmetric.MetricTypeHistogram:
+					dps := m.Histogram().DataPoints()
+					for i := range dps.Len() {
+						total += dps.At(i).BucketCounts().Len()
+						total++ // le=+Inf series
+						total++ // _sum series
+						total++ // _count series
+					}
+				case pmetric.MetricTypeExponentialHistogram:
+					total += m.ExponentialHistogram().DataPoints().Len()
+				case pmetric.MetricTypeSummary:
+					total += m.Summary().DataPoints().Len()
+				}
+			}
+		}
+	}
+	return total
+}
+
+type syncAppendable struct {
+	lock sync.Locker
+	storage.Appendable
+}
+
+type syncAppender struct {
+	lock sync.Locker
+	storage.Appender
+}
+
+func (s syncAppendable) Appender(ctx context.Context) storage.Appender {
+	return syncAppender{Appender: s.Appendable.Appender(ctx), lock: s.lock}
+}
+
+func (s syncAppender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	return s.Appender.Append(ref, l, t, v)
+}
+
+func (s syncAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, f *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	return s.Appender.AppendHistogram(ref, l, t, h, f)
 }
