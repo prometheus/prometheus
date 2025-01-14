@@ -104,7 +104,7 @@ func newInstanceDiscovery(conf *SDConfig) (*instanceDiscovery, error) {
 			Transport: rt,
 			Timeout:   time.Duration(conf.RefreshInterval),
 		}),
-		scw.WithUserAgent(fmt.Sprintf("Prometheus/%s", version.Version)),
+		scw.WithUserAgent("Prometheus/"+version.Version),
 		scw.WithProfile(profile),
 	)
 	if err != nil {
