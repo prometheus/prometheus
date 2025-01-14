@@ -1424,6 +1424,15 @@ endpoint is `/api/v1/otlp/v1/metrics`.
 
 *New in v2.47*
 
+### OTLP Delta
+
+Prometheus can convert incoming metrics from delta temporality to their cumulative equivalent.
+This is done using [deltatocumulative](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor) from the OpenTelemetry Collector.
+
+To enable, pass `--enable-feature=otlp-deltatocumulative`.
+
+*New in v3.2*
+
 ## Notifications
 
 The following endpoints provide information about active status notifications concerning the Prometheus server itself.

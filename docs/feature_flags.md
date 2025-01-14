@@ -151,3 +151,25 @@ Configuration reloads are triggered by detecting changes in the checksum of the
 main configuration file or any referenced files, such as rule and scrape
 configurations. To ensure consistency and avoid issues during reloads, it's
 recommended to update these files atomically.
+
+## OTLP Delta Conversion
+
+`--enable-feature=otlp-deltatocumulative`
+
+When enabled, Prometheus will convert OTLP metrics from delta temporality to their
+cumulative equivalent, instead of dropping them.
+
+This uses
+[deltatocumulative][d2c]
+from the OTel collector, using its default settings.
+
+Delta conversion keeps in-memory state to aggregate delta changes per-series over time.
+When Prometheus restarts, this state is lost, starting the aggregation from zero
+again. This results in a counter reset in the cumulative series.
+
+This state is periodically ([`max_stale`][d2c]) cleared of inactive series.
+
+Enabling this _can_ have negative impact on performance, because the in-memory
+state is mutex guarded. Cumulative-only OTLP requests are not affected.
+
+[d2c]: https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor
