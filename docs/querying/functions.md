@@ -774,6 +774,14 @@ expression is to be evaluated.
 the given vector as the number of seconds since January 1, 1970 UTC. It also
 works with histogram samples.
 
+## `vanish()` (experimental)
+
+`vanish(v range-vector, threshold=5m scalar)` detects when a time series has vanished in the range.
+A time series is considered as vanished if the duration that passes after the last value of the range
+and the evaluation time of the expression is greater than `threshold` (default to 5m: the lookback delta default value)
+
+This is useful for alerting to detect an unexpected loss of metrics.
+
 ## `vector()`
 
 `vector(s scalar)` returns the scalar `s` as a vector with no labels.
