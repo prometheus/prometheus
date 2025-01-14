@@ -86,7 +86,7 @@
     "jest-canvas-mock": "^2.5.2",
     "jest-fetch-mock": "^3.0.3",
     "mutationobserver-shim": "^0.3.7",
-    "prettier": "^2.8.8",
+    "prettier": "^3.4.2",
     "react-scripts": "^5.0.1",
     "sinon": "^19.0.2",
     "ts-jest": "^29.2.5"
