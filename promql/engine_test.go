@@ -3514,6 +3514,16 @@ func TestHistogramQuantileAnnotations(t *testing.T) {
 			},
 			expectedInfoAnnotations: []string{},
 		},
+		"warning annotation for malformed le label": {
+			data: `
+				myHistogram{le="Hello World"}   0+2x10
+			`,
+			expr: "histogram_quantile(0.5, myHistogram)",
+			expectedWarningAnnotations: []string{
+				`PromQL warning: bucket label "le" is missing or has a malformed value of "Hello World" for metric name "myHistogram" (1:25)`,
+			},
+			expectedInfoAnnotations: []string{},
+		},
 		"warning annotation for mixed histograms": {
 			data: `
 				mixedHistogram{le="0.1"}   0+2x10
