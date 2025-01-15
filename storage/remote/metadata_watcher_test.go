@@ -40,9 +40,9 @@ func (s *TestMetaStore) ListMetadata() []scrape.MetricMetadata {
 	return s.Metadata
 }
 
-func (s *TestMetaStore) GetMetadata(metric string) (scrape.MetricMetadata, bool) {
+func (s *TestMetaStore) GetMetadata(mfName string) (scrape.MetricMetadata, bool) {
 	for _, m := range s.Metadata {
-		if metric == m.Metric {
+		if mfName == m.MetricFamily {
 			return m, true
 		}
 	}
@@ -106,26 +106,26 @@ func TestWatchScrapeManager_ReadyForCollection(t *testing.T) {
 	metadata := &TestMetaStore{
 		Metadata: []scrape.MetricMetadata{
 			{
-				Metric: "prometheus_tsdb_head_chunks_created_total",
-				Type:   model.MetricTypeCounter,
-				Help:   "Total number",
-				Unit:   "",
+				MetricFamily: "prometheus_tsdb_head_chunks_created",
+				Type:         model.MetricTypeCounter,
+				Help:         "Total number",
+				Unit:         "",
 			},
 			{
-				Metric: "prometheus_remote_storage_retried_samples_total",
-				Type:   model.MetricTypeCounter,
-				Help:   "Total number",
-				Unit:   "",
+				MetricFamily: "prometheus_remote_storage_retried_samples",
+				Type:         model.MetricTypeCounter,
+				Help:         "Total number",
+				Unit:         "",
 			},
 		},
 	}
 	metadataDup := &TestMetaStore{
 		Metadata: []scrape.MetricMetadata{
 			{
-				Metric: "prometheus_tsdb_head_chunks_created_total",
-				Type:   model.MetricTypeCounter,
-				Help:   "Total number",
-				Unit:   "",
+				MetricFamily: "prometheus_tsdb_head_chunks_created",
+				Type:         model.MetricTypeCounter,
+				Help:         "Total number",
+				Unit:         "",
 			},
 		},
 	}
