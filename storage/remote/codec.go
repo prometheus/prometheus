@@ -132,6 +132,7 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 		var (
 			samples    []prompb.Sample
 			histograms []prompb.Histogram
+			exemplars  []prompb.Exemplar
 		)
 
 		for valType := iter.Next(); valType != chunkenc.ValNone; valType = iter.Next() {
@@ -164,10 +165,16 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 			return nil, ss.Warnings(), err
 		}
 
+		if sse, ok := ss.(*seriesSetWithExemplars); ok {
+			key := series.Labels().Hash()
+			exemplars = sse.exemplarMap[key]
+		}
+
 		resp.Timeseries = append(resp.Timeseries, &prompb.TimeSeries{
 			Labels:     prompb.FromLabels(series.Labels(), nil),
 			Samples:    samples,
 			Histograms: histograms,
+			Exemplars:  exemplars,
 		})
 	}
 	return resp, ss.Warnings(), ss.Err()
@@ -182,7 +189,7 @@ func FromQueryResult(sortSeries bool, res *prompb.QueryResult) storage.SeriesSet
 			return errSeriesSet{err: err}
 		}
 		lbls := ts.ToLabels(&b, nil)
-		series = append(series, &concreteSeries{labels: lbls, floats: ts.Samples, histograms: ts.Histograms})
+		series = append(series, &concreteSeries{labels: lbls, floats: ts.Samples, histograms: ts.Histograms, exemplars: ts.Exemplars})
 	}
 
 	if sortSeries {
@@ -368,6 +375,7 @@ type concreteSeries struct {
 	labels     labels.Labels
 	floats     []prompb.Sample
 	histograms []prompb.Histogram
+	exemplars  []prompb.Exemplar
 }
 
 func (c *concreteSeries) Labels() labels.Labels {
