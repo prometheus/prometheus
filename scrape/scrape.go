@@ -29,6 +29,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/klauspost/compress/gzip"
 	config_util "github.com/prometheus/common/config"
@@ -931,6 +932,7 @@ type scrapeLoop struct {
 // scrapeCache tracks mappings of exposed metric strings to label sets and
 // storage references. Additionally, it tracks staleness of series between
 // scrapes.
+// Cache is meant to be used per a single target.
 type scrapeCache struct {
 	iter uint64 // Current scrape iteration.
 
@@ -951,8 +953,10 @@ type scrapeCache struct {
 	seriesCur  map[uint64]labels.Labels
 	seriesPrev map[uint64]labels.Labels
 
-	metaMtx  sync.Mutex
-	metadata map[string]*metaEntry
+	// TODO(bwplotka): Consider moving Metadata API to use WAL instead of scrape loop to
+	// avoid locking (using metadata API can block scraping).
+	metaMtx  sync.Mutex            // Mutex is needed due to api touching it when metadata is queried.
+	metadata map[string]*metaEntry // metadata by metric family name.
 
 	metrics *scrapeMetrics
 }
@@ -1078,73 +1082,79 @@ func (c *scrapeCache) forEachStale(f func(labels.Labels) bool) {
 	}
 }
 
-func (c *scrapeCache) setType(metric []byte, t model.MetricType) {
-	c.metaMtx.Lock()
+func yoloString(b []byte) string {
+	return unsafe.String(unsafe.SliceData(b), len(b))
+}
 
-	e, ok := c.metadata[string(metric)]
+func (c *scrapeCache) setType(mfName []byte, t model.MetricType) ([]byte, *metaEntry) {
+	c.metaMtx.Lock()
+	defer c.metaMtx.Unlock()
+
+	e, ok := c.metadata[yoloString(mfName)]
 	if !ok {
 		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
-		c.metadata[string(metric)] = e
+		c.metadata[string(mfName)] = e
 	}
 	if e.Type != t {
 		e.Type = t
 		e.lastIterChange = c.iter
 	}
 	e.lastIter = c.iter
-
-	c.metaMtx.Unlock()
+	return mfName, e
 }
 
-func (c *scrapeCache) setHelp(metric, help []byte) {
+func (c *scrapeCache) setHelp(mfName, help []byte) ([]byte, *metaEntry) {
 	c.metaMtx.Lock()
+	defer c.metaMtx.Unlock()
 
-	e, ok := c.metadata[string(metric)]
+	e, ok := c.metadata[yoloString(mfName)]
 	if !ok {
 		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
-		c.metadata[string(metric)] = e
+		c.metadata[string(mfName)] = e
 	}
 	if e.Help != string(help) {
 		e.Help = string(help)
 		e.lastIterChange = c.iter
 	}
 	e.lastIter = c.iter
-
-	c.metaMtx.Unlock()
+	return mfName, e
 }
 
-func (c *scrapeCache) setUnit(metric, unit []byte) {
+func (c *scrapeCache) setUnit(mfName, unit []byte) ([]byte, *metaEntry) {
 	c.metaMtx.Lock()
+	defer c.metaMtx.Unlock()
 
-	e, ok := c.metadata[string(metric)]
+	e, ok := c.metadata[yoloString(mfName)]
 	if !ok {
 		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
-		c.metadata[string(metric)] = e
+		c.metadata[string(mfName)] = e
 	}
 	if e.Unit != string(unit) {
 		e.Unit = string(unit)
 		e.lastIterChange = c.iter
 	}
 	e.lastIter = c.iter
-
-	c.metaMtx.Unlock()
+	return mfName, e
 }
 
-func (c *scrapeCache) GetMetadata(metric string) (MetricMetadata, bool) {
+// GetMetadata returns metadata given the metric family name.
+func (c *scrapeCache) GetMetadata(mfName string) (MetricMetadata, bool) {
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
 
-	m, ok := c.metadata[metric]
+	m, ok := c.metadata[mfName]
 	if !ok {
 		return MetricMetadata{}, false
 	}
 	return MetricMetadata{
-		Metric: metric,
-		Type:   m.Type,
-		Help:   m.Help,
-		Unit:   m.Unit,
+		MetricFamily: mfName,
+		Type:         m.Type,
+		Help:         m.Help,
+		Unit:         m.Unit,
 	}, true
 }
 
+// ListMetadata lists metadata.
 func (c *scrapeCache) ListMetadata() []MetricMetadata {
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
@@ -1153,16 +1163,16 @@ func (c *scrapeCache) ListMetadata() []MetricMetadata {
 
 	for m, e := range c.metadata {
 		res = append(res, MetricMetadata{
-			Metric: m,
-			Type:   e.Type,
-			Help:   e.Help,
-			Unit:   e.Unit,
+			MetricFamily: m,
+			Type:         e.Type,
+			Help:         e.Help,
+			Unit:         e.Unit,
 		})
 	}
 	return res
 }
 
-// MetadataSize returns the size of the metadata cache.
+// SizeMetadata returns the size of the metadata cache.
 func (c *scrapeCache) SizeMetadata() (s int) {
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
@@ -1173,7 +1183,7 @@ func (c *scrapeCache) SizeMetadata() (s int) {
 	return s
 }
 
-// MetadataLen returns the number of metadata entries in the cache.
+// LengthMetadata returns the number of metadata entries in the cache.
 func (c *scrapeCache) LengthMetadata() int {
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
@@ -1607,38 +1617,16 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 		)
 	}
 	var (
-		appErrs         = appendErrors{}
-		sampleLimitErr  error
-		bucketLimitErr  error
-		lset            labels.Labels     // escapes to heap so hoisted out of loop
-		e               exemplar.Exemplar // escapes to heap so hoisted out of loop
-		meta            metadata.Metadata
-		metadataChanged bool
+		appErrs        = appendErrors{}
+		sampleLimitErr error
+		bucketLimitErr error
+		lset           labels.Labels     // escapes to heap so hoisted out of loop
+		e              exemplar.Exemplar // escapes to heap so hoisted out of loop
+		lastMeta       *metaEntry
+		lastMFName     []byte
 	)
 
 	exemplars := make([]exemplar.Exemplar, 0, 1)
-
-	// updateMetadata updates the current iteration's metadata object and the
-	// metadataChanged value if we have metadata in the scrape cache AND the
-	// labelset is for a new series or the metadata for this series has just
-	// changed. It returns a boolean based on whether the metadata was updated.
-	updateMetadata := func(lset labels.Labels, isNewSeries bool) bool {
-		if !sl.appendMetadataToWAL {
-			return false
-		}
-
-		sl.cache.metaMtx.Lock()
-		defer sl.cache.metaMtx.Unlock()
-		metaEntry, metaOk := sl.cache.metadata[lset.Get(labels.MetricName)]
-		if metaOk && (isNewSeries || metaEntry.lastIterChange == sl.cache.iter) {
-			metadataChanged = true
-			meta.Type = metaEntry.Type
-			meta.Unit = metaEntry.Unit
-			meta.Help = metaEntry.Help
-			return true
-		}
-		return false
-	}
 
 	// Take an appender with limits.
 	app = appender(app, sl.sampleLimit, sl.bucketLimit, sl.maxSchema)
@@ -1669,14 +1657,18 @@ loop:
 			break
 		}
 		switch et {
+		// TODO(bwplotka): Consider changing parser to give metadata at once instead of type, help and unit in separation, ideally on `Series()/Histogram()
+		// otherwise we can expose metadata without series on metadata API.
 		case textparse.EntryType:
-			sl.cache.setType(p.Type())
+			// TODO(bwplotka): Build meta entry directly instead of locking and updating the map. This will
+			// allow to properly update metadata when e.g unit was added, then removed;
+			lastMFName, lastMeta = sl.cache.setType(p.Type())
 			continue
 		case textparse.EntryHelp:
-			sl.cache.setHelp(p.Help())
+			lastMFName, lastMeta = sl.cache.setHelp(p.Help())
 			continue
 		case textparse.EntryUnit:
-			sl.cache.setUnit(p.Unit())
+			lastMFName, lastMeta = sl.cache.setUnit(p.Unit())
 			continue
 		case textparse.EntryComment:
 			continue
@@ -1699,10 +1691,6 @@ loop:
 			t = *parsedTimestamp
 		}
 
-		// Zero metadata out for current iteration until it's resolved.
-		meta = metadata.Metadata{}
-		metadataChanged = false
-
 		if sl.cache.getDropped(met) {
 			continue
 		}
@@ -1716,9 +1704,6 @@ loop:
 			ref = ce.ref
 			lset = ce.lset
 			hash = ce.hash
-
-			// Update metadata only if it changed in the current iteration.
-			updateMetadata(lset, false)
 		} else {
 			p.Metric(&lset)
 			hash = lset.Hash()
@@ -1747,9 +1732,6 @@ loop:
 				sl.metrics.targetScrapePoolExceededLabelLimits.Inc()
 				break loop
 			}
-
-			// Append metadata for new series if they were present.
-			updateMetadata(lset, true)
 		}
 
 		if seriesAlreadyScraped && parsedTimestamp == nil {
@@ -1857,10 +1839,18 @@ loop:
 			sl.metrics.targetScrapeExemplarOutOfOrder.Add(float64(outOfOrderExemplars))
 		}
 
-		if sl.appendMetadataToWAL && metadataChanged {
-			if _, merr := app.UpdateMetadata(ref, lset, meta); merr != nil {
-				// No need to fail the scrape on errors appending metadata.
-				sl.l.Debug("Error when appending metadata in scrape loop", "ref", fmt.Sprintf("%d", ref), "metadata", fmt.Sprintf("%+v", meta), "err", merr)
+		if sl.appendMetadataToWAL && lastMeta != nil {
+			// Is it new series OR did metadata change for this family?
+			if !ok || lastMeta.lastIterChange == sl.cache.iter {
+				// In majority cases we can trust that the current series/histogram is matching the lastMeta and lastMFName.
+				// However, optional TYPE etc metadata and broken OM text can break this, detect those cases here.
+				// TODO(bwplotka): Consider moving this to parser as many parser users end up doing this (e.g. CT and NHCB parsing).
+				if isSeriesPartOfFamily(lset.Get(labels.MetricName), lastMFName, lastMeta.Type) {
+					if _, merr := app.UpdateMetadata(ref, lset, lastMeta.Metadata); merr != nil {
+						// No need to fail the scrape on errors appending metadata.
+						sl.l.Debug("Error when appending metadata in scrape loop", "ref", fmt.Sprintf("%d", ref), "metadata", fmt.Sprintf("%+v", lastMeta.Metadata), "err", merr)
+					}
+				}
 			}
 		}
 	}
@@ -1894,6 +1884,71 @@ loop:
 		err = sl.updateStaleMarkers(app, defTime)
 	}
 	return
+}
+
+func isSeriesPartOfFamily(mName string, mfName []byte, typ model.MetricType) bool {
+	mfNameStr := yoloString(mfName)
+	if !strings.HasPrefix(mName, mfNameStr) { // Fast path.
+		return false
+	}
+
+	var (
+		gotMFName string
+		ok        bool
+	)
+	switch typ {
+	case model.MetricTypeCounter:
+		// Prometheus allows _total, cut it from mf name to support this case.
+		mfNameStr, _ = strings.CutSuffix(mfNameStr, "_total")
+
+		gotMFName, ok = strings.CutSuffix(mName, "_total")
+		if !ok {
+			gotMFName = mName
+		}
+	case model.MetricTypeHistogram:
+		gotMFName, ok = strings.CutSuffix(mName, "_bucket")
+		if !ok {
+			gotMFName, ok = strings.CutSuffix(mName, "_sum")
+			if !ok {
+				gotMFName, ok = strings.CutSuffix(mName, "_count")
+				if !ok {
+					gotMFName = mName
+				}
+			}
+		}
+	case model.MetricTypeGaugeHistogram:
+		gotMFName, ok = strings.CutSuffix(mName, "_bucket")
+		if !ok {
+			gotMFName, ok = strings.CutSuffix(mName, "_gsum")
+			if !ok {
+				gotMFName, ok = strings.CutSuffix(mName, "_gcount")
+				if !ok {
+					gotMFName = mName
+				}
+			}
+		}
+	case model.MetricTypeSummary:
+		gotMFName, ok = strings.CutSuffix(mName, "_sum")
+		if !ok {
+			gotMFName, ok = strings.CutSuffix(mName, "_count")
+			if !ok {
+				gotMFName = mName
+			}
+		}
+	case model.MetricTypeInfo:
+		// Technically prometheus text does not support info type, but we might
+		// accidentally allow info type in prom parse, so support metric family names
+		// with the _info explicitly too.
+		mfNameStr, _ = strings.CutSuffix(mfNameStr, "_info")
+
+		gotMFName, ok = strings.CutSuffix(mName, "_info")
+		if !ok {
+			gotMFName = mName
+		}
+	default:
+		gotMFName = mName
+	}
+	return mfNameStr == gotMFName
 }
 
 // Adds samples to the appender, checking the error, and then returns the # of samples added,

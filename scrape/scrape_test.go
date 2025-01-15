@@ -50,6 +50,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -96,7 +97,9 @@ func TestStorageHandlesOutOfOrderTimestamps(t *testing.T) {
 	// Test with default OutOfOrderTimeWindow (0)
 	t.Run("Out-Of-Order Sample Disabled", func(t *testing.T) {
 		s := teststorage.New(t)
-		defer s.Close()
+		t.Cleanup(func() {
+			_ = s.Close()
+		})
 
 		runScrapeLoopTest(t, s, false)
 	})
@@ -104,7 +107,9 @@ func TestStorageHandlesOutOfOrderTimestamps(t *testing.T) {
 	// Test with specific OutOfOrderTimeWindow (600000)
 	t.Run("Out-Of-Order Sample Enabled", func(t *testing.T) {
 		s := teststorage.New(t, 600000)
-		defer s.Close()
+		t.Cleanup(func() {
+			_ = s.Close()
+		})
 
 		runScrapeLoopTest(t, s, true)
 	})
@@ -126,13 +131,13 @@ func runScrapeLoopTest(t *testing.T, s *teststorage.TestStorage, expectOutOfOrde
 	timestampInorder2 := now.Add(5 * time.Minute)
 
 	slApp := sl.appender(context.Background())
-	_, _, _, err := sl.append(slApp, []byte(`metric_a{a="1",b="1"} 1`), "text/plain", timestampInorder1)
+	_, _, _, err := sl.append(slApp, []byte(`metric_total{a="1",b="1"} 1`), "text/plain", timestampInorder1)
 	require.NoError(t, err)
 
-	_, _, _, err = sl.append(slApp, []byte(`metric_a{a="1",b="1"} 2`), "text/plain", timestampOutOfOrder)
+	_, _, _, err = sl.append(slApp, []byte(`metric_total{a="1",b="1"} 2`), "text/plain", timestampOutOfOrder)
 	require.NoError(t, err)
 
-	_, _, _, err = sl.append(slApp, []byte(`metric_a{a="1",b="1"} 3`), "text/plain", timestampInorder2)
+	_, _, _, err = sl.append(slApp, []byte(`metric_total{a="1",b="1"} 3`), "text/plain", timestampInorder2)
 	require.NoError(t, err)
 
 	require.NoError(t, slApp.Commit())
@@ -145,7 +150,7 @@ func runScrapeLoopTest(t *testing.T, s *teststorage.TestStorage, expectOutOfOrde
 	defer q.Close()
 
 	// Use a matcher to filter the metric name.
-	series := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "metric_a"))
+	series := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "metric_total"))
 
 	var results []floatSample
 	for series.Next() {
@@ -165,12 +170,12 @@ func runScrapeLoopTest(t *testing.T, s *teststorage.TestStorage, expectOutOfOrde
 	// Define the expected results
 	want := []floatSample{
 		{
-			metric: labels.FromStrings("__name__", "metric_a", "a", "1", "b", "1"),
+			metric: labels.FromStrings("__name__", "metric_total", "a", "1", "b", "1"),
 			t:      timestamp.FromTime(timestampInorder1),
 			f:      1,
 		},
 		{
-			metric: labels.FromStrings("__name__", "metric_a", "a", "1", "b", "1"),
+			metric: labels.FromStrings("__name__", "metric_total", "a", "1", "b", "1"),
 			t:      timestamp.FromTime(timestampInorder2),
 			f:      3,
 		},
@@ -181,6 +186,110 @@ func runScrapeLoopTest(t *testing.T, s *teststorage.TestStorage, expectOutOfOrde
 	} else {
 		require.Equal(t, want, results, "Appended samples not as expected:\n%s", results)
 	}
+}
+
+// Regression test against https://github.com/prometheus/prometheus/issues/15831.
+func TestScrapeAppendMetadataUpdate(t *testing.T) {
+	const (
+		scrape1 = `# TYPE test_metric counter
+# HELP test_metric some help text
+# UNIT test_metric metric
+test_metric_total 1
+# TYPE test_metric2 gauge
+# HELP test_metric2 other help text
+test_metric2{foo="bar"} 2
+# TYPE test_metric3 gauge
+# HELP test_metric3 this represents tricky case of "broken" text that is not trivial to detect
+test_metric3_metric4{foo="bar"} 2
+# EOF`
+		scrape2 = `# TYPE test_metric counter
+# HELP test_metric different help text
+test_metric_total 11
+# TYPE test_metric2 gauge
+# HELP test_metric2 other help text
+# UNIT test_metric2 metric2
+test_metric2{foo="bar"} 22
+# EOF`
+	)
+
+	// Create an appender for adding samples to the storage.
+	capp := &collectResultAppender{next: nopAppender{}}
+	sl := newBasicScrapeLoop(t, context.Background(), nil, func(ctx context.Context) storage.Appender { return capp }, 0)
+
+	now := time.Now()
+	slApp := sl.appender(context.Background())
+	_, _, _, err := sl.append(slApp, []byte(scrape1), "application/openmetrics-text", now)
+	require.NoError(t, err)
+	require.NoError(t, slApp.Commit())
+	testutil.RequireEqualWithOptions(t, []metadataEntry{
+		{metric: labels.FromStrings("__name__", "test_metric_total"), m: metadata.Metadata{Type: "counter", Unit: "metric", Help: "some help text"}},
+		{metric: labels.FromStrings("__name__", "test_metric2", "foo", "bar"), m: metadata.Metadata{Type: "gauge", Unit: "", Help: "other help text"}},
+	}, capp.resultMetadata, []cmp.Option{cmp.Comparer(metadataEntryEqual)})
+	capp.resultMetadata = nil
+
+	// Next (the same) scrape should not add new metadata entries.
+	slApp = sl.appender(context.Background())
+	_, _, _, err = sl.append(slApp, []byte(scrape1), "application/openmetrics-text", now.Add(15*time.Second))
+	require.NoError(t, err)
+	require.NoError(t, slApp.Commit())
+	testutil.RequireEqualWithOptions(t, []metadataEntry(nil), capp.resultMetadata, []cmp.Option{cmp.Comparer(metadataEntryEqual)})
+
+	slApp = sl.appender(context.Background())
+	_, _, _, err = sl.append(slApp, []byte(scrape2), "application/openmetrics-text", now.Add(15*time.Second))
+	require.NoError(t, err)
+	require.NoError(t, slApp.Commit())
+	testutil.RequireEqualWithOptions(t, []metadataEntry{
+		{metric: labels.FromStrings("__name__", "test_metric_total"), m: metadata.Metadata{Type: "counter", Unit: "metric", Help: "different help text"}}, // Here, technically we should have no unit, but it's a known limitation of the current implementation.
+		{metric: labels.FromStrings("__name__", "test_metric2", "foo", "bar"), m: metadata.Metadata{Type: "gauge", Unit: "metric2", Help: "other help text"}},
+	}, capp.resultMetadata, []cmp.Option{cmp.Comparer(metadataEntryEqual)})
+}
+
+func TestIsSeriesPartOfFamily(t *testing.T) {
+	t.Run("counter", func(t *testing.T) {
+		require.True(t, isSeriesPartOfFamily("http_requests_total", []byte("http_requests_total"), model.MetricTypeCounter)) // Prometheus text style.
+		require.True(t, isSeriesPartOfFamily("http_requests_total", []byte("http_requests"), model.MetricTypeCounter))       // OM text style.
+		require.True(t, isSeriesPartOfFamily("http_requests_total", []byte("http_requests_total"), model.MetricTypeUnknown))
+
+		require.False(t, isSeriesPartOfFamily("http_requests_total", []byte("http_requests"), model.MetricTypeUnknown)) // We don't know.
+		require.False(t, isSeriesPartOfFamily("http_requests2_total", []byte("http_requests_total"), model.MetricTypeCounter))
+		require.False(t, isSeriesPartOfFamily("http_requests_requests_total", []byte("http_requests"), model.MetricTypeCounter))
+	})
+
+	t.Run("gauge", func(t *testing.T) {
+		require.True(t, isSeriesPartOfFamily("http_requests_count", []byte("http_requests_count"), model.MetricTypeGauge))
+		require.True(t, isSeriesPartOfFamily("http_requests_count", []byte("http_requests_count"), model.MetricTypeUnknown))
+
+		require.False(t, isSeriesPartOfFamily("http_requests_count2", []byte("http_requests_count"), model.MetricTypeCounter))
+	})
+
+	t.Run("histogram", func(t *testing.T) {
+		require.True(t, isSeriesPartOfFamily("http_requests_seconds_sum", []byte("http_requests_seconds"), model.MetricTypeHistogram))
+		require.True(t, isSeriesPartOfFamily("http_requests_seconds_count", []byte("http_requests_seconds"), model.MetricTypeHistogram))
+		require.True(t, isSeriesPartOfFamily("http_requests_seconds_bucket", []byte("http_requests_seconds"), model.MetricTypeHistogram))
+		require.True(t, isSeriesPartOfFamily("http_requests_seconds", []byte("http_requests_seconds"), model.MetricTypeHistogram))
+
+		require.False(t, isSeriesPartOfFamily("http_requests_seconds_sum", []byte("http_requests_seconds"), model.MetricTypeUnknown)) // We don't know.
+		require.False(t, isSeriesPartOfFamily("http_requests_seconds2_sum", []byte("http_requests_seconds"), model.MetricTypeHistogram))
+	})
+
+	t.Run("summary", func(t *testing.T) {
+		require.True(t, isSeriesPartOfFamily("http_requests_seconds_sum", []byte("http_requests_seconds"), model.MetricTypeSummary))
+		require.True(t, isSeriesPartOfFamily("http_requests_seconds_count", []byte("http_requests_seconds"), model.MetricTypeSummary))
+		require.True(t, isSeriesPartOfFamily("http_requests_seconds", []byte("http_requests_seconds"), model.MetricTypeSummary))
+
+		require.False(t, isSeriesPartOfFamily("http_requests_seconds_sum", []byte("http_requests_seconds"), model.MetricTypeUnknown)) // We don't know.
+		require.False(t, isSeriesPartOfFamily("http_requests_seconds2_sum", []byte("http_requests_seconds"), model.MetricTypeSummary))
+	})
+
+	t.Run("info", func(t *testing.T) {
+		require.True(t, isSeriesPartOfFamily("go_build_info", []byte("go_build_info"), model.MetricTypeInfo)) // Prometheus text style.
+		require.True(t, isSeriesPartOfFamily("go_build_info", []byte("go_build"), model.MetricTypeInfo))      // OM text style.
+		require.True(t, isSeriesPartOfFamily("go_build_info", []byte("go_build_info"), model.MetricTypeUnknown))
+
+		require.False(t, isSeriesPartOfFamily("go_build_info", []byte("go_build"), model.MetricTypeUnknown)) // We don't know.
+		require.False(t, isSeriesPartOfFamily("go_build2_info", []byte("go_build_info"), model.MetricTypeInfo))
+		require.False(t, isSeriesPartOfFamily("go_build_build_info", []byte("go_build_info"), model.MetricTypeInfo))
+	})
 }
 
 func TestDroppedTargetsList(t *testing.T) {
@@ -824,7 +933,7 @@ func newBasicScrapeLoopWithFallback(t testing.TB, ctx context.Context, scraper s
 		false,
 		false,
 		false,
-		false,
+		true,
 		nil,
 		false,
 		newTestScrapeMetrics(t),
@@ -1131,7 +1240,7 @@ func TestScrapeLoopMetadata(t *testing.T) {
 	total, _, _, err := sl.append(slApp, []byte(`# TYPE test_metric counter
 # HELP test_metric some help text
 # UNIT test_metric metric
-test_metric 1
+test_metric_total 1
 # TYPE test_metric_no_help gauge
 # HELP test_metric_no_type other help text
 # EOF`), "application/openmetrics-text", time.Now())
