@@ -166,7 +166,7 @@ local row = panel.row;
               'sum(rate(prometheus_target_sync_length_seconds_sum{%(clusterLabel)s=~"$cluster",job=~"$job",instance=~"$instance"}[5m])) by (%(clusterLabel)s, job, scrape_job, instance) * 1e3' % $._config
             )
             + prometheus.withFormat('time_series')
-            + prometheus.withLegendFormat('{{%(clusterLabel)s}}:{{job}}:{{instance}}:{{scrape_job}}'),
+            + prometheus.withLegendFormat('{{%(clusterLabel)s}}:{{job}}:{{instance}}:{{scrape_job}}' % $._config),
           ])
         else
           panel.timeSeries.queryOptions.withTargets([
@@ -193,7 +193,7 @@ local row = panel.row;
               'sum by (%(clusterLabel)s, job, instance) (prometheus_sd_discovered_targets{%(clusterLabel)s=~"$cluster", job=~"$job",instance=~"$instance"})' % $._config
             )
             + prometheus.withFormat('time_series')
-            + prometheus.withLegendFormat('{{%(clusterLabel)s}}:{{job}}:{{instance}}'),
+            + prometheus.withLegendFormat('{{%(clusterLabel)s}}:{{job}}:{{instance}}' % $._config),
           ])
         else
           panel.timeSeries.queryOptions.withTargets([
@@ -219,7 +219,7 @@ local row = panel.row;
               'rate(prometheus_target_interval_length_seconds_sum{%(clusterLabel)s=~"$cluster", job=~"$job",instance=~"$instance"}[5m]) / rate(prometheus_target_interval_length_seconds_count{%(clusterLabel)s=~"$cluster", job=~"$job",instance=~"$instance"}[5m]) * 1e3' % $._config
             )
             + prometheus.withFormat('time_series')
-            + prometheus.withLegendFormat('{{%(clusterLabel)s}}:{{job}}:{{instance}} {{interval}} configured'),
+            + prometheus.withLegendFormat('{{%(clusterLabel)s}}:{{job}}:{{instance}} {{interval}} configured' % $._config),
           ])
         else
           panel.timeSeries.queryOptions.withTargets([
