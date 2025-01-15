@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/prometheus/prometheus/model/labels"
 	"math"
 	"regexp"
 	"runtime"
@@ -827,6 +828,17 @@ func (opsr *OutputPerShardRelabeler) UpdateRelabelerState(
 type Label struct {
 	Name  string
 	Value string
+}
+
+func LabelsToCppBridgeLabels(lbls labels.Labels) []Label {
+	result := make([]Label, 0, len(lbls))
+	lbls.Range(func(l labels.Label) {
+		result = append(result, Label{
+			Name:  l.Name,
+			Value: l.Value,
+		})
+	})
+	return result
 }
 
 //

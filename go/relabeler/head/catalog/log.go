@@ -192,7 +192,7 @@ func (fl *FileLog) Size() int {
 }
 
 func (fl *FileLog) Close() error {
-	return errors.Join(fl.file.Close())
+	return fl.file.Close()
 }
 
 type FileHandler struct {

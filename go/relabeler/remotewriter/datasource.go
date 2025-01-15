@@ -418,10 +418,10 @@ func (ds *dataSource) Read(ctx context.Context, segmentID uint32, minTimestamp i
 		}
 	}
 
-	return segments, ds.handle(errs)
+	return segments, ds.handleReadErrors(errs)
 }
 
-func (ds *dataSource) handle(errs []error) error {
+func (ds *dataSource) handleReadErrors(errs []error) error {
 	var numberOfShardIsCorruptedErrors int
 	var numberOfEOFs int
 	var resultErr error

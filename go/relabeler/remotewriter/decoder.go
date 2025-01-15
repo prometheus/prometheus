@@ -27,24 +27,13 @@ func NewDecoder(
 	}
 
 	lss := cppbridge.NewLssStorage()
-	outputDecoder := cppbridge.NewWALOutputDecoder(labelsToCppBridgeLabels(externalLabels), relabeler, lss, shardID, encoderVersion)
+	outputDecoder := cppbridge.NewWALOutputDecoder(cppbridge.LabelsToCppBridgeLabels(externalLabels), relabeler, lss, shardID, encoderVersion)
 
 	return &Decoder{
 		relabeler:     relabeler,
 		lss:           lss,
 		outputDecoder: outputDecoder,
 	}, nil
-}
-
-func labelsToCppBridgeLabels(labels labels.Labels) []cppbridge.Label {
-	result := make([]cppbridge.Label, 0, len(labels))
-	for _, label := range labels {
-		result = append(result, cppbridge.Label{
-			Name:  label.Name,
-			Value: label.Value,
-		})
-	}
-	return result
 }
 
 type DecodedSegment struct {

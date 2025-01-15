@@ -1,6 +1,8 @@
 package catalog
 
 import (
+	"bytes"
+	"encoding/binary"
 	"errors"
 	"github.com/google/uuid"
 	"github.com/jonboulle/clockwork"
@@ -142,4 +144,12 @@ func TestFileLog_Migrate(t *testing.T) {
 	}
 
 	require.NoError(t, fl2.Close())
+}
+
+func TestVersion(t *testing.T) {
+	b := bytes.NewBuffer(nil)
+	var value int64 = 1
+	err := binary.Write(b, binary.LittleEndian, value)
+	require.NoError(t, err)
+	t.Log(len(b.Bytes()))
 }

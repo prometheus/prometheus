@@ -3,7 +3,6 @@ package catalog
 import (
 	"context"
 	"errors"
-	"fmt"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head/ready"
 	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 	"os"
@@ -52,9 +51,9 @@ func (gc *GC) Run(ctx context.Context) error {
 }
 
 func (gc *GC) Iterate() {
-	fmt.Println("CATALOG GC ITERATION STARTED")
+	logger.Debugf("catalog gc iteration: head started")
 	defer func() {
-		fmt.Println("CATALOG GC ITERATION ENDED")
+		logger.Debugf("catalog gc iteration: head ended")
 	}()
 
 	records, err := gc.catalog.List(
@@ -66,7 +65,7 @@ func (gc *GC) Iterate() {
 		},
 	)
 	if err != nil {
-		fmt.Println("catalog gc failed", err)
+		logger.Debugf("catalog gc failed", err)
 		return
 	}
 
@@ -74,13 +73,13 @@ func (gc *GC) Iterate() {
 		if record.deletedAt != 0 {
 			continue
 		}
-		fmt.Println("CATALOG GC ITERATION: HEAD", record.ID())
+		logger.Debugf("catalog gc iteration: head", record.ID())
 		if record.ReferenceCount() > 0 {
 			return
 		}
 
 		if record.Corrupted() {
-			fmt.Println("CATALOG GC ITERATION: HEAD", record.ID(), "CORRUPTED")
+			logger.Debugf("catalog gc iteration: head", record.ID(), "corrupted")
 			continue
 		}
 
@@ -94,7 +93,7 @@ func (gc *GC) Iterate() {
 			return
 		}
 
-		fmt.Println("CATALOG GC ITERATION: HEAD", record.ID(), "REMOVED")
+		logger.Debugf("catalog gc iteration: head", record.ID(), "removed")
 	}
 }
 
