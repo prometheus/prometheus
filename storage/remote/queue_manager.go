@@ -550,7 +550,7 @@ func (t *QueueManager) AppendWatcherMetadata(ctx context.Context, metadata []scr
 	mm := make([]prompb.MetricMetadata, 0, len(metadata))
 	for _, entry := range metadata {
 		mm = append(mm, prompb.MetricMetadata{
-			MetricFamilyName: entry.Metric,
+			MetricFamilyName: entry.MetricFamily,
 			Help:             entry.Help,
 			Type:             prompb.FromMetadataType(entry.Type),
 			Unit:             entry.Unit,

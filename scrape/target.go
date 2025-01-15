@@ -78,17 +78,17 @@ func (t *Target) String() string {
 // MetricMetadataStore represents a storage for metadata.
 type MetricMetadataStore interface {
 	ListMetadata() []MetricMetadata
-	GetMetadata(metric string) (MetricMetadata, bool)
+	GetMetadata(mfName string) (MetricMetadata, bool)
 	SizeMetadata() int
 	LengthMetadata() int
 }
 
-// MetricMetadata is a piece of metadata for a metric.
+// MetricMetadata is a piece of metadata for a metric family.
 type MetricMetadata struct {
-	Metric string
-	Type   model.MetricType
-	Help   string
-	Unit   string
+	MetricFamily string
+	Type         model.MetricType
+	Help         string
+	Unit         string
 }
 
 func (t *Target) ListMetadata() []MetricMetadata {
@@ -124,14 +124,14 @@ func (t *Target) LengthMetadata() int {
 }
 
 // GetMetadata returns type and help metadata for the given metric.
-func (t *Target) GetMetadata(metric string) (MetricMetadata, bool) {
+func (t *Target) GetMetadata(mfName string) (MetricMetadata, bool) {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 
 	if t.metadata == nil {
 		return MetricMetadata{}, false
 	}
-	return t.metadata.GetMetadata(metric)
+	return t.metadata.GetMetadata(mfName)
 }
 
 func (t *Target) SetMetadataStore(s MetricMetadataStore) {
