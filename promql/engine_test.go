@@ -3482,6 +3482,71 @@ func TestRateAnnotations(t *testing.T) {
 	}
 }
 
+func TestHistogramQuantileAnnotations(t *testing.T) {
+	testCases := map[string]struct {
+		data                       string
+		expr                       string
+		expectedWarningAnnotations []string
+		expectedInfoAnnotations    []string
+	}{
+		"info annotation for nonmonotonic buckets": {
+			data: `
+				nonmonotonic_bucket{le="0.1"}   0+2x10
+				nonmonotonic_bucket{le="1"}     0+1x10
+				nonmonotonic_bucket{le="10"}    0+5x10
+				nonmonotonic_bucket{le="100"}   0+4x10
+				nonmonotonic_bucket{le="1000"}  0+9x10
+				nonmonotonic_bucket{le="+Inf"}  0+8x10
+			`,
+			expr:                       "histogram_quantile(0.5, nonmonotonic_bucket)",
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations: []string{
+				`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "nonmonotonic_bucket" (1:25)`,
+			},
+		},
+		"warning annotation for missing le label": {
+			data: `
+				myHistogram{abe="0.1"}   0+2x10
+			`,
+			expr: "histogram_quantile(0.5, myHistogram)",
+			expectedWarningAnnotations: []string{
+				`PromQL warning: bucket label "le" is missing or has a malformed value of "" for metric name "myHistogram" (1:25)`,
+			},
+			expectedInfoAnnotations: []string{},
+		},
+		"warning annotation for mixed histograms": {
+			data: `
+				mixedHistogram{le="0.1"}   0+2x10
+				mixedHistogram{le="1"}     0+3x10
+				mixedHistogram{}           {{schema:0 count:10 sum:50 buckets:[1 2 3]}}
+			`,
+			expr: "histogram_quantile(0.5, mixedHistogram)",
+			expectedWarningAnnotations: []string{
+				`PromQL warning: vector contains a mix of classic and native histograms for metric name "mixedHistogram" (1:25)`,
+			},
+			expectedInfoAnnotations: []string{},
+		},
+	}
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			store := promqltest.LoadedStorage(t, "load 1m\n"+strings.TrimSpace(testCase.data))
+			t.Cleanup(func() { _ = store.Close() })
+
+			engine := newTestEngine(t)
+			query, err := engine.NewInstantQuery(context.Background(), store, nil, testCase.expr, timestamp.Time(0).Add(1*time.Minute))
+			require.NoError(t, err)
+			t.Cleanup(query.Close)
+
+			res := query.Exec(context.Background())
+			require.NoError(t, res.Err)
+
+			warnings, infos := res.Warnings.AsStrings(testCase.expr, 0, 0)
+			testutil.RequireEqual(t, testCase.expectedWarningAnnotations, warnings)
+			testutil.RequireEqual(t, testCase.expectedInfoAnnotations, infos)
+		})
+	}
+}
+
 func TestHistogramRateWithFloatStaleness(t *testing.T) {
 	// Make a chunk with two normal histograms of the same value.
 	h1 := histogram.Histogram{
