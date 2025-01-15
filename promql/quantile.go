@@ -47,7 +47,6 @@ const smallDeltaTolerance = 1e-12
 // excludedLabels are the labels to exclude from signature calculation for
 // quantiles.
 var excludedLabels = []string{
-	labels.MetricName,
 	labels.BucketLabel,
 }
 
