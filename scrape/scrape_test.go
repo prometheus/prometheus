@@ -44,6 +44,8 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/metadata"
+
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -126,13 +128,13 @@ func runScrapeLoopTest(t *testing.T, s *teststorage.TestStorage, expectOutOfOrde
 	timestampInorder2 := now.Add(5 * time.Minute)
 
 	slApp := sl.appender(context.Background())
-	_, _, _, err := sl.append(slApp, []byte(`metric_a{a="1",b="1"} 1`), "text/plain", timestampInorder1)
+	_, _, _, err := sl.append(slApp, []byte(`metric_total{a="1",b="1"} 1`), "text/plain", timestampInorder1)
 	require.NoError(t, err)
 
-	_, _, _, err = sl.append(slApp, []byte(`metric_a{a="1",b="1"} 2`), "text/plain", timestampOutOfOrder)
+	_, _, _, err = sl.append(slApp, []byte(`metric_total{a="1",b="1"} 2`), "text/plain", timestampOutOfOrder)
 	require.NoError(t, err)
 
-	_, _, _, err = sl.append(slApp, []byte(`metric_a{a="1",b="1"} 3`), "text/plain", timestampInorder2)
+	_, _, _, err = sl.append(slApp, []byte(`metric_total{a="1",b="1"} 3`), "text/plain", timestampInorder2)
 	require.NoError(t, err)
 
 	require.NoError(t, slApp.Commit())
@@ -181,6 +183,49 @@ func runScrapeLoopTest(t *testing.T, s *teststorage.TestStorage, expectOutOfOrde
 	} else {
 		require.Equal(t, want, results, "Appended samples not as expected:\n%s", results)
 	}
+}
+
+func TestScrapeAppendMetadataUpdate(t *testing.T) {
+	const (
+		scrape1 = `# TYPE test_metric counter
+# HELP test_metric some help text
+# UNIT test_metric unit1
+test_metric_total 1
+# TYPE test_metric2 gauge
+# HELP test_metric2 other help text
+test_metric2{foo="bar"} 2`
+		scrape2 = `# TYPE test_metric counter
+# HELP test_metric different help text
+# UNIT test_metric metric
+test_metric_total 11
+# TYPE test_metric2 gauge
+# HELP test_metric2 other help text
+# UNIT test_metric2 unit2
+test_metric2{foo="bar"} 22`
+	)
+
+	// Create an appender for adding samples to the storage.
+	capp := &collectResultAppender{next: nopAppender{}}
+	sl := newBasicScrapeLoop(t, context.Background(), nil, func(ctx context.Context) storage.Appender { return capp }, 0)
+
+	now := time.Now()
+	slApp := sl.appender(context.Background())
+	_, _, _, err := sl.append(slApp, []byte(scrape1), "text/plain", now)
+	require.NoError(t, err)
+	require.NoError(t, slApp.Commit())
+	require.Equal(t, []metadata.Metadata{
+		{Type: "counter", Unit: "unit1", Help: "some help text"}, // Fail, missing.
+		{Type: "gauge", Unit: "", Help: "other help text"},
+	}, capp.resultMetadata)
+
+	slApp = sl.appender(context.Background())
+	_, _, _, err = sl.append(slApp, []byte(scrape2), "text/plain", now.Add(15*time.Second))
+	require.NoError(t, err)
+	require.NoError(t, slApp.Commit())
+	require.Equal(t, []metadata.Metadata{
+		{Type: "counter", Unit: "", Help: "different help text"}, // Fail, missing.
+		{Type: "gauge", Unit: "unit2", Help: "other help text"},  // Fail, no unit
+	}, capp.resultMetadata)
 }
 
 func TestDroppedTargetsList(t *testing.T) {
@@ -824,7 +869,7 @@ func newBasicScrapeLoopWithFallback(t testing.TB, ctx context.Context, scraper s
 		false,
 		false,
 		false,
-		false,
+		true,
 		nil,
 		false,
 		newTestScrapeMetrics(t),
@@ -1131,7 +1176,7 @@ func TestScrapeLoopMetadata(t *testing.T) {
 	total, _, _, err := sl.append(slApp, []byte(`# TYPE test_metric counter
 # HELP test_metric some help text
 # UNIT test_metric metric
-test_metric 1
+test_metric_total 1
 # TYPE test_metric_no_help gauge
 # HELP test_metric_no_type other help text
 # EOF`), "application/openmetrics-text", time.Now())
