@@ -59,9 +59,10 @@ Check the resources for validity.
 
 #### Flags
 
-| Flag | Description |
-| --- | --- |
-| <code class="text-nowrap">--extended</code> | Print extended information related to the cardinality of the metrics. |
+| Flag | Description | Default |
+| --- | --- | --- |
+| <code class="text-nowrap">--query.lookback-delta</code> | The server's maximum query lookback duration. | `5m` |
+| <code class="text-nowrap">--extended</code> | Print extended information related to the cardinality of the metrics. |  |
 
 
 
@@ -102,7 +103,7 @@ Check if the config files are valid or not.
 | Flag | Description | Default |
 | --- | --- | --- |
 | <code class="text-nowrap">--syntax-only</code> | Only check the config file syntax, ignoring file and content validation referenced in the config |  |
-| <code class="text-nowrap">--lint</code> | Linting checks to apply to the rules specified in the config. Available options are: all, duplicate-rules, none. Use --lint=none to disable linting | `duplicate-rules` |
+| <code class="text-nowrap">--lint</code> | Linting checks to apply to the rules/scrape configs specified in the config. Available options are: all, duplicate-rules, none, too-long-scrape-interval. Use --lint=none to disable linting | `duplicate-rules` |
 | <code class="text-nowrap">--lint-fatal</code> | Make lint errors exit with exit code 3. | `false` |
 | <code class="text-nowrap">--agent</code> | Check config file for Prometheus in Agent mode. |  |
 

@@ -73,14 +73,19 @@ const (
 	// Exit code 3 is used for "one or more lint issues detected".
 	lintErrExitCode = 3
 
-	lintOptionAll            = "all"
-	lintOptionDuplicateRules = "duplicate-rules"
-	lintOptionNone           = "none"
-	checkHealth              = "/-/healthy"
-	checkReadiness           = "/-/ready"
+	lintOptionAll                   = "all"
+	lintOptionDuplicateRules        = "duplicate-rules"
+	lintOptionTooLongScrapeInterval = "too-long-scrape-interval"
+	lintOptionNone                  = "none"
+	checkHealth                     = "/-/healthy"
+	checkReadiness                  = "/-/ready"
 )
 
-var lintOptions = []string{lintOptionAll, lintOptionDuplicateRules, lintOptionNone}
+var (
+	lintRulesOptions = []string{lintOptionAll, lintOptionDuplicateRules, lintOptionNone}
+	// Same as lintRulesOptions, but including scrape config linting options as well.
+	lintConfigOptions = append(append([]string{}, lintRulesOptions...), lintOptionTooLongScrapeInterval)
+)
 
 func main() {
 	var (
@@ -97,6 +102,10 @@ func main() {
 	app.HelpFlag.Short('h')
 
 	checkCmd := app.Command("check", "Check the resources for validity.")
+	checkLookbackDelta := checkCmd.Flag(
+		"query.lookback-delta",
+		"The server's maximum query lookback duration.",
+	).Default("5m").Duration()
 
 	experimental := app.Flag("experimental", "Enable experimental commands.").Bool()
 
@@ -113,7 +122,7 @@ func main() {
 	checkConfigSyntaxOnly := checkConfigCmd.Flag("syntax-only", "Only check the config file syntax, ignoring file and content validation referenced in the config").Bool()
 	checkConfigLint := checkConfigCmd.Flag(
 		"lint",
-		"Linting checks to apply to the rules specified in the config. Available options are: "+strings.Join(lintOptions, ", ")+". Use --lint=none to disable linting",
+		"Linting checks to apply to the rules/scrape configs specified in the config. Available options are: "+strings.Join(lintConfigOptions, ", ")+". Use --lint=none to disable linting",
 	).Default(lintOptionDuplicateRules).String()
 	checkConfigLintFatal := checkConfigCmd.Flag(
 		"lint-fatal",
@@ -140,7 +149,7 @@ func main() {
 	).ExistingFiles()
 	checkRulesLint := checkRulesCmd.Flag(
 		"lint",
-		"Linting checks to apply. Available options are: "+strings.Join(lintOptions, ", ")+". Use --lint=none to disable linting",
+		"Linting checks to apply. Available options are: "+strings.Join(lintRulesOptions, ", ")+". Use --lint=none to disable linting",
 	).Default(lintOptionDuplicateRules).String()
 	checkRulesLintFatal := checkRulesCmd.Flag(
 		"lint-fatal",
@@ -339,7 +348,7 @@ func main() {
 		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout, prometheus.DefaultRegisterer))
 
 	case checkConfigCmd.FullCommand():
-		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newLintConfig(*checkConfigLint, *checkConfigLintFatal), *configFiles...))
+		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newConfigLintConfig(*checkConfigLint, *checkConfigLintFatal, model.Duration(*checkLookbackDelta)), *configFiles...))
 
 	case checkServerHealthCmd.FullCommand():
 		os.Exit(checkErr(CheckServerStatus(serverURL, checkHealth, httpRoundTripper)))
@@ -351,7 +360,7 @@ func main() {
 		os.Exit(CheckWebConfig(*webConfigFiles...))
 
 	case checkRulesCmd.FullCommand():
-		os.Exit(CheckRules(newLintConfig(*checkRulesLint, *checkRulesLintFatal), *ruleFiles...))
+		os.Exit(CheckRules(newRulesLintConfig(*checkRulesLint, *checkRulesLintFatal), *ruleFiles...))
 
 	case checkMetricsCmd.FullCommand():
 		os.Exit(CheckMetrics(*checkMetricsExtended))
@@ -445,15 +454,15 @@ func checkExperimental(f bool) {
 
 var errLint = errors.New("lint error")
 
-type lintConfig struct {
+type rulesLintConfig struct {
 	all            bool
 	duplicateRules bool
 	fatal          bool
 }
 
-func newLintConfig(stringVal string, fatal bool) lintConfig {
+func newRulesLintConfig(stringVal string, fatal bool) rulesLintConfig {
 	items := strings.Split(stringVal, ",")
-	ls := lintConfig{
+	ls := rulesLintConfig{
 		fatal: fatal,
 	}
 	for _, setting := range items {
@@ -464,14 +473,55 @@ func newLintConfig(stringVal string, fatal bool) lintConfig {
 			ls.duplicateRules = true
 		case lintOptionNone:
 		default:
-			fmt.Printf("WARNING: unknown lint option %s\n", setting)
+			fmt.Printf("WARNING: unknown lint option: %q\n", setting)
 		}
 	}
 	return ls
 }
 
-func (ls lintConfig) lintDuplicateRules() bool {
+func (ls rulesLintConfig) lintDuplicateRules() bool {
 	return ls.all || ls.duplicateRules
+}
+
+type configLintConfig struct {
+	rulesLintConfig
+
+	lookbackDelta model.Duration
+}
+
+func newConfigLintConfig(optionsStr string, fatal bool, lookbackDelta model.Duration) configLintConfig {
+	c := configLintConfig{
+		rulesLintConfig: rulesLintConfig{
+			fatal: fatal,
+		},
+	}
+
+	lintNone := false
+	var rulesOptions []string
+	for _, option := range strings.Split(optionsStr, ",") {
+		switch option {
+		case lintOptionAll, lintOptionTooLongScrapeInterval:
+			c.lookbackDelta = lookbackDelta
+			if option == lintOptionAll {
+				rulesOptions = append(rulesOptions, lintOptionAll)
+			}
+		case lintOptionNone:
+			lintNone = true
+		default:
+			rulesOptions = append(rulesOptions, option)
+		}
+	}
+
+	if lintNone {
+		c.lookbackDelta = 0
+		rulesOptions = nil
+	}
+
+	if len(rulesOptions) > 0 {
+		c.rulesLintConfig = newRulesLintConfig(strings.Join(rulesOptions, ","), fatal)
+	}
+
+	return c
 }
 
 // CheckServerStatus - healthy & ready.
@@ -512,12 +562,12 @@ func CheckServerStatus(serverURL *url.URL, checkEndpoint string, roundTripper ht
 }
 
 // CheckConfig validates configuration files.
-func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings lintConfig, files ...string) int {
+func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings configLintConfig, files ...string) int {
 	failed := false
 	hasErrors := false
 
 	for _, f := range files {
-		ruleFiles, err := checkConfig(agentMode, f, checkSyntaxOnly)
+		ruleFiles, scrapeConfigs, err := checkConfig(agentMode, f, checkSyntaxOnly)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:", err)
 			hasErrors = true
@@ -530,12 +580,12 @@ func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings lintConfig, files
 		}
 		fmt.Println()
 
-		rulesFailed, rulesHasErrors := checkRules(ruleFiles, lintSettings)
-		if rulesFailed {
-			failed = rulesFailed
-		}
-		if rulesHasErrors {
-			hasErrors = rulesHasErrors
+		if !checkSyntaxOnly {
+			scrapeConfigsFailed := lintScrapeConfigs(scrapeConfigs, lintSettings)
+			failed = failed || scrapeConfigsFailed
+			rulesFailed, rulesHaveErrors := checkRules(ruleFiles, lintSettings.rulesLintConfig)
+			failed = failed || rulesFailed
+			hasErrors = hasErrors || rulesHaveErrors
 		}
 	}
 	if failed && hasErrors {
@@ -574,12 +624,12 @@ func checkFileExists(fn string) error {
 	return err
 }
 
-func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]string, error) {
+func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]string, []*config.ScrapeConfig, error) {
 	fmt.Println("Checking", filename)
 
 	cfg, err := config.LoadFile(filename, agentMode, promslog.NewNopLogger())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var ruleFiles []string
@@ -587,15 +637,15 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]strin
 		for _, rf := range cfg.RuleFiles {
 			rfs, err := filepath.Glob(rf)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			// If an explicit file was given, error if it is not accessible.
 			if !strings.Contains(rf, "*") {
 				if len(rfs) == 0 {
-					return nil, fmt.Errorf("%q does not point to an existing file", rf)
+					return nil, nil, fmt.Errorf("%q does not point to an existing file", rf)
 				}
 				if err := checkFileExists(rfs[0]); err != nil {
-					return nil, fmt.Errorf("error checking rule file %q: %w", rfs[0], err)
+					return nil, nil, fmt.Errorf("error checking rule file %q: %w", rfs[0], err)
 				}
 			}
 			ruleFiles = append(ruleFiles, rfs...)
@@ -609,26 +659,26 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]strin
 		var err error
 		scfgs, err = cfg.GetScrapeConfigs()
 		if err != nil {
-			return nil, fmt.Errorf("error loading scrape configs: %w", err)
+			return nil, nil, fmt.Errorf("error loading scrape configs: %w", err)
 		}
 	}
 
 	for _, scfg := range scfgs {
 		if !checkSyntaxOnly && scfg.HTTPClientConfig.Authorization != nil {
 			if err := checkFileExists(scfg.HTTPClientConfig.Authorization.CredentialsFile); err != nil {
-				return nil, fmt.Errorf("error checking authorization credentials or bearer token file %q: %w", scfg.HTTPClientConfig.Authorization.CredentialsFile, err)
+				return nil, nil, fmt.Errorf("error checking authorization credentials or bearer token file %q: %w", scfg.HTTPClientConfig.Authorization.CredentialsFile, err)
 			}
 		}
 
 		if err := checkTLSConfig(scfg.HTTPClientConfig.TLSConfig, checkSyntaxOnly); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		for _, c := range scfg.ServiceDiscoveryConfigs {
 			switch c := c.(type) {
 			case *kubernetes.SDConfig:
 				if err := checkTLSConfig(c.HTTPClientConfig.TLSConfig, checkSyntaxOnly); err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 			case *file.SDConfig:
 				if checkSyntaxOnly {
@@ -637,17 +687,17 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]strin
 				for _, file := range c.Files {
 					files, err := filepath.Glob(file)
 					if err != nil {
-						return nil, err
+						return nil, nil, err
 					}
 					if len(files) != 0 {
 						for _, f := range files {
 							var targetGroups []*targetgroup.Group
 							targetGroups, err = checkSDFile(f)
 							if err != nil {
-								return nil, fmt.Errorf("checking SD file %q: %w", file, err)
+								return nil, nil, fmt.Errorf("checking SD file %q: %w", file, err)
 							}
 							if err := checkTargetGroupsForScrapeConfig(targetGroups, scfg); err != nil {
-								return nil, err
+								return nil, nil, err
 							}
 						}
 						continue
@@ -656,7 +706,7 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]strin
 				}
 			case discovery.StaticConfig:
 				if err := checkTargetGroupsForScrapeConfig(c, scfg); err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 			}
 		}
@@ -673,18 +723,18 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]strin
 				for _, file := range c.Files {
 					files, err := filepath.Glob(file)
 					if err != nil {
-						return nil, err
+						return nil, nil, err
 					}
 					if len(files) != 0 {
 						for _, f := range files {
 							var targetGroups []*targetgroup.Group
 							targetGroups, err = checkSDFile(f)
 							if err != nil {
-								return nil, fmt.Errorf("checking SD file %q: %w", file, err)
+								return nil, nil, fmt.Errorf("checking SD file %q: %w", file, err)
 							}
 
 							if err := checkTargetGroupsForAlertmanager(targetGroups, amcfg); err != nil {
-								return nil, err
+								return nil, nil, err
 							}
 						}
 						continue
@@ -693,12 +743,12 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]strin
 				}
 			case discovery.StaticConfig:
 				if err := checkTargetGroupsForAlertmanager(c, amcfg); err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 			}
 		}
 	}
-	return ruleFiles, nil
+	return ruleFiles, scfgs, nil
 }
 
 func checkTLSConfig(tlsConfig promconfig.TLSConfig, checkSyntaxOnly bool) error {
@@ -760,7 +810,7 @@ func checkSDFile(filename string) ([]*targetgroup.Group, error) {
 }
 
 // CheckRules validates rule files.
-func CheckRules(ls lintConfig, files ...string) int {
+func CheckRules(ls rulesLintConfig, files ...string) int {
 	failed := false
 	hasErrors := false
 	if len(files) == 0 {
@@ -780,7 +830,7 @@ func CheckRules(ls lintConfig, files ...string) int {
 }
 
 // checkRulesFromStdin validates rule from stdin.
-func checkRulesFromStdin(ls lintConfig) (bool, bool) {
+func checkRulesFromStdin(ls rulesLintConfig) (bool, bool) {
 	failed := false
 	hasErrors := false
 	fmt.Println("Checking standard input")
@@ -818,7 +868,7 @@ func checkRulesFromStdin(ls lintConfig) (bool, bool) {
 }
 
 // checkRules validates rule files.
-func checkRules(files []string, ls lintConfig) (bool, bool) {
+func checkRules(files []string, ls rulesLintConfig) (bool, bool) {
 	failed := false
 	hasErrors := false
 	for _, f := range files {
@@ -852,7 +902,7 @@ func checkRules(files []string, ls lintConfig) (bool, bool) {
 	return failed, hasErrors
 }
 
-func checkRuleGroups(rgs *rulefmt.RuleGroups, lintSettings lintConfig) (int, []error) {
+func checkRuleGroups(rgs *rulefmt.RuleGroups, lintSettings rulesLintConfig) (int, []error) {
 	numRules := 0
 	for _, rg := range rgs.Groups {
 		numRules += len(rg.Rules)
@@ -874,6 +924,16 @@ func checkRuleGroups(rgs *rulefmt.RuleGroups, lintSettings lintConfig) (int, []e
 	}
 
 	return numRules, nil
+}
+
+func lintScrapeConfigs(scrapeConfigs []*config.ScrapeConfig, lintSettings configLintConfig) bool {
+	for _, scfg := range scrapeConfigs {
+		if lintSettings.lookbackDelta > 0 && scfg.ScrapeInterval >= lintSettings.lookbackDelta {
+			fmt.Fprintf(os.Stderr, "  FAILED: too long scrape interval found, data point will be marked as stale - job: %s, interval: %s\n", scfg.JobName, scfg.ScrapeInterval)
+			return true
+		}
+	}
+	return false
 }
 
 type compareRuleType struct {
