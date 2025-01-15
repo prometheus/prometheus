@@ -29,7 +29,6 @@ import (
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
-	influx "github.com/influxdata/influxdb/client/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/model"
@@ -44,19 +43,18 @@ import (
 )
 
 type config struct {
-	graphiteAddress         string
-	graphiteTransport       string
-	graphitePrefix          string
-	opentsdbURL             string
-	influxdbURL             string
-	influxdbRetentionPolicy string
-	influxdbUsername        string
-	influxdbDatabase        string
-	influxdbPassword        string
-	remoteTimeout           time.Duration
-	listenAddr              string
-	telemetryPath           string
-	promslogConfig          promslog.Config
+	graphiteAddress   string
+	graphiteTransport string
+	graphitePrefix    string
+	opentsdbURL       string
+	influxdbURL       string
+	bucket            string
+	organization      string
+	influxdbAuthToken string
+	remoteTimeout     time.Duration
+	listenAddr        string
+	telemetryPath     string
+	promslogConfig    promslog.Config
 }
 
 var (
@@ -118,8 +116,8 @@ func parseFlags() *config {
 	a.HelpFlag.Short('h')
 
 	cfg := &config{
-		influxdbPassword: os.Getenv("INFLUXDB_PW"),
-		promslogConfig:   promslog.Config{},
+		influxdbAuthToken: os.Getenv("INFLUXDB_AUTH_TOKEN"),
+		promslogConfig:    promslog.Config{},
 	}
 
 	a.Flag("graphite-address", "The host:port of the Graphite server to send samples to. None, if empty.").
@@ -132,12 +130,10 @@ func parseFlags() *config {
 		Default("").StringVar(&cfg.opentsdbURL)
 	a.Flag("influxdb-url", "The URL of the remote InfluxDB server to send samples to. None, if empty.").
 		Default("").StringVar(&cfg.influxdbURL)
-	a.Flag("influxdb.retention-policy", "The InfluxDB retention policy to use.").
-		Default("autogen").StringVar(&cfg.influxdbRetentionPolicy)
-	a.Flag("influxdb.username", "The username to use when sending samples to InfluxDB. The corresponding password must be provided via the INFLUXDB_PW environment variable.").
-		Default("").StringVar(&cfg.influxdbUsername)
-	a.Flag("influxdb.database", "The name of the database to use for storing samples in InfluxDB.").
-		Default("prometheus").StringVar(&cfg.influxdbDatabase)
+	a.Flag("influxdb.bucket", "The InfluxDB bucket to use.").
+		Default("").StringVar(&cfg.bucket)
+	a.Flag("influxdb.organization", "The name of the organization to use for storing samples in InfluxDB.").
+		Default("").StringVar(&cfg.organization)
 	a.Flag("send-timeout", "The timeout to use when sending samples to the remote storage.").
 		Default("30s").DurationVar(&cfg.remoteTimeout)
 	a.Flag("web.listen-address", "Address to listen on for web endpoints.").
@@ -191,17 +187,12 @@ func buildClients(logger *slog.Logger, cfg *config) ([]writer, []reader) {
 			logger.Error("Failed to parse InfluxDB URL", "url", cfg.influxdbURL, "err", err)
 			os.Exit(1)
 		}
-		conf := influx.HTTPConfig{
-			Addr:     url.String(),
-			Username: cfg.influxdbUsername,
-			Password: cfg.influxdbPassword,
-			Timeout:  cfg.remoteTimeout,
-		}
 		c := influxdb.NewClient(
 			logger.With("storage", "InfluxDB"),
-			conf,
-			cfg.influxdbDatabase,
-			cfg.influxdbRetentionPolicy,
+			url.String(),
+			cfg.influxdbAuthToken,
+			cfg.organization,
+			cfg.bucket,
 		)
 		prometheus.MustRegister(c)
 		writers = append(writers, c)
