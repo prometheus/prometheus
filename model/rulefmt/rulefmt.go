@@ -314,7 +314,7 @@ func testTemplateParsing(rl *RuleNode) (errs []error) {
 }
 
 // Parse parses and validates a set of rules.
-func Parse(content []byte) (*RuleGroups, []error) {
+func Parse(content []byte, ignoreUnknownFields bool) (*RuleGroups, []error) {
 	var (
 		groups RuleGroups
 		node   ruleGroups
@@ -322,7 +322,9 @@ func Parse(content []byte) (*RuleGroups, []error) {
 	)
 
 	decoder := yaml.NewDecoder(bytes.NewReader(content))
-	decoder.KnownFields(true)
+	if !ignoreUnknownFields {
+		decoder.KnownFields(true)
+	}
 	err := decoder.Decode(&groups)
 	// Ignore io.EOF which happens with empty input.
 	if err != nil && !errors.Is(err, io.EOF) {
@@ -341,12 +343,12 @@ func Parse(content []byte) (*RuleGroups, []error) {
 }
 
 // ParseFile reads and parses rules from a file.
-func ParseFile(file string) (*RuleGroups, []error) {
+func ParseFile(file string, ignoreUnknownFields bool) (*RuleGroups, []error) {
 	b, err := os.ReadFile(file)
 	if err != nil {
 		return nil, []error{fmt.Errorf("%s: %w", file, err)}
 	}
-	rgs, errs := Parse(b)
+	rgs, errs := Parse(b, ignoreUnknownFields)
 	for i := range errs {
 		errs[i] = fmt.Errorf("%s: %w", file, errs[i])
 	}

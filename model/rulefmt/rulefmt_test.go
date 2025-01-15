@@ -24,7 +24,7 @@ import (
 )
 
 func TestParseFileSuccess(t *testing.T) {
-	_, errs := ParseFile("testdata/test.yaml")
+	_, errs := ParseFile("testdata/test.yaml", false)
 	require.Empty(t, errs, "unexpected errors parsing file")
 }
 
@@ -84,7 +84,7 @@ func TestParseFileFailure(t *testing.T) {
 	}
 
 	for _, c := range table {
-		_, errs := ParseFile(filepath.Join("testdata", c.filename))
+		_, errs := ParseFile(filepath.Join("testdata", c.filename), false)
 		require.NotEmpty(t, errs, "Expected error parsing %s but got none", c.filename)
 		require.ErrorContainsf(t, errs[0], c.errMsg, "Expected error for %s.", c.filename)
 	}
@@ -179,7 +179,7 @@ groups:
 	}
 
 	for _, tst := range tests {
-		rgs, errs := Parse([]byte(tst.ruleString))
+		rgs, errs := Parse([]byte(tst.ruleString), false)
 		require.NotNil(t, rgs, "Rule parsing, rule=\n"+tst.ruleString)
 		passed := (tst.shouldPass && len(errs) == 0) || (!tst.shouldPass && len(errs) > 0)
 		require.True(t, passed, "Rule validation failed, rule=\n"+tst.ruleString)
@@ -206,7 +206,7 @@ groups:
     annotations:
       summary: "Instance {{ $labels.instance }} up"
 `
-	_, errs := Parse([]byte(group))
+	_, errs := Parse([]byte(group), false)
 	require.Len(t, errs, 2, "Expected two errors")
 	var err00 *Error
 	require.ErrorAs(t, errs[0], &err00)
