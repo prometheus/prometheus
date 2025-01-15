@@ -90,12 +90,13 @@ func DefaultEvalIterationFunc(ctx context.Context, g *Group, evalTimestamp time.
 
 // The Manager manages recording and alerting rules.
 type Manager struct {
-	opts     *ManagerOptions
-	groups   map[string]*Group
-	mtx      sync.RWMutex
-	block    chan struct{}
-	done     chan struct{}
-	restored bool
+	opts                 *ManagerOptions
+	groups               map[string]*Group
+	mtx                  sync.RWMutex
+	block                chan struct{}
+	done                 chan struct{}
+	restored             bool
+	restoreNewRuleGroups bool
 
 	logger *slog.Logger
 }
@@ -122,6 +123,10 @@ type ManagerOptions struct {
 	ConcurrentEvalsEnabled    bool
 	RuleConcurrencyController RuleConcurrencyController
 	RuleDependencyController  RuleDependencyController
+	// At present, manager only restores `for` state when manager is newly created which happens
+	// during restarts. This flag provides an option to restore the `for` state when new rule groups are
+	// added to an existing manager
+	RestoreNewRuleGroups bool
 
 	Metrics *Metrics
 }
@@ -154,11 +159,12 @@ func NewManager(o *ManagerOptions) *Manager {
 	}
 
 	m := &Manager{
-		groups: map[string]*Group{},
-		opts:   o,
-		block:  make(chan struct{}),
-		done:   make(chan struct{}),
-		logger: o.Logger,
+		groups:               map[string]*Group{},
+		opts:                 o,
+		block:                make(chan struct{}),
+		done:                 make(chan struct{}),
+		logger:               o.Logger,
+		restoreNewRuleGroups: o.RestoreNewRuleGroups,
 	}
 
 	return m
@@ -296,7 +302,7 @@ func (m *Manager) LoadGroups(
 ) (map[string]*Group, []error) {
 	groups := make(map[string]*Group)
 
-	shouldRestore := !m.restored
+	shouldRestore := !m.restored || m.restoreNewRuleGroups
 
 	for _, fn := range filenames {
 		rgs, errs := m.opts.GroupLoader.Load(fn, ignoreUnknownFields)
@@ -329,7 +335,7 @@ func (m *Manager) LoadGroups(
 						labels.FromMap(r.Annotations),
 						externalLabels,
 						externalURL,
-						m.restored,
+						!shouldRestore,
 						m.logger.With("alert", r.Alert),
 					))
 					continue
