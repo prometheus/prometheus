@@ -70,6 +70,7 @@ type Iterator struct {
 	dataSource                   DataSource
 	writer                       Writer
 	targetSegmentIDSetCloser     TargetSegmentIDSetCloser
+	segmentReadyChecker          SegmentReadyChecker
 	metrics                      *DestinationMetrics
 	targetSegmentID              uint32
 	targetSegmentIsPartiallyRead bool
@@ -165,14 +166,9 @@ readLoop:
 				continue
 			}
 
-			if errors.Is(err, ErrPartialReadResult) {
-				if len(decodedSegments) > 0 {
-					b.add(decodedSegments)
-					i.targetSegmentIsPartiallyRead = true
-					delay = defaultDelay
-					continue
-				}
-			}
+			logger.Errorf("datasource read failed: %v", err)
+			delay = defaultDelay
+			continue
 		}
 
 		b.add(decodedSegments)

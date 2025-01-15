@@ -2,25 +2,30 @@ package head
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"hash/crc32"
 	"io"
-
-	"github.com/prometheus/prometheus/pp/go/cppbridge"
 )
+
+type WriteSyncCloser interface {
+	io.WriteCloser
+	Sync() error
+}
 
 type ShardWal struct {
 	corrupted           bool
 	encoder             *cppbridge.HeadWalEncoder
-	writeCloser         io.WriteCloser
+	writeSyncCloser     WriteSyncCloser
 	fileHeaderIsWritten bool
 	buf                 [binary.MaxVarintLen32]byte
 }
 
-func newShardWal(encoder *cppbridge.HeadWalEncoder, fileHeaderIsWritten bool, writeCloser io.WriteCloser) *ShardWal {
+func newShardWal(encoder *cppbridge.HeadWalEncoder, fileHeaderIsWritten bool, writeSyncCloser WriteSyncCloser) *ShardWal {
 	return &ShardWal{
 		encoder:             encoder,
-		writeCloser:         writeCloser,
+		writeSyncCloser:     writeSyncCloser,
 		fileHeaderIsWritten: fileHeaderIsWritten,
 	}
 }
@@ -36,7 +41,7 @@ func (w *ShardWal) WriteHeader() error {
 		return nil
 	}
 
-	_, err := WriteHeader(w.writeCloser, 1, w.encoder.Version())
+	_, err := WriteHeader(w.writeSyncCloser, 1, w.encoder.Version())
 	if err != nil {
 		return fmt.Errorf("failed to write file header: %w", err)
 	}
@@ -60,17 +65,21 @@ func (w *ShardWal) Write(innerSeriesSlice []*cppbridge.InnerSeries) error {
 		return fmt.Errorf("failed to finalize segment: %w", err)
 	}
 
-	_, err = WriteSegment(w.writeCloser, segment)
+	_, err = WriteSegment(w.writeSyncCloser, segment)
 	if err != nil {
 		return fmt.Errorf("failed to write segment: %w", err)
+	}
+
+	if err = w.writeSyncCloser.Sync(); err != nil {
+		return fmt.Errorf("failed to flush segment: %w", err)
 	}
 
 	return nil
 }
 
 func (w *ShardWal) Close() error {
-	if w.writeCloser != nil {
-		return w.writeCloser.Close()
+	if w.writeSyncCloser != nil {
+		return w.writeSyncCloser.Close()
 	}
 
 	return nil
@@ -214,7 +223,7 @@ func ReadSegment(reader io.Reader) (decodedSegment DecodedSegment, n int, err er
 	decodedSegment.sampleCount = uint32(sampleCountU64)
 
 	decodedSegment.data = make([]byte, size)
-	n, err = reader.Read(decodedSegment.data)
+	n, err = io.ReadFull(reader, decodedSegment.data)
 	if err != nil {
 		return decodedSegment, br.n, fmt.Errorf("failed to read segment data: %w", err)
 	}
@@ -232,18 +241,18 @@ func TryReadSegment(source io.ReadSeeker) (decodedSegment DecodedSegment, err er
 	var size uint64
 	size, err = binary.ReadUvarint(br)
 	if err != nil {
-		return decodedSegment, fmt.Errorf("failed to read segment size: %w", err)
+		return decodedSegment, errors.Join(fmt.Errorf("failed to read segment size: %w", err), io.ErrUnexpectedEOF)
 	}
 
 	crc32HashU64, err := binary.ReadUvarint(br)
 	if err != nil {
-		return decodedSegment, fmt.Errorf("failed to read segment crc32 hash: %w", err)
+		return decodedSegment, errors.Join(fmt.Errorf("failed to read segment crc32 hash: %w", err), io.ErrUnexpectedEOF)
 	}
 	crc32Hash := uint32(crc32HashU64)
 
 	sampleCountU64, err := binary.ReadUvarint(br)
 	if err != nil {
-		return decodedSegment, fmt.Errorf("failed to read segment sample count: %w", err)
+		return decodedSegment, errors.Join(fmt.Errorf("failed to read segment sample count: %w", err), io.ErrUnexpectedEOF)
 	}
 	decodedSegment.sampleCount = uint32(sampleCountU64)
 

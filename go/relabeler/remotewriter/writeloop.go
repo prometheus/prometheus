@@ -188,6 +188,7 @@ func (wl *writeLoop) nextIterator(ctx context.Context, writer Writer) (*Iterator
 		nextHeadRecord.NumberOfShards(),
 		wl.destination.Config(),
 		discardCache,
+		newSegmentReadyChecker(nextHeadRecord),
 		wl.makeCorruptMarker(),
 		nextHeadRecord,
 		wl.destination.metrics.unexpectedEOFCount,
@@ -211,7 +212,16 @@ func (wl *writeLoop) nextIterator(ctx context.Context, writer Writer) (*Iterator
 		targetSegmentID = crw.GetTargetSegmentID()
 	}
 
-	i, err := newIterator(wl.clock, wl.destination.Config().QueueConfig, ds, crw, targetSegmentID, wl.destination.Config().ReadTimeout, writer, wl.destination.metrics)
+	i, err := newIterator(
+		wl.clock,
+		wl.destination.Config().QueueConfig,
+		ds,
+		crw,
+		targetSegmentID,
+		wl.destination.Config().ReadTimeout,
+		writer,
+		wl.destination.metrics,
+	)
 	if err != nil {
 		return nil, errors.Join(fmt.Errorf("failed to create data source: %w", err), crw.Close(), ds.Close())
 	}

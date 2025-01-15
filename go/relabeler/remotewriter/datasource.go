@@ -154,7 +154,7 @@ func (s *shard) SetCorrupted() {
 	s.corrupted = true
 }
 
-func (s *shard) Read(ctx context.Context, targetSegmentID uint32, minTimestamp int64, isActiveHead bool) (*DecodedSegment, error) {
+func (s *shard) Read(ctx context.Context, targetSegmentID uint32, minTimestamp int64) (*DecodedSegment, error) {
 	if s.corrupted {
 		return nil, ErrShardIsCorrupted
 	}
@@ -171,11 +171,6 @@ func (s *shard) Read(ctx context.Context, targetSegmentID uint32, minTimestamp i
 		segment, err := s.walReader.Read()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				return nil, io.EOF
-			}
-			if errors.Is(err, io.ErrUnexpectedEOF) && isActiveHead {
-				s.unexpectedEOFCount.Inc()
-				logger.Errorf("remotewritedebug %s/%d unexpected eof: %v", s.headID, s.shardID, err)
 				return nil, io.EOF
 			}
 			s.corrupted = true
@@ -204,15 +199,33 @@ func (s *shard) Close() error {
 	return errors.Join(s.walReader.Close(), s.decoderStateFile.Close())
 }
 
+type SegmentReadyChecker interface {
+	SegmentIsReady(segmentID uint32) (ready bool, outOfRange bool)
+}
+
+type segmentReadyChecker struct {
+	headRecord *catalog.Record
+}
+
+func newSegmentReadyChecker(headRecord *catalog.Record) *segmentReadyChecker {
+	return &segmentReadyChecker{headRecord: headRecord}
+}
+
+func (src *segmentReadyChecker) SegmentIsReady(segmentID uint32) (ready bool, outOfRange bool) {
+	ready = src.headRecord.LastAppendedSegmentID() != nil && *src.headRecord.LastAppendedSegmentID() >= segmentID
+	outOfRange = (src.headRecord.Status() != catalog.StatusNew && src.headRecord.Status() != catalog.StatusActive) && !ready
+	return ready, outOfRange
+}
+
 type dataSource struct {
-	ID              string
-	headRecord      *catalog.Record
-	shards          []*shard
-	corruptMarker   CorruptMarker
-	closed          bool
-	completed       bool
-	corrupted       bool
-	headReleaseFunc func()
+	ID                  string
+	shards              []*shard
+	segmentReadyChecker SegmentReadyChecker
+	corruptMarker       CorruptMarker
+	closed              bool
+	completed           bool
+	corrupted           bool
+	headReleaseFunc     func()
 
 	mtx         sync.Mutex
 	cacheWriter *cacheWriter
@@ -225,6 +238,7 @@ func newDataSource(dataDir string,
 	numberOfShards uint16,
 	config DestinationConfig,
 	discardCache bool,
+	segmentReadyChecker SegmentReadyChecker,
 	corruptMarker CorruptMarker,
 	headRecord *catalog.Record,
 	unexpectedEOFCount prometheus.Counter,
@@ -237,13 +251,12 @@ func newDataSource(dataDir string,
 		return nil, fmt.Errorf("failed to convert relabel configs: %w", err)
 	}
 
-	headReleaseFunc := headRecord.Acquire()
 	b := &dataSource{
-		headRecord:         headRecord,
-		corruptMarker:      corruptMarker,
-		headReleaseFunc:    headReleaseFunc,
-		unexpectedEOFCount: unexpectedEOFCount,
-		segmentSize:        segmentSize,
+		corruptMarker:       corruptMarker,
+		segmentReadyChecker: segmentReadyChecker,
+		headReleaseFunc:     headRecord.Acquire(),
+		unexpectedEOFCount:  unexpectedEOFCount,
+		segmentSize:         segmentSize,
 	}
 
 	for shardID := uint16(0); shardID < numberOfShards; shardID++ {
@@ -366,7 +379,14 @@ func (ds *dataSource) Read(ctx context.Context, segmentID uint32, minTimestamp i
 		return nil, ErrEndOfBlock
 	}
 
-	isActiveHead := ds.headRecord.Status() == catalog.StatusNew || ds.headRecord.Status() == catalog.StatusActive
+	segmentIsReady, segmentIsOutOfRange := ds.segmentReadyChecker.SegmentIsReady(segmentID)
+	if !segmentIsReady {
+		if segmentIsOutOfRange {
+			return nil, ErrEndOfBlock
+		}
+
+		return nil, ErrEmptyReadResult
+	}
 
 	wg := &sync.WaitGroup{}
 	readShardResults := make([]readShardResult, len(ds.shards))
@@ -378,7 +398,7 @@ func (ds *dataSource) Read(ctx context.Context, segmentID uint32, minTimestamp i
 		wg.Add(1)
 		go func(shardID int) {
 			defer wg.Done()
-			segment, err := ds.shards[shardID].Read(ctx, segmentID, minTimestamp, isActiveHead)
+			segment, err := ds.shards[shardID].Read(ctx, segmentID, minTimestamp)
 			if err != nil {
 				err = NewShardError(shardID, err)
 			}
@@ -398,10 +418,10 @@ func (ds *dataSource) Read(ctx context.Context, segmentID uint32, minTimestamp i
 		}
 	}
 
-	return segments, ds.handle(errs, isActiveHead)
+	return segments, ds.handle(errs)
 }
 
-func (ds *dataSource) handle(errs []error, isActiveHead bool) error {
+func (ds *dataSource) handle(errs []error) error {
 	var numberOfShardIsCorruptedErrors int
 	var numberOfEOFs int
 	var resultErr error
@@ -425,23 +445,12 @@ func (ds *dataSource) handle(errs []error, isActiveHead bool) error {
 		}
 	}
 
-	if numberOfShardIsCorruptedErrors == len(ds.shards) {
-		ds.completed = true
-		return ErrEndOfBlock
-	}
-
 	if numberOfEOFs+numberOfShardIsCorruptedErrors == len(ds.shards) {
-		if isActiveHead {
-			return ErrEmptyReadResult
-		}
 		ds.completed = true
 		return ErrEndOfBlock
 	}
 
 	if numberOfEOFs > 0 {
-		if isActiveHead {
-			return ErrPartialReadResult
-		}
 		for _, err := range errs {
 			var shardErr ShardError
 			if errors.Is(err, io.EOF) && errors.As(err, &shardErr) {

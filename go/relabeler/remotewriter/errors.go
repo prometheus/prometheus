@@ -6,10 +6,9 @@ import (
 )
 
 var (
-	ErrShardIsCorrupted  = errors.New("shard is corrupted")
-	ErrEndOfBlock        = errors.New("end of block")
-	ErrPartialReadResult = errors.New("partial read result")
-	ErrEmptyReadResult   = errors.New("empty read result")
+	ErrShardIsCorrupted = errors.New("shard is corrupted")
+	ErrEndOfBlock       = errors.New("end of block")
+	ErrEmptyReadResult  = errors.New("empty read result")
 )
 
 // CloseAll closes all given closers.

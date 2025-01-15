@@ -3,7 +3,6 @@ package remotewriter
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 
 	"github.com/prometheus/prometheus/pp/go/relabeler/head"
@@ -12,7 +11,6 @@ import (
 type walReader struct {
 	nextSegmentID uint32
 	file          *os.File
-	reader        io.ReadSeeker
 }
 
 func newWalReader(fileName string) (*walReader, uint8, error) {
@@ -38,14 +36,8 @@ type Segment struct {
 }
 
 func (r *walReader) Read() (segment Segment, err error) {
-	decodedSegment, err := head.TryReadSegment(r.file)
+	decodedSegment, _, err := head.ReadSegment(r.file)
 	if err != nil {
-		if errors.Is(err, io.EOF) {
-			return segment, io.EOF
-		}
-		if errors.Is(err, io.ErrUnexpectedEOF) {
-			return segment, io.ErrUnexpectedEOF
-		}
 		return segment, fmt.Errorf("failed to read segment: %w", err)
 	}
 
