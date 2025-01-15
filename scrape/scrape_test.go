@@ -1292,6 +1292,12 @@ func promTextToProto(tb testing.TB, text []byte) []byte {
 		-run '^$' -bench '^BenchmarkScrapeLoopAppend' \
 		-benchtime 5s -count 6 -cpu 2 -timeout 999m \
 		| tee ${bench}.txt
+
+	export bench=scrape-loop-pprof-4 && go test \
+		-run '^$' -bench '^BenchmarkScrapeLoopAppend/fmt=PromProto' \
+		-benchtime 5s -count 1 -cpu 2 -timeout 999m \
+		-memprofile=${bench}.mem.pprof \
+		| tee ${bench}.txt
 */
 func BenchmarkScrapeLoopAppend(b *testing.B) {
 	metricsText := makeTestMetrics(100)
