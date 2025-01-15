@@ -476,7 +476,7 @@ type recordsMaker struct {
 	make refsCreateFn
 }
 
-// BenchmarkWAL_HistogramLog measures efficiency of encoding classic
+// BenchmarkWAL_HistogramEncoding measures efficiency of encoding classic
 // histograms and native historgrams with custom buckets (NHCB).
 func BenchmarkWAL_HistogramEncoding(b *testing.B) {
 	initClassicRefs := func(labelCount, histograms, buckets int) (series []RefSeries, floatSamples []RefSample, histSamples []RefHistogramSample) {
