@@ -25,6 +25,7 @@ import {
   humanizeDuration,
   now,
 } from "../../lib/formatTime";
+import { useLocalStorage } from "@mantine/hooks";
 import { useAppDispatch, useAppSelector } from "../../state/hooks";
 import {
   setCollapsedPools,
@@ -38,7 +39,6 @@ import panelClasses from "../../Panel.module.css";
 import TargetLabels from "./TargetLabels";
 import { useDebouncedValue } from "@mantine/hooks";
 import { targetPoolDisplayLimit } from "./TargetsPage";
-import { BooleanParam, useQueryParam, withDefault } from "use-query-params";
 import { badgeIconStyle } from "../../styles";
 
 type ScrapePool = {
@@ -165,10 +165,10 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
   });
 
   const dispatch = useAppDispatch();
-  const [showEmptyPools, setShowEmptyPools] = useQueryParam(
-    "showEmptyPools",
-    withDefault(BooleanParam, true)
-  );
+  const [showEmptyPools, setShowEmptyPools] = useLocalStorage<boolean>({
+    key: "targetsPage.showEmptyPools",
+    defaultValue: true,
+  });
 
   const { collapsedPools, showLimitAlert } = useAppSelector(
     (state) => state.targetsPage

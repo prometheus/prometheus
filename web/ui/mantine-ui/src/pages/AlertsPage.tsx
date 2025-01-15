@@ -23,10 +23,10 @@ import { Fragment, useEffect, useMemo } from "react";
 import { StateMultiSelect } from "../components/StateMultiSelect";
 import { IconInfoCircle, IconSearch } from "@tabler/icons-react";
 import { LabelBadges } from "../components/LabelBadges";
+import { useLocalStorage } from "@mantine/hooks";
 import { useSettings } from "../state/settingsSlice";
 import {
   ArrayParam,
-  BooleanParam,
   NumberParam,
   StringParam,
   useQueryParam,
@@ -162,10 +162,10 @@ export default function AlertsPage() {
     withDefault(StringParam, "")
   );
   const [debouncedSearch] = useDebouncedValue<string>(searchFilter.trim(), 250);
-  const [showEmptyGroups, setShowEmptyGroups] = useQueryParam(
-    "showEmptyGroups",
-    withDefault(BooleanParam, true)
-  );
+  const [showEmptyGroups, setShowEmptyGroups] = useLocalStorage<boolean>({
+    key: "alertsPage.showEmptyGroups",
+    defaultValue: true,
+  });
 
   const { alertGroupsPerPage } = useSettings();
   const [activePage, setActivePage] = useQueryParam(
