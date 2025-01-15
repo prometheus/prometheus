@@ -181,6 +181,10 @@ type HeadOptions struct {
 
 	// EnableSharding enables ShardedPostings() support in the Head.
 	EnableSharding bool
+	// Whether ignore WAL corruption during reading it.
+	// If it is set to true, reading will continue truncate as normal.
+	// If it is set to false, when encountering a WAL record corruption, reading will stop and return this corruption err.
+	IgnoreWALReadingCorruption bool
 }
 
 const (
@@ -188,20 +192,23 @@ const (
 	DefaultOutOfOrderCapMax int64 = 32
 	// DefaultSamplesPerChunk provides a default target number of samples per chunk.
 	DefaultSamplesPerChunk = 120
+	// DefaultIgnoreWALReadingCorruption is the default value for whether ignore WAL corruption during reading.
+	DefaultIgnoreWALReadingCorruption = false
 )
 
 func DefaultHeadOptions() *HeadOptions {
 	ho := &HeadOptions{
-		ChunkRange:           DefaultBlockDuration,
-		ChunkDirRoot:         "",
-		ChunkPool:            chunkenc.NewPool(),
-		ChunkWriteBufferSize: chunks.DefaultWriteBufferSize,
-		ChunkWriteQueueSize:  chunks.DefaultWriteQueueSize,
-		SamplesPerChunk:      DefaultSamplesPerChunk,
-		StripeSize:           DefaultStripeSize,
-		SeriesCallback:       &noopSeriesLifecycleCallback{},
-		IsolationDisabled:    defaultIsolationDisabled,
-		WALReplayConcurrency: defaultWALReplayConcurrency,
+		ChunkRange:                 DefaultBlockDuration,
+		ChunkDirRoot:               "",
+		ChunkPool:                  chunkenc.NewPool(),
+		ChunkWriteBufferSize:       chunks.DefaultWriteBufferSize,
+		ChunkWriteQueueSize:        chunks.DefaultWriteQueueSize,
+		SamplesPerChunk:            DefaultSamplesPerChunk,
+		StripeSize:                 DefaultStripeSize,
+		SeriesCallback:             &noopSeriesLifecycleCallback{},
+		IsolationDisabled:          defaultIsolationDisabled,
+		WALReplayConcurrency:       defaultWALReplayConcurrency,
+		IgnoreWALReadingCorruption: DefaultIgnoreWALReadingCorruption,
 	}
 	ho.OutOfOrderCapMax.Store(DefaultOutOfOrderCapMax)
 	return ho
@@ -1295,7 +1302,7 @@ func (h *Head) truncateWAL(mint int64) error {
 		return ok && keepUntil > last
 	}
 	h.metrics.checkpointCreationTotal.Inc()
-	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, keep, mint); err != nil {
+	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, keep, mint, h.opts.IgnoreWALReadingCorruption); err != nil {
 		h.metrics.checkpointCreationFail.Inc()
 		var cerr *chunks.CorruptionErr
 		if errors.As(err, &cerr) {
