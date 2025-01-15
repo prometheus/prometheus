@@ -100,7 +100,7 @@ func joinLabels(ss []string) string {
 		if i > 0 {
 			b.WriteString(", ")
 		}
-		if !model.IsValidLegacyMetricName(string(model.LabelValue(s))) {
+		if !model.LabelName(s).IsValidLegacy() {
 			b.Write(strconv.AppendQuote(b.AvailableBuffer(), s))
 		} else {
 			b.WriteString(s)
@@ -128,19 +128,24 @@ func (node *BinaryExpr) ShortString() string {
 func (node *BinaryExpr) getMatchingStr() string {
 	matching := ""
 	vm := node.VectorMatching
-	if vm != nil && (len(vm.MatchingLabels) > 0 || vm.On) {
-		vmTag := "ignoring"
-		if vm.On {
-			vmTag = "on"
-		}
-		matching = fmt.Sprintf(" %s (%s)", vmTag, strings.Join(vm.MatchingLabels, ", "))
-
-		if vm.Card == CardManyToOne || vm.Card == CardOneToMany {
-			vmCard := "right"
-			if vm.Card == CardManyToOne {
-				vmCard = "left"
+	if vm != nil {
+		if len(vm.MatchingLabels) > 0 || vm.On {
+			vmTag := "ignoring"
+			if vm.On {
+				vmTag = "on"
 			}
-			matching += fmt.Sprintf(" group_%s (%s)", vmCard, strings.Join(vm.Include, ", "))
+			// Quote only necessary labels.
+			matching = fmt.Sprintf(" %s (%s)", vmTag, joinLabels(vm.MatchingLabels))
+
+			if vm.Card == CardManyToOne || vm.Card == CardOneToMany {
+				vmCard := "right"
+				if vm.Card == CardManyToOne {
+					vmCard = "left"
+				}
+				// Quote only necessary Include labels.
+				matching += fmt.Sprintf(" group_%s (%s)", vmCard, joinLabels(vm.Include))
+				fmt.Printf("\n")
+			}
 		}
 	}
 	return matching
