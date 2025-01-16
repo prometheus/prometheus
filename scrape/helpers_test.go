@@ -90,6 +90,27 @@ type histogramSample struct {
 	fh     *histogram.FloatHistogram
 }
 
+type metadataEntry struct {
+	m      metadata.Metadata
+	metric labels.Labels
+}
+
+func metadataEntryEqual(a, b metadataEntry) bool {
+	if !labels.Equal(a.metric, b.metric) {
+		return false
+	}
+	if a.m.Type != b.m.Type {
+		return false
+	}
+	if a.m.Unit != b.m.Unit {
+		return false
+	}
+	if a.m.Help != b.m.Help {
+		return false
+	}
+	return true
+}
+
 type collectResultAppendable struct {
 	*collectResultAppender
 }
@@ -112,8 +133,8 @@ type collectResultAppender struct {
 	rolledbackHistograms []histogramSample
 	resultExemplars      []exemplar.Exemplar
 	pendingExemplars     []exemplar.Exemplar
-	resultMetadata       []metadata.Metadata
-	pendingMetadata      []metadata.Metadata
+	resultMetadata       []metadataEntry
+	pendingMetadata      []metadataEntry
 }
 
 func (a *collectResultAppender) SetOptions(opts *storage.AppendOptions) {}
@@ -173,7 +194,7 @@ func (a *collectResultAppender) AppendHistogramCTZeroSample(ref storage.SeriesRe
 func (a *collectResultAppender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
-	a.pendingMetadata = append(a.pendingMetadata, m)
+	a.pendingMetadata = append(a.pendingMetadata, metadataEntry{metric: l, m: m})
 	if ref == 0 {
 		ref = storage.SeriesRef(rand.Uint64())
 	}

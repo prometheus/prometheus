@@ -1228,11 +1228,11 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 			if metric == "" {
 				for _, md := range t.ListMetadata() {
 					res = append(res, metricMetadata{
-						Target: targetLabels,
-						Metric: md.Metric,
-						Type:   md.Type,
-						Help:   md.Help,
-						Unit:   md.Unit,
+						Target:       targetLabels,
+						MetricFamily: md.MetricFamily,
+						Type:         md.Type,
+						Help:         md.Help,
+						Unit:         md.Unit,
 					})
 				}
 				continue
@@ -1253,11 +1253,11 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 }
 
 type metricMetadata struct {
-	Target labels.Labels    `json:"target"`
-	Metric string           `json:"metric,omitempty"`
-	Type   model.MetricType `json:"type"`
-	Help   string           `json:"help"`
-	Unit   string           `json:"unit"`
+	Target       labels.Labels    `json:"target"`
+	MetricFamily string           `json:"metric,omitempty"`
+	Type         model.MetricType `json:"type"`
+	Help         string           `json:"help"`
+	Unit         string           `json:"unit"`
 }
 
 // AlertmanagerDiscovery has all the active Alertmanagers.
@@ -1357,7 +1357,7 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 			if metric == "" {
 				for _, mm := range t.ListMetadata() {
 					m := metadata.Metadata{Type: mm.Type, Help: mm.Help, Unit: mm.Unit}
-					ms, ok := metrics[mm.Metric]
+					ms, ok := metrics[mm.MetricFamily]
 
 					if limitPerMetric > 0 && len(ms) >= limitPerMetric {
 						continue
@@ -1365,7 +1365,7 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 
 					if !ok {
 						ms = map[metadata.Metadata]struct{}{}
-						metrics[mm.Metric] = ms
+						metrics[mm.MetricFamily] = ms
 					}
 					ms[m] = struct{}{}
 				}
@@ -1374,7 +1374,7 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 
 			if md, ok := t.GetMetadata(metric); ok {
 				m := metadata.Metadata{Type: md.Type, Help: md.Help, Unit: md.Unit}
-				ms, ok := metrics[md.Metric]
+				ms, ok := metrics[md.MetricFamily]
 
 				if limitPerMetric > 0 && len(ms) >= limitPerMetric {
 					continue
@@ -1382,7 +1382,7 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 
 				if !ok {
 					ms = map[metadata.Metadata]struct{}{}
-					metrics[md.Metric] = ms
+					metrics[md.MetricFamily] = ms
 				}
 				ms[m] = struct{}{}
 			}
