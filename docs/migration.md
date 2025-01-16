@@ -76,11 +76,12 @@ If you want Prometheus v3 to behave like v2, you will have to change your
 regular expressions by replacing all `.` patterns with `[^\n]`, e.g.
 `foo[^\n]*`.
 
-### Intervals return a predictable number of points
+### Range selectors and lookback exclude samples coinciding with the left boundary
 
 Lookback and range selectors are now left-open and right-closed (previously
-left-closed and right-closed), which affects queries whose evaluation time
-perfectly aligns with the sample timestamps.
+left-closed and right-closed), which makes their behavior more consistent. This
+change affects queries where the left boundary of a range or the lookback delta
+coincides with the timestamp of one or more samples.
 
 For example, assume we are querying a timeseries with evenly spaced samples
 exactly 1 minute apart. Before Prometheus v3, a range query with `5m` would
@@ -88,18 +89,22 @@ usually return 5 samples. But if the query evaluation aligns perfectly with a
 scrape, it would return 6 samples. In Prometheus v3 queries like this will
 always return 5 samples given even spacing.
 
-This change may affect subqueries that unintentionally relied on the old
-behavior, because query frontends often align subqueries to multiples of the
-step size. Before Prometheus V3 a subquery of `foo[1m:1m]` on such a system
-might have always returned two points, allowing for rate calculations. In
-Prometheus V3, however, such a subquery will only return one point, which is
-insufficient for a rate or increase calculation.
+This change will typically affect subqueries because their evaluation timing is
+naturally perfectly evenly spaced and aligned with timestamps that are multiples
+of the subquery resolution. Furthermore, query frontends often align subqueries
+to multiples of the step size. In combination, this easily creates a situation
+of perfect mutual alignment, often unintended and unknown by the user, so that
+the new behavior might come as a surprise. Before Prometheus V3, a subquery of
+`foo[1m:1m]` on such a system might have always returned two points, allowing
+for rate calculations. In Prometheus V3, however, such a subquery will only
+return one point, which is insufficient for a rate or increase calculation,
+resulting in No Data returned.
 
 Such queries will need to be rewritten to extend the window to properly cover
-more than one point. In the example above, `foo[2m:1m]` should return two points
-no matter the query alignment. The exact form of the rewritten query may depend
-on the intended results and the nature of the underlying data and there is no
-universal drop-in replacement for queries whose behavior has changed.
+more than one point. In this example, `foo[2m:1m]` would always return two
+points no matter the query alignment. The exact form of the rewritten query may
+depend on the intended results and there is no universal drop-in replacement for
+queries whose behavior has changed.
 
 Tests are similarly more likely to affected. To fix those either adjust the
 expected number of samples or extend the range.
