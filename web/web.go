@@ -438,7 +438,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 	})
 
 	router.Get("/version", h.version)
-	router.Get("/metrics", promhttp.Handler().ServeHTTP)
+	router.Get("/metrics", promhttp.HandlerFor(o.Gatherer, promhttp.HandlerOpts{}).ServeHTTP)
 
 	router.Get("/federate", readyf(httputil.CompressionHandler{
 		Handler: http.HandlerFunc(h.federation),

@@ -87,6 +87,8 @@ var (
 	lintRulesOptions = []string{lintOptionAll, lintOptionDuplicateRules, lintOptionNone}
 	// Same as lintRulesOptions, but including scrape config linting options as well.
 	lintConfigOptions = append(append([]string{}, lintRulesOptions...), lintOptionTooLongScrapeInterval)
+
+	registry = prometheus.NewRegistry()
 )
 
 const httpConfigFileDescription = "HTTP client configuration file, see details at https://prometheus.io/docs/prometheus/latest/configuration/promtool"
@@ -356,7 +358,7 @@ func main() {
 
 	switch parsedCmd {
 	case sdCheckCmd.FullCommand():
-		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout, prometheus.DefaultRegisterer))
+		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout, registry))
 
 	case checkConfigCmd.FullCommand():
 		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newConfigLintConfig(*checkConfigLint, *checkConfigLintFatal, *checkConfigIgnoreUnknownFields, model.Duration(*checkLookbackDelta)), *configFiles...))

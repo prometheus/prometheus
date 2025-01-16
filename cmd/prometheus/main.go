@@ -140,12 +140,13 @@ var (
 	agentOnlyFlags, serverOnlyFlags []string
 )
 
+var registry = prometheus.NewRegistry()
+
 func init() {
 	// This can be removed when the legacy global mode is fully deprecated.
 	//nolint:staticcheck
 	model.NameValidationScheme = model.UTF8Validation
-
-	prometheus.MustRegister(versioncollector.NewCollector(strings.ReplaceAll(appName, "-", "_")))
+	registry.MustRegister(versioncollector.NewCollector(strings.ReplaceAll(appName, "-", "_")))
 
 	var err error
 	defaultRetentionDuration, err = model.ParseDuration(defaultRetentionString)
@@ -325,8 +326,8 @@ func main() {
 	}
 
 	// Unregister the default GoCollector, and reregister with our defaults.
-	if prometheus.Unregister(collectors.NewGoCollector()) {
-		prometheus.MustRegister(
+	if registry.Unregister(collectors.NewGoCollector()) {
+		registry.MustRegister(
 			collectors.NewGoCollector(
 				collectors.WithGoCollectorRuntimeMetrics(
 					collectors.MetricsGC,
@@ -339,11 +340,11 @@ func main() {
 
 	cfg := flagConfig{
 		notifier: notifier.Options{
-			Registerer: prometheus.DefaultRegisterer,
+			Registerer: registry,
 		},
 		web: web.Options{
-			Registerer: prometheus.DefaultRegisterer,
-			Gatherer:   prometheus.DefaultGatherer,
+			Registerer: registry,
+			Gatherer:   registry,
 		},
 		promslogConfig: promslog.Config{},
 	}
@@ -587,7 +588,7 @@ func main() {
 	logger := promslog.New(&cfg.promslogConfig)
 	slog.SetDefault(logger)
 
-	notifs := notifications.NewNotifications(cfg.maxNotificationsSubscribers, prometheus.DefaultRegisterer)
+	notifs := notifications.NewNotifications(cfg.maxNotificationsSubscribers, registry)
 	cfg.web.NotificationsSub = notifs.Sub
 	cfg.web.NotificationsGetter = notifs.Get
 	notifs.AddNotification(notifications.StartingUp)
@@ -782,7 +783,7 @@ func main() {
 	var (
 		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
 		scraper       = &readyScrapeManager{}
-		remoteStorage = remote.NewStorage(logger.With("component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper)
+		remoteStorage = remote.NewStorage(logger.With("component", "remote"), registry, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 
@@ -803,25 +804,25 @@ func main() {
 	// can only register metrics specific to a SD instance.
 	// Kubernetes client metrics are the same for the whole process -
 	// they are not specific to an SD instance.
-	err = discovery.RegisterK8sClientMetricsWithPrometheus(prometheus.DefaultRegisterer)
+	err = discovery.RegisterK8sClientMetricsWithPrometheus(registry)
 	if err != nil {
 		logger.Error("failed to register Kubernetes client metrics", "err", err)
 		os.Exit(1)
 	}
 
-	sdMetrics, err := discovery.CreateAndRegisterSDMetrics(prometheus.DefaultRegisterer)
+	sdMetrics, err := discovery.CreateAndRegisterSDMetrics(registry)
 	if err != nil {
 		logger.Error("failed to register service discovery metrics", "err", err)
 		os.Exit(1)
 	}
 
-	discoveryManagerScrape = discovery.NewManager(ctxScrape, logger.With("component", "discovery manager scrape"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("scrape"))
+	discoveryManagerScrape = discovery.NewManager(ctxScrape, logger.With("component", "discovery manager scrape"), registry, sdMetrics, discovery.Name("scrape"))
 	if discoveryManagerScrape == nil {
 		logger.Error("failed to create a discovery manager scrape")
 		os.Exit(1)
 	}
 
-	discoveryManagerNotify = discovery.NewManager(ctxNotify, logger.With("component", "discovery manager notify"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("notify"))
+	discoveryManagerNotify = discovery.NewManager(ctxNotify, logger.With("component", "discovery manager notify"), registry, sdMetrics, discovery.Name("notify"))
 	if discoveryManagerNotify == nil {
 		logger.Error("failed to create a discovery manager notify")
 		os.Exit(1)
@@ -832,7 +833,7 @@ func main() {
 		logger.With("component", "scrape manager"),
 		logging.NewJSONFileLogger,
 		fanoutStorage,
-		prometheus.DefaultRegisterer,
+		registry,
 	)
 	if err != nil {
 		logger.Error("failed to create a scrape manager", "err", err)
@@ -849,7 +850,7 @@ func main() {
 	if !agentMode {
 		opts := promql.EngineOpts{
 			Logger:                   logger.With("component", "query engine"),
-			Reg:                      prometheus.DefaultRegisterer,
+			Reg:                      registry,
 			MaxSamples:               cfg.queryMaxSamples,
 			Timeout:                  time.Duration(cfg.queryTimeout),
 			ActiveQueryTracker:       promql.NewActiveQueryTracker(localStoragePath, cfg.queryConcurrency, logger.With("component", "activeQueryTracker")),
@@ -873,7 +874,7 @@ func main() {
 			NotifyFunc:             rules.SendAlerts(notifierManager, cfg.web.ExternalURL.String()),
 			Context:                ctxRule,
 			ExternalURL:            cfg.web.ExternalURL,
-			Registerer:             prometheus.DefaultRegisterer,
+			Registerer:             registry,
 			Logger:                 logger.With("component", "rule manager"),
 			OutageTolerance:        time.Duration(cfg.outageTolerance),
 			ForGracePeriod:         time.Duration(cfg.forGracePeriod),
@@ -1027,8 +1028,8 @@ func main() {
 		},
 	}
 
-	prometheus.MustRegister(configSuccess)
-	prometheus.MustRegister(configSuccessTime)
+	registry.MustRegister(configSuccess)
+	registry.MustRegister(configSuccessTime)
 
 	// Start all components while we wait for TSDB to open but only load
 	// initial config and mark ourselves as ready after it completed.
@@ -1298,7 +1299,7 @@ func main() {
 					}
 				}
 
-				db, err := openDBWithMetrics(localStoragePath, logger, prometheus.DefaultRegisterer, &opts, localStorage.getStats())
+				db, err := openDBWithMetrics(localStoragePath, logger, registry, &opts, localStorage.getStats())
 				if err != nil {
 					return fmt.Errorf("opening storage failed: %w", err)
 				}
@@ -1350,7 +1351,7 @@ func main() {
 				}
 				db, err := agent.Open(
 					logger,
-					prometheus.DefaultRegisterer,
+					registry,
 					remoteStorage,
 					localStoragePath,
 					&opts,
