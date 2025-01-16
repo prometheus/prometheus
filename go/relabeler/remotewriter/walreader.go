@@ -1,8 +1,10 @@
 package remotewriter
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/prometheus/prometheus/pp/go/relabeler/head"
@@ -11,6 +13,7 @@ import (
 type walReader struct {
 	nextSegmentID uint32
 	file          *os.File
+	reader        io.Reader
 }
 
 func newWalReader(fileName string) (*walReader, uint8, error) {
@@ -25,7 +28,8 @@ func newWalReader(fileName string) (*walReader, uint8, error) {
 	}
 
 	return &walReader{
-		file: file,
+		file:   file,
+		reader: bufio.NewReaderSize(file, 4096),
 	}, encoderVersion, nil
 }
 
@@ -36,7 +40,7 @@ type Segment struct {
 }
 
 func (r *walReader) Read() (segment Segment, err error) {
-	decodedSegment, _, err := head.ReadSegment(r.file)
+	decodedSegment, _, err := head.ReadSegment(r.reader)
 	if err != nil {
 		return segment, fmt.Errorf("failed to read segment: %w", err)
 	}

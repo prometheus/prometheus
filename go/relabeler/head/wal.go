@@ -1,6 +1,7 @@
 package head
 
 import (
+	"bufio"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -12,6 +13,43 @@ import (
 type WriteSyncCloser interface {
 	io.WriteCloser
 	Sync() error
+}
+
+type WriteFlusher interface {
+	io.Writer
+	Flush() error
+}
+
+type bufferedShardWalWriter struct {
+	writeSyncCloser WriteSyncCloser
+	bufferedWriter  *bufio.Writer
+}
+
+func newBufferedShardWalWriter(writeSyncCloser WriteSyncCloser) *bufferedShardWalWriter {
+	return &bufferedShardWalWriter{
+		writeSyncCloser: writeSyncCloser,
+		bufferedWriter:  bufio.NewWriterSize(writeSyncCloser, 1024*1024),
+	}
+}
+
+func (w *bufferedShardWalWriter) Write(p []byte) (n int, err error) {
+	return w.bufferedWriter.Write(p)
+}
+
+func (w *bufferedShardWalWriter) Sync() error {
+	if err := w.bufferedWriter.Flush(); err != nil {
+		return fmt.Errorf("failed to flush buffer: %w", err)
+	}
+
+	if err := w.writeSyncCloser.Sync(); err != nil {
+		return fmt.Errorf("failed to sync: %w", err)
+	}
+
+	return nil
+}
+
+func (w *bufferedShardWalWriter) Close() error {
+	return errors.Join(w.bufferedWriter.Flush(), w.writeSyncCloser.Sync(), w.writeSyncCloser.Close())
 }
 
 type ShardWal struct {
@@ -44,6 +82,10 @@ func (w *ShardWal) WriteHeader() error {
 	_, err := WriteHeader(w.writeSyncCloser, 1, w.encoder.Version())
 	if err != nil {
 		return fmt.Errorf("failed to write file header: %w", err)
+	}
+
+	if err = w.writeSyncCloser.Sync(); err != nil {
+		return fmt.Errorf("failed to sync file header: %w", err)
 	}
 
 	w.fileHeaderIsWritten = true

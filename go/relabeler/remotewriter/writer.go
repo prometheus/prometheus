@@ -6,22 +6,22 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 )
 
-type writer struct {
+type protobufWriter struct {
 	client remote.WriteClient
 }
 
-func newWriter(client remote.WriteClient) *writer {
-	return &writer{
+func newProtobufWriter(client remote.WriteClient) *protobufWriter {
+	return &protobufWriter{
 		client: client,
 	}
 }
 
-func (w *writer) Write(ctx context.Context, protobuf *cppbridge.SnappyProtobufEncodedData) error {
+func (w *protobufWriter) Write(ctx context.Context, protobuf *cppbridge.SnappyProtobufEncodedData) error {
 	return protobuf.Do(func(buf []byte) error {
 		return w.client.Store(ctx, buf, 0)
 	})
 }
 
-func (w *writer) Close() error {
+func (w *protobufWriter) Close() error {
 	return nil
 }

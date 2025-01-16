@@ -28,7 +28,7 @@ type TargetSegmentIDSetCloser interface {
 	Close() error
 }
 
-type Writer interface {
+type ProtobufWriter interface {
 	Write(ctx context.Context, data *cppbridge.SnappyProtobufEncodedData) error
 }
 
@@ -68,7 +68,7 @@ type Iterator struct {
 	clock                        clockwork.Clock
 	queueConfig                  config.QueueConfig
 	dataSource                   DataSource
-	writer                       Writer
+	protobufWriter               ProtobufWriter
 	targetSegmentIDSetCloser     TargetSegmentIDSetCloser
 	segmentReadyChecker          SegmentReadyChecker
 	metrics                      *DestinationMetrics
@@ -77,7 +77,8 @@ type Iterator struct {
 
 	outputSharder *sharder
 
-	scrapeInterval time.Duration
+	scrapeInterval    time.Duration
+	endOfBlockReached bool
 }
 
 type MessageShard struct {
@@ -114,7 +115,7 @@ func newIterator(
 	targetSegmentIDSetCloser TargetSegmentIDSetCloser,
 	targetSegmentID uint32,
 	readTimeout time.Duration,
-	writer Writer,
+	protobufWriter ProtobufWriter,
 	metrics *DestinationMetrics,
 ) (*Iterator, error) {
 	outputSharder, err := newSharder(queueConfig.MinShards, queueConfig.MaxShards)
@@ -126,7 +127,7 @@ func newIterator(
 		clock:                    clock,
 		queueConfig:              queueConfig,
 		dataSource:               dataSource,
-		writer:                   writer,
+		protobufWriter:           protobufWriter,
 		targetSegmentIDSetCloser: targetSegmentIDSetCloser,
 		metrics:                  metrics,
 		targetSegmentID:          targetSegmentID,
@@ -135,7 +136,23 @@ func newIterator(
 	}, nil
 }
 
+func (i *Iterator) wrapError(err error) error {
+	if err != nil {
+		return err
+	}
+
+	if i.endOfBlockReached {
+		return ErrEndOfBlock
+	}
+
+	return nil
+}
+
 func (i *Iterator) Next(ctx context.Context) error {
+	if i.endOfBlockReached {
+		return i.wrapError(nil)
+	}
+
 	startTime := i.clock.Now()
 	var deadlineReached bool
 	var delay time.Duration
@@ -148,7 +165,7 @@ readLoop:
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return i.wrapError(ctx.Err())
 		case <-deadline:
 			deadlineReached = true
 			break readLoop
@@ -158,7 +175,8 @@ readLoop:
 		decodedSegments, err := i.dataSource.Read(ctx, i.targetSegmentID, i.minTimestamp())
 		if err != nil {
 			if errors.Is(err, ErrEndOfBlock) {
-				return ErrEndOfBlock
+				i.endOfBlockReached = true
+				break readLoop
 			}
 
 			if errors.Is(err, ErrEmptyReadResult) {
@@ -190,7 +208,7 @@ readLoop:
 	}
 
 	if b.IsEmpty() {
-		return nil
+		return i.wrapError(nil)
 	}
 
 	var desiredNumberOfShards float64
@@ -206,7 +224,7 @@ readLoop:
 
 	msg, err := i.encode(b.Data(), uint16(numberOfShards))
 	if err != nil {
-		return err
+		return i.wrapError(err)
 	}
 
 	numberOfSamples := b.NumberOfSamples()
@@ -237,7 +255,7 @@ readLoop:
 			go func(shrd *MessageShard) {
 				defer wg.Done()
 				begin := i.clock.Now()
-				writeErr := i.writer.Write(ctx, shrd.Protobuf)
+				writeErr := i.protobufWriter.Write(ctx, shrd.Protobuf)
 				i.metrics.sentBatchDuration.Observe(i.clock.Since(begin).Seconds())
 				if writeErr != nil {
 					logger.Errorf("failed to send protobuf: %v", writeErr)
@@ -295,14 +313,14 @@ readLoop:
 		),
 	)
 	if err != nil {
-		return err
+		return i.wrapError(err)
 	}
 
 	if err = i.tryAck(ctx); err != nil {
 		logger.Errorf("failed to ack segment id: %v", err)
 	}
 
-	return nil
+	return i.wrapError(nil)
 }
 
 func (i *Iterator) writeCaches() {

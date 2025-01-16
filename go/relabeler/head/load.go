@@ -1,6 +1,7 @@
 package head
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
@@ -46,7 +47,7 @@ func Create(id string, generation uint64, dir string, configs []*config.InputRel
 			return nil, fmt.Errorf("failed to create shard wal file: %w", err)
 		}
 		shardWalEncoder := cppbridge.NewHeadWalEncoder(shardID, HeadWalEncoderDecoderLogShards, targetLss)
-		shardWal := newShardWal(shardWalEncoder, false, shardFile)
+		shardWal := newShardWal(shardWalEncoder, false, newBufferedShardWalWriter(shardFile))
 		if err = shardWal.WriteHeader(); err != nil {
 			return nil, fmt.Errorf("failed to write shard wal header: %w", err)
 		}
@@ -95,7 +96,7 @@ func Load(id string, generation uint64, dir string, configs []*config.InputRelab
 		var shardWal *ShardWal
 		var isCorrupted bool
 		var lastSegmentID *uint32
-		shardWal, lastSegmentID, isCorrupted, err = createWal(shardFilePath, targetLss, dataStorages[shardID])
+		shardWal, lastSegmentID, isCorrupted, err = openAndReplayWal(shardFilePath, targetLss, dataStorages[shardID])
 		if err != nil {
 			return nil, corrupted, err
 		}
@@ -139,7 +140,7 @@ func Load(id string, generation uint64, dir string, configs []*config.InputRelab
 	return h, corrupted, nil
 }
 
-func createWal(shardFilePath string, lss *cppbridge.LabelSetStorage, dataStorage *DataStorage) (_ *ShardWal, lastSegmentID *uint32, corrupted bool, err error) {
+func openAndReplayWal(shardFilePath string, lss *cppbridge.LabelSetStorage, dataStorage *DataStorage) (_ *ShardWal, lastSegmentID *uint32, corrupted bool, err error) {
 	var shardFile *os.File
 	shardFile, err = os.OpenFile(shardFilePath, os.O_CREATE|os.O_RDWR, 0666)
 	if err != nil {
@@ -155,12 +156,13 @@ func createWal(shardFilePath string, lss *cppbridge.LabelSetStorage, dataStorage
 		return newCorruptedShardWal(), lastSegmentID, corrupted, shardFile.Close()
 	}
 
-	return newShardWal(encoder, offset != 0, shardFile), lastSegmentID, corrupted, nil
+	return newShardWal(encoder, offset != 0, newBufferedShardWalWriter(shardFile)), lastSegmentID, corrupted, nil
 }
 
 func replayWal(file *os.File, lss *cppbridge.LabelSetStorage, dataStorage *DataStorage) (offset int, lastSegmentID *uint32, encoder *cppbridge.HeadWalEncoder, err error) {
 	logger.Debugf("replaying wal file", file.Name())
-	_, encoderVersion, _, err := ReadHeader(file)
+	bufferedReader := bufio.NewReaderSize(file, 1024*16)
+	_, encoderVersion, _, err := ReadHeader(bufferedReader)
 	if err != nil {
 		return offset, lastSegmentID, nil, fmt.Errorf("failed to read header: %w", err)
 	}
@@ -171,7 +173,7 @@ func replayWal(file *os.File, lss *cppbridge.LabelSetStorage, dataStorage *DataS
 	for {
 		var bytesRead int
 		var segment DecodedSegment
-		segment, bytesRead, err = ReadSegment(file)
+		segment, bytesRead, err = ReadSegment(bufferedReader)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				return offset, lastSegmentID, decoder.CreateEncoder(), nil

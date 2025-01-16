@@ -77,7 +77,7 @@ func NewFileLogV2(fileName string) (fl *FileLog, err error) {
 	fl = &FileLog{
 		version: LogFileVersionV2,
 		file:    file,
-		encoder: EncoderV2{},
+		encoder: NewEncoderV2(),
 		decoder: DecoderV2{},
 	}
 
@@ -131,7 +131,7 @@ func migrate(file *FileHandler, from, to uint64) error {
 		}
 	}
 
-	encoder := EncoderV2{}
+	encoder := NewEncoderV2()
 	buffer := bytes.NewBuffer(nil)
 	if err := binary.Write(buffer, binary.LittleEndian, to); err != nil {
 		return fmt.Errorf("failed to write log file version: %w", err)

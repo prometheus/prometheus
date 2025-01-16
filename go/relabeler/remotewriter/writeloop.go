@@ -41,7 +41,7 @@ func (wl *writeLoop) run(ctx context.Context) {
 	var i *Iterator
 	var nextI *Iterator
 
-	rw := &readyWriter{}
+	rw := &readyProtobufWriter{}
 
 	wl.destination.metrics.maxNumShards.Set(float64(wl.destination.Config().QueueConfig.MaxShards))
 	wl.destination.metrics.minNumShards.Set(float64(wl.destination.Config().QueueConfig.MinShards))
@@ -85,7 +85,7 @@ func (wl *writeLoop) run(ctx context.Context) {
 				continue
 			}
 
-			rw.SetWriter(newWriter(wl.client))
+			rw.SetProtobufWriter(newProtobufWriter(wl.client))
 		}
 
 		if err = wl.write(ctx, i); err != nil {
@@ -150,7 +150,7 @@ func (wl *writeLoop) write(ctx context.Context, iterator *Iterator) error {
 	}
 }
 
-func (wl *writeLoop) nextIterator(ctx context.Context, writer Writer) (*Iterator, error) {
+func (wl *writeLoop) nextIterator(ctx context.Context, protobufWriter ProtobufWriter) (*Iterator, error) {
 	var nextHeadRecord *catalog.Record
 	var err error
 	var cleanStart bool
@@ -219,7 +219,7 @@ func (wl *writeLoop) nextIterator(ctx context.Context, writer Writer) (*Iterator
 		crw,
 		targetSegmentID,
 		wl.destination.Config().ReadTimeout,
-		writer,
+		protobufWriter,
 		wl.destination.metrics,
 	)
 	if err != nil {
@@ -348,14 +348,14 @@ func contextErr(ctx context.Context) error {
 	}
 }
 
-type readyWriter struct {
-	writer Writer
+type readyProtobufWriter struct {
+	protobufWriter ProtobufWriter
 }
 
-func (rw *readyWriter) SetWriter(writer Writer) {
-	rw.writer = writer
+func (rpw *readyProtobufWriter) SetProtobufWriter(protobufWriter ProtobufWriter) {
+	rpw.protobufWriter = protobufWriter
 }
 
-func (rw *readyWriter) Write(ctx context.Context, protobuf *cppbridge.SnappyProtobufEncodedData) error {
-	return rw.writer.Write(ctx, protobuf)
+func (rw *readyProtobufWriter) Write(ctx context.Context, protobuf *cppbridge.SnappyProtobufEncodedData) error {
+	return rw.protobufWriter.Write(ctx, protobuf)
 }

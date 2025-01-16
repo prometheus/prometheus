@@ -24,8 +24,9 @@ type CorruptMarker interface {
 }
 
 type ShardError struct {
-	shardID int
-	err     error
+	shardID     int
+	processable bool
+	err         error
 }
 
 func (e ShardError) Error() string {
@@ -40,10 +41,11 @@ func (e ShardError) ShardID() int {
 	return e.shardID
 }
 
-func NewShardError(shardID int, err error) ShardError {
+func NewShardError(shardID int, processable bool, err error) ShardError {
 	return ShardError{
-		shardID: shardID,
-		err:     err,
+		shardID:     shardID,
+		processable: processable,
+		err:         err,
 	}
 }
 
@@ -170,11 +172,8 @@ func (s *shard) Read(ctx context.Context, targetSegmentID uint32, minTimestamp i
 
 		segment, err := s.walReader.Read()
 		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return nil, io.EOF
-			}
 			s.corrupted = true
-			logger.Errorf("remotewritedebug shard %s/%d is corrupted: %v", s.headID, s.shardID, err)
+			logger.Errorf("remotewritedebug shard %s/%d is corrupted by read: %v", s.headID, s.shardID, err)
 			return nil, errors.Join(err, ErrShardIsCorrupted)
 		}
 
@@ -183,6 +182,7 @@ func (s *shard) Read(ctx context.Context, targetSegmentID uint32, minTimestamp i
 		decodedSegment, err := s.decoder.Decode(segment.Data(), minTimestamp)
 		if err != nil {
 			s.corrupted = true
+			logger.Errorf("remotewritedebug shard %s/%d is corrupted by decode: %v", s.headID, s.shardID, err)
 			return nil, errors.Join(err, ErrShardIsCorrupted)
 		}
 
@@ -226,6 +226,8 @@ type dataSource struct {
 	completed           bool
 	corrupted           bool
 	headReleaseFunc     func()
+
+	lssSlice []*cppbridge.LabelSetStorage
 
 	mtx         sync.Mutex
 	cacheWriter *cacheWriter
@@ -278,6 +280,7 @@ func newDataSource(dataDir string,
 			return nil, errors.Join(fmt.Errorf("failed to create shard: %w", err), b.Close())
 		}
 		b.shards = append(b.shards, s)
+		b.lssSlice = append(b.lssSlice, s.decoder.lss)
 	}
 
 	return b, nil
@@ -392,7 +395,7 @@ func (ds *dataSource) Read(ctx context.Context, segmentID uint32, minTimestamp i
 	readShardResults := make([]readShardResult, len(ds.shards))
 	for shardID := 0; shardID < len(ds.shards); shardID++ {
 		if ds.shards[shardID].corrupted {
-			readShardResults[shardID] = readShardResult{segment: nil, err: ErrShardIsCorrupted}
+			readShardResults[shardID] = readShardResult{segment: nil, err: NewShardError(shardID, false, ErrShardIsCorrupted)}
 			continue
 		}
 		wg.Add(1)
@@ -400,7 +403,7 @@ func (ds *dataSource) Read(ctx context.Context, segmentID uint32, minTimestamp i
 			defer wg.Done()
 			segment, err := ds.shards[shardID].Read(ctx, segmentID, minTimestamp)
 			if err != nil {
-				err = NewShardError(shardID, err)
+				err = NewShardError(shardID, true, err)
 			}
 			readShardResults[shardID] = readShardResult{segment: segment, err: err}
 		}(shardID)
@@ -422,20 +425,11 @@ func (ds *dataSource) Read(ctx context.Context, segmentID uint32, minTimestamp i
 }
 
 func (ds *dataSource) handleReadErrors(errs []error) error {
-	var numberOfShardIsCorruptedErrors int
-	var numberOfEOFs int
-	var resultErr error
-	for _, err := range errs {
-		switch {
-		case errors.Is(err, ErrShardIsCorrupted):
-			numberOfShardIsCorruptedErrors++
-		case errors.Is(err, io.EOF):
-			numberOfEOFs++
-		}
-		resultErr = errors.Join(resultErr, err)
+	if len(errs) == 0 {
+		return nil
 	}
 
-	if numberOfShardIsCorruptedErrors > 0 {
+	if len(errs) == len(ds.shards) {
 		ds.corrupted = true
 		if ds.corruptMarker != nil {
 			if err := ds.corruptMarker.MarkCorrupted(ds.ID); err != nil {
@@ -443,34 +437,32 @@ func (ds *dataSource) handleReadErrors(errs []error) error {
 			}
 			ds.corruptMarker = nil
 		}
-	}
 
-	if numberOfEOFs+numberOfShardIsCorruptedErrors == len(ds.shards) {
-		ds.completed = true
 		return ErrEndOfBlock
 	}
 
-	if numberOfEOFs > 0 {
-		for _, err := range errs {
-			var shardErr ShardError
-			if errors.Is(err, io.EOF) && errors.As(err, &shardErr) {
-				shardID := shardErr.ShardID()
-				ds.shards[shardID].SetCorrupted()
-			}
+	ds.corrupted = true
+	if ds.corruptMarker != nil {
+		if err := ds.corruptMarker.MarkCorrupted(ds.ID); err != nil {
+			return fmt.Errorf("failed to mark head corrupted: %w", err)
 		}
-		logger.Errorf("head %s contains shards with different number of segments", ds.ID)
-		return nil
+		ds.corruptMarker = nil
 	}
 
-	return resultErr
+	for _, err := range errs {
+		var shardErr ShardError
+		if errors.As(err, &shardErr) {
+			if shardErr.processable {
+				logger.Errorf("shard %s/%d is corrupted", ds.ID, shardErr.ShardID())
+			}
+		}
+	}
+
+	return nil
 }
 
 func (ds *dataSource) LSSes() []*cppbridge.LabelSetStorage {
-	lsses := make([]*cppbridge.LabelSetStorage, len(ds.shards))
-	for i := 0; i < len(ds.shards); i++ {
-		lsses[i] = ds.shards[i].decoder.lss
-	}
-	return lsses
+	return ds.lssSlice
 }
 
 type cacheWriter struct {
