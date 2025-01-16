@@ -110,6 +110,12 @@ func newCRC32() hash.Hash32 {
 	return crc32.New(castagnoliTable)
 }
 
+type symbolCacheEntry struct {
+	index          uint32
+	lastValueIndex uint32
+	lastValue      string
+}
+
 type PostingsEncoder func(*encoding.Encbuf, []uint32) error
 
 type PostingsDecoder func(encoding.Decbuf) (int, Postings, error)
@@ -140,7 +146,7 @@ type Writer struct {
 	symbols     *Symbols
 	symbolFile  *fileutil.MmapFile
 	lastSymbol  string
-	symbolCache map[string]uint32 // From symbol to index in table.
+	symbolCache map[string]symbolCacheEntry
 
 	labelIndexes []labelIndexHashEntry // Label index offsets.
 	labelNames   map[string]uint64     // Label names, and their usage.
@@ -240,7 +246,7 @@ func NewWriterWithEncoder(ctx context.Context, fn string, encoder PostingsEncode
 		buf1: encoding.Encbuf{B: make([]byte, 0, 1<<22)},
 		buf2: encoding.Encbuf{B: make([]byte, 0, 1<<22)},
 
-		symbolCache:     make(map[string]uint32, 1<<16),
+		symbolCache:     make(map[string]symbolCacheEntry, 1<<8),
 		labelNames:      make(map[string]uint64, 1<<8),
 		crc32:           newCRC32(),
 		postingsEncoder: encoder,
@@ -472,16 +478,29 @@ func (w *Writer) AddSeries(ref storage.SeriesRef, lset labels.Labels, chunks ...
 	w.buf2.PutUvarint(lset.Len())
 
 	if err := lset.Validate(func(l labels.Label) error {
-		nameIndex, ok := w.symbolCache[l.Name]
+		var err error
+		cacheEntry, ok := w.symbolCache[l.Name]
+		nameIndex := cacheEntry.index
 		if !ok {
-			return fmt.Errorf("symbol entry for %q does not exist", l.Name)
+			nameIndex, err = w.symbols.ReverseLookup(l.Name)
+			if err != nil {
+				return fmt.Errorf("symbol entry for %q does not exist, %w", l.Name, err)
+			}
 		}
 		w.labelNames[l.Name]++
 		w.buf2.PutUvarint32(nameIndex)
 
-		valueIndex, ok := w.symbolCache[l.Value]
-		if !ok {
-			return fmt.Errorf("symbol entry for %q does not exist", l.Value)
+		valueIndex := cacheEntry.lastValueIndex
+		if !ok || cacheEntry.lastValue != l.Value {
+			valueIndex, err = w.symbols.ReverseLookup(l.Value)
+			if err != nil {
+				return fmt.Errorf("symbol entry for %q does not exist, %w", l.Value, err)
+			}
+			w.symbolCache[l.Name] = symbolCacheEntry{
+				index:          nameIndex,
+				lastValueIndex: valueIndex,
+				lastValue:      l.Value,
+			}
 		}
 		w.buf2.PutUvarint32(valueIndex)
 		return nil
@@ -540,7 +559,6 @@ func (w *Writer) AddSymbol(sym string) error {
 		return fmt.Errorf("symbol %q out-of-order", sym)
 	}
 	w.lastSymbol = sym
-	w.symbolCache[sym] = uint32(w.numSymbols)
 	w.numSymbols++
 	w.buf1.Reset()
 	w.buf1.PutUvarintStr(sym)
@@ -610,10 +628,10 @@ func (w *Writer) writeLabelIndices() error {
 	values := []uint32{}
 	for d.Err() == nil && cnt > 0 {
 		cnt--
-		d.Uvarint()               // Keycount.
-		name := d.UvarintBytes()  // Label name.
-		value := d.UvarintBytes() // Label value.
-		d.Uvarint64()             // Offset.
+		d.Uvarint()                           // Keycount.
+		name := d.UvarintBytes()              // Label name.
+		value := yoloString(d.UvarintBytes()) // Label value.
+		d.Uvarint64()                         // Offset.
 		if len(name) == 0 {
 			continue // All index is ignored.
 		}
@@ -626,9 +644,9 @@ func (w *Writer) writeLabelIndices() error {
 			values = values[:0]
 		}
 		current = name
-		sid, ok := w.symbolCache[string(value)]
-		if !ok {
-			return fmt.Errorf("symbol entry for %q does not exist", string(value))
+		sid, err := w.symbols.ReverseLookup(value)
+		if err != nil {
+			return err
 		}
 		values = append(values, sid)
 	}
@@ -900,9 +918,9 @@ func (w *Writer) writePostingsToTmpFiles() error {
 
 		nameSymbols := map[uint32]string{}
 		for _, name := range batchNames {
-			sid, ok := w.symbolCache[name]
-			if !ok {
-				return fmt.Errorf("symbol entry for %q does not exist", name)
+			sid, err := w.symbols.ReverseLookup(name)
+			if err != nil {
+				return err
 			}
 			nameSymbols[sid] = name
 		}
@@ -939,9 +957,9 @@ func (w *Writer) writePostingsToTmpFiles() error {
 
 		for _, name := range batchNames {
 			// Write out postings for this label name.
-			sid, ok := w.symbolCache[name]
-			if !ok {
-				return fmt.Errorf("symbol entry for %q does not exist", name)
+			sid, err := w.symbols.ReverseLookup(name)
+			if err != nil {
+				return err
 			}
 			values := make([]uint32, 0, len(postings[sid]))
 			for v := range postings[sid] {
