@@ -488,7 +488,7 @@ matrix_selector : expr LEFT_BRACKET number_duration_literal RIGHT_BRACKET
 
                         if errMsg != ""{
                                 errRange := mergeRanges(&$2, &$4)
-                                yylex.(*parser).addParseErrf(errRange, errMsg)
+                                yylex.(*parser).addParseErrf(errRange, "%s", errMsg)
                         }
 
 			numLit, _ := $3.(*NumberLiteral)

@@ -1385,7 +1385,7 @@ yydefault:
 
 			if errMsg != "" {
 				errRange := mergeRanges(&yyDollar[2].item, &yyDollar[4].item)
-				yylex.(*parser).addParseErrf(errRange, errMsg)
+				yylex.(*parser).addParseErrf(errRange, "%s", errMsg)
 			}
 
 			numLit, _ := yyDollar[3].node.(*NumberLiteral)
