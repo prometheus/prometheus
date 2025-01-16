@@ -1928,8 +1928,8 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			// Safeguard against sending garbage in case of not having metadata
 			// for whatever reason.
 			pendingData[nPending].Metadata.Type = writev2.Metadata_METRIC_TYPE_UNSPECIFIED
-			pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize("")
-			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize("")
+			pendingData[nPending].Metadata.HelpRef = 0
+			pendingData[nPending].Metadata.UnitRef = 0
 		}
 
 		if sendExemplars {
