@@ -1694,13 +1694,13 @@ loop:
 		if sl.cache.getDropped(met) {
 			continue
 		}
-		ce, ok, seriesAlreadyScraped := sl.cache.get(met)
+		ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
 		var (
 			ref  storage.SeriesRef
 			hash uint64
 		)
 
-		if ok {
+		if seriesCached {
 			ref = ce.ref
 			lset = ce.lset
 			hash = ce.hash
@@ -1781,7 +1781,7 @@ loop:
 			break loop
 		}
 
-		if !ok {
+		if !seriesCached {
 			if parsedTimestamp == nil || sl.trackTimestampsStaleness {
 				// Bypass staleness logic if there is an explicit timestamp.
 				sl.cache.trackStaleness(hash, lset)
@@ -1841,7 +1841,7 @@ loop:
 
 		if sl.appendMetadataToWAL && lastMeta != nil {
 			// Is it new series OR did metadata change for this family?
-			if !ok || lastMeta.lastIterChange == sl.cache.iter {
+			if !seriesCached || lastMeta.lastIterChange == sl.cache.iter {
 				// In majority cases we can trust that the current series/histogram is matching the lastMeta and lastMFName.
 				// However, optional TYPE etc metadata and broken OM text can break this, detect those cases here.
 				// TODO(bwplotka): Consider moving this to parser as many parser users end up doing this (e.g. CT and NHCB parsing).
