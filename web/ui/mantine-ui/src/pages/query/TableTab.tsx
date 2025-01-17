@@ -40,7 +40,9 @@ const TableTab: FC<TableTabProps> = ({ panelIdx, retriggerIdx, expr }) => {
   });
 
   useEffect(() => {
-    expr !== "" && refetch();
+    if (expr !== "") {
+      refetch();
+    }
   }, [retriggerIdx, refetch, expr, endTime]);
 
   useLayoutEffect(() => {
