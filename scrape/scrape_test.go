@@ -244,6 +244,30 @@ test_metric2{foo="bar"} 22
 	}, capp.resultMetadata, []cmp.Option{cmp.Comparer(metadataEntryEqual)})
 }
 
+type nopScraper struct {
+	scraper
+}
+
+func (n nopScraper) Report(start time.Time, dur time.Duration, err error) {}
+
+func TestScrapeReportMetadataUpdate(t *testing.T) {
+	// Create an appender for adding samples to the storage.
+	capp := &collectResultAppender{next: nopAppender{}}
+	sl := newBasicScrapeLoop(t, context.Background(), nopScraper{}, func(ctx context.Context) storage.Appender { return capp }, 0)
+	now := time.Now()
+	slApp := sl.appender(context.Background())
+
+	require.NoError(t, sl.report(slApp, now, 2*time.Second, 1, 1, 1, 512, nil))
+	require.NoError(t, slApp.Commit())
+	testutil.RequireEqualWithOptions(t, []metadataEntry{
+		{metric: labels.FromStrings("__name__", "up"), m: scrapeHealthMetric.Metadata},
+		{metric: labels.FromStrings("__name__", "scrape_duration_seconds"), m: scrapeDurationMetric.Metadata},
+		{metric: labels.FromStrings("__name__", "scrape_samples_scraped"), m: scrapeSamplesMetric.Metadata},
+		{metric: labels.FromStrings("__name__", "scrape_samples_post_metric_relabeling"), m: samplesPostRelabelMetric.Metadata},
+		{metric: labels.FromStrings("__name__", "scrape_series_added"), m: scrapeSeriesAddedMetric.Metadata},
+	}, capp.resultMetadata, []cmp.Option{cmp.Comparer(metadataEntryEqual)})
+}
+
 func TestIsSeriesPartOfFamily(t *testing.T) {
 	t.Run("counter", func(t *testing.T) {
 		require.True(t, isSeriesPartOfFamily("http_requests_total", []byte("http_requests_total"), model.MetricTypeCounter)) // Prometheus text style.
