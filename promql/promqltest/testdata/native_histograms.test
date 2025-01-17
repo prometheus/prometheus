@@ -1165,16 +1165,16 @@ clear
 
 # Test incompatible schemas with comparison binary operators
 load 6m
-  metric{series="1"} {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
-  metric{series="2"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+  metric1 {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+  metric2 {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
 
-eval range from 0 to 6m step 6m metric{series="1"} == ignoring (series) metric{series="2"}
-metric{} _ {{schema:-53 count:1 sum:1 custom_values:[5 10] buckets:[1]}}
+eval range from 0 to 6m step 6m metric1 == metric2
+metric1{} _ {{schema:-53 count:1 sum:1 custom_values:[5 10] buckets:[1]}}
 
-eval range from 0 to 6m step 6m metric{series="1"} != ignoring (series) metric{series="2"}
-metric{} {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}} _
+eval range from 0 to 6m step 6m metric1 != metric2
+metric1{} {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}} _
 
-eval_info range from 0 to 6m step 6m metric{series="1"} > ignoring (series) metric{series="2"}
+eval_info range from 0 to 6m step 6m metric2 > metric2
 
 clear
 
