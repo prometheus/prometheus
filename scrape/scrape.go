@@ -2059,7 +2059,7 @@ var (
 		name: []byte("scrape_body_size_bytes" + "\xff"),
 		Metadata: metadata.Metadata{
 			Type: model.MetricTypeGauge,
-			Help: " The uncompressed size of the last scrape response, if successful. Scrapes failing because body_size_limit is exceeded report -1, other scrape failures report 0.",
+			Help: "The uncompressed size of the last scrape response, if successful. Scrapes failing because body_size_limit is exceeded report -1, other scrape failures report 0.",
 			Unit: "bytes",
 		},
 	}
