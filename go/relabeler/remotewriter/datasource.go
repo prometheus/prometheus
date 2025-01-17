@@ -217,6 +217,13 @@ func (src *segmentReadyChecker) SegmentIsReady(segmentID uint32) (ready bool, ou
 	return ready, outOfRange
 }
 
+type shardCache struct {
+	shardID uint16
+	cache   *bytes.Buffer
+	written bool
+	writer  io.Writer
+}
+
 type dataSource struct {
 	ID                  string
 	shards              []*shard
@@ -229,8 +236,10 @@ type dataSource struct {
 
 	lssSlice []*cppbridge.LabelSetStorage
 
-	mtx         sync.Mutex
-	cacheWriter *cacheWriter
+	cacheMtx             sync.Mutex
+	caches               []*shardCache
+	cacheWriteSignal     chan struct{}
+	cacheWriteLoopClosed chan struct{}
 
 	unexpectedEOFCount prometheus.Counter
 	segmentSize        prometheus.Histogram
@@ -254,12 +263,16 @@ func newDataSource(dataDir string,
 	}
 
 	b := &dataSource{
-		corruptMarker:       corruptMarker,
-		segmentReadyChecker: segmentReadyChecker,
-		headReleaseFunc:     headRecord.Acquire(),
-		unexpectedEOFCount:  unexpectedEOFCount,
-		segmentSize:         segmentSize,
+		corruptMarker:        corruptMarker,
+		segmentReadyChecker:  segmentReadyChecker,
+		headReleaseFunc:      headRecord.Acquire(),
+		unexpectedEOFCount:   unexpectedEOFCount,
+		segmentSize:          segmentSize,
+		cacheWriteSignal:     make(chan struct{}),
+		cacheWriteLoopClosed: make(chan struct{}),
 	}
+
+	go b.cacheWriteLoop()
 
 	for shardID := uint16(0); shardID < numberOfShards; shardID++ {
 		shardFileName := filepath.Join(dataDir, fmt.Sprintf("shard_%d.wal", shardID))
@@ -281,6 +294,12 @@ func newDataSource(dataDir string,
 		}
 		b.shards = append(b.shards, s)
 		b.lssSlice = append(b.lssSlice, s.decoder.lss)
+		b.caches = append(b.caches, &shardCache{
+			shardID: shardID,
+			cache:   bytes.NewBuffer(nil),
+			written: true,
+			writer:  s.decoderStateFile,
+		})
 	}
 
 	return b, nil
@@ -358,9 +377,10 @@ func (ds *dataSource) Close() error {
 	}
 	ds.closed = true
 	var err error
-	if ds.cacheWriter != nil {
-		err = errors.Join(err, ds.cacheWriter.Close())
-	}
+	// stop cache writing first
+	close(ds.cacheWriteSignal)
+	<-ds.cacheWriteLoopClosed
+
 	for _, s := range ds.shards {
 		err = errors.Join(err, s.Close())
 	}
@@ -465,67 +485,85 @@ func (ds *dataSource) LSSes() []*cppbridge.LabelSetStorage {
 	return ds.lssSlice
 }
 
-type cacheWriter struct {
-	caches []*bytes.Buffer
-	files  []io.Writer
-	close  chan struct{}
-	closed chan struct{}
-}
-
-func newCacheWriter(caches []*bytes.Buffer, files []io.Writer) *cacheWriter {
-	cw := &cacheWriter{
-		caches: caches,
-		files:  files,
-		close:  make(chan struct{}),
-		closed: make(chan struct{}),
-	}
-
-	go cw.write()
-	return cw
-}
-
-func (cw *cacheWriter) write() {
-	defer close(cw.closed)
-}
-
-func (cw *cacheWriter) Close() error {
-	close(cw.close)
-	<-cw.closed
-	return nil
-}
-
-func (cw *cacheWriter) Closed() <-chan struct{} {
-	return cw.closed
-
-}
-
 func (ds *dataSource) WriteCaches() {
-	if ds.cacheWriter != nil {
-		select {
-		case <-ds.cacheWriter.Closed():
-			ds.cacheWriter = nil
-		default:
+	ds.cacheMtx.Lock()
+	for shardID, sc := range ds.caches {
+		if !sc.written {
+			continue
+		}
+		sc.cache.Reset()
+		if _, err := ds.shards[shardID].decoder.WriteTo(sc.cache); err != nil {
+			logger.Errorf("failed to get output decoder cache: %v", err)
+			continue
+		}
+		sc.written = false
+	}
+	ds.cacheMtx.Unlock()
+
+	select {
+	case ds.cacheWriteSignal <- struct{}{}:
+	default:
+	}
+}
+
+func (ds *dataSource) cacheWriteLoop() {
+	defer close(ds.cacheWriteLoopClosed)
+	var closed bool
+	var writeRequested bool
+	var writeResultc chan struct{}
+
+	for {
+		if writeRequested && !closed && writeResultc == nil {
+			writeResultc = make(chan struct{})
+			go func() {
+				defer close(writeResultc)
+				ds.writeCaches()
+			}()
+			writeRequested = false
+		}
+
+		if closed && writeResultc == nil {
 			return
 		}
-	}
 
-	caches := make([]*bytes.Buffer, len(ds.shards))
-	files := make([]io.Writer, len(ds.shards))
-	wg := &sync.WaitGroup{}
-	for shardID := range ds.shards {
-		wg.Add(1)
-		go func(shardID uint16, shrd *shard) {
-			defer wg.Done()
-			buffer := bytes.NewBuffer(nil)
-			if _, err := shrd.decoder.WriteTo(buffer); err != nil {
-				logger.Errorf("failed to write cache: %w", err)
+		select {
+		case _, ok := <-ds.cacheWriteSignal:
+			if !ok {
 				return
 			}
-			caches[shardID] = buffer
-			files[shardID] = shrd.decoderStateFile
-		}(uint16(shardID), ds.shards[shardID])
-
+			writeRequested = true
+		case <-writeResultc:
+			writeResultc = nil
+		}
 	}
-	wg.Wait()
-	ds.cacheWriter = newCacheWriter(caches, files)
+}
+
+func (ds *dataSource) writeCaches() {
+	ds.cacheMtx.Lock()
+	caches := make([]*shardCache, 0, len(ds.caches))
+	for _, sc := range ds.caches {
+		if sc.written {
+			continue
+		}
+		sc := sc
+		caches = append(caches, sc)
+	}
+	ds.cacheMtx.Unlock()
+
+	writtenCacheShardIDs := make([]uint16, 0, len(caches))
+	for _, sc := range caches {
+		if _, err := sc.cache.WriteTo(sc.writer); err != nil {
+			logger.Errorf("failed to write cache: %v", err)
+			continue
+		}
+		writtenCacheShardIDs = append(writtenCacheShardIDs, sc.shardID)
+	}
+
+	if len(writtenCacheShardIDs) > 0 {
+		ds.cacheMtx.Lock()
+		for _, shardID := range writtenCacheShardIDs {
+			ds.caches[shardID].written = true
+		}
+		ds.cacheMtx.Unlock()
+	}
 }
