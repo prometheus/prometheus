@@ -102,7 +102,9 @@ const Graph: FC<GraphProps> = ({
 
   // Re-execute the query when the user presses Enter (or hits the Execute button).
   useEffect(() => {
-    effectiveExpr !== "" && refetch();
+    if (effectiveExpr !== "") {
+      refetch();
+    }
   }, [retriggerIdx, refetch, effectiveExpr, endTime, range, resolution]);
 
   // The useElementSize hook above only gets a valid size on the second render, so this
