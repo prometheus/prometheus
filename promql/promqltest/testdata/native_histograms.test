@@ -1163,6 +1163,51 @@ eval_warn range from 0 to 12m step 6m metric{series="2"} - ignoring (series) met
 
 clear
 
+# Test incompatible schemas with comparison binary operators
+load 6m
+  metric1 {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+  metric2 {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+
+eval range from 0 to 6m step 6m metric1 == metric2
+metric1{} _ {{schema:-53 count:1 sum:1 custom_values:[5 10] buckets:[1]}}
+
+eval range from 0 to 6m step 6m metric1 != metric2
+metric1{} {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}} _
+
+eval_info range from 0 to 6m step 6m metric2 > metric2
+
+clear
+
+load 6m
+  nhcb_metric {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+
+eval_warn instant at 12m sum_over_time(nhcb_metric[13m])
+
+eval_warn instant at 12m avg_over_time(nhcb_metric[13m])
+
+eval instant at 12m last_over_time(nhcb_metric[13m])
+nhcb_metric{} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+
+eval instant at 12m count_over_time(nhcb_metric[13m])
+{} 3
+
+eval instant at 12m present_over_time(nhcb_metric[13m])
+{} 1
+
+eval instant at 12m changes(nhcb_metric[13m])
+{} 1
+
+eval_warn instant at 12m delta(nhcb_metric[13m])
+
+eval_warn instant at 12m increase(nhcb_metric[13m])
+
+eval_warn instant at 12m rate(nhcb_metric[13m])
+
+eval instant at 12m resets(nhcb_metric[13m])
+{} 1
+
+clear
+
 load 1m
   metric{group="just-floats", series="1"} 2
   metric{group="just-floats", series="2"} 3
