@@ -153,11 +153,30 @@ function getMetricNameInVectorSelector(tree: SyntaxNode, state: EditorState): st
   return state.sliceDoc(currentNode.from, currentNode.to);
 }
 
-function arrayToCompletionResult(data: Completion[], from: number, to: number, includeSnippet = false, span = true): CompletionResult {
+function arrayToCompletionResult(
+  data: Completion[],
+  from: number,
+  to: number,
+  includeSnippet = false,
+  span = true,
+  isMetricName = false,
+  node?: SyntaxNode
+): CompletionResult {
   const options = data;
   if (includeSnippet) {
     options.push(...snippets);
   }
+
+  // If this is a metric name completion and we have the necessary context
+  if (isMetricName && node) {
+    const boundaries = getMetricNameBoundaries(node);
+    // Only update the boundaries if they're valid
+    if (boundaries.from <= boundaries.to && boundaries.from >= 0) {
+      from = boundaries.from;
+      to = boundaries.to;
+    }
+  }
+
   return {
     from: from,
     to: to,
@@ -533,6 +552,21 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
   return result;
 }
 
+// Helper function to find the complete metric name boundaries using the AST
+function getMetricNameBoundaries(node: SyntaxNode): { from: number; to: number } {
+  const vectorSelector = walkBackward(node, VectorSelector);
+  if (!vectorSelector) {
+    return { from: node.from, to: node.to };
+  }
+
+  const identifier = vectorSelector.getChild(Identifier);
+  if (!identifier) {
+    return { from: vectorSelector.from, to: vectorSelector.to };
+  }
+
+  return { from: identifier.from, to: identifier.to };
+}
+
 // HybridComplete provides a full completion result with or without a remote prometheus.
 export class HybridComplete implements CompleteStrategy {
   private readonly prometheusClient: PrometheusClient | undefined;
@@ -558,6 +592,7 @@ export class HybridComplete implements CompleteStrategy {
     let asyncResult: Promise<Completion[]> = Promise.resolve([]);
     let completeSnippet = false;
     let span = true;
+    let isMetricName = false;
     for (const context of contexts) {
       switch (context.kind) {
         case ContextKind.Aggregation:
@@ -619,6 +654,9 @@ export class HybridComplete implements CompleteStrategy {
           });
           break;
         case ContextKind.MetricName:
+          isMetricName = true;
+          // Break after finding a metric name context to ensure we don't process
+          // other contexts that might interfere with the completion
           asyncResult = asyncResult.then((result) => {
             return this.autocompleteMetricName(result, context);
           });
@@ -635,7 +673,15 @@ export class HybridComplete implements CompleteStrategy {
       }
     }
     return asyncResult.then((result) => {
-      return arrayToCompletionResult(result, computeStartCompletePosition(state, tree, pos), pos, completeSnippet, span);
+      return arrayToCompletionResult(
+        result,
+        computeStartCompletePosition(state, tree, pos),
+        pos,
+        completeSnippet,
+        span,
+        isMetricName,
+        isMetricName ? tree : undefined
+      );
     });
   }
 
