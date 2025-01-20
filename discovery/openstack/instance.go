@@ -73,13 +73,11 @@ func newInstanceDiscovery(provider *gophercloud.ProviderClient, opts *gopherclou
 }
 
 type floatingIPKey struct {
-	tenantID string
 	deviceID string
 	fixed    string
 }
 
 type portKey struct {
-	tenantID string
 	deviceID string
 }
 
@@ -118,7 +116,7 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 
 	portList := make(map[string]portKey)
 	for _, port := range allPorts {
-		portList[port.ID] = portKey{tenantID: port.TenantID, deviceID: port.DeviceID}
+		portList[port.ID] = portKey{deviceID: port.DeviceID}
 	}
 
 	// OpenStack API reference
@@ -133,7 +131,7 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 		}
 		for _, ip := range result {
 			// Skip not associated ips
-			if ip.PortID == "" || ip.FixedIP == "" {
+			if ip.PortID == "" {
 				continue
 			}
 
@@ -145,7 +143,6 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 			}
 
 			key := floatingIPKey{
-				tenantID: ip.TenantID,
 				deviceID: portKey.deviceID,
 				fixed:    ip.FixedIP,
 			}
@@ -243,7 +240,7 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 					}
 					lbls[openstackLabelAddressPool] = model.LabelValue(pool)
 					lbls[openstackLabelPrivateIP] = model.LabelValue(addr)
-					if val, ok := floatingIPList[floatingIPKey{tenantID: s.TenantID, deviceID: s.ID, fixed: addr}]; ok {
+					if val, ok := floatingIPList[floatingIPKey{deviceID: s.ID, fixed: addr}]; ok {
 						lbls[openstackLabelPublicIP] = model.LabelValue(val)
 					}
 					addr = net.JoinHostPort(addr, strconv.Itoa(i.port))
