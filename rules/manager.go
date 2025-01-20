@@ -182,7 +182,7 @@ func (m *Manager) Stop() {
 	}
 
 	for _, eg := range m.groups {
-		eg.awaitStopped()
+		eg.waitStopped()
 	}
 
 	// Shut down the groups waiting multiple evaluation intervals to write

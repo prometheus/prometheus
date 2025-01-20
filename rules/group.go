@@ -302,13 +302,13 @@ func (g *Group) stopAsync() {
 	close(g.done)
 }
 
-func (g *Group) awaitStopped() {
+func (g *Group) waitStopped() {
 	<-g.terminated
 }
 
 func (g *Group) stop() {
-	close(g.done)
-	<-g.terminated
+	g.stopAsync()
+	g.waitStopped()
 }
 
 func (g *Group) hash() uint64 {
