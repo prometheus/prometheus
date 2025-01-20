@@ -177,6 +177,8 @@ func (m *Manager) Stop() {
 
 	level.Info(m.logger).Log("msg", "Stopping rule manager...")
 
+	// Stop all groups asynchronously, then wait for them to finish.
+	// This is faster than stopping and waiting for each group in sequence.
 	for _, eg := range m.groups {
 		eg.stopAsync()
 	}
