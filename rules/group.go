@@ -302,9 +302,17 @@ func (g *Group) run(ctx context.Context) {
 	}
 }
 
-func (g *Group) stop() {
+func (g *Group) stopAsync() {
 	close(g.done)
+}
+
+func (g *Group) waitStopped() {
 	<-g.terminated
+}
+
+func (g *Group) stop() {
+	g.stopAsync()
+	g.waitStopped()
 }
 
 func (g *Group) hash() uint64 {
