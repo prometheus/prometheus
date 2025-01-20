@@ -161,7 +161,7 @@ func openAndReplayWal(shardFilePath string, lss *cppbridge.LabelSetStorage, data
 
 func replayWal(file *os.File, lss *cppbridge.LabelSetStorage, dataStorage *DataStorage) (offset int, lastSegmentID *uint32, encoder *cppbridge.HeadWalEncoder, err error) {
 	logger.Debugf("replaying wal file", file.Name())
-	bufferedReader := bufio.NewReaderSize(file, 1024*16)
+	bufferedReader := bufio.NewReaderSize(file, 1024*1024*4)
 	_, encoderVersion, _, err := ReadHeader(bufferedReader)
 	if err != nil {
 		return offset, lastSegmentID, nil, fmt.Errorf("failed to read header: %w", err)
@@ -180,7 +180,6 @@ func replayWal(file *os.File, lss *cppbridge.LabelSetStorage, dataStorage *DataS
 			}
 			return offset, lastSegmentID, nil, fmt.Errorf("failed to read segment: %w", err)
 		}
-
 		offset += bytesRead
 
 		err = decoder.Decode(segment.Data(), innerSeries)

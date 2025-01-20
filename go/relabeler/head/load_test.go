@@ -2,7 +2,6 @@ package head_test
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -22,9 +21,7 @@ import (
 type noOpLastAppendedSegmentIDSetter struct {
 }
 
-func (noOpLastAppendedSegmentIDSetter) SetLastAppendedSegmentID(segmentID uint32) {
-	fmt.Println("last appended segment id:", segmentID)
-}
+func (noOpLastAppendedSegmentIDSetter) SetLastAppendedSegmentID(_ uint32) {}
 
 func TestLoad(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
