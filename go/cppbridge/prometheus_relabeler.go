@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/prometheus/prometheus/model/labels"
 	"math"
 	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/common/model"
@@ -831,7 +832,7 @@ type Label struct {
 }
 
 func LabelsToCppBridgeLabels(lbls labels.Labels) []Label {
-	result := make([]Label, 0, len(lbls))
+	result := make([]Label, 0, lbls.Len())
 	lbls.Range(func(l labels.Label) {
 		result = append(result, Label{
 			Name:  l.Name,
