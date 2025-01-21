@@ -140,6 +140,18 @@ class CedarTrie {
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return trie_.allocated_memory(); }
 
+  template <class OutputStream>
+  friend OutputStream& operator<<(OutputStream& stream, CedarTrie& trie) {
+    stream << trie.trie_;
+    return stream;
+  }
+
+  template <class InputStream>
+  friend InputStream& operator>>(InputStream& stream, CedarTrie& trie) {
+    stream >> trie.trie_;
+    return stream;
+  }
+
  private:
   Trie trie_;
 };
