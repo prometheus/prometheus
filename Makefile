@@ -88,9 +88,9 @@ help: ## Show this message
 build-entrypoint: ## Build entry point and copy artifacts to Go directory
 	$(MAKE) -C entrypoint clean install
 
-.PHONY: ascii
-ascii: $(our_files) ## Check there is no non-ascii symbols in code
-	@if grep -I -H --color='auto' -P -n "[^[:ascii:]·–—]" $^; then \
+.PHONY: cyrillic
+cyrillic: $(our_files) ## Check there is no cyrillic symbols in code
+	@if LC_ALL=C.utf8 grep -I -H --color='auto' -P -n "\p{Cyrillic}" $^; then \
 		exit 1;\
 	fi
 
