@@ -51,9 +51,9 @@ require (
 	github.com/open-telemetry/opentelemetry-collector-contrib/processor/deltatocumulativeprocessor v0.116.0
 	github.com/ovh/go-ovh v1.6.0
 	github.com/prometheus/alertmanager v0.27.0
-	github.com/prometheus/client_golang v1.20.5
+	github.com/prometheus/client_golang v1.21.0-rc.0
 	github.com/prometheus/client_model v0.6.1
-	github.com/prometheus/common v0.61.0
+	github.com/prometheus/common v0.62.0
 	github.com/prometheus/common/assets v0.2.0
 	github.com/prometheus/exporter-toolkit v0.13.2
 	github.com/prometheus/sigv4 v0.1.1
