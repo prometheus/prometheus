@@ -328,6 +328,10 @@ dns_sd_configs:
 ec2_sd_configs:
   [ - <ec2_sd_config> ... ]
 
+# List of ECS service discovery configurations.
+ecs_sd_configs:
+  [ - <ecs_sd_config> ... ]
+
 # List of Eureka service discovery configurations.
 eureka_sd_configs:
   [ - <eureka_sd_config> ... ]
@@ -1164,6 +1168,83 @@ The [relabeling phase](#relabel_config) is the preferred and more powerful
 way to filter targets based on arbitrary labels. For users with thousands of
 instances it can be more efficient to use the EC2 API directly which has
 support for filtering instances.
+
+### `<ecs_sd_config>`
+
+ECS SD configurations allow retrieving scrape targets from AWS ECS
+task containers. The private IP address is used by default, but may be changed to
+the public IP address with relabeling.
+
+The IAM credentials used must have the following permissions to discover
+scrape targets:
+
+- `ecs:ListClusters`
+- `ecs:ListTasks`
+- `ecs:DescribeTasks`
+- `ecs:DescribeTaskDefinition`
+
+If you have deployed your workloads on EC2 instances:
+
+- `ecs:DescribeContainerInstances`
+- `ec2:DescribeInstances`
+
+If you want the availability zone ID available as a label (see below) also:
+
+- `ec2:DescribeAvailabilityZones`
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_ecs_availability_zone`: the availability zone in which the instance is running
+* `__meta_ecs_availability_zone_id`: the [availability zone ID](https://docs.aws.amazon.com/ram/latest/userguide/working-with-az-ids.html) in which the instance is running (requires `ec2:DescribeAvailabilityZones`)
+* `__meta_ecs_cluster`: the ECS cluster ARN
+* `__meta_ecs_region`: the region of the instance
+* `__meta_ecs_task_desired_status`: The desired status of the task. For more information, see [Task Lifecycle](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-lifecycle.html)
+* `__meta_ecs_task_family`: the name of a family that this task definition is registered to
+* `__meta_ecs_task_family_revision`: the revision of the task in a particular family
+* `__meta_ecs_task_group`: the name of the task group that's associated with the task.
+* `__meta_ecs_task_launch_type`: the infrastructure where your task runs on. For more information, see [Amazon ECS launch types](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/launch_types.html)
+* `__meta_ecs_task_network_mode`: the Docker networking mode to use for the containers in the task
+* `__meta_ecs_task_platform_family`: the operating system that your tasks in the set are running on
+* `__meta_ecs_task_platform_version`: the Fargate platform version where the tasks in the task set are running
+* `__meta_ecs_task_status`: the status of the task set
+* `__meta_ecs_task_version`: the version counter for the task. Every time a task experiences a change that starts a CloudWatch event, the version counter is incremented.
+
+
+See below for the configuration options for ECS discovery:
+
+```yaml
+# The information to access the EC2 API.
+
+# The AWS region. If blank, the region from the instance metadata is used.
+[ region: <string> ]
+
+# Custom endpoint to be used.
+[ endpoint: <string> ]
+
+# The AWS API keys. If blank, the environment variables `AWS_ACCESS_KEY_ID`
+# and `AWS_SECRET_ACCESS_KEY` are used.
+[ access_key: <string> ]
+[ secret_key: <secret> ]
+# Named AWS profile used to connect to the API.
+[ profile: <string> ]
+
+# AWS Role ARN, an alternative to using AWS API keys.
+[ role_arn: <string> ]
+
+# Refresh interval to re-read the instance list.
+[ refresh_interval: <duration> | default = 60s ]
+
+# The port to scrape metrics from. Use tags on ECS Tasks
+# and relabeling rules to change this per task.
+[ port: <int> | default = 80 ]
+
+# HTTP client settings, including authentication methods (such as basic auth and
+# authorization), proxy configurations, TLS options, custom HTTP headers, etc.
+[ <http_config> ]
+```
+
+The [relabeling phase](#relabel_config) is the preferred and more powerful
+way to filter targets based on arbitrary labels.
 
 ### `<openstack_sd_config>`
 
@@ -2664,6 +2745,10 @@ dns_sd_configs:
 # List of EC2 service discovery configurations.
 ec2_sd_configs:
   [ - <ec2_sd_config> ... ]
+
+# List of ECS service discovery configurations.
+ecs_sd_configs:
+  [ - <ecs_sd_config> ... ]
 
 # List of Eureka service discovery configurations.
 eureka_sd_configs:
