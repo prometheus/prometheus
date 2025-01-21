@@ -97,7 +97,7 @@ TEST_F(StatusFixture, EmptyChunk) {
   const auto status = get_status();
 
   // Assert
-  EXPECT_EQ((Status{.min_max_timestamp = {.min = 1, .max = 1}, .chunk_count = 6}), status);
+  EXPECT_EQ((Status{.min_max_timestamp = {.min = 1, .max = 1}, .chunk_count = 1}), status);
 }
 
 }  // namespace
