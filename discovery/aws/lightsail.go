@@ -186,7 +186,6 @@ func (d *LightsailDiscovery) lightsailClient(ctx context.Context) (*lightsail.Cl
 	}
 
 	d.lightsail = lightsail.NewFromConfig(cfg, func(options *lightsail.Options) {
-		options.Credentials = creds
 		options.BaseEndpoint = &d.cfg.Endpoint
 		options.HTTPClient = client
 	})

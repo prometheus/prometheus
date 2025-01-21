@@ -222,7 +222,6 @@ func (d *EC2Discovery) ec2Client(ctx context.Context) (ec2Client, error) {
 	}
 
 	d.ec2 = ec2.NewFromConfig(cfg, func(options *ec2.Options) {
-		options.Credentials = creds
 		options.BaseEndpoint = &d.cfg.Endpoint
 		options.HTTPClient = client
 	})
