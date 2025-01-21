@@ -209,19 +209,43 @@ func TestTailSamples(t *testing.T) {
 						NegativeBuckets: []int64{int64(-i) - 1},
 					}
 
-					histogram := enc.HistogramSamples([]record.RefHistogramSample{{
+					histograms, _ := enc.HistogramSamples([]record.RefHistogramSample{{
 						Ref: chunks.HeadSeriesRef(inner),
 						T:   now.UnixNano() + 1,
 						H:   hist,
 					}}, nil)
-					require.NoError(t, w.Log(histogram))
+					require.NoError(t, w.Log(histograms))
 
-					floatHistogram := enc.FloatHistogramSamples([]record.RefFloatHistogramSample{{
+					customBucketHist := &histogram.Histogram{
+						Schema:        -53,
+						ZeroThreshold: 1e-128,
+						ZeroCount:     0,
+						Count:         2,
+						Sum:           0,
+						PositiveSpans: []histogram.Span{{Offset: 0, Length: 1}},
+						CustomValues:  []float64{float64(i) + 2},
+					}
+
+					customBucketHistograms := enc.CustomBucketsHistogramSamples([]record.RefHistogramSample{{
+						Ref: chunks.HeadSeriesRef(inner),
+						T:   now.UnixNano() + 1,
+						H:   customBucketHist,
+					}}, nil)
+					require.NoError(t, w.Log(customBucketHistograms))
+
+					floatHistograms, _ := enc.FloatHistogramSamples([]record.RefFloatHistogramSample{{
 						Ref: chunks.HeadSeriesRef(inner),
 						T:   now.UnixNano() + 1,
 						FH:  hist.ToFloat(nil),
 					}}, nil)
-					require.NoError(t, w.Log(floatHistogram))
+					require.NoError(t, w.Log(floatHistograms))
+
+					customBucketFloatHistograms := enc.CustomBucketsFloatHistogramSamples([]record.RefFloatHistogramSample{{
+						Ref: chunks.HeadSeriesRef(inner),
+						T:   now.UnixNano() + 1,
+						FH:  customBucketHist.ToFloat(nil),
+					}}, nil)
+					require.NoError(t, w.Log(customBucketFloatHistograms))
 				}
 			}
 
@@ -248,7 +272,7 @@ func TestTailSamples(t *testing.T) {
 			expectedSeries := seriesCount
 			expectedSamples := seriesCount * samplesCount
 			expectedExemplars := seriesCount * exemplarsCount
-			expectedHistograms := seriesCount * histogramsCount
+			expectedHistograms := seriesCount * histogramsCount * 2
 			retry(t, defaultRetryInterval, defaultRetries, func() bool {
 				return wt.checkNumSeries() >= expectedSeries
 			})

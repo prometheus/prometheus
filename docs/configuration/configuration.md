@@ -59,6 +59,7 @@ global:
   [ scrape_interval: <duration> | default = 1m ]
 
   # How long until a scrape request times out.
+  # It cannot be greater than the scrape interval.
   [ scrape_timeout: <duration> | default = 10s ]
 
   # The protocols to negotiate during a scrape with the client.
@@ -221,6 +222,7 @@ job_name: <job_name>
 [ scrape_interval: <duration> | default = <global_config.scrape_interval> ]
 
 # Per-scrape timeout when scraping this job.
+# It cannot be greater than the scrape interval.
 [ scrape_timeout: <duration> | default = <global_config.scrape_timeout> ]
 
 # The protocols to negotiate during a scrape with the client.

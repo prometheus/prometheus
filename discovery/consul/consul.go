@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -248,12 +249,7 @@ func (d *Discovery) shouldWatchFromName(name string) bool {
 		return true
 	}
 
-	for _, sn := range d.watchedServices {
-		if sn == name {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(d.watchedServices, name)
 }
 
 // shouldWatchFromTags returns whether the service of the given name should be watched based on its tags.

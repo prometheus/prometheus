@@ -140,7 +140,7 @@ func (m *SDMock) HandleAuthSuccessfully() {
             {
                 "endpoints": [
                     {
-                        "id": "dc9a55e0bf84487a98671fbc74b68e68",
+                        "id": "5448e46679564d7d95466c2bef54c296",
                         "interface": "public",
                         "region": "RegionOne",
                         "region_id": "RegionOne",
@@ -160,10 +160,9 @@ func (m *SDMock) HandleAuthSuccessfully() {
                         "url": "%s"
                     }
                 ],
-                "id": "c609fc430175123490b62a4242e8a7e8",
+                "id": "26968f704a68417bbddd29508455ff90",
                 "type": "load-balancer"
-        	}
-
+            }
         ],
         "expires_at": "2013-02-27T18:30:59.999999Z",
         "is_domain": false,
@@ -487,82 +486,159 @@ const serverListBody = `
 			"metadata": {}
 		},
 		{
-		"status": "ACTIVE",
-		"updated": "2014-09-25T13:04:49Z",
-		"hostId": "29d3c8c896a45aa4c34e52247875d7fefc3d94bbcc9f622b5d204362",
-		"OS-EXT-SRV-ATTR:host": "devstack",
-		"addresses": {
-			"private": [
-				{
-					"version": 4,
-					"addr": "10.0.0.33",
-					"OS-EXT-IPS:type": "fixed"
-				},
-				{
-					"version": 4,
-					"addr": "10.0.0.34",
-					"OS-EXT-IPS:type": "fixed"
-				},
-				{
-					"version": 4,
-					"addr": "10.10.10.4",
-					"OS-EXT-IPS:type": "floating"
-				}
-			]
-		},
-		"links": [
-			{
-				"href": "http://104.130.131.164:8774/v2/fcad67a6189847c4aecfa3c81a05783b/servers/9e5476bd-a4ec-4653-93d6-72c93aa682ba",
-				"rel": "self"
+			"status": "ACTIVE",
+			"updated": "2014-09-25T13:04:49Z",
+			"hostId": "29d3c8c896a45aa4c34e52247875d7fefc3d94bbcc9f622b5d204362",
+			"OS-EXT-SRV-ATTR:host": "devstack",
+			"addresses": {
+				"private": [
+					{
+						"version": 4,
+						"addr": "10.0.0.33",
+						"OS-EXT-IPS:type": "fixed"
+					},
+					{
+						"version": 4,
+						"addr": "10.0.0.34",
+						"OS-EXT-IPS:type": "fixed"
+					},
+					{
+						"version": 4,
+						"addr": "10.10.10.4",
+						"OS-EXT-IPS:type": "floating"
+					}
+				]
 			},
-			{
-				"href": "http://104.130.131.164:8774/fcad67a6189847c4aecfa3c81a05783b/servers/9e5476bd-a4ec-4653-93d6-72c93aa682ba",
-				"rel": "bookmark"
-			}
-		],
-		"key_name": null,
-		"image": "",
-		"OS-EXT-STS:task_state": null,
-		"OS-EXT-STS:vm_state": "active",
-		"OS-EXT-SRV-ATTR:instance_name": "instance-0000001d",
-		"OS-SRV-USG:launched_at": "2014-09-25T13:04:49.000000",
-		"OS-EXT-SRV-ATTR:hypervisor_hostname": "devstack",
-		"flavor": {
-			"vcpus": 2,
-			"ram": 4096,
-			"disk": 0,
-			"ephemeral": 0,
-			"swap": 0,
-			"original_name": "m1.small",
-			"extra_specs": {
-			  "aggregate_instance_extra_specs:general": "true",
-			  "hw:mem_page_size": "large",
-			  "hw:vif_multiqueue_enabled": "true"
+			"links": [
+				{
+					"href": "http://104.130.131.164:8774/v2/fcad67a6189847c4aecfa3c81a05783b/servers/9e5476bd-a4ec-4653-93d6-72c93aa682ba",
+					"rel": "self"
+				},
+				{
+					"href": "http://104.130.131.164:8774/fcad67a6189847c4aecfa3c81a05783b/servers/9e5476bd-a4ec-4653-93d6-72c93aa682ba",
+					"rel": "bookmark"
+				}
+			],
+			"key_name": null,
+			"image": "",
+			"OS-EXT-STS:task_state": null,
+			"OS-EXT-STS:vm_state": "active",
+			"OS-EXT-SRV-ATTR:instance_name": "instance-0000001d",
+			"OS-SRV-USG:launched_at": "2014-09-25T13:04:49.000000",
+			"OS-EXT-SRV-ATTR:hypervisor_hostname": "devstack",
+			"flavor": {
+				"vcpus": 2,
+				"ram": 4096,
+				"disk": 0,
+				"ephemeral": 0,
+				"swap": 0,
+				"original_name": "m1.small",
+				"extra_specs": {
+				"aggregate_instance_extra_specs:general": "true",
+				"hw:mem_page_size": "large",
+				"hw:vif_multiqueue_enabled": "true"
+				}
+			},
+			"id": "9e5476bd-a4ec-4653-93d6-72c93aa682bb",
+			"security_groups": [
+				{
+					"name": "default"
+				}
+			],
+			"OS-SRV-USG:terminated_at": null,
+			"OS-EXT-AZ:availability_zone": "nova",
+			"user_id": "9349aff8be7545ac9d2f1d00999a23cd",
+			"name": "merp",
+			"created": "2014-09-25T13:04:41Z",
+			"tenant_id": "fcad67a6189847c4aecfa3c81a05783b",
+			"OS-DCF:diskConfig": "MANUAL",
+			"os-extended-volumes:volumes_attached": [],
+			"accessIPv4": "",
+			"accessIPv6": "",
+			"progress": 0,
+			"OS-EXT-STS:power_state": 1,
+			"config_drive": "",
+			"metadata": {
+				"env": "prod"
 			}
 		},
-		"id": "9e5476bd-a4ec-4653-93d6-72c93aa682bb",
-		"security_groups": [
-			{
-				"name": "default"
+		{
+			"status": "ACTIVE",
+			"updated": "2014-09-25T13:04:49Z",
+			"hostId": "29d3c8c896a45aa4c34e52247875d7fefc3d94bbcc9f622b5d204362",
+			"OS-EXT-SRV-ATTR:host": "devstack",
+			"addresses": {
+				"private": [
+					{
+						"version": 4,
+						"addr": "10.0.0.33",
+						"OS-EXT-IPS:type": "fixed"
+					},
+					{
+						"version": 4,
+						"addr": "10.0.0.34",
+						"OS-EXT-IPS:type": "fixed"
+					},
+					{
+						"version": 4,
+						"addr": "10.10.10.24",
+						"OS-EXT-IPS:type": "floating"
+					}
+				]
+			},
+			"links": [
+				{
+					"href": "http://104.130.131.164:8774/v2/b78fef2305934dbbbeb9a10b4c326f7a/servers/9e5476bd-a4ec-4653-93d6-72c93aa682ba",
+					"rel": "self"
+				},
+				{
+					"href": "http://104.130.131.164:8774/b78fef2305934dbbbeb9a10b4c326f7a/servers/9e5476bd-a4ec-4653-93d6-72c93aa682ba",
+					"rel": "bookmark"
+				}
+			],
+			"key_name": null,
+			"image": "",
+			"OS-EXT-STS:task_state": null,
+			"OS-EXT-STS:vm_state": "active",
+			"OS-EXT-SRV-ATTR:instance_name": "instance-0000002d",
+			"OS-SRV-USG:launched_at": "2014-09-25T13:04:49.000000",
+			"OS-EXT-SRV-ATTR:hypervisor_hostname": "devstack",
+			"flavor": {
+				"vcpus": 2,
+				"ram": 4096,
+				"disk": 0,
+				"ephemeral": 0,
+				"swap": 0,
+				"original_name": "m1.small",
+				"extra_specs": {
+				"aggregate_instance_extra_specs:general": "true",
+				"hw:mem_page_size": "large",
+				"hw:vif_multiqueue_enabled": "true"
+				}
+			},
+			"id": "87caf8ed-d92a-41f6-9dcd-d1399e39899f",
+			"security_groups": [
+				{
+					"name": "default"
+				}
+			],
+			"OS-SRV-USG:terminated_at": null,
+			"OS-EXT-AZ:availability_zone": "nova",
+			"user_id": "9349aff8be7545ac9d2f1d00999a23cd",
+			"name": "merp-project2",
+			"created": "2014-09-25T13:04:41Z",
+			"tenant_id": "b78fef2305934dbbbeb9a10b4c326f7a",
+			"OS-DCF:diskConfig": "MANUAL",
+			"os-extended-volumes:volumes_attached": [],
+			"accessIPv4": "",
+			"accessIPv6": "",
+			"progress": 0,
+			"OS-EXT-STS:power_state": 1,
+			"config_drive": "",
+			"metadata": {
+				"env": "prod"
 			}
-		],
-		"OS-SRV-USG:terminated_at": null,
-		"OS-EXT-AZ:availability_zone": "nova",
-		"user_id": "9349aff8be7545ac9d2f1d00999a23cd",
-		"name": "merp",
-		"created": "2014-09-25T13:04:41Z",
-		"tenant_id": "fcad67a6189847c4aecfa3c81a05783b",
-		"OS-DCF:diskConfig": "MANUAL",
-		"os-extended-volumes:volumes_attached": [],
-		"accessIPv4": "",
-		"accessIPv6": "",
-		"progress": 0,
-		"OS-EXT-STS:power_state": 1,
-		"config_drive": "",
-		"metadata": {
-			"env": "prod"
 		}
-	}
 	]
 }
 `
@@ -580,40 +656,281 @@ func (m *SDMock) HandleServerListSuccessfully() {
 
 const listOutput = `
 {
-    "floating_ips": [
+	"floatingips": [
+		{
+			"id": "03a77860-ae03-46c4-b502-caea11467a79",
+			"tenant_id": "fcad67a6189847c4aecfa3c81a05783b",
+			"floating_ip_address": "10.10.10.1",
+			"floating_network_id": "d02c4f18-d606-4864-b12a-1c9b39a46be2",
+			"router_id": "f03af93b-4e8f-4f55-adcf-a0317782ede2",
+			"port_id": "d5597901-48c8-4a69-a041-cfc5be158a04",
+			"fixed_ip_address": null,
+			"status": "ACTIVE",
+			"description": "",
+			"dns_domain": "",
+			"dns_name": "",
+			"port_forwardings": [],
+			"tags": [],
+			"created_at": "2023-08-30T16:30:27Z",
+			"updated_at": "2023-08-30T16:30:28Z"
+		},
+		{
+			"id": "03e28c79-5a4c-491e-a4fe-3ff6bba830c6",
+			"tenant_id": "fcad67a6189847c4aecfa3c81a05783b",
+			"floating_ip_address": "10.10.10.2",
+			"floating_network_id": "d02c4f18-d606-4864-b12a-1c9b39a46be2",
+			"router_id": "f03af93b-4e8f-4f55-adcf-a0317782ede2",
+			"port_id": "4a45b012-0478-484d-8cf3-c8abdb194d08",
+			"fixed_ip_address": "10.0.0.32",
+			"status": "ACTIVE",
+			"description": "",
+			"dns_domain": "",
+			"dns_name": "",
+			"port_forwardings": [],
+			"tags": [],
+			"created_at": "2023-09-06T15:45:36Z",
+			"updated_at": "2023-09-06T15:45:36Z"
+		},
+		{
+			"id": "087fcdd2-1d13-4f72-9c0e-c759e796d558",
+			"tenant_id": "fcad67a6189847c4aecfa3c81a05783b",
+			"floating_ip_address": "10.10.10.4",
+			"floating_network_id": "d02c4f18-d606-4864-b12a-1c9b39a46be2",
+			"router_id": "f03af93b-4e8f-4f55-adcf-a0317782ede2",
+			"port_id": "a0e244e8-7910-4427-b8d1-20470cad4f8a",
+			"fixed_ip_address": "10.0.0.34",
+			"status": "ACTIVE",
+			"description": "",
+			"dns_domain": "",
+			"dns_name": "",
+			"port_forwardings": [],
+			"tags": [],
+			"created_at": "2024-01-24T13:30:50Z",
+			"updated_at": "2024-01-24T13:30:51Z"
+		},
+		{
+			"id": "b23df91a-a74a-4f75-b252-750aff4a5a0c",
+			"tenant_id": "b78fef2305934dbbbeb9a10b4c326f7a",
+			"floating_ip_address": "10.10.10.24",
+			"floating_network_id": "b19ff5bc-a49a-46cc-8d14-ca5f1e94791f",
+			"router_id": "65a5e5af-17f0-4124-9a81-c08b44f5b8a7",
+			"port_id": "b926ab68-ec54-46d8-8c50-1c07aafd5ae9",
+			"fixed_ip_address": "10.0.0.34",
+			"status": "ACTIVE",
+			"description": "",
+			"dns_domain": "",
+			"dns_name": "",
+			"port_forwardings": [],
+			"tags": [],
+			"created_at": "2024-01-24T13:30:50Z",
+			"updated_at": "2024-01-24T13:30:51Z"
+		},
         {
-            "fixed_ip": null,
-            "id": "1",
-            "instance_id": null,
-            "ip": "10.10.10.1",
-            "pool": "nova"
-        },
-        {
-            "fixed_ip": "10.0.0.32",
-            "id": "2",
-            "instance_id": "ef079b0c-e610-4dfb-b1aa-b49f07ac48e5",
-            "ip": "10.10.10.2",
-            "pool": "nova"
-        },
-        {
-            "fixed_ip": "10.0.0.34",
-            "id": "3",
-            "instance_id": "9e5476bd-a4ec-4653-93d6-72c93aa682bb",
-            "ip": "10.10.10.4",
-            "pool": "nova"
-        }
-    ]
+			"id": "fea7332d-9027-4cf9-bf62-c3c4c6ebaf84",
+			"tenant_id": "fcad67a6189847c4aecfa3c81a05783b",
+			"floating_ip_address": "192.168.1.2",
+			"floating_network_id": "d02c4f18-d606-4864-b12a-1c9b39a46be2",
+			"router_id": "f03af93b-4e8f-4f55-adcf-a0317782ede2",
+			"port_id": "b47c39f5-238d-4b17-ae87-9b5d19af8a2e",
+			"fixed_ip_address": "10.0.0.32",
+			"status": "ACTIVE",
+			"description": "",
+			"dns_domain": "",
+			"dns_name": "",
+			"port_forwardings": [],
+			"tags": [],
+			"created_at": "2023-08-30T15:11:37Z",
+			"updated_at": "2023-08-30T15:11:38Z",
+			"revision_number": 1,
+			"project_id": "fcad67a6189847c4aecfa3c81a05783b"
+		},
+		{
+			"id": "febb9554-cf83-4f9b-94d9-1b3c34be357f",
+			"tenant_id": "ac57f03dba1a4fdebff3e67201bc7a85",
+			"floating_ip_address": "192.168.3.4",
+			"floating_network_id": "d02c4f18-d606-4864-b12a-1c9b39a46be2",
+			"router_id": "f03af93b-4e8f-4f55-adcf-a0317782ede2",
+			"port_id": "c83b6e12-4e5d-4673-a4b3-5bc72a7f3ef9",
+			"fixed_ip_address": "10.0.2.78",
+			"status": "ACTIVE",
+			"description": "",
+			"dns_domain": "",
+			"dns_name": "",
+			"port_forwardings": [],
+			"tags": [],
+			"created_at": "2023-08-30T15:11:37Z",
+			"updated_at": "2023-08-30T15:11:38Z",
+			"revision_number": 1,
+			"project_id": "ac57f03dba1a4fdebff3e67201bc7a85"
+		},
+		{
+			"id": "febb9554-cf83-4f9b-94d9-1b3c34be357f",
+			"tenant_id": "fa8c372dfe4d4c92b0c4e3a2d9b3c9fa",
+			"floating_ip_address": "192.168.4.5",
+			"floating_network_id": "d02c4f18-d606-4864-b12a-1c9b39a46be2",
+			"router_id": "f03af93b-4e8f-4f55-adcf-a0317782ede2",
+			"port_id": "f9e8b6e12-7e4d-4963-a5b3-6cd82a7f3ff6",
+			"fixed_ip_address": "10.0.3.99",
+			"status": "ACTIVE",
+			"description": "",
+			"dns_domain": "",
+			"dns_name": "",
+			"port_forwardings": [],
+			"tags": [],
+			"created_at": "2023-08-30T15:11:37Z",
+			"updated_at": "2023-08-30T15:11:38Z",
+			"revision_number": 1,
+			"project_id": "fa8c372dfe4d4c92b0c4e3a2d9b3c9fa"
+		}
+	]
 }
 `
 
 // HandleFloatingIPListSuccessfully mocks floating ips call.
 func (m *SDMock) HandleFloatingIPListSuccessfully() {
-	m.Mux.HandleFunc("/os-floating-ips", func(w http.ResponseWriter, r *http.Request) {
+	m.Mux.HandleFunc("/v2.0/floatingips", func(w http.ResponseWriter, r *http.Request) {
 		testMethod(m.t, r, http.MethodGet)
 		testHeader(m.t, r, "X-Auth-Token", tokenID)
 
 		w.Header().Add("Content-Type", "application/json")
 		fmt.Fprint(w, listOutput)
+	})
+}
+
+const portsListBody = `
+{
+	"ports": [
+		{
+			"id": "d5597901-48c8-4a69-a041-cfc5be158a04",
+			"name": "",
+			"network_id": "d02c4f18-d606-4864-b12a-1c9b39a46be2",
+			"tenant_id": "fcad67a6189847c4aecfa3c81a05783b",
+			"mac_address": "",
+			"admin_state_up": true,
+			"status": "DOWN",
+			"device_id": "",
+			"device_owner": "",
+			"fixed_ips": [],
+			"allowed_address_pairs": [],
+			"extra_dhcp_opts": [],
+			"security_groups": [],
+			"description": "",
+			"binding:vnic_type": "normal",
+			"port_security_enabled": true,
+			"dns_name": "",
+			"dns_assignment": [],
+			"dns_domain": "",
+			"tags": [],
+			"created_at": "2023-08-30T16:30:27Z",
+			"updated_at": "2023-08-30T16:30:28Z",
+			"revision_number": 0,
+			"project_id": "fcad67a6189847c4aecfa3c81a05783b"
+		},
+		{
+			"id": "4a45b012-0478-484d-8cf3-c8abdb194d08",
+			"name": "ovn-lb-vip-0980c8de-58c3-481d-89e3-ed81f44286c0",
+			"network_id": "03200a39-b399-44f3-a778-6dbb93343a31",
+			"tenant_id": "fcad67a6189847c4aecfa3c81a05783b",
+			"mac_address": "fa:16:3e:23:12:a3",
+			"admin_state_up": true,
+			"status": "ACTIVE",
+			"device_id": "ef079b0c-e610-4dfb-b1aa-b49f07ac48e5",
+			"device_owner": "",
+			"fixed_ips": [
+				{
+					"subnet_id": "",
+					"ip_address": "10.10.10.2"
+				}
+			],
+			"allowed_address_pairs": [],
+			"extra_dhcp_opts": [],
+			"security_groups": [],
+			"description": "",
+			"binding:vnic_type": "normal",
+			"port_security_enabled": true,
+			"dns_name": "",
+			"dns_assignment": [],
+			"dns_domain": "",
+			"tags": [],
+			"created_at": "2023-09-06T15:45:36Z",
+			"updated_at": "2023-09-06T15:45:36Z",
+			"revision_number": 0,
+			"project_id": "fcad67a6189847c4aecfa3c81a05783b"
+		},
+		{
+			"id": "a0e244e8-7910-4427-b8d1-20470cad4f8a",
+			"name": "ovn-lb-vip-26c0ccb1-3036-4345-99e8-d8f34a8ba6b2",
+			"network_id": "03200a39-b399-44f3-a778-6dbb93343a31",
+			"tenant_id": "fcad67a6189847c4aecfa3c81a05783b",
+			"mac_address": "fa:16:3e:5f:43:10",
+			"admin_state_up": true,
+			"status": "ACTIVE",
+			"device_id": "9e5476bd-a4ec-4653-93d6-72c93aa682bb",
+			"device_owner": "",
+			"fixed_ips": [
+				{
+					"subnet_id": "",
+					"ip_address": "10.10.10.4"
+				}
+			],
+			"allowed_address_pairs": [],
+			"extra_dhcp_opts": [],
+			"security_groups": [],
+			"description": "",
+			"binding:vnic_type": "normal",
+			"port_security_enabled": true,
+			"dns_name": "",
+			"dns_assignment": [],
+			"dns_domain": "",
+			"tags": [],
+			"created_at": "2024-01-24T13:30:50Z",
+			"updated_at": "2024-01-24T13:30:51Z",
+			"revision_number": 0,
+			"project_id": "fcad67a6189847c4aecfa3c81a05783b"
+		},
+		{
+			"id": "b926ab68-ec54-46d8-8c50-1c07aafd5ae9",
+			"name": "dummy-port",
+			"network_id": "03200a39-b399-44f3-a778-6dbb93343a31",
+			"tenant_id": "b78fef2305934dbbbeb9a10b4c326f7a",
+			"mac_address": "fa:16:3e:5f:12:10",
+			"admin_state_up": true,
+			"status": "ACTIVE",
+			"device_id": "87caf8ed-d92a-41f6-9dcd-d1399e39899f",
+			"device_owner": "",
+			"fixed_ips": [
+				{
+					"subnet_id": "",
+					"ip_address": "10.10.10.24"
+				}
+			],
+			"allowed_address_pairs": [],
+			"extra_dhcp_opts": [],
+			"security_groups": [],
+			"description": "",
+			"binding:vnic_type": "normal",
+			"port_security_enabled": true,
+			"dns_name": "",
+			"dns_assignment": [],
+			"dns_domain": "",
+			"tags": [],
+			"created_at": "2024-01-24T13:30:50Z",
+			"updated_at": "2024-01-24T13:30:51Z",
+			"revision_number": 0,
+			"project_id": "b78fef2305934dbbbeb9a10b4c326f7a"
+		}
+	]
+}
+`
+
+// HandlePortsListSuccessfully mocks the ports list API.
+func (m *SDMock) HandlePortsListSuccessfully() {
+	m.Mux.HandleFunc("/v2.0/ports", func(w http.ResponseWriter, r *http.Request) {
+		testMethod(m.t, r, http.MethodGet)
+		testHeader(m.t, r, "X-Auth-Token", tokenID)
+
+		w.Header().Add("Content-Type", "application/json")
+		fmt.Fprint(w, portsListBody)
 	})
 }
 
@@ -1082,107 +1399,5 @@ func (m *SDMock) HandleListenersListSuccessfully() {
 
 		w.Header().Add("Content-Type", "application/json")
 		fmt.Fprint(w, listenerListBody)
-	})
-}
-
-const floatingIPListBody = `
-{
-	"floatingips": [
-		{
-			"id": "fea7332d-9027-4cf9-bf62-c3c4c6ebaf84",
-			"tenant_id": "fcad67a6189847c4aecfa3c81a05783b",
-			"floating_ip_address": "192.168.1.2",
-			"floating_network_id": "d02c4f18-d606-4864-b12a-1c9b39a46be2",
-			"router_id": "f03af93b-4e8f-4f55-adcf-a0317782ede2",
-			"port_id": "b47c39f5-238d-4b17-ae87-9b5d19af8a2e",
-			"fixed_ip_address": "10.0.0.32",
-			"status": "ACTIVE",
-			"description": "",
-			"port_details": {
-				"name": "dummy",
-				"network_id": "03200a39-b399-44f3-a778-6dbb93343a31",
-				"mac_address": "fa:16:3e:b3:a3:c6",
-				"admin_state_up": true,
-				"status": "ACTIVE",
-				"device_id": "",
-				"device_owner": "compute:az1"
-			},
-			"dns_domain": "",
-			"dns_name": "",
-			"port_forwardings": [],
-			"tags": [],
-			"created_at": "2023-08-30T15:11:37Z",
-			"updated_at": "2023-08-30T15:11:38Z",
-			"revision_number": 1,
-			"project_id": "fcad67a6189847c4aecfa3c81a05783b"
-		},
-		{
-			"id": "febb9554-cf83-4f9b-94d9-1b3c34be357f",
-			"tenant_id": "ac57f03dba1a4fdebff3e67201bc7a85",
-			"floating_ip_address": "192.168.3.4",
-			"floating_network_id": "d02c4f18-d606-4864-b12a-1c9b39a46be2",
-			"router_id": "f03af93b-4e8f-4f55-adcf-a0317782ede2",
-			"port_id": "c83b6e12-4e5d-4673-a4b3-5bc72a7f3ef9",
-			"fixed_ip_address": "10.0.2.78",
-			"status": "ACTIVE",
-			"description": "",
-			"port_details": {
-				"name": "dummy",
-				"network_id": "03200a39-b399-44f3-a778-6dbb93343a31",
-				"mac_address": "fa:16:3e:b3:a3:c6",
-				"admin_state_up": true,
-				"status": "ACTIVE",
-				"device_id": "",
-				"device_owner": "compute:az3"
-			},
-			"dns_domain": "",
-			"dns_name": "",
-			"port_forwardings": [],
-			"tags": [],
-			"created_at": "2023-08-30T15:11:37Z",
-			"updated_at": "2023-08-30T15:11:38Z",
-			"revision_number": 1,
-			"project_id": "ac57f03dba1a4fdebff3e67201bc7a85"
-		},
-		{
-			"id": "febb9554-cf83-4f9b-94d9-1b3c34be357f",
-			"tenant_id": "fa8c372dfe4d4c92b0c4e3a2d9b3c9fa",
-			"floating_ip_address": "192.168.4.5",
-			"floating_network_id": "d02c4f18-d606-4864-b12a-1c9b39a46be2",
-			"router_id": "f03af93b-4e8f-4f55-adcf-a0317782ede2",
-			"port_id": "f9e8b6e12-7e4d-4963-a5b3-6cd82a7f3ff6",
-			"fixed_ip_address": "10.0.3.99",
-			"status": "ACTIVE",
-			"description": "",
-			"port_details": {
-				"name": "dummy",
-				"network_id": "03200a39-b399-44f3-a778-6dbb93343a31",
-				"mac_address": "fa:16:3e:b3:a3:c6",
-				"admin_state_up": true,
-				"status": "ACTIVE",
-				"device_id": "",
-				"device_owner": "compute:az3"
-			},
-			"dns_domain": "",
-			"dns_name": "",
-			"port_forwardings": [],
-			"tags": [],
-			"created_at": "2023-08-30T15:11:37Z",
-			"updated_at": "2023-08-30T15:11:38Z",
-			"revision_number": 1,
-			"project_id": "fa8c372dfe4d4c92b0c4e3a2d9b3c9fa"
-		}
-	]
-}
-`
-
-// HandleFloatingIPsListSuccessfully mocks the floating IPs endpoint.
-func (m *SDMock) HandleFloatingIPsListSuccessfully() {
-	m.Mux.HandleFunc("/v2.0/floatingips", func(w http.ResponseWriter, r *http.Request) {
-		testMethod(m.t, r, http.MethodGet)
-		testHeader(m.t, r, "X-Auth-Token", tokenID)
-
-		w.Header().Add("Content-Type", "application/json")
-		fmt.Fprint(w, floatingIPListBody)
 	})
 }

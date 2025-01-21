@@ -221,7 +221,7 @@ type BlockMetaCompaction struct {
 }
 
 func (bm *BlockMetaCompaction) SetOutOfOrder() {
-	if bm.containsHint(CompactionHintFromOutOfOrder) {
+	if bm.FromOutOfOrder() {
 		return
 	}
 	bm.Hints = append(bm.Hints, CompactionHintFromOutOfOrder)
@@ -229,16 +229,7 @@ func (bm *BlockMetaCompaction) SetOutOfOrder() {
 }
 
 func (bm *BlockMetaCompaction) FromOutOfOrder() bool {
-	return bm.containsHint(CompactionHintFromOutOfOrder)
-}
-
-func (bm *BlockMetaCompaction) containsHint(hint string) bool {
-	for _, h := range bm.Hints {
-		if h == hint {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(bm.Hints, CompactionHintFromOutOfOrder)
 }
 
 const (

@@ -546,7 +546,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 			w.writer.AppendExemplars(exemplars)
 
-		case record.HistogramSamples:
+		case record.HistogramSamples, record.CustomBucketsHistogramSamples:
 			// Skip if experimental "histograms over remote write" is not enabled.
 			if !w.sendHistograms {
 				break
@@ -574,7 +574,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				histogramsToSend = histogramsToSend[:0]
 			}
 
-		case record.FloatHistogramSamples:
+		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
 			// Skip if experimental "histograms over remote write" is not enabled.
 			if !w.sendHistograms {
 				break
@@ -679,7 +679,7 @@ func (w *Watcher) readCheckpoint(checkpointDir string, readFn segmentReadFn) err
 	// Ensure we read the whole contents of every segment in the checkpoint dir.
 	segs, err := listSegments(checkpointDir)
 	if err != nil {
-		return fmt.Errorf("Unable to get segments checkpoint dir: %w", err)
+		return fmt.Errorf("unable to get segments checkpoint dir: %w", err)
 	}
 	for _, segRef := range segs {
 		size, err := getSegmentSize(checkpointDir, segRef.index)

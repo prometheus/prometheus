@@ -1259,19 +1259,20 @@ yydefault:
 		yyDollar = yyS[yypt-1 : yypt+1]
 		{
 			if !model.LabelName(yyDollar[1].item.Val).IsValid() {
-				yylex.(*parser).unexpected("grouping opts", "label")
+				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "invalid label name for grouping: %q", yyDollar[1].item.Val)
 			}
 			yyVAL.item = yyDollar[1].item
 		}
 	case 59:
 		yyDollar = yyS[yypt-1 : yypt+1]
 		{
-			if !model.LabelName(yylex.(*parser).unquoteString(yyDollar[1].item.Val)).IsValid() {
-				yylex.(*parser).unexpected("grouping opts", "label")
+			unquoted := yylex.(*parser).unquoteString(yyDollar[1].item.Val)
+			if !model.LabelName(unquoted).IsValid() {
+				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "invalid label name for grouping: %q", unquoted)
 			}
 			yyVAL.item = yyDollar[1].item
 			yyVAL.item.Pos++
-			yyVAL.item.Val = yylex.(*parser).unquoteString(yyVAL.item.Val)
+			yyVAL.item.Val = unquoted
 		}
 	case 60:
 		yyDollar = yyS[yypt-1 : yypt+1]
@@ -1384,7 +1385,7 @@ yydefault:
 
 			if errMsg != "" {
 				errRange := mergeRanges(&yyDollar[2].item, &yyDollar[4].item)
-				yylex.(*parser).addParseErrf(errRange, errMsg)
+				yylex.(*parser).addParseErrf(errRange, "%s", errMsg)
 			}
 
 			numLit, _ := yyDollar[3].node.(*NumberLiteral)
