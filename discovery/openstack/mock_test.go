@@ -147,7 +147,7 @@ func (m *SDMock) HandleAuthSuccessfully() {
                         "url": "%s"
                     }
                 ],
-                "id": "c609fc430175452290b62a4242e8a7e8",
+                "id": "589f3d99a3d94f5f871e9f5cf206d2e8",
                 "type": "network"
             },
             {
@@ -725,7 +725,7 @@ const listOutput = `
 			"created_at": "2024-01-24T13:30:50Z",
 			"updated_at": "2024-01-24T13:30:51Z"
 		},
-        {
+		{
 			"id": "fea7332d-9027-4cf9-bf62-c3c4c6ebaf84",
 			"tenant_id": "fcad67a6189847c4aecfa3c81a05783b",
 			"floating_ip_address": "192.168.1.2",
