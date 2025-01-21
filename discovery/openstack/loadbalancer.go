@@ -117,7 +117,7 @@ func (i *LoadBalancerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Gro
 		}
 	}
 
-	// Fetch all floating IPs with pagination
+	// Fetch all floating IPs
 	fipPages, err := floatingips.List(networkClient, floatingips.ListOpts{}).AllPages()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list all fips: %w", err)

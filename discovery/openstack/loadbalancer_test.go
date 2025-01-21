@@ -32,7 +32,7 @@ func (s *OpenstackSDLoadBalancerTestSuite) SetupTest(t *testing.T) {
 
 	s.Mock.HandleLoadBalancerListSuccessfully()
 	s.Mock.HandleListenersListSuccessfully()
-	s.Mock.HandleFloatingIPsListSuccessfully()
+	s.Mock.HandleFloatingIPListSuccessfully()
 
 	s.Mock.HandleVersionsSuccessfully()
 	s.Mock.HandleAuthSuccessfully()
