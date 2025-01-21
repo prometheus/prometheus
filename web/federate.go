@@ -79,7 +79,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	)
 	w.Header().Set("Content-Type", string(format))
 
-	q, err := h.localStorage.Querier(mint, maxt)
+	q, err := h.storage.Querier(mint, maxt) // PP_CHANGES.md: rebuild on cpp
 	if err != nil {
 		federationErrors.Inc()
 		if errors.Is(err, tsdb.ErrNotReady) {

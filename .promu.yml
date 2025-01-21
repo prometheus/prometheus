@@ -19,6 +19,7 @@ build:
             - builtinassets
             - static
             - osusergo
+            - stringlabels
         windows:
             - builtinassets
             - stringlabels

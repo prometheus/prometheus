@@ -390,7 +390,7 @@ func New(logger log.Logger, o *Options, receiver handler.Receiver) *Handler { //
 	router.Get("/metrics", promhttp.Handler().ServeHTTP)
 
 	router.Get("/federate", readyf(httputil.CompressionHandler{
-		Handler: http.HandlerFunc(h.opFederation), // PP_CHANGES.md: rebuild on cpp
+		Handler: http.HandlerFunc(h.federation),
 	}.ServeHTTP))
 
 	router.Get("/consoles/*filepath", readyf(h.consoles))

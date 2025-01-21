@@ -42,9 +42,10 @@ func newPromAppender(ctx context.Context, receiver *Receiver, relabelerID string
 
 func (a *promAppender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	lsb := model.NewLabelSetBuilder()
-	for _, label := range l {
+	l.Range(func(label labels.Label) {
 		lsb.Add(label.Name, label.Value)
-	}
+	})
+
 	a.data.timeSeries = append(a.data.timeSeries, model.TimeSeries{
 		LabelSet:  lsb.Build(),
 		Timestamp: uint64(t),
