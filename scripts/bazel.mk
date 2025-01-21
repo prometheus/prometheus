@@ -24,7 +24,7 @@ ifeq ($(use_docker),true)
 	endif
 endif
 
-bazel_flags = --compilation_mode=$(compilation_mode)
+bazel_flags += --compilation_mode=$(compilation_mode)
 ifeq ($(asan),true)
 	bazel_flags += --asan --strip=never --platform_suffix=asan
 endif
