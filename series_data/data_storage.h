@@ -36,6 +36,7 @@ struct DataStorage {
       [[nodiscard]] PROMPP_ALWAYS_INLINE chunk::DataChunk::Type chunk_type() const noexcept {
         return finalized_chunk_iterator_ == finalized_chunk_end_iterator_ ? chunk::DataChunk::Type::kOpen : chunk::DataChunk::Type::kFinalized;
       }
+      [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_open() const noexcept { return chunk_type() == chunk::DataChunk::Type::kOpen; }
       [[nodiscard]] PROMPP_ALWAYS_INLINE const chunk::DataChunk& chunk() const noexcept {
         return chunk_type() == chunk::DataChunk::Type::kOpen ? *open_chunk_ : *finalized_chunk_iterator_;
       }
@@ -148,6 +149,17 @@ struct DataStorage {
    public:
     explicit Chunks(const DataStorage* storage) : storage_(storage) {}
 
+    [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t non_empty_chunk_count() const noexcept { return non_empty_open_chunk_count() + finalized_chunk_count(); }
+
+    [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t non_empty_open_chunk_count() const noexcept {
+      return std::ranges::count_if(storage_->open_chunks, [](const chunk::DataChunk& chunk) { return !chunk.is_empty(); });
+    }
+
+    [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t finalized_chunk_count() const noexcept {
+      return std::accumulate(storage_->finalized_chunks.begin(), storage_->finalized_chunks.end(), uint32_t{},
+                             [](uint32_t count, const auto& chunks_pair) PROMPP_LAMBDA_INLINE { return count + chunks_pair.second.count(); });
+    }
+
     [[nodiscard]] PROMPP_ALWAYS_INLINE ChunkIterator begin() const noexcept { return ChunkIterator{storage_}; }
     [[nodiscard]] PROMPP_ALWAYS_INLINE static IteratorSentinel end() noexcept { return {}; }
 
@@ -240,11 +252,6 @@ struct DataStorage {
     } else {
       return finalized_data_streams[stream_id];
     }
-  }
-
-  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t chunk_count() const noexcept {
-    return open_chunks.size() + std::accumulate(finalized_chunks.begin(), finalized_chunks.end(), 0U,
-                                                [](uint32_t size, const auto& chunks_pair) PROMPP_LAMBDA_INLINE { return size + chunks_pair.second.count(); });
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept {

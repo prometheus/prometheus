@@ -110,12 +110,12 @@ INSTANTIATE_TEST_SUITE_P(QueryOpenChunk,
                                          QuerierCase{.query = {.time_interval{.min = 14, .max = 14}, .label_set_ids = {0}}, .expected = {QueriedChunk(0)}},
                                          QuerierCase{.query = {.time_interval{.min = 12, .max = 15}, .label_set_ids = {0}}, .expected = {QueriedChunk(0)}}));
 
-INSTANTIATE_TEST_SUITE_P(MultipeChunks,
+INSTANTIATE_TEST_SUITE_P(MultipleChunks,
                          QuerierFixture,
                          testing::Values(QuerierCase{.query = {.time_interval{.min = 0, .max = 7}, .label_set_ids = {0}},
                                                      .expected = {QueriedChunk(0, 0), QueriedChunk(0, 1)}}));
 
-INSTANTIATE_TEST_SUITE_P(MultipeChunksMultipleLsIds,
+INSTANTIATE_TEST_SUITE_P(MultipleChunksMultipleLsIds,
                          QuerierFixture,
                          testing::Values(QuerierCase{.query = {.time_interval{.min = 0, .max = 7}, .label_set_ids = {0, 1}},
                                                      .expected = {QueriedChunk(0, 0), QueriedChunk(0, 1), QueriedChunk(1, 0), QueriedChunk(1, 1)}}));

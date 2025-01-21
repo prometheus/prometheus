@@ -98,7 +98,7 @@ class StatusGetter {
 
     status.min_max_timestamp = min_max_timestamp_;
     status.num_series = lss_.size();
-    status.chunk_count = data_storage_.chunk_count();
+    status.chunk_count = data_storage_.chunks().non_empty_chunk_count();
     status.num_label_pairs = label_count_;
 
     fill_top_items(top_label_value_count_by_name_, status.label_value_count_by_label_name);
