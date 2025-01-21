@@ -218,6 +218,13 @@ clear
 load 5m
 	http_requests_total{path="/foo"}	0+10x10
 	http_requests_total{path="/bar"}	0+10x5 0+10x5
+	http_requests_histogram{path="/a"} {{sum:2 count:2}}+{{sum:3 count:3}}x5
+	http_requests_histogram{path="/b"} 0 0 {{sum:1 count:1}} {{sum:4 count:4}}
+	http_requests_histogram{path="/c"} 0 0 {{sum:1 count:1}} {{sum:4 count:4 counter_reset_hint:gauge}}
+	http_requests_histogram{path="/d"} 0 0 {{sum:1 count:1 counter_reset_hint:gauge}} {{sum:4 count:4}}
+	http_requests_histogram{path="/e"} 0 1 2 {{sum:4 count:4}}
+	http_requests_histogram{path="/f"} 0 0 {{sum:1 count:1}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+	http_requests_histogram{path="/g"} 0 0 {{schema:-53 sum:1 count:1 custom_values:[1] buckets:[2]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
 
 eval instant at 50m irate(http_requests_total[50m])
 	{path="/foo"} .03333333333333333333
@@ -227,6 +234,26 @@ eval instant at 50m irate(http_requests_total[50m])
 eval instant at 30m irate(http_requests_total[50m])
 	{path="/foo"} .03333333333333333333
 	{path="/bar"} 0
+
+eval instant at 20m irate(http_requests_histogram{path="/a"}[20m])
+	{path="/a"} {{sum:0.01 count:0.01}}
+
+eval instant at 20m irate(http_requests_histogram{path="/b"}[20m])
+	{path="/b"} {{sum:0.01 count:0.01}}
+
+eval instant at 20m irate(http_requests_histogram{path="/b"}[6m])
+
+eval_warn instant at 20m irate(http_requests_histogram{path="/c"}[20m])
+	{path="/c"} {{sum:0.01 count:0.01}}
+
+eval_warn instant at 20m irate(http_requests_histogram{path="/d"}[20m])
+	{path="/d"} {{sum:0.01 count:0.01}}
+
+eval_warn instant at 20m irate(http_requests_histogram{path="/e"}[20m])
+
+eval_warn instant at 20m irate(http_requests_histogram{path="/f"}[20m])
+
+eval_warn instant at 20m irate(http_requests_histogram{path="/g"}[20m])
 
 clear
 
@@ -259,10 +286,37 @@ clear
 load 5m
 	http_requests{path="/foo"}	0 50 100 150
 	http_requests{path="/bar"}	0 50 100 50
+	http_requests_histogram{path="/a"} {{sum:2 count:2 counter_reset_hint:gauge}}+{{sum:1 count:3 counter_reset_hint:gauge}}x5
+	http_requests_histogram{path="/b"} 0 0 {{sum:1 count:1 counter_reset_hint:gauge}} {{sum:2 count:2 counter_reset_hint:gauge}}
+	http_requests_histogram{path="/c"} 0 0 {{sum:1 count:1}} {{sum:2 count:2 counter_reset_hint:gauge}}
+	http_requests_histogram{path="/d"} 0 0 {{sum:1 count:1 counter_reset_hint:gauge}} {{sum:2 count:2}}
+	http_requests_histogram{path="/e"} 0 1 2 {{sum:1 count:2 counter_reset_hint:gauge}}
+	http_requests_histogram{path="/f"} 0 0 {{sum:1 count:1 counter_reset_hint:gauge}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}}
+	http_requests_histogram{path="/g"} 0 0 {{schema:-53 sum:1 count:1 custom_values:[1] buckets:[2] counter_reset_hint:gauge}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}}
 
 eval instant at 20m idelta(http_requests[20m])
 	{path="/foo"} 50
 	{path="/bar"} -50
+
+eval instant at 20m idelta(http_requests_histogram{path="/a"}[20m])
+	{path="/a"} {{sum:1 count:3}}
+
+eval instant at 20m idelta(http_requests_histogram{path="/b"}[20m])
+	{path="/b"} {{sum:1 count:1}}
+
+eval instant at 20m idelta(http_requests_histogram{path="/b"}[6m])
+
+eval_warn instant at 20m idelta(http_requests_histogram{path="/c"}[20m])
+	{path="/c"} {{sum:1 count:1}}
+
+eval_warn instant at 20m idelta(http_requests_histogram{path="/d"}[20m])
+	{path="/d"} {{sum:1 count:1}}
+
+eval_warn instant at 20m idelta(http_requests_histogram{path="/e"}[20m])
+
+eval_warn instant at 20m idelta(http_requests_histogram{path="/f"}[20m])
+
+eval_warn instant at 20m idelta(http_requests_histogram{path="/g"}[20m])
 
 clear
 

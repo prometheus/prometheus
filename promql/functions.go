@@ -286,46 +286,99 @@ func funcIncrease(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 
 // === irate(node parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcIrate(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return instantValue(vals, enh.Out, true)
+	return instantValue(vals, args, enh.Out, true)
 }
 
 // === idelta(node model.ValMatrix) (Vector, Annotations) ===
 func funcIdelta(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return instantValue(vals, enh.Out, false)
+	return instantValue(vals, args, enh.Out, false)
 }
 
-func instantValue(vals []parser.Value, out Vector, isRate bool) (Vector, annotations.Annotations) {
+func instantValue(vals []parser.Value, args parser.Expressions, out Vector, isRate bool) (Vector, annotations.Annotations) {
 	samples := vals[0].(Matrix)[0]
+	metricName := samples.Metric.Get(labels.MetricName)
+	var LastFourSamples []Sample
+	var annos annotations.Annotations
+
+	// Add last 2 float samples if exists
+	for i := len(samples.Floats) - 1; i >= max(0, len(samples.Floats)-2); i-- {
+		LastFourSamples = append(LastFourSamples, Sample{
+			F: samples.Floats[i].F,
+			T: samples.Floats[i].T,
+		})
+	}
+	// Add last 2 histogram samples if exists
+	for i := len(samples.Histograms) - 1; i >= max(0, len(samples.Histograms)-2); i-- {
+		LastFourSamples = append(LastFourSamples, Sample{
+			H: samples.Histograms[i].H,
+			T: samples.Histograms[i].T,
+		})
+	}
+
 	// No sense in trying to compute a rate without at least two points. Drop
 	// this Vector element.
 	// TODO: add RangeTooShortWarning
-	if len(samples.Floats) < 2 {
+	if len(LastFourSamples) < 2 {
 		return out, nil
 	}
+	// sort the last four samples according to their timestamps
+	sort.Slice(LastFourSamples, func(i, j int) bool {
+		return LastFourSamples[i].T < LastFourSamples[j].T
+	})
 
-	lastSample := samples.Floats[len(samples.Floats)-1]
-	previousSample := samples.Floats[len(samples.Floats)-2]
-
-	var resultValue float64
-	if isRate && lastSample.F < previousSample.F {
-		// Counter reset.
-		resultValue = lastSample.F
-	} else {
-		resultValue = lastSample.F - previousSample.F
-	}
-
-	sampledInterval := lastSample.T - previousSample.T
+	lastSample := LastFourSamples[len(LastFourSamples)-1]
+	prevSample := LastFourSamples[len(LastFourSamples)-2]
+	resultSample := lastSample
+	sampledInterval := lastSample.T - prevSample.T
 	if sampledInterval == 0 {
 		// Avoid dividing by 0.
 		return out, nil
 	}
+	switch true {
+	case lastSample.H == nil && prevSample.H == nil:
+		if isRate && lastSample.F < prevSample.F {
+			// Counter reset.
+		} else {
+			resultSample.F = lastSample.F - prevSample.F
+		}
+	case lastSample.H != nil && prevSample.H != nil:
+		resultSample.H = lastSample.H.Copy()
+		// irate should only be applied to counters.
+		if isRate && (lastSample.H.CounterResetHint == histogram.GaugeType || prevSample.H.CounterResetHint == histogram.GaugeType) {
+			annos.Add(annotations.NewNativeHistogramNotCounterWarning(metricName, args.PositionRange()))
+		}
+		// idelta should only be applied to gauges.
+		if !isRate && (lastSample.H.CounterResetHint != histogram.GaugeType || prevSample.H.CounterResetHint != histogram.GaugeType) {
+			annos.Add(annotations.NewNativeHistogramNotGaugeWarning(metricName, args.PositionRange()))
+		}
+		if isRate && lastSample.H.DetectReset(prevSample.H) {
+			// Counter reset.
+		} else {
+			_, err := resultSample.H.Sub(prevSample.H)
+			if err != nil {
+				if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
+					return out, annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, args.PositionRange()))
+				} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
+					return out, annos.Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, args.PositionRange()))
+				}
+			}
+		}
+	default:
+		// both the samples are different
+		annos.Add(annotations.NewMixedFloatsHistogramsWarning(metricName, args.PositionRange()))
+		return out, annos
+	}
 
 	if isRate {
 		// Convert to per-second.
-		resultValue /= float64(sampledInterval) / 1000
+		if resultSample.H == nil {
+			resultSample.F /= float64(sampledInterval) / 1000
+		} else {
+			resultSample.H.Div(float64(sampledInterval) / 1000)
+		}
 	}
 
-	return append(out, Sample{F: resultValue}), nil
+	return append(out, resultSample), annos
 }
 
 // Calculate the trend value at the given index i in raw data d.
