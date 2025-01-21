@@ -143,7 +143,6 @@ func (c *ECSSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 type ecsClient interface {
 	ecs.ListClustersAPIClient
-	ecs.ListServicesAPIClient
 	ecs.ListTasksAPIClient
 	DescribeTasks(ctx context.Context, params *ecs.DescribeTasksInput, optFns ...func(*ecs.Options)) (*ecs.DescribeTasksOutput, error)
 	DescribeTaskDefinition(ctx context.Context, params *ecs.DescribeTaskDefinitionInput, optFns ...func(*ecs.Options)) (*ecs.DescribeTaskDefinitionOutput, error)
