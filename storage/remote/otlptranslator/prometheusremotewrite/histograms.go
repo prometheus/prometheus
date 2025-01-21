@@ -168,6 +168,7 @@ func convertBucketsLayout(buckets pmetric.ExponentialHistogramDataPointBuckets, 
 
 	// The offset is scaled and adjusted by 1 as described above.
 	bucketIdx := buckets.Offset()>>scaleDown + 1
+
 	spans = append(spans, prompb.BucketSpan{
 		Offset: bucketIdx,
 		Length: 0,
@@ -219,6 +220,162 @@ func convertBucketsLayout(buckets pmetric.ExponentialHistogramDataPointBuckets, 
 		// We have found a small gap (or no gap at all).
 		// Insert empty buckets as needed.
 		for j := int32(0); j < gap; j++ {
+			appendDelta(0)
+		}
+	}
+	appendDelta(count)
+
+	return spans, deltas
+}
+
+func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Context, dataPoints pmetric.HistogramDataPointSlice,
+	resource pcommon.Resource, settings Settings, promName string) (annotations.Annotations, error) {
+	var annots annotations.Annotations
+
+	for x := 0; x < dataPoints.Len(); x++ {
+		if err := c.everyN.checkContext(ctx); err != nil {
+			return annots, err
+		}
+
+		pt := dataPoints.At(x)
+
+		histogram, ws, err := histogramToCustomBucketsHistogram(pt)
+		annots.Merge(ws)
+		if err != nil {
+			return annots, err
+		}
+
+		lbls := createAttributes(
+			resource,
+			pt.Attributes(),
+			settings,
+			nil,
+			true,
+			model.MetricNameLabel,
+			promName,
+		)
+
+		ts, _ := c.getOrCreateTimeSeries(lbls)
+		ts.Histograms = append(ts.Histograms, histogram)
+
+		exemplars, err := getPromExemplars[pmetric.HistogramDataPoint](ctx, &c.everyN, pt)
+		if err != nil {
+			return annots, err
+		}
+		ts.Exemplars = append(ts.Exemplars, exemplars...)
+	}
+
+	return annots, nil
+}
+
+func histogramToCustomBucketsHistogram(p pmetric.HistogramDataPoint) (prompb.Histogram, annotations.Annotations, error) {
+	var annots annotations.Annotations
+
+	positiveSpans, positiveDeltas := convertHistogramBucketsToNHCBLayout(p.BucketCounts().AsRaw())
+
+	h := prompb.Histogram{
+		// The counter reset detection must be compatible with Prometheus to
+		// safely set ResetHint to NO. This is not ensured currently.
+		// Sending a sample that triggers counter reset but with ResetHint==NO
+		// would lead to Prometheus panic as it does not double check the hint.
+		// Thus we're explicitly saying UNKNOWN here, which is always safe.
+		// TODO: using created time stamp should be accurate, but we
+		// need to know here if it was used for the detection.
+		// Ref: https://github.com/open-telemetry/opentelemetry-collector-contrib/pull/28663#issuecomment-1810577303
+		// Counter reset detection in Prometheus: https://github.com/prometheus/prometheus/blob/f997c72f294c0f18ca13fa06d51889af04135195/tsdb/chunkenc/histogram.go#L232
+		ResetHint: prompb.Histogram_UNKNOWN,
+		Schema:    -53,
+
+		PositiveSpans:  positiveSpans,
+		PositiveDeltas: positiveDeltas,
+		CustomValues:   p.ExplicitBounds().AsRaw(),
+
+		Timestamp: convertTimeStamp(p.Timestamp()),
+	}
+
+	if p.Flags().NoRecordedValue() {
+		h.Sum = math.Float64frombits(value.StaleNaN)
+		h.Count = &prompb.Histogram_CountInt{CountInt: value.StaleNaN}
+	} else {
+		if p.HasSum() {
+			h.Sum = p.Sum()
+		}
+		h.Count = &prompb.Histogram_CountInt{CountInt: p.Count()}
+		if p.Count() == 0 && h.Sum != 0 {
+			annots.Add(fmt.Errorf("histogram data point has zero count, but non-zero sum: %f", h.Sum))
+		}
+	}
+	return h, annots, nil
+
+}
+
+func convertHistogramBucketsToNHCBLayout(buckets []uint64) ([]prompb.BucketSpan, []int64) {
+	if len(buckets) == 0 {
+		return nil, nil
+	}
+
+	var (
+		spans     []prompb.BucketSpan
+		deltas    []int64
+		count     int64
+		prevCount int64
+	)
+
+	appendDelta := func(count int64) {
+		spans[len(spans)-1].Length++
+		deltas = append(deltas, count-prevCount)
+		prevCount = count
+	}
+
+	var offset int
+	for offset < len(buckets) && buckets[offset] == 0 {
+		offset++
+	}
+	bucketCounts := buckets[offset:]
+
+	bucketIdx := offset + 1
+	spans = append(spans, prompb.BucketSpan{
+		Offset: int32(offset),
+		Length: 0,
+	})
+
+	for i := 0; i < len(bucketCounts); i++ {
+		nextBucketIdx := offset + i + 1
+		if bucketIdx == nextBucketIdx { // We have not collected enough buckets to merge yet.
+			count += int64(bucketCounts[i])
+			continue
+		}
+		if count == 0 {
+			count = int64(bucketCounts[i])
+			continue
+		}
+
+		iDelta := nextBucketIdx - bucketIdx - 1
+
+		if iDelta > 2 {
+			spans = append(spans, prompb.BucketSpan{
+				Offset: int32(iDelta),
+				Length: 0,
+			})
+		} else {
+			// Either no gap or a gap <= 2
+			for j := int32(0); j < int32(iDelta); j++ {
+				appendDelta(0)
+			}
+		}
+		appendDelta(count)
+		count = int64(bucketCounts[i])
+		bucketIdx = nextBucketIdx
+	}
+
+	iDelta := int32(len(bucketCounts)+offset-1) + 1 - int32(bucketIdx)
+	if iDelta > 2 {
+		spans = append(spans, prompb.BucketSpan{
+			Offset: iDelta,
+			Length: 0,
+		})
+	} else {
+		for j := int32(0); j < iDelta; j++ {
 			appendDelta(0)
 		}
 	}
