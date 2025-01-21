@@ -77,10 +77,6 @@ type floatingIPKey struct {
 	fixed    string
 }
 
-type portKey struct {
-	deviceID string
-}
-
 func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	i.provider.Context = ctx
 	err := openstack.Authenticate(i.provider, *i.authOpts)
@@ -114,9 +110,9 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 		return nil, fmt.Errorf("failed to extract Ports: %w", err)
 	}
 
-	portList := make(map[string]portKey)
+	portList := make(map[string]string)
 	for _, port := range allPorts {
-		portList[port.ID] = portKey{deviceID: port.DeviceID}
+		portList[port.ID] = port.DeviceID
 	}
 
 	// OpenStack API reference
@@ -131,19 +127,19 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 		}
 		for _, ip := range result {
 			// Skip not associated ips
-			if ip.PortID == "" {
+			if ip.PortID == "" || ip.FixedIP == "" {
 				continue
 			}
 
 			// Fetch deviceID from portList
-			portKey, ok := portList[ip.PortID]
+			deviceID, ok := portList[ip.PortID]
 			if !ok {
 				i.logger.Warn("Floating IP PortID not found in portList", "PortID", ip.PortID)
 				continue
 			}
 
 			key := floatingIPKey{
-				deviceID: portKey.deviceID,
+				deviceID: deviceID,
 				fixed:    ip.FixedIP,
 			}
 
