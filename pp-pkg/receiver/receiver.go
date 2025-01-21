@@ -9,7 +9,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"sync"
 	"time"
 
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
@@ -318,88 +317,88 @@ func (rr *Receiver) ApplyConfig(cfg *prom_config.Config) error {
 			return head.Reconfigure(rCfg.Configs, numberOfShards)
 		}),
 		DistributorConfigureFunc(func(dstrb relabeler.Distributor) error {
-			mxdgupds := new(sync.Mutex)
-			dgupds, err := makeDestinationGroupUpdates(
-				cfg.RemoteWriteConfigs,
-				rr.workingDir,
-				rr.clientID,
-				numberOfShards,
-			)
-			if err != nil {
-				level.Error(rr.logger).Log("msg", "failed to init destination group update", "err", err)
-				return err
-			}
-			mxDelete := new(sync.Mutex)
-			toDelete := []int{}
-
-			dgs := dstrb.DestinationGroups()
-			if err = dgs.RangeGo(func(destinationGroupID int, dg *relabeler.DestinationGroup) error {
-				var rangeErr error
-				dgu, ok := dgupds[dg.Name()]
-				if !ok {
-					mxDelete.Lock()
-					toDelete = append(toDelete, destinationGroupID)
-					mxDelete.Unlock()
-					ctxShutdown, cancel := context.WithTimeout(rr.ctx, defaultShutdownTimeout)
-					if rangeErr = dg.Shutdown(ctxShutdown); err != nil {
-						level.Error(rr.logger).Log("msg", "failed shutdown DestinationGroup", "err", rangeErr)
-					}
-					cancel()
-					return nil
-				}
-
-				if !dg.Equal(dgu.DestinationGroupConfig) ||
-					!dg.EqualDialers(dgu.DialersConfigs) {
-					var dialers []relabeler.Dialer
-					if !dg.EqualDialers(dgu.DialersConfigs) {
-						dialers, rangeErr = makeDialers(rr.clock, rr.registerer, dgu.DialersConfigs)
-						if rangeErr != nil {
-							return rangeErr
-						}
-					}
-
-					if rangeErr = dg.ResetTo(dgu.DestinationGroupConfig, dialers); err != nil {
-						return rangeErr
-					}
-				}
-				mxdgupds.Lock()
-				delete(dgupds, dg.Name())
-				mxdgupds.Unlock()
-				return nil
-			}); err != nil {
-				level.Error(rr.logger).Log("msg", "failed to apply config DestinationGroups", "err", err)
-				return err
-			}
-			// delete unused DestinationGroup
-			dgs.RemoveByID(toDelete)
-
-			// DISABLE DestinationGroups
-			// // create new DestinationGroup
-			// for _, dgupd := range dgupds {
-			// 	dialers, err := makeDialers(rr.clock, rr.registerer, dgupd.DialersConfigs)
-			// 	if err != nil {
-			// 		level.Error(rr.logger).Log("msg", "failed to make new dialers", "err", err)
-			// 		return err
-			// 	}
-
-			// 	dg, err := relabeler.NewDestinationGroup(
-			// 		rr.ctx,
-			// 		dgupd.DestinationGroupConfig,
-			// 		encoderSelector,
-			// 		refillCtor,
-			// 		refillSenderCtor,
-			// 		rr.clock,
-			// 		dialers,
-			// 		rr.registerer,
-			// 	)
-			// 	if err != nil {
-			// 		level.Error(rr.logger).Log("msg", "failed to init DestinationGroup", "err", err)
-			// 		return err
-			// 	}
-
-			// 	dgs.Add(dg)
+			// mxdgupds := new(sync.Mutex)
+			// dgupds, err := makeDestinationGroupUpdates(
+			// 	cfg.RemoteWriteConfigs,
+			// 	rr.workingDir,
+			// 	rr.clientID,
+			// 	numberOfShards,
+			// )
+			// if err != nil {
+			// 	level.Error(rr.logger).Log("msg", "failed to init destination group update", "err", err)
+			// 	return err
 			// }
-			dstrb.SetDestinationGroups(dgs)
+			// mxDelete := new(sync.Mutex)
+			// toDelete := []int{}
+
+			// dgs := dstrb.DestinationGroups()
+			// if err = dgs.RangeGo(func(destinationGroupID int, dg *relabeler.DestinationGroup) error {
+			// 	var rangeErr error
+			// 	dgu, ok := dgupds[dg.Name()]
+			// 	if !ok {
+			// 		mxDelete.Lock()
+			// 		toDelete = append(toDelete, destinationGroupID)
+			// 		mxDelete.Unlock()
+			// 		ctxShutdown, cancel := context.WithTimeout(rr.ctx, defaultShutdownTimeout)
+			// 		if rangeErr = dg.Shutdown(ctxShutdown); err != nil {
+			// 			level.Error(rr.logger).Log("msg", "failed shutdown DestinationGroup", "err", rangeErr)
+			// 		}
+			// 		cancel()
+			// 		return nil
+			// 	}
+
+			// 	if !dg.Equal(dgu.DestinationGroupConfig) ||
+			// 		!dg.EqualDialers(dgu.DialersConfigs) {
+			// 		var dialers []relabeler.Dialer
+			// 		if !dg.EqualDialers(dgu.DialersConfigs) {
+			// 			dialers, rangeErr = makeDialers(rr.clock, rr.registerer, dgu.DialersConfigs)
+			// 			if rangeErr != nil {
+			// 				return rangeErr
+			// 			}
+			// 		}
+
+			// 		if rangeErr = dg.ResetTo(dgu.DestinationGroupConfig, dialers); err != nil {
+			// 			return rangeErr
+			// 		}
+			// 	}
+			// 	mxdgupds.Lock()
+			// 	delete(dgupds, dg.Name())
+			// 	mxdgupds.Unlock()
+			// 	return nil
+			// }); err != nil {
+			// 	level.Error(rr.logger).Log("msg", "failed to apply config DestinationGroups", "err", err)
+			// 	return err
+			// }
+			// // delete unused DestinationGroup
+			// dgs.RemoveByID(toDelete)
+
+			// // DISABLE DestinationGroups
+			// // // create new DestinationGroup
+			// // for _, dgupd := range dgupds {
+			// // 	dialers, err := makeDialers(rr.clock, rr.registerer, dgupd.DialersConfigs)
+			// // 	if err != nil {
+			// // 		level.Error(rr.logger).Log("msg", "failed to make new dialers", "err", err)
+			// // 		return err
+			// // 	}
+
+			// // 	dg, err := relabeler.NewDestinationGroup(
+			// // 		rr.ctx,
+			// // 		dgupd.DestinationGroupConfig,
+			// // 		encoderSelector,
+			// // 		refillCtor,
+			// // 		refillSenderCtor,
+			// // 		rr.clock,
+			// // 		dialers,
+			// // 		rr.registerer,
+			// // 	)
+			// // 	if err != nil {
+			// // 		level.Error(rr.logger).Log("msg", "failed to init DestinationGroup", "err", err)
+			// // 		return err
+			// // 	}
+
+			// // 	dgs.Add(dg)
+			// // }
+			// dstrb.SetDestinationGroups(dgs)
 
 			return nil
 		}),
@@ -616,6 +615,7 @@ func convertingConfigDialers(
 				DialerConfig: relabeler.NewDialerConfig(
 					sCfg.URL.URL,
 					clientID,
+					// TODO If not Credentials, accessToken = ""
 					string(sCfg.HTTPClientConfig.Authorization.Credentials),
 				),
 				ConnDialerConfig: ccfg,
