@@ -1387,14 +1387,13 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			sample.Metric = labels.NewBuilder(sample.Metric).
 				Del(excludedLabels...).
 				Labels()
-
 			mb = &metricWithBuckets{sample.Metric, nil}
 			enh.signatureToMetricWithBuckets[string(enh.lblBuf)] = mb
 		}
 		mb.buckets = append(mb.buckets, Bucket{upperBound, sample.F})
 	}
 
-	// Now deal with the histograms.
+	// Now deal with the native histograms.
 	for _, sample := range histogramSamples {
 		// We have to reconstruct the exact same signature as above for
 		// a classic histogram, just ignoring any le label.
@@ -1418,16 +1417,23 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 		})
 	}
 
+	// Now do classic histograms that have already been filtered for conflicting native histograms.
 	for _, mb := range enh.signatureToMetricWithBuckets {
 		if len(mb.buckets) > 0 {
 			res, forcedMonotonicity, _ := BucketQuantile(q, mb.buckets)
-			enh.Out = append(enh.Out, Sample{
-				Metric: mb.metric,
-				F:      res,
-			})
 			if forcedMonotonicity {
 				annos.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(mb.metric.Get(labels.MetricName), args[1].PositionRange()))
 			}
+
+			if !enh.enableDelayedNameRemoval {
+				mb.metric = mb.metric.DropMetricName()
+			}
+
+			enh.Out = append(enh.Out, Sample{
+				Metric:   mb.metric,
+				F:        res,
+				DropName: true,
+			})
 		}
 	}
 
