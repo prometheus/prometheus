@@ -334,7 +334,7 @@ func instantValue(vals []parser.Value, args parser.Expressions, out Vector, isRa
 		// Avoid dividing by 0.
 		return out, nil
 	}
-	switch true {
+	switch {
 	case lastSample.H == nil && prevSample.H == nil:
 		if isRate && lastSample.F < prevSample.F {
 			// Counter reset.
@@ -351,10 +351,17 @@ func instantValue(vals []parser.Value, args parser.Expressions, out Vector, isRa
 		if !isRate && (lastSample.H.CounterResetHint != histogram.GaugeType || prevSample.H.CounterResetHint != histogram.GaugeType) {
 			annos.Add(annotations.NewNativeHistogramNotGaugeWarning(metricName, args.PositionRange()))
 		}
+		_, err := resultSample.H.Sub(prevSample.H)
+		if err != nil {
+			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
+				return out, annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, args.PositionRange()))
+			} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
+				return out, annos.Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, args.PositionRange()))
+			}
+		}
+		// For counter resets
 		if isRate && lastSample.H.DetectReset(prevSample.H) {
-			// Counter reset.
-		} else {
-			_, err := resultSample.H.Sub(prevSample.H)
+			_, err := resultSample.H.Add(prevSample.H)
 			if err != nil {
 				if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 					return out, annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, args.PositionRange()))
@@ -363,6 +370,8 @@ func instantValue(vals []parser.Value, args parser.Expressions, out Vector, isRa
 				}
 			}
 		}
+		resultSample.H.CounterResetHint = histogram.GaugeType
+		resultSample.H.Compact(0)
 	default:
 		// both the samples are different
 		annos.Add(annotations.NewMixedFloatsHistogramsWarning(metricName, args.PositionRange()))
