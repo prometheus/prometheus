@@ -587,10 +587,12 @@ func (s *EncoderDecoderSuite) TestEncodeWALOutputDecode() {
 	segByte := s.transferringData(gos)
 
 	s.T().Log("decoding to RefSamples")
-	refSamples, maxTimestamp, err := dec.Decode(s.baseCtx, segByte, 0)
+	refSamples, stats, err := dec.Decode(s.baseCtx, segByte, 0)
 	s.Require().NoError(err)
 
-	s.Equal(expectedWr.Timeseries[0].Samples[0].Timestamp, maxTimestamp)
+	s.Equal(expectedWr.Timeseries[0].Samples[0].Timestamp, stats.MaxTimestamp())
+	s.Equal(uint64(0), stats.OutdatedSampleCount())
+	s.Equal(uint64(0), stats.DroppedSampleCount())
 	refSamples.Range(func(id uint32, t int64, v float64) bool {
 		if !s.Less(int(id), len(expectedWr.Timeseries)) {
 			return false
@@ -659,11 +661,13 @@ func (s *EncoderDecoderSuite) TestEncodeWALOutputDecodeWithLimit() {
 
 	s.T().Log("decoding to RefSamples")
 
-	refSamples, maxTimestamp, err := dec.Decode(s.baseCtx, segByte, time.Now().UnixMilli()+1)
+	refSamples, stats, err := dec.Decode(s.baseCtx, segByte, time.Now().UnixMilli()+1)
 	s.Require().NoError(err)
 
 	count := 0
-	s.Equal(int64(0), maxTimestamp)
+	s.Equal(int64(0), stats.MaxTimestamp())
+	s.Equal(uint64(1), stats.OutdatedSampleCount())
+	s.Equal(uint64(0), stats.DroppedSampleCount())
 	refSamples.Range(func(id uint32, t int64, v float64) bool {
 		if !s.Less(int(id), len(expectedWr.Timeseries)) {
 			return false

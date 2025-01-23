@@ -278,6 +278,8 @@ extern "C" void prompp_wal_output_decoder_decode(void* args, void* res) {
 
   struct Result {
     int64_t max_timestamp{};
+    uint64_t outdated_sample_count{};
+    uint64_t dropped_sample_count{};
     PromPP::Primitives::Go::Slice<PromPP::WAL::RefSample> ref_samples;
     PromPP::Primitives::Go::Slice<char> error;
   };
@@ -287,19 +289,26 @@ extern "C" void prompp_wal_output_decoder_decode(void* args, void* res) {
 
   try {
     std::ispanstream{static_cast<std::string_view>(in->segment)} >> *in->decoder;
-    in->decoder->process_segment([in, out](PromPP::Primitives::LabelSetID ls_id, PromPP::Primitives::Timestamp ts, PromPP::Primitives::Sample::value_type v)
-                                     PROMPP_LAMBDA_INLINE {
-                                       if (ts < in->lower_limit_timestamp) {
-                                         // skip sample lower limit timestamp
-                                         return;
-                                       }
+    in->decoder->process_segment([in, out](PromPP::Primitives::LabelSetID ls_id, PromPP::Primitives::Timestamp ts, PromPP::Primitives::Sample::value_type v,
+                                           bool is_dropped) PROMPP_LAMBDA_INLINE {
+      if (is_dropped) {
+        // skip dropped sample
+        ++out->dropped_sample_count;
+        return;
+      }
 
-                                       if (out->max_timestamp < ts) {
-                                         out->max_timestamp = ts;
-                                       }
+      if (ts < in->lower_limit_timestamp) {
+        // skip sample lower limit timestamp
+        ++out->outdated_sample_count;
+        return;
+      }
 
-                                       out->ref_samples.emplace_back(ls_id, ts, v);
-                                     });
+      if (out->max_timestamp < ts) {
+        out->max_timestamp = ts;
+      }
+
+      out->ref_samples.emplace_back(ls_id, ts, v);
+    });
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
     handle_current_exception(__func__, err_stream);
@@ -343,6 +352,7 @@ extern "C" void prompp_wal_protobuf_encoder_encode(void* args, void* res) {
   struct Arguments {
     PromPP::Primitives::Go::SliceView<PromPP::WAL::ShardRefSample*> batch;
     PromPP::Primitives::Go::Slice<PromPP::Primitives::Go::Slice<char>> out_slices;
+    PromPP::Primitives::Go::Slice<PromPP::WAL::ProtobufEncoderStats> stats;
     PromPP::WAL::ProtobufEncoder* encoder;
   };
 
@@ -354,7 +364,7 @@ extern "C" void prompp_wal_protobuf_encoder_encode(void* args, void* res) {
   Result* out = new (res) Result();
 
   try {
-    in->encoder->encode(in->batch, in->out_slices);
+    in->encoder->encode(in->batch, in->out_slices, in->stats);
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
     handle_current_exception(__func__, err_stream);
