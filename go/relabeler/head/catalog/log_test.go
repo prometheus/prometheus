@@ -19,10 +19,10 @@ func TestFileLog_Migrate(t *testing.T) {
 	id2 := uuid.MustParse("2d89cb33-9daa-4aea-9855-f844add5e3e4")
 	id3 := uuid.MustParse("ec0c2898-9c42-449c-9a58-74bea665481c")
 
-	records := map[uuid.UUID]*Record{
-		id1: NewRecordWithData(id1, 1, 4, 5, 0, false, 0, StatusNew, &lastWrittenSegmentIDForID1),
-		id2: NewRecordWithData(id2, 2, 34, 420, 0, false, 0, StatusCorrupted, nil),
-		id3: NewRecordWithData(id3, 3, 25, 256, 0, false, 0, StatusPersisted, nil),
+	records := []*Record{
+		NewRecordWithData(id1, 1, 4, 5, 0, false, 0, StatusNew, &lastWrittenSegmentIDForID1),
+		NewRecordWithData(id2, 2, 34, 420, 0, false, 0, StatusCorrupted, nil),
+		NewRecordWithData(id3, 3, 25, 256, 0, false, 0, StatusPersisted, nil),
 	}
 
 	for _, record := range records {
@@ -43,5 +43,7 @@ func fileContentIsEqual(t *testing.T, filePath1, filePath2 string) bool {
 	require.NoError(t, err)
 	data2, err := os.ReadFile(filePath2)
 	require.NoError(t, err)
+	t.Log(string(data1))
+	t.Log(string(data2))
 	return bytes.Equal(data1, data2)
 }
