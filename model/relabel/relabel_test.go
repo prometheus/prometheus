@@ -815,10 +815,8 @@ func TestTargetLabelValidity(t *testing.T) {
 				require.Equal(t, test.valid, relabelTargetUTF8.Match([]byte(test.str)),
 					"Expected %q to be %v", test.str, test.valid)
 			})
-
 		}
 	})
-
 }
 
 func BenchmarkRelabel(b *testing.B) {
