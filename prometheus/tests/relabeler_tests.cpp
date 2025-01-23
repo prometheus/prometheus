@@ -387,7 +387,15 @@ class HashdexTest : public std::vector<ItemTest> {
 
  public:
   using Base::Base;
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const auto& metrics() const noexcept { return *this; }
+  [[nodiscard]] static PROMPP_ALWAYS_INLINE auto metadata() noexcept {
+    struct Stub {};
+    return Stub{};
+  }
 };
+
+static_assert(PromPP::Prometheus::hashdex::HashdexInterface<HashdexTest>);
 
 PROMPP_ALWAYS_INLINE void make_hashdex(HashdexTest& hx, LabelViewSetForTest label_set, std::vector<SampleForTest> samples) {
   hx.emplace_back(hash_value(label_set), label_set, samples);

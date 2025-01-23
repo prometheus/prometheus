@@ -83,7 +83,7 @@ extern "C" void prompp_wal_decoder_decode_to_hashdex(void* args, void* res) {
 
   try {
     out->hashdex_variant = new HashdexVariant{std::in_place_index<HashdexType::kDecoder>};
-    auto& hashdex = std::get<PromPP::WAL::BasicDecoderHashdex>(*out->hashdex_variant);
+    auto& hashdex = std::get<PromPP::WAL::hashdex::BasicDecoder>(*out->hashdex_variant);
     in->decoder->decode_to_hashdex(in->segment, hashdex, *out);
     auto cluster = hashdex.cluster();
     out->cluster.reset_to(cluster.data(), cluster.size());
@@ -102,8 +102,8 @@ extern "C" void prompp_wal_decoder_decode_to_hashdex_with_metric_injection(void*
     PromPP::Primitives::Go::String agent_uuid;
     PromPP::Primitives::Go::String hostname;
 
-    [[nodiscard]] explicit PROMPP_ALWAYS_INLINE operator PromPP::WAL::BasicDecoderHashdex::MetaInjection() const noexcept {
-      return PromPP::WAL::BasicDecoderHashdex::MetaInjection{
+    [[nodiscard]] explicit PROMPP_ALWAYS_INLINE operator PromPP::WAL::hashdex::BasicDecoder::MetaInjection() const noexcept {
+      return PromPP::WAL::hashdex::BasicDecoder::MetaInjection{
           .now = now,
           .sent_at = sent_at,
           .agent_uuid = static_cast<std::string_view>(agent_uuid),
@@ -136,8 +136,8 @@ extern "C" void prompp_wal_decoder_decode_to_hashdex_with_metric_injection(void*
 
   try {
     out->hashdex_variant = new HashdexVariant{std::in_place_index<HashdexType::kDecoder>};
-    auto& hashdex = std::get<PromPP::WAL::BasicDecoderHashdex>(*out->hashdex_variant);
-    in->decoder->decode_to_hashdex(in->segment, hashdex, *out, static_cast<PromPP::WAL::BasicDecoderHashdex::MetaInjection>(*in->meta));
+    auto& hashdex = std::get<PromPP::WAL::hashdex::BasicDecoder>(*out->hashdex_variant);
+    in->decoder->decode_to_hashdex(in->segment, hashdex, *out, static_cast<PromPP::WAL::hashdex::BasicDecoder::MetaInjection>(*in->meta));
     auto cluster = hashdex.cluster();
     out->cluster.reset_to(cluster.data(), cluster.size());
     auto replica = hashdex.replica();

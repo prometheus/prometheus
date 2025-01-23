@@ -6,7 +6,8 @@
 #include <variant>
 
 #include "bare_bones/exception.h"
-#include "wal/hashdex.h"
+#include "wal/hashdex/basic_decoder.h"
+#include "wal/hashdex/go_model.h"
 #include "wal/hashdex/protobuf.h"
 #include "wal/hashdex/scraper/scraper.h"
 
@@ -42,7 +43,7 @@ enum HashdexType : uint8_t {
   kOpenMetricsScraper,
 };
 using HashdexVariant = std::variant<PromPP::WAL::hashdex::Protobuf,
-                                    PromPP::WAL::GoModelHashdex,
-                                    PromPP::WAL::BasicDecoderHashdex,
+                                    PromPP::WAL::hashdex::GoModel,
+                                    PromPP::WAL::hashdex::BasicDecoder,
                                     PromPP::WAL::hashdex::scraper::PrometheusScraper,
                                     PromPP::WAL::hashdex::scraper::OpenMetricsScraper>;

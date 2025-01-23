@@ -6,17 +6,17 @@
 #include <string>
 #include <string_view>
 
-// #include <parallel_hashmap/btree.h>
 #include <parallel_hashmap/phmap.h>
 #include <roaring/roaring.hh>
 
 #include "bare_bones/allocator.h"
 #include "bare_bones/preprocess.h"
 #include "bare_bones/vector.h"
+#include "hashdex.h"
 #include "primitives/go_slice.h"
 #include "primitives/primitives.h"
-#include "prometheus/stateless_relabeler.h"
-#include "prometheus/value.h"
+#include "stateless_relabeler.h"
+#include "value.h"
 
 namespace PromPP::Prometheus::Relabel {
 
@@ -434,7 +434,7 @@ class PerShardRelabeler {
     return track_staleness;
   }
 
-  template <class InputLSS, class TargetLSS, class Hashdex, class StNaNsState, class Stats>
+  template <class InputLSS, class TargetLSS, hashdex::HashdexInterface Hashdex, class StNaNsState, class Stats>
   PROMPP_ALWAYS_INLINE void input_relabeling_internal(InputLSS& input_lss,
                                                       TargetLSS& target_lss,
                                                       Cache& cache,
@@ -630,7 +630,7 @@ class PerShardRelabeler {
     }
   }
 
-  template <class InputLSS, class TargetLSS, class Hashdex, class Stats>
+  template <class InputLSS, class TargetLSS, hashdex::HashdexInterface Hashdex, class Stats>
   PROMPP_ALWAYS_INLINE void input_relabeling(InputLSS& input_lss,
                                              TargetLSS& target_lss,
                                              Cache& cache,
@@ -644,7 +644,7 @@ class PerShardRelabeler {
                               PromPP::Primitives::kNullTimestamp);
   }
 
-  template <class InputLSS, class TargetLSS, class Hashdex, class Stats>
+  template <class InputLSS, class TargetLSS, hashdex::HashdexInterface Hashdex, class Stats>
   PROMPP_ALWAYS_INLINE void input_relabeling_with_stalenans(InputLSS& input_lss,
                                                             TargetLSS& target_lss,
                                                             Cache& cache,

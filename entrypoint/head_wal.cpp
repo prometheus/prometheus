@@ -6,7 +6,6 @@
 #include "primitives/go_slice.h"
 #include "wal/decoder.h"
 #include "wal/encoder.h"
-#include "wal/hashdex.h"
 #include "wal/wal.h"
 
 using Encoder = PromPP::WAL::GenericEncoder<PromPP::WAL::BasicEncoder<entrypoint::head::QueryableEncodingBimap&>>;
