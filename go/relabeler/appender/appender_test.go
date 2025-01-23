@@ -2074,7 +2074,7 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans_WithNullTimestamp(
 	}()
 
 	headID := "head_id"
-	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, head.NoOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
 	require.NoError(s.T(), err)
 	defer func() { _ = hd.Close() }()
 	s.T().Log("make appender")
@@ -2203,7 +2203,7 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans_HonorTimestamps() 
 	}()
 
 	headID := "head_id"
-	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, prometheus.DefaultRegisterer)
+	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, head.NoOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
 	require.NoError(s.T(), err)
 	defer func() { _ = hd.Close() }()
 	s.T().Log("make appender")
