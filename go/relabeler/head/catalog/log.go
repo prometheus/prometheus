@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
 	"io"
 	"os"
 )
@@ -112,7 +111,7 @@ func migrate(file *FileHandler, from, to uint64) error {
 	}
 
 	decoder := DecoderV1{}
-	records := make(map[uuid.UUID]*Record)
+	records := make([]*Record, 0, 10)
 	for {
 		record := Record{}
 		if err := decoder.Decode(file, &record); err != nil {
@@ -121,7 +120,7 @@ func migrate(file *FileHandler, from, to uint64) error {
 			}
 			return fmt.Errorf("failed to decode record: %w", err)
 		}
-		records[record.id] = &record
+		records = append(records, &record)
 	}
 
 	for _, record := range records {
