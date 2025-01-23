@@ -25,6 +25,7 @@ cc_library(
         "@scope_exit",
         "@xxHash",
         "@md5",
+        "@roaring",
         # "@zlib//:zlib",
         # "@lzma//:lzma",
         # "@elf//:elf",

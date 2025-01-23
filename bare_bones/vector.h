@@ -9,6 +9,7 @@
 
 #include <scope_exit.h>
 
+#include "allocated_memory.h"
 #include "concepts.h"
 #include "exception.h"
 #include "memory.h"
@@ -163,15 +164,8 @@ class Vector {
   inline __attribute__((always_inline)) size_t capacity() const noexcept { return data_.size(); }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept {
-    if constexpr (BareBones::concepts::has_allocated_memory<value_type>) {
-      return data_.allocated_memory() +
-             std::accumulate(begin(), end(), 0, [](size_t memory, const auto& item) PROMPP_LAMBDA_INLINE { return memory += item.allocated_memory(); });
-    } else if constexpr (BareBones::concepts::dereferenceable_has_allocated_memory<value_type>) {
-      return data_.allocated_memory() +
-             std::accumulate(begin(), end(), 0, [](size_t memory, const auto& item) PROMPP_LAMBDA_INLINE { return memory += item->allocated_memory(); });
-    } else {
-      return data_.allocated_memory();
-    }
+    return mem::allocated_memory(data_) +
+           std::accumulate(begin(), end(), 0, [](size_t memory, const auto& item) PROMPP_LAMBDA_INLINE { return memory += mem::allocated_memory(item); });
   }
 
   inline __attribute__((always_inline)) void push_back(const T& item) noexcept {
