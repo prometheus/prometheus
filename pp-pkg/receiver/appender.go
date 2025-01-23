@@ -55,6 +55,10 @@ func (a *promAppender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v
 }
 
 func (a *promAppender) Commit() error {
+	if len(a.data.timeSeries) == 0 {
+		return nil
+	}
+
 	_, err := a.receiver.AppendTimeSeries(a.ctx, a.data, nil, a.relabelerID)
 	return err
 }
