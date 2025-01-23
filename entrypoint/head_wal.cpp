@@ -2,6 +2,7 @@
 
 #include "_helpers.hpp"
 #include "head/lss.h"
+#include "head/series_data.h"
 #include "head_wal.h"
 #include "primitives/go_slice.h"
 #include "wal/decoder.h"
@@ -162,6 +163,29 @@ extern "C" void prompp_head_wal_decoder_decode(void* args, void* res) {
   try {
     in->inner_series->clear();
     in->decoder->decode_to_inner_series(in->segment, *in->inner_series, out);
+  } catch (...) {
+    auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
+    handle_current_exception(__func__, err_stream);
+  }
+}
+
+extern "C" void prompp_head_wal_decoder_decode_to_data_storage(void* args, void* res) {
+  struct Arguments {
+    DecoderPtr decoder;
+    PromPP::Primitives::Go::SliceView<char> segment;
+    entrypoint::head::SeriesDataEncoderWrapperPtr encoder_wrapper;
+  };
+
+  struct Result {
+    PromPP::Primitives::Go::Slice<char> error;
+  };
+
+  const auto in = static_cast<Arguments*>(args);
+  const auto out = new (res) Result();
+
+  try {
+    in->decoder->decode(in->segment, [in](PromPP::Primitives::LabelSetID ls_id, PromPP::Primitives::Timestamp timestamp, double value)
+                                         PROMPP_LAMBDA_INLINE { in->encoder_wrapper->encoder.encode(ls_id, timestamp, value); });
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
     handle_current_exception(__func__, err_stream);

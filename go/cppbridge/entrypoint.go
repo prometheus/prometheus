@@ -2189,6 +2189,25 @@ func headWalDecoderDecode(decoder uintptr, segment []byte, innerSeries *InnerSer
 	return handleException(res.exception)
 }
 
+func headWalDecoderDecodeToDataStorage(decoder uintptr, segment []byte, encoder uintptr) error {
+	var args = struct {
+		decoder uintptr
+		segment []byte
+		encoder uintptr
+	}{decoder, segment, encoder}
+	var res struct {
+		exception []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_head_wal_decoder_decode_to_data_storage,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return handleException(res.exception)
+}
+
 func headWalDecoderCreateEncoder(decoder uintptr) uintptr {
 	var args = struct {
 		decoder uintptr
