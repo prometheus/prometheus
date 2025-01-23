@@ -196,7 +196,7 @@ func (h TempHistogram) convertToIntegerHistogram(count uint64) (*histogram.Histo
 		return nil, nil, h.err
 	}
 
-	return rh.Compact(2), nil, nil
+	return rh.Compact(0), nil, nil
 }
 
 func (h TempHistogram) convertToFloatHistogram() (*histogram.Histogram, *histogram.FloatHistogram, error) {
