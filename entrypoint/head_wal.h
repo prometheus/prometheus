@@ -119,6 +119,20 @@ void prompp_head_wal_decoder_dtor(void* args);
  */
 void prompp_head_wal_decoder_decode(void* args, void* res);
 
+/**
+ * @brief Decode WAL-segment into DataStorage
+ *
+ * @param args {
+ *     decoder uintptr // pointer to constructed decoder
+ *     segment []byte  // segment content
+ *     encoder uintptr // pointer to constructed data_storage encoder
+ * }
+ * @param res {
+ *     error      []byte // error string if thrown
+ * }
+ */
+void prompp_head_wal_decoder_decode_to_data_storage(void* args, void* res);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

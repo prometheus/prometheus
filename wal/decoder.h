@@ -76,6 +76,14 @@ class GenericDecoder {
     protobuf_writer.get_statistic(stats);
   }
 
+  template <class Input, class SegmentProcessor>
+    requires std::is_invocable_v<SegmentProcessor, Primitives::LabelSetID, Primitives::Timestamp, double>
+  PROMPP_ALWAYS_INLINE void decode(Input& in, SegmentProcessor&& processor) {
+    std::ispanstream(std::string_view(in.data(), in.size())) >> decoder_;
+
+    decoder_.process_segment(processor);
+  }
+
   // decode_to_hashdex decoding incoming data and add to hashdex with metadata.
   template <class Input, class Hashdex, class Stats, class... PreshardingArgs>
   PROMPP_ALWAYS_INLINE void decode_to_hashdex(Input& in, Hashdex& hx, Stats& stats, PreshardingArgs&&... presharding_args) {
