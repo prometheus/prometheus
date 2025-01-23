@@ -29,7 +29,8 @@ import (
 )
 
 var (
-	relabelTarget = regexp.MustCompile(`^(?:(?:[a-zA-Z_]|\$(?:\{\w+\}|\w+))+\w*)+$`)
+	relabelTargetLegacy = regexp.MustCompile(`^(?:(?:[a-zA-Z_]|\$(?:\{\w+\}|\w+))+\w*)+$`)
+	relabelTargetUTF8   = regexp.MustCompile(`^(?:(?:[^\${}]|\$(?:\{[^\${}]+\}|[^\${}]+))+[^\${}]*)+$`) // All UTF-8 chars, but ${}.
 
 	DefaultRelabelConfig = Config{
 		Action:      Replace,
@@ -124,10 +125,15 @@ func (c *Config) Validate() error {
 	if (c.Action == Replace || c.Action == HashMod || c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && c.TargetLabel == "" {
 		return fmt.Errorf("relabel configuration for %s action requires 'target_label' value", c.Action)
 	}
-	if c.Action == Replace && !strings.Contains(c.TargetLabel, "$") && !model.LabelName(c.TargetLabel).IsValid() {
+	if c.Action == Replace && !varInRegexTemplate(c.TargetLabel) && !model.LabelName(c.TargetLabel).IsValid() {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
-	if c.Action == Replace && strings.Contains(c.TargetLabel, "$") && !relabelTarget.MatchString(c.TargetLabel) {
+
+	relabelTargetRe := relabelTargetUTF8
+	if model.NameValidationScheme == model.LegacyValidation {
+		relabelTargetRe = relabelTargetLegacy
+	}
+	if c.Action == Replace && varInRegexTemplate(c.TargetLabel) && !relabelTargetRe.MatchString(c.TargetLabel) {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
 	if (c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && !model.LabelName(c.TargetLabel).IsValid() {
@@ -136,7 +142,7 @@ func (c *Config) Validate() error {
 	if (c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && c.Replacement != DefaultRelabelConfig.Replacement {
 		return fmt.Errorf("'replacement' can not be set for %s action", c.Action)
 	}
-	if c.Action == LabelMap && !relabelTarget.MatchString(c.Replacement) {
+	if c.Action == LabelMap && !relabelTargetRe.MatchString(c.Replacement) {
 		return fmt.Errorf("%q is invalid 'replacement' for %s action", c.Replacement, c.Action)
 	}
 	if c.Action == HashMod && !model.LabelName(c.TargetLabel).IsValid() {

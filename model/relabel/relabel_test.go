@@ -593,6 +593,75 @@ func TestRelabel(t *testing.T) {
 				"d": "match",
 			}),
 		},
+		{ // Replace on source label with UTF-8 characters.
+			input: labels.FromMap(map[string]string{
+				"utf-8.label": "line1\nline2",
+				"b":           "bar",
+				"c":           "baz",
+			}),
+			relabel: []*Config{
+				{
+					SourceLabels: model.LabelNames{"utf-8.label"},
+					Regex:        MustNewRegexp("line1.*line2"),
+					TargetLabel:  "d",
+					Separator:    ";",
+					Replacement:  `match${1}`,
+					Action:       Replace,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"utf-8.label": "line1\nline2",
+				"b":           "bar",
+				"c":           "baz",
+				"d":           "match",
+			}),
+		},
+		{ // Replace targetLabel with UTF-8 characters.
+			input: labels.FromMap(map[string]string{
+				"a": "line1\nline2",
+				"b": "bar",
+				"c": "baz",
+			}),
+			relabel: []*Config{
+				{
+					SourceLabels: model.LabelNames{"a"},
+					Regex:        MustNewRegexp("line1.*line2"),
+					TargetLabel:  "utf-8.label",
+					Separator:    ";",
+					Replacement:  `match${1}`,
+					Action:       Replace,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"a":           "line1\nline2",
+				"b":           "bar",
+				"c":           "baz",
+				"utf-8.label": "match",
+			}),
+		},
+		{ // Replace targetLabel with UTF-8 characters and $variable.
+			input: labels.FromMap(map[string]string{
+				"a": "line1\nline2",
+				"b": "bar",
+				"c": "baz",
+			}),
+			relabel: []*Config{
+				{
+					SourceLabels: model.LabelNames{"a"},
+					Regex:        MustNewRegexp("line1.*line2"),
+					TargetLabel:  "utf-8.label${1}",
+					Separator:    ";",
+					Replacement:  `match${1}`,
+					Action:       Replace,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"a":           "line1\nline2",
+				"b":           "bar",
+				"c":           "baz",
+				"utf-8.label": "match",
+			}),
+		},
 	}
 
 	for _, test := range tests {
@@ -646,9 +715,8 @@ func TestRelabelValidate(t *testing.T) {
 			config: Config{
 				Action:      Lowercase,
 				Replacement: DefaultRelabelConfig.Replacement,
-				TargetLabel: "${3}",
+				TargetLabel: "${3}", // With UTF-8 naming, this is now a legal relabel rule.
 			},
-			expected: `"${3}" is invalid 'target_label'`,
 		},
 		{
 			config: Config{
@@ -665,9 +733,8 @@ func TestRelabelValidate(t *testing.T) {
 				Regex:        MustNewRegexp("some-([^-]+)-([^,]+)"),
 				Action:       Replace,
 				Replacement:  "${1}",
-				TargetLabel:  "0${3}",
+				TargetLabel:  "0${3}", // With UTF-8 naming this targets a valid label.
 			},
-			expected: `"0${3}" is invalid 'target_label'`,
 		},
 		{
 			config: Config{
@@ -675,9 +742,8 @@ func TestRelabelValidate(t *testing.T) {
 				Regex:        MustNewRegexp("some-([^-]+)-([^,]+)"),
 				Action:       Replace,
 				Replacement:  "${1}",
-				TargetLabel:  "-${3}",
+				TargetLabel:  "-${3}", // With UTF-8 naming this targets a valid label.
 			},
-			expected: `"-${3}" is invalid 'target_label' for replace action`,
 		},
 	}
 	for i, test := range tests {
@@ -693,30 +759,66 @@ func TestRelabelValidate(t *testing.T) {
 }
 
 func TestTargetLabelValidity(t *testing.T) {
-	tests := []struct {
-		str   string
-		valid bool
-	}{
-		{"-label", false},
-		{"label", true},
-		{"label${1}", true},
-		{"${1}label", true},
-		{"${1}", true},
-		{"${1}label", true},
-		{"${", false},
-		{"$", false},
-		{"${}", false},
-		{"foo${", false},
-		{"$1", true},
-		{"asd$2asd", true},
-		{"-foo${1}bar-", false},
-		{"_${1}_", true},
-		{"foo${bar}foo", true},
-	}
-	for _, test := range tests {
-		require.Equal(t, test.valid, relabelTarget.Match([]byte(test.str)),
-			"Expected %q to be %v", test.str, test.valid)
-	}
+	t.Run("legacy", func(t *testing.T) {
+		for _, test := range []struct {
+			str   string
+			valid bool
+		}{
+			{"-label", false},
+			{"label", true},
+			{"label${1}", true},
+			{"${1}label", true},
+			{"${1}", true},
+			{"${1}label", true},
+			{"${", false},
+			{"$", false},
+			{"${}", false},
+			{"foo${", false},
+			{"$1", true},
+			{"asd$2asd", true},
+			{"-foo${1}bar-", false},
+			{"bar.foo${1}bar", false},
+			{"_${1}_", true},
+			{"foo${bar}foo", true},
+		} {
+			t.Run(test.str, func(t *testing.T) {
+				require.Equal(t, test.valid, relabelTargetLegacy.Match([]byte(test.str)),
+					"Expected %q to be %v", test.str, test.valid)
+			})
+		}
+	})
+	t.Run("utf-8", func(t *testing.T) {
+		for _, test := range []struct {
+			str   string
+			valid bool
+		}{
+			{"-label", true},
+			{"label", true},
+			{"label${1}", true},
+			{"${1}label", true},
+			{"${1}", true},
+			{"${1}label", true},
+			{"$1", true},
+			{"asd$2asd", true},
+			{"-foo${1}bar-", true},
+			{"bar.foo${1}bar", true},
+			{"_${1}_", true},
+			{"foo${bar}foo", true},
+
+			// Those can be ambiguous. Currently, we assume user error.
+			{"${", false},
+			{"$", false},
+			{"${}", false},
+			{"foo${", false},
+		} {
+			t.Run(test.str, func(t *testing.T) {
+				require.Equal(t, test.valid, relabelTargetUTF8.Match([]byte(test.str)),
+					"Expected %q to be %v", test.str, test.valid)
+			})
+
+		}
+	})
+
 }
 
 func BenchmarkRelabel(b *testing.B) {
