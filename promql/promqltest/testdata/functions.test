@@ -223,8 +223,8 @@ load 5m
 	http_requests_histogram{path="/c"} 0 0 {{sum:1 count:1}} {{sum:4 count:4 counter_reset_hint:gauge}}
 	http_requests_histogram{path="/d"} 0 0 {{sum:1 count:1 counter_reset_hint:gauge}} {{sum:4 count:4}}
 	http_requests_histogram{path="/e"} 0 1 2 {{sum:4 count:4}}
-	http_requests_histogram{path="/f"} 0 0 {{sum:1 count:1}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
-	http_requests_histogram{path="/g"} 0 0 {{schema:-53 sum:1 count:1 custom_values:[1] buckets:[2]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+	http_requests_histogram{path="/f"} 0 0 {{sum:1 count:1}} {{schema:-53 sum:3 count:3 custom_values:[5 10] buckets:[3]}}
+	http_requests_histogram{path="/g"} 0 0 {{schema:-53 sum:3 count:3 custom_values:[1] buckets:[3]}} {{schema:-53 sum:3 count:3 custom_values:[5 10] buckets:[3]}}
 
 eval instant at 50m irate(http_requests_total[50m])
 	{path="/foo"} .03333333333333333333
@@ -252,8 +252,10 @@ eval_warn instant at 20m irate(http_requests_histogram{path="/d"}[20m])
 eval_warn instant at 20m irate(http_requests_histogram{path="/e"}[20m])
 
 eval_warn instant at 20m irate(http_requests_histogram{path="/f"}[20m])
+	{path="/f"} {{schema:-53 sum:0.01 count:0.01 custom_values:[5 10] buckets:[0.01]}}
 
 eval_warn instant at 20m irate(http_requests_histogram{path="/g"}[20m])
+	{path="/g"} {{schema:-53 sum:0.01 count:0.01 custom_values:[5 10] buckets:[0.01]}}
 
 clear
 
