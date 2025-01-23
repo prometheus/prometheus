@@ -1,17 +1,17 @@
 #pragma once
 
-#include "abstract.h"
 #include "bare_bones/vector.h"
 #include "metric.h"
 #include "primitives/primitives.h"
+#include "prometheus/hashdex.h"
 #include "prometheus/remote_write.h"
 
 namespace PromPP::WAL::hashdex {
 
-class Protobuf : public Abstract {
+class Protobuf : public Prometheus::hashdex::Abstract {
  public:
   Protobuf() noexcept = default;
-  explicit PROMPP_ALWAYS_INLINE Protobuf(const Limits& limits) noexcept
+  explicit PROMPP_ALWAYS_INLINE Protobuf(const Prometheus::hashdex::Limits& limits) noexcept
       : limits_{
             .max_label_name_length = limits.max_label_name_length,
             .max_label_value_length = limits.max_label_value_length,
@@ -137,5 +137,7 @@ class Protobuf : public Abstract {
     };
   }
 };
+
+static_assert(Prometheus::hashdex::HashdexInterface<Protobuf>);
 
 }  // namespace PromPP::WAL::hashdex

@@ -5,7 +5,6 @@
 
 #include "primitives/go_slice.h"
 #include "wal/encoder.h"
-#include "wal/hashdex.h"
 #include "wal/wal.h"
 
 extern "C" void prompp_wal_encoders_version(void* res) {

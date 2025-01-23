@@ -3,7 +3,7 @@
 #include "bare_bones/type_traits.h"
 #include "primitives/go_model.h"
 #include "wal/encoder.h"
-#include "wal/hashdex.h"
+#include "wal/hashdex/go_model.h"
 #include "wal/output_decoder.h"
 
 struct GoLabelSet {
@@ -92,7 +92,7 @@ struct TestWALOutputDecoder : public testing::Test {
       go_time_series_slice.push_back(gts);
     }
     Go::SliceView<Go::TimeSeries>* go_time_series_slice_view = reinterpret_cast<Go::SliceView<Go::TimeSeries>*>(&go_time_series_slice);
-    GoModelHashdex hx;
+    PromPP::WAL::hashdex::GoModel hx;
     hx.presharding(*go_time_series_slice_view);
 
     // make Segment from encoder

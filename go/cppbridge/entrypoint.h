@@ -199,6 +199,20 @@ void prompp_head_wal_decoder_dtor(void* args);
  */
 void prompp_head_wal_decoder_decode(void* args, void* res);
 
+/**
+ * @brief Decode WAL-segment into DataStorage
+ *
+ * @param args {
+ *     decoder uintptr // pointer to constructed decoder
+ *     segment []byte  // segment content
+ *     encoder uintptr // pointer to constructed data_storage encoder
+ * }
+ * @param res {
+ *     error      []byte // error string if thrown
+ * }
+ */
+void prompp_head_wal_decoder_decode_to_data_storage(void* args, void* res);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif
@@ -675,7 +689,7 @@ void prompp_prometheus_relabel_stalenans_state_reset(void* args);
  *     input_lss               uintptr            // pointer to constructed input label sets;
  *     target_lss              uintptr            // pointer to constructed target label sets;
  *     state                   uintptr            // pointer to source state
- *     stale_ts                int64              // timestamp for StaleNaNs
+ *     def_timestamp           int64              // timestamp for metrics and StaleNaNs
  * }
  *
  * @param res {
@@ -1231,12 +1245,15 @@ void prompp_wal_output_decoder_load_from(void* args, void* res);
  * @brief decode segment to slice RefSample.
  *
  * @param args {
+ *     segment               []byte      // segment content
  *     decoder               uintptr     // pointer to constructed output decoder
  *     lower_limit_timestamp int64       // lower limit timestamp
  * }
  *
  * @param res {
  *     max_timestamp         int64       // max timestamp in slice RefSample
+ *     outdated_sample_count uint64      // count of dropped samples on outdated
+ *     dropped_sample_count  uint64      // count of dropped samples on relabeling rules
  *     ref_samples           []RefSample // slice RefSample
  *     error                 []byte      // error string if thrown
  * }

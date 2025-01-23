@@ -1250,7 +1250,7 @@ func prometheusPerShardRelabelerInputRelabeling(
 // hashdex(first stage) with state stalenans.
 func prometheusPerShardRelabelerInputRelabelingWithStalenans(
 	perShardRelabeler, inputLss, targetLss, cache, hashdex, sourceState uintptr,
-	staleNansTS int64,
+	defTimestamp int64,
 	options RelabelerOptions,
 	shardsInnerSeries []*InnerSeries,
 	shardsRelabeledSeries []*RelabeledSeries,
@@ -1265,7 +1265,7 @@ func prometheusPerShardRelabelerInputRelabelingWithStalenans(
 		inputLss              uintptr
 		targetLss             uintptr
 		state                 uintptr
-		staleNansTS           int64
+		defTimestamp          int64
 	}{
 		shardsInnerSeries,
 		shardsRelabeledSeries,
@@ -1276,7 +1276,7 @@ func prometheusPerShardRelabelerInputRelabelingWithStalenans(
 		inputLss,
 		targetLss,
 		sourceState,
-		staleNansTS,
+		defTimestamp,
 	}
 	var res struct {
 		samplesAdded uint32
@@ -2184,6 +2184,25 @@ func headWalDecoderDecode(decoder uintptr, segment []byte, innerSeries *InnerSer
 
 	fastcgo.UnsafeCall2(
 		C.prompp_head_wal_decoder_decode,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+
+	return handleException(res.exception)
+}
+
+func headWalDecoderDecodeToDataStorage(decoder uintptr, segment []byte, encoder uintptr) error {
+	var args = struct {
+		decoder uintptr
+		segment []byte
+		encoder uintptr
+	}{decoder, segment, encoder}
+	var res struct {
+		exception []byte
+	}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_head_wal_decoder_decode_to_data_storage,
 		uintptr(unsafe.Pointer(&args)),
 		uintptr(unsafe.Pointer(&res)),
 	)

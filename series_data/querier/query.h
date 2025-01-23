@@ -72,6 +72,7 @@ struct PROMPP_ATTRIBUTE_PACKED QueriedChunk {
   QueriedChunk(PromPP::Primitives::LabelSetID _ls_id, uint32_t _finalized_chunk_id) : ls_id(_ls_id), finalized_chunk_id(_finalized_chunk_id) {}
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_open() const noexcept { return finalized_chunk_id == kOpenChunkId; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t series_id() const noexcept { return ls_id; }
 
   bool operator==(const QueriedChunk&) const noexcept = default;
 };

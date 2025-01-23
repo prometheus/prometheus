@@ -1,7 +1,8 @@
+#include "go_model.h"
+
 #include <gtest/gtest.h>
 
-#include "wal/hashdex.h"
-
+namespace {
 struct GoLabelSet {
   PromPP::Primitives::Go::Slice<char> data;
   PromPP::Primitives::Go::Slice<PromPP::Primitives::Go::LabelView> pairs;
@@ -13,8 +14,12 @@ struct GoTimeSeries {
   double value;
 };
 
+}  // namespace
+
 template <>
 struct BareBones::IsTriviallyReallocatable<GoTimeSeries> : std::true_type {};
+
+namespace {
 
 template <class Labels>
 void make_timeseries(Labels& labels, uint64_t timestamp, double value, PromPP::Primitives::TimeseriesSemiview& timeseries) {
@@ -87,7 +92,7 @@ TEST(GoModelHashdexTest, HappyPath) {
   PromPP::Primitives::Go::SliceView<PromPP::Primitives::Go::TimeSeries>* go_time_series_slice_view =
       reinterpret_cast<PromPP::Primitives::Go::SliceView<PromPP::Primitives::Go::TimeSeries>*>(&go_time_series_slice);
 
-  PromPP::WAL::GoModelHashdex hdx;
+  PromPP::WAL::hashdex::GoModel hdx;
   hdx.presharding(*go_time_series_slice_view);
 
   EXPECT_EQ(hdx.cluster(), "THECLUSTER");
@@ -101,3 +106,5 @@ TEST(GoModelHashdexTest, HappyPath) {
     timeseries.clear();
   }
 }
+
+}  // namespace

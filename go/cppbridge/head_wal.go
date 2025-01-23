@@ -56,6 +56,10 @@ func (d *HeadWalDecoder) Decode(segment []byte, innerSeries *InnerSeries) error 
 	return headWalDecoderDecode(d.decoder, segment, innerSeries)
 }
 
+func (d *HeadWalDecoder) DecodeToDataStorage(segment []byte, headEncoder *HeadEncoder) error {
+	return headWalDecoderDecodeToDataStorage(d.decoder, segment, headEncoder.encoder)
+}
+
 func (d *HeadWalDecoder) CreateEncoder() *HeadWalEncoder {
 	e := &HeadWalEncoder{
 		lss:     d.lss,

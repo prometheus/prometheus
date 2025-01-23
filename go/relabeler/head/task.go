@@ -94,9 +94,9 @@ func (t *TaskInputRelabeling) WithStaleNans() bool {
 	return t.state.TrackStaleness()
 }
 
-// StaleNansTS return timestamp for stalenans.
-func (t *TaskInputRelabeling) StaleNansTS() int64 {
-	return t.state.StaleNansTS()
+// DefTimestamp return timestamp for scrape time and stalenan.
+func (t *TaskInputRelabeling) DefTimestamp() int64 {
+	return t.state.DefTimestamp()
 }
 
 // IncomingDataDestroy increment or destroy IncomingData.
