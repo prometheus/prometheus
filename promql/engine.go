@@ -3721,14 +3721,15 @@ func detectHistogramStatsDecoding(expr parser.Expr) {
 			if !ok {
 				continue
 			}
-			if call.Func.Name == "histogram_count" || call.Func.Name == "histogram_sum" {
+			switch call.Func.Name {
+			case "histogram_count", "histogram_sum", "histogram_avg":
 				n.SkipHistogramBuckets = true
-				break
-			}
-			if call.Func.Name == "histogram_quantile" || call.Func.Name == "histogram_fraction" {
+			case "histogram_quantile", "histogram_fraction":
 				n.SkipHistogramBuckets = false
-				break
+			default:
+				continue
 			}
+			break
 		}
 		return errors.New("stop")
 	})
