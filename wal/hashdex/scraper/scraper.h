@@ -4,6 +4,7 @@
 
 #include "bare_bones/vector.h"
 #include "parser.h"
+#include "prometheus/hashdex.h"
 #include "prometheus/metric.h"
 #include "prometheus/textparse/escape.h"
 #include "prometheus/value.h"
@@ -508,5 +509,8 @@ class Scraper {
 
 using PrometheusScraper = Scraper<PrometheusParser>;
 using OpenMetricsScraper = Scraper<OpenMetricsParser>;
+
+static_assert(Prometheus::hashdex::HashdexInterface<PrometheusScraper>);
+static_assert(Prometheus::hashdex::HashdexInterface<OpenMetricsScraper>);
 
 }  // namespace PromPP::WAL::hashdex::scraper

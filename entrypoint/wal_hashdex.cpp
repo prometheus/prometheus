@@ -3,7 +3,6 @@
 
 #include "primitives/go_slice.h"
 #include "wal/decoder.h"
-#include "wal/hashdex.h"
 
 using PromPP::WAL::hashdex::scraper::OpenMetricsScraper;
 using PromPP::WAL::hashdex::scraper::PrometheusScraper;
@@ -42,7 +41,7 @@ void get_metadata(void* args, void* res) {
 
 extern "C" void prompp_wal_protobuf_hashdex_ctor(void* args, void* res) {
   struct Arguments {
-    PromPP::WAL::hashdex::Limits limits;
+    PromPP::Prometheus::hashdex::Limits limits;
   };
   struct Result {
     HashdexVariant* hashdex;
@@ -94,7 +93,7 @@ extern "C" void prompp_wal_protobuf_hashdex_get_metadata(void* args, void* res) 
 
 extern "C" void prompp_wal_go_model_hashdex_ctor(void* args, void* res) {
   struct Arguments {
-    PromPP::WAL::hashdex::Limits limits;
+    PromPP::Prometheus::hashdex::Limits limits;
   };
   struct Result {
     HashdexVariant* hashdex;
@@ -119,7 +118,7 @@ extern "C" void prompp_wal_go_model_hashdex_presharding(void* args, void* res) {
   Result* out = new (res) Result();
 
   try {
-    auto& hashdex = std::get<PromPP::WAL::GoModelHashdex>(*in->hashdex_variant);
+    auto& hashdex = std::get<PromPP::WAL::hashdex::GoModel>(*in->hashdex_variant);
     hashdex.presharding(in->data);
     auto cluster = hashdex.cluster();
     out->cluster.reset_to(cluster.data(), cluster.size());

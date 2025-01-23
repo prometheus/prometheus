@@ -4,7 +4,7 @@
 
 #include "bare_bones/preprocess.h"
 
-namespace PromPP::WAL::hashdex {
+namespace PromPP::Prometheus::hashdex {
 
 struct Limits {
   uint32_t max_label_name_length;
@@ -35,4 +35,15 @@ class Abstract {
   }
 };
 
-}  // namespace PromPP::WAL::hashdex
+template <class Hashdex>
+concept HashdexInterface = requires(const Hashdex& const_hashdex) {
+  { const_hashdex.size() } -> std::convertible_to<size_t>;
+
+  { std::forward_iterator<decltype(const_hashdex.begin())> };
+  { const_hashdex.begin() == const_hashdex.end() };
+
+  { const_hashdex.metadata() };
+  { const_hashdex.metrics() };
+};
+
+}  // namespace PromPP::Prometheus::hashdex
