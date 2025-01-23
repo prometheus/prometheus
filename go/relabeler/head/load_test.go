@@ -18,8 +18,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLoad(t *testing.T) {
+type noOpLastAppendedSegmentIDSetter struct {
+}
 
+func (noOpLastAppendedSegmentIDSetter) SetLastAppendedSegmentID(_ uint32) {}
+
+func TestLoad(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
@@ -43,8 +47,8 @@ func TestLoad(t *testing.T) {
 	}
 	var numberOfShards uint16 = 2
 
-	headID := "head_id"
-	h, err := head.Create(headID, 0, tmpDir, cfgs, numberOfShards, prometheus.DefaultRegisterer)
+	headID := "test_head_id"
+	h, err := head.Create(headID, 0, tmpDir, cfgs, numberOfShards, noOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
 	require.NoError(t, err)
 
 	ls := model.NewLabelSetBuilder().Set("__name__", "wal_metric").Set("job", "test").Build()
@@ -115,9 +119,10 @@ func TestLoad(t *testing.T) {
 
 	h.Finalize()
 	require.NoError(t, h.Close())
-
-	h, err = head.Load(headID, 0, tmpDir, cfgs, numberOfShards, prometheus.DefaultRegisterer)
+	var corrupted bool
+	h, corrupted, err = head.Load(headID, 0, tmpDir, cfgs, numberOfShards, noOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
 	require.NoError(t, err)
+	require.False(t, corrupted)
 
 	q = querier.NewQuerier(h, querier.NoOpShardedDeduplicatorFactory(), 0, 10, nil, nil)
 	matcher, err = labels.NewMatcher(labels.MatchEqual, "__name__", "wal_metric")
@@ -217,9 +222,9 @@ func TestLoad(t *testing.T) {
 	h.Finalize()
 	require.NoError(t, h.Close())
 
-	h, err = head.Load(headID, 0, tmpDir, cfgs, numberOfShards, prometheus.DefaultRegisterer)
-
+	h, corrupted, err = head.Load(headID, 0, tmpDir, cfgs, numberOfShards, noOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
 	require.NoError(t, err)
+	require.False(t, corrupted)
 
 	q = querier.NewQuerier(h, querier.NoOpShardedDeduplicatorFactory(), 0, 10, nil, nil)
 	matcher, err = labels.NewMatcher(labels.MatchEqual, "__name__", "wal_metric")

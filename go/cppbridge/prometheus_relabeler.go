@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prometheus/prometheus/model/labels"
+
 	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/common/model"
 )
@@ -224,8 +226,8 @@ const (
 	LabelKeep
 )
 
-// actionNameToValueMap - converting Action string name to Action value.
-var actionNameToValueMap = map[string]Action{
+// ActionNameToValueMap - converting Action string name to Action value.
+var ActionNameToValueMap = map[string]Action{
 	"drop":      Drop,
 	"keep":      Keep,
 	"dropequal": DropEqual,
@@ -271,7 +273,7 @@ func (a *Action) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
-	v, ok := actionNameToValueMap[strings.ToLower(s)]
+	v, ok := ActionNameToValueMap[strings.ToLower(s)]
 	if !ok {
 		return fmt.Errorf("unknown relabel action %q", s)
 	}
@@ -831,6 +833,17 @@ func (opsr *OutputPerShardRelabeler) UpdateRelabelerState(
 type Label struct {
 	Name  string
 	Value string
+}
+
+func LabelsToCppBridgeLabels(lbls labels.Labels) []Label {
+	result := make([]Label, 0, lbls.Len())
+	lbls.Range(func(l labels.Label) {
+		result = append(result, Label{
+			Name:  l.Name,
+			Value: l.Value,
+		})
+	})
+	return result
 }
 
 //

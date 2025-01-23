@@ -19,11 +19,20 @@ type HeadBuilder interface {
 	BuildWithConfig(inputRelabelerConfigs []*config.InputRelabelerConfig, numberOfShards uint16) (relabeler.Head, error)
 }
 
+type HeadActivator interface {
+	Activate(headID string) error
+}
+
+type NoOpHeadActivator struct{}
+
+func (NoOpHeadActivator) Activate(headID string) error { return nil }
+
 // RotatableHead - head wrapper, allows rotations.
 type RotatableHead struct {
-	head    relabeler.Head
-	storage Storage
-	builder HeadBuilder
+	head          relabeler.Head
+	storage       Storage
+	builder       HeadBuilder
+	headActivator HeadActivator
 }
 
 // ID - relabeler.Head interface implementation.
@@ -88,11 +97,12 @@ func (h *RotatableHead) Close() error {
 }
 
 // NewRotatableHead - RotatableHead constructor.
-func NewRotatableHead(head relabeler.Head, storage Storage, builder HeadBuilder) *RotatableHead {
+func NewRotatableHead(head relabeler.Head, storage Storage, builder HeadBuilder, headActivator HeadActivator) *RotatableHead {
 	return &RotatableHead{
-		head:    head,
-		storage: storage,
-		builder: builder,
+		head:          head,
+		storage:       storage,
+		builder:       builder,
+		headActivator: headActivator,
 	}
 }
 
@@ -107,7 +117,7 @@ func (h *RotatableHead) Rotate() error {
 	_ = h.head.Rotate()
 	h.storage.Add(h.head)
 	h.head = newHead
-	return nil
+	return h.headActivator.Activate(newHead.ID())
 }
 
 func (h *RotatableHead) RotateWithConfig(inputRelabelerConfigs []*config.InputRelabelerConfig, numberOfShards uint16) error {

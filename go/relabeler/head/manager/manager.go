@@ -3,7 +3,6 @@ package manager
 import (
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
 	"github.com/prometheus/prometheus/pp/go/relabeler"
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head"
@@ -21,10 +20,10 @@ type ConfigSource interface {
 }
 
 type Catalog interface {
-	List(filter func(record catalog.Record) bool, sortLess func(lhs, rhs catalog.Record) bool) ([]catalog.Record, error)
-	Create(id, dir string, numberOfShards uint16) (catalog.Record, error)
-	SetStatus(id string, status catalog.Status) (catalog.Record, error)
-	Delete(id string) error
+	List(filter func(record *catalog.Record) bool, sortLess func(lhs, rhs *catalog.Record) bool) ([]*catalog.Record, error)
+	Create(numberOfShards uint16) (*catalog.Record, error)
+	SetStatus(id string, status catalog.Status) (*catalog.Record, error)
+	SetCorrupted(id string) (*catalog.Record, error)
 }
 
 type metrics struct {
@@ -42,6 +41,12 @@ type Manager struct {
 	generation   uint64
 	counter      *prometheus.CounterVec
 	registerer   prometheus.Registerer
+}
+
+type SetLastAppendedSegmentIDFn func(segmentID uint32)
+
+func (fn SetLastAppendedSegmentIDFn) SetLastAppendedSegmentID(segmentID uint32) {
+	fn(segmentID)
 }
 
 func New(dir string, configSource ConfigSource, catalog Catalog, registerer prometheus.Registerer) (*Manager, error) {
@@ -73,11 +78,11 @@ func New(dir string, configSource ConfigSource, catalog Catalog, registerer prom
 
 func (m *Manager) Restore(blockDuration time.Duration) (active relabeler.Head, rotated []relabeler.Head, err error) {
 	headRecords, err := m.catalog.List(
-		func(record catalog.Record) bool {
-			return record.DeletedAt == 0 && record.Status != catalog.StatusCorrupted
+		func(record *catalog.Record) bool {
+			return record.DeletedAt() == 0
 		},
-		func(lhs, rhs catalog.Record) bool {
-			return lhs.CreatedAt < rhs.CreatedAt
+		func(lhs, rhs *catalog.Record) bool {
+			return lhs.CreatedAt() < rhs.CreatedAt()
 		},
 	)
 	if err != nil {
@@ -86,32 +91,38 @@ func (m *Manager) Restore(blockDuration time.Duration) (active relabeler.Head, r
 
 	for index, headRecord := range headRecords {
 		var h relabeler.Head
-		headDir := filepath.Join(m.dir, headRecord.Dir)
-		if headRecord.Status == catalog.StatusPersisted {
-			if err = os.RemoveAll(headDir); err != nil {
-				// todo: log
-				continue
-			}
-			if err = m.catalog.Delete(headRecord.ID); err != nil {
-				return nil, nil, fmt.Errorf("failed to delete record from catalog: %w", err)
-			}
-
-			m.counter.With(prometheus.Labels{"type": "deleted"}).Inc()
-
+		headDir := filepath.Join(m.dir, headRecord.Dir())
+		if headRecord.Status() == catalog.StatusPersisted {
 			continue
 		}
 
 		cfgs, _ := m.configSource.Get()
-		h, err = head.Load(headRecord.ID, m.generation, headDir, cfgs, headRecord.NumberOfShards, m.registerer)
+		var corrupted bool
+		hr := headRecord
+		h, corrupted, err = head.Load(
+			headRecord.ID(),
+			m.generation,
+			headDir,
+			cfgs,
+			headRecord.NumberOfShards(),
+			SetLastAppendedSegmentIDFn(func(segmentID uint32) {
+				hr.SetLastAppendedSegmentID(segmentID)
+			}),
+			m.registerer)
 		if err != nil {
-			_, setStatusErr := m.catalog.SetStatus(headRecord.ID, catalog.StatusCorrupted)
-			if setStatusErr != nil {
-				return nil, nil, errors.Join(err, setStatusErr)
-			}
+			logger.Errorf("head load totally failed: %v", err)
 			m.counter.With(prometheus.Labels{"type": "corrupted"}).Inc()
 			continue
 		}
+
+		if corrupted {
+			if _, setCorruptedErr := m.catalog.SetCorrupted(headRecord.ID()); setCorruptedErr != nil {
+				return nil, nil, errors.Join(err, setCorruptedErr)
+			}
+		}
+
 		m.generation++
+		headReleaseFn := headRecord.Acquire()
 		h = NewDiscardableRotatableHead(
 			h,
 			func(id string, err error) error {
@@ -127,24 +138,21 @@ func (m *Manager) Restore(blockDuration time.Duration) (active relabeler.Head, r
 					return discardErr
 				}
 				m.counter.With(prometheus.Labels{"type": "persisted"}).Inc()
-				if discardErr = os.RemoveAll(headDir); discardErr != nil {
-					logger.Errorf("FAILED TO DELETE DIR", headDir, discardErr)
-					return discardErr
-				}
-				if discardErr = m.catalog.Delete(id); discardErr != nil {
-					return discardErr
-				}
-				m.counter.With(prometheus.Labels{"type": "deleted"}).Inc()
 				return nil
-			})
+			},
+			func(id string) error {
+				headReleaseFn()
+				return nil
+			},
+		)
 		m.counter.With(prometheus.Labels{"type": "created"}).Inc()
-		if index == len(headRecords)-1 && time.Now().Sub(time.UnixMilli(headRecord.CreatedAt)).Milliseconds() < blockDuration.Milliseconds() {
+		if !corrupted && index == len(headRecords)-1 && time.Now().Sub(time.UnixMilli(headRecord.CreatedAt())).Milliseconds() < blockDuration.Milliseconds() {
 			active = h
 			continue
 		}
 		h.Finalize()
-		if headRecord.Status != catalog.StatusRotated {
-			if _, err = m.catalog.SetStatus(headRecord.ID, catalog.StatusRotated); err != nil {
+		if headRecord.Status() != catalog.StatusRotated {
+			if _, err = m.catalog.SetStatus(headRecord.ID(), catalog.StatusRotated); err != nil {
 				return nil, nil, fmt.Errorf("failed to set status: %w", err)
 			}
 			m.counter.With(prometheus.Labels{"type": "rotated"}).Inc()
@@ -169,8 +177,12 @@ func (m *Manager) Build() (relabeler.Head, error) {
 }
 
 func (m *Manager) BuildWithConfig(inputRelabelerConfigs []*config.InputRelabelerConfig, numberOfShards uint16) (h relabeler.Head, err error) {
-	id := uuid.New().String()
-	headDir := filepath.Join(m.dir, id)
+	headRecord, err := m.catalog.Create(numberOfShards)
+	if err != nil {
+		return nil, err
+	}
+
+	headDir := filepath.Join(m.dir, headRecord.ID())
 	if err = os.Mkdir(headDir, 0777); err != nil {
 		return nil, err
 	}
@@ -181,17 +193,22 @@ func (m *Manager) BuildWithConfig(inputRelabelerConfigs []*config.InputRelabeler
 	}()
 
 	generation := m.generation
-
-	h, err = head.Create(id, generation, headDir, inputRelabelerConfigs, numberOfShards, m.registerer)
+	h, err = head.Create(
+		headRecord.ID(),
+		generation,
+		headDir,
+		inputRelabelerConfigs,
+		numberOfShards,
+		SetLastAppendedSegmentIDFn(func(segmentID uint32) {
+			headRecord.SetLastAppendedSegmentID(segmentID)
+		}),
+		m.registerer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create head: %w", err)
 	}
 
-	if _, err = m.catalog.Create(id, id, numberOfShards); err != nil {
-		return nil, err
-	}
-
 	m.generation++
+	releaseHeadFn := headRecord.Acquire()
 
 	m.counter.With(prometheus.Labels{"type": "created"}).Inc()
 	return NewDiscardableRotatableHead(
@@ -209,13 +226,10 @@ func (m *Manager) BuildWithConfig(inputRelabelerConfigs []*config.InputRelabeler
 				return discardErr
 			}
 			m.counter.With(prometheus.Labels{"type": "persisted"}).Inc()
-			if discardErr = os.RemoveAll(headDir); discardErr != nil {
-				return discardErr
-			}
-			if discardErr = m.catalog.Delete(id); discardErr != nil {
-				return discardErr
-			}
-			m.counter.With(prometheus.Labels{"type": "deleted"}).Inc()
+			return nil
+		},
+		func(id string) error {
+			releaseHeadFn()
 			return nil
 		},
 	), nil

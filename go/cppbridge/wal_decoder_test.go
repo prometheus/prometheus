@@ -245,7 +245,7 @@ func (s *OutputDecoderSuite) TestWALProtobufEncoderEncode() {
 	}
 
 	dec := cppbridge.NewWALProtobufEncoder(outputLsses)
-	data, err := dec.Encode(context.Background(), batch, 1)
+	data, err := dec.Encode(batch, 1)
 	s.Require().NoError(err)
 
 	s.Equal(int64(400), data[0].MaxTimestamp())

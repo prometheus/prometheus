@@ -10,16 +10,18 @@ import (
 )
 
 type DiscardableRotatableHead struct {
-	head      relabeler.Head
-	onRotate  func(id string, err error) error
-	onDiscard func(id string) error
+	head       relabeler.Head
+	onRotate   func(id string, err error) error
+	onDiscard  func(id string) error
+	afterClose func(id string) error
 }
 
-func NewDiscardableRotatableHead(head relabeler.Head, onRotate func(id string, err error) error, onDiscard func(id string) error) *DiscardableRotatableHead {
+func NewDiscardableRotatableHead(head relabeler.Head, onRotate func(id string, err error) error, onDiscard func(id string) error, afterClose func(id string) error) *DiscardableRotatableHead {
 	return &DiscardableRotatableHead{
-		head:      head,
-		onRotate:  onRotate,
-		onDiscard: onDiscard,
+		head:       head,
+		onRotate:   onRotate,
+		onDiscard:  onDiscard,
+		afterClose: afterClose,
 	}
 }
 
@@ -77,7 +79,11 @@ func (h *DiscardableRotatableHead) Rotate() error {
 }
 
 func (h *DiscardableRotatableHead) Close() error {
-	return h.head.Close()
+	err := h.head.Close()
+	if h.afterClose != nil {
+		err = errors.Join(err, h.afterClose(h.ID()))
+	}
+	return err
 }
 
 func (h *DiscardableRotatableHead) Discard() (err error) {
