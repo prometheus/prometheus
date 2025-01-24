@@ -3,24 +3,27 @@
 #include <string>
 #include <vector>
 
+#include <ranges>
+
 #include <gtest/gtest.h>
 
 #include "bare_bones/stream_v_byte.h"
 
 namespace {
 
-static const std::vector<uint64_t> ETALONS_BOUNDARY_VALUES = {1,        255,        256,        65535,         65536,         16777215,
-                                                              16777216, 4294967295, 4294967296, 1099511627775, 1099511627776, 9223372036854775807};
+using BareBones::StreamVByte::CompactSequence;
+using BareBones::StreamVByte::Sequence;
+
+const std::vector<uint64_t> ETALONS_BOUNDARY_VALUES = {1,        255,        256,        65535,         65536,         16777215,
+                                                       16777216, 4294967295, 4294967296, 1099511627775, 1099511627776, 9223372036854775807};
 
 template <class T>
-class Sequence : public testing::Test {};
+class SequenceFixture : public testing::Test {};
 
-typedef testing::Types<BareBones::StreamVByte::Sequence<BareBones::StreamVByte::Codec1238>,
-                       BareBones::StreamVByte::Sequence<BareBones::StreamVByte::Codec1238Mostly1>>
-    SequenceCodecTypes;
-TYPED_TEST_SUITE(Sequence, SequenceCodecTypes);
+using SequenceCodecTypes = testing::Types<Sequence<BareBones::StreamVByte::Codec1238>, Sequence<BareBones::StreamVByte::Codec1238Mostly1>>;
+TYPED_TEST_SUITE(SequenceFixture, SequenceCodecTypes);
 
-TYPED_TEST(Sequence, Codec64) {
+TYPED_TEST(SequenceFixture, Codec64) {
   TypeParam outcomes;
 
   for (auto& etalon : ETALONS_BOUNDARY_VALUES) {
@@ -33,7 +36,7 @@ TYPED_TEST(Sequence, Codec64) {
 template <class T>
 class Container : public testing::Test {};
 
-typedef testing::Types<std::vector<uint8_t>, BareBones::Vector<uint8_t>> ContainerCodecTypes;
+using ContainerCodecTypes = testing::Types<std::vector<uint8_t>, BareBones::Vector<uint8_t>>;
 
 TYPED_TEST_SUITE(Container, ContainerCodecTypes);
 
@@ -49,5 +52,30 @@ TYPED_TEST(Container, Codec64) {
 
   EXPECT_TRUE(std::ranges::equal(std::begin(ETALONS_BOUNDARY_VALUES), std::end(ETALONS_BOUNDARY_VALUES), outcomes_b_i, outcomes_e_i));
 }
+
+class CompactSequenceFixture : public ::testing::TestWithParam<std::ranges::iota_view<uint32_t, uint32_t>> {
+ protected:
+  CompactSequence<BareBones::StreamVByte::Codec0124, 4> sequence_;
+};
+
+TEST_P(CompactSequenceFixture, TestIota) {
+  // Arrange
+
+  // Act
+  std::ranges::copy(GetParam(), std::back_insert_iterator(sequence_));
+
+  // Assert
+  EXPECT_TRUE(std::ranges::equal(std::begin(GetParam()), std::end(GetParam()), std::begin(sequence_), std::end(sequence_)));
+}
+
+INSTANTIATE_TEST_SUITE_P(Cases,
+                         CompactSequenceFixture,
+                         testing::Values(std::views::iota(0U, 0U),
+                                         std::views::iota(0U, 3U),
+                                         std::views::iota(0U, 4U),
+                                         std::views::iota(0U, 5U),
+                                         std::views::iota(0U, 8U),
+                                         std::views::iota(0U, 9U),
+                                         std::views::iota(std::numeric_limits<uint32_t>::max() - 100, std::numeric_limits<uint32_t>::max())));
 
 }  // namespace
