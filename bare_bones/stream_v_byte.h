@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <fstream>
 #include <utility>
 
@@ -799,6 +800,119 @@ template <class Codec, std::random_access_iterator InnerIteratorType>
 inline __attribute__((always_inline)) auto decoder(InnerIteratorType i, uint32_t size) noexcept {
   return std::pair(DecodeIterator<Codec, InnerIteratorType>(i, size), DecodeIteratorSentinel());
 }
+
+template <class Codec, uint32_t kPreAllocationElementsCount = 1024>
+class CompactSequence {
+ public:
+  static_assert(std::popcount(kPreAllocationElementsCount) == 1, "kPreAllocationElementsCount must be a power of two");
+  static_assert(kPreAllocationElementsCount % 4 == 0, "kPreAllocationElementsCount must be a multiple of 4");
+
+  using value_type = typename Codec::value_type;
+
+  static constexpr uint32_t kMaxKeySize = kPreAllocationElementsCount / 4;
+  static constexpr uint32_t kMaxDataSize = kPreAllocationElementsCount * sizeof(value_type);
+
+  class DecodeIterator {
+    const uint8_t* key_iterator_;
+    const uint8_t* data_iterator_;
+    uint32_t offset_{};
+    uint32_t size_;
+    uint8_t shift_{};
+    uint8_t code_{};
+
+   public:
+    using iterator_category = std::input_iterator_tag;
+    using value_type = typename Codec::value_type;
+    using difference_type = std::ptrdiff_t;
+
+    PROMPP_ALWAYS_INLINE DecodeIterator(const uint8_t* key_iterator, const uint8_t* data_iterator, uint32_t size) noexcept
+        : key_iterator_(key_iterator), data_iterator_(data_iterator), size_(size), code_(size_ == 0 ? 0 : (*key_iterator_ & 0x03)) {}
+
+    PROMPP_ALWAYS_INLINE DecodeIterator& operator++() noexcept {
+      assert(size_ != 0);
+
+      data_iterator_ += Codec::code_to_length(code_);
+
+      if (++offset_ % kPreAllocationElementsCount == 0) [[unlikely]] {
+        key_iterator_ = std::exchange(data_iterator_, data_iterator_ + kMaxKeySize);
+        shift_ = 0;
+      } else {
+        shift_ += 2;
+        key_iterator_ += (shift_ == 8);
+        shift_ %= 8;
+      }
+
+      code_ = (*key_iterator_ >> shift_) % 4;
+      return *this;
+    }
+
+    PROMPP_ALWAYS_INLINE DecodeIterator operator++(int) noexcept {
+      DecodeIterator retval = *this;
+      ++*this;
+      return retval;
+    }
+    PROMPP_ALWAYS_INLINE bool operator==(const DecodeIterator& other) const noexcept = default;
+    PROMPP_ALWAYS_INLINE bool operator==(const DecodeIteratorSentinel&) const noexcept { return offset_ == size_; }
+
+    PROMPP_ALWAYS_INLINE value_type operator*() const noexcept { return Codec::decode(code_, data_iterator_); }
+  };
+
+  using iterator = DecodeIterator;
+  using const_iterator = DecodeIterator;
+  using sentinel = DecodeIteratorSentinel;
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return buffer_.allocated_memory(); }
+
+ private:
+  Memory<uint8_t> buffer_;
+  Memory<uint8_t>::iterator key_iterator_ = nullptr;
+  Memory<uint8_t>::iterator data_iterator_ = nullptr;
+  uint32_t size_ = 0;
+
+  PROMPP_ALWAYS_INLINE void reserve_for_next_elements() noexcept {
+    const auto current_size = data_iterator_ - buffer_;
+    buffer_.grow_to_fit_at_least_and_fill_with_zeros(current_size + kMaxKeySize + kMaxDataSize);
+
+    key_iterator_ = buffer_ + current_size;
+    data_iterator_ = key_iterator_ + kMaxKeySize;
+  }
+
+ public:
+  CompactSequence() noexcept = default;
+  CompactSequence(const CompactSequence&) = delete;
+  CompactSequence& operator=(const CompactSequence&) = delete;
+  CompactSequence(CompactSequence&&) noexcept = default;
+  CompactSequence& operator=(CompactSequence&&) noexcept = default;
+
+  PROMPP_ALWAYS_INLINE void push_back(value_type val) noexcept {
+    if ((size_ % kPreAllocationElementsCount) == 0) [[unlikely]] {
+      reserve_for_next_elements();
+    }
+
+    auto code = Codec::encode(val, data_iterator_);
+    *key_iterator_ |= code << ((size_ & 0x03) << 1);
+
+    ++size_;
+
+    key_iterator_ += !(size_ % 4);
+  }
+
+  PROMPP_ALWAYS_INLINE void clear() noexcept {
+    if (size_ != 0) [[likely]] {
+      std::memset(buffer_, 0, kMaxKeySize);
+      key_iterator_ = buffer_;
+      data_iterator_ = key_iterator_ + kMaxKeySize;
+
+      size_ = 0;
+    }
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t size() const noexcept { return size_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool empty() const noexcept { return !size_; }
+
+  PROMPP_ALWAYS_INLINE auto begin() const noexcept { return DecodeIterator(buffer_, buffer_ + kMaxKeySize, size_); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE static auto end() noexcept { return DecodeIteratorSentinel{}; }
+};
 
 }  // namespace StreamVByte
 

@@ -139,6 +139,11 @@ class Memory {
 
   inline __attribute__((always_inline)) size_t size() const noexcept { return size_; }
 
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const T* begin() const noexcept { return data_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE T* begin() noexcept { return data_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const T* end() const noexcept { return data_ + size_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE T* end() noexcept { return data_ + size_; }
+
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return size_ * sizeof(T); }
 };
 

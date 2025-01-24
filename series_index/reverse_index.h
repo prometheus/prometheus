@@ -12,7 +12,7 @@ namespace series_index {
 static constexpr uint32_t kOptimalPreAllocationElementsCount = 8;
 
 using SeriesIdSequence = BareBones::EncodedSequence<
-    BareBones::Encoding::DeltaRLE<BareBones::StreamVByte::Sequence<BareBones::StreamVByte::Codec0124, kOptimalPreAllocationElementsCount>>>;
+    BareBones::Encoding::DeltaRLE<BareBones::StreamVByte::CompactSequence<BareBones::StreamVByte::Codec0124, kOptimalPreAllocationElementsCount>>>;
 
 class CompactSeriesIdSequence {
  public:
