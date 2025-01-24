@@ -237,7 +237,7 @@ func (r *RuleNode) Validate() (nodes []WrappedError) {
 		// Disallow "{}" chars.
 		if strings.Contains(r.Record.Value, "{") || strings.Contains(r.Record.Value, "}") {
 			nodes = append(nodes, WrappedError{
-				err:  fmt.Errorf("potential issue in the recording rule name; should it be in expr?: %s", r.Record.Value),
+				err:  fmt.Errorf("braces present in the recording rule name; should it be in expr?: %s", r.Record.Value),
 				node: &r.Record,
 			})
 		}
