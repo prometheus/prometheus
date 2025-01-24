@@ -117,10 +117,10 @@ func TestLoad(t *testing.T) {
 
 	require.NoError(t, q.Close())
 
-	h.Finalize()
+	require.NoError(t, h.Finalize())
 	require.NoError(t, h.Close())
 	var corrupted bool
-	h, corrupted, err = head.Load(headID, 0, tmpDir, cfgs, numberOfShards, noOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
+	h, corrupted, _, err = head.Load(headID, 0, tmpDir, cfgs, numberOfShards, noOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
 	require.NoError(t, err)
 	require.False(t, corrupted)
 
@@ -219,10 +219,10 @@ func TestLoad(t *testing.T) {
 
 	require.NoError(t, q.Close())
 
-	h.Finalize()
+	require.NoError(t, h.Finalize())
 	require.NoError(t, h.Close())
 
-	h, corrupted, err = head.Load(headID, 0, tmpDir, cfgs, numberOfShards, noOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
+	h, corrupted, _, err = head.Load(headID, 0, tmpDir, cfgs, numberOfShards, noOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
 	require.NoError(t, err)
 	require.False(t, corrupted)
 
@@ -331,7 +331,7 @@ func TestLoad(t *testing.T) {
 
 	require.NoError(t, q.Close())
 
-	h.Finalize()
+	require.NoError(t, h.Finalize())
 	require.NoError(t, h.Close())
 }
 
@@ -354,6 +354,6 @@ func appendTimeSeries(t *testing.T, ctx context.Context, h *head.Head, timeSerie
 
 	incomingData := &relabeler.IncomingData{Hashdex: hx, Data: tsd}
 
-	_, _, err = h.Append(ctx, incomingData, cppbridge.NewState(h.NumberOfShards()), "transparent_relabeler")
+	_, _, err = h.Append(ctx, incomingData, cppbridge.NewState(h.NumberOfShards()), "transparent_relabeler", true)
 	return err
 }

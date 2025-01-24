@@ -6,11 +6,12 @@ import (
 	"fmt"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
-	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
+	"github.com/prometheus/prometheus/pp/go/util/optional"
 	"github.com/prometheus/client_golang/prometheus"
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 const (
@@ -62,10 +63,45 @@ func Create(id string, generation uint64, dir string, configs []*config.InputRel
 	return New(id, generation, configs, lsses, wals, dataStorages, numberOfShards, nil, lastAppendedSegmentIDSetter, registerer)
 }
 
-func Load(id string, generation uint64, dir string, configs []*config.InputRelabelerConfig, numberOfShards uint16, lastAppendedSegmentIDSetter LastAppendedSegmentIDSetter, registerer prometheus.Registerer) (_ *Head, corrupted bool, err error) {
+func Load(id string, generation uint64, dir string, configs []*config.InputRelabelerConfig, numberOfShards uint16, lastAppendedSegmentIDSetter LastAppendedSegmentIDSetter, registerer prometheus.Registerer) (_ *Head, corrupted bool, numberOfSegments int, err error) {
+	shardLoadResults := make([]ShardLoadResult, numberOfShards)
+	wg := &sync.WaitGroup{}
+	for shardID := uint16(0); shardID < numberOfShards; shardID++ {
+		wg.Add(1)
+		shardWalFilePath := filepath.Join(dir, fmt.Sprintf("shard_%d.wal", shardID))
+		go func(shardID uint16, shardWalFilePath string) {
+			defer wg.Done()
+			shardLoadResults[shardID] = NewShardLoader(shardWalFilePath).Load()
+		}(shardID, shardWalFilePath)
+	}
+	wg.Wait()
+
 	lsses := make([]*LSS, numberOfShards)
 	wals := make([]*ShardWal, numberOfShards)
 	dataStorages := make([]*DataStorage, numberOfShards)
+	numberOfSegmentsRead := optional.Optional[int]{}
+
+	for shardID, shardLoadResult := range shardLoadResults {
+		lsses[shardID] = shardLoadResult.Lss
+		wals[shardID] = shardLoadResult.Wal
+		dataStorages[shardID] = shardLoadResult.DataStorage
+		if shardLoadResult.Corrupted {
+			corrupted = true
+		}
+		if numberOfSegmentsRead.IsNil() {
+			numberOfSegmentsRead.Set(shardLoadResult.NumberOfSegments)
+		} else {
+			if numberOfSegmentsRead.Value() != shardLoadResult.NumberOfSegments {
+				corrupted = true
+			}
+		}
+	}
+
+	var lastAppendedSegmentID *uint32
+	if !numberOfSegmentsRead.IsNil() && numberOfSegmentsRead.Value() > 0 {
+		value := uint32(numberOfSegmentsRead.Value() - 1)
+		lastAppendedSegmentID = &value
+	}
 
 	defer func() {
 		if err == nil {
@@ -78,122 +114,90 @@ func Load(id string, generation uint64, dir string, configs []*config.InputRelab
 		}
 	}()
 
-	lastAppendedSegmentIDs := make([]*uint32, numberOfShards)
-	for shardID := uint16(0); shardID < numberOfShards; shardID++ {
-		inputLss := cppbridge.NewLssStorage()
-		targetLss := cppbridge.NewQueryableLssStorage()
-		lsses[shardID] = &LSS{
-			input:  inputLss,
-			target: targetLss,
-		}
-		dataStorage := cppbridge.NewHeadDataStorage()
-		dataStorages[shardID] = &DataStorage{
-			dataStorage: dataStorage,
-			encoder:     cppbridge.NewHeadEncoderWithDataStorage(dataStorage),
-		}
-
-		shardFilePath := filepath.Join(dir, fmt.Sprintf("shard_%d.wal", shardID))
-		var shardWal *ShardWal
-		var isCorrupted bool
-		var lastSegmentID *uint32
-		shardWal, lastSegmentID, isCorrupted, err = openAndReplayWal(shardFilePath, targetLss, dataStorages[shardID])
-		if err != nil {
-			return nil, corrupted, err
-		}
-		if isCorrupted && !corrupted {
-			corrupted = true
-		}
-		wals[shardID] = shardWal
-		lastAppendedSegmentIDs[shardID] = lastSegmentID
-	}
-
-	var lastAppendedSegmentID *uint32
-	{
-		isNotSet := true
-		for _, shardSegmentID := range lastAppendedSegmentIDs {
-			if shardSegmentID == nil {
-				if !isNotSet {
-					corrupted = true
-				}
-				continue
-			}
-			isNotSet = false
-			if lastAppendedSegmentID == nil {
-				lastAppendedSegmentID = &(*shardSegmentID)
-				continue
-			}
-
-			if *lastAppendedSegmentID != *shardSegmentID {
-				corrupted = true
-				if *lastAppendedSegmentID < *shardSegmentID {
-					lastAppendedSegmentID = &(*shardSegmentID)
-				}
-			}
-		}
-	}
-
 	h, err := New(id, generation, configs, lsses, wals, dataStorages, numberOfShards, lastAppendedSegmentID, lastAppendedSegmentIDSetter, registerer)
 	if err != nil {
-		return nil, corrupted, fmt.Errorf("failed to create head: %w", err)
+		return nil, corrupted, numberOfSegmentsRead.Value(), fmt.Errorf("failed to create head: %w", err)
 	}
 
-	return h, corrupted, nil
+	return h, corrupted, numberOfSegmentsRead.Value(), nil
 }
 
-func openAndReplayWal(shardFilePath string, lss *cppbridge.LabelSetStorage, dataStorage *DataStorage) (_ *ShardWal, lastSegmentID *uint32, corrupted bool, err error) {
-	var shardFile *os.File
-	shardFile, err = os.OpenFile(shardFilePath, os.O_CREATE|os.O_RDWR, 0666)
-	if err != nil {
-		return nil, lastSegmentID, corrupted, fmt.Errorf("failed to create shard wal file: %w", err)
-	}
-
-	var offset int
-	var encoder *cppbridge.HeadWalEncoder
-	offset, lastSegmentID, encoder, err = replayWal(shardFile, lss, dataStorage)
-	if err != nil {
-		logger.Errorf(fmt.Errorf("failed to replay wal: %w", err).Error())
-		corrupted = true
-		return newCorruptedShardWal(), lastSegmentID, corrupted, shardFile.Close()
-	}
-
-	return newShardWal(encoder, offset != 0, newBufferedShardWalWriter(shardFile)), lastSegmentID, corrupted, nil
+type ShardLoader struct {
+	shardFilePath string
 }
 
-func replayWal(file *os.File, lss *cppbridge.LabelSetStorage, dataStorage *DataStorage) (offset int, lastSegmentID *uint32, encoder *cppbridge.HeadWalEncoder, err error) {
-	logger.Debugf("replaying wal file", file.Name())
-	bufferedReader := bufio.NewReaderSize(file, 1024*1024*4)
-	_, encoderVersion, _, err := ReadHeader(bufferedReader)
+func NewShardLoader(shardFilePath string) *ShardLoader {
+	return &ShardLoader{
+		shardFilePath: shardFilePath,
+	}
+}
+
+type ShardLoadResult struct {
+	Lss              *LSS
+	DataStorage      *DataStorage
+	Wal              *ShardWal
+	NumberOfSegments int
+	Corrupted        bool
+	Err              error
+}
+
+func (l *ShardLoader) Load() (result ShardLoadResult) {
+	targetLss := cppbridge.NewQueryableLssStorage()
+	dataStorage := NewDataStorage()
+
+	result.Lss = &LSS{
+		input:  cppbridge.NewLssStorage(),
+		target: targetLss,
+	}
+	result.DataStorage = dataStorage
+	result.Wal = newCorruptedShardWal()
+	result.Corrupted = true
+
+	shardWalFile, err := os.OpenFile(l.shardFilePath, os.O_RDWR, 0600)
 	if err != nil {
-		return offset, lastSegmentID, nil, fmt.Errorf("failed to read header: %w", err)
+		result.Err = err
+		return
 	}
 
-	decoder := cppbridge.NewHeadWalDecoder(lss, encoderVersion)
-	innerSeries := cppbridge.NewInnerSeries()
+	defer func() {
+		if result.Corrupted {
+			_ = shardWalFile.Close()
+		}
+	}()
 
+	reader := bufio.NewReaderSize(shardWalFile, 1024*1024*4)
+	_, encoderVersion, _, err := ReadHeader(reader)
+	if err != nil {
+		result.Err = fmt.Errorf("failed to read wal header: %w", err)
+		return
+	}
+
+	decoder := cppbridge.NewHeadWalDecoder(targetLss, encoderVersion)
+	lastReadSegmentID := -1
+
+readLoop:
 	for {
-		var bytesRead int
 		var segment DecodedSegment
-		segment, bytesRead, err = ReadSegment(bufferedReader)
+		segment, _, err = ReadSegment(reader)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				return offset, lastSegmentID, decoder.CreateEncoder(), nil
+				break readLoop
 			}
-			return offset, lastSegmentID, nil, fmt.Errorf("failed to read segment: %w", err)
+			result.Err = fmt.Errorf("failed to read segment: %w", err)
+			return result
 		}
-		offset += bytesRead
 
-		err = decoder.Decode(segment.Data(), innerSeries)
+		err = decoder.DecodeToDataStorage(segment.data, dataStorage.encoder)
 		if err != nil {
-			return offset, lastSegmentID, nil, fmt.Errorf("failed to decode segment: %w", err)
+			result.Err = fmt.Errorf("failed to decode segment: %w", err)
+			return
 		}
 
-		dataStorage.AppendInnerSeriesSlice([]*cppbridge.InnerSeries{innerSeries})
-
-		if lastSegmentID == nil {
-			var segmentID uint32
-			lastSegmentID = &segmentID
-		} else {
-			*lastSegmentID++
-		}
+		lastReadSegmentID++
 	}
+
+	result.NumberOfSegments = lastReadSegmentID + 1
+	result.Wal = newShardWal(decoder.CreateEncoder(), true, shardWalFile)
+	result.Corrupted = false
+	return result
 }

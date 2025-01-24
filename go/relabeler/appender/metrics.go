@@ -22,7 +22,7 @@ type MetricsWriteTrigger struct {
 	closer   *util.Closer
 }
 
-// MetricsWriteTrigger - MetricsWriteTrigger constructor.
+// NewMetricsWriteTrigger - MetricsWriteTrigger constructor.
 func NewMetricsWriteTrigger(interval time.Duration, targets ...MetricWriterTarget) *MetricsWriteTrigger {
 	t := &MetricsWriteTrigger{
 		interval: interval,

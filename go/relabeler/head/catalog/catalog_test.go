@@ -21,7 +21,7 @@ func TestCatalog(t *testing.T) {
 
 	clock := clockwork.NewFakeClockAt(time.Now())
 
-	c, err := catalog.New(clock, l)
+	c, err := catalog.New(clock, l, catalog.DefaultIDGenerator{})
 	require.NoError(t, err)
 
 	now := clock.Now().UnixMilli()
@@ -64,7 +64,7 @@ func TestCatalog(t *testing.T) {
 
 	l, err = catalog.NewFileLogV2(logFileName)
 	require.NoError(t, err)
-	c, err = catalog.New(clock, l)
+	c, err = catalog.New(clock, l, catalog.DefaultIDGenerator{})
 	require.NoError(t, err)
 
 	records, err := c.List(nil, nil)

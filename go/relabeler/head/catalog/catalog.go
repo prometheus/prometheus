@@ -22,18 +22,30 @@ type Log interface {
 	Size() int
 }
 
-type Catalog struct {
-	mtx     sync.Mutex
-	clock   clockwork.Clock
-	log     Log
-	records map[string]*Record
+type IDGenerator interface {
+	Generate() uuid.UUID
 }
 
-func New(clock clockwork.Clock, log Log) (*Catalog, error) {
+type DefaultIDGenerator struct{}
+
+func (DefaultIDGenerator) Generate() uuid.UUID {
+	return uuid.New()
+}
+
+type Catalog struct {
+	mtx         sync.Mutex
+	clock       clockwork.Clock
+	log         Log
+	idGenerator IDGenerator
+	records     map[string]*Record
+}
+
+func New(clock clockwork.Clock, log Log, idGenerator IDGenerator) (*Catalog, error) {
 	catalog := &Catalog{
-		clock:   clock,
-		log:     log,
-		records: make(map[string]*Record),
+		clock:       clock,
+		log:         log,
+		idGenerator: idGenerator,
+		records:     make(map[string]*Record),
 	}
 
 	if err := catalog.sync(); err != nil {
@@ -67,7 +79,7 @@ func (c *Catalog) Create(numberOfShards uint16) (r *Record, err error) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
-	id := uuid.New()
+	id := c.idGenerator.Generate()
 	now := c.clock.Now().UnixMilli()
 	r = &Record{
 		id:             id,

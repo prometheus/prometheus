@@ -2,7 +2,6 @@ package appender
 
 import (
 	"context"
-
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler"
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
@@ -51,8 +50,14 @@ func (h *RotatableHead) Append(
 	incomingData *relabeler.IncomingData,
 	state *cppbridge.State,
 	relabelerID string,
+	commitToWal bool,
 ) ([][]*cppbridge.InnerSeries, cppbridge.RelabelerStats, error) {
-	return h.head.Append(ctx, incomingData, state, relabelerID)
+	return h.head.Append(ctx, incomingData, state, relabelerID, commitToWal)
+}
+
+// RotatableHead - relabeler.Head interface implementation.
+func (h *RotatableHead) CommitToWal() error {
+	return h.head.CommitToWal()
 }
 
 // ForEachShard - relabeler.Head interface implementation.
@@ -71,7 +76,9 @@ func (h *RotatableHead) NumberOfShards() uint16 {
 }
 
 // Finalize - relabeler.Head interface implementation.
-func (*RotatableHead) Finalize() {}
+func (h *RotatableHead) Finalize() error {
+	return h.head.Finalize()
+}
 
 // Reconfigure - relabeler.Head interface implementation.
 func (h *RotatableHead) Reconfigure(inputRelabelerConfigs []*config.InputRelabelerConfig, numberOfShards uint16) error {
@@ -113,7 +120,10 @@ func (h *RotatableHead) Rotate() error {
 		return err
 	}
 
-	h.head.Finalize()
+	if err = h.head.Finalize(); err != nil {
+		return err
+	}
+
 	_ = h.head.Rotate()
 	h.storage.Add(h.head)
 	h.head = newHead
@@ -160,8 +170,13 @@ func (h *HeapProfileWritableHead) Append(
 	incomingData *relabeler.IncomingData,
 	state *cppbridge.State,
 	relabelerID string,
+	commitToWal bool,
 ) ([][]*cppbridge.InnerSeries, cppbridge.RelabelerStats, error) {
-	return h.head.Append(ctx, incomingData, state, relabelerID)
+	return h.head.Append(ctx, incomingData, state, relabelerID, commitToWal)
+}
+
+func (h *HeapProfileWritableHead) CommitToWal() error {
+	return h.head.CommitToWal()
 }
 
 func (h *HeapProfileWritableHead) ForEachShard(fn relabeler.ShardFn) error {
@@ -176,8 +191,8 @@ func (h *HeapProfileWritableHead) NumberOfShards() uint16 {
 	return h.head.NumberOfShards()
 }
 
-func (h *HeapProfileWritableHead) Finalize() {
-	h.head.Finalize()
+func (h *HeapProfileWritableHead) Finalize() error {
+	return h.head.Finalize()
 }
 
 func (h *HeapProfileWritableHead) Reconfigure(inputRelabelerConfigs []*config.InputRelabelerConfig, numberOfShards uint16) error {

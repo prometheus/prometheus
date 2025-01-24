@@ -141,7 +141,7 @@ func (s *AppenderSuite) TestManagerRelabelerKeep() {
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	stats, err := app.Append(s.baseCtx, h, nil, relabelerID)
+	stats, err := app.Append(s.baseCtx, h, nil, relabelerID, true)
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
@@ -169,7 +169,7 @@ func (s *AppenderSuite) TestManagerRelabelerKeep() {
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	stats, err = app.Append(s.baseCtx, h, nil, relabelerID)
+	stats, err = app.Append(s.baseCtx, h, nil, relabelerID, true)
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 0}, stats)
 
@@ -283,7 +283,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabeling() {
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	stats, err := app.Append(s.baseCtx, h, nil, relabelerID)
+	stats, err := app.Append(s.baseCtx, h, nil, relabelerID, true)
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
@@ -322,7 +322,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabeling() {
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	stats, err = app.Append(s.baseCtx, h, nil, relabelerID)
+	stats, err = app.Append(s.baseCtx, h, nil, relabelerID, true)
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 0}, stats)
 
@@ -436,7 +436,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingAddNewLabel() {
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	stats, err := app.Append(s.baseCtx, h, nil, relabelerID)
+	stats, err := app.Append(s.baseCtx, h, nil, relabelerID, true)
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
@@ -475,7 +475,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingAddNewLabel() {
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	stats, err = app.Append(s.baseCtx, h, nil, relabelerID)
+	stats, err = app.Append(s.baseCtx, h, nil, relabelerID, true)
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 0}, stats)
 
@@ -593,7 +593,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsEnd() {
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	stats, err := app.Append(s.baseCtx, h, nil, relabelerID)
+	stats, err := app.Append(s.baseCtx, h, nil, relabelerID, true)
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
@@ -632,7 +632,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsEnd() {
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	stats, err = app.Append(s.baseCtx, h, nil, relabelerID)
+	stats, err = app.Append(s.baseCtx, h, nil, relabelerID, true)
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 0}, stats)
 
@@ -750,7 +750,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsRelabel(
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	stats, err := app.Append(s.baseCtx, h, nil, relabelerID)
+	stats, err := app.Append(s.baseCtx, h, nil, relabelerID, true)
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
@@ -789,7 +789,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsRelabel(
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	stats, err = app.Append(s.baseCtx, h, nil, relabelerID)
+	stats, err = app.Append(s.baseCtx, h, nil, relabelerID, true)
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 0}, stats)
 
@@ -911,7 +911,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels() {
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	stats, err := app.Append(s.baseCtx, h, state, relabelerID)
+	stats, err := app.Append(s.baseCtx, h, state, relabelerID, true)
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
@@ -966,7 +966,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels() {
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	stats, err = app.Append(s.baseCtx, h, state, relabelerID)
+	stats, err = app.Append(s.baseCtx, h, state, relabelerID, true)
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 0}, stats)
 
@@ -1102,7 +1102,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels_Conflicti
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	stats, err := app.Append(s.baseCtx, h, state, relabelerID)
+	stats, err := app.Append(s.baseCtx, h, state, relabelerID, true)
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
@@ -1157,7 +1157,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels_Conflicti
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	stats, err = app.Append(s.baseCtx, h, state, relabelerID)
+	stats, err = app.Append(s.baseCtx, h, state, relabelerID, true)
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 0}, stats)
 
@@ -1294,7 +1294,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels_Conflicti
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	stats, err := app.Append(s.baseCtx, h, state, relabelerID)
+	stats, err := app.Append(s.baseCtx, h, state, relabelerID, true)
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
@@ -1348,7 +1348,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels_Conflicti
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	stats, err = app.Append(s.baseCtx, h, state, relabelerID)
+	stats, err = app.Append(s.baseCtx, h, state, relabelerID, true)
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 0}, stats)
 
@@ -1496,8 +1496,9 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 	app := appender.NewQueryableAppender(rotatableHead, dstrb, metrics)
 
 	rotationTimer := relabeler.NewRotateTimer(clock, appender.DefaultRotateDuration)
+	commitTimer := appender.NewConstantIntervalTimer(clock, appender.DefaultCommitTimeout)
 	defer rotationTimer.Stop()
-	rotator := appender.NewRotator(app, rotationTimer, prometheus.DefaultRegisterer)
+	rotator := appender.NewRotateCommiter(app, rotationTimer, commitTimer, prometheus.DefaultRegisterer)
 	rotator.Run()
 	defer func() { _ = rotator.Close() }()
 
@@ -1519,7 +1520,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 		},
 	}
 	h := s.makeIncomingData(wr, hlimits)
-	stats, err := app.Append(s.baseCtx, h, nil, relabelerID)
+	stats, err := app.Append(s.baseCtx, h, nil, relabelerID, true)
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
@@ -1567,7 +1568,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	stats, err = app.Append(s.baseCtx, h, nil, relabelerID)
+	stats, err = app.Append(s.baseCtx, h, nil, relabelerID, true)
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
@@ -1607,7 +1608,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 		},
 	}
 	h = s.makeIncomingData(wr, hlimits)
-	stats, err = app.Append(s.baseCtx, h, nil, relabelerID)
+	stats, err = app.Append(s.baseCtx, h, nil, relabelerID, true)
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 0}, stats)
 
@@ -1971,7 +1972,7 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans() {
 	state.EnableTrackStaleness()
 	state.SetDefTimestamp(time.Now().UnixMilli() + 1000)
 
-	stats, err := app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID)
+	stats, err := app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID, true)
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
@@ -2002,7 +2003,7 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans() {
 
 	h = s.makeIncomingData(secondWr, hlimits)
 	state.SetDefTimestamp(time.Now().UnixMilli() + 1000)
-	stats, err = app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID)
+	stats, err = app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID, true)
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
@@ -2104,7 +2105,7 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans_WithNullTimestamp(
 	state.EnableTrackStaleness()
 	state.SetDefTimestamp(time.Now().UnixMilli())
 
-	stats, err := app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID)
+	stats, err := app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID, true)
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
@@ -2135,7 +2136,7 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans_WithNullTimestamp(
 
 	h = s.makeIncomingData(secondWr, hlimits)
 	state.SetDefTimestamp(time.Now().UnixMilli())
-	stats, err = app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID)
+	stats, err = app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID, true)
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
@@ -2232,7 +2233,7 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans_HonorTimestamps() 
 	state.SetDefTimestamp(time.Now().UnixMilli())
 	state.SetRelabelerOptions(&cppbridge.RelabelerOptions{HonorTimestamps: true})
 
-	stats, err := app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID)
+	stats, err := app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID, true)
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
@@ -2260,7 +2261,7 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans_HonorTimestamps() 
 
 	h = s.makeIncomingData(secondWr, hlimits)
 	state.SetDefTimestamp(time.Now().UnixMilli())
-	stats, err = app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID)
+	stats, err = app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID, true)
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
@@ -2391,8 +2392,9 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 	app := appender.NewQueryableAppender(rotatableHead, dstrb, metrics)
 
 	rotationTimer := relabeler.NewRotateTimer(clock, appender.DefaultRotateDuration)
+	commitTimer := appender.NewConstantIntervalTimer(clock, appender.DefaultCommitTimeout)
 	defer rotationTimer.Stop()
-	rotator := appender.NewRotator(app, rotationTimer, prometheus.DefaultRegisterer)
+	rotator := appender.NewRotateCommiter(app, rotationTimer, commitTimer, prometheus.DefaultRegisterer)
 	rotator.Run()
 	defer func() { _ = rotator.Close() }()
 
@@ -2417,7 +2419,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 	state := cppbridge.NewState(numberOfShards)
 	state.EnableTrackStaleness()
 	state.SetDefTimestamp(time.Now().UnixMilli())
-	stats, err := app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID)
+	stats, err := app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID, true)
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
@@ -2467,7 +2469,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 	}
 	h = s.makeIncomingData(secondWr, hlimits)
 	state.SetDefTimestamp(time.Now().UnixMilli())
-	stats, err = app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID)
+	stats, err = app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID, true)
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
@@ -2509,7 +2511,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 	}
 	h = s.makeIncomingData(thirdWr, hlimits)
 	state.SetDefTimestamp(time.Now().UnixMilli())
-	stats, err = app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID)
+	stats, err = app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID, true)
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 

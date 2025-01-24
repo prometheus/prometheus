@@ -2,6 +2,7 @@ package appender
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -35,8 +36,9 @@ func (qa *QueryableAppender) Append(
 	incomingData *relabeler.IncomingData,
 	state *cppbridge.State,
 	relabelerID string,
+	commitToWal bool,
 ) (cppbridge.RelabelerStats, error) {
-	return qa.AppendWithStaleNans(ctx, incomingData, state, relabelerID)
+	return qa.AppendWithStaleNans(ctx, incomingData, state, relabelerID, commitToWal)
 }
 
 func (qa *QueryableAppender) AppendWithStaleNans(
@@ -44,11 +46,12 @@ func (qa *QueryableAppender) AppendWithStaleNans(
 	incomingData *relabeler.IncomingData,
 	state *cppbridge.State,
 	relabelerID string,
+	commitToWal bool,
 ) (cppbridge.RelabelerStats, error) {
 	qa.lock.Lock()
 	defer qa.lock.Unlock()
 
-	data, stats, err := qa.head.Append(ctx, incomingData, state, relabelerID)
+	data, stats, err := qa.head.Append(ctx, incomingData, state, relabelerID, commitToWal)
 	if err != nil {
 		return cppbridge.RelabelerStats{}, err
 	}
@@ -72,6 +75,12 @@ func (qa *QueryableAppender) HeadStatus(limit int) relabeler.HeadStatus {
 	qa.lock.Lock()
 	defer qa.lock.Unlock()
 	return qa.head.Status(limit)
+}
+
+func (qa *QueryableAppender) CommitToWal() error {
+	qa.lock.Lock()
+	defer qa.lock.Unlock()
+	return qa.head.CommitToWal()
 }
 
 func (qa *QueryableAppender) Rotate() error {
@@ -121,4 +130,10 @@ func (qa *QueryableAppender) Querier(mint, maxt int64) (storage.Querier, error) 
 		},
 		qa.querierMetrics,
 	), nil
+}
+
+func (qa *QueryableAppender) Close() error {
+	qa.lock.Lock()
+	defer qa.lock.Unlock()
+	return errors.Join(qa.head.Finalize(), qa.head.Close())
 }
