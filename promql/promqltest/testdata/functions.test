@@ -492,6 +492,7 @@ load 5m
 	test_clamp{src="clamp-a"}	-50
 	test_clamp{src="clamp-b"}	0
 	test_clamp{src="clamp-c"}	100
+	test_clamp{src="histogram"} {{schema:0 sum:1 count:1}}
 
 eval instant at 0m clamp_max(test_clamp, 75)
 	{src="clamp-a"}	-50
@@ -1209,7 +1210,67 @@ eval instant at 1m count_over_time({__name__=~"data(_histogram)?"}[2m])
 
 clear
 
-# Test for absent()
+# Test for abs, ceil(), floor(), round().
+
+load 5m
+	data{type="positive"} 2.5
+	data{type="whole"} 2
+	data{type="negative"} -2.5
+	data{type="nwhole"} -2
+	data{type="zero"} 0
+	data{type="nzero"} -0
+	data{type="inf"} +Inf
+	data{type="ninf"} -Inf
+	data{type="nan"} NaN
+	data{type="histogram"} {{schema:0 sum:1 count:1}}
+
+eval instant at 0m abs(data)
+	{type="positive"} 2.5
+	{type="whole"} 2
+	{type="negative"} 2.5
+	{type="nwhole"} 2
+	{type="zero"} 0
+	{type="nzero"} 0
+	{type="inf"} +Inf
+	{type="ninf"} +Inf
+	{type="nan"} NaN
+
+eval instant at 0m ceil(data)
+	{type="positive"} 3
+	{type="whole"} 2
+	{type="negative"} -2
+	{type="nwhole"} -2
+	{type="zero"} 0
+	{type="nzero"} 0
+	{type="inf"} +Inf
+	{type="ninf"} -Inf
+	{type="nan"} NaN
+
+eval instant at 0m floor(data)
+	{type="positive"} 2
+	{type="whole"} 2
+	{type="negative"} -3
+	{type="nwhole"} -2
+	{type="zero"} 0
+	{type="nzero"} 0
+	{type="inf"} +Inf
+	{type="ninf"} -Inf
+	{type="nan"} NaN
+
+eval instant at 0m round(data)
+	{type="positive"} 3
+	{type="whole"} 2
+	{type="negative"} -2
+	{type="nwhole"} -2
+	{type="zero"} 0
+	{type="nzero"} 0
+	{type="inf"} +Inf
+	{type="ninf"} -Inf
+	{type="nan"} NaN
+
+clear
+
+# Test for absent().
 eval instant at 50m absent(nonexistent)
 	{} 1
 
