@@ -234,8 +234,9 @@ func (m *Manager) Stop() {
 
 func (m *Manager) updateTsets(tsets map[string][]*targetgroup.Group) {
 	m.mtxScrape.Lock()
+	defer m.mtxScrape.Unlock()
+
 	m.targetSets = tsets
-	m.mtxScrape.Unlock()
 }
 
 // ApplyConfig resets the manager's target providers and job configurations as defined by the new cfg.
@@ -314,10 +315,11 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 
 // TargetsAll returns active and dropped targets grouped by job_name.
 func (m *Manager) TargetsAll() map[string][]*Target {
+	targets := make(map[string][]*Target, len(m.scrapePools))
+
 	m.mtxScrape.Lock()
 	defer m.mtxScrape.Unlock()
 
-	targets := make(map[string][]*Target, len(m.scrapePools))
 	for tset, sp := range m.scrapePools {
 		targets[tset] = append(sp.ActiveTargets(), sp.DroppedTargets()...)
 	}
@@ -326,10 +328,11 @@ func (m *Manager) TargetsAll() map[string][]*Target {
 
 // ScrapePools returns the list of all scrape pool names.
 func (m *Manager) ScrapePools() []string {
+	names := make([]string, 0, len(m.scrapePools))
+
 	m.mtxScrape.Lock()
 	defer m.mtxScrape.Unlock()
 
-	names := make([]string, 0, len(m.scrapePools))
 	for name := range m.scrapePools {
 		names = append(names, name)
 	}
@@ -338,10 +341,11 @@ func (m *Manager) ScrapePools() []string {
 
 // TargetsActive returns the active targets currently being scraped.
 func (m *Manager) TargetsActive() map[string][]*Target {
+	targets := make(map[string][]*Target, len(m.scrapePools))
+
 	m.mtxScrape.Lock()
 	defer m.mtxScrape.Unlock()
 
-	targets := make(map[string][]*Target, len(m.scrapePools))
 	for tset, sp := range m.scrapePools {
 		targets[tset] = sp.ActiveTargets()
 	}
@@ -350,10 +354,11 @@ func (m *Manager) TargetsActive() map[string][]*Target {
 
 // TargetsDropped returns the dropped targets during relabelling, subject to KeepDroppedTargets limit.
 func (m *Manager) TargetsDropped() map[string][]*Target {
+	targets := make(map[string][]*Target, len(m.scrapePools))
+
 	m.mtxScrape.Lock()
 	defer m.mtxScrape.Unlock()
 
-	targets := make(map[string][]*Target, len(m.scrapePools))
 	for tset, sp := range m.scrapePools {
 		targets[tset] = sp.DroppedTargets()
 	}
@@ -361,10 +366,11 @@ func (m *Manager) TargetsDropped() map[string][]*Target {
 }
 
 func (m *Manager) TargetsDroppedCounts() map[string]int {
+	counts := make(map[string]int, len(m.scrapePools))
+
 	m.mtxScrape.Lock()
 	defer m.mtxScrape.Unlock()
 
-	counts := make(map[string]int, len(m.scrapePools))
 	for tset, sp := range m.scrapePools {
 		counts[tset] = sp.droppedTargetsCount
 	}
