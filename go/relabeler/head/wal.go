@@ -58,6 +58,7 @@ type ShardWal struct {
 	writeSyncCloser     WriteSyncCloser
 	fileHeaderIsWritten bool
 	buf                 [binary.MaxVarintLen32]byte
+	uncommited          bool
 }
 
 func newShardWal(encoder *cppbridge.HeadWalEncoder, fileHeaderIsWritten bool, writeSyncCloser WriteSyncCloser) *ShardWal {
@@ -102,6 +103,24 @@ func (w *ShardWal) Write(innerSeriesSlice []*cppbridge.InnerSeries) error {
 		return fmt.Errorf("failed to encode inner series: %w", err)
 	}
 
+	w.uncommited = true
+
+	return nil
+}
+
+func (w *ShardWal) Uncommited() bool {
+	return w.uncommited
+}
+
+func (w *ShardWal) Commit() error {
+	if w.corrupted {
+		return fmt.Errorf("commiting corrupted wal")
+	}
+
+	if !w.uncommited {
+		return nil
+	}
+
 	segment, err := w.encoder.Finalize()
 	if err != nil {
 		return fmt.Errorf("failed to finalize segment: %w", err)
@@ -115,6 +134,8 @@ func (w *ShardWal) Write(innerSeriesSlice []*cppbridge.InnerSeries) error {
 	if err = w.writeSyncCloser.Sync(); err != nil {
 		return fmt.Errorf("failed to flush segment: %w", err)
 	}
+
+	w.uncommited = false
 
 	return nil
 }

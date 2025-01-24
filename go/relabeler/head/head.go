@@ -175,10 +175,11 @@ type Head struct {
 	genericTaskCh              []chan *GenericTask
 	numberOfShards             uint16
 	// stat
-	memoryInUse *prometheus.GaugeVec
-	series      prometheus.Gauge
-	stopc       chan struct{}
-	wg          *sync.WaitGroup
+	appendedSegmentCount prometheus.Counter
+	memoryInUse          *prometheus.GaugeVec
+	series               prometheus.Gauge
+	stopc                chan struct{}
+	wg                   *sync.WaitGroup
 }
 
 func New(
@@ -222,6 +223,10 @@ func New(
 		relabelersData:              make(map[string]*RelabelerData, len(inputRelabelerConfigs)),
 		numberOfShards:              numberOfShards,
 		// stat
+		appendedSegmentCount: factory.NewCounter(prometheus.CounterOpts{
+			Name: "prompp_appended_segment_count",
+			Help: "Number of appended segments.",
+		}),
 		memoryInUse: factory.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "prompp_head_cgo_memory_bytes",
@@ -262,6 +267,7 @@ func (h *Head) Append(
 	incomingData *relabeler.IncomingData,
 	state *cppbridge.State,
 	relabelerID string,
+	commitToWal bool,
 ) ([][]*cppbridge.InnerSeries, cppbridge.RelabelerStats, error) {
 	if h.finalizer.FinalizeCalled() {
 		return nil, cppbridge.RelabelerStats{}, errors.New("appending to a finalized head")
@@ -296,7 +302,17 @@ func (h *Head) Append(
 	inputPromise.UpdateRelabeler()
 
 	err := h.forEachShard(func(shard relabeler.Shard) error {
-		return shard.Wal().Write(inputPromise.ShardsInnerSeries(shard.ShardID()))
+		if err := shard.Wal().Write(inputPromise.ShardsInnerSeries(shard.ShardID())); err != nil {
+			return fmt.Errorf("failed to write inner series: %w", err)
+		}
+
+		if commitToWal {
+			if err := shard.Wal().Commit(); err != nil {
+				return fmt.Errorf("failed to commit: %w", err)
+			}
+		}
+
+		return nil
 	})
 
 	if err != nil {
@@ -308,6 +324,14 @@ func (h *Head) Append(
 		return nil
 	})
 
+	if commitToWal {
+		h.incrementLastAppendedSegmentID()
+	}
+
+	return inputPromise.data, inputPromise.Stats(), nil
+}
+
+func (h *Head) incrementLastAppendedSegmentID() {
 	if h.lastAppendedSegmentID == nil {
 		var segmentID uint32 = 0
 		h.lastAppendedSegmentID = &segmentID
@@ -315,8 +339,27 @@ func (h *Head) Append(
 		*h.lastAppendedSegmentID++
 	}
 	h.lastAppendedSegmentIDSetter.SetLastAppendedSegmentID(*h.lastAppendedSegmentID)
+	h.appendedSegmentCount.Inc()
+}
 
-	return inputPromise.data, inputPromise.Stats(), nil
+func (h *Head) CommitToWal() error {
+	var segmentIsWritten bool
+	err := h.ForEachShard(func(shard relabeler.Shard) error {
+		if !shard.Wal().Uncommited() {
+			return nil
+		}
+		segmentIsWritten = true
+		return shard.Wal().Commit()
+	})
+	if err != nil {
+		return err
+	}
+
+	if segmentIsWritten {
+		h.incrementLastAppendedSegmentID()
+	}
+
+	return nil
 }
 
 func (h *Head) ForEachShard(fn relabeler.ShardFn) error {
@@ -339,13 +382,22 @@ func (h *Head) NumberOfShards() uint16 {
 	return h.numberOfShards
 }
 
-func (h *Head) Finalize() {
+func (h *Head) Finalize() error {
 	// todo: wait all tasks on stop
-	_ = h.finalizer.Finalize(func() error {
-		_ = h.forEachShard(func(shard relabeler.Shard) error {
+	return h.finalizer.Finalize(func() error {
+		var segmentIsWritten bool
+		err := h.forEachShard(func(shard relabeler.Shard) error {
 			shard.DataStorage().MergeOutOfOrderChunks()
+			if shard.Wal().Uncommited() {
+				segmentIsWritten = true
+				return shard.Wal().Commit()
+			}
 			return nil
 		})
+
+		if err == nil && segmentIsWritten {
+			h.incrementLastAppendedSegmentID()
+		}
 
 		h.stop()
 		for relabelerID := range h.relabelersData {
@@ -356,7 +408,7 @@ func (h *Head) Finalize() {
 			})
 		}
 		h.relabelersData = nil
-		return nil
+		return err
 	})
 }
 

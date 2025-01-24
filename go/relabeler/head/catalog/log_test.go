@@ -43,7 +43,5 @@ func fileContentIsEqual(t *testing.T, filePath1, filePath2 string) bool {
 	require.NoError(t, err)
 	data2, err := os.ReadFile(filePath2)
 	require.NoError(t, err)
-	t.Log(string(data1))
-	t.Log(string(data2))
 	return bytes.Equal(data1, data2)
 }

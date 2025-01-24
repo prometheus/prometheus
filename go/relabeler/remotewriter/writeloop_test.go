@@ -82,7 +82,7 @@ func NewTestHeads(dir string, inputRelabelConfigs []*config.InputRelabelerConfig
 		return nil, err
 	}
 
-	th.Catalog, err = catalog.New(clock, th.FileLog)
+	th.Catalog, err = catalog.New(clock, th.FileLog, catalog.DefaultIDGenerator{})
 	if err != nil {
 		return nil, errors.Join(err, th.Close())
 	}
@@ -92,7 +92,7 @@ func NewTestHeads(dir string, inputRelabelConfigs []*config.InputRelabelerConfig
 		numberOfShards:      numberOfShards,
 	}
 
-	th.Manager, err = manager.New(dir, th.ConfigSource, th.Catalog, prometheus.DefaultRegisterer)
+	th.Manager, err = manager.New(dir, clock, th.ConfigSource, th.Catalog, prometheus.DefaultRegisterer)
 	if err != nil {
 		return nil, errors.Join(err, th.Close())
 	}
@@ -114,7 +114,7 @@ func (th *TestHeads) Append(ctx context.Context, timeSeriesSlice []model.TimeSer
 		return err
 	}
 
-	_, _, err = th.Head.Append(ctx, &relabeler.IncomingData{Hashdex: hx}, nil, relabelerID)
+	_, _, err = th.Head.Append(ctx, &relabeler.IncomingData{Hashdex: hx}, nil, relabelerID, true)
 	return err
 }
 

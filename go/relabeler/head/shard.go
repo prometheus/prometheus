@@ -49,6 +49,14 @@ type DataStorage struct {
 	encoder     *cppbridge.HeadEncoder
 }
 
+func NewDataStorage() *DataStorage {
+	dataStorage := cppbridge.NewHeadDataStorage()
+	return &DataStorage{
+		dataStorage: dataStorage,
+		encoder:     cppbridge.NewHeadEncoderWithDataStorage(dataStorage),
+	}
+}
+
 func (ds *DataStorage) AppendInnerSeriesSlice(innerSeriesSlice []*cppbridge.InnerSeries) {
 	ds.encoder.EncodeInnerSeriesSlice(innerSeriesSlice)
 }

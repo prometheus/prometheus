@@ -1,6 +1,7 @@
 package appender
 
 import (
+	"github.com/jonboulle/clockwork"
 	"time"
 
 	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
@@ -9,36 +10,47 @@ import (
 )
 
 // DefaultRotateDuration - default block duration.
-const DefaultRotateDuration = 2 * time.Hour
+const (
+	DefaultRotateDuration = 2 * time.Hour
+	DefaultCommitTimeout  = time.Second * 5
+)
 
 // Rotatable is something that can be rotated.
-type Rotatable interface {
+type RotateCommitable interface {
 	Rotate() error
+	CommitToWal() error
 }
 
-type RotationTimer interface {
+type Timer interface {
 	Chan() <-chan time.Time
 	Reset()
 	Stop()
 }
 
 // Rotator is a rotation trigger.
-type Rotator struct {
-	rotatable     Rotatable
-	timer         RotationTimer
-	run           chan struct{}
-	closer        *util.Closer
-	rotateCounter prometheus.Counter
+type RotateCommiter struct {
+	rotateCommitable RotateCommitable
+	rotateTimer      Timer
+	commitTimer      Timer
+	run              chan struct{}
+	closer           *util.Closer
+	rotateCounter    prometheus.Counter
 }
 
 // NewRotator - Rotator constructor.
-func NewRotator(rotatable Rotatable, timer RotationTimer, registerer prometheus.Registerer) *Rotator {
+func NewRotateCommiter(
+	rotateCommitable RotateCommitable,
+	rotateTimer Timer,
+	commitTimer Timer,
+	registerer prometheus.Registerer,
+) *RotateCommiter {
 	factory := util.NewUnconflictRegisterer(registerer)
-	r := &Rotator{
-		rotatable: rotatable,
-		timer:     timer,
-		run:       make(chan struct{}),
-		closer:    util.NewCloser(),
+	r := &RotateCommiter{
+		rotateCommitable: rotateCommitable,
+		rotateTimer:      rotateTimer,
+		commitTimer:      commitTimer,
+		run:              make(chan struct{}),
+		closer:           util.NewCloser(),
 		rotateCounter: factory.NewCounter(
 			prometheus.CounterOpts{
 				Name: "prompp_rotator_rotate_count",
@@ -52,16 +64,17 @@ func NewRotator(rotatable Rotatable, timer RotationTimer, registerer prometheus.
 }
 
 // Run - runs rotation loop.
-func (r *Rotator) Run() {
+func (r *RotateCommiter) Run() {
 	close(r.run)
 }
 
-func (r *Rotator) loop() {
+func (r *RotateCommiter) loop() {
 	defer r.closer.Done()
 
 	select {
 	case <-r.run:
-		r.timer.Reset()
+		r.rotateTimer.Reset()
+		r.commitTimer.Reset()
 	case <-r.closer.Signal():
 		return
 	}
@@ -70,20 +83,49 @@ func (r *Rotator) loop() {
 		select {
 		case <-r.closer.Signal():
 			return
-
-		case <-r.timer.Chan():
+		case <-r.commitTimer.Chan():
+			if err := r.rotateCommitable.CommitToWal(); err != nil {
+				logger.Errorf("wal commit failed: %v", err)
+			}
+			r.commitTimer.Reset()
+		case <-r.rotateTimer.Chan():
 			logger.Debugf("start rotation")
-			if err := r.rotatable.Rotate(); err != nil {
-				logger.Errorf("rotation failed: %s", err.Error())
+			if err := r.rotateCommitable.Rotate(); err != nil {
+				logger.Errorf("rotation failed: %v", err)
 			}
 			r.rotateCounter.Inc()
 
-			r.timer.Reset()
+			r.rotateTimer.Reset()
+			r.commitTimer.Reset()
 		}
 	}
 }
 
 // Close - io.Closer interface implementation.
-func (r *Rotator) Close() error {
+func (r *RotateCommiter) Close() error {
 	return r.closer.Close()
+}
+
+type ConstantIntervalTimer struct {
+	timer    clockwork.Timer
+	interval time.Duration
+}
+
+func NewConstantIntervalTimer(clock clockwork.Clock, interval time.Duration) *ConstantIntervalTimer {
+	return &ConstantIntervalTimer{
+		timer:    clock.NewTimer(interval),
+		interval: interval,
+	}
+}
+
+func (t *ConstantIntervalTimer) Chan() <-chan time.Time {
+	return t.timer.Chan()
+}
+
+func (t *ConstantIntervalTimer) Reset() {
+	t.timer.Reset(t.interval)
+}
+
+func (t *ConstantIntervalTimer) Stop() {
+	t.timer.Stop()
 }

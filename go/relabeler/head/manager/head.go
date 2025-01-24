@@ -37,8 +37,14 @@ func (h *DiscardableRotatableHead) Append(
 	ctx context.Context,
 	incomingData *relabeler.IncomingData,
 	state *cppbridge.State,
-	relabelerID string) ([][]*cppbridge.InnerSeries, cppbridge.RelabelerStats, error) {
-	return h.head.Append(ctx, incomingData, state, relabelerID)
+	relabelerID string,
+	commitToWal bool,
+) ([][]*cppbridge.InnerSeries, cppbridge.RelabelerStats, error) {
+	return h.head.Append(ctx, incomingData, state, relabelerID, commitToWal)
+}
+
+func (h *DiscardableRotatableHead) CommitToWal() error {
+	return h.head.CommitToWal()
 }
 
 func (h *DiscardableRotatableHead) ForEachShard(fn relabeler.ShardFn) error {
@@ -53,8 +59,8 @@ func (h *DiscardableRotatableHead) NumberOfShards() uint16 {
 	return h.head.NumberOfShards()
 }
 
-func (h *DiscardableRotatableHead) Finalize() {
-	h.head.Finalize()
+func (h *DiscardableRotatableHead) Finalize() error {
+	return h.head.Finalize()
 }
 
 func (h *DiscardableRotatableHead) Reconfigure(inputRelabelerConfigs []*config.InputRelabelerConfig, numberOfShards uint16) error {
