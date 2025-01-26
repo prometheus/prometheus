@@ -36,7 +36,7 @@ GO_VERSION        ?= $(shell $(GO) version)
 GO_VERSION_NUMBER ?= $(word 3, $(GO_VERSION))
 PRE_GO_111        ?= $(shell echo $(GO_VERSION_NUMBER) | grep -E 'go1\.(10|[0-9])\.')
 
-PROMU        := $(FIRST_GOPATH)/bin/promu
+PROMU        := GOAMD64=v3 $(FIRST_GOPATH)/bin/promu
 pkgs          = ./...
 
 ifeq (arm, $(GOHOSTARCH))
