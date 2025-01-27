@@ -419,7 +419,7 @@ clear
 
 # Tests for vector, time and timestamp.
 load 10s
-  metric 1 1
+  metric 1 1 {{schema:0 sum:1 count:1}}
 
 eval instant at 0s timestamp(metric)
   {} 0
@@ -435,6 +435,9 @@ eval instant at 10s timestamp(metric)
 
 eval instant at 10s timestamp(((metric)))
   {} 10
+
+eval instant at 20s timestamp(metric)
+  {} 20
 
 # Tests for label_join.
 load 5m
