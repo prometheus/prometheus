@@ -57,7 +57,6 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/util/logging"
 	"github.com/prometheus/prometheus/util/pool"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -395,7 +394,7 @@ type testLoop struct {
 	timeout      time.Duration
 }
 
-func (l *testLoop) setScrapeFailureLogger(*logging.JSONFileLogger) {
+func (l *testLoop) setScrapeFailureLogger(FailureLogger) {
 }
 
 func (l *testLoop) run(errc chan<- error) {
