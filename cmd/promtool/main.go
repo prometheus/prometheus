@@ -85,8 +85,6 @@ var (
 	lintRulesOptions = []string{lintOptionAll, lintOptionDuplicateRules, lintOptionNone}
 	// Same as lintRulesOptions, but including scrape config linting options as well.
 	lintConfigOptions = append(append([]string{}, lintRulesOptions...), lintOptionTooLongScrapeInterval)
-
-	registry = prometheus.NewRegistry()
 )
 
 func main() {
