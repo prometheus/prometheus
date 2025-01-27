@@ -60,7 +60,7 @@ func TestParseFileFailure(t *testing.T) {
 		},
 		{
 			filename: "invalid_record_name.bad.yaml",
-			errMsg:   "potential issue in the recording rule name; should it be in expr?: strawberry{flavor=\"sweet\"}",
+			errMsg:   "braces present in the recording rule name; should it be in expr?: strawberry{flavor=\"sweet\"}",
 		},
 		{
 			filename: "bad_field.bad.yaml",
