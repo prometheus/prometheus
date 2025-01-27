@@ -29,7 +29,8 @@ import (
 )
 
 var (
-	relabelTarget = regexp.MustCompile(`^(?:(?:[a-zA-Z_]|\$(?:\{\w+\}|\w+))+\w*)+$`)
+	// relabelTargetLegacy allows targeting labels with legacy Prometheus character set, plus ${<var>} variables for dynamic characters from source the metrics.
+	relabelTargetLegacy = regexp.MustCompile(`^(?:(?:[a-zA-Z_]|\$(?:\{\w+\}|\w+))+\w*)+$`)
 
 	DefaultRelabelConfig = Config{
 		Action:      Replace,
@@ -124,10 +125,22 @@ func (c *Config) Validate() error {
 	if (c.Action == Replace || c.Action == HashMod || c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && c.TargetLabel == "" {
 		return fmt.Errorf("relabel configuration for %s action requires 'target_label' value", c.Action)
 	}
-	if c.Action == Replace && !strings.Contains(c.TargetLabel, "$") && !model.LabelName(c.TargetLabel).IsValid() {
+	if c.Action == Replace && !varInRegexTemplate(c.TargetLabel) && !model.LabelName(c.TargetLabel).IsValid() {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
-	if c.Action == Replace && strings.Contains(c.TargetLabel, "$") && !relabelTarget.MatchString(c.TargetLabel) {
+
+	isValidLabelNameWithRegexVarFn := func(value string) bool {
+		// UTF-8 allows ${} characters, so standard validation allow $variables by default.
+		// TODO(bwplotka): Relabelling users cannot put $ and ${<...>} characters in metric names or values.
+		// Design escaping mechanism to allow that, once valid use case appears.
+		return model.LabelName(value).IsValid()
+	}
+	if model.NameValidationScheme == model.LegacyValidation {
+		isValidLabelNameWithRegexVarFn = func(value string) bool {
+			return relabelTargetLegacy.MatchString(value)
+		}
+	}
+	if c.Action == Replace && varInRegexTemplate(c.TargetLabel) && !isValidLabelNameWithRegexVarFn(c.TargetLabel) {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
 	if (c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && !model.LabelName(c.TargetLabel).IsValid() {
@@ -136,7 +149,7 @@ func (c *Config) Validate() error {
 	if (c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && c.Replacement != DefaultRelabelConfig.Replacement {
 		return fmt.Errorf("'replacement' can not be set for %s action", c.Action)
 	}
-	if c.Action == LabelMap && !relabelTarget.MatchString(c.Replacement) {
+	if c.Action == LabelMap && !isValidLabelNameWithRegexVarFn(c.Replacement) {
 		return fmt.Errorf("%q is invalid 'replacement' for %s action", c.Replacement, c.Action)
 	}
 	if c.Action == HashMod && !model.LabelName(c.TargetLabel).IsValid() {

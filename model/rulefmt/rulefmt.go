@@ -233,6 +233,14 @@ func (r *RuleNode) Validate() (nodes []WrappedError) {
 				node: &r.Record,
 			})
 		}
+		// While record is a valid UTF-8 it's common mistake to put PromQL expression in the record name.
+		// Disallow "{}" chars.
+		if strings.Contains(r.Record.Value, "{") || strings.Contains(r.Record.Value, "}") {
+			nodes = append(nodes, WrappedError{
+				err:  fmt.Errorf("braces present in the recording rule name; should it be in expr?: %s", r.Record.Value),
+				node: &r.Record,
+			})
+		}
 	}
 
 	for k, v := range r.Labels {
