@@ -87,8 +87,6 @@ var (
 	lintRulesOptions = []string{lintOptionAll, lintOptionDuplicateRules, lintOptionNone}
 	// Same as lintRulesOptions, but including scrape config linting options as well.
 	lintConfigOptions = append(append([]string{}, lintRulesOptions...), lintOptionTooLongScrapeInterval)
-
-	registry = prometheus.NewRegistry()
 )
 
 const httpConfigFileDescription = "HTTP client configuration file, see details at https://prometheus.io/docs/prometheus/latest/configuration/promtool"

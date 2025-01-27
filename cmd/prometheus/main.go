@@ -325,18 +325,16 @@ func main() {
 		runtime.SetMutexProfileFraction(20)
 	}
 
-	// Unregister the default GoCollector, and reregister with our defaults.
-	if registry.Unregister(collectors.NewGoCollector()) {
-		registry.MustRegister(
-			collectors.NewGoCollector(
-				collectors.WithGoCollectorRuntimeMetrics(
-					collectors.MetricsGC,
-					collectors.MetricsScheduler,
-					collectors.GoRuntimeMetricsRule{Matcher: goregexp.MustCompile(`^/sync/mutex/wait/total:seconds$`)},
-				),
+	// Register with NewGoCollector and NewProcessCollector.
+	registry.MustRegister(
+		collectors.NewGoCollector(
+			collectors.WithGoCollectorRuntimeMetrics(
+				collectors.MetricsGC,
+				collectors.MetricsScheduler,
+				collectors.GoRuntimeMetricsRule{Matcher: goregexp.MustCompile(`^/sync/mutex/wait/total:seconds$`)},
 			),
-		)
-	}
+		),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 
 	cfg := flagConfig{
 		notifier: notifier.Options{

@@ -308,6 +308,11 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		logger = promslog.NewNopLogger()
 	}
 
+	// Register the template metrics
+	if o.Registerer != nil {
+		template.RegisterTemplateMetrics(o.Registerer)
+	}
+
 	m := newMetrics(o.Registerer)
 	router := route.New().
 		WithInstrumentation(m.instrumentHandler).

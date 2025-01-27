@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/config"
@@ -35,19 +34,19 @@ import (
 )
 
 var (
-	samplesIn = promauto.NewCounter(prometheus.CounterOpts{
+	samplesIn = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: namespace,
 		Subsystem: subsystem,
 		Name:      "samples_in_total",
 		Help:      "Samples in to remote storage, compare to samples out for queue managers.",
 	})
-	exemplarsIn = promauto.NewCounter(prometheus.CounterOpts{
+	exemplarsIn = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: namespace,
 		Subsystem: subsystem,
 		Name:      "exemplars_in_total",
 		Help:      "Exemplars in to remote storage, compare to exemplars out for queue managers.",
 	})
-	histogramsIn = promauto.NewCounter(prometheus.CounterOpts{
+	histogramsIn = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: namespace,
 		Subsystem: subsystem,
 		Name:      "histograms_in_total",
@@ -104,6 +103,7 @@ func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string,
 	}
 	if reg != nil {
 		reg.MustRegister(rws.highestTimestamp)
+		reg.MustRegister(samplesIn, histogramsIn, exemplarsIn)
 	}
 	go rws.run()
 	return rws
