@@ -47,28 +47,24 @@ func (cmd *cmdWALPPToBlock) Do(
 	}
 
 	level.Debug(logger).Log("msg", "read file log")
-	fileLog, err := catalog.NewFileLog(
-		filepath.Join(workingDir, "head.log"),
-		catalog.DefaultEncoder{},
-		catalog.DefaultDecoder{},
-	)
+	fileLog, err := catalog.NewFileLogV2(filepath.Join(workingDir, "head.log"))
 	if err != nil {
 		return fmt.Errorf("failed init file log reader: %w", err)
 	}
 
 	level.Debug(logger).Log("msg", "read catalog log")
 	clock := clockwork.NewRealClock()
-	headCatalog, err := catalog.New(clock, fileLog)
+	headCatalog, err := catalog.New(clock, fileLog, catalog.DefaultIDGenerator{})
 	if err != nil {
 		return fmt.Errorf("failed init head catalog: %w", err)
 	}
 	headRecords, err := headCatalog.List(
-		func(record catalog.Record) bool {
-			return record.DeletedAt == 0 &&
-				(record.Status == catalog.StatusNew || record.Status == catalog.StatusRotated)
+		func(record *catalog.Record) bool {
+			return record.DeletedAt() == 0 &&
+				(record.Status() == catalog.StatusNew || record.Status() == catalog.StatusActive || record.Status() == catalog.StatusRotated)
 		},
-		func(lhs, rhs catalog.Record) bool {
-			return lhs.CreatedAt < rhs.CreatedAt
+		func(lhs, rhs *catalog.Record) bool {
+			return lhs.CreatedAt() < rhs.CreatedAt()
 		},
 	)
 	if err != nil {
@@ -82,20 +78,21 @@ func (cmd *cmdWALPPToBlock) Do(
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		level.Debug(logger).Log("msg", "load head", "id", headRecord.ID, "dir", headRecord.Dir)
-		h, err := head.Load(
-			headRecord.ID,
+		level.Debug(logger).Log("msg", "load head", "id", headRecord.ID(), "dir", headRecord.Dir())
+		h, _, _, err := head.Load(
+			headRecord.ID(),
 			0,
-			filepath.Join(workingDir, headRecord.Dir),
+			filepath.Join(workingDir, headRecord.Dir()),
 			inputRelabelerConfig,
-			headRecord.NumberOfShards,
+			headRecord.NumberOfShards(),
+			head.NoOpLastAppendedSegmentIDSetter{},
 			registerer,
 		)
 		if err != nil {
 			level.Error(logger).Log(
-				"msg", "failed load head",
-				"id", headRecord.ID,
-				"dir", headRecord.Dir,
+				"msg", "failed to load head",
+				"id", headRecord.ID(),
+				"dir", headRecord.Dir(),
 				"err", err,
 			)
 		}
@@ -105,11 +102,11 @@ func (cmd *cmdWALPPToBlock) Do(
 		if err = h.ForEachShard(func(shard relabeler.Shard) error {
 			return bw.Write(relabeler.NewBlock(shard.LSS().Raw(), shard.DataStorage().Raw()))
 		}); err != nil {
-			return fmt.Errorf("failed write tsdb block [id: %s, dir: %s]: %w", headRecord.ID, headRecord.Dir, err)
+			return fmt.Errorf("failed to write tsdb block [id: %s, dir: %s]: %w", headRecord.ID, headRecord.Dir, err)
 		}
 
-		if _, setStatusErr := headCatalog.SetStatus(headRecord.ID, catalog.StatusPersisted); setStatusErr != nil {
-			return fmt.Errorf("failed set catalog status Persisted: %w", setStatusErr)
+		if _, setStatusErr := headCatalog.SetStatus(headRecord.ID(), catalog.StatusPersisted); setStatusErr != nil {
+			return fmt.Errorf("failed to set catalog status Persisted: %w", setStatusErr)
 		}
 
 		if err = h.Close(); err != nil {

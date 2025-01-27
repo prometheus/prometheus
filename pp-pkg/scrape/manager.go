@@ -31,6 +31,7 @@ type Receiver interface {
 		data relabeler.TimeSeriesData,
 		state *cppbridge.State,
 		relabelerID string,
+		commitToWal bool,
 	) (cppbridge.RelabelerStats, error)
 	// AppendTimeSeries append TimeSeries data to relabeling hashdex data.
 	AppendTimeSeriesHashdex(
@@ -38,6 +39,7 @@ type Receiver interface {
 		hashdex cppbridge.ShardedData,
 		state *cppbridge.State,
 		relabelerID string,
+		commitToWal bool,
 	) (cppbridge.RelabelerStats, error)
 	RelabelerIDIsExist(relabelerID string) bool
 	GetState() *cppbridge.State

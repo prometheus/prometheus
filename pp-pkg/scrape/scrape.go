@@ -1072,6 +1072,7 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 		emptyBatch,
 		sl.state,
 		sl.scrapeName,
+		true,
 	); err != nil {
 		level.Warn(sl.logger).Log("msg", "Stale append failed", "err", err)
 	}
@@ -1110,6 +1111,7 @@ func (sl *scrapeLoop) append(
 			sl.bufferBatches.get(),
 			sl.state,
 			sl.scrapeName,
+			true,
 		)
 		return 0, stats, err
 	}
@@ -1208,6 +1210,7 @@ loop:
 		batch,
 		sl.state,
 		sl.scrapeName,
+		true,
 	)
 	if err != nil {
 		return
@@ -1261,6 +1264,7 @@ func (sl *scrapeLoop) appendCpp(
 		hashdex,
 		sl.state,
 		sl.scrapeName,
+		true,
 	)
 	if err != nil {
 		return 0, stats, fmt.Errorf("failed receiver append hashdex: %w", err)
@@ -1402,6 +1406,7 @@ func (sl *scrapeLoop) report(
 		batch,
 		sl.reportState,
 		config.TransparentRelabeler,
+		true,
 	); err != nil {
 		return
 	}
@@ -1450,6 +1455,7 @@ func (sl *scrapeLoop) reportStale(start time.Time) (err error) {
 		batch,
 		sl.reportState,
 		config.TransparentRelabeler,
+		true,
 	); err != nil {
 		return
 	}

@@ -104,12 +104,13 @@ type NotifyFunc func(ctx context.Context, expr string, alerts ...*Alert)
 
 // ManagerOptions bundles options for the Manager.
 type ManagerOptions struct {
-	ExternalURL               *url.URL
-	QueryFunc                 QueryFunc
-	NotifyFunc                NotifyFunc
-	Context                   context.Context
-	Appendable                storage.Appendable
-	Queryable                 storage.Queryable
+	ExternalURL *url.URL
+	QueryFunc   QueryFunc
+	NotifyFunc  NotifyFunc
+	Context     context.Context
+	Appendable  storage.Appendable
+	Queryable   storage.Queryable
+
 	Logger                    log.Logger
 	Registerer                prometheus.Registerer
 	OutageTolerance           time.Duration

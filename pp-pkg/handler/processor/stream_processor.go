@@ -113,6 +113,7 @@ func (p *StreamProcessor) Process(ctx context.Context, stream MetricStream) erro
 			ctx,
 			decodedSegment.ShardedData(),
 			meta.RelabelerID,
+			true,
 		); err != nil {
 			processingStatus.Code = model.ProcessingStatusRejected
 			processingStatus.Message = err.Error()

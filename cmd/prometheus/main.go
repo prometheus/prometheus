@@ -41,7 +41,11 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/regexp"
+	"github.com/jonboulle/clockwork" // PP_CHANGES.md: rebuild on cpp
 	"github.com/mwitkow/go-conntrack"
+	"github.com/prometheus/prometheus/pp/go/relabeler/head/catalog" // PP_CHANGES.md: rebuild on cpp
+	"github.com/prometheus/prometheus/pp/go/relabeler/head/ready"   // PP_CHANGES.md: rebuild on cpp
+	"github.com/prometheus/prometheus/pp/go/relabeler/remotewriter" // PP_CHANGES.md: rebuild on cpp
 	"github.com/oklog/run"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
@@ -57,6 +61,7 @@ import (
 	klogv2 "k8s.io/klog/v2"
 
 	"github.com/prometheus/prometheus/op-pkg/receiver"             // PP_CHANGES.md: rebuild on cpp
+	"github.com/prometheus/prometheus/op-pkg/remote"               // PP_CHANGES.md: rebuild on cpp
 	"github.com/prometheus/prometheus/op-pkg/scrape"               // PP_CHANGES.md: rebuild on cpp
 	oppkgstorage "github.com/prometheus/prometheus/op-pkg/storage" // PP_CHANGES.md: rebuild on cpp
 
@@ -652,6 +657,32 @@ func main() {
 	reloadBlocksTriggerNotifier := receiver.NewReloadBlocksTriggerNotifier()
 	cfg.tsdb.ReloadBlocksExternalTrigger = reloadBlocksTriggerNotifier
 	ctxReceiver, cancelReceiver := context.WithCancel(context.Background())
+
+	dataDir, err := filepath.Abs(localStoragePath)
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to calculate local storage path abs", "err", err)
+		os.Exit(1)
+	}
+
+	if err = os.MkdirAll(dataDir, 0777); err != nil {
+		level.Error(logger).Log("msg", "failed to create file log", "err", err)
+		os.Exit(1)
+	}
+
+	fileLog, err := catalog.NewFileLogV2(filepath.Join(dataDir, "head.log"))
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to create file log", "err", err)
+		os.Exit(1)
+	}
+
+	clock := clockwork.NewRealClock()
+	headCatalog, err := catalog.New(clock, fileLog, catalog.DefaultIDGenerator{})
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to create head catalog", "err", err)
+		os.Exit(1)
+	}
+
+	receiverReadyNotifier := ready.NewNotifiableNotifier()
 	// create receiver
 	receiver, err := receiver.NewReceiver(
 		ctxReceiver,
@@ -665,12 +696,18 @@ func main() {
 			BlockDuration: time.Duration(cfg.tsdb.MinBlockDuration),
 			Seed:          cfgFile.GlobalConfig.ExternalLabels.Hash(),
 		},
+		headCatalog,
 		reloadBlocksTriggerNotifier,
+		receiverReadyNotifier,
 	)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to create a receiver", "err", err)
 		os.Exit(1)
 	}
+
+	remoteWriterReadyNotifier := ready.NewNotifiableNotifier()
+	remoteWriter := remotewriter.New(dataDir, headCatalog, clock, remoteWriterReadyNotifier, prometheus.DefaultRegisterer)
+
 	// PP_CHANGES.md: rebuild on cpp end
 
 	var (
@@ -904,6 +941,9 @@ func main() {
 		}, { // PP_CHANGES.md: rebuild on cpp end
 			name:     "web_handler",
 			reloader: webHandler.ApplyConfig,
+		}, { // PP_CHANGES.md: rebuild on cpp end
+			name:     "remote_writer",
+			reloader: remote.ApplyConfig(remoteWriter),
 		}, {
 			name: "query_engine",
 			reloader: func(cfg *config.Config) error {
@@ -1021,6 +1061,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	multiNotifiable := ready.New().With(receiverReadyNotifier).With(remoteWriterReadyNotifier).Build()
+	opGC := catalog.NewGC(dataDir, headCatalog, multiNotifiable)
+
 	var g run.Group
 	{
 		// Termination handler.
@@ -1033,6 +1076,7 @@ func main() {
 				select {
 				case sig := <-term:
 					level.Warn(logger).Log("msg", "Received an OS signal, exiting gracefully...", "signal", sig.String())
+					opGC.Stop()
 					reloadReady.Close()
 				case <-webHandler.Quit():
 					level.Warn(logger).Log("msg", "Received termination request via web service, exiting gracefully...")
@@ -1331,6 +1375,26 @@ func main() {
 				}
 				cancelReceiver()
 			},
+		)
+	} // PP_CHANGES.md: rebuild on cpp end
+	{ // PP_CHANGES.md: rebuild on cpp start
+		// run remote writer.
+		ctx, cancel := context.WithCancel(context.Background())
+		g.Add(
+			func() error {
+				return remoteWriter.Run(ctx)
+			},
+			func(err error) { cancel() },
+		)
+	} // PP_CHANGES.md: rebuild on cpp end
+	{ // PP_CHANGES.md: rebuild on cpp start
+		// run catalog gc.
+		ctx, cancel := context.WithCancel(context.Background())
+		g.Add(
+			func() error {
+				return opGC.Run(ctx)
+			},
+			func(err error) { cancel() },
 		)
 	} // PP_CHANGES.md: rebuild on cpp end
 	{

@@ -48,7 +48,7 @@ func (p *RemoteWriteProcessor) Process(ctx context.Context, remoteWrite RemoteWr
 		return err
 	}
 
-	if err := p.receiver.AppendProtobuf(ctx, rwb, remoteWrite.Metadata().RelabelerID); err != nil {
+	if err := p.receiver.AppendProtobuf(ctx, rwb, remoteWrite.Metadata().RelabelerID, true); err != nil {
 		status.Code = http.StatusBadRequest
 		status.Message = err.Error()
 		return err

@@ -59,7 +59,7 @@ func (a *promAppender) Commit() error {
 		return nil
 	}
 
-	_, err := a.receiver.AppendTimeSeries(a.ctx, a.data, nil, a.relabelerID)
+	_, err := a.receiver.AppendTimeSeries(a.ctx, a.data, nil, a.relabelerID, false)
 	return err
 }
 
