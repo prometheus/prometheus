@@ -38,8 +38,6 @@ const (
 	swarmLabel = model.MetaLabelPrefix + "dockerswarm_"
 )
 
-var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
-
 // DefaultDockerSwarmSDConfig is the default Docker Swarm SD configuration.
 var DefaultDockerSwarmSDConfig = DockerSwarmSDConfig{
 	RefreshInterval:  model.Duration(60 * time.Second),
@@ -169,7 +167,7 @@ func NewDiscovery(conf *DockerSwarmSDConfig, logger *slog.Logger, metrics discov
 			}),
 			client.WithScheme(hostURL.Scheme),
 			client.WithHTTPHeaders(map[string]string{
-				"User-Agent": userAgent,
+				"User-Agent": version.PrometheusUserAgent(),
 			}),
 		)
 	}
