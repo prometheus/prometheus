@@ -50,7 +50,7 @@ require (
 	github.com/oklog/ulid v1.3.1
 	github.com/open-telemetry/opentelemetry-collector-contrib/processor/deltatocumulativeprocessor v0.116.0
 	github.com/ovh/go-ovh v1.6.0
-	github.com/prometheus/alertmanager v0.27.0
+	github.com/prometheus/alertmanager v0.28.0
 	github.com/prometheus/client_golang v1.21.0-rc.0
 	github.com/prometheus/client_model v0.6.1
 	github.com/prometheus/common v0.62.0
@@ -122,14 +122,14 @@ require (
 	github.com/ghodss/yaml v1.0.0 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/go-openapi/analysis v0.22.2 // indirect
+	github.com/go-openapi/analysis v0.23.0 // indirect
 	github.com/go-openapi/errors v0.22.0 // indirect
 	github.com/go-openapi/jsonpointer v0.21.0 // indirect
-	github.com/go-openapi/jsonreference v0.20.4 // indirect
-	github.com/go-openapi/loads v0.21.5 // indirect
-	github.com/go-openapi/spec v0.20.14 // indirect
+	github.com/go-openapi/jsonreference v0.21.0 // indirect
+	github.com/go-openapi/loads v0.22.0 // indirect
+	github.com/go-openapi/spec v0.21.0 // indirect
 	github.com/go-openapi/swag v0.23.0 // indirect
-	github.com/go-openapi/validate v0.23.0 // indirect
+	github.com/go-openapi/validate v0.24.0 // indirect
 	github.com/go-resty/resty/v2 v2.16.3 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.1 // indirect
 	github.com/golang/glog v1.2.3 // indirect
