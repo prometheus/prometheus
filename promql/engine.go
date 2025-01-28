@@ -3368,6 +3368,7 @@ func (ev *evaluator) aggregationCountValues(e *parser.AggregateExpr, grouping []
 		count  int
 	}
 	result := map[uint64]*groupCount{}
+	counts := make([]*groupCount, 0)
 
 	var buf []byte
 	for _, s := range vec {
@@ -3388,18 +3389,25 @@ func (ev *evaluator) aggregationCountValues(e *parser.AggregateExpr, grouping []
 		group, ok := result[groupingKey]
 		// Add a new group if it doesn't exist.
 		if !ok {
-			result[groupingKey] = &groupCount{
+			newCount := &groupCount{
 				labels: generateGroupingLabels(enh, metric, e.Without, grouping),
 				count:  1,
 			}
+			counts = append(counts, newCount)
+			result[groupingKey] = newCount
 			continue
 		}
 
 		group.count++
 	}
 
+	// Sort groupCount's by label, since the proper label ordering may be different after adding the value label
+	sort.Slice(counts, func(i, j int) bool {
+		return labels.Compare(counts[i].labels, counts[j].labels) < 0
+	})
+
 	// Construct the result Vector from the aggregated groups.
-	for _, aggr := range result {
+	for _, aggr := range counts {
 		enh.Out = append(enh.Out, Sample{
 			Metric: aggr.labels,
 			F:      float64(aggr.count),
