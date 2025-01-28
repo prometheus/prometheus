@@ -277,8 +277,8 @@ github.com/hashicorp/nomad/api v0.0.0-20241218080744-e3ac00f30eec h1:+YBzb977Vrm
 github.com/hashicorp/nomad/api v0.0.0-20241218080744-e3ac00f30eec/go.mod h1:svtxn6QnrQ69P23VvIWMR34tg3vmwLz4UdUzm1dSCgE=
 github.com/hashicorp/serf v0.10.1 h1:Z1H2J60yRKvfDYAOZLd2MU0ND4AH/WDz7xYHDWQsIPY=
 github.com/hashicorp/serf v0.10.1/go.mod h1:yL2t6BqATOLGc5HF7qbFkTfXoPIY0WZdWHfEvMqbG+4=
-github.com/hetznercloud/hcloud-go/v2 v2.17.1 h1:DPi019dv0WCiECEmtcuTgc//hBvnxESb6QlJnAb4a04=
-github.com/hetznercloud/hcloud-go/v2 v2.17.1/go.mod h1:6ygmBba+FdawR2lLp/d9uJljY2k0dTYthprrI8usdLw=
+github.com/hetznercloud/hcloud-go/v2 v2.18.0 h1:BemrVGeWI8Kn/pvaC1jBsHZxQMnRqOydS7Ju4BERB4Q=
+github.com/hetznercloud/hcloud-go/v2 v2.18.0/go.mod h1:r5RTzv+qi8IbLcDIskTzxkFIji7Ovc8yNgepQR9M+UA=
 github.com/imdario/mergo v0.3.6 h1:xTNEAn+kxVO7dTZGu0CegyqKZmoWFI0rF8UxjlB2d28=
 github.com/imdario/mergo v0.3.6/go.mod h1:2EnlNZ0deacrJVfApfmtdGgDfMuh/nq6Ok1EcJh5FfA=
 github.com/ionos-cloud/sdk-go/v6 v6.3.0 h1:/lTieTH9Mo/CWm3cTlFLnK10jgxjUGkAqRffGqvPteY=
