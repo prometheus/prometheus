@@ -65,6 +65,7 @@
     "not op_mini all"
   ],
   "devDependencies": {
+    "@babel/plugin-proposal-private-property-in-object": "^7.21.11",
     "@testing-library/react-hooks": "^8.0.1",
     "@types/enzyme": "^3.10.18",
     "@types/flot": "0.0.36",
