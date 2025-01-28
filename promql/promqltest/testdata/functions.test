@@ -419,7 +419,7 @@ clear
 
 # Tests for vector, time and timestamp.
 load 10s
-  metric 1 1
+  metric 1 1 {{schema:0 sum:1 count:1}}
 
 eval instant at 0s timestamp(metric)
   {} 0
@@ -435,6 +435,9 @@ eval instant at 10s timestamp(metric)
 
 eval instant at 10s timestamp(((metric)))
   {} 10
+
+eval instant at 20s timestamp(metric)
+  {} 20
 
 # Tests for label_join.
 load 5m
@@ -810,6 +813,8 @@ load 10s
   metric9 -9.988465674311579e+307 -9.988465674311579e+307 -9.988465674311579e+307
   metric10 -9.988465674311579e+307 9.988465674311579e+307
   metric11 1 2 3 NaN NaN
+  metric12 1 2 3 {{schema:0 sum:1 count:1}} {{schema:0 sum:3 count:3}}
+  metric13 {{schema:0 sum:1 count:1}}x5
 
 eval instant at 55s avg_over_time(metric[1m])
   {} 3
@@ -915,6 +920,23 @@ eval instant at 1m avg_over_time(metric11[1m])
 
 eval instant at 1m sum_over_time(metric11[1m])/count_over_time(metric11[1m])
   {} NaN
+
+# Tests for samples with mix of floats and histograms.
+eval_warn instant at 1m sum_over_time(metric12[1m])
+	# no result.
+
+eval_warn instant at 1m avg_over_time(metric12[1m])
+	# no result.
+
+# Tests for samples with only histograms.
+eval instant at 1m sum_over_time(metric13[1m])
+	{} {{schema:0 sum:5 count:5}}
+
+eval instant at 1m avg_over_time(metric13[1m])
+	{} {{schema:0 sum:1 count:1}}
+
+eval instant at 1m sum_over_time(metric13[1m])/count_over_time(metric13[1m])
+	{} {{schema:0 sum:1 count:1}}
 
 # Test if very big intermediate values cause loss of detail.
 clear
