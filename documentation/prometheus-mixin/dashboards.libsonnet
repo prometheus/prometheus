@@ -56,7 +56,7 @@ local row = panel.row;
         + variable.query.selectionOptions.withIncludeAll(true, '.+')
         + variable.query.selectionOptions.withMulti(true)
         + if showMultiCluster then
-          variable.query.queryTypes.withLabelValues('job', metric='prometheus_build_info{cluster=~"$cluster"}')
+          variable.query.queryTypes.withLabelValues('job', metric='prometheus_build_info{%(clusterLabel)s=~"$cluster"}' % $._config)
         else
           variable.query.queryTypes.withLabelValues('job', metric='prometheus_build_info{%(prometheusSelector)s}' % $._config)
       ;
@@ -70,7 +70,7 @@ local row = panel.row;
         + variable.query.selectionOptions.withIncludeAll(true, '.+')
         + variable.query.selectionOptions.withMulti(true)
         + if showMultiCluster then
-          variable.query.queryTypes.withLabelValues('instance', metric='prometheus_build_info{cluster=~"$cluster", job=~"$job"}')
+          variable.query.queryTypes.withLabelValues('instance', metric='prometheus_build_info{%(clusterLabel)s=~"$cluster", job=~"$job"}' % $._config)
         else
           variable.query.queryTypes.withLabelValues('instance', metric='prometheus_build_info{job=~"$job"}')
       ;
@@ -121,14 +121,14 @@ local row = panel.row;
           panel.table.queryOptions.withTargets([
             prometheus.new(
               '$datasource',
-              'count by (cluster, job, instance, version) (prometheus_build_info{cluster=~"$cluster", job=~"$job", instance=~"$instance"})'
+              'count by (cluster, job, instance, version) (prometheus_build_info{%(clusterLabel)s=~"$cluster", job=~"$job", instance=~"$instance"})' % $._config
             )
             + prometheus.withFormat('table')
             + prometheus.withInstant(true)
             + prometheus.withLegendFormat(''),
             prometheus.new(
               '$datasource',
-              'max by (cluster, job, instance) (time() - process_start_time_seconds{cluster=~"$cluster", job=~"$job", instance=~"$instance"})'
+              'max by (cluster, job, instance) (time() - process_start_time_seconds{%(clusterLabel)s=~"$cluster", job=~"$job", instance=~"$instance"})' % $._config
             )
             + prometheus.withFormat('table')
             + prometheus.withInstant(true)
@@ -163,10 +163,10 @@ local row = panel.row;
           panel.timeSeries.queryOptions.withTargets([
             prometheus.new(
               '$datasource',
-              'sum(rate(prometheus_target_sync_length_seconds_sum{cluster=~"$cluster",job=~"$job",instance=~"$instance"}[5m])) by (cluster, job, scrape_job, instance) * 1e3'
+              'sum(rate(prometheus_target_sync_length_seconds_sum{%(clusterLabel)s=~"$cluster",job=~"$job",instance=~"$instance"}[5m])) by (%(clusterLabel)s, job, scrape_job, instance) * 1e3' % $._config
             )
             + prometheus.withFormat('time_series')
-            + prometheus.withLegendFormat('{{cluster}}:{{job}}:{{instance}}:{{scrape_job}}'),
+            + prometheus.withLegendFormat('{{%(clusterLabel)s}}:{{job}}:{{instance}}:{{scrape_job}}' % $._config),
           ])
         else
           panel.timeSeries.queryOptions.withTargets([
@@ -190,10 +190,10 @@ local row = panel.row;
           panel.timeSeries.queryOptions.withTargets([
             prometheus.new(
               '$datasource',
-              'sum by (cluster, job, instance) (prometheus_sd_discovered_targets{cluster=~"$cluster", job=~"$job",instance=~"$instance"})'
+              'sum by (%(clusterLabel)s, job, instance) (prometheus_sd_discovered_targets{%(clusterLabel)s=~"$cluster", job=~"$job",instance=~"$instance"})' % $._config
             )
             + prometheus.withFormat('time_series')
-            + prometheus.withLegendFormat('{{cluster}}:{{job}}:{{instance}}'),
+            + prometheus.withLegendFormat('{{%(clusterLabel)s}}:{{job}}:{{instance}}' % $._config),
           ])
         else
           panel.timeSeries.queryOptions.withTargets([
@@ -216,10 +216,10 @@ local row = panel.row;
           panel.timeSeries.queryOptions.withTargets([
             prometheus.new(
               '$datasource',
-              'rate(prometheus_target_interval_length_seconds_sum{cluster=~"$cluster", job=~"$job",instance=~"$instance"}[5m]) / rate(prometheus_target_interval_length_seconds_count{cluster=~"$cluster", job=~"$job",instance=~"$instance"}[5m]) * 1e3'
+              'rate(prometheus_target_interval_length_seconds_sum{%(clusterLabel)s=~"$cluster", job=~"$job",instance=~"$instance"}[5m]) / rate(prometheus_target_interval_length_seconds_count{%(clusterLabel)s=~"$cluster", job=~"$job",instance=~"$instance"}[5m]) * 1e3' % $._config
             )
             + prometheus.withFormat('time_series')
-            + prometheus.withLegendFormat('{{cluster}}:{{job}}:{{instance}} {{interval}} configured'),
+            + prometheus.withLegendFormat('{{%(clusterLabel)s}}:{{job}}:{{instance}} {{interval}} configured' % $._config),
           ])
         else
           panel.timeSeries.queryOptions.withTargets([
@@ -243,34 +243,34 @@ local row = panel.row;
           panel.timeSeries.queryOptions.withTargets([
             prometheus.new(
               '$datasource',
-              'sum by (cluster, job, instance) (rate(prometheus_target_scrapes_exceeded_body_size_limit_total{cluster=~"$cluster",job=~"$job",instance=~"$instance"}[1m]))'
+              'sum by (%(clusterLabel)s, job, instance) (rate(prometheus_target_scrapes_exceeded_body_size_limit_total{%(clusterLabel)s=~"$cluster",job=~"$job",instance=~"$instance"}[1m]))' % $._config
             )
             + prometheus.withFormat('time_series')
-            + prometheus.withLegendFormat('exceeded body size limit: {{cluster}} {{job}} {{instance}}'),
+            + prometheus.withLegendFormat('exceeded body size limit: {{%(clusterLabel)s}} {{job}} {{instance}}' % $._config),
             prometheus.new(
               '$datasource',
-              'sum by (cluster, job, instance) (rate(prometheus_target_scrapes_exceeded_sample_limit_total{cluster=~"$cluster",job=~"$job",instance=~"$instance"}[1m]))'
+              'sum by (%(clusterLabel)s, job, instance) (rate(prometheus_target_scrapes_exceeded_sample_limit_total{%(clusterLabel)s=~"$cluster",job=~"$job",instance=~"$instance"}[1m]))' % $._config
             )
             + prometheus.withFormat('time_series')
-            + prometheus.withLegendFormat('exceeded sample limit: {{cluster}} {{job}} {{instance}}'),
+            + prometheus.withLegendFormat('exceeded sample limit: {{%(clusterLabel)s}} {{job}} {{instance}}' % $._config),
             prometheus.new(
               '$datasource',
-              'sum by (cluster, job, instance) (rate(prometheus_target_scrapes_sample_duplicate_timestamp_total{cluster=~"$cluster",job=~"$job",instance=~"$instance"}[1m]))'
+              'sum by (%(clusterLabel)s, job, instance) (rate(prometheus_target_scrapes_sample_duplicate_timestamp_total{%(clusterLabel)s=~"$cluster",job=~"$job",instance=~"$instance"}[1m]))' % $._config
             )
             + prometheus.withFormat('time_series')
-            + prometheus.withLegendFormat('duplicate timestamp: {{cluster}} {{job}} {{instance}}'),
+            + prometheus.withLegendFormat('duplicate timestamp: {{%(clusterLabel)s}} {{job}} {{instance}}' % $._config),
             prometheus.new(
               '$datasource',
-              'sum by (cluster, job, instance) (rate(prometheus_target_scrapes_sample_out_of_bounds_total{cluster=~"$cluster",job=~"$job",instance=~"$instance"}[1m]))'
+              'sum by (%(clusterLabel)s, job, instance) (rate(prometheus_target_scrapes_sample_out_of_bounds_total{%(clusterLabel)s=~"$cluster",job=~"$job",instance=~"$instance"}[1m]))' % $._config
             )
             + prometheus.withFormat('time_series')
-            + prometheus.withLegendFormat('out of bounds: {{cluster}} {{job}} {{instance}}'),
+            + prometheus.withLegendFormat('out of bounds: {{%(clusterLabel)s}} {{job}} {{instance}}' % $._config),
             prometheus.new(
               '$datasource',
-              'sum by (cluster, job, instance) (rate(prometheus_target_scrapes_sample_out_of_order_total{cluster=~"$cluster",job=~"$job",instance=~"$instance"}[1m]))'
+              'sum by (%(clusterLabel)s, job, instance) (rate(prometheus_target_scrapes_sample_out_of_order_total{%(clusterLabel)s=~"$cluster",job=~"$job",instance=~"$instance"}[1m]))' % $._config
             )
             + prometheus.withFormat('time_series')
-            + prometheus.withLegendFormat('out of order: {{cluster}} {{job}} {{instance}}'),
+            + prometheus.withLegendFormat('out of order: {{%(clusterLabel)s}} {{job}} {{instance}}' % $._config),
           ])
         else
           panel.timeSeries.queryOptions.withTargets([
@@ -318,10 +318,10 @@ local row = panel.row;
           panel.timeSeries.queryOptions.withTargets([
             prometheus.new(
               '$datasource',
-              'rate(prometheus_tsdb_head_samples_appended_total{cluster=~"$cluster", job=~"$job",instance=~"$instance"}[5m])'
+              'rate(prometheus_tsdb_head_samples_appended_total{%(clusterLabel)s=~"$cluster", job=~"$job",instance=~"$instance"}[5m])' % $._config
             )
             + prometheus.withFormat('time_series')
-            + prometheus.withLegendFormat('{{cluster}} {{job}} {{instance}}'),
+            + prometheus.withLegendFormat('{{%(clusterLabel)s}} {{job}} {{instance}}' % $._config),
           ])
         else
           panel.timeSeries.queryOptions.withTargets([
@@ -345,10 +345,10 @@ local row = panel.row;
           panel.timeSeries.queryOptions.withTargets([
             prometheus.new(
               '$datasource',
-              'prometheus_tsdb_head_series{cluster=~"$cluster",job=~"$job",instance=~"$instance"}'
+              'prometheus_tsdb_head_series{%(clusterLabel)s=~"$cluster",job=~"$job",instance=~"$instance"}' % $._config
             )
             + prometheus.withFormat('time_series')
-            + prometheus.withLegendFormat('{{cluster}} {{job}} {{instance}} head series'),
+            + prometheus.withLegendFormat('{{%(clusterLabel)s}} {{job}} {{instance}} head series' % $._config),
           ])
         else
           panel.timeSeries.queryOptions.withTargets([
@@ -372,10 +372,10 @@ local row = panel.row;
           panel.timeSeries.queryOptions.withTargets([
             prometheus.new(
               '$datasource',
-              'prometheus_tsdb_head_chunks{cluster=~"$cluster",job=~"$job",instance=~"$instance"}'
+              'prometheus_tsdb_head_chunks{%(clusterLabel)s=~"$cluster",job=~"$job",instance=~"$instance"}' % $._config
             )
             + prometheus.withFormat('time_series')
-            + prometheus.withLegendFormat('{{cluster}} {{job}} {{instance}} head chunks'),
+            + prometheus.withLegendFormat('{{%(clusterLabel)s}} {{job}} {{instance}} head chunks' % $._config),
           ])
         else
           panel.timeSeries.queryOptions.withTargets([
@@ -399,10 +399,10 @@ local row = panel.row;
           panel.timeSeries.queryOptions.withTargets([
             prometheus.new(
               '$datasource',
-              'rate(prometheus_engine_query_duration_seconds_count{cluster=~"$cluster",job=~"$job",instance=~"$instance",slice="inner_eval"}[5m])'
+              'rate(prometheus_engine_query_duration_seconds_count{%(clusterLabel)s=~"$cluster",job=~"$job",instance=~"$instance",slice="inner_eval"}[5m])' % $._config
             )
             + prometheus.withFormat('time_series')
-            + prometheus.withLegendFormat('{{cluster}} {{job}} {{instance}}'),
+            + prometheus.withLegendFormat('{{%(clusterLabel)s}} {{job}} {{instance}}' % $._config),
           ])
         else
           panel.timeSeries.queryOptions.withTargets([
@@ -426,7 +426,7 @@ local row = panel.row;
           panel.timeSeries.queryOptions.withTargets([
             prometheus.new(
               '$datasource',
-              'max by (slice) (prometheus_engine_query_duration_seconds{quantile="0.9",cluster=~"$cluster", job=~"$job",instance=~"$instance"}) * 1e3'
+              'max by (slice) (prometheus_engine_query_duration_seconds{quantile="0.9",%(clusterLabel)s=~"$cluster", job=~"$job",instance=~"$instance"}) * 1e3' % $._config
             )
             + prometheus.withFormat('time_series')
             + prometheus.withLegendFormat('{{slice}}'),
@@ -514,7 +514,7 @@ local row = panel.row;
         + variable.query.withDatasourceFromVariable(datasourceVariable)
         + variable.query.refresh.onTime()
         + variable.query.selectionOptions.withIncludeAll(true)
-        + variable.query.queryTypes.withLabelValues('instance', metric='prometheus_build_info{cluster=~"$cluster"}')
+        + variable.query.queryTypes.withLabelValues('instance', metric='prometheus_build_info{%(clusterLabel)s=~"$cluster"}' % $._config)
       ;
 
       local urlVariable =
@@ -522,7 +522,7 @@ local row = panel.row;
         + variable.query.withDatasourceFromVariable(datasourceVariable)
         + variable.query.refresh.onTime()
         + variable.query.selectionOptions.withIncludeAll(true)
-        + variable.query.queryTypes.withLabelValues('url', metric='prometheus_remote_storage_shards{cluster=~"$cluster", instance=~"$instance"}')
+        + variable.query.queryTypes.withLabelValues('url', metric='prometheus_remote_storage_shards{%(clusterLabel)s=~"$cluster", instance=~"$instance"}' % $._config)
       ;
 
       local timestampComparison =
@@ -534,15 +534,15 @@ local row = panel.row;
             '$datasource',
             |||
               (
-                prometheus_remote_storage_highest_timestamp_in_seconds{cluster=~"$cluster", instance=~"$instance"}
+                prometheus_remote_storage_highest_timestamp_in_seconds{%(clusterLabel)s=~"$cluster", instance=~"$instance"}
               -
-                ignoring(remote_name, url) group_right(instance) (prometheus_remote_storage_queue_highest_sent_timestamp_seconds{cluster=~"$cluster", instance=~"$instance", url=~"$url"} != 0)
+                ignoring(remote_name, url) group_right(instance) (prometheus_remote_storage_queue_highest_sent_timestamp_seconds{%(clusterLabel)s=~"$cluster", instance=~"$instance", url=~"$url"} != 0)
               )
-            |||
+            ||| % $._config
           )
           + prometheus.withFormat('time_series')
           + prometheus.withIntervalFactor(2)
-          + prometheus.withLegendFormat('{{cluster}}:{{instance}} {{remote_name}}:{{url}}'),
+          + prometheus.withLegendFormat('{{%(clusterLabel)s}}::{{instance}} {{remote_name}}:{{url}}' % $._config),
         ]);
 
       local timestampComparisonRate =
@@ -554,15 +554,15 @@ local row = panel.row;
             '$datasource',
             |||
               clamp_min(
-                rate(prometheus_remote_storage_highest_timestamp_in_seconds{cluster=~"$cluster", instance=~"$instance"}[5m])
+                rate(prometheus_remote_storage_highest_timestamp_in_seconds{%(clusterLabel)s=~"$cluster", instance=~"$instance"}[5m])
               -
-                ignoring (remote_name, url) group_right(instance) rate(prometheus_remote_storage_queue_highest_sent_timestamp_seconds{cluster=~"$cluster", instance=~"$instance", url=~"$url"}[5m])
+                ignoring (remote_name, url) group_right(instance) rate(prometheus_remote_storage_queue_highest_sent_timestamp_seconds{%(clusterLabel)s=~"$cluster", instance=~"$instance", url=~"$url"}[5m])
               , 0)
-            |||
+            ||| % $._config
           )
           + prometheus.withFormat('time_series')
           + prometheus.withIntervalFactor(2)
-          + prometheus.withLegendFormat('{{cluster}}:{{instance}} {{remote_name}}:{{url}}'),
+          + prometheus.withLegendFormat('{{%(clusterLabel)s}}:{{instance}} {{remote_name}}:{{url}}' % $._config),
         ]);
 
       local samplesRate =
@@ -574,16 +574,16 @@ local row = panel.row;
             '$datasource',
             |||
               rate(
-                prometheus_remote_storage_samples_in_total{cluster=~"$cluster", instance=~"$instance"}[5m])
+                prometheus_remote_storage_samples_in_total{%(clusterLabel)s=~"$cluster", instance=~"$instance"}[5m])
               -
-                ignoring(remote_name, url) group_right(instance) (rate(prometheus_remote_storage_succeeded_samples_total{cluster=~"$cluster", instance=~"$instance", url=~"$url"}[5m]) or rate(prometheus_remote_storage_samples_total{cluster=~"$cluster", instance=~"$instance", url=~"$url"}[5m]))
+                ignoring(remote_name, url) group_right(instance) (rate(prometheus_remote_storage_succeeded_samples_total{%(clusterLabel)s=~"$cluster", instance=~"$instance", url=~"$url"}[5m]) or rate(prometheus_remote_storage_samples_total{%(clusterLabel)s=~"$cluster", instance=~"$instance", url=~"$url"}[5m]))
               -
-                (rate(prometheus_remote_storage_dropped_samples_total{cluster=~"$cluster", instance=~"$instance", url=~"$url"}[5m]) or rate(prometheus_remote_storage_samples_dropped_total{cluster=~"$cluster", instance=~"$instance", url=~"$url"}[5m]))
-            |||
+                (rate(prometheus_remote_storage_dropped_samples_total{%(clusterLabel)s=~"$cluster", instance=~"$instance", url=~"$url"}[5m]) or rate(prometheus_remote_storage_samples_dropped_total{%(clusterLabel)s=~"$cluster", instance=~"$instance", url=~"$url"}[5m]))
+            ||| % $._config
           )
           + prometheus.withFormat('time_series')
           + prometheus.withIntervalFactor(2)
-          + prometheus.withLegendFormat('{{cluster}}:{{instance}} {{remote_name}}:{{url}}'),
+          + prometheus.withLegendFormat('{{%(clusterLabel)s}}:{{instance}} {{remote_name}}:{{url}}' % $._config),
         ]);
 
       local currentShards =
@@ -593,11 +593,11 @@ local row = panel.row;
         + panel.timeSeries.queryOptions.withTargets([
           prometheus.new(
             '$datasource',
-            'prometheus_remote_storage_shards{cluster=~"$cluster", instance=~"$instance", url=~"$url"}'
+            'prometheus_remote_storage_shards{%(clusterLabel)s=~"$cluster", instance=~"$instance", url=~"$url"}' % $._config
           )
           + prometheus.withFormat('time_series')
           + prometheus.withIntervalFactor(2)
-          + prometheus.withLegendFormat('{{cluster}}:{{instance}} {{remote_name}}:{{url}}'),
+          + prometheus.withLegendFormat('{{%(clusterLabel)s}}:{{instance}} {{remote_name}}:{{url}}' % $._config),
         ]);
 
       local maxShards =
@@ -607,11 +607,11 @@ local row = panel.row;
         + panel.timeSeries.queryOptions.withTargets([
           prometheus.new(
             '$datasource',
-            'prometheus_remote_storage_shards_max{cluster=~"$cluster", instance=~"$instance", url=~"$url"}'
+            'prometheus_remote_storage_shards_max{%(clusterLabel)s=~"$cluster", instance=~"$instance", url=~"$url"}' % $._config
           )
           + prometheus.withFormat('time_series')
           + prometheus.withIntervalFactor(2)
-          + prometheus.withLegendFormat('{{cluster}}:{{instance}} {{remote_name}}:{{url}}'),
+          + prometheus.withLegendFormat('{{%(clusterLabel)s}}:{{instance}} {{remote_name}}:{{url}}' % $._config),
         ]);
 
       local minShards =
@@ -621,11 +621,11 @@ local row = panel.row;
         + panel.timeSeries.queryOptions.withTargets([
           prometheus.new(
             '$datasource',
-            'prometheus_remote_storage_shards_min{cluster=~"$cluster", instance=~"$instance", url=~"$url"}'
+            'prometheus_remote_storage_shards_min{%(clusterLabel)s=~"$cluster", instance=~"$instance", url=~"$url"}' % $._config
           )
           + prometheus.withFormat('time_series')
           + prometheus.withIntervalFactor(2)
-          + prometheus.withLegendFormat('{{cluster}}:{{instance}} {{remote_name}}:{{url}}'),
+          + prometheus.withLegendFormat('{{%(clusterLabel)s}}{{instance}} {{remote_name}}:{{url}}' % $._config),
         ]);
 
       local desiredShards =
@@ -635,11 +635,11 @@ local row = panel.row;
         + panel.timeSeries.queryOptions.withTargets([
           prometheus.new(
             '$datasource',
-            'prometheus_remote_storage_shards_desired{cluster=~"$cluster", instance=~"$instance", url=~"$url"}'
+            'prometheus_remote_storage_shards_desired{%(clusterLabel)s=~"$cluster", instance=~"$instance", url=~"$url"}' % $._config
           )
           + prometheus.withFormat('time_series')
           + prometheus.withIntervalFactor(2)
-          + prometheus.withLegendFormat('{{cluster}}:{{instance}} {{remote_name}}:{{url}}'),
+          + prometheus.withLegendFormat('{{%(clusterLabel)s}}:{{instance}} {{remote_name}}:{{url}}' % $._config),
         ]);
 
       local shardsCapacity =
@@ -649,11 +649,11 @@ local row = panel.row;
         + panel.timeSeries.queryOptions.withTargets([
           prometheus.new(
             '$datasource',
-            'prometheus_remote_storage_shard_capacity{cluster=~"$cluster", instance=~"$instance", url=~"$url"}'
+            'prometheus_remote_storage_shard_capacity{%(clusterLabel)s=~"$cluster", instance=~"$instance", url=~"$url"}' % $._config
           )
           + prometheus.withFormat('time_series')
           + prometheus.withIntervalFactor(2)
-          + prometheus.withLegendFormat('{{cluster}}:{{instance}} {{remote_name}}:{{url}}'),
+          + prometheus.withLegendFormat('{{%(clusterLabel)s}}:{{instance}} {{remote_name}}:{{url}}' % $._config),
         ]);
 
       local pendingSamples =
@@ -663,11 +663,11 @@ local row = panel.row;
         + panel.timeSeries.queryOptions.withTargets([
           prometheus.new(
             '$datasource',
-            'prometheus_remote_storage_pending_samples{cluster=~"$cluster", instance=~"$instance", url=~"$url"} or prometheus_remote_storage_samples_pending{cluster=~"$cluster", instance=~"$instance", url=~"$url"}'
+            'prometheus_remote_storage_pending_samples{%(clusterLabel)s=~"$cluster", instance=~"$instance", url=~"$url"} or prometheus_remote_storage_samples_pending{%(clusterLabel)s=~"$cluster", instance=~"$instance", url=~"$url"}' % $._config
           )
           + prometheus.withFormat('time_series')
           + prometheus.withIntervalFactor(2)
-          + prometheus.withLegendFormat('{{cluster}}:{{instance}} {{remote_name}}:{{url}}'),
+          + prometheus.withLegendFormat('{{%(clusterLabel)s}}:{{instance}} {{remote_name}}:{{url}}' % $._config),
         ]);
 
       local walSegment =
@@ -679,11 +679,11 @@ local row = panel.row;
         + panel.timeSeries.queryOptions.withTargets([
           prometheus.new(
             '$datasource',
-            'prometheus_tsdb_wal_segment_current{cluster=~"$cluster", instance=~"$instance"}'
+            'prometheus_tsdb_wal_segment_current{%(clusterLabel)s=~"$cluster", instance=~"$instance"}' % $._config
           )
           + prometheus.withFormat('time_series')
           + prometheus.withIntervalFactor(2)
-          + prometheus.withLegendFormat('{{cluster}}:{{instance}}'),
+          + prometheus.withLegendFormat('{{%(clusterLabel)s}}:{{instance}}' % $._config),
         ]);
 
       local queueSegment =
@@ -695,11 +695,11 @@ local row = panel.row;
         + panel.timeSeries.queryOptions.withTargets([
           prometheus.new(
             '$datasource',
-            'prometheus_wal_watcher_current_segment{cluster=~"$cluster", instance=~"$instance"}'
+            'prometheus_wal_watcher_current_segment{%(clusterLabel)s=~"$cluster", instance=~"$instance"}' % $._config
           )
           + prometheus.withFormat('time_series')
           + prometheus.withIntervalFactor(2)
-          + prometheus.withLegendFormat('{{cluster}}:{{instance}} {{consumer}}'),
+          + prometheus.withLegendFormat('{{%(clusterLabel)s}}:{{instance}} {{consumer}}' % $._config),
         ]);
 
       local droppedSamples =
@@ -710,11 +710,11 @@ local row = panel.row;
         + panel.timeSeries.queryOptions.withTargets([
           prometheus.new(
             '$datasource',
-            'rate(prometheus_remote_storage_dropped_samples_total{cluster=~"$cluster", instance=~"$instance", url=~"$url"}[5m]) or rate(prometheus_remote_storage_samples_dropped_total{cluster=~"$cluster", instance=~"$instance", url=~"$url"}[5m])'
+            'rate(prometheus_remote_storage_dropped_samples_total{%(clusterLabel)s=~"$cluster", instance=~"$instance", url=~"$url"}[5m]) or rate(prometheus_remote_storage_samples_dropped_total{%(clusterLabel)s=~"$cluster", instance=~"$instance", url=~"$url"}[5m])' % $._config
           )
           + prometheus.withFormat('time_series')
           + prometheus.withIntervalFactor(2)
-          + prometheus.withLegendFormat('{{cluster}}:{{instance}} {{remote_name}}:{{url}}'),
+          + prometheus.withLegendFormat('{{%(clusterLabel)s}}:{{instance}} {{remote_name}}:{{url}}' % $._config),
         ]);
 
       local failedSamples =
@@ -725,11 +725,11 @@ local row = panel.row;
         + panel.timeSeries.queryOptions.withTargets([
           prometheus.new(
             '$datasource',
-            'rate(prometheus_remote_storage_failed_samples_total{cluster=~"$cluster", instance=~"$instance", url=~"$url"}[5m]) or rate(prometheus_remote_storage_samples_failed_total{cluster=~"$cluster", instance=~"$instance", url=~"$url"}[5m])'
+            'rate(prometheus_remote_storage_failed_samples_total{%(clusterLabel)s=~"$cluster", instance=~"$instance", url=~"$url"}[5m]) or rate(prometheus_remote_storage_samples_failed_total{%(clusterLabel)s=~"$cluster", instance=~"$instance", url=~"$url"}[5m])' % $._config
           )
           + prometheus.withFormat('time_series')
           + prometheus.withIntervalFactor(2)
-          + prometheus.withLegendFormat('{{cluster}}:{{instance}} {{remote_name}}:{{url}}'),
+          + prometheus.withLegendFormat('{{%(clusterLabel)s}}:{{instance}} {{remote_name}}:{{url}}' % $._config),
         ]);
 
       local retriedSamples =
@@ -740,11 +740,11 @@ local row = panel.row;
         + panel.timeSeries.queryOptions.withTargets([
           prometheus.new(
             '$datasource',
-            'rate(prometheus_remote_storage_retried_samples_total{cluster=~"$cluster", instance=~"$instance", url=~"$url"}[5m]) or rate(prometheus_remote_storage_samples_retried_total{cluster=~"$cluster", instance=~"$instance", url=~"$url"}[5m])'
+            'rate(prometheus_remote_storage_retried_samples_total{%(clusterLabel)s=~"$cluster", instance=~"$instance", url=~"$url"}[5m]) or rate(prometheus_remote_storage_samples_retried_total{%(clusterLabel)s=~"$cluster", instance=~"$instance", url=~"$url"}[5m])' % $._config
           )
           + prometheus.withFormat('time_series')
           + prometheus.withIntervalFactor(2)
-          + prometheus.withLegendFormat('{{cluster}}:{{instance}} {{remote_name}}:{{url}}'),
+          + prometheus.withLegendFormat('{{%(clusterLabel)s}}:{{instance}} {{remote_name}}:{{url}}' % $._config),
         ]);
 
       local enqueueRetries =
@@ -755,11 +755,11 @@ local row = panel.row;
         + panel.timeSeries.queryOptions.withTargets([
           prometheus.new(
             '$datasource',
-            'rate(prometheus_remote_storage_enqueue_retries_total{cluster=~"$cluster", instance=~"$instance", url=~"$url"}[5m])'
+            'rate(prometheus_remote_storage_enqueue_retries_total{%(clusterLabel)s=~"$cluster", instance=~"$instance", url=~"$url"}[5m])' % $._config
           )
           + prometheus.withFormat('time_series')
           + prometheus.withIntervalFactor(2)
-          + prometheus.withLegendFormat('{{cluster}}:{{instance}} {{remote_name}}:{{url}}'),
+          + prometheus.withLegendFormat('{{%(clusterLabel)s}}:{{instance}} {{remote_name}}:{{url}}' % $._config),
         ]);
 
       dashboard.new('%(prefix)sRemote Write' % $._config.grafanaPrometheus)
