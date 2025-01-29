@@ -247,7 +247,7 @@ load 5m
 
 eval instant at 0m testmetric
 `,
-			expectedError: `error in eval testmetric (line 5): unexpected metric {__name__="testmetric"} in result, has value {count:0, sum:0}`,
+			expectedError: `error in eval testmetric (line 5): unexpected metric {__name__="testmetric"} in result, has value {{}}`,
 		},
 		"instant query, but result is missing a series": {
 			input: testData + `
