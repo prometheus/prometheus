@@ -16,7 +16,6 @@ package fmtutil
 import (
 	"bytes"
 	dto "github.com/prometheus/client_model/go"
-	"github.com/stretchr/testify/assert"
 	"math"
 	"testing"
 	"time"
@@ -274,7 +273,7 @@ func TestMakeTimeseries_HistogramInfBucket(t *testing.T) {
 					}
 				}
 			}
-			assert.Truef(t, hasInf, "expected +Inf bucket in histogram")
+			require.Truef(t, hasInf, "expected +Inf bucket in histogram")
 		})
 	}
 }
