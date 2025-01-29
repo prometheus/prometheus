@@ -161,6 +161,11 @@ func registerRemoteReadMetrics(registry prometheus.Registerer) {
 
 // NewReadClient creates a new client for remote read.
 func NewReadClient(name string, conf *ClientConfig, reg prometheus.Registerer) (ReadClient, error) {
+	// metrics are registered with the custom registry
+	if reg != nil {
+		registerRemoteReadMetrics(reg)
+	}
+
 	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_read_client")
 	if err != nil {
 		return nil, err
@@ -171,11 +176,6 @@ func NewReadClient(name string, conf *ClientConfig, reg prometheus.Registerer) (
 		t = newInjectHeadersRoundTripper(conf.Headers, t)
 	}
 	httpClient.Transport = otelhttp.NewTransport(t)
-
-	// metrics are registered with the custom registry
-	if reg != nil {
-		registerRemoteReadMetrics(reg)
-	}
 
 	return &Client{
 		remoteName:          name,
