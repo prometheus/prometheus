@@ -103,7 +103,6 @@ func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string,
 	}
 	if reg != nil {
 		reg.MustRegister(rws.highestTimestamp)
-		reg.MustRegister(samplesIn, histogramsIn, exemplarsIn)
 	}
 	go rws.run()
 	return rws
