@@ -800,7 +800,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 			fp := v.Metric.Hash()
 			if _, ok := ev.metrics[fp]; !ok {
 				if v.H != nil {
-					return fmt.Errorf("unexpected metric %s in result, has value %v", v.Metric, v.H)
+					return fmt.Errorf("unexpected metric %s in result, has value %s", v.Metric, HistogramTestExpression(v.H))
 				}
 
 				return fmt.Errorf("unexpected metric %s in result, has value %v", v.Metric, v.F)
@@ -838,7 +838,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 		}
 		exp0 := ev.expected[0].vals[0]
 		if exp0.Histogram != nil {
-			return fmt.Errorf("expected histogram %v but got %s", exp0.Histogram.TestExpression(), val.String())
+			return fmt.Errorf("expected histogram %s but got %s", exp0.Histogram.TestExpression(), val.String())
 		}
 		if !almost.Equal(exp0.Value, val.V, defaultEpsilon) {
 			return fmt.Errorf("expected scalar %v but got %v", exp0.Value, val.V)
