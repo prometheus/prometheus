@@ -6,14 +6,19 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/pp/go/relabeler/remotewriter"
-	"github.com/prometheus/prometheus/config"
 	"gopkg.in/yaml.v2"
+
+	"github.com/prometheus/prometheus/config"
 )
 
 func ApplyConfig(remoteWriter *remotewriter.RemoteWriter) func(promConfig *config.Config) error {
 	return func(promConfig *config.Config) error {
 		destinationConfigs := make([]remotewriter.DestinationConfig, 0, len(promConfig.RemoteWriteConfigs))
 		for _, rwc := range promConfig.RemoteWriteConfigs {
+			if !rwc.IsPrometheusProtocol() {
+				continue
+			}
+
 			if rwc.Name == "" {
 				rwcHash, err := toHash(rwc)
 				if err != nil {

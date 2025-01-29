@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
@@ -334,88 +335,87 @@ func (rr *Receiver) ApplyConfig(cfg *prom_config.Config) error {
 			return head.Reconfigure(rCfg.Configs, numberOfShards)
 		}),
 		DistributorConfigureFunc(func(dstrb relabeler.Distributor) error {
-			// mxdgupds := new(sync.Mutex)
-			// dgupds, err := makeDestinationGroupUpdates(
-			// 	cfg.RemoteWriteConfigs,
-			// 	rr.workingDir,
-			// 	rr.clientID,
-			// 	numberOfShards,
-			// )
-			// if err != nil {
-			// 	level.Error(rr.logger).Log("msg", "failed to init destination group update", "err", err)
-			// 	return err
-			// }
-			// mxDelete := new(sync.Mutex)
-			// toDelete := []int{}
+			mxdgupds := new(sync.Mutex)
+			dgupds, err := makeDestinationGroupUpdates(
+				cfg.RemoteWriteConfigs,
+				rr.workingDir,
+				rr.clientID,
+				numberOfShards,
+			)
+			if err != nil {
+				level.Error(rr.logger).Log("msg", "failed to init destination group update", "err", err)
+				return err
+			}
+			mxDelete := new(sync.Mutex)
+			toDelete := []int{}
 
-			// dgs := dstrb.DestinationGroups()
-			// if err = dgs.RangeGo(func(destinationGroupID int, dg *relabeler.DestinationGroup) error {
-			// 	var rangeErr error
-			// 	dgu, ok := dgupds[dg.Name()]
-			// 	if !ok {
-			// 		mxDelete.Lock()
-			// 		toDelete = append(toDelete, destinationGroupID)
-			// 		mxDelete.Unlock()
-			// 		ctxShutdown, cancel := context.WithTimeout(rr.ctx, defaultShutdownTimeout)
-			// 		if rangeErr = dg.Shutdown(ctxShutdown); err != nil {
-			// 			level.Error(rr.logger).Log("msg", "failed shutdown DestinationGroup", "err", rangeErr)
-			// 		}
-			// 		cancel()
-			// 		return nil
-			// 	}
+			dgs := dstrb.DestinationGroups()
+			if err = dgs.RangeGo(func(destinationGroupID int, dg *relabeler.DestinationGroup) error {
+				var rangeErr error
+				dgu, ok := dgupds[dg.Name()]
+				if !ok {
+					mxDelete.Lock()
+					toDelete = append(toDelete, destinationGroupID)
+					mxDelete.Unlock()
+					ctxShutdown, cancel := context.WithTimeout(rr.ctx, defaultShutdownTimeout)
+					if rangeErr = dg.Shutdown(ctxShutdown); err != nil {
+						level.Error(rr.logger).Log("msg", "failed shutdown DestinationGroup", "err", rangeErr)
+					}
+					cancel()
+					return nil
+				}
 
-			// 	if !dg.Equal(dgu.DestinationGroupConfig) ||
-			// 		!dg.EqualDialers(dgu.DialersConfigs) {
-			// 		var dialers []relabeler.Dialer
-			// 		if !dg.EqualDialers(dgu.DialersConfigs) {
-			// 			dialers, rangeErr = makeDialers(rr.clock, rr.registerer, dgu.DialersConfigs)
-			// 			if rangeErr != nil {
-			// 				return rangeErr
-			// 			}
-			// 		}
+				if !dg.Equal(dgu.DestinationGroupConfig) ||
+					!dg.EqualDialers(dgu.DialersConfigs) {
+					var dialers []relabeler.Dialer
+					if !dg.EqualDialers(dgu.DialersConfigs) {
+						dialers, rangeErr = makeDialers(rr.clock, rr.registerer, dgu.DialersConfigs)
+						if rangeErr != nil {
+							return rangeErr
+						}
+					}
 
-			// 		if rangeErr = dg.ResetTo(dgu.DestinationGroupConfig, dialers); err != nil {
-			// 			return rangeErr
-			// 		}
-			// 	}
-			// 	mxdgupds.Lock()
-			// 	delete(dgupds, dg.Name())
-			// 	mxdgupds.Unlock()
-			// 	return nil
-			// }); err != nil {
-			// 	level.Error(rr.logger).Log("msg", "failed to apply config DestinationGroups", "err", err)
-			// 	return err
-			// }
-			// // delete unused DestinationGroup
-			// dgs.RemoveByID(toDelete)
+					if rangeErr = dg.ResetTo(dgu.DestinationGroupConfig, dialers); err != nil {
+						return rangeErr
+					}
+				}
+				mxdgupds.Lock()
+				delete(dgupds, dg.Name())
+				mxdgupds.Unlock()
+				return nil
+			}); err != nil {
+				level.Error(rr.logger).Log("msg", "failed to apply config DestinationGroups", "err", err)
+				return err
+			}
+			// delete unused DestinationGroup
+			dgs.RemoveByID(toDelete)
 
-			// // DISABLE DestinationGroups
-			// // // create new DestinationGroup
-			// // for _, dgupd := range dgupds {
-			// // 	dialers, err := makeDialers(rr.clock, rr.registerer, dgupd.DialersConfigs)
-			// // 	if err != nil {
-			// // 		level.Error(rr.logger).Log("msg", "failed to make new dialers", "err", err)
-			// // 		return err
-			// // 	}
+			// create new DestinationGroup
+			for _, dgupd := range dgupds {
+				dialers, err := makeDialers(rr.clock, rr.registerer, dgupd.DialersConfigs)
+				if err != nil {
+					level.Error(rr.logger).Log("msg", "failed to make new dialers", "err", err)
+					return err
+				}
 
-			// // 	dg, err := relabeler.NewDestinationGroup(
-			// // 		rr.ctx,
-			// // 		dgupd.DestinationGroupConfig,
-			// // 		encoderSelector,
-			// // 		refillCtor,
-			// // 		refillSenderCtor,
-			// // 		rr.clock,
-			// // 		dialers,
-			// // 		rr.registerer,
-			// // 	)
-			// // 	if err != nil {
-			// // 		level.Error(rr.logger).Log("msg", "failed to init DestinationGroup", "err", err)
-			// // 		return err
-			// // 	}
+				dg, err := relabeler.NewDestinationGroup(
+					rr.ctx,
+					dgupd.DestinationGroupConfig,
+					encoderSelector,
+					refillCtor,
+					refillSenderCtor,
+					rr.clock,
+					dialers,
+					rr.registerer,
+				)
+				if err != nil {
+					level.Error(rr.logger).Log("msg", "failed to init DestinationGroup", "err", err)
+					return err
+				}
 
-			// // 	dgs.Add(dg)
-			// // }
-			// dstrb.SetDestinationGroups(dgs)
+				dgs.Add(dg)
+			}
+			dstrb.SetDestinationGroups(dgs)
 
 			return nil
 		}),
@@ -456,28 +456,20 @@ func (rr *Receiver) HeadStatus(limit int) relabeler.HeadStatus {
 	return rr.appender.HeadStatus(limit)
 }
 
+// Querier calls f() with the given parameters.
+// Returns a querier.MultiQuerier combining of appenderQuerier and storageQuerier.
 func (rr *Receiver) Querier(mint, maxt int64) (storage.Querier, error) {
-	// fmt.Println("RECEIVER: Querier")
-	// start := time.Now()
-
 	appenderQuerier, err := rr.appender.Querier(mint, maxt)
 	if err != nil {
 		return nil, err
 	}
 
-	// fmt.Println("RECEIVER: Querier appender querier created")
 	storageQuerier, err := rr.storage.Querier(mint, maxt)
 	if err != nil {
 		return nil, errors.Join(err, appenderQuerier.Close())
 	}
 
-	// return storage.NewMergeQuerier(
-	// 	[]storage.Querier{appenderQuerier, storageQuerier},
-	// 	nil,
-	// 	storage.ChainedSeriesMerge,
-	// ), nil
 	return querier.NewMultiQuerier([]storage.Querier{appenderQuerier, storageQuerier}, nil), nil
-	// return querier.NewMultiQuerier([]storage.Querier{&NoopQuerier{}}, nil), nil
 }
 
 func (rr *Receiver) HeadQueryable() storage.Queryable {
@@ -503,46 +495,50 @@ func (rr *Receiver) Shutdown(ctx context.Context) error {
 
 // makeDestinationGroups create DestinationGroups from configs.
 func makeDestinationGroups(
-	_ context.Context, // ctx
-	_ clockwork.Clock, // clock
-	_ prometheus.Registerer, // registerer
-	_, _ string, // workingDir, clientID
+	ctx context.Context,
+	clock clockwork.Clock,
+	registerer prometheus.Registerer,
+	workingDir, clientID string,
 	rwCfgs []*prom_config.OpRemoteWriteConfig,
-	_ uint16, // numberOfShards
+	numberOfShards uint16,
 ) (*relabeler.DestinationGroups, error) {
 	dgs := make(relabeler.DestinationGroups, 0, len(rwCfgs))
-	// DISABLE DestinationGroups
-	// for _, rwCfg := range rwCfgs {
-	// 	dgCfg, err := convertingDestinationGroupConfig(rwCfg, workingDir, numberOfShards)
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
 
-	// 	dialersConfigs, err := convertingConfigDialers(clientID, rwCfg.Destinations)
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-	// 	dialers, err := makeDialers(clock, registerer, dialersConfigs)
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
+	for _, rwCfg := range rwCfgs {
+		if rwCfg.IsPrometheusProtocol() {
+			continue
+		}
 
-	// 	dg, err := relabeler.NewDestinationGroup(
-	// 		ctx,
-	// 		dgCfg,
-	// 		encoderSelector,
-	// 		refillCtor,
-	// 		refillSenderCtor,
-	// 		clock,
-	// 		dialers,
-	// 		registerer,
-	// 	)
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
+		dgCfg, err := convertingDestinationGroupConfig(rwCfg, workingDir, numberOfShards)
+		if err != nil {
+			return nil, err
+		}
 
-	// 	dgs = append(dgs, dg)
-	// }
+		dialersConfigs, err := convertingConfigDialers(clientID, rwCfg.Destinations)
+		if err != nil {
+			return nil, err
+		}
+		dialers, err := makeDialers(clock, registerer, dialersConfigs)
+		if err != nil {
+			return nil, err
+		}
+
+		dg, err := relabeler.NewDestinationGroup(
+			ctx,
+			dgCfg,
+			encoderSelector,
+			refillCtor,
+			refillSenderCtor,
+			clock,
+			dialers,
+			registerer,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		dgs = append(dgs, dg)
+	}
 
 	return &dgs, nil
 }
@@ -556,6 +552,10 @@ func makeDestinationGroupUpdates(
 	dgus := make(map[string]*relabeler.DestinationGroupUpdate, len(rwCfgs))
 
 	for _, rwCfg := range rwCfgs {
+		if rwCfg.IsPrometheusProtocol() {
+			continue
+		}
+
 		dgCfg, err := convertingDestinationGroupConfig(rwCfg, workingDir, numberOfShards)
 		if err != nil {
 			return nil, err
@@ -633,8 +633,7 @@ func convertingConfigDialers(
 				DialerConfig: relabeler.NewDialerConfig(
 					sCfg.URL.URL,
 					clientID,
-					// TODO If not Credentials, accessToken = ""
-					string(sCfg.HTTPClientConfig.Authorization.Credentials),
+					extractAccessToken(sCfg.HTTPClientConfig.Authorization),
 				),
 				ConnDialerConfig: ccfg,
 			},
@@ -642,6 +641,15 @@ func convertingConfigDialers(
 	}
 
 	return dialersConfigs, nil
+}
+
+// extractAccessToken extract access token from Authorization config.
+func extractAccessToken(authorization *common_config.Authorization) string {
+	if authorization == nil {
+		return ""
+	}
+
+	return string(authorization.Credentials)
 }
 
 // makeDialers create dialers from main config according to the specified parameters.
@@ -671,53 +679,53 @@ func makeDialers(
 	return dialers, nil
 }
 
-// // encoderSelector selector for constructors for encoders.
-// func encoderSelector(isShrinkable bool) relabeler.ManagerEncoderCtor {
-// 	if isShrinkable {
-// 		return func(shardID uint16, shardsNumberPower uint8) relabeler.ManagerEncoder {
-// 			return cppbridge.NewWALEncoderLightweight(shardID, shardsNumberPower)
-// 		}
-// 	}
+// encoderSelector selector for constructors for encoders.
+func encoderSelector(isShrinkable bool) relabeler.ManagerEncoderCtor {
+	if isShrinkable {
+		return func(shardID uint16, shardsNumberPower uint8) relabeler.ManagerEncoder {
+			return cppbridge.NewWALEncoderLightweight(shardID, shardsNumberPower)
+		}
+	}
 
-// 	return func(shardID uint16, shardsNumberPower uint8) relabeler.ManagerEncoder {
-// 		return cppbridge.NewWALEncoder(shardID, shardsNumberPower)
-// 	}
-// }
+	return func(shardID uint16, shardsNumberPower uint8) relabeler.ManagerEncoder {
+		return cppbridge.NewWALEncoder(shardID, shardsNumberPower)
+	}
+}
 
-// // refillCtor default contructor for refill.
-// func refillCtor(
-// 	workinDir string,
-// 	blockID uuid.UUID,
-// 	destinations []string,
-// 	shardsNumberPower uint8,
-// 	segmentEncodingVersion uint8,
-// 	alwaysToRefill bool,
-// 	name string,
-// 	registerer prometheus.Registerer,
-// ) (relabeler.ManagerRefill, error) {
-// 	return relabeler.NewRefill(
-// 		workinDir,
-// 		shardsNumberPower,
-// 		segmentEncodingVersion,
-// 		blockID,
-// 		alwaysToRefill,
-// 		name,
-// 		registerer,
-// 		destinations...,
-// 	)
-// }
+// refillCtor default contructor for refill.
+func refillCtor(
+	workinDir string,
+	blockID uuid.UUID,
+	destinations []string,
+	shardsNumberPower uint8,
+	segmentEncodingVersion uint8,
+	alwaysToRefill bool,
+	name string,
+	registerer prometheus.Registerer,
+) (relabeler.ManagerRefill, error) {
+	return relabeler.NewRefill(
+		workinDir,
+		shardsNumberPower,
+		segmentEncodingVersion,
+		blockID,
+		alwaysToRefill,
+		name,
+		registerer,
+		destinations...,
+	)
+}
 
-// // refillSenderCtor default contructor for manager sender.
-// func refillSenderCtor(
-// 	rsmCfg relabeler.RefillSendManagerConfig,
-// 	workingDir string,
-// 	dialers []relabeler.Dialer,
-// 	clock clockwork.Clock,
-// 	name string,
-// 	registerer prometheus.Registerer,
-// ) (relabeler.ManagerRefillSender, error) {
-// 	return relabeler.NewRefillSendManager(rsmCfg, workingDir, dialers, clock, name, registerer)
-// }
+// refillSenderCtor default contructor for manager sender.
+func refillSenderCtor(
+	rsmCfg relabeler.RefillSendManagerConfig,
+	workingDir string,
+	dialers []relabeler.Dialer,
+	clock clockwork.Clock,
+	name string,
+	registerer prometheus.Registerer,
+) (relabeler.ManagerRefillSender, error) {
+	return relabeler.NewRefillSendManager(rsmCfg, workingDir, dialers, clock, name, registerer)
+}
 
 // initLogHandler init log handler for ManagerKeeper.
 func initLogHandler(logger log.Logger) {

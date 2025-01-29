@@ -44,11 +44,21 @@ type metricReceiver struct {
 	appendFn func(ctx context.Context, hashdex cppbridge.ShardedData, relabelerID string) error
 }
 
-func (mr *metricReceiver) AppendHashdex(ctx context.Context, hashdex cppbridge.ShardedData, relabelerID string) error {
+func (mr *metricReceiver) AppendHashdex(
+	ctx context.Context,
+	hashdex cppbridge.ShardedData,
+	relabelerID string,
+	_ bool,
+) error {
 	return mr.appendFn(ctx, hashdex, relabelerID)
 }
 
-func (mr *metricReceiver) AppendProtobuf(ctx context.Context, data relabeler.ProtobufData, relabelerID string) error {
+func (mr *metricReceiver) AppendProtobuf(
+	ctx context.Context,
+	data relabeler.ProtobufData,
+	relabelerID string,
+	_ bool,
+) error {
 	return nil
 }
 

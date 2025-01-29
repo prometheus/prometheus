@@ -19,7 +19,7 @@ import (
 
 const (
 	PrometheusProtocol = "prometheus"
-	ProtocolOdarix     = "odarix"
+	OpProtocol         = "odarix"
 	ScrapePrefix       = "scrape_"
 	// TransparentRelabeler relabeler without ralabeling.
 	TransparentRelabeler = "transparent_relabeler"
@@ -133,7 +133,7 @@ func (c *OpRemoteWriteConfig) Validate() error {
 
 	for _, d := range c.Destinations {
 		switch c.Protocol {
-		case ProtocolOdarix:
+		case OpProtocol:
 			if err := d.OpValidate(); err != nil {
 				return err
 			}
@@ -147,6 +147,11 @@ func (c *OpRemoteWriteConfig) Validate() error {
 	}
 
 	return nil
+}
+
+// IsPrometheusProtocol check type protocol is prometheus.
+func (c *OpRemoteWriteConfig) IsPrometheusProtocol() bool {
+	return c.Protocol == PrometheusProtocol
 }
 
 // Validate validates RemoteWriteConfig, but also fills relevant default values from global config if needed.
