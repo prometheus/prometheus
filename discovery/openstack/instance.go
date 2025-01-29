@@ -25,6 +25,7 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/floatingips"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/ports"
+	"github.com/gophercloud/gophercloud/v2/openstack/utils"
 	"github.com/gophercloud/gophercloud/v2/pagination"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
@@ -72,6 +73,27 @@ func newInstanceDiscovery(provider *gophercloud.ProviderClient, opts *gopherclou
 	}
 }
 
+type SupportedFeatures struct {
+    flavorOriginalName bool // Available from 2.47
+}
+
+func getSupportedFeatures(minMinor, minMajor, maxMinor, maxMajor int) SupportedFeatures {
+    features := SupportedFeatures{}
+
+    // Feature: 'flavor.original_name' is supported from microversion 2.47 onwards
+    if maxMajor > 2 || (maxMajor == 2 && maxMinor >= 47) {
+        features.flavorOriginalName = true
+    }
+
+    return features
+}
+
+func setClientMicroversion(sc *gophercloud.ServiceClient, microversion string) *gophercloud.ServiceClient {
+	microversioned := *sc
+	microversioned.Microversion = microversion
+	return &microversioned
+}
+
 type floatingIPKey struct {
 	deviceID string
 	fixed    string
@@ -89,6 +111,20 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 	if err != nil {
 		return nil, fmt.Errorf("could not create OpenStack compute session: %w", err)
 	}
+
+	supportedVersions, err := utils.GetSupportedMicroversions(ctx, client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch supported microversions: %w", err)
+	}
+
+	// Determine available features
+	features := getSupportedFeatures(supportedVersions.MinMinor, supportedVersions.MinMajor, supportedVersions.MaxMinor, supportedVersions.MaxMajor)
+
+	minMicroversion := fmt.Sprintf("%d.%d", supportedVersions.MaxMajor, supportedVersions.MaxMinor)
+	client = setClientMicroversion(client, minMicroversion)
+
+	maxMicroversion := fmt.Sprintf("%d.%d", supportedVersions.MaxMajor, supportedVersions.MaxMinor)
+	clientLatest := setClientMicroversion(client, maxMicroversion)
 
 	networkClient, err := openstack.NewNetworkV2(i.provider, gophercloud.EndpointOpts{
 		Region: i.region, Availability: i.availability,
@@ -157,6 +193,27 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 		AllTenants: i.allTenants,
 	}
 	pager := servers.List(client, opts)
+
+	var latestServers []servers.Server
+	if features.flavorOriginalName {
+		// Fetch the server list using the client with the latest microversion
+		allPages, err := servers.List(clientLatest, nil).AllPages(ctx)
+		if err != nil {
+			i.logger.Warn("Failed to fetch server list with latest microversion, falling back to flavor.id:", err)
+		} else {
+			latestServers, err = servers.ExtractServers(allPages)
+			if err != nil {
+				i.logger.Warn("Failed to extract servers with latest microversion, falling back to flavor.id:", err)
+			}
+		}
+	}
+	latestServerMap := make(map[string]servers.Server)
+	if len(latestServers) > 0 {
+		for _, server := range latestServers {
+			latestServerMap[server.ID] = server
+		}
+	}
+
 	tg := &targetgroup.Group{
 		Source: "OS_" + i.region,
 	}
@@ -183,18 +240,28 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 				openstackLabelUserID:         model.LabelValue(s.UserID),
 			}
 
-			flavorName, nameOk := s.Flavor["original_name"].(string)
-			// "original_name" is only available for microversion >= 2.47. It was added in favor of "id".
-			if !nameOk {
-				flavorID, idOk := s.Flavor["id"].(string)
-				if !idOk {
-					i.logger.Warn("Invalid type for both flavor original_name and flavor id, expected string")
-					continue
+			// Check if we have enriched data for this server in the latestServerMap
+			if features.flavorOriginalName {
+				if latestServer, ok := latestServerMap[s.ID]; ok {
+					flavorName, nameOk := latestServer.Flavor["original_name"].(string)
+					if nameOk {
+						labels[openstackLabelInstanceFlavor] = model.LabelValue(flavorName)
+					} else {
+						i.logger.Warn("flavor.original_name not found for server, falling back to flavor.id", "instance", s.ID)
+					}
 				}
-				labels[openstackLabelInstanceFlavor] = model.LabelValue(flavorID)
-			} else {
-				labels[openstackLabelInstanceFlavor] = model.LabelValue(flavorName)
 			}
+
+			// Fallback to using flavor.id from the original server list if flavor.original_name wasn't set
+			if _, exists := labels[openstackLabelInstanceFlavor]; !exists {
+				flavorID, idOk := s.Flavor["id"].(string)
+				if idOk {
+					labels[openstackLabelInstanceFlavor] = model.LabelValue(flavorID)
+				} else {
+					i.logger.Warn("Invalid type for both flavor.original_name and flavor.id in server, expected string", "instance", s.ID)
+				}
+			}
+
 
 			imageID, ok := s.Image["id"].(string)
 			if ok {
