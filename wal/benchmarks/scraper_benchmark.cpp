@@ -2,7 +2,7 @@
 
 #include <benchmark/benchmark.h>
 
-#include "scraper.h"
+#include "wal/hashdex/scraper/scraper.h"
 
 namespace {
 
