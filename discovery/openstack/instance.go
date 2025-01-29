@@ -74,18 +74,18 @@ func newInstanceDiscovery(provider *gophercloud.ProviderClient, opts *gopherclou
 }
 
 type SupportedFeatures struct {
-    flavorOriginalName bool // Available from 2.47
+	flavorOriginalName bool // Available from 2.47
 }
 
 func getSupportedFeatures(minMinor, minMajor, maxMinor, maxMajor int) SupportedFeatures {
-    features := SupportedFeatures{}
+	features := SupportedFeatures{}
 
-    // Feature: 'flavor.original_name' is supported from microversion 2.47 onwards
-    if maxMajor > 2 || (maxMajor == 2 && maxMinor >= 47) {
-        features.flavorOriginalName = true
-    }
+	// Feature: 'flavor.original_name' is supported from microversion 2.47 onwards
+	if maxMajor > 2 || (maxMajor == 2 && maxMinor >= 47) {
+		features.flavorOriginalName = true
+	}
 
-    return features
+	return features
 }
 
 func setClientMicroversion(sc *gophercloud.ServiceClient, microversion string) *gophercloud.ServiceClient {
@@ -197,13 +197,13 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 	var latestServers []servers.Server
 	if features.flavorOriginalName {
 		// Fetch the server list using the client with the latest microversion
-		allPages, err := servers.List(clientLatest, nil).AllPages(ctx)
+		allPages, err := servers.List(clientLatest, opts).AllPages(ctx)
 		if err != nil {
-			i.logger.Warn("Failed to fetch server list with latest microversion, falling back to flavor.id:", err)
+			i.logger.Warn("Failed to fetch server list with latest microversion, falling back to flavor.id")
 		} else {
 			latestServers, err = servers.ExtractServers(allPages)
 			if err != nil {
-				i.logger.Warn("Failed to extract servers with latest microversion, falling back to flavor.id:", err)
+				i.logger.Warn("Failed to extract servers with latest microversion, falling back to flavor.id")
 			}
 		}
 	}
@@ -261,7 +261,6 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 					i.logger.Warn("Invalid type for both flavor.original_name and flavor.id in server, expected string", "instance", s.ID)
 				}
 			}
-
 
 			imageID, ok := s.Image["id"].(string)
 			if ok {
