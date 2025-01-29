@@ -187,35 +187,48 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 // not a histogram, and a warning wrapped in an annotation in that case.
 // Otherwise, it returns the calculated histogram and an empty annotation.
 func histogramRate(points []HPoint, isCounter bool, metricName string, pos posrange.PositionRange) (*histogram.FloatHistogram, annotations.Annotations) {
-	prev := points[0].H
-	usingCustomBuckets := prev.UsesCustomBuckets()
-	last := points[len(points)-1].H
+	var (
+		prev               = points[0].H
+		usingCustomBuckets = prev.UsesCustomBuckets()
+		last               = points[len(points)-1].H
+		annos              annotations.Annotations
+	)
+
 	if last == nil {
-		return nil, annotations.New().Add(annotations.NewMixedFloatsHistogramsWarning(metricName, pos))
+		return nil, annos.Add(annotations.NewMixedFloatsHistogramsWarning(metricName, pos))
 	}
 
-	minSchema := prev.Schema
-	if last.Schema < minSchema {
-		minSchema = last.Schema
+	// We check for gauge type histograms in the loop below, but the loop
+	// below does not run on the first and last point, so check the first
+	// and last point now.
+	if isCounter && (prev.CounterResetHint == histogram.GaugeType || last.CounterResetHint == histogram.GaugeType) {
+		annos.Add(annotations.NewNativeHistogramNotCounterWarning(metricName, pos))
+	}
+
+	// Null out the 1st sample if there is a counter reset between the 1st
+	// and 2nd. In this case, we want to ignore any incompatibility in the
+	// bucket layout of the 1st sample because we do not need to look at it.
+	if isCounter && len(points) > 1 {
+		second := points[1].H
+		if second != nil && second.DetectReset(prev) {
+			prev = &histogram.FloatHistogram{}
+			prev.Schema = second.Schema
+			prev.CustomValues = second.CustomValues
+			usingCustomBuckets = second.UsesCustomBuckets()
+		}
 	}
 
 	if last.UsesCustomBuckets() != usingCustomBuckets {
-		return nil, annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
-	}
-
-	var annos annotations.Annotations
-
-	// We check for gauge type histograms in the loop below, but the loop below does not run on the first and last point,
-	// so check the first and last point now.
-	if isCounter && (prev.CounterResetHint == histogram.GaugeType || last.CounterResetHint == histogram.GaugeType) {
-		annos.Add(annotations.NewNativeHistogramNotCounterWarning(metricName, pos))
+		return nil, annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
 	}
 
 	// First iteration to find out two things:
 	// - What's the smallest relevant schema?
 	// - Are all data points histograms?
-	//   TODO(beorn7): Find a way to check that earlier, e.g. by handing in a
-	//   []FloatPoint and a []HistogramPoint separately.
+	minSchema := prev.Schema
+	if last.Schema < minSchema {
+		minSchema = last.Schema
+	}
 	for _, currPoint := range points[1 : len(points)-1] {
 		curr := currPoint.H
 		if curr == nil {
