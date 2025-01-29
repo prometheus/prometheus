@@ -1,6 +1,7 @@
 package cppbridge
 
 import (
+	"context"
 	"runtime"
 	"unsafe"
 
@@ -55,6 +56,12 @@ const (
 	LSSQueryStatusMatch
 )
 
+const (
+	LSSQuerySourceRule uint32 = iota
+	LSSQuerySourceFederate
+	LSSQuerySourceOther
+)
+
 type LSSQueryResult struct {
 	status  uint32
 	matches []uint32 // c allocated
@@ -68,9 +75,9 @@ func (r *LSSQueryResult) Matches() []uint32 {
 	return r.matches
 }
 
-func (lss *LabelSetStorage) Query(matchers []model.LabelMatcher) *LSSQueryResult {
+func (lss *LabelSetStorage) Query(matchers []model.LabelMatcher, querySource uint32) *LSSQueryResult {
 	result := &LSSQueryResult{}
-	result.status, result.matches = primitivesLSSQuery(lss.Pointer(), matchers)
+	result.status, result.matches = primitivesLSSQuery(lss.Pointer(), matchers, querySource)
 	runtime.SetFinalizer(result, func(result *LSSQueryResult) {
 		freeBytes(*(*[]byte)(unsafe.Pointer(&result.matches)))
 	})
@@ -173,4 +180,25 @@ func newLSS(lss_type uint32) *lssPointerWrapper {
 		primitivesLSSDtor(lss.pointer)
 	})
 	return lss
+}
+
+type ctxCallerKey struct{}
+
+// SetTraceID get from context callerID, if not exist return LSSQuerySourceOther.
+func GetCaller(ctx context.Context) uint32 {
+	v, ok := ctx.Value(ctxCallerKey{}).(uint32)
+	if !ok {
+		return LSSQuerySourceOther
+	}
+
+	if v >= LSSQuerySourceOther {
+		return LSSQuerySourceOther
+	}
+
+	return v
+}
+
+// SetTraceID set callerID to context.
+func SetCaller(parent context.Context, callerID uint32) context.Context {
+	return context.WithValue(parent, ctxCallerKey{}, callerID)
 }

@@ -37,6 +37,9 @@ extern "C" {
  *          num_series      uint32
  *          chunk_count     uint32
  *          num_label_pairs uint32
+ *          rule_queried_series uint32
+ *          federate_queried_series uint32
+ *          other_queried_series uint32
  *     }
  * }
  */

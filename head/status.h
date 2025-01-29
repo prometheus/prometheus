@@ -36,6 +36,9 @@ struct Status {
   uint32_t num_series{};
   uint32_t chunk_count{};
   uint32_t num_label_pairs{};
+  uint32_t rule_queried_series{};
+  uint32_t federate_queried_series{};
+  uint32_t other_queried_series{};
 
   bool operator==(const Status&) const noexcept = default;
 };
@@ -91,6 +94,8 @@ class StatusGetter {
   }
 
   void get(Status& status) {
+    using enum series_index::QueriedSeries::Source;
+
     static constexpr auto fill_top_items = [](const auto& top_items, auto& destination) PROMPP_LAMBDA_INLINE {
       destination.reserve(top_items.size());
       std::ranges::copy_if(top_items.elements(), std::back_inserter(destination), [&](const auto& item) PROMPP_LAMBDA_INLINE { return item.count > 0; });
@@ -100,6 +105,9 @@ class StatusGetter {
     status.num_series = lss_.size();
     status.chunk_count = data_storage_.chunks().non_empty_chunk_count();
     status.num_label_pairs = label_count_;
+    status.rule_queried_series = lss_.queried_series_count(kRule);
+    status.federate_queried_series = lss_.queried_series_count(kFederate);
+    status.other_queried_series = lss_.queried_series_count(kOther);
 
     fill_top_items(top_label_value_count_by_name_, status.label_value_count_by_label_name);
     fill_top_items(top_series_count_by_metric_name_, status.series_count_by_metric_name);

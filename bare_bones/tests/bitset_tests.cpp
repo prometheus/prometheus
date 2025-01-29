@@ -32,7 +32,7 @@ TEST_F(BitsetFixture, should_resize_up_to_10_percent) {
 }
 
 TEST_F(BitsetFixture, valid_unset) {
-  const int size = 65536;
+  constexpr int size = 65536;
 
   bs_.resize(size);
   for (auto i = 0; i < size; ++i) {
@@ -45,7 +45,7 @@ TEST_F(BitsetFixture, valid_unset) {
 
 TEST_F(BitsetFixture, random_access) {
   std::vector<uint32_t> index;
-  const int bs_size = 65536;
+  constexpr int bs_size = 65536;
 
   std::mt19937 gen32(testing::UnitTest::GetInstance()->random_seed());
   // Generate index for bit position
@@ -55,12 +55,12 @@ TEST_F(BitsetFixture, random_access) {
   }
 
   // Sort and uniq index
-  std::sort(index.begin(), index.end());
+  std::ranges::sort(index);
   index.erase(std::unique(index.begin(), index.end()), index.end());
 
   // Filling the bitset from index
   bs_.resize(bs_size);
-  for (auto i : index) {
+  for (const auto i : index) {
     bs_.set(i);
   }
 
@@ -98,7 +98,7 @@ TEST_F(BitsetFixture, should_decriase_increase_size) {
   bs_.resize(4);
   // after resize we have bitset {0,1,0,0}
   // create vector that include all position of set bits
-  std::vector<uint32_t> bs_vec_reference = {1};
+  const std::vector<uint32_t> bs_vec_reference = {1};
 
   // save possition of set original bitset to vector
   std::vector<uint32_t> bs_vec;
@@ -112,7 +112,7 @@ TEST_F(BitsetFixture, should_decriase_increase_size) {
 
 TEST_F(BitsetFixture, should_iterate_over_empty) {
   uint32_t count = 0;
-  for (auto i : bs_) {
+  for (const auto i : bs_) {
     count += i;
   }
 
@@ -124,7 +124,7 @@ TEST_F(BitsetFixture, should_iterate_over_resized_empty) {
   bs_.resize(0);
 
   uint32_t count = 0;
-  for (auto i : bs_) {
+  for (const auto i : bs_) {
     count += i;
   }
 
@@ -137,7 +137,7 @@ TEST_F(BitsetFixture, should_not_out_of_range_on_resize) {
   bs_.resize(4096);
 
   uint32_t count = 0;
-  for (auto i : bs_) {
+  for (const auto i : bs_) {
     count += i;
   }
 
@@ -182,6 +182,54 @@ TEST_F(BitsetFixture, TestResetCorrectness) {
   EXPECT_TRUE(bs_[0]);
   EXPECT_FALSE(bs_[1]);
   EXPECT_TRUE(bs_[2]);
+}
+
+TEST_F(BitsetFixture, PopcountOnEmptyBitset) {
+  // Arrange
+  bs_.resize(1);
+
+  // Act
+
+  // Assert
+  EXPECT_EQ(0U, bs_.popcount());
+}
+
+TEST_F(BitsetFixture, PopcountOnNonEmptyBitset) {
+  // Arrange
+  bs_.resize(9);
+
+  // Act
+  bs_.set(0);
+  bs_.set(4);
+  bs_.set(8);
+
+  // Assert
+  EXPECT_EQ(3U, bs_.popcount());
+}
+
+TEST_F(BitsetFixture, PopcountAfterResizeInCurrentUint64) {
+  // Arrange
+  bs_.resize(1);
+
+  // Act
+  bs_.set(0);
+  bs_.resize(0);
+
+  // Assert
+  EXPECT_EQ(0U, bs_.popcount());
+}
+
+TEST_F(BitsetFixture, PopcountAfterResizeInNextUint64) {
+  // Arrange
+  bs_.resize(9);
+
+  // Act
+  bs_.set(8);
+  bs_.resize(0);
+  bs_.resize(9);
+
+  // Assert
+  EXPECT_EQ(0U, bs_.popcount());
 }
 
 }  // namespace

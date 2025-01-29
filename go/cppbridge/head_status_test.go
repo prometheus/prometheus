@@ -29,18 +29,22 @@ func (s *HeadStatusSuite) SetupTest() {
 
 func (s *HeadStatusSuite) TestSomeData() {
 	// Arrange
-	label_sets := []model.LabelSet{
+	labelSets := []model.LabelSet{
 		model.NewLabelSetBuilder().Set("job", "cron").Set("server", "localhost").Set("__name__", "php").Build(),
 		model.NewLabelSetBuilder().Set("job", "cron").Set("server", "127.0.0.1:8000").Set("__name__", "c++").Build(),
 		model.NewLabelSetBuilder().Set("job", "cro1").Set("ip", "127.0.0.1").Set("__name__", "nodejs").Build(),
 	}
-	for _, label_set := range label_sets {
-		s.lssStorage.FindOrEmplace(label_set)
+	for _, labelSet := range labelSets {
+		s.lssStorage.FindOrEmplace(labelSet)
 	}
 
 	s.encoder.Encode(0, 1, 1.0)
 	s.encoder.Encode(1, 3, 1.0)
 	s.encoder.Encode(2, 3, 1.0)
+
+	s.lssStorage.Query(
+		[]model.LabelMatcher{{Name: "job", Value: "cron", MatcherType: model.MatcherTypeExactMatch}},
+		cppbridge.LSSQuerySourceRule)
 
 	// Act
 	status := cppbridge.GetHeadStatus(s.lssStorage.Pointer(), s.dataStorage.Pointer(), s.limit)
@@ -82,7 +86,9 @@ func (s *HeadStatusSuite) TestSomeData() {
 			{Name: "server", Value: "localhost", Count: 1},
 			{Name: "server", Value: "127.0.0.1:8000", Count: 1},
 			{Name: "ip", Value: "127.0.0.1", Count: 1}},
-		NumSeries:     3,
-		ChunkCount:    3,
-		NumLabelPairs: 8}, *status)
+		NumSeries:         3,
+		ChunkCount:        3,
+		NumLabelPairs:     8,
+		RuleQueriedSeries: 2,
+	}, *status)
 }

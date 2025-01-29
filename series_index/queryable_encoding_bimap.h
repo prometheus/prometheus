@@ -3,6 +3,7 @@
 #include "bare_bones/allocator.h"
 #include "bare_bones/preprocess.h"
 #include "bare_bones/snug_composite.h"
+#include "queried_series.h"
 #include "reverse_index.h"
 #include "sorting_index.h"
 #include "trie_index.h"
@@ -39,7 +40,7 @@ class QueryableEncodingBimap : public BareBones::SnugComposite::DecodingTable<Fi
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept {
     return trie_index_.allocated_memory() + reverse_index_.allocated_memory() + ls_id_set_allocated_memory_ + ls_id_hash_set_allocated_memory_ +
-           sorting_index_.allocated_memory() + Base::allocated_memory();
+           sorting_index_.allocated_memory() + queried_series_.allocated_memory() + Base::allocated_memory();
   }
 
   template <class LabelSet>
@@ -57,6 +58,7 @@ class QueryableEncodingBimap : public BareBones::SnugComposite::DecodingTable<Fi
     auto ls_id = Base::items_.size();
     auto composite_label_set = Base::items_.emplace_back(Base::data_, label_set).composite(Base::data());
     update_indexes(ls_id, composite_label_set, hash);
+    queried_series_.set_series_count(Base::items_.size());
     return ls_id;
   }
 
@@ -76,6 +78,13 @@ class QueryableEncodingBimap : public BareBones::SnugComposite::DecodingTable<Fi
     return {};
   }
 
+  template <class SeriesIdContainer>
+  PROMPP_ALWAYS_INLINE void set_queried_series(QueriedSeries::Source source, const SeriesIdContainer& ids) noexcept {
+    queried_series_.set(source, ids);
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t queried_series_count(QueriedSeries::Source source) const noexcept { return queried_series_.count(source); }
+
  private:
   using LabelSet = typename Base::value_type;
 
@@ -90,8 +99,11 @@ class QueryableEncodingBimap : public BareBones::SnugComposite::DecodingTable<Fi
 
   SortingIndex<LsIdSet> sorting_index_{ls_id_set_};
 
+  QueriedSeries queried_series_;
+
   PROMPP_ALWAYS_INLINE void after_items_load(uint32_t first_loaded_id) noexcept override {
     ls_id_hash_set_.reserve(Base::items_.size());
+    queried_series_.set_series_count(Base::items_.size());
 
     for (auto ls_id = first_loaded_id; ls_id < Base::items_.size(); ++ls_id) {
       auto label_set = this->operator[](ls_id);
@@ -104,7 +116,7 @@ class QueryableEncodingBimap : public BareBones::SnugComposite::DecodingTable<Fi
     auto ls_id_set_iterator = ls_id_set_.emplace(ls_id).first;
 
     for (auto label = label_set.begin(); label != label_set.end(); ++label) {
-      if (!is_valid_label((*label).second)) {
+      if (!is_valid_label((*label).second)) [[unlikely]] {
         continue;
       }
 

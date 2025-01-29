@@ -178,6 +178,7 @@ type Head struct {
 	appendedSegmentCount prometheus.Counter
 	memoryInUse          *prometheus.GaugeVec
 	series               prometheus.Gauge
+	queried              *prometheus.GaugeVec
 	stopc                chan struct{}
 	wg                   *sync.WaitGroup
 }
@@ -238,6 +239,13 @@ func New(
 			Name: "prompp_head_series",
 			Help: "Total number of series in the heads block.",
 		}),
+		queried: factory.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "prompp_head_queried_series",
+				Help: "Total number of queried series in the heads block.",
+			},
+			[]string{"caller"},
+		),
 	}
 
 	if err := h.reconfigure(inputRelabelerConfigs, numberOfShards); err != nil {
@@ -426,7 +434,17 @@ func (h *Head) Reconfigure(inputRelabelerConfigs []*config.InputRelabelerConfig,
 }
 
 func (h *Head) WriteMetrics() {
-	h.series.Set(float64(h.Status(1).HeadStats.NumSeries))
+	status := h.Status(1)
+	h.series.Set(float64(status.HeadStats.NumSeries))
+	h.queried.With(
+		prometheus.Labels{"caller": "rule"},
+	).Set(float64(status.HeadStats.RuleQueriedSeries))
+	h.queried.With(
+		prometheus.Labels{"caller": "federate"},
+	).Set(float64(status.HeadStats.FederateQueriedSeries))
+	h.queried.With(
+		prometheus.Labels{"caller": "other"},
+	).Set(float64(status.HeadStats.OtherQueriedSeries))
 
 	_ = h.ForEachShard(func(shard relabeler.Shard) error {
 		h.memoryInUse.With(
@@ -483,6 +501,9 @@ func (h *Head) Status(limit int) relabeler.HeadStatus {
 		headStatus.HeadStats.NumSeries += uint64(shardStatus.NumSeries)
 		headStatus.HeadStats.ChunkCount += int64(shardStatus.ChunkCount)
 		headStatus.HeadStats.NumLabelPairs += int(shardStatus.NumLabelPairs)
+		headStatus.HeadStats.RuleQueriedSeries += int64(shardStatus.RuleQueriedSeries)
+		headStatus.HeadStats.FederateQueriedSeries += int64(shardStatus.FederateQueriedSeries)
+		headStatus.HeadStats.OtherQueriedSeries += int64(shardStatus.OtherQueriedSeries)
 
 		for _, stat := range shardStatus.SeriesCountByMetricName {
 			seriesStats[stat.Name] += uint64(stat.Count)

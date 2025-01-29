@@ -60,6 +60,9 @@ extern "C" {
  *          num_series      uint32
  *          chunk_count     uint32
  *          num_label_pairs uint32
+ *          rule_queried_series uint32
+ *          federate_queried_series uint32
+ *          other_queried_series uint32
  *     }
  * }
  */
@@ -409,6 +412,7 @@ void prompp_primitives_lss_find_or_emplace(void* args, void* res);
  * @param args {
  *     lss uintptr                         // pointer to constructed queryable lss;
  *     label_matchers []model.LabelMatcher // label matchers
+ *     query_source uint32                 // query source (rule, federate, other)
  * }
  *
  * @param res {

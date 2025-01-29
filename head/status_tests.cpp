@@ -12,9 +12,11 @@ namespace {
 using TrieIndex = series_index::TrieIndex<series_index::trie::CedarTrie, series_index::trie::CedarMatchesList>;
 using QueryableEncodingBimap = series_index::QueryableEncodingBimap<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimapFilament, TrieIndex>;
 using head::StatusGetter;
+using PromPP::Primitives::LabelViewSet;
 using series_data::DataStorage;
 using series_data::Encoder;
 using series_data::OutdatedSampleEncoder;
+using QuerySource = series_index::QueriedSeries::Source;
 
 using Status = head::Status<std::string_view, std::vector>;
 
@@ -98,6 +100,24 @@ TEST_F(StatusFixture, EmptyChunk) {
 
   // Assert
   EXPECT_EQ((Status{.min_max_timestamp = {.min = 1, .max = 1}, .chunk_count = 1}), status);
+}
+
+TEST_F(StatusFixture, QueriedSeries) {
+  // Arrange
+  lss_.find_or_emplace(LabelViewSet{{"job", "cron1"}});
+  lss_.find_or_emplace(LabelViewSet{{"job", "cron2"}});
+  lss_.find_or_emplace(LabelViewSet{{"job", "cron3"}});
+  lss_.set_queried_series(QuerySource::kRule, std::vector{0U, 1U, 2U});
+  lss_.set_queried_series(QuerySource::kFederate, std::vector{0U, 1U});
+  lss_.set_queried_series(QuerySource::kOther, std::vector{0U});
+
+  // Act
+  const auto status = get_status();
+
+  // Assert
+  EXPECT_EQ(3U, status.rule_queried_series);
+  EXPECT_EQ(2U, status.federate_queried_series);
+  EXPECT_EQ(1U, status.other_queried_series);
 }
 
 }  // namespace
