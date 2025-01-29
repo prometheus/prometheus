@@ -255,11 +255,11 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 			// Fallback to using flavor.id from the original server list if flavor.original_name wasn't set
 			if _, exists := labels[openstackLabelInstanceFlavor]; !exists {
 				flavorID, idOk := s.Flavor["id"].(string)
-				if idOk {
-					labels[openstackLabelInstanceFlavor] = model.LabelValue(flavorID)
-				} else {
+				if !idOk {
 					i.logger.Warn("Invalid type for both flavor.original_name and flavor.id in server, expected string", "instance", s.ID)
+					continue
 				}
+				labels[openstackLabelInstanceFlavor] = model.LabelValue(flavorID)
 			}
 
 			imageID, ok := s.Image["id"].(string)
