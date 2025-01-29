@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 #include "primitives/primitives.h"
 #include "primitives/snug_composites.h"
 #include "printer.h"
@@ -29,7 +31,7 @@ class MatchersComparatorByTypeAndCardinalityFixture : public testing::TestWithPa
  protected:
   Querier<Index>::MatchersComparatorByTypeAndCardinality comparator_;
 
-  void sort(Selector& selector) const { std::sort(selector.matchers.begin(), selector.matchers.end(), comparator_); }
+  void sort(Selector& selector) const { std::ranges::sort(selector.matchers, comparator_); }
 };
 
 TEST_P(MatchersComparatorByTypeAndCardinalityFixture, Test) {

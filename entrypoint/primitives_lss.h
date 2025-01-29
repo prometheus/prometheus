@@ -57,6 +57,7 @@ void prompp_primitives_lss_find_or_emplace(void* args, void* res);
  * @param args {
  *     lss uintptr                         // pointer to constructed queryable lss;
  *     label_matchers []model.LabelMatcher // label matchers
+ *     query_source uint32                 // query source (rule, federate, other)
  * }
  *
  * @param res {

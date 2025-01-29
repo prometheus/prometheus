@@ -26,9 +26,12 @@ type HeadStatus struct {
 		Value string
 		Count uint32
 	}
-	NumSeries     uint32
-	ChunkCount    uint32
-	NumLabelPairs uint32
+	NumSeries             uint32
+	ChunkCount            uint32
+	NumLabelPairs         uint32
+	RuleQueriedSeries     uint32
+	FederateQueriedSeries uint32
+	OtherQueriedSeries    uint32
 }
 
 func GetHeadStatus(lss uintptr, dataStorage uintptr, limit int) *HeadStatus {

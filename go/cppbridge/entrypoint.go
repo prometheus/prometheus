@@ -887,11 +887,12 @@ func primitivesLSSFindOrEmplace(lss uintptr, labelSet model.LabelSet) uint32 {
 	return res.labelSetID
 }
 
-func primitivesLSSQuery(lss uintptr, matchers []model.LabelMatcher) (uint32, []uint32) {
+func primitivesLSSQuery(lss uintptr, matchers []model.LabelMatcher, querySource uint32) (uint32, []uint32) {
 	var args = struct {
-		lss      uintptr
-		matchers []model.LabelMatcher
-	}{lss, matchers}
+		lss         uintptr
+		matchers    []model.LabelMatcher
+		querySource uint32
+	}{lss, matchers, querySource}
 	var res struct {
 		status  uint32
 		matches []uint32

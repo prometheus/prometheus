@@ -63,7 +63,7 @@ class Querier {
       memory_pool.allocate_temp_memory(max_positive_matcher_cardinality);
     }
 
-    for (auto it = selector.matchers.begin() + 1; it != selector.matchers.end(); ++it) {
+    for (auto it = std::next(selector.matchers.begin()); it != selector.matchers.end(); ++it) {
       process_matcher(*it, series_slice_list, memory_pool, result_set);
     }
 
@@ -73,29 +73,28 @@ class Querier {
 
  private:
   class MemoryPool {
-   private:
-    SeriesIdContainer merge1_;
-    SeriesIdContainer merge2_;
-    SeriesIdContainer temp_;
+    SeriesIdContainer merge_container1_;
+    SeriesIdContainer merge_container2_;
+    SeriesIdContainer temp_container_;
 
    public:
     uint32_t* merge1{};
     uint32_t* merge2{};
     uint32_t* temp{};
 
-    explicit MemoryPool(uint32_t items_count) : merge1_(items_count), merge2_(items_count), merge1(merge1_.data()), merge2(merge2_.data()) {}
+    explicit MemoryPool(uint32_t items_count)
+        : merge_container1_(items_count), merge_container2_(items_count), merge1(merge_container1_.data()), merge2(merge_container2_.data()) {}
 
     PROMPP_ALWAYS_INLINE void allocate_temp_memory(uint32_t items_count) {
-      temp_ = SeriesIdContainer{items_count};
-      temp = temp_.data();
+      temp_container_ = SeriesIdContainer{items_count};
+      temp = temp_container_.data();
     }
 
     PROMPP_ALWAYS_INLINE SeriesIdContainer&& release_container_for_merge(const uint32_t* memory) {
-      if (memory == merge1_.data()) {
-        return std::move(merge1_);
-      } else {
-        return std::move(merge2_);
+      if (memory == merge_container1_.data()) {
+        return std::move(merge_container1_);
       }
+      return std::move(merge_container2_);
     }
   };
 

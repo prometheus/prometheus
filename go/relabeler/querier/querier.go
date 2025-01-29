@@ -149,9 +149,10 @@ func (q *Querier) Select(ctx context.Context, sortSeries bool, hints *storage.Se
 
 	seriesSets := make([]storage.SeriesSet, q.head.NumberOfShards())
 	convertedMatchers := convertPrometheusMatchersToOpcoreMatchers(matchers...)
+	callerID := cppbridge.GetCaller(ctx)
 
 	err := q.head.ForEachShard(func(shard relabeler.Shard) error {
-		lssQueryResult := shard.LSS().Query(convertedMatchers)
+		lssQueryResult := shard.LSS().Query(convertedMatchers, callerID)
 
 		if lssQueryResult.Status() != cppbridge.LSSQueryStatusMatch {
 			seriesSets[shard.ShardID()] = &SeriesSet{}

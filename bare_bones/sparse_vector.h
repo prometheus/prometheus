@@ -29,8 +29,6 @@ class SparseVector {
     data_.clear();
   }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE bool exists(uint32_t key) const noexcept { return element_exists_.is_set(key); }
-
   [[nodiscard]] PROMPP_ALWAYS_INLINE T& operator[](uint32_t key) noexcept {
     assert(key < element_exists_.size());
 

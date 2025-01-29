@@ -20,7 +20,7 @@ class SortingIndex {
   void build() {
     sorting_index_.resize(ls_id_set_.size());
 
-    uint32_t step = kMaxIndexValue / (ls_id_set_.size() + 1);
+    const uint32_t step = kMaxIndexValue / (ls_id_set_.size() + 1);
     uint32_t index_value = 0;
     for (auto ls_id : ls_id_set_) {
       index_value += step;
@@ -28,11 +28,10 @@ class SortingIndex {
     }
   }
 
-  PROMPP_ALWAYS_INLINE void update(Set::const_iterator ls_id_iterator) {
-    uint64_t previous = get_previous(ls_id_iterator);
-    uint64_t next = get_next(ls_id_iterator);
-    uint32_t value = (previous + next) / 2;
-    if (value > previous) {
+  PROMPP_ALWAYS_INLINE void update(typename Set::const_iterator ls_id_iterator) {
+    const uint64_t previous = get_previous(ls_id_iterator);
+    const uint64_t next = get_next(ls_id_iterator);
+    if (uint32_t value = (previous + next) / 2; value > previous) {
       sorting_index_.emplace_back(value);
     } else {
       build();
@@ -48,7 +47,7 @@ class SortingIndex {
   const Set& ls_id_set_;
   BareBones::Vector<uint32_t> sorting_index_;
 
-  PROMPP_ALWAYS_INLINE uint32_t get_previous(Set::const_iterator ls_id_iterator) const noexcept {
+  PROMPP_ALWAYS_INLINE uint32_t get_previous(typename Set::const_iterator ls_id_iterator) const noexcept {
     if (ls_id_iterator != ls_id_set_.begin()) {
       return sorting_index_[*--ls_id_iterator];
     }
@@ -56,7 +55,7 @@ class SortingIndex {
     return 0;
   }
 
-  PROMPP_ALWAYS_INLINE uint32_t get_next(Set::const_iterator ls_id_iterator) const noexcept {
+  PROMPP_ALWAYS_INLINE uint32_t get_next(typename Set::const_iterator ls_id_iterator) const noexcept {
     if (++ls_id_iterator != ls_id_set_.end()) {
       return sorting_index_[*ls_id_iterator];
     }

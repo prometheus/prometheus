@@ -1,6 +1,6 @@
 #pragma once
 
-#include <assert.h>
+#include <cassert>
 #ifdef __x86_64__
 #include <x86intrin.h>
 #endif
@@ -8,9 +8,7 @@
 #include <arm_acle.h>
 #endif
 
-#include <algorithm>
 #include <bitset>
-#include <ostream>
 
 #include "memory.h"
 #include "type_traits.h"
@@ -34,7 +32,7 @@ class Bitset {
     if (__builtin_expect(size > std::numeric_limits<uint32_t>::max(), false))
       std::abort();
 
-    uint64_t size_in_uint64_elements = (size + 63) >> 6;
+    const uint64_t size_in_uint64_elements = (size + 63) >> 6;
 
     if (size_in_uint64_elements <= data_.size()) {
       return;
@@ -48,8 +46,8 @@ class Bitset {
 
     // unset on downsize
     if (size < size_) {
-      uint64_t new_size_in_uint64_elements = (size + 63) >> 6;
-      uint64_t original_size_in_uint64_elements = (size_ + 63) >> 6;
+      const uint64_t new_size_in_uint64_elements = (size + 63) >> 6;
+      const uint64_t original_size_in_uint64_elements = (size_ + 63) >> 6;
       std::memset(data_ + new_size_in_uint64_elements, 0, (original_size_in_uint64_elements - new_size_in_uint64_elements) << 3);
       data_[size >> 6] &= ~(0xFFFFFFFFFFFFFFFF << (size & 0x3F));
     }
@@ -59,9 +57,9 @@ class Bitset {
 
   // TODO shrink_to_fit
 
-  PROMPP_ALWAYS_INLINE size_t size() const noexcept { return size_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t size() const noexcept { return size_; }
 
-  PROMPP_ALWAYS_INLINE size_t capacity() const noexcept { return data_.size() * 64; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t capacity() const noexcept { return data_.size() * 64; }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_set(uint32_t v) const noexcept { return v < size_ && (data_[v >> 6] & (1ull << (v & 0x3F))) != 0; }
 
@@ -82,7 +80,7 @@ class Bitset {
 
   void clear() noexcept {
     if (size_ != 0) {
-      uint64_t size_in_uint64_elements = (size_ + 63) >> 6;
+      const uint64_t size_in_uint64_elements = (size_ + 63) >> 6;
       assert(size_in_uint64_elements <= data_.size());
       std::memset(data_, 0, size_in_uint64_elements << 3);
     }
@@ -121,13 +119,13 @@ class Bitset {
       next();
     }
 
-    PROMPP_ALWAYS_INLINE uint32_t operator*() noexcept { return (block_n_ << 6) | j_; }
+    PROMPP_ALWAYS_INLINE uint32_t operator*() const noexcept { return (block_n_ << 6) | j_; }
     PROMPP_ALWAYS_INLINE Iterator& operator++() noexcept {
       next();
       return *this;
     }
     PROMPP_ALWAYS_INLINE Iterator operator++(int) noexcept {
-      Iterator retval = *this;
+      const Iterator retval = *this;
       next();
       return retval;
     }
@@ -137,10 +135,14 @@ class Bitset {
 
   using const_iterator = Iterator;
 
-  PROMPP_ALWAYS_INLINE auto begin() const noexcept { return Iterator(data_, size_); }
-  PROMPP_ALWAYS_INLINE auto end() const noexcept { return IteratorSentinel(); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE auto begin() const noexcept { return Iterator(data_, size_); }
+  [[nodiscard]] static PROMPP_ALWAYS_INLINE auto end() noexcept { return IteratorSentinel(); }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return data_.allocated_memory(); }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t popcount() const noexcept {
+    return std::accumulate(data_.begin(), data_.end(), 0U, [](uint32_t popcount, uint64_t v) PROMPP_LAMBDA_INLINE { return popcount + std::popcount(v); });
+  }
 };
 
 template <>

@@ -23,7 +23,7 @@ extern "C" void prompp_get_head_status(void* args, void* res) {
   head::StatusGetter<entrypoint::head::QueryableEncodingBimap, Status>{lss, *in->data_storage, in->limit}.get(*static_cast<Status*>(res));
 }
 
-void prompp_free_head_status(void* args) {
+extern "C" void prompp_free_head_status(void* args) {
   const auto in = static_cast<Status*>(args);
 
   in->label_value_count_by_label_name.free();
