@@ -158,11 +158,8 @@ func (node *MatrixSelector) atOffset() (string, string) {
 	// Copy the Vector selector before changing the offset
 	vecSelector := node.VectorSelector.(*VectorSelector)
 	offset := ""
-	switch {
-	case vecSelector.OriginalOffset > time.Duration(0):
-		offset = fmt.Sprintf(" offset %s", model.Duration(vecSelector.OriginalOffset))
-	case vecSelector.OriginalOffset < time.Duration(0):
-		offset = fmt.Sprintf(" offset -%s", model.Duration(-vecSelector.OriginalOffset))
+	if vecSelector.OriginalOffsetExpr != nil {
+		offset = fmt.Sprintf(" offset %s", timeExprString(vecSelector.OriginalOffsetExpr))
 	}
 	at := ""
 	switch {
@@ -181,14 +178,14 @@ func (node *MatrixSelector) String() string {
 	// Copy the Vector selector before changing the offset
 	vecSelector := *node.VectorSelector.(*VectorSelector)
 	// Do not print the @ and offset twice.
-	offsetVal, atVal, preproc := vecSelector.OriginalOffset, vecSelector.Timestamp, vecSelector.StartOrEnd
-	vecSelector.OriginalOffset = 0
+	offsetExpr, atVal, preproc := vecSelector.OriginalOffsetExpr, vecSelector.Timestamp, vecSelector.StartOrEnd
+	vecSelector.OriginalOffsetExpr = nil
 	vecSelector.Timestamp = nil
 	vecSelector.StartOrEnd = 0
 
 	str := fmt.Sprintf("%s[%s]%s%s", vecSelector.String(), model.Duration(node.Range), at, offset)
 
-	vecSelector.OriginalOffset, vecSelector.Timestamp, vecSelector.StartOrEnd = offsetVal, atVal, preproc
+	vecSelector.OriginalOffsetExpr, vecSelector.Timestamp, vecSelector.StartOrEnd = offsetExpr, atVal, preproc
 
 	return str
 }
@@ -213,11 +210,8 @@ func (node *SubqueryExpr) getSubqueryTimeSuffix() string {
 		step = model.Duration(node.Step).String()
 	}
 	offset := ""
-	switch {
-	case node.OriginalOffset > time.Duration(0):
-		offset = fmt.Sprintf(" offset %s", model.Duration(node.OriginalOffset))
-	case node.OriginalOffset < time.Duration(0):
-		offset = fmt.Sprintf(" offset -%s", model.Duration(-node.OriginalOffset))
+	if node.OriginalOffsetExpr != nil {
+		offset = fmt.Sprintf(" offset %s", timeExprString(node.OriginalOffsetExpr))
 	}
 	at := ""
 	switch {
@@ -264,11 +258,8 @@ func (node *VectorSelector) String() string {
 		labelStrings = append(labelStrings, matcher.String())
 	}
 	offset := ""
-	switch {
-	case node.OriginalOffset > time.Duration(0):
-		offset = fmt.Sprintf(" offset %s", model.Duration(node.OriginalOffset))
-	case node.OriginalOffset < time.Duration(0):
-		offset = fmt.Sprintf(" offset -%s", model.Duration(-node.OriginalOffset))
+	if node.OriginalOffsetExpr != nil {
+		offset = fmt.Sprintf(" offset %s", timeExprString(node.OriginalOffsetExpr))
 	}
 	at := ""
 	switch {
@@ -285,4 +276,16 @@ func (node *VectorSelector) String() string {
 	}
 	sort.Strings(labelStrings)
 	return fmt.Sprintf("%s{%s}%s%s", node.Name, strings.Join(labelStrings, ","), at, offset)
+}
+
+func timeExprString(e Expr) string {
+	if nl, ok := e.(*NumberLiteral); ok {
+		v, sign := nl.Val, ""
+		if nl.Val < 0 {
+			v = -1 * v
+			sign = "-"
+		}
+		return fmt.Sprintf("%s%s", sign, model.Duration(time.Duration(v)*time.Second))
+	}
+	return e.String()
 }

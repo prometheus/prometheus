@@ -113,6 +113,11 @@ func TestExprString(t *testing.T) {
 			in: `a[1h:5m] offset 1m`,
 		},
 		{
+			in: `a[12m] offset (1m + 1m)`,
+			// TODO(krajorama): maybe handle time expressions special for numbers?
+			out: `a[12m] offset (60 + 60)`,
+		},
+		{
 			in: `{__name__="a"}`,
 		},
 		{

@@ -937,13 +937,13 @@ func (p *parser) newMetricNameMatcher(value Item) *labels.Matcher {
 }
 
 // addOffset is used to set the offset in the generated parser.
-func (p *parser) addOffset(e Node, offset time.Duration) {
-	var orgoffsetp *time.Duration
+func (p *parser) addOffset(e Node, offset Expr) {
+	var orgoffsetp *Expr
 	var endPosp *posrange.Pos
 
 	switch s := e.(type) {
 	case *VectorSelector:
-		orgoffsetp = &s.OriginalOffset
+		orgoffsetp = &s.OriginalOffsetExpr
 		endPosp = &s.PosRange.End
 	case *MatrixSelector:
 		vs, ok := s.VectorSelector.(*VectorSelector)
@@ -951,10 +951,10 @@ func (p *parser) addOffset(e Node, offset time.Duration) {
 			p.addParseErrf(e.PositionRange(), "ranges only allowed for vector selectors")
 			return
 		}
-		orgoffsetp = &vs.OriginalOffset
+		orgoffsetp = &vs.OriginalOffsetExpr
 		endPosp = &s.EndPos
 	case *SubqueryExpr:
-		orgoffsetp = &s.OriginalOffset
+		orgoffsetp = &s.OriginalOffsetExpr
 		endPosp = &s.EndPos
 	default:
 		p.addParseErrf(e.PositionRange(), "offset modifier must be preceded by an instant vector selector or range vector selector or a subquery")
@@ -963,7 +963,7 @@ func (p *parser) addOffset(e Node, offset time.Duration) {
 
 	// it is already ensured by parseDuration func that there never will be a zero offset modifier
 	switch {
-	case *orgoffsetp != 0:
+	case *orgoffsetp != nil:
 		p.addParseErrf(e.PositionRange(), "offset may not be set multiple times")
 	case orgoffsetp != nil:
 		*orgoffsetp = offset

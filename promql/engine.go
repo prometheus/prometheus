@@ -100,6 +100,9 @@ type (
 	// ErrStorage is returned if an error was encountered in the storage layer
 	// during query handling.
 	ErrStorage struct{ Err error }
+	// ErrTimeExprNotAFloat is returned if a time expression evaluates to something
+	// other than a single float value.
+	ErrTimeExprNotAFloat string
 )
 
 func (e ErrQueryTimeout) Error() string {
@@ -117,6 +120,20 @@ func (e ErrTooManySamples) Error() string {
 func (e ErrStorage) Error() string {
 	return e.Err.Error()
 }
+
+func (e ErrTimeExprNotAFloat) Error() string {
+	return fmt.Sprintf("time expression evaluates to %s not one float", string(e))
+}
+
+var (
+	// ErrTimeExprUsesStorage is returned if a time expression
+	// (timestamp/duration) calculation includes vector/range selector.
+	ErrTimeExprUsesStorage = errors.New("time expression must not use storage")
+	// ErrTimeExprDependsOnEvalTime is returned if a time expression
+	// depends on the evaluation time, which is only allowed for the top level
+	// time expressions.
+	ErrTimeExprDependsOnEvalTime = errors.New("inner time expression must not depend on the evaluation time")
+)
 
 // QueryEngine defines the interface for the *promql.Engine, so it can be replaced, wrapped or mocked.
 type QueryEngine interface {
@@ -486,6 +503,11 @@ func (ng *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts
 	if err != nil {
 		return nil, err
 	}
+
+	if err := ng.PreprocessTimeExpr(expr, ts, ts, 0, opts); err != nil {
+		return nil, err
+	}
+
 	if err := ng.validateOpts(expr); err != nil {
 		return nil, err
 	}
@@ -507,6 +529,11 @@ func (ng *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts Q
 	if err != nil {
 		return nil, err
 	}
+
+	if err := ng.PreprocessTimeExpr(expr, start, end, interval, opts); err != nil {
+		return nil, err
+	}
+
 	if err := ng.validateOpts(expr); err != nil {
 		return nil, err
 	}
@@ -516,6 +543,117 @@ func (ng *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts Q
 	*pExpr = PreprocessExpr(expr, start, end)
 
 	return qry, nil
+}
+
+type timeExprVisitor struct {
+	err        *error
+	ev         *evaluator
+	inSubquery bool
+}
+
+func (tev timeExprVisitor) Visit(node parser.Node, path []parser.Node) (parser.Visitor, error) {
+	checkTimeExpr := func(expr parser.Expr) (float64, error) {
+		if expr == nil {
+			return 0, nil
+		}
+
+		hasStorageDependency, hasEvalTimeDependency := inspectTimeExpr(expr)
+		if hasStorageDependency {
+			return 0, ErrTimeExprUsesStorage
+		}
+		if tev.inSubquery && hasEvalTimeDependency {
+			return 0, ErrTimeExprDependsOnEvalTime
+		}
+		if nl, ok := expr.(*parser.NumberLiteral); ok {
+			return nl.Val, nil
+		}
+		val, err := tev.ev.timeValueOf(expr)
+		if err != nil {
+			return 0, err
+		}
+		// Return the precalculated value.
+		return val, nil
+	}
+
+	switch e := node.(type) {
+	case *parser.VectorSelector:
+		v, err := checkTimeExpr(e.OriginalOffsetExpr)
+		if err != nil {
+			*tev.err = err
+			return tev, err
+		}
+		e.OriginalOffset = secondsValueToDuration(v)
+		return tev, nil
+	case *parser.SubqueryExpr:
+		v, err := checkTimeExpr(e.OriginalOffsetExpr)
+		if err != nil {
+			*tev.err = err
+			return tev, err
+		}
+		e.OriginalOffset = secondsValueToDuration(v)
+		return timeExprVisitor{err: tev.err, inSubquery: true}, nil
+	default:
+		return tev, nil
+	}
+}
+
+func inspectTimeExpr(e parser.Expr) (bool, bool) {
+	var hasStorageDependency, hasEvalTimeDependency bool
+	parser.Inspect(e, func(node parser.Node, _ []parser.Node) error {
+		switch n := node.(type) {
+		case *parser.Call:
+			if n.Func.EvalTimeDependent {
+				hasEvalTimeDependency = true
+			}
+			if n.Func.StorageDependent {
+				hasStorageDependency = true
+			}
+		case *parser.VectorSelector:
+			hasStorageDependency = true
+		}
+		return nil
+	})
+	return hasStorageDependency, hasEvalTimeDependency
+}
+
+// PreprocessTimeExpr checks the time expressions don't try to load data from
+// storage. If the time expression is eval time independent, it will calculate
+// its value and replace with a number literal to avoid re-calculations later.
+func (ng *Engine) PreprocessTimeExpr(e parser.Expr, start, end time.Time, interval time.Duration, opts QueryOpts) error {
+	if opts == nil {
+		opts = NewPrometheusQueryOpts(false, 0)
+	}
+
+	lookbackDelta := opts.LookbackDelta()
+	if lookbackDelta <= 0 {
+		lookbackDelta = ng.lookbackDelta
+	}
+
+	// Make an evaulator on the heap for the time expressions.
+	// We only allow time() function on the top level, so using
+	// "end" timestamp as evaluation time.
+	ev := evaluator{
+		startTimestamp:           timeMilliseconds(end),
+		endTimestamp:             timeMilliseconds(end),
+		interval:                 1,
+		maxSamples:               ng.maxSamplesPerQuery,
+		logger:                   ng.logger,
+		lookbackDelta:            lookbackDelta,
+		samplesStats:             nil,
+		noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
+		enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
+		querier:                  nil, // Fail if we do try to use querier.
+	}
+
+	var err error
+	tev := timeExprVisitor{
+		err: &err,
+		ev:  &ev,
+	}
+
+	parser.Walk(tev, e, nil) //nolint:errcheck
+
+	return *tev.err
 }
 
 func (ng *Engine) newQuery(q storage.Queryable, qs string, opts QueryOpts, start, end time.Time, interval time.Duration) (*parser.Expr, *query) {
@@ -3843,4 +3981,76 @@ func (ev *evaluator) gatherVector(ts int64, input Matrix, output Vector, bufHelp
 	ev.samplesStats.UpdatePeak(ev.currentSamples)
 
 	return output, bufHelpers
+}
+
+// timeValueOf calculates the scalar time value of an expression in float64.
+func (ev *evaluator) timeValueOf(e parser.Expr) (float64, error) {
+	if e == nil {
+		return 0, nil
+	}
+
+	if ev.querier != nil {
+		panic("evaulator does not disallow querier for time expressions")
+	}
+
+	// Shortcut for number literals.
+	if nl, ok := e.(*parser.NumberLiteral); ok {
+		return nl.Val, nil
+	}
+
+	// We can only use scalars as timestamp or duration.
+	if e.Type() != parser.ValueTypeScalar {
+		panic("parser should have discarded non scalar time expression")
+	}
+
+	// TODO(krajorama): would we ever get annotations here?
+	res, _, err := ev.Eval(context.Background(), e)
+	if err != nil {
+		return 0, err
+	}
+
+	var value float64
+
+	switch v := res.(type) {
+	case Scalar:
+		value = v.V
+	case String:
+		return 0, ErrTimeExprNotAFloat("string")
+	case Vector:
+		if len(v) > 0 {
+			return 0, ErrTimeExprNotAFloat("vector with multiple samples")
+		}
+		if len(v) == 0 {
+			return 0, ErrTimeExprNotAFloat("vector with no samples")
+		}
+		if v[0].H != nil {
+			return 0, ErrTimeExprNotAFloat("vector with a histogram element")
+		}
+		return v[0].F, nil
+	case Matrix:
+		if len(v) > 1 {
+			return 0, ErrTimeExprNotAFloat("matrix with more than one series")
+		}
+		if len(v) == 0 {
+			return 0, ErrTimeExprNotAFloat("matrix with no series")
+		}
+		s := v[0]
+		if len(s.Histograms) > 0 {
+			return 0, ErrTimeExprNotAFloat("matrix with histograms")
+		}
+		if len(s.Floats) > 1 {
+			return 0, ErrTimeExprNotAFloat("matrix with more than one element")
+		}
+		if len(s.Floats) == 0 {
+			return 0, ErrTimeExprNotAFloat("matrix with no element")
+		}
+		return s.Floats[0].F, nil
+	default:
+		return 0, ErrTimeExprNotAFloat("unknown type")
+	}
+	return value, nil
+}
+
+func secondsValueToDuration(v float64) time.Duration {
+	return time.Duration(v*1000.0) * time.Millisecond
 }
