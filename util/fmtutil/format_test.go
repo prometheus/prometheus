@@ -15,12 +15,13 @@ package fmtutil
 
 import (
 	"bytes"
-	dto "github.com/prometheus/client_model/go"
-	"github.com/prometheus/prometheus/prompb"
-	"github.com/stretchr/testify/require"
 	"math"
 	"testing"
 	"time"
+
+	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/prometheus/prompb"
+	"github.com/stretchr/testify/require"
 )
 
 var writeRequestFixture = &prompb.WriteRequest{
