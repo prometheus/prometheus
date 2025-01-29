@@ -225,16 +225,16 @@ cc_library(
         ":series_index",
         ":wal",
         "//third_party",
-        "@gtest//:gtest_main",
     ],
 )
 
 cc_binary(
-    name = "performance_tests",
+    name = "performance_tests_bin",
     srcs = glob(["performance_tests/**/*.cpp"]),
     malloc = "@jemalloc",
     deps = [
         ":performance_tests_headers",
+        "@gtest//:gtest_main",
     ],
 )
 
