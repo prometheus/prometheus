@@ -2,7 +2,7 @@ import { FC } from 'react';
 import { Container } from 'reactstrap';
 import Navigation from './Navbar';
 
-import { BrowserRouter as Router, Redirect, Route, Switch } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { PathPrefixContext } from './contexts/PathPrefixContext';
 import { ThemeContext, themeName, themeSetting } from './contexts/ThemeContext';
 import { ReadyContext } from './contexts/ReadyContext';
@@ -77,12 +77,14 @@ const App: FC<AppProps> = ({ consolesLink, agentMode, ready }) => {
       <Theme />
       <PathPrefixContext.Provider value={basePath}>
         <ReadyContext.Provider value={ready}>
-          <Router basename={basePath}>
+          <BrowserRouter basename={basePath}>
             <AnimateLogoContext.Provider value={animateLogo}>
               <Navigation consolesLink={consolesLink} agentMode={agentMode} animateLogo={animateLogo} />
               <Container fluid style={{ paddingTop: 70 }}>
-                <Switch>
-                  <Redirect exact from="/" to={agentMode ? '/agent' : '/graph'} />
+                <Routes>
+                  <Route path="/">
+                    <Navigate to={agentMode ? '/agent' : '/graph'} />
+                  </Route>
                   {/*
               NOTE: Any route added here needs to also be added to the list of
               React-handled router paths ("reactRouterPaths") in /web/web.go.
@@ -117,10 +119,10 @@ const App: FC<AppProps> = ({ consolesLink, agentMode, ready }) => {
                   <Route path="/targets">
                     <TargetsPage />
                   </Route>
-                </Switch>
+                </Routes>
               </Container>
             </AnimateLogoContext.Provider>
-          </Router>
+          </BrowserRouter>
         </ReadyContext.Provider>
       </PathPrefixContext.Provider>
     </ThemeContext.Provider>
