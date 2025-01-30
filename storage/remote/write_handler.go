@@ -707,3 +707,12 @@ func (app *timeLimitAppender) AppendExemplar(ref storage.SeriesRef, l labels.Lab
 	}
 	return ref, nil
 }
+
+func areLabelsSorted(labels []prompb.Label) bool {
+	for i := 1; i < len(labels); i++ {
+		if labels[i-1].Name > labels[i].Name {
+			return false
+		}
+	}
+	return true
+}
