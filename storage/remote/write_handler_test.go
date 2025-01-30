@@ -22,6 +22,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -32,8 +33,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/common/promslog"
-
-	"sort"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
