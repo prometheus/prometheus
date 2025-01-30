@@ -131,13 +131,25 @@ Note that during this delay, the Head continues its usual operations, which incl
 
 Despite the delay in compaction, the blocks produced are time-aligned in the same manner as they would be if the delay was not in place.
 
-## Delay __name__ label removal for PromQL engine
+## Delay `__name__` label removal for PromQL engine
 
 `--enable-feature=promql-delayed-name-removal`
 
 When enabled, Prometheus will change the way in which the `__name__` label is removed from PromQL query results (for functions and expressions for which this is necessary). Specifically, it will delay the removal to the last step of the query evaluation, instead of every time an expression or function creating derived metrics is evaluated.
 
 This allows optionally preserving the `__name__` label via the `label_replace` and `label_join` functions, and helps prevent the "vector cannot contain metrics with the same labelset" error, which can happen when applying a regex-matcher to the `__name__` label.
+
+Note that evaluating parts of the query separately will still trigger the
+labelset collision. This commonly happens when analyzing intermediate results
+of a query manually or with a tool like PromLens.
+
+If a query refers to the already removed `__name__` label, its behavior may
+change while this feature flag is set. (Example: `sum by (__name__)
+(rate({foo="bar"}[5m]))`, see [details on
+GitHub](https://github.com/prometheus/prometheus/issues/11397#issuecomment-1451998792).)
+These queries are rare to occur and easy to fix. (In the above example,
+removing `by (__name__)` doesn't change anything without the feature flag and
+fixes the possible problem with the feature flag.)
 
 ## Auto Reload Config
 
@@ -151,3 +163,25 @@ Configuration reloads are triggered by detecting changes in the checksum of the
 main configuration file or any referenced files, such as rule and scrape
 configurations. To ensure consistency and avoid issues during reloads, it's
 recommended to update these files atomically.
+
+## OTLP Delta Conversion
+
+`--enable-feature=otlp-deltatocumulative`
+
+When enabled, Prometheus will convert OTLP metrics from delta temporality to their
+cumulative equivalent, instead of dropping them.
+
+This uses
+[deltatocumulative][d2c]
+from the OTel collector, using its default settings.
+
+Delta conversion keeps in-memory state to aggregate delta changes per-series over time.
+When Prometheus restarts, this state is lost, starting the aggregation from zero
+again. This results in a counter reset in the cumulative series.
+
+This state is periodically ([`max_stale`][d2c]) cleared of inactive series.
+
+Enabling this _can_ have negative impact on performance, because the in-memory
+state is mutex guarded. Cumulative-only OTLP requests are not affected.
+
+[d2c]: https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor

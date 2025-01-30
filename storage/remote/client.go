@@ -66,7 +66,7 @@ const (
 
 var (
 	// UserAgent represents Prometheus version to use for user agent header.
-	UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+	UserAgent = version.PrometheusUserAgent()
 
 	remoteWriteContentTypeHeaders = map[config.RemoteWriteProtoMsg]string{
 		config.RemoteWriteProtoMsgV1: appProtoContentType, // Also application/x-protobuf;proto=prometheus.WriteRequest but simplified for compatibility with 1.x spec.
@@ -81,8 +81,8 @@ var (
 	remoteReadQueriesTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "read_queries_total",
+			Subsystem: "remote_read_client",
+			Name:      "queries_total",
 			Help:      "The total number of remote read queries.",
 		},
 		[]string{remoteName, endpoint, "response_type", "code"},
@@ -90,8 +90,8 @@ var (
 	remoteReadQueries = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "remote_read_queries",
+			Subsystem: "remote_read_client",
+			Name:      "queries",
 			Help:      "The number of in-flight remote read queries.",
 		},
 		[]string{remoteName, endpoint},
@@ -99,8 +99,8 @@ var (
 	remoteReadQueryDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Namespace:                       namespace,
-			Subsystem:                       subsystem,
-			Name:                            "read_request_duration_seconds",
+			Subsystem:                       "remote_read_client",
+			Name:                            "request_duration_seconds",
 			Help:                            "Histogram of the latency for remote read requests. Note that for streamed responses this is only the duration of the initial call and does not include the processing of the stream.",
 			Buckets:                         append(prometheus.DefBuckets, 25, 60),
 			NativeHistogramBucketFactor:     1.1,

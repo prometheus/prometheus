@@ -233,6 +233,14 @@ func (r *RuleNode) Validate() (nodes []WrappedError) {
 				node: &r.Record,
 			})
 		}
+		// While record is a valid UTF-8 it's common mistake to put PromQL expression in the record name.
+		// Disallow "{}" chars.
+		if strings.Contains(r.Record.Value, "{") || strings.Contains(r.Record.Value, "}") {
+			nodes = append(nodes, WrappedError{
+				err:  fmt.Errorf("braces present in the recording rule name; should it be in expr?: %s", r.Record.Value),
+				node: &r.Record,
+			})
+		}
 	}
 
 	for k, v := range r.Labels {
@@ -314,7 +322,7 @@ func testTemplateParsing(rl *RuleNode) (errs []error) {
 }
 
 // Parse parses and validates a set of rules.
-func Parse(content []byte) (*RuleGroups, []error) {
+func Parse(content []byte, ignoreUnknownFields bool) (*RuleGroups, []error) {
 	var (
 		groups RuleGroups
 		node   ruleGroups
@@ -322,7 +330,9 @@ func Parse(content []byte) (*RuleGroups, []error) {
 	)
 
 	decoder := yaml.NewDecoder(bytes.NewReader(content))
-	decoder.KnownFields(true)
+	if !ignoreUnknownFields {
+		decoder.KnownFields(true)
+	}
 	err := decoder.Decode(&groups)
 	// Ignore io.EOF which happens with empty input.
 	if err != nil && !errors.Is(err, io.EOF) {
@@ -341,12 +351,12 @@ func Parse(content []byte) (*RuleGroups, []error) {
 }
 
 // ParseFile reads and parses rules from a file.
-func ParseFile(file string) (*RuleGroups, []error) {
+func ParseFile(file string, ignoreUnknownFields bool) (*RuleGroups, []error) {
 	b, err := os.ReadFile(file)
 	if err != nil {
 		return nil, []error{fmt.Errorf("%s: %w", file, err)}
 	}
-	rgs, errs := Parse(b)
+	rgs, errs := Parse(b, ignoreUnknownFields)
 	for i := range errs {
 		errs[i] = fmt.Errorf("%s: %w", file, errs[i])
 	}

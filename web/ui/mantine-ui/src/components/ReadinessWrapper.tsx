@@ -48,7 +48,7 @@ const ReadinessLoader: FC = () => {
           default:
             throw new Error(res.statusText);
         }
-      } catch (error) {
+      } catch (_) {
         throw new Error("Unexpected error while fetching ready status");
       }
     },

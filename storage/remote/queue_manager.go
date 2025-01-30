@@ -550,7 +550,7 @@ func (t *QueueManager) AppendWatcherMetadata(ctx context.Context, metadata []scr
 	mm := make([]prompb.MetricMetadata, 0, len(metadata))
 	for _, entry := range metadata {
 		mm = append(mm, prompb.MetricMetadata{
-			MetricFamilyName: entry.Metric,
+			MetricFamilyName: entry.MetricFamily,
 			Help:             entry.Help,
 			Type:             prompb.FromMetadataType(entry.Type),
 			Unit:             entry.Unit,
@@ -1919,12 +1919,17 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 	var nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata int
 	for nPending, d := range batch {
 		pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
-		// todo: should we also safeguard against empty metadata here?
 		if d.metadata != nil {
 			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(d.metadata.Type)
 			pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Help)
-			pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Unit)
+			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(d.metadata.Unit)
 			nPendingMetadata++
+		} else {
+			// Safeguard against sending garbage in case of not having metadata
+			// for whatever reason.
+			pendingData[nPending].Metadata.Type = writev2.Metadata_METRIC_TYPE_UNSPECIFIED
+			pendingData[nPending].Metadata.HelpRef = 0
+			pendingData[nPending].Metadata.UnitRef = 0
 		}
 
 		if sendExemplars {
@@ -2119,7 +2124,7 @@ func compressPayload(tmpbuf *[]byte, inp []byte, enc Compression) (compressed []
 		}
 		return compressed, nil
 	default:
-		return compressed, fmt.Errorf("Unknown compression scheme [%v]", enc)
+		return compressed, fmt.Errorf("unknown compression scheme [%v]", enc)
 	}
 }
 

@@ -315,12 +315,11 @@ func readPrometheusLabels(r io.Reader, n int) ([]labels.Labels, error) {
 	i := 0
 
 	for scanner.Scan() && i < n {
-		m := make([]labels.Label, 0, 10)
-
 		r := strings.NewReplacer("\"", "", "{", "", "}", "")
 		s := r.Replace(scanner.Text())
 
 		labelChunks := strings.Split(s, ",")
+		m := make([]labels.Label, 0, len(labelChunks))
 		for _, labelChunk := range labelChunks {
 			split := strings.Split(labelChunk, ":")
 			m = append(m, labels.Label{Name: split[0], Value: split[1]})

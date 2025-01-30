@@ -1,0 +1,6 @@
+groups:
+  - name: test
+    interval: 1s
+    rules:
+      - alert: rule1
+        expr: 1 < bool 2

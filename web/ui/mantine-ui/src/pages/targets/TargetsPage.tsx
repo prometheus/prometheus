@@ -83,7 +83,9 @@ export default function TargetsPage() {
           value={(limited && scrapePools[0]) || scrapePool || null}
           onChange={(value) => {
             setScrapePool(value);
-            showLimitAlert && dispatch(setShowLimitAlert(false));
+            if (showLimitAlert) {
+              dispatch(setShowLimitAlert(false));
+            }
           }}
           searchable
         />

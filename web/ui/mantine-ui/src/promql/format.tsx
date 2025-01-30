@@ -1,4 +1,4 @@
-import React, { ReactElement, ReactNode } from "react";
+import React, { ReactElement, ReactNode, JSX } from "react";
 import ASTNode, {
   VectorSelector,
   matchType,

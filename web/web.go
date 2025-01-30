@@ -289,7 +289,9 @@ type Options struct {
 	RemoteReadBytesInFrame     int
 	EnableRemoteWriteReceiver  bool
 	EnableOTLPWriteReceiver    bool
+	ConvertOTLPDelta           bool
 	IsAgent                    bool
+	CTZeroIngestionEnabled     bool
 	AppName                    string
 
 	AcceptRemoteWriteProtoMsgs []config.RemoteWriteProtoMsg
@@ -386,6 +388,8 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		o.EnableRemoteWriteReceiver,
 		o.AcceptRemoteWriteProtoMsgs,
 		o.EnableOTLPWriteReceiver,
+		o.ConvertOTLPDelta,
+		o.CTZeroIngestionEnabled,
 	)
 
 	if o.RoutePrefix != "/" {
@@ -803,6 +807,13 @@ func (h *Handler) runtimeInfo() (api_v1.RuntimeInfo, error) {
 		GOGC:           os.Getenv("GOGC"),
 		GODEBUG:        os.Getenv("GODEBUG"),
 	}
+
+	hostname, err := os.Hostname()
+	if err != nil {
+		return status, fmt.Errorf("Error getting hostname: %w", err)
+	}
+	status.Hostname = hostname
+	status.ServerTime = time.Now().UTC()
 
 	if h.options.TSDBRetentionDuration != 0 {
 		status.StorageRetention = h.options.TSDBRetentionDuration.String()

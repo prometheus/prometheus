@@ -60,36 +60,63 @@ This document offers guidance on migrating from Prometheus 2.x to Prometheus 3.0
 
 ## PromQL
 
-- The `.` pattern in regular expressions in PromQL matches newline characters. 
-  With this change a regular expressions like `.*` matches strings that include 
-  `\n`. This applies to matchers in queries and relabel configs.
-  - For example, the following regular expressions now match the accompanying
-  strings, whereas in Prometheus v2 these combinations didn't match.
-      - `.*` additionally matches `foo\n` and `Foo\nBar`
-      - `foo.?bar` additionally matches `foo\nbar`
-      - `foo.+bar` additionally matches `foo\nbar`
-  - If you want Prometheus v3 to behave like v2, you will have to change your
-  regular expressions by replacing all `.` patterns with `[^\n]`, e.g.
-  `foo[^\n]*`.
-- Lookback and range selectors are left open and right closed (previously left 
-  closed and right closed). This change affects queries when the evaluation time 
-  perfectly aligns with the sample timestamps. For example assume querying a 
-  timeseries with evenly spaced samples exactly 1 minute apart. Before Prometheus
-  v3, a range query with `5m` would usually return 5 samples. But if the query
-  evaluation aligns perfectly with a scrape, it would return 6 samples. In 
-  Prometheus v3 queries like this will always return 5 samples.  
-  This change has likely few effects for everyday use, except for some subquery
-  use cases.  
-  Query front-ends that align queries usually align subqueries to multiples of
-  the step size. These subqueries will likely be affected.  
-  Tests are more likely to affected. To fix those either adjust the expected 
-  number of samples or extend the range by less than one sample interval.
-- The `holt_winters` function has been renamed to `double_exponential_smoothing` 
-  and is now guarded by the `promql-experimental-functions` feature flag.
-  If you want to keep using `holt_winters`, you have to do both of these things:
-    - Rename `holt_winters` to `double_exponential_smoothing` in your queries.
-    - Pass `--enable-feature=promql-experimental-functions` in your Prometheus 
-      CLI invocation.
+### Regular expressions match newlines
+
+The `.` pattern in regular expressions in PromQL matches newline characters.
+With this change a regular expressions like `.*` matches strings that include
+`\n`. This applies to matchers in queries and relabel configs.
+
+For example, the following regular expressions now match the accompanying
+strings, whereas in Prometheus v2 these combinations didn't match.
+    - `.*` additionally matches `foo\n` and `Foo\nBar`
+    - `foo.?bar` additionally matches `foo\nbar`
+    - `foo.+bar` additionally matches `foo\nbar`
+
+If you want Prometheus v3 to behave like v2, you will have to change your
+regular expressions by replacing all `.` patterns with `[^\n]`, e.g.
+`foo[^\n]*`.
+
+### Range selectors and lookback exclude samples coinciding with the left boundary
+
+Lookback and range selectors are now left-open and right-closed (previously
+left-closed and right-closed), which makes their behavior more consistent. This
+change affects queries where the left boundary of a range or the lookback delta
+coincides with the timestamp of one or more samples.
+
+For example, assume we are querying a timeseries with evenly spaced samples
+exactly 1 minute apart. Before Prometheus v3, a range query with `5m` would
+usually return 5 samples. But if the query evaluation aligns perfectly with a
+scrape, it would return 6 samples. In Prometheus v3 queries like this will
+always return 5 samples given even spacing.
+
+This change will typically affect subqueries because their evaluation timing is
+naturally perfectly evenly spaced and aligned with timestamps that are multiples
+of the subquery resolution. Furthermore, query frontends often align subqueries
+to multiples of the step size. In combination, this easily creates a situation
+of perfect mutual alignment, often unintended and unknown by the user, so that
+the new behavior might come as a surprise. Before Prometheus V3, a subquery of
+`foo[1m:1m]` on such a system might have always returned two points, allowing
+for rate calculations. In Prometheus V3, however, such a subquery will only
+return one point, which is insufficient for a rate or increase calculation,
+resulting in No Data returned.
+
+Such queries will need to be rewritten to extend the window to properly cover
+more than one point. In this example, `foo[2m:1m]` would always return two
+points no matter the query alignment. The exact form of the rewritten query may
+depend on the intended results and there is no universal drop-in replacement for
+queries whose behavior has changed.
+
+Tests are similarly more likely to affected. To fix those either adjust the
+expected number of samples or extend the range.
+
+### holt_winters function renamed
+
+The `holt_winters` function has been renamed to `double_exponential_smoothing`
+and is now guarded by the `promql-experimental-functions` feature flag.
+If you want to keep using `holt_winters`, you have to do both of these things:
+  - Rename `holt_winters` to `double_exponential_smoothing` in your queries.
+  - Pass `--enable-feature=promql-experimental-functions` in your Prometheus
+    CLI invocation.
 
 ## Scrape protocols
 Prometheus v3 is more strict concerning the Content-Type header received when

@@ -45,10 +45,12 @@ func (u unknownRule) SetEvaluationDuration(time.Duration)  {}
 func (u unknownRule) GetEvaluationDuration() time.Duration { return 0 }
 func (u unknownRule) SetEvaluationTimestamp(time.Time)     {}
 func (u unknownRule) GetEvaluationTimestamp() time.Time    { return time.Time{} }
-func (u unknownRule) SetNoDependentRules(bool)             {}
+func (u unknownRule) SetDependentRules([]Rule)             {}
 func (u unknownRule) NoDependentRules() bool               { return false }
-func (u unknownRule) SetNoDependencyRules(bool)            {}
+func (u unknownRule) DependentRules() []Rule               { return nil }
+func (u unknownRule) SetDependencyRules([]Rule)            {}
 func (u unknownRule) NoDependencyRules() bool              { return false }
+func (u unknownRule) DependencyRules() []Rule              { return nil }
 
 func TestNewRuleDetailPanics(t *testing.T) {
 	require.PanicsWithValue(t, `unknown rule type "rules.unknownRule"`, func() {
@@ -76,12 +78,12 @@ func TestNewRuleDetail(t *testing.T) {
 		require.False(t, detail.NoDependentRules)
 		require.False(t, detail.NoDependencyRules)
 
-		rule.SetNoDependentRules(true)
+		rule.SetDependentRules([]Rule{})
 		detail = NewRuleDetail(rule)
 		require.True(t, detail.NoDependentRules)
 		require.False(t, detail.NoDependencyRules)
 
-		rule.SetNoDependencyRules(true)
+		rule.SetDependencyRules([]Rule{})
 		detail = NewRuleDetail(rule)
 		require.True(t, detail.NoDependentRules)
 		require.True(t, detail.NoDependencyRules)
@@ -104,12 +106,12 @@ func TestNewRuleDetail(t *testing.T) {
 		require.False(t, detail.NoDependentRules)
 		require.False(t, detail.NoDependencyRules)
 
-		rule.SetNoDependentRules(true)
+		rule.SetDependentRules([]Rule{})
 		detail = NewRuleDetail(rule)
 		require.True(t, detail.NoDependentRules)
 		require.False(t, detail.NoDependencyRules)
 
-		rule.SetNoDependencyRules(true)
+		rule.SetDependencyRules([]Rule{})
 		detail = NewRuleDetail(rule)
 		require.True(t, detail.NoDependentRules)
 		require.True(t, detail.NoDependencyRules)

@@ -150,20 +150,20 @@ const TreeNode: FC<{
   });
 
   useEffect(() => {
-    if (mergedChildState === "error") {
-      reportNodeState && reportNodeState(childIdx, "error");
+    if (mergedChildState === "error" && reportNodeState) {
+      reportNodeState(childIdx, "error");
     }
   }, [mergedChildState, reportNodeState, childIdx]);
 
   useEffect(() => {
-    if (error) {
-      reportNodeState && reportNodeState(childIdx, "error");
+    if (error && reportNodeState) {
+      reportNodeState(childIdx, "error");
     }
   }, [error, reportNodeState, childIdx]);
 
   useEffect(() => {
-    if (isFetching) {
-      reportNodeState && reportNodeState(childIdx, "running");
+    if (isFetching && reportNodeState) {
+      reportNodeState(childIdx, "running");
     }
   }, [isFetching, reportNodeState, childIdx]);
 
@@ -219,7 +219,9 @@ const TreeNode: FC<{
       return;
     }
 
-    reportNodeState && reportNodeState(childIdx, "success");
+    if (reportNodeState) {
+      reportNodeState(childIdx, "success");
+    }
 
     let resultSeries = 0;
     const labelValuesByName: Record<string, Record<string, number>> = {};

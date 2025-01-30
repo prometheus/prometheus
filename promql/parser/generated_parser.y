@@ -363,17 +363,18 @@ grouping_label_list:
 grouping_label  : maybe_label
                         {
                         if !model.LabelName($1.Val).IsValid() {
-                                yylex.(*parser).unexpected("grouping opts", "label")
+                                yylex.(*parser).addParseErrf($1.PositionRange(),"invalid label name for grouping: %q", $1.Val)
                         }
                         $$ = $1
                         }
                 | STRING {
-                        if !model.LabelName(yylex.(*parser).unquoteString($1.Val)).IsValid() {
-                                yylex.(*parser).unexpected("grouping opts", "label")
+                        unquoted := yylex.(*parser).unquoteString($1.Val)
+                        if !model.LabelName(unquoted).IsValid() {
+                                yylex.(*parser).addParseErrf($1.PositionRange(),"invalid label name for grouping: %q", unquoted)
                         }
                         $$ = $1
                         $$.Pos++
-                        $$.Val = yylex.(*parser).unquoteString($$.Val)
+                        $$.Val = unquoted
                         }
                 | error
                         { yylex.(*parser).unexpected("grouping opts", "label"); $$ = Item{} }
@@ -487,7 +488,7 @@ matrix_selector : expr LEFT_BRACKET number_duration_literal RIGHT_BRACKET
 
                         if errMsg != ""{
                                 errRange := mergeRanges(&$2, &$4)
-                                yylex.(*parser).addParseErrf(errRange, errMsg)
+                                yylex.(*parser).addParseErrf(errRange, "%s", errMsg)
                         }
 
 			numLit, _ := $3.(*NumberLiteral)

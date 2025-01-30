@@ -55,6 +55,8 @@ func BenchmarkQuerier(b *testing.B) {
 			addSeries(labels.FromStrings("i", strconv.Itoa(i)+postingsBenchSuffix, "n", "1_"+strconv.Itoa(n)+postingsBenchSuffix, "j", "bar"))
 			addSeries(labels.FromStrings("i", strconv.Itoa(i)+postingsBenchSuffix, "n", "2_"+strconv.Itoa(n)+postingsBenchSuffix, "j", "foo"))
 		}
+		require.NoError(b, app.Commit())
+		app = h.Appender(context.Background())
 	}
 	require.NoError(b, app.Commit())
 
@@ -270,6 +272,10 @@ func createHeadForBenchmarkSelect(b *testing.B, numSeries int, addSeries func(ap
 	app := h.Appender(context.Background())
 	for i := 0; i < numSeries; i++ {
 		addSeries(app, i)
+		if i%1000 == 999 { // Commit every so often, so the appender doesn't get too big.
+			require.NoError(b, app.Commit())
+			app = h.Appender(context.Background())
+		}
 	}
 	require.NoError(b, app.Commit())
 	return h, db

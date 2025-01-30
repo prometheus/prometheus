@@ -15,13 +15,17 @@
 package record
 
 import (
+	"fmt"
 	"math/rand"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -148,10 +152,31 @@ func TestRecord_EncodeDecode(t *testing.T) {
 				NegativeBuckets: []int64{1, 2, -1},
 			},
 		},
+		{
+			Ref: 67,
+			T:   5678,
+			H: &histogram.Histogram{
+				Count:         8,
+				ZeroThreshold: 0.001,
+				Sum:           35.5,
+				Schema:        -53,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 2, Length: 2},
+				},
+				PositiveBuckets: []int64{2, -1, 2, 0},
+				CustomValues:    []float64{0, 2, 4, 6, 8},
+			},
+		},
 	}
 
-	decHistograms, err := dec.HistogramSamples(enc.HistogramSamples(histograms, nil), nil)
+	histSamples, customBucketsHistograms := enc.HistogramSamples(histograms, nil)
+	customBucketsHistSamples := enc.CustomBucketsHistogramSamples(customBucketsHistograms, nil)
+	decHistograms, err := dec.HistogramSamples(histSamples, nil)
 	require.NoError(t, err)
+	decCustomBucketsHistograms, err := dec.HistogramSamples(customBucketsHistSamples, nil)
+	require.NoError(t, err)
+	decHistograms = append(decHistograms, decCustomBucketsHistograms...)
 	require.Equal(t, histograms, decHistograms)
 
 	floatHistograms := make([]RefFloatHistogramSample, len(histograms))
@@ -162,25 +187,42 @@ func TestRecord_EncodeDecode(t *testing.T) {
 			FH:  h.H.ToFloat(nil),
 		}
 	}
-	decFloatHistograms, err := dec.FloatHistogramSamples(enc.FloatHistogramSamples(floatHistograms, nil), nil)
+	floatHistSamples, customBucketsFloatHistograms := enc.FloatHistogramSamples(floatHistograms, nil)
+	customBucketsFloatHistSamples := enc.CustomBucketsFloatHistogramSamples(customBucketsFloatHistograms, nil)
+	decFloatHistograms, err := dec.FloatHistogramSamples(floatHistSamples, nil)
 	require.NoError(t, err)
+	decCustomBucketsFloatHistograms, err := dec.FloatHistogramSamples(customBucketsFloatHistSamples, nil)
+	require.NoError(t, err)
+	decFloatHistograms = append(decFloatHistograms, decCustomBucketsFloatHistograms...)
 	require.Equal(t, floatHistograms, decFloatHistograms)
 
 	// Gauge integer histograms.
 	for i := range histograms {
 		histograms[i].H.CounterResetHint = histogram.GaugeType
 	}
-	decHistograms, err = dec.HistogramSamples(enc.HistogramSamples(histograms, nil), nil)
+
+	gaugeHistSamples, customBucketsGaugeHistograms := enc.HistogramSamples(histograms, nil)
+	customBucketsGaugeHistSamples := enc.CustomBucketsHistogramSamples(customBucketsGaugeHistograms, nil)
+	decGaugeHistograms, err := dec.HistogramSamples(gaugeHistSamples, nil)
 	require.NoError(t, err)
-	require.Equal(t, histograms, decHistograms)
+	decCustomBucketsGaugeHistograms, err := dec.HistogramSamples(customBucketsGaugeHistSamples, nil)
+	require.NoError(t, err)
+	decGaugeHistograms = append(decGaugeHistograms, decCustomBucketsGaugeHistograms...)
+	require.Equal(t, histograms, decGaugeHistograms)
 
 	// Gauge float histograms.
 	for i := range floatHistograms {
 		floatHistograms[i].FH.CounterResetHint = histogram.GaugeType
 	}
-	decFloatHistograms, err = dec.FloatHistogramSamples(enc.FloatHistogramSamples(floatHistograms, nil), nil)
+
+	gaugeFloatHistSamples, customBucketsGaugeFloatHistograms := enc.FloatHistogramSamples(floatHistograms, nil)
+	customBucketsGaugeFloatHistSamples := enc.CustomBucketsFloatHistogramSamples(customBucketsGaugeFloatHistograms, nil)
+	decGaugeFloatHistograms, err := dec.FloatHistogramSamples(gaugeFloatHistSamples, nil)
 	require.NoError(t, err)
-	require.Equal(t, floatHistograms, decFloatHistograms)
+	decCustomBucketsGaugeFloatHistograms, err := dec.FloatHistogramSamples(customBucketsGaugeFloatHistSamples, nil)
+	require.NoError(t, err)
+	decGaugeFloatHistograms = append(decGaugeFloatHistograms, decCustomBucketsGaugeFloatHistograms...)
+	require.Equal(t, floatHistograms, decGaugeFloatHistograms)
 }
 
 // TestRecord_Corrupted ensures that corrupted records return the correct error.
@@ -263,10 +305,31 @@ func TestRecord_Corrupted(t *testing.T) {
 					PositiveBuckets: []int64{1, 1, -1, 0},
 				},
 			},
+			{
+				Ref: 67,
+				T:   5678,
+				H: &histogram.Histogram{
+					Count:         8,
+					ZeroThreshold: 0.001,
+					Sum:           35.5,
+					Schema:        -53,
+					PositiveSpans: []histogram.Span{
+						{Offset: 0, Length: 2},
+						{Offset: 2, Length: 2},
+					},
+					PositiveBuckets: []int64{2, -1, 2, 0},
+					CustomValues:    []float64{0, 2, 4, 6, 8},
+				},
+			},
 		}
 
-		corrupted := enc.HistogramSamples(histograms, nil)[:8]
-		_, err := dec.HistogramSamples(corrupted, nil)
+		corruptedHists, customBucketsHists := enc.HistogramSamples(histograms, nil)
+		corruptedHists = corruptedHists[:8]
+		corruptedCustomBucketsHists := enc.CustomBucketsHistogramSamples(customBucketsHists, nil)
+		corruptedCustomBucketsHists = corruptedCustomBucketsHists[:8]
+		_, err := dec.HistogramSamples(corruptedHists, nil)
+		require.ErrorIs(t, err, encoding.ErrInvalidSize)
+		_, err = dec.HistogramSamples(corruptedCustomBucketsHists, nil)
 		require.ErrorIs(t, err, encoding.ErrInvalidSize)
 	})
 }
@@ -308,9 +371,29 @@ func TestRecord_Type(t *testing.T) {
 				PositiveBuckets: []int64{1, 1, -1, 0},
 			},
 		},
+		{
+			Ref: 67,
+			T:   5678,
+			H: &histogram.Histogram{
+				Count:         8,
+				ZeroThreshold: 0.001,
+				Sum:           35.5,
+				Schema:        -53,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 2, Length: 2},
+				},
+				PositiveBuckets: []int64{2, -1, 2, 0},
+				CustomValues:    []float64{0, 2, 4, 6, 8},
+			},
+		},
 	}
-	recordType = dec.Type(enc.HistogramSamples(histograms, nil))
+	hists, customBucketsHistograms := enc.HistogramSamples(histograms, nil)
+	recordType = dec.Type(hists)
 	require.Equal(t, HistogramSamples, recordType)
+	customBucketsHists := enc.CustomBucketsHistogramSamples(customBucketsHistograms, nil)
+	recordType = dec.Type(customBucketsHists)
+	require.Equal(t, CustomBucketsHistogramSamples, recordType)
 
 	recordType = dec.Type(nil)
 	require.Equal(t, Unknown, recordType)
@@ -384,4 +467,134 @@ func TestRecord_MetadataDecodeUnknownExtraFields(t *testing.T) {
 	decMetadata, err := dec.Metadata(enc.Get(), nil)
 	require.NoError(t, err)
 	require.Equal(t, expectedMetadata, decMetadata)
+}
+
+type refsCreateFn func(labelCount, histograms, buckets int) ([]RefSeries, []RefSample, []RefHistogramSample)
+
+type recordsMaker struct {
+	name string
+	make refsCreateFn
+}
+
+// BenchmarkWAL_HistogramEncoding measures efficiency of encoding classic
+// histograms and native historgrams with custom buckets (NHCB).
+func BenchmarkWAL_HistogramEncoding(b *testing.B) {
+	initClassicRefs := func(labelCount, histograms, buckets int) (series []RefSeries, floatSamples []RefSample, histSamples []RefHistogramSample) {
+		ref := chunks.HeadSeriesRef(0)
+		lbls := map[string]string{}
+		for i := range labelCount {
+			lbls[fmt.Sprintf("l%d", i)] = fmt.Sprintf("v%d", i)
+		}
+		for i := range histograms {
+			lbls[model.MetricNameLabel] = fmt.Sprintf("series_%d_count", i)
+			series = append(series, RefSeries{
+				Ref:    ref,
+				Labels: labels.FromMap(lbls),
+			})
+			floatSamples = append(floatSamples, RefSample{
+				Ref: ref,
+				T:   100,
+				V:   float64(i),
+			})
+			ref++
+
+			lbls[model.MetricNameLabel] = fmt.Sprintf("series_%d_sum", i)
+			series = append(series, RefSeries{
+				Ref:    ref,
+				Labels: labels.FromMap(lbls),
+			})
+			floatSamples = append(floatSamples, RefSample{
+				Ref: ref,
+				T:   100,
+				V:   float64(i),
+			})
+			ref++
+
+			if buckets == 0 {
+				continue
+			}
+			lbls[model.MetricNameLabel] = fmt.Sprintf("series_%d_bucket", i)
+			for j := range buckets {
+				lbls[model.BucketLabel] = fmt.Sprintf("%d.0", j)
+				series = append(series, RefSeries{
+					Ref:    ref,
+					Labels: labels.FromMap(lbls),
+				})
+				floatSamples = append(floatSamples, RefSample{
+					Ref: ref,
+					T:   100,
+					V:   float64(i + j),
+				})
+				ref++
+			}
+			delete(lbls, model.BucketLabel)
+		}
+		return
+	}
+
+	initNHCBRefs := func(labelCount, histograms, buckets int) (series []RefSeries, floatSamples []RefSample, histSamples []RefHistogramSample) {
+		ref := chunks.HeadSeriesRef(0)
+		lbls := map[string]string{}
+		for i := range labelCount {
+			lbls[fmt.Sprintf("l%d", i)] = fmt.Sprintf("v%d", i)
+		}
+		for i := range histograms {
+			lbls[model.MetricNameLabel] = fmt.Sprintf("series_%d", i)
+			series = append(series, RefSeries{
+				Ref:    ref,
+				Labels: labels.FromMap(lbls),
+			})
+			h := &histogram.Histogram{
+				Schema:          histogram.CustomBucketsSchema,
+				Count:           uint64(i),
+				Sum:             float64(i),
+				PositiveSpans:   []histogram.Span{{Length: uint32(buckets)}},
+				PositiveBuckets: make([]int64, buckets+1),
+				CustomValues:    make([]float64, buckets),
+			}
+			for j := range buckets {
+				h.PositiveBuckets[j] = int64(i + j)
+			}
+			histSamples = append(histSamples, RefHistogramSample{
+				Ref: ref,
+				T:   100,
+				H:   h,
+			})
+			ref++
+		}
+		return
+	}
+
+	for _, maker := range []recordsMaker{
+		{
+			name: "classic",
+			make: initClassicRefs,
+		},
+		{
+			name: "nhcb",
+			make: initNHCBRefs,
+		},
+	} {
+		for _, labelCount := range []int{0, 10, 50} {
+			for _, histograms := range []int{10, 100, 1000} {
+				for _, buckets := range []int{0, 1, 10, 100} {
+					b.Run(fmt.Sprintf("type=%s/labels=%d/histograms=%d/buckets=%d", maker.name, labelCount, histograms, buckets), func(b *testing.B) {
+						series, samples, nhcbs := maker.make(labelCount, histograms, buckets)
+						enc := Encoder{}
+						for range b.N {
+							var buf []byte
+							enc.Series(series, buf)
+							enc.Samples(samples, buf)
+							var leftOver []RefHistogramSample
+							_, leftOver = enc.HistogramSamples(nhcbs, buf)
+							if len(leftOver) > 0 {
+								enc.CustomBucketsHistogramSamples(leftOver, buf)
+							}
+							b.ReportMetric(float64(len(buf)), "recordBytes/ops")
+						}
+					})
+				}
+			}
+		}
+	}
 }

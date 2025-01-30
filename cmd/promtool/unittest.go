@@ -46,11 +46,11 @@ import (
 
 // RulesUnitTest does unit testing of rules based on the unit testing files provided.
 // More info about the file format can be found in the docs.
-func RulesUnitTest(queryOpts promqltest.LazyLoaderOpts, runStrings []string, diffFlag, debug bool, files ...string) int {
-	return RulesUnitTestResult(io.Discard, queryOpts, runStrings, diffFlag, debug, files...)
+func RulesUnitTest(queryOpts promqltest.LazyLoaderOpts, runStrings []string, diffFlag, debug, ignoreUnknownFields bool, files ...string) int {
+	return RulesUnitTestResult(io.Discard, queryOpts, runStrings, diffFlag, debug, ignoreUnknownFields, files...)
 }
 
-func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts, runStrings []string, diffFlag, debug bool, files ...string) int {
+func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts, runStrings []string, diffFlag, debug, ignoreUnknownFields bool, files ...string) int {
 	failed := false
 	junit := &junitxml.JUnitXML{}
 
@@ -60,7 +60,7 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 	}
 
 	for _, f := range files {
-		if errs := ruleUnitTest(f, queryOpts, run, diffFlag, debug, junit.Suite(f)); errs != nil {
+		if errs := ruleUnitTest(f, queryOpts, run, diffFlag, debug, ignoreUnknownFields, junit.Suite(f)); errs != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
 				fmt.Fprintln(os.Stderr, e.Error())
@@ -82,7 +82,7 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 	return successExitCode
 }
 
-func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *regexp.Regexp, diffFlag, debug bool, ts *junitxml.TestSuite) []error {
+func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *regexp.Regexp, diffFlag, debug, ignoreUnknownFields bool, ts *junitxml.TestSuite) []error {
 	b, err := os.ReadFile(filename)
 	if err != nil {
 		ts.Abort(err)
@@ -131,7 +131,7 @@ func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *reg
 		if t.Interval == 0 {
 			t.Interval = unitTestInp.EvaluationInterval
 		}
-		ers := t.test(testname, evalInterval, groupOrderMap, queryOpts, diffFlag, debug, unitTestInp.RuleFiles...)
+		ers := t.test(testname, evalInterval, groupOrderMap, queryOpts, diffFlag, debug, ignoreUnknownFields, unitTestInp.RuleFiles...)
 		if ers != nil {
 			for _, e := range ers {
 				tc.Fail(e.Error())
@@ -198,7 +198,7 @@ type testGroup struct {
 }
 
 // test performs the unit tests.
-func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrderMap map[string]int, queryOpts promqltest.LazyLoaderOpts, diffFlag, debug bool, ruleFiles ...string) (outErr []error) {
+func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrderMap map[string]int, queryOpts promqltest.LazyLoaderOpts, diffFlag, debug, ignoreUnknownFields bool, ruleFiles ...string) (outErr []error) {
 	if debug {
 		testStart := time.Now()
 		fmt.Printf("DEBUG: Starting test %s\n", testname)
@@ -228,7 +228,7 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 		Logger:     promslog.NewNopLogger(),
 	}
 	m := rules.NewManager(opts)
-	groupsMap, ers := m.LoadGroups(time.Duration(tg.Interval), tg.ExternalLabels, tg.ExternalURL, nil, ruleFiles...)
+	groupsMap, ers := m.LoadGroups(time.Duration(tg.Interval), tg.ExternalLabels, tg.ExternalURL, nil, ignoreUnknownFields, ruleFiles...)
 	if ers != nil {
 		return ers
 	}

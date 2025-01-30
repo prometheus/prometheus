@@ -187,11 +187,11 @@ func readTestWAL(t testing.TB, dir string) (recs []interface{}) {
 			samples, err := dec.Samples(rec, nil)
 			require.NoError(t, err)
 			recs = append(recs, samples)
-		case record.HistogramSamples:
+		case record.HistogramSamples, record.CustomBucketsHistogramSamples:
 			samples, err := dec.HistogramSamples(rec, nil)
 			require.NoError(t, err)
 			recs = append(recs, samples)
-		case record.FloatHistogramSamples:
+		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
 			samples, err := dec.FloatHistogramSamples(rec, nil)
 			require.NoError(t, err)
 			recs = append(recs, samples)
@@ -962,12 +962,12 @@ func TestHead_Truncate(t *testing.T) {
 	require.Nil(t, h.series.getByID(s3.ref))
 	require.Nil(t, h.series.getByID(s4.ref))
 
-	postingsA1, _ := index.ExpandPostings(h.postings.Get("a", "1"))
-	postingsA2, _ := index.ExpandPostings(h.postings.Get("a", "2"))
-	postingsB1, _ := index.ExpandPostings(h.postings.Get("b", "1"))
-	postingsB2, _ := index.ExpandPostings(h.postings.Get("b", "2"))
-	postingsC1, _ := index.ExpandPostings(h.postings.Get("c", "1"))
-	postingsAll, _ := index.ExpandPostings(h.postings.Get("", ""))
+	postingsA1, _ := index.ExpandPostings(h.postings.Postings(ctx, "a", "1"))
+	postingsA2, _ := index.ExpandPostings(h.postings.Postings(ctx, "a", "2"))
+	postingsB1, _ := index.ExpandPostings(h.postings.Postings(ctx, "b", "1"))
+	postingsB2, _ := index.ExpandPostings(h.postings.Postings(ctx, "b", "2"))
+	postingsC1, _ := index.ExpandPostings(h.postings.Postings(ctx, "c", "1"))
+	postingsAll, _ := index.ExpandPostings(h.postings.Postings(ctx, "", ""))
 
 	require.Equal(t, []storage.SeriesRef{storage.SeriesRef(s1.ref)}, postingsA1)
 	require.Equal(t, []storage.SeriesRef{storage.SeriesRef(s2.ref)}, postingsA2)
@@ -1594,7 +1594,6 @@ func TestDelete_e2e(t *testing.T) {
 		for i := 0; i < numRanges; i++ {
 			q, err := NewBlockQuerier(hb, 0, 100000)
 			require.NoError(t, err)
-			defer q.Close()
 			ss := q.Select(context.Background(), true, nil, del.ms...)
 			// Build the mockSeriesSet.
 			matchedSeries := make([]storage.Series, 0, len(matched))
@@ -1635,6 +1634,7 @@ func TestDelete_e2e(t *testing.T) {
 			}
 			require.NoError(t, ss.Err())
 			require.Empty(t, ss.Warnings())
+			require.NoError(t, q.Close())
 		}
 	}
 }

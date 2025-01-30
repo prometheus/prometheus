@@ -86,6 +86,7 @@ URL query parameters:
 - `time=<rfc3339 | unix_timestamp>`: Evaluation timestamp. Optional.
 - `timeout=<duration>`: Evaluation timeout. Optional. Defaults to and
    is capped by the value of the `-query.timeout` flag.
+- `limit=<number>`: Maximum number of returned series. Doesn’t affect scalars or strings but truncates the number of series for matrices and vectors. Optional. 0 means disabled.
 
 The current server time is used if the `time` parameter is omitted.
 
@@ -154,6 +155,7 @@ URL query parameters:
 - `step=<duration | float>`: Query resolution step width in `duration` format or float number of seconds.
 - `timeout=<duration>`: Evaluation timeout. Optional. Defaults to and
    is capped by the value of the `-query.timeout` flag.
+- `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 
 You can URL-encode these parameters directly in the request body by using the `POST` method and
 `Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
@@ -1158,6 +1160,8 @@ $ curl http://localhost:9090/api/v1/status/runtimeinfo
   "data": {
     "startTime": "2019-11-02T17:23:59.301361365+01:00",
     "CWD": "/",
+    "hostname" : "DESKTOP-717H17Q",
+    "serverTime": "2025-01-05T18:27:33Z",
     "reloadConfigSuccess": true,
     "lastConfigTime": "2019-11-02T17:23:59+01:00",
     "timeSeriesCount": 873,
@@ -1419,6 +1423,15 @@ Enable the OTLP receiver by setting
 endpoint is `/api/v1/otlp/v1/metrics`.
 
 *New in v2.47*
+
+### OTLP Delta
+
+Prometheus can convert incoming metrics from delta temporality to their cumulative equivalent.
+This is done using [deltatocumulative](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor) from the OpenTelemetry Collector.
+
+To enable, pass `--enable-feature=otlp-deltatocumulative`.
+
+*New in v3.2*
 
 ## Notifications
 
