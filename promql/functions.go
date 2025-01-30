@@ -295,12 +295,21 @@ func funcIdelta(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelpe
 }
 
 func instantValue(vals []parser.Value, args parser.Expressions, out Vector, isRate bool) (Vector, annotations.Annotations) {
-	samples := vals[0].(Matrix)[0]
-	metricName := samples.Metric.Get(labels.MetricName)
-	var ss []Sample
-	var annos annotations.Annotations
+	var (
+		samples    = vals[0].(Matrix)[0]
+		metricName = samples.Metric.Get(labels.MetricName)
+		ss         = make([]Sample, 0, 2)
+		annos      annotations.Annotations
+	)
 
-	// Add last 2 float samples if exists.
+	// No sense in trying to compute a rate without at least two points. Drop
+	// this Vector element.
+	// TODO: add RangeTooShortWarning
+	if len(samples.Floats)+len(samples.Histograms) < 2 {
+		return out, nil
+	}
+
+	// Add the last 2 float samples if they exist.
 	for i := max(0, len(samples.Floats)-2); i < len(samples.Floats); i++ {
 		ss = append(ss, Sample{
 			F: samples.Floats[i].F,
@@ -308,7 +317,7 @@ func instantValue(vals []parser.Value, args parser.Expressions, out Vector, isRa
 		})
 	}
 
-	// Add last 2 histogram samples into their correct position if exists.
+	// Add the last 2 histogram samples into their correct position if they exist.
 	for i := max(0, len(samples.Histograms)-2); i < len(samples.Histograms); i++ {
 		s := Sample{
 			H: samples.Histograms[i].H,
@@ -324,20 +333,17 @@ func instantValue(vals []parser.Value, args parser.Expressions, out Vector, isRa
 				ss = append(ss, s)
 			}
 		case s.T < ss[0].T:
-			// discard.
-		case s.T > ss[0].T && s.T < ss[1].T:
-			ss[0] = s
+			// s is older than 1st, so discard it.
 		case s.T > ss[1].T:
+			// s is newest, so add it as 2nd and make the old 2nd the new 1st.
 			ss[0] = ss[1]
 			ss[1] = s
+		default:
+			// In all other cases, we just make s the new 1st.
+			// This establishes a correct order, even in the (irregular)
+			// case of equal timestamps.
+			ss[0] = s
 		}
-	}
-
-	// No sense in trying to compute a rate without at least two points. Drop
-	// this Vector element.
-	// TODO: add RangeTooShortWarning
-	if len(ss) < 2 {
-		return out, nil
 	}
 
 	resultSample := ss[1]
@@ -348,11 +354,12 @@ func instantValue(vals []parser.Value, args parser.Expressions, out Vector, isRa
 	}
 	switch {
 	case ss[1].H == nil && ss[0].H == nil:
-		if isRate && ss[1].F < ss[0].F {
-			// Counter reset.
-		} else {
+		if !isRate || ss[1].F >= ss[0].F {
+			// Gauge or counter without reset.
 			resultSample.F = ss[1].F - ss[0].F
 		}
+		// In case of a counter reset, we leave resultSample at
+		// its current value, which is already ss[1].
 	case ss[1].H != nil && ss[0].H != nil:
 		resultSample.H = ss[1].H.Copy()
 		// irate should only be applied to counters.
@@ -363,23 +370,12 @@ func instantValue(vals []parser.Value, args parser.Expressions, out Vector, isRa
 		if !isRate && (ss[1].H.CounterResetHint != histogram.GaugeType || ss[0].H.CounterResetHint != histogram.GaugeType) {
 			annos.Add(annotations.NewNativeHistogramNotGaugeWarning(metricName, args.PositionRange()))
 		}
-		_, err := resultSample.H.Sub(ss[0].H)
-		if !isRate && err != nil {
+		if !isRate || !ss[1].H.DetectReset(ss[0].H) {
+			_, err := resultSample.H.Sub(ss[0].H)
 			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 				return out, annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, args.PositionRange()))
 			} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
 				return out, annos.Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, args.PositionRange()))
-			}
-		}
-		// For counter resets.
-		if isRate && ss[1].H.DetectReset(ss[0].H) {
-			_, err := resultSample.H.Add(ss[0].H)
-			if err != nil {
-				if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
-					annos.Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, args.PositionRange()))
-				} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
-					annos.Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, args.PositionRange()))
-				}
 			}
 		}
 		resultSample.H.CounterResetHint = histogram.GaugeType
