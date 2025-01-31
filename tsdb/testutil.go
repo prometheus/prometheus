@@ -149,8 +149,8 @@ func requireEqualSeries(t *testing.T, expected, actual map[string][]chunks.Sampl
 
 func requireEqualOOOSamples(t *testing.T, expectedSamples int, db *DB) {
 	require.Equal(t, float64(expectedSamples),
-		prom_testutil.ToFloat64(db.head.metrics.successulSamplesAppended.WithLabelValues(oooAppends, sampleMetricTypeFloat))+
-			prom_testutil.ToFloat64(db.head.metrics.successulSamplesAppended.WithLabelValues(oooAppends, sampleMetricTypeHistogram)),
+		prom_testutil.ToFloat64(db.head.metrics.successfulSamplesAppended.WithLabelValues(oooAppends, sampleMetricTypeFloat))+
+			prom_testutil.ToFloat64(db.head.metrics.successfulSamplesAppended.WithLabelValues(oooAppends, sampleMetricTypeHistogram)),
 		"number of ooo appended samples mismatch")
 }
 

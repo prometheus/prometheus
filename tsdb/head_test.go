@@ -4379,7 +4379,7 @@ func TestHistogramMetrics(t *testing.T) {
 		}
 	}
 
-	require.Equal(t, float64(expHSamples), prom_testutil.ToFloat64(head.metrics.successulSamplesAppended.WithLabelValues(successfulAppends, sampleMetricTypeHistogram)))
+	require.Equal(t, float64(expHSamples), prom_testutil.ToFloat64(head.metrics.successfulSamplesAppended.WithLabelValues(successfulAppends, sampleMetricTypeHistogram)))
 
 	require.NoError(t, head.Close())
 	w, err := wlog.NewSize(nil, nil, head.wal.Dir(), 32768, wlog.CompressionNone)
@@ -4388,7 +4388,7 @@ func TestHistogramMetrics(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, head.Init(0))
 
-	require.Equal(t, float64(0), prom_testutil.ToFloat64(head.metrics.successulSamplesAppended.WithLabelValues(successfulAppends, sampleMetricTypeHistogram))) // Counter reset.
+	require.Equal(t, float64(0), prom_testutil.ToFloat64(head.metrics.successfulSamplesAppended.WithLabelValues(successfulAppends, sampleMetricTypeHistogram))) // Counter reset.
 }
 
 func TestHistogramStaleSample(t *testing.T) {

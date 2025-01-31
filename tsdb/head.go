@@ -342,16 +342,16 @@ func (h *Head) resetInMemoryState() error {
 }
 
 type headMetrics struct {
-	activeAppenders          prometheus.Gauge
-	series                   prometheus.GaugeFunc
-	seriesCreated            prometheus.Counter
-	seriesRemoved            prometheus.Counter
-	seriesNotFound           prometheus.Counter
-	chunks                   prometheus.Gauge
-	chunksCreated            prometheus.Counter
-	chunksRemoved            prometheus.Counter
-	gcDuration               prometheus.Summary
-	successulSamplesAppended *prometheus.CounterVec
+	activeAppenders           prometheus.Gauge
+	series                    prometheus.GaugeFunc
+	seriesCreated             prometheus.Counter
+	seriesRemoved             prometheus.Counter
+	seriesNotFound            prometheus.Counter
+	chunks                    prometheus.Gauge
+	chunksCreated             prometheus.Counter
+	chunksRemoved             prometheus.Counter
+	gcDuration                prometheus.Summary
+	successfulSamplesAppended *prometheus.CounterVec
 	// samplesAppended          *prometheus.CounterVec
 	// outOfOrderSamplesAppended *prometheus.CounterVec
 	// outOfBoundSamples         *prometheus.CounterVec
@@ -435,8 +435,8 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_data_replay_duration_seconds",
 			Help: "Time taken to replay the data on disk.",
 		}),
-		successulSamplesAppended: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_head_sucessful_samples_appended_total",
+		successfulSamplesAppended: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_head_successful_samples_appended_total",
 			Help: "Total number of successful appended samples including out of order samples.",
 		}, []string{"reason", "type"}),
 		sampleAppendFailures: prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -532,7 +532,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.walCorruptionsTotal,
 			m.dataTotalReplayDuration,
 			// m.samplesAppended,
-			m.successulSamplesAppended,
+			m.successfulSamplesAppended,
 			// m.outOfOrderSamplesAppended,
 			m.sampleAppendFailures,
 			// m.outOfBoundSamples,
