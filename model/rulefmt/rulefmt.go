@@ -323,14 +323,14 @@ func testTemplateParsing(rl *RuleNode) (errs []error) {
 
 func Parse(content []byte, ignoreUnknownFields bool) (*RuleGroups, []error) {
 	var (
-			groups RuleGroups
-			nodes  []ruleGroups
-			errs   []error
+		groups RuleGroups
+		nodes  []ruleGroups
+		errs   []error
 	)
 
 	decoder := yaml.NewDecoder(bytes.NewReader(content))
 	if !ignoreUnknownFields {
-			decoder.KnownFields(true)
+		decoder.KnownFields(true)
 	}
 
 	// Initialize groups to prevent nil return
@@ -339,45 +339,42 @@ func Parse(content []byte, ignoreUnknownFields bool) (*RuleGroups, []error) {
 	// Parse all YAML documents
 	docIndex := 0
 	for {
-			var group RuleGroups
-			var node ruleGroups
-			
-			err := decoder.Decode(&group)
-			if errors.Is(err, io.EOF) {
-					break
-			}
-			if err != nil {
-					errs = append(errs, fmt.Errorf("document %d: %w", docIndex, err))
-					continue
-			}
+		var group RuleGroups
+		var node ruleGroups
 
-			// Parse node structure for validation
-			nodeDecoder := yaml.NewDecoder(bytes.NewReader(content))
-			for i := 0; i <= docIndex; i++ {
-					if err := nodeDecoder.Decode(&node); err != nil && !errors.Is(err, io.EOF) {
-							errs = append(errs, fmt.Errorf("document %d: %w", docIndex, err))
-					}
-			}
+		err := decoder.Decode(&group)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			errs = append(errs, fmt.Errorf("document %d: %w", docIndex, err))
+			continue
+		}
 
-			groups.Groups = append(groups.Groups, group.Groups...)
-			nodes = append(nodes, node)
-			docIndex++
+		// Parse node structure for validation
+		nodeDecoder := yaml.NewDecoder(bytes.NewReader(content))
+		for i := 0; i <= docIndex; i++ {
+			if err := nodeDecoder.Decode(&node); err != nil && !errors.Is(err, io.EOF) {
+				errs = append(errs, fmt.Errorf("document %d: %w", docIndex, err))
+			}
+		}
+
+		groups.Groups = append(groups.Groups, group.Groups...)
+		nodes = append(nodes, node)
+		docIndex++
 	}
 
 	// Validate all documents
 	for i, node := range nodes {
-			if validationErrs := groups.Validate(node); len(validationErrs) > 0 {
-					for _, err := range validationErrs {
-							errs = append(errs, fmt.Errorf("document %d: %w", i, err))
-					}
+		if validationErrs := groups.Validate(node); len(validationErrs) > 0 {
+			for _, err := range validationErrs {
+				errs = append(errs, fmt.Errorf("document %d: %w", i, err))
 			}
+		}
 	}
 
-	// Return groups even if there are errors
 	return &groups, errs
 }
-
-
 
 // ParseFile reads and parses rules from a file.
 func ParseFile(file string, ignoreUnknownFields bool) (*RuleGroups, []error) {
