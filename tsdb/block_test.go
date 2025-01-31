@@ -738,7 +738,7 @@ func createHeadWithOOOSamples(tb testing.TB, w *wlog.WL, series []storage.Series
 	require.NoError(tb, app.Commit())
 
 	oooSamplesAppended := 0
-	require.Equal(tb, float64(0), prom_testutil.ToFloat64(head.metrics.outOfOrderSamplesAppended))
+	require.Equal(tb, float64(0), prom_testutil.ToFloat64(head.metrics.successulSamplesAppended.WithLabelValues(oooAppends)))
 
 	app = head.Appender(context.Background())
 	for i, lset := range oooSampleLabels {
@@ -751,11 +751,11 @@ func createHeadWithOOOSamples(tb testing.TB, w *wlog.WL, series []storage.Series
 	}
 	require.NoError(tb, app.Commit())
 
-	actOOOAppended := prom_testutil.ToFloat64(head.metrics.outOfOrderSamplesAppended)
+	actOOOAppended := prom_testutil.ToFloat64(head.metrics.successulSamplesAppended.WithLabelValues(oooAppends))
 	require.GreaterOrEqual(tb, actOOOAppended, float64(oooSamplesAppended-len(series)))
 	require.LessOrEqual(tb, actOOOAppended, float64(oooSamplesAppended))
 
-	require.Equal(tb, float64(totalSamples), prom_testutil.ToFloat64(head.metrics.samplesAppended))
+	require.Equal(tb, float64(totalSamples), prom_testutil.ToFloat64(head.metrics.successulSamplesAppended.WithLabelValues(successfulAppends)))
 
 	return head
 }

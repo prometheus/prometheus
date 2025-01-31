@@ -343,7 +343,8 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	// Fail fast if OOO is disabled and the sample is out of bounds.
 	// Otherwise a full check will be done later to decide if the sample is in-order or out-of-order.
 	if a.oooTimeWindow == 0 && t < a.minValidTime {
-		a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
+		a.head.metrics.sampleAppendFailures.WithLabelValues(outOfBounds, sampleMetricTypeFloat).Inc()
+		// a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
 		return 0, storage.ErrOutOfBounds
 	}
 
@@ -377,7 +378,8 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	isOOO, delta, err := s.appendable(t, v, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 	if err == nil {
 		if isOOO && a.hints != nil && a.hints.DiscardOutOfOrder {
-			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
+			a.head.metrics.sampleAppendFailures.WithLabelValues(outOfOrder, sampleMetricTypeFloat).Inc()
+			// a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
 			return 0, storage.ErrOutOfOrderSample
 		}
 		s.pendingCommit = true
@@ -388,9 +390,11 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	if err != nil {
 		switch {
 		case errors.Is(err, storage.ErrOutOfOrderSample):
-			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
+			a.head.metrics.sampleAppendFailures.WithLabelValues(outOfOrder, sampleMetricTypeFloat).Inc()
+			// a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
 		case errors.Is(err, storage.ErrTooOldSample):
-			a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
+			a.head.metrics.sampleAppendFailures.WithLabelValues(tooOld, sampleMetricTypeFloat).Inc()
+			// a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
 		}
 		return 0, err
 	}
@@ -655,7 +659,8 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 	// Fail fast if OOO is disabled and the sample is out of bounds.
 	// Otherwise a full check will be done later to decide if the sample is in-order or out-of-order.
 	if (a.oooTimeWindow == 0 || !a.head.opts.EnableOOONativeHistograms.Load()) && t < a.minValidTime {
-		a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
+		a.head.metrics.sampleAppendFailures.WithLabelValues(outOfBounds, sampleMetricTypeHistogram).Inc()
+		// a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
 		return 0, storage.ErrOutOfBounds
 	}
 
@@ -707,9 +712,11 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 			case errors.Is(err, storage.ErrOutOfOrderSample):
 				fallthrough
 			case errors.Is(err, storage.ErrOOONativeHistogramsDisabled):
-				a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
+				a.head.metrics.sampleAppendFailures.WithLabelValues(outOfOrder, sampleMetricTypeHistogram).Inc()
+				// a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
 			case errors.Is(err, storage.ErrTooOldSample):
-				a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
+				a.head.metrics.sampleAppendFailures.WithLabelValues(tooOld, sampleMetricTypeHistogram).Inc()
+				// a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
 			}
 			return 0, err
 		}
@@ -744,9 +751,11 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 			case errors.Is(err, storage.ErrOutOfOrderSample):
 				fallthrough
 			case errors.Is(err, storage.ErrOOONativeHistogramsDisabled):
-				a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
+				a.head.metrics.sampleAppendFailures.WithLabelValues(outOfOrder, sampleMetricTypeHistogram).Inc()
+				// a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
 			case errors.Is(err, storage.ErrTooOldSample):
-				a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
+				// a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
+				a.head.metrics.sampleAppendFailures.WithLabelValues(tooOld, sampleMetricTypeHistogram).Inc()
 			}
 			return 0, err
 		}
@@ -1491,14 +1500,22 @@ func (a *headAppender) Commit() (err error) {
 	a.commitFloatHistograms(acc)
 	a.commitMetadata()
 
-	a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatOOORejected))
-	a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.histoOOORejected))
-	a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatOOBRejected))
-	a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatTooOldRejected))
-	a.head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatsAppended))
-	a.head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.histogramsAppended))
-	a.head.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.oooFloatsAccepted))
-	a.head.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.oooHistogramAccepted))
+	// a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatOOORejected))
+	// a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.histoOOORejected))
+	a.head.metrics.sampleAppendFailures.WithLabelValues(outOfOrder, sampleMetricTypeHistogram).Add(float64(acc.histoOOORejected))
+	a.head.metrics.sampleAppendFailures.WithLabelValues(outOfOrder, sampleMetricTypeFloat).Add(float64(acc.floatOOORejected))
+	// a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatOOBRejected))
+	a.head.metrics.sampleAppendFailures.WithLabelValues(outOfBounds, sampleMetricTypeFloat).Add(float64(acc.floatOOBRejected))
+	// a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatTooOldRejected))
+	a.head.metrics.sampleAppendFailures.WithLabelValues(tooOld, sampleMetricTypeFloat).Add(float64(acc.floatTooOldRejected))
+	a.head.metrics.successulSamplesAppended.WithLabelValues(successfulAppends, sampleMetricTypeFloat).Add(float64(acc.floatsAppended))
+	a.head.metrics.successulSamplesAppended.WithLabelValues(successfulAppends, sampleMetricTypeHistogram).Add(float64(acc.floatsAppended))
+	// a.head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatsAppended))
+	// a.head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.histogramsAppended))
+	a.head.metrics.successulSamplesAppended.WithLabelValues(oooAppends, sampleMetricTypeFloat).Add(float64(acc.oooFloatsAccepted))
+	a.head.metrics.successulSamplesAppended.WithLabelValues(oooAppends, sampleMetricTypeHistogram).Add(float64(acc.oooHistogramAccepted))
+	// a.head.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.oooFloatsAccepted))
+	// a.head.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.oooHistogramAccepted))
 	a.head.updateMinMaxTime(acc.inOrderMint, acc.inOrderMaxt)
 	a.head.updateMinOOOMaxOOOTime(acc.oooMinT, acc.oooMaxT)
 
