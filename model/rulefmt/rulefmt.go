@@ -321,34 +321,63 @@ func testTemplateParsing(rl *RuleNode) (errs []error) {
 	return errs
 }
 
-// Parse parses and validates a set of rules.
 func Parse(content []byte, ignoreUnknownFields bool) (*RuleGroups, []error) {
 	var (
-		groups RuleGroups
-		node   ruleGroups
-		errs   []error
+			groups RuleGroups
+			nodes  []ruleGroups
+			errs   []error
 	)
 
 	decoder := yaml.NewDecoder(bytes.NewReader(content))
 	if !ignoreUnknownFields {
-		decoder.KnownFields(true)
-	}
-	err := decoder.Decode(&groups)
-	// Ignore io.EOF which happens with empty input.
-	if err != nil && !errors.Is(err, io.EOF) {
-		errs = append(errs, err)
-	}
-	err = yaml.Unmarshal(content, &node)
-	if err != nil {
-		errs = append(errs, err)
+			decoder.KnownFields(true)
 	}
 
-	if len(errs) > 0 {
-		return nil, errs
+	// Initialize groups to prevent nil return
+	groups.Groups = make([]RuleGroup, 0)
+
+	// Parse all YAML documents
+	docIndex := 0
+	for {
+			var group RuleGroups
+			var node ruleGroups
+			
+			err := decoder.Decode(&group)
+			if errors.Is(err, io.EOF) {
+					break
+			}
+			if err != nil {
+					errs = append(errs, fmt.Errorf("document %d: %w", docIndex, err))
+					continue
+			}
+
+			// Parse node structure for validation
+			nodeDecoder := yaml.NewDecoder(bytes.NewReader(content))
+			for i := 0; i <= docIndex; i++ {
+					if err := nodeDecoder.Decode(&node); err != nil && !errors.Is(err, io.EOF) {
+							errs = append(errs, fmt.Errorf("document %d: %w", docIndex, err))
+					}
+			}
+
+			groups.Groups = append(groups.Groups, group.Groups...)
+			nodes = append(nodes, node)
+			docIndex++
 	}
 
-	return &groups, groups.Validate(node)
+	// Validate all documents
+	for i, node := range nodes {
+			if validationErrs := groups.Validate(node); len(validationErrs) > 0 {
+					for _, err := range validationErrs {
+							errs = append(errs, fmt.Errorf("document %d: %w", i, err))
+					}
+			}
+	}
+
+	// Return groups even if there are errors
+	return &groups, errs
 }
+
+
 
 // ParseFile reads and parses rules from a file.
 func ParseFile(file string, ignoreUnknownFields bool) (*RuleGroups, []error) {
