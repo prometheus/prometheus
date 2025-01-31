@@ -94,9 +94,17 @@ func (m *Matcher) String() string {
 	return b.String()
 }
 
+// IsValidLabelCharacter checks if a rune is valid based on its position in the string.
+func IsValidLabelCharacter(c rune, i int) bool {
+	return (c >= 'a' && c <= 'z') ||
+		(c >= 'A' && c <= 'Z') ||
+		c == '_' ||
+		(i > 0 && c >= '0' && c <= '9')
+}
+
 func (m *Matcher) shouldQuoteName() bool {
 	for i, c := range m.Name {
-		if c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (i > 0 && c >= '0' && c <= '9') {
+		if IsValidLabelCharacter(c, i) {
 			continue
 		}
 		return true
