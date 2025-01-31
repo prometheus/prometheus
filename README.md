@@ -4,7 +4,7 @@
 
 <p align="center">Visit <a href="https://prometheus.io" target="_blank">prometheus.io</a> for the full documentation,
 examples and guides.</p>
-
+ 
 <div align="center">
 
 [![CI](https://github.com/prometheus/prometheus/actions/workflows/ci.yml/badge.svg)](https://github.com/prometheus/prometheus/actions/workflows/ci.yml)
