@@ -296,6 +296,8 @@ func NewHistogramIgnoredInAggregationInfo(aggregation string, pos posrange.Posit
 	}
 }
 
+// NewHistogramIgnoredInMixedRangeInfo is used when a histogram is ignored
+// in a range vector which contains mix of floats and histograms.
 func NewHistogramIgnoredInMixedRangeInfo(metricName string, pos posrange.PositionRange) error {
 	return annoErr{
 		PositionRange: pos,
@@ -303,6 +305,8 @@ func NewHistogramIgnoredInMixedRangeInfo(metricName string, pos posrange.Positio
 	}
 }
 
+// NewIncompatibleBucketLayoutInBinOpWarning is used if binary operators act on a
+// combination of two incompatible histograms.
 func NewIncompatibleBucketLayoutInBinOpWarning(operator string, pos posrange.PositionRange) error {
 	return annoErr{
 		PositionRange: pos,
