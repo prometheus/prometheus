@@ -31,7 +31,7 @@
     "@prometheus-io/codemirror-promql": "0.301.0",
     "@reduxjs/toolkit": "^2.5.0",
     "@tabler/icons-react": "^3.28.1",
-    "@tanstack/react-query": "^5.62.11",
+    "@tanstack/react-query": "^5.66.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
     "@types/lodash": "^4.17.13",
