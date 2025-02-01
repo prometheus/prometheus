@@ -284,10 +284,10 @@ func (p *queryLogTest) run(t *testing.T) {
 	p.skip(t)
 
 	// Setup temporary files for this test.
-	queryLogFile, err := os.CreateTemp("", "query")
+	queryLogFile, err := os.CreateTemp(t.TempDir(), "query")
 	require.NoError(t, err)
 	defer os.Remove(queryLogFile.Name())
-	p.configFile, err = os.CreateTemp("", "config")
+	p.configFile, err = os.CreateTemp(t.TempDir(), "config")
 	require.NoError(t, err)
 	defer os.Remove(p.configFile.Name())
 
@@ -382,7 +382,7 @@ func (p *queryLogTest) run(t *testing.T) {
 		return
 	}
 	// Move the file, Prometheus should still write to the old file.
-	newFile, err := os.CreateTemp("", "newLoc")
+	newFile, err := os.CreateTemp(t.TempDir(), "newLoc")
 	require.NoError(t, err)
 	require.NoError(t, newFile.Close())
 	defer os.Remove(newFile.Name())

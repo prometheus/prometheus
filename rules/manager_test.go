@@ -811,7 +811,7 @@ func TestUpdate(t *testing.T) {
 	rgs, errs := rulefmt.ParseFile("fixtures/rules.yaml", false)
 	require.Empty(t, errs, "file parsing failures")
 
-	tmpFile, err := os.CreateTemp("", "rules.test.*.yaml")
+	tmpFile, err := os.CreateTemp(t.TempDir(), "rules.test.*.yaml")
 	require.NoError(t, err)
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()

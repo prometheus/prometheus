@@ -1120,7 +1120,7 @@ func runManagers(t *testing.T, ctx context.Context, opts *Options, app storage.A
 func writeIntoFile(t *testing.T, content, filePattern string) *os.File {
 	t.Helper()
 
-	file, err := os.CreateTemp("", filePattern)
+	file, err := os.CreateTemp(t.TempDir(), filePattern)
 	require.NoError(t, err)
 	_, err = file.WriteString(content)
 	require.NoError(t, err)
