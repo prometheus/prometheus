@@ -153,11 +153,31 @@ function getMetricNameInVectorSelector(tree: SyntaxNode, state: EditorState): st
   return state.sliceDoc(currentNode.from, currentNode.to);
 }
 
-function arrayToCompletionResult(data: Completion[], from: number, to: number, includeSnippet = false, span = true): CompletionResult {
+function arrayToCompletionResult(
+  data: Completion[],
+  from: number,
+  to: number,
+  includeSnippet = false,
+  span = true,
+  isMetricName = false,
+  state?: EditorState,
+  node?: SyntaxNode
+): CompletionResult {
   const options = data;
   if (includeSnippet) {
     options.push(...snippets);
   }
+
+  // If this is a metric name completion and we have the necessary context
+  if (isMetricName && state && node) {
+    const boundaries = findMetricNameBoundaries(state, node, to);
+    // Apply the boundaries only if they make sense
+    if (boundaries.from <= boundaries.to && boundaries.from >= 0 && boundaries.to <= state.doc.length) {
+      from = boundaries.from;
+      to = boundaries.to;
+    }
+  }
+
   return {
     from: from,
     to: to,
@@ -533,6 +553,50 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
   return result;
 }
 
+// Helper function to find the complete metric name boundaries
+function findMetricNameBoundaries(state: EditorState, node: SyntaxNode, pos: number): { from: number; to: number } {
+  // Start with the current node
+  // If we're in the middle of typing a metric name, we need to find its boundaries
+  const doc = state.doc;
+  const line = doc.lineAt(pos);
+  const lineText = line.text;
+
+  // Find the start of the metric name
+  let start = pos;
+  while (start > line.from && /[a-zA-Z0-9_:]/.test(lineText[start - line.from - 1])) {
+    start--;
+  }
+  // Find the end of the metric name
+  let end = pos;
+  while (end < line.to && /[a-zA-Z0-9_:]/.test(lineText[end - line.from])) {
+    end++;
+  }
+
+  // If we're inside a function call or other expression, make sure we don't go beyond parentheses
+  const textBefore = lineText.slice(0, start - line.from);
+  const lastOpenParen = textBefore.lastIndexOf('(');
+  if (lastOpenParen !== -1) {
+    start = Math.max(start, line.from + lastOpenParen + 1);
+  }
+
+  const textAfter = lineText.slice(end - line.from);
+  const firstCloseParen = textAfter.indexOf(')');
+  if (firstCloseParen !== -1) {
+    end = Math.min(end, end + firstCloseParen);
+  }
+
+  // Handle cases where we're in brackets
+  const bracketMatch = /\[[^\]]*$/.exec(textBefore);
+  if (bracketMatch) {
+    start = Math.max(start, line.from + bracketMatch.index + 1);
+  }
+
+  return {
+    from: start,
+    to: end,
+  };
+}
+
 // HybridComplete provides a full completion result with or without a remote prometheus.
 export class HybridComplete implements CompleteStrategy {
   private readonly prometheusClient: PrometheusClient | undefined;
@@ -558,6 +622,7 @@ export class HybridComplete implements CompleteStrategy {
     let asyncResult: Promise<Completion[]> = Promise.resolve([]);
     let completeSnippet = false;
     let span = true;
+    let isMetricName = false;
     for (const context of contexts) {
       switch (context.kind) {
         case ContextKind.Aggregation:
@@ -619,6 +684,9 @@ export class HybridComplete implements CompleteStrategy {
           });
           break;
         case ContextKind.MetricName:
+          isMetricName = true;
+          // Break after finding a metric name context to ensure we don't process
+          // other contexts that might interfere with the completion
           asyncResult = asyncResult.then((result) => {
             return this.autocompleteMetricName(result, context);
           });
@@ -635,7 +703,16 @@ export class HybridComplete implements CompleteStrategy {
       }
     }
     return asyncResult.then((result) => {
-      return arrayToCompletionResult(result, computeStartCompletePosition(state, tree, pos), pos, completeSnippet, span);
+      return arrayToCompletionResult(
+        result,
+        computeStartCompletePosition(state, tree, pos),
+        pos,
+        completeSnippet,
+        span,
+        isMetricName,
+        isMetricName ? state : undefined,
+        isMetricName ? tree : undefined
+      );
     });
   }
 
