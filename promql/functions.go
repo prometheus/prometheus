@@ -404,11 +404,22 @@ func funcDoubleExponentialSmoothing(vals []parser.Value, args parser.Expressions
 	return append(enh.Out, Sample{F: s1}), nil
 }
 
+func filterFloats(vals []parser.Value) Vector {
+	v := vals[0].(Vector)
+	floats := make(Vector, 0, len(v))
+	for _, s := range v {
+		if s.H == nil {
+			floats = append(floats, s)
+		}
+	}
+	return floats
+}
+
 // === sort(node parser.ValueTypeVector) (Vector, Annotations) ===
 func funcSort(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	// NaN should sort to the bottom, so take descending sort with NaN first and
 	// reverse it.
-	byValueSorter := vectorByReverseValueHeap(vals[0].(Vector))
+	byValueSorter := vectorByReverseValueHeap(filterFloats(vals))
 	sort.Sort(sort.Reverse(byValueSorter))
 	return Vector(byValueSorter), nil
 }
@@ -417,7 +428,7 @@ func funcSort(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper)
 func funcSortDesc(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	// NaN should sort to the bottom, so take ascending sort with NaN first and
 	// reverse it.
-	byValueSorter := vectorByValueHeap(vals[0].(Vector))
+	byValueSorter := vectorByValueHeap(filterFloats(vals))
 	sort.Sort(sort.Reverse(byValueSorter))
 	return Vector(byValueSorter), nil
 }
@@ -549,11 +560,27 @@ func funcRound(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 
 // === Scalar(node parser.ValueTypeVector) Scalar ===
 func funcScalar(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	v := vals[0].(Vector)
-	if len(v) != 1 {
+	var (
+		v     = vals[0].(Vector)
+		value float64
+		found bool
+	)
+
+	for _, s := range v {
+		if s.H == nil {
+			if found {
+				// More than one float found, return NaN
+				return append(enh.Out, Sample{F: math.NaN()}), nil
+			}
+			found = true
+			value = s.F
+		}
+	}
+	// Return the single float if found, otherwise return NaN
+	if !found {
 		return append(enh.Out, Sample{F: math.NaN()}), nil
 	}
-	return append(enh.Out, Sample{F: v[0].F}), nil
+	return append(enh.Out, Sample{F: value}), nil
 }
 
 func aggrOverTime(vals []parser.Value, enh *EvalNodeHelper, aggrFn func(Series) float64) Vector {
@@ -1814,13 +1841,6 @@ func (s vectorByValueHeap) Less(i, j int) bool {
 	// We compare histograms based on their sum of observations.
 	// TODO(beorn7): Is that what we want?
 	vi, vj := s[i].F, s[j].F
-	if s[i].H != nil {
-		vi = s[i].H.Sum
-	}
-	if s[j].H != nil {
-		vj = s[j].H.Sum
-	}
-
 	if math.IsNaN(vi) {
 		return true
 	}
@@ -1853,13 +1873,6 @@ func (s vectorByReverseValueHeap) Less(i, j int) bool {
 	// We compare histograms based on their sum of observations.
 	// TODO(beorn7): Is that what we want?
 	vi, vj := s[i].F, s[j].F
-	if s[i].H != nil {
-		vi = s[i].H.Sum
-	}
-	if s[j].H != nil {
-		vj = s[j].H.Sum
-	}
-
 	if math.IsNaN(vi) {
 		return true
 	}
