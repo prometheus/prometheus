@@ -273,6 +273,11 @@ Outer:
 					if sam.T < minValidTime {
 						continue // Before minValidTime: discard.
 					}
+
+					if h.opts.StartupMinRetentionTime > 0 && sam.T < h.opts.StartupMinRetentionTime {
+						continue // Before startup min retention time: discard.
+					}
+
 					if r, ok := multiRef[sam.Ref]; ok {
 						sam.Ref = r
 					}
@@ -328,6 +333,11 @@ Outer:
 					if sam.T < minValidTime {
 						continue // Before minValidTime: discard.
 					}
+
+					if h.opts.StartupMinRetentionTime > 0 && sam.T < h.opts.StartupMinRetentionTime {
+						continue // Before startup min retention time: discard.
+					}
+
 					if r, ok := multiRef[sam.Ref]; ok {
 						sam.Ref = r
 					}
@@ -367,6 +377,11 @@ Outer:
 					if r, ok := multiRef[sam.Ref]; ok {
 						sam.Ref = r
 					}
+
+					if h.opts.StartupMinRetentionTime > 0 && sam.T < h.opts.StartupMinRetentionTime {
+						continue // Before startup min retention time: discard.
+					}
+
 					mod := uint64(sam.Ref) % uint64(concurrency)
 					histogramShards[mod] = append(histogramShards[mod], histogramRecord{ref: sam.Ref, t: sam.T, fh: sam.FH})
 				}
