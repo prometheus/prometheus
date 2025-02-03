@@ -51,7 +51,7 @@ class PROMPP_ATTRIBUTE_PACKED AscIntegerValuesGorillaEncoder {
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return stream_.allocated_memory(); }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_actual(double value) const noexcept {
-    return last_value_type_ == ValueType::kStaleNan ? BareBones::Encoding::Gorilla::isstalenan(value) : is_values_strictly_equals(value, last_value());
+    return last_value_type_ == ValueType::kStaleNan ? BareBones::Encoding::Gorilla::isstalenan(value) : is_values_strictly_equal(value, last_value());
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE double last_value() const noexcept {

@@ -119,6 +119,7 @@ void SeriesDataEncoder::execute(const Config& config, Metrics& metrics) const {
   std::array chunks_info = {
       ChunkInfo{.type = series_data::chunk::DataChunk::EncodingType::kUnknown, .name = "unknown"},
       ChunkInfo{.type = series_data::chunk::DataChunk::EncodingType::kUint32Constant, .name = "uint32_constants"},
+      ChunkInfo{.type = series_data::chunk::DataChunk::EncodingType::kFloat32Constant, .name = "float32_constants"},
       ChunkInfo{.type = series_data::chunk::DataChunk::EncodingType::kDoubleConstant, .name = "double_constants"},
       ChunkInfo{.type = series_data::chunk::DataChunk::EncodingType::kTwoDoubleConstant, .name = "two_double_constants"},
       ChunkInfo{.type = series_data::chunk::DataChunk::EncodingType::kAscIntegerValuesGorilla, .name = "asc_integer_values_gorilla"},

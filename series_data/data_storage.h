@@ -290,6 +290,7 @@ struct DataStorage {
         return gorilla_encoders.allocated_memory();
       }
 
+      case kFloat32Constant:
       case kUint32Constant:
       case kUnknown: {
         return 0;
@@ -361,6 +362,7 @@ struct DataStorage {
         break;
       }
 
+      case kFloat32Constant:
       case kUint32Constant:
       case kUnknown: {
         break;

@@ -2,6 +2,7 @@
 
 #include "bare_bones/preprocess.h"
 #include "series_data/encoder/timestamp/state.h"
+#include "series_data/encoder/value/float32_constant.h"
 #include "series_data/encoder/value/uint32_constant.h"
 
 namespace series_data::chunk {
@@ -15,6 +16,7 @@ struct PROMPP_ATTRIBUTE_PACKED DataChunk {
   enum class EncodingType : uint8_t {
     kUnknown,
     kUint32Constant,
+    kFloat32Constant,
     kDoubleConstant,
     kTwoDoubleConstant,
     kAscIntegerValuesGorilla,
@@ -24,6 +26,7 @@ struct PROMPP_ATTRIBUTE_PACKED DataChunk {
 
   union PROMPP_ATTRIBUTE_PACKED EncoderData {
     encoder::value::Uint32ConstantEncoder uint32_constant;
+    encoder::value::Float32ConstantEncoder float32_constant;
     uint32_t double_constant{0};
     uint32_t two_double_constant;
     uint32_t asc_integer_values_gorilla;

@@ -168,6 +168,11 @@ class OutdatedChunkMerger {
         break;
       }
 
+      case kFloat32Constant: {
+        merge_outdated_samples<kFloat32Constant, chunk_type>(source_chunk, max_timestamp, EncodeIterator{encoder_, chunk, ls_id}, samples);
+        break;
+      }
+
       case kDoubleConstant: {
         merge_outdated_samples<kDoubleConstant, chunk_type>(source_chunk, max_timestamp, EncodeIterator{encoder_, chunk, ls_id}, samples);
         break;

@@ -76,13 +76,20 @@ class Encoder {
     if (chunk.encoding_type == chunk::DataChunk::EncodingType::kUnknown) [[unlikely]] {
       if (encoder::value::Uint32ConstantEncoder::can_be_encoded(value)) {
         chunk.encoding_type = chunk::DataChunk::EncodingType::kUint32Constant;
-        new (&chunk.encoder) encoder::value::Uint32ConstantEncoder(value);
+        std::construct_at(&chunk.encoder.uint32_constant, encoder::value::Uint32ConstantEncoder(value));
+      } else if (encoder::value::Float32ConstantEncoder::can_be_encoded(value)) [[unlikely]] {
+        chunk.encoding_type = chunk::DataChunk::EncodingType::kFloat32Constant;
+        std::construct_at(&chunk.encoder.float32_constant, encoder::value::Float32ConstantEncoder(value));
       } else {
         switch_to_double_constant_encoder(chunk, value);
       }
     } else if (chunk.encoding_type == chunk::DataChunk::EncodingType::kUint32Constant) {
       if (!chunk.encoder.uint32_constant.encode(value)) {
         switch_to_two_constant_encoder(chunk, chunk.encoder.uint32_constant.value(), value);
+      }
+    } else if (chunk.encoding_type == chunk::DataChunk::EncodingType::kFloat32Constant) {
+      if (!chunk.encoder.float32_constant.encode(value)) {
+        switch_to_two_constant_encoder(chunk, chunk.encoder.float32_constant.value(), value);
       }
     } else if (chunk.encoding_type == chunk::DataChunk::EncodingType::kDoubleConstant) {
       if (const auto& encoder = storage_.double_constant_encoders[chunk.encoder.double_constant]; !encoder.encode(value)) {
