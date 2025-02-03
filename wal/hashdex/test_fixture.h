@@ -1,8 +1,7 @@
 #pragma once
 
-#include <iostream>
-
 #include "metric.h"
+#include "primitives/hash.h"
 
 namespace PromPP::WAL::hashdex {
 

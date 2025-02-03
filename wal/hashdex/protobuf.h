@@ -2,7 +2,7 @@
 
 #include "bare_bones/vector.h"
 #include "metric.h"
-#include "primitives/primitives.h"
+#include "primitives/label_set.h"
 #include "prometheus/hashdex.h"
 #include "prometheus/remote_write.h"
 

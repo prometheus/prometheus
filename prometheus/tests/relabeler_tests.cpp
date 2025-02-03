@@ -9,6 +9,7 @@
 #include <string_view>
 #include <vector>
 
+#include "primitives/label_set.h"
 #include "primitives/snug_composites.h"
 #include "prometheus/relabeler.h"
 

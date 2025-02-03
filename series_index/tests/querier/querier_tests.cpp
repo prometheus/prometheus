@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-#include "primitives/primitives.h"
+#include "primitives/label_set.h"
 #include "primitives/snug_composites.h"
 #include "printer.h"
 #include "series_index/querier/querier.h"

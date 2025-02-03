@@ -1,10 +1,8 @@
 #include <parallel_hashmap/phmap_utils.h>
 #include <cassert>
-#include <chrono>
 #include <fstream>
 #include <future>
 #include <iomanip>
-#include <iostream>
 #include <span>
 #include <string>
 #include <thread>
@@ -12,7 +10,7 @@
 
 #include "bare_bones/lz4_stream.h"
 #include "primitives/hash.h"
-#include "primitives/primitives.h"
+#include "primitives/sample.h"
 
 class DummyWal {
  public:

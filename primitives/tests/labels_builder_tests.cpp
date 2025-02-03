@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "primitives/primitives.h"
+#include "primitives/labels_builder.h"
 
 namespace {
 

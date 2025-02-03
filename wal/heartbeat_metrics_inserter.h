@@ -4,7 +4,7 @@
 #include <string_view>
 
 #include "bare_bones/preprocess.h"
-#include "primitives/primitives.h"
+#include "primitives/timeseries.h"
 #include "prometheus/value.h"
 
 namespace PromPP::WAL {

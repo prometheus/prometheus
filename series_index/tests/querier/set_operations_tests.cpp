@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "primitives/primitives.h"
+#include "primitives/label_set.h"
 #include "series_index/querier/set_operations.h"
 
 namespace {

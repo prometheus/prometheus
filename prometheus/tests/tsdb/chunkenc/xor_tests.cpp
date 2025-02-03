@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "primitives/primitives.h"
+#include "primitives/sample.h"
 #include "prometheus/tsdb/chunkenc/bstream.h"
 #include "prometheus/tsdb/chunkenc/xor.h"
 

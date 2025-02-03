@@ -3,7 +3,10 @@
 #include <string_view>
 
 #include "primitives/go_slice.h"
+#include "primitives/hash.h"
 #include "primitives/primitives.h"
+
+#include "bare_bones/exception.h"
 
 namespace PromPP::Primitives::Go {
 
