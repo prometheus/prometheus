@@ -4,7 +4,7 @@
 #include "preprocess.h"
 #include "vector.h"
 
-#include <roaring/roaring.hh>
+#include "bitset.h"
 
 namespace BareBones {
 
@@ -42,17 +42,12 @@ concept holes_need_bitset =
 template <class T>
 struct IsTriviallyReallocatable<VectorWithHolesImpl::ItemOrHole<T>> : std::true_type {};
 
-template <class T, uint32_t CompactingCounter = 255>
+template <class T>
 class VectorWithHoles {
  public:
   ~VectorWithHoles() {
     if constexpr (VectorWithHolesImpl::holes_need_bitset<T>) {
-      for (uint32_t i = 0; i < vector_.size(); ++i) {
-        if (is_hole(i)) [[unlikely]] {
-          continue;
-        }
-        vector_[i].destroy_item();
-      }
+      for_each_item([&](auto& item) { item.destroy_item(); });
     }
   }
 
@@ -66,9 +61,8 @@ class VectorWithHoles {
 
       item.create_item(std::forward<Args>(args)...);
       return item.value;
-    } else {
-      return vector_.emplace_back(std::forward<Args>(args)...).value;
     }
+    return vector_.emplace_back(std::forward<Args>(args)...).value;
   }
 
   PROMPP_ALWAYS_INLINE void erase(uint32_t index) {
@@ -92,13 +86,8 @@ class VectorWithHoles {
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept {
     size_t allocated_memory = vector_.capacity() * sizeof(Item);
     if constexpr (VectorWithHolesImpl::holes_need_bitset<T>) {
-      allocated_memory += holes_index_set_.getSizeInBytes();
-      for (uint32_t i = 0; i < vector_.size(); ++i) {
-        if (is_hole(i)) [[unlikely]] {
-          continue;
-        }
-        allocated_memory += vector_[i].allocated_memory();
-      }
+      allocated_memory += holes_index_set_.allocated_memory();
+      for_each_item([&](const auto& item) { allocated_memory += BareBones::mem::allocated_memory(item); });
     }
 
     return allocated_memory;
@@ -107,20 +96,20 @@ class VectorWithHoles {
  private:
   using Item = VectorWithHolesImpl::ItemOrHole<T>;
   struct nothing_t {};
-  using BitsetOrEmpty = std::conditional_t<VectorWithHolesImpl::holes_need_bitset<T>, roaring::Roaring, nothing_t>;
-  using counter_t = std::conditional_t<VectorWithHolesImpl::holes_need_bitset<T>, uint32_t, nothing_t>;
+  // The bitset was chosen as the main data structure based on series_data_encoder_benchmark
+  // between Roaring::roaring and BareBones::Bitset
+  using BitsetOrEmpty = std::conditional_t<VectorWithHolesImpl::holes_need_bitset<T>, BareBones::Bitset, nothing_t>;
 
   BareBones::Vector<Item> vector_;
   [[no_unique_address]] BitsetOrEmpty holes_index_set_;
   uint32_t next_hole_{std::numeric_limits<uint32_t>::max()};
-  [[no_unique_address]] counter_t bitset_update_cnt_{};
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE bool has_holes() const noexcept { return next_hole_ != std::numeric_limits<uint32_t>::max(); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_hole(uint32_t index) const noexcept {
     if constexpr (VectorWithHolesImpl::holes_need_bitset<T>) {
-      return holes_index_set_.contains(index);
+      return holes_index_set_.is_set(index);
     } else {
-      if (index > vector_.size()) {
+      if (index >= vector_.size()) {
         return false;
       }
       for (uint32_t current = next_hole_; current != std::numeric_limits<uint32_t>::max(); current = vector_[current].next_hole) {
@@ -131,26 +120,48 @@ class VectorWithHoles {
       return false;
     }
   }
-  PROMPP_ALWAYS_INLINE void bitset_update() noexcept {
-    if constexpr (VectorWithHolesImpl::holes_need_bitset<T>) {
-      ++bitset_update_cnt_;
-      if (bitset_update_cnt_ == CompactingCounter) [[unlikely]] {
-        holes_index_set_.runOptimize();
-        holes_index_set_.shrinkToFit();
-        bitset_update_cnt_ = 0;
-      }
-    }
-  }
+
   PROMPP_ALWAYS_INLINE void mark_hole(uint32_t index) noexcept {
     if constexpr (VectorWithHolesImpl::holes_need_bitset<T>) {
-      holes_index_set_.add(index);
-      bitset_update();
+      if (index >= holes_index_set_.size()) [[unlikely]] {
+        holes_index_set_.resize(index + 1);
+      }
+      holes_index_set_.set(index);
     }
   }
   PROMPP_ALWAYS_INLINE void unmark_hole(uint32_t index) noexcept {
     if constexpr (VectorWithHolesImpl::holes_need_bitset<T>) {
-      holes_index_set_.remove(index);
-      bitset_update();
+      holes_index_set_.reset(index);
+    }
+  }
+
+  // skips holes and applies f for each item
+  template <class UnaryFunc>
+  PROMPP_ALWAYS_INLINE void for_each_item(UnaryFunc&& f) {
+    for_each_item_impl(std::forward<UnaryFunc>(f), *this);
+  }
+
+  // const variant
+  template <class UnaryFunc>
+  PROMPP_ALWAYS_INLINE void for_each_item(UnaryFunc&& f) const {
+    for_each_item_impl(std::forward<UnaryFunc>(f), *this);
+  }
+
+  template <class UnaryFunc, class Self>
+  static PROMPP_ALWAYS_INLINE void for_each_item_impl(UnaryFunc&& f, Self&& self) {
+    size_t index_global = 0;
+    const auto& holes_index_set = self.holes_index_set_;
+    auto& vector = self.vector_;
+
+    for (auto hole_it = holes_index_set.begin(); hole_it != holes_index_set.end(); ++hole_it) {
+      for (size_t index = index_global, index_end = *hole_it; index < index_end; ++index) {
+        f(vector[index]);
+      }
+      index_global = (*hole_it) + 1;
+    }
+
+    for (size_t index = index_global; index < vector.size(); ++index) {
+      f(vector[index]);
     }
   }
 };
