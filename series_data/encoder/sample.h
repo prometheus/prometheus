@@ -10,7 +10,7 @@ struct Sample {
   double value{};
 
   PROMPP_ALWAYS_INLINE bool operator==(const Sample& other) const noexcept {
-    return timestamp == other.timestamp && value::is_values_strictly_equals(value, other.value);
+    return timestamp == other.timestamp && value::is_values_strictly_equal(value, other.value);
   }
   PROMPP_ALWAYS_INLINE bool operator<(const Sample& other) const noexcept { return timestamp < other.timestamp; }
   PROMPP_ALWAYS_INLINE bool operator<=(const Sample& other) const noexcept { return *this < other || *this == other; }

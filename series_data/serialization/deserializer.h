@@ -88,6 +88,14 @@ class Deserializer {
                                             encoder::BitSequenceWithItemsCount::reader(timestamp_buffer), chunk.values_offset));
       }
 
+      case kFloat32Constant: {
+        auto timestamp_buffer = buffer.subspan(chunk.timestamps_offset);
+        return decoder::UniversalDecodeIterator(
+            std::in_place_type<decoder::ConstantDecodeIterator>,
+            decoder::ConstantDecodeIterator(encoder::BitSequenceWithItemsCount::count(timestamp_buffer.data()),
+                                            encoder::BitSequenceWithItemsCount::reader(timestamp_buffer), std::bit_cast<float>(chunk.values_offset)));
+      }
+
       case kDoubleConstant: {
         auto timestamp_buffer = buffer.subspan(chunk.timestamps_offset);
         auto values_buffer = buffer.subspan(chunk.values_offset);

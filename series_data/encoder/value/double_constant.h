@@ -12,7 +12,7 @@ class DoubleConstantEncoder {
  public:
   explicit DoubleConstantEncoder(double value) : value_(std::bit_cast<uint64_t>(value)) {}
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_actual(double value) const noexcept { return is_values_strictly_equals(value_, value); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_actual(double value) const noexcept { return is_values_strictly_equal(value_, value); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE bool encode(double value) const noexcept { return is_actual(value); }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE double value() const noexcept { return std::bit_cast<double>(value_); }

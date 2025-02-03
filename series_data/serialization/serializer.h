@@ -117,42 +117,46 @@ class Serializer {
     switch (chunk.encoding_type) {
       case kUint32Constant: {
         fill_timestamp_stream_offset<chunk_type>(timestamp_streams_data, chunk.timestamp_encoder_state_id, serialized_chunk, data_size);
-        serialized_chunk.values_offset = std::bit_cast<uint32_t>(chunk.encoder.uint32_constant);
+        serialized_chunk.store_value_in_offset(chunk.encoder.uint32_constant);
+        break;
+      }
+
+      case kFloat32Constant: {
+        fill_timestamp_stream_offset<chunk_type>(timestamp_streams_data, chunk.timestamp_encoder_state_id, serialized_chunk, data_size);
+        serialized_chunk.store_value_in_offset(chunk.encoder.uint32_constant);
         break;
       }
 
       case kDoubleConstant: {
         fill_timestamp_stream_offset<chunk_type>(timestamp_streams_data, chunk.timestamp_encoder_state_id, serialized_chunk, data_size);
-        serialized_chunk.values_offset = data_size;
+        serialized_chunk.set_offset(data_size);
         data_size += sizeof(encoder::value::DoubleConstantEncoder);
         break;
       }
 
       case kTwoDoubleConstant: {
         fill_timestamp_stream_offset<chunk_type>(timestamp_streams_data, chunk.timestamp_encoder_state_id, serialized_chunk, data_size);
-        serialized_chunk.values_offset = data_size;
+        serialized_chunk.set_offset(data_size);
         data_size += sizeof(encoder::value::TwoDoubleConstantEncoder);
         break;
       }
 
       case kAscIntegerValuesGorilla: {
         fill_timestamp_stream_offset<chunk_type>(timestamp_streams_data, chunk.timestamp_encoder_state_id, serialized_chunk, data_size);
-
-        serialized_chunk.values_offset = data_size;
+        serialized_chunk.set_offset(data_size);
         data_size += storage_.get_asc_integer_values_gorilla_stream<chunk_type>(chunk.encoder.asc_integer_values_gorilla).size_in_bytes();
         break;
       }
 
       case kValuesGorilla: {
         fill_timestamp_stream_offset<chunk_type>(timestamp_streams_data, chunk.timestamp_encoder_state_id, serialized_chunk, data_size);
-
-        serialized_chunk.values_offset = data_size;
+        serialized_chunk.set_offset(data_size);
         data_size += storage_.get_values_gorilla_stream<chunk_type>(chunk.encoder.values_gorilla).size_in_bytes();
         break;
       }
 
       case kGorilla: {
-        serialized_chunk.values_offset = data_size;
+        serialized_chunk.set_offset(data_size);
         data_size += storage_.get_gorilla_encoder_stream<chunk_type>(chunk.encoder.gorilla).size_in_bytes();
         break;
       }
@@ -226,6 +230,11 @@ class Serializer {
 
     switch (chunk.encoding_type) {
       case kUint32Constant: {
+        write_timestamp_stream<chunk_type>(timestamp_streams_data, chunk.timestamp_encoder_state_id, stream);
+        break;
+      }
+
+      case kFloat32Constant: {
         write_timestamp_stream<chunk_type>(timestamp_streams_data, chunk.timestamp_encoder_state_id, stream);
         break;
       }

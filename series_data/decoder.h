@@ -23,6 +23,11 @@ class Decoder {
         break;
       }
 
+      case kFloat32Constant: {
+        std::ranges::all_of(create_decode_iterator<kFloat32Constant, chunk_type>(storage, chunk), DecodeIteratorSentinel{}, std::forward<Callback>(callback));
+        break;
+      }
+
       case kDoubleConstant: {
         std::ranges::all_of(create_decode_iterator<kDoubleConstant, chunk_type>(storage, chunk), DecodeIteratorSentinel{}, std::forward<Callback>(callback));
         break;
@@ -139,6 +144,9 @@ class Decoder {
 
     if constexpr (encoding_type == kUint32Constant) {
       return decoder::ConstantDecodeIterator(storage.get_timestamp_stream<chunk_type>(chunk.timestamp_encoder_state_id), chunk.encoder.uint32_constant.value());
+    } else if constexpr (encoding_type == kFloat32Constant) {
+      return decoder::ConstantDecodeIterator(storage.get_timestamp_stream<chunk_type>(chunk.timestamp_encoder_state_id),
+                                             chunk.encoder.float32_constant.value());
     } else if constexpr (encoding_type == kDoubleConstant) {
       return decoder::ConstantDecodeIterator(storage.get_timestamp_stream<chunk_type>(chunk.timestamp_encoder_state_id),
                                              storage.double_constant_encoders[chunk.encoder.double_constant].value());
@@ -222,6 +230,10 @@ class Decoder {
     switch (chunk.encoding_type) {
       case kUint32Constant: {
         return chunk.encoder.uint32_constant.value();
+      }
+
+      case kFloat32Constant: {
+        return chunk.encoder.float32_constant.value();
       }
 
       case kDoubleConstant: {

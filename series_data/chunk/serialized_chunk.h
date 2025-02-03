@@ -15,6 +15,11 @@ struct PROMPP_ATTRIBUTE_PACKED SerializedChunk {
   explicit SerializedChunk(PromPP::Primitives::LabelSetID _label_set_id) : label_set_id(_label_set_id) {}
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_empty() const noexcept { return encoding_type == DataChunk::EncodingType::kUnknown; }
+  void set_offset(uint32_t offset) noexcept { values_offset = offset; }
+  template <class T>
+  void store_value_in_offset(T value) noexcept {
+    values_offset = std::bit_cast<uint32_t>(value);
+  }
 };
 
 using SerializedChunkList = BareBones::Vector<SerializedChunk>;

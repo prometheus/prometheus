@@ -87,6 +87,7 @@ TEST_P(OutdatedChunkMergerInOpenConstantChunkFixture, Test) {
 
 INSTANTIATE_TEST_SUITE_P(Uint32ConstantChunk, OutdatedChunkMergerInOpenConstantChunkFixture, testing::Values(1.0));
 INSTANTIATE_TEST_SUITE_P(DoubleConstantChunk, OutdatedChunkMergerInOpenConstantChunkFixture, testing::Values(1.1));
+INSTANTIATE_TEST_SUITE_P(Float32ConstantChunk, OutdatedChunkMergerInOpenConstantChunkFixture, testing::Values(-1.0));
 
 class OutdatedChunkMergerInOpenChunkFixture : public OutdatedChunkMergerTrait<series_data::kSamplesPerChunkDefault>, public testing::Test {};
 
@@ -248,6 +249,7 @@ TEST_P(OutdatedChunkMergerInFinalizedConstantChunkFixture, Test) {
 
 INSTANTIATE_TEST_SUITE_P(Uint32ConstantChunk, OutdatedChunkMergerInFinalizedConstantChunkFixture, testing::Values(1.0));
 INSTANTIATE_TEST_SUITE_P(DoubleConstantChunk, OutdatedChunkMergerInFinalizedConstantChunkFixture, testing::Values(1.1));
+INSTANTIATE_TEST_SUITE_P(Float32ConstantChunk, OutdatedChunkMergerInFinalizedConstantChunkFixture, testing::Values(-1.0));
 
 class OutdatedChunkMergerWithFinalizationFixture : public OutdatedChunkMergerTrait<4>, public testing::Test {};
 

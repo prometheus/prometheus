@@ -9,7 +9,7 @@ class PROMPP_ATTRIBUTE_PACKED ValuesGorillaEncoder {
  public:
   PROMPP_ALWAYS_INLINE explicit ValuesGorillaEncoder(double value, uint32_t count) { values_encoder_.encode_first(value, count, stream_); }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_actual(double value) const noexcept { return is_values_strictly_equals(values_encoder_.value(), value); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_actual(double value) const noexcept { return is_values_strictly_equal(values_encoder_.value(), value); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE double last_value() const noexcept { return values_encoder_.value(); }
 
   PROMPP_ALWAYS_INLINE void encode(double value) { values_encoder_.encode(value, stream_); }
