@@ -106,4 +106,41 @@ TYPED_TEST(VectorWithHolesFixture, DestructorWithHoles) {
   EXPECT_EQ(3U, vector.size());
 }
 
+TYPED_TEST(VectorWithHolesFixture, CheckAllocatedEmpty) {
+  // Arrange
+  VectorWithHoles<TypeParam> vector;
+
+  // Act
+
+  // Assert
+  EXPECT_EQ(0U, vector.allocated_memory());
+}
+
+TYPED_TEST(VectorWithHolesFixture, CheckAllocatedDiff) {
+  // Arrange
+  VectorWithHoles<TypeParam> vector;
+
+  // Act
+  vector.emplace_back(101U);
+  vector.emplace_back(102U);
+  vector.emplace_back(103U);
+
+  vector.erase(0);
+  vector.erase(1);
+  vector.erase(2);
+
+  vector.emplace_back(101U);
+  vector.emplace_back(102U);
+  vector.emplace_back(103U);
+
+  const size_t allocated_memory_full = vector.allocated_memory();
+  const size_t mid_allocated_memory = BareBones::mem::allocated_memory(vector[1]);
+
+  vector.erase(1);
+  const size_t allocated_memory_erased = vector.allocated_memory();
+
+  // Assert
+  EXPECT_EQ(mid_allocated_memory, allocated_memory_full - allocated_memory_erased);
+}
+
 }  // namespace
