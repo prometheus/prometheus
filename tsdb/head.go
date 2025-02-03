@@ -351,26 +351,22 @@ type headMetrics struct {
 	chunksCreated             prometheus.Counter
 	chunksRemoved             prometheus.Counter
 	gcDuration                prometheus.Summary
-	successfulSamplesAppended *prometheus.CounterVec
-	// samplesAppended          *prometheus.CounterVec
-	// outOfOrderSamplesAppended *prometheus.CounterVec
-	// outOfBoundSamples         *prometheus.CounterVec
-	// outOfOrderSamples         *prometheus.CounterVec
-	// tooOldSamples             *prometheus.CounterVec
-	walTruncateDuration      prometheus.Summary
-	walCorruptionsTotal      prometheus.Counter
-	dataTotalReplayDuration  prometheus.Gauge
-	headTruncateFail         prometheus.Counter
-	headTruncateTotal        prometheus.Counter
-	checkpointDeleteFail     prometheus.Counter
-	checkpointDeleteTotal    prometheus.Counter
-	checkpointCreationFail   prometheus.Counter
-	checkpointCreationTotal  prometheus.Counter
-	mmapChunkCorruptionTotal prometheus.Counter
-	snapshotReplayErrorTotal prometheus.Counter // Will be either 0 or 1.
-	oooHistogram             prometheus.Histogram
-	mmapChunksTotal          prometheus.Counter
-	sampleAppendFailures     *prometheus.CounterVec
+	samplesAppended           *prometheus.CounterVec
+	outOfOrderSamplesAppended *prometheus.CounterVec
+	walTruncateDuration       prometheus.Summary
+	walCorruptionsTotal       prometheus.Counter
+	dataTotalReplayDuration   prometheus.Gauge
+	headTruncateFail          prometheus.Counter
+	headTruncateTotal         prometheus.Counter
+	checkpointDeleteFail      prometheus.Counter
+	checkpointDeleteTotal     prometheus.Counter
+	checkpointCreationFail    prometheus.Counter
+	checkpointCreationTotal   prometheus.Counter
+	mmapChunkCorruptionTotal  prometheus.Counter
+	snapshotReplayErrorTotal  prometheus.Counter // Will be either 0 or 1.
+	oooHistogram              prometheus.Histogram
+	mmapChunksTotal           prometheus.Counter
+	sampleAppendFailures      *prometheus.CounterVec
 }
 
 const (
@@ -379,8 +375,6 @@ const (
 	outOfBounds               = "out_of_bounds"
 	outOfOrder                = "out_of_order"
 	tooOld                    = "too_old"
-	successfulAppends         = "successful_appends"
-	oooAppends                = "ooo_appends"
 )
 
 func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
@@ -435,34 +429,18 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_data_replay_duration_seconds",
 			Help: "Time taken to replay the data on disk.",
 		}),
-		successfulSamplesAppended: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_head_successful_samples_appended_total",
-			Help: "Total number of successful appended samples including out of order samples.",
-		}, []string{"reason", "type"}),
 		sampleAppendFailures: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_head_samples_append_failures_total",
+			Name: "prometheus_tsdb_head_append_failures_total",
 			Help: "Total number of sample append failures with different reasons.",
 		}, []string{"reason", "type"}),
-		// samplesAppended: prometheus.NewCounterVec(prometheus.CounterOpts{
-		// 	Name: "prometheus_tsdb_head_samples_appended_total",
-		// 	Help: "Total number of appended samples.",
-		// }, []string{"type"}),
-		// outOfOrderSamplesAppended: prometheus.NewCounterVec(prometheus.CounterOpts{
-		// 	Name: "prometheus_tsdb_head_out_of_order_samples_appended_total",
-		// 	Help: "Total number of appended out of order samples.",
-		// }, []string{"type"}),
-		// outOfBoundSamples: prometheus.NewCounterVec(prometheus.CounterOpts{
-		// 	Name: "prometheus_tsdb_out_of_bound_samples_total",
-		// 	Help: "Total number of out of bound samples ingestion failed attempts with out of order support disabled.",
-		// }, []string{"type"}),
-		// outOfOrderSamples: prometheus.NewCounterVec(prometheus.CounterOpts{
-		// 	Name: "prometheus_tsdb_out_of_order_samples_total",
-		// 	Help: "Total number of out of order samples ingestion failed attempts due to out of order being disabled.",
-		// }, []string{"type"}),
-		// tooOldSamples: prometheus.NewCounterVec(prometheus.CounterOpts{
-		// 	Name: "prometheus_tsdb_too_old_samples_total",
-		// 	Help: "Total number of out of order samples ingestion failed attempts with out of support enabled, but sample outside of time window.",
-		// }, []string{"type"}),
+		samplesAppended: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_head_samples_appended_total",
+			Help: "Total number of appended samples.",
+		}, []string{"type"}),
+		outOfOrderSamplesAppended: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_head_out_of_order_samples_appended_total",
+			Help: "Total number of appended out of order samples.",
+		}, []string{"type"}),
 		headTruncateFail: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_truncations_failed_total",
 			Help: "Total number of head truncations that failed.",
@@ -531,13 +509,9 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.walTruncateDuration,
 			m.walCorruptionsTotal,
 			m.dataTotalReplayDuration,
-			// m.samplesAppended,
-			m.successfulSamplesAppended,
-			// m.outOfOrderSamplesAppended,
+			m.samplesAppended,
+			m.outOfOrderSamplesAppended,
 			m.sampleAppendFailures,
-			// m.outOfBoundSamples,
-			// m.outOfOrderSamples,
-			// m.tooOldSamples,
 			m.headTruncateFail,
 			m.headTruncateTotal,
 			m.checkpointDeleteFail,
