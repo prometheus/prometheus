@@ -2,12 +2,17 @@
 
 #include <simdutf/simdutf.h>
 
+#include <span>
+
 #include "bare_bones/vector.h"
+#include "bare_bones/xxhash.h"
 #include "parser.h"
 #include "prometheus/hashdex.h"
 #include "prometheus/metric.h"
 #include "prometheus/textparse/escape.h"
 #include "prometheus/value.h"
+
+#include "primitives/sample.h"
 
 namespace PromPP::WAL::hashdex::scraper {
 

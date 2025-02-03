@@ -1,8 +1,7 @@
 #include <gtest/gtest.h>
 
-#include "primitives/primitives.h"
+#include "primitives/label_set.h"
 #include "primitives/snug_composites.h"
-#include "printer.h"
 #include "series_index/querier/selector_querier.h"
 #include "series_index/queryable_encoding_bimap.h"
 #include "series_index/trie/cedarpp_tree.h"

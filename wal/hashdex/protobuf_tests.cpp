@@ -4,6 +4,9 @@
 #include "protobuf.h"
 #include "wal/hashdex/test_fixture.h"
 
+#include "primitives/label_set.h"
+#include "primitives/sample.h"
+
 namespace {
 
 using PromPP::Primitives::LabelViewSet;

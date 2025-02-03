@@ -11,6 +11,7 @@
 
 #include "bare_bones/preprocess.h"
 #include "bare_bones/serializer.h"
+#include "primitives/labels_builder.h"
 #include "primitives/snug_composites.h"
 #include "prometheus/remote_write.h"
 #include "prometheus/stateless_relabeler.h"

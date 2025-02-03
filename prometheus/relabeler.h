@@ -14,7 +14,9 @@
 #include "bare_bones/vector.h"
 #include "hashdex.h"
 #include "primitives/go_slice.h"
-#include "primitives/primitives.h"
+#include "primitives/labels_builder.h"
+#include "primitives/sample.h"
+#include "primitives/timeseries.h"
 #include "stateless_relabeler.h"
 #include "value.h"
 

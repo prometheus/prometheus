@@ -4,11 +4,10 @@
 #include <fstream>
 #include <limits>
 #include <tuple>
-#include <vector>
 
 #include "bare_bones/fio.h"
 #include "bare_bones/vector.h"
-#include "primitives/primitives.h"
+#include "primitives/label_set.h"
 #include "primitives/snug_composites.h"
 
 namespace PromPP::Prometheus::Block {

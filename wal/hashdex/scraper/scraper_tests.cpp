@@ -4,6 +4,10 @@
 #include "wal/hashdex/metric.h"
 #include "wal/hashdex/test_fixture.h"
 
+#include "primitives/label_set.h"
+#include "primitives/primitives.h"
+#include "primitives/sample.h"
+
 namespace {
 
 using PromPP::Primitives::LabelViewSet;

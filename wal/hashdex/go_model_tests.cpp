@@ -1,4 +1,5 @@
 #include "go_model.h"
+#include "primitives/timeseries.h"
 
 #include <gtest/gtest.h>
 

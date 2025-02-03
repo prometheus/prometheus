@@ -1,6 +1,8 @@
 #pragma once
 
+#include "bare_bones/exception.h"
 #include "primitives/go_model.h"
+#include "primitives/label_set.h"
 #include "prometheus/hashdex.h"
 
 namespace PromPP::WAL::hashdex {

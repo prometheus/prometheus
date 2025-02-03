@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include "primitives/label_set.h"
 #include "primitives/snug_composites.h"
 #include "series_index/prometheus/tsdb/index/section_writer/postings_writer.h"
 #include "series_index/prometheus/tsdb/index/section_writer/series_writer.h"

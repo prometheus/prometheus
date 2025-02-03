@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include <initializer_list>
 
-#include "primitives/primitives.h"
+#include "primitives/labels_builder.h"
 #include "prometheus/stateless_relabeler.h"
 
 namespace {

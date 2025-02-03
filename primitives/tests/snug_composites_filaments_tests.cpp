@@ -2,7 +2,7 @@
 
 #include "gtest/gtest.h"
 
-#include "primitives/primitives.h"
+#include "primitives/label_set.h"
 #include "primitives/snug_composites_filaments.h"
 
 namespace {

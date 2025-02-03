@@ -1,6 +1,6 @@
 #pragma once
 
-#include "primitives/primitives.h"
+#include "primitives/timeseries.h"
 #include "prometheus/metric.h"
 
 namespace PromPP::WAL::hashdex {
