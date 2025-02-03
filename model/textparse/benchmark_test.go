@@ -65,6 +65,7 @@ var newTestParserFns = map[string]newParser{
 //
 // NOTE(bwplotka): Do not try to conclude "what parser (OM, proto, prom) is the fastest"
 // as the testdata has different amount and type of metrics and features (e.g. exemplars).
+// Use scrape.BenchmarkScrapeLoopAppend for this purpose.
 func BenchmarkParse(b *testing.B) {
 	for _, bcase := range []struct {
 		dataFile  string // Localized to "./testdata".
@@ -76,7 +77,7 @@ func BenchmarkParse(b *testing.B) {
 		{dataFile: "promtestdata.txt", parser: "promtext", compareToExpfmtFormat: expfmt.TypeTextPlain},
 		{dataFile: "promtestdata.nometa.txt", parser: "promtext", compareToExpfmtFormat: expfmt.TypeTextPlain},
 
-		//  We don't pass compareToExpfmtFormat: expfmt.TypeProtoDelim as expfmt does not support GAUGE_HISTOGRAM, see https://github.com/prometheus/common/issues/430.
+		// We don't pass compareToExpfmtFormat: expfmt.TypeProtoDelim as expfmt does not support GAUGE_HISTOGRAM, see https://github.com/prometheus/common/issues/430.
 		{dataProto: createTestProtoBuf(b).Bytes(), parser: "promproto"},
 
 		// We don't pass compareToExpfmtFormat: expfmt.TypeOpenMetrics as expfmt does not support OM exemplars, see https://github.com/prometheus/common/issues/703.

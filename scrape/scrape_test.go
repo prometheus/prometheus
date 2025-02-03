@@ -25,6 +25,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -1386,8 +1388,17 @@ func TestScrapeLoopFailLegacyUnderUTF8(t *testing.T) {
 	require.Equal(t, 1, seriesAdded)
 }
 
-func makeTestMetrics(n int) []byte {
-	// Construct a metrics string to parse
+func readTextParseTestMetrics(t testing.TB) []byte {
+	t.Helper()
+
+	b, err := os.ReadFile("../model/textparse/testdata/promtestdata.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+func makeTestGauges(n int) []byte {
 	sb := bytes.Buffer{}
 	fmt.Fprintf(&sb, "# TYPE metric_a gauge\n")
 	fmt.Fprintf(&sb, "# HELP metric_a help text\n")
@@ -1401,59 +1412,102 @@ func makeTestMetrics(n int) []byte {
 func promTextToProto(tb testing.TB, text []byte) []byte {
 	tb.Helper()
 
-	d := expfmt.NewDecoder(bytes.NewReader(text), expfmt.TextVersion)
-
-	pb := &dto.MetricFamily{}
-	if err := d.Decode(pb); err != nil {
-		tb.Fatal(err)
-	}
-	o, err := proto.Marshal(pb)
+	var p expfmt.TextParser
+	fams, err := p.TextToMetricFamilies(bytes.NewReader(text))
 	if err != nil {
 		tb.Fatal(err)
 	}
+	// Order by name for the deterministic tests.
+	var names []string
+	for n := range fams {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+
 	buf := bytes.Buffer{}
-	// Write first length, then binary protobuf.
-	varintBuf := binary.AppendUvarint(nil, uint64(len(o)))
-	buf.Write(varintBuf)
-	buf.Write(o)
+	for _, n := range names {
+		o, err := proto.Marshal(fams[n])
+		if err != nil {
+			tb.Fatal(err)
+		}
+
+		// Write first length, then binary protobuf.
+		varintBuf := binary.AppendUvarint(nil, uint64(len(o)))
+		buf.Write(varintBuf)
+		buf.Write(o)
+	}
 	return buf.Bytes()
 }
 
+func TestPromTextToProto(t *testing.T) {
+	metricsText := readTextParseTestMetrics(t)
+	// TODO(bwplotka): Windows adds \r for new lines which is
+	// not handled correctly in the expfmt parser, fix it.
+	metricsText = bytes.ReplaceAll(metricsText, []byte("\r"), nil)
+
+	metricsProto := promTextToProto(t, metricsText)
+	d := expfmt.NewDecoder(bytes.NewReader(metricsProto), expfmt.NewFormat(expfmt.TypeProtoDelim))
+
+	var got []string
+	for {
+		mf := &dto.MetricFamily{}
+		if err := d.Decode(mf); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			t.Fatal(err)
+		}
+		got = append(got, mf.GetName())
+	}
+	require.Len(t, got, 59)
+	// Check first few to see if those are not dups.
+	require.Equal(t, "go_gc_duration_seconds", got[0])
+	require.Equal(t, "prometheus_evaluator_duration_seconds", got[32])
+	require.Equal(t, "prometheus_treecache_zookeeper_failures_total", got[58])
+}
+
 /*
-	export bench=scrape-loop-v1 && go test \
+	export bench=append-v1 && go test \
 		-run '^$' -bench '^BenchmarkScrapeLoopAppend' \
 		-benchtime 5s -count 6 -cpu 2 -timeout 999m \
 		| tee ${bench}.txt
 */
 func BenchmarkScrapeLoopAppend(b *testing.B) {
-	metricsText := makeTestMetrics(100)
-
-	// Create proto representation.
-	metricsProto := promTextToProto(b, metricsText)
-
-	for _, bcase := range []struct {
-		name        string
-		contentType string
-		parsable    []byte
+	for _, data := range []struct {
+		name         string
+		parsableText []byte
 	}{
-		{name: "PromText", contentType: "text/plain", parsable: metricsText},
-		{name: "OMText", contentType: "application/openmetrics-text", parsable: metricsText},
-		{name: "PromProto", contentType: "application/vnd.google.protobuf", parsable: metricsProto},
+		{name: "1Fam1000Gauges", parsableText: makeTestGauges(1000)},        // ~33.8 KB, ~38.8 KB in proto
+		{name: "59FamsAllTypes", parsableText: readTextParseTestMetrics(b)}, // ~33.3 KB, ~13.2 KB in proto.
 	} {
-		b.Run(fmt.Sprintf("fmt=%v", bcase.name), func(b *testing.B) {
-			ctx, sl := simpleTestScrapeLoop(b)
+		b.Run(fmt.Sprintf("data=%v", data.name), func(b *testing.B) {
+			metricsProto := promTextToProto(b, data.parsableText)
 
-			slApp := sl.appender(ctx)
-			ts := time.Time{}
+			for _, bcase := range []struct {
+				name        string
+				contentType string
+				parsable    []byte
+			}{
+				{name: "PromText", contentType: "text/plain", parsable: data.parsableText},
+				{name: "OMText", contentType: "application/openmetrics-text", parsable: data.parsableText},
+				{name: "PromProto", contentType: "application/vnd.google.protobuf", parsable: metricsProto},
+			} {
+				b.Run(fmt.Sprintf("fmt=%v", bcase.name), func(b *testing.B) {
+					ctx, sl := simpleTestScrapeLoop(b)
 
-			b.ReportAllocs()
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				ts = ts.Add(time.Second)
-				_, _, _, err := sl.append(slApp, bcase.parsable, bcase.contentType, ts)
-				if err != nil {
-					b.Fatal(err)
-				}
+					slApp := sl.appender(ctx)
+					ts := time.Time{}
+
+					b.ReportAllocs()
+					b.ResetTimer()
+					for i := 0; i < b.N; i++ {
+						ts = ts.Add(time.Second)
+						_, _, _, err := sl.append(slApp, bcase.parsable, bcase.contentType, ts)
+						if err != nil {
+							b.Fatal(err)
+						}
+					}
+				})
 			}
 		})
 	}
@@ -4474,7 +4528,7 @@ func TestScrapeLoopCompression(t *testing.T) {
 	simpleStorage := teststorage.New(t)
 	defer simpleStorage.Close()
 
-	metricsText := makeTestMetrics(10)
+	metricsText := makeTestGauges(10)
 
 	for _, tc := range []struct {
 		enableCompression bool
