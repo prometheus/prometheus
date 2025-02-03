@@ -600,10 +600,10 @@ github.com/nats-io/nkeys v0.1.3/go.mod h1:xpnFELMwJABBLVhffcfd1MZx6VsNRFpEugbxzi
 github.com/nats-io/nuid v1.0.1/go.mod h1:19wcPz3Ph3q0Jbyiqsd0kePYG7A95tJPxeL+1OSON2c=
 github.com/nsf/jsondiff v0.0.0-20230430225905-43f6cf3098c1 h1:dOYG7LS/WK00RWZc8XGgcUTlTxpp3mKhdR2Q9z9HbXM=
 github.com/nsf/jsondiff v0.0.0-20230430225905-43f6cf3098c1/go.mod h1:mpRZBD8SJ55OIICQ3iWH0Yz3cjzA61JdqMLoWXeB2+8=
-github.com/prometheus/prometheus/pp/go v0.0.0-20250124081647-9109e9f90fdb h1:jp82YXHqrfKzpzlD+yvXla7S/jbKOxXgZb361QjYzq0=
-github.com/prometheus/prometheus/pp/go v0.0.0-20250124081647-9109e9f90fdb/go.mod h1:PAeKWuTTkznLlxaOd0cDSc7jmkTgyDzPvrkvyt/Bw/Q=
-github.com/prometheus/prometheus/pp/go v0.0.0-20250124130027-a328cbf85fbc h1:+yJMxACI7ncRQ8nY5CCUmiVoS23vsDB5ollUlKF0M+Q=
-github.com/prometheus/prometheus/pp/go v0.0.0-20250124130027-a328cbf85fbc/go.mod h1:PAeKWuTTkznLlxaOd0cDSc7jmkTgyDzPvrkvyt/Bw/Q=
+github.com/prometheus/prometheus/pp/go v0.0.0-20250131085250-25f31b1a6128 h1:dKtSHaYuneJuDcDc9bGqkR/c003cnlMntsZAbJliZqA=
+github.com/prometheus/prometheus/pp/go v0.0.0-20250131085250-25f31b1a6128/go.mod h1:PAeKWuTTkznLlxaOd0cDSc7jmkTgyDzPvrkvyt/Bw/Q=
+github.com/prometheus/prometheus/pp/go v0.0.0-20250203111813-6fd0cc84af33 h1:YDFlX4EFgTWomRrL/Wj5uHpH6JCHqOd7H+Hbt8INu+A=
+github.com/prometheus/prometheus/pp/go v0.0.0-20250203111813-6fd0cc84af33/go.mod h1:PAeKWuTTkznLlxaOd0cDSc7jmkTgyDzPvrkvyt/Bw/Q=
 github.com/oklog/oklog v0.3.2/go.mod h1:FCV+B7mhrz4o+ueLpx+KqkyXRGMWOYEvfiXtdGtbWGs=
 github.com/oklog/run v1.0.0/go.mod h1:dlhp/R75TPv97u0XWUtDeV/lRKWPKSdTuV0TZvrmrQA=
 github.com/oklog/run v1.1.0 h1:GEenZ1cK0+q0+wsJew9qUg/DyD8k3JzYsZAi5gYi2mA=

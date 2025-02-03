@@ -23,6 +23,7 @@ import (
 
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
@@ -95,6 +96,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 	hints := &storage.SelectHints{Start: mint, End: maxt}
 
+	ctx = cppbridge.SetCaller(ctx, cppbridge.LSSQuerySourceFederate) // PP_CHANGES.md: rebuild on cpp
 	var sets []storage.SeriesSet
 	for _, mset := range matcherSets {
 		s := q.Select(ctx, true, hints, mset...)
