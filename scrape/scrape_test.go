@@ -1460,7 +1460,7 @@ func TestPromTextToProto(t *testing.T) {
 		got = append(got, mf.GetName())
 	}
 	require.Len(t, got, 59)
-	// Check first few to see if those are not dups.
+	// Check a few to see if those are not dups.
 	require.Equal(t, "go_gc_duration_seconds", got[0])
 	require.Equal(t, "prometheus_evaluator_duration_seconds", got[32])
 	require.Equal(t, "prometheus_treecache_zookeeper_failures_total", got[58])
