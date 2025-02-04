@@ -17,8 +17,10 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"log/slog"
 	"os"
@@ -774,6 +776,36 @@ func formatSeriesSet(ss storage.SeriesSet) error {
 		}
 		if it.Err() != nil {
 			return ss.Err()
+		}
+	}
+	return nil
+}
+
+func formatSeriesSetToJSON(ss storage.SeriesSet) error {
+	getSeriesID := func(in []byte) uint64 {
+		hash := fnv.New64()
+		_, _ = hash.Write(in)
+		return hash.Sum64()
+	}
+
+	seriesCache := make(map[uint64]struct{})
+	for ss.Next() {
+		series := ss.At()
+		lbs := series.Labels()
+
+		b, err := json.Marshal(lbs)
+		if err != nil {
+			return err
+		}
+
+		if len(b) == 0 {
+			continue
+		}
+
+		id := getSeriesID(b)
+		if _, ok := seriesCache[id]; !ok {
+			fmt.Println(string(b))
+			seriesCache[id] = struct{}{}
 		}
 	}
 	return nil
