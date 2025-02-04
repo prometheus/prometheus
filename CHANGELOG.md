@@ -1,6 +1,7 @@
 # Changelog
 
 ## unreleased
+ * [ENHANCEMENT] Scraping: add warning if targets relabel to same labels. This is enabled under the feature-flag `warn-if-targets-relabelled-to-same-labels`. #9589
 
 * [ENHANCEMENT] promtool: Support linting of scrape interval, through lint option `too-long-scrape-interval`. #15719
 
