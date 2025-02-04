@@ -666,7 +666,7 @@ resets due to target restarts) are automatically adjusted for. Also, the
 calculation extrapolates to the ends of the time range, allowing for missed
 scrapes or imperfect alignment of scrape cycles with the range's time period.
 
-The following example expression returns the per-second rate of HTTP requests as measured
+The following example expression returns the per-second average rate of HTTP requests
 over the last 5 minutes, per time series in the range vector:
 
 ```
