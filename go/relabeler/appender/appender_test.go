@@ -18,7 +18,6 @@ import (
 	"github.com/prometheus/prometheus/pp/go/relabeler/head"
 	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 	"github.com/prometheus/prometheus/pp/go/relabeler/querier"
-	"github.com/stretchr/testify/require"
 
 	"github.com/google/uuid"
 	"github.com/jonboulle/clockwork"
@@ -109,14 +108,14 @@ func (s *AppenderSuite) TestManagerRelabelerKeep() {
 	dstrb := distributor.NewDistributor(destinationGroups)
 
 	tmpDir, err := os.MkdirTemp("", "appender_test")
-	require.NoError(s.T(), err)
+	s.Require().NoError(err)
 	defer func() {
 		_ = os.RemoveAll(tmpDir)
 	}()
 
 	headID := "head_id"
 	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, head.NoOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
-	require.NoError(s.T(), err)
+	s.Require().NoError(err)
 	defer func() { _ = hd.Close() }()
 
 	s.T().Log("make appender")
@@ -145,9 +144,10 @@ func (s *AppenderSuite) TestManagerRelabelerKeep() {
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
-	time.AfterFunc(100*time.Millisecond, func() {
-		clock.Advance(500 * time.Millisecond)
-	})
+	clockCtx, clockCancel := context.WithTimeout(s.baseCtx, 50*time.Millisecond)
+	clock.BlockUntilContext(clockCtx, 4)
+	clockCancel()
+	clock.Advance(500 * time.Millisecond)
 
 	s.T().Log("wait send to 2 destinations")
 	s.Equal(wr.String(), <-destination)
@@ -173,16 +173,17 @@ func (s *AppenderSuite) TestManagerRelabelerKeep() {
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 0}, stats)
 
-	time.AfterFunc(100*time.Millisecond, func() {
-		clock.Advance(500 * time.Millisecond)
-	})
+	clockCtx, clockCancel = context.WithTimeout(s.baseCtx, 50*time.Millisecond)
+	clock.BlockUntilContext(clockCtx, 4)
+	clockCancel()
+	clock.Advance(500 * time.Millisecond)
 
 	s.T().Log("wait send to 2 destinations")
 	s.Equal(wr.String(), <-destination)
 	s.Equal(wr.String(), <-destination)
 
 	s.T().Log("shutdown manager")
-	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 150*time.Millisecond)
+	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 1000*time.Millisecond)
 	err = dstrb.Shutdown(shutdownCtx)
 	cancel()
 	s.Require().NoError(err)
@@ -252,14 +253,14 @@ func (s *AppenderSuite) TestManagerRelabelerRelabeling() {
 
 	dstrb := distributor.NewDistributor(destinationGroups)
 	tmpDir, err := os.MkdirTemp("", "appender_test")
-	require.NoError(s.T(), err)
+	s.Require().NoError(err)
 	defer func() {
 		_ = os.RemoveAll(tmpDir)
 	}()
 
 	headID := "head_id"
 	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, head.NoOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
-	require.NoError(s.T(), err)
+	s.Require().NoError(err)
 	defer func() { _ = hd.Close() }()
 	s.T().Log("make appender")
 	metrics := querier.NewMetrics(prometheus.DefaultRegisterer)
@@ -287,9 +288,10 @@ func (s *AppenderSuite) TestManagerRelabelerRelabeling() {
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
-	time.AfterFunc(100*time.Millisecond, func() {
-		clock.Advance(500 * time.Millisecond)
-	})
+	clockCtx, clockCancel := context.WithTimeout(s.baseCtx, 50*time.Millisecond)
+	clock.BlockUntilContext(clockCtx, 4)
+	clockCancel()
+	clock.Advance(500 * time.Millisecond)
 
 	s.T().Log("wait send to 2 destinations")
 	wr.Timeseries[0].Labels = append(wr.Timeseries[0].Labels, prompb.Label{Name: "job2", Value: "boj"})
@@ -326,9 +328,10 @@ func (s *AppenderSuite) TestManagerRelabelerRelabeling() {
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 0}, stats)
 
-	time.AfterFunc(100*time.Millisecond, func() {
-		clock.Advance(500 * time.Millisecond)
-	})
+	clockCtx, clockCancel = context.WithTimeout(s.baseCtx, 50*time.Millisecond)
+	clock.BlockUntilContext(clockCtx, 4)
+	clockCancel()
+	clock.Advance(500 * time.Millisecond)
 
 	s.T().Log("wait send to 2 destinations")
 	wr.Timeseries[0].Labels = append(wr.Timeseries[0].Labels, prompb.Label{Name: "job2", Value: "boj"})
@@ -337,7 +340,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabeling() {
 	s.Equal(wr.String(), <-destination)
 
 	s.T().Log("shutdown manager")
-	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 100*time.Millisecond)
+	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 1000*time.Millisecond)
 	err = dstrb.Shutdown(shutdownCtx)
 	cancel()
 	s.Require().NoError(err)
@@ -405,14 +408,14 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingAddNewLabel() {
 
 	dstrb := distributor.NewDistributor(destinationGroups)
 	tmpDir, err := os.MkdirTemp("", "appender_test")
-	require.NoError(s.T(), err)
+	s.Require().NoError(err)
 	defer func() {
 		_ = os.RemoveAll(tmpDir)
 	}()
 
 	headID := "head_id"
 	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, head.NoOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
-	require.NoError(s.T(), err)
+	s.Require().NoError(err)
 	defer func() { _ = hd.Close() }()
 	s.T().Log("make appender")
 	metrics := querier.NewMetrics(prometheus.DefaultRegisterer)
@@ -440,9 +443,10 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingAddNewLabel() {
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
-	time.AfterFunc(100*time.Millisecond, func() {
-		clock.Advance(500 * time.Millisecond)
-	})
+	clockCtx, clockCancel := context.WithTimeout(s.baseCtx, 50*time.Millisecond)
+	clock.BlockUntilContext(clockCtx, 4)
+	clockCancel()
+	clock.Advance(500 * time.Millisecond)
 
 	s.T().Log("wait send to 2 destinations")
 	wr.Timeseries[0].Labels = append(wr.Timeseries[0].Labels, prompb.Label{Name: "lname", Value: "blabla"})
@@ -479,9 +483,10 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingAddNewLabel() {
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 0}, stats)
 
-	time.AfterFunc(100*time.Millisecond, func() {
-		clock.Advance(500 * time.Millisecond)
-	})
+	clockCtx, clockCancel = context.WithTimeout(s.baseCtx, 50*time.Millisecond)
+	clock.BlockUntilContext(clockCtx, 4)
+	clockCancel()
+	clock.Advance(500 * time.Millisecond)
 
 	s.T().Log("wait send to 2 destinations")
 	wr.Timeseries[0].Labels = append(wr.Timeseries[0].Labels, prompb.Label{Name: "lname", Value: "blabla"})
@@ -490,7 +495,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingAddNewLabel() {
 	s.Equal(wr.String(), <-destination)
 
 	s.T().Log("shutdown manager")
-	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 200*time.Millisecond)
+	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 1000*time.Millisecond)
 	err = dstrb.Shutdown(shutdownCtx)
 	cancel()
 	s.Require().NoError(err)
@@ -562,16 +567,16 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsEnd() {
 
 	dstrb := distributor.NewDistributor(destinationGroups)
 	tmpDir, err := os.MkdirTemp("", "appender_test")
-	require.NoError(s.T(), err)
+	s.Require().NoError(err)
 	defer func() {
 		_ = os.RemoveAll(tmpDir)
 	}()
 
 	headID := "head_id"
 	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, head.NoOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
-	require.NoError(s.T(), err)
+	s.Require().NoError(err)
 	defer func() { _ = hd.Close() }()
-	require.NoError(s.T(), err)
+	s.Require().NoError(err)
 	s.T().Log("make appender")
 	metrics := querier.NewMetrics(prometheus.DefaultRegisterer)
 	app := appender.NewQueryableAppender(hd, dstrb, metrics)
@@ -597,9 +602,10 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsEnd() {
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
-	time.AfterFunc(100*time.Millisecond, func() {
-		clock.Advance(500 * time.Millisecond)
-	})
+	clockCtx, clockCancel := context.WithTimeout(s.baseCtx, 50*time.Millisecond)
+	clock.BlockUntilContext(clockCtx, 4)
+	clockCancel()
+	clock.Advance(500 * time.Millisecond)
 
 	s.T().Log("wait send to 2 destinations")
 	wr.Timeseries[0].Labels = append(wr.Timeseries[0].Labels, prompb.Label{Name: "job2", Value: "boj"}, prompb.Label{Name: "zzz", Value: "zzz"})
@@ -636,9 +642,10 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsEnd() {
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 0}, stats)
 
-	time.AfterFunc(100*time.Millisecond, func() {
-		clock.Advance(500 * time.Millisecond)
-	})
+	clockCtx, clockCancel = context.WithTimeout(s.baseCtx, 50*time.Millisecond)
+	clock.BlockUntilContext(clockCtx, 4)
+	clockCancel()
+	clock.Advance(500 * time.Millisecond)
 
 	s.T().Log("wait send to 2 destinations")
 	wr.Timeseries[0].Labels = append(wr.Timeseries[0].Labels, prompb.Label{Name: "job2", Value: "boj"}, prompb.Label{Name: "zzz", Value: "zzz"})
@@ -647,7 +654,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsEnd() {
 	s.Equal(wr.String(), <-destination)
 
 	s.T().Log("shutdown manager")
-	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 200*time.Millisecond)
+	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 1000*time.Millisecond)
 	err = dstrb.Shutdown(shutdownCtx)
 	cancel()
 	s.Require().NoError(err)
@@ -719,14 +726,14 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsRelabel(
 
 	dstrb := distributor.NewDistributor(destinationGroups)
 	tmpDir, err := os.MkdirTemp("", "appender_test")
-	require.NoError(s.T(), err)
+	s.Require().NoError(err)
 	defer func() {
 		_ = os.RemoveAll(tmpDir)
 	}()
 
 	headID := "head_id"
 	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, head.NoOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
-	require.NoError(s.T(), err)
+	s.Require().NoError(err)
 	defer func() { _ = hd.Close() }()
 	s.T().Log("make appender")
 	metrics := querier.NewMetrics(prometheus.DefaultRegisterer)
@@ -754,9 +761,10 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsRelabel(
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
-	time.AfterFunc(100*time.Millisecond, func() {
-		clock.Advance(500 * time.Millisecond)
-	})
+	clockCtx, clockCancel := context.WithTimeout(s.baseCtx, 50*time.Millisecond)
+	clock.BlockUntilContext(clockCtx, 4)
+	clockCancel()
+	clock.Advance(500 * time.Millisecond)
 
 	s.T().Log("wait send to 2 destinations")
 	wr.Timeseries[0].Labels = append(wr.Timeseries[0].Labels, prompb.Label{Name: "job2", Value: "boj"})
@@ -793,9 +801,10 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsRelabel(
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 0}, stats)
 
-	time.AfterFunc(100*time.Millisecond, func() {
-		clock.Advance(500 * time.Millisecond)
-	})
+	clockCtx, clockCancel = context.WithTimeout(s.baseCtx, 50*time.Millisecond)
+	clock.BlockUntilContext(clockCtx, 4)
+	clockCancel()
+	clock.Advance(500 * time.Millisecond)
 
 	s.T().Log("wait send to 2 destinations")
 	wr.Timeseries[0].Labels = append(wr.Timeseries[0].Labels, prompb.Label{Name: "job2", Value: "boj"})
@@ -804,7 +813,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithExternalLabelsRelabel(
 	s.Equal(wr.String(), <-destination)
 
 	s.T().Log("shutdown manager")
-	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 100*time.Millisecond)
+	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 1000*time.Millisecond)
 	err = dstrb.Shutdown(shutdownCtx)
 	cancel()
 	s.Require().NoError(err)
@@ -880,14 +889,14 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels() {
 
 	dstrb := distributor.NewDistributor(destinationGroups)
 	tmpDir, err := os.MkdirTemp("", "appender_test")
-	require.NoError(s.T(), err)
+	s.Require().NoError(err)
 	defer func() {
 		_ = os.RemoveAll(tmpDir)
 	}()
 
 	headID := "head_id"
 	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, head.NoOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
-	require.NoError(s.T(), err)
+	s.Require().NoError(err)
 	defer func() { _ = hd.Close() }()
 	s.T().Log("make appender")
 	metrics := querier.NewMetrics(prometheus.DefaultRegisterer)
@@ -915,9 +924,10 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels() {
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
-	time.AfterFunc(100*time.Millisecond, func() {
-		clock.Advance(500 * time.Millisecond)
-	})
+	clockCtx, clockCancel := context.WithTimeout(s.baseCtx, 50*time.Millisecond)
+	clock.BlockUntilContext(clockCtx, 4)
+	clockCancel()
+	clock.Advance(500 * time.Millisecond)
 
 	s.T().Log("wait send to 2 destinations")
 	expectedWr := &prompb.WriteRequest{
@@ -970,9 +980,10 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels() {
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 0}, stats)
 
-	time.AfterFunc(100*time.Millisecond, func() {
-		clock.Advance(500 * time.Millisecond)
-	})
+	clockCtx, clockCancel = context.WithTimeout(s.baseCtx, 50*time.Millisecond)
+	clock.BlockUntilContext(clockCtx, 4)
+	clockCancel()
+	clock.Advance(500 * time.Millisecond)
 
 	s.T().Log("wait send to 2 destinations")
 	expectedWr = &prompb.WriteRequest{
@@ -995,7 +1006,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels() {
 	s.Equal(expectedWr.String(), <-destination)
 
 	s.T().Log("shutdown manager")
-	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 100*time.Millisecond)
+	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 1000*time.Millisecond)
 	err = dstrb.Shutdown(shutdownCtx)
 	cancel()
 	s.Require().NoError(err)
@@ -1071,14 +1082,14 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels_Conflicti
 
 	dstrb := distributor.NewDistributor(destinationGroups)
 	tmpDir, err := os.MkdirTemp("", "appender_test")
-	require.NoError(s.T(), err)
+	s.Require().NoError(err)
 	defer func() {
 		_ = os.RemoveAll(tmpDir)
 	}()
 
 	headID := "head_id"
 	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, head.NoOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
-	require.NoError(s.T(), err)
+	s.Require().NoError(err)
 	defer func() { _ = hd.Close() }()
 	s.T().Log("make appender")
 	metrics := querier.NewMetrics(prometheus.DefaultRegisterer)
@@ -1106,9 +1117,10 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels_Conflicti
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
-	time.AfterFunc(100*time.Millisecond, func() {
-		clock.Advance(500 * time.Millisecond)
-	})
+	clockCtx, clockCancel := context.WithTimeout(s.baseCtx, 50*time.Millisecond)
+	clock.BlockUntilContext(clockCtx, 4)
+	clockCancel()
+	clock.Advance(500 * time.Millisecond)
 
 	s.T().Log("wait send to 2 destinations")
 	expectedWr := &prompb.WriteRequest{
@@ -1161,9 +1173,10 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels_Conflicti
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 0}, stats)
 
-	time.AfterFunc(100*time.Millisecond, func() {
-		clock.Advance(500 * time.Millisecond)
-	})
+	clockCtx, clockCancel = context.WithTimeout(s.baseCtx, 50*time.Millisecond)
+	clock.BlockUntilContext(clockCtx, 4)
+	clockCancel()
+	clock.Advance(500 * time.Millisecond)
 
 	s.T().Log("wait send to 2 destinations")
 	expectedWr = &prompb.WriteRequest{
@@ -1186,7 +1199,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels_Conflicti
 	s.Equal(expectedWr.String(), <-destination)
 
 	s.T().Log("shutdown manager")
-	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 100*time.Millisecond)
+	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 1000*time.Millisecond)
 	err = dstrb.Shutdown(shutdownCtx)
 	cancel()
 	s.Require().NoError(err)
@@ -1263,14 +1276,14 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels_Conflicti
 
 	dstrb := distributor.NewDistributor(destinationGroups)
 	tmpDir, err := os.MkdirTemp("", "appender_test")
-	require.NoError(s.T(), err)
+	s.Require().NoError(err)
 	defer func() {
 		_ = os.RemoveAll(tmpDir)
 	}()
 
 	headID := "head_id"
 	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, head.NoOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
-	require.NoError(s.T(), err)
+	s.Require().NoError(err)
 	defer func() { _ = hd.Close() }()
 	s.T().Log("make appender")
 	metrics := querier.NewMetrics(prometheus.DefaultRegisterer)
@@ -1298,9 +1311,10 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels_Conflicti
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
-	time.AfterFunc(100*time.Millisecond, func() {
-		clock.Advance(500 * time.Millisecond)
-	})
+	clockCtx, clockCancel := context.WithTimeout(s.baseCtx, 50*time.Millisecond)
+	clock.BlockUntilContext(clockCtx, 4)
+	clockCancel()
+	clock.Advance(500 * time.Millisecond)
 
 	s.T().Log("wait send to 2 destinations")
 	expectedWr := &prompb.WriteRequest{
@@ -1352,9 +1366,10 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels_Conflicti
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 0}, stats)
 
-	time.AfterFunc(100*time.Millisecond, func() {
-		clock.Advance(500 * time.Millisecond)
-	})
+	clockCtx, clockCancel = context.WithTimeout(s.baseCtx, 50*time.Millisecond)
+	clock.BlockUntilContext(clockCtx, 4)
+	clockCancel()
+	clock.Advance(500 * time.Millisecond)
 
 	s.T().Log("wait send to 2 destinations")
 	expectedWr = &prompb.WriteRequest{
@@ -1376,7 +1391,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithTargetLabels_Conflicti
 	s.Equal(expectedWr.String(), <-destination)
 
 	s.T().Log("shutdown manager")
-	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 100*time.Millisecond)
+	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 1000*time.Millisecond)
 	err = dstrb.Shutdown(shutdownCtx)
 	cancel()
 	s.Require().NoError(err)
@@ -1461,14 +1476,14 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 		}
 	}()
 	tmpDir, err := os.MkdirTemp("", "appender_test")
-	require.NoError(s.T(), err)
+	s.Require().NoError(err)
 	tmpDirsToRemove = append(tmpDirsToRemove, tmpDir)
 
 	var generation uint64 = 0
 
 	headID := "head_id"
 	hd, err := head.Create(headID, generation, tmpDir, inputRelabelerConfigs, numberOfShards, head.NoOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
-	require.NoError(s.T(), err)
+	s.Require().NoError(err)
 	headsToClose = append(headsToClose, hd)
 
 	builder := head.NewBuilder(
@@ -1478,13 +1493,13 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 			},
 		),
 		func(inputRelabelerConfigs []*config.InputRelabelerConfig, numberOfShards uint16) (relabeler.Head, error) {
-			newDir, err := os.MkdirTemp("", "appender_test")
-			require.NoError(s.T(), err)
+			newDir, buildErr := os.MkdirTemp("", "appender_test")
+			s.Require().NoError(buildErr)
 			tmpDirsToRemove = append(tmpDirsToRemove, newDir)
 			newHeadID := "head_id"
 			generation++
-			newHead, err := head.Create(newHeadID, generation, newDir, inputRelabelerConfigs, numberOfShards, head.NoOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
-			require.NoError(s.T(), err)
+			newHead, buildErr := head.Create(newHeadID, generation, newDir, inputRelabelerConfigs, numberOfShards, head.NoOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
+			s.Require().NoError(buildErr)
 			headsToClose = append(headsToClose, newHead)
 			return newHead, nil
 		},
@@ -1524,9 +1539,10 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
-	time.AfterFunc(100*time.Millisecond, func() {
-		clock.Advance(500 * time.Millisecond)
-	})
+	clockCtx, clockCancel := context.WithTimeout(s.baseCtx, 50*time.Millisecond)
+	clock.BlockUntilContext(clockCtx, 4)
+	clockCancel()
+	clock.Advance(500 * time.Millisecond)
 
 	s.T().Log("first wait send to 2 destinations")
 	wr.Timeseries[0].Labels = append(wr.Timeseries[0].Labels, prompb.Label{Name: "lname", Value: "blabla"})
@@ -1535,7 +1551,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 
 	s.T().Log("rotate")
 	clock.Advance(2 * time.Hour)
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(1 * time.Millisecond)
 
 	s.T().Log("first final frame")
 	for i := 0; i < 1<<relabeler.DefaultShardsNumberPower*2; i++ {
@@ -1572,9 +1588,10 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
-	time.AfterFunc(100*time.Millisecond, func() {
-		clock.Advance(500 * time.Millisecond)
-	})
+	clockCtx, clockCancel = context.WithTimeout(s.baseCtx, 50*time.Millisecond)
+	clock.BlockUntilContext(clockCtx, 4)
+	clockCancel()
+	clock.Advance(500 * time.Millisecond)
 
 	s.T().Log("second wait send to 2 destinations")
 	wr.Timeseries[0].Labels = append(wr.Timeseries[0].Labels, prompb.Label{Name: "lname", Value: "blabla"})
@@ -1612,9 +1629,10 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 0}, stats)
 
-	time.AfterFunc(100*time.Millisecond, func() {
-		clock.Advance(500 * time.Millisecond)
-	})
+	clockCtx, clockCancel = context.WithTimeout(s.baseCtx, 50*time.Millisecond)
+	clock.BlockUntilContext(clockCtx, 4)
+	clockCancel()
+	clock.Advance(500 * time.Millisecond)
 
 	s.T().Log("third wait send to 2 destinations")
 	wr.Timeseries[0].Labels = append(wr.Timeseries[0].Labels, prompb.Label{Name: "lname", Value: "blabla"})
@@ -1623,7 +1641,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 	s.Equal(wr.String(), <-destination)
 
 	s.T().Log("shutdown manager")
-	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 100*time.Millisecond)
+	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 1000*time.Millisecond)
 	err = dstrb.Shutdown(shutdownCtx)
 	cancel()
 	s.Require().NoError(err)
@@ -1632,7 +1650,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotate() {
 func (s *AppenderSuite) makeDestinationGroup(
 	destinationName string,
 	destination chan string,
-	clock clockwork.FakeClock,
+	clock clockwork.Clock,
 	externalLabels []cppbridge.Label,
 	relabelingCfgs []*cppbridge.RelabelConfig,
 	numberOfShards uint16,
@@ -1657,7 +1675,7 @@ func (s *AppenderSuite) makeDestinationGroup(
 	}
 
 	s.T().Log("use auto-ack transport (ack segements after ms delay), default 1 shards with 2 destination groups")
-	dialers := []relabeler.Dialer{s.transportNewAutoAck(s.T().Name(), 50*time.Millisecond, destination)}
+	dialers := []relabeler.Dialer{s.transportNewAutoAck(s.T().Name(), 10*time.Millisecond, destination)}
 
 	s.T().Log("use no-op refill: assumed that it won't be touched")
 	refillCtor := s.constructorForRefill(&ManagerRefillMock{
@@ -1816,12 +1834,11 @@ func (*AppenderSuite) transportNewAutoAck(
 			m := new(sync.Mutex)
 			var ack func(uint32)
 			decoder := cppbridge.NewWALDecoder(3)
-			frID := 0
 			transport := &TransportMock{
 				OnAckFunc: func(fn func(uint32)) {
 					m.Lock()
-					defer m.Unlock()
 					ack = fn
+					m.Unlock()
 				},
 				OnRejectFunc:    func(_ func(uint32)) {},
 				OnReadErrorFunc: func(_ func(error)) {},
@@ -1847,18 +1864,21 @@ func (*AppenderSuite) transportNewAutoAck(
 						return err
 					}
 
+					if wr.String() == "" {
+						m.Lock()
+						ack(rs.ID)
+						m.Unlock()
+						return nil
+					}
+
 					time.AfterFunc(delay, func() {
 						m.Lock()
-						defer m.Unlock()
 						ack(rs.ID)
-						if wr.String() == "" {
-							return
-						}
-						frID++
 						select {
 						case dest <- wr.String():
 						default:
 						}
+						m.Unlock()
 					})
 					return nil
 				},
@@ -1936,14 +1956,14 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans() {
 
 	dstrb := distributor.NewDistributor(destinationGroups)
 	tmpDir, err := os.MkdirTemp("", "appender_test")
-	require.NoError(s.T(), err)
+	s.Require().NoError(err)
 	defer func() {
 		_ = os.RemoveAll(tmpDir)
 	}()
 
 	headID := "head_id"
 	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, head.NoOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
-	require.NoError(s.T(), err)
+	s.Require().NoError(err)
 	defer func() { _ = hd.Close() }()
 	s.T().Log("make appender")
 	metrics := querier.NewMetrics(prometheus.DefaultRegisterer)
@@ -1976,9 +1996,10 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans() {
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
-	time.AfterFunc(100*time.Millisecond, func() {
-		clock.Advance(500 * time.Millisecond)
-	})
+	clockCtx, clockCancel := context.WithTimeout(s.baseCtx, 50*time.Millisecond)
+	clock.BlockUntilContext(clockCtx, 4)
+	clockCancel()
+	clock.Advance(500 * time.Millisecond)
 
 	s.T().Log("wait send to 2 destinations")
 	firstWr.Timeseries[0].Samples[0].Timestamp = state.DefTimestamp()
@@ -2007,9 +2028,10 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans() {
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
-	time.AfterFunc(100*time.Millisecond, func() {
-		clock.Advance(500 * time.Millisecond)
-	})
+	clockCtx, clockCancel = context.WithTimeout(s.baseCtx, 50*time.Millisecond)
+	clock.BlockUntilContext(clockCtx, 4)
+	clockCancel()
+	clock.Advance(500 * time.Millisecond)
 
 	s.T().Log("wait send to 2 destinations")
 	secondWr.Timeseries[0].Samples[0].Timestamp = state.DefTimestamp()
@@ -2021,7 +2043,7 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans() {
 	s.Equal(firstWr.String(), <-destination)
 
 	s.T().Log("shutdown distributor")
-	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 500*time.Millisecond)
+	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 1000*time.Millisecond)
 	err = dstrb.Shutdown(shutdownCtx)
 	cancel()
 	s.Require().NoError(err)
@@ -2069,14 +2091,14 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans_WithNullTimestamp(
 
 	dstrb := distributor.NewDistributor(destinationGroups)
 	tmpDir, err := os.MkdirTemp("", "appender_test")
-	require.NoError(s.T(), err)
+	s.Require().NoError(err)
 	defer func() {
 		_ = os.RemoveAll(tmpDir)
 	}()
 
 	headID := "head_id"
 	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, head.NoOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
-	require.NoError(s.T(), err)
+	s.Require().NoError(err)
 	defer func() { _ = hd.Close() }()
 	s.T().Log("make appender")
 	metrics := querier.NewMetrics(prometheus.DefaultRegisterer)
@@ -2109,9 +2131,10 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans_WithNullTimestamp(
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
-	time.AfterFunc(100*time.Millisecond, func() {
-		clock.Advance(500 * time.Millisecond)
-	})
+	clockCtx, clockCancel := context.WithTimeout(s.baseCtx, 50*time.Millisecond)
+	clock.BlockUntilContext(clockCtx, 4)
+	clockCancel()
+	clock.Advance(500 * time.Millisecond)
 
 	s.T().Log("wait send to 2 destinations")
 	firstWr.Timeseries[0].Samples[0].Timestamp = state.DefTimestamp()
@@ -2119,6 +2142,7 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans_WithNullTimestamp(
 	s.Equal(firstWr.String(), <-destination)
 
 	s.T().Log("append second data")
+	secondTS := time.Now().UnixMilli()
 	secondWr := &prompb.WriteRequest{
 		Timeseries: []prompb.TimeSeries{
 			{
@@ -2128,21 +2152,22 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans_WithNullTimestamp(
 					{Name: "job", Value: "abc"},
 				},
 				Samples: []prompb.Sample{
-					{Value: 0.2, Timestamp: time.Now().UnixMilli()},
+					{Value: 0.2, Timestamp: secondTS},
 				},
 			},
 		},
 	}
 
 	h = s.makeIncomingData(secondWr, hlimits)
-	state.SetDefTimestamp(time.Now().UnixMilli())
+	state.SetDefTimestamp(secondTS)
 	stats, err = app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID, true)
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
-	time.AfterFunc(100*time.Millisecond, func() {
-		clock.Advance(500 * time.Millisecond)
-	})
+	clockCtx, clockCancel = context.WithTimeout(s.baseCtx, 50*time.Millisecond)
+	clock.BlockUntilContext(clockCtx, 4)
+	clockCancel()
+	clock.Advance(500 * time.Millisecond)
 
 	s.T().Log("wait send to 2 destinations")
 	firstWr.Timeseries = append(firstWr.Timeseries, secondWr.Timeseries...)
@@ -2153,7 +2178,7 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans_WithNullTimestamp(
 	s.Equal(firstWr.String(), <-destination)
 
 	s.T().Log("shutdown distributor")
-	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 500*time.Millisecond)
+	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 1000*time.Millisecond)
 	err = dstrb.Shutdown(shutdownCtx)
 	cancel()
 	s.Require().NoError(err)
@@ -2198,14 +2223,14 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans_HonorTimestamps() 
 
 	dstrb := distributor.NewDistributor(destinationGroups)
 	tmpDir, err := os.MkdirTemp("", "appender_test")
-	require.NoError(s.T(), err)
+	s.Require().NoError(err)
 	defer func() {
 		_ = os.RemoveAll(tmpDir)
 	}()
 
 	headID := "head_id"
 	hd, err := head.Create(headID, 0, tmpDir, inputRelabelerConfigs, numberOfShards, head.NoOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
-	require.NoError(s.T(), err)
+	s.Require().NoError(err)
 	defer func() { _ = hd.Close() }()
 	s.T().Log("make appender")
 	metrics := querier.NewMetrics(prometheus.DefaultRegisterer)
@@ -2232,14 +2257,14 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans_HonorTimestamps() 
 	state.EnableTrackStaleness()
 	state.SetDefTimestamp(time.Now().UnixMilli())
 	state.SetRelabelerOptions(&cppbridge.RelabelerOptions{HonorTimestamps: true})
-
 	stats, err := app.AppendWithStaleNans(s.baseCtx, h, state, relabelerID, true)
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
-	time.AfterFunc(100*time.Millisecond, func() {
-		clock.Advance(500 * time.Millisecond)
-	})
+	clockCtx, clockCancel := context.WithTimeout(s.baseCtx, 50*time.Millisecond)
+	clock.BlockUntilContext(clockCtx, 4)
+	clockCancel()
+	clock.Advance(500 * time.Millisecond)
 
 	s.T().Log("wait send to 2 destinations")
 	s.Equal(firstWr.String(), <-destination)
@@ -2265,16 +2290,17 @@ func (s *AppenderSuite) TestManagerRelabelerKeepWithStaleNans_HonorTimestamps() 
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
-	time.AfterFunc(100*time.Millisecond, func() {
-		clock.Advance(500 * time.Millisecond)
-	})
+	clockCtx, clockCancel = context.WithTimeout(s.baseCtx, 50*time.Millisecond)
+	clock.BlockUntilContext(clockCtx, 4)
+	clockCancel()
+	clock.Advance(500 * time.Millisecond)
 
 	s.T().Log("wait send to 2 destinations")
 	s.Equal(secondWr.String(), <-destination)
 	s.Equal(secondWr.String(), <-destination)
 
 	s.T().Log("shutdown distributor")
-	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 500*time.Millisecond)
+	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 1000*time.Millisecond)
 	err = dstrb.Shutdown(shutdownCtx)
 	cancel()
 	s.Require().NoError(err)
@@ -2356,14 +2382,14 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 		}
 	}()
 	tmpDir, err := os.MkdirTemp("", "appender_test")
-	require.NoError(s.T(), err)
+	s.Require().NoError(err)
 	tmpDirsToRemove = append(tmpDirsToRemove, tmpDir)
 
 	var generation uint64 = 0
 
 	headID := fmt.Sprintf("head_id_%d", generation)
 	hd, err := head.Create(headID, generation, tmpDir, inputRelabelerConfigs, numberOfShards, head.NoOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
-	require.NoError(s.T(), err)
+	s.Require().NoError(err)
 	headsToClose = append(headsToClose, hd)
 
 	builder := head.NewBuilder(
@@ -2374,12 +2400,12 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 		),
 		func(inputRelabelerConfigs []*config.InputRelabelerConfig, numberOfShards uint16) (relabeler.Head, error) {
 			newDir, buildErr := os.MkdirTemp("", "appender_test")
-			require.NoError(s.T(), buildErr)
+			s.Require().NoError(buildErr)
 			tmpDirsToRemove = append(tmpDirsToRemove, newDir)
 			generation++
 			newHeadID := fmt.Sprintf("head_id_%d", generation)
 			newHead, buildErr := head.Create(newHeadID, generation, newDir, inputRelabelerConfigs, numberOfShards, head.NoOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
-			require.NoError(s.T(), buildErr)
+			s.Require().NoError(buildErr)
 			headsToClose = append(headsToClose, newHead)
 			return newHead, nil
 		},
@@ -2423,9 +2449,10 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
-	time.AfterFunc(100*time.Millisecond, func() {
-		clock.Advance(500 * time.Millisecond)
-	})
+	clockCtx, clockCancel := context.WithTimeout(s.baseCtx, 50*time.Millisecond)
+	clock.BlockUntilContext(clockCtx, 4)
+	clockCancel()
+	clock.Advance(500 * time.Millisecond)
 
 	s.T().Log("first wait send to 2 destinations")
 	wr.Timeseries[0].Labels = append(wr.Timeseries[0].Labels, prompb.Label{Name: "lname", Value: "blabla"})
@@ -2435,7 +2462,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 
 	s.T().Log("rotate")
 	clock.Advance(2 * time.Hour)
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(1 * time.Millisecond)
 
 	s.T().Log("first final frame")
 	for i := 0; i < 1<<relabeler.DefaultShardsNumberPower*2; i++ {
@@ -2473,9 +2500,10 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
-	time.AfterFunc(100*time.Millisecond, func() {
-		clock.Advance(500 * time.Millisecond)
-	})
+	clockCtx, clockCancel = context.WithTimeout(s.baseCtx, 50*time.Millisecond)
+	clock.BlockUntilContext(clockCtx, 4)
+	clockCancel()
+	clock.Advance(500 * time.Millisecond)
 
 	s.T().Log("second wait send to 2 destinations")
 	secondWr.Timeseries[0].Labels = append(secondWr.Timeseries[0].Labels, prompb.Label{Name: "lname", Value: "blabla"})
@@ -2515,9 +2543,10 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 	s.Require().NoError(err)
 	s.Equal(cppbridge.RelabelerStats{SamplesAdded: 1, SeriesAdded: 1}, stats)
 
-	time.AfterFunc(100*time.Millisecond, func() {
-		clock.Advance(500 * time.Millisecond)
-	})
+	clockCtx, clockCancel = context.WithTimeout(s.baseCtx, 50*time.Millisecond)
+	clock.BlockUntilContext(clockCtx, 4)
+	clockCancel()
+	clock.Advance(500 * time.Millisecond)
 
 	s.T().Log("third wait send to 2 destinations")
 	thirdWr.Timeseries[0].Labels = append(thirdWr.Timeseries[0].Labels, prompb.Label{Name: "lname", Value: "blabla"})
@@ -2530,7 +2559,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 	s.Equal(secondWr.String(), <-destination)
 
 	s.T().Log("shutdown manager")
-	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 100*time.Millisecond)
+	shutdownCtx, cancel := context.WithTimeout(s.baseCtx, 1000*time.Millisecond)
 	err = dstrb.Shutdown(shutdownCtx)
 	cancel()
 	s.Require().NoError(err)

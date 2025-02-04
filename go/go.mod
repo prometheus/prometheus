@@ -11,7 +11,7 @@ require (
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/snappy v0.0.4
 	github.com/google/uuid v1.6.0
-	github.com/jonboulle/clockwork v0.4.0
+	github.com/jonboulle/clockwork v0.5.0
 	github.com/mailru/easyjson v0.7.7
 	github.com/oklog/ulid v1.3.1
 	github.com/pierrec/lz4/v4 v4.1.21

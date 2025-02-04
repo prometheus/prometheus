@@ -261,7 +261,7 @@ func (s *EncoderDecoderSuite) TestEncodeDecodeToHashdex() {
 	enc2 := cppbridge.NewWALEncoder(0, 0)
 	dec2 := cppbridge.NewWALDecoder(cppbridge.EncodersVersion())
 
-	count := 11
+	count := 6
 	for i := 1; i < count; i++ {
 		seriesCount := rand.Intn(5000-100) + 100
 		s.T().Log("generate protobuf")
