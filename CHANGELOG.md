@@ -1,6 +1,7 @@
 # Changelog
 
 ## unreleased
+ * [FEATURE] PromQL: Add experimental `vanish` function. #1234
 
 * [ENHANCEMENT] promtool: Support linting of scrape interval, through lint option `too-long-scrape-interval`. #15719
 
