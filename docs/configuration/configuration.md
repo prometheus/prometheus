@@ -2338,6 +2338,8 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_scaleway_instance_project_id`: project id of the server
 * `__meta_scaleway_instance_public_ipv4`: the public IPv4 address of the server
 * `__meta_scaleway_instance_public_ipv6`: the public IPv6 address of the server
+* `__meta_scaleway_instance_public_ipv4_addresses`: the public IPv4 addresses of the server
+* `__meta_scaleway_instance_public_ipv6_addresses`: the public IPv6 addresses of the server
 * `__meta_scaleway_instance_region`: the region of the server
 * `__meta_scaleway_instance_security_group_id`: the ID of the security group of the server
 * `__meta_scaleway_instance_security_group_name`: the name of the security group of the server
