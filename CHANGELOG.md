@@ -2,7 +2,7 @@
 
 ## unreleased
 
-## 3.2.0 RC0 / 2025-01-29
+## 3.2.0-rc.1 / 2025-01-29
 
 * [CHANGE] relabel: Replace actions can now use UTF-8 characters in `targetLabel` field. Note that `$<chars>` or `${<chars>}` will be expanded. This also apply to `replacement` field for `LabelMap` action. #15851
 * [CHANGE] rulefmt: Rule names can use UTF-8 characters, except `{` and `}` characters (due to common mistake checks). #15851
