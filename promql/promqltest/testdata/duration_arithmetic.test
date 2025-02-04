@@ -1,0 +1,36 @@
+# This file test requirements from
+# https://github.com/prometheus/prometheus/issues/12318
+# We only supply float samples in the inputs and assume that complex type behave
+# the same.
+
+load 1m
+    metric 0+1x60
+
+# offset modifier.
+#
+# Regression test offset modifier has higher precedence.
+# Value at 10m-5m and then plus 1.
+eval instant at 10m metric offset 5m + 1
+    {} 6
+
+# Regression test offset modifier has higher precedence.
+# Value at 10m-5m and then plus 60(s).
+eval instant at 10m metric offset 5m + 1m
+    {} 65
+
+# Value at 10m-(5m+1s) == 4m59s.
+eval instant at 10m metric offset (5m + 1)
+    metric{} 4
+
+# Value at 10m-(5m-120s) == 7m.
+eval instant at 10m metric offset (5m - 120)
+    metric{} 7
+
+# Value at 10m-(5m+1m) == 4m.
+eval instant at 10m metric offset (5m + 1m)
+    metric{} 4
+
+# The time() function is allowed on top level.
+# Value at 10m-(1) == 9.59
+eval instant at 10m metric offset (time() != bool 0 + time() == bool 0)
+    metric{} 9

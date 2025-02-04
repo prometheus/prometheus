@@ -21,6 +21,14 @@ type Function struct {
 	Variadic     int
 	ReturnType   ValueType
 	Experimental bool
+
+	// EvalTimeDependent means that the output of the function depends on what
+	// the current evaluation timestamp is. For example time().
+	EvalTimeDependent bool
+
+	// StorageDependent means that the out of the function depends on the
+	// content of TSDB at the time. For example info().
+	StorageDependent bool
 }
 
 // EnableExperimentalFunctions controls whether experimentalFunctions are enabled.
@@ -225,11 +233,12 @@ var Functions = map[string]*Function{
 		ReturnType: ValueTypeVector,
 	},
 	"info": {
-		Name:         "info",
-		ArgTypes:     []ValueType{ValueTypeVector, ValueTypeVector},
-		ReturnType:   ValueTypeVector,
-		Experimental: true,
-		Variadic:     1,
+		Name:             "info",
+		ArgTypes:         []ValueType{ValueTypeVector, ValueTypeVector},
+		ReturnType:       ValueTypeVector,
+		Experimental:     true,
+		Variadic:         1,
+		StorageDependent: true,
 	},
 	"irate": {
 		Name:       "irate",
@@ -411,9 +420,10 @@ var Functions = map[string]*Function{
 		ReturnType: ValueTypeVector,
 	},
 	"time": {
-		Name:       "time",
-		ArgTypes:   []ValueType{},
-		ReturnType: ValueTypeScalar,
+		Name:              "time",
+		ArgTypes:          []ValueType{},
+		ReturnType:        ValueTypeScalar,
+		EvalTimeDependent: true,
 	},
 	"timestamp": {
 		Name:       "timestamp",
