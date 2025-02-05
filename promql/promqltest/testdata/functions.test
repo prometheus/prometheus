@@ -466,7 +466,7 @@ eval instant at 0m label_replace(testmetric, "dst", "", "dst", ".*")
 eval_fail instant at 0m label_replace(testmetric, "dst", "value-$1", "src", "(.*")
 
 # label_replace fails when the destination label name is not a valid Prometheus label name.
-eval_fail instant at 0m label_replace(testmetric, "invalid-label-name", "", "src", "(.*)")
+eval_fail instant at 0m label_replace(testmetric, "\xff", "", "src", "(.*)")
 
 # label_replace fails when there would be duplicated identical output label sets.
 eval_fail instant at 0m label_replace(testmetric, "src", "", "", "")
