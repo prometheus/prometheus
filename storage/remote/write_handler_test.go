@@ -6,7 +6,7 @@
 // http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
+//distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
@@ -22,7 +22,6 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
-	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -1037,37 +1036,92 @@ func (m *mockAppendable) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labe
 	return 0, nil
 }
 
-func TestAreLabelsSorted(t *testing.T) {
-	labels := []prompb.Label{
-		{Name: "a", Value: "1"},
-		{Name: "b", Value: "2"},
-	}
-	if !areLabelsSorted(labels) {
-		t.Error("expected labels to be sorted")
-	}
-
-	unsortedLabels := []prompb.Label{
-		{Name: "b", Value: "2"},
-		{Name: "a", Value: "1"},
-	}
-	if areLabelsSorted(unsortedLabels) {
-		t.Error("expected labels to be unsorted")
-	}
-}
-
 func TestSortLabels(t *testing.T) {
-	labels := []prompb.Label{
-		{Name: "b", Value: "2"},
-		{Name: "a", Value: "1"},
+	// Test with prompb.Label slices directly
+	tests := []struct {
+		name     string
+		labels   []prompb.Label
+		expected []prompb.Label
+	}{
+		{
+			name: "unsorted labels",
+			labels: []prompb.Label{
+				{Name: "b", Value: "2"},
+				{Name: "a", Value: "1"},
+			},
+			expected: []prompb.Label{
+				{Name: "a", Value: "1"},
+				{Name: "b", Value: "2"},
+			},
+		},
+		{
+			name: "already sorted labels",
+			labels: []prompb.Label{
+				{Name: "a", Value: "1"},
+				{Name: "b", Value: "2"},
+			},
+			expected: []prompb.Label{
+				{Name: "a", Value: "1"},
+				{Name: "b", Value: "2"},
+			},
+		},
+		{
+			name:     "empty labels",
+			labels:   []prompb.Label{},
+			expected: []prompb.Label{},
+		},
+		{
+			name: "single label",
+			labels: []prompb.Label{
+				{Name: "a", Value: "1"},
+			},
+			expected: []prompb.Label{
+				{Name: "a", Value: "1"},
+			},
+		},
 	}
-	sortLabels(labels)
-	if !areLabelsSorted(labels) {
-		t.Error("expected labels to be sorted")
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sortLabels(tt.labels)
+			require.Equal(t, tt.expected, tt.labels)
+		})
 	}
 }
 
-func sortLabels(labels []prompb.Label) {
-	sort.Slice(labels, func(i, j int) bool {
-		return labels[i].Name < labels[j].Name
-	})
+func TestRemoteWriteHandler_SortsUnsortedLabels(t *testing.T) {
+	// Build request with unsorted labels
+	payload, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{
+		{
+			Labels: []prompb.Label{ // Directly use Labels field
+				{Name: "b", Value: "2"},
+				{Name: "a", Value: "1"},
+				{Name: "__name__", Value: "test_metric"},
+			},
+			Samples: []prompb.Sample{
+				{Timestamp: 1000, Value: 1.0},
+			},
+		},
+	}, nil, nil, nil, nil, "snappy")
+	require.NoError(t, err)
+
+	req, err := http.NewRequest("", "", bytes.NewReader(payload))
+	require.NoError(t, err)
+
+	appendable := &mockAppendable{}
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	resp := recorder.Result()
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+
+	// Verify labels were sorted
+	require.Len(t, appendable.samples, 1, "expected exactly one sample")
+
+	expectedLabels := labels.FromStrings("__name__", "test_metric", "a", "1", "b", "2")
+	if !labels.Equal(appendable.samples[0].l, expectedLabels) {
+		t.Errorf("labels not sorted\nexpected: %v\ngot: %v", expectedLabels, appendable.samples[0].l)
+	}
 }

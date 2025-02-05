@@ -20,6 +20,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -246,14 +247,12 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 
 	b := labels.NewScratchBuilder(0)
 	for _, ts := range req.Timeseries {
-		ls := ts.ToLabels(&b, nil)
+		// Sort labels lexicographically.
+		sort.Slice(ts.Labels, func(i, j int) bool {
+			return ts.Labels[i].Name < ts.Labels[j].Name
+		})
 
-		// Validate labels for sorting.
-		if !areLabelsSorted(ts.Labels) {
-			h.logger.Warn("Labels are not sorted lexicographically", "labels", ls.String())
-			samplesWithInvalidLabels++
-			continue
-		}
+		ls := ts.ToLabels(&b, nil)
 
 		// TODO(bwplotka): Even as per 1.0 spec, this should be a 400 error, while other samples are
 		// potentially written. Perhaps unify with fixed writeV2 implementation a bit.
@@ -394,19 +393,11 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		b = labels.NewScratchBuilder(0)
 	)
 	for _, ts := range req.Timeseries {
-		ls := ts.ToLabels(&b, req.Symbols)
+		ls := ts.ToLabels(&b, req.Symbols) // Let ToLabels handle the label conversion
+
 		// Validate series labels early.
-		// NOTE(bwplotka): While spec allows UTF-8, Prometheus Receiver may impose
+		// NOTE: While spec allows UTF-8, Prometheus Receiver may impose
 		// specific limits and follow https://prometheus.io/docs/specs/remote_write_spec_2_0/#invalid-samples case.
-		if !ls.Has(labels.MetricName) || !ls.IsValid(model.NameValidationScheme) {
-			badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid metric name or labels, got %v", ls.String()))
-			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
-			continue
-		} else if duplicateLabel, hasDuplicate := ls.HasDuplicateLabelNames(); hasDuplicate {
-			badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid labels for series, labels %v, duplicated label %s", ls.String(), duplicateLabel))
-			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
-			continue
-		}
 
 		allSamplesSoFar := rs.AllSamples()
 		var ref storage.SeriesRef
@@ -715,11 +706,8 @@ func (app *timeLimitAppender) AppendExemplar(ref storage.SeriesRef, l labels.Lab
 	return ref, nil
 }
 
-func areLabelsSorted(labels []prompb.Label) bool {
-	for i := 1; i < len(labels); i++ {
-		if labels[i-1].Name > labels[i].Name {
-			return false
-		}
-	}
-	return true
+func sortLabels(labels []prompb.Label) {
+	sort.Slice(labels, func(i, j int) bool {
+		return labels[i].Name < labels[j].Name
+	})
 }

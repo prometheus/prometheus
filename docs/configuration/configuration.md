@@ -3046,3 +3046,7 @@ headers:
 tls_config:
   [ <tls_config> ]
 ```
+
+## Label Handling
+
+Remote-write requests are automatically sanitized to ensure labels are sorted lexicographically by name. Unsorted labels will be sorted before ingestion.
