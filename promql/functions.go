@@ -569,14 +569,14 @@ func funcScalar(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelpe
 	for _, s := range v {
 		if s.H == nil {
 			if found {
-				// More than one float found, return NaN
+				// More than one float found, return NaN.
 				return append(enh.Out, Sample{F: math.NaN()}), nil
 			}
 			found = true
 			value = s.F
 		}
 	}
-	// Return the single float if found, otherwise return NaN
+	// Return the single float if found, otherwise return NaN.
 	if !found {
 		return append(enh.Out, Sample{F: math.NaN()}), nil
 	}
