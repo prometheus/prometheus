@@ -1013,7 +1013,7 @@ eval instant at 5m sum(custom_buckets_histogram)
 
 clear
 
-# Test 'this native histogram metric is not a gauge' warning for rate
+# Test 'this native histogram metric is not a counter' warning for rate
 load 30s
     some_metric {{schema:0 sum:1 count:1 buckets:[1] counter_reset_hint:gauge}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:gauge}} {{schema:0 sum:3 count:3 buckets:[3] counter_reset_hint:gauge}}
 
@@ -1022,7 +1022,7 @@ eval_warn instant at 30s rate(some_metric[1m])
     {} {{count:0.03333333333333333 sum:0.03333333333333333 buckets:[0.03333333333333333]}}
 
 # Test the case where we have more than two points for rate
-eval_warn instant at 1m rate(some_metric[1m])
+eval_warn instant at 1m rate(some_metric[1m30s])
     {} {{count:0.03333333333333333 sum:0.03333333333333333 buckets:[0.03333333333333333]}}
 
 clear
@@ -1032,20 +1032,20 @@ load 30s
     some_metric {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
 
 # Start and end with exponential, with custom in the middle.
-eval_warn instant at 1m rate(some_metric[1m])
+eval_warn instant at 1m rate(some_metric[1m30s])
     # Should produce no results.
 
 # Start and end with custom, with exponential in the middle.
-eval_warn instant at 1m30s rate(some_metric[1m])
+eval_warn instant at 1m30s rate(some_metric[1m30s])
     # Should produce no results.
 
-# Start with custom, end with exponential.
-eval_warn instant at 1m rate(some_metric[1m])
-    # Should produce no results.
+# Start with custom, end with exponential. Return the exponential histogram divided by 30.
+eval instant at 1m rate(some_metric[1m])
+    {} {{schema:0 sum:0.16666666666666666 count:0.13333333333333333 buckets:[0.03333333333333333 0.06666666666666667 0.03333333333333333]}}
 
-# Start with exponential, end with custom.
-eval_warn instant at 30s rate(some_metric[1m])
-    # Should produce no results.
+# Start with exponential, end with custom. Return the custom buckets histogram divided by 30.
+eval instant at 30s rate(some_metric[1m])
+    {} {{schema:-53 sum:0.03333333333333333 count:0.03333333333333333 custom_values:[5 10] buckets:[0.03333333333333333]}}
 
 clear
 
@@ -1179,7 +1179,10 @@ eval_info range from 0 to 6m step 6m metric2 > metric2
 clear
 
 load 6m
-  nhcb_metric {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+  nhcb_metric {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+
+# If evaluating at 12m, the first two NHCBs have the same custom values
+# while the 3rd one has different ones.
 
 eval_warn instant at 12m sum_over_time(nhcb_metric[13m])
 
@@ -1204,6 +1207,38 @@ eval_warn instant at 12m increase(nhcb_metric[13m])
 eval_warn instant at 12m rate(nhcb_metric[13m])
 
 eval instant at 12m resets(nhcb_metric[13m])
+{} 1
+
+# Now doing the same again, but at 18m, where the first NHCB has
+# different custom_values compared to the other two. This now
+# works with no warning for increase() and rate(). No change
+# otherwise.
+
+eval_warn instant at 18m sum_over_time(nhcb_metric[13m])
+
+eval_warn instant at 18m avg_over_time(nhcb_metric[13m])
+
+eval instant at 18m last_over_time(nhcb_metric[13m])
+nhcb_metric{} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+
+eval instant at 18m count_over_time(nhcb_metric[13m])
+{} 3
+
+eval instant at 18m present_over_time(nhcb_metric[13m])
+{} 1
+
+eval instant at 18m changes(nhcb_metric[13m])
+{} 1
+
+eval_warn instant at 18m delta(nhcb_metric[13m])
+
+eval instant at 18m increase(nhcb_metric[13m])
+{} {{schema:-53 count:1.0833333333333333 sum:1.0833333333333333 custom_values:[5 10] buckets:[1.0833333333333333]}}
+
+eval instant at 18m rate(nhcb_metric[13m])
+{} {{schema:-53 count:0.0013888888888888887 sum:0.0013888888888888887 custom_values:[5 10] buckets:[0.0013888888888888887]}}
+
+eval instant at 18m resets(nhcb_metric[13m])
 {} 1
 
 clear
