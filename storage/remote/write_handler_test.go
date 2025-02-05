@@ -22,6 +22,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -1034,4 +1035,39 @@ func (m *mockAppendable) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labe
 	m.latestSample[l.Hash()] = ct
 	m.samples = append(m.samples, mockSample{l, ct, 0})
 	return 0, nil
+}
+
+func TestAreLabelsSorted(t *testing.T) {
+	labels := []prompb.Label{
+		{Name: "a", Value: "1"},
+		{Name: "b", Value: "2"},
+	}
+	if !areLabelsSorted(labels) {
+		t.Error("expected labels to be sorted")
+	}
+
+	unsortedLabels := []prompb.Label{
+		{Name: "b", Value: "2"},
+		{Name: "a", Value: "1"},
+	}
+	if areLabelsSorted(unsortedLabels) {
+		t.Error("expected labels to be unsorted")
+	}
+}
+
+func TestSortLabels(t *testing.T) {
+	labels := []prompb.Label{
+		{Name: "b", Value: "2"},
+		{Name: "a", Value: "1"},
+	}
+	sortLabels(labels)
+	if !areLabelsSorted(labels) {
+		t.Error("expected labels to be sorted")
+	}
+}
+
+func sortLabels(labels []prompb.Label) {
+	sort.Slice(labels, func(i, j int) bool {
+		return labels[i].Name < labels[j].Name
+	})
 }

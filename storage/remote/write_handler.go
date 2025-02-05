@@ -248,6 +248,13 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	for _, ts := range req.Timeseries {
 		ls := ts.ToLabels(&b, nil)
 
+		// Validate labels for sorting.
+		if !areLabelsSorted(ts.Labels) {
+			h.logger.Warn("Labels are not sorted lexicographically", "labels", ls.String())
+			samplesWithInvalidLabels++
+			continue
+		}
+
 		// TODO(bwplotka): Even as per 1.0 spec, this should be a 400 error, while other samples are
 		// potentially written. Perhaps unify with fixed writeV2 implementation a bit.
 		if !ls.Has(labels.MetricName) || !ls.IsValid(model.NameValidationScheme) {
@@ -706,4 +713,13 @@ func (app *timeLimitAppender) AppendExemplar(ref storage.SeriesRef, l labels.Lab
 		return 0, err
 	}
 	return ref, nil
+}
+
+func areLabelsSorted(labels []prompb.Label) bool {
+	for i := 1; i < len(labels); i++ {
+		if labels[i-1].Name > labels[i].Name {
+			return false
+		}
+	}
+	return true
 }
