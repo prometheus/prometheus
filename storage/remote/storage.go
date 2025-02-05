@@ -65,12 +65,16 @@ type Storage struct {
 
 // NewStorage returns a remote.Storage.
 func NewStorage(l *slog.Logger, reg prometheus.Registerer, stCallback startTimeCallback, walDir string, flushDeadline time.Duration, sm ReadyScrapeManager, metadataInWAL bool) *Storage {
+	// register remote storage metrics in	custom registry
+	if reg != nil {
+		reg.MustRegister(samplesIn, histogramsIn, exemplarsIn)
+	}
+
 	if l == nil {
 		l = promslog.NewNopLogger()
 	}
 	deduper := logging.Dedupe(l, 1*time.Minute)
 	logger := slog.New(deduper)
-
 	s := &Storage{
 		logger:                 logger,
 		deduper:                deduper,
@@ -122,7 +126,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 			ChunkedReadLimit: rrConf.ChunkedReadLimit,
 			HTTPClientConfig: rrConf.HTTPClientConfig,
 			Headers:          rrConf.Headers,
-		})
+		}, s.rws.reg)
 		if err != nil {
 			return err
 		}
