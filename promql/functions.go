@@ -1689,6 +1689,9 @@ func (ev *evaluator) evalLabelJoin(ctx context.Context, args parser.Expressions)
 			matrix[i].DropName = el.DropName
 		}
 	}
+	if matrix.ContainsSameLabelset() {
+		ev.errorf("vector cannot contain metrics with the same labelset")
+	}
 
 	return matrix, ws
 }
