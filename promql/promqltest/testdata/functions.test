@@ -499,6 +499,8 @@ eval instant at 20s timestamp(metric)
 load 5m
   testmetric{src="a",src1="b",src2="c",dst="original-destination-value"} 0
   testmetric{src="d",src1="e",src2="f",dst="original-destination-value"} 1
+  dup{label="a", this="a"} 1.0
+  dup{label="b", this="a"} 1.0
 
 # label_join joins all src values in order.
 eval instant at 0m label_join(testmetric, "dst", "-", "src", "src1", "src2")
@@ -529,6 +531,9 @@ load 5m
 eval instant at 0m label_join(testmetric1, "dst", ", ", "src", "src1", "src2")
   testmetric1{src="foo",src1="bar",src2="foobar",dst="foo, bar, foobar"} 0
   testmetric1{src="fizz",src1="buzz",src2="fizzbuzz",dst="fizz, buzz, fizzbuzz"} 1
+
+eval_fail range from 0 to 10m step 5m label_join(dup, "label", "", "this")
+  expected_fail_message vector cannot contain metrics with the same labelset
 
 clear
 
