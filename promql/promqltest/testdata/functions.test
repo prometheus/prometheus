@@ -532,7 +532,7 @@ eval instant at 0m label_join(testmetric1, "dst", ", ", "src", "src1", "src2")
   testmetric1{src="foo",src1="bar",src2="foobar",dst="foo, bar, foobar"} 0
   testmetric1{src="fizz",src1="buzz",src2="fizzbuzz",dst="fizz, buzz, fizzbuzz"} 1
 
-eval_fail range from 0 to 10m step 5m label_join(dup, "label", "", "this")
+eval_fail instant at 0m label_join(dup, "label", "", "this")
   expected_fail_message vector cannot contain metrics with the same labelset
 
 clear
