@@ -1612,7 +1612,7 @@ func (ev *evaluator) evalLabelReplace(ctx context.Context, args parser.Expressio
 	if err != nil {
 		panic(fmt.Errorf("invalid regular expression in label_replace(): %s", regexStr))
 	}
-	if !model.LabelNameRE.MatchString(dst) {
+	if !model.LabelName(dst).IsValid() {
 		panic(fmt.Errorf("invalid destination label name in label_replace(): %s", dst))
 	}
 
