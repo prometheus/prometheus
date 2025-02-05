@@ -6897,7 +6897,7 @@ func testOOODisabled(t *testing.T, scenario sampleTypeScenario) {
 	requireEqualSeries(t, expSamples, seriesSet, true)
 	requireEqualOOOSamples(t, 0, db)
 	require.Equal(t, float64(failedSamples),
-		prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(scenario.sampleType))+prom_testutil.ToFloat64(db.head.metrics.outOfBoundSamples.WithLabelValues(scenario.sampleType)),
+		prom_testutil.ToFloat64(db.head.metrics.sampleAppendFailures.WithLabelValues(outOfOrder, scenario.sampleType))+prom_testutil.ToFloat64(db.head.metrics.sampleAppendFailures.WithLabelValues(outOfBounds, scenario.sampleType)),
 		"number of ooo/oob samples mismatch")
 
 	// Verifying that no OOO artifacts were generated.
