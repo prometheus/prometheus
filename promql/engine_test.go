@@ -3208,6 +3208,7 @@ func TestInstantQueryWithRangeVectorSelector(t *testing.T) {
 		load 1m
 			some_metric{env="1"} 0+1x4
 			some_metric{env="2"} 0+2x4
+			some_metric{env="3"} {{count:0}}+{{count:1}}x4
 			some_metric_with_stale_marker 0 1 stale 3
 	`)
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
@@ -3233,6 +3234,13 @@ func TestInstantQueryWithRangeVectorSelector(t *testing.T) {
 					Floats: []promql.FPoint{
 						{T: timestamp.FromTime(baseT.Add(time.Minute)), F: 2},
 						{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), F: 4},
+					},
+				},
+				{
+					Metric: labels.FromStrings("__name__", "some_metric", "env", "3"),
+					Histograms: []promql.HPoint{
+						{T: timestamp.FromTime(baseT.Add(time.Minute)), H: &histogram.FloatHistogram{Count: 1, CounterResetHint: histogram.NotCounterReset}},
+						{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), H: &histogram.FloatHistogram{Count: 2, CounterResetHint: histogram.NotCounterReset}},
 					},
 				},
 			},
