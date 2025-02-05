@@ -377,7 +377,7 @@ http_response_size_bytes{handler="version",quantile="0.9"} NaN
 http_response_size_bytes{handler="version",quantile="0.99"} NaN
 http_response_size_bytes_sum{handler="version"} 0
 http_response_size_bytes_count{handler="version"} 0
-# HELP prometheus_build_info A metric with a constant '1' value labeled by version, revision, branch, and goversion from which prometheus was built.
+# HELP prometheus_build_info A metric with a constant '1' value labeled by version, revision, branch, and goversion from which prometheus was builtt.
 # TYPE prometheus_build_info gauge
 prometheus_build_info{branch="",goversion="go1.7.3",revision="",version=""} 1
 # HELP prometheus_config_last_reload_success_timestamp_seconds Timestamp of the last successful configuration reload.
