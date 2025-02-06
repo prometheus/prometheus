@@ -642,6 +642,7 @@ load 5m
 	http_requests{job="app-server", instance="1", group="production"}	0+60x10
 	http_requests{job="app-server", instance="0", group="canary"}		0+70x10
 	http_requests{job="app-server", instance="1", group="canary"}		0+80x10
+	http_requests{job="app-server", instance="2", group="canary"}		{{schema:0 sum:1 count:1}}x15
 
 eval_ordered instant at 50m sort(http_requests)
 	http_requests{group="production", instance="0", job="api-server"} 100
@@ -1652,3 +1653,22 @@ load 1m
 
 eval range from 0 to 5m step 1m round(mixed_metric)
 	{} _ 1 2 3
+
+# Test scalar() with histograms.
+load 1m
+	metric{type="float", l="x"} 1
+	metric{type="float", l="y"} 2
+	metric{type="histogram", l="x"} {{schema:0 sum:1 count:1}}
+	metric{type="histogram", l="x"} {{schema:0 sum:1 count:1}}
+
+# Two floats in the vector.
+eval instant at 0m scalar(metric)
+	NaN
+
+# No floats in the vector.
+eval instant at 0m scalar({type="histogram"})
+	NaN
+
+# One float in the vector.
+eval instant at 0m scalar({l="x"})
+	1
