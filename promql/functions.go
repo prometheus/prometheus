@@ -404,9 +404,9 @@ func funcDoubleExponentialSmoothing(vals []parser.Value, args parser.Expressions
 	return append(enh.Out, Sample{F: s1}), nil
 }
 
-func filterFloats(vals []parser.Value) Vector {
-	v := vals[0].(Vector)
-	floats := make(Vector, 0, len(v))
+// filterFloats filters out histogram samples from the vector in-place.
+func filterFloats(v Vector) Vector {
+	floats := v[:0]
 	for _, s := range v {
 		if s.H == nil {
 			floats = append(floats, s)
@@ -419,7 +419,7 @@ func filterFloats(vals []parser.Value) Vector {
 func funcSort(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	// NaN should sort to the bottom, so take descending sort with NaN first and
 	// reverse it.
-	byValueSorter := vectorByReverseValueHeap(filterFloats(vals))
+	byValueSorter := vectorByReverseValueHeap(filterFloats(vals[0].(Vector)))
 	sort.Sort(sort.Reverse(byValueSorter))
 	return Vector(byValueSorter), nil
 }
@@ -428,7 +428,7 @@ func funcSort(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper)
 func funcSortDesc(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	// NaN should sort to the bottom, so take ascending sort with NaN first and
 	// reverse it.
-	byValueSorter := vectorByValueHeap(filterFloats(vals))
+	byValueSorter := vectorByValueHeap(filterFloats(vals[0].(Vector)))
 	sort.Sort(sort.Reverse(byValueSorter))
 	return Vector(byValueSorter), nil
 }
@@ -1838,8 +1838,6 @@ func (s vectorByValueHeap) Len() int {
 }
 
 func (s vectorByValueHeap) Less(i, j int) bool {
-	// We compare histograms based on their sum of observations.
-	// TODO(beorn7): Is that what we want?
 	vi, vj := s[i].F, s[j].F
 	if math.IsNaN(vi) {
 		return true
@@ -1870,8 +1868,6 @@ func (s vectorByReverseValueHeap) Len() int {
 }
 
 func (s vectorByReverseValueHeap) Less(i, j int) bool {
-	// We compare histograms based on their sum of observations.
-	// TODO(beorn7): Is that what we want?
 	vi, vj := s[i].F, s[j].F
 	if math.IsNaN(vi) {
 		return true
