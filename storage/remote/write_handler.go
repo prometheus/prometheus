@@ -258,12 +258,9 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 		// potentially written. Perhaps unify with fixed writeV2 implementation a bit.
 		if !ls.Has(labels.MetricName) || !ls.IsValid(model.NameValidationScheme) {
 			h.logger.Warn("Invalid metric names or labels", "got", ls.String())
-			samplesWithInvalidLabels++
-			return fmt.Errorf("invalid metric names or labels")
+			return errors.New("invalid metric names or labels")
 		} else if duplicateLabel, hasDuplicate := ls.HasDuplicateLabelNames(); hasDuplicate {
 			h.logger.Warn("Invalid labels for series.", "labels", ls.String(), "duplicated_label", duplicateLabel)
-			samplesWithInvalidLabels++
-			samplesWithInvalidLabels++
 			continue
 		}
 
@@ -403,12 +400,12 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		if !ls.Has(labels.MetricName) || !ls.IsValid(model.NameValidationScheme) {
 			h.logger.Warn("Invalid metric names or labels", "got", ls.String())
 			samplesWithInvalidLabels++
-			badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid metric name or labels, got %v", ls.String()))
+			badRequestErrs = append(badRequestErrs, errors.New(fmt.Sprintf("invalid metric name or labels, got %v", ls.String())))
 			continue
 		} else if duplicateLabel, hasDuplicate := ls.HasDuplicateLabelNames(); hasDuplicate {
 			h.logger.Warn("Invalid labels for series.", "labels", ls.String(), "duplicated_label", duplicateLabel)
 			samplesWithInvalidLabels++
-			badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid labels for series, labels %v, duplicated label %v", ls.String(), duplicateLabel))
+			badRequestErrs = append(badRequestErrs, errors.New(fmt.Sprintf("invalid labels for series, labels %v, duplicated label %v", ls.String(), duplicateLabel)))
 			continue
 		}
 
