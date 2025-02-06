@@ -54,11 +54,11 @@ ui-bump-version:
 ## Debugging  https://github.com/prometheus/test-infra/issues/832#issuecomment-2639527788
 .PHONY: ui-install
 ui-install:
-	cd $(UI_PATH) && npm install --verbose
+	cd $(UI_PATH) && npm install --verbose --no-audit
 	# The old React app has been separated from the npm workspaces setup to avoid
 	# issues with conflicting dependencies. This is a temporary solution until the
 	# new Mantine-based UI is fully integrated and the old app can be removed.
-	cd $(UI_PATH)/react-app && npm install --verbose
+	cd $(UI_PATH)/react-app && npm install --verbose --no-audit
 
 .PHONY: ui-build
 ui-build:
