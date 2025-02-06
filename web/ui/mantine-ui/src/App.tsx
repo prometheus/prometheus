@@ -319,7 +319,7 @@ function App() {
                 width: 300,
                 // TODO: On pages with a long title like "/status", the navbar
                 // breaks in an ugly way for narrow windows. Fix this.
-                breakpoint: "sm",
+                breakpoint: "md",
                 collapsed: { desktop: true, mobile: !opened },
               }}
               padding="md"
@@ -342,7 +342,7 @@ function App() {
                             <Text fz={20}>Prometheus{agentMode && " Agent"}</Text>
                           </Group>
                         </Link>
-                        <Group gap={12} visibleFrom="sm" wrap="nowrap">
+                        <Group gap={12} visibleFrom="md" wrap="nowrap">
                           {navLinks}
                         </Group>
                       </Group>
@@ -353,7 +353,7 @@ function App() {
                     <Burger
                       opened={opened}
                       onClick={toggle}
-                      hiddenFrom="sm"
+                      hiddenFrom="md"
                       size="sm"
                       color="gray.2"
                     />
