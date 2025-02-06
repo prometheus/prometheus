@@ -23,6 +23,39 @@ import (
 	"github.com/cespare/xxhash/v2"
 )
 
+// List of labels that should be mapped to a single byte value.
+// Obviously can't have more than 256 here.
+var mappedLabels = []string{
+	// Empty string, this must be present here.
+	"",
+	// These label names are always present on every time series.
+	"__name__",
+	"instance",
+	"job",
+	// Common label names.
+	"code",
+	"handler",
+	"quantile",
+	// Meta metric names injected by Prometheus itself.
+	"scrape_body_size_bytes",
+	"scrape_duration_seconds",
+	"scrape_sample_limit",
+	"scrape_samples_post_metric_relabeling",
+	"scrape_samples_scraped",
+	"scrape_series_added",
+	"scrape_timeout_seconds",
+	// Common metric names from client libraries.
+	"process_cpu_seconds_total",
+	"process_max_fds",
+	"process_network_receive_bytes_total",
+	"process_network_transmit_bytes_total",
+	"process_open_fds",
+	"process_resident_memory_bytes",
+	"process_start_time_seconds ",
+	"process_virtual_memory_bytes",
+	"process_virtual_memory_max_bytes",
+}
+
 // Labels is implemented by a single flat string holding name/value pairs.
 // Each name and value is preceded by its length in varint encoding.
 // Names are in order.
@@ -30,12 +63,15 @@ type Labels struct {
 	data string
 }
 
-func decodeSize(data string, index int) (int, int) {
+func decodeSize(data string, index int) (int, int, bool) {
 	// Fast-path for common case of a single byte, value 0..127.
 	b := data[index]
 	index++
+	if b == 0 {
+		return 1, index, true
+	}
 	if b < 0x80 {
-		return int(b), index
+		return int(b), index, false
 	}
 	size := int(b & 0x7F)
 	for shift := uint(7); ; shift += 7 {
@@ -48,13 +84,26 @@ func decodeSize(data string, index int) (int, int) {
 			break
 		}
 	}
-	return size, index
+	return size, index, false
 }
 
 func decodeString(data string, index int) (string, int) {
 	var size int
-	size, index = decodeSize(data, index)
+	var mapped bool
+	size, index, mapped = decodeSize(data, index)
+	if mapped {
+		b := data[index]
+		return mappedLabels[int(b)], index + size
+	}
 	return data[index : index+size], index + size
+}
+
+func encodeShortString(s string) (int, byte) {
+	i := slices.Index(mappedLabels, s)
+	if i >= 0 {
+		return 0, byte(i)
+	}
+	return len(s), 0
 }
 
 // Bytes returns ls as a byte slice.
@@ -197,23 +246,37 @@ func (ls Labels) Get(name string) string {
 		return "" // Prometheus does not store blank label names.
 	}
 	for i := 0; i < len(ls.data); {
-		var size int
-		size, i = decodeSize(ls.data, i)
-		if ls.data[i] == name[0] {
-			lName := ls.data[i : i+size]
-			i += size
+		var size, next int
+		var mapped bool
+		var lName, lValue string
+		size, next, mapped = decodeSize(ls.data, i) // Read the key index and size.
+		if mapped {                                 // Key is a mapped string, so decode it fully and move i to the value index.
+			lName, i = decodeString(ls.data, i)
 			if lName == name {
-				lValue, _ := decodeString(ls.data, i)
+				lValue, _ = decodeString(ls.data, i)
 				return lValue
 			}
-		} else {
-			if ls.data[i] > name[0] { // Stop looking if we've gone past.
+			if lName[0] > name[0] { // Stop looking if we've gone past.
 				break
 			}
-			i += size
+		} else { // Value is stored raw in the data string.
+			i = next // Move index to the start of the key string.
+			if ls.data[i] == name[0] {
+				lName = ls.data[i : i+size]
+				i += size // We got the key string, move the index to the start of the value.
+				if lName == name {
+					lValue, _ := decodeString(ls.data, i)
+					return lValue
+				}
+			} else {
+				if ls.data[i] > name[0] { // Stop looking if we've gone past.
+					break
+				}
+				i += size
+			}
 		}
-		size, i = decodeSize(ls.data, i)
-		i += size
+		size, i, _ = decodeSize(ls.data, i) // Read the value index and size.
+		i += size                           // move the index past the value so we can read the next key.
 	}
 	return ""
 }
@@ -224,21 +287,33 @@ func (ls Labels) Has(name string) bool {
 		return false // Prometheus does not store blank label names.
 	}
 	for i := 0; i < len(ls.data); {
-		var size int
-		size, i = decodeSize(ls.data, i)
-		if ls.data[i] == name[0] {
-			lName := ls.data[i : i+size]
-			i += size
+		var size, next int
+		var mapped bool
+		var lName string
+		size, next, mapped = decodeSize(ls.data, i)
+		if mapped {
+			lName, i = decodeString(ls.data, i)
 			if lName == name {
 				return true
 			}
-		} else {
-			if ls.data[i] > name[0] { // Stop looking if we've gone past.
+			if lName[0] > name[0] { // Stop looking if we've gone past.
 				break
+			}
+		} else {
+			i = next
+			if ls.data[i] == name[0] {
+				lName = ls.data[i : i+size]
+				if lName == name {
+					return true
+				}
+			} else {
+				if ls.data[i] > name[0] { // Stop looking if we've gone past.
+					break
+				}
 			}
 			i += size
 		}
-		size, i = decodeSize(ls.data, i)
+		size, i, _ = decodeSize(ls.data, i)
 		i += size
 	}
 	return false
@@ -356,10 +431,10 @@ func Compare(a, b Labels) int {
 	// Now we know that there is some difference before the end of a and b.
 	// Go back through the fields and find which field that difference is in.
 	firstCharDifferent, i := i, 0
-	size, nextI := decodeSize(a.data, i)
+	size, nextI, _ := decodeSize(a.data, i)
 	for nextI+size <= firstCharDifferent {
 		i = nextI + size
-		size, nextI = decodeSize(a.data, i)
+		size, nextI, _ = decodeSize(a.data, i)
 	}
 	// Difference is inside this entry.
 	aStr, _ := decodeString(a.data, i)
@@ -385,9 +460,9 @@ func (ls Labels) Len() int {
 	count := 0
 	for i := 0; i < len(ls.data); {
 		var size int
-		size, i = decodeSize(ls.data, i)
+		size, i, _ = decodeSize(ls.data, i)
 		i += size
-		size, i = decodeSize(ls.data, i)
+		size, i, _ = decodeSize(ls.data, i)
 		i += size
 		count++
 	}
@@ -422,7 +497,7 @@ func (ls Labels) Validate(f func(l Label) error) error {
 func (ls Labels) DropMetricName() Labels {
 	for i := 0; i < len(ls.data); {
 		lName, i2 := decodeString(ls.data, i)
-		size, i2 := decodeSize(ls.data, i2)
+		size, i2, _ := decodeSize(ls.data, i2)
 		i2 += size
 		if lName == MetricName {
 			if i == 0 { // Make common case fast with no allocations.
@@ -518,12 +593,27 @@ func marshalLabelsToSizedBuffer(lbls []Label, data []byte) int {
 
 func marshalLabelToSizedBuffer(m *Label, data []byte) int {
 	i := len(data)
-	i -= len(m.Value)
-	copy(data[i:], m.Value)
-	i = encodeSize(data, i, len(m.Value))
-	i -= len(m.Name)
-	copy(data[i:], m.Name)
-	i = encodeSize(data, i, len(m.Name))
+
+	size, b := encodeShortString(m.Value)
+	if size == 0 {
+		i--
+		data[i] = b
+	} else {
+		i -= size
+		copy(data[i:], m.Value)
+	}
+	i = encodeSize(data, i, size)
+
+	size, b = encodeShortString(m.Name)
+	if size == 0 {
+		i--
+		data[i] = b
+	} else {
+		i -= size
+		copy(data[i:], m.Name)
+	}
+	i = encodeSize(data, i, size)
+
 	return len(data) - i
 }
 
@@ -581,9 +671,16 @@ func labelsSize(lbls []Label) (n int) {
 
 func labelSize(m *Label) (n int) {
 	// strings are encoded as length followed by contents.
-	l := len(m.Name)
+	l, _ := encodeShortString(m.Name)
+	if l == 0 {
+		l++
+	}
 	n += l + sizeVarint(uint64(l))
-	l = len(m.Value)
+
+	l, _ = encodeShortString(m.Value)
+	if l == 0 {
+		l++
+	}
 	n += l + sizeVarint(uint64(l))
 	return n
 }
