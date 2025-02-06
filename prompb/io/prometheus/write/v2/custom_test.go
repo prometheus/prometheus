@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestOptimizedMarshal(t *testing.T) {
@@ -30,7 +31,7 @@ func TestOptimizedMarshal(t *testing.T) {
 		{
 			name: "simple",
 			m: &Request{
-				Timeseries: []TimeSeries{
+				Timeseries: []*TimeSeries{
 					{
 						LabelsRefs: []uint32{
 							0, 1,
@@ -43,8 +44,8 @@ func TestOptimizedMarshal(t *testing.T) {
 							14, 15,
 						},
 
-						Samples:    []Sample{{Value: 1, Timestamp: 0}},
-						Exemplars:  []Exemplar{{LabelsRefs: []uint32{0, 1}, Value: 1, Timestamp: 0}},
+						Samples:    []*Sample{{Value: 1, Timestamp: 0}},
+						Exemplars:  []*Exemplar{{LabelsRefs: []uint32{0, 1}, Value: 1, Timestamp: 0}},
 						Histograms: nil,
 					},
 					{
@@ -58,8 +59,8 @@ func TestOptimizedMarshal(t *testing.T) {
 							12, 13,
 							14, 15,
 						},
-						Samples:    []Sample{{Value: 2, Timestamp: 1}},
-						Exemplars:  []Exemplar{{LabelsRefs: []uint32{0, 1}, Value: 2, Timestamp: 1}},
+						Samples:    []*Sample{{Value: 2, Timestamp: 1}},
+						Exemplars:  []*Exemplar{{LabelsRefs: []uint32{0, 1}, Value: 2, Timestamp: 1}},
 						Histograms: nil,
 					},
 				},
@@ -82,7 +83,7 @@ func TestOptimizedMarshal(t *testing.T) {
 			got := make([]byte, 0)
 
 			// Should be the same as the standard marshal.
-			expected, err := tt.m.Marshal()
+			expected, err := proto.Marshal(tt.m)
 			require.NoError(t, err)
 			got, err = tt.m.OptimizedMarshal(got)
 			require.NoError(t, err)
@@ -90,8 +91,8 @@ func TestOptimizedMarshal(t *testing.T) {
 
 			// Unmarshal should work too.
 			m := &Request{}
-			require.NoError(t, m.Unmarshal(got))
-			require.Equal(t, tt.m, m)
+			require.NoError(t, m.UnmarshalVT(got))
+			require.EqualExportedValues(t, tt.m, m)
 		})
 	}
 }
