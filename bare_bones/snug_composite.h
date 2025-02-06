@@ -528,6 +528,7 @@ class ShrinkableEncodingBimap final : private DecodingTable<Filament> {
 
     shift_ += Base::items_.size();
     Base::items_.resize(0);
+    Base::items_.shrink_to_fit();
     Base::data_.shrink_to(0);
     set_.clear();
   }
