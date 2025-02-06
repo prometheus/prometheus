@@ -54,6 +54,10 @@ ui-bump-version:
 ## Debugging  https://github.com/prometheus/test-infra/issues/832#issuecomment-2639527788
 .PHONY: ui-install
 ui-install:
+	npm install -g n
+	n lts
+	n prune
+	npm install -g npm@latest
 	cd $(UI_PATH) && npm install --verbose --no-audit
 	# The old React app has been separated from the npm workspaces setup to avoid
 	# issues with conflicting dependencies. This is a temporary solution until the
