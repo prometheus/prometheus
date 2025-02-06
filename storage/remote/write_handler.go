@@ -400,12 +400,12 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		if !ls.Has(labels.MetricName) || !ls.IsValid(model.NameValidationScheme) {
 			h.logger.Warn("Invalid metric names or labels", "got", ls.String())
 			samplesWithInvalidLabels++
-			badRequestErrs = append(badRequestErrs, errors.New(fmt.Sprintf("invalid metric name or labels, got %v", ls.String())))
+			badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid metric name or labels, got %v", ls.String()))
 			continue
 		} else if duplicateLabel, hasDuplicate := ls.HasDuplicateLabelNames(); hasDuplicate {
 			h.logger.Warn("Invalid labels for series.", "labels", ls.String(), "duplicated_label", duplicateLabel)
 			samplesWithInvalidLabels++
-			badRequestErrs = append(badRequestErrs, errors.New(fmt.Sprintf("invalid labels for series, labels %v, duplicated label %v", ls.String(), duplicateLabel)))
+			badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid labels for series, labels %v, duplicated label %v", ls.String(), duplicateLabel))
 			continue
 		}
 
@@ -520,8 +520,6 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 	return samplesWithoutMetadata, http.StatusBadRequest, errors.Join(badRequestErrs...)
 }
 
-// handleHistogramZeroSample appends CT as a zero-value sample with CT value as the sample timestamp.
-// It doens't return errors in case of out of order CT.
 func (h *writeHandler) handleHistogramZeroSample(app storage.Appender, ref storage.SeriesRef, l labels.Labels, hist writev2.Histogram, ct int64) (storage.SeriesRef, error) {
 	var err error
 	if hist.IsFloatHistogram() {
