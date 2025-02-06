@@ -186,7 +186,7 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		if err = h.write(r.Context(), &req); err != nil {
 			switch {
-			case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrOutOfBounds), errors.Is(err, storage.ErrDuplicateSampleForTimestamp), errors.Is(err, storage.ErrTooOldSample):
+			case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrOutOfBounds), errors.Is(err, storage.ErrDuplicateSampleForTimestamp), errors.Is(err, storage.ErrTooOldSample), err.Error() == "invalid metric names or labels":
 				// Indicated an out-of-order sample is a bad request to prevent retries.
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
@@ -259,9 +259,10 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 		if !ls.Has(labels.MetricName) || !ls.IsValid(model.NameValidationScheme) {
 			h.logger.Warn("Invalid metric names or labels", "got", ls.String())
 			samplesWithInvalidLabels++
-			continue
+			return fmt.Errorf("invalid metric names or labels")
 		} else if duplicateLabel, hasDuplicate := ls.HasDuplicateLabelNames(); hasDuplicate {
 			h.logger.Warn("Invalid labels for series.", "labels", ls.String(), "duplicated_label", duplicateLabel)
+			samplesWithInvalidLabels++
 			samplesWithInvalidLabels++
 			continue
 		}
@@ -398,6 +399,18 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		// Validate series labels early.
 		// NOTE: While spec allows UTF-8, Prometheus Receiver may impose
 		// specific limits and follow https://prometheus.io/docs/specs/remote_write_spec_2_0/#invalid-samples case.
+
+		if !ls.Has(labels.MetricName) || !ls.IsValid(model.NameValidationScheme) {
+			h.logger.Warn("Invalid metric names or labels", "got", ls.String())
+			samplesWithInvalidLabels++
+			badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid metric name or labels, got %v", ls.String()))
+			continue
+		} else if duplicateLabel, hasDuplicate := ls.HasDuplicateLabelNames(); hasDuplicate {
+			h.logger.Warn("Invalid labels for series.", "labels", ls.String(), "duplicated_label", duplicateLabel)
+			samplesWithInvalidLabels++
+			badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid labels for series, labels %v, duplicated label %v", ls.String(), duplicateLabel))
+			continue
+		}
 
 		allSamplesSoFar := rs.AllSamples()
 		var ref storage.SeriesRef

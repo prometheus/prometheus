@@ -35,7 +35,8 @@ const defaultZeroThreshold = 1e-128
 // addExponentialHistogramDataPoints adds OTel exponential histogram data points to the corresponding time series
 // as native histogram samples.
 func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Context, dataPoints pmetric.ExponentialHistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, promName string) (annotations.Annotations, error) {
+	resource pcommon.Resource, settings Settings, promName string,
+) (annotations.Annotations, error) {
 	var annots annotations.Annotations
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {

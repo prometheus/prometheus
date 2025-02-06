@@ -56,7 +56,8 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 							{
 								Value:     1,
 								Timestamp: convertTimeStamp(pcommon.Timestamp(ts)),
-							}},
+							},
+						},
 					},
 				}
 			},
@@ -111,7 +112,8 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 							{
 								Value:     1,
 								Timestamp: convertTimeStamp(ts),
-							}},
+							},
+						},
 					},
 				}
 			},

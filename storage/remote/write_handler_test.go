@@ -6,7 +6,7 @@
 // http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
-//distributed under the License is distributed on an "AS IS" BASIS,
+// Distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
@@ -884,6 +884,10 @@ func (m *mockAppendable) Append(_ storage.SeriesRef, l labels.Labels, t int64, v
 		return 0, tsdb.ErrInvalidSample
 	}
 
+	if l.Get("__name__") == "" {
+		return 0, tsdb.ErrInvalidSample
+	}
+
 	m.latestSample[l.Hash()] = t
 	m.samples = append(m.samples, mockSample{l, t, v})
 	return 0, nil
@@ -944,6 +948,10 @@ func (m *mockAppendable) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t
 		return 0, tsdb.ErrInvalidSample
 	}
 	if _, hasDuplicates := l.HasDuplicateLabelNames(); hasDuplicates {
+		return 0, tsdb.ErrInvalidSample
+	}
+
+	if l.Get("__name__") == "" {
 		return 0, tsdb.ErrInvalidSample
 	}
 
