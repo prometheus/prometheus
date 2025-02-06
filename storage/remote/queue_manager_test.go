@@ -1902,12 +1902,9 @@ func BenchmarkBuildV2WriteRequest(b *testing.B) {
 		buff := make([]byte, 0)
 		seriesBuff := make([]*writev2.TimeSeries, len(batch))
 		for i := range seriesBuff {
-			seriesBuff[i] = &writev2.TimeSeries{
-				Metadata:   &writev2.Metadata{},
-				Samples:    []*writev2.Sample{},
-				Histograms: []*writev2.Histogram{},
-				Exemplars:  []*writev2.Exemplar{},
-			}
+			v2Ts := writev2.TimeSeriesFromVTPool()
+			v2Ts.Metadata = writev2.MetadataFromVTPool()
+			seriesBuff[i] = v2Ts
 		}
 		pBuf := []byte{}
 

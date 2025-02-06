@@ -1520,12 +1520,9 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 	}
 	pendingDataV2 := make([]*writev2.TimeSeries, maxCount)
 	for i := range pendingDataV2 {
-		pendingDataV2[i] = &writev2.TimeSeries{
-			Metadata:   &writev2.Metadata{},
-			Samples:    []*writev2.Sample{},
-			Histograms: []*writev2.Histogram{},
-			Exemplars:  []*writev2.Exemplar{},
-		}
+		ts := writev2.TimeSeriesFromVTPool()
+		ts.Metadata = writev2.MetadataFromVTPool()
+		pendingDataV2[i] = ts
 	}
 
 	timer := time.NewTimer(time.Duration(s.qm.cfg.BatchSendDeadline))
@@ -1950,10 +1947,10 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 		pendingData[nPending].LabelsRefs = symbolTable.SymbolizeLabels(d.seriesLabels, pendingData[nPending].LabelsRefs)
 		switch d.sType {
 		case tSample:
-			pendingData[nPending].Samples = append(pendingData[nPending].Samples, &writev2.Sample{
-				Value:     d.value,
-				Timestamp: d.timestamp,
-			})
+			sample := writev2.SampleFromVTPool()
+			sample.Value = d.value
+			sample.Timestamp = d.timestamp
+			pendingData[nPending].Samples = append(pendingData[nPending].Samples, sample)
 			nPendingSamples++
 		case tExemplar:
 			pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, &writev2.Exemplar{
@@ -2182,6 +2179,13 @@ func buildV2WriteRequest(logger *slog.Logger, series []*writev2.TimeSeries, labe
 		Symbols:    labels,
 		Timeseries: timeSeries,
 	}
+	defer func() {
+		for _, ts := range timeSeries {
+			for _, sample := range ts.Samples {
+				sample.ReturnToVTPool()
+			}
+		}
+	}()
 
 	if pBuf == nil {
 		pBuf = &[]byte{} // For convenience in tests. Not efficient.
