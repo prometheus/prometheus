@@ -573,6 +573,7 @@ class LabelSet {
 
       shrinked_size_ += symbols_ids_sequences.size() - size;
       symbols_ids_sequences.resize(size);
+      symbols_ids_sequences.shrink_to_fit();
     }
 
     inline __attribute__((always_inline)) auto checkpoint() const noexcept { return Checkpoint(*this); }
