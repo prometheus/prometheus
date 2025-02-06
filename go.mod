@@ -2,7 +2,7 @@ module github.com/prometheus/prometheus
 
 go 1.22.7
 
-toolchain go1.24rc2
+toolchain go1.24rc3
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.17.0
