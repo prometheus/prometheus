@@ -93,7 +93,7 @@ func (DecoderV2) Decode(reader io.ReadSeeker, r *Record) (err error) {
 
 	defer func() {
 		if err != nil && errors.Is(err, io.EOF) || size != uint8(rReader.BytesRead()) {
-			err = errors.Join(err, io.ErrUnexpectedEOF)
+			err = fmt.Errorf("%s: %w", err.Error(), io.ErrUnexpectedEOF)
 		}
 	}()
 
