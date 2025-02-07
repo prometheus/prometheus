@@ -618,22 +618,20 @@ func (it *intersectPostings) At() storage.SeriesRef {
 }
 
 func (it *intersectPostings) doNext() bool {
-Loop:
 	for {
-		cont := false
+		foundNext := true
 		for _, p := range it.arr {
 			if !p.Seek(it.cur) {
 				return false
 			}
 			if p.At() > it.cur {
 				it.cur = p.At()
-				cont = true
+				foundNext = false
 			}
 		}
-		if cont {
-			continue Loop
+		if foundNext {
+			return true
 		}
-		return true
 	}
 }
 
