@@ -1966,8 +1966,16 @@ func (sl *scrapeLoop) checkAddError(met []byte, err error, sampleLimitErr, bucke
 	switch {
 	case err == nil:
 		return true, nil
-	case errors.Is(err, storage.ErrNotFound):
-		return false, storage.ErrNotFound
+	case errors.Is(err, errSampleLimit):
+		// Keep on parsing output if we hit the limit, so we report the correct
+		// total number of samples scraped.
+		*sampleLimitErr = err
+		return false, nil
+	case errors.Is(err, errBucketLimit):
+		// Keep on parsing output if we hit the limit, so we report the bucket
+		// total number of samples scraped.
+		*bucketLimitErr = err
+		return false, nil
 	case errors.Is(err, storage.ErrOutOfOrderSample):
 		appErrs.numOutOfOrder++
 		sl.l.Debug("Out of order sample", "series", string(met))
@@ -1983,16 +1991,8 @@ func (sl *scrapeLoop) checkAddError(met []byte, err error, sampleLimitErr, bucke
 		sl.l.Debug("Out of bounds metric", "series", string(met))
 		sl.metrics.targetScrapeSampleOutOfBounds.Inc()
 		return false, nil
-	case errors.Is(err, errSampleLimit):
-		// Keep on parsing output if we hit the limit, so we report the correct
-		// total number of samples scraped.
-		*sampleLimitErr = err
-		return false, nil
-	case errors.Is(err, errBucketLimit):
-		// Keep on parsing output if we hit the limit, so we report the correct
-		// total number of samples scraped.
-		*bucketLimitErr = err
-		return false, nil
+	case errors.Is(err, storage.ErrNotFound):
+		return false, storage.ErrNotFound
 	default:
 		return false, err
 	}
