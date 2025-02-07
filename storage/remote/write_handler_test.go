@@ -28,10 +28,8 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/proto"
-
 	"github.com/prometheus/common/promslog"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -145,7 +143,8 @@ func TestRemoteWriteHandlerHeadersHandling_V1Message(t *testing.T) {
 }
 
 func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
-	payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
+	v2ReqFixture := writeV2RequestFixture()
+	payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), v2ReqFixture.Timeseries, v2ReqFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
 	for _, tc := range []struct {
@@ -320,47 +319,62 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 		ingestCTZeroSample bool
 	}{
 		{
-			desc:               "All timeseries accepted/ct_enabled",
-			input:              writeV2RequestFixture.Timeseries,
+			desc: "All timeseries accepted/ct_enabled",
+			input: func() []*writev2.TimeSeries {
+				f := writeV2RequestFixture()
+				return f.Timeseries
+			}(),
 			expectedCode:       http.StatusNoContent,
 			ingestCTZeroSample: true,
 		},
 		{
-			desc:         "All timeseries accepted/ct_disabled",
-			input:        writeV2RequestFixture.Timeseries,
+			desc: "All timeseries accepted/ct_disabled",
+			input: func() []*writev2.TimeSeries {
+				f := writeV2RequestFixture()
+				return f.Timeseries
+			}(),
 			expectedCode: http.StatusNoContent,
 		},
 		{
 			desc: "Partial write; first series with invalid labels (no metric name)",
-			input: append(
-				// Series with test_metric1="test_metric1" labels.
-				[]*writev2.TimeSeries{{LabelsRefs: []uint32{2, 2}, Samples: []*writev2.Sample{{Value: 1, Timestamp: 1}}}},
-				writeV2RequestFixture.Timeseries...),
+			input: func() []*writev2.TimeSeries {
+				f := writeV2RequestFixture()
+				return append(
+					// Series with test_metric1="test_metric1" labels.
+					[]*writev2.TimeSeries{{LabelsRefs: []uint32{2, 2}, Samples: []*writev2.Sample{{Value: 1, Timestamp: 1}}}},
+					f.Timeseries...)
+			}(),
 			expectedCode:     http.StatusBadRequest,
 			expectedRespBody: "invalid metric name or labels, got {test_metric1=\"test_metric1\"}\n",
 		},
 		{
 			desc: "Partial write; first series with invalid labels (empty metric name)",
-			input: append(
-				// Series with __name__="" labels.
-				[]*writev2.TimeSeries{{LabelsRefs: []uint32{1, 0}, Samples: []*writev2.Sample{{Value: 1, Timestamp: 1}}}},
-				writeV2RequestFixture.Timeseries...),
+			input: func() []*writev2.TimeSeries {
+				f := writeV2RequestFixture()
+				return append(
+					// Series with __name__="" labels.
+					[]*writev2.TimeSeries{{LabelsRefs: []uint32{1, 0}, Samples: []*writev2.Sample{{Value: 1, Timestamp: 1}}}},
+					f.Timeseries...)
+			}(),
 			expectedCode:     http.StatusBadRequest,
 			expectedRespBody: "invalid metric name or labels, got {__name__=\"\"}\n",
 		},
 		{
 			desc: "Partial write; first series with duplicate labels",
-			input: append(
-				// Series with __name__="test_metric1",test_metric1="test_metric1",test_metric1="test_metric1" labels.
-				[]*writev2.TimeSeries{{LabelsRefs: []uint32{1, 2, 2, 2, 2, 2}, Samples: []*writev2.Sample{{Value: 1, Timestamp: 1}}}},
-				writeV2RequestFixture.Timeseries...),
+			input: func() []*writev2.TimeSeries {
+				f := writeV2RequestFixture()
+				return append(
+					// Series with __name__="test_metric1",test_metric1="test_metric1",test_metric1="test_metric1" labels.
+					[]*writev2.TimeSeries{{LabelsRefs: []uint32{1, 2, 2, 2, 2, 2}, Samples: []*writev2.Sample{{Value: 1, Timestamp: 1}}}},
+					f.Timeseries...)
+			}(),
 			expectedCode:     http.StatusBadRequest,
 			expectedRespBody: "invalid labels for series, labels {__name__=\"test_metric1\", test_metric1=\"test_metric1\", test_metric1=\"test_metric1\"}, duplicated label test_metric1\n",
 		},
 		{
 			desc: "Partial write; first series with one OOO sample",
 			input: func() []*writev2.TimeSeries {
-				f := proto.Clone(writeV2RequestFixture).(*writev2.Request)
+				f := writeV2RequestFixture()
 				f.Timeseries[0].Samples = append(f.Timeseries[0].Samples, &writev2.Sample{Value: 2, Timestamp: 0})
 				return f.Timeseries
 			}(),
@@ -370,7 +384,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 		{
 			desc: "Partial write; first series with one dup sample",
 			input: func() []*writev2.TimeSeries {
-				f := proto.Clone(writeV2RequestFixture).(*writev2.Request)
+				f := writeV2RequestFixture()
 				f.Timeseries[0].Samples = append(f.Timeseries[0].Samples, f.Timeseries[0].Samples[0])
 				return f.Timeseries
 			}(),
@@ -380,7 +394,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 		{
 			desc: "Partial write; first series with one OOO histogram sample",
 			input: func() []*writev2.TimeSeries {
-				f := proto.Clone(writeV2RequestFixture).(*writev2.Request)
+				f := writeV2RequestFixture()
 				f.Timeseries[0].Histograms = append(f.Timeseries[0].Histograms, writev2.FromFloatHistogram(1, testHistogram.ToFloat(nil)))
 				return f.Timeseries
 			}(),
@@ -390,7 +404,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 		{
 			desc: "Partial write; first series with one dup histogram sample",
 			input: func() []*writev2.TimeSeries {
-				f := proto.Clone(writeV2RequestFixture).(*writev2.Request)
+				f := writeV2RequestFixture()
 				f.Timeseries[0].Histograms = append(f.Timeseries[0].Histograms, f.Timeseries[0].Histograms[1])
 				return f.Timeseries
 			}(),
@@ -400,7 +414,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 		// Non retriable errors from various parts.
 		{
 			desc:            "Internal sample append error; rollback triggered",
-			input:           writeV2RequestFixture.Timeseries,
+			input:           writeV2RequestFixture().Timeseries,
 			appendSampleErr: errors.New("some sample internal append error"),
 
 			expectedCode:     http.StatusInternalServerError,
@@ -408,7 +422,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 		},
 		{
 			desc:               "Internal histogram sample append error; rollback triggered",
-			input:              writeV2RequestFixture.Timeseries,
+			input:              writeV2RequestFixture().Timeseries,
 			appendHistogramErr: errors.New("some histogram sample internal append error"),
 
 			expectedCode:     http.StatusInternalServerError,
@@ -416,21 +430,21 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 		},
 		{
 			desc:              "Partial write; skipped exemplar; exemplar storage errs are noop",
-			input:             writeV2RequestFixture.Timeseries,
+			input:             writeV2RequestFixture().Timeseries,
 			appendExemplarErr: errors.New("some exemplar internal append error"),
 
 			expectedCode: http.StatusNoContent,
 		},
 		{
 			desc:              "Partial write; skipped metadata; metadata storage errs are noop",
-			input:             writeV2RequestFixture.Timeseries,
+			input:             writeV2RequestFixture().Timeseries,
 			updateMetadataErr: errors.New("some metadata update error"),
 
 			expectedCode: http.StatusNoContent,
 		},
 		{
 			desc:      "Internal commit error; rollback triggered",
-			input:     writeV2RequestFixture.Timeseries,
+			input:     writeV2RequestFixture().Timeseries,
 			commitErr: errors.New("storage error"),
 
 			expectedCode:     http.StatusInternalServerError,
@@ -438,7 +452,8 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), tc.input, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
+			v2ReqFixture := writeV2RequestFixture()
+			payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), tc.input, v2ReqFixture.Symbols, nil, nil, nil, "snappy")
 			require.NoError(t, err)
 
 			req, err := http.NewRequest("", "", bytes.NewReader(payload))
@@ -495,8 +510,9 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				b          = labels.NewScratchBuilder(0)
 				i, j, k, m int
 			)
-			for _, ts := range writeV2RequestFixture.Timeseries {
-				ls := ts.ToLabels(&b, writeV2RequestFixture.Symbols)
+			v2ReqFixture = writeV2RequestFixture()
+			for _, ts := range v2ReqFixture.Timeseries {
+				ls := ts.ToLabels(&b, v2ReqFixture.Symbols)
 
 				for _, s := range ts.Samples {
 					if ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
@@ -526,13 +542,13 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				}
 				if tc.appendExemplarErr == nil {
 					for _, e := range ts.Exemplars {
-						exemplarLabels := e.ToExemplar(&b, writeV2RequestFixture.Symbols).Labels
+						exemplarLabels := e.ToExemplar(&b, v2ReqFixture.Symbols).Labels
 						requireEqual(t, mockExemplar{ls, exemplarLabels, e.Timestamp, e.Value}, appendable.exemplars[j])
 						j++
 					}
 				}
 				if tc.updateMetadataErr == nil {
-					expectedMeta := ts.ToMetadata(writeV2RequestFixture.Symbols)
+					expectedMeta := ts.ToMetadata(v2ReqFixture.Symbols)
 					requireEqual(t, mockMetadata{ls, expectedMeta}, appendable.metadata[m])
 					m++
 				}
@@ -708,7 +724,8 @@ func TestCommitErr_V1Message(t *testing.T) {
 }
 
 func TestCommitErr_V2Message(t *testing.T) {
-	payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
+	v2ReqFixture := writeV2RequestFixture()
+	payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), v2ReqFixture.Timeseries, v2ReqFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
 	req, err := http.NewRequest("", "", bytes.NewReader(payload))

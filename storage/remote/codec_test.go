@@ -93,35 +93,37 @@ var (
 	// writeV2RequestFixture represents the same request as writeRequestFixture,
 	// but using the v2 representation, plus includes writeV2RequestSeries1Metadata and writeV2RequestSeries2Metadata.
 	// NOTE: Use TestWriteV2RequestFixture and copy the diff to regenerate if needed.
-	writeV2RequestFixture = &writev2.Request{
-		Symbols: []string{"", "__name__", "test_metric1", "b", "c", "baz", "qux", "d", "e", "foo", "bar", "f", "g", "h", "i", "Test gauge for test purposes", "Maybe op/sec who knows (:", "Test counter for test purposes"},
-		Timeseries: []*writev2.TimeSeries{
-			{
-				LabelsRefs: []uint32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, // Symbolized writeRequestFixture.Timeseries[0].Labels
-				Metadata: &writev2.Metadata{
-					Type: writev2.Metadata_METRIC_TYPE_GAUGE, // writeV2RequestSeries1Metadata.Type.
+	writeV2RequestFixture = func() *writev2.Request {
+		return &writev2.Request{
+			Symbols: []string{"", "__name__", "test_metric1", "b", "c", "baz", "qux", "d", "e", "foo", "bar", "f", "g", "h", "i", "Test gauge for test purposes", "Maybe op/sec who knows (:", "Test counter for test purposes"},
+			Timeseries: []*writev2.TimeSeries{
+				{
+					LabelsRefs: []uint32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, // Symbolized writeRequestFixture.Timeseries[0].Labels
+					Metadata: &writev2.Metadata{
+						Type: writev2.Metadata_METRIC_TYPE_GAUGE, // writeV2RequestSeries1Metadata.Type.
 
-					HelpRef: 15, // Symbolized writeV2RequestSeries1Metadata.Help.
-					UnitRef: 16, // Symbolized writeV2RequestSeries1Metadata.Unit.
+						HelpRef: 15, // Symbolized writeV2RequestSeries1Metadata.Help.
+						UnitRef: 16, // Symbolized writeV2RequestSeries1Metadata.Unit.
+					},
+					Samples:          []*writev2.Sample{{Value: 1, Timestamp: 10}},
+					Exemplars:        []*writev2.Exemplar{{LabelsRefs: []uint32{11, 12}, Value: 1, Timestamp: 10}},
+					Histograms:       []*writev2.Histogram{writev2.FromIntHistogram(10, &testHistogram), writev2.FromFloatHistogram(20, testHistogram.ToFloat(nil))},
+					CreatedTimestamp: 1, // CT needs to be lower than the sample's timestamp.
 				},
-				Samples:          []*writev2.Sample{{Value: 1, Timestamp: 10}},
-				Exemplars:        []*writev2.Exemplar{{LabelsRefs: []uint32{11, 12}, Value: 1, Timestamp: 10}},
-				Histograms:       []*writev2.Histogram{writev2.FromIntHistogram(10, &testHistogram), writev2.FromFloatHistogram(20, testHistogram.ToFloat(nil))},
-				CreatedTimestamp: 1, // CT needs to be lower than the sample's timestamp.
-			},
-			{
-				LabelsRefs: []uint32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, // Same series as first.
-				Metadata: &writev2.Metadata{
-					Type: writev2.Metadata_METRIC_TYPE_COUNTER, // writeV2RequestSeries2Metadata.Type.
+				{
+					LabelsRefs: []uint32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, // Same series as first.
+					Metadata: &writev2.Metadata{
+						Type: writev2.Metadata_METRIC_TYPE_COUNTER, // writeV2RequestSeries2Metadata.Type.
 
-					HelpRef: 17, // Symbolized writeV2RequestSeries2Metadata.Help.
-					// No unit.
+						HelpRef: 17, // Symbolized writeV2RequestSeries2Metadata.Help.
+						// No unit.
+					},
+					Samples:    []*writev2.Sample{{Value: 2, Timestamp: 20}},
+					Exemplars:  []*writev2.Exemplar{{LabelsRefs: []uint32{13, 14}, Value: 2, Timestamp: 20}},
+					Histograms: []*writev2.Histogram{writev2.FromIntHistogram(30, &testHistogram), writev2.FromFloatHistogram(40, testHistogram.ToFloat(nil))},
 				},
-				Samples:    []*writev2.Sample{{Value: 2, Timestamp: 20}},
-				Exemplars:  []*writev2.Exemplar{{LabelsRefs: []uint32{13, 14}, Value: 2, Timestamp: 20}},
-				Histograms: []*writev2.Histogram{writev2.FromIntHistogram(30, &testHistogram), writev2.FromFloatHistogram(40, testHistogram.ToFloat(nil))},
 			},
-		},
+		}
 	}
 )
 
@@ -161,7 +163,7 @@ func TestWriteV2RequestFixture(t *testing.T) {
 		Symbols: st.Symbols(),
 	}
 	// Check if it matches static writeV2RequestFixture.
-	require.Equal(t, expected, writeV2RequestFixture)
+	require.Equal(t, expected, writeV2RequestFixture())
 }
 
 func TestValidateLabelsAndMetricName(t *testing.T) {
@@ -589,12 +591,18 @@ func TestDecodeWriteRequest(t *testing.T) {
 }
 
 func TestDecodeWriteV2Request(t *testing.T) {
-	buf, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
+	// input timeseries samples will get cleared and returned to pool by buildV2WriteRequest;
+	// clone instead for now, but probably would prefer a separate test fixture
+	// (or maybe not, maybe it's better to remind people it gets pooled)
+	v2ReqFixture := writeV2RequestFixture()
+	buf, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), v2ReqFixture.Timeseries, v2ReqFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
 	actual, err := DecodeWriteV2Request(bytes.NewReader(buf))
 	require.NoError(t, err)
-	require.Equal(t, writeV2RequestFixture, actual)
+	v2ReqFixture = writeV2RequestFixture()
+	require.Equal(t, v2ReqFixture.Symbols, actual.Symbols)
+	require.Equal(t, v2ReqFixture.Timeseries, actual.Timeseries)
 }
 
 func TestStreamResponse(t *testing.T) {

@@ -1513,9 +1513,9 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 	batchQueue := queue.Chan()
 	pendingData := make([]prompb.TimeSeries, maxCount)
 	for i := range pendingData {
-		pendingData[i].Samples = []prompb.Sample{{}}
+		pendingData[i].Samples = []prompb.Sample{}
 		if s.qm.sendExemplars {
-			pendingData[i].Exemplars = []prompb.Exemplar{{}}
+			pendingData[i].Exemplars = []prompb.Exemplar{}
 		}
 	}
 	pendingDataV2 := make([]*writev2.TimeSeries, maxCount)
