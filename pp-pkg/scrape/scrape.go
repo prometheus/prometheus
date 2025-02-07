@@ -46,6 +46,9 @@ var ScrapeTimestampTolerance = 2 * time.Millisecond
 // AlignScrapeTimestamps enables the tolerance for scrape appends timestamps described above.
 var AlignScrapeTimestamps = true
 
+// CommitToWalOnAppend switches commit strategy on append.
+var CommitToWalOnAppend = false
+
 // reusableCache compares two scrape config and tells whether the cache is still
 // valid.
 func reusableCache(r, l *config.ScrapeConfig) bool {
@@ -1111,7 +1114,7 @@ func (sl *scrapeLoop) append(
 			sl.bufferBatches.get(),
 			sl.state,
 			sl.scrapeName,
-			true,
+			CommitToWalOnAppend,
 		)
 		return 0, stats, err
 	}

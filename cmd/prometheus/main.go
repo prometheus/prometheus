@@ -160,6 +160,7 @@ type flagConfig struct {
 	queryConcurrency    int
 	queryMaxSamples     int
 	RemoteFlushDeadline model.Duration
+	WalCommitInterval   model.Duration
 
 	featureList   []string
 	memlimitRatio float64
@@ -375,6 +376,9 @@ func main() {
 	serverOnlyFlag(a, "storage.tsdb.no-lockfile", "Do not create lockfile in data directory.").
 		Default("false").BoolVar(&cfg.tsdb.NoLockfile)
 
+	serverOnlyFlag(a, "storage.wal-commit-interval", "Interval between force commits.").
+		Default("5s").SetValue(&cfg.WalCommitInterval)
+
 	// TODO: Remove in Prometheus 3.0.
 	var b bool
 	serverOnlyFlag(a, "storage.tsdb.allow-overlapping-blocks", "[DEPRECATED] This flag has no effect. Overlapping blocks are enabled by default now.").
@@ -449,6 +453,9 @@ func main() {
 
 	a.Flag("scrape.timestamp-tolerance", "Timestamp tolerance. See https://github.com/prometheus/prometheus/issues/7846 for more context. Experimental. This flag will be removed in a future release.").
 		Hidden().Default("2ms").DurationVar(&scrape.ScrapeTimestampTolerance)
+
+	a.Flag("scrape.commit-to-wal", "Commit to wal on append").
+		Hidden().Default("false").BoolVar(&scrape.CommitToWalOnAppend)
 
 	serverOnlyFlag(a, "alertmanager.notification-queue-capacity", "The capacity of the queue for pending Alertmanager notifications.").
 		Default("10000").IntVar(&cfg.notifier.QueueCapacity)
@@ -700,6 +707,7 @@ func main() {
 		headCatalog,
 		reloadBlocksTriggerNotifier,
 		receiverReadyNotifier,
+		time.Duration(cfg.WalCommitInterval),
 	)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to create a receiver", "err", err)
