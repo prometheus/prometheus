@@ -275,14 +275,6 @@ func parseExpect(defLine string, i int) (expectCmdType, *expectCmd, error) {
 		mode            = expectParts[1]
 		hasOptionalPart = expectParts[2] != ""
 	)
-	var expectTypeStr = map[string]expectCmdType{
-		"fail":    Fail,
-		"ordered": Ordered,
-		"warn":    Warn,
-		"no_warn": NoWarn,
-		"info":    Info,
-		"no_info": NoInfo,
-	}
 	expectType, ok := expectTypeStr[mode]
 	if !ok {
 		return 0, nil, fmt.Errorf("invalid expected error/annotation type %s", mode)
@@ -723,6 +715,15 @@ const (
 	NoInfo
 )
 
+var expectTypeStr = map[string]expectCmdType{
+	"fail":    Fail,
+	"ordered": Ordered,
+	"warn":    Warn,
+	"no_warn": NoWarn,
+	"info":    Info,
+	"no_info": NoInfo,
+}
+
 type expectCmd struct {
 	message string
 	regex   *regexp.Regexp
@@ -731,17 +732,15 @@ type expectCmd struct {
 func (e *expectCmd) CheckMatch(str string) bool {
 	if e.regex == nil {
 		return e.message == str
-	} else {
-		return e.regex.MatchString(str)
 	}
+	return e.regex.MatchString(str)
 }
 
 func (e *expectCmd) String() string {
 	if e.regex == nil {
 		return e.message
-	} else {
-		return e.regex.String()
 	}
+	return e.regex.String()
 }
 
 type entry struct {
