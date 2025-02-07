@@ -50,8 +50,8 @@ var (
 	patSpace        = regexp.MustCompile("[\t ]+")
 	patLoad         = regexp.MustCompile(`^load(?:_(with_nhcb))?\s+(.+?)$`)
 	patEvalInstant  = regexp.MustCompile(`^eval(?:_(fail|warn|ordered|info))?\s+instant\s+(?:at\s+(.+?))?\s+(.+)$`)
-	patEvalRange    = regexp.MustCompile(`^eval(?:_(fail|warn|info))?\s+range\s+from\s+(.+)\s+to\s+(.+)\s+step\s+(.+?)\s+(.+)$`)
-	patExpectedAnno = regexp.MustCompile(`^expect\s+(ordered|fail|warn|no_warn|info|no_info)(?:\s+(regex|msg):(.+))?$`)
+	patEvalRange = regexp.MustCompile(`^eval(?:_(fail|warn|info))?\s+range\s+from\s+(.+)\s+to\s+(.+)\s+step\s+(.+?)\s+(.+)$`)
+	patExpect    = regexp.MustCompile(`^expect\s+(ordered|fail|warn|no_warn|info|no_info)(?:\s+(regex|msg):(.+))?$`)
 )
 
 const (
@@ -267,9 +267,9 @@ func parseSeries(defLine string, line int) (labels.Labels, []parser.SequenceValu
 }
 
 func parseExpect(defLine string, i int) (expectCmdType, *expectCmd, error) {
-	expectParts := patExpectedAnno.FindStringSubmatch(strings.TrimSpace(defLine))
+	expectParts := patExpect.FindStringSubmatch(strings.TrimSpace(defLine))
 	if expectParts == nil {
-		return 0, nil, fmt.Errorf("invalid expect statement, must match `%s`", patExpectedAnno.String())
+		return 0, nil, fmt.Errorf("invalid expect statement, must match `%s`", patExpect.String())
 	}
 	var (
 		mode            = expectParts[1]
