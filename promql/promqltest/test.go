@@ -275,7 +275,7 @@ func parseExpect(defLine string, i int) (expectCmdType, *expectCmd, error) {
 		mode            = expectParts[1]
 		hasOptionalPart = expectParts[2] != ""
 	)
-	var annoTypeStr = map[string]expectCmdType{
+	var expectTypeStr = map[string]expectCmdType{
 		"fail":    Fail,
 		"ordered": Ordered,
 		"warn":    Warn,
@@ -283,30 +283,30 @@ func parseExpect(defLine string, i int) (expectCmdType, *expectCmd, error) {
 		"info":    Info,
 		"no_info": NoInfo,
 	}
-	annoType, ok := annoTypeStr[mode]
+	expectType, ok := expectTypeStr[mode]
 	if !ok {
 		return 0, nil, fmt.Errorf("invalid expected error/annotation type %s", mode)
 	}
 
-	anno := &expectCmd{}
+	expCmd := &expectCmd{}
 	if hasOptionalPart {
 		switch {
 		case expectParts[2] == "msg":
-			anno.message = strings.TrimSpace(expectParts[3])
+			expCmd.message = strings.TrimSpace(expectParts[3])
 		case expectParts[2] == "regex":
 			pattern := strings.TrimSpace(expectParts[3])
 			regex, err := regexp.Compile(pattern)
 			if err != nil {
 				return 0, nil, fmt.Errorf("invalid regex %s for %s", pattern, mode)
 			}
-			anno.regex = regex
+			expCmd.regex = regex
 		default:
 			return 0, nil, fmt.Errorf("invalid token %s after %s", expectParts[2], mode)
 		}
 	} else {
-		anno.regex = regexp.MustCompile(`^.*$`)
+		expCmd.regex = regexp.MustCompile(`^.*$`)
 	}
-	return annoType, anno, nil
+	return expectType, expCmd, nil
 }
 
 func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
@@ -1370,7 +1370,7 @@ func (t *test) runInstantQuery(iq atModifierTestCase, cmd *evalCmd, engine promq
 	defer q.Close()
 	res := q.Exec(t.context)
 	if res.Err != nil {
-		if cmd.fail || cmd.expectedCmds[Fail] != nil {
+		if cmd.isFail() {
 			if err := cmd.checkExpectedFailure(res.Err); err != nil {
 				return err
 			}
@@ -1379,7 +1379,7 @@ func (t *test) runInstantQuery(iq atModifierTestCase, cmd *evalCmd, engine promq
 		}
 		return fmt.Errorf("error evaluating query %q (line %d): %w", iq.expr, cmd.line, res.Err)
 	}
-	if res.Err == nil && (cmd.fail || cmd.expectedCmds[Fail] != nil) {
+	if res.Err == nil && cmd.isFail() {
 		return fmt.Errorf("expected error evaluating query %q (line %d) but got none", iq.expr, cmd.line)
 	}
 	if err := cmd.checkAnnotations(iq.expr, res.Warnings); err != nil {
