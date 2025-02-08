@@ -2361,11 +2361,7 @@ func testHistogramKahanAdd(t *testing.T, a, b, expected *FloatHistogram, expErrM
 		expectedCopy = expected.Copy()
 	}
 
-	var res *FloatHistogram
-	comp := aCopy.NewCompensationHistogram()
-	var err error
-
-	res, comp, err = aCopy.KahanAdd(bCopy, comp)
+	res, comp, err := aCopy.KahanAdd(bCopy, nil)
 	if expErrMsg != "" {
 		require.EqualError(t, err, expErrMsg)
 	} else {
@@ -2621,11 +2617,7 @@ func testHistogramKahanSub(t *testing.T, a, b, expected *FloatHistogram, expErrM
 		expectedCopy = expected.Copy()
 	}
 
-	var res *FloatHistogram
-	comp := aCopy.NewCompensationHistogram()
-	var err error
-
-	res, comp, err = aCopy.KahanSub(bCopy, comp)
+	res, comp, err := aCopy.KahanSub(bCopy, nil)
 	if expErrMsg != "" {
 		require.EqualError(t, err, expErrMsg)
 	} else {
