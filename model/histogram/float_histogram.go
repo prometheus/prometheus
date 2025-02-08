@@ -423,19 +423,8 @@ func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (newH *FloatHistogra
 	if !h.UsesCustomBuckets() {
 		otherZeroCount := h.reconcileZeroBuckets(other)
 		h.ZeroCount, c.ZeroCount = kahansum.Inc(otherZeroCount, h.ZeroCount, c.ZeroCount)
-
-		// Ensure c.PositiveSpans and c.NegativeSpans match h.PositiveSpans and h.NegativeSpans.
-		// Reassign if the underlying arrays have been reallocated; otherwise, resize to match lengths.
-		if cap(c.PositiveSpans) != cap(h.PositiveSpans) {
-			c.PositiveSpans = h.PositiveSpans
-		} else if len(c.PositiveSpans) != len(h.PositiveSpans) {
-			c.PositiveSpans = c.PositiveSpans[:len(h.PositiveSpans)]
-		}
-		if cap(c.NegativeSpans) != cap(h.NegativeSpans) {
-			c.NegativeSpans = h.NegativeSpans
-		} else if len(c.NegativeSpans) != len(h.NegativeSpans) {
-			c.NegativeSpans = c.NegativeSpans[:len(h.NegativeSpans)]
-		}
+		c.PositiveSpans = h.PositiveSpans
+		c.NegativeSpans = h.NegativeSpans
 	}
 	h.Count, c.Count = kahansum.Inc(other.Count, h.Count, c.Count)
 	h.Sum, c.Sum = kahansum.Inc(other.Sum, h.Sum, c.Sum)
@@ -562,19 +551,8 @@ func (h *FloatHistogram) KahanSub(other, c *FloatHistogram) (newH *FloatHistogra
 	if !h.UsesCustomBuckets() {
 		otherZeroCount := h.reconcileZeroBuckets(other)
 		h.ZeroCount, c.ZeroCount = kahansum.Dec(otherZeroCount, h.ZeroCount, c.ZeroCount)
-
-		// Ensure c.PositiveSpans and c.NegativeSpans match h.PositiveSpans and h.NegativeSpans.
-		// Reassign if the underlying arrays have been reallocated; otherwise, resize to match lengths.
-		if cap(c.PositiveSpans) != cap(h.PositiveSpans) {
-			c.PositiveSpans = h.PositiveSpans
-		} else if len(c.PositiveSpans) != len(h.PositiveSpans) {
-			c.PositiveSpans = c.PositiveSpans[:len(h.PositiveSpans)]
-		}
-		if cap(c.NegativeSpans) != cap(h.NegativeSpans) {
-			c.NegativeSpans = h.NegativeSpans
-		} else if len(c.NegativeSpans) != len(h.NegativeSpans) {
-			c.NegativeSpans = c.NegativeSpans[:len(h.NegativeSpans)]
-		}
+		c.PositiveSpans = h.PositiveSpans
+		c.NegativeSpans = h.NegativeSpans
 	}
 	h.Count, c.Count = kahansum.Dec(other.Count, h.Count, c.Count)
 	h.Sum, c.Sum = kahansum.Dec(other.Sum, h.Sum, c.Sum)
