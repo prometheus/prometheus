@@ -414,11 +414,8 @@ func (h *FloatHistogram) Add(other *FloatHistogram) (res *FloatHistogram, counte
 // It returns pointers to the updated receiving histogram
 // and a separate histogram that holds the Kahan compensation term.
 func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (*FloatHistogram, *FloatHistogram, error) {
-	if h.UsesCustomBuckets() != other.UsesCustomBuckets() {
-		return nil, nil, ErrHistogramsIncompatibleSchema
-	}
-	if h.UsesCustomBuckets() && !FloatBucketsMatch(h.CustomValues, other.CustomValues) {
-		return nil, nil, ErrHistogramsIncompatibleBounds
+	if err := h.checkSchemaAndBounds(other); err != nil {
+		return nil, nil, err
 	}
 
 	switch {
@@ -580,11 +577,8 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) (res *FloatHistogram, counte
 // It returns pointers to the updated receiving histogram
 // and a separate histogram that holds the Kahan compensation term.
 func (h *FloatHistogram) KahanSub(other, c *FloatHistogram) (*FloatHistogram, *FloatHistogram, error) {
-	if h.UsesCustomBuckets() != other.UsesCustomBuckets() {
-		return nil, nil, ErrHistogramsIncompatibleSchema
-	}
-	if h.UsesCustomBuckets() && !FloatBucketsMatch(h.CustomValues, other.CustomValues) {
-		return nil, nil, ErrHistogramsIncompatibleBounds
+	if err := h.checkSchemaAndBounds(other); err != nil {
+		return nil, nil, err
 	}
 
 	if !h.UsesCustomBuckets() {
