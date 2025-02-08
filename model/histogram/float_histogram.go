@@ -413,7 +413,7 @@ func (h *FloatHistogram) Add(other *FloatHistogram) (res *FloatHistogram, counte
 // KahanAdd works like Add but using the Kahan summation algorithm to minimize numerical errors.
 // It returns pointers to the updated receiving histogram
 // and a separate histogram that holds the Kahan compensation term.
-func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (*FloatHistogram, *FloatHistogram, error) {
+func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (newH *FloatHistogram, newC *FloatHistogram, err error) {
 	if err := h.checkSchemaAndBounds(other); err != nil {
 		return nil, nil, err
 	}
@@ -554,7 +554,7 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) (res *FloatHistogram, counte
 // KahanSub works like Sub but using the Kahan summation algorithm to minimize numerical errors.
 // It returns pointers to the updated receiving histogram
 // and a separate histogram that holds the Kahan compensation term.
-func (h *FloatHistogram) KahanSub(other, c *FloatHistogram) (*FloatHistogram, *FloatHistogram, error) {
+func (h *FloatHistogram) KahanSub(other, c *FloatHistogram) (newH *FloatHistogram, newC *FloatHistogram, err error) {
 	if err := h.checkSchemaAndBounds(other); err != nil {
 		return nil, nil, err
 	}
@@ -1529,7 +1529,7 @@ func kahanAddBuckets(
 	spansA []Span, bucketsA []float64,
 	spansB []Span, bucketsB []float64,
 	bucketsC []float64,
-) ([]Span, []float64, []float64) {
+) (newSpans []Span, newBucketsA []float64, newBucketsC []float64) {
 	var (
 		iSpan              = -1
 		iBucket            = -1
