@@ -877,7 +877,7 @@ func kahanReduceResolution(
 	targetSchema int32,
 	deltaBuckets bool,
 	inplace bool,
-) ([]Span, []float64, []float64) {
+) (newSpans []Span, newReceivingBuckets []float64, newCompBuckets []float64) {
 	var (
 		targetSpans                    []Span    // The spans in the target schema.
 		targetReceivingBuckets         []float64 // The receiving bucket counts in the target schema.
