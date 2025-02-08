@@ -58,6 +58,7 @@ export interface Visualizer {
   resolution: GraphResolution;
   displayMode: GraphDisplayMode;
   showExemplars: boolean;
+  anchorYAxisAtZero: boolean;
 }
 
 export type Panel = {
@@ -86,6 +87,7 @@ export const newDefaultPanel = (): Panel => ({
     resolution: { type: "auto", density: "medium" },
     displayMode: GraphDisplayMode.Lines,
     showExemplars: false,
+    anchorYAxisAtZero: false,
   },
 });
 
