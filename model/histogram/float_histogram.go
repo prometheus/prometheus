@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"math"
 	"strings"
+
+	"github.com/prometheus/prometheus/util/kahansum"
 )
 
 // FloatHistogram is similar to Histogram but uses float64 for all
@@ -408,38 +410,6 @@ func (h *FloatHistogram) Add(other *FloatHistogram) (res *FloatHistogram, counte
 	return h, counterResetCollision, nhcbBoundsReconciled, nil
 }
 
-// kahanSumInc performs addition of two floating-point numbers using the Kahan summation algorithm.
-func kahanSumInc(inc, sum, c float64) (newSum, newC float64) {
-	t := sum + inc
-	switch {
-	case math.IsInf(t, 0):
-		c = 0
-
-	// Using Neumaier improvement, swap if next term larger than sum.
-	case math.Abs(sum) >= math.Abs(inc):
-		c += (sum - t) + inc
-	default:
-		c += (inc - t) + sum
-	}
-	return t, c
-}
-
-// kahanSumDec performs subtraction of one floating-point number from another using the Kahan summation algorithm.
-func kahanSumDec(dec, sum, c float64) (newSum, newC float64) {
-	t := sum - dec
-	switch {
-	case math.IsInf(t, 0):
-		c = 0
-
-	// Using Neumaier improvement, swap if next term larger than sum.
-	case math.Abs(sum) >= math.Abs(dec):
-		c += (sum - t) - dec
-	default:
-		c += (-dec - t) + sum
-	}
-	return t, c
-}
-
 // KahanAdd works like Add but using the Kahan summation algorithm to minimize numerical errors.
 // It returns pointers to the updated receiving histogram
 // and a separate histogram that holds the Kahan compensation term.
@@ -477,7 +447,7 @@ func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (*FloatHistogram, *F
 
 	if !h.UsesCustomBuckets() {
 		otherZeroCount := h.reconcileZeroBuckets(other)
-		h.ZeroCount, c.ZeroCount = kahanSumInc(otherZeroCount, h.ZeroCount, c.ZeroCount)
+		h.ZeroCount, c.ZeroCount = kahansum.Inc(otherZeroCount, h.ZeroCount, c.ZeroCount)
 
 		// Ensure c.PositiveSpans and c.NegativeSpans match h.PositiveSpans and h.NegativeSpans.
 		// Reassign if the underlying arrays have been reallocated; otherwise, resize to match lengths.
@@ -492,8 +462,8 @@ func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (*FloatHistogram, *F
 			c.NegativeSpans = c.NegativeSpans[:len(h.NegativeSpans)]
 		}
 	}
-	h.Count, c.Count = kahanSumInc(other.Count, h.Count, c.Count)
-	h.Sum, c.Sum = kahanSumInc(other.Sum, h.Sum, c.Sum)
+	h.Count, c.Count = kahansum.Inc(other.Count, h.Count, c.Count)
+	h.Sum, c.Sum = kahansum.Inc(other.Sum, h.Sum, c.Sum)
 
 	var (
 		hPositiveSpans       = h.PositiveSpans
@@ -619,7 +589,7 @@ func (h *FloatHistogram) KahanSub(other, c *FloatHistogram) (*FloatHistogram, *F
 
 	if !h.UsesCustomBuckets() {
 		otherZeroCount := h.reconcileZeroBuckets(other)
-		h.ZeroCount, c.ZeroCount = kahanSumDec(otherZeroCount, h.ZeroCount, c.ZeroCount)
+		h.ZeroCount, c.ZeroCount = kahansum.Dec(otherZeroCount, h.ZeroCount, c.ZeroCount)
 
 		// Ensure c.PositiveSpans and c.NegativeSpans match h.PositiveSpans and h.NegativeSpans.
 		// Reassign if the underlying arrays have been reallocated; otherwise, resize to match lengths.
@@ -634,8 +604,8 @@ func (h *FloatHistogram) KahanSub(other, c *FloatHistogram) (*FloatHistogram, *F
 			c.NegativeSpans = c.NegativeSpans[:len(h.NegativeSpans)]
 		}
 	}
-	h.Count, c.Count = kahanSumDec(other.Count, h.Count, c.Count)
-	h.Sum, c.Sum = kahanSumDec(other.Sum, h.Sum, c.Sum)
+	h.Count, c.Count = kahansum.Dec(other.Count, h.Count, c.Count)
+	h.Sum, c.Sum = kahansum.Dec(other.Sum, h.Sum, c.Sum)
 
 	var (
 		hPositiveSpans       = h.PositiveSpans
@@ -1638,7 +1608,7 @@ func kahanAddBuckets(
 					goto nextLoop
 				} else if spansA[0].Offset == indexB {
 					// Just add to first bucket.
-					bucketsA[0], bucketsC[0] = kahanSumInc(bucketB, bucketsA[0], bucketsC[0])
+					bucketsA[0], bucketsC[0] = kahansum.Inc(bucketB, bucketsA[0], bucketsC[0])
 					goto nextLoop
 				}
 				iSpan, iBucket, iInSpan = 0, 0, 0
@@ -1651,7 +1621,7 @@ func kahanAddBuckets(
 					// Bucket is in current span.
 					iBucket += int(deltaIndex)
 					iInSpan += deltaIndex
-					bucketsA[iBucket], bucketsC[iBucket] = kahanSumInc(bucketB, bucketsA[iBucket], bucketsC[iBucket])
+					bucketsA[iBucket], bucketsC[iBucket] = kahansum.Inc(bucketB, bucketsA[iBucket], bucketsC[iBucket])
 					break
 				}
 				deltaIndex -= remainingInSpan
