@@ -14,6 +14,7 @@
 package labels
 
 import (
+	"math"
 	"slices"
 	"strings"
 	"unicode"
@@ -76,10 +77,16 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 		if parsed.Op == syntax.OpConcat {
 			m.prefix, m.suffix, m.contains = optimizeConcatRegex(parsed)
 		}
-		if matches, caseSensitive := findSetMatches(parsed); caseSensitive {
+		matches, prefixes, caseSensitive := findSetMatches(parsed)
+		switch {
+		case len(matches) == 0 && len(prefixes) > minEqualMultiStringMatcherMapThreshold:
+			m.stringMatcher = newMatcherFromPrefixMatchers(caseSensitive, prefixes)
+		case len(matches) > 0 && len(prefixes) == 0 && caseSensitive:
 			m.setMatches = matches
+			m.stringMatcher = stringMatcherFromRegexp(parsed)
+		default:
+			m.stringMatcher = stringMatcherFromRegexp(parsed)
 		}
-		m.stringMatcher = stringMatcherFromRegexp(parsed)
 		m.matchString = m.compileMatchStringFunction()
 	}
 
@@ -127,27 +134,27 @@ func (m *FastRegexMatcher) IsOptimized() bool {
 // findSetMatches extract equality matches from a regexp.
 // Returns nil if we can't replace the regexp by only equality matchers or the regexp contains
 // a mix of case sensitive and case insensitive matchers.
-func findSetMatches(re *syntax.Regexp) (matches []string, caseSensitive bool) {
+func findSetMatches(re *syntax.Regexp) (matches []string, prefixes []prefixMatcher, caseSensitive bool) {
 	clearBeginEndText(re)
 
 	return findSetMatchesInternal(re, "")
 }
 
-func findSetMatchesInternal(re *syntax.Regexp, base string) (matches []string, caseSensitive bool) {
+func findSetMatchesInternal(re *syntax.Regexp, base string) (matches []string, prefixes []prefixMatcher, matchesCaseSensitive bool) {
 	switch re.Op {
 	case syntax.OpBeginText:
 		// Correctly handling the begin text operator inside a regex is tricky,
 		// so in this case we fallback to the regex engine.
-		return nil, false
+		return nil, nil, false
 	case syntax.OpEndText:
 		// Correctly handling the end text operator inside a regex is tricky,
 		// so in this case we fallback to the regex engine.
-		return nil, false
+		return nil, nil, false
 	case syntax.OpLiteral:
-		return []string{base + string(re.Rune)}, isCaseSensitive(re)
+		return []string{base + string(re.Rune)}, nil, isCaseSensitive(re)
 	case syntax.OpEmptyMatch:
 		if base != "" {
-			return []string{base}, isCaseSensitive(re)
+			return []string{base}, nil, isCaseSensitive(re)
 		}
 	case syntax.OpAlternate:
 		return findSetMatchesFromAlternate(re, base)
@@ -158,7 +165,7 @@ func findSetMatchesInternal(re *syntax.Regexp, base string) (matches []string, c
 		return findSetMatchesFromConcat(re, base)
 	case syntax.OpCharClass:
 		if len(re.Rune)%2 != 0 {
-			return nil, false
+			return nil, nil, false
 		}
 		var matches []string
 		var totalSet int
@@ -169,7 +176,7 @@ func findSetMatchesInternal(re *syntax.Regexp, base string) (matches []string, c
 		// In some case like negation [^0-9] a lot of possibilities exists and that
 		// can create thousands of possible matches at which points we're better off using regexp.
 		if totalSet > maxSetMatches {
-			return nil, false
+			return nil, nil, false
 		}
 		for i := 0; i+1 < len(re.Rune); i += 2 {
 			lo, hi := re.Rune[i], re.Rune[i+1]
@@ -177,30 +184,40 @@ func findSetMatchesInternal(re *syntax.Regexp, base string) (matches []string, c
 				matches = append(matches, base+string(c))
 			}
 		}
-		return matches, isCaseSensitive(re)
+		return matches, nil, isCaseSensitive(re)
 	default:
-		return nil, false
+		return nil, nil, false
 	}
-	return nil, false
+	return nil, nil, false
 }
 
-func findSetMatchesFromConcat(re *syntax.Regexp, base string) (matches []string, matchesCaseSensitive bool) {
+func findSetMatchesFromConcat(re *syntax.Regexp, base string) (matches []string, prefixes []prefixMatcher, matchesCaseSensitive bool) {
 	if len(re.Sub) == 0 {
-		return nil, false
+		return nil, nil, false
 	}
 	clearCapture(re.Sub...)
 
 	matches = []string{base}
 
 	for i := 0; i < len(re.Sub); i++ {
-		var newMatches []string
+		// An OpStar makes the matches so far into prefixes.
+		if i > 0 && re.Sub[i].Op == syntax.OpStar && len(matches) > 0 {
+			prefixes = make([]prefixMatcher, 0, len(matches))
+			for _, prefix := range matches {
+				right := stringMatcherFromRegexpInternal(re.Sub[i])
+				prefixes = append(prefixes, newLiteralPrefixStringMatcher(prefix, matchesCaseSensitive, right))
+			}
+			return []string{}, prefixes, matchesCaseSensitive
+		}
+
+		newMatches := []string{}
 		for j, b := range matches {
-			m, caseSensitive := findSetMatchesInternal(re.Sub[i], b)
+			m, p, caseSensitive := findSetMatchesInternal(re.Sub[i], b)
 			if m == nil {
-				return nil, false
+				return nil, nil, false
 			}
 			if tooManyMatches(newMatches, m...) {
-				return nil, false
+				return nil, nil, false
 			}
 
 			// All matches must have the same case sensitivity. If it's the first set of matches
@@ -210,25 +227,29 @@ func findSetMatchesFromConcat(re *syntax.Regexp, base string) (matches []string,
 				matchesCaseSensitive = caseSensitive
 			}
 			if matchesCaseSensitive != caseSensitive {
-				return nil, false
+				return nil, nil, false
 			}
 
 			newMatches = append(newMatches, m...)
+			if i == len(re.Sub)-1 && len(p) > 0 {
+				prefixes = append(prefixes, p...)
+			}
 		}
 		matches = newMatches
 	}
 
-	return matches, matchesCaseSensitive
+	return matches, prefixes, matchesCaseSensitive
 }
 
-func findSetMatchesFromAlternate(re *syntax.Regexp, base string) (matches []string, matchesCaseSensitive bool) {
+func findSetMatchesFromAlternate(re *syntax.Regexp, base string) (matches []string, prefixes []prefixMatcher, matchesCaseSensitive bool) {
+	matches = []string{}
 	for i, sub := range re.Sub {
-		found, caseSensitive := findSetMatchesInternal(sub, base)
+		found, foundPrefixes, caseSensitive := findSetMatchesInternal(sub, base)
 		if found == nil {
-			return nil, false
+			return nil, nil, false
 		}
 		if tooManyMatches(matches, found...) {
-			return nil, false
+			return nil, nil, false
 		}
 
 		// All matches must have the same case sensitivity. If it's the first set of matches
@@ -238,13 +259,14 @@ func findSetMatchesFromAlternate(re *syntax.Regexp, base string) (matches []stri
 			matchesCaseSensitive = caseSensitive
 		}
 		if matchesCaseSensitive != caseSensitive {
-			return nil, false
+			return nil, nil, false
 		}
 
 		matches = append(matches, found...)
+		prefixes = append(prefixes, foundPrefixes...)
 	}
 
-	return matches, matchesCaseSensitive
+	return matches, prefixes, matchesCaseSensitive
 }
 
 // clearCapture removes capture operation as they are not used for matching.
@@ -406,6 +428,11 @@ type StringMatcher interface {
 	Matches(s string) bool
 }
 
+type prefixMatcher interface {
+	StringMatcher
+	Prefix() string
+}
+
 // stringMatcherFromRegexp attempts to replace a common regexp with a string matcher.
 // It returns nil if the regexp is not supported.
 func stringMatcherFromRegexp(re *syntax.Regexp) StringMatcher {
@@ -503,7 +530,11 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 			re.Sub = re.Sub[:len(re.Sub)-1]
 		}
 
-		matches, matchesCaseSensitive := findSetMatchesInternal(re, "")
+		matches, prefixes, matchesCaseSensitive := findSetMatchesInternal(re, "")
+
+		if left == nil && right == nil && len(matches) == 0 && len(prefixes) > minEqualMultiStringMatcherMapThreshold {
+			return newMatcherFromPrefixMatchers(matchesCaseSensitive, prefixes)
+		}
 
 		if len(matches) == 0 && len(re.Sub) == 2 {
 			// We have not find fixed set matches. We look for other known cases that
@@ -544,6 +575,9 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 					s:             match,
 					caseSensitive: matchesCaseSensitive,
 				})
+			}
+			for _, prefix := range prefixes {
+				or = append(or, prefix)
 			}
 			return orStringMatcher(or)
 
@@ -627,7 +661,7 @@ func (m *containsStringMatcher) Matches(s string) bool {
 	return false
 }
 
-func newLiteralPrefixStringMatcher(prefix string, prefixCaseSensitive bool, right StringMatcher) StringMatcher {
+func newLiteralPrefixStringMatcher(prefix string, prefixCaseSensitive bool, right StringMatcher) prefixMatcher {
 	if prefixCaseSensitive {
 		return &literalPrefixSensitiveStringMatcher{
 			prefix: prefix,
@@ -658,6 +692,10 @@ func (m *literalPrefixSensitiveStringMatcher) Matches(s string) bool {
 	return m.right.Matches(s[len(m.prefix):])
 }
 
+func (m *literalPrefixSensitiveStringMatcher) Prefix() string {
+	return m.prefix
+}
+
 // literalPrefixInsensitiveStringMatcher matches a string with the given literal case-insensitive prefix and right side matcher.
 type literalPrefixInsensitiveStringMatcher struct {
 	prefix string
@@ -673,6 +711,10 @@ func (m *literalPrefixInsensitiveStringMatcher) Matches(s string) bool {
 
 	// Ensure the right side matches.
 	return m.right.Matches(s[len(m.prefix):])
+}
+
+func (m *literalPrefixInsensitiveStringMatcher) Prefix() string {
+	return m.prefix
 }
 
 // literalSuffixStringMatcher matches a string with the given literal suffix and left side matcher.
@@ -727,6 +769,18 @@ func (m *equalStringMatcher) Matches(s string) bool {
 		return m.s == s
 	}
 	return strings.EqualFold(m.s, s)
+}
+
+func newMatcherFromPrefixMatchers(caseSensitive bool, matchers []prefixMatcher) StringMatcher {
+	minPrefixLength := math.MaxInt
+	for _, m := range matchers {
+		minPrefixLength = min(minPrefixLength, len(m.Prefix()))
+	}
+	multiMatcher := newEqualMultiStringMatcher(caseSensitive, 0, len(matchers), minPrefixLength)
+	for _, m := range matchers {
+		multiMatcher.addPrefix(m.Prefix(), caseSensitive, m)
+	}
+	return multiMatcher
 }
 
 type multiStringMatcherBuilder interface {
