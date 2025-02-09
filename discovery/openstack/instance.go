@@ -20,12 +20,12 @@ import (
 	"net"
 	"strconv"
 
-	"github.com/gophercloud/gophercloud"
-	"github.com/gophercloud/gophercloud/openstack"
-	"github.com/gophercloud/gophercloud/openstack/compute/v2/servers"
-	"github.com/gophercloud/gophercloud/openstack/networking/v2/extensions/layer3/floatingips"
-	"github.com/gophercloud/gophercloud/openstack/networking/v2/ports"
-	"github.com/gophercloud/gophercloud/pagination"
+	"github.com/gophercloud/gophercloud/v2"
+	"github.com/gophercloud/gophercloud/v2/openstack"
+	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/floatingips"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/ports"
+	"github.com/gophercloud/gophercloud/v2/pagination"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 
@@ -78,8 +78,7 @@ type floatingIPKey struct {
 }
 
 func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	i.provider.Context = ctx
-	err := openstack.Authenticate(i.provider, *i.authOpts)
+	err := openstack.Authenticate(ctx, i.provider, *i.authOpts)
 	if err != nil {
 		return nil, fmt.Errorf("could not authenticate to OpenStack: %w", err)
 	}
@@ -100,7 +99,7 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 
 	// OpenStack API reference
 	// https://docs.openstack.org/api-ref/network/v2/index.html#list-ports
-	portPages, err := ports.List(networkClient, ports.ListOpts{}).AllPages()
+	portPages, err := ports.List(networkClient, ports.ListOpts{}).AllPages(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list all ports: %w", err)
 	}
@@ -120,7 +119,7 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 	pagerFIP := floatingips.List(networkClient, floatingips.ListOpts{})
 	floatingIPList := make(map[floatingIPKey]string)
 	floatingIPPresent := make(map[string]struct{})
-	err = pagerFIP.EachPage(func(page pagination.Page) (bool, error) {
+	err = pagerFIP.EachPage(ctx, func(ctx context.Context, page pagination.Page) (bool, error) {
 		result, err := floatingips.ExtractFloatingIPs(page)
 		if err != nil {
 			return false, fmt.Errorf("could not extract floatingips: %w", err)
@@ -161,7 +160,7 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 	tg := &targetgroup.Group{
 		Source: "OS_" + i.region,
 	}
-	err = pager.EachPage(func(page pagination.Page) (bool, error) {
+	err = pager.EachPage(ctx, func(ctx context.Context, page pagination.Page) (bool, error) {
 		if ctx.Err() != nil {
 			return false, fmt.Errorf("could not extract instances: %w", ctx.Err())
 		}

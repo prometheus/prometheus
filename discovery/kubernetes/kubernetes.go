@@ -59,14 +59,10 @@ const (
 	presentValue    = model.LabelValue("true")
 )
 
-var (
-	// Http header.
-	userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
-	// DefaultSDConfig is the default Kubernetes SD configuration.
-	DefaultSDConfig = SDConfig{
-		HTTPClientConfig: config.DefaultHTTPClientConfig,
-	}
-)
+// DefaultSDConfig is the default Kubernetes SD configuration.
+var DefaultSDConfig = SDConfig{
+	HTTPClientConfig: config.DefaultHTTPClientConfig,
+}
 
 func init() {
 	discovery.RegisterConfig(&SDConfig{})
@@ -336,7 +332,7 @@ func New(l *slog.Logger, metrics discovery.DiscovererMetrics, conf *SDConfig) (*
 		}
 	}
 
-	kcfg.UserAgent = userAgent
+	kcfg.UserAgent = version.PrometheusUserAgent()
 	kcfg.ContentType = "application/vnd.kubernetes.protobuf"
 
 	c, err := kubernetes.NewForConfig(kcfg)

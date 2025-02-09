@@ -132,7 +132,7 @@ func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.Discove
 			Transport: rt,
 			Timeout:   time.Duration(conf.RefreshInterval),
 		},
-		godo.SetUserAgent(fmt.Sprintf("Prometheus/%s", version.Version)),
+		godo.SetUserAgent(version.PrometheusUserAgent()),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error setting up digital ocean agent: %w", err)

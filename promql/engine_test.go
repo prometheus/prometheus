@@ -17,8 +17,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -38,6 +39,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/prometheus/prometheus/util/logging"
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -1898,6 +1900,15 @@ func TestSubquerySelector(t *testing.T) {
 					},
 					Start: time.Unix(35, 0),
 				},
+				{
+					Query: "metric[0:10s]",
+					Result: promql.Result{
+						nil,
+						promql.Matrix{},
+						nil,
+					},
+					Start: time.Unix(10, 0),
+				},
 			},
 		},
 		{
@@ -2147,40 +2158,17 @@ func TestSubquerySelector(t *testing.T) {
 	}
 }
 
-type FakeQueryLogger struct {
-	closed bool
-	logs   []interface{}
-	attrs  []any
-}
+func getLogLines(t *testing.T, name string) []string {
+	content, err := os.ReadFile(name)
+	require.NoError(t, err)
 
-func NewFakeQueryLogger() *FakeQueryLogger {
-	return &FakeQueryLogger{
-		closed: false,
-		logs:   make([]interface{}, 0),
-		attrs:  make([]any, 0),
+	lines := strings.Split(string(content), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if lines[i] == "" {
+			lines = append(lines[:i], lines[i+1:]...)
+		}
 	}
-}
-
-// It implements the promql.QueryLogger interface.
-func (f *FakeQueryLogger) Close() error {
-	f.closed = true
-	return nil
-}
-
-// It implements the promql.QueryLogger interface.
-func (f *FakeQueryLogger) Log(ctx context.Context, level slog.Level, msg string, args ...any) {
-	// Test usage only really cares about existence of keyvals passed in
-	// via args, just append in the log message before handling the
-	// provided args and any embedded kvs added via `.With()` on f.attrs.
-	log := append([]any{msg}, args...)
-	log = append(log, f.attrs...)
-	f.attrs = f.attrs[:0]
-	f.logs = append(f.logs, log...)
-}
-
-// It implements the promql.QueryLogger interface.
-func (f *FakeQueryLogger) With(args ...any) {
-	f.attrs = append(f.attrs, args...)
+	return lines
 }
 
 func TestQueryLogger_basic(t *testing.T) {
@@ -2205,32 +2193,45 @@ func TestQueryLogger_basic(t *testing.T) {
 	// promql.Query works without query log initialized.
 	queryExec()
 
-	f1 := NewFakeQueryLogger()
+	tmpDir := t.TempDir()
+	ql1File := filepath.Join(tmpDir, "query1.log")
+	f1, err := logging.NewJSONFileLogger(ql1File)
+	require.NoError(t, err)
+
 	engine.SetQueryLogger(f1)
 	queryExec()
-	require.Contains(t, f1.logs, `params`)
-	require.Contains(t, f1.logs, map[string]interface{}{"query": "test statement"})
+	logLines := getLogLines(t, ql1File)
+	require.Contains(t, logLines[0], "params", map[string]interface{}{"query": "test statement"})
+	require.Len(t, logLines, 1)
 
-	l := len(f1.logs)
+	l := len(logLines)
 	queryExec()
-	require.Len(t, f1.logs, 2*l)
+	logLines = getLogLines(t, ql1File)
+	l2 := len(logLines)
+	require.Equal(t, l2, 2*l)
 
-	// Test that we close the query logger when unsetting it.
-	require.False(t, f1.closed, "expected f1 to be open, got closed")
+	// Test that we close the query logger when unsetting it. The following
+	// attempt to close the file should error.
 	engine.SetQueryLogger(nil)
-	require.True(t, f1.closed, "expected f1 to be closed, got open")
+	err = f1.Close()
+	require.ErrorContains(t, err, "file already closed", "expected f1 to be closed, got open")
 	queryExec()
 
 	// Test that we close the query logger when swapping.
-	f2 := NewFakeQueryLogger()
-	f3 := NewFakeQueryLogger()
+	ql2File := filepath.Join(tmpDir, "query2.log")
+	f2, err := logging.NewJSONFileLogger(ql2File)
+	require.NoError(t, err)
+	ql3File := filepath.Join(tmpDir, "query3.log")
+	f3, err := logging.NewJSONFileLogger(ql3File)
+	require.NoError(t, err)
 	engine.SetQueryLogger(f2)
-	require.False(t, f2.closed, "expected f2 to be open, got closed")
 	queryExec()
 	engine.SetQueryLogger(f3)
-	require.True(t, f2.closed, "expected f2 to be closed, got open")
-	require.False(t, f3.closed, "expected f3 to be open, got closed")
+	err = f2.Close()
+	require.ErrorContains(t, err, "file already closed", "expected f2 to be closed, got open")
 	queryExec()
+	err = f3.Close()
+	require.NoError(t, err)
 }
 
 func TestQueryLogger_fields(t *testing.T) {
@@ -2242,7 +2243,14 @@ func TestQueryLogger_fields(t *testing.T) {
 	}
 	engine := promqltest.NewTestEngineWithOpts(t, opts)
 
-	f1 := NewFakeQueryLogger()
+	tmpDir := t.TempDir()
+	ql1File := filepath.Join(tmpDir, "query1.log")
+	f1, err := logging.NewJSONFileLogger(ql1File)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, f1.Close())
+	})
+
 	engine.SetQueryLogger(f1)
 
 	ctx, cancelCtx := context.WithCancel(context.Background())
@@ -2255,8 +2263,8 @@ func TestQueryLogger_fields(t *testing.T) {
 	res := query.Exec(ctx)
 	require.NoError(t, res.Err)
 
-	require.Contains(t, f1.logs, `foo`)
-	require.Contains(t, f1.logs, `bar`)
+	logLines := getLogLines(t, ql1File)
+	require.Contains(t, logLines[0], "foo", "bar")
 }
 
 func TestQueryLogger_error(t *testing.T) {
@@ -2268,7 +2276,14 @@ func TestQueryLogger_error(t *testing.T) {
 	}
 	engine := promqltest.NewTestEngineWithOpts(t, opts)
 
-	f1 := NewFakeQueryLogger()
+	tmpDir := t.TempDir()
+	ql1File := filepath.Join(tmpDir, "query1.log")
+	f1, err := logging.NewJSONFileLogger(ql1File)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, f1.Close())
+	})
+
 	engine.SetQueryLogger(f1)
 
 	ctx, cancelCtx := context.WithCancel(context.Background())
@@ -2282,10 +2297,9 @@ func TestQueryLogger_error(t *testing.T) {
 	res := query.Exec(ctx)
 	require.Error(t, res.Err, "query should have failed")
 
-	require.Contains(t, f1.logs, `params`)
-	require.Contains(t, f1.logs, map[string]interface{}{"query": "test statement"})
-	require.Contains(t, f1.logs, `error`)
-	require.Contains(t, f1.logs, testErr)
+	logLines := getLogLines(t, ql1File)
+	require.Contains(t, logLines[0], "error", testErr)
+	require.Contains(t, logLines[0], "params", map[string]interface{}{"query": "test statement"})
 }
 
 func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
@@ -3194,6 +3208,7 @@ func TestInstantQueryWithRangeVectorSelector(t *testing.T) {
 		load 1m
 			some_metric{env="1"} 0+1x4
 			some_metric{env="2"} 0+2x4
+			some_metric{env="3"} {{count:0}}+{{count:1}}x4
 			some_metric_with_stale_marker 0 1 stale 3
 	`)
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
@@ -3221,6 +3236,13 @@ func TestInstantQueryWithRangeVectorSelector(t *testing.T) {
 						{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), F: 4},
 					},
 				},
+				{
+					Metric: labels.FromStrings("__name__", "some_metric", "env", "3"),
+					Histograms: []promql.HPoint{
+						{T: timestamp.FromTime(baseT.Add(time.Minute)), H: &histogram.FloatHistogram{Count: 1, CounterResetHint: histogram.NotCounterReset}},
+						{T: timestamp.FromTime(baseT.Add(2 * time.Minute)), H: &histogram.FloatHistogram{Count: 2, CounterResetHint: histogram.NotCounterReset}},
+					},
+				},
 			},
 		},
 		"matches no series": {
@@ -3245,6 +3267,11 @@ func TestInstantQueryWithRangeVectorSelector(t *testing.T) {
 					},
 				},
 			},
+		},
+		"matches series but range is 0": {
+			expr:     "some_metric[0]",
+			ts:       baseT.Add(2 * time.Minute),
+			expected: promql.Matrix{},
 		},
 	}
 

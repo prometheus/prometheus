@@ -66,7 +66,7 @@ const (
 
 var (
 	// UserAgent represents Prometheus version to use for user agent header.
-	UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+	UserAgent = version.PrometheusUserAgent()
 
 	remoteWriteContentTypeHeaders = map[config.RemoteWriteProtoMsg]string{
 		config.RemoteWriteProtoMsgV1: appProtoContentType, // Also application/x-protobuf;proto=prometheus.WriteRequest but simplified for compatibility with 1.x spec.

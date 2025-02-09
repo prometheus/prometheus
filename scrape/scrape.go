@@ -62,6 +62,15 @@ var AlignScrapeTimestamps = true
 
 var errNameLabelMandatory = fmt.Errorf("missing metric name (%s label)", labels.MetricName)
 
+var _ FailureLogger = (*logging.JSONFileLogger)(nil)
+
+// FailureLogger is an interface that can be used to log all failed
+// scrapes.
+type FailureLogger interface {
+	slog.Handler
+	io.Closer
+}
+
 // scrapePool manages scrapes for sets of targets.
 type scrapePool struct {
 	appendable storage.Appendable
@@ -91,7 +100,7 @@ type scrapePool struct {
 
 	metrics *scrapeMetrics
 
-	scrapeFailureLogger    *logging.JSONFileLogger
+	scrapeFailureLogger    FailureLogger
 	scrapeFailureLoggerMtx sync.RWMutex
 }
 
@@ -224,11 +233,11 @@ func (sp *scrapePool) DroppedTargetsCount() int {
 	return sp.droppedTargetsCount
 }
 
-func (sp *scrapePool) SetScrapeFailureLogger(l *logging.JSONFileLogger) {
+func (sp *scrapePool) SetScrapeFailureLogger(l FailureLogger) {
 	sp.scrapeFailureLoggerMtx.Lock()
 	defer sp.scrapeFailureLoggerMtx.Unlock()
 	if l != nil {
-		l.With("job_name", sp.config.JobName)
+		l = slog.New(l).With("job_name", sp.config.JobName).Handler().(FailureLogger)
 	}
 	sp.scrapeFailureLogger = l
 
@@ -239,7 +248,7 @@ func (sp *scrapePool) SetScrapeFailureLogger(l *logging.JSONFileLogger) {
 	}
 }
 
-func (sp *scrapePool) getScrapeFailureLogger() *logging.JSONFileLogger {
+func (sp *scrapePool) getScrapeFailureLogger() FailureLogger {
 	sp.scrapeFailureLoggerMtx.RLock()
 	defer sp.scrapeFailureLoggerMtx.RUnlock()
 	return sp.scrapeFailureLogger
@@ -792,7 +801,7 @@ func acceptEncodingHeader(enableCompression bool) string {
 	return "identity"
 }
 
-var UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+var UserAgent = version.PrometheusUserAgent()
 
 func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 	if s.req == nil {
@@ -866,7 +875,7 @@ func (s *targetScraper) readResponse(ctx context.Context, resp *http.Response, w
 type loop interface {
 	run(errc chan<- error)
 	setForcedError(err error)
-	setScrapeFailureLogger(*logging.JSONFileLogger)
+	setScrapeFailureLogger(FailureLogger)
 	stop()
 	getCache() *scrapeCache
 	disableEndOfRunStalenessMarkers()
@@ -882,7 +891,7 @@ type cacheEntry struct {
 type scrapeLoop struct {
 	scraper                  scraper
 	l                        *slog.Logger
-	scrapeFailureLogger      *logging.JSONFileLogger
+	scrapeFailureLogger      FailureLogger
 	scrapeFailureLoggerMtx   sync.RWMutex
 	cache                    *scrapeCache
 	lastScrapeSize           int
@@ -1282,11 +1291,11 @@ func newScrapeLoop(ctx context.Context,
 	return sl
 }
 
-func (sl *scrapeLoop) setScrapeFailureLogger(l *logging.JSONFileLogger) {
+func (sl *scrapeLoop) setScrapeFailureLogger(l FailureLogger) {
 	sl.scrapeFailureLoggerMtx.Lock()
 	defer sl.scrapeFailureLoggerMtx.Unlock()
 	if ts, ok := sl.scraper.(fmt.Stringer); ok && l != nil {
-		l.With("target", ts.String())
+		l = slog.New(l).With("target", ts.String()).Handler().(FailureLogger)
 	}
 	sl.scrapeFailureLogger = l
 }
@@ -1436,7 +1445,7 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 		sl.l.Debug("Scrape failed", "err", scrapeErr)
 		sl.scrapeFailureLoggerMtx.RLock()
 		if sl.scrapeFailureLogger != nil {
-			sl.scrapeFailureLogger.Log(context.Background(), slog.LevelError, scrapeErr.Error())
+			slog.New(sl.scrapeFailureLogger).Error(scrapeErr.Error())
 		}
 		sl.scrapeFailureLoggerMtx.RUnlock()
 		if errc != nil {

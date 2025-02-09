@@ -1208,6 +1208,25 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_openstack_tag_<key>`: each metadata item of the instance, with any unsupported characters converted to an underscore.
 * `__meta_openstack_user_id`: the user account owning the tenant.
 
+#### `loadbalancer`
+
+The `loadbalancer` role discovers one target per Octavia loadbalancer with a 
+`PROMETHEUS` listener. The target address defaults to the VIP address
+of the load balancer.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_openstack_loadbalancer_availability_zone`: the availability zone of the OpenStack load balancer.
+* `__meta_openstack_loadbalancer_floating_ip`: the floating IP of the OpenStack load balancer.
+* `__meta_openstack_loadbalancer_id`:  the OpenStack load balancer ID.
+* `__meta_openstack_loadbalancer_name`: the OpenStack load balancer name.
+* `__meta_openstack_loadbalancer_provider`: the Octavia provider of the OpenStack load balancer.
+* `__meta_openstack_loadbalancer_operating_status`: the operating status of the OpenStack load balancer.
+* `__meta_openstack_loadbalancer_provisioning_status`: the provisioning status of the OpenStack load balancer.
+* `__meta_openstack_loadbalancer_tags`: comma separated list of the OpenStack load balancer.
+* `__meta_openstack_loadbalancer_vip`: the VIP of the OpenStack load balancer.
+* `__meta_openstack_project_id`: the project (tenant) owning this load balancer.
+
 See below for the configuration options for OpenStack discovery:
 
 ```yaml

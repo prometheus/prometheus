@@ -426,64 +426,65 @@ func TestDeleteSimple(t *testing.T) {
 		},
 	}
 
-Outer:
 	for _, c := range cases {
-		db := openTestDB(t, nil, nil)
-		defer func() {
-			require.NoError(t, db.Close())
-		}()
+		t.Run("", func(t *testing.T) {
+			db := openTestDB(t, nil, nil)
+			defer func() {
+				require.NoError(t, db.Close())
+			}()
 
-		ctx := context.Background()
-		app := db.Appender(ctx)
+			ctx := context.Background()
+			app := db.Appender(ctx)
 
-		smpls := make([]float64, numSamples)
-		for i := int64(0); i < numSamples; i++ {
-			smpls[i] = rand.Float64()
-			app.Append(0, labels.FromStrings("a", "b"), i, smpls[i])
-		}
-
-		require.NoError(t, app.Commit())
-
-		// TODO(gouthamve): Reset the tombstones somehow.
-		// Delete the ranges.
-		for _, r := range c.Intervals {
-			require.NoError(t, db.Delete(ctx, r.Mint, r.Maxt, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
-		}
-
-		// Compare the result.
-		q, err := db.Querier(0, numSamples)
-		require.NoError(t, err)
-
-		res := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
-
-		expSamples := make([]chunks.Sample, 0, len(c.remaint))
-		for _, ts := range c.remaint {
-			expSamples = append(expSamples, sample{ts, smpls[ts], nil, nil})
-		}
-
-		expss := newMockSeriesSet([]storage.Series{
-			storage.NewListSeries(labels.FromStrings("a", "b"), expSamples),
-		})
-
-		for {
-			eok, rok := expss.Next(), res.Next()
-			require.Equal(t, eok, rok)
-
-			if !eok {
-				require.Empty(t, res.Warnings())
-				continue Outer
+			smpls := make([]float64, numSamples)
+			for i := int64(0); i < numSamples; i++ {
+				smpls[i] = rand.Float64()
+				app.Append(0, labels.FromStrings("a", "b"), i, smpls[i])
 			}
-			sexp := expss.At()
-			sres := res.At()
 
-			require.Equal(t, sexp.Labels(), sres.Labels())
+			require.NoError(t, app.Commit())
 
-			smplExp, errExp := storage.ExpandSamples(sexp.Iterator(nil), nil)
-			smplRes, errRes := storage.ExpandSamples(sres.Iterator(nil), nil)
+			// TODO(gouthamve): Reset the tombstones somehow.
+			// Delete the ranges.
+			for _, r := range c.Intervals {
+				require.NoError(t, db.Delete(ctx, r.Mint, r.Maxt, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
+			}
 
-			require.Equal(t, errExp, errRes)
-			require.Equal(t, smplExp, smplRes)
-		}
+			// Compare the result.
+			q, err := db.Querier(0, numSamples)
+			require.NoError(t, err)
+
+			res := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+
+			expSamples := make([]chunks.Sample, 0, len(c.remaint))
+			for _, ts := range c.remaint {
+				expSamples = append(expSamples, sample{ts, smpls[ts], nil, nil})
+			}
+
+			expss := newMockSeriesSet([]storage.Series{
+				storage.NewListSeries(labels.FromStrings("a", "b"), expSamples),
+			})
+
+			for {
+				eok, rok := expss.Next(), res.Next()
+				require.Equal(t, eok, rok)
+
+				if !eok {
+					require.Empty(t, res.Warnings())
+					break
+				}
+				sexp := expss.At()
+				sres := res.At()
+
+				require.Equal(t, sexp.Labels(), sres.Labels())
+
+				smplExp, errExp := storage.ExpandSamples(sexp.Iterator(nil), nil)
+				smplRes, errRes := storage.ExpandSamples(sres.Iterator(nil), nil)
+
+				require.Equal(t, errExp, errRes)
+				require.Equal(t, smplExp, smplRes)
+			}
+		})
 	}
 }
 
@@ -759,64 +760,65 @@ func TestDB_SnapshotWithDelete(t *testing.T) {
 		},
 	}
 
-Outer:
 	for _, c := range cases {
-		// TODO(gouthamve): Reset the tombstones somehow.
-		// Delete the ranges.
-		for _, r := range c.intervals {
-			require.NoError(t, db.Delete(ctx, r.Mint, r.Maxt, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
-		}
-
-		// create snapshot
-		snap := t.TempDir()
-
-		require.NoError(t, db.Snapshot(snap, true))
-
-		// reopen DB from snapshot
-		newDB, err := Open(snap, nil, nil, nil, nil)
-		require.NoError(t, err)
-		defer func() { require.NoError(t, newDB.Close()) }()
-
-		// Compare the result.
-		q, err := newDB.Querier(0, numSamples)
-		require.NoError(t, err)
-		defer func() { require.NoError(t, q.Close()) }()
-
-		res := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
-
-		expSamples := make([]chunks.Sample, 0, len(c.remaint))
-		for _, ts := range c.remaint {
-			expSamples = append(expSamples, sample{ts, smpls[ts], nil, nil})
-		}
-
-		expss := newMockSeriesSet([]storage.Series{
-			storage.NewListSeries(labels.FromStrings("a", "b"), expSamples),
-		})
-
-		if len(expSamples) == 0 {
-			require.False(t, res.Next())
-			continue
-		}
-
-		for {
-			eok, rok := expss.Next(), res.Next()
-			require.Equal(t, eok, rok)
-
-			if !eok {
-				require.Empty(t, res.Warnings())
-				continue Outer
+		t.Run("", func(t *testing.T) {
+			// TODO(gouthamve): Reset the tombstones somehow.
+			// Delete the ranges.
+			for _, r := range c.intervals {
+				require.NoError(t, db.Delete(ctx, r.Mint, r.Maxt, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
 			}
-			sexp := expss.At()
-			sres := res.At()
 
-			require.Equal(t, sexp.Labels(), sres.Labels())
+			// create snapshot
+			snap := t.TempDir()
 
-			smplExp, errExp := storage.ExpandSamples(sexp.Iterator(nil), nil)
-			smplRes, errRes := storage.ExpandSamples(sres.Iterator(nil), nil)
+			require.NoError(t, db.Snapshot(snap, true))
 
-			require.Equal(t, errExp, errRes)
-			require.Equal(t, smplExp, smplRes)
-		}
+			// reopen DB from snapshot
+			newDB, err := Open(snap, nil, nil, nil, nil)
+			require.NoError(t, err)
+			defer func() { require.NoError(t, newDB.Close()) }()
+
+			// Compare the result.
+			q, err := newDB.Querier(0, numSamples)
+			require.NoError(t, err)
+			defer func() { require.NoError(t, q.Close()) }()
+
+			res := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+
+			expSamples := make([]chunks.Sample, 0, len(c.remaint))
+			for _, ts := range c.remaint {
+				expSamples = append(expSamples, sample{ts, smpls[ts], nil, nil})
+			}
+
+			expss := newMockSeriesSet([]storage.Series{
+				storage.NewListSeries(labels.FromStrings("a", "b"), expSamples),
+			})
+
+			if len(expSamples) == 0 {
+				require.False(t, res.Next())
+				return
+			}
+
+			for {
+				eok, rok := expss.Next(), res.Next()
+				require.Equal(t, eok, rok)
+
+				if !eok {
+					require.Empty(t, res.Warnings())
+					break
+				}
+				sexp := expss.At()
+				sres := res.At()
+
+				require.Equal(t, sexp.Labels(), sres.Labels())
+
+				smplExp, errExp := storage.ExpandSamples(sexp.Iterator(nil), nil)
+				smplRes, errRes := storage.ExpandSamples(sres.Iterator(nil), nil)
+
+				require.Equal(t, errExp, errRes)
+				require.Equal(t, smplExp, smplRes)
+			}
+		})
 	}
 }
 
@@ -2250,49 +2252,51 @@ func TestDB_LabelNames(t *testing.T) {
 		require.NoError(t, err)
 	}
 	for _, tst := range tests {
-		ctx := context.Background()
-		db := openTestDB(t, nil, nil)
-		defer func() {
-			require.NoError(t, db.Close())
-		}()
+		t.Run("", func(t *testing.T) {
+			ctx := context.Background()
+			db := openTestDB(t, nil, nil)
+			defer func() {
+				require.NoError(t, db.Close())
+			}()
 
-		appendSamples(db, 0, 4, tst.sampleLabels1)
+			appendSamples(db, 0, 4, tst.sampleLabels1)
 
-		// Testing head.
-		headIndexr, err := db.head.Index()
-		require.NoError(t, err)
-		labelNames, err := headIndexr.LabelNames(ctx)
-		require.NoError(t, err)
-		require.Equal(t, tst.exp1, labelNames)
-		require.NoError(t, headIndexr.Close())
-
-		// Testing disk.
-		err = db.Compact(ctx)
-		require.NoError(t, err)
-		// All blocks have same label names, hence check them individually.
-		// No need to aggregate and check.
-		for _, b := range db.Blocks() {
-			blockIndexr, err := b.Index()
+			// Testing head.
+			headIndexr, err := db.head.Index()
 			require.NoError(t, err)
-			labelNames, err = blockIndexr.LabelNames(ctx)
+			labelNames, err := headIndexr.LabelNames(ctx)
 			require.NoError(t, err)
 			require.Equal(t, tst.exp1, labelNames)
-			require.NoError(t, blockIndexr.Close())
-		}
+			require.NoError(t, headIndexr.Close())
 
-		// Adding more samples to head with new label names
-		// so that we can test (head+disk).LabelNames(ctx) (the union).
-		appendSamples(db, 5, 9, tst.sampleLabels2)
+			// Testing disk.
+			err = db.Compact(ctx)
+			require.NoError(t, err)
+			// All blocks have same label names, hence check them individually.
+			// No need to aggregate and check.
+			for _, b := range db.Blocks() {
+				blockIndexr, err := b.Index()
+				require.NoError(t, err)
+				labelNames, err = blockIndexr.LabelNames(ctx)
+				require.NoError(t, err)
+				require.Equal(t, tst.exp1, labelNames)
+				require.NoError(t, blockIndexr.Close())
+			}
 
-		// Testing DB (union).
-		q, err := db.Querier(math.MinInt64, math.MaxInt64)
-		require.NoError(t, err)
-		var ws annotations.Annotations
-		labelNames, ws, err = q.LabelNames(ctx, nil)
-		require.NoError(t, err)
-		require.Empty(t, ws)
-		require.NoError(t, q.Close())
-		require.Equal(t, tst.exp2, labelNames)
+			// Adding more samples to head with new label names
+			// so that we can test (head+disk).LabelNames(ctx) (the union).
+			appendSamples(db, 5, 9, tst.sampleLabels2)
+
+			// Testing DB (union).
+			q, err := db.Querier(math.MinInt64, math.MaxInt64)
+			require.NoError(t, err)
+			var ws annotations.Annotations
+			labelNames, ws, err = q.LabelNames(ctx, nil)
+			require.NoError(t, err)
+			require.Empty(t, ws)
+			require.NoError(t, q.Close())
+			require.Equal(t, tst.exp2, labelNames)
+		})
 	}
 }
 

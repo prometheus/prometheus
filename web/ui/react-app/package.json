@@ -11,8 +11,8 @@
     "@codemirror/state": "^6.3.3",
     "@codemirror/view": "^6.36.1",
     "@forevolve/bootstrap-dark": "^4.0.2",
-    "@fortawesome/fontawesome-svg-core": "6.5.2",
-    "@fortawesome/free-solid-svg-icons": "6.5.2",
+    "@fortawesome/fontawesome-svg-core": "6.7.2",
+    "@fortawesome/free-solid-svg-icons": "6.7.2",
     "@fortawesome/react-fontawesome": "0.2.2",
     "@lezer/common": "^1.2.3",
     "@lezer/highlight": "^1.2.1",
@@ -65,6 +65,7 @@
     "not op_mini all"
   ],
   "devDependencies": {
+    "@babel/plugin-proposal-private-property-in-object": "^7.21.11",
     "@testing-library/react-hooks": "^8.0.1",
     "@types/enzyme": "^3.10.18",
     "@types/flot": "0.0.36",
@@ -82,11 +83,11 @@
     "enzyme-to-json": "^3.6.2",
     "eslint-config-prettier": "^9.1.0",
     "eslint-config-react-app": "^7.0.1",
-    "eslint-plugin-prettier": "^4.2.1",
+    "eslint-plugin-prettier": "^5.2.1",
     "jest-canvas-mock": "^2.5.2",
     "jest-fetch-mock": "^3.0.3",
     "mutationobserver-shim": "^0.3.7",
-    "prettier": "^2.8.8",
+    "prettier": "^3.0.0",
     "react-scripts": "^5.0.1",
     "sinon": "^19.0.2",
     "ts-jest": "^29.2.5"
