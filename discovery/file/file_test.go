@@ -16,6 +16,7 @@ package file
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -28,6 +29,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
+
+	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -42,6 +45,7 @@ const defaultWait = time.Second
 type testRunner struct {
 	*testing.T
 	dir           string
+	d             *Discovery
 	ch            chan []*targetgroup.Group
 	done, stopped chan struct{}
 	cancelSD      context.CancelFunc
@@ -71,7 +75,7 @@ func (t *testRunner) copyFile(src string) string {
 }
 
 // copyFileTo atomically copies a file with a different name to the runner's directory.
-func (t *testRunner) copyFileTo(src, name string) string {
+/* func (t *testRunner) copyFileTo(src, name string) string {
 	t.Helper()
 
 	newf, err := os.CreateTemp(t.dir, "")
@@ -87,6 +91,30 @@ func (t *testRunner) copyFileTo(src, name string) string {
 
 	dst := filepath.Join(t.dir, name)
 	err = os.Rename(newf.Name(), dst)
+	require.NoError(t, err)
+
+	return dst
+}
+*/
+
+func (t *testRunner) copyFileTo(src, name string) string {
+	t.Helper()
+
+	dst := filepath.Join(t.dir, name)
+
+	f, err := os.Open(src)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, f.Close())
+	}()
+
+	newf, err := os.Create(dst)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, newf.Close())
+	}()
+
+	_, err = io.Copy(newf, f)
 	require.NoError(t, err)
 
 	return dst
@@ -157,14 +185,15 @@ func (t *testRunner) run(files ...string) {
 		metrics := conf.NewDiscovererMetrics(reg, refreshMetrics)
 		require.NoError(t, metrics.Register())
 
-		d, err := NewDiscovery(
+		var err error
+		t.d, err = NewDiscovery(
 			conf,
 			nil,
 			metrics,
 		)
 		require.NoError(t, err)
 
-		d.Run(ctx, t.ch)
+		t.d.Run(ctx, t.ch)
 
 		metrics.Unregister()
 	}()
@@ -396,6 +425,32 @@ func TestFileUpdate(t *testing.T) {
 	ref := runner.lastReceive()
 	runner.copyFileTo("fixtures/valid2.yml", "valid.yml")
 	runner.requireUpdate(ref, valid2Tg(sdFile))
+}
+
+// TestFileUpdateInLoop ensures that as long as the file is updated
+// atomically, continuous updates should be possible.
+// This is intended for Windows, where file sharing may be restricted.
+// For more details, see: https://github.com/prometheus/prometheus/issues/12669
+func TestFileUpdateInLoop(t *testing.T) {
+	t.Parallel()
+
+	runner := newTestRunner(t)
+	sdFile := runner.copyFile("fixtures/valid.yml")
+
+	runner.run("*.yml")
+	defer runner.stop()
+
+	// Verify that we receive the initial target groups.
+	runner.requireUpdate(time.Time{}, validTg(sdFile))
+
+	for i := range 1000 {
+		suffix := ""
+		if i%2 == 1 {
+			suffix = "2"
+		}
+		runner.copyFileTo(fmt.Sprintf("fixtures/valid%s.yml", suffix), "valid.yml")
+	}
+	require.Equal(t, float64(0), prom_testutil.ToFloat64(runner.d.metrics.fileSDReadErrorsCount))
 }
 
 func TestInvalidFileUpdate(t *testing.T) {
