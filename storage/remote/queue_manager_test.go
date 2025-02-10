@@ -555,6 +555,45 @@ func TestReshard(t *testing.T) {
 	}
 }
 
+func TestReshardWithoutStartStop(t *testing.T) {
+	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
+			size := 10
+			nSeries := 6
+			nSamples := config.DefaultQueueConfig.Capacity * size
+			samples, series := createTimeseries(nSamples, nSeries)
+
+			cfg := config.DefaultQueueConfig
+			cfg.MaxShards = 1
+
+			c := NewTestWriteClient(protoMsg)
+			m := newTestQueueManager(t, cfg, config.DefaultMetadataConfig, defaultFlushDeadline, c, protoMsg)
+			c.expectSamples(samples, series)
+			m.StoreSeries(series, 0)
+
+			m.Start()
+			defer m.Stop()
+
+			go func() {
+				for i := 0; i < len(samples); i += config.DefaultQueueConfig.Capacity {
+					sent := m.Append(samples[i : i+config.DefaultQueueConfig.Capacity])
+					require.True(t, sent, "samples not sent")
+					time.Sleep(100 * time.Millisecond)
+				}
+			}()
+
+			for i := 1; i < len(samples)/config.DefaultQueueConfig.Capacity; i++ {
+				successful := m.shards.reshard(i)
+				require.True(t, successful, "reshard not successful")
+				require.Equal(t, float64(i), client_testutil.ToFloat64(m.shards.qm.metrics.numShards), "Mismatch in num shards metric")
+				time.Sleep(100 * time.Millisecond)
+			}
+
+			c.waitForExpectedData(t, 30*time.Second)
+		})
+	}
+}
+
 func TestReshardRaceWithStop(t *testing.T) {
 	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
@@ -630,6 +669,48 @@ func TestReshardPartialBatch(t *testing.T) {
 				}
 			}
 			// We can only call stop if there was not a deadlock.
+			m.Stop()
+		})
+	}
+}
+
+func TestReshardPartialBatchWithoutStartStop(t *testing.T) {
+	for _, protoMsg := range []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2} {
+		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
+			samples, series := createTimeseries(1, 10)
+
+			c := NewTestBlockedWriteClient()
+
+			cfg := config.DefaultQueueConfig
+			mcfg := config.DefaultMetadataConfig
+			cfg.MaxShards = 1
+			batchSendDeadline := time.Millisecond
+			flushDeadline := 10 * time.Millisecond
+			cfg.BatchSendDeadline = model.Duration(batchSendDeadline)
+
+			m := newTestQueueManager(t, cfg, mcfg, flushDeadline, c, protoMsg)
+			m.StoreSeries(series, 0)
+
+			m.Start()
+
+			for i := 0; i < 100; i++ {
+				done := make(chan struct{})
+				go func() {
+					m.Append(samples)
+					time.Sleep(batchSendDeadline)
+					successful := m.shards.reshard(1)
+					require.True(t, successful, "reshard not successful")
+					require.Equal(t, 1.0, client_testutil.ToFloat64(m.shards.qm.metrics.numShards), "Mismatch in num shards metric")
+					done <- struct{}{}
+				}()
+				select {
+				case <-done:
+				case <-time.After(2 * time.Second):
+					t.Error("Deadlock between sending and stopping detected")
+					pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
+					t.FailNow()
+				}
+			}
 			m.Stop()
 		})
 	}
