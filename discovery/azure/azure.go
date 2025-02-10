@@ -458,11 +458,10 @@ func (d *Discovery) vmToLabelSet(ctx context.Context, client client, vm virtualM
 				networkInterface, err = client.getVMScaleSetVMNetworkInterfaceByID(ctx, nicID, vm.ScaleSet, vm.InstanceID)
 			}
 			if err != nil {
-				if errors.Is(err, errorNotFound) {
-					d.logger.Warn("Network interface does not exist", "name", nicID, "err", err)
-				} else {
+				if !errors.Is(err, errorNotFound) {
 					return nil, err
 				}
+				d.logger.Warn("Network interface does not exist", "name", nicID, "err", err)
 				// Get out of this routine because we cannot continue without a network interface.
 				return nil, nil
 			}
