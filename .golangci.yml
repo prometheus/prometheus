@@ -155,7 +155,6 @@ linters-settings:
       - name: unexported-return
       - name: unreachable-code
       - name: unused-parameter
-        disabled: true
       - name: var-declaration
       - name: var-naming
   testifylint:

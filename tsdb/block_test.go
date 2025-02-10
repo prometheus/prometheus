@@ -602,7 +602,7 @@ func testPostingsForLabelMatching(t *testing.T, offset storage.SeriesRef, setUp 
 		{
 			name:      "missing label",
 			labelName: "missing",
-			match: func(val string) bool {
+			match: func(_ string) bool {
 				return true
 			},
 			exp: nil,

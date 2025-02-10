@@ -43,7 +43,7 @@ func (a nopAppendable) Appender(_ context.Context) storage.Appender {
 
 type nopAppender struct{}
 
-func (a nopAppender) SetOptions(opts *storage.AppendOptions) {}
+func (a nopAppender) SetOptions(_ *storage.AppendOptions) {}
 
 func (a nopAppender) Append(storage.SeriesRef, labels.Labels, int64, float64) (storage.SeriesRef, error) {
 	return 1, nil
@@ -57,7 +57,7 @@ func (a nopAppender) AppendHistogram(storage.SeriesRef, labels.Labels, int64, *h
 	return 3, nil
 }
 
-func (a nopAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (a nopAppender) AppendHistogramCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	return 0, nil
 }
 
@@ -137,7 +137,7 @@ type collectResultAppender struct {
 	pendingMetadata      []metadataEntry
 }
 
-func (a *collectResultAppender) SetOptions(opts *storage.AppendOptions) {}
+func (a *collectResultAppender) SetOptions(_ *storage.AppendOptions) {}
 
 func (a *collectResultAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	a.mtx.Lock()
@@ -184,7 +184,7 @@ func (a *collectResultAppender) AppendHistogram(ref storage.SeriesRef, l labels.
 	return a.next.AppendHistogram(ref, l, t, h, fh)
 }
 
-func (a *collectResultAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (a *collectResultAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, _, ct int64, h *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	if h != nil {
 		return a.AppendHistogram(ref, l, ct, &histogram.Histogram{}, nil)
 	}
@@ -205,7 +205,7 @@ func (a *collectResultAppender) UpdateMetadata(ref storage.SeriesRef, l labels.L
 	return a.next.UpdateMetadata(ref, l, m)
 }
 
-func (a *collectResultAppender) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64) (storage.SeriesRef, error) {
+func (a *collectResultAppender) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labels, _, ct int64) (storage.SeriesRef, error) {
 	return a.Append(ref, l, ct, 0.0)
 }
 

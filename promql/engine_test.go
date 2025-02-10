@@ -263,7 +263,7 @@ func TestQueryError(t *testing.T) {
 	}
 	engine := promqltest.NewTestEngineWithOpts(t, opts)
 	errStorage := promql.ErrStorage{errors.New("storage error")}
-	queryable := storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
+	queryable := storage.QueryableFunc(func(_, _ int64) (storage.Querier, error) {
 		return &errQuerier{err: errStorage}, nil
 	})
 	ctx, cancelCtx := context.WithCancel(context.Background())
@@ -2290,7 +2290,7 @@ func TestQueryLogger_error(t *testing.T) {
 	ctx = promql.NewOriginContext(ctx, map[string]interface{}{"foo": "bar"})
 	defer cancelCtx()
 	testErr := errors.New("failure")
-	query := engine.NewTestQuery(func(ctx context.Context) error {
+	query := engine.NewTestQuery(func(_ context.Context) error {
 		return testErr
 	})
 

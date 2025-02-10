@@ -72,7 +72,7 @@ testmetric,test_label=test_label_value2 value=5.1234 123456789123
 `
 
 	server := httptest.NewServer(http.HandlerFunc(
-		func(w http.ResponseWriter, r *http.Request) {
+		func(_ http.ResponseWriter, r *http.Request) {
 			require.Equal(t, http.MethodPost, r.Method, "Unexpected method.")
 			require.Equal(t, "/api/v2/write", r.URL.Path, "Unexpected path.")
 			b, err := io.ReadAll(r.Body)

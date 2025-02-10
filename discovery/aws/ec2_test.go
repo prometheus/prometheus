@@ -399,7 +399,7 @@ func newMockEC2Client(ec2Data *ec2DataStore) *mockEC2Client {
 	return &client
 }
 
-func (m *mockEC2Client) DescribeAvailabilityZonesWithContext(ctx aws.Context, input *ec2.DescribeAvailabilityZonesInput, opts ...request.Option) (*ec2.DescribeAvailabilityZonesOutput, error) {
+func (m *mockEC2Client) DescribeAvailabilityZonesWithContext(_ aws.Context, _ *ec2.DescribeAvailabilityZonesInput, _ ...request.Option) (*ec2.DescribeAvailabilityZonesOutput, error) {
 	if len(m.ec2Data.azToAZID) == 0 {
 		return nil, errors.New("No AZs found")
 	}
@@ -420,7 +420,7 @@ func (m *mockEC2Client) DescribeAvailabilityZonesWithContext(ctx aws.Context, in
 	}, nil
 }
 
-func (m *mockEC2Client) DescribeInstancesPagesWithContext(ctx aws.Context, input *ec2.DescribeInstancesInput, fn func(*ec2.DescribeInstancesOutput, bool) bool, opts ...request.Option) error {
+func (m *mockEC2Client) DescribeInstancesPagesWithContext(_ aws.Context, _ *ec2.DescribeInstancesInput, fn func(*ec2.DescribeInstancesOutput, bool) bool, _ ...request.Option) error {
 	r := ec2.Reservation{}
 	r.SetInstances(m.ec2Data.instances)
 	r.SetOwnerId(m.ec2Data.ownerID)
