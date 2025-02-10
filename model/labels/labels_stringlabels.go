@@ -25,14 +25,15 @@ import (
 
 // List of labels that should be mapped to a single byte value.
 // Obviously can't have more than 256 here.
-var mappedLabels = []string{
+var mappedLabels = [256]string{
 	// Empty string, this must be present here.
 	"",
 	// These label names are always present on every time series.
-	"__name__",
-	"instance",
+	MetricName,
+	InstanceName,
 	"job",
 	// Common label names.
+	BucketLabel,
 	"code",
 	"handler",
 	"quantile",
@@ -54,6 +55,56 @@ var mappedLabels = []string{
 	"process_start_time_seconds ",
 	"process_virtual_memory_bytes",
 	"process_virtual_memory_max_bytes",
+	// client_go specific metrics
+	"go_gc_heap_frees_by_size_bytes_bucket",
+	"go_gc_heap_allocs_by_size_bytes_bucket",
+	"net_conntrack_dialer_conn_failed_total",
+	"go_sched_pauses_total_other_seconds_bucket",
+	"go_sched_pauses_total_gc_seconds_bucket",
+	"go_sched_pauses_stopping_other_seconds_bucket",
+	"go_sched_pauses_stopping_gc_seconds_bucket",
+	"go_sched_latencies_seconds_bucket",
+	"go_gc_pauses_seconds_bucket",
+	"go_gc_duration_seconds",
+	// node_exporter metrics
+	"node_cpu_seconds_total",
+	"node_scrape_collector_success",
+	"node_scrape_collector_duration_seconds",
+	"node_cpu_scaling_governor",
+	"node_cpu_guest_seconds_total",
+	"node_hwmon_temp_celsius",
+	"node_hwmon_sensor_label",
+	"node_hwmon_temp_max_celsius",
+	"node_cooling_device_max_state",
+	"node_cooling_device_cur_state",
+	"node_softnet_times_squeezed_total",
+	"node_softnet_received_rps_total",
+	"node_softnet_processed_total",
+	"node_softnet_flow_limit_count_total",
+	"node_softnet_dropped_total",
+	"node_softnet_cpu_collision_total",
+	"node_softnet_backlog_len",
+	"node_schedstat_waiting_seconds_total",
+	"node_schedstat_timeslices_total",
+	"node_schedstat_running_seconds_total",
+	"node_cpu_scaling_frequency_min_hertz",
+	"node_cpu_scaling_frequency_max_hertz",
+	"node_cpu_scaling_frequency_hertz",
+	"node_cpu_frequency_min_hertz",
+	"node_cpu_frequency_max_hertz",
+	"node_hwmon_temp_crit_celsius",
+	"node_hwmon_temp_crit_alarm_celsius",
+	"node_cpu_core_throttles_total",
+	"node_thermal_zone_temp",
+	"node_hwmon_temp_min_celsius",
+	"node_hwmon_chip_names",
+	"node_filesystem_readonly",
+	"node_filesystem_device_error",
+	"node_filesystem_size_bytes",
+	"node_filesystem_free_bytes",
+	"node_filesystem_files_free",
+	"node_filesystem_files",
+	"node_filesystem_avail_bytes",
 }
 
 // Labels is implemented by a single flat string holding name/value pairs.
@@ -99,7 +150,7 @@ func decodeString(data string, index int) (string, int) {
 }
 
 func encodeShortString(s string) (int, byte) {
-	i := slices.Index(mappedLabels, s)
+	i := slices.Index(mappedLabels[:], s)
 	if i >= 0 {
 		return 0, byte(i)
 	}
