@@ -63,7 +63,7 @@ func Create(id string, generation uint64, dir string, configs []*config.InputRel
 	return New(id, generation, configs, lsses, wals, dataStorages, numberOfShards, nil, lastAppendedSegmentIDSetter, registerer)
 }
 
-func Load(id string, generation uint64, dir string, configs []*config.InputRelabelerConfig, numberOfShards uint16, lastAppendedSegmentIDSetter LastAppendedSegmentIDSetter, registerer prometheus.Registerer) (_ *Head, corrupted bool, numberOfSegments int, err error) {
+func Load(id string, generation uint64, dir string, configs []*config.InputRelabelerConfig, numberOfShards uint16, lastAppendedSegmentIDSetter LastAppendedSegmentIDSetter, registerer prometheus.Registerer) (_ *Head, corrupted bool, numberOfSegments uint32, err error) {
 	shardLoadResults := make([]ShardLoadResult, numberOfShards)
 	wg := &sync.WaitGroup{}
 	for shardID := uint16(0); shardID < numberOfShards; shardID++ {
@@ -79,7 +79,7 @@ func Load(id string, generation uint64, dir string, configs []*config.InputRelab
 	lsses := make([]*LSS, numberOfShards)
 	wals := make([]*ShardWal, numberOfShards)
 	dataStorages := make([]*DataStorage, numberOfShards)
-	numberOfSegmentsRead := optional.Optional[int]{}
+	numberOfSegmentsRead := optional.Optional[uint32]{}
 
 	for shardID, shardLoadResult := range shardLoadResults {
 		lsses[shardID] = shardLoadResult.Lss
@@ -99,7 +99,7 @@ func Load(id string, generation uint64, dir string, configs []*config.InputRelab
 
 	var lastAppendedSegmentID *uint32
 	if !numberOfSegmentsRead.IsNil() && numberOfSegmentsRead.Value() > 0 {
-		value := uint32(numberOfSegmentsRead.Value() - 1)
+		value := numberOfSegmentsRead.Value() - 1
 		lastAppendedSegmentID = &value
 	}
 
@@ -136,7 +136,7 @@ type ShardLoadResult struct {
 	Lss              *LSS
 	DataStorage      *DataStorage
 	Wal              *ShardWal
-	NumberOfSegments int
+	NumberOfSegments uint32
 	Corrupted        bool
 	Err              error
 }
@@ -196,7 +196,7 @@ readLoop:
 		lastReadSegmentID++
 	}
 
-	result.NumberOfSegments = lastReadSegmentID + 1
+	result.NumberOfSegments = uint32(lastReadSegmentID + 1)
 	result.Wal = newShardWal(decoder.CreateEncoder(), true, shardWalFile)
 	result.Corrupted = false
 	return result
