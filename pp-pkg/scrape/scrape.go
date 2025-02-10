@@ -199,17 +199,18 @@ func newScrapePool(
 		}
 		opts.target.SetMetadataStore(cache)
 
-		// PP_CHANGES.md: override sample limit with annotation
-		limit := opts.target.SampleLimit()
-		if limit != 0 {
-			opts.metricLimits.SampleLimit = int64(limit)
-		}
-
 		targetOptions := &cppbridge.RelabelerOptions{
 			MetricLimits:             opts.metricLimits,
 			HonorLabels:              opts.honorLabels,
 			TrackTimestampsStaleness: opts.trackTimestampsStaleness,
 			HonorTimestamps:          opts.honorTimestamps,
+		}
+		// PP_CHANGES.md: override sample limit with annotation
+		limit := opts.target.SampleLimit()
+		if limit != 0 {
+			limits := *opts.metricLimits
+			limits.SampleLimit = int64(limit)
+			targetOptions.MetricLimits = &limits
 		}
 
 		opts.target.LabelsRange(func(l labels.Label) {
