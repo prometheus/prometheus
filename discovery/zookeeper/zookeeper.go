@@ -59,7 +59,7 @@ type ServersetSDConfig struct {
 }
 
 // NewDiscovererMetrics implements discovery.Config.
-func (*ServersetSDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func (*ServersetSDConfig) NewDiscovererMetrics(_ prometheus.Registerer, _ discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &discovery.NoopDiscovererMetrics{}
 }
 
@@ -101,7 +101,7 @@ type NerveSDConfig struct {
 }
 
 // NewDiscovererMetrics implements discovery.Config.
-func (*NerveSDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func (*NerveSDConfig) NewDiscovererMetrics(_ prometheus.Registerer, _ discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &discovery.NoopDiscovererMetrics{}
 }
 

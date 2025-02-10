@@ -479,7 +479,7 @@ func loadConfiguration(t testing.TB, c string) *config.Config {
 
 func noopLoop() loop {
 	return &testLoop{
-		startFunc: func(interval, timeout time.Duration, errc chan<- error) {},
+		startFunc: func(_, _ time.Duration, _ chan<- error) {},
 		stopFunc:  func() {},
 	}
 }
@@ -730,7 +730,7 @@ func setupTestServer(t *testing.T, typ string, toWrite []byte) *httptest.Server 
 	once := sync.Once{}
 
 	server := httptest.NewServer(
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			fail := true
 			once.Do(func() {
 				fail = false
@@ -972,7 +972,7 @@ func TestManagerCTZeroIngestionHistogram(t *testing.T) {
 			once := sync.Once{}
 			// Start fake HTTP target to that allow one scrape only.
 			server := httptest.NewServer(
-				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					fail := true
 					once.Do(func() {
 						fail = false

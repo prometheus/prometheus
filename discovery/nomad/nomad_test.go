@@ -76,7 +76,7 @@ func (s *NomadSDTestSuite) SetupTest(t *testing.T) {
 }
 
 func (m *SDMock) HandleServicesList() {
-	m.Mux.HandleFunc("/v1/services", func(w http.ResponseWriter, r *http.Request) {
+	m.Mux.HandleFunc("/v1/services", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("content-type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 
@@ -99,7 +99,7 @@ func (m *SDMock) HandleServicesList() {
 }
 
 func (m *SDMock) HandleServiceHashiCupsGet() {
-	m.Mux.HandleFunc("/v1/service/hashicups", func(w http.ResponseWriter, r *http.Request) {
+	m.Mux.HandleFunc("/v1/service/hashicups", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("content-type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 

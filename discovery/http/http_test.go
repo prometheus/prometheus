@@ -75,7 +75,7 @@ func TestHTTPValidRefresh(t *testing.T) {
 }
 
 func TestHTTPInvalidCode(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 	}))
 
@@ -104,7 +104,7 @@ func TestHTTPInvalidCode(t *testing.T) {
 }
 
 func TestHTTPInvalidFormat(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintln(w, "{}")
 	}))
 
@@ -212,7 +212,7 @@ func TestContentTypeRegex(t *testing.T) {
 
 func TestSourceDisappeared(t *testing.T) {
 	var stubResponse string
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintln(w, stubResponse)
 	}))

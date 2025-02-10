@@ -204,7 +204,7 @@ type Decoder struct {
 	builder labels.ScratchBuilder
 }
 
-func NewDecoder(t *labels.SymbolTable) Decoder { // FIXME remove t
+func NewDecoder(_ *labels.SymbolTable) Decoder { // FIXME remove t
 	return Decoder{builder: labels.NewScratchBuilder(0)}
 }
 

@@ -147,7 +147,7 @@ func newTestTarget(targetURL string, _ time.Duration, lbls labels.Labels) *Targe
 func TestNewHTTPBearerToken(t *testing.T) {
 	server := httptest.NewServer(
 		http.HandlerFunc(
-			func(w http.ResponseWriter, r *http.Request) {
+			func(_ http.ResponseWriter, r *http.Request) {
 				expected := "Bearer 1234"
 				received := r.Header.Get("Authorization")
 				require.Equal(t, expected, received, "Authorization header was not set correctly.")
@@ -168,7 +168,7 @@ func TestNewHTTPBearerToken(t *testing.T) {
 func TestNewHTTPBearerTokenFile(t *testing.T) {
 	server := httptest.NewServer(
 		http.HandlerFunc(
-			func(w http.ResponseWriter, r *http.Request) {
+			func(_ http.ResponseWriter, r *http.Request) {
 				expected := "Bearer 12345"
 				received := r.Header.Get("Authorization")
 				require.Equal(t, expected, received, "Authorization header was not set correctly.")
@@ -189,7 +189,7 @@ func TestNewHTTPBearerTokenFile(t *testing.T) {
 func TestNewHTTPBasicAuth(t *testing.T) {
 	server := httptest.NewServer(
 		http.HandlerFunc(
-			func(w http.ResponseWriter, r *http.Request) {
+			func(_ http.ResponseWriter, r *http.Request) {
 				username, password, ok := r.BasicAuth()
 				require.True(t, ok, "Basic authorization header was not set correctly.")
 				require.Equal(t, "user", username)
@@ -214,7 +214,7 @@ func TestNewHTTPBasicAuth(t *testing.T) {
 func TestNewHTTPCACert(t *testing.T) {
 	server := httptest.NewUnstartedServer(
 		http.HandlerFunc(
-			func(w http.ResponseWriter, r *http.Request) {
+			func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
 				w.Write([]byte{})
 			},
@@ -238,7 +238,7 @@ func TestNewHTTPCACert(t *testing.T) {
 func TestNewHTTPClientCert(t *testing.T) {
 	server := httptest.NewUnstartedServer(
 		http.HandlerFunc(
-			func(w http.ResponseWriter, r *http.Request) {
+			func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
 				w.Write([]byte{})
 			},
@@ -267,7 +267,7 @@ func TestNewHTTPClientCert(t *testing.T) {
 func TestNewHTTPWithServerName(t *testing.T) {
 	server := httptest.NewUnstartedServer(
 		http.HandlerFunc(
-			func(w http.ResponseWriter, r *http.Request) {
+			func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
 				w.Write([]byte{})
 			},
@@ -292,7 +292,7 @@ func TestNewHTTPWithServerName(t *testing.T) {
 func TestNewHTTPWithBadServerName(t *testing.T) {
 	server := httptest.NewUnstartedServer(
 		http.HandlerFunc(
-			func(w http.ResponseWriter, r *http.Request) {
+			func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
 				w.Write([]byte{})
 			},

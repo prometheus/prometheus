@@ -991,7 +991,7 @@ func optimizeEqualOrPrefixStringMatchers(input StringMatcher, threshold int) Str
 		return true
 	}
 
-	analysePrefixMatcherCallback := func(prefix string, prefixCaseSensitive bool, matcher StringMatcher) bool {
+	analysePrefixMatcherCallback := func(prefix string, prefixCaseSensitive bool, _ StringMatcher) bool {
 		// Ensure we don't have mixed case sensitivity.
 		if caseSensitiveSet && caseSensitive != prefixCaseSensitive {
 			return false
@@ -1026,7 +1026,7 @@ func optimizeEqualOrPrefixStringMatchers(input StringMatcher, threshold int) Str
 	findEqualOrPrefixStringMatchers(input, func(matcher *equalStringMatcher) bool {
 		multiMatcher.add(matcher.s)
 		return true
-	}, func(prefix string, prefixCaseSensitive bool, matcher StringMatcher) bool {
+	}, func(prefix string, _ bool, matcher StringMatcher) bool {
 		multiMatcher.addPrefix(prefix, caseSensitive, matcher)
 		return true
 	})

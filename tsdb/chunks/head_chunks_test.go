@@ -155,7 +155,7 @@ func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 	hrw = createChunkDiskMapper(t, dir)
 
 	idx := 0
-	require.NoError(t, hrw.IterateAllChunks(func(seriesRef HeadSeriesRef, chunkRef ChunkDiskMapperRef, mint, maxt int64, numSamples uint16, encoding chunkenc.Encoding, isOOO bool) error {
+	require.NoError(t, hrw.IterateAllChunks(func(seriesRef HeadSeriesRef, chunkRef ChunkDiskMapperRef, _, maxt int64, numSamples uint16, _ chunkenc.Encoding, isOOO bool) error {
 		t.Helper()
 
 		expData := expectedData[idx]
@@ -574,7 +574,7 @@ func createChunk(t *testing.T, idx int, hrw *ChunkDiskMapper) (seriesRef HeadSer
 	if rand.Intn(2) == 0 {
 		isOOO = true
 	}
-	chunkRef = hrw.WriteChunk(seriesRef, mint, maxt, chunk, isOOO, func(cbErr error) {
+	chunkRef = hrw.WriteChunk(seriesRef, mint, maxt, chunk, isOOO, func(_ error) {
 		require.NoError(t, err)
 		close(awaitCb)
 	})

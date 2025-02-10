@@ -399,14 +399,14 @@ func TestGetDatacenterShouldReturnError(t *testing.T) {
 	}{
 		{
 			// Define a handler that will return status 500.
-			handler: func(w http.ResponseWriter, r *http.Request) {
+			handler: func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
 			},
 			errMessage: "Unexpected response code: 500 ()",
 		},
 		{
 			// Define a handler that will return incorrect response.
-			handler: func(w http.ResponseWriter, r *http.Request) {
+			handler: func(w http.ResponseWriter, _ *http.Request) {
 				w.Write([]byte(`{"Config": {"Not-Datacenter": "test-dc"}}`))
 			},
 			errMessage: "invalid value '<nil>' for Config.Datacenter",

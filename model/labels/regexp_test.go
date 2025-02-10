@@ -987,7 +987,7 @@ func TestFindEqualOrPrefixStringMatchers(t *testing.T) {
 		ok = findEqualOrPrefixStringMatchers(input, func(matcher *equalStringMatcher) bool {
 			matches = append(matches, match{matcher.s, matcher.caseSensitive})
 			return true
-		}, func(prefix string, prefixCaseSensitive bool, right StringMatcher) bool {
+		}, func(prefix string, prefixCaseSensitive bool, _ StringMatcher) bool {
 			matches = append(matches, match{prefix, prefixCaseSensitive})
 			return true
 		})

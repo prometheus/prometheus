@@ -62,7 +62,7 @@ func testHeader(t *testing.T, r *http.Request, header, expected string) {
 
 // HandleVersionsSuccessfully mocks version call.
 func (m *SDMock) HandleVersionsSuccessfully() {
-	m.Mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	m.Mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintf(w, `
                         {
                                 "versions": {
@@ -90,7 +90,7 @@ func (m *SDMock) HandleVersionsSuccessfully() {
 
 // HandleAuthSuccessfully mocks auth call.
 func (m *SDMock) HandleAuthSuccessfully() {
-	m.Mux.HandleFunc("/v3/auth/tokens", func(w http.ResponseWriter, r *http.Request) {
+	m.Mux.HandleFunc("/v3/auth/tokens", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Add("X-Subject-Token", tokenID)
 
 		w.WriteHeader(http.StatusCreated)

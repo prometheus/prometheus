@@ -399,7 +399,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 				}
 			}
 
-			Checkpoint(promslog.NewNopLogger(), w, 0, 1, func(x chunks.HeadSeriesRef) bool { return true }, 0)
+			Checkpoint(promslog.NewNopLogger(), w, 0, 1, func(_ chunks.HeadSeriesRef) bool { return true }, 0)
 			w.Truncate(1)
 
 			// Write more records after checkpointing.
@@ -490,7 +490,7 @@ func TestReadCheckpoint(t *testing.T) {
 			}
 			_, err = w.NextSegmentSync()
 			require.NoError(t, err)
-			_, err = Checkpoint(promslog.NewNopLogger(), w, 30, 31, func(x chunks.HeadSeriesRef) bool { return true }, 0)
+			_, err = Checkpoint(promslog.NewNopLogger(), w, 30, 31, func(_ chunks.HeadSeriesRef) bool { return true }, 0)
 			require.NoError(t, err)
 			require.NoError(t, w.Truncate(32))
 
@@ -653,7 +653,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 				return wt.checkNumSeries() == seriesCount
 			}, 10*time.Second, 1*time.Second)
 
-			_, err = Checkpoint(promslog.NewNopLogger(), w, 2, 4, func(x chunks.HeadSeriesRef) bool { return true }, 0)
+			_, err = Checkpoint(promslog.NewNopLogger(), w, 2, 4, func(_ chunks.HeadSeriesRef) bool { return true }, 0)
 			require.NoError(t, err)
 
 			err = w.Truncate(5)

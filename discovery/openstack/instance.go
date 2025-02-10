@@ -119,7 +119,7 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 	pagerFIP := floatingips.List(networkClient, floatingips.ListOpts{})
 	floatingIPList := make(map[floatingIPKey]string)
 	floatingIPPresent := make(map[string]struct{})
-	err = pagerFIP.EachPage(ctx, func(ctx context.Context, page pagination.Page) (bool, error) {
+	err = pagerFIP.EachPage(ctx, func(_ context.Context, page pagination.Page) (bool, error) {
 		result, err := floatingips.ExtractFloatingIPs(page)
 		if err != nil {
 			return false, fmt.Errorf("could not extract floatingips: %w", err)
