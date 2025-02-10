@@ -33,6 +33,11 @@ func (h *DiscardableRotatableHead) Generation() uint64 {
 	return h.head.Generation()
 }
 
+// String serialize as string.
+func (h *DiscardableRotatableHead) String() string {
+	return h.head.String()
+}
+
 func (h *DiscardableRotatableHead) Append(
 	ctx context.Context,
 	incomingData *relabeler.IncomingData,

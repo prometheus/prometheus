@@ -269,6 +269,11 @@ func (h *Head) Generation() uint64 {
 	return h.generation
 }
 
+// String serialize as string.
+func (h *Head) String() string {
+	return fmt.Sprintf("{ id: %s, generation: %d }", h.id, h.generation)
+}
+
 // Append incoming data to head.
 func (h *Head) Append(
 	ctx context.Context,

@@ -3,6 +3,11 @@ package manager
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/prometheus/pp/go/relabeler"
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
@@ -11,10 +16,6 @@ import (
 	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 	"github.com/prometheus/prometheus/pp/go/util"
 	"github.com/prometheus/client_golang/prometheus"
-	"os"
-	"path/filepath"
-	"sync"
-	"time"
 )
 
 type ConfigSource interface {
