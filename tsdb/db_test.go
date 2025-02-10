@@ -183,7 +183,9 @@ func queryChunks(t testing.TB, q storage.ChunkQuerier, matchers ...*labels.Match
 // Ensure that blocks are held in memory in their time order
 // and not in ULID order as they are read from the directory.
 func TestDB_reloadOrder(t *testing.T) {
-	db := openTestDB(t, nil, nil)
+	db := openTestDB(t, &Options{
+		StartupMinRetentionTime: 0,
+	}, nil)
 	defer func() {
 		require.NoError(t, db.Close())
 	}()
@@ -982,7 +984,9 @@ func TestDB_e2e(t *testing.T) {
 }
 
 func TestWALFlushedOnDBClose(t *testing.T) {
-	db := openTestDB(t, nil, nil)
+	db := openTestDB(t, &Options{
+		StartupMinRetentionTime: 0,
+	}, nil)
 
 	dirDb := db.Dir()
 
@@ -996,7 +1000,7 @@ func TestWALFlushedOnDBClose(t *testing.T) {
 
 	require.NoError(t, db.Close())
 
-	db, err = Open(dirDb, nil, nil, nil, nil)
+	db, err = Open(dirDb, nil, nil, db.opts, nil)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, db.Close()) }()
 
@@ -1106,7 +1110,9 @@ func TestWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T) {
 func testWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T, numSamplesBeforeSeriesCreation, numSamplesAfterSeriesCreation int) {
 	const numSeries = 1000
 
-	db := openTestDB(t, nil, nil)
+	db := openTestDB(t, &Options{
+		StartupMinRetentionTime: 0,
+	}, nil)
 	db.DisableCompactions()
 
 	for seriesRef := 1; seriesRef <= numSeries; seriesRef++ {
@@ -1139,7 +1145,7 @@ func testWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T, numSamplesBefore
 	require.NoError(t, db.Close())
 
 	// Reopen the DB, replaying the WAL.
-	reopenDB, err := Open(db.Dir(), promslog.New(&promslog.Config{}), nil, nil, nil)
+	reopenDB, err := Open(db.Dir(), promslog.New(&promslog.Config{}), nil, db.opts, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, reopenDB.Close())
@@ -2034,7 +2040,9 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, w.Close())
 
-		db, err := Open(dir, nil, nil, nil, nil)
+		opts := DefaultOptions()
+		opts.StartupMinRetentionTime = 0
+		db, err := Open(dir, nil, nil, opts, nil)
 		require.NoError(t, err)
 		defer db.Close()
 
@@ -2080,7 +2088,9 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 
 		r := prometheus.NewRegistry()
 
-		db, err := Open(dir, nil, r, nil, nil)
+		opts := DefaultOptions()
+		opts.StartupMinRetentionTime = 0
+		db, err := Open(dir, nil, r, opts, nil)
 		require.NoError(t, err)
 		defer db.Close()
 
@@ -2360,7 +2370,9 @@ func TestBlockRanges(t *testing.T) {
 	// when a non standard block already exists.
 	firstBlockMaxT := int64(3)
 	createBlock(t, dir, genSeries(1, 1, 0, firstBlockMaxT))
-	db, err := open(dir, logger, nil, DefaultOptions(), []int64{10000}, nil)
+	opts := DefaultOptions()
+	opts.StartupMinRetentionTime = 0
+	db, err := open(dir, logger, nil, opts, []int64{10000}, nil)
 	require.NoError(t, err)
 
 	rangeToTriggerCompaction := db.compactor.(*LeveledCompactor).ranges[0]/2*3 + 1
@@ -2407,7 +2419,7 @@ func TestBlockRanges(t *testing.T) {
 	thirdBlockMaxt := secondBlockMaxt + 2
 	createBlock(t, dir, genSeries(1, 1, secondBlockMaxt+1, thirdBlockMaxt))
 
-	db, err = open(dir, logger, nil, DefaultOptions(), []int64{10000}, nil)
+	db, err = open(dir, logger, nil, db.opts, []int64{10000}, nil)
 	require.NoError(t, err)
 
 	defer db.Close()
@@ -2470,7 +2482,9 @@ func TestDBReadOnly(t *testing.T) {
 
 	// Open a normal db to use for a comparison.
 	{
-		dbWritable, err := Open(dbDir, logger, nil, nil, nil)
+		dbWritable, err := Open(dbDir, logger, nil, &Options{
+			StartupMinRetentionTime: 0,
+		}, nil)
 		require.NoError(t, err)
 		dbWritable.DisableCompactions()
 
@@ -4819,7 +4833,9 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	db := openTestDB(t, nil, nil)
+	db := openTestDB(t, &Options{
+		StartupMinRetentionTime: 0,
+	}, nil)
 	ctx := context.Background()
 
 	// Add some series so we can append metadata to them.
@@ -4880,7 +4896,7 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 
 	// Reopen the DB, replaying the WAL. The Head must have been replayed
 	// correctly in memory.
-	reopenDB, err := Open(db.Dir(), nil, nil, nil, nil)
+	reopenDB, err := Open(db.Dir(), nil, nil, db.opts, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, reopenDB.Close())
@@ -6925,6 +6941,7 @@ func testWBLAndMmapReplay(t *testing.T, scenario sampleTypeScenario) {
 	opts.OutOfOrderTimeWindow = 4 * time.Hour.Milliseconds()
 	opts.EnableNativeHistograms = true
 	opts.EnableOOONativeHistograms = true
+	opts.StartupMinRetentionTime = 0
 
 	db := openTestDB(t, opts, nil)
 	db.DisableCompactions()
@@ -7730,6 +7747,7 @@ func TestWBLCorruption(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
+	opts.StartupMinRetentionTime = 0
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
@@ -7886,6 +7904,7 @@ func testOOOMmapCorruption(t *testing.T, scenario sampleTypeScenario) {
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
 	opts.EnableNativeHistograms = true
 	opts.EnableOOONativeHistograms = true
+	opts.StartupMinRetentionTime = 0
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
@@ -8316,6 +8335,7 @@ func testNoGapAfterRestartWithOOO(t *testing.T, scenario sampleTypeScenario) {
 			opts.OutOfOrderTimeWindow = 30 * time.Minute.Milliseconds()
 			opts.EnableNativeHistograms = true
 			opts.EnableOOONativeHistograms = true
+			opts.StartupMinRetentionTime = 0
 
 			db, err := Open(dir, nil, nil, opts, nil)
 			require.NoError(t, err)
@@ -8376,6 +8396,7 @@ func testWblReplayAfterOOODisableAndRestart(t *testing.T, scenario sampleTypeSce
 	opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
 	opts.EnableNativeHistograms = true
 	opts.EnableOOONativeHistograms = true
+	opts.StartupMinRetentionTime = 0
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
