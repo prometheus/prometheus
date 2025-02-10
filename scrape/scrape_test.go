@@ -1391,7 +1391,7 @@ func TestScrapeLoopFailLegacyUnderUTF8(t *testing.T) {
 func readTextParseTestMetrics(t testing.TB) []byte {
 	t.Helper()
 
-	b, err := os.ReadFile("../model/textparse/testdata/promtestdata.txt")
+	b, err := os.ReadFile("../model/textparse/testdata/alltypes.237mfs.prom.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1459,15 +1459,24 @@ func TestPromTextToProto(t *testing.T) {
 		}
 		got = append(got, mf.GetName())
 	}
-	require.Len(t, got, 59)
+	require.Len(t, got, 237)
 	// Check a few to see if those are not dups.
-	require.Equal(t, "go_gc_duration_seconds", got[0])
-	require.Equal(t, "prometheus_evaluator_duration_seconds", got[32])
-	require.Equal(t, "prometheus_treecache_zookeeper_failures_total", got[58])
+	require.Equal(t, "go_gc_cycles_automatic_gc_cycles_total", got[0])
+	require.Equal(t, "prometheus_sd_kuma_fetch_duration_seconds", got[128])
+	require.Equal(t, "promhttp_metric_handler_requests_total", got[236])
 }
 
+// BenchmarkScrapeLoopAppend benchmarks a core append function in a scrapeLoop
+// that creates a new parser and goes through a byte slice from a single scrape.
+// Benchmark compares append function run across 2 dimensions:
+// *`data`: different sizes of metrics scraped e.g. one big gauge metric family
+//  with a thousand series and more realistic scenario with common types.
+// *`fmt`: different scrape formats which will benchmark different parsers e.g.
+//  promtext, omtext and promproto.
+//
+// Recommended CLI invocation:
 /*
-	export bench=append-v1 && go test \
+	export bench=append-v1 && go test ./scrape/... \
 		-run '^$' -bench '^BenchmarkScrapeLoopAppend' \
 		-benchtime 5s -count 6 -cpu 2 -timeout 999m \
 		| tee ${bench}.txt
@@ -1477,8 +1486,8 @@ func BenchmarkScrapeLoopAppend(b *testing.B) {
 		name         string
 		parsableText []byte
 	}{
-		{name: "1Fam1000Gauges", parsableText: makeTestGauges(1000)},        // ~33.8 KB, ~38.8 KB in proto
-		{name: "59FamsAllTypes", parsableText: readTextParseTestMetrics(b)}, // ~33.3 KB, ~13.2 KB in proto.
+		{name: "1Fam1000Gauges", parsableText: makeTestGauges(2000)},         // ~68.1 KB, ~77.9 KB in proto.
+		{name: "237FamsAllTypes", parsableText: readTextParseTestMetrics(b)}, // ~185.7 KB, ~70.6 KB in proto.
 	} {
 		b.Run(fmt.Sprintf("data=%v", data.name), func(b *testing.B) {
 			metricsProto := promTextToProto(b, data.parsableText)
