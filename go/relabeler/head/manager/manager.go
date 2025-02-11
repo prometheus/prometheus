@@ -3,6 +3,11 @@ package manager
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/prometheus/pp/go/relabeler"
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
@@ -11,10 +16,6 @@ import (
 	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 	"github.com/prometheus/prometheus/pp/go/util"
 	"github.com/prometheus/client_golang/prometheus"
-	"os"
-	"path/filepath"
-	"sync"
-	"time"
 )
 
 type ConfigSource interface {
@@ -158,6 +159,13 @@ func (m *Manager) Restore(blockDuration time.Duration) (active relabeler.Head, r
 	return active, rotated, nil
 }
 
+func isNumberOfSegmentsMismatched(record *catalog.Record, loadedSegments uint32) bool {
+	if record.LastAppendedSegmentID() == nil {
+		return loadedSegments != 0
+	}
+	return *record.LastAppendedSegmentID()+1 != loadedSegments
+}
+
 func (m *Manager) loadHead(
 	headRecord *catalog.Record,
 	inputRelabelerConfigs []*config.InputRelabelerConfig,
@@ -186,16 +194,14 @@ func (m *Manager) loadHead(
 	}
 
 	if !corrupted {
-		if headRecord.LastAppendedSegmentID() == nil {
-			if numberOfSegments != 0 {
-				corrupted = true
-				logger.Errorf("head: %s number of segments mismatch, want: 0, have: %d", headRecord.ID(), numberOfSegments)
+		switch {
+		case headRecord.Status() == catalog.StatusActive:
+			if numberOfSegments > 0 {
+				headRecord.SetLastAppendedSegmentID(uint32(numberOfSegments) - 1)
 			}
-		} else {
-			if *headRecord.LastAppendedSegmentID()+1 != uint32(numberOfSegments) {
-				corrupted = true
-				logger.Errorf("head: %s number of segments mismatch, want: %d, have: %d", headRecord.ID(), *headRecord.LastAppendedSegmentID()+1, numberOfSegments)
-			}
+		case isNumberOfSegmentsMismatched(headRecord, numberOfSegments):
+			corrupted = true
+			logger.Errorf("head: %s number of segments mismatched", headRecord.ID())
 		}
 	}
 

@@ -70,6 +70,7 @@ type Head interface {
 	Rotate() error
 	Close() error
 	Discard() error
+	String() string
 }
 
 type Distributor interface {

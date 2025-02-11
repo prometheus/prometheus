@@ -43,18 +43,29 @@ type QueryableStorage struct {
 }
 
 // NewQueryableStorage - QueryableStorage constructor.
-func NewQueryableStorage(blockWriter BlockWriter, registerer prometheus.Registerer, querierMetrics *querier.Metrics, heads ...relabeler.Head) *QueryableStorage {
+func NewQueryableStorage(
+	blockWriter BlockWriter,
+	registerer prometheus.Registerer,
+	querierMetrics *querier.Metrics,
+	heads ...relabeler.Head,
+) *QueryableStorage {
 	return NewQueryableStorageWithWriteNotifier(blockWriter, registerer, querierMetrics, noOpWriteNotifier{}, heads...)
 }
 
 // NewQueryableStorageWithWriteNotifier - QueryableStorage constructor.
-func NewQueryableStorageWithWriteNotifier(blockWriter BlockWriter, registerer prometheus.Registerer, querierMetrics *querier.Metrics, writeNotifier WriteNotifier, heads ...relabeler.Head) *QueryableStorage {
+func NewQueryableStorageWithWriteNotifier(
+	blockWriter BlockWriter,
+	registerer prometheus.Registerer,
+	querierMetrics *querier.Metrics,
+	writeNotifier WriteNotifier,
+	heads ...relabeler.Head,
+) *QueryableStorage {
 	factory := util.NewUnconflictRegisterer(registerer)
 	qs := &QueryableStorage{
 		blockWriter:   blockWriter,
 		writeNotifier: writeNotifier,
 		heads:         heads,
-		signal:        make(chan struct{}),
+		signal:        make(chan struct{}, 1),
 		closer:        util.NewCloser(),
 		headPersistenceDuration: factory.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -65,62 +76,68 @@ func NewQueryableStorageWithWriteNotifier(blockWriter BlockWriter, registerer pr
 		),
 		querierMetrics: querierMetrics,
 	}
-	go qs.loop()
 
 	return qs
+}
+
+// Run loop for converting heads.
+func (qs *QueryableStorage) Run() {
+	go qs.loop()
 }
 
 func (qs *QueryableStorage) loop() {
 	defer qs.closer.Done()
 
-	var writeFinished chan struct{}
-	writeRequested := len(qs.heads) > 0
-	closed := false
+	timer := time.NewTimer(0)
+	// skip 0 start
+	<-timer.C
 
 	for {
-		if closed && writeFinished == nil {
-			logger.Infof("QUERYABLE STORAGE: done")
-			return
-		}
-
-		if !closed && writeRequested && writeFinished == nil {
-			writeRequested = false
-			writeFinished = make(chan struct{}, 1)
-			go func() {
-				qs.write()
-				writeFinished <- struct{}{}
-			}()
+		if !qs.write() {
+			if !timer.Stop() {
+				// in the new version of go cleaning of C is not required
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			// try write after 5 minute
+			timer.Reset(5 * time.Minute)
 		}
 
 		select {
 		case <-qs.signal:
-			writeRequested = true
-		case <-writeFinished:
-			writeFinished = nil
+		case <-timer.C:
 		case <-qs.closer.Signal():
-			closed = true
+			logger.Infof("QUERYABLE STORAGE: done")
+			return
 		}
 	}
 }
 
-func (qs *QueryableStorage) write() {
+func (qs *QueryableStorage) write() bool {
 	qs.mtx.Lock()
-	var heads []relabeler.Head
-	for i := range qs.heads {
-		heads = append(heads, qs.heads[i])
+	lenHeads := len(qs.heads)
+	if lenHeads == 0 {
+		// quick exit
+		qs.mtx.Unlock()
+		return true
 	}
+	heads := make([]relabeler.Head, lenHeads)
+	copy(heads, qs.heads)
 	qs.mtx.Unlock()
 
+	successful := true
 	shouldNotify := false
-	var persisted []string
+	persisted := make([]string, 0, lenHeads)
 	for _, head := range heads {
 		start := time.Now()
 		err := head.ForEachShard(func(shard relabeler.Shard) error {
 			return qs.blockWriter.Write(relabeler.NewBlock(shard.LSS().Raw(), shard.DataStorage().Raw()))
 		})
 		if err != nil {
-			// todo: log
-			logger.Errorf("QUERYABLE STORAGE: failed to write head: %s", err.Error())
+			logger.Errorf("QUERYABLE STORAGE: failed to write head %s: %s", head.String(), err.Error())
+			successful = false
 			continue
 		}
 		qs.headPersistenceDuration.With(prometheus.Labels{
@@ -128,7 +145,7 @@ func (qs *QueryableStorage) write() {
 		}).Set(float64(time.Since(start).Milliseconds()))
 		persisted = append(persisted, head.ID())
 		shouldNotify = true
-		logger.Infof("QUERYABLE STORAGE: head { %d } persisted, duration: %v", head.Generation(), time.Since(start))
+		logger.Infof("QUERYABLE STORAGE: head %s persisted, duration: %v", head.String(), time.Since(start))
 	}
 
 	if shouldNotify {
@@ -136,18 +153,20 @@ func (qs *QueryableStorage) write() {
 	}
 
 	qs.shrink(persisted...)
+	return successful
 }
 
 // Add - Storage interface implementation.
 func (qs *QueryableStorage) Add(head relabeler.Head) {
 	qs.mtx.Lock()
 	qs.heads = append(qs.heads, head)
-	logger.Infof("QUERYABLE STORAGE: head { %d } added", head.Generation())
+	logger.Infof("QUERYABLE STORAGE: head %s added", head.String())
 	qs.mtx.Unlock()
 
 	select {
 	case qs.signal <- struct{}{}:
 	case <-qs.closer.Signal():
+	default:
 	}
 }
 
@@ -158,10 +177,8 @@ func (qs *QueryableStorage) Close() error {
 // WriteMetrics - MetricWriterTarget interface implementation.
 func (qs *QueryableStorage) WriteMetrics() {
 	qs.mtx.Lock()
-	var heads []relabeler.Head
-	for _, head := range qs.heads {
-		heads = append(heads, head)
-	}
+	heads := make([]relabeler.Head, len(qs.heads))
+	copy(heads, qs.heads)
 	qs.mtx.Unlock()
 
 	for _, head := range heads {
@@ -174,10 +191,8 @@ func (qs *QueryableStorage) WriteMetrics() {
 // Querier - storage.Queryable interface implementation.
 func (qs *QueryableStorage) Querier(mint, maxt int64) (storage.Querier, error) {
 	qs.mtx.Lock()
-	var heads []relabeler.Head
-	for _, head := range qs.heads {
-		heads = append(heads, head)
-	}
+	heads := make([]relabeler.Head, len(qs.heads))
+	copy(heads, qs.heads)
 	qs.mtx.Unlock()
 
 	var queriers []storage.Querier
@@ -218,19 +233,12 @@ func (qs *QueryableStorage) shrink(persisted ...string) {
 		if _, ok := persistedMap[head.ID()]; ok {
 			_ = head.Close()
 			_ = head.Discard()
-			logger.Infof("QUERYABLE STORAGE: head { %d } persisted, closed and discarded", head.Generation())
+			logger.Infof("QUERYABLE STORAGE: head %s persisted, closed and discarded", head.String())
 			continue
 		}
 		heads = append(heads, head)
 	}
 	qs.heads = heads
-}
-
-func refCount(value int64) int64 {
-	if value < 0 {
-		return value - PersistedHeadValue
-	}
-	return value
 }
 
 type noOpWriteNotifier struct {

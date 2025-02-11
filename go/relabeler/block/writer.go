@@ -86,7 +86,11 @@ func (w *BlockWriter) Write(block Block) error {
 
 	ts := (minT / w.blockDurationMs) * w.blockDurationMs
 	for ; ts < maxT; ts += w.blockDurationMs {
-		if err := w.write(block, ts, ts+w.blockDurationMs); err != nil {
+		endTs := ts + w.blockDurationMs
+		if endTs > maxT {
+			endTs = maxT
+		}
+		if err := w.write(block, ts, endTs); err != nil {
 			return err
 		}
 	}

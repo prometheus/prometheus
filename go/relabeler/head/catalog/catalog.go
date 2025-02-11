@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/jonboulle/clockwork"
+	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 	"io"
 	"sort"
 	"sync"
@@ -190,10 +191,13 @@ func (c *Catalog) sync() error {
 		var err error
 		err = c.log.Read(r)
 		if err != nil {
-			if !errors.Is(err, io.EOF) {
-				return fmt.Errorf("failed to read log: %w", err)
+			if errors.Is(err, io.EOF) {
+				return nil
 			}
-			return nil
+			// this could happen if log file is corrupted
+			logger.Errorf("catalog is corrupted: %v", err)
+
+			return c.compact()
 		}
 		c.records[r.id.String()] = r
 	}
