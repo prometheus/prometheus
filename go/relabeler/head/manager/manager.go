@@ -37,13 +37,14 @@ type metrics struct {
 }
 
 type Manager struct {
-	dir          string
-	clock        clockwork.Clock
-	configSource ConfigSource
-	catalog      Catalog
-	generation   uint64
-	counter      *prometheus.CounterVec
-	registerer   prometheus.Registerer
+	dir            string
+	clock          clockwork.Clock
+	configSource   ConfigSource
+	catalog        Catalog
+	generation     uint64
+	maxSegmentSize uint32
+	counter        *prometheus.CounterVec
+	registerer     prometheus.Registerer
 }
 
 type SetLastAppendedSegmentIDFn func(segmentID uint32)
@@ -52,7 +53,7 @@ func (fn SetLastAppendedSegmentIDFn) SetLastAppendedSegmentID(segmentID uint32) 
 	fn(segmentID)
 }
 
-func New(dir string, clock clockwork.Clock, configSource ConfigSource, catalog Catalog, registerer prometheus.Registerer) (*Manager, error) {
+func New(dir string, clock clockwork.Clock, configSource ConfigSource, catalog Catalog, maxSegmentSize uint32, registerer prometheus.Registerer) (*Manager, error) {
 	dirStat, err := os.Stat(dir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat dir: %w", err)
@@ -65,10 +66,11 @@ func New(dir string, clock clockwork.Clock, configSource ConfigSource, catalog C
 	factory := util.NewUnconflictRegisterer(registerer)
 
 	return &Manager{
-		dir:          dir,
-		clock:        clock,
-		configSource: configSource,
-		catalog:      catalog,
+		dir:            dir,
+		clock:          clock,
+		configSource:   configSource,
+		catalog:        catalog,
+		maxSegmentSize: maxSegmentSize,
 		counter: factory.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "prompp_head_event_count",
@@ -173,6 +175,7 @@ func (m *Manager) loadHead(
 		headDir,
 		inputRelabelerConfigs,
 		headRecord.NumberOfShards(),
+		m.maxSegmentSize,
 		SetLastAppendedSegmentIDFn(func(segmentID uint32) {
 			headRecord.SetLastAppendedSegmentID(segmentID)
 		}),
@@ -264,6 +267,7 @@ func (m *Manager) BuildWithConfig(inputRelabelerConfigs []*config.InputRelabeler
 		headDir,
 		inputRelabelerConfigs,
 		numberOfShards,
+		m.maxSegmentSize,
 		SetLastAppendedSegmentIDFn(func(segmentID uint32) {
 			headRecord.SetLastAppendedSegmentID(segmentID)
 		}),

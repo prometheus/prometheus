@@ -18,6 +18,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const maxSegmentSize uint32 = 1024
+
 type noOpLastAppendedSegmentIDSetter struct {
 }
 
@@ -48,7 +50,7 @@ func TestLoad(t *testing.T) {
 	var numberOfShards uint16 = 2
 
 	headID := "test_head_id"
-	h, err := head.Create(headID, 0, tmpDir, cfgs, numberOfShards, noOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
+	h, err := head.Create(headID, 0, tmpDir, cfgs, numberOfShards, maxSegmentSize, noOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
 	require.NoError(t, err)
 
 	ls := model.NewLabelSetBuilder().Set("__name__", "wal_metric").Set("job", "test").Build()
@@ -120,7 +122,7 @@ func TestLoad(t *testing.T) {
 	require.NoError(t, h.Finalize())
 	require.NoError(t, h.Close())
 	var corrupted bool
-	h, corrupted, _, err = head.Load(headID, 0, tmpDir, cfgs, numberOfShards, noOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
+	h, corrupted, _, err = head.Load(headID, 0, tmpDir, cfgs, numberOfShards, maxSegmentSize, noOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
 	require.NoError(t, err)
 	require.False(t, corrupted)
 
@@ -222,7 +224,7 @@ func TestLoad(t *testing.T) {
 	require.NoError(t, h.Finalize())
 	require.NoError(t, h.Close())
 
-	h, corrupted, _, err = head.Load(headID, 0, tmpDir, cfgs, numberOfShards, noOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
+	h, corrupted, _, err = head.Load(headID, 0, tmpDir, cfgs, numberOfShards, maxSegmentSize, noOpLastAppendedSegmentIDSetter{}, prometheus.DefaultRegisterer)
 	require.NoError(t, err)
 	require.False(t, corrupted)
 
