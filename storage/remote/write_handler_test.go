@@ -844,6 +844,19 @@ func requireEqual(t *testing.T, expected, actual interface{}, msgAndArgs ...inte
 		msgAndArgs...)
 }
 
+func requireContainsSample(t *testing.T, actual []mockSample, expected mockSample) {
+	t.Helper()
+
+	for _, got := range actual {
+		if labels.Equal(expected.l, got.l) && expected.t == got.t && expected.v == got.v {
+			return
+		}
+	}
+	require.Fail(t, fmt.Sprintf("Sample not found: \n"+
+		"expected: %v\n"+
+		"actual  : %v", expected, actual))
+}
+
 func (m *mockAppendable) Appender(_ context.Context) storage.Appender {
 	if m.latestSample == nil {
 		m.latestSample = map[uint64]int64{}

@@ -577,8 +577,8 @@ func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) er
 
 	converter := otlptranslator.NewPrometheusConverter()
 	annots, err := converter.FromMetrics(ctx, md, otlptranslator.Settings{
-		AddMetricSuffixes:                 true,
-		AllowUTF8:                         otlpCfg.TranslationStrategy == config.NoUTF8EscapingWithSuffixes,
+		AddMetricSuffixes:                 otlpCfg.TranslationStrategy != config.NoTranslation,
+		AllowUTF8:                         otlpCfg.TranslationStrategy != config.UnderscoreEscapingWithSuffixes,
 		PromoteResourceAttributes:         otlpCfg.PromoteResourceAttributes,
 		KeepIdentifyingResourceAttributes: otlpCfg.KeepIdentifyingResourceAttributes,
 	})
