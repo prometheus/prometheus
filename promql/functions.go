@@ -833,7 +833,7 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 				if counterResetCollision {
 					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange(), annotations.HistogramSub))
 				}
-				_, counterResetCollision, err = mean.Add(toAdd)
+				_, counterResetCollision, err = mean.Add(toAdd) // TODO(crush-on-anechka): replace with KahanAdd
 				if err != nil {
 					return mean, err
 				}
@@ -1079,8 +1079,11 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 		var annos annotations.Annotations
 		vec, err := aggrHistOverTime(matrixVal, enh, func(s Series) (*histogram.FloatHistogram, error) {
 			sum := s.Histograms[0].H.Copy()
+			var comp *histogram.FloatHistogram
+			var err error
 			for _, h := range s.Histograms[1:] {
-				_, counterResetCollision, err := sum.Add(h.H)
+				var counterResetCollision bool // TODO(crush-on-anechka): Bring counterResetCollision logic into KahanAdd after rebase
+				_, comp, err = sum.KahanAdd(h.H, comp)
 				if err != nil {
 					return sum, err
 				}
@@ -1088,7 +1091,10 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange(), annotations.HistogramAdd))
 				}
 			}
-			return sum, nil
+			if comp != nil {
+				sum, err = sum.Add(comp)
+			}
+			return sum, err
 		})
 		if err != nil {
 			metricName := firstSeries.Metric.Get(labels.MetricName)
