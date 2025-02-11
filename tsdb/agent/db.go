@@ -1026,12 +1026,11 @@ func (a *appender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.L
 		return 0, storage.ErrOutOfOrderCT
 	}
 
-	if ct > series.lastTs {
-		series.lastTs = ct
-	} else {
+	if ct <= series.lastTs {
 		// discard the sample if it's out of order.
 		return 0, storage.ErrOutOfOrderCT
 	}
+	series.lastTs = ct
 
 	switch {
 	case h != nil:
@@ -1091,12 +1090,11 @@ func (a *appender) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labels, t,
 		return 0, storage.ErrOutOfOrderSample
 	}
 
-	if ct > series.lastTs {
-		series.lastTs = ct
-	} else {
+	if ct <= series.lastTs {
 		// discard the sample if it's out of order.
 		return 0, storage.ErrOutOfOrderCT
 	}
+	series.lastTs = ct
 
 	// NOTE: always modify pendingSamples and sampleSeries together.
 	a.pendingSamples = append(a.pendingSamples, record.RefSample{

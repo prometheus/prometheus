@@ -349,11 +349,10 @@ func (tokenProvider *tokenProvider) getToken(ctx context.Context) error {
 func (tokenProvider *tokenProvider) updateRefreshTime(accessToken azcore.AccessToken) error {
 	tokenExpiryTimestamp := accessToken.ExpiresOn.UTC()
 	deltaExpirytime := time.Now().Add(time.Until(tokenExpiryTimestamp) / 2)
-	if deltaExpirytime.After(time.Now().UTC()) {
-		tokenProvider.refreshTime = deltaExpirytime
-	} else {
+	if !deltaExpirytime.After(time.Now().UTC()) {
 		return errors.New("access token expiry is less than the current time")
 	}
+	tokenProvider.refreshTime = deltaExpirytime
 	return nil
 }
 
