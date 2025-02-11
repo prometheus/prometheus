@@ -601,8 +601,8 @@ func TestDecodeWriteV2Request(t *testing.T) {
 	actual, err := DecodeWriteV2Request(bytes.NewReader(buf))
 	require.NoError(t, err)
 	v2ReqFixture = writeV2RequestFixture()
-	require.Equal(t, v2ReqFixture.Symbols, actual.Symbols)
-	require.Equal(t, v2ReqFixture.Timeseries, actual.Timeseries)
+	require.EqualExportedValues(t, v2ReqFixture.Symbols, actual.Symbols)
+	require.EqualExportedValues(t, v2ReqFixture.Timeseries, actual.Timeseries)
 }
 
 func TestStreamResponse(t *testing.T) {

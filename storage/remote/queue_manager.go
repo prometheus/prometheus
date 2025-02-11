@@ -1921,6 +1921,7 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 	var nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata int
 	for nPending, d := range batch {
 		pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
+		pendingData[nPending].Metadata = writev2.MetadataFromVTPool()
 		if d.metadata != nil {
 			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(d.metadata.Type)
 			pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Help)
@@ -1953,11 +1954,11 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			pendingData[nPending].Samples = append(pendingData[nPending].Samples, sample)
 			nPendingSamples++
 		case tExemplar:
-			pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, &writev2.Exemplar{
-				LabelsRefs: symbolTable.SymbolizeLabels(d.exemplarLabels, nil), // TODO: optimize, reuse slice
-				Value:      d.value,
-				Timestamp:  d.timestamp,
-			})
+			exemplar := writev2.ExemplarFromVTPool()
+			exemplar.LabelsRefs = symbolTable.SymbolizeLabels(d.exemplarLabels, nil) // TODO: optimize, reuse slice
+			exemplar.Value = d.value
+			exemplar.Timestamp = d.timestamp
+			pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, exemplar)
 			nPendingExemplars++
 		case tHistogram:
 			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, writev2.FromIntHistogram(d.timestamp, d.histogram))
@@ -2181,8 +2182,15 @@ func buildV2WriteRequest(logger *slog.Logger, series []*writev2.TimeSeries, labe
 	}
 	defer func() {
 		for _, ts := range timeSeries {
-			for _, sample := range ts.Samples {
-				sample.ReturnToVTPool()
+			ts.Metadata.ReturnToVTPool()
+			for _, s := range ts.Samples {
+				s.ReturnToVTPool()
+			}
+			for _, h := range ts.Histograms {
+				h.ReturnToVTPool()
+			}
+			for _, e := range ts.Exemplars {
+				e.ReturnToVTPool()
 			}
 		}
 	}()
