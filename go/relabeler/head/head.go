@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"sync/atomic"
 
 	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 
@@ -356,19 +357,19 @@ func (h *Head) incrementLastAppendedSegmentID() {
 }
 
 func (h *Head) CommitToWal() error {
-	var segmentIsWritten bool
+	var segmentIsWritten uint32
 	err := h.ForEachShard(func(shard relabeler.Shard) error {
-		if !shard.Wal().Uncommited() {
+		if !shard.Wal().Uncommitted() {
 			return nil
 		}
-		segmentIsWritten = true
+		atomic.AddUint32(&segmentIsWritten, 1)
 		return shard.Wal().Commit()
 	})
 	if err != nil {
 		return err
 	}
 
-	if segmentIsWritten {
+	if segmentIsWritten != 0 {
 		h.incrementLastAppendedSegmentID()
 	}
 
@@ -398,17 +399,17 @@ func (h *Head) NumberOfShards() uint16 {
 func (h *Head) Finalize() error {
 	// todo: wait all tasks on stop
 	return h.finalizer.Finalize(func() error {
-		var segmentIsWritten bool
+		var segmentIsWritten uint32
 		err := h.forEachShard(func(shard relabeler.Shard) error {
 			shard.DataStorage().MergeOutOfOrderChunks()
-			if shard.Wal().Uncommited() {
-				segmentIsWritten = true
+			if shard.Wal().Uncommitted() {
+				atomic.AddUint32(&segmentIsWritten, 1)
 				return shard.Wal().Commit()
 			}
 			return nil
 		})
 
-		if err == nil && segmentIsWritten {
+		if err == nil && segmentIsWritten != 0 {
 			h.incrementLastAppendedSegmentID()
 		}
 
