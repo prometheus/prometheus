@@ -5,9 +5,10 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"hash/crc32"
 	"io"
+
+	"github.com/prometheus/prometheus/pp/go/cppbridge"
 )
 
 type WriteSyncCloser interface {
@@ -114,7 +115,7 @@ func (w *ShardWal) Write(innerSeriesSlice []*cppbridge.InnerSeries) error {
 	return nil
 }
 
-func (w *ShardWal) Uncommited() bool {
+func (w *ShardWal) Uncommitted() bool {
 	return w.uncommited
 }
 

@@ -4,14 +4,15 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"github.com/prometheus/prometheus/pp/go/cppbridge"
-	"github.com/prometheus/prometheus/pp/go/relabeler/config"
-	"github.com/prometheus/prometheus/pp/go/util/optional"
-	"github.com/prometheus/client_golang/prometheus"
 	"io"
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/prometheus/prometheus/pp/go/cppbridge"
+	"github.com/prometheus/prometheus/pp/go/relabeler/config"
+	"github.com/prometheus/prometheus/pp/go/util/optional"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 const (
@@ -90,10 +91,8 @@ func Load(id string, generation uint64, dir string, configs []*config.InputRelab
 		}
 		if numberOfSegmentsRead.IsNil() {
 			numberOfSegmentsRead.Set(shardLoadResult.NumberOfSegments)
-		} else {
-			if numberOfSegmentsRead.Value() != shardLoadResult.NumberOfSegments {
-				corrupted = true
-			}
+		} else if numberOfSegmentsRead.Value() != shardLoadResult.NumberOfSegments {
+			corrupted = true
 		}
 	}
 
@@ -177,13 +176,12 @@ func (l *ShardLoader) Load() (result ShardLoadResult) {
 	decoder := cppbridge.NewHeadWalDecoder(targetLss, encoderVersion)
 	lastReadSegmentID := -1
 
-readLoop:
 	for {
 		var segment DecodedSegment
 		segment, _, err = ReadSegment(reader)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				break readLoop
+				break
 			}
 			result.Err = fmt.Errorf("failed to read segment: %w", err)
 			return result
