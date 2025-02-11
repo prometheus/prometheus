@@ -334,7 +334,7 @@ the input samples, while `limit_ratio(-0.9, ...)` returns precisely the
 remaining approximately 90% of the input samples not returned by
 `limit_ratio(0.1, ...)`.
 
-`group` and `count` do not do not interact with the sample values,
+`group` and `count` do not interact with the sample values,
 they work in the same way for float samples and histogram samples.
 
 `count_values` outputs one time series per unique sample value. Each series has
