@@ -1988,7 +1988,7 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 
 	var lset labels.Labels
 	p.Next()
-	p.Metric(&lset)
+	p.Labels(&lset)
 	hash := lset.Hash()
 
 	// Create a fake entry in the cache

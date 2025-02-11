@@ -197,9 +197,9 @@ func (p *OpenMetricsParser) Comment() []byte {
 	return p.text
 }
 
-// Metric writes the labels of the current sample into the passed labels.
+// Labels writes the labels of the current sample into the passed labels.
 // It returns the string from which the metric was parsed.
-func (p *OpenMetricsParser) Metric(l *labels.Labels) string {
+func (p *OpenMetricsParser) Labels(l *labels.Labels) {
 	// Copy the buffer to a string: this is only necessary for the return value.
 	s := string(p.series)
 
@@ -220,8 +220,6 @@ func (p *OpenMetricsParser) Metric(l *labels.Labels) string {
 
 	p.builder.Sort()
 	*l = p.builder.Labels()
-
-	return s
 }
 
 // Exemplar writes the exemplar of the current sample into the passed exemplar.

@@ -67,8 +67,7 @@ type NHCBParser struct {
 	h     *histogram.Histogram
 	fh    *histogram.FloatHistogram
 	// For Metric.
-	lset         labels.Labels
-	metricString string
+	lset labels.Labels
 	// For Type.
 	bName []byte
 	typ   model.MetricType
@@ -141,13 +140,12 @@ func (p *NHCBParser) Comment() []byte {
 	return p.parser.Comment()
 }
 
-func (p *NHCBParser) Metric(l *labels.Labels) string {
+func (p *NHCBParser) Labels(l *labels.Labels) {
 	if p.state == stateEmitting {
 		*l = p.lsetNHCB
-		return p.metricStringNHCB
+		return
 	}
 	*l = p.lset
-	return p.metricString
 }
 
 func (p *NHCBParser) Exemplar(ex *exemplar.Exemplar) bool {
@@ -200,7 +198,7 @@ func (p *NHCBParser) Next() (Entry, error) {
 		switch p.entry {
 		case EntrySeries:
 			p.bytes, p.ts, p.value = p.parser.Series()
-			p.metricString = p.parser.Metric(&p.lset)
+			p.parser.Labels(&p.lset)
 			// Check the label set to see if we can continue or need to emit the NHCB.
 			var isNHCB bool
 			if p.compareLabels() {
@@ -224,7 +222,7 @@ func (p *NHCBParser) Next() (Entry, error) {
 			return p.entry, p.err
 		case EntryHistogram:
 			p.bytes, p.ts, p.h, p.fh = p.parser.Histogram()
-			p.metricString = p.parser.Metric(&p.lset)
+			p.parser.Labels(&p.lset)
 			p.storeExponentialLabels()
 		case EntryType:
 			p.bName, p.typ = p.parser.Type()

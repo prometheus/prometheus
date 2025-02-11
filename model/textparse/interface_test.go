@@ -238,7 +238,7 @@ func testParse(t *testing.T, p Parser) (ret []parsedEntry) {
 				got.m = string(m)
 			}
 
-			p.Metric(&got.lset)
+			p.Labels(&got.lset)
 			// Parser reuses int pointer.
 			if ct := p.CreatedTimestamp(); ct != nil {
 				got.ct = int64p(*ct)

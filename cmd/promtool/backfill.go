@@ -149,7 +149,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 				_, ts, v := p.Series()
 				if ts == nil {
 					l := labels.Labels{}
-					p.Metric(&l)
+					p.Labels(&l)
 					return fmt.Errorf("expected timestamp for series %v, got none", l)
 				}
 				if *ts < t {
@@ -163,7 +163,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 				}
 
 				l := labels.Labels{}
-				p.Metric(&l)
+				p.Labels(&l)
 
 				lb.Reset(l)
 				for name, value := range customLabels {
