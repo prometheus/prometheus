@@ -31,6 +31,6 @@ eval instant at 10m metric offset (5m + 1m)
     metric{} 4
 
 # The time() function is allowed on top level.
-# Value at 10m-(1) == 9.59
+# Value at 10m-(1) == 9m59s
 eval instant at 10m metric offset (time() != bool 0 + time() == bool 0)
     metric{} 9

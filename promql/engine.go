@@ -128,7 +128,7 @@ func (e ErrTimeExprNotAFloat) Error() string {
 var (
 	// ErrTimeExprUsesStorage is returned if a time expression
 	// (timestamp/duration) calculation includes vector/range selector.
-	ErrTimeExprUsesStorage = errors.New("time expression must not use storage")
+	ErrTimeExprUsesStorage = errors.New("time expression must not query for series")
 	// ErrTimeExprDependsOnEvalTime is returned if a time expression
 	// depends on the evaluation time, which is only allowed for the top level
 	// time expressions.
@@ -567,7 +567,7 @@ func (tev timeExprVisitor) Visit(node parser.Node, path []parser.Node) (parser.V
 		if nl, ok := expr.(*parser.NumberLiteral); ok {
 			return nl.Val, nil
 		}
-		val, err := tev.ev.timeValueOf(expr)
+		val, err := tev.ev.scalarValueOf(expr)
 		if err != nil {
 			return 0, err
 		}
@@ -3988,14 +3988,16 @@ func (ev *evaluator) gatherVector(ts int64, input Matrix, output Vector, bufHelp
 	return output, bufHelpers
 }
 
-// timeValueOf calculates the scalar time value of an expression in float64.
-func (ev *evaluator) timeValueOf(e parser.Expr) (float64, error) {
+// scalarValueOf calculates the scalar value of an expression in float64.
+// Use case for this is to be able to calculate offset durations,
+// timestamp, range duration, etc. from scalar expressions.
+func (ev *evaluator) scalarValueOf(e parser.Expr) (float64, error) {
 	if e == nil {
 		return 0, nil
 	}
 
 	if ev.querier != nil {
-		panic("evaulator does not disallow querier for time expressions")
+		panic("evaulator does not allow querier for time expressions")
 	}
 
 	// Shortcut for number literals.

@@ -26,7 +26,7 @@ type Function struct {
 	// the current evaluation timestamp is. For example time().
 	EvalTimeDependent bool
 
-	// StorageDependent means that the out of the function depends on the
+	// StorageDependent means that the output of the function depends on the
 	// content of TSDB at the time. For example info().
 	StorageDependent bool
 }
