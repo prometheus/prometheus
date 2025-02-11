@@ -3170,12 +3170,13 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 }
 
 type groupedAggregation struct {
-	floatValue     float64
-	histogramValue *histogram.FloatHistogram
-	floatMean      float64
-	floatKahanC    float64 // "Compensating value" for Kahan summation.
-	groupCount     float64
-	heap           vectorByValueHeap
+	floatValue      float64
+	histogramValue  *histogram.FloatHistogram
+	histogramKahanC *histogram.FloatHistogram // Compensation histogram for Kahan summation.
+	floatMean       float64
+	floatKahanC     float64 // "Compensating value" for Kahan summation.
+	groupCount      float64
+	heap            vectorByValueHeap
 
 	// All bools together for better packing within the struct.
 	seen                   bool // Was this output groups seen in the input at this timestamp.
@@ -3287,7 +3288,9 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 					case histogram.NotCounterReset:
 						group.notCounterResetSeen = true
 					}
-					_, _, nhcbBoundsReconciled, err := group.histogramValue.Add(h)
+					var err error
+					var counterResetCollision bool // // TODO(crush-on-anechka): Bring counterResetCollision logic into KahanAdd after rebase
+					_, group.histogramKahanC, err = group.histogramValue.KahanAdd(h, group.histogramKahanC)
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
 						group.incompatibleHistograms = true
@@ -3359,8 +3362,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 					if nhcbBoundsReconciled {
 						annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(e.Expr.PositionRange(), annotations.HistogramAgg))
 					}
-
-					_, _, nhcbBoundsReconciled, err = group.histogramValue.Add(toAdd)
+					_, group.histogramKahanC, err = group.histogramValue.KahanAdd(toAdd, group.histogramKahanC) // TODO(crush-on-anechka): Bring counterResetCollision logic into KahanAdd after rebase
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
 						group.incompatibleHistograms = true
@@ -3467,6 +3469,9 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			case aggr.incompatibleHistograms:
 				continue
 			case aggr.hasHistogram:
+				if aggr.histogramKahanC != nil {
+					aggr.histogramValue, _ = aggr.histogramValue.Add(aggr.histogramKahanC)
+				}
 				aggr.histogramValue = aggr.histogramValue.Compact(0)
 			case aggr.incrementalMean:
 				aggr.floatValue = aggr.floatMean + aggr.floatKahanC
@@ -3496,6 +3501,9 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			case aggr.incompatibleHistograms:
 				continue
 			case aggr.hasHistogram:
+				if aggr.histogramKahanC != nil {
+					aggr.histogramValue, _ = aggr.histogramValue.Add(aggr.histogramKahanC)
+				}
 				aggr.histogramValue.Compact(0)
 			default:
 				aggr.floatValue += aggr.floatKahanC
