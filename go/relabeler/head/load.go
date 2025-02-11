@@ -198,7 +198,7 @@ readLoop:
 		lastReadSegmentID++
 	}
 
-	result.NumberOfSegments = lastReadSegmentID + 1
+	result.NumberOfSegments = uint32(lastReadSegmentID + 1)
 	result.Wal = newShardWal(decoder.CreateEncoder(), true, l.maxSegmentSize, shardWalFile)
 	result.Corrupted = false
 	return result

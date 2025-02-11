@@ -92,7 +92,7 @@ func NewTestHeads(dir string, inputRelabelConfigs []*config.InputRelabelerConfig
 		numberOfShards:      numberOfShards,
 	}
 
-	th.Manager, err = manager.New(dir, clock, th.ConfigSource, th.Catalog, prometheus.DefaultRegisterer)
+	th.Manager, err = manager.New(dir, clock, th.ConfigSource, th.Catalog, 0, prometheus.DefaultRegisterer)
 	if err != nil {
 		return nil, errors.Join(err, th.Close())
 	}
