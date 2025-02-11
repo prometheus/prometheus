@@ -851,8 +851,7 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 				if nhcbBoundsReconciled {
 					nhcbBoundsReconciledSeen = true
 				}
-
-				_, _, nhcbBoundsReconciled, err = mean.Add(toAdd)
+				_, _, nhcbBoundsReconciled, err = mean.Add(toAdd) // TODO(crush-on-anechka): replace with KahanAdd
 				if err != nil {
 					return mean, err
 				}
@@ -1113,9 +1112,12 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 
 			sum := s.Histograms[0].H.Copy()
 			trackCounterReset(sum)
+			var comp *histogram.FloatHistogram
+			var err error
 			for _, h := range s.Histograms[1:] {
 				trackCounterReset(h.H)
-				_, _, nhcbBoundsReconciled, err := sum.Add(h.H)
+				var nhcbBoundsReconciled bool // TODO(crush-on-anechka): Bring nhcbBoundsReconciled logic into KahanAdd after rebase
+				_, comp, err = sum.KahanAdd(h.H, comp)
 				if err != nil {
 					return sum, err
 				}
@@ -1123,7 +1125,10 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 					nhcbBoundsReconciledSeen = true
 				}
 			}
-			return sum, nil
+			if comp != nil {
+				sum, _, _, err = sum.Add(comp)
+			}
+			return sum, err
 		})
 		if err != nil {
 			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
