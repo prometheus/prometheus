@@ -96,23 +96,23 @@ func (w *ShardWal) WriteHeader() error {
 	return nil
 }
 
-func (w *ShardWal) Write(innerSeriesSlice []*cppbridge.InnerSeries) error {
+func (w *ShardWal) Write(innerSeriesSlice []*cppbridge.InnerSeries) (bool, error) {
 	if w.corrupted {
-		return fmt.Errorf("writing in corrupted wal")
+		return false, fmt.Errorf("writing in corrupted wal")
 	}
 
 	stats, err := w.encoder.Encode(innerSeriesSlice)
 	if err != nil {
-		return fmt.Errorf("failed to encode inner series: %w", err)
+		return false, fmt.Errorf("failed to encode inner series: %w", err)
 	}
 
 	w.uncommited = true
 
 	if w.maxSegmentSize > 0 && stats.Samples() >= w.maxSegmentSize {
-		return w.Commit()
+		return true, nil
 	}
 
-	return nil
+	return false, nil
 }
 
 func (w *ShardWal) Uncommitted() bool {
@@ -121,7 +121,7 @@ func (w *ShardWal) Uncommitted() bool {
 
 func (w *ShardWal) Commit() error {
 	if w.corrupted {
-		return fmt.Errorf("commiting corrupted wal")
+		return fmt.Errorf("committing corrupted wal")
 	}
 
 	if !w.uncommited {

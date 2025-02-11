@@ -315,30 +315,37 @@ func (h *Head) Append(
 
 	inputPromise.UpdateRelabeler()
 
+	var atomiclimitExhausted uint32
 	err := h.forEachShard(func(shard relabeler.Shard) error {
-		if err := shard.Wal().Write(inputPromise.ShardsInnerSeries(shard.ShardID())); err != nil {
+		limitExhausted, err := shard.Wal().Write(inputPromise.ShardsInnerSeries(shard.ShardID()))
+		if err != nil {
 			return fmt.Errorf("failed to write inner series: %w", err)
 		}
 
-		if commitToWal {
-			if err := shard.Wal().Commit(); err != nil {
-				return fmt.Errorf("failed to commit: %w", err)
-			}
+		if limitExhausted {
+			atomic.AddUint32(&atomiclimitExhausted, 1)
 		}
 
 		return nil
 	})
-
 	if err != nil {
 		return nil, cppbridge.RelabelerStats{}, fmt.Errorf("failed to write wal: %w", err)
 	}
 
-	_ = h.forEachShard(func(shard relabeler.Shard) error {
+	err = h.forEachShard(func(shard relabeler.Shard) error {
 		shard.DataStorage().AppendInnerSeriesSlice(inputPromise.ShardsInnerSeries(shard.ShardID()))
+
+		if commitToWal || atomiclimitExhausted > 0 {
+			return shard.Wal().Commit()
+		}
+
 		return nil
 	})
+	if err != nil {
+		return nil, cppbridge.RelabelerStats{}, fmt.Errorf("failed to commit wal: %w", err)
+	}
 
-	if commitToWal {
+	if commitToWal || atomiclimitExhausted > 0 {
 		h.incrementLastAppendedSegmentID()
 	}
 
