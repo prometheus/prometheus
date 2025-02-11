@@ -319,7 +319,14 @@ the input samples, including the original labels, are returned in the result
 vector. `by` and `without` are only used to bucket the input vector. Similar to
 `min` and `max`, they only operate on float samples, considering `NaN` values
 to be farthest from the top or bottom, respectively. Histogram samples in the
-input vector are ignored, flagged by an info-level annotation.
+input vector are ignored, flagged by an info-level annotation. 
+
+If used in an instant query, `topk` and `bottomk` return series ordered by
+value in descending or ascending order, respectively. If used with `by` or
+`without`, then series within each bucket are sorted by value, and series in
+the same bucket are returned consecutively, but there is no guarantee that
+buckets of series will be returned in any particular order. No sorting applies
+to range queries.
 
 `limitk` and `limit_ratio` also return a subset of the input samples, including
 the original labels in the result vector. The subset is selected in a
