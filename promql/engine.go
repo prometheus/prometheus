@@ -2495,6 +2495,11 @@ func (ev *evaluator) matrixIterSlice(
 		}
 	}
 
+	if mint == maxt {
+		// Empty range: return the empty slices.
+		return floats, histograms
+	}
+
 	soughtValueType := it.Seek(maxt)
 	if soughtValueType == chunkenc.ValNone {
 		if it.Err() != nil {

@@ -18,6 +18,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/klauspost/compress/gzip"
@@ -70,6 +71,17 @@ func TestCompressionHandler_PlainText(t *testing.T) {
 	expected := "Hello World!"
 	actual := string(contents)
 	require.Equal(t, expected, actual, "expected response with content")
+}
+
+func BenchmarkNewCompressionHandler_MaliciousAcceptEncoding(b *testing.B) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/whatever", nil)
+	req.Header.Set("Accept-Encoding", strings.Repeat(",", http.DefaultMaxHeaderBytes))
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		newCompressedResponseWriter(rec, req)
+	}
 }
 
 func TestCompressionHandler_Gzip(t *testing.T) {

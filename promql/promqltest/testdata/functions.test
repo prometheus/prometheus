@@ -466,7 +466,7 @@ eval instant at 0m label_replace(testmetric, "dst", "", "dst", ".*")
 eval_fail instant at 0m label_replace(testmetric, "dst", "value-$1", "src", "(.*")
 
 # label_replace fails when the destination label name is not a valid Prometheus label name.
-eval_fail instant at 0m label_replace(testmetric, "invalid-label-name", "", "src", "(.*)")
+eval_fail instant at 0m label_replace(testmetric, "\xff", "", "src", "(.*)")
 
 # label_replace fails when there would be duplicated identical output label sets.
 eval_fail instant at 0m label_replace(testmetric, "src", "", "", "")
@@ -499,6 +499,8 @@ eval instant at 20s timestamp(metric)
 load 5m
   testmetric{src="a",src1="b",src2="c",dst="original-destination-value"} 0
   testmetric{src="d",src1="e",src2="f",dst="original-destination-value"} 1
+  dup{label="a", this="a"} 1.0
+  dup{label="b", this="a"} 1.0
 
 # label_join joins all src values in order.
 eval instant at 0m label_join(testmetric, "dst", "-", "src", "src1", "src2")
@@ -529,6 +531,9 @@ load 5m
 eval instant at 0m label_join(testmetric1, "dst", ", ", "src", "src1", "src2")
   testmetric1{src="foo",src1="bar",src2="foobar",dst="foo, bar, foobar"} 0
   testmetric1{src="fizz",src1="buzz",src2="fizzbuzz",dst="fizz, buzz, fizzbuzz"} 1
+
+eval_fail instant at 0m label_join(dup, "label", "", "this")
+  expected_fail_message vector cannot contain metrics with the same labelset
 
 clear
 
@@ -637,6 +642,7 @@ load 5m
 	http_requests{job="app-server", instance="1", group="production"}	0+60x10
 	http_requests{job="app-server", instance="0", group="canary"}		0+70x10
 	http_requests{job="app-server", instance="1", group="canary"}		0+80x10
+	http_requests{job="app-server", instance="2", group="canary"}		{{schema:0 sum:1 count:1}}x15
 
 eval_ordered instant at 50m sort(http_requests)
 	http_requests{group="production", instance="0", job="api-server"} 100
@@ -1647,3 +1653,22 @@ load 1m
 
 eval range from 0 to 5m step 1m round(mixed_metric)
 	{} _ 1 2 3
+
+# Test scalar() with histograms.
+load 1m
+	metric{type="float", l="x"} 1
+	metric{type="float", l="y"} 2
+	metric{type="histogram", l="x"} {{schema:0 sum:1 count:1}}
+	metric{type="histogram", l="x"} {{schema:0 sum:1 count:1}}
+
+# Two floats in the vector.
+eval instant at 0m scalar(metric)
+	NaN
+
+# No floats in the vector.
+eval instant at 0m scalar({type="histogram"})
+	NaN
+
+# One float in the vector.
+eval instant at 0m scalar({l="x"})
+	1
