@@ -197,15 +197,11 @@ func (p *OpenMetricsParser) Comment() []byte {
 	return p.text
 }
 
-// Metric writes the labels of the current sample into the passed labels.
-// It returns the string from which the metric was parsed.
-func (p *OpenMetricsParser) Metric(l *labels.Labels) string {
-	// Copy the buffer to a string: this is only necessary for the return value.
-	s := string(p.series)
+func (p *OpenMetricsParser) PopulateLabelsAndName(l *labels.ScratchBuilder) {
+	s := yoloString(p.series)
 
-	p.builder.Reset()
 	metricName := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
-	p.builder.Add(labels.MetricName, metricName)
+	l.Add(labels.MetricName, metricName)
 
 	for i := 2; i < len(p.offsets); i += 4 {
 		a := p.offsets[i] - p.start
@@ -215,13 +211,8 @@ func (p *OpenMetricsParser) Metric(l *labels.Labels) string {
 		d := p.offsets[i+3] - p.start
 		value := normalizeFloatsInLabelValues(p.mtype, label, unreplace(s[c:d]))
 
-		p.builder.Add(label, value)
+		l.Add(label, value)
 	}
-
-	p.builder.Sort()
-	*l = p.builder.Labels()
-
-	return s
 }
 
 // Exemplar writes the exemplar of the current sample into the passed exemplar.

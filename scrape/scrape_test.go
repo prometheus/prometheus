@@ -1986,9 +1986,12 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 	require.NotNil(t, p)
 	require.NoError(t, warning)
 
-	var lset labels.Labels
+	builder := labels.NewScratchBuilder(15)
 	p.Next()
-	p.Metric(&lset)
+	builder.Reset()
+	p.PopulateLabelsAndName(&builder)
+	builder.Sort()
+	lset := builder.Labels()
 	hash := lset.Hash()
 
 	// Create a fake entry in the cache

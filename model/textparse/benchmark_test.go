@@ -162,16 +162,14 @@ func benchParse(b *testing.B, data []byte, parser string) {
 		b.Fatal("unknown parser", parser)
 	}
 
-	var (
-		res labels.Labels
-		e   exemplar.Exemplar
-	)
+	var e exemplar.Exemplar
 
 	b.SetBytes(int64(len(data)))
 	b.ReportAllocs()
 	b.ResetTimer()
 
 	st := labels.NewSymbolTable()
+	lsetBuilder := labels.NewScratchBuilderWithSymbolTable(st, 15)
 	for i := 0; i < b.N; i++ {
 		p := newParserFn(data, st)
 
@@ -202,8 +200,10 @@ func benchParse(b *testing.B, data []byte, parser string) {
 			default:
 				b.Fatal("not implemented entry", t)
 			}
-
-			_ = p.Metric(&res)
+			lsetBuilder.Reset()
+			p.PopulateLabelsAndName(&lsetBuilder)
+			lsetBuilder.Sort()
+			_ = lsetBuilder.Labels()
 			_ = p.CreatedTimestamp()
 			for hasExemplar := p.Exemplar(&e); hasExemplar; hasExemplar = p.Exemplar(&e) {
 			}

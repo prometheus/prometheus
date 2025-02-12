@@ -147,15 +147,14 @@ func (l *promlexer) Error(es string) {
 // PromParser parses samples from a byte slice of samples in the official
 // Prometheus text exposition format.
 type PromParser struct {
-	l       *promlexer
-	builder labels.ScratchBuilder
-	series  []byte
-	text    []byte
-	mtype   model.MetricType
-	val     float64
-	ts      int64
-	hasTS   bool
-	start   int
+	l      *promlexer
+	series []byte
+	text   []byte
+	mtype  model.MetricType
+	val    float64
+	ts     int64
+	hasTS  bool
+	start  int
 	// offsets is a list of offsets into series that describe the positions
 	// of the metric name and label names and values for this series.
 	// p.offsets[0] is the start character of the metric name.
@@ -166,10 +165,9 @@ type PromParser struct {
 }
 
 // NewPromParser returns a new parser of the byte slice.
-func NewPromParser(b []byte, st *labels.SymbolTable) Parser {
+func NewPromParser(b []byte, _ *labels.SymbolTable) Parser {
 	return &PromParser{
-		l:       &promlexer{b: append(b, '\n')},
-		builder: labels.NewScratchBuilderWithSymbolTable(st, 16),
+		l: &promlexer{b: append(b, '\n')},
 	}
 }
 
@@ -223,15 +221,11 @@ func (p *PromParser) Comment() []byte {
 	return p.text
 }
 
-// Metric writes the labels of the current sample into the passed labels.
-// It returns the string from which the metric was parsed.
-func (p *PromParser) Metric(l *labels.Labels) string {
-	// Copy the buffer to a string: this is only necessary for the return value.
-	s := string(p.series)
+func (p *PromParser) PopulateLabelsAndName(l *labels.ScratchBuilder) {
+	s := yoloString(p.series)
 
-	p.builder.Reset()
 	metricName := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
-	p.builder.Add(labels.MetricName, metricName)
+	l.Add(labels.MetricName, metricName)
 
 	for i := 2; i < len(p.offsets); i += 4 {
 		a := p.offsets[i] - p.start
@@ -241,13 +235,8 @@ func (p *PromParser) Metric(l *labels.Labels) string {
 		d := p.offsets[i+3] - p.start
 		value := normalizeFloatsInLabelValues(p.mtype, label, unreplace(s[c:d]))
 
-		p.builder.Add(label, value)
+		l.Add(label, value)
 	}
-
-	p.builder.Sort()
-	*l = p.builder.Labels()
-
-	return s
 }
 
 // Exemplar implements the Parser interface. However, since the classic

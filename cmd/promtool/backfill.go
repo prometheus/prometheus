@@ -132,6 +132,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 			ctx := context.Background()
 			app := w.Appender(ctx)
 			symbolTable := labels.NewSymbolTable() // One table per block means it won't grow too large.
+			builder := labels.NewScratchBuilderWithSymbolTable(symbolTable, 15)
 			p := textparse.NewOpenMetricsParser(input, symbolTable)
 			samplesCount := 0
 			for {
@@ -148,8 +149,10 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 
 				_, ts, v := p.Series()
 				if ts == nil {
-					l := labels.Labels{}
-					p.Metric(&l)
+					builder.Reset()
+					p.PopulateLabelsAndName(&builder)
+					builder.Sort()
+					l := builder.Labels()
 					return fmt.Errorf("expected timestamp for series %v, got none", l)
 				}
 				if *ts < t {
@@ -162,8 +165,10 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 					continue
 				}
 
-				l := labels.Labels{}
-				p.Metric(&l)
+				builder.Reset()
+				p.PopulateLabelsAndName(&builder)
+				builder.Sort()
+				l := builder.Labels()
 
 				lb.Reset(l)
 				for name, value := range customLabels {
