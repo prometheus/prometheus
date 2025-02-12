@@ -1714,7 +1714,7 @@ loop:
 			lset = ce.lset
 			hash = ce.hash
 		} else {
-			p.Metric(&lset)
+			p.Labels(&lset)
 			hash = lset.Hash()
 
 			// Hash label set as it is seen local to the target. Then add target labels

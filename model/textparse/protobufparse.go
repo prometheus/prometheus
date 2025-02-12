@@ -296,9 +296,9 @@ func (p *ProtobufParser) Comment() []byte {
 	return nil
 }
 
-// Metric writes the labels of the current sample into the passed labels.
+// Labels writes the labels of the current sample into the passed labels.
 // It returns the string from which the metric was parsed.
-func (p *ProtobufParser) Metric(l *labels.Labels) string {
+func (p *ProtobufParser) Labels(l *labels.Labels) {
 	p.builder.Reset()
 	p.builder.Add(labels.MetricName, p.getMagicName())
 
@@ -312,8 +312,6 @@ func (p *ProtobufParser) Metric(l *labels.Labels) string {
 	// Sort labels to maintain the sorted labels invariant.
 	p.builder.Sort()
 	*l = p.builder.Labels()
-
-	return p.metricBytes.String()
 }
 
 // Exemplar writes the exemplar of the current sample into the passed
