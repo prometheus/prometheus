@@ -377,7 +377,7 @@ func main() {
 		Default("false").BoolVar(&cfg.tsdb.NoLockfile)
 
 	serverOnlyFlag(a, "storage.wal-commit-interval", "Interval between force commits.").
-		Default("5s").SetValue(&cfg.WalCommitInterval)
+		Default("5000ms").SetValue(&cfg.WalCommitInterval)
 
 	// TODO: Remove in Prometheus 3.0.
 	var b bool
@@ -1372,6 +1372,7 @@ func main() {
 		// run receiver.
 		g.Add(
 			func() error {
+				<-dbOpen
 				return receiver.Run(ctxReceiver)
 			},
 			func(err error) {

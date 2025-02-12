@@ -85,6 +85,7 @@ func (cmd *cmdWALPPToBlock) Do(
 			filepath.Join(workingDir, headRecord.Dir()),
 			inputRelabelerConfig,
 			headRecord.NumberOfShards(),
+			0,
 			head.NoOpLastAppendedSegmentIDSetter{},
 			registerer,
 		)
