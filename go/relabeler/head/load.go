@@ -93,6 +93,10 @@ func Load(id string, generation uint64, dir string, configs []*config.InputRelab
 			numberOfSegmentsRead.Set(shardLoadResult.NumberOfSegments)
 		} else if numberOfSegmentsRead.Value() != shardLoadResult.NumberOfSegments {
 			corrupted = true
+			// calculating maximum number of segments (critical for remote write).
+			if numberOfSegmentsRead.Value() < shardLoadResult.NumberOfSegments {
+				numberOfSegmentsRead.Set(shardLoadResult.NumberOfSegments)
+			}
 		}
 	}
 

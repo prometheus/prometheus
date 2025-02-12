@@ -197,11 +197,16 @@ func (m *Manager) loadHead(
 	if !corrupted {
 		switch {
 		case headRecord.Status() == catalog.StatusActive:
+			// numberOfSegments here is actual number of segments.
 			if numberOfSegments > 0 {
 				headRecord.SetLastAppendedSegmentID(numberOfSegments - 1)
 			}
 		case isNumberOfSegmentsMismatched(headRecord, numberOfSegments):
 			corrupted = true
+			// numberOfSegments here is actual number of segments.
+			if numberOfSegments > 0 {
+				headRecord.SetLastAppendedSegmentID(numberOfSegments - 1)
+			}
 			logger.Errorf("head: %s number of segments mismatched", headRecord.ID())
 		}
 	}
