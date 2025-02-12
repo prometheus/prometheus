@@ -224,10 +224,8 @@ func (p *PromParser) Comment() []byte {
 }
 
 // Labels writes the labels of the current sample into the passed labels.
-// It returns the string from which the metric was parsed.
-func (p *PromParser) Labels(l *labels.Labels) {
-	// Copy the buffer to a string: this is only necessary for the return value.
-	s := string(p.series)
+func (p *PromParser) Labels(l *labels.Labels) error {
+	s := yoloString(p.series)
 
 	p.builder.Reset()
 	metricName := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
@@ -246,6 +244,7 @@ func (p *PromParser) Labels(l *labels.Labels) {
 
 	p.builder.Sort()
 	*l = p.builder.Labels()
+	return nil
 }
 
 // Exemplar implements the Parser interface. However, since the classic

@@ -881,13 +881,6 @@ type loop interface {
 	disableEndOfRunStalenessMarkers()
 }
 
-type cacheEntry struct {
-	ref      storage.SeriesRef
-	lastIter uint64
-	hash     uint64
-	lset     labels.Labels
-}
-
 type scrapeLoop struct {
 	scraper                  scraper
 	l                        *slog.Logger
@@ -938,6 +931,23 @@ type scrapeLoop struct {
 	skipOffsetting bool // For testability.
 }
 
+type (
+	fastSeriesCacheKey = string
+	mfNameCacheKey     = string
+	seriesHashKey      = uint64
+)
+
+type cacheEntry struct {
+	accessIter uint64
+	appended   *cacheSeriesEntry // nil means cached dropped series.
+}
+
+type cacheSeriesEntry struct {
+	ref  storage.SeriesRef
+	hash seriesHashKey
+	lset labels.Labels
+}
+
 // scrapeCache tracks mappings of exposed metric strings to label sets and
 // storage references. Additionally, it tracks staleness of series between
 // scrapes.
@@ -948,24 +958,26 @@ type scrapeCache struct {
 	// How many series and metadata entries there were at the last success.
 	successfulCount int
 
-	// Parsed string to an entry with information about the actual label set
-	// and its storage reference.
-	series map[string]*cacheEntry
-
-	// Cache of dropped metric strings and their iteration. The iteration must
-	// be a pointer so we can update it.
-	droppedSeries map[string]*uint64
+	// series is a main per series (and histograms) cache, for both appended
+	// and dropped series.
+	// See explanation of the fastSeriesCacheKey in textparse.Parser.Series()
+	series map[fastSeriesCacheKey]*cacheEntry
+	// NOTE(bwplotka): Due to soft stability guarantee of fastSeriesCacheKey we could
+	// check if the same seriesHashKey is not currently stored in the cache behind
+	// a different fastSeriesCacheKey. Trying without this first, we do regularly
+	// flush this cache, so this might be not needed.
+	// checksum map[seriesHashKey]*fastSeriesCacheKey
 
 	// seriesCur and seriesPrev store the labels of series that were seen
-	// in the current and previous scrape.
+	// in the current and previous scrape. Used only when staleness is tracked.
 	// We hold two maps and swap them out to save allocations.
-	seriesCur  map[uint64]labels.Labels
-	seriesPrev map[uint64]labels.Labels
+	seriesCur  map[seriesHashKey]labels.Labels
+	seriesPrev map[seriesHashKey]labels.Labels
 
 	// TODO(bwplotka): Consider moving Metadata API to use WAL instead of scrape loop to
 	// avoid locking (using metadata API can block scraping).
-	metaMtx  sync.Mutex            // Mutex is needed due to api touching it when metadata is queried.
-	metadata map[string]*metaEntry // metadata by metric family name.
+	metaMtx  sync.Mutex                    // Mutex is needed due to api touching it when metadata is queried.
+	metadata map[mfNameCacheKey]*metaEntry // metadata by metric family name.
 
 	metrics *scrapeMetrics
 }
@@ -985,18 +997,17 @@ func (m *metaEntry) size() int {
 
 func newScrapeCache(metrics *scrapeMetrics) *scrapeCache {
 	return &scrapeCache{
-		series:        map[string]*cacheEntry{},
-		droppedSeries: map[string]*uint64{},
-		seriesCur:     map[uint64]labels.Labels{},
-		seriesPrev:    map[uint64]labels.Labels{},
-		metadata:      map[string]*metaEntry{},
-		metrics:       metrics,
+		series:     map[fastSeriesCacheKey]*cacheEntry{},
+		seriesCur:  map[seriesHashKey]labels.Labels{},
+		seriesPrev: map[seriesHashKey]labels.Labels{},
+		metadata:   map[mfNameCacheKey]*metaEntry{},
+		metrics:    metrics,
 	}
 }
 
 func (c *scrapeCache) iterDone(flushCache bool) {
 	c.metaMtx.Lock()
-	count := len(c.series) + len(c.droppedSeries) + len(c.metadata)
+	count := len(c.series) + len(c.metadata)
 	c.metaMtx.Unlock()
 
 	switch {
@@ -1017,13 +1028,8 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 		// or multiple string representations of the same metric. Clean up entries
 		// that haven't appeared in the last scrape.
 		for s, e := range c.series {
-			if c.iter != e.lastIter {
+			if c.iter != e.accessIter {
 				delete(c.series, s)
-			}
-		}
-		for s, iter := range c.droppedSeries {
-			if c.iter != *iter {
-				delete(c.droppedSeries, s)
 			}
 		}
 		c.metaMtx.Lock()
@@ -1047,34 +1053,37 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 	}
 }
 
-func (c *scrapeCache) get(met []byte) (*cacheEntry, bool, bool) {
-	e, ok := c.series[string(met)]
+func (c *scrapeCache) getSeriesEntry(fastSeriesKey []byte) (entry *cacheSeriesEntry, ok bool, dropped bool, alreadyScraped bool) {
+	e, ok := c.series[yoloString(fastSeriesKey)]
 	if !ok {
-		return nil, false, false
+		return nil, false, false, false
 	}
-	alreadyScraped := e.lastIter == c.iter
-	e.lastIter = c.iter
-	return e, true, alreadyScraped
+	alreadyScraped = e.accessIter == c.iter
+	e.accessIter = c.iter
+	if e.appended == nil {
+		return nil, true, true, alreadyScraped // Dropped.
+	}
+	return e.appended, true, false, alreadyScraped
 }
 
-func (c *scrapeCache) addRef(met []byte, ref storage.SeriesRef, lset labels.Labels, hash uint64) {
+func (c *scrapeCache) addRef(fastSeriesKey []byte, ref storage.SeriesRef, lset labels.Labels, hash uint64) {
 	if ref == 0 {
 		return
 	}
-	c.series[string(met)] = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset, hash: hash}
-}
-
-func (c *scrapeCache) addDropped(met []byte) {
-	iter := c.iter
-	c.droppedSeries[string(met)] = &iter
-}
-
-func (c *scrapeCache) getDropped(met []byte) bool {
-	iterp, ok := c.droppedSeries[string(met)]
-	if ok {
-		*iterp = c.iter
+	c.series[fastSeriesCacheKey(fastSeriesKey)] = &cacheEntry{
+		accessIter: c.iter,
+		appended: &cacheSeriesEntry{
+			ref:  ref,
+			hash: hash,
+			lset: lset,
+		},
 	}
-	return ok
+}
+
+func (c *scrapeCache) addDropped(fastSeriesKey []byte) {
+	c.series[fastSeriesCacheKey(fastSeriesKey)] = &cacheEntry{
+		accessIter: c.iter,
+	}
 }
 
 func (c *scrapeCache) trackStaleness(hash uint64, lset labels.Labels) {
@@ -1653,7 +1662,7 @@ loop:
 		var (
 			et                       textparse.Entry
 			sampleAdded, isHistogram bool
-			met                      []byte
+			fastSeriesKey            []byte
 			parsedTimestamp          *int64
 			val                      float64
 			h                        *histogram.Histogram
@@ -1689,9 +1698,9 @@ loop:
 
 		t := defTime
 		if isHistogram {
-			met, parsedTimestamp, h, fh = p.Histogram()
+			fastSeriesKey, parsedTimestamp, h, fh = p.Histogram()
 		} else {
-			met, parsedTimestamp, val = p.Series()
+			fastSeriesKey, parsedTimestamp, val = p.Series()
 		}
 		if !sl.honorTimestamps {
 			parsedTimestamp = nil
@@ -1700,21 +1709,25 @@ loop:
 			t = *parsedTimestamp
 		}
 
-		if sl.cache.getDropped(met) {
+		// Populating labels and hashing can be expensive, so we keep a short-term cache
+		// flushed on iterDone regularly.
+		ce, seriesCached, seriesDropped, seriesAlreadyScraped := sl.cache.getSeriesEntry(fastSeriesKey)
+		if seriesDropped {
 			continue
 		}
-		ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
+
 		var (
 			ref  storage.SeriesRef
 			hash uint64
 		)
-
 		if seriesCached {
 			ref = ce.ref
 			lset = ce.lset
 			hash = ce.hash
 		} else {
-			p.Labels(&lset)
+			if err = p.Labels(&lset); err != nil {
+				break loop
+			}
 			hash = lset.Hash()
 
 			// Hash label set as it is seen local to the target. Then add target labels
@@ -1723,7 +1736,7 @@ loop:
 
 			// The label set may be set to empty to indicate dropping.
 			if lset.IsEmpty() {
-				sl.cache.addDropped(met)
+				sl.cache.addDropped(fastSeriesKey)
 				continue
 			}
 
@@ -1744,7 +1757,7 @@ loop:
 		}
 
 		if seriesAlreadyScraped && parsedTimestamp == nil {
-			err = storage.ErrDuplicateSampleForTimestamp
+			err = storage.ErrDuplicateSampleForTimestamp // TODO(bwplotka): Should we return early here?
 		} else {
 			if sl.enableCTZeroIngestion {
 				if ctMs := p.CreatedTimestamp(); ctMs != nil {
@@ -1760,7 +1773,8 @@ loop:
 					if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) { // OOO is a common case, ignoring completely for now.
 						// CT is an experimental feature. For now, we don't need to fail the
 						// scrape on errors updating the created timestamp, log debug.
-						sl.l.Debug("Error when appending CT in scrape loop", "series", string(met), "ct", *ctMs, "t", t, "err", err)
+						// TODO(bwplotka): Consider optimizing string alloc.
+						sl.l.Debug("Error when appending CT in scrape loop", "series", string(fastSeriesKey), "ct", *ctMs, "t", t, "err", err)
 					}
 				}
 			}
@@ -1777,15 +1791,16 @@ loop:
 		}
 
 		if err == nil {
-			if (parsedTimestamp == nil || sl.trackTimestampsStaleness) && ce != nil {
-				sl.cache.trackStaleness(ce.hash, ce.lset)
+			if (parsedTimestamp == nil || sl.trackTimestampsStaleness) && seriesCached {
+				sl.cache.trackStaleness(hash, lset)
 			}
 		}
 
-		sampleAdded, err = sl.checkAddError(met, err, &sampleLimitErr, &bucketLimitErr, &appErrs)
+		sampleAdded, err = sl.checkAddError(fastSeriesKey, err, &sampleLimitErr, &bucketLimitErr, &appErrs)
 		if err != nil {
 			if !errors.Is(err, storage.ErrNotFound) {
-				sl.l.Debug("Unexpected error", "series", string(met), "err", err)
+				// TODO(bwplotka): Consider optimizing string alloc.
+				sl.l.Debug("Unexpected error", "series", string(fastSeriesKey), "err", err)
 			}
 			break loop
 		}
@@ -1795,7 +1810,7 @@ loop:
 				// Bypass staleness logic if there is an explicit timestamp.
 				sl.cache.trackStaleness(hash, lset)
 			}
-			sl.cache.addRef(met, ref, lset, hash)
+			sl.cache.addRef(fastSeriesKey, ref, lset, hash)
 			if sampleAdded && sampleLimitErr == nil && bucketLimitErr == nil {
 				seriesAdded++
 			}
@@ -1962,7 +1977,7 @@ func isSeriesPartOfFamily(mName string, mfName []byte, typ model.MetricType) boo
 
 // Adds samples to the appender, checking the error, and then returns the # of samples added,
 // whether the caller should continue to process more samples, and any sample or bucket limit errors.
-func (sl *scrapeLoop) checkAddError(met []byte, err error, sampleLimitErr, bucketLimitErr *error, appErrs *appendErrors) (bool, error) {
+func (sl *scrapeLoop) checkAddError(fastSeriesKey []byte, err error, sampleLimitErr, bucketLimitErr *error, appErrs *appendErrors) (bool, error) {
 	switch {
 	case err == nil:
 		return true, nil
@@ -1970,17 +1985,17 @@ func (sl *scrapeLoop) checkAddError(met []byte, err error, sampleLimitErr, bucke
 		return false, storage.ErrNotFound
 	case errors.Is(err, storage.ErrOutOfOrderSample):
 		appErrs.numOutOfOrder++
-		sl.l.Debug("Out of order sample", "series", string(met))
+		sl.l.Debug("Out of order sample", "series", string(fastSeriesKey)) // TODO(bwplotka): Consider optimizing string alloc.
 		sl.metrics.targetScrapeSampleOutOfOrder.Inc()
 		return false, nil
 	case errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
 		appErrs.numDuplicates++
-		sl.l.Debug("Duplicate sample for timestamp", "series", string(met))
+		sl.l.Debug("Duplicate sample for timestamp", "series", string(fastSeriesKey)) // TODO(bwplotka): Consider optimizing string alloc.
 		sl.metrics.targetScrapeSampleDuplicate.Inc()
 		return false, nil
 	case errors.Is(err, storage.ErrOutOfBounds):
 		appErrs.numOutOfBounds++
-		sl.l.Debug("Out of bounds metric", "series", string(met))
+		sl.l.Debug("Out of bounds metric", "series", string(fastSeriesKey)) // TODO(bwplotka): Consider optimizing string alloc.
 		sl.metrics.targetScrapeSampleOutOfBounds.Inc()
 		return false, nil
 	case errors.Is(err, errSampleLimit):
@@ -2150,10 +2165,10 @@ func (sl *scrapeLoop) reportStale(app storage.Appender, start time.Time) (err er
 }
 
 func (sl *scrapeLoop) addReportSample(app storage.Appender, s reportSample, t int64, v float64, b *labels.Builder) error {
-	ce, ok, _ := sl.cache.get(s.name)
+	ce, seriesCached, _, _ := sl.cache.getSeriesEntry(s.name)
 	var ref storage.SeriesRef
 	var lset labels.Labels
-	if ok {
+	if seriesCached {
 		ref = ce.ref
 		lset = ce.lset
 	} else {
@@ -2168,7 +2183,7 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s reportSample, t in
 	ref, err := app.Append(ref, lset, t, v)
 	switch {
 	case err == nil:
-		if !ok {
+		if !seriesCached {
 			sl.cache.addRef(s.name, ref, lset, lset.Hash())
 			// We only need to add metadata once a scrape target appears.
 			if sl.appendMetadataToWAL {

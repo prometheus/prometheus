@@ -203,7 +203,7 @@ func benchParse(b *testing.B, data []byte, parser string) {
 				b.Fatal("not implemented entry", t)
 			}
 
-			p.Labels(&res)
+			require.NoError(b, p.Labels(&res))
 			_ = p.CreatedTimestamp()
 			for hasExemplar := p.Exemplar(&e); hasExemplar; hasExemplar = p.Exemplar(&e) {
 			}

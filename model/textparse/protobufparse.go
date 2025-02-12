@@ -15,6 +15,7 @@ package textparse
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -52,12 +53,10 @@ var floatFormatBufPool = sync.Pool{
 type ProtobufParser struct {
 	dec *dto.MetricStreamingDecoder
 
-	// Used for both the string returned by Series and Histogram, as well as,
-	// metric family for Type, Unit and Help.
-	entryBytes *bytes.Buffer
-
-	lset    labels.Labels
 	builder labels.ScratchBuilder // Held here to reduce allocations when building Labels.
+
+	mfName            []byte
+	seriesCacheKeyBuf *bytes.Buffer
 
 	// fieldPos is the position within a Summary or (legacy) Histogram. -2
 	// is the count. -1 is the sum. Otherwise, it is the index within
@@ -84,21 +83,38 @@ type ProtobufParser struct {
 // NewProtobufParser returns a parser for the payload in the byte slice.
 func NewProtobufParser(b []byte, parseClassicHistograms bool, st *labels.SymbolTable) Parser {
 	return &ProtobufParser{
-		dec:        dto.NewMetricStreamingDecoder(b),
-		entryBytes: &bytes.Buffer{},
-		builder:    labels.NewScratchBuilderWithSymbolTable(st, 16), // TODO(bwplotka): Try base builder.
-
+		dec:                    dto.NewMetricStreamingDecoder(b),
+		seriesCacheKeyBuf:      &bytes.Buffer{},
+		builder:                labels.NewScratchBuilderWithSymbolTable(st, 16), // TODO(bwplotka): Try base builder.
 		state:                  EntryInvalid,
 		parseClassicHistograms: parseClassicHistograms,
 	}
+}
+
+func (p *ProtobufParser) seriesCacheKey(buf *bytes.Buffer, f float64, extra ...[]byte) []byte {
+	buf.Reset()
+	buf.Write(p.mfName)
+	buf.Write(p.dec.LabelsProtoData())
+
+	// For complex types in a classic format (histogram, summaries) we need
+	// unique bits which are not in labels in proto natively like magic label values
+	// and magic suffixes.
+	for _, e := range extra {
+		buf.Write(e)
+	}
+	if f != 0.0 {
+		writeFloat(buf, f)
+	}
+	return buf.Bytes()
 }
 
 // Series returns the bytes of a series with a simple float64 as a
 // value, the timestamp if set, and the value of the current sample.
 func (p *ProtobufParser) Series() ([]byte, *int64, float64) {
 	var (
-		ts = &p.dec.TimestampMs // To save memory allocations, never nil.
-		v  float64
+		ts        = &p.dec.TimestampMs // To save memory allocations, never nil.
+		v         float64
+		seriesKey []byte
 	)
 	switch p.dec.GetType() {
 	case dto.MetricType_COUNTER:
@@ -111,29 +127,41 @@ func (p *ProtobufParser) Series() ([]byte, *int64, float64) {
 		s := p.dec.GetSummary()
 		switch p.fieldPos {
 		case -2:
+			// Similar to getMagicName but writes to buffer directly.
+			seriesKey = p.seriesCacheKey(p.seriesCacheKeyBuf, 0, yoloBytes(countMagicSuffix))
 			v = float64(s.GetSampleCount())
 		case -1:
+			// Similar to getMagicName but writes to buffer directly.
+			seriesKey = p.seriesCacheKey(p.seriesCacheKeyBuf, 0, yoloBytes(sumMagicSuffix))
 			v = s.GetSampleSum()
 			// Need to detect summaries without quantile here.
 			if len(s.GetQuantile()) == 0 {
 				p.fieldsDone = true
 			}
 		default:
-			v = s.GetQuantile()[p.fieldPos].GetValue()
+			q := s.GetQuantile()[p.fieldPos]
+			// Similar to getMagicName and getMagicLabel but writes to buffer directly.
+			seriesKey = p.seriesCacheKey(p.seriesCacheKeyBuf, q.GetQuantile(), yoloBytes(model.QuantileLabel))
+			v = q.GetValue()
 		}
 	case dto.MetricType_HISTOGRAM, dto.MetricType_GAUGE_HISTOGRAM:
 		// This should only happen for a classic histogram.
 		h := p.dec.GetHistogram()
 		switch p.fieldPos {
 		case -2:
+			// Similar to getMagicName but writes to buffer directly.
+			seriesKey = p.seriesCacheKey(p.seriesCacheKeyBuf, 0, yoloBytes(countMagicSuffix))
 			v = h.GetSampleCountFloat()
 			if v == 0 {
 				v = float64(h.GetSampleCount())
 			}
 		case -1:
+			// Similar to getMagicName but writes to buffer directly.
+			seriesKey = p.seriesCacheKey(p.seriesCacheKeyBuf, 0, yoloBytes(sumMagicSuffix))
 			v = h.GetSampleSum()
 		default:
 			bb := h.GetBucket()
+			upperBound := math.Inf(1)
 			if p.fieldPos >= len(bb) {
 				v = h.GetSampleCountFloat()
 				if v == 0 {
@@ -144,13 +172,19 @@ func (p *ProtobufParser) Series() ([]byte, *int64, float64) {
 				if v == 0 {
 					v = float64(bb[p.fieldPos].GetCumulativeCount())
 				}
+				upperBound = bb[p.fieldPos].GetUpperBound()
 			}
+			// Similar to getMagicName and getMagicLabel but writes to buffer directly.
+			seriesKey = p.seriesCacheKey(p.seriesCacheKeyBuf, upperBound, yoloBytes(bktMagicSuffix), yoloBytes(model.BucketLabel))
 		}
 	default:
 		panic("encountered unexpected metric type, this is a bug")
 	}
+	if seriesKey == nil {
+		seriesKey = p.seriesCacheKey(p.seriesCacheKeyBuf, 0)
+	}
 	if *ts != 0 {
-		return p.entryBytes.Bytes(), ts, v
+		return seriesKey, ts, v
 	}
 	// TODO(beorn7): We assume here that ts==0 means no timestamp. That's
 	// not true in general, but proto3 originally has no distinction between
@@ -161,7 +195,7 @@ func (p *ProtobufParser) Series() ([]byte, *int64, float64) {
 	// away from gogo-protobuf to an actively maintained protobuf
 	// implementation. Once that's done, we can simply use the `optional`
 	// keyword and check for the unset state explicitly.
-	return p.entryBytes.Bytes(), nil, v
+	return seriesKey, nil, v
 }
 
 // Histogram returns the bytes of a series with a native histogram as a value,
@@ -176,8 +210,9 @@ func (p *ProtobufParser) Series() ([]byte, *int64, float64) {
 // value.
 func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram, *histogram.FloatHistogram) {
 	var (
-		ts = &p.dec.TimestampMs // To save memory allocations, never nil.
-		h  = p.dec.GetHistogram()
+		ts        = &p.dec.TimestampMs // To save memory allocations, never nil.
+		h         = p.dec.GetHistogram()
+		seriesKey = p.seriesCacheKey(p.seriesCacheKeyBuf, 0)
 	)
 
 	if p.parseClassicHistograms && len(h.GetBucket()) > 0 {
@@ -216,13 +251,14 @@ func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram, *his
 			fh.CounterResetHint = histogram.GaugeType
 		}
 		fh.Compact(0)
+
 		if *ts != 0 {
-			return p.entryBytes.Bytes(), ts, nil, &fh
+			return seriesKey, ts, nil, &fh
 		}
 		// Nasty hack: Assume that ts==0 means no timestamp. That's not true in
 		// general, but proto3 has no distinction between unset and
 		// default. Need to avoid in the final format.
-		return p.entryBytes.Bytes(), nil, nil, &fh
+		return seriesKey, nil, nil, &fh
 	}
 
 	// TODO(bwplotka): Create sync.Pool for those structs.
@@ -256,23 +292,23 @@ func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram, *his
 	}
 	sh.Compact(0)
 	if *ts != 0 {
-		return p.entryBytes.Bytes(), ts, &sh, nil
+		return seriesKey, ts, &sh, nil
 	}
-	return p.entryBytes.Bytes(), nil, &sh, nil
+	return seriesKey, nil, &sh, nil
 }
 
 // Help returns the metric name and help text in the current entry.
 // Must only be called after Next returned a help entry.
 // The returned byte slices become invalid after the next call to Next.
 func (p *ProtobufParser) Help() ([]byte, []byte) {
-	return p.entryBytes.Bytes(), yoloBytes(p.dec.GetHelp())
+	return p.mfName, yoloBytes(p.dec.GetHelp())
 }
 
 // Type returns the metric name and type in the current entry.
 // Must only be called after Next returned a type entry.
 // The returned byte slices become invalid after the next call to Next.
 func (p *ProtobufParser) Type() ([]byte, model.MetricType) {
-	n := p.entryBytes.Bytes()
+	n := p.mfName
 	switch p.dec.GetType() {
 	case dto.MetricType_COUNTER:
 		return n, model.MetricTypeCounter
@@ -292,7 +328,7 @@ func (p *ProtobufParser) Type() ([]byte, model.MetricType) {
 // Must only be called after Next returned a unit entry.
 // The returned byte slices become invalid after the next call to Next.
 func (p *ProtobufParser) Unit() ([]byte, []byte) {
-	return p.entryBytes.Bytes(), []byte(p.dec.GetUnit())
+	return p.mfName, []byte(p.dec.GetUnit())
 }
 
 // Comment always returns nil because comments aren't supported by the protobuf
@@ -302,9 +338,22 @@ func (p *ProtobufParser) Comment() []byte {
 }
 
 // Labels writes the labels of the current sample into the passed labels.
-// It returns the string from which the metric was parsed.
-func (p *ProtobufParser) Labels(l *labels.Labels) {
-	*l = p.lset.Copy()
+func (p *ProtobufParser) Labels(l *labels.Labels) error {
+	p.builder.Reset()
+	p.builder.Add(labels.MetricName, p.getMagicName())
+
+	if err := p.dec.Label(&p.builder); err != nil {
+		return err
+	}
+
+	if needed, name, value := p.getMagicLabel(); needed {
+		p.builder.Add(name, value)
+	}
+
+	// Sort labels to maintain the sorted labels invariant.
+	p.builder.Sort()
+	*l = p.builder.Labels()
+	return nil
 }
 
 // Exemplar writes the exemplar of the current sample into the passed
@@ -426,9 +475,9 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			return EntryInvalid, err
 		}
 
-		// We are at the beginning of a metric family. Put only the name
-		// into entryBytes and validate only name, help, and type for now.
+		// We are at the beginning of a metric family.
 		name := p.dec.GetName()
+		p.mfName = yoloBytes(name)
 		if !model.IsValidMetricName(model.LabelValue(name)) {
 			return EntryInvalid, fmt.Errorf("invalid metric name: %s", name)
 		}
@@ -456,8 +505,6 @@ func (p *ProtobufParser) Next() (Entry, error) {
 				return EntryInvalid, fmt.Errorf("unit %q not a suffix of metric %q", unit, name)
 			}
 		}
-		p.entryBytes.Reset()
-		p.entryBytes.WriteString(name)
 		p.state = EntryHelp
 	case EntryHelp:
 		if p.dec.Unit != "" {
@@ -475,9 +522,7 @@ func (p *ProtobufParser) Next() (Entry, error) {
 		} else {
 			p.state = EntrySeries
 		}
-		if err := p.onSeriesOrHistogramUpdate(); err != nil {
-			return EntryInvalid, err
-		}
+		p.setFieldsDone()
 	case EntrySeries:
 		// Potentially a second series in the metric family.
 		t := p.dec.GetType()
@@ -491,9 +536,7 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			if !p.fieldsDone {
 				// Still some fields to iterate over.
 				p.fieldPos++
-				if err := p.onSeriesOrHistogramUpdate(); err != nil {
-					return EntryInvalid, err
-				}
+				p.setFieldsDone()
 				return p.state, nil
 			}
 
@@ -518,9 +561,7 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			}
 			return EntryInvalid, err
 		}
-		if err := p.onSeriesOrHistogramUpdate(); err != nil {
-			return EntryInvalid, err
-		}
+		p.setFieldsDone()
 	case EntryHistogram:
 		// Was Histogram() called and parseClassicHistograms is true?
 		if p.redoClassic {
@@ -539,50 +580,17 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			}
 			return EntryInvalid, err
 		}
-		if err := p.onSeriesOrHistogramUpdate(); err != nil {
-			return EntryInvalid, err
-		}
 	default:
 		return EntryInvalid, fmt.Errorf("invalid protobuf parsing state: %d", p.state)
 	}
 	return p.state, nil
 }
 
-// onSeriesOrHistogramUpdate updates internal state before returning
-// a series or histogram. It updates:
-// * p.lset.
-// * p.entryBytes.
-// * p.fieldsDone depending on p.fieldPos.
-func (p *ProtobufParser) onSeriesOrHistogramUpdate() error {
-	p.builder.Reset()
-	p.builder.Add(labels.MetricName, p.getMagicName())
-
-	if err := p.dec.Label(&p.builder); err != nil {
-		return err
-	}
-
-	if needed, name, value := p.getMagicLabel(); needed {
-		p.builder.Add(name, value)
-	}
-
-	// Sort labels to maintain the sorted labels invariant.
-	p.builder.Sort()
-	p.builder.Overwrite(&p.lset)
-
-	// entryBytes has to be unique for each series.
-	p.entryBytes.Reset()
-	p.lset.Range(func(l labels.Label) {
-		if l.Name == labels.MetricName {
-			p.entryBytes.WriteString(l.Value)
-			return
-		}
-		p.entryBytes.WriteByte(model.SeparatorByte)
-		p.entryBytes.WriteString(l.Name)
-		p.entryBytes.WriteByte(model.SeparatorByte)
-		p.entryBytes.WriteString(l.Value)
-	})
-	return nil
-}
+const (
+	countMagicSuffix = "_count"
+	sumMagicSuffix   = "_sum"
+	bktMagicSuffix   = "_bucket"
+)
 
 // getMagicName usually just returns p.mf.GetType() but adds a magic suffix
 // ("_count", "_sum", "_bucket") if needed according to the current parser
@@ -593,19 +601,39 @@ func (p *ProtobufParser) getMagicName() string {
 		return p.dec.GetName()
 	}
 	if p.fieldPos == -2 {
-		return p.dec.GetName() + "_count"
+		return p.dec.GetName() + countMagicSuffix
 	}
 	if p.fieldPos == -1 {
-		return p.dec.GetName() + "_sum"
+		return p.dec.GetName() + sumMagicSuffix
 	}
 	if t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM {
-		return p.dec.GetName() + "_bucket"
+		return p.dec.GetName() + bktMagicSuffix
 	}
 	return p.dec.GetName()
 }
 
+func (p *ProtobufParser) setFieldsDone() {
+	// Native histogram or _count and _sum series.
+	if p.state == EntryHistogram || p.fieldPos < 0 {
+		return
+	}
+	switch p.dec.GetType() {
+	case dto.MetricType_SUMMARY:
+		qq := p.dec.GetSummary().GetQuantile()
+		p.fieldsDone = p.fieldPos == len(qq)-1
+	case dto.MetricType_HISTOGRAM, dto.MetricType_GAUGE_HISTOGRAM:
+		bb := p.dec.GetHistogram().GetBucket()
+		if p.fieldPos >= len(bb) {
+			p.fieldsDone = true
+			return
+		}
+		b := bb[p.fieldPos]
+		p.fieldsDone = math.IsInf(b.GetUpperBound(), +1)
+	}
+}
+
 // getMagicLabel returns if a magic label ("quantile" or "le") is needed and, if
-// so, its name and value. It also sets p.fieldsDone if applicable.
+// so, its name and value.
 func (p *ProtobufParser) getMagicLabel() (bool, string, string) {
 	// Native histogram or _count and _sum series.
 	if p.state == EntryHistogram || p.fieldPos < 0 {
@@ -615,16 +643,13 @@ func (p *ProtobufParser) getMagicLabel() (bool, string, string) {
 	case dto.MetricType_SUMMARY:
 		qq := p.dec.GetSummary().GetQuantile()
 		q := qq[p.fieldPos]
-		p.fieldsDone = p.fieldPos == len(qq)-1
 		return true, model.QuantileLabel, formatOpenMetricsFloat(q.GetQuantile())
 	case dto.MetricType_HISTOGRAM, dto.MetricType_GAUGE_HISTOGRAM:
 		bb := p.dec.GetHistogram().GetBucket()
 		if p.fieldPos >= len(bb) {
-			p.fieldsDone = true
 			return true, model.BucketLabel, "+Inf"
 		}
 		b := bb[p.fieldPos]
-		p.fieldsDone = math.IsInf(b.GetUpperBound(), +1)
 		return true, model.BucketLabel, formatOpenMetricsFloat(b.GetUpperBound())
 	}
 	return false, "", ""
@@ -658,6 +683,23 @@ func formatOpenMetricsFloat(f float64) string {
 	}
 	*bp = append(*bp, '.', '0')
 	return string(*bp)
+}
+
+func writeFloat(b *bytes.Buffer, f float64) {
+	switch {
+	case math.IsNaN(f):
+		b.WriteString("NaN")
+		return
+	case math.IsInf(f, +1):
+		b.WriteString("+Inf")
+		return
+	case math.IsInf(f, -1):
+		b.WriteString("-Inf")
+		return
+	}
+	var buf [8]byte
+	binary.BigEndian.PutUint64(buf[:], math.Float64bits(f))
+	b.Write(buf[:])
 }
 
 // isNativeHistogram returns false iff the provided histograms has no spans at

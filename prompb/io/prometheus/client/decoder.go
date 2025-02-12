@@ -105,6 +105,17 @@ func (m *MetricStreamingDecoder) NextMetric() error {
 	return nil
 }
 
+// LabelsProtoData returns the portion of the serialized protobuf that
+// contains metric labels (without metric family name).
+// Callers wanting to use it as a cache key need to do it with care given
+// https://protobuf.dev/programming-guides/serialization-not-canonical/.
+func (m *MetricStreamingDecoder) LabelsProtoData() []byte {
+	if len(m.labels) == 0 {
+		return nil
+	}
+	return m.mData[m.labels[0].start:m.labels[len(m.labels)-1].end]
+}
+
 // resetMetric resets all the fields in m to equal the zero value, but re-using slices memory.
 func (m *MetricStreamingDecoder) resetMetric() {
 	m.labels = m.labels[:0]

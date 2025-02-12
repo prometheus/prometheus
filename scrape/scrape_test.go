@@ -1476,9 +1476,15 @@ func TestPromTextToProto(t *testing.T) {
 //
 // Recommended CLI invocation:
 /*
-	export bench=append-v1 && go test ./scrape/... \
+	export bench=protoopt-v2 && go test ./scrape/... \
 		-run '^$' -bench '^BenchmarkScrapeLoopAppend' \
 		-benchtime 5s -count 6 -cpu 2 -timeout 999m \
+		| tee ${bench}.txt
+
+	export bench=protoopt-v2pp && go test ./scrape/... \
+		-run '^$' -bench '^BenchmarkScrapeLoopAppend/data=237FamsAllTypes/fmt=PromProto' \
+		-benchtime 5s -cpu 2 -timeout 999m \
+		-memprofile=${bench}.mem.pprof \
 		| tee ${bench}.txt
 */
 func BenchmarkScrapeLoopAppend(b *testing.B) {
@@ -3517,7 +3523,7 @@ func TestScrapeAddFast(t *testing.T) {
 	// Poison the cache. There is just one entry, and one series in the
 	// storage. Changing the ref will create a 'not found' error.
 	for _, v := range sl.getCache().series {
-		v.ref++
+		v.appended.ref++
 	}
 
 	slApp = sl.appender(ctx)

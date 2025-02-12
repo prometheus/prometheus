@@ -15,6 +15,7 @@ package textparse
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"strconv"
@@ -140,12 +141,13 @@ func (p *NHCBParser) Comment() []byte {
 	return p.parser.Comment()
 }
 
-func (p *NHCBParser) Labels(l *labels.Labels) {
+func (p *NHCBParser) Labels(l *labels.Labels) error {
 	if p.state == stateEmitting {
 		*l = p.lsetNHCB
-		return
+		return nil
 	}
 	*l = p.lset
+	return nil
 }
 
 func (p *NHCBParser) Exemplar(ex *exemplar.Exemplar) bool {
@@ -198,7 +200,11 @@ func (p *NHCBParser) Next() (Entry, error) {
 		switch p.entry {
 		case EntrySeries:
 			p.bytes, p.ts, p.value = p.parser.Series()
-			p.parser.Labels(&p.lset)
+			// TODO(bwplotka): Pass cache to nhcb converter so we can utilize cached labels.
+			if err := p.parser.Labels(&p.lset); err != nil {
+				return EntryInvalid, fmt.Errorf("error parsing labels: %w", err)
+			}
+
 			// Check the label set to see if we can continue or need to emit the NHCB.
 			var isNHCB bool
 			if p.compareLabels() {
@@ -222,7 +228,10 @@ func (p *NHCBParser) Next() (Entry, error) {
 			return p.entry, p.err
 		case EntryHistogram:
 			p.bytes, p.ts, p.h, p.fh = p.parser.Histogram()
-			p.parser.Labels(&p.lset)
+			// TODO(bwplotka): Pass cache to nhcb converter so we can utilize cached labels.
+			if err := p.parser.Labels(&p.lset); err != nil {
+				return EntryInvalid, fmt.Errorf("error parsing labels: %w", err)
+			}
 			p.storeExponentialLabels()
 		case EntryType:
 			p.bName, p.typ = p.parser.Type()

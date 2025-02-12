@@ -27,30 +27,42 @@ import (
 
 // Parser parses samples from a byte slice of samples in different exposition formats.
 type Parser interface {
-	// Series returns the bytes of a series with a simple float64 as a
-	// value, the timestamp if set, and the value of the current sample.
-	Series() ([]byte, *int64, float64)
+	// Series returns the fastSeriesCacheKey, the timestamp if set, and the value
+	// of the current sample.
+	//
+	// fastSeriesCacheKey is a cheap, special ID of the series (metric family name, magic
+	// suffix and labels) that should be stable enough for short-term caching, but
+	// might be unstable for edge cases e.g. different content types or different
+	// clients between parsing. Stable ID can be calculated by executing more expensive
+	// Labels method and taking hash of labels.
+	Series() (fastSeriesCacheKey []byte, ts *int64, v float64)
 
-	// Histogram returns the bytes of a series with a sparse histogram as a
-	// value, the timestamp if set, and the histogram in the current sample.
+	// Histogram returns the fastSeriesCacheKey, the timestamp if set, and the
+	// histogram in the current sample.
 	// Depending on the parsed input, the function returns an (integer) Histogram
 	// or a FloatHistogram, with the respective other return value being nil.
-	Histogram() ([]byte, *int64, *histogram.Histogram, *histogram.FloatHistogram)
+	//
+	// fastSeriesCacheKey is a cheap, special ID of the series (metric family name
+	// and labels) that should be stable enough for short-term caching, but
+	// might be unstable for edge cases e.g. different content types or different
+	// clients between parsing. Stable ID can be calculated by executing more expensive
+	// Labels method and taking hash of labels.
+	Histogram() (fastSeriesCacheKey []byte, ts *int64, h *histogram.Histogram, fh *histogram.FloatHistogram)
 
 	// Help returns the metric name and help text in the current entry.
 	// Must only be called after Next returned a help entry.
 	// The returned byte slices become invalid after the next call to Next.
-	Help() ([]byte, []byte)
+	Help() (mfName []byte, help []byte)
 
 	// Type returns the metric name and type in the current entry.
 	// Must only be called after Next returned a type entry.
 	// The returned byte slices become invalid after the next call to Next.
-	Type() ([]byte, model.MetricType)
+	Type() (mfName []byte, typ model.MetricType)
 
 	// Unit returns the metric name and unit in the current entry.
 	// Must only be called after Next returned a unit entry.
 	// The returned byte slices become invalid after the next call to Next.
-	Unit() ([]byte, []byte)
+	Unit() (mfName []byte, typ []byte)
 
 	// Comment returns the text of the current comment.
 	// Must only be called after Next returned a comment entry.
@@ -60,7 +72,7 @@ type Parser interface {
 	// Labels writes the labels of the current sample into the passed labels.
 	// The values of the "le" labels of classic histograms and "quantile" labels
 	// of summaries should follow the OpenMetrics formatting rules.
-	Labels(l *labels.Labels)
+	Labels(l *labels.Labels) error
 
 	// Exemplar writes the exemplar of the current sample into the passed
 	// exemplar. It can be called repeatedly to retrieve multiple exemplars
