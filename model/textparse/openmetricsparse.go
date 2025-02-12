@@ -198,10 +198,8 @@ func (p *OpenMetricsParser) Comment() []byte {
 }
 
 // Labels writes the labels of the current sample into the passed labels.
-// It returns the string from which the metric was parsed.
 func (p *OpenMetricsParser) Labels(l *labels.Labels) {
-	// Copy the buffer to a string: this is only necessary for the return value.
-	s := string(p.series)
+	s := yoloString(p.series)
 
 	p.builder.Reset()
 	metricName := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
