@@ -5804,7 +5804,7 @@ func testQuerierOOOQuery(t *testing.T,
 		},
 	}
 	for _, tc := range tests {
-		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
+		t.Run("name="+tc.name, func(t *testing.T) {
 			opts.OutOfOrderCapMax = tc.oooCap
 			db := openTestDB(t, opts, nil)
 			db.DisableCompactions()
@@ -6135,7 +6135,7 @@ func testChunkQuerierOOOQuery(t *testing.T,
 		},
 	}
 	for _, tc := range tests {
-		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
+		t.Run("name="+tc.name, func(t *testing.T) {
 			opts.OutOfOrderCapMax = tc.oooCap
 			db := openTestDB(t, opts, nil)
 			db.DisableCompactions()
@@ -6318,7 +6318,7 @@ func testOOONativeHistogramsWithCounterResets(t *testing.T, scenario sampleTypeS
 		},
 	}
 	for _, tc := range tests {
-		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
+		t.Run("name="+tc.name, func(t *testing.T) {
 			db := openTestDB(t, opts, nil)
 			db.DisableCompactions()
 			db.EnableOOONativeHistograms()

@@ -103,15 +103,15 @@ type (
 )
 
 func (e ErrQueryTimeout) Error() string {
-	return fmt.Sprintf("query timed out in %s", string(e))
+	return "query timed out in " + string(e)
 }
 
 func (e ErrQueryCanceled) Error() string {
-	return fmt.Sprintf("query was canceled in %s", string(e))
+	return "query was canceled in " + string(e)
 }
 
 func (e ErrTooManySamples) Error() string {
-	return fmt.Sprintf("query processing would load too many samples into memory in %s", string(e))
+	return "query processing would load too many samples into memory in " + string(e)
 }
 
 func (e ErrStorage) Error() string {

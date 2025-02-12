@@ -140,7 +140,7 @@ func makeXDSResourceHTTPEndpointURL(protocolVersion ProtocolVersion, serverURL *
 		return nil, errors.New("invalid xDS server URL protocol. must be either 'http' or 'https'")
 	}
 
-	serverURL.Path = path.Join(serverURL.Path, string(protocolVersion), fmt.Sprintf("discovery:%s", resourceType))
+	serverURL.Path = path.Join(serverURL.Path, string(protocolVersion), "discovery:"+resourceType)
 
 	return serverURL, nil
 }

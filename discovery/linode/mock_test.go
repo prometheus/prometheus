@@ -15,7 +15,6 @@ package linode
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -56,7 +55,7 @@ func (m *SDMock) Setup() {
 func (m *SDMock) SetupHandlers() {
 	for _, handler := range []string{"/v4/account/events", "/v4/linode/instances", "/v4/networking/ips", "/v4/networking/ipv6/ranges"} {
 		m.Mux.HandleFunc(handler, func(w http.ResponseWriter, r *http.Request) {
-			if r.Header.Get("Authorization") != fmt.Sprintf("Bearer %s", tokenID) {
+			if r.Header.Get("Authorization") != "Bearer "+tokenID {
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
