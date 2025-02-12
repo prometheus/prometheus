@@ -379,7 +379,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 	for _, tt := range tests {
 		for scaleDown, wantLayout := range tt.wantLayout {
 			t.Run(fmt.Sprintf("%s-scaleby-%d", tt.name, scaleDown), func(t *testing.T) {
-				gotSpans, gotDeltas := convertBucketsLayout(tt.buckets(), scaleDown)
+				gotSpans, gotDeltas := convertBucketsLayout(tt.buckets().BucketCounts().AsRaw(), tt.buckets().Offset(), scaleDown, true)
 				assert.Equal(t, wantLayout.wantSpans, gotSpans)
 				assert.Equal(t, wantLayout.wantDeltas, gotDeltas)
 			})
@@ -409,7 +409,7 @@ func BenchmarkConvertBucketLayout(b *testing.B) {
 		}
 		b.Run(fmt.Sprintf("gap %d", scenario.gap), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				convertBucketsLayout(buckets, 0)
+				convertBucketsLayout(buckets.BucketCounts().AsRaw(), buckets.Offset(), 0, true)
 			}
 		})
 	}
@@ -780,7 +780,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 	}
 }
 
-func TestConvertHistogramBucketsToNHCBLayout(t *testing.T) {
+func TestConvertExplicitHistogramBucketsToNHCBLayout(t *testing.T) {
 	tests := []struct {
 		name       string
 		buckets    []uint64
@@ -875,7 +875,12 @@ func TestConvertHistogramBucketsToNHCBLayout(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotSpans, gotDeltas := convertHistogramBucketsToNHCBLayout(tt.buckets)
+
+			buckets := tt.buckets
+			offset := getBucketOffset(buckets)
+			bucketCounts := buckets[offset:]
+
+			gotSpans, gotDeltas := convertBucketsLayout(bucketCounts, int32(offset), 0, false)
 			assert.Equal(t, tt.wantLayout.wantSpans, gotSpans)
 			assert.Equal(t, tt.wantLayout.wantDeltas, gotDeltas)
 		})
@@ -903,7 +908,8 @@ func BenchmarkConvertHistogramBucketsToNHCBLayout(b *testing.B) {
 		}
 		b.Run(fmt.Sprintf("gap %d", scenario.gap), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				convertHistogramBucketsToNHCBLayout(buckets)
+				offset := getBucketOffset(buckets)
+				convertBucketsLayout(buckets, int32(offset), 0, false)
 			}
 		})
 	}
@@ -964,12 +970,11 @@ func TestHistogramToCustomBucketsHistogram(t *testing.T) {
 				}
 			},
 		},
-		// TODO: add tests for error messages
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			validateHistogramCount(t, tt.hist())
-			got, annots, err := histogramToCustomBucketsHistogram(tt.hist())
+			got, annots, err := explicitHistogramToCustomBucketsHistogram(tt.hist())
 			if tt.wantErrMessage != "" {
 				assert.ErrorContains(t, err, tt.wantErrMessage)
 				return
