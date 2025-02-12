@@ -28,9 +28,9 @@ type LSS interface {
 }
 
 type Wal interface {
-	Write(innerSeriesSlice []*cppbridge.InnerSeries) error
+	Write(innerSeriesSlice []*cppbridge.InnerSeries) (bool, error)
 	// DO NOT USE in public interfaces like ForEachShard
-	Uncommited() bool
+	Uncommitted() bool
 	Commit() error
 }
 

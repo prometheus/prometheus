@@ -4,21 +4,22 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"github.com/prometheus/prometheus/pp/go/cppbridge"
-	"github.com/prometheus/prometheus/pp/go/relabeler/config"
-	"github.com/prometheus/prometheus/pp/go/util/optional"
-	"github.com/prometheus/client_golang/prometheus"
 	"io"
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/prometheus/prometheus/pp/go/cppbridge"
+	"github.com/prometheus/prometheus/pp/go/relabeler/config"
+	"github.com/prometheus/prometheus/pp/go/util/optional"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 const (
 	HeadWalEncoderDecoderLogShards uint8 = 0
 )
 
-func Create(id string, generation uint64, dir string, configs []*config.InputRelabelerConfig, numberOfShards uint16, lastAppendedSegmentIDSetter LastAppendedSegmentIDSetter, registerer prometheus.Registerer) (_ *Head, err error) {
+func Create(id string, generation uint64, dir string, configs []*config.InputRelabelerConfig, numberOfShards uint16, maxSegmentSize uint32, lastAppendedSegmentIDSetter LastAppendedSegmentIDSetter, registerer prometheus.Registerer) (_ *Head, err error) {
 	lsses := make([]*LSS, numberOfShards)
 	wals := make([]*ShardWal, numberOfShards)
 	dataStorages := make([]*DataStorage, numberOfShards)
@@ -48,7 +49,7 @@ func Create(id string, generation uint64, dir string, configs []*config.InputRel
 			return nil, fmt.Errorf("failed to create shard wal file: %w", err)
 		}
 		shardWalEncoder := cppbridge.NewHeadWalEncoder(shardID, HeadWalEncoderDecoderLogShards, targetLss)
-		shardWal := newShardWal(shardWalEncoder, false, newBufferedShardWalWriter(shardFile))
+		shardWal := newShardWal(shardWalEncoder, false, maxSegmentSize, newBufferedShardWalWriter(shardFile))
 		if err = shardWal.WriteHeader(); err != nil {
 			return nil, fmt.Errorf("failed to write shard wal header: %w", err)
 		}
@@ -63,7 +64,7 @@ func Create(id string, generation uint64, dir string, configs []*config.InputRel
 	return New(id, generation, configs, lsses, wals, dataStorages, numberOfShards, nil, lastAppendedSegmentIDSetter, registerer)
 }
 
-func Load(id string, generation uint64, dir string, configs []*config.InputRelabelerConfig, numberOfShards uint16, lastAppendedSegmentIDSetter LastAppendedSegmentIDSetter, registerer prometheus.Registerer) (_ *Head, corrupted bool, numberOfSegments uint32, err error) {
+func Load(id string, generation uint64, dir string, configs []*config.InputRelabelerConfig, numberOfShards uint16, maxSegmentSize uint32, lastAppendedSegmentIDSetter LastAppendedSegmentIDSetter, registerer prometheus.Registerer) (_ *Head, corrupted bool, numberOfSegments uint32, err error) {
 	shardLoadResults := make([]ShardLoadResult, numberOfShards)
 	wg := &sync.WaitGroup{}
 	for shardID := uint16(0); shardID < numberOfShards; shardID++ {
@@ -71,7 +72,7 @@ func Load(id string, generation uint64, dir string, configs []*config.InputRelab
 		shardWalFilePath := filepath.Join(dir, fmt.Sprintf("shard_%d.wal", shardID))
 		go func(shardID uint16, shardWalFilePath string) {
 			defer wg.Done()
-			shardLoadResults[shardID] = NewShardLoader(shardWalFilePath).Load()
+			shardLoadResults[shardID] = NewShardLoader(shardWalFilePath, maxSegmentSize).Load()
 		}(shardID, shardWalFilePath)
 	}
 	wg.Wait()
@@ -90,9 +91,11 @@ func Load(id string, generation uint64, dir string, configs []*config.InputRelab
 		}
 		if numberOfSegmentsRead.IsNil() {
 			numberOfSegmentsRead.Set(shardLoadResult.NumberOfSegments)
-		} else {
-			if numberOfSegmentsRead.Value() != shardLoadResult.NumberOfSegments {
-				corrupted = true
+		} else if numberOfSegmentsRead.Value() != shardLoadResult.NumberOfSegments {
+			corrupted = true
+			// calculating maximum number of segments (critical for remote write).
+			if numberOfSegmentsRead.Value() < shardLoadResult.NumberOfSegments {
+				numberOfSegmentsRead.Set(shardLoadResult.NumberOfSegments)
 			}
 		}
 	}
@@ -123,12 +126,14 @@ func Load(id string, generation uint64, dir string, configs []*config.InputRelab
 }
 
 type ShardLoader struct {
-	shardFilePath string
+	shardFilePath  string
+	maxSegmentSize uint32
 }
 
-func NewShardLoader(shardFilePath string) *ShardLoader {
+func NewShardLoader(shardFilePath string, maxSegmentSize uint32) *ShardLoader {
 	return &ShardLoader{
-		shardFilePath: shardFilePath,
+		shardFilePath:  shardFilePath,
+		maxSegmentSize: maxSegmentSize,
 	}
 }
 
@@ -175,13 +180,12 @@ func (l *ShardLoader) Load() (result ShardLoadResult) {
 	decoder := cppbridge.NewHeadWalDecoder(targetLss, encoderVersion)
 	lastReadSegmentID := -1
 
-readLoop:
 	for {
 		var segment DecodedSegment
 		segment, _, err = ReadSegment(reader)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				break readLoop
+				break
 			}
 			result.Err = fmt.Errorf("failed to read segment: %w", err)
 			return result
@@ -197,7 +201,7 @@ readLoop:
 	}
 
 	result.NumberOfSegments = uint32(lastReadSegmentID + 1)
-	result.Wal = newShardWal(decoder.CreateEncoder(), true, shardWalFile)
+	result.Wal = newShardWal(decoder.CreateEncoder(), true, l.maxSegmentSize, shardWalFile)
 	result.Corrupted = false
 	return result
 }

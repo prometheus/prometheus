@@ -38,13 +38,14 @@ type metrics struct {
 }
 
 type Manager struct {
-	dir          string
-	clock        clockwork.Clock
-	configSource ConfigSource
-	catalog      Catalog
-	generation   uint64
-	counter      *prometheus.CounterVec
-	registerer   prometheus.Registerer
+	dir            string
+	clock          clockwork.Clock
+	configSource   ConfigSource
+	catalog        Catalog
+	generation     uint64
+	maxSegmentSize uint32
+	counter        *prometheus.CounterVec
+	registerer     prometheus.Registerer
 }
 
 type SetLastAppendedSegmentIDFn func(segmentID uint32)
@@ -53,7 +54,7 @@ func (fn SetLastAppendedSegmentIDFn) SetLastAppendedSegmentID(segmentID uint32) 
 	fn(segmentID)
 }
 
-func New(dir string, clock clockwork.Clock, configSource ConfigSource, catalog Catalog, registerer prometheus.Registerer) (*Manager, error) {
+func New(dir string, clock clockwork.Clock, configSource ConfigSource, catalog Catalog, maxSegmentSize uint32, registerer prometheus.Registerer) (*Manager, error) {
 	dirStat, err := os.Stat(dir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat dir: %w", err)
@@ -66,10 +67,11 @@ func New(dir string, clock clockwork.Clock, configSource ConfigSource, catalog C
 	factory := util.NewUnconflictRegisterer(registerer)
 
 	return &Manager{
-		dir:          dir,
-		clock:        clock,
-		configSource: configSource,
-		catalog:      catalog,
+		dir:            dir,
+		clock:          clock,
+		configSource:   configSource,
+		catalog:        catalog,
+		maxSegmentSize: maxSegmentSize,
 		counter: factory.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "prompp_head_event_count",
@@ -129,14 +131,15 @@ func (m *Manager) Restore(blockDuration time.Duration) (active relabeler.Head, r
 			isNotCorrupted := !loadResult.corrupted
 			if isNotCorrupted && statusIsAppropriate && isInBlockTimeRange {
 				active = loadResult.head
+				if _, err = m.catalog.SetStatus(loadResult.headRecord.ID(), catalog.StatusActive); err != nil {
+					return nil, nil, fmt.Errorf("failed to set status: %w", err)
+				}
 				continue
 			}
 		}
 
-		if loadResult.headRecord.Status() != catalog.StatusRotated {
-			if _, err = m.catalog.SetStatus(loadResult.headRecord.ID(), catalog.StatusRotated); err != nil {
-				return nil, nil, fmt.Errorf("failed to set status: %w", err)
-			}
+		if _, err = m.catalog.SetStatus(loadResult.headRecord.ID(), catalog.StatusRotated); err != nil {
+			return nil, nil, fmt.Errorf("failed to set status: %w", err)
 		}
 
 		if err = loadResult.head.Finalize(); err != nil {
@@ -181,6 +184,7 @@ func (m *Manager) loadHead(
 		headDir,
 		inputRelabelerConfigs,
 		headRecord.NumberOfShards(),
+		m.maxSegmentSize,
 		SetLastAppendedSegmentIDFn(func(segmentID uint32) {
 			headRecord.SetLastAppendedSegmentID(segmentID)
 		}),
@@ -193,11 +197,16 @@ func (m *Manager) loadHead(
 	if !corrupted {
 		switch {
 		case headRecord.Status() == catalog.StatusActive:
+			// numberOfSegments here is actual number of segments.
 			if numberOfSegments > 0 {
-				headRecord.SetLastAppendedSegmentID(uint32(numberOfSegments) - 1)
+				headRecord.SetLastAppendedSegmentID(numberOfSegments - 1)
 			}
 		case isNumberOfSegmentsMismatched(headRecord, numberOfSegments):
 			corrupted = true
+			// numberOfSegments here is actual number of segments.
+			if numberOfSegments > 0 {
+				headRecord.SetLastAppendedSegmentID(numberOfSegments - 1)
+			}
 			logger.Errorf("head: %s number of segments mismatched", headRecord.ID())
 		}
 	}
@@ -270,6 +279,7 @@ func (m *Manager) BuildWithConfig(inputRelabelerConfigs []*config.InputRelabeler
 		headDir,
 		inputRelabelerConfigs,
 		numberOfShards,
+		m.maxSegmentSize,
 		SetLastAppendedSegmentIDFn(func(segmentID uint32) {
 			headRecord.SetLastAppendedSegmentID(segmentID)
 		}),

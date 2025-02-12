@@ -5,9 +5,10 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"hash/crc32"
 	"io"
+
+	"github.com/prometheus/prometheus/pp/go/cppbridge"
 )
 
 type WriteSyncCloser interface {
@@ -58,14 +59,16 @@ type ShardWal struct {
 	writeSyncCloser     WriteSyncCloser
 	fileHeaderIsWritten bool
 	buf                 [binary.MaxVarintLen32]byte
+	maxSegmentSize      uint32
 	uncommited          bool
 }
 
-func newShardWal(encoder *cppbridge.HeadWalEncoder, fileHeaderIsWritten bool, writeSyncCloser WriteSyncCloser) *ShardWal {
+func newShardWal(encoder *cppbridge.HeadWalEncoder, fileHeaderIsWritten bool, maxSegmentSize uint32, writeSyncCloser WriteSyncCloser) *ShardWal {
 	return &ShardWal{
 		encoder:             encoder,
 		writeSyncCloser:     writeSyncCloser,
 		fileHeaderIsWritten: fileHeaderIsWritten,
+		maxSegmentSize:      maxSegmentSize,
 	}
 }
 
@@ -93,28 +96,32 @@ func (w *ShardWal) WriteHeader() error {
 	return nil
 }
 
-func (w *ShardWal) Write(innerSeriesSlice []*cppbridge.InnerSeries) error {
+func (w *ShardWal) Write(innerSeriesSlice []*cppbridge.InnerSeries) (bool, error) {
 	if w.corrupted {
-		return fmt.Errorf("writing in corrupted wal")
+		return false, fmt.Errorf("writing in corrupted wal")
 	}
 
-	err := w.encoder.Encode(innerSeriesSlice)
+	stats, err := w.encoder.Encode(innerSeriesSlice)
 	if err != nil {
-		return fmt.Errorf("failed to encode inner series: %w", err)
+		return false, fmt.Errorf("failed to encode inner series: %w", err)
 	}
 
 	w.uncommited = true
 
-	return nil
+	if w.maxSegmentSize > 0 && stats.Samples() >= w.maxSegmentSize {
+		return true, nil
+	}
+
+	return false, nil
 }
 
-func (w *ShardWal) Uncommited() bool {
+func (w *ShardWal) Uncommitted() bool {
 	return w.uncommited
 }
 
 func (w *ShardWal) Commit() error {
 	if w.corrupted {
-		return fmt.Errorf("commiting corrupted wal")
+		return fmt.Errorf("committing corrupted wal")
 	}
 
 	if !w.uncommited {

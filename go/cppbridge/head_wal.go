@@ -24,9 +24,8 @@ func (*HeadWalEncoder) Version() uint8 {
 	return EncodersVersion()
 }
 
-func (e *HeadWalEncoder) Encode(innerSeriesSlice []*InnerSeries) error {
-	_, err := headWalEncoderAddInnerSeries(e.encoder, innerSeriesSlice)
-	return err
+func (e *HeadWalEncoder) Encode(innerSeriesSlice []*InnerSeries) (WALEncoderStats, error) {
+	return headWalEncoderAddInnerSeries(e.encoder, innerSeriesSlice)
 }
 
 func (e *HeadWalEncoder) Finalize() (*EncodedSegment, error) {

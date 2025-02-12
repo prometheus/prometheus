@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"sync/atomic"
 
 	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 
@@ -314,30 +315,37 @@ func (h *Head) Append(
 
 	inputPromise.UpdateRelabeler()
 
+	var atomiclimitExhausted uint32
 	err := h.forEachShard(func(shard relabeler.Shard) error {
-		if err := shard.Wal().Write(inputPromise.ShardsInnerSeries(shard.ShardID())); err != nil {
+		limitExhausted, err := shard.Wal().Write(inputPromise.ShardsInnerSeries(shard.ShardID()))
+		if err != nil {
 			return fmt.Errorf("failed to write inner series: %w", err)
 		}
 
-		if commitToWal {
-			if err := shard.Wal().Commit(); err != nil {
-				return fmt.Errorf("failed to commit: %w", err)
-			}
+		if limitExhausted {
+			atomic.AddUint32(&atomiclimitExhausted, 1)
 		}
 
 		return nil
 	})
-
 	if err != nil {
 		return nil, cppbridge.RelabelerStats{}, fmt.Errorf("failed to write wal: %w", err)
 	}
 
-	_ = h.forEachShard(func(shard relabeler.Shard) error {
+	err = h.forEachShard(func(shard relabeler.Shard) error {
 		shard.DataStorage().AppendInnerSeriesSlice(inputPromise.ShardsInnerSeries(shard.ShardID()))
+
+		if commitToWal || atomiclimitExhausted > 0 {
+			return shard.Wal().Commit()
+		}
+
 		return nil
 	})
+	if err != nil {
+		return nil, cppbridge.RelabelerStats{}, fmt.Errorf("failed to commit wal: %w", err)
+	}
 
-	if commitToWal {
+	if commitToWal || atomiclimitExhausted > 0 {
 		h.incrementLastAppendedSegmentID()
 	}
 
@@ -356,19 +364,19 @@ func (h *Head) incrementLastAppendedSegmentID() {
 }
 
 func (h *Head) CommitToWal() error {
-	var segmentIsWritten bool
+	var segmentIsWritten uint32
 	err := h.ForEachShard(func(shard relabeler.Shard) error {
-		if !shard.Wal().Uncommited() {
+		if !shard.Wal().Uncommitted() {
 			return nil
 		}
-		segmentIsWritten = true
+		atomic.AddUint32(&segmentIsWritten, 1)
 		return shard.Wal().Commit()
 	})
 	if err != nil {
 		return err
 	}
 
-	if segmentIsWritten {
+	if segmentIsWritten != 0 {
 		h.incrementLastAppendedSegmentID()
 	}
 
@@ -398,17 +406,17 @@ func (h *Head) NumberOfShards() uint16 {
 func (h *Head) Finalize() error {
 	// todo: wait all tasks on stop
 	return h.finalizer.Finalize(func() error {
-		var segmentIsWritten bool
+		var segmentIsWritten uint32
 		err := h.forEachShard(func(shard relabeler.Shard) error {
 			shard.DataStorage().MergeOutOfOrderChunks()
-			if shard.Wal().Uncommited() {
-				segmentIsWritten = true
+			if shard.Wal().Uncommitted() {
+				atomic.AddUint32(&segmentIsWritten, 1)
 				return shard.Wal().Commit()
 			}
 			return nil
 		})
 
-		if err == nil && segmentIsWritten {
+		if err == nil && segmentIsWritten != 0 {
 			h.incrementLastAppendedSegmentID()
 		}
 
