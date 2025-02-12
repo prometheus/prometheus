@@ -1,8 +1,8 @@
 import { useMantineColorScheme, rem, ActionIcon } from "@mantine/core";
 import {
-  IconBrightnessFilled,
   IconMoonFilled,
   IconSunFilled,
+  IconBrightnessFilled,
 } from "@tabler/icons-react";
 import { FC } from "react";
 
@@ -30,11 +30,11 @@ export const ThemeSelector: FC = () => {
       }
     >
       {colorScheme === "light" ? (
-        <IconMoonFilled {...iconProps} />
-      ) : colorScheme === "dark" ? (
-        <IconBrightnessFilled {...iconProps} />
-      ) : (
         <IconSunFilled {...iconProps} />
+      ) : colorScheme === "dark" ? (
+        <IconMoonFilled {...iconProps} />
+      ) : (
+        <IconBrightnessFilled {...iconProps} />
       )}
     </ActionIcon>
   );
