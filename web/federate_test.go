@@ -395,15 +395,19 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 	p := textparse.NewProtobufParser(body, false, labels.NewSymbolTable())
 	var actVec promql.Vector
 	metricFamilies := 0
-	l := labels.Labels{}
+	lb := labels.NewScratchBuilder(15)
 	for {
 		et, err := p.Next()
 		if err != nil && errors.Is(err, io.EOF) {
 			break
 		}
 		require.NoError(t, err)
+		var l labels.Labels
 		if et == textparse.EntryHistogram || et == textparse.EntrySeries {
-			p.Metric(&l)
+			lb.Reset()
+			p.PopulateLabelsAndName(&lb)
+			lb.Sort()
+			l = lb.Labels()
 		}
 		switch et {
 		case textparse.EntryHelp:

@@ -25,6 +25,8 @@ import (
 
 const (
 	MetricName   = "__name__"
+	MetricType   = "__type__"
+	MetricUnit   = "__unit__"
 	AlertName    = "alertname"
 	BucketLabel  = "le"
 	InstanceName = "instance"

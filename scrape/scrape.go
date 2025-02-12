@@ -1629,6 +1629,7 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 		appErrs        = appendErrors{}
 		sampleLimitErr error
 		bucketLimitErr error
+		builder        = labels.NewScratchBuilderWithSymbolTable(sl.symbolTable, 15)
 		lset           labels.Labels     // escapes to heap so hoisted out of loop
 		e              exemplar.Exemplar // escapes to heap so hoisted out of loop
 		lastMeta       *metaEntry
@@ -1714,7 +1715,23 @@ loop:
 			lset = ce.lset
 			hash = ce.hash
 		} else {
-			p.Metric(&lset)
+			// NOTE(bwplotka): Naive injection of type and unit as labels, without a
+			// feature flag. This is to measure initial overhead of this approach.
+			// Long term we might want to consider similar semantics of type and unit
+			// being part of strict series, however stored outside of labels e.g. in
+			// the new model/series.Series struct that wraps labels.
+			builder.Reset()
+			if lastMeta != nil {
+				// Is it new series OR did metadata change for this family?
+				if lastMeta.lastIterChange == sl.cache.iter {
+					builder.Add(labels.MetricType, string(lastMeta.Type))
+					builder.Add(labels.MetricUnit, lastMeta.Unit)
+				}
+			}
+			p.PopulateLabelsAndName(&builder)
+			builder.Sort()
+
+			lset = builder.Labels()
 			hash = lset.Hash()
 
 			// Hash label set as it is seen local to the target. Then add target labels

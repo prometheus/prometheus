@@ -57,11 +57,8 @@ type Parser interface {
 	// The returned byte slice becomes invalid after the next call to Next.
 	Comment() []byte
 
-	// Metric writes the labels of the current sample into the passed labels.
-	// It returns the string from which the metric was parsed.
-	// The values of the "le" labels of classic histograms and "quantile" labels
-	// of summaries should follow the OpenMetrics formatting rules.
-	Metric(l *labels.Labels) string
+	// PopulateLabelsAndName uses provided builder to add labels and metric name.
+	PopulateLabelsAndName(l *labels.ScratchBuilder)
 
 	// Exemplar writes the exemplar of the current sample into the passed
 	// exemplar. It can be called repeatedly to retrieve multiple exemplars

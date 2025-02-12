@@ -217,6 +217,7 @@ func requireEntries(t *testing.T, exp, got []parsedEntry) {
 func testParse(t *testing.T, p Parser) (ret []parsedEntry) {
 	t.Helper()
 
+	lsetBuilder := labels.NewScratchBuilder(0)
 	for {
 		et, err := p.Next()
 		if errors.Is(err, io.EOF) {
@@ -238,7 +239,11 @@ func testParse(t *testing.T, p Parser) (ret []parsedEntry) {
 				got.m = string(m)
 			}
 
-			p.Metric(&got.lset)
+			lsetBuilder.Reset()
+			p.PopulateLabelsAndName(&lsetBuilder)
+			lsetBuilder.Sort()
+			got.lset = lsetBuilder.Labels()
+
 			// Parser reuses int pointer.
 			if ct := p.CreatedTimestamp(); ct != nil {
 				got.ct = int64p(*ct)
