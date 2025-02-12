@@ -3,6 +3,7 @@ package relabeler
 import (
 	"fmt"
 	"io"
+	"math"
 	"unsafe"
 
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
@@ -54,7 +55,7 @@ func (i *ChunkIterator) Next() bool {
 
 	rc := i.r.RecodeNextChunk()
 	i.rc = &rc
-	return true
+	return rc.SeriesId != math.MaxUint32
 }
 
 func (i *ChunkIterator) At() block.Chunk {

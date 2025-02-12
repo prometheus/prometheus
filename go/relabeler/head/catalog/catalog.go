@@ -3,12 +3,13 @@ package catalog
 import (
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
-	"github.com/jonboulle/clockwork"
-	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 	"io"
 	"sort"
 	"sync"
+
+	"github.com/google/uuid"
+	"github.com/jonboulle/clockwork"
+	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 )
 
 const (
@@ -119,6 +120,10 @@ func (c *Catalog) SetStatus(id string, status Status) (*Record, error) {
 	r, ok := c.records[id]
 	if !ok {
 		return nil, fmt.Errorf("not found: %s", id)
+	}
+
+	if r.status == status {
+		return r, nil
 	}
 
 	r.status = status

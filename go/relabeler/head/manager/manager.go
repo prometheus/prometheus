@@ -131,14 +131,15 @@ func (m *Manager) Restore(blockDuration time.Duration) (active relabeler.Head, r
 			isNotCorrupted := !loadResult.corrupted
 			if isNotCorrupted && statusIsAppropriate && isInBlockTimeRange {
 				active = loadResult.head
+				if _, err = m.catalog.SetStatus(loadResult.headRecord.ID(), catalog.StatusActive); err != nil {
+					return nil, nil, fmt.Errorf("failed to set status: %w", err)
+				}
 				continue
 			}
 		}
 
-		if loadResult.headRecord.Status() != catalog.StatusRotated {
-			if _, err = m.catalog.SetStatus(loadResult.headRecord.ID(), catalog.StatusRotated); err != nil {
-				return nil, nil, fmt.Errorf("failed to set status: %w", err)
-			}
+		if _, err = m.catalog.SetStatus(loadResult.headRecord.ID(), catalog.StatusRotated); err != nil {
+			return nil, nil, fmt.Errorf("failed to set status: %w", err)
 		}
 
 		if err = loadResult.head.Finalize(); err != nil {
@@ -197,7 +198,7 @@ func (m *Manager) loadHead(
 		switch {
 		case headRecord.Status() == catalog.StatusActive:
 			if numberOfSegments > 0 {
-				headRecord.SetLastAppendedSegmentID(uint32(numberOfSegments) - 1)
+				headRecord.SetLastAppendedSegmentID(numberOfSegments - 1)
 			}
 		case isNumberOfSegmentsMismatched(headRecord, numberOfSegments):
 			corrupted = true

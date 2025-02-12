@@ -153,7 +153,9 @@ func (w *BlockWriter) write(block Block, minT, maxT int64) (err error) {
 
 	blockMeta := &tsdb.BlockMeta{ULID: uid, MinTime: math.MaxInt64, MaxTime: math.MinInt64}
 
+	var hasChunks bool
 	for chunkIterator.Next() {
+		hasChunks = true
 		chunk = chunkIterator.At()
 		chunkMetadata, err = chunkw.Write(chunk)
 		if err != nil {
@@ -175,6 +177,10 @@ func (w *BlockWriter) write(block Block, minT, maxT int64) (err error) {
 			chunksMetadata = append(chunksMetadata[:0], chunkMetadata)
 			previousSeriesID = seriesID
 		}
+	}
+
+	if !hasChunks {
+		return nil
 	}
 
 	if err = writeSeries(); err != nil {
