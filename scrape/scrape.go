@@ -1962,6 +1962,10 @@ func isSeriesPartOfFamily(mName string, mfName []byte, typ model.MetricType) boo
 
 // Adds samples to the appender, checking the error, and then returns the # of samples added,
 // whether the caller should continue to process more samples, and any sample or bucket limit errors.
+// Switch error cases for Sample and Bucket limits are checked first since they're more common
+// during normal operation (e.g., accidental cardinality explosion, sudden traffic spikes).
+// Current case ordering prevents exercising other cases when limits are exceeded.
+// Remaining error cases typically occur only a few times, often during initial setup.
 func (sl *scrapeLoop) checkAddError(met []byte, err error, sampleLimitErr, bucketLimitErr *error, appErrs *appendErrors) (bool, error) {
 	switch {
 	case err == nil:
