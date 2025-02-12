@@ -15,6 +15,7 @@ package vultr
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -117,7 +118,7 @@ type Discovery struct {
 func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
 	m, ok := metrics.(*vultrMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	d := &Discovery{
@@ -134,7 +135,7 @@ func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.Discove
 		Timeout:   time.Duration(conf.RefreshInterval),
 	})
 
-	d.client.SetUserAgent(fmt.Sprintf("Prometheus/%s", version.Version))
+	d.client.SetUserAgent(version.PrometheusUserAgent())
 
 	if err != nil {
 		return nil, fmt.Errorf("error setting up vultr agent: %w", err)

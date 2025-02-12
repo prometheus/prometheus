@@ -1,7 +1,7 @@
 ---
 extends: default
 ignore: |
-  ui/react-app/node_modules
+  **/node_modules
 
 rules:
   braces:

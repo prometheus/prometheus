@@ -43,8 +43,8 @@ const (
 func TestTargetLabels(t *testing.T) {
 	target := newTestTarget("example.com:80", 0, labels.FromStrings("job", "some_job", "foo", "bar"))
 	want := labels.FromStrings(model.JobLabel, "some_job", "foo", "bar")
-	b := labels.NewScratchBuilder(0)
-	got := target.Labels(&b)
+	b := labels.NewBuilder(labels.EmptyLabels())
+	got := target.Labels(b)
 	require.Equal(t, want, got)
 	i := 0
 	target.LabelsRange(func(l labels.Label) {
@@ -103,9 +103,11 @@ func TestTargetOffset(t *testing.T) {
 }
 
 func TestTargetURL(t *testing.T) {
-	params := url.Values{
-		"abc": []string{"foo", "bar", "baz"},
-		"xyz": []string{"hoo"},
+	scrapeConfig := &config.ScrapeConfig{
+		Params: url.Values{
+			"abc": []string{"foo", "bar", "baz"},
+			"xyz": []string{"hoo"},
+		},
 	}
 	labels := labels.FromMap(map[string]string{
 		model.AddressLabel:     "example.com:1234",
@@ -114,7 +116,7 @@ func TestTargetURL(t *testing.T) {
 		"__param_abc":          "overwrite",
 		"__param_cde":          "huu",
 	})
-	target := NewTarget(labels, labels, params)
+	target := NewTarget(labels, scrapeConfig, nil, nil)
 
 	// The reserved labels are concatenated into a full URL. The first value for each
 	// URL query parameter can be set/modified via labels as well.
@@ -139,7 +141,7 @@ func newTestTarget(targetURL string, _ time.Duration, lbls labels.Labels) *Targe
 	lb.Set(model.AddressLabel, strings.TrimPrefix(targetURL, "http://"))
 	lb.Set(model.MetricsPathLabel, "/metrics")
 
-	return &Target{labels: lb.Labels()}
+	return &Target{labels: lb.Labels(), scrapeConfig: &config.ScrapeConfig{}}
 }
 
 func TestNewHTTPBearerToken(t *testing.T) {
@@ -352,6 +354,80 @@ func TestTargetsFromGroup(t *testing.T) {
 	require.Len(t, targets, 1)
 	require.Len(t, failures, 1)
 	require.EqualError(t, failures[0], expectedError)
+}
+
+// TestTargetsFromGroupWithLabelKeepDrop aims to demonstrate and reinforce the current behavior: relabeling's "labelkeep" and "labeldrop"
+// are applied to all labels of a target, including internal ones (labels starting with "__" such as "__address__").
+// This will be helpful for cases like https://github.com/prometheus/prometheus/issues/12355.
+func TestTargetsFromGroupWithLabelKeepDrop(t *testing.T) {
+	tests := []struct {
+		name             string
+		cfgText          string
+		targets          []model.LabelSet
+		shouldDropTarget bool
+	}{
+		{
+			name: "no relabeling",
+			cfgText: `
+global:
+  metric_name_validation_scheme: legacy
+scrape_configs:
+  - job_name: job1
+    static_configs:
+      - targets: ["localhost:9090"]
+`,
+			targets: []model.LabelSet{{model.AddressLabel: "localhost:9090"}},
+		},
+		{
+			name: "labelkeep",
+			cfgText: `
+global:
+  metric_name_validation_scheme: legacy
+scrape_configs:
+  - job_name: job1
+    static_configs:
+      - targets: ["localhost:9090"]
+    relabel_configs:
+      - regex: 'foo'
+        action: labelkeep
+`,
+			targets:          []model.LabelSet{{model.AddressLabel: "localhost:9090"}},
+			shouldDropTarget: true,
+		},
+		{
+			name: "labeldrop",
+			cfgText: `
+global:
+  metric_name_validation_scheme: legacy
+scrape_configs:
+  - job_name: job1
+    static_configs:
+      - targets: ["localhost:9090"]
+    relabel_configs:
+      - regex: '__address__'
+        action: labeldrop
+`,
+			targets:          []model.LabelSet{{model.AddressLabel: "localhost:9090"}},
+			shouldDropTarget: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := loadConfiguration(t, tt.cfgText)
+			lb := labels.NewBuilder(labels.EmptyLabels())
+			targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: tt.targets}, config.ScrapeConfigs[0], nil, lb)
+
+			if tt.shouldDropTarget {
+				require.Len(t, failures, 1)
+				require.EqualError(t, failures[0], "instance 0 in group : no address")
+				require.Empty(t, targets)
+			} else {
+				require.Empty(t, failures)
+				require.Len(t, targets, 1)
+			}
+		})
+	}
 }
 
 func BenchmarkTargetsFromGroup(b *testing.B) {

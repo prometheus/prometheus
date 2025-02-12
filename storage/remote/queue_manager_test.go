@@ -20,6 +20,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"path"
 	"runtime/pprof"
 	"sort"
 	"strconv"
@@ -48,6 +49,7 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/runutil"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -340,10 +342,10 @@ func TestMetadataDelivery(t *testing.T) {
 	numMetadata := 1532
 	for i := 0; i < numMetadata; i++ {
 		metadata = append(metadata, scrape.MetricMetadata{
-			Metric: "prometheus_remote_storage_sent_metadata_bytes_total_" + strconv.Itoa(i),
-			Type:   model.MetricTypeCounter,
-			Help:   "a nice help text",
-			Unit:   "",
+			MetricFamily: "prometheus_remote_storage_sent_metadata_bytes_" + strconv.Itoa(i),
+			Type:         model.MetricTypeCounter,
+			Help:         "a nice help text",
+			Unit:         "",
 		})
 	}
 
@@ -355,7 +357,7 @@ func TestMetadataDelivery(t *testing.T) {
 	// fit into MaxSamplesPerSend.
 	require.Equal(t, numMetadata/config.DefaultMetadataConfig.MaxSamplesPerSend+1, c.writesReceived)
 	// Make sure the last samples were sent.
-	require.Equal(t, c.receivedMetadata[metadata[len(metadata)-1].Metric][0].MetricFamilyName, metadata[len(metadata)-1].Metric)
+	require.Equal(t, c.receivedMetadata[metadata[len(metadata)-1].MetricFamily][0].MetricFamilyName, metadata[len(metadata)-1].MetricFamily)
 }
 
 func TestWALMetadataDelivery(t *testing.T) {
@@ -763,7 +765,7 @@ func TestDisableReshardOnRetry(t *testing.T) {
 				onStoreCalled()
 
 				return WriteResponseStats{}, RecoverableError{
-					error:      fmt.Errorf("fake error"),
+					error:      errors.New("fake error"),
 					retryAfter: model.Duration(retryAfter),
 				}
 			},
@@ -1407,12 +1409,12 @@ func BenchmarkStartup(b *testing.B) {
 
 	// Find the second largest segment; we will replay up to this.
 	// (Second largest as WALWatcher will start tailing the largest).
-	dirents, err := os.ReadDir(dir)
+	dirents, err := os.ReadDir(path.Join(dir, "wal"))
 	require.NoError(b, err)
 
 	var segments []int
 	for _, dirent := range dirents {
-		if i, err := strconv.Atoi(dirent.Name()); err != nil {
+		if i, err := strconv.Atoi(dirent.Name()); err == nil {
 			segments = append(segments, i)
 		}
 	}
@@ -1424,13 +1426,15 @@ func BenchmarkStartup(b *testing.B) {
 	mcfg := config.DefaultMetadataConfig
 	for n := 0; n < b.N; n++ {
 		metrics := newQueueManagerMetrics(nil, "", "")
+		watcherMetrics := wlog.NewWatcherMetrics(nil)
 		c := NewTestBlockedWriteClient()
 		// todo: test with new proto type(s)
-		m := NewQueueManager(metrics, nil, nil, logger, dir,
+		m := NewQueueManager(metrics, watcherMetrics, nil, logger, dir,
 			newEWMARate(ewmaWeight, shardUpdateDuration),
 			cfg, mcfg, labels.EmptyLabels(), nil, c, 1*time.Minute, newPool(), newHighestTimestampMetric(), nil, false, false, config.RemoteWriteProtoMsgV1)
 		m.watcher.SetStartTime(timestamp.Time(math.MaxInt64))
 		m.watcher.MaxSegment = segments[len(segments)-2]
+		m.watcher.SetMetrics()
 		err := m.watcher.Run()
 		require.NoError(b, err)
 	}
@@ -2073,7 +2077,7 @@ func createTimeseriesWithOldSamples(numSamples, numSeries int, extraLabels ...la
 		for j := 0; j < numSamples/2; j++ {
 			sample := record.RefSample{
 				Ref: chunks.HeadSeriesRef(i),
-				T:   int64(int(time.Now().UnixMilli()) + j),
+				T:   time.Now().UnixMilli() + int64(j),
 				V:   float64(i),
 			}
 			samples = append(samples, sample)

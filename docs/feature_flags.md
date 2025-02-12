@@ -11,20 +11,11 @@ Their behaviour can change in future releases which will be communicated via the
 You can enable them using the `--enable-feature` flag with a comma separated list of features.
 They may be enabled by default in future versions.
 
-## Expand environment variables in external labels
-
-`--enable-feature=expand-external-labels`
-
-Replace `${var}` or `$var` in the [`external_labels`](configuration/configuration.md#configuration-file)
-values according to the values of the current environment variables. References
-to undefined variables are replaced by the empty string.
-The `$` character can be escaped by using `$$`.
-
 ## Exemplars storage
 
 `--enable-feature=exemplar-storage`
 
-[OpenMetrics](https://github.com/OpenObservability/OpenMetrics/blob/main/specification/OpenMetrics.md#exemplars) introduces the ability for scrape targets to add exemplars to certain metrics. Exemplars are references to data outside of the MetricSet. A common use case are IDs of program traces.
+[OpenMetrics](https://github.com/prometheus/OpenMetrics/blob/v1.0.0/specification/OpenMetrics.md#exemplars) introduces the ability for scrape targets to add exemplars to certain metrics. Exemplars are references to data outside of the MetricSet. A common use case are IDs of program traces.
 
 Exemplar storage is implemented as a fixed size circular buffer that stores exemplars in memory for all series. Enabling this feature will enable the storage of exemplars scraped by Prometheus. The config file block [storage](configuration/configuration.md#configuration-file)/[exemplars](configuration/configuration.md#exemplars) can be used to control the size of circular buffer by # of exemplars. An exemplar with just a `trace_id=<jaeger-trace-id>` uses roughly 100 bytes of memory via the in-memory exemplar storage. If the exemplar storage is enabled, we will also append the exemplars to WAL for local persistence (for WAL duration).
 
@@ -32,9 +23,8 @@ Exemplar storage is implemented as a fixed size circular buffer that stores exem
 
 `--enable-feature=memory-snapshot-on-shutdown`
 
-This takes the snapshot of the chunks that are in memory along with the series information when shutting down and stores
-it on disk. This will reduce the startup time since the memory state can be restored with this snapshot and m-mapped
-chunks without the need of WAL replay.
+This takes a snapshot of the chunks that are in memory along with the series information when shutting down and stores it on disk. This will reduce the startup time since the memory state can now be restored with this snapshot 
+and m-mapped chunks, while a WAL replay from disk is only needed for the parts of the WAL that are not part of the snapshot.
 
 ## Extra scrape metrics
 
@@ -56,20 +46,6 @@ statistics. Currently this is limited to totalQueryableSamples.
 
 When disabled in either the engine or the query, per-step statistics are not
 computed at all.
-
-## Auto GOMAXPROCS
-
-`--enable-feature=auto-gomaxprocs`
-
-When enabled, GOMAXPROCS variable is automatically set to match Linux container CPU quota.
-
-## Auto GOMEMLIMIT
-
-`--enable-feature=auto-gomemlimit`
-
-When enabled, the GOMEMLIMIT variable is automatically set to match the Linux container memory limit. If there is no container limit, or the process is running outside of containers, the system memory total is used.
-
-There is also an additional tuning flag, `--auto-gomemlimit.ratio`, which allows controlling how much of the memory is used for Prometheus. The remainder is reserved for memory outside the process. For example, kernel page cache. Page cache is important for Prometheus TSDB query performance. The default is `0.9`, which means 90% of the memory limit will be used for Prometheus.
 
 ## Native Histograms
 
@@ -93,59 +69,7 @@ those classic histograms that do not come with a corresponding native
 histogram. However, if a native histogram is present, Prometheus will ignore
 the corresponding classic histogram, with the notable exception of exemplars,
 which are always ingested. To keep the classic histograms as well, enable
-`scrape_classic_histograms` in the scrape job.
-
-_Note about the format of `le` and `quantile` label values:_
-
-In certain situations, the protobuf parsing changes the number formatting of
-the `le` labels of classic histograms and the `quantile` labels of
-summaries. Typically, this happens if the scraped target is instrumented with
-[client_golang](https://github.com/prometheus/client_golang) provided that
-[promhttp.HandlerOpts.EnableOpenMetrics](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus/promhttp#HandlerOpts)
-is set to `false`. In such a case, integer label values are represented in the
-text format as such, e.g. `quantile="1"` or `le="2"`. However, the protobuf parsing
-changes the representation to float-like (following the OpenMetrics
-specification), so the examples above become `quantile="1.0"` and `le="2.0"` after
-ingestion into Prometheus, which changes the identity of the metric compared to
-what was ingested before via the text format.
-
-The effect of this change is that alerts, recording rules and dashboards that
-directly reference label values as whole numbers such as `le="1"` will stop
-working.
-
-Aggregation by the `le` and `quantile` labels for vectors that contain the old and
-new formatting will lead to unexpected results, and range vectors that span the
-transition between the different formatting will contain additional series.
-The most common use case for both is the quantile calculation via
-`histogram_quantile`, e.g.
-`histogram_quantile(0.95, sum by (le) (rate(histogram_bucket[10m])))`.
-The `histogram_quantile` function already tries to mitigate the effects to some
-extent, but there will be inaccuracies, in particular for shorter ranges that
-cover only a few samples.
-
-Ways to deal with this change either globally or on a per metric basis:
-
-- Fix references to integer `le`, `quantile` label values, but otherwise do
-nothing and accept that some queries that span the transition time will produce
-inaccurate or unexpected results.
-_This is the recommended solution, to get consistently normalized label values._
-Also Prometheus 3.0 is expected to enforce normalization of these label values.
-- Use `metric_relabel_config` to retain the old labels when scraping targets.
-This should **only** be applied to metrics that currently produce such labels.
-
-<!-- The following config snippet is unit tested in scrape/scrape_test.go. -->
-```yaml
-    metric_relabel_configs:
-      - source_labels:
-          - quantile
-        target_label: quantile
-        regex: (\d+)\.0+
-      - source_labels:
-          - le
-          - __name__
-        target_label: le
-        regex: (\d+)\.0+;.*_bucket
-```
+`always_scrape_classic_histograms` in the scrape job.
 
 ## Experimental PromQL functions
 
@@ -207,13 +131,25 @@ Note that during this delay, the Head continues its usual operations, which incl
 
 Despite the delay in compaction, the blocks produced are time-aligned in the same manner as they would be if the delay was not in place.
 
-## Delay __name__ label removal for PromQL engine
+## Delay `__name__` label removal for PromQL engine
 
 `--enable-feature=promql-delayed-name-removal`
 
 When enabled, Prometheus will change the way in which the `__name__` label is removed from PromQL query results (for functions and expressions for which this is necessary). Specifically, it will delay the removal to the last step of the query evaluation, instead of every time an expression or function creating derived metrics is evaluated.
 
 This allows optionally preserving the `__name__` label via the `label_replace` and `label_join` functions, and helps prevent the "vector cannot contain metrics with the same labelset" error, which can happen when applying a regex-matcher to the `__name__` label.
+
+Note that evaluating parts of the query separately will still trigger the
+labelset collision. This commonly happens when analyzing intermediate results
+of a query manually or with a tool like PromLens.
+
+If a query refers to the already removed `__name__` label, its behavior may
+change while this feature flag is set. (Example: `sum by (__name__)
+(rate({foo="bar"}[5m]))`, see [details on
+GitHub](https://github.com/prometheus/prometheus/issues/11397#issuecomment-1451998792).)
+These queries are rare to occur and easy to fix. (In the above example,
+removing `by (__name__)` doesn't change anything without the feature flag and
+fixes the possible problem with the feature flag.)
 
 ## Auto Reload Config
 
@@ -227,3 +163,25 @@ Configuration reloads are triggered by detecting changes in the checksum of the
 main configuration file or any referenced files, such as rule and scrape
 configurations. To ensure consistency and avoid issues during reloads, it's
 recommended to update these files atomically.
+
+## OTLP Delta Conversion
+
+`--enable-feature=otlp-deltatocumulative`
+
+When enabled, Prometheus will convert OTLP metrics from delta temporality to their
+cumulative equivalent, instead of dropping them.
+
+This uses
+[deltatocumulative][d2c]
+from the OTel collector, using its default settings.
+
+Delta conversion keeps in-memory state to aggregate delta changes per-series over time.
+When Prometheus restarts, this state is lost, starting the aggregation from zero
+again. This results in a counter reset in the cumulative series.
+
+This state is periodically ([`max_stale`][d2c]) cleared of inactive series.
+
+Enabling this _can_ have negative impact on performance, because the in-memory
+state is mutex guarded. Cumulative-only OTLP requests are not affected.
+
+[d2c]: https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor

@@ -48,17 +48,45 @@ func TestCreateAttributes(t *testing.T) {
 		resource.Attributes().PutStr(k, v)
 	}
 	attrs := pcommon.NewMap()
-	attrs.PutStr("__name__", "test_metric")
 	attrs.PutStr("metric-attr", "metric value")
+	attrs.PutStr("metric-attr-other", "metric value other")
 
 	testCases := []struct {
 		name                      string
 		promoteResourceAttributes []string
+		ignoreAttrs               []string
 		expectedLabels            []prompb.Label
 	}{
 		{
 			name:                      "Successful conversion without resource attribute promotion",
 			promoteResourceAttributes: nil,
+			expectedLabels: []prompb.Label{
+				{
+					Name:  "__name__",
+					Value: "test_metric",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+				{
+					Name:  "job",
+					Value: "service name",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "metric value",
+				},
+				{
+					Name:  "metric_attr_other",
+					Value: "metric value other",
+				},
+			},
+		},
+		{
+			name:                      "Successful conversion with some attributes ignored",
+			promoteResourceAttributes: nil,
+			ignoreAttrs:               []string{"metric-attr-other"},
 			expectedLabels: []prompb.Label{
 				{
 					Name:  "__name__",
@@ -99,6 +127,10 @@ func TestCreateAttributes(t *testing.T) {
 					Value: "metric value",
 				},
 				{
+					Name:  "metric_attr_other",
+					Value: "metric value other",
+				},
+				{
 					Name:  "existent_attr",
 					Value: "resource value",
 				},
@@ -128,6 +160,10 @@ func TestCreateAttributes(t *testing.T) {
 					Name:  "metric_attr",
 					Value: "metric value",
 				},
+				{
+					Name:  "metric_attr_other",
+					Value: "metric value other",
+				},
 			},
 		},
 		{
@@ -154,6 +190,10 @@ func TestCreateAttributes(t *testing.T) {
 					Name:  "metric_attr",
 					Value: "metric value",
 				},
+				{
+					Name:  "metric_attr_other",
+					Value: "metric value other",
+				},
 			},
 		},
 	}
@@ -162,7 +202,7 @@ func TestCreateAttributes(t *testing.T) {
 			settings := Settings{
 				PromoteResourceAttributes: tc.promoteResourceAttributes,
 			}
-			lbls := createAttributes(resource, attrs, settings, nil, false)
+			lbls := createAttributes(resource, attrs, settings, tc.ignoreAttrs, false, model.MetricNameLabel, "test_metric")
 
 			assert.ElementsMatch(t, lbls, tc.expectedLabels)
 		})
@@ -405,4 +445,39 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			assert.Empty(t, converter.conflicts)
 		})
 	}
+}
+
+func TestGetPromExemplars(t *testing.T) {
+	ctx := context.Background()
+	everyN := &everyNTimes{n: 1}
+
+	t.Run("Exemplars with int value", func(t *testing.T) {
+		pt := pmetric.NewNumberDataPoint()
+		exemplar := pt.Exemplars().AppendEmpty()
+		exemplar.SetTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
+		exemplar.SetIntValue(42)
+		exemplars, err := getPromExemplars(ctx, everyN, pt)
+		assert.NoError(t, err)
+		assert.Len(t, exemplars, 1)
+		assert.Equal(t, float64(42), exemplars[0].Value)
+	})
+
+	t.Run("Exemplars with double value", func(t *testing.T) {
+		pt := pmetric.NewNumberDataPoint()
+		exemplar := pt.Exemplars().AppendEmpty()
+		exemplar.SetTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
+		exemplar.SetDoubleValue(69.420)
+		exemplars, err := getPromExemplars(ctx, everyN, pt)
+		assert.NoError(t, err)
+		assert.Len(t, exemplars, 1)
+		assert.Equal(t, 69.420, exemplars[0].Value)
+	})
+
+	t.Run("Exemplars with unsupported value type", func(t *testing.T) {
+		pt := pmetric.NewNumberDataPoint()
+		exemplar := pt.Exemplars().AppendEmpty()
+		exemplar.SetTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
+		_, err := getPromExemplars(ctx, everyN, pt)
+		assert.Error(t, err)
+	})
 }

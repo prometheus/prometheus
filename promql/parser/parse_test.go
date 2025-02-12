@@ -2398,7 +2398,7 @@ var testExpr = []struct {
 		},
 	},
 	{
-		input: `sum by ("foo")({"some.metric"})`,
+		input: `sum by ("foo bar")({"some.metric"})`,
 		expected: &AggregateExpr{
 			Op: SUM,
 			Expr: &VectorSelector{
@@ -2406,14 +2406,14 @@ var testExpr = []struct {
 					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some.metric"),
 				},
 				PosRange: posrange.PositionRange{
-					Start: 15,
-					End:   30,
+					Start: 19,
+					End:   34,
 				},
 			},
-			Grouping: []string{"foo"},
+			Grouping: []string{"foo bar"},
 			PosRange: posrange.PositionRange{
 				Start: 0,
-				End:   31,
+				End:   35,
 			},
 		},
 	},
@@ -3872,6 +3872,81 @@ var testExpr = []struct {
 			},
 		},
 	},
+	{
+		input: `info(rate(http_request_counter_total{}[5m]))`,
+		expected: &Call{
+			Func: MustGetFunction("info"),
+			Args: Expressions{
+				&Call{
+					Func: MustGetFunction("rate"),
+					PosRange: posrange.PositionRange{
+						Start: 5,
+						End:   43,
+					},
+					Args: Expressions{
+						&MatrixSelector{
+							VectorSelector: &VectorSelector{
+								Name:           "http_request_counter_total",
+								OriginalOffset: 0,
+								LabelMatchers: []*labels.Matcher{
+									MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "http_request_counter_total"),
+								},
+								PosRange: posrange.PositionRange{
+									Start: 10,
+									End:   38,
+								},
+							},
+							EndPos: 42,
+							Range:  5 * time.Minute,
+						},
+					},
+				},
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   44,
+			},
+		},
+	},
+	{
+		input:  `info(rate(http_request_counter_total{}[5m]), target_info{foo="bar"})`,
+		fail:   true,
+		errMsg: `1:46: parse error: expected label selectors only, got vector selector instead`,
+	},
+	{
+		input: `info(http_request_counter_total{namespace="zzz"}, {foo="bar", bar="baz"})`,
+		expected: &Call{
+			Func: MustGetFunction("info"),
+			Args: Expressions{
+				&VectorSelector{
+					Name: "http_request_counter_total",
+					LabelMatchers: []*labels.Matcher{
+						MustLabelMatcher(labels.MatchEqual, "namespace", "zzz"),
+						MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "http_request_counter_total"),
+					},
+					PosRange: posrange.PositionRange{
+						Start: 5,
+						End:   48,
+					},
+				},
+				&VectorSelector{
+					LabelMatchers: []*labels.Matcher{
+						MustLabelMatcher(labels.MatchEqual, "foo", "bar"),
+						MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+					},
+					PosRange: posrange.PositionRange{
+						Start: 50,
+						End:   72,
+					},
+					BypassEmptyMatcherCheck: true,
+				},
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   73,
+			},
+		},
+	},
 }
 
 func makeInt64Pointer(val int64) *int64 {
@@ -3889,6 +3964,12 @@ func readable(s string) string {
 }
 
 func TestParseExpressions(t *testing.T) {
+	// Enable experimental functions testing.
+	EnableExperimentalFunctions = true
+	t.Cleanup(func() {
+		EnableExperimentalFunctions = false
+	})
+
 	model.NameValidationScheme = model.UTF8Validation
 	for _, test := range testExpr {
 		t.Run(readable(test.input), func(t *testing.T) {
@@ -3937,6 +4018,76 @@ func TestParseExpressions(t *testing.T) {
 					require.LessOrEqual(t, e.PositionRange.Start, e.PositionRange.End, "parse error has negative length\nExpression '%s'\nError: %v", test.input, e)
 					require.LessOrEqual(t, e.PositionRange.End, posrange.Pos(len(test.input)), "parse error is not contained in input\nExpression '%s'\nError: %v", test.input, e)
 				}
+			}
+		})
+	}
+}
+
+func TestParseSeriesDesc(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          string
+		expectedLabels labels.Labels
+		expectedValues []SequenceValue
+		expectError    string
+	}{
+		{
+			name:           "empty string",
+			expectedLabels: labels.EmptyLabels(),
+			expectedValues: []SequenceValue{},
+		},
+		{
+			name:  "simple line",
+			input: `http_requests{job="api-server", instance="0", group="production"}`,
+			expectedLabels: labels.FromStrings(
+				"__name__", "http_requests",
+				"group", "production",
+				"instance", "0",
+				"job", "api-server",
+			),
+			expectedValues: []SequenceValue{},
+		},
+		{
+			name:  "label name characters that require quoting",
+			input: `{"http.requests", "service.name"="api-server", instance="0", group="canary"}		0+50x2`,
+			expectedLabels: labels.FromStrings(
+				"__name__", "http.requests",
+				"group", "canary",
+				"instance", "0",
+				"service.name", "api-server",
+			),
+			expectedValues: []SequenceValue{
+				{Value: 0, Omitted: false, Histogram: (*histogram.FloatHistogram)(nil)},
+				{Value: 50, Omitted: false, Histogram: (*histogram.FloatHistogram)(nil)},
+				{Value: 100, Omitted: false, Histogram: (*histogram.FloatHistogram)(nil)},
+			},
+		},
+		{
+			name:        "confirm failure on junk after identifier",
+			input:       `{"http.requests"xx}		0+50x2`,
+			expectError: `parse error: unexpected identifier "xx" in label set, expected "," or "}"`,
+		},
+		{
+			name:        "confirm failure on bare operator after identifier",
+			input:       `{"http.requests"=, x="y"}		0+50x2`,
+			expectError: `parse error: unexpected "," in label set, expected string`,
+		},
+		{
+			name:        "confirm failure on unterminated string identifier",
+			input:       `{"http.requests}		0+50x2`,
+			expectError: `parse error: unterminated quoted string`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			l, v, err := ParseSeriesDesc(tc.input)
+			if tc.expectError != "" {
+				require.Contains(t, err.Error(), tc.expectError)
+			} else {
+				require.NoError(t, err)
+				require.True(t, labels.Equal(tc.expectedLabels, l))
+				require.Equal(t, tc.expectedValues, v)
 			}
 		})
 	}

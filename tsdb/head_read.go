@@ -103,37 +103,32 @@ func (h *headIndexReader) LabelNames(ctx context.Context, matchers ...*labels.Ma
 
 // Postings returns the postings list iterator for the label pairs.
 func (h *headIndexReader) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
-	switch len(values) {
-	case 0:
-		return index.EmptyPostings(), nil
-	case 1:
-		return h.head.postings.Get(name, values[0]), nil
-	default:
-		res := make([]index.Postings, 0, len(values))
-		for _, value := range values {
-			if p := h.head.postings.Get(name, value); !index.IsEmptyPostingsType(p) {
-				res = append(res, p)
-			}
-		}
-		return index.Merge(ctx, res...), nil
-	}
+	return h.head.postings.Postings(ctx, name, values...), nil
 }
 
 func (h *headIndexReader) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) index.Postings {
 	return h.head.postings.PostingsForLabelMatching(ctx, name, match)
 }
 
+func (h *headIndexReader) PostingsForAllLabelValues(ctx context.Context, name string) index.Postings {
+	return h.head.postings.PostingsForAllLabelValues(ctx, name)
+}
+
 func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 	series := make([]*memSeries, 0, 128)
 
+	notFoundSeriesCount := 0
 	// Fetch all the series only once.
 	for p.Next() {
 		s := h.head.series.getByID(chunks.HeadSeriesRef(p.At()))
 		if s == nil {
-			h.head.logger.Debug("Looked up series not found")
+			notFoundSeriesCount++
 		} else {
 			series = append(series, s)
 		}
+	}
+	if notFoundSeriesCount > 0 {
+		h.head.logger.Debug("Looked up series not found", "count", notFoundSeriesCount)
 	}
 	if err := p.Err(); err != nil {
 		return index.ErrPostings(fmt.Errorf("expand postings: %w", err))
@@ -159,11 +154,12 @@ func (h *headIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCou
 	}
 
 	out := make([]storage.SeriesRef, 0, 128)
+	notFoundSeriesCount := 0
 
 	for p.Next() {
 		s := h.head.series.getByID(chunks.HeadSeriesRef(p.At()))
 		if s == nil {
-			h.head.logger.Debug("Looked up series not found")
+			notFoundSeriesCount++
 			continue
 		}
 
@@ -173,6 +169,9 @@ func (h *headIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCou
 		}
 
 		out = append(out, storage.SeriesRef(s.ref))
+	}
+	if notFoundSeriesCount > 0 {
+		h.head.logger.Debug("Looked up series not found", "count", notFoundSeriesCount)
 	}
 
 	return index.NewListPostings(out)

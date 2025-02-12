@@ -15,6 +15,7 @@ package testutil
 
 import (
 	"net"
+	"slices"
 	"sync"
 	"testing"
 )
@@ -48,12 +49,7 @@ func RandomUnprivilegedPort(t *testing.T) int {
 }
 
 func portWasUsed(port int) bool {
-	for _, usedPort := range usedPorts {
-		if port == usedPort {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(usedPorts, port)
 }
 
 func getPort() (int, error) {

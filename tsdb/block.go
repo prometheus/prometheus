@@ -82,6 +82,10 @@ type IndexReader interface {
 	// If no postings are found having at least one matching label, an empty iterator is returned.
 	PostingsForLabelMatching(ctx context.Context, name string, match func(value string) bool) index.Postings
 
+	// PostingsForAllLabelValues returns a sorted iterator over all postings having a label with the given name.
+	// If no postings are found with the label in question, an empty iterator is returned.
+	PostingsForAllLabelValues(ctx context.Context, name string) index.Postings
+
 	// SortedPostings returns a postings list that is reordered to be sorted
 	// by the label set of the underlying series.
 	SortedPostings(index.Postings) index.Postings
@@ -217,7 +221,7 @@ type BlockMetaCompaction struct {
 }
 
 func (bm *BlockMetaCompaction) SetOutOfOrder() {
-	if bm.containsHint(CompactionHintFromOutOfOrder) {
+	if bm.FromOutOfOrder() {
 		return
 	}
 	bm.Hints = append(bm.Hints, CompactionHintFromOutOfOrder)
@@ -225,16 +229,7 @@ func (bm *BlockMetaCompaction) SetOutOfOrder() {
 }
 
 func (bm *BlockMetaCompaction) FromOutOfOrder() bool {
-	return bm.containsHint(CompactionHintFromOutOfOrder)
-}
-
-func (bm *BlockMetaCompaction) containsHint(hint string) bool {
-	for _, h := range bm.Hints {
-		if h == hint {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(bm.Hints, CompactionHintFromOutOfOrder)
 }
 
 const (
@@ -330,7 +325,7 @@ type Block struct {
 
 // OpenBlock opens the block in the directory. It can be passed a chunk pool, which is used
 // to instantiate chunk structs.
-func OpenBlock(logger *slog.Logger, dir string, pool chunkenc.Pool) (pb *Block, err error) {
+func OpenBlock(logger *slog.Logger, dir string, pool chunkenc.Pool, postingsDecoderFactory PostingsDecoderFactory) (pb *Block, err error) {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
 	}
@@ -351,7 +346,11 @@ func OpenBlock(logger *slog.Logger, dir string, pool chunkenc.Pool) (pb *Block, 
 	}
 	closers = append(closers, cr)
 
-	ir, err := index.NewFileReader(filepath.Join(dir, indexFilename))
+	decoder := index.DecodePostingsRaw
+	if postingsDecoderFactory != nil {
+		decoder = postingsDecoderFactory(meta)
+	}
+	ir, err := index.NewFileReader(filepath.Join(dir, indexFilename), decoder)
 	if err != nil {
 		return nil, err
 	}
@@ -525,6 +524,10 @@ func (r blockIndexReader) Postings(ctx context.Context, name string, values ...s
 
 func (r blockIndexReader) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) index.Postings {
 	return r.ir.PostingsForLabelMatching(ctx, name, match)
+}
+
+func (r blockIndexReader) PostingsForAllLabelValues(ctx context.Context, name string) index.Postings {
+	return r.ir.PostingsForAllLabelValues(ctx, name)
 }
 
 func (r blockIndexReader) SortedPostings(p index.Postings) index.Postings {

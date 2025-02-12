@@ -11,6 +11,7 @@ import {
   Alert,
   TextInput,
   Anchor,
+  Pagination,
 } from "@mantine/core";
 import { useSuspenseAPIQuery } from "../api/api";
 import { AlertingRule, AlertingRulesResult } from "../api/responseTypes/rules";
@@ -18,14 +19,15 @@ import badgeClasses from "../Badge.module.css";
 import panelClasses from "../Panel.module.css";
 import RuleDefinition from "../components/RuleDefinition";
 import { humanizeDurationRelative, now } from "../lib/formatTime";
-import { Fragment, useMemo } from "react";
+import { Fragment, useEffect, useMemo } from "react";
 import { StateMultiSelect } from "../components/StateMultiSelect";
 import { IconInfoCircle, IconSearch } from "@tabler/icons-react";
 import { LabelBadges } from "../components/LabelBadges";
+import { useLocalStorage } from "@mantine/hooks";
 import { useSettings } from "../state/settingsSlice";
 import {
   ArrayParam,
-  BooleanParam,
+  NumberParam,
   StringParam,
   useQueryParam,
   withDefault,
@@ -33,6 +35,7 @@ import {
 import { useDebouncedValue } from "@mantine/hooks";
 import { KVSearch } from "@nexucis/kvsearch";
 import { inputIconStyle } from "../styles";
+import CustomInfiniteScroll from "../components/CustomInfiniteScroll";
 
 type AlertsPageData = {
   // How many rules are in each state across all groups.
@@ -132,6 +135,12 @@ const buildAlertsPageData = (
   return pageData;
 };
 
+// Should be defined as a constant here instead of inline as a value
+// to avoid unnecessary re-renders. Otherwise the empty array has
+// a different reference on each render and causes subsequent memoized
+// computations to re-run as long as no state filter is selected.
+const emptyStateFilter: string[] = [];
+
 export default function AlertsPage() {
   // Fetch the alerting rules data.
   const { data } = useSuspenseAPIQuery<AlertingRulesResult>({
@@ -146,16 +155,22 @@ export default function AlertsPage() {
   // Define URL query params.
   const [stateFilter, setStateFilter] = useQueryParam(
     "state",
-    withDefault(ArrayParam, [])
+    withDefault(ArrayParam, emptyStateFilter)
   );
   const [searchFilter, setSearchFilter] = useQueryParam(
     "search",
     withDefault(StringParam, "")
   );
   const [debouncedSearch] = useDebouncedValue<string>(searchFilter.trim(), 250);
-  const [showEmptyGroups, setShowEmptyGroups] = useQueryParam(
-    "showEmptyGroups",
-    withDefault(BooleanParam, true)
+  const [showEmptyGroups, setShowEmptyGroups] = useLocalStorage<boolean>({
+    key: "alertsPage.showEmptyGroups",
+    defaultValue: true,
+  });
+
+  const { alertGroupsPerPage } = useSettings();
+  const [activePage, setActivePage] = useQueryParam(
+    "page",
+    withDefault(NumberParam, 1)
   );
 
   // Update the page data whenever the fetched data or filters change.
@@ -164,126 +179,105 @@ export default function AlertsPage() {
     [data, stateFilter, debouncedSearch]
   );
 
-  const shownGroups = showEmptyGroups
-    ? alertsPageData.groups
-    : alertsPageData.groups.filter((g) => g.rules.length > 0);
+  const shownGroups = useMemo(
+    () =>
+      showEmptyGroups
+        ? alertsPageData.groups
+        : alertsPageData.groups.filter((g) => g.rules.length > 0),
+    [alertsPageData.groups, showEmptyGroups]
+  );
 
-  return (
-    <Stack mt="xs">
-      <Group>
-        <StateMultiSelect
-          options={["inactive", "pending", "firing"]}
-          optionClass={(o) =>
-            o === "inactive"
-              ? badgeClasses.healthOk
-              : o === "pending"
-                ? badgeClasses.healthWarn
-                : badgeClasses.healthErr
-          }
-          optionCount={(o) =>
-            alertsPageData.globalCounts[
-              o as keyof typeof alertsPageData.globalCounts
-            ]
-          }
-          placeholder="Filter by rule state"
-          values={(stateFilter?.filter((v) => v !== null) as string[]) || []}
-          onChange={(values) => setStateFilter(values)}
-        />
-        <TextInput
-          flex={1}
-          leftSection={<IconSearch style={inputIconStyle} />}
-          placeholder="Filter by rule name or labels"
-          value={searchFilter || ""}
-          onChange={(event) =>
-            setSearchFilter(event.currentTarget.value || null)
-          }
-        ></TextInput>
-      </Group>
-      {alertsPageData.groups.length === 0 ? (
-        <Alert title="No rules found" icon={<IconInfoCircle />}>
-          No rules found.
-        </Alert>
-      ) : (
-        !showEmptyGroups &&
-        alertsPageData.groups.length !== shownGroups.length && (
-          <Alert
-            title="Hiding groups with no matching rules"
-            icon={<IconInfoCircle/>}
-          >
-            Hiding {alertsPageData.groups.length - shownGroups.length} empty
-            groups due to filters or no rules.
-            <Anchor ml="md" fz="1em" onClick={() => setShowEmptyGroups(true)}>
-              Show empty groups
-            </Anchor>
-          </Alert>
-        )
-      )}
-      <Stack>
-        {shownGroups.map((g, i) => {
-          return (
-            <Card
-              shadow="xs"
-              withBorder
-              p="md"
-              key={i} // TODO: Find a stable and definitely unique key.
-            >
-              <Group mb="md" mt="xs" ml="xs" justify="space-between">
-                <Group align="baseline">
-                  <Text
-                    fz="xl"
-                    fw={600}
-                    c="var(--mantine-primary-color-filled)"
-                  >
-                    {g.name}
-                  </Text>
-                  <Text fz="sm" c="gray.6">
-                    {g.file}
-                  </Text>
-                </Group>
-                <Group>
-                  {g.counts.firing > 0 && (
-                    <Badge className={badgeClasses.healthErr}>
-                      firing ({g.counts.firing})
-                    </Badge>
-                  )}
-                  {g.counts.pending > 0 && (
-                    <Badge className={badgeClasses.healthWarn}>
-                      pending ({g.counts.pending})
-                    </Badge>
-                  )}
-                  {g.counts.inactive > 0 && (
-                    <Badge className={badgeClasses.healthOk}>
-                      inactive ({g.counts.inactive})
-                    </Badge>
-                  )}
-                </Group>
-              </Group>
-              {g.counts.total === 0 ? (
-                <Alert title="No rules" icon={<IconInfoCircle />}>
-                  No rules in this group.
-                  <Anchor
-                    ml="md"
-                    fz="1em"
-                    onClick={() => setShowEmptyGroups(false)}
-                  >
-                    Hide empty groups
-                  </Anchor>
-                </Alert>
-              ) : g.rules.length === 0 ? (
-                <Alert title="No matching rules" icon={<IconInfoCircle />}>
-                  No rules in this group match your filter criteria (omitted{" "}
-                  {g.counts.total} filtered rules).
-                  <Anchor
-                    ml="md"
-                    fz="1em"
-                    onClick={() => setShowEmptyGroups(false)}
-                  >
-                    Hide empty groups
-                  </Anchor>
-                </Alert>
-              ) : (
+  // If we were e.g. on page 10 and the number of total pages decreases to 5 (due to filtering
+  // or changing the max number of items per page), go to the largest possible page.
+  const totalPageCount = Math.ceil(shownGroups.length / alertGroupsPerPage);
+  const effectiveActivePage = Math.max(1, Math.min(activePage, totalPageCount));
+
+  useEffect(() => {
+    if (effectiveActivePage !== activePage) {
+      setActivePage(effectiveActivePage);
+    }
+  }, [effectiveActivePage, activePage, setActivePage]);
+
+  const currentPageGroups = useMemo(
+    () =>
+      shownGroups.slice(
+        (effectiveActivePage - 1) * alertGroupsPerPage,
+        effectiveActivePage * alertGroupsPerPage
+      ),
+    [shownGroups, effectiveActivePage, alertGroupsPerPage]
+  );
+
+  // We memoize the actual rendering of the page items to avoid re-rendering
+  // them on every state change. This is especially important when the user
+  // types into the search box, as the search filter changes on every keystroke,
+  // even before debouncing takes place (extracting the filters and results list
+  // into separate components would be an alternative to this, but it's kinda
+  // convenient to have in the same file IMO).
+  const renderedPageItems = useMemo(
+    () =>
+      currentPageGroups.map((g, i) => (
+        <Card
+          shadow="xs"
+          withBorder
+          p="md"
+          key={i} // TODO: Find a stable and definitely unique key.
+        >
+          <Group mb="md" mt="xs" ml="xs" justify="space-between">
+            <Group align="baseline">
+              <Text fz="xl" fw={600} c="var(--mantine-primary-color-filled)">
+                {g.name}
+              </Text>
+              <Text fz="sm" c="gray.6">
+                {g.file}
+              </Text>
+            </Group>
+            <Group>
+              {g.counts.firing > 0 && (
+                <Badge className={badgeClasses.healthErr}>
+                  firing ({g.counts.firing})
+                </Badge>
+              )}
+              {g.counts.pending > 0 && (
+                <Badge className={badgeClasses.healthWarn}>
+                  pending ({g.counts.pending})
+                </Badge>
+              )}
+              {g.counts.inactive > 0 && (
+                <Badge className={badgeClasses.healthOk}>
+                  inactive ({g.counts.inactive})
+                </Badge>
+              )}
+            </Group>
+          </Group>
+          {g.counts.total === 0 ? (
+            <Alert title="No rules" icon={<IconInfoCircle />}>
+              No rules in this group.
+              <Anchor
+                ml="md"
+                fz="1em"
+                onClick={() => setShowEmptyGroups(false)}
+              >
+                Hide empty groups
+              </Anchor>
+            </Alert>
+          ) : g.rules.length === 0 ? (
+            <Alert title="No matching rules" icon={<IconInfoCircle />}>
+              No rules in this group match your filter criteria (omitted{" "}
+              {g.counts.total} filtered rules).
+              <Anchor
+                ml="md"
+                fz="1em"
+                onClick={() => setShowEmptyGroups(false)}
+              >
+                Hide empty groups
+              </Anchor>
+            </Alert>
+          ) : (
+            <CustomInfiniteScroll
+              allItems={g.rules}
+              child={({ items }) => (
                 <Accordion multiple variant="separated">
-                  {g.rules.map((r, j) => {
+                  {items.map((r, j) => {
                     return (
                       <Accordion.Item
                         styles={{
@@ -327,7 +321,7 @@ export default function AlertsPage() {
                           {r.rule.alerts.length > 0 && (
                             <Table mt="lg">
                               <Table.Thead>
-                                <Table.Tr style={{whiteSpace: "nowrap"}}>
+                                <Table.Tr style={{ whiteSpace: "nowrap" }}>
                                   <Table.Th>Alert labels</Table.Th>
                                   <Table.Th>State</Table.Th>
                                   <Table.Th>Active Since</Table.Th>
@@ -405,9 +399,71 @@ export default function AlertsPage() {
                   })}
                 </Accordion>
               )}
-            </Card>
-          );
-        })}
+            />
+          )}
+        </Card>
+      )),
+    [currentPageGroups, showAnnotations, setShowEmptyGroups]
+  );
+
+  return (
+    <Stack mt="xs">
+      <Group>
+        <StateMultiSelect
+          options={["inactive", "pending", "firing"]}
+          optionClass={(o) =>
+            o === "inactive"
+              ? badgeClasses.healthOk
+              : o === "pending"
+                ? badgeClasses.healthWarn
+                : badgeClasses.healthErr
+          }
+          optionCount={(o) =>
+            alertsPageData.globalCounts[
+              o as keyof typeof alertsPageData.globalCounts
+            ]
+          }
+          placeholder="Filter by rule state"
+          values={(stateFilter?.filter((v) => v !== null) as string[]) || []}
+          onChange={(values) => setStateFilter(values)}
+        />
+        <TextInput
+          flex={1}
+          leftSection={<IconSearch style={inputIconStyle} />}
+          placeholder="Filter by rule name or labels"
+          value={searchFilter || ""}
+          onChange={(event) =>
+            setSearchFilter(event.currentTarget.value || null)
+          }
+        ></TextInput>
+      </Group>
+      {alertsPageData.groups.length === 0 ? (
+        <Alert title="No rules found" icon={<IconInfoCircle />}>
+          No rules found.
+        </Alert>
+      ) : (
+        !showEmptyGroups &&
+        alertsPageData.groups.length !== shownGroups.length && (
+          <Alert
+            title="Hiding groups with no matching rules"
+            icon={<IconInfoCircle />}
+          >
+            Hiding {alertsPageData.groups.length - shownGroups.length} empty
+            groups due to filters or no rules.
+            <Anchor ml="md" fz="1em" onClick={() => setShowEmptyGroups(true)}>
+              Show empty groups
+            </Anchor>
+          </Alert>
+        )
+      )}
+      <Stack>
+        <Pagination
+          total={totalPageCount}
+          value={effectiveActivePage}
+          onChange={setActivePage}
+          hideWithOnePage
+        />
+        {renderedPageItems}
       </Stack>
     </Stack>
   );

@@ -155,10 +155,6 @@ type HeadOptions struct {
 	// OutOfOrderTimeWindow is > 0
 	EnableOOONativeHistograms atomic.Bool
 
-	// EnableCreatedTimestampZeroIngestion enables the ingestion of the created timestamp as a synthetic zero sample.
-	// See: https://github.com/prometheus/proposals/blob/main/proposals/2023-06-13_created-timestamp.md
-	EnableCreatedTimestampZeroIngestion bool
-
 	ChunkRange int64
 	// ChunkDirRoot is the parent directory of the chunks directory.
 	ChunkDirRoot         string
@@ -1052,7 +1048,7 @@ func (h *Head) PostingsCardinalityStats(statsByLabelName string, limit int) *ind
 		return h.cardinalityCache
 	}
 	h.cardinalityCacheKey = cacheKey
-	h.cardinalityCache = h.postings.Stats(statsByLabelName, limit)
+	h.cardinalityCache = h.postings.Stats(statsByLabelName, limit, labels.SizeOfLabels)
 	h.lastPostingsStatsCall = time.Duration(time.Now().Unix()) * time.Second
 
 	return h.cardinalityCache
@@ -1734,6 +1730,11 @@ func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labe
 	h.numSeries.Inc()
 
 	h.postings.Add(storage.SeriesRef(id), lset)
+
+	// Adding the series in the postings marks the creation of series
+	// as any further calls to this and the read methods would return that series.
+	h.series.postCreation(lset)
+
 	return s, true, nil
 }
 
@@ -2041,9 +2042,6 @@ func (s *stripeSeries) getOrSet(hash uint64, lset labels.Labels, createSeries fu
 		// The callback prevented creation of series.
 		return nil, false, preCreationErr
 	}
-	// Setting the series in the s.hashes marks the creation of series
-	// as any further calls to this methods would return that series.
-	s.seriesLifecycleCallback.PostCreation(series.labels())
 
 	i = uint64(series.ref) & uint64(s.size-1)
 
@@ -2052,6 +2050,10 @@ func (s *stripeSeries) getOrSet(hash uint64, lset labels.Labels, createSeries fu
 	s.locks[i].Unlock()
 
 	return series, true, nil
+}
+
+func (s *stripeSeries) postCreation(lset labels.Labels) {
+	s.seriesLifecycleCallback.PostCreation(lset)
 }
 
 type sample struct {

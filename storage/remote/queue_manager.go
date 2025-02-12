@@ -550,7 +550,7 @@ func (t *QueueManager) AppendWatcherMetadata(ctx context.Context, metadata []scr
 	mm := make([]prompb.MetricMetadata, 0, len(metadata))
 	for _, entry := range metadata {
 		mm = append(mm, prompb.MetricMetadata{
-			MetricFamilyName: entry.Metric,
+			MetricFamilyName: entry.MetricFamily,
 			Help:             entry.Help,
 			Type:             prompb.FromMetadataType(entry.Type),
 			Unit:             entry.Unit,
@@ -957,13 +957,6 @@ func (t *QueueManager) Stop() {
 	if t.mcfg.Send {
 		t.metadataWatcher.Stop()
 	}
-
-	// On shutdown, release the strings in the labels from the intern pool.
-	t.seriesMtx.Lock()
-	for _, labels := range t.seriesLabels {
-		t.releaseLabels(labels)
-	}
-	t.seriesMtx.Unlock()
 	t.metrics.unregister()
 }
 
@@ -985,14 +978,6 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 			continue
 		}
 		lbls := t.builder.Labels()
-		t.internLabels(lbls)
-
-		// We should not ever be replacing a series labels in the map, but just
-		// in case we do we need to ensure we do not leak the replaced interned
-		// strings.
-		if orig, ok := t.seriesLabels[s.Ref]; ok {
-			t.releaseLabels(orig)
-		}
 		t.seriesLabels[s.Ref] = lbls
 	}
 }
@@ -1037,7 +1022,6 @@ func (t *QueueManager) SeriesReset(index int) {
 	for k, v := range t.seriesSegmentIndexes {
 		if v < index {
 			delete(t.seriesSegmentIndexes, k)
-			t.releaseLabels(t.seriesLabels[k])
 			delete(t.seriesLabels, k)
 			delete(t.seriesMetadata, k)
 			delete(t.droppedSeries, k)
@@ -1057,14 +1041,6 @@ func (t *QueueManager) client() WriteClient {
 	t.clientMtx.RLock()
 	defer t.clientMtx.RUnlock()
 	return t.storeClient
-}
-
-func (t *QueueManager) internLabels(lbls labels.Labels) {
-	lbls.InternStrings(t.interner.intern)
-}
-
-func (t *QueueManager) releaseLabels(ls labels.Labels) {
-	ls.ReleaseStrings(t.interner.release)
 }
 
 // processExternalLabels merges externalLabels into b. If b contains
@@ -1712,7 +1688,7 @@ func (s *shards) updateMetrics(_ context.Context, err error, sampleCount, exempl
 	s.enqueuedHistograms.Sub(int64(histogramCount))
 }
 
-// sendSamples to the remote storage with backoff for recoverable errors.
+// sendSamplesWithBackoff to the remote storage with backoff for recoverable errors.
 func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount, metadataCount int, pBuf *proto.Buffer, buf *[]byte, enc Compression) (WriteResponseStats, error) {
 	// Build the WriteRequest with no metadata.
 	req, highest, lowest, err := buildWriteRequest(s.qm.logger, samples, nil, pBuf, buf, nil, enc)
@@ -1826,7 +1802,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 	return accumulatedStats, err
 }
 
-// sendV2Samples to the remote storage with backoff for recoverable errors.
+// sendV2SamplesWithBackoff to the remote storage with backoff for recoverable errors.
 func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2.TimeSeries, labels []string, sampleCount, exemplarCount, histogramCount, metadataCount int, pBuf, buf *[]byte, enc Compression) (WriteResponseStats, error) {
 	// Build the WriteRequest with no metadata.
 	req, highest, lowest, err := buildV2WriteRequest(s.qm.logger, samples, labels, pBuf, buf, nil, enc)
@@ -1943,12 +1919,17 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 	var nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata int
 	for nPending, d := range batch {
 		pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
-		// todo: should we also safeguard against empty metadata here?
 		if d.metadata != nil {
 			pendingData[nPending].Metadata.Type = writev2.FromMetadataType(d.metadata.Type)
 			pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Help)
-			pendingData[nPending].Metadata.HelpRef = symbolTable.Symbolize(d.metadata.Unit)
+			pendingData[nPending].Metadata.UnitRef = symbolTable.Symbolize(d.metadata.Unit)
 			nPendingMetadata++
+		} else {
+			// Safeguard against sending garbage in case of not having metadata
+			// for whatever reason.
+			pendingData[nPending].Metadata.Type = writev2.Metadata_METRIC_TYPE_UNSPECIFIED
+			pendingData[nPending].Metadata.HelpRef = 0
+			pendingData[nPending].Metadata.UnitRef = 0
 		}
 
 		if sendExemplars {
@@ -2143,7 +2124,7 @@ func compressPayload(tmpbuf *[]byte, inp []byte, enc Compression) (compressed []
 		}
 		return compressed, nil
 	default:
-		return compressed, fmt.Errorf("Unknown compression scheme [%v]", enc)
+		return compressed, fmt.Errorf("unknown compression scheme [%v]", enc)
 	}
 }
 

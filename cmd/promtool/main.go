@@ -36,7 +36,7 @@ import (
 	"github.com/prometheus/client_golang/api"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil/promlint"
-	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/version"
@@ -45,7 +45,6 @@ import (
 
 	dto "github.com/prometheus/client_model/go"
 	promconfig "github.com/prometheus/common/config"
-	"github.com/prometheus/common/expfmt"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
@@ -58,6 +57,7 @@ import (
 	_ "github.com/prometheus/prometheus/plugins" // Register plugins.
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
+	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/util/documentcli"
 )
@@ -73,14 +73,19 @@ const (
 	// Exit code 3 is used for "one or more lint issues detected".
 	lintErrExitCode = 3
 
-	lintOptionAll            = "all"
-	lintOptionDuplicateRules = "duplicate-rules"
-	lintOptionNone           = "none"
-	checkHealth              = "/-/healthy"
-	checkReadiness           = "/-/ready"
+	lintOptionAll                   = "all"
+	lintOptionDuplicateRules        = "duplicate-rules"
+	lintOptionTooLongScrapeInterval = "too-long-scrape-interval"
+	lintOptionNone                  = "none"
+	checkHealth                     = "/-/healthy"
+	checkReadiness                  = "/-/ready"
 )
 
-var lintOptions = []string{lintOptionAll, lintOptionDuplicateRules, lintOptionNone}
+var (
+	lintRulesOptions = []string{lintOptionAll, lintOptionDuplicateRules, lintOptionNone}
+	// Same as lintRulesOptions, but including scrape config linting options as well.
+	lintConfigOptions = append(append([]string{}, lintRulesOptions...), lintOptionTooLongScrapeInterval)
+)
 
 func main() {
 	var (
@@ -97,6 +102,10 @@ func main() {
 	app.HelpFlag.Short('h')
 
 	checkCmd := app.Command("check", "Check the resources for validity.")
+	checkLookbackDelta := checkCmd.Flag(
+		"query.lookback-delta",
+		"The server's maximum query lookback duration.",
+	).Default("5m").Duration()
 
 	experimental := app.Flag("experimental", "Enable experimental commands.").Bool()
 
@@ -113,11 +122,12 @@ func main() {
 	checkConfigSyntaxOnly := checkConfigCmd.Flag("syntax-only", "Only check the config file syntax, ignoring file and content validation referenced in the config").Bool()
 	checkConfigLint := checkConfigCmd.Flag(
 		"lint",
-		"Linting checks to apply to the rules specified in the config. Available options are: "+strings.Join(lintOptions, ", ")+". Use --lint=none to disable linting",
+		"Linting checks to apply to the rules/scrape configs specified in the config. Available options are: "+strings.Join(lintConfigOptions, ", ")+". Use --lint=none to disable linting",
 	).Default(lintOptionDuplicateRules).String()
 	checkConfigLintFatal := checkConfigCmd.Flag(
 		"lint-fatal",
 		"Make lint errors exit with exit code 3.").Default("false").Bool()
+	checkConfigIgnoreUnknownFields := checkConfigCmd.Flag("ignore-unknown-fields", "Ignore unknown fields in the rule groups read by the config files. This is useful when you want to extend rule files with custom metadata. Ensure that those fields are removed before loading them into the Prometheus server as it performs strict checks by default.").Default("false").Bool()
 
 	checkWebConfigCmd := checkCmd.Command("web-config", "Check if the web config files are valid or not.")
 	webConfigFiles := checkWebConfigCmd.Arg(
@@ -140,11 +150,12 @@ func main() {
 	).ExistingFiles()
 	checkRulesLint := checkRulesCmd.Flag(
 		"lint",
-		"Linting checks to apply. Available options are: "+strings.Join(lintOptions, ", ")+". Use --lint=none to disable linting",
+		"Linting checks to apply. Available options are: "+strings.Join(lintRulesOptions, ", ")+". Use --lint=none to disable linting",
 	).Default(lintOptionDuplicateRules).String()
 	checkRulesLintFatal := checkRulesCmd.Flag(
 		"lint-fatal",
 		"Make lint errors exit with exit code 3.").Default("false").Bool()
+	checkRulesIgnoreUnknownFields := checkRulesCmd.Flag("ignore-unknown-fields", "Ignore unknown fields in the rule files. This is useful when you want to extend rule files with custom metadata. Ensure that those fields are removed before loading them into the Prometheus server as it performs strict checks by default.").Default("false").Bool()
 
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
 	checkMetricsExtended := checkCmd.Flag("extended", "Print extended information related to the cardinality of the metrics.").Bool()
@@ -216,7 +227,9 @@ func main() {
 		"test-rule-file",
 		"The unit test file.",
 	).Required().ExistingFiles()
+	testRulesDebug := testRulesCmd.Flag("debug", "Enable unit test debugging.").Default("false").Bool()
 	testRulesDiff := testRulesCmd.Flag("diff", "[Experimental] Print colored differential output between expected & received output.").Default("false").Bool()
+	testRulesIgnoreUnknownFields := testRulesCmd.Flag("ignore-unknown-fields", "Ignore unknown fields in the test files. This is useful when you want to extend rule files with custom metadata. Ensure that those fields are removed before loading them into the Prometheus server as it performs strict checks by default.").Default("false").Bool()
 
 	defaultDBPath := "data/"
 	tsdbCmd := app.Command("tsdb", "Run tsdb commands.")
@@ -310,12 +323,12 @@ func main() {
 			kingpin.Fatalf("Cannot set base auth in the server URL and use a http.config.file at the same time")
 		}
 		var err error
-		httpConfig, _, err := config_util.LoadHTTPConfigFile(httpConfigFilePath)
+		httpConfig, _, err := promconfig.LoadHTTPConfigFile(httpConfigFilePath)
 		if err != nil {
 			kingpin.Fatalf("Failed to load HTTP config file: %v", err)
 		}
 
-		httpRoundTripper, err = promconfig.NewRoundTripperFromConfig(*httpConfig, "promtool", config_util.WithUserAgent("promtool/"+version.Version))
+		httpRoundTripper, err = promconfig.NewRoundTripperFromConfig(*httpConfig, "promtool", promconfig.WithUserAgent(version.ComponentUserAgent("promtool")))
 		if err != nil {
 			kingpin.Fatalf("Failed to create a new HTTP round tripper: %v", err)
 		}
@@ -338,7 +351,7 @@ func main() {
 		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout, prometheus.DefaultRegisterer))
 
 	case checkConfigCmd.FullCommand():
-		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newLintConfig(*checkConfigLint, *checkConfigLintFatal), *configFiles...))
+		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newConfigLintConfig(*checkConfigLint, *checkConfigLintFatal, *checkConfigIgnoreUnknownFields, model.Duration(*checkLookbackDelta)), *configFiles...))
 
 	case checkServerHealthCmd.FullCommand():
 		os.Exit(checkErr(CheckServerStatus(serverURL, checkHealth, httpRoundTripper)))
@@ -350,7 +363,7 @@ func main() {
 		os.Exit(CheckWebConfig(*webConfigFiles...))
 
 	case checkRulesCmd.FullCommand():
-		os.Exit(CheckRules(newLintConfig(*checkRulesLint, *checkRulesLintFatal), *ruleFiles...))
+		os.Exit(CheckRules(newRulesLintConfig(*checkRulesLint, *checkRulesLintFatal, *checkRulesIgnoreUnknownFields), *ruleFiles...))
 
 	case checkMetricsCmd.FullCommand():
 		os.Exit(CheckMetrics(*checkMetricsExtended))
@@ -391,6 +404,8 @@ func main() {
 			},
 			*testRulesRun,
 			*testRulesDiff,
+			*testRulesDebug,
+			*testRulesIgnoreUnknownFields,
 			*testRulesFiles...),
 		)
 
@@ -441,18 +456,20 @@ func checkExperimental(f bool) {
 	}
 }
 
-var errLint = fmt.Errorf("lint error")
+var errLint = errors.New("lint error")
 
-type lintConfig struct {
-	all            bool
-	duplicateRules bool
-	fatal          bool
+type rulesLintConfig struct {
+	all                 bool
+	duplicateRules      bool
+	fatal               bool
+	ignoreUnknownFields bool
 }
 
-func newLintConfig(stringVal string, fatal bool) lintConfig {
+func newRulesLintConfig(stringVal string, fatal, ignoreUnknownFields bool) rulesLintConfig {
 	items := strings.Split(stringVal, ",")
-	ls := lintConfig{
-		fatal: fatal,
+	ls := rulesLintConfig{
+		fatal:               fatal,
+		ignoreUnknownFields: ignoreUnknownFields,
 	}
 	for _, setting := range items {
 		switch setting {
@@ -462,14 +479,55 @@ func newLintConfig(stringVal string, fatal bool) lintConfig {
 			ls.duplicateRules = true
 		case lintOptionNone:
 		default:
-			fmt.Printf("WARNING: unknown lint option %s\n", setting)
+			fmt.Printf("WARNING: unknown lint option: %q\n", setting)
 		}
 	}
 	return ls
 }
 
-func (ls lintConfig) lintDuplicateRules() bool {
+func (ls rulesLintConfig) lintDuplicateRules() bool {
 	return ls.all || ls.duplicateRules
+}
+
+type configLintConfig struct {
+	rulesLintConfig
+
+	lookbackDelta model.Duration
+}
+
+func newConfigLintConfig(optionsStr string, fatal, ignoreUnknownFields bool, lookbackDelta model.Duration) configLintConfig {
+	c := configLintConfig{
+		rulesLintConfig: rulesLintConfig{
+			fatal: fatal,
+		},
+	}
+
+	lintNone := false
+	var rulesOptions []string
+	for _, option := range strings.Split(optionsStr, ",") {
+		switch option {
+		case lintOptionAll, lintOptionTooLongScrapeInterval:
+			c.lookbackDelta = lookbackDelta
+			if option == lintOptionAll {
+				rulesOptions = append(rulesOptions, lintOptionAll)
+			}
+		case lintOptionNone:
+			lintNone = true
+		default:
+			rulesOptions = append(rulesOptions, option)
+		}
+	}
+
+	if lintNone {
+		c.lookbackDelta = 0
+		rulesOptions = nil
+	}
+
+	if len(rulesOptions) > 0 {
+		c.rulesLintConfig = newRulesLintConfig(strings.Join(rulesOptions, ","), fatal, ignoreUnknownFields)
+	}
+
+	return c
 }
 
 // CheckServerStatus - healthy & ready.
@@ -510,12 +568,12 @@ func CheckServerStatus(serverURL *url.URL, checkEndpoint string, roundTripper ht
 }
 
 // CheckConfig validates configuration files.
-func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings lintConfig, files ...string) int {
+func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings configLintConfig, files ...string) int {
 	failed := false
 	hasErrors := false
 
 	for _, f := range files {
-		ruleFiles, err := checkConfig(agentMode, f, checkSyntaxOnly)
+		ruleFiles, scrapeConfigs, err := checkConfig(agentMode, f, checkSyntaxOnly)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:", err)
 			hasErrors = true
@@ -528,12 +586,12 @@ func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings lintConfig, files
 		}
 		fmt.Println()
 
-		rulesFailed, rulesHasErrors := checkRules(ruleFiles, lintSettings)
-		if rulesFailed {
-			failed = rulesFailed
-		}
-		if rulesHasErrors {
-			hasErrors = rulesHasErrors
+		if !checkSyntaxOnly {
+			scrapeConfigsFailed := lintScrapeConfigs(scrapeConfigs, lintSettings)
+			failed = failed || scrapeConfigsFailed
+			rulesFailed, rulesHaveErrors := checkRules(ruleFiles, lintSettings.rulesLintConfig)
+			failed = failed || rulesFailed
+			hasErrors = hasErrors || rulesHaveErrors
 		}
 	}
 	if failed && hasErrors {
@@ -572,12 +630,12 @@ func checkFileExists(fn string) error {
 	return err
 }
 
-func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]string, error) {
+func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]string, []*config.ScrapeConfig, error) {
 	fmt.Println("Checking", filename)
 
-	cfg, err := config.LoadFile(filename, agentMode, false, promslog.NewNopLogger())
+	cfg, err := config.LoadFile(filename, agentMode, promslog.NewNopLogger())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var ruleFiles []string
@@ -585,15 +643,15 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]strin
 		for _, rf := range cfg.RuleFiles {
 			rfs, err := filepath.Glob(rf)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			// If an explicit file was given, error if it is not accessible.
 			if !strings.Contains(rf, "*") {
 				if len(rfs) == 0 {
-					return nil, fmt.Errorf("%q does not point to an existing file", rf)
+					return nil, nil, fmt.Errorf("%q does not point to an existing file", rf)
 				}
 				if err := checkFileExists(rfs[0]); err != nil {
-					return nil, fmt.Errorf("error checking rule file %q: %w", rfs[0], err)
+					return nil, nil, fmt.Errorf("error checking rule file %q: %w", rfs[0], err)
 				}
 			}
 			ruleFiles = append(ruleFiles, rfs...)
@@ -607,26 +665,26 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]strin
 		var err error
 		scfgs, err = cfg.GetScrapeConfigs()
 		if err != nil {
-			return nil, fmt.Errorf("error loading scrape configs: %w", err)
+			return nil, nil, fmt.Errorf("error loading scrape configs: %w", err)
 		}
 	}
 
 	for _, scfg := range scfgs {
 		if !checkSyntaxOnly && scfg.HTTPClientConfig.Authorization != nil {
 			if err := checkFileExists(scfg.HTTPClientConfig.Authorization.CredentialsFile); err != nil {
-				return nil, fmt.Errorf("error checking authorization credentials or bearer token file %q: %w", scfg.HTTPClientConfig.Authorization.CredentialsFile, err)
+				return nil, nil, fmt.Errorf("error checking authorization credentials or bearer token file %q: %w", scfg.HTTPClientConfig.Authorization.CredentialsFile, err)
 			}
 		}
 
 		if err := checkTLSConfig(scfg.HTTPClientConfig.TLSConfig, checkSyntaxOnly); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		for _, c := range scfg.ServiceDiscoveryConfigs {
 			switch c := c.(type) {
 			case *kubernetes.SDConfig:
 				if err := checkTLSConfig(c.HTTPClientConfig.TLSConfig, checkSyntaxOnly); err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 			case *file.SDConfig:
 				if checkSyntaxOnly {
@@ -635,17 +693,17 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]strin
 				for _, file := range c.Files {
 					files, err := filepath.Glob(file)
 					if err != nil {
-						return nil, err
+						return nil, nil, err
 					}
 					if len(files) != 0 {
 						for _, f := range files {
 							var targetGroups []*targetgroup.Group
 							targetGroups, err = checkSDFile(f)
 							if err != nil {
-								return nil, fmt.Errorf("checking SD file %q: %w", file, err)
+								return nil, nil, fmt.Errorf("checking SD file %q: %w", file, err)
 							}
 							if err := checkTargetGroupsForScrapeConfig(targetGroups, scfg); err != nil {
-								return nil, err
+								return nil, nil, err
 							}
 						}
 						continue
@@ -654,7 +712,7 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]strin
 				}
 			case discovery.StaticConfig:
 				if err := checkTargetGroupsForScrapeConfig(c, scfg); err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 			}
 		}
@@ -671,18 +729,18 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]strin
 				for _, file := range c.Files {
 					files, err := filepath.Glob(file)
 					if err != nil {
-						return nil, err
+						return nil, nil, err
 					}
 					if len(files) != 0 {
 						for _, f := range files {
 							var targetGroups []*targetgroup.Group
 							targetGroups, err = checkSDFile(f)
 							if err != nil {
-								return nil, fmt.Errorf("checking SD file %q: %w", file, err)
+								return nil, nil, fmt.Errorf("checking SD file %q: %w", file, err)
 							}
 
 							if err := checkTargetGroupsForAlertmanager(targetGroups, amcfg); err != nil {
-								return nil, err
+								return nil, nil, err
 							}
 						}
 						continue
@@ -691,15 +749,15 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]strin
 				}
 			case discovery.StaticConfig:
 				if err := checkTargetGroupsForAlertmanager(c, amcfg); err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 			}
 		}
 	}
-	return ruleFiles, nil
+	return ruleFiles, scfgs, nil
 }
 
-func checkTLSConfig(tlsConfig config_util.TLSConfig, checkSyntaxOnly bool) error {
+func checkTLSConfig(tlsConfig promconfig.TLSConfig, checkSyntaxOnly bool) error {
 	if len(tlsConfig.CertFile) > 0 && len(tlsConfig.KeyFile) == 0 {
 		return fmt.Errorf("client cert file %q specified without client key file", tlsConfig.CertFile)
 	}
@@ -758,7 +816,7 @@ func checkSDFile(filename string) ([]*targetgroup.Group, error) {
 }
 
 // CheckRules validates rule files.
-func CheckRules(ls lintConfig, files ...string) int {
+func CheckRules(ls rulesLintConfig, files ...string) int {
 	failed := false
 	hasErrors := false
 	if len(files) == 0 {
@@ -778,7 +836,7 @@ func CheckRules(ls lintConfig, files ...string) int {
 }
 
 // checkRulesFromStdin validates rule from stdin.
-func checkRulesFromStdin(ls lintConfig) (bool, bool) {
+func checkRulesFromStdin(ls rulesLintConfig) (bool, bool) {
 	failed := false
 	hasErrors := false
 	fmt.Println("Checking standard input")
@@ -787,7 +845,7 @@ func checkRulesFromStdin(ls lintConfig) (bool, bool) {
 		fmt.Fprintln(os.Stderr, "  FAILED:", err)
 		return true, true
 	}
-	rgs, errs := rulefmt.Parse(data)
+	rgs, errs := rulefmt.Parse(data, ls.ignoreUnknownFields)
 	if errs != nil {
 		failed = true
 		fmt.Fprintln(os.Stderr, "  FAILED:")
@@ -816,12 +874,12 @@ func checkRulesFromStdin(ls lintConfig) (bool, bool) {
 }
 
 // checkRules validates rule files.
-func checkRules(files []string, ls lintConfig) (bool, bool) {
+func checkRules(files []string, ls rulesLintConfig) (bool, bool) {
 	failed := false
 	hasErrors := false
 	for _, f := range files {
 		fmt.Println("Checking", f)
-		rgs, errs := rulefmt.ParseFile(f)
+		rgs, errs := rulefmt.ParseFile(f, ls.ignoreUnknownFields)
 		if errs != nil {
 			failed = true
 			fmt.Fprintln(os.Stderr, "  FAILED:")
@@ -850,7 +908,7 @@ func checkRules(files []string, ls lintConfig) (bool, bool) {
 	return failed, hasErrors
 }
 
-func checkRuleGroups(rgs *rulefmt.RuleGroups, lintSettings lintConfig) (int, []error) {
+func checkRuleGroups(rgs *rulefmt.RuleGroups, lintSettings rulesLintConfig) (int, []error) {
 	numRules := 0
 	for _, rg := range rgs.Groups {
 		numRules += len(rg.Rules)
@@ -874,6 +932,16 @@ func checkRuleGroups(rgs *rulefmt.RuleGroups, lintSettings lintConfig) (int, []e
 	return numRules, nil
 }
 
+func lintScrapeConfigs(scrapeConfigs []*config.ScrapeConfig, lintSettings configLintConfig) bool {
+	for _, scfg := range scrapeConfigs {
+		if lintSettings.lookbackDelta > 0 && scfg.ScrapeInterval >= lintSettings.lookbackDelta {
+			fmt.Fprintf(os.Stderr, "  FAILED: too long scrape interval found, data point will be marked as stale - job: %s, interval: %s\n", scfg.JobName, scfg.ScrapeInterval)
+			return true
+		}
+	}
+	return false
+}
+
 type compareRuleType struct {
 	metric string
 	label  labels.Labels
@@ -895,30 +963,30 @@ func compare(a, b compareRuleType) int {
 
 func checkDuplicates(groups []rulefmt.RuleGroup) []compareRuleType {
 	var duplicates []compareRuleType
-	var rules compareRuleTypes
+	var cRules compareRuleTypes
 
 	for _, group := range groups {
 		for _, rule := range group.Rules {
-			rules = append(rules, compareRuleType{
+			cRules = append(cRules, compareRuleType{
 				metric: ruleMetric(rule),
-				label:  labels.FromMap(rule.Labels),
+				label:  rules.FromMaps(group.Labels, rule.Labels),
 			})
 		}
 	}
-	if len(rules) < 2 {
+	if len(cRules) < 2 {
 		return duplicates
 	}
-	sort.Sort(rules)
+	sort.Sort(cRules)
 
-	last := rules[0]
-	for i := 1; i < len(rules); i++ {
-		if compare(last, rules[i]) == 0 {
+	last := cRules[0]
+	for i := 1; i < len(cRules); i++ {
+		if compare(last, cRules[i]) == 0 {
 			// Don't add a duplicated rule multiple times.
 			if len(duplicates) == 0 || compare(last, duplicates[len(duplicates)-1]) != 0 {
-				duplicates = append(duplicates, rules[i])
+				duplicates = append(duplicates, cRules[i])
 			}
 		}
-		last = rules[i]
+		last = cRules[i]
 	}
 
 	return duplicates

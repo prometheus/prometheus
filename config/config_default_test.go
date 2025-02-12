@@ -18,6 +18,8 @@ package config
 const ruleFilesConfigFile = "testdata/rules_abs_path.good.yml"
 
 var ruleFilesExpectedConf = &Config{
+	loaded: true,
+
 	GlobalConfig: DefaultGlobalConfig,
 	Runtime:      DefaultRuntimeConfig,
 	RuleFiles: []string{

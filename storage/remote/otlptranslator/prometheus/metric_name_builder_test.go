@@ -19,9 +19,7 @@ package prometheus
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/collector/pdata/pmetric"
 )
 
 func TestByte(t *testing.T) {
@@ -39,6 +37,8 @@ func TestWhiteSpaces(t *testing.T) {
 
 func TestNonStandardUnit(t *testing.T) {
 	require.Equal(t, "system_network_dropped", normalizeName(createGauge("system.network.dropped", "{packets}"), ""))
+	// The normal metric name character set is allowed in non-standard units.
+	require.Equal(t, "system_network_dropped_nonstandard:_1", normalizeName(createGauge("system.network.dropped", "nonstandard:_1"), ""))
 }
 
 func TestNonStandardUnitCounter(t *testing.T) {
@@ -70,6 +70,12 @@ func TestHertz(t *testing.T) {
 func TestPer(t *testing.T) {
 	require.Equal(t, "broken_metric_speed_km_per_hour", normalizeName(createGauge("broken.metric.speed", "km/h"), ""))
 	require.Equal(t, "astro_light_speed_limit_meters_per_second", normalizeName(createGauge("astro.light.speed_limit", "m/s"), ""))
+	// The normal metric name character set is allowed in non-standard units.
+	require.Equal(t, "system_network_dropped_non_per_standard:_1", normalizeName(createGauge("system.network.dropped", "non/standard:_1"), ""))
+
+	t.Run("invalid per unit", func(t *testing.T) {
+		require.Equal(t, "broken_metric_speed_km", normalizeName(createGauge("broken.metric.speed", "km/°"), ""))
+	})
 }
 
 func TestPercent(t *testing.T) {
@@ -80,12 +86,6 @@ func TestPercent(t *testing.T) {
 func TestEmpty(t *testing.T) {
 	require.Equal(t, "test_metric_no_unit", normalizeName(createGauge("test.metric.no_unit", ""), ""))
 	require.Equal(t, "test_metric_spaces", normalizeName(createGauge("test.metric.spaces", "   \t  "), ""))
-}
-
-func TestUnsupportedRunes(t *testing.T) {
-	require.Equal(t, "unsupported_metric_temperature_F", normalizeName(createGauge("unsupported.metric.temperature", "°F"), ""))
-	require.Equal(t, "unsupported_metric_weird", normalizeName(createGauge("unsupported.metric.weird", "+=.:,!* & #"), ""))
-	require.Equal(t, "unsupported_metric_redundant_test_per_C", normalizeName(createGauge("unsupported.metric.redundant", "__test $/°C"), ""))
 }
 
 func TestOTelReceivers(t *testing.T) {
@@ -113,48 +113,18 @@ func TestOTelReceivers(t *testing.T) {
 	require.Equal(t, "redis_latest_fork_microseconds", normalizeName(createGauge("redis.latest_fork", "us"), ""))
 }
 
-func TestTrimPromSuffixes(t *testing.T) {
-	assert.Equal(t, "active_directory_ds_replication_network_io", TrimPromSuffixes("active_directory_ds_replication_network_io_bytes_total", pmetric.MetricTypeSum, "bytes"))
-	assert.Equal(t, "active_directory_ds_name_cache_hit_rate", TrimPromSuffixes("active_directory_ds_name_cache_hit_rate_percent", pmetric.MetricTypeGauge, "percent"))
-	assert.Equal(t, "active_directory_ds_ldap_bind_last_successful_time", TrimPromSuffixes("active_directory_ds_ldap_bind_last_successful_time_milliseconds", pmetric.MetricTypeGauge, "milliseconds"))
-	assert.Equal(t, "apache_requests", TrimPromSuffixes("apache_requests_total", pmetric.MetricTypeSum, "1"))
-	assert.Equal(t, "system_cpu_utilization", TrimPromSuffixes("system_cpu_utilization_ratio", pmetric.MetricTypeGauge, "ratio"))
-	assert.Equal(t, "mongodbatlas_process_journaling_data_files", TrimPromSuffixes("mongodbatlas_process_journaling_data_files_mebibytes", pmetric.MetricTypeGauge, "mebibytes"))
-	assert.Equal(t, "mongodbatlas_process_network_io", TrimPromSuffixes("mongodbatlas_process_network_io_bytes_per_second", pmetric.MetricTypeGauge, "bytes_per_second"))
-	assert.Equal(t, "mongodbatlas_process_oplog_rate", TrimPromSuffixes("mongodbatlas_process_oplog_rate_gibibytes_per_hour", pmetric.MetricTypeGauge, "gibibytes_per_hour"))
-	assert.Equal(t, "nsxt_node_memory_usage", TrimPromSuffixes("nsxt_node_memory_usage_kilobytes", pmetric.MetricTypeGauge, "kilobytes"))
-	assert.Equal(t, "redis_latest_fork", TrimPromSuffixes("redis_latest_fork_microseconds", pmetric.MetricTypeGauge, "microseconds"))
-	assert.Equal(t, "up", TrimPromSuffixes("up", pmetric.MetricTypeGauge, ""))
-
-	// These are not necessarily valid OM units, only tested for the sake of completeness.
-	assert.Equal(t, "active_directory_ds_replication_sync_object_pending", TrimPromSuffixes("active_directory_ds_replication_sync_object_pending_total", pmetric.MetricTypeSum, "{objects}"))
-	assert.Equal(t, "apache_current", TrimPromSuffixes("apache_current_connections", pmetric.MetricTypeGauge, "connections"))
-	assert.Equal(t, "bigip_virtual_server_request_count", TrimPromSuffixes("bigip_virtual_server_request_count_total", pmetric.MetricTypeSum, "{requests}"))
-	assert.Equal(t, "mongodbatlas_process_db_query_targeting_scanned_per_returned", TrimPromSuffixes("mongodbatlas_process_db_query_targeting_scanned_per_returned", pmetric.MetricTypeGauge, "{scanned}/{returned}"))
-	assert.Equal(t, "nginx_connections_accepted", TrimPromSuffixes("nginx_connections_accepted", pmetric.MetricTypeGauge, "connections"))
-	assert.Equal(t, "apache_workers", TrimPromSuffixes("apache_workers_connections", pmetric.MetricTypeGauge, "connections"))
-	assert.Equal(t, "nginx", TrimPromSuffixes("nginx_requests", pmetric.MetricTypeGauge, "requests"))
-
-	// Units shouldn't be trimmed if the unit is not a direct match with the suffix, i.e, a suffix "_seconds" shouldn't be removed if unit is "sec" or "s"
-	assert.Equal(t, "system_cpu_load_average_15m_ratio", TrimPromSuffixes("system_cpu_load_average_15m_ratio", pmetric.MetricTypeGauge, "1"))
-	assert.Equal(t, "mongodbatlas_process_asserts_per_second", TrimPromSuffixes("mongodbatlas_process_asserts_per_second", pmetric.MetricTypeGauge, "{assertions}/s"))
-	assert.Equal(t, "memcached_operation_hit_ratio_percent", TrimPromSuffixes("memcached_operation_hit_ratio_percent", pmetric.MetricTypeGauge, "%"))
-	assert.Equal(t, "active_directory_ds_replication_object_rate_per_second", TrimPromSuffixes("active_directory_ds_replication_object_rate_per_second", pmetric.MetricTypeGauge, "{objects}/s"))
-	assert.Equal(t, "system_disk_operation_time_seconds", TrimPromSuffixes("system_disk_operation_time_seconds_total", pmetric.MetricTypeSum, "s"))
-}
-
 func TestNamespace(t *testing.T) {
 	require.Equal(t, "space_test", normalizeName(createGauge("test", ""), "space"))
 	require.Equal(t, "space_test", normalizeName(createGauge("#test", ""), "space"))
 }
 
-func TestCleanUpString(t *testing.T) {
-	require.Equal(t, "", CleanUpString(""))
-	require.Equal(t, "a_b", CleanUpString("a b"))
-	require.Equal(t, "hello_world", CleanUpString("hello, world!"))
-	require.Equal(t, "hello_you_2", CleanUpString("hello you 2"))
-	require.Equal(t, "1000", CleanUpString("$1000"))
-	require.Equal(t, "", CleanUpString("*+$^=)"))
+func TestCleanUpUnit(t *testing.T) {
+	require.Equal(t, "", cleanUpUnit(""))
+	require.Equal(t, "a_b", cleanUpUnit("a b"))
+	require.Equal(t, "hello_world", cleanUpUnit("hello, world"))
+	require.Equal(t, "hello_you_2", cleanUpUnit("hello you 2"))
+	require.Equal(t, "1000", cleanUpUnit("$1000"))
+	require.Equal(t, "", cleanUpUnit("*+$^=)"))
 }
 
 func TestUnitMapGetOrDefault(t *testing.T) {
@@ -169,6 +139,51 @@ func TestPerUnitMapGetOrDefault(t *testing.T) {
 	require.Equal(t, "invalid", perUnitMapGetOrDefault("invalid"))
 }
 
+func TestBuildUnitSuffixes(t *testing.T) {
+	tests := []struct {
+		unit         string
+		expectedMain string
+		expectedPer  string
+	}{
+		{"", "", ""},
+		{"s", "seconds", ""},
+		{"By/s", "bytes", "per_second"},
+		{"requests/m", "requests", "per_minute"},
+		{"{invalid}/second", "", "per_second"},
+		{"bytes/{invalid}", "bytes", ""},
+	}
+
+	for _, test := range tests {
+		mainUnitSuffix, perUnitSuffix := buildUnitSuffixes(test.unit)
+		require.Equal(t, test.expectedMain, mainUnitSuffix)
+		require.Equal(t, test.expectedPer, perUnitSuffix)
+	}
+}
+
+func TestAddUnitTokens(t *testing.T) {
+	tests := []struct {
+		nameTokens     []string
+		mainUnitSuffix string
+		perUnitSuffix  string
+		expected       []string
+	}{
+		{[]string{}, "", "", []string{}},
+		{[]string{"token1"}, "main", "", []string{"token1", "main"}},
+		{[]string{"token1"}, "", "per", []string{"token1", "per"}},
+		{[]string{"token1"}, "main", "per", []string{"token1", "main", "per"}},
+		{[]string{"token1", "per"}, "main", "per", []string{"token1", "per", "main"}},
+		{[]string{"token1", "main"}, "main", "per", []string{"token1", "main", "per"}},
+		{[]string{"token1"}, "main_", "per", []string{"token1", "main", "per"}},
+		{[]string{"token1"}, "main_unit", "per_seconds_", []string{"token1", "main_unit", "per_seconds"}}, // trailing underscores are removed
+		{[]string{"token1"}, "main_unit", "per_", []string{"token1", "main_unit"}},                        // 'per_' is removed entirely
+	}
+
+	for _, test := range tests {
+		result := addUnitTokens(test.nameTokens, test.mainUnitSuffix, test.perUnitSuffix)
+		require.Equal(t, test.expected, result)
+	}
+}
+
 func TestRemoveItem(t *testing.T) {
 	require.Equal(t, []string{}, removeItem([]string{}, "test"))
 	require.Equal(t, []string{}, removeItem([]string{}, ""))
@@ -179,27 +194,64 @@ func TestRemoveItem(t *testing.T) {
 	require.Equal(t, []string{"b", "c"}, removeItem([]string{"a", "b", "c"}, "a"))
 }
 
-func TestBuildCompliantNameWithNormalize(t *testing.T) {
-	require.Equal(t, "system_io_bytes_total", BuildCompliantName(createCounter("system.io", "By"), "", true))
-	require.Equal(t, "system_network_io_bytes_total", BuildCompliantName(createCounter("network.io", "By"), "system", true))
-	require.Equal(t, "_3_14_digits", BuildCompliantName(createGauge("3.14 digits", ""), "", true))
-	require.Equal(t, "envoy_rule_engine_zlib_buf_error", BuildCompliantName(createGauge("envoy__rule_engine_zlib_buf_error", ""), "", true))
-	require.Equal(t, "foo_bar", BuildCompliantName(createGauge(":foo::bar", ""), "", true))
-	require.Equal(t, "foo_bar_total", BuildCompliantName(createCounter(":foo::bar", ""), "", true))
+func TestBuildCompliantMetricNameWithSuffixes(t *testing.T) {
+	require.Equal(t, "system_io_bytes_total", BuildCompliantMetricName(createCounter("system.io", "By"), "", true))
+	require.Equal(t, "system_network_io_bytes_total", BuildCompliantMetricName(createCounter("network.io", "By"), "system", true))
+	require.Equal(t, "_3_14_digits", BuildCompliantMetricName(createGauge("3.14 digits", ""), "", true))
+	require.Equal(t, "envoy_rule_engine_zlib_buf_error", BuildCompliantMetricName(createGauge("envoy__rule_engine_zlib_buf_error", ""), "", true))
+	require.Equal(t, ":foo::bar", BuildCompliantMetricName(createGauge(":foo::bar", ""), "", true))
+	require.Equal(t, ":foo::bar_total", BuildCompliantMetricName(createCounter(":foo::bar", ""), "", true))
 	// Gauges with unit 1 are considered ratios.
-	require.Equal(t, "foo_bar_ratio", BuildCompliantName(createGauge("foo.bar", "1"), "", true))
+	require.Equal(t, "foo_bar_ratio", BuildCompliantMetricName(createGauge("foo.bar", "1"), "", true))
 	// Slashes in units are converted.
-	require.Equal(t, "system_io_foo_per_bar_total", BuildCompliantName(createCounter("system.io", "foo/bar"), "", true))
+	require.Equal(t, "system_io_foo_per_bar_total", BuildCompliantMetricName(createCounter("system.io", "foo/bar"), "", true))
+	require.Equal(t, "metric_with_foreign_characters_total", BuildCompliantMetricName(createCounter("metric_with_字符_foreign_characters", ""), "", true))
+	// Removes non aplhanumerical characters from units, but leaves colons.
+	require.Equal(t, "temperature_:C", BuildCompliantMetricName(createGauge("temperature", "%*()°:C"), "", true))
 }
 
-func TestBuildCompliantNameWithoutSuffixes(t *testing.T) {
-	require.Equal(t, "system_io", BuildCompliantName(createCounter("system.io", "By"), "", false))
-	require.Equal(t, "system_network_io", BuildCompliantName(createCounter("network.io", "By"), "system", false))
-	require.Equal(t, "system_network_I_O", BuildCompliantName(createCounter("network (I/O)", "By"), "system", false))
-	require.Equal(t, "_3_14_digits", BuildCompliantName(createGauge("3.14 digits", "By"), "", false))
-	require.Equal(t, "envoy__rule_engine_zlib_buf_error", BuildCompliantName(createGauge("envoy__rule_engine_zlib_buf_error", ""), "", false))
-	require.Equal(t, ":foo::bar", BuildCompliantName(createGauge(":foo::bar", ""), "", false))
-	require.Equal(t, ":foo::bar", BuildCompliantName(createCounter(":foo::bar", ""), "", false))
-	require.Equal(t, "foo_bar", BuildCompliantName(createGauge("foo.bar", "1"), "", false))
-	require.Equal(t, "system_io", BuildCompliantName(createCounter("system.io", "foo/bar"), "", false))
+func TestBuildCompliantMetricNameWithoutSuffixes(t *testing.T) {
+	require.Equal(t, "system_io", BuildCompliantMetricName(createCounter("system.io", "By"), "", false))
+	require.Equal(t, "system_network_io", BuildCompliantMetricName(createCounter("network.io", "By"), "system", false))
+	require.Equal(t, "system_network_I_O", BuildCompliantMetricName(createCounter("network (I/O)", "By"), "system", false))
+	require.Equal(t, "_3_14_digits", BuildCompliantMetricName(createGauge("3.14 digits", "By"), "", false))
+	require.Equal(t, "envoy__rule_engine_zlib_buf_error", BuildCompliantMetricName(createGauge("envoy__rule_engine_zlib_buf_error", ""), "", false))
+	require.Equal(t, ":foo::bar", BuildCompliantMetricName(createGauge(":foo::bar", ""), "", false))
+	require.Equal(t, ":foo::bar", BuildCompliantMetricName(createCounter(":foo::bar", ""), "", false))
+	require.Equal(t, "foo_bar", BuildCompliantMetricName(createGauge("foo.bar", "1"), "", false))
+	require.Equal(t, "system_io", BuildCompliantMetricName(createCounter("system.io", "foo/bar"), "", false))
+	require.Equal(t, "metric_with___foreign_characters", BuildCompliantMetricName(createCounter("metric_with_字符_foreign_characters", ""), "", false))
+}
+
+func TestBuildMetricNameWithSuffixes(t *testing.T) {
+	require.Equal(t, "system.io_bytes_total", BuildMetricName(createCounter("system.io", "By"), "", true))
+	require.Equal(t, "system_network.io_bytes_total", BuildMetricName(createCounter("network.io", "By"), "system", true))
+	require.Equal(t, "3.14 digits", BuildMetricName(createGauge("3.14 digits", ""), "", true))
+	require.Equal(t, "envoy__rule_engine_zlib_buf_error", BuildMetricName(createGauge("envoy__rule_engine_zlib_buf_error", ""), "", true))
+	require.Equal(t, ":foo::bar", BuildMetricName(createGauge(":foo::bar", ""), "", true))
+	require.Equal(t, ":foo::bar_total", BuildMetricName(createCounter(":foo::bar", ""), "", true))
+	// Gauges with unit 1 are considered ratios.
+	require.Equal(t, "foo.bar_ratio", BuildMetricName(createGauge("foo.bar", "1"), "", true))
+	// Slashes in units are converted.
+	require.Equal(t, "system.io_foo_per_bar_total", BuildMetricName(createCounter("system.io", "foo/bar"), "", true))
+	require.Equal(t, "metric_with_字符_foreign_characters_total", BuildMetricName(createCounter("metric_with_字符_foreign_characters", ""), "", true))
+	require.Equal(t, "temperature_%*()°C", BuildMetricName(createGauge("temperature", "%*()°C"), "", true)) // Keeps the all characters in unit
+	// Tests below show weird interactions that users can have with the metric names.
+	// With BuildMetricName we don't check if units/type suffixes are already present in the metric name, we always add them.
+	require.Equal(t, "system_io_seconds_seconds", BuildMetricName(createGauge("system_io_seconds", "s"), "", true))
+	require.Equal(t, "system_io_total_total", BuildMetricName(createCounter("system_io_total", ""), "", true))
+}
+
+func TestBuildMetricNameWithoutSuffixes(t *testing.T) {
+	require.Equal(t, "system.io", BuildMetricName(createCounter("system.io", "By"), "", false))
+	require.Equal(t, "system_network.io", BuildMetricName(createCounter("network.io", "By"), "system", false))
+	require.Equal(t, "3.14 digits", BuildMetricName(createGauge("3.14 digits", ""), "", false))
+	require.Equal(t, "envoy__rule_engine_zlib_buf_error", BuildMetricName(createGauge("envoy__rule_engine_zlib_buf_error", ""), "", false))
+	require.Equal(t, ":foo::bar", BuildMetricName(createGauge(":foo::bar", ""), "", false))
+	require.Equal(t, ":foo::bar", BuildMetricName(createCounter(":foo::bar", ""), "", false))
+	// Gauges with unit 1 are considered ratios.
+	require.Equal(t, "foo.bar", BuildMetricName(createGauge("foo.bar", "1"), "", false))
+	require.Equal(t, "metric_with_字符_foreign_characters", BuildMetricName(createCounter("metric_with_字符_foreign_characters", ""), "", false))
+	require.Equal(t, "system_io_seconds", BuildMetricName(createGauge("system_io_seconds", "s"), "", false))
+	require.Equal(t, "system_io_total", BuildMetricName(createCounter("system_io_total", ""), "", false))
 }

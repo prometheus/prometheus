@@ -94,8 +94,6 @@ type Options struct {
 	skipOffsetting bool
 }
 
-const DefaultNameEscapingScheme = model.ValueEncodingEscaping
-
 // Manager maintains a set of scrape pools and manages start/stop cycles
 // when receiving new target groups from the discovery manager.
 type Manager struct {
@@ -109,7 +107,7 @@ type Manager struct {
 	scrapeConfigs          map[string]*config.ScrapeConfig
 	scrapePools            map[string]*scrapePool
 	newScrapeFailureLogger func(string) (*logging.JSONFileLogger, error)
-	scrapeFailureLoggers   map[string]*logging.JSONFileLogger
+	scrapeFailureLoggers   map[string]FailureLogger
 	targetSets             map[string][]*targetgroup.Group
 	buffers                *pool.Pool
 
@@ -176,6 +174,11 @@ func (m *Manager) reload() {
 			scrapeConfig, ok := m.scrapeConfigs[setName]
 			if !ok {
 				m.logger.Error("error reloading target set", "err", "invalid config id:"+setName)
+				continue
+			}
+			if scrapeConfig.ConvertClassicHistogramsToNHCB && m.opts.EnableCreatedTimestampZeroIngestion {
+				// TODO(krajorama): fix https://github.com/prometheus/prometheus/issues/15137
+				m.logger.Error("error reloading target set", "err", "cannot convert classic histograms to native histograms with custom buckets and ingest created timestamp zero samples at the same time due to https://github.com/prometheus/prometheus/issues/15137")
 				continue
 			}
 			m.metrics.targetScrapePools.Inc()
@@ -246,7 +249,7 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 	}
 
 	c := make(map[string]*config.ScrapeConfig)
-	scrapeFailureLoggers := map[string]*logging.JSONFileLogger{
+	scrapeFailureLoggers := map[string]FailureLogger{
 		"": nil, // Emptying the file name sets the scrape logger to nil.
 	}
 	for _, scfg := range scfgs {
@@ -254,7 +257,7 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 		if _, ok := scrapeFailureLoggers[scfg.ScrapeFailureLogFile]; !ok {
 			// We promise to reopen the file on each reload.
 			var (
-				logger *logging.JSONFileLogger
+				logger FailureLogger
 				err    error
 			)
 			if m.newScrapeFailureLogger != nil {

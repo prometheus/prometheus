@@ -90,7 +90,8 @@ eval instant at 25s sum_over_time(metric{job="1"}[100] offset 50s @ 100)
 eval instant at 25s metric{job="1"} @ 50 + metric{job="1"} @ 100
   {job="1"} 15
 
-eval instant at 25s rate(metric{job="1"}[100s] @ 100) + label_replace(rate(metric{job="2"}[123s] @ 200), "job", "1", "", "")
+# Note that this triggers an info annotation because we are rate'ing a metric that does not end in `_total`.
+eval_info instant at 25s rate(metric{job="1"}[100s] @ 100) + label_replace(rate(metric{job="2"}[123s] @ 200), "job", "1", "", "")
   {job="1"} 0.3
 
 eval instant at 25s sum_over_time(metric{job="1"}[100s] @ 100) + label_replace(sum_over_time(metric{job="2"}[100s] @ 100), "job", "1", "", "")

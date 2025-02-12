@@ -1153,7 +1153,7 @@ func BenchmarkCompaction(b *testing.B) {
 			blockDirs := make([]string, 0, len(c.ranges))
 			var blocks []*Block
 			for _, r := range c.ranges {
-				block, err := OpenBlock(nil, createBlock(b, dir, genSeries(nSeries, 10, r[0], r[1])), nil)
+				block, err := OpenBlock(nil, createBlock(b, dir, genSeries(nSeries, 10, r[0], r[1])), nil, nil)
 				require.NoError(b, err)
 				blocks = append(blocks, block)
 				defer func() {
@@ -1549,7 +1549,7 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 			require.Len(t, ids, 1)
 
 			// Open the block and query it and check the histograms.
-			block, err := OpenBlock(nil, path.Join(head.opts.ChunkDirRoot, ids[0].String()), nil)
+			block, err := OpenBlock(nil, path.Join(head.opts.ChunkDirRoot, ids[0].String()), nil, nil)
 			require.NoError(t, err)
 			t.Cleanup(func() {
 				require.NoError(t, block.Close())
@@ -1575,12 +1575,13 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 func TestSparseHistogramSpaceSavings(t *testing.T) {
 	t.Skip()
 
-	cases := []struct {
+	type testcase struct {
 		numSeriesPerSchema int
 		numBuckets         int
 		numSpans           int
 		gapBetweenSpans    int
-	}{
+	}
+	cases := []testcase{
 		{1, 15, 1, 0},
 		{1, 50, 1, 0},
 		{1, 100, 1, 0},
@@ -1692,7 +1693,7 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 				}()
 
 				wg.Add(1)
-				go func() {
+				go func(c testcase) {
 					defer wg.Done()
 
 					// Ingest histograms the old way.
@@ -1740,7 +1741,7 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 					oldULIDs, err = compactor.Write(oldHead.opts.ChunkDirRoot, oldHead, mint, maxt, nil)
 					require.NoError(t, err)
 					require.Len(t, oldULIDs, 1)
-				}()
+				}(c)
 
 				wg.Wait()
 
@@ -1911,7 +1912,7 @@ func TestCompactEmptyResultBlockWithTombstone(t *testing.T) {
 	ctx := context.Background()
 	tmpdir := t.TempDir()
 	blockDir := createBlock(t, tmpdir, genSeries(1, 1, 0, 10))
-	block, err := OpenBlock(nil, blockDir, nil)
+	block, err := OpenBlock(nil, blockDir, nil, nil)
 	require.NoError(t, err)
 	// Write tombstone covering the whole block.
 	err = block.Delete(ctx, 0, 10, labels.MustNewMatcher(labels.MatchEqual, defaultLabelName, "0"))

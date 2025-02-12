@@ -146,7 +146,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, iw.Close())
 
-	ir, err := NewFileReader(fn)
+	ir, err := NewFileReader(fn, DecodePostingsRaw)
 	require.NoError(t, err)
 	require.NoError(t, ir.Close())
 
@@ -157,7 +157,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 	require.NoError(t, err)
 	f.Close()
 
-	_, err = NewFileReader(dir)
+	_, err = NewFileReader(dir, DecodePostingsRaw)
 	require.Error(t, err)
 }
 
@@ -218,7 +218,7 @@ func TestIndexRW_Postings(t *testing.T) {
 	}, labelIndices)
 
 	t.Run("ShardedPostings()", func(t *testing.T) {
-		ir, err := NewFileReader(fn)
+		ir, err := NewFileReader(fn, DecodePostingsRaw)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, ir.Close())
@@ -331,7 +331,7 @@ func TestPostingsMany(t *testing.T) {
 				exp = append(exp, e)
 			}
 		}
-		require.Equal(t, exp, got, fmt.Sprintf("input: %v", c.in))
+		require.Equalf(t, exp, got, "input: %v", c.in)
 	}
 }
 
@@ -469,7 +469,7 @@ func TestDecbufUvarintWithInvalidBuffer(t *testing.T) {
 func TestReaderWithInvalidBuffer(t *testing.T) {
 	b := realByteSlice([]byte{0x81, 0x81, 0x81, 0x81, 0x81, 0x81})
 
-	_, err := NewReader(b)
+	_, err := NewReader(b, DecodePostingsRaw)
 	require.Error(t, err)
 }
 
@@ -481,7 +481,7 @@ func TestNewFileReaderErrorNoOpenFiles(t *testing.T) {
 	err := os.WriteFile(idxName, []byte("corrupted contents"), 0o666)
 	require.NoError(t, err)
 
-	_, err = NewFileReader(idxName)
+	_, err = NewFileReader(idxName, DecodePostingsRaw)
 	require.Error(t, err)
 
 	// dir.Close will fail on Win if idxName fd is not closed on error path.
@@ -560,7 +560,8 @@ func BenchmarkReader_ShardedPostings(b *testing.B) {
 }
 
 func TestDecoder_Postings_WrongInput(t *testing.T) {
-	_, _, err := (&Decoder{}).Postings([]byte("the cake is a lie"))
+	d := encoding.Decbuf{B: []byte("the cake is a lie")}
+	_, _, err := (&Decoder{DecodePostings: DecodePostingsRaw}).DecodePostings(d)
 	require.Error(t, err)
 }
 
@@ -610,6 +611,52 @@ func TestChunksTimeOrdering(t *testing.T) {
 	), "chunk maxT 30 is less than minT 100")
 
 	require.NoError(t, idx.Close())
+}
+
+func TestReader_PostingsForLabelMatching(t *testing.T) {
+	const seriesCount = 9
+	var input indexWriterSeriesSlice
+	for i := 1; i <= seriesCount; i++ {
+		input = append(input, &indexWriterSeries{
+			labels: labels.FromStrings("__name__", strconv.Itoa(i)),
+			chunks: []chunks.Meta{
+				{Ref: 1, MinTime: 0, MaxTime: 10},
+			},
+		})
+	}
+	ir, _, _ := createFileReader(context.Background(), t, input)
+
+	p := ir.PostingsForLabelMatching(context.Background(), "__name__", func(v string) bool {
+		iv, err := strconv.Atoi(v)
+		if err != nil {
+			panic(err)
+		}
+		return iv%2 == 0
+	})
+	require.NoError(t, p.Err())
+	refs, err := ExpandPostings(p)
+	require.NoError(t, err)
+	require.Equal(t, []storage.SeriesRef{4, 6, 8, 10}, refs)
+}
+
+func TestReader_PostingsForAllLabelValues(t *testing.T) {
+	const seriesCount = 9
+	var input indexWriterSeriesSlice
+	for i := 1; i <= seriesCount; i++ {
+		input = append(input, &indexWriterSeries{
+			labels: labels.FromStrings("__name__", strconv.Itoa(i)),
+			chunks: []chunks.Meta{
+				{Ref: 1, MinTime: 0, MaxTime: 10},
+			},
+		})
+	}
+	ir, _, _ := createFileReader(context.Background(), t, input)
+
+	p := ir.PostingsForAllLabelValues(context.Background(), "__name__")
+	require.NoError(t, p.Err())
+	refs, err := ExpandPostings(p)
+	require.NoError(t, err)
+	require.Equal(t, []storage.SeriesRef{3, 4, 5, 6, 7, 8, 9, 10, 11}, refs)
 }
 
 func TestReader_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
@@ -690,7 +737,7 @@ func createFileReader(ctx context.Context, tb testing.TB, input indexWriterSerie
 	}
 	require.NoError(tb, iw.Close())
 
-	ir, err := NewFileReader(fn)
+	ir, err := NewFileReader(fn, DecodePostingsRaw)
 	require.NoError(tb, err)
 	tb.Cleanup(func() {
 		require.NoError(tb, ir.Close())

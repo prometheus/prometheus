@@ -28,7 +28,6 @@ import (
 const testMaxSize int = 32
 
 // Formulas chosen to make testing easy.
-// Formulas chosen to make testing easy.
 func valEven(pos int) int64 { return int64(pos*2 + 2) } // s[0]=2, s[1]=4, s[2]=6, ..., s[31]=64 - Predictable pre-existing values
 func valOdd(pos int) int64  { return int64(pos*2 + 1) } // s[0]=1, s[1]=3, s[2]=5, ..., s[31]=63 - New values will interject at chosen position because they sort before the pre-existing vals.
 
@@ -55,12 +54,12 @@ func TestOOOInsert(t *testing.T) {
 		},
 		"integer histogram": {
 			sampleFunc: func(ts int64) sample {
-				return sample{t: ts, h: tsdbutil.GenerateTestHistogram(int(ts))}
+				return sample{t: ts, h: tsdbutil.GenerateTestHistogram(ts)}
 			},
 		},
 		"float histogram": {
 			sampleFunc: func(ts int64) sample {
-				return sample{t: ts, fh: tsdbutil.GenerateTestFloatHistogram(int(ts))}
+				return sample{t: ts, fh: tsdbutil.GenerateTestFloatHistogram(ts)}
 			},
 		},
 	}
@@ -119,12 +118,12 @@ func TestOOOInsertDuplicate(t *testing.T) {
 		},
 		"integer histogram": {
 			sampleFunc: func(ts int64) sample {
-				return sample{t: ts, h: tsdbutil.GenerateTestHistogram(int(ts))}
+				return sample{t: ts, h: tsdbutil.GenerateTestHistogram(ts)}
 			},
 		},
 		"float histogram": {
 			sampleFunc: func(ts int64) sample {
-				return sample{t: ts, fh: tsdbutil.GenerateTestFloatHistogram(int(ts))}
+				return sample{t: ts, fh: tsdbutil.GenerateTestFloatHistogram(ts)}
 			},
 		},
 	}
@@ -167,6 +166,8 @@ func TestOOOChunks_ToEncodedChunks(t *testing.T) {
 	h2 := h1.Copy()
 	h2.PositiveSpans = append(h2.PositiveSpans, histogram.Span{Offset: 1, Length: 1})
 	h2.PositiveBuckets = append(h2.PositiveBuckets, 12)
+	h2explicit := h2.Copy()
+	h2explicit.CounterResetHint = histogram.CounterReset
 
 	testCases := map[string]struct {
 		samples               []sample
@@ -199,12 +200,32 @@ func TestOOOChunks_ToEncodedChunks(t *testing.T) {
 				{encoding: chunkenc.EncXOR, minTime: 1200, maxTime: 1200},
 			},
 		},
-		"has a counter reset": {
+		"has an implicit counter reset": {
 			samples: []sample{
 				{t: 1000, h: h2},
 				{t: 1100, h: h1},
 			},
-			expectedCounterResets: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.CounterReset},
+			expectedCounterResets: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.UnknownCounterReset},
+			expectedChunks: []chunkVerify{
+				{encoding: chunkenc.EncHistogram, minTime: 1000, maxTime: 1000},
+				{encoding: chunkenc.EncHistogram, minTime: 1100, maxTime: 1100},
+			},
+		},
+		"has an explicit counter reset": {
+			samples: []sample{
+				{t: 1100, h: h2explicit},
+			},
+			expectedCounterResets: []histogram.CounterResetHint{histogram.UnknownCounterReset},
+			expectedChunks: []chunkVerify{
+				{encoding: chunkenc.EncHistogram, minTime: 1100, maxTime: 1100},
+			},
+		},
+		"has an explicit counter reset inside": {
+			samples: []sample{
+				{t: 1000, h: h1},
+				{t: 1100, h: h2explicit},
+			},
+			expectedCounterResets: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.UnknownCounterReset},
 			expectedChunks: []chunkVerify{
 				{encoding: chunkenc.EncHistogram, minTime: 1000, maxTime: 1000},
 				{encoding: chunkenc.EncHistogram, minTime: 1100, maxTime: 1100},

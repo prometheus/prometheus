@@ -68,6 +68,12 @@ func (i ItemType) IsAggregatorWithParam() bool {
 	return i == TOPK || i == BOTTOMK || i == COUNT_VALUES || i == QUANTILE || i == LIMITK || i == LIMIT_RATIO
 }
 
+// IsExperimentalAggregator defines the experimental aggregation functions that are controlled
+// with EnableExperimentalFunctions.
+func (i ItemType) IsExperimentalAggregator() bool {
+	return i == LIMITK || i == LIMIT_RATIO
+}
+
 // IsKeyword returns true if the Item corresponds to a keyword.
 // Returns false otherwise.
 func (i ItemType) IsKeyword() bool { return i > keywordsStart && i < keywordsEnd }

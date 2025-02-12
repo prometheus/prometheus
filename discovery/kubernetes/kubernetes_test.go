@@ -23,7 +23,9 @@ import (
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
+	apiv1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/version"
 	"k8s.io/apimachinery/pkg/watch"
@@ -271,6 +273,7 @@ func (s *Service) hasSynced() bool {
 }
 
 func TestRetryOnError(t *testing.T) {
+	t.Parallel()
 	for _, successAt := range []int{1, 2, 3} {
 		var called int
 		f := func() error {
@@ -286,6 +289,7 @@ func TestRetryOnError(t *testing.T) {
 }
 
 func TestFailuresCountMetric(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		role             Role
 		minFailedWatches int
@@ -319,4 +323,20 @@ func TestFailuresCountMetric(t *testing.T) {
 			require.GreaterOrEqual(t, prom_testutil.ToFloat64(n.metrics.failuresCount), float64(tc.minFailedWatches))
 		})
 	}
+}
+
+func TestNodeName(t *testing.T) {
+	t.Parallel()
+	node := &apiv1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "foo",
+		},
+	}
+	name, err := nodeName(node)
+	require.NoError(t, err)
+	require.Equal(t, "foo", name)
+
+	name, err = nodeName(cache.DeletedFinalStateUnknown{Key: "bar"})
+	require.NoError(t, err)
+	require.Equal(t, "bar", name)
 }

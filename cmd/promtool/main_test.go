@@ -60,6 +60,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestQueryRange(t *testing.T) {
+	t.Parallel()
 	s, getRequest := mockServer(200, `{"status": "success", "data": {"resultType": "matrix", "result": []}}`)
 	defer s.Close()
 
@@ -83,6 +84,7 @@ func TestQueryRange(t *testing.T) {
 }
 
 func TestQueryInstant(t *testing.T) {
+	t.Parallel()
 	s, getRequest := mockServer(200, `{"status": "success", "data": {"resultType": "vector", "result": []}}`)
 	defer s.Close()
 
@@ -114,6 +116,7 @@ func mockServer(code int, body string) (*httptest.Server, func() *http.Request) 
 }
 
 func TestCheckSDFile(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		file string
@@ -144,6 +147,7 @@ func TestCheckSDFile(t *testing.T) {
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			_, err := checkSDFile(test.file)
 			if test.err != "" {
 				require.EqualErrorf(t, err, test.err, "Expected error %q, got %q", test.err, err.Error())
@@ -155,6 +159,7 @@ func TestCheckSDFile(t *testing.T) {
 }
 
 func TestCheckDuplicates(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name         string
 		ruleFile     string
@@ -179,7 +184,8 @@ func TestCheckDuplicates(t *testing.T) {
 	for _, test := range cases {
 		c := test
 		t.Run(c.name, func(t *testing.T) {
-			rgs, err := rulefmt.ParseFile(c.ruleFile)
+			t.Parallel()
+			rgs, err := rulefmt.ParseFile(c.ruleFile, false)
 			require.Empty(t, err)
 			dups := checkDuplicates(rgs.Groups)
 			require.Equal(t, c.expectedDups, dups)
@@ -188,7 +194,7 @@ func TestCheckDuplicates(t *testing.T) {
 }
 
 func BenchmarkCheckDuplicates(b *testing.B) {
-	rgs, err := rulefmt.ParseFile("./testdata/rules_large.yml")
+	rgs, err := rulefmt.ParseFile("./testdata/rules_large.yml", false)
 	require.Empty(b, err)
 	b.ResetTimer()
 
@@ -198,6 +204,7 @@ func BenchmarkCheckDuplicates(b *testing.B) {
 }
 
 func TestCheckTargetConfig(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		file string
@@ -226,7 +233,8 @@ func TestCheckTargetConfig(t *testing.T) {
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := checkConfig(false, "testdata/"+test.file, false)
+			t.Parallel()
+			_, _, err := checkConfig(false, "testdata/"+test.file, false)
 			if test.err != "" {
 				require.EqualErrorf(t, err, test.err, "Expected error %q, got %q", test.err, err.Error())
 				return
@@ -237,6 +245,7 @@ func TestCheckTargetConfig(t *testing.T) {
 }
 
 func TestCheckConfigSyntax(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name       string
 		file       string
@@ -309,7 +318,8 @@ func TestCheckConfigSyntax(t *testing.T) {
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := checkConfig(false, "testdata/"+test.file, test.syntaxOnly)
+			t.Parallel()
+			_, _, err := checkConfig(false, "testdata/"+test.file, test.syntaxOnly)
 			expectedErrMsg := test.err
 			if strings.Contains(runtime.GOOS, "windows") {
 				expectedErrMsg = test.errWindows
@@ -324,6 +334,7 @@ func TestCheckConfigSyntax(t *testing.T) {
 }
 
 func TestAuthorizationConfig(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		file string
@@ -343,7 +354,8 @@ func TestAuthorizationConfig(t *testing.T) {
 
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := checkConfig(false, "testdata/"+test.file, false)
+			t.Parallel()
+			_, _, err := checkConfig(false, "testdata/"+test.file, false)
 			if test.err != "" {
 				require.ErrorContains(t, err, test.err, "Expected error to contain %q, got %q", test.err, err.Error())
 				return
@@ -357,6 +369,7 @@ func TestCheckMetricsExtended(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Skipping on windows")
 	}
+	t.Parallel()
 
 	f, err := os.Open("testdata/metrics-test.prom")
 	require.NoError(t, err)
@@ -393,6 +406,7 @@ func TestExitCodes(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
 	}
+	t.Parallel()
 
 	for _, c := range []struct {
 		file      string
@@ -417,8 +431,10 @@ func TestExitCodes(t *testing.T) {
 		},
 	} {
 		t.Run(c.file, func(t *testing.T) {
+			t.Parallel()
 			for _, lintFatal := range []bool{true, false} {
 				t.Run(strconv.FormatBool(lintFatal), func(t *testing.T) {
+					t.Parallel()
 					args := []string{"-test.main", "check", "config", "testdata/" + c.file}
 					if lintFatal {
 						args = append(args, "--lint-fatal")
@@ -449,6 +465,7 @@ func TestDocumentation(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.SkipNow()
 	}
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -491,7 +508,7 @@ func TestCheckRules(t *testing.T) {
 		defer func(v *os.File) { os.Stdin = v }(os.Stdin)
 		os.Stdin = r
 
-		exitCode := CheckRules(newLintConfig(lintOptionDuplicateRules, false))
+		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, false, false))
 		require.Equal(t, successExitCode, exitCode, "")
 	})
 
@@ -513,7 +530,7 @@ func TestCheckRules(t *testing.T) {
 		defer func(v *os.File) { os.Stdin = v }(os.Stdin)
 		os.Stdin = r
 
-		exitCode := CheckRules(newLintConfig(lintOptionDuplicateRules, false))
+		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, false, false))
 		require.Equal(t, failureExitCode, exitCode, "")
 	})
 
@@ -535,32 +552,79 @@ func TestCheckRules(t *testing.T) {
 		defer func(v *os.File) { os.Stdin = v }(os.Stdin)
 		os.Stdin = r
 
-		exitCode := CheckRules(newLintConfig(lintOptionDuplicateRules, true))
+		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, true, false))
 		require.Equal(t, lintErrExitCode, exitCode, "")
 	})
 }
 
 func TestCheckRulesWithRuleFiles(t *testing.T) {
 	t.Run("rules-good", func(t *testing.T) {
-		exitCode := CheckRules(newLintConfig(lintOptionDuplicateRules, false), "./testdata/rules.yml")
+		t.Parallel()
+		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, false, false), "./testdata/rules.yml")
 		require.Equal(t, successExitCode, exitCode, "")
 	})
 
 	t.Run("rules-bad", func(t *testing.T) {
-		exitCode := CheckRules(newLintConfig(lintOptionDuplicateRules, false), "./testdata/rules-bad.yml")
+		t.Parallel()
+		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, false, false), "./testdata/rules-bad.yml")
 		require.Equal(t, failureExitCode, exitCode, "")
 	})
 
 	t.Run("rules-lint-fatal", func(t *testing.T) {
-		exitCode := CheckRules(newLintConfig(lintOptionDuplicateRules, true), "./testdata/prometheus-rules.lint.yml")
+		t.Parallel()
+		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, true, false), "./testdata/prometheus-rules.lint.yml")
 		require.Equal(t, lintErrExitCode, exitCode, "")
 	})
+}
+
+func TestCheckScrapeConfigs(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		lookbackDelta model.Duration
+		expectError   bool
+	}{
+		{
+			name:          "scrape interval less than lookback delta",
+			lookbackDelta: model.Duration(11 * time.Minute),
+			expectError:   false,
+		},
+		{
+			name:          "scrape interval greater than lookback delta",
+			lookbackDelta: model.Duration(5 * time.Minute),
+			expectError:   true,
+		},
+		{
+			name:          "scrape interval same as lookback delta",
+			lookbackDelta: model.Duration(10 * time.Minute),
+			expectError:   true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Non-fatal linting.
+			code := CheckConfig(false, false, newConfigLintConfig(lintOptionTooLongScrapeInterval, false, false, tc.lookbackDelta), "./testdata/prometheus-config.lint.too_long_scrape_interval.yml")
+			require.Equal(t, successExitCode, code, "Non-fatal linting should return success")
+			// Fatal linting.
+			code = CheckConfig(false, false, newConfigLintConfig(lintOptionTooLongScrapeInterval, true, false, tc.lookbackDelta), "./testdata/prometheus-config.lint.too_long_scrape_interval.yml")
+			if tc.expectError {
+				require.Equal(t, lintErrExitCode, code, "Fatal linting should return error")
+			} else {
+				require.Equal(t, successExitCode, code, "Fatal linting should return success when there are no problems")
+			}
+			// Check syntax only, no linting.
+			code = CheckConfig(false, true, newConfigLintConfig(lintOptionTooLongScrapeInterval, true, false, tc.lookbackDelta), "./testdata/prometheus-config.lint.too_long_scrape_interval.yml")
+			require.Equal(t, successExitCode, code, "Fatal linting should return success when checking syntax only")
+			// Lint option "none" should disable linting.
+			code = CheckConfig(false, false, newConfigLintConfig(lintOptionNone+","+lintOptionTooLongScrapeInterval, true, false, tc.lookbackDelta), "./testdata/prometheus-config.lint.too_long_scrape_interval.yml")
+			require.Equal(t, successExitCode, code, `Fatal linting should return success when lint option "none" is specified`)
+		})
+	}
 }
 
 func TestTSDBDumpCommand(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
 	}
+	t.Parallel()
 
 	storage := promqltest.LoadedStorage(t, `
 	load 1m
@@ -593,6 +657,7 @@ func TestTSDBDumpCommand(t *testing.T) {
 		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			args := []string{"-test.main", "tsdb", c.subCmd, storage.Dir()}
 			cmd := exec.Command(promtoolPath, args...)
 			require.NoError(t, cmd.Run())

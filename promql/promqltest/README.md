@@ -22,7 +22,7 @@ Each test file contains a series of commands. There are three kinds of commands:
 
 * `load`
 * `clear`
-* `eval`
+* `eval` (including the variants `eval_fail`, `eval_warn`, `eval_info`, and `eval_ordered`)
 
 Each command is executed in the order given in the file.
 
@@ -50,12 +50,12 @@ load 1m
     my_metric{env="prod"} 5 2+3x2 _ stale {{schema:1 sum:3 count:22 buckets:[5 10 7]}}
 ```
 
-...will create a single series with labels `my_metric{env="prod"}`, with the following points:
+… will create a single series with labels `my_metric{env="prod"}`, with the following points:
 
 * t=0: value is 5
 * t=1m: value is 2
 * t=2m: value is 5
-* t=3m: value is 7
+* t=3m: value is 8
 * t=4m: no point
 * t=5m: stale marker
 * t=6m: native histogram with schema 1, sum -3, count 22 and bucket counts 5, 10 and 7
@@ -74,6 +74,7 @@ When loading a batch of classic histogram float series, you can optionally appen
 ## `eval` command
 
 `eval` runs a query against the test environment and asserts that the result is as expected.
+It requires the query to succeed without any (info or warn) annotations.
 
 Both instant and range queries are supported.
 
@@ -110,11 +111,18 @@ eval range from 0 to 3m step 1m sum by (env) (my_metric)
     {env="test"} 10 20 30 45
 ```
 
-Instant queries also support asserting that the series are returned in exactly the order specified: use `eval_ordered instant ...` instead of `eval instant ...`.
-This is not supported for range queries.
+To assert that a query succeeds with an info or warn annotation, use the
+`eval_info` or `eval_warn` commands, respectively.
 
-It is also possible to test that queries fail: use `eval_fail instant ...` or `eval_fail range ...`.
-`eval_fail` optionally takes an expected error message string or regexp to assert that the error message is as expected.
+Instant queries also support asserting that the series are returned in exactly
+the order specified: use `eval_ordered instant ...` instead of `eval instant
+...`. `eval_ordered` ignores any annotations. The assertion always fails for
+matrix results.
+
+To assert that a query fails, use the `eval_fail` command. `eval_fail` does not
+expect any result lines. Instead, it optionally accepts an expected error
+message string or regular expression to assert that the error message is as
+expected.
 
 For example:
 

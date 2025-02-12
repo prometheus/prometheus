@@ -187,11 +187,11 @@ func readTestWAL(t testing.TB, dir string) (recs []interface{}) {
 			samples, err := dec.Samples(rec, nil)
 			require.NoError(t, err)
 			recs = append(recs, samples)
-		case record.HistogramSamples:
+		case record.HistogramSamples, record.CustomBucketsHistogramSamples:
 			samples, err := dec.HistogramSamples(rec, nil)
 			require.NoError(t, err)
 			recs = append(recs, samples)
-		case record.FloatHistogramSamples:
+		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
 			samples, err := dec.FloatHistogramSamples(rec, nil)
 			require.NoError(t, err)
 			recs = append(recs, samples)
@@ -962,12 +962,12 @@ func TestHead_Truncate(t *testing.T) {
 	require.Nil(t, h.series.getByID(s3.ref))
 	require.Nil(t, h.series.getByID(s4.ref))
 
-	postingsA1, _ := index.ExpandPostings(h.postings.Get("a", "1"))
-	postingsA2, _ := index.ExpandPostings(h.postings.Get("a", "2"))
-	postingsB1, _ := index.ExpandPostings(h.postings.Get("b", "1"))
-	postingsB2, _ := index.ExpandPostings(h.postings.Get("b", "2"))
-	postingsC1, _ := index.ExpandPostings(h.postings.Get("c", "1"))
-	postingsAll, _ := index.ExpandPostings(h.postings.Get("", ""))
+	postingsA1, _ := index.ExpandPostings(h.postings.Postings(ctx, "a", "1"))
+	postingsA2, _ := index.ExpandPostings(h.postings.Postings(ctx, "a", "2"))
+	postingsB1, _ := index.ExpandPostings(h.postings.Postings(ctx, "b", "1"))
+	postingsB2, _ := index.ExpandPostings(h.postings.Postings(ctx, "b", "2"))
+	postingsC1, _ := index.ExpandPostings(h.postings.Postings(ctx, "c", "1"))
+	postingsAll, _ := index.ExpandPostings(h.postings.Postings(ctx, "", ""))
 
 	require.Equal(t, []storage.SeriesRef{storage.SeriesRef(s1.ref)}, postingsA1)
 	require.Equal(t, []storage.SeriesRef{storage.SeriesRef(s2.ref)}, postingsA2)
@@ -1594,7 +1594,6 @@ func TestDelete_e2e(t *testing.T) {
 		for i := 0; i < numRanges; i++ {
 			q, err := NewBlockQuerier(hb, 0, 100000)
 			require.NoError(t, err)
-			defer q.Close()
 			ss := q.Select(context.Background(), true, nil, del.ms...)
 			// Build the mockSeriesSet.
 			matchedSeries := make([]storage.Series, 0, len(matched))
@@ -1635,6 +1634,7 @@ func TestDelete_e2e(t *testing.T) {
 			}
 			require.NoError(t, ss.Err())
 			require.Empty(t, ss.Warnings())
+			require.NoError(t, q.Close())
 		}
 	}
 }
@@ -4732,7 +4732,7 @@ func TestOOOHistogramCounterResetHeaders(t *testing.T) {
 
 			// OOO histogram
 			for i := 1; i <= 5; i++ {
-				appendHistogram(100+int64(i), tsdbutil.GenerateTestHistogram(1000+i))
+				appendHistogram(100+int64(i), tsdbutil.GenerateTestHistogram(1000+int64(i)))
 			}
 			// Nothing mmapped yet.
 			checkOOOExpCounterResetHeader()
@@ -4820,7 +4820,7 @@ func TestOOOHistogramCounterResetHeaders(t *testing.T) {
 			appendHistogram(300, tsdbutil.SetHistogramCounterReset(tsdbutil.GenerateTestHistogram(3000)))
 
 			for i := 1; i <= 4; i++ {
-				appendHistogram(300+int64(i), tsdbutil.GenerateTestHistogram(3000+i))
+				appendHistogram(300+int64(i), tsdbutil.GenerateTestHistogram(3000+int64(i)))
 			}
 
 			// One mmapped chunk with (ts, val) [(300, 3000), (301, 3001), (302, 3002), (303, 3003), (350, 4000)].
@@ -5178,7 +5178,7 @@ func testWBLReplay(t *testing.T, scenario sampleTypeScenario) {
 	// Passing in true for the 'ignoreCounterResets' parameter prevents differences in counter reset headers
 	// from being factored in to the sample comparison
 	// TODO(fionaliao): understand counter reset behaviour, might want to modify this later
-	requireEqualSamples(t, l.String(), expOOOSamples, actOOOSamples, true)
+	requireEqualSamples(t, l.String(), expOOOSamples, actOOOSamples, requireEqualSamplesIgnoreCounterResets)
 
 	require.NoError(t, h.Close())
 }
@@ -6405,7 +6405,7 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 			expectedSamples: []chunks.Sample{
 				sample{t: 1, h: &histogram.Histogram{}},
 				sample{t: 100, h: testHistogram},
-				sample{t: 101, h: &histogram.Histogram{CounterResetHint: histogram.CounterReset}},
+				sample{t: 101, h: &histogram.Histogram{CounterResetHint: histogram.UnknownCounterReset}},
 				sample{t: 102, h: testHistogram},
 			},
 		},
@@ -6418,7 +6418,7 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 			expectedSamples: []chunks.Sample{
 				sample{t: 1, fh: &histogram.FloatHistogram{}},
 				sample{t: 100, fh: testFloatHistogram},
-				sample{t: 101, fh: &histogram.FloatHistogram{CounterResetHint: histogram.CounterReset}},
+				sample{t: 101, fh: &histogram.FloatHistogram{CounterResetHint: histogram.UnknownCounterReset}},
 				sample{t: 102, fh: testFloatHistogram},
 			},
 		},
@@ -6523,4 +6523,61 @@ func (c *countSeriesLifecycleCallback) PreCreation(labels.Labels) error { return
 func (c *countSeriesLifecycleCallback) PostCreation(labels.Labels)      { c.created.Inc() }
 func (c *countSeriesLifecycleCallback) PostDeletion(s map[chunks.HeadSeriesRef]labels.Labels) {
 	c.deleted.Add(int64(len(s)))
+}
+
+// Regression test for data race https://github.com/prometheus/prometheus/issues/15139.
+func TestHeadAppendHistogramAndCommitConcurrency(t *testing.T) {
+	h := tsdbutil.GenerateTestHistogram(1)
+	fh := tsdbutil.GenerateTestFloatHistogram(1)
+
+	testCases := map[string]func(storage.Appender, int) error{
+		"integer histogram": func(app storage.Appender, i int) error {
+			_, err := app.AppendHistogram(0, labels.FromStrings("foo", "bar", "serial", strconv.Itoa(i)), 1, h, nil)
+			return err
+		},
+		"float histogram": func(app storage.Appender, i int) error {
+			_, err := app.AppendHistogram(0, labels.FromStrings("foo", "bar", "serial", strconv.Itoa(i)), 1, nil, fh)
+			return err
+		},
+	}
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			testHeadAppendHistogramAndCommitConcurrency(t, tc)
+		})
+	}
+}
+
+func testHeadAppendHistogramAndCommitConcurrency(t *testing.T, appendFn func(storage.Appender, int) error) {
+	head, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+
+	// How this works: Commit() should be atomic, thus one of the commits will
+	// be first and the other second. The first commit will create a new series
+	// and write a sample. The second commit will see an exact duplicate sample
+	// which it should ignore. Unless there's a race that causes the
+	// memSeries.lastHistogram to be corrupt and fail the duplicate check.
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 10000; i++ {
+			app := head.Appender(context.Background())
+			require.NoError(t, appendFn(app, i))
+			require.NoError(t, app.Commit())
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 10000; i++ {
+			app := head.Appender(context.Background())
+			require.NoError(t, appendFn(app, i))
+			require.NoError(t, app.Commit())
+		}
+	}()
+
+	wg.Wait()
 }

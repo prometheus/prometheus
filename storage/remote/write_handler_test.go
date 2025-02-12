@@ -130,7 +130,7 @@ func TestRemoteWriteHandlerHeadersHandling_V1Message(t *testing.T) {
 			}
 
 			appendable := &mockAppendable{}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -231,7 +231,7 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 			}
 
 			appendable := &mockAppendable{}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2})
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2}, false)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -256,7 +256,7 @@ func TestRemoteWriteHandler_V1Message(t *testing.T) {
 	// in Prometheus, so keeping like this to not break existing 1.0 clients.
 
 	appendable := &mockAppendable{}
-	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -310,14 +310,23 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 		expectedCode     int
 		expectedRespBody string
 
-		commitErr          error
-		appendSampleErr    error
-		appendHistogramErr error
-		appendExemplarErr  error
-		updateMetadataErr  error
+		commitErr             error
+		appendSampleErr       error
+		appendCTZeroSampleErr error
+		appendHistogramErr    error
+		appendExemplarErr     error
+		updateMetadataErr     error
+
+		ingestCTZeroSample bool
 	}{
 		{
-			desc:         "All timeseries accepted",
+			desc:               "All timeseries accepted/ct_enabled",
+			input:              writeV2RequestFixture.Timeseries,
+			expectedCode:       http.StatusNoContent,
+			ingestCTZeroSample: true,
+		},
+		{
+			desc:         "All timeseries accepted/ct_disabled",
 			input:        writeV2RequestFixture.Timeseries,
 			expectedCode: http.StatusNoContent,
 		},
@@ -440,13 +449,14 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
 
 			appendable := &mockAppendable{
-				commitErr:          tc.commitErr,
-				appendSampleErr:    tc.appendSampleErr,
-				appendHistogramErr: tc.appendHistogramErr,
-				appendExemplarErr:  tc.appendExemplarErr,
-				updateMetadataErr:  tc.updateMetadataErr,
+				commitErr:             tc.commitErr,
+				appendSampleErr:       tc.appendSampleErr,
+				appendCTZeroSampleErr: tc.appendCTZeroSampleErr,
+				appendHistogramErr:    tc.appendHistogramErr,
+				appendExemplarErr:     tc.appendExemplarErr,
+				updateMetadataErr:     tc.updateMetadataErr,
 			}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2})
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2}, tc.ingestCTZeroSample)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -489,15 +499,27 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				ls := ts.ToLabels(&b, writeV2RequestFixture.Symbols)
 
 				for _, s := range ts.Samples {
+					if ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
+						requireEqual(t, mockSample{ls, ts.CreatedTimestamp, 0}, appendable.samples[i])
+						i++
+					}
 					requireEqual(t, mockSample{ls, s.Timestamp, s.Value}, appendable.samples[i])
 					i++
 				}
 				for _, hp := range ts.Histograms {
 					if hp.IsFloatHistogram() {
 						fh := hp.ToFloatHistogram()
+						if ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
+							requireEqual(t, mockHistogram{ls, ts.CreatedTimestamp, nil, &histogram.FloatHistogram{}}, appendable.histograms[k])
+							k++
+						}
 						requireEqual(t, mockHistogram{ls, hp.Timestamp, nil, fh}, appendable.histograms[k])
 					} else {
 						h := hp.ToIntHistogram()
+						if ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
+							requireEqual(t, mockHistogram{ls, ts.CreatedTimestamp, &histogram.Histogram{}, nil}, appendable.histograms[k])
+							k++
+						}
 						requireEqual(t, mockHistogram{ls, hp.Timestamp, h, nil}, appendable.histograms[k])
 					}
 					k++
@@ -545,7 +567,7 @@ func TestOutOfOrderSample_V1Message(t *testing.T) {
 			require.NoError(t, err)
 
 			appendable := &mockAppendable{latestSample: map[uint64]int64{labels.FromStrings("__name__", "test_metric").Hash(): 100}}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -587,7 +609,7 @@ func TestOutOfOrderExemplar_V1Message(t *testing.T) {
 			require.NoError(t, err)
 
 			appendable := &mockAppendable{latestSample: map[uint64]int64{labels.FromStrings("__name__", "test_metric").Hash(): 100}}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -625,7 +647,7 @@ func TestOutOfOrderHistogram_V1Message(t *testing.T) {
 			require.NoError(t, err)
 
 			appendable := &mockAppendable{latestSample: map[uint64]int64{labels.FromStrings("__name__", "test_metric").Hash(): 100}}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -656,7 +678,7 @@ func BenchmarkRemoteWriteHandler(b *testing.B) {
 
 	appendable := &mockAppendable{}
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
 	recorder := httptest.NewRecorder()
 
 	b.ResetTimer()
@@ -672,8 +694,8 @@ func TestCommitErr_V1Message(t *testing.T) {
 	req, err := http.NewRequest("", "", bytes.NewReader(payload))
 	require.NoError(t, err)
 
-	appendable := &mockAppendable{commitErr: fmt.Errorf("commit error")}
-	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
+	appendable := &mockAppendable{commitErr: errors.New("commit error")}
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -696,8 +718,8 @@ func TestCommitErr_V2Message(t *testing.T) {
 	req.Header.Set("Content-Encoding", string(SnappyBlockCompression))
 	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
 
-	appendable := &mockAppendable{commitErr: fmt.Errorf("commit error")}
-	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2})
+	appendable := &mockAppendable{commitErr: errors.New("commit error")}
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2}, false)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -724,7 +746,7 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 		require.NoError(b, db.Close())
 	})
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(promslog.NewNopLogger(), nil, db.Head(), []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1})
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, db.Head(), []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
 
 	buf, _, _, err := buildWriteRequest(nil, genSeriesWithSample(1000, 200*time.Minute.Milliseconds()), nil, nil, nil, nil, "snappy")
 	require.NoError(b, err)
@@ -775,15 +797,17 @@ type mockAppendable struct {
 	latestExemplar  map[uint64]int64
 	exemplars       []mockExemplar
 	latestHistogram map[uint64]int64
+	latestFloatHist map[uint64]int64
 	histograms      []mockHistogram
 	metadata        []mockMetadata
 
 	// optional errors to inject.
-	commitErr          error
-	appendSampleErr    error
-	appendHistogramErr error
-	appendExemplarErr  error
-	updateMetadataErr  error
+	commitErr             error
+	appendSampleErr       error
+	appendCTZeroSampleErr error
+	appendHistogramErr    error
+	appendExemplarErr     error
+	updateMetadataErr     error
 }
 
 type mockSample struct {
@@ -827,10 +851,17 @@ func (m *mockAppendable) Appender(_ context.Context) storage.Appender {
 	if m.latestHistogram == nil {
 		m.latestHistogram = map[uint64]int64{}
 	}
+	if m.latestFloatHist == nil {
+		m.latestFloatHist = map[uint64]int64{}
+	}
 	if m.latestExemplar == nil {
 		m.latestExemplar = map[uint64]int64{}
 	}
 	return m
+}
+
+func (m *mockAppendable) SetOptions(opts *storage.AppendOptions) {
+	panic("unimplemented")
 }
 
 func (m *mockAppendable) Append(_ storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
@@ -896,7 +927,12 @@ func (m *mockAppendable) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t
 		return 0, m.appendHistogramErr
 	}
 
-	latestTs := m.latestHistogram[l.Hash()]
+	var latestTs int64
+	if h != nil {
+		latestTs = m.latestHistogram[l.Hash()]
+	} else {
+		latestTs = m.latestFloatHist[l.Hash()]
+	}
 	if t < latestTs {
 		return 0, storage.ErrOutOfOrderSample
 	}
@@ -911,15 +947,53 @@ func (m *mockAppendable) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t
 		return 0, tsdb.ErrInvalidSample
 	}
 
-	m.latestHistogram[l.Hash()] = t
+	if h != nil {
+		m.latestHistogram[l.Hash()] = t
+	} else {
+		m.latestFloatHist[l.Hash()] = t
+	}
 	m.histograms = append(m.histograms, mockHistogram{l, t, h, fh})
 	return 0, nil
 }
 
 func (m *mockAppendable) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	// AppendCTZeroSample is no-op for remote-write for now.
-	// TODO(bwplotka/arthursens): Add support for PRW 2.0 for CT zero feature (but also we might
-	// replace this with in-metadata CT storage, see https://github.com/prometheus/prometheus/issues/14218).
+	if m.appendCTZeroSampleErr != nil {
+		return 0, m.appendCTZeroSampleErr
+	}
+
+	// Created Timestamp can't be higher than the original sample's timestamp.
+	if ct > t {
+		return 0, storage.ErrOutOfOrderSample
+	}
+
+	var latestTs int64
+	if h != nil {
+		latestTs = m.latestHistogram[l.Hash()]
+	} else {
+		latestTs = m.latestFloatHist[l.Hash()]
+	}
+	if ct < latestTs {
+		return 0, storage.ErrOutOfOrderSample
+	}
+	if ct == latestTs {
+		return 0, storage.ErrDuplicateSampleForTimestamp
+	}
+
+	if l.IsEmpty() {
+		return 0, tsdb.ErrInvalidSample
+	}
+
+	if _, hasDuplicates := l.HasDuplicateLabelNames(); hasDuplicates {
+		return 0, tsdb.ErrInvalidSample
+	}
+
+	if h != nil {
+		m.latestHistogram[l.Hash()] = ct
+		m.histograms = append(m.histograms, mockHistogram{l, ct, &histogram.Histogram{}, nil})
+	} else {
+		m.latestFloatHist[l.Hash()] = ct
+		m.histograms = append(m.histograms, mockHistogram{l, ct, nil, &histogram.FloatHistogram{}})
+	}
 	return 0, nil
 }
 
@@ -932,9 +1006,32 @@ func (m *mockAppendable) UpdateMetadata(_ storage.SeriesRef, l labels.Labels, mp
 	return 0, nil
 }
 
-func (m *mockAppendable) AppendCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
-	// AppendCTZeroSample is no-op for remote-write for now.
-	// TODO(bwplotka): Add support for PRW 2.0 for CT zero feature (but also we might
-	// replace this with in-metadata CT storage, see https://github.com/prometheus/prometheus/issues/14218).
+func (m *mockAppendable) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64) (storage.SeriesRef, error) {
+	if m.appendCTZeroSampleErr != nil {
+		return 0, m.appendCTZeroSampleErr
+	}
+
+	// Created Timestamp can't be higher than the original sample's timestamp.
+	if ct > t {
+		return 0, storage.ErrOutOfOrderSample
+	}
+
+	latestTs := m.latestSample[l.Hash()]
+	if ct < latestTs {
+		return 0, storage.ErrOutOfOrderSample
+	}
+	if ct == latestTs {
+		return 0, storage.ErrDuplicateSampleForTimestamp
+	}
+
+	if l.IsEmpty() {
+		return 0, tsdb.ErrInvalidSample
+	}
+	if _, hasDuplicates := l.HasDuplicateLabelNames(); hasDuplicates {
+		return 0, tsdb.ErrInvalidSample
+	}
+
+	m.latestSample[l.Hash()] = ct
+	m.samples = append(m.samples, mockSample{l, ct, 0})
 	return 0, nil
 }

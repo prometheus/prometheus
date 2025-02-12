@@ -15,6 +15,7 @@ package chunkenc
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math"
 
@@ -761,9 +762,9 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 		if !okToAppend || counterReset {
 			if appendOnly {
 				if counterReset {
-					return nil, false, a, fmt.Errorf("float histogram counter reset")
+					return nil, false, a, errors.New("float histogram counter reset")
 				}
-				return nil, false, a, fmt.Errorf("float histogram schema change")
+				return nil, false, a, errors.New("float histogram schema change")
 			}
 			newChunk := NewFloatHistogramChunk()
 			app, err := newChunk.Appender()
@@ -812,7 +813,7 @@ func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppend
 	pForwardInserts, nForwardInserts, pBackwardInserts, nBackwardInserts, pMergedSpans, nMergedSpans, okToAppend := a.appendableGauge(h)
 	if !okToAppend {
 		if appendOnly {
-			return nil, false, a, fmt.Errorf("float gauge histogram schema change")
+			return nil, false, a, errors.New("float gauge histogram schema change")
 		}
 		newChunk := NewFloatHistogramChunk()
 		app, err := newChunk.Appender()
@@ -975,6 +976,7 @@ func (it *floatHistogramIterator) Reset(b []byte) {
 		it.atFloatHistogramCalled = false
 		it.pBuckets, it.nBuckets = nil, nil
 		it.pSpans, it.nSpans = nil, nil
+		it.customValues = nil
 	} else {
 		it.pBuckets, it.nBuckets = it.pBuckets[:0], it.nBuckets[:0]
 	}
@@ -1070,7 +1072,7 @@ func (it *floatHistogramIterator) Next() ValueType {
 	// The case for the 2nd sample with single deltas is implicitly handled correctly with the double delta code,
 	// so we don't need a separate single delta logic for the 2nd sample.
 
-	// Recycle bucket and span slices that have not been returned yet. Otherwise, copy them.
+	// Recycle bucket, span and custom value slices that have not been returned yet. Otherwise, copy them.
 	// We can always recycle the slices for leading and trailing bits as they are
 	// never returned to the caller.
 	if it.atFloatHistogramCalled {
@@ -1102,6 +1104,13 @@ func (it *floatHistogramIterator) Next() ValueType {
 			it.nSpans = newSpans
 		} else {
 			it.nSpans = nil
+		}
+		if len(it.customValues) > 0 {
+			newCustomValues := make([]float64, len(it.customValues))
+			copy(newCustomValues, it.customValues)
+			it.customValues = newCustomValues
+		} else {
+			it.customValues = nil
 		}
 	}
 

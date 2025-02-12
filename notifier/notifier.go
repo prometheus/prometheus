@@ -16,6 +16,8 @@ package notifier
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -32,9 +34,10 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
-	"github.com/prometheus/common/sigv4"
 	"github.com/prometheus/common/version"
+	"github.com/prometheus/sigv4"
 	"go.uber.org/atomic"
+	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -53,7 +56,7 @@ const (
 	alertmanagerLabel = "alertmanager"
 )
 
-var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+var userAgent = version.PrometheusUserAgent()
 
 // Alert is a generic representation of an alert in the Prometheus eco-system.
 type Alert struct {
@@ -157,7 +160,7 @@ func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen, alertmanag
 			Namespace: namespace,
 			Subsystem: subsystem,
 			Name:      "errors_total",
-			Help:      "Total number of errors sending alert notifications.",
+			Help:      "Total number of sent alerts affected by errors.",
 		},
 			[]string{alertmanagerLabel},
 		),
@@ -257,11 +260,31 @@ func (n *Manager) ApplyConfig(conf *config.Config) error {
 	n.opts.RelabelConfigs = conf.AlertingConfig.AlertRelabelConfigs
 
 	amSets := make(map[string]*alertmanagerSet)
+	// configToAlertmanagers maps alertmanager sets for each unique AlertmanagerConfig,
+	// helping to avoid dropping known alertmanagers and re-use them without waiting for SD updates when applying the config.
+	configToAlertmanagers := make(map[string]*alertmanagerSet, len(n.alertmanagers))
+	for _, oldAmSet := range n.alertmanagers {
+		hash, err := oldAmSet.configHash()
+		if err != nil {
+			return err
+		}
+		configToAlertmanagers[hash] = oldAmSet
+	}
 
 	for k, cfg := range conf.AlertingConfig.AlertmanagerConfigs.ToMap() {
 		ams, err := newAlertmanagerSet(cfg, n.logger, n.metrics)
 		if err != nil {
 			return err
+		}
+
+		hash, err := ams.configHash()
+		if err != nil {
+			return err
+		}
+
+		if oldAmSet, ok := configToAlertmanagers[hash]; ok {
+			ams.ams = oldAmSet.ams
+			ams.droppedAms = oldAmSet.droppedAms
 		}
 
 		amSets[k] = ams
@@ -519,10 +542,10 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 
 	begin := time.Now()
 
-	// v1Payload and v2Payload represent 'alerts' marshaled for Alertmanager API
-	// v1 or v2. Marshaling happens below. Reference here is for caching between
+	// cachedPayload represent 'alerts' marshaled for Alertmanager API v2.
+	// Marshaling happens below. Reference here is for caching between
 	// for loop iterations.
-	var v1Payload, v2Payload []byte
+	var cachedPayload []byte
 
 	n.mtx.RLock()
 	amSets := n.alertmanagers
@@ -553,29 +576,16 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 				continue
 			}
 			// We can't use the cached values from previous iteration.
-			v1Payload, v2Payload = nil, nil
+			cachedPayload = nil
 		}
 
 		switch ams.cfg.APIVersion {
-		case config.AlertmanagerAPIVersionV1:
-			{
-				if v1Payload == nil {
-					v1Payload, err = json.Marshal(amAlerts)
-					if err != nil {
-						n.logger.Error("Encoding alerts for Alertmanager API v1 failed", "err", err)
-						ams.mtx.RUnlock()
-						return false
-					}
-				}
-
-				payload = v1Payload
-			}
 		case config.AlertmanagerAPIVersionV2:
 			{
-				if v2Payload == nil {
+				if cachedPayload == nil {
 					openAPIAlerts := alertsToOpenAPIAlerts(amAlerts)
 
-					v2Payload, err = json.Marshal(openAPIAlerts)
+					cachedPayload, err = json.Marshal(openAPIAlerts)
 					if err != nil {
 						n.logger.Error("Encoding alerts for Alertmanager API v2 failed", "err", err)
 						ams.mtx.RUnlock()
@@ -583,7 +593,7 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 					}
 				}
 
-				payload = v2Payload
+				payload = cachedPayload
 			}
 		default:
 			{
@@ -598,7 +608,7 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 
 		if len(ams.cfg.AlertRelabelConfigs) > 0 {
 			// We can't use the cached values on the next iteration.
-			v1Payload, v2Payload = nil, nil
+			cachedPayload = nil
 		}
 
 		for _, am := range ams.ams {
@@ -609,13 +619,13 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 
 			go func(ctx context.Context, client *http.Client, url string, payload []byte, count int) {
 				if err := n.sendOne(ctx, client, url, payload); err != nil {
-					n.logger.Error("Error sending alert", "alertmanager", url, "count", count, "err", err)
-					n.metrics.errors.WithLabelValues(url).Inc()
+					n.logger.Error("Error sending alerts", "alertmanager", url, "count", count, "err", err)
+					n.metrics.errors.WithLabelValues(url).Add(float64(count))
 				} else {
 					numSuccess.Inc()
 				}
 				n.metrics.latency.WithLabelValues(url).Observe(time.Since(begin).Seconds())
-				n.metrics.sent.WithLabelValues(url).Add(float64(len(amAlerts)))
+				n.metrics.sent.WithLabelValues(url).Add(float64(count))
 
 				wg.Done()
 			}(ctx, ams.client, am.url().String(), payload, len(amAlerts))
@@ -801,6 +811,15 @@ func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 		s.metrics.errors.DeleteLabelValues(us)
 		seen[us] = struct{}{}
 	}
+}
+
+func (s *alertmanagerSet) configHash() (string, error) {
+	b, err := yaml.Marshal(s.cfg)
+	if err != nil {
+		return "", err
+	}
+	hash := md5.Sum(b)
+	return hex.EncodeToString(hash[:]), nil
 }
 
 func postPath(pre string, v config.AlertmanagerAPIVersion) string {

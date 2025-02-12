@@ -2,6 +2,7 @@ import { Badge, BadgeVariant, Group, MantineColor, Stack } from "@mantine/core";
 import { FC } from "react";
 import { escapeString } from "../lib/escapeString";
 import badgeClasses from "../Badge.module.css";
+import { maybeQuoteLabelName } from "../promql/utils";
 
 export interface LabelBadgesProps {
   labels: Record<string, string>;
@@ -30,7 +31,7 @@ export const LabelBadges: FC<LabelBadgesProps> = ({
           }}
           key={k}
         >
-          {k}="{escapeString(v)}"
+          {maybeQuoteLabelName(k)}="{escapeString(v)}"
         </Badge>
       );
     })}

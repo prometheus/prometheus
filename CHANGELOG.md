@@ -2,33 +2,143 @@
 
 ## unreleased
 
+* [ENHANCEMENT] promtool: Support linting of scrape interval, through lint option `too-long-scrape-interval`. #15719
+
+## 3.1.0 / 2025-01-02
+
+ * [SECURITY] upgrade golang.org/x/crypto to address reported CVE-2024-45337. #15691
+ * [CHANGE] Notifier: Increment prometheus_notifications_errors_total by the number of affected alerts rather than per batch. #15428
+ * [CHANGE] API: list rules field "groupNextToken:omitempty" renamed to "groupNextToken". #15400
+ * [ENHANCEMENT] OTLP translate: keep identifying attributes in target_info. #15448
+ * [ENHANCEMENT] Paginate rule groups, add infinite scroll to rules within groups. #15677
+ * [ENHANCEMENT] TSDB: Improve calculation of space used by labels. #13880
+ * [ENHANCEMENT] Rules: new metric rule_group_last_rule_duration_sum_seconds. #15672
+ * [ENHANCEMENT] Observability: Export 'go_sync_mutex_wait_total_seconds_total' metric. #15339
+ * [ENHANCEMEN] Remote-Write: optionally use a DNS resolver that picks a random IP. #15329
+ * [PERF] Optimize `l=~".+"` matcher. #15474, #15684
+ * [PERF] TSDB: Cache all symbols for compaction . #15455
+ * [PERF] TSDB: MemPostings: keep a map of label values slices. #15426
+ * [PERF] Remote-Write: Remove interning hook. #15456
+ * [PERF] Scrape: optimize string manipulation for experimental native histograms with custom buckets. #15453
+ * [PERF] TSDB: reduce memory allocations. #15465, #15427
+ * [PERF] Storage: Implement limit in mergeGenericQuerier. #14489
+ * [PERF] TSDB: Optimize inverse matching. #14144
+ * [PERF] Regex: use stack memory for lowercase copy of string. #15210
+ * [PERF] TSDB: When deleting from postings index, pause to unlock and let readers read. #15242
+ * [BUGFIX] Main: Avoid possible segfault at exit. (#15724)
+ * [BUGFIX] Rules: Do not run rules concurrently if uncertain about dependencies. #15560
+ * [BUGFIX] PromQL: Adds test for `absent`, `absent_over_time` and `deriv` func with histograms. #15667
+ * [BUGFIX] PromQL: Fix various bugs related to quoting UTF-8 characters. #15531
+ * [BUGFIX] Scrape: fix nil panic after scrape loop reload. #15563
+ * [BUGFIX] Remote-write: fix panic on repeated log message. #15562
+ * [BUGFIX] Scrape: reload would ignore always_scrape_classic_histograms and convert_classic_histograms_to_nhcb configs. #15489
+ * [BUGFIX] TSDB: fix data corruption in experimental native histograms. #15482
+ * [BUGFIX] PromQL: Ignore histograms in all time related functions. #15479
+ * [BUGFIX] OTLP receiver: Convert metric metadata. #15416
+ * [BUGFIX] PromQL: Fix `resets` function for histograms. #15527
+ * [BUGFIX] PromQL: Fix behaviour of `changes()` for mix of histograms and floats. #15469
+ * [BUGFIX] PromQL: Fix behaviour of some aggregations with histograms. #15432
+ * [BUGFIX] allow quoted exemplar keys in openmetrics text format. #15260
+ * [BUGFIX] TSDB: fixes for rare conditions when loading write-behind-log (WBL). #15380
+ * [BUGFIX] `round()` function did not remove `__name__` label. #15250
+ * [BUGFIX] Promtool: analyze block shows metric name with 0 cardinality. #15438
+ * [BUGFIX] PromQL: Fix `count_values` for histograms. #15422
+ * [BUGFIX] PromQL: fix issues with comparison binary operations with `bool` modifier and native histograms. #15413
+ * [BUGFIX] PromQL: fix incorrect "native histogram ignored in aggregation" annotations. #15414
+ * [BUGFIX] PromQL: Corrects the behaviour of some operator and aggregators with Native Histograms. #15245
+ * [BUGFIX] TSDB: Always return unknown hint for first sample in non-gauge histogram chunk. #15343
+ * [BUGFIX] PromQL: Clamp functions: Ignore any points with native histograms. #15169
+ * [BUGFIX] TSDB: Fix race on stale values in headAppender. #15322
+ * [BUGFIX] UI: Fix selector / series formatting for empty metric names. #15340
+ * [BUGFIX] OTLP receiver: Allow colons in non-standard units. #15710
+
+## 3.0.1 / 2024-11-28
+
+The first bug fix release for Prometheus 3.
+
+* [BUGFIX] Promql: Make subqueries left open. #15431
+* [BUGFIX] Fix memory leak when query log is enabled. #15434
+* [BUGFIX] Support utf8 names on /v1/label/:name/values endpoint. #15399
+
+## 3.0.0 / 2024-11-14
+
+This release includes new features such as a brand new UI and UTF-8 support enabled by default. As this marks the first new major version in seven years, several breaking changes are introduced. The breaking changes are mainly around the removal of deprecated feature flags and CLI arguments, and the full list can be found below. For users that want to upgrade we recommend to read through our [migration guide](https://prometheus.io/docs/prometheus/3.0/migration/).
+
+* [CHANGE] Set the `GOMAXPROCS` variable automatically to match the Linux CPU quota. Use `--no-auto-gomaxprocs` to disable it. The `auto-gomaxprocs` feature flag was removed. #15376
+* [CHANGE] Set the `GOMEMLIMIT` variable automatically to match the Linux container memory limit. Use `--no-auto-gomemlimit` to disable it. The `auto-gomemlimit` feature flag was removed. #15373
+* [CHANGE] Scraping: Remove implicit fallback to the Prometheus text format in case of invalid/missing Content-Type and fail the scrape instead. Add ability to specify a `fallback_scrape_protocol` in the scrape config. #15136
+* [CHANGE] Remote-write: default enable_http2 to false. #15219
+* [CHANGE] Scraping: normalize "le" and "quantile" label values upon ingestion. #15164
+* [CHANGE] Scraping: config `scrape_classic_histograms` was renamed to `always_scrape_classic_histograms`. #15178
+* [CHANGE] Config: remove expand-external-labels flag, expand external labels env vars by default. #14657
+* [CHANGE] Disallow configuring AM with the v1 api. #13883
+* [CHANGE] regexp `.` now matches all characters (performance improvement). #14505
 * [CHANGE] `holt_winters` is now called `double_exponential_smoothing` and moves behind the [experimental-promql-functions feature flag](https://prometheus.io/docs/prometheus/latest/feature_flags/#experimental-promql-functions). #14930
 * [CHANGE] API: The OTLP receiver endpoint can now be enabled using `--web.enable-otlp-receiver` instead of `--enable-feature=otlp-write-receiver`. #14894
-* [BUGFIX] PromQL: Only return "possible non-counter" annotation when `rate` returns points. #14910
-
-## 3.0.0-beta.0 / 2024-09-05
-
-Release 3.0.0-beta.0 includes new features such as a brand new UI and UTF-8 support enabled by default. As a new major version, several breaking changes are introduced. The breaking changes are mainly around the removal of deprecated feature flags and CLI arguments, and the full list can be found below. Most users should be able to try this release out of the box without any configuration changes.
-
-As is traditional with a beta release, we do **not** recommend users install 3.0.0-beta on critical production systems, but we do want everyone to test it out and find bugs.
-
+* [CHANGE] Prometheus will not add or remove port numbers from the target address. `no-default-scrape-port` feature flag removed. #14160
+* [CHANGE] Logging: the format of log lines has changed a little, along with the adoption of Go's Structured Logging package. #14906
+* [CHANGE] Don't create extra `_created` timeseries if feature-flag `created-timestamp-zero-ingestion` is enabled. #14738
+* [CHANGE] Float literals and time durations being the same is now a stable fetaure. #15111
 * [CHANGE] UI: The old web UI has been replaced by a completely new one that is less cluttered and adds a few new features (PromLens-style tree view, better metrics explorer, "Explain" tab). However, it is still missing some features of the old UI (notably, exemplar display and heatmaps). To switch back to the old UI, you can use the feature flag `--enable-feature=old-ui` for the time being. #14872
 * [CHANGE] PromQL: Range selectors and the lookback delta are now left-open, i.e. a sample coinciding with the lower time limit is excluded rather than included. #13904
 * [CHANGE] Kubernetes SD: Remove support for `discovery.k8s.io/v1beta1` API version of EndpointSlice. This version is no longer served as of Kubernetes v1.25. #14365
 * [CHANGE] Kubernetes SD: Remove support for `networking.k8s.io/v1beta1` API version of Ingress. This version is no longer served as of Kubernetes v1.22. #14365
-* [CHANGE] UTF-8: Enable UTF-8 support by default. Prometheus now allows all UTF-8 characters in metric and label names. The corresponding `utf8-name` feature flag has been removed. #14705
+* [CHANGE] UTF-8: Enable UTF-8 support by default. Prometheus now allows all UTF-8 characters in metric and label names. The corresponding `utf8-name` feature flag has been removed. #14705, #15258
 * [CHANGE] Console: Remove example files for the console feature. Users can continue using the console feature by supplying their own JavaScript and templates. #14807
 * [CHANGE] SD: Enable the new service discovery manager by default. This SD manager does not restart unchanged discoveries upon reloading. This makes reloads faster and reduces pressure on service discoveries' sources. The corresponding `new-service-discovery-manager` feature flag has been removed. #14770
 * [CHANGE] Agent mode has been promoted to stable. The feature flag `agent` has been removed. To run Prometheus in Agent mode, use the new `--agent` cmdline arg instead. #14747
 * [CHANGE] Remove deprecated `remote-write-receiver`,`promql-at-modifier`, and `promql-negative-offset` feature flags. #13456, #14526
 * [CHANGE] Remove deprecated `storage.tsdb.allow-overlapping-blocks`, `alertmanager.timeout`, and `storage.tsdb.retention` flags. #14640, #14643
+* [FEATURE] OTLP receiver: Ability to skip UTF-8 normalization using `otlp.translation_strategy = NoUTF8EscapingWithSuffixes` configuration option. #15384
+* [FEATURE] Support config reload automatically - feature flag `auto-reload-config`. #14769, #15011
+* [ENHANCEMENT] Scraping, rules: handle targets reappearing, or rules moving group, when out-of-order is enabled. #14710
+* [ENHANCEMENT] Tools: add debug printouts to promtool rules unit testing #15196
+* [ENHANCEMENT] Scraping: support Created-Timestamp feature on native histograms. #14694
+* [ENHANCEMENT] UI: Many fixes and improvements. #14898, #14899, #14907, #14908, #14912, #14913, #14914, #14931, #14940, #14945, #14946, #14972, #14981, #14982, #14994, #15096
+* [ENHANCEMENT] UI: Web UI now displays notifications, e.g. when starting up and shutting down. #15082
+* [ENHANCEMENT] PromQL: Introduce exponential interpolation for native histograms. #14677
+* [ENHANCEMENT] TSDB: Add support for ingestion of out-of-order native histogram samples. #14850, #14546
+* [ENHANCEMENT] Alerts: remove metrics for removed Alertmanagers. #13909
+* [ENHANCEMENT] Kubernetes SD: Support sidecar containers in endpoint discovery. #14929
+* [ENHANCEMENT] Consul SD: Support catalog filters. #11224
 * [ENHANCEMENT] Move AM discovery page from "Monitoring status" to "Server status". #14875
+* [PERF] TSDB: Parallelize deletion of postings after head compaction. #14975
+* [PERF] TSDB: Chunk encoding: shorten some write sequences. #14932
+* [PERF] TSDB: Grow postings by doubling. #14721
+* [PERF] Relabeling: Optimize adding a constant label pair. #12180
+* [BUGFIX] Scraping: Don't log errors on empty scrapes. #15357
+* [BUGFIX] UI: fix selector / series formatting for empty metric names. #15341
+* [BUGFIX] PromQL: Fix stddev+stdvar aggregations to always ignore native histograms. #14941
+* [BUGFIX] PromQL: Fix stddev+stdvar aggregations to treat Infinity consistently. #14941
+* [BUGFIX] OTLP receiver: Preserve colons when generating metric names in suffix adding mode (this mode is always enabled, unless one uses Prometheus as a library). #15251
+* [BUGFIX] Scraping: Unit was missing when using protobuf format. #15095
+* [BUGFIX] PromQL: Only return "possible non-counter" annotation when `rate` returns points. #14910
+* [BUGFIX] TSDB: Chunks could have one unnecessary zero byte at the end. #14854
+* [BUGFIX] "superfluous response.WriteHeader call" messages in log. #14884
+* [BUGFIX] PromQL: Unary negation of native histograms. #14821
+* [BUGFIX] PromQL: Handle stale marker in native histogram series (e.g. if series goes away and comes back). #15025
+* [BUGFIX] Autoreload: Reload invalid yaml files. #14947
 * [BUGFIX] Scrape: Do not override target parameter labels with config params. #11029
 
-## 2.55.0-rc.0 / 2024-09-20
+## 2.53.3 / 2024-11-04
 
+* [BUGFIX] Scraping: allow multiple samples on same series, with explicit timestamps. #14685, #14740
+
+## 2.53.2 / 2024-08-09
+
+Fix a bug where Prometheus would crash with a segmentation fault if a remote-read
+request accessed a block on disk at about the same time as TSDB created a new block.
+
+[BUGFIX] Remote-Read: Resolve occasional segmentation fault on query. #14515,#14523
+
+## 2.55.1 / 2024-11-04
+
+* [BUGFIX] `round()` function did not remove `__name__` label. #15250
+
+## 2.55.0 / 2024-10-22
+
+* [FEATURE] PromQL: Add experimental `info` function. #14495
 * [FEATURE] Support UTF-8 characters in label names - feature flag `utf8-names`. #14482, #14880, #14736, #14727
-* [FEATURE] Support config reload automatically - feature flag `auto-reload-config`. #14769
 * [FEATURE] Scraping: Add the ability to set custom `http_headers` in config. #14817
 * [FEATURE] Scraping: Support feature flag `created-timestamp-zero-ingestion` in OpenMetrics. #14356, #14815
 * [FEATURE] Scraping: `scrape_failure_log_file` option to log failures to a file. #14734
@@ -36,19 +146,21 @@ As is traditional with a beta release, we do **not** recommend users install 3.0
 * [FEATURE] Remote-Write: Support Google Cloud Monitoring authorization. #14346
 * [FEATURE] Promtool: `tsdb create-blocks` new option to add labels. #14403
 * [FEATURE] Promtool: `promtool test` adds `--junit` flag to format results. #14506
+* [FEATURE] TSDB: Add `delayed-compaction` feature flag, for people running many Prometheus to randomize timing. #12532
 * [ENHANCEMENT] OTLP receiver: Warn on exponential histograms with zero count and non-zero sum. #14706
 * [ENHANCEMENT] OTLP receiver: Interrupt translation on context cancellation/timeout. #14612
 * [ENHANCEMENT] Remote Read client: Enable streaming remote read if the server supports it. #11379
 * [ENHANCEMENT] Remote-Write: Don't reshard if we haven't successfully sent a sample since last update. #14450
 * [ENHANCEMENT] PromQL: Delay deletion of `__name__` label to the end of the query evaluation. This is **experimental** and enabled under the feature-flag `promql-delayed-name-removal`. #14477
-* [ENHANCEMENT] PromQL: Experimental `sort_by_label` and `sort_by_label_desc` sort by all labels when label is equal. #14655
+* [ENHANCEMENT] PromQL: Experimental `sort_by_label` and `sort_by_label_desc` sort by all labels when label is equal. #14655, #14985
 * [ENHANCEMENT] PromQL: Clarify error message logged when Go runtime panic occurs during query evaluation. #14621
 * [ENHANCEMENT] PromQL: Use Kahan summation for better accuracy in `avg` and `avg_over_time`. #14413
 * [ENHANCEMENT] Tracing: Improve PromQL tracing, including showing the operation performed for aggregates, operators, and calls. #14816
 * [ENHANCEMENT] API: Support multiple listening addresses. #14665
 * [ENHANCEMENT] TSDB: Backward compatibility with upcoming index v3. #14934
-* [PERF] TSDB: Query in-order and out-of-order series together. #14354, #14693, #14714, #14831, #14874, #14948
+* [PERF] TSDB: Query in-order and out-of-order series together. #14354, #14693, #14714, #14831, #14874, #14948, #15120
 * [PERF] TSDB: Streamline reading of overlapping out-of-order head chunks. #14729
+* [BUGFIX] PromQL: make sort_by_label stable. #14985
 * [BUGFIX] SD: Fix dropping targets (with feature flag `new-service-discovery-manager`). #13147
 * [BUGFIX] SD: Stop storing stale targets (with feature flag `new-service-discovery-manager`). #13622
 * [BUGFIX] Scraping: exemplars could be dropped in protobuf scraping. #14810
@@ -59,7 +171,7 @@ As is traditional with a beta release, we do **not** recommend users install 3.0
 
 ## 2.54.1 / 2024-08-27
 
-* [BUGFIX] Scraping: allow multiple samples on same series, with explicit timestamps. #14685
+* [BUGFIX] Scraping: allow multiple samples on same series, with explicit timestamps (mixing samples of the same series with and without timestamps is still rejected). #14685
 * [BUGFIX] Docker SD: fix crash in `match_first_network` mode when container is reconnected to a new network. #14654
 * [BUGFIX] PromQL: fix experimental native histograms getting corrupted due to vector selector bug in range queries. #14538
 * [BUGFIX] PromQL: fix experimental native histogram counter reset detection on stale samples. #14514
@@ -141,6 +253,7 @@ This release changes the default for GOGC, the Go runtime control for the trade-
 ## 2.52.0 / 2024-05-07
 
 * [CHANGE] TSDB: Fix the predicate checking for blocks which are beyond the retention period to include the ones right at the retention boundary. #9633
+* [CHANGE] Scrape: Multiple samples (even with different timestamps) are treated as duplicates during one scrape.
 * [FEATURE] Kubernetes SD: Add a new metric `prometheus_sd_kubernetes_failures_total` to track failed requests to Kubernetes API. #13554
 * [FEATURE] Kubernetes SD: Add node and zone metadata labels when using the endpointslice role. #13935
 * [FEATURE] Azure SD/Remote Write: Allow usage of Azure authorization SDK. #13099

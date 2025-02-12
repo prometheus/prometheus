@@ -1,0 +1,5 @@
+groups:
+  - name: test_1
+    rules:
+      - record: test_2
+        expr: vector(2)

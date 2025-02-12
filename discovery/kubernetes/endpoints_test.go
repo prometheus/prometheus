@@ -18,10 +18,12 @@ import (
 	"testing"
 
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/cache"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
@@ -95,6 +97,7 @@ func makeEndpoints() *v1.Endpoints {
 }
 
 func TestEndpointsDiscoveryBeforeRun(t *testing.T) {
+	t.Parallel()
 	n, c := makeDiscovery(RoleEndpoint, NamespaceDiscovery{})
 
 	k8sDiscoveryTest{
@@ -149,6 +152,7 @@ func TestEndpointsDiscoveryBeforeRun(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryAdd(t *testing.T) {
+	t.Parallel()
 	obj := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testpod",
@@ -274,6 +278,7 @@ func TestEndpointsDiscoveryAdd(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryDelete(t *testing.T) {
+	t.Parallel()
 	n, c := makeDiscovery(RoleEndpoint, NamespaceDiscovery{}, makeEndpoints())
 
 	k8sDiscoveryTest{
@@ -292,6 +297,7 @@ func TestEndpointsDiscoveryDelete(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryUpdate(t *testing.T) {
+	t.Parallel()
 	n, c := makeDiscovery(RoleEndpoint, NamespaceDiscovery{}, makeEndpoints())
 
 	k8sDiscoveryTest{
@@ -363,6 +369,7 @@ func TestEndpointsDiscoveryUpdate(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryEmptySubsets(t *testing.T) {
+	t.Parallel()
 	n, c := makeDiscovery(RoleEndpoint, NamespaceDiscovery{}, makeEndpoints())
 
 	k8sDiscoveryTest{
@@ -391,6 +398,7 @@ func TestEndpointsDiscoveryEmptySubsets(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryWithService(t *testing.T) {
+	t.Parallel()
 	n, c := makeDiscovery(RoleEndpoint, NamespaceDiscovery{}, makeEndpoints())
 
 	k8sDiscoveryTest{
@@ -456,6 +464,7 @@ func TestEndpointsDiscoveryWithService(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryWithServiceUpdate(t *testing.T) {
+	t.Parallel()
 	n, c := makeDiscovery(RoleEndpoint, NamespaceDiscovery{}, makeEndpoints())
 
 	k8sDiscoveryTest{
@@ -536,6 +545,7 @@ func TestEndpointsDiscoveryWithServiceUpdate(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryWithNodeMetadata(t *testing.T) {
+	t.Parallel()
 	metadataConfig := AttachMetadataConfig{Node: true}
 	nodeLabels1 := map[string]string{"az": "us-east1"}
 	nodeLabels2 := map[string]string{"az": "us-west2"}
@@ -609,6 +619,7 @@ func TestEndpointsDiscoveryWithNodeMetadata(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryWithUpdatedNodeMetadata(t *testing.T) {
+	t.Parallel()
 	nodeLabels1 := map[string]string{"az": "us-east1"}
 	nodeLabels2 := map[string]string{"az": "us-west2"}
 	node1 := makeNode("foobar", "", "", nodeLabels1, nil)
@@ -686,6 +697,7 @@ func TestEndpointsDiscoveryWithUpdatedNodeMetadata(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryNamespaces(t *testing.T) {
+	t.Parallel()
 	epOne := makeEndpoints()
 	epOne.Namespace = "ns1"
 	objs := []runtime.Object{
@@ -837,6 +849,7 @@ func TestEndpointsDiscoveryNamespaces(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryOwnNamespace(t *testing.T) {
+	t.Parallel()
 	epOne := makeEndpoints()
 	epOne.Namespace = "own-ns"
 
@@ -931,6 +944,7 @@ func TestEndpointsDiscoveryOwnNamespace(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryEmptyPodStatus(t *testing.T) {
+	t.Parallel()
 	ep := makeEndpoints()
 	ep.Namespace = "ns"
 
@@ -976,6 +990,7 @@ func TestEndpointsDiscoveryEmptyPodStatus(t *testing.T) {
 // TestEndpointsDiscoveryUpdatePod makes sure that Endpoints discovery detects underlying Pods changes.
 // See https://github.com/prometheus/prometheus/issues/11305 for more details.
 func TestEndpointsDiscoveryUpdatePod(t *testing.T) {
+	t.Parallel()
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testpod",
@@ -1095,6 +1110,7 @@ func TestEndpointsDiscoveryUpdatePod(t *testing.T) {
 }
 
 func TestEndpointsDiscoverySidecarContainer(t *testing.T) {
+	t.Parallel()
 	objs := []runtime.Object{
 		&v1.Endpoints{
 			ObjectMeta: metav1.ObjectMeta{
@@ -1256,4 +1272,23 @@ func TestEndpointsDiscoverySidecarContainer(t *testing.T) {
 			},
 		},
 	}.Run(t)
+}
+
+func BenchmarkResolvePodRef(b *testing.B) {
+	indexer := cache.NewIndexer(cache.DeletionHandlingMetaNamespaceKeyFunc, nil)
+	e := &Endpoints{
+		podStore: indexer,
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		p := e.resolvePodRef(&v1.ObjectReference{
+			Kind:      "Pod",
+			Name:      "testpod",
+			Namespace: "foo",
+		})
+		require.Nil(b, p)
+	}
 }

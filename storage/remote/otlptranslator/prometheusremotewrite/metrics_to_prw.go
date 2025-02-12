@@ -32,13 +32,14 @@ import (
 )
 
 type Settings struct {
-	Namespace                 string
-	ExternalLabels            map[string]string
-	DisableTargetInfo         bool
-	ExportCreatedMetric       bool
-	AddMetricSuffixes         bool
-	SendMetadata              bool
-	PromoteResourceAttributes []string
+	Namespace                         string
+	ExternalLabels                    map[string]string
+	DisableTargetInfo                 bool
+	ExportCreatedMetric               bool
+	AddMetricSuffixes                 bool
+	AllowUTF8                         bool
+	PromoteResourceAttributes         []string
+	KeepIdentifyingResourceAttributes bool
 }
 
 // PrometheusConverter converts from OTel write format to Prometheus remote write format.
@@ -46,6 +47,7 @@ type PrometheusConverter struct {
 	unique    map[uint64]*prompb.TimeSeries
 	conflicts map[uint64][]*prompb.TimeSeries
 	everyN    everyNTimes
+	metadata  []prompb.MetricMetadata
 }
 
 func NewPrometheusConverter() *PrometheusConverter {
@@ -59,6 +61,16 @@ func NewPrometheusConverter() *PrometheusConverter {
 func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, settings Settings) (annots annotations.Annotations, errs error) {
 	c.everyN = everyNTimes{n: 128}
 	resourceMetricsSlice := md.ResourceMetrics()
+
+	numMetrics := 0
+	for i := 0; i < resourceMetricsSlice.Len(); i++ {
+		scopeMetricsSlice := resourceMetricsSlice.At(i).ScopeMetrics()
+		for j := 0; j < scopeMetricsSlice.Len(); j++ {
+			numMetrics += scopeMetricsSlice.At(j).Metrics().Len()
+		}
+	}
+	c.metadata = make([]prompb.MetricMetadata, 0, numMetrics)
+
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
 		resourceMetrics := resourceMetricsSlice.At(i)
 		resource := resourceMetrics.Resource()
@@ -84,7 +96,18 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					continue
 				}
 
-				promName := prometheustranslator.BuildCompliantName(metric, settings.Namespace, settings.AddMetricSuffixes)
+				var promName string
+				if settings.AllowUTF8 {
+					promName = prometheustranslator.BuildMetricName(metric, settings.Namespace, settings.AddMetricSuffixes)
+				} else {
+					promName = prometheustranslator.BuildCompliantMetricName(metric, settings.Namespace, settings.AddMetricSuffixes)
+				}
+				c.metadata = append(c.metadata, prompb.MetricMetadata{
+					Type:             otelMetricTypeToPromMetricType(metric),
+					MetricFamilyName: promName,
+					Help:             metric.Description(),
+					Unit:             metric.Unit(),
+				})
 
 				// handle individual metrics based on type
 				//exhaustive:enforce

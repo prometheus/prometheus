@@ -55,6 +55,8 @@ func BenchmarkQuerier(b *testing.B) {
 			addSeries(labels.FromStrings("i", strconv.Itoa(i)+postingsBenchSuffix, "n", "1_"+strconv.Itoa(n)+postingsBenchSuffix, "j", "bar"))
 			addSeries(labels.FromStrings("i", strconv.Itoa(i)+postingsBenchSuffix, "n", "2_"+strconv.Itoa(n)+postingsBenchSuffix, "j", "foo"))
 		}
+		require.NoError(b, app.Commit())
+		app = h.Appender(context.Background())
 	}
 	require.NoError(b, app.Commit())
 
@@ -75,7 +77,7 @@ func BenchmarkQuerier(b *testing.B) {
 
 	b.Run("Block", func(b *testing.B) {
 		blockdir := createBlockFromHead(b, b.TempDir(), h)
-		block, err := OpenBlock(nil, blockdir, nil)
+		block, err := OpenBlock(nil, blockdir, nil, nil)
 		require.NoError(b, err)
 		defer func() {
 			require.NoError(b, block.Close())
@@ -270,6 +272,10 @@ func createHeadForBenchmarkSelect(b *testing.B, numSeries int, addSeries func(ap
 	app := h.Appender(context.Background())
 	for i := 0; i < numSeries; i++ {
 		addSeries(app, i)
+		if i%1000 == 999 { // Commit every so often, so the appender doesn't get too big.
+			require.NoError(b, app.Commit())
+			app = h.Appender(context.Background())
+		}
 	}
 	require.NoError(b, app.Commit())
 	return h, db
@@ -315,7 +321,7 @@ func BenchmarkQuerierSelect(b *testing.B) {
 		tmpdir := b.TempDir()
 
 		blockdir := createBlockFromHead(b, tmpdir, h)
-		block, err := OpenBlock(nil, blockdir, nil)
+		block, err := OpenBlock(nil, blockdir, nil, nil)
 		require.NoError(b, err)
 		defer func() {
 			require.NoError(b, block.Close())

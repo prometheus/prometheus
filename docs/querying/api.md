@@ -86,6 +86,7 @@ URL query parameters:
 - `time=<rfc3339 | unix_timestamp>`: Evaluation timestamp. Optional.
 - `timeout=<duration>`: Evaluation timeout. Optional. Defaults to and
    is capped by the value of the `-query.timeout` flag.
+- `limit=<number>`: Maximum number of returned series. Doesn’t affect scalars or strings but truncates the number of series for matrices and vectors. Optional. 0 means disabled.
 
 The current server time is used if the `time` parameter is omitted.
 
@@ -154,6 +155,7 @@ URL query parameters:
 - `step=<duration | float>`: Query resolution step width in `duration` format or float number of seconds.
 - `timeout=<duration>`: Evaluation timeout. Optional. Defaults to and
    is capped by the value of the `-query.timeout` flag.
+- `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 
 You can URL-encode these parameters directly in the request body by using the `POST` method and
 `Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
@@ -433,18 +435,40 @@ URL query parameters:
   series from which to read the label values. Optional.
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 
-
 The `data` section of the JSON response is a list of string label values.
 
-This example queries for all label values for the `job` label:
+This example queries for all label values for the `http_status_code` label:
 
 ```json
-$ curl http://localhost:9090/api/v1/label/job/values
+$ curl http://localhost:9090/api/v1/label/http_status_code/values
 {
    "status" : "success",
    "data" : [
-      "node",
-      "prometheus"
+      "200",
+      "504"
+   ]
+}
+```
+
+Label names can optionally be encoded using the Values Escaping method, and is necessary if a name includes the `/` character. To encode a name in this way:
+
+* Prepend the label with `U__`.
+* Letters, numbers, and colons appear as-is.
+* Convert single underscores to double underscores.
+* For all other characters, use the UTF-8 codepoint as a hex integer, surrounded
+  by underscores.  So ` ` becomes `_20_` and a `.` becomes `_2e_`.
+
+ More information about text escaping can be found in the original UTF-8 [Proposal document](https://github.com/prometheus/proposals/blob/main/proposals/2023-08-21-utf8.md#text-escaping).
+
+This example queries for all label values for the `http.status_code` label:
+
+```json
+$ curl http://localhost:9090/api/v1/label/U__http_2e_status_code/values
+{
+   "status" : "success",
+   "data" : [
+      "200",
+      "404"
    ]
 }
 ```
@@ -568,7 +592,7 @@ Instant vectors are returned as result type `vector`. The corresponding
 Each series could have the `"value"` key, or the `"histogram"` key, but not both.
 
 Series are not guaranteed to be returned in any particular order unless a function
-such as [`sort`](functions.md#sort) or [`sort_by_label`](functions.md#sort_by_label)`
+such as [`sort`](functions.md#sort) or [`sort_by_label`](functions.md#sort_by_label)
 is used.
 
 ### Scalars
@@ -764,6 +788,8 @@ URL query parameters:
 - `file[]=<string>`: only return rules with the given filepath. If the parameter is repeated, rules with any of the provided filepaths are returned. When the parameter is absent or empty, no filtering is done.
 - `exclude_alerts=<bool>`: only return rules, do not return active alerts.
 - `match[]=<label_selector>`: only return rules that have configured labels that satisfy the label selectors. If the parameter is repeated, rules that match any of the sets of label selectors are returned. Note that matching is on the labels in the definition of each rule, not on the values after template expansion (for alerting rules). Optional.
+- `group_limit=<number>`: The `group_limit` parameter allows you to specify a limit for the number of rule groups that is returned in a single response. If the total number of rule groups exceeds the specified `group_limit` value, the response will include a `groupNextToken` property. You can use the value of this `groupNextToken` property in subsequent requests in the `group_next_token` parameter to paginate over the remaining rule groups. The `groupNextToken` property will not be present in the final response, indicating that you have retrieved all the available rule groups. Please note that there are no guarantees regarding the consistency of the response if the rule groups are being modified during the pagination process.
+- `group_next_token`: the pagination token that was returned in previous request when the `group_limit` property is set. The pagination token is used to iteratively paginate over a large number of rule groups. To use the `group_next_token` parameter, the `group_limit` parameter also need to be present. If a rule group that coincides with the next token is removed while you are paginating over the rule groups, a response with status code 400 will be returned.
 
 ```json
 $ curl http://localhost:9090/api/v1/rules
@@ -903,7 +929,7 @@ curl -G http://localhost:9091/api/v1/targets/metadata \
 ```
 
 The following example returns metadata for all metrics for all targets with
-label `instance="127.0.0.1:9090`.
+label `instance="127.0.0.1:9090"`.
 
 ```json
 curl -G http://localhost:9091/api/v1/targets/metadata \
@@ -1134,6 +1160,8 @@ $ curl http://localhost:9090/api/v1/status/runtimeinfo
   "data": {
     "startTime": "2019-11-02T17:23:59.301361365+01:00",
     "CWD": "/",
+    "hostname" : "DESKTOP-717H17Q",
+    "serverTime": "2025-01-05T18:27:33Z",
     "reloadConfigSuccess": true,
     "lastConfigTime": "2019-11-02T17:23:59+01:00",
     "timeSeriesCount": 873,
@@ -1188,9 +1216,11 @@ The following endpoint returns various cardinality statistics about the Promethe
 GET /api/v1/status/tsdb
 ```
 URL query parameters:
+
 - `limit=<number>`: Limit the number of returned items to a given number for each set of statistics. By default, 10 items are returned.
 
-The `data` section of the query result consists of
+The `data` section of the query result consists of:
+
 - **headStats**: This provides the following data about the head block of the TSDB:
   - **numSeries**: The number of series.
   - **chunkCount**: The number of chunks.
@@ -1266,13 +1296,13 @@ The following endpoint returns information about the WAL replay:
 GET /api/v1/status/walreplay
 ```
 
-**read**: The number of segments replayed so far.
-**total**: The total number segments needed to be replayed.
-**progress**: The progress of the replay (0 - 100%).
-**state**: The state of the replay. Possible states:
-- **waiting**: Waiting for the replay to start.
-- **in progress**: The replay is in progress.
-- **done**: The replay has finished.
+- **read**: The number of segments replayed so far.
+- **total**: The total number segments needed to be replayed.
+- **progress**: The progress of the replay (0 - 100%).
+- **state**: The state of the replay. Possible states:
+  - **waiting**: Waiting for the replay to start.
+  - **in progress**: The replay is in progress.
+  - **done**: The replay has finished.
 
 ```json
 $ curl http://localhost:9090/api/v1/status/walreplay
@@ -1393,6 +1423,15 @@ Enable the OTLP receiver by setting
 endpoint is `/api/v1/otlp/v1/metrics`.
 
 *New in v2.47*
+
+### OTLP Delta
+
+Prometheus can convert incoming metrics from delta temporality to their cumulative equivalent.
+This is done using [deltatocumulative](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor) from the OpenTelemetry Collector.
+
+To enable, pass `--enable-feature=otlp-deltatocumulative`.
+
+*New in v3.2*
 
 ## Notifications
 

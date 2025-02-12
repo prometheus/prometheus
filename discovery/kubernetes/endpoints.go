@@ -102,10 +102,7 @@ func NewEndpoints(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, node 
 			return
 		}
 
-		ep := &apiv1.Endpoints{}
-		ep.Namespace = svc.Namespace
-		ep.Name = svc.Name
-		obj, exists, err := e.endpointsStore.Get(ep)
+		obj, exists, err := e.endpointsStore.GetByKey(namespacedName(svc.Namespace, svc.Name))
 		if exists && err == nil {
 			e.enqueue(obj.(*apiv1.Endpoints))
 		}
@@ -167,8 +164,11 @@ func NewEndpoints(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, node 
 				e.enqueueNode(node.Name)
 			},
 			DeleteFunc: func(o interface{}) {
-				node := o.(*apiv1.Node)
-				e.enqueueNode(node.Name)
+				nodeName, err := nodeName(o)
+				if err != nil {
+					l.Error("Error getting Node name", "err", err)
+				}
+				e.enqueueNode(nodeName)
 			},
 		})
 		if err != nil {
@@ -454,11 +454,8 @@ func (e *Endpoints) resolvePodRef(ref *apiv1.ObjectReference) *apiv1.Pod {
 	if ref == nil || ref.Kind != "Pod" {
 		return nil
 	}
-	p := &apiv1.Pod{}
-	p.Namespace = ref.Namespace
-	p.Name = ref.Name
 
-	obj, exists, err := e.podStore.Get(p)
+	obj, exists, err := e.podStore.GetByKey(namespacedName(ref.Namespace, ref.Name))
 	if err != nil {
 		e.logger.Error("resolving pod ref failed", "err", err)
 		return nil
@@ -470,11 +467,7 @@ func (e *Endpoints) resolvePodRef(ref *apiv1.ObjectReference) *apiv1.Pod {
 }
 
 func (e *Endpoints) addServiceLabels(ns, name string, tg *targetgroup.Group) {
-	svc := &apiv1.Service{}
-	svc.Namespace = ns
-	svc.Name = name
-
-	obj, exists, err := e.serviceStore.Get(svc)
+	obj, exists, err := e.serviceStore.GetByKey(namespacedName(ns, name))
 	if err != nil {
 		e.logger.Error("retrieving service failed", "err", err)
 		return
@@ -482,7 +475,7 @@ func (e *Endpoints) addServiceLabels(ns, name string, tg *targetgroup.Group) {
 	if !exists {
 		return
 	}
-	svc = obj.(*apiv1.Service)
+	svc := obj.(*apiv1.Service)
 
 	tg.Labels = tg.Labels.Merge(serviceLabels(svc))
 }

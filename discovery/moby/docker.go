@@ -15,6 +15,7 @@ package moby
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -32,6 +33,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/version"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
@@ -110,7 +112,7 @@ func (c *DockerSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 		return err
 	}
 	if c.Host == "" {
-		return fmt.Errorf("host missing")
+		return errors.New("host missing")
 	}
 	if _, err = url.Parse(c.Host); err != nil {
 		return err
@@ -131,7 +133,7 @@ type DockerDiscovery struct {
 func NewDockerDiscovery(conf *DockerSDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*DockerDiscovery, error) {
 	m, ok := metrics.(*dockerMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	d := &DockerDiscovery{
@@ -172,7 +174,7 @@ func NewDockerDiscovery(conf *DockerSDConfig, logger *slog.Logger, metrics disco
 			}),
 			client.WithScheme(hostURL.Scheme),
 			client.WithHTTPHeaders(map[string]string{
-				"User-Agent": userAgent,
+				"User-Agent": version.PrometheusUserAgent(),
 			}),
 		)
 	}
@@ -235,17 +237,16 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 		if len(networks) == 0 {
 			// Try to lookup shared networks
 			for {
-				if containerNetworkMode.IsContainer() {
-					tmpContainer, exists := allContainers[containerNetworkMode.ConnectedContainer()]
-					if !exists {
-						break
-					}
-					networks = tmpContainer.NetworkSettings.Networks
-					containerNetworkMode = container.NetworkMode(tmpContainer.HostConfig.NetworkMode)
-					if len(networks) > 0 {
-						break
-					}
-				} else {
+				if !containerNetworkMode.IsContainer() {
+					break
+				}
+				tmpContainer, exists := allContainers[containerNetworkMode.ConnectedContainer()]
+				if !exists {
+					break
+				}
+				networks = tmpContainer.NetworkSettings.Networks
+				containerNetworkMode = container.NetworkMode(tmpContainer.HostConfig.NetworkMode)
+				if len(networks) > 0 {
 					break
 				}
 			}

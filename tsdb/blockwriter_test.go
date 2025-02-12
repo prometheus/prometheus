@@ -47,7 +47,7 @@ func TestBlockWriter(t *testing.T) {
 
 	// Confirm the block has the correct data.
 	blockpath := filepath.Join(outputDir, id.String())
-	b, err := OpenBlock(nil, blockpath, nil)
+	b, err := OpenBlock(nil, blockpath, nil, nil)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, b.Close()) }()
 	q, err := NewBlockQuerier(b, math.MinInt64, math.MaxInt64)

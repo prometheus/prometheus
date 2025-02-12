@@ -43,6 +43,7 @@ const defaultBlockDuration = time.Duration(tsdb.DefaultBlockDuration) * time.Mil
 
 // TestBackfillRuleIntegration is an integration test that runs all the rule importer code to confirm the parts work together.
 func TestBackfillRuleIntegration(t *testing.T) {
+	t.Parallel()
 	const (
 		testMaxSampleCount = 50
 		testValue          = 123
@@ -72,6 +73,7 @@ func TestBackfillRuleIntegration(t *testing.T) {
 	}
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			tmpDir := t.TempDir()
 			ctx := context.Background()
 
@@ -210,6 +212,7 @@ func createMultiRuleTestFiles(path string) error {
 // TestBackfillLabels confirms that the labels in the rule file override the labels from the metrics
 // received from Prometheus Query API, including the __name__ label.
 func TestBackfillLabels(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	ctx := context.Background()
 
@@ -251,6 +254,7 @@ func TestBackfillLabels(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("correct-labels", func(t *testing.T) {
+		t.Parallel()
 		selectedSeries := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
 		for selectedSeries.Next() {
 			series := selectedSeries.At()
