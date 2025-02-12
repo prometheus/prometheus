@@ -114,8 +114,7 @@ Fall back to serving the old (Prometheus 2.x) web UI instead of the new UI. The 
 When enabled, Prometheus will store metadata in-memory and keep track of
 metadata changes as WAL records on a per-series basis.
 
-This must be used if
-you are also using remote write 2.0 as it will only gather metadata from the WAL.
+This must be used if you would like to send metadata using the new remote write 2.0.
 
 ## Delay compaction start time
 
