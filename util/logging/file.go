@@ -15,6 +15,7 @@ package logging
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -57,4 +58,13 @@ func (l *JSONFileLogger) Close() error {
 // Log calls the Log function of the underlying logger.
 func (l *JSONFileLogger) Log(i ...interface{}) error {
 	return l.logger.Log(i...)
+}
+
+// Read calls the Log function of the underlying logger.
+func (l *JSONFileLogger) Read(i ...interface{}) (r io.Reader, err error) {
+	f, err := os.Open(l.file.Name())
+	if err != nil {
+		return nil, err
+	}
+	return f, nil
 }

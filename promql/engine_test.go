@@ -17,10 +17,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -2062,6 +2064,14 @@ func (f *FakeQueryLogger) Close() error {
 func (f *FakeQueryLogger) Log(l ...interface{}) error {
 	f.logs = append(f.logs, l...)
 	return nil
+}
+
+func (f *FakeQueryLogger) Read(l ...interface{}) (io.Reader, error) {
+	var sb strings.Builder
+	for _, log := range f.logs {
+		sb.WriteString(fmt.Sprintf("%v\n", log))
+	}
+	return strings.NewReader(sb.String()), nil
 }
 
 func TestQueryLogger_basic(t *testing.T) {
