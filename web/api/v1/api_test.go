@@ -14,6 +14,7 @@
 package v1
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -44,6 +45,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/model/querylog"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
@@ -4758,9 +4760,81 @@ func TestQueryTimeout(t *testing.T) {
 	}
 }
 
+func TestQueryLogEndpoint(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+        load 1m
+            test_metric1{foo="bar"} 0+100x100
+			test_metric1{foo="boo"} 1+0x100
+    `)
+	t.Cleanup(func() { storage.Close() })
+
+	now := time.Now()
+
+	queryLog := querylog.QueryLog{
+		Params: querylog.QueryLogParams{
+			Query: "test_metric1{foo=\"bar\"}",
+			Start: "1234567890",
+			End:   "1234567891",
+		},
+		Stats: querylog.QueryLogStats{
+			Timings: querylog.QueryLogTimings{
+				EvalTotalTime:        1.0,
+				ExecQueueTime:        0.1,
+				ExecTotalTime:        1.1,
+				InnerEvalTime:        0.5,
+				QueryPreparationTime: 0.2,
+				ResultSortTime:       0.3,
+			},
+			Samples: querylog.QueryLogSamples{
+				TotalQueryableSamples: 100,
+				PeakSamples:           50,
+			},
+		},
+		Timestamp: "2025-02-11T00:00:00Z",
+	}
+
+	queryLogBytes, err := json.Marshal(queryLog)
+	require.NoError(t, err)
+
+	engine := &fakeEngine{
+		queryLogger: &fakeQueryLogger{
+			reader: bytes.NewReader(queryLogBytes),
+		},
+	}
+	api := &API{
+		Queryable:             storage,
+		QueryEngine:           engine,
+		ExemplarQueryable:     storage.ExemplarQueryable(),
+		alertmanagerRetriever: testAlertmanagerRetriever{}.toFactory(),
+		flagsMap:              sampleFlagMap,
+		now:                   func() time.Time { return now },
+		config:                func() config.Config { return samplePrometheusCfg },
+		ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
+	}
+
+	// Send a query
+	query := url.Values{
+		"query": []string{"test_metric1"},
+		"time":  []string{"123.4"},
+	}
+	ctx := context.Background()
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("?%s", query.Encode()), nil)
+	require.NoError(t, err)
+	res := api.query(req.WithContext(ctx))
+
+	// Validate that the query log returns those queries in the response
+	req, err = http.NewRequest(http.MethodGet, "", nil)
+	require.NoError(t, err)
+	res = api.queryLog(req.WithContext(ctx))
+	assertAPIError(t, res.err, "")
+
+	testutil.RequireEqual(t, []querylog.QueryLog{queryLog}, res.data)
+}
+
 // fakeEngine is a fake QueryEngine implementation.
 type fakeEngine struct {
-	query fakeQuery
+	query       fakeQuery
+	queryLogger *fakeQueryLogger
 }
 
 func (e *fakeEngine) NewInstantQuery(context.Context, storage.Queryable, promql.QueryOpts, string, time.Time) (promql.Query, error) {
@@ -4769,6 +4843,10 @@ func (e *fakeEngine) NewInstantQuery(context.Context, storage.Queryable, promql.
 
 func (e *fakeEngine) NewRangeQuery(context.Context, storage.Queryable, promql.QueryOpts, string, time.Time, time.Time, time.Duration) (promql.Query, error) {
 	return &e.query, nil
+}
+
+func (e *fakeEngine) GetEngineQueryLogger(ctx context.Context) (promql.QueryLogger, error) {
+	return e.queryLogger, nil
 }
 
 // fakeQuery is a fake Query implementation.
@@ -4800,4 +4878,21 @@ func (*fakeQuery) Cancel() {}
 
 func (q *fakeQuery) String() string {
 	return q.query
+}
+
+// fakeQueryLogger is a fake QueryLogger implementation.
+type fakeQueryLogger struct {
+	reader io.Reader
+}
+
+func (l *fakeQueryLogger) Close() error {
+	return nil
+}
+
+func (l *fakeQueryLogger) Log(...interface{}) error {
+	return nil
+}
+
+func (l *fakeQueryLogger) Read(...interface{}) (io.Reader, error) {
+	return l.reader, nil
 }

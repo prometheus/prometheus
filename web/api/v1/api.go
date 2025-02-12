@@ -14,6 +14,7 @@
 package v1
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
@@ -44,6 +45,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/model/querylog"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -449,6 +451,8 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/alerts", wrapAgent(api.alerts))
 	r.Get("/rules", wrapAgent(api.rules))
 
+	r.Get("/query_log", wrapAgent(api.queryLog))
+
 	// Admin APIs
 	r.Post("/admin/tsdb/delete_series", wrapAgent(api.deleteSeries))
 	r.Post("/admin/tsdb/clean_tombstones", wrapAgent(api.cleanTombstones))
@@ -544,7 +548,36 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	}, nil, warnings, qry.Close}
 }
 
-func (*API) formatQuery(r *http.Request) (result apiFuncResult) {
+func (api *API) queryLog(r *http.Request) (result apiFuncResult) {
+	ctx := r.Context()
+	l, err := api.QueryEngine.GetEngineQueryLogger(ctx)
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
+	}
+
+	// read query log
+	file, err := l.Read()
+	defer l.Close()
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
+	}
+
+	// Unmarshal json query log
+	var ql []querylog.QueryLog
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		var q querylog.QueryLog
+		err = json.Unmarshal(scanner.Bytes(), &q)
+		if err != nil {
+			return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
+		}
+		ql = append(ql, q)
+	}
+
+	return apiFuncResult{ql, nil, nil, nil}
+}
+
+func (api *API) formatQuery(r *http.Request) (result apiFuncResult) {
 	expr, err := parser.ParseExpr(r.FormValue("query"))
 	if err != nil {
 		return invalidParamError(err, "query")

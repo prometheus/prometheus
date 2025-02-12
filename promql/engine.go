@@ -119,6 +119,7 @@ func (e ErrStorage) Error() string {
 type QueryEngine interface {
 	NewInstantQuery(ctx context.Context, q storage.Queryable, opts QueryOpts, qs string, ts time.Time) (Query, error)
 	NewRangeQuery(ctx context.Context, q storage.Queryable, opts QueryOpts, qs string, start, end time.Time, interval time.Duration) (Query, error)
+	GetEngineQueryLogger(ctx context.Context) (QueryLogger, error)
 }
 
 var _ QueryLogger = (*logging.JSONFileLogger)(nil)
@@ -128,8 +129,9 @@ var _ QueryLogger = (*logging.JSONFileLogger)(nil)
 // logging.JSONFileLogger implements this interface, downstream users may use
 // different implementations.
 type QueryLogger interface {
-	slog.Handler
-	io.Closer
+	Log(...interface{}) error
+	Read(...interface{}) (io.Reader, error)
+	Close() error
 }
 
 // A Query is derived from a raw query string and can be run against an engine
@@ -345,6 +347,11 @@ type Engine struct {
 	enablePerStepStats       bool
 	enableDelayedNameRemoval bool
 	enableTypeAndUnitLabels  bool
+}
+
+// GetEngineLogger
+func (ng *Engine) GetEngineQueryLogger(ctx context.Context) (QueryLogger, error) {
+	return ng.queryLogger, nil
 }
 
 // NewEngine returns a new engine.
