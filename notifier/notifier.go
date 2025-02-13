@@ -534,7 +534,7 @@ func (n *Manager) DroppedAlertmanagers() []*url.URL {
 }
 
 // sendAll sends the alerts to all configured Alertmanagers concurrently.
-// It returns true if the alerts could be sent successfully to at least one Alertmanager.
+// It returns true if at least one AlertManager within each set has received the alerts.
 func (n *Manager) sendAll(alerts ...*Alert) bool {
 	if len(alerts) == 0 {
 		return true
@@ -552,91 +552,99 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 	n.mtx.RUnlock()
 
 	var (
-		wg         sync.WaitGroup
-		numSuccess atomic.Uint64
+		wg        sync.WaitGroup
+		failedSet atomic.Uint64
 	)
+
 	for _, ams := range amSets {
-		var (
-			payload  []byte
-			err      error
-			amAlerts = alerts
-		)
+		wg.Add(1)
+		// process each set in parallel
+		go func() {
+			defer wg.Done()
+			var (
+				setWg      sync.WaitGroup
+				payload    []byte
+				err        error
+				amAlerts   = alerts
+				numSuccess atomic.Uint64
+			)
 
-		ams.mtx.RLock()
+			ams.mtx.RLock()
+			defer ams.mtx.RUnlock()
 
-		if len(ams.ams) == 0 {
-			ams.mtx.RUnlock()
-			continue
-		}
-
-		if len(ams.cfg.AlertRelabelConfigs) > 0 {
-			amAlerts = relabelAlerts(ams.cfg.AlertRelabelConfigs, labels.Labels{}, alerts)
-			if len(amAlerts) == 0 {
-				ams.mtx.RUnlock()
-				continue
+			if len(ams.ams) == 0 {
+				return
 			}
-			// We can't use the cached values from previous iteration.
-			cachedPayload = nil
-		}
 
-		switch ams.cfg.APIVersion {
-		case config.AlertmanagerAPIVersionV2:
-			{
-				if cachedPayload == nil {
-					openAPIAlerts := alertsToOpenAPIAlerts(amAlerts)
+			if len(ams.cfg.AlertRelabelConfigs) > 0 {
+				amAlerts = relabelAlerts(ams.cfg.AlertRelabelConfigs, labels.Labels{}, alerts)
+				if len(amAlerts) == 0 {
+					return
+				}
+				// We can't use the cached values from previous iteration.
+				cachedPayload = nil
+			}
 
-					cachedPayload, err = json.Marshal(openAPIAlerts)
-					if err != nil {
-						n.logger.Error("Encoding alerts for Alertmanager API v2 failed", "err", err)
-						ams.mtx.RUnlock()
-						return false
+			switch ams.cfg.APIVersion {
+			case config.AlertmanagerAPIVersionV2:
+				{
+					if cachedPayload == nil {
+						openAPIAlerts := alertsToOpenAPIAlerts(amAlerts)
+
+						cachedPayload, err = json.Marshal(openAPIAlerts)
+						if err != nil {
+							n.logger.Error("Encoding alerts for Alertmanager API v2 failed", "err", err)
+							failedSet.Inc()
+							return
+						}
 					}
+
+					payload = cachedPayload
 				}
-
-				payload = cachedPayload
-			}
-		default:
-			{
-				n.logger.Error(
-					fmt.Sprintf("Invalid Alertmanager API version '%v', expected one of '%v'", ams.cfg.APIVersion, config.SupportedAlertmanagerAPIVersions),
-					"err", err,
-				)
-				ams.mtx.RUnlock()
-				return false
-			}
-		}
-
-		if len(ams.cfg.AlertRelabelConfigs) > 0 {
-			// We can't use the cached values on the next iteration.
-			cachedPayload = nil
-		}
-
-		for _, am := range ams.ams {
-			wg.Add(1)
-
-			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(ams.cfg.Timeout))
-			defer cancel()
-
-			go func(ctx context.Context, client *http.Client, url string, payload []byte, count int) {
-				if err := n.sendOne(ctx, client, url, payload); err != nil {
-					n.logger.Error("Error sending alerts", "alertmanager", url, "count", count, "err", err)
-					n.metrics.errors.WithLabelValues(url).Add(float64(count))
-				} else {
-					numSuccess.Inc()
+			default:
+				{
+					n.logger.Error(
+						fmt.Sprintf("Invalid Alertmanager API version '%v', expected one of '%v'", ams.cfg.APIVersion, config.SupportedAlertmanagerAPIVersions),
+						"err", err,
+					)
+					failedSet.Inc()
+					return
 				}
-				n.metrics.latency.WithLabelValues(url).Observe(time.Since(begin).Seconds())
-				n.metrics.sent.WithLabelValues(url).Add(float64(count))
+			}
 
-				wg.Done()
-			}(ctx, ams.client, am.url().String(), payload, len(amAlerts))
-		}
+			if len(ams.cfg.AlertRelabelConfigs) > 0 {
+				// We can't use the cached values on the next iteration.
+				cachedPayload = nil
+			}
 
-		ams.mtx.RUnlock()
+			for _, am := range ams.ams {
+				setWg.Add(1)
+
+				ctx, cancel := context.WithTimeout(context.Background(), time.Duration(ams.cfg.Timeout))
+				defer cancel()
+
+				// send to each am in parallel
+				go func(ctx context.Context, client *http.Client, url string, payload []byte, count int) {
+					defer setWg.Done()
+					if err := n.sendOne(ctx, client, url, payload); err != nil {
+						n.logger.Error("Error sending alerts", "alertmanager", url, "count", count, "err", err)
+						n.metrics.errors.WithLabelValues(url).Add(float64(count))
+					} else {
+						numSuccess.Inc()
+					}
+					n.metrics.latency.WithLabelValues(url).Observe(time.Since(begin).Seconds())
+					n.metrics.sent.WithLabelValues(url).Add(float64(count))
+				}(ctx, ams.client, am.url().String(), payload, len(amAlerts))
+			}
+
+			setWg.Wait() // wait for all ams in set
+			if numSuccess.Load() == 0 {
+				failedSet.Inc()
+			}
+		}()
 	}
-
-	wg.Wait()
-
-	return numSuccess.Load() > 0
+	wg.Wait() // wait for all sets
+	return failedSet.Load() == 0
 }
 
 func alertsToOpenAPIAlerts(alerts []*Alert) models.PostableAlerts {
