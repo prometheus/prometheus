@@ -86,7 +86,7 @@ Chunk references within single series must be increasing, and chunk references f
 This property guarantees that chunks that belong to the same series are grouped together in the segment files.
 Furthermore chunk `mint` must be less or equal than `maxt`, and subsequent chunks within single series must have increasing `mint` and `maxt` and not overlap.
 
-`mint` of the first chunk is stored, it's `maxt` is stored as a delta and the `mint` and `maxt` are encoded as deltas to the previous time for subsequent chunks. Similarly, the reference of the first chunk is stored and the next ref is stored as a delta to the previous one.
+`mint` of the first chunk is stored, i's `maxt` is stored as a delta and the `mint` and `maxt` are encoded as deltas to the previous time for subsequent chunks. Similarly, the reference of the first chunk is stored and the next ref is stored as a delta to the previous one.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
