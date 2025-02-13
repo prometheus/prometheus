@@ -86,6 +86,38 @@ func (m *SDMock) HandleVersionsSuccessfully() {
                         }
                 `, m.Endpoint()+"v3/", m.Endpoint()+"v2.0/")
 	})
+
+	// Compute API
+	m.Mux.HandleFunc("/compute/", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `
+			{
+				"version": {
+					"id": "v2.1",
+					"status": "CURRENT",
+					"version": "2.96",
+					"min_version": "2.1",
+					"updated": "2013-07-23T11:33:21Z",
+					"links": [
+						{
+							"rel": "self",
+							"href": "%s"
+						},
+						{
+							"rel": "describedby",
+							"type": "text/html",
+							"href": "http://docs.openstack.org/"
+						}
+					],
+					"media-types": [
+						{
+							"base": "application/json",
+							"type": "application/vnd.openstack.compute+json;version=2.1"
+						}
+					]
+				}
+			}
+		`, m.Endpoint()+"v2.1/")
+	})
 }
 
 // HandleAuthSuccessfully mocks auth call.
@@ -131,7 +163,7 @@ func (m *SDMock) HandleAuthSuccessfully() {
                         "interface": "public",
                         "region": "RegionOne",
                         "region_id": "RegionOne",
-                        "url": "%s"
+                        "url": "%s/compute/v2.1/"
                     }
                 ],
                 "id": "b7f2a5b1a019459cb956e43a8cb41e31",
@@ -263,7 +295,7 @@ const hypervisorListBody = `
 
 // HandleHypervisorListSuccessfully mocks os-hypervisors detail call.
 func (m *SDMock) HandleHypervisorListSuccessfully() {
-	m.Mux.HandleFunc("/os-hypervisors/detail", func(w http.ResponseWriter, r *http.Request) {
+	m.Mux.HandleFunc("/compute/v2.1/os-hypervisors/detail", func(w http.ResponseWriter, r *http.Request) {
 		testMethod(m.t, r, http.MethodGet)
 		testHeader(m.t, r, "X-Auth-Token", tokenID)
 
@@ -645,7 +677,7 @@ const serverListBody = `
 
 // HandleServerListSuccessfully mocks server detail call.
 func (m *SDMock) HandleServerListSuccessfully() {
-	m.Mux.HandleFunc("/servers/detail", func(w http.ResponseWriter, r *http.Request) {
+	m.Mux.HandleFunc("/compute/v2.1/servers/detail", func(w http.ResponseWriter, r *http.Request) {
 		testMethod(m.t, r, http.MethodGet)
 		testHeader(m.t, r, "X-Auth-Token", tokenID)
 
