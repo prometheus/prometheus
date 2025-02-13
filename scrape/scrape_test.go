@@ -1895,6 +1895,7 @@ func TestScrapeLoopAppend(t *testing.T) {
 }
 
 func requireEqual(t *testing.T, expected, actual interface{}, msgAndArgs ...interface{}) {
+	t.Helper()
 	testutil.RequireEqualWithOptions(t, expected, actual,
 		[]cmp.Option{cmp.Comparer(equalFloatSamples), cmp.AllowUnexported(histogramSample{})},
 		msgAndArgs...)

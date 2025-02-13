@@ -931,7 +931,7 @@ func createTestPromHistogram() string {
 	return `# HELP test_histogram1 Test histogram 1
 # TYPE test_histogram1 histogram
 test_histogram1_count 175 1234568
-test_histogram1_sum 0.0008280461746287094 1234768
+test_histogram1_sum 0.0008280461746287094 1234568
 test_histogram1_bucket{le="-0.0004899999999999998"} 2 1234568
 test_histogram1_bucket{le="-0.0003899999999999998"} 4 1234568
 test_histogram1_bucket{le="-0.0002899999999999998"} 16 1234568
