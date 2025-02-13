@@ -14,6 +14,7 @@
 package labels
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -27,6 +28,9 @@ func TestStableHash(t *testing.T) {
 		0x347c8ee7a9e29708: FromStrings("hello", "world"),
 		0xcbab40540f26097d: FromStrings(MetricName, "metric", "label", "value"),
 	} {
-		require.Equal(t, expectedHash, StableHash(lbls))
+		t.Run(fmt.Sprintf("hash %d", expectedHash), func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, expectedHash, StableHash(lbls))
+		})
 	}
 }

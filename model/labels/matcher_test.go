@@ -22,6 +22,7 @@ import (
 )
 
 func mustNewMatcher(t *testing.T, mType MatchType, value string) *Matcher {
+	t.Helper()
 	m, err := NewMatcher(mType, "test_label_name", value)
 	require.NoError(t, err)
 	return m
@@ -100,8 +101,11 @@ func TestMatcher(t *testing.T) {
 		},
 	}
 
-	for _, test := range tests {
-		require.Equal(t, test.matcher.Matches(test.value), test.match)
+	for i, test := range tests {
+		t.Run(fmt.Sprintf("%d: %s", i, test.matcher), func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, test.matcher.Matches(test.value), test.match)
+		})
 	}
 }
 
@@ -128,10 +132,13 @@ func TestInverse(t *testing.T) {
 		},
 	}
 
-	for _, test := range tests {
-		result, err := test.matcher.Inverse()
-		require.NoError(t, err)
-		require.Equal(t, test.expected.Type, result.Type)
+	for i, test := range tests {
+		t.Run(fmt.Sprintf("%d: %s", i, test.matcher), func(t *testing.T) {
+			t.Parallel()
+			result, err := test.matcher.Inverse()
+			require.NoError(t, err)
+			require.Equal(t, test.expected.Type, result.Type)
+		})
 	}
 }
 
@@ -182,6 +189,7 @@ func TestPrefix(t *testing.T) {
 		},
 	} {
 		t.Run(fmt.Sprintf("%d: %s", i, tc.matcher), func(t *testing.T) {
+			t.Parallel()
 			require.Equal(t, tc.prefix, tc.matcher.Prefix())
 		})
 	}
@@ -206,6 +214,7 @@ func TestIsRegexOptimized(t *testing.T) {
 		},
 	} {
 		t.Run(fmt.Sprintf("%d: %s", i, tc.matcher), func(t *testing.T) {
+			t.Parallel()
 			require.Equal(t, tc.isRegexOptimized, tc.matcher.IsRegexOptimized())
 		})
 	}

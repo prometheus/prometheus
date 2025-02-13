@@ -2533,12 +2533,9 @@ func TestProtobufParse(t *testing.T) {
 
 	for _, scenario := range scenarios {
 		t.Run(scenario.name, func(t *testing.T) {
-			var (
-				p   = scenario.parser
-				exp = scenario.expected
-			)
-			got := testParse(t, p)
-			requireEntries(t, exp, got)
+			t.Parallel()
+			got := testParse(t, scenario.parser)
+			requireEntries(t, scenario.expected, got)
 		})
 	}
 }

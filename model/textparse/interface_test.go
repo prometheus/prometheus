@@ -31,8 +31,6 @@ import (
 )
 
 func TestNewParser(t *testing.T) {
-	t.Parallel()
-
 	requireNilParser := func(t *testing.T, p Parser) {
 		require.Nil(t, p)
 	}
@@ -163,7 +161,6 @@ func TestNewParser(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			tt := tt // Copy to local variable before going parallel.
 			t.Parallel()
 
 			fallbackProtoMediaType := tt.fallbackScrapeProtocol.HeaderMediaType()
