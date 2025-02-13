@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -4895,4 +4896,18 @@ func (l *fakeQueryLogger) Log(...interface{}) error {
 
 func (l *fakeQueryLogger) Read(...interface{}) (io.Reader, error) {
 	return l.reader, nil
+}
+
+func (l *fakeQueryLogger) Enabled(ctx context.Context, level slog.Level) bool {
+	return true
+}
+func (l *fakeQueryLogger) Handle(ctx context.Context, r slog.Record) error {
+	return nil
+}
+
+func (l *fakeQueryLogger) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return nil
+}
+func (l *fakeQueryLogger) WithGroup(name string) slog.Handler {
+	return nil
 }

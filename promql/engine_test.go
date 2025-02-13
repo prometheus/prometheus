@@ -17,7 +17,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -2316,14 +2315,6 @@ func getLogLines(t *testing.T, name string) []string {
 		}
 	}
 	return lines
-}
-
-func (f *FakeQueryLogger) Read(l ...interface{}) (io.Reader, error) {
-	var sb strings.Builder
-	for _, log := range f.logs {
-		sb.WriteString(fmt.Sprintf("%v\n", log))
-	}
-	return strings.NewReader(sb.String()), nil
 }
 
 func TestQueryLogger_basic(t *testing.T) {
