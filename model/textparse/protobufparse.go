@@ -302,7 +302,6 @@ func (p *ProtobufParser) Comment() []byte {
 }
 
 // Labels writes the labels of the current sample into the passed labels.
-// It returns the string from which the metric was parsed.
 func (p *ProtobufParser) Labels(l *labels.Labels) {
 	*l = p.lset.Copy()
 }
