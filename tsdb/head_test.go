@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"math/rand"
 	"os"
@@ -741,63 +742,96 @@ func TestHead_ReadWAL(t *testing.T) {
 }
 
 func TestHead_WALMultiRef(t *testing.T) {
-	head, w := newTestHead(t, 1000, wlog.CompressionNone, false)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	var walDir string
+	{
+		head, w := newTestHead(t, 1000, wlog.CompressionNone, false)
+		walDir = w.Dir()
 
-	require.NoError(t, head.Init(0))
+		require.NoError(t, head.Init(0))
 
-	app := head.Appender(context.Background())
-	ref1, err := app.Append(0, labels.FromStrings("foo", "bar"), 100, 1)
-	require.NoError(t, err)
-	require.NoError(t, app.Commit())
-	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
+		app := head.Appender(context.Background())
+		ref1, err := app.Append(0, labels.FromStrings("foo", "bar"), 100, 1)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
 
-	// Add another sample outside chunk range to mmap a chunk.
-	app = head.Appender(context.Background())
-	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 1500, 2)
-	require.NoError(t, err)
-	require.NoError(t, app.Commit())
-	require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
+		// Add another sample outside chunk range to mmap a chunk.
+		app = head.Appender(context.Background())
+		_, err = app.Append(0, labels.FromStrings("foo", "bar"), 1500, 2)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
 
-	require.NoError(t, head.Truncate(1600))
+		require.NoError(t, head.Truncate(1600))
 
-	app = head.Appender(context.Background())
-	ref2, err := app.Append(0, labels.FromStrings("foo", "bar"), 1700, 3)
-	require.NoError(t, err)
-	require.NoError(t, app.Commit())
-	require.Equal(t, 3.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
+		app = head.Appender(context.Background())
+		ref2, err := app.Append(0, labels.FromStrings("foo", "bar"), 1700, 3)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		require.Equal(t, 3.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
 
-	// Add another sample outside chunk range to mmap a chunk.
-	app = head.Appender(context.Background())
-	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 2000, 4)
-	require.NoError(t, err)
-	require.NoError(t, app.Commit())
-	require.Equal(t, 4.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
+		// Add another sample outside chunk range to mmap a chunk.
+		app = head.Appender(context.Background())
+		_, err = app.Append(0, labels.FromStrings("foo", "bar"), 2000, 4)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		require.Equal(t, 4.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
 
-	require.NotEqual(t, ref1, ref2, "Refs are the same")
-	require.NoError(t, head.Close())
+		require.NotEqual(t, ref1, ref2, "Refs are the same")
+		require.NoError(t, head.Close())
+	}
 
-	w, err = wlog.New(nil, nil, w.Dir(), wlog.CompressionNone)
-	require.NoError(t, err)
-
+	// Now open a new head
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = 1000
-	opts.ChunkDirRoot = w.Dir()
-	head, err = NewHead(nil, nil, w, nil, opts, nil)
-	require.NoError(t, err)
-	require.NoError(t, head.Init(0))
-	defer func() {
-		require.NoError(t, head.Close())
-	}()
+	opts.ChunkDirRoot = walDir
+	{
+		w, err := wlog.New(logger, nil, walDir, wlog.CompressionNone)
+		require.NoError(t, err)
+		head, err := NewHead(nil, logger, w, nil, opts, nil)
+		require.NoError(t, err)
+		require.NoError(t, head.Init(0))
 
-	q, err := NewBlockQuerier(head, 0, 2100)
-	require.NoError(t, err)
-	series := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-	// The samples before the new ref should be discarded since Head truncation
-	// happens only after compacting the Head.
-	require.Equal(t, map[string][]chunks.Sample{`{foo="bar"}`: {
-		sample{1700, 3, nil, nil},
-		sample{2000, 4, nil, nil},
-	}}, series)
+		q, err := NewBlockQuerier(head, 0, 2100)
+		require.NoError(t, err)
+		series := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+		// The samples before the new ref should be discarded since Head truncation
+		// happens only after compacting the Head.
+		require.Equal(t, map[string][]chunks.Sample{`{foo="bar"}`: {
+			sample{1700, 3, nil, nil},
+			sample{2000, 4, nil, nil},
+		}}, series)
+
+		// Now do a checkpoint.
+		keep := func(id chunks.HeadSeriesRef) bool { // Keep series that are in the head.
+			return head.series.getByID(id) != nil
+		}
+		_, err = wlog.Checkpoint(logger, head.wal, 0, 1, keep, 0)
+		require.NoError(t, err)
+
+		require.NoError(t, head.Close())
+	}
+
+	// Open and check again.
+	{
+		w, err := wlog.New(logger, nil, walDir, wlog.CompressionNone)
+		require.NoError(t, err)
+		head, err := NewHead(nil, logger, w, nil, opts, nil)
+		require.NoError(t, err)
+		require.NoError(t, head.Init(0))
+
+		q, err := NewBlockQuerier(head, 0, 2100)
+		require.NoError(t, err)
+		series := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+		require.Equal(t, map[string][]chunks.Sample{`{foo="bar"}`: {
+			sample{1700, 3, nil, nil},
+			sample{2000, 4, nil, nil},
+		}}, series)
+
+		require.NoError(t, head.Close())
+	}
+
 }
 
 func TestHead_ActiveAppenders(t *testing.T) {
