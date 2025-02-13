@@ -436,19 +436,27 @@ paren_expr      : LEFT_PAREN expr RIGHT_PAREN
 offset_expr: expr OFFSET number_duration_literal
                         {
   		            numLit, _ := $3.(*NumberLiteral)
-      		            dur := time.Duration(numLit.Val * 1000) * time.Millisecond
+                            dur := &NumberLiteral{Val: numLit.Val}
                  	    yylex.(*parser).addOffset($1, dur)
                             $$ = $1
                         }
                 | expr OFFSET SUB number_duration_literal
                         {
 			    numLit, _ := $4.(*NumberLiteral)
-		            dur := time.Duration(numLit.Val * 1000) * time.Millisecond
-			    yylex.(*parser).addOffset($1, -dur)
+                            dur := &NumberLiteral{Val: numLit.Val * -1.0}
+			    yylex.(*parser).addOffset($1, dur)
                             $$ = $1
                         }
+                | expr OFFSET paren_expr
+                        {
+                            dur, _ := $3.(*ParenExpr)
+                            if dur.Type() != ValueTypeScalar {
+                                yylex.(*parser).unexpected("offset", "time expression does not evaluate to a scalar")
+                            }
+                            yylex.(*parser).addOffset($1, dur)
+                        }
                 | expr OFFSET error
-                        { yylex.(*parser).unexpected("offset", "number or duration"); $$ = $1 }
+                        { yylex.(*parser).unexpected("offset", "number or duration or time expression in parentheses"); $$ = $1 }
                 ;
 /*
  * @ modifiers.
@@ -480,7 +488,7 @@ matrix_selector : expr LEFT_BRACKET number_duration_literal RIGHT_BRACKET
                         vs, ok := $1.(*VectorSelector)
                         if !ok{
                                 errMsg = "ranges only allowed for vector selectors"
-                        } else if vs.OriginalOffset != 0{
+                        } else if vs.OriginalOffsetExpr != nil {
                                 errMsg = "no offset modifiers allowed before range"
                         } else if vs.Timestamp != nil {
                                 errMsg = "no @ modifiers allowed before range"

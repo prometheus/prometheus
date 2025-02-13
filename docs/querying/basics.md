@@ -303,6 +303,17 @@ When querying for samples in the past, a negative offset will enable temporal co
 
 Note that this allows a query to look ahead of its evaluation time.
 
+_Notes about the experimental time expressions:_
+
+The offset may be a time expression in parenthesis. A time expression is
+different from a normal expression in that it must yield a scalar and
+must not query series. The scalar resulting from the time expression will be
+used as the offset in seconds. The `time()` function can only be called outside
+subqueries. For example, 5 minute offset may be calculated from adding 2 minutes
+and 180 seconds together:
+
+    http_requests_total offset (2m + 180)
+
 ### @ modifier
 
 The `@` modifier allows changing the evaluation time for individual instant

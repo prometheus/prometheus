@@ -133,8 +133,10 @@ type MatrixSelector struct {
 type SubqueryExpr struct {
 	Expr  Expr
 	Range time.Duration
+	// OriginalOffsetExpr is the parsed expression for OriginalOffset
+	OriginalOffsetExpr Expr
 	// OriginalOffset is the actual offset that was set in the query.
-	// This never changes.
+	// Precalculated from the OriginalOffsetExpr and then never changes.
 	OriginalOffset time.Duration
 	// Offset is the offset used during the query execution
 	// which is calculated using the original offset, at modifier time,
@@ -192,8 +194,10 @@ func (e *StepInvariantExpr) PositionRange() posrange.PositionRange {
 // VectorSelector represents a Vector selection.
 type VectorSelector struct {
 	Name string
+	// OriginalOffsetExpr is the parsed expression for OriginalOffset
+	OriginalOffsetExpr Expr
 	// OriginalOffset is the actual offset that was set in the query.
-	// This never changes.
+	// Precalculated from the OriginalOffsetExpr and then never changes.
 	OriginalOffset time.Duration
 	// Offset is the offset used during the query execution
 	// which is calculated using the original offset, at modifier time,
