@@ -312,7 +312,7 @@ func TestFailuresCountMetric(t *testing.T) {
 			require.Equal(t, float64(0), prom_testutil.ToFloat64(n.metrics.failuresCount))
 
 			// Simulate an error on watch requests.
-			c.Discovery().(*fakediscovery.FakeDiscovery).PrependWatchReactor("*", func(action kubetesting.Action) (bool, watch.Interface, error) {
+			c.Discovery().(*fakediscovery.FakeDiscovery).PrependWatchReactor("*", func(_ kubetesting.Action) (bool, watch.Interface, error) {
 				return true, nil, apierrors.NewUnauthorized("unauthorized")
 			})
 

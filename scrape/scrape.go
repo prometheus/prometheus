@@ -456,7 +456,7 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 		for _, t := range targets {
 			// Replicate .Labels().IsEmpty() with a loop here to avoid generating garbage.
 			nonEmpty := false
-			t.LabelsRange(func(l labels.Label) { nonEmpty = true })
+			t.LabelsRange(func(_ labels.Label) { nonEmpty = true })
 			switch {
 			case nonEmpty:
 				all = append(all, t)
@@ -820,7 +820,7 @@ func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 	return s.client.Do(s.req.WithContext(ctx))
 }
 
-func (s *targetScraper) readResponse(ctx context.Context, resp *http.Response, w io.Writer) (string, error) {
+func (s *targetScraper) readResponse(_ context.Context, resp *http.Response, w io.Writer) (string, error) {
 	defer func() {
 		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()

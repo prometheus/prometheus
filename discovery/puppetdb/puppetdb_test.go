@@ -184,7 +184,7 @@ func TestPuppetDBRefreshWithParameters(t *testing.T) {
 }
 
 func TestPuppetDBInvalidCode(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 	}))
 
@@ -212,7 +212,7 @@ func TestPuppetDBInvalidCode(t *testing.T) {
 }
 
 func TestPuppetDBInvalidFormat(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintln(w, "{}")
 	}))
 

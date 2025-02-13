@@ -314,7 +314,7 @@ func (m *rulesRetrieverMock) CreateRuleGroups() {
 		Appendable: storage,
 		Context:    context.Background(),
 		Logger:     promslog.NewNopLogger(),
-		NotifyFunc: func(ctx context.Context, expr string, alerts ...*rules.Alert) {},
+		NotifyFunc: func(_ context.Context, _ string, _ ...*rules.Alert) {},
 	}
 
 	var r []rules.Rule
@@ -951,7 +951,7 @@ func TestStats(t *testing.T) {
 		},
 		{
 			name: "custom handler with known value",
-			renderer: func(ctx context.Context, s *stats.Statistics, p string) stats.QueryStats {
+			renderer: func(_ context.Context, _ *stats.Statistics, p string) stats.QueryStats {
 				if p == "known" {
 					return testStats{"Custom Value"}
 				}
@@ -4127,7 +4127,7 @@ func TestRespondSuccess_DefaultCodecCannotEncodeResponse(t *testing.T) {
 }
 
 func TestRespondError(t *testing.T) {
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		api := API{}
 		api.respondError(w, &apiError{errorTimeout, errors.New("message")}, "test")
 	}))
@@ -4723,11 +4723,11 @@ type fakeEngine struct {
 	query fakeQuery
 }
 
-func (e *fakeEngine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
+func (e *fakeEngine) NewInstantQuery(_ context.Context, _ storage.Queryable, _ promql.QueryOpts, _ string, _ time.Time) (promql.Query, error) {
 	return &e.query, nil
 }
 
-func (e *fakeEngine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
+func (e *fakeEngine) NewRangeQuery(_ context.Context, _ storage.Queryable, _ promql.QueryOpts, _ string, _, _ time.Time, _ time.Duration) (promql.Query, error) {
 	return &e.query, nil
 }
 

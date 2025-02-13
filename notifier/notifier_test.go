@@ -348,7 +348,7 @@ func TestCustomDo(t *testing.T) {
 
 	var received bool
 	h := NewManager(&Options{
-		Do: func(_ context.Context, client *http.Client, req *http.Request) (*http.Response, error) {
+		Do: func(_ context.Context, _ *http.Client, req *http.Request) (*http.Response, error) {
 			received = true
 			body, err := io.ReadAll(req.Body)
 
@@ -447,7 +447,7 @@ func TestHandlerQueuing(t *testing.T) {
 		errc      = make(chan error, 1)
 	)
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		// Notify the test function that we have received something.
 		select {
 		case called <- struct{}{}:
@@ -724,7 +724,7 @@ func TestHangingNotifier(t *testing.T) {
 
 	// Set up a faulty Alertmanager.
 	var faultyCalled atomic.Bool
-	faultyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	faultyServer := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		faultyCalled.Store(true)
 		select {
 		case <-done:
@@ -736,7 +736,7 @@ func TestHangingNotifier(t *testing.T) {
 
 	// Set up a functional Alertmanager.
 	var functionalCalled atomic.Bool
-	functionalServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	functionalServer := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		functionalCalled.Store(true)
 	}))
 	functionalURL, err := url.Parse(functionalServer.URL)

@@ -246,7 +246,7 @@ func TestRecordingEvalWithOrigin(t *testing.T) {
 	require.NoError(t, err)
 
 	rule := NewRecordingRule(name, expr, lbs)
-	_, err = rule.Eval(ctx, 0, now, func(ctx context.Context, qs string, _ time.Time) (promql.Vector, error) {
+	_, err = rule.Eval(ctx, 0, now, func(ctx context.Context, _ string, _ time.Time) (promql.Vector, error) {
 		detail = FromOriginContext(ctx)
 		return nil, nil
 	}, nil, 0)

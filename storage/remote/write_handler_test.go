@@ -860,7 +860,7 @@ func (m *mockAppendable) Appender(_ context.Context) storage.Appender {
 	return m
 }
 
-func (m *mockAppendable) SetOptions(opts *storage.AppendOptions) {
+func (m *mockAppendable) SetOptions(_ *storage.AppendOptions) {
 	panic("unimplemented")
 }
 
@@ -956,7 +956,7 @@ func (m *mockAppendable) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t
 	return 0, nil
 }
 
-func (m *mockAppendable) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (m *mockAppendable) AppendHistogramCTZeroSample(_ storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	if m.appendCTZeroSampleErr != nil {
 		return 0, m.appendCTZeroSampleErr
 	}
@@ -1006,7 +1006,7 @@ func (m *mockAppendable) UpdateMetadata(_ storage.SeriesRef, l labels.Labels, mp
 	return 0, nil
 }
 
-func (m *mockAppendable) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64) (storage.SeriesRef, error) {
+func (m *mockAppendable) AppendCTZeroSample(_ storage.SeriesRef, l labels.Labels, t, ct int64) (storage.SeriesRef, error) {
 	if m.appendCTZeroSampleErr != nil {
 		return 0, m.appendCTZeroSampleErr
 	}

@@ -45,7 +45,7 @@ func sortSamples(samples []backfillSample) {
 	})
 }
 
-func queryAllSeries(t testing.TB, q storage.Querier, expectedMinTime, expectedMaxTime int64) []backfillSample {
+func queryAllSeries(t testing.TB, q storage.Querier, _, _ int64) []backfillSample {
 	ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
 	samples := []backfillSample{}
 	for ss.Next() {
