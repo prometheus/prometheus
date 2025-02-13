@@ -2,7 +2,8 @@ groups:
   - name: my-group-name
     interval: 30s # defaults to global interval
     rules:
-      - alert: &alertname HighAlert
+      - &highalert
+        alert: &alertname HighAlert
         expr: &expr |
           sum without(instance) (rate(errors_total[5m]))
           /
@@ -28,6 +29,9 @@ groups:
         annotations:
           description: *description
 
+      - <<: *highalert
+        alert: HighAlert2
+
   - name: my-another-name
     interval: 30s # defaults to global interval
     rules:
@@ -48,3 +52,6 @@ groups:
           severity: *severity
         annotations:
           description: *description
+
+      - <<: *highalert
+        alert: HighAlert2
