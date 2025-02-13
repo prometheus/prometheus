@@ -27,14 +27,14 @@ var invalidLabelCharRE = regexp.MustCompile(`[^a-zA-Z0-9_]`)
 // the provided expression.
 func TableLinkForExpression(expr string) string {
 	escapedExpression := url.QueryEscape(expr)
-	return fmt.Sprintf("/graph?g0.expr=%s&g0.tab=1", escapedExpression)
+	return fmt.Sprintf("/query?g0.expr=%s&g0.tab=1", escapedExpression)
 }
 
 // GraphLinkForExpression creates an escaped relative link to the graph view of
 // the provided expression.
 func GraphLinkForExpression(expr string) string {
 	escapedExpression := url.QueryEscape(expr)
-	return fmt.Sprintf("/graph?g0.expr=%s&g0.tab=0", escapedExpression)
+	return fmt.Sprintf("/query?g0.expr=%s&g0.tab=0", escapedExpression)
 }
 
 // SanitizeLabelName replaces anything that doesn't match
