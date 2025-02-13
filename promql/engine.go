@@ -130,9 +130,9 @@ var _ QueryLogger = (*logging.JSONFileLogger)(nil)
 // QueryLogger is an interface that can be used to log all the queries logged
 // by the engine.
 type QueryLogger interface {
-	Log(...interface{}) error
+	slog.Handler
+	io.Closer
 	Read(...interface{}) (io.Reader, error)
-	Close() error
 }
 
 // A Query is derived from an a raw query string and can be run against an engine
