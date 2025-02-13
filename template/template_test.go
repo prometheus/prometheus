@@ -490,12 +490,12 @@ func TestTemplateExpansion(t *testing.T) {
 		{
 			// graphLink.
 			text:   "{{ graphLink \"up\" }}",
-			output: "/graph?g0.expr=up&g0.tab=0",
+			output: "/query?g0.expr=up&g0.tab=0",
 		},
 		{
 			// tableLink.
 			text:   "{{ tableLink \"up\" }}",
-			output: "/graph?g0.expr=up&g0.tab=1",
+			output: "/query?g0.expr=up&g0.tab=1",
 		},
 		{
 			// tmpl.
