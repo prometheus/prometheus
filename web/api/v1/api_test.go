@@ -4772,13 +4772,13 @@ func TestQueryLogEndpoint(t *testing.T) {
 	now := time.Now()
 
 	queryLog := querylog.QueryLog{
-		Params: querylog.QueryLogParams{
+		Params: querylog.Params{
 			Query: "test_metric1{foo=\"bar\"}",
 			Start: "1234567890",
 			End:   "1234567891",
 		},
-		Stats: querylog.QueryLogStats{
-			Timings: querylog.QueryLogTimings{
+		Stats: querylog.Stats{
+			Timings: querylog.Timings{
 				EvalTotalTime:        1.0,
 				ExecQueueTime:        0.1,
 				ExecTotalTime:        1.1,
@@ -4786,7 +4786,7 @@ func TestQueryLogEndpoint(t *testing.T) {
 				QueryPreparationTime: 0.2,
 				ResultSortTime:       0.3,
 			},
-			Samples: querylog.QueryLogSamples{
+			Samples: querylog.Samples{
 				TotalQueryableSamples: 100,
 				PeakSamples:           50,
 			},
@@ -4821,12 +4821,12 @@ func TestQueryLogEndpoint(t *testing.T) {
 	ctx := context.Background()
 	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("?%s", query.Encode()), nil)
 	require.NoError(t, err)
-	res := api.query(req.WithContext(ctx))
+	api.query(req.WithContext(ctx))
 
 	// Validate that the query log returns those queries in the response
 	req, err = http.NewRequest(http.MethodGet, "", nil)
 	require.NoError(t, err)
-	res = api.queryLog(req.WithContext(ctx))
+	res := api.queryLog(req.WithContext(ctx))
 	assertAPIError(t, res.err, "")
 
 	testutil.RequireEqual(t, []querylog.QueryLog{queryLog}, res.data)

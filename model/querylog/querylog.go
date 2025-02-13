@@ -15,24 +15,24 @@ package querylog
 
 // QueryLog stores a query log entry information.
 type QueryLog struct {
-	Params    QueryLogParams `json:"params"`
-	Stats     QueryLogStats  `json:"stats"`
-	Timestamp string         `json:"ts"`
+	Params    Params `json:"params"`
+	Stats     Stats  `json:"stats"`
+	Timestamp string `json:"ts"`
 }
 
-type QueryLogParams struct {
+type Params struct {
 	End   string `json:"end"`
 	Query string `json:"query"`
 	Start string `json:"start"`
 	Step  uint64 `json:"step"`
 }
 
-type QueryLogStats struct {
-	Timings QueryLogTimings `json:"timings"`
-	Samples QueryLogSamples `json:"samples"`
+type Stats struct {
+	Timings Timings `json:"timings"`
+	Samples Samples `json:"samples"`
 }
 
-type QueryLogTimings struct {
+type Timings struct {
 	EvalTotalTime        float64 `json:"evalTotalTime"`
 	ExecQueueTime        float64 `json:"execQueueTime"`
 	ExecTotalTime        float64 `json:"execTotalTime"`
@@ -41,7 +41,7 @@ type QueryLogTimings struct {
 	ResultSortTime       float64 `json:"resultSortTime"`
 }
 
-type QueryLogSamples struct {
+type Samples struct {
 	TotalQueryableSamples uint64 `json:"totalQueryableSamples"`
 	PeakSamples           uint64 `json:"peakSamples"`
 }
