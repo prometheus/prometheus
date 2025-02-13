@@ -26,26 +26,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-var (
-	failureCounter = prometheus.NewCounter(prometheus.CounterOpts{
-		Namespace: "prometheus",
-		Subsystem: "treecache",
-		Name:      "zookeeper_failures_total",
-		Help:      "The total number of ZooKeeper failures.",
-	})
-	numWatchers = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "prometheus",
-		Subsystem: "treecache",
-		Name:      "watcher_goroutines",
-		Help:      "The current number of watcher goroutines.",
-	})
-)
-
-func init() {
-	prometheus.MustRegister(failureCounter)
-	prometheus.MustRegister(numWatchers)
-}
-
 // ZookeeperLogger wraps a *slog.Logger into a zk.Logger.
 type ZookeeperLogger struct {
 	logger *slog.Logger
@@ -72,6 +52,9 @@ type ZookeeperTreeCache struct {
 	head   *zookeeperTreeCacheNode
 
 	logger *slog.Logger
+
+	failureCounter prometheus.Counter
+	numWatchers    prometheus.Gauge
 }
 
 // A ZookeeperTreeCacheEvent models a Zookeeper event for a path.
@@ -89,21 +72,22 @@ type zookeeperTreeCacheNode struct {
 }
 
 // NewZookeeperTreeCache creates a new ZookeeperTreeCache for a given path.
-func NewZookeeperTreeCache(conn *zk.Conn, path string, events chan ZookeeperTreeCacheEvent, logger *slog.Logger) *ZookeeperTreeCache {
+func NewZookeeperTreeCache(conn *zk.Conn, path string, events chan ZookeeperTreeCacheEvent, logger *slog.Logger, failureCounter prometheus.Counter, numWatchers prometheus.Gauge) *ZookeeperTreeCache {
 	tc := &ZookeeperTreeCache{
-		conn:   conn,
-		prefix: path,
-		events: events,
-		stop:   make(chan struct{}),
-		wg:     &sync.WaitGroup{},
-
-		logger: logger,
+		conn:           conn,
+		prefix:         path,
+		events:         events,
+		stop:           make(chan struct{}),
+		wg:             &sync.WaitGroup{},
+		logger:         logger,
+		failureCounter: failureCounter,
+		numWatchers:    numWatchers,
 	}
 	tc.head = &zookeeperTreeCacheNode{
 		events:   make(chan zk.Event),
 		children: map[string]*zookeeperTreeCacheNode{},
 		done:     make(chan struct{}, 1),
-		stopped:  true, // Set head's stop to be true so that recursiveDelete will not stop the head node.
+		stopped:  true, // head node starts stopped
 	}
 	tc.wg.Add(1)
 	go tc.loop(path)
@@ -134,7 +118,7 @@ func (tc *ZookeeperTreeCache) loop(path string) {
 	retryChan := make(chan struct{})
 
 	failure := func() {
-		failureCounter.Inc()
+		tc.failureCounter.Inc()
 		failureMode = true
 		time.AfterFunc(time.Second*10, func() {
 			retryChan <- struct{}{}
@@ -267,7 +251,7 @@ func (tc *ZookeeperTreeCache) recursiveNodeUpdate(path string, node *zookeeperTr
 
 	tc.wg.Add(1)
 	go func() {
-		numWatchers.Inc()
+		tc.numWatchers.Inc() // use the field instead of the global
 		// Pass up zookeeper events, until the node is deleted.
 		select {
 		case event := <-dataWatcher:
@@ -276,7 +260,7 @@ func (tc *ZookeeperTreeCache) recursiveNodeUpdate(path string, node *zookeeperTr
 			node.events <- event
 		case <-node.done:
 		}
-		numWatchers.Dec()
+		tc.numWatchers.Dec() // same here
 		tc.wg.Done()
 	}()
 	return nil
