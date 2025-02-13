@@ -38,7 +38,7 @@ func TestParseFileSuccessWithAliases(t *testing.T) {
 /
 sum without(instance) (rate(requests_total[5m]))
 `
-	rgs, errs := ParseFile("testdata/test_aliases.yaml")
+	rgs, errs := ParseFile("testdata/test_aliases.yaml", false)
 	require.Empty(t, errs, "unexpected errors parsing file")
 	for _, rg := range rgs.Groups {
 		require.Equal(t, "HighAlert", rg.Rules[0].Alert)
