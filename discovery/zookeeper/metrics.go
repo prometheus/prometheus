@@ -57,12 +57,20 @@ func (m *zookeeperMetrics) Register() error {
 	return m.metricRegisterer.RegisterMetrics()
 }
 
+<<<<<<< HEAD
 // Unregister implements discovery.DiscovererMetrics.
+=======
+// Unregister metrics
+>>>>>>> 01da1bf2a (refactor(treecache): remove global prometheus registration)
 func (m *zookeeperMetrics) Unregister() {
 	m.metricRegisterer.UnregisterMetrics()
 }
 
+<<<<<<< HEAD
 // Expose individual metrics (to avoid struct circular import issues).
+=======
+// Expose individual metrics (to avoid struct circular import issues)
+>>>>>>> 01da1bf2a (refactor(treecache): remove global prometheus registration)
 func (m *zookeeperMetrics) FailuresCounter() prometheus.Counter {
 	return m.failureCounter
 }
