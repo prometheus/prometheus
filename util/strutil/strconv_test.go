@@ -28,13 +28,13 @@ type linkTest struct {
 var linkTests = []linkTest{
 	{
 		"sum(incoming_http_requests_total) by (system)",
-		"/graph?g0.expr=sum%28incoming_http_requests_total%29+by+%28system%29&g0.tab=0",
-		"/graph?g0.expr=sum%28incoming_http_requests_total%29+by+%28system%29&g0.tab=1",
+		"/query?g0.expr=sum%28incoming_http_requests_total%29+by+%28system%29&g0.tab=0",
+		"/query?g0.expr=sum%28incoming_http_requests_total%29+by+%28system%29&g0.tab=1",
 	},
 	{
 		"sum(incoming_http_requests_total{system=\"trackmetadata\"})",
-		"/graph?g0.expr=sum%28incoming_http_requests_total%7Bsystem%3D%22trackmetadata%22%7D%29&g0.tab=0",
-		"/graph?g0.expr=sum%28incoming_http_requests_total%7Bsystem%3D%22trackmetadata%22%7D%29&g0.tab=1",
+		"/query?g0.expr=sum%28incoming_http_requests_total%7Bsystem%3D%22trackmetadata%22%7D%29&g0.tab=0",
+		"/query?g0.expr=sum%28incoming_http_requests_total%7Bsystem%3D%22trackmetadata%22%7D%29&g0.tab=1",
 	},
 }
 
