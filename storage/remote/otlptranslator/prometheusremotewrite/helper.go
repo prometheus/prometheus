@@ -117,7 +117,8 @@ var seps = []byte{'\xff'}
 // if logOnOverwrite is true, the overwrite is logged. Resulting label names are sanitized.
 // If settings.PromoteResourceAttributes is not empty, it's a set of resource attributes that should be promoted to labels.
 func createAttributes(resource pcommon.Resource, attributes pcommon.Map, settings Settings,
-	ignoreAttrs []string, logOnOverwrite bool, extras ...string) []prompb.Label {
+	ignoreAttrs []string, logOnOverwrite bool, extras ...string,
+) []prompb.Label {
 	resourceAttrs := resource.Attributes()
 	serviceName, haveServiceName := resourceAttrs.Get(conventions.AttributeServiceName)
 	instance, haveInstanceID := resourceAttrs.Get(conventions.AttributeServiceInstanceID)
@@ -249,7 +250,8 @@ func isValidAggregationTemporality(metric pmetric.Metric) bool {
 // However, work is under way to resolve this shortcoming through a feature called native histograms custom buckets:
 // https://github.com/prometheus/prometheus/issues/13485.
 func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPoints pmetric.HistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, baseName string) error {
+	resource pcommon.Resource, settings Settings, baseName string,
+) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
 			return err
@@ -449,7 +451,8 @@ func mostRecentTimestampInMetric(metric pmetric.Metric) pcommon.Timestamp {
 }
 
 func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoints pmetric.SummaryDataPointSlice, resource pcommon.Resource,
-	settings Settings, baseName string) error {
+	settings Settings, baseName string,
+) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
 			return err
