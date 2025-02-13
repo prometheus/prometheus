@@ -197,56 +197,71 @@ func TestDirectIOWriter(t *testing.T) {
 	}
 }
 
-// BenchmarkBufWriter XXX
 func BenchmarkBufWriter(b *testing.B) {
+	// newFile creates a new file in a temporary directory,
+	// seeks 8 bytes forward to simulate pre‐written SegmentHeaderSize.
 	newFile := func() *os.File {
 		fileName := path.Join(b.TempDir(), "test")
 		f, err := os.OpenFile(fileName, os.O_CREATE|os.O_WRONLY, 0o666)
 		require.NoError(b, err)
-		// file with initial offset to simulate what happens with segments.
 		_, err = f.Seek(8, io.SeekStart)
 		require.NoError(b, err)
 		return f
 	}
 
+	chunks := []int{0, 1, 2, 3, 5, 11, 63, 128, 280, 333, 450, 500, 512}
+
 	for _, writer := range []string{"bufioWriter", "directIOWriter"} {
 		b.Run(fmt.Sprintf("sample=%s", writer), func(b *testing.B) {
-			data := make([]byte, 16*1024*1024+1)
+			data := make([]byte, 512*1024*1024+1)
 			for i := 0; i < len(data); i++ {
 				data[i] = byte(i % 251)
 			}
-			// Ensure the block is not aligned to always ensure the worst-case
-			// scenario for directIOWriter.
+			// Ensure the block is not aligned for directIOWriter’s worst-case scenario.
 			if isAligned(data, directIORqmtsForTest(b)) {
 				data = data[1:]
+			} else {
+				data = data[:len(data)-1]
 			}
-			chunks := []int{0, 1, 2, 3, 5, 11, 63, 128, 280, 333, 450, 500, 512}
-		
+
 			file := newFile()
-		
+
 			b.SetBytes(int64(len(data)))
 			b.ReportAllocs()
 			b.ResetTimer()
-		
-			bw, err := newDirectIOWriter(file, 8*1024*1024)
-			require.NoError(b, err)
-		
-			// Uncomment to compare to bufio's Writer.
-			// bw := bufio.NewWriterSize(file, 8*1024*1024)
-		
+
+			const bufferSize = 8 * 1024 * 1024
+			var bw BufWriter
+			var err error
+
+			switch writer {
+			case "directIOWriter":
+				bw, err = NewDirectIOWriter(file, bufferSize)
+				require.NoError(b, err)
+			case "bufioWriter":
+				bw, err = NewBufioWriterWithSeek(file, bufferSize)
+				require.NoError(b, err)
+			default:
+				b.Fatalf("unknown writer : %s", writer)
+			}
+
 			for i := 0; i < b.N; i++ {
-				// Write the data in multiple steps.
+				// Write the data in multiple chunks.
 				for i := range len(chunks) - 1 {
-					bw.Write(data[chunks[i]*1024*1024 : chunks[i+1]*1024*1024])
+					_, err := bw.Write(data[chunks[i]*1024*1024 : chunks[i+1]*1024*1024])
+					require.NoError(b, err)
 				}
-				bw.Flush()
+				require.NoError(b, bw.Flush())
 				require.NoError(b, file.Sync())
-		
+
 				// Reset to a new file.
 				b.StopTimer()
-				os.Remove(file.Name())
+				require.NoError(b, file.Close())
+				require.NoError(b, os.Remove(file.Name()))
 				file = newFile()
 				b.StartTimer()
+
+				// Reset the writer to the new file.
 				bw.Reset(file)
 			}
 		})
