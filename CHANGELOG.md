@@ -2,7 +2,8 @@
 
 ## unreleased
 
-## 3.2.0-rc.1 / 2025-01-29
+
+## 3.2.0 / 2025-02-17
 
 * [CHANGE] relabel: Replace actions can now use UTF-8 characters in `targetLabel` field. Note that `$<chars>` or `${<chars>}` will be expanded. This also apply to `replacement` field for `LabelMap` action. #15851
 * [CHANGE] rulefmt: Rule names can use UTF-8 characters, except `{` and `}` characters (due to common mistake checks). #15851
@@ -14,6 +15,7 @@
 * [ENHANCEMENT] ui: Make "hide empty rules" and hide empty rules" persistent #15807
 * [ENHANCEMENT] web/api: Add a limit parameter to `/query` and `/query_range`. #15552
 * [ENHANCEMENT] api: Add fields Node and ServerTime to `/status`. #15784
+* [PERF] Scraping: defer computing labels for dropped targets until they are needed by the UI.  #15261
 * [BUGFIX] remotewrite2: Fix invalid metadata bug for metrics without metadata. #15829
 * [BUGFIX] remotewrite2: Fix the unit field propagation. #15825
 * [BUGFIX] scrape: Fix WAL metadata for histograms and summaries. #15832
