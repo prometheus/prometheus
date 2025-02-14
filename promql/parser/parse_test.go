@@ -4244,6 +4244,26 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: `duration out of range`,
 	},
+	{
+		input: "(sum(foo))",
+		expected: &ParenExpr{
+			Expr: &AggregateExpr{
+				Op: SUM,
+				Expr: &VectorSelector{
+					Name: "foo",
+					LabelMatchers: []*labels.Matcher{
+						MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+					},
+					PosRange: posrange.PositionRange{
+						Start: 5,
+						End:   8,
+					},
+				},
+				PosRange: posrange.PositionRange{Start: 1, End: 9},
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 10},
+		},
+	},
 }
 
 func makeInt64Pointer(val int64) *int64 {
