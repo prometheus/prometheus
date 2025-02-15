@@ -216,7 +216,7 @@ export default function AlertsPage() {
   // convenient to have in the same file IMO).
   const renderedPageItems = useMemo(
     () =>
-      currentPageGroups.map((g, i) => (
+      currentPageGroups.map((g) => (
         <Card
           shadow="xs"
           withBorder
