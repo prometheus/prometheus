@@ -215,12 +215,12 @@ export default function AlertsPage() {
   // convenient to have in the same file IMO).
   const renderedPageItems = useMemo(
     () =>
-      currentPageGroups.map((g, i) => (
+      currentPageGroups.map((g) => (
         <Card
           shadow="xs"
           withBorder
           p="md"
-          key={i} // TODO: Find a stable and definitely unique key.
+          key={`${g.name}-${g.file}`} // TODO: Find a stable and definitely unique key.
         >
           <Group mb="md" mt="xs" ml="xs" justify="space-between">
             <Group align="baseline">
