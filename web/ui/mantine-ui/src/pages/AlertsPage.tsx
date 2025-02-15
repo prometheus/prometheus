@@ -220,7 +220,7 @@ export default function AlertsPage() {
           shadow="xs"
           withBorder
           p="md"
-          key={i} // TODO: Find a stable and definitely unique key.
+          key={`${g.name}-${g.file}`} // TODO: Find a stable and definitely unique key.
         >
           <Group mb="md" mt="xs" ml="xs" justify="space-between">
             <Group align="baseline">
