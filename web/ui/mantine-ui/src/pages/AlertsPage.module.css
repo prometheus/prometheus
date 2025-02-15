@@ -1,0 +1,8 @@
+.item {
+    background-color: light-dark(var(--mantine-color-gray-1), var(--mantine-color-dark-5));
+  }
+  
+.item[data-active] {
+    background-color: light-dark(var(--mantine-color-body-light), var(--mantine-color-body-dark));
+  }
+  

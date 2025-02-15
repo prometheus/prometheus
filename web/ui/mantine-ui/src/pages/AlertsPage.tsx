@@ -37,6 +37,7 @@ import { useDebouncedValue } from "@mantine/hooks";
 import { KVSearch } from "@nexucis/kvsearch";
 import { inputIconStyle } from "../styles";
 import CustomInfiniteScroll from "../components/CustomInfiniteScroll";
+import classes from "./AlertsPage.module.css";
 
 type AlertsPageData = {
   // How many rules are in each state across all groups.
@@ -277,7 +278,7 @@ export default function AlertsPage() {
             <CustomInfiniteScroll
               allItems={g.rules}
               child={({ items }) => (
-                <Accordion multiple variant="separated">
+                <Accordion multiple variant="separated" classNames={classes}>
                   {items.map((r, j) => {
                     return (
                       <Accordion.Item
