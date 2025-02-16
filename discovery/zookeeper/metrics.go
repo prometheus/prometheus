@@ -19,7 +19,6 @@ import (
 )
 
 type zookeeperMetrics struct {
-
 	// The total number of ZooKeeper failures.
 	failureCounter prometheus.Counter
 	// The current number of Zookeeper watcher goroutines.
@@ -28,7 +27,7 @@ type zookeeperMetrics struct {
 	metricRegisterer discovery.MetricRegisterer
 }
 
-// Create and register metrics
+// Create and register metrics.
 func newDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	m := &zookeeperMetrics{
 		failureCounter: prometheus.NewCounter(prometheus.CounterOpts{
@@ -53,17 +52,17 @@ func newDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetric
 	return m
 }
 
-// Register metrics
+// Register implements discovery.DiscovererMetrics.
 func (m *zookeeperMetrics) Register() error {
 	return m.metricRegisterer.RegisterMetrics()
 }
 
-// Unregister metrics
+// Unregister implements discovery.DiscovererMetrics.
 func (m *zookeeperMetrics) Unregister() {
 	m.metricRegisterer.UnregisterMetrics()
 }
 
-// Expose individual metrics (to avoid struct circular import issues)
+// Expose individual metrics (to avoid struct circular import issues).
 func (m *zookeeperMetrics) FailuresCounter() prometheus.Counter {
 	return m.failureCounter
 }
