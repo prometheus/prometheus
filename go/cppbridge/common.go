@@ -9,7 +9,8 @@ func GetFlavor() string {
 
 // MemInfo stats from C++ allocator
 type MemInfo struct {
-	InUse uint64
+	InUse     uint64
+	Allocated uint64
 }
 
 // GetMemInfo returns current C++ allocator stats

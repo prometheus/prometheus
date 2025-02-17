@@ -1,8 +1,9 @@
 package appender
 
 import (
-	"github.com/jonboulle/clockwork"
 	"time"
+
+	"github.com/jonboulle/clockwork"
 
 	"github.com/prometheus/prometheus/pp/go/relabeler/logger"
 	"github.com/prometheus/prometheus/pp/go/util"

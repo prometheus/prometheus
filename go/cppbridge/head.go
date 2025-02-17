@@ -151,6 +151,10 @@ func (r *HeadDataStorageSerializedChunks) NumberOfChunks() int {
 	return int(*(*int32)(unsafe.Pointer(&r.data[0])))
 }
 
+func (r *HeadDataStorageSerializedChunks) Len() int {
+	return len(r.data)
+}
+
 type HeadDataStorageSerializedChunkIndex struct {
 	m map[uint32][]int
 }

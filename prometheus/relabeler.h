@@ -106,7 +106,7 @@ PROMPP_ALWAYS_INLINE void hard_validate(relabelStatus& rstatus, LabelsBuilder& b
 // samples - incoming samples;
 // ls_id   - relabeling ls id from lss;
 struct InnerSerie {
-  BareBones::Vector<PromPP::Primitives::Sample> samples;
+  PromPP::Primitives::Sample sample;
   uint32_t ls_id;
 
   PROMPP_ALWAYS_INLINE bool operator==(const InnerSerie& rt) const noexcept = default;
@@ -118,17 +118,17 @@ struct InnerSerie {
 // data - vector with timeseries;
 class InnerSeries {
   size_t size_{0};
-  std::vector<InnerSerie> data_;
+  BareBones::Vector<InnerSerie> data_;
 
  public:
-  PROMPP_ALWAYS_INLINE const std::vector<InnerSerie>& data() const { return data_; }
+  PROMPP_ALWAYS_INLINE const BareBones::Vector<InnerSerie>& data() const { return data_; }
 
   PROMPP_ALWAYS_INLINE size_t size() const { return size_; }
 
   PROMPP_ALWAYS_INLINE void reserve(size_t n) { data_.reserve(n); }
 
-  PROMPP_ALWAYS_INLINE void emplace_back(const BareBones::Vector<PromPP::Primitives::Sample>& samples, const uint32_t& ls_id) {
-    data_.emplace_back(samples, ls_id);
+  PROMPP_ALWAYS_INLINE void emplace_back(const PromPP::Primitives::Sample& sample, const uint32_t& ls_id) {
+    data_.emplace_back(sample, ls_id);
     ++size_;
   }
 
@@ -486,7 +486,9 @@ class PerShardRelabeler {
               if (o.track_timestamps_staleness || resolve_timestamps(def_timestamp, samples, o)) {
                 stale_nan_state.add_target(ls_id);
               }
-              shards_inner_series[shard_id_]->emplace_back(samples, ls_id);
+              for (const PromPP::Primitives::Sample& sample : samples) {
+                shards_inner_series[shard_id_]->emplace_back(sample, ls_id);
+              }
               ++stats.series_added;
             } break;
             case rsRelabel: {
@@ -508,14 +510,18 @@ class PerShardRelabeler {
           if (o.track_timestamps_staleness || resolve_timestamps(def_timestamp, samples, o)) {
             stale_nan_state.add_target(check_result.ls_id);
           }
-          shards_inner_series[shard_id_]->emplace_back(samples, check_result.ls_id);
+          for (const PromPP::Primitives::Sample& sample : samples) {
+            shards_inner_series[shard_id_]->emplace_back(sample, check_result.ls_id);
+          }
         } break;
         case Cache::CheckResult::kRelabel: {
           auto& samples = timeseries_buf_.samples();
           if (o.track_timestamps_staleness || resolve_timestamps(def_timestamp, samples, o)) {
             stale_nan_state.add_input(check_result.source_ls_id);
           }
-          shards_inner_series[check_result.shard_id]->emplace_back(samples, check_result.ls_id);
+          for (const PromPP::Primitives::Sample& sample : samples) {
+            shards_inner_series[check_result.shard_id]->emplace_back(sample, check_result.ls_id);
+          }
         } break;
         default:
           continue;
@@ -533,7 +539,7 @@ class PerShardRelabeler {
       }
     }
 
-    BareBones::Vector<PromPP::Primitives::Sample> smpl{{def_timestamp, kStaleNan}};
+    PromPP::Primitives::Sample smpl{def_timestamp, kStaleNan};
     stale_nan_state.swap(
         [&](uint32_t ls_id) {
           if (auto res = cache.check_input(ls_id); res.status == Cache::CheckResult::kRelabel) {
@@ -664,7 +670,7 @@ class PerShardRelabeler {
                                                     PromPP::Primitives::Go::SliceView<InnerSeries*>& shards_inner_series,
                                                     StaleNaNsState& state,
                                                     PromPP::Primitives::Timestamp stale_ts) {
-    BareBones::Vector<PromPP::Primitives::Sample> smpl{{stale_ts, kStaleNan}};
+    PromPP::Primitives::Sample smpl{stale_ts, kStaleNan};
     state.swap(
         [&](uint32_t ls_id) {
           if (auto res = cache.check_input(ls_id); res.status == Cache::CheckResult::kRelabel) {
@@ -688,7 +694,9 @@ class PerShardRelabeler {
     for (const auto& relabeled_serie : relabeled_series->data()) {
       uint32_t ls_id = lss.find_or_emplace(relabeled_serie.ls, relabeled_serie.hash);
 
-      inner_series->emplace_back(relabeled_serie.samples, ls_id);
+      for (const PromPP::Primitives::Sample& sample : relabeled_serie.samples) {
+        inner_series->emplace_back(sample, ls_id);
+      }
       relabeler_state_update->emplace_back(relabeled_serie.ls_id, ls_id);
     }
   }
@@ -722,7 +730,7 @@ class PerShardRelabeler {
         }
 
         if (res.status == Cache::CheckResult::kRelabel) {
-          encoders_inner_series[res.shard_id]->emplace_back(inner_serie.samples, res.ls_id);
+          encoders_inner_series[res.shard_id]->emplace_back(inner_serie.sample, res.ls_id);
           return;
         }
 
@@ -741,7 +749,8 @@ class PerShardRelabeler {
         }
 
         PromPP::Primitives::LabelSet new_label_set = builder.label_set();
-        relabeled_series->emplace_back(new_label_set, inner_serie.samples, hash_value(new_label_set), inner_serie.ls_id);
+        relabeled_series->emplace_back(new_label_set, BareBones::Vector<PromPP::Primitives::Sample>{inner_serie.sample}, hash_value(new_label_set),
+                                       inner_serie.ls_id);
       });
     });
 

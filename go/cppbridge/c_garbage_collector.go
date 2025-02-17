@@ -30,6 +30,7 @@ type CGOGC struct {
 	// stat
 	memoryThreshold prometheus.Gauge
 	memoryInUse     prometheus.Gauge
+	memoryAllocated prometheus.Gauge
 	cGoGCCount      prometheus.Counter
 }
 
@@ -44,19 +45,25 @@ func NewCGOGC(registerer prometheus.Registerer) *CGOGC {
 		done:        make(chan struct{}),
 		memoryThreshold: factory.NewGauge(
 			prometheus.GaugeOpts{
-				Name: "prompp_common_cgogc_memory_threshold_bytes",
+				Name: "prompp_common_jemalloc_memory_threshold_bytes",
 				Help: "Current value memory threshold in bytes.",
 			},
 		),
 		memoryInUse: factory.NewGauge(
 			prometheus.GaugeOpts{
-				Name: "prompp_common_cgogc_memory_bytes",
-				Help: "Current value memory in use in bytes.",
+				Name: "prompp_common_jemalloc_memory_in_use_bytes",
+				Help: "Current value stats.in_use from jemalloc in bytes.",
+			},
+		),
+		memoryAllocated: factory.NewGauge(
+			prometheus.GaugeOpts{
+				Name: "prompp_common_jemalloc_memory_allocated_bytes",
+				Help: "Current value stats.allocated from jemalloc in bytes.",
 			},
 		),
 		cGoGCCount: factory.NewCounter(
 			prometheus.CounterOpts{
-				Name: "prompp_common_cgogc_count",
+				Name: "prompp_common_jemalloc_count",
 				Help: "Counter of run garbage collector for c objects.",
 			},
 		),
@@ -67,13 +74,14 @@ func NewCGOGC(registerer prometheus.Registerer) *CGOGC {
 }
 
 // set - set a value to the series and updates the moving average.
-func (cgc *CGOGC) set(value float64) {
-	cgc.memoryInUse.Set(value)
+func (cgc *CGOGC) set(memInfo MemInfo) {
+	cgc.memoryInUse.Set(float64(memInfo.InUse))
+	cgc.memoryAllocated.Set(float64(memInfo.Allocated))
 	if cgc.value == 0 {
-		cgc.value = value
+		cgc.value = float64(memInfo.InUse)
 		return
 	}
-	cgc.value = (value * cgc.decay) + (cgc.value * cgc.multiplier)
+	cgc.value = (float64(memInfo.InUse) * cgc.decay) + (cgc.value * cgc.multiplier)
 }
 
 // calcThreshold - calculate max expotential threshold value.
@@ -89,14 +97,14 @@ func (cgc *CGOGC) calcThreshold() {
 }
 
 // isOverThreshold - check and adjustment threshold.
-func (cgc *CGOGC) isOverThreshold(value float64) bool {
-	cgc.set(value)
-	if value >= cgc.threshold {
+func (cgc *CGOGC) isOverThreshold(memInfo MemInfo) bool {
+	cgc.set(memInfo)
+	if float64(memInfo.InUse) >= cgc.threshold {
 		cgc.calcThreshold()
 		return true
 	}
 
-	if value < cgc.value {
+	if float64(memInfo.InUse) < cgc.value {
 		cgc.calcThreshold()
 	}
 	return false
@@ -125,7 +133,7 @@ func (cgc *CGOGC) run() {
 func (cgc *CGOGC) gc() {
 	memInfo := GetMemInfo()
 
-	if !cgc.isOverThreshold(float64(memInfo.InUse)) {
+	if !cgc.isOverThreshold(memInfo) {
 		return
 	}
 	runtime.GC()

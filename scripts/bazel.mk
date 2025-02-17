@@ -1,4 +1,4 @@
-# This is includ file with 
+# This is includ file with
 
 compilation_mode?=opt## Bazel compilation mode opt or dbg
 asan?=false## Build with address sanitizer
