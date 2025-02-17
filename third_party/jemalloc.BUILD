@@ -3,7 +3,6 @@
 
 load("@rules_foreign_cc//foreign_cc:configure.bzl", "configure_make")
 
-
 licenses(["notice"])  # LGPL license
 
 exports_files(["COPYING"])
@@ -18,21 +17,21 @@ filegroup(
 
 configure_make(
     name = "make_jemalloc",
+    args = ["-j `nproc`"],
     autoconf = True,
     configure_in_place = True,
-    lib_source = ":src",
     configure_options = [
-		"--enable-xmalloc",
-		"--with-lg-page=\"12\"",
-		"--with-lg-hugepage=21",
+        "--enable-xmalloc",
+        "--with-lg-page=\"12\"",
+        "--with-lg-hugepage=21",
     ],
     copts = [
-        "-Wno-error"
+        "-Wno-error",
     ],
+    lib_source = ":src",
     out_static_libs = [
         "libjemalloc.a",
     ],
-    args = ["-j `nproc`"],
     visibility = ["//visibility:public"],
 )
 

@@ -409,13 +409,13 @@ func (iss *InnerSeries) Size() uint64 {
 
 // NewInnerSeries - init new InnerSeries with finalizer for dtor C-InnerSeries.
 func NewInnerSeries() *InnerSeries {
-	rts := &InnerSeries{size: 0}
-	prometheusInnerSeriesCtor(rts)
-	runtime.SetFinalizer(rts, func(r *InnerSeries) {
-		prometheusInnerSeriesDtor(r)
+	iss := &InnerSeries{size: 0}
+	prometheusInnerSeriesCtor(iss)
+	runtime.SetFinalizer(iss, func(i *InnerSeries) {
+		prometheusInnerSeriesDtor(i)
 	})
 
-	return rts
+	return iss
 }
 
 //

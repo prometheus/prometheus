@@ -56,7 +56,7 @@ class GenericEncoder {
       }
 
       std::ranges::for_each(inner_series->data(),
-                            [&](const Prometheus::Relabel::InnerSerie& inner_serie) { encoder_.add_samples_on_ls_id(inner_serie.ls_id, inner_serie.samples); });
+                            [&](const Prometheus::Relabel::InnerSerie& inner_serie) { encoder_.add_sample_on_ls_id(inner_serie.ls_id, inner_serie.sample); });
     });
 
     write_stats(stats);
@@ -73,7 +73,9 @@ class GenericEncoder {
     std::ranges::for_each(incoming_relabeled_series->data(), [&](const Prometheus::Relabel::RelabeledSerie& relabeled_serie) {
       if ((relabeled_serie.hash % (1 << encoder_.pow_two_of_total_shards())) == encoder_.shard_id()) {
         uint32_t ls_id = encoder_.add_label_set(relabeled_serie.ls, relabeled_serie.hash);
-        encoder_.add_samples_on_ls_id(ls_id, relabeled_serie.samples);
+        for (const auto& sample : relabeled_serie.samples) {
+          encoder_.add_sample_on_ls_id(ls_id, sample);
+        }
         relabeler_state_update->emplace_back(relabeled_serie.ls_id, ls_id);
       }
     });

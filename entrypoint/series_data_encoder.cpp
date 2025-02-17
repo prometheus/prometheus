@@ -42,9 +42,7 @@ extern "C" void prompp_series_data_encoder_encode_inner_series_slice(void* args)
     }
 
     std::ranges::for_each(inner_series->data(), [&](const PromPP::Prometheus::Relabel::InnerSerie& inner_serie) {
-      std::ranges::for_each(inner_serie.samples, [&](const PromPP::Primitives::Sample& sample) {
-        in->encoder_wrapper->encoder.encode(inner_serie.ls_id, sample.timestamp(), sample.value());
-      });
+      in->encoder_wrapper->encoder.encode(inner_serie.ls_id, inner_serie.sample.timestamp(), inner_serie.sample.value());
     });
   });
 }

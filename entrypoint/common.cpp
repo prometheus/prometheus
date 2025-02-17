@@ -30,6 +30,7 @@ extern "C" void prompp_jemalloc_init() {
 extern "C" void prompp_mem_info(void* res) {
   using res_t = struct {
     int64_t in_use;
+    int64_t allocated;
   };
 
   res_t* out = new (res) res_t();
@@ -42,6 +43,8 @@ extern "C" void prompp_mem_info(void* res) {
   size_t size_len = sizeof(size);
   mallctl("stats.active", &size, &size_len, NULL, 0);
   out->in_use = size;
+  mallctl("stats.allocated", &size, &size_len, NULL, 0);
+  out->allocated = size;
 #else
   struct mallinfo2 mi;
   mi = mallinfo2();

@@ -757,7 +757,7 @@ TEST_F(TestPerShardRelabeler, InputRelabelingWithStalenans_Default) {
   EXPECT_EQ(relabeled_results_[1]->size(), 0);
   EXPECT_EQ(shards_inner_series_[0]->size(), 0);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
-  EXPECT_EQ(shards_inner_series_[1]->data()[0].samples[0].timestamp(), def_timestamp);
+  EXPECT_EQ(shards_inner_series_[1]->data()[0].sample.timestamp(), def_timestamp);
   EXPECT_EQ(stats_.samples_added, 1);
   EXPECT_EQ(stats_.series_added, 1);
 
@@ -771,7 +771,7 @@ TEST_F(TestPerShardRelabeler, InputRelabelingWithStalenans_Default) {
   PromPP::Primitives::Timestamp stale_ts = 1712567047055;
   prs.input_relabeling_with_stalenans(lss_, lss_, cache_, empty_hx, o_, stats_, shards_inner_series_, relabeled_results_, state, stale_ts);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
-  EXPECT_EQ(PromPP::Primitives::Sample(stale_ts, PromPP::Prometheus::kStaleNan), shards_inner_series_[1]->data()[0].samples[0]);
+  EXPECT_EQ(PromPP::Primitives::Sample(stale_ts, PromPP::Prometheus::kStaleNan), shards_inner_series_[1]->data()[0].sample);
   EXPECT_EQ(stats_.samples_added, 1);
   EXPECT_EQ(stats_.series_added, 1);
 }
@@ -792,7 +792,7 @@ TEST_F(TestPerShardRelabeler, InputRelabelingWithStalenans_DefaultHonorTimestamp
   EXPECT_EQ(relabeled_results_[1]->size(), 0);
   EXPECT_EQ(shards_inner_series_[0]->size(), 0);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
-  EXPECT_EQ(shards_inner_series_[1]->data()[0].samples[0].timestamp(), def_timestamp);
+  EXPECT_EQ(shards_inner_series_[1]->data()[0].sample.timestamp(), def_timestamp);
   EXPECT_EQ(stats_.samples_added, 1);
   EXPECT_EQ(stats_.series_added, 1);
 
@@ -806,7 +806,7 @@ TEST_F(TestPerShardRelabeler, InputRelabelingWithStalenans_DefaultHonorTimestamp
   PromPP::Primitives::Timestamp stale_ts = 1712567047055;
   prs.input_relabeling_with_stalenans(lss_, lss_, cache_, empty_hx, o_, stats_, shards_inner_series_, relabeled_results_, state, stale_ts);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
-  EXPECT_EQ(PromPP::Primitives::Sample(stale_ts, PromPP::Prometheus::kStaleNan), shards_inner_series_[1]->data()[0].samples[0]);
+  EXPECT_EQ(PromPP::Primitives::Sample(stale_ts, PromPP::Prometheus::kStaleNan), shards_inner_series_[1]->data()[0].sample);
   EXPECT_EQ(stats_.samples_added, 1);
   EXPECT_EQ(stats_.series_added, 1);
 }
@@ -826,7 +826,7 @@ TEST_F(TestPerShardRelabeler, InputRelabelingWithStalenans_WithMetricTimestamp) 
   EXPECT_EQ(relabeled_results_[1]->size(), 0);
   EXPECT_EQ(shards_inner_series_[0]->size(), 0);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
-  EXPECT_EQ(shards_inner_series_[1]->data()[0].samples[0].timestamp(), def_timestamp);
+  EXPECT_EQ(shards_inner_series_[1]->data()[0].sample.timestamp(), def_timestamp);
   EXPECT_EQ(stats_.samples_added, 1);
   EXPECT_EQ(stats_.series_added, 1);
 
@@ -840,7 +840,7 @@ TEST_F(TestPerShardRelabeler, InputRelabelingWithStalenans_WithMetricTimestamp) 
   PromPP::Primitives::Timestamp stale_ts = 1712567047055;
   prs.input_relabeling_with_stalenans(lss_, lss_, cache_, empty_hx, o_, stats_, shards_inner_series_, relabeled_results_, state, stale_ts);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
-  EXPECT_EQ(PromPP::Primitives::Sample(stale_ts, PromPP::Prometheus::kStaleNan), shards_inner_series_[1]->data()[0].samples[0]);
+  EXPECT_EQ(PromPP::Primitives::Sample(stale_ts, PromPP::Prometheus::kStaleNan), shards_inner_series_[1]->data()[0].sample);
   EXPECT_EQ(stats_.samples_added, 1);
   EXPECT_EQ(stats_.series_added, 1);
 }
@@ -862,7 +862,7 @@ TEST_F(TestPerShardRelabeler, InputRelabelingWithStalenans_HonorTimestamps) {
   EXPECT_EQ(relabeled_results_[1]->size(), 0);
   EXPECT_EQ(shards_inner_series_[0]->size(), 0);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
-  EXPECT_EQ(shards_inner_series_[1]->data()[0].samples[0].timestamp(), metric_timestamp);
+  EXPECT_EQ(shards_inner_series_[1]->data()[0].sample.timestamp(), metric_timestamp);
   EXPECT_EQ(stats_.samples_added, 1);
   EXPECT_EQ(stats_.series_added, 1);
 
@@ -896,7 +896,7 @@ TEST_F(TestPerShardRelabeler, InputRelabelingWithStalenans_HonorTimestampsAndTra
   EXPECT_EQ(relabeled_results_[1]->size(), 0);
   EXPECT_EQ(shards_inner_series_[0]->size(), 0);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
-  EXPECT_EQ(shards_inner_series_[1]->data()[0].samples[0].timestamp(), metric_timestamp);
+  EXPECT_EQ(shards_inner_series_[1]->data()[0].sample.timestamp(), metric_timestamp);
   EXPECT_EQ(stats_.samples_added, 1);
   EXPECT_EQ(stats_.series_added, 1);
 
@@ -910,7 +910,7 @@ TEST_F(TestPerShardRelabeler, InputRelabelingWithStalenans_HonorTimestampsAndTra
   PromPP::Primitives::Timestamp stale_ts = 1712567047055;
   prs.input_relabeling_with_stalenans(lss_, lss_, cache_, empty_hx, o_, stats_, shards_inner_series_, relabeled_results_, state, stale_ts);
   EXPECT_EQ(shards_inner_series_[1]->size(), 1);
-  EXPECT_EQ(PromPP::Primitives::Sample(stale_ts, PromPP::Prometheus::kStaleNan), shards_inner_series_[1]->data()[0].samples[0]);
+  EXPECT_EQ(PromPP::Primitives::Sample(stale_ts, PromPP::Prometheus::kStaleNan), shards_inner_series_[1]->data()[0].sample);
   EXPECT_EQ(stats_.samples_added, 1);
   EXPECT_EQ(stats_.series_added, 1);
 }
