@@ -1709,6 +1709,31 @@ func TestSizeRetentionMetric(t *testing.T) {
 	}
 }
 
+func TestStartupMinRetentionTime(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create blocks and verify initial load
+	blocks := []*BlockMeta{
+		{MinTime: 100, MaxTime: 200},
+		{MinTime: 200, MaxTime: 300},
+		{MinTime: 300, MaxTime: 400},
+	}
+
+	for _, m := range blocks {
+		createBlock(t, dir, genSeries(100, 10, m.MinTime, m.MaxTime))
+	}
+
+	// Open DB with retention and verify only one block remains
+	opts := DefaultOptions()
+	opts.StartupMinRetentionTime = 300
+	db, err := Open(dir, nil, nil, opts, nil)
+	require.NoError(t, err)
+	defer db.Close()
+
+	require.NoError(t, db.reloadBlocks())
+	require.Equal(t, 1, len(db.Blocks()))
+}
+
 func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {
 	db := openTestDB(t, nil, nil)
 	defer func() {
