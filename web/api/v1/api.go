@@ -718,6 +718,8 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 
 	hints := &storage.LabelHints{
 		Limit: toHintLimit(limit),
+		From: start,
+		To: end,
 	}
 
 	q, err := api.Queryable.Querier(timestamp.FromTime(start), timestamp.FromTime(end))
@@ -807,6 +809,8 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 
 	hints := &storage.LabelHints{
 		Limit: toHintLimit(limit),
+		From: start,
+		To: end,
 	}
 
 	q, err := api.Queryable.Querier(timestamp.FromTime(start), timestamp.FromTime(end))
