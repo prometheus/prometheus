@@ -288,11 +288,11 @@ func valuesToSamples(timestamp time.Time, value interface{}) (prompb.Sample, err
 	var valueInt64 int64
 	var ok bool
 	if valueFloat64, ok = value.(float64); !ok {
-		if valueInt64, ok = value.(int64); ok {
-			valueFloat64 = float64(valueInt64)
-		} else {
+		valueInt64, ok = value.(int64)
+		if !ok {
 			return prompb.Sample{}, fmt.Errorf("unable to convert sample value to float64: %v", value)
 		}
+		valueFloat64 = float64(valueInt64)
 	}
 
 	return prompb.Sample{

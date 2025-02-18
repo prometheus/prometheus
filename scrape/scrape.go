@@ -1714,7 +1714,7 @@ loop:
 			lset = ce.lset
 			hash = ce.hash
 		} else {
-			p.Metric(&lset)
+			p.Labels(&lset)
 			hash = lset.Hash()
 
 			// Hash label set as it is seen local to the target. Then add target labels
@@ -1962,12 +1962,24 @@ func isSeriesPartOfFamily(mName string, mfName []byte, typ model.MetricType) boo
 
 // Adds samples to the appender, checking the error, and then returns the # of samples added,
 // whether the caller should continue to process more samples, and any sample or bucket limit errors.
+// Switch error cases for Sample and Bucket limits are checked first since they're more common
+// during normal operation (e.g., accidental cardinality explosion, sudden traffic spikes).
+// Current case ordering prevents exercising other cases when limits are exceeded.
+// Remaining error cases typically occur only a few times, often during initial setup.
 func (sl *scrapeLoop) checkAddError(met []byte, err error, sampleLimitErr, bucketLimitErr *error, appErrs *appendErrors) (bool, error) {
 	switch {
 	case err == nil:
 		return true, nil
-	case errors.Is(err, storage.ErrNotFound):
-		return false, storage.ErrNotFound
+	case errors.Is(err, errSampleLimit):
+		// Keep on parsing output if we hit the limit, so we report the correct
+		// total number of samples scraped.
+		*sampleLimitErr = err
+		return false, nil
+	case errors.Is(err, errBucketLimit):
+		// Keep on parsing output if we hit the limit, so we report the bucket
+		// total number of samples scraped.
+		*bucketLimitErr = err
+		return false, nil
 	case errors.Is(err, storage.ErrOutOfOrderSample):
 		appErrs.numOutOfOrder++
 		sl.l.Debug("Out of order sample", "series", string(met))
@@ -1983,16 +1995,8 @@ func (sl *scrapeLoop) checkAddError(met []byte, err error, sampleLimitErr, bucke
 		sl.l.Debug("Out of bounds metric", "series", string(met))
 		sl.metrics.targetScrapeSampleOutOfBounds.Inc()
 		return false, nil
-	case errors.Is(err, errSampleLimit):
-		// Keep on parsing output if we hit the limit, so we report the correct
-		// total number of samples scraped.
-		*sampleLimitErr = err
-		return false, nil
-	case errors.Is(err, errBucketLimit):
-		// Keep on parsing output if we hit the limit, so we report the correct
-		// total number of samples scraped.
-		*bucketLimitErr = err
-		return false, nil
+	case errors.Is(err, storage.ErrNotFound):
+		return false, storage.ErrNotFound
 	default:
 		return false, err
 	}

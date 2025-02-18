@@ -1895,6 +1895,7 @@ func TestScrapeLoopAppend(t *testing.T) {
 }
 
 func requireEqual(t *testing.T, expected, actual interface{}, msgAndArgs ...interface{}) {
+	t.Helper()
 	testutil.RequireEqualWithOptions(t, expected, actual,
 		[]cmp.Option{cmp.Comparer(equalFloatSamples), cmp.AllowUnexported(histogramSample{})},
 		msgAndArgs...)
@@ -1988,7 +1989,7 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 
 	var lset labels.Labels
 	p.Next()
-	p.Metric(&lset)
+	p.Labels(&lset)
 	hash := lset.Hash()
 
 	// Create a fake entry in the cache

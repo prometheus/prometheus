@@ -94,6 +94,16 @@ type Head struct {
 	bytesPool           zeropool.Pool[[]byte]
 	memChunkPool        sync.Pool
 
+	// These pools are used during WAL/WBL replay.
+	wlReplaySeriesPool          zeropool.Pool[[]record.RefSeries]
+	wlReplaySamplesPool         zeropool.Pool[[]record.RefSample]
+	wlReplaytStonesPool         zeropool.Pool[[]tombstones.Stone]
+	wlReplayExemplarsPool       zeropool.Pool[[]record.RefExemplar]
+	wlReplayHistogramsPool      zeropool.Pool[[]record.RefHistogramSample]
+	wlReplayFloatHistogramsPool zeropool.Pool[[]record.RefFloatHistogramSample]
+	wlReplayMetadataPool        zeropool.Pool[[]record.RefMetadata]
+	wlReplayMmapMarkersPool     zeropool.Pool[[]record.RefMmapMarker]
+
 	// All series addressable by their ID or hash.
 	series *stripeSeries
 

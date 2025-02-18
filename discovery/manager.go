@@ -101,12 +101,12 @@ func NewManager(ctx context.Context, logger *slog.Logger, registerer prometheus.
 
 	// Register the metrics.
 	// We have to do this after setting all options, so that the name of the Manager is set.
-	if metrics, err := NewManagerMetrics(registerer, mgr.name); err == nil {
-		mgr.metrics = metrics
-	} else {
+	metrics, err := NewManagerMetrics(registerer, mgr.name)
+	if err != nil {
 		logger.Error("Failed to create discovery manager metrics", "manager", mgr.name, "err", err)
 		return nil
 	}
+	mgr.metrics = metrics
 
 	return mgr
 }

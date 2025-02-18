@@ -126,6 +126,9 @@ linters-settings:
           - allowTypesBefore: "*testing.T,testing.TB"
       - name: context-keys-type
       - name: dot-imports
+      - name: early-return
+        arguments:
+          - "preserveScope"
       # A lot of false positives: incorrectly identifies channel draining as "empty code block".
       # See https://github.com/mgechev/revive/issues/386
       - name: empty-block
@@ -137,6 +140,8 @@ linters-settings:
       - name: exported
       - name: increment-decrement
       - name: indent-error-flow
+        arguments:
+          - "preserveScope"
       - name: package-comments
         # TODO(beorn7): Currently, we have a lot of missing package doc comments. Maybe we should have them.
         disabled: true
@@ -144,6 +149,8 @@ linters-settings:
       - name: receiver-naming
       - name: redefines-builtin-id
       - name: superfluous-else
+        arguments:
+          - "preserveScope"
       - name: time-naming
       - name: unexported-return
       - name: unreachable-code
