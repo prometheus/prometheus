@@ -232,8 +232,8 @@ type SelectHints struct {
 type LabelHints struct {
 	// Maximum number of results returned. Use a value of 0 to disable.
 	Limit int
-	From time.Time
-	To time.Time
+	From  time.Time
+	To    time.Time
 }
 
 // QueryableFunc is an adapter to allow the use of ordinary functions as
