@@ -2566,3 +2566,10 @@ func TestGetScrapeConfigs_Loaded(t *testing.T) {
 		require.NoError(t, err)
 	})
 }
+
+func TestGoGCDefaultValueOnEmptyConfigBody(t *testing.T) {
+	c, err := Load("", promslog.NewNopLogger())
+	require.NoError(t, err)
+	exp := DefaultRuntimeConfig
+	require.Equal(t, exp.GoGC, c.Runtime.GoGC)
+}
