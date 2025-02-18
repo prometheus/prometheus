@@ -309,7 +309,7 @@ The offset may be a time expression in parenthesis. A time expression is
 different from a normal expression in that it must yield a scalar and
 must not query series. The scalar resulting from the time expression will be
 used as the offset in seconds. The `time()` function can only be called outside
-subqueries. For example, 5 minute offset may be calculated from adding 2 minutes
+subqueries. For example, a 5 minute offset may be calculated from adding 2 minutes
 and 180 seconds together:
 
     http_requests_total offset (2m + 180)
