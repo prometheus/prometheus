@@ -36,7 +36,6 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/version"
 	"github.com/prometheus/sigv4"
-	"go.uber.org/atomic"
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/config"
@@ -553,9 +552,11 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 
 	var (
 		wg         sync.WaitGroup
-		numSuccess atomic.Uint64
+		lock       sync.Mutex
+		numSuccess = make(map[string]int, len(amSets))
+		numAttempt = make(map[string]int, len(amSets))
 	)
-	for _, ams := range amSets {
+	for k, ams := range amSets {
 		var (
 			payload  []byte
 			err      error
@@ -617,18 +618,25 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(ams.cfg.Timeout))
 			defer cancel()
 
-			go func(ctx context.Context, client *http.Client, url string, payload []byte, count int) {
-				if err := n.sendOne(ctx, client, url, payload); err != nil {
+			go func(ctx context.Context, k string, client *http.Client, url string, payload []byte, count int) {
+				err := n.sendOne(ctx, client, url, payload)
+				if err != nil {
 					n.logger.Error("Error sending alerts", "alertmanager", url, "count", count, "err", err)
 					n.metrics.errors.WithLabelValues(url).Add(float64(count))
-				} else {
-					numSuccess.Inc()
 				}
+
+				lock.Lock()
+				numAttempt[k]++
+				if err == nil {
+					numSuccess[k]++
+				}
+				lock.Unlock()
+
 				n.metrics.latency.WithLabelValues(url).Observe(time.Since(begin).Seconds())
 				n.metrics.sent.WithLabelValues(url).Add(float64(count))
 
 				wg.Done()
-			}(ctx, ams.client, am.url().String(), payload, len(amAlerts))
+			}(ctx, k, ams.client, am.url().String(), payload, len(amAlerts))
 		}
 
 		ams.mtx.RUnlock()
@@ -636,7 +644,14 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 
 	wg.Wait()
 
-	return numSuccess.Load() > 0
+	// Return false if there are any sets which were attempted (e.g. not filtered
+	// out) but have no successes.
+	for k := range numAttempt {
+		if numAttempt[k] > 0 && numSuccess[k] == 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func alertsToOpenAPIAlerts(alerts []*Alert) models.PostableAlerts {
