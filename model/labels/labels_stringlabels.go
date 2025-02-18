@@ -25,7 +25,7 @@ import (
 
 // List of labels that should be mapped to a single byte value.
 // Obviously can't have more than 256 here.
-var mappedLabels = []string{
+var MappedLabels = []string{
 	// Empty string, this must be present here.
 	"",
 	// These label names are always present on every time series.
@@ -144,13 +144,13 @@ func decodeString(data string, index int) (string, int) {
 	size, index, mapped = decodeSize(data, index)
 	if mapped {
 		b := data[index]
-		return mappedLabels[int(b)], index + size
+		return MappedLabels[int(b)], index + size
 	}
 	return data[index : index+size], index + size
 }
 
 func encodeShortString(s string) (int, byte) {
-	i := slices.Index(mappedLabels, s)
+	i := slices.Index(MappedLabels, s)
 	if i >= 0 {
 		return 0, byte(i)
 	}

@@ -1242,6 +1242,10 @@ func main() {
 					return fmt.Errorf("opening storage failed: %w", err)
 				}
 
+				if err = mapCommonLabelSymbols(db, logger); err != nil {
+					logger.Warn("Failed to map common strings in labels", slog.Any("err", err))
+				}
+
 				switch fsType := prom_runtime.Statfs(localStoragePath); fsType {
 				case "NFS_SUPER_MAGIC":
 					logger.Warn("This filesystem is not supported and may lead to data corruption and data loss. Please carefully read https://prometheus.io/docs/prometheus/latest/storage/ to learn more about supported filesystems.", "fs_type", fsType)
