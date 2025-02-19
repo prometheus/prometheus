@@ -237,6 +237,13 @@ Outer:
 				}
 				if !created {
 					multiRef[walSeries.Ref] = mSeries.ref
+
+					// Mark the walSeries as deleted, so it is kept in subsequent WAL checkpoints.
+					_, last, err := wlog.Segments(h.wal.Dir())
+					if err != nil {
+						h.logger.Error("failed to get last segment to mark duplicate series as deleted", "err", err)
+					}
+					h.markDeleted(walSeries.Ref, last)
 				}
 
 				idx := uint64(mSeries.ref) % uint64(concurrency)
