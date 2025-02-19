@@ -92,7 +92,7 @@ export default function RulesPage() {
             withBorder
             p="md"
             mb="md"
-            key={`${g.file}-${g.name}`} // TODO: Find a stable and definitely unique key.
+            key={`${g.file}-${g.name}`}
           >
             <Group mb="sm" justify="space-between">
               <Group align="baseline">
