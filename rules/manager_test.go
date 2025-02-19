@@ -1601,10 +1601,14 @@ func TestDependencyMap(t *testing.T) {
 	require.NoError(t, err)
 	rule4 := NewRecordingRule("user:requests:increase1h", expr, labels.Labels{})
 
+	expr, err = parser.ParseExpr(`sum by (user) ({__name__=~"user:requests.+5m"})`)
+	require.NoError(t, err)
+	rule5 := NewRecordingRule("user:requests:sum5m", expr, labels.Labels{})
+
 	group := NewGroup(GroupOptions{
 		Name:     "rule_group",
 		Interval: time.Second,
-		Rules:    []Rule{rule, rule2, rule3, rule4},
+		Rules:    []Rule{rule, rule2, rule3, rule4, rule5},
 		Opts:     opts,
 	})
 
@@ -1619,13 +1623,17 @@ func TestDependencyMap(t *testing.T) {
 	require.Equal(t, []Rule{rule}, depMap.dependencies(rule2))
 	require.False(t, depMap.isIndependent(rule2))
 
-	require.Zero(t, depMap.dependents(rule3))
+	require.Equal(t, []Rule{rule5}, depMap.dependents(rule3))
 	require.Zero(t, depMap.dependencies(rule3))
-	require.True(t, depMap.isIndependent(rule3))
+	require.False(t, depMap.isIndependent(rule3))
 
 	require.Zero(t, depMap.dependents(rule4))
 	require.Equal(t, []Rule{rule}, depMap.dependencies(rule4))
 	require.False(t, depMap.isIndependent(rule4))
+
+	require.Zero(t, depMap.dependents(rule5))
+	require.Equal(t, []Rule{rule3}, depMap.dependencies(rule5))
+	require.False(t, depMap.isIndependent(rule5))
 }
 
 func TestNoDependency(t *testing.T) {
