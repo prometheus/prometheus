@@ -153,10 +153,21 @@ jobs:
           parallelism: 12
           thread: ${{ matrix.thread }}
   build_all_status:
+    # This status check aggregates the individual matrix jobs of the "Build
+    # Prometheus for all architectures" step into a final status. Fails if a
+    # single matrix job fails, succeeds if all matrix jobs succeed.
+    # See https://github.com/orgs/community/discussions/4324 for why this is
+    # needed
     name: Report status of build Prometheus for all architectures
     runs-on: ubuntu-latest
     needs: [build_all]
-    if: github.event_name == 'pull_request' && startsWith(github.event.pull_request.base.ref, 'release-')
+    # The run condition needs to include always(). Otherwise actions
+    # behave unexpected:
+    # only "needs" will make the Status Report be skipped if one of the builds fails https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/using-jobs-in-a-workflow#defining-prerequisite-jobs
+    # And skipped is treated as success https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/collaborat[…]n-repositories-with-code-quality-features/about-status-checks
+    # Adding always ensures that the status check is run independently of the
+    # results of Build All
+    if: always() && github.event_name == 'pull_request' && startsWith(github.event.pull_request.base.ref, 'release-')
     steps:
       - name: Successful build
         if: ${{ !(contains(needs.*.result, 'failure')) && !(contains(needs.*.result, 'cancelled')) }}
