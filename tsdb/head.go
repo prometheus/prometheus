@@ -1262,6 +1262,34 @@ func (h *Head) IsQuerierCollidingWithTruncation(querierMint, querierMaxt int64) 
 	return false, false, 0
 }
 
+func (h *Head) checkDeleted(id chunks.HeadSeriesRef) (int, bool) {
+	h.deletedMtx.Lock()
+	defer h.deletedMtx.Unlock()
+
+	keepUntil, ok := h.deleted[id]
+	return keepUntil, ok
+}
+
+func (h *Head) markDeleted(id chunks.HeadSeriesRef, keepUntil int) {
+	h.deletedMtx.Lock()
+	defer h.deletedMtx.Unlock()
+
+	h.deleted[id] = keepUntil
+}
+
+// keepSeriesInWALCheckpoint is used to determine whether a series record should be kept in the checkpoint
+// last is the last WAL segment that was considered for checkpointing.
+func (h *Head) keepSeriesInWALCheckpoint(id chunks.HeadSeriesRef, last int) bool {
+	// Keep the record if the series exists in the head.
+	if h.series.getByID(id) != nil {
+		return true
+	}
+
+	// Keep the record if the series was recently deleted.
+	keepUntil, ok := h.checkDeleted(id)
+	return ok && keepUntil > last
+}
+
 // truncateWAL removes old data before mint from the WAL.
 func (h *Head) truncateWAL(mint int64) error {
 	h.chunkSnapshotMtx.Lock()
@@ -1295,17 +1323,8 @@ func (h *Head) truncateWAL(mint int64) error {
 		return nil
 	}
 
-	keep := func(id chunks.HeadSeriesRef) bool {
-		if h.series.getByID(id) != nil {
-			return true
-		}
-		h.deletedMtx.Lock()
-		keepUntil, ok := h.deleted[id]
-		h.deletedMtx.Unlock()
-		return ok && keepUntil > last
-	}
 	h.metrics.checkpointCreationTotal.Inc()
-	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, keep, mint); err != nil {
+	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpoint, mint); err != nil {
 		h.metrics.checkpointCreationFail.Inc()
 		var cerr *chunks.CorruptionErr
 		if errors.As(err, &cerr) {
