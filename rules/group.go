@@ -71,9 +71,9 @@ type Group struct {
 	// Rule group evaluation iteration function,
 	// defaults to DefaultEvalIterationFunc.
 	evalIterationFunc GroupEvalIterationFunc
+	alertStore        AlertStore
 
-	appOpts               *storage.AppendOptions
-	alertStore            AlertStore
+	appOpts *storage.AppendOptions
 }
 
 // GroupEvalIterationFunc is used to implement and extend rule group
@@ -144,8 +144,8 @@ func NewGroup(o GroupOptions) *Group {
 		logger:               opts.Logger.With("file", o.File, "group", o.Name),
 		metrics:              metrics,
 		evalIterationFunc:    evalIterationFunc,
-		appOpts:              &storage.AppendOptions{DiscardOutOfOrder: true},
 		alertStore:           o.AlertStore,
+		appOpts:              &storage.AppendOptions{DiscardOutOfOrder: true},
 	}
 }
 

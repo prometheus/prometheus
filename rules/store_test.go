@@ -48,7 +48,7 @@ func TestAlertStore(t *testing.T) {
 
 		got, err := alertStore.GetAlerts(key)
 		require.NoError(t, err)
-		require.Equal(t, len(alerts), len(got))
+		require.Len(t, got, len(alerts))
 
 		result := make([]*Alert, 0, len(got))
 		for _, value := range got {

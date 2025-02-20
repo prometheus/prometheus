@@ -115,12 +115,12 @@ func (s *FileStore) SetAlerts(key uint64, groupKey string, alerts []*Alert) erro
 	s.stateMtx.Lock()
 	defer s.stateMtx.Unlock()
 
-	// Update in memory
-	if alerts != nil {
-		s.alertsByRule[key] = alerts
-	} else {
+	if alerts == nil {
 		return nil
 	}
+	// Update in memory
+	s.alertsByRule[key] = alerts
+
 	// flush in memory state to file storage
 	file, err := os.Create(s.path)
 	if err != nil {

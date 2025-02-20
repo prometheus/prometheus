@@ -2586,7 +2586,7 @@ func TestKeepFiringForStateRestore(t *testing.T) {
 		Queryable:       testStorage,
 		Context:         context.Background(),
 		Logger:          promslog.NewNopLogger(),
-		NotifyFunc:      func(ctx context.Context, expr string, alerts ...*Alert) {},
+		NotifyFunc:      func(_ context.Context, _ string, _ ...*Alert) {},
 		OutageTolerance: 30 * time.Minute,
 		ForGracePeriod:  10 * time.Minute,
 		AlertStore:      alertStore,
@@ -2713,8 +2713,8 @@ func TestKeepFiringForStateRestore(t *testing.T) {
 
 			got := newRule.ActiveAlerts()
 			got2 := newRule2.ActiveAlerts()
-			require.Equal(t, len(exp), len(got))
-			require.Equal(t, len(exp2), len(got2))
+			require.Len(t, got, len(exp))
+			require.Len(t, got2, len(exp2))
 			require.Equal(t, tt.alertsExpected, len(got)+len(got2))
 
 			results := [][]*Alert{got, got2}
@@ -2733,7 +2733,7 @@ func TestKeepFiringForStateRestore(t *testing.T) {
 
 			for i, expected := range expectedAlerts {
 				got = results[i]
-				require.Equal(t, len(expected), len(got))
+				require.Len(t, got, len(expected))
 				for j, alert := range expected {
 					diff := float64(alert.KeepFiringSince.Unix() - got[j].KeepFiringSince.Unix())
 					require.Equal(t, 0.0, math.Abs(diff), "'keep_firing_for' restored time is wrong")
