@@ -1915,7 +1915,7 @@ which automates the Prometheus setup on top of Kubernetes.
 
 Kuma SD configurations allow retrieving scrape target from the [Kuma](https://kuma.io) control plane.
 
-This SD discovers "monitoring assignments" based on Kuma [Dataplane Proxies](https://kuma.io/docs/latest/documentation/dps-and-data-model),
+This SD discovers "monitoring assignments" based on Kuma [Dataplane Proxies](https://kuma.io/docs/latest/production/dp-config/dpp/#data-plane-proxy),
 via the MADS v1 (Monitoring Assignment Discovery Service) xDS API, and will create a target for each proxy
 inside a Prometheus-enabled mesh.
 
