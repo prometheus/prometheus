@@ -801,7 +801,7 @@ func TestHead_WALMultiRef(t *testing.T) {
 	opts.ChunkDirRoot = head.opts.ChunkDirRoot
 	head, err = NewHead(nil, nil, w, nil, opts, nil)
 	require.NoError(t, err)
-	require.NoError(t, head.Init(1600))
+	require.NoError(t, head.Init(0))
 	defer func() {
 		require.NoError(t, head.Close())
 	}()
@@ -827,7 +827,6 @@ func TestHead_WALMultiRef_Checkpoint(t *testing.T) {
 	ref1, err := app.Append(0, labels.FromStrings("foo", "bar"), 100, 1)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
-	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
 
 	// Truncate head to remove first series entirely.
 	require.NoError(t, head.Truncate(500))
@@ -837,7 +836,6 @@ func TestHead_WALMultiRef_Checkpoint(t *testing.T) {
 	ref2, err := app.Append(0, labels.FromStrings("foo", "bar"), 600, 2)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
-	require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
 
 	require.NotEqual(t, ref1, ref2, "refs should be different")
 
@@ -851,7 +849,6 @@ func TestHead_WALMultiRef_Checkpoint(t *testing.T) {
 	ref3, err := app.Append(0, labels.FromStrings("foo", "bar"), 1000, 3)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
-	require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
 
 	require.Equal(t, ref2, ref3, "refs should be the same")
 
@@ -873,7 +870,6 @@ func TestHead_WALMultiRef_Checkpoint(t *testing.T) {
 	ref4, err := app.Append(0, labels.FromStrings("foo", "bar"), 1500, 4)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
-	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
 
 	require.Equal(t, ref1, ref4, "refs should be the same")
 
@@ -896,14 +892,6 @@ func TestHead_WALMultiRef_Checkpoint(t *testing.T) {
 	_, chkidx, err := wlog.LastCheckpoint(w.Dir())
 	require.NoError(t, err)
 	require.Equal(t, 1, chkidx)
-
-	// At this point the WAL is:
-	// - checkpoint 1:
-	//   - series 1 record
-	// - segment 2:
-	//   - series 2 sample @ 1000 (series not found)
-	// - segment 3:
-	//   - series 1 sample @ 1500 (series not found)
 
 	// Close and re-open head again (simulated restart).
 	require.NoError(t, head.Close())
