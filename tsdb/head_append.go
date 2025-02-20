@@ -56,6 +56,16 @@ func (a *initAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	return a.app.Append(ref, lset, t, v)
 }
 
+func (a *initAppender) AppendWithCT(ref storage.SeriesRef, lset labels.Labels, t, ct int64, v float64) (storage.SeriesRef, error) {
+	if a.app != nil {
+		return a.app.AppendWithCT(ref, lset, t, ct, v)
+	}
+
+	a.head.initTime(t)
+	a.app = a.head.appender()
+	return a.app.AppendWithCT(ref, lset, t, ct, v)
+}
+
 func (a *initAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
 	// Check if exemplar storage is enabled.
 	if !a.head.opts.EnableExemplarStorage || a.head.opts.MaxExemplars.Load() <= 0 {
@@ -77,19 +87,29 @@ func (a *initAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t
 	if a.app != nil {
 		return a.app.AppendHistogram(ref, l, t, h, fh)
 	}
+
 	a.head.initTime(t)
 	a.app = a.head.appender()
-
 	return a.app.AppendHistogram(ref, l, t, h, fh)
+}
+
+func (a *initAppender) AppendHistogramWithCT(ref storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	if a.app != nil {
+		return a.app.AppendHistogramWithCT(ref, l, t, ct, h, fh)
+	}
+
+	a.head.initTime(t)
+	a.app = a.head.appender()
+	return a.app.AppendHistogramWithCT(ref, l, t, ct, h, fh)
 }
 
 func (a *initAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	if a.app != nil {
 		return a.app.AppendHistogramCTZeroSample(ref, l, t, ct, h, fh)
 	}
+
 	a.head.initTime(t)
 	a.app = a.head.appender()
-
 	return a.app.AppendHistogramCTZeroSample(ref, l, t, ct, h, fh)
 }
 
@@ -109,7 +129,6 @@ func (a *initAppender) AppendCTZeroSample(ref storage.SeriesRef, lset labels.Lab
 
 	a.head.initTime(t)
 	a.app = a.head.appender()
-
 	return a.app.AppendCTZeroSample(ref, lset, t, ct)
 }
 
@@ -340,6 +359,10 @@ func (a *headAppender) SetOptions(opts *storage.AppendOptions) {
 }
 
 func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+	return a.AppendWithCT(ref, lset, t, 0, v)
+}
+
+func (a *headAppender) AppendWithCT(ref storage.SeriesRef, lset labels.Labels, t, ct int64, v float64) (storage.SeriesRef, error) {
 	// Fail fast if OOO is disabled and the sample is out of bounds.
 	// Otherwise a full check will be done later to decide if the sample is in-order or out-of-order.
 	if a.oooTimeWindow == 0 && t < a.minValidTime {
@@ -401,11 +424,17 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	if t > a.maxt {
 		a.maxt = t
 	}
-
+	if ct != 0 && ct > t {
+		// TODO(bwplotka): Invalid (in future) CTs, ignore it. Add metric to report this event.
+		// WARN FOR PR experiment only
+		slog.Warn("got CT in future?", "ct", ct, "t", t, "lset", lset.String())
+		ct = 0
+	}
 	a.samples = append(a.samples, record.RefSample{
 		Ref: s.ref,
 		T:   t,
 		V:   v,
+		CT:  ct,
 	})
 	a.sampleSeries = append(a.sampleSeries, s)
 	return storage.SeriesRef(s.ref), nil
@@ -413,7 +442,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 
 // AppendCTZeroSample appends synthetic zero sample for ct timestamp. It returns
 // error when sample can't be appended. See
-// storage.CreatedTimestampAppender.AppendCTZeroSample for further documentation.
+// storage.WithCTAppender.AppendCTZeroSample for further documentation.
 func (a *headAppender) AppendCTZeroSample(ref storage.SeriesRef, lset labels.Labels, t, ct int64) (storage.SeriesRef, error) {
 	if ct >= t {
 		return 0, storage.ErrCTNewerThanSample
@@ -447,7 +476,7 @@ func (a *headAppender) AppendCTZeroSample(ref storage.SeriesRef, lset labels.Lab
 	if ct > a.maxt {
 		a.maxt = ct
 	}
-	a.samples = append(a.samples, record.RefSample{Ref: s.ref, T: ct, V: 0.0})
+	a.samples = append(a.samples, record.RefSample{Ref: s.ref, T: ct, V: 0.0, CT: ct})
 	a.sampleSeries = append(a.sampleSeries, s)
 	return storage.SeriesRef(s.ref), nil
 }
@@ -645,6 +674,12 @@ func (a *headAppender) AppendExemplar(ref storage.SeriesRef, lset labels.Labels,
 	a.exemplars = append(a.exemplars, exemplarWithSeriesRef{ref, e})
 
 	return storage.SeriesRef(s.ref), nil
+}
+
+func (a *headAppender) AppendHistogramWithCT(ref storage.SeriesRef, lset labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	// TODO(bwplotka): Add support for native histograms with CTs in WAL; add/consolidate records.
+	// We ignore CT for now.
+	return a.AppendHistogram(ref, lset, t, h, fh)
 }
 
 func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
