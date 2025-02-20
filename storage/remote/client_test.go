@@ -344,7 +344,7 @@ func TestReadClient(t *testing.T) {
 				Timeout:          model.Duration(5 * time.Second),
 				ChunkedReadLimit: config.DefaultChunkedReadLimit,
 			}
-			c, err := NewReadClient("test", conf)
+			c, err := NewReadClient("test", conf, nil)
 			require.NoError(t, err)
 
 			query := &prompb.Query{}
