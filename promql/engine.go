@@ -1604,7 +1604,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		if e.Op == parser.COUNT_VALUES {
 			valueLabel := param.(*parser.StringLiteral)
 			if !model.LabelName(valueLabel.Val).IsValid() {
-				ev.errorf("invalid label name %q", valueLabel.Val)
+				ev.errorf("invalid label name %s", valueLabel)
 			}
 			if !e.Without {
 				sortedGrouping = append(sortedGrouping, valueLabel.Val)
