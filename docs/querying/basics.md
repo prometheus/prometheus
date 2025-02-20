@@ -305,14 +305,18 @@ Note that this allows a query to look ahead of its evaluation time.
 
 _Notes about the experimental time expressions:_
 
-The offset may be a time expression in parenthesis. A time expression is
+The offset may be a time expression in parentheses. A time expression is
 different from a normal expression in that it must yield a scalar and
 must not query series. The scalar resulting from the time expression will be
 used as the offset in seconds. The `time()` function can only be called outside
-subqueries. For example, a 5 minute offset may be calculated from adding 2 minutes
+subqueries. For example, a 5-minute offset may be calculated from adding 2 minutes
 and 180 seconds together:
 
     http_requests_total offset (2m + 180)
+
+This is useful if queries are generated via a templating system that is not
+capable of evaluating math expressions. We also plan to add support for time
+expressions to the `@` modifier, range selectors, and subqueries ([issue](https://github.com/prometheus/prometheus/issues/12318)).
 
 ### @ modifier
 
