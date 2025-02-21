@@ -552,9 +552,13 @@ type timeExprVisitor struct {
 }
 
 func (tev timeExprVisitor) Visit(node parser.Node, path []parser.Node) (parser.Visitor, error) {
-	checkTimeExpr := func(expr parser.Expr) (float64, error) {
+	evaluateTimeExpr := func(expr parser.Expr) (float64, error) {
 		if expr == nil {
 			return 0, nil
+		}
+
+		if nl, ok := expr.(*parser.NumberLiteral); ok {
+			return nl.Val, nil
 		}
 
 		hasStorageDependency, hasEvalTimeDependency := inspectTimeExpr(expr)
@@ -563,9 +567,6 @@ func (tev timeExprVisitor) Visit(node parser.Node, path []parser.Node) (parser.V
 		}
 		if tev.inSubquery && hasEvalTimeDependency {
 			return 0, ErrTimeExprDependsOnEvalTime
-		}
-		if nl, ok := expr.(*parser.NumberLiteral); ok {
-			return nl.Val, nil
 		}
 		val, err := tev.ev.scalarValueOf(expr)
 		if err != nil {
@@ -577,7 +578,7 @@ func (tev timeExprVisitor) Visit(node parser.Node, path []parser.Node) (parser.V
 
 	switch e := node.(type) {
 	case *parser.VectorSelector:
-		v, err := checkTimeExpr(e.OriginalOffsetExpr)
+		v, err := evaluateTimeExpr(e.OriginalOffsetExpr)
 		if err != nil {
 			*tev.err = err
 			return tev, err
@@ -585,7 +586,7 @@ func (tev timeExprVisitor) Visit(node parser.Node, path []parser.Node) (parser.V
 		e.OriginalOffset = secondsValueToDuration(v)
 		return tev, nil
 	case *parser.SubqueryExpr:
-		v, err := checkTimeExpr(e.OriginalOffsetExpr)
+		v, err := evaluateTimeExpr(e.OriginalOffsetExpr)
 		if err != nil {
 			*tev.err = err
 			return tev, err
