@@ -17,7 +17,7 @@ struct SnugComposite : public testing::Test {
   BareBones::LZ4Stream::istream lss_wal_lz4_stream{&underlying_stream_for_lss_wal_lz4_stream};
   std::ifstream underlying_stream_for_lss_full_lz4_stream;
   BareBones::LZ4Stream::istream lss_full_lz4_stream{&underlying_stream_for_lss_full_lz4_stream};
-  Primitives::SnugComposites::LabelSet::DecodingTable expected_result;
+  Primitives::SnugComposites::LabelSet::DecodingTable<BareBones::Vector> expected_result;
 
   void SetUp() final {
     std::string lss_wal_file_full_name =
@@ -49,28 +49,28 @@ struct SnugComposite : public testing::Test {
 };
 
 TEST_F(SnugComposite, DecodingTable) {
-  Primitives::SnugComposites::LabelSet::DecodingTable actual_result;
+  Primitives::SnugComposites::LabelSet::DecodingTable<BareBones::Vector> actual_result;
   lss_full_lz4_stream >> actual_result;
 
   EXPECT_TRUE(std::ranges::equal(expected_result.begin(), expected_result.end(), actual_result.begin(), actual_result.end()));
 }
 
 TEST_F(SnugComposite, ParallelEncodingBimap) {
-  Primitives::SnugComposites::LabelSet::ParallelEncodingBimap actual_result;
+  Primitives::SnugComposites::LabelSet::ParallelEncodingBimap<BareBones::Vector> actual_result;
   lss_full_lz4_stream >> actual_result;
 
   EXPECT_TRUE(std::ranges::equal(expected_result.begin(), expected_result.end(), actual_result.begin(), actual_result.end(), std::equal_to()));
 }
 
 TEST_F(SnugComposite, EncodingBimap) {
-  Primitives::SnugComposites::LabelSet::EncodingBimap actual_result;
+  Primitives::SnugComposites::LabelSet::EncodingBimap<BareBones::Vector> actual_result;
   lss_full_lz4_stream >> actual_result;
 
   EXPECT_TRUE(std::ranges::equal(expected_result.begin(), expected_result.end(), actual_result.begin(), actual_result.end(), std::equal_to()));
 }
 
 TEST_F(SnugComposite, OrderedEncodingBimap) {
-  Primitives::SnugComposites::LabelSet::OrderedEncodingBimap actual_result;
+  Primitives::SnugComposites::LabelSet::OrderedEncodingBimap<BareBones::Vector> actual_result;
   lss_full_lz4_stream >> actual_result;
 
   EXPECT_TRUE(
@@ -78,7 +78,7 @@ TEST_F(SnugComposite, OrderedEncodingBimap) {
 }
 
 TEST_F(SnugComposite, OrderedIndexingTable) {
-  Primitives::SnugComposites::LabelSet::OrderedIndexingTable actual_result;
+  Primitives::SnugComposites::LabelSet::OrderedIndexingTable<BareBones::Vector> actual_result;
   lss_full_lz4_stream >> actual_result;
 
   EXPECT_TRUE(std::ranges::equal(expected_result.begin(), expected_result.end(), actual_result.begin(), actual_result.end(), std::equal_to()));

@@ -8,7 +8,7 @@
 using namespace PromPP;  // NOLINT
 
 void load_ordered_indexing_table_in_loop::execute(const Config& config, Metrics& metrics) const {
-  Primitives::SnugComposites::LabelSet::OrderedEncodingBimap source_lss;
+  Primitives::SnugComposites::LabelSet::OrderedEncodingBimap<BareBones::Vector> source_lss;
   std::ifstream infile(input_file_full_name(config), std::ios_base::binary);
   BareBones::LZ4Stream::istream in(&infile);
   if (!infile.is_open()) {
@@ -18,7 +18,7 @@ void load_ordered_indexing_table_in_loop::execute(const Config& config, Metrics&
   in >> source_lss;
 
   // Load
-  Primitives::SnugComposites::LabelSet::OrderedIndexingTable lss;
+  Primitives::SnugComposites::LabelSet::OrderedIndexingTable<BareBones::Vector> lss;
 
   auto start = std::chrono::steady_clock::now();
   for (auto i = source_lss.begin(); i != source_lss.end(); ++i) {

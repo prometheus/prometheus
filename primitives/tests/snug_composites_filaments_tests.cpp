@@ -7,12 +7,24 @@
 
 namespace {
 
+using BareBones::Vector;
+using BareBones::SnugComposite::DecodingTable;
+using BareBones::SnugComposite::EncodingBimap;
 using PromPP::Primitives::kInvalidLabelSetID;
+using PromPP::Primitives::LabelSet;
 using PromPP::Primitives::LabelViewSet;
-using FillamentLabelSet =
-    PromPP::Primitives::SnugComposites::Filaments::LabelSet<BareBones::SnugComposite::EncodingBimap<PromPP::Primitives::SnugComposites::Filaments::Symbol>,
-                                                          BareBones::SnugComposite::EncodingBimap<PromPP::Primitives::SnugComposites::Filaments::LabelNameSet<
-                                                              BareBones::SnugComposite::EncodingBimap<PromPP::Primitives::SnugComposites::Filaments::Symbol>>>>;
+
+template <template <class> class Vector>
+using SymbolFilament = EncodingBimap<PromPP::Primitives::SnugComposites::Filaments::Symbol, Vector>;
+
+template <template <class> class Vector>
+using LabelNameSetFilament = PromPP::Primitives::SnugComposites::Filaments::LabelNameSet<SymbolFilament, Vector>;
+
+template <template <class> class Vector>
+using LabelSetFilament = EncodingBimap<LabelNameSetFilament, Vector>;
+
+template <template <class> class Vector>
+using FilamentLabelSet = PromPP::Primitives::SnugComposites::Filaments::LabelSet<SymbolFilament, LabelSetFilament, Vector>;
 
 class NamesSetForTest : public std::vector<std::string> {
   using Base = std::vector<std::string>;
@@ -78,13 +90,13 @@ LabelSetForTest generate_label_set() {
 struct SnugCompositesFilaments : public testing::Test {};
 
 TEST_F(SnugCompositesFilaments, Symbol) {
-  PromPP::Primitives::SnugComposites::Filaments::Symbol::data_type data;
+  PromPP::Primitives::SnugComposites::Filaments::Symbol<Vector>::data_type data;
 
-  std::vector<std::pair<std::string, PromPP::Primitives::SnugComposites::Filaments::Symbol>> etalons_and_outcomes;
+  std::vector<std::pair<std::string, PromPP::Primitives::SnugComposites::Filaments::Symbol<Vector>>> etalons_and_outcomes;
 
   for (int i = 0; i < NUM_VALUES; i++) {
     const auto etalon = generate_str(i);
-    auto outcome = PromPP::Primitives::SnugComposites::Filaments::Symbol(data, etalon);
+    auto outcome = PromPP::Primitives::SnugComposites::Filaments::Symbol<Vector>(data, etalon);
     EXPECT_NO_THROW(outcome.validate(data));
 
     etalons_and_outcomes.push_back({etalon, outcome});
@@ -96,13 +108,12 @@ TEST_F(SnugCompositesFilaments, Symbol) {
 }
 
 TEST_F(SnugCompositesFilaments, LabelNamesSet) {
-  using FillamentLabelNameSet =
-      PromPP::Primitives::SnugComposites::Filaments::LabelNameSet<BareBones::SnugComposite::EncodingBimap<PromPP::Primitives::SnugComposites::Filaments::Symbol>>;
+  using FilamentLabelNameSet = PromPP::Primitives::SnugComposites::Filaments::LabelNameSet<SymbolFilament, Vector>;
 
-  FillamentLabelNameSet::data_type data;
+  FilamentLabelNameSet::data_type data;
   const NamesSetForTest etalons = generate_names_set();
 
-  auto lns = FillamentLabelNameSet(data, etalons);
+  auto lns = FilamentLabelNameSet(data, etalons);
   EXPECT_NO_THROW(lns.validate(data));
   auto outcomes = lns.composite(data);
 
@@ -118,10 +129,10 @@ TEST_F(SnugCompositesFilaments, LabelNamesSet) {
 }
 
 TEST_F(SnugCompositesFilaments, LabelSet) {
-  FillamentLabelSet::data_type data;
+  FilamentLabelSet<Vector>::data_type data;
   const LabelSetForTest etalons = generate_label_set();
 
-  auto ls = FillamentLabelSet(data, etalons);
+  FilamentLabelSet<Vector> ls(data, etalons);
   EXPECT_NO_THROW(ls.validate(data));
   auto outcomes = ls.composite(data);
 
@@ -142,8 +153,8 @@ TEST_F(SnugCompositesFilaments, LabelSet) {
 
 class ShrinkableEncodingBimapLabelSetFixture : public testing::Test {
  protected:
-  BareBones::SnugComposite::ShrinkableEncodingBimap<FillamentLabelSet> encoding_table_;
-  BareBones::SnugComposite::DecodingTable<FillamentLabelSet> decoding_table_;
+  BareBones::SnugComposite::ShrinkableEncodingBimap<FilamentLabelSet, Vector> encoding_table_;
+  BareBones::SnugComposite::DecodingTable<FilamentLabelSet, Vector> decoding_table_;
   std::array<LabelSetForTest, 6> ls_;
 
   void SetUp() override {
@@ -158,7 +169,7 @@ class ShrinkableEncodingBimapLabelSetFixture : public testing::Test {
     ls_[5].emplace_back("7", "7");
   }
 
-  auto create_and_load_checkpoint(const BareBones::SnugComposite::ShrinkableEncodingBimap<FillamentLabelSet>::checkpoint_type* from) {
+  auto create_and_load_checkpoint(const BareBones::SnugComposite::ShrinkableEncodingBimap<FilamentLabelSet, Vector>::checkpoint_type* from) {
     auto checkpoint = encoding_table_.checkpoint();
     std::stringstream ss;
     checkpoint.save(ss, from);
@@ -231,7 +242,7 @@ TEST_F(ShrinkableEncodingBimapLabelSetFixture, LoadWithoutShrink) {
 
 TEST_F(ShrinkableEncodingBimapLabelSetFixture, LoadFromNonShrinkableTable) {
   // Arrange
-  BareBones::SnugComposite::EncodingBimap<FillamentLabelSet> lss;
+  BareBones::SnugComposite::EncodingBimap<FilamentLabelSet, Vector> lss;
   std::stringstream stream;
 
   // Act

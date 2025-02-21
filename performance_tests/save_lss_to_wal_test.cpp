@@ -15,7 +15,7 @@ void save_lss_to_wal::execute(const Config& config, Metrics& metrics) const {
 
   DummyWal::Timeseries tmsr;
   DummyWal dummy_wal(input_file_full_name(config));
-  Primitives::SnugComposites::LabelSet::ParallelEncodingBimap lss;
+  Primitives::SnugComposites::LabelSet::ParallelEncodingBimap<BareBones::Vector> lss;
 
   auto checkpoint = lss.checkpoint();
 

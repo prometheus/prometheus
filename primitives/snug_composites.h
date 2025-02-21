@@ -2,40 +2,99 @@
 
 #include "snug_composites_filaments.h"
 
-namespace PromPP {
-namespace Primitives {
-namespace SnugComposites {
+namespace PromPP::Primitives::SnugComposites {
+
 namespace Symbol {
-using DecodingTable = BareBones::SnugComposite::DecodingTable<Filaments::Symbol>;
-using EncodingBimap = BareBones::SnugComposite::EncodingBimap<Filaments::Symbol>;
-using ParallelEncodingBimap = BareBones::SnugComposite::ParallelEncodingBimap<Filaments::Symbol>;
-using OrderedEncodingBimap = BareBones::SnugComposite::OrderedEncodingBimap<Filaments::Symbol>;
-using EncodingBimapWithOrderedAccess = BareBones::SnugComposite::EncodingBimapWithOrderedAccess<Filaments::Symbol>;
-using OrderedDecodingTable = BareBones::SnugComposite::OrderedDecodingTable<Filaments::Symbol>;
+
+template <template <class> class Vector>
+using DecodingTable = BareBones::SnugComposite::DecodingTable<Filaments::Symbol, Vector>;
+
+template <template <class> class Vector>
+using EncodingBimap = BareBones::SnugComposite::EncodingBimap<Filaments::Symbol, Vector>;
+
+template <template <class> class Vector>
+using ParallelEncodingBimap = BareBones::SnugComposite::ParallelEncodingBimap<Filaments::Symbol, Vector>;
+
+template <template <class> class Vector>
+using OrderedEncodingBimap = BareBones::SnugComposite::OrderedEncodingBimap<Filaments::Symbol, Vector>;
+
+template <template <class> class Vector>
+using EncodingBimapWithOrderedAccess = BareBones::SnugComposite::EncodingBimapWithOrderedAccess<Filaments::Symbol, Vector>;
+
+template <template <class> class Vector>
+using OrderedDecodingTable = BareBones::SnugComposite::OrderedDecodingTable<Filaments::Symbol, Vector>;
+
 }  // namespace Symbol
 
 namespace LabelNameSet {
-using DecodingTable = BareBones::SnugComposite::DecodingTable<Filaments::LabelNameSet<Symbol::DecodingTable>>;
-using EncodingBimap = BareBones::SnugComposite::EncodingBimap<Filaments::LabelNameSet<Symbol::EncodingBimap>>;
-using OrderedEncodingBimap = BareBones::SnugComposite::OrderedEncodingBimap<Filaments::LabelNameSet<Symbol::OrderedEncodingBimap>>;
-using EncodingBimapWithOrderedAccess =
-    BareBones::SnugComposite::EncodingBimapWithOrderedAccess<Filaments::LabelNameSet<Symbol::EncodingBimapWithOrderedAccess>>;
-using EncodingBimapWithOrderedAccessToSymbols = BareBones::SnugComposite::EncodingBimap<Filaments::LabelNameSet<Symbol::EncodingBimapWithOrderedAccess>>;
+
+template <template <class> class Vector>
+using DecodingTableFilament = Filaments::LabelNameSet<Symbol::DecodingTable, Vector>;
+
+template <template <class> class Vector>
+using DecodingTable = BareBones::SnugComposite::DecodingTable<DecodingTableFilament, Vector>;
+
+template <template <class> class Vector>
+using EncodingBimapFilament = Filaments::LabelNameSet<Symbol::EncodingBimap, Vector>;
+
+template <template <class> class Vector>
+using EncodingBimap = BareBones::SnugComposite::EncodingBimap<EncodingBimapFilament, Vector>;
+
+template <template <class> class Vector>
+using OrderedEncodingBimapFilament = Filaments::LabelNameSet<Symbol::OrderedEncodingBimap, Vector>;
+
+template <template <class> class Vector>
+using OrderedEncodingBimap = BareBones::SnugComposite::OrderedEncodingBimap<OrderedEncodingBimapFilament, Vector>;
+
+template <template <class> class Vector>
+using EncodingBimapWithOrderedAccessFilament = Filaments::LabelNameSet<Symbol::EncodingBimapWithOrderedAccess, Vector>;
+
+template <template <class> class Vector>
+using EncodingBimapWithOrderedAccess = BareBones::SnugComposite::EncodingBimapWithOrderedAccess<EncodingBimapWithOrderedAccessFilament, Vector>;
+
+template <template <class> class Vector>
+using EncodingBimapWithOrderedAccessToSymbolsFilament = Filaments::LabelNameSet<Symbol::EncodingBimapWithOrderedAccess, Vector>;
+
+template <template <class> class Vector>
+using EncodingBimapWithOrderedAccessToSymbols = BareBones::SnugComposite::EncodingBimap<EncodingBimapWithOrderedAccessToSymbolsFilament, Vector>;
 
 }  // namespace LabelNameSet
 
 namespace LabelSet {
-using DecodingTableFilament = Filaments::LabelSet<Symbol::DecodingTable, LabelNameSet::DecodingTable>;
-using DecodingTable = BareBones::SnugComposite::DecodingTable<DecodingTableFilament>;
-using EncodingBimapFilament = Filaments::LabelSet<Symbol::EncodingBimap, LabelNameSet::EncodingBimap>;
-using EncodingBimap = BareBones::SnugComposite::EncodingBimap<EncodingBimapFilament>;
-using ShrinkableEncodingBimap = BareBones::SnugComposite::ShrinkableEncodingBimap<EncodingBimapFilament>;
-using ParallelEncodingBimap = BareBones::SnugComposite::ParallelEncodingBimap<Filaments::LabelSet<Symbol::EncodingBimap, LabelNameSet::EncodingBimap>>;
-using OrderedEncodingBimap =
-    BareBones::SnugComposite::OrderedEncodingBimap<Filaments::LabelSet<Symbol::OrderedEncodingBimap, LabelNameSet::OrderedEncodingBimap>>;
-using OrderedIndexingTable = BareBones::SnugComposite::OrderedDecodingTable<
-    Filaments::LabelSet<Symbol::EncodingBimapWithOrderedAccess, LabelNameSet::EncodingBimapWithOrderedAccessToSymbols>>;
+
+template <template <class> class Vector>
+using DecodingTableFilament = Filaments::LabelSet<Symbol::DecodingTable, LabelNameSet::DecodingTable, Vector>;
+
+template <template <class> class Vector>
+using DecodingTable = BareBones::SnugComposite::DecodingTable<DecodingTableFilament, Vector>;
+
+template <template <class> class Vector>
+using EncodingBimapFilament = Filaments::LabelSet<Symbol::EncodingBimap, LabelNameSet::EncodingBimap, Vector>;
+
+template <template <class> class Vector>
+using EncodingBimap = BareBones::SnugComposite::EncodingBimap<EncodingBimapFilament, Vector>;
+
+template <template <class> class Vector>
+using ShrinkableEncodingBimap = BareBones::SnugComposite::ShrinkableEncodingBimap<EncodingBimapFilament, Vector>;
+
+template <template <class> class Vector>
+using ParallelEncodingBimapFilament = Filaments::LabelSet<Symbol::EncodingBimap, LabelNameSet::EncodingBimap, Vector>;
+
+template <template <class> class Vector>
+using ParallelEncodingBimap = BareBones::SnugComposite::ParallelEncodingBimap<EncodingBimapFilament, Vector>;
+
+template <template <class> class Vector>
+using OrderedEncodingBimapFilament = Filaments::LabelSet<Symbol::OrderedEncodingBimap, LabelNameSet::OrderedEncodingBimap, Vector>;
+
+template <template <class> class Vector>
+using OrderedEncodingBimap = BareBones::SnugComposite::OrderedEncodingBimap<OrderedEncodingBimapFilament, Vector>;
+
+template <template <class> class Vector>
+using OrderedIndexingTableFilament = Filaments::LabelSet<Symbol::EncodingBimapWithOrderedAccess, LabelNameSet::EncodingBimapWithOrderedAccessToSymbols, Vector>;
+
+template <template <class> class Vector>
+using OrderedIndexingTable = BareBones::SnugComposite::OrderedDecodingTable<OrderedIndexingTableFilament, Vector>;
+
 }  // namespace LabelSet
-}  // namespace SnugComposites
-}  // namespace Primitives
-}  // namespace PromPP
+
+}  // namespace PromPP::Primitives::SnugComposites

@@ -211,7 +211,7 @@ extern "C" void prompp_wal_output_decoder_ctor(void* args, void* res) {
 
   auto* in = reinterpret_cast<Arguments*>(args);
   Result* out = new (res) Result();
-  auto& output_lss = std::get<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>(*in->output_lss);
+  auto& output_lss = std::get<entrypoint::head::EncodingBimap>(*in->output_lss);
   out->decoder =
       new PromPP::WAL::OutputDecoder(*in->stateless_relabeler, output_lss, in->external_labels, static_cast<PromPP::WAL::BasicEncoderVersion>(in->encoder_version));
 }
@@ -330,10 +330,10 @@ extern "C" void prompp_wal_protobuf_encoder_ctor(void* args, void* res) {
   auto* in = reinterpret_cast<Arguments*>(args);
   Result* out = new (res) Result();
 
-  std::vector<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap*> output_lsses;
+  std::vector<entrypoint::head::EncodingBimap*> output_lsses;
   output_lsses.reserve(in->output_lsses.size());
   for (const auto& output_lss : in->output_lsses) {
-    output_lsses.push_back(&std::get<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>(*output_lss));
+    output_lsses.push_back(&std::get<entrypoint::head::EncodingBimap>(*output_lss));
   }
 
   out->encoder = new PromPP::WAL::ProtobufEncoder(std::move(output_lsses));

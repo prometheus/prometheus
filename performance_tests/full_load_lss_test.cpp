@@ -16,7 +16,7 @@ void full_load_lss::execute(const Config& config, Metrics& metrics) const {
       throw std::runtime_error("failed to open file '" + input_file_full_name(config) + "'");
     }
 
-    Primitives::SnugComposites::LabelSet::DecodingTable lss;
+    Primitives::SnugComposites::LabelSet::DecodingTable<BareBones::Vector> lss;
 
     auto start = std::chrono::steady_clock::now();
     in >> lss;
@@ -34,7 +34,7 @@ void full_load_lss::execute(const Config& config, Metrics& metrics) const {
       throw std::runtime_error("failed to open file '" + input_file_full_name(config) + "'");
     }
 
-    Primitives::SnugComposites::LabelSet::ParallelEncodingBimap lss;
+    Primitives::SnugComposites::LabelSet::ParallelEncodingBimap<BareBones::Vector> lss;
 
     auto start = std::chrono::steady_clock::now();
     in >> lss;
@@ -52,7 +52,7 @@ void full_load_lss::execute(const Config& config, Metrics& metrics) const {
       throw std::runtime_error("failed to open file '" + input_file_full_name(config) + "'");
     }
 
-    Primitives::SnugComposites::LabelSet::EncodingBimap lss;
+    Primitives::SnugComposites::LabelSet::EncodingBimap<BareBones::Vector> lss;
 
     auto start = std::chrono::steady_clock::now();
     in >> lss;
@@ -69,7 +69,7 @@ void full_load_lss::execute(const Config& config, Metrics& metrics) const {
       throw std::runtime_error("failed to open file '" + input_file_full_name(config) + "'");
     }
 
-    Primitives::SnugComposites::LabelSet::OrderedEncodingBimap lss;
+    Primitives::SnugComposites::LabelSet::OrderedEncodingBimap<BareBones::Vector> lss;
 
     BareBones::LZ4Stream::istream in(&infile);
     auto start = std::chrono::steady_clock::now();
@@ -87,7 +87,7 @@ void full_load_lss::execute(const Config& config, Metrics& metrics) const {
       throw std::runtime_error("failed to open file '" + input_file_full_name(config) + "'");
     }
 
-    Primitives::SnugComposites::LabelSet::OrderedIndexingTable lss;
+    Primitives::SnugComposites::LabelSet::OrderedIndexingTable<BareBones::Vector> lss;
 
     BareBones::LZ4Stream::istream in(&infile);
     auto start = std::chrono::steady_clock::now();

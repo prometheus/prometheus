@@ -2,28 +2,39 @@
 
 #include "gtest/gtest.h"
 #include "primitives/hash.h"
+#include "primitives/label_set.h"
 
 #include "primitives/snug_composites.h"
 #include "primitives/snug_composites_filaments.h"
 
 namespace {
 
-class NamesSetForTest : public std::vector<std::string> {
-  using Base = std::vector<std::string>;
+using BareBones::SharedSpan;
+using BareBones::SharedVector;
+using BareBones::Vector;
+using PromPP::Primitives::LabelViewSet;
+using std::operator""sv;
+
+template <template <class> class Vector>
+class GenericNamesSetForTest : public Vector<std::string> {
+  using Base = Vector<std::string>;
 
  public:
   using Base::Base;
-  friend size_t hash_value(const NamesSetForTest& lns) { return PromPP::Primitives::hash::hash_of_string_list(lns); }
+  friend size_t hash_value(const GenericNamesSetForTest& lns) { return PromPP::Primitives::hash::hash_of_string_list(lns); }
 };
 
-class LabelSetForTest : public std::vector<std::pair<std::string, std::string>> {
-  using Base = std::vector<std::pair<std::string, std::string>>;
+using NamesSetForTest = GenericNamesSetForTest<std::vector>;
+
+template <template <class> class Vector>
+class GenericLabelSetForTest : public Vector<std::pair<std::string, std::string>> {
+  using Base = Vector<std::pair<std::string, std::string>>;
 
  public:
   using Base::Base;
 
-  NamesSetForTest names() const {
-    NamesSetForTest tns;
+  GenericNamesSetForTest<Vector> names() const {
+    GenericNamesSetForTest<Vector> tns;
 
     for (const auto& [label_name, _] : *this) {
       tns.push_back(label_name);
@@ -33,22 +44,33 @@ class LabelSetForTest : public std::vector<std::pair<std::string, std::string>> 
   }
 };
 
-using LabelSet =
-    PromPP::Primitives::SnugComposites::Filaments::LabelSet<BareBones::SnugComposite::EncodingBimap<PromPP::Primitives::SnugComposites::Filaments::Symbol>,
-                                                          BareBones::SnugComposite::EncodingBimap<PromPP::Primitives::SnugComposites::Filaments::LabelNameSet<
-                                                              BareBones::SnugComposite::EncodingBimap<PromPP::Primitives::SnugComposites::Filaments::Symbol>>>>;
+using LabelSetForTest = GenericLabelSetForTest<std::vector>;
+
+template <template <class> class Vector>
+using SymbolFilament = BareBones::SnugComposite::EncodingBimap<PromPP::Primitives::SnugComposites::Filaments::Symbol, Vector>;
+
+template <template <class> class Vector>
+using LabelNameSetFilament = PromPP::Primitives::SnugComposites::Filaments::LabelNameSet<SymbolFilament, Vector>;
+
+template <template <class> class Vector>
+using LabelSetFilament = BareBones::SnugComposite::EncodingBimap<LabelNameSetFilament, Vector>;
+
+template <template <class> class Vector>
+using GenericLabelSet = PromPP::Primitives::SnugComposites::Filaments::LabelSet<SymbolFilament, LabelSetFilament, Vector>;
+
+using LabelSet = GenericLabelSet<Vector>;
 
 struct SnugComposites : public testing::Test {};
 
 TEST(SnugComposites, OrderedDecodingTableWithSymbolsHandlesZeroStringAsFirstElementCorrectly) {
-  PromPP::Primitives::SnugComposites::Symbol::OrderedDecodingTable t;
+  PromPP::Primitives::SnugComposites::Symbol::OrderedDecodingTable<Vector> t;
 
   EXPECT_EQ(t.emplace_back(""), 0);
   EXPECT_EQ(t[0], "");
 }
 
 TEST(SnugComposites, SnapshotRollbackSymbolEncodingBimap) {
-  PromPP::Primitives::SnugComposites::Symbol::EncodingBimap encoding_bimap;
+  PromPP::Primitives::SnugComposites::Symbol::EncodingBimap<Vector> encoding_bimap;
 
   const std::vector<std::string> etalons_rollback = {"11111", "22222", "33333"};
   const std::vector<std::string> etalons = {"44444", "55555", "66666"};
@@ -92,7 +114,7 @@ TEST(SnugComposites, SnapshotRollbackSymbolEncodingBimap) {
 }
 
 TEST(SnugComposites, SnapshotRollbackLabelNameSetEncodingBimap) {
-  PromPP::Primitives::SnugComposites::LabelNameSet::EncodingBimap encoding_bimap;
+  PromPP::Primitives::SnugComposites::LabelNameSet::EncodingBimap<Vector> encoding_bimap;
 
   const std::vector<NamesSetForTest> etalons_rollback = {{"11111", "22222", "33333"}, {"44444", "55555", "66666"}};
   const std::vector<NamesSetForTest> etalons = {{"77777", "88888", "99999"}, {"aaaaa", "sssss", "ddddd"}};
@@ -139,7 +161,7 @@ TEST(SnugComposites, SnapshotRollbackLabelSetEncodingBimap) {
   LabelSet::data_type data;
   auto data_checkpoint = data.checkpoint();
 
-  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap encoding_bimap;
+  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap<Vector> encoding_bimap;
 
   const std::vector<LabelSetForTest> etalons_rollback = {{{"11111", "22222"}}, {{"33333", "44444"}}, {{"55555", "66666"}}};
   const std::vector<LabelSetForTest> etalons = {{{"77777", "88888"}}, {{"99999", "aaaaa"}}, {{"sssss", "ddddd"}}};
@@ -232,17 +254,17 @@ TEST(SnugComposites, SnapshotRollbackLabelSetEncodingBimap) {
 template <class T>
 class EncodingBimap : public testing::Test {
  public:
-  static void find_or_emplace(PromPP::Primitives::SnugComposites::Symbol::EncodingBimap& encoding_bimap) {
+  static void find_or_emplace(PromPP::Primitives::SnugComposites::Symbol::EncodingBimap<Vector>& encoding_bimap) {
     const auto str = "11111";
     encoding_bimap.find_or_emplace(str);
   };
 
-  static void find_or_emplace(PromPP::Primitives::SnugComposites::LabelNameSet::EncodingBimap& encoding_bimap) {
+  static void find_or_emplace(PromPP::Primitives::SnugComposites::LabelNameSet::EncodingBimap<Vector>& encoding_bimap) {
     const NamesSetForTest nst = {"11111"};
     encoding_bimap.find_or_emplace(nst);
   };
 
-  static void find_or_emplace(PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap& encoding_bimap) {
+  static void find_or_emplace(PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap<Vector>& encoding_bimap) {
     const LabelSetForTest lst = {{"11111", "22222"}};
     LabelSet::data_type data;
     auto ls = LabelSet(data, lst);
@@ -252,9 +274,9 @@ class EncodingBimap : public testing::Test {
   };
 };
 
-typedef testing::Types<PromPP::Primitives::SnugComposites::Symbol::EncodingBimap,
-                       PromPP::Primitives::SnugComposites::LabelNameSet::EncodingBimap,
-                       PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>
+typedef testing::Types<PromPP::Primitives::SnugComposites::Symbol::EncodingBimap<Vector>,
+                       PromPP::Primitives::SnugComposites::LabelNameSet::EncodingBimap<Vector>,
+                       PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap<Vector>>
     FilamentTypes;
 TYPED_TEST_SUITE(EncodingBimap, FilamentTypes);
 
@@ -280,6 +302,78 @@ TYPED_TEST(EncodingBimap, SaveSizeWAL) {
   const auto etalon_save_size_wal = delta.save_size();
   stream << delta;
   EXPECT_EQ(stream.tellp(), etalon_save_size_wal);
+}
+
+class LssViewFixture : public testing::Test {
+ protected:
+  using Symbol = PromPP::Primitives::SnugComposites::Symbol::EncodingBimap<SharedVector>;
+  using SymbolView = PromPP::Primitives::SnugComposites::Symbol::DecodingTable<SharedSpan>;
+
+  using LabelNameSet = PromPP::Primitives::SnugComposites::LabelNameSet::EncodingBimap<SharedVector>;
+  using LabelNameSetView = PromPP::Primitives::SnugComposites::LabelNameSet::DecodingTable<SharedSpan>;
+
+  using LabelSet = PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap<SharedVector>;
+  using LabelSetView = PromPP::Primitives::SnugComposites::LabelSet::DecodingTable<SharedSpan>;
+};
+
+TEST_F(LssViewFixture, CopySymbol) {
+  // Arrange
+  Symbol source;
+  constexpr auto source_data = "string1"sv;
+  source.find_or_emplace(source_data);
+
+  // Act
+  const SymbolView view(source);
+  source.find_or_emplace("string2"sv);
+
+  // Assert
+  EXPECT_EQ(1U, view.size());
+  EXPECT_EQ(source_data, view[0]);
+}
+
+TEST_F(LssViewFixture, CopyLabelNameSet) {
+  // Arrange
+  LabelNameSet source;
+  const NamesSetForTest source_data{"name1", "name2", "name3"};
+  source.find_or_emplace(source_data);
+
+  // Act
+  const LabelNameSetView view(source);
+  source.find_or_emplace(NamesSetForTest{"name4", "name5"});
+
+  // Assert
+  EXPECT_EQ(1U, view.size());
+  EXPECT_EQ(source_data, view[0]);
+}
+
+TEST_F(LssViewFixture, CopyLabelSet) {
+  // Arrange
+  LabelSet source;
+  const LabelViewSet source_data{{"name1", "value1"}, {"name2", "value2"}, {"name3", "value3"}};
+  source.find_or_emplace(source_data);
+
+  // Act
+  const LabelSetView view(source);
+  source.find_or_emplace(LabelViewSet{{"name4", "value4"}});
+
+  // Assert
+  EXPECT_EQ(1U, view.size());
+  EXPECT_EQ(source_data, view[0]);
+}
+
+TEST_F(LssViewFixture, UseCopyLabelSetAfterFreeSourceLabelSet) {
+  // Arrange
+  auto source = std::make_unique<LabelSet>();
+  const LabelViewSet source_data{{"name1", "value1"}, {"name2", "value2"}, {"name3", "value3"}};
+  source->find_or_emplace(source_data);
+
+  // Act
+  const LabelSetView view(*source);
+  source.reset();
+
+  // Assert
+  EXPECT_EQ(1U, view.size());
+  EXPECT_EQ(source_data, view[0]);
 }
 
 }  // namespace

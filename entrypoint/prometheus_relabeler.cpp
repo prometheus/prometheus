@@ -202,7 +202,7 @@ extern "C" void prompp_prometheus_per_shard_relabeler_input_relabeling(void* arg
   try {
     std::visit(
         [in, out](auto& hashdex) {
-          auto& input_lss = std::get<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>(*in->input_lss);
+          auto& input_lss = std::get<entrypoint::head::EncodingBimap>(*in->input_lss);
           auto& target_lss = std::get<entrypoint::head::QueryableEncodingBimap>(*in->target_lss);
           in->per_shard_relabeler->input_relabeling(input_lss, target_lss, *in->cache, hashdex, in->options, *out, in->shards_inner_series,
                                                     in->shards_relabeled_series);
@@ -265,7 +265,7 @@ extern "C" void prompp_prometheus_per_shard_relabeler_input_relabeling_with_stal
   try {
     std::visit(
         [in, out](auto& hashdex) {
-          auto& input_lss = std::get<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>(*in->input_lss);
+          auto& input_lss = std::get<entrypoint::head::EncodingBimap>(*in->input_lss);
           auto& target_lss = std::get<entrypoint::head::QueryableEncodingBimap>(*in->target_lss);
           in->per_shard_relabeler->input_relabeling_with_stalenans(input_lss, target_lss, *in->cache, hashdex, in->options, *out, in->shards_inner_series,
                                                                    in->shards_relabeled_series, *in->state, in->def_timestamp);

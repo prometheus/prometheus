@@ -11,7 +11,8 @@
 namespace {
 
 using TrieIndex = series_index::TrieIndex<series_index::trie::CedarTrie, series_index::trie::CedarMatchesList>;
-using QueryableEncodingBimap = series_index::QueryableEncodingBimap<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimapFilament, TrieIndex>;
+using QueryableEncodingBimap =
+    series_index::QueryableEncodingBimap<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimapFilament, BareBones::Vector, TrieIndex>;
 using head::StatusGetter;
 using PromPP::Primitives::LabelViewSet;
 using series_data::DataStorage;

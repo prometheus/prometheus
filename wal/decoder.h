@@ -51,7 +51,7 @@ class TimeseriesProtobufWriter {
   uint32_t processed_series_{};
 };
 
-template <typename LSS = Primitives::SnugComposites::LabelSet::DecodingTable>
+template <typename LSS = Primitives::SnugComposites::LabelSet::DecodingTable<BareBones::Vector>>
 class GenericDecoder {
   using Decoder = BasicDecoder<std::remove_reference_t<LSS>>;
 

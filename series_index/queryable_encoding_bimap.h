@@ -10,10 +10,10 @@
 
 namespace series_index {
 
-template <class Filament, class TrieIndex>
-class QueryableEncodingBimap : public BareBones::SnugComposite::DecodingTable<Filament> {
+template <template <template <class> class> class Filament, template <class> class Vector, class TrieIndex>
+class QueryableEncodingBimap final : public BareBones::SnugComposite::DecodingTable<Filament, Vector> {
  public:
-  using Base = BareBones::SnugComposite::DecodingTable<Filament>;
+  using Base = BareBones::SnugComposite::DecodingTable<Filament, Vector>;
   using LsIdSet = phmap::btree_set<typename Base::Proxy, typename Base::LessComparator, BareBones::Allocator<typename Base::Proxy>>;
   using HashSet =
       phmap::flat_hash_set<typename Base::Proxy, typename Base::Hasher, typename Base::EqualityComparator, BareBones::Allocator<typename Base::Proxy>>;

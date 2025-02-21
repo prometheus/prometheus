@@ -20,7 +20,7 @@ using series_index::querier::QuerierStatus;
 using series_index::trie::CedarMatchesList;
 using series_index::trie::CedarTrie;
 using TrieIndex = series_index::TrieIndex<CedarTrie, CedarMatchesList>;
-using Index = QueryableEncodingBimap<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimapFilament, TrieIndex>;
+using Index = QueryableEncodingBimap<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimapFilament, BareBones::Vector, TrieIndex>;
 
 struct MatchersComparatorByTypeAndCardinalityCase {
   Selector selector;

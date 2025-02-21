@@ -77,7 +77,7 @@ struct TestWALOutputDecoder : public testing::Test {
   Relabel::StatelessRelabeler sr_{rcts_};
 
   // Output LSS
-  SnugComposites::LabelSet::EncodingBimap output_lss_;
+  SnugComposites::LabelSet::EncodingBimap<BareBones::Vector> output_lss_;
 
   void SetUp() final {
     // external_labels
@@ -141,7 +141,7 @@ TEST_F(TestWALOutputDecoder, DumpLoadSingleData) {
 
   wod.dump_to(dump);
 
-  SnugComposites::LabelSet::EncodingBimap output_lss2;
+  SnugComposites::LabelSet::EncodingBimap<BareBones::Vector> output_lss2;
   OutputDecoder wod2(sr_, output_lss2, external_labels_);
   wod2.load_from(dump);
 
@@ -175,7 +175,7 @@ TEST_F(TestWALOutputDecoder, DumpLoadDoubleData) {
     wod.dump_to(dump);
   }
 
-  SnugComposites::LabelSet::EncodingBimap output_lss2;
+  SnugComposites::LabelSet::EncodingBimap<BareBones::Vector> output_lss2;
   OutputDecoder wod2(sr_, output_lss2, external_labels_);
   wod2.load_from(dump);
 
@@ -211,7 +211,7 @@ TEST_F(TestWALOutputDecoder, DumpLoadDataEmptyData) {
     wod.dump_to(dump);
   }
 
-  SnugComposites::LabelSet::EncodingBimap output_lss2;
+  SnugComposites::LabelSet::EncodingBimap<BareBones::Vector> output_lss2;
   OutputDecoder wod2(sr_, output_lss2, external_labels_);
   wod2.load_from(dump);
 
@@ -302,7 +302,7 @@ TEST_F(TestWALOutputDecoder, ProcessSegmentWithDump) {
   std::vector<RefSample> expected_ref_samples{{.id = 0, .t = 10, .v = 1}, {.id = 0, .t = 11, .v = 1}, {.id = 1, .t = 11, .v = 1}};
   EXPECT_EQ(expected_ref_samples, actual_ref_samples);
 
-  SnugComposites::LabelSet::EncodingBimap output_lss2;
+  SnugComposites::LabelSet::EncodingBimap<BareBones::Vector> output_lss2;
   OutputDecoder wod2(sr_, output_lss2, external_labels_);
   wod2.load_from(dump);
   Encoder enc2{uint16_t{0}, uint8_t{0}};
@@ -336,9 +336,9 @@ TEST_F(TestWALOutputDecoder, ProcessSegmentWithDump) {
 struct TestProtobufEncoder : public testing::Test {};
 
 TEST_F(TestProtobufEncoder, Encode) {
-  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap output_lss0;
-  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap output_lss1;
-  std::vector<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap*> output_lsses{&output_lss0, &output_lss1};
+  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap<BareBones::Vector> output_lss0;
+  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap<BareBones::Vector> output_lss1;
+  std::vector output_lsses{&output_lss0, &output_lss1};
 
   std::vector<PromPP::WAL::RefSample> ref_samples0;
   ref_samples0.emplace_back(output_lss0.find_or_emplace(LabelViewSet{{"__name__", "value1"}, {"job", "abc"}}), 10, 1);

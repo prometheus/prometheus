@@ -14,7 +14,7 @@ void full_save_lss::execute(const Config& config, Metrics& metrics) const {
     throw std::runtime_error("failed to open file '" + input_file_full_name(config) + "'");
   }
 
-  Primitives::SnugComposites::LabelSet::DecodingTable lss;
+  Primitives::SnugComposites::LabelSet::DecodingTable<BareBones::Vector> lss;
   while (!in.eof()) {
     in >> lss;
   }

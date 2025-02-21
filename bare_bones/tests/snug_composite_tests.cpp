@@ -6,15 +6,17 @@
 
 namespace {
 
+using BareBones::Vector;
 using std::string_literals::operator""s;
 
+template <template <class> class Vector>
 class TestSnugCompositesStringFilament {
   uint32_t pos_;
   uint32_t len_;
 
  public:
   // NOLINTNEXTLINE
-  class data_type : public BareBones::Vector<char> {
+  class data_type : public Vector<char> {
     class Checkpoint {
       uint32_t size_;
 
@@ -57,10 +59,10 @@ class TestSnugCompositesStringFilament {
 
    public:
     using checkpoint_type = Checkpoint;
-    inline __attribute__((always_inline)) auto checkpoint() const noexcept { return Checkpoint(size()); }
+    inline __attribute__((always_inline)) auto checkpoint() const noexcept { return Checkpoint(this->size()); }
     inline __attribute__((always_inline)) void rollback(const checkpoint_type& s) noexcept {
-      assert(s.size() <= size());
-      resize(s.size());
+      assert(s.size() <= this->size());
+      this->resize(s.size());
     }
 
     template <BareBones::InputStream S>
@@ -72,7 +74,7 @@ class TestSnugCompositesStringFilament {
         in.read(reinterpret_cast<char*>(&first_to_load_i), sizeof(first_to_load_i));
       }
 
-      if (first_to_load_i - shift_ != size()) {
+      if (first_to_load_i - shift_ != this->size()) {
         throw std::runtime_error("something went wrong");
       }
 
@@ -80,13 +82,13 @@ class TestSnugCompositesStringFilament {
       in.read(reinterpret_cast<char*>(&size_to_load), sizeof(size_to_load));
 
       // read data
-      resize(size() + size_to_load);
-      in.read(begin() + first_to_load_i - shift_, size_to_load);
+      this->resize(this->size() + size_to_load);
+      in.read(this->begin() + first_to_load_i - shift_, size_to_load);
     }
 
     void shrink_to(uint32_t size) {
       shift_ += BareBones::Vector<char>::size();
-      resize(size);
+      this->resize(size);
     }
 
     [[nodiscard]] uint32_t shift() const noexcept { return shift_; }
@@ -105,15 +107,15 @@ class TestSnugCompositesStringFilament {
   }
 };
 
-typedef testing::Types<BareBones::SnugComposite::EncodingBimap<TestSnugCompositesStringFilament>,
-                       BareBones::SnugComposite::ParallelEncodingBimap<TestSnugCompositesStringFilament>,
-                       BareBones::SnugComposite::OrderedEncodingBimap<TestSnugCompositesStringFilament>,
-                       BareBones::SnugComposite::EncodingBimapWithOrderedAccess<TestSnugCompositesStringFilament>>
+typedef testing::Types<BareBones::SnugComposite::EncodingBimap<TestSnugCompositesStringFilament, Vector>,
+                       BareBones::SnugComposite::ParallelEncodingBimap<TestSnugCompositesStringFilament, Vector>,
+                       BareBones::SnugComposite::OrderedEncodingBimap<TestSnugCompositesStringFilament, Vector>,
+                       BareBones::SnugComposite::EncodingBimapWithOrderedAccess<TestSnugCompositesStringFilament, Vector>>
     SnugCompositesBimapTypes;
 
 template <class T>
 struct SnugComposite : public testing::Test {
-  using StringFilament = TestSnugCompositesStringFilament;
+  using StringFilament = TestSnugCompositesStringFilament<Vector>;
 };
 
 TYPED_TEST_SUITE(SnugComposite, SnugCompositesBimapTypes);
@@ -134,7 +136,7 @@ TYPED_TEST(SnugComposite, should_return_same_id_for_same_data) {
 TYPED_TEST(SnugComposite, should_return_same_id_for_same_data_with_hash) {
   TypeParam outcomes;
 
-  if constexpr (!std::is_same<TypeParam, BareBones::SnugComposite::OrderedEncodingBimap<TestSnugCompositesStringFilament>>::value) {
+  if constexpr (!std::is_same<TypeParam, BareBones::SnugComposite::OrderedEncodingBimap<TestSnugCompositesStringFilament, Vector>>::value) {
     std::mt19937 gen32(testing::UnitTest::GetInstance()->random_seed());
     for (auto i = 0; i < 100; ++i) {
       outcomes.find_or_emplace(std::to_string(gen32()));
@@ -177,7 +179,7 @@ TYPED_TEST(SnugComposite, should_return_different_id_for_different_data) {
 TYPED_TEST(SnugComposite, should_return_different_id_for_different_data_with_hash) {
   TypeParam outcomes;
 
-  if constexpr (!std::is_same<TypeParam, BareBones::SnugComposite::OrderedEncodingBimap<TestSnugCompositesStringFilament>>::value) {
+  if constexpr (!std::is_same<TypeParam, BareBones::SnugComposite::OrderedEncodingBimap<TestSnugCompositesStringFilament, Vector>>::value) {
     std::mt19937 gen32(testing::UnitTest::GetInstance()->random_seed());
     for (auto i = 0; i < 100; ++i) {
       outcomes.find_or_emplace(std::to_string(gen32()));
@@ -344,7 +346,7 @@ TYPED_TEST(SnugComposite, should_write_the_same_wal_after_rollback) {
 
 class ShrinkableEncodingBimapFixture : public testing::Test {
  protected:
-  using Table = BareBones::SnugComposite::ShrinkableEncodingBimap<TestSnugCompositesStringFilament>;
+  using Table = BareBones::SnugComposite::ShrinkableEncodingBimap<TestSnugCompositesStringFilament, Vector>;
 
   static constexpr auto kInvalidId = std::numeric_limits<uint32_t>::max();
 

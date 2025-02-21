@@ -175,7 +175,7 @@ struct BareBones::IsTriviallyReallocatable<PromPP::WAL::CompactSamplesList> : st
 
 namespace PromPP::WAL {
 
-template <class LabelSetsTable = Primitives::SnugComposites::LabelSet::EncodingBimap, bool shrink_lss = false>
+template <class LabelSetsTable = Primitives::SnugComposites::LabelSet::EncodingBimap<BareBones::Vector>, bool shrink_lss = false>
 class BasicEncoder {
  public:
   using checkpoint_type = typename std::remove_reference_t<LabelSetsTable>::checkpoint_type;
@@ -619,8 +619,8 @@ class BasicEncoder {
 
     auto encoders_count = segment == next_encoded_segment_ ? gorilla_.size() : (*it.begin())->encoders_count;
     if (encoders_count > gorilla_.size()) {
-      throw BareBones::Exception(0xfd921d184ca372ee, "Encoder's Snapshot %d has more encoders in first redundant (%zd) than already on the Writer (%zd)",
-                                 segment, encoders_count, gorilla_.size());
+      throw BareBones::Exception(0xfd921d184ca372ee, "Encoder's Snapshot %d has more encoders in first redundant (%u) than already on the Writer (%u)", segment,
+                                 encoders_count, gorilla_.size());
     }
 
     decltype(gorilla_) encoders;
@@ -809,7 +809,7 @@ class GorillaSampleDecoder {
 
 static_assert(SampleDecoderInterface<GorillaSampleDecoder>);
 
-template <class LabelSetsTable = Primitives::SnugComposites::LabelSet::DecodingTable,
+template <class LabelSetsTable = Primitives::SnugComposites::LabelSet::DecodingTable<BareBones::Vector>,
           SampleDecoderInterface SampleDecoder = GorillaSampleDecoder,
           size_t LZ4DecompressedBufferSize = 256>
 class BasicDecoder {

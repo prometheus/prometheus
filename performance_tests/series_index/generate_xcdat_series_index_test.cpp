@@ -16,7 +16,7 @@ void GenerateXcdatSeriesIndex::execute([[maybe_unused]] const Config& config, [[
   auto* names_list = new std::vector<std::string>();
   auto* labels_values_vector = new std::vector<std::vector<std::string>>();
 
-  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap label_set_bitmap;
+  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap<BareBones::Vector> label_set_bitmap;
   uint32_t previous_label_id = std::numeric_limits<uint32_t>::max();
   std::chrono::nanoseconds add_index_time{};
 

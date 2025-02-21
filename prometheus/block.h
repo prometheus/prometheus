@@ -12,7 +12,7 @@
 
 namespace PromPP::Prometheus::Block {
 
-using SymbolsTable = BareBones::SnugComposite::OrderedDecodingTable<PromPP::Primitives::SnugComposites::Filaments::Symbol>;
+using SymbolsTable = PromPP::Primitives::SnugComposites::Symbol::OrderedDecodingTable<BareBones::Vector>;
 using LabelViewSet = PromPP::Primitives::LabelViewSet;
 using Timestamp = PromPP::Primitives::Timestamp;
 using ChunkRef = uint64_t;
@@ -30,7 +30,7 @@ class Chunks {
   Chunks(Chunks&&) noexcept = default;
   Chunks& operator=(Chunks&&) noexcept = default;
 
-  void add(Timestamp minTime, Timestamp maxTime, ChunkRef ref) noexcept { data_.push_back({minTime, maxTime, ref}); }
+  void add(Timestamp minTime, Timestamp maxTime, ChunkRef ref) noexcept { data_.push_back(Chunk{minTime, maxTime, ref}); }
 
   size_t size() const noexcept { return data_.size(); }
 
@@ -122,7 +122,7 @@ class BasicSeries {
 using Series = BasicSeries<LabelViewSet, Chunks>;
 
 class OrderedSeriesList {
-  Primitives::SnugComposites::LabelSet::OrderedIndexingTable label_sets_;
+  Primitives::SnugComposites::LabelSet::OrderedIndexingTable<BareBones::Vector> label_sets_;
   BareBones::Vector<Chunks> chunks_;
 
  public:
@@ -164,8 +164,8 @@ class OrderedSeriesList {
     inline __attribute__((always_inline)) bool operator==(const IteratorSentinel&) const noexcept { return i_ == ordered_series_list_->size(); }
 
     inline __attribute__((always_inline)) auto operator*() const noexcept {
-      return BasicSeries<const Primitives::SnugComposites::LabelSet::OrderedIndexingTable::value_type, const Chunks*>(ordered_series_list_->label_sets_[i_],
-                                                                                                                      &ordered_series_list_->chunks_[i_]);
+      return BasicSeries<const Primitives::SnugComposites::LabelSet::OrderedIndexingTable<BareBones::Vector>::value_type, const Chunks*>(
+          ordered_series_list_->label_sets_[i_], &ordered_series_list_->chunks_[i_]);
     }
   };
 
