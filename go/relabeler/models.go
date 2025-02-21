@@ -48,7 +48,7 @@ const (
 type (
 	// HashdexFactory - constructor factory for Hashdex.
 	HashdexFactory interface {
-		Protobuf(data []byte, limits cppbridge.WALHashdexLimits) (cppbridge.ShardedData, error)
+		SnappyProtobuf(data []byte, limits cppbridge.WALHashdexLimits) (cppbridge.ShardedData, error)
 		GoModel(data []model.TimeSeries, limits cppbridge.WALHashdexLimits) (cppbridge.ShardedData, error)
 	}
 

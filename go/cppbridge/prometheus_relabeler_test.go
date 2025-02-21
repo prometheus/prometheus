@@ -8,6 +8,7 @@ import (
 	"unsafe"
 
 	"github.com/cespare/xxhash/v2"
+	"github.com/golang/snappy"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/suite"
@@ -176,7 +177,7 @@ func (s *RelabelerSuite) TestInvalidAction() {
 	s.Require().NoError(err)
 
 	hlimits := cppbridge.DefaultWALHashdexLimits()
-	h, err := cppbridge.NewWALProtobufHashdex(data, hlimits)
+	h, err := cppbridge.NewWALSnappyProtobufHashdex(snappy.Encode(nil, data), hlimits)
 	s.Require().NoError(err)
 
 	shardsInnerSeries := cppbridge.NewShardsInnerSeries(numberOfShards)
@@ -237,7 +238,7 @@ func (s *RelabelerSuite) TestInputPerShardRelabeler() {
 	s.Require().NoError(err)
 
 	hlimits := cppbridge.DefaultWALHashdexLimits()
-	h, err := cppbridge.NewWALProtobufHashdex(data, hlimits)
+	h, err := cppbridge.NewWALSnappyProtobufHashdex(snappy.Encode(nil, data), hlimits)
 	s.Require().NoError(err)
 
 	shardsInnerSeries := cppbridge.NewShardsInnerSeries(numberOfShards)

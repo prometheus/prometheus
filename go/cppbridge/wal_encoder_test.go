@@ -5,6 +5,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/golang/snappy"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/suite"
 
@@ -85,7 +86,7 @@ func (s *EncoderSuite) TestEncode() {
 	enc := cppbridge.NewWALEncoder(0, 0)
 
 	for i := 1; i < encodeCount; i++ {
-		h, err := cppbridge.NewWALProtobufHashdex(s.makeData(int64(i)), hlimits)
+		h, err := cppbridge.NewWALSnappyProtobufHashdex(snappy.Encode(nil, s.makeData(int64(i))), hlimits)
 		s.Require().NoError(err)
 
 		segKey, seg, err := enc.Encode(s.baseCtx, h)
@@ -109,7 +110,7 @@ func (s *EncoderSuite) TestEncodeDuplicateTS() {
 	hlimits := cppbridge.DefaultWALHashdexLimits()
 	enc := cppbridge.NewWALEncoder(0, 0)
 
-	h, err := cppbridge.NewWALProtobufHashdex(s.makeData(int64(0)), hlimits)
+	h, err := cppbridge.NewWALSnappyProtobufHashdex(snappy.Encode(nil, s.makeData(int64(0))), hlimits)
 	s.Require().NoError(err)
 
 	segKey, seg, err := enc.Encode(s.baseCtx, h)
@@ -132,7 +133,7 @@ func (s *EncoderSuite) TestEncodeError() {
 	cancel()
 	hlimits := cppbridge.DefaultWALHashdexLimits()
 
-	h, err := cppbridge.NewWALProtobufHashdex(s.makeData(int64(1)), hlimits)
+	h, err := cppbridge.NewWALSnappyProtobufHashdex(snappy.Encode(nil, s.makeData(int64(1))), hlimits)
 	s.Require().NoError(err)
 
 	enc := cppbridge.NewWALEncoder(0, 0)
@@ -143,7 +144,7 @@ func (s *EncoderSuite) TestEncodeError() {
 func (s *EncoderSuite) TestEncoder_Add() {
 	limits := cppbridge.DefaultWALHashdexLimits()
 	data := s.makeData(100)
-	protoHashdex, err := cppbridge.NewWALProtobufHashdex(data, limits)
+	protoHashdex, err := cppbridge.NewWALSnappyProtobufHashdex(snappy.Encode(nil, data), limits)
 	s.Require().NoError(err)
 
 	encoder := cppbridge.NewWALEncoder(0, 0)
@@ -155,7 +156,7 @@ func (s *EncoderSuite) TestEncoder_Add() {
 func (s *EncoderSuite) TestEncoderLightweight_AddFinalize() {
 	limits := cppbridge.DefaultWALHashdexLimits()
 	data := s.makeData(100)
-	protoHashdex, err := cppbridge.NewWALProtobufHashdex(data, limits)
+	protoHashdex, err := cppbridge.NewWALSnappyProtobufHashdex(snappy.Encode(nil, data), limits)
 	s.Require().NoError(err)
 
 	encoder := cppbridge.NewWALEncoderLightweight(0, 0)
@@ -195,7 +196,7 @@ func (s *EncoderSuite) TestEncodeErrorCPPExceptions() {
 	s.Require().NoError(err)
 
 	hlimits := cppbridge.DefaultWALHashdexLimits()
-	h, err := cppbridge.NewWALProtobufHashdex(b, hlimits)
+	h, err := cppbridge.NewWALSnappyProtobufHashdex(snappy.Encode(nil, b), hlimits)
 	s.Require().NoError(err)
 
 	enc := cppbridge.NewWALEncoder(0, 0)
@@ -232,7 +233,7 @@ func (s *EncoderSuite) TestFinalizeErrorCPPExceptions() {
 	s.Require().NoError(err)
 
 	hlimits := cppbridge.DefaultWALHashdexLimits()
-	h, err := cppbridge.NewWALProtobufHashdex(b, hlimits)
+	h, err := cppbridge.NewWALSnappyProtobufHashdex(snappy.Encode(nil, b), hlimits)
 	s.Require().NoError(err)
 
 	enc := cppbridge.NewWALEncoder(0, 0)
@@ -246,7 +247,7 @@ func (s *EncoderSuite) TestFinalizeErrorCPPExceptions() {
 func (s *EncoderSuite) TestEncodeRemainingSize() {
 	var remainingTableSize uint32 = math.MaxUint32
 	hlimits := cppbridge.DefaultWALHashdexLimits()
-	h, err := cppbridge.NewWALProtobufHashdex(s.makeData(1), hlimits)
+	h, err := cppbridge.NewWALSnappyProtobufHashdex(snappy.Encode(nil, s.makeData(1)), hlimits)
 	s.NoError(err)
 
 	enc := cppbridge.NewWALEncoder(0, 0)

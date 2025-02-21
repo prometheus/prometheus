@@ -3,6 +3,15 @@ extern "C" {
 #endif
 
 /**
+ * @brief Destroy hashdex
+ *
+ * @param args {
+ *     hashdex uintptr // pointer to constructed hashdex
+ * }
+ */
+void prompp_wal_hashdex_dtor(void* args);
+
+/**
  * @brief Construct a new WAL Hashdex
  *
  * @param args { // limits for incoming data
@@ -19,24 +28,15 @@ extern "C" {
 void prompp_wal_protobuf_hashdex_ctor(void* args, void* res);
 
 /**
- * @brief Destroy hashdex
- *
- * @param args {
- *     hashdex uintptr // pointer to constructed hashdex
- * }
- */
-void prompp_wal_hashdex_dtor(void* args);
-
-/**
- * @brief Fill hashdex from protobuf
+ * @brief Fill hashdex from compressed via snappy protobuf
  *
  * Hashdex only indexing protobuf and doesn't copy all data.
  * Caller should preserve original protobuf content at the same
  * memory address to use hashdex in next call.
  *
  * @param args {
- *     hashdex  uintptr // pointer to constructed hashdex
- *     protobuf []byte  // RemoteWrite protobuf content
+ *     hashdex             uintptr // pointer to constructed hashdex
+ *     compressed_protobuf []byte  // compressed via snappy RemoteWrite protobuf content
  * }
  * @param res {
  *     // this data is a view over protobuf memory and shouldn't be destroyed explicitely
@@ -45,7 +45,7 @@ void prompp_wal_hashdex_dtor(void* args);
  *     error   []byte // error string if thrown
  * }
  */
-void prompp_wal_protobuf_hashdex_presharding(void* args, void* res);
+void prompp_wal_protobuf_hashdex_snappy_presharding(void* args, void* res);
 
 /**
  * @brief Get parsed metadata

@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstring>
 #include <ostream>
+#include <string_view>
 
 namespace BareBones {
 
