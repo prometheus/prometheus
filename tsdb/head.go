@@ -1295,14 +1295,34 @@ func (h *Head) truncateWAL(mint int64) error {
 		return nil
 	}
 
-	keep := func(id chunks.HeadSeriesRef) bool {
-		if h.series.getByID(id) != nil {
+	keep := func(s record.RefSeries) bool {
+		// Keep the record if the series exists in the head.
+		if h.series.getByID(s.Ref) != nil {
 			return true
 		}
+
+		// Keep the record if it was recently deleted.
 		h.deletedMtx.Lock()
-		keepUntil, ok := h.deleted[id]
+		keepUntil, ok := h.deleted[s.Ref]
 		h.deletedMtx.Unlock()
-		return ok && keepUntil > last
+		if ok {
+			return keepUntil > last
+		}
+
+		// Keep the record if it is a duplicate of a series in the head.
+		if !s.Labels.IsEmpty() && h.series.getByHash(s.Labels.Hash(), s.Labels) != nil {
+			// If it is a duplicate, new samples will be written with the id of the series already in the head,
+			// so keep this record only until the last current WAL segment.
+			_, last, _ := wlog.Segments(h.wal.Dir())
+			h.deletedMtx.Lock()
+			h.deleted[s.Ref] = last
+			h.deletedMtx.Unlock()
+			return true
+		}
+
+		// TODO: Do we need to check if the series is a duplicate of a series in deleted?
+
+		return false
 	}
 	h.metrics.checkpointCreationTotal.Inc()
 	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, keep, mint); err != nil {

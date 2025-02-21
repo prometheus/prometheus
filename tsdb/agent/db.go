@@ -656,12 +656,14 @@ func (db *DB) truncate(mint int64) error {
 		return nil
 	}
 
-	keep := func(id chunks.HeadSeriesRef) bool {
-		if db.series.GetByID(id) != nil {
+	keep := func(s record.RefSeries) bool {
+		if db.series.GetByID(s.Ref) != nil {
 			return true
 		}
 
-		seg, ok := db.deleted[id]
+		// TODO: need to also deal with the duplicates
+
+		seg, ok := db.deleted[s.Ref]
 		return ok && seg > last
 	}
 

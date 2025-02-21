@@ -29,7 +29,6 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -291,8 +290,8 @@ func TestCheckpoint(t *testing.T) {
 			}
 			require.NoError(t, w.Close())
 
-			stats, err := Checkpoint(promslog.NewNopLogger(), w, 100, 106, func(x chunks.HeadSeriesRef) bool {
-				return x%2 == 0
+			stats, err := Checkpoint(promslog.NewNopLogger(), w, 100, 106, func(s record.RefSeries) bool {
+				return s.Ref%2 == 0
 			}, last/2)
 			require.NoError(t, err)
 			require.NoError(t, w.Truncate(107))
