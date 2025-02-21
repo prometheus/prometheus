@@ -23,88 +23,122 @@ import (
 	"github.com/cespare/xxhash/v2"
 )
 
-// List of labels that should be mapped to a single byte value.
-// Obviously can't have more than 256 here.
-var MappedLabels = []string{
-	// Empty string, this must be present here.
-	"",
-	// These label names are always present on every time series.
-	MetricName,
-	InstanceName,
-	"job",
-	// Common label names.
-	BucketLabel,
-	"code",
-	"handler",
-	"quantile",
-	// Meta metric names injected by Prometheus itself.
-	"scrape_body_size_bytes",
-	"scrape_duration_seconds",
-	"scrape_sample_limit",
-	"scrape_samples_post_metric_relabeling",
-	"scrape_samples_scraped",
-	"scrape_series_added",
-	"scrape_timeout_seconds",
-	// Common metric names from client libraries.
-	"process_cpu_seconds_total",
-	"process_max_fds",
-	"process_network_receive_bytes_total",
-	"process_network_transmit_bytes_total",
-	"process_open_fds",
-	"process_resident_memory_bytes",
-	"process_start_time_seconds ",
-	"process_virtual_memory_bytes",
-	"process_virtual_memory_max_bytes",
-	// client_go specific metrics
-	"go_gc_heap_frees_by_size_bytes_bucket",
-	"go_gc_heap_allocs_by_size_bytes_bucket",
-	"net_conntrack_dialer_conn_failed_total",
-	"go_sched_pauses_total_other_seconds_bucket",
-	"go_sched_pauses_total_gc_seconds_bucket",
-	"go_sched_pauses_stopping_other_seconds_bucket",
-	"go_sched_pauses_stopping_gc_seconds_bucket",
-	"go_sched_latencies_seconds_bucket",
-	"go_gc_pauses_seconds_bucket",
-	"go_gc_duration_seconds",
-	// node_exporter metrics
-	"node_cpu_seconds_total",
-	"node_scrape_collector_success",
-	"node_scrape_collector_duration_seconds",
-	"node_cpu_scaling_governor",
-	"node_cpu_guest_seconds_total",
-	"node_hwmon_temp_celsius",
-	"node_hwmon_sensor_label",
-	"node_hwmon_temp_max_celsius",
-	"node_cooling_device_max_state",
-	"node_cooling_device_cur_state",
-	"node_softnet_times_squeezed_total",
-	"node_softnet_received_rps_total",
-	"node_softnet_processed_total",
-	"node_softnet_flow_limit_count_total",
-	"node_softnet_dropped_total",
-	"node_softnet_cpu_collision_total",
-	"node_softnet_backlog_len",
-	"node_schedstat_waiting_seconds_total",
-	"node_schedstat_timeslices_total",
-	"node_schedstat_running_seconds_total",
-	"node_cpu_scaling_frequency_min_hertz",
-	"node_cpu_scaling_frequency_max_hertz",
-	"node_cpu_scaling_frequency_hertz",
-	"node_cpu_frequency_min_hertz",
-	"node_cpu_frequency_max_hertz",
-	"node_hwmon_temp_crit_celsius",
-	"node_hwmon_temp_crit_alarm_celsius",
-	"node_cpu_core_throttles_total",
-	"node_thermal_zone_temp",
-	"node_hwmon_temp_min_celsius",
-	"node_hwmon_chip_names",
-	"node_filesystem_readonly",
-	"node_filesystem_device_error",
-	"node_filesystem_size_bytes",
-	"node_filesystem_free_bytes",
-	"node_filesystem_files_free",
-	"node_filesystem_files",
-	"node_filesystem_avail_bytes",
+var (
+	// List of labels that should be mapped to a single byte value.
+	// Obviously can't have more than 256 here.
+	mappedLabels     = []string{}
+	mappedLabelIndex = map[string]byte{}
+)
+
+// MapLabels takes a list of strings that shuld use a single byte storage
+// inside labels, making them use as little memory as possible.
+// Since we use a single byte mapping we can only have 256 such strings.
+//
+// We MUST store empty string ("") as one of the values here and if you
+// don't pass it into MapLabels() then it will be injected.
+//
+// If you pass more strings than 256 then extra strings will be ignored.
+func MapLabels(names []string) {
+	// We must always store empty string. Push it to the front of the slice if not present.
+	if !slices.Contains(names, "") {
+		names = append([]string{""}, names...)
+	}
+
+	mappedLabels = make([]string, 0, 256)
+	mappedLabelIndex = make(map[string]byte, 256)
+
+	for i, name := range names {
+		if i >= 256 {
+			break
+		}
+		mappedLabels = append(mappedLabels, name)
+		mappedLabelIndex[name] = byte(i)
+	}
+}
+
+func init() {
+	names := []string{
+		// Empty string, this must be present here.
+		"",
+		// These label names are always present on every time series.
+		MetricName,
+		InstanceName,
+		"job",
+		// Common label names.
+		BucketLabel,
+		"code",
+		"handler",
+		"quantile",
+		// Meta metric names injected by Prometheus itself.
+		"scrape_body_size_bytes",
+		"scrape_duration_seconds",
+		"scrape_sample_limit",
+		"scrape_samples_post_metric_relabeling",
+		"scrape_samples_scraped",
+		"scrape_series_added",
+		"scrape_timeout_seconds",
+		// Common metric names from client libraries.
+		"process_cpu_seconds_total",
+		"process_max_fds",
+		"process_network_receive_bytes_total",
+		"process_network_transmit_bytes_total",
+		"process_open_fds",
+		"process_resident_memory_bytes",
+		"process_start_time_seconds ",
+		"process_virtual_memory_bytes",
+		"process_virtual_memory_max_bytes",
+		// client_go specific metrics
+		"go_gc_heap_frees_by_size_bytes_bucket",
+		"go_gc_heap_allocs_by_size_bytes_bucket",
+		"net_conntrack_dialer_conn_failed_total",
+		"go_sched_pauses_total_other_seconds_bucket",
+		"go_sched_pauses_total_gc_seconds_bucket",
+		"go_sched_pauses_stopping_other_seconds_bucket",
+		"go_sched_pauses_stopping_gc_seconds_bucket",
+		"go_sched_latencies_seconds_bucket",
+		"go_gc_pauses_seconds_bucket",
+		"go_gc_duration_seconds",
+		// node_exporter metrics
+		"node_cpu_seconds_total",
+		"node_scrape_collector_success",
+		"node_scrape_collector_duration_seconds",
+		"node_cpu_scaling_governor",
+		"node_cpu_guest_seconds_total",
+		"node_hwmon_temp_celsius",
+		"node_hwmon_sensor_label",
+		"node_hwmon_temp_max_celsius",
+		"node_cooling_device_max_state",
+		"node_cooling_device_cur_state",
+		"node_softnet_times_squeezed_total",
+		"node_softnet_received_rps_total",
+		"node_softnet_processed_total",
+		"node_softnet_flow_limit_count_total",
+		"node_softnet_dropped_total",
+		"node_softnet_cpu_collision_total",
+		"node_softnet_backlog_len",
+		"node_schedstat_waiting_seconds_total",
+		"node_schedstat_timeslices_total",
+		"node_schedstat_running_seconds_total",
+		"node_cpu_scaling_frequency_min_hertz",
+		"node_cpu_scaling_frequency_max_hertz",
+		"node_cpu_scaling_frequency_hertz",
+		"node_cpu_frequency_min_hertz",
+		"node_cpu_frequency_max_hertz",
+		"node_hwmon_temp_crit_celsius",
+		"node_hwmon_temp_crit_alarm_celsius",
+		"node_cpu_core_throttles_total",
+		"node_thermal_zone_temp",
+		"node_hwmon_temp_min_celsius",
+		"node_hwmon_chip_names",
+		"node_filesystem_readonly",
+		"node_filesystem_device_error",
+		"node_filesystem_size_bytes",
+		"node_filesystem_free_bytes",
+		"node_filesystem_files_free",
+		"node_filesystem_files",
+		"node_filesystem_avail_bytes",
+	}
+	MapLabels(names)
 }
 
 // Labels is implemented by a single flat string holding name/value pairs.
@@ -144,15 +178,14 @@ func decodeString(data string, index int) (string, int) {
 	size, index, mapped = decodeSize(data, index)
 	if mapped {
 		b := data[index]
-		return MappedLabels[int(b)], index + size
+		return mappedLabels[int(b)], index + size
 	}
 	return data[index : index+size], index + size
 }
 
 func encodeShortString(s string) (int, byte) {
-	i := slices.Index(MappedLabels, s)
-	if i >= 0 {
-		return 0, byte(i)
+	if i, ok := mappedLabelIndex[s]; ok {
+		return 0, i
 	}
 	return len(s), 0
 }

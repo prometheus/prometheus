@@ -101,9 +101,8 @@ func selectBlockStringsToMap(block *tsdb.Block) ([]string, error) {
 	})
 
 	mappedLabels := make([]string, 0, 256)
-	mappedLabels = append(mappedLabels, "") // We must always store empty string.
 	for i, c := range costs {
-		if i > 254 {
+		if i >= 256 {
 			break
 		}
 		mappedLabels = append(mappedLabels, c.name)
@@ -132,6 +131,6 @@ func mapCommonLabelSymbols(db *tsdb.DB, logger *slog.Logger) error {
 		return err
 	}
 	logger.Info("Mapped common label strings", slog.Int("count", len(mappedLabels)))
-	labels.MappedLabels = mappedLabels
+	labels.MapLabels(mappedLabels)
 	return nil
 }
