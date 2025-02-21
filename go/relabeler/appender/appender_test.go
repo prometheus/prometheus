@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang/snappy"
 	"github.com/prometheus/prometheus/pp/go/relabeler/appender"
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"github.com/prometheus/prometheus/pp/go/relabeler/distributor"
@@ -1707,7 +1708,7 @@ func (s *AppenderSuite) makeIncomingData(
 ) *relabeler.IncomingData {
 	data, err := wr.Marshal()
 	s.Require().NoError(err)
-	h, err := cppbridge.NewWALProtobufHashdex(data, hlimits)
+	h, err := cppbridge.NewWALSnappyProtobufHashdex(snappy.Encode(nil, data), hlimits)
 	s.Require().NoError(err)
 	// incomingData
 	return &relabeler.IncomingData{Hashdex: h, Data: newProtoDataTest(data)}
@@ -2460,6 +2461,7 @@ func (s *AppenderSuite) TestManagerRelabelerRelabelingWithRotateWithStaleNans() 
 	s.Equal(wr.String(), <-destination)
 	s.Equal(wr.String(), <-destination)
 
+	time.Sleep(1 * time.Millisecond)
 	s.T().Log("rotate")
 	clock.Advance(2 * time.Hour)
 	time.Sleep(1 * time.Millisecond)

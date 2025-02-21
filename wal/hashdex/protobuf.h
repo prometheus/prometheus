@@ -1,5 +1,7 @@
 #pragma once
 
+#include "snappy.h"
+
 #include "bare_bones/vector.h"
 #include "metric.h"
 #include "primitives/label_set.h"
@@ -53,6 +55,12 @@ class Protobuf : public Prometheus::hashdex::Abstract {
     }
   };
 
+  // snappy_presharding uncompress protobuf via snappy and make presharding slice with hash and proto.
+  PROMPP_ALWAYS_INLINE void snappy_presharding(std::string_view snappy_protobuf) {
+    snappy::Uncompress(snappy_protobuf.data(), snappy_protobuf.size(), &protobuf_);
+    presharding(protobuf_);
+  };
+
   [[nodiscard]] PROMPP_ALWAYS_INLINE auto begin() const noexcept { return std::begin(metrics_); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE auto end() const noexcept { return std::end(metrics_); }
 
@@ -74,6 +82,7 @@ class Protobuf : public Prometheus::hashdex::Abstract {
     }
   };
 
+  std::string protobuf_;
   BareBones::Vector<Item> metrics_;
   BareBones::Vector<Metadata> metadata_;
   const Prometheus::RemoteWrite::PbLabelSetMemoryLimits limits_{};

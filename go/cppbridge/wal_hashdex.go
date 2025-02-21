@@ -22,7 +22,6 @@ type ShardedData interface {
 // WALProtobufHashdex - Presharding data, GO wrapper for WALProtobufHashdex, init from GO and filling from C/C++.
 type WALProtobufHashdex struct {
 	hashdex uintptr
-	data    []byte
 	cluster string
 	replica string
 }
@@ -85,19 +84,17 @@ func (l *WALHashdexLimits) UnmarshalBinary(data []byte) error {
 	return nil
 }
 
-// NewWALProtobufHashdex - init new WALProtobufHashdex with limits.
-func NewWALProtobufHashdex(protoData []byte, limits WALHashdexLimits) (ShardedData, error) {
+// NewWALSnappyProtobufHashdex init new WALProtobufHashdex with limits from compressed via snappy protobuf.
+func NewWALSnappyProtobufHashdex(compressedProtobuf []byte, limits WALHashdexLimits) (ShardedData, error) {
 	// cluster and replica - in memory GO(protoData)
 	h := &WALProtobufHashdex{
 		hashdex: walProtobufHashdexCtor(limits),
-		data:    protoData,
 	}
 	runtime.SetFinalizer(h, func(h *WALProtobufHashdex) {
-		runtime.KeepAlive(h.data)
 		walHashdexDtor(h.hashdex)
 	})
 	var exception []byte
-	h.cluster, h.replica, exception = walProtobufHashdexPresharding(h.hashdex, protoData)
+	h.cluster, h.replica, exception = walProtobufHashdexSnappyPresharding(h.hashdex, compressedProtobuf)
 	return h, handleException(exception)
 }
 
@@ -176,9 +173,9 @@ func NewWALGoModelHashdex(limits WALHashdexLimits, data []model.TimeSeries) (Sha
 // HashdexFactory - hashdex factory.
 type HashdexFactory struct{}
 
-// Protobuf - constructs Prometheus Remote Write based hashdex.
-func (HashdexFactory) Protobuf(data []byte, limits WALHashdexLimits) (ShardedData, error) {
-	return NewWALProtobufHashdex(data, limits)
+// SnappyProtobuf - constructs compressed vis snappy Prometheus Remote Write based hashdex.
+func (HashdexFactory) SnappyProtobuf(data []byte, limits WALHashdexLimits) (ShardedData, error) {
+	return NewWALSnappyProtobufHashdex(data, limits)
 }
 
 // GoModel - constructs model.TimeSeries based hashdex.

@@ -39,6 +39,10 @@ void get_metadata(void* args, void* res) {
   }
 }
 
+//
+// ProtobufHashdex
+//
+
 extern "C" void prompp_wal_protobuf_hashdex_ctor(void* args, void* res) {
   struct Arguments {
     PromPP::Prometheus::hashdex::Limits limits;
@@ -61,10 +65,10 @@ extern "C" void prompp_wal_hashdex_dtor(void* args) {
   delete in->hashdex;
 }
 
-extern "C" void prompp_wal_protobuf_hashdex_presharding(void* args, void* res) {
+extern "C" void prompp_wal_protobuf_hashdex_snappy_presharding(void* args, void* res) {
   struct Arguments {
     HashdexVariant* hashdex_variant;
-    PromPP::Primitives::Go::SliceView<char> protobuf;
+    PromPP::Primitives::Go::SliceView<char> compressed_protobuf;
   };
   struct Result {
     PromPP::Primitives::Go::String cluster;
@@ -76,7 +80,7 @@ extern "C" void prompp_wal_protobuf_hashdex_presharding(void* args, void* res) {
 
   try {
     auto& hashdex = std::get<PromPP::WAL::hashdex::Protobuf>(*in->hashdex_variant);
-    hashdex.presharding(static_cast<std::string_view>(in->protobuf));
+    hashdex.snappy_presharding(static_cast<std::string_view>(in->compressed_protobuf));
     auto cluster = hashdex.cluster();
     out->cluster.reset_to(cluster.data(), cluster.size());
     auto replica = hashdex.replica();
@@ -90,6 +94,10 @@ extern "C" void prompp_wal_protobuf_hashdex_presharding(void* args, void* res) {
 extern "C" void prompp_wal_protobuf_hashdex_get_metadata(void* args, void* res) {
   get_metadata<PromPP::WAL::hashdex::Protobuf>(args, res);
 }
+
+//
+// GoModelHashdex
+//
 
 extern "C" void prompp_wal_go_model_hashdex_ctor(void* args, void* res) {
   struct Arguments {

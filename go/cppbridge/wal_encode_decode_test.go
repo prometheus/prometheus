@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang/snappy"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/suite"
 
@@ -110,7 +111,7 @@ func (s *EncoderDecoderSuite) TestEncodeDecode() {
 		s.Require().NoError(err)
 
 		s.T().Log("sharding protobuf")
-		h, err := cppbridge.NewWALProtobufHashdex(data, hlimits)
+		h, err := cppbridge.NewWALSnappyProtobufHashdex(snappy.Encode(nil, data), hlimits)
 		s.Require().NoError(err)
 
 		s.T().Log("encoding protobuf")
@@ -152,7 +153,7 @@ func (s *EncoderDecoderSuite) TestEncodeDecodeOpenHead() {
 		s.Require().NoError(err)
 
 		s.T().Log("sharding protobuf")
-		h, err := cppbridge.NewWALProtobufHashdex(data, hlimits)
+		h, err := cppbridge.NewWALSnappyProtobufHashdex(snappy.Encode(nil, data), hlimits)
 		s.Require().NoError(err)
 
 		s.T().Log("encoding protobuf")
@@ -196,7 +197,7 @@ func (s *EncoderDecoderSuite) TestRestoreFromStream() {
 		expectedWr := s.makeData(10, int64(i))
 		data, err := expectedWr.Marshal()
 		s.Require().NoError(err)
-		h, err := cppbridge.NewWALProtobufHashdex(data, hlimits)
+		h, err := cppbridge.NewWALSnappyProtobufHashdex(snappy.Encode(nil, data), hlimits)
 		s.Require().NoError(err)
 		_, gos, err := enc.Encode(s.baseCtx, h)
 		s.Require().NoError(err)
@@ -233,7 +234,7 @@ func (s *EncoderDecoderSuite) EncodeDecodeBench(i int64) {
 	hlimits := cppbridge.DefaultWALHashdexLimits()
 	dec := cppbridge.NewWALDecoder(cppbridge.EncodersVersion())
 	enc := cppbridge.NewWALEncoder(0, 0)
-	h, err := cppbridge.NewWALProtobufHashdex(data, hlimits)
+	h, err := cppbridge.NewWALSnappyProtobufHashdex(snappy.Encode(nil, data), hlimits)
 	s.Require().NoError(err)
 
 	_, gos, err := enc.Encode(s.baseCtx, h)
@@ -275,7 +276,7 @@ func (s *EncoderDecoderSuite) TestEncodeDecodeToHashdex() {
 		s.Require().NoError(err)
 
 		s.T().Log("sharding protobuf")
-		h, err := cppbridge.NewWALProtobufHashdex(data, hlimits)
+		h, err := cppbridge.NewWALSnappyProtobufHashdex(snappy.Encode(nil, data), hlimits)
 		s.Require().NoError(err)
 
 		s.T().Log("encoding protobuf")
@@ -349,7 +350,7 @@ func (s *EncoderDecoderSuite) TestEncodeDecodeToHashdexWithMetricInjection() {
 		s.Require().NoError(err)
 
 		s.T().Log("sharding protobuf")
-		h, err := cppbridge.NewWALProtobufHashdex(data, hlimits)
+		h, err := cppbridge.NewWALSnappyProtobufHashdex(snappy.Encode(nil, data), hlimits)
 		s.Require().NoError(err)
 
 		s.T().Log("encoding protobuf")
@@ -442,7 +443,7 @@ func (s *EncoderDecoderSuite) TestEncodeDecodeToHashdexClusterReplica() {
 	s.Require().NoError(err)
 
 	s.T().Log("sharding protobuf")
-	h, err := cppbridge.NewWALProtobufHashdex(data, hlimits)
+	h, err := cppbridge.NewWALSnappyProtobufHashdex(snappy.Encode(nil, data), hlimits)
 	s.Require().NoError(err)
 
 	s.T().Log("encoding protobuf")
@@ -573,7 +574,7 @@ func (s *EncoderDecoderSuite) TestEncodeWALOutputDecode() {
 	s.Require().NoError(err)
 
 	s.T().Log("sharding protobuf")
-	h, err := cppbridge.NewWALProtobufHashdex(data, hlimits)
+	h, err := cppbridge.NewWALSnappyProtobufHashdex(snappy.Encode(nil, data), hlimits)
 	s.Require().NoError(err)
 
 	s.T().Log("encoding protobuf")
@@ -646,7 +647,7 @@ func (s *EncoderDecoderSuite) TestEncodeWALOutputDecodeWithLimit() {
 	s.Require().NoError(err)
 
 	s.T().Log("sharding protobuf")
-	h, err := cppbridge.NewWALProtobufHashdex(data, hlimits)
+	h, err := cppbridge.NewWALSnappyProtobufHashdex(snappy.Encode(nil, data), hlimits)
 	s.Require().NoError(err)
 
 	s.T().Log("encoding protobuf")

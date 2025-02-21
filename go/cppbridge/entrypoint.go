@@ -87,6 +87,10 @@ func memInfo() (res MemInfo) {
 	return res
 }
 
+//
+// ProtobufHashdex
+//
+
 func walProtobufHashdexCtor(limits WALHashdexLimits) uintptr {
 	var res struct {
 		hashdex uintptr
@@ -112,11 +116,14 @@ func walHashdexDtor(hashdex uintptr) {
 	)
 }
 
-func walProtobufHashdexPresharding(hashdex uintptr, protobuf []byte) (cluster, replica string, err []byte) {
+func walProtobufHashdexSnappyPresharding(
+	hashdex uintptr,
+	compressedProtobuf []byte,
+) (cluster, replica string, err []byte) {
 	var args = struct {
-		hashdex  uintptr
-		protobuf []byte
-	}{hashdex, protobuf}
+		hashdex            uintptr
+		compressedProtobuf []byte
+	}{hashdex, compressedProtobuf}
 	var res struct {
 		cluster   string
 		replica   string
@@ -124,7 +131,7 @@ func walProtobufHashdexPresharding(hashdex uintptr, protobuf []byte) (cluster, r
 	}
 
 	fastcgo.UnsafeCall2(
-		C.prompp_wal_protobuf_hashdex_presharding,
+		C.prompp_wal_protobuf_hashdex_snappy_presharding,
 		uintptr(unsafe.Pointer(&args)),
 		uintptr(unsafe.Pointer(&res)),
 	)
@@ -148,6 +155,10 @@ func walProtobufHashdexGetMetadata(hashdex uintptr) []WALScraperHashdexMetadata 
 
 	return res.metadata
 }
+
+//
+// GoModelHashdex
+//
 
 func walGoModelHashdexCtor(limits WALHashdexLimits) uintptr {
 	var res struct {
