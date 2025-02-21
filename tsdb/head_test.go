@@ -2500,7 +2500,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 		return i
 	}
 
-	testIsolation := func(h *Head, i int) {
+	testIsolation := func(_ *Head, _ int) {
 	}
 
 	// Test isolation without restart of Head.
@@ -5133,7 +5133,7 @@ func testWBLReplay(t *testing.T, scenario sampleTypeScenario) {
 
 	var expOOOSamples []chunks.Sample
 	l := labels.FromStrings("foo", "bar")
-	appendSample := func(mins int64, val float64, isOOO bool) {
+	appendSample := func(mins int64, _ float64, isOOO bool) {
 		app := h.Appender(context.Background())
 		_, s, err := scenario.appendFunc(app, l, mins*time.Minute.Milliseconds(), mins)
 		require.NoError(t, err)
@@ -5896,7 +5896,7 @@ func TestCuttingNewHeadChunks(t *testing.T) {
 	}{
 		"float samples": {
 			numTotalSamples: 180,
-			floatValFunc: func(i int) float64 {
+			floatValFunc: func(_ int) float64 {
 				return 1.
 			},
 			expectedChks: []struct {

@@ -58,7 +58,7 @@ func testUpdateServices(respHandler http.HandlerFunc) ([]*targetgroup.Group, err
 func TestEurekaSDHandleError(t *testing.T) {
 	var (
 		errTesting  = "non 2xx status '500' response during eureka service discovery"
-		respHandler = func(w http.ResponseWriter, r *http.Request) {
+		respHandler = func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Header().Set("Content-Type", "application/xml")
 			io.WriteString(w, ``)
@@ -76,7 +76,7 @@ func TestEurekaSDEmptyList(t *testing.T) {
 <versions__delta>1</versions__delta>
 <apps__hashcode/>
 </applications>`
-		respHandler = func(w http.ResponseWriter, r *http.Request) {
+		respHandler = func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			w.Header().Set("Content-Type", "application/xml")
 			io.WriteString(w, appsXML)
@@ -235,7 +235,7 @@ func TestEurekaSDSendGroup(t *testing.T) {
     </instance>
   </application>
 </applications>`
-		respHandler = func(w http.ResponseWriter, r *http.Request) {
+		respHandler = func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			w.Header().Set("Content-Type", "application/xml")
 			io.WriteString(w, appsXML)

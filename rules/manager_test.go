@@ -375,7 +375,7 @@ func TestForStateRestore(t *testing.T) {
 				Queryable:       storage,
 				Context:         context.Background(),
 				Logger:          promslog.NewNopLogger(),
-				NotifyFunc:      func(ctx context.Context, expr string, alerts ...*Alert) {},
+				NotifyFunc:      func(_ context.Context, _ string, _ ...*Alert) {},
 				OutageTolerance: 30 * time.Minute,
 				ForGracePeriod:  10 * time.Minute,
 			}
@@ -917,7 +917,7 @@ func TestNotify(t *testing.T) {
 	}
 	engine := promqltest.NewTestEngineWithOpts(t, engineOpts)
 	var lastNotified []*Alert
-	notifyFunc := func(ctx context.Context, expr string, alerts ...*Alert) {
+	notifyFunc := func(_ context.Context, _ string, alerts ...*Alert) {
 		lastNotified = alerts
 	}
 	opts := &ManagerOptions{
@@ -1356,7 +1356,7 @@ func TestRuleGroupEvalIterationFunc(t *testing.T) {
 		testValue = 3
 	}
 
-	skipEvalIterationFunc := func(ctx context.Context, g *Group, evalTimestamp time.Time) {
+	skipEvalIterationFunc := func(_ context.Context, _ *Group, _ time.Time) {
 		testValue = 4
 	}
 
@@ -1395,7 +1395,7 @@ func TestRuleGroupEvalIterationFunc(t *testing.T) {
 			Queryable:       storage,
 			Context:         context.Background(),
 			Logger:          promslog.NewNopLogger(),
-			NotifyFunc:      func(ctx context.Context, expr string, alerts ...*Alert) {},
+			NotifyFunc:      func(_ context.Context, _ string, _ ...*Alert) {},
 			OutageTolerance: 30 * time.Minute,
 			ForGracePeriod:  10 * time.Minute,
 		}
@@ -1528,7 +1528,7 @@ func TestManager_LoadGroups_ShouldCheckWhetherEachRuleHasDependentsAndDependenci
 		Context:    context.Background(),
 		Logger:     promslog.NewNopLogger(),
 		Appendable: storage,
-		QueryFunc:  func(ctx context.Context, q string, ts time.Time) (promql.Vector, error) { return nil, nil },
+		QueryFunc:  func(_ context.Context, _ string, _ time.Time) (promql.Vector, error) { return nil, nil },
 	})
 
 	t.Run("load a mix of dependent and independent rules", func(t *testing.T) {
@@ -2282,7 +2282,7 @@ func TestNewRuleGroupRestoration(t *testing.T) {
 		interval        = 60 * time.Second
 	)
 
-	waitForEvaluations := func(t *testing.T, ch <-chan int32, targetCount int32) {
+	waitForEvaluations := func(_ *testing.T, ch <-chan int32, targetCount int32) {
 		for {
 			select {
 			case cnt := <-ch:
@@ -2300,11 +2300,11 @@ func TestNewRuleGroupRestoration(t *testing.T) {
 	option := optsFactory(store, &maxInflight, &inflightQueries, maxConcurrency)
 	option.Queryable = store
 	option.Appendable = store
-	option.NotifyFunc = func(ctx context.Context, expr string, alerts ...*Alert) {}
+	option.NotifyFunc = func(_ context.Context, _ string, _ ...*Alert) {}
 
 	var evalCount atomic.Int32
 	ch := make(chan int32)
-	noopEvalIterFunc := func(ctx context.Context, g *Group, evalTimestamp time.Time) {
+	noopEvalIterFunc := func(_ context.Context, _ *Group, _ time.Time) {
 		evalCount.Inc()
 		ch <- evalCount.Load()
 	}
@@ -2345,7 +2345,7 @@ func TestNewRuleGroupRestorationWithRestoreNewGroupOption(t *testing.T) {
 		interval        = 60 * time.Second
 	)
 
-	waitForEvaluations := func(t *testing.T, ch <-chan int32, targetCount int32) {
+	waitForEvaluations := func(_ *testing.T, ch <-chan int32, targetCount int32) {
 		for {
 			select {
 			case cnt := <-ch:
@@ -2364,11 +2364,11 @@ func TestNewRuleGroupRestorationWithRestoreNewGroupOption(t *testing.T) {
 	option.Queryable = store
 	option.Appendable = store
 	option.RestoreNewRuleGroups = true
-	option.NotifyFunc = func(ctx context.Context, expr string, alerts ...*Alert) {}
+	option.NotifyFunc = func(_ context.Context, _ string, _ ...*Alert) {}
 
 	var evalCount atomic.Int32
 	ch := make(chan int32)
-	noopEvalIterFunc := func(ctx context.Context, g *Group, evalTimestamp time.Time) {
+	noopEvalIterFunc := func(_ context.Context, _ *Group, _ time.Time) {
 		evalCount.Inc()
 		ch <- evalCount.Load()
 	}
@@ -2510,7 +2510,7 @@ func optsFactory(storage storage.Storage, maxInflight, inflightQueries *atomic.I
 		ConcurrentEvalsEnabled: concurrent,
 		MaxConcurrentEvals:     maxConcurrent,
 		Appendable:             storage,
-		QueryFunc: func(ctx context.Context, q string, ts time.Time) (promql.Vector, error) {
+		QueryFunc: func(_ context.Context, _ string, ts time.Time) (promql.Vector, error) {
 			inflightMu.Lock()
 
 			current := inflightQueries.Add(1)
@@ -2659,7 +2659,7 @@ func TestRuleDependencyController_AnalyseRules(t *testing.T) {
 				Context:    context.Background(),
 				Logger:     promslog.NewNopLogger(),
 				Appendable: storage,
-				QueryFunc:  func(ctx context.Context, q string, ts time.Time) (promql.Vector, error) { return nil, nil },
+				QueryFunc:  func(_ context.Context, _ string, _ time.Time) (promql.Vector, error) { return nil, nil },
 			})
 
 			groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, false, tc.ruleFile)
@@ -2688,7 +2688,7 @@ func BenchmarkRuleDependencyController_AnalyseRules(b *testing.B) {
 		Context:    context.Background(),
 		Logger:     promslog.NewNopLogger(),
 		Appendable: storage,
-		QueryFunc:  func(ctx context.Context, q string, ts time.Time) (promql.Vector, error) { return nil, nil },
+		QueryFunc:  func(_ context.Context, _ string, _ time.Time) (promql.Vector, error) { return nil, nil },
 	})
 
 	groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, false, "fixtures/rules_multiple.yaml")

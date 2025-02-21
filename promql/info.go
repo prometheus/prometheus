@@ -83,7 +83,7 @@ loop:
 func (ev *evaluator) infoSelectHints(expr parser.Expr) storage.SelectHints {
 	var nodeTimestamp *int64
 	var offset int64
-	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
 		switch n := node.(type) {
 		case *parser.VectorSelector:
 			if n.Timestamp != nil {

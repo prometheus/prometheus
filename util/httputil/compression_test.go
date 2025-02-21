@@ -40,7 +40,7 @@ func setup() func() {
 }
 
 func getCompressionHandlerFunc() CompressionHandler {
-	hf := func(w http.ResponseWriter, r *http.Request) {
+	hf := func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("Hello World!"))
 	}

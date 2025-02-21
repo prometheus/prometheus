@@ -77,7 +77,7 @@ func (h *HypervisorDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group
 	// OpenStack API reference
 	// https://developer.openstack.org/api-ref/compute/#list-hypervisors-details
 	pagerHypervisors := hypervisors.List(client, nil)
-	err = pagerHypervisors.EachPage(ctx, func(ctx context.Context, page pagination.Page) (bool, error) {
+	err = pagerHypervisors.EachPage(ctx, func(_ context.Context, page pagination.Page) (bool, error) {
 		hypervisorList, err := hypervisors.ExtractHypervisors(page)
 		if err != nil {
 			return false, fmt.Errorf("could not extract hypervisors: %w", err)

@@ -558,7 +558,7 @@ func (ng *Engine) validateOpts(expr parser.Expr) error {
 	var atModifierUsed, negativeOffsetUsed bool
 
 	var validationErr error
-	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
 		switch n := node.(type) {
 		case *parser.VectorSelector:
 			if n.Timestamp != nil || n.StartOrEnd == parser.START || n.StartOrEnd == parser.END {
@@ -1969,7 +1969,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 
 	case *parser.NumberLiteral:
 		span.SetAttributes(attribute.Float64("value", e.Val))
-		return ev.rangeEval(ctx, nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+		return ev.rangeEval(ctx, nil, func(_ []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 			return append(enh.Out, Sample{F: e.Val, Metric: labels.EmptyLabels()}), nil
 		})
 
@@ -2138,7 +2138,7 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 		seriesIterators[i] = storage.NewMemoizedIterator(it, durationMilliseconds(ev.lookbackDelta)-1)
 	}
 
-	return ev.rangeEval(ctx, nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	return ev.rangeEval(ctx, nil, func(_ []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 		if vs.Timestamp != nil {
 			// This is a special case for "timestamp()" when the @ modifier is used, to ensure that
 			// we return a point for each time step in this case.
@@ -3789,7 +3789,7 @@ func NewHashRatioSampler() *HashRatioSampler {
 	return &HashRatioSampler{}
 }
 
-func (s *HashRatioSampler) sampleOffset(ts int64, sample *Sample) float64 {
+func (s *HashRatioSampler) sampleOffset(_ int64, sample *Sample) float64 {
 	const (
 		float64MaxUint64 = float64(math.MaxUint64)
 	)

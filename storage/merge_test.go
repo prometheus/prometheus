@@ -959,7 +959,7 @@ func (m *mockQuerier) Select(_ context.Context, sortSeries bool, _ *SelectHints,
 	return &mockSeriesSet{idx: -1, series: ret, warnings: m.warnings, err: m.err}
 }
 
-func (m *mockQuerier) LabelValues(_ context.Context, name string, hints *LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (m *mockQuerier) LabelValues(_ context.Context, name string, _ *LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	m.mtx.Lock()
 	m.labelNamesRequested = append(m.labelNamesRequested, labelNameRequest{
 		name:     name,
@@ -1409,7 +1409,7 @@ func BenchmarkMergeLabelValuesWithLimit(b *testing.B) {
 		},
 	}
 
-	b.Run("benchmark", func(b *testing.B) {
+	b.Run("benchmark", func(_ *testing.B) {
 		ctx := context.Background()
 		hints := &LabelHints{
 			Limit: 1000,
@@ -1696,7 +1696,7 @@ func (e errIterator) Next() chunkenc.ValueType {
 	return chunkenc.ValNone
 }
 
-func (e errIterator) Seek(t int64) chunkenc.ValueType {
+func (e errIterator) Seek(_ int64) chunkenc.ValueType {
 	return chunkenc.ValNone
 }
 
