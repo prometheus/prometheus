@@ -15,11 +15,12 @@ enum class LssType : uint32_t {
 };
 
 using TrieIndex = series_index::TrieIndex<series_index::trie::CedarTrie, series_index::trie::CedarMatchesList>;
-using QueryableEncodingBimap = series_index::QueryableEncodingBimap<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimapFilament, TrieIndex>;
+using EncodingBimap = PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap<BareBones::Vector>;
+using OrderedEncodingBimap = PromPP::Primitives::SnugComposites::LabelSet::OrderedEncodingBimap<BareBones::Vector>;
+using QueryableEncodingBimap =
+    series_index::QueryableEncodingBimap<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimapFilament, BareBones::Vector, TrieIndex>;
 
-using LssVariant = std::variant<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap,
-                                PromPP::Primitives::SnugComposites::LabelSet::OrderedEncodingBimap,
-                                QueryableEncodingBimap>;
+using LssVariant = std::variant<EncodingBimap, OrderedEncodingBimap, QueryableEncodingBimap>;
 using LssVariantPtr = std::unique_ptr<LssVariant>;
 
 static_assert(sizeof(LssVariantPtr) == sizeof(void*));

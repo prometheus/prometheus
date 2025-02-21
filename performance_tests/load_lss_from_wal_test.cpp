@@ -15,7 +15,7 @@ void load_lss_from_wal::execute(const Config& config, Metrics& metrics) const {
     throw std::runtime_error("failed to open file '" + input_file_full_name(config) + "'");
   }
 
-  Primitives::SnugComposites::LabelSet::DecodingTable lss;
+  Primitives::SnugComposites::LabelSet::DecodingTable<BareBones::Vector> lss;
 
   auto start = std::chrono::steady_clock::now();
   while (!in.eof()) {

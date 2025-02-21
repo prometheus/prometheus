@@ -15,8 +15,8 @@
 #include "bare_bones/streams.h"
 #include "bare_bones/vector.h"
 
-namespace BareBones {
-namespace SnugComposite {
+namespace BareBones::SnugComposite {
+
 /**
  * Serialization mode used to annotate encoded data and how to apply it on container.
  * We use Delta for save difference between two states of container. It doesn't matter
@@ -30,13 +30,16 @@ concept is_shrinkable = requires(FilamentDataType& data_type) {
   { data_type.shrink_to(uint32_t()) };
 };
 
-template <class Filament>
+template <template <template <class> class> class Filament, template <class> class Vector>
 class DecodingTable {
-  static_assert(!std::is_integral<typename Filament::composite_type>::value, "Filament::composite_type can't be an integral type");
+  static_assert(!std::is_integral_v<typename Filament<Vector>::composite_type>, "Filament::composite_type can't be an integral type");
+
+  template <template <template <class> class> class AnyFilament, template <class> class AnyVector>
+  friend class DecodingTable;
 
  public:
-  using value_type = typename Filament::composite_type;
-  using data_type = typename Filament::data_type;  // FIXME make it private
+  using value_type = typename Filament<Vector>::composite_type;
+  using data_type = typename Filament<Vector>::data_type;  // FIXME make it private
 
  protected:
   class Proxy {
@@ -157,7 +160,7 @@ class DecodingTable {
 
       // write items
       out.write(reinterpret_cast<const char*>(&decoding_table_->items()[first_to_save_i - first_item_index_in_decoding_table]),
-                sizeof(Filament) * size_to_save);
+                sizeof(Filament<Vector>) * size_to_save);
 
       // write data
       if (from != nullptr) {
@@ -194,7 +197,7 @@ class DecodingTable {
         return res;
 
       // items
-      res += sizeof(Filament) * size_to_save;
+      res += sizeof(Filament<Vector>) * size_to_save;
 
       // data
       if (from != nullptr) {
@@ -231,25 +234,31 @@ class DecodingTable {
     Delta operator-(const Checkpoint& from) const noexcept { return Delta(from, *this); }
   };
 
-  Hasher hasher_;
-  EqualityComparator equality_comparator_;
-  LessComparator less_comparator_;
+  Hasher hasher_{this};
+  EqualityComparator equality_comparator_{this};
+  LessComparator less_comparator_{this};
+
+  static constexpr bool kIsReadOnly = std::same_as<Vector<uint8_t>, SharedSpan<uint8_t>>;
 
   data_type data_;
-  Vector<Filament> items_;
+  Vector<Filament<Vector>> items_;
 
   virtual void after_items_load(uint32_t) noexcept {}
 
  public:
-  using checkpoint_type = Checkpoint<DecodingTable<Filament>>;
+  using checkpoint_type = Checkpoint<DecodingTable>;
   using delta_type = typename checkpoint_type::Delta;
 
-  inline __attribute__((always_inline)) DecodingTable() noexcept : hasher_(this), equality_comparator_(this), less_comparator_(this) {}
+  DecodingTable() noexcept = default;
+  DecodingTable(const DecodingTable& other) = delete;
 
-  DecodingTable(const DecodingTable&) = delete;
-  DecodingTable(DecodingTable&&) = delete;
-  DecodingTable& operator=(const DecodingTable&) = delete;
-  DecodingTable& operator=(DecodingTable&&) = delete;
+  template <template <template <class> class> class AnotherFilament, template <class> class AnotherVector>
+    requires kIsReadOnly
+  explicit DecodingTable(const DecodingTable<AnotherFilament, AnotherVector>& other) : data_(other.data_), items_(other.items_) {}
+
+  DecodingTable(DecodingTable&& other) noexcept = delete;
+  DecodingTable& operator=(const DecodingTable& other) = delete;
+  DecodingTable& operator=(DecodingTable&& other) noexcept = delete;
 
   inline __attribute__((always_inline)) value_type operator[](uint32_t id) const noexcept { return items_[id].composite(data_); }
 
@@ -266,9 +275,11 @@ class DecodingTable {
   inline __attribute__((always_inline)) auto checkpoint() const noexcept { return checkpoint_type(*this, items_.size()); }
 
   inline __attribute__((always_inline)) virtual void rollback(const checkpoint_type& s) noexcept {
-    assert(s.size() <= items_.size());
-    items_.resize(s.size());
-    data_.rollback(s.data_checkpoint());
+    if constexpr (!kIsReadOnly) {
+      assert(s.size() <= items_.size());
+      items_.resize(s.size());
+      data_.rollback(s.data_checkpoint());
+    }
   }
 
   template <InputStream S>
@@ -304,7 +315,7 @@ class DecodingTable {
         throw BareBones::Exception(0x3387739a7b4f574a, "Attempt to load segment over existing DecodingTable data");
       } else {
         throw BareBones::Exception(0x4ece66e098927bc6,
-                                   "Attempt to load incomplete data from segment, DecodingTable data vector length (%zd) is less than segment size(%d)",
+                                   "Attempt to load incomplete data from segment, DecodingTable data vector length (%u) is less than segment size(%d)",
                                    items_.size(), first_to_load_i);
       }
     }
@@ -322,7 +333,7 @@ class DecodingTable {
     const auto original_size = items_.size();
     auto sg2 = std::experimental::scope_fail([&]() { items_.resize(original_size); });
     items_.resize(items_.size() + size_to_load);
-    in.read(reinterpret_cast<char*>(&items_[original_size]), sizeof(Filament) * size_to_load);
+    in.read(reinterpret_cast<char*>(&items_[original_size]), sizeof(Filament<Vector>) * size_to_load);
 
     // read data
     auto data_checkpoint = data_.checkpoint();
@@ -368,7 +379,7 @@ class DecodingTable {
 
    public:
     using iterator_category = std::input_iterator_tag;
-    using value_type = typename Filament::composite_type;
+    using value_type = typename Filament<Vector>::composite_type;
     using difference_type = std::ptrdiff_t;
 
     inline
@@ -403,7 +414,7 @@ class DecodingTable {
 
    public:
     using iterator_category = std::input_iterator_tag;
-    using value_type = typename Filament::composite_type;
+    using value_type = typename Filament<Vector>::composite_type;
     using difference_type = std::ptrdiff_t;
 
     inline __attribute__((always_inline)) explicit ItemIDIterator(const DecodingTable* decoding_table = nullptr,
@@ -442,7 +453,7 @@ class DecodingTable {
     inner_iterator_sentinel_type end_;
 
    public:
-    using value_type = typename Filament::composite_type;
+    using value_type = typename Filament<Vector>::composite_type;
 
     inline __attribute__((always_inline)) explicit Resolver(const DecodingTable* decoding_table = nullptr,
                                                             inner_iterator_type begin = inner_iterator_type(),
@@ -472,12 +483,12 @@ class DecodingTable {
   virtual ~DecodingTable() = default;
 };
 
-template <class Filament>
-  requires is_shrinkable<typename Filament::data_type>
-class ShrinkableEncodingBimap final : private DecodingTable<Filament> {
+template <template <template <class> class> class Filament, template <class> class Vector>
+  requires is_shrinkable<typename Filament<Vector>::data_type>
+class ShrinkableEncodingBimap final : private DecodingTable<Filament, Vector> {
  public:
-  using Base = DecodingTable<Filament>;
-  using checkpoint_type = typename Base::template Checkpoint<ShrinkableEncodingBimap<Filament>>;
+  using Base = DecodingTable<Filament, Vector>;
+  using checkpoint_type = typename Base::template Checkpoint<ShrinkableEncodingBimap>;
   using delta_type = typename checkpoint_type::Delta;
   using value_type = typename Base::value_type;
 
@@ -565,13 +576,13 @@ class ShrinkableEncodingBimap final : private DecodingTable<Filament> {
   }
 };
 
-template <class Filament>
-class EncodingBimap : public DecodingTable<Filament> {
-  using Base = DecodingTable<Filament>;
+template <template <template <class> class> class Filament, template <class> class Vector>
+class EncodingBimap : public DecodingTable<Filament, Vector> {
+  using Base = DecodingTable<Filament, Vector>;
 
-  phmap::flat_hash_set<typename Base::Proxy, typename Base::Hasher, typename Base::EqualityComparator> set_;
+  phmap::flat_hash_set<typename Base::Proxy, typename Base::Hasher, typename Base::EqualityComparator> set_{{}, 0, Base::hasher_, Base::equality_comparator_};
 
-  inline __attribute__((always_inline)) virtual void after_items_load(uint32_t first_loaded_id) noexcept {
+  PROMPP_ALWAYS_INLINE void after_items_load(uint32_t first_loaded_id) noexcept override {
     set_.reserve(Base::items_.size());
     for (auto id = first_loaded_id; id != Base::items_.size(); ++id) {
       set_.emplace(typename Base::Proxy(id));
@@ -579,12 +590,11 @@ class EncodingBimap : public DecodingTable<Filament> {
   }
 
  public:
-  inline __attribute__((always_inline)) EncodingBimap() noexcept : set_({}, 0, Base::hasher_, Base::equality_comparator_) {}
-
-  EncodingBimap(const EncodingBimap&) = delete;
-  EncodingBimap(EncodingBimap&&) = delete;
+  EncodingBimap() noexcept = default;
+  EncodingBimap(const EncodingBimap& other) = delete;
+  EncodingBimap(EncodingBimap&&) noexcept = delete;
   EncodingBimap& operator=(const EncodingBimap&) = delete;
-  EncodingBimap& operator=(EncodingBimap&&) = delete;
+  EncodingBimap& operator=(EncodingBimap&&) noexcept = delete;
 
   template <class Class>
   inline __attribute__((always_inline)) uint32_t find_or_emplace(const Class& c) noexcept {
@@ -620,28 +630,30 @@ class EncodingBimap : public DecodingTable<Filament> {
     return {};
   }
 
-  inline __attribute__((always_inline)) virtual void rollback(const typename Base::checkpoint_type& s) noexcept {
-    assert(s.size() <= Base::items_.size());
+  inline __attribute__((always_inline)) void rollback(const typename Base::checkpoint_type& s) noexcept override {
+    if constexpr (!Base::kIsReadOnly) {
+      assert(s.size() <= Base::items_.size());
 
-    for (uint32_t i = s.size(); i != Base::items_.size(); ++i) {
-      set_.erase(typename Base::Proxy(i));
+      for (uint32_t i = s.size(); i != Base::items_.size(); ++i) {
+        set_.erase(typename Base::Proxy(i));
+      }
+
+      Base::rollback(s);
     }
-
-    Base::rollback(s);
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept {
-    return DecodingTable<Filament>::allocated_memory() + set_.capacity() * sizeof(typename Base::Proxy);
+    return Base::allocated_memory() + set_.capacity() * sizeof(typename Base::Proxy);
   }
 };
 
-template <class Filament>
-class ParallelEncodingBimap : public DecodingTable<Filament> {
-  using Base = DecodingTable<Filament>;
+template <template <template <class> class> class Filament, template <class> class Vector>
+class ParallelEncodingBimap : public DecodingTable<Filament, Vector> {
+  using Base = DecodingTable<Filament, Vector>;
 
   phmap::parallel_flat_hash_set<typename Base::Proxy, typename Base::Hasher, typename Base::EqualityComparator> set_;
 
-  inline __attribute__((always_inline)) virtual void after_items_load(uint32_t first_loaded_id) noexcept {
+  inline __attribute__((always_inline)) void after_items_load(uint32_t first_loaded_id) noexcept override {
     set_.reserve(Base::items_.size());
     for (auto id = first_loaded_id; id != Base::items_.size(); ++id) {
       set_.emplace(typename Base::Proxy(id));
@@ -690,28 +702,30 @@ class ParallelEncodingBimap : public DecodingTable<Filament> {
     return {};
   }
 
-  inline __attribute__((always_inline)) virtual void rollback(const typename Base::checkpoint_type& s) noexcept {
-    assert(s.size() <= Base::items_.size());
+  inline __attribute__((always_inline)) void rollback(const typename Base::checkpoint_type& s) noexcept override {
+    if constexpr (!Base::kIsReadOnly) {
+      assert(s.size() <= Base::items_.size());
 
-    for (uint32_t i = s.size(); i != Base::items_.size(); ++i) {
-      set_.erase(typename Base::Proxy(i));
+      for (uint32_t i = s.size(); i != Base::items_.size(); ++i) {
+        set_.erase(typename Base::Proxy(i));
+      }
+
+      Base::rollback(s);
     }
-
-    Base::rollback(s);
   }
 
   // TODO wrap everything with read/write mutex, and test it!
 };
 
-template <class Filament>
-class OrderedEncodingBimap : public DecodingTable<Filament> {
-  using Base = DecodingTable<Filament>;
+template <template <template <class> class> class Filament, template <class> class Vector>
+class OrderedEncodingBimap : public DecodingTable<Filament, Vector> {
+  using Base = DecodingTable<Filament, Vector>;
 
   using Set = phmap::btree_set<typename Base::Proxy, typename Base::LessComparator>;
   Set set_;
 
  protected:
-  inline __attribute__((always_inline)) virtual void after_items_load(uint32_t first_loaded_id) noexcept {
+  inline __attribute__((always_inline)) void after_items_load(uint32_t first_loaded_id) noexcept override {
     for (auto id = first_loaded_id; id != Base::items_.size(); ++id) {
       set_.emplace(typename Base::Proxy(id));
     }
@@ -760,14 +774,16 @@ class OrderedEncodingBimap : public DecodingTable<Filament> {
     return {};
   }
 
-  inline __attribute__((always_inline)) virtual void rollback(const typename Base::checkpoint_type& s) noexcept {
-    assert(s.size() <= Base::items_.size());
+  inline __attribute__((always_inline)) void rollback(const typename Base::checkpoint_type& s) noexcept override {
+    if constexpr (!Base::kIsReadOnly) {
+      assert(s.size() <= Base::items_.size());
 
-    for (uint32_t i = s.size(); i != Base::items_.size(); ++i) {
-      set_.erase(typename Base::Proxy(i));
+      for (uint32_t i = s.size(); i != Base::items_.size(); ++i) {
+        set_.erase(typename Base::Proxy(i));
+      }
+
+      Base::rollback(s);
     }
-
-    Base::rollback(s);
   }
 
   inline __attribute__((always_inline)) auto begin() const noexcept {
@@ -779,9 +795,9 @@ class OrderedEncodingBimap : public DecodingTable<Filament> {
   inline __attribute__((always_inline)) auto unordered_end() const noexcept { return Base::end(); }
 };
 
-template <class Filament>
-class OrderedDecodingTable : public DecodingTable<Filament> {
-  using Base = DecodingTable<Filament>;
+template <template <template <class> class> class Filament, template <class> class Vector>
+class OrderedDecodingTable : public DecodingTable<Filament, Vector> {
+  using Base = DecodingTable<Filament, Vector>;
 
  public:
   using Base::Base;
@@ -806,9 +822,9 @@ class OrderedDecodingTable : public DecodingTable<Filament> {
   }
 };
 
-template <class Filament>
-class EncodingBimapWithOrderedAccess : public DecodingTable<Filament> {
-  using Base = DecodingTable<Filament>;
+template <template <template <class> class> class Filament, template <class> class Vector>
+class EncodingBimapWithOrderedAccess : public DecodingTable<Filament, Vector> {
+  using Base = DecodingTable<Filament, Vector>;
 
   using OrderedSet = phmap::btree_set<typename Base::Proxy, typename Base::LessComparator>;
   OrderedSet ordered_set_;
@@ -816,7 +832,7 @@ class EncodingBimapWithOrderedAccess : public DecodingTable<Filament> {
   using Set = phmap::flat_hash_set<typename Base::Proxy, typename Base::Hasher, typename Base::EqualityComparator>;
   Set set_;
 
-  inline __attribute__((always_inline)) virtual void after_items_load(uint32_t first_loaded_id) noexcept {
+  inline __attribute__((always_inline)) void after_items_load(uint32_t first_loaded_id) noexcept override {
     set_.reserve(Base::items_.size());
     for (auto id = first_loaded_id; id != Base::items_.size(); ++id) {
       set_.emplace(typename Base::Proxy(id));
@@ -869,15 +885,17 @@ class EncodingBimapWithOrderedAccess : public DecodingTable<Filament> {
     return {};
   }
 
-  inline __attribute__((always_inline)) virtual void rollback(const typename Base::checkpoint_type& s) noexcept {
-    assert(s.size() <= Base::items_.size());
+  inline __attribute__((always_inline)) void rollback(const typename Base::checkpoint_type& s) noexcept override {
+    if constexpr (!Base::kIsReadOnly) {
+      assert(s.size() <= Base::items_.size());
 
-    for (uint32_t i = s.size(); i != Base::items_.size(); ++i) {
-      ordered_set_.erase(typename Base::Proxy(i));
-      set_.erase(typename Base::Proxy(i));
+      for (uint32_t i = s.size(); i != Base::items_.size(); ++i) {
+        ordered_set_.erase(typename Base::Proxy(i));
+        set_.erase(typename Base::Proxy(i));
+      }
+
+      Base::rollback(s);
     }
-
-    Base::rollback(s);
   }
 
   inline __attribute__((always_inline)) auto begin() const noexcept {
@@ -890,5 +908,5 @@ class EncodingBimapWithOrderedAccess : public DecodingTable<Filament> {
   inline __attribute__((always_inline)) auto unordered_begin() const noexcept { return Base::begin(); }
   inline __attribute__((always_inline)) auto unordered_end() const noexcept { return Base::end(); }
 };
-}  // namespace SnugComposite
-}  // namespace BareBones
+
+}  // namespace BareBones::SnugComposite

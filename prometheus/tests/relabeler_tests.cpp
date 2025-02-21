@@ -497,7 +497,7 @@ struct TestPerShardRelabeler : public testing::Test {
   HashdexTest hx_;
 
   // LSS
-  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap lss_;
+  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap<BareBones::Vector> lss_;
 
   // Cache
   PromPP::Prometheus::Relabel::Cache cache_{};
@@ -571,7 +571,7 @@ TEST_F(TestPerShardRelabeler, KeepEQ) {
 }
 
 TEST_F(TestPerShardRelabeler, KeepEQ_OrderedEncodingBimap) {
-  PromPP::Primitives::SnugComposites::LabelSet::OrderedEncodingBimap lss;
+  PromPP::Primitives::SnugComposites::LabelSet::OrderedEncodingBimap<BareBones::Vector> lss;
   RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"job"}, .regex = "abc", .action = 2};  // Keep
   Relabel::StatelessRelabeler sr(std::vector<RelabelConfigTest*>{&rct});
   PromPP::Prometheus::Relabel::PerShardRelabeler prs(external_labels_, &sr, 2, 1);
@@ -709,7 +709,7 @@ TEST_F(TestPerShardRelabeler, ReplaceToNewLS3) {
 }
 
 TEST_F(TestPerShardRelabeler, ReplaceToNewLS2_OrderedEncodingBimap) {
-  PromPP::Primitives::SnugComposites::LabelSet::OrderedEncodingBimap lss;
+  PromPP::Primitives::SnugComposites::LabelSet::OrderedEncodingBimap<BareBones::Vector> lss;
   RelabelConfigTest rct{.source_labels = std::vector<std::string_view>{"__name__"},
                         .separator = ";",
                         .regex = ".*(o).*",
@@ -1016,7 +1016,7 @@ struct TestTargetLabels : public testing::Test {
   PromPP::Prometheus::Relabel::RelabelerOptions o_;
 
   // for init PerShardRelabeler
-  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap lss_;
+  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap<BareBones::Vector> lss_;
   std::vector<RelabelConfigTest*> rcts_;
   std::vector<std::pair<PromPP::Primitives::Go::String, PromPP::Primitives::Go::String>> vector_external_labels_;
   PromPP::Primitives::Go::SliceView<std::pair<PromPP::Primitives::Go::String, PromPP::Primitives::Go::String>> external_labels_;
@@ -1245,7 +1245,7 @@ TEST_F(TestLabelsValidator, LabelValueIsInValid) {
 struct TestStaleNaNsState : public testing::Test {};
 
 TEST_F(TestStaleNaNsState, Swap) {
-  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap lss;
+  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap<BareBones::Vector> lss;
   PromPP::Prometheus::Relabel::StaleNaNsState* result = new PromPP::Prometheus::Relabel::StaleNaNsState();
 
   uint32_t current_ls_id{42};

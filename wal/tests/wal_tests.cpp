@@ -42,10 +42,8 @@ class LabelSetForTest : public std::vector<std::pair<std::string, std::string>> 
 
 class TimeSeriesForTest {
  public:
-  using PrimaryLS =
-      PromPP::Primitives::SnugComposites::Filaments::LabelSet<BareBones::SnugComposite::EncodingBimap<PromPP::Primitives::SnugComposites::Filaments::Symbol>,
-                                                            BareBones::SnugComposite::EncodingBimap<PromPP::Primitives::SnugComposites::Filaments::LabelNameSet<
-                                                                BareBones::SnugComposite::EncodingBimap<PromPP::Primitives::SnugComposites::Filaments::Symbol>>>>;
+  using PrimaryLS = PromPP::Primitives::SnugComposites::Filaments::
+      LabelSet<PromPP::Primitives::SnugComposites::Symbol::EncodingBimap, PromPP::Primitives::SnugComposites::LabelNameSet::EncodingBimap, BareBones::Vector>;
   using PrimaryCompositeType = PrimaryLS::composite_type;
 
  private:
@@ -127,7 +125,7 @@ struct WalBufferAddCase {
 
 class WalBufferAddFixture : public testing::TestWithParam<WalBufferAddCase> {
  protected:
-  PromPP::WAL::BasicEncoder<PromPP::Primitives::SnugComposites::Symbol::EncodingBimap>::Buffer buffer_;
+  PromPP::WAL::BasicEncoder<PromPP::Primitives::SnugComposites::Symbol::EncodingBimap<BareBones::Vector>>::Buffer buffer_;
 
   void add() {
     for (auto& series_sample : GetParam().samples) {
@@ -309,7 +307,7 @@ INSTANTIATE_TEST_SUITE_P(
 class WalFixture : public testing::Test {};
 
 TEST_F(WalFixture, BasicEncoderBasicDecoder) {
-  PromPP::WAL::BasicEncoder<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap> writer;
+  PromPP::WAL::BasicEncoder<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap<BareBones::Vector>> writer;
 
   const LabelSetForTest etalons_label_set = generate_label_set();
   const samples_sequence_type etalons_samples = generate_samples(1000, 1.123);
@@ -335,8 +333,9 @@ TEST_F(WalFixture, BasicEncoderBasicDecoder) {
   auto writer_earliest_sample = writer.buffer().earliest_sample();
   auto writer_latest_sample = writer.buffer().latest_sample();
 
-  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap encoding_bimap;
-  PromPP::WAL::BasicDecoder<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap> reader{encoding_bimap, PromPP::WAL::BasicEncoderVersion::kV3};
+  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap<BareBones::Vector> encoding_bimap;
+  PromPP::WAL::BasicDecoder<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap<BareBones::Vector>> reader{encoding_bimap,
+                                                                                                               PromPP::WAL::BasicEncoderVersion::kV3};
   std::stringstream stream_buffer;
 
   // save wal
@@ -379,10 +378,10 @@ TEST_F(WalFixture, BasicEncoderBasicDecoder) {
 }
 
 TEST_F(WalFixture, Snapshots) {
-  using WALEncoder = PromPP::WAL::BasicEncoder<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>;
-  using WALDecoder = PromPP::WAL::BasicDecoder<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>;
+  using WALEncoder = PromPP::WAL::BasicEncoder<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap<BareBones::Vector>>;
+  using WALDecoder = PromPP::WAL::BasicDecoder<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap<BareBones::Vector>>;
   WALEncoder encoder(2, 3);
-  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap encoding_bimap;
+  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap<BareBones::Vector> encoding_bimap;
   WALDecoder decoder{encoding_bimap, PromPP::WAL::BasicEncoderVersion::kV3};
   std::stringstream writer_stream;
   std::vector<std::unique_ptr<WALEncoder::Redundant>> redundants;
@@ -411,7 +410,7 @@ TEST_F(WalFixture, Snapshots) {
   EXPECT_GT(stream_buffer.tellp(), 0);
 
   // read wal from snapshot
-  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap encoding_bimap2;
+  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap<BareBones::Vector> encoding_bimap2;
   WALDecoder decoder2{encoding_bimap2, PromPP::WAL::BasicEncoderVersion::kV3};
   decoder2.load_snapshot(stream_buffer);
 
@@ -426,7 +425,7 @@ TEST_F(WalFixture, Snapshots) {
 }
 
 TEST_F(WalFixture, BasicEncoderMany) {
-  using WALEncoder = PromPP::WAL::BasicEncoder<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap>;
+  using WALEncoder = PromPP::WAL::BasicEncoder<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap<BareBones::Vector>>;
   using AddManyCallbackType = WALEncoder::add_many_generator_callback_type;
   using enum AddManyCallbackType;
   WALEncoder encoder(2, 3);
@@ -486,8 +485,8 @@ TEST_F(WalFixture, BasicEncoderMany) {
 
 class CreateBasicEncoderFromBasicDecoderFixture : public ::testing::Test {
  protected:
-  using Encoder = BasicEncoder<EncodingBimap&>;
-  using Decoder = BasicDecoder<EncodingBimap>;
+  using Encoder = BasicEncoder<EncodingBimap<BareBones::Vector>&>;
+  using Decoder = BasicDecoder<EncodingBimap<BareBones::Vector>>;
 
   struct DecodedPoint {
     Sample sample{};
@@ -499,13 +498,13 @@ class CreateBasicEncoderFromBasicDecoderFixture : public ::testing::Test {
   const LabelSet kLabelSet1{{"__name__", "test_metric1"}};
   const LabelSet kLabelSet2{{"__name__", "test_metric2"}};
 
-  EncodingBimap encoder_lss1_;
+  EncodingBimap<BareBones::Vector> encoder_lss1_;
   Encoder encoder1_{encoder_lss1_, 0, 2};
 
-  EncodingBimap decoder_lss1_;
+  EncodingBimap<BareBones::Vector> decoder_lss1_;
   Decoder decoder1_{decoder_lss1_, BasicEncoder<>::version};
 
-  EncodingBimap decoder_lss2_;
+  EncodingBimap<BareBones::Vector> decoder_lss2_;
   Decoder decoder2_{decoder_lss2_, BasicEncoder<>::version};
 
   static auto create_point_decoder(DecodedPoint& point) noexcept {

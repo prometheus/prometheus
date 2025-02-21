@@ -30,7 +30,7 @@ std::string_view get_wal_file() {
 
 BareBones::Vector<Label> get_labels() {
   BareBones::Vector<Label> labels;
-  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap label_set_bitmap;
+  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap<BareBones::Vector> label_set_bitmap;
 
   DummyWal::Timeseries tmsr;
   DummyWal dummy_wal{std::string{get_wal_file()}};

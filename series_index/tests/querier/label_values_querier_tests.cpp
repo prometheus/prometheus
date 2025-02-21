@@ -18,7 +18,7 @@ using series_index::querier::QuerierStatus;
 using series_index::trie::CedarMatchesList;
 using series_index::trie::CedarTrie;
 using TrieIndex = series_index::TrieIndex<CedarTrie, CedarMatchesList>;
-using Index = QueryableEncodingBimap<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimapFilament, TrieIndex>;
+using Index = QueryableEncodingBimap<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimapFilament, BareBones::Vector, TrieIndex>;
 
 struct LabelValuesQuerierCase {
   std::string_view label_name;
@@ -51,7 +51,7 @@ TEST_P(LabelValuesQuerierFixture, TestQuery) {
   std::vector<std::string_view> values;
 
   // Act
-  auto status =
+  const auto status =
       querier_.query(GetParam().label_name, GetParam().label_matchers, [&values](std::string_view value) PROMPP_LAMBDA_INLINE { values.emplace_back(value); });
 
   // Assert

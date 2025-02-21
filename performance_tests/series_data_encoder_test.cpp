@@ -1,6 +1,7 @@
 #include "series_data_encoder_test.h"
 
 #include <chrono>
+#include <iostream>
 #include <unordered_set>
 
 #include "bare_bones/allocator.h"
@@ -64,7 +65,7 @@ void SeriesDataEncoder::execute(const Config& config, Metrics& metrics) const {
   DummyWal::Timeseries tmsr;
   DummyWal dummy_wal(input_file_full_name(config));
 
-  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap label_set_bitmap;
+  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap<BareBones::Vector> label_set_bitmap;
   series_data::DataStorage storage;
   std::chrono::system_clock clock;
   series_data::OutdatedSampleEncoder outdated_sample_encoder{clock};

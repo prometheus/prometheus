@@ -134,16 +134,16 @@ class GorillaSampleDecoderWithSkips {
 
 static_assert(SampleDecoderInterface<GorillaSampleDecoderWithSkips>);
 
-using BaseOutputDecoder = BasicDecoder<Primitives::SnugComposites::LabelSet::ShrinkableEncodingBimap, GorillaSampleDecoderWithSkips>;
+using BaseOutputDecoder = BasicDecoder<Primitives::SnugComposites::LabelSet::ShrinkableEncodingBimap<BareBones::Vector>, GorillaSampleDecoderWithSkips>;
 
 class OutputDecoder : private BaseOutputDecoder {
-  Primitives::SnugComposites::LabelSet::ShrinkableEncodingBimap wal_lss_;
+  Primitives::SnugComposites::LabelSet::ShrinkableEncodingBimap<BareBones::Vector> wal_lss_;
   std::stringstream buf_;
   Primitives::LabelsBuilderStateMap builder_state_;
   std::vector<Primitives::LabelView> external_labels_{};
   Prometheus::Relabel::StatelessRelabeler& stateless_relabeler_;
-  Primitives::SnugComposites::LabelSet::EncodingBimap& output_lss_;
-  Primitives::SnugComposites::LabelSet::EncodingBimap::checkpoint_type dumped_checkpoint_{output_lss_.checkpoint()};
+  Primitives::SnugComposites::LabelSet::EncodingBimap<BareBones::Vector>& output_lss_;
+  Primitives::SnugComposites::LabelSet::EncodingBimap<BareBones::Vector>::checkpoint_type dumped_checkpoint_{output_lss_.checkpoint()};
 
   // align_cache_to_lss add new labels from lss via relabeler to cache.
   PROMPP_ALWAYS_INLINE void align_cache_to_lss() {
@@ -181,7 +181,7 @@ class OutputDecoder : private BaseOutputDecoder {
  public:
   // WALOutputDecoder constructor with empty state.
   PROMPP_ALWAYS_INLINE explicit OutputDecoder(Prometheus::Relabel::StatelessRelabeler& stateless_relabeler,
-                                              Primitives::SnugComposites::LabelSet::EncodingBimap& output_lss,
+                                              Primitives::SnugComposites::LabelSet::EncodingBimap<BareBones::Vector>& output_lss,
                                               Primitives::Go::SliceView<std::pair<Primitives::Go::String, Primitives::Go::String>>& external_labels,
                                               BasicEncoderVersion encoder_version = Writer::version)
       : BaseOutputDecoder{wal_lss_, encoder_version}, stateless_relabeler_{stateless_relabeler}, output_lss_(output_lss) {
@@ -270,8 +270,8 @@ class OutputDecoder : private BaseOutputDecoder {
   template <class Callback>
     requires std::is_invocable_v<Callback, Primitives::LabelSetID, timeseries_type>
   __attribute__((flatten)) void process_segment(Callback&& func) {
-    Primitives::BasicTimeseries<Primitives::SnugComposites::LabelSet::ShrinkableEncodingBimap::value_type*> timeseries;
-    Primitives::SnugComposites::LabelSet::ShrinkableEncodingBimap::value_type last_ls;  // composite_type
+    Primitives::BasicTimeseries<Primitives::SnugComposites::LabelSet::ShrinkableEncodingBimap<BareBones::Vector>::value_type*> timeseries;
+    Primitives::SnugComposites::LabelSet::ShrinkableEncodingBimap<BareBones::Vector>::value_type last_ls;  // composite_type
     Primitives::LabelSetID last_ls_id = std::numeric_limits<Primitives::LabelSetID>::max();
 
     process_segment([&](Primitives::LabelSetID ls_id, Primitives::Timestamp ts, Primitives::Sample::value_type v) {
@@ -314,9 +314,10 @@ struct ProtobufEncoderStats {
 
 // ProtobufEncoder encoder for snapped protobuf from refSamples.
 class ProtobufEncoder {
-  Primitives::BasicTimeseries<Primitives::SnugComposites::LabelSet::EncodingBimap::value_type*, BareBones::Vector<Primitives::Sample>> timeseries_;
+  Primitives::BasicTimeseries<Primitives::SnugComposites::LabelSet::EncodingBimap<BareBones::Vector>::value_type*, BareBones::Vector<Primitives::Sample>>
+      timeseries_;
   std::string protobuffer_;
-  std::vector<Primitives::SnugComposites::LabelSet::EncodingBimap*> output_lsses_;
+  std::vector<Primitives::SnugComposites::LabelSet::EncodingBimap<BareBones::Vector>*> output_lsses_;
   std::vector<std::vector<const RefSample*>> shards_ref_samples_;
   std::vector<size_t> max_size_shards_ref_samples_;
   size_t lss_number_of_shards_{0};
@@ -327,7 +328,7 @@ class ProtobufEncoder {
   PROMPP_ALWAYS_INLINE void write_compressed_protobuf(Primitives::Go::Slice<char>& compressed, WAL::ProtobufEncoderStats& stats) {
     // make protobuf
     protozero::pbf_writer pb_writer(protobuffer_);
-    Primitives::SnugComposites::LabelSet::EncodingBimap::value_type last_ls;  // composite_type
+    Primitives::SnugComposites::LabelSet::EncodingBimap<BareBones::Vector>::value_type last_ls;  // composite_type
 
     for (size_t lss_shard_id = 0; lss_shard_id < lss_number_of_shards_; ++lss_shard_id) {
       // calculate samples
@@ -385,7 +386,7 @@ class ProtobufEncoder {
 
   // clear_state clear state and maximum size recording.
   PROMPP_ALWAYS_INLINE void clear_state() noexcept {
-    max_size_timeseries_samples_ = std::max(max_size_timeseries_samples_, timeseries_.samples().size());
+    max_size_timeseries_samples_ = std::max(max_size_timeseries_samples_, static_cast<size_t>(timeseries_.samples().size()));
     timeseries_.set_label_set(nullptr);
     timeseries_.samples().clear();
 
@@ -424,7 +425,7 @@ class ProtobufEncoder {
 
  public:
   // ProtobufEncoder constructor.
-  PROMPP_ALWAYS_INLINE explicit ProtobufEncoder(std::vector<Primitives::SnugComposites::LabelSet::EncodingBimap*>&& output_lsses) noexcept
+  PROMPP_ALWAYS_INLINE explicit ProtobufEncoder(std::vector<Primitives::SnugComposites::LabelSet::EncodingBimap<BareBones::Vector>*>&& output_lsses) noexcept
       : output_lsses_{std::move(output_lsses)}, lss_number_of_shards_{output_lsses_.size()} {
     shards_ref_samples_.resize(lss_number_of_shards_);
     max_size_shards_ref_samples_.resize(lss_number_of_shards_);

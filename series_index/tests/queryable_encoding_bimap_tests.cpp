@@ -15,7 +15,7 @@ using series_index::trie::CedarTrie;
 class QueryableEncodingBimapFixture : public testing::Test {
  protected:
   using TrieIndex = series_index::TrieIndex<CedarTrie, CedarMatchesList>;
-  using Index = QueryableEncodingBimap<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimapFilament, TrieIndex>;
+  using Index = QueryableEncodingBimap<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimapFilament, BareBones::Vector, TrieIndex>;
 
   Index index_;
 };
@@ -27,11 +27,11 @@ TEST_F(QueryableEncodingBimapFixture, EmplaceLabelSet) {
   index_.find_or_emplace(LabelViewSet{{"job", "cron"}});
 
   // Assert
-  auto name_id = index_.trie_index().names_trie().lookup("job");
+  const auto name_id = index_.trie_index().names_trie().lookup("job");
   EXPECT_TRUE(name_id);
   EXPECT_NE(nullptr, index_.reverse_index().get(*name_id));
 
-  auto values_trie = index_.trie_index().values_trie(*name_id);
+  const auto values_trie = index_.trie_index().values_trie(*name_id);
   ASSERT_NE(nullptr, values_trie);
   EXPECT_TRUE(values_trie->lookup("cron"));
 }
@@ -45,10 +45,10 @@ TEST_F(QueryableEncodingBimapFixture, EmplaceInvalidLabel) {
     label.second = "";
     break;
   }
-  auto ls_id = index_.find_or_emplace(ls);
+  const auto ls_id = index_.find_or_emplace(ls);
 
   // Assert
-  auto label = index_[ls_id].begin();
+  const auto label = index_[ls_id].begin();
   EXPECT_FALSE(index_.trie_index().names_trie().lookup("key"));
   EXPECT_EQ(nullptr, index_.reverse_index().get(label.name_id()));
   EXPECT_EQ(nullptr, index_.trie_index().values_trie(label.name_id()));

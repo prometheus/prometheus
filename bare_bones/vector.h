@@ -1,27 +1,24 @@
 #pragma once
 
 #include <algorithm>
-#include <bit>
 #include <cassert>
 #include <cstring>
 #include <fstream>
-#include <iostream>
+#include <numeric>
 
 #include <scope_exit.h>
 
 #include "allocated_memory.h"
-#include "concepts.h"
 #include "exception.h"
 #include "memory.h"
 #include "preprocess.h"
-#include "stacktrace.h"
 #include "streams.h"
 #include "type_traits.h"
 
 namespace BareBones {
 
-template <class T>
-class Vector {
+template <template <class> class DerivedVector, class T>
+class GenericVector {
   /**
    * Why??? Why another vector??? Why no std::vector?
    *
@@ -35,224 +32,158 @@ class Vector {
 
   static_assert(IsTriviallyReallocatable<T>::value, "type parameter of this class should be trivially reallocatable");
 
-  Memory<T> data_;
-  uint32_t size_ = 0;
-
  public:
   using iterator_category = std::contiguous_iterator_tag;
   using value_type = T;
   using iterator = T*;
   using const_iterator = const T*;
 
-  Vector() noexcept = default;
-  Vector(std::initializer_list<T> values) {
-    reserve(values.size());
+  using Derived = DerivedVector<T>;
 
-    for (auto it = values.begin(); it != values.end(); ++it) {
-      new (data_ + size_) T(std::move(*it));
-      ++size_;
-    }
-  }
-  Vector(Vector&& o) noexcept : data_(std::move(o.data_)), size_(o.size_) { o.size_ = 0; }
-  Vector(const Vector& o) noexcept : size_(o.size_) {
-    if constexpr (IsTriviallyCopyable<T>::value) {
-      data_ = o.data_;
-    } else {
-      reserve(size_);
-      for (uint32_t i = 0; i != size_; ++i) {
-        new (data_ + i) T(o[i]);
-      }
-    }
-  }
+  PROMPP_ALWAYS_INLINE void reserve(size_t size) noexcept { derived()->memory().grow_to_fit_at_least(size); }
 
-  Vector& operator=(Vector&& o) noexcept {
-    data_ = std::move(o.data_);
-    size_ = o.size_;
-    o.size_ = 0;
-    return *this;
-  }
-  Vector& operator=(const Vector& o) noexcept {
-    if constexpr (IsTriviallyCopyable<T>::value) {
-      size_ = o.size_;
-      data_ = o.data_;
-    } else {
-      if (this != &o) {
-        size_ = o.size_;
-        reserve(size_);
-        for (uint32_t i = 0; i != size_; ++i) {
-          new (data_ + i) T(o[i]);
-        }
-      }
-    }
+  PROMPP_ALWAYS_INLINE void shrink_to_fit() noexcept { derived()->memory().resize_to_fit_at_least(size()); }
 
-    return *this;
-  }
+  PROMPP_ALWAYS_INLINE void resize(size_t new_size) noexcept {
+    reserve(new_size);
 
-  inline __attribute__((always_inline)) void reserve(size_t size) noexcept { data_.grow_to_fit_at_least(size); }
+    if constexpr (!std::is_trivial_v<T>) {
+      const auto current_size = size();
+      const auto memory = data();
 
-  inline __attribute__((always_inline)) void shrink_to_fit() noexcept { data_.resize_to_fit_at_least(size_); }
-
-  inline __attribute__((always_inline)) void resize(size_t size) noexcept {
-    reserve(size);
-
-    if constexpr (!std::is_trivial<T>::value) {
       if constexpr (IsZeroInitializable<T>::value) {
         if constexpr (IsTriviallyDestructible<T>::value) {
-          if (size > size_) {
-            PRAGMA_DIAGNOSTIC(push)
-            PRAGMA_DIAGNOSTIC(ignored DIAGNOSTIC_CLASS_MEMACCESS)
-            std::memset(data_ + size_, 0, (size - size_) * sizeof(T));
-            PRAGMA_DIAGNOSTIC(pop)
+          if (new_size > current_size) {
+            zero_memory(memory + current_size, new_size - current_size);
           } else {
-            PRAGMA_DIAGNOSTIC(push)
-            PRAGMA_DIAGNOSTIC(ignored DIAGNOSTIC_CLASS_MEMACCESS)
-            std::memset(data_ + size, 0, (size_ - size) * sizeof(T));
-            PRAGMA_DIAGNOSTIC(pop)
+            zero_memory(memory + new_size, current_size - new_size);
           }
         } else {
-          if (size > size_) {
-            PRAGMA_DIAGNOSTIC(push)
-            PRAGMA_DIAGNOSTIC(ignored DIAGNOSTIC_CLASS_MEMACCESS)
-            std::memset(data_ + size_, 0, (size - size_) * sizeof(T));
-            PRAGMA_DIAGNOSTIC(pop)
+          if (new_size > current_size) {
+            zero_memory(memory + current_size, new_size - current_size);
           } else {
-            for (uint32_t i = size; i != size_; ++i) {
-              (data_ + i)->~T();
+            for (uint32_t i = new_size; i != current_size; ++i) {
+              std::destroy_at(memory + i);
             }
           }
         }
       } else {
-        if (size > size_) {
-          for (uint32_t i = size_; i != size; ++i) {
-            new (data_ + i) T();
+        if (new_size > current_size) {
+          for (uint32_t i = current_size; i != new_size; ++i) {
+            std::construct_at(memory + i);
           }
         } else {
-          for (uint32_t i = size; i != size_; ++i) {
-            (data_ + i)->~T();
+          for (uint32_t i = new_size; i != current_size; ++i) {
+            std::destroy_at(memory + i);
           }
         }
       }
     }
 
-    size_ = static_cast<uint32_t>(size);
+    derived()->set_size(new_size);
   }
 
-  inline __attribute__((always_inline)) ~Vector() noexcept { clear(); }
+  PROMPP_ALWAYS_INLINE void clear() noexcept {
+    if constexpr (!std::is_trivial_v<T>) {
+      const auto memory = data();
+      const auto current_size = size();
 
-  inline __attribute__((always_inline)) void clear() noexcept {
-    if constexpr (!std::is_trivial<T>::value) {
       if constexpr (IsTriviallyDestructible<T>::value) {
-        std::memset(data_, 0, size_ * sizeof(T));
+        zero_memory(memory, current_size);
       } else {
-        for (uint32_t i = 0; i != size_; ++i) {
-          (data_ + i)->~T();
+        for (uint32_t i = 0; i != current_size; ++i) {
+          std::destroy_at(memory + i);
         }
       }
     }
 
-    size_ = 0;
+    derived()->set_size(0);
   }
 
-  inline __attribute__((always_inline)) const T* data() const noexcept { return data_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const T* data() const noexcept { return derived()->memory(); }
 
-  inline __attribute__((always_inline)) T* data() noexcept { return data_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE T* data() noexcept { return derived()->memory(); }
 
-  inline __attribute__((always_inline)) bool empty() const noexcept { return !size_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool empty() const noexcept { return size() == 0; }
 
-  inline __attribute__((always_inline)) size_t size() const noexcept { return size_; }
-
-  inline __attribute__((always_inline)) size_t capacity() const noexcept { return data_.size(); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t capacity() const noexcept { return derived()->memory().size(); }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept {
-    return mem::allocated_memory(data_) +
-           std::accumulate(begin(), end(), 0, [](size_t memory, const auto& item) PROMPP_LAMBDA_INLINE { return memory += mem::allocated_memory(item); });
+    return mem::allocated_memory(derived()->memory()) +
+           std::accumulate(begin(), end(), 0, [](size_t memory, const auto& item) PROMPP_LAMBDA_INLINE { return memory + mem::allocated_memory(item); });
   }
 
-  inline __attribute__((always_inline)) void push_back(const T& item) noexcept {
-    auto pos = size_;
-    resize(static_cast<size_t>(size_) + 1);
-    *(data_ + pos) = item;
+  template <class Item>
+  PROMPP_ALWAYS_INLINE void push_back(Item&& item) noexcept {
+    auto pos = size();
+    resize(pos + 1);
+    std::construct_at(data() + pos, std::forward<Item>(item));
   }
 
-  inline __attribute__((always_inline)) void push_back(T&& item) noexcept {
-    auto pos = size_;
-    resize(static_cast<size_t>(size_) + 1);
-    *(data_ + pos) = std::move(item);
-  }
+  template <class Item>
+  PROMPP_ALWAYS_INLINE iterator insert(iterator pos, Item&& item) noexcept {
+    assert(pos >= data());
+    assert(pos <= data() + size());
 
-  inline __attribute__((always_inline)) iterator insert(const iterator pos, const T& item) noexcept {
-    assert(pos >= data_);
-    assert(pos <= data_ + size_);
-    const auto idx = pos - data_;
-    reserve(size_ + 1);
+    const auto idx = pos - data();
+    reserve(size() + 1);
+    const auto memory = data();
+
     PRAGMA_DIAGNOSTIC(push)
     PRAGMA_DIAGNOSTIC(ignored DIAGNOSTIC_CLASS_MEMACCESS)
-    std::memmove(data_ + idx + 1, data_ + idx, (size_ - idx) * sizeof(T));
+    std::memmove(memory + idx + 1, memory + idx, (size() - idx) * sizeof(T));
     PRAGMA_DIAGNOSTIC(pop)
-    ++size_;
-    new (data_ + idx) T(item);
-    return data_ + idx;
-  }
 
-  inline __attribute__((always_inline)) iterator insert(const iterator pos, T&& item) noexcept {
-    assert(pos >= data_);
-    assert(pos <= data_ + size_);
-    const auto idx = pos - data_;
-    reserve(size_ + 1);
-    std::memmove(data_ + idx + 1, data_ + idx, (size_ - idx) * sizeof(T));
-    ++size_;
-    new (data_ + idx) T(std::move(item));
-    return data_ + idx;
+    derived()->set_size(size() + 1);
+    return std::construct_at(memory + idx, std::forward<Item>(item));
   }
 
   template <class... Args>
-  inline __attribute__((always_inline)) T& emplace_back(Args&&... args) noexcept {
-    reserve(size_ + 1);
-
-    new (data_ + size_) T(std::forward<Args>(args)...);
-
-    return *(data_ + size_++);
+  PROMPP_ALWAYS_INLINE T& emplace_back(Args&&... args) noexcept {
+    auto pos = size();
+    reserve(pos + 1);
+    derived()->set_size(pos + 1);
+    return *std::construct_at(data() + pos, std::forward<Args>(args)...);
   }
 
   template <std::random_access_iterator IteratorType, class IteratorSentinelType>
-    requires std::is_same<typename std::iterator_traits<IteratorType>::value_type, T>::value && std::sentinel_for<IteratorSentinelType, IteratorType>
-  inline __attribute__((always_inline)) void push_back(IteratorType begin, IteratorSentinelType end) noexcept {
-    auto pos = size_;
-    resize(static_cast<size_t>(size_) + (end - begin));
-    std::ranges::copy(begin, end, data_ + pos);
+    requires std::is_same_v<typename std::iterator_traits<IteratorType>::value_type, T> && std::sentinel_for<IteratorSentinelType, IteratorType>
+  PROMPP_ALWAYS_INLINE void push_back(IteratorType begin, IteratorSentinelType end) noexcept {
+    auto pos = size();
+    resize(pos + std::distance(begin, end));
+    std::ranges::copy(begin, end, data() + pos);
   }
 
-  inline __attribute__((always_inline)) const T& back() const noexcept { return data_[size_ - 1]; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t size() const noexcept { return derived()->get_size(); }
 
-  inline __attribute__((always_inline)) T& back() noexcept { return data_[size_ - 1]; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const T& back() const noexcept { return data()[size() - 1]; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE T& back() noexcept { return data()[size() - 1]; }
 
-  inline __attribute__((always_inline)) iterator begin() noexcept { return data_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE iterator begin() noexcept { return data(); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const_iterator begin() const noexcept { return data(); }
 
-  inline __attribute__((always_inline)) const_iterator begin() const noexcept { return data_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE iterator end() noexcept { return begin() + size(); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const_iterator end() const noexcept { return begin() + size(); }
 
-  inline __attribute__((always_inline)) iterator end() noexcept { return data_ + size_; }
-
-  inline __attribute__((always_inline)) const_iterator end() const noexcept { return data_ + size_; }
-
-  inline __attribute__((always_inline)) const T& operator[](uint32_t i) const {
-    assert(i < size_);
-    return data_[i];
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const T& operator[](uint32_t i) const {
+    assert(i < size());
+    return data()[i];
   }
 
-  inline __attribute__((always_inline)) T& operator[](uint32_t i) {
-    assert(i < size_);
-    return data_[i];
+  [[nodiscard]] PROMPP_ALWAYS_INLINE T& operator[](uint32_t i) {
+    assert(i < size());
+    return data()[i];
   }
 
-  inline __attribute__((always_inline)) bool operator==(const Vector<T>& vec) const { return this->size() == vec.size() && std::ranges::equal(*this, vec); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool operator==(const GenericVector& vec) const { return size() == vec.size() && std::ranges::equal(*this, vec); }
 
-  inline __attribute__((always_inline)) size_t save_size() const noexcept {
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t save_size() const noexcept {
     // version is written and read by methods put() and get() and they write and read 1 byte
-    return 1 + sizeof(size_) + sizeof(T) * size();
+    return 1 + sizeof(uint32_t) + sizeof(T) * size();
   }
 
   template <OutputStream S>
-  friend S& operator<<(S& out, const Vector& vec) {
+  friend S& operator<<(S& out, const GenericVector& vec) {
     auto original_exceptions = out.exceptions();
     auto sg1 = std::experimental::scope_exit([&]() { out.exceptions(original_exceptions); });
     out.exceptions(std::ifstream::failbit | std::ifstream::badbit);
@@ -261,34 +192,36 @@ class Vector {
     out.put(1);
 
     // write size
-    out.write(reinterpret_cast<const char*>(&vec.size_), sizeof(vec.size_));
+    const uint32_t size = vec.size();
+    out.write(reinterpret_cast<const char*>(&size), sizeof(size));
 
     // if there are no items to write, we finish here
-    if (!vec.size_) {
+    if (size == 0) {
       return out;
     }
 
     // write data
-    out.write(reinterpret_cast<const char*>(static_cast<const T*>(vec.data_)), sizeof(T) * vec.size_);
+    out.write(reinterpret_cast<const char*>(static_cast<const T*>(vec.data())), sizeof(T) * size);
 
     return out;
   }
 
   template <InputStream S>
-  friend S& operator>>(S& in, Vector& vec) {
+  friend S& operator>>(S& in, GenericVector& vec) {
     assert(vec.empty());
     auto sg1 = std::experimental::scope_fail([&]() { vec.clear(); });
 
     // read version
-    uint8_t version = in.get();
+    const uint8_t version = in.get();
 
     // return successfully, if stream is empty
-    if (in.eof())
+    if (in.eof()) {
       return in;
+    }
 
     // check version
-    if (version != 1) {
-      throw BareBones::Exception(0xe637da228c04829d, "Invalid vector format version %d while reading from stream, only version 1 is supported", version);
+    if (version != 1) [[unlikely]] {
+      throw Exception(0xe637da228c04829d, "Invalid vector format version %d while reading from stream, only version 1 is supported", version);
     }
 
     auto original_exceptions = in.exceptions();
@@ -306,16 +239,183 @@ class Vector {
 
     // read data
     vec.resize(size_to_read);
-    in.read(reinterpret_cast<char*>(static_cast<T*>(vec.data_)), sizeof(T) * size_to_read);
+    in.read(reinterpret_cast<char*>(static_cast<T*>(vec.data())), sizeof(T) * size_to_read);
 
     return in;
   }
+
+ protected:
+  void initialize(std::initializer_list<T> values) {
+    reserve(values.size());
+
+    auto item = data();
+    for (auto it = values.begin(); it != values.end(); ++it, ++item) {
+      std::construct_at(item, std::move(*it));
+    }
+
+    derived()->set_size(values.size());
+  }
+
+ private:
+  PROMPP_ALWAYS_INLINE static void zero_memory(void* memory, uint32_t size) {
+    PRAGMA_DIAGNOSTIC(push)
+    PRAGMA_DIAGNOSTIC(ignored DIAGNOSTIC_CLASS_MEMACCESS)
+    std::memset(memory, 0, size * sizeof(T));
+    PRAGMA_DIAGNOSTIC(pop)
+  }
+
+  PROMPP_ALWAYS_INLINE Derived* derived() noexcept { return static_cast<Derived*>(this); }
+  PROMPP_ALWAYS_INLINE const Derived* derived() const noexcept { return static_cast<const Derived*>(this); }
+};
+
+template <class T>
+class Vector : public GenericVector<Vector, T> {
+ public:
+  using Base = GenericVector<Vector, T>;
+
+  Vector() noexcept = default;
+  Vector(Vector&& o) noexcept : memory_(std::move(o.memory_)), size_(std::exchange(o.size_, 0)) {}
+  Vector(const Vector& o) noexcept : size_(o.size_) {
+    if constexpr (IsTriviallyCopyable<T>::value) {
+      memory_ = o.memory_;
+    } else {
+      memory_.grow_to_fit_at_least(size_);
+      for (uint32_t i = 0; i != size_; ++i) {
+        std::construct_at(memory_ + i, o[i]);
+      }
+    }
+  }
+  Vector(std::initializer_list<T> values) { Base::initialize(values); }
+
+  Vector& operator=(Vector&& o) noexcept {
+    if (this != &o) [[likely]] {
+      memory_ = std::move(o.memory_);
+      size_ = std::exchange(o.size_, 0);
+    }
+
+    return *this;
+  }
+  Vector& operator=(const Vector& o) noexcept {
+    if (this != &o) [[likely]] {
+      size_ = o.size_;
+
+      if constexpr (IsTriviallyCopyable<T>::value) {
+        memory_ = o.memory_;
+      } else {
+        memory_.grow_to_fit_at_least(size_);
+        for (uint32_t i = 0; i != size_; ++i) {
+          std::construct_at(memory_ + i, o[i]);
+        }
+      }
+    }
+
+    return *this;
+  }
+
+  ~Vector() noexcept {
+    for (uint32_t i = 0; i != size_; ++i) {
+      std::destroy_at(memory_ + i);
+    }
+  }
+
+ protected:
+  friend class GenericVector<Vector, T>;
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE Memory<T>& memory() noexcept { return memory_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const Memory<T>& memory() const noexcept { return memory_; }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t get_size() const noexcept { return size_; }
+  PROMPP_ALWAYS_INLINE void set_size(uint32_t size) noexcept { size_ = size; }
+
+ private:
+  Memory<T> memory_;
+  uint32_t size_{};
+};
+
+template <class T>
+class SharedVector : public GenericVector<SharedVector, T> {
+ public:
+  using Base = GenericVector<SharedVector, T>;
+
+  SharedVector() = default;
+  SharedVector(const SharedVector&) = default;
+  SharedVector(SharedVector&&) = default;
+  SharedVector(std::initializer_list<T> values) { Base::initialize(values); }
+
+  SharedVector& operator=(const SharedVector&) = default;
+  SharedVector& operator=(SharedVector&&) noexcept = default;
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const SharedPtr<T>& shared_ptr() const noexcept { return memory_.ptr(); }
+
+ protected:
+  friend class GenericVector<SharedVector, T>;
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE SharedMemory<T>& memory() noexcept { return memory_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const SharedMemory<T>& memory() const noexcept { return memory_; }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t get_size() const noexcept { return memory_.constructed_item_count(); }
+  PROMPP_ALWAYS_INLINE void set_size(uint32_t size) noexcept { memory_.set_constructed_item_count(size); }
+
+ private:
+  SharedMemory<T> memory_;
 };
 
 template <class T>
 struct IsTriviallyReallocatable<Vector<T>> : std::true_type {};
 
 template <class T>
+struct IsTriviallyReallocatable<SharedVector<T>> : std::true_type {};
+
+template <class T>
 struct IsZeroInitializable<Vector<T>> : std::true_type {};
+
+template <class T>
+struct IsZeroInitializable<SharedVector<T>> : std::true_type {};
+
+template <class T>
+class SharedSpan {
+ public:
+  using iterator_category = std::contiguous_iterator_tag;
+  using value_type = T;
+  using iterator = T*;
+  using const_iterator = const T*;
+
+  SharedSpan() noexcept = default;
+
+  template <class Item>
+    requires std::is_trivially_destructible_v<Item>
+  explicit SharedSpan(const SharedVector<Item>& vector) : data_(reinterpret_cast<const SharedPtr<T>&>(vector.shared_ptr())), size_(vector.size()) {}
+
+  SharedSpan(const SharedSpan&) = default;
+  SharedSpan(SharedSpan&& other) noexcept : data_(std::move(other.data_)), size_(std::exchange(other.size_, 0)) {}
+  SharedSpan& operator=(const SharedSpan&) = default;
+  SharedSpan& operator=(SharedSpan&& other) noexcept {
+    if (this != other) [[likely]] {
+      data_ = std::move(other.data_);
+      size_ = std::exchange(other.size_, 0);
+    }
+
+    return *this;
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const T& operator[](uint32_t i) const {
+    assert(i < size_);
+    return data_.get()[i];
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE T& operator[](uint32_t i) {
+    assert(i < size_);
+    return data_.get()[i];
+  }
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t size() const noexcept { return size_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const T* data() const noexcept { return begin(); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const T* begin() const noexcept { return data_.get(); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const T* end() const noexcept { return begin() + size_; }
+
+ private:
+  SharedPtr<T> data_;
+  uint32_t size_{};
+};
 
 }  // namespace BareBones

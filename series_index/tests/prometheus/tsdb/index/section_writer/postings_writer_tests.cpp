@@ -32,7 +32,8 @@ struct PostingsWriterCase {
 class PostingsWriterFixture : public testing::TestWithParam<PostingsWriterCase> {
  protected:
   using TrieIndex = series_index::TrieIndex<series_index::trie::CedarTrie, series_index::trie::CedarMatchesList>;
-  using QueryableEncodingBimap = series_index::QueryableEncodingBimap<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimapFilament, TrieIndex>;
+  using QueryableEncodingBimap =
+      series_index::QueryableEncodingBimap<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimapFilament, BareBones::Vector, TrieIndex>;
 
   std::ostringstream stream_;
   StreamWriter<decltype(stream_)> stream_writer_{&stream_};

@@ -5,6 +5,11 @@
 namespace BareBones::concepts {
 
 template <class T>
+concept is_dereferenceable = requires(T t) {
+  { *t };
+};
+
+template <class T>
 concept has_allocated_memory = requires(const T& t) {
   { t.allocated_memory() } -> std::convertible_to<size_t>;
 };

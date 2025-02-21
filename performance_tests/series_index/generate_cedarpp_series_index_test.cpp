@@ -13,7 +13,7 @@ void GenerateCedarppSeriesIndex::execute([[maybe_unused]] const Config& config, 
   DummyWal::Timeseries tmsr;
   DummyWal dummy_wal(input_file_full_name(config));
 
-  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap label_set_bitmap;
+  PromPP::Primitives::SnugComposites::LabelSet::EncodingBimap<BareBones::Vector> label_set_bitmap;
   uint32_t previous_label_id = std::numeric_limits<uint32_t>::max();
   cedar::da<uint32_t> names_trie;
   std::vector<std::unique_ptr<cedar::da<uint32_t>>> labels_trie_vector;
