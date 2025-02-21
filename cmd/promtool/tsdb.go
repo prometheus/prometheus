@@ -35,7 +35,9 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
+
 	"github.com/prometheus/common/promslog"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -45,6 +47,7 @@ import (
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
+
 	"go.uber.org/atomic"
 )
 
