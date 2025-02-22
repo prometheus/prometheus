@@ -54,7 +54,7 @@ type ScrapePools = {
 };
 
 const poolPanelHealthClass = (pool: ScrapePool) =>
-  pool.count > 1 && pool.downCount === pool.count
+  pool.count > 0 && pool.downCount === pool.count
     ? panelClasses.panelHealthErr
     : pool.downCount >= 1
       ? panelClasses.panelHealthWarn
