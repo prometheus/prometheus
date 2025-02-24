@@ -266,37 +266,37 @@ func parseSeries(defLine string, line int) (labels.Labels, []parser.SequenceValu
 	return metric, vals, nil
 }
 
-func parseExpect(defLine string, i int) (expectCmdType, *expectCmd, error) {
+func parseExpect(defLine string, i int) (expectCmdType, expectCmd, error) {
 	expectParts := patExpect.FindStringSubmatch(strings.TrimSpace(defLine))
+	expCmd := expectCmd{}
 	if expectParts == nil {
-		return 0, nil, fmt.Errorf("invalid expect statement, must match `%s`", patExpect.String())
+		return 0, expCmd, fmt.Errorf("invalid expect statement, must match `%s`", patExpect.String())
 	}
 	var (
 		mode            = expectParts[1]
 		hasOptionalPart = expectParts[2] != ""
+		matchAnyRegex   = regexp.MustCompile(`^.*$`)
 	)
 	expectType, ok := expectTypeStr[mode]
 	if !ok {
-		return 0, nil, fmt.Errorf("invalid expected error/annotation type %s", mode)
+		return 0, expCmd, fmt.Errorf("invalid expected error/annotation type %s", mode)
 	}
-
-	expCmd := &expectCmd{}
 	if hasOptionalPart {
-		switch {
-		case expectParts[2] == "msg":
+		switch expectParts[2] {
+		case "msg":
 			expCmd.message = strings.TrimSpace(expectParts[3])
-		case expectParts[2] == "regex":
+		case "regex":
 			pattern := strings.TrimSpace(expectParts[3])
 			regex, err := regexp.Compile(pattern)
 			if err != nil {
-				return 0, nil, fmt.Errorf("invalid regex %s for %s", pattern, mode)
+				return 0, expCmd, fmt.Errorf("invalid regex %s for %s", pattern, mode)
 			}
 			expCmd.regex = regex
 		default:
-			return 0, nil, fmt.Errorf("invalid token %s after %s", expectParts[2], mode)
+			return 0, expCmd, fmt.Errorf("invalid token %s after %s", expectParts[2], mode)
 		}
 	} else {
-		expCmd.regex = regexp.MustCompile(`^.*$`)
+		expCmd.regex = matchAnyRegex
 	}
 	return expectType, expCmd, nil
 }
@@ -413,16 +413,11 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 			break
 		}
 
+		// This would still allow a metric named 'expect' if it is written as 'expect{}'.
 		if strings.Split(defLine, " ")[0] == "expect" {
 			annoType, expectedAnno, err := parseExpect(defLine, i)
 			if err != nil {
 				return i, nil, formatErr("%w", err)
-			}
-			if cmd.expectedCmds == nil {
-				cmd.expectedCmds = make(map[expectCmdType][]*expectCmd)
-			}
-			if _, ok := cmd.expectedCmds[annoType]; !ok {
-				cmd.expectedCmds[annoType] = make([]*expectCmd, 0, 1)
 			}
 			cmd.expectedCmds[annoType] = append(cmd.expectedCmds[annoType], expectedAnno)
 			j--
@@ -436,9 +431,6 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 		metric, vals, err := parseSeries(defLine, i)
 		if err != nil {
 			return i, nil, err
-		}
-		if metric.Get(labels.MetricName) == "expect" {
-			return i, nil, formatErr(`"expect" is a reserved keyword in PromQL testing framework and cannot be used as a metric name`)
 		}
 
 		// Currently, we are not expecting any matrices.
@@ -689,7 +681,7 @@ type evalCmd struct {
 	expectedFailMessage       string
 	expectedFailRegexp        *regexp.Regexp
 
-	expectedCmds map[expectCmdType][]*expectCmd
+	expectedCmds map[expectCmdType][]expectCmd
 
 	metrics      map[uint64]labels.Labels
 	expectScalar bool
@@ -697,11 +689,11 @@ type evalCmd struct {
 }
 
 func (ev *evalCmd) isOrdered() bool {
-	return ev.ordered || (ev.expectedCmds[Ordered] != nil)
+	return ev.ordered || (len(ev.expectedCmds[Ordered]) > 0)
 }
 
 func (ev *evalCmd) isFail() bool {
-	return ev.fail || (ev.expectedCmds[Fail] != nil)
+	return ev.fail || (len(ev.expectedCmds[Fail]) > 0)
 }
 
 type expectCmdType byte
@@ -758,8 +750,9 @@ func newInstantEvalCmd(expr string, start time.Time, line int) *evalCmd {
 		start: start,
 		line:  line,
 
-		metrics:  map[uint64]labels.Labels{},
-		expected: map[uint64]entry{},
+		metrics:      map[uint64]labels.Labels{},
+		expected:     map[uint64]entry{},
+		expectedCmds: map[expectCmdType][]expectCmd{},
 	}
 }
 
@@ -772,8 +765,9 @@ func newRangeEvalCmd(expr string, start, end time.Time, step time.Duration, line
 		line:    line,
 		isRange: true,
 
-		metrics:  map[uint64]labels.Labels{},
-		expected: map[uint64]entry{},
+		metrics:      map[uint64]labels.Labels{},
+		expected:     map[uint64]entry{},
+		expectedCmds: map[expectCmdType][]expectCmd{},
 	}
 }
 
@@ -799,7 +793,7 @@ func (ev *evalCmd) expectMetric(pos int, m labels.Labels, vals ...parser.Sequenc
 }
 
 // validateExpectedAnnotations validates expected messages and regex match actual annotations.
-func validateExpectedAnnotations(expr string, expectedAnnotations []*expectCmd, actualAnnotations []string, line int, annotationType string) error {
+func validateExpectedAnnotations(expr string, expectedAnnotations []expectCmd, actualAnnotations []string, line int, annotationType string) error {
 	if len(expectedAnnotations) == 0 {
 		return nil
 	}
@@ -820,7 +814,7 @@ func validateExpectedAnnotations(expr string, expectedAnnotations []*expectCmd, 
 
 	// Check if all actual annotations have a corresponding expected annotation.
 	for _, anno := range actualAnnotations {
-		matchFound := slices.ContainsFunc(expectedAnnotations, func(e *expectCmd) bool {
+		matchFound := slices.ContainsFunc(expectedAnnotations, func(e expectCmd) bool {
 			return e.CheckMatch(anno)
 		})
 		if !matchFound {
@@ -837,20 +831,13 @@ func (ev *evalCmd) checkAnnotations(expr string, annos annotations.Annotations) 
 	switch {
 	case ev.ordered:
 		// Ignore annotations if testing for order.
-	case !ev.warn && countWarnings > 0:
-		return fmt.Errorf("unexpected warnings evaluating query %q (line %d): %v", expr, ev.line, annos.AsErrors())
 	case ev.warn && countWarnings == 0:
 		return fmt.Errorf("expected warnings evaluating query %q (line %d) but got none", expr, ev.line)
-	case !ev.info && countInfo > 0:
-		return fmt.Errorf("unexpected info annotations evaluating query %q (line %d): %v", expr, ev.line, annos.AsErrors())
 	case ev.info && countInfo == 0:
 		return fmt.Errorf("expected info annotations evaluating query %q (line %d) but got none", expr, ev.line)
 	}
 
-	var (
-		warnings = make([]string, 0, countWarnings)
-		infos    = make([]string, 0, countInfo)
-	)
+	var warnings, infos []string
 
 	for _, err := range annos {
 		switch {
