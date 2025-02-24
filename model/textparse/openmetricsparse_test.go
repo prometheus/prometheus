@@ -289,7 +289,7 @@ foobar{quantile="0.99"} 150.1`
 			es: []exemplar.Exemplar{
 				{Labels: labels.FromStrings("id", "counter-test"), Value: 5},
 			},
-			ct: int64p(1520872607123),
+			ct: 1520872607123,
 		}, {
 			m:    `foo_total{a="b"}`,
 			v:    17.0,
@@ -298,12 +298,12 @@ foobar{quantile="0.99"} 150.1`
 			es: []exemplar.Exemplar{
 				{Labels: labels.FromStrings("id", "counter-test"), Value: 5},
 			},
-			ct: int64p(1520872607123),
+			ct: 1520872607123,
 		}, {
 			m:    `foo_total{le="c"}`,
 			v:    21.0,
 			lset: labels.FromStrings("__name__", "foo_total", "le", "c"),
-			ct:   int64p(1520872621123),
+			ct:   1520872621123,
 		}, {
 			m:    `foo_total{le="1"}`,
 			v:    10.0,
@@ -318,22 +318,22 @@ foobar{quantile="0.99"} 150.1`
 			m:    "bar_count",
 			v:    17.0,
 			lset: labels.FromStrings("__name__", "bar_count"),
-			ct:   int64p(1520872608124),
+			ct:   1520872608124,
 		}, {
 			m:    "bar_sum",
 			v:    324789.3,
 			lset: labels.FromStrings("__name__", "bar_sum"),
-			ct:   int64p(1520872608124),
+			ct:   1520872608124,
 		}, {
 			m:    `bar{quantile="0.95"}`,
 			v:    123.7,
 			lset: labels.FromStrings("__name__", "bar", "quantile", "0.95"),
-			ct:   int64p(1520872608124),
+			ct:   1520872608124,
 		}, {
 			m:    `bar{quantile="0.99"}`,
 			v:    150.0,
 			lset: labels.FromStrings("__name__", "bar", "quantile", "0.99"),
-			ct:   int64p(1520872608124),
+			ct:   1520872608124,
 		}, {
 			m:    "baz",
 			help: "Histogram with the same objective as above's summary",
@@ -344,22 +344,22 @@ foobar{quantile="0.99"} 150.1`
 			m:    `baz_bucket{le="0.0"}`,
 			v:    0,
 			lset: labels.FromStrings("__name__", "baz_bucket", "le", "0.0"),
-			ct:   int64p(1520872609125),
+			ct:   1520872609125,
 		}, {
 			m:    `baz_bucket{le="+Inf"}`,
 			v:    17,
 			lset: labels.FromStrings("__name__", "baz_bucket", "le", "+Inf"),
-			ct:   int64p(1520872609125),
+			ct:   1520872609125,
 		}, {
 			m:    `baz_count`,
 			v:    17,
 			lset: labels.FromStrings("__name__", "baz_count"),
-			ct:   int64p(1520872609125),
+			ct:   1520872609125,
 		}, {
 			m:    `baz_sum`,
 			v:    324789.3,
 			lset: labels.FromStrings("__name__", "baz_sum"),
-			ct:   int64p(1520872609125),
+			ct:   1520872609125,
 		}, {
 			m:    "fizz_created",
 			help: "Gauge which shouldn't be parsed as CT",
@@ -380,27 +380,27 @@ foobar{quantile="0.99"} 150.1`
 			m:    `something_count`,
 			v:    18,
 			lset: labels.FromStrings("__name__", "something_count"),
-			ct:   int64p(1520430001000),
+			ct:   1520430001000,
 		}, {
 			m:    `something_sum`,
 			v:    324789.4,
 			lset: labels.FromStrings("__name__", "something_sum"),
-			ct:   int64p(1520430001000),
+			ct:   1520430001000,
 		}, {
 			m:    `something_bucket{le="0.0"}`,
 			v:    1,
 			lset: labels.FromStrings("__name__", "something_bucket", "le", "0.0"),
-			ct:   int64p(1520430001000),
+			ct:   1520430001000,
 		}, {
 			m:    `something_bucket{le="1"}`,
 			v:    2,
 			lset: labels.FromStrings("__name__", "something_bucket", "le", "1.0"),
-			ct:   int64p(1520430001000),
+			ct:   1520430001000,
 		}, {
 			m:    `something_bucket{le="+Inf"}`,
 			v:    18,
 			lset: labels.FromStrings("__name__", "something_bucket", "le", "+Inf"),
-			ct:   int64p(1520430001000),
+			ct:   1520430001000,
 		}, {
 			m:    "yum",
 			help: "Summary with _created between sum and quantiles",
@@ -411,22 +411,22 @@ foobar{quantile="0.99"} 150.1`
 			m:    `yum_count`,
 			v:    20,
 			lset: labels.FromStrings("__name__", "yum_count"),
-			ct:   int64p(1520430003000),
+			ct:   1520430003000,
 		}, {
 			m:    `yum_sum`,
 			v:    324789.5,
 			lset: labels.FromStrings("__name__", "yum_sum"),
-			ct:   int64p(1520430003000),
+			ct:   1520430003000,
 		}, {
 			m:    `yum{quantile="0.95"}`,
 			v:    123.7,
 			lset: labels.FromStrings("__name__", "yum", "quantile", "0.95"),
-			ct:   int64p(1520430003000),
+			ct:   1520430003000,
 		}, {
 			m:    `yum{quantile="0.99"}`,
 			v:    150.0,
 			lset: labels.FromStrings("__name__", "yum", "quantile", "0.99"),
-			ct:   int64p(1520430003000),
+			ct:   1520430003000,
 		}, {
 			m:    "foobar",
 			help: "Summary with _created as the first line",
@@ -437,22 +437,22 @@ foobar{quantile="0.99"} 150.1`
 			m:    `foobar_count`,
 			v:    21,
 			lset: labels.FromStrings("__name__", "foobar_count"),
-			ct:   int64p(1520430004000),
+			ct:   1520430004000,
 		}, {
 			m:    `foobar_sum`,
 			v:    324789.6,
 			lset: labels.FromStrings("__name__", "foobar_sum"),
-			ct:   int64p(1520430004000),
+			ct:   1520430004000,
 		}, {
 			m:    `foobar{quantile="0.95"}`,
 			v:    123.8,
 			lset: labels.FromStrings("__name__", "foobar", "quantile", "0.95"),
-			ct:   int64p(1520430004000),
+			ct:   1520430004000,
 		}, {
 			m:    `foobar{quantile="0.99"}`,
 			v:    150.1,
 			lset: labels.FromStrings("__name__", "foobar", "quantile", "0.99"),
-			ct:   int64p(1520430004000),
+			ct:   1520430004000,
 		}, {
 			m:    "metric",
 			help: "foo\x00bar",
@@ -507,12 +507,12 @@ quotedexemplar2_count 1 # {"id.thing"="histogram-count-test",other="hello"} 4
 			m:    `{"go.gc_duration_seconds",quantile="0"}`,
 			v:    4.9351e-05,
 			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "0.0"),
-			ct:   int64p(1520872607123),
+			ct:   1520872607123,
 		}, {
 			m:    `{"go.gc_duration_seconds",quantile="0.25"}`,
 			v:    7.424100000000001e-05,
 			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "quantile", "0.25"),
-			ct:   int64p(1520872607123),
+			ct:   1520872607123,
 		}, {
 			m:    `{"go.gc_duration_seconds",quantile="0.5",a="b"}`,
 			v:    8.3835e-05,
@@ -966,19 +966,19 @@ thing_c_total 14123.232
 				},
 				{
 					m:  `thing_count`,
-					ct: nil, // Should be int64p(1520872607123).
+					ct: 0, // Should be int64p(1520872607123).
 				},
 				{
 					m:  `thing_sum`,
-					ct: nil, // Should be int64p(1520872607123).
+					ct: 0, // Should be int64p(1520872607123).
 				},
 				{
 					m:  `thing_bucket{le="0.0"}`,
-					ct: nil, // Should be int64p(1520872607123).
+					ct: 0, // Should be int64p(1520872607123).
 				},
 				{
 					m:  `thing_bucket{le="+Inf"}`,
-					ct: nil, // Should be int64p(1520872607123),
+					ct: 0, // Should be int64p(1520872607123),
 				},
 				{
 					m:    "thing_c",
@@ -990,7 +990,7 @@ thing_c_total 14123.232
 				},
 				{
 					m:  `thing_c_total`,
-					ct: nil, // Should be int64p(1520872607123).
+					ct: 0, // Should be int64p(1520872607123).
 				},
 			},
 		},
