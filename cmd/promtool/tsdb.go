@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"hash/fnv"
 	"io"
 	"log/slog"
 	"os"
@@ -802,13 +801,7 @@ func CondensedString(ls labels.Labels) string {
 }
 
 func formatSeriesSetToJSON(ss storage.SeriesSet) error {
-	getSeriesID := func(in []byte) uint64 {
-		hash := fnv.New64()
-		_, _ = hash.Write(in)
-		return hash.Sum64()
-	}
-
-	seriesCache := make(map[uint64]struct{})
+	seriesCache := make(map[string]struct{})
 	for ss.Next() {
 		series := ss.At()
 		lbs := series.Labels()
@@ -822,10 +815,10 @@ func formatSeriesSetToJSON(ss storage.SeriesSet) error {
 			continue
 		}
 
-		id := getSeriesID(b)
-		if _, ok := seriesCache[id]; !ok {
-			fmt.Println(string(b))
-			seriesCache[id] = struct{}{}
+		s := string(b)
+		if _, ok := seriesCache[s]; !ok {
+			fmt.Println(s)
+			seriesCache[s] = struct{}{}
 		}
 	}
 	return nil
