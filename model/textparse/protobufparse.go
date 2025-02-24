@@ -379,9 +379,8 @@ func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 	return true
 }
 
-// CreatedTimestamp returns CT or nil if CT is not present or
-// invalid (as timestamp e.g. negative value) on counters, summaries or histograms.
-func (p *ProtobufParser) CreatedTimestamp() *int64 {
+// CreatedTimestamp returns CT or 0 if CT is not present on counters, summaries or histograms.
+func (p *ProtobufParser) CreatedTimestamp() int64 {
 	var ct *types.Timestamp
 	switch p.dec.GetType() {
 	case dto.MetricType_COUNTER:
@@ -392,13 +391,12 @@ func (p *ProtobufParser) CreatedTimestamp() *int64 {
 		ct = p.dec.GetHistogram().GetCreatedTimestamp()
 	default:
 	}
-	ctAsTime, err := types.TimestampFromProto(ct)
-	if err != nil {
-		// Errors means ct == nil or invalid timestamp, which we silently ignore.
-		return nil
+	if ct == nil {
+		return 0
 	}
-	ctMilis := ctAsTime.UnixMilli()
-	return &ctMilis
+	// Same as the gogo proto types.TimestampFromProto but straight to integer.
+	// and without validation.
+	return ct.GetSeconds()*1e3 + int64(ct.GetNanos())/1e6
 }
 
 // Next advances the parser to the next "sample" (emulating the behavior of a
