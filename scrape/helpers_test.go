@@ -159,7 +159,7 @@ func (a *collectResultAppender) Append(ref storage.SeriesRef, lset labels.Labels
 	if err != nil {
 		return 0, err
 	}
-	return ref, err
+	return ref, nil
 }
 
 func (a *collectResultAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
