@@ -266,7 +266,7 @@ func parseSeries(defLine string, line int) (labels.Labels, []parser.SequenceValu
 	return metric, vals, nil
 }
 
-func parseExpect(defLine string, i int) (expectCmdType, expectCmd, error) {
+func parseExpect(defLine string) (expectCmdType, expectCmd, error) {
 	expectParts := patExpect.FindStringSubmatch(strings.TrimSpace(defLine))
 	expCmd := expectCmd{}
 	if expectParts == nil {
@@ -415,7 +415,7 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 
 		// This would still allow a metric named 'expect' if it is written as 'expect{}'.
 		if strings.Split(defLine, " ")[0] == "expect" {
-			annoType, expectedAnno, err := parseExpect(defLine, i)
+			annoType, expectedAnno, err := parseExpect(defLine)
 			if err != nil {
 				return i, nil, formatErr("%w", err)
 			}
@@ -804,9 +804,7 @@ func validateExpectedAnnotations(expr string, expectedAnnotations []expectCmd, a
 
 	// Check if all expected annotations are found in actual.
 	for _, e := range expectedAnnotations {
-		matchFound := slices.ContainsFunc(actualAnnotations, func(anno string) bool {
-			return e.CheckMatch(anno)
-		})
+		matchFound := slices.ContainsFunc(actualAnnotations, e.CheckMatch)
 		if !matchFound {
 			return fmt.Errorf("expected %s annotation %q but no matching annotation was found for query %q (line %d)", annotationType, e.String(), expr, line)
 		}

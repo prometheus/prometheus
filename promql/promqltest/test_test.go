@@ -374,6 +374,7 @@ eval_info instant at 50m sort(rate(http_requests[10m]))
 		"instant query with unexpected info annotation": {
 			input: testData + `
 eval instant at 50m sort(rate(http_requests[10m]))
+	expect no_info
 	{group="production", instance="0", job="api-server"} 0.03333333333333333
 	{group="production", instance="1", job="api-server"} 0.06666666666666667
 	{group="canary", instance="0", job="api-server"} 0.1
