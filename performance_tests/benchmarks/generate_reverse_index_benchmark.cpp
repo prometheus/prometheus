@@ -56,25 +56,27 @@ BareBones::Vector<Label> get_labels() {
 }
 
 void BenchmarkGenerateReverseIndex(benchmark::State& state) {
-  const auto& labels = get_labels();
+  static const auto& labels = get_labels();
+  static size_t allocated_memory = 0;
 
   for ([[maybe_unused]] auto _ : state) {
-    ::series_index::SeriesReverseIndex series_reverse_index;
+    series_index::SeriesReverseIndex series_reverse_index;
 
     for (const auto& label : labels) {
       series_reverse_index.add(label, label.ls_id_);
     }
   }
 
-  state.counters["Memory"] = static_cast<double>([&labels] {
-    ::series_index::SeriesReverseIndex series_reverse_index;
+  if (allocated_memory == 0) [[unlikely]] {
+    series_index::SeriesReverseIndex series_reverse_index;
 
     for (const auto& label : labels) {
       series_reverse_index.add(label, label.ls_id_);
     }
 
-    return series_reverse_index.allocated_memory();
-  }());
+    allocated_memory = series_reverse_index.allocated_memory();
+  }
+  state.counters["Memory"] = benchmark::Counter(static_cast<double>(allocated_memory), benchmark::Counter::kDefaults, benchmark::Counter::kIs1024);
 }
 
 double min_value(const std::vector<double>& v) noexcept {

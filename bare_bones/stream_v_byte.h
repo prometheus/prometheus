@@ -598,13 +598,15 @@ template <class Codec, uint32_t PreAllocationElementsCount = 1024>
 class Sequence {
   static_assert(std::popcount(PreAllocationElementsCount) == 1, "PreAllocationElementsCount must be a power of two");
 
+  using Memory = BareBones::Memory<MemoryControlBlock, uint8_t>;
+
   uint32_t size_ = 0;
 
-  Memory<uint8_t> keys_;
-  Memory<uint8_t> data_;
+  Memory keys_;
+  Memory data_;
 
-  Memory<uint8_t>::iterator k_i_ = nullptr;
-  Memory<uint8_t>::iterator d_i_ = nullptr;
+  Memory::iterator k_i_ = nullptr;
+  Memory::iterator d_i_ = nullptr;
 
  public:
   using value_type = typename Codec::value_type;
@@ -865,10 +867,11 @@ class CompactSequence {
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return buffer_.allocated_memory(); }
 
  private:
-  Memory<uint8_t> buffer_;
-  Memory<uint8_t>::iterator key_iterator_ = nullptr;
-  Memory<uint8_t>::iterator data_iterator_ = nullptr;
-  uint32_t size_ = 0;
+  using Memory = BareBones::Memory<MemoryControlBlockWithItemCount, uint8_t>;
+
+  Memory buffer_;
+  Memory::iterator key_iterator_ = nullptr;
+  Memory::iterator data_iterator_ = nullptr;
 
   PROMPP_ALWAYS_INLINE void reserve_for_next_elements() noexcept {
     const auto current_size = data_iterator_ - buffer_;
@@ -886,33 +889,36 @@ class CompactSequence {
   CompactSequence& operator=(CompactSequence&&) noexcept = default;
 
   PROMPP_ALWAYS_INLINE void push_back(value_type val) noexcept {
-    if ((size_ % kPreAllocationElementsCount) == 0) [[unlikely]] {
+    if ((size() % kPreAllocationElementsCount) == 0) [[unlikely]] {
       reserve_for_next_elements();
     }
 
     auto code = Codec::encode(val, data_iterator_);
-    *key_iterator_ |= code << ((size_ & 0x03) << 1);
+    *key_iterator_ |= code << ((size() & 0x03) << 1);
 
-    ++size_;
+    set_size(size() + 1);
 
-    key_iterator_ += !(size_ % 4);
+    key_iterator_ += !(size() % 4);
   }
 
   PROMPP_ALWAYS_INLINE void clear() noexcept {
-    if (size_ != 0) [[likely]] {
+    if (size() != 0) [[likely]] {
       std::memset(buffer_, 0, kMaxKeySize);
       key_iterator_ = buffer_;
       data_iterator_ = key_iterator_ + kMaxKeySize;
 
-      size_ = 0;
+      set_size(0);
     }
   }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t size() const noexcept { return size_; }
-  [[nodiscard]] PROMPP_ALWAYS_INLINE bool empty() const noexcept { return !size_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t size() const noexcept { return buffer_.control_block().items_count; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool empty() const noexcept { return size() == 0; }
 
-  PROMPP_ALWAYS_INLINE auto begin() const noexcept { return DecodeIterator(buffer_, buffer_ + kMaxKeySize, size_); }
+  PROMPP_ALWAYS_INLINE auto begin() const noexcept { return DecodeIterator(buffer_, buffer_ + kMaxKeySize, size()); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE static auto end() noexcept { return DecodeIteratorSentinel{}; }
+
+ private:
+  PROMPP_ALWAYS_INLINE void set_size(uint32_t new_size) noexcept { buffer_.control_block().items_count = new_size; }
 };
 
 }  // namespace StreamVByte

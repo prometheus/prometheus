@@ -113,7 +113,7 @@ extern "C" void prompp_primitives_lss_free_label_sets(void* args) {
     Slice<Slice<PromPP::Primitives::Go::Label>> label_sets;
   };
 
-  static_cast<Arguments*>(args)->label_sets.~Slice();
+  static_cast<Arguments*>(args)->~Arguments();
 }
 
 extern "C" void prompp_primitives_lss_query_label_names(void* args, void* res) {

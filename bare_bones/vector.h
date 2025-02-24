@@ -17,7 +17,7 @@
 
 namespace BareBones {
 
-template <template <class> class DerivedVector, class T>
+template <class Derived, class SizeType, class T>
 class GenericVector {
   /**
    * Why??? Why another vector??? Why no std::vector?
@@ -38,18 +38,16 @@ class GenericVector {
   using iterator = T*;
   using const_iterator = const T*;
 
-  using Derived = DerivedVector<T>;
-
-  PROMPP_ALWAYS_INLINE void reserve(size_t size) noexcept { derived()->memory().grow_to_fit_at_least(size); }
+  PROMPP_ALWAYS_INLINE void reserve(SizeType size) noexcept { derived()->memory().grow_to_fit_at_least(size); }
 
   PROMPP_ALWAYS_INLINE void shrink_to_fit() noexcept { derived()->memory().resize_to_fit_at_least(size()); }
 
-  PROMPP_ALWAYS_INLINE void resize(size_t new_size) noexcept {
+  PROMPP_ALWAYS_INLINE void resize(SizeType new_size) noexcept {
     reserve(new_size);
 
     if constexpr (!std::is_trivial_v<T>) {
       const auto current_size = size();
-      const auto memory = data();
+      auto memory = data();
 
       if constexpr (IsZeroInitializable<T>::value) {
         if constexpr (IsTriviallyDestructible<T>::value) {
@@ -62,19 +60,22 @@ class GenericVector {
           if (new_size > current_size) {
             zero_memory(memory + current_size, new_size - current_size);
           } else {
-            for (uint32_t i = new_size; i != current_size; ++i) {
-              std::destroy_at(memory + i);
+            memory += new_size;
+            for (SizeType i = new_size; i != current_size; ++i) {
+              std::destroy_at(memory++);
             }
           }
         }
       } else {
         if (new_size > current_size) {
-          for (uint32_t i = current_size; i != new_size; ++i) {
-            std::construct_at(memory + i);
+          memory += current_size;
+          for (SizeType i = current_size; i != new_size; ++i) {
+            std::construct_at(memory++);
           }
         } else {
-          for (uint32_t i = new_size; i != current_size; ++i) {
-            std::destroy_at(memory + i);
+          memory += new_size;
+          for (SizeType i = new_size; i != current_size; ++i) {
+            std::destroy_at(memory++);
           }
         }
       }
@@ -84,27 +85,51 @@ class GenericVector {
   }
 
   template <class Writer>
-    requires std::is_invocable_v<Writer, iterator, uint32_t>
-  PROMPP_ALWAYS_INLINE void reserve_and_write(uint32_t additional_size, Writer&& writer) {
+    requires std::is_invocable_v<Writer, iterator, SizeType>
+  PROMPP_ALWAYS_INLINE void reserve_and_write(SizeType additional_size, Writer&& writer) {
     reserve(size() + additional_size);
     derived()->set_size(size() + std::forward<Writer>(writer)(end(), additional_size));
   }
 
   PROMPP_ALWAYS_INLINE void clear() noexcept {
     if constexpr (!std::is_trivial_v<T>) {
-      const auto memory = data();
+      auto memory = data();
       const auto current_size = size();
 
       if constexpr (IsTriviallyDestructible<T>::value) {
         zero_memory(memory, current_size);
       } else {
-        for (uint32_t i = 0; i != current_size; ++i) {
-          std::destroy_at(memory + i);
+        for (SizeType i = 0; i != current_size; ++i) {
+          std::destroy_at(memory++);
         }
       }
     }
 
     derived()->set_size(0);
+  }
+
+  PROMPP_ALWAYS_INLINE iterator erase(iterator first, iterator last) noexcept {
+    assert(first >= begin());
+    assert(last <= end());
+    assert(last >= first);
+
+    if (first == last) {
+      return end();
+    }
+
+    if constexpr (!IsTriviallyDestructible<T>::value) {
+      for (auto i = first; i != last; ++i, ++first) {
+        first->~T();
+      }
+    }
+
+    PRAGMA_DIAGNOSTIC(push)
+    PRAGMA_DIAGNOSTIC(ignored DIAGNOSTIC_CLASS_MEMACCESS)
+    std::ranges::move(last, end(), first);
+    PRAGMA_DIAGNOSTIC(pop)
+
+    resize(size() - (last - first));
+    return first;
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE const T* data() const noexcept { return derived()->memory(); }
@@ -113,7 +138,7 @@ class GenericVector {
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE bool empty() const noexcept { return size() == 0; }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t capacity() const noexcept { return derived()->memory().size(); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE SizeType capacity() const noexcept { return derived()->memory().size(); }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept {
     return mem::allocated_memory(derived()->memory()) +
@@ -161,7 +186,7 @@ class GenericVector {
     std::ranges::copy(begin, end, data() + pos);
   }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t size() const noexcept { return derived()->get_size(); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE SizeType size() const noexcept { return derived()->get_size(); }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE const T& back() const noexcept { return data()[size() - 1]; }
   [[nodiscard]] PROMPP_ALWAYS_INLINE T& back() noexcept { return data()[size() - 1]; }
@@ -172,12 +197,12 @@ class GenericVector {
   [[nodiscard]] PROMPP_ALWAYS_INLINE iterator end() noexcept { return begin() + size(); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE const_iterator end() const noexcept { return begin() + size(); }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE const T& operator[](uint32_t i) const {
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const T& operator[](SizeType i) const {
     assert(i < size());
     return data()[i];
   }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE T& operator[](uint32_t i) {
+  [[nodiscard]] PROMPP_ALWAYS_INLINE T& operator[](SizeType i) {
     assert(i < size());
     return data()[i];
   }
@@ -186,7 +211,7 @@ class GenericVector {
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t save_size() const noexcept {
     // version is written and read by methods put() and get() and they write and read 1 byte
-    return 1 + sizeof(uint32_t) + sizeof(T) * size();
+    return 1 + sizeof(SizeType) + sizeof(T) * size();
   }
 
   template <OutputStream S>
@@ -199,7 +224,7 @@ class GenericVector {
     out.put(1);
 
     // write size
-    const uint32_t size = vec.size();
+    const auto size = vec.size();
     out.write(reinterpret_cast<const char*>(&size), sizeof(size));
 
     // if there are no items to write, we finish here
@@ -236,7 +261,7 @@ class GenericVector {
     in.exceptions(std::ifstream::failbit | std::ifstream::badbit | std::ifstream::eofbit);
 
     // read size
-    uint32_t size_to_read;
+    SizeType size_to_read;
     in.read(reinterpret_cast<char*>(&size_to_read), sizeof(size_to_read));
 
     // read is completed, if there are no items
@@ -264,90 +289,86 @@ class GenericVector {
   }
 
  private:
-  PROMPP_ALWAYS_INLINE static void zero_memory(void* memory, uint32_t size) {
+  PROMPP_ALWAYS_INLINE static void zero_memory(void* memory, SizeType size) {
     PRAGMA_DIAGNOSTIC(push)
     PRAGMA_DIAGNOSTIC(ignored DIAGNOSTIC_CLASS_MEMACCESS)
     std::memset(memory, 0, size * sizeof(T));
     PRAGMA_DIAGNOSTIC(pop)
   }
 
-  PROMPP_ALWAYS_INLINE Derived* derived() noexcept { return static_cast<Derived*>(this); }
-  PROMPP_ALWAYS_INLINE const Derived* derived() const noexcept { return static_cast<const Derived*>(this); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE Derived* derived() noexcept { return static_cast<Derived*>(this); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const Derived* derived() const noexcept { return static_cast<const Derived*>(this); }
 };
 
-template <class T>
-class Vector : public GenericVector<Vector, T> {
+template <template <class> class MemoryControlBlock, class T>
+class MemoryBasedVector : public GenericVector<MemoryBasedVector<MemoryControlBlock, T>, typename MemoryControlBlock<T>::SizeType, T> {
  public:
-  using Base = GenericVector<Vector, T>;
+  using MemoryType = Memory<MemoryControlBlock, T>;
+  using SizeType = typename MemoryType::SizeType;
+  using Base = GenericVector<MemoryBasedVector, SizeType, T>;
 
-  Vector() noexcept = default;
-  Vector(Vector&& o) noexcept : memory_(std::move(o.memory_)), size_(std::exchange(o.size_, 0)) {}
-  Vector(const Vector& o) noexcept : size_(o.size_) {
-    if constexpr (IsTriviallyCopyable<T>::value) {
-      memory_ = o.memory_;
-    } else {
-      memory_.grow_to_fit_at_least(size_);
-      for (uint32_t i = 0; i != size_; ++i) {
-        std::construct_at(memory_ + i, o[i]);
-      }
-    }
-  }
-  Vector(std::initializer_list<T> values) { Base::initialize(values); }
+  MemoryBasedVector() noexcept = default;
+  MemoryBasedVector(MemoryBasedVector&& other) noexcept = default;
+  MemoryBasedVector(const MemoryBasedVector& other) noexcept { copy(other); }
+  MemoryBasedVector(std::initializer_list<T> values) { Base::initialize(values); }
+  explicit MemoryBasedVector(SizeType size) { Base::resize(size); }
 
-  Vector& operator=(Vector&& o) noexcept {
-    if (this != &o) [[likely]] {
-      memory_ = std::move(o.memory_);
-      size_ = std::exchange(o.size_, 0);
-    }
-
-    return *this;
-  }
-  Vector& operator=(const Vector& o) noexcept {
-    if (this != &o) [[likely]] {
-      size_ = o.size_;
-
-      if constexpr (IsTriviallyCopyable<T>::value) {
-        memory_ = o.memory_;
-      } else {
-        memory_.grow_to_fit_at_least(size_);
-        for (uint32_t i = 0; i != size_; ++i) {
-          std::construct_at(memory_ + i, o[i]);
-        }
-      }
+  MemoryBasedVector& operator=(MemoryBasedVector&& o) noexcept = default;
+  MemoryBasedVector& operator=(const MemoryBasedVector& other) noexcept {
+    if (this != &other) [[likely]] {
+      copy(other);
     }
 
     return *this;
   }
 
-  ~Vector() noexcept {
-    for (uint32_t i = 0; i != size_; ++i) {
-      std::destroy_at(memory_ + i);
+  ~MemoryBasedVector() noexcept {
+    auto memory = Base::data();
+    for (SizeType i = 0; i != get_size(); ++i) {
+      std::destroy_at(memory++);
     }
   }
 
  protected:
-  friend class GenericVector<Vector, T>;
+  friend class GenericVector<MemoryBasedVector, SizeType, T>;
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE Memory<T>& memory() noexcept { return memory_; }
-  [[nodiscard]] PROMPP_ALWAYS_INLINE const Memory<T>& memory() const noexcept { return memory_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE auto& memory() noexcept { return memory_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const auto& memory() const noexcept { return memory_; }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t get_size() const noexcept { return size_; }
-  PROMPP_ALWAYS_INLINE void set_size(uint32_t size) noexcept { size_ = size; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE SizeType get_size() const noexcept { return memory_.control_block().items_count; }
+  PROMPP_ALWAYS_INLINE void set_size(SizeType size) noexcept { memory_.control_block().items_count = size; }
 
  private:
-  Memory<T> memory_;
-  uint32_t size_{};
+  MemoryType memory_;
+
+  PROMPP_ALWAYS_INLINE void copy(const MemoryBasedVector& other) {
+    set_size(other.get_size());
+
+    if constexpr (IsTriviallyCopyable<T>::value) {
+      memory_ = other.memory_;
+    } else {
+      memory_.grow_to_fit_at_least(get_size());
+      for (SizeType i = 0; i != get_size(); ++i) {
+        std::construct_at(memory_ + i, other[i]);
+      }
+    }
+  }
 };
 
 template <class T>
-class SharedVector : public GenericVector<SharedVector, T> {
+using Vector = MemoryBasedVector<MemoryControlBlockWithItemCount, T>;
+
+template <class T>
+class SharedVector : public GenericVector<SharedVector<T>, typename SharedMemory<T>::SizeType, T> {
  public:
-  using Base = GenericVector<SharedVector, T>;
+  using SizeType = typename SharedMemory<T>::SizeType;
+  using Base = GenericVector<SharedVector, SizeType, T>;
 
   SharedVector() = default;
   SharedVector(const SharedVector&) = default;
   SharedVector(SharedVector&&) = default;
   SharedVector(std::initializer_list<T> values) { Base::initialize(values); }
+  explicit SharedVector(SizeType size) { Base::resize(size); }
 
   SharedVector& operator=(const SharedVector&) = default;
   SharedVector& operator=(SharedVector&&) noexcept = default;
@@ -355,13 +376,13 @@ class SharedVector : public GenericVector<SharedVector, T> {
   [[nodiscard]] PROMPP_ALWAYS_INLINE const SharedPtr<T>& shared_ptr() const noexcept { return memory_.ptr(); }
 
  protected:
-  friend class GenericVector<SharedVector, T>;
+  friend class GenericVector<SharedVector, SizeType, T>;
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE SharedMemory<T>& memory() noexcept { return memory_; }
   [[nodiscard]] PROMPP_ALWAYS_INLINE const SharedMemory<T>& memory() const noexcept { return memory_; }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t get_size() const noexcept { return memory_.constructed_item_count(); }
-  PROMPP_ALWAYS_INLINE void set_size(uint32_t size) noexcept { memory_.set_constructed_item_count(size); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE SizeType get_size() const noexcept { return memory_.constructed_item_count(); }
+  PROMPP_ALWAYS_INLINE void set_size(SizeType size) noexcept { memory_.set_constructed_item_count(size); }
 
  private:
   SharedMemory<T> memory_;
@@ -386,6 +407,7 @@ class SharedSpan {
   using value_type = T;
   using iterator = T*;
   using const_iterator = const T*;
+  using SizeType = typename SharedVector<T>::SizeType;
 
   SharedSpan() noexcept = default;
 
@@ -405,24 +427,24 @@ class SharedSpan {
     return *this;
   }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE const T& operator[](uint32_t i) const {
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const T& operator[](SizeType i) const {
     assert(i < size_);
     return data_.get()[i];
   }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE T& operator[](uint32_t i) {
+  [[nodiscard]] PROMPP_ALWAYS_INLINE T& operator[](SizeType i) {
     assert(i < size_);
     return data_.get()[i];
   }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t size() const noexcept { return size_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE SizeType size() const noexcept { return size_; }
   [[nodiscard]] PROMPP_ALWAYS_INLINE const T* data() const noexcept { return begin(); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE const T* begin() const noexcept { return data_.get(); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE const T* end() const noexcept { return begin() + size_; }
 
  private:
   SharedPtr<T> data_;
-  uint32_t size_{};
+  SizeType size_{};
 };
 
 }  // namespace BareBones

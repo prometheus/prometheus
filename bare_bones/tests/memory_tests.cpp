@@ -7,12 +7,13 @@
 namespace {
 
 using BareBones::Memory;
+using BareBones::MemoryControlBlock;
 using BareBones::SharedMemory;
 using BareBones::SharedPtr;
 
 class MemoryFixture : public ::testing::Test {
  protected:
-  Memory<uint8_t> memory_;
+  Memory<MemoryControlBlock, uint8_t> memory_;
 };
 
 TEST_F(MemoryFixture, Empty) {
@@ -45,7 +46,7 @@ TEST_F(MemoryFixture, CopyOperator) {
   std::iota(memory_.begin(), memory_.end(), uint8_t{});
 
   // Act
-  Memory<uint8_t> memory2;
+  Memory<MemoryControlBlock, uint8_t> memory2;
   memory2.resize_to_fit_at_least(1);
   memory2 = memory_;
 
@@ -79,7 +80,7 @@ TEST_F(MemoryFixture, MoveOperator) {
   const auto memory_size = memory_.size();
 
   // Act
-  Memory<uint8_t> memory2;
+  Memory<MemoryControlBlock, uint8_t> memory2;
   memory2.resize_to_fit_at_least(1);
   memory2 = std::move(memory_);
 

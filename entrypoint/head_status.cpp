@@ -24,10 +24,5 @@ extern "C" void prompp_get_head_status(void* args, void* res) {
 }
 
 extern "C" void prompp_free_head_status(void* args) {
-  const auto in = static_cast<Status*>(args);
-
-  in->label_value_count_by_label_name.free();
-  in->series_count_by_metric_name.free();
-  in->memory_in_bytes_by_label_name.free();
-  in->series_count_by_label_value_pair.free();
+  static_cast<Status*>(args)->~Status();
 }
