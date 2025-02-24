@@ -7,7 +7,7 @@
 
 namespace BareBones {
 
-template <template <class> class DerivedMemory, class T>
+template <class Derived, class SizeType, class T>
 class GenericMemory {
  public:
   static_assert(IsTriviallyReallocatable<T>::value, "type parameter of this class should be trivially reallocatable");
@@ -16,26 +16,24 @@ class GenericMemory {
   using iterator = T*;
   using const_iterator = const T*;
 
-  using Derived = DerivedMemory<T>;
+  PROMPP_ALWAYS_INLINE void resize_to_fit_at_least(SizeType needed_size) noexcept { derived()->resize(get_allocation_size(needed_size)); }
 
-  PROMPP_ALWAYS_INLINE void resize_to_fit_at_least(size_t needed_size) noexcept { derived()->resize(get_allocation_size(needed_size)); }
-
-  PROMPP_ALWAYS_INLINE void grow_to_fit_at_least(size_t needed_size) noexcept {
+  PROMPP_ALWAYS_INLINE void grow_to_fit_at_least(SizeType needed_size) noexcept {
     if (needed_size > size()) {
       resize_to_fit_at_least(needed_size);
     }
   }
 
-  PROMPP_ALWAYS_INLINE void grow_to_fit_at_least_and_fill_with_zeros(size_t needed_size) noexcept {
+  PROMPP_ALWAYS_INLINE void grow_to_fit_at_least_and_fill_with_zeros(SizeType needed_size) noexcept {
     if (needed_size > size()) {
-      size_t old_size = size();
+      const auto old_size = size();
       resize_to_fit_at_least(needed_size);
       std::memset(begin() + old_size, 0, (size() - old_size) * sizeof(T));
     }
   }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE bool empty() const noexcept { return size() == 0; }
-  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t size() const noexcept { return derived()->get_size(); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE SizeType size() const noexcept { return derived()->get_size(); }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE const T* begin() const noexcept { return derived()->data(); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE T* begin() noexcept { return derived()->data(); }
@@ -49,7 +47,7 @@ class GenericMemory {
   [[nodiscard]] PROMPP_ALWAYS_INLINE operator T*() noexcept { return begin(); }
 
  private:
-  [[nodiscard]] PROMPP_ALWAYS_INLINE static size_t get_allocation_size(size_t needed_size) noexcept {
+  [[nodiscard]] PROMPP_ALWAYS_INLINE static SizeType get_allocation_size(SizeType needed_size) noexcept {
     static constexpr size_t kMinAllocationSize = 32;
 
     if (needed_size > std::numeric_limits<uint32_t>::max()) [[unlikely]] {
@@ -75,13 +73,71 @@ class GenericMemory {
   PROMPP_ALWAYS_INLINE const Derived* derived() const noexcept { return static_cast<const Derived*>(this); }
 };
 
+template <template <class> class ControlBlock, class T>
+concept MemoryControlBlockInterface = requires(ControlBlock<T> control_block) {
+  typename ControlBlock<T>::SizeType;
+
+  { control_block.data } -> std::same_as<T*&>;
+  { control_block.data_size } -> std::same_as<typename ControlBlock<T>::SizeType&>;
+};
+
 template <class T>
-class Memory : public GenericMemory<Memory, T> {
+struct MemoryControlBlock {
+  using SizeType = uint32_t;
+
+  MemoryControlBlock() = default;
+  MemoryControlBlock(const MemoryControlBlock&) = delete;
+  MemoryControlBlock(MemoryControlBlock&& other) noexcept : data(std::exchange(other.data, nullptr)), data_size(std::exchange(other.data_size, 0)) {}
+
+  MemoryControlBlock& operator=(const MemoryControlBlock&) = delete;
+  PROMPP_ALWAYS_INLINE MemoryControlBlock& operator=(MemoryControlBlock&& other) noexcept {
+    if (this != &other) [[likely]] {
+      data = std::exchange(other.data, nullptr);
+      data_size = std::exchange(other.data_size, 0);
+    }
+
+    return *this;
+  }
+
+  T* data{};
+  SizeType data_size{};
+};
+
+template <class T>
+struct MemoryControlBlockWithItemCount {
+  using SizeType = uint32_t;
+
+  MemoryControlBlockWithItemCount() = default;
+  MemoryControlBlockWithItemCount(const MemoryControlBlockWithItemCount&) = delete;
+  MemoryControlBlockWithItemCount(MemoryControlBlockWithItemCount&& other) noexcept
+      : data(std::exchange(other.data, nullptr)), data_size(std::exchange(other.data_size, 0)), items_count(std::exchange(other.items_count, 0)) {}
+
+  MemoryControlBlockWithItemCount& operator=(const MemoryControlBlockWithItemCount&) = delete;
+  PROMPP_ALWAYS_INLINE MemoryControlBlockWithItemCount& operator=(MemoryControlBlockWithItemCount&& other) noexcept {
+    if (this != &other) [[likely]] {
+      data = std::exchange(other.data, nullptr);
+      data_size = std::exchange(other.data_size, 0);
+      items_count = std::exchange(other.items_count, 0);
+    }
+
+    return *this;
+  }
+
+  T* data{};
+  SizeType data_size{};
+  SizeType items_count{};
+};
+
+template <template <class> class ControlBlock, class T>
+  requires MemoryControlBlockInterface<ControlBlock, T>
+class Memory : public GenericMemory<Memory<ControlBlock, T>, typename ControlBlock<T>::SizeType, T> {
  public:
+  using SizeType = typename ControlBlock<T>::SizeType;
+
   PROMPP_ALWAYS_INLINE Memory() noexcept = default;
   PROMPP_ALWAYS_INLINE Memory(const Memory& o) noexcept { copy(o); }
-  PROMPP_ALWAYS_INLINE Memory(Memory&& o) noexcept : data_(std::exchange(o.data_, nullptr)), size_(std::exchange(o.size_, 0)) {}
-  PROMPP_ALWAYS_INLINE ~Memory() noexcept { std::free(data_); }
+  PROMPP_ALWAYS_INLINE Memory(Memory&& o) noexcept = default;
+  PROMPP_ALWAYS_INLINE ~Memory() noexcept { std::free(control_block_.data); }
 
   PROMPP_ALWAYS_INLINE Memory& operator=(const Memory& o) noexcept {
     if (this != &o) [[likely]] {
@@ -93,49 +149,48 @@ class Memory : public GenericMemory<Memory, T> {
 
   PROMPP_ALWAYS_INLINE Memory& operator=(Memory&& o) noexcept {
     if (this != &o) [[likely]] {
-      std::free(data_);
-
-      size_ = std::exchange(o.size_, 0);
-      data_ = std::exchange(o.data_, nullptr);
+      std::free(control_block_.data);
+      control_block_ = std::move(o.control_block_);
     }
 
     return *this;
   }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return size_ * sizeof(T); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE auto& control_block() noexcept { return control_block_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const auto& control_block() const noexcept { return control_block_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return control_block_.data_size * sizeof(T); }
 
  protected:
-  friend class GenericMemory<Memory, T>;
+  friend class GenericMemory<Memory, SizeType, T>;
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t get_size() const noexcept { return size_; }
-  [[nodiscard]] PROMPP_ALWAYS_INLINE T* data() noexcept { return data_; }
-  [[nodiscard]] PROMPP_ALWAYS_INLINE const T* data() const noexcept { return data_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE SizeType get_size() const noexcept { return control_block_.data_size; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE T* data() noexcept { return control_block_.data; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const T* data() const noexcept { return control_block_.data; }
 
-  PROMPP_ALWAYS_INLINE void resize(size_t new_size) noexcept {
+  PROMPP_ALWAYS_INLINE void resize(SizeType new_size) noexcept {
     PRAGMA_DIAGNOSTIC(push)
     PRAGMA_DIAGNOSTIC(ignored DIAGNOSTIC_CLASS_MEMACCESS)
-    data_ = static_cast<T*>(std::realloc(data_, new_size * sizeof(T)));
+    control_block_.data = static_cast<T*>(std::realloc(control_block_.data, new_size * sizeof(T)));
     PRAGMA_DIAGNOSTIC(pop)
 
-    if (data_ == nullptr) [[unlikely]] {
+    if (control_block_.data == nullptr) [[unlikely]] {
       std::abort();
     }
 
-    size_ = new_size;
+    control_block_.data_size = new_size;
   }
 
  private:
-  T* data_{};
-  uint32_t size_{};
+  ControlBlock<T> control_block_;
 
   PROMPP_ALWAYS_INLINE void copy(const Memory& o) noexcept {
     static_assert(IsTriviallyCopyable<T>::value, "it's not allowed to copy memory for non trivially copyable types");
 
-    resize(o.size_);
+    resize(o.control_block_.data_size);
 
     PRAGMA_DIAGNOSTIC(push)
     PRAGMA_DIAGNOSTIC(ignored DIAGNOSTIC_CLASS_MEMACCESS)
-    std::memcpy(data_, o.data_, size_ * sizeof(T));
+    std::memcpy(control_block_.data, o.control_block_.data, control_block_.data_size * sizeof(T));
     PRAGMA_DIAGNOSTIC(pop)
   }
 };
@@ -273,8 +328,10 @@ class SharedPtr {
 };
 
 template <class T>
-class SharedMemory : public GenericMemory<SharedMemory, T> {
+class SharedMemory : public GenericMemory<SharedMemory<T>, uint32_t, T> {
  public:
+  using SizeType = uint32_t;
+
   SharedMemory() = default;
   SharedMemory(const SharedMemory&) = default;
   SharedMemory(SharedMemory&& other) noexcept : data_(std::move(other.data_)), size_(std::exchange(other.size_, 0)) {}
@@ -299,13 +356,13 @@ class SharedMemory : public GenericMemory<SharedMemory, T> {
   [[nodiscard]] PROMPP_ALWAYS_INLINE const SharedPtr<T>& ptr() const noexcept { return data_; }
 
  protected:
-  friend class GenericMemory<SharedMemory, T>;
+  friend class GenericMemory<SharedMemory, SizeType, T>;
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t get_size() const noexcept { return size_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE SizeType get_size() const noexcept { return size_; }
   [[nodiscard]] PROMPP_ALWAYS_INLINE T* data() noexcept { return data_.get(); }
   [[nodiscard]] PROMPP_ALWAYS_INLINE const T* data() const noexcept { return data_.get(); }
 
-  PROMPP_ALWAYS_INLINE void resize(size_t new_size) noexcept {
+  PROMPP_ALWAYS_INLINE void resize(SizeType new_size) noexcept {
     if (data_.non_atomic_is_unique()) [[likely]] {
       data_.non_atomic_reallocate(new_size);
     } else {
@@ -325,14 +382,14 @@ class SharedMemory : public GenericMemory<SharedMemory, T> {
   uint32_t size_{};
 };
 
-template <class T>
-struct IsTriviallyReallocatable<Memory<T>> : std::true_type {};
+template <template <class> class ControlBlock, class T>
+struct IsTriviallyReallocatable<Memory<ControlBlock, T>> : std::true_type {};
 
 template <class T>
 struct IsTriviallyReallocatable<SharedMemory<T>> : std::true_type {};
 
-template <class T>
-struct IsZeroInitializable<Memory<T>> : std::true_type {};
+template <template <class> class ControlBlock, class T>
+struct IsZeroInitializable<Memory<ControlBlock, T>> : std::true_type {};
 
 template <class T>
 struct IsZeroInitializable<SharedMemory<T>> : std::true_type {};

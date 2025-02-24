@@ -13,10 +13,9 @@
 #include "primitives/go_slice.h"
 
 extern "C" void prompp_free_bytes(void* args) {
-  using args_t = PromPP::Primitives::Go::Slice<char>;
+  using Slice = PromPP::Primitives::Go::Slice<char>;
 
-  args_t* in = reinterpret_cast<args_t*>(args);
-  in->free();
+  static_cast<Slice*>(args)->~Slice();
 }
 
 extern "C" void je_jemalloc_constructor(void);

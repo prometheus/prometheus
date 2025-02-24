@@ -36,7 +36,7 @@ struct AllocationSize {
 
 class BitSequenceReader {
  public:
-  BitSequenceReader(const Memory<uint8_t>::const_iterator begin, uint64_t size) noexcept : begin_(begin), size_(size) {}
+  BitSequenceReader(const uint8_t* begin, uint64_t size) noexcept : begin_(begin), size_(size) {}
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t read_bits_u32(uint8_t size) const noexcept {
     assert(size <= 32);
@@ -395,7 +395,7 @@ class BitSequence {
   size_t size_ = 0;
 
   size_t max_size_for_current_data_size_ = 0;
-  Memory<uint8_t> data_;
+  Memory<MemoryControlBlock, uint8_t> data_;
 
   PROMPP_ALWAYS_INLINE void reserve_enough_memory_if_needed() noexcept {
     if (size_ >= max_size_for_current_data_size_) {

@@ -13,7 +13,12 @@ struct buffer_customization<PromPP::Primitives::Go::Slice<char>> {
 
   static void append(PromPP::Primitives::Go::Slice<char>* buffer, const char* data, std::size_t count) { buffer->push_back(data, data + count); }
 
-  static void append_zeros(PromPP::Primitives::Go::Slice<char>* buffer, std::size_t count) { buffer->push_back(count, '\0'); }
+  static void append_zeros(PromPP::Primitives::Go::Slice<char>* buffer, std::size_t count) {
+    buffer->reserve_and_write(count, [](char* memory, size_t size) {
+      std::memset(memory, 0x00, size);
+      return size;
+    });
+  }
 
   static void resize(PromPP::Primitives::Go::Slice<char>* buffer, std::size_t size) {
     protozero_assert(size < buffer->size());

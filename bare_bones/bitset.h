@@ -14,6 +14,7 @@
 #include "type_traits.h"
 
 namespace BareBones {
+
 class Bitset {
   /**
    * Why??? Why another bitset??? Why no std::bitset?
@@ -24,8 +25,7 @@ class Bitset {
    * - roaring bitmap is not that quick if you can afford to hold the whole
    *   bitset in memory (including unset parts), which is the case
    */
-  Memory<uint64_t> data_;
-  uint32_t size_ = 0;
+  Memory<MemoryControlBlockWithItemCount, uint64_t> data_;
 
  public:
   void reserve(size_t size) noexcept {
@@ -41,50 +41,50 @@ class Bitset {
     data_.grow_to_fit_at_least_and_fill_with_zeros(size_in_uint64_elements);
   }
 
-  void resize(size_t size) noexcept {
-    reserve(size);
+  void resize(size_t new_size) noexcept {
+    reserve(new_size);
 
     // unset on downsize
-    if (size < size_) {
-      const uint64_t new_size_in_uint64_elements = (size + 63) >> 6;
-      const uint64_t original_size_in_uint64_elements = (size_ + 63) >> 6;
+    if (new_size < size()) {
+      const uint64_t new_size_in_uint64_elements = (new_size + 63) >> 6;
+      const uint64_t original_size_in_uint64_elements = (size() + 63) >> 6;
       std::memset(data_ + new_size_in_uint64_elements, 0, (original_size_in_uint64_elements - new_size_in_uint64_elements) << 3);
-      data_[size >> 6] &= ~(0xFFFFFFFFFFFFFFFF << (size & 0x3F));
+      data_[new_size >> 6] &= ~(0xFFFFFFFFFFFFFFFF << (new_size & 0x3F));
     }
 
-    size_ = static_cast<uint32_t>(size);
+    set_size(static_cast<uint32_t>(new_size));
   }
 
   // TODO shrink_to_fit
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t size() const noexcept { return size_; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t size() const noexcept { return data_.control_block().items_count; }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t capacity() const noexcept { return data_.size() * 64; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE size_t capacity() const noexcept { return static_cast<size_t>(data_.size()) * 64; }
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_set(uint32_t v) const noexcept { return v < size_ && (data_[v >> 6] & (1ull << (v & 0x3F))) != 0; }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE bool is_set(uint32_t v) const noexcept { return v < size() && (data_[v >> 6] & (1ull << (v & 0x3F))) != 0; }
 
   void set(uint32_t v) noexcept {
-    assert(v < size_);
+    assert(v < size());
     data_[v >> 6] |= (1ull << (v & 0x3F));
   }
 
   void reset(uint32_t v) noexcept {
-    assert(v < size_);
+    assert(v < size());
     data_[v >> 6] &= ~(1ull << (v & 0x3F));
   }
 
   PROMPP_ALWAYS_INLINE bool operator[](uint32_t v) const noexcept {
-    assert(v < size_);
+    assert(v < size());
     return (data_[v >> 6] & (1ull << (v & 0x3F))) > 0;
   }
 
   void clear() noexcept {
-    if (size_ != 0) {
-      const uint64_t size_in_uint64_elements = (size_ + 63) >> 6;
+    if (size() != 0) {
+      const uint64_t size_in_uint64_elements = (size() + 63) >> 6;
       assert(size_in_uint64_elements <= data_.size());
       std::memset(data_, 0, size_in_uint64_elements << 3);
     }
-    size_ = 0;
+    set_size(0);
   }
 
   class IteratorSentinel {};
@@ -135,7 +135,7 @@ class Bitset {
 
   using const_iterator = Iterator;
 
-  [[nodiscard]] PROMPP_ALWAYS_INLINE auto begin() const noexcept { return Iterator(data_, size_); }
+  [[nodiscard]] PROMPP_ALWAYS_INLINE auto begin() const noexcept { return Iterator(data_, size()); }
   [[nodiscard]] static PROMPP_ALWAYS_INLINE auto end() noexcept { return IteratorSentinel(); }
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE size_t allocated_memory() const noexcept { return data_.allocated_memory(); }
@@ -143,6 +143,9 @@ class Bitset {
   [[nodiscard]] PROMPP_ALWAYS_INLINE uint32_t popcount() const noexcept {
     return std::accumulate(data_.begin(), data_.end(), 0U, [](uint32_t popcount, uint64_t v) PROMPP_LAMBDA_INLINE { return popcount + std::popcount(v); });
   }
+
+ private:
+  PROMPP_ALWAYS_INLINE void set_size(uint32_t new_size) noexcept { data_.control_block().items_count = new_size; }
 };
 
 template <>
