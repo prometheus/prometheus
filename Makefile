@@ -125,7 +125,8 @@ coverage: ## Run code coverage
 coverage:
 	@$(bazel) coverage $(bazel_flags) --cache_test_results=no  --experimental_fetch_all_coverage_outputs $(target)
 	lcov -t "pp" -o pp.info -c -f -d $(lcov_directory) -b ./ --no-external \
+		--ignore-errors unused -j `nproc` \
 		-exclude "$(bazel_workspace_root)/external/*" -exclude "*_tests.cpp" -exclude "*_mock.h" \
 		-exclude "$(bazel_workspace_root)/bazel-out/*" -exclude "$(bazel_workspace_root)/*/tests/*" \
 		-exclude "$(bazel_workspace_root)/third_party/*"
-	genhtml -o report pp.info
+	genhtml --hierarchical -q -o report pp.info

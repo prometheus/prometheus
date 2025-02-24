@@ -116,31 +116,34 @@ typedef testing::Types<BareBones::SnugComposite::EncodingBimap<TestSnugComposite
 template <class T>
 struct SnugComposite : public testing::Test {
   using StringFilament = TestSnugCompositesStringFilament<Vector>;
+
+  static void fill_table_with_random_values(auto& table) {
+    table.find_or_emplace("10"s);
+    table.find_or_emplace("11"s);
+    table.find_or_emplace("13"s);
+  }
 };
 
 TYPED_TEST_SUITE(SnugComposite, SnugCompositesBimapTypes);
 
 TYPED_TEST(SnugComposite, should_return_same_id_for_same_data) {
+  // Arrange
   TypeParam outcomes;
-  std::mt19937 gen32(testing::UnitTest::GetInstance()->random_seed());
-  for (auto i = 0; i < 100; ++i) {
-    outcomes.find_or_emplace(std::to_string(gen32()));
-  }
-  std::string v = "12";
-  auto id = outcomes.find_or_emplace(v);
-  ASSERT_EQ(id, outcomes.find_or_emplace(v));
+  this->fill_table_with_random_values(outcomes);
+  static auto v = "12"s;
 
+  // Act
+  auto id = outcomes.find_or_emplace(v);
+
+  // Assert
+  ASSERT_EQ(id, outcomes.find_or_emplace(v));
   ASSERT_EQ(outcomes.find_or_emplace(v), outcomes.find(v));
 }
 
 TYPED_TEST(SnugComposite, should_return_same_id_for_same_data_with_hash) {
-  TypeParam outcomes;
-
-  if constexpr (!std::is_same<TypeParam, BareBones::SnugComposite::OrderedEncodingBimap<TestSnugCompositesStringFilament, Vector>>::value) {
-    std::mt19937 gen32(testing::UnitTest::GetInstance()->random_seed());
-    for (auto i = 0; i < 100; ++i) {
-      outcomes.find_or_emplace(std::to_string(gen32()));
-    }
+  if constexpr (!std::is_same_v<TypeParam, BareBones::SnugComposite::OrderedEncodingBimap<TestSnugCompositesStringFilament, Vector>>) {
+    TypeParam outcomes;
+    this->fill_table_with_random_values(outcomes);
 
     std::string v = "12";
     auto hash_val = std::hash<std::string>()(v);
@@ -165,25 +168,24 @@ TYPED_TEST(SnugComposite, should_return_same_id_for_same_data_with_hash) {
 }
 
 TYPED_TEST(SnugComposite, should_return_different_id_for_different_data) {
+  // Arrange
   TypeParam outcomes;
-  std::mt19937 gen32(testing::UnitTest::GetInstance()->random_seed());
-  for (auto i = 0; i < 100; ++i) {
-    outcomes.find_or_emplace(std::to_string(gen32()));
-  }
-  std::string v = "12";
-  auto id = outcomes.find_or_emplace(v);
-  v = "21";
-  ASSERT_NE(id, outcomes.find_or_emplace(v));
+  this->fill_table_with_random_values(outcomes);
+  static auto v1 = "12"s;
+  static auto v2 = "21"s;
+
+  // Act
+  auto id1 = outcomes.find_or_emplace(v1);
+  auto id2 = outcomes.find_or_emplace(v2);
+
+  // Assert
+  ASSERT_NE(id1, id2);
 }
 
 TYPED_TEST(SnugComposite, should_return_different_id_for_different_data_with_hash) {
-  TypeParam outcomes;
-
-  if constexpr (!std::is_same<TypeParam, BareBones::SnugComposite::OrderedEncodingBimap<TestSnugCompositesStringFilament, Vector>>::value) {
-    std::mt19937 gen32(testing::UnitTest::GetInstance()->random_seed());
-    for (auto i = 0; i < 100; ++i) {
-      outcomes.find_or_emplace(std::to_string(gen32()));
-    }
+  if constexpr (!std::is_same_v<TypeParam, BareBones::SnugComposite::OrderedEncodingBimap<TestSnugCompositesStringFilament, Vector>>) {
+    TypeParam outcomes;
+    this->fill_table_with_random_values(outcomes);
 
     std::string v = "12";
     size_t hash_val = std::hash<std::string>()(v);
@@ -204,31 +206,6 @@ TYPED_TEST(SnugComposite, should_return_different_id_for_different_data_with_has
     EXPECT_NE(id, outcomes.find_or_emplace(v, hash_val));
     EXPECT_NE(id, outcomes.find_or_emplace(v));
   }
-}
-
-TYPED_TEST(SnugComposite, should_has_all_pushed_items) {
-  TypeParam outcomes;
-  std::mt19937 gen32(testing::UnitTest::GetInstance()->random_seed());
-  for (auto i = 0; i < 100; ++i) {
-    outcomes.find_or_emplace(std::to_string(gen32()));
-  }
-  std::string v = "12";
-  auto id = outcomes.find_or_emplace(v);
-  v = "21";
-  ASSERT_NE(id, outcomes.find_or_emplace(v));
-  // std::set<std::string> expected;
-  // for (auto i = 0; i < 100; ++i) {
-  //   v = std::to_string(gen32());
-  // expected.insert(s);
-  //   x.find_or_emplace(std::to_string(gen32()));
-  // }
-  // std::set<std::string> actual;
-  // for (auto i = x.begin(); i != x.end(); ++i) {
-  //   std::string_view sv = *i;
-  //   std::string s(sv);
-  //   actual.insert(s);
-  // }
-  // ASSERT_EQ(expected, actual);
 }
 
 TYPED_TEST(SnugComposite, should_assign_new_ids_after_rollback) {

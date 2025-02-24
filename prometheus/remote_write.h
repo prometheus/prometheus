@@ -171,7 +171,7 @@ inline __attribute__((always_inline)) void read_timeseries(ProtobufReader&& pb_t
 
 template <class Timeseries, class ProtobufReader, class Callback>
   requires std::is_invocable<Callback, const Timeseries&>::value
-__attribute__((flatten)) void read_many_timeseries(ProtobufReader& pb, Callback func) {
+void read_many_timeseries(ProtobufReader& pb, Callback func) {
   Timeseries timeseries;
 
   try {
@@ -247,7 +247,7 @@ inline __attribute__((always_inline)) void read_timeseries_label_set(ProtobufRea
 
 template <class Timeseries, class Hashdex, class ProtobufReader>
   requires std::is_same<typename Hashdex::value_type, TimeseriesProtobufHashdexRecord>::value
-__attribute__((flatten)) void read_many_timeseries_in_hashdex(ProtobufReader& pb, Hashdex& hdx, const PbLabelSetMemoryLimits& limits) {
+void read_many_timeseries_in_hashdex(ProtobufReader& pb, Hashdex& hdx, const PbLabelSetMemoryLimits& limits) {
   Timeseries timeseries;
   size_t current_timeseries_n = 0;
   try {

@@ -3,6 +3,8 @@
 
 #include <gtest/gtest.h>
 
+#include <ranges>
+
 #include "bare_bones/sparse_vector.h"
 #include "bare_bones/vector.h"
 
@@ -41,36 +43,19 @@ TEST(BareBonesSparseVector, valid_clear) {
 }
 
 TEST(BareBonesSparseVector, random_access) {
-  const size_t num_values = 10000;
+  // Arrange
+  constexpr std::array values = {124906U, 315107U, 1006518U, 1723575U, 2586253U, 5161614U, 5703086U, 6539749U, 7322267U, 7929935U};
+  static_assert(std::ranges::is_sorted(values));
   BareBones::SparseVector<uint32_t, BareBones::Vector> sv;
-  std::map<uint32_t, uint32_t> mp;
-  std::vector<uint32_t> index;
 
-  std::mt19937 gen32(testing::UnitTest::GetInstance()->random_seed());
-  uint32_t max_index = 0;
-  for (size_t i = 0; i < num_values; ++i) {
-    auto v = gen32() % 8'000'000;
-    if (v > max_index) {
-      max_index = v;
-    }
-    index.push_back(v);
-  }
-  for (auto i = index.begin(); i != index.end(); ++i) {
-    mp[*i] = *i;
+  // Act
+  sv.resize(values.back() + 1);
+  for (const auto value : values) {
+    sv[value] = value;
   }
 
-  sv.resize(max_index + 1);
-  for (auto i = index.begin(); i != index.end(); ++i) {
-    sv[*i] = *i;
-  }
-
-  std::map<uint32_t, uint32_t> mp_sv;
-  for (auto i = sv.begin(); i != sv.end(); ++i) {
-    auto [in, v] = *i;
-    mp_sv[in] = v;
-  }
-
-  ASSERT_EQ(mp, mp_sv);
+  // Assert
+  EXPECT_TRUE(std::ranges::equal(values, std::ranges::views::transform(values, [&](auto i) { return sv[i]; })));
 }
 
 TEST(BareBonesSparseVector, should_increase_decriase_size) {

@@ -183,7 +183,7 @@ def _impl(ctx):
                                 "-static-libgcc",
                                 "-static-libstdc++",
                                 "-l:libstdc++.a",
-                                "-l:libm.a",
+                                "-lm",
                             ],
                         ),
                     ]),

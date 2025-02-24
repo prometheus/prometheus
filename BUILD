@@ -263,7 +263,6 @@ cc_library(
     includes = ["./ceph"],
     deps = [
         ":bare_bones_headers",
-        "@ceph",
         "@snappy",
     ],
 )
@@ -314,6 +313,7 @@ cc_binary(
     linkshared = True,
     deps = [
         ":ceph_sdk",
+        "@ceph",
         ":cls_wal_modules",
     ],
 )
@@ -397,6 +397,7 @@ cc_binary(
     linkshared = True,
     deps = [
         ":cls_block_catalog_modules",
+        "@ceph",
     ],
 )
 

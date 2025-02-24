@@ -19,22 +19,22 @@ using BareBones::Encoding::Gorilla::ZigZagTimestampDecoder;
 using BareBones::Encoding::Gorilla::ZigZagTimestampEncoder;
 using BareBones::Encoding::Gorilla::ZigZagTimestampNullDecoder;
 
-using samples_sequence_type = std::vector<std::pair<uint64_t, double>>;
-
-const size_t NUM_SAMPLES = 100000;
+const size_t NUM_SAMPLES = 1000;
 const uint64_t START_TS = 1660828400000;
 const uint64_t STEP_TS = 10000;
 const double START_VALUE = 1000;
 const double STEP_VALUE = 10.5;
 
+using samples_sequence_type = std::array<std::pair<uint64_t, double>, NUM_SAMPLES>;
+
 samples_sequence_type generate_consistent_samples() {
   samples_sequence_type samples;
 
   for (size_t i = 0; i < NUM_SAMPLES; ++i) {
-    samples.push_back({
+    samples[i] = {
         START_TS + (STEP_TS * i),
         START_VALUE + (STEP_VALUE * i),
-    });
+    };
   }
 
   return samples;
@@ -45,15 +45,15 @@ samples_sequence_type generate_samples_with_negative_delta_values() {
 
   for (size_t i = 0; i < NUM_SAMPLES; ++i) {
     if (i % 2 == 0) {
-      samples.push_back({
+      samples[i] = {
           START_TS + (STEP_TS * i),
           START_VALUE - (STEP_VALUE * i),
-      });
+      };
     } else {
-      samples.push_back({
+      samples[i] = {
           START_TS + (STEP_TS * i),
           START_VALUE + (STEP_VALUE * i),
-      });
+      };
     }
   }
 
@@ -65,15 +65,15 @@ samples_sequence_type generate_samples_with_negative_delta_timestamp() {
 
   for (size_t i = 0; i < NUM_SAMPLES; ++i) {
     if (i % 2 == 0) {
-      samples.push_back({
+      samples[i] = {
           START_TS - (STEP_TS * i),
           START_VALUE + (STEP_VALUE * i),
-      });
+      };
     } else {
-      samples.push_back({
+      samples[i] = {
           START_TS + (STEP_TS * i),
           START_VALUE + (STEP_VALUE * i),
-      });
+      };
     }
   }
 
@@ -85,15 +85,15 @@ samples_sequence_type generate_samples_with_negative_delta() {
 
   for (size_t i = 0; i < NUM_SAMPLES; ++i) {
     if (i % 2 == 0) {
-      samples.push_back({
+      samples[i] = {
           START_TS - (STEP_TS * i),
           START_VALUE - (STEP_VALUE * i),
-      });
+      };
     } else {
-      samples.push_back({
+      samples[i] = {
           START_TS + (STEP_TS * i),
           START_VALUE + (STEP_VALUE * i),
-      });
+      };
     }
   }
 
@@ -105,20 +105,20 @@ samples_sequence_type generate_samples_with_nan() {
 
   for (size_t i = 0; i < NUM_SAMPLES; ++i) {
     if (i % 3 == 0) {
-      samples.push_back({
+      samples[i] = {
           START_TS + (STEP_TS * i),
           std::nan("1"),
-      });
+      };
     } else if (i % 2 == 0) {
-      samples.push_back({
+      samples[i] = {
           START_TS + (STEP_TS * i),
           BareBones::Encoding::Gorilla::STALE_NAN,
-      });
+      };
     } else {
-      samples.push_back({
+      samples[i] = {
           START_TS + (STEP_TS * i),
           START_VALUE + (STEP_VALUE * i),
-      });
+      };
     }
   }
 

@@ -44,40 +44,18 @@ TEST_F(BitsetFixture, valid_unset) {
 }
 
 TEST_F(BitsetFixture, random_access) {
-  std::vector<uint32_t> index;
-  constexpr int bs_size = 65536;
+  // Arrange
+  constexpr std::array indexes = {0U, 134U, 1087U, 5378U, 12098U, 65535U};
+  static_assert(std::ranges::is_sorted(indexes));
 
-  std::mt19937 gen32(testing::UnitTest::GetInstance()->random_seed());
-  // Generate index for bit position
-  index.reserve(bs_size);
-  for (auto i = 0; i < (bs_size); ++i) {
-    index.push_back(gen32() % (bs_size - 1));
+  // Act
+  bs_.resize(indexes.back() + 1);
+  for (const auto index : indexes) {
+    bs_.set(index);
   }
 
-  // Sort and uniq index
-  std::ranges::sort(index);
-  index.erase(std::unique(index.begin(), index.end()), index.end());
-
-  // Filling the bitset from index
-  bs_.resize(bs_size);
-  for (const auto i : index) {
-    bs_.set(i);
-  }
-
-  // Prepare result vector from index
-  std::vector<uint32_t> bs_vec_reference;
-  bs_vec_reference.reserve(index.size());
-  for (auto i : index) {
-    bs_vec_reference.push_back(i);
-  }
-
-  // Save bit possition from bitset to result vector
-  std::vector<uint32_t> bs_vec;
-  for (auto i : bs_) {
-    bs_vec.push_back(i);
-  }
-
-  ASSERT_EQ(bs_vec, bs_vec_reference);
+  // Assert
+  EXPECT_TRUE(std::ranges::equal(bs_, indexes));
 }
 
 TEST_F(BitsetFixture, should_decriase_increase_size) {

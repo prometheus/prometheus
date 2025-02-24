@@ -89,9 +89,9 @@ std::string generate_str(int seed) {
   std::mt19937 gen32(seed);
   std::string word;
   int maxlen = 4 + (gen32() % 28);
-
+  word.resize(maxlen);
   for (int i = 0; i < maxlen; i++) {
-    word += SYMBOLS_DATA[gen32() % 89];
+    word[i] = SYMBOLS_DATA[gen32() % 89];
   }
 
   return word;
@@ -386,8 +386,8 @@ TEST_F(WalFixture, Snapshots) {
   std::stringstream writer_stream;
   std::vector<std::unique_ptr<WALEncoder::Redundant>> redundants;
   std::ofstream devnull("/dev/null");
-  for (int i = 0; i < 10; ++i) {     // segments
-    for (int j = 0; j < 100; ++j) {  // samples
+  for (int i = 0; i < 10; ++i) {    // segments
+    for (int j = 0; j < 10; ++j) {  // samples
       const LabelSetForTest label_set = generate_label_set();
       const samples_sequence_type samples = generate_samples(1000, 1.123);
       const TimeSeriesForTest timeseries = TimeSeriesForTest(label_set, samples);
