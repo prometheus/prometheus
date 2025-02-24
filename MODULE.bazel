@@ -5,6 +5,6 @@
 # For more details, please check https://github.com/bazelbuild/bazel/issues/18958
 ###############################################################################
 register_toolchains(
-    "//bazel/toolchain:cc_toolchain_for_g++-12_toolchain_aarch64",
-    "//bazel/toolchain:cc_toolchain_for_g++-12_toolchain_x86_64",
+    "//bazel/toolchain:cc_toolchain_for_g++-13_toolchain_aarch64",
+    "//bazel/toolchain:cc_toolchain_for_g++-13_toolchain_x86_64",
 )

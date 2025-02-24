@@ -224,7 +224,7 @@ class BasicEncoder {
 
     template <class Callback>
       requires std::is_invocable_v<Callback, Primitives::LabelSetID, Primitives::Timestamp, Primitives::Sample::value_type>
-    __attribute__((flatten)) void for_each(Callback&& func) const {
+    void for_each(Callback&& func) const {
       for (const auto& [ls_id, sample] : series_) {
         if (sample.is_single()) [[likely]] {
           func(ls_id, sample.sample().timestamp(), sample.sample().value());
@@ -1034,7 +1034,7 @@ class BasicDecoder {
 
   template <class Callback>
     requires std::is_invocable_v<Callback, Primitives::LabelSetID, Primitives::Timestamp, Primitives::Sample::value_type>
-  __attribute__((flatten)) void process_segment(Callback&& func) {
+  void process_segment(Callback&& func) {
     if (segment_gorilla_v_bitseq_.empty()) [[unlikely]] {
       return;
     }
@@ -1127,7 +1127,7 @@ class BasicDecoder {
 
   template <class Callback>
     requires std::is_invocable_v<Callback, label_set_type, Primitives::Timestamp, Primitives::Sample::value_type>
-  __attribute__((flatten)) void process_segment(Callback&& func) {
+  void process_segment(Callback&& func) {
     process_segment([&](Primitives::LabelSetID ls_id, Primitives::Timestamp ts, Primitives::Sample::value_type v) {
       const auto& label_set = label_sets_[ls_id];
 
@@ -1140,7 +1140,7 @@ class BasicDecoder {
 
   template <class Callback>
     requires std::is_invocable_v<Callback, Primitives::LabelSetID, timeseries_type>
-  __attribute__((flatten)) void process_segment(Callback&& func) {
+  void process_segment(Callback&& func) {
     Primitives::BasicTimeseries<typename LabelSetsTable::value_type*> timeseries;
 
     typename LabelSetsTable::value_type last_ls;  // composite_type

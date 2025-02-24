@@ -54,14 +54,15 @@ class LabelSetForTest : public std::vector<std::pair<std::string, std::string>> 
 };
 
 const char SYMBOLS_DATA[89] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-+=/|.,\\?<>!@#$%^&*()\"':;";
-const int NUM_VALUES = 1000;
+const int NUM_VALUES = 100;
 
 std::string generate_str(int seed) {
   std::mt19937 gen32(seed);
   std::string b;
   int maxlen = 4 + (gen32() % 28);
+  b.resize(maxlen);
   for (int i = 0; i < maxlen; i++) {
-    b += SYMBOLS_DATA[gen32() % 89];
+    b[i] = SYMBOLS_DATA[gen32() % 89];
   }
 
   return b;

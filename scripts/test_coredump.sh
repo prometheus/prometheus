@@ -33,7 +33,7 @@ OLD_COREDUMP_USE_PID=0
 SAVE_COREDUMP=1
 SKIP_BUILD_TEST=0
 TEST_TARGET_NAME=bare_bones_coredump_test
-TEST_BUILD_COMMAND="bazel build --config=g++-12 $TEST_TARGET_NAME"
+TEST_BUILD_COMMAND="bazel build --config=g++-13 $TEST_TARGET_NAME"
 TEST_BINARY=./bazel-bin/$TEST_TARGET_NAME
 
 eval set -- "${options}"

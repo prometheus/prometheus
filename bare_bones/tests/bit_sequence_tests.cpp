@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <random>
 
 #include <gtest/gtest.h>
@@ -10,30 +11,21 @@ using BareBones::AllocationSize;
 using BareBones::BitSequenceReader;
 using BareBones::CompactBitSequence;
 
-const size_t NUM_VALUES = 1000;
+constexpr size_t NUM_VALUES = 1000;
 
 constexpr std::array kAllocationSizesTable = {AllocationSize{0U}, AllocationSize{32U}};
 
-std::vector<uint64_t> generate_uint64_vector() {
-  std::vector<uint64_t> data;
-  std::mt19937 gen32(testing::UnitTest::GetInstance()->random_seed());
-  data.reserve(NUM_VALUES);
-  for (size_t i = 0; i < NUM_VALUES; ++i) {
-    data.push_back(gen32());
-  }
-
+std::array<uint64_t, NUM_VALUES> generate_uint64_vector() {
+  std::array<uint64_t, NUM_VALUES> data;
+  std::ranges::generate(data, std::mt19937(testing::UnitTest::GetInstance()->random_seed()));
   return data;
 }
 
-std::vector<double> generate_double_vector() {
-  std::vector<double> data;
+std::array<double, NUM_VALUES> generate_double_vector() {
+  std::array<double, NUM_VALUES> data;
   std::uniform_real_distribution<double> unif;
   std::mt19937 gen32(testing::UnitTest::GetInstance()->random_seed());
-  data.reserve(NUM_VALUES);
-  for (size_t i = 0; i < NUM_VALUES; ++i) {
-    data.push_back(unif(gen32));
-  }
-
+  std::ranges::generate(data, [&unif, gen32] mutable { return unif(gen32); });
   return data;
 }
 

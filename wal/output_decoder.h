@@ -238,7 +238,7 @@ class OutputDecoder : private BaseOutputDecoder {
 
   template <class Callback>
     requires std::is_invocable_v<Callback, Primitives::LabelSetID, Primitives::Timestamp, Primitives::Sample::value_type, bool>
-  __attribute__((flatten)) void process_segment(Callback&& func) {
+  void process_segment(Callback&& func) {
     BaseOutputDecoder::process_segment([&](Primitives::LabelSetID ls_id, Primitives::Timestamp ts, Primitives::Sample::value_type v) {
       auto id = sample_decoder().cache()[ls_id];
       func(id, ts, v, id == OutputDecoderCache::kIsDropped);
@@ -247,7 +247,7 @@ class OutputDecoder : private BaseOutputDecoder {
 
   template <class Callback>
     requires std::is_invocable_v<Callback, Primitives::LabelSetID, Primitives::Timestamp, Primitives::Sample::value_type>
-  __attribute__((flatten)) void process_segment(Callback&& func) {
+  void process_segment(Callback&& func) {
     process_segment([&](Primitives::LabelSetID ls_id, Primitives::Timestamp ts, Primitives::Sample::value_type v, bool is_dropped) {
       if (is_dropped) {
         return;
@@ -259,7 +259,7 @@ class OutputDecoder : private BaseOutputDecoder {
 
   template <class Callback>
     requires std::is_invocable_v<Callback, label_set_type, Primitives::Timestamp, Primitives::Sample::value_type>
-  __attribute__((flatten)) void process_segment(Callback&& func) {
+  void process_segment(Callback&& func) {
     process_segment([&](Primitives::LabelSetID ls_id, Primitives::Timestamp ts, Primitives::Sample::value_type v) {
       const auto& label_set = output_lss_[ls_id];
 
@@ -269,7 +269,7 @@ class OutputDecoder : private BaseOutputDecoder {
 
   template <class Callback>
     requires std::is_invocable_v<Callback, Primitives::LabelSetID, timeseries_type>
-  __attribute__((flatten)) void process_segment(Callback&& func) {
+  void process_segment(Callback&& func) {
     Primitives::BasicTimeseries<Primitives::SnugComposites::LabelSet::ShrinkableEncodingBimap<BareBones::Vector>::value_type*> timeseries;
     Primitives::SnugComposites::LabelSet::ShrinkableEncodingBimap<BareBones::Vector>::value_type last_ls;  // composite_type
     Primitives::LabelSetID last_ls_id = std::numeric_limits<Primitives::LabelSetID>::max();
