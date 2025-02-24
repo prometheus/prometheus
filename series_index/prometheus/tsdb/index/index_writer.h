@@ -11,12 +11,11 @@
 
 namespace series_index::prometheus::tsdb::index {
 
-template <class Stream>
+template <template <class> class LssVector, class Stream>
 class IndexWriter {
  public:
   using TrieIndex = series_index::TrieIndex<trie::CedarTrie, trie::CedarMatchesList>;
-  using QueryableEncodingBimap =
-      series_index::QueryableEncodingBimap<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimapFilament, BareBones::Vector, TrieIndex>;
+  using QueryableEncodingBimap = series_index::QueryableEncodingBimap<PromPP::Primitives::SnugComposites::LabelSet::EncodingBimapFilament, LssVector, TrieIndex>;
   using StreamWriter = PromPP::Prometheus::tsdb::index::StreamWriter<Stream>;
   using SeriesWriter = section_writer::SeriesWriter<QueryableEncodingBimap, Stream>;
   using PostingsWriter = section_writer::PostingsWriter<QueryableEncodingBimap, Stream>;

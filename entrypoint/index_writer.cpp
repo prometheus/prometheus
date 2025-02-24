@@ -8,7 +8,7 @@
 
 using PromPP::Primitives::Go::SliceView;
 using series_index::prometheus::tsdb::index::ChunkMetadata;
-using IndexWriter = series_index::prometheus::tsdb::index::IndexWriter<PromPP::Primitives::Go::BytesStream>;
+using IndexWriter = series_index::prometheus::tsdb::index::IndexWriter<entrypoint::head::QueryableEncodingBimapVector, PromPP::Primitives::Go::BytesStream>;
 using IndexWriterPtr = std::unique_ptr<IndexWriter>;
 
 static_assert(sizeof(IndexWriterPtr) == sizeof(void*));

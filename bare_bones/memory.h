@@ -157,8 +157,8 @@ class SharedPtr {
   static constexpr uint32_t kControlBlockSize = sizeof(ControlBlock);
 
   SharedPtr() = default;
-  explicit SharedPtr(uint32_t size) : data_(nullptr) { non_atomic_reallocate(size); }
-  SharedPtr(const SharedPtr& other) noexcept : data_(other.data_) { inc_atomic_ref_counter(); }
+  explicit PROMPP_ALWAYS_INLINE SharedPtr(uint32_t size) : data_(nullptr) { non_atomic_reallocate(size); }
+  PROMPP_ALWAYS_INLINE SharedPtr(const SharedPtr& other) noexcept : data_(other.data_) { inc_atomic_ref_counter(); }
   SharedPtr(SharedPtr&& other) noexcept : data_(std::exchange(other.data_, nullptr)) {}
 
   PROMPP_ALWAYS_INLINE ~SharedPtr() { dec_ref_counter(); }
