@@ -431,10 +431,12 @@ class LabelSet {
             next_item_index_(data.next_item_index_),
             size_(data.symbols_ids_sequences.size()),
             label_name_sets_table_checkpoint_(data.label_name_sets_table.checkpoint()) {
-        symbols_tables_checkpoints_.reserve(data.symbols_tables.size());
-        for (const auto& symbols_table : data.symbols_tables) {
-          symbols_tables_checkpoints_.emplace_back(symbols_table->checkpoint());
-        }
+        symbols_tables_checkpoints_.reserve_and_write(data.symbols_tables.size(), [&data](auto memory, uint32_t size) {
+          for (auto& symbol_table : data.symbols_tables) {
+            std::construct_at(memory++, symbol_table->checkpoint());
+          }
+          return size;
+        });
       }
 
       PROMPP_ALWAYS_INLINE uint32_t size() const noexcept { return size_; }
@@ -598,10 +600,12 @@ class LabelSet {
           label_name_sets_table(other.label_name_sets_table),
           next_item_index_(other.next_item_index_),
           shrinked_size_(other.shrinked_size_) {
-      symbols_tables.reserve(other.symbols_tables.size());
-      for (auto& symbol_table : other.symbols_tables) {
-        symbols_tables.emplace_back(*symbol_table);
-      }
+      symbols_tables.reserve_and_write(other.symbols_tables.size(), [&other](auto memory, uint32_t size) {
+        for (auto& symbol_table : other.symbols_tables) {
+          std::construct_at(memory++, *symbol_table);
+        }
+        return size;
+      });
     }
 
     data_type(data_type&&) noexcept = delete;

@@ -11,14 +11,17 @@
 namespace series_index {
 
 template <template <template <class> class> class Filament, template <class> class Vector, class TrieIndex>
-class QueryableEncodingBimap final : public BareBones::SnugComposite::DecodingTable<Filament, Vector> {
+class QueryableEncodingBimap final
+    : public BareBones::SnugComposite::GenericDecodingTable<QueryableEncodingBimap<Filament, Vector, TrieIndex>, Filament, Vector> {
  public:
-  using Base = BareBones::SnugComposite::DecodingTable<Filament, Vector>;
+  using Base = BareBones::SnugComposite::GenericDecodingTable<QueryableEncodingBimap, Filament, Vector>;
   using LsIdSet = phmap::btree_set<typename Base::Proxy, typename Base::LessComparator, BareBones::Allocator<typename Base::Proxy>>;
   using HashSet =
       phmap::flat_hash_set<typename Base::Proxy, typename Base::Hasher, typename Base::EqualityComparator, BareBones::Allocator<typename Base::Proxy>>;
   using LsIdSetIterator = typename LsIdSet::const_iterator;
   using TrieIndexIterator = typename TrieIndex::Iterator;
+
+  friend class BareBones::SnugComposite::GenericDecodingTable<QueryableEncodingBimap, Filament, Vector>;
 
   [[nodiscard]] PROMPP_ALWAYS_INLINE const TrieIndex& trie_index() const noexcept { return trie_index_; }
   [[nodiscard]] PROMPP_ALWAYS_INLINE const SeriesReverseIndex& reverse_index() const noexcept { return reverse_index_; }
@@ -45,7 +48,7 @@ class QueryableEncodingBimap final : public BareBones::SnugComposite::DecodingTa
 
   template <class LabelSet>
   PROMPP_ALWAYS_INLINE uint32_t find_or_emplace(const LabelSet& label_set) noexcept {
-    return find_or_emplace(label_set, Base::hasher_(label_set));
+    return find_or_emplace(label_set, Base::hasher()(label_set));
   }
 
   template <class LabelSet>
@@ -92,22 +95,23 @@ class QueryableEncodingBimap final : public BareBones::SnugComposite::DecodingTa
   SeriesReverseIndex reverse_index_;
 
   size_t ls_id_set_allocated_memory_{};
-  LsIdSet ls_id_set_{{}, Base::less_comparator_, BareBones::Allocator<typename Base::Proxy>{ls_id_set_allocated_memory_}};
+  LsIdSet ls_id_set_{{}, Base::less_comparator(), BareBones::Allocator<typename Base::Proxy>{ls_id_set_allocated_memory_}};
 
   size_t ls_id_hash_set_allocated_memory_{};
-  HashSet ls_id_hash_set_{0, Base::hasher_, Base::equality_comparator_, BareBones::Allocator<typename Base::Proxy>{ls_id_hash_set_allocated_memory_}};
+  HashSet ls_id_hash_set_{0, Base::hasher(), Base::equality_comparator(), BareBones::Allocator<typename Base::Proxy>{ls_id_hash_set_allocated_memory_}};
 
   SortingIndex<LsIdSet> sorting_index_{ls_id_set_};
 
   QueriedSeries queried_series_;
 
-  PROMPP_ALWAYS_INLINE void after_items_load(uint32_t first_loaded_id) noexcept override {
+  PROMPP_ALWAYS_INLINE void after_items_load_impl(uint32_t first_loaded_id) noexcept {
     ls_id_hash_set_.reserve(Base::items_.size());
     queried_series_.set_series_count(Base::items_.size());
 
+    const auto hasher = Base::hasher();
     for (auto ls_id = first_loaded_id; ls_id < Base::items_.size(); ++ls_id) {
       auto label_set = this->operator[](ls_id);
-      update_indexes(ls_id, label_set, phmap_hash(Base::hasher_(label_set)));
+      update_indexes(ls_id, label_set, phmap_hash(hasher(label_set)));
     }
   }
 

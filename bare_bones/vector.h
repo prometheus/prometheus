@@ -83,6 +83,13 @@ class GenericVector {
     derived()->set_size(new_size);
   }
 
+  template <class Writer>
+    requires std::is_invocable_v<Writer, iterator, uint32_t>
+  PROMPP_ALWAYS_INLINE void reserve_and_write(uint32_t additional_size, Writer&& writer) {
+    reserve(size() + additional_size);
+    derived()->set_size(size() + std::forward<Writer>(writer)(end(), additional_size));
+  }
+
   PROMPP_ALWAYS_INLINE void clear() noexcept {
     if constexpr (!std::is_trivial_v<T>) {
       const auto memory = data();
