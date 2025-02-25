@@ -853,6 +853,12 @@ func main() {
 
 	cfg.web.Flags = map[string]string{}
 
+	cfg.tsdb.PreInitFunc = func(db *tsdb.DB) {
+		if err = mapCommonLabelSymbols(db, logger); err != nil {
+			logger.Warn("Failed to map common strings in labels", slog.Any("err", err))
+		}
+	}
+
 	// Exclude kingpin default flags to expose only Prometheus ones.
 	boilerplateFlags := kingpin.New("", "").Version("")
 	for _, f := range a.Model().Flags {
@@ -1240,10 +1246,6 @@ func main() {
 				db, err := openDBWithMetrics(localStoragePath, logger, prometheus.DefaultRegisterer, &opts, localStorage.getStats())
 				if err != nil {
 					return fmt.Errorf("opening storage failed: %w", err)
-				}
-
-				if err = mapCommonLabelSymbols(db, logger); err != nil {
-					logger.Warn("Failed to map common strings in labels", slog.Any("err", err))
 				}
 
 				switch fsType := prom_runtime.Statfs(localStoragePath); fsType {
@@ -1801,6 +1803,7 @@ type tsdbOptions struct {
 	CompactionDelayMaxPercent      int
 	EnableOverlappingCompaction    bool
 	EnableOOONativeHistograms      bool
+	PreInitFunc                    tsdb.PreInitFunc
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -1825,6 +1828,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableDelayedCompaction:        opts.EnableDelayedCompaction,
 		CompactionDelayMaxPercent:      opts.CompactionDelayMaxPercent,
 		EnableOverlappingCompaction:    opts.EnableOverlappingCompaction,
+		PreInitFunc:                    opts.PreInitFunc,
 	}
 }
 
