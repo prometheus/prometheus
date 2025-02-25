@@ -176,6 +176,98 @@ func sortLines(buf string) string {
 	return strings.Join(lines, "\n")
 }
 
+// getDumpedSeries dumps series and returns them.
+func getDumpedSeries(t *testing.T, path string, mint, maxt int64, match []string, formatter SeriesSetFormatter) string {
+	t.Helper()
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := dumpSamples(
+		context.Background(),
+		path,
+		t.TempDir(),
+		mint,
+		maxt,
+		match,
+		formatter,
+	)
+	require.NoError(t, err)
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	return buf.String()
+}
+
+func TestTSDBDumpSeries(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			metric{foo="bar", baz="abc"} 1 2 3 4 5
+			heavy_metric{foo="bar"} 5 4 3 2 1
+			heavy_metric{foo="foo"} 5 4 3 2 1
+	`)
+
+	expectedArray := []string{
+		`{"__name__":"heavy_metric","foo":"bar"}
+`,
+		`{"__name__":"heavy_metric","foo":"foo"}
+`,
+		`{"__name__":"metric","baz":"abc","foo":"bar"}
+`,
+	}
+
+	tests := []struct {
+		name     string
+		mint     int64
+		maxt     int64
+		match    []string
+		expected string
+	}{
+		{
+			name:     "default match",
+			match:    []string{"{__name__=~'(?s:.*)'}"},
+			expected: strings.Join(expectedArray, ""),
+		},
+		{
+			name:     "same matcher twice",
+			match:    []string{"{foo=~'.+'}", "{foo=~'.+'}"},
+			expected: strings.Join(expectedArray, ""),
+		},
+		{
+			name:     "no duplication",
+			match:    []string{"{__name__=~'(?s:.*)'}", "{baz='abc'}"},
+			expected: strings.Join(expectedArray, ""),
+		},
+		{
+			name:     "well merged",
+			match:    []string{"{__name__='heavy_metric'}", "{baz='abc'}"},
+			expected: strings.Join(expectedArray, ""),
+		},
+		{
+			name:     "multi matchers",
+			match:    []string{"{__name__='heavy_metric',foo='foo'}", "{__name__='metric'}"},
+			expected: expectedArray[1] + expectedArray[2],
+		},
+		{
+			name:     "with reduced mint and maxt",
+			match:    []string{"{__name__='metric'}"},
+			expected: expectedArray[2],
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dumpedSeries := getDumpedSeries(t, storage.Dir(), tt.mint, tt.maxt, tt.match, formatSeriesSetToJSON)
+			expectedSeries := normalizeNewLine([]byte(tt.expected))
+			// Sort both, because Prometheus does not guarantee the output order.
+			require.Equal(t, sortLines(string(expectedSeries)), sortLines(dumpedSeries))
+		})
+	}
+}
+
 func TestTSDBDumpOpenMetrics(t *testing.T) {
 	storage := promqltest.LoadedStorage(t, `
 		load 1m
