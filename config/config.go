@@ -156,6 +156,7 @@ var (
 	// DefaultConfig is the default top-level configuration.
 	DefaultConfig = Config{
 		GlobalConfig: DefaultGlobalConfig,
+		Runtime:      DefaultRuntimeConfig,
 	}
 
 	// DefaultGlobalConfig is the default global configuration.
