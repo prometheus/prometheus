@@ -25,12 +25,12 @@ import (
 // NOTE(bwplotka): This file's code is tested in /prompb/rwcommon.
 
 // ToLabels return model labels.Labels from timeseries' remote labels.
-func (m TimeSeries) ToLabels(b *labels.ScratchBuilder, symbols []string) labels.Labels {
+func (m *TimeSeries) ToLabels(b *labels.ScratchBuilder, symbols []string) labels.Labels {
 	return desymbolizeLabels(b, m.GetLabelsRefs(), symbols)
 }
 
 // ToMetadata return model metadata from timeseries' remote metadata.
-func (m TimeSeries) ToMetadata(symbols []string) metadata.Metadata {
+func (m *TimeSeries) ToMetadata(symbols []string) metadata.Metadata {
 	typ := model.MetricTypeUnknown
 	switch m.Metadata.Type {
 	case Metadata_METRIC_TYPE_COUNTER:
@@ -79,14 +79,14 @@ func FromMetadataType(t model.MetricType) Metadata_MetricType {
 }
 
 // IsFloatHistogram returns true if the histogram is float.
-func (h Histogram) IsFloatHistogram() bool {
+func (h *Histogram) IsFloatHistogram() bool {
 	_, ok := h.GetCount().(*Histogram_CountFloat)
 	return ok
 }
 
 // ToIntHistogram returns integer Prometheus histogram from the remote implementation
 // of integer histogram. If it's a float histogram, the method returns nil.
-func (h Histogram) ToIntHistogram() *histogram.Histogram {
+func (h *Histogram) ToIntHistogram() *histogram.Histogram {
 	if h.IsFloatHistogram() {
 		return nil
 	}
@@ -108,7 +108,7 @@ func (h Histogram) ToIntHistogram() *histogram.Histogram {
 // ToFloatHistogram returns float Prometheus histogram from the remote implementation
 // of float histogram. If the underlying implementation is an integer histogram, a
 // conversion is performed.
-func (h Histogram) ToFloatHistogram() *histogram.FloatHistogram {
+func (h *Histogram) ToFloatHistogram() *histogram.FloatHistogram {
 	if h.IsFloatHistogram() {
 		return &histogram.FloatHistogram{
 			CounterResetHint: histogram.CounterResetHint(h.ResetHint),
@@ -140,7 +140,7 @@ func (h Histogram) ToFloatHistogram() *histogram.FloatHistogram {
 	}
 }
 
-func spansProtoToSpans(s []BucketSpan) []histogram.Span {
+func spansProtoToSpans(s []*BucketSpan) []histogram.Span {
 	spans := make([]histogram.Span, len(s))
 	for i := 0; i < len(s); i++ {
 		spans[i] = histogram.Span{Offset: s[i].Offset, Length: s[i].Length}
@@ -160,51 +160,54 @@ func deltasToCounts(deltas []int64) []float64 {
 }
 
 // FromIntHistogram returns remote Histogram from the integer Histogram.
-func FromIntHistogram(timestamp int64, h *histogram.Histogram) Histogram {
-	return Histogram{
-		Count:          &Histogram_CountInt{CountInt: h.Count},
-		Sum:            h.Sum,
-		Schema:         h.Schema,
-		ZeroThreshold:  h.ZeroThreshold,
-		ZeroCount:      &Histogram_ZeroCountInt{ZeroCountInt: h.ZeroCount},
-		NegativeSpans:  spansToSpansProto(h.NegativeSpans),
-		NegativeDeltas: h.NegativeBuckets,
-		PositiveSpans:  spansToSpansProto(h.PositiveSpans),
-		PositiveDeltas: h.PositiveBuckets,
-		ResetHint:      Histogram_ResetHint(h.CounterResetHint),
-		CustomValues:   h.CustomValues,
-		Timestamp:      timestamp,
-	}
+func FromIntHistogram(timestamp int64, h *histogram.Histogram) *Histogram {
+	result := HistogramFromVTPool()
+	result.Count = &Histogram_CountInt{CountInt: h.Count}
+	result.Sum = h.Sum
+	result.Schema = h.Schema
+	result.ZeroThreshold = h.ZeroThreshold
+	result.ZeroCount = &Histogram_ZeroCountInt{ZeroCountInt: h.ZeroCount}
+	result.NegativeSpans = spansToSpansProto(h.NegativeSpans)
+	result.NegativeDeltas = h.NegativeBuckets
+	result.PositiveSpans = spansToSpansProto(h.PositiveSpans)
+	result.PositiveDeltas = h.PositiveBuckets
+	result.ResetHint = Histogram_ResetHint(h.CounterResetHint)
+	result.CustomValues = h.CustomValues
+	result.Timestamp = timestamp
+	return result
 }
 
 // FromFloatHistogram returns remote Histogram from the float Histogram.
-func FromFloatHistogram(timestamp int64, fh *histogram.FloatHistogram) Histogram {
-	return Histogram{
-		Count:          &Histogram_CountFloat{CountFloat: fh.Count},
-		Sum:            fh.Sum,
-		Schema:         fh.Schema,
-		ZeroThreshold:  fh.ZeroThreshold,
-		ZeroCount:      &Histogram_ZeroCountFloat{ZeroCountFloat: fh.ZeroCount},
-		NegativeSpans:  spansToSpansProto(fh.NegativeSpans),
-		NegativeCounts: fh.NegativeBuckets,
-		PositiveSpans:  spansToSpansProto(fh.PositiveSpans),
-		PositiveCounts: fh.PositiveBuckets,
-		ResetHint:      Histogram_ResetHint(fh.CounterResetHint),
-		CustomValues:   fh.CustomValues,
-		Timestamp:      timestamp,
-	}
+func FromFloatHistogram(timestamp int64, fh *histogram.FloatHistogram) *Histogram {
+	result := HistogramFromVTPool()
+	result.Count = &Histogram_CountFloat{CountFloat: fh.Count}
+	result.Sum = fh.Sum
+	result.Schema = fh.Schema
+	result.ZeroThreshold = fh.ZeroThreshold
+	result.ZeroCount = &Histogram_ZeroCountFloat{ZeroCountFloat: fh.ZeroCount}
+	result.NegativeSpans = spansToSpansProto(fh.NegativeSpans)
+	result.NegativeCounts = fh.NegativeBuckets
+	result.PositiveSpans = spansToSpansProto(fh.PositiveSpans)
+	result.PositiveCounts = fh.PositiveBuckets
+	result.ResetHint = Histogram_ResetHint(fh.CounterResetHint)
+	result.CustomValues = fh.CustomValues
+	result.Timestamp = timestamp
+	return result
 }
 
-func spansToSpansProto(s []histogram.Span) []BucketSpan {
-	spans := make([]BucketSpan, len(s))
+func spansToSpansProto(s []histogram.Span) []*BucketSpan {
+	spans := make([]*BucketSpan, len(s))
 	for i := 0; i < len(s); i++ {
-		spans[i] = BucketSpan{Offset: s[i].Offset, Length: s[i].Length}
+		span := BucketSpanFromVTPool()
+		span.Offset = s[i].Offset
+		span.Length = s[i].Length
+		spans[i] = span
 	}
 
 	return spans
 }
 
-func (m Exemplar) ToExemplar(b *labels.ScratchBuilder, symbols []string) exemplar.Exemplar {
+func (m *Exemplar) ToExemplar(b *labels.ScratchBuilder, symbols []string) exemplar.Exemplar {
 	timestamp := m.Timestamp
 
 	return exemplar.Exemplar{

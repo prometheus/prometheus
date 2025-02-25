@@ -200,15 +200,15 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Remote Write 2.x proto message handling.
-	var req writev2.Request
-	if err := proto.Unmarshal(decompressed, &req); err != nil {
+	req := &writev2.Request{}
+	if err := req.UnmarshalVT(decompressed); err != nil {
 		// TODO(bwplotka): Add more context to responded error?
 		h.logger.Error("Error decoding v2 remote write request", "protobuf_message", msgType, "err", err.Error())
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	respStats, errHTTPCode, err := h.writeV2(r.Context(), &req)
+	respStats, errHTTPCode, err := h.writeV2(r.Context(), req)
 
 	// Set required X-Prometheus-Remote-Write-Written-* response headers, in all cases.
 	respStats.SetHeaders(w)
@@ -514,7 +514,7 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 
 // handleHistogramZeroSample appends CT as a zero-value sample with CT value as the sample timestamp.
 // It doens't return errors in case of out of order CT.
-func (h *writeHandler) handleHistogramZeroSample(app storage.Appender, ref storage.SeriesRef, l labels.Labels, hist writev2.Histogram, ct int64) (storage.SeriesRef, error) {
+func (h *writeHandler) handleHistogramZeroSample(app storage.Appender, ref storage.SeriesRef, l labels.Labels, hist *writev2.Histogram, ct int64) (storage.SeriesRef, error) {
 	var err error
 	if hist.IsFloatHistogram() {
 		ref, err = app.AppendHistogramCTZeroSample(ref, l, hist.Timestamp, ct, nil, hist.ToFloatHistogram())
