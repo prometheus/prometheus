@@ -298,6 +298,7 @@ func Equal(ls, o Labels) bool {
 func EmptyLabels() Labels {
 	return Labels{}
 }
+
 func yoloBytes(s string) []byte {
 	return unsafe.Slice(unsafe.StringData(s), len(s))
 }
