@@ -195,7 +195,7 @@ type parsedEntry struct {
 	lset labels.Labels
 	t    *int64
 	es   []exemplar.Exemplar
-	ct   *int64
+	ct   int64
 
 	// In EntryType.
 	typ model.MetricType
@@ -255,11 +255,8 @@ func testParse(t *testing.T, p Parser) (ret []parsedEntry) {
 			}
 			got.m = string(m)
 			p.Labels(&got.lset)
+			got.ct = p.CreatedTimestamp()
 
-			// Parser reuses int pointer.
-			if ct := p.CreatedTimestamp(); ct != nil {
-				got.ct = int64p(*ct)
-			}
 			for e := (exemplar.Exemplar{}); p.Exemplar(&e); {
 				got.es = append(got.es, e)
 			}
