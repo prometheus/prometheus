@@ -11,7 +11,7 @@ using PromPP::Prometheus::tsdb::chunkenc::BStream;
 
 class BStreamFixture : public testing::Test {
  protected:
-  static constexpr std::array kAllocationSizesTable = {AllocationSize{0U}, AllocationSize{32U}};
+  static constexpr std::array kAllocationSizesTable = {AllocationSize{0U}, AllocationSize{8U}, AllocationSize{16U}};
 
   BStream<kAllocationSizesTable> stream_;
 };
@@ -64,6 +64,17 @@ TEST_F(BStreamFixture, WriteByteToNextByte2) {
   // Assert
   EXPECT_EQ(0x00, stream_.raw_bytes()[0]);
   EXPECT_EQ(0x02, stream_.raw_bytes()[1]);
+}
+
+TEST_F(BStreamFixture, WriteByteToNextByteWithReallocation) {
+  // Arrange
+  stream_.write_bits(0, BareBones::Bit::to_bits(sizeof(uint64_t)) - BareBones::Bit::kByteBits);
+
+  // Act
+  stream_.write_byte(1);
+
+  // Assert
+  EXPECT_EQ(0x01, stream_.raw_bytes()[7]);
 }
 
 TEST_F(BStreamFixture, WriteBits) {
