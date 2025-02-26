@@ -112,10 +112,11 @@ const buildPoolsData = (
     const { job: poolName } = target.discoveredLabels;
     const pool = pools[poolName];
     if (!pool) {
-      // TODO: Should we do better here?
-      throw new Error(
-        "Received target information for an unknown scrape pool, likely the list of scrape pools has changed. Please reload the page."
-      );
+      /*
+      When using custom, per target, job label it is not possible to map the dropped target to a pool since the scrapePool
+      is not part of the result data for droppedTargets.
+      */
+      continue;
     }
 
     pool.total++;
@@ -131,6 +132,10 @@ const buildPoolsData = (
             .map((value) => value.original);
 
   for (const target of filteredDroppedTargets) {
+    if (!pools[target.discoveredLabels.job]) {
+      // Target might have been dropped in case of custom job labels.
+      continue;
+    }
     pools[target.discoveredLabels.job].targets.push({
       discoveredLabels: target.discoveredLabels,
       isDropped: true,
