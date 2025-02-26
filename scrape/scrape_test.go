@@ -2825,6 +2825,8 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 			accept := r.Header.Get("Accept")
 			if allowUTF8 {
 				require.Containsf(t, accept, "escaping=allow-utf-8", "Expected Accept header to allow utf8, got %q", accept)
+			} else {
+				require.NotContainsf(t, accept, "escaping=allow-utf-8", "Expected Accept header to not allow utf8, got %q", accept)
 			}
 			if protobufParsing {
 				require.True(t, strings.HasPrefix(accept, "application/vnd.google.protobuf;"),
@@ -2860,7 +2862,7 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 		panic(err)
 	}
 
-	runTest := func(acceptHeader string) {
+	runTest := func(t *testing.T, acceptHeader string) {
 		ts := &targetScraper{
 			Target: &Target{
 				labels: labels.FromStrings(
@@ -2887,14 +2889,43 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 		require.Equal(t, "metric_a 1\nmetric_b 2\n", buf.String())
 	}
 
-	runTest(acceptHeader(config.DefaultScrapeProtocols, model.LegacyValidation))
-	protobufParsing = true
-	runTest(acceptHeader(config.DefaultProtoFirstScrapeProtocols, model.LegacyValidation))
-	protobufParsing = false
-	allowUTF8 = true
-	runTest(acceptHeader(config.DefaultScrapeProtocols, model.UTF8Validation))
-	protobufParsing = true
-	runTest(acceptHeader(config.DefaultProtoFirstScrapeProtocols, model.UTF8Validation))
+	for _, tc := range []struct {
+		scrapeProtocols []config.ScrapeProtocol
+		scheme          model.ValidationScheme
+		protobufParsing bool
+		allowUTF8       bool
+	}{
+		{
+			scrapeProtocols: config.DefaultScrapeProtocols,
+			scheme:          model.LegacyValidation,
+			protobufParsing: false,
+			allowUTF8:       false,
+		},
+		{
+			scrapeProtocols: config.DefaultProtoFirstScrapeProtocols,
+			scheme:          model.LegacyValidation,
+			protobufParsing: true,
+			allowUTF8:       false,
+		},
+		{
+			scrapeProtocols: config.DefaultScrapeProtocols,
+			scheme:          model.UTF8Validation,
+			protobufParsing: false,
+			allowUTF8:       true,
+		},
+		{
+			scrapeProtocols: config.DefaultProtoFirstScrapeProtocols,
+			scheme:          model.UTF8Validation,
+			protobufParsing: true,
+			allowUTF8:       true,
+		},
+	} {
+		t.Run(fmt.Sprintf("%+v", tc), func(t *testing.T) {
+			protobufParsing = tc.protobufParsing
+			allowUTF8 = tc.allowUTF8
+			runTest(t, acceptHeader(tc.scrapeProtocols, tc.scheme))
+		})
+	}
 }
 
 func TestTargetScrapeScrapeCancel(t *testing.T) {
