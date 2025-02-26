@@ -16,7 +16,6 @@ package parser
 import (
 	"testing"
 
-	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -169,8 +168,6 @@ func TestExprString(t *testing.T) {
 			out: "1048576",
 		},
 	}
-
-	model.NameValidationScheme = model.UTF8Validation
 
 	for _, test := range inputs {
 		expr, err := ParseExpr(test.in)

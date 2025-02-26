@@ -469,12 +469,6 @@ foobar{quantile="0.99"} 150.1`
 }
 
 func TestUTF8OpenMetricsParse(t *testing.T) {
-	oldValidationScheme := model.NameValidationScheme
-	model.NameValidationScheme = model.UTF8Validation
-	defer func() {
-		model.NameValidationScheme = oldValidationScheme
-	}()
-
 	input := `# HELP "go.gc_duration_seconds" A summary of the GC invocation durations.
 # TYPE "go.gc_duration_seconds" summary
 # UNIT "go.gc_duration_seconds" seconds

@@ -1325,14 +1325,13 @@ func TestScrapeLoopSeriesAdded(t *testing.T) {
 }
 
 func TestScrapeLoopFailWithInvalidLabelsAfterRelabel(t *testing.T) {
-	model.NameValidationScheme = model.LegacyValidation
 	s := teststorage.New(t)
 	defer s.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	target := &Target{
-		labels: labels.FromStrings("pod_label_invalid_012", "test"),
+		labels: labels.FromStrings("pod_label_invalid_012\xff", "test"),
 	}
 	relabelConfig := []*relabel.Config{{
 		Action:      relabel.LabelMap,
@@ -1357,10 +1356,6 @@ func TestScrapeLoopFailWithInvalidLabelsAfterRelabel(t *testing.T) {
 func TestScrapeLoopFailLegacyUnderUTF8(t *testing.T) {
 	// Test that scrapes fail when default validation is utf8 but scrape config is
 	// legacy.
-	model.NameValidationScheme = model.UTF8Validation
-	defer func() {
-		model.NameValidationScheme = model.LegacyValidation
-	}()
 	s := teststorage.New(t)
 	defer s.Close()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -3711,8 +3706,6 @@ func TestScrapeReportLimit(t *testing.T) {
 func TestScrapeUTF8(t *testing.T) {
 	s := teststorage.New(t)
 	defer s.Close()
-	model.NameValidationScheme = model.UTF8Validation
-	t.Cleanup(func() { model.NameValidationScheme = model.LegacyValidation })
 
 	cfg := &config.ScrapeConfig{
 		JobName:                    "test",
