@@ -2551,7 +2551,8 @@ input to a subsequent relabeling step), use the `__tmp` label name prefix. This
 prefix is guaranteed to never be used by Prometheus itself.
 
 ```yaml
-# The source labels select values from existing labels. Their content is concatenated
+# The source_labels tells the rule what labels to fetch from the series. Any 
+# labels which do not exist get a blank value ("").  Their content is concatenated
 # using the configured separator and matched against the configured regular expression
 # for the replace, keep, and drop actions.
 [ source_labels: '[' <labelname> [, ...] ']' ]
