@@ -451,9 +451,10 @@ offset_expr: expr OFFSET number_duration_literal
                         {
                             dur, _ := $3.(*ParenExpr)
                             if dur.Type() != ValueTypeScalar {
-                                yylex.(*parser).unexpected("offset", "time expression does not evaluate to a scalar")
+                                yylex.(*parser).addParseErrf($3.PositionRange(), "offset time expression does not evaluate to a scalar")
                             }
                             yylex.(*parser).addOffset($1, dur)
+                            $$ = $1
                         }
                 | expr OFFSET error
                         { yylex.(*parser).unexpected("offset", "number or duration or time expression in parentheses"); $$ = $1 }

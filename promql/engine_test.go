@@ -3777,15 +3777,15 @@ func TestPreprocessTimeExpressionErrors(t *testing.T) {
 		},
 		{
 			input:       "metric offset (info(another_metric))",
-			expectedErr: "time expression does not evaluate to a scalar", // FIXME: currently erroring with "1:36: parse error: unexpected \")\" in offset, expected time expression does not evaluate to a scalar"
+			expectedErr: "1:15: parse error: offset time expression does not evaluate to a scalar",
 		},
 		{
 			input:       "metric offset (another_metric)",
-			expectedErr: "time expression does not evaluate to a scalar", // FIXME: currently erroring with "1:36: parse error: unexpected \")\" in offset, expected time expression does not evaluate to a scalar"
+			expectedErr: "1:15: parse error: offset time expression does not evaluate to a scalar",
 		},
 		{
 			input:       "metric offset (1 * another_metric)",
-			expectedErr: "time expression does not evaluate to a scalar", // FIXME: currently erroring with "1:36: parse error: unexpected \")\" in offset, expected time expression does not evaluate to a scalar"
+			expectedErr: "1:15: parse error: offset time expression does not evaluate to a scalar",
 		},
 	} {
 		t.Run(tc.input, func(t *testing.T) {
@@ -3798,5 +3798,4 @@ func TestPreprocessTimeExpressionErrors(t *testing.T) {
 			require.EqualError(t, err, tc.expectedErr)
 		})
 	}
-
 }

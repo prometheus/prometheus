@@ -1351,9 +1351,10 @@ yydefault:
 		{
 			dur, _ := yyDollar[3].node.(*ParenExpr)
 			if dur.Type() != ValueTypeScalar {
-				yylex.(*parser).unexpected("offset", "time expression does not evaluate to a scalar")
+				yylex.(*parser).addParseErrf(yyDollar[3].node.PositionRange(), "offset time expression does not evaluate to a scalar")
 			}
 			yylex.(*parser).addOffset(yyDollar[1].node, dur)
+			yyVAL.node = yyDollar[1].node
 		}
 	case 71:
 		yyDollar = yyS[yypt-3 : yypt+1]
