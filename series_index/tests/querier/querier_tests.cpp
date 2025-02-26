@@ -74,7 +74,7 @@ struct QuerierTestCase {
 class QuerierFixture : public testing::TestWithParam<QuerierTestCase> {
  protected:
   Index index_;
-  Querier<Index> querier_{index_};
+  Querier<Index, BareBones::Vector> querier_{index_};
 
   void SetUp() override {
     for (auto& label_set : label_sets_) {
@@ -120,7 +120,10 @@ INSTANTIATE_TEST_SUITE_P(TwoPositiveMatchers,
                                                          .expected = {.series_id_list = {1}, .status = QuerierStatus::kMatch}},
                                          QuerierTestCase{.label_matchers = {{.name = "task", .value = "php|python", .type = MatcherType::kRegexpMatch},
                                                                             {.name = "job", .value = "cron", .type = MatcherType::kExactMatch}},
-                                                         .expected = {.series_id_list = {1, 2}, .status = QuerierStatus::kMatch}}));
+                                                         .expected = {.series_id_list = {1, 2}, .status = QuerierStatus::kMatch}},
+                                         QuerierTestCase{.label_matchers = {{.name = "job", .value = "cron", .type = MatcherType::kExactMatch},
+                                                                            {.name = "task", .value = "php|python|nodejs", .type = MatcherType::kRegexpMatch}},
+                                                         .expected = {.series_id_list = {0, 1, 2}, .status = QuerierStatus::kMatch}}));
 
 INSTANTIATE_TEST_SUITE_P(EmptyMatcher,
                          QuerierFixture,

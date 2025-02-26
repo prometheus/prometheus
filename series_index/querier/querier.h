@@ -57,14 +57,13 @@ class Querier {
     auto max_positive_matcher_cardinality = get_max_positive_matcher_cardinality(selector);
     MemoryPool memory_pool(max_positive_matcher_cardinality);
 
-    SeriesSliceList series_slice_list;
-    auto result_set = process_first_matcher(selector.matchers[0], series_slice_list, memory_pool);
+    auto result_set = process_first_matcher(selector.matchers[0], memory_pool);
     if (selector.matchers.size() > 1 && selector.matchers[1].is_positive()) {
       memory_pool.allocate_temp_memory(max_positive_matcher_cardinality);
     }
 
     for (auto it = std::next(selector.matchers.begin()); it != selector.matchers.end(); ++it) {
-      process_matcher(*it, series_slice_list, memory_pool, result_set);
+      process_matcher(*it, memory_pool, result_set);
     }
 
     result.set_series_id_list(memory_pool.release_container_for_merge(result_set.data()), result_set.size());
@@ -86,7 +85,7 @@ class Querier {
         : merge_container1_(items_count), merge_container2_(items_count), merge1(merge_container1_.data()), merge2(merge_container2_.data()) {}
 
     PROMPP_ALWAYS_INLINE void allocate_temp_memory(uint32_t items_count) {
-      temp_container_ = SeriesIdContainer{items_count};
+      temp_container_.resize(items_count);
       temp = temp_container_.data();
     }
 
@@ -99,6 +98,7 @@ class Querier {
   };
 
   const Index& index_;
+  SeriesSliceList series_slice_list_;
 
   void sort_matchers_by_type_and_cardinality(PromPP::Prometheus::Selector& selector) const noexcept {
     fill_positive_matchers_cardinality(selector);
@@ -134,20 +134,15 @@ class Querier {
     return 0U;
   }
 
-  PROMPP_ALWAYS_INLINE SeriesIdSpan process_first_matcher(const PromPP::Prometheus::Selector::Matcher& matcher,
-                                                          SeriesSliceList& series_slice_list,
-                                                          MemoryPool& memory_pool) {
-    resolve_matcher(matcher, series_slice_list, memory_pool.merge1);
-    return SetMerger::merge(series_slice_list, memory_pool.merge1, memory_pool.merge2);
+  PROMPP_ALWAYS_INLINE SeriesIdSpan process_first_matcher(const PromPP::Prometheus::Selector::Matcher& matcher, MemoryPool& memory_pool) {
+    resolve_matcher(matcher, memory_pool.merge1);
+    return SetMerger::merge(series_slice_list_, memory_pool.merge1, memory_pool.merge2);
   }
 
-  PROMPP_ALWAYS_INLINE void process_matcher(const PromPP::Prometheus::Selector::Matcher& matcher,
-                                            SeriesSliceList& series_slice_list,
-                                            MemoryPool& memory_pool,
-                                            SeriesIdSpan& result_set) {
+  PROMPP_ALWAYS_INLINE void process_matcher(const PromPP::Prometheus::Selector::Matcher& matcher, MemoryPool& memory_pool, SeriesIdSpan& result_set) {
     if (matcher.is_positive()) {
-      resolve_matcher(matcher, series_slice_list, memory_pool.merge2);
-      result_set = SetIntersecter::intersect(result_set, SetMerger::merge(series_slice_list, memory_pool.merge2, memory_pool.temp));
+      resolve_matcher(matcher, memory_pool.merge2);
+      result_set = SetIntersecter::intersect(result_set, SetMerger::merge(series_slice_list_, memory_pool.merge2, memory_pool.temp));
     } else if (matcher.is_negative()) {
       if (matcher.status == PromPP::Prometheus::MatchStatus::kAllMatch) {
         result_set = substract_sequence(result_set, index_.reverse_index().get(matcher.label_name_id));
@@ -159,21 +154,21 @@ class Querier {
     }
   }
 
-  void resolve_matcher(const PromPP::Prometheus::Selector::Matcher& matcher, SeriesSliceList& series_slice_list, uint32_t* memory) const {
-    series_slice_list.clear();
+  void resolve_matcher(const PromPP::Prometheus::Selector::Matcher& matcher, uint32_t* memory) {
+    series_slice_list_.clear();
 
     if (matcher.status == PromPP::Prometheus::MatchStatus::kAllMatch) {
       auto sequence = index_.reverse_index().get(matcher.label_name_id);
       decode_sequence(sequence, memory);
-      series_slice_list.emplace_back(SeriesSlice{.begin = 0, .end = sequence->count()});
+      series_slice_list_.emplace_back(SeriesSlice{.begin = 0, .end = sequence->count()});
     } else {
-      series_slice_list.reserve(matcher.matches.size());
+      series_slice_list_.reserve(matcher.matches.size());
 
       uint32_t offset = 0;
       for (auto label_value_id : matcher.matches) {
         auto sequence = index_.reverse_index().get(matcher.label_name_id, label_value_id);
         decode_sequence(sequence, memory + offset);
-        series_slice_list.emplace_back(SeriesSlice{.begin = offset, .end = offset + sequence->count()});
+        series_slice_list_.emplace_back(SeriesSlice{.begin = offset, .end = offset + sequence->count()});
         offset += sequence->count();
       }
     }

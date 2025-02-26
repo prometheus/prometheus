@@ -6,12 +6,12 @@ namespace PromPP::Prometheus::tsdb::chunkenc {
 
 template <std::array kAllocationSizesTable>
   requires std::is_same_v<typename decltype(kAllocationSizesTable)::value_type, BareBones::AllocationSize>
-class BStream : public BareBones::CompactBitSequenceBase<kAllocationSizesTable, BareBones::Bit::to_bits(sizeof(uint8_t))> {
+class BStream : public BareBones::CompactBitSequenceBase<kAllocationSizesTable, BareBones::Bit::to_bits(sizeof(uint8_t) + 1)> {
  public:
   void write_bits(uint64_t u, uint8_t nbits) noexcept {
     u <<= kUint64Bits - nbits;
     while (nbits >= kByteBits) {
-      auto byt = static_cast<uint8_t>(u >> (kUint64Bits - kByteBits));
+      const auto byt = static_cast<uint8_t>(u >> (kUint64Bits - kByteBits));
       write_byte(byt);
       u <<= kByteBits;
       nbits -= kByteBits;
@@ -54,7 +54,7 @@ class BStream : public BareBones::CompactBitSequenceBase<kAllocationSizesTable, 
   }
 
  private:
-  using Base = BareBones::CompactBitSequenceBase<kAllocationSizesTable, BareBones::Bit::to_bits(sizeof(uint8_t))>;
+  using Base = BareBones::CompactBitSequenceBase<kAllocationSizesTable, BareBones::Bit::to_bits(sizeof(uint8_t) + 1)>;
 
   static constexpr auto kUint64Bits = BareBones::Bit::kUint64Bits;
   static constexpr auto kByteBits = BareBones::Bit::kByteBits;
