@@ -504,7 +504,7 @@ func (ng *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts
 		return nil, err
 	}
 
-	if err := ng.PreprocessTimeExpr(expr, ts, ts, 0, opts); err != nil {
+	if err := ng.PreprocessTimeExpr(expr, ts, opts); err != nil {
 		return nil, err
 	}
 
@@ -530,7 +530,7 @@ func (ng *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts Q
 		return nil, err
 	}
 
-	if err := ng.PreprocessTimeExpr(expr, start, end, interval, opts); err != nil {
+	if err := ng.PreprocessTimeExpr(expr, end, opts); err != nil {
 		return nil, err
 	}
 
@@ -551,7 +551,7 @@ type timeExprVisitor struct {
 	inSubquery bool
 }
 
-func (tev timeExprVisitor) Visit(node parser.Node, path []parser.Node) (parser.Visitor, error) {
+func (tev timeExprVisitor) Visit(node parser.Node, _ []parser.Node) (parser.Visitor, error) {
 	evaluateTimeExpr := func(expr parser.Expr) (float64, error) {
 		if expr == nil {
 			return 0, nil
@@ -620,7 +620,7 @@ func inspectTimeExpr(e parser.Expr) (bool, bool) {
 // PreprocessTimeExpr checks the time expressions don't try to load data from
 // storage. If the time expression is eval time independent, it will calculate
 // its value and replace with a number literal to avoid re-calculations later.
-func (ng *Engine) PreprocessTimeExpr(e parser.Expr, start, end time.Time, interval time.Duration, opts QueryOpts) error {
+func (ng *Engine) PreprocessTimeExpr(e parser.Expr, end time.Time, opts QueryOpts) error {
 	if opts == nil {
 		opts = NewPrometheusQueryOpts(false, 0)
 	}
