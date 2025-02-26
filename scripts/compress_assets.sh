@@ -13,9 +13,9 @@ fi
 cd web/ui
 cp embed.go.tmpl embed.go
 
-GZIP_OPTS="-fk"
+GZIP_OPTS="-fkn"
 # gzip option '-k' may not always exist in the latest gzip available on different distros.
-if ! gzip -k -h &>/dev/null; then GZIP_OPTS="-f"; fi
+if ! gzip -k -h &>/dev/null; then GZIP_OPTS="-fn"; fi
 
 mkdir -p static
 find static -type f -name '*.gz' -delete
