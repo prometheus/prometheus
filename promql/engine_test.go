@@ -2748,8 +2748,8 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 							Start: 0,
 							End:   27,
 						},
-						Timestamp:      makeInt64Pointer(123000),
-						OriginalOffset: 1 * time.Minute,
+						Timestamp:          makeInt64Pointer(123000),
+						OriginalOffsetExpr: &parser.NumberLiteral{Val: float64(1 * time.Minute / time.Second)},
 					},
 				},
 				Range:  10 * time.Minute,
@@ -2771,11 +2771,11 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 							End:   11,
 						},
 					},
-					Timestamp:      makeInt64Pointer(123000),
-					OriginalOffset: 1 * time.Minute,
-					Range:          10 * time.Minute,
-					Step:           5 * time.Second,
-					EndPos:         35,
+					Timestamp:          makeInt64Pointer(123000),
+					OriginalOffsetExpr: &parser.NumberLiteral{Val: float64(1 * time.Minute / time.Second)},
+					Range:              10 * time.Minute,
+					Step:               5 * time.Second,
+					EndPos:             35,
 				},
 			},
 		},
@@ -3756,4 +3756,46 @@ eval instant at 10m last_over_time(metric_total{env="1"}[10m])
 eval instant at 10m max_over_time(metric_total{env="1"}[10m])
 	{env="1"} 120
 `, engine)
+}
+
+func TestPreprocessTimeExpressionErrors(t *testing.T) {
+	for _, tc := range []struct {
+		input       string
+		expectedErr string
+	}{
+		{
+			input:       "metric offset (scalar(another_metric))",
+			expectedErr: "time expression must not query for series",
+		},
+		{
+			input:       "metric offset (time())[1m:]",
+			expectedErr: "inner time expression must not depend on the evaluation time",
+		},
+		{
+			input:       "metric offset scalar(another_metric)",
+			expectedErr: `1:15: parse error: unexpected identifier "scalar" in offset, expected number or duration or time expression in parentheses`,
+		},
+		{
+			input:       "metric offset (info(another_metric))",
+			expectedErr: "1:15: parse error: offset time expression does not evaluate to a scalar",
+		},
+		{
+			input:       "metric offset (another_metric)",
+			expectedErr: "1:15: parse error: offset time expression does not evaluate to a scalar",
+		},
+		{
+			input:       "metric offset (1 * another_metric)",
+			expectedErr: "1:15: parse error: offset time expression does not evaluate to a scalar",
+		},
+	} {
+		t.Run(tc.input, func(t *testing.T) {
+			engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+				MaxSamples: 10,
+			})
+			ctx, cancelCtx := context.WithCancel(context.Background())
+			defer cancelCtx()
+			_, err := engine.NewInstantQuery(ctx, nil, nil, tc.input, time.Unix(1, 0))
+			require.EqualError(t, err, tc.expectedErr)
+		})
+	}
 }

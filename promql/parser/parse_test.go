@@ -1472,8 +1472,8 @@ var testExpr = []struct {
 	{
 		input: "foo offset 5m",
 		expected: &VectorSelector{
-			Name:           "foo",
-			OriginalOffset: 5 * time.Minute,
+			Name:               "foo",
+			OriginalOffsetExpr: &NumberLiteral{Val: float64(5 * time.Minute / time.Second)},
 			LabelMatchers: []*labels.Matcher{
 				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
 			},
@@ -1486,8 +1486,8 @@ var testExpr = []struct {
 	{
 		input: "foo offset -7m",
 		expected: &VectorSelector{
-			Name:           "foo",
-			OriginalOffset: -7 * time.Minute,
+			Name:               "foo",
+			OriginalOffsetExpr: &NumberLiteral{Val: float64(-7 * time.Minute / time.Second)},
 			LabelMatchers: []*labels.Matcher{
 				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
 			},
@@ -1500,8 +1500,8 @@ var testExpr = []struct {
 	{
 		input: `foo OFFSET 1h30m`,
 		expected: &VectorSelector{
-			Name:           "foo",
-			OriginalOffset: 90 * time.Minute,
+			Name:               "foo",
+			OriginalOffsetExpr: &NumberLiteral{Val: float64(90 * time.Minute / time.Second)},
 			LabelMatchers: []*labels.Matcher{
 				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
 			},
@@ -1514,14 +1514,68 @@ var testExpr = []struct {
 	{
 		input: `foo OFFSET 1m30ms`,
 		expected: &VectorSelector{
-			Name:           "foo",
-			OriginalOffset: time.Minute + 30*time.Millisecond,
+			Name:               "foo",
+			OriginalOffsetExpr: &NumberLiteral{Val: 60.03},
 			LabelMatchers: []*labels.Matcher{
 				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
 			},
 			PosRange: posrange.PositionRange{
 				Start: 0,
 				End:   17,
+			},
+		},
+	},
+	{
+		//      0        1         2
+		//      123456789012345678901234567890
+		input: `foo offset (scalar(vector(1)))`,
+		expected: &VectorSelector{
+			Name: "foo",
+			OriginalOffsetExpr: &ParenExpr{
+				Expr: &Call{
+					Func: &Function{
+						Name:       "scalar",
+						ArgTypes:   []ValueType{ValueTypeVector},
+						ReturnType: ValueTypeScalar,
+					},
+					Args: Expressions{
+						&Call{
+							Func: &Function{
+								Name:       "vector",
+								ArgTypes:   []ValueType{ValueTypeScalar},
+								ReturnType: ValueTypeVector,
+							},
+							Args: Expressions{
+								&NumberLiteral{
+									PosRange: posrange.PositionRange{
+										Start: 26,
+										End:   27,
+									},
+									Val: 1.0,
+								},
+							},
+							PosRange: posrange.PositionRange{
+								Start: 19,
+								End:   28,
+							},
+						},
+					},
+					PosRange: posrange.PositionRange{
+						Start: 12,
+						End:   29,
+					},
+				},
+				PosRange: posrange.PositionRange{
+					Start: 11,
+					End:   30,
+				},
+			},
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   30,
 			},
 		},
 	},
@@ -2064,8 +2118,8 @@ var testExpr = []struct {
 		input: "test[5h] OFFSET 5m",
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
-				Name:           "test",
-				OriginalOffset: 5 * time.Minute,
+				Name:               "test",
+				OriginalOffsetExpr: &NumberLiteral{Val: float64(5 * time.Minute / time.Second)},
 				LabelMatchers: []*labels.Matcher{
 					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
 				},
@@ -2082,8 +2136,8 @@ var testExpr = []struct {
 		input: "test[5d] OFFSET 10s",
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
-				Name:           "test",
-				OriginalOffset: 10 * time.Second,
+				Name:               "test",
+				OriginalOffsetExpr: &NumberLiteral{Val: 10},
 				LabelMatchers: []*labels.Matcher{
 					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
 				},
@@ -2100,8 +2154,8 @@ var testExpr = []struct {
 		input: "test[5w] offset 2w",
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
-				Name:           "test",
-				OriginalOffset: 14 * 24 * time.Hour,
+				Name:               "test",
+				OriginalOffsetExpr: &NumberLiteral{Val: float64(14 * 24 * time.Hour / time.Second)},
 				LabelMatchers: []*labels.Matcher{
 					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
 				},
@@ -2118,8 +2172,8 @@ var testExpr = []struct {
 		input: `test{a="b"}[5y] OFFSET 3d`,
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
-				Name:           "test",
-				OriginalOffset: 3 * 24 * time.Hour,
+				Name:               "test",
+				OriginalOffsetExpr: &NumberLiteral{Val: float64(3 * 24 * time.Hour / time.Second)},
 				LabelMatchers: []*labels.Matcher{
 					MustLabelMatcher(labels.MatchEqual, "a", "b"),
 					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
@@ -2137,8 +2191,8 @@ var testExpr = []struct {
 		input: `test{a="b"}[5m] OFFSET 3600`,
 		expected: &MatrixSelector{
 			VectorSelector: &VectorSelector{
-				Name:           "test",
-				OriginalOffset: 1 * time.Hour,
+				Name:               "test",
+				OriginalOffsetExpr: &NumberLiteral{Val: float64(1 * time.Hour / time.Second)},
 				LabelMatchers: []*labels.Matcher{
 					MustLabelMatcher(labels.MatchEqual, "a", "b"),
 					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
@@ -2354,6 +2408,11 @@ var testExpr = []struct {
 		input:  `some_metric[5m] OFFSET`,
 		fail:   true,
 		errMsg: "unexpected end of input in offset, expected number or duration",
+	},
+	{
+		input:  `some_metric[5m] OFFSET (vector(1))`,
+		fail:   true,
+		errMsg: "time expression does not evaluate to a scalar",
 	},
 	{
 		input:  `some_metric OFFSET 1m[5m]`,
@@ -3267,9 +3326,9 @@ var testExpr = []struct {
 								End:   38,
 							},
 						},
-						Range:          5 * time.Minute,
-						OriginalOffset: 4 * time.Minute,
-						EndPos:         53,
+						Range:              5 * time.Minute,
+						OriginalOffsetExpr: &NumberLiteral{Val: float64(4 * time.Minute / time.Second)},
+						EndPos:             53,
 					},
 				},
 				PosRange: posrange.PositionRange{
@@ -3413,7 +3472,7 @@ var testExpr = []struct {
 					Start: 0,
 					End:   21,
 				},
-				OriginalOffset: 1 * time.Minute,
+				OriginalOffsetExpr: &NumberLiteral{Val: float64(1 * time.Minute / time.Second)},
 			},
 			Range:  10 * time.Minute,
 			Step:   5 * time.Second,
@@ -3451,8 +3510,8 @@ var testExpr = []struct {
 					Start: 0,
 					End:   27,
 				},
-				Timestamp:      makeInt64Pointer(123000),
-				OriginalOffset: 1 * time.Minute,
+				Timestamp:          makeInt64Pointer(123000),
+				OriginalOffsetExpr: &NumberLiteral{Val: float64(1 * time.Minute / time.Second)},
 			},
 			Range:  10 * time.Minute,
 			Step:   5 * time.Second,
@@ -3471,8 +3530,8 @@ var testExpr = []struct {
 					Start: 0,
 					End:   27,
 				},
-				Timestamp:      makeInt64Pointer(123000),
-				OriginalOffset: 1 * time.Minute,
+				Timestamp:          makeInt64Pointer(123000),
+				OriginalOffsetExpr: &NumberLiteral{Val: float64(1 * time.Minute / time.Second)},
 			},
 			Range:  10 * time.Minute,
 			Step:   5 * time.Second,
@@ -3492,11 +3551,11 @@ var testExpr = []struct {
 					End:   11,
 				},
 			},
-			Timestamp:      makeInt64Pointer(123000),
-			OriginalOffset: 1 * time.Minute,
-			Range:          10 * time.Minute,
-			Step:           5 * time.Second,
-			EndPos:         35,
+			Timestamp:          makeInt64Pointer(123000),
+			OriginalOffsetExpr: &NumberLiteral{Val: float64(1 * time.Minute / time.Second)},
+			Range:              10 * time.Minute,
+			Step:               5 * time.Second,
+			EndPos:             35,
 		},
 	},
 	{
@@ -3575,9 +3634,9 @@ var testExpr = []struct {
 					End:   21,
 				},
 			},
-			Range:          5 * time.Minute,
-			OriginalOffset: 10 * time.Minute,
-			EndPos:         37,
+			Range:              5 * time.Minute,
+			OriginalOffsetExpr: &NumberLiteral{Val: float64(10 * time.Minute / time.Second)},
+			EndPos:             37,
 		},
 	},
 	{
@@ -3886,8 +3945,7 @@ var testExpr = []struct {
 					Args: Expressions{
 						&MatrixSelector{
 							VectorSelector: &VectorSelector{
-								Name:           "http_request_counter_total",
-								OriginalOffset: 0,
+								Name: "http_request_counter_total",
 								LabelMatchers: []*labels.Matcher{
 									MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "http_request_counter_total"),
 								},
@@ -4006,6 +4064,7 @@ func TestParseExpressions(t *testing.T) {
 
 				require.Equal(t, expected, expr, "error on input '%s'", test.input)
 			} else {
+				require.Error(t, err, "expected an error on input '%s', got nil", test.input)
 				require.ErrorContains(t, err, test.errMsg, "unexpected error on input '%s', expected '%s', got '%s'", test.input, test.errMsg, err.Error())
 
 				var errorList ParseErrors
