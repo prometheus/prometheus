@@ -52,6 +52,7 @@ require (
 	github.com/ovh/go-ovh v1.6.0
 	github.com/prometheus/alertmanager v0.28.0
 	github.com/prometheus/client_golang v1.21.0-rc.0
+	github.com/prometheus/client_golang/exp v0.0.0-20250225163354-248c3f7f612b
 	github.com/prometheus/client_model v0.6.1
 	github.com/prometheus/common v0.62.0
 	github.com/prometheus/common/assets v0.2.0
@@ -87,7 +88,7 @@ require (
 	google.golang.org/api v0.219.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20250115164207-1a7da9e5054f
 	google.golang.org/grpc v1.70.0
-	google.golang.org/protobuf v1.36.4
+	google.golang.org/protobuf v1.36.5
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.31.3
