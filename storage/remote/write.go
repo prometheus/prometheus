@@ -89,7 +89,7 @@ func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string,
 		flushDeadline:     flushDeadline,
 		samplesIn:         newEWMARate(ewmaWeight, shardUpdateDuration),
 		dir:               dir,
-		interner:          newPool(),
+		interner:          newPool(reg),
 		scraper:           sm,
 		quit:              make(chan struct{}),
 		highestTimestamp: &maxTimestamp{
