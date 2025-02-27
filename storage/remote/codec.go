@@ -24,7 +24,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/gogo/protobuf/proto"
+	gogoproto "github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
@@ -73,7 +73,7 @@ func DecodeReadRequest(r *http.Request) (*prompb.ReadRequest, error) {
 	}
 
 	var req prompb.ReadRequest
-	if err := proto.Unmarshal(reqBuf, &req); err != nil {
+	if err := gogoproto.Unmarshal(reqBuf, &req); err != nil {
 		return nil, err
 	}
 
@@ -82,7 +82,7 @@ func DecodeReadRequest(r *http.Request) (*prompb.ReadRequest, error) {
 
 // EncodeReadResponse writes a remote.Response to a http.ResponseWriter.
 func EncodeReadResponse(resp *prompb.ReadResponse, w http.ResponseWriter) error {
-	data, err := proto.Marshal(resp)
+	data, err := gogoproto.Marshal(resp)
 	if err != nil {
 		return err
 	}
@@ -841,7 +841,7 @@ func DecodeWriteRequest(r io.Reader) (*prompb.WriteRequest, error) {
 	}
 
 	var req prompb.WriteRequest
-	if err := proto.Unmarshal(reqBuf, &req); err != nil {
+	if err := gogoproto.Unmarshal(reqBuf, &req); err != nil {
 		return nil, err
 	}
 
@@ -862,12 +862,12 @@ func DecodeWriteV2Request(r io.Reader) (*writev2.Request, error) {
 		return nil, err
 	}
 
-	var req writev2.Request
-	if err := proto.Unmarshal(reqBuf, &req); err != nil {
+	req := &writev2.Request{}
+	if err := req.UnmarshalVT(reqBuf); err != nil {
 		return nil, err
 	}
 
-	return &req, nil
+	return req, nil
 }
 
 func DecodeOTLPWriteRequest(r *http.Request) (pmetricotlp.ExportRequest, error) {

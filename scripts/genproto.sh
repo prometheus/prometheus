@@ -2,8 +2,7 @@
 #
 # Generate all protobuf bindings.
 # Run from repository root.
-set -e
-set -u
+set -Eeuxo pipefail
 
 if ! [[ "$0" =~ "scripts/genproto.sh" ]]; then
 	echo "must be run from repository root"
@@ -11,8 +10,8 @@ if ! [[ "$0" =~ "scripts/genproto.sh" ]]; then
 fi
 
 # TODO(bwplotka): Move to buf, this is not OSS agnostic, likely won't work locally.
-if ! [[ $(protoc --version) =~ "3.15.8" ]]; then
-	echo "could not find protoc 3.15.8, is it installed + in PATH? Consider commenting out this check for local flow"
+if ! [[ $(protoc --version) =~ "29.3" ]]; then
+	echo "could not find protoc 29.3, is it installed + in PATH? Consider commenting out this check for local flow"
 	exit 255
 fi
 
@@ -20,7 +19,7 @@ fi
 # Make a backup.
 cp go.sum go.sum.bak
 
-INSTALL_PKGS="golang.org/x/tools/cmd/goimports github.com/gogo/protobuf/protoc-gen-gogofast github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger"
+INSTALL_PKGS="golang.org/x/tools/cmd/goimports github.com/gogo/protobuf/protoc-gen-gogofast github.com/planetscale/vtprotobuf/cmd/protoc-gen-go-vtproto github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger"
 for pkg in ${INSTALL_PKGS}; do
     GO111MODULE=on go install "$pkg"
 done
@@ -29,6 +28,7 @@ PROM_ROOT="${PWD}"
 PROM_PATH="${PROM_ROOT}/prompb"
 GOGOPROTO_ROOT="$(GO111MODULE=on go list -mod=readonly -f '{{ .Dir }}' -m github.com/gogo/protobuf)"
 GOGOPROTO_PATH="${GOGOPROTO_ROOT}:${GOGOPROTO_ROOT}/protobuf"
+VTPROTOBUF_PATH="$(GO111MODULE=on go list -mod=readonly -f '{{ .Dir }}/include' -m github.com/planetscale/vtprotobuf)"
 GRPC_GATEWAY_ROOT="$(GO111MODULE=on go list -mod=readonly -f '{{ .Dir }}' -m github.com/grpc-ecosystem/grpc-gateway)"
 
 DIRS="prompb"
@@ -41,8 +41,13 @@ for dir in ${DIRS}; do
             -I="${PROM_PATH}" \
             -I="${GRPC_GATEWAY_ROOT}/third_party/googleapis" \
             ./*.proto
-		protoc --gogofast_out=plugins=grpc:. -I=. \
-            -I="${GOGOPROTO_PATH}" \
+    protoc \
+            -I . \
+            -I "${VTPROTOBUF_PATH}" \
+            --go_out=paths=source_relative:. \
+            --go-vtproto_out=paths=source_relative:. \
+            --go-vtproto_opt=features=marshal+unmarshal+unmarshal_unsafe+size+pool+clone \
+            --go-grpc_out=require_unimplemented_servers=false,paths=source_relative:. \
             ./io/prometheus/write/v2/*.proto
 		protoc --gogofast_out=Mgoogle/protobuf/timestamp.proto=github.com/gogo/protobuf/types,paths=source_relative:. -I=. \
             -I="${GOGOPROTO_PATH}" \
