@@ -56,7 +56,7 @@ const hcloudTestToken = "LRK9DAWQ1ZAEFSrCNEEzLCUwhYX1U3g7wMg4dTlkkDC96fyDuyJ39nV
 // HandleHcloudServers mocks the cloud servers list endpoint.
 func (m *SDMock) HandleHcloudServers() {
 	m.Mux.HandleFunc("/servers", func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != fmt.Sprintf("Bearer %s", hcloudTestToken) {
+		if r.Header.Get("Authorization") != "Bearer "+hcloudTestToken {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
@@ -432,7 +432,7 @@ func (m *SDMock) HandleHcloudServers() {
 // HandleHcloudNetworks mocks the cloud networks list endpoint.
 func (m *SDMock) HandleHcloudNetworks() {
 	m.Mux.HandleFunc("/networks", func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != fmt.Sprintf("Bearer %s", hcloudTestToken) {
+		if r.Header.Get("Authorization") != "Bearer "+hcloudTestToken {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
