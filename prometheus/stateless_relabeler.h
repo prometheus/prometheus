@@ -14,8 +14,9 @@
 #include "re2/re2.h"
 #pragma GCC diagnostic pop
 #include <simdutf/simdutf.h>
-#include "md5/md5.h"
+#include <quasis_crypto/md5.hh>
 
+#include "bare_bones/bit.h"
 #include "bare_bones/exception.h"
 #include "bare_bones/preprocess.h"
 #include "primitives/go_slice.h"
@@ -360,16 +361,15 @@ class RelabelConfig {
   }
 
   // make_hash_uint64 - make uint64 from md5 hash.
-  PROMPP_ALWAYS_INLINE uint64_t make_hash_uint64(std::string& src) {
-    MD5::MD5 hash;
-    unsigned char rawHash[MD5::HashBytes];
-    hash.add(src.c_str(), src.size());
-    hash.get_hash(rawHash);
+  static PROMPP_ALWAYS_INLINE uint64_t make_hash_uint64(const std::string& src) {
+    crypto::MD5<> hash;
+    hash.update(src.c_str(), src.size());
+    const auto& digest = hash.digest();
+
     // Use only the last 8 bytes of the hash to give the same result as earlier versions of prom code.
-    int shift = 8;
+    static constexpr auto shift = sizeof(uint64_t);
     // need return BigEndian
-    uint64_t le = *reinterpret_cast<uint64_t*>(&rawHash[shift]);
-    return std::byteswap(le);
+    return BareBones::Bit::be(*reinterpret_cast<const uint64_t*>(&digest[shift]));
   }
 
  public:

@@ -24,12 +24,7 @@ cc_library(
         "@parallel_hashmap",
         "@scope_exit",
         "@xxHash",
-        "@md5",
         "@roaring",
-        # "@zlib//:zlib",
-        # "@lzma//:lzma",
-        # "@elf//:elf",
-        # "@backward_cpp//:backward_cpp_header_only", # stacktrace lib
     ],
 )
 
@@ -99,7 +94,7 @@ cc_library(
         ":bare_bones",
         ":primitives",
         "@com_google_absl//absl/crc:crc32c",
-        "@md5",
+        "@quasis_crypto",
         "@re2",
         "@simdutf",
     ],
@@ -338,7 +333,6 @@ cc_library(
         ":wal",
         "@cedar",
         "@re2",
-        "@xcdat",
     ],
 )
 

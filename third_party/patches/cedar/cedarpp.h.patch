@@ -1,0 +1,272 @@
+--- a/cedarpp.h
++++ b/cedarpp.h
+@@ -16,6 +16,10 @@
+ #include <cstring>
+ #include <climits>
+ #include <cassert>
++#include <ios>
++#include <string>
++
++#include <scope_exit.h>
+ 
+ #ifdef HAVE_CONFIG_H
+ #include "config.h"
+@@ -24,6 +28,11 @@
+ #define STATIC_ASSERT(e, msg) typedef char msg[(e) ? 1 : -1]
+ 
+ namespace cedar {
++template <class T>
++concept has_reserve = requires(T& r) {
++  { r.reserve(size_t{}) };
++};
++
+   // typedefs
+ #if LONG_BIT == 64
+   typedef unsigned long       npos_t; // possibly compatible with size_t
+@@ -37,8 +46,14 @@ namespace cedar {
+   template <> struct NaN <float> { enum { N1 = 0x7f800001, N2 = 0x7f800002 }; };
+   static const int MAX_ALLOC_SIZE = 1 << 16; // must be divisible by 256
+ 
++struct DefaultCharTraits {
++  static uchar replace(uchar c) noexcept { return c; }
++  static uchar restore(uchar c) noexcept { return c; }
++};
++
+   // dynamic double array
+   template <typename value_type,
++            class CharTraits = DefaultCharTraits,
+             const int     NO_VALUE  = NaN <value_type>::N1,
+             const int     NO_PATH   = NaN <value_type>::N2,
+             const bool    ORDERED   = true,
+@@ -78,9 +93,11 @@ namespace cedar {
+       block () : prev (0), next (0), num (256), reject (257), trial (0), ehead (0) {}
+     };
+     da () : tracking_node (), _array (0), _tail (0), _tail0 (0), _ninfo (0), _block (0), _bheadF (0), _bheadC (0), _bheadO (0), _capacity (0), _size (0), _quota (0), _quota0 (0), _no_delete (false), _reject () {
++#pragma GCC diagnostic ignored "-Wunused-local-typedefs"
+       STATIC_ASSERT(sizeof (value_type) <= sizeof (int),
+                     value_type_is_not_supported___maintain_a_value_array_by_yourself_and_store_its_index_to_trie
+                     );
++#pragma GCC diagnostic warning "-Wunused-local-typedefs"
+       _initialize ();
+     }
+     ~da () { clear (false); }
+@@ -173,6 +190,29 @@ namespace cedar {
+         to = static_cast <npos_t> (from);
+       }
+     }
++    [[nodiscard]] const std::string& restore_key(npos_t to, size_t length, std::string& restored_key) noexcept {
++      std::string_view tail;
++      if (static_cast<int>(to >> 32)) {
++        to &= TAIL_OFFSET_MASK;
++        tail = &_tail[-_array[to].base];
++      }
++
++      restored_key.resize_and_overwrite(length, [&](char* buf, size_t) mutable {
++        auto tail_length = std::min(tail.length(), length);
++        char* output_ptr = buf + length - tail_length;
++        std::transform(tail.end() - tail_length, tail.end(), output_ptr, CharTraits::restore);
++
++        while (output_ptr > buf && to != 0) {
++          const int from = _array[to].check;
++          *--output_ptr = CharTraits::restore(static_cast<uchar>(_array[from].base ^ static_cast<int>(to)));
++          to = static_cast<npos_t>(from);
++        }
++
++        return length;
++      });
++
++      return restored_key;
++    }
+     value_type traverse (const char* key, npos_t& from, size_t& pos) const
+     { return traverse (key, from, pos, std::strlen (key)); }
+     value_type traverse (const char* key, npos_t& from, size_t& pos, size_t len) const {
+@@ -200,14 +240,14 @@ namespace cedar {
+              _array[from].base >= 0; ++pos) {
+           if (pos == len)
+             { const int to = _follow (from, 0, cf); return _array[to].value += val; }
+-          from = static_cast <size_t> (_follow (from, key_[pos], cf));
++          from = static_cast <size_t> (_follow (from, CharTraits::replace(key_[pos]), cf));
+         }
+         offset = static_cast <npos_t> (-_array[from].base);
+       }
+       if (offset >= sizeof (int)) { // go to _tail
+         const size_t pos_orig = pos;
+         char* const tail = &_tail[offset] - pos;
+-        while (pos < len && key[pos] == tail[pos]) ++pos;
++        while (pos < len && CharTraits::replace(key[pos]) == static_cast<uchar>(tail[pos])) ++pos;
+         //
+         if (pos == len && tail[pos] == '\0') { // found exact key
+           if (const npos_t moved = pos - pos_orig) { // search end on tail
+@@ -233,7 +273,7 @@ namespace cedar {
+         }
+         for (size_t pos_ = pos_orig; pos_ < pos; ++pos_)
+           from = static_cast <size_t>
+-                 (_follow (from, static_cast <uchar> (key[pos_]), cf));
++                 (_follow (from, static_cast<uchar>(CharTraits::replace(key[pos_])), cf));
+         npos_t moved = pos - pos_orig;
+         if (tail[pos]) { // remember to move offset to existing tail
+           const int to_ = _follow (from, static_cast <uchar> (tail[pos]), cf);
+@@ -257,7 +297,7 @@ namespace cedar {
+           if (pos == len) return _array[to].value += val; // set value on tail
+           _array[to].value += *reinterpret_cast <value_type*> (&tail[pos + 1]);
+         }
+-        from = static_cast <size_t> (_follow (from, static_cast <uchar> (key[pos]), cf));
++        from = static_cast <size_t> (_follow (from, static_cast<uchar>(CharTraits::replace(key[pos])), cf));
+         ++pos;
+       }
+       const int needed = static_cast <int> (len - pos + 1 + sizeof (value_type));
+@@ -281,7 +321,7 @@ namespace cedar {
+       const size_t pos_orig = pos;
+       char* const tail = &_tail[*_length] - pos;
+       if (pos < len) {
+-        do tail[pos] = key[pos]; while (++pos < len);
++        do tail[pos] = CharTraits::replace(key[pos]); while (++pos < len);
+         from |= (static_cast <npos_t> (*_length) + (len - pos_orig)) << 32;
+       }
+       *_length += needed;
+@@ -375,6 +415,25 @@ namespace cedar {
+ #endif
+       return 0;
+     }
++    template <class OutputStream>
++  friend OutputStream& operator<<(OutputStream& stream, da& trie) {
++      if constexpr (has_reserve<OutputStream>) {
++        stream.reserve(*trie._length + sizeof(trie._size) + sizeof(node) * trie._size + sizeof(_bheadF) + sizeof(_bheadC) + sizeof(_bheadO) +
++                       sizeof(ninfo) * static_cast<size_t>(trie._size) + sizeof(block) * static_cast<size_t>(trie._size >> 8));
++      }
++
++      stream.write(trie._tail, *trie._length);
++      stream.write(reinterpret_cast<const char*>(&trie._size), sizeof(trie._size));
++      stream.write(reinterpret_cast<const char*>(trie._array), sizeof(node) * trie._size);
++
++      stream.write(reinterpret_cast<const char*>(&trie._bheadF), sizeof(_bheadF));
++      stream.write(reinterpret_cast<const char*>(&trie._bheadC), sizeof(_bheadC));
++      stream.write(reinterpret_cast<const char*>(&trie._bheadO), sizeof(_bheadO));
++      stream.write(reinterpret_cast<const char*>(trie._ninfo), sizeof(ninfo) * static_cast<size_t>(trie._size));
++      stream.write(reinterpret_cast<const char*>(trie._block), sizeof(block) * static_cast<size_t>(trie._size >> 8));
++
++      return stream;
++    }
+     int open (const char* fn, const char* mode = "rb",
+               const size_t offset = 0, size_t size_ = 0) {
+       FILE* fp = std::fopen (fn, mode);
+@@ -431,6 +490,43 @@ namespace cedar {
+ #endif
+       return 0;
+     }
++    template <class InputStream>
++  friend InputStream& operator>>(InputStream& stream, da& trie) {
++      auto sg1 = std::experimental::scope_exit([original_exceptions = stream.exceptions(), &stream] { stream.exceptions(original_exceptions); });
++      stream.exceptions(std::ios_base::failbit | std::ios_base::badbit | std::ios_base::eofbit);
++
++      int tail_length = 0;
++      stream.read(reinterpret_cast<char*>(&tail_length), sizeof(tail_length));
++
++      trie.clear(false);
++
++      trie._tail = static_cast<char*>(std::malloc(tail_length));
++      std::memcpy(trie._tail, &tail_length, sizeof(tail_length));
++      stream.read(trie._tail + sizeof(tail_length), tail_length - sizeof(tail_length));
++
++      stream.read(reinterpret_cast<char*>(&trie._size), sizeof(trie._size));
++      trie._array = static_cast<node*>(std::malloc(sizeof(node) * trie._size));
++      stream.read(reinterpret_cast<char*>(trie._array), sizeof(node) * trie._size);
++
++      trie._tail0 = static_cast<int*>(std::malloc(sizeof(int)));
++
++      stream.read(reinterpret_cast<char*>(&trie._bheadF), sizeof(trie._bheadF));
++      stream.read(reinterpret_cast<char*>(&trie._bheadC), sizeof(trie._bheadC));
++      stream.read(reinterpret_cast<char*>(&trie._bheadO), sizeof(trie._bheadO));
++
++      trie._ninfo = static_cast<ninfo*>(std::malloc(sizeof(ninfo) * trie._size));
++      stream.read(reinterpret_cast<char*>(trie._ninfo), sizeof(ninfo) * trie._size);
++
++      trie._block = static_cast<block*>(std::malloc(sizeof(block) * trie._size >> 8));
++      stream.read(reinterpret_cast<char*>(trie._block), sizeof(block) * trie._size >> 8);
++
++      *trie._length0 = 0;
++      trie._capacity = trie._size;
++      trie._quota = *trie._length;
++      trie._quota0 = 1;
++
++      return stream;
++    }
+ #ifndef USE_FAST_LOAD
+     void restore () { // restore information to update
+       if (! _block) _restore_block ();
+@@ -451,12 +547,12 @@ namespace cedar {
+     }
+     const void* array () const { return _array; }
+     void clear (const bool reuse = true) {
+-      if (_no_delete) _array = 0, _tail = 0;
+-      if (_array) std::free (_array); _array = 0;
+-      if (_tail)  std::free (_tail);  _tail  = 0;
+-      if (_tail0) std::free (_tail0); _tail0 = 0;
+-      if (_ninfo) std::free (_ninfo); _ninfo = 0;
+-      if (_block) std::free (_block); _block = 0;
++      if (_no_delete) {_array = 0, _tail = 0;}
++      if (_array) {std::free (_array); _array = 0;}
++      if (_tail)  {std::free (_tail);  _tail  = 0;}
++      if (_tail0) {std::free (_tail0); _tail0 = 0;}
++      if (_ninfo) {std::free (_ninfo); _ninfo = 0;}
++      if (_block) {std::free (_block); _block = 0;}
+       _bheadF = _bheadC = _bheadO = _capacity = _size = _quota = _quota0 = 0;
+       if (reuse) _initialize ();
+       _no_delete = false;
+@@ -501,6 +597,16 @@ namespace cedar {
+       return begin (from = static_cast <size_t> (_array[from].base) ^ c, ++len);
+     }
+     npos_t tracking_node[NUM_TRACKING_NODES + 1];
++
++    size_t allocated_memory() const noexcept {
++      size_t result = sizeof(*_array) * _capacity;
++      result += sizeof(*_tail) * _quota;
++      result += sizeof(*_tail0) * _quota0;
++      result += sizeof(*_ninfo) * _capacity;
++      result += sizeof(*_block) * (_capacity >> 8);
++      return result;
++    }
++
+   private:
+     // currently disabled; implement these if you need
+     da (const da&);
+@@ -570,7 +676,7 @@ namespace cedar {
+             if (n.check != static_cast <int> (from)) return CEDAR_NO_VALUE;
+             return n.base;
+           }
+-          size_t to = static_cast <size_t> (_array[from].base); to ^= key_[pos];
++          size_t to = static_cast <size_t> (_array[from].base); to ^= CharTraits::replace(key_[pos]);
+           if (_array[to].check != static_cast <int> (from)) return CEDAR_NO_PATH;
+           ++pos;
+           from = to;
+@@ -581,7 +687,7 @@ namespace cedar {
+       const size_t pos_orig = pos; // start position in reading _tail
+       const char* const tail = &_tail[offset] - pos;
+       if (pos < len) {
+-        do if (key[pos] != tail[pos]) break; while (++pos < len);
++        do if (CharTraits::replace(key[pos]) != static_cast<uchar>(tail[pos])) break; while (++pos < len);
+         if (const npos_t moved = pos - pos_orig) {
+           from &= TAIL_OFFSET_MASK;
+           from |= (offset + moved) << 32;
+@@ -713,8 +819,10 @@ namespace cedar {
+     // push label to from's child
+     void _push_sibling (const npos_t from, const int base, const uchar label, const bool flag = true) {
+       uchar* c = &_ninfo[from].child;
+-      if (flag && (ORDERED ? label > *c : ! *c))
+-        do c = &_ninfo[base ^ *c].sibling; while (ORDERED && *c && *c < label);
++      if (flag && (ORDERED ? (!*c || CharTraits::restore(label) > *c) : !*c))
++        do
++          c = &_ninfo[base ^ *c].sibling;
++      while (ORDERED && *c && *c < CharTraits::restore(label));
+       _ninfo[base ^ label].sibling = *c, *c = label;
+     }
+     // pop label from from's child
+@@ -734,7 +842,7 @@ namespace cedar {
+       --p;
+       if (! c)  { *++p = c; c = _ninfo[base ^ c].sibling; } // 0: terminal
+       if (ORDERED)
+-        while (c && c < label) { *++p = c; c = _ninfo[base ^ c].sibling; }
++        while (c && c < CharTraits::restore(label)) { *++p = c; c = _ninfo[base ^ c].sibling; }
+       if (label != -1) *++p = static_cast <uchar> (label);
+       while (c) { *++p = c; c = _ninfo[base ^ c].sibling; }
+       return p;

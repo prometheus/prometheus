@@ -2,6 +2,7 @@ workspace(name = "prompp")
 
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
 http_archive(
     name = "bazel_skylib",
@@ -103,86 +104,6 @@ http_archive(
 )
 
 http_archive(
-    name = "argp",
-    build_file = "//third_party:argp.BUILD",
-    patch_args = ["-p1"],
-    patches = [
-        "//third_party/patches/argp:0001-Makefile.am.patch",
-    ],
-    sha256 = "c29eae929dfebd575c38174f2c8c315766092cec99a8f987569d0cad3c6d64f6",
-    strip_prefix = "argp-standalone-1.5.0/",
-    url = "https://github.com/argp-standalone/argp-standalone/archive/refs/tags/1.5.0.tar.gz",
-)
-
-http_archive(
-    name = "fts",
-    build_file = "//third_party:fts.BUILD",
-    sha256 = "49ae567a96dbab22823d045ffebe0d6b14b9b799925e9ca9274d47d26ff482a6",
-    strip_prefix = "musl-fts-1.2.7/",
-    url = "https://github.com/void-linux/musl-fts/archive/refs/tags/v1.2.7.tar.gz",
-)
-
-http_archive(
-    name = "obstack",
-    build_file = "//third_party:obstack.BUILD",
-    sha256 = "9ffb3479b15df0170eba4480e51723c3961dbe0b461ec289744622db03a69395",
-    strip_prefix = "musl-obstack-1.2.3/",
-    url = "https://github.com/void-linux/musl-obstack/archive/refs/tags/v1.2.3.tar.gz",
-)
-
-http_archive(
-    name = "zlib",
-    build_file = "//third_party:zlib.BUILD",
-    sha256 = "ff0ba4c292013dbc27530b3a81e1f9a813cd39de01ca5e0f8bf355702efa593e",
-    strip_prefix = "zlib-1.3/",
-    url = "https://zlib.net/zlib-1.3.tar.gz",
-)
-
-http_archive(
-    name = "zstd",
-    build_file = "//third_party:zstd.BUILD",
-    sha256 = "9c4396cc829cfae319a6e2615202e82aad41372073482fce286fac78646d3ee4",
-    strip_prefix = "zstd-1.5.5/",
-    url = "https://github.com/facebook/zstd/releases/download/v1.5.5/zstd-1.5.5.tar.gz",
-)
-
-http_archive(
-    name = "lzma",
-    build_file = "//third_party:lzma.BUILD",
-    sha256 = "705d0d96e94e1840e64dec75fc8d5832d34f6649833bec1ced9c3e08cf88132e",
-    strip_prefix = "xz-5.4.4/",
-    url = "https://tukaani.org/xz/xz-5.4.4.tar.xz",
-)
-
-local_repository(
-    name = "musl-legacy-error",
-    path = "third_party/musl-legacy-error",
-)
-
-http_archive(
-    name = "elf",
-    build_file = "//third_party:elf.BUILD",
-    patch_args = ["-p1"],
-    patches = [
-        "//third_party/patches/elf:0001-fix-aarch64_fregs.patch",
-        "//third_party/patches/elf:0002-fix-uninitialized.patch",
-        "//third_party/patches/elf:0003-musl-macros.patch",
-        "//third_party/patches/elf:0004-Makefile.in.patch",
-    ],
-    sha256 = "39bd8f1a338e2b7cd4abc3ff11a0eddc6e690f69578a57478d8179b4148708c8",
-    strip_prefix = "elfutils-0.189/",
-    url = "https://sourceware.org/elfutils/ftp/0.189/elfutils-0.189.tar.bz2",
-)
-
-http_archive(
-    name = "backward_cpp",
-    build_file = "//third_party:backward_cpp.BUILD",
-    sha256 = "fa6e7d2919eca555772ceb9a946e58d95cb562cb01bb59d01f901f607656cd32",
-    strip_prefix = "backward-cpp-65a769ffe77cf9d759d801bc792ac56af8e911a3/",
-    url = "https://github.com/bombela/backward-cpp/archive/65a769ffe77cf9d759d801bc792ac56af8e911a3.zip",
-)
-
-http_archive(
     name = "roaring",
     build_file = "//third_party:roaring.BUILD",
     patch_args = ["-p1"],
@@ -207,9 +128,12 @@ http_archive(
     ]
 )
 
-local_repository(
+http_archive(
     name = "xxHash",
-    path = "third_party/xxHash",
+    build_file = "//third_party:xxHash.BUILD",
+    sha256 = "aae608dfe8213dfd05d909a57718ef82f30722c392344583d3f39050c7f29a80",
+    strip_prefix = "xxHash-0.8.3/",
+    url = "https://github.com/Cyan4973/xxHash/archive/refs/tags/v0.8.3.tar.gz",
 )
 
 http_archive(
@@ -264,24 +188,40 @@ http_archive(
     url = "https://github.com/google/re2/archive/refs/tags/2024-02-01.tar.gz",
 )
 
-local_repository(
+git_repository(
     name = "cedar",
-    path = "third_party/cedar",
+    build_file = "//third_party:cedar.BUILD",
+    commit = "38fa7f615f14bf867834c796945841d54cb45e0f",
+    patch_args = ["-p1"],
+    patches = [
+        "//third_party/patches/cedar:cedarpp.h.patch",
+    ],
+    remote = "https://github.com/DevO2012/cedar",
 )
 
-local_repository(
-    name = "xcdat",
-    path = "third_party/xcdat",
+git_repository(
+    name = "quasis_crypto",
+    build_file = "//third_party:quasis_crypto.BUILD",
+    commit = "7d3c4c648b1013e37d25d247c31078033b10d172",
+    patch_args = ["-p1"],
+    patches = [
+        "//third_party/patches/quasis_crypto:md5.hh.patch",
+    ],
+    remote = "https://github.com/quasis/crypto",
 )
 
-local_repository(
-    name = "md5",
-    path = "third_party/md5",
-)
-
-local_repository(
+http_archive(
     name = "simdutf",
-    path = "third_party/simdutf",
+    build_file = "//third_party:simdutf.BUILD",
+    sha256 = "66c85f591133e3baa23cc441d6e2400dd2c94c4902820734ddbcd9e04dd3988b",
+    url = "https://github.com/simdutf/simdutf/releases/download/v6.2.0/singleheader.zip",
+)
+
+http_file(
+    name = "fastfloat_header",
+    downloaded_file_path = "fastfloat/fast_float.h",
+    url = "https://github.com/fastfloat/fast_float/releases/download/v8.0.0/fast_float.h",
+    sha256 = "1335e82c61fda54476ecbd94b92356deebeb3f0122802c3f103ee528ac08624e",
 )
 
 local_repository(
