@@ -26,7 +26,7 @@ This document offers guidance on migrating from Prometheus 2.x to Prometheus 3.0
       - Prometheus v3 will no longer add ports to scrape targets according to the 
     specified scheme. Target will now appear in labels as configured.
       - If you rely on scrape targets like 
-      `https://example.com/metrics` or `http://exmaple.com/metrics` to be 
+      `https://example.com/metrics` or `http://example.com/metrics` to be 
       represented as `https://example.com/metrics:443` and 
       `http://example.com/metrics:80` respectively, add them to your target URLs
   - `agent`
@@ -139,7 +139,7 @@ may now fail if this fallback protocol is not specified.
 The TSDB format has been changed slightly in Prometheus v2.55 in preparation for changes 
 to the index format. Consequently, a Prometheus v3 TSDB can only be read by a
 Prometheus v2.55 or newer. Keep that in mind when upgrading to v3 -- you will be only
-able to downgrade to v2.55, not lower, without losing your TSDB persitent data.
+able to downgrade to v2.55, not lower, without losing your TSDB persistent data.
 
 As an extra safety measure, you could optionally consider upgrading to v2.55 first and
 confirm Prometheus works as expected, before upgrading to v3.
