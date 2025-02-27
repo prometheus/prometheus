@@ -1325,14 +1325,13 @@ func TestScrapeLoopSeriesAdded(t *testing.T) {
 }
 
 func TestScrapeLoopFailWithInvalidLabelsAfterRelabel(t *testing.T) {
-	model.NameValidationScheme = model.LegacyValidation
 	s := teststorage.New(t)
 	defer s.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	target := &Target{
-		labels: labels.FromStrings("pod_label_invalid_012", "test"),
+		labels: labels.FromStrings("pod_label_invalid_012\xff", "test"),
 	}
 	relabelConfig := []*relabel.Config{{
 		Action:      relabel.LabelMap,
@@ -1357,10 +1356,6 @@ func TestScrapeLoopFailWithInvalidLabelsAfterRelabel(t *testing.T) {
 func TestScrapeLoopFailLegacyUnderUTF8(t *testing.T) {
 	// Test that scrapes fail when default validation is utf8 but scrape config is
 	// legacy.
-	model.NameValidationScheme = model.UTF8Validation
-	defer func() {
-		model.NameValidationScheme = model.LegacyValidation
-	}()
 	s := teststorage.New(t)
 	defer s.Close()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -2872,6 +2867,111 @@ func TestScrapeLoopOutOfBoundsTimeError(t *testing.T) {
 	require.Equal(t, 0, seriesAdded)
 }
 
+func TestSchemesFromConfig(t *testing.T) {
+	tests := []struct {
+		name                   string
+		config                 config.ScrapeConfig
+		expectValidationScheme model.ValidationScheme
+		expectEscapingScheme   model.EscapingScheme
+		expectErr              string
+	}{
+		{
+			name:                   "blank config, utf8 defaults",
+			expectValidationScheme: model.UTF8Validation,
+			expectEscapingScheme:   model.NoEscaping,
+		},
+		{
+			name: "utf8, utf8 implies utf8",
+			config: config.ScrapeConfig{
+				MetricNameValidationScheme: "utf8",
+			},
+			expectValidationScheme: model.UTF8Validation,
+			expectEscapingScheme:   model.NoEscaping,
+		},
+		{
+			name: "utf8 overridden to ask for underscores",
+			config: config.ScrapeConfig{
+				MetricNameValidationScheme: "utf8",
+				MetricNameEscapingScheme:   "underscores",
+			},
+			expectValidationScheme: model.UTF8Validation,
+			expectEscapingScheme:   model.UnderscoreEscaping,
+		},
+		{
+			name: "bad validation value",
+			config: config.ScrapeConfig{
+				MetricNameValidationScheme: "not a thing",
+			},
+			expectErr: "invalid metric name validation scheme",
+		},
+		{
+			name: "bad escaping value",
+			config: config.ScrapeConfig{
+				MetricNameEscapingScheme: "not a thing",
+			},
+			expectErr: "invalid metric name escaping scheme",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sp := &scrapePool{
+				config: &tc.config,
+			}
+			gotValidation, gotEscaping, gotErr := sp.schemesFromConfig()
+			if tc.expectErr == "" {
+				require.NoError(t, gotErr)
+				require.Equal(t, tc.expectValidationScheme, gotValidation)
+				require.Equal(t, tc.expectEscapingScheme, gotEscaping)
+			} else {
+				require.Error(t, gotErr)
+				require.ErrorContains(t, gotErr, tc.expectErr)
+			}
+		})
+	}
+}
+
+func TestAcceptHeader(t *testing.T) {
+	tests := []struct {
+		name            string
+		scrapeProtocols []config.ScrapeProtocol
+		scheme          model.EscapingScheme
+		expectedHeader  string
+	}{
+		{
+			name:            "default scrape protocols with underscore escaping",
+			scrapeProtocols: config.DefaultScrapeProtocols,
+			scheme:          model.UnderscoreEscaping,
+			expectedHeader:  "application/openmetrics-text;version=1.0.0;escaping=underscores;q=0.6,application/openmetrics-text;version=0.0.1;q=0.5,text/plain;version=1.0.0;escaping=underscores;q=0.4,text/plain;version=0.0.4;q=0.3,*/*;q=0.2",
+		},
+		{
+			name:            "default proto first scrape protocols with underscore escaping",
+			scrapeProtocols: config.DefaultProtoFirstScrapeProtocols,
+			scheme:          model.DotsEscaping,
+			expectedHeader:  "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.6,application/openmetrics-text;version=1.0.0;escaping=dots;q=0.5,application/openmetrics-text;version=0.0.1;q=0.4,text/plain;version=1.0.0;escaping=dots;q=0.3,text/plain;version=0.0.4;q=0.2,*/*;q=0.1",
+		},
+		{
+			name:            "default scrape protocols with no escaping",
+			scrapeProtocols: config.DefaultScrapeProtocols,
+			scheme:          model.NoEscaping,
+			expectedHeader:  "application/openmetrics-text;version=1.0.0;escaping=allow-utf-8;q=0.6,application/openmetrics-text;version=0.0.1;q=0.5,text/plain;version=1.0.0;escaping=allow-utf-8;q=0.4,text/plain;version=0.0.4;q=0.3,*/*;q=0.2",
+		},
+		{
+			name:            "default proto first scrape protocols with no escaping",
+			scrapeProtocols: config.DefaultProtoFirstScrapeProtocols,
+			scheme:          model.NoEscaping,
+			expectedHeader:  "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.6,application/openmetrics-text;version=1.0.0;escaping=allow-utf-8;q=0.5,application/openmetrics-text;version=0.0.1;q=0.4,text/plain;version=1.0.0;escaping=allow-utf-8;q=0.3,text/plain;version=0.0.4;q=0.2,*/*;q=0.1",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			header := acceptHeader(tc.scrapeProtocols, tc.scheme)
+			require.Equal(t, tc.expectedHeader, header)
+		})
+	}
+}
+
 func TestTargetScraperScrapeOK(t *testing.T) {
 	const (
 		configTimeout   = 1500 * time.Millisecond
@@ -2955,31 +3055,31 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 
 	for _, tc := range []struct {
 		scrapeProtocols []config.ScrapeProtocol
-		scheme          model.ValidationScheme
+		scheme          model.EscapingScheme
 		protobufParsing bool
 		allowUTF8       bool
 	}{
 		{
 			scrapeProtocols: config.DefaultScrapeProtocols,
-			scheme:          model.LegacyValidation,
+			scheme:          model.UnderscoreEscaping,
 			protobufParsing: false,
 			allowUTF8:       false,
 		},
 		{
 			scrapeProtocols: config.DefaultProtoFirstScrapeProtocols,
-			scheme:          model.LegacyValidation,
+			scheme:          model.UnderscoreEscaping,
 			protobufParsing: true,
 			allowUTF8:       false,
 		},
 		{
 			scrapeProtocols: config.DefaultScrapeProtocols,
-			scheme:          model.UTF8Validation,
+			scheme:          model.NoEscaping,
 			protobufParsing: false,
 			allowUTF8:       true,
 		},
 		{
 			scrapeProtocols: config.DefaultProtoFirstScrapeProtocols,
-			scheme:          model.UTF8Validation,
+			scheme:          model.NoEscaping,
 			protobufParsing: true,
 			allowUTF8:       true,
 		},
@@ -3016,7 +3116,7 @@ func TestTargetScrapeScrapeCancel(t *testing.T) {
 			scrapeConfig: &config.ScrapeConfig{},
 		},
 		client:       http.DefaultClient,
-		acceptHeader: acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, model.LegacyValidation),
+		acceptHeader: acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, model.UnderscoreEscaping),
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -3072,7 +3172,7 @@ func TestTargetScrapeScrapeNotFound(t *testing.T) {
 			scrapeConfig: &config.ScrapeConfig{},
 		},
 		client:       http.DefaultClient,
-		acceptHeader: acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, model.LegacyValidation),
+		acceptHeader: acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, model.UnderscoreEscaping),
 	}
 
 	resp, err := ts.scrape(context.Background())
@@ -3117,7 +3217,7 @@ func TestTargetScraperBodySizeLimit(t *testing.T) {
 		},
 		client:        http.DefaultClient,
 		bodySizeLimit: bodySizeLimit,
-		acceptHeader:  acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, model.LegacyValidation),
+		acceptHeader:  acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, model.UnderscoreEscaping),
 		metrics:       newTestScrapeMetrics(t),
 	}
 	var buf bytes.Buffer
@@ -3711,8 +3811,6 @@ func TestScrapeReportLimit(t *testing.T) {
 func TestScrapeUTF8(t *testing.T) {
 	s := teststorage.New(t)
 	defer s.Close()
-	model.NameValidationScheme = model.UTF8Validation
-	t.Cleanup(func() { model.NameValidationScheme = model.LegacyValidation })
 
 	cfg := &config.ScrapeConfig{
 		JobName:                    "test",
