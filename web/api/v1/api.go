@@ -1105,15 +1105,15 @@ func (api *API) scrapePools(r *http.Request) apiFuncResult {
 }
 
 func (api *API) targets(r *http.Request) apiFuncResult {
-	sortKeys := func(targets map[string][]*scrape.Target) ([]string, int) {
+	getSortedPools := func(targets map[string][]*scrape.Target) ([]string, int) {
 		var n int
-		keys := make([]string, 0, len(targets))
-		for k := range targets {
-			keys = append(keys, k)
-			n += len(targets[k])
+		pools := make([]string, 0, len(targets))
+		for p := range targets {
+			pools = append(pools, p)
+			n += len(targets[p])
 		}
-		slices.Sort(keys)
-		return keys, n
+		slices.Sort(pools)
+		return pools, n
 	}
 
 	scrapePool := r.URL.Query().Get("scrapePool")
@@ -1125,14 +1125,14 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 
 	if showActive {
 		targetsActive := api.targetRetriever(r.Context()).TargetsActive()
-		activeKeys, numTargets := sortKeys(targetsActive)
+		activePools, numTargets := getSortedPools(targetsActive)
 		res.ActiveTargets = make([]*Target, 0, numTargets)
 
-		for _, key := range activeKeys {
-			if scrapePool != "" && key != scrapePool {
+		for _, p := range activePools {
+			if scrapePool != "" && p != scrapePool {
 				continue
 			}
-			for _, target := range targetsActive[key] {
+			for _, target := range targetsActive[p] {
 				lastErrStr := ""
 				lastErr := target.LastError()
 				if lastErr != nil {
@@ -1144,7 +1144,7 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 				res.ActiveTargets = append(res.ActiveTargets, &Target{
 					DiscoveredLabels: target.DiscoveredLabels(builder),
 					Labels:           target.Labels(builder),
-					ScrapePool:       key,
+					ScrapePool:       p,
 					ScrapeURL:        target.URL().String(),
 					GlobalURL:        globalURL.String(),
 					LastError: func() string {
@@ -1170,16 +1170,15 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 	}
 	if showDropped {
 		res.DroppedTargetCounts = api.targetRetriever(r.Context()).TargetsDroppedCounts()
-	}
-	if showDropped {
+
 		targetsDropped := api.targetRetriever(r.Context()).TargetsDropped()
-		droppedKeys, numTargets := sortKeys(targetsDropped)
+		droppedPools, numTargets := getSortedPools(targetsDropped)
 		res.DroppedTargets = make([]*DroppedTarget, 0, numTargets)
-		for _, key := range droppedKeys {
-			if scrapePool != "" && key != scrapePool {
+		for _, p := range droppedPools {
+			if scrapePool != "" && p != scrapePool {
 				continue
 			}
-			for _, target := range targetsDropped[key] {
+			for _, target := range targetsDropped[p] {
 				res.DroppedTargets = append(res.DroppedTargets, &DroppedTarget{
 					DiscoveredLabels: target.DiscoveredLabels(builder),
 				})
