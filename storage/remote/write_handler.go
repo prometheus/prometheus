@@ -513,7 +513,7 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 }
 
 // handleHistogramZeroSample appends CT as a zero-value sample with CT value as the sample timestamp.
-// It doens't return errors in case of out of order CT.
+// It doesn't return errors in case of out of order CT.
 func (h *writeHandler) handleHistogramZeroSample(app storage.Appender, ref storage.SeriesRef, l labels.Labels, hist writev2.Histogram, ct int64) (storage.SeriesRef, error) {
 	var err error
 	if hist.IsFloatHistogram() {

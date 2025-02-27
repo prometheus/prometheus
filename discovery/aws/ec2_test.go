@@ -217,7 +217,7 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 						State:            &ec2.InstanceState{Name: strptr("running")},
 						SubnetId:         strptr("azid-3"),
 						VpcId:            strptr("vpc-ipv4"),
-						// network intefaces
+						// network interfaces
 						NetworkInterfaces: []*ec2.InstanceNetworkInterface{
 							// interface without subnet -> should be ignored
 							{
@@ -285,7 +285,7 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 						State:            &ec2.InstanceState{Name: strptr("running")},
 						SubnetId:         strptr("azid-2"),
 						VpcId:            strptr("vpc-ipv6"),
-						// network intefaces
+						// network interfaces
 						NetworkInterfaces: []*ec2.InstanceNetworkInterface{
 							// interface without primary IPv6, index 2
 							{
