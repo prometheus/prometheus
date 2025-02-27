@@ -58,12 +58,12 @@ type writeStorage struct {
 
 const maxAheadTime = 10 * time.Minute
 
-// NewWriteHandler creates a http.Handler that accepts remote write requests and writes them to the provided appendable.
+// NewWriteHandler creates a http.Handler that accepts remote write requests with
+// the given message in acceptedMessages and writes them to the provided appendable.
 //
 // NOTE(bwplotka): When accepting v2 proto and spec, partial writes are possible
 // as per https://prometheus.io/docs/specs/remote_write_spec_2_0/#partial-write.
-// TODO(saswatamcode): Remove acceptedProtoMsgs parameter?
-func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, _ []config.RemoteWriteProtoMsg, ingestCTZeroSample bool) http.Handler {
+func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedMessages remote.MessageTypes, ingestCTZeroSample bool) http.Handler {
 	s := &writeStorage{
 		logger:     logger,
 		appendable: appendable,
@@ -83,7 +83,7 @@ func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable 
 		ingestCTZeroSample: ingestCTZeroSample,
 	}
 
-	return remote.NewHandler(s, remote.WithHandlerLogger(logger))
+	return remote.NewHandler(s, acceptedMessages, remote.WithHandlerLogger(logger))
 }
 
 // Store implements remote.writeStorage interface.

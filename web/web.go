@@ -38,6 +38,7 @@ import (
 	"github.com/alecthomas/units"
 	"github.com/grafana/regexp"
 	"github.com/mwitkow/go-conntrack"
+	"github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	io_prometheus_client "github.com/prometheus/client_model/go"
@@ -294,7 +295,7 @@ type Options struct {
 	CTZeroIngestionEnabled     bool
 	AppName                    string
 
-	AcceptRemoteWriteProtoMsgs []config.RemoteWriteProtoMsg
+	AcceptRemoteWriteProtoMsgs remote.MessageTypes
 
 	Gatherer   prometheus.Gatherer
 	Registerer prometheus.Registerer
