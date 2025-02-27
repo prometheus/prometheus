@@ -48,7 +48,9 @@ func newEntry(s string) *entry {
 }
 
 func newPool(reg prometheus.Registerer) *pool {
-	reg.MustRegister(noReferenceReleases)
+	if reg != nil {
+		reg.MustRegister(noReferenceReleases)
+	}
 
 	return &pool{
 		pool: map[string]*entry{},
