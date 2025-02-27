@@ -58,12 +58,12 @@ type writeStorage struct {
 
 const maxAheadTime = 10 * time.Minute
 
-// NewWriteHandler creates a http.Handler that accepts remote write requests with
-// the given message in acceptedProtoMsgs and writes them to the provided appendable.
+// NewWriteHandler creates a http.Handler that accepts remote write requests and writes them to the provided appendable.
 //
 // NOTE(bwplotka): When accepting v2 proto and spec, partial writes are possible
 // as per https://prometheus.io/docs/specs/remote_write_spec_2_0/#partial-write.
-func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedProtoMsgs []config.RemoteWriteProtoMsg, ingestCTZeroSample bool) http.Handler {
+// TODO(saswatamcode): Remove acceptedProtoMsgs parameter?
+func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, _ []config.RemoteWriteProtoMsg, ingestCTZeroSample bool) http.Handler {
 	s := &writeStorage{
 		logger:     logger,
 		appendable: appendable,
@@ -105,7 +105,7 @@ func (s *writeStorage) Store(ctx context.Context, msgType remote.WriteMessageTyp
 			wr.SetStatusCode(http.StatusBadRequest)
 			return wr, err
 		}
-		if err = s.write(r.Context(), &req); err != nil {
+		if err = s.write(ctx, &req); err != nil {
 			switch {
 			case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrOutOfBounds), errors.Is(err, storage.ErrDuplicateSampleForTimestamp), errors.Is(err, storage.ErrTooOldSample):
 				// Indicated an out-of-order sample is a bad request to prevent retries.
@@ -129,7 +129,7 @@ func (s *writeStorage) Store(ctx context.Context, msgType remote.WriteMessageTyp
 		return wr, err
 	}
 
-	respStats, errHTTPCode, err := s.writeV2(r.Context(), &req)
+	respStats, errHTTPCode, err := s.writeV2(ctx, &req)
 	if err != nil {
 		if errHTTPCode/5 == 100 { // 5xx
 			s.logger.Error("Error while remote writing the v2 request", "err", err.Error())
