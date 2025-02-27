@@ -692,6 +692,7 @@ $ curl http://localhost:9090/api/v1/targets
           "__scrape_timeout__": "10s",
           "job": "node"
         },
+        "scrapePool": "node"
       }
     ]
   }
