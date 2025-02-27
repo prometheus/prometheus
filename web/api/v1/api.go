@@ -1108,9 +1108,9 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 	getSortedPools := func(targets map[string][]*scrape.Target) ([]string, int) {
 		var n int
 		pools := make([]string, 0, len(targets))
-		for p := range targets {
+		for p, t := range targets {
 			pools = append(pools, p)
-			n += len(targets[p])
+			n += len(t)
 		}
 		slices.Sort(pools)
 		return pools, n
@@ -1128,11 +1128,11 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 		activePools, numTargets := getSortedPools(targetsActive)
 		res.ActiveTargets = make([]*Target, 0, numTargets)
 
-		for _, p := range activePools {
-			if scrapePool != "" && p != scrapePool {
+		for _, pool := range activePools {
+			if scrapePool != "" && pool != scrapePool {
 				continue
 			}
-			for _, target := range targetsActive[p] {
+			for _, target := range targetsActive[pool] {
 				lastErrStr := ""
 				lastErr := target.LastError()
 				if lastErr != nil {
@@ -1144,7 +1144,7 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 				res.ActiveTargets = append(res.ActiveTargets, &Target{
 					DiscoveredLabels: target.DiscoveredLabels(builder),
 					Labels:           target.Labels(builder),
-					ScrapePool:       p,
+					ScrapePool:       pool,
 					ScrapeURL:        target.URL().String(),
 					GlobalURL:        globalURL.String(),
 					LastError: func() string {
@@ -1174,11 +1174,11 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 		targetsDropped := api.targetRetriever(r.Context()).TargetsDropped()
 		droppedPools, numTargets := getSortedPools(targetsDropped)
 		res.DroppedTargets = make([]*DroppedTarget, 0, numTargets)
-		for _, p := range droppedPools {
-			if scrapePool != "" && p != scrapePool {
+		for _, pool := range droppedPools {
+			if scrapePool != "" && pool != scrapePool {
 				continue
 			}
-			for _, target := range targetsDropped[p] {
+			for _, target := range targetsDropped[pool] {
 				res.DroppedTargets = append(res.DroppedTargets, &DroppedTarget{
 					DiscoveredLabels: target.DiscoveredLabels(builder),
 				})
