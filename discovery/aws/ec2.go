@@ -55,6 +55,7 @@ const (
 	ec2LabelInstanceType         = ec2Label + "instance_type"
 	ec2LabelOwnerID              = ec2Label + "owner_id"
 	ec2LabelPlatform             = ec2Label + "platform"
+	ec2LabelDefaultIPv6Address   = ec2Label + "default_ipv6_address"
 	ec2LabelPrimaryIPv6Addresses = ec2Label + "primary_ipv6_addresses"
 	ec2LabelPrimarySubnetID      = ec2Label + "primary_subnet_id"
 	ec2LabelPrivateDNS           = ec2Label + "private_dns_name"
@@ -233,6 +234,42 @@ func (d *EC2Discovery) refreshAZIDs(ctx context.Context) error {
 	return nil
 }
 
+func refreshIPv6(i *ec2.Instance) (*string, []string, []string) {
+	var primaryipv6addrs []string
+	var ipv6addrs []string
+
+	if i.VpcId != nil {
+		for _, eni := range i.NetworkInterfaces {
+			if eni.SubnetId == nil {
+				continue
+			}
+
+			for _, ipv6addr := range eni.Ipv6Addresses {
+				ipv6addrs = append(ipv6addrs, *ipv6addr.Ipv6Address)
+				if *ipv6addr.IsPrimaryIpv6 {
+					// we might have to extend the slice with more than one element
+					// that could leave empty strings in the list which is intentional
+					// to keep the position/device index information
+					for int64(len(primaryipv6addrs)) <= *eni.Attachment.DeviceIndex {
+						primaryipv6addrs = append(primaryipv6addrs, "")
+					}
+					primaryipv6addrs[*eni.Attachment.DeviceIndex] = *ipv6addr.Ipv6Address
+				}
+			}
+		}
+
+		// Find an IPv6 address we can "guess" to use. Pick a primary one if there is
+		// one available, if not then just pick any.
+		for _, ipv6addr := range append(primaryipv6addrs, ipv6addrs...) {
+			if ipv6addr != "" {
+				return &ipv6addr, primaryipv6addrs, ipv6addrs
+			}
+		}
+	}
+
+	return nil, primaryipv6addrs, ipv6addrs
+}
+
 func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	ec2Client, err := d.ec2Client(ctx)
 	if err != nil {
@@ -265,7 +302,9 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 	if err := ec2Client.DescribeInstancesPagesWithContext(ctx, input, func(p *ec2.DescribeInstancesOutput, _ bool) bool {
 		for _, r := range p.Reservations {
 			for _, inst := range r.Instances {
-				if inst.PrivateIpAddress == nil {
+				defaultipv6addr, primaryipv6addrs, ipv6addrs := refreshIPv6(inst)
+
+				if inst.PrivateIpAddress == nil && defaultipv6addr == nil {
 					continue
 				}
 
@@ -278,12 +317,20 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 					labels[ec2LabelOwnerID] = model.LabelValue(*r.OwnerId)
 				}
 
-				labels[ec2LabelPrivateIP] = model.LabelValue(*inst.PrivateIpAddress)
+				if defaultipv6addr != nil {
+					labels[ec2LabelDefaultIPv6Address] = model.LabelValue(*defaultipv6addr)
+				}
+
+				if inst.PrivateIpAddress != nil {
+					labels[ec2LabelPrivateIP] = model.LabelValue(*inst.PrivateIpAddress)
+					labels[model.AddressLabel] = model.LabelValue(net.JoinHostPort(*inst.PrivateIpAddress, strconv.Itoa(d.cfg.Port)))
+				} else {
+					labels[model.AddressLabel] = model.LabelValue(net.JoinHostPort(*defaultipv6addr, strconv.Itoa(d.cfg.Port)))
+				}
+
 				if inst.PrivateDnsName != nil {
 					labels[ec2LabelPrivateDNS] = model.LabelValue(*inst.PrivateDnsName)
 				}
-				addr := net.JoinHostPort(*inst.PrivateIpAddress, strconv.Itoa(d.cfg.Port))
-				labels[model.AddressLabel] = model.LabelValue(addr)
 
 				if inst.Platform != nil {
 					labels[ec2LabelPlatform] = model.LabelValue(*inst.Platform)
@@ -293,6 +340,21 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 					labels[ec2LabelPublicIP] = model.LabelValue(*inst.PublicIpAddress)
 					labels[ec2LabelPublicDNS] = model.LabelValue(*inst.PublicDnsName)
 				}
+
+				if primaryipv6addrs != nil {
+					labels[ec2LabelPrimaryIPv6Addresses] = model.LabelValue(
+						ec2LabelSeparator +
+							strings.Join(primaryipv6addrs, ec2LabelSeparator) +
+							ec2LabelSeparator)
+				}
+
+				if ipv6addrs != nil {
+					labels[ec2LabelIPv6Addresses] = model.LabelValue(
+						ec2LabelSeparator +
+							strings.Join(ipv6addrs, ec2LabelSeparator) +
+							ec2LabelSeparator)
+				}
+
 				labels[ec2LabelAMI] = model.LabelValue(*inst.ImageId)
 				labels[ec2LabelAZ] = model.LabelValue(*inst.Placement.AvailabilityZone)
 				azID, ok := d.azToAZID[*inst.Placement.AvailabilityZone]
@@ -318,8 +380,6 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 					labels[ec2LabelPrimarySubnetID] = model.LabelValue(*inst.SubnetId)
 
 					var subnets []string
-					var ipv6addrs []string
-					var primaryipv6addrs []string
 					subnetsMap := make(map[string]struct{})
 					for _, eni := range inst.NetworkInterfaces {
 						if eni.SubnetId == nil {
@@ -330,36 +390,11 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 							subnetsMap[*eni.SubnetId] = struct{}{}
 							subnets = append(subnets, *eni.SubnetId)
 						}
-
-						for _, ipv6addr := range eni.Ipv6Addresses {
-							ipv6addrs = append(ipv6addrs, *ipv6addr.Ipv6Address)
-							if *ipv6addr.IsPrimaryIpv6 {
-								// we might have to extend the slice with more than one element
-								// that could leave empty strings in the list which is intentional
-								// to keep the position/device index information
-								for int64(len(primaryipv6addrs)) <= *eni.Attachment.DeviceIndex {
-									primaryipv6addrs = append(primaryipv6addrs, "")
-								}
-								primaryipv6addrs[*eni.Attachment.DeviceIndex] = *ipv6addr.Ipv6Address
-							}
-						}
 					}
 					labels[ec2LabelSubnetID] = model.LabelValue(
 						ec2LabelSeparator +
 							strings.Join(subnets, ec2LabelSeparator) +
 							ec2LabelSeparator)
-					if len(ipv6addrs) > 0 {
-						labels[ec2LabelIPv6Addresses] = model.LabelValue(
-							ec2LabelSeparator +
-								strings.Join(ipv6addrs, ec2LabelSeparator) +
-								ec2LabelSeparator)
-					}
-					if len(primaryipv6addrs) > 0 {
-						labels[ec2LabelPrimaryIPv6Addresses] = model.LabelValue(
-							ec2LabelSeparator +
-								strings.Join(primaryipv6addrs, ec2LabelSeparator) +
-								ec2LabelSeparator)
-					}
 				}
 
 				for _, t := range inst.Tags {
