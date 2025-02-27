@@ -60,6 +60,18 @@ func (s *sharder) Apply(value float64) {
 	s.numberOfShards = newValue
 }
 
+// BestNumberOfShards clamping value between min and max.
+func (s *sharder) BestNumberOfShards(value float64) int {
+	newValue := int(math.Ceil(value))
+	if newValue < s.min {
+		newValue = s.min
+	} else if newValue > s.max {
+		newValue = s.max
+	}
+
+	return newValue
+}
+
 func (s *sharder) NumberOfShards() int {
 	return s.numberOfShards
 }
@@ -213,16 +225,24 @@ readLoop:
 
 	var desiredNumberOfShards float64
 	if deadlineReached {
-		desiredNumberOfShards = math.Ceil(float64(b.NumberOfSamples()) / float64(b.MaxNumberOfSamplesPerShard()) * float64(numberOfShards))
+		desiredNumberOfShards = math.Ceil(
+			float64(b.NumberOfSamples()) / float64(b.MaxNumberOfSamplesPerShard()) * float64(numberOfShards),
+		)
 	} else {
 		desiredNumberOfShards = math.Ceil(float64(i.scrapeInterval) / float64(readDuration) * float64(numberOfShards))
 	}
+
+	bestNumberOfShards := i.outputSharder.BestNumberOfShards(
+		float64(b.NumberOfSamples()) / float64(b.MaxNumberOfSamplesPerShard()),
+	)
+
 	i.outputSharder.Apply(desiredNumberOfShards)
 	i.metrics.desiredNumShards.Set(desiredNumberOfShards)
+	i.metrics.bestNumShards.Set(float64(bestNumberOfShards))
 
 	i.writeCaches()
 
-	msg, err := i.encode(b.Data(), uint16(numberOfShards))
+	msg, err := i.encode(b.Data(), uint16(bestNumberOfShards))
 	if err != nil {
 		return i.wrapError(err)
 	}
@@ -329,7 +349,7 @@ func (i *Iterator) writeCaches() {
 
 func (i *Iterator) encode(segments []*DecodedSegment, numberOfShards uint16) (*Message, error) {
 	var maxTimestamp int64
-	var batchToEncode []*cppbridge.DecodedRefSamples
+	batchToEncode := make([]*cppbridge.DecodedRefSamples, 0, len(segments))
 	for _, segment := range segments {
 		if maxTimestamp < segment.MaxTimestamp {
 			maxTimestamp = segment.MaxTimestamp

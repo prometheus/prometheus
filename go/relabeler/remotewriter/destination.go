@@ -257,6 +257,13 @@ func NewDestination(cfg DestinationConfig) *Destination {
 				Help:        "The number of shards that the queues shard calculation wants to run based on the rate of samples in vs. samples out.",
 				ConstLabels: constLabels,
 			}),
+			bestNumShards: prometheus.NewGauge(prometheus.GaugeOpts{
+				Namespace:   namespace,
+				Subsystem:   subsystem,
+				Name:        "shards_best",
+				Help:        "The number of shards that are calculated from the actual number of accumulated segments.",
+				ConstLabels: constLabels,
+			}),
 			sentBytesTotal: prometheus.NewCounter(prometheus.CounterOpts{
 				Namespace:   namespace,
 				Subsystem:   subsystem,
@@ -328,6 +335,7 @@ func (d *Destination) RegisterMetrics(registerer prometheus.Registerer) {
 	registerer.MustRegister(d.metrics.maxNumShards)
 	registerer.MustRegister(d.metrics.minNumShards)
 	registerer.MustRegister(d.metrics.desiredNumShards)
+	registerer.MustRegister(d.metrics.bestNumShards)
 	registerer.MustRegister(d.metrics.sentBytesTotal)
 	registerer.MustRegister(d.metrics.metadataBytesTotal)
 	registerer.MustRegister(d.metrics.maxSamplesPerSend)
@@ -362,6 +370,7 @@ func (d *Destination) UnregisterMetrics(registerer prometheus.Registerer) {
 	registerer.Unregister(d.metrics.maxNumShards)
 	registerer.Unregister(d.metrics.minNumShards)
 	registerer.Unregister(d.metrics.desiredNumShards)
+	registerer.Unregister(d.metrics.bestNumShards)
 	registerer.Unregister(d.metrics.sentBytesTotal)
 	registerer.Unregister(d.metrics.metadataBytesTotal)
 	registerer.Unregister(d.metrics.maxSamplesPerSend)
@@ -429,6 +438,7 @@ type DestinationMetrics struct {
 	maxNumShards           prometheus.Gauge
 	minNumShards           prometheus.Gauge
 	desiredNumShards       prometheus.Gauge
+	bestNumShards          prometheus.Gauge
 	sentBytesTotal         prometheus.Counter
 	metadataBytesTotal     prometheus.Counter
 	maxSamplesPerSend      prometheus.Gauge

@@ -2,6 +2,7 @@ package remotewriter
 
 import (
 	"context"
+
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/storage/remote"
 )
@@ -18,6 +19,10 @@ func newProtobufWriter(client remote.WriteClient) *protobufWriter {
 
 func (w *protobufWriter) Write(ctx context.Context, protobuf *cppbridge.SnappyProtobufEncodedData) error {
 	return protobuf.Do(func(buf []byte) error {
+		if len(buf) == 0 {
+			return nil
+		}
+
 		return w.client.Store(ctx, buf, 0)
 	})
 }
