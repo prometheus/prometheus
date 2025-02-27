@@ -7,13 +7,13 @@ metadata:
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
     pipelinesascode.tekton.dev/max-keep-runs: "3"
     pipelinesascode.tekton.dev/on-cel-expression: event == "push" && target_branch
-      == "release-2.13"
+      == "release-2.14"
   creationTimestamp: null
   labels:
-    appstudio.openshift.io/application: release-acm-213
-    appstudio.openshift.io/component: prometheus-acm-213
+    appstudio.openshift.io/application: release-acm-214
+    appstudio.openshift.io/component: prometheus-acm-214
     pipelines.appstudio.openshift.io/type: build
-  name: prometheus-acm-213-on-push
+  name: prometheus-acm-214-on-push
   namespace: crt-redhat-acm-tenant
 spec:
   params:
@@ -22,7 +22,7 @@ spec:
   - name: revision
     value: '{{revision}}'
   - name: output-image
-    value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/prometheus-acm-213:{{revision}}
+    value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/prometheus-acm-214:{{revision}}
   - name: build-platforms
     value:
     - linux/x86_64
