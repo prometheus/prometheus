@@ -17,12 +17,11 @@ import (
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/prometheus/prometheus/discovery"
 )
 
-var (
-	registerMetricsOnce sync.Once
-)
+var registerMetricsOnce sync.Once
 
 type zookeeperMetrics struct {
 	// The total number of ZooKeeper failures.
@@ -32,7 +31,7 @@ type zookeeperMetrics struct {
 }
 
 // Create and register metrics.
-func newDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func newDiscovererMetrics(reg prometheus.Registerer, _ discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	m := &zookeeperMetrics{
 		failureCounter: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "prometheus",
