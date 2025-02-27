@@ -232,7 +232,7 @@ func (node *SubqueryExpr) getSubqueryTimeSuffix() string {
 }
 
 func (node *NumberLiteral) String() string {
-	return fmt.Sprint(node.Val)
+	return strconv.FormatFloat(node.Val, 'f', -1, 64)
 }
 
 func (node *ParenExpr) String() string {
