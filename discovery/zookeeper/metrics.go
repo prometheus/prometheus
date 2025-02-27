@@ -14,8 +14,14 @@
 package zookeeper
 
 import (
+	"sync"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/discovery"
+)
+
+var (
+	registerMetricsOnce sync.Once
 )
 
 type zookeeperMetrics struct {
@@ -23,8 +29,6 @@ type zookeeperMetrics struct {
 	failureCounter prometheus.Counter
 	// The current number of Zookeeper watcher goroutines.
 	numWatchers prometheus.Gauge
-
-	metricRegisterer discovery.MetricRegisterer
 }
 
 // Create and register metrics.
@@ -43,38 +47,24 @@ func newDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetric
 			Help:      "The current number of watcher goroutines.",
 		}),
 	}
-
-	m.metricRegisterer = discovery.NewMetricRegisterer(reg, []prometheus.Collector{
-		m.failureCounter,
-		m.numWatchers,
+	// Register zookeeper metrics once for both ServerSet and Nerve SD.
+	registerMetricsOnce.Do(func() {
+		reg.MustRegister(m.failureCounter, m.numWatchers)
 	})
 
-	return m
+	return &zookeeperMetrics{
+		failureCounter: m.failureCounter,
+		numWatchers:    m.numWatchers,
+	}
 }
 
 // Register implements discovery.DiscovererMetrics.
 func (m *zookeeperMetrics) Register() error {
-	return m.metricRegisterer.RegisterMetrics()
+	// return m.metricRegisterer.RegisterMetrics()
+	return nil
 }
 
-<<<<<<< HEAD
 // Unregister implements discovery.DiscovererMetrics.
-=======
-// Unregister metrics
->>>>>>> 01da1bf2a (refactor(treecache): remove global prometheus registration)
 func (m *zookeeperMetrics) Unregister() {
-	m.metricRegisterer.UnregisterMetrics()
-}
-
-<<<<<<< HEAD
-// Expose individual metrics (to avoid struct circular import issues).
-=======
-// Expose individual metrics (to avoid struct circular import issues)
->>>>>>> 01da1bf2a (refactor(treecache): remove global prometheus registration)
-func (m *zookeeperMetrics) FailuresCounter() prometheus.Counter {
-	return m.failureCounter
-}
-
-func (m *zookeeperMetrics) WatcherGauge() prometheus.Gauge {
-	return m.numWatchers
+	// m.metricRegisterer.UnregisterMetrics()
 }
