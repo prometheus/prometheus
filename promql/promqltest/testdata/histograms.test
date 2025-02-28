@@ -113,6 +113,11 @@ eval instant at 50m histogram_fraction(0, 0.2, rate(testhistogram3[10m]))
 	{start="positive"} 0.6363636363636364
 	{start="negative"} 0
 
+
+eval instant at 50m histogram_fraction(0, 0.2, rate(testhistogram3_bucket[10m]))
+	{start="positive"} 0.6363636363636364
+	{start="negative"} 0
+
 # In the classic histogram, we can access the corresponding bucket (if
 # it exists) and divide by the count to get the same result.
 
