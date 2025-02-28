@@ -163,7 +163,7 @@ type RefSeries struct {
 // TODO(beorn7): Perhaps make this "polymorphic", including histogram and float-histogram pointers? Then get rid of RefHistogramSample.
 type RefSample struct {
 	Ref   chunks.HeadSeriesRef
-	T, CT int64
+	CT, T int64
 	V     float64
 }
 
@@ -361,23 +361,23 @@ func (d *Decoder) samplesWithCT(dec *encoding.Decbuf, samples []RefSample) ([]Re
 	}
 	var (
 		baseRef  = dec.Be64()
-		baseTime = dec.Be64int64()
 		baseCT   = dec.Be64int64()
+		baseTime = dec.Be64int64()
 	)
 	// Allow 1 byte for each varint and 8 for the value; the output slice must be at least that big.
-	if minSize := dec.Len() / (1 + 1 + 8); cap(samples) < minSize {
+	if minSize := dec.Len() / (1 + 1 + 1 + 8); cap(samples) < minSize {
 		samples = make([]RefSample, 0, minSize)
 	}
 	for len(dec.B) > 0 && dec.Err() == nil {
 		dref := dec.Varint64()
-		dtime := dec.Varint64()
 		dCT := dec.Varint64()
+		dtime := dec.Varint64()
 		val := dec.Be64()
 
 		samples = append(samples, RefSample{
 			Ref: chunks.HeadSeriesRef(int64(baseRef) + dref),
-			T:   baseTime + dtime,
 			CT:  baseCT + dCT,
+			T:   baseTime + dtime,
 			V:   math.Float64frombits(val),
 		})
 	}
@@ -763,13 +763,13 @@ func (e *Encoder) samplesWithCT(samples []RefSample, b []byte) []byte {
 	first := samples[0]
 
 	buf.PutBE64(uint64(first.Ref))
-	buf.PutBE64int64(first.T)
 	buf.PutBE64int64(first.CT)
+	buf.PutBE64int64(first.T)
 
 	for _, s := range samples {
 		buf.PutVarint64(int64(s.Ref) - int64(first.Ref))
-		buf.PutVarint64(s.T - first.T)
 		buf.PutVarint64(s.CT - first.CT)
+		buf.PutVarint64(s.T - first.T)
 		buf.PutBE64(math.Float64bits(s.V))
 	}
 	return buf.Get()

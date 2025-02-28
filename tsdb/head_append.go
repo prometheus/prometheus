@@ -676,7 +676,7 @@ func (a *headAppender) AppendExemplar(ref storage.SeriesRef, lset labels.Labels,
 	return storage.SeriesRef(s.ref), nil
 }
 
-func (a *headAppender) AppendHistogramWithCT(ref storage.SeriesRef, lset labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (a *headAppender) AppendHistogramWithCT(ref storage.SeriesRef, lset labels.Labels, t, _ int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	// TODO(bwplotka): Add support for native histograms with CTs in WAL; add/consolidate records.
 	// We ignore CT for now.
 	return a.AppendHistogram(ref, lset, t, h, fh)

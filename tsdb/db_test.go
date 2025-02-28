@@ -58,6 +58,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/compression"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/record"
@@ -1962,7 +1963,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		dir := t.TempDir()
 
 		require.NoError(t, os.MkdirAll(path.Join(dir, "wal"), 0o777))
-		w, err := wlog.New(nil, nil, path.Join(dir, "wal"), wlog.CompressionNone)
+		w, err := wlog.New(nil, nil, path.Join(dir, "wal"), compression.None)
 		require.NoError(t, err)
 
 		var enc record.Encoder
@@ -2006,7 +2007,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		createBlock(t, dir, genSeries(1, 1, 1000, 6000))
 
 		require.NoError(t, os.MkdirAll(path.Join(dir, "wal"), 0o777))
-		w, err := wlog.New(nil, nil, path.Join(dir, "wal"), wlog.CompressionNone)
+		w, err := wlog.New(nil, nil, path.Join(dir, "wal"), compression.None)
 		require.NoError(t, err)
 
 		var enc record.Encoder
@@ -2407,7 +2408,7 @@ func TestDBReadOnly(t *testing.T) {
 		}
 
 		// Add head to test DBReadOnly WAL reading capabilities.
-		w, err := wlog.New(logger, nil, filepath.Join(dbDir, "wal"), wlog.CompressionSnappy)
+		w, err := wlog.New(logger, nil, filepath.Join(dbDir, "wal"), compression.Snappy)
 		require.NoError(t, err)
 		h := createHead(t, w, genSeries(1, 1, 16, 18), dbDir)
 		require.NoError(t, h.Close())
@@ -3058,7 +3059,7 @@ func TestCompactHead(t *testing.T) {
 		NoLockfile:        true,
 		MinBlockDuration:  int64(time.Hour * 2 / time.Millisecond),
 		MaxBlockDuration:  int64(time.Hour * 2 / time.Millisecond),
-		WALCompression:    wlog.CompressionSnappy,
+		WALCompression:    compression.Snappy,
 	}
 
 	db, err := Open(dbDir, promslog.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg, nil)
@@ -4662,7 +4663,7 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 
 	ctx := context.Background()
 	numSamples := 10000
-	hb, w := newTestHead(t, int64(numSamples)*10, wlog.CompressionNone, false)
+	hb, w := newTestHead(t, int64(numSamples)*10, compression.None, false)
 
 	// Add some series so we can append metadata to them.
 	app := hb.Appender(ctx)
@@ -7019,7 +7020,7 @@ func testWBLAndMmapReplay(t *testing.T, scenario sampleTypeScenario) {
 		resetMmapToOriginal() // We neet to reset because new duplicate chunks can be written above.
 
 		// Removing m-map markers in WBL by rewriting it.
-		newWbl, err := wlog.New(promslog.NewNopLogger(), nil, filepath.Join(t.TempDir(), "new_wbl"), wlog.CompressionNone)
+		newWbl, err := wlog.New(promslog.NewNopLogger(), nil, filepath.Join(t.TempDir(), "new_wbl"), compression.None)
 		require.NoError(t, err)
 		sr, err := wlog.NewSegmentsReader(originalWblDir)
 		require.NoError(t, err)

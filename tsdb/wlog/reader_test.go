@@ -31,6 +31,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/tsdb/compression"
+
 	"github.com/prometheus/common/promslog"
 
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
@@ -315,7 +317,7 @@ func allSegments(dir string) (io.ReadCloser, error) {
 
 func TestReaderFuzz(t *testing.T) {
 	for name, fn := range readerConstructors {
-		for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+		for _, compress := range []compression.Type{compression.None, compression.Snappy, compression.Zstd} {
 			t.Run(fmt.Sprintf("%s,compress=%s", name, compress), func(t *testing.T) {
 				dir := t.TempDir()
 
@@ -354,7 +356,7 @@ func TestReaderFuzz(t *testing.T) {
 
 func TestReaderFuzz_Live(t *testing.T) {
 	logger := promslog.NewNopLogger()
-	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+	for _, compress := range []compression.Type{compression.None, compression.Snappy, compression.Zstd} {
 		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
 			dir := t.TempDir()
 
@@ -444,7 +446,7 @@ func TestLiveReaderCorrupt_ShortFile(t *testing.T) {
 	logger := promslog.NewNopLogger()
 	dir := t.TempDir()
 
-	w, err := NewSize(nil, nil, dir, pageSize, CompressionNone)
+	w, err := NewSize(nil, nil, dir, pageSize, compression.None)
 	require.NoError(t, err)
 
 	rec := make([]byte, pageSize-recordHeaderSize)
@@ -484,7 +486,7 @@ func TestLiveReaderCorrupt_RecordTooLongAndShort(t *testing.T) {
 	logger := promslog.NewNopLogger()
 	dir := t.TempDir()
 
-	w, err := NewSize(nil, nil, dir, pageSize*2, CompressionNone)
+	w, err := NewSize(nil, nil, dir, pageSize*2, compression.None)
 	require.NoError(t, err)
 
 	rec := make([]byte, pageSize-recordHeaderSize)
@@ -531,7 +533,7 @@ func TestReaderData(t *testing.T) {
 
 	for name, fn := range readerConstructors {
 		t.Run(name, func(t *testing.T) {
-			w, err := New(nil, nil, dir, CompressionSnappy)
+			w, err := New(nil, nil, dir, compression.Snappy)
 			require.NoError(t, err)
 
 			sr, err := allSegments(dir)

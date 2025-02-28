@@ -73,6 +73,7 @@ import (
 	"github.com/prometheus/prometheus/tracing"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/agent"
+	"github.com/prometheus/prometheus/tsdb/compression"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/documentcli"
 	"github.com/prometheus/prometheus/util/logging"
@@ -442,7 +443,7 @@ func main() {
 		Hidden().Default("true").BoolVar(&cfg.tsdb.WALCompression)
 
 	serverOnlyFlag(a, "storage.tsdb.wal-compression-type", "Compression algorithm for the tsdb WAL.").
-		Hidden().Default(string(wlog.CompressionSnappy)).EnumVar(&cfg.tsdb.WALCompressionType, string(wlog.CompressionSnappy), string(wlog.CompressionZstd))
+		Hidden().Default(string(compression.Snappy)).EnumVar(&cfg.tsdb.WALCompressionType, string(compression.Snappy), string(compression.Zstd))
 
 	serverOnlyFlag(a, "storage.tsdb.head-chunks-write-queue-size", "Size of the queue through which head chunks are written to the disk to be m-mapped, 0 disables the queue completely. Experimental.").
 		Default("0").IntVar(&cfg.tsdb.HeadChunksWriteQueueSize)
@@ -464,7 +465,7 @@ func main() {
 		Default("true").BoolVar(&cfg.agent.WALCompression)
 
 	agentOnlyFlag(a, "storage.agent.wal-compression-type", "Compression algorithm for the agent WAL.").
-		Hidden().Default(string(wlog.CompressionSnappy)).EnumVar(&cfg.agent.WALCompressionType, string(wlog.CompressionSnappy), string(wlog.CompressionZstd))
+		Hidden().Default(string(compression.Snappy)).EnumVar(&cfg.agent.WALCompressionType, string(compression.Snappy), string(compression.Zstd))
 
 	agentOnlyFlag(a, "storage.agent.wal-truncate-frequency",
 		"The frequency at which to truncate the WAL and remove old data.").

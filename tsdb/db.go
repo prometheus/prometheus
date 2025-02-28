@@ -41,6 +41,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/compression"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	_ "github.com/prometheus/prometheus/tsdb/goversion" // Load the package into main to make sure minimum Go version is met.
@@ -80,7 +81,7 @@ func DefaultOptions() *Options {
 		MaxBlockDuration:            DefaultBlockDuration,
 		NoLockfile:                  false,
 		SamplesPerChunk:             DefaultSamplesPerChunk,
-		WALCompression:              wlog.CompressionNone,
+		WALCompression:              compression.None,
 		StripeSize:                  DefaultStripeSize,
 		HeadChunksWriteBufferSize:   chunks.DefaultWriteBufferSize,
 		IsolationDisabled:           defaultIsolationDisabled,
@@ -124,7 +125,7 @@ type Options struct {
 	NoLockfile bool
 
 	// WALCompression configures the compression type to use on records in the WAL.
-	WALCompression wlog.CompressionType
+	WALCompression compression.Type
 
 	// Maximum number of CPUs that can simultaneously processes WAL replay.
 	// If it is <=0, then GOMAXPROCS is used.
