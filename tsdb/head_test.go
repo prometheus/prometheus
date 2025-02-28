@@ -728,14 +728,14 @@ func TestHead_ReadWAL(t *testing.T) {
 
 			// Duplicate series record should not be written to the head.
 			require.Nil(t, s101)
-			// But it should be marked as deleted.
-			keepUntil, ok := head.checkDeleted(101)
+			// But it should have a WAL expiry set.
+			keepUntil, ok := head.checkWALExpiry(101)
 			require.True(t, ok)
 			_, last, err := wlog.Segments(w.Dir())
 			require.NoError(t, err)
 			require.Equal(t, last, keepUntil)
-			// Only the duplicate series record should be marked as deleted.
-			_, ok = head.checkDeleted(50)
+			// Only the duplicate series record should have a WAL expiry set.
+			_, ok = head.checkWALExpiry(50)
 			require.False(t, ok)
 
 			expandChunk := func(c chunkenc.Iterator) (x []sample) {
@@ -852,7 +852,7 @@ func TestHead_KeepSeriesInWALCheckpoint(t *testing.T) {
 		{
 			name: "keep deleted series with keepUntil > last",
 			prepare: func(_ *testing.T, h *Head) {
-				h.markDeleted(chunks.HeadSeriesRef(existingRef), deletedKeepUntil)
+				h.setWALExpiry(chunks.HeadSeriesRef(existingRef), deletedKeepUntil)
 			},
 			seriesRef: chunks.HeadSeriesRef(existingRef),
 			last:      deletedKeepUntil - 1,
@@ -861,7 +861,7 @@ func TestHead_KeepSeriesInWALCheckpoint(t *testing.T) {
 		{
 			name: "drop deleted series with keepUntil <= last",
 			prepare: func(_ *testing.T, h *Head) {
-				h.markDeleted(chunks.HeadSeriesRef(existingRef), deletedKeepUntil)
+				h.setWALExpiry(chunks.HeadSeriesRef(existingRef), deletedKeepUntil)
 			},
 			seriesRef: chunks.HeadSeriesRef(existingRef),
 			last:      deletedKeepUntil,
