@@ -74,6 +74,11 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		decodeErr, seriesCreationErr error
 	)
 
+	_, last, err := wlog.Segments(h.wal.Dir())
+	if err != nil {
+		return fmt.Errorf("failed to get last segment to mark duplicate series as deleted: %w", err)
+	}
+
 	defer func() {
 		// For CorruptionErr ensure to terminate all workers before exiting.
 		_, ok := err.(*wlog.CorruptionErr)
@@ -237,12 +242,7 @@ Outer:
 				}
 				if !created {
 					multiRef[walSeries.Ref] = mSeries.ref
-
 					// Mark the walSeries as deleted, so it is kept in subsequent WAL checkpoints.
-					_, last, err := wlog.Segments(h.wal.Dir())
-					if err != nil {
-						h.logger.Error("failed to get last segment to mark duplicate series as deleted", "err", err)
-					}
 					h.markDeleted(walSeries.Ref, last)
 				}
 
