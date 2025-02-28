@@ -1390,10 +1390,10 @@ clear
 eval instant at 50m absent(sum(nonexistent{job="testjob", instance="testinstance"}))
 	{} 1
 
-eval instant at 50m absent(max(nonexistant))
+eval instant at 50m absent(max(nonexistent))
 	{} 1
 
-eval instant at 50m absent(nonexistant > 1)
+eval instant at 50m absent(nonexistent > 1)
 	{} 1
 
 eval instant at 50m absent(a + b)
@@ -1402,7 +1402,7 @@ eval instant at 50m absent(a + b)
 eval instant at 50m absent(a and b)
 	{} 1
 
-eval instant at 50m absent(rate(nonexistant[5m]))
+eval instant at 50m absent(rate(nonexistent[5m]))
 	{} 1
 
 clear
@@ -1420,7 +1420,7 @@ eval instant at 1m absent_over_time(http_requests_total{handler!="/foo"}[5m])
 eval instant at 1m absent_over_time(http_requests_total{handler="/foo", handler="/bar", handler="/foobar"}[5m])
     {} 1
 
-eval instant at 1m absent_over_time(rate(nonexistant[5m])[5m:])
+eval instant at 1m absent_over_time(rate(nonexistent[5m])[5m:])
     {} 1
 
 eval instant at 1m absent_over_time(http_requests_total{handler="/foo", handler="/bar", instance="127.0.0.1"}[5m])
@@ -1497,7 +1497,7 @@ eval instant at 1m present_over_time(http_requests_total{handler!="/foo"}[5m])
 
 eval instant at 1m present_over_time(http_requests_total{handler="/foo", handler="/bar", handler="/foobar"}[5m])
 
-eval instant at 1m present_over_time(rate(nonexistant[5m])[5m:])
+eval instant at 1m present_over_time(rate(nonexistent[5m])[5m:])
 
 eval instant at 1m present_over_time(http_requests_total{handler="/foo", handler="/bar", instance="127.0.0.1"}[5m])
 
