@@ -79,15 +79,50 @@ Enables PromQL functions that are considered experimental. These functions
 might change their name, syntax, or semantics. They might also get removed
 entirely.
 
+## Created Timestamps per sample
+
+`--enable-feature=created-timestamp-per-sample`
+
+When enabled, Prometheus will store created timestamps (CT) per sample, which 
+allows persisting CTs across restarts in the WAL, block storage, 
+as well as using it in Remote Write 2.0 and PromQL engine.
+
+This must be used if you would like to send created timestamps using the new remote write 2.0.
+
+Important: Enhanced sample records are only readable by v3.3+ Prometheus versions.
+
+### Current State
+
+This flag intends to cover all experimental features related to created timestamps
+per sample approach.
+
+At the moment, only WAL storage is implemented. CT is stored per sample in a
+new samples WAL record. CTs are used for Remote Write 2.0 endpoints if configured.
+
+In the future, we intend to enable Prometheus PromQL to use CTs in sample WAL records,
+as well as storing it in TSDB block storage.
+ 
+Enable the `created-timestamp-zero-ingestion` explained below, if you wish to have PromQL
+aware of CTs in a form of synthetic zero samples, with all its consequences.
+
+### Client Considerations
+
+Currently, Prometheus supports created timestamps only on the traditional
+Prometheus Protobuf protocol. As a result, when enabling
+this feature, the Prometheus protobuf scrape protocol will be prioritized
+(See `scrape_config.scrape_protocols` settings for more details). Community is
+working on [accessible CTs through OpenMetrics 2.0 too]().
+
+Besides enabling this feature in Prometheus, CT need to be exposed by the application being scraped.
+
 ## Created Timestamps Zero Injection
 
 `--enable-feature=created-timestamp-zero-ingestion`
 
-Enables ingestion of created timestamp. Created timestamps are injected as 0 valued samples when appropriate. See [PromCon talk](https://youtu.be/nWf0BfQ5EEA) for details.
+Enables ingestion of created timestamp (CT). Created timestamps are injected as
+0 valued samples when appropriate. See [PromCon talk](https://youtu.be/nWf0BfQ5EEA) for details.
 
-Currently Prometheus supports created timestamps only on the traditional Prometheus Protobuf protocol (WIP for other protocols). As a result, when enabling this feature, the Prometheus protobuf scrape protocol will be prioritized (See `scrape_config.scrape_protocols` settings for more details).
-
-Besides enabling this feature in Prometheus, created timestamps need to be exposed by the application being scraped.
+The [client considerations for CTs](#client-considerations) also applies here.
 
 ## Concurrent evaluation of independent rules
 

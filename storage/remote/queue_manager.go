@@ -730,11 +730,12 @@ outer:
 			default:
 			}
 			if t.shards.enqueue(s.Ref, timeSeries{
-				seriesLabels: lbls,
-				metadata:     meta,
-				timestamp:    s.T,
-				value:        s.V,
-				sType:        tSample,
+				seriesLabels:     lbls,
+				metadata:         meta,
+				timestamp:        s.T,
+				createdTimestamp: s.CT,
+				value:            s.V,
+				sType:            tSample,
 			}) {
 				continue outer
 			}
@@ -1351,13 +1352,14 @@ type queue struct {
 }
 
 type timeSeries struct {
-	seriesLabels   labels.Labels
-	value          float64
-	histogram      *histogram.Histogram
-	floatHistogram *histogram.FloatHistogram
-	metadata       *metadata.Metadata
-	timestamp      int64
-	exemplarLabels labels.Labels
+	seriesLabels     labels.Labels
+	value            float64
+	histogram        *histogram.Histogram
+	floatHistogram   *histogram.FloatHistogram
+	metadata         *metadata.Metadata
+	timestamp        int64
+	createdTimestamp int64
+	exemplarLabels   labels.Labels
 	// The type of series: sample, exemplar, or histogram.
 	sType seriesType
 }
@@ -1949,6 +1951,7 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 				Value:     d.value,
 				Timestamp: d.timestamp,
 			})
+			pendingData[nPending].CreatedTimestamp = d.createdTimestamp
 			nPendingSamples++
 		case tExemplar:
 			pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, writev2.Exemplar{

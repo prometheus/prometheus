@@ -958,6 +958,7 @@ func newBasicScrapeLoopWithFallback(t testing.TB, ctx context.Context, scraper s
 		false,
 		false,
 		false,
+		false,
 		true,
 		nil,
 		false,
@@ -1105,6 +1106,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		false,
 		false,
 		false,
+		false,
 		nil,
 		false,
 		scrapeMetrics,
@@ -1246,6 +1248,7 @@ func TestScrapeLoopMetadata(t *testing.T) {
 		nil,
 		0,
 		0,
+		false,
 		false,
 		false,
 		false,
@@ -2815,6 +2818,10 @@ type errorAppender struct {
 }
 
 func (app *errorAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+	return app.AppendWithCT(ref, lset, t, 0, v)
+}
+
+func (app *errorAppender) AppendWithCT(ref storage.SeriesRef, lset labels.Labels, t, ct int64, v float64) (storage.SeriesRef, error) {
 	switch lset.Get(model.MetricNameLabel) {
 	case "out_of_order":
 		return 0, storage.ErrOutOfOrderSample
@@ -2823,7 +2830,7 @@ func (app *errorAppender) Append(ref storage.SeriesRef, lset labels.Labels, t in
 	case "out_of_bounds":
 		return 0, storage.ErrOutOfBounds
 	default:
-		return app.collectResultAppender.Append(ref, lset, t, v)
+		return app.collectResultAppender.AppendWithCT(ref, lset, t, ct, v)
 	}
 }
 
