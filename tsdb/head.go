@@ -1262,7 +1262,7 @@ func (h *Head) IsQuerierCollidingWithTruncation(querierMint, querierMaxt int64) 
 	return false, false, 0
 }
 
-func (h *Head) checkWALExpiry(id chunks.HeadSeriesRef) (int, bool) {
+func (h *Head) getWALExpiry(id chunks.HeadSeriesRef) (int, bool) {
 	h.walExpiriesMtx.Lock()
 	defer h.walExpiriesMtx.Unlock()
 
@@ -1286,7 +1286,7 @@ func (h *Head) keepSeriesInWALCheckpoint(id chunks.HeadSeriesRef, last int) bool
 	}
 
 	// Keep the record if the series has an expiry set.
-	keepUntil, ok := h.checkWALExpiry(id)
+	keepUntil, ok := h.getWALExpiry(id)
 	return ok && keepUntil > last
 }
 

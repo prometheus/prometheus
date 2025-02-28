@@ -729,13 +729,13 @@ func TestHead_ReadWAL(t *testing.T) {
 			// Duplicate series record should not be written to the head.
 			require.Nil(t, s101)
 			// But it should have a WAL expiry set.
-			keepUntil, ok := head.checkWALExpiry(101)
+			keepUntil, ok := head.getWALExpiry(101)
 			require.True(t, ok)
 			_, last, err := wlog.Segments(w.Dir())
 			require.NoError(t, err)
 			require.Equal(t, last, keepUntil)
 			// Only the duplicate series record should have a WAL expiry set.
-			_, ok = head.checkWALExpiry(50)
+			_, ok = head.getWALExpiry(50)
 			require.False(t, ok)
 
 			expandChunk := func(c chunkenc.Iterator) (x []sample) {
