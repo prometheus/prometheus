@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"testing"
 
+	translator "github.com/ArthurSens/otlp-prometheus-translator"
 	"github.com/stretchr/testify/require"
 )
 
@@ -38,7 +39,7 @@ func TestNormalizeLabel(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(fmt.Sprintf("test_%d", i), func(t *testing.T) {
-			result := NormalizeLabel(test.label)
+			result := translator.NormalizeLabel(test.label)
 			require.Equal(t, test.expected, result)
 		})
 	}

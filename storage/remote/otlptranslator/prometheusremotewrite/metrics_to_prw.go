@@ -26,8 +26,8 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.uber.org/multierr"
 
+	translator "github.com/ArthurSens/otlp-prometheus-translator"
 	"github.com/prometheus/prometheus/prompb"
-	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -98,9 +98,12 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 
 				var promName string
 				if settings.AllowUTF8 {
-					promName = prometheustranslator.BuildMetricName(metric, settings.Namespace, settings.AddMetricSuffixes)
+					promName = translator.BuildMetricName(metric.Name(), metric.Unit(), getTranslatorMetricType(metric), settings.AddMetricSuffixes)
 				} else {
-					promName = prometheustranslator.BuildCompliantMetricName(metric, settings.Namespace, settings.AddMetricSuffixes)
+					promName = translator.BuildCompliantMetricName(metric.Name(), metric.Unit(), getTranslatorMetricType(metric), settings.AddMetricSuffixes)
+				}
+				if settings.Namespace != "" {
+					promName = fmt.Sprintf("%s_%s", settings.Namespace, promName)
 				}
 				c.metadata = append(c.metadata, prompb.MetricMetadata{
 					Type:             otelMetricTypeToPromMetricType(metric),
@@ -189,6 +192,26 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 	}
 
 	return annots, errs
+}
+
+func getTranslatorMetricType(metric pmetric.Metric) translator.MetricType {
+	var translatorMetricType translator.MetricType
+	if metric.Type() == pmetric.MetricTypeGauge {
+		translatorMetricType = translator.MetricTypeGauge
+	} else if metric.Type() == pmetric.MetricTypeSum && metric.Sum().IsMonotonic() {
+		translatorMetricType = translator.MetricTypeMonotonicCounter
+	} else if metric.Type() == pmetric.MetricTypeSum && !metric.Sum().IsMonotonic() {
+		translatorMetricType = translator.MetricTypeNonMonotonicCounter
+	} else if metric.Type() == pmetric.MetricTypeHistogram {
+		translatorMetricType = translator.MetricTypeHistogram
+	} else if metric.Type() == pmetric.MetricTypeExponentialHistogram {
+		translatorMetricType = translator.MetricTypeExponentialHistogram
+	} else if metric.Type() == pmetric.MetricTypeSummary {
+		translatorMetricType = translator.MetricTypeSummary
+	} else {
+		translatorMetricType = translator.MetricTypeUnknown
+	}
+	return translatorMetricType
 }
 
 func isSameMetric(ts *prompb.TimeSeries, lbls []prompb.Label) bool {
