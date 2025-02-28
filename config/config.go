@@ -28,6 +28,7 @@ import (
 
 	"github.com/alecthomas/units"
 	"github.com/grafana/regexp"
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/sigv4"
@@ -203,7 +204,7 @@ var (
 	// DefaultRemoteWriteConfig is the default remote write configuration.
 	DefaultRemoteWriteConfig = RemoteWriteConfig{
 		RemoteTimeout:    model.Duration(30 * time.Second),
-		ProtobufMessage:  RemoteWriteProtoMsgV1,
+		ProtobufMessage:  remoteapi.WriteV1MessageType,
 		QueueConfig:      DefaultQueueConfig,
 		MetadataConfig:   DefaultMetadataConfig,
 		HTTPClientConfig: DefaultRemoteWriteHTTPClientConfig,
@@ -1150,50 +1151,6 @@ func CheckTargetAddress(address model.LabelValue) error {
 	return nil
 }
 
-// RemoteWriteProtoMsg represents the known protobuf message for the remote write
-// 1.0 and 2.0 specs.
-type RemoteWriteProtoMsg string
-
-// Validate returns error if the given reference for the protobuf message is not supported.
-func (s RemoteWriteProtoMsg) Validate() error {
-	switch s {
-	case RemoteWriteProtoMsgV1, RemoteWriteProtoMsgV2:
-		return nil
-	default:
-		return fmt.Errorf("unknown remote write protobuf message %v, supported: %v", s, RemoteWriteProtoMsgs{RemoteWriteProtoMsgV1, RemoteWriteProtoMsgV2}.String())
-	}
-}
-
-type RemoteWriteProtoMsgs []RemoteWriteProtoMsg
-
-func (m RemoteWriteProtoMsgs) Strings() []string {
-	ret := make([]string, 0, len(m))
-	for _, typ := range m {
-		ret = append(ret, string(typ))
-	}
-	return ret
-}
-
-func (m RemoteWriteProtoMsgs) String() string {
-	return strings.Join(m.Strings(), ", ")
-}
-
-var (
-	// RemoteWriteProtoMsgV1 represents the `prometheus.WriteRequest` protobuf
-	// message introduced in the https://prometheus.io/docs/specs/remote_write_spec/,
-	// which will eventually be deprecated.
-	//
-	// NOTE: This string is used for both HTTP header values and config value, so don't change
-	// this reference.
-	RemoteWriteProtoMsgV1 RemoteWriteProtoMsg = "prometheus.WriteRequest"
-	// RemoteWriteProtoMsgV2 represents the `io.prometheus.write.v2.Request` protobuf
-	// message introduced in https://prometheus.io/docs/specs/remote_write_spec_2_0/
-	//
-	// NOTE: This string is used for both HTTP header values and config value, so don't change
-	// this reference.
-	RemoteWriteProtoMsgV2 RemoteWriteProtoMsg = "io.prometheus.write.v2.Request"
-)
-
 // RemoteWriteConfig is the configuration for writing to remote storage.
 type RemoteWriteConfig struct {
 	URL                  *config.URL       `yaml:"url"`
@@ -1206,7 +1163,7 @@ type RemoteWriteConfig struct {
 	RoundRobinDNS        bool              `yaml:"round_robin_dns,omitempty"`
 	// ProtobufMessage specifies the protobuf message to use against the remote
 	// receiver as specified in https://prometheus.io/docs/specs/remote_write_spec_2_0/
-	ProtobufMessage RemoteWriteProtoMsg `yaml:"protobuf_message,omitempty"`
+	ProtobufMessage remoteapi.WriteMessageType `yaml:"protobuf_message,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.

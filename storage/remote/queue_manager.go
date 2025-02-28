@@ -25,6 +25,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
@@ -420,8 +421,8 @@ type QueueManager struct {
 
 	clientMtx   sync.RWMutex
 	storeClient WriteClient
-	protoMsg    config.RemoteWriteProtoMsg
-	enc         Compression
+	protoMsg    remoteapi.WriteMessageType
+	enc         remoteapi.Compression
 
 	seriesMtx      sync.Mutex // Covers seriesLabels, seriesMetadata, droppedSeries and builder.
 	seriesLabels   map[chunks.HeadSeriesRef]labels.Labels
@@ -468,7 +469,7 @@ func NewQueueManager(
 	sm ReadyScrapeManager,
 	enableExemplarRemoteWrite bool,
 	enableNativeHistogramRemoteWrite bool,
-	protoMsg config.RemoteWriteProtoMsg,
+	protoMsg remoteapi.WriteMessageType,
 ) *QueueManager {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
@@ -512,11 +513,11 @@ func NewQueueManager(
 		highestRecvTimestamp: highestRecvTimestamp,
 
 		protoMsg: protoMsg,
-		enc:      SnappyBlockCompression, // Hardcoded for now, but scaffolding exists for likely future use.
+		enc:      remoteapi.SnappyBlockCompression, // Hardcoded for now, but scaffolding exists for likely future use.
 	}
 
 	walMetadata := false
-	if t.protoMsg != config.RemoteWriteProtoMsgV1 {
+	if t.protoMsg != remoteapi.WriteV1MessageType {
 		walMetadata = true
 	}
 	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite, walMetadata)
@@ -525,7 +526,7 @@ func NewQueueManager(
 	// with the new approach, which stores metadata as WAL records and
 	// ships them alongside series. If both mechanisms are set, the new one
 	// takes precedence by implicitly disabling the older one.
-	if t.mcfg.Send && t.protoMsg != config.RemoteWriteProtoMsgV1 {
+	if t.mcfg.Send && t.protoMsg != remoteapi.WriteV1MessageType {
 		logger.Warn("usage of 'metadata_config.send' is redundant when using remote write v2 (or higher) as metadata will always be gathered from the WAL and included for every series within each write request")
 		t.mcfg.Send = false
 	}
@@ -542,7 +543,7 @@ func NewQueueManager(
 // This is only used for the metadata_config.send setting and 1.x Remote Write.
 func (t *QueueManager) AppendWatcherMetadata(ctx context.Context, metadata []scrape.MetricMetadata) {
 	// no op for any newer proto format, which will cache metadata sent to it from the WAL watcher.
-	if t.protoMsg != config.RemoteWriteProtoMsgV1 {
+	if t.protoMsg != remoteapi.WriteV1MessageType {
 		return
 	}
 
@@ -984,7 +985,7 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 
 // StoreMetadata keeps track of known series' metadata for lookups when sending samples to remote.
 func (t *QueueManager) StoreMetadata(meta []record.RefMetadata) {
-	if t.protoMsg == config.RemoteWriteProtoMsgV1 {
+	if t.protoMsg == remoteapi.WriteV1MessageType {
 		return
 	}
 
@@ -1534,9 +1535,9 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 	}
 	defer stop()
 
-	sendBatch := func(batch []timeSeries, protoMsg config.RemoteWriteProtoMsg, enc Compression, timer bool) {
+	sendBatch := func(batch []timeSeries, protoMsg remoteapi.WriteMessageType, enc remoteapi.Compression, timer bool) {
 		switch protoMsg {
-		case config.RemoteWriteProtoMsgV1:
+		case remoteapi.WriteV1MessageType:
 			nPendingSamples, nPendingExemplars, nPendingHistograms := populateTimeSeries(batch, pendingData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
 			n := nPendingSamples + nPendingExemplars + nPendingHistograms
 			if timer {
@@ -1544,7 +1545,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 					"exemplars", nPendingExemplars, "shard", shardNum, "histograms", nPendingHistograms)
 			}
 			_ = s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, &buf, enc)
-		case config.RemoteWriteProtoMsgV2:
+		case remoteapi.WriteV2MessageType:
 			nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata := populateV2TimeSeries(&symbolTable, batch, pendingDataV2, s.qm.sendExemplars, s.qm.sendNativeHistograms)
 			n := nPendingSamples + nPendingExemplars + nPendingHistograms
 			_ = s.sendV2Samples(ctx, pendingDataV2[:n], symbolTable.Symbols(), nPendingSamples, nPendingExemplars, nPendingHistograms, nPendingMetadata, &pBufRaw, &buf, enc)
@@ -1636,7 +1637,7 @@ func populateTimeSeries(batch []timeSeries, pendingData []prompb.TimeSeries, sen
 	return nPendingSamples, nPendingExemplars, nPendingHistograms
 }
 
-func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount int, pBuf *proto.Buffer, buf *[]byte, enc Compression) error {
+func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount int, pBuf *proto.Buffer, buf *[]byte, enc remoteapi.Compression) error {
 	begin := time.Now()
 	rs, err := s.sendSamplesWithBackoff(ctx, samples, sampleCount, exemplarCount, histogramCount, 0, pBuf, buf, enc)
 	s.updateMetrics(ctx, err, sampleCount, exemplarCount, histogramCount, 0, rs, time.Since(begin))
@@ -1645,7 +1646,7 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 
 // TODO(bwplotka): DRY this (have one logic for both v1 and v2).
 // See https://github.com/prometheus/prometheus/issues/14409
-func (s *shards) sendV2Samples(ctx context.Context, samples []writev2.TimeSeries, labels []string, sampleCount, exemplarCount, histogramCount, metadataCount int, pBuf, buf *[]byte, enc Compression) error {
+func (s *shards) sendV2Samples(ctx context.Context, samples []writev2.TimeSeries, labels []string, sampleCount, exemplarCount, histogramCount, metadataCount int, pBuf, buf *[]byte, enc remoteapi.Compression) error {
 	begin := time.Now()
 	rs, err := s.sendV2SamplesWithBackoff(ctx, samples, labels, sampleCount, exemplarCount, histogramCount, metadataCount, pBuf, buf, enc)
 	s.updateMetrics(ctx, err, sampleCount, exemplarCount, histogramCount, metadataCount, rs, time.Since(begin))
@@ -1689,7 +1690,7 @@ func (s *shards) updateMetrics(_ context.Context, err error, sampleCount, exempl
 }
 
 // sendSamplesWithBackoff to the remote storage with backoff for recoverable errors.
-func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount, metadataCount int, pBuf *proto.Buffer, buf *[]byte, enc Compression) (WriteResponseStats, error) {
+func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount, histogramCount, metadataCount int, pBuf *proto.Buffer, buf *[]byte, enc remoteapi.Compression) (WriteResponseStats, error) {
 	// Build the WriteRequest with no metadata.
 	req, highest, lowest, err := buildWriteRequest(s.qm.logger, samples, nil, pBuf, buf, nil, enc)
 	s.qm.buildRequestLimitTimestamp.Store(lowest)
@@ -1803,7 +1804,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 }
 
 // sendV2SamplesWithBackoff to the remote storage with backoff for recoverable errors.
-func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2.TimeSeries, labels []string, sampleCount, exemplarCount, histogramCount, metadataCount int, pBuf, buf *[]byte, enc Compression) (WriteResponseStats, error) {
+func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2.TimeSeries, labels []string, sampleCount, exemplarCount, histogramCount, metadataCount int, pBuf, buf *[]byte, enc remoteapi.Compression) (WriteResponseStats, error) {
 	// Build the WriteRequest with no metadata.
 	req, highest, lowest, err := buildV2WriteRequest(s.qm.logger, samples, labels, pBuf, buf, nil, enc)
 	s.qm.buildRequestLimitTimestamp.Store(lowest)
@@ -2114,9 +2115,9 @@ func buildTimeSeries(timeSeries []prompb.TimeSeries, filter func(prompb.TimeSeri
 	return highest, lowest, timeSeries, droppedSamples, droppedExemplars, droppedHistograms
 }
 
-func compressPayload(tmpbuf *[]byte, inp []byte, enc Compression) (compressed []byte, _ error) {
+func compressPayload(tmpbuf *[]byte, inp []byte, enc remoteapi.Compression) (compressed []byte, _ error) {
 	switch enc {
-	case SnappyBlockCompression:
+	case remoteapi.SnappyBlockCompression:
 		compressed = snappy.Encode(*tmpbuf, inp)
 		if n := snappy.MaxEncodedLen(len(inp)); n > len(*tmpbuf) {
 			// grow the buffer for the next time
@@ -2128,7 +2129,7 @@ func compressPayload(tmpbuf *[]byte, inp []byte, enc Compression) (compressed []
 	}
 }
 
-func buildWriteRequest(logger *slog.Logger, timeSeries []prompb.TimeSeries, metadata []prompb.MetricMetadata, pBuf *proto.Buffer, buf *[]byte, filter func(prompb.TimeSeries) bool, enc Compression) (compressed []byte, highest, lowest int64, _ error) {
+func buildWriteRequest(logger *slog.Logger, timeSeries []prompb.TimeSeries, metadata []prompb.MetricMetadata, pBuf *proto.Buffer, buf *[]byte, filter func(prompb.TimeSeries) bool, enc remoteapi.Compression) (compressed []byte, highest, lowest int64, _ error) {
 	highest, lowest, timeSeries,
 		droppedSamples, droppedExemplars, droppedHistograms := buildTimeSeries(timeSeries, filter)
 
@@ -2166,7 +2167,7 @@ func buildWriteRequest(logger *slog.Logger, timeSeries []prompb.TimeSeries, meta
 	return compressed, highest, lowest, nil
 }
 
-func buildV2WriteRequest(logger *slog.Logger, samples []writev2.TimeSeries, labels []string, pBuf, buf *[]byte, filter func(writev2.TimeSeries) bool, enc Compression) (compressed []byte, highest, lowest int64, _ error) {
+func buildV2WriteRequest(logger *slog.Logger, samples []writev2.TimeSeries, labels []string, pBuf, buf *[]byte, filter func(writev2.TimeSeries) bool, enc remoteapi.Compression) (compressed []byte, highest, lowest int64, _ error) {
 	highest, lowest, timeSeries, droppedSamples, droppedExemplars, droppedHistograms := buildV2TimeSeries(samples, filter)
 
 	if droppedSamples > 0 || droppedExemplars > 0 || droppedHistograms > 0 {

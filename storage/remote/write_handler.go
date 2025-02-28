@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/gogo/protobuf/proto"
-	"github.com/prometheus/client_golang/exp/api/remote"
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
@@ -63,7 +63,7 @@ const maxAheadTime = 10 * time.Minute
 //
 // NOTE(bwplotka): When accepting v2 proto and spec, partial writes are possible
 // as per https://prometheus.io/docs/specs/remote_write_spec_2_0/#partial-write.
-func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedMessages remote.MessageTypes, ingestCTZeroSample bool) http.Handler {
+func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedMessages remoteapi.MessageTypes, ingestCTZeroSample bool) http.Handler {
 	s := &writeStorage{
 		logger:     logger,
 		appendable: appendable,
@@ -83,11 +83,11 @@ func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable 
 		ingestCTZeroSample: ingestCTZeroSample,
 	}
 
-	return remote.NewHandler(s, acceptedMessages, remote.WithHandlerLogger(logger))
+	return remoteapi.NewHandler(s, acceptedMessages, remoteapi.WithHandlerLogger(logger))
 }
 
-// Store implements remote.writeStorage interface.
-func (s *writeStorage) Store(ctx context.Context, msgType remote.WriteMessageType, r *http.Request) (*remote.WriteResponse, error) {
+// Store implements remoteapi.writeStorage interface.
+func (s *writeStorage) Store(ctx context.Context, msgType remoteapi.WriteMessageType, r *http.Request) (*remoteapi.WriteResponse, error) {
 	// Store receives request with snappy-decompressed content in body.
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -95,8 +95,8 @@ func (s *writeStorage) Store(ctx context.Context, msgType remote.WriteMessageTyp
 		return nil, err
 	}
 
-	wr := remote.NewWriteResponse()
-	if msgType == remote.WriteV1MessageType {
+	wr := remoteapi.NewWriteResponse()
+	if msgType == remoteapi.WriteV1MessageType {
 		// PRW 1.0 flow has different proto message and no partial write handling.
 		var req prompb.WriteRequest
 		if err := proto.Unmarshal(body, &req); err != nil {
@@ -265,13 +265,13 @@ func (s *writeStorage) appendV1Histograms(app storage.Appender, hh []prompb.Hist
 //
 // NOTE(bwplotka): TSDB storage is NOT idempotent, so we don't allow "partial retry-able" errors.
 // Once we have 5xx type of error, we immediately stop and rollback all appends.
-func (s *writeStorage) writeV2(ctx context.Context, req *writev2.Request) (_ remote.WriteResponseStats, errHTTPCode int, _ error) {
+func (s *writeStorage) writeV2(ctx context.Context, req *writev2.Request) (_ remoteapi.WriteResponseStats, errHTTPCode int, _ error) {
 	app := &timeLimitAppender{
 		Appender: s.appendable.Appender(ctx),
 		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
 	}
 
-	stats := remote.WriteResponseStats{}
+	stats := remoteapi.WriteResponseStats{}
 	samplesWithoutMetadata, errHTTPCode, err := s.appendV2(app, req, &stats)
 	if err != nil {
 		if errHTTPCode/5 == 100 {
@@ -280,14 +280,14 @@ func (s *writeStorage) writeV2(ctx context.Context, req *writev2.Request) (_ rem
 			if rerr := app.Rollback(); rerr != nil {
 				s.logger.Error("writev2 rollback failed on retry-able error", "err", rerr)
 			}
-			return remote.WriteResponseStats{}, errHTTPCode, err
+			return remoteapi.WriteResponseStats{}, errHTTPCode, err
 		}
 
 		// Non-retriable (e.g. bad request error case). Can be partially written.
 		commitErr := app.Commit()
 		if commitErr != nil {
 			// Bad requests does not matter as we have internal error (retryable).
-			return remote.WriteResponseStats{}, http.StatusInternalServerError, commitErr
+			return remoteapi.WriteResponseStats{}, http.StatusInternalServerError, commitErr
 		}
 		// Bad request error happened, but rest of data (if any) was written.
 		s.samplesAppendedWithoutMetadata.Add(float64(samplesWithoutMetadata))
@@ -296,13 +296,13 @@ func (s *writeStorage) writeV2(ctx context.Context, req *writev2.Request) (_ rem
 
 	// All good just commit.
 	if err := app.Commit(); err != nil {
-		return remote.WriteResponseStats{}, http.StatusInternalServerError, err
+		return remoteapi.WriteResponseStats{}, http.StatusInternalServerError, err
 	}
 	s.samplesAppendedWithoutMetadata.Add(float64(samplesWithoutMetadata))
 	return stats, 0, nil
 }
 
-func (s *writeStorage) appendV2(app storage.Appender, req *writev2.Request, rs *remote.WriteResponseStats) (samplesWithoutMetadata, errHTTPCode int, err error) {
+func (s *writeStorage) appendV2(app storage.Appender, req *writev2.Request, rs *remoteapi.WriteResponseStats) (samplesWithoutMetadata, errHTTPCode int, err error) {
 	var (
 		badRequestErrs                                   []error
 		outOfOrderExemplarErrs, samplesWithInvalidLabels int

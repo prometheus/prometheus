@@ -25,6 +25,7 @@ import (
 
 	"github.com/alecthomas/units"
 	"github.com/grafana/regexp"
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
@@ -118,7 +119,7 @@ var expectedConf = &Config{
 	RemoteWriteConfigs: []*RemoteWriteConfig{
 		{
 			URL:             mustParseURL("http://remote1/push"),
-			ProtobufMessage: RemoteWriteProtoMsgV1,
+			ProtobufMessage: remoteapi.WriteV1MessageType,
 			RemoteTimeout:   model.Duration(30 * time.Second),
 			Name:            "drop_expensive",
 			WriteRelabelConfigs: []*relabel.Config{
@@ -148,7 +149,7 @@ var expectedConf = &Config{
 		},
 		{
 			URL:             mustParseURL("http://remote2/push"),
-			ProtobufMessage: RemoteWriteProtoMsgV2,
+			ProtobufMessage: remoteapi.WriteV2MessageType,
 			RemoteTimeout:   model.Duration(30 * time.Second),
 			QueueConfig:     DefaultQueueConfig,
 			MetadataConfig:  DefaultMetadataConfig,
