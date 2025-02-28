@@ -34,6 +34,6 @@ type DecoderBuilder interface {
 
 // Receiver interface.
 type Receiver interface {
-	AppendProtobuf(ctx context.Context, data relabeler.ProtobufData, relabelerID string, commitToWal bool) error
+	AppendSnappyProtobuf(ctx context.Context, compressedData relabeler.ProtobufData, relabelerID string, commitToWal bool) error
 	AppendHashdex(ctx context.Context, hashdex cppbridge.ShardedData, relabelerID string, commitToWal bool) error
 }

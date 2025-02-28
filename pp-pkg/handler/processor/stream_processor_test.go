@@ -53,10 +53,10 @@ func (mr *metricReceiver) AppendHashdex(
 	return mr.appendFn(ctx, hashdex, relabelerID)
 }
 
-func (mr *metricReceiver) AppendProtobuf(
-	ctx context.Context,
-	data relabeler.ProtobufData,
-	relabelerID string,
+func (mr *metricReceiver) AppendSnappyProtobuf(
+	_ context.Context,
+	_ relabeler.ProtobufData,
+	_ string,
 	_ bool,
 ) error {
 	return nil

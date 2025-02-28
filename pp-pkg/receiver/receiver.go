@@ -239,23 +239,24 @@ func NewReceiver(
 	return r, nil
 }
 
-// AppendProtobuf append Protobuf data to relabeling hashdex data.
-func (rr *Receiver) AppendProtobuf(
+// AppendSnappyProtobuf append compressed via snappy Protobuf data to relabeling hashdex data.
+func (rr *Receiver) AppendSnappyProtobuf(
 	ctx context.Context,
-	data relabeler.ProtobufData,
+	compressedData relabeler.ProtobufData,
 	relabelerID string,
 	commitToWal bool,
 ) error {
-	hx, err := rr.hashdexFactory.Protobuf(data.Bytes(), rr.hashdexLimits)
+	hx, err := cppbridge.NewWALSnappyProtobufHashdex(compressedData.Bytes(), rr.hashdexLimits)
+	compressedData.Destroy()
 	if err != nil {
-		data.Destroy()
 		return err
 	}
+
 	if rr.haTracker.IsDrop(hx.Cluster(), hx.Replica()) {
-		data.Destroy()
 		return nil
 	}
-	incomingData := &relabeler.IncomingData{Hashdex: hx, Data: data}
+
+	incomingData := &relabeler.IncomingData{Hashdex: hx}
 	_, err = rr.appender.Append(ctx, incomingData, nil, relabelerID, commitToWal)
 	return err
 }
