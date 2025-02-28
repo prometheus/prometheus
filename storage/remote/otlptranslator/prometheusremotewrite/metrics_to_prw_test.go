@@ -28,9 +28,9 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
+	translator "github.com/ArthurSens/otlp-prometheus-translator"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
-	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
 )
 
 func TestFromMetrics(t *testing.T) {
@@ -46,7 +46,7 @@ func TestFromMetrics(t *testing.T) {
 					metricSlice := scopeMetricsSlice.At(j).Metrics()
 					for k := 0; k < metricSlice.Len(); k++ {
 						metric := metricSlice.At(k)
-						promName := prometheustranslator.BuildCompliantMetricName(metric, "", false)
+						promName := translator.BuildCompliantMetricName(metric.Name(), metric.Unit(), getTranslatorMetricType(metric), false)
 						expMetadata = append(expMetadata, prompb.MetricMetadata{
 							Type:             otelMetricTypeToPromMetricType(metric),
 							MetricFamilyName: promName,
