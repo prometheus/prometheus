@@ -243,7 +243,7 @@ Outer:
 				if !created {
 					multiRef[walSeries.Ref] = mSeries.ref
 					// Mark the walSeries as deleted, so it is kept in subsequent WAL checkpoints.
-					h.markDeleted(walSeries.Ref, last)
+					h.setWALExpiry(walSeries.Ref, last)
 				}
 
 				idx := uint64(mSeries.ref) % uint64(concurrency)
