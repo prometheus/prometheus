@@ -453,24 +453,24 @@ func testOOOHeadChunkReader_LabelValues(t *testing.T, scenario sampleTypeScenari
 			// We first want to test using a head index reader that covers the biggest query interval
 			oh := NewHeadAndOOOIndexReader(head, tc.queryMinT, tc.queryMinT, tc.queryMaxT, 0)
 			matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar1")}
-			values, err := oh.LabelValues(ctx, "foo", matchers...)
+			values, err := oh.LabelValues(ctx, "foo", &storage.LabelHints{}, matchers...)
 			sort.Strings(values)
 			require.NoError(t, err)
 			require.Equal(t, tc.expValues1, values)
 
 			matchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "foo", "^bar.")}
-			values, err = oh.LabelValues(ctx, "foo", matchers...)
+			values, err = oh.LabelValues(ctx, "foo", &storage.LabelHints{}, matchers...)
 			sort.Strings(values)
 			require.NoError(t, err)
 			require.Equal(t, tc.expValues2, values)
 
 			matchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.")}
-			values, err = oh.LabelValues(ctx, "foo", matchers...)
+			values, err = oh.LabelValues(ctx, "foo", &storage.LabelHints{}, matchers...)
 			sort.Strings(values)
 			require.NoError(t, err)
 			require.Equal(t, tc.expValues3, values)
 
-			values, err = oh.LabelValues(ctx, "foo")
+			values, err = oh.LabelValues(ctx, "foo", &storage.LabelHints{})
 			sort.Strings(values)
 			require.NoError(t, err)
 			require.Equal(t, tc.expValues4, values)
