@@ -53,7 +53,8 @@ class SetMerger {
 
 class SetIntersecter {
  public:
-  PROMPP_ALWAYS_INLINE static SeriesIdSpan intersect(SeriesIdSpan set1, SeriesIdSpan set2) {
+  template <class Set2>
+  PROMPP_ALWAYS_INLINE static SeriesIdSpan intersect(SeriesIdSpan set1, const Set2& set2) {
     return {set1.begin(), std::ranges::set_intersection(set1, set2, set1.begin()).out};
   }
 };

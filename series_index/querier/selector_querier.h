@@ -43,10 +43,6 @@ class SelectorQuerier {
       }
     }
 
-    if (!selector.have_positive_matchers()) {
-      return QuerierStatus::kNoPositiveMatchers;
-    }
-
     for (size_t i = 0; i < selector.matchers.size(); ++i) {
       auto& label_matcher = label_matchers[i];
       auto& matcher = selector.matchers[i];
@@ -60,6 +56,10 @@ class SelectorQuerier {
           return QuerierStatus::kNoMatch;
         }
       }
+    }
+
+    if (!selector.have_positive_matchers()) {
+      return QuerierStatus::kNoPositiveMatchers;
     }
 
     return QuerierStatus::kMatch;
@@ -162,6 +162,26 @@ class SelectorQuerier {
         }
 
         matcher.status = MatchStatus::kAllMatch;
+        return QuerierStatus::kMatch;
+      }
+
+      case RegexpMatchAnalyzer::Status::kAllMatchWithExcludes: {
+        if (trie == nullptr) {
+          matcher.status = MatchStatus::kAllMatchWithExcludes;
+          matcher.type = MatcherType::kUnknown;
+          return QuerierStatus::kMatch;
+        }
+
+        matcher.invert();
+
+        typename TrieIndex::RegexpMatchesList matches_list(matcher.matches);
+        if (auto status = RegexpSearcher<typename TrieIndex::Trie, typename TrieIndex::RegexpMatchesList>(matches_list).search(*trie, regexp);
+            status == MatchStatus::kEmptyMatch) {
+          matcher.status = MatchStatus::kAllMatch;
+        } else {
+          matcher.status = MatchStatus::kAllMatchWithExcludes;
+        }
+
         return QuerierStatus::kMatch;
       }
 

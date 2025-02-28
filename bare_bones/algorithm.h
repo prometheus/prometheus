@@ -13,4 +13,9 @@ ValueType accumulate(const Range& range, ValueType initial_value, Method&& metho
   return initial_value;
 }
 
+template <class Value, class... Args>
+bool is_in(const Value& value, Args&&... args) {
+  return (... || (value == std::forward<Args>(args)));
+}
+
 };  // namespace BareBones
