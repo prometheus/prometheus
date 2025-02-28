@@ -23,7 +23,7 @@ TEST_P(RegexpMatchAnalyzerFixture, Test) {
   // Arrange
 
   // Act
-  auto status = RegexpMatchAnalyzer::analyze(RegexpParser::parse(GetParam().regexp).get());
+  const auto status = RegexpMatchAnalyzer::analyze(RegexpParser::parse(GetParam().regexp).get());
 
   // Assert
   EXPECT_EQ(GetParam().status, status);
@@ -44,7 +44,8 @@ INSTANTIATE_TEST_SUITE_P(AnythingMatchRegexp,
                          RegexpMatchAnalyzerFixture,
                          testing::Values(RegexpMatchAnalyzerTestCase{.regexp = ".*", .status = Status::kAnythingMatch},
                                          RegexpMatchAnalyzerTestCase{.regexp = "^.*", .status = Status::kAnythingMatch},
-                                         RegexpMatchAnalyzerTestCase{.regexp = "^.*$", .status = Status::kAnythingMatch}));
+                                         RegexpMatchAnalyzerTestCase{.regexp = "^.*$", .status = Status::kAnythingMatch},
+                                         RegexpMatchAnalyzerTestCase{.regexp = "^.{0,}", .status = Status::kAnythingMatch}));
 
 INSTANTIATE_TEST_SUITE_P(AllMatchRegexp,
                          RegexpMatchAnalyzerFixture,
@@ -52,11 +53,46 @@ INSTANTIATE_TEST_SUITE_P(AllMatchRegexp,
                                          RegexpMatchAnalyzerTestCase{.regexp = "^.+", .status = Status::kAllMatch},
                                          RegexpMatchAnalyzerTestCase{.regexp = "^.+$", .status = Status::kAllMatch}));
 
+INSTANTIATE_TEST_SUITE_P(AllMatchWithExcludesRegexp,
+                         RegexpMatchAnalyzerFixture,
+                         testing::Values(RegexpMatchAnalyzerTestCase{.regexp = "|abc", .status = Status::kAllMatchWithExcludes},
+                                         RegexpMatchAnalyzerTestCase{.regexp = "abc||bcd", .status = Status::kAllMatchWithExcludes},
+                                         RegexpMatchAnalyzerTestCase{.regexp = "abc|bcd|", .status = Status::kAllMatchWithExcludes},
+                                         RegexpMatchAnalyzerTestCase{.regexp = "|", .status = Status::kAllMatchWithExcludes},
+                                         RegexpMatchAnalyzerTestCase{.regexp = "^|abc", .status = Status::kAllMatchWithExcludes},
+                                         RegexpMatchAnalyzerTestCase{.regexp = "$|abc", .status = Status::kAllMatchWithExcludes},
+                                         RegexpMatchAnalyzerTestCase{.regexp = "^$|abc", .status = Status::kAllMatchWithExcludes},
+                                         RegexpMatchAnalyzerTestCase{.regexp = "^(|abc)$", .status = Status::kAllMatchWithExcludes},
+                                         RegexpMatchAnalyzerTestCase{.regexp = "^(^|abc)$", .status = Status::kAllMatchWithExcludes},
+                                         RegexpMatchAnalyzerTestCase{.regexp = "^(^(|abc))$", .status = Status::kAllMatchWithExcludes},
+                                         RegexpMatchAnalyzerTestCase{.regexp = "^(^(^|abc))$", .status = Status::kAllMatchWithExcludes},
+                                         RegexpMatchAnalyzerTestCase{.regexp = "^(^((^(?i)$)|abc))$", .status = Status::kAllMatchWithExcludes},
+                                         RegexpMatchAnalyzerTestCase{.regexp = "(|abc)", .status = Status::kAllMatchWithExcludes},
+                                         RegexpMatchAnalyzerTestCase{.regexp = "((?i)|abc)", .status = Status::kAllMatchWithExcludes},
+                                         RegexpMatchAnalyzerTestCase{.regexp = ".+|", .status = Status::kAllMatchWithExcludes}));
+
 INSTANTIATE_TEST_SUITE_P(PartialMatchRegexp,
                          RegexpMatchAnalyzerFixture,
                          testing::Values(RegexpMatchAnalyzerTestCase{.regexp = "a", .status = Status::kPartialMatch},
                                          RegexpMatchAnalyzerTestCase{.regexp = "^a.+", .status = Status::kPartialMatch},
                                          RegexpMatchAnalyzerTestCase{.regexp = "^a.+$", .status = Status::kPartialMatch},
-                                         RegexpMatchAnalyzerTestCase{.regexp = "abc$", .status = Status::kPartialMatch}));
+                                         RegexpMatchAnalyzerTestCase{.regexp = "abc$", .status = Status::kPartialMatch},
+                                         RegexpMatchAnalyzerTestCase{.regexp = "(a(|b))", .status = Status::kPartialMatch},
+                                         RegexpMatchAnalyzerTestCase{.regexp = "((?i).{1,}|abc)", .status = Status::kPartialMatch}));
+
+// TODO: this test cases must return AnythingMatch
+INSTANTIATE_TEST_SUITE_P(ItMustBeAnythingMatchButNowItIsPartialMatch,
+                         RegexpMatchAnalyzerFixture,
+                         testing::Values(RegexpMatchAnalyzerTestCase{.regexp = "(.*|abc)", .status = Status::kPartialMatch},
+                                         RegexpMatchAnalyzerTestCase{.regexp = ".{0,}|abc", .status = Status::kPartialMatch},
+                                         RegexpMatchAnalyzerTestCase{.regexp = ".+|.*", .status = Status::kPartialMatch}));
+
+// TODO: this test cases must return AllMatch
+INSTANTIATE_TEST_SUITE_P(ItMustBeAllMatchButNowItIsPartialMatch,
+                         RegexpMatchAnalyzerFixture,
+                         testing::Values(RegexpMatchAnalyzerTestCase{.regexp = ".+|abc", .status = Status::kPartialMatch},
+                                         RegexpMatchAnalyzerTestCase{.regexp = "(.+|abc)", .status = Status::kPartialMatch},
+                                         RegexpMatchAnalyzerTestCase{.regexp = "^.+|abc", .status = Status::kPartialMatch},
+                                         RegexpMatchAnalyzerTestCase{.regexp = "^.+$|abc", .status = Status::kPartialMatch}));
 
 }  // namespace

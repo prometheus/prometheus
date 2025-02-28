@@ -43,7 +43,14 @@ struct LabelMatcherTrait {
 using LabelMatcher = LabelMatcherTrait<std::string>;
 using LabelMatchers = std::vector<LabelMatcher>;
 
-enum class MatchStatus : uint8_t { kUnknown = 0, kEmptyMatch, kAllMatch, kPartialMatch, kError };
+enum class MatchStatus : uint8_t {
+  kUnknown = 0,
+  kEmptyMatch,
+  kAllMatch,
+  kAllMatchWithExcludes,
+  kPartialMatch,
+  kError,
+};
 
 struct Selector {
   struct Matcher {
@@ -72,6 +79,16 @@ struct Selector {
     PROMPP_ALWAYS_INLINE void convert_to_positive() noexcept {
       if (type == MatcherType::kExactNotMatch) {
         type = MatcherType::kExactMatch;
+      } else if (type == MatcherType::kRegexpNotMatch) {
+        type = MatcherType::kRegexpMatch;
+      }
+    }
+
+    PROMPP_ALWAYS_INLINE void invert() noexcept {
+      if (is_positive()) {
+        convert_to_negative();
+      } else if (is_negative()) {
+        convert_to_positive();
       }
     }
   };
