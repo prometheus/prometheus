@@ -17,6 +17,7 @@ import (
 	"errors"
 	"io"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -24,6 +25,7 @@ import (
 )
 
 func TestParseFileSuccess(t *testing.T) {
+	t.Parallel()
 	_, errs := ParseFile("testdata/test.yaml", false)
 	require.Empty(t, errs, "unexpected errors parsing file")
 
@@ -107,6 +109,7 @@ func TestParseFileFailure(t *testing.T) {
 		},
 	} {
 		t.Run(c.filename, func(t *testing.T) {
+			t.Parallel()
 			_, errs := ParseFile(filepath.Join("testdata", c.filename), false)
 			require.NotEmpty(t, errs, "Expected error parsing %s but got none", c.filename)
 			require.ErrorContainsf(t, errs[0], c.errMsg, "Expected error for %s.", c.filename)
@@ -202,15 +205,19 @@ groups:
 		},
 	}
 
-	for _, tst := range tests {
-		rgs, errs := Parse([]byte(tst.ruleString), false)
-		require.NotNil(t, rgs, "Rule parsing, rule=\n"+tst.ruleString)
-		passed := (tst.shouldPass && len(errs) == 0) || (!tst.shouldPass && len(errs) > 0)
-		require.True(t, passed, "Rule validation failed, rule=\n"+tst.ruleString)
+	for i, tst := range tests {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			t.Parallel()
+			rgs, errs := Parse([]byte(tst.ruleString), false)
+			require.NotNil(t, rgs, "Rule parsing, rule=\n"+tst.ruleString)
+			passed := (tst.shouldPass && len(errs) == 0) || (!tst.shouldPass && len(errs) > 0)
+			require.True(t, passed, "Rule validation failed, rule=\n"+tst.ruleString)
+		})
 	}
 }
 
 func TestUniqueErrorNodes(t *testing.T) {
+	t.Parallel()
 	group := `
 groups:
 - name: example
@@ -299,6 +306,7 @@ func TestError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			require.EqualError(t, tt.error, tt.want)
 		})
 	}
@@ -347,6 +355,7 @@ func TestWrappedError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			require.EqualError(t, tt.wrappedError, tt.want)
 		})
 	}
@@ -371,6 +380,7 @@ func TestErrorUnwrap(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.wrappedError.Error(), func(t *testing.T) {
+			t.Parallel()
 			require.ErrorIs(t, tt.wrappedError, tt.unwrappedError)
 		})
 	}

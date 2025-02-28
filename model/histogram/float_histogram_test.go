@@ -223,6 +223,7 @@ func TestFloatHistogramMul(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			require.Equal(t, c.expected, c.in.Mul(c.scale))
 			// Has it also happened in-place?
 			require.Equal(t, c.expected, c.in)
@@ -285,6 +286,7 @@ func TestFloatHistogramCopy(t *testing.T) {
 
 	for _, tcase := range cases {
 		t.Run(tcase.name, func(t *testing.T) {
+			t.Parallel()
 			hCopy := tcase.orig.Copy()
 
 			// Modify a primitive value in the original histogram.
@@ -350,6 +352,7 @@ func TestFloatHistogramCopyTo(t *testing.T) {
 
 	for _, tcase := range cases {
 		t.Run(tcase.name, func(t *testing.T) {
+			t.Parallel()
 			hCopy := &FloatHistogram{}
 			tcase.orig.CopyTo(hCopy)
 
@@ -362,6 +365,7 @@ func TestFloatHistogramCopyTo(t *testing.T) {
 }
 
 func assertDeepCopyFHSpans(t *testing.T, orig, hCopy, expected *FloatHistogram) {
+	t.Helper()
 	// Do an in-place expansion of an original spans slice.
 	orig.PositiveSpans = expandSpans(orig.PositiveSpans)
 	orig.PositiveSpans[len(orig.PositiveSpans)-1] = Span{1, 2}
@@ -545,6 +549,7 @@ func TestFloatHistogramDiv(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			require.Equal(t, c.expected, c.fh.Div(c.s))
 			// Has it also happened in-place?
 			require.Equal(t, c.expected, c.fh)
@@ -1275,6 +1280,7 @@ func TestFloatHistogramDetectReset(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			require.Equal(t, c.resetExpected, c.current.DetectReset(c.previous))
 		})
 	}
@@ -1632,6 +1638,7 @@ func TestFloatHistogramCompact(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			require.Equal(t, c.expected, c.in.Compact(c.maxEmptyBuckets))
 			// Compact has happened in-place, too.
 			require.Equal(t, c.expected, c.in)
@@ -2310,6 +2317,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			testHistogramAdd(t, c.in1, c.in2, c.expected, c.expErrMsg)
 			testHistogramAdd(t, c.in2, c.in1, c.expected, c.expErrMsg)
 		})
@@ -2317,6 +2325,7 @@ func TestFloatHistogramAdd(t *testing.T) {
 }
 
 func testHistogramAdd(t *testing.T, a, b, expected *FloatHistogram, expErrMsg string) {
+	t.Helper()
 	var (
 		aCopy        = a.Copy()
 		bCopy        = b.Copy()
@@ -2503,6 +2512,7 @@ func TestFloatHistogramSub(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			testFloatHistogramSub(t, c.in1, c.in2, c.expected, c.expErrMsg)
 
 			var expectedNegative *FloatHistogram
@@ -2515,6 +2525,7 @@ func TestFloatHistogramSub(t *testing.T) {
 }
 
 func testFloatHistogramSub(t *testing.T, a, b, expected *FloatHistogram, expErrMsg string) {
+	t.Helper()
 	var (
 		aCopy        = a.Copy()
 		bCopy        = b.Copy()
@@ -2628,6 +2639,7 @@ func TestFloatHistogramCopyToSchema(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			inCopy := c.in.Copy()
 			require.Equal(t, c.expected, c.in.CopyToSchema(c.targetSchema))
 			// Check that the receiver histogram was not mutated:
@@ -2637,6 +2649,7 @@ func TestFloatHistogramCopyToSchema(t *testing.T) {
 }
 
 func TestReverseFloatBucketIterator(t *testing.T) {
+	t.Parallel()
 	h := &FloatHistogram{
 		Count:         405,
 		ZeroCount:     102,
@@ -2881,6 +2894,7 @@ func TestAllFloatBucketIterator(t *testing.T) {
 
 	for i, c := range cases {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			t.Parallel()
 			var expBuckets, actBuckets []Bucket[float64]
 
 			if c.includeNeg {
@@ -3107,6 +3121,7 @@ func TestAllReverseFloatBucketIterator(t *testing.T) {
 
 	for i, c := range cases {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			t.Parallel()
 			var expBuckets, actBuckets []Bucket[float64]
 
 			if c.includePos {
@@ -3150,6 +3165,7 @@ func TestAllReverseFloatBucketIterator(t *testing.T) {
 }
 
 func TestFloatBucketIteratorTargetSchema(t *testing.T) {
+	t.Parallel()
 	h := FloatHistogram{
 		Count:  405,
 		Sum:    1008.4,
@@ -3245,6 +3261,7 @@ func TestFloatCustomBucketsIterators(t *testing.T) {
 
 	for i, c := range cases {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			t.Parallel()
 			{
 				it := c.h.AllBucketIterator()
 				for i, b := range c.expPositiveBuckets {
@@ -3303,6 +3320,7 @@ func TestFloatCustomBucketsIterators(t *testing.T) {
 // TestFloatHistogramEquals tests FloatHistogram with float-specific cases that
 // cannot be covered by TestHistogramEquals.
 func TestFloatHistogramEquals(t *testing.T) {
+	t.Parallel()
 	h1 := FloatHistogram{
 		Schema:          3,
 		Count:           2.2,
@@ -3455,6 +3473,7 @@ func TestFloatHistogramSize(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			require.Equal(t, c.expected, c.fh.Size())
 		})
 	}
@@ -3506,6 +3525,7 @@ func TestFloatHistogramString(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			require.NoError(t, c.fh.Validate())
 			require.Equal(t, c.expected, c.fh.String())
 		})
@@ -3597,10 +3617,13 @@ func TestFloatHistogramReduceResolution(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tcs {
-		target := tc.origin.ReduceResolution(tc.target.Schema)
-		require.Equal(t, tc.target, target)
-		// Check that receiver histogram was mutated:
-		require.Equal(t, tc.target, tc.origin)
+	for testName, tc := range tcs {
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+			target := tc.origin.ReduceResolution(tc.target.Schema)
+			require.Equal(t, tc.target, target)
+			// Check that receiver histogram was mutated:
+			require.Equal(t, tc.target, tc.origin)
+		})
 	}
 }

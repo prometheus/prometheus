@@ -15,6 +15,7 @@ package textparse
 
 import (
 	"io"
+	"strconv"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -24,6 +25,7 @@ import (
 )
 
 func TestPromParse(t *testing.T) {
+	t.Parallel()
 	input := `# HELP go_gc_duration_seconds A summary of the GC invocation durations.
 # 	TYPE go_gc_duration_seconds summary
 go_gc_duration_seconds{quantile="0"} 4.9351e-05
@@ -205,6 +207,7 @@ testmetric{le="10"} 1`
 }
 
 func TestUTF8PromParse(t *testing.T) {
+	// this test cannot use parallelism due to race condition by changing NameValidationScheme
 	oldValidationScheme := model.NameValidationScheme
 	model.NameValidationScheme = model.UTF8Validation
 	defer func() {
@@ -361,12 +364,15 @@ func TestPromParseErrors(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		p := NewPromParser([]byte(c.input), labels.NewSymbolTable())
-		var err error
-		for err == nil {
-			_, err = p.Next()
-		}
-		require.EqualError(t, err, c.err, "test %d", i)
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			t.Parallel()
+			p := NewPromParser([]byte(c.input), labels.NewSymbolTable())
+			var err error
+			for err == nil {
+				_, err = p.Next()
+			}
+			require.EqualError(t, err, c.err, "test %d", i)
+		})
 	}
 }
 
@@ -414,17 +420,20 @@ func TestPromNullByteHandling(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		p := NewPromParser([]byte(c.input), labels.NewSymbolTable())
-		var err error
-		for err == nil {
-			_, err = p.Next()
-		}
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			t.Parallel()
+			p := NewPromParser([]byte(c.input), labels.NewSymbolTable())
+			var err error
+			for err == nil {
+				_, err = p.Next()
+			}
 
-		if c.err == "" {
-			require.Equal(t, io.EOF, err, "test %d", i)
-			continue
-		}
+			if c.err == "" {
+				require.Equal(t, io.EOF, err, "test %d", i)
+				return
+			}
 
-		require.EqualError(t, err, c.err, "test %d", i)
+			require.EqualError(t, err, c.err, "test %d", i)
+		})
 	}
 }
