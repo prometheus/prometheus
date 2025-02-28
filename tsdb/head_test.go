@@ -719,11 +719,13 @@ func TestHead_ReadWAL(t *testing.T) {
 			s11 := head.series.getByID(11)
 			s50 := head.series.getByID(50)
 			s100 := head.series.getByID(100)
+			s101 := head.series.getByID(101)
 
 			testutil.RequireEqual(t, labels.FromStrings("a", "1"), s10.lset)
 			require.Nil(t, s11) // Series without samples should be garbage collected at head.Init().
 			testutil.RequireEqual(t, labels.FromStrings("a", "4"), s50.lset)
 			testutil.RequireEqual(t, labels.FromStrings("a", "3"), s100.lset)
+			require.Nil(t, s101) // Duplicate series record should be discarded.
 
 			expandChunk := func(c chunkenc.Iterator) (x []sample) {
 				for c.Next() == chunkenc.ValFloat {
@@ -796,10 +798,10 @@ func TestHead_WALMultiRef(t *testing.T) {
 
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = 1000
-	opts.ChunkDirRoot = w.Dir()
+	opts.ChunkDirRoot = head.opts.ChunkDirRoot
 	head, err = NewHead(nil, nil, w, nil, opts, nil)
 	require.NoError(t, err)
-	require.NoError(t, head.Init(0))
+	require.NoError(t, head.Init(1600))
 	defer func() {
 		require.NoError(t, head.Close())
 	}()
@@ -812,6 +814,117 @@ func TestHead_WALMultiRef(t *testing.T) {
 	require.Equal(t, map[string][]chunks.Sample{`{foo="bar"}`: {
 		sample{1700, 3, nil, nil},
 		sample{2000, 4, nil, nil},
+	}}, series)
+}
+
+func TestHead_WALMultiRef_Checkpoint(t *testing.T) {
+	head, w := newTestHead(t, 10000, wlog.CompressionNone, false)
+
+	require.NoError(t, head.Init(0))
+
+	// Write a sample.
+	app := head.Appender(context.Background())
+	ref1, err := app.Append(0, labels.FromStrings("foo", "bar"), 100, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
+
+	// Truncate head to remove first series entirely.
+	require.NoError(t, head.Truncate(500))
+
+	// Write another sample -- will create a new series ID.
+	app = head.Appender(context.Background())
+	ref2, err := app.Append(0, labels.FromStrings("foo", "bar"), 600, 2)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
+
+	require.NotEqual(t, ref1, ref2, "refs should be different")
+
+	// Start a new WAL segment so we can checkpoint the series entry separately from future samples.
+	seg, err := w.NextSegment()
+	require.NoError(t, err)
+	require.Equal(t, 2, seg)
+
+	// Write another sample -- will be written using the new series ID.
+	app = head.Appender(context.Background())
+	ref3, err := app.Append(0, labels.FromStrings("foo", "bar"), 1000, 3)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
+
+	require.Equal(t, ref2, ref3, "refs should be the same")
+
+	// Close and re-open head (simulated restart).
+	require.NoError(t, head.Close())
+
+	w, err = wlog.NewSize(nil, nil, w.Dir(), 32768, wlog.CompressionNone)
+	require.NoError(t, err)
+
+	head, err = NewHead(nil, nil, w, nil, head.opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, head.Init(500))
+
+	// WAL replay will use the original series ID for all samples in the WAL, as well
+	// as any new samples for the series written after replay.
+
+	// Write another sample -- will be written using the original series ID.
+	app = head.Appender(context.Background())
+	ref4, err := app.Append(0, labels.FromStrings("foo", "bar"), 1500, 4)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.chunksCreated))
+
+	require.Equal(t, ref1, ref4, "refs should be the same")
+
+	// At this point the WAL is:
+	// - segment 0:
+	//   - series 1 record
+	//   - series 1 sample @ 100
+	// - segment 1:
+	//   - series 2 record
+	//   - series 2 sample @ 600
+	// - segment 2:
+	//   - series 2 sample @ 1000
+	// - segment 3:
+	//   - series 1 sample @ 1500
+
+	// Truncate head again
+	require.NoError(t, head.Truncate(700))
+
+	// Ensure a checkpoint was created.
+	_, chkidx, err := wlog.LastCheckpoint(w.Dir())
+	require.NoError(t, err)
+	require.Equal(t, 1, chkidx)
+
+	// At this point the WAL is:
+	// - checkpoint 1:
+	//   - series 1 record
+	// - segment 2:
+	//   - series 2 sample @ 1000 (series not found)
+	// - segment 3:
+	//   - series 1 sample @ 1500 (series not found)
+
+	// Close and re-open head again (simulated restart).
+	require.NoError(t, head.Close())
+
+	w, err = wlog.NewSize(nil, nil, w.Dir(), 32768, wlog.CompressionNone)
+	require.NoError(t, err)
+
+	head, err = NewHead(nil, nil, w, nil, head.opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, head.Init(700))
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+
+	q, err := NewBlockQuerier(head, 0, 1600)
+	require.NoError(t, err)
+	series := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	// We expect only the samples after the truncation.
+	require.Equal(t, map[string][]chunks.Sample{`{foo="bar"}`: {
+		sample{1000, 3, nil, nil},
+		sample{1500, 4, nil, nil},
 	}}, series)
 }
 
