@@ -90,7 +90,7 @@
     "prettier": "^3.0.0",
     "react-scripts": "^5.0.1",
     "sinon": "^19.0.2",
-    "ts-jest": "^29.2.5"
+    "ts-jest": "^29.2.6"
   },
   "jest": {
     "snapshotSerializers": [
