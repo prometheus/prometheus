@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -13,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/columnar"
 )
 
 type TimeSeriesRow struct {
@@ -31,7 +33,7 @@ func convertToColumnarBlock(blockPath string, logger *slog.Logger) error {
 	columnarBlockPath := blockPath + "_columnar"
 	dataDir := filepath.Join(columnarBlockPath, "data")
 
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create columnar block directory: %w", err)
 	}
 
@@ -65,10 +67,18 @@ func convertToColumnarBlock(blockPath string, logger *slog.Logger) error {
 		return fmt.Errorf("failed to group series by metric family: %w", err)
 	}
 
+	newIndex := columnar.NewIndex()
+
 	for metricName, series := range metricFamilies {
-		if err := writeParquetFile(metricName, series, dataDir, logger); err != nil {
+		mm, err := writeParquetFile(metricName, series, dataDir, logger)
+		if err != nil {
 			return fmt.Errorf("failed to write Parquet file for metric %s: %w", metricName, err)
 		}
+		newIndex.Metrics[metricName] = mm
+	}
+
+	if err := columnar.WriteIndex(newIndex, columnarBlockPath); err != nil {
+		return fmt.Errorf("failed to write index: %w", err)
 	}
 
 	logger.Info("Successfully converted block to columnar format",
@@ -81,7 +91,7 @@ func convertToColumnarBlock(blockPath string, logger *slog.Logger) error {
 func groupSeriesByMetricFamily(
 	indexr tsdb.IndexReader,
 	chunkr tsdb.ChunkReader,
-	logger *slog.Logger,
+	_ *slog.Logger,
 ) (map[string][]TimeSeriesRow, error) {
 	metricFamilies := make(map[string][]TimeSeriesRow)
 
@@ -146,33 +156,39 @@ func writeParquetFile(
 	series []TimeSeriesRow,
 	dataDir string,
 	logger *slog.Logger,
-) error {
-	schema := buildDynamicSchema(series)
+) (columnar.MetricMeta, error) {
+	metricMeta := columnar.MetricMeta{
+		ParquetFile: metricName + ".parquet",
+		LabelNames:  uniqueLabelKeys(series),
+	}
 
-	parquetRows := convertToParquetValues(series, schema)
+	schema := buildDynamicSchema(metricMeta.LabelNames)
 
-	fileName := filepath.Join(dataDir, metricName+".parquet")
+	var parquetRows []parquet.Row
+	parquetRows, metricMeta.MinT, metricMeta.MaxT = convertToParquetValues(series, schema)
+
+	fileName := filepath.Join(dataDir, metricMeta.ParquetFile)
 	f, err := os.Create(fileName)
 	if err != nil {
-		return fmt.Errorf("failed to create Parquet file: %w", err)
+		return metricMeta, fmt.Errorf("failed to create Parquet file: %w", err)
 	}
 	defer f.Close()
 
 	writer := parquet.NewGenericWriter[any](f, schema)
 	_, err = writer.WriteRows(parquetRows)
 	if err != nil {
-		return fmt.Errorf("failed to write rows to Parquet file: %w", err)
+		return metricMeta, fmt.Errorf("failed to write rows to Parquet file: %w", err)
 	}
 
 	if err := writer.Close(); err != nil {
-		return fmt.Errorf("failed to close Parquet writer: %w", err)
+		return metricMeta, fmt.Errorf("failed to close Parquet writer: %w", err)
 	}
 
 	logger.Info("Created Parquet file", "metric", metricName, "file", fileName, "series", len(series))
-	return nil
+	return metricMeta, nil
 }
 
-func buildDynamicSchema(rows []TimeSeriesRow) *parquet.Schema {
+func uniqueLabelKeys(rows []TimeSeriesRow) []string {
 	uniqueLabels := make(map[string]struct{})
 	for _, row := range rows {
 		for _, label := range row.Lbls {
@@ -186,6 +202,10 @@ func buildDynamicSchema(rows []TimeSeriesRow) *parquet.Schema {
 	}
 	sort.Strings(labelKeys)
 
+	return labelKeys
+}
+
+func buildDynamicSchema(labelKeys []string) *parquet.Schema {
 	node := parquet.Group{
 		"x_chunk":          parquet.Leaf(parquet.ByteArrayType),
 		"x_chunk_min_time": parquet.Int(64),
@@ -198,7 +218,8 @@ func buildDynamicSchema(rows []TimeSeriesRow) *parquet.Schema {
 	return parquet.NewSchema("metric_family", node)
 }
 
-func convertToParquetValues(rows []TimeSeriesRow, schema *parquet.Schema) []parquet.Row {
+func convertToParquetValues(rows []TimeSeriesRow, schema *parquet.Schema) ([]parquet.Row, int64, int64) {
+	var minT, maxT int64 = math.MaxInt64, math.MinInt64
 	columnMap := make(map[string]int)
 	for i, col := range schema.Columns() {
 		columnMap[col[0]] = i
@@ -214,9 +235,15 @@ func convertToParquetValues(rows []TimeSeriesRow, schema *parquet.Schema) []parq
 
 		minTimeIdx := columnMap["x_chunk_min_time"]
 		values[minTimeIdx] = parquet.Int64Value(row.MinTime)
+		if row.MinTime < minT {
+			minT = row.MinTime
+		}
 
 		maxTimeIdx := columnMap["x_chunk_max_time"]
 		values[maxTimeIdx] = parquet.Int64Value(row.MaxTime)
+		if row.MaxTime > maxT {
+			maxT = row.MaxTime
+		}
 
 		labelMap := make(map[string]string)
 		for _, label := range row.Lbls {
@@ -232,7 +259,7 @@ func convertToParquetValues(rows []TimeSeriesRow, schema *parquet.Schema) []parq
 		result[i] = values
 	}
 
-	return result
+	return result, minT, maxT
 }
 
 func copyFile(src, dst string) error {
@@ -240,5 +267,5 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(dst, data, 0644)
+	return os.WriteFile(dst, data, 0o644)
 }
