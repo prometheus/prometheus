@@ -76,7 +76,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 
 	_, last, err := wlog.Segments(h.wal.Dir())
 	if err != nil {
-		return fmt.Errorf("failed to get last segment to mark duplicate series as deleted: %w", err)
+		return fmt.Errorf("failed to get last segment to set WAL expiry for duplicate series: %w", err)
 	}
 
 	defer func() {
@@ -242,7 +242,7 @@ Outer:
 				}
 				if !created {
 					multiRef[walSeries.Ref] = mSeries.ref
-					// Mark the walSeries as deleted, so it is kept in subsequent WAL checkpoints.
+					// Set the WAL expiry for the duplicate series, so it is kept in subsequent WAL checkpoints.
 					h.setWALExpiry(walSeries.Ref, last)
 				}
 
