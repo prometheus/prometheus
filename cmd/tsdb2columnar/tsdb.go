@@ -20,7 +20,7 @@ import (
 )
 
 // createTSDBBlock creates a new TSDB block with the specified number of series
-func createTSDBBlock(numSeries int, outputDir string, logger *slog.Logger) (string, error) {
+func createTSDBBlock(numSeries int, outputDir string, dimensions int, cardinality int, logger *slog.Logger) (string, error) {
 	if err := os.MkdirAll(outputDir, os.ModePerm); err != nil {
 		return "", fmt.Errorf("failed to create directory: %w", err)
 	}
@@ -31,7 +31,27 @@ func createTSDBBlock(numSeries int, outputDir string, logger *slog.Logger) (stri
 	series := make([]storage.Series, 0, numSeries)
 
 	for i := 0; i < numSeries; i++ {
-		lbls := labels.FromStrings("__name__", fmt.Sprintf("tsdb2columnar_gauge_%d", i))
+		// Start with the __name__ label
+		labelPairs := []labels.Label{
+			{Name: "__name__", Value: fmt.Sprintf("tsdb2columnar_gauge_%d", i)},
+		}
+
+		// Add dimension labels with varying cardinality
+		for d := 0; d < dimensions; d++ {
+			labelName := fmt.Sprintf("dim_%d", d)
+
+			// Calculate a deterministic but distributed value based on series index
+			// This ensures we get good distribution across the cardinality range
+			cardValue := i % cardinality
+			labelValue := fmt.Sprintf("val_%d", cardValue)
+
+			labelPairs = append(labelPairs, labels.Label{
+				Name:  labelName,
+				Value: labelValue,
+			})
+		}
+
+		lbls := labels.New(labelPairs...)
 
 		samples := []chunks.Sample{}
 		for j := 0; j < 100; j++ { // append a sample every 30 seconds
