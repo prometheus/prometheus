@@ -72,7 +72,7 @@ func TestRepairBadIndexVersion(t *testing.T) {
 
 	// Check the current db.
 	// In its current state, lookups should fail with the fixed code.
-	_, _, err := readMetaFile(tmpDbDir)
+	_, _, err := ReadMetaFile(tmpDbDir)
 	require.Error(t, err)
 
 	// Touch chunks dir in block to imitate them.
@@ -118,7 +118,7 @@ func TestRepairBadIndexVersion(t *testing.T) {
 		labels.FromStrings("a", "2", "b", "1"),
 	}, res)
 
-	meta, _, err := readMetaFile(tmpDbDir)
+	meta, _, err := ReadMetaFile(tmpDbDir)
 	require.NoError(t, err)
 	require.Equal(t, metaVersion1, meta.Version, "unexpected meta version %d", meta.Version)
 }

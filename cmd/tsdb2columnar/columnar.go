@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -37,12 +38,16 @@ func convertToColumnarBlock(blockPath string, logger *slog.Logger) error {
 		return fmt.Errorf("failed to create columnar block directory: %w", err)
 	}
 
-	if err := copyFile(
-		filepath.Join(blockPath, "meta.json"),
-		filepath.Join(columnarBlockPath, "meta.json"),
-	); err != nil {
-		return fmt.Errorf("failed to copy meta.json: %w", err)
+	bm, _, err := tsdb.ReadMetaFile(blockPath)
+	if err != nil {
+		return fmt.Errorf("failed to read meta file: %w", err)
 	}
+	if bm.Compaction.IsParquet() {
+		return errors.New("block is already in columnar format")
+	}
+	bm.Compaction.SetParquet()
+
+	tsdb.WriteMetaFile(logger, columnarBlockPath, bm)
 
 	block, err := tsdb.OpenBlock(logger, blockPath, nil, nil)
 	if err != nil {

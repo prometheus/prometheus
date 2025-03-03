@@ -47,10 +47,10 @@ import (
 func TestBlockMetaMustNeverBeVersion2(t *testing.T) {
 	dir := t.TempDir()
 
-	_, err := writeMetaFile(promslog.NewNopLogger(), dir, &BlockMeta{})
+	_, err := WriteMetaFile(promslog.NewNopLogger(), dir, &BlockMeta{})
 	require.NoError(t, err)
 
-	meta, _, err := readMetaFile(dir)
+	meta, _, err := ReadMetaFile(dir)
 	require.NoError(t, err)
 	require.NotEqual(t, 2, meta.Version, "meta.json version must never be 2")
 }

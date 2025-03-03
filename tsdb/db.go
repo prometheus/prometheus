@@ -1692,7 +1692,7 @@ func openBlocks(l *slog.Logger, dir string, loaded []*Block, chunkPool chunkenc.
 
 	corrupted = make(map[ulid.ULID]error)
 	for _, bDir := range bDirs {
-		meta, _, err := readMetaFile(bDir)
+		meta, _, err := ReadMetaFile(bDir)
 		if err != nil {
 			l.Error("Failed to read meta.json for a block during reloadBlocks. Skipping", "dir", bDir, "err", err)
 			continue

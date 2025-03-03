@@ -245,7 +245,7 @@ func (c *LeveledCompactor) Plan(dir string) ([]string, error) {
 
 	var dms []dirMeta
 	for _, dir := range dirs {
-		meta, _, err := readMetaFile(dir)
+		meta, _, err := ReadMetaFile(dir)
 		if err != nil {
 			return nil, err
 		}
@@ -470,7 +470,7 @@ func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string,
 	start := time.Now()
 
 	for _, d := range dirs {
-		meta, _, err := readMetaFile(d)
+		meta, _, err := ReadMetaFile(d)
 		if err != nil {
 			return nil, err
 		}
@@ -509,7 +509,7 @@ func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string,
 		if meta.Stats.NumSamples == 0 {
 			for _, b := range bs {
 				b.meta.Compaction.Deletable = true
-				n, err := writeMetaFile(c.logger, b.dir, &b.meta)
+				n, err := WriteMetaFile(c.logger, b.dir, &b.meta)
 				if err != nil {
 					c.logger.Error(
 						"Failed to write 'Deletable' to meta file after compaction",
@@ -695,7 +695,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 		return nil
 	}
 
-	if _, err = writeMetaFile(c.logger, tmp, meta); err != nil {
+	if _, err = WriteMetaFile(c.logger, tmp, meta); err != nil {
 		return fmt.Errorf("write merged meta: %w", err)
 	}
 

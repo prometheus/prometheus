@@ -234,6 +234,14 @@ func (bm BlockMetaCompaction) IsParquet() bool {
 	return slices.Contains(bm.Hints, "parquet")
 }
 
+func (bm *BlockMetaCompaction) SetParquet() {
+	if bm.IsParquet() {
+		return
+	}
+	bm.Hints = append(bm.Hints, "parquet")
+	slices.Sort(bm.Hints)
+}
+
 func (bm *BlockMetaCompaction) SetOutOfOrder() {
 	if bm.FromOutOfOrder() {
 		return
@@ -259,7 +267,7 @@ const (
 func chunkDir(dir string) string { return filepath.Join(dir, "chunks") }
 func dataDir(dir string) string  { return filepath.Join(dir, "data") }
 
-func readMetaFile(dir string) (*BlockMeta, int64, error) {
+func ReadMetaFile(dir string) (*BlockMeta, int64, error) {
 	b, err := os.ReadFile(filepath.Join(dir, metaFilename))
 	if err != nil {
 		return nil, 0, err
@@ -276,7 +284,7 @@ func readMetaFile(dir string) (*BlockMeta, int64, error) {
 	return &m, int64(len(b)), nil
 }
 
-func writeMetaFile(logger *slog.Logger, dir string, meta *BlockMeta) (int64, error) {
+func WriteMetaFile(logger *slog.Logger, dir string, meta *BlockMeta) (int64, error) {
 	meta.Version = metaVersion1
 
 	// Make any changes to the file appear atomic.
@@ -350,7 +358,7 @@ func OpenBlock(logger *slog.Logger, dir string, pool chunkenc.Pool, postingsDeco
 			err = tsdb_errors.NewMulti(err, tsdb_errors.CloseAll(closers)).Err()
 		}
 	}()
-	meta, sizeMeta, err := readMetaFile(dir)
+	meta, sizeMeta, err := ReadMetaFile(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -488,7 +496,7 @@ func (pb *Block) GetSymbolTableSize() uint64 {
 
 func (pb *Block) setCompactionFailed() error {
 	pb.meta.Compaction.Failed = true
-	n, err := writeMetaFile(pb.logger, pb.dir, &pb.meta)
+	n, err := WriteMetaFile(pb.logger, pb.dir, &pb.meta)
 	if err != nil {
 		return err
 	}
@@ -678,7 +686,7 @@ Outer:
 		return err
 	}
 	pb.numBytesTombstone = n
-	n, err = writeMetaFile(pb.logger, pb.dir, &pb.meta)
+	n, err = WriteMetaFile(pb.logger, pb.dir, &pb.meta)
 	if err != nil {
 		return err
 	}

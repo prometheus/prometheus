@@ -3207,7 +3207,7 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 		dir := createBlock(t, tmpDir, genSeries(10, 2, 50, 60))
 		expectedLoadedDirs[dir] = struct{}{}
 
-		m, _, err := readMetaFile(dir)
+		m, _, err := ReadMetaFile(dir)
 		require.NoError(t, err)
 
 		compacted := createBlock(t, tmpDir, genSeries(10, 2, 50, 55))
@@ -3222,7 +3222,7 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 		// Regression test: Already removed parent can be still in list, which was causing Open errors.
 		m.Compaction.Parents = append(m.Compaction.Parents, BlockDesc{ULID: ulid.MustParse(filepath.Base(compacted))})
 		m.Compaction.Parents = append(m.Compaction.Parents, BlockDesc{ULID: ulid.MustParse(filepath.Base(compacted))})
-		_, err = writeMetaFile(promslog.New(&promslog.Config{}), dir, m)
+		_, err = WriteMetaFile(promslog.New(&promslog.Config{}), dir, m)
 		require.NoError(t, err)
 	}
 	tmpCheckpointDir := path.Join(tmpDir, "wal/checkpoint.00000001.tmp")
@@ -9358,7 +9358,7 @@ func TestBlockQuerierAndBlockChunkQuerier(t *testing.T) {
 
 		// Overwrite meta.json with compaction section for testing purpose.
 		b.meta.Compaction = metas[i].Compaction
-		_, err = writeMetaFile(db.logger, blockDir, &b.meta)
+		_, err = WriteMetaFile(db.logger, blockDir, &b.meta)
 		require.NoError(t, err)
 		require.NoError(t, b.Close())
 	}

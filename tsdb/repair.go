@@ -112,7 +112,7 @@ func repairBadIndexVersion(logger *slog.Logger, dir string) error {
 		}
 		// Reset version of meta.json to 1.
 		meta.Version = metaVersion1
-		if _, err := writeMetaFile(logger, d, meta); err != nil {
+		if _, err := WriteMetaFile(logger, d, meta); err != nil {
 			if err := repl.Close(); err != nil {
 				return fmt.Errorf("write meta for block dir: %v: %w", d, err)
 			}
