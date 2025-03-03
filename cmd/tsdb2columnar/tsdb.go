@@ -10,6 +10,7 @@ import (
 	"time"
 
 	mimirblock "github.com/grafana/mimir/pkg/storage/tsdb/block"
+
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -30,7 +31,7 @@ func createTSDBBlock(numSeries int, outputDir string, logger *slog.Logger) (stri
 	series := make([]storage.Series, 0, numSeries)
 
 	for i := 0; i < numSeries; i++ {
-		lbls := labels.FromStrings("__name__", fmt.Sprintf("grafana_recovery_test_series_%d", i))
+		lbls := labels.FromStrings("__name__", fmt.Sprintf("tsdb2columnar_gauge_%d", i))
 
 		samples := []chunks.Sample{}
 		for j := 0; j < 100; j++ { // append a sample every 30 seconds
