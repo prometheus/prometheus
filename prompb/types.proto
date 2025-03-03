@@ -107,6 +107,8 @@ message Histogram {
   // timestamp is in ms format, see model/timestamp/timestamp.go for
   // conversion from time.Time to Prometheus timestamp.
   int64 timestamp = 15;
+
+  repeated double custom_values = 16;
 }
 
 // A BucketSpan defines a number of consecutive buckets with their
