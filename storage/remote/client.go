@@ -42,6 +42,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote/azuread"
 	"github.com/prometheus/prometheus/storage/remote/googleiam"
+	"github.com/prometheus/prometheus/util/compression"
 )
 
 const (
@@ -51,17 +52,6 @@ const (
 	RemoteWriteVersion1HeaderValue  = "0.1.0"
 	RemoteWriteVersion20HeaderValue = "2.0.0"
 	appProtoContentType             = "application/x-protobuf"
-)
-
-// Compression represents the encoding. Currently remote storage supports only
-// one, but we experiment with more, thus leaving the compression scaffolding
-// for now.
-// NOTE(bwplotka): Keeping it public, as a non-stable help for importers to use.
-type Compression string
-
-const (
-	// SnappyBlockCompression represents https://github.com/google/snappy/blob/2c94e11145f0b7b184b831577c93e5a41c4c0346/format_description.txt
-	SnappyBlockCompression Compression = "snappy"
 )
 
 var (
@@ -130,7 +120,7 @@ type Client struct {
 	readQueriesDuration prometheus.ObserverVec
 
 	writeProtoMsg    config.RemoteWriteProtoMsg
-	writeCompression Compression // Not exposed by ClientConfig for now.
+	writeCompression compression.Type // Not exposed by ClientConfig for now.
 }
 
 // ClientConfig configures a client.
@@ -232,7 +222,7 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 		retryOnRateLimit: conf.RetryOnRateLimit,
 		timeout:          time.Duration(conf.Timeout),
 		writeProtoMsg:    writeProtoMsg,
-		writeCompression: SnappyBlockCompression,
+		writeCompression: compression.Snappy,
 	}, nil
 }
 
@@ -269,7 +259,7 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) (WriteRespo
 		return WriteResponseStats{}, err
 	}
 
-	httpReq.Header.Add("Content-Encoding", string(c.writeCompression))
+	httpReq.Header.Add("Content-Encoding", c.writeCompression)
 	httpReq.Header.Set("Content-Type", remoteWriteContentTypeHeaders[c.writeProtoMsg])
 	httpReq.Header.Set("User-Agent", UserAgent)
 	if c.writeProtoMsg == config.RemoteWriteProtoMsgV1 {
