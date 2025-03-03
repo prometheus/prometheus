@@ -1259,4 +1259,6 @@ func (cr nopChunkReader) ChunkOrIterable(chunks.Meta) (chunkenc.Chunk, chunkenc.
 	return cr.emptyChunk, nil, nil
 }
 
+func (cr nopChunkReader) Size() int64 { return 0 }
+
 func (cr nopChunkReader) Close() error { return nil }

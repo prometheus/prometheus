@@ -224,6 +224,8 @@ type Options struct {
 	// PostingsDecoderFactory allows users to customize postings decoders based on BlockMeta.
 	// By default, DefaultPostingsDecoderFactory will be used to create raw posting decoder.
 	PostingsDecoderFactory PostingsDecoderFactory
+
+	EnableColumnarBlocks bool
 }
 
 type NewCompactorFunc func(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error)
@@ -901,15 +903,19 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	if opts.NewCompactorFunc != nil {
+	switch {
+	case opts.NewCompactorFunc != nil:
 		db.compactor, err = opts.NewCompactorFunc(ctx, r, l, rngs, db.chunkPool, opts)
-	} else {
+	case opts.EnableColumnarBlocks:
+		db.compactor, err = NewColumnarCompactorWithOptions(ctx, r, l, rngs, db.chunkPool, ColumnarCompactorOptions{})
+	default:
 		db.compactor, err = NewLeveledCompactorWithOptions(ctx, r, l, rngs, db.chunkPool, LeveledCompactorOptions{
 			MaxBlockChunkSegmentSize:    opts.MaxBlockChunkSegmentSize,
 			EnableOverlappingCompaction: opts.EnableOverlappingCompaction,
 			PD:                          opts.PostingsDecoderFactory,
 		})
 	}
+
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("create compactor: %w", err)

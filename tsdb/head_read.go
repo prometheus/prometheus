@@ -53,8 +53,18 @@ func (h *headIndexReader) Close() error {
 	return nil
 }
 
+func (h *headIndexReader) Size() int64 {
+	// TODO: implement this method.
+	return 0
+}
+
 func (h *headIndexReader) Symbols() index.StringIter {
 	return h.head.postings.Symbols()
+}
+
+func (h *headIndexReader) SymbolTableSize() uint64 {
+	// TODO: implement this method.
+	return 0
 }
 
 // SortedLabelValues returns label values present in the head for the
@@ -333,6 +343,11 @@ type headChunkReader struct {
 	head       *Head
 	mint, maxt int64
 	isoState   *isolationState
+}
+
+func (h *headChunkReader) Size() int64 {
+	// TODO: implement this method.
+	return 0
 }
 
 func (h *headChunkReader) Close() error {

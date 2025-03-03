@@ -277,6 +277,11 @@ func (cr *HeadAndOOOChunkReader) chunkOrIterable(meta chunks.Meta, copyLastChunk
 	return nil, mc, meta.MaxTime, nil
 }
 
+func (cr *HeadAndOOOChunkReader) Size() int64 {
+	// TODO: implement this method.
+	return 0
+}
+
 func (cr *HeadAndOOOChunkReader) Close() error {
 	if cr.cr != nil && cr.cr.isoState != nil {
 		cr.cr.isoState.Close()
@@ -436,6 +441,16 @@ func NewOOOCompactionHeadIndexReader(ch *OOOCompactionHead) IndexReader {
 func (ir *OOOCompactionHeadIndexReader) Symbols() index.StringIter {
 	hr := headIndexReader{head: ir.ch.head, mint: ir.ch.mint, maxt: ir.ch.maxt}
 	return hr.Symbols()
+}
+
+func (ir *OOOCompactionHeadIndexReader) SymbolTableSize() uint64 {
+	hr := headIndexReader{head: ir.ch.head, mint: ir.ch.mint, maxt: ir.ch.maxt}
+	return hr.SymbolTableSize()
+}
+
+func (ir *OOOCompactionHeadIndexReader) Size() int64 {
+	hr := headIndexReader{head: ir.ch.head, mint: ir.ch.mint, maxt: ir.ch.maxt}
+	return hr.Size()
 }
 
 func (ir *OOOCompactionHeadIndexReader) Postings(_ context.Context, name string, values ...string) (index.Postings, error) {

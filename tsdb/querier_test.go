@@ -2087,6 +2087,10 @@ func (cr mockChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chu
 	return nil, nil, errors.New("Chunk with ref not found")
 }
 
+func (cr mockChunkReader) Size() int64 {
+	panic("Size called")
+}
+
 func (cr mockChunkReader) Close() error {
 	return nil
 }
@@ -2219,6 +2223,14 @@ func (m mockIndex) Symbols() index.StringIter {
 	}
 	sort.Strings(l)
 	return index.NewStringListIter(l)
+}
+
+func (m mockIndex) Size() int64 {
+	panic("Size called")
+}
+
+func (m mockIndex) SymbolTableSize() uint64 {
+	panic("SymbolTableSize called")
 }
 
 func (m *mockIndex) AddSeries(ref storage.SeriesRef, l labels.Labels, chunks ...chunks.Meta) error {
@@ -3302,6 +3314,14 @@ type mockMatcherIndex struct{}
 
 func (m mockMatcherIndex) Symbols() index.StringIter { return nil }
 
+func (m mockMatcherIndex) SymbolTableSize() uint64 {
+	panic("SymbolTableSize called")
+}
+
+func (m mockMatcherIndex) Size() int64 {
+	panic("Size called")
+}
+
 func (m mockMatcherIndex) Close() error { return nil }
 
 // SortedLabelValues will return error if it is called.
@@ -3801,7 +3821,15 @@ func (m mockReaderOfLabels) Series(storage.SeriesRef, *labels.ScratchBuilder, *[
 }
 
 func (m mockReaderOfLabels) Symbols() index.StringIter {
-	panic("Series called")
+	panic("Symbols called")
+}
+
+func (m mockReaderOfLabels) SymbolTableSize() uint64 {
+	panic("SymbolTableSize called")
+}
+
+func (m mockReaderOfLabels) Size() int64 {
+	panic("Size called")
 }
 
 // TestMergeQuerierConcurrentSelectMatchers reproduces the data race bug from

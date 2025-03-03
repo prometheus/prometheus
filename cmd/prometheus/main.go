@@ -278,6 +278,8 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "otlp-deltatocumulative":
 				c.web.ConvertOTLPDelta = true
 				logger.Info("Converting delta OTLP metrics to cumulative")
+			case "columnar-storage":
+				c.tsdb.EnableColumnarBlocks = true
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
 			}
@@ -1797,6 +1799,9 @@ type tsdbOptions struct {
 	CompactionDelayMaxPercent      int
 	EnableOverlappingCompaction    bool
 	EnableOOONativeHistograms      bool
+
+	// Turn on experimental columnar blocks.
+	EnableColumnarBlocks bool
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -1821,6 +1826,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableDelayedCompaction:        opts.EnableDelayedCompaction,
 		CompactionDelayMaxPercent:      opts.CompactionDelayMaxPercent,
 		EnableOverlappingCompaction:    opts.EnableOverlappingCompaction,
+		EnableColumnarBlocks:           opts.EnableColumnarBlocks,
 	}
 }
 
