@@ -10,7 +10,9 @@ import (
 
 	parquet "github.com/parquet-go/parquet-go"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 )
 
 // TimeSeriesRow represents a single time series with its labels and chunk data
@@ -109,22 +111,16 @@ func groupSeriesByMetricFamily(
 		// Iterate through all series for this metric name
 		for postings.Next() {
 			seriesRef := postings.At()
-
-			// Get the label set for this series
-			lbls, err := indexr.Series(seriesRef, nil, nil)
+			builder := labels.NewScratchBuilder(0)
+			chks := []chunks.Meta{}
+			err := indexr.Series(seriesRef, &builder, &chks)
 			if err != nil {
-				return nil, fmt.Errorf("failed to get labels for series %d: %w", seriesRef, err)
-			}
-
-			// Get the chunks for this series
-			chks, err := indexr.ChunkMetas(seriesRef)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get chunks for series %d: %w", seriesRef, err)
+				return nil, fmt.Errorf("failed to get chunk metas and labels from series")
 			}
 
 			// Convert labels to LabelSet format
-			labelSets := make([]LabelSet, 0, len(lbls))
-			for _, lbl := range lbls {
+			labelSets := make([]LabelSet, 0, len(builder.Labels()))
+			for _, lbl := range builder.Labels() {
 				labelSets = append(labelSets, LabelSet{
 					Key:   lbl.Name,
 					Value: lbl.Value,
@@ -133,16 +129,18 @@ func groupSeriesByMetricFamily(
 
 			// For each chunk, create a TimeSeriesRow
 			for _, chk := range chks {
-				// Read the chunk data
-				chunkData, err := chunkr.Chunk(chk)
+				c, iterable, err := chunkr.ChunkOrIterable(chk)
 				if err != nil {
-					return nil, fmt.Errorf("failed to read chunk %d: %w", chk.Ref, err)
+					return nil, fmt.Errorf("error reading chunk")
+				}
+				if iterable != nil {
+					return nil, fmt.Errorf("ChunkOrIterable should not return an iterable when reading a block")
 				}
 
 				// Create a TimeSeriesRow
 				row := TimeSeriesRow{
 					Lbls:  labelSets,
-					Chunk: chunkData.Bytes(),
+					Chunk: c.Bytes(),
 				}
 
 				// Add to the appropriate metric family
