@@ -16,11 +16,11 @@ import (
 )
 
 type TimeSeriesRow struct {
-	Lbls  []LabelSet
+	Lbls  []Label
 	Chunk []byte
 }
 
-type LabelSet struct {
+type Label struct {
 	Key   string
 	Value string
 }
@@ -103,9 +103,9 @@ func groupSeriesByMetricFamily(
 				return nil, fmt.Errorf("failed to get chunk metas and labels from series")
 			}
 
-			labelSets := make([]LabelSet, 0, len(builder.Labels()))
+			labelSets := make([]Label, 0, len(builder.Labels()))
 			for _, lbl := range builder.Labels() {
-				labelSets = append(labelSets, LabelSet{
+				labelSets = append(labelSets, Label{
 					Key:   lbl.Name,
 					Value: lbl.Value,
 				})

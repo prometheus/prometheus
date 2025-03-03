@@ -48,9 +48,9 @@ func createTSDBBlock(numSeries int, outputDir string, dimensions int, cardinalit
 		lbls := labels.New(labelPairs...)
 
 		samples := []chunks.Sample{}
-		for j := 0; j < 100; j++ {
+		for j := 0; j < 500; j++ {
 			v := float64(j)
-			samples = append(samples, newSample(timestamp+int64(j)*30*1000, v, nil, nil))
+			samples = append(samples, newSample(timestamp+int64(j)*14*1000, v, nil, nil))
 		}
 
 		series = append(series, storage.NewListSeries(lbls, samples))
