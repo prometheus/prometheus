@@ -107,15 +107,27 @@ func NewGroup(o GroupOptions) *Group {
 		metrics = NewGroupMetrics(opts.Registerer)
 	}
 
+	alertingCount := 0
+	recordingCount := 0
+	for _, rule := range o.Rules {
+		if _, ok := rule.(*AlertingRule); ok {
+			alertingCount++
+		} else {
+			recordingCount++
+		}
+	}
+
 	key := GroupKey(o.File, o.Name)
 	metrics.IterationsMissed.WithLabelValues(key)
 	metrics.IterationsScheduled.WithLabelValues(key)
 	metrics.EvalTotal.WithLabelValues(key)
-	metrics.EvalFailures.WithLabelValues(key)
+	metrics.EvalFailures.WithLabelValues(key, KindAlerting)
+	metrics.EvalFailures.WithLabelValues(key, KindRecording)
 	metrics.GroupLastEvalTime.WithLabelValues(key)
 	metrics.GroupLastDuration.WithLabelValues(key)
 	metrics.GroupLastRuleDurationSum.WithLabelValues(key)
-	metrics.GroupRules.WithLabelValues(key).Set(float64(len(o.Rules)))
+	metrics.GroupRules.WithLabelValues(key, KindAlerting).Set(float64(alertingCount))
+	metrics.GroupRules.WithLabelValues(key, KindRecording).Set(float64(recordingCount))
 	metrics.GroupSamples.WithLabelValues(key)
 	metrics.GroupInterval.WithLabelValues(key).Set(o.Interval.Seconds())
 
@@ -542,7 +554,12 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			rule.SetHealth(HealthBad)
 			rule.SetLastError(err)
 			sp.SetStatus(codes.Error, err.Error())
-			g.metrics.EvalFailures.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
+
+			if _, ok := rule.(*AlertingRule); ok {
+				g.metrics.EvalFailures.WithLabelValues(GroupKey(g.File(), g.Name()), KindAlerting).Inc()
+			} else {
+				g.metrics.EvalFailures.WithLabelValues(GroupKey(g.File(), g.Name()), KindRecording).Inc()
+			}
 
 			// Canceled queries are intentional termination of queries. This normally
 			// happens on shutdown and thus we skip logging of any errors here.
@@ -572,7 +589,12 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				rule.SetHealth(HealthBad)
 				rule.SetLastError(err)
 				sp.SetStatus(codes.Error, err.Error())
-				g.metrics.EvalFailures.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
+
+				if _, ok := rule.(*AlertingRule); ok {
+					g.metrics.EvalFailures.WithLabelValues(GroupKey(g.File(), g.Name()), KindAlerting).Inc()
+				} else {
+					g.metrics.EvalFailures.WithLabelValues(GroupKey(g.File(), g.Name()), KindRecording).Inc()
+				}
 
 				logger.Warn("Rule sample appending failed", "err", err)
 				return
@@ -974,7 +996,7 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 				Name:      "rule_evaluation_failures_total",
 				Help:      "The total number of rule evaluation failures.",
 			},
-			[]string{"rule_group"},
+			[]string{"rule_group", "rule_type"},
 		),
 		GroupInterval: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -1022,7 +1044,7 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 				Name:      "rule_group_rules",
 				Help:      "The number of rules.",
 			},
-			[]string{"rule_group"},
+			[]string{"rule_group", "rule_type"},
 		),
 		GroupSamples: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
