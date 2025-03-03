@@ -191,7 +191,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			stats.TotalSeries += len(series)
 			stats.DroppedSeries += len(series) - len(repl)
 
-		case record.Samples:
+		case record.Samples, record.SamplesWithCT:
 			samples, err = dec.Samples(rec, samples)
 			if err != nil {
 				return nil, fmt.Errorf("decode samples: %w", err)

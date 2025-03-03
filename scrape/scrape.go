@@ -195,6 +195,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 			opts.convertClassicHistToNHCB,
 			options.EnableNativeHistogramsIngestion,
 			options.EnableCreatedTimestampZeroIngestion,
+			options.EnableCreatedTimestampPerSample,
 			options.ExtraMetrics,
 			options.AppendMetadata,
 			opts.target,
@@ -916,6 +917,7 @@ type scrapeLoop struct {
 	// Feature flagged options.
 	enableNativeHistogramIngestion bool
 	enableCTZeroIngestion          bool
+	enableCTPerSample              bool
 
 	appender            func(ctx context.Context) storage.Appender
 	symbolTable         *labels.SymbolTable
@@ -1223,6 +1225,7 @@ func newScrapeLoop(ctx context.Context,
 	convertClassicHistToNHCB bool,
 	enableNativeHistogramIngestion bool,
 	enableCTZeroIngestion bool,
+	enableCTPerSample bool,
 	reportExtraMetrics bool,
 	appendMetadataToWAL bool,
 	target *Target,
@@ -1279,6 +1282,7 @@ func newScrapeLoop(ctx context.Context,
 		convertClassicHistToNHCB:       convertClassicHistToNHCB,
 		enableNativeHistogramIngestion: enableNativeHistogramIngestion,
 		enableCTZeroIngestion:          enableCTZeroIngestion,
+		enableCTPerSample:              enableCTPerSample,
 		reportExtraMetrics:             reportExtraMetrics,
 		appendMetadataToWAL:            appendMetadataToWAL,
 		metrics:                        metrics,
@@ -1746,6 +1750,12 @@ loop:
 		if seriesAlreadyScraped && parsedTimestamp == nil {
 			err = storage.ErrDuplicateSampleForTimestamp
 		} else {
+			var ct int64
+			if sl.enableCTPerSample {
+				if ctMs := p.CreatedTimestamp(); ctMs != nil {
+					ct = *ctMs
+				}
+			}
 			if sl.enableCTZeroIngestion {
 				if ctMs := p.CreatedTimestamp(); ctMs != nil {
 					if isHistogram && sl.enableNativeHistogramIngestion {
@@ -1760,19 +1770,19 @@ loop:
 					if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) { // OOO is a common case, ignoring completely for now.
 						// CT is an experimental feature. For now, we don't need to fail the
 						// scrape on errors updating the created timestamp, log debug.
-						sl.l.Debug("Error when appending CT in scrape loop", "series", string(met), "ct", *ctMs, "t", t, "err", err)
+						sl.l.Debug("Error when appending CT in scrape loop", "series", string(met), "ct", ct, "t", t, "err", err)
 					}
 				}
 			}
 
 			if isHistogram && sl.enableNativeHistogramIngestion {
 				if h != nil {
-					ref, err = app.AppendHistogram(ref, lset, t, h, nil)
+					ref, err = app.AppendHistogramWithCT(ref, lset, t, ct, h, nil)
 				} else {
-					ref, err = app.AppendHistogram(ref, lset, t, nil, fh)
+					ref, err = app.AppendHistogramWithCT(ref, lset, t, ct, nil, fh)
 				}
 			} else {
-				ref, err = app.Append(ref, lset, t, val)
+				ref, err = app.AppendWithCT(ref, lset, t, ct, val)
 			}
 		}
 

@@ -75,6 +75,7 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, metadata, decMetadata)
 
+	// Without CT.
 	samples := []RefSample{
 		{Ref: 0, T: 12423423, V: 1.2345},
 		{Ref: 123, T: -1231, V: -123},
@@ -83,6 +84,16 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	decSamples, err := dec.Samples(enc.Samples(samples, nil), nil)
 	require.NoError(t, err)
 	require.Equal(t, samples, decSamples)
+
+	// With CT.
+	samplesWithCT := []RefSample{
+		{Ref: 0, T: 12423423, CT: 14, V: 1.2345},
+		{Ref: 123, T: -1231, CT: 14, V: -123},
+		{Ref: 2, T: 0, CT: 14, V: 99999},
+	}
+	decSamplesWithCT, err := dec.Samples(enc.Samples(samplesWithCT, nil), nil)
+	require.NoError(t, err)
+	require.Equal(t, samplesWithCT, decSamplesWithCT)
 
 	// Intervals get split up into single entries. So we don't get back exactly
 	// what we put in.
@@ -477,7 +488,7 @@ type recordsMaker struct {
 }
 
 // BenchmarkWAL_HistogramEncoding measures efficiency of encoding classic
-// histograms and native historgrams with custom buckets (NHCB).
+// histograms and native histograms with custom buckets (NHCB).
 func BenchmarkWAL_HistogramEncoding(b *testing.B) {
 	initClassicRefs := func(labelCount, histograms, buckets int) (series []RefSeries, floatSamples []RefSample, histSamples []RefHistogramSample) {
 		ref := chunks.HeadSeriesRef(0)

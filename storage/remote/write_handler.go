@@ -673,11 +673,15 @@ type timeLimitAppender struct {
 }
 
 func (app *timeLimitAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+	return app.AppendWithCT(ref, lset, t, 0, v)
+}
+
+func (app *timeLimitAppender) AppendWithCT(ref storage.SeriesRef, lset labels.Labels, t, ct int64, v float64) (storage.SeriesRef, error) {
 	if t > app.maxTime {
 		return 0, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds)
 	}
 
-	ref, err := app.Appender.Append(ref, lset, t, v)
+	ref, err := app.Appender.AppendWithCT(ref, lset, t, ct, v)
 	if err != nil {
 		return 0, err
 	}
@@ -685,11 +689,15 @@ func (app *timeLimitAppender) Append(ref storage.SeriesRef, lset labels.Labels, 
 }
 
 func (app *timeLimitAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	return app.AppendHistogramWithCT(ref, l, t, 0, h, fh)
+}
+
+func (app *timeLimitAppender) AppendHistogramWithCT(ref storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	if t > app.maxTime {
 		return 0, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds)
 	}
 
-	ref, err := app.Appender.AppendHistogram(ref, l, t, h, fh)
+	ref, err := app.Appender.AppendHistogramWithCT(ref, l, t, ct, h, fh)
 	if err != nil {
 		return 0, err
 	}

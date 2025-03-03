@@ -14,6 +14,8 @@ package wlog
 
 import (
 	"fmt"
+	"log/slog"
+	"math"
 	"math/rand"
 	"os"
 	"path"
@@ -27,9 +29,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/prometheus/prometheus/util/testrecord"
+
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/compression"
 	"github.com/prometheus/prometheus/tsdb/record"
 )
 
@@ -123,7 +128,7 @@ func (wtm *writeToMock) SeriesReset(index int) {
 	}
 }
 
-func (wtm *writeToMock) checkNumSeries() int {
+func (wtm *writeToMock) seriesStored() int {
 	wtm.seriesLock.Lock()
 	defer wtm.seriesLock.Unlock()
 	return len(wtm.seriesSegmentIndexes)
@@ -142,7 +147,7 @@ func TestTailSamples(t *testing.T) {
 	const samplesCount = 250
 	const exemplarsCount = 25
 	const histogramsCount = 50
-	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+	for _, compress := range []compression.Type{compression.None, compression.Snappy, compression.Zstd} {
 		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
 			now := time.Now()
 
@@ -264,8 +269,7 @@ func TestTailSamples(t *testing.T) {
 				require.NoError(t, err)
 
 				reader := NewLiveReader(nil, NewLiveReaderMetrics(nil), segment)
-				// Use tail true so we can ensure we got the right number of samples.
-				watcher.readSegment(reader, i, true)
+				require.NoError(t, watcher.readSegment(reader, i))
 				require.NoError(t, segment.Close())
 			}
 
@@ -274,9 +278,9 @@ func TestTailSamples(t *testing.T) {
 			expectedExemplars := seriesCount * exemplarsCount
 			expectedHistograms := seriesCount * histogramsCount * 2
 			retry(t, defaultRetryInterval, defaultRetries, func() bool {
-				return wt.checkNumSeries() >= expectedSeries
+				return wt.seriesStored() >= expectedSeries
 			})
-			require.Equal(t, expectedSeries, wt.checkNumSeries(), "did not receive the expected number of series")
+			require.Equal(t, expectedSeries, wt.seriesStored(), "did not receive the expected number of series")
 			require.Equal(t, expectedSamples, wt.samplesAppended, "did not receive the expected number of samples")
 			require.Equal(t, expectedExemplars, wt.exemplarsAppended, "did not receive the expected number of exemplars")
 			require.Equal(t, expectedHistograms, wt.histogramsAppended, "did not receive the expected number of histograms")
@@ -290,7 +294,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 	const seriesCount = 10
 	const samplesCount = 250
 
-	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+	for _, compress := range []compression.Type{compression.None, compression.Snappy, compression.Zstd} {
 		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
 			dir := t.TempDir()
 			wdir := path.Join(dir, "wal")
@@ -344,7 +348,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 
 			expected := seriesCount
 			require.Eventually(t, func() bool {
-				return wt.checkNumSeries() == expected
+				return wt.seriesStored() == expected
 			}, 20*time.Second, 1*time.Second)
 			watcher.Stop()
 		})
@@ -358,7 +362,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 	const seriesCount = 10
 	const samplesCount = 250
 
-	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+	for _, compress := range []compression.Type{compression.None, compression.Snappy, compression.Zstd} {
 		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
 			dir := t.TempDir()
 
@@ -434,7 +438,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 			expected := seriesCount * 2
 
 			require.Eventually(t, func() bool {
-				return wt.checkNumSeries() == expected
+				return wt.seriesStored() == expected
 			}, 10*time.Second, 1*time.Second)
 			watcher.Stop()
 		})
@@ -446,7 +450,7 @@ func TestReadCheckpoint(t *testing.T) {
 	const seriesCount = 10
 	const samplesCount = 250
 
-	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+	for _, compress := range []compression.Type{compression.None, compression.Snappy, compression.Zstd} {
 		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
 			dir := t.TempDir()
 
@@ -504,10 +508,10 @@ func TestReadCheckpoint(t *testing.T) {
 
 			expectedSeries := seriesCount
 			retry(t, defaultRetryInterval, defaultRetries, func() bool {
-				return wt.checkNumSeries() >= expectedSeries
+				return wt.seriesStored() >= expectedSeries
 			})
 			watcher.Stop()
-			require.Equal(t, expectedSeries, wt.checkNumSeries())
+			require.Equal(t, expectedSeries, wt.seriesStored())
 		})
 	}
 }
@@ -519,7 +523,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 	const seriesCount = 20
 	const samplesCount = 300
 
-	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+	for _, compress := range []compression.Type{compression.None, compression.Snappy, compression.Zstd} {
 		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
 			dir := t.TempDir()
 
@@ -590,11 +594,11 @@ func TestCheckpointSeriesReset(t *testing.T) {
 	const seriesCount = 20
 	const samplesCount = 350
 	testCases := []struct {
-		compress CompressionType
+		compress compression.Type
 		segments int
 	}{
-		{compress: CompressionNone, segments: 14},
-		{compress: CompressionSnappy, segments: 13},
+		{compress: compression.None, segments: 14},
+		{compress: compression.Snappy, segments: 13},
 	}
 
 	for _, tc := range testCases {
@@ -647,10 +651,10 @@ func TestCheckpointSeriesReset(t *testing.T) {
 
 			expected := seriesCount
 			retry(t, defaultRetryInterval, defaultRetries, func() bool {
-				return wt.checkNumSeries() >= expected
+				return wt.seriesStored() >= expected
 			})
 			require.Eventually(t, func() bool {
-				return wt.checkNumSeries() == seriesCount
+				return wt.seriesStored() == seriesCount
 			}, 10*time.Second, 1*time.Second)
 
 			_, err = Checkpoint(promslog.NewNopLogger(), w, 2, 4, func(_ chunks.HeadSeriesRef) bool { return true }, 0)
@@ -669,7 +673,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			// many series records you end up with and change the last Equals check accordingly
 			// or modify the Equals to Assert(len(wt.seriesLabels) < seriesCount*10)
 			require.Eventually(t, func() bool {
-				return wt.checkNumSeries() == tc.segments
+				return wt.seriesStored() == tc.segments
 			}, 20*time.Second, 1*time.Second)
 		})
 	}
@@ -681,7 +685,7 @@ func TestRun_StartupTime(t *testing.T) {
 	const seriesCount = 20
 	const samplesCount = 300
 
-	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+	for _, compress := range []compression.Type{compression.None, compression.Snappy, compression.Zstd} {
 		t.Run(string(compress), func(t *testing.T) {
 			dir := t.TempDir()
 
@@ -774,7 +778,7 @@ func TestRun_AvoidNotifyWhenBehind(t *testing.T) {
 	const seriesCount = 10
 	const samplesCount = 50
 
-	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+	for _, compress := range []compression.Type{compression.None, compression.Snappy, compression.Zstd} {
 		t.Run(string(compress), func(t *testing.T) {
 			dir := t.TempDir()
 
@@ -812,7 +816,7 @@ func TestRun_AvoidNotifyWhenBehind(t *testing.T) {
 
 			// The watcher went through 00000000 and is tailing the next one.
 			retry(t, defaultRetryInterval, defaultRetries, func() bool {
-				return wt.checkNumSeries() == seriesCount
+				return wt.seriesStored() == seriesCount
 			})
 
 			// In the meantime, add some new segments in bulk.
@@ -826,9 +830,120 @@ func TestRun_AvoidNotifyWhenBehind(t *testing.T) {
 			require.NoError(t, g.Wait())
 
 			// All series and samples were read.
-			require.Equal(t, (segmentsToRead+1)*seriesCount, wt.checkNumSeries()) // Series from 00000000 are also read.
+			require.Equal(t, (segmentsToRead+1)*seriesCount, wt.seriesStored()) // Series from 00000000 are also read.
 			require.Equal(t, segmentsToRead*seriesCount*samplesCount, wt.samplesAppended)
 			require.NoError(t, w.Close())
 		})
 	}
+}
+
+const (
+	seriesRecords   = 100           //  Targets * Scrapes
+	seriesPerRecord = 10            // New series per scrape.
+	sampleRecords   = seriesRecords // Targets * Scrapes
+)
+
+var (
+	compressions = []compression.Type{compression.None, compression.Snappy, compression.Zstd}
+	dataCases    = []testrecord.RefSamplesCase{
+		testrecord.Realistic1000Samples,
+		testrecord.Realistic1000WithCTSamples,
+		testrecord.WorstCase1000Samples,
+	}
+)
+
+/*
+	export bench=watcher-read-v2 && go test ./tsdb/wlog/... \
+		-run '^$' -bench '^BenchmarkWatcherReadSegment' \
+		-benchtime 5s -count 6 -cpu 2 -timeout 999m \
+		| tee ${bench}.txt
+*/
+func BenchmarkWatcherReadSegment(b *testing.B) {
+	for _, compress := range compressions {
+		for _, data := range dataCases {
+			b.Run(fmt.Sprintf("compr=%v/data=%v", compress, data), func(b *testing.B) {
+				dir := b.TempDir()
+				wdir := path.Join(dir, "wal")
+				require.NoError(b, os.Mkdir(wdir, 0o777))
+
+				generateRealisticSegment(b, wdir, compress, data)
+				logger := promslog.NewNopLogger()
+
+				b.Run("func=readSegmentSeries", func(b *testing.B) {
+					wt := newWriteToMock(0)
+					watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
+					// Required as WorstCase1000Samples have math.MinInt32 timestamps.
+					watcher.startTimestamp = math.MinInt32 - 1
+					watcher.SetMetrics()
+
+					// Validate our test data first.
+					testReadFn(b, wdir, 0, logger, watcher, (*Watcher).readSegmentSeries)
+					require.Equal(b, seriesRecords*seriesPerRecord, wt.seriesStored())
+					require.Equal(b, 0, wt.samplesAppended)
+
+					b.ReportAllocs()
+					b.ResetTimer()
+					for i := 0; i < b.N; i++ {
+						testReadFn(b, wdir, 0, logger, watcher, (*Watcher).readSegmentSeries)
+					}
+				})
+				b.Run("func=readSegment", func(b *testing.B) {
+					wt := newWriteToMock(0)
+					watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
+					// Required as WorstCase1000Samples have math.MinInt32 timestamps.
+					watcher.startTimestamp = math.MinInt32 - 1
+					watcher.SetMetrics()
+
+					// Validate our test data first.
+					testReadFn(b, wdir, 0, logger, watcher, (*Watcher).readSegment)
+					require.Equal(b, seriesRecords*seriesPerRecord, wt.seriesStored())
+					require.Equal(b, sampleRecords*1000, wt.samplesAppended)
+
+					b.ReportAllocs()
+					b.ResetTimer()
+					for i := 0; i < b.N; i++ {
+						testReadFn(b, wdir, 0, logger, watcher, (*Watcher).readSegment)
+					}
+				})
+			})
+		}
+	}
+}
+
+func generateRealisticSegment(tb testing.TB, wdir string, compress compression.Type, samplesCase testrecord.RefSamplesCase) {
+	tb.Helper()
+
+	enc := record.Encoder{}
+	w, err := NewSize(nil, nil, wdir, 128*pageSize, compress)
+	require.NoError(tb, err)
+	defer w.Close()
+
+	// Generate fake data for WAL.
+	for i := range seriesRecords {
+		series := make([]record.RefSeries, seriesPerRecord)
+		for j := range seriesPerRecord {
+			series[j] = record.RefSeries{
+				Ref:    chunks.HeadSeriesRef(i*seriesPerRecord + j),
+				Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", 0), "foo", "bar", "foo1", "bar2", "sdfsasdgfadsfgaegga", "dgsfzdsf§sfawf2"),
+			}
+		}
+		rec := enc.Series(series, nil)
+		require.NoError(tb, w.Log(rec))
+	}
+	for i := 0; i < sampleRecords; i++ {
+		rec := enc.Samples(testrecord.GenTestRefSamplesCase(tb, samplesCase), nil)
+		require.NoError(tb, w.Log(rec))
+	}
+	// Build segment.
+	require.NoError(tb, w.flushPage(true))
+}
+
+func testReadFn(tb testing.TB, wdir string, segNum int, logger *slog.Logger, watcher *Watcher, fn segmentReadFn) {
+	tb.Helper()
+
+	segment, err := OpenReadSegment(SegmentName(wdir, segNum))
+	require.NoError(tb, err)
+
+	r := NewLiveReader(logger, watcher.readerMetrics, segment)
+	require.NoError(tb, fn(watcher, r, segNum))
 }

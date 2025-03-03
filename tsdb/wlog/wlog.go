@@ -29,10 +29,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/snappy"
-	"github.com/klauspost/compress/zstd"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
+
+	"github.com/prometheus/prometheus/tsdb/compression"
 
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
@@ -169,24 +169,16 @@ func OpenReadSegment(fn string) (*Segment, error) {
 	return &Segment{SegmentFile: f, i: k, dir: filepath.Dir(fn)}, nil
 }
 
-type CompressionType string
-
-const (
-	CompressionNone   CompressionType = "none"
-	CompressionSnappy CompressionType = "snappy"
-	CompressionZstd   CompressionType = "zstd"
-)
-
 // ParseCompressionType parses the two compression-related configuration values and returns the CompressionType. If
 // compression is enabled but the compressType is unrecognized, we default to Snappy compression.
-func ParseCompressionType(compress bool, compressType string) CompressionType {
+func ParseCompressionType(compress bool, compressType string) compression.Type {
 	if compress {
 		if compressType == "zstd" {
-			return CompressionZstd
+			return compression.Zstd
 		}
-		return CompressionSnappy
+		return compression.Snappy
 	}
-	return CompressionNone
+	return compression.None
 }
 
 // WL is a write log that stores records in segment files.
@@ -210,9 +202,9 @@ type WL struct {
 	stopc       chan chan struct{}
 	actorc      chan func()
 	closed      bool // To allow calling Close() more than once without blocking.
-	compress    CompressionType
+	compress    compression.Type
+	cEnc        *compression.Encoder
 	compressBuf []byte
-	zstdWriter  *zstd.Encoder
 
 	WriteNotified WriteNotified
 
@@ -309,13 +301,13 @@ func newWLMetrics(w *WL, r prometheus.Registerer) *wlMetrics {
 }
 
 // New returns a new WAL over the given directory.
-func New(logger *slog.Logger, reg prometheus.Registerer, dir string, compress CompressionType) (*WL, error) {
+func New(logger *slog.Logger, reg prometheus.Registerer, dir string, compress compression.Type) (*WL, error) {
 	return NewSize(logger, reg, dir, DefaultSegmentSize, compress)
 }
 
 // NewSize returns a new write log over the given directory.
 // New segments are created with the specified size.
-func NewSize(logger *slog.Logger, reg prometheus.Registerer, dir string, segmentSize int, compress CompressionType) (*WL, error) {
+func NewSize(logger *slog.Logger, reg prometheus.Registerer, dir string, segmentSize int, compress compression.Type) (*WL, error) {
 	if segmentSize%pageSize != 0 {
 		return nil, errors.New("invalid segment size")
 	}
@@ -326,13 +318,9 @@ func NewSize(logger *slog.Logger, reg prometheus.Registerer, dir string, segment
 		logger = promslog.NewNopLogger()
 	}
 
-	var zstdWriter *zstd.Encoder
-	if compress == CompressionZstd {
-		var err error
-		zstdWriter, err = zstd.NewWriter(nil)
-		if err != nil {
-			return nil, err
-		}
+	cEnc, err := compression.NewEncoder()
+	if err != nil {
+		return nil, err
 	}
 
 	w := &WL{
@@ -343,7 +331,7 @@ func NewSize(logger *slog.Logger, reg prometheus.Registerer, dir string, segment
 		actorc:      make(chan func(), 100),
 		stopc:       make(chan chan struct{}),
 		compress:    compress,
-		zstdWriter:  zstdWriter,
+		cEnc:        cEnc,
 	}
 	prefix := "prometheus_tsdb_wal_"
 	if filepath.Base(dir) == WblDirName {
@@ -382,22 +370,16 @@ func Open(logger *slog.Logger, dir string) (*WL, error) {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
 	}
-	zstdWriter, err := zstd.NewWriter(nil)
-	if err != nil {
-		return nil, err
-	}
 
 	w := &WL{
-		dir:        dir,
-		logger:     logger,
-		zstdWriter: zstdWriter,
+		dir:    dir,
+		logger: logger,
 	}
-
 	return w, nil
 }
 
 // CompressionType returns if compression is enabled on this WAL.
-func (w *WL) CompressionType() CompressionType {
+func (w *WL) CompressionType() compression.Type {
 	return w.compress
 }
 
@@ -705,7 +687,7 @@ func (w *WL) Log(recs ...[]byte) error {
 // - the final record of a batch
 // - the record is bigger than the page size
 // - the current page is full.
-func (w *WL) log(rec []byte, final bool) error {
+func (w *WL) log(rec []byte, final bool) (err error) {
 	// When the last page flush failed the page will remain full.
 	// When the page is full, need to flush it before trying to add more records to it.
 	if w.page.full() {
@@ -716,25 +698,12 @@ func (w *WL) log(rec []byte, final bool) error {
 
 	// Compress the record before calculating if a new segment is needed.
 	compressed := false
-	if w.compress == CompressionSnappy && len(rec) > 0 {
-		// If MaxEncodedLen is less than 0 the record is too large to be compressed.
-		if len(rec) > 0 && snappy.MaxEncodedLen(len(rec)) >= 0 {
-			// The snappy library uses `len` to calculate if we need a new buffer.
-			// In order to allocate as few buffers as possible make the length
-			// equal to the capacity.
-			w.compressBuf = w.compressBuf[:cap(w.compressBuf)]
-			w.compressBuf = snappy.Encode(w.compressBuf, rec)
-			if len(w.compressBuf) < len(rec) {
-				rec = w.compressBuf
-				compressed = true
-			}
-		}
-	} else if w.compress == CompressionZstd && len(rec) > 0 {
-		w.compressBuf = w.zstdWriter.EncodeAll(rec, w.compressBuf[:0])
-		if len(w.compressBuf) < len(rec) {
-			rec = w.compressBuf
-			compressed = true
-		}
+	w.compressBuf, compressed, err = w.cEnc.Encode(w.compress, rec, w.compressBuf)
+	if err != nil {
+		return err
+	}
+	if compressed {
+		rec = w.compressBuf
 	}
 
 	// If the record is too big to fit within the active page in the current
@@ -773,9 +742,9 @@ func (w *WL) log(rec []byte, final bool) error {
 			typ = recMiddle
 		}
 		if compressed {
-			if w.compress == CompressionSnappy {
+			if w.compress == compression.Snappy {
 				typ |= snappyMask
-			} else if w.compress == CompressionZstd {
+			} else if w.compress == compression.Zstd {
 				typ |= zstdMask
 			}
 		}
