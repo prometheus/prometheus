@@ -3970,7 +3970,6 @@ func TestParseExpressions(t *testing.T) {
 		EnableExperimentalFunctions = false
 	})
 
-	model.NameValidationScheme = model.UTF8Validation
 	for _, test := range testExpr {
 		t.Run(readable(test.input), func(t *testing.T) {
 			expr, err := ParseExpr(test.input)

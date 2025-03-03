@@ -344,9 +344,9 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 		convertClassicHistToNHCB = sp.config.ConvertClassicHistogramsToNHCB
 	)
 
-	validationScheme := model.UTF8Validation
-	if sp.config.MetricNameValidationScheme == config.LegacyValidationConfig {
-		validationScheme = model.LegacyValidation
+	validationScheme, escapingScheme, err := sp.schemesFromConfig()
+	if err != nil {
+		panic(err)
 	}
 
 	sp.targetMtx.Lock()
@@ -369,7 +369,7 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 				client:               sp.client,
 				timeout:              targetTimeout,
 				bodySizeLimit:        bodySizeLimit,
-				acceptHeader:         acceptHeader(sp.config.ScrapeProtocols, validationScheme),
+				acceptHeader:         acceptHeader(sp.config.ScrapeProtocols, escapingScheme),
 				acceptEncodingHeader: acceptEncodingHeader(enableCompression),
 				metrics:              sp.metrics,
 			}
@@ -506,9 +506,9 @@ func (sp *scrapePool) sync(targets []*Target) {
 		convertClassicHistToNHCB = sp.config.ConvertClassicHistogramsToNHCB
 	)
 
-	validationScheme := model.UTF8Validation
-	if sp.config.MetricNameValidationScheme == config.LegacyValidationConfig {
-		validationScheme = model.LegacyValidation
+	validationScheme, escapingScheme, err := sp.schemesFromConfig()
+	if err != nil {
+		panic(err)
 	}
 
 	sp.targetMtx.Lock()
@@ -526,7 +526,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 				client:               sp.client,
 				timeout:              timeout,
 				bodySizeLimit:        bodySizeLimit,
-				acceptHeader:         acceptHeader(sp.config.ScrapeProtocols, validationScheme),
+				acceptHeader:         acceptHeader(sp.config.ScrapeProtocols, escapingScheme),
 				acceptEncodingHeader: acceptEncodingHeader(enableCompression),
 				metrics:              sp.metrics,
 			}
@@ -615,6 +615,40 @@ func (sp *scrapePool) refreshTargetLimitErr() error {
 		return fmt.Errorf("target_limit exceeded (number of targets: %d, limit: %d)", l, sp.config.TargetLimit)
 	}
 	return nil
+}
+
+func (sp *scrapePool) schemesFromConfig() (validationScheme model.ValidationScheme, escapingScheme model.EscapingScheme, err error) {
+	validationScheme = model.UTF8Validation
+	switch sp.config.MetricNameValidationScheme {
+	case "", config.UTF8ValidationConfig:
+	case config.LegacyValidationConfig:
+		validationScheme = model.LegacyValidation
+	default:
+		return model.UTF8Validation, model.UnderscoreEscaping, fmt.Errorf("invalid metric name validation scheme, %s", sp.config.MetricNameValidationScheme)
+	}
+
+	// Escaping scheme is default-implied by the validation scheme, but can be
+	// overridden.
+	switch validationScheme {
+	case model.LegacyValidation:
+		escapingScheme = model.UnderscoreEscaping
+	case model.UTF8Validation:
+		escapingScheme = model.NoEscaping
+	}
+
+	if sp.config.MetricNameEscapingScheme != "" {
+		var err error
+		escapingScheme, err = model.ToEscapingScheme(sp.config.MetricNameEscapingScheme)
+		if err != nil {
+			return model.UTF8Validation, model.UnderscoreEscaping, fmt.Errorf("invalid metric name escaping scheme, %w", err)
+		}
+	}
+
+	// Check for an invalid combination of settings.
+	if escapingScheme == model.NoEscaping && validationScheme == model.LegacyValidation {
+		return model.UTF8Validation, model.UnderscoreEscaping, errors.New("cannot request UTF-8 names when validation is set to Legacy")
+	}
+	return validationScheme, escapingScheme, nil
 }
 
 func verifyLabelLimits(lset labels.Labels, limits *labelLimits) error {
@@ -777,13 +811,14 @@ var errBodySizeLimit = errors.New("body size limit exceeded")
 // acceptHeader transforms preference from the options into specific header values as
 // https://www.rfc-editor.org/rfc/rfc9110.html#name-accept defines.
 // No validation is here, we expect scrape protocols to be validated already.
-func acceptHeader(sps []config.ScrapeProtocol, scheme model.ValidationScheme) string {
+func acceptHeader(sps []config.ScrapeProtocol, scheme model.EscapingScheme) string {
 	var vals []string
 	weight := len(config.ScrapeProtocolsHeaders) + 1
 	for _, sp := range sps {
 		val := config.ScrapeProtocolsHeaders[sp]
-		if scheme == model.UTF8Validation {
-			val += ";" + config.UTF8NamesHeader
+		// Escaping header is only valid for newer versions of the text formats.
+		if sp == config.PrometheusText1_0_0 || sp == config.OpenMetricsText1_0_0 {
+			val += ";" + model.EscapingKey + "=" + scheme.String()
 		}
 		val += fmt.Sprintf(";q=0.%d", weight)
 		vals = append(vals, val)
