@@ -284,10 +284,9 @@ func TestLabels_IsValid(t *testing.T) {
 
 func TestLabels_ValidationModes(t *testing.T) {
 	for _, test := range []struct {
-		input      Labels
-		globalMode model.ValidationScheme
-		callMode   model.ValidationScheme
-		expected   bool
+		input    Labels
+		callMode model.ValidationScheme
+		expected bool
 	}{
 		{
 			input: FromStrings(
@@ -295,9 +294,8 @@ func TestLabels_ValidationModes(t *testing.T) {
 				"hostname", "localhost",
 				"job", "check",
 			),
-			globalMode: model.UTF8Validation,
-			callMode:   model.UTF8Validation,
-			expected:   true,
+			callMode: model.UTF8Validation,
+			expected: true,
 		},
 		{
 			input: FromStrings(
@@ -305,31 +303,8 @@ func TestLabels_ValidationModes(t *testing.T) {
 				"\xc5 bad utf8", "localhost",
 				"job", "check",
 			),
-			globalMode: model.UTF8Validation,
-			callMode:   model.UTF8Validation,
-			expected:   false,
-		},
-		{
-			// Setting the common model to legacy validation and then trying to check for UTF-8 on a
-			// per-call basis is not supported.
-			input: FromStrings(
-				"__name__", "test.utf8.metric",
-				"hostname", "localhost",
-				"job", "check",
-			),
-			globalMode: model.LegacyValidation,
-			callMode:   model.UTF8Validation,
-			expected:   false,
-		},
-		{
-			input: FromStrings(
-				"__name__", "test",
-				"hostname", "localhost",
-				"job", "check",
-			),
-			globalMode: model.LegacyValidation,
-			callMode:   model.LegacyValidation,
-			expected:   true,
+			callMode: model.UTF8Validation,
+			expected: false,
 		},
 		{
 			input: FromStrings(
@@ -337,9 +312,8 @@ func TestLabels_ValidationModes(t *testing.T) {
 				"hostname", "localhost",
 				"job", "check",
 			),
-			globalMode: model.UTF8Validation,
-			callMode:   model.LegacyValidation,
-			expected:   false,
+			callMode: model.LegacyValidation,
+			expected: false,
 		},
 		{
 			input: FromStrings(
@@ -347,12 +321,10 @@ func TestLabels_ValidationModes(t *testing.T) {
 				"host.name", "localhost",
 				"job", "check",
 			),
-			globalMode: model.UTF8Validation,
-			callMode:   model.LegacyValidation,
-			expected:   false,
+			callMode: model.LegacyValidation,
+			expected: false,
 		},
 	} {
-		model.NameValidationScheme = test.globalMode
 		require.Equal(t, test.expected, test.input.IsValid(test.callMode))
 	}
 }

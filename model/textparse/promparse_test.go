@@ -205,12 +205,6 @@ testmetric{le="10"} 1`
 }
 
 func TestUTF8PromParse(t *testing.T) {
-	oldValidationScheme := model.NameValidationScheme
-	model.NameValidationScheme = model.UTF8Validation
-	defer func() {
-		model.NameValidationScheme = oldValidationScheme
-	}()
-
 	input := `# HELP "go.gc_duration_seconds" A summary of the GC invocation durations.
 # 	TYPE "go.gc_duration_seconds" summary
 {"go.gc_duration_seconds",quantile="0"} 4.9351e-05
