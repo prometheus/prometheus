@@ -16,8 +16,10 @@ import (
 )
 
 type TimeSeriesRow struct {
-	Lbls  []Label
-	Chunk []byte
+	Lbls    []Label
+	Chunk   []byte
+	MinTime int64
+	MaxTime int64
 }
 
 type Label struct {
@@ -121,8 +123,10 @@ func groupSeriesByMetricFamily(
 				}
 
 				row := TimeSeriesRow{
-					Lbls:  labelSets,
-					Chunk: c.Bytes(),
+					Lbls:    labelSets,
+					Chunk:   c.Bytes(),
+					MinTime: chk.MinTime,
+					MaxTime: chk.MaxTime,
 				}
 
 				metricFamilies[metricName] = append(metricFamilies[metricName], row)
@@ -183,7 +187,9 @@ func buildDynamicSchema(rows []TimeSeriesRow) *parquet.Schema {
 	sort.Strings(labelKeys)
 
 	node := parquet.Group{
-		"x_chunk": parquet.Leaf(parquet.ByteArrayType),
+		"x_chunk":          parquet.Leaf(parquet.ByteArrayType),
+		"x_chunk_min_time": parquet.Int(64),
+		"x_chunk_max_time": parquet.Int(64),
 	}
 	for _, label := range labelKeys {
 		node["l_"+label] = parquet.String()
@@ -205,6 +211,12 @@ func convertToParquetValues(rows []TimeSeriesRow, schema *parquet.Schema) []parq
 
 		chunkIdx := columnMap["x_chunk"]
 		values[chunkIdx] = parquet.ByteArrayValue(row.Chunk)
+
+		minTimeIdx := columnMap["x_chunk_min_time"]
+		values[minTimeIdx] = parquet.Int64Value(row.MinTime)
+
+		maxTimeIdx := columnMap["x_chunk_max_time"]
+		values[maxTimeIdx] = parquet.Int64Value(row.MaxTime)
 
 		labelMap := make(map[string]string)
 		for _, label := range row.Lbls {
