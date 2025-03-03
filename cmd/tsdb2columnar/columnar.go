@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -92,7 +93,7 @@ func groupSeriesByMetricFamily(
 	metricFamilies := make(map[string][]TimeSeriesRow)
 
 	// Get all postings for the __name__ label
-	values, err := indexr.LabelValues("__name__")
+	values, err := indexr.LabelValues(context.Background(), "__name__")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get metric names: %w", err)
 	}
@@ -100,7 +101,7 @@ func groupSeriesByMetricFamily(
 	// For each metric name, get all series
 	for _, metricName := range values {
 		// Get all series for this metric name
-		postings, err := indexr.Postings("__name__", metricName)
+		postings, err := indexr.Postings(context.Background(), "__name__", metricName)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get postings for metric %s: %w", metricName, err)
 		}
