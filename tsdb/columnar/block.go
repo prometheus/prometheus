@@ -17,6 +17,7 @@ package columnar
 import (
 	"context"
 	"errors"
+	"sort"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -60,7 +61,19 @@ func (ir *IndexReader) SymbolTableSize() uint64 {
 }
 
 // SortedLabelValues (ctx context.Context, name string, matchers ...*labels.Matcher).
-func (ir *IndexReader) SortedLabelValues(_ context.Context, _ string, _ ...*labels.Matcher) ([]string, error) {
+func (ir *IndexReader) SortedLabelValues(_ context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
+	if name == labels.MetricName {
+		if len(matchers) == 0 {
+			nameValues := make([]string, 0, len(ir.ix.Metrics))
+			for name := range ir.ix.Metrics {
+				nameValues = append(nameValues, name)
+			}
+			// sort nameValues by string value
+			sort.Strings(nameValues)
+			return nameValues, nil
+		}
+	}
+
 	return nil, errors.New("not implemented: SortedLabelValues")
 }
 
