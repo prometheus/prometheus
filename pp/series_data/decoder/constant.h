@@ -17,7 +17,7 @@ class ConstantDecodeIterator : public SeparatedTimestampValueDecodeIteratorTrait
   }
 
   PROMPP_ALWAYS_INLINE ConstantDecodeIterator operator++(int) noexcept {
-    auto result = *this;
+    const auto result = *this;
     ++*this;
     return result;
   }

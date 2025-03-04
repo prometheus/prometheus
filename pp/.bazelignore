@@ -1,3 +1,4 @@
+.git
 .cache
 bazel-bin
 bazel-pp

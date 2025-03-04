@@ -32,7 +32,7 @@ class UniversalDecodeIterator : public DecodeIteratorTypeTrait {
   }
 
   PROMPP_ALWAYS_INLINE UniversalDecodeIterator operator++(int) noexcept {
-    auto result = *this;
+    const auto result = *this;
     ++*this;
     return result;
   }

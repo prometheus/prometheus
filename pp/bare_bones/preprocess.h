@@ -26,3 +26,16 @@
 #else
 #error #pragma diagnostic is not supported
 #endif
+
+
+#if __has_include(<gtest/gtest.h>)
+constexpr auto kIsUnitTestBuild = true;
+#else
+constexpr auto kIsUnitTestBuild = false;
+#endif
+
+#ifdef __SANITIZE_ADDRESS__
+constexpr auto kIsBuildWithAsan = true;
+#else
+constexpr auto kIsBuildWithAsan = false;
+#endif
