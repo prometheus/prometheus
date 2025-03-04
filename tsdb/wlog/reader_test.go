@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"io"
@@ -54,7 +55,6 @@ var readerConstructors = map[string]func(io.Reader) reader{
 	},
 	"LiveReader": func(r io.Reader) reader {
 		lr := NewLiveReader(promslog.NewNopLogger(), NewLiveReaderMetrics(nil), r)
-		lr.eofNonErr = true
 		return lr
 	},
 }
@@ -186,7 +186,16 @@ func TestReader(t *testing.T) {
 					require.Equal(t, c.exp[j], rec, "Bytes within record did not match expected Bytes")
 				}
 				if !c.fail {
-					require.NoError(t, r.Err())
+					if lr, ok := r.(*LiveReader); ok && errors.Is(r.Err(), io.EOF) {
+						// Live reader does not know if the EOF is because of partial
+						// segment or full segment. Handle it like all users are supposed to
+						// handle it.
+						require.NoError(t, handleFullSegmentPartialReads(r.Err(), lr, func() (int64, error) {
+							return int64(len(buf)), nil
+						}))
+					} else {
+						require.NoError(t, r.Err())
+					}
 				} else {
 					require.Error(t, r.Err())
 				}
