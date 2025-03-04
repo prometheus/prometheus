@@ -379,7 +379,7 @@ func OpenBlock(logger *slog.Logger, dir string, pool chunkenc.Pool, postingsDeco
 	var ir IndexReader
 
 	if meta.Compaction.IsParquet() {
-		ir, err = columnar.NewIndexReader(filepath.Join(dir, indexFilename))
+		ir, err = columnar.NewIndexReader(dir)
 	} else {
 		decoder := index.DecodePostingsRaw
 		if postingsDecoderFactory != nil {
