@@ -18,7 +18,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
+	"strings"
+
+	"github.com/parquet-go/parquet-go"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -31,9 +35,6 @@ import (
 type IndexReader struct {
 	ix Index
 }
-
-// ChunkReader implements the tsdb.ChunkReader interface.
-type ChunkReader struct{}
 
 // The index reader.
 
@@ -141,24 +142,85 @@ func (ir *IndexReader) Close() error {
 
 // The chunks reader.
 
-// NewChunkReader (dir string).
-func NewChunkReader(_ string) (*ChunkReader, error) {
-	return &ChunkReader{}, nil
+// ChunkReader implements the tsdb.ChunkReader interface.
+type ChunkReader struct {
+	dir      string
+	pool     chunkenc.Pool
+	parquets map[string]*parquet.GenericReader[parquet.Page] // TODO Maybe any instead?
+	size     int64
 }
 
-// ChunkOrIterable (meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error).
-func (cr *ChunkReader) ChunkOrIterable(_ chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
+// NewChunkReader creates a new ChunkReader for the columnar format.
+func NewChunkReader(dir string, pool chunkenc.Pool) (*ChunkReader, error) {
+	cr := &ChunkReader{
+		dir:      dir,
+		pool:     pool,
+		parquets: make(map[string]*parquet.GenericReader[parquet.Page]),
+	}
+
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	var size int64
+
+	for _, file := range files {
+		if !file.IsDir() && strings.HasSuffix(file.Name(), ".parquet") {
+			// Add the file to the parquets map with a nil reader (lazy loading)
+			cr.parquets[file.Name()] = nil
+
+			fileInfo, err := file.Info()
+			if err != nil {
+				return nil, err
+			}
+			size += fileInfo.Size()
+		}
+	}
+
+	cr.size = size
+	return cr, nil
+}
+
+// ChunkOrIterable returns the chunk or iterable for the given chunk meta.
+func (cr *ChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
+	// TODO(jesus.vazquez) We need to find a way to link chunk refs to the chunks within parquet files.
+	// IIRC the chunk references are ever increasing integers so maybe we can use that as an index into the parquet files.
+	// The typical call sequence is:
+	//
+	//  var chks []chunks.Meta{}
+	//  _ = Series(seriesRef, &builder, &chks)
+	//  for _, chk := range chks {
+	//    c, iterable, err := chunkr.ChunkOrIterable(chk)
+	//    c.Bytes()
+	//  }
+	//
+	// So the IndexReader is responsible for building the chunk metas. We probably need to implement that method before this one.
+
+	// TODO(jesus.vazquez) I think iterable should always be nil because we're reading from a block, not a WAL or head
 	return nil, nil, errors.New("not implemented: ChunkOrIterable")
 }
 
 func (cr *ChunkReader) Size() int64 {
-	// TODO: implement this method.
-	return 0
+	return cr.size
 }
 
-// Close ().
+// Close closes all open parquet readers.
 func (cr *ChunkReader) Close() error {
-	// Do nothing.
+	var errs []error
+
+	for _, reader := range cr.parquets {
+		if reader != nil {
+			if err := reader.Close(); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("errors closing parquet readers: %v", errs)
+	}
+
 	return nil
 }
 

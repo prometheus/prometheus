@@ -366,7 +366,7 @@ func OpenBlock(logger *slog.Logger, dir string, pool chunkenc.Pool, postingsDeco
 	var cr ChunkReader
 
 	if meta.Compaction.IsParquet() {
-		cr, err = columnar.NewChunkReader(dataDir(dir)) // TODO: Should take the pool as an argument.
+		cr, err = columnar.NewChunkReader(dataDir(dir), pool)
 	} else {
 		cr, err = chunks.NewDirReader(chunkDir(dir), pool)
 	}
