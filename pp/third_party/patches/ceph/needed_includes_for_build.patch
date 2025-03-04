@@ -1,0 +1,1821 @@
+Subject: [PATCH] added needed includes for build
+---
+<+>UTF-8
+===================================================================
+diff --git a/src/include/global_legacy_options.h b/src/include/global_legacy_options.h
+new file mode 100644
+--- /dev/null	(date 1702669339275)
++++ b/src/include/global_legacy_options.h	(date 1702669339275)
+@@ -0,0 +1,648 @@
++OPTION(host, OPT_STR)
++OPTION(public_addr, OPT_ADDR)
++OPTION(public_addrv, OPT_ADDRVEC)
++OPTION(public_bind_addr, OPT_ADDR)
++OPTION(cluster_addr, OPT_ADDR)
++OPTION(public_network, OPT_STR)
++OPTION(cluster_network, OPT_STR)
++OPTION(lockdep, OPT_BOOL)
++OPTION(lockdep_force_backtrace, OPT_BOOL)
++OPTION(run_dir, OPT_STR)
++OPTION(admin_socket, OPT_STR)
++OPTION(admin_socket_mode, OPT_STR)
++OPTION(daemonize, OPT_BOOL)
++OPTION(setuser, OPT_STR)
++OPTION(setgroup, OPT_STR)
++OPTION(setuser_match_path, OPT_STR)
++OPTION(pid_file, OPT_STR)
++OPTION(chdir, OPT_STR)
++OPTION(fatal_signal_handlers, OPT_BOOL)
++OPTION(crash_dir, OPT_STR)
++OPTION(restapi_log_level, OPT_STR)
++OPTION(restapi_base_url, OPT_STR)
++OPTION(erasure_code_dir, OPT_STR)
++OPTION(log_file, OPT_STR)
++OPTION(log_max_new, OPT_INT)
++OPTION(log_max_recent, OPT_INT)
++OPTION(log_to_file, OPT_BOOL)
++OPTION(log_to_stderr, OPT_BOOL)
++OPTION(err_to_stderr, OPT_BOOL)
++OPTION(log_to_syslog, OPT_BOOL)
++OPTION(err_to_syslog, OPT_BOOL)
++OPTION(log_flush_on_exit, OPT_BOOL)
++OPTION(log_stop_at_utilization, OPT_FLOAT)
++OPTION(log_to_graylog, OPT_BOOL)
++OPTION(err_to_graylog, OPT_BOOL)
++OPTION(log_graylog_host, OPT_STR)
++OPTION(log_graylog_port, OPT_INT)
++OPTION(clog_to_monitors, OPT_STR)
++OPTION(clog_to_syslog, OPT_STR)
++OPTION(clog_to_syslog_level, OPT_STR)
++OPTION(clog_to_syslog_facility, OPT_STR)
++OPTION(clog_to_graylog_host, OPT_STR)
++OPTION(clog_to_graylog_port, OPT_STR)
++OPTION(enable_experimental_unrecoverable_data_corrupting_features, OPT_STR)
++OPTION(compressor_zlib_isal, OPT_BOOL)
++OPTION(compressor_zlib_level, OPT_INT)
++OPTION(compressor_zlib_winsize, OPT_INT)
++OPTION(compressor_zstd_level, OPT_INT)
++OPTION(qat_compressor_enabled, OPT_BOOL)
++OPTION(plugin_crypto_accelerator, OPT_STR)
++OPTION(openssl_engine_opts, OPT_STR)
++OPTION(mempool_debug, OPT_BOOL)
++OPTION(key, OPT_STR)
++OPTION(keyfile, OPT_STR)
++OPTION(keyring, OPT_STR)
++OPTION(heartbeat_interval, OPT_INT)
++OPTION(heartbeat_file, OPT_STR)
++OPTION(heartbeat_inject_failure, OPT_INT)
++OPTION(perf, OPT_BOOL)
++OPTION(ms_type, OPT_STR)
++OPTION(ms_public_type, OPT_STR)
++OPTION(ms_cluster_type, OPT_STR)
++OPTION(ms_learn_addr_from_peer, OPT_BOOL)
++OPTION(ms_tcp_nodelay, OPT_BOOL)
++OPTION(ms_tcp_rcvbuf, OPT_SIZE)
++OPTION(ms_tcp_prefetch_max_size, OPT_SIZE)
++OPTION(ms_initial_backoff, OPT_FLOAT)
++OPTION(ms_max_backoff, OPT_FLOAT)
++OPTION(ms_crc_data, OPT_BOOL)
++OPTION(ms_crc_header, OPT_BOOL)
++OPTION(ms_die_on_bad_msg, OPT_BOOL)
++OPTION(ms_die_on_unhandled_msg, OPT_BOOL)
++OPTION(ms_die_on_old_message, OPT_BOOL)
++OPTION(ms_die_on_skipped_message, OPT_BOOL)
++OPTION(ms_die_on_bug, OPT_BOOL)
++OPTION(ms_dispatch_throttle_bytes, OPT_SIZE)
++OPTION(ms_bind_ipv6, OPT_BOOL)
++OPTION(ms_bind_port_min, OPT_INT)
++OPTION(ms_bind_port_max, OPT_INT)
++OPTION(ms_bind_retry_count, OPT_INT)
++OPTION(ms_bind_retry_delay, OPT_INT)
++OPTION(ms_bind_before_connect, OPT_BOOL)
++OPTION(ms_tcp_listen_backlog, OPT_INT)
++OPTION(ms_connection_ready_timeout, OPT_U32)
++OPTION(ms_connection_idle_timeout, OPT_U32)
++OPTION(ms_pq_max_tokens_per_priority, OPT_U32)
++OPTION(ms_pq_min_cost, OPT_SIZE)
++OPTION(ms_inject_socket_failures, OPT_U32)
++OPTION(ms_inject_delay_type, OPT_STR)
++OPTION(ms_inject_delay_max, OPT_FLOAT)
++OPTION(ms_inject_delay_probability, OPT_FLOAT)
++OPTION(ms_inject_internal_delays, OPT_FLOAT)
++OPTION(ms_inject_network_congestion, OPT_U32)
++OPTION(ms_blackhole_osd, OPT_BOOL)
++OPTION(ms_blackhole_mon, OPT_BOOL)
++OPTION(ms_blackhole_mds, OPT_BOOL)
++OPTION(ms_blackhole_mgr, OPT_BOOL)
++OPTION(ms_blackhole_client, OPT_BOOL)
++OPTION(ms_dump_on_send, OPT_BOOL)
++OPTION(ms_dump_corrupt_message_level, OPT_INT)
++OPTION(ms_async_op_threads, OPT_U32)
++OPTION(ms_async_reap_threshold, OPT_U32)
++OPTION(ms_async_rdma_device_name, OPT_STR)
++OPTION(ms_async_rdma_enable_hugepage, OPT_BOOL)
++OPTION(ms_async_rdma_buffer_size, OPT_SIZE)
++OPTION(ms_async_rdma_send_buffers, OPT_U32)
++OPTION(ms_async_rdma_receive_buffers, OPT_U32)
++OPTION(ms_async_rdma_receive_queue_len, OPT_U32)
++OPTION(ms_async_rdma_support_srq, OPT_BOOL)
++OPTION(ms_async_rdma_port_num, OPT_U32)
++OPTION(ms_async_rdma_polling_us, OPT_U32)
++OPTION(ms_async_rdma_gid_idx, OPT_INT)
++OPTION(ms_async_rdma_local_gid, OPT_STR)
++OPTION(ms_async_rdma_roce_ver, OPT_INT)
++OPTION(ms_async_rdma_sl, OPT_INT)
++OPTION(ms_async_rdma_dscp, OPT_INT)
++OPTION(ms_max_accept_failures, OPT_INT)
++OPTION(ms_async_rdma_cm, OPT_BOOL)
++OPTION(ms_async_rdma_type, OPT_STR)
++OPTION(ms_dpdk_port_id, OPT_INT)
++OPTION(ms_dpdk_coremask, OPT_STR)
++OPTION(ms_dpdk_memory_channel, OPT_STR)
++OPTION(ms_dpdk_hugepages, OPT_STR)
++OPTION(ms_dpdk_pmd, OPT_STR)
++OPTION(ms_dpdk_host_ipv4_addr, OPT_STR)
++OPTION(ms_dpdk_gateway_ipv4_addr, OPT_STR)
++OPTION(ms_dpdk_netmask_ipv4_addr, OPT_STR)
++OPTION(ms_dpdk_lro, OPT_BOOL)
++OPTION(ms_dpdk_hw_flow_control, OPT_BOOL)
++OPTION(ms_dpdk_hw_queue_weight, OPT_FLOAT)
++OPTION(ms_dpdk_debug_allow_loopback, OPT_BOOL)
++OPTION(ms_dpdk_rx_buffer_count_per_core, OPT_INT)
++OPTION(inject_early_sigterm, OPT_BOOL)
++OPTION(mon_initial_members, OPT_STR)
++OPTION(mon_osd_full_ratio, OPT_FLOAT)
++OPTION(mon_osd_backfillfull_ratio, OPT_FLOAT)
++OPTION(mon_osd_nearfull_ratio, OPT_FLOAT)
++OPTION(mon_osd_initial_require_min_compat_client, OPT_STR)
++OPTION(mon_allow_pool_delete, OPT_BOOL)
++OPTION(mon_fake_pool_delete, OPT_BOOL)
++OPTION(mon_globalid_prealloc, OPT_U32)
++OPTION(mon_osd_report_timeout, OPT_INT)
++OPTION(mon_min_osdmap_epochs, OPT_INT)
++OPTION(mon_max_log_epochs, OPT_INT)
++OPTION(mon_max_mdsmap_epochs, OPT_INT)
++OPTION(mon_max_osd, OPT_INT)
++OPTION(mon_probe_timeout, OPT_FLOAT)
++OPTION(mon_client_bytes, OPT_SIZE)
++OPTION(mon_warn_pg_not_scrubbed_ratio, OPT_FLOAT)
++OPTION(mon_warn_pg_not_deep_scrubbed_ratio, OPT_FLOAT)
++OPTION(mon_scrub_timeout, OPT_INT)
++OPTION(mon_scrub_max_keys, OPT_INT)
++OPTION(mon_scrub_inject_crc_mismatch, OPT_FLOAT)
++OPTION(mon_scrub_inject_missing_keys, OPT_FLOAT)
++OPTION(mon_config_key_max_entry_size, OPT_SIZE)
++OPTION(mon_sync_timeout, OPT_FLOAT)
++OPTION(mon_sync_max_payload_size, OPT_SIZE)
++OPTION(mon_sync_max_payload_keys, OPT_INT)
++OPTION(mon_sync_debug, OPT_BOOL)
++OPTION(mon_inject_sync_get_chunk_delay, OPT_FLOAT)
++OPTION(mon_osd_snap_trim_queue_warn_on, OPT_INT)
++OPTION(mon_osd_force_trim_to, OPT_INT)
++OPTION(mon_debug_deprecated_as_obsolete, OPT_BOOL)
++OPTION(mon_debug_dump_transactions, OPT_BOOL)
++OPTION(mon_debug_dump_json, OPT_BOOL)
++OPTION(mon_debug_dump_location, OPT_STR)
++OPTION(mon_debug_no_require_bluestore_for_ec_overwrites, OPT_BOOL)
++OPTION(mon_debug_no_initial_persistent_features, OPT_BOOL)
++OPTION(mon_inject_transaction_delay_max, OPT_FLOAT)
++OPTION(mon_inject_transaction_delay_probability, OPT_FLOAT)
++OPTION(mon_sync_provider_kill_at, OPT_INT)
++OPTION(mon_sync_requester_kill_at, OPT_INT)
++OPTION(mon_force_quorum_join, OPT_BOOL)
++OPTION(mon_keyvaluedb, OPT_STR)
++OPTION(mon_debug_unsafe_allow_tier_with_nonempty_snaps, OPT_BOOL)
++OPTION(auth_cluster_required, OPT_STR)
++OPTION(auth_service_required, OPT_STR)
++OPTION(auth_client_required, OPT_STR)
++OPTION(auth_supported, OPT_STR)
++OPTION(max_rotating_auth_attempts, OPT_INT)
++OPTION(cephx_require_signatures, OPT_BOOL)
++OPTION(cephx_require_version, OPT_INT)
++OPTION(cephx_cluster_require_signatures, OPT_BOOL)
++OPTION(cephx_cluster_require_version, OPT_INT)
++OPTION(cephx_service_require_signatures, OPT_BOOL)
++OPTION(cephx_service_require_version, OPT_INT)
++OPTION(cephx_sign_messages, OPT_BOOL)
++OPTION(auth_mon_ticket_ttl, OPT_FLOAT)
++OPTION(auth_service_ticket_ttl, OPT_FLOAT)
++OPTION(auth_allow_insecure_global_id_reclaim, OPT_BOOL)
++OPTION(auth_expose_insecure_global_id_reclaim, OPT_BOOL)
++OPTION(auth_debug, OPT_BOOL)
++OPTION(mon_client_hunt_parallel, OPT_U32)
++OPTION(mon_client_hunt_interval, OPT_FLOAT)
++OPTION(mon_client_log_interval, OPT_FLOAT)
++OPTION(mon_client_ping_interval, OPT_FLOAT)
++OPTION(mon_client_ping_timeout, OPT_FLOAT)
++OPTION(mon_client_hunt_interval_backoff, OPT_FLOAT)
++OPTION(mon_client_hunt_interval_min_multiple, OPT_FLOAT)
++OPTION(mon_client_hunt_interval_max_multiple, OPT_FLOAT)
++OPTION(mon_client_max_log_entries_per_message, OPT_INT)
++OPTION(mon_client_directed_command_retry, OPT_INT)
++OPTION(crush_location, OPT_STR)
++OPTION(crush_location_hook, OPT_STR)
++OPTION(crush_location_hook_timeout, OPT_INT)
++OPTION(objecter_tick_interval, OPT_FLOAT)
++OPTION(objecter_timeout, OPT_FLOAT)
++OPTION(objecter_inflight_op_bytes, OPT_SIZE)
++OPTION(objecter_inflight_ops, OPT_U32)
++OPTION(objecter_completion_locks_per_session, OPT_U32)
++OPTION(objecter_inject_no_watch_ping, OPT_BOOL)
++OPTION(objecter_retry_writes_after_first_reply, OPT_BOOL)
++OPTION(objecter_debug_inject_relock_delay, OPT_BOOL)
++OPTION(filer_max_purge_ops, OPT_U32)
++OPTION(filer_max_truncate_ops, OPT_U32)
++OPTION(osd_crush_chooseleaf_type, OPT_INT)
++OPTION(osd_pool_use_gmt_hitset, OPT_BOOL)
++OPTION(osd_pool_default_ec_fast_read, OPT_BOOL)
++OPTION(osd_erasure_code_plugins, OPT_STR)
++OPTION(osd_pool_default_flags, OPT_INT)
++OPTION(osd_pool_default_flag_hashpspool, OPT_BOOL)
++OPTION(osd_pool_default_flag_nodelete, OPT_BOOL)
++OPTION(osd_pool_default_flag_nopgchange, OPT_BOOL)
++OPTION(osd_pool_default_flag_nosizechange, OPT_BOOL)
++OPTION(osd_pool_default_flag_bulk, OPT_BOOL)
++OPTION(osd_pool_default_hit_set_bloom_fpp, OPT_FLOAT)
++OPTION(osd_pool_default_cache_target_dirty_ratio, OPT_FLOAT)
++OPTION(osd_pool_default_cache_target_dirty_high_ratio, OPT_FLOAT)
++OPTION(osd_pool_default_cache_target_full_ratio, OPT_FLOAT)
++OPTION(osd_pool_default_cache_min_flush_age, OPT_INT)
++OPTION(osd_pool_default_cache_min_evict_age, OPT_INT)
++OPTION(osd_pool_default_cache_max_evict_check_size, OPT_INT)
++OPTION(osd_pool_default_read_lease_ratio, OPT_FLOAT)
++OPTION(osd_hit_set_min_size, OPT_INT)
++OPTION(osd_hit_set_max_size, OPT_INT)
++OPTION(osd_hit_set_namespace, OPT_STR)
++OPTION(osd_tier_promote_max_objects_sec, OPT_U32)
++OPTION(osd_tier_promote_max_bytes_sec, OPT_SIZE)
++OPTION(osd_objecter_finishers, OPT_INT)
++OPTION(osd_map_dedup, OPT_BOOL)
++OPTION(osd_map_message_max, OPT_INT)
++OPTION(osd_map_message_max_bytes, OPT_SIZE)
++OPTION(osd_ignore_stale_divergent_priors, OPT_BOOL)
++OPTION(osd_heartbeat_interval, OPT_INT)
++OPTION(osd_heartbeat_grace, OPT_INT)
++OPTION(osd_heartbeat_use_min_delay_socket, OPT_BOOL)
++OPTION(osd_heartbeat_min_size, OPT_SIZE)
++OPTION(osd_pg_max_concurrent_snap_trims, OPT_U32)
++OPTION(osd_max_trimming_pgs, OPT_U32)
++OPTION(osd_heartbeat_min_healthy_ratio, OPT_FLOAT)
++OPTION(osd_mon_heartbeat_interval, OPT_INT)
++OPTION(osd_mon_report_interval, OPT_INT)
++OPTION(osd_mon_report_max_in_flight, OPT_INT)
++OPTION(osd_beacon_report_interval, OPT_INT)
++OPTION(osd_pg_stat_report_interval_max, OPT_INT)
++OPTION(osd_max_snap_prune_intervals_per_epoch, OPT_U32)
++OPTION(osd_auto_mark_unfound_lost, OPT_BOOL)
++OPTION(osd_check_for_log_corruption, OPT_BOOL)
++OPTION(osd_use_stale_snap, OPT_BOOL)
++OPTION(osd_rollback_to_cluster_snap, OPT_STR)
++OPTION(osd_default_notify_timeout, OPT_U32)
++OPTION(osd_kill_backfill_at, OPT_INT)
++OPTION(osd_pg_epoch_persisted_max_stale, OPT_U32)
++OPTION(osd_target_pg_log_entries_per_osd, OPT_U32)
++OPTION(osd_min_pg_log_entries, OPT_U32)
++OPTION(osd_max_pg_log_entries, OPT_U32)
++OPTION(osd_pg_log_dups_tracked, OPT_U32)
++OPTION(osd_object_clean_region_max_num_intervals, OPT_INT)
++OPTION(osd_force_recovery_pg_log_entries_factor, OPT_FLOAT)
++OPTION(osd_pg_log_trim_min, OPT_U32)
++OPTION(osd_pg_log_trim_max, OPT_U32)
++OPTION(osd_op_complaint_time, OPT_FLOAT)
++OPTION(osd_command_max_records, OPT_INT)
++OPTION(osd_max_pg_blocked_by, OPT_U32)
++OPTION(osd_op_log_threshold, OPT_INT)
++OPTION(osd_backoff_on_unfound, OPT_BOOL)
++OPTION(osd_backoff_on_degraded, OPT_BOOL)
++OPTION(osd_backoff_on_peering, OPT_BOOL)
++OPTION(osd_debug_shutdown, OPT_BOOL)
++OPTION(osd_debug_crash_on_ignored_backoff, OPT_BOOL)
++OPTION(osd_debug_inject_dispatch_delay_probability, OPT_FLOAT)
++OPTION(osd_debug_inject_dispatch_delay_duration, OPT_FLOAT)
++OPTION(osd_debug_drop_ping_probability, OPT_FLOAT)
++OPTION(osd_debug_drop_ping_duration, OPT_INT)
++OPTION(osd_debug_op_order, OPT_BOOL)
++OPTION(osd_debug_verify_missing_on_start, OPT_BOOL)
++OPTION(osd_debug_verify_snaps, OPT_BOOL)
++OPTION(osd_debug_verify_stray_on_activate, OPT_BOOL)
++OPTION(osd_debug_skip_full_check_in_backfill_reservation, OPT_BOOL)
++OPTION(osd_debug_reject_backfill_probability, OPT_FLOAT)
++OPTION(osd_debug_inject_copyfrom_error, OPT_BOOL)
++OPTION(osd_debug_misdirected_ops, OPT_BOOL)
++OPTION(osd_debug_skip_full_check_in_recovery, OPT_BOOL)
++OPTION(osd_debug_random_push_read_error, OPT_FLOAT)
++OPTION(osd_debug_verify_cached_snaps, OPT_BOOL)
++OPTION(osd_debug_deep_scrub_sleep, OPT_FLOAT)
++OPTION(osd_debug_no_acting_change, OPT_BOOL)
++OPTION(osd_debug_no_purge_strays, OPT_BOOL)
++OPTION(osd_debug_pretend_recovery_active, OPT_BOOL)
++OPTION(osd_enable_op_tracker, OPT_BOOL)
++OPTION(osd_num_op_tracker_shard, OPT_U32)
++OPTION(osd_op_history_size, OPT_U32)
++OPTION(osd_op_history_duration, OPT_U32)
++OPTION(osd_op_history_slow_op_size, OPT_U32)
++OPTION(osd_op_history_slow_op_threshold, OPT_FLOAT)
++OPTION(osd_target_transaction_size, OPT_INT)
++OPTION(osd_failsafe_full_ratio, OPT_FLOAT)
++OPTION(osd_fast_shutdown, OPT_BOOL)
++OPTION(osd_fast_shutdown_timeout, OPT_INT)
++OPTION(osd_fast_shutdown_notify_mon, OPT_BOOL)
++OPTION(osd_fast_fail_on_connection_refused, OPT_BOOL)
++OPTION(osd_pg_object_context_cache_count, OPT_INT)
++OPTION(osd_tracing, OPT_BOOL)
++OPTION(osd_function_tracing, OPT_BOOL)
++OPTION(osd_fast_info, OPT_BOOL)
++OPTION(osd_debug_pg_log_writeout, OPT_BOOL)
++OPTION(osd_loop_before_reset_tphandle, OPT_U32)
++OPTION(threadpool_default_timeout, OPT_INT)
++OPTION(threadpool_empty_queue_max_wait, OPT_INT)
++OPTION(rocksdb_log_to_ceph_log, OPT_BOOL)
++OPTION(rocksdb_cache_size, OPT_SIZE)
++OPTION(rocksdb_cache_row_ratio, OPT_FLOAT)
++OPTION(rocksdb_cache_shard_bits, OPT_INT)
++OPTION(rocksdb_cache_type, OPT_STR)
++OPTION(rocksdb_block_size, OPT_SIZE)
++OPTION(rocksdb_perf, OPT_BOOL)
++OPTION(rocksdb_collect_compaction_stats, OPT_BOOL)
++OPTION(rocksdb_collect_extended_stats, OPT_BOOL)
++OPTION(rocksdb_collect_memory_stats, OPT_BOOL)
++OPTION(rocksdb_cf_compact_on_deletion, OPT_BOOL)
++OPTION(rocksdb_cf_compact_on_deletion_sliding_window, OPT_INT)
++OPTION(rocksdb_cf_compact_on_deletion_trigger, OPT_INT)
++OPTION(osd_client_op_priority, OPT_U32)
++OPTION(osd_recovery_op_priority, OPT_U32)
++OPTION(osd_peering_op_priority, OPT_U32)
++OPTION(osd_snap_trim_priority, OPT_U32)
++OPTION(osd_snap_trim_cost, OPT_SIZE)
++OPTION(osd_pg_delete_priority, OPT_U32)
++OPTION(osd_pg_delete_cost, OPT_SIZE)
++OPTION(osd_scrub_priority, OPT_U32)
++OPTION(osd_scrub_cost, OPT_SIZE)
++OPTION(osd_scrub_event_cost, OPT_SIZE)
++OPTION(osd_requested_scrub_priority, OPT_U32)
++OPTION(osd_recovery_priority, OPT_U32)
++OPTION(osd_recovery_cost, OPT_SIZE)
++OPTION(osd_recovery_op_warn_multiple, OPT_U32)
++OPTION(osd_mon_shutdown_timeout, OPT_FLOAT)
++OPTION(osd_shutdown_pgref_assert, OPT_BOOL)
++OPTION(osd_max_object_size, OPT_SIZE)
++OPTION(osd_max_object_name_len, OPT_U32)
++OPTION(osd_max_object_namespace_len, OPT_U32)
++OPTION(osd_max_attr_name_len, OPT_U32)
++OPTION(osd_max_attr_size, OPT_U32)
++OPTION(osd_max_omap_entries_per_request, OPT_U32)
++OPTION(osd_max_omap_bytes_per_request, OPT_SIZE)
++OPTION(osd_max_write_op_reply_len, OPT_SIZE)
++OPTION(osd_objectstore, OPT_STR)
++OPTION(osd_objectstore_tracing, OPT_BOOL)
++OPTION(osd_objectstore_fuse, OPT_BOOL)
++OPTION(osd_bench_small_size_max_iops, OPT_U32)
++OPTION(osd_bench_large_size_max_throughput, OPT_SIZE)
++OPTION(osd_bench_max_block_size, OPT_SIZE)
++OPTION(osd_bench_duration, OPT_U32)
++OPTION(osd_blkin_trace_all, OPT_BOOL)
++OPTION(osdc_blkin_trace_all, OPT_BOOL)
++OPTION(osd_discard_disconnected_ops, OPT_BOOL)
++OPTION(memstore_device_bytes, OPT_SIZE)
++OPTION(memstore_page_set, OPT_BOOL)
++OPTION(memstore_page_size, OPT_SIZE)
++OPTION(memstore_debug_omit_block_device_write, OPT_BOOL)
++OPTION(objectstore_blackhole, OPT_BOOL)
++OPTION(bdev_debug_inflight_ios, OPT_BOOL)
++OPTION(bdev_inject_crash, OPT_INT)
++OPTION(bdev_inject_crash_flush_delay, OPT_INT)
++OPTION(bdev_aio, OPT_BOOL)
++OPTION(bdev_aio_poll_ms, OPT_INT)
++OPTION(bdev_aio_max_queue_depth, OPT_INT)
++OPTION(bdev_aio_reap_max, OPT_INT)
++OPTION(bdev_block_size, OPT_SIZE)
++OPTION(bdev_read_buffer_alignment, OPT_SIZE)
++OPTION(bdev_debug_aio, OPT_BOOL)
++OPTION(bdev_debug_aio_suicide_timeout, OPT_FLOAT)
++OPTION(bdev_debug_aio_log_age, OPT_FLOAT)
++OPTION(bdev_nvme_unbind_from_kernel, OPT_BOOL)
++OPTION(bdev_enable_discard, OPT_BOOL)
++OPTION(bdev_async_discard, OPT_BOOL)
++OPTION(bluefs_alloc_size, OPT_SIZE)
++OPTION(bluefs_shared_alloc_size, OPT_SIZE)
++OPTION(bluefs_failed_shared_alloc_cooldown, OPT_FLOAT)
++OPTION(bluefs_max_prefetch, OPT_SIZE)
++OPTION(bluefs_min_log_runway, OPT_SIZE)
++OPTION(bluefs_max_log_runway, OPT_SIZE)
++OPTION(bluefs_log_compact_min_ratio, OPT_FLOAT)
++OPTION(bluefs_log_compact_min_size, OPT_SIZE)
++OPTION(bluefs_min_flush_size, OPT_SIZE)
++OPTION(bluefs_compact_log_sync, OPT_BOOL)
++OPTION(bluefs_buffered_io, OPT_BOOL)
++OPTION(bluefs_sync_write, OPT_BOOL)
++OPTION(bluefs_allocator, OPT_STR)
++OPTION(bluefs_log_replay_check_allocations, OPT_BOOL)
++OPTION(bluefs_replay_recovery, OPT_BOOL)
++OPTION(bluefs_replay_recovery_disable_compact, OPT_BOOL)
++OPTION(bluefs_check_for_zeros, OPT_BOOL)
++OPTION(bluefs_check_volume_selector_on_umount, OPT_BOOL)
++OPTION(bluefs_check_volume_selector_often, OPT_BOOL)
++OPTION(bluestore_bluefs, OPT_BOOL)
++OPTION(bluestore_bluefs_env_mirror, OPT_BOOL)
++OPTION(bluestore_bluefs_alloc_failure_dump_interval, OPT_FLOAT)
++OPTION(bluestore_block_path, OPT_STR)
++OPTION(bluestore_block_size, OPT_SIZE)
++OPTION(bluestore_block_create, OPT_BOOL)
++OPTION(bluestore_block_db_path, OPT_STR)
++OPTION(bluestore_block_db_size, OPT_SIZE)
++OPTION(bluestore_block_db_create, OPT_BOOL)
++OPTION(bluestore_block_wal_path, OPT_STR)
++OPTION(bluestore_block_wal_size, OPT_SIZE)
++OPTION(bluestore_block_wal_create, OPT_BOOL)
++OPTION(bluestore_block_preallocate_file, OPT_BOOL)
++OPTION(bluestore_ignore_data_csum, OPT_BOOL)
++OPTION(bluestore_csum_type, OPT_STR)
++OPTION(bluestore_retry_disk_reads, OPT_U32)
++OPTION(bluestore_min_alloc_size, OPT_U32)
++OPTION(bluestore_min_alloc_size_hdd, OPT_SIZE)
++OPTION(bluestore_min_alloc_size_ssd, OPT_SIZE)
++OPTION(bluestore_use_optimal_io_size_for_min_alloc_size, OPT_BOOL)
++OPTION(bluestore_max_alloc_size, OPT_SIZE)
++OPTION(bluestore_prefer_deferred_size, OPT_SIZE)
++OPTION(bluestore_prefer_deferred_size_hdd, OPT_SIZE)
++OPTION(bluestore_prefer_deferred_size_ssd, OPT_SIZE)
++OPTION(bluestore_compression_mode, OPT_STR)
++OPTION(bluestore_compression_algorithm, OPT_STR)
++OPTION(bluestore_compression_min_blob_size, OPT_SIZE)
++OPTION(bluestore_compression_min_blob_size_hdd, OPT_SIZE)
++OPTION(bluestore_compression_min_blob_size_ssd, OPT_SIZE)
++OPTION(bluestore_compression_max_blob_size, OPT_SIZE)
++OPTION(bluestore_compression_max_blob_size_hdd, OPT_SIZE)
++OPTION(bluestore_compression_max_blob_size_ssd, OPT_SIZE)
++OPTION(bluestore_gc_enable_blob_threshold, OPT_INT)
++OPTION(bluestore_gc_enable_total_threshold, OPT_INT)
++OPTION(bluestore_max_blob_size, OPT_SIZE)
++OPTION(bluestore_max_blob_size_hdd, OPT_SIZE)
++OPTION(bluestore_max_blob_size_ssd, OPT_SIZE)
++OPTION(bluestore_compression_required_ratio, OPT_FLOAT)
++OPTION(bluestore_extent_map_shard_max_size, OPT_SIZE)
++OPTION(bluestore_extent_map_shard_target_size, OPT_SIZE)
++OPTION(bluestore_extent_map_shard_min_size, OPT_SIZE)
++OPTION(bluestore_extent_map_shard_target_size_slop, OPT_FLOAT)
++OPTION(bluestore_extent_map_inline_shard_prealloc_size, OPT_SIZE)
++OPTION(bluestore_cache_trim_interval, OPT_FLOAT)
++OPTION(bluestore_cache_trim_max_skip_pinned, OPT_U32)
++OPTION(bluestore_cache_type, OPT_STR)
++OPTION(bluestore_2q_cache_kin_ratio, OPT_FLOAT)
++OPTION(bluestore_2q_cache_kout_ratio, OPT_FLOAT)
++OPTION(bluestore_cache_size, OPT_SIZE)
++OPTION(bluestore_cache_size_hdd, OPT_SIZE)
++OPTION(bluestore_cache_size_ssd, OPT_SIZE)
++OPTION(bluestore_cache_meta_ratio, OPT_FLOAT)
++OPTION(bluestore_cache_kv_ratio, OPT_FLOAT)
++OPTION(bluestore_alloc_stats_dump_interval, OPT_FLOAT)
++OPTION(bluestore_kvbackend, OPT_STR)
++OPTION(bluestore_allocator, OPT_STR)
++OPTION(bluestore_freelist_blocks_per_key, OPT_SIZE)
++OPTION(bluestore_bitmapallocator_blocks_per_zone, OPT_SIZE)
++OPTION(bluestore_bitmapallocator_span_size, OPT_SIZE)
++OPTION(bluestore_max_deferred_txc, OPT_U32)
++OPTION(bluestore_max_defer_interval, OPT_FLOAT)
++OPTION(bluestore_rocksdb_options, OPT_STR)
++OPTION(bluestore_rocksdb_options_annex, OPT_STR)
++OPTION(bluestore_qfsck_on_mount, OPT_BOOL)
++OPTION(bluestore_fsck_on_mount, OPT_BOOL)
++OPTION(bluestore_fsck_on_mount_deep, OPT_BOOL)
++OPTION(bluestore_fsck_quick_fix_on_mount, OPT_BOOL)
++OPTION(bluestore_fsck_on_umount, OPT_BOOL)
++OPTION(bluestore_allocation_from_file, OPT_BOOL)
++OPTION(bluestore_debug_inject_allocation_from_file_failure, OPT_FLOAT)
++OPTION(bluestore_fsck_on_umount_deep, OPT_BOOL)
++OPTION(bluestore_fsck_on_mkfs, OPT_BOOL)
++OPTION(bluestore_fsck_on_mkfs_deep, OPT_BOOL)
++OPTION(bluestore_sync_submit_transaction, OPT_BOOL)
++OPTION(bluestore_fsck_read_bytes_cap, OPT_SIZE)
++OPTION(bluestore_fsck_quick_fix_threads, OPT_INT)
++OPTION(bluestore_throttle_bytes, OPT_SIZE)
++OPTION(bluestore_throttle_deferred_bytes, OPT_SIZE)
++OPTION(bluestore_throttle_cost_per_io, OPT_SIZE)
++OPTION(bluestore_throttle_cost_per_io_hdd, OPT_U32)
++OPTION(bluestore_throttle_cost_per_io_ssd, OPT_U32)
++OPTION(bluestore_deferred_batch_ops, OPT_U32)
++OPTION(bluestore_deferred_batch_ops_hdd, OPT_U32)
++OPTION(bluestore_deferred_batch_ops_ssd, OPT_U32)
++OPTION(bluestore_nid_prealloc, OPT_INT)
++OPTION(bluestore_blobid_prealloc, OPT_U32)
++OPTION(bluestore_clone_cow, OPT_BOOL)
++OPTION(bluestore_default_buffered_read, OPT_BOOL)
++OPTION(bluestore_default_buffered_write, OPT_BOOL)
++OPTION(bluestore_debug_no_reuse_blocks, OPT_BOOL)
++OPTION(bluestore_debug_small_allocations, OPT_INT)
++OPTION(bluestore_debug_too_many_blobs_threshold, OPT_INT)
++OPTION(bluestore_debug_freelist, OPT_BOOL)
++OPTION(bluestore_debug_prefill, OPT_FLOAT)
++OPTION(bluestore_debug_prefragment_max, OPT_SIZE)
++OPTION(bluestore_debug_inject_read_err, OPT_BOOL)
++OPTION(bluestore_debug_randomize_serial_transaction, OPT_INT)
++OPTION(bluestore_debug_omit_block_device_write, OPT_BOOL)
++OPTION(bluestore_debug_fsck_abort, OPT_BOOL)
++OPTION(bluestore_debug_omit_kv_commit, OPT_BOOL)
++OPTION(bluestore_debug_permit_any_bdev_label, OPT_BOOL)
++OPTION(bluestore_debug_random_read_err, OPT_FLOAT)
++OPTION(bluestore_debug_inject_csum_err_probability, OPT_FLOAT)
++OPTION(bluestore_debug_legacy_omap, OPT_BOOL)
++OPTION(bluestore_fsck_error_on_no_per_pool_stats, OPT_BOOL)
++OPTION(bluestore_warn_on_bluefs_spillover, OPT_BOOL)
++OPTION(bluestore_warn_on_legacy_statfs, OPT_BOOL)
++OPTION(bluestore_warn_on_spurious_read_errors, OPT_BOOL)
++OPTION(bluestore_fsck_error_on_no_per_pool_omap, OPT_BOOL)
++OPTION(bluestore_fsck_error_on_no_per_pg_omap, OPT_BOOL)
++OPTION(bluestore_warn_on_no_per_pool_omap, OPT_BOOL)
++OPTION(bluestore_warn_on_no_per_pg_omap, OPT_BOOL)
++OPTION(bluestore_log_op_age, OPT_FLOAT)
++OPTION(bluestore_log_omap_iterator_age, OPT_FLOAT)
++OPTION(bluestore_log_collection_list_age, OPT_FLOAT)
++OPTION(bluestore_debug_enforce_settings, OPT_STR)
++OPTION(bluestore_volume_selection_policy, OPT_STR)
++OPTION(bluestore_volume_selection_reserved_factor, OPT_FLOAT)
++OPTION(bluestore_volume_selection_reserved, OPT_INT)
++OPTION(bluestore_kv_sync_util_logging_s, OPT_FLOAT)
++OPTION(bluestore_fail_eio, OPT_BOOL)
++OPTION(bluestore_zero_block_detection, OPT_BOOL)
++OPTION(kstore_max_ops, OPT_U32)
++OPTION(kstore_max_bytes, OPT_SIZE)
++OPTION(kstore_backend, OPT_STR)
++OPTION(kstore_rocksdb_options, OPT_STR)
++OPTION(kstore_fsck_on_mount, OPT_BOOL)
++OPTION(kstore_fsck_on_mount_deep, OPT_BOOL)
++OPTION(kstore_nid_prealloc, OPT_U32)
++OPTION(kstore_sync_transaction, OPT_BOOL)
++OPTION(kstore_sync_submit_transaction, OPT_BOOL)
++OPTION(kstore_onode_map_size, OPT_U32)
++OPTION(kstore_default_stripe_size, OPT_SIZE)
++OPTION(filestore_rocksdb_options, OPT_STR)
++OPTION(filestore_omap_backend, OPT_STR)
++OPTION(filestore_omap_backend_path, OPT_STR)
++OPTION(filestore_wbthrottle_enable, OPT_BOOL)
++OPTION(filestore_wbthrottle_btrfs_bytes_start_flusher, OPT_SIZE)
++OPTION(filestore_wbthrottle_btrfs_bytes_hard_limit, OPT_SIZE)
++OPTION(filestore_wbthrottle_btrfs_ios_start_flusher, OPT_U32)
++OPTION(filestore_wbthrottle_btrfs_ios_hard_limit, OPT_U32)
++OPTION(filestore_wbthrottle_btrfs_inodes_start_flusher, OPT_U32)
++OPTION(filestore_wbthrottle_xfs_bytes_start_flusher, OPT_SIZE)
++OPTION(filestore_wbthrottle_xfs_bytes_hard_limit, OPT_SIZE)
++OPTION(filestore_wbthrottle_xfs_ios_start_flusher, OPT_U32)
++OPTION(filestore_wbthrottle_xfs_ios_hard_limit, OPT_U32)
++OPTION(filestore_wbthrottle_xfs_inodes_start_flusher, OPT_U32)
++OPTION(filestore_wbthrottle_btrfs_inodes_hard_limit, OPT_U32)
++OPTION(filestore_wbthrottle_xfs_inodes_hard_limit, OPT_U32)
++OPTION(filestore_odsync_write, OPT_BOOL)
++OPTION(filestore_index_retry_probability, OPT_FLOAT)
++OPTION(filestore_debug_inject_read_err, OPT_BOOL)
++OPTION(filestore_debug_random_read_err, OPT_FLOAT)
++OPTION(filestore_debug_omap_check, OPT_BOOL)
++OPTION(filestore_omap_header_cache_size, OPT_SIZE)
++OPTION(filestore_max_inline_xattr_size, OPT_SIZE)
++OPTION(filestore_max_inline_xattr_size_xfs, OPT_SIZE)
++OPTION(filestore_max_inline_xattr_size_btrfs, OPT_SIZE)
++OPTION(filestore_max_inline_xattr_size_other, OPT_SIZE)
++OPTION(filestore_max_inline_xattrs, OPT_U32)
++OPTION(filestore_max_inline_xattrs_xfs, OPT_U32)
++OPTION(filestore_max_inline_xattrs_btrfs, OPT_U32)
++OPTION(filestore_max_inline_xattrs_other, OPT_U32)
++OPTION(filestore_max_xattr_value_size, OPT_SIZE)
++OPTION(filestore_max_xattr_value_size_xfs, OPT_SIZE)
++OPTION(filestore_max_xattr_value_size_btrfs, OPT_SIZE)
++OPTION(filestore_max_xattr_value_size_other, OPT_SIZE)
++OPTION(filestore_sloppy_crc, OPT_BOOL)
++OPTION(filestore_sloppy_crc_block_size, OPT_SIZE)
++OPTION(filestore_max_alloc_hint_size, OPT_SIZE)
++OPTION(filestore_max_sync_interval, OPT_FLOAT)
++OPTION(filestore_min_sync_interval, OPT_FLOAT)
++OPTION(filestore_btrfs_snap, OPT_BOOL)
++OPTION(filestore_btrfs_clone_range, OPT_BOOL)
++OPTION(filestore_zfs_snap, OPT_BOOL)
++OPTION(filestore_fsync_flushes_journal_data, OPT_BOOL)
++OPTION(filestore_fiemap, OPT_BOOL)
++OPTION(filestore_punch_hole, OPT_BOOL)
++OPTION(filestore_seek_data_hole, OPT_BOOL)
++OPTION(filestore_splice, OPT_BOOL)
++OPTION(filestore_fadvise, OPT_BOOL)
++OPTION(filestore_collect_device_partition_information, OPT_BOOL)
++OPTION(filestore_xfs_extsize, OPT_BOOL)
++OPTION(filestore_journal_parallel, OPT_BOOL)
++OPTION(filestore_journal_writeahead, OPT_BOOL)
++OPTION(filestore_journal_trailing, OPT_BOOL)
++OPTION(filestore_queue_max_ops, OPT_U32)
++OPTION(filestore_queue_max_bytes, OPT_SIZE)
++OPTION(filestore_caller_concurrency, OPT_INT)
++OPTION(filestore_expected_throughput_bytes, OPT_FLOAT)
++OPTION(filestore_expected_throughput_ops, OPT_FLOAT)
++OPTION(filestore_queue_max_delay_multiple, OPT_FLOAT)
++OPTION(filestore_queue_high_delay_multiple, OPT_FLOAT)
++OPTION(filestore_queue_max_delay_multiple_bytes, OPT_FLOAT)
++OPTION(filestore_queue_high_delay_multiple_bytes, OPT_FLOAT)
++OPTION(filestore_queue_max_delay_multiple_ops, OPT_FLOAT)
++OPTION(filestore_queue_high_delay_multiple_ops, OPT_FLOAT)
++OPTION(filestore_queue_low_threshhold, OPT_FLOAT)
++OPTION(filestore_queue_high_threshhold, OPT_FLOAT)
++OPTION(filestore_op_threads, OPT_INT)
++OPTION(filestore_op_thread_timeout, OPT_INT)
++OPTION(filestore_op_thread_suicide_timeout, OPT_INT)
++OPTION(filestore_commit_timeout, OPT_FLOAT)
++OPTION(filestore_fiemap_threshold, OPT_SIZE)
++OPTION(filestore_merge_threshold, OPT_INT)
++OPTION(filestore_split_multiple, OPT_INT)
++OPTION(filestore_split_rand_factor, OPT_U32)
++OPTION(filestore_update_to, OPT_INT)
++OPTION(filestore_blackhole, OPT_BOOL)
++OPTION(filestore_fd_cache_size, OPT_INT)
++OPTION(filestore_fd_cache_shards, OPT_INT)
++OPTION(filestore_ondisk_finisher_threads, OPT_INT)
++OPTION(filestore_apply_finisher_threads, OPT_INT)
++OPTION(filestore_dump_file, OPT_STR)
++OPTION(filestore_kill_at, OPT_INT)
++OPTION(filestore_inject_stall, OPT_INT)
++OPTION(filestore_fail_eio, OPT_BOOL)
++OPTION(filestore_debug_verify_split, OPT_BOOL)
++OPTION(journal_dio, OPT_BOOL)
++OPTION(journal_aio, OPT_BOOL)
++OPTION(journal_force_aio, OPT_BOOL)
++OPTION(journal_block_size, OPT_SIZE)
++OPTION(journal_block_align, OPT_BOOL)
++OPTION(journal_write_header_frequency, OPT_U32)
++OPTION(journal_max_write_bytes, OPT_SIZE)
++OPTION(journal_max_write_entries, OPT_INT)
++OPTION(journal_throttle_low_threshhold, OPT_FLOAT)
++OPTION(journal_throttle_high_threshhold, OPT_FLOAT)
++OPTION(journal_throttle_high_multiple, OPT_FLOAT)
++OPTION(journal_throttle_max_multiple, OPT_FLOAT)
++OPTION(journal_align_min_size, OPT_SIZE)
++OPTION(journal_replay_from, OPT_INT)
++OPTION(journal_zero_on_create, OPT_BOOL)
++OPTION(journal_ignore_corruption, OPT_BOOL)
++OPTION(journal_discard, OPT_BOOL)
++OPTION(fio_dir, OPT_STR)
++OPTION(rados_tracing, OPT_BOOL)
++OPTION(throttler_perf_counter, OPT_BOOL)
++OPTION(event_tracing, OPT_BOOL)
++OPTION(debug_deliberately_leak_memory, OPT_BOOL)
++OPTION(debug_asok_assert_abort, OPT_BOOL)
++OPTION(bluestore_cleaner_sleep_interval, OPT_FLOAT)
++OPTION(jaeger_tracing_enable, OPT_BOOL)
+Index: third_party/ceph/include/cephfs-mirror_legacy_options.h
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/include/cephfs-mirror_legacy_options.h b/src/include/cephfs-mirror_legacy_options.h
+new file mode 100644
+--- /dev/null	(date 1702891856479)
++++ b/src/include/cephfs-mirror_legacy_options.h	(date 1702891856479)
+@@ -0,0 +1,1 @@
++
+Index: third_party/ceph/include/ceph-exporter_legacy_options.h
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/include/ceph-exporter_legacy_options.h b/src/include/ceph-exporter_legacy_options.h
+new file mode 100644
+--- /dev/null	(date 1702891856478)
++++ b/src/include/ceph-exporter_legacy_options.h	(date 1702891856478)
+@@ -0,0 +1,1 @@
++
+Index: third_party/ceph/include/osd_legacy_options.h
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/include/osd_legacy_options.h b/src/include/osd_legacy_options.h
+new file mode 100644
+--- /dev/null	(date 1702669339292)
++++ b/src/include/osd_legacy_options.h	(date 1702669339292)
+@@ -0,0 +1,100 @@
++OPTION(osd_check_max_object_name_len_on_startup, OPT_BOOL)
++OPTION(osd_max_backfills, OPT_U32)
++OPTION(osd_min_recovery_priority, OPT_INT)
++OPTION(osd_backfill_retry_interval, OPT_FLOAT)
++OPTION(osd_recovery_retry_interval, OPT_FLOAT)
++OPTION(osd_recovery_sleep, OPT_FLOAT)
++OPTION(osd_recovery_sleep_hdd, OPT_FLOAT)
++OPTION(osd_recovery_sleep_ssd, OPT_FLOAT)
++OPTION(osd_snap_trim_sleep, OPT_FLOAT)
++OPTION(osd_scrub_invalid_stats, OPT_BOOL)
++OPTION(osd_max_scrubs, OPT_INT)
++OPTION(osd_scrub_during_recovery, OPT_BOOL)
++OPTION(osd_repair_during_recovery, OPT_BOOL)
++OPTION(osd_scrub_begin_hour, OPT_INT)
++OPTION(osd_scrub_end_hour, OPT_INT)
++OPTION(osd_scrub_begin_week_day, OPT_INT)
++OPTION(osd_scrub_end_week_day, OPT_INT)
++OPTION(osd_scrub_load_threshold, OPT_FLOAT)
++OPTION(osd_scrub_min_interval, OPT_FLOAT)
++OPTION(osd_scrub_max_interval, OPT_FLOAT)
++OPTION(osd_scrub_interval_randomize_ratio, OPT_FLOAT)
++OPTION(osd_scrub_backoff_ratio, OPT_FLOAT)
++OPTION(osd_scrub_chunk_min, OPT_INT)
++OPTION(osd_scrub_chunk_max, OPT_INT)
++OPTION(osd_shallow_scrub_chunk_min, OPT_INT)
++OPTION(osd_shallow_scrub_chunk_max, OPT_INT)
++OPTION(osd_scrub_sleep, OPT_FLOAT)
++OPTION(osd_scrub_extended_sleep, OPT_FLOAT)
++OPTION(osd_scrub_auto_repair, OPT_BOOL)
++OPTION(osd_scrub_auto_repair_num_errors, OPT_U32)
++OPTION(osd_deep_scrub_interval, OPT_FLOAT)
++OPTION(osd_deep_scrub_randomize_ratio, OPT_FLOAT)
++OPTION(osd_deep_scrub_stride, OPT_SIZE)
++OPTION(osd_deep_scrub_keys, OPT_INT)
++OPTION(osd_deep_scrub_update_digest_min_age, OPT_INT)
++OPTION(osd_deep_scrub_large_omap_object_key_threshold, OPT_U32)
++OPTION(osd_deep_scrub_large_omap_object_value_sum_threshold, OPT_SIZE)
++OPTION(osd_blocked_scrub_grace_period, OPT_INT)
++OPTION(osd_class_dir, OPT_STR)
++OPTION(osd_open_classes_on_start, OPT_BOOL)
++OPTION(osd_class_load_list, OPT_STR)
++OPTION(osd_class_default_list, OPT_STR)
++OPTION(osd_agent_max_ops, OPT_INT)
++OPTION(osd_agent_max_low_ops, OPT_INT)
++OPTION(osd_agent_min_evict_effort, OPT_FLOAT)
++OPTION(osd_agent_quantize_effort, OPT_FLOAT)
++OPTION(osd_agent_delay_time, OPT_FLOAT)
++OPTION(osd_agent_hist_halflife, OPT_INT)
++OPTION(osd_agent_slop, OPT_FLOAT)
++OPTION(osd_find_best_info_ignore_history_les, OPT_BOOL)
++OPTION(osd_uuid, OPT_UUID)
++OPTION(osd_data, OPT_STR)
++OPTION(osd_journal, OPT_STR)
++OPTION(osd_journal_size, OPT_SIZE)
++OPTION(osd_journal_flush_on_shutdown, OPT_BOOL)
++OPTION(osd_max_write_size, OPT_SIZE)
++OPTION(osd_max_pgls, OPT_U32)
++OPTION(osd_client_message_size_cap, OPT_SIZE)
++OPTION(osd_client_message_cap, OPT_U32)
++OPTION(osd_crush_update_on_start, OPT_BOOL)
++OPTION(osd_class_update_on_start, OPT_BOOL)
++OPTION(osd_crush_initial_weight, OPT_FLOAT)
++OPTION(osd_allow_recovery_below_min_size, OPT_BOOL)
++OPTION(osd_map_share_max_epochs, OPT_INT)
++OPTION(osd_map_cache_size, OPT_INT)
++OPTION(osd_inject_bad_map_crc_probability, OPT_FLOAT)
++OPTION(osd_inject_failure_on_pg_removal, OPT_BOOL)
++OPTION(osd_max_markdown_period, OPT_INT)
++OPTION(osd_max_markdown_count, OPT_INT)
++OPTION(osd_op_thread_timeout, OPT_INT)
++OPTION(osd_op_thread_suicide_timeout, OPT_INT)
++OPTION(osd_op_pq_max_tokens_per_priority, OPT_U32)
++OPTION(osd_op_pq_min_cost, OPT_SIZE)
++OPTION(osd_recover_clone_overlap, OPT_BOOL)
++OPTION(osd_aggregated_slow_ops_logging, OPT_BOOL)
++OPTION(osd_op_num_threads_per_shard, OPT_INT)
++OPTION(osd_op_num_threads_per_shard_hdd, OPT_INT)
++OPTION(osd_op_num_threads_per_shard_ssd, OPT_INT)
++OPTION(osd_op_num_shards, OPT_INT)
++OPTION(osd_op_num_shards_hdd, OPT_INT)
++OPTION(osd_op_num_shards_ssd, OPT_INT)
++OPTION(osd_op_queue, OPT_STR)
++OPTION(osd_op_queue_cut_off, OPT_STR)
++OPTION(osd_read_ec_check_for_errors, OPT_BOOL)
++OPTION(osd_recovery_delay_start, OPT_FLOAT)
++OPTION(osd_recovery_max_active, OPT_U32)
++OPTION(osd_recovery_max_active_hdd, OPT_U32)
++OPTION(osd_recovery_max_active_ssd, OPT_U32)
++OPTION(osd_recovery_max_single_start, OPT_U32)
++OPTION(osd_recovery_max_chunk, OPT_SIZE)
++OPTION(osd_recovery_max_omap_entries_per_chunk, OPT_U32)
++OPTION(osd_copyfrom_max_chunk, OPT_SIZE)
++OPTION(osd_push_per_object_cost, OPT_SIZE)
++OPTION(osd_max_push_cost, OPT_SIZE)
++OPTION(osd_max_push_objects, OPT_U32)
++OPTION(osd_debug_feed_pullee, OPT_INT)
++OPTION(osd_backfill_scan_min, OPT_INT)
++OPTION(osd_backfill_scan_max, OPT_INT)
++OPTION(osd_heartbeat_min_peers, OPT_INT)
++OPTION(osd_rocksdb_iterator_bounds_enabled, OPT_BOOL)
+Index: third_party/ceph/include/acconfig.h
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/include/acconfig.h b/src/include/acconfig.h
+new file mode 100644
+--- /dev/null	(date 1702759634123)
++++ b/src/include/acconfig.h	(date 1702759634123)
+@@ -0,0 +1,407 @@
++/* config.h file expanded by Cmake for build */
++
++#ifndef CONFIG_H
++#define CONFIG_H
++
++/* Define to 1 if you have the `memset_s()` function. */
++/* #undef HAVE_MEMSET_S */
++
++/* fallocate(2) is supported */
++#define CEPH_HAVE_FALLOCATE
++
++/* Define to 1 if you have the `posix_fadvise' function. */
++#define HAVE_POSIX_FADVISE 1
++
++/* Define to 1 if you have the `posix_fallocate' function. */
++#define HAVE_POSIX_FALLOCATE 1
++
++/* Define to 1 if you have the `syncfs' function. */
++#define HAVE_SYS_SYNCFS 1
++
++/* sync_file_range(2) is supported */
++#define HAVE_SYNC_FILE_RANGE
++
++/* Define if you have mallinfo */
++/* #undef HAVE_MALLINFO */
++
++/* Define to 1 if you have the `pwritev' function. */
++#define HAVE_PWRITEV 1
++
++/* Define to 1 if you have the <sys/mount.h> header file. */
++#define HAVE_SYS_MOUNT_H 1
++
++/* Define to 1 if you have the <sys/param.h> header file. */
++#define HAVE_SYS_PARAM_H 1
++
++/* Define to 1 if you have the <sys/types.h> header file. */
++#define HAVE_SYS_TYPES_H 1
++
++/* Define to 1 if you have the <sys/vfs.h> header file. */
++#define HAVE_SYS_VFS_H 1
++
++/* Define to 1 if you have the <execinfo.h> header file. */
++#define HAVE_EXECINFO1H 1
++
++/* Define to 1 if the system has the type `__s16'. */
++#define HAVE___S16 1
++
++/* Define to 1 if the system has the type `__s32'. */
++#define HAVE___S32 1
++
++/* Define to 1 if the system has the type `__s64'. */
++#define HAVE___S64 1
++
++/* Define to 1 if the system has the type `__s8'. */
++#define HAVE___S8 1
++
++/* Define to 1 if the system has the type `__u16'. */
++#define HAVE___U16 1
++
++/* Define to 1 if the system has the type `__u32'. */
++#define HAVE___U32 1
++
++/* Define to 1 if the system has the type `__u64'. */
++#define HAVE___U64 1
++
++/* Define to 1 if the system has the type `__u8'. */
++#define HAVE___U8 1
++
++/* Define if the system has the type `in_addr_t' */
++#define HAVE_IN_ADDR_T
++
++/* Define if you have suseconds_t */
++#define HAVE_SUSECONDS_T
++
++/* Define if you have res_nquery */
++#define HAVE_RES_NQUERY
++
++/* Defined if you have LZ4 */
++#define HAVE_LZ4
++
++/* Defined if you have BROTLI */
++/* #undef HAVE_BROTLI */
++
++/* Defined if you have libaio */
++#define HAVE_LIBAIO
++
++/* Defined if you have libdml */
++/* #undef HAVE_LIBDML */
++
++/* Defined if you have libzbd */
++/* #undef HAVE_LIBZBD */
++
++/* Defined if you have liburing */
++#define HAVE_LIBURING
++
++/* Defind if you have POSIX AIO */
++/* #undef HAVE_POSIXAIO */
++
++/* Defined if OpenLDAP enabled */
++#define HAVE_OPENLDAP
++
++/* Define if you have fuse */
++#define HAVE_LIBFUSE
++
++/* Define version major */
++#define CEPH_FUSE_MAJOR_VERSION 2
++
++/* Define version minor */
++#define CEPH_FUSE_MINOR_VERSION 9
++
++/* Define to 1 if you have libxfs */
++#define HAVE_LIBXFS 1
++
++/* SPDK conditional compilation */
++/* #undef HAVE_SPDK */
++
++/* DPDK conditional compilation */
++/* #undef HAVE_DPDK */
++
++/* PMEM_DEVICE (OSD) conditional compilation */
++/* #undef HAVE_BLUESTORE_PMEM */
++
++/* Define if you have tcmalloc */
++#define HAVE_LIBTCMALLOC
++/* #undef LIBTCMALLOC_MISSING_ALIGNED_ALLOC */
++
++/* AsyncMessenger RDMA conditional compilation */
++#define HAVE_RDMA
++
++/* ibverbs experimental conditional compilation */
++/* #undef HAVE_IBV_EXP */
++
++/* define if bluestore enabled */
++#define WITH_BLUESTORE
++
++/* define if cephfs enabled */
++#define WITH_CEPHFS
++
++/* define if systemed is enabled */
++#define WITH_SYSTEMD
++
++/*define if GSSAPI/KRB5 enabled */
++/* #undef HAVE_GSSAPI */
++
++/* define if rbd enabled */
++#define WITH_RBD
++
++/* define if kernel rbd enabled */
++#define WITH_KRBD
++
++/* define if rbd ubbd enabled */
++/* #undef WITH_RBD_UBBD */
++
++/* define if key-value-store is enabled */
++/* #undef WITH_KVS */
++
++/* define if radosgw enabled */
++#define WITH_RADOSGW
++
++/* define if radosgw has openssl support */
++/* #undef WITH_CURL_OPENSSL */
++
++/*define if D4N filter enabled */
++#define WITH_RADOSGW_D4N 
++
++/* define if HAVE_THREAD_SAFE_RES_QUERY */
++/* #undef HAVE_THREAD_SAFE_RES_QUERY */
++
++/* define if HAVE_REENTRANT_STRSIGNAL */
++/* #undef HAVE_REENTRANT_STRSIGNAL */
++
++/* Define if you want to use LTTng */
++#define WITH_LTTNG
++
++/* Define if you want to use Jaeger */
++//#define HAVE_JAEGER
++
++/* Define if you want to use EVENTTRACE */
++/* #undef WITH_EVENTTRACE */
++
++/* Define if you want to OSD function instrumentation */
++/* #undef WITH_OSD_INSTRUMENT_FUNCTIONS */
++
++/* Define if you want to use Babeltrace */
++#define WITH_BABELTRACE
++
++/* Define to 1 if you have the <babeltrace/babeltrace.h> header file. */
++#define HAVE_BABELTRACE_BABELTRACE_H 1
++
++/* Define to 1 if you have the <babeltrace/ctf/events.h> header file. */
++#define HAVE_BABELTRACE_CTF_EVENTS_H 1
++
++/* Define to 1 if you have the <babeltrace/ctf/iterator.h> header file. */
++#define HAVE_BABELTRACE_CTF_ITERATOR_H 1
++
++/* Define to 1 if you have the <arpa/nameser_compat.h> header file. */
++#define HAVE_ARPA_NAMESER_COMPAT_H 1
++
++/* FastCGI headers are in /usr/include/fastcgi */
++/* #undef FASTCGI_INCLUDE_DIR */
++
++/* splice(2) is supported */
++#define CEPH_HAVE_SPLICE
++
++/* Define if you want C_Gather debugging */
++#define DEBUG_GATHER
++
++/* Define to 1 if you have the `getgrouplist' function. */
++#define HAVE_GETGROUPLIST 1
++
++/* LTTng is disabled, so define this macro to be nothing. */
++/* #undef tracepoint */
++
++/* Define to 1 if you have fdatasync. */
++#define HAVE_FDATASYNC 1
++
++/* Define to 1 if you have the <valgrind/helgrind.h> header file. */
++/* #undef HAVE_VALGRIND_HELGRIND_H */
++
++/* Define to 1 if you have the <sys/prctl.h> header file. */
++#define HAVE_SYS_PRCTL_H 1
++
++/* Define to 1 if you have the <linux/types.h> header file. */
++#define HAVE_LINUX_TYPES_H 1
++
++/* Define to 1 if you have the <linux/version.h> header file. */
++#define HAVE_LINUX_VERSION_H 1
++
++/* Define to 1 if you have sched.h. */
++#define HAVE_SCHED 1
++
++/* Define to 1 if you have sigdescr_np. */
++#define HAVE_SIGDESCR_NP 1
++
++/* Support SSE (Streaming SIMD Extensions) instructions */
++/* #undef HAVE_SSE */
++
++/* Support SSE2 (Streaming SIMD Extensions 2) instructions */
++/* #undef HAVE_SSE2 */
++
++/* Define to 1 if you have the `pipe2' function. */
++#define HAVE_PIPE2 1
++
++/* Support NEON instructions */
++/* #undef HAVE_NEON */
++
++/* Define if you have pthread_spin_init */
++#define HAVE_PTHREAD_SPINLOCK
++
++/* name_to_handle_at exists */
++#define HAVE_NAME_TO_HANDLE_AT
++
++/* we have a recent nasm and are x86_64 */
++/* #undef HAVE_NASM_X64 */
++
++/* nasm can also build the isa-l:avx512 */
++/* #undef HAVE_NASM_X64_AVX512 */
++
++/* Define if the erasure code isa-l plugin is compiled */
++#define WITH_EC_ISA_PLUGIN
++
++/* Define to 1 if strerror_r returns char *. */
++#define STRERROR_R_CHAR_P 1
++
++/* Defined if you have libzfs enabled */
++/* #undef HAVE_LIBZFS */
++
++/* Define if the C compiler supports __func__ */
++#define HAVE_FUNC
++
++/* Define if the C compiler supports __PRETTY_FUNCTION__ */
++#define HAVE_PRETTY_FUNC
++
++/* Define if the C compiler supports __attribute__((__symver__ (".."))) */
++#define HAVE_ATTR_SYMVER
++
++/* Define if the C compiler supports __asm__(".symver ..") */
++#define HAVE_ASM_SYMVER
++
++/* Have eventfd extension. */
++#define HAVE_EVENTFD
++
++/* Define if enabling coverage. */
++/* #undef ENABLE_COVERAGE */
++
++/* Defined if you want pg ref debugging */
++/* #undef PG_DEBUG_REFS */
++
++/* Support ARMv8 CRC instructions */
++#define HAVE_ARMV8_CRC
++
++/* Support ARMv8 CRYPTO instructions */
++#define HAVE_ARMV8_CRYPTO
++
++/* Support ARMv8 CRC and CRYPTO intrinsics */
++#define HAVE_ARMV8_CRC_CRYPTO_INTRINSICS
++
++/* Define if you have struct stat.st_mtimespec.tv_nsec */
++/* #undef HAVE_STAT_ST_MTIMESPEC_TV_NSEC */
++
++/* Define if you have struct stat.st_mtim.tv_nsec */
++#define HAVE_STAT_ST_MTIM_TV_NSEC
++
++/* Define if compiler supports static_cast<> */
++/* #undef HAVE_STATIC_CAST */
++
++/* Version number of package */
++#define PROJECT_VERSION "18.0.0"
++
++/* Defined if pthread_setname_np() is available */
++#define HAVE_PTHREAD_SETNAME_NP 1
++
++/* Defined if pthread_rwlockattr_setkind_np() is available */
++#define HAVE_PTHREAD_RWLOCKATTR_SETKIND_NP
++
++/* Defined if blkin enabled */
++/* #undef WITH_BLKIN */
++
++/* Defined if pthread_set_name_np() is available */
++/* #undef HAVE_PTHREAD_SET_NAME_NP */
++
++/* Defined if pthread_getname_np() is available */
++#define HAVE_PTHREAD_GETNAME_NP 1
++
++/* Support POWER8 instructions */
++/* #undef HAVE_POWER8 */
++
++/* Define if endian type is big endian */
++/* #undef CEPH_BIG_ENDIAN */
++
++/* Define if endian type is little endian */
++#define CEPH_LITTLE_ENDIAN
++
++#define MGR_PYTHON_EXECUTABLE "/usr/bin/python3.10"
++
++/* Define to 1 if you have the `getprogname' function. */
++/* #undef HAVE_GETPROGNAME */
++
++/* Defined if getentropy() is available */
++#define HAVE_GETENTROPY
++
++/* Defined if libradosstriper is enabled: */
++#define WITH_LIBRADOSSTRIPER
++
++/* Defined if OpenSSL is available for the rgw beast frontend */
++#define WITH_RADOSGW_BEAST_OPENSSL
++
++/* Defined if rabbitmq-c is available for rgw amqp push endpoint */
++#define WITH_RADOSGW_AMQP_ENDPOINT
++
++/* Defined if libedkafka is available for rgw kafka push endpoint */
++#define WITH_RADOSGW_KAFKA_ENDPOINT
++
++/* Defined if lua packages can be installed by radosgw */
++#define WITH_RADOSGW_LUA_PACKAGES
++
++/* Backend dbstore for Rados Gateway */
++#define WITH_RADOSGW_DBSTORE
++
++/* Backend CORTX-Motr for Rados Gateway */
++/* #undef WITH_RADOSGW_MOTR */
++
++/* Backend CORTX-DAOS for Rados Gateway */
++/* #undef WITH_RADOSGW_DAOS */
++
++/* Backend POSIX for Rados Gateway */
++#define WITH_RADOSGW_POSIX
++
++/* Defined if std::map::merge() is supported */
++#define HAVE_STDLIB_MAP_SPLICING
++
++/* Defined if Intel QAT compress/decompress is supported */
++/* #undef HAVE_QATZIP */
++
++/* Define if seastar is available. */
++/* #undef HAVE_SEASTAR */
++
++/* Define if unit tests are built. */
++#define UNIT_TESTS_BUILT
++
++/* Define if RBD QCOW migration format is enabled */
++#define WITH_RBD_MIGRATION_FORMAT_QCOW_V1
++
++/* Define if libcephsqlite is enabled */
++#define WITH_LIBCEPHSQLITE
++
++/* Define if RWL is enabled */
++/* #undef WITH_RBD_RWL */
++
++/* Define if PWL-SSD is enabled */
++/* #undef WITH_RBD_SSD_CACHE */
++
++/* Define if libcryptsetup can be used (linux only) */
++#define HAVE_LIBCRYPTSETUP
++
++/* Shared library extension, such as .so, .dll or .dylib */
++#define CMAKE_SHARED_LIBRARY_SUFFIX ".so"
++
++/* libexec directory path */
++#define CMAKE_INSTALL_LIBEXECDIR "libexec"
++
++#define BOOST_MPL_CFG_NO_PREPROCESSED_HEADERS
++#define BOOST_MPL_LIMIT_LIST_SIZE 30
++
++#include "include/ceph_assert.h"
++
++#endif /* CONFIG_H */
+Index: third_party/ceph/include/crimson_legacy_options.h
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/include/crimson_legacy_options.h b/src/include/crimson_legacy_options.h
+new file mode 100644
+--- /dev/null	(date 1702891856470)
++++ b/src/include/crimson_legacy_options.h	(date 1702891856470)
+@@ -0,0 +1,1 @@
++
+Index: third_party/ceph/include/mon_legacy_options.h
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/include/mon_legacy_options.h b/src/include/mon_legacy_options.h
+new file mode 100644
+--- /dev/null	(date 1702669339281)
++++ b/src/include/mon_legacy_options.h	(date 1702669339281)
+@@ -0,0 +1,85 @@
++OPTION(osd_crush_update_weight_set, OPT_BOOL)
++OPTION(mon_cluster_log_to_stderr, OPT_BOOL)
++OPTION(mon_cluster_log_to_syslog, OPT_STR)
++OPTION(mon_cluster_log_to_syslog_level, OPT_STR)
++OPTION(mon_cluster_log_to_syslog_facility, OPT_STR)
++OPTION(mon_cluster_log_to_file, OPT_BOOL)
++OPTION(mon_cluster_log_file, OPT_STR)
++OPTION(mon_cluster_log_file_level, OPT_STR)
++OPTION(mon_cluster_log_to_graylog, OPT_STR)
++OPTION(mon_cluster_log_to_graylog_host, OPT_STR)
++OPTION(mon_cluster_log_to_graylog_port, OPT_STR)
++OPTION(mon_log_max, OPT_U32)
++OPTION(mon_log_max_summary, OPT_U32)
++OPTION(mon_log_full_interval, OPT_U32)
++OPTION(mon_max_log_entries_per_event, OPT_INT)
++OPTION(mon_health_to_clog, OPT_BOOL)
++OPTION(mon_health_to_clog_interval, OPT_INT)
++OPTION(mon_health_to_clog_tick_interval, OPT_FLOAT)
++OPTION(mon_health_detail_to_clog, OPT_BOOL)
++OPTION(mon_warn_on_filestore_osds, OPT_BOOL)
++OPTION(mon_data_avail_crit, OPT_INT)
++OPTION(mon_data_avail_warn, OPT_INT)
++OPTION(mon_data_size_warn, OPT_SIZE)
++OPTION(mon_daemon_bytes, OPT_SIZE)
++OPTION(mon_election_timeout, OPT_FLOAT)
++OPTION(mon_lease, OPT_FLOAT)
++OPTION(mon_lease_renew_interval_factor, OPT_FLOAT)
++OPTION(mon_lease_ack_timeout_factor, OPT_FLOAT)
++OPTION(mon_accept_timeout_factor, OPT_FLOAT)
++OPTION(mon_warn_on_cache_pools_without_hit_sets, OPT_BOOL)
++OPTION(mon_warn_on_crush_straw_calc_version_zero, OPT_BOOL)
++OPTION(mon_warn_on_osd_down_out_interval_zero, OPT_BOOL)
++OPTION(mon_warn_on_legacy_crush_tunables, OPT_BOOL)
++OPTION(mon_crush_min_required_version, OPT_STR)
++OPTION(mon_clock_drift_allowed, OPT_FLOAT)
++OPTION(mon_clock_drift_warn_backoff, OPT_FLOAT)
++OPTION(mon_timecheck_interval, OPT_FLOAT)
++OPTION(mon_timecheck_skew_interval, OPT_FLOAT)
++OPTION(paxos_stash_full_interval, OPT_INT)
++OPTION(paxos_max_join_drift, OPT_INT)
++OPTION(paxos_propose_interval, OPT_FLOAT)
++OPTION(paxos_min_wait, OPT_FLOAT)
++OPTION(paxos_min, OPT_INT)
++OPTION(paxos_trim_min, OPT_INT)
++OPTION(paxos_trim_max, OPT_INT)
++OPTION(paxos_service_trim_min, OPT_U32)
++OPTION(paxos_service_trim_max, OPT_U32)
++OPTION(paxos_kill_at, OPT_INT)
++OPTION(mon_mds_force_trim_to, OPT_INT)
++OPTION(mon_mds_skip_sanity, OPT_BOOL)
++OPTION(mon_osd_laggy_halflife, OPT_INT)
++OPTION(mon_osd_laggy_weight, OPT_FLOAT)
++OPTION(mon_osd_laggy_max_interval, OPT_INT)
++OPTION(mon_osd_adjust_heartbeat_grace, OPT_BOOL)
++OPTION(mon_osd_adjust_down_out_interval, OPT_BOOL)
++OPTION(mon_osd_auto_mark_in, OPT_BOOL)
++OPTION(mon_osd_auto_mark_auto_out_in, OPT_BOOL)
++OPTION(mon_osd_auto_mark_new_in, OPT_BOOL)
++OPTION(mon_osd_destroyed_out_interval, OPT_INT)
++OPTION(mon_osd_down_out_interval, OPT_INT)
++OPTION(mon_osd_min_up_ratio, OPT_FLOAT)
++OPTION(mon_osd_min_in_ratio, OPT_FLOAT)
++OPTION(mon_osd_warn_op_age, OPT_FLOAT)
++OPTION(mon_osd_prime_pg_temp, OPT_BOOL)
++OPTION(mon_osd_prime_pg_temp_max_time, OPT_FLOAT)
++OPTION(mon_osd_prime_pg_temp_max_estimate, OPT_FLOAT)
++OPTION(mon_osd_blocklist_default_expire, OPT_FLOAT)
++OPTION(mon_osd_crush_smoke_test, OPT_BOOL)
++OPTION(mon_data, OPT_STR)
++OPTION(mon_rocksdb_options, OPT_STR)
++OPTION(mon_compact_on_start, OPT_BOOL)
++OPTION(mon_compact_on_bootstrap, OPT_BOOL)
++OPTION(mon_compact_on_trim, OPT_BOOL)
++OPTION(mon_osd_cache_size, OPT_INT)
++OPTION(mon_osd_cache_size_min, OPT_SIZE)
++OPTION(mon_osd_mapping_pgs_per_chunk, OPT_INT)
++OPTION(mon_clean_pg_upmaps_per_chunk, OPT_U32)
++OPTION(mon_osd_max_creating_pgs, OPT_INT)
++OPTION(mon_memory_target, OPT_SIZE)
++OPTION(mon_memory_autotune, OPT_BOOL)
++OPTION(mon_cpu_threads, OPT_INT)
++OPTION(mon_tick_interval, OPT_INT)
++OPTION(mon_session_timeout, OPT_INT)
++OPTION(mon_subscribe_interval, OPT_FLOAT)
++OPTION(mon_use_min_delay_socket, OPT_BOOL)
+Index: third_party/ceph/include/rbd-mirror_legacy_options.h
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/include/rbd-mirror_legacy_options.h b/src/include/rbd-mirror_legacy_options.h
+new file mode 100644
+--- /dev/null	(date 1702891856473)
++++ b/src/include/rbd-mirror_legacy_options.h	(date 1702891856473)
+@@ -0,0 +1,1 @@
++
+Index: third_party/ceph/include/immutable-object-cache_legacy_options.h
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/include/immutable-object-cache_legacy_options.h b/src/include/immutable-object-cache_legacy_options.h
+new file mode 100644
+--- /dev/null	(date 1702891856477)
++++ b/src/include/immutable-object-cache_legacy_options.h	(date 1702891856477)
+@@ -0,0 +1,1 @@
++
+Index: third_party/ceph/include/rbd_legacy_options.h
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/include/rbd_legacy_options.h b/src/include/rbd_legacy_options.h
+new file mode 100644
+--- /dev/null	(date 1702891856475)
++++ b/src/include/rbd_legacy_options.h	(date 1702891856475)
+@@ -0,0 +1,1 @@
++
+Index: third_party/ceph/include/mds-client_legacy_options.h
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/include/mds-client_legacy_options.h b/src/include/mds-client_legacy_options.h
+new file mode 100644
+--- /dev/null	(date 1702669339277)
++++ b/src/include/mds-client_legacy_options.h	(date 1702669339277)
+@@ -0,0 +1,33 @@
++OPTION(client_cache_size, OPT_SIZE)
++OPTION(client_cache_mid, OPT_FLOAT)
++OPTION(client_use_random_mds, OPT_BOOL)
++OPTION(client_trace, OPT_STR)
++OPTION(client_readahead_min, OPT_SIZE)
++OPTION(client_readahead_max_bytes, OPT_SIZE)
++OPTION(client_readahead_max_periods, OPT_INT)
++OPTION(client_snapdir, OPT_STR)
++OPTION(client_mount_uid, OPT_INT)
++OPTION(client_mount_gid, OPT_INT)
++OPTION(client_notify_timeout, OPT_INT)
++OPTION(osd_client_watch_timeout, OPT_INT)
++OPTION(client_quota_df, OPT_BOOL)
++OPTION(client_oc, OPT_BOOL)
++OPTION(client_oc_size, OPT_SIZE)
++OPTION(client_oc_max_dirty, OPT_SIZE)
++OPTION(client_oc_target_dirty, OPT_SIZE)
++OPTION(client_oc_max_dirty_age, OPT_FLOAT)
++OPTION(client_oc_max_objects, OPT_INT)
++OPTION(client_debug_getattr_caps, OPT_BOOL)
++OPTION(client_debug_force_sync_read, OPT_BOOL)
++OPTION(client_max_inline_size, OPT_SIZE)
++OPTION(client_inject_release_failure, OPT_BOOL)
++OPTION(client_inject_fixed_oldest_tid, OPT_BOOL)
++OPTION(client_metadata, OPT_STR)
++OPTION(client_acl_type, OPT_STR)
++OPTION(client_permissions, OPT_BOOL)
++OPTION(client_dirsize_rbytes, OPT_BOOL)
++OPTION(client_try_dentry_invalidate, OPT_BOOL)
++OPTION(client_check_pool_perm, OPT_BOOL)
++OPTION(client_use_faked_inos, OPT_BOOL)
++OPTION(fake_statfs_for_testing, OPT_INT)
++OPTION(debug_allow_any_pool_priority, OPT_BOOL)
+Index: third_party/ceph/include/mgr_legacy_options.h
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/include/mgr_legacy_options.h b/src/include/mgr_legacy_options.h
+new file mode 100644
+--- /dev/null	(date 1702669339280)
++++ b/src/include/mgr_legacy_options.h	(date 1702669339280)
+@@ -0,0 +1,10 @@
++OPTION(mgr_max_pg_num_change, OPT_INT)
++OPTION(mon_delta_reset_interval, OPT_FLOAT)
++OPTION(mon_cache_target_full_warn_ratio, OPT_FLOAT)
++OPTION(mon_pg_check_down_all_threshold, OPT_FLOAT)
++OPTION(mon_warn_on_misplaced, OPT_BOOL)
++OPTION(mon_reweight_min_pgs_per_osd, OPT_U32)
++OPTION(mon_reweight_min_bytes_per_osd, OPT_SIZE)
++OPTION(mon_reweight_max_osds, OPT_INT)
++OPTION(mon_reweight_max_change, OPT_FLOAT)
++OPTION(mon_osd_err_op_age_ratio, OPT_FLOAT)
+Index: third_party/ceph/include/mds_legacy_options.h
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/include/mds_legacy_options.h b/src/include/mds_legacy_options.h
+new file mode 100644
+--- /dev/null	(date 1702669339279)
++++ b/src/include/mds_legacy_options.h	(date 1702669339279)
+@@ -0,0 +1,95 @@
++OPTION(mds_data, OPT_STR)
++OPTION(mds_max_file_recover, OPT_U32)
++OPTION(mds_dir_max_commit_size, OPT_INT)
++OPTION(mds_dir_keys_per_op, OPT_INT)
++OPTION(mds_decay_halflife, OPT_FLOAT)
++OPTION(mds_beacon_interval, OPT_FLOAT)
++OPTION(mds_beacon_grace, OPT_FLOAT)
++OPTION(mds_enforce_unique_name, OPT_BOOL)
++OPTION(mds_session_blocklist_on_timeout, OPT_BOOL)
++OPTION(mds_session_blocklist_on_evict, OPT_BOOL)
++OPTION(mds_sessionmap_keys_per_op, OPT_U32)
++OPTION(mds_freeze_tree_timeout, OPT_FLOAT)
++OPTION(mds_health_summarize_threshold, OPT_INT)
++OPTION(mds_reconnect_timeout, OPT_FLOAT)
++OPTION(mds_tick_interval, OPT_FLOAT)
++OPTION(mds_dirstat_min_interval, OPT_FLOAT)
++OPTION(mds_scatter_nudge_interval, OPT_FLOAT)
++OPTION(mds_client_prealloc_inos, OPT_INT)
++OPTION(mds_early_reply, OPT_BOOL)
++OPTION(mds_default_dir_hash, OPT_INT)
++OPTION(mds_log_segment_size, OPT_SIZE)
++OPTION(mds_bal_export_pin, OPT_BOOL)
++OPTION(mds_bal_sample_interval, OPT_FLOAT)
++OPTION(mds_bal_replicate_threshold, OPT_FLOAT)
++OPTION(mds_bal_unreplicate_threshold, OPT_FLOAT)
++OPTION(mds_bal_split_size, OPT_INT)
++OPTION(mds_bal_split_rd, OPT_FLOAT)
++OPTION(mds_bal_split_wr, OPT_FLOAT)
++OPTION(mds_bal_split_bits, OPT_INT)
++OPTION(mds_bal_merge_size, OPT_INT)
++OPTION(mds_bal_fragment_size_max, OPT_INT)
++OPTION(mds_bal_fragment_fast_factor, OPT_FLOAT)
++OPTION(mds_bal_idle_threshold, OPT_FLOAT)
++OPTION(mds_bal_max, OPT_INT)
++OPTION(mds_bal_max_until, OPT_INT)
++OPTION(mds_bal_mode, OPT_INT)
++OPTION(mds_bal_min_rebalance, OPT_FLOAT)
++OPTION(mds_bal_overload_epochs, OPT_INT)
++OPTION(mds_bal_min_start, OPT_FLOAT)
++OPTION(mds_bal_need_min, OPT_FLOAT)
++OPTION(mds_bal_need_max, OPT_FLOAT)
++OPTION(mds_bal_midchunk, OPT_FLOAT)
++OPTION(mds_bal_minchunk, OPT_FLOAT)
++OPTION(mds_bal_target_decay, OPT_FLOAT)
++OPTION(mds_replay_interval, OPT_FLOAT)
++OPTION(mds_shutdown_check, OPT_INT)
++OPTION(mds_thrash_exports, OPT_INT)
++OPTION(mds_thrash_fragments, OPT_INT)
++OPTION(mds_dump_cache_on_map, OPT_BOOL)
++OPTION(mds_dump_cache_after_rejoin, OPT_BOOL)
++OPTION(mds_verify_scatter, OPT_BOOL)
++OPTION(mds_debug_scatterstat, OPT_BOOL)
++OPTION(mds_debug_frag, OPT_BOOL)
++OPTION(mds_debug_auth_pins, OPT_BOOL)
++OPTION(mds_debug_subtrees, OPT_BOOL)
++OPTION(mds_kill_mdstable_at, OPT_INT)
++OPTION(mds_kill_export_at, OPT_INT)
++OPTION(mds_kill_import_at, OPT_INT)
++OPTION(mds_kill_link_at, OPT_INT)
++OPTION(mds_kill_rename_at, OPT_INT)
++OPTION(mds_kill_openc_at, OPT_INT)
++OPTION(mds_kill_journal_expire_at, OPT_INT)
++OPTION(mds_kill_journal_replay_at, OPT_INT)
++OPTION(mds_journal_format, OPT_U32)
++OPTION(mds_kill_create_at, OPT_INT)
++OPTION(mds_kill_skip_replaying_inotable, OPT_BOOL)
++OPTION(mds_inject_skip_replaying_inotable, OPT_BOOL)
++OPTION(mds_inject_traceless_reply_probability, OPT_FLOAT)
++OPTION(mds_wipe_sessions, OPT_BOOL)
++OPTION(mds_wipe_ino_prealloc, OPT_BOOL)
++OPTION(mds_skip_ino, OPT_INT)
++OPTION(mds_enable_op_tracker, OPT_BOOL)
++OPTION(mds_op_history_size, OPT_U32)
++OPTION(mds_op_history_duration, OPT_U32)
++OPTION(mds_op_history_slow_op_size, OPT_U32)
++OPTION(mds_op_history_slow_op_threshold, OPT_U32)
++OPTION(mds_op_complaint_time, OPT_FLOAT)
++OPTION(mds_op_log_threshold, OPT_INT)
++OPTION(mds_snap_min_uid, OPT_U32)
++OPTION(mds_snap_max_uid, OPT_U32)
++OPTION(mds_snap_rstat, OPT_BOOL)
++OPTION(mds_verify_backtrace, OPT_U32)
++OPTION(mds_max_completed_flushes, OPT_U32)
++OPTION(mds_max_completed_requests, OPT_U32)
++OPTION(mds_action_on_write_error, OPT_U32)
++OPTION(mds_mon_shutdown_timeout, OPT_FLOAT)
++OPTION(mds_max_purge_files, OPT_U32)
++OPTION(mds_max_purge_ops, OPT_U32)
++OPTION(mds_max_purge_ops_per_pg, OPT_FLOAT)
++OPTION(mds_purge_queue_busy_flush_period, OPT_FLOAT)
++OPTION(mds_root_ino_uid, OPT_INT)
++OPTION(mds_root_ino_gid, OPT_INT)
++OPTION(mds_max_scrub_ops_in_progress, OPT_INT)
++OPTION(mds_damage_table_max_entries, OPT_INT)
++OPTION(mds_client_writeable_range_max_inc_objs, OPT_U32)
+Index: third_party/ceph/include/rgw_legacy_options.h
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/include/rgw_legacy_options.h b/src/include/rgw_legacy_options.h
+new file mode 100644
+--- /dev/null	(date 1702669339300)
++++ b/src/include/rgw_legacy_options.h	(date 1702669339300)
+@@ -0,0 +1,298 @@
++OPTION(rgw_acl_grants_max_num, OPT_INT)
++OPTION(rgw_user_policies_max_num, OPT_INT)
++OPTION(rgw_cors_rules_max_num, OPT_INT)
++OPTION(rgw_delete_multi_obj_max_num, OPT_INT)
++OPTION(rgw_website_routing_rules_max_num, OPT_INT)
++OPTION(rgw_max_chunk_size, OPT_SIZE)
++OPTION(rgw_put_obj_min_window_size, OPT_SIZE)
++OPTION(rgw_put_obj_max_window_size, OPT_SIZE)
++OPTION(rgw_max_put_size, OPT_SIZE)
++OPTION(rgw_max_put_param_size, OPT_SIZE)
++OPTION(rgw_max_attr_size, OPT_SIZE)
++OPTION(rgw_max_attr_name_len, OPT_SIZE)
++OPTION(rgw_max_attrs_num_in_req, OPT_U32)
++OPTION(rgw_override_bucket_index_max_shards, OPT_U32)
++OPTION(rgw_bucket_index_max_aio, OPT_U32)
++OPTION(rgw_multi_obj_del_max_aio, OPT_U32)
++OPTION(rgw_enable_quota_threads, OPT_BOOL)
++OPTION(rgw_enable_gc_threads, OPT_BOOL)
++OPTION(rgw_enable_lc_threads, OPT_BOOL)
++OPTION(rgw_data, OPT_STR)
++OPTION(rgw_enable_apis, OPT_STR)
++OPTION(rgw_cache_enabled, OPT_BOOL)
++OPTION(rgw_cache_lru_size, OPT_INT)
++OPTION(rgw_dns_name, OPT_STR)
++OPTION(rgw_dns_s3website_name, OPT_STR)
++OPTION(rgw_service_provider_name, OPT_STR)
++OPTION(rgw_content_length_compat, OPT_BOOL)
++OPTION(rgw_lifecycle_work_time, OPT_STR)
++OPTION(rgw_lc_lock_max_time, OPT_INT)
++OPTION(rgw_lc_max_worker, OPT_INT)
++OPTION(rgw_lc_max_wp_worker, OPT_INT)
++OPTION(rgw_lc_max_objs, OPT_INT)
++OPTION(rgw_lc_max_rules, OPT_U32)
++OPTION(rgw_lc_debug_interval, OPT_INT)
++OPTION(rgw_script_uri, OPT_STR)
++OPTION(rgw_request_uri, OPT_STR)
++OPTION(rgw_ignore_get_invalid_range, OPT_BOOL)
++OPTION(rgw_swift_url, OPT_STR)
++OPTION(rgw_swift_url_prefix, OPT_STR)
++OPTION(rgw_swift_auth_url, OPT_STR)
++OPTION(rgw_swift_auth_entry, OPT_STR)
++OPTION(rgw_swift_tenant_name, OPT_STR)
++OPTION(rgw_swift_account_in_url, OPT_BOOL)
++OPTION(rgw_swift_enforce_content_length, OPT_BOOL)
++OPTION(rgw_keystone_url, OPT_STR)
++OPTION(rgw_keystone_admin_token, OPT_STR)
++OPTION(rgw_keystone_admin_token_path, OPT_STR)
++OPTION(rgw_keystone_admin_user, OPT_STR)
++OPTION(rgw_keystone_admin_password, OPT_STR)
++OPTION(rgw_keystone_admin_password_path, OPT_STR)
++OPTION(rgw_keystone_admin_tenant, OPT_STR)
++OPTION(rgw_keystone_admin_project, OPT_STR)
++OPTION(rgw_keystone_admin_domain, OPT_STR)
++OPTION(rgw_keystone_service_token_enabled, OPT_BOOL)
++OPTION(rgw_keystone_service_token_accepted_roles, OPT_STR)
++OPTION(rgw_keystone_expired_token_cache_expiration, OPT_INT)
++OPTION(rgw_keystone_barbican_user, OPT_STR)
++OPTION(rgw_keystone_barbican_password, OPT_STR)
++OPTION(rgw_keystone_barbican_tenant, OPT_STR)
++OPTION(rgw_keystone_barbican_project, OPT_STR)
++OPTION(rgw_keystone_barbican_domain, OPT_STR)
++OPTION(rgw_keystone_api_version, OPT_INT)
++OPTION(rgw_keystone_accepted_roles, OPT_STR)
++OPTION(rgw_keystone_accepted_admin_roles, OPT_STR)
++OPTION(rgw_keystone_accepted_reader_roles, OPT_STR)
++OPTION(rgw_keystone_token_cache_size, OPT_INT)
++OPTION(rgw_keystone_verify_ssl, OPT_BOOL)
++OPTION(rgw_keystone_implicit_tenants, OPT_STR)
++OPTION(rgw_cross_domain_policy, OPT_STR)
++OPTION(rgw_healthcheck_disabling_path, OPT_STR)
++OPTION(rgw_s3_auth_use_rados, OPT_BOOL)
++OPTION(rgw_s3_auth_use_keystone, OPT_BOOL)
++OPTION(rgw_s3_auth_order, OPT_STR)
++OPTION(rgw_barbican_url, OPT_STR)
++OPTION(rgw_ldap_uri, OPT_STR)
++OPTION(rgw_ldap_binddn, OPT_STR)
++OPTION(rgw_ldap_searchdn, OPT_STR)
++OPTION(rgw_ldap_dnattr, OPT_STR)
++OPTION(rgw_ldap_secret, OPT_STR)
++OPTION(rgw_s3_auth_use_ldap, OPT_BOOL)
++OPTION(rgw_ldap_searchfilter, OPT_STR)
++OPTION(rgw_opa_url, OPT_STR)
++OPTION(rgw_opa_token, OPT_STR)
++OPTION(rgw_opa_verify_ssl, OPT_BOOL)
++OPTION(rgw_use_opa_authz, OPT_BOOL)
++OPTION(rgw_admin_entry, OPT_STR)
++OPTION(rgw_enforce_swift_acls, OPT_BOOL)
++OPTION(rgw_swift_token_expiration, OPT_INT)
++OPTION(rgw_print_continue, OPT_BOOL)
++OPTION(rgw_print_prohibited_content_length, OPT_BOOL)
++OPTION(rgw_remote_addr_param, OPT_STR)
++OPTION(rgw_op_thread_timeout, OPT_INT)
++OPTION(rgw_op_thread_suicide_timeout, OPT_INT)
++OPTION(rgw_thread_pool_size, OPT_INT)
++OPTION(rgw_num_control_oids, OPT_INT)
++OPTION(rgw_verify_ssl, OPT_BOOL)
++OPTION(rgw_nfs_lru_lanes, OPT_INT)
++OPTION(rgw_nfs_lru_lane_hiwat, OPT_INT)
++OPTION(rgw_nfs_fhcache_partitions, OPT_INT)
++OPTION(rgw_nfs_fhcache_size, OPT_INT)
++OPTION(rgw_nfs_namespace_expire_secs, OPT_INT)
++OPTION(rgw_nfs_max_gc, OPT_INT)
++OPTION(rgw_nfs_write_completion_interval_s, OPT_INT)
++OPTION(rgw_nfs_s3_fast_attrs, OPT_BOOL)
++OPTION(rgw_nfs_run_gc_threads, OPT_BOOL)
++OPTION(rgw_nfs_run_lc_threads, OPT_BOOL)
++OPTION(rgw_nfs_run_quota_threads, OPT_BOOL)
++OPTION(rgw_nfs_run_sync_thread, OPT_BOOL)
++OPTION(rgw_nfs_frontends, OPT_STR)
++OPTION(rgw_zone, OPT_STR)
++OPTION(rgw_zone_root_pool, OPT_STR)
++OPTION(rgw_default_zone_info_oid, OPT_STR)
++OPTION(rgw_region, OPT_STR)
++OPTION(rgw_region_root_pool, OPT_STR)
++OPTION(rgw_default_region_info_oid, OPT_STR)
++OPTION(rgw_zonegroup, OPT_STR)
++OPTION(rgw_zonegroup_root_pool, OPT_STR)
++OPTION(rgw_default_zonegroup_info_oid, OPT_STR)
++OPTION(rgw_realm, OPT_STR)
++OPTION(rgw_realm_root_pool, OPT_STR)
++OPTION(rgw_default_realm_info_oid, OPT_STR)
++OPTION(rgw_period_root_pool, OPT_STR)
++OPTION(rgw_period_latest_epoch_info_oid, OPT_STR)
++OPTION(rgw_log_nonexistent_bucket, OPT_BOOL)
++OPTION(rgw_log_object_name, OPT_STR)
++OPTION(rgw_log_object_name_utc, OPT_BOOL)
++OPTION(rgw_usage_max_shards, OPT_INT)
++OPTION(rgw_usage_max_user_shards, OPT_INT)
++OPTION(rgw_enable_ops_log, OPT_BOOL)
++OPTION(rgw_enable_usage_log, OPT_BOOL)
++OPTION(rgw_ops_log_rados, OPT_BOOL)
++OPTION(rgw_ops_log_socket_path, OPT_STR)
++OPTION(rgw_ops_log_file_path, OPT_STR)
++OPTION(rgw_ops_log_data_backlog, OPT_SIZE)
++OPTION(rgw_usage_log_flush_threshold, OPT_INT)
++OPTION(rgw_usage_log_tick_interval, OPT_INT)
++OPTION(rgw_init_timeout, OPT_INT)
++OPTION(rgw_mime_types_file, OPT_STR)
++OPTION(rgw_gc_max_objs, OPT_INT)
++OPTION(rgw_gc_obj_min_wait, OPT_INT)
++OPTION(rgw_gc_processor_max_time, OPT_INT)
++OPTION(rgw_gc_processor_period, OPT_INT)
++OPTION(rgw_gc_max_concurrent_io, OPT_INT)
++OPTION(rgw_gc_max_trim_chunk, OPT_INT)
++OPTION(rgw_gc_max_deferred_entries_size, OPT_U32)
++OPTION(rgw_gc_max_queue_size, OPT_U32)
++OPTION(rgw_gc_max_deferred, OPT_U32)
++OPTION(rgw_s3_success_create_obj_status, OPT_INT)
++OPTION(rgw_resolve_cname, OPT_BOOL)
++OPTION(rgw_obj_stripe_size, OPT_SIZE)
++OPTION(rgw_extended_http_attrs, OPT_STR)
++OPTION(rgw_exit_timeout_secs, OPT_INT)
++OPTION(rgw_get_obj_window_size, OPT_SIZE)
++OPTION(rgw_get_obj_max_req_size, OPT_SIZE)
++OPTION(rgw_relaxed_s3_bucket_names, OPT_BOOL)
++OPTION(rgw_defer_to_bucket_acls, OPT_STR)
++OPTION(rgw_list_buckets_max_chunk, OPT_INT)
++OPTION(rgw_md_log_max_shards, OPT_INT)
++OPTION(rgw_curl_buffersize, OPT_INT)
++OPTION(rgw_curl_wait_timeout_ms, OPT_INT)
++OPTION(rgw_curl_low_speed_limit, OPT_INT)
++OPTION(rgw_curl_low_speed_time, OPT_INT)
++OPTION(rgw_curl_tcp_keepalive, OPT_INT)
++OPTION(rgw_copy_obj_progress, OPT_BOOL)
++OPTION(rgw_copy_obj_progress_every_bytes, OPT_SIZE)
++OPTION(rgw_max_copy_obj_concurrent_io, OPT_INT)
++OPTION(rgw_sync_obj_etag_verify, OPT_BOOL)
++OPTION(rgw_obj_tombstone_cache_size, OPT_INT)
++OPTION(rgw_data_log_window, OPT_INT)
++OPTION(rgw_data_log_changes_size, OPT_INT)
++OPTION(rgw_data_log_num_shards, OPT_INT)
++OPTION(rgw_data_log_obj_prefix, OPT_STR)
++OPTION(rgw_data_sync_poll_interval, OPT_INT)
++OPTION(rgw_meta_sync_poll_interval, OPT_INT)
++OPTION(rgw_bucket_sync_spawn_window, OPT_INT)
++OPTION(rgw_data_sync_spawn_window, OPT_INT)
++OPTION(rgw_meta_sync_spawn_window, OPT_INT)
++OPTION(rgw_bucket_quota_ttl, OPT_INT)
++OPTION(rgw_bucket_quota_cache_size, OPT_INT)
++OPTION(rgw_bucket_default_quota_max_objects, OPT_INT)
++OPTION(rgw_bucket_default_quota_max_size, OPT_INT)
++OPTION(rgw_expose_bucket, OPT_BOOL)
++OPTION(rgw_frontends, OPT_STR)
++OPTION(rgw_beast_enable_async, OPT_BOOL)
++OPTION(rgw_user_quota_bucket_sync_interval, OPT_INT)
++OPTION(rgw_user_quota_sync_interval, OPT_INT)
++OPTION(rgw_user_quota_sync_idle_users, OPT_BOOL)
++OPTION(rgw_user_quota_sync_wait_time, OPT_INT)
++OPTION(rgw_user_default_quota_max_objects, OPT_INT)
++OPTION(rgw_user_default_quota_max_size, OPT_INT)
++OPTION(rgw_multipart_min_part_size, OPT_SIZE)
++OPTION(rgw_multipart_part_upload_limit, OPT_INT)
++OPTION(rgw_max_slo_entries, OPT_INT)
++OPTION(rgw_olh_pending_timeout_sec, OPT_INT)
++OPTION(rgw_user_max_buckets, OPT_INT)
++OPTION(rgw_objexp_gc_interval, OPT_U32)
++OPTION(rgw_objexp_hints_num_shards, OPT_U32)
++OPTION(rgw_objexp_chunk_size, OPT_U32)
++OPTION(rgw_enable_static_website, OPT_BOOL)
++OPTION(rgw_log_http_headers, OPT_STR)
++OPTION(rgw_num_async_rados_threads, OPT_INT)
++OPTION(rgw_md_notify_interval_msec, OPT_INT)
++OPTION(rgw_run_sync_thread, OPT_BOOL)
++OPTION(rgw_sync_lease_period, OPT_INT)
++OPTION(rgw_sync_log_trim_interval, OPT_INT)
++OPTION(rgw_sync_data_inject_err_probability, OPT_FLOAT)
++OPTION(rgw_sync_meta_inject_err_probability, OPT_FLOAT)
++OPTION(rgw_sync_data_full_inject_err_probability, OPT_FLOAT)
++OPTION(rgw_sync_trace_history_size, OPT_SIZE)
++OPTION(rgw_sync_trace_per_node_log_size, OPT_INT)
++OPTION(rgw_sync_trace_servicemap_update_interval, OPT_INT)
++OPTION(rgw_period_push_interval, OPT_FLOAT)
++OPTION(rgw_period_push_interval_max, OPT_FLOAT)
++OPTION(rgw_safe_max_objects_per_shard, OPT_INT)
++OPTION(rgw_shard_warning_threshold, OPT_FLOAT)
++OPTION(rgw_swift_versioning_enabled, OPT_BOOL)
++OPTION(rgw_swift_custom_header, OPT_STR)
++OPTION(rgw_swift_need_stats, OPT_BOOL)
++OPTION(rgw_debug_inject_set_olh_err, OPT_U32)
++OPTION(rgw_debug_inject_olh_cancel_modification_err, OPT_BOOL)
++OPTION(rgw_trust_forwarded_https, OPT_BOOL)
++OPTION(rgw_crypt_require_ssl, OPT_BOOL)
++OPTION(rgw_crypt_default_encryption_key, OPT_STR)
++OPTION(rgw_crypt_s3_kms_backend, OPT_STR)
++OPTION(rgw_crypt_s3_kms_encryption_keys, OPT_STR)
++OPTION(rgw_crypt_vault_auth, OPT_STR)
++OPTION(rgw_crypt_vault_token_file, OPT_STR)
++OPTION(rgw_crypt_vault_addr, OPT_STR)
++OPTION(rgw_crypt_vault_prefix, OPT_STR)
++OPTION(rgw_crypt_vault_secret_engine, OPT_STR)
++OPTION(rgw_crypt_vault_namespace, OPT_STR)
++OPTION(rgw_crypt_vault_verify_ssl, OPT_BOOL)
++OPTION(rgw_crypt_vault_ssl_cacert, OPT_STR)
++OPTION(rgw_crypt_vault_ssl_clientcert, OPT_STR)
++OPTION(rgw_crypt_vault_ssl_clientkey, OPT_STR)
++OPTION(rgw_crypt_kmip_addr, OPT_STR)
++OPTION(rgw_crypt_kmip_ca_path, OPT_STR)
++OPTION(rgw_crypt_kmip_username, OPT_STR)
++OPTION(rgw_crypt_kmip_password, OPT_STR)
++OPTION(rgw_crypt_kmip_client_cert, OPT_STR)
++OPTION(rgw_crypt_kmip_client_key, OPT_STR)
++OPTION(rgw_crypt_kmip_kms_key_template, OPT_STR)
++OPTION(rgw_crypt_kmip_s3_key_template, OPT_STR)
++OPTION(rgw_crypt_suppress_logs, OPT_BOOL)
++OPTION(rgw_crypt_sse_s3_backend, OPT_STR)
++OPTION(rgw_crypt_sse_s3_vault_secret_engine, OPT_STR)
++OPTION(rgw_crypt_sse_s3_key_template, OPT_STR)
++OPTION(rgw_crypt_sse_s3_vault_auth, OPT_STR)
++OPTION(rgw_crypt_sse_s3_vault_token_file, OPT_STR)
++OPTION(rgw_crypt_sse_s3_vault_addr, OPT_STR)
++OPTION(rgw_crypt_sse_s3_vault_prefix, OPT_STR)
++OPTION(rgw_crypt_sse_s3_vault_namespace, OPT_STR)
++OPTION(rgw_crypt_sse_s3_vault_verify_ssl, OPT_BOOL)
++OPTION(rgw_crypt_sse_s3_vault_ssl_cacert, OPT_STR)
++OPTION(rgw_crypt_sse_s3_vault_ssl_clientcert, OPT_STR)
++OPTION(rgw_crypt_sse_s3_vault_ssl_clientkey, OPT_STR)
++OPTION(rgw_list_bucket_min_readahead, OPT_INT)
++OPTION(rgw_rest_getusage_op_compat, OPT_BOOL)
++OPTION(rgw_torrent_flag, OPT_BOOL)
++OPTION(rgw_torrent_tracker, OPT_STR)
++OPTION(rgw_torrent_createby, OPT_STR)
++OPTION(rgw_torrent_comment, OPT_STR)
++OPTION(rgw_torrent_encoding, OPT_STR)
++OPTION(rgw_data_notify_interval_msec, OPT_INT)
++OPTION(rgw_torrent_origin, OPT_STR)
++OPTION(rgw_torrent_sha_unit, OPT_SIZE)
++OPTION(rgw_torrent_max_size, OPT_SIZE)
++OPTION(rgw_sts_entry, OPT_STR)
++OPTION(rgw_sts_key, OPT_STR)
++OPTION(rgw_s3_auth_use_sts, OPT_BOOL)
++OPTION(rgw_sts_max_session_duration, OPT_U32)
++OPTION(rgw_sts_min_session_duration, OPT_U32)
++OPTION(rgw_sts_token_introspection_url, OPT_STR)
++OPTION(rgw_sts_client_id, OPT_STR)
++OPTION(rgw_sts_client_secret, OPT_STR)
++OPTION(rgw_d3n_l1_local_datacache_enabled, OPT_BOOL)
++OPTION(rgw_d3n_l1_datacache_persistent_path, OPT_STR)
++OPTION(rgw_d3n_l1_datacache_size, OPT_SIZE)
++OPTION(rgw_d3n_l1_evict_cache_on_start, OPT_BOOL)
++OPTION(rgw_d3n_l1_fadvise, OPT_INT)
++OPTION(rgw_d3n_l1_eviction_policy, OPT_STR)
++OPTION(rgw_d3n_libaio_aio_threads, OPT_INT)
++OPTION(rgw_d3n_libaio_aio_num, OPT_INT)
++OPTION(rgwlc_auto_session_clear, OPT_BOOL)
++OPTION(rgwlc_skip_bucket_step, OPT_BOOL)
++OPTION(rgw_pending_bucket_index_op_expiration, OPT_U32)
++OPTION(rgw_bucket_index_transaction_instrumentation, OPT_BOOL)
++OPTION(rgw_d4n_host, OPT_STR)
++OPTION(rgw_d4n_port, OPT_INT)
++OPTION(rgw_topic_persistency_time_to_live, OPT_U32)
++OPTION(rgw_topic_persistency_max_retries, OPT_U32)
++OPTION(rgw_topic_persistency_sleep_duration, OPT_U32)
++OPTION(rgw_lua_max_memory_per_state, OPT_U32)
++OPTION(mandatory_topic_permissions, OPT_BOOL)
++OPTION(rgw_user_counters_cache, OPT_BOOL)
++OPTION(rgw_user_counters_cache_size, OPT_U32)
++OPTION(rgw_bucket_counters_cache, OPT_BOOL)
++OPTION(rgw_bucket_counters_cache_size, OPT_U32)

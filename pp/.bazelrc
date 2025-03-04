@@ -1,0 +1,5 @@
+# This flag fixed bazel build error (tested on 7.* versions)
+build --noreuse_sandbox_directories
+build --fission=yes
+build --flag_alias=march=//bazel/toolchain:march
+build --flag_alias=asan=//bazel/toolchain:asan

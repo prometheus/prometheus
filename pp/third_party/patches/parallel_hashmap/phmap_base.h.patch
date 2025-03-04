@@ -1,0 +1,11 @@
+--- parallel_hashmap/phmap_base.h
++++ parallel_hashmap/phmap_base.h
+@@ -238,7 +238,7 @@ struct negation : std::integral_constant<bool, !T::value> {};
+ 
+ template <typename T>
+ struct is_trivially_destructible
+-    : std::integral_constant<bool, __has_trivial_destructor(T) &&
++    : std::integral_constant<bool, std::is_trivially_destructible<T>::value &&
+       std::is_destructible<T>::value> {};
+ 
+ template <typename T>

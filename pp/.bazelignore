@@ -1,0 +1,6 @@
+.cache
+bazel-bin
+bazel-pp
+bazel-out
+bazel-testlogs
+bazel-external

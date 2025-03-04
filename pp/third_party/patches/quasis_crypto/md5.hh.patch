@@ -1,0 +1,67 @@
+--- a/md5.hh
++++ b/md5.hh
+@@ -36,6 +36,10 @@
+  *     Copyright 2022 Quasis - The MIT License
+  */
+ 
++#pragma once
++
++#include <bit>
++
+ namespace crypto {
+ 
+     template<unsigned state_bits = 128>
+@@ -180,7 +184,7 @@ namespace crypto {
+ 
+         template<typename input_type> constexpr MD5&
+         update(const size_type count, input_type &&input) noexcept {
+-            for (size_type i = 0; i < count; ++i) update(static_cast<input_type&&>(input)); return *this;
++            for (size_type i = 0; i < count; ++i) { update(static_cast<input_type&&>(input)); } return *this;
+         }
+ 
+         constexpr output_type
+@@ -207,7 +211,7 @@ namespace crypto {
+ 
+         static constexpr uint32_type
+         rotl(uint32_type value, int count) noexcept {
+-            return __builtin_rotateleft32(value, count);
++            return std::rotl(value, count);
+         }
+ 
+         static constexpr word_type
+@@ -323,35 +327,3 @@ namespace crypto {
+         return MD5<state_bits>().update(static_cast<input_type&&>(input)...).digest();
+     }
+ }
+-
+-#if __INCLUDE_LEVEL__
+-
+-    #pragma once
+-
+-#else
+-
+-    #include <cassert>
+-    using namespace crypto;
+-
+-    template<auto count, typename right_type> constexpr bool
+-    operator==(const char (&left)[count], const right_type &right) noexcept {
+-        return count - 1 == sizeof(right_type) && __builtin_memcmp(&left, &right, sizeof(right_type)) == 0;
+-    }
+-
+-    int
+-    main() {
+-
+-        assert("\xd4\x1d\x8c\xd9\x8f\x00\xb2\x04\xe9\x80\x09\x98\xec\xf8\x42\x7e" == md5(""));
+-        assert("\x0c\xc1\x75\xb9\xc0\xf1\xb6\xa8\x31\xc3\x99\xe2\x69\x77\x26\x61" == md5("a"));
+-        assert("\x90\x01\x50\x98\x3c\xd2\x4f\xb0\xd6\x96\x3f\x7d\x28\xe1\x7f\x72" == md5("abc"));
+-        assert("\xf9\x6b\x69\x7d\x7c\xb7\x93\x8d\x52\x5a\x2f\x31\xaa\xf1\x61\xd0" == md5("message digest"));
+-        assert("\xc3\xfc\xd3\xd7\x61\x92\xe4\x00\x7d\xfb\x49\x6c\xca\x67\xe1\x3b" == md5("abcdefghijklmnopqrstuvwxyz"));
+-        assert("\x82\x15\xef\x07\x96\xa2\x0b\xca\xaa\xe1\x16\xd3\x87\x6c\x66\x4a" == md5("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"));
+-        assert("\xd1\x74\xab\x98\xd2\x77\xd9\xf5\xa5\x61\x1c\x2c\x9f\x41\x9d\x9f" == md5("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"));
+-        assert("\x57\xed\xf4\xa2\x2b\xe3\xc9\x55\xac\x49\xda\x2e\x21\x07\xb6\x7a" == md5("12345678901234567890123456789012345678901234567890123456789012345678901234567890"));
+-        assert("\x77\x07\xd6\xae\x4e\x02\x7c\x70\xee\xa2\xa9\x35\xc2\x29\x6f\x21" == md5(1000000, 'a'));
+-
+-        return 0;
+-    }
+-
+-#endif

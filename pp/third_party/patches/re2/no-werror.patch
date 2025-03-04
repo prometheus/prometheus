@@ -1,0 +1,13 @@
+--- BUILD.bazel
++++ BUILD.bazel
+@@ -61,7 +61,9 @@ cc_library(
+         "@platforms//os:wasi": [],
+         "@platforms//os:windows": [],
+         "//conditions:default": ["-pthread"],
+-    }),
++    }) + [
++        "-Wno-error"
++    ],
+     linkopts = select({
+         # macOS doesn't need `-pthread' when linking and it appears that
+         # older versions of Clang will warn about the unused command line

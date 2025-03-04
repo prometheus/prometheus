@@ -1,0 +1,16 @@
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/**
+ * @brief return determined flavor
+ *
+ * @param res {
+ *   flavor string
+ * }
+ */
+void prompp_get_flavor(void* res);
+
+#ifdef __cplusplus
+}
+#endif

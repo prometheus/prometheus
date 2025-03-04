@@ -1,0 +1,69 @@
+#pragma once
+
+#include "query.h"
+#include "series_data/data_storage.h"
+#include "series_data/decoder.h"
+
+namespace series_data::querier {
+
+class Querier {
+ public:
+  explicit Querier(const DataStorage& storage) : storage_(storage) {}
+
+  template <typename Query>
+  [[nodiscard]] PROMPP_ALWAYS_INLINE const QueriedChunkList& query(const Query& query) {
+    chunks_.clear();
+
+    for (auto& ls_id : query.label_set_ids) {
+      query_chunks(ls_id, query.time_interval);
+    }
+
+    return chunks_;
+  }
+
+ private:
+  using ChunkType = chunk::DataChunk::Type;
+
+  const DataStorage& storage_;
+  QueriedChunkList chunks_;
+
+  PROMPP_ALWAYS_INLINE void query_chunks(PromPP::Primitives::LabelSetID ls_id, const PromPP::Primitives::TimeInterval& time_interval) {
+    query_finalized_chunks(ls_id, time_interval);
+    query_opened_chunks(ls_id, time_interval);
+  }
+
+  void query_finalized_chunks(PromPP::Primitives::LabelSetID ls_id, const PromPP::Primitives::TimeInterval& time_interval) {
+    if (const auto it = storage_.finalized_chunks.find(ls_id); it != storage_.finalized_chunks.end()) {
+      uint32_t finalized_chunk_index = 0;
+      auto& finalized_chunks = it->second;
+      for (auto chunk_it = finalized_chunks.begin(); chunk_it != finalized_chunks.end(); ++chunk_it, ++finalized_chunk_index) {
+        const auto chunk_start_timestamp_ms = Decoder::get_chunk_first_timestamp<ChunkType::kFinalized>(storage_, *chunk_it);
+        if (chunk_start_timestamp_ms > time_interval.max) {
+          return;
+        }
+
+        if (time_interval.intersect(
+                {.min = chunk_start_timestamp_ms, .max = Decoder::get_finalized_chunk_last_timestamp(storage_, ls_id, chunk_it, finalized_chunks.end())})) {
+          chunks_.emplace_back(ls_id, finalized_chunk_index);
+        }
+      }
+    }
+  }
+
+  void query_opened_chunks(PromPP::Primitives::LabelSetID ls_id, const PromPP::Primitives::TimeInterval& time_interval) {
+    if (storage_.open_chunks.size() > ls_id) {
+      if (auto& open_chunk = storage_.open_chunks[ls_id]; !open_chunk.is_empty()) {
+        const auto chunk_start_timestamp_ms = Decoder::get_chunk_first_timestamp<ChunkType::kOpen>(storage_, open_chunk);
+        if (chunk_start_timestamp_ms > time_interval.max) {
+          return;
+        }
+
+        if (time_interval.intersect({.min = chunk_start_timestamp_ms, .max = Decoder::get_open_chunk_last_timestamp(storage_, open_chunk)})) {
+          chunks_.emplace_back(ls_id);
+        }
+      }
+    }
+  }
+};
+
+}  // namespace series_data::querier

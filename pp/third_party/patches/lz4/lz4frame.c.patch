@@ -1,0 +1,14 @@
+--- lib/lz4frame.c
++++ lib/lz4frame.c
+@@ -1097,6 +1097,11 @@ void LZ4F_resetDecompressionContext(LZ4F_dctx* dctx)
+     dctx->dictSize = 0;
+ }
+ 
++size_t LZ4F_allocated_memory(LZ4F_dctx* dctx)
++{
++  return sizeof(*dctx) + dctx->tmpInSize + dctx->tmpOutSize;
++}
++
+ 
+ /*! LZ4F_decodeHeader() :
+  *  input   : `src` points at the **beginning of the frame**

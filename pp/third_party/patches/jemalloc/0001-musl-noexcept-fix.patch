@@ -1,0 +1,79 @@
+From 9cfceb398c323e56709e4a60ece405cac4546e50 Mon Sep 17 00:00:00 2001
+From: Marvin Schmidt <marv@exherbo.org>
+Date: Tue, 27 Sep 2022 07:03:14 +0200
+Subject: [PATCH 1/2] configure: Handle *-linux-musl* hosts properly
+
+This is the same as the `*-*-linux*` case with the two exceptions that
+we don't set glibc=1 and don't define JEMALLOC_USE_CXX_THROW
+---
+ configure.ac | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/configure.ac b/configure.ac
+index 0ae579eea..619a9cd6f 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -687,6 +687,19 @@ case "${host}" in
+ 	fi
+ 	zero_realloc_default_free="1"
+ 	;;
++  *-*-linux-musl*)
++	dnl syscall(2) and secure_getenv(3) are exposed by _GNU_SOURCE.
++	JE_APPEND_VS(CPPFLAGS, -D_GNU_SOURCE)
++	abi="elf"
++	AC_DEFINE([JEMALLOC_PURGE_MADVISE_DONTNEED_ZEROS], [ ], [ ])
++	AC_DEFINE([JEMALLOC_HAS_ALLOCA_H], [ ], [ ])
++	AC_DEFINE([JEMALLOC_PROC_SYS_VM_OVERCOMMIT_MEMORY], [ ], [ ])
++	AC_DEFINE([JEMALLOC_THREADED_INIT], [ ], [ ])
++	if test "${LG_SIZEOF_PTR}" = "3"; then
++	  default_retain="1"
++	fi
++	zero_realloc_default_free="1"
++	;;
+   *-*-linux*)
+ 	dnl syscall(2) and secure_getenv(3) are exposed by _GNU_SOURCE.
+ 	JE_APPEND_VS(CPPFLAGS, -D_GNU_SOURCE)
+
+From 2e2e76febd4a438b65f055b519eae8c09901fb65 Mon Sep 17 00:00:00 2001
+From: Marvin Schmidt <marv@exherbo.org>
+Date: Tue, 27 Sep 2022 07:00:13 +0200
+Subject: [PATCH 2/2] Fix exception specification error for hosts using musl
+ libc
+
+It turns out that the previous commit did not suffice since the
+JEMALLOC_SYS_NOTHROW definition also causes the same exception specification
+errors as JEMALLOC_USE_CXX_THROW did:
+```
+x86_64-pc-linux-musl-cc -std=gnu11 -Werror=unknown-warning-option -Wall -Wextra -Wshorten-64-to-32 -Wsign-compare -Wundef -Wno-format-zero-length -Wpointer-
+arith -Wno-missing-braces -Wno-missing-field-initializers -pipe -g3 -fvisibility=hidden -Wimplicit-fallthrough -O3 -funroll-loops -march=native -O2 -pipe -c -march=native -O2 -pipe -D_GNU_SOURCE -D_REENTRANT -Iinclude -Iinclude -o src/background_thread.o src/background_thread.c
+In file included from src/jemalloc_cpp.cpp:9:
+In file included from include/jemalloc/internal/jemalloc_preamble.h:27:
+include/jemalloc/internal/../jemalloc.h:254:32: error: exception specification in declaration does not match previous declaration
+    void JEMALLOC_SYS_NOTHROW   *je_malloc(size_t size)
+                                 ^
+include/jemalloc/internal/../jemalloc.h:75:21: note: expanded from macro 'je_malloc'
+                    ^
+/usr/x86_64-pc-linux-musl/include/stdlib.h:40:7: note: previous declaration is here
+void *malloc (size_t);
+      ^
+```
+
+On systems using the musl C library we have to omit the exception specification
+on malloc function family like it's done for MacOS, FreeBSD and OpenBSD.
+---
+ include/jemalloc/jemalloc_macros.h.in | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/include/jemalloc/jemalloc_macros.h.in b/include/jemalloc/jemalloc_macros.h.in
+index 2de3f27de..05d996be2 100644
+--- a/include/jemalloc/jemalloc_macros.h.in
++++ b/include/jemalloc/jemalloc_macros.h.in
+@@ -142,7 +142,7 @@
+ #  define JEMALLOC_COLD
+ #endif
+ 
+-#if (defined(__APPLE__) || defined(__FreeBSD__)) && !defined(JEMALLOC_NO_RENAME)
++#if (defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || (defined(__linux__) && !defined(__GLIBC__))) && !defined(JEMALLOC_NO_RENAME)
+ #  define JEMALLOC_SYS_NOTHROW
+ #else
+ #  define JEMALLOC_SYS_NOTHROW JEMALLOC_NOTHROW
