@@ -30,12 +30,10 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 )
 
-func createTSDBBlock(numSeries int, outputDir string, dimensions int, cardinality int, logger *slog.Logger) (string, error) {
+func createTSDBBlock(numSeries int, outputDir string, dimensions int, cardinality int, mint int64, logger *slog.Logger) (string, error) {
 	if err := os.MkdirAll(outputDir, os.ModePerm); err != nil {
 		return "", fmt.Errorf("failed to create directory: %w", err)
 	}
-
-	timestamp := time.Now().Unix() * 1000
 
 	series := make([]storage.Series, 0, numSeries)
 
@@ -61,7 +59,8 @@ func createTSDBBlock(numSeries int, outputDir string, dimensions int, cardinalit
 		samples := []chunks.Sample{}
 		for j := 0; j < 500; j++ {
 			v := float64(j)
-			samples = append(samples, newSample(timestamp+int64(j)*14*1000, v, nil, nil))
+			ts := mint + int64(j)*14*1000
+			samples = append(samples, newSample(ts, v, nil, nil))
 		}
 
 		series = append(series, storage.NewListSeries(lbls, samples))
