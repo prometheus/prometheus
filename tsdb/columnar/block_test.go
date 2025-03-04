@@ -15,7 +15,7 @@ const (
 	testdataDir = "testdata"
 )
 
-func TestChunkReader_New(t *testing.T) {
+func TestColumnarChunkReader_New(t *testing.T) {
 	_, err := os.Stat(testdataDir)
 	require.NoError(t, err, "testdata directory not found, test data is required")
 
@@ -52,7 +52,7 @@ func TestChunkReader_New(t *testing.T) {
 	require.NotEmpty(t, blockDir, "No columnar block with parquet files found in testdata directory")
 	require.NotEmpty(t, parquetFiles, "No parquet files found in the data directory")
 
-	cr, err := NewChunkReader(blockDir, chunkenc.NewPool())
+	cr, err := NewColumnarChunkReader(blockDir, chunkenc.NewPool())
 	require.NoError(t, err)
 	require.NotNil(t, cr)
 
