@@ -184,9 +184,20 @@ func NewChunkReader(dir string, pool chunkenc.Pool) (*ChunkReader, error) {
 
 // ChunkOrIterable returns the chunk or iterable for the given chunk meta.
 func (cr *ChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
-	// TODO We need to find a way to link chunk refs to the chunks within parquet files. IIRC the chunk references are ever increasing integers so maybe we can use that as an index into the parquet files.
+	// TODO(jesus.vazquez) We need to find a way to link chunk refs to the chunks within parquet files.
+	// IIRC the chunk references are ever increasing integers so maybe we can use that as an index into the parquet files.
+	// The typical call sequence is:
+	//
+	//  var chks []chunks.Meta{}
+	//  _ = Series(seriesRef, &builder, &chks)
+	//  for _, chk := range chks {
+	//    c, iterable, err := chunkr.ChunkOrIterable(chk)
+	//    c.Bytes()
+	//  }
+	//
+	// So the IndexReader is responsible for building the chunk metas. We probably need to implement that method before this one.
 
-	// For now, let's return a not implemented error
+	// TODO(jesus.vazquez) I think iterable should always be nil because we're reading from a block, not a WAL or head
 	return nil, nil, errors.New("not implemented: ChunkOrIterable")
 }
 
