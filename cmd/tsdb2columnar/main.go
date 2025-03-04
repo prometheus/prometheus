@@ -20,6 +20,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -33,12 +34,14 @@ func main() {
 		Level: slog.LevelInfo,
 	}))
 
+	now := time.Date(2024, time.December, 10, 10, 0, 0, 0, time.UTC)
+
 	printSeparator("STEP 1: CREATING TSDB BLOCK")
 
 	fmt.Printf("Creating a TSDB block with %d series in directory '%s'\n", *numSeries, *outputDir)
 	fmt.Printf("Adding %d dimensions with cardinality %d\n", *dimensions, *cardinality)
 
-	blockPath, err := createTSDBBlock(*numSeries, *outputDir, *dimensions, *cardinality, logger)
+	blockPath, err := createTSDBBlock(*numSeries, *outputDir, *dimensions, *cardinality, now.Unix()*1000, logger)
 	if err != nil {
 		fmt.Printf("Failed to create TSDB block: %v\n", err)
 		return
