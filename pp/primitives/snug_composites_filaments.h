@@ -585,6 +585,8 @@ class LabelSet {
     };
 
    public:
+    using SymbolIdsCodec = BareBones::StreamVByte::Codec1234;
+
     symbols_tables_type symbols_tables;
     symbols_ids_sequences_type symbols_ids_sequences;
     LabelNameSetsTableType<Vector> label_name_sets_table;
@@ -641,14 +643,14 @@ class LabelSet {
     template <class InputStream>
     void load(InputStream& in) {
       // read version
-      uint8_t version = in.get();
+      const uint8_t version = in.get();
       if (version != 1) {
         throw BareBones::Exception(0x7524f0b0ab963554, "Invalid stream data version (%d) for loading LabelSets into data vector, only version 1 is supported",
                                    version);
       }
 
       // read mode
-      BareBones::SnugComposite::SerializationMode mode = static_cast<BareBones::SnugComposite::SerializationMode>(in.get());
+      const auto mode = static_cast<BareBones::SnugComposite::SerializationMode>(in.get());
 
       // read pos of first seq in the portion, if we are reading wal
       uint32_t first_to_load_i = 0;
@@ -672,10 +674,12 @@ class LabelSet {
       in.read(reinterpret_cast<char*>(&size_to_load), sizeof(size_to_load));
 
       // read data
-      const auto original_size = symbols_ids_sequences.size();
-      auto sg1 = std::experimental::scope_fail([&]() { symbols_ids_sequences.resize(original_size); });
-      symbols_ids_sequences.resize(original_size + size_to_load);
-      in.read(reinterpret_cast<char*>(&symbols_ids_sequences[original_size]), size_to_load * sizeof(symbols_ids_sequences[first_to_load_i]));
+      auto sg1 = std::experimental::scope_fail([original_size = symbols_ids_sequences.size(), this] { symbols_ids_sequences.resize(original_size); });
+
+      symbols_ids_sequences.reserve_and_write(size_to_load + sizeof(SymbolIdsCodec::value_type), [&in, size_to_load](uint8_t* buffer, uint32_t) {
+        in.read(reinterpret_cast<char*>(buffer), size_to_load * sizeof(symbols_ids_sequences[first_to_load_i]));
+        return size_to_load;
+      });
       next_item_index_ += size_to_load;
 
       // read label name sets table
@@ -708,7 +712,7 @@ class LabelSet {
 
         // resize, if needed
         if (id >= symbols_tables.size()) {
-          auto number_of_tables_stil_left_to_load = number_of_symbols_tables_to_load - i;
+          const auto number_of_tables_stil_left_to_load = number_of_symbols_tables_to_load - i;
           auto size_will_be_at_least = id + number_of_tables_stil_left_to_load;
 
           symbols_tables.reserve(size_will_be_at_least);
@@ -771,7 +775,7 @@ class LabelSet {
     auto lns = data.label_name_sets_table[lns_id_];
     auto lns_i = lns.begin();
     auto size_before = data.symbols_ids_sequences.size();
-    auto i = BareBones::StreamVByte::back_inserter<BareBones::StreamVByte::Codec1234>(data.symbols_ids_sequences, lns.size());
+    auto i = BareBones::StreamVByte::back_inserter<typename data_type::SymbolIdsCodec>(data.symbols_ids_sequences, lns.size());
     for (auto [_, label_value] : label_set) {
       *i++ = data.symbols_tables[lns_i.id()]->find_or_emplace(label_value);
       ++lns_i;
@@ -783,7 +787,8 @@ class LabelSet {
   // NOLINTNEXTLINE(readability-identifier-naming)
   class composite_type {
     using label_name_set_type = typename LabelNameSetsTableType<Vector>::value_type;
-    using values_iterator_type = BareBones::StreamVByte::DecodeIterator<BareBones::StreamVByte::Codec1234, typename symbols_ids_sequences_type::const_iterator>;
+    using values_iterator_type =
+        BareBones::StreamVByte::DecodeIterator<typename data_type::SymbolIdsCodec, typename symbols_ids_sequences_type::const_iterator>;
     using values_iterator_sentinel_type = BareBones::StreamVByte::DecodeIteratorSentinel;
 
     label_name_set_type label_name_set_;
@@ -879,7 +884,7 @@ class LabelSet {
     auto lns = data.label_name_sets_table[lns_id_];
 
     auto [values_begin, values_end] =
-        BareBones::StreamVByte::decoder<BareBones::StreamVByte::Codec1234>(data.symbols_ids_sequences.begin() + pos_ - data.shrinked_size_, lns.size());
+        BareBones::StreamVByte::decoder<typename data_type::SymbolIdsCodec>(data.symbols_ids_sequences.begin() + pos_ - data.shrinked_size_, lns.size());
 
     return composite_type(&data, std::move(lns), std::move(values_begin), std::move(values_end));
   }

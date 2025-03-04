@@ -6,6 +6,7 @@
 #include "primitives/snug_composites.h"
 #include "printer.h"
 #include "series_index/querier/querier.h"
+#include "series_index/queryable_encoding_bimap.h"
 #include "series_index/trie/cedarpp_tree.h"
 
 namespace {
@@ -191,7 +192,10 @@ INSTANTIATE_TEST_SUITE_P(RegexpMatchWithEmptyAlternative,
                                                          .expected = {.series_id_list = {0, 1}, .status = QuerierStatus::kMatch}},
                                          QuerierTestCase{.label_matchers = {{.name = "job", .value = "cron", .type = MatcherType::kExactMatch},
                                                                             {.name = "server1", .value = "|localhost", .type = MatcherType::kRegexpMatch}},
-                                                         .expected = {.series_id_list = {0, 1, 2}, .status = QuerierStatus::kMatch}}));
+                                                         .expected = {.series_id_list = {0, 1, 2}, .status = QuerierStatus::kMatch}},
+                                         QuerierTestCase{.label_matchers = {{.name = "server", .value = "localhost", .type = MatcherType::kExactMatch},
+                                                                            {.name = "job", .value = "|cron", .type = MatcherType::kRegexpMatch}},
+                                                         .expected = {.series_id_list = {2}, .status = QuerierStatus::kMatch}}));
 
 INSTANTIATE_TEST_SUITE_P(RegexpNotMatchWithEmptyAlternative,
                          QuerierFixture,
@@ -206,5 +210,12 @@ INSTANTIATE_TEST_SUITE_P(RegexpNotMatchWithEmptyAlternative,
                                                          .expected = {.series_id_list = {}, .status = QuerierStatus::kNoMatch}},
                                          QuerierTestCase{.label_matchers = {{.name = "server", .value = "|localhost", .type = MatcherType::kRegexpNotMatch}},
                                                          .expected = {.series_id_list = {}, .status = QuerierStatus::kNoMatch}}));
+
+INSTANTIATE_TEST_SUITE_P(MatchersSorting,
+                         QuerierFixture,
+                         testing::Values(QuerierTestCase{.label_matchers = {{.name = "job", .value = "cron", .type = MatcherType::kExactMatch},
+                                                                            {.name = "task", .value = "nodejs", .type = MatcherType::kExactNotMatch},
+                                                                            {.name = "task", .value = "php|python", .type = MatcherType::kRegexpMatch}},
+                                                         .expected = {.series_id_list = {1, 2}, .status = QuerierStatus::kMatch}}));
 
 }  // namespace

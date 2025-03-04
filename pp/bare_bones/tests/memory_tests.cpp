@@ -6,10 +6,53 @@
 
 namespace {
 
+using BareBones::AllocationSizeCalculator;
 using BareBones::Memory;
 using BareBones::MemoryControlBlock;
 using BareBones::SharedMemory;
 using BareBones::SharedPtr;
+
+struct GetAllocationSizeCase {
+  uint32_t needed_size;
+  uint32_t expected_size;
+};
+
+class AllocationSizeCalculatorFixture : public testing::TestWithParam<GetAllocationSizeCase> {
+ protected:
+  using Calculator = AllocationSizeCalculator<char, uint32_t>;
+};
+
+TEST_P(AllocationSizeCalculatorFixture, TestCalculate) {
+  // Arrange
+
+  // Act
+  const auto size = Calculator::calculate(GetParam().needed_size);
+
+  // Assert
+  EXPECT_EQ(GetParam().expected_size, size);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    UpTo50PercentAlignedToMinAllocationSize,
+    AllocationSizeCalculatorFixture,
+    testing::Values(GetAllocationSizeCase{.needed_size = 0, .expected_size = AllocationSizeCalculator<char, uint32_t>::kMinAllocationSize},
+                    GetAllocationSizeCase{.needed_size = static_cast<uint32_t>(AllocationSizeCalculator<char, uint32_t>::kMinAllocationSize * 0.66),
+                                          .expected_size = AllocationSizeCalculator<char, uint32_t>::kMinAllocationSize},
+                    GetAllocationSizeCase{.needed_size = static_cast<uint32_t>(AllocationSizeCalculator<char, uint32_t>::kMinAllocationSize * 0.66) + 1,
+                                          .expected_size = AllocationSizeCalculator<char, uint32_t>::kMinAllocationSize * 2},
+                    GetAllocationSizeCase{.needed_size = 170, .expected_size = 256},
+                    GetAllocationSizeCase{.needed_size = 171, .expected_size = 512}));
+
+INSTANTIATE_TEST_SUITE_P(UpTo50PercentAlignedTo256,
+                         AllocationSizeCalculatorFixture,
+                         testing::Values(GetAllocationSizeCase{.needed_size = 171, .expected_size = 512},
+                                         GetAllocationSizeCase{.needed_size = 2730, .expected_size = 4096},
+                                         GetAllocationSizeCase{.needed_size = 2731, .expected_size = 4096},
+                                         GetAllocationSizeCase{.needed_size = 2732, .expected_size = 4096}));
+
+INSTANTIATE_TEST_SUITE_P(UpTo10PercentAlignedTo4096,
+                         AllocationSizeCalculatorFixture,
+                         testing::Values(GetAllocationSizeCase{.needed_size = 4096, .expected_size = 8192}));
 
 class MemoryFixture : public ::testing::Test {
  protected:

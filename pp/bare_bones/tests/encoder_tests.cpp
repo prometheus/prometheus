@@ -1,6 +1,5 @@
-#include <algorithm>
-#include <iterator>
 #include <random>
+#include <ranges>
 #include <string>
 #include <vector>
 
@@ -20,19 +19,19 @@ class EncoderTest : public testing::Test {
   static constexpr value_type NUM_VALUES = 100;
 
  public:
-  static std::vector<value_type> make_data(const char* key) {
+  static std::vector<value_type> make_data(std::string_view key) {
     std::vector<value_type> data;
 
-    if (strcmp(key, "empty") == 0) {
+    if (key == "empty") {
       return data;
     }
-    if (strcmp(key, "increment") == 0) {
+    if (key == "increment") {
       for (value_type i = 0; i < NUM_VALUES; ++i) {
         data.push_back(i);
       }
       return data;
     }
-    if (strcmp(key, "random") == 0) {
+    if (key == "random") {
       std::mt19937 gen32(testing::UnitTest::GetInstance()->random_seed());
       for (value_type i = 0; i < NUM_VALUES; ++i) {
         // use half of value for correct ZigZag
@@ -41,104 +40,82 @@ class EncoderTest : public testing::Test {
       std::sort(data.begin(), data.end());
       return data;
     }
-    throw std::invalid_argument(key);
+    throw std::invalid_argument(std::string(key));
   }
 };
 
-typedef testing::Types<BareBones::EncodedSequence<BareBones::Encoding::RLE<DataSequence>>,
-                       BareBones::EncodedSequence<BareBones::Encoding::DeltaRLE<DataSequence>>,
-                       BareBones::EncodedSequence<BareBones::Encoding::DeltaZigZagRLE<DataSequence>>,
-                       BareBones::EncodedSequence<BareBones::Encoding::RLE<DataSequence64>>,
-                       BareBones::EncodedSequence<BareBones::Encoding::DeltaRLE<DataSequence64>>,
-                       BareBones::EncodedSequence<BareBones::Encoding::DeltaZigZagRLE<DataSequence64>>,
-                       BareBones::EncodedSequence<BareBones::Encoding::RLE<DataSequence64Mostly1>>,
-                       BareBones::EncodedSequence<BareBones::Encoding::DeltaRLE<DataSequence64Mostly1>>,
-                       BareBones::EncodedSequence<BareBones::Encoding::DeltaZigZagRLE<DataSequence64Mostly1>>>
-    EncoderTypes;
+using EncoderTypes = testing::Types<BareBones::EncodedSequence<BareBones::Encoding::RLE<DataSequence>>,
+                                    BareBones::EncodedSequence<BareBones::Encoding::DeltaRLE<DataSequence>>,
+                                    BareBones::EncodedSequence<BareBones::Encoding::DeltaZigZagRLE<DataSequence>>,
+                                    BareBones::EncodedSequence<BareBones::Encoding::RLE<DataSequence64>>,
+                                    BareBones::EncodedSequence<BareBones::Encoding::DeltaRLE<DataSequence64>>,
+                                    BareBones::EncodedSequence<BareBones::Encoding::DeltaZigZagRLE<DataSequence64>>,
+                                    BareBones::EncodedSequence<BareBones::Encoding::RLE<DataSequence64Mostly1>>,
+                                    BareBones::EncodedSequence<BareBones::Encoding::DeltaRLE<DataSequence64Mostly1>>,
+                                    BareBones::EncodedSequence<BareBones::Encoding::DeltaZigZagRLE<DataSequence64Mostly1>>>;
 TYPED_TEST_SUITE(EncoderTest, EncoderTypes);
 
 TYPED_TEST(EncoderTest, should_keep_push_back_order) {
-  const char* cases[] = {"empty", "increment", "random"};
-  for (auto key : cases) {
+  for (constexpr std::array cases{"empty", "increment", "random"}; auto key : cases) {
     SCOPED_TRACE(key);
+
+    // Arrange
     const auto etalons = EncoderTest<TypeParam>::make_data(key);
 
+    // Act
     TypeParam outcomes;
-    for (const auto& x : etalons) {
-      outcomes.push_back(x);
-    }
-    // TODO: Need understand - why it's doesn't work
-    // ASSERT_TRUE(std::ranges::equal(std::begin(data), std::end(data), std::begin(actual), std::end(actual)));
-    auto etalon = etalons.begin();
-    auto outcome = outcomes.begin();
-    size_t count = 0;
-    while (etalon != etalons.end() && outcome != outcomes.end()) {
-      EXPECT_EQ(*etalon++, *outcome++);
-      count++;
-    }
-    EXPECT_EQ(etalon == etalons.end(), outcome == outcomes.end());
-    EXPECT_EQ(etalons.size(), count);
+    std::ranges::copy(etalons, std::back_insert_iterator(outcomes));
+
+    // Assert
+    ASSERT_TRUE(std::ranges::equal(etalons, outcomes));
   }
 }
 
 TYPED_TEST(EncoderTest, should_dump_and_restore) {
-  const char* cases[] = {"empty", "increment", "random"};
-  for (auto key : cases) {
+  for (constexpr std::array cases{"empty", "increment", "random"}; auto key : cases) {
     SCOPED_TRACE(key);
-    const auto etalons = EncoderTest<TypeParam>::make_data(key);
 
+    // Arrange
+    const auto etalons = EncoderTest<TypeParam>::make_data(key);
     TypeParam src_outcomes, dst_outcomes;
-    for (const auto& etalon : etalons) {
-      src_outcomes.push_back(etalon);
-    }
+    std::ranges::copy(etalons, std::back_insert_iterator(src_outcomes));
     auto save_size = src_outcomes.save_size();
 
+    // Act
     std::ostringstream out;
     out << src_outcomes;
     ASSERT_EQ(out.str().length(), save_size);
     std::istringstream in(out.str());
     in >> dst_outcomes;
 
-    auto src_outcome = src_outcomes.begin();
-    auto dst_outcome = dst_outcomes.begin();
-    while (src_outcome != src_outcomes.end() && dst_outcome != dst_outcomes.end()) {
-      EXPECT_EQ(*src_outcome++, *dst_outcome++);
-    }
-    EXPECT_EQ(src_outcome == src_outcomes.end(), dst_outcome == dst_outcomes.end());
+    // Assert
+    EXPECT_TRUE(std::ranges::equal(src_outcomes, dst_outcomes));
   }
 }
 
-static const std::vector<uint64_t> ETALONS_BOUNDARY_VALUES = {1,        255,        256,        65535,         65536,         16777215,
-                                                              16777216, 4294967295, 4294967296, 1099511627775, 1099511627776, 9223372036854775807};
+constexpr std::array kEtalonsBoundaryValues = {1UL,        255UL,        256UL,        65535UL,         65536UL,         16777215UL,
+                                               16777216UL, 4294967295UL, 4294967296UL, 1099511627775UL, 1099511627776UL, 9223372036854775807UL};
 
 template <class T>
 class EncoderTest64 : public testing::Test {};
 
-typedef testing::Types<BareBones::EncodedSequence<BareBones::Encoding::RLE<DataSequence64>>,
-                       BareBones::EncodedSequence<BareBones::Encoding::DeltaRLE<DataSequence64>>,
-                       BareBones::EncodedSequence<BareBones::Encoding::DeltaZigZagRLE<DataSequence64>>,
-                       BareBones::EncodedSequence<BareBones::Encoding::RLE<DataSequence64Mostly1>>,
-                       BareBones::EncodedSequence<BareBones::Encoding::DeltaRLE<DataSequence64Mostly1>>,
-                       BareBones::EncodedSequence<BareBones::Encoding::DeltaZigZagRLE<DataSequence64Mostly1>>>
-    EncoderTypes64;
+using EncoderTypes64 = testing::Types<BareBones::EncodedSequence<BareBones::Encoding::RLE<DataSequence64>>,
+                                      BareBones::EncodedSequence<BareBones::Encoding::DeltaRLE<DataSequence64>>,
+                                      BareBones::EncodedSequence<BareBones::Encoding::DeltaZigZagRLE<DataSequence64>>,
+                                      BareBones::EncodedSequence<BareBones::Encoding::RLE<DataSequence64Mostly1>>,
+                                      BareBones::EncodedSequence<BareBones::Encoding::DeltaRLE<DataSequence64Mostly1>>,
+                                      BareBones::EncodedSequence<BareBones::Encoding::DeltaZigZagRLE<DataSequence64Mostly1>>>;
 TYPED_TEST_SUITE(EncoderTest64, EncoderTypes64);
 
 TYPED_TEST(EncoderTest64, boundary_values) {
+  // Arrange
   TypeParam outcomes;
-  for (const auto& x : ETALONS_BOUNDARY_VALUES) {
-    outcomes.push_back(x);
-  }
 
-  auto etalon = ETALONS_BOUNDARY_VALUES.begin();
-  auto outcome = outcomes.begin();
-  size_t count = 0;
-  while (etalon != ETALONS_BOUNDARY_VALUES.end() && outcome != outcomes.end()) {
-    EXPECT_EQ(*etalon++, *outcome++);
-    count++;
-  }
+  // Act
+  std::ranges::copy(kEtalonsBoundaryValues, std::back_insert_iterator(outcomes));
 
-  EXPECT_EQ(etalon == ETALONS_BOUNDARY_VALUES.end(), outcome == outcomes.end());
-  EXPECT_EQ(ETALONS_BOUNDARY_VALUES.size(), count);
+  // Assert
+  EXPECT_TRUE(std::ranges::equal(outcomes, kEtalonsBoundaryValues));
 }
 
 }  // namespace

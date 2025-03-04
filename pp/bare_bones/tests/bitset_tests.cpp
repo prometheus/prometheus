@@ -14,23 +14,6 @@ class BitsetFixture : public testing::Test {
   BareBones::Bitset bs_;
 };
 
-TEST_F(BitsetFixture, should_resize_up_to_10_percent) {
-  uint32_t prev_cap = 0;
-  uint32_t curr_cap = 0;
-
-  for (auto i = 0; i <= 10239; ++i) {
-    if (bs_.capacity() > curr_cap) {
-      prev_cap = curr_cap;
-      curr_cap = bs_.capacity();
-    }
-    bs_.resize(static_cast<uint32_t>(i + 1));
-    bs_.set(static_cast<uint32_t>(i));
-  }
-
-  ASSERT_GE((((bs_.capacity() - prev_cap) / (prev_cap * 1.0)) * 100), 10);
-  ASSERT_EQ(bs_.capacity() % 32, 0U);
-}
-
 TEST_F(BitsetFixture, valid_unset) {
   constexpr int size = 65536;
 

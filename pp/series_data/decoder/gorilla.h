@@ -18,7 +18,7 @@ class GorillaDecodeIterator : public DecodeIteratorTrait {
   }
 
   PROMPP_ALWAYS_INLINE GorillaDecodeIterator operator++(int) noexcept {
-    auto result = *this;
+    const auto result = *this;
     ++*this;
     return result;
   }

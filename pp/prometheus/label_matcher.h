@@ -54,9 +54,11 @@ enum class MatchStatus : uint8_t {
 
 struct Selector {
   struct Matcher {
+    using Cardinality = uint32_t;
+
     std::vector<uint32_t> matches{};
     uint32_t label_name_id{std::numeric_limits<uint32_t>::max()};
-    uint32_t cardinality{};
+    Cardinality cardinality{};
     MatchStatus status{MatchStatus::kUnknown};
     MatcherType type{MatcherType::kUnknown};
 

@@ -7,6 +7,34 @@
 
 namespace BareBones {
 
+template <class DataType, class SizeType>
+class AllocationSizeCalculator {
+ public:
+  static constexpr size_t kMinAllocationSize = 32;
+
+  [[nodiscard]] PROMPP_ALWAYS_INLINE static uint32_t calculate(SizeType needed_size) noexcept {
+    if (needed_size > std::numeric_limits<uint32_t>::max()) [[unlikely]] {
+      std::abort();
+    }
+
+    if constexpr (sizeof(DataType) < 8) {
+      if (static_cast<double>(needed_size) * 1.5 * sizeof(SizeType) < 256) {
+        // grow 50%, round up to 32b
+        return ((static_cast<size_t>(needed_size * sizeof(DataType) * 1.5) & 0xFFFFFFFFFFFFFFE0) + kMinAllocationSize) / sizeof(DataType);
+      }
+    }
+
+    if (static_cast<double>(needed_size) * 1.5 * sizeof(DataType) < 4096) {
+      // grow 50%, round up to 256b
+      return ((static_cast<size_t>(needed_size * sizeof(DataType) * 1.5) & 0xFFFFFFFFFFFFFF00) + 256) / sizeof(DataType);
+    }
+
+    // grow 10%, round up to 4096b
+    const auto new_size = ((static_cast<size_t>(needed_size * sizeof(DataType) * 1.1) & 0xFFFFFFFFFFFFF000) + 4096) / sizeof(DataType);
+    return std::min(new_size, static_cast<size_t>(std::numeric_limits<uint32_t>::max()));
+  }
+};
+
 template <class Derived, class SizeType, class T>
 class GenericMemory {
  public:
@@ -48,25 +76,12 @@ class GenericMemory {
 
  private:
   [[nodiscard]] PROMPP_ALWAYS_INLINE static SizeType get_allocation_size(SizeType needed_size) noexcept {
-    static constexpr size_t kMinAllocationSize = 32;
-
-    if (needed_size > std::numeric_limits<uint32_t>::max()) [[unlikely]] {
-      std::abort();
+    if constexpr (kIsUnitTestBuild || kIsBuildWithAsan) {
+      // In unit tests or in build with asan we allocate only needed_size bytes. It helps us to debug memory access errors
+      return needed_size;
+    } else {
+      return AllocationSizeCalculator<T, SizeType>::calculate(needed_size);
     }
-
-    if (sizeof(T) < 8 && static_cast<double>(needed_size) * 1.5 * sizeof(T) < 256) {
-      // grow 50%, round up to 32b
-      return ((static_cast<size_t>(needed_size * sizeof(T) * 1.5) & 0xFFFFFFFFFFFFFFE0) + kMinAllocationSize) / sizeof(T);
-    }
-
-    if (static_cast<double>(needed_size) * 1.5 * sizeof(T) < 4096) {
-      // grow 50%, round up to 256b
-      return ((static_cast<size_t>(needed_size * sizeof(T) * 1.5) & 0xFFFFFFFFFFFFFF00) + 256) / sizeof(T);
-    }
-
-    // grow 10%, round up to 4096b
-    const auto new_size = ((static_cast<size_t>(needed_size * sizeof(T) * 1.1) & 0xFFFFFFFFFFFFF000) + 4096) / sizeof(T);
-    return std::min(new_size, static_cast<size_t>(std::numeric_limits<uint32_t>::max()));
   }
 
   PROMPP_ALWAYS_INLINE Derived* derived() noexcept { return static_cast<Derived*>(this); }
@@ -173,7 +188,7 @@ class Memory : public GenericMemory<Memory<ControlBlock, T>, typename ControlBlo
     control_block_.data = static_cast<T*>(std::realloc(control_block_.data, new_size * sizeof(T)));
     PRAGMA_DIAGNOSTIC(pop)
 
-    if (control_block_.data == nullptr) [[unlikely]] {
+    if (control_block_.data == nullptr && new_size > 0) [[unlikely]] {
       std::abort();
     }
 
