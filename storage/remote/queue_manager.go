@@ -214,12 +214,15 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		ConstLabels: constLabels,
 	})
 	m.sentBatchDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Namespace:   namespace,
-		Subsystem:   subsystem,
-		Name:        "sent_batch_duration_seconds",
-		Help:        "Duration of send calls to the remote storage.",
-		Buckets:     append(prometheus.DefBuckets, 25, 60, 120, 300),
-		ConstLabels: constLabels,
+		Namespace:                       namespace,
+		Subsystem:                       subsystem,
+		Name:                            "sent_batch_duration_seconds",
+		Help:                            "Duration of send calls to the remote storage.",
+		Buckets:                         append(prometheus.DefBuckets, 25, 60, 120, 300),
+		ConstLabels:                     constLabels,
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
 	})
 	m.highestSentTimestamp = &maxTimestamp{
 		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
@@ -396,8 +399,10 @@ type WriteClient interface {
 // indicated by the provided WriteClient. Implements writeTo interface
 // used by WAL Watcher.
 type QueueManager struct {
-	lastSendTimestamp          atomic.Int64
-	buildRequestLimitTimestamp atomic.Int64
+	lastSendTimestamp            atomic.Int64
+	buildRequestLimitTimestamp   atomic.Int64
+	reshardDisableStartTimestamp atomic.Int64 // Time that reshard was disabled.
+	reshardDisableEndTimestamp   atomic.Int64 // Time that reshard is disabled until.
 
 	logger               log.Logger
 	flushDeadline        time.Duration
@@ -413,9 +418,10 @@ type QueueManager struct {
 	clientMtx   sync.RWMutex
 	storeClient WriteClient
 
-	seriesMtx     sync.Mutex // Covers seriesLabels and droppedSeries.
+	seriesMtx     sync.Mutex // Covers seriesLabels, droppedSeries and builder.
 	seriesLabels  map[chunks.HeadSeriesRef]labels.Labels
 	droppedSeries map[chunks.HeadSeriesRef]struct{}
+	builder       *labels.Builder
 
 	seriesSegmentMtx     sync.Mutex // Covers seriesSegmentIndexes - if you also lock seriesMtx, take seriesMtx first.
 	seriesSegmentIndexes map[chunks.HeadSeriesRef]int
@@ -482,6 +488,7 @@ func NewQueueManager(
 		seriesLabels:         make(map[chunks.HeadSeriesRef]labels.Labels),
 		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
 		droppedSeries:        make(map[chunks.HeadSeriesRef]struct{}),
+		builder:              labels.NewBuilder(labels.EmptyLabels()),
 
 		numShards:   cfg.MinShards,
 		reshardChan: make(chan int),
@@ -572,7 +579,7 @@ func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []p
 	retry := func() {
 		t.metrics.retriedMetadataTotal.Add(float64(len(metadata)))
 	}
-	err = sendWriteRequestWithBackoff(ctx, t.cfg, t.logger, attemptStore, retry)
+	err = t.sendWriteRequestWithBackoff(ctx, attemptStore, retry)
 	if err != nil {
 		return err
 	}
@@ -897,12 +904,14 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 		// Just make sure all the Refs of Series will insert into seriesSegmentIndexes map for tracking.
 		t.seriesSegmentIndexes[s.Ref] = index
 
-		ls := processExternalLabels(s.Labels, t.externalLabels)
-		lbls, keep := relabel.Process(ls, t.relabelConfigs...)
-		if !keep || lbls.IsEmpty() {
+		t.builder.Reset(s.Labels)
+		processExternalLabels(t.builder, t.externalLabels)
+		keep := relabel.ProcessBuilder(t.builder, t.relabelConfigs...)
+		if !keep {
 			t.droppedSeries[s.Ref] = struct{}{}
 			continue
 		}
+		lbls := t.builder.Labels()
 		t.internLabels(lbls)
 
 		// We should not ever be replacing a series labels in the map, but just
@@ -967,30 +976,14 @@ func (t *QueueManager) releaseLabels(ls labels.Labels) {
 	ls.ReleaseStrings(t.interner.release)
 }
 
-// processExternalLabels merges externalLabels into ls. If ls contains
-// a label in externalLabels, the value in ls wins.
-func processExternalLabels(ls labels.Labels, externalLabels []labels.Label) labels.Labels {
-	if len(externalLabels) == 0 {
-		return ls
-	}
-
-	b := labels.NewScratchBuilder(ls.Len() + len(externalLabels))
-	j := 0
-	ls.Range(func(l labels.Label) {
-		for j < len(externalLabels) && l.Name > externalLabels[j].Name {
-			b.Add(externalLabels[j].Name, externalLabels[j].Value)
-			j++
+// processExternalLabels merges externalLabels into b. If b contains
+// a label in externalLabels, the value in b wins.
+func processExternalLabels(b *labels.Builder, externalLabels []labels.Label) {
+	for _, el := range externalLabels {
+		if b.Get(el.Name) == "" {
+			b.Set(el.Name, el.Value)
 		}
-		if j < len(externalLabels) && l.Name == externalLabels[j].Name {
-			j++
-		}
-		b.Add(l.Name, l.Value)
-	})
-	for ; j < len(externalLabels); j++ {
-		b.Add(externalLabels[j].Name, externalLabels[j].Value)
 	}
-
-	return b.Labels()
 }
 
 func (t *QueueManager) updateShardsLoop() {
@@ -1031,6 +1024,13 @@ func (t *QueueManager) shouldReshard(desiredShards int) bool {
 	lsts := t.lastSendTimestamp.Load()
 	if lsts < minSendTimestamp {
 		level.Warn(t.logger).Log("msg", "Skipping resharding, last successful send was beyond threshold", "lastSendTimestamp", lsts, "minSendTimestamp", minSendTimestamp)
+		return false
+	}
+	if disableTimestamp := t.reshardDisableEndTimestamp.Load(); time.Now().Unix() < disableTimestamp {
+		disabledAt := time.Unix(t.reshardDisableStartTimestamp.Load(), 0)
+		disabledFor := time.Until(time.Unix(disableTimestamp, 0))
+
+		level.Warn(t.logger).Log("msg", "Skipping resharding, resharding is disabled while waiting for recoverable errors", "disabled_at", disabledAt, "disabled_for", disabledFor)
 		return false
 	}
 	return true
@@ -1634,7 +1634,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		s.qm.metrics.retriedHistogramsTotal.Add(float64(histogramCount))
 	}
 
-	err = sendWriteRequestWithBackoff(ctx, s.qm.cfg, s.qm.logger, attemptStore, onRetry)
+	err = s.qm.sendWriteRequestWithBackoff(ctx, attemptStore, onRetry)
 	if errors.Is(err, context.Canceled) {
 		// When there is resharding, we cancel the context for this queue, which means the data is not sent.
 		// So we exit early to not update the metrics.
@@ -1647,8 +1647,8 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 	return err
 }
 
-func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l log.Logger, attempt func(int) error, onRetry func()) error {
-	backoff := cfg.MinBackoff
+func (t *QueueManager) sendWriteRequestWithBackoff(ctx context.Context, attempt func(int) error, onRetry func()) error {
+	backoff := t.cfg.MinBackoff
 	sleepDuration := model.Duration(0)
 	try := 0
 
@@ -1675,9 +1675,26 @@ func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l 
 		switch {
 		case backoffErr.retryAfter > 0:
 			sleepDuration = backoffErr.retryAfter
-			level.Info(l).Log("msg", "Retrying after duration specified by Retry-After header", "duration", sleepDuration)
+			level.Info(t.logger).Log("msg", "Retrying after duration specified by Retry-After header", "duration", sleepDuration)
 		case backoffErr.retryAfter < 0:
-			level.Debug(l).Log("msg", "retry-after cannot be in past, retrying using default backoff mechanism")
+			level.Debug(t.logger).Log("msg", "retry-after cannot be in past, retrying using default backoff mechanism")
+		}
+
+		// We should never reshard for a recoverable error; increasing shards could
+		// make the problem worse, particularly if we're getting rate limited.
+		//
+		// reshardDisableTimestamp holds the unix timestamp until which resharding
+		// is diableld. We'll update that timestamp if the period we were just told
+		// to sleep for is newer than the existing disabled timestamp.
+		reshardWaitPeriod := time.Now().Add(time.Duration(sleepDuration) * 2)
+		if oldTS, updated := setAtomicToNewer(&t.reshardDisableEndTimestamp, reshardWaitPeriod.Unix()); updated {
+			// If the old timestamp was in the past, then resharding was previously
+			// enabled. We want to track the time where it initially got disabled for
+			// logging purposes.
+			disableTime := time.Now().Unix()
+			if oldTS < disableTime {
+				t.reshardDisableStartTimestamp.Store(disableTime)
+			}
 		}
 
 		select {
@@ -1687,15 +1704,35 @@ func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l 
 
 		// If we make it this far, we've encountered a recoverable error and will retry.
 		onRetry()
-		level.Warn(l).Log("msg", "Failed to send batch, retrying", "err", err)
+		level.Warn(t.logger).Log("msg", "Failed to send batch, retrying", "err", err)
 
 		backoff = sleepDuration * 2
 
-		if backoff > cfg.MaxBackoff {
-			backoff = cfg.MaxBackoff
+		if backoff > t.cfg.MaxBackoff {
+			backoff = t.cfg.MaxBackoff
 		}
 
 		try++
+	}
+}
+
+// setAtomicToNewer atomically sets a value to the newer int64 between itself
+// and the provided newValue argument. setAtomicToNewer returns whether the
+// atomic value was updated and what the previous value was.
+func setAtomicToNewer(value *atomic.Int64, newValue int64) (previous int64, updated bool) {
+	for {
+		current := value.Load()
+		if current >= newValue {
+			// If the current stored value is newer than newValue; abort.
+			return current, false
+		}
+
+		// Try to swap the value. If the atomic value has changed, we loop back to
+		// the beginning until we've successfully swapped out the value or the
+		// value stored in it is newer than newValue.
+		if value.CompareAndSwap(current, newValue) {
+			return current, true
+		}
 	}
 }
 

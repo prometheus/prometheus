@@ -1,0 +1,19 @@
+{
+  "data": [
+    {
+      "range": "2600:3c03:e000:123::",
+      "prefix": 64,
+      "region": "us-east",
+      "route_target": "2600:3c03::f03c:92ff:fe1a:fb4c"
+    },
+    {
+      "range": "2600:3c04:e001:456::",
+      "prefix": 64,
+      "region": "ca-central",
+      "route_target": "2600:3c04::f03c:92ff:fe1a:fb68"
+    }
+  ],
+  "page": 1,
+  "pages": 1,
+  "results": 2
+}

@@ -20,6 +20,7 @@ import (
 	"errors"
 	"io"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/promql/parser"
 )
@@ -56,8 +57,11 @@ const (
 	maxInputSize = 10240
 )
 
+// Use package-scope symbol table to avoid memory allocation on every fuzzing operation.
+var symbolTable = labels.NewSymbolTable()
+
 func fuzzParseMetricWithContentType(in []byte, contentType string) int {
-	p, warning := textparse.New(in, contentType, false)
+	p, warning := textparse.New(in, contentType, false, symbolTable)
 	if warning != nil {
 		// An invalid content type is being passed, which should not happen
 		// in this context.

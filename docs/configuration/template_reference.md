@@ -18,7 +18,7 @@ The primary data structure for dealing with time series data is the sample, defi
 ```go
 type sample struct {
         Labels map[string]string
-        Value  float64
+        Value  interface{}
 }
 ```
 
@@ -44,7 +44,7 @@ If functions are used in a pipeline, the pipeline value is passed as the last ar
 | query         | query string  | []sample | Queries the database, does not support returning range vectors.  |
 | first         | []sample      | sample   | Equivalent to `index a 0`  |
 | label         | label, sample | string   | Equivalent to `index sample.Labels label`  |
-| value         | sample        | float64  | Equivalent to `sample.Value`  |
+| value         | sample        | interface{}  | Equivalent to `sample.Value`  |
 | sortByLabel   | label, []samples | []sample | Sorts the samples by the given label. Is stable.  |
 
 `first`, `label` and `value` are intended to make query results easily usable in pipelines.

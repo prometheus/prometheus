@@ -56,15 +56,11 @@ func TestConfiguredService(t *testing.T) {
 	metrics := NewTestMetrics(t, conf, prometheus.NewRegistry())
 
 	consulDiscovery, err := NewDiscovery(conf, nil, metrics)
-	if err != nil {
-		t.Errorf("Unexpected error when initializing discovery %v", err)
-	}
-	if !consulDiscovery.shouldWatch("configuredServiceName", []string{""}) {
-		t.Errorf("Expected service %s to be watched", "configuredServiceName")
-	}
-	if consulDiscovery.shouldWatch("nonConfiguredServiceName", []string{""}) {
-		t.Errorf("Expected service %s to not be watched", "nonConfiguredServiceName")
-	}
+	require.NoError(t, err, "when initializing discovery")
+	require.True(t, consulDiscovery.shouldWatch("configuredServiceName", []string{""}),
+		"Expected service %s to be watched", "configuredServiceName")
+	require.False(t, consulDiscovery.shouldWatch("nonConfiguredServiceName", []string{""}),
+		"Expected service %s to not be watched", "nonConfiguredServiceName")
 }
 
 func TestConfiguredServiceWithTag(t *testing.T) {
@@ -76,21 +72,18 @@ func TestConfiguredServiceWithTag(t *testing.T) {
 	metrics := NewTestMetrics(t, conf, prometheus.NewRegistry())
 
 	consulDiscovery, err := NewDiscovery(conf, nil, metrics)
-	if err != nil {
-		t.Errorf("Unexpected error when initializing discovery %v", err)
-	}
-	if consulDiscovery.shouldWatch("configuredServiceName", []string{""}) {
-		t.Errorf("Expected service %s to not be watched without tag", "configuredServiceName")
-	}
-	if !consulDiscovery.shouldWatch("configuredServiceName", []string{"http"}) {
-		t.Errorf("Expected service %s to be watched with tag %s", "configuredServiceName", "http")
-	}
-	if consulDiscovery.shouldWatch("nonConfiguredServiceName", []string{""}) {
-		t.Errorf("Expected service %s to not be watched without tag", "nonConfiguredServiceName")
-	}
-	if consulDiscovery.shouldWatch("nonConfiguredServiceName", []string{"http"}) {
-		t.Errorf("Expected service %s to not be watched with tag %s", "nonConfiguredServiceName", "http")
-	}
+	require.NoError(t, err, "when initializing discovery")
+	require.False(t, consulDiscovery.shouldWatch("configuredServiceName", []string{""}),
+		"Expected service %s to not be watched without tag", "configuredServiceName")
+
+	require.True(t, consulDiscovery.shouldWatch("configuredServiceName", []string{"http"}),
+		"Expected service %s to be watched with tag %s", "configuredServiceName", "http")
+
+	require.False(t, consulDiscovery.shouldWatch("nonConfiguredServiceName", []string{""}),
+		"Expected service %s to not be watched without tag", "nonConfiguredServiceName")
+
+	require.False(t, consulDiscovery.shouldWatch("nonConfiguredServiceName", []string{"http"}),
+		"Expected service %s to not be watched with tag %s", "nonConfiguredServiceName", "http")
 }
 
 func TestConfiguredServiceWithTags(t *testing.T) {
@@ -173,13 +166,10 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 		metrics := NewTestMetrics(t, tc.conf, prometheus.NewRegistry())
 
 		consulDiscovery, err := NewDiscovery(tc.conf, nil, metrics)
-		if err != nil {
-			t.Errorf("Unexpected error when initializing discovery %v", err)
-		}
+		require.NoError(t, err, "when initializing discovery")
 		ret := consulDiscovery.shouldWatch(tc.serviceName, tc.serviceTags)
-		if ret != tc.shouldWatch {
-			t.Errorf("Expected should watch? %t, got %t. Watched service and tags: %s %+v, input was %s %+v", tc.shouldWatch, ret, tc.conf.Services, tc.conf.ServiceTags, tc.serviceName, tc.serviceTags)
-		}
+		require.Equal(t, tc.shouldWatch, ret, "Watched service and tags: %s %+v, input was %s %+v",
+			tc.conf.Services, tc.conf.ServiceTags, tc.serviceName, tc.serviceTags)
 	}
 }
 
@@ -189,12 +179,8 @@ func TestNonConfiguredService(t *testing.T) {
 	metrics := NewTestMetrics(t, conf, prometheus.NewRegistry())
 
 	consulDiscovery, err := NewDiscovery(conf, nil, metrics)
-	if err != nil {
-		t.Errorf("Unexpected error when initializing discovery %v", err)
-	}
-	if !consulDiscovery.shouldWatch("nonConfiguredServiceName", []string{""}) {
-		t.Errorf("Expected service %s to be watched", "nonConfiguredServiceName")
-	}
+	require.NoError(t, err, "when initializing discovery")
+	require.True(t, consulDiscovery.shouldWatch("nonConfiguredServiceName", []string{""}), "Expected service %s to be watched", "nonConfiguredServiceName")
 }
 
 const (
@@ -502,13 +488,10 @@ oauth2:
 			var config SDConfig
 			err := config.UnmarshalYAML(unmarshal([]byte(test.config)))
 			if err != nil {
-				require.Equalf(t, err.Error(), test.errMessage, "Expected error '%s', got '%v'", test.errMessage, err)
+				require.EqualError(t, err, test.errMessage)
 				return
 			}
-			if test.errMessage != "" {
-				t.Errorf("Expected error %s, got none", test.errMessage)
-				return
-			}
+			require.Empty(t, test.errMessage, "Expected error.")
 
 			require.Equal(t, test.expected, config)
 		})

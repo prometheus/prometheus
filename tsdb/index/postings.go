@@ -20,12 +20,12 @@ import (
 	"fmt"
 	"math"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 
 	"github.com/bboreham/go-loser"
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -395,6 +395,41 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 		}
 		list[i], list[i-1] = list[i-1], list[i]
 	}
+}
+
+func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) Postings {
+	p.mtx.RLock()
+
+	e := p.m[name]
+	if len(e) == 0 {
+		p.mtx.RUnlock()
+		return EmptyPostings()
+	}
+
+	// Benchmarking shows that first copying the values into a slice and then matching over that is
+	// faster than matching over the map keys directly, at least on AMD64.
+	vals := make([]string, 0, len(e))
+	for v, srs := range e {
+		if len(srs) > 0 {
+			vals = append(vals, v)
+		}
+	}
+
+	var its []Postings
+	count := 1
+	for _, v := range vals {
+		if count%checkContextEveryNIterations == 0 && ctx.Err() != nil {
+			p.mtx.RUnlock()
+			return ErrPostings(ctx.Err())
+		}
+		count++
+		if match(v) {
+			its = append(its, NewListPostings(e[v]))
+		}
+	}
+	p.mtx.RUnlock()
+
+	return Merge(ctx, its...)
 }
 
 // ExpandPostings returns the postings expanded as a slice.

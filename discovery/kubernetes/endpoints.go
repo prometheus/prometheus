@@ -62,6 +62,8 @@ func NewEndpoints(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node ca
 	svcUpdateCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleUpdate)
 	svcDeleteCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleDelete)
 
+	podUpdateCount := eventCount.WithLabelValues(RolePod.String(), MetricLabelRoleUpdate)
+
 	e := &Endpoints{
 		logger:           l,
 		endpointsInf:     eps,
@@ -131,6 +133,29 @@ func NewEndpoints(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node ca
 	if err != nil {
 		level.Error(l).Log("msg", "Error adding services event handler.", "err", err)
 	}
+	_, err = e.podInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		UpdateFunc: func(old, cur interface{}) {
+			podUpdateCount.Inc()
+			oldPod, ok := old.(*apiv1.Pod)
+			if !ok {
+				return
+			}
+
+			curPod, ok := cur.(*apiv1.Pod)
+			if !ok {
+				return
+			}
+
+			// the Pod's phase may change without triggering an update on the Endpoints/Service.
+			// https://github.com/prometheus/prometheus/issues/11305.
+			if curPod.Status.Phase != oldPod.Status.Phase {
+				e.enqueuePod(namespacedName(curPod.Namespace, curPod.Name))
+			}
+		},
+	})
+	if err != nil {
+		level.Error(l).Log("msg", "Error adding pods event handler.", "err", err)
+	}
 	if e.withNodeMetadata {
 		_, err = e.nodeInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc: func(o interface{}) {
@@ -158,6 +183,18 @@ func (e *Endpoints) enqueueNode(nodeName string) {
 	endpoints, err := e.endpointsInf.GetIndexer().ByIndex(nodeIndex, nodeName)
 	if err != nil {
 		level.Error(e.logger).Log("msg", "Error getting endpoints for node", "node", nodeName, "err", err)
+		return
+	}
+
+	for _, endpoint := range endpoints {
+		e.enqueue(endpoint)
+	}
+}
+
+func (e *Endpoints) enqueuePod(podNamespacedName string) {
+	endpoints, err := e.endpointsInf.GetIndexer().ByIndex(podIndex, podNamespacedName)
+	if err != nil {
+		level.Error(e.logger).Log("msg", "Error getting endpoints for pod", "pod", podNamespacedName, "err", err)
 		return
 	}
 
@@ -312,7 +349,7 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 			tg.Targets = append(tg.Targets, target)
 			return
 		}
-		s := pod.Namespace + "/" + pod.Name
+		s := namespacedName(pod.Namespace, pod.Name)
 
 		sp, ok := seenPods[s]
 		if !ok {

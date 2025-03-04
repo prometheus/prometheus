@@ -216,6 +216,12 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'histogram_avg',
+    detail: 'function',
+    info: 'Return the average of observations from a native histogram (experimental feature)',
+    type: 'function',
+  },
+  {
     label: 'histogram_count',
     detail: 'function',
     info: 'Return the count of observations from a native histogram (experimental feature)',

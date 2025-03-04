@@ -87,6 +87,9 @@ type Chunk interface {
 	// There's no strong guarantee that no samples will be appended once
 	// Compact() is called. Implementing this function is optional.
 	Compact()
+
+	// Reset resets the chunk given stream.
+	Reset(stream []byte)
 }
 
 type Iterable interface {
@@ -303,64 +306,47 @@ func NewPool() Pool {
 }
 
 func (p *pool) Get(e Encoding, b []byte) (Chunk, error) {
+	var c Chunk
 	switch e {
 	case EncXOR:
-		c := p.xor.Get().(*XORChunk)
-		c.b.stream = b
-		c.b.count = 0
-		return c, nil
+		c = p.xor.Get().(*XORChunk)
 	case EncHistogram:
-		c := p.histogram.Get().(*HistogramChunk)
-		c.b.stream = b
-		c.b.count = 0
-		return c, nil
+		c = p.histogram.Get().(*HistogramChunk)
 	case EncFloatHistogram:
-		c := p.floatHistogram.Get().(*FloatHistogramChunk)
-		c.b.stream = b
-		c.b.count = 0
-		return c, nil
+		c = p.floatHistogram.Get().(*FloatHistogramChunk)
+	default:
+		return nil, fmt.Errorf("invalid chunk encoding %q", e)
 	}
-	return nil, fmt.Errorf("invalid chunk encoding %q", e)
+
+	c.Reset(b)
+	return c, nil
 }
 
 func (p *pool) Put(c Chunk) error {
+	var sp *sync.Pool
+	var ok bool
 	switch c.Encoding() {
 	case EncXOR:
-		xc, ok := c.(*XORChunk)
-		// This may happen often with wrapped chunks. Nothing we can really do about
-		// it but returning an error would cause a lot of allocations again. Thus,
-		// we just skip it.
-		if !ok {
-			return nil
-		}
-		xc.b.stream = nil
-		xc.b.count = 0
-		p.xor.Put(c)
+		_, ok = c.(*XORChunk)
+		sp = &p.xor
 	case EncHistogram:
-		sh, ok := c.(*HistogramChunk)
-		// This may happen often with wrapped chunks. Nothing we can really do about
-		// it but returning an error would cause a lot of allocations again. Thus,
-		// we just skip it.
-		if !ok {
-			return nil
-		}
-		sh.b.stream = nil
-		sh.b.count = 0
-		p.histogram.Put(c)
+		_, ok = c.(*HistogramChunk)
+		sp = &p.histogram
 	case EncFloatHistogram:
-		sh, ok := c.(*FloatHistogramChunk)
-		// This may happen often with wrapped chunks. Nothing we can really do about
-		// it but returning an error would cause a lot of allocations again. Thus,
-		// we just skip it.
-		if !ok {
-			return nil
-		}
-		sh.b.stream = nil
-		sh.b.count = 0
-		p.floatHistogram.Put(c)
+		_, ok = c.(*FloatHistogramChunk)
+		sp = &p.floatHistogram
 	default:
 		return fmt.Errorf("invalid chunk encoding %q", c.Encoding())
 	}
+	if !ok {
+		// This may happen often with wrapped chunks. Nothing we can really do about
+		// it but returning an error would cause a lot of allocations again. Thus,
+		// we just skip it.
+		return nil
+	}
+
+	c.Reset(nil)
+	sp.Put(c)
 	return nil
 }
 

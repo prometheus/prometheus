@@ -30,14 +30,14 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
 func TestSampledReadEndpoint(t *testing.T) {
-	store := promql.LoadedStorage(t, `
+	store := promqltest.LoadedStorage(t, `
 		load 1m
 			test_metric1{foo="bar",baz="qux"} 1
 	`)
@@ -75,7 +75,7 @@ func TestSampledReadEndpoint(t *testing.T) {
 	require.NoError(t, err)
 
 	compressed := snappy.Encode(nil, data)
-	request, err := http.NewRequest("POST", "", bytes.NewBuffer(compressed))
+	request, err := http.NewRequest(http.MethodPost, "", bytes.NewBuffer(compressed))
 	require.NoError(t, err)
 
 	recorder := httptest.NewRecorder()
@@ -132,7 +132,7 @@ func TestSampledReadEndpoint(t *testing.T) {
 }
 
 func BenchmarkStreamReadEndpoint(b *testing.B) {
-	store := promql.LoadedStorage(b, `
+	store := promqltest.LoadedStorage(b, `
 	load 1m
 		test_metric1{foo="bar1",baz="qux"} 0+100x119
 		test_metric1{foo="bar2",baz="qux"} 0+100x120
@@ -170,7 +170,7 @@ func BenchmarkStreamReadEndpoint(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		compressed := snappy.Encode(nil, data)
-		request, err := http.NewRequest("POST", "", bytes.NewBuffer(compressed))
+		request, err := http.NewRequest(http.MethodPost, "", bytes.NewBuffer(compressed))
 		require.NoError(b, err)
 
 		recorder := httptest.NewRecorder()
@@ -200,7 +200,7 @@ func TestStreamReadEndpoint(t *testing.T) {
 	// Second with 121 float samples, We expect 1 frame with 2 chunks.
 	// Third with 241 float samples. We expect 1 frame with 2 chunks, and 1 frame with 1 chunk for the same series due to bytes limit.
 	// Fourth with 25 histogram samples. We expect 1 frame with 1 chunk.
-	store := promql.LoadedStorage(t, `
+	store := promqltest.LoadedStorage(t, `
 		load 1m
 			test_metric1{foo="bar1",baz="qux"} 0+100x119
 			test_metric1{foo="bar2",baz="qux"} 0+100x120
@@ -268,7 +268,7 @@ func TestStreamReadEndpoint(t *testing.T) {
 	require.NoError(t, err)
 
 	compressed := snappy.Encode(nil, data)
-	request, err := http.NewRequest("POST", "", bytes.NewBuffer(compressed))
+	request, err := http.NewRequest(http.MethodPost, "", bytes.NewBuffer(compressed))
 	require.NoError(t, err)
 
 	recorder := httptest.NewRecorder()

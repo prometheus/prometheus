@@ -37,7 +37,7 @@ if [ -z "${GITHUB_TOKEN}" ]; then
 fi
 
 # List of files that should be synced.
-SYNC_FILES="CODE_OF_CONDUCT.md LICENSE Makefile.common SECURITY.md .yamllint scripts/golangci-lint.yml .github/workflows/scorecards.yml"
+SYNC_FILES="CODE_OF_CONDUCT.md LICENSE Makefile.common SECURITY.md .yamllint scripts/golangci-lint.yml .github/workflows/scorecards.yml .github/workflows/container_description.yml"
 
 # Go to the root of the repo
 cd "$(git rev-parse --show-cdup)" || exit 1
@@ -99,6 +99,15 @@ check_go() {
   curl -sLf -o /dev/null "https://raw.githubusercontent.com/${org_repo}/${default_branch}/go.mod"
 }
 
+check_docker() {
+  local org_repo
+  local default_branch
+  org_repo="$1"
+  default_branch="$2"
+
+  curl -sLf -o /dev/null "https://raw.githubusercontent.com/${org_repo}/${default_branch}/Dockerfile"
+}
+
 process_repo() {
   local org_repo
   local default_branch
@@ -119,6 +128,10 @@ process_repo() {
       echo "${org_repo} is not Go, skipping golangci-lint.yml."
       continue
     fi
+    if [[ "${source_file}" == '.github/workflows/container_description.yml' ]] && ! check_docker "${org_repo}" "${default_branch}" ; then
+      echo "${org_repo} has no Dockerfile, skipping container_description.yml."
+      continue
+    fi
     if [[ "${source_file}" == 'LICENSE' ]] && ! check_license "${target_file}" ; then
       echo "LICENSE in ${org_repo} is not apache, skipping."
       continue
@@ -131,7 +144,7 @@ process_repo() {
     if [[ -z "${target_file}" ]]; then
       echo "${target_filename} doesn't exist in ${org_repo}"
       case "${source_file}" in
-        CODE_OF_CONDUCT.md | SECURITY.md)
+        CODE_OF_CONDUCT.md | SECURITY.md | .github/workflows/container_description.yml)
           echo "${source_file} missing in ${org_repo}, force updating."
           needs_update+=("${source_file}")
           ;;

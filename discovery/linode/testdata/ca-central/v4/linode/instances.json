@@ -1,0 +1,49 @@
+{
+  "data": [
+    {
+      "id": 26837938,
+      "label": "prometheus-linode-sd-exporter-3",
+      "group": "",
+      "status": "running",
+      "created": "2021-05-12T04:20:11",
+      "updated": "2021-05-12T04:20:11",
+      "type": "g6-standard-1",
+      "ipv4": [
+        "192.53.120.25"
+      ],
+      "ipv6": "2600:3c04::f03c:92ff:fe1a:fb68/128",
+      "image": "linode/ubuntu20.04",
+      "region": "ca-central",
+      "specs": {
+        "disk": 51200,
+        "memory": 2048,
+        "vcpus": 1,
+        "gpus": 0,
+        "transfer": 2000
+      },
+      "alerts": {
+        "cpu": 90,
+        "network_in": 10,
+        "network_out": 10,
+        "transfer_quota": 80,
+        "io": 10000
+      },
+      "backups": {
+        "enabled": false,
+        "schedule": {
+          "day": null,
+          "window": null
+        },
+        "last_successful": null
+      },
+      "hypervisor": "kvm",
+      "watchdog_enabled": true,
+      "tags": [
+        "monitoring"
+      ]
+    }
+  ],
+  "page": 1,
+  "pages": 1,
+  "results": 1
+}

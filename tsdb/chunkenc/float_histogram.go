@@ -44,6 +44,10 @@ func NewFloatHistogramChunk() *FloatHistogramChunk {
 	return &FloatHistogramChunk{b: bstream{stream: b, count: 0}}
 }
 
+func (c *FloatHistogramChunk) Reset(stream []byte) {
+	c.b.Reset(stream)
+}
+
 // xorValue holds all the necessary information to encode
 // and decode XOR encoded float64 values.
 type xorValue struct {

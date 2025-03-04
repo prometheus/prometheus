@@ -24,6 +24,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -126,12 +127,9 @@ func TestFailedStartupExitCode(t *testing.T) {
 	require.Error(t, err)
 
 	var exitError *exec.ExitError
-	if errors.As(err, &exitError) {
-		status := exitError.Sys().(syscall.WaitStatus)
-		require.Equal(t, expectedExitStatus, status.ExitStatus())
-	} else {
-		t.Errorf("unable to retrieve the exit status for prometheus: %v", err)
-	}
+	require.ErrorAs(t, err, &exitError)
+	status := exitError.Sys().(syscall.WaitStatus)
+	require.Equal(t, expectedExitStatus, status.ExitStatus())
 }
 
 type senderFunc func(alerts ...*notifier.Alert)
@@ -192,11 +190,9 @@ func TestSendAlerts(t *testing.T) {
 
 	for i, tc := range testCases {
 		tc := tc
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			senderFunc := senderFunc(func(alerts ...*notifier.Alert) {
-				if len(tc.in) == 0 {
-					t.Fatalf("sender called with 0 alert")
-				}
+				require.NotEmpty(t, tc.in, "sender called with 0 alert")
 				require.Equal(t, tc.exp, alerts)
 			})
 			rules.SendAlerts(senderFunc, "http://localhost:9090")(context.TODO(), "up", tc.in...)
@@ -228,7 +224,7 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 			go func() { done <- prom.Wait() }()
 			select {
 			case err := <-done:
-				t.Errorf("prometheus should be still running: %v", err)
+				require.Fail(t, "prometheus should be still running: %v", err)
 			case <-time.After(startupTime):
 				prom.Process.Kill()
 				<-done
@@ -239,12 +235,9 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 		err = prom.Wait()
 		require.Error(t, err)
 		var exitError *exec.ExitError
-		if errors.As(err, &exitError) {
-			status := exitError.Sys().(syscall.WaitStatus)
-			require.Equal(t, expectedExitStatus, status.ExitStatus())
-		} else {
-			t.Errorf("unable to retrieve the exit status for prometheus: %v", err)
-		}
+		require.ErrorAs(t, err, &exitError)
+		status := exitError.Sys().(syscall.WaitStatus)
+		require.Equal(t, expectedExitStatus, status.ExitStatus())
 	}
 }
 
@@ -274,7 +267,7 @@ func TestMaxBlockChunkSegmentSizeBounds(t *testing.T) {
 			go func() { done <- prom.Wait() }()
 			select {
 			case err := <-done:
-				t.Errorf("prometheus should be still running: %v", err)
+				require.Fail(t, "prometheus should be still running: %v", err)
 			case <-time.After(startupTime):
 				prom.Process.Kill()
 				<-done
@@ -285,12 +278,9 @@ func TestMaxBlockChunkSegmentSizeBounds(t *testing.T) {
 		err = prom.Wait()
 		require.Error(t, err)
 		var exitError *exec.ExitError
-		if errors.As(err, &exitError) {
-			status := exitError.Sys().(syscall.WaitStatus)
-			require.Equal(t, expectedExitStatus, status.ExitStatus())
-		} else {
-			t.Errorf("unable to retrieve the exit status for prometheus: %v", err)
-		}
+		require.ErrorAs(t, err, &exitError)
+		status := exitError.Sys().(syscall.WaitStatus)
+		require.Equal(t, expectedExitStatus, status.ExitStatus())
 	}
 }
 
@@ -347,10 +337,8 @@ func getCurrentGaugeValuesFor(t *testing.T, reg prometheus.Gatherer, metricNames
 			}
 
 			require.Len(t, g.GetMetric(), 1)
-			if _, ok := res[m]; ok {
-				t.Error("expected only one metric family for", m)
-				t.FailNow()
-			}
+			_, ok := res[m]
+			require.False(t, ok, "expected only one metric family for", m)
 			res[m] = *g.GetMetric()[0].GetGauge().Value
 		}
 	}

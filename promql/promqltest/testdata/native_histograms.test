@@ -1,0 +1,716 @@
+# Minimal valid case: an empty histogram.
+load 5m
+	empty_histogram	{{}}
+
+eval instant at 5m empty_histogram
+	{__name__="empty_histogram"} {{}}
+
+eval instant at 5m histogram_count(empty_histogram)
+	{} 0
+
+eval instant at 5m histogram_sum(empty_histogram)
+	{} 0
+
+eval instant at 5m histogram_avg(empty_histogram)
+	{} NaN
+
+eval instant at 5m histogram_fraction(-Inf, +Inf, empty_histogram)
+	{} NaN
+
+eval instant at 5m histogram_fraction(0, 8, empty_histogram)
+	{} NaN
+
+
+
+# buckets:[1 2 1] means 1 observation in the 1st bucket, 2 observations in the 2nd and 1 observation in the 3rd (total 4).
+load 5m
+	single_histogram	{{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+
+# histogram_count extracts the count property from the histogram.
+eval instant at 5m histogram_count(single_histogram)
+	{} 4
+
+# histogram_sum extracts the sum property from the histogram.
+eval instant at 5m histogram_sum(single_histogram)
+	{} 5
+
+# histogram_avg calculates the average from sum and count properties.
+eval instant at 5m histogram_avg(single_histogram)
+	{} 1.25
+
+# We expect half of the values to fall in the range 1 < x <= 2.
+eval instant at 5m histogram_fraction(1, 2, single_histogram)
+	{} 0.5
+
+# We expect all values to fall in the range 0 < x <= 8.
+eval instant at 5m histogram_fraction(0, 8, single_histogram)
+	{} 1
+
+# Median is 1.5 due to linear estimation of the midpoint of the middle bucket, whose values are within range 1 < x <= 2.
+eval instant at 5m histogram_quantile(0.5, single_histogram)
+	{} 1.5
+
+
+
+# Repeat the same histogram 10 times.
+load 5m
+	multi_histogram	{{schema:0 sum:5 count:4 buckets:[1 2 1]}}x10
+
+eval instant at 5m histogram_count(multi_histogram)
+	{} 4
+
+eval instant at 5m histogram_sum(multi_histogram)
+	{} 5
+
+eval instant at 5m histogram_avg(multi_histogram)
+	{} 1.25
+
+eval instant at 5m histogram_fraction(1, 2, multi_histogram)
+	{} 0.5
+
+eval instant at 5m histogram_quantile(0.5, multi_histogram)
+	{} 1.5
+
+
+# Each entry should look the same as the first.
+eval instant at 50m histogram_count(multi_histogram)
+	{} 4
+
+eval instant at 50m histogram_sum(multi_histogram)
+	{} 5
+
+eval instant at 50m histogram_avg(multi_histogram)
+	{} 1.25
+
+eval instant at 50m histogram_fraction(1, 2, multi_histogram)
+	{} 0.5
+
+eval instant at 50m histogram_quantile(0.5, multi_histogram)
+	{} 1.5
+
+
+
+# Accumulate the histogram addition for 10 iterations, offset is a bucket position where offset:0 is always the bucket
+# with an upper limit of 1 and offset:1 is the bucket which follows to the right. Negative offsets represent bucket
+# positions for upper limits <1 (tending toward zero), where offset:-1 is the bucket to the left of offset:0.
+load 5m
+	incr_histogram	{{schema:0 sum:4 count:4 buckets:[1 2 1]}}+{{sum:2 count:1 buckets:[1] offset:1}}x10
+
+eval instant at 5m histogram_count(incr_histogram)
+	{} 5
+
+eval instant at 5m histogram_sum(incr_histogram)
+	{} 6
+
+eval instant at 5m histogram_avg(incr_histogram)
+	{} 1.2
+
+# We expect 3/5ths of the values to fall in the range 1 < x <= 2.
+eval instant at 5m histogram_fraction(1, 2, incr_histogram)
+	{} 0.6
+
+eval instant at 5m histogram_quantile(0.5, incr_histogram)
+	{} 1.5
+
+
+eval instant at 50m incr_histogram
+	{__name__="incr_histogram"} {{count:14 sum:24 buckets:[1 12 1]}}
+
+eval instant at 50m histogram_count(incr_histogram)
+	{} 14
+
+eval instant at 50m histogram_sum(incr_histogram)
+	{} 24
+
+eval instant at 50m histogram_avg(incr_histogram)
+    {} 1.7142857142857142
+
+# We expect 12/14ths of the values to fall in the range 1 < x <= 2.
+eval instant at 50m histogram_fraction(1, 2, incr_histogram)
+	{} 0.8571428571428571
+
+eval instant at 50m histogram_quantile(0.5, incr_histogram)
+	{} 1.5
+
+# Per-second average rate of increase should be 1/(5*60) for count and buckets, then 2/(5*60) for sum.
+eval instant at 50m rate(incr_histogram[5m])
+	{} {{count:0.0033333333333333335 sum:0.006666666666666667 offset:1 buckets:[0.0033333333333333335]}}
+
+# Calculate the 50th percentile of observations over the last 10m.
+eval instant at 50m histogram_quantile(0.5, rate(incr_histogram[10m]))
+	{} 1.5
+
+
+
+# Schema represents the histogram resolution, different schema have compatible bucket boundaries, e.g.:
+#  0: 1 2 4 8 16 32 64 (higher resolution)
+# -1: 1   4   16    64  (lower resolution)
+#
+# Histograms can be merged as long as the histogram to the right is same resolution or higher.
+load 5m
+	low_res_histogram	{{schema:-1 sum:4 count:1 buckets:[1] offset:1}}+{{schema:0 sum:4 count:4 buckets:[2 2] offset:1}}x1
+
+eval instant at 5m low_res_histogram
+	{__name__="low_res_histogram"} {{schema:-1 count:5 sum:8 offset:1 buckets:[5]}}
+
+eval instant at 5m histogram_count(low_res_histogram)
+	{} 5
+
+eval instant at 5m histogram_sum(low_res_histogram)
+	{} 8
+
+eval instant at 5m histogram_avg(low_res_histogram)
+	{} 1.6
+
+# We expect all values to fall into the lower-resolution bucket with the range 1 < x <= 4.
+eval instant at 5m histogram_fraction(1, 4, low_res_histogram)
+	{} 1
+
+
+
+# z_bucket:1 means there is one observation in the zero bucket and z_bucket_w:0.5 means the zero bucket has the range
+# 0 < x <= 0.5. Sum and count are expected to represent all observations in the histogram, including those in the zero bucket.
+load 5m
+	single_zero_histogram {{schema:0 z_bucket:1 z_bucket_w:0.5 sum:0.25 count:1}}
+
+eval instant at 5m histogram_count(single_zero_histogram)
+	{} 1
+
+eval instant at 5m histogram_sum(single_zero_histogram)
+	{} 0.25
+
+eval instant at 5m histogram_avg(single_zero_histogram)
+	{} 0.25
+
+# When only the zero bucket is populated, or there are negative buckets, the distribution is assumed to be equally
+# distributed around zero; i.e. that there are an equal number of positive and negative observations. Therefore the
+# entire distribution must lie within the full range of the zero bucket, in this case: -0.5 < x <= +0.5.
+eval instant at 5m histogram_fraction(-0.5, 0.5, single_zero_histogram)
+	{} 1
+
+# Half of the observations are estimated to be zero, as this is the midpoint between -0.5 and +0.5.
+eval instant at 5m histogram_quantile(0.5, single_zero_histogram)
+	{} 0
+
+
+
+# Let's turn single_histogram upside-down.
+load 5m
+	negative_histogram {{schema:0 sum:-5 count:4 n_buckets:[1 2 1]}}
+
+eval instant at 5m histogram_count(negative_histogram)
+	{} 4
+
+eval instant at 5m histogram_sum(negative_histogram)
+	{} -5
+
+eval instant at 5m histogram_avg(negative_histogram)
+	{} -1.25
+
+# We expect half of the values to fall in the range -2 < x <= -1.
+eval instant at 5m histogram_fraction(-2, -1, negative_histogram)
+	{} 0.5
+
+eval instant at 5m histogram_quantile(0.5, negative_histogram)
+	{} -1.5
+
+
+
+# Two histogram samples.
+load 5m
+	two_samples_histogram {{schema:0 sum:4 count:4 buckets:[1 2 1]}} {{schema:0 sum:-4 count:4 n_buckets:[1 2 1]}}
+
+# We expect to see the newest sample.
+eval instant at 10m histogram_count(two_samples_histogram)
+	{} 4
+
+eval instant at 10m histogram_sum(two_samples_histogram)
+	{} -4
+
+eval instant at 10m histogram_avg(two_samples_histogram)
+	{} -1
+
+eval instant at 10m histogram_fraction(-2, -1, two_samples_histogram)
+	{} 0.5
+
+eval instant at 10m histogram_quantile(0.5, two_samples_histogram)
+	{} -1.5
+
+
+
+# Add two histograms with negated data.
+load 5m
+	balanced_histogram {{schema:0 sum:4 count:4 buckets:[1 2 1]}}+{{schema:0 sum:-4 count:4 n_buckets:[1 2 1]}}x1
+
+eval instant at 5m histogram_count(balanced_histogram)
+	{} 8
+
+eval instant at 5m histogram_sum(balanced_histogram)
+	{} 0
+
+eval instant at 5m histogram_avg(balanced_histogram)
+	{} 0
+
+eval instant at 5m histogram_fraction(0, 4, balanced_histogram)
+	{} 0.5
+
+# If the quantile happens to be located in a span of empty buckets, the actually returned value is the lower bound of
+# the first populated bucket after the span of empty buckets.
+eval instant at 5m histogram_quantile(0.5, balanced_histogram)
+	{} 0.5
+
+# Add histogram to test sum(last_over_time) regression
+load 5m
+    incr_sum_histogram{number="1"} {{schema:0 sum:0 count:0 buckets:[1]}}+{{schema:0 sum:1 count:1 buckets:[1]}}x10
+    incr_sum_histogram{number="2"} {{schema:0 sum:0 count:0 buckets:[1]}}+{{schema:0 sum:2 count:1 buckets:[1]}}x10
+
+eval instant at 50m histogram_sum(sum(incr_sum_histogram))
+    {} 30
+
+eval instant at 50m histogram_sum(sum(last_over_time(incr_sum_histogram[5m])))
+    {} 30
+
+# Apply rate function to histogram.
+load 15s
+    histogram_rate {{schema:1 count:12 sum:18.4 z_bucket:2 z_bucket_w:0.001 buckets:[1 2 0 1 1] n_buckets:[1 2 0 1 1]}}+{{schema:1 count:9 sum:18.4 z_bucket:1 z_bucket_w:0.001 buckets:[1 1 0 1 1] n_buckets:[1 1 0 1 1]}}x100
+
+eval instant at 5m rate(histogram_rate[45s])
+    {} {{schema:1 count:0.6 sum:1.2266666666666652 z_bucket:0.06666666666666667 z_bucket_w:0.001 buckets:[0.06666666666666667 0.06666666666666667 0 0.06666666666666667 0.06666666666666667] n_buckets:[0.06666666666666667 0.06666666666666667 0 0.06666666666666667 0.06666666666666667]}}
+
+eval range from 5m to 5m30s step 30s rate(histogram_rate[45s])
+    {} {{schema:1 count:0.6 sum:1.2266666666666652 z_bucket:0.06666666666666667 z_bucket_w:0.001 buckets:[0.06666666666666667 0.06666666666666667 0 0.06666666666666667 0.06666666666666667] n_buckets:[0.06666666666666667 0.06666666666666667 0 0.06666666666666667 0.06666666666666667]}}x1
+
+# Apply count and sum function to histogram.
+load 10m
+    histogram_count_sum_2 {{schema:0 count:24 sum:100 z_bucket:4 z_bucket_w:0.001 buckets:[2 3 0 1 4] n_buckets:[2 3 0 1 4]}}x1
+
+eval instant at 10m histogram_count(histogram_count_sum_2)
+    {} 24
+
+eval instant at 10m histogram_sum(histogram_count_sum_2)
+    {} 100
+
+# Apply stddev and stdvar function to histogram with {1, 2, 3, 4} (low res).
+load 10m
+   histogram_stddev_stdvar_1 {{schema:2 count:4 sum:10 buckets:[1 0 0 0 1 0 0 1 1]}}x1
+
+eval instant at 10m histogram_stddev(histogram_stddev_stdvar_1)
+    {} 1.0787993180043811
+
+eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_1)
+    {} 1.163807968526718
+
+# Apply stddev and stdvar function to histogram with {1, 1, 1, 1} (high res).
+load 10m
+   histogram_stddev_stdvar_2 {{schema:8 count:10 sum:10 buckets:[1 2 3 4]}}x1
+
+eval instant at 10m histogram_stddev(histogram_stddev_stdvar_2)
+    {} 0.0048960313898237465
+
+eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_2)
+    {} 2.3971123370139447e-05
+
+# Apply stddev and stdvar function to histogram with {-50, -8, 0, 3, 8, 9}.
+load 10m
+   histogram_stddev_stdvar_3 {{schema:3 count:7 sum:62 z_bucket:1 buckets:[0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 ] n_buckets:[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 ]}}x1
+
+eval instant at 10m histogram_stddev(histogram_stddev_stdvar_3)
+    {} 42.947236400258
+
+eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_3)
+    {} 1844.4651144196398
+
+# Apply stddev and stdvar function to histogram with {-100000, -10000, -1000, -888, -888, -100, -50, -9, -8, -3}.
+load 10m
+   histogram_stddev_stdvar_4 {{schema:0 count:10 sum:-112946 z_bucket:0 n_buckets:[0 0 1 1 1 0 1 1 0 0 3 0 0 0 1 0 0 1]}}x1
+
+eval instant at 10m histogram_stddev(histogram_stddev_stdvar_4)
+    {} 27556.344499842
+
+eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_4)
+    {} 759352122.1939945
+
+# Apply stddev and stdvar function to histogram with {-10x10}.
+load 10m
+   histogram_stddev_stdvar_5 {{schema:0 count:10 sum:-100 z_bucket:0 n_buckets:[0 0 0 0 10]}}x1
+
+eval instant at 10m histogram_stddev(histogram_stddev_stdvar_5)
+    {} 1.3137084989848
+
+eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_5)
+    {} 1.725830020304794
+
+# Apply stddev and stdvar function to histogram with {-50, -8, 0, 3, 8, 9, NaN}.
+load 10m
+   histogram_stddev_stdvar_6 {{schema:3 count:7 sum:NaN z_bucket:1 buckets:[0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 ] n_buckets:[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 ]}}x1
+
+eval instant at 10m histogram_stddev(histogram_stddev_stdvar_6)
+    {} NaN
+
+eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_6)
+    {} NaN
+
+# Apply stddev and stdvar function to histogram with {-50, -8, 0, 3, 8, 9, Inf}.
+load 10m
+   histogram_stddev_stdvar_7 {{schema:3 count:7 sum:Inf z_bucket:1 buckets:[0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 ] n_buckets:[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 ]}}x1
+
+eval instant at 10m histogram_stddev(histogram_stddev_stdvar_7)
+    {} NaN
+
+eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_7)
+    {} NaN
+
+# Apply quantile function to histogram with all positive buckets with zero bucket.
+load 10m
+    histogram_quantile_1 {{schema:0 count:12 sum:100 z_bucket:2 z_bucket_w:0.001 buckets:[2 3 0 1 4]}}x1
+
+eval instant at 10m histogram_quantile(1.001, histogram_quantile_1)
+    {} Inf
+
+eval instant at 10m histogram_quantile(1, histogram_quantile_1)
+    {} 16
+
+eval instant at 10m histogram_quantile(0.99, histogram_quantile_1)
+    {} 15.759999999999998
+
+eval instant at 10m histogram_quantile(0.9, histogram_quantile_1)
+    {} 13.600000000000001
+
+eval instant at 10m histogram_quantile(0.6, histogram_quantile_1)
+    {} 4.799999999999997
+
+eval instant at 10m histogram_quantile(0.5, histogram_quantile_1)
+    {} 1.6666666666666665
+
+eval instant at 10m histogram_quantile(0.1, histogram_quantile_1)
+    {} 0.0006000000000000001
+
+eval instant at 10m histogram_quantile(0, histogram_quantile_1)
+    {} 0
+
+eval instant at 10m histogram_quantile(-1, histogram_quantile_1)
+    {} -Inf
+
+# Apply quantile function to histogram with all negative buckets with zero bucket.
+load 10m
+    histogram_quantile_2 {{schema:0 count:12 sum:100 z_bucket:2 z_bucket_w:0.001 n_buckets:[2 3 0 1 4]}}x1
+
+eval instant at 10m histogram_quantile(1.001, histogram_quantile_2)
+    {} Inf
+
+eval instant at 10m histogram_quantile(1, histogram_quantile_2)
+    {} 0
+
+eval instant at 10m histogram_quantile(0.99, histogram_quantile_2)
+    {} -6.000000000000048e-05
+
+eval instant at 10m histogram_quantile(0.9, histogram_quantile_2)
+    {} -0.0005999999999999996
+
+eval instant at 10m histogram_quantile(0.5, histogram_quantile_2)
+    {} -1.6666666666666667
+
+eval instant at 10m histogram_quantile(0.1, histogram_quantile_2)
+    {} -13.6
+
+eval instant at 10m histogram_quantile(0, histogram_quantile_2)
+    {} -16
+
+eval instant at 10m histogram_quantile(-1, histogram_quantile_2)
+    {} -Inf
+
+# Apply quantile function to histogram with both positive and negative buckets with zero bucket.
+load 10m
+    histogram_quantile_3 {{schema:0 count:24 sum:100 z_bucket:4 z_bucket_w:0.001 buckets:[2 3 0 1 4] n_buckets:[2 3 0 1 4]}}x1
+
+eval instant at 10m histogram_quantile(1.001, histogram_quantile_3)
+    {} Inf
+
+eval instant at 10m histogram_quantile(1, histogram_quantile_3)
+    {} 16
+
+eval instant at 10m histogram_quantile(0.99, histogram_quantile_3)
+    {} 15.519999999999996
+
+eval instant at 10m histogram_quantile(0.9, histogram_quantile_3)
+    {} 11.200000000000003
+
+eval instant at 10m histogram_quantile(0.7, histogram_quantile_3)
+    {} 1.2666666666666657
+
+eval instant at 10m histogram_quantile(0.55, histogram_quantile_3)
+    {} 0.0006000000000000005
+
+eval instant at 10m histogram_quantile(0.5, histogram_quantile_3)
+    {} 0
+
+eval instant at 10m histogram_quantile(0.45, histogram_quantile_3)
+    {} -0.0005999999999999996
+
+eval instant at 10m histogram_quantile(0.3, histogram_quantile_3)
+    {} -1.266666666666667
+
+eval instant at 10m histogram_quantile(0.1, histogram_quantile_3)
+    {} -11.2
+
+eval instant at 10m histogram_quantile(0.01, histogram_quantile_3)
+    {} -15.52
+
+eval instant at 10m histogram_quantile(0, histogram_quantile_3)
+    {} -16
+
+eval instant at 10m histogram_quantile(-1, histogram_quantile_3)
+    {} -Inf
+
+# Apply fraction function to empty histogram.
+load 10m
+    histogram_fraction_1 {{}}x1
+
+eval instant at 10m histogram_fraction(3.1415, 42, histogram_fraction_1)
+    {} NaN
+
+# Apply fraction function to histogram with positive and zero buckets.
+load 10m
+    histogram_fraction_2 {{schema:0 count:12 sum:100 z_bucket:2 z_bucket_w:0.001 buckets:[2 3 0 1 4]}}x1
+
+eval instant at 10m histogram_fraction(0, +Inf, histogram_fraction_2)
+    {} 1
+
+eval instant at 10m histogram_fraction(-Inf, 0, histogram_fraction_2)
+    {} 0
+
+eval instant at 10m histogram_fraction(-0.001, 0, histogram_fraction_2)
+    {} 0
+
+eval instant at 10m histogram_fraction(0, 0.001, histogram_fraction_2)
+    {} 0.16666666666666666
+
+eval instant at 10m histogram_fraction(0, 0.0005, histogram_fraction_2)
+    {} 0.08333333333333333
+
+eval instant at 10m histogram_fraction(0.001, inf, histogram_fraction_2)
+    {} 0.8333333333333334
+
+eval instant at 10m histogram_fraction(-inf, -0.001, histogram_fraction_2)
+    {} 0
+
+eval instant at 10m histogram_fraction(1, 2, histogram_fraction_2)
+    {} 0.25
+
+eval instant at 10m histogram_fraction(1.5, 2, histogram_fraction_2)
+    {} 0.125
+
+eval instant at 10m histogram_fraction(1, 8, histogram_fraction_2)
+    {} 0.3333333333333333
+
+eval instant at 10m histogram_fraction(1, 6, histogram_fraction_2)
+    {} 0.2916666666666667
+
+eval instant at 10m histogram_fraction(1.5, 6, histogram_fraction_2)
+    {} 0.16666666666666666
+
+eval instant at 10m histogram_fraction(-2, -1, histogram_fraction_2)
+    {} 0
+
+eval instant at 10m histogram_fraction(-2, -1.5, histogram_fraction_2)
+    {} 0
+
+eval instant at 10m histogram_fraction(-8, -1, histogram_fraction_2)
+    {} 0
+
+eval instant at 10m histogram_fraction(-6, -1, histogram_fraction_2)
+    {} 0
+
+eval instant at 10m histogram_fraction(-6, -1.5, histogram_fraction_2)
+    {} 0
+
+eval instant at 10m histogram_fraction(42, 3.1415, histogram_fraction_2)
+    {} 0
+
+eval instant at 10m histogram_fraction(0, 0, histogram_fraction_2)
+    {} 0
+
+eval instant at 10m histogram_fraction(0.000001, 0.000001, histogram_fraction_2)
+    {} 0
+
+eval instant at 10m histogram_fraction(42, 42, histogram_fraction_2)
+    {} 0
+
+eval instant at 10m histogram_fraction(-3.1, -3.1, histogram_fraction_2)
+    {} 0
+
+eval instant at 10m histogram_fraction(3.1415, NaN, histogram_fraction_2)
+    {} NaN
+
+eval instant at 10m histogram_fraction(NaN, 42, histogram_fraction_2)
+    {} NaN
+
+eval instant at 10m histogram_fraction(NaN, NaN, histogram_fraction_2)
+    {} NaN
+
+eval instant at 10m histogram_fraction(-Inf, +Inf, histogram_fraction_2)
+    {} 1
+
+# Apply fraction function to histogram with negative and zero buckets.
+load 10m
+    histogram_fraction_3 {{schema:0 count:12 sum:100 z_bucket:2 z_bucket_w:0.001 n_buckets:[2 3 0 1 4]}}x1
+
+eval instant at 10m histogram_fraction(0, +Inf, histogram_fraction_3)
+    {} 0
+
+eval instant at 10m histogram_fraction(-Inf, 0, histogram_fraction_3)
+    {} 1
+
+eval instant at 10m histogram_fraction(-0.001, 0, histogram_fraction_3)
+    {} 0.16666666666666666
+
+eval instant at 10m histogram_fraction(0, 0.001, histogram_fraction_3)
+    {} 0
+
+eval instant at 10m histogram_fraction(-0.0005, 0, histogram_fraction_3)
+    {} 0.08333333333333333
+
+eval instant at 10m histogram_fraction(0.001, inf, histogram_fraction_3)
+    {} 0
+
+eval instant at 10m histogram_fraction(-inf, -0.001, histogram_fraction_3)
+    {} 0.8333333333333334
+
+eval instant at 10m histogram_fraction(1, 2, histogram_fraction_3)
+    {} 0
+
+eval instant at 10m histogram_fraction(1.5, 2, histogram_fraction_3)
+    {} 0
+
+eval instant at 10m histogram_fraction(1, 8, histogram_fraction_3)
+    {} 0
+
+eval instant at 10m histogram_fraction(1, 6, histogram_fraction_3)
+    {} 0
+
+eval instant at 10m histogram_fraction(1.5, 6, histogram_fraction_3)
+    {} 0
+
+eval instant at 10m histogram_fraction(-2, -1, histogram_fraction_3)
+    {} 0.25
+
+eval instant at 10m histogram_fraction(-2, -1.5, histogram_fraction_3)
+    {} 0.125
+
+eval instant at 10m histogram_fraction(-8, -1, histogram_fraction_3)
+    {} 0.3333333333333333
+
+eval instant at 10m histogram_fraction(-6, -1, histogram_fraction_3)
+    {} 0.2916666666666667
+
+eval instant at 10m histogram_fraction(-6, -1.5, histogram_fraction_3)
+    {} 0.16666666666666666
+
+eval instant at 10m histogram_fraction(42, 3.1415, histogram_fraction_3)
+    {} 0
+
+eval instant at 10m histogram_fraction(0, 0, histogram_fraction_3)
+    {} 0
+
+eval instant at 10m histogram_fraction(0.000001, 0.000001, histogram_fraction_3)
+    {} 0
+
+eval instant at 10m histogram_fraction(42, 42, histogram_fraction_3)
+    {} 0
+
+eval instant at 10m histogram_fraction(-3.1, -3.1, histogram_fraction_3)
+    {} 0
+
+eval instant at 10m histogram_fraction(3.1415, NaN, histogram_fraction_3)
+    {} NaN
+
+eval instant at 10m histogram_fraction(NaN, 42, histogram_fraction_3)
+    {} NaN
+
+eval instant at 10m histogram_fraction(NaN, NaN, histogram_fraction_3)
+    {} NaN
+
+eval instant at 10m histogram_fraction(-Inf, +Inf, histogram_fraction_3)
+    {} 1
+
+# Apply fraction function to histogram with both positive, negative and zero buckets.
+load 10m
+    histogram_fraction_4 {{schema:0 count:24 sum:100 z_bucket:4 z_bucket_w:0.001 buckets:[2 3 0 1 4] n_buckets:[2 3 0 1 4]}}x1
+
+eval instant at 10m histogram_fraction(0, +Inf, histogram_fraction_4)
+    {} 0.5
+
+eval instant at 10m histogram_fraction(-Inf, 0, histogram_fraction_4)
+    {} 0.5
+
+eval instant at 10m histogram_fraction(-0.001, 0, histogram_fraction_4)
+    {} 0.08333333333333333
+
+eval instant at 10m histogram_fraction(0, 0.001, histogram_fraction_4)
+    {} 0.08333333333333333
+
+eval instant at 10m histogram_fraction(-0.0005, 0.0005, histogram_fraction_4)
+    {} 0.08333333333333333
+
+eval instant at 10m histogram_fraction(0.001, inf, histogram_fraction_4)
+    {} 0.4166666666666667
+
+eval instant at 10m histogram_fraction(-inf, -0.001, histogram_fraction_4)
+    {} 0.4166666666666667
+
+eval instant at 10m histogram_fraction(1, 2, histogram_fraction_4)
+    {} 0.125
+
+eval instant at 10m histogram_fraction(1.5, 2, histogram_fraction_4)
+    {} 0.0625
+
+eval instant at 10m histogram_fraction(1, 8, histogram_fraction_4)
+    {} 0.16666666666666666
+
+eval instant at 10m histogram_fraction(1, 6, histogram_fraction_4)
+    {} 0.14583333333333334
+
+eval instant at 10m histogram_fraction(1.5, 6, histogram_fraction_4)
+    {} 0.08333333333333333
+
+eval instant at 10m histogram_fraction(-2, -1, histogram_fraction_4)
+    {} 0.125
+
+eval instant at 10m histogram_fraction(-2, -1.5, histogram_fraction_4)
+    {} 0.0625
+
+eval instant at 10m histogram_fraction(-8, -1, histogram_fraction_4)
+    {} 0.16666666666666666
+
+eval instant at 10m histogram_fraction(-6, -1, histogram_fraction_4)
+    {} 0.14583333333333334
+
+eval instant at 10m histogram_fraction(-6, -1.5, histogram_fraction_4)
+    {} 0.08333333333333333
+
+eval instant at 10m histogram_fraction(42, 3.1415, histogram_fraction_4)
+    {} 0
+
+eval instant at 10m histogram_fraction(0, 0, histogram_fraction_4)
+    {} 0
+
+eval instant at 10m histogram_fraction(0.000001, 0.000001, histogram_fraction_4)
+    {} 0
+
+eval instant at 10m histogram_fraction(42, 42, histogram_fraction_4)
+    {} 0
+
+eval instant at 10m histogram_fraction(-3.1, -3.1, histogram_fraction_4)
+    {} 0
+
+eval instant at 10m histogram_fraction(3.1415, NaN, histogram_fraction_4)
+    {} NaN
+
+eval instant at 10m histogram_fraction(NaN, 42, histogram_fraction_4)
+    {} NaN
+
+eval instant at 10m histogram_fraction(NaN, NaN, histogram_fraction_4)
+    {} NaN
+
+eval instant at 10m histogram_fraction(-Inf, +Inf, histogram_fraction_4)
+    {} 1

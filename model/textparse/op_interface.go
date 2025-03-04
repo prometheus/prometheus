@@ -1,8 +1,6 @@
 package textparse
 
 import (
-	"strings"
-
 	"github.com/prometheus/prometheus/model/labels"
 )
 
@@ -19,20 +17,14 @@ func (p *PromParser) MetricToBuilder(builder Builder) {
 	s := string(p.series)
 
 	builder.Reset()
-	builder.Add(labels.MetricName, s[:p.offsets[0]-p.start])
+	builder.Add(labels.MetricName, unreplace(s[p.offsets[0]-p.start:p.offsets[1]-p.start]))
 
-	for i := 1; i < len(p.offsets); i += 4 {
+	for i := 2; i < len(p.offsets); i += 4 {
 		a := p.offsets[i] - p.start
 		b := p.offsets[i+1] - p.start
 		c := p.offsets[i+2] - p.start
 		d := p.offsets[i+3] - p.start
-
-		value := s[c:d]
-		// Replacer causes allocations. Replace only when necessary.
-		if strings.IndexByte(s[c:d], byte('\\')) >= 0 {
-			value = lvalReplacer.Replace(value)
-		}
-		builder.Add(s[a:b], value)
+		builder.Add(unreplace(s[a:b]), unreplace(s[c:d]))
 	}
 	builder.Sort()
 }
@@ -43,20 +35,14 @@ func (p *OpenMetricsParser) MetricToBuilder(builder Builder) {
 	s := string(p.series)
 
 	builder.Reset()
-	builder.Add(labels.MetricName, s[:p.offsets[0]-p.start])
+	builder.Add(labels.MetricName, unreplace(s[p.offsets[0]-p.start:p.offsets[1]-p.start]))
 
-	for i := 1; i < len(p.offsets); i += 4 {
+	for i := 2; i < len(p.offsets); i += 4 {
 		a := p.offsets[i] - p.start
 		b := p.offsets[i+1] - p.start
 		c := p.offsets[i+2] - p.start
 		d := p.offsets[i+3] - p.start
-
-		value := s[c:d]
-		// Replacer causes allocations. Replace only when necessary.
-		if strings.IndexByte(s[c:d], byte('\\')) >= 0 {
-			value = lvalReplacer.Replace(value)
-		}
-		builder.Add(s[a:b], value)
+		builder.Add(unreplace(s[a:b]), unreplace(s[c:d]))
 	}
 	builder.Sort()
 }

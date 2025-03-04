@@ -184,7 +184,7 @@ func TestCommit(t *testing.T) {
 	// Read records from WAL and check for expected count of series, samples, and exemplars.
 	var (
 		r   = wlog.NewReader(sr)
-		dec record.Decoder
+		dec = record.NewDecoder(labels.NewSymbolTable())
 
 		walSeriesCount, walSamplesCount, walExemplarsCount, walHistogramCount, walFloatHistogramCount int
 	)
@@ -293,7 +293,7 @@ func TestRollback(t *testing.T) {
 	// Read records from WAL and check for expected count of series and samples.
 	var (
 		r   = wlog.NewReader(sr)
-		dec record.Decoder
+		dec = record.NewDecoder(labels.NewSymbolTable())
 
 		walSeriesCount, walSamplesCount, walHistogramCount, walFloatHistogramCount, walExemplarsCount int
 	)
@@ -737,7 +737,7 @@ func TestStorage_DuplicateExemplarsIgnored(t *testing.T) {
 	defer sr.Close()
 	r := wlog.NewReader(sr)
 
-	var dec record.Decoder
+	dec := record.NewDecoder(labels.NewSymbolTable())
 	for r.Next() {
 		rec := r.Record()
 		if dec.Type(rec) == record.Exemplars {

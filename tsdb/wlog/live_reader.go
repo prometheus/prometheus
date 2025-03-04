@@ -327,10 +327,3 @@ func (r *LiveReader) readRecord() ([]byte, int, error) {
 
 	return rec, length + recordHeaderSize, nil
 }
-
-func min(i, j int) int {
-	if i < j {
-		return i
-	}
-	return j
-}

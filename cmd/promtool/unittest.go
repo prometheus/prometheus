@@ -20,13 +20,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/google/go-cmp/cmp"
 	"github.com/grafana/regexp"
 	"github.com/nsf/jsondiff"
 	"github.com/prometheus/common/model"
@@ -36,13 +36,14 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
 )
 
 // RulesUnitTest does unit testing of rules based on the unit testing files provided.
 // More info about the file format can be found in the docs.
-func RulesUnitTest(queryOpts promql.LazyLoaderOpts, runStrings []string, diffFlag bool, files ...string) int {
+func RulesUnitTest(queryOpts promqltest.LazyLoaderOpts, runStrings []string, diffFlag bool, files ...string) int {
 	failed := false
 
 	var run *regexp.Regexp
@@ -69,7 +70,7 @@ func RulesUnitTest(queryOpts promql.LazyLoaderOpts, runStrings []string, diffFla
 	return successExitCode
 }
 
-func ruleUnitTest(filename string, queryOpts promql.LazyLoaderOpts, run *regexp.Regexp, diffFlag bool) []error {
+func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *regexp.Regexp, diffFlag bool) []error {
 	fmt.Println("Unit Testing: ", filename)
 
 	b, err := os.ReadFile(filename)
@@ -175,13 +176,18 @@ type testGroup struct {
 }
 
 // test performs the unit tests.
-func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]int, queryOpts promql.LazyLoaderOpts, diffFlag bool, ruleFiles ...string) []error {
+func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]int, queryOpts promqltest.LazyLoaderOpts, diffFlag bool, ruleFiles ...string) (outErr []error) {
 	// Setup testing suite.
-	suite, err := promql.NewLazyLoader(nil, tg.seriesLoadingString(), queryOpts)
+	suite, err := promqltest.NewLazyLoader(tg.seriesLoadingString(), queryOpts)
 	if err != nil {
 		return []error{err}
 	}
-	defer suite.Close()
+	defer func() {
+		err := suite.Close()
+		if err != nil {
+			outErr = append(outErr, err)
+		}
+	}()
 	suite.SubqueryInterval = evalInterval
 
 	// Load the rule files.
@@ -340,7 +346,7 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 				sort.Sort(gotAlerts)
 				sort.Sort(expAlerts)
 
-				if !reflect.DeepEqual(expAlerts, gotAlerts) {
+				if !cmp.Equal(expAlerts, gotAlerts, cmp.Comparer(labels.Equal)) {
 					var testName string
 					if tg.TestGroupName != "" {
 						testName = fmt.Sprintf("    name: %s,\n", tg.TestGroupName)
@@ -408,7 +414,7 @@ Outer:
 			gotSamples = append(gotSamples, parsedSample{
 				Labels:    s.Metric.Copy(),
 				Value:     s.F,
-				Histogram: promql.HistogramTestExpression(s.H),
+				Histogram: promqltest.HistogramTestExpression(s.H),
 			})
 		}
 
@@ -438,7 +444,7 @@ Outer:
 			expSamples = append(expSamples, parsedSample{
 				Labels:    lb,
 				Value:     s.Value,
-				Histogram: promql.HistogramTestExpression(hist),
+				Histogram: promqltest.HistogramTestExpression(hist),
 			})
 		}
 
@@ -448,7 +454,7 @@ Outer:
 		sort.Slice(gotSamples, func(i, j int) bool {
 			return labels.Compare(gotSamples[i].Labels, gotSamples[j].Labels) <= 0
 		})
-		if !reflect.DeepEqual(expSamples, gotSamples) {
+		if !cmp.Equal(expSamples, gotSamples, cmp.Comparer(labels.Equal)) {
 			errs = append(errs, fmt.Errorf("    expr: %q, time: %s,\n        exp: %v\n        got: %v", testCase.Expr,
 				testCase.EvalTime.String(), parsedSamplesString(expSamples), parsedSamplesString(gotSamples)))
 		}
@@ -567,7 +573,7 @@ func (la labelsAndAnnotations) String() string {
 	}
 	s := "[\n0:" + indentLines("\n"+la[0].String(), "  ")
 	for i, l := range la[1:] {
-		s += ",\n" + fmt.Sprintf("%d", i+1) + ":" + indentLines("\n"+l.String(), "  ")
+		s += ",\n" + strconv.Itoa(i+1) + ":" + indentLines("\n"+l.String(), "  ")
 	}
 	s += "\n]"
 

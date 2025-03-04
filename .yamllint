@@ -1,5 +1,7 @@
 ---
 extends: default
+ignore: |
+  ui/react-app/node_modules
 
 rules:
   braces:

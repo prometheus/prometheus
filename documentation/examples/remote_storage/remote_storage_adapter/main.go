@@ -83,9 +83,12 @@ var (
 	)
 	sentBatchDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "sent_batch_duration_seconds",
-			Help:    "Duration of sample batch send calls to the remote storage.",
-			Buckets: prometheus.DefBuckets,
+			Name:                            "sent_batch_duration_seconds",
+			Help:                            "Duration of sample batch send calls to the remote storage.",
+			Buckets:                         prometheus.DefBuckets,
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		},
 		[]string{"remote"},
 	)

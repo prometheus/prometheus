@@ -105,7 +105,7 @@ func (c *Client) Write(samples model.Samples) error {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	req, err := http.NewRequest("POST", u.String(), bytes.NewBuffer(buf))
+	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewBuffer(buf))
 	if err != nil {
 		return err
 	}

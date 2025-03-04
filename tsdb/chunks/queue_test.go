@@ -55,7 +55,7 @@ func (q *writeJobQueue) assertInvariants(t *testing.T) {
 			require.Len(t, s.segment, s.nextWrite)
 		}
 		// Last segment must have at least one element, or we wouldn't have created it.
-		require.Greater(t, s.nextWrite, 0)
+		require.Positive(t, s.nextWrite)
 	}
 
 	require.Equal(t, q.size, totalSize)

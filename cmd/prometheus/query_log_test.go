@@ -296,7 +296,7 @@ func (p *queryLogTest) run(t *testing.T) {
 	if p.exactQueryCount() {
 		require.Equal(t, 1, qc)
 	} else {
-		require.Greater(t, qc, 0, "no queries logged")
+		require.Positive(t, qc, "no queries logged")
 	}
 	p.validateLastQuery(t, ql)
 
@@ -366,7 +366,7 @@ func (p *queryLogTest) run(t *testing.T) {
 	if p.exactQueryCount() {
 		require.Equal(t, 1, qc)
 	} else {
-		require.Greater(t, qc, 0, "no queries logged")
+		require.Positive(t, qc, "no queries logged")
 	}
 }
 

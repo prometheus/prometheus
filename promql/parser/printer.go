@@ -204,8 +204,8 @@ func (node *VectorSelector) String() string {
 		labelStrings = make([]string, 0, len(node.LabelMatchers)-1)
 	}
 	for _, matcher := range node.LabelMatchers {
-		// Only include the __name__ label if its equality matching and matches the name.
-		if matcher.Name == labels.MetricName && matcher.Type == labels.MatchEqual && matcher.Value == node.Name {
+		// Only include the __name__ label if its equality matching and matches the name, but don't skip if it's an explicit empty name matcher.
+		if matcher.Name == labels.MetricName && matcher.Type == labels.MatchEqual && matcher.Value == node.Name && matcher.Value != "" {
 			continue
 		}
 		labelStrings = append(labelStrings, matcher.String())

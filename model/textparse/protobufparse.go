@@ -56,6 +56,8 @@ type ProtobufParser struct {
 	fieldPos    int
 	fieldsDone  bool // true if no more fields of a Summary or (legacy) Histogram to be processed.
 	redoClassic bool // true after parsing a native histogram if we need to parse it again as a classic histogram.
+	// exemplarPos is the position within the exemplars slice of a native histogram.
+	exemplarPos int
 
 	// exemplarReturned is set to true each time an exemplar has been
 	// returned, and set back to false upon each Next() call.
@@ -78,13 +80,14 @@ type ProtobufParser struct {
 }
 
 // NewProtobufParser returns a parser for the payload in the byte slice.
-func NewProtobufParser(b []byte, parseClassicHistograms bool) Parser {
+func NewProtobufParser(b []byte, parseClassicHistograms bool, st *labels.SymbolTable) Parser {
 	return &ProtobufParser{
 		in:                     b,
 		state:                  EntryInvalid,
 		mf:                     &dto.MetricFamily{},
 		metricBytes:            &bytes.Buffer{},
 		parseClassicHistograms: parseClassicHistograms,
+		builder:                labels.NewScratchBuilderWithSymbolTable(st, 16),
 	}
 }
 
@@ -304,8 +307,9 @@ func (p *ProtobufParser) Metric(l *labels.Labels) string {
 
 // Exemplar writes the exemplar of the current sample into the passed
 // exemplar. It returns if an exemplar exists or not. In case of a native
-// histogram, the legacy bucket section is still used for exemplars. To ingest
-// all exemplars, call the Exemplar method repeatedly until it returns false.
+// histogram, the exemplars in the native histogram will be returned.
+// If this field is empty, the classic bucket section is still used for exemplars.
+// To ingest all exemplars, call the Exemplar method repeatedly until it returns false.
 func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 	if p.exemplarReturned && p.state == EntrySeries {
 		// We only ever return one exemplar per (non-native-histogram) series.
@@ -317,28 +321,42 @@ func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 	case dto.MetricType_COUNTER:
 		exProto = m.GetCounter().GetExemplar()
 	case dto.MetricType_HISTOGRAM, dto.MetricType_GAUGE_HISTOGRAM:
-		bb := m.GetHistogram().GetBucket()
 		isClassic := p.state == EntrySeries
-		if p.fieldPos < 0 {
-			if isClassic {
-				return false // At _count or _sum.
+		if !isClassic && len(m.GetHistogram().GetExemplars()) > 0 {
+			exs := m.GetHistogram().GetExemplars()
+			for p.exemplarPos < len(exs) {
+				exProto = exs[p.exemplarPos]
+				p.exemplarPos++
+				if exProto != nil && exProto.GetTimestamp() != nil {
+					break
+				}
 			}
-			p.fieldPos = 0 // Start at 1st bucket for native histograms.
-		}
-		for p.fieldPos < len(bb) {
-			exProto = bb[p.fieldPos].GetExemplar()
-			if isClassic {
-				break
+			if exProto != nil && exProto.GetTimestamp() == nil {
+				return false
 			}
-			p.fieldPos++
-			// We deliberately drop exemplars with no timestamp only for native histograms.
-			if exProto != nil && (isClassic || exProto.GetTimestamp() != nil) {
-				break // Found a classic histogram exemplar or a native histogram exemplar with a timestamp.
+		} else {
+			bb := m.GetHistogram().GetBucket()
+			if p.fieldPos < 0 {
+				if isClassic {
+					return false // At _count or _sum.
+				}
+				p.fieldPos = 0 // Start at 1st bucket for native histograms.
 			}
-		}
-		// If the last exemplar for native histograms has no timestamp, ignore it.
-		if !isClassic && exProto.GetTimestamp() == nil {
-			return false
+			for p.fieldPos < len(bb) {
+				exProto = bb[p.fieldPos].GetExemplar()
+				if isClassic {
+					break
+				}
+				p.fieldPos++
+				// We deliberately drop exemplars with no timestamp only for native histograms.
+				if exProto != nil && (isClassic || exProto.GetTimestamp() != nil) {
+					break // Found a classic histogram exemplar or a native histogram exemplar with a timestamp.
+				}
+			}
+			// If the last exemplar for native histograms has no timestamp, ignore it.
+			if !isClassic && exProto.GetTimestamp() == nil {
+				return false
+			}
 		}
 	default:
 		return false

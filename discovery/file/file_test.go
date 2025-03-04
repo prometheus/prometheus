@@ -208,7 +208,6 @@ func (t *testRunner) requireUpdate(ref time.Time, expected []*targetgroup.Group)
 		select {
 		case <-timeout:
 			t.Fatalf("Expected update but got none")
-			return
 		case <-time.After(defaultWait / 10):
 			if ref.Equal(t.lastReceive()) {
 				// No update received.
@@ -358,9 +357,7 @@ func TestInvalidFile(t *testing.T) {
 
 			// Verify that we've received nothing.
 			time.Sleep(defaultWait)
-			if runner.lastReceive().After(now) {
-				t.Fatalf("unexpected targets received: %v", runner.targets())
-			}
+			require.False(t, runner.lastReceive().After(now), "unexpected targets received: %v", runner.targets())
 		})
 	}
 }

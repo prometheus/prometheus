@@ -18,6 +18,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -27,54 +29,35 @@ func TestLocking(t *testing.T) {
 
 	fileName := filepath.Join(dir.Path(), "LOCK")
 
-	if _, err := os.Stat(fileName); err == nil {
-		t.Fatalf("File %q unexpectedly exists.", fileName)
-	}
+	_, err := os.Stat(fileName)
+	require.Error(t, err, "File %q unexpectedly exists.", fileName)
 
 	lock, existed, err := Flock(fileName)
-	if err != nil {
-		t.Fatalf("Error locking file %q: %s", fileName, err)
-	}
-	if existed {
-		t.Errorf("File %q reported as existing during locking.", fileName)
-	}
+	require.NoError(t, err, "Error locking file %q", fileName)
+	require.False(t, existed, "File %q reported as existing during locking.", fileName)
 
 	// File must now exist.
-	if _, err = os.Stat(fileName); err != nil {
-		t.Errorf("Could not stat file %q expected to exist: %s", fileName, err)
-	}
+	_, err = os.Stat(fileName)
+	require.NoError(t, err, "Could not stat file %q expected to exist", fileName)
 
 	// Try to lock again.
 	lockedAgain, existed, err := Flock(fileName)
-	if err == nil {
-		t.Fatalf("File %q locked twice.", fileName)
-	}
-	if lockedAgain != nil {
-		t.Error("Unsuccessful locking did not return nil.")
-	}
-	if !existed {
-		t.Errorf("Existing file %q not recognized.", fileName)
-	}
+	require.Error(t, err, "File %q locked twice.", fileName)
+	require.Nil(t, lockedAgain, "Unsuccessful locking did not return nil.")
+	require.True(t, existed, "Existing file %q not recognized.", fileName)
 
-	if err := lock.Release(); err != nil {
-		t.Errorf("Error releasing lock for file %q: %s", fileName, err)
-	}
+	err = lock.Release()
+	require.NoError(t, err, "Error releasing lock for file %q", fileName)
 
 	// File must still exist.
-	if _, err = os.Stat(fileName); err != nil {
-		t.Errorf("Could not stat file %q expected to exist: %s", fileName, err)
-	}
+	_, err = os.Stat(fileName)
+	require.NoError(t, err, "Could not stat file %q expected to exist", fileName)
 
 	// Lock existing file.
 	lock, existed, err = Flock(fileName)
-	if err != nil {
-		t.Fatalf("Error locking file %q: %s", fileName, err)
-	}
-	if !existed {
-		t.Errorf("Existing file %q not recognized.", fileName)
-	}
+	require.NoError(t, err, "Error locking file %q", fileName)
+	require.True(t, existed, "Existing file %q not recognized.", fileName)
 
-	if err := lock.Release(); err != nil {
-		t.Errorf("Error releasing lock for file %q: %s", fileName, err)
-	}
+	err = lock.Release()
+	require.NoError(t, err, "Error releasing lock for file %q", fileName)
 }

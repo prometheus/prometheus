@@ -15,7 +15,6 @@ package hetzner
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"net/http"
 	"strconv"
@@ -92,7 +91,7 @@ func (d *hcloudDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 	for i, server := range servers {
 		labels := model.LabelSet{
 			hetznerLabelRole:              model.LabelValue(HetznerRoleHcloud),
-			hetznerLabelServerID:          model.LabelValue(fmt.Sprintf("%d", server.ID)),
+			hetznerLabelServerID:          model.LabelValue(strconv.FormatInt(server.ID, 10)),
 			hetznerLabelServerName:        model.LabelValue(server.Name),
 			hetznerLabelDatacenter:        model.LabelValue(server.Datacenter.Name),
 			hetznerLabelPublicIPv4:        model.LabelValue(server.PublicNet.IPv4.IP.String()),
@@ -102,10 +101,10 @@ func (d *hcloudDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 			hetznerLabelHcloudDatacenterLocation:            model.LabelValue(server.Datacenter.Location.Name),
 			hetznerLabelHcloudDatacenterLocationNetworkZone: model.LabelValue(server.Datacenter.Location.NetworkZone),
 			hetznerLabelHcloudType:                          model.LabelValue(server.ServerType.Name),
-			hetznerLabelHcloudCPUCores:                      model.LabelValue(fmt.Sprintf("%d", server.ServerType.Cores)),
+			hetznerLabelHcloudCPUCores:                      model.LabelValue(strconv.Itoa(server.ServerType.Cores)),
 			hetznerLabelHcloudCPUType:                       model.LabelValue(server.ServerType.CPUType),
-			hetznerLabelHcloudMemoryGB:                      model.LabelValue(fmt.Sprintf("%d", int(server.ServerType.Memory))),
-			hetznerLabelHcloudDiskGB:                        model.LabelValue(fmt.Sprintf("%d", server.ServerType.Disk)),
+			hetznerLabelHcloudMemoryGB:                      model.LabelValue(strconv.Itoa(int(server.ServerType.Memory))),
+			hetznerLabelHcloudDiskGB:                        model.LabelValue(strconv.Itoa(server.ServerType.Disk)),
 
 			model.AddressLabel: model.LabelValue(net.JoinHostPort(server.PublicNet.IPv4.IP.String(), strconv.FormatUint(uint64(d.port), 10))),
 		}

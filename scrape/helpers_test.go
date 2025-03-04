@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"math/rand"
 	"strings"
 	"sync"
@@ -69,6 +70,11 @@ type floatSample struct {
 	metric labels.Labels
 	t      int64
 	f      float64
+}
+
+func equalFloatSamples(a, b floatSample) bool {
+	// Compare Float64bits so NaN values which are exactly the same will compare equal.
+	return labels.Equal(a.metric, b.metric) && a.t == b.t && math.Float64bits(a.f) == math.Float64bits(b.f)
 }
 
 type histogramSample struct {

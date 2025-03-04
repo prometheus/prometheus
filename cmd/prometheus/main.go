@@ -28,6 +28,8 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -42,6 +44,8 @@ import (
 	"github.com/mwitkow/go-conntrack"
 	"github.com/oklog/run"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	versioncollector "github.com/prometheus/client_golang/prometheus/collectors/version"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promlog"
 	promlogflag "github.com/prometheus/common/promlog/flag"
@@ -51,6 +55,10 @@ import (
 	"go.uber.org/automaxprocs/maxprocs"
 	"k8s.io/klog"
 	klogv2 "k8s.io/klog/v2"
+
+	"github.com/prometheus/prometheus/op-pkg/receiver"             // PP_CHANGES.md: rebuild on cpp
+	"github.com/prometheus/prometheus/op-pkg/scrape"               // PP_CHANGES.md: rebuild on cpp
+	oppkgstorage "github.com/prometheus/prometheus/op-pkg/storage" // PP_CHANGES.md: rebuild on cpp
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
@@ -62,10 +70,7 @@ import (
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/notifier"
-	"github.com/prometheus/prometheus/op-pkg/receiver"             // PP_CHANGES.md: rebuild on cpp
-	"github.com/prometheus/prometheus/op-pkg/scrape"               // PP_CHANGES.md: rebuild on cpp
-	oppkgstorage "github.com/prometheus/prometheus/op-pkg/storage" // PP_CHANGES.md: rebuild on cpp
-	_ "github.com/prometheus/prometheus/plugins"                   // Register plugins.
+	_ "github.com/prometheus/prometheus/plugins" // Register plugins.
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
@@ -100,7 +105,7 @@ var (
 )
 
 func init() {
-	prometheus.MustRegister(version.NewCollector(strings.ReplaceAll(appName, "-", "_")))
+	prometheus.MustRegister(versioncollector.NewCollector(strings.ReplaceAll(appName, "-", "_")))
 
 	var err error
 	defaultRetentionDuration, err = model.ParseDuration(defaultRetentionString)
@@ -138,6 +143,7 @@ type flagConfig struct {
 	forGracePeriod      model.Duration
 	outageTolerance     model.Duration
 	resendDelay         model.Duration
+	maxConcurrentEvals  int64
 	web                 web.Options
 	scrape              scrape.Options
 	tsdb                tsdbOptions
@@ -158,6 +164,7 @@ type flagConfig struct {
 	enablePerStepStats         bool
 	enableAutoGOMAXPROCS       bool
 	enableAutoGOMEMLIMIT       bool
+	enableConcurrentRuleEval   bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -204,6 +211,9 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "auto-gomemlimit":
 				c.enableAutoGOMEMLIMIT = true
 				level.Info(logger).Log("msg", "Automatically set GOMEMLIMIT to match Linux container or system memory limit")
+			case "concurrent-rule-eval":
+				c.enableConcurrentRuleEval = true
+				level.Info(logger).Log("msg", "Experimental concurrent rule evaluation enabled.")
 			case "no-default-scrape-port":
 				c.scrape.NoDefaultPort = true
 				level.Info(logger).Log("msg", "No default port will be appended to scrape targets' addresses.")
@@ -212,6 +222,7 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 				level.Info(logger).Log("msg", "Experimental PromQL functions enabled.")
 			case "native-histograms":
 				c.tsdb.EnableNativeHistograms = true
+				c.scrape.EnableNativeHistogramsIngestion = true
 				// Change relevant global variables. Hacky, but it's hard to pass a new option or default to unmarshallers.
 				config.DefaultConfig.GlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
@@ -245,6 +256,18 @@ func main() {
 		oldFlagRetentionDuration model.Duration
 		newFlagRetentionDuration model.Duration
 	)
+
+	// Unregister the default GoCollector, and reregister with our defaults.
+	if prometheus.Unregister(collectors.NewGoCollector()) {
+		prometheus.MustRegister(
+			collectors.NewGoCollector(
+				collectors.WithGoCollectorRuntimeMetrics(
+					collectors.MetricsGC,
+					collectors.MetricsScheduler,
+				),
+			),
+		)
+	}
 
 	cfg := flagConfig{
 		notifier: notifier.Options{
@@ -412,6 +435,9 @@ func main() {
 	serverOnlyFlag(a, "rules.alert.resend-delay", "Minimum amount of time to wait before resending an alert to Alertmanager.").
 		Default("1m").SetValue(&cfg.resendDelay)
 
+	serverOnlyFlag(a, "rules.max-concurrent-evals", "Global concurrency limit for independent rules that can run concurrently. When set, \"query.max-concurrency\" may need to be adjusted accordingly.").
+		Default("4").Int64Var(&cfg.maxConcurrentEvals)
+
 	a.Flag("scrape.adjust-timestamps", "Adjust scrape timestamps by up to `scrape.timestamp-tolerance` to align them to the intended schedule. See https://github.com/prometheus/prometheus/issues/7846 for more context. Experimental. This flag will be removed in a future release.").
 		Hidden().Default("true").BoolVar(&scrape.AlignScrapeTimestamps)
 
@@ -439,7 +465,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, auto-gomemlimit, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-at-modifier, promql-negative-offset, promql-per-step-stats, promql-experimental-functions, remote-write-receiver (DEPRECATED), extra-scrape-metrics, new-service-discovery-manager, auto-gomaxprocs, no-default-scrape-port, native-histograms, otlp-write-receiver. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, auto-gomemlimit, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, remote-write-receiver (DEPRECATED), extra-scrape-metrics, new-service-discovery-manager, auto-gomaxprocs, no-default-scrape-port, native-histograms, otlp-write-receiver, created-timestamp-zero-ingestion, concurrent-rule-eval. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
@@ -797,17 +823,22 @@ func main() {
 		queryEngine = promql.NewEngine(opts)
 
 		ruleManager = rules.NewManager(&rules.ManagerOptions{
-			Appendable:      receiver, // PP_CHANGES.md: rebuild on cpp
-			Queryable:       receiver, // PP_CHANGES.md: rebuild on cpp
-			QueryFunc:       rules.EngineQueryFunc(queryEngine, fanoutStorage),
-			NotifyFunc:      rules.SendAlerts(notifierManager, cfg.web.ExternalURL.String()),
-			Context:         ctxRule,
-			ExternalURL:     cfg.web.ExternalURL,
-			Registerer:      prometheus.DefaultRegisterer,
-			Logger:          log.With(logger, "component", "rule manager"),
-			OutageTolerance: time.Duration(cfg.outageTolerance),
-			ForGracePeriod:  time.Duration(cfg.forGracePeriod),
-			ResendDelay:     time.Duration(cfg.resendDelay),
+			Appendable:             receiver, // PP_CHANGES.md: rebuild on cpp
+			Queryable:              receiver, // PP_CHANGES.md: rebuild on cpp
+			QueryFunc:              rules.EngineQueryFunc(queryEngine, fanoutStorage),
+			NotifyFunc:             rules.SendAlerts(notifierManager, cfg.web.ExternalURL.String()),
+			Context:                ctxRule,
+			ExternalURL:            cfg.web.ExternalURL,
+			Registerer:             prometheus.DefaultRegisterer,
+			Logger:                 log.With(logger, "component", "rule manager"),
+			OutageTolerance:        time.Duration(cfg.outageTolerance),
+			ForGracePeriod:         time.Duration(cfg.forGracePeriod),
+			ResendDelay:            time.Duration(cfg.resendDelay),
+			MaxConcurrentEvals:     cfg.maxConcurrentEvals,
+			ConcurrentEvalsEnabled: cfg.enableConcurrentRuleEval,
+			DefaultRuleQueryOffset: func() time.Duration {
+				return time.Duration(cfgFile.GlobalConfig.RuleQueryOffset)
+			},
 		})
 	}
 
@@ -1000,8 +1031,8 @@ func main() {
 			func() error {
 				// Don't forget to release the reloadReady channel so that waiting blocks can exit normally.
 				select {
-				case <-term:
-					level.Warn(logger).Log("msg", "Received SIGTERM, exiting gracefully...")
+				case sig := <-term:
+					level.Warn(logger).Log("msg", "Received an OS signal, exiting gracefully...", "signal", sig.String())
 					reloadReady.Close()
 				case <-webHandler.Quit():
 					level.Warn(logger).Log("msg", "Received termination request via web service, exiting gracefully...")
@@ -1231,7 +1262,7 @@ func main() {
 				db, err := agent.Open(
 					logger,
 					prometheus.DefaultRegisterer,
-					receiver,
+					receiver, // PP_CHANGES.md: rebuild on cpp
 					localStoragePath,
 					&opts,
 				)
@@ -1423,6 +1454,17 @@ func reloadConfig(filename string, expandExternalLabels, enableExemplarStorage b
 	}
 	if failed {
 		return fmt.Errorf("one or more errors occurred while applying the new configuration (--config.file=%q)", filename)
+	}
+
+	oldGoGC := debug.SetGCPercent(conf.Runtime.GoGC)
+	if oldGoGC != conf.Runtime.GoGC {
+		level.Info(logger).Log("msg", "updated GOGC", "old", oldGoGC, "new", conf.Runtime.GoGC)
+	}
+	// Write the new setting out to the ENV var for runtime API output.
+	if conf.Runtime.GoGC >= 0 {
+		os.Setenv("GOGC", strconv.Itoa(conf.Runtime.GoGC))
+	} else {
+		os.Setenv("GOGC", "off")
 	}
 
 	noStepSuqueryInterval.Set(conf.GlobalConfig.EvaluationInterval)
@@ -1752,7 +1794,6 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableNativeHistograms:         opts.EnableNativeHistograms,
 		OutOfOrderTimeWindow:           opts.OutOfOrderTimeWindow,
 		EnableOverlappingCompaction:    true,
-		ReloadBlocksExternalTrigger:    opts.ReloadBlocksExternalTrigger,
 	}
 }
 

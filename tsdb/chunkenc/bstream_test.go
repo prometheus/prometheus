@@ -19,6 +19,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestBstream_Reset(t *testing.T) {
+	bs := bstream{
+		stream: []byte("test"),
+		count:  10,
+	}
+	bs.Reset([]byte("was reset"))
+
+	require.Equal(t, bstream{
+		stream: []byte("was reset"),
+		count:  0,
+	}, bs)
+}
+
 func TestBstreamReader(t *testing.T) {
 	// Write to the bit stream.
 	w := bstream{}

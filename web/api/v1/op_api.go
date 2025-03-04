@@ -8,6 +8,7 @@ import (
 
 	"github.com/prometheus/prometheus/pp/go/relabeler"
 	"github.com/prometheus/common/route"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/op-pkg/handler/middleware"
 	"github.com/prometheus/prometheus/promql"

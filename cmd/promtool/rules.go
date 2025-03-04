@@ -234,17 +234,3 @@ func (m *multipleAppender) flushAndCommit(ctx context.Context) error {
 	}
 	return nil
 }
-
-func max(x, y int64) int64 {
-	if x > y {
-		return x
-	}
-	return y
-}
-
-func min(x, y int64) int64 {
-	if x < y {
-		return x
-	}
-	return y
-}

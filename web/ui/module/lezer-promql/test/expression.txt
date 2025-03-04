@@ -112,6 +112,54 @@ PromQL(
     )
 )
 
+# Quoted label name in grouping labels
+
+sum by("job", mode) (test_metric) / on("job") group_left sum by("job")(test_metric)
+
+==>
+
+PromQL(
+    BinaryExpr(
+        AggregateExpr(
+          AggregateOp(Sum),
+          AggregateModifier(
+            By,
+            GroupingLabels(
+                QuotedLabelName(StringLiteral),
+                LabelName
+            )
+          ),
+          FunctionCallBody(
+                VectorSelector(
+                  Identifier
+                )
+          )
+      ),
+      Div,
+        MatchingModifierClause(
+          On,
+          GroupingLabels(
+              QuotedLabelName(StringLiteral)
+          )
+          GroupLeft
+        ),
+        AggregateExpr(
+          AggregateOp(Sum),
+          AggregateModifier(
+            By,
+            GroupingLabels(
+                QuotedLabelName(StringLiteral)
+            )
+          ),
+          FunctionCallBody(
+                VectorSelector(
+                  Identifier
+                )
+          )
+        )
+    )
+)
+
 # Case insensitivity for aggregations and binop modifiers.
 
 SuM BY(testlabel1) (testmetric1) / IGNOring(testlabel2) AVG withOUT(testlabel3) (testmetric2)
@@ -226,25 +274,25 @@ PromQL(
     VectorSelector(
       Identifier,
       LabelMatchers(
-        LabelMatcher(
-          LabelName,
-          MatchOp(EqlSingle),
-          StringLiteral
+        UnquotedLabelMatcher(
+            LabelName,
+            MatchOp(EqlSingle),
+            StringLiteral
         ),
-        LabelMatcher(
-          LabelName,
-          MatchOp(Neq),
-          StringLiteral
+        UnquotedLabelMatcher(
+            LabelName,
+            MatchOp(Neq),
+            StringLiteral
         ),
-        LabelMatcher(
-          LabelName,
-          MatchOp(EqlRegex),
-          StringLiteral
+        UnquotedLabelMatcher(
+            LabelName,
+            MatchOp(EqlRegex),
+            StringLiteral
         ),
-        LabelMatcher(
-          LabelName,
-          MatchOp(NeqRegex),
-          StringLiteral
+        UnquotedLabelMatcher(
+            LabelName,
+            MatchOp(NeqRegex),
+            StringLiteral
         )
       )
     )
@@ -571,14 +619,14 @@ PromQL(NumberLiteral)
 NaN{foo="bar"}
 
 ==>
-PromQL(BinaryExpr(NumberLiteral,⚠,VectorSelector(LabelMatchers(LabelMatcher(LabelName,MatchOp(EqlSingle),StringLiteral)))))
+PromQL(BinaryExpr(NumberLiteral,⚠,VectorSelector(LabelMatchers(UnquotedLabelMatcher(LabelName,MatchOp(EqlSingle),StringLiteral)))))
 
 # Trying to illegally use Inf as a metric name.
 
 Inf{foo="bar"}
 
 ==>
-PromQL(BinaryExpr(NumberLiteral,⚠,VectorSelector(LabelMatchers(LabelMatcher(LabelName,MatchOp(EqlSingle),StringLiteral)))))
+PromQL(BinaryExpr(NumberLiteral,⚠,VectorSelector(LabelMatchers(UnquotedLabelMatcher(LabelName,MatchOp(EqlSingle),StringLiteral)))))
 
 # Negative offset
 
@@ -614,3 +662,24 @@ MetricName(Identifier)
 
 ==>
 PromQL(BinaryExpr(NumberLiteral,Add,BinaryExpr(VectorSelector(Identifier),Atan2,VectorSelector(Identifier))))
+
+# Testing quoted metric name
+
+{"metric_name"}
+
+==>
+PromQL(VectorSelector(LabelMatchers(QuotedLabelName(StringLiteral))))
+
+# Testing quoted label name
+
+{"foo"="bar"}
+
+==>
+PromQL(VectorSelector(LabelMatchers(QuotedLabelMatcher(QuotedLabelName(StringLiteral), MatchOp(EqlSingle), StringLiteral))))
+
+# Testing quoted metric name and label name
+
+{"metric_name", "foo"="bar"}
+
+==>
+PromQL(VectorSelector(LabelMatchers(QuotedLabelName(StringLiteral), QuotedLabelMatcher(QuotedLabelName(StringLiteral), MatchOp(EqlSingle), StringLiteral))))

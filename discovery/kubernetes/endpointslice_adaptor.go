@@ -44,6 +44,7 @@ type endpointSliceEndpointAdaptor interface {
 	addresses() []string
 	hostname() *string
 	nodename() *string
+	zone() *string
 	conditions() endpointSliceEndpointConditionsAdaptor
 	targetRef() *corev1.ObjectReference
 	topology() map[string]string
@@ -181,6 +182,10 @@ func (e *endpointSliceEndpointAdaptorV1) nodename() *string {
 	return e.endpoint.NodeName
 }
 
+func (e *endpointSliceEndpointAdaptorV1) zone() *string {
+	return e.endpoint.Zone
+}
+
 func (e *endpointSliceEndpointAdaptorV1) conditions() endpointSliceEndpointConditionsAdaptor {
 	return newEndpointSliceEndpointConditionsAdaptorFromV1(e.endpoint.Conditions)
 }
@@ -231,6 +236,10 @@ func (e *endpointSliceEndpointAdaptorV1beta1) hostname() *string {
 
 func (e *endpointSliceEndpointAdaptorV1beta1) nodename() *string {
 	return e.endpoint.NodeName
+}
+
+func (e *endpointSliceEndpointAdaptorV1beta1) zone() *string {
+	return nil
 }
 
 func (e *endpointSliceEndpointAdaptorV1beta1) conditions() endpointSliceEndpointConditionsAdaptor {

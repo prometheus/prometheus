@@ -22,12 +22,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid"
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -77,9 +77,18 @@ type IndexReader interface {
 	// during background garbage collections.
 	Postings(ctx context.Context, name string, values ...string) (index.Postings, error)
 
+	// PostingsForLabelMatching returns a sorted iterator over postings having a label with the given name and a value for which match returns true.
+	// If no postings are found having at least one matching label, an empty iterator is returned.
+	PostingsForLabelMatching(ctx context.Context, name string, match func(value string) bool) index.Postings
+
 	// SortedPostings returns a postings list that is reordered to be sorted
 	// by the label set of the underlying series.
 	SortedPostings(index.Postings) index.Postings
+
+	// ShardedPostings returns a postings list filtered by the provided shardIndex
+	// out of shardCount. For a given posting, its shard MUST be computed hashing
+	// the series labels mod shardCount, using a hash function which is consistent over time.
+	ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings
 
 	// Series populates the given builder and chunk metas for the series identified
 	// by the reference.
@@ -513,8 +522,16 @@ func (r blockIndexReader) Postings(ctx context.Context, name string, values ...s
 	return p, nil
 }
 
+func (r blockIndexReader) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) index.Postings {
+	return r.ir.PostingsForLabelMatching(ctx, name, match)
+}
+
 func (r blockIndexReader) SortedPostings(p index.Postings) index.Postings {
 	return r.ir.SortedPostings(p)
+}
+
+func (r blockIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings {
+	return r.ir.ShardedPostings(p, shardIndex, shardCount)
 }
 
 func (r blockIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {

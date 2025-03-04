@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestRepairBadIndexVersion(t *testing.T) {
@@ -112,7 +113,7 @@ func TestRepairBadIndexVersion(t *testing.T) {
 	}
 
 	require.NoError(t, p.Err())
-	require.Equal(t, []labels.Labels{
+	testutil.RequireEqual(t, []labels.Labels{
 		labels.FromStrings("a", "1", "b", "1"),
 		labels.FromStrings("a", "2", "b", "1"),
 	}, res)

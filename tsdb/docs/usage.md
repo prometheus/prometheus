@@ -1,6 +1,6 @@
 # Usage
 
-TSDB can be - and is - used by other applications such as [Cortex](https://cortexmetrics.io/) and [Thanos](https://thanos.io/).
+TSDB can be - and is - used by other applications such as [Cortex](https://cortexmetrics.io/), [Thanos](https://thanos.io/), and [Grafana Mimir](https://grafana.com/oss/mimir/).
 This directory contains documentation for any developers who wish to work on or with TSDB.
 
 For a full example of instantiating a database, adding and querying data, see the [tsdb example in the docs](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb).
@@ -18,7 +18,7 @@ A `DB` has the following main components:
 * [`Head`](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb#DB.Head)
 * [Blocks (persistent blocks)](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb#DB.Blocks)
 
-The `Head` is responsible for a lot.  Here are its main components:
+The `Head` is responsible for a lot. Here are its main components:
 
 * [WAL](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb/wal#WAL) (Write Ahead Log).
 * [`stripeSeries`](https://github.com/prometheus/prometheus/blob/411021ada9ab41095923b8d2df9365b632fd40c3/tsdb/head.go#L1292):

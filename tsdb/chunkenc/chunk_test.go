@@ -110,6 +110,96 @@ func testChunk(t *testing.T, c Chunk) {
 	require.Equal(t, ValNone, it3.Seek(exp[len(exp)-1].t+1))
 }
 
+func TestPool(t *testing.T) {
+	p := NewPool()
+	for _, tc := range []struct {
+		name     string
+		encoding Encoding
+		expErr   error
+	}{
+		{
+			name:     "xor",
+			encoding: EncXOR,
+		},
+		{
+			name:     "histogram",
+			encoding: EncHistogram,
+		},
+		{
+			name:     "float histogram",
+			encoding: EncFloatHistogram,
+		},
+		{
+			name:     "invalid encoding",
+			encoding: EncNone,
+			expErr:   fmt.Errorf(`invalid chunk encoding "none"`),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := p.Get(tc.encoding, []byte("test"))
+			if tc.expErr != nil {
+				require.EqualError(t, err, tc.expErr.Error())
+				return
+			}
+
+			require.NoError(t, err)
+
+			var b *bstream
+			switch tc.encoding {
+			case EncHistogram:
+				b = &c.(*HistogramChunk).b
+			case EncFloatHistogram:
+				b = &c.(*FloatHistogramChunk).b
+			default:
+				b = &c.(*XORChunk).b
+			}
+
+			require.Equal(t, &bstream{
+				stream: []byte("test"),
+				count:  0,
+			}, b)
+
+			b.count = 1
+			require.NoError(t, p.Put(c))
+			require.Equal(t, &bstream{
+				stream: nil,
+				count:  0,
+			}, b)
+		})
+	}
+
+	t.Run("put bad chunk wrapper", func(t *testing.T) {
+		// When a wrapping chunk poses as an encoding it can't be converted to, Put should skip it.
+		c := fakeChunk{
+			encoding: EncXOR,
+			t:        t,
+		}
+		require.NoError(t, p.Put(c))
+	})
+	t.Run("put invalid encoding", func(t *testing.T) {
+		c := fakeChunk{
+			encoding: EncNone,
+			t:        t,
+		}
+		require.EqualError(t, p.Put(c), `invalid chunk encoding "none"`)
+	})
+}
+
+type fakeChunk struct {
+	Chunk
+
+	encoding Encoding
+	t        *testing.T
+}
+
+func (c fakeChunk) Encoding() Encoding {
+	return c.encoding
+}
+
+func (c fakeChunk) Reset([]byte) {
+	c.t.Fatal("Reset should not be called")
+}
+
 func benchmarkIterator(b *testing.B, newChunk func() Chunk) {
 	const samplesPerChunk = 250
 	var (

@@ -74,8 +74,8 @@ type Parser interface {
 	// if the scrape protocol or metric type does not support created timestamps.
 	CreatedTimestamp() *int64
 
-	// Next advances the parser to the next sample. It returns false if no
-	// more samples were read or an error occurred.
+	// Next advances the parser to the next sample.
+	// It returns (EntryInvalid, io.EOF) if no samples were read.
 	Next() (Entry, error)
 }
 
@@ -83,22 +83,22 @@ type Parser interface {
 //
 // This function always returns a valid parser, but might additionally
 // return an error if the content type cannot be parsed.
-func New(b []byte, contentType string, parseClassicHistograms bool) (Parser, error) {
+func New(b []byte, contentType string, parseClassicHistograms bool, st *labels.SymbolTable) (Parser, error) {
 	if contentType == "" {
-		return NewPromParser(b), nil
+		return NewPromParser(b, st), nil
 	}
 
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err != nil {
-		return NewPromParser(b), err
+		return NewPromParser(b, st), err
 	}
 	switch mediaType {
 	case "application/openmetrics-text":
-		return NewOpenMetricsParser(b), nil
+		return NewOpenMetricsParser(b, st), nil
 	case "application/vnd.google.protobuf":
-		return NewProtobufParser(b, parseClassicHistograms), nil
+		return NewProtobufParser(b, parseClassicHistograms, st), nil
 	default:
-		return NewPromParser(b), nil
+		return NewPromParser(b, st), nil
 	}
 }
 

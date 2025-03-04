@@ -84,8 +84,10 @@ or 31 days, whichever is smaller.
 Prometheus has several flags that configure local storage. The most important are:
 
 - `--storage.tsdb.path`: Where Prometheus writes its database. Defaults to `data/`.
-- `--storage.tsdb.retention.time`: When to remove old data. Defaults to `15d`.
-  Overrides `storage.tsdb.retention` if this flag is set to anything other than default.
+- `--storage.tsdb.retention.time`: How long to retain samples in storage. When this flag is
+  set, it overrides `storage.tsdb.retention`. If neither this flag nor `storage.tsdb.retention`
+  nor `storage.tsdb.retention.size` is set, the retention time defaults to `15d`.
+  Supported units: y, w, d, h, m, s, ms.
 - `--storage.tsdb.retention.size`: The maximum number of bytes of storage blocks to retain.
   The oldest data will be removed first. Defaults to `0` or disabled. Units supported:
   B, KB, MB, GB, TB, PB, EB. Ex: "512MB". Based on powers-of-2, so 1KB is 1024B. Only
@@ -194,6 +196,9 @@ A typical use case is to migrate metrics data from a different monitoring system
 or time-series database to Prometheus. To do so, the user must first convert the
 source data into [OpenMetrics](https://openmetrics.io/) format, which is the
 input format for the backfilling as described below.
+
+Note that native histograms and staleness markers are not supported by this
+procedure, as they cannot be represented in the OpenMetrics format.
 
 ### Usage
 

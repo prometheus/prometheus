@@ -14,7 +14,7 @@
 package relabel
 
 import (
-	"fmt"
+	"strconv"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -22,6 +22,7 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestRelabel(t *testing.T) {
@@ -591,7 +592,7 @@ func TestRelabel(t *testing.T) {
 		res, keep := Process(test.input, test.relabel...)
 		require.Equal(t, !test.drop, keep)
 		if keep {
-			require.Equal(t, test.output, res)
+			testutil.RequireEqual(t, test.output, res)
 		}
 	}
 }
@@ -656,7 +657,7 @@ func TestRelabelValidate(t *testing.T) {
 		},
 	}
 	for i, test := range tests {
-		t.Run(fmt.Sprint(i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			err := test.config.Validate()
 			if test.expected == "" {
 				require.NoError(t, err)

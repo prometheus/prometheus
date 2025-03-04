@@ -1,5 +1,115 @@
 # Changelog
 
+## 2.53.2 / 2024-08-09
+
+Fix a bug where Prometheus would crash with a segmentation fault if a remote-read
+request accessed a block on disk at about the same time as TSDB created a new block.
+
+[BUGFIX] Remote-Read: Resolve occasional segmentation fault on query. #14515,#14523
+
+## 2.53.1 / 2024-07-10
+
+Fix a bug which would drop samples in remote-write if the sending flow stalled
+for longer than it takes to write one "WAL segment". How long this takes depends on the size
+of your Prometheus; as a rough guide with 10 million series it is about 2-3 minutes.
+
+* [BUGFIX] Remote-write: stop dropping samples in catch-up #14446
+
+## 2.53.0 / 2024-06-16
+
+This release changes the default for GOGC, the Go runtime control for the trade-off between excess memory use and CPU usage. We have found that Prometheus operates with minimal additional CPU usage, but greatly reduced memory by adjusting the upstream Go default from 100 to 75.
+
+* [CHANGE] Rules: Execute 1 query instead of N (where N is the number of alerts within alert rule) when restoring alerts. #13980 #14048
+* [CHANGE] Runtime: Change GOGC threshold from 100 to 75 #14176 #14285
+* [FEATURE] Rules: Add new option `query_offset` for each rule group via rule group configuration file and `rule_query_offset` as part of the global configuration to have more resilience for remote write delays. #14061 #14216 #14273
+* [ENHANCEMENT] Rules: Add `rule_group_last_restore_duration_seconds` metric to measure the time it takes to restore a rule group. #13974
+* [ENHANCEMENT] OTLP: Improve remote write format translation performance by using label set hashes for metric identifiers instead of string based ones. #14006 #13991
+* [ENHANCEMENT] TSDB: Optimize querying with regexp matchers. #13620
+* [BUGFIX] OTLP: Don't generate target_info unless there are metrics and at least one identifying label is defined. #13991
+* [BUGFIX] Scrape: Do no try to ingest native histograms when the native histograms feature is turned off. This happened when protobuf scrape was enabled by for example the created time feature. #13987
+* [BUGFIX] Scaleway SD: Use the instance's public IP if no private IP is available as the `__address__` meta label. #13941
+* [BUGFIX] Query logger: Do not leak file descriptors on error. #13948
+* [BUGFIX] TSDB: Let queries with heavy regex matches be cancelled and not use up the CPU. #14096 #14103 #14118 #14199
+* [BUGFIX] API: Do not warn if result count is equal to the limit, only when exceeding the limit for the series, label-names and label-values APIs. #14116
+* [BUGFIX] TSDB: Fix head stats and hooks when replaying a corrupted snapshot. #14079
+
+## 2.52.1 / 2024-05-29
+
+* [BUGFIX] Linode SD: Fix partial fetch when discovery would return more than 500 elements. #14141
+
+## 2.52.0 / 2024-05-07
+
+* [CHANGE] TSDB: Fix the predicate checking for blocks which are beyond the retention period to include the ones right at the retention boundary. #9633
+* [FEATURE] Kubernetes SD: Add a new metric `prometheus_sd_kubernetes_failures_total` to track failed requests to Kubernetes API. #13554
+* [FEATURE] Kubernetes SD: Add node and zone metadata labels when using the endpointslice role. #13935
+* [FEATURE] Azure SD/Remote Write: Allow usage of Azure authorization SDK. #13099
+* [FEATURE] Alerting: Support native histogram templating. #13731
+* [FEATURE] Linode SD: Support IPv6 range discovery and region filtering. #13774
+* [ENHANCEMENT] PromQL: Performance improvements for queries with regex matchers. #13461
+* [ENHANCEMENT] PromQL: Performance improvements when using aggregation operators. #13744
+* [ENHANCEMENT] PromQL: Validate label_join destination label. #13803
+* [ENHANCEMENT] Scrape: Increment `prometheus_target_scrapes_sample_duplicate_timestamp_total` metric on duplicated series during one scrape. #12933
+* [ENHANCEMENT] TSDB: Many improvements in performance. #13742 #13673 #13782
+* [ENHANCEMENT] TSDB: Pause regular block compactions if the head needs to be compacted (prioritize head as it increases memory consumption). #13754
+* [ENHANCEMENT] Observability: Improved logging during signal handling termination. #13772
+* [ENHANCEMENT] Observability: All log lines for drop series use "num_dropped" key consistently. #13823
+* [ENHANCEMENT] Observability: Log chunk snapshot and mmaped chunk replay duration during WAL replay. #13838
+* [ENHANCEMENT] Observability: Log if the block is being created from WBL during compaction. #13846
+* [BUGFIX] PromQL: Fix inaccurate sample number statistic when querying histograms. #13667
+* [BUGFIX] PromQL: Fix `histogram_stddev` and `histogram_stdvar` for cases where the histogram has negative buckets. #13852
+* [BUGFIX] PromQL: Fix possible duplicated label name and values in a metric result for specific queries. #13845
+* [BUGFIX] Scrape: Fix setting native histogram schema factor during scrape. #13846
+* [BUGFIX] TSDB: Fix counting of histogram samples when creating WAL checkpoint stats. #13776
+* [BUGFIX] TSDB: Fix cases of compacting empty heads. #13755
+* [BUGFIX] TSDB: Count float histograms in WAL checkpoint. #13844
+* [BUGFIX] Remote Read: Fix memory leak due to broken requests. #13777
+* [BUGFIX] API: Stop building response for `/api/v1/series/` when the API request was cancelled. #13766
+* [BUGFIX] promtool: Fix panic on `promtool tsdb analyze --extended` when no native histograms are present. #13976
+
+## 2.51.2 / 2024-04-09
+
+Bugfix release.
+
+[BUGFIX] Notifier: could hang when using relabeling on alerts #13861
+
+## 2.51.1 / 2024-03-27
+
+Bugfix release.
+
+* [BUGFIX] PromQL: Re-instate validation of label_join destination label #13803
+* [BUGFIX] Scraping (experimental native histograms): Fix handling of the min bucket factor on sync of targets #13846
+* [BUGFIX] PromQL: Some queries could return the same series twice (library use only) #13845
+
+## 2.51.0 / 2024-03-18
+
+This version is built with Go 1.22.1.
+
+There is a new optional build tag "dedupelabels", which should reduce memory consumption (#12304).
+It is off by default; there will be an optional alternative image to try it out.
+
+* [CHANGE] Scraping: Do experimental timestamp alignment even if tolerance is bigger than 1% of scrape interval #13624, #13737
+* [FEATURE] Alerting: Relabel rules for AlertManagerConfig; allows routing alerts to different alertmanagers #12551, #13735
+* [FEATURE] API: add limit param to series, label-names and label-values APIs #13396
+* [FEATURE] UI (experimental native histograms): Add native histogram chart to Table view #13658
+* [FEATURE] Promtool: Add a "tsdb dump-openmetrics" to dump in OpenMetrics format. #13194
+* [FEATURE] PromQL (experimental native histograms): Add histogram_avg function #13467
+* [ENHANCEMENT] Rules: Evaluate independent rules concurrently #12946, #13527
+* [ENHANCEMENT] Scraping (experimental native histograms): Support exemplars #13488
+* [ENHANCEMENT] Remote Write: Disable resharding during active retry backoffs #13562
+* [ENHANCEMENT] Observability: Add native histograms to latency/duration metrics #13681
+* [ENHANCEMENT] Observability: Add 'type' label to prometheus_tsdb_head_out_of_order_samples_appended_total #13607
+* [ENHANCEMENT] API: Faster generation of targets into JSON #13469, #13484
+* [ENHANCEMENT] Scraping, API: Use faster compression library #10782
+* [ENHANCEMENT] OpenTelemetry: Performance improvements in OTLP parsing #13627
+* [ENHANCEMENT] PromQL: Optimisations to reduce CPU and memory #13448, #13536
+* [BUGFIX] PromQL: Constrain extrapolation in rate() to half of sample interval #13725
+* [BUGFIX] Remote Write: Stop slowing down when a new WAL segment is created #13583, #13628
+* [BUGFIX] PromQL: Fix wrongly scoped range vectors with @ modifier #13559
+* [BUGFIX] Kubernetes SD: Pod status changes were not discovered by Endpoints service discovery #13337
+* [BUGFIX] Azure SD: Fix 'error: parameter virtualMachineScaleSetName cannot be empty' (#13702)
+* [BUGFIX] Remote Write: Fix signing for AWS sigv4 transport #13497
+* [BUGFIX] Observability: Exemplars emitted by Prometheus use "trace_id" not "traceID" #13589
+
 ## 2.50.1 / 2024-02-26
 
 * [BUGFIX] API: Fix metadata API using wrong field names. #13633

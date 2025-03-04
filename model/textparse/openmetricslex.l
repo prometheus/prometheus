@@ -50,12 +50,15 @@ S     [ ]
 <sComment>TYPE{S}                     l.state = sMeta1; return tType
 <sComment>UNIT{S}                     l.state = sMeta1; return tUnit
 <sComment>"EOF"\n?                    l.state = sInit; return tEOFWord
+<sMeta1>\"(\\.|[^\\"])*\"             l.state = sMeta2; return tMName
 <sMeta1>{M}({M}|{D})*                 l.state = sMeta2; return tMName
 <sMeta2>{S}{C}*\n                     l.state = sInit; return tText
 
 {M}({M}|{D})*                         l.state = sValue; return tMName
 <sValue>\{                            l.state = sLabels; return tBraceOpen
+\{                                    l.state = sLabels; return tBraceOpen
 <sLabels>{L}({L}|{D})*                return tLName
+<sLabels>\"(\\.|[^\\"])*\"            l.state = sLabels; return tQString
 <sLabels>\}                           l.state = sValue; return tBraceClose
 <sLabels>=                            l.state = sLValue; return tEqual
 <sLabels>,                            return tComma

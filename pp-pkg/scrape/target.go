@@ -157,8 +157,8 @@ func (t *Target) offset(interval time.Duration, offsetSeed uint64) time.Duration
 }
 
 // Labels returns a copy of the set of all public labels of the target.
-func (t *Target) Labels() labels.Labels {
-	b := labels.NewScratchBuilder(t.labels.Len())
+func (t *Target) Labels(b *labels.ScratchBuilder) labels.Labels {
+	b.Reset()
 	t.labels.Range(func(l labels.Label) {
 		if !strings.HasPrefix(l.Name, model.ReservedLabelPrefix) {
 			b.Add(l.Name, l.Value)
@@ -479,7 +479,7 @@ func HashFromGroup(tg *targetgroup.Group) uint64 {
 	res := xxhash.New()
 	writeLabelSet := func(ls model.LabelSet) {
 		fp := ls.FastFingerprint()
-		res.Write((*(*[8]byte)(unsafe.Pointer(&fp)))[:])
+		_, _ = res.Write((*(*[8]byte)(unsafe.Pointer(&fp)))[:])
 	}
 	writeLabelSet(tg.Labels)
 	for i := range tg.Targets {

@@ -23,6 +23,7 @@ benchmark.txt
 npm_licenses.tar.bz2
 /web/ui/static/react
 
+/vendor
 /.build
 
 /**/node_modules

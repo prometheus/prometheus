@@ -14,8 +14,8 @@
 package histogram
 
 import (
-	"fmt"
 	"math"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -72,7 +72,7 @@ func TestHistogramString(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			actualString := c.histogram.String()
 			require.Equal(t, c.expectedString, actualString)
 		})
@@ -211,7 +211,7 @@ func TestCumulativeBucketIterator(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			it := c.histogram.CumulativeBucketIterator()
 			actualBuckets := make([]Bucket[uint64], 0, len(c.expectedBuckets))
 			for it.Next() {
@@ -371,7 +371,7 @@ func TestRegularBucketIterator(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			it := c.histogram.PositiveBucketIterator()
 			actualPositiveBuckets := make([]Bucket[uint64], 0, len(c.expectedPositiveBuckets))
 			for it.Next() {

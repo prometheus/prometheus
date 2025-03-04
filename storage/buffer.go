@@ -306,10 +306,9 @@ func (r *sampleRing) reset() {
 	r.iBuf = r.iBuf[:0]
 }
 
-// Returns the current iterator. Invalidates previously returned iterators.
+// Resets and returns the iterator. Invalidates previously returned iterators.
 func (r *sampleRing) iterator() *SampleRingIterator {
-	r.it.r = r
-	r.it.i = -1
+	r.it.reset(r)
 	return &r.it
 }
 
@@ -322,6 +321,13 @@ type SampleRingIterator struct {
 	f  float64
 	h  *histogram.Histogram
 	fh *histogram.FloatHistogram
+}
+
+func (it *SampleRingIterator) reset(r *sampleRing) {
+	it.r = r
+	it.i = -1
+	it.h = nil
+	it.fh = nil
 }
 
 func (it *SampleRingIterator) Next() chunkenc.ValueType {

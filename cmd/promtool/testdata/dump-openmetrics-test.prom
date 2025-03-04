@@ -1,0 +1,11 @@
+my_counter{baz="abc",foo="bar"} 1 0.000
+my_counter{baz="abc",foo="bar"} 2 60.000
+my_counter{baz="abc",foo="bar"} 3 120.000
+my_counter{baz="abc",foo="bar"} 4 180.000
+my_counter{baz="abc",foo="bar"} 5 240.000
+my_gauge{abc="baz",bar="foo"} 9 0.000
+my_gauge{abc="baz",bar="foo"} 8 60.000
+my_gauge{abc="baz",bar="foo"} 0 120.000
+my_gauge{abc="baz",bar="foo"} 4 180.000
+my_gauge{abc="baz",bar="foo"} 7 240.000
+# EOF

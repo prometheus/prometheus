@@ -169,6 +169,13 @@ func (m *Manager) Providers() []*Provider {
 	return m.providers
 }
 
+// UnregisterMetrics unregisters manager metrics. It does not unregister
+// service discovery or refresh metrics, whose lifecycle is managed independent
+// of the discovery Manager.
+func (m *Manager) UnregisterMetrics() {
+	m.metrics.Unregister(m.registerer)
+}
+
 // Run starts the background processing.
 func (m *Manager) Run() error {
 	go m.sender()

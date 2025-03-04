@@ -14,9 +14,9 @@
 package histogram
 
 import (
-	"fmt"
 	"math"
 	"math/rand"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -2134,7 +2134,7 @@ func TestAllFloatBucketIterator(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			var expBuckets, actBuckets []Bucket[float64]
 
 			if c.includeNeg {
@@ -2360,7 +2360,7 @@ func TestAllReverseFloatBucketIterator(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			var expBuckets, actBuckets []Bucket[float64]
 
 			if c.includePos {

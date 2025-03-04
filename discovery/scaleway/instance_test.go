@@ -60,7 +60,7 @@ api_url: %s
 	tg := tgs[0]
 	require.NotNil(t, tg)
 	require.NotNil(t, tg.Targets)
-	require.Len(t, tg.Targets, 2)
+	require.Len(t, tg.Targets, 3)
 
 	for i, lbls := range []model.LabelSet{
 		{
@@ -109,6 +109,28 @@ api_url: %s
 			"__meta_scaleway_instance_status":                 "running",
 			"__meta_scaleway_instance_type":                   "DEV1-S",
 			"__meta_scaleway_instance_zone":                   "fr-par-1",
+		},
+		{
+			"__address__":                                     "51.158.183.115:80",
+			"__meta_scaleway_instance_boot_type":              "local",
+			"__meta_scaleway_instance_hostname":               "routed-dualstack",
+			"__meta_scaleway_instance_id":                     "4904366a-7e26-4b65-b97b-6392c761247a",
+			"__meta_scaleway_instance_image_arch":             "x86_64",
+			"__meta_scaleway_instance_image_id":               "3e0a5b84-1d69-4993-8fa4-0d7df52d5160",
+			"__meta_scaleway_instance_image_name":             "Ubuntu 22.04 Jammy Jellyfish",
+			"__meta_scaleway_instance_location_cluster_id":    "19",
+			"__meta_scaleway_instance_location_hypervisor_id": "1201",
+			"__meta_scaleway_instance_location_node_id":       "24",
+			"__meta_scaleway_instance_name":                   "routed-dualstack",
+			"__meta_scaleway_instance_organization_id":        "20b3d507-96ac-454c-a795-bc731b46b12f",
+			"__meta_scaleway_instance_project_id":             "20b3d507-96ac-454c-a795-bc731b46b12f",
+			"__meta_scaleway_instance_public_ipv4":            "51.158.183.115",
+			"__meta_scaleway_instance_region":                 "nl-ams",
+			"__meta_scaleway_instance_security_group_id":      "984414da-9fc2-49c0-a925-fed6266fe092",
+			"__meta_scaleway_instance_security_group_name":    "Default security group",
+			"__meta_scaleway_instance_status":                 "running",
+			"__meta_scaleway_instance_type":                   "DEV1-S",
+			"__meta_scaleway_instance_zone":                   "nl-ams-1",
 		},
 	} {
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {

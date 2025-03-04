@@ -183,8 +183,14 @@ func NewReceiver(
 
 	hd := appender.NewRotatableHead(activeHead, queryableStorage, headManager)
 
+	var appenderHead relabeler.Head = hd
+	if len(os.Getenv("OPCORE_ROTATION_HEAP_DEBUG")) > 0 {
+		heapProfileWriter := util.NewHeapProfileWriter(filepath.Join(dataDir, "heap_profiles"))
+		appenderHead = appender.NewHeapProfileWritableHead(appenderHead, heapProfileWriter)
+	}
+
 	dstrb := distributor.NewDistributor(*destinationGroups)
-	app := appender.NewQueryableAppender(hd, dstrb, querierMetrics)
+	app := appender.NewQueryableAppender(appenderHead, dstrb, querierMetrics)
 	mwt := appender.NewMetricsWriteTrigger(appender.DefaultMetricWriteInterval, app, queryableStorage)
 
 	r := &Receiver{
@@ -283,8 +289,8 @@ func (rr *Receiver) AppendHashdex(ctx context.Context, hashdex cppbridge.Sharded
 
 // ApplyConfig update config.
 func (rr *Receiver) ApplyConfig(cfg *prom_config.Config) error {
-	fmt.Println("RECONFIGURATION")
-	defer fmt.Println("RECONFIGURATION COMPLETED")
+	level.Info(rr.logger).Log("msg", "reconfiguration start")
+	defer level.Info(rr.logger).Log("msg", "reconfiguration completed")
 
 	rCfg, err := cfg.GetReceiverConfig()
 	if err != nil {

@@ -97,7 +97,7 @@ func TestRefresh(t *testing.T) {
 	defer tick.Stop()
 	select {
 	case <-ch:
-		t.Fatal("Unexpected target group")
+		require.FailNow(t, "Unexpected target group")
 	case <-tick.C:
 	}
 }

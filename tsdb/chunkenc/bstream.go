@@ -52,6 +52,12 @@ type bstream struct {
 	count  uint8  // How many right-most bits are available for writing in the current byte (the last byte of the stream).
 }
 
+// Reset resets b around stream.
+func (b *bstream) Reset(stream []byte) {
+	b.stream = stream
+	b.count = 0
+}
+
 func (b *bstream) bytes() []byte {
 	return b.stream
 }

@@ -14,8 +14,8 @@
 package agent
 
 import (
-	"fmt"
 	"math"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -53,7 +53,7 @@ func TestNoDeadlock(t *testing.T) {
 			series := &memSeries{
 				ref: chunks.HeadSeriesRef(i),
 				lset: labels.FromMap(map[string]string{
-					"id": fmt.Sprintf("%d", i),
+					"id": strconv.Itoa(i),
 				}),
 			}
 			stripeSeries.Set(series.lset.Hash(), series)

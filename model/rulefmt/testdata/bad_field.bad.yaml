@@ -6,4 +6,4 @@ groups:
         labels:
           instance: localhost
         annotation:
-          summary: annonations is written without s above
+          summary: annotations is written without s above

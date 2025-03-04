@@ -1,7 +1,6 @@
 import * as React from 'react';
-import { shallow } from 'enzyme';
+import { mount, shallow } from 'enzyme';
 import DataTable, { DataTableProps } from './DataTable';
-import HistogramString, { HistogramStringProps } from './DataTable';
 import { Alert, Table } from 'reactstrap';
 import SeriesName from './SeriesName';
 
@@ -72,7 +71,7 @@ describe('DataTable', () => {
       const table = dataTable.find(Table);
       table.find('tr').forEach((row, idx) => {
         expect(row.find(SeriesName)).toHaveLength(1);
-        expect(row.find('td').at(1).text()).toEqual(`${idx} <HistogramString />`);
+        expect(row.find('td').at(1).text()).toEqual(`${idx}`);
       });
     });
   });
@@ -133,19 +132,18 @@ describe('DataTable', () => {
     const dataTable = shallow(<DataTable {...dataTableProps} />);
 
     it('renders a table', () => {
-      const table = dataTable.find(Table);
+      const table = dataTable.find(Table).first();
       expect(table.prop('hover')).toBe(true);
       expect(table.prop('size')).toEqual('sm');
       expect(table.prop('className')).toEqual('data-table');
-      expect(table.find('tbody')).toHaveLength(1);
+      expect(table.find('tbody')).toHaveLength(dataTableProps.data?.result.length as number);
     });
 
     it('renders rows', () => {
       const table = dataTable.find(Table);
       table.find('tr').forEach((row, idx) => {
-        expect(row.find(SeriesName)).toHaveLength(1);
-        // TODO(beorn7): This doesn't actually test the rendoring yet. Need to trigger it somehow.
-        expect(row.find('td').at(1).text()).toEqual(` <HistogramString />`);
+        const seriesNameComponent = dataTable.find('SeriesName');
+        expect(seriesNameComponent).toHaveLength(dataTableProps.data?.result.length as number);
       });
     });
   });

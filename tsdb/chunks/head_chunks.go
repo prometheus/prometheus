@@ -15,7 +15,6 @@ package chunks
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -23,13 +22,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"sync"
 
 	"github.com/dennwc/varint"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
-	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
@@ -189,8 +188,8 @@ func (f *chunkPos) bytesToWriteForChunk(chkLen uint64) uint64 {
 	return bytes
 }
 
-// ChunkDiskMapper is for writing the Head block chunks to the disk
-// and access chunks via mmapped file.
+// ChunkDiskMapper is for writing the Head block chunks to disk
+// and access chunks via mmapped files.
 type ChunkDiskMapper struct {
 	/// Writer.
 	dir             *os.File
@@ -232,7 +231,7 @@ type ChunkDiskMapper struct {
 	closed bool
 }
 
-// mmappedChunkFile provides mmapp access to an entire head chunks file that holds many chunks.
+// mmappedChunkFile provides mmap access to an entire head chunks file that holds many chunks.
 type mmappedChunkFile struct {
 	byteSlice ByteSlice
 	maxt      int64 // Max timestamp among all of this file's chunks.
@@ -241,7 +240,7 @@ type mmappedChunkFile struct {
 // NewChunkDiskMapper returns a new ChunkDiskMapper against the given directory
 // using the default head chunk file duration.
 // NOTE: 'IterateAllChunks' method needs to be called at least once after creating ChunkDiskMapper
-// to set the maxt of all the file.
+// to set the maxt of all files.
 func NewChunkDiskMapper(reg prometheus.Registerer, dir string, pool chunkenc.Pool, writeBufferSize, writeQueueSize int) (*ChunkDiskMapper, error) {
 	// Validate write buffer size.
 	if writeBufferSize < MinWriteBufferSize || writeBufferSize > MaxWriteBufferSize {
@@ -382,6 +381,33 @@ func listChunkFiles(dir string) (map[int]string, error) {
 	return res, nil
 }
 
+// HardLinkChunkFiles creates hardlinks for chunk files from src to dst.
+// It does nothing if src doesn't exist and ensures dst is created if not.
+func HardLinkChunkFiles(src, dst string) error {
+	_, err := os.Stat(src)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("check source chunks dir: %w", err)
+	}
+	if err := os.MkdirAll(dst, 0o777); err != nil {
+		return fmt.Errorf("set up destination chunks dir: %w", err)
+	}
+	files, err := listChunkFiles(src)
+	if err != nil {
+		return fmt.Errorf("list chunks: %w", err)
+	}
+	for _, filePath := range files {
+		_, fileName := filepath.Split(filePath)
+		err := os.Link(filepath.Join(src, fileName), filepath.Join(dst, fileName))
+		if err != nil {
+			return fmt.Errorf("hardlink a chunk: %w", err)
+		}
+	}
+	return nil
+}
+
 // repairLastChunkFile deletes the last file if it's empty.
 // Because we don't fsync when creating these files, we could end
 // up with an empty file at the end during an abrupt shutdown.
@@ -426,7 +452,7 @@ func repairLastChunkFile(files map[int]string) (_ map[int]string, returnErr erro
 	return files, nil
 }
 
-// WriteChunk writes the chunk to the disk.
+// WriteChunk writes the chunk to disk.
 // The returned chunk ref is the reference from where the chunk encoding starts for the chunk.
 func (cdm *ChunkDiskMapper) WriteChunk(seriesRef HeadSeriesRef, mint, maxt int64, chk chunkenc.Chunk, isOOO bool, callback func(err error)) (chkRef ChunkDiskMapperRef) {
 	// cdm.evtlPosMtx must be held to serialize the calls to cdm.evtlPos.getNextChunkRef() and the writing of the chunk (either with or without queue).
@@ -690,7 +716,6 @@ func (cdm *ChunkDiskMapper) Chunk(ref ChunkDiskMapperRef) (chunkenc.Chunk, error
 	sgmIndex, chkStart := ref.Unpack()
 	// We skip the series ref and the mint/maxt beforehand.
 	chkStart += SeriesRefSize + (2 * MintMaxtSize)
-	chkCRC32 := newCRC32()
 
 	// If it is the current open file, then the chunks can be in the buffer too.
 	if sgmIndex == cdm.curFileSequence {
@@ -755,18 +780,11 @@ func (cdm *ChunkDiskMapper) Chunk(ref ChunkDiskMapperRef) (chunkenc.Chunk, error
 
 	// Check the CRC.
 	sum := mmapFile.byteSlice.Range(chkDataEnd, chkDataEnd+CRCSize)
-	if _, err := chkCRC32.Write(mmapFile.byteSlice.Range(chkStart-(SeriesRefSize+2*MintMaxtSize), chkDataEnd)); err != nil {
+	if err := checkCRC32(mmapFile.byteSlice.Range(chkStart-(SeriesRefSize+2*MintMaxtSize), chkDataEnd), sum); err != nil {
 		return nil, &CorruptionErr{
 			Dir:       cdm.dir.Name(),
 			FileIndex: sgmIndex,
 			Err:       err,
-		}
-	}
-	if act := chkCRC32.Sum(nil); !bytes.Equal(act, sum) {
-		return nil, &CorruptionErr{
-			Dir:       cdm.dir.Name(),
-			FileIndex: sgmIndex,
-			Err:       fmt.Errorf("checksum mismatch expected:%x, actual:%x", sum, act),
 		}
 	}
 
@@ -793,7 +811,7 @@ func (cdm *ChunkDiskMapper) Chunk(ref ChunkDiskMapperRef) (chunkenc.Chunk, error
 // IterateAllChunks iterates all mmappedChunkFiles (in order of head chunk file name/number) and all the chunks within it
 // and runs the provided function with information about each chunk. It returns on the first error encountered.
 // NOTE: This method needs to be called at least once after creating ChunkDiskMapper
-// to set the maxt of all the file.
+// to set the maxt of all files.
 func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chunkRef ChunkDiskMapperRef, mint, maxt int64, numSamples uint16, encoding chunkenc.Encoding, isOOO bool) error) (err error) {
 	cdm.writePathMtx.Lock()
 	defer cdm.writePathMtx.Unlock()
@@ -801,8 +819,6 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 	defer func() {
 		cdm.fileMaxtSet = true
 	}()
-
-	chkCRC32 := newCRC32()
 
 	// Iterate files in ascending order.
 	segIDs := make([]int, 0, len(cdm.mmappedChunkFiles))
@@ -838,7 +854,6 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 						" - required:%v, available:%v, file:%d", idx+MaxHeadChunkMetaSize, fileEnd, segID),
 				}
 			}
-			chkCRC32.Reset()
 			chunkRef := newChunkDiskMapperRef(uint64(segID), uint64(idx))
 
 			startIdx := idx
@@ -877,14 +892,11 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 
 			// Check CRC.
 			sum := mmapFile.byteSlice.Range(idx, idx+CRCSize)
-			if _, err := chkCRC32.Write(mmapFile.byteSlice.Range(startIdx, idx)); err != nil {
-				return err
-			}
-			if act := chkCRC32.Sum(nil); !bytes.Equal(act, sum) {
+			if err := checkCRC32(mmapFile.byteSlice.Range(startIdx, idx), sum); err != nil {
 				return &CorruptionErr{
 					Dir:       cdm.dir.Name(),
 					FileIndex: segID,
-					Err:       fmt.Errorf("checksum mismatch expected:%x, actual:%x", sum, act),
+					Err:       err,
 				}
 			}
 			idx += CRCSize
@@ -919,7 +931,7 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 	return nil
 }
 
-// Truncate deletes the head chunk files whose file number is less than given fileNo.
+// Truncate deletes the head chunk files with numbers less than the given fileNo.
 func (cdm *ChunkDiskMapper) Truncate(fileNo uint32) error {
 	cdm.readPathMtx.RLock()
 

@@ -422,7 +422,7 @@ func getBound(idx, schema int32) float64 {
 	// bucket results in precisely that. It is either frac=1.0 & exp=1024
 	// (for schema < 0) or frac=0.5 & exp=1025 (for schema >=0). (This is,
 	// by the way, a power of two where the exponent itself is a power of
-	// two, 2¹⁰ in fact, which coinicides with a bucket boundary in all
+	// two, 2¹⁰ in fact, which coincides with a bucket boundary in all
 	// schemas.) So these are the special cases we have to catch below.
 	if schema < 0 {
 		exp := int(idx) << -schema

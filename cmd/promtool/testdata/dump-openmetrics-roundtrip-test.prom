@@ -1,0 +1,15 @@
+my_histogram_bucket{instance="localhost:8000",job="example2",le="+Inf"} 1.0267820369e+10 1700215884.373
+my_histogram_bucket{instance="localhost:8000",job="example2",le="+Inf"} 1.026872507e+10 1700215889.373
+my_histogram_bucket{instance="localhost:8000",job="example2",le="0.01"} 0 1700215884.373
+my_histogram_bucket{instance="localhost:8000",job="example2",le="0.01"} 0 1700215889.373
+my_histogram_count{instance="localhost:8000",job="example2"} 1.0267820369e+10 1700215884.373
+my_histogram_count{instance="localhost:8000",job="example2"} 1.026872507e+10 1700215889.373
+my_summary_count{instance="localhost:8000",job="example5"} 9.518161497e+09 1700211684.981
+my_summary_count{instance="localhost:8000",job="example5"} 9.519048034e+09 1700211689.984
+my_summary_sum{instance="localhost:8000",job="example5"} 5.2349889185e+10 1700211684.981
+my_summary_sum{instance="localhost:8000",job="example5"} 5.2354761848e+10 1700211689.984
+up{instance="localhost:8000",job="example2"} 1 1700226034.330
+up{instance="localhost:8000",job="example2"} 1 1700226094.329
+up{instance="localhost:8000",job="example3"} 1 1700210681.366
+up{instance="localhost:8000",job="example3"} 1 1700210686.366
+# EOF
