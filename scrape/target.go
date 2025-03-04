@@ -19,6 +19,7 @@ import (
 	"hash/fnv"
 	"net"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -277,6 +278,19 @@ func (t *Target) Health() TargetHealth {
 	defer t.mtx.RUnlock()
 
 	return t.health
+}
+
+// PP_CHANGES.md override sample limit
+func (t *Target) SampleLimit() int {
+	limit := t.labels.Get("__sample_limit__")
+	if limit == "" {
+		return 0
+	}
+	convertedLimit, err := strconv.Atoi(limit)
+	if err != nil {
+		return 0
+	}
+	return convertedLimit
 }
 
 // intervalAndTimeout returns the interval and timeout derived from

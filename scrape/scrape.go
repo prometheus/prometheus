@@ -149,6 +149,12 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 		}
 		opts.target.SetMetadataStore(cache)
 
+		// PP_CHANGES.md: override sample limit with annotation
+		limit := opts.target.SampleLimit()
+		if limit == 0 {
+			limit = opts.sampleLimit
+		}
+
 		return newScrapeLoop(
 			ctx,
 			opts.scraper,
@@ -164,7 +170,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 			opts.honorTimestamps,
 			opts.trackTimestampsStaleness,
 			opts.enableCompression,
-			opts.sampleLimit,
+			limit, // PP_CHANGES.md: override sample limit with annotation, original: opts.sampleLimit
 			opts.bucketLimit,
 			opts.maxSchema,
 			opts.labelLimits,

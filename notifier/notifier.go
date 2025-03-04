@@ -134,6 +134,7 @@ type alertMetrics struct {
 	latency                 *prometheus.SummaryVec
 	errors                  *prometheus.CounterVec
 	sent                    *prometheus.CounterVec
+	successfullySent        *prometheus.CounterVec // PP_CHANGES.md: add successfully send metric
 	dropped                 prometheus.Counter
 	queueLength             prometheus.GaugeFunc
 	queueCapacity           prometheus.Gauge
@@ -164,6 +165,15 @@ func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen, alertmanag
 			Subsystem: subsystem,
 			Name:      "sent_total",
 			Help:      "Total number of alerts sent.",
+		},
+			[]string{alertmanagerLabel},
+		),
+		// PP_CHANGES.md: add successfully send metric
+		successfullySent: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "successfully_sent_total",
+			Help:      "Total number of successfully sent alerts.",
 		},
 			[]string{alertmanagerLabel},
 		),
@@ -531,6 +541,8 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 					n.metrics.errors.WithLabelValues(url).Inc()
 				} else {
 					numSuccess.Inc()
+					// PP_CHANGES.md: add successfully send metric
+					n.metrics.successfullySent.WithLabelValues(url).Add(float64(len(alerts)))
 				}
 				n.metrics.latency.WithLabelValues(url).Observe(time.Since(begin).Seconds())
 				n.metrics.sent.WithLabelValues(url).Add(float64(len(alerts)))
@@ -694,6 +706,8 @@ func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 		// This will initialize the Counters for the AM to 0.
 		s.metrics.sent.WithLabelValues(us)
 		s.metrics.errors.WithLabelValues(us)
+		// PP_CHANGES.md: add successfully send metric
+		s.metrics.successfullySent.WithLabelValues(us)
 
 		seen[us] = struct{}{}
 		s.ams = append(s.ams, am)

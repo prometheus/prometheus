@@ -281,6 +281,7 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 			// The user has to add a port manually.
 			tg.Targets = append(tg.Targets, model.LabelSet{
 				model.AddressLabel:     lv(pod.Status.PodIP),
+				"__sample_limit__":     lv(""), // PP_CHANGES.md: override sample limit with annotation
 				podContainerNameLabel:  lv(c.Name),
 				podContainerIDLabel:    lv(cID),
 				podContainerImageLabel: lv(c.Image),
@@ -295,6 +296,7 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 
 			tg.Targets = append(tg.Targets, model.LabelSet{
 				model.AddressLabel:            lv(addr),
+				"__sample_limit__":            lv(""), // PP_CHANGES.md: override sample limit with annotation
 				podContainerNameLabel:         lv(c.Name),
 				podContainerIDLabel:           lv(cID),
 				podContainerImageLabel:        lv(c.Image),

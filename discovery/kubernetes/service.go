@@ -180,6 +180,7 @@ func (s *Service) buildService(svc *apiv1.Service) *targetgroup.Group {
 
 		labelSet := model.LabelSet{
 			model.AddressLabel:       lv(addr),
+			"__sample_limit__":       lv(""), // PP_CHANGES.md: override sample limit with annotation
 			servicePortNameLabel:     lv(port.Name),
 			servicePortNumberLabel:   lv(strconv.FormatInt(int64(port.Port), 10)),
 			servicePortProtocolLabel: lv(string(port.Protocol)),
