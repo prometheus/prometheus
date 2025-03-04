@@ -71,3 +71,20 @@ func WriteIndex(index Index, path string) error {
 
 	return nil
 }
+
+// ReadIndex reads the index from the given path.
+func ReadIndex(path string) (Index, error) {
+	file, err := os.Open(indexPath(path))
+	if err != nil {
+		return Index{}, err
+	}
+	defer file.Close()
+
+	var index Index
+	decoder := yaml.NewDecoder(file)
+	if err := decoder.Decode(&index); err != nil {
+		return Index{}, err
+	}
+
+	return index, nil
+}
