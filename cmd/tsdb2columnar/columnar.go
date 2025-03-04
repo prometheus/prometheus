@@ -137,13 +137,13 @@ func groupSeriesByMetricFamily(
 				return nil, fmt.Errorf("failed to get chunk metas and labels from series")
 			}
 
-			labelSets := make([]Label, 0, len(builder.Labels()))
-			for _, lbl := range builder.Labels() {
+			labelSets := make([]Label, 0, builder.Labels().Len())
+			builder.Labels().Range(func(lbl labels.Label) {
 				labelSets = append(labelSets, Label{
 					Key:   lbl.Name,
 					Value: lbl.Value,
 				})
-			}
+			})
 
 			for _, chk := range chks {
 				c, iterable, err := chunkr.ChunkOrIterable(chk)

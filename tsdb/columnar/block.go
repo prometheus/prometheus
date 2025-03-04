@@ -146,7 +146,7 @@ func (cr *ChunkReader) Close() error {
 	return errors.New("not implemented")
 }
 
-// NopStrinIter implements tsdb.StringIter.
+// NopStringIter implements tsdb.StringIter.
 type NopStringIter struct{}
 
 func (it NopStringIter) Next() bool {

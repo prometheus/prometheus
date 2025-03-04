@@ -16,14 +16,11 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
-
-	mimirblock "github.com/grafana/mimir/pkg/storage/tsdb/block"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -80,26 +77,14 @@ func createTSDBBlock(numSeries int, outputDir string, dimensions int, cardinalit
 		return "", fmt.Errorf("failed to create block: %w", err)
 	}
 
-	metaFilePath := filepath.Join(blockFName, "meta.json")
-	metaFile, err := os.ReadFile(metaFilePath)
+	bm, _, err := tsdb.ReadMetaFile(blockFName)
 	if err != nil {
-		return "", fmt.Errorf("failed to read meta.json: %w", err)
+		return "", fmt.Errorf("failed to read meta file: %w", err)
 	}
-
-	var meta mimirblock.Meta
-	if err := json.Unmarshal(metaFile, &meta); err != nil {
-		return "", fmt.Errorf("failed to unmarshal meta.json: %w", err)
-	}
-
-	meta.Compaction.Level = 1
-
-	updatedMetaFile, err := json.MarshalIndent(meta, "", "  ")
+	bm.Compaction.Level = 1
+	_, err = tsdb.WriteMetaFile(logger, blockFName, bm)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal updated meta.json: %w", err)
-	}
-
-	if err := os.WriteFile(metaFilePath, updatedMetaFile, os.ModePerm); err != nil {
-		return "", fmt.Errorf("failed to write updated meta.json: %w", err)
+		return "", fmt.Errorf("failed to write meta file: %w", err)
 	}
 
 	return blockFName, nil
