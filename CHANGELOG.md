@@ -2,6 +2,8 @@
 
 ## unreleased
 
+* [BUGFIX] TSDB: keep duplicate series records in checkpoints while their samples may still be present in the WAL. #16060
+
 ## 3.2.1 / 2025-02-25
 
 * [BUGFIX] Don't send Accept` header `escape=allow-utf-8` when `metric_name_validation_scheme: legacy` is configured. #16061
