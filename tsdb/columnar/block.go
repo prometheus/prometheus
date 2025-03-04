@@ -17,6 +17,7 @@ package columnar
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -83,8 +84,8 @@ func (ir *IndexReader) LabelValues(_ context.Context, _ string, _ ...*labels.Mat
 }
 
 // Postings (ctx context.Context, name string, values ...string).
-func (ir *IndexReader) Postings(_ context.Context, _ string, _ ...string) (index.Postings, error) {
-	return nil, errors.New("not implemented: Postings")
+func (ir *IndexReader) Postings(_ context.Context, name string, values ...string) (index.Postings, error) {
+	return nil, fmt.Errorf("not implemented: Postings name=%s values=%v", name, values)
 }
 
 // PostingsForLabelMatching (ctx context.Context, name string, match func(value string) bool).
