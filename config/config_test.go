@@ -15,7 +15,6 @@ package config
 
 import (
 	"crypto/tls"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
