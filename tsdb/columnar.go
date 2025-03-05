@@ -145,7 +145,12 @@ func (q *columnarQuerier) Select(ctx context.Context, sortSeries bool, hints *st
 	reader := parquet.NewGenericReader[any](f, schema)
 	defer reader.Close()
 
-	var result []parquet.Row
+	columnIndex := make(map[string]int, len(schema.Columns()))
+	for i, col := range schema.Columns() {
+		columnIndex[col[0]] = i
+	}
+
+	var rows []parquet.Row
 	buf := make([]parquet.Row, 10)
 
 	for {
@@ -158,8 +163,13 @@ func (q *columnarQuerier) Select(ctx context.Context, sortSeries bool, hints *st
 		}
 
 		for _, row := range buf[:readRows] {
-			if matches(row, ms, reader.Schema()) {
-				result = append(result, row)
+			if matches(row, ms, reader.Schema()) && chunkRangeOverlaps(
+				row[columnIndex["x_chunk_min_time"]].Int64(),
+				row[columnIndex["x_chunk_max_time"]].Int64(),
+				q.mint,
+				q.maxt,
+			) {
+				rows = append(rows, row)
 			}
 		}
 
@@ -169,12 +179,16 @@ func (q *columnarQuerier) Select(ctx context.Context, sortSeries bool, hints *st
 	}
 
 	return &columnarSeriesSet{
-		rows:    result,
+		rows:    rows,
 		schema:  schema,
 		mint:    q.mint,
 		maxt:    q.maxt,
 		builder: labels.NewScratchBuilder(len(columns)),
 	}
+}
+
+func chunkRangeOverlaps(chunkmint, chunkmaxt, mint, maxt int64) bool {
+	return !(chunkmaxt < mint || chunkmint > maxt)
 }
 
 func (*columnarQuerier) getMetricFamily(ms []*labels.Matcher) (string, error) {
@@ -255,12 +269,13 @@ func (r *rowsSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
 			panic(err)
 		}
 		its = append(its, chnk.Iterator(nil))
-		// metas[i] = chunks.Meta{
+		// meta := chunks.Meta{
 		// 	Ref:     chunks.ChunkRef(i),
 		// 	MinTime: 0, // TODO
 		// 	MaxTime: 0, // TODO
 		// 	Chunk:   chnk,
 		// }
+
 	}
 
 	return newConsecutiveChunkIterators(its)
