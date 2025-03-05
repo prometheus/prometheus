@@ -106,7 +106,9 @@ func (ir *ColumnarIndexReader) LabelValues(_ context.Context, _ string, _ ...*la
 // | 1         | a       | b       | 2     | 1,101,200                                     |
 // | 1         | a       | b       | 3     | 1,201,300                                     |
 // | 4         | a       | c       | 1     | 4,0,100                                       |
+// | 4         | a       | c       | 2     | 4,101,200                                     |
 func (ir *ColumnarIndexReader) Postings(_ context.Context, name string, values ...string) (index.Postings, error) {
+	// __name__, values=[tsdb2columanr_gauge_0]
 	// Things that I need
 	// - Extend the parquet file format to have the series IDs in it. [Done]
 	// - A way to read the parquet file [WIP]

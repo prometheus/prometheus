@@ -17,6 +17,14 @@ func buildSchemaForLabels(labels []string) *parquet.Schema {
 	return parquet.NewSchema("metric_family", node)
 }
 
+func queryDictionary(fileName, column string) {
+	f, err := os.Open(fileName)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+}
+
 // query does something like: SELECT project FROM fileName WHERE lname = lvalue
 func query(fileName, lname, lvalue string, project ...string) []parquet.Row {
 	f, err := os.Open(fileName)
