@@ -37,7 +37,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/promslog"

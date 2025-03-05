@@ -30,7 +30,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
 	"go.uber.org/atomic"
