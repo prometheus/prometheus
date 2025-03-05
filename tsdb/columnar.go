@@ -16,8 +16,10 @@ package tsdb
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -33,14 +35,14 @@ import (
 )
 
 type columnarQuerier struct {
-	f          *os.File
+	dir        string
 	closed     bool
 	mint, maxt int64
 }
 
-func NewColumnarQuerier(f *os.File, mint, maxt int64) (*columnarQuerier, error) {
+func NewColumnarQuerier(dir string, mint, maxt int64) (*columnarQuerier, error) {
 	return &columnarQuerier{
-		f:    f,
+		dir:  dir,
 		mint: mint,
 		maxt: maxt,
 	}, nil
@@ -106,6 +108,8 @@ func matches(row parquet.Row, ms []*labels.Matcher, schema *parquet.Schema) bool
 }
 
 func (q *columnarQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.SeriesSet {
+	fmt.Printf("IM BEING CALLED")
+
 	columns := selectColumns
 	for _, m := range ms {
 		if m.Type != labels.MatchEqual {
@@ -115,11 +119,18 @@ func (q *columnarQuerier) Select(ctx context.Context, sortSeries bool, hints *st
 			columns = append(columns, m.Name)
 		}
 	}
+
+	f, err := q.FindFile(ms)
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+
 	// TODO: i believe that including the chunks in the schema makes it so we load them into memory, but we don't want them all.
 	// should we do a first pass to get the rowids, and then a second pass to get the chunks?
 	// For now let's just make it work.
 	schema := buildSchemaForLabels(columns, true)
-	reader := parquet.NewGenericReader[any](q.f, schema)
+	reader := parquet.NewGenericReader[any](f, schema)
 	defer reader.Close()
 
 	var result []parquet.Row
@@ -152,6 +163,20 @@ func (q *columnarQuerier) Select(ctx context.Context, sortSeries bool, hints *st
 		maxt:    q.maxt,
 		builder: labels.NewScratchBuilder(len(columns) - 3),
 	}
+}
+
+func (q *columnarQuerier) FindFile(ms []*labels.Matcher) (*os.File, error) {
+	var metricFamily string
+	for _, m := range ms {
+		if m.Name == labels.MetricName {
+			metricFamily = m.Value
+			break
+		}
+	}
+	if metricFamily == "" {
+		return nil, errors.New("no metric name provided")
+	}
+	return os.Open(filepath.Join(q.dir, "data", fmt.Sprintf("%s.parquet", metricFamily)))
 }
 
 type columnarSeriesSet struct {
