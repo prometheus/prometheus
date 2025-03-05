@@ -38,19 +38,22 @@ type columnarQuerier struct {
 	closed     bool
 	mint, maxt int64
 
+	includeLabels []string
+
 	ix columnar.Index
 }
 
-func NewColumnarQuerier(dir string, mint, maxt int64) (*columnarQuerier, error) {
+func NewColumnarQuerier(dir string, mint, maxt int64, includeLabels []string) (*columnarQuerier, error) {
 	ix, err := columnar.ReadIndex(dir)
 	if err != nil {
 		return nil, err
 	}
 	return &columnarQuerier{
-		dir:  dir,
-		mint: mint,
-		maxt: maxt,
-		ix:   ix,
+		dir:           dir,
+		mint:          mint,
+		maxt:          maxt,
+		includeLabels: includeLabels,
+		ix:            ix,
 	}, nil
 }
 
@@ -135,6 +138,12 @@ func (q *columnarQuerier) Select(ctx context.Context, sortSeries bool, hints *st
 		}
 		if !slices.Contains(columns, m.Name) && slices.Contains(q.ix.Metrics[metricFamily].LabelNames, m.Name) {
 			columns = append(columns, m.Name)
+		}
+	}
+
+	for _, l := range q.includeLabels {
+		if !slices.Contains(columns, l) && slices.Contains(q.ix.Metrics[metricFamily].LabelNames, l) {
+			columns = append(columns, l)
 		}
 	}
 

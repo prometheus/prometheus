@@ -27,7 +27,7 @@ import (
 func TestColumnarQuerier(t *testing.T) {
 	from := int64(1733828454000)
 	to := int64(1733829686000)
-	q, err := NewColumnarQuerier("testdata/01JNKZDF5RP1X06VKBC2WMZJ8K", from, to)
+	q, err := NewColumnarQuerier("testdata/01JNKZDF5RP1X06VKBC2WMZJ8K", from, to, nil /*[]string{"dim_0"}*/)
 	require.NoError(t, err)
 	defer q.Close()
 
