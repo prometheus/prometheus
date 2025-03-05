@@ -33,10 +33,11 @@ import (
 )
 
 type TimeSeriesRow struct {
-	Lbls    []Label
-	Chunk   []byte
-	MinTime int64
-	MaxTime int64
+	Lbls     []Label
+	Chunk    []byte
+	MinTime  int64
+	MaxTime  int64
+	SeriesID int64
 }
 
 type Label struct {
@@ -91,12 +92,15 @@ func convertToColumnarBlock(blockPath string, logger *slog.Logger) error {
 
 	newIndex := columnar.NewIndex()
 
+	fileIndex := int32(1)
+
 	for metricName, series := range metricFamilies {
-		mm, err := writeParquetFile(metricName, series, dataDir, logger)
+		mm, err := writeParquetFile(metricName, series, dataDir, logger, fileIndex)
 		if err != nil {
 			return fmt.Errorf("failed to write Parquet file for metric %s: %w", metricName, err)
 		}
 		newIndex.Metrics[metricName] = mm
+		fileIndex++
 	}
 
 	if err := columnar.WriteIndex(newIndex, columnarBlockPath); err != nil {
@@ -128,6 +132,8 @@ func groupSeriesByMetricFamily(
 			return nil, fmt.Errorf("failed to get postings for metric %s: %w", metricName, err)
 		}
 
+		seriesID := int64(1)
+
 		for postings.Next() {
 			seriesRef := postings.At()
 			builder := labels.NewScratchBuilder(0)
@@ -155,14 +161,17 @@ func groupSeriesByMetricFamily(
 				}
 
 				row := TimeSeriesRow{
-					Lbls:    labelSets,
-					Chunk:   c.Bytes(),
-					MinTime: chk.MinTime,
-					MaxTime: chk.MaxTime,
+					Lbls:     labelSets,
+					Chunk:    c.Bytes(),
+					MinTime:  chk.MinTime,
+					MaxTime:  chk.MaxTime,
+					SeriesID: seriesID,
 				}
 
 				metricFamilies[metricName] = append(metricFamilies[metricName], row)
 			}
+
+			seriesID++
 		}
 
 		if postings.Err() != nil {
@@ -178,10 +187,12 @@ func writeParquetFile(
 	series []TimeSeriesRow,
 	dataDir string,
 	logger *slog.Logger,
+	fileIndex int32,
 ) (columnar.MetricMeta, error) {
 	metricMeta := columnar.MetricMeta{
 		ParquetFile: metricName + ".parquet",
 		LabelNames:  uniqueLabelKeys(series),
+		FileIndex:   fileIndex,
 	}
 
 	schema := buildDynamicSchema(metricMeta.LabelNames)
@@ -229,9 +240,11 @@ func uniqueLabelKeys(rows []TimeSeriesRow) []string {
 
 func buildDynamicSchema(labelKeys []string) *parquet.Schema {
 	node := parquet.Group{
+		"x_series_id": parquet.Encoded(parquet.Int(64), &parquet.RLEDictionary),
+
 		"x_chunk":          parquet.Leaf(parquet.ByteArrayType),
-		"x_chunk_min_time": parquet.Encoded(parquet.Int(64), &parquet.DeltaBinaryPacked), // TODO For fixed intervals parquet.RLE might be better, we should test that
 		"x_chunk_max_time": parquet.Encoded(parquet.Int(64), &parquet.DeltaBinaryPacked),
+		"x_chunk_min_time": parquet.Encoded(parquet.Int(64), &parquet.DeltaBinaryPacked), // TODO For fixed intervals parquet.RLE might be better, we should test that
 	}
 	for _, label := range labelKeys {
 		node["l_"+label] = parquet.Encoded(parquet.String(), &parquet.RLEDictionary)
@@ -251,6 +264,9 @@ func convertToParquetValues(rows []TimeSeriesRow, schema *parquet.Schema) ([]par
 
 	for i, row := range rows {
 		values := make([]parquet.Value, len(schema.Columns()))
+
+		seriesIDIdx := columnMap["x_series_id"]
+		values[seriesIDIdx] = parquet.Int64Value(row.SeriesID)
 
 		chunkIdx := columnMap["x_chunk"]
 		values[chunkIdx] = parquet.ByteArrayValue(row.Chunk)
