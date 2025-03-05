@@ -49,11 +49,15 @@ func NewColumnarQuerier(dir string, mint, maxt int64) (*columnarQuerier, error) 
 }
 
 func (q *columnarQuerier) LabelValues(ctx context.Context, name string, _ *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	panic("implement me")
+	if name == "instance" {
+		return []string{"instance1", "instance2"}, nil, nil
+	} else {
+		return []string{"job1", "job2"}, nil, nil
+	}
 }
 
 func (q *columnarQuerier) LabelNames(ctx context.Context, _ *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	panic("implement me")
+	return []string{"instance", "job"}, nil, nil
 }
 
 func (q *columnarQuerier) Close() error {
@@ -91,9 +95,10 @@ func matches(row parquet.Row, ms []*labels.Matcher, schema *parquet.Schema) bool
 	// TODO: very inefficient
 	for _, val := range row {
 		colName := schema.Columns()[val.Column()][0]
-		if colName == "x_chunk" {
+		if !strings.HasPrefix(colName, "l_") {
 			continue
 		}
+
 		lname := colName[2:]
 		// TODO: if we have dict encoding, is there a way to make this comparison quicker?
 
