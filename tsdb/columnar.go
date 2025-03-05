@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/columnar"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/util/annotations"
 )
@@ -38,13 +39,20 @@ type columnarQuerier struct {
 	dir        string
 	closed     bool
 	mint, maxt int64
+
+	ix columnar.Index
 }
 
 func NewColumnarQuerier(dir string, mint, maxt int64) (*columnarQuerier, error) {
+	ix, err := columnar.ReadIndex(dir)
+	if err != nil {
+		return nil, err
+	}
 	return &columnarQuerier{
 		dir:  dir,
 		mint: mint,
 		maxt: maxt,
+		ix:   ix,
 	}, nil
 }
 
@@ -113,9 +121,19 @@ func matches(row parquet.Row, ms []*labels.Matcher, schema *parquet.Schema) bool
 }
 
 func (q *columnarQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.SeriesSet {
-	fmt.Printf("IM BEING CALLED")
+	metricFamily, err := q.getMetricFamily(ms)
+	if err != nil {
+		return storage.ErrSeriesSet(fmt.Errorf("we only accept matchers that have EQ matcher on __name__: %w", err))
+	}
 
-	columns := selectColumns
+	f, err := os.Open(filepath.Join(q.dir, "data", fmt.Sprintf("%s.parquet", metricFamily)))
+
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+
+	columns := q.ix.Metrics[metricFamily].LabelNames
 	for _, m := range ms {
 		if m.Type != labels.MatchEqual {
 			panic("only MatchEqual is supported")
@@ -124,12 +142,6 @@ func (q *columnarQuerier) Select(ctx context.Context, sortSeries bool, hints *st
 			columns = append(columns, m.Name)
 		}
 	}
-
-	f, err := q.FindFile(ms)
-	if err != nil {
-		panic(err)
-	}
-	defer f.Close()
 
 	// TODO: i believe that including the chunks in the schema makes it so we load them into memory, but we don't want them all.
 	// should we do a first pass to get the rowids, and then a second pass to get the chunks?
@@ -166,11 +178,11 @@ func (q *columnarQuerier) Select(ctx context.Context, sortSeries bool, hints *st
 		schema:  schema,
 		mint:    q.mint,
 		maxt:    q.maxt,
-		builder: labels.NewScratchBuilder(len(columns) - 3),
+		builder: labels.NewScratchBuilder(len(columns)),
 	}
 }
 
-func (q *columnarQuerier) FindFile(ms []*labels.Matcher) (*os.File, error) {
+func (*columnarQuerier) getMetricFamily(ms []*labels.Matcher) (string, error) {
 	var metricFamily string
 	for _, m := range ms {
 		if m.Name == labels.MetricName {
@@ -179,9 +191,9 @@ func (q *columnarQuerier) FindFile(ms []*labels.Matcher) (*os.File, error) {
 		}
 	}
 	if metricFamily == "" {
-		return nil, errors.New("no metric name provided")
+		return "", errors.New("no metric name provided")
 	}
-	return os.Open(filepath.Join(q.dir, "data", fmt.Sprintf("%s.parquet", metricFamily)))
+	return metricFamily, nil
 }
 
 type columnarSeriesSet struct {
