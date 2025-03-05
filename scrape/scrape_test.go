@@ -5782,7 +5782,13 @@ metric{l1="1", l2="2"} 5`,
 			require.NoError(t, err)
 
 			require.NoError(t, slApp.Commit())
-			require.Equal(t, test.expectedFloats, app.resultFloats)
+			require.Len(t, app.resultFloats, len(test.expectedFloats))
+			for i := range app.resultFloats {
+				expected, actual := test.expectedFloats[i], app.resultFloats[i]
+				require.Equal(t, expected.metric.String(), actual.metric.String())
+				require.Equal(t, expected.t, actual.t)
+				require.Equal(t, expected.f, actual.f)
+			}
 		})
 	}
 }
