@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -33,7 +34,8 @@ import (
 
 // ColumnarIndexReader implements the tsdb.IndexReader interface.
 type ColumnarIndexReader struct {
-	ix Index
+	ix  Index
+	dir string
 }
 
 // The columnar index reader.
@@ -46,7 +48,8 @@ func NewColumnarIndexReader(dir string) (*ColumnarIndexReader, error) {
 	}
 
 	return &ColumnarIndexReader{
-		ix: index,
+		ix:  index,
+		dir: dir,
 	}, nil
 }
 
@@ -107,6 +110,15 @@ func (ir *ColumnarIndexReader) Postings(_ context.Context, name string, values .
 	// Things that I need
 	// - Extend the parquet file format to have the series IDs in it. [Done]
 	// - A way to read the parquet file [WIP]
+	if name != labels.MetricName {
+		panic("not implemented for anything else other than __name__")
+	}
+	if len(values) > 1 {
+		panic("not implemented for more than one value")
+	}
+	_ = query(filepath.Join(ir.dir, "data", ir.ix.Metrics[values[0]].ParquetFile), labels.MetricName, values[0])
+	// TODO convert from rows to postings
+
 	// - Build back the postings iterator
 	return nil, fmt.Errorf("not implemented: Postings name=%s values=%v", name, values)
 }
