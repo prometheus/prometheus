@@ -63,7 +63,7 @@ func (r *ruleEngine) NewScrapeBatch() Batch {
 func (r *ruleEngine) EvaluateRules(b Batch, ts time.Time, sampleMutator labelsMutator) ([]Sample, error) {
 	var (
 		result  []Sample
-		builder labels.ScratchBuilder
+		builder = labels.NewScratchBuilder(0)
 	)
 	for _, rule := range r.rules {
 		queryable := storage.QueryableFunc(func(_, _ int64) (storage.Querier, error) {
