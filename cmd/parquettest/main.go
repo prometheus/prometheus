@@ -87,6 +87,28 @@ func generateDiskMetrics() []TimeSeriesRow {
 			// Filesystem available bytes typically in GB range (converted to bytes).
 			Chunk: encodeChunk([]int64{1645123456000, 1645123457000}, []float64{22.3 * 1e9, 22.1 * 1e9}),
 		},
+		{
+			Lbls: []LabelSet{
+				{Key: "name", Value: "node_filesystem_avail_bytes"},
+				{Key: "host", Value: "server3"},
+				{Key: "region", Value: "us-east"},
+				{Key: "mountpoint", Value: "/"},
+				{Key: "fstype", Value: "ext4"},
+			},
+			// Filesystem available bytes typically in GB range (converted to bytes).
+			Chunk: encodeChunk([]int64{1645123456000, 1645123457000}, []float64{22.3 * 1e9, 22.1 * 1e9}),
+		},
+		{
+			Lbls: []LabelSet{
+				{Key: "name", Value: "node_filesystem_avail_bytes"},
+				{Key: "host", Value: "server4"},
+				{Key: "region", Value: "us-east"},
+				{Key: "mountpoint", Value: "/"},
+				{Key: "fstype", Value: "ext4"},
+			},
+			// Filesystem available bytes typically in GB range (converted to bytes).
+			Chunk: encodeChunk([]int64{1645123456000, 1645123457000}, []float64{22.3 * 1e9, 22.1 * 1e9}),
+		},
 	}
 }
 
@@ -174,7 +196,7 @@ func convertToParquetValues(rows []TimeSeriesRow, schema *parquet.Schema) []parq
 }
 
 // testDynamicSchemaWriter tests writing and reading time series with a dynamic schema.
-func testDynamicSchemaWriter(samples []TimeSeriesRow) {
+func testDynamicSchemaWriter(samples []TimeSeriesRow) (fileName string) {
 	// Build dynamic schema based on the labels in the samples.
 	schema := buildDynamicSchema(samples)
 
@@ -183,7 +205,7 @@ func testDynamicSchemaWriter(samples []TimeSeriesRow) {
 
 	// Write to file using generic writer.
 	f, _ := os.CreateTemp("", "parquet-dynamic-schema-example-")
-	fileName := f.Name()
+	fileName = f.Name()
 	fmt.Printf("Dynamic schema writer file: %s\n", fileName)
 
 	writer := parquet.NewGenericWriter[any](f, schema)
@@ -238,12 +260,83 @@ func testDynamicSchemaWriter(samples []TimeSeriesRow) {
 			}
 		}
 	}
+	return
+}
+
+func buildSchemaForLabels(labels []string) *parquet.Schema {
+	node := parquet.Group{}
+	for _, label := range labels {
+		node["l_"+label] = parquet.String()
+	}
+	return parquet.NewSchema("metric_family", node)
+}
+
+// query does something like: SELECT project FROM fileName WHERE lname = lvalue
+func query(fileName, lname, lvalue string, project ...string) []parquet.Row {
+
+	f, err := os.Open(fileName)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+
+	fmt.Printf("\nQuerying: select (%v) where %s = %s\n", project, lname, lvalue)
+
+	// We build a schema only with the columns we are interested in. See NewGenericReader docstring:
+	// > If the option list may explicitly declare a schema, it must be compatible
+	// > with the schema generated from T.
+	// Note that I'm not including the chunks, but that should be done if we want the data.
+	schema := buildSchemaForLabels(append(project, lname))
+	reader := parquet.NewGenericReader[any](f, schema)
+	defer reader.Close()
+
+	var result []parquet.Row
+	buf := make([]parquet.Row, 10)
+
+	rowId := 0 // We don't use this, but could be useful if we wanted to reference a row.
+	for {
+		readRows, err := reader.ReadRows(buf)
+		if err != nil && err != io.EOF {
+			log.Fatal(err)
+		}
+		if readRows == 0 {
+			break
+		}
+
+		for _, row := range buf[:readRows] {
+			for _, val := range row {
+				colName := reader.Schema().Columns()[val.Column()][0]
+				// TODO: if we have dict encoding, is there a way to make this comparison quicker?
+				if colName == "l_"+lname && string(val.ByteArray()) == lvalue {
+					result = append(result, row)
+					break
+				}
+			}
+			rowId++
+		}
+
+		if err == io.EOF {
+			break
+		}
+
+	}
+
+	fmt.Println("\nQuery result:")
+	for i, row := range result {
+		fmt.Printf("\nRow %d:\n", i+1)
+		for j, val := range row {
+			fmt.Printf("\t%d: %s\n", j, string(val.ByteArray()))
+		}
+	}
+	return result
 }
 
 func main() {
-	cpuSamples := generateCPUMetrics()
+	// cpuSamples := generateCPUMetrics()
 	diskSamples := generateDiskMetrics()
 	fmt.Println("\nTesting Dynamic Schema Writer:")
-	testDynamicSchemaWriter(cpuSamples)
-	testDynamicSchemaWriter(diskSamples)
+	// testDynamicSchemaWriter(cpuSamples)
+	fileName := testDynamicSchemaWriter(diskSamples)
+
+	query(fileName, "host", "server4", "name", "host")
 }
