@@ -50,7 +50,7 @@ type histogramRecord struct {
 	fh  *histogram.FloatHistogram
 }
 
-func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk) (err error) {
+func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk, lastSegment int) (err error) {
 	// Track number of samples that referenced a series we don't know about
 	// for error reporting.
 	var unknownRefs atomic.Uint64
@@ -73,11 +73,6 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		decoded                      = make(chan interface{}, 10)
 		decodeErr, seriesCreationErr error
 	)
-
-	_, last, err := wlog.Segments(h.wal.Dir())
-	if err != nil {
-		return fmt.Errorf("failed to get last segment to set WAL expiry for duplicate series: %w", err)
-	}
 
 	defer func() {
 		// For CorruptionErr ensure to terminate all workers before exiting.
@@ -243,7 +238,7 @@ Outer:
 				if !created {
 					multiRef[walSeries.Ref] = mSeries.ref
 					// Set the WAL expiry for the duplicate series, so it is kept in subsequent WAL checkpoints.
-					h.setWALExpiry(walSeries.Ref, last)
+					h.setWALExpiry(walSeries.Ref, lastSegment)
 				}
 
 				idx := uint64(mSeries.ref) % uint64(concurrency)
