@@ -33,10 +33,11 @@ import (
 )
 
 type TimeSeriesRow struct {
-	Lbls    []Label
-	Chunk   []byte
-	MinTime int64
-	MaxTime int64
+	Lbls     []Label
+	Chunk    []byte
+	MinTime  int64
+	MaxTime  int64
+	SeriesID int64
 }
 
 type Label struct {
@@ -131,6 +132,8 @@ func groupSeriesByMetricFamily(
 			return nil, fmt.Errorf("failed to get postings for metric %s: %w", metricName, err)
 		}
 
+		seriesID := int64(1)
+
 		for postings.Next() {
 			seriesRef := postings.At()
 			builder := labels.NewScratchBuilder(0)
@@ -158,14 +161,17 @@ func groupSeriesByMetricFamily(
 				}
 
 				row := TimeSeriesRow{
-					Lbls:    labelSets,
-					Chunk:   c.Bytes(),
-					MinTime: chk.MinTime,
-					MaxTime: chk.MaxTime,
+					Lbls:     labelSets,
+					Chunk:    c.Bytes(),
+					MinTime:  chk.MinTime,
+					MaxTime:  chk.MaxTime,
+					SeriesID: seriesID,
 				}
 
 				metricFamilies[metricName] = append(metricFamilies[metricName], row)
 			}
+
+			seriesID++
 		}
 
 		if postings.Err() != nil {
@@ -234,7 +240,7 @@ func uniqueLabelKeys(rows []TimeSeriesRow) []string {
 
 func buildDynamicSchema(labelKeys []string) *parquet.Schema {
 	node := parquet.Group{
-		"x_series_id": parquet.Encoded(parquet.Int(64), &parquet.RLE),
+		"x_series_id": parquet.Encoded(parquet.Int(64), &parquet.RLEDictionary),
 
 		"x_chunk":          parquet.Leaf(parquet.ByteArrayType),
 		"x_chunk_max_time": parquet.Encoded(parquet.Int(64), &parquet.DeltaBinaryPacked),
@@ -258,6 +264,9 @@ func convertToParquetValues(rows []TimeSeriesRow, schema *parquet.Schema) ([]par
 
 	for i, row := range rows {
 		values := make([]parquet.Value, len(schema.Columns()))
+
+		seriesIDIdx := columnMap["x_series_id"]
+		values[seriesIDIdx] = parquet.Int64Value(row.SeriesID)
 
 		chunkIdx := columnMap["x_chunk"]
 		values[chunkIdx] = parquet.ByteArrayValue(row.Chunk)
