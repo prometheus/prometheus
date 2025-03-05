@@ -719,11 +719,24 @@ func TestHead_ReadWAL(t *testing.T) {
 			s11 := head.series.getByID(11)
 			s50 := head.series.getByID(50)
 			s100 := head.series.getByID(100)
+			s101 := head.series.getByID(101)
 
 			testutil.RequireEqual(t, labels.FromStrings("a", "1"), s10.lset)
 			require.Nil(t, s11) // Series without samples should be garbage collected at head.Init().
 			testutil.RequireEqual(t, labels.FromStrings("a", "4"), s50.lset)
 			testutil.RequireEqual(t, labels.FromStrings("a", "3"), s100.lset)
+
+			// Duplicate series record should not be written to the head.
+			require.Nil(t, s101)
+			// But it should have a WAL expiry set.
+			keepUntil, ok := head.getWALExpiry(101)
+			require.True(t, ok)
+			_, last, err := wlog.Segments(w.Dir())
+			require.NoError(t, err)
+			require.Equal(t, last, keepUntil)
+			// Only the duplicate series record should have a WAL expiry set.
+			_, ok = head.getWALExpiry(50)
+			require.False(t, ok)
 
 			expandChunk := func(c chunkenc.Iterator) (x []sample) {
 				for c.Next() == chunkenc.ValFloat {
@@ -796,7 +809,7 @@ func TestHead_WALMultiRef(t *testing.T) {
 
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = 1000
-	opts.ChunkDirRoot = w.Dir()
+	opts.ChunkDirRoot = head.opts.ChunkDirRoot
 	head, err = NewHead(nil, nil, w, nil, opts, nil)
 	require.NoError(t, err)
 	require.NoError(t, head.Init(0))
@@ -813,6 +826,64 @@ func TestHead_WALMultiRef(t *testing.T) {
 		sample{1700, 3, nil, nil},
 		sample{2000, 4, nil, nil},
 	}}, series)
+}
+
+func TestHead_KeepSeriesInWALCheckpoint(t *testing.T) {
+	existingRef := 1
+	existingLbls := labels.FromStrings("foo", "bar")
+	deletedKeepUntil := 10
+
+	cases := []struct {
+		name      string
+		prepare   func(t *testing.T, h *Head)
+		seriesRef chunks.HeadSeriesRef
+		last      int
+		expected  bool
+	}{
+		{
+			name: "keep series still in the head",
+			prepare: func(t *testing.T, h *Head) {
+				_, _, err := h.getOrCreateWithID(chunks.HeadSeriesRef(existingRef), existingLbls.Hash(), existingLbls)
+				require.NoError(t, err)
+			},
+			seriesRef: chunks.HeadSeriesRef(existingRef),
+			expected:  true,
+		},
+		{
+			name: "keep deleted series with keepUntil > last",
+			prepare: func(_ *testing.T, h *Head) {
+				h.setWALExpiry(chunks.HeadSeriesRef(existingRef), deletedKeepUntil)
+			},
+			seriesRef: chunks.HeadSeriesRef(existingRef),
+			last:      deletedKeepUntil - 1,
+			expected:  true,
+		},
+		{
+			name: "drop deleted series with keepUntil <= last",
+			prepare: func(_ *testing.T, h *Head) {
+				h.setWALExpiry(chunks.HeadSeriesRef(existingRef), deletedKeepUntil)
+			},
+			seriesRef: chunks.HeadSeriesRef(existingRef),
+			last:      deletedKeepUntil,
+			expected:  false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h, _ := newTestHead(t, 1000, wlog.CompressionNone, false)
+			t.Cleanup(func() {
+				require.NoError(t, h.Close())
+			})
+
+			if tc.prepare != nil {
+				tc.prepare(t, h)
+			}
+
+			kept := h.keepSeriesInWALCheckpoint(tc.seriesRef, tc.last)
+			require.Equal(t, tc.expected, kept)
+		})
+	}
 }
 
 func TestHead_ActiveAppenders(t *testing.T) {
