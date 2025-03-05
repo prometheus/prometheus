@@ -156,8 +156,6 @@ func CreateBlock(series []storage.Series, dir string, chunkRange int64, logger *
 		}
 	}()
 
-	sampleCount := 0
-	const commitAfter = 10000
 	ctx := context.Background()
 	app := w.Appender(ctx)
 	var it chunkenc.Iterator
@@ -166,17 +164,9 @@ func CreateBlock(series []storage.Series, dir string, chunkRange int64, logger *
 		ref := storage.SeriesRef(0)
 		it = s.Iterator(it)
 		lset := s.Labels()
-		typ := it.Next()
-		lastTyp := typ
-		for ; typ != chunkenc.ValNone; typ = it.Next() {
-			if lastTyp != typ {
-				if err = app.Commit(); err != nil {
-					return "", err
-				}
-				app = w.Appender(ctx)
-				sampleCount = 0
-			}
 
+		for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
+			var err error
 			switch typ {
 			case chunkenc.ValFloat:
 				t, v := it.At()
@@ -193,18 +183,10 @@ func CreateBlock(series []storage.Series, dir string, chunkRange int64, logger *
 			if err != nil {
 				return "", err
 			}
-			sampleCount++
-			lastTyp = typ
 		}
+
 		if it.Err() != nil {
 			return "", it.Err()
-		}
-		if sampleCount > commitAfter {
-			if err = app.Commit(); err != nil {
-				return "", err
-			}
-			app = w.Appender(ctx)
-			sampleCount = 0
 		}
 	}
 
