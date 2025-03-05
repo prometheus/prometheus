@@ -14,7 +14,7 @@
 // The code in this file was largely written by Damian Gryski as part of
 // https://github.com/dgryski/go-tsz and published under the license below.
 // It was modified to accommodate reading from byte slices without modifying
-// the underlying bytes, which would panic when reading from mmap'd
+// the underlying bytes, which would panic when reading from mmapped
 // read-only byte slices.
 
 // Copyright (c) 2015,2016 Damian Gryski <damian@gryski.com>
@@ -191,8 +191,8 @@ func (a *xorAppender) Append(t int64, v float64) {
 		case dod == 0:
 			a.b.writeBit(zero)
 		case bitRange(dod, 14):
-			a.b.writeBits(0b10, 2)
-			a.b.writeBits(uint64(dod), 14)
+			a.b.writeByte(0b10<<6 | (uint8(dod>>8) & (1<<6 - 1))) // 0b10 size code combined with 6 bits of dod.
+			a.b.writeByte(uint8(dod))                             // Bottom 8 bits of dod.
 		case bitRange(dod, 17):
 			a.b.writeBits(0b110, 3)
 			a.b.writeBits(uint64(dod), 17)

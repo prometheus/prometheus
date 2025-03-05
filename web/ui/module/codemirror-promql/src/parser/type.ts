@@ -17,7 +17,7 @@ import {
   BinaryExpr,
   FunctionCall,
   MatrixSelector,
-  NumberLiteral,
+  NumberDurationLiteral,
   OffsetExpr,
   ParenExpr,
   StepInvariantExpr,
@@ -42,7 +42,7 @@ export function getType(node: SyntaxNode | null): ValueType {
       return getType(node.firstChild);
     case StringLiteral:
       return ValueType.string;
-    case NumberLiteral:
+    case NumberDurationLiteral:
       return ValueType.scalar;
     case MatrixSelector:
       return ValueType.matrix;

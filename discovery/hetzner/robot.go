@@ -18,13 +18,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
@@ -39,7 +39,7 @@ const (
 	hetznerLabelRobotCancelled = hetznerRobotLabelPrefix + "cancelled"
 )
 
-var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+var userAgent = version.PrometheusUserAgent()
 
 // Discovery periodically performs Hetzner Robot requests. It implements
 // the Discoverer interface.
@@ -51,7 +51,7 @@ type robotDiscovery struct {
 }
 
 // newRobotDiscovery returns a new robotDiscovery which periodically refreshes its targets.
-func newRobotDiscovery(conf *SDConfig, _ log.Logger) (*robotDiscovery, error) {
+func newRobotDiscovery(conf *SDConfig, _ *slog.Logger) (*robotDiscovery, error) {
 	d := &robotDiscovery{
 		port:     conf.Port,
 		endpoint: conf.robotEndpoint,
@@ -87,7 +87,6 @@ func (d *robotDiscovery) refresh(context.Context) ([]*targetgroup.Group, error) 
 		resp.Body.Close()
 	}()
 
-	//nolint:usestdlibvars
 	if resp.StatusCode/100 != 2 {
 		return nil, fmt.Errorf("non 2xx status '%d' response during hetzner service discovery with role robot", resp.StatusCode)
 	}

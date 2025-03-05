@@ -14,8 +14,10 @@
 package parser
 
 import (
+	"bytes"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -72,27 +74,55 @@ func (node *AggregateExpr) String() string {
 	return aggrString
 }
 
+func (node *AggregateExpr) ShortString() string {
+	aggrString := node.getAggOpStr()
+	return aggrString
+}
+
 func (node *AggregateExpr) getAggOpStr() string {
 	aggrString := node.Op.String()
 
 	switch {
 	case node.Without:
-		aggrString += fmt.Sprintf(" without (%s) ", strings.Join(node.Grouping, ", "))
+		aggrString += fmt.Sprintf(" without (%s) ", joinLabels(node.Grouping))
 	case len(node.Grouping) > 0:
-		aggrString += fmt.Sprintf(" by (%s) ", strings.Join(node.Grouping, ", "))
+		aggrString += fmt.Sprintf(" by (%s) ", joinLabels(node.Grouping))
 	}
 
 	return aggrString
 }
 
-func (node *BinaryExpr) String() string {
-	returnBool := ""
-	if node.ReturnBool {
-		returnBool = " bool"
-	}
+func joinLabels(ss []string) string {
+	var bytea [1024]byte // On stack to avoid memory allocation while building the output.
+	b := bytes.NewBuffer(bytea[:0])
 
+	for i, s := range ss {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		if !model.IsValidLegacyMetricName(string(model.LabelValue(s))) {
+			b.Write(strconv.AppendQuote(b.AvailableBuffer(), s))
+		} else {
+			b.WriteString(s)
+		}
+	}
+	return b.String()
+}
+
+func (node *BinaryExpr) returnBool() string {
+	if node.ReturnBool {
+		return " bool"
+	}
+	return ""
+}
+
+func (node *BinaryExpr) String() string {
 	matching := node.getMatchingStr()
-	return fmt.Sprintf("%s %s%s%s %s", node.LHS, node.Op, returnBool, matching, node.RHS)
+	return fmt.Sprintf("%s %s%s%s %s", node.LHS, node.Op, node.returnBool(), matching, node.RHS)
+}
+
+func (node *BinaryExpr) ShortString() string {
+	return fmt.Sprintf("%s%s%s", node.Op, node.returnBool(), node.getMatchingStr())
 }
 
 func (node *BinaryExpr) getMatchingStr() string {
@@ -120,9 +150,13 @@ func (node *Call) String() string {
 	return fmt.Sprintf("%s(%s)", node.Func.Name, node.Args)
 }
 
-func (node *MatrixSelector) String() string {
+func (node *Call) ShortString() string {
+	return node.Func.Name
+}
+
+func (node *MatrixSelector) atOffset() (string, string) {
 	// Copy the Vector selector before changing the offset
-	vecSelector := *node.VectorSelector.(*VectorSelector)
+	vecSelector := node.VectorSelector.(*VectorSelector)
 	offset := ""
 	switch {
 	case vecSelector.OriginalOffset > time.Duration(0):
@@ -139,7 +173,13 @@ func (node *MatrixSelector) String() string {
 	case vecSelector.StartOrEnd == END:
 		at = " @ end()"
 	}
+	return at, offset
+}
 
+func (node *MatrixSelector) String() string {
+	at, offset := node.atOffset()
+	// Copy the Vector selector before changing the offset
+	vecSelector := *node.VectorSelector.(*VectorSelector)
 	// Do not print the @ and offset twice.
 	offsetVal, atVal, preproc := vecSelector.OriginalOffset, vecSelector.Timestamp, vecSelector.StartOrEnd
 	vecSelector.OriginalOffset = 0
@@ -153,8 +193,17 @@ func (node *MatrixSelector) String() string {
 	return str
 }
 
+func (node *MatrixSelector) ShortString() string {
+	at, offset := node.atOffset()
+	return fmt.Sprintf("[%s]%s%s", model.Duration(node.Range), at, offset)
+}
+
 func (node *SubqueryExpr) String() string {
 	return fmt.Sprintf("%s%s", node.Expr.String(), node.getSubqueryTimeSuffix())
+}
+
+func (node *SubqueryExpr) ShortString() string {
+	return node.getSubqueryTimeSuffix()
 }
 
 // getSubqueryTimeSuffix returns the '[<range>:<step>] @ <timestamp> offset <offset>' suffix of the subquery.
@@ -183,7 +232,7 @@ func (node *SubqueryExpr) getSubqueryTimeSuffix() string {
 }
 
 func (node *NumberLiteral) String() string {
-	return fmt.Sprint(node.Val)
+	return strconv.FormatFloat(node.Val, 'f', -1, 64)
 }
 
 func (node *ParenExpr) String() string {
@@ -196,6 +245,10 @@ func (node *StringLiteral) String() string {
 
 func (node *UnaryExpr) String() string {
 	return fmt.Sprintf("%s%s", node.Op, node.Expr)
+}
+
+func (node *UnaryExpr) ShortString() string {
+	return node.Op.String()
 }
 
 func (node *VectorSelector) String() string {

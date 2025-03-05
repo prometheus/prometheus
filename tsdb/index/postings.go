@@ -18,18 +18,22 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"maps"
 	"math"
 	"runtime"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/bboreham/go-loser"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 )
+
+const exponentialSliceGrowthFactor = 2
 
 var allPostingsKey = labels.Label{}
 
@@ -54,15 +58,33 @@ var ensureOrderBatchPool = sync.Pool{
 // EnsureOrder() must be called once before any reads are done. This allows for quick
 // unordered batch fills on startup.
 type MemPostings struct {
-	mtx     sync.RWMutex
-	m       map[string]map[string][]storage.SeriesRef
+	mtx sync.RWMutex
+
+	// m holds the postings lists for each label-value pair, indexed first by label name, and then by label value.
+	//
+	// mtx must be held when interacting with m (the appropriate one for reading or writing).
+	// It is safe to retain a reference to a postings list after releasing the lock.
+	//
+	// BUG: There's currently a data race in addFor, which might modify the tail of the postings list:
+	// https://github.com/prometheus/prometheus/issues/15317
+	m map[string]map[string][]storage.SeriesRef
+
+	// lvs holds the label values for each label name.
+	// lvs[name] is essentially an unsorted append-only list of all keys in m[name]
+	// mtx must be held when interacting with lvs.
+	// Since it's append-only, it is safe to read the label values slice after releasing the lock.
+	lvs map[string][]string
+
 	ordered bool
 }
+
+const defaultLabelNamesMapSize = 512
 
 // NewMemPostings returns a memPostings that's ready for reads and writes.
 func NewMemPostings() *MemPostings {
 	return &MemPostings{
-		m:       make(map[string]map[string][]storage.SeriesRef, 512),
+		m:       make(map[string]map[string][]storage.SeriesRef, defaultLabelNamesMapSize),
+		lvs:     make(map[string][]string, defaultLabelNamesMapSize),
 		ordered: true,
 	}
 }
@@ -71,7 +93,8 @@ func NewMemPostings() *MemPostings {
 // until EnsureOrder() was called once.
 func NewUnorderedMemPostings() *MemPostings {
 	return &MemPostings{
-		m:       make(map[string]map[string][]storage.SeriesRef, 512),
+		m:       make(map[string]map[string][]storage.SeriesRef, defaultLabelNamesMapSize),
+		lvs:     make(map[string][]string, defaultLabelNamesMapSize),
 		ordered: false,
 	}
 }
@@ -79,16 +102,19 @@ func NewUnorderedMemPostings() *MemPostings {
 // Symbols returns an iterator over all unique name and value strings, in order.
 func (p *MemPostings) Symbols() StringIter {
 	p.mtx.RLock()
+	// Make a quick clone of the map to avoid holding the lock while iterating.
+	// It's safe to use the values of the map after releasing the lock, as they're append-only slices.
+	lvs := maps.Clone(p.lvs)
+	p.mtx.RUnlock()
 
 	// Add all the strings to a map to de-duplicate.
-	symbols := make(map[string]struct{}, 512)
-	for n, e := range p.m {
+	symbols := make(map[string]struct{}, defaultLabelNamesMapSize)
+	for n, labelValues := range lvs {
 		symbols[n] = struct{}{}
-		for v := range e {
+		for _, v := range labelValues {
 			symbols[v] = struct{}{}
 		}
 	}
-	p.mtx.RUnlock()
 
 	res := make([]string, 0, len(symbols))
 	for k := range symbols {
@@ -144,13 +170,14 @@ func (p *MemPostings) LabelNames() []string {
 // LabelValues returns label values for the given name.
 func (p *MemPostings) LabelValues(_ context.Context, name string) []string {
 	p.mtx.RLock()
-	defer p.mtx.RUnlock()
+	values := p.lvs[name]
+	p.mtx.RUnlock()
 
-	values := make([]string, 0, len(p.m[name]))
-	for v := range p.m[name] {
-		values = append(values, v)
-	}
-	return values
+	// The slice from p.lvs[name] is shared between all readers, and it is append-only.
+	// Since it's shared, we need to make a copy of it before returning it to make
+	// sure that no caller modifies the original one by sorting it or filtering it.
+	// Since it's append-only, we can do this while not holding the mutex anymore.
+	return slices.Clone(values)
 }
 
 // PostingsStats contains cardinality based statistics for postings.
@@ -163,7 +190,8 @@ type PostingsStats struct {
 }
 
 // Stats calculates the cardinality statistics from postings.
-func (p *MemPostings) Stats(label string, limit int) *PostingsStats {
+// Caller can pass in a function which computes the space required for n series with a given label.
+func (p *MemPostings) Stats(label string, limit int, labelSizeFunc func(string, string, uint64) uint64) *PostingsStats {
 	var size uint64
 	p.mtx.RLock()
 
@@ -191,7 +219,7 @@ func (p *MemPostings) Stats(label string, limit int) *PostingsStats {
 			}
 			seriesCnt := uint64(len(values))
 			labelValuePairs.push(Stat{Name: n + "=" + name, Count: seriesCnt})
-			size += uint64(len(name)) * seriesCnt
+			size += labelSizeFunc(n, name, seriesCnt)
 		}
 		labelValueLength.push(Stat{Name: n, Count: size})
 	}
@@ -207,25 +235,9 @@ func (p *MemPostings) Stats(label string, limit int) *PostingsStats {
 	}
 }
 
-// Get returns a postings list for the given label pair.
-func (p *MemPostings) Get(name, value string) Postings {
-	var lp []storage.SeriesRef
-	p.mtx.RLock()
-	l := p.m[name]
-	if l != nil {
-		lp = l[value]
-	}
-	p.mtx.RUnlock()
-
-	if lp == nil {
-		return EmptyPostings()
-	}
-	return newListPostings(lp...)
-}
-
 // All returns a postings list over all documents ever added.
 func (p *MemPostings) All() Postings {
-	return p.Get(AllPostingsKey())
+	return p.Postings(context.Background(), allPostingsKey.Name, allPostingsKey.Value)
 }
 
 // EnsureOrder ensures that all postings lists are sorted. After it returns all further
@@ -293,6 +305,7 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}, affected ma
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
 
+	affectedLabelNames := map[string]struct{}{}
 	process := func(l labels.Label) {
 		orig := p.m[l.Name][l.Value]
 		repl := make([]storage.SeriesRef, 0, len(orig))
@@ -305,17 +318,66 @@ func (p *MemPostings) Delete(deleted map[storage.SeriesRef]struct{}, affected ma
 			p.m[l.Name][l.Value] = repl
 		} else {
 			delete(p.m[l.Name], l.Value)
-			// Delete the key if we removed all values.
-			if len(p.m[l.Name]) == 0 {
-				delete(p.m, l.Name)
-			}
+			affectedLabelNames[l.Name] = struct{}{}
 		}
 	}
 
+	i := 0
 	for l := range affected {
+		i++
 		process(l)
+
+		// From time to time we want some readers to go through and read their postings.
+		// It takes around 50ms to process a 1K series batch, and 120ms to process a 10K series batch (local benchmarks on an M3).
+		// Note that a read query will most likely want to read multiple postings lists, say 5, 10 or 20 (depending on the number of matchers)
+		// And that read query will most likely evaluate only one of those matchers before we unpause here, so we want to pause often.
+		if i%512 == 0 {
+			p.unlockWaitAndLockAgain()
+		}
 	}
 	process(allPostingsKey)
+
+	// Now we need to update the label values slices.
+	i = 0
+	for name := range affectedLabelNames {
+		i++
+		// From time to time we want some readers to go through and read their postings.
+		if i%512 == 0 {
+			p.unlockWaitAndLockAgain()
+		}
+
+		if len(p.m[name]) == 0 {
+			// Delete the label name key if we deleted all values.
+			delete(p.m, name)
+			delete(p.lvs, name)
+			continue
+		}
+
+		// Create the new slice with enough room to grow without reallocating.
+		// We have deleted values here, so there's definitely some churn, so be prepared for it.
+		lvs := make([]string, 0, exponentialSliceGrowthFactor*len(p.m[name]))
+		for v := range p.m[name] {
+			lvs = append(lvs, v)
+		}
+		p.lvs[name] = lvs
+	}
+}
+
+// unlockWaitAndLockAgain will unlock an already locked p.mtx.Lock() and then wait a little bit before locking it again,
+// letting the RLock()-waiting goroutines to get the lock.
+func (p *MemPostings) unlockWaitAndLockAgain() {
+	p.mtx.Unlock()
+	// While it's tempting to just do a `time.Sleep(time.Millisecond)` here,
+	// it wouldn't ensure use that readers actually were able to get the read lock,
+	// because if there are writes waiting on same mutex, readers won't be able to get it.
+	// So we just grab one RLock ourselves.
+	p.mtx.RLock()
+	// We shouldn't wait here, because we would be blocking a potential write for no reason.
+	// Note that if there's a writer waiting for us to unlock, no reader will be able to get the read lock.
+	p.mtx.RUnlock() //nolint:staticcheck // SA2001: this is an intentionally empty critical section.
+	// Now we can wait a little bit just to increase the chance of a reader getting the lock.
+	time.Sleep(time.Millisecond)
+	p.mtx.Lock()
 }
 
 // Iter calls f for each postings list. It aborts if f returns an error and returns it.
@@ -345,13 +407,26 @@ func (p *MemPostings) Add(id storage.SeriesRef, lset labels.Labels) {
 	p.mtx.Unlock()
 }
 
+func appendWithExponentialGrowth[T any](a []T, v T) []T {
+	if cap(a) < len(a)+1 {
+		newList := make([]T, len(a), len(a)*exponentialSliceGrowthFactor+1)
+		copy(newList, a)
+		a = newList
+	}
+	return append(a, v)
+}
+
 func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 	nm, ok := p.m[l.Name]
 	if !ok {
 		nm = map[string][]storage.SeriesRef{}
 		p.m[l.Name] = nm
 	}
-	list := append(nm[l.Value], id)
+	vm, ok := nm[l.Value]
+	if !ok {
+		p.lvs[l.Name] = appendWithExponentialGrowth(p.lvs[l.Name], l.Value)
+	}
+	list := appendWithExponentialGrowth(vm, id)
 	nm[l.Value] = list
 
 	if !p.ordered {
@@ -370,25 +445,27 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 }
 
 func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) Postings {
-	// We'll copy the values into a slice and then match over that,
+	// We'll take the label values slice and then match over that,
 	// this way we don't need to hold the mutex while we're matching,
 	// which can be slow (seconds) if the match function is a huge regex.
 	// Holding this lock prevents new series from being added (slows down the write path)
 	// and blocks the compaction process.
-	vals := p.labelValues(name)
-	for i, count := 0, 1; i < len(vals); count++ {
-		if count%checkContextEveryNIterations == 0 && ctx.Err() != nil {
+	//
+	// We just need to make sure we don't modify the slice we took,
+	// so we'll append matching values to a different one.
+	p.mtx.RLock()
+	readOnlyLabelValues := p.lvs[name]
+	p.mtx.RUnlock()
+
+	vals := make([]string, 0, len(readOnlyLabelValues))
+	for i, v := range readOnlyLabelValues {
+		if i%checkContextEveryNIterations == 0 && ctx.Err() != nil {
 			return ErrPostings(ctx.Err())
 		}
 
-		if match(vals[i]) {
-			i++
-			continue
+		if match(v) {
+			vals = append(vals, v)
 		}
-
-		// Didn't match, bring the last value to this position, make the slice shorter and check again.
-		// The order of the slice doesn't matter as it comes from a map iteration.
-		vals[i], vals = vals[len(vals)-1], vals[:len(vals)-1]
 	}
 
 	// If none matched (or this label had no values), no need to grab the lock again.
@@ -397,16 +474,18 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 	}
 
 	// Now `vals` only contains the values that matched, get their postings.
-	its := make([]Postings, 0, len(vals))
+	its := make([]*ListPostings, 0, len(vals))
+	lps := make([]ListPostings, len(vals))
 	p.mtx.RLock()
 	e := p.m[name]
-	for _, v := range vals {
+	for i, v := range vals {
 		if refs, ok := e[v]; ok {
 			// Some of the values may have been garbage-collected in the meantime this is fine, we'll just skip them.
 			// If we didn't let the mutex go, we'd have these postings here, but they would be pointing nowhere
 			// because there would be a `MemPostings.Delete()` call waiting for the lock to delete these labels,
 			// because the series were deleted already.
-			its = append(its, NewListPostings(refs))
+			lps[i] = ListPostings{list: refs}
+			its = append(its, &lps[i])
 		}
 	}
 	// Let the mutex go before merging.
@@ -415,25 +494,40 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 	return Merge(ctx, its...)
 }
 
-// labelValues returns a slice of label values for the given label name.
-// It will take the read lock.
-func (p *MemPostings) labelValues(name string) []string {
+// Postings returns a postings iterator for the given label values.
+func (p *MemPostings) Postings(ctx context.Context, name string, values ...string) Postings {
+	res := make([]*ListPostings, 0, len(values))
+	lps := make([]ListPostings, len(values))
 	p.mtx.RLock()
-	defer p.mtx.RUnlock()
-
-	e := p.m[name]
-	if len(e) == 0 {
-		return nil
-	}
-
-	vals := make([]string, 0, len(e))
-	for v, srs := range e {
-		if len(srs) > 0 {
-			vals = append(vals, v)
+	postingsMapForName := p.m[name]
+	for i, value := range values {
+		if lp := postingsMapForName[value]; lp != nil {
+			lps[i] = ListPostings{list: lp}
+			res = append(res, &lps[i])
 		}
 	}
+	p.mtx.RUnlock()
+	return Merge(ctx, res...)
+}
 
-	return vals
+func (p *MemPostings) PostingsForAllLabelValues(ctx context.Context, name string) Postings {
+	p.mtx.RLock()
+
+	e := p.m[name]
+	its := make([]*ListPostings, 0, len(e))
+	lps := make([]ListPostings, len(e))
+	i := 0
+	for _, refs := range e {
+		if len(refs) > 0 {
+			lps[i] = ListPostings{list: refs}
+			its = append(its, &lps[i])
+		}
+		i++
+	}
+
+	// Let the mutex go before merging.
+	p.mtx.RUnlock()
+	return Merge(ctx, its...)
 }
 
 // ExpandPostings returns the postings expanded as a slice.
@@ -566,7 +660,7 @@ func (it *intersectPostings) Err() error {
 }
 
 // Merge returns a new iterator over the union of the input iterators.
-func Merge(_ context.Context, its ...Postings) Postings {
+func Merge[T Postings](_ context.Context, its ...T) Postings {
 	if len(its) == 0 {
 		return EmptyPostings()
 	}
@@ -581,19 +675,19 @@ func Merge(_ context.Context, its ...Postings) Postings {
 	return p
 }
 
-type mergedPostings struct {
-	p   []Postings
-	h   *loser.Tree[storage.SeriesRef, Postings]
+type mergedPostings[T Postings] struct {
+	p   []T
+	h   *loser.Tree[storage.SeriesRef, T]
 	cur storage.SeriesRef
 }
 
-func newMergedPostings(p []Postings) (m *mergedPostings, nonEmpty bool) {
+func newMergedPostings[T Postings](p []T) (m *mergedPostings[T], nonEmpty bool) {
 	const maxVal = storage.SeriesRef(math.MaxUint64) // This value must be higher than all real values used in the tree.
 	lt := loser.New(p, maxVal)
-	return &mergedPostings{p: p, h: lt}, true
+	return &mergedPostings[T]{p: p, h: lt}, true
 }
 
-func (it *mergedPostings) Next() bool {
+func (it *mergedPostings[T]) Next() bool {
 	for {
 		if !it.h.Next() {
 			return false
@@ -607,7 +701,7 @@ func (it *mergedPostings) Next() bool {
 	}
 }
 
-func (it *mergedPostings) Seek(id storage.SeriesRef) bool {
+func (it *mergedPostings[T]) Seek(id storage.SeriesRef) bool {
 	for !it.h.IsEmpty() && it.h.At() < id {
 		finished := !it.h.Winner().Seek(id)
 		it.h.Fix(finished)
@@ -619,11 +713,11 @@ func (it *mergedPostings) Seek(id storage.SeriesRef) bool {
 	return true
 }
 
-func (it mergedPostings) At() storage.SeriesRef {
+func (it mergedPostings[T]) At() storage.SeriesRef {
 	return it.cur
 }
 
-func (it mergedPostings) Err() error {
+func (it mergedPostings[T]) Err() error {
 	for _, p := range it.p {
 		if err := p.Err(); err != nil {
 			return err
@@ -767,6 +861,11 @@ func (it *ListPostings) Seek(x storage.SeriesRef) bool {
 
 func (it *ListPostings) Err() error {
 	return nil
+}
+
+// Len returns the remaining number of postings in the list.
+func (it *ListPostings) Len() int {
+	return len(it.list)
 }
 
 // bigEndianPostings implements the Postings interface over a byte stream of

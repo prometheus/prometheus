@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	// Indicates that there is no index entry for an exmplar.
+	// Indicates that there is no index entry for an exemplar.
 	noExemplar = -1
 	// Estimated number of exemplars per series, for sizing the index.
 	estimatedExemplarsPerSeries = 16
@@ -152,12 +152,12 @@ func (ce *CircularExemplarStorage) Querier(_ context.Context) (storage.ExemplarQ
 func (ce *CircularExemplarStorage) Select(start, end int64, matchers ...[]*labels.Matcher) ([]exemplar.QueryResult, error) {
 	ret := make([]exemplar.QueryResult, 0)
 
+	ce.lock.RLock()
+	defer ce.lock.RUnlock()
+
 	if len(ce.exemplars) == 0 {
 		return ret, nil
 	}
-
-	ce.lock.RLock()
-	defer ce.lock.RUnlock()
 
 	// Loop through each index entry, which will point us to first/last exemplar for each series.
 	for _, idx := range ce.index {
@@ -281,12 +281,12 @@ func (ce *CircularExemplarStorage) Resize(l int64) int {
 		l = 0
 	}
 
+	ce.lock.Lock()
+	defer ce.lock.Unlock()
+
 	if l == int64(len(ce.exemplars)) {
 		return 0
 	}
-
-	ce.lock.Lock()
-	defer ce.lock.Unlock()
 
 	oldBuffer := ce.exemplars
 	oldNextIndex := int64(ce.nextIndex)
@@ -349,17 +349,17 @@ func (ce *CircularExemplarStorage) migrate(entry *circularBufferEntry, buf []byt
 }
 
 func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemplar) error {
+	// TODO(bwplotka): This lock can lock all scrapers, there might high contention on this on scale.
+	// Optimize by moving the lock to be per series (& benchmark it).
+	ce.lock.Lock()
+	defer ce.lock.Unlock()
+
 	if len(ce.exemplars) == 0 {
 		return storage.ErrExemplarsDisabled
 	}
 
 	var buf [1024]byte
 	seriesLabels := l.Bytes(buf[:])
-
-	// TODO(bwplotka): This lock can lock all scrapers, there might high contention on this on scale.
-	// Optimize by moving the lock to be per series (& benchmark it).
-	ce.lock.Lock()
-	defer ce.lock.Unlock()
 
 	idx, ok := ce.index[string(seriesLabels)]
 	err := ce.validateExemplar(idx, e, true)

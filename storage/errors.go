@@ -16,9 +16,10 @@ package storage
 import "fmt"
 
 type errDuplicateSampleForTimestamp struct {
-	timestamp int64
-	existing  float64
-	newValue  float64
+	timestamp           int64
+	existing            float64
+	existingIsHistogram bool
+	newValue            float64
 }
 
 func NewDuplicateFloatErr(t int64, existing, newValue float64) error {
@@ -29,13 +30,26 @@ func NewDuplicateFloatErr(t int64, existing, newValue float64) error {
 	}
 }
 
+// NewDuplicateHistogramToFloatErr describes an error where a new float sample is sent for same timestamp as previous histogram.
+func NewDuplicateHistogramToFloatErr(t int64, newValue float64) error {
+	return errDuplicateSampleForTimestamp{
+		timestamp:           t,
+		existingIsHistogram: true,
+		newValue:            newValue,
+	}
+}
+
 func (e errDuplicateSampleForTimestamp) Error() string {
 	if e.timestamp == 0 {
 		return "duplicate sample for timestamp"
 	}
+	if e.existingIsHistogram {
+		return fmt.Sprintf("duplicate sample for timestamp %d; overrides not allowed: existing is a histogram, new value %g", e.timestamp, e.newValue)
+	}
 	return fmt.Sprintf("duplicate sample for timestamp %d; overrides not allowed: existing %g, new value %g", e.timestamp, e.existing, e.newValue)
 }
 
+// Is implements the anonymous interface checked by errors.Is.
 // Every errDuplicateSampleForTimestamp compares equal to the global ErrDuplicateSampleForTimestamp.
 func (e errDuplicateSampleForTimestamp) Is(t error) bool {
 	if t == ErrDuplicateSampleForTimestamp {

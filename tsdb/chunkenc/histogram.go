@@ -15,6 +15,7 @@ package chunkenc
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math"
 
@@ -237,16 +238,23 @@ func (a *HistogramAppender) Append(int64, float64) {
 }
 
 // appendable returns whether the chunk can be appended to, and if so whether
-// any recoding needs to happen using the provided inserts (in case of any new
-// buckets, positive or negative range, respectively).  If the sample is a gauge
-// histogram, AppendableGauge must be used instead.
+//  1. Any recoding needs to happen to the chunk using the provided forward
+//     inserts (in case of any new buckets, positive or negative range,
+//     respectively).
+//  2. Any recoding needs to happen for the histogram being appended, using the
+//     backward inserts (in case of any missing buckets, positive or negative
+//     range, respectively).
+//
+// If the sample is a gauge histogram, AppendableGauge must be used instead.
 //
 // The chunk is not appendable in the following cases:
 //
 //   - The schema has changed.
 //   - The custom bounds have changed if the current schema is custom buckets.
 //   - The threshold for the zero bucket has changed.
-//   - Any buckets have disappeared.
+//   - Any buckets have disappeared, unless the bucket count was 0, unused.
+//     Empty bucket can happen if the chunk was recoded and we're merging a non
+//     recoded histogram. In this case backward inserts will be provided.
 //   - There was a counter reset in the count of observations or in any bucket,
 //     including the zero bucket.
 //   - The last sample in the chunk was stale while the current sample is not stale.
@@ -256,6 +264,7 @@ func (a *HistogramAppender) Append(int64, float64) {
 // append. If counterReset is true, okToAppend is always false.
 func (a *HistogramAppender) appendable(h *histogram.Histogram) (
 	positiveInserts, negativeInserts []Insert,
+	backwardPositiveInserts, backwardNegativeInserts []Insert,
 	okToAppend, counterReset bool,
 ) {
 	if a.NumSamples() > 0 && a.GetCounterResetHeader() == GaugeType {
@@ -299,20 +308,14 @@ func (a *HistogramAppender) appendable(h *histogram.Histogram) (
 	}
 
 	var ok bool
-	positiveInserts, ok = expandSpansForward(a.pSpans, h.PositiveSpans)
+	positiveInserts, backwardPositiveInserts, ok = expandIntSpansAndBuckets(a.pSpans, h.PositiveSpans, a.pBuckets, h.PositiveBuckets)
 	if !ok {
 		counterReset = true
 		return
 	}
-	negativeInserts, ok = expandSpansForward(a.nSpans, h.NegativeSpans)
+	negativeInserts, backwardNegativeInserts, ok = expandIntSpansAndBuckets(a.nSpans, h.NegativeSpans, a.nBuckets, h.NegativeBuckets)
 	if !ok {
 		counterReset = true
-		return
-	}
-
-	if counterResetInAnyBucket(a.pBuckets, h.PositiveBuckets, a.pSpans, h.PositiveSpans) ||
-		counterResetInAnyBucket(a.nBuckets, h.NegativeBuckets, a.nSpans, h.NegativeSpans) {
-		counterReset, positiveInserts, negativeInserts = true, nil, nil
 		return
 	}
 
@@ -320,10 +323,208 @@ func (a *HistogramAppender) appendable(h *histogram.Histogram) (
 	return
 }
 
+// expandIntSpansAndBuckets returns the inserts to expand the bucket spans 'a' so that
+// they match the spans in 'b'. 'b' must cover the same or more buckets than
+// 'a', otherwise the function will return false.
+// The function also returns the inserts to expand 'b' to also cover all the
+// buckets that are missing in 'b', but are present with 0 counter value in 'a'.
+// The function also checks for counter resets between 'a' and 'b'.
+//
+// Example:
+//
+// Let's say the old buckets look like this:
+//
+//	span syntax: [offset, length]
+//	spans      : [ 0 , 2 ]               [2,1]                   [ 3 , 2 ]                     [3,1]       [1,1]
+//	bucket idx : [0]   [1]    2     3    [4]    5     6     7    [8]   [9]    10    11    12   [13]   14   [15]
+//	raw values    6     3                 3                       2     4                       5           1
+//	deltas        6    -3                 0                      -1     2                       1          -4
+//
+// But now we introduce a new bucket layout. (Carefully chosen example where we
+// have a span appended, one unchanged[*], one prepended, and two merge - in
+// that order.)
+//
+// [*] unchanged in terms of which bucket indices they represent. but to achieve
+// that, their offset needs to change if "disrupted" by spans changing ahead of
+// them
+//
+//	                                      \/ this one is "unchanged"
+//	spans      : [  0  ,  3    ]         [1,1]       [    1    ,   4     ]                     [  3  ,   3    ]
+//	bucket idx : [0]   [1]   [2]    3    [4]    5    [6]   [7]   [8]   [9]    10    11    12   [13]  [14]  [15]
+//	raw values    6     3     0           3           0     0     2     4                       5     0     1
+//	deltas        6    -3    -3           3          -3     0     2     2                       1    -5     1
+//	delta mods:                          / \                     / \                                       / \
+//
+// Note for histograms with delta-encoded buckets: Whenever any new buckets are
+// introduced, the subsequent "old" bucket needs to readjust its delta to the
+// new base of 0. Thus, for the caller who wants to transform the set of
+// original deltas to a new set of deltas to match a new span layout that adds
+// buckets, we simply need to generate a list of inserts.
+//
+// Note: Within expandSpansForward we don't have to worry about the changes to the
+// spans themselves, thanks to the iterators we get to work with the more useful
+// bucket indices (which of course directly correspond to the buckets we have to
+// adjust).
+func expandIntSpansAndBuckets(a, b []histogram.Span, aBuckets, bBuckets []int64) (forward, backward []Insert, ok bool) {
+	ai := newBucketIterator(a)
+	bi := newBucketIterator(b)
+
+	var aInserts []Insert // To insert into buckets of a, to make up for missing buckets in b.
+	var bInserts []Insert // To insert into buckets of b, to make up for missing empty(!) buckets in a.
+
+	// When aInter.num or bInter.num becomes > 0, this becomes a valid insert that should
+	// be yielded when we finish a streak of new buckets.
+	var aInter Insert
+	var bInter Insert
+
+	aIdx, aOK := ai.Next()
+	bIdx, bOK := bi.Next()
+
+	// Bucket count. Initialize the absolute count and index into the
+	// positive/negative counts or deltas array. The bucket count is
+	// used to detect counter reset as well as unused buckets in a.
+	var (
+		aCount    int64
+		bCount    int64
+		aCountIdx int
+		bCountIdx int
+	)
+	if aOK {
+		aCount = aBuckets[aCountIdx]
+	}
+	if bOK {
+		bCount = bBuckets[bCountIdx]
+	}
+
+loop:
+	for {
+		switch {
+		case aOK && bOK:
+			switch {
+			case aIdx == bIdx: // Both have an identical bucket index.
+				// Bucket count. Check bucket for reset from a to b.
+				if aCount > bCount {
+					return nil, nil, false
+				}
+
+				// Finish WIP insert for a and reset.
+				if aInter.num > 0 {
+					aInserts = append(aInserts, aInter)
+					aInter.num = 0
+				}
+
+				// Finish WIP insert for b and reset.
+				if bInter.num > 0 {
+					bInserts = append(bInserts, bInter)
+					bInter.num = 0
+				}
+
+				aIdx, aOK = ai.Next()
+				bIdx, bOK = bi.Next()
+				aInter.pos++ // Advance potential insert position.
+				aCountIdx++  // Advance absolute bucket count index for a.
+				if aOK {
+					aCount += aBuckets[aCountIdx]
+				}
+				bInter.pos++ // Advance potential insert position.
+				bCountIdx++  // Advance absolute bucket count index for b.
+				if bOK {
+					bCount += bBuckets[bCountIdx]
+				}
+
+				continue
+			case aIdx < bIdx: // b misses a bucket index that is in a.
+				// This is ok if the count in a is 0, in which case we make a note to
+				// fill in the bucket in b and advance a.
+				if aCount == 0 {
+					bInter.num++ // Mark that we need to insert a bucket in b.
+					bInter.bucketIdx = aIdx
+					// Advance a
+					if aInter.num > 0 {
+						aInserts = append(aInserts, aInter)
+						aInter.num = 0
+					}
+					aIdx, aOK = ai.Next()
+					aInter.pos++
+					aCountIdx++
+					if aOK {
+						aCount += aBuckets[aCountIdx]
+					}
+					continue
+				}
+				// Otherwise we are missing a bucket that was in use in a, which is a reset.
+				return nil, nil, false
+			case aIdx > bIdx: // a misses a value that is in b. Forward b and recompare.
+				aInter.num++
+				aInter.bucketIdx = bIdx
+				// Advance b
+				if bInter.num > 0 {
+					bInserts = append(bInserts, bInter)
+					bInter.num = 0
+				}
+				bIdx, bOK = bi.Next()
+				bInter.pos++
+				bCountIdx++
+				if bOK {
+					bCount += bBuckets[bCountIdx]
+				}
+			}
+		case aOK && !bOK: // b misses a value that is in a.
+			// This is ok if the count in a is 0, in which case we make a note to
+			// fill in the bucket in b and advance a.
+			if aCount == 0 {
+				bInter.num++
+				bInter.bucketIdx = aIdx
+				// Advance a
+				if aInter.num > 0 {
+					aInserts = append(aInserts, aInter)
+					aInter.num = 0
+				}
+				aIdx, aOK = ai.Next()
+				aInter.pos++ // Advance potential insert position.
+				// Update absolute bucket counts for a.
+				aCountIdx++
+				if aOK {
+					aCount += aBuckets[aCountIdx]
+				}
+				continue
+			}
+			// Otherwise we are missing a bucket that was in use in a, which is a reset.
+			return nil, nil, false
+		case !aOK && bOK: // a misses a value that is in b. Forward b and recompare.
+			aInter.num++
+			aInter.bucketIdx = bIdx
+			// Advance b
+			if bInter.num > 0 {
+				bInserts = append(bInserts, bInter)
+				bInter.num = 0
+			}
+			bIdx, bOK = bi.Next()
+			bInter.pos++ // Advance potential insert position.
+			// Update absolute bucket counts for b.
+			bCountIdx++
+			if bOK {
+				bCount += bBuckets[bCountIdx]
+			}
+		default: // Both iterators ran out. We're done.
+			if aInter.num > 0 {
+				aInserts = append(aInserts, aInter)
+			}
+			if bInter.num > 0 {
+				bInserts = append(bInserts, bInter)
+			}
+			break loop
+		}
+	}
+
+	return aInserts, bInserts, true
+}
+
 // appendableGauge returns whether the chunk can be appended to, and if so
 // whether:
-//  1. Any recoding needs to happen to the chunk using the provided inserts
-//     (in case of any new buckets, positive or negative range, respectively).
+//  1. Any recoding needs to happen to the chunk using the provided forward
+//     inserts (in case of any new buckets, positive or negative range,
+//     respectively).
 //  2. Any recoding needs to happen for the histogram being appended, using the
 //     backward inserts (in case of any missing buckets, positive or negative
 //     range, respectively).
@@ -367,76 +568,6 @@ func (a *HistogramAppender) appendableGauge(h *histogram.Histogram) (
 	negativeInserts, backwardNegativeInserts, negativeSpans = expandSpansBothWays(a.nSpans, h.NegativeSpans)
 	okToAppend = true
 	return
-}
-
-// counterResetInAnyBucket returns true if there was a counter reset for any
-// bucket. This should be called only when the bucket layout is the same or new
-// buckets were added. It does not handle the case of buckets missing.
-func counterResetInAnyBucket(oldBuckets, newBuckets []int64, oldSpans, newSpans []histogram.Span) bool {
-	if len(oldSpans) == 0 || len(oldBuckets) == 0 {
-		return false
-	}
-
-	var (
-		oldSpanSliceIdx, newSpanSliceIdx     int    = -1, -1 // Index for the span slices. Starts at -1 to indicate that the first non empty span is not yet found.
-		oldInsideSpanIdx, newInsideSpanIdx   uint32          // Index inside a span.
-		oldIdx, newIdx                       int32           // Index inside a bucket slice.
-		oldBucketSliceIdx, newBucketSliceIdx int             // Index inside bucket slice.
-	)
-
-	// Find first non empty spans.
-	oldSpanSliceIdx, oldIdx = nextNonEmptySpanSliceIdx(oldSpanSliceIdx, oldIdx, oldSpans)
-	newSpanSliceIdx, newIdx = nextNonEmptySpanSliceIdx(newSpanSliceIdx, newIdx, newSpans)
-	oldVal, newVal := oldBuckets[0], newBuckets[0]
-
-	// Since we assume that new spans won't have missing buckets, there will never be a case
-	// where the old index will not find a matching new index.
-	for {
-		if oldIdx == newIdx {
-			if newVal < oldVal {
-				return true
-			}
-		}
-
-		if oldIdx <= newIdx {
-			// Moving ahead old bucket and span by 1 index.
-			if oldInsideSpanIdx+1 >= oldSpans[oldSpanSliceIdx].Length {
-				// Current span is over.
-				oldSpanSliceIdx, oldIdx = nextNonEmptySpanSliceIdx(oldSpanSliceIdx, oldIdx, oldSpans)
-				oldInsideSpanIdx = 0
-				if oldSpanSliceIdx >= len(oldSpans) {
-					// All old spans are over.
-					break
-				}
-			} else {
-				oldInsideSpanIdx++
-				oldIdx++
-			}
-			oldBucketSliceIdx++
-			oldVal += oldBuckets[oldBucketSliceIdx]
-		}
-
-		if oldIdx > newIdx {
-			// Moving ahead new bucket and span by 1 index.
-			if newInsideSpanIdx+1 >= newSpans[newSpanSliceIdx].Length {
-				// Current span is over.
-				newSpanSliceIdx, newIdx = nextNonEmptySpanSliceIdx(newSpanSliceIdx, newIdx, newSpans)
-				newInsideSpanIdx = 0
-				if newSpanSliceIdx >= len(newSpans) {
-					// All new spans are over.
-					// This should not happen, old spans above should catch this first.
-					panic("new spans over before old spans in counterReset")
-				}
-			} else {
-				newInsideSpanIdx++
-				newIdx++
-			}
-			newBucketSliceIdx++
-			newVal += newBuckets[newBucketSliceIdx]
-		}
-	}
-
-	return false
 }
 
 // appendHistogram appends a histogram to the chunk. The caller must ensure that
@@ -649,7 +780,7 @@ func (a *HistogramAppender) AppendHistogram(prev *HistogramAppender, t int64, h 
 			a.setCounterResetHeader(CounterReset)
 		case prev != nil:
 			// This is a new chunk, but continued from a previous one. We need to calculate the reset header unless already set.
-			_, _, _, counterReset := prev.appendable(h)
+			_, _, _, _, _, counterReset := prev.appendable(h)
 			if counterReset {
 				a.setCounterResetHeader(CounterReset)
 			} else {
@@ -661,13 +792,13 @@ func (a *HistogramAppender) AppendHistogram(prev *HistogramAppender, t int64, h 
 
 	// Adding counter-like histogram.
 	if h.CounterResetHint != histogram.GaugeType {
-		pForwardInserts, nForwardInserts, okToAppend, counterReset := a.appendable(h)
+		pForwardInserts, nForwardInserts, pBackwardInserts, nBackwardInserts, okToAppend, counterReset := a.appendable(h)
 		if !okToAppend || counterReset {
 			if appendOnly {
 				if counterReset {
-					return nil, false, a, fmt.Errorf("histogram counter reset")
+					return nil, false, a, errors.New("histogram counter reset")
 				}
-				return nil, false, a, fmt.Errorf("histogram schema change")
+				return nil, false, a, errors.New("histogram schema change")
 			}
 			newChunk := NewHistogramChunk()
 			app, err := newChunk.Appender()
@@ -680,6 +811,23 @@ func (a *HistogramAppender) AppendHistogram(prev *HistogramAppender, t int64, h 
 			}
 			happ.appendHistogram(t, h)
 			return newChunk, false, app, nil
+		}
+		if len(pBackwardInserts) > 0 || len(nBackwardInserts) > 0 {
+			// The histogram needs to be expanded to have the extra empty buckets
+			// of the chunk.
+			if len(pForwardInserts) == 0 && len(nForwardInserts) == 0 {
+				// No new chunks from the histogram, so the spans of the appender can accommodate the new buckets.
+				// However we need to make a copy in case the input is sharing spans from an iterator.
+				h.PositiveSpans = make([]histogram.Span, len(a.pSpans))
+				copy(h.PositiveSpans, a.pSpans)
+				h.NegativeSpans = make([]histogram.Span, len(a.nSpans))
+				copy(h.NegativeSpans, a.nSpans)
+			} else {
+				// Spans need pre-adjusting to accommodate the new buckets.
+				h.PositiveSpans = adjustForInserts(h.PositiveSpans, pBackwardInserts)
+				h.NegativeSpans = adjustForInserts(h.NegativeSpans, nBackwardInserts)
+			}
+			a.recodeHistogram(h, pBackwardInserts, nBackwardInserts)
 		}
 		if len(pForwardInserts) > 0 || len(nForwardInserts) > 0 {
 			if appendOnly {
@@ -699,7 +847,7 @@ func (a *HistogramAppender) AppendHistogram(prev *HistogramAppender, t int64, h 
 	pForwardInserts, nForwardInserts, pBackwardInserts, nBackwardInserts, pMergedSpans, nMergedSpans, okToAppend := a.appendableGauge(h)
 	if !okToAppend {
 		if appendOnly {
-			return nil, false, a, fmt.Errorf("gauge histogram schema change")
+			return nil, false, a, errors.New("gauge histogram schema change")
 		}
 		newChunk := NewHistogramChunk()
 		app, err := newChunk.Appender()
@@ -926,6 +1074,8 @@ func (it *histogramIterator) Reset(b []byte) {
 	if it.atHistogramCalled {
 		it.atHistogramCalled = false
 		it.pBuckets, it.nBuckets = nil, nil
+		it.pSpans, it.nSpans = nil, nil
+		it.customValues = nil
 	} else {
 		it.pBuckets = it.pBuckets[:0]
 		it.nBuckets = it.nBuckets[:0]
@@ -933,6 +1083,7 @@ func (it *histogramIterator) Reset(b []byte) {
 	if it.atFloatHistogramCalled {
 		it.atFloatHistogramCalled = false
 		it.pFloatBuckets, it.nFloatBuckets = nil, nil
+		it.customValues = nil
 	} else {
 		it.pFloatBuckets = it.pFloatBuckets[:0]
 		it.nFloatBuckets = it.nFloatBuckets[:0]
@@ -1038,8 +1189,31 @@ func (it *histogramIterator) Next() ValueType {
 	// The case for the 2nd sample with single deltas is implicitly handled correctly with the double delta code,
 	// so we don't need a separate single delta logic for the 2nd sample.
 
-	// Recycle bucket slices that have not been returned yet. Otherwise,
-	// copy them.
+	// Recycle bucket, span and custom value slices that have not been returned yet. Otherwise, copy them.
+	if it.atFloatHistogramCalled || it.atHistogramCalled {
+		if len(it.pSpans) > 0 {
+			newSpans := make([]histogram.Span, len(it.pSpans))
+			copy(newSpans, it.pSpans)
+			it.pSpans = newSpans
+		} else {
+			it.pSpans = nil
+		}
+		if len(it.nSpans) > 0 {
+			newSpans := make([]histogram.Span, len(it.nSpans))
+			copy(newSpans, it.nSpans)
+			it.nSpans = newSpans
+		} else {
+			it.nSpans = nil
+		}
+		if len(it.customValues) > 0 {
+			newCustomValues := make([]float64, len(it.customValues))
+			copy(newCustomValues, it.customValues)
+			it.customValues = newCustomValues
+		} else {
+			it.customValues = nil
+		}
+	}
+
 	if it.atHistogramCalled {
 		it.atHistogramCalled = false
 		if len(it.pBuckets) > 0 {
@@ -1057,6 +1231,7 @@ func (it *histogramIterator) Next() ValueType {
 			it.nBuckets = nil
 		}
 	}
+
 	// FloatBuckets are set from scratch, so simply create empty ones.
 	if it.atFloatHistogramCalled {
 		it.atFloatHistogramCalled = false

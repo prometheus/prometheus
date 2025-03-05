@@ -302,15 +302,10 @@ type Exemplar struct {
 	// value represents an exact example value. This can be useful when the exemplar
 	// is attached to a histogram, which only gives an estimated value through buckets.
 	Value float64 `protobuf:"fixed64,2,opt,name=value,proto3" json:"value,omitempty"`
-	// timestamp represents an optional timestamp of the sample in ms.
+	// timestamp represents the timestamp of the exemplar in ms.
 	//
 	// For Go, see github.com/prometheus/prometheus/model/timestamp/timestamp.go
 	// for conversion from/to time.Time to Prometheus timestamp.
-	//
-	// Note that the "optional" keyword is omitted due to
-	// https://cloud.google.com/apis/design/design_patterns.md#optional_primitive_fields
-	// Zero value means value not set. If you need to use exactly zero value for
-	// the timestamp, use 1 millisecond before or after.
 	Timestamp            int64    `protobuf:"varint,3,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`

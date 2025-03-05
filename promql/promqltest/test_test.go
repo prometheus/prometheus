@@ -165,6 +165,8 @@ load 5m
 	http_requests{job="api-server", instance="1", group="production"}	0+20x10
 	http_requests{job="api-server", instance="0", group="canary"}		0+30x10
 	http_requests{job="api-server", instance="1", group="canary"}		0+40x10
+	{"http.requests", "service.name"="api-server", instance="0", group="canary"}		0+50x10
+	{"http.requests", "service.name"="api-server", instance="1", group="canary"}		0+60x10
 `
 
 	testCases := map[string]struct {
@@ -178,13 +180,19 @@ eval instant at 5m sum by (group) (http_requests)
 	{group="canary"} 70
 `,
 		},
+		"instant query on UTF-8 metric with expected float result": {
+			input: testData + `
+eval instant at 5m sum by ("service.name") ({"http.requests"})
+	{"service.name"="api-server"} 110
+`,
+		},
 		"instant query with unexpected float result": {
 			input: testData + `
 eval instant at 5m sum by (group) (http_requests)
 	{group="production"} 30
 	{group="canary"} 80
 `,
-			expectedError: `error in eval sum by (group) (http_requests) (line 8): expected 80 for {group="canary"} but got 70`,
+			expectedError: `error in eval sum by (group) (http_requests) (line 10): expected 80 for {group="canary"} but got 70`,
 		},
 		"instant query with expected histogram result": {
 			input: `
@@ -230,16 +238,16 @@ eval instant at 0 testmetric
 eval instant at 5m sum by (group) (http_requests)
 	{group="production"} 30
 `,
-			expectedError: `error in eval sum by (group) (http_requests) (line 8): unexpected metric {group="canary"} in result, has value 70`,
+			expectedError: `error in eval sum by (group) (http_requests) (line 10): unexpected metric {group="canary"} in result, has value 70`,
 		},
 		"instant query, but result has an unexpected series with a histogram value": {
 			input: `
 load 5m
 	testmetric {{}}
 
-eval instant at 5m testmetric
+eval instant at 0m testmetric
 `,
-			expectedError: `error in eval testmetric (line 5): unexpected metric {__name__="testmetric"} in result, has value {count:0, sum:0}`,
+			expectedError: `error in eval testmetric (line 5): unexpected metric {__name__="testmetric"} in result, has value {{}}`,
 		},
 		"instant query, but result is missing a series": {
 			input: testData + `
@@ -248,7 +256,7 @@ eval instant at 5m sum by (group) (http_requests)
 	{group="canary"} 70
 	{group="test"} 100
 `,
-			expectedError: `error in eval sum by (group) (http_requests) (line 8): expected metric {group="test"} with 3: [100.000000] not found`,
+			expectedError: `error in eval sum by (group) (http_requests) (line 10): expected metric {group="test"} with 3: [100.000000] not found`,
 		},
 		"instant query expected to fail, and query fails": {
 			input: `
@@ -334,7 +342,7 @@ eval_ordered instant at 50m sort(http_requests)
 	http_requests{group="canary", instance="1", job="api-server"} 400
 	http_requests{group="canary", instance="0", job="api-server"} 300
 `,
-			expectedError: `error in eval sort(http_requests) (line 8): expected metric {__name__="http_requests", group="canary", instance="0", job="api-server"} with [300.000000] at position 4 but was at 3`,
+			expectedError: `error in eval sort(http_requests) (line 10): expected metric {__name__="http_requests", group="canary", instance="0", job="api-server"} with [300.000000] at position 4 but was at 3`,
 		},
 		"instant query with results expected to match provided order, but result has an unexpected series": {
 			input: testData + `
@@ -343,7 +351,45 @@ eval_ordered instant at 50m sort(http_requests)
 	http_requests{group="production", instance="1", job="api-server"} 200
 	http_requests{group="canary", instance="0", job="api-server"} 300
 `,
-			expectedError: `error in eval sort(http_requests) (line 8): unexpected metric {__name__="http_requests", group="canary", instance="1", job="api-server"} in result, has value 400`,
+			expectedError: `error in eval sort(http_requests) (line 10): unexpected metric {__name__="http_requests", group="canary", instance="1", job="api-server"} in result, has value 400`,
+		},
+		"instant query with results expected to match provided order, result is in expected order and info annotation is ignored": {
+			input: testData + `
+eval_ordered instant at 50m sort(rate(http_requests[10m]))
+	{group="production", instance="0", job="api-server"} 0.03333333333333333
+	{group="production", instance="1", job="api-server"} 0.06666666666666667
+	{group="canary", instance="0", job="api-server"} 0.1
+	{group="canary", instance="1", job="api-server"} 0.13333333333333333
+`,
+		},
+		"instant query with expected info annotation": {
+			input: testData + `
+eval_info instant at 50m sort(rate(http_requests[10m]))
+	{group="production", instance="0", job="api-server"} 0.03333333333333333
+	{group="production", instance="1", job="api-server"} 0.06666666666666667
+	{group="canary", instance="0", job="api-server"} 0.1
+	{group="canary", instance="1", job="api-server"} 0.13333333333333333
+`,
+		},
+		"instant query with unexpected info annotation": {
+			input: testData + `
+eval instant at 50m sort(rate(http_requests[10m]))
+	{group="production", instance="0", job="api-server"} 0.03333333333333333
+	{group="production", instance="1", job="api-server"} 0.06666666666666667
+	{group="canary", instance="0", job="api-server"} 0.1
+	{group="canary", instance="1", job="api-server"} 0.13333333333333333
+`,
+			expectedError: `unexpected info annotations evaluating query "sort(rate(http_requests[10m]))" (line 10): [PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "http_requests"]`,
+		},
+		"instant query with unexpectedly missing warn annotation": {
+			input: testData + `
+eval_warn instant at 50m sort(rate(http_requests[10m]))
+	{group="production", instance="0", job="api-server"} 0.03333333333333333
+	{group="production", instance="1", job="api-server"} 0.06666666666666667
+	{group="canary", instance="0", job="api-server"} 0.1
+	{group="canary", instance="1", job="api-server"} 0.13333333333333333
+`,
+			expectedError: `expected warnings evaluating query "sort(rate(http_requests[10m]))" (line 10) but got none`,
 		},
 		"instant query with invalid timestamp": {
 			input:         `eval instant at abc123 vector(0)`,
@@ -362,7 +408,7 @@ eval range from 0 to 10m step 5m sum by (group) (http_requests)
 	{group="production"} 0 30 60
 	{group="canary"} 0 80 140
 `,
-			expectedError: `error in eval sum by (group) (http_requests) (line 8): expected float value at index 1 (t=300000) for {group="canary"} to be 80, but got 70 (result has 3 float points [0 @[0] 70 @[300000] 140 @[600000]] and 0 histogram points [])`,
+			expectedError: `error in eval sum by (group) (http_requests) (line 10): expected float value at index 1 (t=300000) for {group="canary"} to be 80, but got 70 (result has 3 float points [0 @[0] 70 @[300000] 140 @[600000]] and 0 histogram points [])`,
 		},
 		"range query with expected histogram values": {
 			input: `
@@ -381,7 +427,7 @@ load 5m
 eval range from 0 to 10m step 5m testmetric
 	testmetric {{schema:-1 sum:4 count:1 buckets:[1] offset:1}} {{schema:-1 sum:7 count:1 buckets:[1] offset:1}} {{schema:-1 sum:8 count:1 buckets:[1] offset:1}}
 `,
-			expectedError: `error in eval testmetric (line 5): expected histogram value at index 1 (t=300000) for {__name__="testmetric"} to be {count:1, sum:7, (1,4]:1}, but got {count:1, sum:5, (1,4]:1} (result has 0 float points [] and 3 histogram points [{count:1, sum:4, (1,4]:1} @[0] {count:1, sum:5, (1,4]:1} @[300000] {count:1, sum:6, (1,4]:1} @[600000]])`,
+			expectedError: `error in eval testmetric (line 5): expected histogram value at index 1 (t=300000) for {__name__="testmetric"} to be {{schema:-1 count:1 sum:7 offset:1 buckets:[1]}}, but got {{schema:-1 count:1 sum:5 counter_reset_hint:not_reset offset:1 buckets:[1]}} (result has 0 float points [] and 3 histogram points [{{schema:-1 count:1 sum:4 offset:1 buckets:[1]}} @[0] {{schema:-1 count:1 sum:5 counter_reset_hint:not_reset offset:1 buckets:[1]}} @[300000] {{schema:-1 count:1 sum:6 counter_reset_hint:not_reset offset:1 buckets:[1]}} @[600000]])`,
 		},
 		"range query with too many points for query time range": {
 			input: testData + `
@@ -389,7 +435,7 @@ eval range from 0 to 10m step 5m sum by (group) (http_requests)
 	{group="production"} 0 30 60 90
 	{group="canary"} 0 70 140
 `,
-			expectedError: `error in eval sum by (group) (http_requests) (line 8): expected 4 points for {group="production"}, but query time range cannot return this many points`,
+			expectedError: `error in eval sum by (group) (http_requests) (line 10): expected 4 points for {group="production"}, but query time range cannot return this many points`,
 		},
 		"range query with missing point in result": {
 			input: `
@@ -407,14 +453,14 @@ eval range from 0 to 10m step 5m sum by (group) (http_requests)
 	{group="production"} 0 30
 	{group="canary"} 0 70 140
 `,
-			expectedError: `error in eval sum by (group) (http_requests) (line 8): expected 2 float points and 0 histogram points for {group="production"}, but got 3 float points [0 @[0] 30 @[300000] 60 @[600000]] and 0 histogram points []`,
+			expectedError: `error in eval sum by (group) (http_requests) (line 10): expected 2 float points and 0 histogram points for {group="production"}, but got 3 float points [0 @[0] 30 @[300000] 60 @[600000]] and 0 histogram points []`,
 		},
 		"range query, but result has an unexpected series": {
 			input: testData + `
 eval range from 0 to 10m step 5m sum by (group) (http_requests)
 	{group="production"} 0 30 60
 `,
-			expectedError: `error in eval sum by (group) (http_requests) (line 8): unexpected metric {group="canary"} in result, has 3 float points [0 @[0] 70 @[300000] 140 @[600000]] and 0 histogram points []`,
+			expectedError: `error in eval sum by (group) (http_requests) (line 10): unexpected metric {group="canary"} in result, has 3 float points [0 @[0] 70 @[300000] 140 @[600000]] and 0 histogram points []`,
 		},
 		"range query, but result is missing a series": {
 			input: testData + `
@@ -423,7 +469,7 @@ eval range from 0 to 10m step 5m sum by (group) (http_requests)
 	{group="canary"} 0 70 140
 	{group="test"} 0 100 200
 `,
-			expectedError: `error in eval sum by (group) (http_requests) (line 8): expected metric {group="test"} not found`,
+			expectedError: `error in eval sum by (group) (http_requests) (line 10): expected metric {group="test"} not found`,
 		},
 		"range query expected to fail, and query fails": {
 			input: `
@@ -532,7 +578,7 @@ load 5m
 eval range from 0 to 5m step 5m testmetric
 	testmetric 2 3
 `,
-			expectedError: `error in eval testmetric (line 5): expected 2 float points and 0 histogram points for {__name__="testmetric"}, but got 0 float points [] and 2 histogram points [{count:0, sum:0} @[0] {count:0, sum:0} @[300000]]`,
+			expectedError: `error in eval testmetric (line 5): expected 2 float points and 0 histogram points for {__name__="testmetric"}, but got 0 float points [] and 2 histogram points [{{}} @[0] {{counter_reset_hint:not_reset}} @[300000]]`,
 		},
 		"range query with expected mixed results": {
 			input: `
@@ -552,13 +598,50 @@ load 5m
 eval range from 0 to 5m step 5m testmetric
 	testmetric {{}} 3
 `,
-			expectedError: `error in eval testmetric (line 5): expected float value at index 0 for {__name__="testmetric"} to have timestamp 300000, but it had timestamp 0 (result has 1 float point [3 @[0]] and 1 histogram point [{count:0, sum:0} @[300000]])`,
+			expectedError: `error in eval testmetric (line 5): expected float value at index 0 for {__name__="testmetric"} to have timestamp 300000, but it had timestamp 0 (result has 1 float point [3 @[0]] and 1 histogram point [{{}} @[300000]])`,
+		},
+		"instant query with expected scalar result": {
+			input: `
+				eval instant at 1m 3
+					3
+			`,
+		},
+		"instant query with unexpected scalar result": {
+			input: `
+				eval instant at 1m 3
+					2
+			`,
+			expectedError: `error in eval 3 (line 2): expected scalar 2 but got 3`,
+		},
+		"instant query that returns a scalar but expects a vector": {
+			input: `
+				eval instant at 1m 3
+					{} 3
+			`,
+			expectedError: `error in eval 3 (line 2): expected vector or matrix result, but got scalar: 3 @[60000]`,
+		},
+		"instant query that returns a vector but expects a scalar": {
+			input: `
+				eval instant at 1m vector(3)
+					3
+			`,
+			expectedError: `error in eval vector(3) (line 2): expected scalar result, but got vector {} => 3 @[60000]`,
+		},
+		"range query that returns a matrix but expects a scalar": {
+			input: `
+				eval range from 0 to 1m step 30s vector(3)
+					3
+			`,
+			expectedError: `error in eval vector(3) (line 2): expected scalar result, but got matrix {} =>
+3 @[0]
+3 @[30000]
+3 @[60000]`,
 		},
 	}
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			err := runTest(t, testCase.input, NewTestEngine(false, 0, DefaultMaxSamplesPerQuery))
+			err := testTest(t, testCase.input, NewTestEngine(t, false, 0, DefaultMaxSamplesPerQuery))
 
 			if testCase.expectedError == "" {
 				require.NoError(t, err)

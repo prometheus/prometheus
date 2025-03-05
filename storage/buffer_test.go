@@ -96,10 +96,10 @@ func TestSampleRingMixed(t *testing.T) {
 
 	// With ValNone as the preferred type, nothing should be initialized.
 	r := newSampleRing(10, 2, chunkenc.ValNone)
-	require.Zero(t, len(r.fBuf))
-	require.Zero(t, len(r.hBuf))
-	require.Zero(t, len(r.fhBuf))
-	require.Zero(t, len(r.iBuf))
+	require.Empty(t, r.fBuf)
+	require.Empty(t, r.hBuf)
+	require.Empty(t, r.fhBuf)
+	require.Empty(t, r.iBuf)
 
 	// But then mixed adds should work as expected.
 	r.addF(fSample{t: 1, f: 3.14})
@@ -146,10 +146,10 @@ func TestSampleRingAtFloatHistogram(t *testing.T) {
 
 	// With ValNone as the preferred type, nothing should be initialized.
 	r := newSampleRing(10, 2, chunkenc.ValNone)
-	require.Zero(t, len(r.fBuf))
-	require.Zero(t, len(r.hBuf))
-	require.Zero(t, len(r.fhBuf))
-	require.Zero(t, len(r.iBuf))
+	require.Empty(t, r.fBuf)
+	require.Empty(t, r.hBuf)
+	require.Empty(t, r.fhBuf)
+	require.Empty(t, r.iBuf)
 
 	var (
 		h  *histogram.Histogram
@@ -312,6 +312,56 @@ func TestBufferedSeriesIteratorMixedHistograms(t *testing.T) {
 	require.Equal(t, chunkenc.ValHistogram, buf.Next())
 	_, fh = buf.AtFloatHistogram(nil)
 	require.Equal(t, histograms[1].ToFloat(nil), fh)
+}
+
+func TestBufferedSeriesIteratorMixedFloatsAndHistograms(t *testing.T) {
+	histograms := tsdbutil.GenerateTestHistograms(5)
+
+	it := NewBufferIterator(NewListSeriesIteratorWithCopy(samples{
+		hSample{t: 1, h: histograms[0].Copy()},
+		fSample{t: 2, f: 2},
+		hSample{t: 3, h: histograms[1].Copy()},
+		hSample{t: 4, h: histograms[2].Copy()},
+		fhSample{t: 3, fh: histograms[3].ToFloat(nil)},
+		fhSample{t: 4, fh: histograms[4].ToFloat(nil)},
+	}), 6)
+
+	require.Equal(t, chunkenc.ValNone, it.Seek(7))
+	require.NoError(t, it.Err())
+
+	buf := it.Buffer()
+
+	require.Equal(t, chunkenc.ValHistogram, buf.Next())
+	_, h0 := buf.AtHistogram()
+	require.Equal(t, histograms[0], h0)
+
+	require.Equal(t, chunkenc.ValFloat, buf.Next())
+	_, v := buf.At()
+	require.Equal(t, 2.0, v)
+
+	require.Equal(t, chunkenc.ValHistogram, buf.Next())
+	_, h1 := buf.AtHistogram()
+	require.Equal(t, histograms[1], h1)
+
+	require.Equal(t, chunkenc.ValHistogram, buf.Next())
+	_, h2 := buf.AtHistogram()
+	require.Equal(t, histograms[2], h2)
+
+	require.Equal(t, chunkenc.ValFloatHistogram, buf.Next())
+	_, h3 := buf.AtFloatHistogram(nil)
+	require.Equal(t, histograms[3].ToFloat(nil), h3)
+
+	require.Equal(t, chunkenc.ValFloatHistogram, buf.Next())
+	_, h4 := buf.AtFloatHistogram(nil)
+	require.Equal(t, histograms[4].ToFloat(nil), h4)
+
+	// Test for overwrite bug where the buffered histogram was reused
+	// between items in the buffer.
+	require.Equal(t, histograms[0], h0)
+	require.Equal(t, histograms[1], h1)
+	require.Equal(t, histograms[2], h2)
+	require.Equal(t, histograms[3].ToFloat(nil), h3)
+	require.Equal(t, histograms[4].ToFloat(nil), h4)
 }
 
 func BenchmarkBufferedSeriesIterator(b *testing.B) {

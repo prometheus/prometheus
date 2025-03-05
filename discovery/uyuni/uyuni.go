@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"path"
@@ -24,7 +25,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/kolo/xmlrpc"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
@@ -41,10 +41,10 @@ const (
 	uyuniMetaLabelPrefix     = model.MetaLabelPrefix + "uyuni_"
 	uyuniLabelMinionHostname = uyuniMetaLabelPrefix + "minion_hostname"
 	uyuniLabelPrimaryFQDN    = uyuniMetaLabelPrefix + "primary_fqdn"
-	uyuniLablelSystemID      = uyuniMetaLabelPrefix + "system_id"
-	uyuniLablelGroups        = uyuniMetaLabelPrefix + "groups"
-	uyuniLablelEndpointName  = uyuniMetaLabelPrefix + "endpoint_name"
-	uyuniLablelExporter      = uyuniMetaLabelPrefix + "exporter"
+	uyuniLabelSystemID       = uyuniMetaLabelPrefix + "system_id"
+	uyuniLabelGroups         = uyuniMetaLabelPrefix + "groups"
+	uyuniLabelEndpointName   = uyuniMetaLabelPrefix + "endpoint_name"
+	uyuniLabelExporter       = uyuniMetaLabelPrefix + "exporter"
 	uyuniLabelProxyModule    = uyuniMetaLabelPrefix + "proxy_module"
 	uyuniLabelMetricsPath    = uyuniMetaLabelPrefix + "metrics_path"
 	uyuniLabelScheme         = uyuniMetaLabelPrefix + "scheme"
@@ -109,11 +109,11 @@ type Discovery struct {
 	entitlement     string
 	separator       string
 	interval        time.Duration
-	logger          log.Logger
+	logger          *slog.Logger
 }
 
 // NewDiscovererMetrics implements discovery.Config.
-func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func (*SDConfig) NewDiscovererMetrics(_ prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &uyuniMetrics{
 		refreshMetrics: rmi,
 	}
@@ -205,17 +205,14 @@ func getEndpointInfoForSystems(
 	err := rpcclient.Call(
 		"system.monitoring.listEndpoints",
 		[]interface{}{token, systemIDs}, &endpointInfos)
-	if err != nil {
-		return nil, err
-	}
 	return endpointInfos, err
 }
 
 // NewDiscovery returns a uyuni discovery for the given configuration.
-func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
 	m, ok := metrics.(*uyuniMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	apiURL, err := url.Parse(conf.Server)
@@ -270,10 +267,10 @@ func (d *Discovery) getEndpointLabels(
 		model.AddressLabel:       model.LabelValue(addr),
 		uyuniLabelMinionHostname: model.LabelValue(networkInfo.Hostname),
 		uyuniLabelPrimaryFQDN:    model.LabelValue(networkInfo.PrimaryFQDN),
-		uyuniLablelSystemID:      model.LabelValue(strconv.Itoa(endpoint.SystemID)),
-		uyuniLablelGroups:        model.LabelValue(strings.Join(managedGroupNames, d.separator)),
-		uyuniLablelEndpointName:  model.LabelValue(endpoint.EndpointName),
-		uyuniLablelExporter:      model.LabelValue(endpoint.ExporterName),
+		uyuniLabelSystemID:       model.LabelValue(strconv.Itoa(endpoint.SystemID)),
+		uyuniLabelGroups:         model.LabelValue(strings.Join(managedGroupNames, d.separator)),
+		uyuniLabelEndpointName:   model.LabelValue(endpoint.EndpointName),
+		uyuniLabelExporter:       model.LabelValue(endpoint.ExporterName),
 		uyuniLabelProxyModule:    model.LabelValue(endpoint.Module),
 		uyuniLabelMetricsPath:    model.LabelValue(endpoint.Path),
 		uyuniLabelScheme:         model.LabelValue(scheme),

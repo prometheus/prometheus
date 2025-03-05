@@ -22,14 +22,15 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -433,7 +434,7 @@ func TestRangeWithFailedCompactionWontGetSelected(t *testing.T) {
 }
 
 func TestCompactionFailWillCleanUpTempDir(t *testing.T) {
-	compactor, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{
+	compactor, err := NewLeveledCompactor(context.Background(), nil, promslog.NewNopLogger(), []int64{
 		20,
 		60,
 		240,
@@ -1044,8 +1045,7 @@ func TestCompaction_populateBlock(t *testing.T) {
 			}
 			err = blockPopulator.PopulateBlock(c.ctx, c.metrics, c.logger, c.chunkPool, c.mergeFunc, blocks, meta, iw, nopChunkWriter{}, irPostingsFunc)
 			if tc.expErr != nil {
-				require.Error(t, err)
-				require.Equal(t, tc.expErr.Error(), err.Error())
+				require.EqualError(t, err, tc.expErr.Error())
 				return
 			}
 			require.NoError(t, err)
@@ -1153,7 +1153,7 @@ func BenchmarkCompaction(b *testing.B) {
 			blockDirs := make([]string, 0, len(c.ranges))
 			var blocks []*Block
 			for _, r := range c.ranges {
-				block, err := OpenBlock(nil, createBlock(b, dir, genSeries(nSeries, 10, r[0], r[1])), nil)
+				block, err := OpenBlock(nil, createBlock(b, dir, genSeries(nSeries, 10, r[0], r[1])), nil, nil)
 				require.NoError(b, err)
 				blocks = append(blocks, block)
 				defer func() {
@@ -1162,7 +1162,7 @@ func BenchmarkCompaction(b *testing.B) {
 				blockDirs = append(blockDirs, block.Dir())
 			}
 
-			c, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{0}, nil, nil)
+			c, err := NewLeveledCompactor(context.Background(), nil, promslog.NewNopLogger(), []int64{0}, nil, nil)
 			require.NoError(b, err)
 
 			b.ResetTimer()
@@ -1318,7 +1318,7 @@ func TestCancelCompactions(t *testing.T) {
 	// Measure the compaction time without interrupting it.
 	var timeCompactionUninterrupted time.Duration
 	{
-		db, err := open(tmpdir, log.NewNopLogger(), nil, DefaultOptions(), []int64{1, 2000}, nil)
+		db, err := open(tmpdir, promslog.NewNopLogger(), nil, DefaultOptions(), []int64{1, 2000}, nil)
 		require.NoError(t, err)
 		require.Len(t, db.Blocks(), 3, "initial block count mismatch")
 		require.Equal(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran), "initial compaction counter mismatch")
@@ -1337,7 +1337,7 @@ func TestCancelCompactions(t *testing.T) {
 	}
 	// Measure the compaction time when closing the db in the middle of compaction.
 	{
-		db, err := open(tmpdirCopy, log.NewNopLogger(), nil, DefaultOptions(), []int64{1, 2000}, nil)
+		db, err := open(tmpdirCopy, promslog.NewNopLogger(), nil, DefaultOptions(), []int64{1, 2000}, nil)
 		require.NoError(t, err)
 		require.Len(t, db.Blocks(), 3, "initial block count mismatch")
 		require.Equal(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran), "initial compaction counter mismatch")
@@ -1358,7 +1358,7 @@ func TestCancelCompactions(t *testing.T) {
 		// This checks that the `context.Canceled` error is properly checked at all levels:
 		// - tsdb_errors.NewMulti() should have the Is() method implemented for correct checks.
 		// - callers should check with errors.Is() instead of ==.
-		readOnlyDB, err := OpenDBReadOnly(tmpdirCopy, "", log.NewNopLogger())
+		readOnlyDB, err := OpenDBReadOnly(tmpdirCopy, "", promslog.NewNopLogger())
 		require.NoError(t, err)
 		blocks, err := readOnlyDB.Blocks()
 		require.NoError(t, err)
@@ -1370,7 +1370,7 @@ func TestCancelCompactions(t *testing.T) {
 }
 
 // TestDeleteCompactionBlockAfterFailedReload ensures that a failed reloadBlocks immediately after a compaction
-// deletes the resulting block to avoid creatings blocks with the same time range.
+// deletes the resulting block to avoid creating blocks with the same time range.
 func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 	tests := map[string]func(*DB) int{
 		"Test Head Compaction": func(db *DB) int {
@@ -1549,7 +1549,7 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 			require.Len(t, ids, 1)
 
 			// Open the block and query it and check the histograms.
-			block, err := OpenBlock(nil, path.Join(head.opts.ChunkDirRoot, ids[0].String()), nil)
+			block, err := OpenBlock(nil, path.Join(head.opts.ChunkDirRoot, ids[0].String()), nil, nil)
 			require.NoError(t, err)
 			t.Cleanup(func() {
 				require.NoError(t, block.Close())
@@ -1575,12 +1575,13 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 func TestSparseHistogramSpaceSavings(t *testing.T) {
 	t.Skip()
 
-	cases := []struct {
+	type testcase struct {
 		numSeriesPerSchema int
 		numBuckets         int
 		numSpans           int
 		gapBetweenSpans    int
-	}{
+	}
+	cases := []testcase{
 		{1, 15, 1, 0},
 		{1, 50, 1, 0},
 		{1, 100, 1, 0},
@@ -1692,7 +1693,7 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 				}()
 
 				wg.Add(1)
-				go func() {
+				go func(c testcase) {
 					defer wg.Done()
 
 					// Ingest histograms the old way.
@@ -1740,7 +1741,7 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 					oldULIDs, err = compactor.Write(oldHead.opts.ChunkDirRoot, oldHead, mint, maxt, nil)
 					require.NoError(t, err)
 					require.Len(t, oldULIDs, 1)
-				}()
+				}(c)
 
 				wg.Wait()
 
@@ -1911,17 +1912,243 @@ func TestCompactEmptyResultBlockWithTombstone(t *testing.T) {
 	ctx := context.Background()
 	tmpdir := t.TempDir()
 	blockDir := createBlock(t, tmpdir, genSeries(1, 1, 0, 10))
-	block, err := OpenBlock(nil, blockDir, nil)
+	block, err := OpenBlock(nil, blockDir, nil, nil)
 	require.NoError(t, err)
 	// Write tombstone covering the whole block.
 	err = block.Delete(ctx, 0, 10, labels.MustNewMatcher(labels.MatchEqual, defaultLabelName, "0"))
 	require.NoError(t, err)
 
-	c, err := NewLeveledCompactor(ctx, nil, log.NewNopLogger(), []int64{0}, nil, nil)
+	c, err := NewLeveledCompactor(ctx, nil, promslog.NewNopLogger(), []int64{0}, nil, nil)
 	require.NoError(t, err)
 
 	ulids, err := c.Compact(tmpdir, []string{blockDir}, []*Block{block})
 	require.NoError(t, err)
 	require.Nil(t, ulids)
 	require.NoError(t, block.Close())
+}
+
+func TestDelayedCompaction(t *testing.T) {
+	// The delay is chosen in such a way as to not slow down the tests, but also to make
+	// the effective compaction duration negligible compared to it, so that the duration comparisons make sense.
+	delay := 1000 * time.Millisecond
+
+	waitUntilCompactedAndCheck := func(db *DB) {
+		t.Helper()
+		start := time.Now()
+		for db.head.compactable() {
+			// This simulates what happens at the end of commits, for less busy DB, a compaction
+			// is triggered every minute. This is to speed up the test.
+			select {
+			case db.compactc <- struct{}{}:
+			default:
+			}
+			time.Sleep(time.Millisecond)
+		}
+		duration := time.Since(start)
+		// Only waited for one offset: offset<=delay<<<2*offset
+		require.Greater(t, duration, db.opts.CompactionDelay)
+		require.Less(t, duration, 2*db.opts.CompactionDelay)
+	}
+
+	compactAndCheck := func(db *DB) {
+		t.Helper()
+		start := time.Now()
+		db.Compact(context.Background())
+		for db.head.compactable() {
+			time.Sleep(time.Millisecond)
+		}
+		if runtime.GOOS == "windows" {
+			// TODO: enable on windows once ms resolution timers are better supported.
+			return
+		}
+		duration := time.Since(start)
+		require.Less(t, duration, delay)
+	}
+
+	cases := []struct {
+		name string
+		// The delays are chosen in such a way as to not slow down the tests, but also in a way to make the
+		// effective compaction duration negligible compared to them, so that the duration comparisons make sense.
+		compactionDelay time.Duration
+	}{
+		{
+			"delayed compaction not enabled",
+			0,
+		},
+		{
+			"delayed compaction enabled",
+			delay,
+		},
+	}
+
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+
+			var options *Options
+			if c.compactionDelay > 0 {
+				options = &Options{CompactionDelay: c.compactionDelay}
+			}
+			db := openTestDB(t, options, []int64{10})
+			defer func() {
+				require.NoError(t, db.Close())
+			}()
+
+			label := labels.FromStrings("foo", "bar")
+
+			// The first compaction is expected to result in 1 block.
+			db.DisableCompactions()
+			app := db.Appender(context.Background())
+			_, err := app.Append(0, label, 0, 0)
+			require.NoError(t, err)
+			_, err = app.Append(0, label, 11, 0)
+			require.NoError(t, err)
+			_, err = app.Append(0, label, 21, 0)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			if c.compactionDelay == 0 {
+				// When delay is not enabled, compaction should run on the first trigger.
+				compactAndCheck(db)
+			} else {
+				db.EnableCompactions()
+				waitUntilCompactedAndCheck(db)
+				// The db.compactc signals have been processed multiple times since a compaction is triggered every 1ms by waitUntilCompacted.
+				// This implies that the compaction delay doesn't block or wait on the initial trigger.
+				// 3 is an arbitrary value because it's difficult to determine the precise value.
+				require.GreaterOrEqual(t, prom_testutil.ToFloat64(db.metrics.compactionsTriggered)-prom_testutil.ToFloat64(db.metrics.compactionsSkipped), 3.0)
+				// The delay doesn't change the head blocks alignment.
+				require.Eventually(t, func() bool {
+					return db.head.MinTime() == db.compactor.(*LeveledCompactor).ranges[0]+1
+				}, 500*time.Millisecond, 10*time.Millisecond)
+				// One compaction was run and one block was produced.
+				require.Equal(t, 1.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran))
+			}
+
+			// The second compaction is expected to result in 2 blocks.
+			// This ensures that the logic for compaction delay doesn't only work for the first compaction, but also takes into account the future compactions.
+			// This also ensures that no delay happens between consecutive compactions.
+			db.DisableCompactions()
+			app = db.Appender(context.Background())
+			_, err = app.Append(0, label, 31, 0)
+			require.NoError(t, err)
+			_, err = app.Append(0, label, 41, 0)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			if c.compactionDelay == 0 {
+				// Compaction should still run on the first trigger.
+				compactAndCheck(db)
+			} else {
+				db.EnableCompactions()
+				waitUntilCompactedAndCheck(db)
+			}
+
+			// Two other compactions were run.
+			require.Eventually(t, func() bool {
+				return prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran) == 3.0
+			}, 500*time.Millisecond, 10*time.Millisecond)
+
+			if c.compactionDelay == 0 {
+				return
+			}
+
+			// This test covers a special case. If auto compaction is in a delay period and a manual compaction is triggered,
+			// auto compaction should stop waiting for the delay if the head is no longer compactable.
+			// Of course, if the head is still compactable after the manual compaction, auto compaction will continue waiting for the same delay.
+			getTimeWhenCompactionDelayStarted := func() time.Time {
+				t.Helper()
+				db.cmtx.Lock()
+				defer db.cmtx.Unlock()
+				return db.timeWhenCompactionDelayStarted
+			}
+
+			db.DisableCompactions()
+			app = db.Appender(context.Background())
+			_, err = app.Append(0, label, 51, 0)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			require.True(t, db.head.compactable())
+			db.EnableCompactions()
+			// Trigger an auto compaction.
+			db.compactc <- struct{}{}
+			// That made auto compaction start waiting for the delay.
+			require.Eventually(t, func() bool {
+				return !getTimeWhenCompactionDelayStarted().IsZero()
+			}, 100*time.Millisecond, 10*time.Millisecond)
+			// Trigger a manual compaction.
+			require.NoError(t, db.CompactHead(NewRangeHead(db.Head(), 0, 50.0)))
+			require.Equal(t, 4.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran))
+			// Re-trigger an auto compaction.
+			db.compactc <- struct{}{}
+			// That made auto compaction stop waiting for the delay.
+			require.Eventually(t, func() bool {
+				return getTimeWhenCompactionDelayStarted().IsZero()
+			}, 100*time.Millisecond, 10*time.Millisecond)
+		})
+	}
+}
+
+// TestDelayedCompactionDoesNotBlockUnrelatedOps makes sure that when delayed compaction is enabled,
+// operations that don't directly derive from the Head compaction are not delayed, here we consider disk blocks compaction.
+func TestDelayedCompactionDoesNotBlockUnrelatedOps(t *testing.T) {
+	cases := []struct {
+		name            string
+		whenCompactable bool
+	}{
+		{
+			"Head is compactable",
+			true,
+		},
+		{
+			"Head is not compactable",
+			false,
+		},
+	}
+
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+
+			tmpdir := t.TempDir()
+			// Some blocks that need compaction are present.
+			createBlock(t, tmpdir, genSeries(1, 1, 0, 100))
+			createBlock(t, tmpdir, genSeries(1, 1, 100, 200))
+			createBlock(t, tmpdir, genSeries(1, 1, 200, 300))
+
+			options := DefaultOptions()
+			// This will make the test timeout if compaction really waits for it.
+			options.CompactionDelay = time.Hour
+			db, err := open(tmpdir, promslog.NewNopLogger(), nil, options, []int64{10, 200}, nil)
+			require.NoError(t, err)
+			defer func() {
+				require.NoError(t, db.Close())
+			}()
+
+			db.DisableCompactions()
+			require.Len(t, db.Blocks(), 3)
+
+			if c.whenCompactable {
+				label := labels.FromStrings("foo", "bar")
+				app := db.Appender(context.Background())
+				_, err := app.Append(0, label, 301, 0)
+				require.NoError(t, err)
+				_, err = app.Append(0, label, 317, 0)
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+				// The Head is compactable and will still be at the end.
+				require.True(t, db.head.compactable())
+				defer func() {
+					require.True(t, db.head.compactable())
+				}()
+			}
+
+			// The blocks were compacted.
+			db.Compact(context.Background())
+			require.Len(t, db.Blocks(), 2)
+		})
+	}
 }

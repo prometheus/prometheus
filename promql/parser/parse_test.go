@@ -2398,6 +2398,51 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: `sum by ("foo bar")({"some.metric"})`,
+		expected: &AggregateExpr{
+			Op: SUM,
+			Expr: &VectorSelector{
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some.metric"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 19,
+					End:   34,
+				},
+			},
+			Grouping: []string{"foo bar"},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   35,
+			},
+		},
+	},
+	{
+		input:  `sum by ("foo)(some_metric{})`,
+		fail:   true,
+		errMsg: "unterminated quoted string",
+	},
+	{
+		input: `sum by ("foo", bar, 'baz')({"some.metric"})`,
+		expected: &AggregateExpr{
+			Op: SUM,
+			Expr: &VectorSelector{
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some.metric"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 27,
+					End:   42,
+				},
+			},
+			Grouping: []string{"foo", "bar", "baz"},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   43,
+			},
+		},
+	},
+	{
 		input: "avg by (foo)(some_metric)",
 		expected: &AggregateExpr{
 			Op: AVG,
@@ -3827,6 +3872,81 @@ var testExpr = []struct {
 			},
 		},
 	},
+	{
+		input: `info(rate(http_request_counter_total{}[5m]))`,
+		expected: &Call{
+			Func: MustGetFunction("info"),
+			Args: Expressions{
+				&Call{
+					Func: MustGetFunction("rate"),
+					PosRange: posrange.PositionRange{
+						Start: 5,
+						End:   43,
+					},
+					Args: Expressions{
+						&MatrixSelector{
+							VectorSelector: &VectorSelector{
+								Name:           "http_request_counter_total",
+								OriginalOffset: 0,
+								LabelMatchers: []*labels.Matcher{
+									MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "http_request_counter_total"),
+								},
+								PosRange: posrange.PositionRange{
+									Start: 10,
+									End:   38,
+								},
+							},
+							EndPos: 42,
+							Range:  5 * time.Minute,
+						},
+					},
+				},
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   44,
+			},
+		},
+	},
+	{
+		input:  `info(rate(http_request_counter_total{}[5m]), target_info{foo="bar"})`,
+		fail:   true,
+		errMsg: `1:46: parse error: expected label selectors only, got vector selector instead`,
+	},
+	{
+		input: `info(http_request_counter_total{namespace="zzz"}, {foo="bar", bar="baz"})`,
+		expected: &Call{
+			Func: MustGetFunction("info"),
+			Args: Expressions{
+				&VectorSelector{
+					Name: "http_request_counter_total",
+					LabelMatchers: []*labels.Matcher{
+						MustLabelMatcher(labels.MatchEqual, "namespace", "zzz"),
+						MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "http_request_counter_total"),
+					},
+					PosRange: posrange.PositionRange{
+						Start: 5,
+						End:   48,
+					},
+				},
+				&VectorSelector{
+					LabelMatchers: []*labels.Matcher{
+						MustLabelMatcher(labels.MatchEqual, "foo", "bar"),
+						MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+					},
+					PosRange: posrange.PositionRange{
+						Start: 50,
+						End:   72,
+					},
+					BypassEmptyMatcherCheck: true,
+				},
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   73,
+			},
+		},
+	},
 }
 
 func makeInt64Pointer(val int64) *int64 {
@@ -3844,6 +3964,13 @@ func readable(s string) string {
 }
 
 func TestParseExpressions(t *testing.T) {
+	// Enable experimental functions testing.
+	EnableExperimentalFunctions = true
+	t.Cleanup(func() {
+		EnableExperimentalFunctions = false
+	})
+
+	model.NameValidationScheme = model.UTF8Validation
 	for _, test := range testExpr {
 		t.Run(readable(test.input), func(t *testing.T) {
 			expr, err := ParseExpr(test.input)
@@ -3879,8 +4006,7 @@ func TestParseExpressions(t *testing.T) {
 
 				require.Equal(t, expected, expr, "error on input '%s'", test.input)
 			} else {
-				require.Error(t, err)
-				require.Contains(t, err.Error(), test.errMsg, "unexpected error on input '%s', expected '%s', got '%s'", test.input, test.errMsg, err.Error())
+				require.ErrorContains(t, err, test.errMsg, "unexpected error on input '%s', expected '%s', got '%s'", test.input, test.errMsg, err.Error())
 
 				var errorList ParseErrors
 				ok := errors.As(err, &errorList)
@@ -3892,6 +4018,76 @@ func TestParseExpressions(t *testing.T) {
 					require.LessOrEqual(t, e.PositionRange.Start, e.PositionRange.End, "parse error has negative length\nExpression '%s'\nError: %v", test.input, e)
 					require.LessOrEqual(t, e.PositionRange.End, posrange.Pos(len(test.input)), "parse error is not contained in input\nExpression '%s'\nError: %v", test.input, e)
 				}
+			}
+		})
+	}
+}
+
+func TestParseSeriesDesc(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          string
+		expectedLabels labels.Labels
+		expectedValues []SequenceValue
+		expectError    string
+	}{
+		{
+			name:           "empty string",
+			expectedLabels: labels.EmptyLabels(),
+			expectedValues: []SequenceValue{},
+		},
+		{
+			name:  "simple line",
+			input: `http_requests{job="api-server", instance="0", group="production"}`,
+			expectedLabels: labels.FromStrings(
+				"__name__", "http_requests",
+				"group", "production",
+				"instance", "0",
+				"job", "api-server",
+			),
+			expectedValues: []SequenceValue{},
+		},
+		{
+			name:  "label name characters that require quoting",
+			input: `{"http.requests", "service.name"="api-server", instance="0", group="canary"}		0+50x2`,
+			expectedLabels: labels.FromStrings(
+				"__name__", "http.requests",
+				"group", "canary",
+				"instance", "0",
+				"service.name", "api-server",
+			),
+			expectedValues: []SequenceValue{
+				{Value: 0, Omitted: false, Histogram: (*histogram.FloatHistogram)(nil)},
+				{Value: 50, Omitted: false, Histogram: (*histogram.FloatHistogram)(nil)},
+				{Value: 100, Omitted: false, Histogram: (*histogram.FloatHistogram)(nil)},
+			},
+		},
+		{
+			name:        "confirm failure on junk after identifier",
+			input:       `{"http.requests"xx}		0+50x2`,
+			expectError: `parse error: unexpected identifier "xx" in label set, expected "," or "}"`,
+		},
+		{
+			name:        "confirm failure on bare operator after identifier",
+			input:       `{"http.requests"=, x="y"}		0+50x2`,
+			expectError: `parse error: unexpected "," in label set, expected string`,
+		},
+		{
+			name:        "confirm failure on unterminated string identifier",
+			input:       `{"http.requests}		0+50x2`,
+			expectError: `parse error: unterminated quoted string`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			l, v, err := ParseSeriesDesc(tc.input)
+			if tc.expectError != "" {
+				require.Contains(t, err.Error(), tc.expectError)
+			} else {
+				require.NoError(t, err)
+				require.True(t, labels.Equal(tc.expectedLabels, l))
+				require.Equal(t, tc.expectedValues, v)
 			}
 		})
 	}
@@ -4038,32 +4234,50 @@ func TestParseHistogramSeries(t *testing.T) {
 		},
 		{
 			name:  "all properties used",
-			input: `{} {{schema:1 sum:-0.3 count:3.1 z_bucket:7.1 z_bucket_w:0.05 buckets:[5.1 10 7] offset:-3 n_buckets:[4.1 5] n_offset:-5}}`,
+			input: `{} {{schema:1 sum:0.3 count:3.1 z_bucket:7.1 z_bucket_w:0.05 buckets:[5.1 10 7] offset:3 n_buckets:[4.1 5] n_offset:5 counter_reset_hint:gauge}}`,
 			expected: []histogram.FloatHistogram{{
-				Schema:          1,
-				Sum:             -0.3,
-				Count:           3.1,
-				ZeroCount:       7.1,
-				ZeroThreshold:   0.05,
-				PositiveBuckets: []float64{5.1, 10, 7},
-				PositiveSpans:   []histogram.Span{{Offset: -3, Length: 3}},
-				NegativeBuckets: []float64{4.1, 5},
-				NegativeSpans:   []histogram.Span{{Offset: -5, Length: 2}},
+				Schema:           1,
+				Sum:              0.3,
+				Count:            3.1,
+				ZeroCount:        7.1,
+				ZeroThreshold:    0.05,
+				PositiveBuckets:  []float64{5.1, 10, 7},
+				PositiveSpans:    []histogram.Span{{Offset: 3, Length: 3}},
+				NegativeBuckets:  []float64{4.1, 5},
+				NegativeSpans:    []histogram.Span{{Offset: 5, Length: 2}},
+				CounterResetHint: histogram.GaugeType,
 			}},
 		},
 		{
 			name:  "all properties used - with spaces",
-			input: `{} {{schema:1  sum:0.3  count:3  z_bucket:7 z_bucket_w:5 buckets:[5 10  7  ] offset:-3  n_buckets:[4 5]  n_offset:5  }}`,
+			input: `{} {{schema:1  sum:0.3  count:3  z_bucket:7 z_bucket_w:5 buckets:[5 10  7  ] offset:-3  n_buckets:[4 5]  n_offset:5  counter_reset_hint:gauge  }}`,
 			expected: []histogram.FloatHistogram{{
-				Schema:          1,
-				Sum:             0.3,
-				Count:           3,
-				ZeroCount:       7,
-				ZeroThreshold:   5,
-				PositiveBuckets: []float64{5, 10, 7},
-				PositiveSpans:   []histogram.Span{{Offset: -3, Length: 3}},
-				NegativeBuckets: []float64{4, 5},
-				NegativeSpans:   []histogram.Span{{Offset: 5, Length: 2}},
+				Schema:           1,
+				Sum:              0.3,
+				Count:            3,
+				ZeroCount:        7,
+				ZeroThreshold:    5,
+				PositiveBuckets:  []float64{5, 10, 7},
+				PositiveSpans:    []histogram.Span{{Offset: -3, Length: 3}},
+				NegativeBuckets:  []float64{4, 5},
+				NegativeSpans:    []histogram.Span{{Offset: 5, Length: 2}},
+				CounterResetHint: histogram.GaugeType,
+			}},
+		},
+		{
+			name:  "all properties used, with negative values where supported",
+			input: `{} {{schema:1 sum:-0.3 count:-3.1 z_bucket:-7.1 z_bucket_w:0.05 buckets:[-5.1 -10 -7] offset:-3 n_buckets:[-4.1 -5] n_offset:-5 counter_reset_hint:gauge}}`,
+			expected: []histogram.FloatHistogram{{
+				Schema:           1,
+				Sum:              -0.3,
+				Count:            -3.1,
+				ZeroCount:        -7.1,
+				ZeroThreshold:    0.05,
+				PositiveBuckets:  []float64{-5.1, -10, -7},
+				PositiveSpans:    []histogram.Span{{Offset: -3, Length: 3}},
+				NegativeBuckets:  []float64{-4.1, -5},
+				NegativeSpans:    []histogram.Span{{Offset: -5, Length: 2}},
+				CounterResetHint: histogram.GaugeType,
 			}},
 		},
 		{
@@ -4250,6 +4464,39 @@ func TestParseHistogramSeries(t *testing.T) {
 			input:         `{} {{ schema:1}}`,
 			expectedError: `1:7: parse error: unexpected "<Item 57372>" "schema" in series values`,
 		},
+		{
+			name:          "invalid counter reset hint value",
+			input:         `{} {{counter_reset_hint:foo}}`,
+			expectedError: `1:25: parse error: bad histogram descriptor found: "foo"`,
+		},
+		{
+			name:  "'unknown' counter reset hint value",
+			input: `{} {{counter_reset_hint:unknown}}`,
+			expected: []histogram.FloatHistogram{{
+				CounterResetHint: histogram.UnknownCounterReset,
+			}},
+		},
+		{
+			name:  "'reset' counter reset hint value",
+			input: `{} {{counter_reset_hint:reset}}`,
+			expected: []histogram.FloatHistogram{{
+				CounterResetHint: histogram.CounterReset,
+			}},
+		},
+		{
+			name:  "'not_reset' counter reset hint value",
+			input: `{} {{counter_reset_hint:not_reset}}`,
+			expected: []histogram.FloatHistogram{{
+				CounterResetHint: histogram.NotCounterReset,
+			}},
+		},
+		{
+			name:  "'gauge' counter reset hint value",
+			input: `{} {{counter_reset_hint:gauge}}`,
+			expected: []histogram.FloatHistogram{{
+				CounterResetHint: histogram.GaugeType,
+			}},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			_, vals, err := ParseSeriesDesc(test.input)
@@ -4304,6 +4551,22 @@ func TestHistogramTestExpression(t *testing.T) {
 			},
 			expected: `{{offset:-3 buckets:[5.1 0 0 0 0 10 7] n_offset:-1 n_buckets:[4.1 5 0 0 7 8 9]}}`,
 		},
+		{
+			name: "known counter reset hint",
+			input: histogram.FloatHistogram{
+				Schema:           1,
+				Sum:              -0.3,
+				Count:            3.1,
+				ZeroCount:        7.1,
+				ZeroThreshold:    0.05,
+				PositiveBuckets:  []float64{5.1, 10, 7},
+				PositiveSpans:    []histogram.Span{{Offset: -3, Length: 3}},
+				NegativeBuckets:  []float64{4.1, 5},
+				NegativeSpans:    []histogram.Span{{Offset: -5, Length: 2}},
+				CounterResetHint: histogram.CounterReset,
+			},
+			expected: `{{schema:1 count:3.1 sum:-0.3 z_bucket:7.1 z_bucket_w:0.05 counter_reset_hint:reset offset:-3 buckets:[5.1 10 7] n_offset:-5 n_buckets:[4.1 5]}}`,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			expression := test.input.TestExpression()
@@ -4355,7 +4618,7 @@ func TestRecoverParserError(t *testing.T) {
 	e := errors.New("custom error")
 
 	defer func() {
-		require.Equal(t, e.Error(), err.Error())
+		require.EqualError(t, err, e.Error())
 	}()
 	defer p.recover(&err)
 

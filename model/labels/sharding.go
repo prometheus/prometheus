@@ -39,9 +39,9 @@ func StableHash(ls Labels) uint64 {
 		}
 
 		b = append(b, v.Name...)
-		b = append(b, seps[0])
+		b = append(b, sep)
 		b = append(b, v.Value...)
-		b = append(b, seps[0])
+		b = append(b, sep)
 	}
 	return xxhash.Sum64(b)
 }

@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"reflect"
 	"strings"
@@ -25,23 +26,18 @@ import (
 
 	"github.com/prometheus/prometheus/util/strutil"
 
-	disv1beta1 "k8s.io/api/discovery/v1beta1"
-
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/version"
 	apiv1 "k8s.io/api/core/v1"
 	disv1 "k8s.io/api/discovery/v1"
 	networkv1 "k8s.io/api/networking/v1"
-	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	utilversion "k8s.io/apimachinery/pkg/util/version"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -63,14 +59,10 @@ const (
 	presentValue    = model.LabelValue("true")
 )
 
-var (
-	// Http header.
-	userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
-	// DefaultSDConfig is the default Kubernetes SD configuration.
-	DefaultSDConfig = SDConfig{
-		HTTPClientConfig: config.DefaultHTTPClientConfig,
-	}
-)
+// DefaultSDConfig is the default Kubernetes SD configuration.
+var DefaultSDConfig = SDConfig{
+	HTTPClientConfig: config.DefaultHTTPClientConfig,
+}
 
 func init() {
 	discovery.RegisterConfig(&SDConfig{})
@@ -177,7 +169,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if c.Role == "" {
-		return fmt.Errorf("role missing (one of: pod, service, endpoints, endpointslice, node, ingress)")
+		return errors.New("role missing (one of: pod, service, endpoints, endpointslice, node, ingress)")
 	}
 	err = c.HTTPClientConfig.Validate()
 	if err != nil {
@@ -185,20 +177,20 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	if c.APIServer.URL != nil && c.KubeConfig != "" {
 		// Api-server and kubeconfig_file are mutually exclusive
-		return fmt.Errorf("cannot use 'kubeconfig_file' and 'api_server' simultaneously")
+		return errors.New("cannot use 'kubeconfig_file' and 'api_server' simultaneously")
 	}
 	if c.KubeConfig != "" && !reflect.DeepEqual(c.HTTPClientConfig, config.DefaultHTTPClientConfig) {
 		// Kubeconfig_file and custom http config are mutually exclusive
-		return fmt.Errorf("cannot use a custom HTTP client configuration together with 'kubeconfig_file'")
+		return errors.New("cannot use a custom HTTP client configuration together with 'kubeconfig_file'")
 	}
 	if c.APIServer.URL == nil && !reflect.DeepEqual(c.HTTPClientConfig, config.DefaultHTTPClientConfig) {
-		return fmt.Errorf("to use custom HTTP client configuration please provide the 'api_server' URL explicitly")
+		return errors.New("to use custom HTTP client configuration please provide the 'api_server' URL explicitly")
 	}
 	if c.APIServer.URL != nil && c.NamespaceDiscovery.IncludeOwnNamespace {
-		return fmt.Errorf("cannot use 'api_server' and 'namespaces.own_namespace' simultaneously")
+		return errors.New("cannot use 'api_server' and 'namespaces.own_namespace' simultaneously")
 	}
 	if c.KubeConfig != "" && c.NamespaceDiscovery.IncludeOwnNamespace {
-		return fmt.Errorf("cannot use 'kubeconfig_file' and 'namespaces.own_namespace' simultaneously")
+		return errors.New("cannot use 'kubeconfig_file' and 'namespaces.own_namespace' simultaneously")
 	}
 
 	foundSelectorRoles := make(map[Role]struct{})
@@ -264,7 +256,7 @@ type Discovery struct {
 	sync.RWMutex
 	client             kubernetes.Interface
 	role               Role
-	logger             log.Logger
+	logger             *slog.Logger
 	namespaceDiscovery *NamespaceDiscovery
 	discoverers        []discovery.Discoverer
 	selectors          roleSelector
@@ -289,14 +281,14 @@ func (d *Discovery) getNamespaces() []string {
 }
 
 // New creates a new Kubernetes discovery for the given role.
-func New(l log.Logger, metrics discovery.DiscovererMetrics, conf *SDConfig) (*Discovery, error) {
+func New(l *slog.Logger, metrics discovery.DiscovererMetrics, conf *SDConfig) (*Discovery, error) {
 	m, ok := metrics.(*kubernetesMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	if l == nil {
-		l = log.NewNopLogger()
+		l = promslog.NewNopLogger()
 	}
 	var (
 		kcfg         *rest.Config
@@ -328,7 +320,7 @@ func New(l log.Logger, metrics discovery.DiscovererMetrics, conf *SDConfig) (*Di
 			ownNamespace = string(ownNamespaceContents)
 		}
 
-		level.Info(l).Log("msg", "Using pod service account via in-cluster config")
+		l.Info("Using pod service account via in-cluster config")
 	default:
 		rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "kubernetes_sd")
 		if err != nil {
@@ -340,7 +332,7 @@ func New(l log.Logger, metrics discovery.DiscovererMetrics, conf *SDConfig) (*Di
 		}
 	}
 
-	kcfg.UserAgent = userAgent
+	kcfg.UserAgent = version.PrometheusUserAgent()
 	kcfg.ContentType = "application/vnd.kubernetes.protobuf"
 
 	c, err := kubernetes.NewForConfig(kcfg)
@@ -401,55 +393,22 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 
 	switch d.role {
 	case RoleEndpointSlice:
-		// Check "networking.k8s.io/v1" availability with retries.
-		// If "v1" is not available, use "networking.k8s.io/v1beta1" for backward compatibility
-		var v1Supported bool
-		if retryOnError(ctx, 10*time.Second,
-			func() (err error) {
-				v1Supported, err = checkDiscoveryV1Supported(d.client)
-				if err != nil {
-					level.Error(d.logger).Log("msg", "Failed to check networking.k8s.io/v1 availability", "err", err)
-				}
-				return err
-			},
-		) {
-			d.Unlock()
-			return
-		}
-
 		for _, namespace := range namespaces {
 			var informer cache.SharedIndexInformer
-			if v1Supported {
-				e := d.client.DiscoveryV1().EndpointSlices(namespace)
-				elw := &cache.ListWatch{
-					ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-						options.FieldSelector = d.selectors.endpointslice.field
-						options.LabelSelector = d.selectors.endpointslice.label
-						return e.List(ctx, options)
-					},
-					WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-						options.FieldSelector = d.selectors.endpointslice.field
-						options.LabelSelector = d.selectors.endpointslice.label
-						return e.Watch(ctx, options)
-					},
-				}
-				informer = d.newEndpointSlicesByNodeInformer(elw, &disv1.EndpointSlice{})
-			} else {
-				e := d.client.DiscoveryV1beta1().EndpointSlices(namespace)
-				elw := &cache.ListWatch{
-					ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-						options.FieldSelector = d.selectors.endpointslice.field
-						options.LabelSelector = d.selectors.endpointslice.label
-						return e.List(ctx, options)
-					},
-					WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-						options.FieldSelector = d.selectors.endpointslice.field
-						options.LabelSelector = d.selectors.endpointslice.label
-						return e.Watch(ctx, options)
-					},
-				}
-				informer = d.newEndpointSlicesByNodeInformer(elw, &disv1beta1.EndpointSlice{})
+			e := d.client.DiscoveryV1().EndpointSlices(namespace)
+			elw := &cache.ListWatch{
+				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+					options.FieldSelector = d.selectors.endpointslice.field
+					options.LabelSelector = d.selectors.endpointslice.label
+					return e.List(ctx, options)
+				},
+				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+					options.FieldSelector = d.selectors.endpointslice.field
+					options.LabelSelector = d.selectors.endpointslice.label
+					return e.Watch(ctx, options)
+				},
 			}
+			informer = d.newEndpointSlicesByNodeInformer(elw, &disv1.EndpointSlice{})
 
 			s := d.client.CoreV1().Services(namespace)
 			slw := &cache.ListWatch{
@@ -483,7 +442,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				go nodeInf.Run(ctx.Done())
 			}
 			eps := NewEndpointSlice(
-				log.With(d.logger, "role", "endpointslice"),
+				d.logger.With("role", "endpointslice"),
 				informer,
 				d.mustNewSharedInformer(slw, &apiv1.Service{}, resyncDisabled),
 				d.mustNewSharedInformer(plw, &apiv1.Pod{}, resyncDisabled),
@@ -543,7 +502,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			}
 
 			eps := NewEndpoints(
-				log.With(d.logger, "role", "endpoint"),
+				d.logger.With("role", "endpoint"),
 				d.newEndpointsByNodeInformer(elw),
 				d.mustNewSharedInformer(slw, &apiv1.Service{}, resyncDisabled),
 				d.mustNewSharedInformer(plw, &apiv1.Pod{}, resyncDisabled),
@@ -577,7 +536,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				},
 			}
 			pod := NewPod(
-				log.With(d.logger, "role", "pod"),
+				d.logger.With("role", "pod"),
 				d.newPodsByNodeInformer(plw),
 				nodeInformer,
 				d.metrics.eventCount,
@@ -601,7 +560,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				},
 			}
 			svc := NewService(
-				log.With(d.logger, "role", "service"),
+				d.logger.With("role", "service"),
 				d.mustNewSharedInformer(slw, &apiv1.Service{}, resyncDisabled),
 				d.metrics.eventCount,
 			)
@@ -609,57 +568,24 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			go svc.informer.Run(ctx.Done())
 		}
 	case RoleIngress:
-		// Check "networking.k8s.io/v1" availability with retries.
-		// If "v1" is not available, use "networking.k8s.io/v1beta1" for backward compatibility
-		var v1Supported bool
-		if retryOnError(ctx, 10*time.Second,
-			func() (err error) {
-				v1Supported, err = checkNetworkingV1Supported(d.client)
-				if err != nil {
-					level.Error(d.logger).Log("msg", "Failed to check networking.k8s.io/v1 availability", "err", err)
-				}
-				return err
-			},
-		) {
-			d.Unlock()
-			return
-		}
-
 		for _, namespace := range namespaces {
 			var informer cache.SharedInformer
-			if v1Supported {
-				i := d.client.NetworkingV1().Ingresses(namespace)
-				ilw := &cache.ListWatch{
-					ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-						options.FieldSelector = d.selectors.ingress.field
-						options.LabelSelector = d.selectors.ingress.label
-						return i.List(ctx, options)
-					},
-					WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-						options.FieldSelector = d.selectors.ingress.field
-						options.LabelSelector = d.selectors.ingress.label
-						return i.Watch(ctx, options)
-					},
-				}
-				informer = d.mustNewSharedInformer(ilw, &networkv1.Ingress{}, resyncDisabled)
-			} else {
-				i := d.client.NetworkingV1beta1().Ingresses(namespace)
-				ilw := &cache.ListWatch{
-					ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-						options.FieldSelector = d.selectors.ingress.field
-						options.LabelSelector = d.selectors.ingress.label
-						return i.List(ctx, options)
-					},
-					WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-						options.FieldSelector = d.selectors.ingress.field
-						options.LabelSelector = d.selectors.ingress.label
-						return i.Watch(ctx, options)
-					},
-				}
-				informer = d.mustNewSharedInformer(ilw, &v1beta1.Ingress{}, resyncDisabled)
+			i := d.client.NetworkingV1().Ingresses(namespace)
+			ilw := &cache.ListWatch{
+				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+					options.FieldSelector = d.selectors.ingress.field
+					options.LabelSelector = d.selectors.ingress.label
+					return i.List(ctx, options)
+				},
+				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+					options.FieldSelector = d.selectors.ingress.field
+					options.LabelSelector = d.selectors.ingress.label
+					return i.Watch(ctx, options)
+				},
 			}
+			informer = d.mustNewSharedInformer(ilw, &networkv1.Ingress{}, resyncDisabled)
 			ingress := NewIngress(
-				log.With(d.logger, "role", "ingress"),
+				d.logger.With("role", "ingress"),
 				informer,
 				d.metrics.eventCount,
 			)
@@ -668,11 +594,11 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		}
 	case RoleNode:
 		nodeInformer := d.newNodeInformer(ctx)
-		node := NewNode(log.With(d.logger, "role", "node"), nodeInformer, d.metrics.eventCount)
+		node := NewNode(d.logger.With("role", "node"), nodeInformer, d.metrics.eventCount)
 		d.discoverers = append(d.discoverers, node)
 		go node.informer.Run(ctx.Done())
 	default:
-		level.Error(d.logger).Log("msg", "unknown Kubernetes discovery kind", "role", d.role)
+		d.logger.Error("unknown Kubernetes discovery kind", "role", d.role)
 	}
 
 	var wg sync.WaitGroup
@@ -720,20 +646,6 @@ func retryOnError(ctx context.Context, interval time.Duration, f func() error) (
 	}
 }
 
-func checkNetworkingV1Supported(client kubernetes.Interface) (bool, error) {
-	k8sVer, err := client.Discovery().ServerVersion()
-	if err != nil {
-		return false, err
-	}
-	semVer, err := utilversion.ParseSemantic(k8sVer.String())
-	if err != nil {
-		return false, err
-	}
-	// networking.k8s.io/v1 is available since Kubernetes v1.19
-	// https://github.com/kubernetes/kubernetes/blob/master/CHANGELOG/CHANGELOG-1.19.md
-	return semVer.Major() >= 1 && semVer.Minor() >= 19, nil
-}
-
 func (d *Discovery) newNodeInformer(ctx context.Context) cache.SharedInformer {
 	nlw := &cache.ListWatch{
 		ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
@@ -756,7 +668,7 @@ func (d *Discovery) newPodsByNodeInformer(plw *cache.ListWatch) cache.SharedInde
 		indexers[nodeIndex] = func(obj interface{}) ([]string, error) {
 			pod, ok := obj.(*apiv1.Pod)
 			if !ok {
-				return nil, fmt.Errorf("object is not a pod")
+				return nil, errors.New("object is not a pod")
 			}
 			return []string{pod.Spec.NodeName}, nil
 		}
@@ -770,7 +682,7 @@ func (d *Discovery) newEndpointsByNodeInformer(plw *cache.ListWatch) cache.Share
 	indexers[podIndex] = func(obj interface{}) ([]string, error) {
 		e, ok := obj.(*apiv1.Endpoints)
 		if !ok {
-			return nil, fmt.Errorf("object is not endpoints")
+			return nil, errors.New("object is not endpoints")
 		}
 		var pods []string
 		for _, target := range e.Subsets {
@@ -789,7 +701,7 @@ func (d *Discovery) newEndpointsByNodeInformer(plw *cache.ListWatch) cache.Share
 	indexers[nodeIndex] = func(obj interface{}) ([]string, error) {
 		e, ok := obj.(*apiv1.Endpoints)
 		if !ok {
-			return nil, fmt.Errorf("object is not endpoints")
+			return nil, errors.New("object is not endpoints")
 		}
 		var nodes []string
 		for _, target := range e.Subsets {
@@ -834,21 +746,8 @@ func (d *Discovery) newEndpointSlicesByNodeInformer(plw *cache.ListWatch, object
 					}
 				}
 			}
-		case *disv1beta1.EndpointSlice:
-			for _, target := range e.Endpoints {
-				if target.TargetRef != nil {
-					switch target.TargetRef.Kind {
-					case "Pod":
-						if target.NodeName != nil {
-							nodes = append(nodes, *target.NodeName)
-						}
-					case "Node":
-						nodes = append(nodes, target.TargetRef.Name)
-					}
-				}
-			}
 		default:
-			return nil, fmt.Errorf("object is not an endpointslice")
+			return nil, errors.New("object is not an endpointslice")
 		}
 
 		return nodes, nil
@@ -882,21 +781,6 @@ func (d *Discovery) mustNewSharedIndexInformer(lw cache.ListerWatcher, exampleOb
 	return informer
 }
 
-func checkDiscoveryV1Supported(client kubernetes.Interface) (bool, error) {
-	k8sVer, err := client.Discovery().ServerVersion()
-	if err != nil {
-		return false, err
-	}
-	semVer, err := utilversion.ParseSemantic(k8sVer.String())
-	if err != nil {
-		return false, err
-	}
-	// The discovery.k8s.io/v1beta1 API version of EndpointSlice will no longer be served in v1.25.
-	// discovery.k8s.io/v1 is available since Kubernetes v1.21
-	// https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-25
-	return semVer.Major() >= 1 && semVer.Minor() >= 21, nil
-}
-
 func addObjectMetaLabels(labelSet model.LabelSet, objectMeta metav1.ObjectMeta, role Role) {
 	labelSet[model.LabelName(metaLabelPrefix+string(role)+"_name")] = lv(objectMeta.Name)
 
@@ -915,4 +799,14 @@ func addObjectMetaLabels(labelSet model.LabelSet, objectMeta metav1.ObjectMeta, 
 
 func namespacedName(namespace, name string) string {
 	return namespace + "/" + name
+}
+
+// nodeName knows how to handle the cache.DeletedFinalStateUnknown tombstone.
+// It assumes the MetaNamespaceKeyFunc keyFunc is used, which uses the node name as the tombstone key.
+func nodeName(o interface{}) (string, error) {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(o)
+	if err != nil {
+		return "", err
+	}
+	return key, nil
 }

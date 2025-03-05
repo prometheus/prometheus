@@ -15,14 +15,13 @@ package ionos
 
 import (
 	"context"
-	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
 	ionoscloud "github.com/ionos-cloud/sdk-go/v6"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -60,7 +59,7 @@ type serverDiscovery struct {
 	datacenterID string
 }
 
-func newServerDiscovery(conf *SDConfig, _ log.Logger) (*serverDiscovery, error) {
+func newServerDiscovery(conf *SDConfig, _ *slog.Logger) (*serverDiscovery, error) {
 	d := &serverDiscovery{
 		port:         conf.Port,
 		datacenterID: conf.DatacenterID,
@@ -77,7 +76,7 @@ func newServerDiscovery(conf *SDConfig, _ log.Logger) (*serverDiscovery, error) 
 		Transport: rt,
 		Timeout:   time.Duration(conf.RefreshInterval),
 	}
-	cfg.UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+	cfg.UserAgent = version.PrometheusUserAgent()
 
 	d.client = ionoscloud.NewAPIClient(cfg)
 

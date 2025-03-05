@@ -79,7 +79,7 @@ func TestRepairBadIndexVersion(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(tmpDbDir, "chunks"), 0o777))
 
 	// Read current index to check integrity.
-	r, err := index.NewFileReader(filepath.Join(tmpDbDir, indexFilename))
+	r, err := index.NewFileReader(filepath.Join(tmpDbDir, indexFilename), index.DecodePostingsRaw)
 	require.NoError(t, err)
 	p, err := r.Postings(ctx, "b", "1")
 	require.NoError(t, err)
@@ -97,7 +97,7 @@ func TestRepairBadIndexVersion(t *testing.T) {
 	require.NoError(t, err)
 	db.Close()
 
-	r, err = index.NewFileReader(filepath.Join(tmpDbDir, indexFilename))
+	r, err = index.NewFileReader(filepath.Join(tmpDbDir, indexFilename), index.DecodePostingsRaw)
 	require.NoError(t, err)
 	defer r.Close()
 	p, err = r.Postings(ctx, "b", "1")

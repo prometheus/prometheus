@@ -21,7 +21,6 @@ import {
   BinaryExpr,
   BoolModifier,
   Div,
-  Duration,
   Eql,
   EqlRegex,
   EqlSingle,
@@ -40,7 +39,6 @@ import {
   Mul,
   Neq,
   NeqRegex,
-  NumberLiteral,
   OffsetExpr,
   Or,
   Pow,
@@ -54,6 +52,14 @@ import {
   UnquotedLabelMatcher,
   QuotedLabelMatcher,
   QuotedLabelName,
+  NumberDurationLiteralInDurationContext,
+  NumberDurationLiteral,
+  AggregateOp,
+  Topk,
+  Bottomk,
+  LimitK,
+  LimitRatio,
+  CountValues,
 } from '@prometheus-io/lezer-promql';
 import { Completion, CompletionContext, CompletionResult } from '@codemirror/autocomplete';
 import { EditorState } from '@codemirror/state';
@@ -179,33 +185,51 @@ function computeStartCompleteLabelPositionInLabelMatcherOrInGroupingLabel(node: 
 // It is an important step because the start position will be used by CMN to find the string and then to use it to filter the CompletionResult.
 // A wrong `start` position will lead to have the completion not working.
 // Note: this method is exported only for testing purpose.
-export function computeStartCompletePosition(node: SyntaxNode, pos: number): number {
+export function computeStartCompletePosition(state: EditorState, node: SyntaxNode, pos: number): number {
+  const currentText = state.doc.slice(node.from, pos).toString();
   let start = node.from;
   if (node.type.id === LabelMatchers || node.type.id === GroupingLabels) {
     start = computeStartCompleteLabelPositionInLabelMatcherOrInGroupingLabel(node, pos);
   } else if (
-    node.type.id === FunctionCallBody ||
+    (node.type.id === FunctionCallBody && node.firstChild === null) ||
     (node.type.id === StringLiteral && (node.parent?.type.id === UnquotedLabelMatcher || node.parent?.type.id === QuotedLabelMatcher))
   ) {
     // When the cursor is between bracket, quote, we need to increment the starting position to avoid to consider the open bracket/ first string.
     start++;
   } else if (
     node.type.id === OffsetExpr ||
-    (node.type.id === NumberLiteral && node.parent?.type.id === 0 && node.parent.parent?.type.id === SubqueryExpr) ||
+    // Since duration and number are equivalent, writing go[5] or go[5d] is syntactically accurate.
+    // Before we were able to guess when we had to autocomplete the duration later based on the error node,
+    // which is not possible anymore.
+    // So we have to analyze the string about the current node to see if the duration unit is already present or not.
+    (node.type.id === NumberDurationLiteralInDurationContext && !durationTerms.map((v) => v.label).includes(currentText[currentText.length - 1])) ||
+    (node.type.id === NumberDurationLiteral && node.parent?.type.id === 0 && node.parent.parent?.type.id === SubqueryExpr) ||
+    (node.type.id === FunctionCallBody && isAggregatorWithParam(node) && node.firstChild !== null) ||
     (node.type.id === 0 &&
       (node.parent?.type.id === OffsetExpr ||
         node.parent?.type.id === MatrixSelector ||
-        (node.parent?.type.id === SubqueryExpr && containsAtLeastOneChild(node.parent, Duration))))
+        (node.parent?.type.id === SubqueryExpr && containsAtLeastOneChild(node.parent, NumberDurationLiteralInDurationContext))))
   ) {
     start = pos;
   }
   return start;
 }
 
+function isAggregatorWithParam(functionCallBody: SyntaxNode): boolean {
+  const parent = functionCallBody.parent;
+  if (parent !== null && parent.firstChild?.type.id === AggregateOp) {
+    const aggregationOpType = parent.firstChild.firstChild;
+    if (aggregationOpType !== null && [Topk, Bottomk, LimitK, LimitRatio, CountValues].includes(aggregationOpType.type.id)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // analyzeCompletion is going to determinate what should be autocompleted.
 // The value of the autocompletion is then calculate by the function buildCompletion.
 // Note: this method is exported for testing purpose only. Do not use it directly.
-export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context[] {
+export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: number): Context[] {
   const result: Context[] = [];
   switch (node.type.id) {
     case 0: // 0 is the id of the error node
@@ -230,7 +254,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
         result.push({ kind: ContextKind.Duration });
         break;
       }
-      if (node.parent?.type.id === SubqueryExpr && containsAtLeastOneChild(node.parent, Duration)) {
+      if (node.parent?.type.id === SubqueryExpr && containsAtLeastOneChild(node.parent, NumberDurationLiteralInDurationContext)) {
         // we are likely in the given situation:
         //    `rate(foo[5d:5])`
         // so we should autocomplete a duration
@@ -324,7 +348,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
       }
       // now we have to know if we have two Expr in the direct children of the `parent`
       const containExprTwice = containsChild(parent, 'Expr', 'Expr');
-      if (containExprTwice) {
+      if (containExprTwice && parent.type.id !== FunctionCallBody) {
         if (parent.type.id === BinaryExpr && !containsAtLeastOneChild(parent, 0)) {
           // We are likely in the case 1 or 5
           result.push(
@@ -434,7 +458,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
         result.push({ kind: ContextKind.MetricName, metricName: state.sliceDoc(node.from, node.to).slice(1, -1) });
       }
       break;
-    case NumberLiteral:
+    case NumberDurationLiteral:
       if (node.parent?.type.id === 0 && node.parent.parent?.type.id === SubqueryExpr) {
         // Here we are likely in this situation:
         //     `go[5d:4]`
@@ -449,12 +473,28 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
         result.push({ kind: ContextKind.Number });
       }
       break;
-    case Duration:
+    case NumberDurationLiteralInDurationContext:
     case OffsetExpr:
       result.push({ kind: ContextKind.Duration });
       break;
     case FunctionCallBody:
-      // In this case we are in the given situation:
+      // For aggregation function such as Topk, the first parameter is a number.
+      // The second one is an expression.
+      // When moving to the second parameter, the node is an error node.
+      // Unfortunately, as a current node, codemirror doesn't give us the error node but instead the FunctionCallBody
+      // The tree looks like that: PromQL(AggregateExpr(AggregateOp(Topk),FunctionCallBody(NumberDurationLiteral,⚠)))
+      // So, we need to figure out if the cursor is on the first parameter or in the second.
+      if (isAggregatorWithParam(node)) {
+        if (node.firstChild === null || (node.firstChild.from <= pos && node.firstChild.to >= pos)) {
+          // it means the FunctionCallBody has no child, which means we are autocompleting the first parameter
+          result.push({ kind: ContextKind.Number });
+          break;
+        }
+        // at this point we are necessary autocompleting the second parameter
+        result.push({ kind: ContextKind.MetricName, metricName: '' }, { kind: ContextKind.Function }, { kind: ContextKind.Aggregation });
+        break;
+      }
+      // In all other cases, we are in the given situation:
       //       sum() or in rate()
       // with the cursor between the bracket. So we can autocomplete the metric, the function and the aggregation.
       result.push({ kind: ContextKind.MetricName, metricName: '' }, { kind: ContextKind.Function }, { kind: ContextKind.Aggregation });
@@ -510,7 +550,11 @@ export class HybridComplete implements CompleteStrategy {
   promQL(context: CompletionContext): Promise<CompletionResult | null> | CompletionResult | null {
     const { state, pos } = context;
     const tree = syntaxTree(state).resolve(pos, -1);
-    const contexts = analyzeCompletion(state, tree);
+    // The lines above can help you to print the current lezer tree.
+    // It's useful when you are trying to understand why it doesn't autocomplete.
+    // console.log(syntaxTree(state).topNode.toString());
+    // console.log(`current node: ${tree.type.name}`);
+    const contexts = analyzeCompletion(state, tree, pos);
     let asyncResult: Promise<Completion[]> = Promise.resolve([]);
     let completeSnippet = false;
     let span = true;
@@ -591,7 +635,7 @@ export class HybridComplete implements CompleteStrategy {
       }
     }
     return asyncResult.then((result) => {
-      return arrayToCompletionResult(result, computeStartCompletePosition(tree, pos), pos, completeSnippet, span);
+      return arrayToCompletionResult(result, computeStartCompletePosition(state, tree, pos), pos, completeSnippet, span);
     });
   }
 

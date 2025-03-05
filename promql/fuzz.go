@@ -61,8 +61,8 @@ const (
 var symbolTable = labels.NewSymbolTable()
 
 func fuzzParseMetricWithContentType(in []byte, contentType string) int {
-	p, warning := textparse.New(in, contentType, false, symbolTable)
-	if warning != nil {
+	p, warning := textparse.New(in, contentType, "", false, false, symbolTable)
+	if p == nil || warning != nil {
 		// An invalid content type is being passed, which should not happen
 		// in this context.
 		panic(warning)
@@ -91,7 +91,7 @@ func fuzzParseMetricWithContentType(in []byte, contentType string) int {
 // Note that this is not the parser for the text-based exposition-format; that
 // lives in github.com/prometheus/client_golang/text.
 func FuzzParseMetric(in []byte) int {
-	return fuzzParseMetricWithContentType(in, "")
+	return fuzzParseMetricWithContentType(in, "text/plain")
 }
 
 func FuzzParseOpenMetric(in []byte) int {

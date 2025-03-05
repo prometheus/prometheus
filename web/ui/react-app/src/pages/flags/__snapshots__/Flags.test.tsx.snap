@@ -693,32 +693,6 @@ exports[`Flags should match snapshot 1`] = `
         </td>
       </tr>
       <tr
-        key="--storage.tsdb.retention"
-      >
-        <td
-          className="flag-item"
-        >
-          <span
-            dangerouslySetInnerHTML={
-              Object {
-                "__html": "--storage.tsdb.retention",
-              }
-            }
-          />
-        </td>
-        <td
-          className="flag-value"
-        >
-          <span
-            dangerouslySetInnerHTML={
-              Object {
-                "__html": "0s",
-              }
-            }
-          />
-        </td>
-      </tr>
-      <tr
         key="--storage.tsdb.retention.size"
       >
         <td

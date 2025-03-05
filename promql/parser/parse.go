@@ -244,7 +244,8 @@ type seriesDescription struct {
 	values []SequenceValue
 }
 
-// ParseSeriesDesc parses the description of a time series.
+// ParseSeriesDesc parses the description of a time series. It is only used in
+// the PromQL testing framework code.
 func ParseSeriesDesc(input string) (labels labels.Labels, values []SequenceValue, err error) {
 	p := NewParser(input)
 	p.lex.seriesDesc = true
@@ -447,8 +448,8 @@ func (p *parser) newAggregateExpr(op Item, modifier, args Node) (ret *AggregateE
 
 	desiredArgs := 1
 	if ret.Op.IsAggregatorWithParam() {
-		if !EnableExperimentalFunctions && (ret.Op == LIMITK || ret.Op == LIMIT_RATIO) {
-			p.addParseErrf(ret.PositionRange(), "limitk() and limit_ratio() are experimental and must be enabled with --enable-feature=promql-experimental-functions")
+		if !EnableExperimentalFunctions && ret.Op.IsExperimentalAggregator() {
+			p.addParseErrf(ret.PositionRange(), "%s() is experimental and must be enabled with --enable-feature=promql-experimental-functions", ret.Op)
 			return
 		}
 		desiredArgs = 2
@@ -577,6 +578,28 @@ func (p *parser) buildHistogramFromMap(desc *map[string]interface{}) *histogram.
 			output.CustomValues = customValues
 		} else {
 			p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing custom_values: %v", val)
+		}
+	}
+
+	val, ok = (*desc)["counter_reset_hint"]
+	if ok {
+		resetHint, ok := val.(Item)
+
+		if ok {
+			switch resetHint.Typ {
+			case UNKNOWN_COUNTER_RESET:
+				output.CounterResetHint = histogram.UnknownCounterReset
+			case COUNTER_RESET:
+				output.CounterResetHint = histogram.CounterReset
+			case NOT_COUNTER_RESET:
+				output.CounterResetHint = histogram.NotCounterReset
+			case GAUGE_TYPE:
+				output.CounterResetHint = histogram.GaugeType
+			default:
+				p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing counter_reset_hint: unknown value %v", resetHint.Typ)
+			}
+		} else {
+			p.addParseErrf(p.yyParser.lval.item.PositionRange(), "error parsing counter_reset_hint: %v", val)
 		}
 	}
 
@@ -762,6 +785,19 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 			}
 		}
 
+		if n.Func.Name == "info" && len(n.Args) > 1 {
+			// Check the type is correct first
+			if n.Args[1].Type() != ValueTypeVector {
+				p.addParseErrf(node.PositionRange(), "expected type %s in %s, got %s", DocumentedType(ValueTypeVector), fmt.Sprintf("call to function %q", n.Func.Name), DocumentedType(n.Args[1].Type()))
+			}
+			// Check the vector selector in the input doesn't contain a metric name
+			if n.Args[1].(*VectorSelector).Name != "" {
+				p.addParseErrf(n.Args[1].PositionRange(), "expected label selectors only, got vector selector instead")
+			}
+			// Set Vector Selector flag to bypass empty matcher check
+			n.Args[1].(*VectorSelector).BypassEmptyMatcherCheck = true
+		}
+
 		for i, arg := range n.Args {
 			if i >= len(n.Func.ArgTypes) {
 				if n.Func.Variadic == 0 {
@@ -808,17 +844,19 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 			// metric name is a non-empty matcher.
 			break
 		}
-		// A Vector selector must contain at least one non-empty matcher to prevent
-		// implicit selection of all metrics (e.g. by a typo).
-		notEmpty := false
-		for _, lm := range n.LabelMatchers {
-			if lm != nil && !lm.Matches("") {
-				notEmpty = true
-				break
+		if !n.BypassEmptyMatcherCheck {
+			// A Vector selector must contain at least one non-empty matcher to prevent
+			// implicit selection of all metrics (e.g. by a typo).
+			notEmpty := false
+			for _, lm := range n.LabelMatchers {
+				if lm != nil && !lm.Matches("") {
+					notEmpty = true
+					break
+				}
 			}
-		}
-		if !notEmpty {
-			p.addParseErrf(n.PositionRange(), "vector selector must contain at least one non-empty matcher")
+			if !notEmpty {
+				p.addParseErrf(n.PositionRange(), "vector selector must contain at least one non-empty matcher")
+			}
 		}
 
 	case *NumberLiteral, *StringLiteral:

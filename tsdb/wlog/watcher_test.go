@@ -22,9 +22,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -50,6 +51,13 @@ func retry(t *testing.T, interval time.Duration, n int, f func() bool) {
 	}
 	ticker.Stop()
 	t.Logf("function returned false")
+}
+
+// Overwrite readTimeout defined in watcher.go.
+func overwriteReadTimeout(t *testing.T, val time.Duration) {
+	initialVal := readTimeout
+	readTimeout = val
+	t.Cleanup(func() { readTimeout = initialVal })
 }
 
 type writeToMock struct {
@@ -201,19 +209,43 @@ func TestTailSamples(t *testing.T) {
 						NegativeBuckets: []int64{int64(-i) - 1},
 					}
 
-					histogram := enc.HistogramSamples([]record.RefHistogramSample{{
+					histograms, _ := enc.HistogramSamples([]record.RefHistogramSample{{
 						Ref: chunks.HeadSeriesRef(inner),
 						T:   now.UnixNano() + 1,
 						H:   hist,
 					}}, nil)
-					require.NoError(t, w.Log(histogram))
+					require.NoError(t, w.Log(histograms))
 
-					floatHistogram := enc.FloatHistogramSamples([]record.RefFloatHistogramSample{{
+					customBucketHist := &histogram.Histogram{
+						Schema:        -53,
+						ZeroThreshold: 1e-128,
+						ZeroCount:     0,
+						Count:         2,
+						Sum:           0,
+						PositiveSpans: []histogram.Span{{Offset: 0, Length: 1}},
+						CustomValues:  []float64{float64(i) + 2},
+					}
+
+					customBucketHistograms := enc.CustomBucketsHistogramSamples([]record.RefHistogramSample{{
+						Ref: chunks.HeadSeriesRef(inner),
+						T:   now.UnixNano() + 1,
+						H:   customBucketHist,
+					}}, nil)
+					require.NoError(t, w.Log(customBucketHistograms))
+
+					floatHistograms, _ := enc.FloatHistogramSamples([]record.RefFloatHistogramSample{{
 						Ref: chunks.HeadSeriesRef(inner),
 						T:   now.UnixNano() + 1,
 						FH:  hist.ToFloat(nil),
 					}}, nil)
-					require.NoError(t, w.Log(floatHistogram))
+					require.NoError(t, w.Log(floatHistograms))
+
+					customBucketFloatHistograms := enc.CustomBucketsFloatHistogramSamples([]record.RefFloatHistogramSample{{
+						Ref: chunks.HeadSeriesRef(inner),
+						T:   now.UnixNano() + 1,
+						FH:  customBucketHist.ToFloat(nil),
+					}}, nil)
+					require.NoError(t, w.Log(customBucketFloatHistograms))
 				}
 			}
 
@@ -226,21 +258,21 @@ func TestTailSamples(t *testing.T) {
 			watcher.SetStartTime(now)
 
 			// Set the Watcher's metrics so they're not nil pointers.
-			watcher.setMetrics()
+			watcher.SetMetrics()
 			for i := first; i <= last; i++ {
 				segment, err := OpenReadSegment(SegmentName(watcher.walDir, i))
 				require.NoError(t, err)
-				defer segment.Close()
 
 				reader := NewLiveReader(nil, NewLiveReaderMetrics(nil), segment)
 				// Use tail true so we can ensure we got the right number of samples.
 				watcher.readSegment(reader, i, true)
+				require.NoError(t, segment.Close())
 			}
 
 			expectedSeries := seriesCount
 			expectedSamples := seriesCount * samplesCount
 			expectedExemplars := seriesCount * exemplarsCount
-			expectedHistograms := seriesCount * histogramsCount
+			expectedHistograms := seriesCount * histogramsCount * 2
 			retry(t, defaultRetryInterval, defaultRetries, func() bool {
 				return wt.checkNumSeries() >= expectedSeries
 			})
@@ -302,7 +334,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 				}
 			}
 			require.NoError(t, w.Log(recs...))
-			readTimeout = time.Second
+			overwriteReadTimeout(t, time.Second)
 			_, _, err = Segments(w.Dir())
 			require.NoError(t, err)
 
@@ -367,7 +399,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 				}
 			}
 
-			Checkpoint(log.NewNopLogger(), w, 0, 1, func(x chunks.HeadSeriesRef) bool { return true }, 0)
+			Checkpoint(promslog.NewNopLogger(), w, 0, 1, func(_ chunks.HeadSeriesRef) bool { return true }, 0)
 			w.Truncate(1)
 
 			// Write more records after checkpointing.
@@ -394,7 +426,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 
 			_, _, err = Segments(w.Dir())
 			require.NoError(t, err)
-			readTimeout = time.Second
+			overwriteReadTimeout(t, time.Second)
 			wt := newWriteToMock(0)
 			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
 			go watcher.Start()
@@ -458,7 +490,7 @@ func TestReadCheckpoint(t *testing.T) {
 			}
 			_, err = w.NextSegmentSync()
 			require.NoError(t, err)
-			_, err = Checkpoint(log.NewNopLogger(), w, 30, 31, func(x chunks.HeadSeriesRef) bool { return true }, 0)
+			_, err = Checkpoint(promslog.NewNopLogger(), w, 30, 31, func(_ chunks.HeadSeriesRef) bool { return true }, 0)
 			require.NoError(t, err)
 			require.NoError(t, w.Truncate(32))
 
@@ -540,7 +572,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 			watcher.MaxSegment = -1
 
 			// Set the Watcher's metrics so they're not nil pointers.
-			watcher.setMetrics()
+			watcher.SetMetrics()
 
 			lastCheckpoint, _, err := LastCheckpoint(watcher.walDir)
 			require.NoError(t, err)
@@ -607,7 +639,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			_, _, err = Segments(w.Dir())
 			require.NoError(t, err)
 
-			readTimeout = time.Second
+			overwriteReadTimeout(t, time.Second)
 			wt := newWriteToMock(0)
 			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
 			watcher.MaxSegment = -1
@@ -621,7 +653,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 				return wt.checkNumSeries() == seriesCount
 			}, 10*time.Second, 1*time.Second)
 
-			_, err = Checkpoint(log.NewNopLogger(), w, 2, 4, func(x chunks.HeadSeriesRef) bool { return true }, 0)
+			_, err = Checkpoint(promslog.NewNopLogger(), w, 2, 4, func(_ chunks.HeadSeriesRef) bool { return true }, 0)
 			require.NoError(t, err)
 
 			err = w.Truncate(5)
@@ -691,7 +723,7 @@ func TestRun_StartupTime(t *testing.T) {
 			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
 			watcher.MaxSegment = segments
 
-			watcher.setMetrics()
+			watcher.SetMetrics()
 			startTime := time.Now()
 
 			err = watcher.Run()
@@ -742,9 +774,6 @@ func TestRun_AvoidNotifyWhenBehind(t *testing.T) {
 	const seriesCount = 10
 	const samplesCount = 50
 
-	// This test can take longer than intended to finish in cloud CI.
-	readTimeout := 10 * time.Second
-
 	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
 		t.Run(string(compress), func(t *testing.T) {
 			dir := t.TempDir()
@@ -755,36 +784,50 @@ func TestRun_AvoidNotifyWhenBehind(t *testing.T) {
 
 			w, err := NewSize(nil, nil, wdir, segmentSize, compress)
 			require.NoError(t, err)
-			var wg sync.WaitGroup
-			// Generate one segment initially to ensure that watcher.Run() finds at least one segment on disk.
+			// Write to 00000000, the watcher will read series from it.
 			require.NoError(t, generateWALRecords(w, 0, seriesCount, samplesCount))
-			w.NextSegment() // Force creation of the next segment
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for i := 1; i < segmentsToWrite; i++ {
-					require.NoError(t, generateWALRecords(w, i, seriesCount, samplesCount))
-					w.NextSegment()
-				}
-			}()
+			// Create 00000001, the watcher will tail it once started.
+			w.NextSegment()
 
+			// Set up the watcher and run it in the background.
 			wt := newWriteToMock(time.Millisecond)
 			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
+			watcher.SetMetrics()
 			watcher.MaxSegment = segmentsToRead
 
-			watcher.setMetrics()
-			startTime := time.Now()
-			err = watcher.Run()
-			wg.Wait()
-			require.Less(t, time.Since(startTime), readTimeout)
-
-			// But samples records shouldn't get dropped
-			retry(t, defaultRetryInterval, defaultRetries, func() bool {
-				return wt.checkNumSeries() > 0
+			var g errgroup.Group
+			g.Go(func() error {
+				startTime := time.Now()
+				err = watcher.Run()
+				if err != nil {
+					return err
+				}
+				// If the watcher was to wait for readTicker to read every new segment, it would need readTimeout * segmentsToRead.
+				d := time.Since(startTime)
+				if d > readTimeout {
+					return fmt.Errorf("watcher ran for %s, it shouldn't rely on readTicker=%s to read the new segments", d, readTimeout)
+				}
+				return nil
 			})
-			require.Equal(t, segmentsToRead*seriesCount*samplesCount, wt.samplesAppended)
 
-			require.NoError(t, err)
+			// The watcher went through 00000000 and is tailing the next one.
+			retry(t, defaultRetryInterval, defaultRetries, func() bool {
+				return wt.checkNumSeries() == seriesCount
+			})
+
+			// In the meantime, add some new segments in bulk.
+			// We should end up with segmentsToWrite + 1 segments now.
+			for i := 1; i < segmentsToWrite; i++ {
+				require.NoError(t, generateWALRecords(w, i, seriesCount, samplesCount))
+				w.NextSegment()
+			}
+
+			// Wait for the watcher.
+			require.NoError(t, g.Wait())
+
+			// All series and samples were read.
+			require.Equal(t, (segmentsToRead+1)*seriesCount, wt.checkNumSeries()) // Series from 00000000 are also read.
+			require.Equal(t, segmentsToRead*seriesCount*samplesCount, wt.samplesAppended)
 			require.NoError(t, w.Close())
 		})
 	}

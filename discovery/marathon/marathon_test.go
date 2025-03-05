@@ -243,7 +243,7 @@ func TestMarathonZeroTaskPorts(t *testing.T) {
 
 func Test500ErrorHttpResponseWithValidJSONBody(t *testing.T) {
 	// Simulate 500 error with a valid JSON response.
-	respHandler := func(w http.ResponseWriter, r *http.Request) {
+	respHandler := func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, `{}`)

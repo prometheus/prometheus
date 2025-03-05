@@ -26,11 +26,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/alertmanager/api/v2/models"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"gopkg.in/yaml.v2"
@@ -38,6 +38,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 
 	"github.com/prometheus/prometheus/config"
+	_ "github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
@@ -49,27 +50,27 @@ func TestPostPath(t *testing.T) {
 	}{
 		{
 			in:  "",
-			out: "/api/v1/alerts",
+			out: "/api/v2/alerts",
 		},
 		{
 			in:  "/",
-			out: "/api/v1/alerts",
+			out: "/api/v2/alerts",
 		},
 		{
 			in:  "/prefix",
-			out: "/prefix/api/v1/alerts",
+			out: "/prefix/api/v2/alerts",
 		},
 		{
 			in:  "/prefix//",
-			out: "/prefix/api/v1/alerts",
+			out: "/prefix/api/v2/alerts",
 		},
 		{
 			in:  "prefix//",
-			out: "/prefix/api/v1/alerts",
+			out: "/prefix/api/v2/alerts",
 		},
 	}
 	for _, c := range cases {
-		require.Equal(t, c.out, postPath(c.in, config.AlertmanagerAPIVersionV1))
+		require.Equal(t, c.out, postPath(c.in, config.AlertmanagerAPIVersionV2))
 	}
 }
 
@@ -139,17 +140,20 @@ func newTestHTTPServerBuilder(expected *[]*Alert, errc chan<- error, u, p string
 
 func TestHandlerSendAll(t *testing.T) {
 	var (
-		errc             = make(chan error, 1)
-		expected         = make([]*Alert, 0, maxBatchSize)
-		status1, status2 atomic.Int32
+		errc                      = make(chan error, 1)
+		expected                  = make([]*Alert, 0, maxBatchSize)
+		status1, status2, status3 atomic.Int32
 	)
 	status1.Store(int32(http.StatusOK))
 	status2.Store(int32(http.StatusOK))
+	status3.Store(int32(http.StatusOK))
 
 	server1 := newTestHTTPServerBuilder(&expected, errc, "prometheus", "testing_password", &status1)
 	server2 := newTestHTTPServerBuilder(&expected, errc, "", "", &status2)
+	server3 := newTestHTTPServerBuilder(&expected, errc, "", "", &status3)
 	defer server1.Close()
 	defer server2.Close()
+	defer server3.Close()
 
 	h := NewManager(&Options{}, nil)
 
@@ -169,6 +173,9 @@ func TestHandlerSendAll(t *testing.T) {
 	am2Cfg := config.DefaultAlertmanagerConfig
 	am2Cfg.Timeout = model.Duration(time.Second)
 
+	am3Cfg := config.DefaultAlertmanagerConfig
+	am3Cfg.Timeout = model.Duration(time.Second)
+
 	h.alertmanagers["1"] = &alertmanagerSet{
 		ams: []alertmanager{
 			alertmanagerMock{
@@ -184,8 +191,16 @@ func TestHandlerSendAll(t *testing.T) {
 			alertmanagerMock{
 				urlf: func() string { return server2.URL },
 			},
+			alertmanagerMock{
+				urlf: func() string { return server3.URL },
+			},
 		},
 		cfg: &am2Cfg,
+	}
+
+	h.alertmanagers["3"] = &alertmanagerSet{
+		ams: []alertmanager{}, // empty set
+		cfg: &am3Cfg,
 	}
 
 	for i := range make([]struct{}, maxBatchSize) {
@@ -206,14 +221,25 @@ func TestHandlerSendAll(t *testing.T) {
 		}
 	}
 
+	// all ams in all sets are up
 	require.True(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
 	checkNoErr()
 
+	// the only am in set 1 is down
 	status1.Store(int32(http.StatusNotFound))
-	require.True(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
+	require.False(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
 	checkNoErr()
 
+	// reset it
+	status1.Store(int32(http.StatusOK))
+
+	// only one of the ams in set 2 is down
 	status2.Store(int32(http.StatusInternalServerError))
+	require.True(t, h.sendAll(h.queue...), "all sends succeeded unexpectedly")
+	checkNoErr()
+
+	// both ams in set 2 are down
+	status3.Store(int32(http.StatusInternalServerError))
 	require.False(t, h.sendAll(h.queue...), "all sends succeeded unexpectedly")
 	checkNoErr()
 }
@@ -225,13 +251,15 @@ func TestHandlerSendAllRemapPerAm(t *testing.T) {
 		expected2 = make([]*Alert, 0, maxBatchSize)
 		expected3 = make([]*Alert, 0)
 
-		statusOK atomic.Int32
+		status1, status2, status3 atomic.Int32
 	)
-	statusOK.Store(int32(http.StatusOK))
+	status1.Store(int32(http.StatusOK))
+	status2.Store(int32(http.StatusOK))
+	status3.Store(int32(http.StatusOK))
 
-	server1 := newTestHTTPServerBuilder(&expected1, errc, "", "", &statusOK)
-	server2 := newTestHTTPServerBuilder(&expected2, errc, "", "", &statusOK)
-	server3 := newTestHTTPServerBuilder(&expected3, errc, "", "", &statusOK)
+	server1 := newTestHTTPServerBuilder(&expected1, errc, "", "", &status1)
+	server2 := newTestHTTPServerBuilder(&expected2, errc, "", "", &status2)
+	server3 := newTestHTTPServerBuilder(&expected3, errc, "", "", &status3)
 
 	defer server1.Close()
 	defer server2.Close()
@@ -330,6 +358,21 @@ func TestHandlerSendAllRemapPerAm(t *testing.T) {
 		}
 	}
 
+	// all ams are up
+	require.True(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
+	checkNoErr()
+
+	// the only am in set 1 goes down
+	status1.Store(int32(http.StatusInternalServerError))
+	require.False(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
+	checkNoErr()
+
+	// reset set 1
+	status1.Store(int32(http.StatusOK))
+
+	// set 3 loses its only am, but all alerts were dropped
+	// so there was nothing to send, keeping sendAll true
+	status3.Store(int32(http.StatusInternalServerError))
 	require.True(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
 	checkNoErr()
 
@@ -347,7 +390,7 @@ func TestCustomDo(t *testing.T) {
 
 	var received bool
 	h := NewManager(&Options{
-		Do: func(_ context.Context, client *http.Client, req *http.Request) (*http.Response, error) {
+		Do: func(_ context.Context, _ *http.Client, req *http.Request) (*http.Response, error) {
 			received = true
 			body, err := io.ReadAll(req.Body)
 
@@ -446,7 +489,7 @@ func TestHandlerQueuing(t *testing.T) {
 		errc      = make(chan error, 1)
 	)
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		// Notify the test function that we have received something.
 		select {
 		case called <- struct{}{}:
@@ -711,7 +754,7 @@ func TestHangingNotifier(t *testing.T) {
 	)
 
 	var (
-		sendTimeout = 10 * time.Millisecond
+		sendTimeout = 100 * time.Millisecond
 		sdUpdatert  = sendTimeout / 2
 
 		done = make(chan struct{})
@@ -723,7 +766,7 @@ func TestHangingNotifier(t *testing.T) {
 
 	// Set up a faulty Alertmanager.
 	var faultyCalled atomic.Bool
-	faultyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	faultyServer := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		faultyCalled.Store(true)
 		select {
 		case <-done:
@@ -735,7 +778,7 @@ func TestHangingNotifier(t *testing.T) {
 
 	// Set up a functional Alertmanager.
 	var functionalCalled atomic.Bool
-	functionalServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	functionalServer := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		functionalCalled.Store(true)
 	}))
 	functionalURL, err := url.Parse(functionalServer.URL)
@@ -743,7 +786,7 @@ func TestHangingNotifier(t *testing.T) {
 
 	// Initialize the discovery manager
 	// This is relevant as the updates aren't sent continually in real life, but only each updatert.
-	// The old implementation of TestHangingNotifier didn't take that into acount.
+	// The old implementation of TestHangingNotifier didn't take that into account.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	reg := prometheus.NewRegistry()
@@ -751,7 +794,7 @@ func TestHangingNotifier(t *testing.T) {
 	require.NoError(t, err)
 	sdManager := discovery.NewManager(
 		ctx,
-		log.NewNopLogger(),
+		promslog.NewNopLogger(),
 		reg,
 		sdMetrics,
 		discovery.Name("sd-manager"),
@@ -1016,4 +1059,108 @@ func TestStop_DrainingEnabled(t *testing.T) {
 	}
 
 	require.Equal(t, int64(2), alertsReceived.Load())
+}
+
+func TestApplyConfig(t *testing.T) {
+	targetURL := "alertmanager:9093"
+	targetGroup := &targetgroup.Group{
+		Targets: []model.LabelSet{
+			{
+				"__address__": model.LabelValue(targetURL),
+			},
+		},
+	}
+	alertmanagerURL := fmt.Sprintf("http://%s/api/v2/alerts", targetURL)
+
+	n := NewManager(&Options{}, nil)
+	cfg := &config.Config{}
+	s := `
+alerting:
+  alertmanagers:
+  - file_sd_configs:
+    - files:
+      - foo.json
+`
+	// 1. Ensure known alertmanagers are not dropped during ApplyConfig.
+	require.NoError(t, yaml.UnmarshalStrict([]byte(s), cfg))
+	require.Len(t, cfg.AlertingConfig.AlertmanagerConfigs, 1)
+
+	// First, apply the config and reload.
+	require.NoError(t, n.ApplyConfig(cfg))
+	tgs := map[string][]*targetgroup.Group{"config-0": {targetGroup}}
+	n.reload(tgs)
+	require.Len(t, n.Alertmanagers(), 1)
+	require.Equal(t, alertmanagerURL, n.Alertmanagers()[0].String())
+
+	// Reapply the config.
+	require.NoError(t, n.ApplyConfig(cfg))
+	// Ensure the known alertmanagers are not dropped.
+	require.Len(t, n.Alertmanagers(), 1)
+	require.Equal(t, alertmanagerURL, n.Alertmanagers()[0].String())
+
+	// 2. Ensure known alertmanagers are not dropped during ApplyConfig even when
+	// the config order changes.
+	s = `
+alerting:
+  alertmanagers:
+  - static_configs:
+  - file_sd_configs:
+    - files:
+      - foo.json
+`
+	require.NoError(t, yaml.UnmarshalStrict([]byte(s), cfg))
+	require.Len(t, cfg.AlertingConfig.AlertmanagerConfigs, 2)
+
+	require.NoError(t, n.ApplyConfig(cfg))
+	require.Len(t, n.Alertmanagers(), 1)
+	// Ensure no unnecessary alertmanagers are injected.
+	require.Empty(t, n.alertmanagers["config-0"].ams)
+	// Ensure the config order is taken into account.
+	ams := n.alertmanagers["config-1"].ams
+	require.Len(t, ams, 1)
+	require.Equal(t, alertmanagerURL, ams[0].url().String())
+
+	// 3. Ensure known alertmanagers are reused for new config with identical AlertmanagerConfig.
+	s = `
+alerting:
+  alertmanagers:
+  - file_sd_configs:
+    - files:
+      - foo.json
+  - file_sd_configs:
+    - files:
+      - foo.json
+`
+	require.NoError(t, yaml.UnmarshalStrict([]byte(s), cfg))
+	require.Len(t, cfg.AlertingConfig.AlertmanagerConfigs, 2)
+
+	require.NoError(t, n.ApplyConfig(cfg))
+	require.Len(t, n.Alertmanagers(), 2)
+	for cfgIdx := range 2 {
+		ams := n.alertmanagers[fmt.Sprintf("config-%d", cfgIdx)].ams
+		require.Len(t, ams, 1)
+		require.Equal(t, alertmanagerURL, ams[0].url().String())
+	}
+
+	// 4. Ensure known alertmanagers are reused only for identical AlertmanagerConfig.
+	s = `
+alerting:
+  alertmanagers:
+  - file_sd_configs:
+    - files:
+      - foo.json
+    path_prefix: /bar
+  - file_sd_configs:
+    - files:
+      - foo.json
+    relabel_configs:
+    - source_labels: ['__address__']
+      regex: 'doesntmatter:1234'
+      action: drop
+`
+	require.NoError(t, yaml.UnmarshalStrict([]byte(s), cfg))
+	require.Len(t, cfg.AlertingConfig.AlertmanagerConfigs, 2)
+
+	require.NoError(t, n.ApplyConfig(cfg))
+	require.Empty(t, n.Alertmanagers())
 }

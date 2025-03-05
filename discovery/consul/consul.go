@@ -17,17 +17,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	consul "github.com/hashicorp/consul/api"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -113,8 +114,11 @@ type SDConfig struct {
 	Services []string `yaml:"services,omitempty"`
 	// A list of tags used to filter instances inside a service. Services must contain all tags in the list.
 	ServiceTags []string `yaml:"tags,omitempty"`
-	// Desired node metadata.
+	// Desired node metadata. As of Consul 1.14, consider `filter` instead.
 	NodeMeta map[string]string `yaml:"node_meta,omitempty"`
+	// Consul filter string
+	// See https://www.consul.io/api-docs/catalog#filtering-1, for syntax
+	Filter string `yaml:"filter,omitempty"`
 
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 }
@@ -174,22 +178,23 @@ type Discovery struct {
 	watchedServices  []string // Set of services which will be discovered.
 	watchedTags      []string // Tags used to filter instances of a service.
 	watchedNodeMeta  map[string]string
+	watchedFilter    string
 	allowStale       bool
 	refreshInterval  time.Duration
 	finalizer        func()
-	logger           log.Logger
+	logger           *slog.Logger
 	metrics          *consulMetrics
 }
 
 // NewDiscovery returns a new Discovery for the given config.
-func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
 	m, ok := metrics.(*consulMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	if logger == nil {
-		logger = log.NewNopLogger()
+		logger = promslog.NewNopLogger()
 	}
 
 	wrapper, err := config.NewClientFromConfig(conf.HTTPClientConfig, "consul_sd", config.WithIdleConnTimeout(2*watchTimeout))
@@ -218,6 +223,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.Discovere
 		watchedServices:  conf.Services,
 		watchedTags:      conf.ServiceTags,
 		watchedNodeMeta:  conf.NodeMeta,
+		watchedFilter:    conf.Filter,
 		allowStale:       conf.AllowStale,
 		refreshInterval:  time.Duration(conf.RefreshInterval),
 		clientDatacenter: conf.Datacenter,
@@ -236,22 +242,17 @@ func (d *Discovery) shouldWatch(name string, tags []string) bool {
 	return d.shouldWatchFromName(name) && d.shouldWatchFromTags(tags)
 }
 
-// shouldWatch returns whether the service of the given name should be watched based on its name.
+// shouldWatchFromName returns whether the service of the given name should be watched based on its name.
 func (d *Discovery) shouldWatchFromName(name string) bool {
 	// If there's no fixed set of watched services, we watch everything.
 	if len(d.watchedServices) == 0 {
 		return true
 	}
 
-	for _, sn := range d.watchedServices {
-		if sn == name {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(d.watchedServices, name)
 }
 
-// shouldWatch returns whether the service of the given name should be watched based on its tags.
+// shouldWatchFromTags returns whether the service of the given name should be watched based on its tags.
 // This gets called when the user doesn't specify a list of services in order to avoid watching
 // *all* services. Details in https://github.com/prometheus/prometheus/pull/3814
 func (d *Discovery) shouldWatchFromTags(tags []string) bool {
@@ -282,7 +283,7 @@ func (d *Discovery) getDatacenter() error {
 
 	info, err := d.client.Agent().Self()
 	if err != nil {
-		level.Error(d.logger).Log("msg", "Error retrieving datacenter name", "err", err)
+		d.logger.Error("Error retrieving datacenter name", "err", err)
 		d.metrics.rpcFailuresCount.Inc()
 		return err
 	}
@@ -290,12 +291,12 @@ func (d *Discovery) getDatacenter() error {
 	dc, ok := info["Config"]["Datacenter"].(string)
 	if !ok {
 		err := fmt.Errorf("invalid value '%v' for Config.Datacenter", info["Config"]["Datacenter"])
-		level.Error(d.logger).Log("msg", "Error retrieving datacenter name", "err", err)
+		d.logger.Error("Error retrieving datacenter name", "err", err)
 		return err
 	}
 
 	d.clientDatacenter = dc
-	d.logger = log.With(d.logger, "datacenter", dc)
+	d.logger = d.logger.With("datacenter", dc)
 	return nil
 }
 
@@ -361,13 +362,14 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 // entire list of services.
 func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.Group, lastIndex *uint64, services map[string]func()) {
 	catalog := d.client.Catalog()
-	level.Debug(d.logger).Log("msg", "Watching services", "tags", strings.Join(d.watchedTags, ","))
+	d.logger.Debug("Watching services", "tags", strings.Join(d.watchedTags, ","), "filter", d.watchedFilter)
 
 	opts := &consul.QueryOptions{
 		WaitIndex:  *lastIndex,
 		WaitTime:   watchTimeout,
 		AllowStale: d.allowStale,
 		NodeMeta:   d.watchedNodeMeta,
+		Filter:     d.watchedFilter,
 	}
 	t0 := time.Now()
 	srvs, meta, err := catalog.Services(opts.WithContext(ctx))
@@ -382,7 +384,7 @@ func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.
 	}
 
 	if err != nil {
-		level.Error(d.logger).Log("msg", "Error refreshing service list", "err", err)
+		d.logger.Error("Error refreshing service list", "err", err)
 		d.metrics.rpcFailuresCount.Inc()
 		time.Sleep(retryInterval)
 		return
@@ -445,7 +447,7 @@ type consulService struct {
 	discovery          *Discovery
 	client             *consul.Client
 	tagSeparator       string
-	logger             log.Logger
+	logger             *slog.Logger
 	rpcFailuresCount   prometheus.Counter
 	serviceRPCDuration prometheus.Observer
 }
@@ -490,7 +492,7 @@ func (d *Discovery) watchService(ctx context.Context, ch chan<- []*targetgroup.G
 
 // Get updates for a service.
 func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Group, health *consul.Health, lastIndex *uint64) {
-	level.Debug(srv.logger).Log("msg", "Watching service", "service", srv.name, "tags", strings.Join(srv.tags, ","))
+	srv.logger.Debug("Watching service", "service", srv.name, "tags", strings.Join(srv.tags, ","))
 
 	opts := &consul.QueryOptions{
 		WaitIndex:  *lastIndex,
@@ -513,7 +515,7 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 	}
 
 	if err != nil {
-		level.Error(srv.logger).Log("msg", "Error refreshing service", "service", srv.name, "tags", strings.Join(srv.tags, ","), "err", err)
+		srv.logger.Error("Error refreshing service", "service", srv.name, "tags", strings.Join(srv.tags, ","), "err", err)
 		srv.rpcFailuresCount.Inc()
 		time.Sleep(retryInterval)
 		return

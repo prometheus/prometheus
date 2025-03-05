@@ -16,13 +16,12 @@ package ovhcloud
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/netip"
 	"net/url"
 	"path"
 	"strconv"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/ovh/go-ovh/ovh"
 	"github.com/prometheus/common/model"
 
@@ -55,10 +54,10 @@ type dedicatedServer struct {
 type dedicatedServerDiscovery struct {
 	*refresh.Discovery
 	config *SDConfig
-	logger log.Logger
+	logger *slog.Logger
 }
 
-func newDedicatedServerDiscovery(conf *SDConfig, logger log.Logger) *dedicatedServerDiscovery {
+func newDedicatedServerDiscovery(conf *SDConfig, logger *slog.Logger) *dedicatedServerDiscovery {
 	return &dedicatedServerDiscovery{config: conf, logger: logger}
 }
 
@@ -115,10 +114,7 @@ func (d *dedicatedServerDiscovery) refresh(context.Context) ([]*targetgroup.Grou
 	for _, dedicatedServerName := range dedicatedServerList {
 		dedicatedServer, err := getDedicatedServerDetails(client, dedicatedServerName)
 		if err != nil {
-			err := level.Warn(d.logger).Log("msg", fmt.Sprintf("%s: Could not get details of %s", d.getSource(), dedicatedServerName), "err", err.Error())
-			if err != nil {
-				return nil, err
-			}
+			d.logger.Warn(fmt.Sprintf("%s: Could not get details of %s", d.getSource(), dedicatedServerName), "err", err.Error())
 			continue
 		}
 		dedicatedServerDetailedList = append(dedicatedServerDetailedList, *dedicatedServer)

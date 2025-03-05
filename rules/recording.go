@@ -15,8 +15,10 @@ package rules
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
+	"sync"
 	"time"
 
 	"go.uber.org/atomic"
@@ -42,8 +44,9 @@ type RecordingRule struct {
 	// Duration of how long it took to evaluate the recording rule.
 	evaluationDuration *atomic.Duration
 
-	noDependentRules  *atomic.Bool
-	noDependencyRules *atomic.Bool
+	dependenciesMutex sync.RWMutex
+	dependentRules    []Rule
+	dependencyRules   []Rule
 }
 
 // NewRecordingRule returns a new recording rule.
@@ -56,8 +59,6 @@ func NewRecordingRule(name string, vector parser.Expr, lset labels.Labels) *Reco
 		evaluationTimestamp: atomic.NewTime(time.Time{}),
 		evaluationDuration:  atomic.NewDuration(0),
 		lastError:           atomic.NewError(nil),
-		noDependentRules:    atomic.NewBool(false),
-		noDependencyRules:   atomic.NewBool(false),
 	}
 }
 
@@ -103,7 +104,7 @@ func (rule *RecordingRule) Eval(ctx context.Context, queryOffset time.Duration, 
 	// Check that the rule does not produce identical metrics after applying
 	// labels.
 	if vector.ContainsSameLabelset() {
-		return nil, fmt.Errorf("vector contains metrics with the same labelset after applying rule labels")
+		return nil, errors.New("vector contains metrics with the same labelset after applying rule labels")
 	}
 
 	numSeries := len(vector)
@@ -171,18 +172,52 @@ func (rule *RecordingRule) GetEvaluationTimestamp() time.Time {
 	return rule.evaluationTimestamp.Load()
 }
 
-func (rule *RecordingRule) SetNoDependentRules(noDependentRules bool) {
-	rule.noDependentRules.Store(noDependentRules)
+func (rule *RecordingRule) SetDependentRules(dependents []Rule) {
+	rule.dependenciesMutex.Lock()
+	defer rule.dependenciesMutex.Unlock()
+
+	rule.dependentRules = make([]Rule, len(dependents))
+	copy(rule.dependentRules, dependents)
 }
 
 func (rule *RecordingRule) NoDependentRules() bool {
-	return rule.noDependentRules.Load()
+	rule.dependenciesMutex.RLock()
+	defer rule.dependenciesMutex.RUnlock()
+
+	if rule.dependentRules == nil {
+		return false // We don't know if there are dependent rules.
+	}
+
+	return len(rule.dependentRules) == 0
 }
 
-func (rule *RecordingRule) SetNoDependencyRules(noDependencyRules bool) {
-	rule.noDependencyRules.Store(noDependencyRules)
+func (rule *RecordingRule) DependentRules() []Rule {
+	rule.dependenciesMutex.RLock()
+	defer rule.dependenciesMutex.RUnlock()
+	return rule.dependentRules
+}
+
+func (rule *RecordingRule) SetDependencyRules(dependencies []Rule) {
+	rule.dependenciesMutex.Lock()
+	defer rule.dependenciesMutex.Unlock()
+
+	rule.dependencyRules = make([]Rule, len(dependencies))
+	copy(rule.dependencyRules, dependencies)
 }
 
 func (rule *RecordingRule) NoDependencyRules() bool {
-	return rule.noDependencyRules.Load()
+	rule.dependenciesMutex.RLock()
+	defer rule.dependenciesMutex.RUnlock()
+
+	if rule.dependencyRules == nil {
+		return false // We don't know if there are dependency rules.
+	}
+
+	return len(rule.dependencyRules) == 0
+}
+
+func (rule *RecordingRule) DependencyRules() []Rule {
+	rule.dependenciesMutex.RLock()
+	defer rule.dependenciesMutex.RUnlock()
+	return rule.dependencyRules
 }
