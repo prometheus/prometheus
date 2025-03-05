@@ -234,9 +234,11 @@ func uniqueLabelKeys(rows []TimeSeriesRow) []string {
 
 func buildDynamicSchema(labelKeys []string) *parquet.Schema {
 	node := parquet.Group{
+		"x_series_id": parquet.Encoded(parquet.Int(64), &parquet.RLE),
+
 		"x_chunk":          parquet.Leaf(parquet.ByteArrayType),
-		"x_chunk_min_time": parquet.Encoded(parquet.Int(64), &parquet.DeltaBinaryPacked), // TODO For fixed intervals parquet.RLE might be better, we should test that
 		"x_chunk_max_time": parquet.Encoded(parquet.Int(64), &parquet.DeltaBinaryPacked),
+		"x_chunk_min_time": parquet.Encoded(parquet.Int(64), &parquet.DeltaBinaryPacked), // TODO For fixed intervals parquet.RLE might be better, we should test that
 	}
 	for _, label := range labelKeys {
 		node["l_"+label] = parquet.Encoded(parquet.String(), &parquet.RLEDictionary)
