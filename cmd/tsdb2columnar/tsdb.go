@@ -35,35 +35,10 @@ func createTSDBBlock(numSeries int, outputDir string, dimensions int, cardinalit
 		return "", fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	series := make([]storage.Series, 0, numSeries)
+	series := make([]storage.Series, 0)
 
-	for i := 0; i < numSeries; i++ {
-		labelPairs := []labels.Label{
-			{Name: "__name__", Value: fmt.Sprintf("tsdb2columnar_gauge_%d", i)},
-		}
-
-		for d := 0; d < dimensions; d++ {
-			labelName := fmt.Sprintf("dim_%d", d)
-
-			cardValue := i % cardinality
-			labelValue := fmt.Sprintf("val_%d", cardValue)
-
-			labelPairs = append(labelPairs, labels.Label{
-				Name:  labelName,
-				Value: labelValue,
-			})
-		}
-
-		lbls := labels.New(labelPairs...)
-
-		samples := []chunks.Sample{}
-		for j := 0; j < 500; j++ {
-			v := float64(j)
-			ts := mint + int64(j)*14*1000
-			samples = append(samples, newSample(ts, v, nil, nil))
-		}
-
-		series = append(series, storage.NewListSeries(lbls, samples))
+	for seriesIdx := 0; seriesIdx < numSeries; seriesIdx++ {
+		generateSeriesWithDimensions(seriesIdx, dimensions, cardinality, 0, nil, &series, mint)
 	}
 
 	blockFName, err := CreateBlock(
@@ -87,6 +62,42 @@ func createTSDBBlock(numSeries int, outputDir string, dimensions int, cardinalit
 	}
 
 	return blockFName, nil
+}
+
+// generateSeriesWithDimensions recursively generates all combinations of dimension values
+func generateSeriesWithDimensions(seriesIdx, dimensions, cardinality, currentDim int, currentLabels []labels.Label, series *[]storage.Series, mint int64) {
+	if currentDim == dimensions {
+		labelPairs := append(
+			[]labels.Label{
+				{Name: "__name__", Value: fmt.Sprintf("tsdb2columnar_gauge_%d", seriesIdx)},
+			},
+			currentLabels...,
+		)
+
+		lbls := labels.New(labelPairs...)
+
+		samples := []chunks.Sample{}
+		for j := 0; j < 500; j++ {
+			v := float64(j)
+			ts := mint + int64(j)*14*1000
+			samples = append(samples, newSample(ts, v, nil, nil))
+		}
+
+		*series = append(*series, storage.NewListSeries(lbls, samples))
+		return
+	}
+
+	labelName := fmt.Sprintf("dim_%d", currentDim)
+	for val := 0; val < cardinality; val++ {
+		labelValue := fmt.Sprintf("val_%d", val)
+
+		newLabels := append(currentLabels, labels.Label{
+			Name:  labelName,
+			Value: labelValue,
+		})
+
+		generateSeriesWithDimensions(seriesIdx, dimensions, cardinality, currentDim+1, newLabels, series, mint)
+	}
 }
 
 type sample struct {
@@ -145,8 +156,6 @@ func CreateBlock(series []storage.Series, dir string, chunkRange int64, logger *
 		}
 	}()
 
-	sampleCount := 0
-	const commitAfter = 10000
 	ctx := context.Background()
 	app := w.Appender(ctx)
 	var it chunkenc.Iterator
@@ -155,17 +164,9 @@ func CreateBlock(series []storage.Series, dir string, chunkRange int64, logger *
 		ref := storage.SeriesRef(0)
 		it = s.Iterator(it)
 		lset := s.Labels()
-		typ := it.Next()
-		lastTyp := typ
-		for ; typ != chunkenc.ValNone; typ = it.Next() {
-			if lastTyp != typ {
-				if err = app.Commit(); err != nil {
-					return "", err
-				}
-				app = w.Appender(ctx)
-				sampleCount = 0
-			}
 
+		for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
+			var err error
 			switch typ {
 			case chunkenc.ValFloat:
 				t, v := it.At()
@@ -182,18 +183,10 @@ func CreateBlock(series []storage.Series, dir string, chunkRange int64, logger *
 			if err != nil {
 				return "", err
 			}
-			sampleCount++
-			lastTyp = typ
 		}
+
 		if it.Err() != nil {
 			return "", it.Err()
-		}
-		if sampleCount > commitAfter {
-			if err = app.Commit(); err != nil {
-				return "", err
-			}
-			app = w.Appender(ctx)
-			sampleCount = 0
 		}
 	}
 

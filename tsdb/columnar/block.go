@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -33,7 +34,8 @@ import (
 
 // ColumnarIndexReader implements the tsdb.IndexReader interface.
 type ColumnarIndexReader struct {
-	ix Index
+	ix  Index
+	dir string
 }
 
 // The columnar index reader.
@@ -46,7 +48,8 @@ func NewColumnarIndexReader(dir string) (*ColumnarIndexReader, error) {
 	}
 
 	return &ColumnarIndexReader{
-		ix: index,
+		ix:  index,
+		dir: dir,
 	}, nil
 }
 
@@ -75,7 +78,6 @@ func (ir *ColumnarIndexReader) SortedLabelValues(_ context.Context, name string,
 			return nameValues, nil
 		}
 	}
-
 	return nil, errors.New("not implemented: SortedLabelValues")
 }
 
@@ -85,7 +87,41 @@ func (ir *ColumnarIndexReader) LabelValues(_ context.Context, _ string, _ ...*la
 }
 
 // Postings (ctx context.Context, name string, values ...string).
+//
+// So Postings is supposed to return the list of series ids (a.k.a postings) that match the inputs label name = values
+// The way to simplify this in your head is imagining that name is '__name__' and values only contains the metric name.
+//
+// In the TSDB world, the block index has a table of postings and a list of series with the key pairs of labels so by
+// traversing this data we can return the series ids that match the input.
+// See these two references for more information
+// - https://ganeshvernekar.com/blog/prometheus-tsdb-persistent-block-and-its-index#3-index
+// - See how at index.go the newReader method loads the postings slice to the list of label values
+//
+// So the idea for the parquet file could be to have a table with the following columns where for the same series
+// the series ID is repeated. Then also have a chunk meta column that will help us build the chunk metas later.
+// The series ID is increasing so with the right encoding and compression we can have a very efficient way to store this data.
+// | series ID | label 1 | label 2 | chunk | chunk meta (seriesid, chunk start, chunk end) |
+// |-----------|---------|---------|-------|-----------------------------------------------|
+// | 1         | a       | b       | 1     | 1,0,100                                       |
+// | 1         | a       | b       | 2     | 1,101,200                                     |
+// | 1         | a       | b       | 3     | 1,201,300                                     |
+// | 4         | a       | c       | 1     | 4,0,100                                       |
+// | 4         | a       | c       | 2     | 4,101,200                                     |
 func (ir *ColumnarIndexReader) Postings(_ context.Context, name string, values ...string) (index.Postings, error) {
+	// __name__, values=[tsdb2columanr_gauge_0]
+	// Things that I need
+	// - Extend the parquet file format to have the series IDs in it. [Done]
+	// - A way to read the parquet file [WIP]
+	if name != labels.MetricName {
+		panic("not implemented for anything else other than __name__")
+	}
+	if len(values) > 1 {
+		panic("not implemented for more than one value")
+	}
+	_ = query(filepath.Join(ir.dir, "data", ir.ix.Metrics[values[0]].ParquetFile), labels.MetricName, values[0])
+	// TODO convert from rows to postings
+
+	// - Build back the postings iterator
 	return nil, fmt.Errorf("not implemented: Postings name=%s values=%v", name, values)
 }
 
@@ -111,6 +147,8 @@ func (ir *ColumnarIndexReader) ShardedPostings(_ index.Postings, _, _ uint64) in
 
 // Series (ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta).
 func (ir *ColumnarIndexReader) Series(_ storage.SeriesRef, _ *labels.ScratchBuilder, _ *[]chunks.Meta) error {
+	// Series ref already tells us what to open so we can see how many chunks we have there
+	// IDea have a column with chunk start, end and series id repeated.
 	panic("not implemented: Series")
 }
 

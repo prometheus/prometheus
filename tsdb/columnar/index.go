@@ -38,6 +38,9 @@ type MetricMeta struct {
 	// krajorama: I'm not sure if this is going to be needed here or should be
 	// moved to the parquet file or a separate file.
 	LabelNames []string `json:"label_names" yaml:"label_names"`
+	// FileIndex is the index of the parquet file in the block that will help us to
+	// generate chunk references
+	FileIndex int32 `json:"file_index" yaml:"file_index"`
 }
 
 func indexPath(path string) string {

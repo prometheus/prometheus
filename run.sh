@@ -1,5 +1,5 @@
 #!/bin/bash
-echo "# Make sure you've built prometheus with 'make build' first."
+make build
 GOPATH=$(go env GOPATH)
 IDIR="${GOPATH}/github.com/krajorama/prometheus"
 promu build --prefix ${IDIR}
