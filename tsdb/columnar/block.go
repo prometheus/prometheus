@@ -196,6 +196,8 @@ func (cr *ColumnarChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk
 	//  }
 	//
 	// So the ColumnarIndexReader is responsible for building the chunk metas. We probably need to implement that method before this one.
+	// Idea:
+	// Lets split meta.Ref first 32 bits to point to the parquet file and the last 32 bits to point to the row within the parquet file which will give us the chunk.
 
 	// TODO(jesus.vazquez) I think iterable should always be nil because we're reading from a block, not a WAL or head
 	return nil, nil, errors.New("not implemented: ChunkOrIterable")
