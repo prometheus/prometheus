@@ -16,6 +16,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"github.com/prometheus/prometheus/promql/parser"
 	"log/slog"
 	"mime"
 	"net/url"
@@ -732,6 +733,8 @@ type ScrapeConfig struct {
 	RelabelConfigs []*relabel.Config `yaml:"relabel_configs,omitempty"`
 	// List of metric relabel configurations.
 	MetricRelabelConfigs []*relabel.Config `yaml:"metric_relabel_configs,omitempty"`
+	// List of rules to execute at scrape time.
+	RuleConfigs []*ScrapeRuleConfig `yaml:"scrape_rule_configs,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -856,6 +859,38 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 // MarshalYAML implements the yaml.Marshaler interface.
 func (c *ScrapeConfig) MarshalYAML() (interface{}, error) {
 	return discovery.MarshalYAMLWithInlineConfigs(c)
+}
+
+// ScrapeRuleConfig is the configuration for rules executed
+// at scrape time for each individual target.
+type ScrapeRuleConfig struct {
+	Expr   string `yaml:"expr"`
+	Record string `yaml:"record"`
+}
+
+func (a *ScrapeRuleConfig) Validate() error {
+	if a.Record == "" {
+		return errors.New("aggregation rule record must not be empty")
+	}
+
+	if a.Expr == "" {
+		return errors.New("aggregation rule expression must not be empty")
+	}
+
+	expr, err := parser.ParseExpr(a.Expr)
+	if err != nil {
+		return fmt.Errorf("invalid scrape rule expression: %w", err)
+	}
+
+	parser.Inspect(expr, func(node parser.Node, nodes []parser.Node) error {
+		if _, ok := node.(*parser.MatrixSelector); ok {
+			err = errors.New("matrix selectors are not allowed in scrape rule expressions")
+			return err
+		}
+		return nil
+	})
+
+	return err
 }
 
 // StorageConfig configures runtime reloadable configuration options.
