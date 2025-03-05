@@ -16,7 +16,6 @@ package config
 import (
 	"errors"
 	"fmt"
-	"github.com/prometheus/prometheus/promql/parser"
 	"log/slog"
 	"mime"
 	"net/url"
@@ -39,6 +38,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage/remote/azuread"
 	"github.com/prometheus/prometheus/storage/remote/googleiam"
 )
@@ -1027,7 +1027,7 @@ func (a *ScrapeRuleConfig) Validate() error {
 		return fmt.Errorf("invalid scrape rule expression: %w", err)
 	}
 
-	parser.Inspect(expr, func(node parser.Node, nodes []parser.Node) error {
+	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
 		if _, ok := node.(*parser.MatrixSelector); ok {
 			err = errors.New("matrix selectors are not allowed in scrape rule expressions")
 			return err
