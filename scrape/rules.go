@@ -189,12 +189,12 @@ func (s *seriesSet) At() storage.Series {
 			Metric:     sample.metric,
 			Histograms: []promql.HPoint{{T: sample.t, H: sample.fh}},
 		})
-	} else {
-		return promql.NewStorageSeries(promql.Series{
-			Metric: sample.metric,
-			Floats: []promql.FPoint{{T: sample.t, F: sample.f}},
-		})
 	}
+
+	return promql.NewStorageSeries(promql.Series{
+		Metric: sample.metric,
+		Floats: []promql.FPoint{{T: sample.t, F: sample.f}},
+	})
 }
 
 func (s *seriesSet) Err() error                        { return nil }
