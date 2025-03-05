@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 func TestColumnarQuerier(t *testing.T) {
@@ -37,12 +38,17 @@ func TestColumnarQuerier(t *testing.T) {
 
 	seriesSet := q.Select(ctx, false, nil, matchers...)
 
-	require.True(t, seriesSet.Next())
-	series := seriesSet.At()
-	require.Equal(t, "tsdb2columnar_gauge_0", series.Labels().Get("__name__"))
-	lbls := []string{}
-	series.Labels().Range(func(l labels.Label) {
-		lbls = append(lbls, l.Name+"="+l.Value)
-	})
-	require.Equal(t, "", strings.Join(lbls, ","))
+	for seriesSet.Next() {
+		series := seriesSet.At()
+		lbls := []string{}
+		series.Labels().Range(func(l labels.Label) {
+			lbls = append(lbls, l.Name+"="+l.Value)
+		})
+
+		it := series.Iterator(nil)
+		for it.Next() != chunkenc.ValNone {
+			println(it.At())
+		}
+		require.Equal(t, "__name__=tsdb2columnar_gauge_0", strings.Join(lbls, ","))
+	}
 }

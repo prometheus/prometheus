@@ -23,13 +23,11 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/oklog/ulid"
 	"github.com/parquet-go/parquet-go"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/columnar"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -79,9 +77,6 @@ func (q *columnarQuerier) Close() error {
 	q.closed = true
 	return errs.Err()
 }
-
-// TODO: make this a columnarQuerier field
-var selectColumns = []string{"instance", "job"}
 
 func buildSchemaForLabels(labels []string, chunks bool) *parquet.Schema {
 	// TODO: use common util
@@ -133,12 +128,12 @@ func (q *columnarQuerier) Select(ctx context.Context, sortSeries bool, hints *st
 	}
 	defer f.Close()
 
-	columns := q.ix.Metrics[metricFamily].LabelNames
+	columns := []string{}
 	for _, m := range ms {
 		if m.Type != labels.MatchEqual {
 			panic("only MatchEqual is supported")
 		}
-		if !slices.Contains(columns, m.Name) {
+		if !slices.Contains(columns, m.Name) && slices.Contains(q.ix.Metrics[metricFamily].LabelNames, m.Name) {
 			columns = append(columns, m.Name)
 		}
 	}
@@ -220,32 +215,55 @@ type rowsSeries struct {
 	rows        []parquet.Row
 }
 
+type consecutiveChunkIterators struct {
+	chunkenc.Iterator
+	left []chunkenc.Iterator
+}
+
+func newConsecutiveChunkIterators(its []chunkenc.Iterator) *consecutiveChunkIterators {
+	return &consecutiveChunkIterators{
+		Iterator: its[0],
+		left:     its[1:],
+	}
+}
+
+func (c *consecutiveChunkIterators) Next() chunkenc.ValueType {
+	rv := c.Iterator.Next()
+	if rv != chunkenc.ValNone {
+		return rv
+	}
+
+	if len(c.left) == 0 {
+		return rv
+	}
+
+	c.Iterator = c.left[0]
+	c.left = c.left[1:]
+	return c.Next()
+}
+
 // Iterator implements storage.Series.
 func (r *rowsSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
-	pi, ok := it.(*populateWithDelSeriesIterator)
-	if !ok {
-		pi = &populateWithDelSeriesIterator{}
-	}
-	slices := make([]chunks.ByteSlice, len(r.rows))
-	for _, row := range r.rows {
-		slices = append(slices, chunks.RealByteSlice(row[r.columnIndex["x_chunk"]].ByteArray()))
-	}
+
+	pool := chunkenc.NewPool()
 	// TODO: no closers
-	reader, err := chunks.NewReader(slices, nil, chunkenc.NewPool())
-	if err != nil {
-		panic(err)
-	}
-	metas := make([]chunks.Meta, len(r.rows))
-	for i, _ := range r.rows {
-		metas[i] = chunks.Meta{
-			Ref:     chunks.ChunkRef(i),
-			MinTime: 0,   // TODO
-			MaxTime: 0,   // TODO
-			Chunk:   nil, // Just pray this doesn't get used
+	its := make([]chunkenc.Iterator, 0, len(r.rows))
+	// metas := make([]chunks.Meta, len(r.rows))
+	for _, row := range r.rows {
+		chnk, err := pool.Get(chunkenc.EncXOR, row[r.columnIndex["x_chunk"]].ByteArray())
+		if err != nil {
+			panic(err)
 		}
+		its = append(its, chnk.Iterator(nil))
+		// metas[i] = chunks.Meta{
+		// 	Ref:     chunks.ChunkRef(i),
+		// 	MinTime: 0, // TODO
+		// 	MaxTime: 0, // TODO
+		// 	Chunk:   chnk,
+		// }
 	}
-	pi.reset(ulid.ULID{}, reader, metas, nil)
-	return pi
+
+	return newConsecutiveChunkIterators(its)
 }
 
 // Labels implements storage.Series.
@@ -280,6 +298,7 @@ func (b *columnarSeriesSet) Next() bool {
 		rows:        b.rows[from:to],
 		columnIndex: b.columnIndex,
 	}
+	b.rowIdx = to
 
 	return true
 
