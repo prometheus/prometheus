@@ -270,6 +270,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "promql-delayed-name-removal":
 				c.promqlEnableDelayedNameRemoval = true
 				logger.Info("Experimental PromQL delayed name removal enabled.")
+			case "scrape-rules":
+				c.scrape.EnableScrapeRules = true
+				logger.Info("Experimental scrape-time recording rules enabled.")
 			case "":
 				continue
 			case "old-ui":
@@ -744,12 +747,30 @@ func main() {
 		os.Exit(1)
 	}
 
+	opts := promql.EngineOpts{
+		Logger:                   logger.With("component", "query engine"),
+		Reg:                      prometheus.DefaultRegisterer,
+		MaxSamples:               cfg.queryMaxSamples,
+		Timeout:                  time.Duration(cfg.queryTimeout),
+		ActiveQueryTracker:       promql.NewActiveQueryTracker(localStoragePath, cfg.queryConcurrency, logger.With("component", "activeQueryTracker")),
+		LookbackDelta:            time.Duration(cfg.lookbackDelta),
+		NoStepSubqueryIntervalFn: noStepSubqueryInterval.Get,
+		// EnableAtModifier and EnableNegativeOffset have to be
+		// always on for regular PromQL as of Prometheus v2.33.
+		EnableAtModifier:         true,
+		EnableNegativeOffset:     true,
+		EnablePerStepStats:       cfg.enablePerStepStats,
+		EnableDelayedNameRemoval: cfg.promqlEnableDelayedNameRemoval,
+	}
+	queryEngine := promql.NewEngine(opts)
+
 	scrapeManager, err := scrape.NewManager(
 		&cfg.scrape,
 		logger.With("component", "scrape manager"),
 		logging.NewJSONFileLogger,
 		fanoutStorage,
 		prometheus.DefaultRegisterer,
+		queryEngine,
 	)
 	if err != nil {
 		logger.Error("failed to create a scrape manager", "err", err)
@@ -758,9 +779,7 @@ func main() {
 
 	var (
 		tracingManager = tracing.NewManager(logger)
-
-		queryEngine *promql.Engine
-		ruleManager *rules.Manager
+		ruleManager    *rules.Manager
 	)
 
 	if cfg.maxprocsEnable {
@@ -787,24 +806,6 @@ func main() {
 	}
 
 	if !agentMode {
-		opts := promql.EngineOpts{
-			Logger:                   logger.With("component", "query engine"),
-			Reg:                      prometheus.DefaultRegisterer,
-			MaxSamples:               cfg.queryMaxSamples,
-			Timeout:                  time.Duration(cfg.queryTimeout),
-			ActiveQueryTracker:       promql.NewActiveQueryTracker(localStoragePath, cfg.queryConcurrency, logger.With("component", "activeQueryTracker")),
-			LookbackDelta:            time.Duration(cfg.lookbackDelta),
-			NoStepSubqueryIntervalFn: noStepSubqueryInterval.Get,
-			// EnableAtModifier and EnableNegativeOffset have to be
-			// always on for regular PromQL as of Prometheus v2.33.
-			EnableAtModifier:         true,
-			EnableNegativeOffset:     true,
-			EnablePerStepStats:       cfg.enablePerStepStats,
-			EnableDelayedNameRemoval: cfg.promqlEnableDelayedNameRemoval,
-		}
-
-		queryEngine = promql.NewEngine(opts)
-
 		ruleManager = rules.NewManager(&rules.ManagerOptions{
 			Appendable:             fanoutStorage,
 			Queryable:              localStorage,
