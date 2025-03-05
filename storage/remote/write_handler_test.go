@@ -31,9 +31,9 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/common/promslog"
 
-	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -59,8 +59,8 @@ func TestRemoteWriteHandlerHeadersHandling_V1Message(t *testing.T) {
 		{
 			name: "correct PRW 1.0 headers",
 			reqHeaders: map[string]string{
-				"Content-Type":           remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV1],
-				"Content-Encoding":       string(SnappyBlockCompression),
+				"Content-Type":           remoteWriteContentTypeHeaders[remoteapi.WriteV1MessageType],
+				"Content-Encoding":       string(remoteapi.SnappyBlockCompression),
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
 			expectedCode: http.StatusNoContent,
@@ -68,8 +68,8 @@ func TestRemoteWriteHandlerHeadersHandling_V1Message(t *testing.T) {
 		{
 			name: "missing remote write version",
 			reqHeaders: map[string]string{
-				"Content-Type":     remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV1],
-				"Content-Encoding": string(SnappyBlockCompression),
+				"Content-Type":     remoteWriteContentTypeHeaders[remoteapi.WriteV1MessageType],
+				"Content-Encoding": string(remoteapi.SnappyBlockCompression),
 			},
 			expectedCode: http.StatusNoContent,
 		},
@@ -81,7 +81,7 @@ func TestRemoteWriteHandlerHeadersHandling_V1Message(t *testing.T) {
 		{
 			name: "missing content-type",
 			reqHeaders: map[string]string{
-				"Content-Encoding":       string(SnappyBlockCompression),
+				"Content-Encoding":       string(remoteapi.SnappyBlockCompression),
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
 			expectedCode: http.StatusNoContent,
@@ -89,7 +89,7 @@ func TestRemoteWriteHandlerHeadersHandling_V1Message(t *testing.T) {
 		{
 			name: "missing content-encoding",
 			reqHeaders: map[string]string{
-				"Content-Type":           remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV1],
+				"Content-Type":           remoteWriteContentTypeHeaders[remoteapi.WriteV1MessageType],
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
 			expectedCode: http.StatusNoContent,
@@ -98,7 +98,7 @@ func TestRemoteWriteHandlerHeadersHandling_V1Message(t *testing.T) {
 			name: "wrong content-type",
 			reqHeaders: map[string]string{
 				"Content-Type":           "yolo",
-				"Content-Encoding":       string(SnappyBlockCompression),
+				"Content-Encoding":       string(remoteapi.SnappyBlockCompression),
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
 			expectedCode: http.StatusUnsupportedMediaType,
@@ -107,7 +107,7 @@ func TestRemoteWriteHandlerHeadersHandling_V1Message(t *testing.T) {
 			name: "wrong content-type2",
 			reqHeaders: map[string]string{
 				"Content-Type":           appProtoContentType + ";proto=yolo",
-				"Content-Encoding":       string(SnappyBlockCompression),
+				"Content-Encoding":       string(remoteapi.SnappyBlockCompression),
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
 			expectedCode: http.StatusUnsupportedMediaType,
@@ -115,7 +115,7 @@ func TestRemoteWriteHandlerHeadersHandling_V1Message(t *testing.T) {
 		{
 			name: "not supported content-encoding",
 			reqHeaders: map[string]string{
-				"Content-Type":           remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV1],
+				"Content-Type":           remoteWriteContentTypeHeaders[remoteapi.WriteV1MessageType],
 				"Content-Encoding":       "zstd",
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
@@ -123,14 +123,14 @@ func TestRemoteWriteHandlerHeadersHandling_V1Message(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			req, err := http.NewRequest("", "", bytes.NewReader(payload))
+			req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
 			require.NoError(t, err)
 			for k, v := range tc.reqHeaders {
 				req.Header.Set(k, v)
 			}
 
 			appendable := &mockAppendable{}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, remoteapi.MessageTypes{remoteapi.WriteV1MessageType}, false)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -156,8 +156,8 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 		{
 			name: "correct PRW 2.0 headers",
 			reqHeaders: map[string]string{
-				"Content-Type":           remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV2],
-				"Content-Encoding":       string(SnappyBlockCompression),
+				"Content-Type":           remoteWriteContentTypeHeaders[remoteapi.WriteV2MessageType],
+				"Content-Encoding":       string(remoteapi.SnappyBlockCompression),
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
 			expectedCode: http.StatusNoContent,
@@ -165,32 +165,15 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 		{
 			name: "missing remote write version",
 			reqHeaders: map[string]string{
-				"Content-Type":     remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV2],
-				"Content-Encoding": string(SnappyBlockCompression),
+				"Content-Type":     remoteWriteContentTypeHeaders[remoteapi.WriteV2MessageType],
+				"Content-Encoding": string(remoteapi.SnappyBlockCompression),
 			},
 			expectedCode: http.StatusNoContent, // We don't check for now.
 		},
 		{
-			name:         "no headers",
-			reqHeaders:   map[string]string{},
-			expectedCode: http.StatusUnsupportedMediaType,
-		},
-		{
-			name: "missing content-type",
-			reqHeaders: map[string]string{
-				"Content-Encoding":       string(SnappyBlockCompression),
-				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
-			},
-			// This only gives 415, because we explicitly only support 2.0. If we supported both
-			// (default) it would be empty message parsed and ok response.
-			// This is perhaps better, than 415 for previously working 1.0 flow with
-			// no content-type.
-			expectedCode: http.StatusUnsupportedMediaType,
-		},
-		{
 			name: "missing content-encoding",
 			reqHeaders: map[string]string{
-				"Content-Type":           remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV2],
+				"Content-Type":           remoteWriteContentTypeHeaders[remoteapi.WriteV2MessageType],
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
 			expectedCode: http.StatusNoContent, // Similar to 1.0 impl, we default to Snappy, so it works.
@@ -199,7 +182,7 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 			name: "wrong content-type",
 			reqHeaders: map[string]string{
 				"Content-Type":           "yolo",
-				"Content-Encoding":       string(SnappyBlockCompression),
+				"Content-Encoding":       string(remoteapi.SnappyBlockCompression),
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
 			expectedCode: http.StatusUnsupportedMediaType,
@@ -208,7 +191,7 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 			name: "wrong content-type2",
 			reqHeaders: map[string]string{
 				"Content-Type":           appProtoContentType + ";proto=yolo",
-				"Content-Encoding":       string(SnappyBlockCompression),
+				"Content-Encoding":       string(remoteapi.SnappyBlockCompression),
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
 			expectedCode: http.StatusUnsupportedMediaType,
@@ -216,7 +199,7 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 		{
 			name: "not supported content-encoding",
 			reqHeaders: map[string]string{
-				"Content-Type":           remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV2],
+				"Content-Type":           remoteWriteContentTypeHeaders[remoteapi.WriteV2MessageType],
 				"Content-Encoding":       "zstd",
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
@@ -224,14 +207,14 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			req, err := http.NewRequest("", "", bytes.NewReader(payload))
+			req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
 			require.NoError(t, err)
 			for k, v := range tc.reqHeaders {
 				req.Header.Set(k, v)
 			}
 
 			appendable := &mockAppendable{}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2}, false)
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, remoteapi.MessageTypes{remoteapi.WriteV2MessageType}, false)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -249,14 +232,14 @@ func TestRemoteWriteHandler_V1Message(t *testing.T) {
 	payload, _, _, err := buildWriteRequest(nil, writeRequestFixture.Timeseries, nil, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
-	req, err := http.NewRequest("", "", bytes.NewReader(payload))
+	req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
 	require.NoError(t, err)
 
 	// NOTE: Strictly speaking, even for 1.0 we require headers, but we never verified those
 	// in Prometheus, so keeping like this to not break existing 1.0 clients.
 
 	appendable := &mockAppendable{}
-	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, remoteapi.MessageTypes{remoteapi.WriteV1MessageType}, false)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -441,11 +424,11 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), tc.input, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
 			require.NoError(t, err)
 
-			req, err := http.NewRequest("", "", bytes.NewReader(payload))
+			req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
 			require.NoError(t, err)
 
-			req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV2])
-			req.Header.Set("Content-Encoding", string(SnappyBlockCompression))
+			req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[remoteapi.WriteV2MessageType])
+			req.Header.Set("Content-Encoding", string(remoteapi.SnappyBlockCompression))
 			req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
 
 			appendable := &mockAppendable{
@@ -456,7 +439,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				appendExemplarErr:     tc.appendExemplarErr,
 				updateMetadataErr:     tc.updateMetadataErr,
 			}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2}, tc.ingestCTZeroSample)
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, remoteapi.MessageTypes{remoteapi.WriteV2MessageType}, tc.ingestCTZeroSample)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -563,11 +546,11 @@ func TestOutOfOrderSample_V1Message(t *testing.T) {
 			}}, nil, nil, nil, nil, "snappy")
 			require.NoError(t, err)
 
-			req, err := http.NewRequest("", "", bytes.NewReader(payload))
+			req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
 			require.NoError(t, err)
 
 			appendable := &mockAppendable{latestSample: map[uint64]int64{labels.FromStrings("__name__", "test_metric").Hash(): 100}}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, remoteapi.MessageTypes{remoteapi.WriteV1MessageType}, false)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -605,11 +588,11 @@ func TestOutOfOrderExemplar_V1Message(t *testing.T) {
 			}}, nil, nil, nil, nil, "snappy")
 			require.NoError(t, err)
 
-			req, err := http.NewRequest("", "", bytes.NewReader(payload))
+			req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
 			require.NoError(t, err)
 
 			appendable := &mockAppendable{latestSample: map[uint64]int64{labels.FromStrings("__name__", "test_metric").Hash(): 100}}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, remoteapi.MessageTypes{remoteapi.WriteV1MessageType}, false)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -643,11 +626,11 @@ func TestOutOfOrderHistogram_V1Message(t *testing.T) {
 			}}, nil, nil, nil, nil, "snappy")
 			require.NoError(t, err)
 
-			req, err := http.NewRequest("", "", bytes.NewReader(payload))
+			req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
 			require.NoError(t, err)
 
 			appendable := &mockAppendable{latestSample: map[uint64]int64{labels.FromStrings("__name__", "test_metric").Hash(): 100}}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
+			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, remoteapi.MessageTypes{remoteapi.WriteV1MessageType}, false)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -671,14 +654,14 @@ func BenchmarkRemoteWriteHandler(b *testing.B) {
 			Histograms: []prompb.Histogram{prompb.FromIntHistogram(0, &testHistogram)},
 		}}, nil, nil, nil, nil, "snappy")
 		require.NoError(b, err)
-		req, err := http.NewRequest("", "", bytes.NewReader(buf))
+		req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(buf))
 		require.NoError(b, err)
 		reqs = append(reqs, req)
 	}
 
 	appendable := &mockAppendable{}
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, remoteapi.MessageTypes{remoteapi.WriteV1MessageType}, false)
 	recorder := httptest.NewRecorder()
 
 	b.ResetTimer()
@@ -691,11 +674,11 @@ func TestCommitErr_V1Message(t *testing.T) {
 	payload, _, _, err := buildWriteRequest(nil, writeRequestFixture.Timeseries, nil, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
-	req, err := http.NewRequest("", "", bytes.NewReader(payload))
+	req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
 	require.NoError(t, err)
 
 	appendable := &mockAppendable{commitErr: errors.New("commit error")}
-	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, remoteapi.MessageTypes{remoteapi.WriteV1MessageType}, false)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -711,15 +694,15 @@ func TestCommitErr_V2Message(t *testing.T) {
 	payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
 	require.NoError(t, err)
 
-	req, err := http.NewRequest("", "", bytes.NewReader(payload))
+	req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
 	require.NoError(t, err)
 
-	req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV2])
-	req.Header.Set("Content-Encoding", string(SnappyBlockCompression))
+	req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[remoteapi.WriteV2MessageType])
+	req.Header.Set("Content-Encoding", string(remoteapi.SnappyBlockCompression))
 	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
 
 	appendable := &mockAppendable{commitErr: errors.New("commit error")}
-	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2}, false)
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, remoteapi.MessageTypes{remoteapi.WriteV2MessageType}, false)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -746,12 +729,12 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 		require.NoError(b, db.Close())
 	})
 	// TODO: test with other proto format(s)
-	handler := NewWriteHandler(promslog.NewNopLogger(), nil, db.Head(), []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, db.Head(), remoteapi.MessageTypes{remoteapi.WriteV1MessageType}, false)
 
 	buf, _, _, err := buildWriteRequest(nil, genSeriesWithSample(1000, 200*time.Minute.Milliseconds()), nil, nil, nil, nil, "snappy")
 	require.NoError(b, err)
 
-	req, err := http.NewRequest("", "", bytes.NewReader(buf))
+	req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(buf))
 	require.NoError(b, err)
 
 	recorder := httptest.NewRecorder()
@@ -768,7 +751,7 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < 100; i++ {
-		req, err = http.NewRequest("", "", bytes.NewReader(bufRequests[i]))
+		req, err = http.NewRequest(http.MethodPost, "", bytes.NewReader(bufRequests[i]))
 		require.NoError(b, err)
 
 		recorder = httptest.NewRecorder()

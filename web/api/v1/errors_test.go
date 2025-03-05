@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/grafana/regexp"
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/route"
@@ -140,7 +141,7 @@ func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable) *route
 		nil,
 		nil,
 		false,
-		config.RemoteWriteProtoMsgs{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2},
+		remoteapi.MessageTypes{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType},
 		false,
 		false,
 		false,
