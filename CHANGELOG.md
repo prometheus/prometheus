@@ -2,7 +2,7 @@
 
 ## unreleased
 
-* [BUGFIX] TSDB: keep duplicate series records in checkpoints while their samples may still be present in the WAL. #16060
+* [BUGFIX] TSDB: fix unknown series errors and possible lost data during WAL replay when series are removed from the head due to inactivity and reappear before the next WAL checkpoint. #16060
 
 ## 3.2.1 / 2025-02-25
 
