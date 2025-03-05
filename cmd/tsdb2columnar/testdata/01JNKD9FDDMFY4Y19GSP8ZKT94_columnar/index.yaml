@@ -1,0 +1,81 @@
+metrics:
+  tsdb2columnar_gauge_0:
+    parquet_file: tsdb2columnar_gauge_0.parquet
+    min_t: 1733824800000
+    max_t: 1733831786000
+    label_names:
+    - __name__
+    - dim_0
+    file_index: 1
+  tsdb2columnar_gauge_1:
+    parquet_file: tsdb2columnar_gauge_1.parquet
+    min_t: 1733824800000
+    max_t: 1733831786000
+    label_names:
+    - __name__
+    - dim_0
+    file_index: 2
+  tsdb2columnar_gauge_2:
+    parquet_file: tsdb2columnar_gauge_2.parquet
+    min_t: 1733824800000
+    max_t: 1733831786000
+    label_names:
+    - __name__
+    - dim_0
+    file_index: 3
+  tsdb2columnar_gauge_3:
+    parquet_file: tsdb2columnar_gauge_3.parquet
+    min_t: 1733824800000
+    max_t: 1733831786000
+    label_names:
+    - __name__
+    - dim_0
+    file_index: 7
+  tsdb2columnar_gauge_4:
+    parquet_file: tsdb2columnar_gauge_4.parquet
+    min_t: 1733824800000
+    max_t: 1733831786000
+    label_names:
+    - __name__
+    - dim_0
+    file_index: 8
+  tsdb2columnar_gauge_5:
+    parquet_file: tsdb2columnar_gauge_5.parquet
+    min_t: 1733824800000
+    max_t: 1733831786000
+    label_names:
+    - __name__
+    - dim_0
+    file_index: 4
+  tsdb2columnar_gauge_6:
+    parquet_file: tsdb2columnar_gauge_6.parquet
+    min_t: 1733824800000
+    max_t: 1733831786000
+    label_names:
+    - __name__
+    - dim_0
+    file_index: 5
+  tsdb2columnar_gauge_7:
+    parquet_file: tsdb2columnar_gauge_7.parquet
+    min_t: 1733824800000
+    max_t: 1733831786000
+    label_names:
+    - __name__
+    - dim_0
+    file_index: 9
+  tsdb2columnar_gauge_8:
+    parquet_file: tsdb2columnar_gauge_8.parquet
+    min_t: 1733824800000
+    max_t: 1733831786000
+    label_names:
+    - __name__
+    - dim_0
+    file_index: 10
+  tsdb2columnar_gauge_9:
+    parquet_file: tsdb2columnar_gauge_9.parquet
+    min_t: 1733824800000
+    max_t: 1733831786000
+    label_names:
+    - __name__
+    - dim_0
+    file_index: 6

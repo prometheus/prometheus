@@ -105,8 +105,8 @@ func (ir *ColumnarIndexReader) LabelValues(_ context.Context, _ string, _ ...*la
 // | 4         | a       | c       | 1     | 4,0,100                                       |
 func (ir *ColumnarIndexReader) Postings(_ context.Context, name string, values ...string) (index.Postings, error) {
 	// Things that I need
-	// - Extend the parquet file format to have the series IDs in it. [WIP]
-	// - A way to read the parquet file
+	// - Extend the parquet file format to have the series IDs in it. [Done]
+	// - A way to read the parquet file [WIP]
 	// - Build back the postings iterator
 	return nil, fmt.Errorf("not implemented: Postings name=%s values=%v", name, values)
 }
