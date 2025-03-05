@@ -75,7 +75,6 @@ func (ir *ColumnarIndexReader) SortedLabelValues(_ context.Context, name string,
 			return nameValues, nil
 		}
 	}
-
 	return nil, errors.New("not implemented: SortedLabelValues")
 }
 
@@ -84,8 +83,18 @@ func (ir *ColumnarIndexReader) LabelValues(_ context.Context, _ string, _ ...*la
 	return nil, errors.New("not implemented: LabelValues")
 }
 
+/*
+| series ID | label 1 | label 2 | chunk | chunk meta (seriesid, chunk start, chunk end) |
+|-----------|---------|---------|-------|-----------------------------------------------|
+| 1         | a       | b       | 1     | 1,0,100                                       |
+| 1         | a       | b       | 2     | 1,101,200                                     |
+| 1         | a       | b       | 3     | 1,201,300                                     |
+| 4 	    | a       | c       | 1     | 4,0,100                                       |
+*/
+
 // Postings (ctx context.Context, name string, values ...string).
 func (ir *ColumnarIndexReader) Postings(_ context.Context, name string, values ...string) (index.Postings, error) {
+	// When generating the posting we can
 	return nil, fmt.Errorf("not implemented: Postings name=%s values=%v", name, values)
 }
 
@@ -111,6 +120,8 @@ func (ir *ColumnarIndexReader) ShardedPostings(_ index.Postings, _, _ uint64) in
 
 // Series (ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta).
 func (ir *ColumnarIndexReader) Series(_ storage.SeriesRef, _ *labels.ScratchBuilder, _ *[]chunks.Meta) error {
+	// Series ref already tells us what to open so we can see how many chunks we have there
+	// IDea have a column with chunk start, end and series id repeated.
 	panic("not implemented: Series")
 }
 

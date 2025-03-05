@@ -91,12 +91,15 @@ func convertToColumnarBlock(blockPath string, logger *slog.Logger) error {
 
 	newIndex := columnar.NewIndex()
 
+	fileIndex := int32(1)
+
 	for metricName, series := range metricFamilies {
-		mm, err := writeParquetFile(metricName, series, dataDir, logger)
+		mm, err := writeParquetFile(metricName, series, dataDir, logger, fileIndex)
 		if err != nil {
 			return fmt.Errorf("failed to write Parquet file for metric %s: %w", metricName, err)
 		}
 		newIndex.Metrics[metricName] = mm
+		fileIndex++
 	}
 
 	if err := columnar.WriteIndex(newIndex, columnarBlockPath); err != nil {
@@ -178,10 +181,12 @@ func writeParquetFile(
 	series []TimeSeriesRow,
 	dataDir string,
 	logger *slog.Logger,
+	fileIndex int32,
 ) (columnar.MetricMeta, error) {
 	metricMeta := columnar.MetricMeta{
 		ParquetFile: metricName + ".parquet",
 		LabelNames:  uniqueLabelKeys(series),
+		FileIndex:   fileIndex,
 	}
 
 	schema := buildDynamicSchema(metricMeta.LabelNames)
