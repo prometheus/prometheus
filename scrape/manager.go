@@ -23,6 +23,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/prometheus/promql"
+
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -39,7 +41,14 @@ import (
 )
 
 // NewManager is the Manager constructor.
-func NewManager(o *Options, logger *slog.Logger, newScrapeFailureLogger func(string) (*logging.JSONFileLogger, error), app storage.Appendable, registerer prometheus.Registerer) (*Manager, error) {
+func NewManager(
+	o *Options,
+	logger *slog.Logger,
+	newScrapeFailureLogger func(string) (*logging.JSONFileLogger, error),
+	app storage.Appendable,
+	registerer prometheus.Registerer,
+	queryEngine *promql.Engine,
+) (*Manager, error) {
 	if o == nil {
 		o = &Options{}
 	}
@@ -63,6 +72,7 @@ func NewManager(o *Options, logger *slog.Logger, newScrapeFailureLogger func(str
 		triggerReload:          make(chan struct{}, 1),
 		metrics:                sm,
 		buffers:                pool.New(1e3, 100e6, 3, func(sz int) interface{} { return make([]byte, 0, sz) }),
+		queryEngine:            queryEngine,
 	}
 
 	m.metrics.setTargetMetadataCacheGatherer(m)
@@ -95,6 +105,9 @@ type Options struct {
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption
 
+	// EnableScrapeRules enables rule evaluation at scrape time.
+	EnableScrapeRules bool
+
 	// private option for testability.
 	skipOffsetting bool
 }
@@ -116,6 +129,7 @@ type Manager struct {
 	targetSets             map[string][]*targetgroup.Group
 	buffers                *pool.Pool
 
+	queryEngine   *promql.Engine
 	triggerReload chan struct{}
 
 	metrics *scrapeMetrics
@@ -190,7 +204,7 @@ func (m *Manager) reload() {
 				continue
 			}
 			m.metrics.targetScrapePools.Inc()
-			sp, err := newScrapePool(scrapeConfig, m.append, m.offsetSeed, m.logger.With("scrape_pool", setName), m.buffers, m.opts, m.metrics)
+			sp, err := newScrapePool(scrapeConfig, m.append, m.offsetSeed, m.logger.With("scrape_pool", setName), m.buffers, m.queryEngine, m.opts, m.metrics)
 			if err != nil {
 				m.metrics.targetScrapePoolsFailed.Inc()
 				m.logger.Error("error creating new scrape pool", "err", err, "scrape_pool", setName)
