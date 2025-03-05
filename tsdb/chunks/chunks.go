@@ -577,6 +577,16 @@ func (b realByteSlice) Range(start, end int) []byte {
 	return b[start:end]
 }
 
+type RealByteSlice []byte
+
+func (b RealByteSlice) Len() int {
+	return len(b)
+}
+
+func (b RealByteSlice) Range(start, end int) []byte {
+	return b[start:end]
+}
+
 // Reader implements a ChunkReader for a serialized byte stream
 // of series data.
 type Reader struct {
@@ -589,6 +599,26 @@ type Reader struct {
 }
 
 func newReader(bs []ByteSlice, cs []io.Closer, pool chunkenc.Pool) (*Reader, error) {
+	cr := Reader{pool: pool, bs: bs, cs: cs}
+	for i, b := range cr.bs {
+		if b.Len() < SegmentHeaderSize {
+			return nil, fmt.Errorf("invalid segment header in segment %d: %w", i, errInvalidSize)
+		}
+		// Verify magic number.
+		if m := binary.BigEndian.Uint32(b.Range(0, MagicChunksSize)); m != MagicChunks {
+			return nil, fmt.Errorf("invalid magic number %x", m)
+		}
+
+		// Verify chunk format version.
+		if v := int(b.Range(MagicChunksSize, MagicChunksSize+ChunksFormatVersionSize)[0]); v != chunksFormatV1 {
+			return nil, fmt.Errorf("invalid chunk format version %d", v)
+		}
+		cr.size += int64(b.Len())
+	}
+	return &cr, nil
+}
+
+func NewReader(bs []ByteSlice, cs []io.Closer, pool chunkenc.Pool) (*Reader, error) {
 	cr := Reader{pool: pool, bs: bs, cs: cs}
 	for i, b := range cr.bs {
 		if b.Len() < SegmentHeaderSize {

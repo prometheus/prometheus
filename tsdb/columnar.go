@@ -17,14 +17,17 @@ import (
 	"context"
 	"errors"
 	"io"
-	"log"
 	"os"
 	"slices"
+	"strings"
 
+	"github.com/oklog/ulid"
 	"github.com/parquet-go/parquet-go"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/util/annotations"
 )
@@ -67,16 +70,21 @@ func (q *columnarQuerier) Close() error {
 var selectColumns = []string{"instance", "job"}
 
 func buildSchemaForLabels(labels []string, chunks bool) *parquet.Schema {
-	node := parquet.Group{}
-	node["x_id"] = parquet.Leaf(parquet.Int64Type)
+	// TODO: use common util
+	node := parquet.Group{
+		"x_series_id": parquet.Encoded(parquet.Int(64), &parquet.RLEDictionary),
+	}
 	for _, label := range labels {
 		node["l_"+label] = parquet.String()
 	}
 	if chunks {
 		node["x_chunk"] = parquet.Leaf(parquet.ByteArrayType)
+		node["x_chunk_max_time"] = parquet.Encoded(parquet.Int(64), &parquet.DeltaBinaryPacked)
+		node["x_chunk_min_time"] = parquet.Encoded(parquet.Int(64), &parquet.DeltaBinaryPacked)
 	}
 	return parquet.NewSchema("metric_family", node)
 }
+
 func matches(row parquet.Row, ms []*labels.Matcher, schema *parquet.Schema) bool {
 	// TODO: very inefficient
 	for _, val := range row {
@@ -120,7 +128,7 @@ func (q *columnarQuerier) Select(ctx context.Context, sortSeries bool, hints *st
 	for {
 		readRows, err := reader.ReadRows(buf)
 		if err != nil && err != io.EOF {
-			log.Fatal(err)
+			return storage.ErrSeriesSet(err)
 		}
 		if readRows == 0 {
 			break
@@ -137,27 +145,102 @@ func (q *columnarQuerier) Select(ctx context.Context, sortSeries bool, hints *st
 		}
 	}
 
-	return nil
+	return &columnarSeriesSet{
+		rows:    result,
+		schema:  schema,
+		mint:    q.mint,
+		maxt:    q.maxt,
+		builder: labels.NewScratchBuilder(len(columns) - 3),
+	}
 }
 
 type columnarSeriesSet struct {
-	rows   []parquet.Row
-	schema *parquet.Schema
+	rows        []parquet.Row
+	schema      *parquet.Schema
+	columnIndex map[string]int
 
 	mint, maxt int64
 
-	curr seriesData
+	curr   rowsSeries
+	rowIdx int
 
 	builder labels.ScratchBuilder
 	err     error
 }
 
 func (b *columnarSeriesSet) At() storage.Series {
-	// TODO
-	return nil
+	return &b.curr
+}
+
+type rowsSeries struct {
+	labels      labels.Labels
+	columnIndex map[string]int
+	rows        []parquet.Row
+}
+
+// Iterator implements storage.Series.
+func (r *rowsSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
+	pi, ok := it.(*populateWithDelSeriesIterator)
+	if !ok {
+		pi = &populateWithDelSeriesIterator{}
+	}
+	slices := make([]chunks.ByteSlice, len(r.rows))
+	for _, row := range r.rows {
+		slices = append(slices, chunks.RealByteSlice(row[r.columnIndex["x_chunk"]].ByteArray()))
+	}
+	// TODO: no closers
+	reader, err := chunks.NewReader(slices, nil, chunkenc.NewPool())
+	if err != nil {
+		panic(err)
+	}
+	metas := make([]chunks.Meta, len(r.rows))
+	for i, _ := range r.rows {
+		metas[i] = chunks.Meta{
+			Ref:     chunks.ChunkRef(i),
+			MinTime: 0,   // TODO
+			MaxTime: 0,   // TODO
+			Chunk:   nil, // Just pray this doesn't get used
+		}
+	}
+	pi.reset(ulid.ULID{}, reader, metas, nil)
+	return pi
+}
+
+// Labels implements storage.Series.
+func (r *rowsSeries) Labels() labels.Labels {
+	return r.labels
 }
 
 func (b *columnarSeriesSet) Next() bool {
+	if b.columnIndex == nil {
+		b.columnIndex = make(map[string]int, len(b.schema.Columns()))
+		for i, col := range b.schema.Columns() {
+			b.columnIndex[col[0]] = i
+		}
+	}
+	if b.rowIdx == len(b.rows) {
+		return false
+	}
+	seriesID := b.rows[b.rowIdx][b.columnIndex["x_series_id"]].Int64()
+	from := b.rowIdx
+	to := from
+	for to < len(b.rows) && b.rows[to][b.columnIndex["x_series_id"]].Int64() == seriesID {
+		to++
+	}
+	b.builder.Reset()
+	for l, i := range b.columnIndex {
+		if strings.HasPrefix(l, "l_") {
+			b.builder.Add(l[2:], string(b.rows[from][i].ByteArray()))
+		}
+	}
+	b.curr = rowsSeries{
+		labels:      b.builder.Labels(),
+		rows:        b.rows[from:to],
+		columnIndex: b.columnIndex,
+	}
+
+	return true
+
 	// for b.p.Next() {
 	// 	if err := b.index.Series(b.p.At(), &b.builder, &b.bufChks); err != nil {
 	// 		// Postings may be stale. Skip if no underlying series exists.
@@ -235,7 +318,6 @@ func (b *columnarSeriesSet) Next() bool {
 	// 	b.curr.intervals = intervals
 	// 	return true
 	// }
-	return false
 }
 
 func (b *columnarSeriesSet) Err() error {
