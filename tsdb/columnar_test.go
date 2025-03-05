@@ -1,0 +1,48 @@
+// Copyright 2025 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package tsdb
+
+import (
+	"context"
+	"math"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/labels"
+)
+
+func TestColumnarQuerier(t *testing.T) {
+	q, err := NewColumnarQuerier("testdata/01JNKZDF5RP1X06VKBC2WMZJ8K", 0, math.MaxInt64)
+	require.NoError(t, err)
+	defer q.Close()
+
+	matchers := []*labels.Matcher{
+		labels.MustNewMatcher(labels.MatchEqual, "__name__", "tsdb2columnar_gauge_0"),
+	}
+
+	ctx := context.Background()
+
+	seriesSet := q.Select(ctx, false, nil, matchers...)
+
+	require.True(t, seriesSet.Next())
+	series := seriesSet.At()
+	require.Equal(t, "tsdb2columnar_gauge_0", series.Labels().Get("__name__"))
+	lbls := []string{}
+	series.Labels().Range(func(l labels.Label) {
+		lbls = append(lbls, l.Name+"="+l.Value)
+	})
+	require.Equal(t, "", strings.Join(lbls, ","))
+}
