@@ -95,7 +95,9 @@ const UPlotChart: FC<UPlotChartProps> = ({
         className={classes.uplotChart}
       />
       <Text fz="xs" c="dimmed" ml={40} mt={-25} mb="lg">
-        Click: hide single series, Ctrl+click: show single series
+        Click: show single series,{" "}
+        {navigator.userAgent.includes("Mac") ? "⌘" : "Ctrl"} + click: hide
+        single series
       </Text>
     </>
   );
