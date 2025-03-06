@@ -1,5 +1,4 @@
 #!/bin/bash
-make build
 GOPATH=$(go env GOPATH)
 IDIR="${GOPATH}/github.com/krajorama/prometheus"
 promu build --prefix ${IDIR}

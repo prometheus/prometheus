@@ -2126,11 +2126,20 @@ func (db *DB) Querier(mint, maxt int64) (_ storage.Querier, err error) {
 	}
 
 	for _, b := range blocks {
-		q, err := db.blockQuerierFunc(b, mint, maxt)
-		if err != nil {
-			return nil, fmt.Errorf("open querier for block %s: %w", b, err)
+		if b.Meta().Compaction.IsParquet() {
+
+			q, err := NewColumnarQuerier(filepath.Join(db.dir, b.Meta().ULID.String()), mint, maxt, nil)
+			if err != nil {
+				panic(err)
+			}
+			blockQueriers = append(blockQueriers, q)
+		} else {
+			q, err := db.blockQuerierFunc(b, mint, maxt)
+			if err != nil {
+				return nil, fmt.Errorf("open querier for block %s: %w", b, err)
+			}
+			blockQueriers = append(blockQueriers, q)
 		}
-		blockQueriers = append(blockQueriers, q)
 	}
 
 	return storage.NewMergeQuerier(blockQueriers, nil, storage.ChainedSeriesMerge), nil
