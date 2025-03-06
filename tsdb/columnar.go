@@ -20,6 +20,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"strings"
 
@@ -177,6 +178,8 @@ func (q *columnarQuerier) Select(ctx context.Context, sortSeries bool, hints *st
 
 	seriesIds, _ := loadSeriesIds(root)
 
+	filterLabel(root, "dim_0", *labels.MustNewMatcher(labels.MatchEqual, "dim_0", "val_1"))
+
 	return &columnarSeriesSet{
 		chunkIterator: chunkColumnIterator{
 			pf: pFile,
@@ -238,6 +241,67 @@ func loadSeriesIds(root *parquet.Column) ([]int64, error) {
 	return seriesIds, nil
 }
 
+func filterLabel(root *parquet.Column, labelName string, matchers ...labels.Matcher) ([]bool, error) {
+	cols := root.Columns()
+	var col *parquet.Column
+	for _, c := range cols {
+		if c.Name() == "l_"+labelName {
+			col = c
+			break
+		}
+	}
+	if col == nil {
+		panic("label not found")
+	}
+	if !col.Leaf() {
+		panic("label is not a leaf")
+	}
+	pages := col.Pages()
+	matchingSymbols := []int32{}
+	rowMask := []bool{}
+	rowOffset := 0
+	for {
+		page, err := pages.ReadPage()
+
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			panic(err)
+		}
+
+		rowMask = append(rowMask, make([]bool, page.NumValues())...)
+
+		symbols := page.Dictionary()
+		matchingSymbols := matchingSymbols[:0]
+		for i:=0; i<symbols.Len(); i++ {
+			labelValue := symbols.Index(int32(i))
+			fmt.Printf("Label value: %s for idx %d\n", labelValue, i)
+			for _, m := range matchers {
+				if m.Type != labels.MatchEqual {
+					panic("only MatchEqual is supported")
+				}
+				if m.Value == labelValue.String() {
+					matchingSymbols = append(matchingSymbols, int32(i))
+				}
+			}
+		}
+
+		data := page.Data()
+		syms := data.Int32()
+		for _, sym := range syms {
+			if slices.Contains(matchingSymbols, sym) {
+				rowMask[rowOffset] = true
+			}
+			rowOffset++
+		}
+
+	}
+
+	fmt.Printf("Row mask: %v\n", rowMask)
+
+	return nil, nil
+}
 
 func chunkRangeOverlaps(chunkmint, chunkmaxt, mint, maxt int64) bool {
 	return !(chunkmaxt < mint || chunkmint > maxt)
