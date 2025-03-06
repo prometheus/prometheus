@@ -42,6 +42,8 @@ type columnarQuerier struct {
 	includeLabels []string
 
 	ix columnar.Index
+
+	parquetFile *os.File
 }
 
 func NewColumnarQuerier(dir string, mint, maxt int64, includeLabels []string) (*columnarQuerier, error) {
@@ -78,6 +80,8 @@ func (q *columnarQuerier) Close() error {
 	errs := tsdb_errors.NewMulti(
 	// TODO: close parquet file? Or readers?
 	)
+	q.parquetFile.Close()
+
 	q.closed = true
 	return errs.Err()
 }
@@ -134,11 +138,13 @@ func (q *columnarQuerier) Select(ctx context.Context, sortSeries bool, hints *st
 	if err != nil {
 		panic(err)
 	}
-	defer f.Close()
+
+	q.parquetFile = f
 
 	// Get the size of the parquet file.
 	fstat, err := f.Stat()
 	if err != nil {
+		f.Close()
 		panic(err)
 	}
 
@@ -163,6 +169,7 @@ func (q *columnarQuerier) Select(ctx context.Context, sortSeries bool, hints *st
 
 	pFile, err := parquet.OpenFile(f, fstat.Size())
 	if err != nil {
+		f.Close()
 		panic(err)
 	}
 
@@ -170,114 +177,15 @@ func (q *columnarQuerier) Select(ctx context.Context, sortSeries bool, hints *st
 
 	seriesIds, _ := loadSeriesIds(root)
 
-
-	cols := root.Columns()
-	var col *parquet.Column
-	for _, c := range cols {
-		if c.Name() == "x_chunk" {
-			col = c
-			break
-		}
-	}
-	if col == nil {
-		panic("x_chunk not found")
-	}
-
-	pages := col.Pages()
-	rawPageData := [][]byte{}
-	numberOfChunks := 0
-	for {
-		page, err := pages.ReadPage()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			panic(err)
-		}
-
-		valReader := page.Values()
-		fmt.Printf("Page has %d values, size %d\n", page.NumValues(), page.Size())
-		chunks := make([]byte, page.Size())
-		binaryReader, ok := valReader.(parquet.ByteArrayReader)
-		if !ok {
-			panic("not a ByteArrayReader")
-		}
-		n, err := binaryReader.ReadByteArrays(chunks)
-
-		if err == nil || errors.Is(err, io.EOF) {
-			numberOfChunks += n
-			rawPageData = append(rawPageData, chunks)
-		}
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			panic(err)
-		}
-		fmt.Printf("Read %d chunks\n", n)
-	}
-
-	metas := make([]chunks.Meta, 0, numberOfChunks)
-	for _, raw := range rawPageData {
-		pos := 0
-		for pos < len(raw)-4 {
-			fmt.Printf("Reading chunk at %d\n", pos)
-			chkLen := int(raw[pos]) | int(raw[pos+1])<<8 | int(raw[pos+2])<<16 | int(raw[pos+3])<<24
-			chk, erro := chunkenc.FromData(chunkenc.EncXOR, raw[pos+4:pos+4+chkLen])
-			if erro != nil {
-				panic(erro)
-			}
-			meta := chunks.Meta{
-				Chunk: chk,
-			}
-			metas = append(metas, meta)
-			pos += 4 + chkLen
-		}
-	}
-	fmt.Printf("Read %d and have %d chunks from %d pages\n", numberOfChunks, len(metas), len(rawPageData))
-
-	// columnIndex := make(map[string]int, len(schema.Columns()))
-	// for i, col := range schema.Columns() {
-	// 	columnIndex[col[0]] = i
-	// }
-
-
-	// var rows []parquet.Row
-	// buf := make([]parquet.Row, 10)
-
-	// for {
-	// 	readRows, err := reader.ReadRows(buf)
-	// 	if err != nil && err != io.EOF {
-	// 		return storage.ErrSeriesSet(err)
-	// 	}
-	// 	if readRows == 0 {
-	// 		break
-	// 	}
-
-	// 	for _, row := range buf[:readRows] {
-	// 		if matches(row, ms, reader.Schema()) && chunkRangeOverlaps(
-	// 			row[columnIndex["x_chunk_min_time"]].Int64(),
-	// 			row[columnIndex["x_chunk_max_time"]].Int64(),
-	// 			q.mint,
-	// 			q.maxt,
-	// 		) {
-	// 			rows = append(rows, row)
-	// 		}
-	// 	}
-
-	// 	if err == io.EOF {
-	// 		break
-	// 	}
-	// }
-
 	return &columnarSeriesSet{
-		metas:    metas,
+		chunkIterator: chunkColumnIterator{
+			pf: pFile,
+		},
 		schema:  nil,
 		mint:    q.mint,
 		maxt:    q.maxt,
 		builder: labels.NewScratchBuilder(1),
 		curr:   rowsSeries{
-			//metas: metas,
             labels: labels.FromStrings(labels.MetricName, metricFamily),
 		},
 		seriesIds: seriesIds,
@@ -350,15 +258,14 @@ func (*columnarQuerier) getMetricFamily(ms []*labels.Matcher) (string, error) {
 }
 
 type columnarSeriesSet struct {
-	metas      []chunks.Meta
-	//rows        []parquet.Row
+    chunkIterator  chunkColumnIterator
+
 	schema      *parquet.Schema
 	//columnIndex map[string]int
 
 	mint, maxt int64
 
 	curr   rowsSeries
-	//rowIdx int
 
 	builder labels.ScratchBuilder
 	err     error
@@ -439,10 +346,18 @@ func (b *columnarSeriesSet) Next() bool {
 	if b.seriesPos >= len(b.seriesIds) {
 		return false
 	}
+
 	b.curr.metas = []chunks.Meta{}
 	nextSeriesId := b.seriesIds[b.seriesPos]
 	for b.seriesPos < len(b.seriesIds) && nextSeriesId == b.seriesIds[b.seriesPos] {
-		b.curr.metas = append(b.curr.metas, b.metas[b.seriesPos])
+		chk, err := b.chunkIterator.Next()
+		if err != nil {
+			panic(err)
+		}
+
+		b.curr.metas = append(b.curr.metas, chunks.Meta{
+			Chunk: chk,
+		})
 		b.seriesPos++
 	}
 
@@ -475,84 +390,6 @@ func (b *columnarSeriesSet) Next() bool {
 	// b.rowIdx = to
 
 	return true
-
-	// for b.p.Next() {
-	// 	if err := b.index.Series(b.p.At(), &b.builder, &b.bufChks); err != nil {
-	// 		// Postings may be stale. Skip if no underlying series exists.
-	// 		if errors.Is(err, storage.ErrNotFound) {
-	// 			continue
-	// 		}
-	// 		b.err = fmt.Errorf("get series %d: %w", b.p.At(), err)
-	// 		return false
-	// 	}
-
-	// 	if len(b.bufChks) == 0 {
-	// 		continue
-	// 	}
-
-	// 	intervals, err := b.tombstones.Get(b.p.At())
-	// 	if err != nil {
-	// 		b.err = fmt.Errorf("get tombstones: %w", err)
-	// 		return false
-	// 	}
-
-	// 	// NOTE:
-	// 	// * block time range is half-open: [meta.MinTime, meta.MaxTime).
-	// 	// * chunks are both closed: [chk.MinTime, chk.MaxTime].
-	// 	// * requested time ranges are closed: [req.Start, req.End].
-
-	// 	var trimFront, trimBack bool
-
-	// 	// Copy chunks as iterables are reusable.
-	// 	// Count those in range to size allocation (roughly - ignoring tombstones).
-	// 	nChks := 0
-	// 	for _, chk := range b.bufChks {
-	// 		if !(chk.MaxTime < b.mint || chk.MinTime > b.maxt) {
-	// 			nChks++
-	// 		}
-	// 	}
-	// 	chks := make([]chunks.Meta, 0, nChks)
-
-	// 	// Prefilter chunks and pick those which are not entirely deleted or totally outside of the requested range.
-	// 	for _, chk := range b.bufChks {
-	// 		if chk.MaxTime < b.mint {
-	// 			continue
-	// 		}
-	// 		if chk.MinTime > b.maxt {
-	// 			continue
-	// 		}
-	// 		if (tombstones.Interval{Mint: chk.MinTime, Maxt: chk.MaxTime}.IsSubrange(intervals)) {
-	// 			continue
-	// 		}
-	// 		chks = append(chks, chk)
-
-	// 		// If still not entirely deleted, check if trim is needed based on requested time range.
-	// 		if !b.disableTrimming {
-	// 			if chk.MinTime < b.mint {
-	// 				trimFront = true
-	// 			}
-	// 			if chk.MaxTime > b.maxt {
-	// 				trimBack = true
-	// 			}
-	// 		}
-	// 	}
-
-	// 	if len(chks) == 0 {
-	// 		continue
-	// 	}
-
-	// 	if trimFront {
-	// 		intervals = intervals.Add(tombstones.Interval{Mint: math.MinInt64, Maxt: b.mint - 1})
-	// 	}
-	// 	if trimBack {
-	// 		intervals = intervals.Add(tombstones.Interval{Mint: b.maxt + 1, Maxt: math.MaxInt64})
-	// 	}
-
-	// 	b.curr.labels = b.builder.Labels()
-	// 	b.curr.chks = chks
-	// 	b.curr.intervals = intervals
-	// 	return true
-	// }
 }
 
 func (b *columnarSeriesSet) Err() error {
@@ -563,3 +400,80 @@ func (b *columnarSeriesSet) Err() error {
 }
 
 func (b *columnarSeriesSet) Warnings() annotations.Annotations { return nil }
+
+
+type chunkColumnIterator struct {
+	pf             *parquet.File
+	chunkPages     parquet.Pages
+	chunkBuffer    []byte
+	chunkBufferPos int
+	rowId          int
+}
+
+// Next return the next chunk or nil if there are no more chunks.
+func (c *chunkColumnIterator) Next() (chunkenc.Chunk, error) {
+	if c.chunkBufferPos < len(c.chunkBuffer) {
+		return c.currentChunk()
+	}
+
+	// Init the pages if not already done.
+	if c.chunkPages == nil {
+		cols := c.pf.Root().Columns()
+		var col *parquet.Column
+		for _, c := range cols {
+			if c.Name() == "x_chunk" {
+				col = c
+				break
+			}
+		}
+		if col == nil {
+			panic("x_chunk not found")
+		}
+		c.chunkPages = col.Pages()
+	}
+
+	// We need to read the next page.
+	page, err := c.chunkPages.ReadPage()
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	valReader := page.Values()
+	fmt.Printf("Page has %d values, size %d\n", page.NumValues(), page.Size())
+	if c.chunkBuffer == nil || int64(cap(c.chunkBuffer)) < page.Size() {
+		c.chunkBuffer = make([]byte, page.Size())
+	}
+	c.chunkBuffer = c.chunkBuffer[:page.Size()]
+	binaryReader, ok := valReader.(parquet.ByteArrayReader)
+	if !ok {
+		panic("not a ByteArrayReader")
+	}
+	n, err := binaryReader.ReadByteArrays(c.chunkBuffer)
+	c.chunkBufferPos = 0
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+	fmt.Printf("Read %d chunks\n", n)
+	return c.currentChunk()
+}
+
+func (c *chunkColumnIterator) currentChunk() (chunkenc.Chunk, error) {
+	c.rowId++
+	// We have a chunk in the buffer, return it.
+	chunkLen := int(c.chunkBuffer[c.chunkBufferPos]) | int(c.chunkBuffer[c.chunkBufferPos+1])<<8 | int(c.chunkBuffer[c.chunkBufferPos+2])<<16 | int(c.chunkBuffer[c.chunkBufferPos+3])<<24
+	chk, err := chunkenc.FromData(chunkenc.EncXOR, c.chunkBuffer[c.chunkBufferPos+4:c.chunkBufferPos+4+chunkLen])
+	if err != nil {
+		return nil, err
+	}
+	c.chunkBufferPos += 4 + chunkLen
+	return chk, nil
+}
+
+// Seek to row.
+func (c *chunkColumnIterator) Seek(row int) error {
+	// Will have to implement for when we filter.
+	return nil
+}
