@@ -267,6 +267,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "delayed-compaction":
 				c.tsdb.EnableDelayedCompaction = true
 				logger.Info("Experimental delayed compaction is enabled.")
+			case "cache-all-symbols-for-compaction":
+				c.tsdb.CacheAllSymbols = true
+				logger.Info("Caching of all TSDB symbols for compaction enabled")
 			case "promql-delayed-name-removal":
 				c.promqlEnableDelayedNameRemoval = true
 				logger.Info("Experimental PromQL delayed name removal enabled.")
@@ -519,7 +522,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, native-histograms, created-timestamp-zero-ingestion, concurrent-rule-eval, delayed-compaction, old-ui, otlp-deltatocumulative. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, native-histograms, created-timestamp-zero-ingestion, concurrent-rule-eval, delayed-compaction, old-ui, otlp-deltatocumulative, cache-all-symbols-for-compaction. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
@@ -1796,6 +1799,7 @@ type tsdbOptions struct {
 	EnableDelayedCompaction        bool
 	CompactionDelayMaxPercent      int
 	EnableOverlappingCompaction    bool
+	CacheAllSymbols                bool
 	EnableOOONativeHistograms      bool
 }
 
@@ -1821,6 +1825,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableDelayedCompaction:        opts.EnableDelayedCompaction,
 		CompactionDelayMaxPercent:      opts.CompactionDelayMaxPercent,
 		EnableOverlappingCompaction:    opts.EnableOverlappingCompaction,
+		CacheAllSymbols:                opts.CacheAllSymbols,
 	}
 }
 
