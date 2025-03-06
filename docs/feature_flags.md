@@ -184,3 +184,10 @@ Enabling this _can_ have negative impact on performance, because the in-memory
 state is mutex guarded. Cumulative-only OTLP requests are not affected.
 
 [d2c]: https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor
+
+## Cache all symbols for compaction
+
+`--enable-feature=cache-all-symbols-for-compaction`
+
+When enabled, as a performance measure, all TSDB symbols are cached for compaction.
+Be aware that this may increase memory usage significantly.
