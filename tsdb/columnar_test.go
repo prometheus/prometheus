@@ -58,6 +58,6 @@ func TestColumnarQuerier(t *testing.T) {
 			// require.LessOrEqual(t, it.AtT(), to)
 		}
 	}
-	require.Equal(t, 1, seriesCount)
+	require.Equal(t, 5, seriesCount)
 	require.Equal(t, 2500, sampleCount)
 }

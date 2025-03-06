@@ -18,12 +18,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-
-	//"io"
 	"os"
 	"path/filepath"
 
-	//"slices"
 	"strings"
 
 	"github.com/parquet-go/parquet-go"
@@ -170,6 +167,10 @@ func (q *columnarQuerier) Select(ctx context.Context, sortSeries bool, hints *st
 	}
 
 	root := pFile.Root()
+
+	seriesIds, _ := loadSeriesIds(root)
+
+
 	cols := root.Columns()
 	var col *parquet.Column
 	for _, c := range cols {
@@ -270,17 +271,65 @@ func (q *columnarQuerier) Select(ctx context.Context, sortSeries bool, hints *st
 	// }
 
 	return &columnarSeriesSet{
-		//metas:    metas,
+		metas:    metas,
 		schema:  nil,
 		mint:    q.mint,
 		maxt:    q.maxt,
 		builder: labels.NewScratchBuilder(1),
 		curr:   rowsSeries{
-			metas: metas,
+			//metas: metas,
             labels: labels.FromStrings(labels.MetricName, metricFamily),
 		},
+		seriesIds: seriesIds,
 	}
 }
+
+func loadSeriesIds(root *parquet.Column) ([]int64, error) {
+	cols := root.Columns()
+	var col *parquet.Column
+	for _, c := range cols {
+		if c.Name() == "x_series_id" {
+			col = c
+			break
+		}
+	}
+	if col == nil {
+		panic("x_series_id not found")
+	}
+	if !col.Leaf() {
+		panic("x_series_id is not a leaf")
+	}
+	pages := col.Pages()
+	seriesIds := []int64{}
+	for {
+		page, err := pages.ReadPage()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			panic(err)
+		}
+
+		valReader := page.Values()
+		fmt.Printf("Page has %d values, size %d\n", page.NumValues(), page.Size())
+
+		// Read parquet.Value:
+		nextSeriesIds := make([]parquet.Value, page.NumValues())
+		_, err = valReader.ReadValues(nextSeriesIds)
+		for _, v := range nextSeriesIds {
+			seriesIds = append(seriesIds, v.Int64())
+		}
+
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			panic(err)
+		}
+	}
+	return seriesIds, nil
+}
+
 
 func chunkRangeOverlaps(chunkmint, chunkmaxt, mint, maxt int64) bool {
 	return !(chunkmaxt < mint || chunkmint > maxt)
@@ -301,7 +350,7 @@ func (*columnarQuerier) getMetricFamily(ms []*labels.Matcher) (string, error) {
 }
 
 type columnarSeriesSet struct {
-	//metas      []chunks.Meta
+	metas      []chunks.Meta
 	//rows        []parquet.Row
 	schema      *parquet.Schema
 	//columnIndex map[string]int
@@ -313,7 +362,8 @@ type columnarSeriesSet struct {
 
 	builder labels.ScratchBuilder
 	err     error
-	isConsumed bool
+	seriesIds []int64
+	seriesPos int
 }
 
 func (b *columnarSeriesSet) At() storage.Series {
@@ -386,10 +436,16 @@ func (r *rowsSeries) Labels() labels.Labels {
 }
 
 func (b *columnarSeriesSet) Next() bool {
-	if b.isConsumed {
+	if b.seriesPos >= len(b.seriesIds) {
 		return false
 	}
-	b.isConsumed = true
+	b.curr.metas = []chunks.Meta{}
+	nextSeriesId := b.seriesIds[b.seriesPos]
+	for b.seriesPos < len(b.seriesIds) && nextSeriesId == b.seriesIds[b.seriesPos] {
+		b.curr.metas = append(b.curr.metas, b.metas[b.seriesPos])
+		b.seriesPos++
+	}
+
 	// if b.columnIndex == nil {
 	// 	b.columnIndex = make(map[string]int, len(b.schema.Columns()))
 	// 	for i, col := range b.schema.Columns() {
