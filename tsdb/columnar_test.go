@@ -27,12 +27,13 @@ import (
 func TestColumnarQuerier(t *testing.T) {
 	from := int64(1733828454000)
 	to := int64(1733829686000)
-	q, err := NewColumnarQuerier("testdata/01JNKZDF5RP1X06VKBC2WMZJ8K", from, to, nil /*[]string{"dim_0"}*/)
+	q, err := NewColumnarQuerier("testdata/01JNKZDF5RP1X06VKBC2WMZJ8K", from, to, []string{"dim_0"})
 	require.NoError(t, err)
 	defer q.Close()
 
 	matchers := []*labels.Matcher{
 		labels.MustNewMatcher(labels.MatchEqual, "__name__", "tsdb2columnar_gauge_0"),
+		labels.MustNewMatcher(labels.MatchEqual, "dim_0", "val_1"),
 	}
 
 	ctx := context.Background()
@@ -48,7 +49,7 @@ func TestColumnarQuerier(t *testing.T) {
 		series.Labels().Range(func(l labels.Label) {
 			lbls = append(lbls, l.Name+"="+l.Value)
 		})
-		require.Equal(t, "__name__=tsdb2columnar_gauge_0", strings.Join(lbls, ","))
+		require.Equal(t, "__name__=tsdb2columnar_gauge_0,dim_0=val_1", strings.Join(lbls, ","))
 
 		it := series.Iterator(nil)
 		for it.Next() != chunkenc.ValNone {
@@ -58,6 +59,6 @@ func TestColumnarQuerier(t *testing.T) {
 			// require.LessOrEqual(t, it.AtT(), to)
 		}
 	}
-	require.Equal(t, 5, seriesCount)
-	require.Equal(t, 2500, sampleCount)
+	require.Equal(t, 1, seriesCount)
+	require.Equal(t, 500, sampleCount)
 }
