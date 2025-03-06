@@ -247,6 +247,10 @@ func buildDynamicSchema(labelKeys []string) *parquet.Schema {
 		"x_chunk_min_time": parquet.Encoded(parquet.Int(64), &parquet.DeltaBinaryPacked), // TODO For fixed intervals parquet.RLE might be better, we should test that
 	}
 	for _, label := range labelKeys {
+		// We don't need to store the metric name as a label, it's already in the file name.
+		if label == labels.MetricName {
+			continue
+		}
 		node["l_"+label] = parquet.Encoded(parquet.String(), &parquet.RLEDictionary)
 	}
 

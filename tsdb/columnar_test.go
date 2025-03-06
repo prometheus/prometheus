@@ -39,7 +39,10 @@ func TestColumnarQuerier(t *testing.T) {
 
 	seriesSet := q.Select(ctx, false, nil, matchers...)
 
+	seriesCount := 0
+	sampleCount := 0
 	for seriesSet.Next() {
+		seriesCount++
 		series := seriesSet.At()
 		lbls := []string{}
 		series.Labels().Range(func(l labels.Label) {
@@ -49,9 +52,12 @@ func TestColumnarQuerier(t *testing.T) {
 
 		it := series.Iterator(nil)
 		for it.Next() != chunkenc.ValNone {
+			sampleCount++
 			// TODO: this fails
 			// require.GreaterOrEqual(t, it.AtT(), from)
 			// require.LessOrEqual(t, it.AtT(), to)
 		}
 	}
+	require.Equal(t, 1, seriesCount)
+	require.Equal(t, 2500, sampleCount)
 }

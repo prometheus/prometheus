@@ -18,9 +18,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+
+	//"io"
 	"os"
 	"path/filepath"
-	"slices"
+
+	//"slices"
 	"strings"
 
 	"github.com/parquet-go/parquet-go"
@@ -28,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/columnar"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -81,12 +85,16 @@ func (q *columnarQuerier) Close() error {
 	return errs.Err()
 }
 
-func buildSchemaForLabels(labels []string, chunks bool) *parquet.Schema {
+func buildSchemaForLabels(lbls []string, chunks bool) *parquet.Schema {
 	// TODO: use common util
 	node := parquet.Group{
 		"x_series_id": parquet.Encoded(parquet.Int(64), &parquet.RLEDictionary),
 	}
-	for _, label := range labels {
+	for _, label := range lbls {
+		// The metric name is not stored in the parquet file, so we don't need to include it in the schema.
+		if label == labels.MetricName {
+			continue
+		}
 		node["l_"+label] = parquet.String()
 	}
 	if chunks {
@@ -131,68 +139,146 @@ func (q *columnarQuerier) Select(ctx context.Context, sortSeries bool, hints *st
 	}
 	defer f.Close()
 
-	columns := []string{}
-	for _, m := range ms {
-		if m.Type != labels.MatchEqual {
-			panic("only MatchEqual is supported")
-		}
-		if !slices.Contains(columns, m.Name) && slices.Contains(q.ix.Metrics[metricFamily].LabelNames, m.Name) {
-			columns = append(columns, m.Name)
-		}
+	// Get the size of the parquet file.
+	fstat, err := f.Stat()
+	if err != nil {
+		panic(err)
 	}
 
-	for _, l := range q.includeLabels {
-		if !slices.Contains(columns, l) && slices.Contains(q.ix.Metrics[metricFamily].LabelNames, l) {
-			columns = append(columns, l)
-		}
-	}
+	// These will be the columns to filter on.
+	// matchedColumns := []string{}
+	// for _, m := range ms {
+	// 	if m.Type != labels.MatchEqual {
+	// 		panic("only MatchEqual is supported")
+	// 	}
+	// 	if !slices.Contains(matchedColumns, m.Name) && slices.Contains(q.ix.Metrics[metricFamily].LabelNames, m.Name) {
+	// 		matchedColumns = append(matchedColumns, m.Name)
+	// 	}
+	// }
+
 
 	// TODO: i believe that including the chunks in the schema makes it so we load them into memory, but we don't want them all.
 	// should we do a first pass to get the rowids, and then a second pass to get the chunks?
 	// For now let's just make it work.
-	schema := buildSchemaForLabels(columns, true)
-	reader := parquet.NewGenericReader[any](f, schema)
-	defer reader.Close()
+	//schema := buildSchemaForLabels(q.ix.Metrics[metricFamily].LabelNames, true)
+	// reader := parquet.NewGenericReader[any](f, schema)
+	// defer reader.Close()
 
-	columnIndex := make(map[string]int, len(schema.Columns()))
-	for i, col := range schema.Columns() {
-		columnIndex[col[0]] = i
+	pFile, err := parquet.OpenFile(f, fstat.Size())
+	if err != nil {
+		panic(err)
 	}
 
-	var rows []parquet.Row
-	buf := make([]parquet.Row, 10)
+	root := pFile.Root()
+	cols := root.Columns()
+	var col *parquet.Column
+	for _, c := range cols {
+		if c.Name() == "x_chunk" {
+			col = c
+			break
+		}
+	}
+	if col == nil {
+		panic("x_chunk not found")
+	}
 
+	pages := col.Pages()
+	rawPageData := [][]byte{}
+	numberOfChunks := 0
 	for {
-		readRows, err := reader.ReadRows(buf)
-		if err != nil && err != io.EOF {
-			return storage.ErrSeriesSet(err)
-		}
-		if readRows == 0 {
-			break
-		}
-
-		for _, row := range buf[:readRows] {
-			if matches(row, ms, reader.Schema()) && chunkRangeOverlaps(
-				row[columnIndex["x_chunk_min_time"]].Int64(),
-				row[columnIndex["x_chunk_max_time"]].Int64(),
-				q.mint,
-				q.maxt,
-			) {
-				rows = append(rows, row)
+		page, err := pages.ReadPage()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
 			}
+			panic(err)
 		}
 
-		if err == io.EOF {
-			break
+		valReader := page.Values()
+		fmt.Printf("Page has %d values, size %d\n", page.NumValues(), page.Size())
+		chunks := make([]byte, page.Size())
+		binaryReader, ok := valReader.(parquet.ByteArrayReader)
+		if !ok {
+			panic("not a ByteArrayReader")
+		}
+		n, err := binaryReader.ReadByteArrays(chunks)
+
+		if err == nil || errors.Is(err, io.EOF) {
+			numberOfChunks += n
+			rawPageData = append(rawPageData, chunks)
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			panic(err)
+		}
+		fmt.Printf("Read %d chunks\n", n)
+	}
+
+	metas := make([]chunks.Meta, 0, numberOfChunks)
+	for _, raw := range rawPageData {
+		pos := 0
+		for pos < len(raw)-4 {
+			fmt.Printf("Reading chunk at %d\n", pos)
+			chkLen := int(raw[pos]) | int(raw[pos+1])<<8 | int(raw[pos+2])<<16 | int(raw[pos+3])<<24
+			chk, erro := chunkenc.FromData(chunkenc.EncXOR, raw[pos+4:pos+4+chkLen])
+			if erro != nil {
+				panic(erro)
+			}
+			meta := chunks.Meta{
+				Chunk: chk,
+			}
+			metas = append(metas, meta)
+			pos += 4 + chkLen
 		}
 	}
+	fmt.Printf("Read %d and have %d chunks from %d pages\n", numberOfChunks, len(metas), len(rawPageData))
+
+	// columnIndex := make(map[string]int, len(schema.Columns()))
+	// for i, col := range schema.Columns() {
+	// 	columnIndex[col[0]] = i
+	// }
+
+
+	// var rows []parquet.Row
+	// buf := make([]parquet.Row, 10)
+
+	// for {
+	// 	readRows, err := reader.ReadRows(buf)
+	// 	if err != nil && err != io.EOF {
+	// 		return storage.ErrSeriesSet(err)
+	// 	}
+	// 	if readRows == 0 {
+	// 		break
+	// 	}
+
+	// 	for _, row := range buf[:readRows] {
+	// 		if matches(row, ms, reader.Schema()) && chunkRangeOverlaps(
+	// 			row[columnIndex["x_chunk_min_time"]].Int64(),
+	// 			row[columnIndex["x_chunk_max_time"]].Int64(),
+	// 			q.mint,
+	// 			q.maxt,
+	// 		) {
+	// 			rows = append(rows, row)
+	// 		}
+	// 	}
+
+	// 	if err == io.EOF {
+	// 		break
+	// 	}
+	// }
 
 	return &columnarSeriesSet{
-		rows:    rows,
-		schema:  schema,
+		//metas:    metas,
+		schema:  nil,
 		mint:    q.mint,
 		maxt:    q.maxt,
-		builder: labels.NewScratchBuilder(len(columns)),
+		builder: labels.NewScratchBuilder(1),
+		curr:   rowsSeries{
+			metas: metas,
+            labels: labels.FromStrings(labels.MetricName, metricFamily),
+		},
 	}
 }
 
@@ -203,7 +289,7 @@ func chunkRangeOverlaps(chunkmint, chunkmaxt, mint, maxt int64) bool {
 func (*columnarQuerier) getMetricFamily(ms []*labels.Matcher) (string, error) {
 	var metricFamily string
 	for _, m := range ms {
-		if m.Name == labels.MetricName {
+		if m.Type == labels.MatchEqual && m.Name == labels.MetricName {
 			metricFamily = m.Value
 			break
 		}
@@ -215,17 +301,19 @@ func (*columnarQuerier) getMetricFamily(ms []*labels.Matcher) (string, error) {
 }
 
 type columnarSeriesSet struct {
-	rows        []parquet.Row
+	//metas      []chunks.Meta
+	//rows        []parquet.Row
 	schema      *parquet.Schema
-	columnIndex map[string]int
+	//columnIndex map[string]int
 
 	mint, maxt int64
 
 	curr   rowsSeries
-	rowIdx int
+	//rowIdx int
 
 	builder labels.ScratchBuilder
 	err     error
+	isConsumed bool
 }
 
 func (b *columnarSeriesSet) At() storage.Series {
@@ -234,8 +322,9 @@ func (b *columnarSeriesSet) At() storage.Series {
 
 type rowsSeries struct {
 	labels      labels.Labels
-	columnIndex map[string]int
-	rows        []parquet.Row
+	//columnIndex map[string]int
+	//rows        []parquet.Row
+	metas       []chunks.Meta
 }
 
 type consecutiveChunkIterators struct {
@@ -268,16 +357,17 @@ func (c *consecutiveChunkIterators) Next() chunkenc.ValueType {
 // Iterator implements storage.Series.
 func (r *rowsSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
 
-	pool := chunkenc.NewPool()
+	//pool := chunkenc.NewPool()
 	// TODO: no closers
-	its := make([]chunkenc.Iterator, 0, len(r.rows))
+	its := make([]chunkenc.Iterator, 0, len(r.metas))
 	// metas := make([]chunks.Meta, len(r.rows))
-	for _, row := range r.rows {
-		chnk, err := pool.Get(chunkenc.EncXOR, row[r.columnIndex["x_chunk"]].ByteArray())
-		if err != nil {
-			panic(err)
-		}
-		its = append(its, chnk.Iterator(nil))
+	for _, meta := range r.metas {
+
+		//chnk, err := pool.Get(chunkenc.EncXOR, row[r.columnIndex["x_chunk"]].ByteArray())
+		// if err != nil {
+		// 	panic(err)
+		// }
+		its = append(its, meta.Chunk.Iterator(nil))
 		// meta := chunks.Meta{
 		// 	Ref:     chunks.ChunkRef(i),
 		// 	MinTime: 0, // TODO
@@ -296,33 +386,37 @@ func (r *rowsSeries) Labels() labels.Labels {
 }
 
 func (b *columnarSeriesSet) Next() bool {
-	if b.columnIndex == nil {
-		b.columnIndex = make(map[string]int, len(b.schema.Columns()))
-		for i, col := range b.schema.Columns() {
-			b.columnIndex[col[0]] = i
-		}
-	}
-	if b.rowIdx == len(b.rows) {
+	if b.isConsumed {
 		return false
 	}
-	seriesID := b.rows[b.rowIdx][b.columnIndex["x_series_id"]].Int64()
-	from := b.rowIdx
-	to := from
-	for to < len(b.rows) && b.rows[to][b.columnIndex["x_series_id"]].Int64() == seriesID {
-		to++
-	}
-	b.builder.Reset()
-	for l, i := range b.columnIndex {
-		if strings.HasPrefix(l, "l_") {
-			b.builder.Add(l[2:], string(b.rows[from][i].ByteArray()))
-		}
-	}
-	b.curr = rowsSeries{
-		labels:      b.builder.Labels(),
-		rows:        b.rows[from:to],
-		columnIndex: b.columnIndex,
-	}
-	b.rowIdx = to
+	b.isConsumed = true
+	// if b.columnIndex == nil {
+	// 	b.columnIndex = make(map[string]int, len(b.schema.Columns()))
+	// 	for i, col := range b.schema.Columns() {
+	// 		b.columnIndex[col[0]] = i
+	// 	}
+	// }
+	// if b.rowIdx == len(b.rows) {
+	// 	return false
+	// }
+	// seriesID := b.rows[b.rowIdx][b.columnIndex["x_series_id"]].Int64()
+	// from := b.rowIdx
+	// to := from
+	// for to < len(b.rows) && b.rows[to][b.columnIndex["x_series_id"]].Int64() == seriesID {
+	// 	to++
+	// }
+	// b.builder.Reset()
+	// for l, i := range b.columnIndex {
+	// 	if strings.HasPrefix(l, "l_") {
+	// 		b.builder.Add(l[2:], string(b.rows[from][i].ByteArray()))
+	// 	}
+	// }
+	// b.curr = rowsSeries{
+	// 	labels:      b.builder.Labels(),
+	// 	rows:        b.rows[from:to],
+	// 	columnIndex: b.columnIndex,
+	// }
+	// b.rowIdx = to
 
 	return true
 
