@@ -34,7 +34,7 @@ require (
 	github.com/gophercloud/gophercloud/v2 v2.6.0
 	github.com/grafana/regexp v0.0.0-20240518133315-a468a5bfb3bc
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
-	github.com/hashicorp/consul/api v1.31.0
+	github.com/hashicorp/consul/api v1.31.2
 	github.com/hashicorp/nomad/api v0.0.0-20241218080744-e3ac00f30eec
 	github.com/hetznercloud/hcloud-go/v2 v2.19.1
 	github.com/ionos-cloud/sdk-go/v6 v6.3.2
@@ -192,7 +192,7 @@ require (
 	go.opentelemetry.io/proto/otlp v1.5.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/crypto v0.35.0 // indirect
-	golang.org/x/exp v0.0.0-20240119083558-1b970713d09a // indirect
+	golang.org/x/exp v0.0.0-20250106191152-7588d65b2ba8 // indirect
 	golang.org/x/mod v0.23.0 // indirect
 	golang.org/x/net v0.35.0 // indirect
 	golang.org/x/term v0.29.0 // indirect
