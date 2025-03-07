@@ -46,7 +46,7 @@ jobs:
       GOTOOLCHAIN: local
     container:
       # The go version in this image should be N-1 wrt test_go.
-      image: quay.io/prometheus/golang-builder:1.22-base
+      image: quay.io/prometheus/golang-builder:1.23-base
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - run: make build
