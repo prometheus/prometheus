@@ -544,7 +544,10 @@ func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendabl
 
 	if opts.ConvertDelta {
 		fac := deltatocumulative.NewFactory()
-		set := processor.Settings{TelemetrySettings: component.TelemetrySettings{MeterProvider: noop.NewMeterProvider()}}
+		set := processor.Settings{
+			ID:                component.NewID(fac.Type()),
+			TelemetrySettings: component.TelemetrySettings{MeterProvider: noop.NewMeterProvider()},
+		}
 		d2c, err := fac.CreateMetrics(context.Background(), set, fac.CreateDefaultConfig(), wh.cumul)
 		if err != nil {
 			// fac.CreateMetrics directly calls [deltatocumulativeprocessor.createMetricsProcessor],
@@ -555,7 +558,7 @@ func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendabl
 			// both cannot be the case, as we pass a valid *Config and valid TelemetrySettings.
 			// as such, we assume this error to never occur.
 			// if it is, our assumptions are broken in which case a panic seems acceptable.
-			panic(err)
+			panic(fmt.Errorf("failed to create metrics processor: %w", err))
 		}
 		if err := d2c.Start(context.Background(), nil); err != nil {
 			// deltatocumulative does not error on start. see above for panic reasoning
