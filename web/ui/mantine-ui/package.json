@@ -54,7 +54,7 @@
     "@eslint/compat": "^1.2.4",
     "@eslint/eslintrc": "^3.2.0",
     "@eslint/js": "^9.21.0",
-    "@types/react": "^19.0.6",
+    "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.0",
     "@typescript-eslint/eslint-plugin": "^8.20.0",
     "@typescript-eslint/parser": "^8.25.0",
