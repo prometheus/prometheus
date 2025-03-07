@@ -25,7 +25,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/network"
@@ -211,7 +210,7 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 		return nil, fmt.Errorf("error while computing network labels: %w", err)
 	}
 
-	allContainers := make(map[string]types.Container)
+	allContainers := make(map[string]container.Summary)
 	for _, c := range containers {
 		allContainers[c.ID] = c
 	}
