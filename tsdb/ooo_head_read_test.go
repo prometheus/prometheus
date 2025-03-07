@@ -385,7 +385,7 @@ func TestOOOHeadChunkReader_LabelValues(t *testing.T) {
 	}
 }
 
-//nolint:revive // unexported-return.
+//nolint:revive // unexported-return
 func testOOOHeadChunkReader_LabelValues(t *testing.T, scenario sampleTypeScenario) {
 	chunkRange := int64(2000)
 	head, _ := newTestHead(t, chunkRange, wlog.CompressionNone, true)
@@ -489,7 +489,7 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 	}
 }
 
-//nolint:revive // unexported-return.
+//nolint:revive // unexported-return
 func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 5
@@ -900,7 +900,7 @@ func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 	}
 }
 
-//nolint:revive // unexported-return.
+//nolint:revive // unexported-return
 func testOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(t *testing.T, scenario sampleTypeScenario) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 5
