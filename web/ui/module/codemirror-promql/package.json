@@ -41,7 +41,7 @@
     "@lezer/common": "^1.2.3",
     "@lezer/highlight": "^1.2.0",
     "@lezer/lr": "^1.4.2",
-    "eslint-plugin-prettier": "^5.1.3",
+    "eslint-plugin-prettier": "^5.2.3",
     "isomorphic-fetch": "^3.0.0",
     "nock": "^13.5.6"
   },
