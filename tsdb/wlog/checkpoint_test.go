@@ -25,6 +25,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/tsdb/compression"
+
 	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -170,7 +172,7 @@ func TestCheckpoint(t *testing.T) {
 		}
 	}
 
-	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+	for _, compress := range []compression.Type{compression.None, compression.Snappy, compression.Zstd} {
 		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
 			dir := t.TempDir()
 
@@ -323,7 +325,7 @@ func TestCheckpoint(t *testing.T) {
 				case record.Series:
 					series, err = dec.Series(rec, series)
 					require.NoError(t, err)
-				case record.Samples:
+				case record.Samples, record.SamplesWithCT:
 					samples, err := dec.Samples(rec, nil)
 					require.NoError(t, err)
 					for _, s := range samples {
@@ -385,7 +387,7 @@ func TestCheckpoint(t *testing.T) {
 func TestCheckpointNoTmpFolderAfterError(t *testing.T) {
 	// Create a new wlog with invalid data.
 	dir := t.TempDir()
-	w, err := NewSize(nil, nil, dir, 64*1024, CompressionNone)
+	w, err := NewSize(nil, nil, dir, 64*1024, compression.None)
 	require.NoError(t, err)
 	var enc record.Encoder
 	require.NoError(t, w.Log(enc.Series([]record.RefSeries{

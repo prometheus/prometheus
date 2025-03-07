@@ -21,8 +21,7 @@ import (
 	"hash/crc32"
 	"io"
 
-	"github.com/golang/snappy"
-	"github.com/klauspost/compress/zstd"
+	"github.com/prometheus/prometheus/tsdb/compression"
 )
 
 // Reader reads WAL records from an io.Reader.
@@ -31,7 +30,7 @@ type Reader struct {
 	err         error
 	rec         []byte
 	compressBuf []byte
-	zstdReader  *zstd.Decoder
+	cDec        *compression.Decoder
 	buf         [pageSize]byte
 	total       int64   // Total bytes processed.
 	curRecTyp   recType // Used for checking that the last record is not torn.
@@ -39,9 +38,7 @@ type Reader struct {
 
 // NewReader returns a new reader.
 func NewReader(r io.Reader) *Reader {
-	// Calling zstd.NewReader with a nil io.Reader and no options cannot return an error.
-	zstdReader, _ := zstd.NewReader(nil)
-	return &Reader{rdr: r, zstdReader: zstdReader}
+	return &Reader{rdr: r, cDec: compression.NewDecoder()}
 }
 
 // Next advances the reader to the next records and returns true if it exists.
@@ -67,7 +64,6 @@ func (r *Reader) next() (err error) {
 	hdr := r.buf[:recordHeaderSize]
 	buf := r.buf[recordHeaderSize:]
 
-	r.rec = r.rec[:0]
 	r.compressBuf = r.compressBuf[:0]
 
 	i := 0
@@ -77,8 +73,13 @@ func (r *Reader) next() (err error) {
 		}
 		r.total++
 		r.curRecTyp = recTypeFromHeader(hdr[0])
-		isSnappyCompressed := hdr[0]&snappyMask == snappyMask
-		isZstdCompressed := hdr[0]&zstdMask == zstdMask
+		// TODO(bwplotka): Handle unknown compressions.
+		compr := compression.None
+		if hdr[0]&snappyMask == snappyMask {
+			compr = compression.Snappy
+		} else if hdr[0]&zstdMask == zstdMask {
+			compr = compression.Zstd
+		}
 
 		// Gobble up zero bytes.
 		if r.curRecTyp == recPageTerm {
@@ -133,26 +134,14 @@ func (r *Reader) next() (err error) {
 		if c := crc32.Checksum(buf[:length], castagnoliTable); c != crc {
 			return fmt.Errorf("unexpected checksum %x, expected %x", c, crc)
 		}
-
-		if isSnappyCompressed || isZstdCompressed {
-			r.compressBuf = append(r.compressBuf, buf[:length]...)
-		} else {
-			r.rec = append(r.rec, buf[:length]...)
-		}
-
 		if err := validateRecord(r.curRecTyp, i); err != nil {
 			return err
 		}
+
+		r.compressBuf = append(r.compressBuf, buf[:length]...)
 		if r.curRecTyp == recLast || r.curRecTyp == recFull {
-			if isSnappyCompressed && len(r.compressBuf) > 0 {
-				// The snappy library uses `len` to calculate if we need a new buffer.
-				// In order to allocate as few buffers as possible make the length
-				// equal to the capacity.
-				r.rec = r.rec[:cap(r.rec)]
-				r.rec, err = snappy.Decode(r.rec, r.compressBuf)
-				return err
-			} else if isZstdCompressed && len(r.compressBuf) > 0 {
-				r.rec, err = r.zstdReader.DecodeAll(r.compressBuf, r.rec[:0])
+			r.rec, err = r.cDec.Decode(compr, r.compressBuf, r.rec[:0])
+			if err != nil {
 				return err
 			}
 			return nil

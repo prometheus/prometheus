@@ -171,6 +171,20 @@ func (f *fanoutAppender) Append(ref SeriesRef, l labels.Labels, t int64, v float
 	return ref, nil
 }
 
+func (f *fanoutAppender) AppendWithCT(ref SeriesRef, l labels.Labels, t, ct int64, v float64) (SeriesRef, error) {
+	ref, err := f.primary.AppendWithCT(ref, l, t, ct, v)
+	if err != nil {
+		return ref, err
+	}
+
+	for _, appender := range f.secondaries {
+		if _, err := appender.AppendWithCT(ref, l, t, ct, v); err != nil {
+			return 0, err
+		}
+	}
+	return ref, nil
+}
+
 func (f *fanoutAppender) AppendExemplar(ref SeriesRef, l labels.Labels, e exemplar.Exemplar) (SeriesRef, error) {
 	ref, err := f.primary.AppendExemplar(ref, l, e)
 	if err != nil {
@@ -193,6 +207,20 @@ func (f *fanoutAppender) AppendHistogram(ref SeriesRef, l labels.Labels, t int64
 
 	for _, appender := range f.secondaries {
 		if _, err := appender.AppendHistogram(ref, l, t, h, fh); err != nil {
+			return 0, err
+		}
+	}
+	return ref, nil
+}
+
+func (f *fanoutAppender) AppendHistogramWithCT(ref SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error) {
+	ref, err := f.primary.AppendHistogramWithCT(ref, l, t, ct, h, fh)
+	if err != nil {
+		return ref, err
+	}
+
+	for _, appender := range f.secondaries {
+		if _, err := appender.AppendHistogramWithCT(ref, l, t, ct, h, fh); err != nil {
 			return 0, err
 		}
 	}

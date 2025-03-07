@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/compression"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
@@ -66,7 +67,7 @@ type Options struct {
 	WALSegmentSize int
 
 	// WALCompression configures the compression type to use on records in the WAL.
-	WALCompression wlog.CompressionType
+	WALCompression compression.Type
 
 	// StripeSize is the size (power of 2) in entries of the series hash map. Reducing the size will save memory but impact performance.
 	StripeSize int
@@ -90,7 +91,7 @@ type Options struct {
 func DefaultOptions() *Options {
 	return &Options{
 		WALSegmentSize:       wlog.DefaultSegmentSize,
-		WALCompression:       wlog.CompressionNone,
+		WALCompression:       compression.None,
 		StripeSize:           tsdb.DefaultStripeSize,
 		TruncateFrequency:    DefaultTruncateFrequency,
 		MinWALTime:           DefaultMinWALTime,
@@ -222,7 +223,9 @@ func (m *dbMetrics) Unregister() {
 	}
 }
 
-// DB represents a WAL-only storage. It implements storage.DB.
+var _ storage.Appendable = &DB{}
+
+// DB represents a WAL-only storage.
 type DB struct {
 	mtx    sync.RWMutex
 	logger *slog.Logger
@@ -337,7 +340,7 @@ func validateOptions(opts *Options) *Options {
 	}
 
 	if opts.WALCompression == "" {
-		opts.WALCompression = wlog.CompressionNone
+		opts.WALCompression = compression.None
 	}
 
 	// Revert StripeSize to DefaultStripeSize if StripeSize is either 0 or not a power of 2.
@@ -452,7 +455,7 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 					return
 				}
 				decoded <- series
-			case record.Samples:
+			case record.Samples, record.SamplesWithCT:
 				samples := db.walReplaySamplesPool.Get()[:0]
 				samples, err = dec.Samples(rec, samples)
 				if err != nil {
@@ -766,6 +769,8 @@ func (db *DB) Close() error {
 	return tsdb_errors.NewMulti(db.locker.Release(), db.wal.Close()).Err()
 }
 
+var _ storage.Appender = &appender{}
+
 type appender struct {
 	*DB
 	hints *storage.AppendOptions
@@ -794,6 +799,10 @@ func (a *appender) SetOptions(opts *storage.AppendOptions) {
 }
 
 func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+	return a.AppendWithCT(ref, l, t, 0, v)
+}
+
+func (a *appender) AppendWithCT(ref storage.SeriesRef, l labels.Labels, t, ct int64, v float64) (storage.SeriesRef, error) {
 	// series references and chunk references are identical for agent mode.
 	headRef := chunks.HeadSeriesRef(ref)
 
@@ -830,11 +839,16 @@ func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v flo
 		return 0, storage.ErrOutOfOrderSample
 	}
 
+	if ct != 0 && ct > t {
+		ct = 0
+	}
+
 	// NOTE: always modify pendingSamples and sampleSeries together.
 	a.pendingSamples = append(a.pendingSamples, record.RefSample{
 		Ref: series.ref,
 		T:   t,
 		V:   v,
+		CT:  ct,
 	})
 	a.sampleSeries = append(a.sampleSeries, series)
 
@@ -907,6 +921,12 @@ func (a *appender) AppendExemplar(ref storage.SeriesRef, _ labels.Labels, e exem
 
 	a.metrics.totalAppendedExemplars.Inc()
 	return storage.SeriesRef(s.ref), nil
+}
+
+func (a *appender) AppendHistogramWithCT(ref storage.SeriesRef, lset labels.Labels, t, _ int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	// TODO(bwplotka): Add support for native histograms with CTs in WAL; add/consolidate records.
+	// We ignore CT for now.
+	return a.AppendHistogram(ref, lset, t, h, fh)
 }
 
 func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
