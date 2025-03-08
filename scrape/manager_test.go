@@ -23,6 +23,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"sync"
@@ -1156,12 +1157,7 @@ func requireTargets(
 		}
 		sort.Strings(expectedTargets)
 		sort.Strings(sTargets)
-		for i, t := range sTargets {
-			if t != expectedTargets[i] {
-				return false
-			}
-		}
-		return true
+		return slices.Equal(sTargets, expectedTargets)
 	}, 1*time.Second, 100*time.Millisecond)
 }
 
