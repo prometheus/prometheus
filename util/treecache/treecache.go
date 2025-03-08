@@ -72,7 +72,12 @@ type zookeeperTreeCacheNode struct {
 }
 
 // NewZookeeperTreeCache creates a new ZookeeperTreeCache for a given path.
-func NewZookeeperTreeCache(conn *zk.Conn, path string, events chan ZookeeperTreeCacheEvent, logger *slog.Logger, failureCounter prometheus.Counter, numWatchers prometheus.Gauge) *ZookeeperTreeCache {
+func NewZookeeperTreeCache(
+	conn *zk.Conn, path string, 
+	events chan ZookeeperTreeCacheEvent, 
+	logger *slog.Logger, 
+	failureCounter prometheus.Counter, numWatchers prometheus.Gauge,
+) *ZookeeperTreeCache {
 	tc := &ZookeeperTreeCache{
 		conn:           conn,
 		prefix:         path,
