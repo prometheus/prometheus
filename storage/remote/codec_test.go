@@ -165,11 +165,6 @@ func TestWriteV2RequestFixture(t *testing.T) {
 }
 
 func TestValidateLabelsAndMetricName(t *testing.T) {
-	oldScheme := model.NameValidationScheme
-	model.NameValidationScheme = model.LegacyValidation
-	defer func() {
-		model.NameValidationScheme = oldScheme
-	}()
 	tests := []struct {
 		input       []prompb.Label
 		expectedErr string
@@ -194,18 +189,10 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 		{
 			input: []prompb.Label{
 				{Name: "__name__", Value: "name"},
-				{Name: "@labelName", Value: "labelValue"},
+				{Name: "@labelName\xff", Value: "labelValue"},
 			},
-			expectedErr: "invalid label name: @labelName",
-			description: "label name with @",
-		},
-		{
-			input: []prompb.Label{
-				{Name: "__name__", Value: "name"},
-				{Name: "123labelName", Value: "labelValue"},
-			},
-			expectedErr: "invalid label name: 123labelName",
-			description: "label name starts with numbers",
+			expectedErr: "invalid label name: @labelName\xff",
+			description: "label name with \xff",
 		},
 		{
 			input: []prompb.Label{
@@ -225,10 +212,10 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 		},
 		{
 			input: []prompb.Label{
-				{Name: "__name__", Value: "@invalid_name"},
+				{Name: "__name__", Value: "invalid_name\xff"},
 			},
-			expectedErr: "invalid metric name: @invalid_name",
-			description: "metric name starts with @",
+			expectedErr: "invalid metric name: invalid_name\xff",
+			description: "metric name has invalid utf8",
 		},
 		{
 			input: []prompb.Label{
