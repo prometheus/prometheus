@@ -5155,6 +5155,8 @@ func TestScrapePoolScrapeAfterReload(t *testing.T) {
 }
 
 // Regression test against https://github.com/prometheus/prometheus/issues/16160.
+// The first scrape fails with a parsing error, but the second should
+// succeed and cause `metric_1=11` to appear in the appender.
 func TestScrapeAppendWithParseError(t *testing.T) {
 	const (
 		scrape1 = `metric_a 1

@@ -1035,7 +1035,6 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 		}
 		c.metaMtx.Unlock()
 	}
-	c.iter++
 
 	// Swap current and previous series.
 	c.seriesPrev, c.seriesCur = c.seriesCur, c.seriesPrev
@@ -1044,6 +1043,8 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 	for k := range c.seriesCur {
 		delete(c.seriesCur, k)
 	}
+
+	c.iter++
 }
 
 func (c *scrapeCache) get(met []byte) (*cacheEntry, bool, bool) {
