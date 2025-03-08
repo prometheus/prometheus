@@ -1,6 +1,7 @@
 # Changelog
 
 ## unreleased
+ * [ENHANCEMENT] Scraping: add warning if targets relabel to same labels. This is enabled under the feature-flag `warn-if-targets-relabelled-to-same-labels`. #9589
 
 * [BUGFIX] TSDB: fix unknown series errors and possible lost data during WAL replay when series are removed from the head due to inactivity and reappear before the next WAL checkpoint. #16060
 
