@@ -987,7 +987,7 @@ load 5m
      reset_in_bucket {{schema:0 count:4 sum:5 buckets:[1 2 1]}} {{schema:0 count:5 sum:6 buckets:[1 1 3]}} {{schema:0 count:6 sum:7 buckets:[1 2 3]}}
 
 eval instant at 10m increase(reset_in_bucket[15m])
-     {} {{count:9 sum:10.5 buckets:[1.5 3 4.5]}}
+     {} {{count:8.5 sum:10.5 buckets:[1.5 3 4]}}
 
 # The following two test the "fast path" where only sum and count is decoded.
 eval instant at 10m histogram_count(increase(reset_in_bucket[15m]))
@@ -1319,3 +1319,32 @@ eval instant at 10m histogram_sub_3{idx="0"} - ignoring(idx) histogram_sub_3{idx
     {} {{schema:0 count:-30 sum:-1111.1 z_bucket:-2 z_bucket_w:0.001 buckets:[-1 0 -1 -2 -1 -1 -1] n_buckets:[0 2 -2 -2 -7 0 0 0 0 -5 -5 -2]}}
 
 clear
+
+# Test prevent extrapolation of total count below zero for native histograms
+# This tests the logic where an increasing counter, if extrapolated linearly
+# backwards to rangeStart, would have a negative count. The clamping of
+# durationToStart to the point where the counter would have been zero
+# affects the extrapolation window and thus the final rate.
+load 10s
+    histo_total_count_clamp_positive_rate {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:11 count:11 buckets:[11]}}
+
+eval instant at 10s rate(histo_total_count_clamp_positive_rate[20s])
+    {} {{schema:0 sum:0.55 count:0.55 buckets:[0.55]}}
+
+eval instant at 10s histogram_count(rate(histo_total_count_clamp_positive_rate[20s]))
+    {} 0.55
+
+eval instant at 10s histogram_sum(rate(histo_total_count_clamp_positive_rate[20s]))
+    {} 0.55
+
+clear
+
+# Per‑bucket clamp: bucket 0 would go negative without the fix.
+load 10s
+    histogram_bucket_extrapolation _  _  {{schema:0 sum:0.1 count:1 buckets:[0.1]}} {{schema:0 sum:5.1 count:6 buckets:[5.1]}}
+
+eval instant at 32s rate(histogram_bucket_extrapolation[20s])
+    {} {{schema:0 sum:0.35 count:0.305 buckets:[0.305]}}
+
+eval instant at 32s histogram_count(rate(histogram_bucket_extrapolation[20s]))
+    {} 0.35

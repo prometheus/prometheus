@@ -546,7 +546,7 @@ load_with_nhcb 5m
     histogram_with_reset_sum{}          36 16 61
 
 eval instant at 10m increase(histogram_with_reset[15m])
-    {} {{schema:-53 count:27 sum:91.5 custom_values:[1 2 4 8] counter_reset_hint:gauge buckets:[13.5 0 4.5 9]}}
+    {} {{schema:-53 count:23.5 sum:91.5 custom_values:[1 2 4 8] counter_reset_hint:gauge buckets:[10 0 4.5 9]}}
 
 eval instant at 10m resets(histogram_with_reset[15m])
      {} 1
