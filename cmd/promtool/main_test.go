@@ -39,11 +39,6 @@ import (
 	"github.com/prometheus/prometheus/promql/promqltest"
 )
 
-func init() {
-	// This can be removed when the default validation scheme in common is updated.
-	model.NameValidationScheme = model.UTF8Validation
-}
-
 var promtoolPath = os.Args[0]
 
 func TestMain(m *testing.M) {
