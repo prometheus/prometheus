@@ -265,14 +265,15 @@ func (a *HistogramAppender) Append(int64, float64) {
 func (a *HistogramAppender) appendable(h *histogram.Histogram) (
 	positiveInserts, negativeInserts []Insert,
 	backwardPositiveInserts, backwardNegativeInserts []Insert,
-	okToAppend, counterReset bool,
+	okToAppend bool, counterResetHeader CounterResetHeader,
 ) {
+	counterResetHeader = NotCounterReset
 	if a.NumSamples() > 0 && a.GetCounterResetHeader() == GaugeType {
 		return
 	}
 	if h.CounterResetHint == histogram.CounterReset {
 		// Always honor the explicit counter reset hint.
-		counterReset = true
+		counterResetHeader = CounterReset
 		return
 	}
 	if value.IsStaleNaN(h.Sum) {
@@ -288,34 +289,35 @@ func (a *HistogramAppender) appendable(h *histogram.Histogram) (
 
 	if h.Count < a.cnt {
 		// There has been a counter reset.
-		counterReset = true
+		counterResetHeader = CounterReset
 		return
 	}
 
 	if h.Schema != a.schema || h.ZeroThreshold != a.zThreshold {
+		counterResetHeader = UnknownCounterReset
 		return
 	}
 
 	if histogram.IsCustomBucketsSchema(h.Schema) && !histogram.FloatBucketsMatch(h.CustomValues, a.customValues) {
-		counterReset = true
+		counterResetHeader = CounterReset
 		return
 	}
 
 	if h.ZeroCount < a.zCnt {
 		// There has been a counter reset since ZeroThreshold didn't change.
-		counterReset = true
+		counterResetHeader = CounterReset
 		return
 	}
 
 	var ok bool
 	positiveInserts, backwardPositiveInserts, ok = expandIntSpansAndBuckets(a.pSpans, h.PositiveSpans, a.pBuckets, h.PositiveBuckets)
 	if !ok {
-		counterReset = true
+		counterResetHeader = CounterReset
 		return
 	}
 	negativeInserts, backwardNegativeInserts, ok = expandIntSpansAndBuckets(a.nSpans, h.NegativeSpans, a.nBuckets, h.NegativeBuckets)
 	if !ok {
-		counterReset = true
+		counterResetHeader = CounterReset
 		return
 	}
 
@@ -780,22 +782,18 @@ func (a *HistogramAppender) AppendHistogram(prev *HistogramAppender, t int64, h 
 			a.setCounterResetHeader(CounterReset)
 		case prev != nil:
 			// This is a new chunk, but continued from a previous one. We need to calculate the reset header unless already set.
-			_, _, _, _, _, counterReset := prev.appendable(h)
-			if counterReset {
-				a.setCounterResetHeader(CounterReset)
-			} else {
-				a.setCounterResetHeader(NotCounterReset)
-			}
+			_, _, _, _, _, counterResetHeader := prev.appendable(h)
+			a.setCounterResetHeader(counterResetHeader)
 		}
 		return nil, false, a, nil
 	}
 
 	// Adding counter-like histogram.
 	if h.CounterResetHint != histogram.GaugeType {
-		pForwardInserts, nForwardInserts, pBackwardInserts, nBackwardInserts, okToAppend, counterReset := a.appendable(h)
-		if !okToAppend || counterReset {
+		pForwardInserts, nForwardInserts, pBackwardInserts, nBackwardInserts, okToAppend, counterResetHeader := a.appendable(h)
+		if !okToAppend || counterResetHeader != NotCounterReset {
 			if appendOnly {
-				if counterReset {
+				if counterResetHeader == CounterReset {
 					return nil, false, a, errors.New("histogram counter reset")
 				}
 				return nil, false, a, errors.New("histogram schema change")
@@ -806,8 +804,8 @@ func (a *HistogramAppender) AppendHistogram(prev *HistogramAppender, t int64, h 
 				panic(err) // This should never happen for an empty histogram chunk.
 			}
 			happ := app.(*HistogramAppender)
-			if counterReset {
-				happ.setCounterResetHeader(CounterReset)
+			if counterResetHeader != NotCounterReset {
+				happ.setCounterResetHeader(counterResetHeader)
 			}
 			happ.appendHistogram(t, h)
 			return newChunk, false, app, nil
