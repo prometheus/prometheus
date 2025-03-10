@@ -90,7 +90,7 @@ func DefaultOptions() *Options {
 		EnableOverlappingCompaction: true,
 		EnableSharding:              false,
 		EnableDelayedCompaction:     false,
-		CacheAllSymbols:             false,
+		CacheAllSymbols:             true,
 		CompactionDelayMaxPercent:   DefaultCompactionDelayMaxPercent,
 		CompactionDelay:             time.Duration(0),
 		PostingsDecoderFactory:      DefaultPostingsDecoderFactory,

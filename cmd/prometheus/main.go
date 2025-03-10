@@ -269,9 +269,6 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "delayed-compaction":
 				c.tsdb.EnableDelayedCompaction = true
 				logger.Info("Experimental delayed compaction is enabled.")
-			case "cache-all-symbols-for-compaction":
-				c.tsdb.CacheAllSymbols = true
-				logger.Info("Caching of all TSDB symbols for compaction enabled")
 			case "promql-delayed-name-removal":
 				c.promqlEnableDelayedNameRemoval = true
 				logger.Info("Experimental PromQL delayed name removal enabled.")
@@ -457,6 +454,9 @@ func main() {
 	serverOnlyFlag(a, "storage.tsdb.delayed-compaction.max-percent", "Sets the upper limit for the random compaction delay, specified as a percentage of the head chunk range. 100 means the compaction can be delayed by up to the entire head chunk range. Only effective when the delayed-compaction feature flag is enabled.").
 		Default("10").Hidden().IntVar(&cfg.tsdb.CompactionDelayMaxPercent)
 
+	serverOnlyFlag(a, "storage.tsdb.cache-all-symbols-for-compaction", "Enable caching of all symbols for compaction.").
+		Default("true").Hidden().BoolVar(&cfg.tsdb.CacheAllSymbols)
+
 	agentOnlyFlag(a, "storage.agent.path", "Base path for metrics storage.").
 		Default("data-agent/").StringVar(&cfg.agentStoragePath)
 
@@ -540,7 +540,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, native-histograms, created-timestamp-zero-ingestion, concurrent-rule-eval, delayed-compaction, old-ui, otlp-deltatocumulative, cache-all-symbols-for-compaction. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, native-histograms, created-timestamp-zero-ingestion, concurrent-rule-eval, delayed-compaction, old-ui, otlp-deltatocumulative. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)

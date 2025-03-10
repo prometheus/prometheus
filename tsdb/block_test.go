@@ -372,9 +372,7 @@ func TestBlockSize(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, expAfterDelete, actAfterDelete, "after a delete reported block size doesn't match actual disk size")
 
-		c, err := NewLeveledCompactorWithOptions(context.Background(), nil, promslog.NewNopLogger(), []int64{0}, nil, LeveledCompactorOptions{
-			EnableOverlappingCompaction: true,
-		})
+		c, err := NewLeveledCompactor(context.Background(), nil, promslog.NewNopLogger(), []int64{0}, nil, nil)
 		require.NoError(t, err)
 		blockDirsAfterCompact, err := c.Compact(tmpdir, []string{blockInit.Dir()}, nil)
 		require.NoError(t, err)
@@ -623,15 +621,13 @@ func testPostingsForLabelMatching(t *testing.T, offset storage.SeriesRef, setUp 
 
 // createBlock creates a block with given set of series and returns its dir.
 func createBlock(tb testing.TB, dir string, series []storage.Series) string {
-	blockDir, err := CreateBlock(series, dir, 0, false, promslog.NewNopLogger())
+	blockDir, err := CreateBlock(series, dir, 0, true, promslog.NewNopLogger())
 	require.NoError(tb, err)
 	return blockDir
 }
 
 func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
-	compactor, err := NewLeveledCompactorWithOptions(context.Background(), nil, promslog.NewNopLogger(), []int64{1000000}, nil, LeveledCompactorOptions{
-		EnableOverlappingCompaction: true,
-	})
+	compactor, err := NewLeveledCompactor(context.Background(), nil, promslog.NewNopLogger(), []int64{1000000}, nil, nil)
 	require.NoError(tb, err)
 
 	require.NoError(tb, os.MkdirAll(dir, 0o777))
@@ -645,9 +641,7 @@ func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
 }
 
 func createBlockFromOOOHead(tb testing.TB, dir string, head *OOOCompactionHead) string {
-	compactor, err := NewLeveledCompactorWithOptions(context.Background(), nil, promslog.NewNopLogger(), []int64{1000000}, nil, LeveledCompactorOptions{
-		EnableOverlappingCompaction: true,
-	})
+	compactor, err := NewLeveledCompactor(context.Background(), nil, promslog.NewNopLogger(), []int64{1000000}, nil, nil)
 	require.NoError(tb, err)
 
 	require.NoError(tb, os.MkdirAll(dir, 0o777))

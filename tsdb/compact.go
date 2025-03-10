@@ -180,12 +180,24 @@ func DefaultPostingsDecoderFactory(_ *BlockMeta) index.PostingsDecoder {
 	return index.DecodePostingsRaw
 }
 
-func NewLeveledCompactorWithChunkSize(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, maxBlockChunkSegmentSize int64, cacheAllSymbols bool, mergeFunc storage.VerticalChunkSeriesMergeFunc) (*LeveledCompactor, error) {
+// NewLeveledCompactorWithChunkSize returns a new LeveledCompactor with a certain max block segment chunk size.
+// It's the same as calling NewLeveledCompactorWithOptions with maxBlockChunkSegmentSize, mergeFunc, enabled overlapping compaction, and caching of all symbols during compaction.
+func NewLeveledCompactorWithChunkSize(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, maxBlockChunkSegmentSize int64, mergeFunc storage.VerticalChunkSeriesMergeFunc) (*LeveledCompactor, error) {
 	return NewLeveledCompactorWithOptions(ctx, r, l, ranges, pool, LeveledCompactorOptions{
 		MaxBlockChunkSegmentSize:    maxBlockChunkSegmentSize,
 		MergeFunc:                   mergeFunc,
 		EnableOverlappingCompaction: true,
-		CacheAllSymbols:             cacheAllSymbols,
+		CacheAllSymbols:             true,
+	})
+}
+
+// NewLeveledCompactor returns a new LeveledCompactor.
+// It's the same as calling NewLeveledCompactorWithOptions with mergeFunc, enabled overlapping compaction, and caching of all symbols during compaction.
+func NewLeveledCompactor(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc) (*LeveledCompactor, error) {
+	return NewLeveledCompactorWithOptions(ctx, r, l, ranges, pool, LeveledCompactorOptions{
+		MergeFunc:                   mergeFunc,
+		EnableOverlappingCompaction: true,
+		CacheAllSymbols:             true,
 	})
 }
 

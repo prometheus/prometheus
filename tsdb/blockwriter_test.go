@@ -30,7 +30,7 @@ import (
 func TestBlockWriter(t *testing.T) {
 	ctx := context.Background()
 	outputDir := t.TempDir()
-	w, err := NewBlockWriter(promslog.NewNopLogger(), outputDir, DefaultBlockDuration, false)
+	w, err := NewBlockWriter(promslog.NewNopLogger(), outputDir, DefaultBlockDuration, true)
 	require.NoError(t, err)
 
 	// Add some series.
