@@ -23,6 +23,7 @@ import (
 	"net/http/httptrace"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -99,11 +100,9 @@ var (
 		},
 		[]string{remoteName, endpoint, "response_type"},
 	)
-)
 
-func init() {
-	prometheus.MustRegister(remoteReadQueriesTotal, remoteReadQueries, remoteReadQueryDuration)
-}
+	once sync.Once
+)
 
 // Client allows reading and writing from/to a remote HTTP endpoint.
 type Client struct {
@@ -144,8 +143,19 @@ type ReadClient interface {
 	Read(ctx context.Context, query *prompb.Query, sortSeries bool) (storage.SeriesSet, error)
 }
 
+func registerRemoteReadMetrics(registry prometheus.Registerer) {
+	once.Do(func() {
+		registry.MustRegister(remoteReadQueriesTotal, remoteReadQueries, remoteReadQueryDuration)
+	})
+}
+
 // NewReadClient creates a new client for remote read.
-func NewReadClient(name string, conf *ClientConfig) (ReadClient, error) {
+func NewReadClient(name string, conf *ClientConfig, reg prometheus.Registerer) (ReadClient, error) {
+	// metrics are registered with the custom registry
+	if reg != nil {
+		registerRemoteReadMetrics(reg)
+	}
+
 	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_read_client")
 	if err != nil {
 		return nil, err
