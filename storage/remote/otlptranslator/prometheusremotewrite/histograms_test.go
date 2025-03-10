@@ -30,7 +30,7 @@ import (
 
 	"github.com/prometheus/prometheus/prompb"
 
-	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
+	translator "github.com/ArthurSens/otlp-prometheus-translator"
 )
 
 type expectedBucketLayout struct {
@@ -762,7 +762,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 				Settings{
 					ExportCreatedMetric: true,
 				},
-				prometheustranslator.BuildCompliantMetricName(metric, "", true),
+				translator.BuildCompliantMetricName(metric.Name(), metric.Unit(), getTranslatorMetricType(metric), true),
 			)
 			require.NoError(t, err)
 			require.Empty(t, annots)

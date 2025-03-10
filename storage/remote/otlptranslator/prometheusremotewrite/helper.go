@@ -37,7 +37,7 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/prompb"
 
-	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
+	translator "github.com/ArthurSens/otlp-prometheus-translator"
 )
 
 const (
@@ -159,7 +159,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 	for _, label := range labels {
 		finalKey := label.Name
 		if !settings.AllowUTF8 {
-			finalKey = prometheustranslator.NormalizeLabel(finalKey)
+			finalKey = translator.NormalizeLabel(finalKey)
 		}
 		if existingValue, alreadyExists := l[finalKey]; alreadyExists {
 			l[finalKey] = existingValue + ";" + label.Value
@@ -171,7 +171,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 	for _, lbl := range promotedAttrs {
 		normalized := lbl.Name
 		if !settings.AllowUTF8 {
-			normalized = prometheustranslator.NormalizeLabel(normalized)
+			normalized = translator.NormalizeLabel(normalized)
 		}
 		if _, exists := l[normalized]; !exists {
 			l[normalized] = lbl.Value
@@ -211,7 +211,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 		}
 		// internal labels should be maintained
 		if !settings.AllowUTF8 && !(len(name) > 4 && name[:2] == "__" && name[len(name)-2:] == "__") {
-			name = prometheustranslator.NormalizeLabel(name)
+			name = translator.NormalizeLabel(name)
 		}
 		l[name] = extras[i+1]
 	}
