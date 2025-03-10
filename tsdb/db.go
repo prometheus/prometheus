@@ -90,6 +90,7 @@ func DefaultOptions() *Options {
 		EnableOverlappingCompaction: true,
 		EnableSharding:              false,
 		EnableDelayedCompaction:     false,
+		CacheAllSymbols:             false,
 		CompactionDelayMaxPercent:   DefaultCompactionDelayMaxPercent,
 		CompactionDelay:             time.Duration(0),
 		PostingsDecoderFactory:      DefaultPostingsDecoderFactory,
@@ -212,6 +213,9 @@ type Options struct {
 	CompactionDelay time.Duration
 	// CompactionDelayMaxPercent is the upper limit for CompactionDelay, specified as a percentage of the head chunk range.
 	CompactionDelayMaxPercent int
+
+	// CacheAllSymbols enables caching of all TSDB symbols for compaction.
+	CacheAllSymbols bool
 
 	// NewCompactorFunc is a function that returns a TSDB compactor.
 	NewCompactorFunc NewCompactorFunc
@@ -432,15 +436,16 @@ var ErrClosed = errors.New("db already closed")
 // Current implementation doesn't support concurrency so
 // all API calls should happen in the same go routine.
 type DBReadOnly struct {
-	logger     *slog.Logger
-	dir        string
-	sandboxDir string
-	closers    []io.Closer
-	closed     chan struct{}
+	logger          *slog.Logger
+	dir             string
+	sandboxDir      string
+	cacheAllSymbols bool
+	closers         []io.Closer
+	closed          chan struct{}
 }
 
 // OpenDBReadOnly opens DB in the given directory for read only operations.
-func OpenDBReadOnly(dir, sandboxDirRoot string, l *slog.Logger) (*DBReadOnly, error) {
+func OpenDBReadOnly(dir, sandboxDirRoot string, cacheAllSymbols bool, l *slog.Logger) (*DBReadOnly, error) {
 	if _, err := os.Stat(dir); err != nil {
 		return nil, fmt.Errorf("opening the db dir: %w", err)
 	}
@@ -458,10 +463,11 @@ func OpenDBReadOnly(dir, sandboxDirRoot string, l *slog.Logger) (*DBReadOnly, er
 	}
 
 	return &DBReadOnly{
-		logger:     l,
-		dir:        dir,
-		sandboxDir: sandboxDir,
-		closed:     make(chan struct{}),
+		logger:          l,
+		dir:             dir,
+		cacheAllSymbols: cacheAllSymbols,
+		sandboxDir:      sandboxDir,
+		closed:          make(chan struct{}),
 	}, nil
 }
 
@@ -511,12 +517,16 @@ func (db *DBReadOnly) FlushWAL(dir string) (returnErr error) {
 	mint := head.MinTime()
 	maxt := head.MaxTime()
 	rh := NewRangeHead(head, mint, maxt)
-	compactor, err := NewLeveledCompactor(
+	compactor, err := NewLeveledCompactorWithOptions(
 		context.Background(),
 		nil,
 		db.logger,
 		ExponentialBlockRanges(DefaultOptions().MinBlockDuration, 3, 5),
-		chunkenc.NewPool(), nil,
+		chunkenc.NewPool(),
+		LeveledCompactorOptions{
+			EnableOverlappingCompaction: true,
+			CacheAllSymbols:             db.cacheAllSymbols,
+		},
 	)
 	if err != nil {
 		return fmt.Errorf("create leveled compactor: %w", err)
@@ -908,6 +918,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		db.compactor, err = NewLeveledCompactorWithOptions(ctx, r, l, rngs, db.chunkPool, LeveledCompactorOptions{
 			MaxBlockChunkSegmentSize:    opts.MaxBlockChunkSegmentSize,
 			EnableOverlappingCompaction: opts.EnableOverlappingCompaction,
+			CacheAllSymbols:             opts.CacheAllSymbols,
 			PD:                          opts.PostingsDecoderFactory,
 		})
 	}
