@@ -195,23 +195,23 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 }
 
 func getTranslatorMetricType(metric pmetric.Metric) translator.MetricType {
-	var translatorMetricType translator.MetricType
-	if metric.Type() == pmetric.MetricTypeGauge {
-		translatorMetricType = translator.MetricTypeGauge
-	} else if metric.Type() == pmetric.MetricTypeSum && metric.Sum().IsMonotonic() {
-		translatorMetricType = translator.MetricTypeMonotonicCounter
-	} else if metric.Type() == pmetric.MetricTypeSum && !metric.Sum().IsMonotonic() {
-		translatorMetricType = translator.MetricTypeNonMonotonicCounter
-	} else if metric.Type() == pmetric.MetricTypeHistogram {
-		translatorMetricType = translator.MetricTypeHistogram
-	} else if metric.Type() == pmetric.MetricTypeExponentialHistogram {
-		translatorMetricType = translator.MetricTypeExponentialHistogram
-	} else if metric.Type() == pmetric.MetricTypeSummary {
-		translatorMetricType = translator.MetricTypeSummary
-	} else {
-		translatorMetricType = translator.MetricTypeUnknown
+	switch metric.Type() {
+	case pmetric.MetricTypeGauge:
+		return translator.MetricTypeGauge
+	case pmetric.MetricTypeSum:
+		if metric.Sum().IsMonotonic() {
+			return translator.MetricTypeMonotonicCounter
+		}
+		return translator.MetricTypeNonMonotonicCounter
+	case pmetric.MetricTypeHistogram:
+		return translator.MetricTypeHistogram
+	case pmetric.MetricTypeExponentialHistogram:
+		return translator.MetricTypeExponentialHistogram
+	case pmetric.MetricTypeSummary:
+		return translator.MetricTypeSummary
+	default:
+		return translator.MetricTypeUnknown
 	}
-	return translatorMetricType
 }
 
 func isSameMetric(ts *prompb.TimeSeries, lbls []prompb.Label) bool {
