@@ -1510,10 +1510,6 @@ func (r *Reader) LabelValues(ctx context.Context, name string, hints *storage.La
 		return nil, fmt.Errorf("matchers parameter is not implemented: %+v", matchers)
 	}
 
-	if hints == nil {
-		hints = &storage.LabelHints{}
-	}
-
 	if r.version == FormatV1 {
 		e, ok := r.postingsV1[name]
 		if !ok {
@@ -1521,6 +1517,9 @@ func (r *Reader) LabelValues(ctx context.Context, name string, hints *storage.La
 		}
 		values := make([]string, 0, len(e))
 		for k := range e {
+			if hints != nil && hints.Limit > 0 && len(values) >= hints.Limit {
+				break
+			}
 			values = append(values, k)
 		}
 		return values, nil
@@ -1534,13 +1533,13 @@ func (r *Reader) LabelValues(ctx context.Context, name string, hints *storage.La
 	}
 
 	valuesLength := len(e) * symbolFactor
-	if hints.Limit > 0 && valuesLength > (hints.Limit*symbolFactor) {
-		valuesLength = hints.Limit * symbolFactor
+	if hints != nil && hints.Limit > 0 && valuesLength > hints.Limit {
+		valuesLength = hints.Limit
 	}
 	values := make([]string, 0, valuesLength)
 	lastVal := e[len(e)-1].value
 	err := r.traversePostingOffsets(ctx, e[0].off, func(val string, _ uint64) (bool, error) {
-		if len(e) >= valuesLength {
+		if hints != nil && hints.Limit > 0 && len(values) >= hints.Limit {
 			return false, nil
 		}
 		values = append(values, val)

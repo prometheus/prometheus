@@ -173,11 +173,7 @@ func (p *MemPostings) LabelValues(_ context.Context, name string, hints *storage
 	values := p.lvs[name]
 	p.mtx.RUnlock()
 
-	if hints == nil {
-		hints = &storage.LabelHints{}
-	}
-
-	if hints.Limit > 0 && len(values) > hints.Limit {
+	if hints != nil && hints.Limit > 0 && len(values) > hints.Limit {
 		values = values[:hints.Limit]
 	}
 

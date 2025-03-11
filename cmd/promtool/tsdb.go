@@ -553,7 +553,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 
 	postingInfos = postingInfos[:0]
 	for _, n := range allLabelNames {
-		values, err := ir.SortedLabelValues(ctx, n, &storage.LabelHints{}, selectors...)
+		values, err := ir.SortedLabelValues(ctx, n, nil, selectors...)
 		if err != nil {
 			return err
 		}
@@ -569,7 +569,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 
 	postingInfos = postingInfos[:0]
 	for _, n := range allLabelNames {
-		lv, err := ir.SortedLabelValues(ctx, n, &storage.LabelHints{}, selectors...)
+		lv, err := ir.SortedLabelValues(ctx, n, nil, selectors...)
 		if err != nil {
 			return err
 		}
@@ -579,7 +579,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 	printInfo(postingInfos)
 
 	postingInfos = postingInfos[:0]
-	lv, err := ir.SortedLabelValues(ctx, "__name__", &storage.LabelHints{}, selectors...)
+	lv, err := ir.SortedLabelValues(ctx, "__name__", nil, selectors...)
 	if err != nil {
 		return err
 	}

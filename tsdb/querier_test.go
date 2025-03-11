@@ -2267,15 +2267,11 @@ func (m mockIndex) SortedLabelValues(ctx context.Context, name string, hints *st
 func (m mockIndex) LabelValues(_ context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
 	var values []string
 
-	if hints == nil {
-		hints = &storage.LabelHints{}
-	}
-
 	if len(matchers) == 0 {
 		for l := range m.postings {
 			if l.Name == name {
 				values = append(values, l.Value)
-				if hints.Limit > 0 && len(values) >= hints.Limit {
+				if hints != nil && hints.Limit > 0 && len(values) >= hints.Limit {
 					break
 				}
 			}
@@ -2288,7 +2284,7 @@ func (m mockIndex) LabelValues(_ context.Context, name string, hints *storage.La
 			if matcher.Matches(series.l.Get(matcher.Name)) {
 				// TODO(colega): shouldn't we check all the matchers before adding this to the values?
 				values = append(values, series.l.Get(name))
-				if hints.Limit > 0 && len(values) >= hints.Limit {
+				if hints != nil && hints.Limit > 0 && len(values) >= hints.Limit {
 					break
 				}
 			}
@@ -3752,7 +3748,7 @@ func TestReader_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 
 	failAfter := uint64(mockReaderOfLabelsSeriesCount / 2 / checkContextEveryNIterations)
 	ctx := &testutil.MockContextErrAfter{FailAfter: failAfter}
-	_, err := labelValuesWithMatchers(ctx, ir, "__name__", &storage.LabelHints{}, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".+"))
+	_, err := labelValuesWithMatchers(ctx, ir, "__name__", nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".+"))
 
 	require.Error(t, err)
 	require.Equal(t, failAfter+1, ctx.Count()) // Plus one for the Err() call that puts the error in the result.

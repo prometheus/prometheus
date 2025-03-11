@@ -391,12 +391,8 @@ func inversePostingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Ma
 }
 
 func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
-	if hints == nil {
-		hints = &storage.LabelHints{}
-	}
-
-	// Do not apply limits here. We need all values.
-	allValues, err := r.LabelValues(ctx, name, &storage.LabelHints{})
+	// Limit is applied at the end, after filtering.
+	allValues, err := r.LabelValues(ctx, name, nil)
 	if err != nil {
 		return nil, fmt.Errorf("fetching values of label %s: %w", name, err)
 	}
@@ -433,7 +429,7 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, hi
 
 	// If we don't have any matchers for other labels, then we're done.
 	if !hasMatchersForOtherLabels {
-		if hints.Limit > 0 && len(allValues) > hints.Limit {
+		if hints != nil && hints.Limit > 0 && len(allValues) > hints.Limit {
 			allValues = allValues[:hints.Limit]
 		}
 		return allValues, nil
@@ -459,7 +455,7 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, hi
 	values := make([]string, 0, len(indexes))
 	for _, idx := range indexes {
 		values = append(values, allValues[idx])
-		if hints.Limit > 0 && len(values) >= hints.Limit {
+		if hints != nil && hints.Limit > 0 && len(values) >= hints.Limit {
 			break
 		}
 	}
