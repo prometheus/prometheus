@@ -14,8 +14,6 @@ package wlog
 
 import (
 	"fmt"
-	"log/slog"
-	"math"
 	"math/rand"
 	"os"
 	"path"
@@ -32,7 +30,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/util/compression"
-	"github.com/prometheus/prometheus/util/testrecord"
 )
 
 var (
@@ -128,12 +125,6 @@ func (wtm *writeToMock) SeriesReset(index int) {
 			delete(wtm.seriesSegmentIndexes, k)
 		}
 	}
-}
-
-func (wtm *writeToMock) seriesStored() int {
-	wtm.mu.Lock()
-	defer wtm.mu.Unlock()
-	return len(wtm.seriesSegmentIndexes)
 }
 
 func (wtm *writeToMock) expectEventually(
@@ -357,6 +348,7 @@ func TestWatch_Live(t *testing.T) {
 					cutNewSegment(t, w)
 				}
 			}
+			watcher.Notify() // Notify would be used on every WAL commit anyway.
 			expectSegments(t, wdir, segments)
 
 			// Watcher watched from the beginning so expect all data.
@@ -576,115 +568,4 @@ func TestWatch_EmergencyReadTimeout(t *testing.T) {
 			)
 		})
 	}
-}
-
-func logBenchWALRealisticRecords(tb *testing.B, w *WL, seriesRecords, seriesPerRecord, sampleRecords int, samplesCase testrecord.RefSamplesCase) {
-	tb.Helper()
-
-	enc := record.Encoder{}
-	for i := range seriesRecords {
-		series := make([]record.RefSeries, seriesPerRecord)
-		for j := range seriesPerRecord {
-			series[j] = record.RefSeries{
-				Ref:    chunks.HeadSeriesRef(i*seriesPerRecord + j),
-				Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", 0), "foo", "bar", "foo1", "bar2", "sdfsasdgfadsfgaegga", "dgsfzdsf§sfawf2"),
-			}
-		}
-		rec := enc.Series(series, nil)
-		require.NoError(tb, w.Log(rec))
-	}
-	for i := 0; i < sampleRecords; i++ {
-		rec := enc.Samples(testrecord.GenTestRefSamplesCase(tb, samplesCase), nil)
-		require.NoError(tb, w.Log(rec))
-	}
-}
-
-/*
-	export bench=watcher-read-v1 && go test ./tsdb/wlog/... \
-		-run '^$' -bench '^BenchmarkWatcherReadSegment' \
-		-benchtime 5s -count 6 -cpu 2 -timeout 999m \
-		| tee ${bench}.txt
-*/
-func BenchmarkWatcherReadSegment(b *testing.B) {
-	const (
-		seriesRecords   = 100           //  Targets * Scrapes
-		seriesPerRecord = 10            // New series per scrape.
-		sampleRecords   = seriesRecords // Targets * Scrapes
-	)
-	for _, compress := range compression.Types() {
-		for _, data := range []testrecord.RefSamplesCase{
-			testrecord.Realistic1000Samples,
-			testrecord.WorstCase1000Samples,
-		} {
-			b.Run(fmt.Sprintf("compr=%v/data=%v", compress, data), func(b *testing.B) {
-				dir := b.TempDir()
-				wdir := path.Join(dir, "wal")
-				require.NoError(b, os.Mkdir(wdir, 0o777))
-
-				w, err := NewSize(nil, nil, wdir, 128*pageSize, compress)
-				require.NoError(b, err)
-				defer func() {
-					require.NoError(b, w.Close())
-				}()
-
-				logBenchWALRealisticRecords(b, w, seriesRecords, seriesPerRecord, sampleRecords, data)
-				// 	// Build segment.
-				//	require.NoError(tb, w.flushPage(true))
-				logger := promslog.NewNopLogger()
-
-				b.Run("func=readSegmentSeries", func(b *testing.B) {
-					benchmarkedReadFn := (*Watcher).readSegmentSeries
-
-					wt := newWriteToMock(0)
-					watcher := newTestWatcher(dir, wt)
-					// Required as we don't use public method, but invoke readSegment* directly.
-					watcher.initMetrics()
-
-					// Validate our test data first.
-					testReadFn(b, wdir, 0, logger, watcher, benchmarkedReadFn)
-					require.Equal(b, seriesRecords*seriesPerRecord, wt.seriesStored())
-					require.Equal(b, 0, wt.samplesAppended) // ReadSegmentSeries skips non-series.
-
-					b.ReportAllocs()
-					b.ResetTimer()
-					for i := 0; i < b.N; i++ {
-						testReadFn(b, wdir, 0, logger, watcher, benchmarkedReadFn)
-					}
-				})
-				b.Run("func=readSegment", func(b *testing.B) {
-					benchmarkedReadFn := func(w *Watcher, r *LiveReader, segmentNum int) error {
-						// StartTime being ultra low is required as WorstCase1000Samples have
-						// math.MinInt32 timestamps (for compression overhead).
-						return w.readSegment(r, math.MinInt32-1, segmentNum)
-					}
-
-					wt := newWriteToMock(0)
-					watcher := newTestWatcher(dir, wt)
-					// Required as we don't use public method, but invoke readSegment* directly.
-					watcher.initMetrics()
-
-					// Validate our test data first.
-					testReadFn(b, wdir, 0, logger, watcher, benchmarkedReadFn)
-					require.Equal(b, seriesRecords*seriesPerRecord, wt.seriesStored())
-					require.Equal(b, sampleRecords*1000, wt.samplesAppended)
-
-					b.ReportAllocs()
-					b.ResetTimer()
-					for i := 0; i < b.N; i++ {
-						testReadFn(b, wdir, 0, logger, watcher, benchmarkedReadFn)
-					}
-				})
-			})
-		}
-	}
-}
-
-func testReadFn(tb testing.TB, wdir string, segNum int, logger *slog.Logger, watcher *Watcher, fn segmentReadFn) {
-	tb.Helper()
-
-	segment, err := OpenReadSegment(SegmentName(wdir, segNum))
-	require.NoError(tb, err)
-
-	r := NewLiveReader(logger, watcher.readerMetrics, segment)
-	require.NoError(tb, fn(watcher, r, segNum))
 }
