@@ -370,7 +370,12 @@ func instantValue(vals []parser.Value, args parser.Expressions, out Vector, isRa
 		if !isRate || ss[1].F >= ss[0].F {
 			// Gauge or counter without reset.
 			resultSample.F = ss[1].F - ss[0].F
+		} else if math.IsNaN(ss[0].F) {
+			// We don't need to do anything extra to handle the case where ss[1].F is a NaN, but we do need to check
+			// ss[0].F in the case where we don't do the subtraction operation above.
+			resultSample.F = math.NaN()
 		}
+
 		// In case of a counter reset, we leave resultSample at
 		// its current value, which is already ss[1].
 	case ss[1].H != nil && ss[0].H != nil:

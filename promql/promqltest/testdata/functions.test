@@ -218,6 +218,7 @@ clear
 load 5m
 	http_requests_total{path="/foo"}	0+10x10
 	http_requests_total{path="/bar"}	0+10x5 0+10x5
+	http_requests_nan{}               1 NaN NaN 5 11
 	http_requests_histogram{path="/a"} {{sum:2 count:2}}+{{sum:3 count:3}}x5
 	http_requests_histogram{path="/b"} 0 0 {{sum:1 count:1}} {{sum:4 count:4}}
 	http_requests_histogram{path="/c"} 0 0 {{sum:1 count:1}} {{sum:4 count:4 counter_reset_hint:gauge}}
@@ -234,6 +235,9 @@ eval instant at 50m irate(http_requests_total[50m])
 eval instant at 30m irate(http_requests_total[50m])
 	{path="/foo"} .03333333333333333333
 	{path="/bar"} 0
+
+eval range from 0 to 20m step 5m irate(http_requests_nan[15m1s])
+	{} _ NaN NaN NaN 0.02
 
 eval instant at 20m irate(http_requests_histogram{path="/a"}[20m])
 	{path="/a"} {{sum:0.01 count:0.01 counter_reset_hint:gauge}}
@@ -288,6 +292,7 @@ clear
 load 5m
 	http_requests{path="/foo"}	0 50 100 150
 	http_requests{path="/bar"}	0 50 100 50
+	http_requests_nan{}         1 NaN NaN 5 11
 	http_requests_histogram{path="/a"} {{sum:2 count:2 counter_reset_hint:gauge}}+{{sum:1 count:3 counter_reset_hint:gauge}}x5
 	http_requests_histogram{path="/b"} 0 0 {{sum:1 count:1 counter_reset_hint:gauge}} {{sum:2 count:2 counter_reset_hint:gauge}}
 	http_requests_histogram{path="/c"} 0 0 {{sum:1 count:1}} {{sum:2 count:2 counter_reset_hint:gauge}}
@@ -299,6 +304,9 @@ load 5m
 eval instant at 20m idelta(http_requests[20m])
 	{path="/foo"} 50
 	{path="/bar"} -50
+
+eval range from 0 to 20m step 5m idelta(http_requests_nan[15m1s])
+	{} _ NaN NaN NaN 6
 
 eval instant at 20m idelta(http_requests_histogram{path="/a"}[20m])
 	{path="/a"} {{sum:1 count:3 counter_reset_hint:gauge}}
