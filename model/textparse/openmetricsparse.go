@@ -73,6 +73,7 @@ func (l *openMetricsLexer) Error(es string) {
 
 // OpenMetricsParser parses samples from a byte slice of samples in the official
 // OpenMetrics text exposition format.
+// Specification can be found at https://github.com/prometheus/OpenMetrics/blob/v1.0.0/specification/OpenMetrics.md#data-model
 type OpenMetricsParser struct {
 	l         *openMetricsLexer
 	builder   labels.ScratchBuilder
