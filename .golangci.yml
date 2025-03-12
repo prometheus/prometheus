@@ -17,7 +17,8 @@ linters:
     - loggercheck
     - misspell
     - nilnesserr
-    - nolintlint
+    # TODO(bwplotka): Enable once https://github.com/golangci/golangci-lint/issues/3228 is fixed.
+    # - nolintlint
     - perfsprint
     - predeclared
     - revive
