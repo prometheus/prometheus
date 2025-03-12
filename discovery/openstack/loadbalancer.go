@@ -119,9 +119,6 @@ func (i *LoadBalancerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Gro
 	// Fetch all floating IPs
 	fipPages, err := floatingips.List(networkClient, floatingips.ListOpts{}).AllPages(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list all fips: %w", err)
-	}
-	if err != nil {
 		return nil, fmt.Errorf("failed to list floating IPs: %w", err)
 	}
 
