@@ -27,6 +27,8 @@ import (
 
 	"go.uber.org/atomic"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -66,6 +68,12 @@ func (s *seriesRefSet) count() int {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 	return len(s.refs)
+}
+
+func counterAddNonZero(v *prometheus.CounterVec, value float64, lvs ...string) {
+	if value > 0 {
+		v.WithLabelValues(lvs...).Add(value)
+	}
 }
 
 func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk, lastSegment int) (err error) {
@@ -450,6 +458,13 @@ Outer:
 			"metadata", unknownMetadataRefs.Load(),
 			"tombstones", unknownTombstoneRefs.Load(),
 		)
+
+		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownSeriesRefs.count()), "series")
+		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownSampleRefs.Load()), "samples")
+		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownExemplarRefs.Load()), "exemplars")
+		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownHistogramRefs.Load()), "histograms")
+		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownMetadataRefs.Load()), "metadata")
+		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownTombstoneRefs.Load()), "tombstones")
 	}
 	if count := mmapOverlappingChunks.Load(); count > 0 {
 		h.logger.Info("Overlapping m-map chunks on duplicate series records", "count", count)
@@ -932,6 +947,11 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 			"histograms", unknownHistogramRefs.Load(),
 			"mmap_markers", mmapMarkerUnknownRefs.Load(),
 		)
+
+		counterAddNonZero(h.metrics.wblReplayUnknownRefsTotal, float64(unknownSeriesRefs.count()), "series")
+		counterAddNonZero(h.metrics.wblReplayUnknownRefsTotal, float64(unknownSampleRefs.Load()), "samples")
+		counterAddNonZero(h.metrics.wblReplayUnknownRefsTotal, float64(unknownHistogramRefs.Load()), "histograms")
+		counterAddNonZero(h.metrics.wblReplayUnknownRefsTotal, float64(mmapMarkerUnknownRefs.Load()), "mmap_markers")
 	}
 
 	return nil
