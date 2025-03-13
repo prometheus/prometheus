@@ -480,15 +480,15 @@ func TestEndpoints(t *testing.T) {
 		u, err := url.Parse(server.URL)
 		require.NoError(t, err)
 
-		al := promslog.AllowedLevel{}
+		al := promslog.NewLevel()
 		require.NoError(t, al.Set("debug"))
 
-		af := promslog.AllowedFormat{}
+		af := promslog.NewFormat()
 		require.NoError(t, af.Set("logfmt"))
 
 		promslogConfig := promslog.Config{
-			Level:  &al,
-			Format: &af,
+			Level:  al,
+			Format: af,
 		}
 
 		dbDir := t.TempDir()
