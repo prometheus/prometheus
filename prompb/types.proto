@@ -108,6 +108,8 @@ message Histogram {
   // conversion from time.Time to Prometheus timestamp.
   int64 timestamp = 15;
 
+  // custom_values are not part of the specification, DO NOT use in remote write clients.
+  // Used only for converting from OpenTelemetry to Prometheus internally.
   repeated double custom_values = 16;
 }
 
