@@ -402,7 +402,9 @@ type Histogram struct {
 	ResetHint      Histogram_ResetHint `protobuf:"varint,14,opt,name=reset_hint,json=resetHint,proto3,enum=prometheus.Histogram_ResetHint" json:"reset_hint,omitempty"`
 	// timestamp is in ms format, see model/timestamp/timestamp.go for
 	// conversion from time.Time to Prometheus timestamp.
-	Timestamp            int64     `protobuf:"varint,15,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	Timestamp int64 `protobuf:"varint,15,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	// custom_values are not part of the specification, DO NOT use in remote write clients.
+	// Used only for converting from OpenTelemetry to Prometheus internally.
 	CustomValues         []float64 `protobuf:"fixed64,16,rep,packed,name=custom_values,json=customValues,proto3" json:"custom_values,omitempty"`
 	XXX_NoUnkeyedLiteral struct{}  `json:"-"`
 	XXX_unrecognized     []byte    `json:"-"`
