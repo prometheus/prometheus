@@ -837,12 +837,11 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 		}
 	}
 
+	if model.NameValidationScheme != model.UTF8Validation {
+		return errors.New("model.NameValidationScheme must be set to UTF8")
+	}
 	switch globalConfig.MetricNameValidationScheme {
-	case LegacyValidationConfig:
-	case "", UTF8ValidationConfig:
-		if model.NameValidationScheme != model.UTF8Validation {
-			panic("utf8 name validation requested but model.NameValidationScheme is not set to UTF8")
-		}
+	case "", LegacyValidationConfig, UTF8ValidationConfig:
 	default:
 		return fmt.Errorf("unknown name validation method specified, must be either 'legacy' or 'utf8', got %s", globalConfig.MetricNameValidationScheme)
 	}

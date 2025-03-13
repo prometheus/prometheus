@@ -140,8 +140,9 @@ var (
 )
 
 func init() {
-	// This can be removed when the default validation scheme in common is updated.
+	// This can be removed when the legacy global mode is fully deprecated.
 	model.NameValidationScheme = model.UTF8Validation
+
 	prometheus.MustRegister(versioncollector.NewCollector(strings.ReplaceAll(appName, "-", "_")))
 
 	var err error

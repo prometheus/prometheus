@@ -1,3 +1,0 @@
-global:
-  external_labels:
-    'not:allowed': value
