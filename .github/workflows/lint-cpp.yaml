@@ -1,0 +1,43 @@
+name: Lint C++ Code
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - synchronize
+      - reopened
+  push:
+    branches:
+      - pp
+
+jobs:
+  clang-format:
+    defaults:
+      run:
+        working-directory: pp
+    runs-on: fsn-dev-gitlab-runner
+    container:
+      image: "${{ secrets.CI_REGISTRY_IMAGE }}:gcc-tools-x86_64-ubuntu"
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Run Clang Format
+        run: make format
+
+  clang-tidy:
+    defaults:
+      run:
+        working-directory: pp
+    runs-on: fsn-dev-gitlab-runner
+    container:
+      image: "${{ secrets.CI_REGISTRY_IMAGE }}:gcc-tools-x86_64-ubuntu"
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Run Clang Tidy
+        run: |
+          cache_addr=$(ip route | awk '/default/ {print $3}')
+          echo "build --remote_cache=http://$cache_addr/cache/ --experimental_guard_against_concurrent_changes" >> .bazelrc
+          make tidy
