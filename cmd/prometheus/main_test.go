@@ -45,6 +45,7 @@ import (
 
 func init() {
 	// This can be removed when the legacy global mode is fully deprecated.
+	//nolint:staticcheck
 	model.NameValidationScheme = model.UTF8Validation
 }
 

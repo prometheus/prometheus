@@ -837,6 +837,7 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 		}
 	}
 
+	//nolint:staticcheck
 	if model.NameValidationScheme != model.UTF8Validation {
 		return errors.New("model.NameValidationScheme must be set to UTF8")
 	}
