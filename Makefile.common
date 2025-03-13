@@ -201,7 +201,10 @@ common-unused:
 .PHONY: common-build
 common-build: promu
 	@echo ">> building binaries"
-	$(PROMU) build --prefix $(PREFIX) $(PROMU_BINARIES)
+	@$(PROMU) build --prefix $(PREFIX) $(PROMU_BINARIES) && \
+		if [ "$(GOHOSTOS)" = "darwin" ] && command -v codesign > /dev/null 2>&1; then \
+			codesign --sign - --force --preserve-metadata=entitlements,requirements,flags,runtime $(PREFIX) >/dev/null 2>&1; \
+		fi
 
 .PHONY: common-tarball
 common-tarball: promu
