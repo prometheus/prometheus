@@ -30,7 +30,7 @@ import (
 
 	"github.com/prometheus/prometheus/prompb"
 
-	translator "github.com/ArthurSens/otlp-prometheus-translator"
+	translator "github.com/prometheus/common/otlptranslator"
 )
 
 type expectedBucketLayout struct {

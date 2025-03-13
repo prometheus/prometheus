@@ -19,7 +19,7 @@ package prometheus
 import (
 	"testing"
 
-	translator "github.com/ArthurSens/otlp-prometheus-translator"
+	translator "github.com/prometheus/common/otlptranslator"
 	"github.com/stretchr/testify/require"
 )
 
