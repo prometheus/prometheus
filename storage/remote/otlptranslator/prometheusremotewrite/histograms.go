@@ -127,7 +127,7 @@ func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint) (prom
 		}
 		h.Count = &prompb.Histogram_CountInt{CountInt: p.Count()}
 		if p.Count() == 0 && h.Sum != 0 {
-			annots.Add(fmt.Errorf("exponential histogram data point has zero count, but non-zero sum: %f", h.Sum))
+			annots.AddRaw(fmt.Errorf("exponential histogram data point has zero count, but non-zero sum: %f", h.Sum))
 		}
 	}
 	return h, annots, nil
