@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright 2021 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -11,24 +11,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !windows && !plan9 && !js
+//go:build openbsd
+// +build openbsd
 
 package fileutil
 
 import (
-	"os"
-
 	"golang.org/x/sys/unix"
 )
 
-func mmapRo(f *os.File, length int) ([]byte, error) {
-	return unix.Mmap(int(f.Fd()), 0, length, unix.PROT_READ, unix.MAP_SHARED)
-}
-
-func mmapRw(f *os.File, length int) ([]byte, error) {
-	return unix.Mmap(int(f.Fd()), 0, length, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED)
-}
-
-func munmap(b []byte) (err error) {
-	return unix.Munmap(b)
+func (f *MmapFile) Sync() error {
+	return unix.Msync(f.b, unix.MS_SYNC)
 }

@@ -19,8 +19,31 @@ import (
 )
 
 type MmapFile struct {
-	f *os.File
-	b []byte
+	f         *os.File
+	b         []byte
+	rw        bool
+	closeFile bool
+}
+
+func OpenRwMmapFromFile(f *os.File, size int) (mf *MmapFile, retErr error) {
+	defer func() {
+		if retErr != nil {
+			f.Close()
+		}
+	}()
+	if size <= 0 {
+		info, err := f.Stat()
+		if err != nil {
+			return nil, fmt.Errorf("stat: %w", err)
+		}
+		size = int(info.Size())
+	}
+
+	b, err := mmapRw(f, size)
+	if err != nil {
+		return nil, fmt.Errorf("mmap, size %d: %w", size, err)
+	}
+	return &MmapFile{f: f, b: b, rw: true}, nil
 }
 
 func OpenMmapFile(path string) (*MmapFile, error) {
@@ -45,22 +68,53 @@ func OpenMmapFileWithSize(path string, size int) (mf *MmapFile, retErr error) {
 		size = int(info.Size())
 	}
 
-	b, err := mmap(f, size)
+	b, err := mmapRo(f, size)
 	if err != nil {
 		return nil, fmt.Errorf("mmap, size %d: %w", size, err)
 	}
+	return &MmapFile{f: f, b: b, closeFile: true}, nil
+}
 
-	return &MmapFile{f: f, b: b}, nil
+func (f *MmapFile) resize(size int) error {
+	err := f.Sync()
+	if err != nil {
+		return fmt.Errorf("resize sync: %w", err)
+	}
+	err = munmap(f.b)
+	if err != nil {
+		return fmt.Errorf("resize munmap: %w", err)
+	}
+	var b []byte
+	if f.rw {
+		b, err = mmapRw(f.f, size)
+	} else {
+		b, err = mmapRo(f.f, size)
+	}
+	if err != nil {
+		return fmt.Errorf("resize mmap: %w", err)
+	}
+	f.b = b
+	return nil
 }
 
 func (f *MmapFile) Close() error {
-	err0 := munmap(f.b)
-	err1 := f.f.Close()
+	err0 := f.Sync()
+	err1 := munmap(f.b)
+	var err2 error
+	if f.closeFile {
+		err2 = f.f.Close()
+	}
 
 	if err0 != nil {
-		return err0
+		return fmt.Errorf("close sync: %w", err0)
 	}
-	return err1
+	if err1 != nil {
+		return fmt.Errorf("close munmap: %w", err1)
+	}
+	if err2 != nil {
+		return fmt.Errorf("close file: %w", err2)
+	}
+	return nil
 }
 
 func (f *MmapFile) File() *os.File {
