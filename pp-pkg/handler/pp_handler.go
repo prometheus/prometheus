@@ -6,16 +6,16 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/prometheus/prometheus/pp/go/util"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 	"golang.org/x/net/websocket"
 
-	"github.com/prometheus/prometheus/op-pkg/handler/adapter"
-	"github.com/prometheus/prometheus/op-pkg/handler/decoder/opcore"
-	"github.com/prometheus/prometheus/op-pkg/handler/middleware"
-	"github.com/prometheus/prometheus/op-pkg/handler/processor"
-	"github.com/prometheus/prometheus/op-pkg/handler/storage/block"
+	"github.com/prometheus/prometheus/pp-pkg/handler/adapter"
+	"github.com/prometheus/prometheus/pp-pkg/handler/decoder/opcore"
+	"github.com/prometheus/prometheus/pp-pkg/handler/middleware"
+	"github.com/prometheus/prometheus/pp-pkg/handler/processor"
+	"github.com/prometheus/prometheus/pp-pkg/handler/storage/block"
+	"github.com/prometheus/prometheus/pp/go/util"
 	"github.com/prometheus/prometheus/util/pool"
 )
 

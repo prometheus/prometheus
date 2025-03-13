@@ -48,7 +48,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/op-pkg/scrape" // PP_CHANGES.md: rebuild on cpp
+	"github.com/prometheus/prometheus/pp-pkg/scrape" // PP_CHANGES.md: rebuild on cpp
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"

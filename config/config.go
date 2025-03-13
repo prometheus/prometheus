@@ -36,7 +36,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
-	op_config "github.com/prometheus/prometheus/op-pkg/config" // PP_CHANGES.md: rebuild on cpp
+	pp_pkg_config "github.com/prometheus/prometheus/pp-pkg/config" // PP_CHANGES.md: rebuild on cpp
 	"github.com/prometheus/prometheus/storage/remote/azuread"
 )
 
@@ -240,8 +240,8 @@ type Config struct {
 	StorageConfig     StorageConfig   `yaml:"storage,omitempty"`
 	TracingConfig     TracingConfig   `yaml:"tracing,omitempty"`
 
-	ReceiverConfig     op_config.RemoteWriteReceiverConfig `yaml:",inline,omitempty"`      // PP_CHANGES.md: rebuild on cpp
-	RemoteWriteConfigs []*OpRemoteWriteConfig              `yaml:"remote_write,omitempty"` // PP_CHANGES.md: rebuild on cpp
+	ReceiverConfig     pp_pkg_config.RemoteWriteReceiverConfig `yaml:",inline,omitempty"`      // PP_CHANGES.md: rebuild on cpp
+	RemoteWriteConfigs []*OpRemoteWriteConfig                  `yaml:"remote_write,omitempty"` // PP_CHANGES.md: rebuild on cpp
 
 	RemoteReadConfigs []*RemoteReadConfig `yaml:"remote_read,omitempty"`
 }

@@ -13,6 +13,7 @@ require (
 	github.com/alecthomas/units v0.0.0-20231202071711-9a357b53e9c9
 	github.com/aws/aws-sdk-go v1.53.16
 	github.com/bboreham/go-loser v0.0.0-20230920113527-fcc2c21820a3
+	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/dennwc/varint v1.0.0
 	github.com/digitalocean/godo v1.117.0
@@ -22,10 +23,13 @@ require (
 	github.com/envoyproxy/protoc-gen-validate v1.0.4
 	github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
 	github.com/fsnotify/fsnotify v1.7.0
+	github.com/go-faker/faker/v4 v4.6.0
 	github.com/go-kit/log v0.2.1
 	github.com/go-logfmt/logfmt v0.6.0
 	github.com/go-openapi/strfmt v0.23.0
+	github.com/go-playground/validator/v10 v10.22.1
 	github.com/go-zookeeper/zk v1.0.3
+	github.com/gobuffalo/packr/v2 v2.8.3
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/snappy v0.0.4
 	github.com/google/go-cmp v0.6.0
@@ -43,11 +47,11 @@ require (
 	github.com/klauspost/compress v1.17.11
 	github.com/kolo/xmlrpc v0.0.0-20220921171641-a4b6fa1dd06b
 	github.com/linode/linodego v1.35.0
+	github.com/mailru/easyjson v0.7.7
 	github.com/miekg/dns v1.1.59
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f
 	github.com/nsf/jsondiff v0.0.0-20230430225905-43f6cf3098c1
-	github.com/prometheus/prometheus/pp/go v0.0.0-20250228104810-eca037a251ef
 	github.com/oklog/run v1.1.0
 	github.com/oklog/ulid v1.3.1
 	github.com/ovh/go-ovh v1.5.1
@@ -60,6 +64,7 @@ require (
 	github.com/prometheus/exporter-toolkit v0.11.0
 	github.com/scaleway/scaleway-sdk-go v1.0.0-beta.27
 	github.com/shurcooL/httpfs v0.0.0-20230704072500-f1e31cf0ba5c
+	github.com/spf13/afero v1.10.0
 	github.com/stretchr/testify v1.9.0
 	github.com/vultr/govultr/v2 v2.17.2
 	go.opentelemetry.io/collector/pdata v1.8.0
@@ -104,7 +109,6 @@ require (
 	github.com/armon/go-metrics v0.4.1 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cilium/ebpf v0.11.0 // indirect
 	github.com/cncf/xds/go v0.0.0-20240318125728-8a4994d93e50 // indirect
 	github.com/containerd/cgroups/v3 v3.0.3 // indirect
@@ -133,9 +137,7 @@ require (
 	github.com/go-openapi/validate v0.23.0 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
-	github.com/go-playground/validator/v10 v10.22.1 // indirect
 	github.com/go-resty/resty/v2 v2.13.1 // indirect
-	github.com/gobuffalo/packr/v2 v2.8.3 // indirect
 	github.com/godbus/dbus/v5 v5.0.4 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.1 // indirect
 	github.com/golang/glog v1.2.0 // indirect
@@ -166,7 +168,6 @@ require (
 	github.com/julienschmidt/httprouter v1.3.0 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
-	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect

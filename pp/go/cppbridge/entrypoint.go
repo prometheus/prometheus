@@ -41,20 +41,18 @@ import (
 	"time"
 	"unsafe" //nolint:gocritic // because otherwise it won't work
 
-	"github.com/prometheus/prometheus/pp/go/cppbridge/fastcgo"
-	"github.com/prometheus/prometheus/pp/go/model"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/prometheus/pp/go/cppbridge/fastcgo"
+	"github.com/prometheus/prometheus/pp/go/model"
 )
 
-var (
-	unsafeCall = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "prompp_cppbridge_unsafecall_nanoseconds",
-			Help: "The time duration cpp call.",
-		},
-		[]string{"object", "method"},
-	)
+var unsafeCall = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "prompp_cppbridge_unsafecall_nanoseconds",
+		Help: "The time duration cpp call.",
+	},
+	[]string{"object", "method"},
 )
 
 func freeBytes(b []byte) {
@@ -106,7 +104,7 @@ func walProtobufHashdexCtor(limits WALHashdexLimits) uintptr {
 }
 
 func walHashdexDtor(hashdex uintptr) {
-	var args = struct {
+	args := struct {
 		hashdex uintptr
 	}{hashdex}
 
@@ -120,7 +118,7 @@ func walProtobufHashdexSnappyPresharding(
 	hashdex uintptr,
 	compressedProtobuf []byte,
 ) (cluster, replica string, err []byte) {
-	var args = struct {
+	args := struct {
 		hashdex            uintptr
 		compressedProtobuf []byte
 	}{hashdex, compressedProtobuf}
@@ -140,7 +138,7 @@ func walProtobufHashdexSnappyPresharding(
 }
 
 func walProtobufHashdexGetMetadata(hashdex uintptr) []WALScraperHashdexMetadata {
-	var args = struct {
+	args := struct {
 		hashdex uintptr
 	}{hashdex}
 	var res struct {
@@ -175,7 +173,7 @@ func walGoModelHashdexCtor(limits WALHashdexLimits) uintptr {
 }
 
 func walGoModelHashdexPresharding(hashdex uintptr, data []model.TimeSeries) (cluster, replica string, err []byte) {
-	var args = struct {
+	args := struct {
 		hashdex uintptr
 		data    []model.TimeSeries
 	}{hashdex, data}
@@ -214,7 +212,7 @@ func walEncodersVersion() uint8 {
 
 // walEncoderCtor - wrapper for constructor C-Encoder.
 func walEncoderCtor(shardID uint16, logShards uint8) uintptr {
-	var args = struct {
+	args := struct {
 		shardID   uint16
 		logShards uint8
 	}{shardID, logShards}
@@ -233,7 +231,7 @@ func walEncoderCtor(shardID uint16, logShards uint8) uintptr {
 
 // walEncoderAdd - add to encode incoming data(ShardedData) through C++ encoder.
 func walEncoderAdd(encoder, hashdex uintptr) (stats WALEncoderStats, exception []byte) {
-	var args = struct {
+	args := struct {
 		encoder uintptr
 		hashdex uintptr
 	}{encoder, hashdex}
@@ -252,7 +250,7 @@ func walEncoderAdd(encoder, hashdex uintptr) (stats WALEncoderStats, exception [
 }
 
 func walEncoderAddInnerSeries(encoder uintptr, innerSeries []*InnerSeries) (stats WALEncoderStats, exception []byte) {
-	var args = struct {
+	args := struct {
 		innerSeries []*InnerSeries
 		encoder     uintptr
 	}{innerSeries, encoder}
@@ -275,7 +273,7 @@ func walEncoderAddRelabeledSeries(
 	relabeledSeries *RelabeledSeries,
 	relabelerStateUpdate *RelabelerStateUpdate,
 ) (stats WALEncoderStats, exception []byte) {
-	var args = struct {
+	args := struct {
 		relabelerStateUpdate *RelabelerStateUpdate
 		relabeledSeries      *RelabeledSeries
 		encoder              uintptr
@@ -296,7 +294,7 @@ func walEncoderAddRelabeledSeries(
 
 // walEncoderFinalize - finalize the encoded data in the C++ encoder to Segment.
 func walEncoderFinalize(encoder uintptr) (stats WALEncoderStats, segment, exception []byte) {
-	var args = struct {
+	args := struct {
 		encoder uintptr
 	}{encoder}
 	var res struct {
@@ -320,7 +318,7 @@ func walEncoderAddWithStaleNans(
 	encoder, hashdex, sourceState uintptr,
 	staleTS int64,
 ) (stats WALEncoderStats, state uintptr, exception []byte) {
-	var args = struct {
+	args := struct {
 		encoder     uintptr
 		hashdex     uintptr
 		staleTS     int64
@@ -343,7 +341,7 @@ func walEncoderAddWithStaleNans(
 
 // walEncoderCollectSource - destroy source state and mark all series as stale.
 func walEncoderCollectSource(encoder, sourceState uintptr, staleTS int64) (stats WALEncoderStats, exception []byte) {
-	var args = struct {
+	args := struct {
 		encoder     uintptr
 		staleTS     int64
 		sourceState uintptr
@@ -364,7 +362,7 @@ func walEncoderCollectSource(encoder, sourceState uintptr, staleTS int64) (stats
 
 // walEncoderDtor - wrapper for destructor C-Encoder.
 func walEncoderDtor(encoder uintptr) {
-	var args = struct {
+	args := struct {
 		encoder uintptr
 	}{encoder}
 
@@ -380,7 +378,7 @@ func walEncoderDtor(encoder uintptr) {
 
 // walEncoderLightweightCtor - wrapper for constructor C-EncoderLightweight.
 func walEncoderLightweightCtor(shardID uint16, logShards uint8) uintptr {
-	var args = struct {
+	args := struct {
 		shardID   uint16
 		logShards uint8
 	}{shardID, logShards}
@@ -399,7 +397,7 @@ func walEncoderLightweightCtor(shardID uint16, logShards uint8) uintptr {
 
 // walEncoderLightweightAdd - add to encode incoming data(ShardedData) through C++ EncoderLightweight.
 func walEncoderLightweightAdd(encoder, hashdex uintptr) (stats WALEncoderStats, exception []byte) {
-	var args = struct {
+	args := struct {
 		encoder uintptr
 		hashdex uintptr
 	}{encoder, hashdex}
@@ -422,7 +420,7 @@ func walEncoderLightweightAddInnerSeries(
 	encoder uintptr,
 	innerSeries []*InnerSeries,
 ) (stats WALEncoderStats, exception []byte) {
-	var args = struct {
+	args := struct {
 		innerSeries []*InnerSeries
 		encoder     uintptr
 	}{innerSeries, encoder}
@@ -446,7 +444,7 @@ func walEncoderLightweightAddRelabeledSeries(
 	relabeledSeries *RelabeledSeries,
 	relabelerStateUpdate *RelabelerStateUpdate,
 ) (stats WALEncoderStats, exception []byte) {
-	var args = struct {
+	args := struct {
 		relabelerStateUpdate *RelabelerStateUpdate
 		relabeledSeries      *RelabeledSeries
 		encoder              uintptr
@@ -467,7 +465,7 @@ func walEncoderLightweightAddRelabeledSeries(
 
 // walEncoderLightweightFinalize - finalize the encoded data in the C++ EncoderLightweight to Segment.
 func walEncoderLightweightFinalize(encoder uintptr) (stats WALEncoderStats, segment, exception []byte) {
-	var args = struct {
+	args := struct {
 		encoder uintptr
 	}{encoder}
 	var res struct {
@@ -487,7 +485,7 @@ func walEncoderLightweightFinalize(encoder uintptr) (stats WALEncoderStats, segm
 
 // walEncoderLightweightDtor - wrapper for destructor C-EncoderLightweight.
 func walEncoderLightweightDtor(encoder uintptr) {
-	var args = struct {
+	args := struct {
 		encoder uintptr
 	}{encoder}
 
@@ -503,7 +501,7 @@ func walEncoderLightweightDtor(encoder uintptr) {
 
 // walDecoderCtor - wrapper for constructor C-Decoder.
 func walDecoderCtor(encodersVersion uint8) uintptr {
-	var args = struct {
+	args := struct {
 		encoder_version uint8
 	}{encodersVersion}
 	var res struct {
@@ -521,7 +519,7 @@ func walDecoderCtor(encodersVersion uint8) uintptr {
 
 // walDecoderDecode - decode WAL-segment into protobuf message through C++ decoder.
 func walDecoderDecode(decoder uintptr, segment []byte) (stats DecodedSegmentStats, protobuf, err []byte) {
-	var args = struct {
+	args := struct {
 		decoder uintptr
 		segment []byte
 	}{decoder, segment}
@@ -550,7 +548,7 @@ func walDecoderDecodeToHashdex(
 	cluster, replica string,
 	err []byte,
 ) {
-	var args = struct {
+	args := struct {
 		decoder uintptr
 		segment []byte
 	}{decoder, segment}
@@ -583,7 +581,7 @@ func walDecoderDecodeToHashdexWithMetricInjection(
 	cluster, replica string,
 	err []byte,
 ) {
-	var args = struct {
+	args := struct {
 		decoder uintptr
 		meta    *MetaInjection
 		segment []byte
@@ -607,7 +605,7 @@ func walDecoderDecodeToHashdexWithMetricInjection(
 
 // decoderDecode - decode WAL-segment and drop decoded data through C++ decoder.
 func walDecoderDecodeDry(decoder uintptr, segment []byte) (segmentID uint32, err []byte) {
-	var args = struct {
+	args := struct {
 		decoder uintptr
 		segment []byte
 	}{decoder, segment}
@@ -631,7 +629,7 @@ func walDecoderRestoreFromStream(
 	segment []byte,
 	segmentID uint32,
 ) (offset uint64, rSegmentID uint32, err []byte) {
-	var args = struct {
+	args := struct {
 		decoder   uintptr
 		segment   []byte
 		segmentID uint32
@@ -653,7 +651,7 @@ func walDecoderRestoreFromStream(
 
 // walDecoderDtor - wrapper for destructor C-Decoder.
 func walDecoderDtor(decoder uintptr) {
-	var args = struct {
+	args := struct {
 		decoder uintptr
 	}{decoder}
 
@@ -673,7 +671,7 @@ func walOutputDecoderCtor(
 	statelessRelabeler, outputLss uintptr,
 	encodersVersion uint8,
 ) uintptr {
-	var args = struct {
+	args := struct {
 		externalLabels     []Label
 		statelessRelabeler uintptr
 		outputLss          uintptr
@@ -694,7 +692,7 @@ func walOutputDecoderCtor(
 
 // walOutputDecoderDtor - wrapper for destructor C-WalOutputDecoder.
 func walOutputDecoderDtor(decoder uintptr) {
-	var args = struct {
+	args := struct {
 		decoder uintptr
 	}{decoder}
 
@@ -706,7 +704,7 @@ func walOutputDecoderDtor(decoder uintptr) {
 
 // walOutputDecoderDumpTo dump output decoder state(output_lss and cache) to slice byte.
 func walOutputDecoderDumpTo(decoder uintptr) (dump, err []byte) {
-	var args = struct {
+	args := struct {
 		decoder uintptr
 	}{decoder}
 	var res struct {
@@ -725,7 +723,7 @@ func walOutputDecoderDumpTo(decoder uintptr) (dump, err []byte) {
 
 // walOutputDecoderLoadFrom load from dump(slice byte) output decoder state(output_lss and cache).
 func walOutputDecoderLoadFrom(decoder uintptr, dump []byte) []byte {
-	var args = struct {
+	args := struct {
 		dump    []byte
 		decoder uintptr
 	}{dump, decoder}
@@ -748,7 +746,7 @@ func walOutputDecoderDecode(
 	decoder uintptr,
 	lowerLimitTimestamp int64,
 ) (stats OutputDecoderStats, dump []RefSample, err []byte) {
-	var args = struct {
+	args := struct {
 		segment             []byte
 		decoder             uintptr
 		lowerLimitTimestamp int64
@@ -774,7 +772,7 @@ func walOutputDecoderDecode(
 
 // walProtobufEncoderCtor - wrapper for constructor C-ProtobufEncoder.
 func walProtobufEncoderCtor(outputLsses []uintptr) uintptr {
-	var args = struct {
+	args := struct {
 		outputLsses []uintptr
 	}{outputLsses}
 	var res struct {
@@ -792,7 +790,7 @@ func walProtobufEncoderCtor(outputLsses []uintptr) uintptr {
 
 // walProtobufEncoderDtor - wrapper for destructor C-ProtobufEncoder.
 func walProtobufEncoderDtor(decoder uintptr) {
-	var args = struct {
+	args := struct {
 		decoder uintptr
 	}{decoder}
 
@@ -809,7 +807,7 @@ func walProtobufEncoderEncode(
 	stats []protobufEncoderStats,
 	encoder uintptr,
 ) []byte {
-	var args = struct {
+	args := struct {
 		batch     []*DecodedRefSamples
 		outSlices [][]byte
 		stats     []protobufEncoderStats
@@ -834,7 +832,7 @@ func walProtobufEncoderEncode(
 
 // primitivesLSSCtor - wrapper for constructor C-Lss.
 func primitivesLSSCtor(lss_type uint32) uintptr {
-	var args = struct {
+	args := struct {
 		lss_type uint32
 	}{lss_type}
 	var res struct {
@@ -852,7 +850,7 @@ func primitivesLSSCtor(lss_type uint32) uintptr {
 
 // primitivesLSSDtor - wrapper for destructor C-EncodingBimap.
 func primitivesLSSDtor(lss uintptr) {
-	var args = struct {
+	args := struct {
 		lss uintptr
 	}{lss}
 
@@ -864,7 +862,7 @@ func primitivesLSSDtor(lss uintptr) {
 
 // primitivesLSSAllocatedMemory -  return size of allocated memory for label sets in C++.
 func primitivesLSSAllocatedMemory(lss uintptr) uint64 {
-	var args = struct {
+	args := struct {
 		lss uintptr
 	}{lss}
 	var res struct {
@@ -881,7 +879,7 @@ func primitivesLSSAllocatedMemory(lss uintptr) uint64 {
 }
 
 func primitivesLSSFindOrEmplace(lss uintptr, labelSet model.LabelSet) uint32 {
-	var args = struct {
+	args := struct {
 		lss      uintptr
 		labelSet model.LabelSet
 	}{lss, labelSet}
@@ -899,7 +897,7 @@ func primitivesLSSFindOrEmplace(lss uintptr, labelSet model.LabelSet) uint32 {
 }
 
 func primitivesLSSQuery(lss uintptr, matchers []model.LabelMatcher, querySource uint32) (uint32, []uint32) {
-	var args = struct {
+	args := struct {
 		lss         uintptr
 		matchers    []model.LabelMatcher
 		querySource uint32
@@ -919,7 +917,7 @@ func primitivesLSSQuery(lss uintptr, matchers []model.LabelMatcher, querySource 
 }
 
 func primitivesLSSGetLabelSets(lss uintptr, labelSetIDs []uint32) []Labels {
-	var args = struct {
+	args := struct {
 		lss         uintptr
 		labelSetIDs []uint32
 	}{lss, labelSetIDs}
@@ -937,7 +935,7 @@ func primitivesLSSGetLabelSets(lss uintptr, labelSetIDs []uint32) []Labels {
 }
 
 func primitivesLSSFreeLabelSets(labelSets []Labels) {
-	var args = struct {
+	args := struct {
 		labelSets []Labels
 	}{labelSets}
 
@@ -948,7 +946,7 @@ func primitivesLSSFreeLabelSets(labelSets []Labels) {
 }
 
 func primitivesLSSQueryLabelNames(lss uintptr, matchers []model.LabelMatcher) (uint32, []string) {
-	var args = struct {
+	args := struct {
 		lss      uintptr
 		matchers []model.LabelMatcher
 	}{lss, matchers}
@@ -967,7 +965,7 @@ func primitivesLSSQueryLabelNames(lss uintptr, matchers []model.LabelMatcher) (u
 }
 
 func primitivesLSSQueryLabelValues(lss uintptr, label_name string, matchers []model.LabelMatcher) (uint32, []string) {
-	var args = struct {
+	args := struct {
 		lss        uintptr
 		label_name string
 		matchers   []model.LabelMatcher
@@ -992,7 +990,7 @@ func primitivesLSSQueryLabelValues(lss uintptr, label_name string, matchers []mo
 
 // prometheusStatelessRelabelerCtor - wrapper for constructor C-StatelessRelabeler.
 func prometheusStatelessRelabelerCtor(cfgs []*RelabelConfig) (statelessRelabeler uintptr, exception []byte) {
-	var args = struct {
+	args := struct {
 		cfgs []*RelabelConfig
 	}{cfgs}
 	var res struct {
@@ -1011,7 +1009,7 @@ func prometheusStatelessRelabelerCtor(cfgs []*RelabelConfig) (statelessRelabeler
 
 // prometheusStatelessRelabelerDtor - wrapper for destructor C-StatelessRelabeler.
 func prometheusStatelessRelabelerDtor(statelessRelabeler uintptr) {
-	var args = struct {
+	args := struct {
 		statelessRelabeler uintptr
 	}{statelessRelabeler}
 
@@ -1023,7 +1021,7 @@ func prometheusStatelessRelabelerDtor(statelessRelabeler uintptr) {
 
 // prometheusStatelessRelabelerResetTo reset configs and replace on new converting go-config..
 func prometheusStatelessRelabelerResetTo(statelessRelabeler uintptr, cfgs []*RelabelConfig) (exception []byte) {
-	var args = struct {
+	args := struct {
 		statelessRelabeler uintptr
 		cfgs               []*RelabelConfig
 	}{statelessRelabeler, cfgs}
@@ -1046,7 +1044,7 @@ func prometheusStatelessRelabelerResetTo(statelessRelabeler uintptr, cfgs []*Rel
 
 // prometheusInnerSeriesCtor - wrapper for constructor C-InnerSeries(vector).
 func prometheusInnerSeriesCtor(innerSeries *InnerSeries) {
-	var args = struct {
+	args := struct {
 		innerSeries *InnerSeries
 	}{innerSeries}
 
@@ -1058,7 +1056,7 @@ func prometheusInnerSeriesCtor(innerSeries *InnerSeries) {
 
 // prometheusInnerSeriesDtor - wrapper for destructor C-InnerSeries(vector).
 func prometheusInnerSeriesDtor(innerSeries *InnerSeries) {
-	var args = struct {
+	args := struct {
 		innerSeries *InnerSeries
 	}{innerSeries}
 
@@ -1074,7 +1072,7 @@ func prometheusInnerSeriesDtor(innerSeries *InnerSeries) {
 
 // prometheusRelabeledSeriesCtor - wrapper for constructor C-RelabeledSeries(vector).
 func prometheusRelabeledSeriesCtor(relabeledSeries *RelabeledSeries) {
-	var args = struct {
+	args := struct {
 		relabeledSeries *RelabeledSeries
 	}{relabeledSeries}
 
@@ -1086,7 +1084,7 @@ func prometheusRelabeledSeriesCtor(relabeledSeries *RelabeledSeries) {
 
 // prometheusRelabeledSeriesDtor - wrapper for destructor C-RelabeledSeries(vector).
 func prometheusRelabeledSeriesDtor(relabeledSeries *RelabeledSeries) {
-	var args = struct {
+	args := struct {
 		relabeledSeries *RelabeledSeries
 	}{relabeledSeries}
 
@@ -1102,7 +1100,7 @@ func prometheusRelabeledSeriesDtor(relabeledSeries *RelabeledSeries) {
 
 // prometheusRelabelerStateUpdateCtor - wrapper for constructor C-RelabelerStateUpdate(vector), filling in c++.
 func prometheusRelabelerStateUpdateCtor(relabelerStateUpdate *RelabelerStateUpdate) {
-	var args = struct {
+	args := struct {
 		relabelerStateUpdate *RelabelerStateUpdate
 	}{relabelerStateUpdate}
 
@@ -1114,7 +1112,7 @@ func prometheusRelabelerStateUpdateCtor(relabelerStateUpdate *RelabelerStateUpda
 
 // prometheusRelabelerStateUpdateDtor - wrapper for destructor C-RelabelerStateUpdate(vector).
 func prometheusRelabelerStateUpdateDtor(relabelerStateUpdate *RelabelerStateUpdate) {
-	var args = struct {
+	args := struct {
 		relabelerStateUpdate *RelabelerStateUpdate
 	}{relabelerStateUpdate}
 
@@ -1142,7 +1140,7 @@ func prometheusRelabelStaleNansStateCtor() uintptr {
 }
 
 func prometheusRelabelStaleNansStateReset(state uintptr) {
-	var args = struct {
+	args := struct {
 		state uintptr
 	}{state}
 
@@ -1153,7 +1151,7 @@ func prometheusRelabelStaleNansStateReset(state uintptr) {
 }
 
 func prometheusRelabelStaleNansStateDtor(state uintptr) {
-	var args = struct {
+	args := struct {
 		state uintptr
 	}{state}
 
@@ -1173,7 +1171,7 @@ func prometheusPerShardRelabelerCtor(
 	statelessRelabeler uintptr,
 	numberOfShards, shardID uint16,
 ) (perShardRelabeler uintptr, exception []byte) {
-	var args = struct {
+	args := struct {
 		externalLabels     []Label
 		statelessRelabeler uintptr
 		numberOfShards     uint16
@@ -1195,7 +1193,7 @@ func prometheusPerShardRelabelerCtor(
 
 // prometheusPerShardRelabelerDtor - wrapper for destructor C-PerShardRelabeler.
 func prometheusPerShardRelabelerDtor(perShardRelabeler uintptr) {
-	var args = struct {
+	args := struct {
 		perShardRelabeler uintptr
 	}{perShardRelabeler}
 
@@ -1207,7 +1205,7 @@ func prometheusPerShardRelabelerDtor(perShardRelabeler uintptr) {
 
 // prometheusPerShardRelabelerCacheAllocatedMemory - return size of allocated memory for cache map.
 func prometheusPerShardRelabelerCacheAllocatedMemory(perShardRelabeler uintptr) uint64 {
-	var args = struct {
+	args := struct {
 		perShardRelabeler uintptr
 	}{perShardRelabeler}
 	var res struct {
@@ -1230,7 +1228,7 @@ func prometheusPerShardRelabelerInputRelabeling(
 	shardsInnerSeries []*InnerSeries,
 	shardsRelabeledSeries []*RelabeledSeries,
 ) (samplesAdded, seriesAdded uint32, exception []byte) {
-	var args = struct {
+	args := struct {
 		shardsInnerSeries     []*InnerSeries
 		shardsRelabeledSeries []*RelabeledSeries
 		options               RelabelerOptions
@@ -1267,7 +1265,7 @@ func prometheusPerShardRelabelerInputRelabelingWithStalenans(
 	shardsInnerSeries []*InnerSeries,
 	shardsRelabeledSeries []*RelabeledSeries,
 ) (samplesAdded, seriesAdded uint32, exception []byte) {
-	var args = struct {
+	args := struct {
 		shardsInnerSeries     []*InnerSeries
 		shardsRelabeledSeries []*RelabeledSeries
 		options               RelabelerOptions
@@ -1316,7 +1314,7 @@ func prometheusPerShardRelabelerAppendRelabelerSeries(
 	relabeledSeries *RelabeledSeries,
 	relabelerStateUpdate *RelabelerStateUpdate,
 ) []byte {
-	var args = struct {
+	args := struct {
 		innerSeries          *InnerSeries
 		relabeledSeries      *RelabeledSeries
 		relabelerStateUpdate *RelabelerStateUpdate
@@ -1345,7 +1343,7 @@ func prometheusPerShardRelabelerUpdateRelabelerState(
 	perShardRelabeler, cache uintptr,
 	relabeledShardID uint16,
 ) []byte {
-	var args = struct {
+	args := struct {
 		relabelerStateUpdate *RelabelerStateUpdate
 		perShardRelabeler    uintptr
 		cache                uintptr
@@ -1373,7 +1371,7 @@ func prometheusPerShardRelabelerOutputRelabeling(
 	incomingInnerSeries, encodersInnerSeries []*InnerSeries,
 	relabeledSeries *RelabeledSeries,
 ) []byte {
-	var args = struct {
+	args := struct {
 		relabeledSeries     *RelabeledSeries
 		incomingInnerSeries []*InnerSeries
 		encodersInnerSeries []*InnerSeries
@@ -1400,7 +1398,7 @@ func prometheusPerShardRelabelerResetTo(
 	perShardRelabeler uintptr,
 	numberOfShards uint16,
 ) {
-	var args = struct {
+	args := struct {
 		externalLabels    []Label
 		perShardRelabeler uintptr
 		numberOfShards    uint16
@@ -1429,7 +1427,7 @@ func seriesDataDataStorageCtor() uintptr {
 }
 
 func seriesDataDataStorageReset(dataStorage uintptr) {
-	var args = struct {
+	args := struct {
 		dataStorage uintptr
 	}{dataStorage}
 	start := time.Now()
@@ -1443,7 +1441,7 @@ func seriesDataDataStorageReset(dataStorage uintptr) {
 }
 
 func seriesDataDataStorageAllocatedMemory(dataStorage uintptr) uint64 {
-	var args = struct {
+	args := struct {
 		dataStorage uintptr
 	}{dataStorage}
 	var res struct {
@@ -1463,7 +1461,7 @@ func seriesDataDataStorageAllocatedMemory(dataStorage uintptr) uint64 {
 }
 
 func seriesDataDataStorageQuery(dataStorage uintptr, query HeadDataStorageQuery) []byte {
-	var args = struct {
+	args := struct {
 		dataStorage uintptr
 		query       HeadDataStorageQuery
 	}{dataStorage, query}
@@ -1484,10 +1482,10 @@ func seriesDataDataStorageQuery(dataStorage uintptr, query HeadDataStorageQuery)
 }
 
 func seriesDataDataStorageTimeInterval(dataStorage uintptr) TimeInterval {
-	var args = struct {
+	args := struct {
 		dataStorage uintptr
 	}{dataStorage}
-	var res = struct {
+	res := struct {
 		interval TimeInterval
 	}{}
 
@@ -1501,7 +1499,7 @@ func seriesDataDataStorageTimeInterval(dataStorage uintptr) TimeInterval {
 }
 
 func seriesDataDataStorageDtor(dataStorage uintptr) {
-	var args = struct {
+	args := struct {
 		dataStorage uintptr
 	}{dataStorage}
 
@@ -1512,7 +1510,7 @@ func seriesDataDataStorageDtor(dataStorage uintptr) {
 }
 
 func seriesDataEncoderCtor(dataStorage uintptr) uintptr {
-	var args = struct {
+	args := struct {
 		dataStorage uintptr
 	}{dataStorage}
 	var res struct {
@@ -1529,7 +1527,7 @@ func seriesDataEncoderCtor(dataStorage uintptr) uintptr {
 }
 
 func seriesDataEncoderEncode(encoder uintptr, seriesID uint32, timestamp int64, value float64) {
-	var args = struct {
+	args := struct {
 		encoder   uintptr
 		seriesID  uint32
 		timestamp int64
@@ -1546,7 +1544,7 @@ func seriesDataEncoderEncode(encoder uintptr, seriesID uint32, timestamp int64, 
 }
 
 func seriesDataEncoderEncodeInnerSeriesSlice(encoder uintptr, innerSeriesSlice []*InnerSeries) {
-	var args = struct {
+	args := struct {
 		encoder          uintptr
 		innerSeriesSlice []*InnerSeries
 	}{encoder, innerSeriesSlice}
@@ -1561,7 +1559,7 @@ func seriesDataEncoderEncodeInnerSeriesSlice(encoder uintptr, innerSeriesSlice [
 }
 
 func seriesDataEncoderMergeOutOfOrderChunks(encoder uintptr) {
-	var args = struct {
+	args := struct {
 		encoder uintptr
 	}{encoder}
 	start := time.Now()
@@ -1575,7 +1573,7 @@ func seriesDataEncoderMergeOutOfOrderChunks(encoder uintptr) {
 }
 
 func seriesDataEncoderDtor(encoder uintptr) {
-	var args = struct {
+	args := struct {
 		encoder uintptr
 	}{encoder}
 
@@ -1586,7 +1584,7 @@ func seriesDataEncoderDtor(encoder uintptr) {
 }
 
 func seriesDataDeserializerCtor(serializedChunks []byte) uintptr {
-	var args = struct {
+	args := struct {
 		serializedChunks []byte
 	}{serializedChunks}
 	var res struct {
@@ -1603,7 +1601,7 @@ func seriesDataDeserializerCtor(serializedChunks []byte) uintptr {
 }
 
 func seriesDataDeserializerCreateDecodeIterator(deserializer uintptr, chunkMetadata []byte) uintptr {
-	var args = struct {
+	args := struct {
 		deserializer  uintptr
 		chunkMetadata []byte
 	}{deserializer, chunkMetadata}
@@ -1621,7 +1619,7 @@ func seriesDataDeserializerCreateDecodeIterator(deserializer uintptr, chunkMetad
 }
 
 func seriesDataDecodeIteratorNext(decodeIterator uintptr) bool {
-	var args = struct {
+	args := struct {
 		decodeIterator uintptr
 	}{decodeIterator}
 	var res struct {
@@ -1638,7 +1636,7 @@ func seriesDataDecodeIteratorNext(decodeIterator uintptr) bool {
 }
 
 func seriesDataDecodeIteratorSample(decodeIterator uintptr) (int64, float64) {
-	var args = struct {
+	args := struct {
 		decodeIterator uintptr
 	}{decodeIterator}
 	var res struct {
@@ -1656,7 +1654,7 @@ func seriesDataDecodeIteratorSample(decodeIterator uintptr) (int64, float64) {
 }
 
 func seriesDataDecodeIteratorDtor(decodeIterator uintptr) {
-	var args = struct {
+	args := struct {
 		decodeIterator uintptr
 	}{decodeIterator}
 
@@ -1667,7 +1665,7 @@ func seriesDataDecodeIteratorDtor(decodeIterator uintptr) {
 }
 
 func seriesDataDeserializerDtor(deserializer uintptr) {
-	var args = struct {
+	args := struct {
 		deserializer uintptr
 	}{deserializer}
 
@@ -1678,7 +1676,7 @@ func seriesDataDeserializerDtor(deserializer uintptr) {
 }
 
 func seriesDataChunkRecoderCtor(lss, dataStorage uintptr, timeInterval TimeInterval) uintptr {
-	var args = struct {
+	args := struct {
 		lss         uintptr
 		dataStorage uintptr
 		TimeInterval
@@ -1697,7 +1695,7 @@ func seriesDataChunkRecoderCtor(lss, dataStorage uintptr, timeInterval TimeInter
 }
 
 func seriesDataChunkRecoderRecodeNextChunk(chunkRecoder uintptr, recodedChunk *RecodedChunk) {
-	var args = struct {
+	args := struct {
 		chunkRecoder uintptr
 	}{chunkRecoder}
 	start := time.Now()
@@ -1712,7 +1710,7 @@ func seriesDataChunkRecoderRecodeNextChunk(chunkRecoder uintptr, recodedChunk *R
 }
 
 func seriesDataChunkRecoderDtor(chunkRecoder uintptr) {
-	var args = struct {
+	args := struct {
 		chunkRecoder uintptr
 	}{chunkRecoder}
 
@@ -1723,7 +1721,7 @@ func seriesDataChunkRecoderDtor(chunkRecoder uintptr) {
 }
 
 func indexWriterCtor(lss uintptr) uintptr {
-	var args = struct {
+	args := struct {
 		lss uintptr
 	}{lss}
 
@@ -1741,7 +1739,7 @@ func indexWriterCtor(lss uintptr) uintptr {
 }
 
 func indexWriterDtor(writer uintptr) {
-	var args = struct {
+	args := struct {
 		writer uintptr
 	}{writer}
 
@@ -1752,11 +1750,11 @@ func indexWriterDtor(writer uintptr) {
 }
 
 func indexWriterWriteHeader(writer uintptr, data []byte) []byte {
-	var args = struct {
+	args := struct {
 		writer uintptr
 	}{writer}
 
-	var res = struct {
+	res := struct {
 		data []byte
 	}{data}
 
@@ -1770,11 +1768,11 @@ func indexWriterWriteHeader(writer uintptr, data []byte) []byte {
 }
 
 func indexWriterWriteSymbols(writer uintptr, data []byte) []byte {
-	var args = struct {
+	args := struct {
 		writer uintptr
 	}{writer}
 
-	var res = struct {
+	res := struct {
 		data []byte
 	}{data}
 
@@ -1788,13 +1786,13 @@ func indexWriterWriteSymbols(writer uintptr, data []byte) []byte {
 }
 
 func indexWriterWriteNextSeriesBatch(writer uintptr, ls_id uint32, chunks_meta []ChunkMetadata, data []byte) []byte {
-	var args = struct {
+	args := struct {
 		writer      uintptr
 		chunks_meta []ChunkMetadata
 		ls_id       uint32
 	}{writer, chunks_meta, ls_id}
 
-	var res = struct {
+	res := struct {
 		data []byte
 	}{data}
 
@@ -1808,11 +1806,11 @@ func indexWriterWriteNextSeriesBatch(writer uintptr, ls_id uint32, chunks_meta [
 }
 
 func indexWriterWriteLabelIndices(writer uintptr, data []byte) []byte {
-	var args = struct {
+	args := struct {
 		writer uintptr
 	}{writer}
 
-	var res = struct {
+	res := struct {
 		data []byte
 	}{data}
 
@@ -1826,12 +1824,12 @@ func indexWriterWriteLabelIndices(writer uintptr, data []byte) []byte {
 }
 
 func indexWriterWriteNextPostingsBatch(writer uintptr, max_batch_size uint32, data []byte) ([]byte, bool) {
-	var args = struct {
+	args := struct {
 		writer         uintptr
 		max_batch_size uint32
 	}{writer, max_batch_size}
 
-	var res = struct {
+	res := struct {
 		data          []byte
 		has_more_data bool
 	}{data, false}
@@ -1846,11 +1844,11 @@ func indexWriterWriteNextPostingsBatch(writer uintptr, max_batch_size uint32, da
 }
 
 func indexWriterWriteLabelIndicesTable(writer uintptr, data []byte) []byte {
-	var args = struct {
+	args := struct {
 		writer uintptr
 	}{writer}
 
-	var res = struct {
+	res := struct {
 		data []byte
 	}{data}
 
@@ -1864,11 +1862,11 @@ func indexWriterWriteLabelIndicesTable(writer uintptr, data []byte) []byte {
 }
 
 func indexWriterWritePostingsTableOffsets(writer uintptr, data []byte) []byte {
-	var args = struct {
+	args := struct {
 		writer uintptr
 	}{writer}
 
-	var res = struct {
+	res := struct {
 		data []byte
 	}{data}
 
@@ -1882,11 +1880,11 @@ func indexWriterWritePostingsTableOffsets(writer uintptr, data []byte) []byte {
 }
 
 func indexWriterWriteTableOfContents(writer uintptr, data []byte) []byte {
-	var args = struct {
+	args := struct {
 		writer uintptr
 	}{writer}
 
-	var res = struct {
+	res := struct {
 		data []byte
 	}{data}
 
@@ -1900,7 +1898,7 @@ func indexWriterWriteTableOfContents(writer uintptr, data []byte) []byte {
 }
 
 func getHeadStatus(lss, dataStorage uintptr, status *HeadStatus, limit int) {
-	var args = struct {
+	args := struct {
 		lss         uintptr
 		dataStorage uintptr
 		limit       int
@@ -1938,7 +1936,7 @@ func walPrometheusScraperHashdexCtor() uintptr {
 }
 
 func walPrometheusScraperHashdexParse(hashdex uintptr, buffer []byte, default_timestamp int64) (uint32, uint32) {
-	var args = struct {
+	args := struct {
 		hashdex           uintptr
 		buffer            []byte
 		default_timestamp int64
@@ -1961,7 +1959,7 @@ func walPrometheusScraperHashdexParse(hashdex uintptr, buffer []byte, default_ti
 }
 
 func walPrometheusScraperHashdexGetMetadata(hashdex uintptr) []WALScraperHashdexMetadata {
-	var args = struct {
+	args := struct {
 		hashdex uintptr
 	}{hashdex}
 	var res struct {
@@ -1995,7 +1993,7 @@ func walOpenMetricsScraperHashdexCtor() uintptr {
 }
 
 func walOpenMetricsScraperHashdexParse(hashdex uintptr, buffer []byte, default_timestamp int64) (uint32, uint32) {
-	var args = struct {
+	args := struct {
 		hashdex           uintptr
 		buffer            []byte
 		default_timestamp int64
@@ -2018,7 +2016,7 @@ func walOpenMetricsScraperHashdexParse(hashdex uintptr, buffer []byte, default_t
 }
 
 func walOpenMetricsScraperHashdexGetMetadata(hashdex uintptr) []WALScraperHashdexMetadata {
-	var args = struct {
+	args := struct {
 		hashdex uintptr
 	}{hashdex}
 	var res struct {
@@ -2054,7 +2052,7 @@ func prometheusCacheCtor() uintptr {
 
 // prometheusCacheDtor wrapper for destructor C-Cache.
 func prometheusCacheDtor(cache uintptr) {
-	var args = struct {
+	args := struct {
 		cache uintptr
 	}{cache}
 
@@ -2066,7 +2064,7 @@ func prometheusCacheDtor(cache uintptr) {
 
 // prometheusCacheAllocatedMemory return size of allocated memory for caches.
 func prometheusCacheAllocatedMemory(cache uintptr) uint64 {
-	var args = struct {
+	args := struct {
 		cache uintptr
 	}{cache}
 	var res struct {
@@ -2084,7 +2082,7 @@ func prometheusCacheAllocatedMemory(cache uintptr) uint64 {
 
 // prometheusCacheResetTo reset cache.
 func prometheusCacheResetTo(cache uintptr) {
-	var args = struct {
+	args := struct {
 		cache uintptr
 	}{cache}
 
@@ -2095,13 +2093,13 @@ func prometheusCacheResetTo(cache uintptr) {
 }
 
 func headWalEncoderCtor(shardID uint16, logShards uint8, lss uintptr) uintptr {
-	var args = struct {
+	args := struct {
 		shardID   uint16
 		logShards uint8
 		lss       uintptr
 	}{shardID, logShards, lss}
 
-	var res = struct {
+	res := struct {
 		encoder uintptr
 	}{}
 
@@ -2115,7 +2113,7 @@ func headWalEncoderCtor(shardID uint16, logShards uint8, lss uintptr) uintptr {
 }
 
 func headWalEncoderAddInnerSeries(encoder uintptr, innerSeries []*InnerSeries) (stats WALEncoderStats, err error) {
-	var args = struct {
+	args := struct {
 		innerSeries []*InnerSeries
 		encoder     uintptr
 	}{innerSeries, encoder}
@@ -2135,7 +2133,7 @@ func headWalEncoderAddInnerSeries(encoder uintptr, innerSeries []*InnerSeries) (
 
 // headWalEncoderFinalize - finalize the encoded data in the C++ encoder to Segment.
 func headWalEncoderFinalize(encoder uintptr) (stats WALEncoderStats, segment []byte, err error) {
-	var args = struct {
+	args := struct {
 		encoder uintptr
 	}{encoder}
 	var res struct {
@@ -2154,7 +2152,7 @@ func headWalEncoderFinalize(encoder uintptr) (stats WALEncoderStats, segment []b
 }
 
 func headWalEncoderDtor(encoder uintptr) {
-	var args = struct {
+	args := struct {
 		encoder uintptr
 	}{encoder}
 
@@ -2165,12 +2163,12 @@ func headWalEncoderDtor(encoder uintptr) {
 }
 
 func headWalDecoderCtor(lss uintptr, encoderVersion uint8) uintptr {
-	var args = struct {
+	args := struct {
 		lss            uintptr
 		encoderVersion uint8
 	}{lss, encoderVersion}
 
-	var res = struct {
+	res := struct {
 		decoder uintptr
 	}{}
 
@@ -2184,7 +2182,7 @@ func headWalDecoderCtor(lss uintptr, encoderVersion uint8) uintptr {
 }
 
 func headWalDecoderDecode(decoder uintptr, segment []byte, innerSeries *InnerSeries) error {
-	var args = struct {
+	args := struct {
 		decoder     uintptr
 		segment     []byte
 		innerSeries *InnerSeries
@@ -2204,7 +2202,7 @@ func headWalDecoderDecode(decoder uintptr, segment []byte, innerSeries *InnerSer
 }
 
 func headWalDecoderDecodeToDataStorage(decoder uintptr, segment []byte, encoder uintptr) error {
-	var args = struct {
+	args := struct {
 		decoder uintptr
 		segment []byte
 		encoder uintptr
@@ -2223,7 +2221,7 @@ func headWalDecoderDecodeToDataStorage(decoder uintptr, segment []byte, encoder 
 }
 
 func headWalDecoderCreateEncoder(decoder uintptr) uintptr {
-	var args = struct {
+	args := struct {
 		decoder uintptr
 	}{decoder}
 	var res struct {
@@ -2240,7 +2238,7 @@ func headWalDecoderCreateEncoder(decoder uintptr) uintptr {
 }
 
 func headWalDecoderDtor(decoder uintptr) {
-	var args = struct {
+	args := struct {
 		decoder uintptr
 	}{decoder}
 

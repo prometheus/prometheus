@@ -6,19 +6,18 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/jonboulle/clockwork"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/pp/go/relabeler"
 	"github.com/prometheus/prometheus/pp/go/relabeler/block"
 	"github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head"
 	"github.com/prometheus/prometheus/pp/go/relabeler/head/catalog"
-
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/model"
-
-	"github.com/alecthomas/kingpin/v2"
-	"github.com/jonboulle/clockwork"
 )
 
 type cmdWALPPToBlock struct {
@@ -28,7 +27,6 @@ type cmdWALPPToBlock struct {
 func registerCmdWALPPToBlock(cmd *cmdWALPPToBlock, clause *kingpin.CmdClause) {
 	clause.Flag("storage.tsdb.min-block-duration", "Minimum duration of a data block before being persisted. For use in testing.").
 		Default("2h").SetValue(&cmd.blockDuration)
-
 }
 
 func (cmd *cmdWALPPToBlock) Do(
@@ -97,13 +95,21 @@ func (cmd *cmdWALPPToBlock) Do(
 				"err", err,
 			)
 		}
-		h.Finalize()
 
-		level.Debug(logger).Log("msg", "write block", "id", headRecord.ID, "dir", headRecord.Dir)
+		if err = h.Finalize(); err != nil {
+			level.Error(logger).Log(
+				"msg", "failed to finalize head",
+				"id", headRecord.ID(),
+				"dir", headRecord.Dir(),
+				"err", err,
+			)
+		}
+
+		level.Debug(logger).Log("msg", "write block", "id", headRecord.ID(), "dir", headRecord.Dir())
 		if err = h.ForEachShard(func(shard relabeler.Shard) error {
 			return bw.Write(relabeler.NewBlock(shard.LSS().Raw(), shard.DataStorage().Raw()))
 		}); err != nil {
-			return fmt.Errorf("failed to write tsdb block [id: %s, dir: %s]: %w", headRecord.ID, headRecord.Dir, err)
+			return fmt.Errorf("failed to write tsdb block [id: %s, dir: %s]: %w", headRecord.ID(), headRecord.Dir(), err)
 		}
 
 		if _, setStatusErr := headCatalog.SetStatus(headRecord.ID(), catalog.StatusPersisted); setStatusErr != nil {

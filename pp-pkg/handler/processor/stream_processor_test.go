@@ -11,15 +11,15 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/pp-pkg/handler/decoder/opcore"
+	"github.com/prometheus/prometheus/pp-pkg/handler/model"
+	"github.com/prometheus/prometheus/pp-pkg/handler/processor"
+	"github.com/prometheus/prometheus/pp-pkg/handler/storage/block"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	coremodel "github.com/prometheus/prometheus/pp/go/model"
 	"github.com/prometheus/prometheus/pp/go/relabeler"
-	"github.com/stretchr/testify/require"
-
-	"github.com/prometheus/prometheus/op-pkg/handler/decoder/opcore"
-	"github.com/prometheus/prometheus/op-pkg/handler/model"
-	"github.com/prometheus/prometheus/op-pkg/handler/processor"
-	"github.com/prometheus/prometheus/op-pkg/handler/storage/block"
 )
 
 type testStream struct {

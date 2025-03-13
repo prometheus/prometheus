@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/prometheus/prometheus/pp/go/cppbridge"
-	"github.com/prometheus/prometheus/pp/go/util"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/prometheus/prometheus/op-pkg/handler/model"
+	"github.com/prometheus/prometheus/pp-pkg/handler/model"
+	"github.com/prometheus/prometheus/pp/go/cppbridge"
+	"github.com/prometheus/prometheus/pp/go/util"
 )
 
 type StreamProcessor struct {

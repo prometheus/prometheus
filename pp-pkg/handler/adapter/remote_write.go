@@ -8,7 +8,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/prometheus/prometheus/op-pkg/handler/model"
+	"github.com/prometheus/prometheus/pp-pkg/handler/model"
 	"github.com/prometheus/prometheus/util/pool"
 )
 

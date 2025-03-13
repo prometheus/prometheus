@@ -7,9 +7,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/op-pkg/handler/model"
-	"github.com/prometheus/prometheus/op-pkg/handler/storage"
-	"github.com/prometheus/prometheus/op-pkg/handler/storage/block"
+	"github.com/prometheus/prometheus/pp-pkg/handler/model"
+	"github.com/prometheus/prometheus/pp-pkg/handler/storage"
+	"github.com/prometheus/prometheus/pp-pkg/handler/storage/block"
 )
 
 func TestStorage(t *testing.T) {

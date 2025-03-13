@@ -7,7 +7,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/prometheus/prometheus/op-pkg/handler/model"
+	"github.com/prometheus/prometheus/pp-pkg/handler/model"
 )
 
 // Refill wrapper for refill reader.
