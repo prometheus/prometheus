@@ -17,3 +17,8 @@ type MemInfo struct {
 func GetMemInfo() MemInfo {
 	return memInfo()
 }
+
+// DumpMemoryProfile Dump C++ allocated memory profile to file
+func DumpMemoryProfile(filename string) bool {
+	return dumpMemoryProfile(filename) == 0
+}

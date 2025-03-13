@@ -18,6 +18,18 @@ void prompp_free_bytes(void* args);
  */
 void prompp_mem_info(void* res);
 
+/**
+ * @brief Dump jemalloc memory profile to file
+ *
+ * @param args {
+ *     filename string
+ * }
+ * @param res {
+ *     int error
+ * }
+ */
+void prompp_dump_memory_profile(void* args, void* res);
+
 #ifdef __cplusplus
 }
 #endif

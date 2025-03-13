@@ -184,6 +184,7 @@ def _impl(ctx):
                                 "-static-libstdc++",
                                 "-l:libstdc++.a",
                                 "-lm",
+                                "-lunwind",
                             ],
                         ),
                     ]),
