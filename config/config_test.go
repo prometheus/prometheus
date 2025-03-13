@@ -2160,6 +2160,10 @@ var expectedErrors = []struct {
 		filename: "scrape_config_files_fallback_scrape_protocol2.bad.yml",
 		errMsg:   `unmarshal errors`,
 	},
+	{
+		filename: "scrape_config_utf8_conflicting.bad.yml",
+		errMsg:   `utf8 metric names requested but validation scheme is not set to UTF8`,
+	},
 }
 
 func TestBadConfigs(t *testing.T) {
@@ -2276,12 +2280,12 @@ func TestGetScrapeConfigs(t *testing.T) {
 			expectedResult: []*ScrapeConfig{sc("prometheus", model.Duration(60*time.Second), model.Duration(10*time.Second))},
 		},
 		{
-			name:           "An global config that only include a scrape config file.",
+			name:           "A global config that only include a scrape config file.",
 			configFile:     "testdata/scrape_config_files_only.good.yml",
 			expectedResult: []*ScrapeConfig{sc("prometheus", model.Duration(60*time.Second), model.Duration(10*time.Second))},
 		},
 		{
-			name:       "An global config that combine scrape config files and scrape configs.",
+			name:       "A global config that combine scrape config files and scrape configs.",
 			configFile: "testdata/scrape_config_files_combined.good.yml",
 			expectedResult: []*ScrapeConfig{
 				sc("node", model.Duration(60*time.Second), model.Duration(10*time.Second)),
@@ -2290,7 +2294,7 @@ func TestGetScrapeConfigs(t *testing.T) {
 			},
 		},
 		{
-			name:       "An global config that includes a scrape config file with globs",
+			name:       "A global config that includes a scrape config file with globs",
 			configFile: "testdata/scrape_config_files_glob.good.yml",
 			expectedResult: []*ScrapeConfig{
 				{
@@ -2366,17 +2370,17 @@ func TestGetScrapeConfigs(t *testing.T) {
 			},
 		},
 		{
-			name:          "An global config that includes twice the same scrape configs.",
+			name:          "A global config that includes twice the same scrape configs.",
 			configFile:    "testdata/scrape_config_files_double_import.bad.yml",
 			expectedError: `found multiple scrape configs with job name "prometheus"`,
 		},
 		{
-			name:          "An global config that includes a scrape config identical to a scrape config in the main file.",
+			name:          "A global config that includes a scrape config identical to a scrape config in the main file.",
 			configFile:    "testdata/scrape_config_files_duplicate.bad.yml",
 			expectedError: `found multiple scrape configs with job name "prometheus"`,
 		},
 		{
-			name:          "An global config that includes a scrape config file with errors.",
+			name:          "A global config that includes a scrape config file with errors.",
 			configFile:    "testdata/scrape_config_files_global.bad.yml",
 			expectedError: `scrape timeout greater than scrape interval for scrape config with job name "prometheus"`,
 		},
@@ -2454,6 +2458,56 @@ func TestScrapeConfigNameValidationSettings(t *testing.T) {
 			require.NoError(t, yaml.UnmarshalStrict(out, got))
 
 			require.Equal(t, tc.expectScheme, got.ScrapeConfigs[0].MetricNameValidationScheme)
+		})
+	}
+}
+
+func TestScrapeConfigNameEscapingSettings(t *testing.T) {
+	tests := []struct {
+		name                   string
+		inputFile              string
+		expectValidationScheme string
+		expectEscapingScheme   string
+	}{
+		{
+			name:                   "blank config implies default",
+			inputFile:              "scrape_config_default_validation_mode",
+			expectValidationScheme: "",
+			expectEscapingScheme:   "",
+		},
+		{
+			name:                   "global setting implies local settings",
+			inputFile:              "scrape_config_global_validation_mode",
+			expectValidationScheme: "legacy",
+			expectEscapingScheme:   "dots",
+		},
+		{
+			name:                   "local setting",
+			inputFile:              "scrape_config_local_validation_mode",
+			expectValidationScheme: "legacy",
+			expectEscapingScheme:   "values",
+		},
+		{
+			name:                   "local setting overrides global setting",
+			inputFile:              "scrape_config_local_global_validation_mode",
+			expectValidationScheme: "utf8",
+			expectEscapingScheme:   "dots",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			want, err := LoadFile(fmt.Sprintf("testdata/%s.yml", tc.inputFile), false, promslog.NewNopLogger())
+			require.NoError(t, err)
+
+			out, err := yaml.Marshal(want)
+
+			require.NoError(t, err)
+			got := &Config{}
+			require.NoError(t, yaml.UnmarshalStrict(out, got))
+
+			require.Equal(t, tc.expectValidationScheme, got.ScrapeConfigs[0].MetricNameValidationScheme)
+			require.Equal(t, tc.expectEscapingScheme, got.ScrapeConfigs[0].MetricNameEscapingScheme)
 		})
 	}
 }
