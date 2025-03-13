@@ -3,12 +3,10 @@ package handler
 import (
 	"context"
 
-	"github.com/prometheus/prometheus/storage"
-
+	"github.com/prometheus/prometheus/pp-pkg/handler/processor"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler"
-
-	"github.com/prometheus/prometheus/op-pkg/handler/processor"
+	"github.com/prometheus/prometheus/storage"
 )
 
 // Receiver interface.

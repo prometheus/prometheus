@@ -3,11 +3,10 @@ package processor
 import (
 	"context"
 
+	"github.com/prometheus/prometheus/pp-pkg/handler/decoder"
+	"github.com/prometheus/prometheus/pp-pkg/handler/model"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler"
-
-	"github.com/prometheus/prometheus/op-pkg/handler/decoder"
-	"github.com/prometheus/prometheus/op-pkg/handler/model"
 )
 
 type MetricStream interface {

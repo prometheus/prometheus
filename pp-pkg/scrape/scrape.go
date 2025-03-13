@@ -20,8 +20,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/klauspost/compress/gzip"
-	"github.com/prometheus/prometheus/pp/go/cppbridge"
-	op_model "github.com/prometheus/prometheus/pp/go/model"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
@@ -34,6 +32,8 @@ import (
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/pp/go/cppbridge"
+	pp_model "github.com/prometheus/prometheus/pp/go/model"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/pool"
 )
@@ -1468,7 +1468,7 @@ func (sl *scrapeLoop) reportStale(start time.Time) (err error) {
 }
 
 func (sl *scrapeLoop) addReportSample(
-	builder *op_model.LabelSetSimpleBuilder,
+	builder *pp_model.LabelSetSimpleBuilder,
 	batch *BatchTimeSeries,
 	nameValue string,
 	t int64,

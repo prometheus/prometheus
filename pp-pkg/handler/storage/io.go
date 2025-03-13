@@ -5,7 +5,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/prometheus/prometheus/op-pkg/handler/model"
+	"github.com/prometheus/prometheus/pp-pkg/handler/model"
 )
 
 var (

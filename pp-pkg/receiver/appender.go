@@ -3,12 +3,11 @@ package receiver
 import (
 	"context"
 
-	"github.com/prometheus/prometheus/pp/go/model"
-
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/pp/go/model"
 	"github.com/prometheus/prometheus/storage"
 )
 

@@ -39,14 +39,13 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 
-	"github.com/prometheus/prometheus/op-pkg/handler"            // PP_CHANGES.md: rebuild on cpp
-	"github.com/prometheus/prometheus/op-pkg/handler/middleware" // PP_CHANGES.md: rebuild on cpp
-	"github.com/prometheus/prometheus/op-pkg/scrape"             // PP_CHANGES.md: rebuild on cpp
-
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/pp-pkg/handler"            // PP_CHANGES.md: rebuild on cpp
+	"github.com/prometheus/prometheus/pp-pkg/handler/middleware" // PP_CHANGES.md: rebuild on cpp
+	"github.com/prometheus/prometheus/pp-pkg/scrape"             // PP_CHANGES.md: rebuild on cpp
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"

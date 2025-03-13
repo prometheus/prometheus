@@ -5,10 +5,10 @@ import (
 	"encoding/hex"
 	"time"
 
-	"github.com/prometheus/prometheus/pp/go/relabeler/remotewriter"
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/pp/go/relabeler/remotewriter"
 )
 
 func ApplyConfig(remoteWriter *remotewriter.RemoteWriter) func(promConfig *config.Config) error {

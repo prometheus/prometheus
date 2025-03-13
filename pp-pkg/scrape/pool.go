@@ -9,7 +9,7 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 
-	op_model "github.com/prometheus/prometheus/pp/go/model"
+	pp_model "github.com/prometheus/prometheus/pp/go/model"
 )
 
 // buildersPool pool for reuse labels builders.
@@ -22,19 +22,19 @@ func newBuildersPool() *buildersPool {
 	return &buildersPool{
 		pool: &sync.Pool{
 			New: func() any {
-				return op_model.NewLabelSetSimpleBuilder()
+				return pp_model.NewLabelSetSimpleBuilder()
 			},
 		},
 	}
 }
 
 // get take from pool labels builder.
-func (p *buildersPool) get() *op_model.LabelSetSimpleBuilder {
-	return p.pool.Get().(*op_model.LabelSetSimpleBuilder)
+func (p *buildersPool) get() *pp_model.LabelSetSimpleBuilder {
+	return p.pool.Get().(*pp_model.LabelSetSimpleBuilder)
 }
 
 // put return to pool labels builder.
-func (p *buildersPool) put(builder *op_model.LabelSetSimpleBuilder) {
+func (p *buildersPool) put(builder *pp_model.LabelSetSimpleBuilder) {
 	p.pool.Put(builder)
 }
 
@@ -80,7 +80,7 @@ const maxAheadTime = 10 * time.Minute
 
 type Batch interface {
 	// Add add to batch timeseries, timestamp and value.
-	Add(builder *op_model.LabelSetSimpleBuilder, timestamp uint64, value float64) error
+	Add(builder *pp_model.LabelSetSimpleBuilder, timestamp uint64, value float64) error
 	// Destroy destroy batch with destroyFunc(return to pool).
 	Destroy()
 	// IsEmpty check batch is empty.
@@ -88,7 +88,7 @@ type Batch interface {
 	// Len return current length data.
 	Len() int
 	// TimeSeries return batched slice TimeSeries.
-	TimeSeries() []op_model.TimeSeries
+	TimeSeries() []pp_model.TimeSeries
 }
 
 // BatchWithLimit wrap batch timeseries into limits.
@@ -103,7 +103,7 @@ func BatchWithLimit(batch Batch) Batch {
 
 // BatchTimeSeries batch time series accumulated from source.
 type BatchTimeSeries struct {
-	data        []op_model.TimeSeries
+	data        []pp_model.TimeSeries
 	destroyFunc func()
 }
 
@@ -115,10 +115,10 @@ func newBatchTimeSeries() *BatchTimeSeries {
 }
 
 // Add add to batch timeseries, timestamp and value.
-func (batch *BatchTimeSeries) Add(builder *op_model.LabelSetSimpleBuilder, timestamp uint64, val float64) error {
+func (batch *BatchTimeSeries) Add(builder *pp_model.LabelSetSimpleBuilder, timestamp uint64, val float64) error {
 	batch.data = append(
 		batch.data,
-		op_model.TimeSeries{
+		pp_model.TimeSeries{
 			LabelSet:  builder.Build(),
 			Timestamp: timestamp,
 			Value:     val,
@@ -147,7 +147,7 @@ func (batch *BatchTimeSeries) Len() int {
 }
 
 // TimeSeries return batched slice TimeSeries.
-func (batch *BatchTimeSeries) TimeSeries() []op_model.TimeSeries {
+func (batch *BatchTimeSeries) TimeSeries() []pp_model.TimeSeries {
 	return batch.data
 }
 
@@ -172,7 +172,7 @@ type samplesLimitBatch struct {
 var _ Batch = (*samplesLimitBatch)(nil)
 
 // Add add to batch timeseries, timestamp and value.
-func (b *samplesLimitBatch) Add(builder *op_model.LabelSetSimpleBuilder, timestamp uint64, val float64) error {
+func (b *samplesLimitBatch) Add(builder *pp_model.LabelSetSimpleBuilder, timestamp uint64, val float64) error {
 	if !value.IsStaleNaN(val) {
 		b.i++
 		if b.i > b.limit {
@@ -193,7 +193,7 @@ type timeLimitBatch struct {
 var _ Batch = (*timeLimitBatch)(nil)
 
 // Add add to batch timeseries, timestamp and value.
-func (b *timeLimitBatch) Add(builder *op_model.LabelSetSimpleBuilder, timestamp uint64, val float64) error {
+func (b *timeLimitBatch) Add(builder *pp_model.LabelSetSimpleBuilder, timestamp uint64, val float64) error {
 	if timestamp > b.maxTime {
 		return storage.ErrOutOfBounds
 	}

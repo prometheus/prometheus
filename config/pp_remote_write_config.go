@@ -8,13 +8,13 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/prometheus/prometheus/pp/go/cppbridge"
-	relabelerconfig "github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"github.com/prometheus/common/config"
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/model/relabel"
-	op_config "github.com/prometheus/prometheus/op-pkg/config"
+	pp_pkg_config "github.com/prometheus/prometheus/pp-pkg/config"
+	"github.com/prometheus/prometheus/pp/go/cppbridge"
+	relabelerconfig "github.com/prometheus/prometheus/pp/go/relabeler/config"
 )
 
 const (
@@ -34,7 +34,7 @@ var (
 	emptyTLSConfig = config.TLSConfig{}
 )
 
-func (c *Config) GetReceiverConfig() (*op_config.RemoteWriteReceiverConfig, error) {
+func (c *Config) GetReceiverConfig() (*pp_pkg_config.RemoteWriteReceiverConfig, error) {
 	scfgs, err := c.GetScrapeConfigs()
 	if err != nil {
 		return nil, err

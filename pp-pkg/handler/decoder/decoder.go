@@ -3,9 +3,8 @@ package decoder
 import (
 	"context"
 
+	"github.com/prometheus/prometheus/pp-pkg/handler/model"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
-
-	"github.com/prometheus/prometheus/op-pkg/handler/model"
 )
 
 // Decoder implements decoders.

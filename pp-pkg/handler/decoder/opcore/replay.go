@@ -6,11 +6,10 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/prometheus/prometheus/pp-pkg/handler/decoder"
+	"github.com/prometheus/prometheus/pp-pkg/handler/model"
+	"github.com/prometheus/prometheus/pp-pkg/handler/storage"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
-
-	"github.com/prometheus/prometheus/op-pkg/handler/decoder"
-	"github.com/prometheus/prometheus/op-pkg/handler/model"
-	"github.com/prometheus/prometheus/op-pkg/handler/storage"
 )
 
 type ReplayDecoderBuilder struct {

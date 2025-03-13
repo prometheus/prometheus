@@ -43,10 +43,6 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/jonboulle/clockwork" // PP_CHANGES.md: rebuild on cpp
 	"github.com/mwitkow/go-conntrack"
-	"github.com/prometheus/prometheus/pp/go/cppbridge"
-	"github.com/prometheus/prometheus/pp/go/relabeler/head/catalog" // PP_CHANGES.md: rebuild on cpp
-	"github.com/prometheus/prometheus/pp/go/relabeler/head/ready"   // PP_CHANGES.md: rebuild on cpp
-	"github.com/prometheus/prometheus/pp/go/relabeler/remotewriter" // PP_CHANGES.md: rebuild on cpp
 	"github.com/oklog/run"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
@@ -61,10 +57,14 @@ import (
 	"k8s.io/klog"
 	klogv2 "k8s.io/klog/v2"
 
-	"github.com/prometheus/prometheus/op-pkg/receiver"             // PP_CHANGES.md: rebuild on cpp
-	"github.com/prometheus/prometheus/op-pkg/remote"               // PP_CHANGES.md: rebuild on cpp
-	"github.com/prometheus/prometheus/op-pkg/scrape"               // PP_CHANGES.md: rebuild on cpp
-	oppkgstorage "github.com/prometheus/prometheus/op-pkg/storage" // PP_CHANGES.md: rebuild on cpp
+	"github.com/prometheus/prometheus/pp-pkg/receiver"               // PP_CHANGES.md: rebuild on cpp
+	"github.com/prometheus/prometheus/pp-pkg/remote"                 // PP_CHANGES.md: rebuild on cpp
+	"github.com/prometheus/prometheus/pp-pkg/scrape"                 // PP_CHANGES.md: rebuild on cpp
+	pp_pkg_storage "github.com/prometheus/prometheus/pp-pkg/storage" // PP_CHANGES.md: rebuild on cpp
+	"github.com/prometheus/prometheus/pp/go/cppbridge"               // PP_CHANGES.md: rebuild on cpp
+	"github.com/prometheus/prometheus/pp/go/relabeler/head/catalog"  // PP_CHANGES.md: rebuild on cpp
+	"github.com/prometheus/prometheus/pp/go/relabeler/head/ready"    // PP_CHANGES.md: rebuild on cpp
+	"github.com/prometheus/prometheus/pp/go/relabeler/remotewriter"  // PP_CHANGES.md: rebuild on cpp
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
@@ -672,7 +672,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = os.MkdirAll(dataDir, 0777); err != nil {
+	if err = os.MkdirAll(dataDir, 0o777); err != nil {
 		level.Error(logger).Log("msg", "failed to create file log", "err", err)
 		os.Exit(1)
 	}
@@ -724,7 +724,7 @@ func main() {
 		scraper      = &readyScrapeManager{}
 
 		// PP_CHANGES.md: rebuild on cpp start
-		remoteRead = oppkgstorage.NewRemoteRead(
+		remoteRead = pp_pkg_storage.NewRemoteRead(
 			log.With(logger, "component", "remote"),
 			prometheus.DefaultRegisterer,
 			localStorage.StartTime,
@@ -733,7 +733,7 @@ func main() {
 		)
 		fanoutStorage = storage.NewFanout(
 			logger,
-			oppkgstorage.NewQueryableStorage(receiver),
+			pp_pkg_storage.NewQueryableStorage(receiver),
 			localStorage,
 			remoteRead,
 		)

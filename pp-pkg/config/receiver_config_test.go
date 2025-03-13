@@ -5,12 +5,12 @@ package config_test
 import (
 	"testing"
 
-	relabelerconfig "github.com/prometheus/prometheus/pp/go/relabeler/config"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"gopkg.in/yaml.v2"
 
-	"github.com/prometheus/prometheus/op-pkg/config"
+	"github.com/prometheus/prometheus/pp-pkg/config"
+	relabelerconfig "github.com/prometheus/prometheus/pp/go/relabeler/config"
 )
 
 func TestRemoteWriteReceiverConfig(t *testing.T) {

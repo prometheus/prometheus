@@ -51,11 +51,10 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/net/netutil"
 
-	"github.com/prometheus/prometheus/op-pkg/handler" // PP_CHANGES.md: rebuild on cpp
-	"github.com/prometheus/prometheus/op-pkg/scrape"  // PP_CHANGES.md: rebuild on cpp
-
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
+	"github.com/prometheus/prometheus/pp-pkg/handler" // PP_CHANGES.md: rebuild on cpp
+	"github.com/prometheus/prometheus/pp-pkg/scrape"  // PP_CHANGES.md: rebuild on cpp
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"

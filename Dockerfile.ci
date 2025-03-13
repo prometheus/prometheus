@@ -1,0 +1,36 @@
+FROM ubuntu:24.04
+
+# Base + g++ + git for perf_tests
+RUN DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get upgrade -y
+RUN DEBIAN_FRONTEND=noninteractive && apt-get install -y gpg wget gcc g++ \
+    git autoconf make iproute2 jq curl ca-certificates libtool pkg-config cmake lcov && \
+    echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-19 main" | tee /etc/apt/sources.list.d/archive_uri-http_apt_llvm_org_jammy_-jammy.list && \
+    wget -qO - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
+    apt-get update && apt-get install -y clang-format-19 clang-tidy-19 && \
+    ln -s /usr/lib/llvm-19/bin/clang-tidy /usr/bin/clang-tidy && \
+    ln -s /usr/lib/llvm-19/bin/clang-format /usr/bin/clang-format
+
+# Bazel
+ARG BAZEL_ARCH=x86_64
+ARG BAZEL_VERSION=7.4.1
+RUN wget -qO "/usr/local/bin/bazel" https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VERSION}/bazel-${BAZEL_VERSION}-linux-${BAZEL_ARCH} && \
+    chmod +x "/usr/local/bin/bazel"
+
+# Go + go-tools
+ARG GO_ARCH=amd64
+ARG GO_VERSION=1.23.2
+RUN cd /tmp && curl -LOs https://go.dev/dl/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz && tar -C /usr/local -xzf go${GO_VERSION}.linux-${GO_ARCH}.tar.gz
+ENV PATH="$PATH:/usr/local/go/bin"
+ENV GOBIN="/usr/local/go/bin"
+RUN go install github.com/jstemmer/go-junit-report/v2@latest
+RUN go install github.com/axw/gocov/gocov@latest
+RUN go install github.com/AlekSi/gocov-xml@latest
+
+# minio for getting perf test data
+RUN wget -O /usr/local/bin/mcli https://dl.min.io/client/mc/release/linux-amd64/mc
+RUN chmod +x /usr/local/bin/mcli
+
+# Gitlab extensions
+RUN cd /tmp && curl -LOs https://gitlab.com/gitlab-org/incubation-engineering/mobile-devops/download-secure-files/-/releases/permalink/latest/downloads/download-secure-files-linux-${GO_ARCH} && \
+    mv download-secure-files-linux-${GO_ARCH} /usr/bin/download-secure-files && \
+    chmod +x /usr/bin/download-secure-files

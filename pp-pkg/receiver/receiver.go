@@ -12,6 +12,20 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+	"github.com/google/uuid"
+	"github.com/jonboulle/clockwork"
+	"github.com/prometheus/client_golang/prometheus"
+	common_config "github.com/prometheus/common/config"
+	"go.uber.org/atomic"
+	"gopkg.in/yaml.v2"
+
+	prom_config "github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/relabel"
+	pp_pkg_config "github.com/prometheus/prometheus/pp-pkg/config"
+	"github.com/prometheus/prometheus/pp-pkg/dialer"
 	"github.com/prometheus/prometheus/pp/go/cppbridge"
 	"github.com/prometheus/prometheus/pp/go/relabeler"
 	"github.com/prometheus/prometheus/pp/go/relabeler/appender"
@@ -24,23 +38,6 @@ import (
 	rlogger "github.com/prometheus/prometheus/pp/go/relabeler/logger"
 	"github.com/prometheus/prometheus/pp/go/relabeler/querier"
 	"github.com/prometheus/prometheus/pp/go/util"
-
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
-	"github.com/google/uuid"
-	"github.com/jonboulle/clockwork"
-	"github.com/prometheus/client_golang/prometheus"
-	common_config "github.com/prometheus/common/config"
-	"github.com/prometheus/prometheus/pp/go/cppbridge"
-	"github.com/prometheus/prometheus/pp/go/relabeler"
-	"go.uber.org/atomic"
-	"gopkg.in/yaml.v2"
-
-	prom_config "github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/relabel"
-	op_config "github.com/prometheus/prometheus/op-pkg/config"
-	"github.com/prometheus/prometheus/op-pkg/dialer"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 )
@@ -121,7 +118,7 @@ func NewReceiver(
 	ctx context.Context,
 	logger log.Logger,
 	registerer prometheus.Registerer,
-	receiverCfg *op_config.RemoteWriteReceiverConfig,
+	receiverCfg *pp_pkg_config.RemoteWriteReceiverConfig,
 	workingDir string,
 	remoteWriteCfgs []*prom_config.OpRemoteWriteConfig,
 	dataDir string,

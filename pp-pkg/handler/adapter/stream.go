@@ -6,7 +6,7 @@ import (
 	"context"
 	"net"
 
-	"github.com/prometheus/prometheus/op-pkg/handler/model"
+	"github.com/prometheus/prometheus/pp-pkg/handler/model"
 )
 
 // Stream wrapper for stream connection.

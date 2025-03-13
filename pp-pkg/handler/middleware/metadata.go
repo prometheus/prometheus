@@ -10,7 +10,7 @@ import (
 	"github.com/prometheus/common/route"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/op-pkg/handler/model"
+	"github.com/prometheus/prometheus/pp-pkg/handler/model"
 )
 
 // metadataCtxKey key for Metadata in context.

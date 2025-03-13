@@ -8,15 +8,15 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/tsdb/fileutil"
-	"github.com/prometheus/prometheus/tsdb/wlog"
-
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/alecthomas/units"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/common/model"
+
+	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/fileutil"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
 type cmdWALVanillaToBlock struct {

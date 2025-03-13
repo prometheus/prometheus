@@ -9,8 +9,6 @@ import (
 
 	"github.com/alecthomas/units"
 	"github.com/go-kit/log"
-	"github.com/prometheus/prometheus/pp/go/cppbridge"
-	relabelerconfig "github.com/prometheus/prometheus/pp/go/relabeler/config"
 	common_config "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/suite"
@@ -19,7 +17,9 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
-	op_config "github.com/prometheus/prometheus/op-pkg/config"
+	pp_pkg_config "github.com/prometheus/prometheus/pp-pkg/config"
+	"github.com/prometheus/prometheus/pp/go/cppbridge"
+	relabelerconfig "github.com/prometheus/prometheus/pp/go/relabeler/config"
 )
 
 type OpConfigSuite struct {
@@ -243,7 +243,7 @@ var expectedConf = &config.Config{
 		},
 	},
 
-	ReceiverConfig: op_config.RemoteWriteReceiverConfig{
+	ReceiverConfig: pp_pkg_config.RemoteWriteReceiverConfig{
 		NumberOfShards: 2,
 		Configs: []*relabelerconfig.InputRelabelerConfig{
 			{

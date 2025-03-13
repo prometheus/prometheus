@@ -12,7 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/prometheus/prometheus/op-pkg/handler/storage"
+	"github.com/prometheus/prometheus/pp-pkg/handler/storage"
 )
 
 const (
