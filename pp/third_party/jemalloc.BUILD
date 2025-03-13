@@ -24,6 +24,9 @@ configure_make(
         "--enable-xmalloc",
         "--with-lg-page=\"12\"",
         "--with-lg-hugepage=21",
+        "--enable-prof",
+        "--enable-shared=\"no\"",
+        "--enable-prof-libunwind=\"1\"",
     ],
     copts = [
         "-Wno-error",

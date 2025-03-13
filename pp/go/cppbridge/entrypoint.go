@@ -32,7 +32,7 @@ package cppbridge
 // #cgo amd64,sanitize,dbg LDFLAGS: -l:amd64_k8_entrypoint_aio_prefixed_dbg_asan.a
 // #cgo amd64,sanitize,dbg LDFLAGS: -l:amd64_nehalem_entrypoint_aio_prefixed_dbg_asan.a
 // #cgo amd64,sanitize,dbg LDFLAGS: -l:amd64_haswell_entrypoint_aio_prefixed_dbg_asan.a
-// #cgo LDFLAGS: -static-libgcc -static-libstdc++ -l:libstdc++.a -l:libm.a
+// #cgo LDFLAGS: -static-libgcc -static-libstdc++ -l:libstdc++.a -l:libm.a -l:libunwind.a -l:liblzma.a
 // #cgo static LDFLAGS: -static
 // #include "entrypoint.h"
 import "C" //nolint:gocritic // because otherwise it won't work
@@ -83,6 +83,23 @@ func memInfo() (res MemInfo) {
 		uintptr(unsafe.Pointer(&res)),
 	)
 	return res
+}
+
+func dumpMemoryProfile(filename string) int {
+	args := struct {
+		filename string
+	}{filename}
+
+	res := struct {
+		error int
+	}{0}
+
+	fastcgo.UnsafeCall2(
+		C.prompp_dump_memory_profile,
+		uintptr(unsafe.Pointer(&args)),
+		uintptr(unsafe.Pointer(&res)),
+	)
+	return res.error
 }
 
 //

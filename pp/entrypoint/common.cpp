@@ -27,12 +27,12 @@ extern "C" void prompp_jemalloc_init() {
 }
 
 extern "C" void prompp_mem_info(void* res) {
-  using res_t = struct {
+  struct Result {
     int64_t in_use;
     int64_t allocated;
   };
 
-  res_t* out = new (res) res_t();
+  const auto out = static_cast<Result*>(res);
 
 #if JEMALLOC_AVAILABLE
   uint64_t epoch = 1;
@@ -45,8 +45,27 @@ extern "C" void prompp_mem_info(void* res) {
   mallctl("stats.allocated", &size, &size_len, NULL, 0);
   out->allocated = size;
 #else
-  struct mallinfo2 mi;
-  mi = mallinfo2();
-  out->in_use = mi.uordblks;
+  out->in_use = mallinfo2().uordblks;
+#endif
+}
+
+extern "C" void prompp_dump_memory_profile([[maybe_unused]] void* args, void* res) {
+  struct Arguments {
+    PromPP::Primitives::Go::String filename;
+  };
+  struct Result {
+    int error;
+  };
+
+  const auto out = static_cast<Result*>(res);
+
+#if JEMALLOC_AVAILABLE
+  auto in = static_cast<Arguments*>(args);
+  std::string filename_c_string(in->filename.data(), in->filename.size());
+  const char* filename = filename_c_string.c_str();
+
+  out->error = mallctl("prof.dump", nullptr, nullptr, &filename, sizeof(const char*));
+#else
+  out->error = ENODATA;
 #endif
 }

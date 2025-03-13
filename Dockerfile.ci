@@ -2,7 +2,7 @@ FROM ubuntu:24.04
 
 # Base + g++ + git for perf_tests
 RUN DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get upgrade -y
-RUN DEBIAN_FRONTEND=noninteractive && apt-get install -y gpg wget gcc g++ \
+RUN DEBIAN_FRONTEND=noninteractive && apt-get install -y gpg wget gcc g++ libunwind-dev \
     git autoconf make iproute2 jq curl ca-certificates libtool pkg-config cmake lcov && \
     echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-19 main" | tee /etc/apt/sources.list.d/archive_uri-http_apt_llvm_org_jammy_-jammy.list && \
     wget -qO - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
