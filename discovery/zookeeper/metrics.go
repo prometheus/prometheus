@@ -14,6 +14,7 @@
 package zookeeper
 
 import (
+	"errors"
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -48,7 +49,23 @@ func newDiscovererMetrics(reg prometheus.Registerer, _ discovery.RefreshMetricsI
 	}
 	// Register zookeeper metrics once for both ServerSet and Nerve SD.
 	registerMetricsOnce.Do(func() {
-		reg.MustRegister(m.failureCounter, m.numWatchers)
+		// Register failureCounter
+		if err := reg.Register(m.failureCounter); err != nil {
+			var are prometheus.AlreadyRegisteredError
+			if !errors.As(err, &are) {
+				panic(err)
+			}
+			m.failureCounter = are.ExistingCollector.(prometheus.Counter)
+		}
+
+		// Register numWatchers
+		if err := reg.Register(m.numWatchers); err != nil {
+			var are prometheus.AlreadyRegisteredError
+			if !errors.As(err, &are) {
+				panic(err)
+			}
+			m.numWatchers = are.ExistingCollector.(prometheus.Gauge)
+		}
 	})
 
 	return &zookeeperMetrics{
