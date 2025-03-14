@@ -321,8 +321,15 @@ func BenchmarkLoadWLs(b *testing.B) {
 
 							writeSeries := refSeries
 							if missingSeriesPct > 0 {
-								missingSeries := int(float64(c.seriesPerBatch) * missingSeriesPct)
-								writeSeries = refSeries[:len(refSeries)-missingSeries]
+								newWriteSeries := make([]record.RefSeries, 0, int(float64(len(refSeries))*(1.0-missingSeriesPct)))
+								keepRatio := 1.0 - missingSeriesPct
+								// Keep approximately every 1/keepRatio series.
+								for i, s := range refSeries {
+									if int(float64(i)*keepRatio) != int(float64(i+1)*keepRatio) {
+										newWriteSeries = append(newWriteSeries, s)
+									}
+								}
+								writeSeries = newWriteSeries
 							}
 
 							populateTestWL(b, wal, []interface{}{writeSeries})
