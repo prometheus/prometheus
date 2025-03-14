@@ -26,8 +26,8 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.uber.org/multierr"
 
+	translator "github.com/prometheus/common/otlptranslator"
 	"github.com/prometheus/prometheus/prompb"
-	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -98,9 +98,12 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 
 				var promName string
 				if settings.AllowUTF8 {
-					promName = prometheustranslator.BuildMetricName(metric, settings.Namespace, settings.AddMetricSuffixes)
+					promName = translator.BuildMetricName(metric.Name(), metric.Unit(), getTranslatorMetricType(metric), settings.AddMetricSuffixes)
 				} else {
-					promName = prometheustranslator.BuildCompliantMetricName(metric, settings.Namespace, settings.AddMetricSuffixes)
+					promName = translator.BuildCompliantMetricName(metric.Name(), metric.Unit(), getTranslatorMetricType(metric), settings.AddMetricSuffixes)
+				}
+				if settings.Namespace != "" {
+					promName = fmt.Sprintf("%s_%s", settings.Namespace, promName)
 				}
 				c.metadata = append(c.metadata, prompb.MetricMetadata{
 					Type:             otelMetricTypeToPromMetricType(metric),
@@ -189,6 +192,26 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 	}
 
 	return annots, errs
+}
+
+func getTranslatorMetricType(metric pmetric.Metric) translator.MetricType {
+	switch metric.Type() {
+	case pmetric.MetricTypeGauge:
+		return translator.MetricTypeGauge
+	case pmetric.MetricTypeSum:
+		if metric.Sum().IsMonotonic() {
+			return translator.MetricTypeMonotonicCounter
+		}
+		return translator.MetricTypeNonMonotonicCounter
+	case pmetric.MetricTypeHistogram:
+		return translator.MetricTypeHistogram
+	case pmetric.MetricTypeExponentialHistogram:
+		return translator.MetricTypeExponentialHistogram
+	case pmetric.MetricTypeSummary:
+		return translator.MetricTypeSummary
+	default:
+		return translator.MetricTypeUnknown
+	}
 }
 
 func isSameMetric(ts *prompb.TimeSeries, lbls []prompb.Label) bool {
