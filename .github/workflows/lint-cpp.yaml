@@ -17,7 +17,7 @@ jobs:
         working-directory: pp
     runs-on: fsn-dev-gitlab-runner
     container:
-      image: "${{ secrets.CI_REGISTRY_IMAGE }}:gcc-tools-x86_64-ubuntu"
+      image: "${{ secrets.CI_REGISTRY_IMAGE }}:gcc-tools-x86_64"
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -31,7 +31,7 @@ jobs:
         working-directory: pp
     runs-on: fsn-dev-gitlab-runner
     container:
-      image: "${{ secrets.CI_REGISTRY_IMAGE }}:gcc-tools-x86_64-ubuntu"
+      image: "${{ secrets.CI_REGISTRY_IMAGE }}:gcc-tools-x86_64"
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4

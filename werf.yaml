@@ -2,171 +2,170 @@ project: prompp
 configVersion: 1
 ---
 image: toolkit
-final: false
+# final: false
 dockerfile: Dockerfile.ci
----
-image: prompp-src-artifact
-from: golang:1.23.2-alpine3.20
-final: false
-git:
-  - add: /
-    to: /src
-  - url: https://github.com/prometheus/promu.git
-    to: /src/promu
-    tag: v0.17.0
----
-image: promu-artifact
-from: golang:1.23.2-alpine3.20
-final: false
-git:
-  - url: https://github.com/prometheus/promu.git
-    to: /src
-    tag: v0.17.0
-mount:
-  - fromPath: ~/go-pkg-cache
-    to: /go/pkg
-shell:
-  install:
-    - export GOPROXY="https://proxy.golang.org/" CGO_ENABLED=0 GOOS=linux GOARCH=amd64
-    - cd /src
-    - go build -ldflags="-s -w" -o promu ./main.go
----
-image: cpp-artifact
-final: false
-fromImage: toolkit
-git:
-  - add: /pp
-    to: /src
-    excludePaths: 
-      - pp/go
-    stageDependencies:
-      install:
-        - '**/*'
-shell:
-  install:
-    - cd /src
-    - make install_dir=/tmp compilation_mode={{ env "COMPILATION_MODE" }} asan={{ env "ASAN" }} build-entrypoint
----
-image: prompp-artifact
-final: false
-fromImage: toolkit
-mount:
-  - fromPath: ~/go-pkg-cache
-    to: /go/pkg
-import:
-  - image: prompp-src-artifact
-    add: /src
-    to: /src
-    before: install
-  - artifact: promu-artifact
-    add: /src/promu
-    to: /bin/promu
-    before: install
-  - image: cpp-artifact
-    add: /tmp
-    to: /tmp_cpp
-    before: install
-shell:
-  beforeInstall:
-    - apt update && apt install -y git bash gcc g++ nodejs npm
-  install:
-    - export NODE_MAJOR=20
-    - export GOPROXY="https://proxy.golang.org/" CGO_ENABLED=1 GOOS=linux GOARCH=amd64
-    - cd /src/web/ui
-    - mkdir static
-    - npm install
-    - npm run build
-    - cd /src
-    - scripts/compress_assets.sh
-  beforeSetup:
-    - cp -r /tmp_cpp/* /src/pp/go/cppbridge/
-    - rm -rf /tmp_cpp
-    - cd /src
-    - go mod tidy
-    - go generate -tags plugins ./plugins
-    - /bin/promu build --prefix /src
-  setup:
-    - mkdir -p /consoles
-    - cp /src/consoles/* /consoles
-    - cp /src/console_libraries/* /consoles
-    - mkdir -p /etc
-    - cp /src/documentation/examples/prometheus.yml /etc
-    - cp /src/console_libraries/* /etc
-    - mkdir /empty
-    - chown -R 64535:64535 /empty
-    - chown -R 64535:64535 /src/
-    - chown -R 64535:64535 /etc/
-    - chown -R 64535:64535 /consoles/
-    - chmod 0700 /src/prometheus
-    - chmod 0700 /src/promtool
-    - chmod 0700 /src/prompptool
----
-{{ $binariesList := "/usr/bin/curl /bin/sh /bin/df" }}
----
-artifact: prom-pp-binaries-artifact
-from: registry.deckhouse.io/base_images/dev-alt:p10@sha256:76e6e163fa982f03468166203488b569e6d9fc10855d6a259c662706436cdcad
-shell:
-  install:
-    - /binary_replace.sh -i "{{ $binariesList }}" -o /relocate
----
-image: prompptool
-from: registry.deckhouse.io/deckhouse/ce@sha256:916e14b8eed3d023869752535fed781040a59cf79368b3b05628a7f5029414a0
-final: false
-import:
-  - artifact: prompp-artifact
-    add: /src/prompptool
-    to: /bin/prompptool
-    before: setup
-docker:
-  ENTRYPOINT:
-    - "/bin/prompptool"
----
-image: prom-pp
-from: registry.deckhouse.io/deckhouse/ce@sha256:916e14b8eed3d023869752535fed781040a59cf79368b3b05628a7f5029414a0
-import:
-  - artifact: prompp-artifact
-    add: /src/prometheus
-    to: /bin/prometheus
-    before: setup
-  - artifact: prompp-artifact
-    add: /src/promtool
-    to: /bin/promtool
-    before: setup
-  - artifact: prompp-artifact
-    add: /src/console_libraries/
-    to: /usr/share/prometheus/console_libraries
-    before: setup
-  - artifact: prompp-artifact
-    add: /consoles/
-    to: /usr/share/prometheus/consoles
-    before: setup
-  - artifact: prompp-artifact
-    add: /etc/
-    to: /etc/prometheus
-    before: setup
-  - artifact: prompp-artifact
-    add: /empty/
-    to: /prometheus
-    before: setup
-  - artifact: prom-pp-binaries-artifact
-    add: /relocate
-    to: /
-    before: install
-    includePaths:
-      - '**/*'
-docker:
-  ENV:
-    GOGC: 30
-    MALLOC_CONF: "background_thread:true,tcache_max:4096,dirty_decay_ms:5000,muzzy_decay_ms:5000"
-  EXPOSE:
-    - "9090"
-  VOLUME:
-    - "/prometheus"
-  WORKDIR: "/prometheus"
-  ENTRYPOINT:
-    - "/bin/prometheus"
-  CMD:
-    - "--config.file=/etc/src.yml"
-    - "--storage.tsdb.path=/prometheus"
-    - "--web.console.libraries=/usr/share/prometheus/console_libraries"
-    - "--web.console.templates=/usr/share/prometheus/consoles"
+# ---
+# image: prompp-src-artifact
+# from: golang:1.23.2-alpine3.20
+# final: false
+# git:
+#   - add: /
+#     to: /src
+#   - url: https://github.com/prometheus/promu.git
+#     to: /src/promu
+#     tag: v0.17.0
+# ---
+# image: promu-artifact
+# from: golang:1.23.2-alpine3.20
+# final: false
+# git:
+#   - url: https://github.com/prometheus/promu.git
+#     to: /src
+#     tag: v0.17.0
+# mount:
+#   - fromPath: ~/go-pkg-cache
+#     to: /go/pkg
+# shell:
+#   install:
+#     - export GOPROXY="https://proxy.golang.org/" CGO_ENABLED=0 GOOS=linux GOARCH=amd64
+#     - cd /src
+#     - go build -ldflags="-s -w" -o promu ./main.go
+# ---
+# image: cpp-artifact
+# final: false
+# fromImage: toolkit
+# git:
+#   - add: /pp
+#     to: /src
+#     excludePaths: 
+#       - pp/go
+#     stageDependencies:
+#       install:
+#         - '**/*'
+# shell:
+#   install:
+#     - cd /src
+#     - make install_dir=/tmp compilation_mode={{ env "COMPILATION_MODE" }} asan={{ env "ASAN" }} build-entrypoint
+# ---
+# image: prompp-artifact
+# final: false
+# fromImage: toolkit
+# mount:
+#   - fromPath: ~/go-pkg-cache
+#     to: /go/pkg
+# import:
+#   - image: prompp-src-artifact
+#     add: /src
+#     to: /src
+#     before: install
+#   - artifact: promu-artifact
+#     add: /src/promu
+#     to: /bin/promu
+#     before: install
+#   - image: cpp-artifact
+#     add: /tmp
+#     to: /tmp_cpp
+#     before: install
+# shell:
+#   beforeInstall:
+#     - apt update && apt install -y git bash gcc g++ nodejs npm
+#   install:
+#     - export NODE_MAJOR=20
+#     - export GOPROXY="https://proxy.golang.org/" CGO_ENABLED=1 GOOS=linux GOARCH=amd64
+#     - cd /src/web/ui
+#     - mkdir static
+#     - npm install
+#     - npm run build
+#     - cd /src
+#     - scripts/compress_assets.sh
+#   beforeSetup:
+#     - cp -r /tmp_cpp/* /src/pp/go/cppbridge/
+#     - rm -rf /tmp_cpp
+#     - cd /src
+#     - go mod tidy
+#     - go generate -tags plugins ./plugins
+#     - /bin/promu build --prefix /src
+#   setup:
+#     - mkdir -p /consoles
+#     - cp /src/consoles/* /consoles
+#     - cp /src/console_libraries/* /consoles
+#     - mkdir -p /etc
+#     - cp /src/documentation/examples/prometheus.yml /etc
+#     - cp /src/console_libraries/* /etc
+#     - mkdir /empty
+#     - chown -R 64535:64535 /empty
+#     - chown -R 64535:64535 /src/
+#     - chown -R 64535:64535 /etc/
+#     - chown -R 64535:64535 /consoles/
+#     - chmod 0700 /src/prometheus
+#     - chmod 0700 /src/promtool
+#     - chmod 0700 /src/prompptool
+# ---
+# {{ $binariesList := "/usr/bin/curl /bin/sh /bin/df" }}
+# ---
+# artifact: prom-pp-binaries-artifact
+# from: registry.deckhouse.io/base_images/dev-alt:p10@sha256:76e6e163fa982f03468166203488b569e6d9fc10855d6a259c662706436cdcad
+# shell:
+#   install:
+#     - /binary_replace.sh -i "{{ $binariesList }}" -o /relocate
+# ---
+# image: prompptool
+# from: registry.deckhouse.io/deckhouse/ce@sha256:916e14b8eed3d023869752535fed781040a59cf79368b3b05628a7f5029414a0
+# import:
+#   - artifact: prompp-artifact
+#     add: /src/prompptool
+#     to: /bin/prompptool
+#     before: setup
+# docker:
+#   ENTRYPOINT:
+#     - "/bin/prompptool"
+# ---
+# image: prom-pp
+# from: registry.deckhouse.io/deckhouse/ce@sha256:916e14b8eed3d023869752535fed781040a59cf79368b3b05628a7f5029414a0
+# import:
+#   - artifact: prompp-artifact
+#     add: /src/prometheus
+#     to: /bin/prometheus
+#     before: setup
+#   - artifact: prompp-artifact
+#     add: /src/promtool
+#     to: /bin/promtool
+#     before: setup
+#   - artifact: prompp-artifact
+#     add: /src/console_libraries/
+#     to: /usr/share/prometheus/console_libraries
+#     before: setup
+#   - artifact: prompp-artifact
+#     add: /consoles/
+#     to: /usr/share/prometheus/consoles
+#     before: setup
+#   - artifact: prompp-artifact
+#     add: /etc/
+#     to: /etc/prometheus
+#     before: setup
+#   - artifact: prompp-artifact
+#     add: /empty/
+#     to: /prometheus
+#     before: setup
+#   - artifact: prom-pp-binaries-artifact
+#     add: /relocate
+#     to: /
+#     before: install
+#     includePaths:
+#       - '**/*'
+# docker:
+#   ENV:
+#     GOGC: 30
+#     MALLOC_CONF: "background_thread:true,tcache_max:4096,dirty_decay_ms:5000,muzzy_decay_ms:5000"
+#   EXPOSE:
+#     - "9090"
+#   VOLUME:
+#     - "/prometheus"
+#   WORKDIR: "/prometheus"
+#   ENTRYPOINT:
+#     - "/bin/prometheus"
+#   CMD:
+#     - "--config.file=/etc/src.yml"
+#     - "--storage.tsdb.path=/prometheus"
+#     - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+#     - "--web.console.templates=/usr/share/prometheus/consoles"

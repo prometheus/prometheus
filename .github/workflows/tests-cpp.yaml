@@ -23,7 +23,7 @@ jobs:
     env:
       ARCH: arm64
     container:
-      image: "${{ secrets.CI_REGISTRY_IMAGE }}:gcc-tools-${{ env.ARCH }}-ubuntu"
+      image: "${{ secrets.CI_REGISTRY_IMAGE }}:gcc-tools-arm64"
     strategy:
       matrix:
         OPT: [dbg, opt]
@@ -58,7 +58,7 @@ jobs:
     env:
       ARCH: x86_64
     container:
-      image: "${{ secrets.CI_REGISTRY_IMAGE }}:gcc-tools-${{ env.ARCH }}-ubuntu"
+      image: "${{ secrets.CI_REGISTRY_IMAGE }}:gcc-tools-x86_64"
     strategy:
       matrix:
         OPT: [dbg, opt]
