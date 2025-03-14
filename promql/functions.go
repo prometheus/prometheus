@@ -162,7 +162,42 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 			durationToStart = durationToZero
 		}
 	}
+	// Histogram total count clamping logic
+	// Using the first sample's count as the master metric, we ensure that
+	// if extrapolation would take the count below zero, we clamp the extrapolation.
+	if isCounter && resultHistogram != nil && resultHistogram.Count > 0 {
+		// Calculate the duration over which, at the current total rate, the first sample's count would become zero.
+		durationToZero := sampledInterval * (samples.Histograms[0].H.Count / resultHistogram.Count)
+		// Clamp durationToStart so we don't extrapolate beyond the point where the count would be zero.
+		if durationToZero < durationToStart {
+			durationToStart = durationToZero
+		}
+	}
+
 	extrapolateToInterval += durationToStart
+
+	// Histogram bucket clamping logic
+	if isCounter && resultHistogram != nil && resultHistogram.Count > 0 && resultHistogram.Sum > 0 {
+		// If we leave Bucket rates as is, they will hit 0 either to early or too late.
+		// To fix this, we take last sample and new zero point and claculate what rate we need.
+		lastHistogram := samples.Histograms[len(samples.Histograms)-1].H
+		var totalSumDelta float64
+		for i, bucketRate := range resultHistogram.PositiveBuckets {
+			// Calculate this bucket's proportion of the total rate
+			bucketProportion := bucketRate / resultHistogram.Sum
+
+			// Bucket final value based on its proportion
+			bucketFinalValue := bucketProportion * lastHistogram.Sum
+
+			// Adjusted rate to reach from zero at durationToStart to final value
+			adjustedRate := bucketFinalValue / extrapolateToInterval
+			// Track total sum delta
+			totalSumDelta += bucketRate - adjustedRate
+
+			resultHistogram.PositiveBuckets[i] = adjustedRate
+		}
+		resultHistogram.Sum -= totalSumDelta
+	}
 
 	if durationToEnd >= extrapolationThreshold {
 		durationToEnd = averageDurationBetweenSamples / 2
