@@ -1,0 +1,2 @@
+otlp:
+  translation_strategy: NoTranslation
