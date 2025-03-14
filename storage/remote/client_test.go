@@ -220,6 +220,7 @@ func TestReadClient(t *testing.T) {
 		name                  string
 		query                 *prompb.Query
 		httpHandler           http.HandlerFunc
+		timeout               time.Duration
 		expectedLabels        []map[string]string
 		expectedSamples       [][]model.SamplePair
 		expectedErrorContains string
@@ -329,6 +330,12 @@ func TestReadClient(t *testing.T) {
 			}),
 			expectedErrorContains: "unsupported content type",
 		},
+		{
+			name:                  "timeout",
+			httpHandler:           sampledResponseHTTPHandler(t),
+			timeout:               time.Nanosecond,
+			expectedErrorContains: "context deadline exceeded: request timed out after 1ns",
+		},
 	}
 
 	for _, test := range tests {
@@ -339,9 +346,13 @@ func TestReadClient(t *testing.T) {
 			u, err := url.Parse(server.URL)
 			require.NoError(t, err)
 
+			if test.timeout == 0 {
+				test.timeout = 5 * time.Second
+			}
+
 			conf := &ClientConfig{
 				URL:              &config_util.URL{URL: u},
-				Timeout:          model.Duration(5 * time.Second),
+				Timeout:          model.Duration(test.timeout),
 				ChunkedReadLimit: config.DefaultChunkedReadLimit,
 			}
 			c, err := NewReadClient("test", conf)
