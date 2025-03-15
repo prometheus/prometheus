@@ -50,6 +50,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/ovhcloud"
 	"github.com/prometheus/prometheus/discovery/puppetdb"
 	"github.com/prometheus/prometheus/discovery/scaleway"
+	"github.com/prometheus/prometheus/discovery/stackit"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/discovery/triton"
 	"github.com/prometheus/prometheus/discovery/uyuni"
@@ -1445,6 +1446,42 @@ var expectedConf = &Config{
 			},
 		},
 		{
+			JobName:                        "stackit-servers",
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
+
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&stackit.SDConfig{
+					Project:  "11111111-1111-1111-1111-111111111111",
+					Endpoint: "https://iaas.api.eu01.stackit.cloud",
+					HTTPClientConfig: config.HTTPClientConfig{
+						FollowRedirects: true,
+						EnableHTTP2:     true,
+					},
+					Port:            80,
+					RefreshInterval: model.Duration(60 * time.Second),
+					Role:            "server",
+				},
+			},
+		},
+		{
 			JobName: "uyuni",
 
 			HonorTimestamps:                true,
@@ -2276,6 +2313,14 @@ var expectedErrors = []struct {
 	{
 		filename: "scrape_config_utf8_conflicting.bad.yml",
 		errMsg:   `utf8 metric names requested but validation scheme is not set to UTF8`,
+	},
+	{
+		filename: "stackit_role.bad.yml",
+		errMsg:   "unknown role",
+	},
+	{
+		filename: "stackit_endpoint.bad.yml",
+		errMsg:   "invalid endpoint",
 	},
 }
 
