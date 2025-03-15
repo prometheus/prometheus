@@ -409,6 +409,10 @@ scaleway_sd_configs:
 serverset_sd_configs:
   [ - <serverset_sd_config> ... ]
 
+# List of STACKIT service discovery configurations.
+stackit_sd_configs:
+  [ - <stackit_sd_config> ... ]
+
 # List of Triton service discovery configurations.
 triton_sd_configs:
   [ - <triton_sd_config> ... ]
@@ -2224,6 +2228,74 @@ paths:
 
 Serverset data must be in the JSON format, the Thrift format is not currently supported.
 
+### `<stackit_sd_config>`
+
+[STACKIT](https://www.stackit.de/de/) SD configurations allow retrieving
+scrape targets from various APIs.
+
+One of the following `<stackit_role>` types can be configured to discover targets:
+
+#### `server`
+
+The `server` role discovers scrape targets per [IAAS API](https://docs.api.eu01.stackit.cloud/documentation/iaas/version/v1#tag/Servers/operation/v1ListServersInProject).
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_stackit_availability_zone`: The availability zone of the server.
+* `__meta_stackit_label_<labelname>`: Each server label, with unsupported characters replaced by underscores.</labelname>
+* `__meta_stackit_labelpresent_<labelname>`: "true" for each label of the server, with unsupported characters replaced by underscores.</labelname>
+* `__meta_stackit_private_ipv4_<networkname>`: the private ipv4 address of the server within a given network
+* `__meta_stackit_public_ipv4`: the public ipv4 address of the server
+* `__meta_stackit_server_id`: The alias of the target container.
+* `__meta_stackit_server_type`: The type or brand of the target container.
+* `__meta_stackit_server_name`: The server name.
+* `__meta_stackit_server_status`: The current status of the server.
+* `__meta_stackit_server_power_status`: The power status of the server.
+
+See below for the configuration options for STACKIT discovery:
+
+```yaml
+# The information to access the STACKIT API.
+[ endpoint : <string> | default = "https://iaas.api.eu01.stackit.cloud" ]
+
+# The STACKIT project 
+project: <string>
+
+# The STACKIT role of entities that should be discovered.
+# Currently, only server is supported.
+role: <string>
+
+# The port to scrape metrics from.
+[ port: <int> | default = 80 ]
+
+# Raw private key string used for authenticating a service account
+[ private_key: <string> ]
+
+# Path to a file containing the raw private key string
+[ private_key_file: <string> ]
+
+# Full JSON-formatted service account key used for authentication
+[ service_account_key: <string> ]
+
+# Path to a file containing the JSON-formatted service account key
+[ service_account_key_path: <string> ]
+
+# The time after which the servers are refreshed.
+[ refresh_interval: <duration> | default = 60s ]
+
+# HTTP client settings, including authentication methods (such as basic auth and
+# authorization), proxy configurations, TLS options, custom HTTP headers, etc.
+[ <http_config> ]
+```
+
+A Service Account Token can be set through `http_config`.
+
+```yaml
+http_config:
+  authorization:
+    credentials: <token>
+```
+
 ### `<triton_sd_config>`
 
 [Triton](https://github.com/joyent/triton) SD configurations allow retrieving
@@ -2795,6 +2867,10 @@ scaleway_sd_configs:
 # List of Zookeeper Serverset service discovery configurations.
 serverset_sd_configs:
   [ - <serverset_sd_config> ... ]
+
+# List of STACKIT service discovery configurations.
+stackit_sd_configs:
+  [ - <stackit_sd_config> ... ]
 
 # List of Triton service discovery configurations.
 triton_sd_configs:
