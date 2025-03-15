@@ -480,15 +480,15 @@ func TestEndpoints(t *testing.T) {
 		u, err := url.Parse(server.URL)
 		require.NoError(t, err)
 
-		al := promslog.AllowedLevel{}
+		al := promslog.NewLevel()
 		require.NoError(t, al.Set("debug"))
 
-		af := promslog.AllowedFormat{}
+		af := promslog.NewFormat()
 		require.NoError(t, af.Set("logfmt"))
 
 		promslogConfig := promslog.Config{
-			Level:  &al,
-			Format: &af,
+			Level:  al,
+			Format: af,
 		}
 
 		dbDir := t.TempDir()
@@ -1117,7 +1117,6 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 		metadata              []targetMetadata
 		exemplars             []exemplar.QueryResult
 		zeroFunc              func(interface{})
-		nameValidationScheme  model.ValidationScheme
 	}
 
 	rulesZeroFunc := func(i interface{}) {
@@ -1767,6 +1766,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 							"__scrape_interval__", "30s",
 							"__scrape_timeout__", "15s",
 						),
+						ScrapePool: "blackbox",
 					},
 				},
 				DroppedTargetCounts: map[string]int{"blackbox": 1},
@@ -1816,6 +1816,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 							"__scrape_interval__", "30s",
 							"__scrape_timeout__", "15s",
 						),
+						ScrapePool: "blackbox",
 					},
 				},
 				DroppedTargetCounts: map[string]int{"blackbox": 1},
@@ -1875,6 +1876,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 							"__scrape_interval__", "30s",
 							"__scrape_timeout__", "15s",
 						),
+						ScrapePool: "blackbox",
 					},
 				},
 				DroppedTargetCounts: map[string]int{"blackbox": 1},
@@ -3244,14 +3246,13 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					"boo",
 				},
 			},
-			// Bad name parameter for legacy validation.
+			// Bad name parameter
 			{
 				endpoint: api.labelValues,
 				params: map[string]string{
-					"name": "host.name",
+					"name": "host.name\xff",
 				},
-				nameValidationScheme: model.LegacyValidation,
-				errType:              errorBadData,
+				errType: errorBadData,
 			},
 			// Valid utf8 name parameter for utf8 validation.
 			{
@@ -3259,7 +3260,6 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				params: map[string]string{
 					"name": "host.name",
 				},
-				nameValidationScheme: model.UTF8Validation,
 				response: []string{
 					"localhost",
 				},
@@ -3270,7 +3270,6 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				params: map[string]string{
 					"name": "U__junk_0a__7b__7d__2c__3d_:_20__20_chars",
 				},
-				nameValidationScheme: model.UTF8Validation,
 				response: []string{
 					"bar",
 				},
@@ -3702,8 +3701,6 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					for p, v := range test.params {
 						ctx = route.WithParam(ctx, p, v)
 					}
-
-					model.NameValidationScheme = test.nameValidationScheme
 
 					req, err := request(method, test.query)
 					require.NoError(t, err)

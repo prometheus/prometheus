@@ -5,7 +5,7 @@ import { GraphDisplayMode } from "../../state/queryPageSlice";
 import uPlot from "uplot";
 import UplotReact from "uplot-react";
 import { useSettings } from "../../state/settingsSlice";
-import { useComputedColorScheme } from "@mantine/core";
+import { useComputedColorScheme, Text } from "@mantine/core";
 
 import "uplot/dist/uPlot.min.css";
 import "./uplot.css";
@@ -88,11 +88,18 @@ const UPlotChart: FC<UPlotChartProps> = ({
   }
 
   return (
-    <UplotReact
-      options={options}
-      data={processedData}
-      className={classes.uplotChart}
-    />
+    <>
+      <UplotReact
+        options={options}
+        data={processedData}
+        className={classes.uplotChart}
+      />
+      <Text fz="xs" c="dimmed" ml={40} mt={-25} mb="lg">
+        Click: show single series,{" "}
+        {navigator.userAgent.includes("Mac") ? "⌘" : "Ctrl"} + click: hide
+        single series
+      </Text>
+    </>
   );
 };
 

@@ -1,7 +1,7 @@
 {
   "name": "@prometheus-io/mantine-ui",
   "private": true,
-  "version": "0.301.0",
+  "version": "0.302.1",
   "type": "module",
   "scripts": {
     "start": "vite",
@@ -28,12 +28,12 @@
     "@microsoft/fetch-event-source": "^2.0.1",
     "@nexucis/fuzzy": "^0.5.1",
     "@nexucis/kvsearch": "^0.9.1",
-    "@prometheus-io/codemirror-promql": "0.301.0",
+    "@prometheus-io/codemirror-promql": "0.302.1",
     "@reduxjs/toolkit": "^2.5.0",
     "@tabler/icons-react": "^3.28.1",
-    "@tanstack/react-query": "^5.62.11",
+    "@tanstack/react-query": "^5.67.1",
     "@testing-library/jest-dom": "^6.6.3",
-    "@testing-library/react": "^16.1.0",
+    "@testing-library/react": "^16.2.0",
     "@types/lodash": "^4.17.13",
     "@types/sanitize-html": "^2.13.0",
     "@uiw/react-codemirror": "^4.23.7",
@@ -53,21 +53,21 @@
   "devDependencies": {
     "@eslint/compat": "^1.2.4",
     "@eslint/eslintrc": "^3.2.0",
-    "@eslint/js": "^9.17.0",
+    "@eslint/js": "^9.21.0",
     "@types/react": "^19.0.6",
     "@types/react-dom": "^19.0.0",
     "@typescript-eslint/eslint-plugin": "^8.20.0",
-    "@typescript-eslint/parser": "^8.20.0",
+    "@typescript-eslint/parser": "^8.25.0",
     "@vitejs/plugin-react": "^4.3.4",
     "eslint": "^9.18.0",
     "eslint-plugin-react-hooks": "^5.1.0",
-    "eslint-plugin-react-refresh": "^0.4.16",
+    "eslint-plugin-react-refresh": "^0.4.19",
     "globals": "^15.14.0",
     "jsdom": "^25.0.1",
     "postcss": "^8.4.47",
     "postcss-preset-mantine": "^1.17.0",
     "postcss-simple-vars": "^7.0.1",
-    "vite": "^6.0.7",
-    "vitest": "^2.1.8"
+    "vite": "^6.2.1",
+    "vitest": "^3.0.8"
   }
 }

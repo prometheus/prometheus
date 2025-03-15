@@ -313,6 +313,7 @@ export const getUPlotOptions = (
   legend: {
     show: true,
     live: false,
+    isolate: true,
     markers: {
       fill: (
         _u: uPlot,
@@ -339,8 +340,8 @@ export const getUPlotOptions = (
         stroke: light ? "#00000010" : "#ffffff20",
       },
       grid: {
-        show: false,
-        stroke: light ? "#eee" : "#333",
+        show: true,
+        stroke: light ? "#00000010" : "#ffffff20",
         width: 2,
         dash: [],
       },

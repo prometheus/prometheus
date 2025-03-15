@@ -3,7 +3,6 @@ import React, { FC } from "react";
 import { formatSeries } from "../../lib/formatSeries";
 import classes from "./SeriesName.module.css";
 import { escapeString } from "../../lib/escapeString";
-import { useClipboard } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
   maybeQuoteLabelName,
@@ -15,9 +14,34 @@ interface SeriesNameProps {
   format: boolean;
 }
 
-const SeriesName: FC<SeriesNameProps> = ({ labels, format }) => {
-  const clipboard = useClipboard();
+const copyMatcher = (matcher: string) => {
+  if ("clipboard" in navigator) {
+    navigator.clipboard
+      .writeText(matcher)
+      .then(() =>
+        notifications.show({
+          title: "Copied matcher!",
+          message: `Label matcher ${matcher} copied to clipboard`,
+        })
+      )
+      .catch(() =>
+        notifications.show({
+          color: "red",
+          title: "Failed to copy matcher!",
+          message: "Label matcher could not be copied to clipboard.",
+        })
+      );
+  } else {
+    notifications.show({
+      color: "red",
+      title: "Failed to copy matcher!",
+      message:
+        "Clipboard API is not supported in this context (most likely due to non-HTTPS origin).",
+    });
+  }
+};
 
+const SeriesName: FC<SeriesNameProps> = ({ labels, format }) => {
   const renderFormatted = (): React.ReactElement => {
     const metricExtendedCharset =
       labels && metricContainsExtendedCharset(labels.__name__ || "");
@@ -49,15 +73,8 @@ const SeriesName: FC<SeriesNameProps> = ({ labels, format }) => {
           {!first && ", "}
           <span
             className={classes.labelPair}
-            onClick={(e) => {
-              const text = e.currentTarget.innerText;
-              clipboard.copy(text);
-              notifications.show({
-                title: "Copied matcher!",
-                message: `Label matcher ${text} copied to clipboard`,
-              });
-            }}
-            title="Click to copy label matcher"
+            onDoubleClick={(e) => copyMatcher(e.currentTarget.innerText)}
+            title="Double click to copy label matcher"
           >
             <span className={classes.labelName}>
               {maybeQuoteLabelName(label)}

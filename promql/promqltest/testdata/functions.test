@@ -218,6 +218,7 @@ clear
 load 5m
 	http_requests_total{path="/foo"}	0+10x10
 	http_requests_total{path="/bar"}	0+10x5 0+10x5
+	http_requests_nan{}               1 NaN NaN 5 11
 	http_requests_histogram{path="/a"} {{sum:2 count:2}}+{{sum:3 count:3}}x5
 	http_requests_histogram{path="/b"} 0 0 {{sum:1 count:1}} {{sum:4 count:4}}
 	http_requests_histogram{path="/c"} 0 0 {{sum:1 count:1}} {{sum:4 count:4 counter_reset_hint:gauge}}
@@ -234,6 +235,9 @@ eval instant at 50m irate(http_requests_total[50m])
 eval instant at 30m irate(http_requests_total[50m])
 	{path="/foo"} .03333333333333333333
 	{path="/bar"} 0
+
+eval range from 0 to 20m step 5m irate(http_requests_nan[15m1s])
+	{} _ NaN NaN NaN 0.02
 
 eval instant at 20m irate(http_requests_histogram{path="/a"}[20m])
 	{path="/a"} {{sum:0.01 count:0.01 counter_reset_hint:gauge}}
@@ -288,6 +292,7 @@ clear
 load 5m
 	http_requests{path="/foo"}	0 50 100 150
 	http_requests{path="/bar"}	0 50 100 50
+	http_requests_nan{}         1 NaN NaN 5 11
 	http_requests_histogram{path="/a"} {{sum:2 count:2 counter_reset_hint:gauge}}+{{sum:1 count:3 counter_reset_hint:gauge}}x5
 	http_requests_histogram{path="/b"} 0 0 {{sum:1 count:1 counter_reset_hint:gauge}} {{sum:2 count:2 counter_reset_hint:gauge}}
 	http_requests_histogram{path="/c"} 0 0 {{sum:1 count:1}} {{sum:2 count:2 counter_reset_hint:gauge}}
@@ -299,6 +304,9 @@ load 5m
 eval instant at 20m idelta(http_requests[20m])
 	{path="/foo"} 50
 	{path="/bar"} -50
+
+eval range from 0 to 20m step 5m idelta(http_requests_nan[15m1s])
+	{} _ NaN NaN NaN 6
 
 eval instant at 20m idelta(http_requests_histogram{path="/a"}[20m])
 	{path="/a"} {{sum:1 count:3 counter_reset_hint:gauge}}
@@ -1390,10 +1398,10 @@ clear
 eval instant at 50m absent(sum(nonexistent{job="testjob", instance="testinstance"}))
 	{} 1
 
-eval instant at 50m absent(max(nonexistant))
+eval instant at 50m absent(max(nonexistent))
 	{} 1
 
-eval instant at 50m absent(nonexistant > 1)
+eval instant at 50m absent(nonexistent > 1)
 	{} 1
 
 eval instant at 50m absent(a + b)
@@ -1402,7 +1410,7 @@ eval instant at 50m absent(a + b)
 eval instant at 50m absent(a and b)
 	{} 1
 
-eval instant at 50m absent(rate(nonexistant[5m]))
+eval instant at 50m absent(rate(nonexistent[5m]))
 	{} 1
 
 clear
@@ -1420,7 +1428,7 @@ eval instant at 1m absent_over_time(http_requests_total{handler!="/foo"}[5m])
 eval instant at 1m absent_over_time(http_requests_total{handler="/foo", handler="/bar", handler="/foobar"}[5m])
     {} 1
 
-eval instant at 1m absent_over_time(rate(nonexistant[5m])[5m:])
+eval instant at 1m absent_over_time(rate(nonexistent[5m])[5m:])
     {} 1
 
 eval instant at 1m absent_over_time(http_requests_total{handler="/foo", handler="/bar", instance="127.0.0.1"}[5m])
@@ -1497,7 +1505,7 @@ eval instant at 1m present_over_time(http_requests_total{handler!="/foo"}[5m])
 
 eval instant at 1m present_over_time(http_requests_total{handler="/foo", handler="/bar", handler="/foobar"}[5m])
 
-eval instant at 1m present_over_time(rate(nonexistant[5m])[5m:])
+eval instant at 1m present_over_time(rate(nonexistent[5m])[5m:])
 
 eval instant at 1m present_over_time(http_requests_total{handler="/foo", handler="/bar", instance="127.0.0.1"}[5m])
 
