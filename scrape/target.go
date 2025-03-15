@@ -24,6 +24,9 @@ import (
 
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/model/series"
+	storagev2 "github.com/prometheus/prometheus/storage/v2"
+
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -326,9 +329,20 @@ var (
 // limitAppender limits the number of total appended samples in a batch.
 type limitAppender struct {
 	storage.Appender
+	appV2 storagev2.Appender
 
 	limit int
 	i     int
+}
+
+func (app *limitAppender) AppendSample(ref storage.SeriesRef, se series.Series, sa storagev2.Sample, opts *storagev2.AppendOptions) (storage.SeriesRef, error) {
+	if !value.IsStaleNaN(sa.V) {
+		app.i++
+		if app.i > app.limit {
+			return 0, errSampleLimit
+		}
+	}
+	return app.appV2.AppendSample(ref, se, sa, opts)
 }
 
 func (app *limitAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
@@ -347,8 +361,17 @@ func (app *limitAppender) Append(ref storage.SeriesRef, lset labels.Labels, t in
 
 type timeLimitAppender struct {
 	storage.Appender
+	appV2 storagev2.Appender
 
 	maxTime int64
+}
+
+func (app *timeLimitAppender) AppendSample(ref storage.SeriesRef, se series.Series, sa storagev2.Sample, opts *storagev2.AppendOptions) (storage.SeriesRef, error) {
+	if sa.T > app.maxTime {
+		return 0, storage.ErrOutOfBounds
+	}
+
+	return app.appV2.AppendSample(ref, se, sa, opts)
 }
 
 func (app *timeLimitAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
@@ -356,58 +379,94 @@ func (app *timeLimitAppender) Append(ref storage.SeriesRef, lset labels.Labels, 
 		return 0, storage.ErrOutOfBounds
 	}
 
-	ref, err := app.Appender.Append(ref, lset, t, v)
-	if err != nil {
-		return 0, err
-	}
-	return ref, nil
+	return app.Appender.Append(ref, lset, t, v)
 }
 
 // bucketLimitAppender limits the number of total appended samples in a batch.
 type bucketLimitAppender struct {
 	storage.Appender
+	appV2 storagev2.Appender
 
 	limit int
 }
 
+func (app *bucketLimitAppender) limitH(h *histogram.Histogram) error {
+	// Return with an early error if the histogram has too many buckets and the
+	// schema is not exponential, in which case we can't reduce the resolution.
+	if len(h.PositiveBuckets)+len(h.NegativeBuckets) > app.limit && !histogram.IsExponentialSchema(h.Schema) {
+		return errBucketLimit
+	}
+	for len(h.PositiveBuckets)+len(h.NegativeBuckets) > app.limit {
+		if h.Schema <= histogram.ExponentialSchemaMin {
+			return errBucketLimit
+		}
+		h = h.ReduceResolution(h.Schema - 1)
+	}
+	return nil
+}
+
+func (app *bucketLimitAppender) limitFH(fh *histogram.FloatHistogram) error {
+	// Return with an early error if the histogram has too many buckets and the
+	// schema is not exponential, in which case we can't reduce the resolution.
+	if len(fh.PositiveBuckets)+len(fh.NegativeBuckets) > app.limit && !histogram.IsExponentialSchema(fh.Schema) {
+		return errBucketLimit
+	}
+	for len(fh.PositiveBuckets)+len(fh.NegativeBuckets) > app.limit {
+		if fh.Schema <= histogram.ExponentialSchemaMin {
+			return errBucketLimit
+		}
+		fh = fh.ReduceResolution(fh.Schema - 1)
+	}
+	return nil
+}
+
+func (app *bucketLimitAppender) AppendSample(ref storage.SeriesRef, se series.Series, sa storagev2.Sample, opts *storagev2.AppendOptions) (storage.SeriesRef, error) {
+	if sa.H != nil {
+		if err := app.limitH(sa.H); err != nil {
+			return 0, err
+		}
+	}
+	if sa.FH != nil {
+		if err := app.limitFH(sa.FH); err != nil {
+			return 0, err
+		}
+	}
+	return app.appV2.AppendSample(ref, se, sa, opts)
+}
+
 func (app *bucketLimitAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	if h != nil {
-		// Return with an early error if the histogram has too many buckets and the
-		// schema is not exponential, in which case we can't reduce the resolution.
-		if len(h.PositiveBuckets)+len(h.NegativeBuckets) > app.limit && !histogram.IsExponentialSchema(h.Schema) {
-			return 0, errBucketLimit
-		}
-		for len(h.PositiveBuckets)+len(h.NegativeBuckets) > app.limit {
-			if h.Schema <= histogram.ExponentialSchemaMin {
-				return 0, errBucketLimit
-			}
-			h = h.ReduceResolution(h.Schema - 1)
+		if err := app.limitH(h); err != nil {
+			return 0, err
 		}
 	}
 	if fh != nil {
-		// Return with an early error if the histogram has too many buckets and the
-		// schema is not exponential, in which case we can't reduce the resolution.
-		if len(fh.PositiveBuckets)+len(fh.NegativeBuckets) > app.limit && !histogram.IsExponentialSchema(fh.Schema) {
-			return 0, errBucketLimit
-		}
-		for len(fh.PositiveBuckets)+len(fh.NegativeBuckets) > app.limit {
-			if fh.Schema <= histogram.ExponentialSchemaMin {
-				return 0, errBucketLimit
-			}
-			fh = fh.ReduceResolution(fh.Schema - 1)
+		if err := app.limitFH(fh); err != nil {
+			return 0, err
 		}
 	}
-	ref, err := app.Appender.AppendHistogram(ref, lset, t, h, fh)
-	if err != nil {
-		return 0, err
-	}
-	return ref, nil
+	return app.Appender.AppendHistogram(ref, lset, t, h, fh)
 }
 
 type maxSchemaAppender struct {
 	storage.Appender
+	appV2 storagev2.Appender
 
 	maxSchema int32
+}
+
+func (app *maxSchemaAppender) AppendSample(ref storage.SeriesRef, se series.Series, sa storagev2.Sample, opts *storagev2.AppendOptions) (storage.SeriesRef, error) {
+	if sa.H != nil {
+		if histogram.IsExponentialSchema(sa.H.Schema) && sa.H.Schema > app.maxSchema {
+			sa.H = sa.H.ReduceResolution(app.maxSchema)
+		}
+	}
+	if sa.FH != nil {
+		if histogram.IsExponentialSchema(sa.FH.Schema) && sa.FH.Schema > app.maxSchema {
+			sa.FH = sa.FH.ReduceResolution(app.maxSchema)
+		}
+	}
+	return app.appV2.AppendSample(ref, se, sa, opts)
 }
 
 func (app *maxSchemaAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {

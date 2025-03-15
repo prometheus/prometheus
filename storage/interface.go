@@ -275,14 +275,17 @@ type Appender interface {
 	// Appender has to be discarded after rollback.
 	Rollback() error
 
-	// SetOptions configures the appender with specific append options such as
-	// discarding out-of-order samples even if out-of-order is enabled in the TSDB.
-	SetOptions(opts *AppendOptions)
-
+	SetOptionAppender
 	ExemplarAppender
 	HistogramAppender
 	MetadataUpdater
 	CreatedTimestampAppender
+}
+
+type SetOptionAppender interface {
+	// SetOptions configures the appender with specific append options such as
+	// discarding out-of-order samples even if out-of-order is enabled in the TSDB.
+	SetOptions(opts *AppendOptions)
 }
 
 // GetRef is an extra interface on Appenders used by downstream projects

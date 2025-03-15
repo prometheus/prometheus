@@ -86,6 +86,10 @@ type Options struct {
 	EnableCreatedTimestampZeroIngestion bool
 	// Option to enable the ingestion of native histograms.
 	EnableNativeHistogramsIngestion bool
+	// EnableNativeTypeAndUnit enables storing type and unit (if present)
+	// in TSDB, unlocking cases mentioned in https://github.com/prometheus/proposals/pull/39.
+	// e.g. unit & type collision detection and selection.
+	EnableNativeTypeAndUnit bool
 
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption
