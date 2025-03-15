@@ -3,6 +3,7 @@
 ## unreleased
 
 * [BUGFIX] TSDB: fix unknown series errors and possible lost data during WAL replay when series are removed from the head due to inactivity and reappear before the next WAL checkpoint. #16060
+* [ENHANCEMENT] TSDB: Add hidden flag for disabling caching of all symbols for compaction: `--storage.tsdb.cache-all-symbols-for-compaction`. #15836
 
 ## 3.2.1 / 2025-02-25
 
