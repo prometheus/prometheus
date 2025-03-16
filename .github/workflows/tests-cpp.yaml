@@ -15,17 +15,21 @@ on:
       - pp
 
 jobs:
-  cpp-tests-arm:
+  cpp-tests:
     defaults:
       run:
         working-directory: pp
-    runs-on: fsn-dev-arm-runner
-    env:
-      ARCH: arm64
-    container:
-      image: "${{ secrets.CI_REGISTRY_IMAGE }}:gcc-tools-arm64"
+    runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
+        ARCH: [arm64, x86_64]
+        include:
+          - ARCH: arm64
+            runner: fsn-dev-arm-runner
+            image: "${{ secrets.CI_REGISTRY_IMAGE }}:gcc-tools-arm64"
+          - ARCH: x86_64
+            runner: fsn-dev-gitlab-runner
+            image: "${{ secrets.CI_REGISTRY_IMAGE }}:gcc-tools-x86_64"
         OPT: [dbg, opt]
         SANITIZERS: [no_sanitizers, with_sanitizers]
     steps:
@@ -46,41 +50,6 @@ jobs:
       - name: Upload Test Results
         uses: actions/upload-artifact@v4
         with:
-          name: unit-tests-${{ env.ARCH }}-${{ matrix.OPT }}-asan-${{ matrix.SANITIZERS }}
-          path: testlogs/*.xml
-          retention-days: 7
-
-  cpp-tests-amd:
-    defaults:
-      run:
-        working-directory: pp
-    runs-on: fsn-dev-gitlab-runner
-    env:
-      ARCH: x86_64
-    container:
-      image: "${{ secrets.CI_REGISTRY_IMAGE }}:gcc-tools-x86_64"
-    strategy:
-      matrix:
-        OPT: [dbg, opt]
-        SANITIZERS: [no_sanitizers, with_sanitizers]
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Run Unit Tests
-        run: |
-          cache_addr=$(ip route | awk '/default/ {print $3}')
-          echo "build --remote_cache=http://$cache_addr/cache/ --experimental_guard_against_concurrent_changes" >> .bazelrc
-          ./scripts/ci_run_unit_tests.sh
-
-      - name: Collect Test Reports
-        run: |
-          mkdir testlogs
-          for f in ./bazel-testlogs/**/test.xml; do cp $f testlogs/$(basename $(dirname $f)).xml; done
-
-      - name: Upload Test Results
-        uses: actions/upload-artifact@v4
-        with:
-          name: unit-tests-${{ env.ARCH }}-${{ matrix.OPT }}-asan-${{ matrix.SANITIZERS }}
+          name: unit-tests-${{ matrix.ARCH }}-${{ matrix.OPT }}-asan-${{ matrix.SANITIZERS }}
           path: testlogs/*.xml
           retention-days: 7

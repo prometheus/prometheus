@@ -1,0 +1,72 @@
+name: Build with Werf
+
+on:
+  workflow_run:
+    workflows:
+      - "Run Tests for C++ Code"
+      - "Run Tests for Go Code"
+    types: 
+      - completed
+  push:
+    tags:
+      - "v*"
+
+env:
+  WERF_VER: "2 alpha"
+  WERF_TELEMETRY: "1"
+  WERF_TELEMETRY_LOGS: "0"
+  WERF_PARALLEL_TASKS_LIMIT: 10
+  DOCKER_BUILDKIT: "1"
+  MODULE_NAME: "prompp"
+
+jobs:
+  build:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        ARCH: [arm64, x86_64]
+        COMPILATION_MODE: [dbg, opt]
+        ASAN: [true, false]
+        include:
+          - ARCH: arm64
+            runner: fsn-dev-arm-runner
+          - ARCH: x86_64
+            runner: fsn-dev-gitlab-runner
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2.1.0
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_REGISTRY_LOGIN }}
+          password: ${{ secrets.DOCKERHUB_REGISTRY_PASSWORD }}
+          logout: false
+
+      - name: Build Images Dockerhub
+        run: |
+          type trdl && . $(trdl use werf ${WERF_VER})
+          type werf && source $(werf ci-env github --as-file)
+          werf build --add-custom-tag="%image%-${{ github.ref_name }} --repo=docker.io/prompp"
+
+      - name: Retag and Push to Dockerhub
+        run: |
+          SRC_IMAGE_PROMPP="docker.io/prompp/prompp:prompp-${{ github.ref_name }}"
+          SRC_IMAGE_TOOL="docker.io/prompp/prompp:prompptool-${{ github.ref_name }}"
+          NEW_IMAGE_PROMPP="docker.io/prompp/prompp:${{ github.ref_name }}-${{ env.ARCH }}-${{ matrix.COMPILATION_MODE }}-asan-${{ matrix.ASAN }}"
+          NEW_IMAGE_TOOL="docker.io/prompp/prompptool:${{ github.ref_name }}-${{ env.ARCH }}-${{ matrix.COMPILATION_MODE }}-asan-${{ matrix.ASAN }}"
+          docker tag ${SRC_IMAGE_PROMPP} ${NEW_IMAGE_PROMPP} && docker tag ${SRC_IMAGE_TOOL} ${NEW_IMAGE_TOOL}
+          docker push ${NEW_IMAGE_PROMPP} && docker push ${NEW_IMAGE_TOOL}
+
+          docker rmi ${NEW_IMAGE_PROMPP} || true
+          docker rmi ${NEW_IMAGE_TOOL} || true
+          docker rmi ${SRC_IMAGE_PROMPP} || true
+          docker rmi ${SRC_IMAGE_TOOL} || true
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: werf-artifacts-${{ matrix.ARCH }}-${{ matrix.COMPILATION_MODE }}-asan-${{ matrix.ASAN }}
+          path: werf/.werf/tmp
+          retention-days: 7

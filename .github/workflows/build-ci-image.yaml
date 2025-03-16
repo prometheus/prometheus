@@ -15,8 +15,18 @@ env:
   GO_VERSION: "1.23.2"
 
 jobs:
-  build-ci-image-arm:
-    runs-on: fsn-dev-arm-runner
+  build-ci-image:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        ARCH: [arm64, x86_64]
+        include:
+          - ARCH: arm64
+            runner: fsn-dev-arm-runner
+            go_arch: arm64
+          - ARCH: x86_64
+            runner: fsn-dev-gitlab-runner
+            go_arch: amd64
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -30,43 +40,12 @@ jobs:
           logout: false
 
       - name: Build and Push Docker Image
-        env:
-          ARCH: arm64
-          GO_ARCH: arm64
         run: |
           docker build -f Dockerfile.ci \
-            -t ${{ secrets.CI_REGISTRY_IMAGE }}:gcc-tools-${{ env.ARCH }} \
-            --build-arg ARCH=${{ env.ARCH }} \
-            --build-arg BAZEL_ARCH=${{ env.ARCH }} \
+            -t ${{ secrets.CI_REGISTRY_IMAGE }}:gcc-tools-${{ matrix.ARCH }} \
+            --build-arg ARCH=${{ matrix.ARCH }} \
+            --build-arg BAZEL_ARCH=${{ matrix.ARCH }} \
             --build-arg BAZEL_VERSION=${{ env.BAZEL_VERSION }} \
-            --build-arg GO_ARCH=${{ env.GO_ARCH }} \
+            --build-arg GO_ARCH=${{ matrix.go_arch }} \
             --build-arg GO_VERSION=${{ env.GO_VERSION }} .
-          docker push ${{ secrets.CI_REGISTRY_IMAGE }}:gcc-tools-${{ env.ARCH }}
-
-  build-ci-image-amd:
-    runs-on: fsn-dev-gitlab-runner
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Login to registry
-        uses: docker/login-action@v2.1.0
-        with:
-          registry: ${{ secrets.DOCKERHUB_REGISTRY }}
-          username: ${{ secrets.DOCKERHUB_REGISTRY_LOGIN }}
-          password: ${{ secrets.DOCKERHUB_REGISTRY_PASSWORD }}
-          logout: false
-
-      - name: Build and Push Docker Image
-        env:
-          ARCH: x86_64
-          GO_ARCH: amd64
-        run: |
-          docker build -f Dockerfile.ci \
-            -t ${{ secrets.CI_REGISTRY_IMAGE }}:gcc-tools-${{ env.ARCH }} \
-            --build-arg ARCH=${{ env.ARCH }} \
-            --build-arg BAZEL_ARCH=${{ env.ARCH }} \
-            --build-arg BAZEL_VERSION=${{ env.BAZEL_VERSION }} \
-            --build-arg GO_ARCH=${{ env.GO_ARCH }} \
-            --build-arg GO_VERSION=${{ env.GO_VERSION }} .
-          docker push ${{ secrets.CI_REGISTRY_IMAGE }}:gcc-tools-${{ env.ARCH }}
+          docker push ${{ secrets.CI_REGISTRY_IMAGE }}:gcc-tools-${{ matrix.ARCH }}
