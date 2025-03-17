@@ -19,6 +19,7 @@ package prometheusremotewrite
 import (
 	"context"
 	"fmt"
+	"github.com/prometheus/prometheus/model/histogram"
 	"math"
 
 	"github.com/prometheus/common/model"
@@ -297,11 +298,17 @@ func explicitHistogramToCustomBucketsHistogram(p pmetric.HistogramDataPoint) (pr
 		// Ref: https://github.com/open-telemetry/opentelemetry-collector-contrib/pull/28663#issuecomment-1810577303
 		// Counter reset detection in Prometheus: https://github.com/prometheus/prometheus/blob/f997c72f294c0f18ca13fa06d51889af04135195/tsdb/chunkenc/histogram.go#L232
 		ResetHint: prompb.Histogram_UNKNOWN,
-		Schema:    -53,
+		Schema:    histogram.CustomBucketsSchema,
 
 		PositiveSpans:  positiveSpans,
 		PositiveDeltas: positiveDeltas,
-		CustomValues:   p.ExplicitBounds().AsRaw(),
+		// Note: OTel explicit histograms have an implicit +Inf bucket, which has a lower bound
+		// of the last element in the explicit_bounds array.
+		// This is similar to the custom_values array in native histograms with custom buckets.
+		// Because of this shared property, the OTel explicit histogram's explicit_bounds array
+		// can be mapped directly to the custom_values array.
+		// See: https://github.com/open-telemetry/opentelemetry-proto/blob/d7770822d70c7bd47a6891fc9faacc66fc4af3d3/opentelemetry/proto/metrics/v1/metrics.proto#L469
+		CustomValues: p.ExplicitBounds().AsRaw(),
 
 		Timestamp: convertTimeStamp(p.Timestamp()),
 	}
