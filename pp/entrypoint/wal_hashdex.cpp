@@ -1,6 +1,7 @@
 #include "wal_hashdex.h"
-#include "_helpers.hpp"
 
+#include "_helpers.hpp"
+#include "exception.hpp"
 #include "primitives/go_slice.h"
 #include "wal/decoder.h"
 
@@ -87,7 +88,7 @@ extern "C" void prompp_wal_protobuf_hashdex_snappy_presharding(void* args, void*
     out->replica.reset_to(replica.data(), replica.size());
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
-    handle_current_exception(__func__, err_stream);
+    entrypoint::handle_current_exception(err_stream);
   }
 }
 
@@ -134,7 +135,7 @@ extern "C" void prompp_wal_go_model_hashdex_presharding(void* args, void* res) {
     out->replica.reset_to(replica.data(), replica.size());
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
-    handle_current_exception(__func__, err_stream);
+    entrypoint::handle_current_exception(err_stream);
   }
 }
 

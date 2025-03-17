@@ -9,28 +9,31 @@
 /// the longer messages would be clamped.
 #pragma once
 
+#include <sys/types.h>
+
 #include <cstdint>
 #include <exception>
 #include <sstream>
+#include <stacktrace>
 #include <string_view>
-
-#include <sys/types.h>  // pid_t
 
 namespace BareBones {
 
-class Exception : public std::exception {
+class Exception final : public std::exception {
  public:
   using Code = uint64_t;
 
- private:
-  std::string_view msg_;
-  Code code_;
-
- public:
   Exception(Code exc_code, const char* message, ...) __attribute__((format(printf, 3, 4)));
 
-  const char* what() const noexcept override { return msg_.data(); }
-  Code code() const noexcept { return code_; }
+  [[nodiscard]] std::string_view message() const noexcept { return msg_; }
+  [[nodiscard]] const std::stacktrace& stacktrace() const noexcept { return stacktrace_; }
+  [[nodiscard]] const char* what() const noexcept override { return msg_.data(); }
+  [[nodiscard]] Code code() const noexcept { return code_; }
+
+ private:
+  std::stacktrace stacktrace_;
+  std::string_view msg_;
+  Code code_;
 };
 
 }  // namespace BareBones

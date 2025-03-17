@@ -1,9 +1,11 @@
+#include "head_wal.h"
+
 #include <variant>
 
 #include "_helpers.hpp"
+#include "exception.hpp"
 #include "head/lss.h"
 #include "head/series_data.h"
-#include "head_wal.h"
 #include "primitives/go_slice.h"
 #include "wal/decoder.h"
 #include "wal/encoder.h"
@@ -81,7 +83,7 @@ extern "C" void prompp_head_wal_encoder_add_inner_series(void* args, void* res) 
     in->encoder->add_inner_series(in->incoming_inner_series, out);
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
-    handle_current_exception(__func__, err_stream);
+    entrypoint::handle_current_exception(err_stream);
   }
 }
 
@@ -110,7 +112,7 @@ extern "C" void prompp_head_wal_encoder_finalize(void* args, void* res) {
     in->encoder->finalize(out, out_stream);
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
-    handle_current_exception(__func__, err_stream);
+    entrypoint::handle_current_exception(err_stream);
   }
 }
 
@@ -165,7 +167,7 @@ extern "C" void prompp_head_wal_decoder_decode(void* args, void* res) {
     in->decoder->decode_to_inner_series(in->segment, *in->inner_series, out);
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
-    handle_current_exception(__func__, err_stream);
+    entrypoint::handle_current_exception(err_stream);
   }
 }
 
@@ -188,6 +190,6 @@ extern "C" void prompp_head_wal_decoder_decode_to_data_storage(void* args, void*
                                          PROMPP_LAMBDA_INLINE { in->encoder_wrapper->encoder.encode(ls_id, timestamp, value); });
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
-    handle_current_exception(__func__, err_stream);
+    entrypoint::handle_current_exception(err_stream);
   }
 }

@@ -76,7 +76,7 @@ func handleException(b []byte) error {
 
 	msg, st, _ := strings.Cut(s, "\n")
 	var code uint64
-	if _, msgStartedWithCode, ok := strings.Cut(msg, "(): Exception "); ok {
+	if _, msgStartedWithCode, ok := strings.Cut(msg, "): Exception "); ok {
 		if codeStr, _, ok := strings.Cut(msgStartedWithCode, ":"); ok {
 			//revive:disable:add-constant // not need const
 			code, _ = strconv.ParseUint(codeStr, 16, 64)
@@ -99,7 +99,7 @@ func (err *Exception) Code() uint64 {
 	return err.code
 }
 
-// Stacktrace return stactrace to throw instruction
+// Stacktrace return stacktrace to throw instruction
 func (err *Exception) Stacktrace() string {
 	return err.st
 }

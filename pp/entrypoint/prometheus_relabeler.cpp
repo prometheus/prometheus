@@ -1,5 +1,7 @@
 #include "prometheus_relabeler.h"
+
 #include "_helpers.hpp"
+#include "exception.hpp"
 #include "head/lss.h"
 
 #include "primitives/go_slice.h"
@@ -27,7 +29,7 @@ extern "C" void prompp_prometheus_stateless_relabeler_ctor(void* args, void* res
     out->stateless_relabeler = new PromPP::Prometheus::Relabel::StatelessRelabeler(in->go_rcfgs);
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
-    handle_current_exception(__func__, err_stream);
+    entrypoint::handle_current_exception(err_stream);
   }
 }
 
@@ -56,7 +58,7 @@ extern "C" void prompp_prometheus_stateless_relabeler_reset_to(void* args, void*
     in->stateless_relabeler->reset_to(in->go_rcfgs);
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
-    handle_current_exception(__func__, err_stream);
+    entrypoint::handle_current_exception(err_stream);
   }
 }
 
@@ -152,7 +154,7 @@ extern "C" void prompp_prometheus_per_shard_relabeler_ctor(void* args, void* res
         new PromPP::Prometheus::Relabel::PerShardRelabeler(in->external_labels, in->stateless_relabeler, in->number_of_shards, in->shard_id);
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
-    handle_current_exception(__func__, err_stream);
+    entrypoint::handle_current_exception(err_stream);
   }
 }
 
@@ -210,7 +212,7 @@ extern "C" void prompp_prometheus_per_shard_relabeler_input_relabeling(void* arg
         *in->hashdex);
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
-    handle_current_exception(__func__, err_stream);
+    entrypoint::handle_current_exception(err_stream);
   }
 }
 
@@ -273,7 +275,7 @@ extern "C" void prompp_prometheus_per_shard_relabeler_input_relabeling_with_stal
         *in->hashdex);
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
-    handle_current_exception(__func__, err_stream);
+    entrypoint::handle_current_exception(err_stream);
   }
 }
 
@@ -296,7 +298,7 @@ extern "C" void prompp_prometheus_per_shard_relabeler_input_collect_stalenans(vo
     in->per_shard_relabeler->input_collect_stalenans(*in->cache, in->shards_inner_series, *in->state, in->stale_ts);
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
-    handle_current_exception(__func__, err_stream);
+    entrypoint::handle_current_exception(err_stream);
   }
 }
 
@@ -320,7 +322,7 @@ extern "C" void prompp_prometheus_per_shard_relabeler_append_relabeler_series(vo
     in->per_shard_relabeler->append_relabeler_series(lss, in->inner_series, in->relabeled_series, in->relabeler_state_update);
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
-    handle_current_exception(__func__, err_stream);
+    entrypoint::handle_current_exception(err_stream);
   }
 }
 
@@ -342,7 +344,7 @@ extern "C" void prompp_prometheus_per_shard_relabeler_update_relabeler_state(voi
     in->per_shard_relabeler->update_relabeler_state(*in->cache, in->relabeler_state_update, in->relabeled_shard_id);
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
-    handle_current_exception(__func__, err_stream);
+    entrypoint::handle_current_exception(err_stream);
   }
 }
 
@@ -367,7 +369,7 @@ extern "C" void prompp_prometheus_per_shard_relabeler_output_relabeling(void* ar
     in->per_shard_relabeler->output_relabeling(lss, *in->cache, in->relabeled_series, in->incoming_inner_series, in->encoders_inner_series);
   } catch (...) {
     auto err_stream = PromPP::Primitives::Go::BytesStream(&out->error);
-    handle_current_exception(__func__, err_stream);
+    entrypoint::handle_current_exception(err_stream);
   }
 }
 
