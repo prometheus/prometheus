@@ -1,0 +1,58 @@
+name: Run Tests for C++ Code
+
+on:
+  workflow_run:
+    workflows: ["Lint C++ Code"]
+    types: 
+      - completed
+  pull_request_target:
+    types:
+      - opened
+      - synchronize
+      - reopened
+  push:
+    branches:
+      - pp
+
+jobs:
+  cpp-tests:
+    defaults:
+      run:
+        working-directory: pp
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: ${{ matrix.image }}
+    strategy:
+      matrix:
+        ARCH: [arm64, x86_64]
+        include:
+          - ARCH: arm64
+            runner: fsn-dev-arm-runner
+            image: "${{ secrets.CI_REGISTRY_IMAGE }}:gcc-tools-arm64"
+          - ARCH: x86_64
+            runner: fsn-dev-gitlab-runner
+            image: "${{ secrets.CI_REGISTRY_IMAGE }}:gcc-tools-x86_64"
+        COMPILATION_MODE: [dbg, opt]
+        ASAN: [true, false]
+        SANITIZERS: [no_sanitizers, with_sanitizers]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Run Unit Tests
+        run: |
+          cache_addr=$(ip route | awk '/default/ {print $3}')
+          echo "build --remote_cache=http://$cache_addr/cache/ --experimental_guard_against_concurrent_changes" >> .bazelrc
+          ./scripts/ci_run_unit_tests.sh
+
+      - name: Collect Test Reports
+        run: |
+          mkdir testlogs
+          for f in ./bazel-testlogs/**/test.xml; do cp $f testlogs/$(basename $(dirname $f)).xml; done
+
+      - name: Upload Test Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-tests-${{ matrix.ARCH }}-${{ matrix.COMPILATION_MODE }}-asan-${{ matrix.ASAN }}-${{ matrix.SANITIZERS }}
+          path: testlogs/*.xml
+          retention-days: 7

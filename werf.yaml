@@ -45,7 +45,7 @@ git:
 shell:
   install:
     - cd /src
-    - make install_dir=/tmp compilation_mode={{ env "COMPILATION_MODE" }} asan={{ env "ASAN" }} build-entrypoint
+    - make install_dir=/tmp compilation_mode={{ env "COMPILATION_MODE" "opt" }} asan={{ env "ASAN" "false" }} build-entrypoint
 ---
 image: prompp-artifact
 final: false
@@ -111,7 +111,6 @@ shell:
 ---
 image: prompptool
 from: registry.deckhouse.io/deckhouse/ce@sha256:916e14b8eed3d023869752535fed781040a59cf79368b3b05628a7f5029414a0
-final: false
 import:
   - artifact: prompp-artifact
     add: /src/prompptool

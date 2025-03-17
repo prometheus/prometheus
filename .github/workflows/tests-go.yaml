@@ -1,0 +1,81 @@
+name: Run Tests for Go Code
+
+on:
+  workflow_run:
+    workflows: ["Run Tests for C++ Code"]
+    types: 
+      - completed
+  pull_request_target:
+    types:
+      - opened
+      - synchronize
+      - reopened
+  push:
+    branches:
+      - pp
+
+jobs:
+  go-tests:
+    defaults:
+      run:
+        working-directory: pp
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        ARCH: [arm64, x86_64]
+        include:
+          - ARCH: arm64
+            runner: fsn-dev-arm-runner
+            image: "${{ secrets.CI_REGISTRY_IMAGE }}:gcc-tools-arm64"
+          - ARCH: x86_64
+            runner: fsn-dev-gitlab-runner
+            image: "${{ secrets.CI_REGISTRY_IMAGE }}:gcc-tools-x86_64"
+        COMPILATION_MODE: [dbg, opt]
+        ASAN: [true, false]
+        SANITIZERS: [no_sanitizers, with_sanitizers]
+    container:
+      image: ${{ matrix.image }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Go Testing Tools
+        run: |
+          mkdir -p .cache
+          go install github.com/jstemmer/go-junit-report/v2@latest
+          go install github.com/axw/gocov/gocov@latest
+          go install github.com/AlekSi/gocov-xml@latest
+
+      - name: Build static lib cpp for go
+        run: |
+          - cache_addr=$(ip -json ro show default | jq -r '.[0].gateway')
+          - echo "build --remote_cache=http://$cache_addr/cache/ --experimental_guard_against_concurrent_changes" >> .bazelrc
+          - make compilation_mode=$COMPILATION_MODE asan=$ASAN build-entrypoint
+
+      - name: Run Go Tests
+        env:
+          GOPATH: "$GITHUB_WORKSPACE/.cache"
+          GOBIN: "/usr/local/go/bin"
+        run: |
+          go test $(./scripts/ci_get_go_test_flags.sh) -v -cover -count=1 -coverprofile=coverage.txt -covermode=atomic ./go/... 2>&1 | tee report.txt
+
+      - name: Process Coverage + Reports
+        run: |
+          cat report.txt | go-junit-report > report.xml
+          sed -i '/\(pb\|easyjson\|string\)\.go/d' coverage.txt
+          gocov convert coverage.txt | gocov-xml > coverage.xml
+          go tool cover -func=coverage.txt | tail -n 1 | awk '{print "Total coverage:", $3;}'
+
+      - name: Upload Go Test Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-unit-tests-${{ matrix.ARCH }}-${{ matrix.COMPILATION_MODE }}-asan-${{ matrix.ASAN }}-${{ matrix.SANITIZERS }}
+          path: report.xml
+          retention-days: 7
+
+      - name: Upload Coverage Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-coverage-report-${{ matrix.ARCH }}-${{ matrix.COMPILATION_MODE }}-asan-${{ matrix.ASAN }}-${{ matrix.SANITIZERS }}
+          path: coverage.xml
+          retention-days: 7
