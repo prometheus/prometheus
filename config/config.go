@@ -167,7 +167,8 @@ var (
 		RuleQueryOffset:    model.Duration(0 * time.Minute),
 		// When native histogram feature flag is enabled, ScrapeProtocols default
 		// changes to DefaultNativeHistogramScrapeProtocols.
-		ScrapeProtocols: DefaultScrapeProtocols,
+		ScrapeProtocols:                DefaultScrapeProtocols,
+		ConvertClassicHistogramsToNHCB: false,
 	}
 
 	DefaultRuntimeConfig = RuntimeConfig{
@@ -486,6 +487,8 @@ type GlobalConfig struct {
 	// blank in config files but must have a value if a ScrepeConfig is created
 	// programmatically.
 	MetricNameEscapingScheme string `yaml:"metric_name_escaping_scheme,omitempty"`
+	// Whether to convert all scraped classic histograms into native histograms with custom buckets.
+	ConvertClassicHistogramsToNHCB bool `yaml:"convert_classic_histograms_to_nhcb,omitempty"`
 }
 
 // ScrapeProtocol represents supported protocol for scraping metrics.
@@ -641,7 +644,8 @@ func (c *GlobalConfig) isZero() bool {
 		c.RuleQueryOffset == 0 &&
 		c.QueryLogFile == "" &&
 		c.ScrapeFailureLogFile == "" &&
-		c.ScrapeProtocols == nil
+		c.ScrapeProtocols == nil &&
+		!c.ConvertClassicHistogramsToNHCB
 }
 
 // RuntimeConfig configures the values for the process behavior.
@@ -688,7 +692,7 @@ type ScrapeConfig struct {
 	// Whether to scrape a classic histogram, even if it is also exposed as a native histogram.
 	AlwaysScrapeClassicHistograms bool `yaml:"always_scrape_classic_histograms,omitempty"`
 	// Whether to convert all scraped classic histograms into a native histogram with custom buckets.
-	ConvertClassicHistogramsToNHCB bool `yaml:"convert_classic_histograms_to_nhcb,omitempty"`
+	ConvertClassicHistogramsToNHCB *bool `yaml:"convert_classic_histograms_to_nhcb,omitempty"`
 	// File to which scrape failures are logged.
 	ScrapeFailureLogFile string `yaml:"scrape_failure_log_file,omitempty"`
 	// The HTTP resource path on which to fetch metrics from targets.
@@ -895,6 +899,11 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 		return fmt.Errorf("unknown scrape config name escaping method specified, must be one of '%s', '%s', '%s', or '%s', got %s", model.AllowUTF8, model.EscapeUnderscores, model.EscapeDots, model.EscapeValues, c.MetricNameValidationScheme)
 	}
 
+	if c.ConvertClassicHistogramsToNHCB == nil {
+		globalVal := &globalConfig.ConvertClassicHistogramsToNHCB
+		c.ConvertClassicHistogramsToNHCB = globalVal
+	}
+
 	return nil
 }
 
@@ -915,6 +924,11 @@ func ToValidationScheme(s string) (validationScheme model.ValidationScheme, err 
 	}
 
 	return validationScheme, nil
+}
+
+// ConvertClassicHistogramsToNHCBEnabled returns whether to convert classic histograms to NHCB
+func (c *ScrapeConfig) ConvertClassicHistogramsToNHCBEnabled() bool {
+	return c.ConvertClassicHistogramsToNHCB != nil && *c.ConvertClassicHistogramsToNHCB
 }
 
 // StorageConfig configures runtime reloadable configuration options.

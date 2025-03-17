@@ -140,6 +140,10 @@ global:
   # and underscores.
   [ metric_name_validation_scheme <string> | default "utf8" ]
 
+  # Specifies whether to convert all scraped classic histograms into native
+  # histograms with custom buckets.
+  [ convert_classic_histograms_to_nhcb <bool> | default = false]
+
 runtime:
   # Configure the Go garbage collector GOGC parameter
   # See: https://tip.golang.org/doc/gc-guide#GOGC
@@ -531,6 +535,11 @@ metric_relabel_configs:
 # 0 results in the smallest supported factor (which is currently ~1.0027 or
 # schema 8, but might change in the future).
 [ native_histogram_min_bucket_factor: <float> | default = 0 ]
+
+# Specifies whether to convert scraped classic histograms from this into
+# native histogram with custom buckets.
+[ convert_classic_histograms_to_nhcb <bool> | default = false 
+or global.convert_classic_histograms_to_nhcb if unset]
 ```
 
 Where `<job_name>` must be unique across all scrape configurations.
