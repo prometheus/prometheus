@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.53.4 / 2025-03-18
+
+* [BUGFIX] Runtime: fix GOGC is being set to 0 when installed with empty prometheus.yml file resulting high cpu usage. #16090
+* [BUGFIX] Scrape: fix dropping valid metrics after previous scrape failed. #16220
+
 ## 2.53.3 / 2024-11-04
 
 * [BUGFIX] Scraping: allow multiple samples on same series, with explicit timestamps. #14685, #14740
