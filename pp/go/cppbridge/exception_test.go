@@ -34,4 +34,5 @@ func TestHashdex_error(t *testing.T) {
 	var coreErr *cppbridge.Exception
 	assert.ErrorAs(t, err, &coreErr)
 	assert.EqualValues(t, 0x68997b7d2e49de1e, coreErr.Code())
+	assert.Greater(t, len(coreErr.Stacktrace()), 1)
 }

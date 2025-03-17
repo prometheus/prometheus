@@ -1,19 +1,14 @@
 #include "bare_bones/exception.h"
 
+#include <sys/resource.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+#include <cerrno>
+#include <cinttypes>
+#include <cstdarg>
+#include <cstring>
 #include <exception>
-#include <limits>
-
-#include <errno.h>     // errno
-#include <inttypes.h>  // printf() specifiers for long types.
-#include <stdarg.h>    // va_arg
-#include <stdlib.h>    // getenv()
-#include <string.h>    // strerror()
-
-// linux-specific includes for coredumps
-#include <strings.h>       // strncasecmp()
-#include <sys/resource.h>  // setrlimit() for coredumps
-#include <sys/types.h>     // pid_t
-#include <unistd.h>        // fork()
 
 static bool coredump_enabled = false;
 static void (*onfork_handler)(void*, pid_t) = [](void*, pid_t) {};
@@ -30,6 +25,7 @@ extern "C" void prompp_barebones_exception_set_on_fork_handler(void* state, void
 }
 
 namespace BareBones {
+
 static constexpr size_t USER_BUFFER_MSG_SIZE = 255;
 
 static constexpr size_t get_exception_buffer_size() {
@@ -39,7 +35,7 @@ static constexpr size_t get_exception_buffer_size() {
   return USER_BUFFER_MSG_SIZE + sizeof(Exception::Code) * byte_size_in_printed_characters + std::size("Exception : ");
 }
 
-Exception::Exception(Code exc_code, const char* message, ...) : code_(exc_code) {
+Exception::Exception(Code exc_code, const char* message, ...) : stacktrace_(std::stacktrace::current(1)), code_(exc_code) {
   if (coredump_enabled) {
     auto pid = fork();
     // > 0 is the parent, == 0 is the child.
