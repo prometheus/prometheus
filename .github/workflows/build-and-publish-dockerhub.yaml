@@ -16,8 +16,6 @@ env:
   WERF_TELEMETRY: "1"
   WERF_TELEMETRY_LOGS: "0"
   WERF_PARALLEL_TASKS_LIMIT: 10
-  DOCKER_BUILDKIT: "1"
-  MODULE_NAME: "prompp"
 
 jobs:
   build:
