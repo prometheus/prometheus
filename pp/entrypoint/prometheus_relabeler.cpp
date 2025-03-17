@@ -1,7 +1,7 @@
 #include "prometheus_relabeler.h"
 
-#include "_helpers.hpp"
 #include "exception.hpp"
+#include "hashdex.hpp"
 #include "head/lss.h"
 
 #include "primitives/go_slice.h"

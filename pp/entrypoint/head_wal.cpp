@@ -2,8 +2,8 @@
 
 #include <variant>
 
-#include "_helpers.hpp"
 #include "exception.hpp"
+#include "hashdex.hpp"
 #include "head/lss.h"
 #include "head/series_data.h"
 #include "primitives/go_slice.h"

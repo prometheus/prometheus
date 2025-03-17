@@ -1,7 +1,7 @@
 #include "wal_hashdex.h"
 
-#include "_helpers.hpp"
 #include "exception.hpp"
+#include "hashdex.hpp"
 #include "primitives/go_slice.h"
 #include "wal/decoder.h"
 

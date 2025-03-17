@@ -1,6 +1,6 @@
 #include "primitives_lss.h"
 
-#include "_helpers.hpp"
+#include "hashdex.hpp"
 #include "head/lss.h"
 #include "series_index/querier/label_names_querier.h"
 #include "series_index/querier/label_values_querier.h"
