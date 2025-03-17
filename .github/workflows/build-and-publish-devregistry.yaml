@@ -23,13 +23,11 @@ env:
   WERF_PARALLEL_TASKS_LIMIT: 10
 
 jobs:
-  build:
+  preps:
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
         ARCH: [arm64, x86_64]
-        COMPILATION_MODE: [dbg, opt]
-        ASAN: [true, false]
         include:
           - ARCH: arm64
             runner: fsn-dev-arm-runner
@@ -46,30 +44,22 @@ jobs:
           username: ${{ secrets.DEV_REGISTRY_LOGIN }}
           password: ${{ secrets.DEV_REGISTRY_PASSWORD }}
           logout: false
-
-      - name: Build Images Dev registry
-        run: |
-          type trdl && . $(trdl use werf ${WERF_VER})
-          type werf && source $(werf ci-env github --as-file)
-          werf build --add-custom-tag="%image%-${{ github.ref_name }} --repo=${{ secrets.DEV_REGISTRY }}/prompp"
-
-      - name: Retag and Push to Dev Registry
-        run: |
-          SRC_IMAGE_PROMPP="${{ secrets.DEV_REGISTRY }}/prompp:prompp-${{ github.ref_name }}"
-          SRC_IMAGE_PROMPPTOOL="${{ secrets.DEV_REGISTRY }}/prompp:prompptool-${{ github.ref_name }}"
-          NEW_IMAGE_PROMPP="${{ secrets.DEV_REGISTRY }}/prompp:${{ github.ref_name }}-${{ env.ARCH }}-${{ matrix.COMPILATION_MODE }}-asan-${{ matrix.ASAN }}"
-          NEW_IMAGE_PROMPPTOOL="${{ secrets.DEV_REGISTRY }}/prompptool:${{ github.ref_name }}-${{ env.ARCH }}-${{ matrix.COMPILATION_MODE }}-asan-${{ matrix.ASAN }}"
-          docker tag ${SRC_IMAGE_PROMPP} ${NEW_IMAGE_PROMPP} && docker tag ${SRC_IMAGE_PROMPPTOOL} ${NEW_IMAGE_PROMPPTOOL}
-          docker push ${NEW_IMAGE_PROMPP} && docker push ${NEW_IMAGE_PROMPPTOOL}
-
-          docker rmi ${NEW_IMAGE_PROMPP} || true
-          docker rmi ${NEW_IMAGE_PROMPPTOOL} || true
-          docker rmi ${SRC_IMAGE_PROMPP} || true
-          docker rmi ${SRC_IMAGE_PROMPPTOOL} || true
-
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: werf-artifacts-${{ matrix.ARCH }}-${{ matrix.COMPILATION_MODE }}-asan-${{ matrix.ASAN }}
-          path: werf/.werf/tmp
-          retention-days: 7
+  build:
+    needs: preps
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        ARCH: [arm64, x86_64]
+        COMPILATION_MODE: [dbg, opt]
+        ASAN: [true, false]
+        include:
+          - ARCH: arm64
+            runner: fsn-dev-arm-runner
+          - ARCH: x86_64
+            runner: fsn-dev-gitlab-runner
+    steps:
+    - name: Build Images Dev registry
+      run: |
+        type trdl && . $(trdl use werf ${WERF_VER})
+        type werf && source $(werf ci-env github --as-file)
+        werf build --add-custom-tag="%image%-${{ github.ref_name }}-${{ env.ARCH }}-${{ matrix.COMPILATION_MODE }}-asan-${{ matrix.ASAN }} --repo=${{ secrets.DEV_REGISTRY }}/prompp/prompp"
