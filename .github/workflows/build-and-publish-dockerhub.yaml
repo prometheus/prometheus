@@ -1,4 +1,4 @@
-name: Build with Werf
+name: Build with Werf Dockerhub
 
 on:
   workflow_run:

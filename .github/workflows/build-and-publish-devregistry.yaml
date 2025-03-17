@@ -1,4 +1,4 @@
-name: Build with Werf
+name: Build with Werf dev registry
 
 on:
   workflow_run:
