@@ -46,6 +46,12 @@ jobs:
           go install github.com/axw/gocov/gocov@latest
           go install github.com/AlekSi/gocov-xml@latest
 
+      - name: Build static lib cpp for go
+        run: |
+          - cache_addr=$(ip -json ro show default | jq -r '.[0].gateway')
+          - echo "build --remote_cache=http://$cache_addr/cache/ --experimental_guard_against_concurrent_changes" >> .bazelrc
+          - make compilation_mode=$COMPILATION_MODE asan=$ASAN build-entrypoint
+
       - name: Run Go Tests
         env:
           GOPATH: "$GITHUB_WORKSPACE/.cache"
