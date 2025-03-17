@@ -15,18 +15,18 @@ package promql
 
 import (
 	"context"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/grafana/regexp"
-	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
 
 func TestQueryLogging(t *testing.T) {
-	file, err := ioutil.TempFile("", "mmapedFile")
+	file, err := os.CreateTemp("", "mmapedFile")
 	require.NoError(t, err)
 
 	filename := file.Name()
@@ -79,7 +79,7 @@ func TestQueryLogging(t *testing.T) {
 }
 
 func TestIndexReuse(t *testing.T) {
-	file, err := ioutil.TempFile("", "mmapedFile")
+	file, err := os.CreateTemp("", "mmapedFile")
 	require.NoError(t, err)
 
 	filename := file.Name()
