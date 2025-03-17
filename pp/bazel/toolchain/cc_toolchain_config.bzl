@@ -185,6 +185,7 @@ def _impl(ctx):
                                 "-l:libstdc++.a",
                                 "-lm",
                                 "-lunwind",
+                                "-lstdc++_libbacktrace"
                             ],
                         ),
                     ]),
