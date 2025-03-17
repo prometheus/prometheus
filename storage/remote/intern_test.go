@@ -20,7 +20,6 @@ package remote
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -76,11 +75,24 @@ func TestIntern_MultiRef_Concurrent(t *testing.T) {
 	require.True(t, ok)
 	require.Equalf(t, int64(1), interned.refs.Load(), "expected refs to be 1 but it was %d", interned.refs.Load())
 
-	go interner.release(testString)
-
-	interner.intern(testString)
-
-	time.Sleep(time.Millisecond)
+	// #8524 observed an issue in cases when `release()` was called before `intern()`.
+	// This was due to the fact that `release()` removes the entry from the pool (to avoid memory leaks), making the stored reference invalid.
+	// The subsequent `intern()` call would create a new entry in the pool, but the reference to the old entry would still be present and tested.
+	ch := make(chan bool)
+	for range 100000 /* #8524 was reproducible 100% of the time on 10e5 iterations */ {
+		go func(ch chan bool) {
+			interner.release(testString)
+			_, ok = interner.pool[testString]
+			ch <- ok
+		}(ch)
+		interner.intern(testString)
+		if !<-ch {
+			interned, ok = interner.pool[testString]
+		}
+		require.Equalf(t, int64(1), interned.refs.Load(), "expected refs to be 1 but it was %d", interned.refs.Load())
+		require.Equalf(t, int64(1), interner.pool[testString].refs.Load(), "expected refs to be 1 but it was %d", interner.pool[testString].refs.Load())
+	}
+	close(ch)
 
 	interner.mtx.RLock()
 	interned, ok = interner.pool[testString]
