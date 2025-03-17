@@ -284,159 +284,176 @@ func BenchmarkLoadWLs(b *testing.B) {
 	exemplarsPercentages := []float64{0, 0.5, 1, 5}
 	lastExemplarsPerSeries := -1
 	for _, c := range cases {
-		for _, p := range exemplarsPercentages {
-			exemplarsPerSeries := int(math.RoundToEven(float64(c.samplesPerSeries) * p / 100))
-			// For tests with low samplesPerSeries we could end up testing with 0 exemplarsPerSeries
-			// multiple times without this check.
-			if exemplarsPerSeries == lastExemplarsPerSeries {
-				continue
-			}
-			lastExemplarsPerSeries = exemplarsPerSeries
-			b.Run(fmt.Sprintf("batches=%d,seriesPerBatch=%d,samplesPerSeries=%d,exemplarsPerSeries=%d,mmappedChunkT=%d,oooSeriesPct=%.3f,oooSamplesPct=%.3f,oooCapMax=%d", c.batches, c.seriesPerBatch, c.samplesPerSeries, exemplarsPerSeries, c.mmappedChunkT, c.oooSeriesPct, c.oooSamplesPct, c.oooCapMax),
-				func(b *testing.B) {
-					dir := b.TempDir()
+		missingSeriesPercentages := []float64{0, 0.1}
+		for _, missingSeriesPct := range missingSeriesPercentages {
+			for _, p := range exemplarsPercentages {
+				exemplarsPerSeries := int(math.RoundToEven(float64(c.samplesPerSeries) * p / 100))
+				// For tests with low samplesPerSeries we could end up testing with 0 exemplarsPerSeries
+				// multiple times without this check.
+				if exemplarsPerSeries == lastExemplarsPerSeries {
+					continue
+				}
+				lastExemplarsPerSeries = exemplarsPerSeries
+				b.Run(fmt.Sprintf("batches=%d,seriesPerBatch=%d,samplesPerSeries=%d,exemplarsPerSeries=%d,mmappedChunkT=%d,oooSeriesPct=%.3f,oooSamplesPct=%.3f,oooCapMax=%d,missingSeriesPct=%.3f", c.batches, c.seriesPerBatch, c.samplesPerSeries, exemplarsPerSeries, c.mmappedChunkT, c.oooSeriesPct, c.oooSamplesPct, c.oooCapMax, missingSeriesPct),
+					func(b *testing.B) {
+						dir := b.TempDir()
 
-					wal, err := wlog.New(nil, nil, dir, compression.None)
-					require.NoError(b, err)
-					var wbl *wlog.WL
-					if c.oooSeriesPct != 0 {
-						wbl, err = wlog.New(nil, nil, dir, compression.None)
+						wal, err := wlog.New(nil, nil, dir, compression.None)
 						require.NoError(b, err)
-					}
-
-					// Write series.
-					refSeries := make([]record.RefSeries, 0, c.seriesPerBatch)
-					for k := 0; k < c.batches; k++ {
-						refSeries = refSeries[:0]
-						for i := k * c.seriesPerBatch; i < (k+1)*c.seriesPerBatch; i++ {
-							lbls := make(map[string]string, labelsPerSeries)
-							lbls[defaultLabelName] = strconv.Itoa(i)
-							for j := 1; len(lbls) < labelsPerSeries; j++ {
-								lbls[defaultLabelName+strconv.Itoa(j)] = defaultLabelValue + strconv.Itoa(j)
-							}
-							refSeries = append(refSeries, record.RefSeries{Ref: chunks.HeadSeriesRef(i) * 101, Labels: labels.FromMap(lbls)})
+						var wbl *wlog.WL
+						if c.oooSeriesPct != 0 {
+							wbl, err = wlog.New(nil, nil, dir, compression.None)
+							require.NoError(b, err)
 						}
-						populateTestWL(b, wal, []interface{}{refSeries})
-					}
 
-					// Write samples.
-					refSamples := make([]record.RefSample, 0, c.seriesPerBatch)
-
-					oooSeriesPerBatch := int(float64(c.seriesPerBatch) * c.oooSeriesPct)
-					oooSamplesPerSeries := int(float64(c.samplesPerSeries) * c.oooSamplesPct)
-
-					for i := 0; i < c.samplesPerSeries; i++ {
-						for j := 0; j < c.batches; j++ {
-							refSamples = refSamples[:0]
-
-							k := j * c.seriesPerBatch
-							// Skip appending the first oooSamplesPerSeries samples for the series in the batch that
-							// should have OOO samples. OOO samples are appended after all the in-order samples.
-							if i < oooSamplesPerSeries {
-								k += oooSeriesPerBatch
-							}
-							for ; k < (j+1)*c.seriesPerBatch; k++ {
-								refSamples = append(refSamples, record.RefSample{
-									Ref: chunks.HeadSeriesRef(k) * 101,
-									T:   int64(i) * 10,
-									V:   float64(i) * 100,
-								})
-							}
-							populateTestWL(b, wal, []interface{}{refSamples})
-						}
-					}
-
-					// Write mmapped chunks.
-					if c.mmappedChunkT != 0 {
-						chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, mmappedChunksDir(dir), chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
-						require.NoError(b, err)
-						cOpts := chunkOpts{
-							chunkDiskMapper: chunkDiskMapper,
-							chunkRange:      c.mmappedChunkT,
-							samplesPerChunk: DefaultSamplesPerChunk,
-						}
-						for k := 0; k < c.batches*c.seriesPerBatch; k++ {
-							// Create one mmapped chunk per series, with one sample at the given time.
-							s := newMemSeries(labels.Labels{}, chunks.HeadSeriesRef(k)*101, 0, defaultIsolationDisabled)
-							s.append(c.mmappedChunkT, 42, 0, cOpts)
-							// There's only one head chunk because only a single sample is appended. mmapChunks()
-							// ignores the latest chunk, so we need to cut a new head chunk to guarantee the chunk with
-							// the sample at c.mmappedChunkT is mmapped.
-							s.cutNewHeadChunk(c.mmappedChunkT, chunkenc.EncXOR, c.mmappedChunkT)
-							s.mmapChunks(chunkDiskMapper)
-						}
-						require.NoError(b, chunkDiskMapper.Close())
-					}
-
-					// Write exemplars.
-					refExemplars := make([]record.RefExemplar, 0, c.seriesPerBatch)
-					for i := 0; i < exemplarsPerSeries; i++ {
-						for j := 0; j < c.batches; j++ {
-							refExemplars = refExemplars[:0]
-							for k := j * c.seriesPerBatch; k < (j+1)*c.seriesPerBatch; k++ {
-								refExemplars = append(refExemplars, record.RefExemplar{
-									Ref:    chunks.HeadSeriesRef(k) * 101,
-									T:      int64(i) * 10,
-									V:      float64(i) * 100,
-									Labels: labels.FromStrings("trace_id", fmt.Sprintf("trace-%d", i)),
-								})
-							}
-							populateTestWL(b, wal, []interface{}{refExemplars})
-						}
-					}
-
-					// Write OOO samples and mmap markers.
-					refMarkers := make([]record.RefMmapMarker, 0, oooSeriesPerBatch)
-					refSamples = make([]record.RefSample, 0, oooSeriesPerBatch)
-					for i := 0; i < oooSamplesPerSeries; i++ {
-						shouldAddMarkers := c.oooCapMax != 0 && i != 0 && int64(i)%c.oooCapMax == 0
-
-						for j := 0; j < c.batches; j++ {
-							refSamples = refSamples[:0]
-							if shouldAddMarkers {
-								refMarkers = refMarkers[:0]
-							}
-							for k := j * c.seriesPerBatch; k < (j*c.seriesPerBatch)+oooSeriesPerBatch; k++ {
-								ref := chunks.HeadSeriesRef(k) * 101
-								if shouldAddMarkers {
-									// loadWBL() checks that the marker's MmapRef is less than or equal to the ref
-									// for the last mmap chunk. Setting MmapRef to 0 to always pass that check.
-									refMarkers = append(refMarkers, record.RefMmapMarker{Ref: ref, MmapRef: 0})
+						// Write series.
+						refSeries := make([]record.RefSeries, 0, c.seriesPerBatch)
+						for k := 0; k < c.batches; k++ {
+							refSeries = refSeries[:0]
+							for i := k * c.seriesPerBatch; i < (k+1)*c.seriesPerBatch; i++ {
+								lbls := make(map[string]string, labelsPerSeries)
+								lbls[defaultLabelName] = strconv.Itoa(i)
+								for j := 1; len(lbls) < labelsPerSeries; j++ {
+									lbls[defaultLabelName+strconv.Itoa(j)] = defaultLabelValue + strconv.Itoa(j)
 								}
-								refSamples = append(refSamples, record.RefSample{
-									Ref: ref,
-									T:   int64(i) * 10,
-									V:   float64(i) * 100,
-								})
+								refSeries = append(refSeries, record.RefSeries{Ref: chunks.HeadSeriesRef(i) * 101, Labels: labels.FromMap(lbls)})
 							}
-							if shouldAddMarkers {
-								populateTestWL(b, wbl, []interface{}{refMarkers})
+
+							writeSeries := refSeries
+							if missingSeriesPct > 0 {
+								newWriteSeries := make([]record.RefSeries, 0, int(float64(len(refSeries))*(1.0-missingSeriesPct)))
+								keepRatio := 1.0 - missingSeriesPct
+								// Keep approximately every 1/keepRatio series.
+								for i, s := range refSeries {
+									if int(float64(i)*keepRatio) != int(float64(i+1)*keepRatio) {
+										newWriteSeries = append(newWriteSeries, s)
+									}
+								}
+								writeSeries = newWriteSeries
 							}
-							populateTestWL(b, wal, []interface{}{refSamples})
-							populateTestWL(b, wbl, []interface{}{refSamples})
-						}
-					}
 
-					b.ResetTimer()
-
-					// Load the WAL.
-					for i := 0; i < b.N; i++ {
-						opts := DefaultHeadOptions()
-						opts.ChunkRange = 1000
-						opts.ChunkDirRoot = dir
-						if c.oooCapMax > 0 {
-							opts.OutOfOrderCapMax.Store(c.oooCapMax)
+							populateTestWL(b, wal, []interface{}{writeSeries})
 						}
-						h, err := NewHead(nil, nil, wal, wbl, opts, nil)
-						require.NoError(b, err)
-						h.Init(0)
-					}
-					b.StopTimer()
-					wal.Close()
-					if wbl != nil {
-						wbl.Close()
-					}
-				})
+
+						// Write samples.
+						refSamples := make([]record.RefSample, 0, c.seriesPerBatch)
+
+						oooSeriesPerBatch := int(float64(c.seriesPerBatch) * c.oooSeriesPct)
+						oooSamplesPerSeries := int(float64(c.samplesPerSeries) * c.oooSamplesPct)
+
+						for i := 0; i < c.samplesPerSeries; i++ {
+							for j := 0; j < c.batches; j++ {
+								refSamples = refSamples[:0]
+
+								k := j * c.seriesPerBatch
+								// Skip appending the first oooSamplesPerSeries samples for the series in the batch that
+								// should have OOO samples. OOO samples are appended after all the in-order samples.
+								if i < oooSamplesPerSeries {
+									k += oooSeriesPerBatch
+								}
+								for ; k < (j+1)*c.seriesPerBatch; k++ {
+									refSamples = append(refSamples, record.RefSample{
+										Ref: chunks.HeadSeriesRef(k) * 101,
+										T:   int64(i) * 10,
+										V:   float64(i) * 100,
+									})
+								}
+								populateTestWL(b, wal, []interface{}{refSamples})
+							}
+						}
+
+						// Write mmapped chunks.
+						if c.mmappedChunkT != 0 {
+							chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, mmappedChunksDir(dir), chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
+							require.NoError(b, err)
+							cOpts := chunkOpts{
+								chunkDiskMapper: chunkDiskMapper,
+								chunkRange:      c.mmappedChunkT,
+								samplesPerChunk: DefaultSamplesPerChunk,
+							}
+							for k := 0; k < c.batches*c.seriesPerBatch; k++ {
+								// Create one mmapped chunk per series, with one sample at the given time.
+								s := newMemSeries(labels.Labels{}, chunks.HeadSeriesRef(k)*101, 0, defaultIsolationDisabled)
+								s.append(c.mmappedChunkT, 42, 0, cOpts)
+								// There's only one head chunk because only a single sample is appended. mmapChunks()
+								// ignores the latest chunk, so we need to cut a new head chunk to guarantee the chunk with
+								// the sample at c.mmappedChunkT is mmapped.
+								s.cutNewHeadChunk(c.mmappedChunkT, chunkenc.EncXOR, c.mmappedChunkT)
+								s.mmapChunks(chunkDiskMapper)
+							}
+							require.NoError(b, chunkDiskMapper.Close())
+						}
+
+						// Write exemplars.
+						refExemplars := make([]record.RefExemplar, 0, c.seriesPerBatch)
+						for i := 0; i < exemplarsPerSeries; i++ {
+							for j := 0; j < c.batches; j++ {
+								refExemplars = refExemplars[:0]
+								for k := j * c.seriesPerBatch; k < (j+1)*c.seriesPerBatch; k++ {
+									refExemplars = append(refExemplars, record.RefExemplar{
+										Ref:    chunks.HeadSeriesRef(k) * 101,
+										T:      int64(i) * 10,
+										V:      float64(i) * 100,
+										Labels: labels.FromStrings("trace_id", fmt.Sprintf("trace-%d", i)),
+									})
+								}
+								populateTestWL(b, wal, []interface{}{refExemplars})
+							}
+						}
+
+						// Write OOO samples and mmap markers.
+						refMarkers := make([]record.RefMmapMarker, 0, oooSeriesPerBatch)
+						refSamples = make([]record.RefSample, 0, oooSeriesPerBatch)
+						for i := 0; i < oooSamplesPerSeries; i++ {
+							shouldAddMarkers := c.oooCapMax != 0 && i != 0 && int64(i)%c.oooCapMax == 0
+
+							for j := 0; j < c.batches; j++ {
+								refSamples = refSamples[:0]
+								if shouldAddMarkers {
+									refMarkers = refMarkers[:0]
+								}
+								for k := j * c.seriesPerBatch; k < (j*c.seriesPerBatch)+oooSeriesPerBatch; k++ {
+									ref := chunks.HeadSeriesRef(k) * 101
+									if shouldAddMarkers {
+										// loadWBL() checks that the marker's MmapRef is less than or equal to the ref
+										// for the last mmap chunk. Setting MmapRef to 0 to always pass that check.
+										refMarkers = append(refMarkers, record.RefMmapMarker{Ref: ref, MmapRef: 0})
+									}
+									refSamples = append(refSamples, record.RefSample{
+										Ref: ref,
+										T:   int64(i) * 10,
+										V:   float64(i) * 100,
+									})
+								}
+								if shouldAddMarkers {
+									populateTestWL(b, wbl, []interface{}{refMarkers})
+								}
+								populateTestWL(b, wal, []interface{}{refSamples})
+								populateTestWL(b, wbl, []interface{}{refSamples})
+							}
+						}
+
+						b.ResetTimer()
+
+						// Load the WAL.
+						for i := 0; i < b.N; i++ {
+							opts := DefaultHeadOptions()
+							opts.ChunkRange = 1000
+							opts.ChunkDirRoot = dir
+							if c.oooCapMax > 0 {
+								opts.OutOfOrderCapMax.Store(c.oooCapMax)
+							}
+							h, err := NewHead(nil, nil, wal, wbl, opts, nil)
+							require.NoError(b, err)
+							h.Init(0)
+						}
+						b.StopTimer()
+						wal.Close()
+						if wbl != nil {
+							wbl.Close()
+						}
+					})
+			}
 		}
 	}
 }
