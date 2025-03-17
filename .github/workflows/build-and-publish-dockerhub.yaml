@@ -56,8 +56,8 @@ jobs:
     steps:
     - name: Build Images Dev registry
       run: |
-        type trdl && . $(trdl use werf ${WERF_VER})
-        type werf && source $(werf ci-env github --as-file)
+        . $(trdl use werf ${WERF_VER})
+        . $(werf ci-env --as-file gitlab)
         werf build --add-custom-tag="%image%-${{ github.ref_name }}-${{ env.ARCH }}-${{ matrix.COMPILATION_MODE }}-asan-${{ matrix.ASAN }}" --repo=docker.io/prompp/prompp
 
   release:
