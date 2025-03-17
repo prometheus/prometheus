@@ -20,6 +20,8 @@ jobs:
       run:
         working-directory: pp
     runs-on: ${{ matrix.runner }}
+    container:
+      image: ${{ matrix.image }}
     strategy:
       matrix:
         ARCH: [arm64, x86_64]
