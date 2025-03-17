@@ -45,7 +45,7 @@ git:
 shell:
   install:
     - cd /src
-    - make install_dir=/tmp compilation_mode={{ env "COMPILATION_MODE" }} asan={{ env "ASAN" }} build-entrypoint
+    - make install_dir=/tmp compilation_mode={{ env "COMPILATION_MODE" "opt" }} asan={{ env "ASAN" "false" }} build-entrypoint
 ---
 image: prompp-artifact
 final: false
