@@ -300,7 +300,7 @@ func (a *HistogramAppender) appendable(h *histogram.Histogram) (
 	}
 
 	if h.Schema != a.schema || h.ZeroThreshold != a.zThreshold {
-		// This case might or might not go along with a counter reset and that
+		// This case might or might not go along with a counter reset and
 		// we do not want to invest the work of a full counter reset detection
 		// as long as https://github.com/prometheus/prometheus/issues/15346 is still open.
 		// TODO: consider adding the counter reset detection here once #15346 is fixed.
