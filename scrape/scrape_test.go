@@ -3784,3 +3784,40 @@ scrape_configs:
 		require.Equal(t, expectedSchema, h.Schema)
 	}
 }
+
+// Regression test against https://github.com/prometheus/prometheus/issues/16160.
+// The first scrape fails with a parsing error, but the second should
+// succeed and cause `metric_1=11` to appear in the appender.
+func TestScrapeAppendWithParseError(t *testing.T) {
+	const (
+		scrape1 = `metric_a 1
+`
+		scrape2 = `metric_a 11
+# EOF`
+	)
+
+	sl := newBasicScrapeLoop(t, context.Background(), nil, nil, 0)
+	sl.cache = newScrapeCache(sl.metrics)
+
+	now := time.Now()
+	capp := &collectResultAppender{next: nopAppender{}}
+	_, _, _, err := sl.append(capp, []byte(scrape1), "application/openmetrics-text", now)
+	require.Error(t, err)
+	_, _, _, err = sl.append(capp, nil, "", now)
+	require.NoError(t, err)
+	require.Empty(t, capp.resultFloats)
+
+	capp = &collectResultAppender{next: nopAppender{}}
+	_, _, _, err = sl.append(capp, []byte(scrape2), "application/openmetrics-text", now.Add(15*time.Second))
+	require.NoError(t, err)
+	require.NoError(t, capp.Commit())
+
+	want := []floatSample{
+		{
+			metric: labels.FromStrings(model.MetricNameLabel, "metric_a"),
+			t:      timestamp.FromTime(now.Add(15 * time.Second)),
+			f:      11,
+		},
+	}
+	requireEqual(t, want, capp.resultFloats, "Appended samples not as expected:\n%s", capp)
+}

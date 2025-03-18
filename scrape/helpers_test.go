@@ -44,23 +44,23 @@ func (a nopAppendable) Appender(_ context.Context) storage.Appender {
 type nopAppender struct{}
 
 func (a nopAppender) Append(storage.SeriesRef, labels.Labels, int64, float64) (storage.SeriesRef, error) {
-	return 0, nil
+	return 1, nil
 }
 
 func (a nopAppender) AppendExemplar(storage.SeriesRef, labels.Labels, exemplar.Exemplar) (storage.SeriesRef, error) {
-	return 0, nil
+	return 2, nil
 }
 
 func (a nopAppender) AppendHistogram(storage.SeriesRef, labels.Labels, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	return 0, nil
+	return 3, nil
 }
 
 func (a nopAppender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Metadata) (storage.SeriesRef, error) {
-	return 0, nil
+	return 4, nil
 }
 
 func (a nopAppender) AppendCTZeroSample(storage.SeriesRef, labels.Labels, int64, int64) (storage.SeriesRef, error) {
-	return 0, nil
+	return 5, nil
 }
 
 func (a nopAppender) Commit() error   { return nil }
