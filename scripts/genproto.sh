@@ -20,7 +20,7 @@ fi
 # Make a backup.
 cp go.sum go.sum.bak
 
-INSTALL_PKGS="golang.org/x/tools/cmd/goimports github.com/gogo/protobuf/protoc-gen-gogofast github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger"
+INSTALL_PKGS="golang.org/x/tools/cmd/goimports github.com/gogo/protobuf/protoc-gen-gogofast github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2"
 for pkg in ${INSTALL_PKGS}; do
     GO111MODULE=on go install "$pkg"
 done
@@ -29,7 +29,6 @@ PROM_ROOT="${PWD}"
 PROM_PATH="${PROM_ROOT}/prompb"
 GOGOPROTO_ROOT="$(GO111MODULE=on go list -mod=readonly -f '{{ .Dir }}' -m github.com/gogo/protobuf)"
 GOGOPROTO_PATH="${GOGOPROTO_ROOT}:${GOGOPROTO_ROOT}/protobuf"
-GRPC_GATEWAY_ROOT="$(GO111MODULE=on go list -mod=readonly -f '{{ .Dir }}' -m github.com/grpc-ecosystem/grpc-gateway)"
 
 DIRS="prompb"
 
@@ -39,7 +38,6 @@ for dir in ${DIRS}; do
 		protoc --gogofast_out=plugins=grpc:. -I=. \
             -I="${GOGOPROTO_PATH}" \
             -I="${PROM_PATH}" \
-            -I="${GRPC_GATEWAY_ROOT}/third_party/googleapis" \
             ./*.proto
 		protoc --gogofast_out=plugins=grpc:. -I=. \
             -I="${GOGOPROTO_PATH}" \
