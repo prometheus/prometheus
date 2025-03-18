@@ -384,7 +384,7 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "http://example.org/federate?match[]=test_metric", nil)
-	req.Header.Add("Accept", `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited,application/openmetrics-text;version=1.0.0;q=0.8,application/openmetrics-text;version=0.0.1;q=0.75,text/plain;version=0.0.4;q=0.5,*/*;q=0.1`)
+	req.Header.Add("Accept", `application/vnd.google.protobuf;proto=io.prometheus.client.MetricDescriptor;encoding=delimited,application/openmetrics-text;version=1.0.0;q=0.8,application/openmetrics-text;version=0.0.1;q=0.75,text/plain;version=0.0.4;q=0.5,*/*;q=0.1`)
 	res := httptest.NewRecorder()
 
 	h.federation(res, req)
@@ -392,7 +392,7 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 	require.Equal(t, http.StatusOK, res.Code)
 	body, err := io.ReadAll(res.Body)
 	require.NoError(t, err)
-	p := textparse.NewProtobufParser(body, false, labels.NewSymbolTable())
+	p := textparse.NewProtobufParser(body, false, false, labels.NewSymbolTable())
 	var actVec promql.Vector
 	metricFamilies := 0
 	l := labels.Labels{}

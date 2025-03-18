@@ -209,6 +209,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 			opts.convertClassicHistToNHCB,
 			options.EnableNativeHistogramsIngestion,
 			options.EnableCreatedTimestampZeroIngestion,
+			options.EnableTypeAndUnitLabels,
 			options.ExtraMetrics,
 			options.AppendMetadata,
 			opts.target,
@@ -932,6 +933,7 @@ type scrapeLoop struct {
 	// Feature flagged options.
 	enableNativeHistogramIngestion bool
 	enableCTZeroIngestion          bool
+	enableTypeAndUnitLabels        bool
 
 	appender            func(ctx context.Context) storage.Appender
 	symbolTable         *labels.SymbolTable
@@ -1239,6 +1241,7 @@ func newScrapeLoop(ctx context.Context,
 	convertClassicHistToNHCB bool,
 	enableNativeHistogramIngestion bool,
 	enableCTZeroIngestion bool,
+	enableTypeAndUnitLabels bool,
 	reportExtraMetrics bool,
 	appendMetadataToWAL bool,
 	target *Target,
@@ -1296,6 +1299,7 @@ func newScrapeLoop(ctx context.Context,
 		convertClassicHistToNHCB:       convertClassicHistToNHCB,
 		enableNativeHistogramIngestion: enableNativeHistogramIngestion,
 		enableCTZeroIngestion:          enableCTZeroIngestion,
+		enableTypeAndUnitLabels:        enableTypeAndUnitLabels,
 		reportExtraMetrics:             reportExtraMetrics,
 		appendMetadataToWAL:            appendMetadataToWAL,
 		metrics:                        metrics,
@@ -1622,7 +1626,7 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 		return
 	}
 
-	p, err := textparse.New(b, contentType, sl.fallbackScrapeProtocol, sl.alwaysScrapeClassicHist, sl.enableCTZeroIngestion, sl.symbolTable)
+	p, err := textparse.New(b, contentType, sl.fallbackScrapeProtocol, sl.alwaysScrapeClassicHist, sl.enableCTZeroIngestion, sl.enableTypeAndUnitLabels, sl.symbolTable)
 	if p == nil {
 		sl.l.Error(
 			"Failed to determine correct type of scrape target.",

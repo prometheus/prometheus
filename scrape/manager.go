@@ -87,6 +87,9 @@ type Options struct {
 	// Option to enable the ingestion of native histograms.
 	EnableNativeHistogramsIngestion bool
 
+	// EnableTypeAndUnitLabels
+	EnableTypeAndUnitLabels bool
+
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption
 

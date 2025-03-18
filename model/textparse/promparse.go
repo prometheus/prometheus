@@ -160,16 +160,19 @@ type PromParser struct {
 	// of the metric name and label names and values for this series.
 	// p.offsets[0] is the start character of the metric name.
 	// p.offsets[1] is the end of the metric name.
-	// Subsequently, p.offsets is a pair of pair of offsets for the positions
+	// Subsequently, p.offsets is a pair of offsets for the positions
 	// of the label name and value start and end characters.
 	offsets []int
+
+	enableTypeAndUnitLabels bool
 }
 
 // NewPromParser returns a new parser of the byte slice.
-func NewPromParser(b []byte, st *labels.SymbolTable) Parser {
+func NewPromParser(b []byte, st *labels.SymbolTable, enableTypeAndUnitLabels bool) Parser {
 	return &PromParser{
-		l:       &promlexer{b: append(b, '\n')},
-		builder: labels.NewScratchBuilderWithSymbolTable(st, 16),
+		l:                       &promlexer{b: append(b, '\n')},
+		builder:                 labels.NewScratchBuilderWithSymbolTable(st, 16),
+		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
 	}
 }
 
@@ -229,12 +232,23 @@ func (p *PromParser) Labels(l *labels.Labels) {
 
 	p.builder.Reset()
 	metricName := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
-	p.builder.Add(labels.MetricName, metricName)
+	if p.enableTypeAndUnitLabels {
+		p.builder.AddMetricIdentity(labels.MetricDescriptor{
+			Name: metricName,
+			Type: p.mtype,
+		})
+	} else {
+		p.builder.Add(labels.MetricName, metricName)
+	}
 
 	for i := 2; i < len(p.offsets); i += 4 {
 		a := p.offsets[i] - p.start
 		b := p.offsets[i+1] - p.start
 		label := unreplace(s[a:b])
+		if p.enableTypeAndUnitLabels && labels.IsMetricIdentityLabel(label) {
+			// Dropping user provided id labels if needed.
+			continue
+		}
 		c := p.offsets[i+2] - p.start
 		d := p.offsets[i+3] - p.start
 		value := normalizeFloatsInLabelValues(p.mtype, label, unreplace(s[c:d]))

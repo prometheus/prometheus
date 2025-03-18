@@ -982,6 +982,7 @@ func newBasicScrapeLoopWithFallback(t testing.TB, ctx context.Context, scraper s
 		false,
 		false,
 		false,
+		false,
 		true,
 		nil,
 		false,
@@ -1130,6 +1131,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		false,
 		false,
 		false,
+		false,
 		nil,
 		false,
 		scrapeMetrics,
@@ -1272,6 +1274,7 @@ func TestScrapeLoopMetadata(t *testing.T) {
 		nil,
 		0,
 		0,
+		false,
 		false,
 		false,
 		false,
@@ -2005,7 +2008,7 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 	fakeRef := storage.SeriesRef(1)
 	expValue := float64(1)
 	metric := []byte(`metric{n="1"} 1`)
-	p, warning := textparse.New(metric, "text/plain", "", false, false, labels.NewSymbolTable())
+	p, warning := textparse.New(metric, "text/plain", "", false, false, false, labels.NewSymbolTable())
 	require.NotNil(t, p)
 	require.NoError(t, warning)
 
@@ -3085,7 +3088,7 @@ func TestAcceptHeader(t *testing.T) {
 			name:            "default proto first scrape protocols with underscore escaping",
 			scrapeProtocols: config.DefaultProtoFirstScrapeProtocols,
 			scheme:          model.DotsEscaping,
-			expectedHeader:  "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.6,application/openmetrics-text;version=1.0.0;escaping=dots;q=0.5,application/openmetrics-text;version=0.0.1;q=0.4,text/plain;version=1.0.0;escaping=dots;q=0.3,text/plain;version=0.0.4;q=0.2,*/*;q=0.1",
+			expectedHeader:  "application/vnd.google.protobuf;proto=io.prometheus.client.MetricDescriptor;encoding=delimited;q=0.6,application/openmetrics-text;version=1.0.0;escaping=dots;q=0.5,application/openmetrics-text;version=0.0.1;q=0.4,text/plain;version=1.0.0;escaping=dots;q=0.3,text/plain;version=0.0.4;q=0.2,*/*;q=0.1",
 		},
 		{
 			name:            "default scrape protocols with no escaping",
@@ -3097,7 +3100,7 @@ func TestAcceptHeader(t *testing.T) {
 			name:            "default proto first scrape protocols with no escaping",
 			scrapeProtocols: config.DefaultProtoFirstScrapeProtocols,
 			scheme:          model.NoEscaping,
-			expectedHeader:  "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.6,application/openmetrics-text;version=1.0.0;escaping=allow-utf-8;q=0.5,application/openmetrics-text;version=0.0.1;q=0.4,text/plain;version=1.0.0;escaping=allow-utf-8;q=0.3,text/plain;version=0.0.4;q=0.2,*/*;q=0.1",
+			expectedHeader:  "application/vnd.google.protobuf;proto=io.prometheus.client.MetricDescriptor;encoding=delimited;q=0.6,application/openmetrics-text;version=1.0.0;escaping=allow-utf-8;q=0.5,application/openmetrics-text;version=0.0.1;q=0.4,text/plain;version=1.0.0;escaping=allow-utf-8;q=0.3,text/plain;version=0.0.4;q=0.2,*/*;q=0.1",
 		},
 	}
 
@@ -4704,7 +4707,7 @@ metric: <
 
 				ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					if metricsText.contentType != "" {
-						w.Header().Set("Content-Type", `application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited`)
+						w.Header().Set("Content-Type", `application/vnd.google.protobuf; proto=io.prometheus.client.MetricDescriptor; encoding=delimited`)
 						for _, text := range metricsText.text {
 							buf := &bytes.Buffer{}
 							// In case of protobuf, we have to create the binary representation.
@@ -5144,7 +5147,7 @@ func testNativeHistogramMaxSchemaSet(t *testing.T, minBucketFactor string, expec
 
 	// Create a HTTP server to serve /metrics via ProtoBuf
 	metricsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", `application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited`)
+		w.Header().Set("Content-Type", `application/vnd.google.protobuf; proto=io.prometheus.client.MetricDescriptor; encoding=delimited`)
 		w.Write(buffer)
 	}))
 	defer metricsServer.Close()
