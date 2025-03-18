@@ -2,6 +2,7 @@
 
 ## unreleased
 
+* [FEATURE] OTLP translate: Add feature flag for optionally translating OTel explicit bucket histograms into native histograms with custom buckets. #15850
 * [CHANGE] Make setting out-of-order native histograms feature (`--enable-feature=ooo-native-histograms`) a no-op. Out-of-order native histograms are now always enabled when `out_of_order_time_window` is greater than zero and `--enable-feature=native-histograms` is set. #16207
 * [ENHANCEMENT] TSDB: add `prometheus_tsdb_wal_replay_unknown_refs_total` and `prometheus_tsdb_wbl_replay_unknown_refs_total` metrics to track unknown series references during WAL/WBL replay. #16166
 * [BUGFIX] TSDB: fix unknown series errors and possible lost data during WAL replay when series are removed from the head due to inactivity and reappear before the next WAL checkpoint. #16060
