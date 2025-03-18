@@ -332,9 +332,9 @@ func TestReadClient(t *testing.T) {
 		},
 		{
 			name:                  "timeout",
-			httpHandler:           sampledResponseHTTPHandler(t),
-			timeout:               time.Nanosecond,
-			expectedErrorContains: "context deadline exceeded: request timed out after 1ns",
+			httpHandler:           delayedResponseHTTPHandler(t, 15*time.Millisecond),
+			timeout:               5 * time.Millisecond,
+			expectedErrorContains: "context deadline exceeded: request timed out after 5ms",
 		},
 	}
 
@@ -442,6 +442,19 @@ func sampledResponseHTTPHandler(t *testing.T) http.HandlerFunc {
 			},
 		}
 		b, err := proto.Marshal(&resp)
+		require.NoError(t, err)
+
+		_, err = w.Write(snappy.Encode(nil, b))
+		require.NoError(t, err)
+	}
+}
+
+func delayedResponseHTTPHandler(t *testing.T, delay time.Duration) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(delay)
+
+		w.Header().Set("Content-Type", "application/x-protobuf")
+		b, err := proto.Marshal(&prompb.ReadResponse{})
 		require.NoError(t, err)
 
 		_, err = w.Write(snappy.Encode(nil, b))
