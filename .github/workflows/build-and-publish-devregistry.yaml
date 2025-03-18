@@ -10,42 +10,19 @@ on:
   push:
     branches:
       - pp
-  pull_request_target:
+  pull_request:
     types:
       - opened
       - synchronize
       - reopened
 
 env:
-  WERF_VER: "2 alpha"
   WERF_TELEMETRY: "1"
   WERF_TELEMETRY_LOGS: "0"
   WERF_PARALLEL_TASKS_LIMIT: 10
 
 jobs:
   preps:
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      matrix:
-        ARCH: [arm64, x86_64]
-        include:
-          - ARCH: arm64
-            runner: fsn-dev-arm-runner
-          - ARCH: x86_64
-            runner: fsn-dev-gitlab-runner
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Login to Dev Registry
-        uses: docker/login-action@v2.1.0
-        with:
-          registry: ${{ secrets.DEV_REGISTRY }}
-          username: ${{ secrets.DEV_REGISTRY_LOGIN }}
-          password: ${{ secrets.DEV_REGISTRY_PASSWORD }}
-          logout: false
-  build:
-    needs: preps
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
@@ -58,8 +35,15 @@ jobs:
           - ARCH: x86_64
             runner: fsn-dev-gitlab-runner
     steps:
-    - name: Build Images Dev registry
-      run: |
-        . $(trdl use werf ${WERF_VER})
-        . $(werf ci-env --as-file gitlab)
-        werf build --add-custom-tag="%image%-${{ github.ref_name }}-${{ env.ARCH }}-${{ matrix.COMPILATION_MODE }}-asan-${{ matrix.ASAN }} --repo=${{ secrets.DEV_REGISTRY }}/prompp/prompp"
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - uses: deckhouse/modules-actions/setup@v2
+        with:
+          registry: ${{ secrets.DEV_REGISTRY }}
+          registry_login: ${{ secrets.DEV_REGISTRY_LOGIN }}
+          registry_password: ${{ secrets.DEV_REGISTRY_PASSWORD }}
+
+      - name: Build Images Dev registry
+        run: |
+          werf build --add-custom-tag="%image%-${{ github.ref_name }}-${{ env.ARCH }}-${{ matrix.COMPILATION_MODE }}-asan-${{ matrix.ASAN }} --repo=${{ secrets.DEV_REGISTRY }}/prompp/prompp"

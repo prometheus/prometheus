@@ -5,7 +5,7 @@ on:
     workflows: ["Run Tests for C++ Code"]
     types: 
       - completed
-  pull_request_target:
+  pull_request:
     types:
       - opened
       - synchronize
