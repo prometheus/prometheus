@@ -469,9 +469,15 @@ func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (*FloatHistogram, *F
 	switch {
 	case other.Schema < h.Schema:
 		hPositiveSpans, hPositiveBuckets, cPositiveBuckets = kahanReduceResolution(
-			hPositiveSpans, hPositiveBuckets, cPositiveBuckets, h.Schema, other.Schema, false, true)
+			hPositiveSpans, hPositiveBuckets, cPositiveBuckets,
+			h.Schema, other.Schema,
+			true,
+		)
 		hNegativeSpans, hNegativeBuckets, cNegativeBuckets = kahanReduceResolution(
-			hNegativeSpans, hNegativeBuckets, cNegativeBuckets, h.Schema, other.Schema, false, true)
+			hNegativeSpans, hNegativeBuckets, cNegativeBuckets,
+			h.Schema, other.Schema,
+			true,
+		)
 		h.Schema = other.Schema
 		c.Schema = other.Schema
 
@@ -608,9 +614,9 @@ func (h *FloatHistogram) KahanSub(other, c *FloatHistogram) (*FloatHistogram, *F
 	switch {
 	case other.Schema < h.Schema:
 		hPositiveSpans, hPositiveBuckets, cPositiveBuckets = kahanReduceResolution(
-			hPositiveSpans, hPositiveBuckets, cPositiveBuckets, h.Schema, other.Schema, false, true)
+			hPositiveSpans, hPositiveBuckets, cPositiveBuckets, h.Schema, other.Schema, true)
 		hNegativeSpans, hNegativeBuckets, cNegativeBuckets = kahanReduceResolution(
-			hNegativeSpans, hNegativeBuckets, cNegativeBuckets, h.Schema, other.Schema, false, true)
+			hNegativeSpans, hNegativeBuckets, cNegativeBuckets, h.Schema, other.Schema, true)
 		h.Schema = other.Schema
 		c.Schema = other.Schema
 

@@ -866,8 +866,9 @@ func mustReduceResolution[IBC InternalBucketCount](
 	return targetSpans, targetBuckets
 }
 
-// kahanReduceResolution works like reduceResolution but it is used in FloatHistogram's KahanAdd method and takes
-// an additional argument, originCompBuckets, representing the compensation buckets for the origin histogram.
+// kahanReduceResolution works like reduceResolution, but it is specialized for FloatHistogram's KahanAdd method.
+// Unlike reduceResolution, which supports both float and integer buckets, this function only operates on float buckets.
+// It also takes an additional argument, originCompBuckets, representing the compensation buckets for the origin histogram.
 // This function modifies both the buckets of the origin histogram and its corresponding compensation histogram.
 func kahanReduceResolution(
 	originSpans []Span,
@@ -875,21 +876,16 @@ func kahanReduceResolution(
 	originCompBuckets []float64,
 	originSchema,
 	targetSchema int32,
-	deltaBuckets bool,
 	inplace bool,
 ) (newSpans []Span, newReceivingBuckets []float64, newCompBuckets []float64) {
 	var (
-		targetSpans                    []Span    // The spans in the target schema.
-		targetReceivingBuckets         []float64 // The receiving bucket counts in the target schema.
-		targetCompBuckets              []float64 // The compensation bucket counts in the target schema.
-		bucketIdx                      int32     // The index of bucket in the origin schema.
-		bucketCountIdx                 int       // The position of a bucket in origin bucket count slice `originBuckets`.
-		targetBucketIdx                int32     // The index of bucket in the target schema.
-		lastReceivingBucketCount       float64   // The last visited receiving bucket's count in the origin schema.
-		lastCompBucketCount            float64   // The last visited compensation bucket's count in the origin schema.
-		lastTargetBucketIdx            int32     // The index of the last added target bucket.
-		lastTargetReceivingBucketCount float64
-		lastTargetCompBucketCount      float64
+		targetSpans            []Span    // The spans in the target schema.
+		targetReceivingBuckets []float64 // The receiving bucket counts in the target schema.
+		targetCompBuckets      []float64 // The compensation bucket counts in the target schema.
+		bucketIdx              int32     // The index of bucket in the origin schema.
+		bucketCountIdx         int       // The position of a bucket in origin bucket count slice `originBuckets`.
+		targetBucketIdx        int32     // The index of bucket in the target schema.
+		lastTargetBucketIdx    int32     // The index of the last added target bucket.
 	)
 
 	if inplace {
@@ -917,27 +913,12 @@ func kahanReduceResolution(
 				targetSpans = append(targetSpans, span)
 				targetReceivingBuckets = append(targetReceivingBuckets, originReceivingBuckets[bucketCountIdx])
 				lastTargetBucketIdx = targetBucketIdx
-				lastReceivingBucketCount = originReceivingBuckets[bucketCountIdx]
-				lastTargetReceivingBucketCount = originReceivingBuckets[bucketCountIdx]
-
 				targetCompBuckets = append(targetCompBuckets, originCompBuckets[bucketCountIdx])
-				lastCompBucketCount = originCompBuckets[bucketCountIdx]
-				lastTargetCompBucketCount = originCompBuckets[bucketCountIdx]
 
 			case lastTargetBucketIdx == targetBucketIdx:
 				// The current bucket has to be merged into the same target bucket as the previous bucket.
-				if deltaBuckets {
-					lastReceivingBucketCount += originReceivingBuckets[bucketCountIdx]
-					targetReceivingBuckets[len(targetReceivingBuckets)-1] += lastReceivingBucketCount
-					lastTargetReceivingBucketCount += lastReceivingBucketCount
-
-					lastCompBucketCount += originCompBuckets[bucketCountIdx]
-					targetCompBuckets[len(targetCompBuckets)-1] += lastCompBucketCount
-					lastTargetCompBucketCount += lastCompBucketCount
-				} else {
-					targetReceivingBuckets[len(targetReceivingBuckets)-1] += originReceivingBuckets[bucketCountIdx]
-					targetCompBuckets[len(targetCompBuckets)-1] += originCompBuckets[bucketCountIdx]
-				}
+				targetReceivingBuckets[len(targetReceivingBuckets)-1] += originReceivingBuckets[bucketCountIdx]
+				targetCompBuckets[len(targetCompBuckets)-1] += originCompBuckets[bucketCountIdx]
 
 			case (lastTargetBucketIdx + 1) == targetBucketIdx:
 				// The current bucket has to go into a new target bucket,
@@ -945,18 +926,8 @@ func kahanReduceResolution(
 				// so we add it to the current target span.
 				targetSpans[len(targetSpans)-1].Length++
 				lastTargetBucketIdx++
-				if deltaBuckets {
-					lastReceivingBucketCount += originReceivingBuckets[bucketCountIdx]
-					targetReceivingBuckets = append(targetReceivingBuckets, lastReceivingBucketCount-lastTargetReceivingBucketCount)
-					lastTargetReceivingBucketCount = lastReceivingBucketCount
-
-					lastCompBucketCount += originCompBuckets[bucketCountIdx]
-					targetCompBuckets = append(targetCompBuckets, lastCompBucketCount-lastTargetCompBucketCount)
-					lastTargetCompBucketCount = lastCompBucketCount
-				} else {
-					targetReceivingBuckets = append(targetReceivingBuckets, originReceivingBuckets[bucketCountIdx])
-					targetCompBuckets = append(targetCompBuckets, originCompBuckets[bucketCountIdx])
-				}
+				targetReceivingBuckets = append(targetReceivingBuckets, originReceivingBuckets[bucketCountIdx])
+				targetCompBuckets = append(targetCompBuckets, originCompBuckets[bucketCountIdx])
 
 			case (lastTargetBucketIdx + 1) < targetBucketIdx:
 				// The current bucket has to go into a new target bucket,
@@ -968,18 +939,8 @@ func kahanReduceResolution(
 				}
 				targetSpans = append(targetSpans, span)
 				lastTargetBucketIdx = targetBucketIdx
-				if deltaBuckets {
-					lastReceivingBucketCount += originReceivingBuckets[bucketCountIdx]
-					targetReceivingBuckets = append(targetReceivingBuckets, lastReceivingBucketCount-lastTargetReceivingBucketCount)
-					lastTargetReceivingBucketCount = lastReceivingBucketCount
-
-					lastCompBucketCount += originCompBuckets[bucketCountIdx]
-					targetCompBuckets = append(targetCompBuckets, lastCompBucketCount-lastTargetCompBucketCount)
-					lastTargetCompBucketCount = lastCompBucketCount
-				} else {
-					targetReceivingBuckets = append(targetReceivingBuckets, originReceivingBuckets[bucketCountIdx])
-					targetCompBuckets = append(targetCompBuckets, originCompBuckets[bucketCountIdx])
-				}
+				targetReceivingBuckets = append(targetReceivingBuckets, originReceivingBuckets[bucketCountIdx])
+				targetCompBuckets = append(targetCompBuckets, originCompBuckets[bucketCountIdx])
 			}
 
 			bucketIdx++
