@@ -789,7 +789,7 @@ func (a *headAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, lset l
 			s.lastHistogramValue = zeroHistogram
 		}
 
-		// Although we call `appendableHistogram` with oooHistogramsEnabled=true, for CTZeroSamples OOO is not allowed.
+		// For CTZeroSamples OOO is not allowed.
 		// We set it to true to make this implementation as close as possible to the float implementation.
 		isOOO, _, err := s.appendableHistogram(ct, zeroHistogram, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		if err != nil {
