@@ -896,6 +896,20 @@ func (c *ScrapeConfig) MarshalYAML() (interface{}, error) {
 	return discovery.MarshalYAMLWithInlineConfigs(c)
 }
 
+// ToValidationScheme returns the validation scheme for the given string config value.
+func ToValidationScheme(s string) (validationScheme model.ValidationScheme, err error) {
+	switch s {
+	case UTF8ValidationConfig:
+		validationScheme = model.UTF8Validation
+	case LegacyValidationConfig:
+		validationScheme = model.LegacyValidation
+	default:
+		return model.UTF8Validation, fmt.Errorf("invalid metric name validation scheme, %s", s)
+	}
+
+	return validationScheme, nil
+}
+
 // StorageConfig configures runtime reloadable configuration options.
 type StorageConfig struct {
 	TSDBConfig      *TSDBConfig      `yaml:"tsdb,omitempty"`
