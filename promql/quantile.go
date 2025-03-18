@@ -485,7 +485,7 @@ func BucketFraction(lower, upper float64, buckets Buckets) float64 {
 		upperBound := b.UpperBound
 
 		interpolateLinearly := func(v float64) float64 {
-			return rank + b.Count*(v-lowerBound)/(upperBound-lowerBound)
+			return rank + (b.Count-rank)*(v-lowerBound)/(upperBound-lowerBound)
 		}
 
 		if !lowerSet && lowerBound >= lower {

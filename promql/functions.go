@@ -20,7 +20,6 @@ import (
 	"math"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -1439,60 +1438,10 @@ func funcHistogramFraction(vals []parser.Value, args parser.Expressions, enh *Ev
 	upper := vals[1].(Vector)[0].F
 	inVec := vals[2].(Vector)
 
-	if enh.signatureToMetricWithBuckets == nil {
-		enh.signatureToMetricWithBuckets = map[string]*metricWithBuckets{}
-	} else {
-		for _, v := range enh.signatureToMetricWithBuckets {
-			v.buckets = v.buckets[:0]
-		}
-	}
+	annos := enh.resetHistograms(inVec, args[2])
 
-	var (
-		annos            annotations.Annotations
-		histogramSamples []Sample
-	)
-
-	for _, sample := range inVec {
-		// We are only looking for classic buckets here. Remember
-		// the histograms for later treatment.
-		if sample.H != nil {
-			histogramSamples = append(histogramSamples, sample)
-			continue
-		}
-
-		upperBound, err := strconv.ParseFloat(
-			sample.Metric.Get(model.BucketLabel), 64,
-		)
-		if err != nil {
-			annos.Add(annotations.NewBadBucketLabelWarning(sample.Metric.Get(labels.MetricName), sample.Metric.Get(model.BucketLabel), args[2].PositionRange()))
-			continue
-		}
-		enh.lblBuf = sample.Metric.BytesWithoutLabels(enh.lblBuf, labels.BucketLabel)
-		mb, ok := enh.signatureToMetricWithBuckets[string(enh.lblBuf)]
-		if !ok {
-			sample.Metric = labels.NewBuilder(sample.Metric).
-				Del(excludedLabels...).
-				Labels()
-			mb = &metricWithBuckets{sample.Metric, nil}
-			enh.signatureToMetricWithBuckets[string(enh.lblBuf)] = mb
-		}
-		mb.buckets = append(mb.buckets, Bucket{upperBound, sample.F})
-	}
-
-	// Now deal with the native histograms.
-	for _, sample := range histogramSamples {
-		// We have to reconstruct the exact same signature as above for
-		// a classic histogram, just ignoring any le label.
-		enh.lblBuf = sample.Metric.Bytes(enh.lblBuf)
-		if mb, ok := enh.signatureToMetricWithBuckets[string(enh.lblBuf)]; ok && len(mb.buckets) > 0 {
-			// At this data point, we have classic histogram
-			// buckets and a native histogram with the same name and
-			// labels. Do not evaluate anything.
-			annos.Add(annotations.NewMixedClassicNativeHistogramsWarning(sample.Metric.Get(labels.MetricName), args[1].PositionRange()))
-			delete(enh.signatureToMetricWithBuckets, string(enh.lblBuf))
-			continue
-		}
-
+	// Deal with the native histograms.
+	for _, sample := range enh.nativeHistogramSamples {
 		if !enh.enableDelayedNameRemoval {
 			sample.Metric = sample.Metric.DropMetricName()
 		}
@@ -1503,7 +1452,7 @@ func funcHistogramFraction(vals []parser.Value, args parser.Expressions, enh *Ev
 		})
 	}
 
-	// Now do classic histograms that have already been filtered for conflicting native histograms.
+	// Deal with classic histograms that have already been filtered for conflicting native histograms.
 	for _, mb := range enh.signatureToMetricWithBuckets {
 		if len(mb.buckets) == 0 {
 			continue
@@ -1519,7 +1468,7 @@ func funcHistogramFraction(vals []parser.Value, args parser.Expressions, enh *Ev
 		})
 	}
 
-	return enh.Out, nil
+	return enh.Out, annos
 }
 
 // === histogram_quantile(k parser.ValueTypeScalar, Vector parser.ValueTypeVector) (Vector, Annotations) ===
@@ -1531,58 +1480,10 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 	if math.IsNaN(q) || q < 0 || q > 1 {
 		annos.Add(annotations.NewInvalidQuantileWarning(q, args[0].PositionRange()))
 	}
+	annos.Merge(enh.resetHistograms(inVec, args[1]))
 
-	if enh.signatureToMetricWithBuckets == nil {
-		enh.signatureToMetricWithBuckets = map[string]*metricWithBuckets{}
-	} else {
-		for _, v := range enh.signatureToMetricWithBuckets {
-			v.buckets = v.buckets[:0]
-		}
-	}
-
-	var histogramSamples []Sample
-
-	for _, sample := range inVec {
-		// We are only looking for classic buckets here. Remember
-		// the histograms for later treatment.
-		if sample.H != nil {
-			histogramSamples = append(histogramSamples, sample)
-			continue
-		}
-
-		upperBound, err := strconv.ParseFloat(
-			sample.Metric.Get(model.BucketLabel), 64,
-		)
-		if err != nil {
-			annos.Add(annotations.NewBadBucketLabelWarning(sample.Metric.Get(labels.MetricName), sample.Metric.Get(model.BucketLabel), args[1].PositionRange()))
-			continue
-		}
-		enh.lblBuf = sample.Metric.BytesWithoutLabels(enh.lblBuf, labels.BucketLabel)
-		mb, ok := enh.signatureToMetricWithBuckets[string(enh.lblBuf)]
-		if !ok {
-			sample.Metric = labels.NewBuilder(sample.Metric).
-				Del(excludedLabels...).
-				Labels()
-			mb = &metricWithBuckets{sample.Metric, nil}
-			enh.signatureToMetricWithBuckets[string(enh.lblBuf)] = mb
-		}
-		mb.buckets = append(mb.buckets, Bucket{upperBound, sample.F})
-	}
-
-	// Now deal with the native histograms.
-	for _, sample := range histogramSamples {
-		// We have to reconstruct the exact same signature as above for
-		// a classic histogram, just ignoring any le label.
-		enh.lblBuf = sample.Metric.Bytes(enh.lblBuf)
-		if mb, ok := enh.signatureToMetricWithBuckets[string(enh.lblBuf)]; ok && len(mb.buckets) > 0 {
-			// At this data point, we have classic histogram
-			// buckets and a native histogram with the same name and
-			// labels. Do not evaluate anything.
-			annos.Add(annotations.NewMixedClassicNativeHistogramsWarning(sample.Metric.Get(labels.MetricName), args[1].PositionRange()))
-			delete(enh.signatureToMetricWithBuckets, string(enh.lblBuf))
-			continue
-		}
-
+	// Deal with the native histograms.
+	for _, sample := range enh.nativeHistogramSamples {
 		if !enh.enableDelayedNameRemoval {
 			sample.Metric = sample.Metric.DropMetricName()
 		}
@@ -1593,7 +1494,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 		})
 	}
 
-	// Now do classic histograms that have already been filtered for conflicting native histograms.
+	// Deal with classic histograms that have already been filtered for conflicting native histograms.
 	for _, mb := range enh.signatureToMetricWithBuckets {
 		if len(mb.buckets) > 0 {
 			res, forcedMonotonicity, _ := BucketQuantile(q, mb.buckets)

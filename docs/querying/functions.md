@@ -253,10 +253,20 @@ histogram samples:
 
 ## `histogram_fraction()`
 
-`histogram_fraction(lower scalar, upper scalar, v instant-vector)` returns the
+`histogram_fraction(lower scalar, upper scalar, b instant-vector)` returns the
 estimated fraction of observations between the provided lower and upper values
-for each histogram sample in `v`. Float samples are ignored and do not show up
-in the returned vector.
+for each histogram sample in `b`.
+It can handle
+[classic histograms](https://prometheus.io/docs/concepts/metric_types/#histogram)
+or native histograms.
+If used with classic histogram take care that the `lower` and `upper` values dont
+stray far from the exported bucket boundaries, otherwise interpolation will lead
+to a potentially large margin of error. The interpolation method for classic historams
+is the same as the one used for `histogram_quantile()`.
+(See
+[here](https://prometheus.io/docs/practices/histograms/#apdex-score) for a more
+informed approach to compute fractions for classic histograms using the exported
+bucket boundaries directly.)
 
 For example, the following expression calculates the fraction of HTTP requests
 over the last hour that took 200ms or less:
@@ -280,8 +290,8 @@ feature inclusive upper boundaries and exclusive lower boundaries for positive
 values, and vice versa for negative values.) Without a precise alignment of
 boundaries, the function uses interpolation to estimate the fraction. With the
 resulting uncertainty, it becomes irrelevant if the boundaries are inclusive or
-exclusive. The interpolation method is the same as the one used for
-`histogram_quantile()`. See there for more details.
+exclusive.
+
 
 ## `histogram_quantile()`
 
