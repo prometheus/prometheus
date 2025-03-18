@@ -1507,8 +1507,6 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 			expectedMinMaxTimes: []minMaxTimes{{7, 12}, {11, 16}, {10, 203}},
 		},
 		{
-			// This case won't actually happen until OOO native histograms is implemented.
-			// Issue: https://github.com/prometheus/prometheus/issues/11220.
 			name: "int histogram iterables with counter resets",
 			samples: [][]chunks.Sample{
 				{
@@ -1578,8 +1576,6 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 			skipChunkTest: true,
 		},
 		{
-			// This case won't actually happen until OOO native histograms is implemented.
-			// Issue: https://github.com/prometheus/prometheus/issues/11220.
 			name: "float histogram iterables with counter resets",
 			samples: [][]chunks.Sample{
 				{
@@ -1649,8 +1645,6 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 			skipChunkTest: true,
 		},
 		{
-			// This case won't actually happen until OOO native histograms is implemented.
-			// Issue: https://github.com/prometheus/prometheus/issues/11220.
 			name: "iterables with mixed encodings and counter resets",
 			samples: [][]chunks.Sample{
 				{

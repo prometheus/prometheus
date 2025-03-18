@@ -8966,7 +8966,7 @@ func TestNativeHistogramFlag(t *testing.T) {
 	}, act)
 }
 
-func TestOOONativeHistogramFlag(t *testing.T) {
+func TestOOONativeHistogramsSettings(t *testing.T) {
 	h := &histogram.Histogram{
 		Count:         9,
 		ZeroCount:     4,
@@ -8982,7 +8982,7 @@ func TestOOONativeHistogramFlag(t *testing.T) {
 
 	l := labels.FromStrings("foo", "bar")
 
-	t.Run("Test OOO native histograms if OOO is disabled", func(t *testing.T) {
+	t.Run("Test OOO native histograms if OOO is disabled and Native Histograms is enabled", func(t *testing.T) {
 		opts := DefaultOptions()
 		opts.OutOfOrderTimeWindow = 0
 		db := openTestDB(t, opts, []int64{100})
@@ -8990,7 +8990,6 @@ func TestOOONativeHistogramFlag(t *testing.T) {
 			require.NoError(t, db.Close())
 		}()
 
-		// Enable Native Histograms and OOO Native Histogram ingestion
 		db.EnableNativeHistograms()
 
 		app := db.Appender(context.Background())
@@ -9009,7 +9008,7 @@ func TestOOONativeHistogramFlag(t *testing.T) {
 			l.String(): {sample{t: 100, h: h}},
 		}, act)
 	})
-	t.Run("Test OOO Native Histograms if Native Histograms are disabled", func(t *testing.T) {
+	t.Run("Test OOO Native Histograms if OOO is enabled and Native Histograms are disabled", func(t *testing.T) {
 		opts := DefaultOptions()
 		opts.OutOfOrderTimeWindow = 100
 		db := openTestDB(t, opts, []int64{100})
@@ -9017,7 +9016,6 @@ func TestOOONativeHistogramFlag(t *testing.T) {
 			require.NoError(t, db.Close())
 		}()
 
-		// Disable Native Histograms and enable OOO Native Histogram ingestion
 		db.DisableNativeHistograms()
 
 		// Attempt to add an in-order sample
@@ -9036,7 +9034,7 @@ func TestOOONativeHistogramFlag(t *testing.T) {
 		act := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 		require.Equal(t, map[string][]chunks.Sample{}, act)
 	})
-	t.Run("Test OOO native histograms when flag is enabled", func(t *testing.T) {
+	t.Run("Test OOO native histograms when both OOO and Native Histograms are enabled", func(t *testing.T) {
 		opts := DefaultOptions()
 		opts.OutOfOrderTimeWindow = 100
 		db := openTestDB(t, opts, []int64{100})
@@ -9044,7 +9042,6 @@ func TestOOONativeHistogramFlag(t *testing.T) {
 			require.NoError(t, db.Close())
 		}()
 
-		// Enable Native Histograms and OOO Native Histogram ingestion
 		db.EnableNativeHistograms()
 
 		// Add in-order samples
