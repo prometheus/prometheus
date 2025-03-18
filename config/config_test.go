@@ -2113,6 +2113,7 @@ func TestEmptyConfig(t *testing.T) {
 	require.NoError(t, err)
 	exp := DefaultConfig
 	require.Equal(t, exp, *c)
+	require.Equal(t, 75, c.Runtime.GoGC)
 }
 
 func TestExpandExternalLabels(t *testing.T) {
@@ -2164,7 +2165,6 @@ func TestEmptyGlobalBlock(t *testing.T) {
 	c, err := Load("global:\n", false, log.NewNopLogger())
 	require.NoError(t, err)
 	exp := DefaultConfig
-	exp.Runtime = DefaultRuntimeConfig
 	require.Equal(t, exp, *c)
 }
 
