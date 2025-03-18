@@ -184,3 +184,24 @@ Enabling this _can_ have negative impact on performance, because the in-memory
 state is mutex guarded. Cumulative-only OTLP requests are not affected.
 
 [d2c]: https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor
+
+## Type and Unit Labels
+
+`--enable-feature=type-and-unit-labels`
+
+When enabled, Prometheus will start injecting additional, special `__type__`
+and `__unit__` labels that extends the existing `__name__` metric identity.
+
+Those labels are injected from the metadata parts of OpenMetrics and other scrape expositions
+, as well as Remote Write 2.0 and OTLP receive. All user provided labels with
+`__type__` and `__unit__` will be dropped or overridden.
+
+This is useful for users who:
+* Want to be able to select metrics based on type or unit.
+* Want to handle cases of series with the same metric name and different type and units.
+e.g. native histogram migrations or OpenTelemetry metrics from OTLP endpoint, without translation.
+
+In future more work is planned that will depend on this e.g. rich PromQL UX that helps 
+when wrong types are used on wrong functions, automatic renames, delta types and more.
+
+See [proposal](https://github.com/prometheus/proposals/pull/39)

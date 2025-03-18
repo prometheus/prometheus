@@ -280,6 +280,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "otlp-deltatocumulative":
 				c.web.ConvertOTLPDelta = true
 				logger.Info("Converting delta OTLP metrics to cumulative")
+			case "type-and-unit-labels":
+				c.scrape.EnableTypeAndUnitLabels = true
+				logger.Info("Experimental type and unit labels enabled")
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
 			}
