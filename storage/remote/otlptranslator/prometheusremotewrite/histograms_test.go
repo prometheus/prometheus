@@ -875,7 +875,6 @@ func TestConvertExplicitHistogramBucketsToNHCBLayout(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-
 			buckets := tt.buckets
 			offset := getBucketOffset(buckets)
 			bucketCounts := buckets[offset:]
