@@ -1,0 +1,45 @@
+name: Make release
+
+on:
+  workflow_run:
+    workflows:
+      - "Build with Werf Dockerhub"
+    types: 
+      - completed
+  push:
+    tags:
+      - "**"
+
+jobs:
+  release:
+    needs: build
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        ARCH: [arm64, x86_64]
+        COMPILATION_MODE: [dbg, opt]
+        ASAN: [true, false]
+        include:
+          - ARCH: arm64
+            runner: fsn-dev-arm-runner
+          - ARCH: x86_64
+            runner: fsn-dev-gitlab-runner
+    steps:
+      - name: Extract binaries from Docker images
+        run: |
+          CONTAINER_ID_PROMPP=$(docker create docker.io/prompp/prompp:prompp-${{ github.ref_name }}-${{ env.ARCH }}-${{ matrix.COMPILATION_MODE }}-asan-${{ matrix.ASAN }})
+          CONTAINER_ID_PROMPPTOOL=$(docker create docker.io/prompp/prompp:prompptool-${{ github.ref_name }}-${{ env.ARCH }}-${{ matrix.COMPILATION_MODE }}-asan-${{ matrix.ASAN }})
+
+          docker cp $CONTAINER_ID_PROMPP:/bin/prometheus ./release-binaries/prometheus
+          docker cp $CONTAINER_ID_PROMPP:/bin/promtool ./release-binaries/promtool
+          docker cp $CONTAINER_ID_PROMPPTOOL:/bin/prompptool ./release-binaries/prompptool
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            prometheus
+            promtool
+            prompptools
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
