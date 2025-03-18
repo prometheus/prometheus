@@ -2570,15 +2570,16 @@ func testHistogramKahanAdd(t *testing.T, a, b, expected *FloatHistogram, expErrM
 		expectedCopy = expected.Copy()
 	}
 
-	res, comp, err := aCopy.KahanAdd(bCopy, nil)
+	_, comp, err := aCopy.KahanAdd(bCopy, nil)
 	if expErrMsg != "" {
 		require.EqualError(t, err, expErrMsg)
 	} else {
 		require.NoError(t, err)
 	}
 
-	if res != nil {
-		res, _, err = res.Add(comp)
+	var res *FloatHistogram
+	if comp != nil {
+		res, _, err = aCopy.Add(comp) // TODO(crush-on-anechka): Handle counterResetCollision after rebase
 		if expErrMsg != "" {
 			require.EqualError(t, err, expErrMsg)
 		} else {

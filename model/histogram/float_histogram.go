@@ -413,7 +413,7 @@ func (h *FloatHistogram) Add(other *FloatHistogram) (res *FloatHistogram, counte
 // KahanAdd works like Add but using the Kahan summation algorithm to minimize numerical errors.
 // It returns pointers to the updated receiving histogram
 // and a separate histogram that holds the Kahan compensation term.
-func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (newH *FloatHistogram, newC *FloatHistogram, err error) {
+func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (*FloatHistogram, *FloatHistogram, error) {
 	if err := h.checkSchemaAndBounds(other); err != nil {
 		return nil, nil, err
 	}
@@ -427,8 +427,19 @@ func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (newH *FloatHistogra
 	if !h.UsesCustomBuckets() {
 		otherZeroCount := h.reconcileZeroBuckets(other)
 		h.ZeroCount, c.ZeroCount = kahansum.Inc(otherZeroCount, h.ZeroCount, c.ZeroCount)
-		c.PositiveSpans = h.PositiveSpans
-		c.NegativeSpans = h.NegativeSpans
+
+		// Ensure c.PositiveSpans and c.NegativeSpans match h.PositiveSpans and h.NegativeSpans.
+		// Reassign if the underlying arrays have been reallocated; otherwise, resize to match lengths.
+		if cap(c.PositiveSpans) != cap(h.PositiveSpans) {
+			c.PositiveSpans = h.PositiveSpans
+		} else if len(c.PositiveSpans) != len(h.PositiveSpans) {
+			c.PositiveSpans = c.PositiveSpans[:len(h.PositiveSpans)]
+		}
+		if cap(c.NegativeSpans) != cap(h.NegativeSpans) {
+			c.NegativeSpans = h.NegativeSpans
+		} else if len(c.NegativeSpans) != len(h.NegativeSpans) {
+			c.NegativeSpans = c.NegativeSpans[:len(h.NegativeSpans)]
+		}
 	}
 	h.Count, c.Count = kahansum.Inc(other.Count, h.Count, c.Count)
 	h.Sum, c.Sum = kahansum.Inc(other.Sum, h.Sum, c.Sum)
@@ -443,11 +454,7 @@ func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (newH *FloatHistogra
 
 	if h.UsesCustomBuckets() {
 		h.PositiveSpans, h.PositiveBuckets, c.PositiveBuckets = kahanAddBuckets(
-			h.Schema, h.ZeroThreshold, false,
-			hPositiveSpans, hPositiveBuckets,
-			otherPositiveSpans, otherPositiveBuckets,
-			cPositiveBuckets,
-		)
+			h.Schema, h.ZeroThreshold, false, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets, cPositiveBuckets)
 		return h, c, nil
 	}
 
@@ -462,43 +469,23 @@ func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (newH *FloatHistogra
 	switch {
 	case other.Schema < h.Schema:
 		hPositiveSpans, hPositiveBuckets, cPositiveBuckets = kahanReduceResolution(
-			hPositiveSpans, hPositiveBuckets, cPositiveBuckets,
-			h.Schema, other.Schema,
-			false, true,
-		)
+			hPositiveSpans, hPositiveBuckets, cPositiveBuckets, h.Schema, other.Schema, false, true)
 		hNegativeSpans, hNegativeBuckets, cNegativeBuckets = kahanReduceResolution(
-			hNegativeSpans, hNegativeBuckets, cNegativeBuckets,
-			h.Schema, other.Schema,
-			false, true,
-		)
+			hNegativeSpans, hNegativeBuckets, cNegativeBuckets, h.Schema, other.Schema, false, true)
 		h.Schema = other.Schema
 		c.Schema = other.Schema
 
 	case other.Schema > h.Schema:
 		otherPositiveSpans, otherPositiveBuckets = reduceResolution(
-			otherPositiveSpans, otherPositiveBuckets,
-			other.Schema, h.Schema,
-			false, false,
-		)
+			otherPositiveSpans, otherPositiveBuckets, other.Schema, h.Schema, false, false)
 		otherNegativeSpans, otherNegativeBuckets = reduceResolution(
-			otherNegativeSpans, otherNegativeBuckets,
-			other.Schema, h.Schema,
-			false, false,
-		)
+			otherNegativeSpans, otherNegativeBuckets, other.Schema, h.Schema, false, false)
 	}
 
 	h.PositiveSpans, h.PositiveBuckets, c.PositiveBuckets = kahanAddBuckets(
-		h.Schema, h.ZeroThreshold, false,
-		hPositiveSpans, hPositiveBuckets,
-		otherPositiveSpans, otherPositiveBuckets,
-		cPositiveBuckets,
-	)
+		h.Schema, h.ZeroThreshold, false, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets, cPositiveBuckets)
 	h.NegativeSpans, h.NegativeBuckets, c.NegativeBuckets = kahanAddBuckets(
-		h.Schema, h.ZeroThreshold, false,
-		hNegativeSpans, hNegativeBuckets,
-		otherNegativeSpans, otherNegativeBuckets,
-		cNegativeBuckets,
-	)
+		h.Schema, h.ZeroThreshold, false, hNegativeSpans, hNegativeBuckets, otherNegativeSpans, otherNegativeBuckets, cNegativeBuckets)
 
 	return h, c, nil
 }
@@ -566,6 +553,80 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) (res *FloatHistogram, counte
 	h.NegativeSpans, h.NegativeBuckets = addBuckets(h.Schema, h.ZeroThreshold, true, hNegativeSpans, hNegativeBuckets, otherNegativeSpans, otherNegativeBuckets)
 
 	return h, counterResetCollision, nhcbBoundsReconciled, nil
+}
+
+// KahanSub works like Sub but using the Kahan summation algorithm to minimize numerical errors.
+// It returns pointers to the updated receiving histogram
+// and a separate histogram that holds the Kahan compensation term.
+func (h *FloatHistogram) KahanSub(other, c *FloatHistogram) (*FloatHistogram, *FloatHistogram, error) {
+	if err := h.checkSchemaAndBounds(other); err != nil {
+		return nil, nil, err
+	}
+
+	if !h.UsesCustomBuckets() {
+		otherZeroCount := h.reconcileZeroBuckets(other)
+		h.ZeroCount, c.ZeroCount = kahansum.Dec(otherZeroCount, h.ZeroCount, c.ZeroCount)
+
+		// Ensure c.PositiveSpans and c.NegativeSpans match h.PositiveSpans and h.NegativeSpans.
+		// Reassign if the underlying arrays have been reallocated; otherwise, resize to match lengths.
+		if cap(c.PositiveSpans) != cap(h.PositiveSpans) {
+			c.PositiveSpans = h.PositiveSpans
+		} else if len(c.PositiveSpans) != len(h.PositiveSpans) {
+			c.PositiveSpans = c.PositiveSpans[:len(h.PositiveSpans)]
+		}
+		if cap(c.NegativeSpans) != cap(h.NegativeSpans) {
+			c.NegativeSpans = h.NegativeSpans
+		} else if len(c.NegativeSpans) != len(h.NegativeSpans) {
+			c.NegativeSpans = c.NegativeSpans[:len(h.NegativeSpans)]
+		}
+	}
+	h.Count, c.Count = kahansum.Dec(other.Count, h.Count, c.Count)
+	h.Sum, c.Sum = kahansum.Dec(other.Sum, h.Sum, c.Sum)
+
+	var (
+		hPositiveSpans       = h.PositiveSpans
+		hPositiveBuckets     = h.PositiveBuckets
+		otherPositiveSpans   = other.PositiveSpans
+		otherPositiveBuckets = other.PositiveBuckets
+		cPositiveBuckets     = c.PositiveBuckets
+	)
+
+	if h.UsesCustomBuckets() {
+		h.PositiveSpans, h.PositiveBuckets, c.PositiveBuckets = kahanAddBuckets(
+			h.Schema, h.ZeroThreshold, true, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets, cPositiveBuckets)
+		return h, c, nil
+	}
+
+	var (
+		hNegativeSpans       = h.NegativeSpans
+		hNegativeBuckets     = h.NegativeBuckets
+		otherNegativeSpans   = other.NegativeSpans
+		otherNegativeBuckets = other.NegativeBuckets
+		cNegativeBuckets     = c.NegativeBuckets
+	)
+
+	switch {
+	case other.Schema < h.Schema:
+		hPositiveSpans, hPositiveBuckets, cPositiveBuckets = kahanReduceResolution(
+			hPositiveSpans, hPositiveBuckets, cPositiveBuckets, h.Schema, other.Schema, false, true)
+		hNegativeSpans, hNegativeBuckets, cNegativeBuckets = kahanReduceResolution(
+			hNegativeSpans, hNegativeBuckets, cNegativeBuckets, h.Schema, other.Schema, false, true)
+		h.Schema = other.Schema
+		c.Schema = other.Schema
+
+	case other.Schema > h.Schema:
+		otherPositiveSpans, otherPositiveBuckets = reduceResolution(
+			otherPositiveSpans, otherPositiveBuckets, other.Schema, h.Schema, false, false)
+		otherNegativeSpans, otherNegativeBuckets = reduceResolution(
+			otherNegativeSpans, otherNegativeBuckets, other.Schema, h.Schema, false, false)
+	}
+
+	h.PositiveSpans, h.PositiveBuckets, c.PositiveBuckets = kahanAddBuckets(
+		h.Schema, h.ZeroThreshold, true, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets, cPositiveBuckets)
+	h.NegativeSpans, h.NegativeBuckets, c.NegativeBuckets = kahanAddBuckets(
+		h.Schema, h.ZeroThreshold, true, hNegativeSpans, hNegativeBuckets, otherNegativeSpans, otherNegativeBuckets, cNegativeBuckets)
+
+	return h, c, nil
 }
 
 // Equals returns true if the given float histogram matches exactly.
@@ -1472,7 +1533,7 @@ func kahanAddBuckets(
 	spansA []Span, bucketsA []float64,
 	spansB []Span, bucketsB []float64,
 	bucketsC []float64,
-) (newSpans []Span, newBucketsA []float64, newBucketsC []float64) {
+) ([]Span, []float64, []float64) {
 	var (
 		iSpan              = -1
 		iBucket            = -1
@@ -1559,6 +1620,7 @@ func kahanAddBuckets(
 						iSpan--
 						iInSpan = int32(spansA[iSpan].Length)
 						spansA[iSpan].Length++
+						// spansC[iSpan].Length++
 						goto nextLoop
 					case iSpan < len(spansA) && deltaIndex == spansA[iSpan].Offset-1:
 						// Directly before next span, extend next span.
@@ -1844,12 +1906,12 @@ func (h *FloatHistogram) ReduceResolution(targetSchema int32) error {
 	return nil
 }
 
-// newCompensationHistogram initializes a new compensation histogram that can be used
+// NewCompensationHistogram initializes a new compensation histogram that can be used
 // alongside the current FloatHistogram in Kahan summation.
 // The compensation histogram is structured to match the receiving histogram's bucket
 // layout including its schema and custom values, and it shares spans with the receiving histogram.
 // However, the bucket values in the compensation histogram are initialized to zero.
-func (h *FloatHistogram) newCompensationHistogram() *FloatHistogram {
+func (h *FloatHistogram) NewCompensationHistogram() *FloatHistogram {
 	c := &FloatHistogram{
 		Schema:          h.Schema,
 		CustomValues:    h.CustomValues,
