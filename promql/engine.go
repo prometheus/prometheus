@@ -2976,7 +2976,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				group.hasHistogram = true
 				if group.histogramValue != nil {
 					var err error
-					_, group.histogramKahanC, err = group.histogramValue.KahanAdd(h, group.histogramKahanC)
+					group.histogramKahanC, err = group.histogramValue.KahanAdd(h, group.histogramKahanC)
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
 						group.incompatibleHistograms = true
@@ -3003,7 +3003,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 						group.incompatibleHistograms = true
 						continue
 					}
-					_, group.histogramKahanC, err = group.histogramValue.KahanAdd(toAdd, group.histogramKahanC)
+					group.histogramKahanC, err = group.histogramValue.KahanAdd(toAdd, group.histogramKahanC)
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
 						group.incompatibleHistograms = true

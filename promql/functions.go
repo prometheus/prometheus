@@ -591,7 +591,7 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 				if err != nil {
 					return mean, err
 				}
-				_, comp, err = mean.KahanAdd(toAdd, comp)
+				comp, err = mean.KahanAdd(toAdd, comp)
 				if err != nil {
 					return mean, err
 				}
@@ -768,7 +768,7 @@ func funcSumOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 			var comp *histogram.FloatHistogram
 			var err error
 			for _, h := range s.Histograms[1:] {
-				_, comp, err = sum.KahanAdd(h.H, comp)
+				comp, err = sum.KahanAdd(h.H, comp)
 				if err != nil {
 					return sum, err
 				}

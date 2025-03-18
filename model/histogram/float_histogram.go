@@ -388,11 +388,12 @@ func (h *FloatHistogram) Add(other *FloatHistogram) (*FloatHistogram, error) {
 }
 
 // KahanAdd works like Add but using the Kahan summation algorithm to minimize numerical errors.
-// It returns pointers to the updated receiving histogram
-// and a separate histogram that holds the Kahan compensation term.
-func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (newH *FloatHistogram, newC *FloatHistogram, err error) {
+// c is a histogram holding the Kahan compensation term. It is modified in-place.
+// If c is nil, a suitable histogram is created. In any case, a pointer to the newly created
+// or updated c is returned as updatedC.
+func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (updatedC *FloatHistogram, err error) {
 	if err := h.checkSchemaAndBounds(other); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	h.adjustCounterResetForAddition(other)
@@ -425,7 +426,7 @@ func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (newH *FloatHistogra
 			otherPositiveSpans, otherPositiveBuckets,
 			cPositiveBuckets,
 		)
-		return h, c, nil
+		return c, nil
 	}
 
 	var (
@@ -477,7 +478,7 @@ func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (newH *FloatHistogra
 		cNegativeBuckets,
 	)
 
-	return h, c, nil
+	return c, nil
 }
 
 // Sub works like Add but subtracts the other histogram.
