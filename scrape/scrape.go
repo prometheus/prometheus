@@ -618,35 +618,18 @@ func (sp *scrapePool) refreshTargetLimitErr() error {
 }
 
 func (sp *scrapePool) schemesFromConfig() (validationScheme model.ValidationScheme, escapingScheme model.EscapingScheme, err error) {
-	validationScheme = model.UTF8Validation
 	switch sp.config.MetricNameValidationScheme {
-	case "", config.UTF8ValidationConfig:
+	case config.UTF8ValidationConfig:
+		validationScheme = model.UTF8Validation
 	case config.LegacyValidationConfig:
 		validationScheme = model.LegacyValidation
 	default:
 		return model.UTF8Validation, model.UnderscoreEscaping, fmt.Errorf("invalid metric name validation scheme, %s", sp.config.MetricNameValidationScheme)
 	}
 
-	// Escaping scheme is default-implied by the validation scheme, but can be
-	// overridden.
-	switch validationScheme {
-	case model.LegacyValidation:
-		escapingScheme = model.UnderscoreEscaping
-	case model.UTF8Validation:
-		escapingScheme = model.NoEscaping
-	}
-
-	if sp.config.MetricNameEscapingScheme != "" {
-		var err error
-		escapingScheme, err = model.ToEscapingScheme(sp.config.MetricNameEscapingScheme)
-		if err != nil {
-			return model.UTF8Validation, model.UnderscoreEscaping, fmt.Errorf("invalid metric name escaping scheme, %w", err)
-		}
-	}
-
-	// Check for an invalid combination of settings.
-	if escapingScheme == model.NoEscaping && validationScheme == model.LegacyValidation {
-		return model.UTF8Validation, model.UnderscoreEscaping, errors.New("cannot request UTF-8 names when validation is set to Legacy")
+	escapingScheme, err = model.ToEscapingScheme(sp.config.MetricNameEscapingScheme)
+	if err != nil {
+		return model.UTF8Validation, model.UnderscoreEscaping, fmt.Errorf("invalid metric name escaping scheme, %w", err)
 	}
 	return validationScheme, escapingScheme, nil
 }

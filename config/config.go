@@ -844,26 +844,48 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	if model.NameValidationScheme != model.UTF8Validation {
 		return errors.New("model.NameValidationScheme must be set to UTF8")
 	}
+
 	switch globalConfig.MetricNameValidationScheme {
-	case "", LegacyValidationConfig, UTF8ValidationConfig:
+	case "":
+		globalConfig.MetricNameValidationScheme = UTF8ValidationConfig
+	case LegacyValidationConfig, UTF8ValidationConfig:
 	default:
-		return fmt.Errorf("unknown name validation method specified, must be either 'legacy' or 'utf8', got %s", globalConfig.MetricNameValidationScheme)
+		return fmt.Errorf("unknown global name validation method specified, must be either 'legacy' or 'utf8', got %s", globalConfig.MetricNameValidationScheme)
 	}
-	if c.MetricNameValidationScheme == "" {
+	// Scrapeconfig validation scheme matches global if left blank.
+	switch c.MetricNameValidationScheme {
+	case "":
 		c.MetricNameValidationScheme = globalConfig.MetricNameValidationScheme
+	case LegacyValidationConfig, UTF8ValidationConfig:
+	default:
+		return fmt.Errorf("unknown scrape config name validation method specified, must be either 'legacy' or 'utf8', got %s", c.MetricNameValidationScheme)
 	}
 
+	// Escaping scheme is based on the validation scheme if left blank.
 	switch globalConfig.MetricNameEscapingScheme {
+	case "":
+		if globalConfig.MetricNameValidationScheme == LegacyValidationConfig {
+			globalConfig.MetricNameEscapingScheme = model.EscapeUnderscores
+		} else {
+			globalConfig.MetricNameEscapingScheme = model.AllowUTF8
+		}
+	case model.AllowUTF8, model.EscapeUnderscores, model.EscapeDots, model.EscapeValues:
+	default:
+		return fmt.Errorf("unknown global name escaping method specified, must be one of '%s', '%s', '%s', or '%s', got %s", model.AllowUTF8, model.EscapeUnderscores, model.EscapeDots, model.EscapeValues, globalConfig.MetricNameValidationScheme)
+	}
+
+	if c.MetricNameEscapingScheme == "" {
+		c.MetricNameEscapingScheme = globalConfig.MetricNameEscapingScheme
+	}
+
+	switch c.MetricNameEscapingScheme {
 	case model.AllowUTF8:
 		if c.MetricNameValidationScheme != UTF8ValidationConfig {
 			return errors.New("utf8 metric names requested but validation scheme is not set to UTF8")
 		}
-	case "", model.EscapeUnderscores, model.EscapeDots, model.EscapeValues:
+	case model.EscapeUnderscores, model.EscapeDots, model.EscapeValues:
 	default:
-		return fmt.Errorf("unknown name escaping method specified, must be one of 'allow-utf-8', 'underscores', 'dots', or 'values', got %s", globalConfig.MetricNameValidationScheme)
-	}
-	if c.MetricNameEscapingScheme == "" {
-		c.MetricNameEscapingScheme = globalConfig.MetricNameEscapingScheme
+		return fmt.Errorf("unknown scrape config name escaping method specified, must be one of '%s', '%s', '%s', or '%s', got %s", model.AllowUTF8, model.EscapeUnderscores, model.EscapeDots, model.EscapeValues, c.MetricNameValidationScheme)
 	}
 
 	return nil
