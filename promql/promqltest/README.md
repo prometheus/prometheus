@@ -122,12 +122,12 @@ expect <type> <match_type> <string>
     * `warn` expects the query to return at least one warn annotation.
     * `no_info` expects the query to return no info annotation.
     * `no_warn` expects the query to return no warn annotation.
-    * `ordered`: expects the query to return the results in the specified order.
+    * `ordered` expects the query to return the results in the specified order.
 * `<match_type>` (optional) specifies message matching type for annotations:
     * `msg` for exact string match.
     * `regex` for regular expression match.
     * **Not applicable** for `ordered`, `no_info`, and `no_warn`.
-* `<string>`: Expected annotation message.
+* `<string>` is the expected annotation message.
 
 For example:
 
