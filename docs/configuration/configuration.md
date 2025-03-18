@@ -467,6 +467,18 @@ metric_relabel_configs:
 # underscores.
 [ metric_name_validation_scheme <string> | default "utf8" ]
 
+# Specifies the escaping scheme for metric and label names. Available options 
+# are: 
+#   * Either blank or "allow-utf-8": Full UTF-8 support.
+#   * "underscores": Escape all legacy-invalid characters to underscores.
+#   * "dots": Escapes dots to `_dot_`, underscores to `__`, and all other
+#     legacy-invalid characters to underscores.
+#   * "values": Prepend the name with `U__` and replace all invalid
+#     characters with their unicode value, surrounded by underscores. Single
+#     underscores are replaced with double underscores. 
+#     e.g. "U__my_2e_dotted_2e_name".
+[ metric_name_validation_scheme <string> | default "utf8" ]
+
 # Limit on total number of positive and negative buckets allowed in a single
 # native histogram. The resolution of a histogram with more buckets will be
 # reduced until the number of buckets is within the limit. If the limit cannot
