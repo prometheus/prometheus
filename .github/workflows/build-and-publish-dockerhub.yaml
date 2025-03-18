@@ -1,6 +1,12 @@
 name: Build with Werf Dockerhub
 
 on:
+  workflow_dispatch:
+    inputs:
+      debug_branch:
+        description: 'Branch to build for debugging'
+        required: true
+        default: 'pp'
   workflow_run:
     workflows:
       - "Run Tests for C++ Code"

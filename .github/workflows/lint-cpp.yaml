@@ -1,6 +1,12 @@
 name: Lint C++ Code
 
 on:
+  workflow_dispatch:
+    inputs:
+      debug_branch:
+        description: 'Branch to build for debugging'
+        required: true
+        default: 'pp'
   pull_request:
     types:
       - opened
