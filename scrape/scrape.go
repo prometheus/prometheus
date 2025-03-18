@@ -1718,7 +1718,7 @@ loop:
 			t = *parsedTimestamp
 		}
 
-		if sl.cache.getDropped(met) {
+		if sl.cache.getDropped(met) || isHistogram && !sl.enableNativeHistogramIngestion {
 			continue
 		}
 		ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
@@ -1766,7 +1766,7 @@ loop:
 		} else {
 			if sl.enableCTZeroIngestion {
 				if ctMs := p.CreatedTimestamp(); ctMs != 0 {
-					if isHistogram && sl.enableNativeHistogramIngestion {
+					if isHistogram {
 						if h != nil {
 							ref, err = app.AppendHistogramCTZeroSample(ref, lset, t, ctMs, h, nil)
 						} else {
@@ -1783,7 +1783,7 @@ loop:
 				}
 			}
 
-			if isHistogram && sl.enableNativeHistogramIngestion {
+			if isHistogram {
 				if h != nil {
 					ref, err = app.AppendHistogram(ref, lset, t, h, nil)
 				} else {

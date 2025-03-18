@@ -45,6 +45,7 @@ import (
 
 func init() {
 	// This can be removed when the legacy global mode is fully deprecated.
+	//nolint:staticcheck
 	model.NameValidationScheme = model.UTF8Validation
 }
 
@@ -251,6 +252,8 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 			// WaitGroup is used to ensure that we don't call t.Log() after the test has finished.
 			var wg sync.WaitGroup
 			wg.Add(1)
+			defer wg.Wait()
+
 			go func() {
 				defer wg.Done()
 				slurp, _ := io.ReadAll(stderr)
@@ -270,7 +273,6 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 					prom.Process.Kill()
 					<-done
 				}
-				wg.Wait()
 				return
 			}
 
@@ -280,8 +282,6 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 			require.ErrorAs(t, err, &exitError)
 			status := exitError.Sys().(syscall.WaitStatus)
 			require.Equal(t, tc.exitCode, status.ExitStatus())
-
-			wg.Wait()
 		})
 	}
 }
@@ -312,7 +312,14 @@ func TestMaxBlockChunkSegmentSizeBounds(t *testing.T) {
 			// Log stderr in case of failure.
 			stderr, err := prom.StderrPipe()
 			require.NoError(t, err)
+
+			// WaitGroup is used to ensure that we don't call t.Log() after the test has finished.
+			var wg sync.WaitGroup
+			wg.Add(1)
+			defer wg.Wait()
+
 			go func() {
+				defer wg.Done()
 				slurp, _ := io.ReadAll(stderr)
 				t.Log(string(slurp))
 			}()
@@ -510,6 +517,8 @@ func TestModeSpecificFlags(t *testing.T) {
 			// WaitGroup is used to ensure that we don't call t.Log() after the test has finished.
 			var wg sync.WaitGroup
 			wg.Add(1)
+			defer wg.Wait()
+
 			go func() {
 				defer wg.Done()
 				slurp, _ := io.ReadAll(stderr)
@@ -529,7 +538,6 @@ func TestModeSpecificFlags(t *testing.T) {
 					prom.Process.Kill()
 					<-done
 				}
-				wg.Wait()
 				return
 			}
 
@@ -542,8 +550,6 @@ func TestModeSpecificFlags(t *testing.T) {
 			} else {
 				t.Errorf("unable to retrieve the exit status for prometheus: %v", err)
 			}
-
-			wg.Wait()
 		})
 	}
 }
