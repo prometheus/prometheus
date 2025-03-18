@@ -253,10 +253,9 @@ histogram samples:
 
 ## `histogram_fraction()`
 
-`histogram_fraction(lower scalar, upper scalar, v instant-vector)` returns the
+`histogram_fraction(lower scalar, upper scalar, b instant-vector)` returns the
 estimated fraction of observations between the provided lower and upper values
-for each histogram sample in `v`. Float samples are ignored and do not show up
-in the returned vector.
+for each histogram sample in `b`.
 
 For example, the following expression calculates the fraction of HTTP requests
 over the last hour that took 200ms or less:
@@ -280,8 +279,10 @@ feature inclusive upper boundaries and exclusive lower boundaries for positive
 values, and vice versa for negative values.) Without a precise alignment of
 boundaries, the function uses interpolation to estimate the fraction. With the
 resulting uncertainty, it becomes irrelevant if the boundaries are inclusive or
-exclusive. The interpolation method is the same as the one used for
-`histogram_quantile()`. See there for more details.
+exclusive.
+
+The interpolation method and handling of float samples is the same as the one
+used for `histogram_quantile()`. See there for more details.
 
 ## `histogram_quantile()`
 
