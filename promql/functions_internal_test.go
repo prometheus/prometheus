@@ -18,8 +18,9 @@ import (
 	"math"
 	"testing"
 
-	"github.com/prometheus/prometheus/util/kahansum"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/util/kahansum"
 )
 
 func TestKahanSumInc(t *testing.T) {
