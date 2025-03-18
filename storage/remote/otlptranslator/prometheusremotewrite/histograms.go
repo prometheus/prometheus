@@ -287,6 +287,7 @@ func explicitHistogramToCustomBucketsHistogram(p pmetric.HistogramDataPoint) (pr
 	bucketCounts := buckets[offset:]
 	positiveSpans, positiveDeltas := convertBucketsLayout(bucketCounts, int32(offset), 0, false)
 
+	// TODO(carrieedwards): Add setting to limit maximum bucket count
 	h := prompb.Histogram{
 		// The counter reset detection must be compatible with Prometheus to
 		// safely set ResetHint to NO. This is not ensured currently.
