@@ -5768,7 +5768,7 @@ func TestGaugeHistogramWALAndChunkHeader(t *testing.T) {
 		expHeaders := []chunkenc.CounterResetHeader{
 			chunkenc.UnknownCounterReset,
 			chunkenc.GaugeType,
-			chunkenc.UnknownCounterReset,
+			chunkenc.NotCounterReset,
 			chunkenc.GaugeType,
 		}
 		for i, mmapChunk := range ms.mmappedChunks {
