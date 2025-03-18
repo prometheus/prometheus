@@ -52,6 +52,7 @@ var (
 	patEvalInstant = regexp.MustCompile(`^eval(?:_(fail|warn|ordered|info))?\s+instant\s+(?:at\s+(.+?))?\s+(.+)$`)
 	patEvalRange   = regexp.MustCompile(`^eval(?:_(fail|warn|info))?\s+range\s+from\s+(.+)\s+to\s+(.+)\s+step\s+(.+?)\s+(.+)$`)
 	patExpect      = regexp.MustCompile(`^expect\s+(ordered|fail|warn|no_warn|info|no_info)(?:\s+(regex|msg):(.+))?$`)
+	patMatchAny    = regexp.MustCompile(`^.*$`)
 )
 
 const (
@@ -275,7 +276,6 @@ func parseExpect(defLine string) (expectCmdType, expectCmd, error) {
 	var (
 		mode            = expectParts[1]
 		hasOptionalPart = expectParts[2] != ""
-		matchAnyRegex   = regexp.MustCompile(`^.*$`)
 	)
 	expectType, ok := expectTypeStr[mode]
 	if !ok {
@@ -296,7 +296,7 @@ func parseExpect(defLine string) (expectCmdType, expectCmd, error) {
 			return 0, expCmd, fmt.Errorf("invalid token %s after %s", expectParts[2], mode)
 		}
 	} else {
-		expCmd.regex = matchAnyRegex
+		expCmd.regex = patMatchAny
 	}
 	return expectType, expCmd, nil
 }
@@ -827,8 +827,6 @@ func validateExpectedAnnotations(expr string, expectedAnnotations []expectCmd, a
 func (ev *evalCmd) checkAnnotations(expr string, annos annotations.Annotations) error {
 	countWarnings, countInfo := annos.CountWarningsAndInfo()
 	switch {
-	case ev.ordered:
-		// Ignore annotations if testing for order.
 	case ev.warn && countWarnings == 0:
 		return fmt.Errorf("expected warnings evaluating query %q (line %d) but got none", expr, ev.line)
 	case ev.info && countInfo == 0:
