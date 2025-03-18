@@ -2829,7 +2829,6 @@ func TestOutOfOrderSamplesMetric(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			options := DefaultOptions()
 			options.EnableNativeHistograms = true
-			options.EnableOOONativeHistograms = true
 			testOutOfOrderSamplesMetric(t, scenario, options, storage.ErrOutOfOrderSample)
 		})
 	}
@@ -2842,10 +2841,9 @@ func TestOutOfOrderSamplesMetricNativeHistogramOOODisabled(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			options := DefaultOptions()
-			options.OutOfOrderTimeWindow = (1000 * time.Minute).Milliseconds()
+			options.OutOfOrderTimeWindow = 0
 			options.EnableNativeHistograms = true
-			options.EnableOOONativeHistograms = false
-			testOutOfOrderSamplesMetric(t, scenario, options, storage.ErrOOONativeHistogramsDisabled)
+			testOutOfOrderSamplesMetric(t, scenario, options, storage.ErrOutOfOrderSample)
 		})
 	}
 }
@@ -4784,7 +4782,6 @@ func TestOOOHistogramCounterResetHeaders(t *testing.T) {
 			l := labels.FromStrings("a", "b")
 			head, _ := newTestHead(t, 1000, compression.None, true)
 			head.opts.OutOfOrderCapMax.Store(5)
-			head.opts.EnableOOONativeHistograms.Store(true)
 
 			t.Cleanup(func() {
 				require.NoError(t, head.Close())
@@ -4943,7 +4940,6 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 	dir := t.TempDir()
 	opts := DefaultOptions()
 	opts.EnableNativeHistograms = true
-	opts.EnableOOONativeHistograms = true
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -5215,7 +5211,6 @@ func testWBLReplay(t *testing.T, scenario sampleTypeScenario) {
 	opts.ChunkDirRoot = dir
 	opts.OutOfOrderTimeWindow.Store(30 * time.Minute.Milliseconds())
 	opts.EnableNativeHistograms.Store(true)
-	opts.EnableOOONativeHistograms.Store(true)
 
 	h, err := NewHead(nil, nil, wal, oooWlog, opts, nil)
 	require.NoError(t, err)
@@ -5310,7 +5305,6 @@ func testOOOMmapReplay(t *testing.T, scenario sampleTypeScenario) {
 	opts.OutOfOrderCapMax.Store(30)
 	opts.OutOfOrderTimeWindow.Store(1000 * time.Minute.Milliseconds())
 	opts.EnableNativeHistograms.Store(true)
-	opts.EnableOOONativeHistograms.Store(true)
 
 	h, err := NewHead(nil, nil, wal, oooWlog, opts, nil)
 	require.NoError(t, err)
@@ -5613,7 +5607,6 @@ func testOOOAppendWithNoSeries(t *testing.T, appendFunc func(appender storage.Ap
 	opts.OutOfOrderCapMax.Store(30)
 	opts.OutOfOrderTimeWindow.Store(120 * time.Minute.Milliseconds())
 	opts.EnableNativeHistograms.Store(true)
-	opts.EnableOOONativeHistograms.Store(true)
 
 	h, err := NewHead(nil, nil, wal, oooWlog, opts, nil)
 	require.NoError(t, err)
@@ -5705,7 +5698,6 @@ func testHeadMinOOOTimeUpdate(t *testing.T, scenario sampleTypeScenario) {
 	opts.ChunkDirRoot = dir
 	opts.OutOfOrderTimeWindow.Store(10 * time.Minute.Milliseconds())
 	opts.EnableNativeHistograms.Store(true)
-	opts.EnableOOONativeHistograms.Store(true)
 
 	h, err := NewHead(nil, nil, wal, oooWlog, opts, nil)
 	require.NoError(t, err)
