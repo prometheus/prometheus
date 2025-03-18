@@ -17,7 +17,7 @@ env:
   WERF_PARALLEL_TASKS_LIMIT: 10
 
 jobs:
-  registry-login:
+  build-and-push:
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:

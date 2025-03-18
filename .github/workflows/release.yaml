@@ -1,4 +1,4 @@
-name: Build with Werf Dockerhub
+name: Make release
 
 on:
   workflow_run:

@@ -22,7 +22,7 @@ env:
   WERF_PARALLEL_TASKS_LIMIT: 10
 
 jobs:
-  preps:
+  build-and-push:
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
