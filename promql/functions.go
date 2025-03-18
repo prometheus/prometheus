@@ -1092,7 +1092,7 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 				}
 			}
 			if comp != nil {
-				sum, err = sum.Add(comp)
+				sum, _, err = sum.Add(comp) // TODO(crush-on-anechka): Handle counterResetCollision after rebase
 			}
 			return sum, err
 		})
