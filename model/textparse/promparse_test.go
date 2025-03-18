@@ -199,7 +199,7 @@ testmetric{le="10"} 1`
 		},
 	}
 
-	p := NewPromParser([]byte(input), labels.NewSymbolTable())
+	p := NewPromParser([]byte(input), labels.NewSymbolTable(), false)
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -274,7 +274,7 @@ choices}`, "strange©™\n'quoted' \"name\"", "6"),
 		},
 	}
 
-	p := NewPromParser([]byte(input), labels.NewSymbolTable())
+	p := NewPromParser([]byte(input), labels.NewSymbolTable(), false)
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
@@ -355,7 +355,7 @@ func TestPromParseErrors(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		p := NewPromParser([]byte(c.input), labels.NewSymbolTable())
+		p := NewPromParser([]byte(c.input), labels.NewSymbolTable(), false)
 		var err error
 		for err == nil {
 			_, err = p.Next()
@@ -408,7 +408,7 @@ func TestPromNullByteHandling(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		p := NewPromParser([]byte(c.input), labels.NewSymbolTable())
+		p := NewPromParser([]byte(c.input), labels.NewSymbolTable(), false)
 		var err error
 		for err == nil {
 			_, err = p.Next()
