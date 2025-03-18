@@ -442,12 +442,12 @@ func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (updatedC *FloatHist
 		hPositiveSpans, hPositiveBuckets, cPositiveBuckets = kahanReduceResolution(
 			hPositiveSpans, hPositiveBuckets, cPositiveBuckets,
 			h.Schema, other.Schema,
-			false, true,
+			true,
 		)
 		hNegativeSpans, hNegativeBuckets, cNegativeBuckets = kahanReduceResolution(
 			hNegativeSpans, hNegativeBuckets, cNegativeBuckets,
 			h.Schema, other.Schema,
-			false, true,
+			true,
 		)
 		h.Schema = other.Schema
 		c.Schema = other.Schema
