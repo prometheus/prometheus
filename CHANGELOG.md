@@ -145,6 +145,11 @@ This release includes new features such as a brand new UI and UTF-8 support enab
 * [BUGFIX] Autoreload: Reload invalid yaml files. #14947
 * [BUGFIX] Scrape: Do not override target parameter labels with config params. #11029
 
+## 2.53.4 / 2025-03-18
+
+* [BUGFIX] Runtime: fix GOGC is being set to 0 when installed with empty prometheus.yml file resulting high cpu usage. #16090
+* [BUGFIX] Scrape: fix dropping valid metrics after previous scrape failed. #16220
+
 ## 2.53.3 / 2024-11-04
 
 * [BUGFIX] Scraping: allow multiple samples on same series, with explicit timestamps. #14685, #14740
