@@ -73,7 +73,7 @@ export const decodePanelOptionsFromURLParams = (query: string): Panel[] => {
     decodeSetting("end_input", (value) => {
       panel.visualizer.endTime = parseTime(value);
     });
-    // Legacy "step_input" parameter, overriden below by
+    // Legacy "step_input" parameter, overridden below by
     // "res_type" / "res_density" / "res_step" if present.
     decodeSetting("step_input", (value) => {
       if (parseInt(value) > 0) {
