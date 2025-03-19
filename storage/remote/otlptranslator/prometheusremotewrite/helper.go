@@ -37,7 +37,7 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/prompb"
 
-	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
+	prometheustranslator "github.com/prometheus/otlp-prometheus-translator"
 )
 
 const (

@@ -26,8 +26,8 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.uber.org/multierr"
 
+	prometheustranslator "github.com/prometheus/otlp-prometheus-translator"
 	"github.com/prometheus/prometheus/prompb"
-	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
