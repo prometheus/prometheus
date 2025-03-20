@@ -1137,7 +1137,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 					ExportCreatedMetric:     true,
 					ConvertHistogramsToNHCB: true,
 				},
-				prometheustranslator.BuildCompliantMetricName(metric, "", true),
+				otlptranslator.BuildCompliantMetricName(metric, "", true),
 			)
 
 			require.NoError(t, err)
