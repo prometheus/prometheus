@@ -165,7 +165,7 @@ type ruleGroupNode struct {
 	Interval    model.Duration    `yaml:"interval,omitempty"`
 	QueryOffset *model.Duration   `yaml:"query_offset,omitempty"`
 	Limit       int               `yaml:"limit,omitempty"`
-	Rules       []ruleNode        `yaml:"rules"`
+	Rules       []RuleNode        `yaml:"rules"`
 	Labels      map[string]string `yaml:"labels,omitempty"`
 }
 
@@ -180,8 +180,8 @@ type Rule struct {
 	Annotations   map[string]string `yaml:"annotations,omitempty"`
 }
 
-// ruleNode adds yaml.v3 layer to support line and column outputs for invalid rules.
-type ruleNode struct {
+// RuleNode adds yaml.v3 layer to support line and column outputs for invalid rules.
+type RuleNode struct {
 	Record        yaml.Node         `yaml:"record,omitempty"`
 	Alert         yaml.Node         `yaml:"alert,omitempty"`
 	Expr          yaml.Node         `yaml:"expr"`
@@ -192,7 +192,7 @@ type ruleNode struct {
 }
 
 // Validate the rule and return a list of encountered errors.
-func (r *Rule) Validate(node ruleNode) (nodes []WrappedError) {
+func (r *Rule) Validate(node RuleNode) (nodes []WrappedError) {
 	if r.Record != "" && r.Alert != "" {
 		nodes = append(nodes, WrappedError{
 			err:     errors.New("only one of 'record' and 'alert' must be set"),
