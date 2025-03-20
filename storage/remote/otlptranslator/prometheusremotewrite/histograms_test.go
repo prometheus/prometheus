@@ -23,14 +23,13 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
+	prometheustranslator "github.com/prometheus/otlp-prometheus-translator"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
 	"github.com/prometheus/prometheus/prompb"
-
-	prometheustranslator "github.com/prometheus/otlp-prometheus-translator"
 )
 
 type expectedBucketLayout struct {

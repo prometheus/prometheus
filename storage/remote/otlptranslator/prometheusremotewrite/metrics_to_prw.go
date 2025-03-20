@@ -22,11 +22,11 @@ import (
 	"fmt"
 	"sort"
 
+	prometheustranslator "github.com/prometheus/otlp-prometheus-translator"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.uber.org/multierr"
 
-	prometheustranslator "github.com/prometheus/otlp-prometheus-translator"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/util/annotations"
 )

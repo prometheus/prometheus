@@ -23,12 +23,12 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	prometheustranslator "github.com/prometheus/otlp-prometheus-translator"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
-	prometheustranslator "github.com/prometheus/otlp-prometheus-translator"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 )
