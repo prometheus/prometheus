@@ -92,7 +92,7 @@ type RuleGroups struct {
 }
 
 type ruleGroups struct {
-	Groups []ruleGroupNode `yaml:"groups"`
+	Groups []RuleGroupNode `yaml:"groups"`
 }
 
 // Validate validates all rules in the rule groups.
@@ -158,8 +158,8 @@ type RuleGroup struct {
 	Labels      map[string]string `yaml:"labels,omitempty"`
 }
 
-// ruleGroupNode adds yaml.v3 layer to support line and columns outputs for invalid rule groups.
-type ruleGroupNode struct {
+// RuleGroupNode adds yaml.v3 layer to support line and columns outputs for invalid rule groups.
+type RuleGroupNode struct {
 	yaml.Node
 	Name        string            `yaml:"name"`
 	Interval    model.Duration    `yaml:"interval,omitempty"`
