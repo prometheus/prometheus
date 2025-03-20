@@ -16,9 +16,8 @@ package tsdbutil
 import (
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/prometheus/common/promslog"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/util/testutil"
 )
