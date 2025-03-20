@@ -2390,7 +2390,7 @@ metric_total{n="2"} 2 # {t="2"} 2.0 20000
 			},
 		},
 		{
-			title: "Native histogram with three exemplars",
+			title: "Native histogram with three exemplars from classic buckets",
 
 			enableNativeHistogramsIngestion: true,
 			scrapeText: `name: "test_histogram"
@@ -2638,6 +2638,180 @@ metric: <
 				{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, Ts: 1234568, HasTs: false},
 				{Labels: labels.FromStrings("dummyID", "58215"), Value: -0.00019, Ts: 1625851055146, HasTs: true},
 			},
+		},
+		{
+			title:                           "Native histogram with exemplars and no classic buckets",
+			contentType:                     "application/vnd.google.protobuf",
+			enableNativeHistogramsIngestion: true,
+			scrapeText: `name: "test_histogram"
+help: "Test histogram."
+type: HISTOGRAM
+metric: <
+  histogram: <
+    sample_count: 175
+    sample_sum: 0.0008280461746287094
+    schema: 3
+    zero_threshold: 2.938735877055719e-39
+    zero_count: 2
+    negative_span: <
+      offset: -162
+      length: 1
+    >
+    negative_span: <
+      offset: 23
+      length: 4
+    >
+    negative_delta: 1
+    negative_delta: 3
+    negative_delta: -2
+    negative_delta: -1
+    negative_delta: 1
+    positive_span: <
+      offset: -161
+      length: 1
+    >
+    positive_span: <
+      offset: 8
+      length: 3
+    >
+    positive_delta: 1
+    positive_delta: 2
+    positive_delta: -1
+    positive_delta: -1
+	exemplars: <
+	  label: <
+        name: "dummyID"
+        value: "59732"
+      >
+      value: -0.00039
+      timestamp: <
+        seconds: 1625851155
+        nanos: 146848499
+      >
+	>
+	exemplars: <
+	  label: <
+        name: "dummyID"
+        value: "58242"
+      >
+      value: -0.00019
+      timestamp: <
+        seconds: 1625851055
+        nanos: 146848599
+      >
+	>
+	exemplars: <
+      label: <
+        name: "dummyID"
+        value: "5617"
+      >
+      value: -0.00029
+    >
+  >
+  timestamp_ms: 1234568
+>
+
+`,
+			histograms: []histogramSample{{
+				t:      1234568,
+				metric: labels.FromStrings("__name__", "test_histogram"),
+				h: &histogram.Histogram{
+					Count:         175,
+					ZeroCount:     2,
+					Sum:           0.0008280461746287094,
+					ZeroThreshold: 2.938735877055719e-39,
+					Schema:        3,
+					PositiveSpans: []histogram.Span{
+						{Offset: -161, Length: 1},
+						{Offset: 8, Length: 3},
+					},
+					NegativeSpans: []histogram.Span{
+						{Offset: -162, Length: 1},
+						{Offset: 23, Length: 4},
+					},
+					PositiveBuckets: []int64{1, 2, -1, -1},
+					NegativeBuckets: []int64{1, 3, -2, -1, 1},
+				},
+			}},
+			exemplars: []exemplar.Exemplar{
+				// Exemplars with missing timestamps are dropped for native histograms.
+				{Labels: labels.FromStrings("dummyID", "58242"), Value: -0.00019, Ts: 1625851055146, HasTs: true},
+				{Labels: labels.FromStrings("dummyID", "59732"), Value: -0.00039, Ts: 1625851155146, HasTs: true},
+			},
+		},
+		{
+			title:                           "Native histogram with exemplars but ingestion disabled",
+			contentType:                     "application/vnd.google.protobuf",
+			enableNativeHistogramsIngestion: false,
+			scrapeText: `name: "test_histogram"
+help: "Test histogram."
+type: HISTOGRAM
+metric: <
+  histogram: <
+    sample_count: 175
+    sample_sum: 0.0008280461746287094
+    schema: 3
+    zero_threshold: 2.938735877055719e-39
+    zero_count: 2
+    negative_span: <
+      offset: -162
+      length: 1
+    >
+    negative_span: <
+      offset: 23
+      length: 4
+    >
+    negative_delta: 1
+    negative_delta: 3
+    negative_delta: -2
+    negative_delta: -1
+    negative_delta: 1
+    positive_span: <
+      offset: -161
+      length: 1
+    >
+    positive_span: <
+      offset: 8
+      length: 3
+    >
+    positive_delta: 1
+    positive_delta: 2
+    positive_delta: -1
+    positive_delta: -1
+	exemplars: <
+	  label: <
+        name: "dummyID"
+        value: "59732"
+      >
+      value: -0.00039
+      timestamp: <
+        seconds: 1625851155
+        nanos: 146848499
+      >
+	>
+	exemplars: <
+	  label: <
+        name: "dummyID"
+        value: "58242"
+      >
+      value: -0.00019
+      timestamp: <
+        seconds: 1625851055
+        nanos: 146848599
+      >
+	>
+	exemplars: <
+      label: <
+        name: "dummyID"
+        value: "5617"
+      >
+      value: -0.00029
+    >
+  >
+  timestamp_ms: 1234568
+>
+
+`,
 		},
 	}
 

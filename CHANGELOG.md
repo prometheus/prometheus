@@ -2,8 +2,10 @@
 
 ## unreleased
 
-* [BUGFIX] TSDB: fix unknown series errors and possible lost data during WAL replay when series are removed from the head due to inactivity and reappear before the next WAL checkpoint. #16060
+* [CHANGE] Make setting out-of-order native histograms feature (`--enable-feature=ooo-native-histograms`) a no-op. Out-of-order native histograms are now always enabled when `out_of_order_time_window` is greater than zero and `--enable-feature=native-histograms` is set. #16207
+* [ENHANCEMENT] TSDB: add `prometheus_tsdb_wal_replay_unknown_refs_total` and `prometheus_tsdb_wbl_replay_unknown_refs_total` metrics to track unknown series references during WAL/WBL replay. #16166
 * [ENHANCEMENT] TSDB: Add hidden flag for disabling caching of all symbols for compaction: `--storage.tsdb.cache-all-symbols-for-compaction`. #15836
+* [BUGFIX] TSDB: fix unknown series errors and possible lost data during WAL replay when series are removed from the head due to inactivity and reappear before the next WAL checkpoint. #16060
 
 ## 3.2.1 / 2025-02-25
 
@@ -143,6 +145,11 @@ This release includes new features such as a brand new UI and UTF-8 support enab
 * [BUGFIX] PromQL: Handle stale marker in native histogram series (e.g. if series goes away and comes back). #15025
 * [BUGFIX] Autoreload: Reload invalid yaml files. #14947
 * [BUGFIX] Scrape: Do not override target parameter labels with config params. #11029
+
+## 2.53.4 / 2025-03-18
+
+* [BUGFIX] Runtime: fix GOGC is being set to 0 when installed with empty prometheus.yml file resulting high cpu usage. #16090
+* [BUGFIX] Scrape: fix dropping valid metrics after previous scrape failed. #16220
 
 ## 2.53.3 / 2024-11-04
 
