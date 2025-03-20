@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
-	prometheustranslator "github.com/prometheus/otlp-prometheus-translator"
+	"github.com/prometheus/otlptranslator"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -761,7 +761,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 				Settings{
 					ExportCreatedMetric: true,
 				},
-				prometheustranslator.BuildCompliantMetricName(metric, "", true),
+				otlptranslator.BuildCompliantMetricName(metric, "", true),
 			)
 			require.NoError(t, err)
 			require.Empty(t, annots)
