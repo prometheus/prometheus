@@ -24,7 +24,6 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -380,8 +379,8 @@ func TestConvertBucketsLayout(t *testing.T) {
 		for scaleDown, wantLayout := range tt.wantLayout {
 			t.Run(fmt.Sprintf("%s-scaleby-%d", tt.name, scaleDown), func(t *testing.T) {
 				gotSpans, gotDeltas := convertBucketsLayout(tt.buckets().BucketCounts().AsRaw(), tt.buckets().Offset(), scaleDown, true)
-				assert.Equal(t, wantLayout.wantSpans, gotSpans)
-				assert.Equal(t, wantLayout.wantDeltas, gotDeltas)
+				require.Equal(t, wantLayout.wantSpans, gotSpans)
+				require.Equal(t, wantLayout.wantDeltas, gotDeltas)
 			})
 		}
 	}
@@ -569,13 +568,13 @@ func TestExponentialToNativeHistogram(t *testing.T) {
 			validateExponentialHistogramCount(t, tt.exponentialHist()) // Sanity check.
 			got, annots, err := exponentialToNativeHistogram(tt.exponentialHist())
 			if tt.wantErrMessage != "" {
-				assert.ErrorContains(t, err, tt.wantErrMessage)
+				require.ErrorContains(t, err, tt.wantErrMessage)
 				return
 			}
 
 			require.NoError(t, err)
 			require.Empty(t, annots)
-			assert.Equal(t, tt.wantNativeHist(), got)
+			require.Equal(t, tt.wantNativeHist(), got)
 			validateNativeHistogramCount(t, got)
 		})
 	}
@@ -617,7 +616,7 @@ func validateNativeHistogramCount(t *testing.T, h prompb.Histogram) {
 		prevBucket += delta
 		actualCount += uint64(prevBucket)
 	}
-	assert.Equal(t, want, actualCount, "native histogram count mismatch")
+	require.Equal(t, want, actualCount, "native histogram count mismatch")
 }
 
 func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
@@ -774,8 +773,8 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			require.NoError(t, err)
 			require.Empty(t, annots)
 
-			assert.Equal(t, tt.wantSeries(), converter.unique)
-			assert.Empty(t, converter.conflicts)
+			require.Equal(t, tt.wantSeries(), converter.unique)
+			require.Empty(t, converter.conflicts)
 		})
 	}
 }
@@ -814,7 +813,7 @@ func TestConvertExplicitHistogramBucketsToNHCBLayout(t *testing.T) {
 		},
 		{
 			name:    "trailing empty buckets",
-			buckets: []uint64{0, 0, 1, 1, 2, 3, 0, 0}, //TODO: add tests for 3 trailing buckets
+			buckets: []uint64{0, 0, 1, 1, 2, 3, 0, 0}, // TODO: add tests for 3 trailing buckets
 			wantLayout: expectedBucketLayout{
 				wantSpans: []prompb.BucketSpan{
 					{
@@ -880,8 +879,8 @@ func TestConvertExplicitHistogramBucketsToNHCBLayout(t *testing.T) {
 			bucketCounts := buckets[offset:]
 
 			gotSpans, gotDeltas := convertBucketsLayout(bucketCounts, int32(offset), 0, false)
-			assert.Equal(t, tt.wantLayout.wantSpans, gotSpans)
-			assert.Equal(t, tt.wantLayout.wantDeltas, gotDeltas)
+			require.Equal(t, tt.wantLayout.wantSpans, gotSpans)
+			require.Equal(t, tt.wantLayout.wantDeltas, gotDeltas)
 		})
 	}
 }
@@ -975,13 +974,13 @@ func TestHistogramToCustomBucketsHistogram(t *testing.T) {
 			validateHistogramCount(t, tt.hist())
 			got, annots, err := explicitHistogramToCustomBucketsHistogram(tt.hist())
 			if tt.wantErrMessage != "" {
-				assert.ErrorContains(t, err, tt.wantErrMessage)
+				require.ErrorContains(t, err, tt.wantErrMessage)
 				return
 			}
 
 			require.NoError(t, err)
 			require.Empty(t, annots)
-			assert.Equal(t, tt.wantNativeHist(), got)
+			require.Equal(t, tt.wantNativeHist(), got)
 			validateNativeHistogramCount(t, got)
 		})
 	}
@@ -1143,8 +1142,8 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			require.NoError(t, err)
 			require.Empty(t, annots)
 
-			assert.Equal(t, tt.wantSeries(), converter.unique)
-			assert.Empty(t, converter.conflicts)
+			require.Equal(t, tt.wantSeries(), converter.unique)
+			require.Empty(t, converter.conflicts)
 		})
 	}
 }

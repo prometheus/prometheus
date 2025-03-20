@@ -72,12 +72,12 @@ func TestFromMetrics(t *testing.T) {
 			ts := converter.TimeSeries()
 			require.Len(t, ts, 1408+1) // +1 for the target_info.
 
-			target_info_count := 0
+			tgtInfoCount := 0
 			for _, s := range ts {
 				b := labels.NewScratchBuilder(2)
 				lbls := s.ToLabels(&b, nil)
 				if lbls.Get(labels.MetricName) == "target_info" {
-					target_info_count++
+					tgtInfoCount++
 					require.Equal(t, "test-namespace/test-service", lbls.Get("job"))
 					require.Equal(t, "id1234", lbls.Get("instance"))
 					if keepIdentifyingResourceAttributes {
@@ -91,7 +91,7 @@ func TestFromMetrics(t *testing.T) {
 					}
 				}
 			}
-			require.Equal(t, 1, target_info_count)
+			require.Equal(t, 1, tgtInfoCount)
 		})
 	}
 
@@ -129,7 +129,7 @@ func TestFromMetrics(t *testing.T) {
 
 			if convertHistogramsToNHCB {
 				require.Len(t, series[0].Histograms, 1)
-				require.Len(t, series[0].Samples, 0)
+				require.Empty(t, series[0].Samples)
 			} else {
 				require.Len(t, series, 3)
 				for i := range series {

@@ -19,13 +19,13 @@ package prometheusremotewrite
 import (
 	"context"
 	"fmt"
-	"github.com/prometheus/prometheus/model/histogram"
 	"math"
 
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -36,7 +36,8 @@ const defaultZeroThreshold = 1e-128
 // addExponentialHistogramDataPoints adds OTel exponential histogram data points to the corresponding time series
 // as native histogram samples.
 func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Context, dataPoints pmetric.ExponentialHistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, promName string) (annotations.Annotations, error) {
+	resource pcommon.Resource, settings Settings, promName string,
+) (annotations.Annotations, error) {
 	var annots annotations.Annotations
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -151,7 +152,7 @@ func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint) (prom
 //
 // When converting from OTel Explicit Histograms to Native Histograms with Custom Buckets,
 // the bucket indexes are not scaled, and the indices are not adjusted by 1.
-func convertBucketsLayout(bucketCounts []uint64, offset int32, scaleDown int32, adjustOffset bool) ([]prompb.BucketSpan, []int64) {
+func convertBucketsLayout(bucketCounts []uint64, offset, scaleDown int32, adjustOffset bool) ([]prompb.BucketSpan, []int64) {
 	if len(bucketCounts) == 0 {
 		return nil, nil
 	}
@@ -240,7 +241,8 @@ func convertBucketsLayout(bucketCounts []uint64, offset int32, scaleDown int32, 
 }
 
 func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Context, dataPoints pmetric.HistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, promName string) (annotations.Annotations, error) {
+	resource pcommon.Resource, settings Settings, promName string,
+) (annotations.Annotations, error) {
 	var annots annotations.Annotations
 
 	for x := 0; x < dataPoints.Len(); x++ {
