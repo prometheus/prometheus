@@ -40,6 +40,7 @@ type Settings struct {
 	AllowUTF8                         bool
 	PromoteResourceAttributes         []string
 	KeepIdentifyingResourceAttributes bool
+	ConvertHistogramsToNHCB           bool
 }
 
 // PrometheusConverter converts from OTel write format to Prometheus remote write format.
@@ -142,10 +143,21 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, promName); err != nil {
-						errs = multierr.Append(errs, err)
-						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-							return
+					if settings.ConvertHistogramsToNHCB {
+						ws, err := c.addCustomBucketsHistogramDataPoints(ctx, dataPoints, resource, settings, promName)
+						annots.Merge(ws)
+						if err != nil {
+							errs = multierr.Append(errs, err)
+							if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+								return
+							}
+						}
+					} else {
+						if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, promName); err != nil {
+							errs = multierr.Append(errs, err)
+							if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+								return
+							}
 						}
 					}
 				case pmetric.MetricTypeExponentialHistogram:

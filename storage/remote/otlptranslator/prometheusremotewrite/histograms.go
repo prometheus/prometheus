@@ -19,6 +19,7 @@ package prometheusremotewrite
 import (
 	"context"
 	"fmt"
+	"github.com/prometheus/prometheus/model/histogram"
 	"math"
 
 	"github.com/prometheus/common/model"
@@ -89,8 +90,8 @@ func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint) (prom
 		scale = 8
 	}
 
-	pSpans, pDeltas := convertBucketsLayout(p.Positive(), scaleDown)
-	nSpans, nDeltas := convertBucketsLayout(p.Negative(), scaleDown)
+	pSpans, pDeltas := convertBucketsLayout(p.Positive().BucketCounts().AsRaw(), p.Positive().Offset(), scaleDown, true)
+	nSpans, nDeltas := convertBucketsLayout(p.Negative().BucketCounts().AsRaw(), p.Negative().Offset(), scaleDown, true)
 
 	h := prompb.Histogram{
 		// The counter reset detection must be compatible with Prometheus to
@@ -133,19 +134,25 @@ func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint) (prom
 	return h, annots, nil
 }
 
-// convertBucketsLayout translates OTel Exponential Histogram dense buckets
-// representation to Prometheus Native Histogram sparse bucket representation.
+// convertBucketsLayout translates OTel Explicit or Exponential Histogram dense buckets
+// representation to Prometheus Native Histogram sparse bucket representation. This is used
+// for translating Exponential Histograms into Native Histograms, and Explicit Histograms
+// into Native Histograms with Custom Buckets.
 //
 // The translation logic is taken from the client_golang `histogram.go#makeBuckets`
 // function, see `makeBuckets` https://github.com/prometheus/client_golang/blob/main/prometheus/histogram.go
-// The bucket indexes conversion was adjusted, since OTel exp. histogram bucket
+//
+// scaleDown is the factor by which the buckets are scaled down. In other words 2^scaleDown buckets will be merged into one.
+//
+// When converting from OTel Exponential Histograms to Native Histograms, the
+// bucket indexes conversion is adjusted, since OTel exp. histogram bucket
 // index 0 corresponds to the range (1, base] while Prometheus bucket index 0
 // to the range (base 1].
 //
-// scaleDown is the factor by which the buckets are scaled down. In other words 2^scaleDown buckets will be merged into one.
-func convertBucketsLayout(buckets pmetric.ExponentialHistogramDataPointBuckets, scaleDown int32) ([]prompb.BucketSpan, []int64) {
-	bucketCounts := buckets.BucketCounts()
-	if bucketCounts.Len() == 0 {
+// When converting from OTel Explicit Histograms to Native Histograms with Custom Buckets,
+// the bucket indexes are not scaled, and the indices are not adjusted by 1.
+func convertBucketsLayout(bucketCounts []uint64, offset int32, scaleDown int32, adjustOffset bool) ([]prompb.BucketSpan, []int64) {
+	if len(bucketCounts) == 0 {
 		return nil, nil
 	}
 
@@ -164,24 +171,28 @@ func convertBucketsLayout(buckets pmetric.ExponentialHistogramDataPointBuckets, 
 
 	// Let the compiler figure out that this is const during this function by
 	// moving it into a local variable.
-	numBuckets := bucketCounts.Len()
+	numBuckets := len(bucketCounts)
 
-	// The offset is scaled and adjusted by 1 as described above.
-	bucketIdx := buckets.Offset()>>scaleDown + 1
+	bucketIdx := offset>>scaleDown + 1
+
+	initialOffset := offset
+	if adjustOffset {
+		initialOffset = initialOffset>>scaleDown + 1
+	}
+
 	spans = append(spans, prompb.BucketSpan{
-		Offset: bucketIdx,
+		Offset: initialOffset,
 		Length: 0,
 	})
 
 	for i := 0; i < numBuckets; i++ {
-		// The offset is scaled and adjusted by 1 as described above.
-		nextBucketIdx := (int32(i)+buckets.Offset())>>scaleDown + 1
+		nextBucketIdx := (int32(i)+offset)>>scaleDown + 1
 		if bucketIdx == nextBucketIdx { // We have not collected enough buckets to merge yet.
-			count += int64(bucketCounts.At(i))
+			count += int64(bucketCounts[i])
 			continue
 		}
 		if count == 0 {
-			count = int64(bucketCounts.At(i))
+			count = int64(bucketCounts[i])
 			continue
 		}
 
@@ -202,11 +213,12 @@ func convertBucketsLayout(buckets pmetric.ExponentialHistogramDataPointBuckets, 
 			}
 		}
 		appendDelta(count)
-		count = int64(bucketCounts.At(i))
+		count = int64(bucketCounts[i])
 		bucketIdx = nextBucketIdx
 	}
+
 	// Need to use the last item's index. The offset is scaled and adjusted by 1 as described above.
-	gap := (int32(numBuckets)+buckets.Offset()-1)>>scaleDown + 1 - bucketIdx
+	gap := (int32(numBuckets)+offset-1)>>scaleDown + 1 - bucketIdx
 	if gap > 2 {
 		// We have to create a new span, because we have found a gap
 		// of more than two buckets. The constant 2 is copied from the logic in
@@ -225,4 +237,101 @@ func convertBucketsLayout(buckets pmetric.ExponentialHistogramDataPointBuckets, 
 	appendDelta(count)
 
 	return spans, deltas
+}
+
+func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Context, dataPoints pmetric.HistogramDataPointSlice,
+	resource pcommon.Resource, settings Settings, promName string) (annotations.Annotations, error) {
+	var annots annotations.Annotations
+
+	for x := 0; x < dataPoints.Len(); x++ {
+		if err := c.everyN.checkContext(ctx); err != nil {
+			return annots, err
+		}
+
+		pt := dataPoints.At(x)
+
+		histogram, ws, err := explicitHistogramToCustomBucketsHistogram(pt)
+		annots.Merge(ws)
+		if err != nil {
+			return annots, err
+		}
+
+		lbls := createAttributes(
+			resource,
+			pt.Attributes(),
+			settings,
+			nil,
+			true,
+			model.MetricNameLabel,
+			promName,
+		)
+
+		ts, _ := c.getOrCreateTimeSeries(lbls)
+		ts.Histograms = append(ts.Histograms, histogram)
+
+		exemplars, err := getPromExemplars[pmetric.HistogramDataPoint](ctx, &c.everyN, pt)
+		if err != nil {
+			return annots, err
+		}
+		ts.Exemplars = append(ts.Exemplars, exemplars...)
+	}
+
+	return annots, nil
+}
+
+func explicitHistogramToCustomBucketsHistogram(p pmetric.HistogramDataPoint) (prompb.Histogram, annotations.Annotations, error) {
+	var annots annotations.Annotations
+
+	buckets := p.BucketCounts().AsRaw()
+	offset := getBucketOffset(buckets)
+	bucketCounts := buckets[offset:]
+	positiveSpans, positiveDeltas := convertBucketsLayout(bucketCounts, int32(offset), 0, false)
+
+	// TODO(carrieedwards): Add setting to limit maximum bucket count
+	h := prompb.Histogram{
+		// The counter reset detection must be compatible with Prometheus to
+		// safely set ResetHint to NO. This is not ensured currently.
+		// Sending a sample that triggers counter reset but with ResetHint==NO
+		// would lead to Prometheus panic as it does not double check the hint.
+		// Thus we're explicitly saying UNKNOWN here, which is always safe.
+		// TODO: using created time stamp should be accurate, but we
+		// need to know here if it was used for the detection.
+		// Ref: https://github.com/open-telemetry/opentelemetry-collector-contrib/pull/28663#issuecomment-1810577303
+		// Counter reset detection in Prometheus: https://github.com/prometheus/prometheus/blob/f997c72f294c0f18ca13fa06d51889af04135195/tsdb/chunkenc/histogram.go#L232
+		ResetHint: prompb.Histogram_UNKNOWN,
+		Schema:    histogram.CustomBucketsSchema,
+
+		PositiveSpans:  positiveSpans,
+		PositiveDeltas: positiveDeltas,
+		// Note: OTel explicit histograms have an implicit +Inf bucket, which has a lower bound
+		// of the last element in the explicit_bounds array.
+		// This is similar to the custom_values array in native histograms with custom buckets.
+		// Because of this shared property, the OTel explicit histogram's explicit_bounds array
+		// can be mapped directly to the custom_values array.
+		// See: https://github.com/open-telemetry/opentelemetry-proto/blob/d7770822d70c7bd47a6891fc9faacc66fc4af3d3/opentelemetry/proto/metrics/v1/metrics.proto#L469
+		CustomValues: p.ExplicitBounds().AsRaw(),
+
+		Timestamp: convertTimeStamp(p.Timestamp()),
+	}
+
+	if p.Flags().NoRecordedValue() {
+		h.Sum = math.Float64frombits(value.StaleNaN)
+		h.Count = &prompb.Histogram_CountInt{CountInt: value.StaleNaN}
+	} else {
+		if p.HasSum() {
+			h.Sum = p.Sum()
+		}
+		h.Count = &prompb.Histogram_CountInt{CountInt: p.Count()}
+		if p.Count() == 0 && h.Sum != 0 {
+			annots.Add(fmt.Errorf("histogram data point has zero count, but non-zero sum: %f", h.Sum))
+		}
+	}
+	return h, annots, nil
+}
+
+func getBucketOffset(buckets []uint64) (offset int) {
+	for offset < len(buckets) && buckets[offset] == 0 {
+		offset++
+	}
+	return offset
 }

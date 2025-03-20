@@ -379,7 +379,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 	for _, tt := range tests {
 		for scaleDown, wantLayout := range tt.wantLayout {
 			t.Run(fmt.Sprintf("%s-scaleby-%d", tt.name, scaleDown), func(t *testing.T) {
-				gotSpans, gotDeltas := convertBucketsLayout(tt.buckets(), scaleDown)
+				gotSpans, gotDeltas := convertBucketsLayout(tt.buckets().BucketCounts().AsRaw(), tt.buckets().Offset(), scaleDown, true)
 				assert.Equal(t, wantLayout.wantSpans, gotSpans)
 				assert.Equal(t, wantLayout.wantDeltas, gotDeltas)
 			})
@@ -409,7 +409,7 @@ func BenchmarkConvertBucketLayout(b *testing.B) {
 		}
 		b.Run(fmt.Sprintf("gap %d", scenario.gap), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				convertBucketsLayout(buckets, 0)
+				convertBucketsLayout(buckets.BucketCounts().AsRaw(), buckets.Offset(), 0, true)
 			}
 		})
 	}
@@ -579,6 +579,14 @@ func TestExponentialToNativeHistogram(t *testing.T) {
 			validateNativeHistogramCount(t, got)
 		})
 	}
+}
+
+func validateHistogramCount(t *testing.T, h pmetric.HistogramDataPoint) {
+	actualCount := uint64(0)
+	for _, bucket := range h.BucketCounts().AsRaw() {
+		actualCount += bucket
+	}
+	require.Equal(t, h.Count(), actualCount, "histogram count mismatch")
 }
 
 func validateExponentialHistogramCount(t *testing.T, h pmetric.ExponentialHistogramDataPoint) {
@@ -763,6 +771,375 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 				},
 				otlptranslator.BuildCompliantMetricName(metric, "", true),
 			)
+			require.NoError(t, err)
+			require.Empty(t, annots)
+
+			assert.Equal(t, tt.wantSeries(), converter.unique)
+			assert.Empty(t, converter.conflicts)
+		})
+	}
+}
+
+func TestConvertExplicitHistogramBucketsToNHCBLayout(t *testing.T) {
+	tests := []struct {
+		name       string
+		buckets    []uint64
+		wantLayout expectedBucketLayout
+	}{
+		{
+			name:    "zero offset",
+			buckets: []uint64{4, 3, 2, 1},
+			wantLayout: expectedBucketLayout{
+				wantSpans: []prompb.BucketSpan{
+					{
+						Offset: 0,
+						Length: 4,
+					},
+				},
+				wantDeltas: []int64{4, -1, -1, -1},
+			},
+		},
+		{
+			name:    "leading empty buckets",
+			buckets: []uint64{0, 0, 1, 1, 2, 3},
+			wantLayout: expectedBucketLayout{
+				wantSpans: []prompb.BucketSpan{
+					{
+						Offset: 2,
+						Length: 4,
+					},
+				},
+				wantDeltas: []int64{1, 0, 1, 1},
+			},
+		},
+		{
+			name:    "trailing empty buckets",
+			buckets: []uint64{0, 0, 1, 1, 2, 3, 0, 0}, //TODO: add tests for 3 trailing buckets
+			wantLayout: expectedBucketLayout{
+				wantSpans: []prompb.BucketSpan{
+					{
+						Offset: 2,
+						Length: 6,
+					},
+				},
+				wantDeltas: []int64{1, 0, 1, 1, -3, 0},
+			},
+		},
+		{
+			name:    "bucket gap of 2",
+			buckets: []uint64{1, 2, 0, 0, 2},
+			wantLayout: expectedBucketLayout{
+				wantSpans: []prompb.BucketSpan{
+					{
+						Offset: 0,
+						Length: 5,
+					},
+				},
+				wantDeltas: []int64{1, 1, -2, 0, 2},
+			},
+		},
+		{
+			name:    "bucket gap > 2",
+			buckets: []uint64{1, 2, 0, 0, 0, 2, 4, 4},
+			wantLayout: expectedBucketLayout{
+				wantSpans: []prompb.BucketSpan{
+					{
+						Offset: 0,
+						Length: 2,
+					},
+					{
+						Offset: 3,
+						Length: 3,
+					},
+				},
+				wantDeltas: []int64{1, 1, 0, 2, 0},
+			},
+		},
+		{
+			name:    "multiple bucket gaps",
+			buckets: []uint64{0, 0, 1, 2, 0, 0, 0, 2, 4, 4, 0, 0},
+			wantLayout: expectedBucketLayout{
+				wantSpans: []prompb.BucketSpan{
+					{
+						Offset: 2,
+						Length: 2,
+					},
+					{
+						Offset: 3,
+						Length: 5,
+					},
+				},
+				wantDeltas: []int64{1, 1, 0, 2, 0, -4, 0},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buckets := tt.buckets
+			offset := getBucketOffset(buckets)
+			bucketCounts := buckets[offset:]
+
+			gotSpans, gotDeltas := convertBucketsLayout(bucketCounts, int32(offset), 0, false)
+			assert.Equal(t, tt.wantLayout.wantSpans, gotSpans)
+			assert.Equal(t, tt.wantLayout.wantDeltas, gotDeltas)
+		})
+	}
+}
+
+func BenchmarkConvertHistogramBucketsToNHCBLayout(b *testing.B) {
+	scenarios := []struct {
+		gap int
+	}{
+		{gap: 0},
+		{gap: 1},
+		{gap: 2},
+		{gap: 3},
+	}
+
+	for _, scenario := range scenarios {
+		var buckets []uint64
+		for i := 0; i < 1000; i++ {
+			if i%(scenario.gap+1) == 0 {
+				buckets = append(buckets, uint64(10))
+			} else {
+				buckets = append(buckets, uint64(0))
+			}
+		}
+		b.Run(fmt.Sprintf("gap %d", scenario.gap), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				offset := getBucketOffset(buckets)
+				convertBucketsLayout(buckets, int32(offset), 0, false)
+			}
+		})
+	}
+}
+
+func TestHistogramToCustomBucketsHistogram(t *testing.T) {
+	tests := []struct {
+		name           string
+		hist           func() pmetric.HistogramDataPoint
+		wantNativeHist func() prompb.Histogram
+		wantErrMessage string
+	}{
+		{
+			name: "convert hist to custom buckets hist",
+			hist: func() pmetric.HistogramDataPoint {
+				pt := pmetric.NewHistogramDataPoint()
+				pt.SetStartTimestamp(pcommon.NewTimestampFromTime(time.UnixMilli(100)))
+				pt.SetTimestamp(pcommon.NewTimestampFromTime(time.UnixMilli(500)))
+				pt.SetCount(2)
+				pt.SetSum(10.1)
+
+				pt.BucketCounts().FromRaw([]uint64{1, 1})
+				pt.ExplicitBounds().FromRaw([]float64{0, 1})
+				return pt
+			},
+			wantNativeHist: func() prompb.Histogram {
+				return prompb.Histogram{
+					Count:          &prompb.Histogram_CountInt{CountInt: 2},
+					Sum:            10.1,
+					Schema:         -53,
+					PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 2}},
+					PositiveDeltas: []int64{1, 0},
+					CustomValues:   []float64{0, 1},
+					Timestamp:      500,
+				}
+			},
+		},
+		{
+			name: "convert hist to custom buckets hist with no sum",
+			hist: func() pmetric.HistogramDataPoint {
+				pt := pmetric.NewHistogramDataPoint()
+				pt.SetStartTimestamp(pcommon.NewTimestampFromTime(time.UnixMilli(100)))
+				pt.SetTimestamp(pcommon.NewTimestampFromTime(time.UnixMilli(500)))
+				pt.SetCount(4)
+
+				pt.BucketCounts().FromRaw([]uint64{2, 2})
+				pt.ExplicitBounds().FromRaw([]float64{0, 1})
+				return pt
+			},
+			wantNativeHist: func() prompb.Histogram {
+				return prompb.Histogram{
+					Count:          &prompb.Histogram_CountInt{CountInt: 4},
+					Schema:         -53,
+					PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 2}},
+					PositiveDeltas: []int64{2, 0},
+					CustomValues:   []float64{0, 1},
+					Timestamp:      500,
+				}
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			validateHistogramCount(t, tt.hist())
+			got, annots, err := explicitHistogramToCustomBucketsHistogram(tt.hist())
+			if tt.wantErrMessage != "" {
+				assert.ErrorContains(t, err, tt.wantErrMessage)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Empty(t, annots)
+			assert.Equal(t, tt.wantNativeHist(), got)
+			validateNativeHistogramCount(t, got)
+		})
+	}
+}
+
+func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
+	tests := []struct {
+		name       string
+		metric     func() pmetric.Metric
+		wantSeries func() map[uint64]*prompb.TimeSeries
+	}{
+		{
+			name: "histogram data points with same labels",
+			metric: func() pmetric.Metric {
+				metric := pmetric.NewMetric()
+				metric.SetName("test_hist_to_nhcb")
+				metric.SetEmptyHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+
+				pt := metric.Histogram().DataPoints().AppendEmpty()
+				pt.SetCount(3)
+				pt.SetSum(3)
+				pt.BucketCounts().FromRaw([]uint64{2, 0, 1})
+				pt.ExplicitBounds().FromRaw([]float64{5, 10})
+				pt.Exemplars().AppendEmpty().SetDoubleValue(1)
+				pt.Attributes().PutStr("attr", "test_attr")
+
+				pt = metric.Histogram().DataPoints().AppendEmpty()
+				pt.SetCount(11)
+				pt.SetSum(5)
+				pt.BucketCounts().FromRaw([]uint64{3, 8, 0})
+				pt.ExplicitBounds().FromRaw([]float64{0, 1})
+				pt.Exemplars().AppendEmpty().SetDoubleValue(2)
+				pt.Attributes().PutStr("attr", "test_attr")
+
+				return metric
+			},
+			wantSeries: func() map[uint64]*prompb.TimeSeries {
+				labels := []prompb.Label{
+					{Name: model.MetricNameLabel, Value: "test_hist_to_nhcb"},
+					{Name: "attr", Value: "test_attr"},
+				}
+				return map[uint64]*prompb.TimeSeries{
+					timeSeriesSignature(labels): {
+						Labels: labels,
+						Histograms: []prompb.Histogram{
+							{
+								Count:          &prompb.Histogram_CountInt{CountInt: 3},
+								Sum:            3,
+								Schema:         -53,
+								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 3}},
+								PositiveDeltas: []int64{2, -2, 1},
+								CustomValues:   []float64{5, 10},
+							},
+							{
+								Count:          &prompb.Histogram_CountInt{CountInt: 11},
+								Sum:            5,
+								Schema:         -53,
+								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 3}},
+								PositiveDeltas: []int64{3, 5, -8},
+								CustomValues:   []float64{0, 1},
+							},
+						},
+						Exemplars: []prompb.Exemplar{
+							{Value: 1},
+							{Value: 2},
+						},
+					},
+				}
+			},
+		},
+		{
+			name: "histogram data points with different labels",
+			metric: func() pmetric.Metric {
+				metric := pmetric.NewMetric()
+				metric.SetName("test_hist_to_nhcb")
+				metric.SetEmptyHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+
+				pt := metric.Histogram().DataPoints().AppendEmpty()
+				pt.SetCount(6)
+				pt.SetSum(3)
+				pt.BucketCounts().FromRaw([]uint64{4, 2})
+				pt.ExplicitBounds().FromRaw([]float64{0, 1})
+				pt.Exemplars().AppendEmpty().SetDoubleValue(1)
+				pt.Attributes().PutStr("attr", "test_attr")
+
+				pt = metric.Histogram().DataPoints().AppendEmpty()
+				pt.SetCount(11)
+				pt.SetSum(5)
+				pt.BucketCounts().FromRaw([]uint64{3, 8})
+				pt.ExplicitBounds().FromRaw([]float64{0, 1})
+				pt.Exemplars().AppendEmpty().SetDoubleValue(2)
+				pt.Attributes().PutStr("attr", "test_attr_two")
+
+				return metric
+			},
+			wantSeries: func() map[uint64]*prompb.TimeSeries {
+				labels := []prompb.Label{
+					{Name: model.MetricNameLabel, Value: "test_hist_to_nhcb"},
+					{Name: "attr", Value: "test_attr"},
+				}
+				labelsAnother := []prompb.Label{
+					{Name: model.MetricNameLabel, Value: "test_hist_to_nhcb"},
+					{Name: "attr", Value: "test_attr_two"},
+				}
+
+				return map[uint64]*prompb.TimeSeries{
+					timeSeriesSignature(labels): {
+						Labels: labels,
+						Histograms: []prompb.Histogram{
+							{
+								Count:          &prompb.Histogram_CountInt{CountInt: 6},
+								Sum:            3,
+								Schema:         -53,
+								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 2}},
+								PositiveDeltas: []int64{4, -2},
+								CustomValues:   []float64{0, 1},
+							},
+						},
+						Exemplars: []prompb.Exemplar{
+							{Value: 1},
+						},
+					},
+					timeSeriesSignature(labelsAnother): {
+						Labels: labelsAnother,
+						Histograms: []prompb.Histogram{
+							{
+								Count:          &prompb.Histogram_CountInt{CountInt: 11},
+								Sum:            5,
+								Schema:         -53,
+								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 2}},
+								PositiveDeltas: []int64{3, 5},
+								CustomValues:   []float64{0, 1},
+							},
+						},
+						Exemplars: []prompb.Exemplar{
+							{Value: 2},
+						},
+					},
+				}
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			metric := tt.metric()
+
+			converter := NewPrometheusConverter()
+			annots, err := converter.addCustomBucketsHistogramDataPoints(
+				context.Background(),
+				metric.Histogram().DataPoints(),
+				pcommon.NewResource(),
+				Settings{
+					ExportCreatedMetric:     true,
+					ConvertHistogramsToNHCB: true,
+				},
+				otlptranslator.BuildCompliantMetricName(metric, "", true),
+			)
+
 			require.NoError(t, err)
 			require.Empty(t, annots)
 
