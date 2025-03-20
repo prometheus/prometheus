@@ -183,4 +183,26 @@ This state is periodically ([`max_stale`][d2c]) cleared of inactive series.
 Enabling this _can_ have negative impact on performance, because the in-memory
 state is mutex guarded. Cumulative-only OTLP requests are not affected.
 
+### PromQL arithmetic expressions in time durations
+
+`--enable-feature=promql-duration-expr`
+
+With this flag, arithmetic expressions can also be used in time durations. The following operators are supported:
+
+* `+` - addition
+* `-` - subtraction
+* `*` - multiplication 
+* `/` - division
+* `%` - modulo
+* `^` - exponentiation
+
+Examples:
+
+    5m * 2 # Equivalent to 10m or 600s
+    10m - 1m # Equivalent to 9m or 540s
+    (5+2) * 1m # Equivalent to 7m or 420s
+    1h / 2 # Equivalent to 30m or 1800s
+    4h % 3h # Equivalent to 1h or 3600s
+    (2 ^ 3) * 1m # Equivalent to 8m or 480s
+
 [d2c]: https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor

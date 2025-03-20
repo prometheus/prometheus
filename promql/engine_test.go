@@ -1900,15 +1900,6 @@ func TestSubquerySelector(t *testing.T) {
 					},
 					Start: time.Unix(35, 0),
 				},
-				{
-					Query: "metric[0:10s]",
-					Result: promql.Result{
-						nil,
-						promql.Matrix{},
-						nil,
-					},
-					Start: time.Unix(10, 0),
-				},
 			},
 		},
 		{
@@ -3267,11 +3258,6 @@ func TestInstantQueryWithRangeVectorSelector(t *testing.T) {
 					},
 				},
 			},
-		},
-		"matches series but range is 0": {
-			expr:     "some_metric[0]",
-			ts:       baseT.Add(2 * time.Minute),
-			expected: promql.Matrix{},
 		},
 	}
 

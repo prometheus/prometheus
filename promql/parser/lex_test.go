@@ -915,6 +915,10 @@ var tests = []struct {
 				input: `test:name{on!~"bar"}[:4s]`,
 				fail:  true,
 			},
+			{
+				input: `test:name{on!~"bar"}[1s:1s:1s]`,
+				fail:  true,
+			},
 		},
 	},
 }

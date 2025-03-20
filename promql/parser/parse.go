@@ -39,6 +39,9 @@ var parserPool = sync.Pool{
 	},
 }
 
+// ExperimentalDurationExpr is a flag to enable experimental duration expression parsing.
+var ExperimentalDurationExpr bool
+
 type Parser interface {
 	ParseExpr() (Expr, error)
 	Close()
@@ -881,9 +884,6 @@ func parseDuration(ds string) (time.Duration, error) {
 	if err != nil {
 		return 0, err
 	}
-	if dur == 0 {
-		return 0, errors.New("duration must be greater than 0")
-	}
 	return time.Duration(dur), nil
 }
 
@@ -1059,4 +1059,67 @@ func MustGetFunction(name string) *Function {
 		panic(fmt.Errorf("function %q does not exist", name))
 	}
 	return f
+}
+
+// evalDurationExprBinOp evaluates binary operations for duration expressions.
+// It handles type checking, performs the operation using the specified operator,
+// and constructs a new NumberLiteral with the result.
+func (p *parser) evalDurationExprBinOp(lhs, rhs Node, op Item) *NumberLiteral {
+	if !ExperimentalDurationExpr {
+		p.addParseErrf(op.PositionRange(), "experimental duration expression parsing is experimental and must be enabled with --enable-feature=promql-duration-expr")
+		return &NumberLiteral{Val: 0}
+	}
+
+	numLit1, ok1 := lhs.(*NumberLiteral)
+	numLit2, ok2 := rhs.(*NumberLiteral)
+
+	if !ok1 || !ok2 {
+		p.addParseErrf(posrange.PositionRange{
+			Start: lhs.PositionRange().Start,
+			End:   rhs.PositionRange().End,
+		}, "invalid operands for %s", op.Val)
+		return &NumberLiteral{Val: 0}
+	}
+
+	var val float64
+	var err error
+
+	switch op.Typ {
+	case ADD:
+		val = numLit1.Val + numLit2.Val
+	case SUB:
+		val = numLit1.Val - numLit2.Val
+	case MUL:
+		val = numLit1.Val * numLit2.Val
+	case DIV:
+		if numLit2.Val == 0 {
+			err = errors.New("division by zero")
+		} else {
+			val = numLit1.Val / numLit2.Val
+		}
+	case MOD:
+		if numLit2.Val == 0 {
+			err = errors.New("modulo by zero")
+		} else {
+			val = math.Mod(numLit1.Val, numLit2.Val)
+		}
+	case POW:
+		val = math.Pow(numLit1.Val, numLit2.Val)
+	default:
+		p.addParseErrf(op.PositionRange(), "unknown operator for duration expression: %s", op.Val)
+		return &NumberLiteral{Val: 0}
+	}
+
+	if err != nil {
+		p.addParseErrf(numLit2.PosRange, err.Error())
+		return &NumberLiteral{Val: 0}
+	}
+
+	return &NumberLiteral{
+		Val: val,
+		PosRange: posrange.PositionRange{
+			Start: numLit1.PosRange.Start,
+			End:   numLit2.PosRange.End,
+		},
+	}
 }

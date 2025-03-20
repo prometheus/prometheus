@@ -2337,12 +2337,12 @@ var testExpr = []struct {
 	{
 		input:  `foo[]`,
 		fail:   true,
-		errMsg: "bad number or duration syntax: \"\"",
+		errMsg: "unexpected \"]\" in subquery selector, expected number or duration",
 	},
 	{
 		input:  `foo[-1]`,
 		fail:   true,
-		errMsg: "bad number or duration syntax: \"\"",
+		errMsg: "duration must be greater than 0",
 	},
 	{
 		input:  `some_metric[5m] OFFSET 1mm`,
@@ -3091,7 +3091,7 @@ var testExpr = []struct {
 	{
 		input:  `foo{bar="baz"}[`,
 		fail:   true,
-		errMsg: `1:16: parse error: bad number or duration syntax: ""`,
+		errMsg: `unexpected end of input in duration expression`,
 	},
 	{
 		input: `foo{bar="baz"}[10m:6s]`,
@@ -3946,6 +3946,120 @@ var testExpr = []struct {
 			},
 		},
 	},
+	{
+		input: `foo[11s+10s-5*2^2]`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			Range:  1 * time.Second, // 11s+10s-5*2^2 = 21s-20s = 1s
+			EndPos: 18,
+		},
+	},
+	{
+		input: `foo[-(10s-5s)+20s]`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			Range:  15 * time.Second, // -(10s-5s)+20s = -5s+20s = 15s
+			EndPos: 18,
+		},
+	},
+	{
+		input: `foo[-10s+15s]`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			Range:  5 * time.Second, // -10s+15s = 5s
+			EndPos: 13,
+		},
+	},
+	{
+		input: `foo[4s+4s:1s*2] offset (5s-8)`,
+		expected: &SubqueryExpr{
+			Expr: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			Range:          8 * time.Second,  // 4s+4s = 8s
+			Step:           2 * time.Second,  // 1s*2 = 2s
+			OriginalOffset: -3 * time.Second, // 5s-8 = -3s
+			EndPos:         29,
+		},
+	},
+	{
+		input: `foo offset 5s-8`,
+		expected: &BinaryExpr{
+			Op: SUB,
+			LHS: &VectorSelector{
+				Name:           "foo",
+				OriginalOffset: 5 * time.Second,
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   13,
+				},
+			},
+			RHS: &NumberLiteral{
+				Val: 8,
+				PosRange: posrange.PositionRange{
+					Start: 14,
+					End:   15,
+				},
+			},
+		},
+	},
+	{
+		input:  `foo[5s/0d]`,
+		fail:   true,
+		errMsg: `division by zero`,
+	},
+	{
+		input:  `foo offset (4d/0)`,
+		fail:   true,
+		errMsg: `division by zero`,
+	},
+	{
+		input:  `foo[5s%0d]`,
+		fail:   true,
+		errMsg: `modulo by zero`,
+	},
+	{
+		input:  `foo offset (5s%(2d-2d))`,
+		fail:   true,
+		errMsg: `modulo by zero`,
+	},
 }
 
 func makeInt64Pointer(val int64) *int64 {
@@ -3965,8 +4079,11 @@ func readable(s string) string {
 func TestParseExpressions(t *testing.T) {
 	// Enable experimental functions testing.
 	EnableExperimentalFunctions = true
+	// Enable experimental duration expression parsing.
+	ExperimentalDurationExpr = true
 	t.Cleanup(func() {
 		EnableExperimentalFunctions = false
+		ExperimentalDurationExpr = false
 	})
 
 	for _, test := range testExpr {
