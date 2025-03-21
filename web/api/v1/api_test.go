@@ -4155,6 +4155,12 @@ func TestRespondError(t *testing.T) {
 			code:    http.StatusTooManyRequests,
 			msg:     "some error: rpc error: code = Code(429) desc = message",
 		},
+		{
+			errType: errorExec,
+			err:     grpcstatus.Error(998, "message"),
+			code:    http.StatusUnprocessableEntity, // Return 422 if the code is not a valid HTTP status
+			msg:     "rpc error: code = Code(998) desc = message",
+		},
 	}
 
 	for _, test := range tests {

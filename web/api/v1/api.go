@@ -2024,7 +2024,7 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 	case errorBadData:
 		code = http.StatusBadRequest
 	case errorExec:
-		c, ok := grpcutil.StatusCodeFromErrorChain(apiErr.err)
+		c, ok := grpcutil.HTTPStatusCodeFromErrorChain(apiErr.err)
 		if ok {
 			code = int(c)
 		} else {

@@ -2,21 +2,22 @@ package grpcutil
 
 import (
 	"errors"
+	"net/http"
 
 	"google.golang.org/grpc/status"
 )
 
-// StatusCodeFromErrorChain retrieves the first status code from the chain of gRPC error
-func StatusCodeFromErrorChain(err error) (int32, bool) {
+// HTTPStatusCodeFromErrorChain retrieves the first HTTP status code from the chain of gRPC error
+func HTTPStatusCodeFromErrorChain(err error) (int32, bool) {
 	if err == nil || len(err.Error()) == 0 {
 		return 0, false
 	}
 
 	code, ok := statusCodeFromError(err)
-	if ok {
+	if ok && http.StatusText(int(code)) != "" {
 		return code, true
 	}
-	return StatusCodeFromErrorChain(errors.Unwrap(err))
+	return HTTPStatusCodeFromErrorChain(errors.Unwrap(err))
 }
 
 // statusCodeFromError retrieves the status code from the gRPC error
