@@ -403,10 +403,30 @@ func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (updatedC *FloatHist
 	}
 
 	if !h.UsesCustomBuckets() {
+		var (
+			hPositiveBucketsZeroIndices     []int
+			hNegativeBucketsZeroIndices     []int
+			shouldAdjustCompensationBuckets = other.ZeroThreshold > h.ZeroThreshold
+		)
+		if shouldAdjustCompensationBuckets {
+			for i, value := range h.PositiveBuckets {
+				if value == 0 {
+					hPositiveBucketsZeroIndices = append(hPositiveBucketsZeroIndices, i)
+				}
+			}
+			for i, value := range h.NegativeBuckets {
+				if value == 0 {
+					hNegativeBucketsZeroIndices = append(hNegativeBucketsZeroIndices, i)
+				}
+			}
+		}
 		otherZeroCount := h.reconcileZeroBuckets(other)
-		h.ZeroCount, c.ZeroCount = kahansum.Inc(otherZeroCount, h.ZeroCount, c.ZeroCount)
+		if shouldAdjustCompensationBuckets {
+			c.adjustCompensationBuckets(h, hPositiveBucketsZeroIndices, hNegativeBucketsZeroIndices)
+		}
 		c.PositiveSpans = h.PositiveSpans
 		c.NegativeSpans = h.NegativeSpans
+		h.ZeroCount, c.ZeroCount = kahansum.Inc(otherZeroCount, h.ZeroCount, c.ZeroCount)
 	}
 	h.Count, c.Count = kahansum.Inc(other.Count, h.Count, c.Count)
 	h.Sum, c.Sum = kahansum.Inc(other.Sum, h.Sum, c.Sum)
@@ -996,6 +1016,64 @@ func (h *FloatHistogram) reconcileZeroBuckets(other *FloatHistogram) float64 {
 		}
 	}
 	return otherZeroCount
+}
+
+// adjustCompensationBuckets adjusts the compensation histogram's buckets layout to match the
+// corresponding receiving histogram layout.
+//
+// If the length of the receiving histogram's buckets has decreased, we assume this is due to:
+//  1. An increase in the zero threshold, shifting some values into the zero bucket.
+//  2. Compacting (eliminating) buckets with zero values.
+//
+// To adjust the compensation histogram, we first remove buckets corresponding to the original
+// zero values in the receiving histogram. If the receiving histogram's bucket slice is still
+// larger than the compensation histogram's, we trim values from the left of the compensation
+// histogram's buckets and increase its zero count accordingly.
+func (h *FloatHistogram) adjustCompensationBuckets(
+	other *FloatHistogram, posBucketsZeroIndices, negBucketsZeroIndices []int,
+) {
+	if len(other.PositiveBuckets) < len(h.PositiveBuckets) {
+		h.PositiveBuckets = removeByIndices(h.PositiveBuckets, posBucketsZeroIndices)
+	}
+	if len(other.PositiveBuckets) < len(h.PositiveBuckets) {
+		diff := len(h.PositiveBuckets) - len(other.PositiveBuckets)
+		for _, count := range h.PositiveBuckets[:diff] {
+			h.ZeroCount += count
+		}
+		h.PositiveBuckets = h.PositiveBuckets[diff:]
+	}
+
+	if len(other.NegativeBuckets) < len(h.NegativeBuckets) {
+		h.NegativeBuckets = removeByIndices(h.NegativeBuckets, negBucketsZeroIndices)
+	}
+	if len(other.NegativeBuckets) < len(h.NegativeBuckets) {
+		diff := len(h.NegativeBuckets) - len(other.NegativeBuckets)
+		for _, count := range h.NegativeBuckets[:diff] {
+			h.ZeroCount += count
+		}
+		h.NegativeBuckets = h.NegativeBuckets[diff:]
+	}
+}
+
+// removeByIndices removes elements from the given slice at the specified indices
+// and returns a new slice with the remaining elements. The indicesToRemove slice
+// must be sorted in ascending order for correct behavior.
+func removeByIndices(slice []float64, indicesToRemove []int) []float64 {
+	if len(indicesToRemove) == 0 {
+		return slice
+	}
+
+	result := make([]float64, 0, len(slice)-len(indicesToRemove))
+	removeIdx := 0
+
+	for i, val := range slice {
+		if removeIdx < len(indicesToRemove) && i == indicesToRemove[removeIdx] {
+			removeIdx++
+			continue
+		}
+		result = append(result, val)
+	}
+	return result
 }
 
 // floatBucketIterator is a low-level constructor for bucket iterators.
@@ -1645,8 +1723,8 @@ func kahanReduceResolution(
 
 // newCompensationHistogram initializes a new compensation histogram that can be used
 // alongside the current FloatHistogram in Kahan summation.
-// The compensation histogram is structured to match the receiving histogram's bucket
-// layout including its schema and custom values, and it shares spans with the receiving histogram.
+// The compensation histogram is structured to match the receiving histogram's bucket layout
+// including its schema and custom values, and it shares spans with the receiving histogram.
 // However, the bucket values in the compensation histogram are initialized to zero.
 func (h *FloatHistogram) newCompensationHistogram() *FloatHistogram {
 	c := &FloatHistogram{
