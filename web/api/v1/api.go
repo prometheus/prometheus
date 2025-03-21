@@ -54,6 +54,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/prometheus/prometheus/util/grpcutil"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/notifications"
 	"github.com/prometheus/prometheus/util/stats"
@@ -2023,7 +2024,12 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 	case errorBadData:
 		code = http.StatusBadRequest
 	case errorExec:
-		code = http.StatusUnprocessableEntity
+		c, ok := grpcutil.StatusCodeFromErrorChain(apiErr.err)
+		if ok {
+			code = int(c)
+		} else {
+			code = http.StatusUnprocessableEntity
+		}
 	case errorCanceled:
 		code = statusClientClosedConnection
 	case errorTimeout:
