@@ -518,6 +518,9 @@ func main() {
 	serverOnlyFlag(a, "alertmanager.notification-queue-capacity", "The capacity of the queue for pending Alertmanager notifications.").
 		Default("10000").IntVar(&cfg.notifier.QueueCapacity)
 
+	serverOnlyFlag(a, "alertmanager.notification-batch-size", "The number of notifications to send to the Alertmanager in a single HTTP request.").
+		Default("256").IntVar(&cfg.notifier.MaxBatchSize)
+
 	serverOnlyFlag(a, "alertmanager.drain-notification-queue-on-shutdown", "Send any outstanding Alertmanager notifications when shutting down. If false, any outstanding Alertmanager notifications will be dropped when shutting down.").
 		Default("true").BoolVar(&cfg.notifier.DrainOnShutdown)
 
