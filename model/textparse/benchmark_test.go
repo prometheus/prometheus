@@ -144,10 +144,12 @@ func benchParse(b *testing.B, data []byte, parser string) {
 	var newParserFn newParser
 	switch parser {
 	case "promtext":
-		newParserFn = NewPromParser
+		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
+			return NewPromParser(b, st, false)
+		}
 	case "promproto":
 		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
-			return NewProtobufParser(b, true, st)
+			return NewProtobufParser(b, true, false, st)
 		}
 	case "omtext":
 		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
@@ -273,7 +275,7 @@ func BenchmarkCreatedTimestampPromProto(b *testing.B) {
 	data := createTestProtoBuf(b).Bytes()
 
 	st := labels.NewSymbolTable()
-	p := NewProtobufParser(data, true, st)
+	p := NewProtobufParser(data, true, false, st)
 
 	found := false
 Inner:
