@@ -21,13 +21,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/grafana/regexp"
-
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/google/uuid"
+	"github.com/grafana/regexp"
 )
 
 // Clouds.

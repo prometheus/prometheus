@@ -11,7 +11,7 @@ if ! [[ "$0" =~ "scripts/genproto.sh" ]]; then
 fi
 
 pushd "internal/tools"
-INSTALL_PKGS="github.com/bufbuild/buf/cmd/buf github.com/gogo/protobuf/protoc-gen-gogofast github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2 golang.org/x/tools/cmd/goimports"
+INSTALL_PKGS="github.com/bufbuild/buf/cmd/buf github.com/daixiang0/gci github.com/gogo/protobuf/protoc-gen-gogofast github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2"
 for pkg in ${INSTALL_PKGS}; do
     GO111MODULE=on go install "$pkg"
 done
@@ -29,6 +29,7 @@ for dir in ${DIRS}; do
 		sed -i.bak -E 's/golang\/protobuf\/descriptor/gogo\/protobuf\/protoc-gen-gogo\/descriptor/g' *.go
 		sed -i.bak -E 's/golang\/protobuf/gogo\/protobuf/g' *.go
 		rm -f -- *.bak
-		goimports -w ./*.go ./io/prometheus/client/*.go
+		gci write -s standard -s default -s "prefix(github.com/prometheus/prometheus)" .
 	popd
 done
+

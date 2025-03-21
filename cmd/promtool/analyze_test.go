@@ -17,9 +17,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
 )
 
 var (

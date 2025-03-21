@@ -38,9 +38,8 @@ import (
 	"github.com/Code-Hex/go-generics-cache/policy/lru"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
-	"github.com/prometheus/common/promslog"
-
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/version"
 
 	"github.com/prometheus/prometheus/discovery"

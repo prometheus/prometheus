@@ -29,11 +29,10 @@ import (
 
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
+	common_templates "github.com/prometheus/common/helpers/templates"
 	"github.com/prometheus/common/model"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
-
-	common_templates "github.com/prometheus/common/helpers/templates"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/strutil"

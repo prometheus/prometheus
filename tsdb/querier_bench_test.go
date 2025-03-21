@@ -19,11 +19,11 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/index"
-
-	"github.com/stretchr/testify/require"
 )
 
 // Make entries ~50B in size, to emulate real-world high cardinality.

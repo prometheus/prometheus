@@ -21,11 +21,10 @@ import (
 	"os"
 	"testing"
 
-	yaml "gopkg.in/yaml.v2"
-
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
+	yaml "gopkg.in/yaml.v2"
 )
 
 func TestOvhCloudVpsRefresh(t *testing.T) {

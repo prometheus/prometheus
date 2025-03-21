@@ -10,10 +10,10 @@ linters:
     - depguard
     - errorlint
     - exptostd
+    - gci
     - gocritic
     - godot
     - gofumpt
-    - goimports
     - loggercheck
     - misspell
     - nilnesserr
@@ -103,8 +103,11 @@ linters-settings:
       - (*net/http.Server).Shutdown
       # Never check for rollback errors as Rollback() is called when a previous error was detected.
       - (github.com/prometheus/prometheus/storage.Appender).Rollback
-  goimports:
-    local-prefixes: github.com/prometheus/prometheus
+  gci:
+    sections:
+      - standard
+      - default
+      - prefix(github.com/prometheus/prometheus)
   gofumpt:
     extra-rules: true
   perfsprint:

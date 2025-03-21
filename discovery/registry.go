@@ -22,9 +22,8 @@ import (
 	"strings"
 	"sync"
 
-	"gopkg.in/yaml.v2"
-
 	"github.com/prometheus/client_golang/prometheus"
+	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
