@@ -45,7 +45,6 @@ func NewLiveReaderMetrics(reg prometheus.Registerer) *LiveReaderMetrics {
 	if reg != nil {
 		reg.MustRegister(m.readerCorruptionErrors)
 	}
-
 	return m
 }
 
@@ -83,9 +82,6 @@ type LiveReader struct {
 	total       int64 // Total bytes processed during reading in calls to Next().
 	index       int   // Used to track partial records, should be 0 at the start of every new record.
 
-	// For testing, we can treat EOF as a non-error.
-	eofNonErr bool
-
 	// We sometime see records span page boundaries.  Should never happen, but it
 	// does.  Until we track down why, set permissive to true to tolerate it.
 	// NB the non-ive Reader implementation allows for this.
@@ -94,18 +90,19 @@ type LiveReader struct {
 	metrics *LiveReaderMetrics
 }
 
-// Err returns any errors encountered reading the WAL.  io.EOFs are not terminal
-// and Next can be tried again.  Non-EOFs are terminal, and the reader should
-// not be used again.  It is up to the user to decide when to stop trying should
-// io.EOF be returned.
+// Err returns any errors encountered reading the WAL. io.EOFs are not terminal
+// and Next can be tried again. Note that LiveReader don't know when we read the
+// segment fully, so it will never return nil error.
+//
+// See handleFullSegmentPartialReads on one way of handling full segments with
+// live reader.
+//
+// Non-EOFs are terminal, and the reader should not be used again.
 func (r *LiveReader) Err() error {
-	if r.eofNonErr && errors.Is(r.err, io.EOF) {
-		return nil
-	}
 	return r.err
 }
 
-// Offset returns the number of bytes consumed from this segment.
+// Offset returns the number of bytes consumed from the reader interface.
 func (r *LiveReader) Offset() int64 {
 	return r.total
 }
@@ -117,7 +114,7 @@ func (r *LiveReader) fillBuffer() (int, error) {
 }
 
 // Next returns true if Record() will contain a full record.
-// If Next returns false, you should always checked the contents of Error().
+// If Next returns false, you should always check the contents of Error().
 // Return false guarantees there are no more records if the segment is closed
 // and not corrupt, otherwise if Err() == io.EOF you should try again when more
 // data has been written.
