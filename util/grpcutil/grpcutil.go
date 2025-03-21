@@ -20,7 +20,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// HTTPStatusCodeFromErrorChain retrieves the first HTTP status code from the chain of gRPC error
+// HTTPStatusCodeFromErrorChain retrieves the first HTTP status code from the chain of gRPC error.
 func HTTPStatusCodeFromErrorChain(err error) (int32, bool) {
 	if err == nil || len(err.Error()) == 0 {
 		return 0, false
@@ -33,7 +33,7 @@ func HTTPStatusCodeFromErrorChain(err error) (int32, bool) {
 	return HTTPStatusCodeFromErrorChain(errors.Unwrap(err))
 }
 
-// statusCodeFromError retrieves the status code from the gRPC error
+// statusCodeFromError retrieves the status code from the gRPC error.
 func statusCodeFromError(err error) (int32, bool) {
 	s, ok := status.FromError(err)
 	if !ok {

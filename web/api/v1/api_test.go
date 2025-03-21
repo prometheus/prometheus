@@ -15,6 +15,7 @@ package v1
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -34,7 +35,6 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 
 	jsoniter "github.com/json-iterator/go"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -4151,7 +4151,7 @@ func TestRespondError(t *testing.T) {
 		},
 		{
 			errType: errorExec,
-			err:     errors.Wrapf(grpcstatus.Error(429, "message"), "some error"),
+			err:     fmt.Errorf("some error: %w", grpcstatus.Error(429, "message")),
 			code:    http.StatusTooManyRequests,
 			msg:     "some error: rpc error: code = Code(429) desc = message",
 		},
