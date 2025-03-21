@@ -76,7 +76,7 @@ When loading a batch of classic histogram float series, you can optionally appen
 ## `eval` command
 
 `eval` runs a query against the test environment and asserts that the result is as expected. 
-It requires the query to succeed without any failures.
+It requires the query to succeed without any failures unless an `expect fail` line is provided. Previously `eval` expected no `info` or `warn` annotation, but now `expect no_info` and `expect no_warn` lines must be explicitly provided.
 
 Both instant and range queries are supported.
 
@@ -163,4 +163,4 @@ There can be multiple `<expect>` lines for a given `<type>`. Each `<type>` valid
 
 Every `<expect>` line must match at least one corresponding annotation or error.
 
-If at least one `<expect>` line of a specific `<type>` is present, then all corresponding annotations must have a matching `expect` line.
+If at least one `<expect>` line of type `warn` or `info` is present, then all corresponding annotations must have a matching `expect` line.
