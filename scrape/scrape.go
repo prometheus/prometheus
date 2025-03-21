@@ -341,7 +341,7 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 		mrc                      = sp.config.MetricRelabelConfigs
 		fallbackScrapeProtocol   = sp.config.ScrapeFallbackProtocol.HeaderMediaType()
 		alwaysScrapeClassicHist  = sp.config.AlwaysScrapeClassicHistograms
-		convertClassicHistToNHCB = sp.config.ConvertClassicHistogramsToNHCB
+		convertClassicHistToNHCB = sp.config.ConvertClassicHistogramsToNHCBEnabled()
 	)
 
 	validationScheme := model.UTF8Validation
@@ -503,7 +503,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 		mrc                      = sp.config.MetricRelabelConfigs
 		fallbackScrapeProtocol   = sp.config.ScrapeFallbackProtocol.HeaderMediaType()
 		alwaysScrapeClassicHist  = sp.config.AlwaysScrapeClassicHistograms
-		convertClassicHistToNHCB = sp.config.ConvertClassicHistogramsToNHCB
+		convertClassicHistToNHCB = sp.config.ConvertClassicHistogramsToNHCB != nil && *sp.config.ConvertClassicHistogramsToNHCB
 	)
 
 	validationScheme := model.UTF8Validation

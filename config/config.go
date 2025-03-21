@@ -167,7 +167,8 @@ var (
 		RuleQueryOffset:    model.Duration(0 * time.Minute),
 		// When native histogram feature flag is enabled, ScrapeProtocols default
 		// changes to DefaultNativeHistogramScrapeProtocols.
-		ScrapeProtocols: DefaultScrapeProtocols,
+		ScrapeProtocols:                DefaultScrapeProtocols,
+		ConvertClassicHistogramsToNHCB: false,
 	}
 
 	DefaultRuntimeConfig = RuntimeConfig{
@@ -481,6 +482,8 @@ type GlobalConfig struct {
 	KeepDroppedTargets uint `yaml:"keep_dropped_targets,omitempty"`
 	// Allow UTF8 Metric and Label Names.
 	MetricNameValidationScheme string `yaml:"metric_name_validation_scheme,omitempty"`
+	// Whether to convert all scraped classic histograms into native histograms with custom buckets.
+	ConvertClassicHistogramsToNHCB bool `yaml:"convert_classic_histograms_to_nhcb,omitempty"`
 }
 
 // ScrapeProtocol represents supported protocol for scraping metrics.
@@ -636,7 +639,8 @@ func (c *GlobalConfig) isZero() bool {
 		c.RuleQueryOffset == 0 &&
 		c.QueryLogFile == "" &&
 		c.ScrapeFailureLogFile == "" &&
-		c.ScrapeProtocols == nil
+		c.ScrapeProtocols == nil &&
+		!c.ConvertClassicHistogramsToNHCB
 }
 
 // RuntimeConfig configures the values for the process behavior.
@@ -683,7 +687,7 @@ type ScrapeConfig struct {
 	// Whether to scrape a classic histogram, even if it is also exposed as a native histogram.
 	AlwaysScrapeClassicHistograms bool `yaml:"always_scrape_classic_histograms,omitempty"`
 	// Whether to convert all scraped classic histograms into a native histogram with custom buckets.
-	ConvertClassicHistogramsToNHCB bool `yaml:"convert_classic_histograms_to_nhcb,omitempty"`
+	ConvertClassicHistogramsToNHCB *bool `yaml:"convert_classic_histograms_to_nhcb,omitempty"`
 	// File to which scrape failures are logged.
 	ScrapeFailureLogFile string `yaml:"scrape_failure_log_file,omitempty"`
 	// The HTTP resource path on which to fetch metrics from targets.
@@ -850,12 +854,21 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 		c.MetricNameValidationScheme = globalConfig.MetricNameValidationScheme
 	}
 
+	if c.ConvertClassicHistogramsToNHCB == nil {
+		globalVal := &globalConfig.ConvertClassicHistogramsToNHCB
+		c.ConvertClassicHistogramsToNHCB = globalVal
+	}
+
 	return nil
 }
 
 // MarshalYAML implements the yaml.Marshaler interface.
 func (c *ScrapeConfig) MarshalYAML() (interface{}, error) {
 	return discovery.MarshalYAMLWithInlineConfigs(c)
+}
+
+func (c *ScrapeConfig) ConvertClassicHistogramsToNHCBEnabled() bool {
+	return c.ConvertClassicHistogramsToNHCB != nil && *c.ConvertClassicHistogramsToNHCB
 }
 
 // StorageConfig configures runtime reloadable configuration options.
