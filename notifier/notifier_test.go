@@ -26,6 +26,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
+
 	"github.com/prometheus/alertmanager/api/v2/models"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
@@ -182,8 +184,9 @@ func TestHandlerSendAll(t *testing.T) {
 				urlf: func() string { return server1.URL },
 			},
 		},
-		cfg:    &am1Cfg,
-		client: authClient,
+		cfg:     &am1Cfg,
+		client:  authClient,
+		metrics: h.metrics,
 	}
 
 	h.alertmanagers["2"] = &alertmanagerSet{
@@ -195,12 +198,14 @@ func TestHandlerSendAll(t *testing.T) {
 				urlf: func() string { return server3.URL },
 			},
 		},
-		cfg: &am2Cfg,
+		cfg:     &am2Cfg,
+		metrics: h.metrics,
 	}
 
 	h.alertmanagers["3"] = &alertmanagerSet{
-		ams: []alertmanager{}, // empty set
-		cfg: &am3Cfg,
+		ams:     []alertmanager{}, // empty set
+		cfg:     &am3Cfg,
+		metrics: h.metrics,
 	}
 
 	for i := range make([]struct{}, maxBatchSize) {
@@ -222,21 +227,26 @@ func TestHandlerSendAll(t *testing.T) {
 	}
 
 	// all ams in all sets are up
-	require.True(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
+	require.True(t, h.sendAll(h.queue...), "sends failed unexpectedly")
 	checkNoErr()
 
+	server1Sent := testutil.ToFloat64(h.metrics.sent.WithLabelValues(server1.URL))
 	// the only am in set 1 is down
 	status1.Store(int32(http.StatusNotFound))
-	require.False(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
+	require.False(t, h.sendAll(h.queue...), "all sends succeeded unexpectedly")
 	checkNoErr()
+	require.Equal(t, server1Sent, testutil.ToFloat64(h.metrics.sent.WithLabelValues(server1.URL)), "incorrect server 1 sent count")
 
 	// reset it
 	status1.Store(int32(http.StatusOK))
 
 	// only one of the ams in set 2 is down
+	server2Sent := testutil.ToFloat64(h.metrics.sent.WithLabelValues(server2.URL))
 	status2.Store(int32(http.StatusInternalServerError))
-	require.True(t, h.sendAll(h.queue...), "all sends succeeded unexpectedly")
+	require.True(t, h.sendAll(h.queue...), "sends failed unexpectedly")
 	checkNoErr()
+	require.Equal(t, server1Sent+maxBatchSize, testutil.ToFloat64(h.metrics.sent.WithLabelValues(server1.URL)), "incorrect server 1 sent count")
+	require.Equal(t, server2Sent, testutil.ToFloat64(h.metrics.sent.WithLabelValues(server2.URL)), "incorrect server 2 sent count")
 
 	// both ams in set 2 are down
 	status3.Store(int32(http.StatusInternalServerError))
