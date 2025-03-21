@@ -2514,8 +2514,156 @@ func TestFloatHistogramAdd(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			testHistogramAdd(t, c.in1, c.in2, c.expected, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
 			testHistogramAdd(t, c.in2, c.in1, c.expected, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
-			testHistogramKahanAdd(t, c.in1, c.in2, c.expected, c.expErrMsg)
-			testHistogramKahanAdd(t, c.in2, c.in1, c.expected, c.expErrMsg)
+			testHistogramKahanAdd(t, c.in1, nil, c.in2, c.expected, nil, c.expErrMsg)
+			testHistogramKahanAdd(t, c.in2, nil, c.in1, c.expected, nil, c.expErrMsg)
+		})
+	}
+}
+
+// TestKahanAddWithCompHistogram tests KahanAdd.
+// Test cases provide two float histograms and a compensation histogram with predefined values.
+func TestKahanAddWithCompHistogram(t *testing.T) {
+	cases := []struct {
+		name                                   string
+		in1, comp, in2, expectedSum, expectedC *FloatHistogram
+		expErrMsg                              string
+	}{
+		{
+			"larger zero bucket in first histogram",
+			&FloatHistogram{
+				ZeroThreshold:   1,
+				ZeroCount:       17,
+				Count:           21,
+				Sum:             1.234,
+				PositiveSpans:   []Span{{1, 2}, {0, 3}},
+				PositiveBuckets: []float64{2, 3, 6, 2, 5},
+				NegativeSpans:   []Span{{4, 2}, {1, 2}},
+				NegativeBuckets: []float64{1, 1, 4, 4},
+			},
+			&FloatHistogram{
+				PositiveSpans:   []Span{{1, 2}, {0, 3}},
+				PositiveBuckets: []float64{0.02, 0.03, 0.06, 0.02, 0.05},
+				NegativeSpans:   []Span{{4, 2}, {1, 2}},
+				NegativeBuckets: []float64{0.01, 0.01, 0.04, 0.04},
+			},
+			&FloatHistogram{
+				ZeroThreshold:   0.01,
+				ZeroCount:       11,
+				Count:           30,
+				Sum:             2.345,
+				PositiveSpans:   []Span{{-2, 2}, {2, 3}},
+				PositiveBuckets: []float64{1, 0, 3, 4, 7},
+				NegativeSpans:   []Span{{3, 2}, {3, 2}},
+				NegativeBuckets: []float64{3, 1, 5, 6},
+			},
+			&FloatHistogram{
+				ZeroThreshold:   1,
+				ZeroCount:       29,
+				Count:           51,
+				Sum:             3.579,
+				PositiveSpans:   []Span{{1, 2}, {0, 3}},
+				PositiveBuckets: []float64{2.02, 6.03, 10.06, 9.02, 5.05},
+				NegativeSpans:   []Span{{3, 3}, {1, 3}},
+				NegativeBuckets: []float64{3, 2.01, 1.01, 4.04, 9.04, 6},
+			},
+			&FloatHistogram{
+				PositiveSpans:   []Span{{1, 2}, {0, 3}},
+				PositiveBuckets: []float64{0.02, 0.03, 0.06, 0.02, 0.05},
+				NegativeSpans:   []Span{{3, 3}, {1, 3}},
+				NegativeBuckets: []float64{0, 0.01, 0.01, 0.04, 0.04, 0},
+			},
+			"",
+		},
+		{
+			"smaller zero bucket in first histogram",
+			&FloatHistogram{
+				ZeroThreshold:   0.01,
+				ZeroCount:       11,
+				Count:           40,
+				Sum:             2.345,
+				PositiveSpans:   []Span{{-2, 2}, {2, 3}},
+				PositiveBuckets: []float64{1, 2, 3, 4, 7},
+				NegativeSpans:   []Span{{3, 2}, {3, 2}},
+				NegativeBuckets: []float64{3, 1, 5, 6},
+			},
+			&FloatHistogram{
+				ZeroCount:       0,
+				PositiveSpans:   []Span{{-2, 2}, {2, 3}},
+				PositiveBuckets: []float64{0.02, 0.03, 0.06, 0.07, 0.05},
+				NegativeSpans:   []Span{{3, 2}, {3, 2}},
+				NegativeBuckets: []float64{0.01, 0.01, 0.04, 0.04},
+			},
+			&FloatHistogram{
+				ZeroThreshold:   1,
+				ZeroCount:       17,
+				Count:           11,
+				Sum:             1.234,
+				PositiveSpans:   []Span{{1, 2}, {0, 3}},
+				PositiveBuckets: []float64{2, 3, 6, 2, 5},
+				NegativeSpans:   []Span{{4, 2}, {1, 2}},
+				NegativeBuckets: []float64{1, 1, 4, 4},
+			},
+			&FloatHistogram{
+				ZeroThreshold:   1,
+				ZeroCount:       31.05,
+				Count:           51,
+				Sum:             3.579,
+				PositiveSpans:   []Span{{1, 5}},
+				PositiveBuckets: []float64{2, 6.06, 10.07, 9.05, 5},
+				NegativeSpans:   []Span{{3, 3}, {1, 3}},
+				NegativeBuckets: []float64{3.01, 2.01, 1, 4, 9.04, 6.04},
+			},
+			&FloatHistogram{
+				ZeroCount:       0.05,
+				PositiveSpans:   []Span{{1, 5}},
+				PositiveBuckets: []float64{0, 0.06, 0.07, 0.05, 0},
+				NegativeSpans:   []Span{{3, 3}, {1, 3}},
+				NegativeBuckets: []float64{0.01, 0.01, 0, 0, 0.04, 0.04},
+			},
+			"",
+		},
+		{
+			"first histogram contains zero buckets and Compact is called",
+			&FloatHistogram{
+				ZeroThreshold:   0.01,
+				ZeroCount:       11,
+				Count:           30,
+				Sum:             2.345,
+				PositiveSpans:   []Span{{-2, 2}, {1, 1}, {1, 3}},
+				PositiveBuckets: []float64{1, 3, 3, 0, 7, -6},
+			},
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-2, 2}, {1, 1}, {1, 3}},
+				PositiveBuckets: []float64{7, 2, 0.03, 0, 0.05, 0.06},
+			},
+			&FloatHistogram{
+				ZeroThreshold:   1,
+				ZeroCount:       17,
+				Count:           21,
+				Sum:             1.234,
+				PositiveSpans:   []Span{{1, 2}, {1, 2}},
+				PositiveBuckets: []float64{2, 3, 2, 5},
+			},
+			&FloatHistogram{
+				ZeroThreshold:   1,
+				ZeroCount:       41,
+				Count:           51,
+				Sum:             3.579,
+				PositiveSpans:   []Span{{1, 2}, {1, 2}},
+				PositiveBuckets: []float64{5.03, 3, 9.05, -0.94},
+			},
+			&FloatHistogram{
+				ZeroCount:       9,
+				PositiveSpans:   []Span{{1, 2}, {1, 2}},
+				PositiveBuckets: []float64{0.03, 0, 0.05, 0.06},
+			},
+			"",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			testHistogramKahanAdd(t, c.in1, c.comp, c.in2, c.expectedSum, c.expectedC, c.expErrMsg)
 		})
 	}
 }
@@ -2559,18 +2707,28 @@ func testHistogramAdd(t *testing.T, a, b, expected *FloatHistogram, expErrMsg st
 	}
 }
 
-func testHistogramKahanAdd(t *testing.T, a, b, expected *FloatHistogram, expErrMsg string) {
+func testHistogramKahanAdd(t *testing.T, a, c, b, expectedSum, expectedC *FloatHistogram, expErrMsg string) {
 	var (
-		aCopy        = a.Copy()
-		bCopy        = b.Copy()
-		expectedCopy *FloatHistogram
+		aCopy           = a.Copy()
+		bCopy           = b.Copy()
+		cCopy           *FloatHistogram
+		expectedSumCopy *FloatHistogram
+		expectedCCopy   *FloatHistogram
 	)
 
-	if expected != nil {
-		expectedCopy = expected.Copy()
+	if c != nil {
+		cCopy = c.Copy()
 	}
 
-	_, comp, err := aCopy.KahanAdd(bCopy, nil)
+	if expectedC != nil {
+		expectedCCopy = expectedC.Copy()
+	}
+
+	if expectedSum != nil {
+		expectedSumCopy = expectedSum.Copy()
+	}
+
+	_, comp, err := aCopy.KahanAdd(bCopy, cCopy)
 	if expErrMsg != "" {
 		require.EqualError(t, err, expErrMsg)
 	} else {
@@ -2587,14 +2745,18 @@ func testHistogramKahanAdd(t *testing.T, a, b, expected *FloatHistogram, expErrM
 		}
 	}
 
-	if expected != nil {
-		res.Compact(0)
-		expectedCopy.Compact(0)
+	if expectedCCopy != nil {
+		require.Equal(t, expectedCCopy, comp)
+	}
 
-		require.Equal(t, expectedCopy, res)
+	if expectedSum != nil {
+		res.Compact(0)
+		expectedSumCopy.Compact(0)
+
+		require.Equal(t, expectedSumCopy, res)
 
 		// Has it also happened in-place?
-		require.Equal(t, expectedCopy, aCopy)
+		require.Equal(t, expectedSumCopy, aCopy)
 
 		// Check that the argument was not mutated.
 		require.Equal(t, b, bCopy)
