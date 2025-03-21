@@ -24,6 +24,7 @@ TSDB_BENCHMARK_DATASET ?= ./tsdb/testdata/20kseries.json
 TSDB_BENCHMARK_OUTPUT_DIR ?= ./benchout
 
 GOLANGCI_LINT_OPTS ?= --timeout 4m
+GOYACC_VERSION ?= v0.6.0
 
 include Makefile.common
 
@@ -108,11 +109,18 @@ assets-tarball: assets
 	scripts/package_assets.sh
 
 .PHONY: parser
-parser: promql/parser/generated_parser.y.go
+parser:
+	@echo ">> running goyacc to generate the .go file."
+ifeq (, $(shell command -v goyacc 2> /dev/null))
+	@echo "goyacc not installed so skipping"
+	@echo "To install: \"go install golang.org/x/tools/cmd/goyacc@$(GOYACC_VERSION)\" or run \"make install-goyacc\""
+else
+	$(MAKE) promql/parser/generated_parser.y.go
+endif
 
 promql/parser/generated_parser.y.go: promql/parser/generated_parser.y
 	@echo ">> running goyacc to generate the .go file."
-	@./scripts/gengoyacc.sh
+	@$(FIRST_GOPATH)/bin/goyacc -l -o promql/parser/generated_parser.y.go promql/parser/generated_parser.y
 
 .PHONY: clean-parser
 clean-parser:
@@ -123,6 +131,11 @@ clean-parser:
 check-generated-parser: clean-parser promql/parser/generated_parser.y.go
 	@echo ">> checking generated parser"
 	@git diff --exit-code -- promql/parser/generated_parser.y.go || (echo "Generated parser is out of date. Please run 'make parser' and commit the changes." && false)
+
+.PHONY: install-goyacc
+install-goyacc:
+	@echo ">> installing goyacc $(GOYACC_VERSION)"
+	@go install golang.org/x/tools/cmd/goyacc@$(GOYACC_VERSION)
 
 .PHONY: test
 # If we only want to only test go code we have to change the test target
