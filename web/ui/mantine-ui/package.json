@@ -34,7 +34,7 @@
     "@tanstack/react-query": "^5.67.1",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.2.0",
-    "@types/lodash": "^4.17.13",
+    "@types/lodash": "^4.17.16",
     "@types/sanitize-html": "^2.13.0",
     "@uiw/react-codemirror": "^4.23.7",
     "clsx": "^2.1.1",
