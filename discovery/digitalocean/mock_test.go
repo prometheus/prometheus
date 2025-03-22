@@ -56,7 +56,7 @@ const tokenID = "3c9a75a2-24fd-4508-b4f2-11f18aa97411"
 // HandleDropletsList mocks droplet list.
 func (m *SDMock) HandleDropletsList() {
 	m.Mux.HandleFunc("/v2/droplets", func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != fmt.Sprintf("Bearer %s", tokenID) {
+		if r.Header.Get("Authorization") != "Bearer "+tokenID {
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
