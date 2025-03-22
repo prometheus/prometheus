@@ -251,8 +251,8 @@ github.com/hashicorp/nomad/api v0.0.0-20241218080744-e3ac00f30eec h1:+YBzb977Vrm
 github.com/hashicorp/nomad/api v0.0.0-20241218080744-e3ac00f30eec/go.mod h1:svtxn6QnrQ69P23VvIWMR34tg3vmwLz4UdUzm1dSCgE=
 github.com/hashicorp/serf v0.10.1 h1:Z1H2J60yRKvfDYAOZLd2MU0ND4AH/WDz7xYHDWQsIPY=
 github.com/hashicorp/serf v0.10.1/go.mod h1:yL2t6BqATOLGc5HF7qbFkTfXoPIY0WZdWHfEvMqbG+4=
-github.com/hetznercloud/hcloud-go/v2 v2.19.1 h1:UU/7h3uc/rdgspM8xkQF7wokmwZXePWDXcLqrQRRzzY=
-github.com/hetznercloud/hcloud-go/v2 v2.19.1/go.mod h1:r5RTzv+qi8IbLcDIskTzxkFIji7Ovc8yNgepQR9M+UA=
+github.com/hetznercloud/hcloud-go/v2 v2.20.1 h1:1wnKY6keRb6ip1kGPAtnU/ugjMxNkQ4tkulS6uc+vfk=
+github.com/hetznercloud/hcloud-go/v2 v2.20.1/go.mod h1:WSM7w+9tT86sJTNcF8a/oHljC3HUmQfcLxYsgx6PpSc=
 github.com/ionos-cloud/sdk-go/v6 v6.3.2 h1:2mUmrZZz6cPyT9IRX0T8fBLc/7XU/eTxP2Y5tS7/09k=
 github.com/ionos-cloud/sdk-go/v6 v6.3.2/go.mod h1:SXrO9OGyWjd2rZhAhEpdYN6VUAODzzqRdqA9BCviQtI=
 github.com/jarcoal/httpmock v1.3.1 h1:iUx3whfZWVf3jT01hQTO/Eo5sAYtB2/rqaUuOtpInww=
@@ -409,8 +409,8 @@ github.com/prometheus/alertmanager v0.28.1/go.mod h1:0StpPUDDHi1VXeM7p2yYfeZgLVi
 github.com/prometheus/client_golang v0.9.1/go.mod h1:7SWBe2y4D6OKWSNQJUaRYU/AaXPKyh/dDVn+NZz0KFw=
 github.com/prometheus/client_golang v1.0.0/go.mod h1:db9x61etRT2tGnBNRi70OPL5FsnadC4Ky3P0J6CfImo=
 github.com/prometheus/client_golang v1.4.0/go.mod h1:e9GMxYsXl05ICDXkRhurwBS4Q3OK1iX/F2sw+iXX5zU=
-github.com/prometheus/client_golang v1.21.0-rc.0 h1:bR+RxBlwcr4q8hXkgSOA/J18j6n0/qH0Gb0DH+8c+RY=
-github.com/prometheus/client_golang v1.21.0-rc.0/go.mod h1:U9NM32ykUErtVBxdvD3zfi+EuFkkaBvMb09mIfe0Zgg=
+github.com/prometheus/client_golang v1.21.1 h1:DOvXXTqVzvkIewV/CDPFdejpMCGeMcbGCQ8YOmu+Ibk=
+github.com/prometheus/client_golang v1.21.1/go.mod h1:U9NM32ykUErtVBxdvD3zfi+EuFkkaBvMb09mIfe0Zgg=
 github.com/prometheus/client_model v0.0.0-20180712105110-5c3871d89910/go.mod h1:MbSGuTsp3dbXC40dX6PRTWyKYBIrTGTE9sqQNg2J8bo=
 github.com/prometheus/client_model v0.0.0-20190129233127-fd36f4220a90/go.mod h1:xMI15A0UPsDsEKsMN9yxemIoYk6Tm2C1GtYGdfGttqA=
 github.com/prometheus/client_model v0.2.0/go.mod h1:xMI15A0UPsDsEKsMN9yxemIoYk6Tm2C1GtYGdfGttqA=

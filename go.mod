@@ -35,7 +35,7 @@ require (
 	github.com/grafana/regexp v0.0.0-20240518133315-a468a5bfb3bc
 	github.com/hashicorp/consul/api v1.31.2
 	github.com/hashicorp/nomad/api v0.0.0-20241218080744-e3ac00f30eec
-	github.com/hetznercloud/hcloud-go/v2 v2.19.1
+	github.com/hetznercloud/hcloud-go/v2 v2.20.1
 	github.com/ionos-cloud/sdk-go/v6 v6.3.2
 	github.com/json-iterator/go v1.1.12
 	github.com/klauspost/compress v1.18.0
@@ -50,7 +50,7 @@ require (
 	github.com/open-telemetry/opentelemetry-collector-contrib/processor/deltatocumulativeprocessor v0.121.0
 	github.com/ovh/go-ovh v1.7.0
 	github.com/prometheus/alertmanager v0.28.1
-	github.com/prometheus/client_golang v1.21.0-rc.0
+	github.com/prometheus/client_golang v1.21.1
 	github.com/prometheus/client_model v0.6.1
 	github.com/prometheus/common v0.63.0
 	github.com/prometheus/common/assets v0.2.0
