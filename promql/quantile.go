@@ -448,6 +448,84 @@ func HistogramFraction(lower, upper float64, h *histogram.FloatHistogram) float6
 	return (upperRank - lowerRank) / h.Count
 }
 
+// BucketFraction is a version of HistogramFraction for classic histograms.
+func BucketFraction(lower, upper float64, buckets Buckets) float64 {
+	slices.SortFunc(buckets, func(a, b Bucket) int {
+		// We don't expect the bucket boundary to be a NaN.
+		if a.UpperBound < b.UpperBound {
+			return -1
+		}
+		if a.UpperBound > b.UpperBound {
+			return +1
+		}
+		return 0
+	})
+	if !math.IsInf(buckets[len(buckets)-1].UpperBound, +1) {
+		return math.NaN()
+	}
+	buckets = coalesceBuckets(buckets)
+
+	count := buckets[len(buckets)-1].Count
+	if count == 0 || math.IsNaN(lower) || math.IsNaN(upper) {
+		return math.NaN()
+	}
+	if lower >= upper {
+		return 0
+	}
+
+	var (
+		rank, lowerRank, upperRank float64
+		lowerSet, upperSet         bool
+	)
+	for i, b := range buckets {
+		lowerBound := math.Inf(-1)
+		if i > 0 {
+			lowerBound = buckets[i-1].UpperBound
+		}
+		upperBound := b.UpperBound
+
+		interpolateLinearly := func(v float64) float64 {
+			return rank + (b.Count-rank)*(v-lowerBound)/(upperBound-lowerBound)
+		}
+
+		if !lowerSet && lowerBound >= lower {
+			// We have hit the lower value at the lower bucket boundary.
+			lowerRank = rank
+			lowerSet = true
+		}
+		if !upperSet && lowerBound >= upper {
+			// We have hit the upper value at the lower bucket boundary.
+			upperRank = rank
+			upperSet = true
+		}
+		if lowerSet && upperSet {
+			break
+		}
+		if !lowerSet && lowerBound < lower && upperBound > lower {
+			// The lower value is in this bucket.
+			lowerRank = interpolateLinearly(lower)
+			lowerSet = true
+		}
+		if !upperSet && lowerBound < upper && upperBound > upper {
+			// The upper value is in this bucket.
+			upperRank = interpolateLinearly(upper)
+			upperSet = true
+		}
+		if lowerSet && upperSet {
+			break
+		}
+		rank = b.Count
+	}
+	if !lowerSet || lowerRank > count {
+		lowerRank = count
+	}
+	if !upperSet || upperRank > count {
+		upperRank = count
+	}
+
+	return (upperRank - lowerRank) / count
+}
+
 // coalesceBuckets merges buckets with the same upper bound.
 //
 // The input buckets must be sorted.
