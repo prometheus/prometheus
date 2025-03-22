@@ -160,11 +160,6 @@ type HeadOptions struct {
 	// EnableNativeHistograms enables the ingestion of native histograms.
 	EnableNativeHistograms atomic.Bool
 
-	// EnableOOONativeHistograms enables the ingestion of OOO native histograms.
-	// It will only take effect if EnableNativeHistograms is set to true and the
-	// OutOfOrderTimeWindow is > 0
-	EnableOOONativeHistograms atomic.Bool
-
 	ChunkRange int64
 	// ChunkDirRoot is the parent directory of the chunks directory.
 	ChunkDirRoot         string
@@ -379,6 +374,8 @@ type headMetrics struct {
 	snapshotReplayErrorTotal  prometheus.Counter // Will be either 0 or 1.
 	oooHistogram              prometheus.Histogram
 	mmapChunksTotal           prometheus.Counter
+	walReplayUnknownRefsTotal *prometheus.CounterVec
+	wblReplayUnknownRefsTotal *prometheus.CounterVec
 }
 
 const (
@@ -510,6 +507,14 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_mmap_chunks_total",
 			Help: "Total number of chunks that were memory-mapped.",
 		}),
+		walReplayUnknownRefsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_wal_replay_unknown_refs_total",
+			Help: "Total number of unknown series references encountered during WAL replay.",
+		}, []string{"type"}),
+		wblReplayUnknownRefsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_wbl_replay_unknown_refs_total",
+			Help: "Total number of unknown series references encountered during WBL replay.",
+		}, []string{"type"}),
 	}
 
 	if r != nil {
@@ -577,6 +582,8 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 				}
 				return float64(val)
 			}),
+			m.walReplayUnknownRefsTotal,
+			m.wblReplayUnknownRefsTotal,
 		)
 	}
 	return m
@@ -1027,16 +1034,6 @@ func (h *Head) EnableNativeHistograms() {
 // DisableNativeHistograms disables the native histogram feature.
 func (h *Head) DisableNativeHistograms() {
 	h.opts.EnableNativeHistograms.Store(false)
-}
-
-// EnableOOONativeHistograms enables the ingestion of out-of-order native histograms.
-func (h *Head) EnableOOONativeHistograms() {
-	h.opts.EnableOOONativeHistograms.Store(true)
-}
-
-// DisableOOONativeHistograms disables the ingestion of out-of-order native histograms.
-func (h *Head) DisableOOONativeHistograms() {
-	h.opts.EnableOOONativeHistograms.Store(false)
 }
 
 // PostingsCardinalityStats returns highest cardinality stats by label and value names.

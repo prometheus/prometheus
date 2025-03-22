@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/prometheus/otlptranslator"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -30,7 +31,6 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
-	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
 )
 
 func TestFromMetrics(t *testing.T) {
@@ -46,7 +46,7 @@ func TestFromMetrics(t *testing.T) {
 					metricSlice := scopeMetricsSlice.At(j).Metrics()
 					for k := 0; k < metricSlice.Len(); k++ {
 						metric := metricSlice.At(k)
-						promName := prometheustranslator.BuildCompliantMetricName(metric, "", false)
+						promName := otlptranslator.BuildCompliantMetricName(metric, "", false)
 						expMetadata = append(expMetadata, prompb.MetricMetadata{
 							Type:             otelMetricTypeToPromMetricType(metric),
 							MetricFamilyName: promName,
@@ -72,12 +72,12 @@ func TestFromMetrics(t *testing.T) {
 			ts := converter.TimeSeries()
 			require.Len(t, ts, 1408+1) // +1 for the target_info.
 
-			target_info_count := 0
+			tgtInfoCount := 0
 			for _, s := range ts {
 				b := labels.NewScratchBuilder(2)
 				lbls := s.ToLabels(&b, nil)
 				if lbls.Get(labels.MetricName) == "target_info" {
-					target_info_count++
+					tgtInfoCount++
 					require.Equal(t, "test-namespace/test-service", lbls.Get("job"))
 					require.Equal(t, "id1234", lbls.Get("instance"))
 					if keepIdentifyingResourceAttributes {
@@ -91,7 +91,52 @@ func TestFromMetrics(t *testing.T) {
 					}
 				}
 			}
-			require.Equal(t, 1, target_info_count)
+			require.Equal(t, 1, tgtInfoCount)
+		})
+	}
+
+	for _, convertHistogramsToNHCB := range []bool{false, true} {
+		t.Run(fmt.Sprintf("successful/convertHistogramsToNHCB=%v", convertHistogramsToNHCB), func(t *testing.T) {
+			request := pmetricotlp.NewExportRequest()
+			rm := request.Metrics().ResourceMetrics().AppendEmpty()
+			generateAttributes(rm.Resource().Attributes(), "resource", 10)
+
+			metrics := rm.ScopeMetrics().AppendEmpty().Metrics()
+			ts := pcommon.NewTimestampFromTime(time.Now())
+
+			m := metrics.AppendEmpty()
+			m.SetEmptyHistogram()
+			m.SetName("histogram-1")
+			m.Histogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+			h := m.Histogram().DataPoints().AppendEmpty()
+			h.SetTimestamp(ts)
+
+			h.SetCount(15)
+			h.SetSum(155)
+
+			generateAttributes(h.Attributes(), "series", 1)
+
+			converter := NewPrometheusConverter()
+			annots, err := converter.FromMetrics(
+				context.Background(),
+				request.Metrics(),
+				Settings{ConvertHistogramsToNHCB: convertHistogramsToNHCB},
+			)
+			require.NoError(t, err)
+			require.Empty(t, annots)
+
+			series := converter.TimeSeries()
+
+			if convertHistogramsToNHCB {
+				require.Len(t, series[0].Histograms, 1)
+				require.Empty(t, series[0].Samples)
+			} else {
+				require.Len(t, series, 3)
+				for i := range series {
+					require.Len(t, series[i].Samples, 1)
+					require.Nil(t, series[i].Histograms)
+				}
+			}
 		})
 	}
 
@@ -149,6 +194,43 @@ func TestFromMetrics(t *testing.T) {
 		require.Empty(t, infos)
 		require.Equal(t, []string{
 			"exponential histogram data point has zero count, but non-zero sum: 155.000000",
+		}, ws)
+	})
+
+	t.Run("explicit histogram to NHCB warnings for zero count and non-zero sum", func(t *testing.T) {
+		request := pmetricotlp.NewExportRequest()
+		rm := request.Metrics().ResourceMetrics().AppendEmpty()
+		generateAttributes(rm.Resource().Attributes(), "resource", 10)
+
+		metrics := rm.ScopeMetrics().AppendEmpty().Metrics()
+		ts := pcommon.NewTimestampFromTime(time.Now())
+
+		for i := 1; i <= 10; i++ {
+			m := metrics.AppendEmpty()
+			m.SetEmptyHistogram()
+			m.SetName(fmt.Sprintf("histogram-%d", i))
+			m.Histogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+			h := m.Histogram().DataPoints().AppendEmpty()
+			h.SetTimestamp(ts)
+
+			h.SetCount(0)
+			h.SetSum(155)
+
+			generateAttributes(h.Attributes(), "series", 10)
+		}
+
+		converter := NewPrometheusConverter()
+		annots, err := converter.FromMetrics(
+			context.Background(),
+			request.Metrics(),
+			Settings{ConvertHistogramsToNHCB: true},
+		)
+		require.NoError(t, err)
+		require.NotEmpty(t, annots)
+		ws, infos := annots.AsStrings("", 0, 0)
+		require.Empty(t, infos)
+		require.Equal(t, []string{
+			"histogram data point has zero count, but non-zero sum: 155.000000",
 		}, ws)
 	})
 }

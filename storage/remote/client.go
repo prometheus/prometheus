@@ -365,7 +365,8 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query, sortSeries bool)
 	httpReq.Header.Set("User-Agent", UserAgent)
 	httpReq.Header.Set("X-Prometheus-Remote-Read-Version", "0.1.0")
 
-	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	errTimeout := fmt.Errorf("%w: request timed out after %s", context.DeadlineExceeded, c.timeout)
+	ctx, cancel := context.WithTimeoutCause(ctx, c.timeout, errTimeout)
 
 	ctx, span := otel.Tracer("").Start(ctx, "Remote Read", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()

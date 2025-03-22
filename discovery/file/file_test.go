@@ -434,6 +434,9 @@ func TestInvalidFileUpdate(t *testing.T) {
 }
 
 func TestUpdateFileWithPartialWrites(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("flaky test, see https://github.com/prometheus/prometheus/issues/16212")
+	}
 	t.Parallel()
 
 	runner := newTestRunner(t)
