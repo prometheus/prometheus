@@ -55,34 +55,26 @@ func newPool() *pool {
 }
 
 func (p *pool) intern(s string) string {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+
 	if s == "" {
 		return ""
 	}
-
-	p.mtx.RLock()
-	interned, ok := p.pool[s]
-	p.mtx.RUnlock()
-	if ok {
-		interned.refs.Inc()
-		return interned.s
-	}
-	p.mtx.Lock()
-	defer p.mtx.Unlock()
 	if interned, ok := p.pool[s]; ok {
 		interned.refs.Inc()
 		return interned.s
 	}
-
 	p.pool[s] = newEntry(s)
 	p.pool[s].refs.Store(1)
 	return s
 }
 
 func (p *pool) release(s string) {
-	p.mtx.RLock()
-	interned, ok := p.pool[s]
-	p.mtx.RUnlock()
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
 
+	interned, ok := p.pool[s]
 	if !ok {
 		noReferenceReleases.Inc()
 		return
@@ -93,8 +85,6 @@ func (p *pool) release(s string) {
 		return
 	}
 
-	p.mtx.Lock()
-	defer p.mtx.Unlock()
 	if interned.refs.Load() != 0 {
 		return
 	}
