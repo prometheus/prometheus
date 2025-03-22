@@ -29,7 +29,7 @@
     "@nexucis/fuzzy": "^0.5.1",
     "@nexucis/kvsearch": "^0.9.1",
     "@prometheus-io/codemirror-promql": "0.302.1",
-    "@reduxjs/toolkit": "^2.5.0",
+    "@reduxjs/toolkit": "^2.6.1",
     "@tabler/icons-react": "^3.28.1",
     "@tanstack/react-query": "^5.67.1",
     "@testing-library/jest-dom": "^6.6.3",
