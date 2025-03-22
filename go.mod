@@ -60,11 +60,11 @@ require (
 	github.com/shurcooL/httpfs v0.0.0-20230704072500-f1e31cf0ba5c
 	github.com/stretchr/testify v1.10.0
 	github.com/vultr/govultr/v2 v2.17.2
-	go.opentelemetry.io/collector/component v1.27.0
-	go.opentelemetry.io/collector/consumer v1.27.0
+	go.opentelemetry.io/collector/component v1.28.1
+	go.opentelemetry.io/collector/consumer v1.28.1
 	go.opentelemetry.io/collector/pdata v1.28.1
-	go.opentelemetry.io/collector/processor v0.121.0
-	go.opentelemetry.io/collector/semconv v0.121.0
+	go.opentelemetry.io/collector/processor v0.122.1
+	go.opentelemetry.io/collector/semconv v0.122.1
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.60.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.60.0
 	go.opentelemetry.io/otel v1.35.0
@@ -191,7 +191,7 @@ require (
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/collector/confmap v1.27.0 // indirect
 	go.opentelemetry.io/collector/confmap/xconfmap v0.121.0 // indirect
-	go.opentelemetry.io/collector/pipeline v0.121.0 // indirect
+	go.opentelemetry.io/collector/pipeline v0.122.1 // indirect
 	go.opentelemetry.io/proto/otlp v1.5.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/crypto v0.36.0 // indirect
