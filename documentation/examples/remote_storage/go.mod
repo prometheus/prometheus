@@ -8,7 +8,7 @@ require (
 	github.com/golang/snappy v1.0.0
 	github.com/influxdata/influxdb-client-go/v2 v2.14.0
 	github.com/prometheus/client_golang v1.21.1
-	github.com/prometheus/common v0.62.0
+	github.com/prometheus/common v0.63.0
 	github.com/prometheus/prometheus v1.99.0
 	github.com/stretchr/testify v1.10.0
 )
