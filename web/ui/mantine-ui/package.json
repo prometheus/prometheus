@@ -23,7 +23,7 @@
     "@mantine/code-highlight": "^7.15.2",
     "@mantine/core": "^7.11.2",
     "@mantine/dates": "^7.15.3",
-    "@mantine/hooks": "^7.11.2",
+    "@mantine/hooks": "^7.17.2",
     "@mantine/notifications": "^7.15.3",
     "@microsoft/fetch-event-source": "^2.0.1",
     "@nexucis/fuzzy": "^0.5.1",
