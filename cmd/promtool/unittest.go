@@ -29,10 +29,9 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/grafana/regexp"
 	"github.com/nsf/jsondiff"
-	"gopkg.in/yaml.v2"
-
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
+	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
