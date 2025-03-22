@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
@@ -56,7 +56,8 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 							{
 								Value:     1,
 								Timestamp: convertTimeStamp(pcommon.Timestamp(ts)),
-							}},
+							},
+						},
 					},
 				}
 			},
@@ -77,8 +78,8 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 				metric.Name(),
 			)
 
-			assert.Equal(t, tt.want(), converter.unique)
-			assert.Empty(t, converter.conflicts)
+			require.Equal(t, tt.want(), converter.unique)
+			require.Empty(t, converter.conflicts)
 		})
 	}
 }
@@ -111,7 +112,8 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 							{
 								Value:     1,
 								Timestamp: convertTimeStamp(ts),
-							}},
+							},
+						},
 					},
 				}
 			},
@@ -255,8 +257,8 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				metric.Name(),
 			)
 
-			assert.Equal(t, tt.want(), converter.unique)
-			assert.Empty(t, converter.conflicts)
+			require.Equal(t, tt.want(), converter.unique)
+			require.Empty(t, converter.conflicts)
 		})
 	}
 }
