@@ -618,6 +618,43 @@ func TestManagerTargetsUpdates(t *testing.T) {
 	}
 }
 
+func TestManagerDuplicateAfterRelabellingWarning(t *testing.T) {
+	var buf bytes.Buffer
+	writer := &buf
+	logger := promslog.New(&promslog.Config{Writer: writer})
+
+	opts := Options{EnableWarnIfTargetsRelabelledToSameLabels: true}
+	testRegistry := prometheus.NewRegistry()
+	m, err := NewManager(&opts, logger, nil, nil, testRegistry)
+	require.NoError(t, err)
+
+	m.scrapePools = map[string]*scrapePool{}
+	sp := &scrapePool{
+		activeTargets: map[uint64]*Target{},
+	}
+	targetScrapeCfg := &config.ScrapeConfig{
+		Scheme:         "https",
+		MetricsPath:    "/metrics",
+		JobName:        "job",
+		ScrapeInterval: model.Duration(time.Second),
+		ScrapeTimeout:  model.Duration(time.Second),
+	}
+	sp.activeTargets[uint64(0)] = &Target{
+		scrapeConfig: targetScrapeCfg,
+		tLabels:      map[model.LabelName]model.LabelValue{model.AddressLabel: "foo"},
+	}
+	sp.activeTargets[uint64(1)] = &Target{
+		scrapeConfig: targetScrapeCfg,
+		tLabels:      map[model.LabelName]model.LabelValue{model.AddressLabel: "bar"},
+	}
+	m.scrapePools["default"] = sp
+
+	m.reload()
+	require.Contains(t, buf.String(), "Found targets with same labels after relabelling")
+	require.Contains(t, buf.String(), "foo")
+	require.Contains(t, buf.String(), "bar")
+}
+
 func TestSetOffsetSeed(t *testing.T) {
 	getConfig := func(prometheus string) *config.Config {
 		cfgText := `
