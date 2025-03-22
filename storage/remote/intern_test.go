@@ -21,6 +21,7 @@ package remote
 import (
 	"testing"
 	"time"
+	"unique"
 
 	"github.com/stretchr/testify/require"
 )
@@ -29,7 +30,7 @@ func TestIntern(t *testing.T) {
 	interner := newPool()
 	testString := "TestIntern"
 	interner.intern(testString)
-	interned, ok := interner.pool[testString]
+	interned, ok := interner.pool[unique.Make(testString)]
 
 	require.True(t, ok)
 	require.Equalf(t, int64(1), interned.refs.Load(), "expected refs to be 1 but it was %d", interned.refs.Load())
@@ -40,13 +41,13 @@ func TestIntern_MultiRef(t *testing.T) {
 	testString := "TestIntern_MultiRef"
 
 	interner.intern(testString)
-	interned, ok := interner.pool[testString]
+	interned, ok := interner.pool[unique.Make(testString)]
 
 	require.True(t, ok)
 	require.Equalf(t, int64(1), interned.refs.Load(), "expected refs to be 1 but it was %d", interned.refs.Load())
 
 	interner.intern(testString)
-	interned, ok = interner.pool[testString]
+	interned, ok = interner.pool[unique.Make(testString)]
 
 	require.True(t, ok)
 	require.Equalf(t, int64(2), interned.refs.Load(), "expected refs to be 2 but it was %d", interned.refs.Load())
@@ -57,13 +58,13 @@ func TestIntern_DeleteRef(t *testing.T) {
 	testString := "TestIntern_DeleteRef"
 
 	interner.intern(testString)
-	interned, ok := interner.pool[testString]
+	interned, ok := interner.pool[unique.Make(testString)]
 
 	require.True(t, ok)
 	require.Equalf(t, int64(1), interned.refs.Load(), "expected refs to be 1 but it was %d", interned.refs.Load())
 
 	interner.release(testString)
-	_, ok = interner.pool[testString]
+	_, ok = interner.pool[unique.Make(testString)]
 	require.False(t, ok)
 }
 
@@ -72,7 +73,7 @@ func TestIntern_MultiRef_Concurrent(t *testing.T) {
 	testString := "TestIntern_MultiRef_Concurrent"
 
 	interner.intern(testString)
-	interned, ok := interner.pool[testString]
+	interned, ok := interner.pool[unique.Make(testString)]
 	require.True(t, ok)
 	require.Equalf(t, int64(1), interned.refs.Load(), "expected refs to be 1 but it was %d", interned.refs.Load())
 
@@ -83,7 +84,7 @@ func TestIntern_MultiRef_Concurrent(t *testing.T) {
 	time.Sleep(time.Millisecond)
 
 	interner.mtx.RLock()
-	interned, ok = interner.pool[testString]
+	interned, ok = interner.pool[unique.Make(testString)]
 	interner.mtx.RUnlock()
 	require.True(t, ok)
 	require.Equalf(t, int64(1), interned.refs.Load(), "expected refs to be 1 but it was %d", interned.refs.Load())
