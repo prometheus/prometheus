@@ -52,7 +52,7 @@
   },
   "devDependencies": {
     "@eslint/compat": "^1.2.4",
-    "@eslint/eslintrc": "^3.2.0",
+    "@eslint/eslintrc": "^3.3.1",
     "@eslint/js": "^9.21.0",
     "@types/react": "^19.0.6",
     "@types/react-dom": "^19.0.0",
