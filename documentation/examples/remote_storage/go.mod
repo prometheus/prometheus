@@ -5,7 +5,7 @@ go 1.23.0
 require (
 	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/gogo/protobuf v1.3.2
-	github.com/golang/snappy v0.0.4
+	github.com/golang/snappy v1.0.0
 	github.com/influxdata/influxdb-client-go/v2 v2.14.0
 	github.com/prometheus/client_golang v1.21.0
 	github.com/prometheus/common v0.62.0
