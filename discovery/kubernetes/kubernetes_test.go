@@ -199,7 +199,7 @@ func requireTargetGroups(t *testing.T, expected, res map[string]*targetgroup.Gro
 		panic(err)
 	}
 
-	require.Equal(t, string(b1), string(b2))
+	require.JSONEq(t, string(b1), string(b2))
 }
 
 // marshalTargetGroups serializes a set of target groups to JSON, ignoring the
