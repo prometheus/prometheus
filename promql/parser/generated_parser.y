@@ -186,7 +186,7 @@ START_METRIC_SELECTOR
 %type <int> int
 %type <uint> uint
 %type <float> number series_value signed_number signed_or_unsigned_number
-%type <node> step_invariant_expr aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_duration_literal offset_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector
+%type <node> step_invariant_expr aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_duration_literal offset_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector duration_expr paren_duration_expr positive_duration_expr
 
 %start start
 
@@ -433,14 +433,30 @@ paren_expr      : LEFT_PAREN expr RIGHT_PAREN
  * Offset modifiers.
  */
 
-offset_expr: expr OFFSET number_duration_literal
+positive_duration_expr : duration_expr
                         {
-  		            numLit, _ := $3.(*NumberLiteral)
-      		            dur := time.Duration(numLit.Val * 1000) * time.Millisecond
+                            numLit, ok := $1.(*NumberLiteral)
+                            if !ok {
+                                // This should never happen but handle it gracefully.
+                                yylex.(*parser).addParseErrf(posrange.PositionRange{}, "internal error: duration expression did not evaluate to a number")
+                                $$ = &NumberLiteral{Val: 1} // Use 1 as fallback to prevent cascading errors.
+                            } else if numLit.Val > 0 {
+                                $$ = numLit
+                            } else {
+                                yylex.(*parser).addParseErrf(numLit.PosRange, "duration must be greater than 0")
+                                $$ = &NumberLiteral{Val: 1, PosRange: numLit.PosRange} // Use 1 as fallback.
+                            }
+                        }
+                ;
+
+offset_expr: expr OFFSET duration_expr
+                        {
+      		            numLit, _ := $3.(*NumberLiteral)
+                 	    dur := time.Duration(numLit.Val * 1000) * time.Millisecond
                  	    yylex.(*parser).addOffset($1, dur)
                             $$ = $1
                         }
-                | expr OFFSET SUB number_duration_literal
+                | expr OFFSET SUB duration_expr
                         {
 			    numLit, _ := $4.(*NumberLiteral)
 		            dur := time.Duration(numLit.Val * 1000) * time.Millisecond
@@ -450,6 +466,7 @@ offset_expr: expr OFFSET number_duration_literal
                 | expr OFFSET error
                         { yylex.(*parser).unexpected("offset", "number or duration"); $$ = $1 }
                 ;
+
 /*
  * @ modifiers.
  */
@@ -474,7 +491,7 @@ at_modifier_preprocessors: START | END;
  * Subquery and range selectors.
  */
 
-matrix_selector : expr LEFT_BRACKET number_duration_literal RIGHT_BRACKET
+matrix_selector : expr LEFT_BRACKET positive_duration_expr RIGHT_BRACKET
                         {
                         var errMsg string
                         vs, ok := $1.(*VectorSelector)
@@ -500,7 +517,7 @@ matrix_selector : expr LEFT_BRACKET number_duration_literal RIGHT_BRACKET
                         }
                 ;
 
-subquery_expr   : expr LEFT_BRACKET number_duration_literal COLON number_duration_literal RIGHT_BRACKET
+subquery_expr   : expr LEFT_BRACKET positive_duration_expr COLON positive_duration_expr RIGHT_BRACKET
                         {
 			numLitRange, _ := $3.(*NumberLiteral)
 			numLitStep, _ := $5.(*NumberLiteral)
@@ -511,7 +528,7 @@ subquery_expr   : expr LEFT_BRACKET number_duration_literal COLON number_duratio
                                 EndPos: $6.Pos + 1,
                         }
                         }
-                | expr LEFT_BRACKET number_duration_literal COLON RIGHT_BRACKET
+                | expr LEFT_BRACKET positive_duration_expr COLON RIGHT_BRACKET
 		        {
 		          numLitRange, _ := $3.(*NumberLiteral)
 		          $$ = &SubqueryExpr{
@@ -521,11 +538,11 @@ subquery_expr   : expr LEFT_BRACKET number_duration_literal COLON number_duratio
 		          EndPos: $5.Pos + 1,
 		          }
 		        }
-                | expr LEFT_BRACKET number_duration_literal COLON number_duration_literal error
+                | expr LEFT_BRACKET positive_duration_expr COLON positive_duration_expr error
                         { yylex.(*parser).unexpected("subquery selector", "\"]\""); $$ = $1 }
-                | expr LEFT_BRACKET number_duration_literal COLON error
+                | expr LEFT_BRACKET positive_duration_expr COLON error
                         { yylex.(*parser).unexpected("subquery selector", "number or duration or \"]\""); $$ = $1 }
-                | expr LEFT_BRACKET number_duration_literal error
+                | expr LEFT_BRACKET positive_duration_expr error
                         { yylex.(*parser).unexpected("subquery or range", "\":\" or \"]\""); $$ = $1 }
                 | expr LEFT_BRACKET error
 		        { yylex.(*parser).unexpected("subquery selector", "number or duration"); $$ = $1 }
@@ -995,6 +1012,45 @@ string_identifier  : STRING
 
 maybe_grouping_labels: /* empty */ { $$ = nil }
                 | grouping_labels
+                ;
+
+/*
+ * Duration expressions.
+ */
+
+duration_expr   : number_duration_literal
+                /* Gives the rule the same precedence as MUL. This aligns with mathematical conventions. */
+                | unary_op duration_expr %prec MUL
+                        {
+                        nl, ok := $2.(*NumberLiteral)
+                        if !ok {
+                                yylex.(*parser).addParseErrf($1.PositionRange(), "expected number literal in duration expression")
+                                $$ = &NumberLiteral{Val: 0}
+                                break
+                        }
+                        if $1.Typ == SUB {
+                                nl.Val *= -1
+                        }
+                        nl.PosRange.Start = $1.Pos
+                        $$ = nl
+                }
+                | duration_expr ADD duration_expr
+                        { $$ = yylex.(*parser).evalDurationExprBinOp($1, $3, $2) }
+                | duration_expr SUB duration_expr
+                        { $$ = yylex.(*parser).evalDurationExprBinOp($1, $3, $2) }
+                | duration_expr MUL duration_expr
+                        { $$ = yylex.(*parser).evalDurationExprBinOp($1, $3, $2) }
+                | duration_expr DIV duration_expr
+                        { $$ = yylex.(*parser).evalDurationExprBinOp($1, $3, $2) }
+                | duration_expr MOD duration_expr
+                        { $$ = yylex.(*parser).evalDurationExprBinOp($1, $3, $2) }
+                | duration_expr POW duration_expr
+                        { $$ = yylex.(*parser).evalDurationExprBinOp($1, $3, $2) }
+                | paren_duration_expr
+                ;
+
+paren_duration_expr : LEFT_PAREN duration_expr RIGHT_PAREN
+                        { $$ = $2 }
                 ;
 
 %%
