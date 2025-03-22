@@ -500,8 +500,8 @@ something_bucket{a="b",le="+Inf"} 9 # {id="something-test"} 2e100 123.000
 				Schema:          histogram.CustomBucketsSchema,
 				Count:           9,
 				Sum:             42123.0,
-				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
-				PositiveBuckets: []int64{8, -8, 1},
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}, {Offset: 1, Length: 1}},
+				PositiveBuckets: []int64{8, -7},
 				CustomValues:    []float64{0.0, 1.0}, // We do not store the +Inf boundary.
 			},
 			lset: labels.FromStrings("__name__", "something", "a", "b"),
