@@ -68,6 +68,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
+	"github.com/prometheus/prometheus/semconv"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tracing"
@@ -214,6 +215,8 @@ type flagConfig struct {
 	promqlEnableDelayedNameRemoval bool
 
 	promslogConfig promslog.Config
+
+	enableSemconvVersionedRead bool
 }
 
 // setFeatureListOptions sets the corresponding options from the featureList.
@@ -283,6 +286,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "type-and-unit-labels":
 				c.scrape.EnableTypeAndUnitLabels = true
 				logger.Info("Experimental type and unit labels enabled")
+			case "semconv-versioned-read":
+				c.enableSemconvVersionedRead = true
+				logger.Info("Experimental semconv versioned read enabled")
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
 			}
@@ -727,6 +733,10 @@ func main() {
 		remoteStorage = remote.NewStorage(logger.With("component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
+
+	if cfg.enableSemconvVersionedRead {
+		fanoutStorage = semconv.AwareStorage(fanoutStorage)
+	}
 
 	var (
 		ctxWeb, cancelWeb = context.WithCancel(context.Background())
