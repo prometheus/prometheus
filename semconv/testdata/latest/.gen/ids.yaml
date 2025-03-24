@@ -1,0 +1,20 @@
+# Version of this file.
+version: 1
+
+# map from identity of an element to its id(s).
+metrics_ids:
+  my_app_latency_seconds~seconds.histogram:
+  - id: "my_app_latency.2"
+    intro_version: "v1.1.0" # When introduced.
+  my_app_custom_elements_changed_total.counter:
+  - id: "my_app_custom_elements.2"
+    intro_version: "v1.1.0"
+  my_app_latency_milliseconds~milliseconds.histogram:
+  - id: "my_app_latency"
+    intro_version: "v1.0.0"
+  my_app_custom_elements_total.counter:
+  - id: "my_app_custom_elements"
+    intro_version: "v1.0.0"
+  my_app_some_elements~gauge:
+  - id: "my_app_some_elements"
+    intro_version: "v1.0.0"
