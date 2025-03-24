@@ -45,6 +45,8 @@ import (
 )
 
 const (
+	DefaultMaxBatchSize = 256
+
 	contentTypeJSON = "application/json"
 )
 
@@ -229,7 +231,7 @@ func NewManager(o *Options, logger *slog.Logger) *Manager {
 	}
 	// Set default MaxBatchSize if not provided.
 	if o.MaxBatchSize <= 0 {
-		o.MaxBatchSize = 256
+		o.MaxBatchSize = DefaultMaxBatchSize
 	}
 	if logger == nil {
 		logger = promslog.NewNopLogger()
