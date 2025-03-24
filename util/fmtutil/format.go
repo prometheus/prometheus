@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"sort"
 	"time"
 
@@ -140,11 +141,23 @@ func makeTimeseries(wr *prompb.WriteRequest, labels map[string]string, m *dto.Me
 		for key, value := range labels {
 			bucketLabels[key] = value
 		}
+		var hasInf bool
 		for _, b := range m.GetHistogram().Bucket {
+			if b.GetUpperBound() == math.Inf(1) {
+				hasInf = true
+			}
 			bucketLabels[model.MetricNameLabel] = metricName + bucketStr
 			bucketLabels[model.BucketLabel] = fmt.Sprint(b.GetUpperBound())
 			toTimeseries(wr, bucketLabels, timestamp, float64(b.GetCumulativeCount()))
 		}
+
+		// Add +Inf bucket if not present
+		if !hasInf {
+			bucketLabels[model.MetricNameLabel] = metricName + bucketStr
+			bucketLabels[model.BucketLabel] = fmt.Sprint(math.Inf(1))
+			toTimeseries(wr, bucketLabels, timestamp, float64(m.GetHistogram().GetSampleCount()))
+		}
+
 		// Overwrite label model.MetricNameLabel for count and sum metrics
 		// Add Histogram sum timeseries
 		labels[model.MetricNameLabel] = metricName + sumStr
