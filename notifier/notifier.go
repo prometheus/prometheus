@@ -45,6 +45,7 @@ import (
 )
 
 const (
+	// DefaultMaxBatchSize is the default maximum number of alerts to send in a single request to the alertmanager.
 	DefaultMaxBatchSize = 256
 
 	contentTypeJSON = "application/json"
