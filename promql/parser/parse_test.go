@@ -4060,6 +4060,21 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: `modulo by zero`,
 	},
+	{
+		input:  `foo[150y+150y]`,
+		fail:   true,
+		errMsg: `duration out of range`,
+	},
+	{
+		input:  `foo offset (150y+150y)`,
+		fail:   true,
+		errMsg: `duration out of range`,
+	},
+	{
+		input:  `foo offset (-2*150y)`,
+		fail:   true,
+		errMsg: `duration out of range`,
+	},
 }
 
 func makeInt64Pointer(val int64) *int64 {

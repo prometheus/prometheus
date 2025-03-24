@@ -1115,6 +1115,11 @@ func (p *parser) evalDurationExprBinOp(lhs, rhs Node, op Item) *NumberLiteral {
 		return &NumberLiteral{Val: 0}
 	}
 
+	if val > 1<<63/1e9 || val < -(1<<63)/1e9 {
+		p.addParseErrf(op.PositionRange(), "duration out of range")
+		return &NumberLiteral{Val: 0}
+	}
+
 	return &NumberLiteral{
 		Val: val,
 		PosRange: posrange.PositionRange{
