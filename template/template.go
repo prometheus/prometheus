@@ -281,30 +281,14 @@ func NewTemplateExpander(
 	}
 }
 
-type templateData struct {
-	Labels         map[string]string
-	ExternalLabels map[string]string
-	ExternalURL    string
-	Value          interface{}
-}
-
-// String implements fmt.Stringer interface.
-func (t templateData) String() string {
-	labelsString := func(labels map[string]string) string {
-		// model.LabelSet has a ready String() method, that we can use.
-		labelSet := make(model.LabelSet, len(t.Labels))
-		for k, v := range t.Labels {
-			labelSet[model.LabelName(k)] = model.LabelValue(v)
-		}
-		return labelSet.String()
-	}
-
-	return fmt.Sprintf("<Labels: %s, ExternalLabels: %s, ExternalURL: %s, Value: %v>", labelsString(t.Labels), labelsString(t.ExternalLabels), t.ExternalURL, t.Value)
-}
-
 // AlertTemplateData returns the interface to be used in expanding the template.
 func AlertTemplateData(labels, externalLabels map[string]string, externalURL string, smpl promql.Sample) interface{} {
-	res := templateData{
+	res := struct {
+		Labels         map[string]string
+		ExternalLabels map[string]string
+		ExternalURL    string
+		Value          interface{}
+	}{
 		Labels:         labels,
 		ExternalLabels: externalLabels,
 		ExternalURL:    externalURL,
