@@ -107,6 +107,10 @@ message Histogram {
   // timestamp is in ms format, see model/timestamp/timestamp.go for
   // conversion from time.Time to Prometheus timestamp.
   int64 timestamp = 15;
+
+  // custom_values are not part of the specification, DO NOT use in remote write clients.
+  // Used only for converting from OpenTelemetry to Prometheus internally.
+  repeated double custom_values = 16;
 }
 
 // A BucketSpan defines a number of consecutive buckets with their

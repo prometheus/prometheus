@@ -23,21 +23,19 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.uber.org/atomic"
 
-	"github.com/prometheus/prometheus/promql/parser"
-
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/model"
-	"github.com/prometheus/common/promslog"
-
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
@@ -302,9 +300,17 @@ func (g *Group) run(ctx context.Context) {
 	}
 }
 
-func (g *Group) stop() {
+func (g *Group) stopAsync() {
 	close(g.done)
+}
+
+func (g *Group) waitStopped() {
 	<-g.terminated
+}
+
+func (g *Group) stop() {
+	g.stopAsync()
+	g.waitStopped()
 }
 
 func (g *Group) hash() uint64 {
@@ -1102,9 +1108,6 @@ func buildDependencyMap(rules []Rule) dependencyMap {
 		return dependencies
 	}
 
-	inputs := make(map[string][]Rule, len(rules))
-	outputs := make(map[string][]Rule, len(rules))
-
 	var indeterminate bool
 
 	for _, rule := range rules {
@@ -1112,26 +1115,46 @@ func buildDependencyMap(rules []Rule) dependencyMap {
 			break
 		}
 
-		name := rule.Name()
-		outputs[name] = append(outputs[name], rule)
-
-		parser.Inspect(rule.Query(), func(node parser.Node, path []parser.Node) error {
+		parser.Inspect(rule.Query(), func(node parser.Node, _ []parser.Node) error {
 			if n, ok := node.(*parser.VectorSelector); ok {
+				// Find the name matcher for the rule.
+				var nameMatcher *labels.Matcher
+				if n.Name != "" {
+					nameMatcher = labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, n.Name)
+				} else {
+					for _, m := range n.LabelMatchers {
+						if m.Name == model.MetricNameLabel {
+							nameMatcher = m
+							break
+						}
+					}
+				}
+
 				// A wildcard metric expression means we cannot reliably determine if this rule depends on any other,
 				// which means we cannot safely run any rules concurrently.
-				if n.Name == "" && len(n.LabelMatchers) > 0 {
+				if nameMatcher == nil {
 					indeterminate = true
 					return nil
 				}
 
 				// Rules which depend on "meta-metrics" like ALERTS and ALERTS_FOR_STATE will have undefined behaviour
 				// if they run concurrently.
-				if n.Name == alertMetricName || n.Name == alertForStateMetricName {
+				if nameMatcher.Matches(alertMetricName) || nameMatcher.Matches(alertForStateMetricName) {
 					indeterminate = true
 					return nil
 				}
 
-				inputs[n.Name] = append(inputs[n.Name], rule)
+				// Find rules which depend on the output of this rule.
+				for _, other := range rules {
+					if other == rule {
+						continue
+					}
+
+					otherName := other.Name()
+					if nameMatcher.Matches(otherName) {
+						dependencies[other] = append(dependencies[other], rule)
+					}
+				}
 			}
 			return nil
 		})
@@ -1139,14 +1162,6 @@ func buildDependencyMap(rules []Rule) dependencyMap {
 
 	if indeterminate {
 		return nil
-	}
-
-	for output, outRules := range outputs {
-		for _, outRule := range outRules {
-			if inRules, found := inputs[output]; found && len(inRules) > 0 {
-				dependencies[outRule] = append(dependencies[outRule], inRules...)
-			}
-		}
 	}
 
 	return dependencies

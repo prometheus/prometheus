@@ -15,7 +15,6 @@ package config
 
 import (
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -61,11 +60,6 @@ import (
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/util/testutil"
 )
-
-func init() {
-	// This can be removed when the default validation scheme in common is updated.
-	model.NameValidationScheme = model.UTF8Validation
-}
 
 func mustParseURL(u string) *config.URL {
 	parsed, err := url.Parse(u)
@@ -1569,6 +1563,20 @@ func TestOTLPAllowServiceNameInTargetInfo(t *testing.T) {
 	})
 }
 
+func TestOTLPConvertHistogramsToNHCB(t *testing.T) {
+	t.Run("good config", func(t *testing.T) {
+		want, err := LoadFile(filepath.Join("testdata", "otlp_convert_histograms_to_nhcb.good.yml"), false, promslog.NewNopLogger())
+		require.NoError(t, err)
+
+		out, err := yaml.Marshal(want)
+		require.NoError(t, err)
+		var got Config
+		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+
+		require.True(t, got.OTLPConfig.ConvertHistogramsToNHCB)
+	})
+}
+
 func TestOTLPAllowUTF8(t *testing.T) {
 	t.Run("good config", func(t *testing.T) {
 		fpath := filepath.Join("testdata", "otlp_allow_utf8.good.yml")
@@ -1716,11 +1724,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "labelname.bad.yml",
-		errMsg:   `"not$allowed" is not a valid label name`,
-	},
-	{
-		filename: "labelname2.bad.yml",
-		errMsg:   `"not:allowed" is not a valid label name`,
+		errMsg:   `"\xff" is not a valid label name`,
 	},
 	{
 		filename: "labelvalue.bad.yml",
@@ -1792,15 +1796,11 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "labelmap.bad.yml",
-		errMsg:   "\"l-$1\" is invalid 'replacement' for labelmap action",
+		errMsg:   "!!binary value contains invalid base64 data",
 	},
 	{
 		filename: "lowercase.bad.yml",
 		errMsg:   "relabel configuration for lowercase action requires 'target_label' value",
-	},
-	{
-		filename: "lowercase2.bad.yml",
-		errMsg:   "\"42lab\" is invalid 'target_label' for lowercase action",
 	},
 	{
 		filename: "lowercase3.bad.yml",
@@ -1809,10 +1809,6 @@ var expectedErrors = []struct {
 	{
 		filename: "uppercase.bad.yml",
 		errMsg:   "relabel configuration for uppercase action requires 'target_label' value",
-	},
-	{
-		filename: "uppercase2.bad.yml",
-		errMsg:   "\"42lab\" is invalid 'target_label' for uppercase action",
 	},
 	{
 		filename: "uppercase3.bad.yml",
@@ -2181,10 +2177,6 @@ var expectedErrors = []struct {
 }
 
 func TestBadConfigs(t *testing.T) {
-	model.NameValidationScheme = model.LegacyValidation
-	defer func() {
-		model.NameValidationScheme = model.UTF8Validation
-	}()
 	for _, ee := range expectedErrors {
 		_, err := LoadFile("testdata/"+ee.filename, false, promslog.NewNopLogger())
 		require.ErrorContains(t, err, ee.errMsg,
@@ -2192,23 +2184,7 @@ func TestBadConfigs(t *testing.T) {
 	}
 }
 
-func TestBadStaticConfigsJSON(t *testing.T) {
-	model.NameValidationScheme = model.LegacyValidation
-	defer func() {
-		model.NameValidationScheme = model.UTF8Validation
-	}()
-	content, err := os.ReadFile("testdata/static_config.bad.json")
-	require.NoError(t, err)
-	var tg targetgroup.Group
-	err = json.Unmarshal(content, &tg)
-	require.Error(t, err)
-}
-
 func TestBadStaticConfigsYML(t *testing.T) {
-	model.NameValidationScheme = model.LegacyValidation
-	defer func() {
-		model.NameValidationScheme = model.UTF8Validation
-	}()
 	content, err := os.ReadFile("testdata/static_config.bad.yml")
 	require.NoError(t, err)
 	var tg targetgroup.Group
@@ -2222,6 +2198,7 @@ func TestEmptyConfig(t *testing.T) {
 	exp := DefaultConfig
 	exp.loaded = true
 	require.Equal(t, exp, *c)
+	require.Equal(t, 75, c.Runtime.GoGC)
 }
 
 func TestExpandExternalLabels(t *testing.T) {
@@ -2269,7 +2246,6 @@ func TestEmptyGlobalBlock(t *testing.T) {
 	c, err := Load("global:\n", promslog.NewNopLogger())
 	require.NoError(t, err)
 	exp := DefaultConfig
-	exp.Runtime = DefaultRuntimeConfig
 	exp.loaded = true
 	require.Equal(t, exp, *c)
 }
@@ -2453,11 +2429,6 @@ func TestScrapeConfigDisableCompression(t *testing.T) {
 }
 
 func TestScrapeConfigNameValidationSettings(t *testing.T) {
-	model.NameValidationScheme = model.UTF8Validation
-	defer func() {
-		model.NameValidationScheme = model.LegacyValidation
-	}()
-
 	tests := []struct {
 		name         string
 		inputFile    string

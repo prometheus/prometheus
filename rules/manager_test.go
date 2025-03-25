@@ -375,7 +375,7 @@ func TestForStateRestore(t *testing.T) {
 				Queryable:       storage,
 				Context:         context.Background(),
 				Logger:          promslog.NewNopLogger(),
-				NotifyFunc:      func(ctx context.Context, expr string, alerts ...*Alert) {},
+				NotifyFunc:      func(_ context.Context, _ string, _ ...*Alert) {},
 				OutageTolerance: 30 * time.Minute,
 				ForGracePeriod:  10 * time.Minute,
 			}
@@ -842,7 +842,7 @@ func TestUpdate(t *testing.T) {
 	// Change group rules and reload.
 	for i, g := range rgs.Groups {
 		for j, r := range g.Rules {
-			rgs.Groups[i].Rules[j].Expr.SetString(fmt.Sprintf("%s * 0", r.Expr.Value))
+			rgs.Groups[i].Rules[j].Expr = fmt.Sprintf("%s * 0", r.Expr)
 		}
 	}
 	reloadAndValidate(rgs, t, tmpFile, ruleManager, ogs)
@@ -869,9 +869,9 @@ func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
 		rtmp := []rulefmt.Rule{}
 		for _, r := range g.Rules {
 			rtmp = append(rtmp, rulefmt.Rule{
-				Record:      r.Record.Value,
-				Alert:       r.Alert.Value,
-				Expr:        r.Expr.Value,
+				Record:      r.Record,
+				Alert:       r.Alert,
+				Expr:        r.Expr,
 				For:         r.For,
 				Labels:      r.Labels,
 				Annotations: r.Annotations,
@@ -917,7 +917,7 @@ func TestNotify(t *testing.T) {
 	}
 	engine := promqltest.NewTestEngineWithOpts(t, engineOpts)
 	var lastNotified []*Alert
-	notifyFunc := func(ctx context.Context, expr string, alerts ...*Alert) {
+	notifyFunc := func(_ context.Context, _ string, alerts ...*Alert) {
 		lastNotified = alerts
 	}
 	opts := &ManagerOptions{
@@ -1356,7 +1356,7 @@ func TestRuleGroupEvalIterationFunc(t *testing.T) {
 		testValue = 3
 	}
 
-	skipEvalIterationFunc := func(ctx context.Context, g *Group, evalTimestamp time.Time) {
+	skipEvalIterationFunc := func(_ context.Context, _ *Group, _ time.Time) {
 		testValue = 4
 	}
 
@@ -1395,7 +1395,7 @@ func TestRuleGroupEvalIterationFunc(t *testing.T) {
 			Queryable:       storage,
 			Context:         context.Background(),
 			Logger:          promslog.NewNopLogger(),
-			NotifyFunc:      func(ctx context.Context, expr string, alerts ...*Alert) {},
+			NotifyFunc:      func(_ context.Context, _ string, _ ...*Alert) {},
 			OutageTolerance: 30 * time.Minute,
 			ForGracePeriod:  10 * time.Minute,
 		}
@@ -1528,7 +1528,7 @@ func TestManager_LoadGroups_ShouldCheckWhetherEachRuleHasDependentsAndDependenci
 		Context:    context.Background(),
 		Logger:     promslog.NewNopLogger(),
 		Appendable: storage,
-		QueryFunc:  func(ctx context.Context, q string, ts time.Time) (promql.Vector, error) { return nil, nil },
+		QueryFunc:  func(_ context.Context, _ string, _ time.Time) (promql.Vector, error) { return nil, nil },
 	})
 
 	t.Run("load a mix of dependent and independent rules", func(t *testing.T) {
@@ -1601,10 +1601,14 @@ func TestDependencyMap(t *testing.T) {
 	require.NoError(t, err)
 	rule4 := NewRecordingRule("user:requests:increase1h", expr, labels.Labels{})
 
+	expr, err = parser.ParseExpr(`sum by (user) ({__name__=~"user:requests.+5m"})`)
+	require.NoError(t, err)
+	rule5 := NewRecordingRule("user:requests:sum5m", expr, labels.Labels{})
+
 	group := NewGroup(GroupOptions{
 		Name:     "rule_group",
 		Interval: time.Second,
-		Rules:    []Rule{rule, rule2, rule3, rule4},
+		Rules:    []Rule{rule, rule2, rule3, rule4, rule5},
 		Opts:     opts,
 	})
 
@@ -1619,13 +1623,17 @@ func TestDependencyMap(t *testing.T) {
 	require.Equal(t, []Rule{rule}, depMap.dependencies(rule2))
 	require.False(t, depMap.isIndependent(rule2))
 
-	require.Zero(t, depMap.dependents(rule3))
+	require.Equal(t, []Rule{rule5}, depMap.dependents(rule3))
 	require.Zero(t, depMap.dependencies(rule3))
-	require.True(t, depMap.isIndependent(rule3))
+	require.False(t, depMap.isIndependent(rule3))
 
 	require.Zero(t, depMap.dependents(rule4))
 	require.Equal(t, []Rule{rule}, depMap.dependencies(rule4))
 	require.False(t, depMap.isIndependent(rule4))
+
+	require.Zero(t, depMap.dependents(rule5))
+	require.Equal(t, []Rule{rule3}, depMap.dependencies(rule5))
+	require.False(t, depMap.isIndependent(rule5))
 }
 
 func TestNoDependency(t *testing.T) {
@@ -2264,6 +2272,139 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 	})
 }
 
+func TestNewRuleGroupRestoration(t *testing.T) {
+	store := teststorage.New(t)
+	t.Cleanup(func() { store.Close() })
+	var (
+		inflightQueries atomic.Int32
+		maxInflight     atomic.Int32
+		maxConcurrency  int64
+		interval        = 60 * time.Second
+	)
+
+	waitForEvaluations := func(_ *testing.T, ch <-chan int32, targetCount int32) {
+		for {
+			select {
+			case cnt := <-ch:
+				if cnt == targetCount {
+					return
+				}
+			case <-time.After(5 * time.Second):
+				return
+			}
+		}
+	}
+
+	files := []string{"fixtures/alert_rule.yaml"}
+
+	option := optsFactory(store, &maxInflight, &inflightQueries, maxConcurrency)
+	option.Queryable = store
+	option.Appendable = store
+	option.NotifyFunc = func(_ context.Context, _ string, _ ...*Alert) {}
+
+	var evalCount atomic.Int32
+	ch := make(chan int32)
+	noopEvalIterFunc := func(_ context.Context, _ *Group, _ time.Time) {
+		evalCount.Inc()
+		ch <- evalCount.Load()
+	}
+
+	ruleManager := NewManager(option)
+	go ruleManager.Run()
+	err := ruleManager.Update(interval, files, labels.EmptyLabels(), "", noopEvalIterFunc)
+	require.NoError(t, err)
+
+	waitForEvaluations(t, ch, 3)
+	require.Equal(t, int32(3), evalCount.Load())
+	ruleGroups := make(map[string]struct{})
+	for _, group := range ruleManager.groups {
+		ruleGroups[group.Name()] = struct{}{}
+		require.False(t, group.shouldRestore)
+		for _, rule := range group.rules {
+			require.True(t, rule.(*AlertingRule).restored.Load())
+		}
+	}
+
+	files = append(files, "fixtures/alert_rule1.yaml")
+	err = ruleManager.Update(interval, files, labels.EmptyLabels(), "", nil)
+	require.NoError(t, err)
+	ruleManager.Stop()
+	for _, group := range ruleManager.groups {
+		// new rule groups added to existing manager will not be restored
+		require.False(t, group.shouldRestore)
+	}
+}
+
+func TestNewRuleGroupRestorationWithRestoreNewGroupOption(t *testing.T) {
+	store := teststorage.New(t)
+	t.Cleanup(func() { store.Close() })
+	var (
+		inflightQueries atomic.Int32
+		maxInflight     atomic.Int32
+		maxConcurrency  int64
+		interval        = 60 * time.Second
+	)
+
+	waitForEvaluations := func(_ *testing.T, ch <-chan int32, targetCount int32) {
+		for {
+			select {
+			case cnt := <-ch:
+				if cnt == targetCount {
+					return
+				}
+			case <-time.After(5 * time.Second):
+				return
+			}
+		}
+	}
+
+	files := []string{"fixtures/alert_rule.yaml"}
+
+	option := optsFactory(store, &maxInflight, &inflightQueries, maxConcurrency)
+	option.Queryable = store
+	option.Appendable = store
+	option.RestoreNewRuleGroups = true
+	option.NotifyFunc = func(_ context.Context, _ string, _ ...*Alert) {}
+
+	var evalCount atomic.Int32
+	ch := make(chan int32)
+	noopEvalIterFunc := func(_ context.Context, _ *Group, _ time.Time) {
+		evalCount.Inc()
+		ch <- evalCount.Load()
+	}
+
+	ruleManager := NewManager(option)
+	go ruleManager.Run()
+	err := ruleManager.Update(interval, files, labels.EmptyLabels(), "", noopEvalIterFunc)
+	require.NoError(t, err)
+
+	waitForEvaluations(t, ch, 3)
+	require.Equal(t, int32(3), evalCount.Load())
+	ruleGroups := make(map[string]struct{})
+	for _, group := range ruleManager.groups {
+		ruleGroups[group.Name()] = struct{}{}
+		require.False(t, group.shouldRestore)
+		for _, rule := range group.rules {
+			require.True(t, rule.(*AlertingRule).restored.Load())
+		}
+	}
+
+	files = append(files, "fixtures/alert_rule1.yaml")
+	err = ruleManager.Update(interval, files, labels.EmptyLabels(), "", nil)
+	require.NoError(t, err)
+	// stop eval
+	ruleManager.Stop()
+	for _, group := range ruleManager.groups {
+		if _, OK := ruleGroups[group.Name()]; OK {
+			// already restored
+			require.False(t, group.shouldRestore)
+			continue
+		}
+		// new rule groups added to existing manager will be restored
+		require.True(t, group.shouldRestore)
+	}
+}
+
 func TestBoundedRuleEvalConcurrency(t *testing.T) {
 	storage := teststorage.New(t)
 	t.Cleanup(func() { storage.Close() })
@@ -2369,7 +2510,7 @@ func optsFactory(storage storage.Storage, maxInflight, inflightQueries *atomic.I
 		ConcurrentEvalsEnabled: concurrent,
 		MaxConcurrentEvals:     maxConcurrent,
 		Appendable:             storage,
-		QueryFunc: func(ctx context.Context, q string, ts time.Time) (promql.Vector, error) {
+		QueryFunc: func(_ context.Context, _ string, ts time.Time) (promql.Vector, error) {
 			inflightMu.Lock()
 
 			current := inflightQueries.Add(1)
@@ -2518,7 +2659,7 @@ func TestRuleDependencyController_AnalyseRules(t *testing.T) {
 				Context:    context.Background(),
 				Logger:     promslog.NewNopLogger(),
 				Appendable: storage,
-				QueryFunc:  func(ctx context.Context, q string, ts time.Time) (promql.Vector, error) { return nil, nil },
+				QueryFunc:  func(_ context.Context, _ string, _ time.Time) (promql.Vector, error) { return nil, nil },
 			})
 
 			groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, false, tc.ruleFile)
@@ -2547,7 +2688,7 @@ func BenchmarkRuleDependencyController_AnalyseRules(b *testing.B) {
 		Context:    context.Background(),
 		Logger:     promslog.NewNopLogger(),
 		Appendable: storage,
-		QueryFunc:  func(ctx context.Context, q string, ts time.Time) (promql.Vector, error) { return nil, nil },
+		QueryFunc:  func(_ context.Context, _ string, _ time.Time) (promql.Vector, error) { return nil, nil },
 	})
 
 	groups, errs := ruleManager.LoadGroups(time.Second, labels.EmptyLabels(), "", nil, false, "fixtures/rules_multiple.yaml")

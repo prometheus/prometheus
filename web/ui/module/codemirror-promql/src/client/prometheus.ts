@@ -294,7 +294,7 @@ class Cache {
   constructor(config?: CacheConfig) {
     const maxAge = {
       ttl: config && config.maxAge ? config.maxAge : 5 * 60 * 1000,
-      ttlAutopurge: false,
+      ttlAutopurge: true,
     };
     this.completeAssociation = new LRUCache<string, Map<string, Set<string>>>(maxAge);
     this.metricMetadata = {};

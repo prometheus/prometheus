@@ -134,3 +134,19 @@ eval instant at 20s min_over_time(metric_total[15s:10s])
 eval instant at 20m min_over_time(rate(metric_total[5m])[20m:1m])
   {} 0.12119047619047618
 
+clear
+
+# This native histogram series has a counter reset at 5m.
+# TODO(beorn7): Write this more nicely once https://github.com/prometheus/prometheus/issues/15984 is fixed.
+load 1m
+  native_histogram {{sum:100 count:100}} {{sum:103 count:103}} {{sum:106 count:106}} {{sum:109 count:109}} {{sum:112 count:112}} {{sum:3 count:3 counter_reset_hint:reset}} {{sum:6 count:6}}+{{sum:3 count:3}}x5
+
+# This sub-query has to detect the counter reset even if it does
+# not include the exact sample where the counter reset has happened.
+eval instant at 10m increase(native_histogram[10m:3m])
+  {} {{count:25 sum:25}}
+# This sub-query must not detect the counter reset multiple times
+# even though the sample where the counter reset happened is returned
+# by the sub-query multiple times.
+eval instant at 10m increase(native_histogram[10m:15s])
+  {} {{count:30.769230769230766 sum:30.769230769230766}}

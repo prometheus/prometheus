@@ -29,12 +29,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/snappy"
-	"github.com/klauspost/compress/zstd"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/tsdb/fileutil"
+	"github.com/prometheus/prometheus/util/compression"
 )
 
 const (
@@ -169,26 +169,6 @@ func OpenReadSegment(fn string) (*Segment, error) {
 	return &Segment{SegmentFile: f, i: k, dir: filepath.Dir(fn)}, nil
 }
 
-type CompressionType string
-
-const (
-	CompressionNone   CompressionType = "none"
-	CompressionSnappy CompressionType = "snappy"
-	CompressionZstd   CompressionType = "zstd"
-)
-
-// ParseCompressionType parses the two compression-related configuration values and returns the CompressionType. If
-// compression is enabled but the compressType is unrecognized, we default to Snappy compression.
-func ParseCompressionType(compress bool, compressType string) CompressionType {
-	if compress {
-		if compressType == "zstd" {
-			return CompressionZstd
-		}
-		return CompressionSnappy
-	}
-	return CompressionNone
-}
-
 // WL is a write log that stores records in segment files.
 // It must be read from start to end once before logging new data.
 // If an error occurs during read, the repair procedure must be called
@@ -210,9 +190,8 @@ type WL struct {
 	stopc       chan chan struct{}
 	actorc      chan func()
 	closed      bool // To allow calling Close() more than once without blocking.
-	compress    CompressionType
-	compressBuf []byte
-	zstdWriter  *zstd.Encoder
+	compress    compression.Type
+	cEnc        compression.EncodeBuffer
 
 	WriteNotified WriteNotified
 
@@ -220,14 +199,17 @@ type WL struct {
 }
 
 type wlMetrics struct {
-	fsyncDuration   prometheus.Summary
-	pageFlushes     prometheus.Counter
-	pageCompletions prometheus.Counter
-	truncateFail    prometheus.Counter
-	truncateTotal   prometheus.Counter
-	currentSegment  prometheus.Gauge
-	writesFailed    prometheus.Counter
-	walFileSize     prometheus.GaugeFunc
+	fsyncDuration    prometheus.Summary
+	pageFlushes      prometheus.Counter
+	pageCompletions  prometheus.Counter
+	truncateFail     prometheus.Counter
+	truncateTotal    prometheus.Counter
+	currentSegment   prometheus.Gauge
+	writesFailed     prometheus.Counter
+	walFileSize      prometheus.GaugeFunc
+	recordPartWrites prometheus.Counter
+	recordPartBytes  prometheus.Counter
+	recordBytesSaved *prometheus.CounterVec
 
 	r prometheus.Registerer
 }
@@ -244,78 +226,78 @@ func (w *wlMetrics) Unregister() {
 	w.r.Unregister(w.currentSegment)
 	w.r.Unregister(w.writesFailed)
 	w.r.Unregister(w.walFileSize)
+	w.r.Unregister(w.recordPartWrites)
+	w.r.Unregister(w.recordPartBytes)
+	w.r.Unregister(w.recordBytesSaved)
 }
 
 func newWLMetrics(w *WL, r prometheus.Registerer) *wlMetrics {
-	m := &wlMetrics{
+	return &wlMetrics{
 		r: r,
+		fsyncDuration: promauto.With(r).NewSummary(prometheus.SummaryOpts{
+			Name:       "fsync_duration_seconds",
+			Help:       "Duration of write log fsync.",
+			Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
+		}),
+		pageFlushes: promauto.With(r).NewCounter(prometheus.CounterOpts{
+			Name: "page_flushes_total",
+			Help: "Total number of page flushes.",
+		}),
+		pageCompletions: promauto.With(r).NewCounter(prometheus.CounterOpts{
+			Name: "completed_pages_total",
+			Help: "Total number of completed pages.",
+		}),
+		truncateFail: promauto.With(r).NewCounter(prometheus.CounterOpts{
+			Name: "truncations_failed_total",
+			Help: "Total number of write log truncations that failed.",
+		}),
+		truncateTotal: promauto.With(r).NewCounter(prometheus.CounterOpts{
+			Name: "truncations_total",
+			Help: "Total number of write log truncations attempted.",
+		}),
+		currentSegment: promauto.With(r).NewGauge(prometheus.GaugeOpts{
+			Name: "segment_current",
+			Help: "Write log segment index that TSDB is currently writing to.",
+		}),
+		writesFailed: promauto.With(r).NewCounter(prometheus.CounterOpts{
+			Name: "writes_failed_total",
+			Help: "Total number of write log writes that failed.",
+		}),
+		walFileSize: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "storage_size_bytes",
+			Help: "Size of the write log directory.",
+		}, func() float64 {
+			val, err := w.Size()
+			if err != nil {
+				w.logger.Error("Failed to calculate size of \"wal\" dir", "err", err.Error())
+			}
+			return float64(val)
+		}),
+		recordPartWrites: promauto.With(r).NewCounter(prometheus.CounterOpts{
+			Name: "record_part_writes_total",
+			Help: "Total number of record parts written before flushing.",
+		}),
+		recordPartBytes: promauto.With(r).NewCounter(prometheus.CounterOpts{
+			Name: "record_parts_bytes_written_total",
+			Help: "Total number of record part bytes written before flushing, including" +
+				" CRC and compression headers.",
+		}),
+		recordBytesSaved: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+			Name: "record_bytes_saved_total",
+			Help: "Total number of bytes saved by the optional record compression." +
+				" Use this metric to learn about the effectiveness compression.",
+		}, []string{"compression"}),
 	}
-
-	m.fsyncDuration = prometheus.NewSummary(prometheus.SummaryOpts{
-		Name:       "fsync_duration_seconds",
-		Help:       "Duration of write log fsync.",
-		Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
-	})
-	m.pageFlushes = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "page_flushes_total",
-		Help: "Total number of page flushes.",
-	})
-	m.pageCompletions = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "completed_pages_total",
-		Help: "Total number of completed pages.",
-	})
-	m.truncateFail = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "truncations_failed_total",
-		Help: "Total number of write log truncations that failed.",
-	})
-	m.truncateTotal = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "truncations_total",
-		Help: "Total number of write log truncations attempted.",
-	})
-	m.currentSegment = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "segment_current",
-		Help: "Write log segment index that TSDB is currently writing to.",
-	})
-	m.writesFailed = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "writes_failed_total",
-		Help: "Total number of write log writes that failed.",
-	})
-	m.walFileSize = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "storage_size_bytes",
-		Help: "Size of the write log directory.",
-	}, func() float64 {
-		val, err := w.Size()
-		if err != nil {
-			w.logger.Error("Failed to calculate size of \"wal\" dir",
-				"err", err.Error())
-		}
-		return float64(val)
-	})
-
-	if r != nil {
-		r.MustRegister(
-			m.fsyncDuration,
-			m.pageFlushes,
-			m.pageCompletions,
-			m.truncateFail,
-			m.truncateTotal,
-			m.currentSegment,
-			m.writesFailed,
-			m.walFileSize,
-		)
-	}
-
-	return m
 }
 
 // New returns a new WAL over the given directory.
-func New(logger *slog.Logger, reg prometheus.Registerer, dir string, compress CompressionType) (*WL, error) {
+func New(logger *slog.Logger, reg prometheus.Registerer, dir string, compress compression.Type) (*WL, error) {
 	return NewSize(logger, reg, dir, DefaultSegmentSize, compress)
 }
 
 // NewSize returns a new write log over the given directory.
 // New segments are created with the specified size.
-func NewSize(logger *slog.Logger, reg prometheus.Registerer, dir string, segmentSize int, compress CompressionType) (*WL, error) {
+func NewSize(logger *slog.Logger, reg prometheus.Registerer, dir string, segmentSize int, compress compression.Type) (*WL, error) {
 	if segmentSize%pageSize != 0 {
 		return nil, errors.New("invalid segment size")
 	}
@@ -326,15 +308,6 @@ func NewSize(logger *slog.Logger, reg prometheus.Registerer, dir string, segment
 		logger = promslog.NewNopLogger()
 	}
 
-	var zstdWriter *zstd.Encoder
-	if compress == CompressionZstd {
-		var err error
-		zstdWriter, err = zstd.NewWriter(nil)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	w := &WL{
 		dir:         dir,
 		logger:      logger,
@@ -343,7 +316,7 @@ func NewSize(logger *slog.Logger, reg prometheus.Registerer, dir string, segment
 		actorc:      make(chan func(), 100),
 		stopc:       make(chan chan struct{}),
 		compress:    compress,
-		zstdWriter:  zstdWriter,
+		cEnc:        compression.NewSyncEncodeBuffer(),
 	}
 	prefix := "prometheus_tsdb_wal_"
 	if filepath.Base(dir) == WblDirName {
@@ -382,22 +355,16 @@ func Open(logger *slog.Logger, dir string) (*WL, error) {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
 	}
-	zstdWriter, err := zstd.NewWriter(nil)
-	if err != nil {
-		return nil, err
-	}
 
 	w := &WL{
-		dir:        dir,
-		logger:     logger,
-		zstdWriter: zstdWriter,
+		dir:    dir,
+		logger: logger,
 	}
-
 	return w, nil
 }
 
 // CompressionType returns if compression is enabled on this WAL.
-func (w *WL) CompressionType() CompressionType {
+func (w *WL) CompressionType() compression.Type {
 	return w.compress
 }
 
@@ -715,26 +682,23 @@ func (w *WL) log(rec []byte, final bool) error {
 	}
 
 	// Compress the record before calculating if a new segment is needed.
-	compressed := false
-	if w.compress == CompressionSnappy && len(rec) > 0 {
-		// If MaxEncodedLen is less than 0 the record is too large to be compressed.
-		if len(rec) > 0 && snappy.MaxEncodedLen(len(rec)) >= 0 {
-			// The snappy library uses `len` to calculate if we need a new buffer.
-			// In order to allocate as few buffers as possible make the length
-			// equal to the capacity.
-			w.compressBuf = w.compressBuf[:cap(w.compressBuf)]
-			w.compressBuf = snappy.Encode(w.compressBuf, rec)
-			if len(w.compressBuf) < len(rec) {
-				rec = w.compressBuf
-				compressed = true
-			}
+	finalCompression := w.compress
+	enc, err := compression.Encode(w.compress, rec, w.cEnc)
+	if err != nil {
+		return err
+	}
+	if w.compress != compression.None {
+		savedBytes := len(rec) - len(enc)
+
+		// Even if the compression was applied, skip it, if there's no benefit
+		// in the WAL record size (we have a choice). For small records e.g. snappy
+		// compression can yield larger records than the uncompressed.
+		if savedBytes <= 0 {
+			enc = rec
+			finalCompression = compression.None
+			savedBytes = 0
 		}
-	} else if w.compress == CompressionZstd && len(rec) > 0 {
-		w.compressBuf = w.zstdWriter.EncodeAll(rec, w.compressBuf[:0])
-		if len(w.compressBuf) < len(rec) {
-			rec = w.compressBuf
-			compressed = true
-		}
+		w.metrics.recordBytesSaved.WithLabelValues(w.compress).Add(float64(savedBytes))
 	}
 
 	// If the record is too big to fit within the active page in the current
@@ -743,7 +707,7 @@ func (w *WL) log(rec []byte, final bool) error {
 	left := w.page.remaining() - recordHeaderSize                                   // Free space in the active page.
 	left += (pageSize - recordHeaderSize) * (w.pagesPerSegment() - w.donePages - 1) // Free pages in the active segment.
 
-	if len(rec) > left {
+	if len(enc) > left {
 		if _, err := w.nextSegment(true); err != nil {
 			return err
 		}
@@ -751,32 +715,36 @@ func (w *WL) log(rec []byte, final bool) error {
 
 	// Populate as many pages as necessary to fit the record.
 	// Be careful to always do one pass to ensure we write zero-length records.
-	for i := 0; i == 0 || len(rec) > 0; i++ {
+	for i := 0; i == 0 || len(enc) > 0; i++ {
 		p := w.page
 
 		// Find how much of the record we can fit into the page.
 		var (
-			l    = min(len(rec), (pageSize-p.alloc)-recordHeaderSize)
-			part = rec[:l]
+			l    = min(len(enc), (pageSize-p.alloc)-recordHeaderSize)
+			part = enc[:l]
 			buf  = p.buf[p.alloc:]
 			typ  recType
 		)
 
 		switch {
-		case i == 0 && len(part) == len(rec):
+		case i == 0 && len(part) == len(enc):
 			typ = recFull
-		case len(part) == len(rec):
+		case len(part) == len(enc):
 			typ = recLast
 		case i == 0:
 			typ = recFirst
 		default:
 			typ = recMiddle
 		}
-		if compressed {
-			if w.compress == CompressionSnappy {
+
+		if finalCompression != compression.None {
+			switch finalCompression {
+			case compression.Snappy:
 				typ |= snappyMask
-			} else if w.compress == CompressionZstd {
+			case compression.Zstd:
 				typ |= zstdMask
+			default:
+				return fmt.Errorf("unsupported compression type: %v", finalCompression)
 			}
 		}
 
@@ -788,6 +756,9 @@ func (w *WL) log(rec []byte, final bool) error {
 		copy(buf[recordHeaderSize:], part)
 		p.alloc += len(part) + recordHeaderSize
 
+		w.metrics.recordPartWrites.Inc()
+		w.metrics.recordPartBytes.Add(float64(len(part) + recordHeaderSize))
+
 		if w.page.full() {
 			if err := w.flushPage(true); err != nil {
 				// TODO When the flushing fails at this point and the record has not been
@@ -796,7 +767,7 @@ func (w *WL) log(rec []byte, final bool) error {
 				return err
 			}
 		}
-		rec = rec[l:]
+		enc = enc[l:]
 	}
 
 	// If it's the final record of the batch and the page is not empty, flush it.

@@ -171,7 +171,7 @@ func reloadPrometheus(t *testing.T, port int) {
 // startGarbageServer sets up a mock server that returns a 500 Internal Server Error
 // for all requests. It also increments the request count each time it's hit.
 func startGarbageServer(t *testing.T, requestCount *atomic.Int32) string {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		requestCount.Inc()
 		w.WriteHeader(http.StatusInternalServerError)
 	}))

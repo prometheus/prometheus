@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
@@ -194,7 +195,7 @@ type parsedEntry struct {
 	lset labels.Labels
 	t    *int64
 	es   []exemplar.Exemplar
-	ct   *int64
+	ct   int64
 
 	// In EntryType.
 	typ model.MetricType
@@ -210,6 +211,17 @@ func requireEntries(t *testing.T, exp, got []parsedEntry) {
 	t.Helper()
 
 	testutil.RequireEqualWithOptions(t, exp, got, []cmp.Option{
+		// We reuse slices so we sometimes have empty vs nil differences
+		// we need to ignore with cmpopts.EquateEmpty().
+		// However we have to filter out labels, as only
+		// one comparer per type has to be specified,
+		// and RequireEqualWithOptions uses
+		// cmp.Comparer(labels.Equal).
+		cmp.FilterValues(func(x, y any) bool {
+			_, xIsLabels := x.(labels.Labels)
+			_, yIsLabels := y.(labels.Labels)
+			return !xIsLabels && !yIsLabels
+		}, cmpopts.EquateEmpty()),
 		cmp.AllowUnexported(parsedEntry{}),
 	})
 }
@@ -230,19 +242,21 @@ func testParse(t *testing.T, p Parser) (ret []parsedEntry) {
 		case EntryInvalid:
 			t.Fatal("entry invalid not expected")
 		case EntrySeries, EntryHistogram:
+			var ts *int64
 			if et == EntrySeries {
-				m, got.t, got.v = p.Series()
-				got.m = string(m)
+				m, ts, got.v = p.Series()
 			} else {
-				m, got.t, got.shs, got.fhs = p.Histogram()
-				got.m = string(m)
+				m, ts, got.shs, got.fhs = p.Histogram()
 			}
+			if ts != nil {
+				// TODO(bwplotka): Change to 0 in the interface for set check to
+				// avoid pointer mangling.
+				got.t = int64p(*ts)
+			}
+			got.m = string(m)
+			p.Labels(&got.lset)
+			got.ct = p.CreatedTimestamp()
 
-			p.Metric(&got.lset)
-			// Parser reuses int pointer.
-			if ct := p.CreatedTimestamp(); ct != nil {
-				got.ct = int64p(*ct)
-			}
 			for e := (exemplar.Exemplar{}); p.Exemplar(&e); {
 				got.es = append(got.es, e)
 			}

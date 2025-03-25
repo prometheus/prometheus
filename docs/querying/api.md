@@ -45,7 +45,7 @@ The JSON response envelope format is as follows:
   // Only set if there were warnings while executing the request.
   // There will still be data in the data field.
   "warnings": ["<string>"],
-  // Only set if there were info-level annnotations while executing the request.
+  // Only set if there were info-level annotations while executing the request.
   "infos": ["<string>"]
 }
 ```
@@ -692,6 +692,7 @@ $ curl http://localhost:9090/api/v1/targets
           "__scrape_timeout__": "10s",
           "job": "node"
         },
+        "scrapePool": "node"
       }
     ]
   }

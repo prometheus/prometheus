@@ -29,9 +29,8 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
-	"github.com/stretchr/testify/require"
-
 	"github.com/prometheus/common/promslog"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -42,6 +41,7 @@ import (
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -60,7 +60,7 @@ func TestRemoteWriteHandlerHeadersHandling_V1Message(t *testing.T) {
 			name: "correct PRW 1.0 headers",
 			reqHeaders: map[string]string{
 				"Content-Type":           remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV1],
-				"Content-Encoding":       string(SnappyBlockCompression),
+				"Content-Encoding":       compression.Snappy,
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
 			expectedCode: http.StatusNoContent,
@@ -69,7 +69,7 @@ func TestRemoteWriteHandlerHeadersHandling_V1Message(t *testing.T) {
 			name: "missing remote write version",
 			reqHeaders: map[string]string{
 				"Content-Type":     remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV1],
-				"Content-Encoding": string(SnappyBlockCompression),
+				"Content-Encoding": compression.Snappy,
 			},
 			expectedCode: http.StatusNoContent,
 		},
@@ -81,7 +81,7 @@ func TestRemoteWriteHandlerHeadersHandling_V1Message(t *testing.T) {
 		{
 			name: "missing content-type",
 			reqHeaders: map[string]string{
-				"Content-Encoding":       string(SnappyBlockCompression),
+				"Content-Encoding":       compression.Snappy,
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
 			expectedCode: http.StatusNoContent,
@@ -98,7 +98,7 @@ func TestRemoteWriteHandlerHeadersHandling_V1Message(t *testing.T) {
 			name: "wrong content-type",
 			reqHeaders: map[string]string{
 				"Content-Type":           "yolo",
-				"Content-Encoding":       string(SnappyBlockCompression),
+				"Content-Encoding":       compression.Snappy,
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
 			expectedCode: http.StatusUnsupportedMediaType,
@@ -107,7 +107,7 @@ func TestRemoteWriteHandlerHeadersHandling_V1Message(t *testing.T) {
 			name: "wrong content-type2",
 			reqHeaders: map[string]string{
 				"Content-Type":           appProtoContentType + ";proto=yolo",
-				"Content-Encoding":       string(SnappyBlockCompression),
+				"Content-Encoding":       compression.Snappy,
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
 			expectedCode: http.StatusUnsupportedMediaType,
@@ -157,7 +157,7 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 			name: "correct PRW 2.0 headers",
 			reqHeaders: map[string]string{
 				"Content-Type":           remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV2],
-				"Content-Encoding":       string(SnappyBlockCompression),
+				"Content-Encoding":       compression.Snappy,
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
 			expectedCode: http.StatusNoContent,
@@ -166,7 +166,7 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 			name: "missing remote write version",
 			reqHeaders: map[string]string{
 				"Content-Type":     remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV2],
-				"Content-Encoding": string(SnappyBlockCompression),
+				"Content-Encoding": compression.Snappy,
 			},
 			expectedCode: http.StatusNoContent, // We don't check for now.
 		},
@@ -178,7 +178,7 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 		{
 			name: "missing content-type",
 			reqHeaders: map[string]string{
-				"Content-Encoding":       string(SnappyBlockCompression),
+				"Content-Encoding":       compression.Snappy,
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
 			// This only gives 415, because we explicitly only support 2.0. If we supported both
@@ -199,7 +199,7 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 			name: "wrong content-type",
 			reqHeaders: map[string]string{
 				"Content-Type":           "yolo",
-				"Content-Encoding":       string(SnappyBlockCompression),
+				"Content-Encoding":       compression.Snappy,
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
 			expectedCode: http.StatusUnsupportedMediaType,
@@ -208,7 +208,7 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 			name: "wrong content-type2",
 			reqHeaders: map[string]string{
 				"Content-Type":           appProtoContentType + ";proto=yolo",
-				"Content-Encoding":       string(SnappyBlockCompression),
+				"Content-Encoding":       compression.Snappy,
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
 			expectedCode: http.StatusUnsupportedMediaType,
@@ -445,7 +445,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			require.NoError(t, err)
 
 			req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV2])
-			req.Header.Set("Content-Encoding", string(SnappyBlockCompression))
+			req.Header.Set("Content-Encoding", compression.Snappy)
 			req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
 
 			appendable := &mockAppendable{
@@ -715,7 +715,7 @@ func TestCommitErr_V2Message(t *testing.T) {
 	require.NoError(t, err)
 
 	req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV2])
-	req.Header.Set("Content-Encoding", string(SnappyBlockCompression))
+	req.Header.Set("Content-Encoding", compression.Snappy)
 	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
 
 	appendable := &mockAppendable{commitErr: errors.New("commit error")}
@@ -860,7 +860,7 @@ func (m *mockAppendable) Appender(_ context.Context) storage.Appender {
 	return m
 }
 
-func (m *mockAppendable) SetOptions(opts *storage.AppendOptions) {
+func (m *mockAppendable) SetOptions(_ *storage.AppendOptions) {
 	panic("unimplemented")
 }
 
@@ -956,7 +956,7 @@ func (m *mockAppendable) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t
 	return 0, nil
 }
 
-func (m *mockAppendable) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (m *mockAppendable) AppendHistogramCTZeroSample(_ storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	if m.appendCTZeroSampleErr != nil {
 		return 0, m.appendCTZeroSampleErr
 	}
@@ -1006,7 +1006,7 @@ func (m *mockAppendable) UpdateMetadata(_ storage.SeriesRef, l labels.Labels, mp
 	return 0, nil
 }
 
-func (m *mockAppendable) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64) (storage.SeriesRef, error) {
+func (m *mockAppendable) AppendCTZeroSample(_ storage.SeriesRef, l labels.Labels, t, ct int64) (storage.SeriesRef, error) {
 	if m.appendCTZeroSampleErr != nil {
 		return 0, m.appendCTZeroSampleErr
 	}

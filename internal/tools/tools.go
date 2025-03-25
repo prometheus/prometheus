@@ -18,8 +18,9 @@
 package tools
 
 import (
+	_ "github.com/bufbuild/buf/cmd/buf"
+	_ "github.com/daixiang0/gci/cmd/gci"
 	_ "github.com/gogo/protobuf/protoc-gen-gogofast"
-	_ "github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway"
-	_ "github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger"
-	_ "golang.org/x/tools/cmd/goimports"
+	_ "github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway"
+	_ "github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2"
 )

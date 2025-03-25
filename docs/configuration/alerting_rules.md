@@ -46,7 +46,7 @@ this alert firing for the specified duration after the firing condition was last
 This can be used to prevent situations such as flapping alerts, false resolutions
 due to lack of data loss, etc. Alerting rules without the `keep_firing_for` clause
 will deactivate on the first evaluation where the condition is not met (assuming
-any optional `for` duration desribed above has been satisfied).
+any optional `for` duration described above has been satisfied).
 
 The `labels` clause allows specifying a set of additional labels to be attached
 to the alert. Any existing conflicting labels will be overwritten. The label

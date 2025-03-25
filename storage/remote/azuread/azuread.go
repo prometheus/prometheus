@@ -21,13 +21,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/grafana/regexp"
-
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/google/uuid"
+	"github.com/grafana/regexp"
 )
 
 // Clouds.
@@ -349,11 +348,10 @@ func (tokenProvider *tokenProvider) getToken(ctx context.Context) error {
 func (tokenProvider *tokenProvider) updateRefreshTime(accessToken azcore.AccessToken) error {
 	tokenExpiryTimestamp := accessToken.ExpiresOn.UTC()
 	deltaExpirytime := time.Now().Add(time.Until(tokenExpiryTimestamp) / 2)
-	if deltaExpirytime.After(time.Now().UTC()) {
-		tokenProvider.refreshTime = deltaExpirytime
-	} else {
+	if !deltaExpirytime.After(time.Now().UTC()) {
 		return errors.New("access token expiry is less than the current time")
 	}
+	tokenProvider.refreshTime = deltaExpirytime
 	return nil
 }
 

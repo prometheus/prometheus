@@ -173,7 +173,7 @@ func (h *histogramIterator) Next() chunkenc.ValueType {
 	return chunkenc.ValNone
 }
 
-func (h *histogramIterator) Seek(t int64) chunkenc.ValueType { panic("not implemented") }
+func (h *histogramIterator) Seek(_ int64) chunkenc.ValueType { panic("not implemented") }
 
 func (h *histogramIterator) At() (int64, float64) { panic("not implemented") }
 

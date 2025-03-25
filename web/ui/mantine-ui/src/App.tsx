@@ -332,14 +332,16 @@ function App() {
                       justify="space-between"
                       wrap="nowrap"
                     >
-                      <Group gap={65} wrap="nowrap">
+                      <Group gap={40} wrap="nowrap">
                         <Link
                           to="/"
                           style={{ textDecoration: "none", color: "white" }}
                         >
                           <Group gap={10} wrap="nowrap">
                             <img src={PrometheusLogo} height={30} />
-                            <Text fz={20}>Prometheus{agentMode && " Agent"}</Text>
+                            <Text hiddenFrom="sm" fz={20}>Prometheus</Text>
+                            <Text visibleFrom="md" fz={20}>Prometheus</Text>
+                            <Text fz={20}>{agentMode && "Agent"}</Text>
                           </Group>
                         </Link>
                         <Group gap={12} visibleFrom="sm" wrap="nowrap">

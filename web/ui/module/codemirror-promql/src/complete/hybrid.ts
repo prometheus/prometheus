@@ -232,7 +232,8 @@ function isAggregatorWithParam(functionCallBody: SyntaxNode): boolean {
 export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: number): Context[] {
   const result: Context[] = [];
   switch (node.type.id) {
-    case 0: // 0 is the id of the error node
+    case 0: {
+      // 0 is the id of the error node
       if (node.parent?.type.id === OffsetExpr) {
         // we are likely in the given situation:
         // `metric_name offset 5` that leads to this tree:
@@ -270,7 +271,8 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
         result.push({ kind: ContextKind.BinOp });
       }
       break;
-    case Identifier:
+    }
+    case Identifier: {
       // sometimes an Identifier has an error has parent. This should be treated in priority
       if (node.parent?.type.id === 0) {
         const errorNodeParent = node.parent.parent;
@@ -380,6 +382,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
         }
       }
       break;
+    }
     case PromQL:
       if (node.firstChild !== null && node.firstChild.type.id === 0) {
         // this situation can happen when there is nothing in the text area and the user is explicitly triggering the autocompletion (with ctrl + space)

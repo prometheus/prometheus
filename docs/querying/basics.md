@@ -47,7 +47,19 @@ _Notes about the experimental native histograms:_
   disabling the feature flag again), both instant vectors and range vectors may
   now contain samples that aren't simple floating point numbers (float samples)
   but complete histograms (histogram samples). A vector may contain a mix of
-  float samples and histogram samples.
+  float samples and histogram samples. Note that the term “histogram sample” in
+  the PromQL documentation always refers to a native histogram. Classic
+  histograms are broken up into a number of series of float samples. From the
+  perspective of PromQL, there are no “classic histogram samples”.
+* Like float samples, histogram samples can be counters or gauges, also called
+  counter histograms or gauge histograms, respectively.
+* Native histograms can have different bucket layouts, but they are generally
+  convertible to compatible versions to apply binary and aggregation operations
+  to them. This is not true for all bucketing schemas. If incompatible
+  histograms are encountered in an operation, the corresponding output vector
+  element is removed from the result, flagged with a warn-level annotation.
+  More details can be found in the
+  [native histogram specification](https://prometheus.io/docs/specs/native_histograms/#compatibility-between-histograms).
 
 ## Literals
 

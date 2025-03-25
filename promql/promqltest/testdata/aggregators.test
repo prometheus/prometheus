@@ -430,6 +430,10 @@ eval instant at 1m count_values by (job, group)("job", version)
 	{job="7", group="canary"} 2
     {job="{count:20, sum:10, [-2,-1):2, [-1,-0.5):1, [-0.001,0.001]:2, (0.5,1]:1, (1,2]:2}", group="canary"} 2
 
+# Test an invalid label value.
+eval_fail instant at 0 count_values("a\xc5z", version)
+  expected_fail_message invalid label name "a\xc5z"
+
 # Tests for quantile.
 clear
 

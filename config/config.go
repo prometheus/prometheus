@@ -156,6 +156,7 @@ var (
 	// DefaultConfig is the default top-level configuration.
 	DefaultConfig = Config{
 		GlobalConfig: DefaultGlobalConfig,
+		Runtime:      DefaultRuntimeConfig,
 	}
 
 	// DefaultGlobalConfig is the default global configuration.
@@ -523,7 +524,7 @@ var (
 	ScrapeProtocolsHeaders = map[ScrapeProtocol]string{
 		PrometheusProto:      "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited",
 		PrometheusText0_0_4:  "text/plain;version=0.0.4",
-		PrometheusText1_0_0:  "text/plain;version=1.0.0;escaping=allow-utf-8",
+		PrometheusText1_0_0:  "text/plain;version=1.0.0",
 		OpenMetricsText0_0_1: "application/openmetrics-text;version=0.0.1",
 		OpenMetricsText1_0_0: "application/openmetrics-text;version=1.0.0",
 	}
@@ -836,12 +837,12 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 		}
 	}
 
+	//nolint:staticcheck
+	if model.NameValidationScheme != model.UTF8Validation {
+		return errors.New("model.NameValidationScheme must be set to UTF8")
+	}
 	switch globalConfig.MetricNameValidationScheme {
-	case LegacyValidationConfig:
-	case "", UTF8ValidationConfig:
-		if model.NameValidationScheme != model.UTF8Validation {
-			panic("utf8 name validation requested but model.NameValidationScheme is not set to UTF8")
-		}
+	case "", LegacyValidationConfig, UTF8ValidationConfig:
 	default:
 		return fmt.Errorf("unknown name validation method specified, must be either 'legacy' or 'utf8', got %s", globalConfig.MetricNameValidationScheme)
 	}
@@ -1442,6 +1443,7 @@ type OTLPConfig struct {
 	PromoteResourceAttributes         []string                  `yaml:"promote_resource_attributes,omitempty"`
 	TranslationStrategy               translationStrategyOption `yaml:"translation_strategy,omitempty"`
 	KeepIdentifyingResourceAttributes bool                      `yaml:"keep_identifying_resource_attributes,omitempty"`
+	ConvertHistogramsToNHCB           bool                      `yaml:"convert_histograms_to_nhcb,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.

@@ -38,9 +38,8 @@ import (
 	"github.com/Code-Hex/go-generics-cache/policy/lru"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
-	"github.com/prometheus/common/promslog"
-
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/version"
 
 	"github.com/prometheus/prometheus/discovery"
@@ -70,18 +69,14 @@ const (
 	authMethodManagedIdentity = "ManagedIdentity"
 )
 
-var (
-	userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
-
-	// DefaultSDConfig is the default Azure SD configuration.
-	DefaultSDConfig = SDConfig{
-		Port:                 80,
-		RefreshInterval:      model.Duration(5 * time.Minute),
-		Environment:          "AzurePublicCloud",
-		AuthenticationMethod: authMethodOAuth,
-		HTTPClientConfig:     config_util.DefaultHTTPClientConfig,
-	}
-)
+// DefaultSDConfig is the default Azure SD configuration.
+var DefaultSDConfig = SDConfig{
+	Port:                 80,
+	RefreshInterval:      model.Duration(5 * time.Minute),
+	Environment:          "AzurePublicCloud",
+	AuthenticationMethod: authMethodOAuth,
+	HTTPClientConfig:     config_util.DefaultHTTPClientConfig,
+}
 
 var environments = map[string]cloud.Configuration{
 	"AZURECHINACLOUD":        cloud.AzureChina,
@@ -244,7 +239,7 @@ func (d *Discovery) createAzureClient() (client, error) {
 	c.logger = d.logger
 
 	telemetry := policy.TelemetryOptions{
-		ApplicationID: userAgent,
+		ApplicationID: version.PrometheusUserAgent(),
 	}
 
 	credential, err := newCredential(*d.cfg, policy.ClientOptions{
@@ -462,11 +457,10 @@ func (d *Discovery) vmToLabelSet(ctx context.Context, client client, vm virtualM
 				networkInterface, err = client.getVMScaleSetVMNetworkInterfaceByID(ctx, nicID, vm.ScaleSet, vm.InstanceID)
 			}
 			if err != nil {
-				if errors.Is(err, errorNotFound) {
-					d.logger.Warn("Network interface does not exist", "name", nicID, "err", err)
-				} else {
+				if !errors.Is(err, errorNotFound) {
 					return nil, err
 				}
+				d.logger.Warn("Network interface does not exist", "name", nicID, "err", err)
 				// Get out of this routine because we cannot continue without a network interface.
 				return nil, nil
 			}

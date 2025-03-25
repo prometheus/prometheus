@@ -35,14 +35,15 @@ import (
 	"go.uber.org/atomic"
 	"gopkg.in/yaml.v2"
 
-	"github.com/prometheus/prometheus/discovery"
-
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery"
 	_ "github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 )
+
+const maxBatchSize = 256
 
 func TestPostPath(t *testing.T) {
 	cases := []struct {
@@ -140,17 +141,20 @@ func newTestHTTPServerBuilder(expected *[]*Alert, errc chan<- error, u, p string
 
 func TestHandlerSendAll(t *testing.T) {
 	var (
-		errc             = make(chan error, 1)
-		expected         = make([]*Alert, 0, maxBatchSize)
-		status1, status2 atomic.Int32
+		errc                      = make(chan error, 1)
+		expected                  = make([]*Alert, 0, maxBatchSize)
+		status1, status2, status3 atomic.Int32
 	)
 	status1.Store(int32(http.StatusOK))
 	status2.Store(int32(http.StatusOK))
+	status3.Store(int32(http.StatusOK))
 
 	server1 := newTestHTTPServerBuilder(&expected, errc, "prometheus", "testing_password", &status1)
 	server2 := newTestHTTPServerBuilder(&expected, errc, "", "", &status2)
+	server3 := newTestHTTPServerBuilder(&expected, errc, "", "", &status3)
 	defer server1.Close()
 	defer server2.Close()
+	defer server3.Close()
 
 	h := NewManager(&Options{}, nil)
 
@@ -170,6 +174,9 @@ func TestHandlerSendAll(t *testing.T) {
 	am2Cfg := config.DefaultAlertmanagerConfig
 	am2Cfg.Timeout = model.Duration(time.Second)
 
+	am3Cfg := config.DefaultAlertmanagerConfig
+	am3Cfg.Timeout = model.Duration(time.Second)
+
 	h.alertmanagers["1"] = &alertmanagerSet{
 		ams: []alertmanager{
 			alertmanagerMock{
@@ -185,8 +192,16 @@ func TestHandlerSendAll(t *testing.T) {
 			alertmanagerMock{
 				urlf: func() string { return server2.URL },
 			},
+			alertmanagerMock{
+				urlf: func() string { return server3.URL },
+			},
 		},
 		cfg: &am2Cfg,
+	}
+
+	h.alertmanagers["3"] = &alertmanagerSet{
+		ams: []alertmanager{}, // empty set
+		cfg: &am3Cfg,
 	}
 
 	for i := range make([]struct{}, maxBatchSize) {
@@ -207,14 +222,25 @@ func TestHandlerSendAll(t *testing.T) {
 		}
 	}
 
+	// all ams in all sets are up
 	require.True(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
 	checkNoErr()
 
+	// the only am in set 1 is down
 	status1.Store(int32(http.StatusNotFound))
-	require.True(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
+	require.False(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
 	checkNoErr()
 
+	// reset it
+	status1.Store(int32(http.StatusOK))
+
+	// only one of the ams in set 2 is down
 	status2.Store(int32(http.StatusInternalServerError))
+	require.True(t, h.sendAll(h.queue...), "all sends succeeded unexpectedly")
+	checkNoErr()
+
+	// both ams in set 2 are down
+	status3.Store(int32(http.StatusInternalServerError))
 	require.False(t, h.sendAll(h.queue...), "all sends succeeded unexpectedly")
 	checkNoErr()
 }
@@ -226,13 +252,15 @@ func TestHandlerSendAllRemapPerAm(t *testing.T) {
 		expected2 = make([]*Alert, 0, maxBatchSize)
 		expected3 = make([]*Alert, 0)
 
-		statusOK atomic.Int32
+		status1, status2, status3 atomic.Int32
 	)
-	statusOK.Store(int32(http.StatusOK))
+	status1.Store(int32(http.StatusOK))
+	status2.Store(int32(http.StatusOK))
+	status3.Store(int32(http.StatusOK))
 
-	server1 := newTestHTTPServerBuilder(&expected1, errc, "", "", &statusOK)
-	server2 := newTestHTTPServerBuilder(&expected2, errc, "", "", &statusOK)
-	server3 := newTestHTTPServerBuilder(&expected3, errc, "", "", &statusOK)
+	server1 := newTestHTTPServerBuilder(&expected1, errc, "", "", &status1)
+	server2 := newTestHTTPServerBuilder(&expected2, errc, "", "", &status2)
+	server3 := newTestHTTPServerBuilder(&expected3, errc, "", "", &status3)
 
 	defer server1.Close()
 	defer server2.Close()
@@ -331,6 +359,21 @@ func TestHandlerSendAllRemapPerAm(t *testing.T) {
 		}
 	}
 
+	// all ams are up
+	require.True(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
+	checkNoErr()
+
+	// the only am in set 1 goes down
+	status1.Store(int32(http.StatusInternalServerError))
+	require.False(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
+	checkNoErr()
+
+	// reset set 1
+	status1.Store(int32(http.StatusOK))
+
+	// set 3 loses its only am, but all alerts were dropped
+	// so there was nothing to send, keeping sendAll true
+	status3.Store(int32(http.StatusInternalServerError))
 	require.True(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
 	checkNoErr()
 
@@ -348,7 +391,7 @@ func TestCustomDo(t *testing.T) {
 
 	var received bool
 	h := NewManager(&Options{
-		Do: func(_ context.Context, client *http.Client, req *http.Request) (*http.Response, error) {
+		Do: func(_ context.Context, _ *http.Client, req *http.Request) (*http.Response, error) {
 			received = true
 			body, err := io.ReadAll(req.Body)
 
@@ -372,6 +415,7 @@ func TestCustomDo(t *testing.T) {
 func TestExternalLabels(t *testing.T) {
 	h := NewManager(&Options{
 		QueueCapacity:  3 * maxBatchSize,
+		MaxBatchSize:   maxBatchSize,
 		ExternalLabels: labels.FromStrings("a", "b"),
 		RelabelConfigs: []*relabel.Config{
 			{
@@ -406,6 +450,7 @@ func TestExternalLabels(t *testing.T) {
 func TestHandlerRelabel(t *testing.T) {
 	h := NewManager(&Options{
 		QueueCapacity: 3 * maxBatchSize,
+		MaxBatchSize:  maxBatchSize,
 		RelabelConfigs: []*relabel.Config{
 			{
 				SourceLabels: model.LabelNames{"alertname"},
@@ -447,7 +492,7 @@ func TestHandlerQueuing(t *testing.T) {
 		errc      = make(chan error, 1)
 	)
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		// Notify the test function that we have received something.
 		select {
 		case called <- struct{}{}:
@@ -484,6 +529,7 @@ func TestHandlerQueuing(t *testing.T) {
 	h := NewManager(
 		&Options{
 			QueueCapacity: 3 * maxBatchSize,
+			MaxBatchSize:  maxBatchSize,
 		},
 		nil,
 	)
@@ -724,7 +770,7 @@ func TestHangingNotifier(t *testing.T) {
 
 	// Set up a faulty Alertmanager.
 	var faultyCalled atomic.Bool
-	faultyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	faultyServer := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		faultyCalled.Store(true)
 		select {
 		case <-done:
@@ -736,7 +782,7 @@ func TestHangingNotifier(t *testing.T) {
 
 	// Set up a functional Alertmanager.
 	var functionalCalled atomic.Bool
-	functionalServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	functionalServer := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		functionalCalled.Store(true)
 	}))
 	functionalURL, err := url.Parse(functionalServer.URL)

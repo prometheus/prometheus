@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
@@ -34,8 +35,6 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	kubetesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
-
-	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -199,7 +198,7 @@ func requireTargetGroups(t *testing.T, expected, res map[string]*targetgroup.Gro
 		panic(err)
 	}
 
-	require.Equal(t, string(b1), string(b2))
+	require.JSONEq(t, string(b1), string(b2))
 }
 
 // marshalTargetGroups serializes a set of target groups to JSON, ignoring the
@@ -312,7 +311,7 @@ func TestFailuresCountMetric(t *testing.T) {
 			require.Equal(t, float64(0), prom_testutil.ToFloat64(n.metrics.failuresCount))
 
 			// Simulate an error on watch requests.
-			c.Discovery().(*fakediscovery.FakeDiscovery).PrependWatchReactor("*", func(action kubetesting.Action) (bool, watch.Interface, error) {
+			c.Discovery().(*fakediscovery.FakeDiscovery).PrependWatchReactor("*", func(_ kubetesting.Action) (bool, watch.Interface, error) {
 				return true, nil, apierrors.NewUnauthorized("unauthorized")
 			})
 

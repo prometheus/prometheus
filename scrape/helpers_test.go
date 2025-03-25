@@ -43,7 +43,7 @@ func (a nopAppendable) Appender(_ context.Context) storage.Appender {
 
 type nopAppender struct{}
 
-func (a nopAppender) SetOptions(opts *storage.AppendOptions) {}
+func (a nopAppender) SetOptions(_ *storage.AppendOptions) {}
 
 func (a nopAppender) Append(storage.SeriesRef, labels.Labels, int64, float64) (storage.SeriesRef, error) {
 	return 1, nil
@@ -57,7 +57,7 @@ func (a nopAppender) AppendHistogram(storage.SeriesRef, labels.Labels, int64, *h
 	return 3, nil
 }
 
-func (a nopAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (a nopAppender) AppendHistogramCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	return 0, nil
 }
 
@@ -90,6 +90,27 @@ type histogramSample struct {
 	fh     *histogram.FloatHistogram
 }
 
+type metadataEntry struct {
+	m      metadata.Metadata
+	metric labels.Labels
+}
+
+func metadataEntryEqual(a, b metadataEntry) bool {
+	if !labels.Equal(a.metric, b.metric) {
+		return false
+	}
+	if a.m.Type != b.m.Type {
+		return false
+	}
+	if a.m.Unit != b.m.Unit {
+		return false
+	}
+	if a.m.Help != b.m.Help {
+		return false
+	}
+	return true
+}
+
 type collectResultAppendable struct {
 	*collectResultAppender
 }
@@ -112,11 +133,11 @@ type collectResultAppender struct {
 	rolledbackHistograms []histogramSample
 	resultExemplars      []exemplar.Exemplar
 	pendingExemplars     []exemplar.Exemplar
-	resultMetadata       []metadata.Metadata
-	pendingMetadata      []metadata.Metadata
+	resultMetadata       []metadataEntry
+	pendingMetadata      []metadataEntry
 }
 
-func (a *collectResultAppender) SetOptions(opts *storage.AppendOptions) {}
+func (a *collectResultAppender) SetOptions(_ *storage.AppendOptions) {}
 
 func (a *collectResultAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	a.mtx.Lock()
@@ -138,7 +159,7 @@ func (a *collectResultAppender) Append(ref storage.SeriesRef, lset labels.Labels
 	if err != nil {
 		return 0, err
 	}
-	return ref, err
+	return ref, nil
 }
 
 func (a *collectResultAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
@@ -163,7 +184,7 @@ func (a *collectResultAppender) AppendHistogram(ref storage.SeriesRef, l labels.
 	return a.next.AppendHistogram(ref, l, t, h, fh)
 }
 
-func (a *collectResultAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (a *collectResultAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, l labels.Labels, _, ct int64, h *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	if h != nil {
 		return a.AppendHistogram(ref, l, ct, &histogram.Histogram{}, nil)
 	}
@@ -173,7 +194,7 @@ func (a *collectResultAppender) AppendHistogramCTZeroSample(ref storage.SeriesRe
 func (a *collectResultAppender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
-	a.pendingMetadata = append(a.pendingMetadata, m)
+	a.pendingMetadata = append(a.pendingMetadata, metadataEntry{metric: l, m: m})
 	if ref == 0 {
 		ref = storage.SeriesRef(rand.Uint64())
 	}
@@ -184,7 +205,7 @@ func (a *collectResultAppender) UpdateMetadata(ref storage.SeriesRef, l labels.L
 	return a.next.UpdateMetadata(ref, l, m)
 }
 
-func (a *collectResultAppender) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64) (storage.SeriesRef, error) {
+func (a *collectResultAppender) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labels, _, ct int64) (storage.SeriesRef, error) {
 	return a.Append(ref, l, ct, 0.0)
 }
 

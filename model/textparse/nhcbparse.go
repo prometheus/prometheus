@@ -67,8 +67,7 @@ type NHCBParser struct {
 	h     *histogram.Histogram
 	fh    *histogram.FloatHistogram
 	// For Metric.
-	lset         labels.Labels
-	metricString string
+	lset labels.Labels
 	// For Type.
 	bName []byte
 	typ   model.MetricType
@@ -84,7 +83,7 @@ type NHCBParser struct {
 	fhNHCB           *histogram.FloatHistogram
 	lsetNHCB         labels.Labels
 	exemplars        []exemplar.Exemplar
-	ctNHCB           *int64
+	ctNHCB           int64
 	metricStringNHCB string
 
 	// Collates values from the classic histogram series to build
@@ -93,7 +92,7 @@ type NHCBParser struct {
 	tempNHCB          convertnhcb.TempHistogram
 	tempExemplars     []exemplar.Exemplar
 	tempExemplarCount int
-	tempCT            *int64
+	tempCT            int64
 
 	// Remembers the last base histogram metric name (assuming it's
 	// a classic histogram) so we can tell if the next float series
@@ -141,13 +140,12 @@ func (p *NHCBParser) Comment() []byte {
 	return p.parser.Comment()
 }
 
-func (p *NHCBParser) Metric(l *labels.Labels) string {
+func (p *NHCBParser) Labels(l *labels.Labels) {
 	if p.state == stateEmitting {
 		*l = p.lsetNHCB
-		return p.metricStringNHCB
+		return
 	}
 	*l = p.lset
-	return p.metricString
 }
 
 func (p *NHCBParser) Exemplar(ex *exemplar.Exemplar) bool {
@@ -162,7 +160,7 @@ func (p *NHCBParser) Exemplar(ex *exemplar.Exemplar) bool {
 	return p.parser.Exemplar(ex)
 }
 
-func (p *NHCBParser) CreatedTimestamp() *int64 {
+func (p *NHCBParser) CreatedTimestamp() int64 {
 	switch p.state {
 	case stateStart:
 		if p.entry == EntrySeries || p.entry == EntryHistogram {
@@ -173,7 +171,7 @@ func (p *NHCBParser) CreatedTimestamp() *int64 {
 	case stateEmitting:
 		return p.ctNHCB
 	}
-	return nil
+	return 0
 }
 
 func (p *NHCBParser) Next() (Entry, error) {
@@ -200,7 +198,7 @@ func (p *NHCBParser) Next() (Entry, error) {
 		switch p.entry {
 		case EntrySeries:
 			p.bytes, p.ts, p.value = p.parser.Series()
-			p.metricString = p.parser.Metric(&p.lset)
+			p.parser.Labels(&p.lset)
 			// Check the label set to see if we can continue or need to emit the NHCB.
 			var isNHCB bool
 			if p.compareLabels() {
@@ -224,7 +222,7 @@ func (p *NHCBParser) Next() (Entry, error) {
 			return p.entry, p.err
 		case EntryHistogram:
 			p.bytes, p.ts, p.h, p.fh = p.parser.Histogram()
-			p.metricString = p.parser.Metric(&p.lset)
+			p.parser.Labels(&p.lset)
 			p.storeExponentialLabels()
 		case EntryType:
 			p.bName, p.typ = p.parser.Type()
@@ -377,6 +375,6 @@ func (p *NHCBParser) processNHCB() bool {
 	}
 	p.tempNHCB.Reset()
 	p.tempExemplarCount = 0
-	p.tempCT = nil
+	p.tempCT = 0
 	return err == nil
 }

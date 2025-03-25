@@ -30,10 +30,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/util/stats"
-	"github.com/prometheus/prometheus/util/testutil"
-
 	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
@@ -47,6 +43,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
@@ -55,7 +52,9 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/teststorage"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func testEngine(t *testing.T) *promql.Engine {
@@ -84,7 +83,7 @@ func (s *testMetaStore) ListMetadata() []scrape.MetricMetadata {
 
 func (s *testMetaStore) GetMetadata(metric string) (scrape.MetricMetadata, bool) {
 	for _, m := range s.Metadata {
-		if metric == m.Metric {
+		if metric == m.MetricFamily {
 			return m, true
 		}
 	}
@@ -314,7 +313,7 @@ func (m *rulesRetrieverMock) CreateRuleGroups() {
 		Appendable: storage,
 		Context:    context.Background(),
 		Logger:     promslog.NewNopLogger(),
-		NotifyFunc: func(ctx context.Context, expr string, alerts ...*rules.Alert) {},
+		NotifyFunc: func(_ context.Context, _ string, _ ...*rules.Alert) {},
 	}
 
 	var r []rules.Rule
@@ -480,22 +479,22 @@ func TestEndpoints(t *testing.T) {
 		u, err := url.Parse(server.URL)
 		require.NoError(t, err)
 
-		al := promslog.AllowedLevel{}
+		al := promslog.NewLevel()
 		require.NoError(t, al.Set("debug"))
 
-		af := promslog.AllowedFormat{}
+		af := promslog.NewFormat()
 		require.NoError(t, af.Set("logfmt"))
 
 		promslogConfig := promslog.Config{
-			Level:  &al,
-			Format: &af,
+			Level:  al,
+			Format: af,
 		}
 
 		dbDir := t.TempDir()
 
 		remote := remote.NewStorage(promslog.New(&promslogConfig), prometheus.DefaultRegisterer, func() (int64, error) {
 			return 0, nil
-		}, dbDir, 1*time.Second, nil, false)
+		}, dbDir, 1*time.Second, nil)
 
 		err = remote.ApplyConfig(&config.Config{
 			RemoteReadConfigs: []*config.RemoteReadConfig{
@@ -951,7 +950,7 @@ func TestStats(t *testing.T) {
 		},
 		{
 			name: "custom handler with known value",
-			renderer: func(ctx context.Context, s *stats.Statistics, p string) stats.QueryStats {
+			renderer: func(_ context.Context, _ *stats.Statistics, p string) stats.QueryStats {
 				if p == "known" {
 					return testStats{"Custom Value"}
 				}
@@ -1117,7 +1116,6 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 		metadata              []targetMetadata
 		exemplars             []exemplar.QueryResult
 		zeroFunc              func(interface{})
-		nameValidationScheme  model.ValidationScheme
 	}
 
 	rulesZeroFunc := func(i interface{}) {
@@ -1767,6 +1765,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 							"__scrape_interval__", "30s",
 							"__scrape_timeout__", "15s",
 						),
+						ScrapePool: "blackbox",
 					},
 				},
 				DroppedTargetCounts: map[string]int{"blackbox": 1},
@@ -1816,6 +1815,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 							"__scrape_interval__", "30s",
 							"__scrape_timeout__", "15s",
 						),
+						ScrapePool: "blackbox",
 					},
 				},
 				DroppedTargetCounts: map[string]int{"blackbox": 1},
@@ -1875,6 +1875,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 							"__scrape_interval__", "30s",
 							"__scrape_timeout__", "15s",
 						),
+						ScrapePool: "blackbox",
 					},
 				},
 				DroppedTargetCounts: map[string]int{"blackbox": 1},
@@ -1891,10 +1892,10 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					identifier: "test",
 					metadata: []scrape.MetricMetadata{
 						{
-							Metric: "go_threads",
-							Type:   model.MetricTypeGauge,
-							Help:   "Number of OS threads created.",
-							Unit:   "",
+							MetricFamily: "go_threads",
+							Type:         model.MetricTypeGauge,
+							Help:         "Number of OS threads created.",
+							Unit:         "",
 						},
 					},
 				},
@@ -1921,10 +1922,10 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					identifier: "blackbox",
 					metadata: []scrape.MetricMetadata{
 						{
-							Metric: "prometheus_tsdb_storage_blocks_bytes",
-							Type:   model.MetricTypeGauge,
-							Help:   "The number of bytes that are currently used for local storage by all blocks.",
-							Unit:   "",
+							MetricFamily: "prometheus_tsdb_storage_blocks_bytes",
+							Type:         model.MetricTypeGauge,
+							Help:         "The number of bytes that are currently used for local storage by all blocks.",
+							Unit:         "",
 						},
 					},
 				},
@@ -1934,10 +1935,10 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					Target: labels.FromMap(map[string]string{
 						"job": "blackbox",
 					}),
-					Metric: "prometheus_tsdb_storage_blocks_bytes",
-					Help:   "The number of bytes that are currently used for local storage by all blocks.",
-					Type:   model.MetricTypeGauge,
-					Unit:   "",
+					MetricFamily: "prometheus_tsdb_storage_blocks_bytes",
+					Help:         "The number of bytes that are currently used for local storage by all blocks.",
+					Type:         model.MetricTypeGauge,
+					Unit:         "",
 				},
 			},
 		},
@@ -1949,10 +1950,10 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					identifier: "test",
 					metadata: []scrape.MetricMetadata{
 						{
-							Metric: "go_threads",
-							Type:   model.MetricTypeGauge,
-							Help:   "Number of OS threads created.",
-							Unit:   "",
+							MetricFamily: "go_threads",
+							Type:         model.MetricTypeGauge,
+							Help:         "Number of OS threads created.",
+							Unit:         "",
 						},
 					},
 				},
@@ -1960,10 +1961,10 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					identifier: "blackbox",
 					metadata: []scrape.MetricMetadata{
 						{
-							Metric: "prometheus_tsdb_storage_blocks_bytes",
-							Type:   model.MetricTypeGauge,
-							Help:   "The number of bytes that are currently used for local storage by all blocks.",
-							Unit:   "",
+							MetricFamily: "prometheus_tsdb_storage_blocks_bytes",
+							Type:         model.MetricTypeGauge,
+							Help:         "The number of bytes that are currently used for local storage by all blocks.",
+							Unit:         "",
 						},
 					},
 				},
@@ -1973,25 +1974,25 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					Target: labels.FromMap(map[string]string{
 						"job": "test",
 					}),
-					Metric: "go_threads",
-					Help:   "Number of OS threads created.",
-					Type:   model.MetricTypeGauge,
-					Unit:   "",
+					MetricFamily: "go_threads",
+					Help:         "Number of OS threads created.",
+					Type:         model.MetricTypeGauge,
+					Unit:         "",
 				},
 				{
 					Target: labels.FromMap(map[string]string{
 						"job": "blackbox",
 					}),
-					Metric: "prometheus_tsdb_storage_blocks_bytes",
-					Help:   "The number of bytes that are currently used for local storage by all blocks.",
-					Type:   model.MetricTypeGauge,
-					Unit:   "",
+					MetricFamily: "prometheus_tsdb_storage_blocks_bytes",
+					Help:         "The number of bytes that are currently used for local storage by all blocks.",
+					Type:         model.MetricTypeGauge,
+					Unit:         "",
 				},
 			},
 			sorter: func(m interface{}) {
 				sort.Slice(m.([]metricMetadata), func(i, j int) bool {
 					s := m.([]metricMetadata)
-					return s[i].Metric < s[j].Metric
+					return s[i].MetricFamily < s[j].MetricFamily
 				})
 			},
 		},
@@ -2026,16 +2027,16 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					identifier: "test",
 					metadata: []scrape.MetricMetadata{
 						{
-							Metric: "prometheus_engine_query_duration_seconds",
-							Type:   model.MetricTypeSummary,
-							Help:   "Query timings",
-							Unit:   "",
+							MetricFamily: "prometheus_engine_query_duration_seconds",
+							Type:         model.MetricTypeSummary,
+							Help:         "Query timings",
+							Unit:         "",
 						},
 						{
-							Metric: "go_info",
-							Type:   model.MetricTypeGauge,
-							Help:   "Information about the Go environment.",
-							Unit:   "",
+							MetricFamily: "go_info",
+							Type:         model.MetricTypeGauge,
+							Help:         "Information about the Go environment.",
+							Unit:         "",
 						},
 					},
 				},
@@ -2056,10 +2057,10 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					identifier: "test",
 					metadata: []scrape.MetricMetadata{
 						{
-							Metric: "go_threads",
-							Type:   model.MetricTypeGauge,
-							Help:   "Number of OS threads created",
-							Unit:   "",
+							MetricFamily: "go_threads",
+							Type:         model.MetricTypeGauge,
+							Help:         "Number of OS threads created",
+							Unit:         "",
 						},
 					},
 				},
@@ -2067,10 +2068,10 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					identifier: "blackbox",
 					metadata: []scrape.MetricMetadata{
 						{
-							Metric: "go_threads",
-							Type:   model.MetricTypeGauge,
-							Help:   "Number of OS threads created",
-							Unit:   "",
+							MetricFamily: "go_threads",
+							Type:         model.MetricTypeGauge,
+							Help:         "Number of OS threads created",
+							Unit:         "",
 						},
 					},
 				},
@@ -2089,10 +2090,10 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					identifier: "test",
 					metadata: []scrape.MetricMetadata{
 						{
-							Metric: "go_threads",
-							Type:   model.MetricTypeGauge,
-							Help:   "Number of OS threads created",
-							Unit:   "",
+							MetricFamily: "go_threads",
+							Type:         model.MetricTypeGauge,
+							Help:         "Number of OS threads created",
+							Unit:         "",
 						},
 					},
 				},
@@ -2100,10 +2101,10 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					identifier: "blackbox",
 					metadata: []scrape.MetricMetadata{
 						{
-							Metric: "go_threads",
-							Type:   model.MetricTypeGauge,
-							Help:   "Number of OS threads that were created.",
-							Unit:   "",
+							MetricFamily: "go_threads",
+							Type:         model.MetricTypeGauge,
+							Help:         "Number of OS threads that were created.",
+							Unit:         "",
 						},
 					},
 				},
@@ -2136,16 +2137,16 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					identifier: "test",
 					metadata: []scrape.MetricMetadata{
 						{
-							Metric: "go_threads",
-							Type:   model.MetricTypeGauge,
-							Help:   "Number of OS threads created",
-							Unit:   "",
+							MetricFamily: "go_threads",
+							Type:         model.MetricTypeGauge,
+							Help:         "Number of OS threads created",
+							Unit:         "",
 						},
 						{
-							Metric: "prometheus_engine_query_duration_seconds",
-							Type:   model.MetricTypeSummary,
-							Help:   "Query Timings.",
-							Unit:   "",
+							MetricFamily: "prometheus_engine_query_duration_seconds",
+							Type:         model.MetricTypeSummary,
+							Help:         "Query Timings.",
+							Unit:         "",
 						},
 					},
 				},
@@ -2153,10 +2154,10 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					identifier: "blackbox",
 					metadata: []scrape.MetricMetadata{
 						{
-							Metric: "go_gc_duration_seconds",
-							Type:   model.MetricTypeSummary,
-							Help:   "A summary of the GC invocation durations.",
-							Unit:   "",
+							MetricFamily: "go_gc_duration_seconds",
+							Type:         model.MetricTypeSummary,
+							Help:         "A summary of the GC invocation durations.",
+							Unit:         "",
 						},
 					},
 				},
@@ -2172,22 +2173,22 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					identifier: "test",
 					metadata: []scrape.MetricMetadata{
 						{
-							Metric: "go_threads",
-							Type:   model.MetricTypeGauge,
-							Help:   "Number of OS threads created",
-							Unit:   "",
+							MetricFamily: "go_threads",
+							Type:         model.MetricTypeGauge,
+							Help:         "Number of OS threads created",
+							Unit:         "",
 						},
 						{
-							Metric: "go_threads",
-							Type:   model.MetricTypeGauge,
-							Help:   "Repeated metadata",
-							Unit:   "",
+							MetricFamily: "go_threads",
+							Type:         model.MetricTypeGauge,
+							Help:         "Repeated metadata",
+							Unit:         "",
 						},
 						{
-							Metric: "go_gc_duration_seconds",
-							Type:   model.MetricTypeSummary,
-							Help:   "A summary of the GC invocation durations.",
-							Unit:   "",
+							MetricFamily: "go_gc_duration_seconds",
+							Type:         model.MetricTypeSummary,
+							Help:         "A summary of the GC invocation durations.",
+							Unit:         "",
 						},
 					},
 				},
@@ -2211,22 +2212,22 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					identifier: "test",
 					metadata: []scrape.MetricMetadata{
 						{
-							Metric: "go_threads",
-							Type:   model.MetricTypeGauge,
-							Help:   "Number of OS threads created",
-							Unit:   "",
+							MetricFamily: "go_threads",
+							Type:         model.MetricTypeGauge,
+							Help:         "Number of OS threads created",
+							Unit:         "",
 						},
 						{
-							Metric: "go_threads",
-							Type:   model.MetricTypeGauge,
-							Help:   "Repeated metadata",
-							Unit:   "",
+							MetricFamily: "go_threads",
+							Type:         model.MetricTypeGauge,
+							Help:         "Repeated metadata",
+							Unit:         "",
 						},
 						{
-							Metric: "go_gc_duration_seconds",
-							Type:   model.MetricTypeSummary,
-							Help:   "A summary of the GC invocation durations.",
-							Unit:   "",
+							MetricFamily: "go_gc_duration_seconds",
+							Type:         model.MetricTypeSummary,
+							Help:         "A summary of the GC invocation durations.",
+							Unit:         "",
 						},
 					},
 				},
@@ -2244,22 +2245,22 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					identifier: "test",
 					metadata: []scrape.MetricMetadata{
 						{
-							Metric: "go_threads",
-							Type:   model.MetricTypeGauge,
-							Help:   "Number of OS threads created",
-							Unit:   "",
+							MetricFamily: "go_threads",
+							Type:         model.MetricTypeGauge,
+							Help:         "Number of OS threads created",
+							Unit:         "",
 						},
 						{
-							Metric: "go_threads",
-							Type:   model.MetricTypeGauge,
-							Help:   "Repeated metadata",
-							Unit:   "",
+							MetricFamily: "go_threads",
+							Type:         model.MetricTypeGauge,
+							Help:         "Repeated metadata",
+							Unit:         "",
 						},
 						{
-							Metric: "go_gc_duration_seconds",
-							Type:   model.MetricTypeSummary,
-							Help:   "A summary of the GC invocation durations.",
-							Unit:   "",
+							MetricFamily: "go_gc_duration_seconds",
+							Type:         model.MetricTypeSummary,
+							Help:         "A summary of the GC invocation durations.",
+							Unit:         "",
 						},
 					},
 				},
@@ -2267,16 +2268,16 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					identifier: "secondTarget",
 					metadata: []scrape.MetricMetadata{
 						{
-							Metric: "go_threads",
-							Type:   model.MetricTypeGauge,
-							Help:   "Number of OS threads created, but from a different target",
-							Unit:   "",
+							MetricFamily: "go_threads",
+							Type:         model.MetricTypeGauge,
+							Help:         "Number of OS threads created, but from a different target",
+							Unit:         "",
 						},
 						{
-							Metric: "go_gc_duration_seconds",
-							Type:   model.MetricTypeSummary,
-							Help:   "A summary of the GC invocation durations, but from a different target.",
-							Unit:   "",
+							MetricFamily: "go_gc_duration_seconds",
+							Type:         model.MetricTypeSummary,
+							Help:         "A summary of the GC invocation durations, but from a different target.",
+							Unit:         "",
 						},
 					},
 				},
@@ -2293,10 +2294,10 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					identifier: "test",
 					metadata: []scrape.MetricMetadata{
 						{
-							Metric: "go_threads",
-							Type:   model.MetricTypeGauge,
-							Help:   "Number of OS threads created",
-							Unit:   "",
+							MetricFamily: "go_threads",
+							Type:         model.MetricTypeGauge,
+							Help:         "Number of OS threads created",
+							Unit:         "",
 						},
 					},
 				},
@@ -2304,16 +2305,16 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					identifier: "blackbox",
 					metadata: []scrape.MetricMetadata{
 						{
-							Metric: "go_gc_duration_seconds",
-							Type:   model.MetricTypeSummary,
-							Help:   "A summary of the GC invocation durations.",
-							Unit:   "",
+							MetricFamily: "go_gc_duration_seconds",
+							Type:         model.MetricTypeSummary,
+							Help:         "A summary of the GC invocation durations.",
+							Unit:         "",
 						},
 						{
-							Metric: "go_threads",
-							Type:   model.MetricTypeGauge,
-							Help:   "Number of OS threads that were created.",
-							Unit:   "",
+							MetricFamily: "go_threads",
+							Type:         model.MetricTypeGauge,
+							Help:         "Number of OS threads that were created.",
+							Unit:         "",
 						},
 					},
 				},
@@ -2342,10 +2343,10 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					identifier: "test",
 					metadata: []scrape.MetricMetadata{
 						{
-							Metric: "go_threads",
-							Type:   model.MetricTypeGauge,
-							Help:   "Number of OS threads created",
-							Unit:   "",
+							MetricFamily: "go_threads",
+							Type:         model.MetricTypeGauge,
+							Help:         "Number of OS threads created",
+							Unit:         "",
 						},
 					},
 				},
@@ -3244,14 +3245,13 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 					"boo",
 				},
 			},
-			// Bad name parameter for legacy validation.
+			// Bad name parameter
 			{
 				endpoint: api.labelValues,
 				params: map[string]string{
-					"name": "host.name",
+					"name": "host.name\xff",
 				},
-				nameValidationScheme: model.LegacyValidation,
-				errType:              errorBadData,
+				errType: errorBadData,
 			},
 			// Valid utf8 name parameter for utf8 validation.
 			{
@@ -3259,7 +3259,6 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				params: map[string]string{
 					"name": "host.name",
 				},
-				nameValidationScheme: model.UTF8Validation,
 				response: []string{
 					"localhost",
 				},
@@ -3270,7 +3269,6 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				params: map[string]string{
 					"name": "U__junk_0a__7b__7d__2c__3d_:_20__20_chars",
 				},
-				nameValidationScheme: model.UTF8Validation,
 				response: []string{
 					"bar",
 				},
@@ -3703,8 +3701,6 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						ctx = route.WithParam(ctx, p, v)
 					}
 
-					model.NameValidationScheme = test.nameValidationScheme
-
 					req, err := request(method, test.query)
 					require.NoError(t, err)
 
@@ -4127,7 +4123,7 @@ func TestRespondSuccess_DefaultCodecCannotEncodeResponse(t *testing.T) {
 }
 
 func TestRespondError(t *testing.T) {
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		api := API{}
 		api.respondError(w, &apiError{errorTimeout, errors.New("message")}, "test")
 	}))
@@ -4723,11 +4719,11 @@ type fakeEngine struct {
 	query fakeQuery
 }
 
-func (e *fakeEngine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
+func (e *fakeEngine) NewInstantQuery(_ context.Context, _ storage.Queryable, _ promql.QueryOpts, _ string, _ time.Time) (promql.Query, error) {
 	return &e.query, nil
 }
 
-func (e *fakeEngine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
+func (e *fakeEngine) NewRangeQuery(_ context.Context, _ storage.Queryable, _ promql.QueryOpts, _ string, _, _ time.Time, _ time.Duration) (promql.Query, error) {
 	return &e.query, nil
 }
 

@@ -20,9 +20,8 @@ import (
 	"testing"
 
 	"github.com/gogo/protobuf/proto"
-	"github.com/stretchr/testify/require"
-
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -293,14 +292,14 @@ foobar{quantile="0.99"} 150.1`
 			lset: labels.FromStrings("__name__", "foo_total"),
 			t:    int64p(1520879607789),
 			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "counter-test"), Value: 5}},
-			ct:   int64p(1520872607123),
+			ct:   1520872607123,
 		}, {
 			m:    `foo_total{a="b"}`,
 			v:    17.0,
 			lset: labels.FromStrings("__name__", "foo_total", "a", "b"),
 			t:    int64p(1520879607789),
 			es:   []exemplar.Exemplar{{Labels: labels.FromStrings("id", "counter-test"), Value: 5}},
-			ct:   int64p(1520872607123),
+			ct:   1520872607123,
 		}, {
 			m:    "bar",
 			help: "Summary with CT at the end, making sure we find CT even if it's multiple lines a far",
@@ -311,22 +310,22 @@ foobar{quantile="0.99"} 150.1`
 			m:    "bar_count",
 			v:    17.0,
 			lset: labels.FromStrings("__name__", "bar_count"),
-			ct:   int64p(1520872608124),
+			ct:   1520872608124,
 		}, {
 			m:    "bar_sum",
 			v:    324789.3,
 			lset: labels.FromStrings("__name__", "bar_sum"),
-			ct:   int64p(1520872608124),
+			ct:   1520872608124,
 		}, {
 			m:    `bar{quantile="0.95"}`,
 			v:    123.7,
 			lset: labels.FromStrings("__name__", "bar", "quantile", "0.95"),
-			ct:   int64p(1520872608124),
+			ct:   1520872608124,
 		}, {
 			m:    `bar{quantile="0.99"}`,
 			v:    150.0,
 			lset: labels.FromStrings("__name__", "bar", "quantile", "0.99"),
-			ct:   int64p(1520872608124),
+			ct:   1520872608124,
 		}, {
 			m:    "baz",
 			help: "Histogram with the same objective as above's summary",
@@ -344,7 +343,7 @@ foobar{quantile="0.99"} 150.1`
 				CustomValues:    []float64{0.0}, // We do not store the +Inf boundary.
 			},
 			lset: labels.FromStrings("__name__", "baz"),
-			ct:   int64p(1520872609125),
+			ct:   1520872609125,
 		}, {
 			m:    "fizz_created",
 			help: "Gauge which shouldn't be parsed as CT",
@@ -372,7 +371,7 @@ foobar{quantile="0.99"} 150.1`
 				CustomValues:    []float64{0.0}, // We do not store the +Inf boundary.
 			},
 			lset: labels.FromStrings("__name__", "something"),
-			ct:   int64p(1520430001000),
+			ct:   1520430001000,
 		}, {
 			m: `something{a="b"}`,
 			shs: &histogram.Histogram{
@@ -384,7 +383,7 @@ foobar{quantile="0.99"} 150.1`
 				CustomValues:    []float64{0.0}, // We do not store the +Inf boundary.
 			},
 			lset: labels.FromStrings("__name__", "something", "a", "b"),
-			ct:   int64p(1520430002000),
+			ct:   1520430002000,
 		}, {
 			m:    "yum",
 			help: "Summary with _created between sum and quantiles",
@@ -395,22 +394,22 @@ foobar{quantile="0.99"} 150.1`
 			m:    `yum_count`,
 			v:    20,
 			lset: labels.FromStrings("__name__", "yum_count"),
-			ct:   int64p(1520430003000),
+			ct:   1520430003000,
 		}, {
 			m:    `yum_sum`,
 			v:    324789.5,
 			lset: labels.FromStrings("__name__", "yum_sum"),
-			ct:   int64p(1520430003000),
+			ct:   1520430003000,
 		}, {
 			m:    `yum{quantile="0.95"}`,
 			v:    123.7,
 			lset: labels.FromStrings("__name__", "yum", "quantile", "0.95"),
-			ct:   int64p(1520430003000),
+			ct:   1520430003000,
 		}, {
 			m:    `yum{quantile="0.99"}`,
 			v:    150.0,
 			lset: labels.FromStrings("__name__", "yum", "quantile", "0.99"),
-			ct:   int64p(1520430003000),
+			ct:   1520430003000,
 		}, {
 			m:    "foobar",
 			help: "Summary with _created as the first line",
@@ -421,22 +420,22 @@ foobar{quantile="0.99"} 150.1`
 			m:    `foobar_count`,
 			v:    21,
 			lset: labels.FromStrings("__name__", "foobar_count"),
-			ct:   int64p(1520430004000),
+			ct:   1520430004000,
 		}, {
 			m:    `foobar_sum`,
 			v:    324789.6,
 			lset: labels.FromStrings("__name__", "foobar_sum"),
-			ct:   int64p(1520430004000),
+			ct:   1520430004000,
 		}, {
 			m:    `foobar{quantile="0.95"}`,
 			v:    123.8,
 			lset: labels.FromStrings("__name__", "foobar", "quantile", "0.95"),
-			ct:   int64p(1520430004000),
+			ct:   1520430004000,
 		}, {
 			m:    `foobar{quantile="0.99"}`,
 			v:    150.1,
 			lset: labels.FromStrings("__name__", "foobar", "quantile", "0.99"),
-			ct:   int64p(1520430004000),
+			ct:   1520430004000,
 		}, {
 			m:    "metric",
 			help: "foo\x00bar",
@@ -604,14 +603,14 @@ func TestNHCBParser_NoNHCBWhenExponential(t *testing.T) {
 			return "ProtoBuf", factory, []int{1, 2, 3}, parserOptions{useUTF8sep: true, hasCreatedTimeStamp: true}
 		},
 		func() (string, parserFactory, []int, parserOptions) {
-			factory := func(keepClassic bool) Parser {
+			factory := func(_ bool) Parser {
 				input := createTestOpenMetricsHistogram()
 				return NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
 			}
 			return "OpenMetrics", factory, []int{1}, parserOptions{hasCreatedTimeStamp: true}
 		},
 		func() (string, parserFactory, []int, parserOptions) {
-			factory := func(keepClassic bool) Parser {
+			factory := func(_ bool) Parser {
 				input := createTestPromHistogram()
 				return NewPromParser([]byte(input), labels.NewSymbolTable())
 			}
@@ -646,9 +645,9 @@ func TestNHCBParser_NoNHCBWhenExponential(t *testing.T) {
 						typ: model.MetricTypeHistogram,
 					})
 
-					var ct *int64
+					var ct int64
 					if options.hasCreatedTimeStamp {
-						ct = int64p(1000)
+						ct = 1000
 					}
 
 					var bucketForMetric func(string) string
@@ -931,7 +930,7 @@ func createTestPromHistogram() string {
 	return `# HELP test_histogram1 Test histogram 1
 # TYPE test_histogram1 histogram
 test_histogram1_count 175 1234568
-test_histogram1_sum 0.0008280461746287094 1234768
+test_histogram1_sum 0.0008280461746287094 1234568
 test_histogram1_bucket{le="-0.0004899999999999998"} 2 1234568
 test_histogram1_bucket{le="-0.0003899999999999998"} 4 1234568
 test_histogram1_bucket{le="-0.0002899999999999998"} 16 1234568
@@ -973,7 +972,7 @@ something_bucket{a="b",le="+Inf"} 9
 				CustomValues:    []float64{0.0}, // We do not store the +Inf boundary.
 			},
 			lset: labels.FromStrings("__name__", "something", "a", "b"),
-			ct:   int64p(1520430002000),
+			ct:   1520430002000,
 		},
 	}
 

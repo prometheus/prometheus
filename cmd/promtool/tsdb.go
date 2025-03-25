@@ -33,9 +33,8 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
-	"go.uber.org/atomic"
-
 	"github.com/prometheus/common/promslog"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -315,12 +314,11 @@ func readPrometheusLabels(r io.Reader, n int) ([]labels.Labels, error) {
 	i := 0
 
 	for scanner.Scan() && i < n {
-		m := make([]labels.Label, 0, 10)
-
 		r := strings.NewReplacer("\"", "", "{", "", "}", "")
 		s := r.Replace(scanner.Text())
 
 		labelChunks := strings.Split(s, ",")
+		m := make([]labels.Label, 0, len(labelChunks))
 		for _, labelChunk := range labelChunks {
 			split := strings.Split(labelChunk, ":")
 			m = append(m, labels.Label{Name: split[0], Value: split[1]})
@@ -827,17 +825,31 @@ func checkErr(err error) int {
 }
 
 func backfillOpenMetrics(path, outputDir string, humanReadable, quiet bool, maxBlockDuration time.Duration, customLabels map[string]string) int {
-	inputFile, err := fileutil.OpenMmapFile(path)
+	var buf []byte
+	info, err := os.Stat(path)
 	if err != nil {
 		return checkErr(err)
 	}
-	defer inputFile.Close()
+	if info.Mode()&(os.ModeNamedPipe|os.ModeCharDevice) != 0 {
+		// Read the pipe chunks by chunks as it cannot be mmap-ed
+		buf, err = os.ReadFile(path)
+		if err != nil {
+			return checkErr(err)
+		}
+	} else {
+		inputFile, err := fileutil.OpenMmapFile(path)
+		if err != nil {
+			return checkErr(err)
+		}
+		defer inputFile.Close()
+		buf = inputFile.Bytes()
+	}
 
 	if err := os.MkdirAll(outputDir, 0o777); err != nil {
 		return checkErr(fmt.Errorf("create output dir: %w", err))
 	}
 
-	return checkErr(backfill(5000, inputFile.Bytes(), outputDir, humanReadable, quiet, maxBlockDuration, customLabels))
+	return checkErr(backfill(5000, buf, outputDir, humanReadable, quiet, maxBlockDuration, customLabels))
 }
 
 func displayHistogram(dataType string, datas []int, total int) {
