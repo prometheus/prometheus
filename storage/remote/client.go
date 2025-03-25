@@ -145,8 +145,8 @@ type ReadClient interface {
 }
 
 // NewReadClient creates a new client for remote read.
-func NewReadClient(name string, conf *ClientConfig) (ReadClient, error) {
-	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_read_client")
+func NewReadClient(name string, conf *ClientConfig, optFuncs ...config_util.HTTPClientOption) (ReadClient, error) {
+	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_read_client", optFuncs...)
 	if err != nil {
 		return nil, err
 	}
