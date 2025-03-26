@@ -82,13 +82,14 @@ func newTestScrapeMetrics(t testing.TB) *scrapeMetrics {
 
 func TestNewScrapePool(t *testing.T) {
 	var (
-		app = &nopAppendable{}
-		cfg = &config.ScrapeConfig{
+		app     = &nopAppendable{}
+		cfg     = &config.ScrapeConfig{
 			MetricNameValidationScheme: config.UTF8ValidationConfig,
 			MetricNameEscapingScheme:   model.AllowUTF8,
 		}
-		sp, _ = newScrapePool(cfg, app, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
+		sp, err = newScrapePool(cfg, app, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
 	)
+	require.NoError(t, err)
 
 	a, ok := sp.appendable.(*nopAppendable)
 	require.True(t, ok, "Failure to append.")

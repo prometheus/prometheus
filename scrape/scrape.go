@@ -151,7 +151,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 
 	validationScheme, err := config.ToValidationScheme(cfg.MetricNameValidationScheme)
 	if err != nil {
-		return nil, fmt.Errorf("error creating HTTP client: %w", err)
+		return nil, fmt.Errorf("invalid metric name validation scheme: %w", err)
 	}
 	var escapingScheme model.EscapingScheme
 	escapingScheme, err = model.ToEscapingScheme(cfg.MetricNameEscapingScheme)
@@ -326,7 +326,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	sp.client = client
 	validationScheme, err := config.ToValidationScheme(cfg.MetricNameValidationScheme)
 	if err != nil {
-		return fmt.Errorf("error creating HTTP client: %w", err)
+		return fmt.Errorf("invalid metric name validation scheme: %w", err)
 	}
 	sp.validationScheme = validationScheme
 	var escapingScheme model.EscapingScheme
