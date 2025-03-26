@@ -47,7 +47,10 @@ func newDiscovererMetrics(reg prometheus.Registerer, _ discovery.RefreshMetricsI
 			Help:      "The current number of watcher goroutines.",
 		}),
 	}
-	// Register zookeeper metrics once for both ServerSet and Nerve SD.
+	// For historical reasons, both ServerSet and Nerve SD share the same zookeeper metrics.
+	// To not cause double registration problems, if both SD mechanisms are instantiated with
+	// the same registry, we are handling the AlreadyRegisteredError accordingly below.
+	// TODO: Consider separate zookeeper metrics for both SD mechanisms in the future.
 	registerMetricsOnce.Do(func() {
 		// Register failureCounter
 		if err := reg.Register(m.failureCounter); err != nil {
