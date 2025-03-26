@@ -35,14 +35,15 @@ import (
 	"go.uber.org/atomic"
 	"gopkg.in/yaml.v2"
 
-	"github.com/prometheus/prometheus/discovery"
-
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery"
 	_ "github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 )
+
+const maxBatchSize = 256
 
 func TestPostPath(t *testing.T) {
 	cases := []struct {
@@ -414,6 +415,7 @@ func TestCustomDo(t *testing.T) {
 func TestExternalLabels(t *testing.T) {
 	h := NewManager(&Options{
 		QueueCapacity:  3 * maxBatchSize,
+		MaxBatchSize:   maxBatchSize,
 		ExternalLabels: labels.FromStrings("a", "b"),
 		RelabelConfigs: []*relabel.Config{
 			{
@@ -448,6 +450,7 @@ func TestExternalLabels(t *testing.T) {
 func TestHandlerRelabel(t *testing.T) {
 	h := NewManager(&Options{
 		QueueCapacity: 3 * maxBatchSize,
+		MaxBatchSize:  maxBatchSize,
 		RelabelConfigs: []*relabel.Config{
 			{
 				SourceLabels: model.LabelNames{"alertname"},
@@ -526,6 +529,7 @@ func TestHandlerQueuing(t *testing.T) {
 	h := NewManager(
 		&Options{
 			QueueCapacity: 3 * maxBatchSize,
+			MaxBatchSize:  maxBatchSize,
 		},
 		nil,
 	)

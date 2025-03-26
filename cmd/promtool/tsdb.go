@@ -33,9 +33,8 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
-	"go.uber.org/atomic"
-
 	"github.com/prometheus/common/promslog"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
