@@ -3140,101 +3140,83 @@ func scalarBinop(op parser.ItemType, lhs, rhs float64) float64 {
 	panic(fmt.Errorf("operator %q not allowed for Scalar operations", op))
 }
 
-// processCustomBucket handles custom bucket processing for histogram trimming.
-// It returns the count to keep and the bucket midpoint for sum calculations.
-func processCustomBucket(
-	bucket histogram.Bucket[float64],
-	rhs float64,
-	op parser.ItemType,
-) (keepCount, bucketMidpoint float64) {
-	// Midpoint calculation
-	switch {
-	case math.IsInf(bucket.Lower, -1):
-		// First bucket: no lower bound, assume midpoint is near upper bound.
-		bucketMidpoint = bucket.Upper
-	case math.IsInf(bucket.Upper, 1):
-		bucketMidpoint = bucket.Lower
-	default:
-		bucketMidpoint = (bucket.Lower + bucket.Upper) / 2
+func handleInfinityBuckets(b histogram.Bucket[float64], le float64) (float64, float64) {
+	var underCount, bucketMidpoint float64
+
+	if math.IsInf(b.Lower, -1) {
+		switch {
+		case le >= b.Upper:
+			// le is greater than or equal to upper bound. Full count applies
+			underCount = b.Count
+			bucketMidpoint = b.Upper
+		case le < 0:
+			// le is negative and less than zero — nothing to keep.
+			underCount = b.Count * 0.5
+			bucketMidpoint = b.Upper
+		default:
+			// Interpolating with treated lower bound as 0 (linear)
+			fraction := le / b.Upper
+			underCount = b.Count * fraction
+			bucketMidpoint = le / 2
+		}
+		return underCount, bucketMidpoint
 	}
 
-	// Fractional keepCount calculation
-	switch op {
-	case parser.TRIM_UPPER:
-		switch {
-		case math.IsInf(bucket.Lower, -1):
-			// Special case for -Inf lower bound
-			if rhs >= bucket.Upper {
-				// Trim point is above bucket upper bound, keep all
-				keepCount = bucket.Count
-			} else {
-				// Trim point is within bucket or below, keep none
-				keepCount = 0
-			}
-		case math.IsInf(bucket.Upper, 1):
-			// Special case for +Inf upper bound
-			if rhs <= bucket.Lower {
-				// Trim point is below bucket lower bound, keep none
-				keepCount = 0
-			} else {
-				// Trim point is within the bucket, keep a portion
-				// Since we can't interpolate with +Inf, assume keep half for simplicity
-				// Another approach would be to use a different interpolation scheme
-				keepCount = bucket.Count * 0.5
-			}
-		default:
-			// Normal case - finite bounds
-			switch {
-			case bucket.Upper <= rhs:
-				// Bucket entirely below trim point - keep all
-				keepCount = bucket.Count
-			case bucket.Lower < rhs:
-				// Bucket contains trim point - interpolate
-				fraction := (rhs - bucket.Lower) / (bucket.Upper - bucket.Lower)
-				keepCount = bucket.Count * fraction
-			default:
-				// Bucket entirely above trim point - discard
-				keepCount = 0
-			}
+	if math.IsInf(b.Upper, 1) {
+		if le <= b.Lower {
+			underCount = 0
+			bucketMidpoint = b.Lower
+		} else {
+			underCount = b.Count * 0.5
+			bucketMidpoint = b.Lower
 		}
-
-	case parser.TRIM_LOWER:
-		switch {
-		case math.IsInf(bucket.Upper, 1):
-			// Special case for +Inf upper bound
-			if rhs <= bucket.Lower {
-				keepCount = bucket.Count
-			} else {
-				keepCount = 0
-			}
-		case math.IsInf(bucket.Lower, -1):
-			// Special case for -Inf lower bound
-			if rhs >= bucket.Upper {
-				keepCount = 0
-			} else {
-				keepCount = bucket.Count * 0.5
-			}
-		default:
-			switch {
-			case bucket.Lower >= rhs:
-				keepCount = bucket.Count
-			case bucket.Upper > rhs:
-				fraction := (bucket.Upper - rhs) / (bucket.Upper - bucket.Lower)
-				keepCount = bucket.Count * fraction
-			default:
-				keepCount = 0
-			}
-		}
+		return underCount, bucketMidpoint
 	}
-
-	return keepCount, bucketMidpoint
+	return underCount, bucketMidpoint
 }
 
-func computeBucketTrim(op parser.ItemType, bucket histogram.Bucket[float64], rhs float64, isPostive, isCustomBucket bool) (float64, float64) {
-	if isCustomBucket {
-		return processCustomBucket(bucket, rhs, op)
+// computeSplit calculates the portion of the bucket's count <= le (trim point).
+func computeSplit(b histogram.Bucket[float64], le float64, isPositive, isCustom bool) float64 {
+	if le <= b.Lower {
+		return 0
 	}
-	return computeExponentialTrim(bucket, rhs, isPostive, op)
+	if le >= b.Upper {
+		return b.Count
+	}
+
+	var fraction float64
+	switch {
+	case isCustom || (b.Lower <= 0 && b.Upper >= 0):
+		fraction = (le - b.Lower) / (b.Upper - b.Lower)
+	default:
+		// Exponential interpolation
+		logLower := math.Log2(math.Abs(b.Lower))
+		logUpper := math.Log2(math.Abs(b.Upper))
+		logV := math.Log2(math.Abs(le))
+
+		if isPositive {
+			fraction = (logV - logLower) / (logUpper - logLower)
+		} else {
+			fraction = 1 - ((logV - logUpper) / (logLower - logUpper))
+		}
+	}
+
+	underCount := b.Count * fraction
+	return underCount
+}
+
+func computeBucketTrim(op parser.ItemType, b histogram.Bucket[float64], rhs float64, isPositive, isCustomBucket bool) (float64, float64) {
+	if math.IsInf(b.Lower, -1) || math.IsInf(b.Upper, 1) {
+		return handleInfinityBuckets(b, rhs)
+	}
+
+	product := math.Abs(b.Lower) * math.Abs(rhs)
+	underCount := computeSplit(b, rhs, isPositive, isCustomBucket)
+	if op == parser.TRIM_UPPER {
+		return underCount, computeMidpoint(b, product, isCustomBucket, isPositive)
+	}
+	product = math.Abs(rhs) * math.Abs(b.Upper)
+	return b.Count - underCount, computeMidpoint(b, product, isCustomBucket, isPositive)
 }
 
 // Helper function to trim native histogram buckets.
@@ -3252,8 +3234,7 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, op parser
 		for i, iter := 0, trimmedHist.PositiveBucketIterator(); iter.Next(); i++ {
 			hasPositive = true
 			bucket := iter.At()
-			var keepCount, bucketMidpoint float64
-			keepCount, bucketMidpoint = computeBucketTrim(op, bucket, rhs, true, isCustomBucket)
+			keepCount, bucketMidpoint := computeBucketTrim(op, bucket, rhs, true, isCustomBucket)
 
 			// Bucket is entirely below the trim point - keep all
 			switch {
@@ -3280,8 +3261,7 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, op parser
 		for i, iter := 0, trimmedHist.NegativeBucketIterator(); iter.Next(); i++ {
 			hasNegative = true
 			bucket := iter.At()
-			var keepCount, bucketMidpoint float64
-			keepCount, bucketMidpoint = computeBucketTrim(op, bucket, rhs, false, isCustomBucket)
+			keepCount, bucketMidpoint := computeBucketTrim(op, bucket, rhs, false, isCustomBucket)
 
 			switch {
 			case bucket.Upper <= rhs:
@@ -3305,8 +3285,7 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, op parser
 		for i, iter := 0, trimmedHist.PositiveBucketIterator(); iter.Next(); i++ {
 			hasPositive = true
 			bucket := iter.At()
-			var keepCount, bucketMidpoint float64
-			keepCount, bucketMidpoint = computeBucketTrim(op, bucket, rhs, true, isCustomBucket)
+			keepCount, bucketMidpoint := computeBucketTrim(op, bucket, rhs, true, isCustomBucket)
 
 			switch {
 			case bucket.Lower >= rhs:
@@ -3330,8 +3309,8 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, op parser
 		for i, iter := 0, trimmedHist.NegativeBucketIterator(); iter.Next(); i++ {
 			hasNegative = true
 			bucket := iter.At()
-			var keepCount, bucketMidpoint float64
-			keepCount, bucketMidpoint = computeBucketTrim(op, bucket, rhs, false, isCustomBucket)
+			keepCount, bucketMidpoint := computeBucketTrim(op, bucket, rhs, false, isCustomBucket)
+
 			switch {
 			case bucket.Lower >= rhs:
 				updatedCount += bucket.Count
@@ -3403,36 +3382,19 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, op parser
 	trimmedHist.Compact(0)
 }
 
-func computeExponentialTrim(bucket histogram.Bucket[float64], rhs float64, isPositive bool, op parser.ItemType) (float64, float64) {
-	var fraction, bucketMidpoint, keepCount float64
-
-	logLower := math.Log2(math.Abs(bucket.Lower))
-	logUpper := math.Log2(math.Abs(bucket.Upper))
-	logRHS := math.Log2(math.Abs(rhs))
-
-	switch op {
-	case parser.TRIM_UPPER:
+func computeMidpoint(b histogram.Bucket[float64], product float64, isCustom, isPositive bool) float64 {
+	midpoint := func(product float64, isPositive bool) float64 {
 		if isPositive {
-			fraction = (logRHS - logLower) / (logUpper - logLower)
-			bucketMidpoint = math.Sqrt(bucket.Lower * rhs)
-		} else {
-			fraction = 1 - ((logRHS - logUpper) / (logLower - logUpper))
-			bucketMidpoint = -math.Sqrt(math.Abs(bucket.Lower) * math.Abs(rhs))
+			return math.Sqrt(product)
 		}
-
-	case parser.TRIM_LOWER:
-		if isPositive {
-			fraction = (logUpper - logRHS) / (logUpper - logLower)
-			bucketMidpoint = math.Sqrt(rhs * bucket.Upper)
-		} else {
-			fraction = (logRHS - logUpper) / (logLower - logUpper)
-			bucketMidpoint = -math.Sqrt(math.Abs(rhs) * math.Abs(bucket.Upper))
-		}
+		return -math.Sqrt(product)
 	}
 
-	keepCount = bucket.Count * fraction
+	if isCustom {
+		return (b.Lower + b.Upper) / 2
+	}
 
-	return keepCount, bucketMidpoint
+	return midpoint(product, isPositive)
 }
 
 // vectorElemBinop evaluates a binary operation between two Vector elements.
