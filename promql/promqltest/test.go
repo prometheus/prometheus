@@ -271,7 +271,7 @@ func parseExpect(defLine string) (expectCmdType, expectCmd, error) {
 	expectParts := patExpect.FindStringSubmatch(strings.TrimSpace(defLine))
 	expCmd := expectCmd{}
 	if expectParts == nil {
-		return 0, expCmd, fmt.Errorf("invalid expect statement, must match `%s`", patExpect.String())
+		return 0, expCmd, fmt.Errorf("invalid expect statement, must match `expect <type> <match_type> <string>` format")
 	}
 	var (
 		mode            = expectParts[1]
@@ -299,6 +299,19 @@ func parseExpect(defLine string) (expectCmdType, expectCmd, error) {
 		expCmd.regex = patMatchAny
 	}
 	return expectType, expCmd, nil
+}
+
+func validateExpectedCmds(cmd *evalCmd) error {
+	if len(cmd.expectedCmds[Info]) > 0 && len(cmd.expectedCmds[NoInfo]) > 0 {
+		return fmt.Errorf("invalid expect lines, info and no_info cannot be used together")
+	}
+	if len(cmd.expectedCmds[Warn]) > 0 && len(cmd.expectedCmds[NoWarn]) > 0 {
+		return fmt.Errorf("invalid expect lines, warn and no_warn cannot be used together")
+	}
+	if len(cmd.expectedCmds[Fail]) > 1 {
+		return fmt.Errorf("invalid expect lines, multiple expect fail lines are not allowed")
+	}
+	return nil
 }
 
 func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
@@ -421,6 +434,10 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 			}
 			cmd.expectedCmds[annoType] = append(cmd.expectedCmds[annoType], expectedAnno)
 			j--
+			err = validateExpectedCmds(cmd)
+			if err != nil {
+				return i, nil, formatErr("%w", err)
+			}
 			continue
 		}
 
@@ -735,6 +752,13 @@ func (e *expectCmd) String() string {
 	return e.regex.String()
 }
 
+func (e *expectCmd) Type() string {
+	if e.regex == nil {
+		return "message"
+	}
+	return "pattern"
+}
+
 type entry struct {
 	pos  int
 	vals []parser.SequenceValue
@@ -806,7 +830,7 @@ func validateExpectedAnnotations(expr string, expectedAnnotations []expectCmd, a
 	for _, e := range expectedAnnotations {
 		matchFound := slices.ContainsFunc(actualAnnotations, e.CheckMatch)
 		if !matchFound {
-			return fmt.Errorf("expected %s annotation %q but no matching annotation was found for query %q (line %d)", annotationType, e.String(), expr, line)
+			return fmt.Errorf(`expected %s annotation matching %s %q but no matching annotation was found for query %q (line %d), found: %v`, annotationType, e.Type(), e.String(), expr, line, actualAnnotations)
 		}
 	}
 
@@ -841,6 +865,8 @@ func (ev *evalCmd) checkAnnotations(expr string, annos annotations.Annotations) 
 			warnings = append(warnings, err.Error())
 		case errors.Is(err, annotations.PromQLInfo):
 			infos = append(infos, err.Error())
+		default:
+			return fmt.Errorf("actual annotation must be either info or warn")
 		}
 	}
 	if err := validateExpectedAnnotations(expr, ev.expectedCmds[Warn], warnings, ev.line, "warn"); err != nil {
@@ -1127,9 +1153,6 @@ func (ev *evalCmd) checkExpectedFailure(actual error) error {
 
 	expFail, exists := ev.expectedCmds[Fail]
 	if exists && len(expFail) > 0 {
-		if len(expFail) > 1 {
-			return fmt.Errorf("expected more than one error evaluating query %q (line %d), but got only one", ev.expr, ev.line)
-		}
 		if !expFail[0].CheckMatch(actual.Error()) {
 			return fmt.Errorf("expected error matching %q evaluating query %q (line %d), but got: %s", expFail[0].String(), ev.expr, ev.line, actual.Error())
 		}
