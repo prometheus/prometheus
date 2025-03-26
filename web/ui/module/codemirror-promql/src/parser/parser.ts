@@ -49,12 +49,14 @@ import {
   StepInvariantExpr,
   SubqueryExpr,
   Topk,
+  TrimLower,
+  TrimUpper,
   UnaryExpr,
   Unless,
   UnquotedLabelMatcher,
   VectorSelector,
 } from '@prometheus-io/lezer-promql';
-import { containsAtLeastOneChild } from './path-finder';
+import { containsAtLeastOneChild, containsChild } from './path-finder';
 import { getType } from './type';
 import { buildLabelMatchers } from './matcher';
 import { EditorState } from '@codemirror/state';
@@ -214,17 +216,25 @@ export class Parser {
     const lt = this.checkAST(lExpr);
     const rt = this.checkAST(rExpr);
     const boolModifierUsed = node.getChild(BoolModifier);
-    const isComparisonOperator = containsAtLeastOneChild(node, Eql, Neq, Lte, Lss, Gte, Gtr);
+
+    const isComparisonOperator = containsAtLeastOneChild(node, Eql, Neq, Lte, Lss, Gte, Gtr, TrimLower, TrimUpper);
+    const isTrimLowerOperator = containsChild(node, TrimLower);
+    const isTrimUpperOperator = containsChild(node, TrimUpper);
     const isSetOperator = containsAtLeastOneChild(node, And, Or, Unless);
 
-    // BOOL modifier check
     if (boolModifierUsed) {
-      if (!isComparisonOperator) {
+      if (!isComparisonOperator || isTrimLowerOperator || isTrimUpperOperator) {
         this.addDiagnostic(node, 'bool modifier can only be used on comparison operators');
       }
     } else {
       if (isComparisonOperator && lt === ValueType.scalar && rt === ValueType.scalar) {
-        this.addDiagnostic(node, 'comparisons between scalars must use BOOL modifier');
+        if (isTrimLowerOperator) {
+          this.addDiagnostic(node, 'operator ">/" not allowed for Scalar operations');
+        } else if (isTrimUpperOperator) {
+          this.addDiagnostic(node, 'operator "</" not allowed for Scalar operations');
+        } else {
+          this.addDiagnostic(node, 'comparisons between scalars must use BOOL modifier');
+        }
       }
     }
 
