@@ -2,6 +2,13 @@
 
 ## unreleased
 
+## 3.3.0-rc.1 / 2025-04-02
+
+* [BUGFIX] Remote-Write: Reduce memory footprint during WAL replay. #16197
+* [BUGFIX] Scraping: Skip native histograms series when ingestion is disabled. #16218
+* [BUGFIX] UI: Display the correct value of Alerting rules' `keep_firing_for`. #16211
+* [BUGFIX] PromQL: return NaN from `irate()` if second-last sample is NaN. #16199 #15853
+
 ## 3.3.0-rc.0 / 2025-03-11
 
 * [FEATURE] PromQL: Implement `idelta()` and `irate()` for native histograms. #15853
