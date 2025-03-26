@@ -12,11 +12,9 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/histogram"
-
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 const cacheTTL = 1 * time.Hour
@@ -187,13 +185,13 @@ func (e *schemaEngine) fetchChangelog(schemaChangelogURL string) (_ *changelog, 
 func schemaChangelogURL(schemaURL string) string {
 	// NOTE(bwplotka): Be careful with path as it cleans potential http:// to http:/
 	dir, _ := path.Split(schemaURL)
-	return fmt.Sprintf("%v/latest/.gen/changelog.yaml", dir)
+	return fmt.Sprintf("%v/changelog.yaml", dir)
 }
 
 func schemaIDsURL(schemaURL string) string {
 	// NOTE(bwplotka): Be careful with path as it cleans potential http:// to http:/
 	dir, _ := path.Split(schemaURL)
-	return fmt.Sprintf("%v/latest/.gen/ids.yaml", dir)
+	return fmt.Sprintf("%v/ids.yaml", dir)
 }
 
 // FindVariants returns all variants for a single schematized (referenced by schema_url) metric.
