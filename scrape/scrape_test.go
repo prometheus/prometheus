@@ -82,8 +82,8 @@ func newTestScrapeMetrics(t testing.TB) *scrapeMetrics {
 
 func TestNewScrapePool(t *testing.T) {
 	var (
-		app     = &nopAppendable{}
-		cfg     = &config.ScrapeConfig{
+		app = &nopAppendable{}
+		cfg = &config.ScrapeConfig{
 			MetricNameValidationScheme: config.UTF8ValidationConfig,
 			MetricNameEscapingScheme:   model.AllowUTF8,
 		}
