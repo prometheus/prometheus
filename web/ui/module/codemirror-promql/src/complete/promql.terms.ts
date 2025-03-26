@@ -26,6 +26,8 @@ export const binOpTerms = [
   { label: '>=' },
   { label: '>' },
   { label: '<' },
+  { label: '</' },
+  { label: '>/' },
   { label: '<=' },
   { label: '!=' },
   { label: 'atan2' },
