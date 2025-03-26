@@ -149,6 +149,7 @@ var (
 	HistogramQuantileForcedMonotonicityInfo = fmt.Errorf("%w: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name", PromQLInfo)
 	IncompatibleTypesInBinOpInfo            = fmt.Errorf("%w: incompatible sample types encountered for binary operator", PromQLInfo)
 	HistogramIgnoredInAggregationInfo       = fmt.Errorf("%w: ignored histogram in", PromQLInfo)
+	UnsupportedOperatorForVectorInfo        = fmt.Errorf("%w: operator only supported for native histograms and scalars, not full vectors", PromQLInfo)
 	HistogramIgnoredInMixedRangeInfo        = fmt.Errorf("%w: ignored histograms in a range containing both floats and histograms for metric name", PromQLInfo)
 )
 
@@ -311,5 +312,13 @@ func NewIncompatibleBucketLayoutInBinOpWarning(operator string, pos posrange.Pos
 	return annoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w %s", IncompatibleBucketLayoutInBinOpWarning, operator),
+	}
+}
+
+// NewUnsupportedOperatorForVectorInfo is used when TRIM_UPPER or TRIM_LOWER is attempted on a full vector instead of a single histogram+scalar.
+func NewUnsupportedOperatorForVectorInfo(operator string, pos posrange.PositionRange) error {
+	return annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w %q: only supported for native histograms and scalars, not full vector operations", UnsupportedOperatorForVectorInfo, operator),
 	}
 }
