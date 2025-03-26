@@ -6,9 +6,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/promql/parser"
-
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -47,7 +46,7 @@ func TestEngine_FindVariants(t *testing.T) {
 				{
 					matchers: []*labels.Matcher{
 						labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_latency_milliseconds"),
-						labels.MustNewMatcher(labels.MatchEqual, "__unit__", "millisecond"),
+						labels.MustNewMatcher(labels.MatchEqual, "__unit__", "milliseconds"),
 						labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
 					},
 					result: resultTransform{
@@ -75,7 +74,7 @@ func TestEngine_FindVariants(t *testing.T) {
 				{
 					matchers: []*labels.Matcher{
 						labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_latency_seconds"),
-						labels.MustNewMatcher(labels.MatchEqual, "__unit__", "second"),
+						labels.MustNewMatcher(labels.MatchEqual, "__unit__", "seconds"),
 						labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
 					},
 					result: resultTransform{

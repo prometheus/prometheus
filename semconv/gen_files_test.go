@@ -53,29 +53,29 @@ func TestFetchIDs(t *testing.T) {
 	expected := &ids{
 		Version: 1,
 		MetricsIDs: map[string][]versionedID{
-			"my_app_latency_seconds~second.histogram": {
+			"my_app_latency_seconds~seconds.histogram": {
 				{ID: "my_app_latency.2",
 					IntroVersion: "1.1.0"},
 			},
-			"my_app_custom_elements_changed_total~element.counter": {
+			"my_app_custom_elements_changed_total~elements.counter": {
 				{
 					ID:           "my_app_custom_elements.2",
 					IntroVersion: "1.1.0",
 				},
 			},
-			"my_app_latency_milliseconds~millisecond.histogram": {
+			"my_app_latency_milliseconds~milliseconds.histogram": {
 				{
 					ID:           "my_app_latency",
 					IntroVersion: "1.0.0",
 				},
 			},
-			"my_app_custom_elements_total~element.counter": {
+			"my_app_custom_elements_total~elements.counter": {
 				{
 					ID:           "my_app_custom_elements",
 					IntroVersion: "1.0.0",
 				},
 			},
-			"my_app_some_elements~element.gauge": {
+			"my_app_some_elements~elements.gauge": {
 				{
 					ID:           "my_app_some_elements",
 					IntroVersion: "1.0.0",
@@ -83,18 +83,18 @@ func TestFetchIDs(t *testing.T) {
 			},
 		},
 		uniqueNameToIdentity: map[string]string{
-			"my_app_custom_elements_changed_total": "my_app_custom_elements_changed_total~element.counter",
-			"my_app_custom_elements_total":         "my_app_custom_elements_total~element.counter",
-			"my_app_latency_milliseconds":          "my_app_latency_milliseconds~millisecond.histogram",
-			"my_app_latency_seconds":               "my_app_latency_seconds~second.histogram",
-			"my_app_some_elements":                 "my_app_some_elements~element.gauge",
+			"my_app_custom_elements_changed_total": "my_app_custom_elements_changed_total~elements.counter",
+			"my_app_custom_elements_total":         "my_app_custom_elements_total~elements.counter",
+			"my_app_latency_milliseconds":          "my_app_latency_milliseconds~milliseconds.histogram",
+			"my_app_latency_seconds":               "my_app_latency_seconds~seconds.histogram",
+			"my_app_some_elements":                 "my_app_some_elements~elements.gauge",
 		},
 		uniqueNameTypeToIdentity: map[string]string{
-			"my_app_custom_elements_changed_total.counter": "my_app_custom_elements_changed_total~element.counter",
-			"my_app_custom_elements_total.counter":         "my_app_custom_elements_total~element.counter",
-			"my_app_latency_milliseconds.histogram":        "my_app_latency_milliseconds~millisecond.histogram",
-			"my_app_latency_seconds.histogram":             "my_app_latency_seconds~second.histogram",
-			"my_app_some_elements.gauge":                   "my_app_some_elements~element.gauge",
+			"my_app_custom_elements_changed_total.counter": "my_app_custom_elements_changed_total~elements.counter",
+			"my_app_custom_elements_total.counter":         "my_app_custom_elements_total~elements.counter",
+			"my_app_latency_milliseconds.histogram":        "my_app_latency_milliseconds~milliseconds.histogram",
+			"my_app_latency_seconds.histogram":             "my_app_latency_seconds~seconds.histogram",
+			"my_app_some_elements.gauge":                   "my_app_some_elements~elements.gauge",
 		},
 	}
 

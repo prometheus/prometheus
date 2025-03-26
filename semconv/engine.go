@@ -369,7 +369,7 @@ func (s *transformingSeries) Labels() labels.Labels {
 			builder.Del(l.Name)
 		case "__unit__":
 			if s.result.to.Unit != "" {
-				builder.Set(l.Name, strings.Trim(s.result.to.Unit, "{}"))
+				builder.Set(l.Name, s.result.to.DirectUnit())
 			}
 		case "le":
 			if typ == model.MetricTypeHistogram {

@@ -53,8 +53,11 @@ type metricGroupChange struct {
 }
 
 func (m metricGroupChange) DirectUnit() string {
+	if strings.HasPrefix(m.Unit, "{") {
+		return strings.Trim(m.Unit, "{}") + "s"
+	}
 	// TODO(bwplotka): Yolo, fix it.
-	return strings.Trim(m.Unit, "{}")
+	return m.Unit
 }
 
 type attribute struct {
