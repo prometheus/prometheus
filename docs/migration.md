@@ -31,8 +31,7 @@ This document offers guidance on migrating from Prometheus 2.x to Prometheus 3.0
   - `agent`
       - Instead use the dedicated `--agent` CLI flag.
   - `remote-write-receiver`
-      - Instead use the dedicated `--web.enable-remote-write-receiver` CLI flag.
-      - Note: This functionality is NOT enabled by default and requires explicit enablement.
+      - Instead use the dedicated `--web.enable-remote-write-receiver` CLI flag to enable the remote write receiver.
   - `auto-gomemlimit`
       - Prometheus v3 will automatically set `GOMEMLIMIT` to match the Linux 
       container memory limit. If there is no container limit, or the process is 
