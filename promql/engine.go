@@ -2900,9 +2900,9 @@ func scalarBinop(op parser.ItemType, lhs, rhs float64) float64 {
 	panic(fmt.Errorf("operator %q not allowed for Scalar operations", op))
 }
 
-// processCustomBucket handles custom bucket processing for histogram trimming.
+// computeLinearTrim handles custom bucket processing for histogram trimming.
 // It returns the count to keep and the bucket midpoint for sum calculations.
-func processCustomBucket(
+func computeLinearTrim(
 	bucket histogram.Bucket[float64],
 	rhs float64,
 	op parser.ItemType,
@@ -2928,8 +2928,19 @@ func processCustomBucket(
 				// Trim point is above bucket upper bound, keep all
 				keepCount = bucket.Count
 			} else {
-				// Trim point is within bucket or below, keep none
-				keepCount = 0
+				if bucket.Upper <= 0 {
+					keepCount = bucket.Count * 0.5
+				} else {
+					// Bucket spans from -Inf to some positive value
+					// Treat -Inf as if it were 0, then do linear interpolation
+					if rhs < 0 {
+						// Trim point is negative, keep nothing
+						keepCount = 0
+					} else {
+						fraction := rhs / bucket.Upper
+						keepCount = bucket.Count * fraction
+					}
+				}
 			}
 		case math.IsInf(bucket.Upper, 1):
 			// Special case for +Inf upper bound
@@ -2992,7 +3003,7 @@ func processCustomBucket(
 
 func computeBucketTrim(op parser.ItemType, bucket histogram.Bucket[float64], rhs float64, isPostive, isCustomBucket bool) (float64, float64) {
 	if isCustomBucket {
-		return processCustomBucket(bucket, rhs, op)
+		return computeLinearTrim(bucket, rhs, op)
 	}
 	return computeExponentialTrim(bucket, rhs, isPostive, op)
 }
@@ -3012,8 +3023,7 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, op parser
 		for i, iter := 0, trimmedHist.PositiveBucketIterator(); iter.Next(); i++ {
 			hasPositive = true
 			bucket := iter.At()
-			var keepCount, bucketMidpoint float64
-			keepCount, bucketMidpoint = computeBucketTrim(op, bucket, rhs, true, isCustomBucket)
+			keepCount, bucketMidpoint := computeBucketTrim(op, bucket, rhs, true, isCustomBucket)
 
 			// Bucket is entirely below the trim point - keep all
 			switch {
@@ -3040,8 +3050,7 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, op parser
 		for i, iter := 0, trimmedHist.NegativeBucketIterator(); iter.Next(); i++ {
 			hasNegative = true
 			bucket := iter.At()
-			var keepCount, bucketMidpoint float64
-			keepCount, bucketMidpoint = computeBucketTrim(op, bucket, rhs, false, isCustomBucket)
+			keepCount, bucketMidpoint := computeBucketTrim(op, bucket, rhs, false, isCustomBucket)
 
 			switch {
 			case bucket.Upper <= rhs:
@@ -3065,8 +3074,7 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, op parser
 		for i, iter := 0, trimmedHist.PositiveBucketIterator(); iter.Next(); i++ {
 			hasPositive = true
 			bucket := iter.At()
-			var keepCount, bucketMidpoint float64
-			keepCount, bucketMidpoint = computeBucketTrim(op, bucket, rhs, true, isCustomBucket)
+			keepCount, bucketMidpoint := computeBucketTrim(op, bucket, rhs, true, isCustomBucket)
 
 			switch {
 			case bucket.Lower >= rhs:
@@ -3090,8 +3098,8 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, op parser
 		for i, iter := 0, trimmedHist.NegativeBucketIterator(); iter.Next(); i++ {
 			hasNegative = true
 			bucket := iter.At()
-			var keepCount, bucketMidpoint float64
-			keepCount, bucketMidpoint = computeBucketTrim(op, bucket, rhs, false, isCustomBucket)
+			keepCount, bucketMidpoint := computeBucketTrim(op, bucket, rhs, false, isCustomBucket)
+
 			switch {
 			case bucket.Lower >= rhs:
 				updatedCount += bucket.Count
