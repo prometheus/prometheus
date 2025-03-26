@@ -6,12 +6,12 @@ metrics_changelog:
   my_app_latency:
   - forward:
       metric_name: my_app_latency_seconds
-      unit: "{seconds}"
-      value_promql: "metric{} / 1000"
+      unit: "{second}"
+      value_promql: "value{} / 1000"
     backward:
       metric_name: my_app_latency_milliseconds
-      unit: "{milliseconds}"
-      value_promql: "metric{} * 1000"
+      unit: "{millisecond}"
+      value_promql: "value{} * 1000"
 
   my_app_custom_elements:
   - forward:
