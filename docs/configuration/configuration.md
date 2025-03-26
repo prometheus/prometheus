@@ -187,6 +187,8 @@ otlp:
   # resource attributes to the "target_info" metric, on top of converting
   # them into the "instance" and "job" labels.
   [ keep_identifying_resource_attributes: <boolean> | default = false]
+  # Configures optional translation of OTLP explicit bucket histograms into native histograms with custom buckets.
+  [ convert_histograms_to_nhcb: <boolean> | default = false]
 
 # Settings related to the remote read feature.
 remote_read:
