@@ -16,7 +16,6 @@ package vultr
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -136,10 +135,6 @@ func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.Discove
 	})
 
 	d.client.SetUserAgent(version.PrometheusUserAgent())
-
-	if err != nil {
-		return nil, fmt.Errorf("error setting up vultr agent: %w", err)
-	}
 
 	d.Discovery = refresh.NewDiscovery(
 		refresh.Options{

@@ -2280,10 +2280,8 @@ func (db *DB) CleanTombstones() (err error) {
 					db.logger.Error("failed to delete block after failed `CleanTombstones`", "dir", dir, "err", err)
 				}
 			}
-			if err != nil {
-				return fmt.Errorf("reload blocks: %w", err)
-			}
-			return nil
+
+			return fmt.Errorf("reload blocks: %w", err)
 		}
 	}
 	return nil
