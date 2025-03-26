@@ -32,6 +32,7 @@ import {
   LimitRatio,
   Lss,
   Lte,
+  Ltrim,
   MatrixSelector,
   Neq,
   Or,
@@ -39,6 +40,7 @@ import {
   Quantile,
   QuotedLabelMatcher,
   QuotedLabelName,
+  Rtrim,
   StepInvariantExpr,
   SubqueryExpr,
   Topk,
@@ -47,7 +49,7 @@ import {
   UnquotedLabelMatcher,
   VectorSelector,
 } from '@prometheus-io/lezer-promql';
-import { containsAtLeastOneChild } from './path-finder';
+import { containsAtLeastOneChild, containsChild } from './path-finder';
 import { getType } from './type';
 import { buildLabelMatchers } from './matcher';
 import { EditorState } from '@codemirror/state';
@@ -199,17 +201,25 @@ export class Parser {
     const lt = this.checkAST(lExpr);
     const rt = this.checkAST(rExpr);
     const boolModifierUsed = node.getChild(BoolModifier);
-    const isComparisonOperator = containsAtLeastOneChild(node, Eql, Neq, Lte, Lss, Gte, Gtr);
+
+    const isComparisonOperator = containsAtLeastOneChild(node, Eql, Neq, Lte, Lss, Gte, Gtr, Rtrim, Ltrim);
+    const isRTrimOperator = containsChild(node, Rtrim);
+    const isLTrimOperator = containsChild(node, Ltrim);
     const isSetOperator = containsAtLeastOneChild(node, And, Or, Unless);
 
-    // BOOL modifier check
     if (boolModifierUsed) {
-      if (!isComparisonOperator) {
+      if (!isComparisonOperator || isRTrimOperator || isLTrimOperator) {
         this.addDiagnostic(node, 'bool modifier can only be used on comparison operators');
       }
     } else {
       if (isComparisonOperator && lt === ValueType.scalar && rt === ValueType.scalar) {
-        this.addDiagnostic(node, 'comparisons between scalars must use BOOL modifier');
+        if (isRTrimOperator) {
+          this.addDiagnostic(node, 'operator ">/" not allowed for Scalar operations');
+        } else if (isLTrimOperator) {
+          this.addDiagnostic(node, 'operator "</" not allowed for Scalar operations');
+        } else {
+          this.addDiagnostic(node, 'comparisons between scalars must use BOOL modifier');
+        }
       }
     }
 
