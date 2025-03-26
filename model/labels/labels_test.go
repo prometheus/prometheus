@@ -389,6 +389,16 @@ func TestLabels_FromStrings(t *testing.T) {
 	require.Panics(t, func() { FromStrings("aaa", "111", "bbb") }) //nolint:staticcheck // Ignore SA5012, error is intentional test.
 }
 
+func TestLabels_Iter(t *testing.T) {
+	labels := FromStrings("aaa", "111", "bbb", "222")
+	actual := []Label{}
+	for label := range labels.Iter() {
+		actual = append(actual, label)
+	}
+
+	require.Equal(t, 0, Compare(New(actual...), labels))
+}
+
 func TestLabels_Compare(t *testing.T) {
 	labels := FromStrings(
 		"aaa", "111",
