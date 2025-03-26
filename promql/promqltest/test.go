@@ -271,7 +271,7 @@ func parseExpect(defLine string) (expectCmdType, expectCmd, error) {
 	expectParts := patExpect.FindStringSubmatch(strings.TrimSpace(defLine))
 	expCmd := expectCmd{}
 	if expectParts == nil {
-		return 0, expCmd, fmt.Errorf("invalid expect statement, must match `expect <type> <match_type> <string>` format")
+		return 0, expCmd, errors.New("invalid expect statement, must match `expect <type> <match_type> <string>` format")
 	}
 	var (
 		mode            = expectParts[1]
@@ -303,13 +303,13 @@ func parseExpect(defLine string) (expectCmdType, expectCmd, error) {
 
 func validateExpectedCmds(cmd *evalCmd) error {
 	if len(cmd.expectedCmds[Info]) > 0 && len(cmd.expectedCmds[NoInfo]) > 0 {
-		return fmt.Errorf("invalid expect lines, info and no_info cannot be used together")
+		return errors.New("invalid expect lines, info and no_info cannot be used together")
 	}
 	if len(cmd.expectedCmds[Warn]) > 0 && len(cmd.expectedCmds[NoWarn]) > 0 {
-		return fmt.Errorf("invalid expect lines, warn and no_warn cannot be used together")
+		return errors.New("invalid expect lines, warn and no_warn cannot be used together")
 	}
 	if len(cmd.expectedCmds[Fail]) > 1 {
-		return fmt.Errorf("invalid expect lines, multiple expect fail lines are not allowed")
+		return errors.New("invalid expect lines, multiple expect fail lines are not allowed")
 	}
 	return nil
 }
@@ -866,7 +866,7 @@ func (ev *evalCmd) checkAnnotations(expr string, annos annotations.Annotations) 
 		case errors.Is(err, annotations.PromQLInfo):
 			infos = append(infos, err.Error())
 		default:
-			return fmt.Errorf("actual annotation must be either info or warn")
+			return errors.New("actual annotation must be either info or warn")
 		}
 	}
 	if err := validateExpectedAnnotations(expr, ev.expectedCmds[Warn], warnings, ev.line, "warn"); err != nil {
