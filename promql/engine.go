@@ -2825,6 +2825,29 @@ func scalarBinop(op parser.ItemType, lhs, rhs float64) float64 {
 	panic(fmt.Errorf("operator %q not allowed for Scalar operations", op))
 }
 
+// Helper function to trim native histogram buckets.
+func trimBuckets(trimmedHist, hlhs *histogram.FloatHistogram, rhs float64, mode string) {
+	trimmedHist.PositiveBuckets = make([]float64, len(hlhs.PositiveBuckets))
+	copy(trimmedHist.PositiveBuckets, hlhs.PositiveBuckets)
+
+	trimmedHist.NegativeBuckets = make([]float64, len(hlhs.NegativeBuckets))
+	copy(trimmedHist.NegativeBuckets, hlhs.NegativeBuckets)
+
+	for i, iter := 0, hlhs.PositiveBucketIterator(); iter.Next(); i++ {
+		bucket := iter.At()
+		if (mode == "LTRIM" && bucket.Upper > rhs) || (mode == "RTRIM" && bucket.Lower < rhs) {
+			trimmedHist.PositiveBuckets[i] = 0
+		}
+	}
+
+	for i, iter := 0, hlhs.NegativeBucketIterator(); iter.Next(); i++ {
+		bucket := iter.At()
+		if (mode == "LTRIM" && bucket.Upper > rhs) || (mode == "RTRIM" && bucket.Lower < rhs) {
+			trimmedHist.NegativeBuckets[i] = 0
+		}
+	}
+}
+
 // vectorElemBinop evaluates a binary operation between two Vector elements.
 func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram, pos posrange.PositionRange) (float64, *histogram.FloatHistogram, bool, error) {
 	opName := parser.ItemTypeStr[op]
@@ -2865,7 +2888,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 			switch op {
 			case parser.MUL:
 				return 0, hrhs.Copy().Mul(lhs).Compact(0), true, nil
-			case parser.ADD, parser.SUB, parser.DIV, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
+			case parser.ADD, parser.SUB, parser.DIV, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.RTRIM, parser.LTRIM, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
 				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("float", opName, "histogram", pos)
 			}
 		}
@@ -2876,6 +2899,14 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 				return 0, hlhs.Copy().Mul(rhs).Compact(0), true, nil
 			case parser.DIV:
 				return 0, hlhs.Copy().Div(rhs).Compact(0), true, nil
+			case parser.LTRIM:
+				trimmedHist := *hlhs
+				trimBuckets(&trimmedHist, hlhs, rhs, "LTRIM")
+				return 0, &trimmedHist, true, nil
+			case parser.RTRIM:
+				trimmedHist := *hlhs
+				trimBuckets(&trimmedHist, hlhs, rhs, "RTRIM")
+				return 0, &trimmedHist, true, nil
 			case parser.ADD, parser.SUB, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
 				return 0, nil, false, annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "float", pos)
 			}
