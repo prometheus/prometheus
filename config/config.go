@@ -479,9 +479,12 @@ type GlobalConfig struct {
 	// Keep no more than this many dropped targets per job.
 	// 0 means no limit.
 	KeepDroppedTargets uint `yaml:"keep_dropped_targets,omitempty"`
-	// Allow UTF8 Metric and Label Names.
+	// Allow UTF8 Metric and Label Names. Can be blank in config files but must
+	// have a value if a ScrepeConfig is created programmatically.
 	MetricNameValidationScheme string `yaml:"metric_name_validation_scheme,omitempty"`
-	// Metric name escaping mode to request through content negotiation.
+	// Metric name escaping mode to request through content negotiation. Can be
+	// blank in config files but must have a value if a ScrepeConfig is created
+	// programmatically.
 	MetricNameEscapingScheme string `yaml:"metric_name_escaping_scheme,omitempty"`
 }
 
