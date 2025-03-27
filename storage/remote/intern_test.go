@@ -73,7 +73,7 @@ func TestIntern_MultiRef_Concurrent(t *testing.T) {
 	interner.intern(testString)
 	interned, ok := interner.pool[testString]
 	require.True(t, ok)
-	require.Equalf(t, int64(1), interned.refs.Load(), "wrong interned refs count")
+	require.Equal(t, int64(1), interned.refs.Load(), "wrong interned refs count")
 
 	for i := 0; i < 1000; i++ {
 		released := make(chan struct{})
@@ -89,5 +89,5 @@ func TestIntern_MultiRef_Concurrent(t *testing.T) {
 	interned, ok = interner.pool[testString]
 	interner.mtx.RUnlock()
 	require.True(t, ok)
-	require.Equalf(t, int64(1), interned.refs.Load(), "wrong interned refs count")
+	require.Equal(t, int64(1), interned.refs.Load(), "wrong interned refs count")
 }
