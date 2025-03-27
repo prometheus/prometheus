@@ -399,24 +399,26 @@ func TestLabels_Iter(t *testing.T) {
 	require.Equal(t, 0, Compare(New(actual...), labels))
 }
 
-func BenchmarkLabels_Iter(b *testing.B) {
+func BenchmarkLabels_Iteration(b *testing.B) {
 	labels := FromStringsForBenchmark("__name__", "kube_pod_container_status_last_terminated_exitcode", "cluster", "prod-af-north-0", " container", "prometheus", "instance", "kube-state-metrics-0:kube-state-metrics:ksm", "job", "kube-state-metrics/kube-state-metrics", " namespace", "observability-prometheus", "pod", "observability-prometheus-0", "uid", "deadbeef-0000-1111-2222-b9ad64bb417e")
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		for label := range labels.Iter() {
-			_ = label
-		}
-	}
-}
 
-func BenchmarkLabels_Range(b *testing.B) {
-	labels := FromStringsForBenchmark("__name__", "kube_pod_container_status_last_terminated_exitcode", "cluster", "prod-af-north-0", " container", "prometheus", "instance", "kube-state-metrics-0:kube-state-metrics:ksm", "job", "kube-state-metrics/kube-state-metrics", " namespace", "observability-prometheus", "pod", "observability-prometheus-0", "uid", "deadbeef-0000-1111-2222-b9ad64bb417e")
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		labels.Range(func(l Label) {
-			_ = l
-		})
-	}
+	b.Run("method=Iter", func(b *testing.B) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			for label := range labels.Iter() {
+				_ = label
+			}
+		}
+	})
+
+	b.Run("method=Range", func(b *testing.B) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			labels.Range(func(l Label) {
+				_ = l
+			})
+		}
+	})
 }
 
 func TestLabels_Compare(t *testing.T) {
