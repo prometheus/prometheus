@@ -536,10 +536,10 @@ metric_relabel_configs:
 # schema 8, but might change in the future).
 [ native_histogram_min_bucket_factor: <float> | default = 0 ]
 
-# Specifies whether to convert scraped classic histograms from this into
-# native histogram with custom buckets.
-[ convert_classic_histograms_to_nhcb <bool> | default = false 
-or global.convert_classic_histograms_to_nhcb if unset]
+# Specifies whether to convert classic histograms into native histograms with
+# custom buckets (has no effect without --enable-feature=native-histograms).
+[ convert_classic_histograms_to_nhcb <bool> | default =
+<global.convert_classic_histograms_to_nhcb>]
 ```
 
 Where `<job_name>` must be unique across all scrape configurations.

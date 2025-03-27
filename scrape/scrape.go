@@ -523,7 +523,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 		mrc                      = sp.config.MetricRelabelConfigs
 		fallbackScrapeProtocol   = sp.config.ScrapeFallbackProtocol.HeaderMediaType()
 		alwaysScrapeClassicHist  = sp.config.AlwaysScrapeClassicHistograms
-		convertClassicHistToNHCB = sp.config.ConvertClassicHistogramsToNHCB != nil && *sp.config.ConvertClassicHistogramsToNHCB
+		convertClassicHistToNHCB = sp.config.ConvertClassicHistogramsToNHCBEnabled()
 	)
 
 	sp.targetMtx.Lock()

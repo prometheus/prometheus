@@ -900,8 +900,8 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	}
 
 	if c.ConvertClassicHistogramsToNHCB == nil {
-		globalVal := &globalConfig.ConvertClassicHistogramsToNHCB
-		c.ConvertClassicHistogramsToNHCB = globalVal
+		global := globalConfig.ConvertClassicHistogramsToNHCB
+		c.ConvertClassicHistogramsToNHCB = &global
 	}
 
 	return nil
@@ -926,7 +926,7 @@ func ToValidationScheme(s string) (validationScheme model.ValidationScheme, err 
 	return validationScheme, nil
 }
 
-// ConvertClassicHistogramsToNHCBEnabled returns whether to convert classic histograms to NHCB
+// ConvertClassicHistogramsToNHCBEnabled returns whether to convert classic histograms to NHCB.
 func (c *ScrapeConfig) ConvertClassicHistogramsToNHCBEnabled() bool {
 	return c.ConvertClassicHistogramsToNHCB != nil && *c.ConvertClassicHistogramsToNHCB
 }
