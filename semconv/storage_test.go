@@ -2,9 +2,15 @@ package semconv
 
 import (
 	"context"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/timestamp"
+
+	"github.com/prometheus/prometheus/promql"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -154,7 +160,7 @@ func (s sample) Copy() chunks.Sample {
 	return c
 }
 
-func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[string][]chunks.Sample {
+func selectSeries(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[string][]chunks.Sample {
 	t.Helper()
 
 	ss := q.Select(context.Background(), false, nil, matchers...)
@@ -282,7 +288,7 @@ func TestAwareStorage(t *testing.T) {
 		})
 
 		t.Run("backward", func(t *testing.T) {
-			onlyNewResult := query(t, notAware,
+			onlyNewResult := selectSeries(t, notAware,
 				labels.MustNewMatcher(labels.MatchEqual, schemaURLLabel, testSchemaURL("1.1.0")),
 				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, testdataElementsSeriesNew.MetricIdentity().Name),
 				labels.MustNewMatcher(labels.MatchNotEqual, "number", "2"),
@@ -292,7 +298,7 @@ func TestAwareStorage(t *testing.T) {
 			require.Equal(t, map[string][]chunks.Sample{
 				`{__name__="my_app_custom_elements_changed_total", __schema_url__="` + testSchemaURL("1.1.0") + `", __type__="counter", class="FIRST", fraction="1.243", number="1", test="new"}`: testFSamples,
 			}, onlyNewResult)
-			got := query(t, aware,
+			got := selectSeries(t, aware,
 				// Without schema selector, semconv aware storage should have no effect.
 				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, testdataElementsSeriesNew.MetricIdentity().Name),
 				labels.MustNewMatcher(labels.MatchNotEqual, "number", "2"),
@@ -301,7 +307,7 @@ func TestAwareStorage(t *testing.T) {
 			)
 			require.Equal(t, onlyNewResult, got)
 
-			compatibleResult := query(t, aware,
+			compatibleResult := selectSeries(t, aware,
 				labels.MustNewMatcher(labels.MatchEqual, schemaURLLabel, testdataElementsSeriesNew.Get(schemaURLLabel)),
 				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, testdataElementsSeriesNew.MetricIdentity().Name),
 				labels.MustNewMatcher(labels.MatchNotEqual, "number", "2"),
@@ -314,7 +320,7 @@ func TestAwareStorage(t *testing.T) {
 			}, compatibleResult)
 		})
 		t.Run("forward", func(t *testing.T) {
-			onlyOldResult := query(t, notAware,
+			onlyOldResult := selectSeries(t, notAware,
 				labels.MustNewMatcher(labels.MatchEqual, schemaURLLabel, testdataElementsSeriesOld.Get(schemaURLLabel)),
 				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, testdataElementsSeriesOld.MetricIdentity().Name),
 				labels.MustNewMatcher(labels.MatchNotEqual, "integer", "2"),
@@ -324,7 +330,7 @@ func TestAwareStorage(t *testing.T) {
 			require.Equal(t, map[string][]chunks.Sample{
 				`{__name__="my_app_custom_elements_total", __schema_url__="` + testSchemaURL("1.0.0") + `", __type__="counter", category="first", fraction="1.243", integer="1", test="old"}`: testFSamples,
 			}, onlyOldResult)
-			got := query(t, aware,
+			got := selectSeries(t, aware,
 				// Without schema selector, semconv aware storage should have no effect.
 				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, testdataElementsSeriesOld.MetricIdentity().Name),
 				labels.MustNewMatcher(labels.MatchNotEqual, "integer", "2"),
@@ -333,7 +339,7 @@ func TestAwareStorage(t *testing.T) {
 			)
 			require.Equal(t, onlyOldResult, got)
 
-			compatibleResult := query(t, aware,
+			compatibleResult := selectSeries(t, aware,
 				labels.MustNewMatcher(labels.MatchEqual, schemaURLLabel, testdataElementsSeriesOld.Get(schemaURLLabel)),
 				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, testdataElementsSeriesOld.MetricIdentity().Name),
 				labels.MustNewMatcher(labels.MatchNotEqual, "integer", "2"),
@@ -381,7 +387,7 @@ func TestAwareStorage(t *testing.T) {
 
 		t.Run("backward", func(t *testing.T) {
 			t.Run("_bucket", func(t *testing.T) {
-				onlyNewResult := query(t, notAware,
+				onlyNewResult := selectSeries(t, notAware,
 					labels.MustNewMatcher(labels.MatchEqual, schemaURLLabel, testSchemaURL("1.1.0")),
 					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_latency_seconds_bucket"),
 					labels.MustNewMatcher(labels.MatchEqual, "code", "200"),
@@ -389,14 +395,14 @@ func TestAwareStorage(t *testing.T) {
 				require.Equal(t, map[string][]chunks.Sample{
 					`{__name__="my_app_latency_seconds_bucket", __schema_url__="` + testSchemaURL("1.1.0") + `", __type__="histogram", __unit__="seconds", code="200", le="10", test="new"}`: testFSamples,
 				}, onlyNewResult)
-				got := query(t, aware,
+				got := selectSeries(t, aware,
 					// Without schema selector, semconv aware storage should have no effect.
 					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_latency_seconds_bucket"),
 					labels.MustNewMatcher(labels.MatchEqual, "code", "200"),
 				)
 				require.Equal(t, onlyNewResult, got)
 
-				compatibleResult := query(t, aware,
+				compatibleResult := selectSeries(t, aware,
 					labels.MustNewMatcher(labels.MatchEqual, schemaURLLabel, testSchemaURL("1.1.0")),
 					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_latency_seconds_bucket"),
 					labels.MustNewMatcher(labels.MatchEqual, "code", "200"),
@@ -407,7 +413,7 @@ func TestAwareStorage(t *testing.T) {
 				}, compatibleResult)
 			})
 			t.Run("_count", func(t *testing.T) {
-				onlyNewResult := query(t, notAware,
+				onlyNewResult := selectSeries(t, notAware,
 					labels.MustNewMatcher(labels.MatchEqual, schemaURLLabel, testSchemaURL("1.1.0")),
 					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_latency_seconds_count"),
 					labels.MustNewMatcher(labels.MatchEqual, "code", "200"),
@@ -415,14 +421,14 @@ func TestAwareStorage(t *testing.T) {
 				require.Equal(t, map[string][]chunks.Sample{
 					`{__name__="my_app_latency_seconds_count", __schema_url__="` + testSchemaURL("1.1.0") + `", __type__="histogram", __unit__="seconds", code="200", test="new"}`: testFSamples, // TODO(bwplotka): Type and unit proposal is not really consistent with count/sum
 				}, onlyNewResult)
-				got := query(t, aware,
+				got := selectSeries(t, aware,
 					// Without schema selector, semconv aware storage should have no effect.
 					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_latency_seconds_count"),
 					labels.MustNewMatcher(labels.MatchEqual, "code", "200"),
 				)
 				require.Equal(t, onlyNewResult, got)
 
-				compatibleResult := query(t, aware,
+				compatibleResult := selectSeries(t, aware,
 					labels.MustNewMatcher(labels.MatchEqual, schemaURLLabel, testSchemaURL("1.1.0")),
 					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_latency_seconds_count"),
 					labels.MustNewMatcher(labels.MatchEqual, "code", "200"),
@@ -433,7 +439,7 @@ func TestAwareStorage(t *testing.T) {
 				}, compatibleResult)
 			})
 			t.Run("_sum", func(t *testing.T) {
-				onlyNewResult := query(t, notAware,
+				onlyNewResult := selectSeries(t, notAware,
 					labels.MustNewMatcher(labels.MatchEqual, schemaURLLabel, testSchemaURL("1.1.0")),
 					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_latency_seconds_sum"),
 					labels.MustNewMatcher(labels.MatchEqual, "code", "200"),
@@ -441,14 +447,14 @@ func TestAwareStorage(t *testing.T) {
 				require.Equal(t, map[string][]chunks.Sample{
 					`{__name__="my_app_latency_seconds_sum", __schema_url__="` + testSchemaURL("1.1.0") + `", __type__="histogram", __unit__="seconds", code="200", test="new"}`: testFSamples, // TODO(bwplotka): Type and unit proposal is not really consistent with count/sum
 				}, onlyNewResult)
-				got := query(t, aware,
+				got := selectSeries(t, aware,
 					// Without schema selector, semconv aware storage should have no effect.
 					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_latency_seconds_sum"),
 					labels.MustNewMatcher(labels.MatchEqual, "code", "200"),
 				)
 				require.Equal(t, onlyNewResult, got)
 
-				compatibleResult := query(t, aware,
+				compatibleResult := selectSeries(t, aware,
 					labels.MustNewMatcher(labels.MatchEqual, schemaURLLabel, testSchemaURL("1.1.0")),
 					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_latency_seconds_sum"),
 					labels.MustNewMatcher(labels.MatchEqual, "code", "200"),
@@ -461,7 +467,7 @@ func TestAwareStorage(t *testing.T) {
 		})
 		t.Run("forward", func(t *testing.T) {
 			t.Run("_bucket", func(t *testing.T) {
-				onlyOldResult := query(t, notAware,
+				onlyOldResult := selectSeries(t, notAware,
 					labels.MustNewMatcher(labels.MatchEqual, schemaURLLabel, testSchemaURL("1.0.0")),
 					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_latency_milliseconds_bucket"),
 					labels.MustNewMatcher(labels.MatchEqual, "code", "200"),
@@ -469,14 +475,14 @@ func TestAwareStorage(t *testing.T) {
 				require.Equal(t, map[string][]chunks.Sample{
 					`{__name__="my_app_latency_milliseconds_bucket", __schema_url__="` + testSchemaURL("1.0.0") + `", __type__="histogram", __unit__="milliseconds", code="200", le="10000", test="old"}`: testFSamples,
 				}, onlyOldResult)
-				got := query(t, aware,
+				got := selectSeries(t, aware,
 					// Without schema selector, semconv aware storage should have no effect.
 					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_latency_milliseconds_bucket"),
 					labels.MustNewMatcher(labels.MatchEqual, "code", "200"),
 				)
 				require.Equal(t, onlyOldResult, got)
 
-				compatibleResult := query(t, aware,
+				compatibleResult := selectSeries(t, aware,
 					labels.MustNewMatcher(labels.MatchEqual, schemaURLLabel, testSchemaURL("1.0.0")),
 					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_latency_milliseconds_bucket"),
 					labels.MustNewMatcher(labels.MatchEqual, "code", "200"),
@@ -487,7 +493,7 @@ func TestAwareStorage(t *testing.T) {
 				}, compatibleResult)
 			})
 			t.Run("_count", func(t *testing.T) {
-				onlyOldResult := query(t, notAware,
+				onlyOldResult := selectSeries(t, notAware,
 					labels.MustNewMatcher(labels.MatchEqual, schemaURLLabel, testSchemaURL("1.0.0")),
 					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_latency_milliseconds_count"),
 					labels.MustNewMatcher(labels.MatchEqual, "code", "200"),
@@ -495,14 +501,14 @@ func TestAwareStorage(t *testing.T) {
 				require.Equal(t, map[string][]chunks.Sample{
 					`{__name__="my_app_latency_milliseconds_count", __schema_url__="` + testSchemaURL("1.0.0") + `", __type__="histogram", __unit__="milliseconds", code="200", test="old"}`: testFSamples, // TODO(bwplotka): Type and unit proposal is not really consistent with count/sum
 				}, onlyOldResult)
-				got := query(t, aware,
+				got := selectSeries(t, aware,
 					// Without schema selector, semconv aware storage should have no effect.
 					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_latency_milliseconds_count"),
 					labels.MustNewMatcher(labels.MatchEqual, "code", "200"),
 				)
 				require.Equal(t, onlyOldResult, got)
 
-				compatibleResult := query(t, aware,
+				compatibleResult := selectSeries(t, aware,
 					labels.MustNewMatcher(labels.MatchEqual, schemaURLLabel, testSchemaURL("1.0.0")),
 					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_latency_milliseconds_count"),
 					labels.MustNewMatcher(labels.MatchEqual, "code", "200"),
@@ -513,7 +519,7 @@ func TestAwareStorage(t *testing.T) {
 				}, compatibleResult)
 			})
 			t.Run("_sum", func(t *testing.T) {
-				onlyOldResult := query(t, notAware,
+				onlyOldResult := selectSeries(t, notAware,
 					labels.MustNewMatcher(labels.MatchEqual, schemaURLLabel, testSchemaURL("1.0.0")),
 					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_latency_milliseconds_sum"),
 					labels.MustNewMatcher(labels.MatchEqual, "code", "200"),
@@ -521,14 +527,14 @@ func TestAwareStorage(t *testing.T) {
 				require.Equal(t, map[string][]chunks.Sample{
 					`{__name__="my_app_latency_milliseconds_sum", __schema_url__="` + testSchemaURL("1.0.0") + `", __type__="histogram", __unit__="milliseconds", code="200", test="old"}`: testFSamples, // TODO(bwplotka): Type and unit proposal is not really consistent with count/sum
 				}, onlyOldResult)
-				got := query(t, aware,
+				got := selectSeries(t, aware,
 					// Without schema selector, semconv aware storage should have no effect.
 					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_latency_milliseconds_sum"),
 					labels.MustNewMatcher(labels.MatchEqual, "code", "200"),
 				)
 				require.Equal(t, onlyOldResult, got)
 
-				compatibleResult := query(t, aware,
+				compatibleResult := selectSeries(t, aware,
 					labels.MustNewMatcher(labels.MatchEqual, schemaURLLabel, testSchemaURL("1.0.0")),
 					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_latency_milliseconds_sum"),
 					labels.MustNewMatcher(labels.MatchEqual, "code", "200"),
@@ -558,7 +564,7 @@ func TestAwareStorage(t *testing.T) {
 		})
 
 		t.Run("backward", func(t *testing.T) {
-			onlyNewResult := query(t, notAware,
+			onlyNewResult := selectSeries(t, notAware,
 				labels.MustNewMatcher(labels.MatchEqual, schemaURLLabel, testSchemaURL("1.1.0")),
 				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, testdataLatencySeriesNew.MetricIdentity().Name),
 				labels.MustNewMatcher(labels.MatchEqual, "code", testdataLatencySeriesNew.Get("code")),
@@ -566,14 +572,14 @@ func TestAwareStorage(t *testing.T) {
 			require.Equal(t, map[string][]chunks.Sample{
 				`{__name__="my_app_latency_seconds", __schema_url__="` + testSchemaURL("1.1.0") + `", __type__="histogram", __unit__="seconds", code="200", test="new"}`: testNHCBSamples,
 			}, onlyNewResult)
-			got := query(t, aware,
+			got := selectSeries(t, aware,
 				// Without schema selector, semconv aware storage should have no effect.
 				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, testdataLatencySeriesNew.MetricIdentity().Name),
 				labels.MustNewMatcher(labels.MatchEqual, "code", testdataLatencySeriesNew.Get("code")),
 			)
 			require.Equal(t, onlyNewResult, got)
 
-			compatibleResult := query(t, aware,
+			compatibleResult := selectSeries(t, aware,
 				labels.MustNewMatcher(labels.MatchEqual, schemaURLLabel, testSchemaURL("1.1.0")),
 				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, testdataLatencySeriesNew.MetricIdentity().Name),
 				labels.MustNewMatcher(labels.MatchEqual, "code", testdataLatencySeriesNew.Get("code")),
@@ -584,7 +590,7 @@ func TestAwareStorage(t *testing.T) {
 			}, compatibleResult)
 		})
 		t.Run("forward", func(t *testing.T) {
-			onlyOldResult := query(t, notAware,
+			onlyOldResult := selectSeries(t, notAware,
 				labels.MustNewMatcher(labels.MatchEqual, schemaURLLabel, testSchemaURL("1.0.0")),
 				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, testdataLatencySeriesOld.MetricIdentity().Name),
 				labels.MustNewMatcher(labels.MatchEqual, "code", testdataLatencySeriesOld.Get("code")),
@@ -592,14 +598,14 @@ func TestAwareStorage(t *testing.T) {
 			require.Equal(t, map[string][]chunks.Sample{
 				`{__name__="my_app_latency_milliseconds", __schema_url__="` + testSchemaURL("1.0.0") + `", __type__="histogram", __unit__="milliseconds", code="200", test="old"}`: testNHCBSamples,
 			}, onlyOldResult)
-			got := query(t, aware,
+			got := selectSeries(t, aware,
 				// Without schema selector, semconv aware storage should have no effect.
 				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, testdataLatencySeriesOld.MetricIdentity().Name),
 				labels.MustNewMatcher(labels.MatchEqual, "code", testdataLatencySeriesOld.Get("code")),
 			)
 			require.Equal(t, onlyOldResult, got)
 
-			compatibleResult := query(t, aware,
+			compatibleResult := selectSeries(t, aware,
 				labels.MustNewMatcher(labels.MatchEqual, schemaURLLabel, testSchemaURL("1.0.0")),
 				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, testdataLatencySeriesOld.MetricIdentity().Name),
 				labels.MustNewMatcher(labels.MatchEqual, "code", testdataLatencySeriesOld.Get("code")),
@@ -609,5 +615,64 @@ func TestAwareStorage(t *testing.T) {
 				`{__name__="my_app_latency_milliseconds", __type__="histogram", __unit__="milliseconds", code="200", test="old"}`: testNHCBSamples,
 			}, compatibleResult)
 		})
+	})
+}
+
+func TestAwareStorage_PromQL_OverlappingSeries(t *testing.T) {
+	const samples = 10
+
+	testFSamples := make([]chunks.Sample, samples)
+	for i := range samples {
+		testFSamples[i] = sample{
+			t: int64(i),
+			f: float64(i),
+		}
+	}
+
+	// Remove the test label so the series are identical after semconv conversion.
+	seriesOld := labels.NewBuilder(testdataElementsSeriesOld).Del("test").Labels()
+	seriesNew := labels.NewBuilder(testdataElementsSeriesNew).Del("test").Labels()
+
+	ctx := context.TODO()
+	e := promql.NewEngine(promql.EngineOpts{MaxSamples: 100, Timeout: 30 * time.Second})
+
+	t.Run("rate with overlapping samples", func(t *testing.T) {
+		db := openTestDB(t, nil, []appendSeries{
+			{series: seriesOld, samples: testFSamples[:5]},
+			{series: seriesNew, samples: testFSamples[5:]},
+		})
+
+		q, err := e.NewInstantQuery(
+			ctx, AwareStorage(db), nil,
+			fmt.Sprintf("rate(%v{__schema_url__=%q}[10])", seriesOld.MetricIdentity().Name, testSchemaURL("1.0.0")), timestamp.Time(10),
+		)
+		require.NoError(t, err)
+
+		t.Cleanup(q.Close)
+
+		res := q.Exec(ctx)
+		require.NoError(t, res.Err)
+		require.NoError(t, nil, res.Warnings.AsErrors())
+		require.Equal(t, "{category=\"first\", fraction=\"1.243\", integer=\"1\"} => 0.9999999999999998 @[10]", res.String())
+	})
+
+	t.Run("rate with duplicate samples", func(t *testing.T) {
+		db := openTestDB(t, nil, []appendSeries{
+			{series: seriesOld, samples: testFSamples},
+			{series: seriesNew, samples: testFSamples},
+		})
+
+		q, err := e.NewInstantQuery(
+			ctx, AwareStorage(db), nil,
+			fmt.Sprintf("rate(%v{__schema_url__=%q}[10])", seriesOld.MetricIdentity().Name, testSchemaURL("1.0.0")), timestamp.Time(10),
+		)
+		require.NoError(t, err)
+
+		t.Cleanup(q.Close)
+
+		res := q.Exec(ctx)
+		require.NoError(t, res.Err)
+		require.NoError(t, nil, res.Warnings.AsErrors())
+		require.Equal(t, "{category=\"first\", fraction=\"1.243\", integer=\"1\"} => 0.9999999999999998 @[10]", res.String())
 	})
 }
