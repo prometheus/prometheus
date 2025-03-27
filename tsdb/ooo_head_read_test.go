@@ -837,7 +837,7 @@ func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 	}
 
 	for _, tc := range tests {
-		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
+		t.Run("name="+tc.name, func(t *testing.T) {
 			db := newTestDBWithOpts(t, opts)
 
 			app := db.Appender(context.Background())
@@ -1007,7 +1007,7 @@ func testOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 	}
 
 	for _, tc := range tests {
-		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
+		t.Run("name="+tc.name, func(t *testing.T) {
 			db := newTestDBWithOpts(t, opts)
 
 			app := db.Appender(context.Background())
@@ -1114,7 +1114,7 @@ func TestSortMetaByMinTimeAndMinRef(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(fmt.Sprintf("name=%s", tc.name), func(t *testing.T) {
+		t.Run("name="+tc.name, func(t *testing.T) {
 			slices.SortFunc(tc.inputMetas, lessByMinTimeAndMinRef)
 			require.Equal(t, tc.expMetas, tc.inputMetas)
 		})
