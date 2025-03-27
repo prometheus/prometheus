@@ -18,13 +18,6 @@ func mustNewValueTransformerFromPromQL(p string) valueTransformer {
 	return ret
 }
 
-// clean removed fields not used in metricGroupChange for result
-// transformations, so they are not updated.
-func clean(m metricGroupChange) metricGroupChange {
-	m.ValuePromQL = ""
-	return m
-}
-
 // TODO(bwplotka): Test ambiguous matcher errors etc.
 func TestEngine_FindMatcherVariants(t *testing.T) {
 	for _, tcase := range []struct {
@@ -107,7 +100,7 @@ func TestEngine_FindMatcherVariants(t *testing.T) {
 		{
 			schemaURL: "./testdata/1.1.0", matchers: []*labels.Matcher{
 				labels.MustNewMatcher(labels.MatchEqual, schemaURLLabel, "./testdata/1.1.0"),
-				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_custom_elements_changed_total"),
+				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_custom_changed_elements_total"),
 				labels.MustNewMatcher(labels.MatchNotEqual, "number", "2"),
 				labels.MustNewMatcher(labels.MatchRegexp, "class", "FIRST|OTHER"),
 				labels.MustNewMatcher(labels.MatchEqual, "fraction", "1.2"),
@@ -115,7 +108,7 @@ func TestEngine_FindMatcherVariants(t *testing.T) {
 			expectedVariants: [][]*labels.Matcher{
 				{
 					// Original matchers.
-					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_custom_elements_changed_total"),
+					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_custom_changed_elements_total"),
 					labels.MustNewMatcher(labels.MatchNotEqual, "number", "2"),
 					labels.MustNewMatcher(labels.MatchRegexp, "class", "FIRST|OTHER"),
 					labels.MustNewMatcher(labels.MatchEqual, "fraction", "1.2"),
@@ -129,7 +122,7 @@ func TestEngine_FindMatcherVariants(t *testing.T) {
 				},
 				{
 					// Forward.
-					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_custom_elements_changed_total"),
+					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_custom_changed_elements_total"),
 					labels.MustNewMatcher(labels.MatchNotEqual, "my_number", "2"),
 					labels.MustNewMatcher(labels.MatchRegexp, "class", "FIRST|OTHER"),
 					labels.MustNewMatcher(labels.MatchEqual, "fraction", "1.2"),
@@ -144,7 +137,7 @@ func TestEngine_FindMatcherVariants(t *testing.T) {
 		{
 			schemaURL: "./testdata/1.2.0", matchers: []*labels.Matcher{
 				labels.MustNewMatcher(labels.MatchEqual, schemaURLLabel, "./testdata/1.2.0"),
-				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_custom_elements_changed_total"),
+				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_custom_changed_elements_total"),
 				labels.MustNewMatcher(labels.MatchNotEqual, "my_number", "2"),
 				labels.MustNewMatcher(labels.MatchRegexp, "class", "FIRST|OTHER"),
 				labels.MustNewMatcher(labels.MatchEqual, "fraction", "1.2"),
@@ -152,14 +145,14 @@ func TestEngine_FindMatcherVariants(t *testing.T) {
 			expectedVariants: [][]*labels.Matcher{
 				{
 					// Original matchers.
-					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_custom_elements_changed_total"),
+					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_custom_changed_elements_total"),
 					labels.MustNewMatcher(labels.MatchNotEqual, "my_number", "2"),
 					labels.MustNewMatcher(labels.MatchRegexp, "class", "FIRST|OTHER"),
 					labels.MustNewMatcher(labels.MatchEqual, "fraction", "1.2"),
 				},
 				{
 					// Backward 1.
-					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_custom_elements_changed_total"),
+					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_custom_changed_elements_total"),
 					labels.MustNewMatcher(labels.MatchNotEqual, "number", "2"),
 					labels.MustNewMatcher(labels.MatchRegexp, "class", "FIRST|OTHER"),
 					labels.MustNewMatcher(labels.MatchEqual, "fraction", "1.2"),
@@ -196,14 +189,14 @@ func TestEngine_FindMatcherVariants(t *testing.T) {
 				},
 				{
 					// Forward 1.
-					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_custom_elements_changed_total"),
+					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_custom_changed_elements_total"),
 					labels.MustNewMatcher(labels.MatchNotEqual, "number", "2"),
 					labels.MustNewMatcher(labels.MatchRegexp, "class", "FIRST|OTHER"),
 					labels.MustNewMatcher(labels.MatchEqual, "fraction", "1.2"),
 				},
 				{
 					// Forward 2.
-					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_custom_elements_changed_total"),
+					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_custom_changed_elements_total"),
 					labels.MustNewMatcher(labels.MatchNotEqual, "my_number", "2"),
 					labels.MustNewMatcher(labels.MatchRegexp, "class", "FIRST|OTHER"),
 					labels.MustNewMatcher(labels.MatchEqual, "fraction", "1.2"),
@@ -355,7 +348,7 @@ func TestEngine_TransformSeries(t *testing.T) {
 			},
 			lbls: testdataElementsSeriesNew,
 			expectedLabels: labels.FromStrings(
-				"__name__", "my_app_custom_elements_changed_total",
+				"__name__", "my_app_custom_changed_elements_total",
 				"__type__", "counter",
 				"number", "1",
 				"class", "FIRST",
@@ -370,7 +363,7 @@ func TestEngine_TransformSeries(t *testing.T) {
 			},
 			lbls: testdataElementsSeriesOld,
 			expectedLabels: labels.FromStrings(
-				"__name__", "my_app_custom_elements_changed_total",
+				"__name__", "my_app_custom_changed_elements_total",
 				"__type__", "counter",
 				"number", "1",
 				"class", "FIRST",
@@ -385,7 +378,7 @@ func TestEngine_TransformSeries(t *testing.T) {
 			},
 			lbls: testdataElementsSeriesOld,
 			expectedLabels: labels.FromStrings(
-				"__name__", "my_app_custom_elements_changed_total",
+				"__name__", "my_app_custom_changed_elements_total",
 				"__type__", "counter",
 				"my_number", "1",
 				"class", "FIRST",
@@ -400,7 +393,7 @@ func TestEngine_TransformSeries(t *testing.T) {
 			},
 			lbls: testdataElementsSeriesNew,
 			expectedLabels: labels.FromStrings(
-				"__name__", "my_app_custom_elements_changed_total",
+				"__name__", "my_app_custom_changed_elements_total",
 				"__type__", "counter",
 				"my_number", "1",
 				"class", "FIRST",

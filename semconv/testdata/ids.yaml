@@ -6,7 +6,7 @@ metrics_ids:
   my_app_latency_seconds~seconds.histogram:
   - id: "my_app_latency.2"
     intro_version: "1.1.0"
-  my_app_custom_elements_changed_total~elements.counter:
+  my_app_custom_changed_elements_total~elements.counter:
   - id: "my_app_custom_elements.3"
     intro_version: "1.2.0"
   - id: "my_app_custom_elements.2"

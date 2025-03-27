@@ -9,12 +9,12 @@ import (
 var (
 	testdataElementsChanges = []change{
 		{
-			Forward:  metricGroupChange{MetricName: "my_app_custom_elements_changed_total", Unit: "", ValuePromQL: "", Attributes: []attribute{{Tag: "number"}, {Tag: "class", Members: []attributeMember{{Value: "FIRST"}, {Value: "SECOND"}, {Value: "OTHER"}}}}},
-			Backward: metricGroupChange{MetricName: "my_app_custom_elements_total", Unit: "", ValuePromQL: "", Attributes: []attribute{{Tag: "integer"}, {Tag: "category", Members: []attributeMember{{Value: "first"}, {Value: "second"}, {Value: "other"}}}}},
-		},
-		{
 			Forward:  metricGroupChange{MetricName: "", Unit: "", ValuePromQL: "", Attributes: []attribute{{Tag: "my_number"}}},
 			Backward: metricGroupChange{MetricName: "", Unit: "", ValuePromQL: "", Attributes: []attribute{{Tag: "number"}}},
+		},
+		{
+			Forward:  metricGroupChange{MetricName: "my_app_custom_changed_elements_total", Unit: "", ValuePromQL: "", Attributes: []attribute{{Tag: "number"}, {Tag: "class", Members: []attributeMember{{Value: "FIRST"}, {Value: "SECOND"}, {Value: "OTHER"}}}}},
+			Backward: metricGroupChange{MetricName: "my_app_custom_elements_total", Unit: "", ValuePromQL: "", Attributes: []attribute{{Tag: "integer"}, {Tag: "category", Members: []attributeMember{{Value: "first"}, {Value: "second"}, {Value: "other"}}}}},
 		},
 	}
 	testdataLatencyChanges = []change{
@@ -60,7 +60,7 @@ func TestFetchIDs(t *testing.T) {
 				{ID: "my_app_latency.2",
 					IntroVersion: "1.1.0"},
 			},
-			"my_app_custom_elements_changed_total~elements.counter": {
+			"my_app_custom_changed_elements_total~elements.counter": {
 				{
 					ID:           "my_app_custom_elements.3",
 					IntroVersion: "1.2.0",
@@ -90,14 +90,14 @@ func TestFetchIDs(t *testing.T) {
 			},
 		},
 		uniqueNameToIdentity: map[string]string{
-			"my_app_custom_elements_changed_total": "my_app_custom_elements_changed_total~elements.counter",
+			"my_app_custom_changed_elements_total": "my_app_custom_changed_elements_total~elements.counter",
 			"my_app_custom_elements_total":         "my_app_custom_elements_total~elements.counter",
 			"my_app_latency_milliseconds":          "my_app_latency_milliseconds~milliseconds.histogram",
 			"my_app_latency_seconds":               "my_app_latency_seconds~seconds.histogram",
 			"my_app_some_elements":                 "my_app_some_elements~elements.gauge",
 		},
 		uniqueNameTypeToIdentity: map[string]string{
-			"my_app_custom_elements_changed_total.counter": "my_app_custom_elements_changed_total~elements.counter",
+			"my_app_custom_changed_elements_total.counter": "my_app_custom_changed_elements_total~elements.counter",
 			"my_app_custom_elements_total.counter":         "my_app_custom_elements_total~elements.counter",
 			"my_app_latency_milliseconds.histogram":        "my_app_latency_milliseconds~milliseconds.histogram",
 			"my_app_latency_seconds.histogram":             "my_app_latency_seconds~seconds.histogram",
