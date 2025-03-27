@@ -971,6 +971,43 @@ func TestHead_ActiveAppenders(t *testing.T) {
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
 }
 
+func TestHead_RaceBetweenSeriesCreationAndGC(t *testing.T) {
+	head, _ := newTestHead(t, 1000, compression.None, false)
+	t.Cleanup(func() { _ = head.Close() })
+	require.NoError(t, head.Init(0))
+
+	const totalSeries = 100_000
+	series := make([]labels.Labels, totalSeries)
+	for i := 0; i < totalSeries; i++ {
+		series[i] = labels.FromStrings("foo", strconv.Itoa(i))
+	}
+	done := atomic.NewBool(false)
+
+	go func() {
+		defer done.Store(true)
+		app := head.Appender(context.Background())
+		defer func() {
+			if err := app.Commit(); err != nil {
+				t.Errorf("Failed to commit: %v", err)
+			}
+		}()
+		for i := 0; i < totalSeries; i++ {
+			_, err := app.Append(0, series[i], 100, 1)
+			if err != nil {
+				t.Errorf("Failed to append: %v", err)
+				return
+			}
+		}
+	}()
+
+	// Don't check the atomic.Bool on all iterations in order to perform more gc iterations and make the race condition more likely.
+	for i := 1; i%128 != 0 || !done.Load(); i++ {
+		head.gc()
+	}
+
+	require.Equal(t, totalSeries, int(head.NumSeries()))
+}
+
 func TestHead_UnknownWALRecord(t *testing.T) {
 	head, w := newTestHead(t, 1000, compression.None, false)
 	w.Log([]byte{255, 42})
