@@ -36,7 +36,7 @@ var (
 		"test", "old",
 	)
 	testdataElementsSeriesNew = labels.FromStrings(
-		"__name__", "my_app_custom_elements_changed_total",
+		"__name__", "my_app_custom_changed_elements_total",
 		"__schema_url__", testSchemaURL("1.1.0"),
 		"__type__", "counter",
 		"number", "1",
@@ -296,7 +296,7 @@ func TestAwareStorage(t *testing.T) {
 				labels.MustNewMatcher(labels.MatchEqual, "fraction", testdataElementsSeriesNew.Get("fraction")),
 			)
 			require.Equal(t, map[string][]chunks.Sample{
-				`{__name__="my_app_custom_elements_changed_total", __schema_url__="` + testSchemaURL("1.1.0") + `", __type__="counter", class="FIRST", fraction="1.243", number="1", test="new"}`: testFSamples,
+				`{__name__="my_app_custom_changed_elements_total", __schema_url__="` + testSchemaURL("1.1.0") + `", __type__="counter", class="FIRST", fraction="1.243", number="1", test="new"}`: testFSamples,
 			}, onlyNewResult)
 			got := selectSeries(t, aware,
 				// Without schema selector, semconv aware storage should have no effect.
@@ -315,8 +315,8 @@ func TestAwareStorage(t *testing.T) {
 				labels.MustNewMatcher(labels.MatchEqual, "fraction", testdataElementsSeriesNew.Get("fraction")),
 			)
 			require.Equal(t, map[string][]chunks.Sample{
-				`{__name__="my_app_custom_elements_changed_total", __type__="counter", class="FIRST", fraction="1.243", number="1", test="new"}`: testFSamples,
-				`{__name__="my_app_custom_elements_changed_total", __type__="counter", class="FIRST", fraction="1.243", number="1", test="old"}`: testFSamples,
+				`{__name__="my_app_custom_changed_elements_total", __type__="counter", class="FIRST", fraction="1.243", number="1", test="new"}`: testFSamples,
+				`{__name__="my_app_custom_changed_elements_total", __type__="counter", class="FIRST", fraction="1.243", number="1", test="old"}`: testFSamples,
 			}, compatibleResult)
 		})
 		t.Run("forward", func(t *testing.T) {
