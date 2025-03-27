@@ -408,13 +408,20 @@ func (c *genericMergeSeriesSet) Next() bool {
 
 func (c *genericMergeSeriesSet) At() Labels {
 	if len(c.currentSets) == 1 {
-		return c.currentSets[0].At()
+		at := c.currentSets[0].At()
+		fmt.Println("DEBUG: (one) Returning", at.Labels(), "from", at)
+		return at
 	}
 	series := make([]Labels, 0, len(c.currentSets))
 	for _, seriesSet := range c.currentSets {
-		series = append(series, seriesSet.At())
+		at := seriesSet.At()
+		fmt.Println("DEBUG: Got", at.Labels(), "from", at)
+		series = append(series, at)
 	}
-	return c.mergeFunc(series...)
+	// DEBUG.
+	l := c.mergeFunc(series...)
+	fmt.Println("DEBUG: Returning", l.Labels(), "from", l)
+	return l
 }
 
 func (c *genericMergeSeriesSet) Err() error {

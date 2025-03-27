@@ -3,6 +3,7 @@ package semconv
 import (
 	"fmt"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -139,9 +140,10 @@ func (e *schemaEngine) getMetricID(schemaURL string, matchers matcherBuilder) (m
 	}
 
 	for _, id := range vid {
-		if !natural.Less(id.IntroVersion, schemaVersion) {
-			return id.ID, magicSuffix, nil
+		if natural.Less(schemaVersion, id.IntroVersion) {
+			continue
 		}
+		return id.ID, magicSuffix, nil
 	}
 	return "", "", fmt.Errorf("can't find metric ID in %v entry for version %v", matchers.metric.String(), schemaVersion)
 }
@@ -211,31 +213,40 @@ func (e *schemaEngine) FindVariants(schemaURL string, originalMatchers []*labels
 	if err != nil {
 		return nil, err
 	}
+
+	// Original selection (without schema url).
+	variants = append(variants, &variant{matchers: matchers.ToMatchers("")})
+
 	sID, rev := mID.semanticID()
-	changes, ok := ch.MetricsChangelog[sID]
-	if !ok {
-		return nil, fmt.Errorf("schema is malformed or cache is not consistent; can't find changes for semantic ID %v", sID)
-	}
-
-	variants = append(variants, &variant{
-		matchers: matchers.ToMatchers(""),
-	})
+	changes, _ := ch.MetricsChangelog[sID]
 	if len(changes) == 0 {
-		// No changes, only one variant--the original metric.
-		return nil, nil
+		// Unfortunately this (!ok) might also mean the malformed schema or cache.
+		// __schema__id__ idea would be more robust here.
+		// We could expect non-changed things in changelog, but that would
+		// make changelog overly huge.
+		return variants, nil
 	}
 
-	// Revision starts with 0, then 2,3,4...
+	// Changes are sorted from the newest to the oldest, so reverse this, so
+	// it's matches the revisions order.
+	slices.Reverse(changes)
+
+	// Revision starts with 0, then 2,3,4..., uniform it (0,1,2,3...).
 	if rev != 0 {
 		rev--
 	}
 
-	// Changelog contains changes across revisions, traverse up and down.
-	variants, err = traverseChanges(changes, rev, true, matchers, magicSuffix, variants)
+	t := &changeTraverser{
+		changes:     changes,
+		magicSuffix: magicSuffix,
+	}
+
+	// Changelog contains changes across revisions, traverse forward and backward.
+	variants, err = t.traverse(rev, false, matchers, resultTransform{}, variants)
 	if err != nil {
 		return nil, fmt.Errorf("can't traverse changes for semantic ID %v: %w", sID, err)
 	}
-	variants, err = traverseChanges(changes, rev, false, matchers, magicSuffix, variants)
+	variants, err = t.traverse(rev, true, matchers, resultTransform{}, variants)
 	if err != nil {
 		return nil, fmt.Errorf("can't traverse changes for semantic ID %v: %w", sID, err)
 	}
@@ -245,7 +256,7 @@ func (e *schemaEngine) FindVariants(schemaURL string, originalMatchers []*labels
 type resultTransform struct {
 	to          metricGroupChange
 	from        metricGroupChange
-	vt          *valueTransformer
+	vt          valueTransformer
 	magicSuffix string
 }
 
@@ -254,26 +265,42 @@ type variant struct {
 	result   resultTransform
 }
 
-// TODO(bwplotka): Fix known gap - we have to chain to's and from's for more traversal lenght than 1 (similar to what we do with matchers).
-func traverseChanges(changes []change, rev int, up bool, b matcherBuilder, magicSuffix string, v []*variant) ([]*variant, error) {
-	var to, from metricGroupChange
-	if up {
-		if len(changes) <= rev {
+type changeTraverser struct {
+	changes     []change
+	magicSuffix string
+}
+
+// traverse builds the matchers and result transformations for the variant to be queried.
+// It then walks further with the new matchers and result transformation as the base for the next change in the chain.
+// This allows handling multi-version variants.
+// TODO(bwplotka): Consider refactoring for clarity, it's complex, transition to math operations vs semantics.
+func (t *changeTraverser) traverse(revision int, newer bool, b matcherBuilder, r resultTransform, v []*variant) ([]*variant, error) {
+	var (
+		to, from metricGroupChange
+	)
+	// Changes are sorted from the oldest to the newest.
+	if newer {
+		if len(t.changes) <= revision {
 			return v, nil
 		}
-		to = changes[rev].Forward
-		from = changes[rev].Backward
-		rev++ // up starts with the current rev, and then goes up.
+		// We are at the changes from older to newer revision, so to match the new version we
+		// have to take the existing matchers forward.
+		to = t.changes[revision].Forward
+		from = t.changes[revision].Backward
+		revision++
 	} else {
-		rev--
-		if rev < 0 {
+		revision--
+		if revision < 0 {
 			return v, nil
 		}
-		to = changes[rev].Backward
-		from = changes[rev].Forward
+		// We are at the changes from newer to older revision, so to match the old version we
+		// have to take the existing matchers backward.
+		to = t.changes[revision].Backward
+		from = t.changes[revision].Forward
 	}
 
-	// Transform matchers.
+	// Transform matchers first. We have the `b` from the last traversal with potentially
+	// already transformed matchers, so just add new changes in.
 	if to.MetricName != "" {
 		b.metric.Name = to.MetricName
 	}
@@ -285,7 +312,7 @@ func traverseChanges(changes []change, rev int, up bool, b matcherBuilder, magic
 		aFrom := from.Attributes[a]
 		// TODO(bwplotka): In current logic, tag MUST be specified,
 		// otherwise the engine would need to fetch full metric definition and
-		// to get the tag -> ID of attribute (or separate attribute tag to IDs index).
+		// to get the tag -> ID of attribute (or separate attribute tag -> IDs index).
 		for m := range b.other {
 			// Find the attribute under the "old" name.
 			if b.other[m].Name == aFrom.Tag {
@@ -303,25 +330,68 @@ func traverseChanges(changes []change, rev int, up bool, b matcherBuilder, magic
 		}
 	}
 
-	var vt *valueTransformer
-	if from.ValuePromQL != "" {
+	// Prepare result transformations. Here we don't have the series data yet, so
+	// we need to prepare the full "from", "to" that will be used on the result.
+	// Transformation [from -> to] is for matchers, for results we need to revert that.
+	to, from = from, to
+
+	// Update "to", so the final state. For final state, we prioritize the old values.
+	if r.to.MetricName == "" {
+		r.to.MetricName = to.MetricName
+	}
+	if r.to.Unit == "" {
+		r.to.Unit = to.Unit
+	}
+	for _, newAttr := range to.Attributes {
+		var found bool
+		// To find relation we are checking the "from" part of the existing result.
+		for _, oldAttr := range r.from.Attributes {
+			if newAttr.Tag == oldAttr.Tag {
+				found = true
+				break
+			}
+		}
+		if found {
+			continue
+		}
+		r.to.Attributes = append(r.to.Attributes, newAttr)
+	}
+
+	// Update "from", so the current, expected data set for a queried variant.
+	// Here we prioritize the new values.
+	if from.MetricName != "" {
+		r.from.MetricName = from.MetricName
+	}
+	if from.Unit != "" {
+		r.from.Unit = from.Unit
+	}
+	for _, oldAttr := range r.from.Attributes {
+		var found bool
+		// To find relation we are checking the "to" part of the new result.
+		for _, newAttr := range to.Attributes {
+			if newAttr.Tag == oldAttr.Tag {
+				found = true
+				break
+			}
+		}
+		if found {
+			continue
+		}
+		from.Attributes = append(from.Attributes, oldAttr)
+	}
+	r.from.Attributes = from.Attributes
+
+	// Value transformation for results just needs "to" to be accumulated.
+	if to.ValuePromQL != "" {
 		var err error
-		vt, err = newValueTransformer(from.ValuePromQL)
+		r.vt, err = r.vt.AddPromQL(to.ValuePromQL)
 		if err != nil {
 			return nil, err
 		}
 	}
-
-	return traverseChanges(changes, rev, up, b, magicSuffix, append(v, &variant{
-		matchers: b.ToMatchers(magicSuffix),
-		result: resultTransform{
-			// Transformation from -> to is for matchers, for results we need to revert that
-			// transformation, so below code uses to -> from.
-			from:        to,
-			to:          from,
-			vt:          vt,
-			magicSuffix: magicSuffix,
-		},
+	return t.traverse(revision, newer, b, r, append(v, &variant{
+		matchers: b.ToMatchers(t.magicSuffix),
+		result:   r,
 	}))
 }
 

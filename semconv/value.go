@@ -7,28 +7,28 @@ import (
 )
 
 type valueTransformer struct {
-	expr parser.Expr
+	expr []parser.Expr
 }
 
-func newValueTransformer(toPromQL string) (*valueTransformer, error) {
+func (vt valueTransformer) AddPromQL(toPromQL string) (valueTransformer, error) {
 	p := parser.NewParser(toPromQL)
 	expr, err := p.ParseExpr()
 	if err != nil {
-		return nil, fmt.Errorf("can't parse %v: %w", toPromQL, err)
+		return vt, fmt.Errorf("can't parse %v: %w", toPromQL, err)
 	}
+	// Validate it.
 	if _, err = transform(expr, 0); err != nil {
-		return nil, err
+		return vt, err
 	}
-
-	return &valueTransformer{expr: expr}, nil
+	vt.expr = append(vt.expr, expr)
+	return vt, nil
 }
 
-func (t *valueTransformer) Transform(v float64) float64 {
-	if t == nil {
-		return v // Noop.
+func (vt valueTransformer) Transform(v float64) float64 {
+	for _, e := range vt.expr {
+		// We did what we could and tested transform in constructor, skipping error here.
+		v, _ = transform(e, v)
 	}
-	// We did what we could and tested transform in constructor, skipping here.
-	v, _ = transform(t.expr, v)
 	return v
 }
 
