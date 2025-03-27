@@ -817,7 +817,7 @@ func (ev *evalCmd) expectMetric(pos int, m labels.Labels, vals ...parser.Sequenc
 }
 
 // validateExpectedAnnotations validates expected messages and regex match actual annotations.
-func validateExpectedAnnotations(expr string, expectedAnnotations []expectCmd, actualAnnotations []string, line int, annotationType string) error {
+func validateExpectedAnnotations(expr string, expectedAnnotations []expectCmd, actualAnnotations []string, line int, annotationType string, annos annotations.Annotations) error {
 	if len(expectedAnnotations) == 0 {
 		return nil
 	}
@@ -830,7 +830,7 @@ func validateExpectedAnnotations(expr string, expectedAnnotations []expectCmd, a
 	for _, e := range expectedAnnotations {
 		matchFound := slices.ContainsFunc(actualAnnotations, e.CheckMatch)
 		if !matchFound {
-			return fmt.Errorf(`expected %s annotation matching %s %q but no matching annotation was found for query %q (line %d), found: %v`, annotationType, e.Type(), e.String(), expr, line, actualAnnotations)
+			return fmt.Errorf(`expected %s annotation matching %s %q but no matching annotation was found for query %q (line %d), found: %v`, annotationType, e.Type(), e.String(), expr, line, annos.AsErrors())
 		}
 	}
 
@@ -866,13 +866,13 @@ func (ev *evalCmd) checkAnnotations(expr string, annos annotations.Annotations) 
 		case errors.Is(err, annotations.PromQLInfo):
 			infos = append(infos, err.Error())
 		default:
-			return errors.New("actual annotation must be either info or warn")
+			return errors.New("unexpected annotation type, must be either info or warn")
 		}
 	}
-	if err := validateExpectedAnnotations(expr, ev.expectedCmds[Warn], warnings, ev.line, "warn"); err != nil {
+	if err := validateExpectedAnnotations(expr, ev.expectedCmds[Warn], warnings, ev.line, "warn", annos); err != nil {
 		return err
 	}
-	if err := validateExpectedAnnotations(expr, ev.expectedCmds[Info], infos, ev.line, "info"); err != nil {
+	if err := validateExpectedAnnotations(expr, ev.expectedCmds[Info], infos, ev.line, "info", annos); err != nil {
 		return err
 	}
 	if ev.expectedCmds[NoWarn] != nil && len(warnings) > 0 {
