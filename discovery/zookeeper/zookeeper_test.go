@@ -26,6 +26,10 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
+// ❗ If you followed the guidelines in https://github.com/prometheus/prometheus/blob/main/CONTRIBUTING.md#steps-to-contribute
+// and encountered a failing test case, the issue is related to DNS resolution.
+// If you are using Clash or other proxy tools, please disable TUN mode.
+// For more details, see: https://github.com/prometheus/prometheus/issues/16191
 func TestNewDiscoveryError(t *testing.T) {
 	_, err := NewDiscovery(
 		[]string{"unreachable.test"},
