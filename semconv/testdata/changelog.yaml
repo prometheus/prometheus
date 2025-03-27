@@ -25,7 +25,7 @@ metrics_changelog:
       - tag: "number"
     # my_app_custom_elements vs my_app_custom_elements.2
   - forward:
-      metric_name: my_app_custom_elements_changed_total
+      metric_name: my_app_custom_changed_elements_total
       attributes:
       - tag: "number"
       - tag: "class"
