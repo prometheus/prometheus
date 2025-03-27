@@ -61,11 +61,15 @@ func (p *pool) intern(s string) string {
 
 	p.mtx.RLock()
 	interned, ok := p.pool[s]
-	p.mtx.RUnlock()
 	if ok {
+		// Increase the reference count while we're still holding the read lock,
+		// This will prevent the release() from deleting the entry while we're increasing its ref count.
 		interned.refs.Inc()
+		p.mtx.RUnlock()
 		return interned.s
 	}
+	p.mtx.RUnlock()
+
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
 	if interned, ok := p.pool[s]; ok {
