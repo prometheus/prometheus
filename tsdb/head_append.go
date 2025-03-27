@@ -793,10 +793,12 @@ func (a *headAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, lset l
 		// We set it to true to make this implementation as close as possible to the float implementation.
 		isOOO, _, err := s.appendableHistogram(ct, zeroHistogram, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 		if err != nil {
+			s.Unlock()
 			if errors.Is(err, storage.ErrOutOfOrderSample) {
-				s.Unlock()
 				return 0, storage.ErrOutOfOrderCT
 			}
+
+			return 0, err
 		}
 
 		// OOO is not allowed because after the first scrape, CT will be the same for most (if not all) future samples.
@@ -828,10 +830,12 @@ func (a *headAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, lset l
 		// We set it to true to make this implementation as close as possible to the float implementation.
 		isOOO, _, err := s.appendableFloatHistogram(ct, zeroFloatHistogram, a.headMaxt, a.minValidTime, a.oooTimeWindow) // OOO is not allowed for CTZeroSamples.
 		if err != nil {
+			s.Unlock()
 			if errors.Is(err, storage.ErrOutOfOrderSample) {
-				s.Unlock()
 				return 0, storage.ErrOutOfOrderCT
 			}
+
+			return 0, err
 		}
 
 		// OOO is not allowed because after the first scrape, CT will be the same for most (if not all) future samples.
