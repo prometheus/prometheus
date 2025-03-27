@@ -12,10 +12,7 @@ import (
 	"github.com/maruel/natural"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 const cacheTTL = 1 * time.Hour
@@ -69,6 +66,13 @@ func newMatcherBuilder(matchers []*labels.Matcher) (matcherBuilder, error) {
 	return b, nil
 }
 
+func (b matcherBuilder) Clone() matcherBuilder {
+	return matcherBuilder{
+		metric: b.metric,
+		other:  slices.Clone(b.other),
+	}
+}
+
 // ToMatchers returns a copy of matchers based on builder details.
 func (b matcherBuilder) ToMatchers(extraNameSuffix string) []*labels.Matcher {
 	ret := make([]*labels.Matcher, 0, len(b.other)+3)
@@ -95,57 +99,6 @@ func (b matcherBuilder) ToMatchers(extraNameSuffix string) []*labels.Matcher {
 		})
 	}
 	return append(ret, b.other...)
-}
-
-func (e *schemaEngine) getMetricID(schemaURL string, matchers matcherBuilder) (metricID, string, error) {
-	schemaVersion := path.Base(schemaURL)
-
-	// TODO(bwplotka): This assumes such a file structure is part of the spec.
-	ids, err := e.fetchIDs(schemaIDsURL(schemaURL))
-	if err != nil {
-		return "", "", fmt.Errorf("based on __schema_url__=%v; %w", schemaURL, err)
-	}
-
-	var (
-		vid         []versionedID
-		magicSuffix string
-	)
-	for _, suffix := range []string{"", "_bucket", "_count", "_sum"} {
-		magicSuffix = suffix
-		m := matchers.metric
-		m.Name = strings.TrimSuffix(m.Name, magicSuffix)
-
-		var ok bool
-		vid, ok = ids.MetricsIDs[m.String()]
-		if !ok {
-			// Try non-unit search.
-			val, ok := ids.uniqueNameTypeToIdentity[m.String()]
-			if !ok {
-				// Try just name search.
-				val, ok = ids.uniqueNameToIdentity[m.Name]
-				if !ok {
-					// Try different suffix.
-					continue
-				}
-			}
-			if val == "" {
-				return "", "", fmt.Errorf("ambigous metric ID lookup for %v metric; use __type__ and __unit__ for more specific selection", m.String())
-			}
-			vid = ids.MetricsIDs[val]
-			break
-		}
-	}
-	if len(vid) == 0 {
-		return "", "", fmt.Errorf("can't find metric ID in %v entry for version %v; this metric (with or without magic suffixes) is not part of this schema registry", matchers.metric.String(), schemaVersion)
-	}
-
-	for _, id := range vid {
-		if natural.Less(schemaVersion, id.IntroVersion) {
-			continue
-		}
-		return id.ID, magicSuffix, nil
-	}
-	return "", "", fmt.Errorf("can't find metric ID in %v entry for version %v", matchers.metric.String(), schemaVersion)
 }
 
 func (e *schemaEngine) fetchIDs(schemaIDsURL string) (_ *ids, err error) {
@@ -196,40 +149,102 @@ func schemaIDsURL(schemaURL string) string {
 	return fmt.Sprintf("%v/ids.yaml", dir)
 }
 
-// FindVariants returns all variants for a single schematized (referenced by schema_url) metric.
-// It returns error if the given matchers does not point to a single metric or if schema or variants couldn't
-// be detected.
-func (e *schemaEngine) FindVariants(schemaURL string, originalMatchers []*labels.Matcher) (variants []*variant, _ error) {
-	matchers, err := newMatcherBuilder(originalMatchers)
+// findMetricID returns the metric ID from the schema definition for this identity and schema URL.
+// This allows parsing semantic ID and the revision number. This function also returns
+// magicSuffix that was matched if any.
+func (e *schemaEngine) findMetricID(schemaURL string, metric labels.MetricIdentity) (metricID, string, error) {
+	schemaVersion := path.Base(schemaURL)
+
+	// TODO(bwplotka): This assumes such a file structure is part of the spec.
+	ids, err := e.fetchIDs(schemaIDsURL(schemaURL))
 	if err != nil {
-		return nil, err
+		return "", "", fmt.Errorf("based on __schema_url__=%v; %w", schemaURL, err)
 	}
 
-	mID, magicSuffix, err := e.getMetricID(schemaURL, matchers)
-	if err != nil {
-		return nil, fmt.Errorf("getMetricID: %w", err)
+	var (
+		vid         []versionedID
+		magicSuffix string
+	)
+	for _, suffix := range []string{"", "_bucket", "_count", "_sum"} {
+		magicSuffix = suffix
+		m := metric
+		m.Name = strings.TrimSuffix(m.Name, magicSuffix)
+
+		var ok bool
+		vid, ok = ids.MetricsIDs[m.String()]
+		if !ok {
+			// Try non-unit search.
+			val, ok := ids.uniqueNameTypeToIdentity[m.String()]
+			if !ok {
+				// Try just name search.
+				val, ok = ids.uniqueNameToIdentity[m.Name]
+				if !ok {
+					// Try different suffix.
+					continue
+				}
+			}
+			if val == "" {
+				return "", "", fmt.Errorf("ambigous metric ID lookup for %v metric; use __type__ and __unit__ for more specific selection", m.String())
+			}
+			vid = ids.MetricsIDs[val]
+		}
+		break
 	}
+	if len(vid) == 0 {
+		return "", "", fmt.Errorf("can't find metric ID in %v entry for version %v; this metric (with or without magic suffixes) is not part of this schema registry", metric.String(), schemaVersion)
+	}
+
+	for _, id := range vid {
+		if natural.Less(schemaVersion, id.IntroVersion) {
+			continue
+		}
+		return id.ID, magicSuffix, nil
+	}
+	return "", "", fmt.Errorf("can't find metric ID in %v entry for version %v", metric.String(), schemaVersion)
+}
+
+type queryContext struct {
+	mID         metricID
+	magicSuffix string
+	changes     []change
+}
+
+// FindMatcherVariants returns all variants to match for a single schematized (referenced by schema_url) metric selection.
+// It also returns all changes for found semantic ID.
+// It returns error if the given matchers does not point to a single metric or if schema or variants couldn't
+// be detected.
+func (e *schemaEngine) FindMatcherVariants(schemaURL string, originalMatchers []*labels.Matcher) (variants [][]*labels.Matcher, q queryContext, err error) {
+	matchers, err := newMatcherBuilder(originalMatchers)
+	if err != nil {
+		return nil, q, err
+	}
+
+	q.mID, q.magicSuffix, err = e.findMetricID(schemaURL, matchers.metric)
+	if err != nil {
+		return nil, q, fmt.Errorf("FindMetricID: %w", err)
+	}
+
 	ch, err := e.fetchChangelog(schemaChangelogURL(schemaURL))
 	if err != nil {
-		return nil, err
+		return nil, q, err
 	}
 
 	// Original selection (without schema url).
-	variants = append(variants, &variant{matchers: matchers.ToMatchers("")})
+	variants = append(variants, matchers.ToMatchers(""))
 
-	sID, rev := mID.semanticID()
-	changes, _ := ch.MetricsChangelog[sID]
-	if len(changes) == 0 {
+	sID, rev := q.mID.semanticID()
+	q.changes, _ = ch.MetricsChangelog[sID]
+	if len(q.changes) == 0 {
 		// Unfortunately this (!ok) might also mean the malformed schema or cache.
 		// __schema__id__ idea would be more robust here.
 		// We could expect non-changed things in changelog, but that would
 		// make changelog overly huge.
-		return variants, nil
+		return variants, q, nil
 	}
 
 	// Changes are sorted from the newest to the oldest, so reverse this, so
 	// it's matches the revisions order.
-	slices.Reverse(changes)
+	slices.Reverse(q.changes)
 
 	// Revision starts with 0, then 2,3,4..., uniform it (0,1,2,3...).
 	if rev != 0 {
@@ -237,32 +252,20 @@ func (e *schemaEngine) FindVariants(schemaURL string, originalMatchers []*labels
 	}
 
 	t := &changeTraverser{
-		changes:     changes,
-		magicSuffix: magicSuffix,
+		changes:     q.changes,
+		magicSuffix: q.magicSuffix,
 	}
 
 	// Changelog contains changes across revisions, traverse forward and backward.
-	variants, err = t.traverse(rev, false, matchers, resultTransform{}, variants)
+	variants, err = t.traverseForMatchers(rev, false, matchers.Clone(), variants)
 	if err != nil {
-		return nil, fmt.Errorf("can't traverse changes for semantic ID %v: %w", sID, err)
+		return nil, q, fmt.Errorf("can't traverse changes for semantic ID %v: %w", sID, err)
 	}
-	variants, err = t.traverse(rev, true, matchers, resultTransform{}, variants)
+	variants, err = t.traverseForMatchers(rev, true, matchers, variants)
 	if err != nil {
-		return nil, fmt.Errorf("can't traverse changes for semantic ID %v: %w", sID, err)
+		return nil, q, fmt.Errorf("can't traverse changes for semantic ID %v: %w", sID, err)
 	}
-	return variants, nil
-}
-
-type resultTransform struct {
-	to          metricGroupChange
-	from        metricGroupChange
-	vt          valueTransformer
-	magicSuffix string
-}
-
-type variant struct {
-	matchers []*labels.Matcher
-	result   resultTransform
+	return variants, q, nil
 }
 
 type changeTraverser struct {
@@ -270,11 +273,10 @@ type changeTraverser struct {
 	magicSuffix string
 }
 
-// traverse builds the matchers and result transformations for the variant to be queried.
+// traverseForMatchers builds the matchers for the variant to be queried.
 // It then walks further with the new matchers and result transformation as the base for the next change in the chain.
 // This allows handling multi-version variants.
-// TODO(bwplotka): Consider refactoring for clarity, it's complex, transition to math operations vs semantics.
-func (t *changeTraverser) traverse(revision int, newer bool, b matcherBuilder, r resultTransform, v []*variant) ([]*variant, error) {
+func (t *changeTraverser) traverseForMatchers(revision int, newer bool, b matcherBuilder, v [][]*labels.Matcher) ([][]*labels.Matcher, error) {
 	var (
 		to, from metricGroupChange
 	)
@@ -299,7 +301,7 @@ func (t *changeTraverser) traverse(revision int, newer bool, b matcherBuilder, r
 		from = t.changes[revision].Forward
 	}
 
-	// Transform matchers first. We have the `b` from the last traversal with potentially
+	// We have the `b` from the last traversal with potentially
 	// already transformed matchers, so just add new changes in.
 	if to.MetricName != "" {
 		b.metric.Name = to.MetricName
@@ -307,6 +309,7 @@ func (t *changeTraverser) traverse(revision int, newer bool, b matcherBuilder, r
 	if to.Unit != "" {
 		b.metric.Unit = to.DirectUnit()
 	}
+
 	for a := range to.Attributes {
 		aTo := to.Attributes[a]
 		aFrom := from.Attributes[a]
@@ -329,191 +332,141 @@ func (t *changeTraverser) traverse(revision int, newer bool, b matcherBuilder, r
 			}
 		}
 	}
+	return t.traverseForMatchers(revision, newer, b, append(v, b.ToMatchers(t.magicSuffix)))
+}
 
-	// Prepare result transformations. Here we don't have the series data yet, so
-	// we need to prepare the full "from", "to" that will be used on the result.
-	// Transformation [from -> to] is for matchers, for results we need to revert that.
-	to, from = from, to
-
-	// Update "to", so the final state. For final state, we prioritize the old values.
-	if r.to.MetricName == "" {
-		r.to.MetricName = to.MetricName
-	}
-	if r.to.Unit == "" {
-		r.to.Unit = to.Unit
-	}
-	for _, newAttr := range to.Attributes {
-		var found bool
-		// To find relation we are checking the "from" part of the existing result.
-		for _, oldAttr := range r.from.Attributes {
-			if newAttr.Tag == oldAttr.Tag {
-				found = true
-				break
-			}
-		}
-		if found {
-			continue
-		}
-		r.to.Attributes = append(r.to.Attributes, newAttr)
+// TransformSeries returns transformed series and value transformer for a single series that contains __schema__url__.
+// TODO(bwplotka): Decide what to do if non schematized series are returned, currently we error.
+func (e *schemaEngine) TransformSeries(q queryContext, originalLabels labels.Labels) (lbls labels.Labels, vt valueTransformer, _ error) {
+	schemaURL := originalLabels.Get(schemaURLLabel)
+	if schemaURL == "" {
+		return originalLabels, vt, fmt.Errorf("selected series %v does not contain __schema_url__", originalLabels)
 	}
 
-	// Update "from", so the current, expected data set for a queried variant.
-	// Here we prioritize the new values.
-	if from.MetricName != "" {
-		r.from.MetricName = from.MetricName
+	identity := originalLabels.MetricIdentity()
+	mID, magicSuffix, err := e.findMetricID(schemaURL, identity)
+	if err != nil {
+		return originalLabels, vt, fmt.Errorf("getMetricID: %w", err)
 	}
-	if from.Unit != "" {
-		r.from.Unit = from.Unit
-	}
-	for _, oldAttr := range r.from.Attributes {
-		var found bool
-		// To find relation we are checking the "to" part of the new result.
-		for _, newAttr := range to.Attributes {
-			if newAttr.Tag == oldAttr.Tag {
-				found = true
-				break
-			}
-		}
-		if found {
-			continue
-		}
-		from.Attributes = append(from.Attributes, oldAttr)
-	}
-	r.from.Attributes = from.Attributes
 
-	// Value transformation for results just needs "to" to be accumulated.
+	sID, fromRev := mID.semanticID()
+	toSID, toRev := q.mID.semanticID()
+	if sID != toSID {
+		// Should not happen?
+		return originalLabels, vt, fmt.Errorf("selected series %v (id: %v) are not semantically equivalent (desired id: %v)", originalLabels, sID, toSID)
+	}
+
+	builder := labels.NewBuilder(originalLabels)
+	// Explicitly remove __schema_url__ as that would be misleading.
+	builder.Del(schemaURLLabel)
+
+	if fromRev == toRev {
+		return builder.Labels(), vt, nil
+	}
+
+	// Transform series fromRev -> toRev.
+
+	// Revision starts with 0, then 2,3,4..., uniform it (0,1,2,3...).
+	if fromRev != 0 {
+		fromRev--
+	}
+	if toRev != 0 {
+		toRev--
+	}
+
+	t := &changeTraverser{
+		changes:     q.changes,
+		magicSuffix: magicSuffix,
+	}
+
+	// Changelog contains changes across revisions, traverse in the required direction.
+	vt, err = t.traverseForLabels(fromRev, toRev, identity.Type, magicSuffix, builder, valueTransformer{})
+	if err != nil {
+		return originalLabels, vt, fmt.Errorf("can't traverse changes for semantic ID %v: %w", sID, err)
+	}
+	return builder.Labels(), vt, nil
+}
+
+// traverseForLabels builds the matchers for the variant to be queried.
+// It then walks further with the new matchers and result transformation as the base for the next change in the chain.
+// This allows handling multi-version variants.
+func (t *changeTraverser) traverseForLabels(fromRev, toRev int, mTyp model.MetricType, magicSuffix string, b *labels.Builder, vt valueTransformer) (valueTransformer, error) {
+	if fromRev == toRev {
+		return vt, nil
+	}
+
+	var to, from metricGroupChange
+	// Changes are sorted from the oldest to the newest.
+	if fromRev < toRev {
+		if len(t.changes) <= fromRev {
+			return vt, nil
+		}
+		// We are at the changes from older to newer revision, so go forward.
+		to = t.changes[fromRev].Forward
+		from = t.changes[fromRev].Backward
+		fromRev++
+	} else {
+		fromRev--
+		if fromRev < 0 {
+			return vt, nil
+		}
+		// We are at the changes from newer to older revision, so go backward.
+		to = t.changes[fromRev].Backward
+		from = t.changes[fromRev].Forward
+	}
+
+	// Find value transformation.
 	if to.ValuePromQL != "" {
 		var err error
-		r.vt, err = r.vt.AddPromQL(to.ValuePromQL)
+		vt, err = vt.AddPromQL(to.ValuePromQL)
 		if err != nil {
-			return nil, err
+			return vt, err
 		}
 	}
-	return t.traverse(revision, newer, b, r, append(v, &variant{
-		matchers: b.ToMatchers(t.magicSuffix),
-		result:   r,
-	}))
-}
 
-type transformingSeriesSet struct {
-	storage.SeriesSet
-
-	result resultTransform
-}
-
-// SeriesSet returns variant SeriesSet that transforms data on the fly
-// based on variant to and from change details.
-func (v *variant) SeriesSet(s storage.SeriesSet) storage.SeriesSet {
-	return &transformingSeriesSet{SeriesSet: s, result: v.result}
-}
-
-type transformingSeries struct {
-	storage.Series
-
-	lbls labels.Labels
-
-	result resultTransform
-}
-
-func (s *transformingSeriesSet) At() storage.Series {
-	at := s.SeriesSet.At()
-	return &transformingSeries{Series: at, lbls: at.Labels(), result: s.result}
-}
-
-func (s *transformingSeries) Labels() labels.Labels {
-	typ := s.lbls.MetricIdentity().Type
-
-	builder := labels.NewBuilder(s.lbls)
-	builder.Range(func(l labels.Label) {
+	b.Range(func(l labels.Label) {
 
 	nameswitch:
 		switch l.Name {
 		case labels.MetricName:
-			if s.result.to.MetricName != "" {
-				builder.Set(l.Name, s.result.to.MetricName+s.result.magicSuffix)
+			if to.MetricName != "" {
+				b.Set(l.Name, to.MetricName+magicSuffix)
 			}
 		case "__type__":
 			return
-		case schemaURLLabel:
-			// Explicitly remove __schema_url__ as that would be misleading.
-			builder.Del(l.Name)
 		case "__unit__":
-			if s.result.to.Unit != "" {
-				builder.Set(l.Name, s.result.to.DirectUnit())
+			if to.Unit != "" {
+				b.Set(l.Name, to.DirectUnit())
 			}
 		case "le":
-			if typ == model.MetricTypeHistogram {
+			// NOTE(bwplotka): le renames are not possible.
+			if len(vt.expr) == 0 {
+				break nameswitch
+			}
+			if mTyp == model.MetricTypeHistogram {
 				val, err := strconv.ParseFloat(l.Value, 64)
 				if err != nil {
 					fmt.Println("ERROR", err)
 				}
-				builder.Set(l.Name, model.FloatString(s.result.vt.Transform(val)).String())
+				b.Set(l.Name, model.FloatString(vt.Transform(val)).String())
 			}
 		default:
-			for a := range s.result.to.Attributes {
-				if l.Name != s.result.from.Attributes[a].Tag {
+			for a := range to.Attributes {
+				if l.Name != from.Attributes[a].Tag {
 					continue
 				}
-				builder.Del(l.Name)
-				for m := range s.result.from.Attributes[a].Members {
-					if l.Value != s.result.from.Attributes[a].Members[m].Value {
+				b.Del(l.Name)
+				for m := range from.Attributes[a].Members {
+					if l.Value != from.Attributes[a].Members[m].Value {
 						continue
 					}
-					builder.Set(s.result.to.Attributes[a].Tag, s.result.to.Attributes[a].Members[m].Value)
+					b.Set(to.Attributes[a].Tag, to.Attributes[a].Members[m].Value)
 					break nameswitch
 				}
-				builder.Set(s.result.to.Attributes[a].Tag, l.Value)
+				b.Set(to.Attributes[a].Tag, l.Value)
 				break nameswitch
 			}
 		}
 	})
-	return builder.Labels()
-}
-
-type transformingIterator struct {
-	chunkenc.Iterator
-
-	typ    model.MetricType
-	result resultTransform
-}
-
-func (s *transformingSeries) Iterator(i chunkenc.Iterator) chunkenc.Iterator {
-	return &transformingIterator{Iterator: s.Series.Iterator(i), typ: s.lbls.MetricIdentity().Type, result: s.result}
-}
-
-func (i *transformingIterator) At() (int64, float64) {
-	t, v := i.Iterator.At()
-	// TODO(bwplotka): Do the same for summaries.
-	if i.typ == model.MetricTypeHistogram && (i.result.magicSuffix == "_count" || i.result.magicSuffix == "_bucket") {
-		return t, v
-	}
-	return t, i.result.vt.Transform(v)
-}
-
-func (i *transformingIterator) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
-	t, hist := i.Iterator.AtHistogram(h)
-	// TODO: You can't really scale native histograms with exponential scheme. Handle this (error, approx, validation).
-
-	if hist.UsesCustomBuckets() {
-		hist = hist.Copy()
-		hist.Sum = i.result.vt.Transform(hist.Sum)
-		for cvi := range hist.CustomValues {
-			hist.CustomValues[cvi] = i.result.vt.Transform(hist.CustomValues[cvi])
-		}
-	}
-	return t, hist
-}
-
-func (i *transformingIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
-	t, hist := i.Iterator.AtFloatHistogram(fh)
-	// TODO: You can't really scale native histograms with exponential scheme. Handle this (error, approx, validation).
-
-	if hist.UsesCustomBuckets() {
-		hist = hist.Copy()
-		hist.Sum = i.result.vt.Transform(hist.Sum)
-		for cvi := range hist.CustomValues {
-			hist.CustomValues[cvi] = i.result.vt.Transform(hist.CustomValues[cvi])
-		}
-	}
-	return t, hist
+	return t.traverseForLabels(fromRev, toRev, mTyp, magicSuffix, b, vt)
 }
