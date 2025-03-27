@@ -25,13 +25,15 @@ func clean(m metricGroupChange) metricGroupChange {
 	return m
 }
 
-func TestEngine_FindVariants(t *testing.T) {
+// TODO(bwplotka): Test ambiguous matcher errors etc.
+func TestEngine_FindMatcherVariants(t *testing.T) {
 	for _, tcase := range []struct {
 		schemaURL string
 		matchers  []*labels.Matcher
 
-		expectedVariants []*variant
-		expectedErr      error
+		expectedVariants     [][]*labels.Matcher
+		expectedQueryContext queryContext
+		expectedErr          error
 	}{
 		// Only original.
 		{
@@ -40,79 +42,67 @@ func TestEngine_FindVariants(t *testing.T) {
 				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_some_elements"),
 				labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
 			},
-			expectedVariants: []*variant{
+			expectedVariants: [][]*labels.Matcher{
 				{
-					// Original.
-					matchers: []*labels.Matcher{
-						labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_some_elements"),
-						labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
-					},
+					// Original matchers.
+					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_some_elements"),
+					labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
 				},
+			},
+			expectedQueryContext: queryContext{
+				mID: "my_app_some_elements",
 			},
 		},
 		// Asking for my_app_latency_seconds.2 should give us original and one backward variant.
-		/*
-			{
-				schemaURL: "./testdata/1.1.0", matchers: []*labels.Matcher{
-					labels.MustNewMatcher(labels.MatchEqual, schemaURLLabel, "./testdata/1.1.0"),
+		{
+			schemaURL: "./testdata/1.1.0", matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, schemaURLLabel, "./testdata/1.1.0"),
+				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_latency_seconds"),
+				labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
+			},
+			expectedVariants: [][]*labels.Matcher{
+				{
+					// Original.
 					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_latency_seconds"),
 					labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
 				},
-				expectedVariants: []*variant{
-					{
-						// Original.
-						matchers: []*labels.Matcher{
-							labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_latency_seconds"),
-							labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
-						},
-					},
-					{
-						// Backward.
-						matchers: []*labels.Matcher{
-							labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_latency_milliseconds"),
-							labels.MustNewMatcher(labels.MatchEqual, "__unit__", "milliseconds"),
-							labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
-						},
-						result: resultTransform{
-							to:   clean(testdataLatencyChanges[0].Forward),
-							from: clean(testdataLatencyChanges[0].Backward),
-							vt:   mustNewValueTransformerFromPromQL("value{} / 1000"),
-						},
-					},
+				{
+					// Backward.
+					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_latency_milliseconds"),
+					labels.MustNewMatcher(labels.MatchEqual, "__unit__", "milliseconds"),
+					labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
 				},
 			},
-			// Asking for my_app_latency_seconds should give us original and one forward variant.
-			{
-				schemaURL: "./testdata/1.0.0", matchers: []*labels.Matcher{
-					labels.MustNewMatcher(labels.MatchEqual, schemaURLLabel, "./testdata/1.0.0"),
+			expectedQueryContext: queryContext{
+				mID:     "my_app_latency.2",
+				changes: testdataLatencyChanges,
+			},
+		},
+		// Asking for my_app_latency_seconds should give us original and one forward variant.
+		{
+			schemaURL: "./testdata/1.0.0", matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, schemaURLLabel, "./testdata/1.0.0"),
+				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_latency_milliseconds"),
+				labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
+			},
+			expectedVariants: [][]*labels.Matcher{
+				{
+					// Original.
 					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_latency_milliseconds"),
 					labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
 				},
-				expectedVariants: []*variant{
-					{
-						// Original.
-						matchers: []*labels.Matcher{
-							labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_latency_milliseconds"),
-							labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
-						},
-					},
-					{
-						// Forward.
-						matchers: []*labels.Matcher{
-							labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_latency_seconds"),
-							labels.MustNewMatcher(labels.MatchEqual, "__unit__", "seconds"),
-							labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
-						},
-						result: resultTransform{
-							to:   clean(testdataLatencyChanges[0].Backward),
-							from: clean(testdataLatencyChanges[0].Forward),
-							vt:   mustNewValueTransformerFromPromQL("value{} * 1000"),
-						},
-					},
+				{
+					// Forward.
+					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_latency_seconds"),
+					labels.MustNewMatcher(labels.MatchEqual, "__unit__", "seconds"),
+					labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"),
 				},
 			},
-		*/
-		// TODO(bwplotka): Test ambiguous matcher errors etc.
+			expectedQueryContext: queryContext{
+				mID:     "my_app_latency",
+				changes: testdataLatencyChanges,
+			},
+		},
 		// Asking for my_app_custom_elements.2 should give us the original and one backward and one forward variant.
 		{
 			schemaURL: "./testdata/1.1.0", matchers: []*labels.Matcher{
@@ -122,48 +112,112 @@ func TestEngine_FindVariants(t *testing.T) {
 				labels.MustNewMatcher(labels.MatchRegexp, "class", "FIRST|OTHER"),
 				labels.MustNewMatcher(labels.MatchEqual, "fraction", "1.2"),
 			},
-			expectedVariants: []*variant{
+			expectedVariants: [][]*labels.Matcher{
 				{
-					// Original.
-					matchers: []*labels.Matcher{
-						labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_custom_elements_changed_total"),
-						labels.MustNewMatcher(labels.MatchNotEqual, "number", "2"),
-						labels.MustNewMatcher(labels.MatchRegexp, "class", "FIRST|OTHER"),
-						labels.MustNewMatcher(labels.MatchEqual, "fraction", "1.2"),
-					},
+					// Original matchers.
+					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_custom_elements_changed_total"),
+					labels.MustNewMatcher(labels.MatchNotEqual, "number", "2"),
+					labels.MustNewMatcher(labels.MatchRegexp, "class", "FIRST|OTHER"),
+					labels.MustNewMatcher(labels.MatchEqual, "fraction", "1.2"),
 				},
 				{
 					// Backward.
-					matchers: []*labels.Matcher{
-						labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_custom_elements_total"),
-						labels.MustNewMatcher(labels.MatchNotEqual, "integer", "2"),
-						labels.MustNewMatcher(labels.MatchRegexp, "category", "first|other"),
-						labels.MustNewMatcher(labels.MatchEqual, "fraction", "1.2"),
-					},
-					result: resultTransform{
-						to:   testdataElementsChanges[1].Forward,
-						from: testdataElementsChanges[1].Backward,
-					},
+					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_custom_elements_total"),
+					labels.MustNewMatcher(labels.MatchNotEqual, "integer", "2"),
+					labels.MustNewMatcher(labels.MatchRegexp, "category", "first|other"),
+					labels.MustNewMatcher(labels.MatchEqual, "fraction", "1.2"),
 				},
 				{
 					// Forward.
-					matchers: []*labels.Matcher{
-						labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_custom_elements_changed_total"),
-						labels.MustNewMatcher(labels.MatchNotEqual, "my_number", "2"),
-						labels.MustNewMatcher(labels.MatchRegexp, "class", "FIRST|OTHER"),
-						labels.MustNewMatcher(labels.MatchEqual, "fraction", "1.2"),
-					},
-					result: resultTransform{
-						to:   testdataElementsChanges[0].Backward,
-						from: testdataElementsChanges[0].Forward,
-					},
+					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_custom_elements_changed_total"),
+					labels.MustNewMatcher(labels.MatchNotEqual, "my_number", "2"),
+					labels.MustNewMatcher(labels.MatchRegexp, "class", "FIRST|OTHER"),
+					labels.MustNewMatcher(labels.MatchEqual, "fraction", "1.2"),
 				},
+			},
+			expectedQueryContext: queryContext{
+				mID:     "my_app_custom_elements.2",
+				changes: testdataElementsChanges,
+			},
+		},
+		// Asking for my_app_custom_elements.3 should give us the original and 2 backward variants.
+		{
+			schemaURL: "./testdata/1.2.0", matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, schemaURLLabel, "./testdata/1.2.0"),
+				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_custom_elements_changed_total"),
+				labels.MustNewMatcher(labels.MatchNotEqual, "my_number", "2"),
+				labels.MustNewMatcher(labels.MatchRegexp, "class", "FIRST|OTHER"),
+				labels.MustNewMatcher(labels.MatchEqual, "fraction", "1.2"),
+			},
+			expectedVariants: [][]*labels.Matcher{
+				{
+					// Original matchers.
+					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_custom_elements_changed_total"),
+					labels.MustNewMatcher(labels.MatchNotEqual, "my_number", "2"),
+					labels.MustNewMatcher(labels.MatchRegexp, "class", "FIRST|OTHER"),
+					labels.MustNewMatcher(labels.MatchEqual, "fraction", "1.2"),
+				},
+				{
+					// Backward 1.
+					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_custom_elements_changed_total"),
+					labels.MustNewMatcher(labels.MatchNotEqual, "number", "2"),
+					labels.MustNewMatcher(labels.MatchRegexp, "class", "FIRST|OTHER"),
+					labels.MustNewMatcher(labels.MatchEqual, "fraction", "1.2"),
+				},
+				{
+					// Backward 2.
+					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_custom_elements_total"),
+					labels.MustNewMatcher(labels.MatchNotEqual, "integer", "2"),
+					labels.MustNewMatcher(labels.MatchRegexp, "category", "first|other"),
+					labels.MustNewMatcher(labels.MatchEqual, "fraction", "1.2"),
+				},
+			},
+			expectedQueryContext: queryContext{
+				mID:     "my_app_custom_elements.3",
+				changes: testdataElementsChanges,
+			},
+		},
+		// Asking for my_app_custom_elements should give us the original and 2 forward variants.
+		{
+			schemaURL: "./testdata/1.0.0", matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, schemaURLLabel, "./testdata/1.0.0"),
+				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_custom_elements_total"),
+				labels.MustNewMatcher(labels.MatchNotEqual, "integer", "2"),
+				labels.MustNewMatcher(labels.MatchRegexp, "category", "first|other"),
+				labels.MustNewMatcher(labels.MatchEqual, "fraction", "1.2"),
+			},
+			expectedVariants: [][]*labels.Matcher{
+				{
+					// Original matchers.
+					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_custom_elements_total"),
+					labels.MustNewMatcher(labels.MatchNotEqual, "integer", "2"),
+					labels.MustNewMatcher(labels.MatchRegexp, "category", "first|other"),
+					labels.MustNewMatcher(labels.MatchEqual, "fraction", "1.2"),
+				},
+				{
+					// Forward 1.
+					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_custom_elements_changed_total"),
+					labels.MustNewMatcher(labels.MatchNotEqual, "number", "2"),
+					labels.MustNewMatcher(labels.MatchRegexp, "class", "FIRST|OTHER"),
+					labels.MustNewMatcher(labels.MatchEqual, "fraction", "1.2"),
+				},
+				{
+					// Forward 2.
+					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_app_custom_elements_changed_total"),
+					labels.MustNewMatcher(labels.MatchNotEqual, "my_number", "2"),
+					labels.MustNewMatcher(labels.MatchRegexp, "class", "FIRST|OTHER"),
+					labels.MustNewMatcher(labels.MatchEqual, "fraction", "1.2"),
+				},
+			},
+			expectedQueryContext: queryContext{
+				mID:     "my_app_custom_elements",
+				changes: testdataElementsChanges,
 			},
 		},
 	} {
 		t.Run("", func(t *testing.T) {
 			e := newSchemaEngine()
-			got, err := e.FindVariants(tcase.schemaURL, tcase.matchers)
+			got, gotQ, err := e.FindMatcherVariants(tcase.schemaURL, tcase.matchers)
 			if tcase.expectedErr != nil {
 				require.ErrorContains(t, err, tcase.expectedErr.Error())
 				return
@@ -173,7 +227,202 @@ func TestEngine_FindVariants(t *testing.T) {
 				cmp.Comparer(func(a, b *labels.Matcher) bool {
 					return a.Name == b.Name && a.Type == b.Type && a.Value == b.Value
 				}),
-				cmp.AllowUnexported(variant{}, resultTransform{}, valueTransformer{}),
+			})
+			testutil.RequireEqualWithOptions(t, tcase.expectedQueryContext, gotQ, []cmp.Option{
+				cmp.AllowUnexported(queryContext{}),
+			})
+		})
+	}
+}
+
+func TestEngine_TransformSeries(t *testing.T) {
+	for _, tcase := range []struct {
+		q    queryContext
+		lbls labels.Labels
+
+		expectedLabels labels.Labels
+		expectedVT     valueTransformer
+		expectedErr    error
+	}{
+		{
+			q: queryContext{
+				mID:     "my_app_latency.2",
+				changes: testdataLatencyChanges,
+			},
+			lbls: labels.FromStrings(
+				schemaURLLabel, testSchemaURL("1.1.0"),
+				labels.MetricName, "my_app_latency_seconds",
+				"foo", "bar",
+			),
+			expectedLabels: labels.FromStrings(
+				labels.MetricName, "my_app_latency_seconds",
+				"foo", "bar",
+			),
+		},
+		{
+			// Same but with unit label.
+			q: queryContext{
+				mID:     "my_app_latency.2",
+				changes: testdataLatencyChanges,
+			},
+			lbls: testdataLatencySeriesNew,
+			expectedLabels: labels.FromStrings(
+				"__name__", "my_app_latency_seconds",
+				"__type__", "histogram",
+				"__unit__", "seconds",
+				"code", "200",
+				"test", "new",
+			),
+		},
+		{
+			q: queryContext{
+				mID:     "my_app_latency.2",
+				changes: testdataLatencyChanges,
+			},
+			lbls: testdataLatencySeriesOld,
+			expectedLabels: labels.FromStrings(
+				"__name__", "my_app_latency_seconds",
+				"__type__", "histogram",
+				"__unit__", "seconds",
+				"code", "200",
+				"test", "old",
+			),
+			expectedVT: mustNewValueTransformerFromPromQL(testdataLatencyChanges[0].Forward.ValuePromQL),
+		},
+		{
+			q: queryContext{
+				mID:     "my_app_latency",
+				changes: testdataLatencyChanges,
+			},
+			lbls: testdataLatencySeriesOld,
+			expectedLabels: labels.FromStrings(
+				"__name__", "my_app_latency_milliseconds",
+				"__type__", "histogram",
+				"__unit__", "milliseconds",
+				"code", "200",
+				"test", "old",
+			),
+		},
+		{
+			q: queryContext{
+				mID:     "my_app_latency",
+				changes: testdataLatencyChanges,
+			},
+			lbls: testdataLatencySeriesNew,
+			expectedLabels: labels.FromStrings(
+				"__name__", "my_app_latency_milliseconds",
+				"__type__", "histogram",
+				"__unit__", "milliseconds",
+				"code", "200",
+				"test", "new",
+			),
+			expectedVT: mustNewValueTransformerFromPromQL(testdataLatencyChanges[0].Backward.ValuePromQL),
+		},
+		{
+			q: queryContext{
+				mID:     "my_app_custom_elements",
+				changes: testdataElementsChanges,
+			},
+			lbls: testdataElementsSeriesOld,
+			expectedLabels: labels.FromStrings(
+				"__name__", "my_app_custom_elements_total",
+				"__type__", "counter",
+				"integer", "1",
+				"category", "first",
+				"fraction", "1.243",
+				"test", "old",
+			),
+		},
+		{
+			q: queryContext{
+				mID:     "my_app_custom_elements",
+				changes: testdataElementsChanges,
+			},
+			lbls: testdataElementsSeriesNew,
+			expectedLabels: labels.FromStrings(
+				"__name__", "my_app_custom_elements_total",
+				"__type__", "counter",
+				"integer", "1",
+				"category", "first",
+				"fraction", "1.243",
+				"test", "new",
+			),
+		},
+		{
+			q: queryContext{
+				mID:     "my_app_custom_elements.2",
+				changes: testdataElementsChanges,
+			},
+			lbls: testdataElementsSeriesNew,
+			expectedLabels: labels.FromStrings(
+				"__name__", "my_app_custom_elements_changed_total",
+				"__type__", "counter",
+				"number", "1",
+				"class", "FIRST",
+				"fraction", "1.243",
+				"test", "new",
+			),
+		},
+		{
+			q: queryContext{
+				mID:     "my_app_custom_elements.2",
+				changes: testdataElementsChanges,
+			},
+			lbls: testdataElementsSeriesOld,
+			expectedLabels: labels.FromStrings(
+				"__name__", "my_app_custom_elements_changed_total",
+				"__type__", "counter",
+				"number", "1",
+				"class", "FIRST",
+				"fraction", "1.243",
+				"test", "old",
+			),
+		},
+		{
+			q: queryContext{
+				mID:     "my_app_custom_elements.3",
+				changes: testdataElementsChanges,
+			},
+			lbls: testdataElementsSeriesOld,
+			expectedLabels: labels.FromStrings(
+				"__name__", "my_app_custom_elements_changed_total",
+				"__type__", "counter",
+				"my_number", "1",
+				"class", "FIRST",
+				"fraction", "1.243",
+				"test", "old",
+			),
+		},
+		{
+			q: queryContext{
+				mID:     "my_app_custom_elements.3",
+				changes: testdataElementsChanges,
+			},
+			lbls: testdataElementsSeriesNew,
+			expectedLabels: labels.FromStrings(
+				"__name__", "my_app_custom_elements_changed_total",
+				"__type__", "counter",
+				"my_number", "1",
+				"class", "FIRST",
+				"fraction", "1.243",
+				"test", "new",
+			),
+		},
+	} {
+		t.Run("", func(t *testing.T) {
+			e := newSchemaEngine()
+			got, gotVT, err := e.TransformSeries(tcase.q, tcase.lbls)
+			if tcase.expectedErr != nil {
+				require.ErrorContains(t, err, tcase.expectedErr.Error())
+				return
+			}
+			require.NoError(t, err)
+			testutil.RequireEqual(t, tcase.expectedLabels, got)
+			testutil.RequireEqualWithOptions(t, tcase.expectedVT, gotVT, []cmp.Option{
+				cmp.Comparer(func(a, b *labels.Matcher) bool {
+					return a.Name == b.Name && a.Type == b.Type && a.Value == b.Value
+				}),
+				cmp.AllowUnexported(valueTransformer{}),
 			})
 		})
 	}
