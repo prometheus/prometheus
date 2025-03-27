@@ -3959,7 +3959,37 @@ var testExpr = []struct {
 					End:   3,
 				},
 			},
-			Range:  1 * time.Second, // 11s+10s-5*2^2 = 21s-20s = 1s
+			RangeExpr: &DurationExpr{
+				Op: SUB,
+				LHS: &DurationExpr{
+					Op: ADD,
+					LHS: &NumberLiteral{
+						Val: 11,
+						PosRange: posrange.PositionRange{
+							Start: 4,
+							End:   7,
+						},
+						Duration: true,
+					},
+					RHS: &NumberLiteral{
+						Val: 10,
+						PosRange: posrange.PositionRange{
+							Start: 8,
+							End:   11,
+						},
+						Duration: true,
+					},
+				},
+				RHS: &DurationExpr{
+					Op:  MUL,
+					LHS: &NumberLiteral{Val: 5, PosRange: posrange.PositionRange{Start: 12, End: 13}},
+					RHS: &DurationExpr{
+						Op:  POW,
+						LHS: &NumberLiteral{Val: 2, PosRange: posrange.PositionRange{Start: 14, End: 15}},
+						RHS: &NumberLiteral{Val: 2, PosRange: posrange.PositionRange{Start: 16, End: 17}},
+					},
+				},
+			},
 			EndPos: 18,
 		},
 	},
@@ -3976,7 +4006,41 @@ var testExpr = []struct {
 					End:   3,
 				},
 			},
-			Range:  15 * time.Second, // -(10s-5s)+20s = -5s+20s = 15s
+			RangeExpr: &DurationExpr{
+				Op: ADD,
+				LHS: &DurationExpr{
+					Op:       SUB,
+					StartPos: 4,
+					RHS: &DurationExpr{
+						Op: SUB,
+						LHS: &NumberLiteral{
+							Val: 10,
+							PosRange: posrange.PositionRange{
+								Start: 6,
+								End:   9,
+							},
+							Duration: true,
+						},
+						RHS: &NumberLiteral{
+							Val: 5,
+							PosRange: posrange.PositionRange{
+								Start: 10,
+								End:   12,
+							},
+							Duration: true,
+						},
+						Wrapped: true,
+					},
+				},
+				RHS: &NumberLiteral{
+					Val: 20,
+					PosRange: posrange.PositionRange{
+						Start: 14,
+						End:   17,
+					},
+					Duration: true,
+				},
+			},
 			EndPos: 18,
 		},
 	},
@@ -3993,7 +4057,25 @@ var testExpr = []struct {
 					End:   3,
 				},
 			},
-			Range:  5 * time.Second, // -10s+15s = 5s
+			RangeExpr: &DurationExpr{
+				Op: ADD,
+				LHS: &NumberLiteral{
+					Val: -10,
+					PosRange: posrange.PositionRange{
+						Start: 4,
+						End:   8,
+					},
+					Duration: true,
+				},
+				RHS: &NumberLiteral{
+					Val: 15,
+					PosRange: posrange.PositionRange{
+						Start: 9,
+						End:   12,
+					},
+					Duration: true,
+				},
+			},
 			EndPos: 13,
 		},
 	},
@@ -4010,10 +4092,63 @@ var testExpr = []struct {
 					End:   3,
 				},
 			},
-			Range:          8 * time.Second,  // 4s+4s = 8s
-			Step:           2 * time.Second,  // 1s*2 = 2s
-			OriginalOffset: -3 * time.Second, // 5s-8 = -3s
-			EndPos:         29,
+			RangeExpr: &DurationExpr{
+				Op: ADD,
+				LHS: &NumberLiteral{
+					Val: 4,
+					PosRange: posrange.PositionRange{
+						Start: 4,
+						End:   6,
+					},
+					Duration: true,
+				},
+				RHS: &NumberLiteral{
+					Val: 4,
+					PosRange: posrange.PositionRange{
+						Start: 7,
+						End:   9,
+					},
+					Duration: true,
+				},
+			},
+			StepExpr: &DurationExpr{
+				Op: MUL,
+				LHS: &NumberLiteral{
+					Val: 1,
+					PosRange: posrange.PositionRange{
+						Start: 10,
+						End:   12,
+					},
+					Duration: true,
+				},
+				RHS: &NumberLiteral{
+					Val: 2,
+					PosRange: posrange.PositionRange{
+						Start: 13,
+						End:   14,
+					},
+				},
+			},
+			OriginalOffsetExpr: &DurationExpr{
+				Op: SUB,
+				LHS: &NumberLiteral{
+					Val: 5,
+					PosRange: posrange.PositionRange{
+						Start: 24,
+						End:   26,
+					},
+					Duration: true,
+				},
+				RHS: &NumberLiteral{
+					Val: 8,
+					PosRange: posrange.PositionRange{
+						Start: 27,
+						End:   28,
+					},
+				},
+				Wrapped: true,
+			},
+			EndPos: 29,
 		},
 	},
 	{
@@ -4041,6 +4176,50 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: `rate(foo[2m+2m])`,
+		expected: &Call{
+			Func: MustGetFunction("rate"),
+			Args: Expressions{
+				&MatrixSelector{
+					VectorSelector: &VectorSelector{
+						Name: "foo",
+						LabelMatchers: []*labels.Matcher{
+							MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+						},
+						PosRange: posrange.PositionRange{
+							Start: 5,
+							End:   8,
+						},
+					},
+					RangeExpr: &DurationExpr{
+						Op: ADD,
+						LHS: &NumberLiteral{
+							Val: 120,
+							PosRange: posrange.PositionRange{
+								Start: 9,
+								End:   11,
+							},
+							Duration: true,
+						},
+						RHS: &NumberLiteral{
+							Val: 120,
+							PosRange: posrange.PositionRange{
+								Start: 12,
+								End:   14,
+							},
+							Duration: true,
+						},
+					},
+					EndPos: 15,
+				},
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   16,
+			},
+		},
+	},
+	{
 		input:  `foo[5s/0d]`,
 		fail:   true,
 		errMsg: `division by zero`,
@@ -4056,22 +4235,12 @@ var testExpr = []struct {
 		errMsg: `modulo by zero`,
 	},
 	{
-		input:  `foo offset (5s%(2d-2d))`,
-		fail:   true,
-		errMsg: `modulo by zero`,
-	},
-	{
-		input:  `foo[150y+150y]`,
+		input:  `foo offset 9.5e10`,
 		fail:   true,
 		errMsg: `duration out of range`,
 	},
 	{
-		input:  `foo offset (150y+150y)`,
-		fail:   true,
-		errMsg: `duration out of range`,
-	},
-	{
-		input:  `foo offset (-2*150y)`,
+		input:  `foo[9.5e10]`,
 		fail:   true,
 		errMsg: `duration out of range`,
 	},
