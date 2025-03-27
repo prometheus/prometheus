@@ -2281,7 +2281,7 @@ func (db *DB) CleanTombstones() (err error) {
 				}
 			}
 
-                       // This should only be reached if an error occurred.
+			// This should only be reached if an error occurred.
 			return fmt.Errorf("reload blocks: %w", err)
 		}
 	}
