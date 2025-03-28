@@ -25,9 +25,8 @@ import {
 } from "../../state/serviceDiscoveryPageSlice";
 import CustomInfiniteScroll from "../../components/CustomInfiniteScroll";
 
-import { useDebouncedValue } from "@mantine/hooks";
+import { useDebouncedValue, useLocalStorage } from "@mantine/hooks";
 import { targetPoolDisplayLimit } from "./ServiceDiscoveryPage";
-import { BooleanParam, useQueryParam, withDefault } from "use-query-params";
 import { LabelBadges } from "../../components/LabelBadges";
 
 type TargetLabels = {
@@ -154,10 +153,10 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
   searchFilter,
 }) => {
   const dispatch = useAppDispatch();
-  const [showEmptyPools, setShowEmptyPools] = useQueryParam(
-    "showEmptyPools",
-    withDefault(BooleanParam, true)
-  );
+  const [showEmptyPools, setShowEmptyPools] = useLocalStorage<boolean>({
+    key: "serviceDiscoveryPage.showEmptyPools",
+    defaultValue: false,
+  });
 
   // Based on the selected pool (if any), load the list of targets.
   const {

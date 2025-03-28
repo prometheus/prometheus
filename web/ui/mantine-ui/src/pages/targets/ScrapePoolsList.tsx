@@ -167,7 +167,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
   const dispatch = useAppDispatch();
   const [showEmptyPools, setShowEmptyPools] = useLocalStorage<boolean>({
     key: "targetsPage.showEmptyPools",
-    defaultValue: true,
+    defaultValue: false,
   });
 
   const { collapsedPools, showLimitAlert } = useAppSelector(
