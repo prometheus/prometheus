@@ -72,7 +72,11 @@ func relabelAlerts(relabelConfigs []*relabel.Config, externalLabels labels.Label
 	lb := labels.NewBuilder(labels.EmptyLabels())
 	var relabeledAlerts []*Alert
 
-	for _, a := range alerts {
+	for _, s := range alerts {
+		// Copy the alert to avoid race condition.
+		a := &Alert{}
+		*a = *s
+
 		lb.Reset(a.Labels)
 		externalLabels.Range(func(l labels.Label) {
 			if a.Labels.Get(l.Name) == "" {

@@ -19,13 +19,14 @@ type alertMetrics struct {
 	latency                 *prometheus.SummaryVec
 	errors                  *prometheus.CounterVec
 	sent                    *prometheus.CounterVec
-	dropped                 prometheus.Counter
-	queueLength             prometheus.GaugeFunc
+	retries                 *prometheus.CounterVec
+	dropped                 *prometheus.CounterVec
+	queueLength             *prometheus.GaugeVec
 	queueCapacity           prometheus.Gauge
 	alertmanagersDiscovered prometheus.GaugeFunc
 }
 
-func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen, alertmanagersDiscovered func() float64) *alertMetrics {
+func newAlertMetrics(r prometheus.Registerer, queueCap int, alertmanagersDiscovered func() float64) *alertMetrics {
 	m := &alertMetrics{
 		latency: prometheus.NewSummaryVec(prometheus.SummaryOpts{
 			Namespace:  namespace,
@@ -52,18 +53,26 @@ func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen, alertmanag
 		},
 			[]string{alertmanagerLabel},
 		),
-		dropped: prometheus.NewCounter(prometheus.CounterOpts{
+		retries: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "retries_total",
+			Help:      "Total number of send retries after failure.",
+		},
+			[]string{alertmanagerLabel},
+		),
+		dropped: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
 			Name:      "dropped_total",
 			Help:      "Total number of alerts dropped due to errors when sending to Alertmanager.",
-		}),
-		queueLength: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		}, []string{alertmanagerLabel}),
+		queueLength: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
 			Name:      "queue_length",
 			Help:      "The number of alert notifications in the queue.",
-		}, queueLen),
+		}, []string{alertmanagerLabel}),
 		queueCapacity: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -83,6 +92,7 @@ func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen, alertmanag
 			m.latency,
 			m.errors,
 			m.sent,
+			m.retries,
 			m.dropped,
 			m.queueLength,
 			m.queueCapacity,
