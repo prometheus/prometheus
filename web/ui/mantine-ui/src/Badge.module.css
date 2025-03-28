@@ -28,6 +28,7 @@
   );
   height: calc(1.25rem * var(--mantine-scale));
   letter-spacing: calc(0.015625rem * var(--mantine-scale));
+  white-space: nowrap;
 }
 
 .healthOk {
