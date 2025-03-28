@@ -382,7 +382,44 @@ func TestWriteStorageApplyConfig_PartialUpdate(t *testing.T) {
 
 func TestOTLPWriteHandler(t *testing.T) {
 	exportRequest := generateOTLPWriteRequest()
+	resp, appendable := handleOtlp(t, exportRequest)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
 
+	require.Len(t, appendable.samples, 12)   // 1 (counter) + 1 (gauge) + 1 (target_info) + 7 (hist_bucket) + 2 (hist_sum, hist_count)
+	require.Len(t, appendable.histograms, 1) // 1 (exponential histogram)
+	require.Len(t, appendable.exemplars, 1)  // 1 (exemplar)
+}
+
+func TestOTLPWriteHandlerNoTranslation(t *testing.T) {
+	timestamp := time.Now()
+	exportRequest := generateCounterOTLPWriteRequest(timestamp)
+	resp, appendable := handleOtlp(t, exportRequest)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	requireContainsSample(t, appendable.samples, mockSample{
+		l: labels.New(
+			labels.Label{Name: "__name__", Value: "test.counter"},
+			labels.Label{Name: "foo.bar", Value: "baz"},
+			labels.Label{Name: "instance", Value: "test-instance"},
+			labels.Label{Name: "job", Value: "test-service"},
+		),
+		t: timestamp.UnixMilli(),
+		v: 10,
+	})
+
+	requireContainsSample(t, appendable.samples, mockSample{
+		l: labels.New(
+			labels.Label{Name: "__name__", Value: "target_info"},
+			labels.Label{Name: "host.name", Value: "test-host"},
+			labels.Label{Name: "instance", Value: "test-instance"},
+			labels.Label{Name: "job", Value: "test-service"},
+		),
+		t: timestamp.UnixMilli(),
+		v: 1,
+	})
+}
+
+func handleOtlp(t *testing.T, exportRequest pmetricotlp.ExportRequest) (*http.Response, *mockAppendable) {
 	buf, err := exportRequest.MarshalProto()
 	require.NoError(t, err)
 
@@ -391,9 +428,11 @@ func TestOTLPWriteHandler(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-protobuf")
 
 	appendable := &mockAppendable{}
+	conf := config.DefaultOTLPConfig
+	conf.TranslationStrategy = config.NoTranslation
 	handler := NewOTLPWriteHandler(nil, nil, appendable, func() config.Config {
 		return config.Config{
-			OTLPConfig: config.DefaultOTLPConfig,
+			OTLPConfig: conf,
 		}
 	}, OTLPOptions{})
 
@@ -401,11 +440,39 @@ func TestOTLPWriteHandler(t *testing.T) {
 	handler.ServeHTTP(recorder, req)
 
 	resp := recorder.Result()
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+	return resp, appendable
+}
 
-	require.Len(t, appendable.samples, 12)   // 1 (counter) + 1 (gauge) + 1 (target_info) + 7 (hist_bucket) + 2 (hist_sum, hist_count)
-	require.Len(t, appendable.histograms, 1) // 1 (exponential histogram)
-	require.Len(t, appendable.exemplars, 1)  // 1 (exemplar)
+func generateCounterOTLPWriteRequest(timestamp time.Time) pmetricotlp.ExportRequest {
+	d := pmetric.NewMetrics()
+
+	resourceMetric := d.ResourceMetrics().AppendEmpty()
+	resourceMetric.Resource().Attributes().PutStr("service.name", "test-service")
+	resourceMetric.Resource().Attributes().PutStr("service.instance.id", "test-instance")
+	resourceMetric.Resource().Attributes().PutStr("host.name", "test-host")
+
+	scopeMetric := resourceMetric.ScopeMetrics().AppendEmpty()
+
+	counterMetric := scopeMetric.Metrics().AppendEmpty()
+	counterMetric.SetName("test.counter")
+	counterMetric.SetDescription("test-counter-description")
+	counterMetric.SetEmptySum()
+	counterMetric.Sum().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+	counterMetric.Sum().SetIsMonotonic(true)
+
+	counterDataPoint := counterMetric.Sum().DataPoints().AppendEmpty()
+	counterDataPoint.SetTimestamp(pcommon.NewTimestampFromTime(timestamp))
+	counterDataPoint.SetDoubleValue(10.0)
+	counterDataPoint.Attributes().PutStr("foo.bar", "baz")
+
+	counterExemplar := counterDataPoint.Exemplars().AppendEmpty()
+
+	counterExemplar.SetTimestamp(pcommon.NewTimestampFromTime(timestamp))
+	counterExemplar.SetDoubleValue(10.0)
+	counterExemplar.SetSpanID(pcommon.SpanID{0, 1, 2, 3, 4, 5, 6, 7})
+	counterExemplar.SetTraceID(pcommon.TraceID{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15})
+
+	return pmetricotlp.NewExportRequestFromMetrics(d)
 }
 
 func generateOTLPWriteRequest() pmetricotlp.ExportRequest {
@@ -426,7 +493,7 @@ func generateOTLPWriteRequest() pmetricotlp.ExportRequest {
 
 	// Generate One Counter
 	counterMetric := scopeMetric.Metrics().AppendEmpty()
-	counterMetric.SetName("test-counter")
+	counterMetric.SetName("test.counter")
 	counterMetric.SetDescription("test-counter-description")
 	counterMetric.SetEmptySum()
 	counterMetric.Sum().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
