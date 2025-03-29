@@ -4631,26 +4631,31 @@ metric: <
 		require.Equal(t, expectedCount, count, "number of histogram series not as expected")
 	}
 
+	tru := true
+	fals := false
 	for metricsTextName, metricsText := range metricsTexts {
 		for name, tc := range map[string]struct {
 			alwaysScrapeClassicHistograms bool
-			convertClassicHistToNHCB      bool
+			convertClassicHistToNHCB      *bool
 		}{
 			"convert with scrape": {
 				alwaysScrapeClassicHistograms: true,
-				convertClassicHistToNHCB:      true,
+				convertClassicHistToNHCB:      &tru,
 			},
 			"convert without scrape": {
 				alwaysScrapeClassicHistograms: false,
-				convertClassicHistToNHCB:      true,
+				convertClassicHistToNHCB:      &tru,
 			},
 			"scrape without convert": {
 				alwaysScrapeClassicHistograms: true,
-				convertClassicHistToNHCB:      false,
+				convertClassicHistToNHCB:      &fals,
+			},
+			"scrape with nil convert": {
+				alwaysScrapeClassicHistograms: true,
 			},
 			"neither scrape nor convert": {
 				alwaysScrapeClassicHistograms: false,
-				convertClassicHistToNHCB:      false,
+				convertClassicHistToNHCB:      &fals,
 			},
 		} {
 			var expectedClassicHistCount, expectedNativeHistCount int
@@ -4664,17 +4669,17 @@ metric: <
 				}
 			} else if metricsText.hasClassic {
 				switch {
-				case tc.alwaysScrapeClassicHistograms && tc.convertClassicHistToNHCB:
+				case tc.convertClassicHistToNHCB == nil || !*tc.convertClassicHistToNHCB:
+					expectedClassicHistCount = 1
+					expectedNativeHistCount = 0
+				case tc.alwaysScrapeClassicHistograms && *tc.convertClassicHistToNHCB:
 					expectedClassicHistCount = 1
 					expectedNativeHistCount = 1
 					expectCustomBuckets = true
-				case !tc.alwaysScrapeClassicHistograms && tc.convertClassicHistToNHCB:
+				case !tc.alwaysScrapeClassicHistograms && *tc.convertClassicHistToNHCB:
 					expectedClassicHistCount = 0
 					expectedNativeHistCount = 1
 					expectCustomBuckets = true
-				case !tc.convertClassicHistToNHCB:
-					expectedClassicHistCount = 1
-					expectedNativeHistCount = 0
 				}
 			}
 
