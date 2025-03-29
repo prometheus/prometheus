@@ -1137,8 +1137,9 @@ type EvalNodeHelper struct {
 	Out Vector
 
 	// Caches.
-	// funcHistogramQuantile for classic histograms.
+	// funcHistogramQuantile and funcHistogramFraction for classic histograms.
 	signatureToMetricWithBuckets map[string]*metricWithBuckets
+	nativeHistogramSamples       []Sample
 
 	lb           *labels.Builder
 	lblBuf       []byte
@@ -1159,6 +1160,62 @@ func (enh *EvalNodeHelper) resetBuilder(lbls labels.Labels) {
 	} else {
 		enh.lb.Reset(lbls)
 	}
+}
+
+// resetHistograms prepares the histogram caches by splitting the given vector into native and classic histograms.
+func (enh *EvalNodeHelper) resetHistograms(inVec Vector, arg parser.Expr) annotations.Annotations {
+	var annos annotations.Annotations
+
+	if enh.signatureToMetricWithBuckets == nil {
+		enh.signatureToMetricWithBuckets = map[string]*metricWithBuckets{}
+	} else {
+		for _, v := range enh.signatureToMetricWithBuckets {
+			v.buckets = v.buckets[:0]
+		}
+	}
+	enh.nativeHistogramSamples = enh.nativeHistogramSamples[:0]
+
+	for _, sample := range inVec {
+		// We are only looking for classic buckets here. Remember
+		// the histograms for later treatment.
+		if sample.H != nil {
+			enh.nativeHistogramSamples = append(enh.nativeHistogramSamples, sample)
+			continue
+		}
+
+		upperBound, err := strconv.ParseFloat(
+			sample.Metric.Get(model.BucketLabel), 64,
+		)
+		if err != nil {
+			annos.Add(annotations.NewBadBucketLabelWarning(sample.Metric.Get(labels.MetricName), sample.Metric.Get(model.BucketLabel), arg.PositionRange()))
+			continue
+		}
+		enh.lblBuf = sample.Metric.BytesWithoutLabels(enh.lblBuf, labels.BucketLabel)
+		mb, ok := enh.signatureToMetricWithBuckets[string(enh.lblBuf)]
+		if !ok {
+			sample.Metric = labels.NewBuilder(sample.Metric).
+				Del(excludedLabels...).
+				Labels()
+			mb = &metricWithBuckets{sample.Metric, nil}
+			enh.signatureToMetricWithBuckets[string(enh.lblBuf)] = mb
+		}
+		mb.buckets = append(mb.buckets, Bucket{upperBound, sample.F})
+	}
+
+	for _, sample := range enh.nativeHistogramSamples {
+		// We have to reconstruct the exact same signature as above for
+		// a classic histogram, just ignoring any le label.
+		enh.lblBuf = sample.Metric.Bytes(enh.lblBuf)
+		if mb, ok := enh.signatureToMetricWithBuckets[string(enh.lblBuf)]; ok && len(mb.buckets) > 0 {
+			// At this data point, we have classic histogram
+			// buckets and a native histogram with the same name and
+			// labels. Do not evaluate anything.
+			annos.Add(annotations.NewMixedClassicNativeHistogramsWarning(sample.Metric.Get(labels.MetricName), arg.PositionRange()))
+			delete(enh.signatureToMetricWithBuckets, string(enh.lblBuf))
+			continue
+		}
+	}
+	return annos
 }
 
 // rangeEval evaluates the given expressions, and then for each step calls
