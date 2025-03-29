@@ -426,8 +426,6 @@ func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (*FloatHistogram, *F
 
 	if !h.UsesCustomBuckets() {
 		otherZeroCount := h.reconcileZeroBuckets(other, c)
-		c.PositiveSpans = h.PositiveSpans
-		c.NegativeSpans = h.NegativeSpans
 		h.ZeroCount, c.ZeroCount = kahansum.Inc(otherZeroCount, h.ZeroCount, c.ZeroCount)
 	}
 	h.Count, c.Count = kahansum.Inc(other.Count, h.Count, c.Count)
@@ -468,7 +466,6 @@ func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (*FloatHistogram, *F
 			true,
 		)
 		h.Schema = other.Schema
-		c.Schema = other.Schema
 
 	case other.Schema > h.Schema:
 		otherPositiveSpans, otherPositiveBuckets = reduceResolution(
@@ -481,6 +478,11 @@ func (h *FloatHistogram) KahanAdd(other, c *FloatHistogram) (*FloatHistogram, *F
 		h.Schema, h.ZeroThreshold, false, hPositiveSpans, hPositiveBuckets, otherPositiveSpans, otherPositiveBuckets, cPositiveBuckets)
 	h.NegativeSpans, h.NegativeBuckets, c.NegativeBuckets = kahanAddBuckets(
 		h.Schema, h.ZeroThreshold, false, hNegativeSpans, hNegativeBuckets, otherNegativeSpans, otherNegativeBuckets, cNegativeBuckets)
+
+	c.Schema = other.Schema
+	c.ZeroThreshold = h.ZeroThreshold
+	c.PositiveSpans = h.PositiveSpans
+	c.NegativeSpans = h.NegativeSpans
 
 	return h, c, nil
 }
@@ -2215,11 +2217,12 @@ func kahanReduceResolution(
 // newCompensationHistogram initializes a new compensation histogram that can be used
 // alongside the current FloatHistogram in Kahan summation.
 // The compensation histogram is structured to match the receiving histogram's bucket layout
-// including its schema and custom values, and it shares spans with the receiving histogram.
-// However, the bucket values in the compensation histogram are initialized to zero.
-func (h *FloatHistogram) NewCompensationHistogram() *FloatHistogram {
+// including its schema, zero threshold and custom values, and it shares spans with the receiving
+// histogram. However, the bucket values in the compensation histogram are initialized to zero.
+func (h *FloatHistogram) newCompensationHistogram() *FloatHistogram {
 	c := &FloatHistogram{
 		Schema:          h.Schema,
+		ZeroThreshold:   h.ZeroThreshold,
 		CustomValues:    h.CustomValues,
 		PositiveBuckets: make([]float64, len(h.PositiveBuckets)),
 		PositiveSpans:   h.PositiveSpans,
