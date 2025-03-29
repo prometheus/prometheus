@@ -32,6 +32,7 @@ import {
   LimitRatio,
   Lss,
   Lte,
+  Ltrim,
   MatrixSelector,
   Neq,
   Or,
@@ -39,6 +40,7 @@ import {
   Quantile,
   QuotedLabelMatcher,
   QuotedLabelName,
+  Rtrim,
   StepInvariantExpr,
   SubqueryExpr,
   Topk,
@@ -199,7 +201,7 @@ export class Parser {
     const lt = this.checkAST(lExpr);
     const rt = this.checkAST(rExpr);
     const boolModifierUsed = node.getChild(BoolModifier);
-    const isComparisonOperator = containsAtLeastOneChild(node, Eql, Neq, Lte, Lss, Gte, Gtr);
+    const isComparisonOperator = containsAtLeastOneChild(node, Eql, Neq, Lte, Lss, Gte, Gtr, Rtrim, Ltrim);
     const isSetOperator = containsAtLeastOneChild(node, And, Or, Unless);
 
     // BOOL modifier check
