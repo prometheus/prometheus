@@ -23,6 +23,18 @@ jobs:
       - run: make -C documentation/examples/remote_storage
       - run: make -C documentation/examples
 
+  test_go_size_restricted_fs:
+    name: Go tests on size restricted FS
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5.3.0
+        with:
+          go-version: 1.24.x
+      - name: Set up size-restricted filesystems for tests
+        run: bash ./scripts/size_restricted_fs.sh
+      - run: go test --tags=stringlabels ./tsdb/ -test.size-restricted-fs=true -run TestSizeRestrictedFS
+
   test_go_more:
     name: More Go tests
     runs-on: ubuntu-latest
