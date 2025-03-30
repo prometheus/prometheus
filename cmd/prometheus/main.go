@@ -363,7 +363,7 @@ func main() {
 	a.Flag("config.auto-reload-interval", "Specifies the interval for checking and automatically reloading the Prometheus configuration file upon detecting changes.").
 		Default("30s").SetValue(&cfg.autoReloadInterval)
 
-	a.Flag("web.listen-address", "Address to listen on for UI, API, and telemetry. Can be repeated.").
+	a.Flag("web.listen-address", "Address or UNIX domain socket path (prefixed with `unix://`) to listen on for UI, API, and telemetry. Can be repeated.").
 		Default("0.0.0.0:9090").StringsVar(&cfg.web.ListenAddresses)
 
 	a.Flag("auto-gomaxprocs", "Automatically set GOMAXPROCS to match Linux container CPU quota").

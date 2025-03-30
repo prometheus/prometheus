@@ -434,6 +434,50 @@ func TestAgentSuccessfulStartup(t *testing.T) {
 	require.Equal(t, 0, actualExitStatus)
 }
 
+func TestSuccessfulStartupWithUnixSocket(t *testing.T) {
+	socket := "prometheus-test.sock"
+
+	prom := exec.Command(promPath, "-test.main", "--web.listen-address=unix://"+socket, "--config.file="+promConfig)
+	require.NoError(t, prom.Start())
+
+	actualExitStatus := 0
+	done := make(chan error, 1)
+
+	go func() { done <- prom.Wait() }()
+	select {
+	case err := <-done:
+		out, outerr := prom.Output()
+		t.Logf("prometheus should be still running: %v %v %v", err, out, outerr)
+		actualExitStatus = prom.ProcessState.ExitCode()
+	case <-time.After(startupTime):
+		prom.Process.Kill()
+	}
+	os.Remove(socket)
+	require.Equal(t, 0, actualExitStatus)
+}
+
+func TestSuccessfulStartupWithUnixSocketAndExternalUrl(t *testing.T) {
+	socket := "prometheus-test.sock"
+
+	prom := exec.Command(promPath, "-test.main", "--web.external-url=https://example.com", "--web.listen-address=unix://"+socket, "--config.file="+promConfig)
+	require.NoError(t, prom.Start())
+
+	actualExitStatus := 0
+	done := make(chan error, 1)
+
+	go func() { done <- prom.Wait() }()
+	select {
+	case err := <-done:
+		out, outerr := prom.Output()
+		t.Logf("prometheus should be still running: %v %v %v", err, out, outerr)
+		actualExitStatus = prom.ProcessState.ExitCode()
+	case <-time.After(startupTime):
+		prom.Process.Kill()
+	}
+	os.Remove(socket)
+	require.Equal(t, 0, actualExitStatus)
+}
+
 func TestAgentFailedStartupWithServerFlag(t *testing.T) {
 	t.Parallel()
 
