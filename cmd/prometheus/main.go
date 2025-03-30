@@ -804,14 +804,15 @@ func main() {
 	)
 
 	var (
-		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
-		scraper       = &readyScrapeManager{}
+		localStorage    = &readyStorage{stats: tsdb.NewDBStats()}
+		scraper         = &readyScrapeManager{}
 		remoteStorage = remote.NewStorage(logger.With("component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.scrape.EnableTypeAndUnitLabels)
-		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
+		fanoutStorage   = storage.NewFanout(logger, localStorage, remoteStorage)
+		semconvReloader func(*config.Config) error
 	)
 
 	if cfg.enableSemconvVersionedRead {
-		fanoutStorage = semconv.AwareStorage(fanoutStorage)
+		fanoutStorage, semconvReloader = semconv.AwareStorage(fanoutStorage)
 	}
 
 	var (
@@ -1023,6 +1024,15 @@ func main() {
 					c[k] = v.ServiceDiscoveryConfigs
 				}
 				return discoveryManagerNotify.ApplyConfig(c)
+			},
+		},
+		{
+			name: "semconv",
+			reloader: func(c *config.Config) error {
+				if !cfg.enableSemconvVersionedRead {
+					return nil
+				}
+				return semconvReloader(c)
 			},
 		}, {
 			name: "rules",
