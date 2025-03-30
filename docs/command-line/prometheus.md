@@ -16,7 +16,7 @@ The Prometheus monitoring server
 | <code class="text-nowrap">--version</code> | Show application version. |  |
 | <code class="text-nowrap">--config.file</code> | Prometheus configuration file path. | `prometheus.yml` |
 | <code class="text-nowrap">--config.auto-reload-interval</code> | Specifies the interval for checking and automatically reloading the Prometheus configuration file upon detecting changes. | `30s` |
-| <code class="text-nowrap">--web.listen-address</code> <code class="text-nowrap">...<code class="text-nowrap"> | Address to listen on for UI, API, and telemetry. Can be repeated. | `0.0.0.0:9090` |
+| <code class="text-nowrap">--web.listen-address</code> <code class="text-nowrap">...<code class="text-nowrap"> | Address or UNIX domain socket path to listen on for UI, API, and telemetry. Can be repeated. If set to a UNIX domain socket, --web.external-url must be set as well. | `0.0.0.0:9090` |
 | <code class="text-nowrap">--auto-gomaxprocs</code> | Automatically set GOMAXPROCS to match Linux container CPU quota | `true` |
 | <code class="text-nowrap">--auto-gomemlimit</code> | Automatically set GOMEMLIMIT to match Linux container or system memory limit | `true` |
 | <code class="text-nowrap">--auto-gomemlimit.ratio</code> | The ratio of reserved GOMEMLIMIT memory to the detected maximum container or system memory | `0.9` |
@@ -24,7 +24,7 @@ The Prometheus monitoring server
 | <code class="text-nowrap">--web.read-timeout</code> | Maximum duration before timing out read of the request, and closing idle connections. | `5m` |
 | <code class="text-nowrap">--web.max-connections</code> | Maximum number of simultaneous connections across all listeners. | `512` |
 | <code class="text-nowrap">--web.max-notifications-subscribers</code> | Limits the maximum number of subscribers that can concurrently receive live notifications. If the limit is reached, new subscription requests will be denied until existing connections close. | `16` |
-| <code class="text-nowrap">--web.external-url</code> | The URL under which Prometheus is externally reachable (for example, if Prometheus is served via a reverse proxy). Used for generating relative and absolute links back to Prometheus itself. If the URL has a path portion, it will be used to prefix all HTTP endpoints served by Prometheus. If omitted, relevant URL components will be derived automatically. |  |
+| <code class="text-nowrap">--web.external-url</code> | The URL under which Prometheus is externally reachable (for example, if Prometheus is served via a reverse proxy). Used for generating relative and absolute links back to Prometheus itself. If the URL has a path portion, it will be used to prefix all HTTP endpoints served by Prometheus. If omitted, relevant URL components will be derived automatically. Mandatory if --web.listen-address is set to a UNIX domain socket. |  |
 | <code class="text-nowrap">--web.route-prefix</code> | Prefix for the internal routes of web endpoints. Defaults to path of --web.external-url. |  |
 | <code class="text-nowrap">--web.user-assets</code> | Path to static asset directory, available at /user. |  |
 | <code class="text-nowrap">--web.enable-lifecycle</code> | Enable shutdown and reload via HTTP request. | `false` |

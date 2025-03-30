@@ -649,11 +649,27 @@ func (h *Handler) Listeners() ([]net.Listener, error) {
 	return listeners, nil
 }
 
+// isUnixDomainSocket tests if the given string is a syntactically valid path for a UNIX domain socket.
+func isUnixDomainSocket(address string) bool {
+	// sanitizeSplitHostPort already prevents TCP socket addresses without a port number.
+	if (strings.HasPrefix(address, "/") || strings.HasPrefix(address, "./")) && !strings.Contains(address, ":") {
+		return true
+	}
+
+	return false
+}
+
 // Listener creates the TCP listener for web requests.
 func (h *Handler) Listener(address string, sem chan struct{}) (net.Listener, error) {
 	h.logger.Info("Start listening for connections", "address", address)
 
-	listener, err := net.Listen("tcp", address)
+	network := "tcp"
+
+	if isUnixDomainSocket(address) {
+		network = "unix"
+	}
+
+	listener, err := net.Listen(network, address)
 	if err != nil {
 		return listener, err
 	}

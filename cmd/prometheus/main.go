@@ -338,7 +338,7 @@ func main() {
 	a.Flag("config.auto-reload-interval", "Specifies the interval for checking and automatically reloading the Prometheus configuration file upon detecting changes.").
 		Default("30s").SetValue(&cfg.autoReloadInterval)
 
-	a.Flag("web.listen-address", "Address to listen on for UI, API, and telemetry. Can be repeated.").
+	a.Flag("web.listen-address", "Address or UNIX domain socket path to listen on for UI, API, and telemetry. Can be repeated. If set to a UNIX domain socket, --web.external-url must be set as well.").
 		Default("0.0.0.0:9090").StringsVar(&cfg.web.ListenAddresses)
 
 	a.Flag("auto-gomaxprocs", "Automatically set GOMAXPROCS to match Linux container CPU quota").
@@ -364,7 +364,7 @@ func main() {
 		Default("16").IntVar(&cfg.maxNotificationsSubscribers)
 
 	a.Flag("web.external-url",
-		"The URL under which Prometheus is externally reachable (for example, if Prometheus is served via a reverse proxy). Used for generating relative and absolute links back to Prometheus itself. If the URL has a path portion, it will be used to prefix all HTTP endpoints served by Prometheus. If omitted, relevant URL components will be derived automatically.").
+		"The URL under which Prometheus is externally reachable (for example, if Prometheus is served via a reverse proxy). Used for generating relative and absolute links back to Prometheus itself. If the URL has a path portion, it will be used to prefix all HTTP endpoints served by Prometheus. If omitted, relevant URL components will be derived automatically. Mandatory if --web.listen-address is set to a UNIX domain socket.").
 		PlaceHolder("<URL>").StringVar(&cfg.prometheusURL)
 
 	a.Flag("web.route-prefix",
