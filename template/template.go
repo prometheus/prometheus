@@ -51,7 +51,7 @@ var (
 	errNaNOrInf = errors.New("value is NaN or Inf")
 )
 
-// Caller is responsible for calling this only once per registry.
+// RegisterTemplateMetrics registers the template metrics. Caller is responsible for calling this only once per registry.
 func RegisterTemplateMetrics(registry prometheus.Registerer) {
 	registry.MustRegister(templateTextExpansionFailures)
 	registry.MustRegister(templateTextExpansionTotal)
