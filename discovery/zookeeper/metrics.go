@@ -15,14 +15,11 @@ package zookeeper
 
 import (
 	"errors"
-	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/discovery"
 )
-
-var registerMetricsOnce sync.Once
 
 type zookeeperMetrics struct {
 	// The total number of ZooKeeper failures.
@@ -51,25 +48,21 @@ func newDiscovererMetrics(reg prometheus.Registerer, _ discovery.RefreshMetricsI
 	// To not cause double registration problems, if both SD mechanisms are instantiated with
 	// the same registry, we are handling the AlreadyRegisteredError accordingly below.
 	// TODO: Consider separate zookeeper metrics for both SD mechanisms in the future.
-	registerMetricsOnce.Do(func() {
-		// Register failureCounter
-		if err := reg.Register(m.failureCounter); err != nil {
-			var are prometheus.AlreadyRegisteredError
-			if !errors.As(err, &are) {
-				panic(err)
-			}
-			m.failureCounter = are.ExistingCollector.(prometheus.Counter)
+	if err := reg.Register(m.failureCounter); err != nil {
+		var are prometheus.AlreadyRegisteredError
+		if !errors.As(err, &are) {
+			panic(err)
 		}
+		m.failureCounter = are.ExistingCollector.(prometheus.Counter)
+	}
 
-		// Register numWatchers
-		if err := reg.Register(m.numWatchers); err != nil {
-			var are prometheus.AlreadyRegisteredError
-			if !errors.As(err, &are) {
-				panic(err)
-			}
-			m.numWatchers = are.ExistingCollector.(prometheus.Gauge)
+	if err := reg.Register(m.numWatchers); err != nil {
+		var are prometheus.AlreadyRegisteredError
+		if !errors.As(err, &are) {
+			panic(err)
 		}
-	})
+		m.numWatchers = are.ExistingCollector.(prometheus.Gauge)
+	}
 
 	return &zookeeperMetrics{
 		failureCounter: m.failureCounter,

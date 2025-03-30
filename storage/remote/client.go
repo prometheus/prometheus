@@ -24,7 +24,6 @@ import (
 	"net/http/httptrace"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -101,8 +100,6 @@ var (
 		},
 		[]string{remoteName, endpoint, "response_type"},
 	)
-
-	once sync.Once
 )
 
 // Client allows reading and writing from/to a remote HTTP endpoint.
@@ -148,9 +145,7 @@ type ReadClient interface {
 }
 
 func registerRemoteReadMetrics(registry prometheus.Registerer) {
-	once.Do(func() {
-		registry.MustRegister(remoteReadQueriesTotal, remoteReadQueries, remoteReadQueryDuration)
-	})
+	registry.MustRegister(remoteReadQueriesTotal, remoteReadQueries, remoteReadQueryDuration)
 }
 
 // NewReadClient creates a new client for remote read.

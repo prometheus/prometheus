@@ -24,7 +24,6 @@ import (
 	"net/url"
 	"sort"
 	"strings"
-	"sync"
 	text_template "text/template"
 	"time"
 
@@ -50,15 +49,12 @@ var (
 	})
 
 	errNaNOrInf = errors.New("value is NaN or Inf")
-
-	once sync.Once // Ensure registration happens only once
 )
 
+// Caller is responsible for calling this only once per registry.
 func RegisterTemplateMetrics(registry prometheus.Registerer) {
-	once.Do(func() {
-		registry.MustRegister(templateTextExpansionFailures)
-		registry.MustRegister(templateTextExpansionTotal)
-	})
+	registry.MustRegister(templateTextExpansionFailures)
+	registry.MustRegister(templateTextExpansionTotal)
 }
 
 // A version of vector that's easier to use from templates.
