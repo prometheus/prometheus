@@ -1,3 +1,16 @@
+// Copyright 2025 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package semconv
 
 import (
@@ -9,7 +22,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/timestamp"
-
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -281,7 +293,8 @@ func TestAwareStorage(t *testing.T) {
 		t.Cleanup(func() {
 			require.NoError(t, notAware.Close())
 		})
-		aware, err := AwareStorage(db).Querier(0, samples)
+		s, _ := AwareStorage(db)
+		aware, err := s.Querier(0, samples)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, aware.Close())
@@ -379,7 +392,8 @@ func TestAwareStorage(t *testing.T) {
 		t.Cleanup(func() {
 			require.NoError(t, notAware.Close())
 		})
-		aware, err := AwareStorage(db).Querier(0, samples)
+		s, _ := AwareStorage(db)
+		aware, err := s.Querier(0, samples)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, aware.Close())
@@ -557,7 +571,8 @@ func TestAwareStorage(t *testing.T) {
 		t.Cleanup(func() {
 			require.NoError(t, notAware.Close())
 		})
-		aware, err := AwareStorage(db).Querier(0, samples)
+		s, _ := AwareStorage(db)
+		aware, err := s.Querier(0, samples)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, aware.Close())
@@ -642,8 +657,9 @@ func TestAwareStorage_PromQL_OverlappingSeries(t *testing.T) {
 			{series: seriesNew, samples: testFSamples[5:]},
 		})
 
+		s, _ := AwareStorage(db)
 		q, err := e.NewInstantQuery(
-			ctx, AwareStorage(db), nil,
+			ctx, s, nil,
 			fmt.Sprintf("rate(%v{__schema_url__=%q}[10])", seriesOld.MetricIdentity().Name, testSchemaURL("1.0.0")), timestamp.Time(10),
 		)
 		require.NoError(t, err)
@@ -662,8 +678,9 @@ func TestAwareStorage_PromQL_OverlappingSeries(t *testing.T) {
 			{series: seriesNew, samples: testFSamples},
 		})
 
+		s, _ := AwareStorage(db)
 		q, err := e.NewInstantQuery(
-			ctx, AwareStorage(db), nil,
+			ctx, s, nil,
 			fmt.Sprintf("rate(%v{__schema_url__=%q}[10])", seriesOld.MetricIdentity().Name, testSchemaURL("1.0.0")), timestamp.Time(10),
 		)
 		require.NoError(t, err)

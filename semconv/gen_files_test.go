@@ -1,3 +1,16 @@
+// Copyright 2025 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package semconv
 
 import (
@@ -9,12 +22,12 @@ import (
 var (
 	testdataElementsChanges = []change{
 		{
-			Forward:  metricGroupChange{MetricName: "", Unit: "", ValuePromQL: "", Attributes: []attribute{{Tag: "my_number"}}},
-			Backward: metricGroupChange{MetricName: "", Unit: "", ValuePromQL: "", Attributes: []attribute{{Tag: "number"}}},
-		},
-		{
 			Forward:  metricGroupChange{MetricName: "my_app_custom_changed_elements_total", Unit: "", ValuePromQL: "", Attributes: []attribute{{Tag: "number"}, {Tag: "class", Members: []attributeMember{{Value: "FIRST"}, {Value: "SECOND"}, {Value: "OTHER"}}}}},
 			Backward: metricGroupChange{MetricName: "my_app_custom_elements_total", Unit: "", ValuePromQL: "", Attributes: []attribute{{Tag: "integer"}, {Tag: "category", Members: []attributeMember{{Value: "first"}, {Value: "second"}, {Value: "other"}}}}},
+		},
+		{
+			Forward:  metricGroupChange{MetricName: "", Unit: "", ValuePromQL: "", Attributes: []attribute{{Tag: "my_number"}}},
+			Backward: metricGroupChange{MetricName: "", Unit: "", ValuePromQL: "", Attributes: []attribute{{Tag: "number"}}},
 		},
 	}
 	testdataLatencyChanges = []change{
@@ -35,24 +48,35 @@ func TestFetchChangelog(t *testing.T) {
 	}
 
 	t.Run("local", func(t *testing.T) {
-		got, err := fetchChangelog("./testdata/changelog.yaml")
+		e := newSchemaEngine()
+		got, err := e.fetchChangelog("./testdata/1.1.0")
 		require.NoError(t, err)
 		require.Equal(t, expected, got)
 	})
 	// TODO(bwplotka): Move to something Prometheus owns e.g. internal Prometheus repo path.
 	t.Run("http", func(t *testing.T) {
-		got, err := fetchChangelog("https://raw.githubusercontent.com/bwplotka/metric-rename-demo/refs/heads/diff/my-org/semconv/changelog.yaml")
+		e := newSchemaEngine()
+		got, err := e.fetchChangelog("https://raw.githubusercontent.com/bwplotka/metric-rename-demo/refs/heads/diff/my-org/semconv/1.1.0")
 		require.NoError(t, err)
 		require.Equal(t, expected, got)
 	})
 	t.Run("http-custom", func(t *testing.T) {
-		got, err := fetchChangelog("https://bwplotka.dev/semconv/changelog.yaml")
+		e := newSchemaEngine()
+		got, err := e.fetchChangelog("https://bwplotka.dev/semconv/1.0.0")
+		require.NoError(t, err)
+		require.Equal(t, expected, got)
+	})
+	t.Run("override", func(t *testing.T) {
+		e := newSchemaEngine()
+		e.schemaBaseOverride["https://bwplotka.dev/YOLO"] = "./testdata"
+
+		got, err := e.fetchChangelog("https://bwplotka.dev/YOLO/1.1.0")
 		require.NoError(t, err)
 		require.Equal(t, expected, got)
 	})
 }
 
-func TestFetchIDs(t *testing.T) {
+func TestSchemaEngine_FetchIDs(t *testing.T) {
 	expected := &ids{
 		Version: 1,
 		MetricsIDs: map[string][]versionedID{
@@ -106,17 +130,28 @@ func TestFetchIDs(t *testing.T) {
 	}
 
 	t.Run("local", func(t *testing.T) {
-		got, err := fetchIDs("./testdata/ids.yaml")
+		e := newSchemaEngine()
+		got, err := e.fetchIDs("./testdata/1.1.0")
 		require.NoError(t, err)
 		require.Equal(t, expected, got)
 	})
 	t.Run("http", func(t *testing.T) {
-		got, err := fetchIDs("https://raw.githubusercontent.com/bwplotka/metric-rename-demo/refs/heads/diff/my-org/semconv/ids.yaml")
+		e := newSchemaEngine()
+		got, err := e.fetchIDs("https://raw.githubusercontent.com/bwplotka/metric-rename-demo/refs/heads/diff/my-org/semconv/1.1.0")
 		require.NoError(t, err)
 		require.Equal(t, expected, got)
 	})
 	t.Run("http-custom", func(t *testing.T) {
-		got, err := fetchIDs("https://bwplotka.dev/semconv/ids.yaml")
+		e := newSchemaEngine()
+		got, err := e.fetchIDs("https://bwplotka.dev/semconv/1.1.0")
+		require.NoError(t, err)
+		require.Equal(t, expected, got)
+	})
+	t.Run("override", func(t *testing.T) {
+		e := newSchemaEngine()
+		e.schemaBaseOverride["https://bwplotka.dev/YOLO"] = "./testdata"
+
+		got, err := e.fetchIDs("https://bwplotka.dev/YOLO/1.1.0")
 		require.NoError(t, err)
 		require.Equal(t, expected, got)
 	})

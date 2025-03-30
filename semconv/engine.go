@@ -1,3 +1,16 @@
+// Copyright 2025 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package semconv
 
 import (
@@ -12,6 +25,8 @@ import (
 	"github.com/maruel/natural"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/config"
+
 	"github.com/prometheus/prometheus/model/labels"
 )
 
@@ -19,16 +34,19 @@ const cacheTTL = 1 * time.Hour
 
 type schemaEngine struct {
 	// TODO(bwplotka): Implement GC logic for ttl and limits.
-	cachedIDs        map[string]*ids
-	cacheIDsMu       sync.RWMutex
-	cachedChangelog  map[string]*changelog
-	cacheChangelogMu sync.RWMutex
+	cachedIDs       map[string]*ids
+	cacheMu         sync.RWMutex
+	cachedChangelog map[string]*changelog
+
+	schemaBaseOverride map[string]string
 }
 
 func newSchemaEngine() *schemaEngine {
 	return &schemaEngine{
 		cachedIDs:       map[string]*ids{},
 		cachedChangelog: map[string]*changelog{},
+
+		schemaBaseOverride: map[string]string{},
 	}
 }
 
@@ -101,10 +119,24 @@ func (b matcherBuilder) ToMatchers(extraNameSuffix string) []*labels.Matcher {
 	return append(ret, b.other...)
 }
 
-func (e *schemaEngine) fetchIDs(schemaIDsURL string) (_ *ids, err error) {
-	e.cacheIDsMu.RLock()
+func (e *schemaEngine) ApplyConfig(cfg *config.Config) error {
+	e.cacheMu.Lock()
+	e.schemaBaseOverride = cfg.SemConv.SchemaOverrides
+	e.cacheMu.Unlock()
+	return nil
+}
+
+func (e *schemaEngine) fetchIDs(schemaURL string) (_ *ids, err error) {
+	e.cacheMu.RLock()
+	// NOTE(bwplotka): Be careful with path as it cleans potential http:// to http:/
+	schemaBase, _ := path.Split(schemaURL)
+	schemaBase = strings.TrimSuffix(schemaBase, "/")
+	if o, ok := e.schemaBaseOverride[schemaBase]; ok {
+		schemaBase = o
+	}
+	schemaIDsURL := fmt.Sprintf("%v/ids.yaml", schemaBase)
 	ids, ok := e.cachedIDs[schemaIDsURL]
-	e.cacheIDsMu.RUnlock()
+	e.cacheMu.RUnlock()
 	if ok && time.Now().Sub(ids.fetchTime) < cacheTTL {
 		return ids, nil
 	}
@@ -113,16 +145,24 @@ func (e *schemaEngine) fetchIDs(schemaIDsURL string) (_ *ids, err error) {
 	if err != nil {
 		return nil, err
 	}
-	e.cacheIDsMu.Lock()
+	e.cacheMu.Lock()
 	e.cachedIDs[schemaIDsURL] = ids
-	e.cacheIDsMu.Unlock()
+	e.cacheMu.Unlock()
 	return ids, nil
 }
 
-func (e *schemaEngine) fetchChangelog(schemaChangelogURL string) (_ *changelog, err error) {
-	e.cacheChangelogMu.RLock()
+func (e *schemaEngine) fetchChangelog(schemaURL string) (_ *changelog, err error) {
+	e.cacheMu.RLock()
+	// NOTE(bwplotka): Be careful with path as it cleans potential http:// to http:/
+	schemaBase, _ := path.Split(schemaURL)
+	schemaBase = strings.TrimSuffix(schemaBase, "/")
+	if o, ok := e.schemaBaseOverride[schemaBase]; ok {
+		schemaBase = o
+	}
+	schemaChangelogURL := fmt.Sprintf("%v/changelog.yaml", schemaBase)
+
 	ch, ok := e.cachedChangelog[schemaChangelogURL]
-	e.cacheChangelogMu.RUnlock()
+	e.cacheMu.RUnlock()
 	if ok && time.Now().Sub(ch.fetchTime) < cacheTTL {
 		return ch, nil
 	}
@@ -131,22 +171,10 @@ func (e *schemaEngine) fetchChangelog(schemaChangelogURL string) (_ *changelog, 
 	if err != nil {
 		return nil, err
 	}
-	e.cacheChangelogMu.Lock()
+	e.cacheMu.Lock()
 	e.cachedChangelog[schemaChangelogURL] = ch
-	e.cacheChangelogMu.Unlock()
+	e.cacheMu.Unlock()
 	return ch, nil
-}
-
-func schemaChangelogURL(schemaURL string) string {
-	// NOTE(bwplotka): Be careful with path as it cleans potential http:// to http:/
-	dir, _ := path.Split(schemaURL)
-	return fmt.Sprintf("%v/changelog.yaml", dir)
-}
-
-func schemaIDsURL(schemaURL string) string {
-	// NOTE(bwplotka): Be careful with path as it cleans potential http:// to http:/
-	dir, _ := path.Split(schemaURL)
-	return fmt.Sprintf("%v/ids.yaml", dir)
 }
 
 // findMetricID returns the metric ID from the schema definition for this identity and schema URL.
@@ -156,7 +184,7 @@ func (e *schemaEngine) findMetricID(schemaURL string, metric labels.MetricIdenti
 	schemaVersion := path.Base(schemaURL)
 
 	// TODO(bwplotka): This assumes such a file structure is part of the spec.
-	ids, err := e.fetchIDs(schemaIDsURL(schemaURL))
+	ids, err := e.fetchIDs(schemaURL)
 	if err != nil {
 		return "", "", fmt.Errorf("based on __schema_url__=%v; %w", schemaURL, err)
 	}
@@ -224,7 +252,7 @@ func (e *schemaEngine) FindMatcherVariants(schemaURL string, originalMatchers []
 		return nil, q, fmt.Errorf("FindMetricID: %w", err)
 	}
 
-	ch, err := e.fetchChangelog(schemaChangelogURL(schemaURL))
+	ch, err := e.fetchChangelog(schemaURL)
 	if err != nil {
 		return nil, q, err
 	}
