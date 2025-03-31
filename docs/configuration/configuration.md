@@ -469,6 +469,22 @@ metric_relabel_configs:
 # underscores.
 [ metric_name_validation_scheme <string> | default "utf8" ]
 
+# Specifies the character escaping scheme that will be requested when scraping
+# for metric and label names that do not conform to the legacy Prometheus
+# character set. Available options are: 
+#   * `allow-utf-8`: Full UTF-8 support, no escaping needed.
+#   * `underscores`: Escape all legacy-invalid characters to underscores.
+#   * `dots`: Escapes dots to `_dot_`, underscores to `__`, and all other
+#     legacy-invalid characters to underscores.
+#   * `values`: Prepend the name with `U__` and replace all invalid
+#     characters with their unicode value, surrounded by underscores. Single
+#     underscores are replaced with double underscores. 
+#     e.g. "U__my_2e_dotted_2e_name".
+# If this value is left blank, Prometheus will default to `allow-utf-8` if the
+# validation scheme for the current scrape config is set to utf8, or
+# `underscores` if the validation scheme is set to `legacy`.
+[ metric_name_validation_scheme <string> | default "utf8" ]
+
 # Limit on total number of positive and negative buckets allowed in a single
 # native histogram. The resolution of a histogram with more buckets will be
 # reduced until the number of buckets is within the limit. If the limit cannot

@@ -164,7 +164,7 @@ export default function AlertsPage() {
   const [debouncedSearch] = useDebouncedValue<string>(searchFilter.trim(), 250);
   const [showEmptyGroups, setShowEmptyGroups] = useLocalStorage<boolean>({
     key: "alertsPage.showEmptyGroups",
-    defaultValue: true,
+    defaultValue: false,
   });
 
   const { alertGroupsPerPage } = useSettings();

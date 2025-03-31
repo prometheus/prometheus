@@ -9104,7 +9104,7 @@ func compareSeries(t require.TestingT, expected, actual map[string][]chunks.Samp
 				require.Equal(t, eS.F(), aS.F(), "sample %d in series %q differs", i, key)
 			case chunkenc.ValHistogram:
 				eH, aH := eS.H(), aS.H()
-				if aH.CounterResetHint == histogram.UnknownCounterReset && aH.CounterResetHint != histogram.GaugeType {
+				if aH.CounterResetHint == histogram.UnknownCounterReset {
 					eH = eH.Copy()
 					// It is always safe to set the counter reset hint to UnknownCounterReset
 					eH.CounterResetHint = histogram.UnknownCounterReset
@@ -9114,7 +9114,7 @@ func compareSeries(t require.TestingT, expected, actual map[string][]chunks.Samp
 
 			case chunkenc.ValFloatHistogram:
 				eFH, aFH := eS.FH(), aS.FH()
-				if aFH.CounterResetHint == histogram.UnknownCounterReset && aFH.CounterResetHint != histogram.GaugeType {
+				if aFH.CounterResetHint == histogram.UnknownCounterReset {
 					eFH = eFH.Copy()
 					// It is always safe to set the counter reset hint to UnknownCounterReset
 					eFH.CounterResetHint = histogram.UnknownCounterReset
