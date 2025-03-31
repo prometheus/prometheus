@@ -524,7 +524,7 @@ func (h *writeHandler) handleHistogramZeroSample(app storage.Appender, ref stora
 }
 
 type OTLPOptions struct {
-	// Convert deltaToCumulative samples to their cumulative equivalent by aggregating in-memory
+	// Convert delta samples to their cumulative equivalent by aggregating in-memory
 	ConvertDelta bool
 }
 
@@ -563,7 +563,7 @@ func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendabl
 			// deltatocumulative does not error on start. see above for panic reasoning
 			panic(err)
 		}
-		wh.deltaToCumulative = d2c
+		wh.delta = d2c
 	}
 
 	return wh
@@ -608,8 +608,8 @@ func (rw *rwExporter) Capabilities() consumer.Capabilities {
 type otlpWriteHandler struct {
 	logger *slog.Logger
 
-	cumul             consumer.Metrics // only cumulative
-	deltaToCumulative consumer.Metrics // deltaToCumulative capable
+	cumul consumer.Metrics // only cumulative
+	delta consumer.Metrics // delta capable
 }
 
 func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -621,12 +621,12 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	md := req.Metrics()
-	// if deltaToCumulative conversion enabled AND deltaToCumulative samples exist, use slower deltaToCumulative capable path
-	if h.deltaToCumulative != nil && hasDelta(md) {
-		err = h.deltaToCumulative.ConsumeMetrics(r.Context(), md)
+	// if delta conversion enabled AND delta samples exist, use slower delta capable path
+	if h.delta != nil && hasDelta(md) {
+		err = h.delta.ConsumeMetrics(r.Context(), md)
 	} else {
 		// deltatocumulative currently holds a sync.Mutex when entering ConsumeMetrics.
-		// This is slow and not necessary when no deltaToCumulative samples exist anyways
+		// This is slow and not necessary when no delta samples exist anyways
 		err = h.cumul.ConsumeMetrics(r.Context(), md)
 	}
 
