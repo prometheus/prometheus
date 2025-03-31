@@ -501,7 +501,7 @@ func TestOTLPDelta(t *testing.T) {
 	ms := md.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics()
 
 	m := ms.AppendEmpty()
-	m.SetName("some.delta.total")
+	m.SetName("some.deltaToCumulative.total")
 
 	sum := m.SetEmptySum()
 	sum.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
@@ -677,7 +677,7 @@ func BenchmarkOTLP(b *testing.B) {
 			return data(pmetric.AggregationTemporalityCumulative, 10, epoch)
 		},
 	}, {
-		name: "delta",
+		name: "deltaToCumulative",
 		data: func(data func(pmetric.AggregationTemporality, int, int) []pmetric.Metric, epoch int) []pmetric.Metric {
 			return data(pmetric.AggregationTemporalityDelta, 10, epoch)
 		},
@@ -705,7 +705,7 @@ func BenchmarkOTLP(b *testing.B) {
 		for _, mode := range modes {
 			for _, cfg := range configs {
 				b.Run(fmt.Sprintf("type=%s/temporality=%s/cfg=%s", cs.name, mode.name, cfg.name), func(b *testing.B) {
-					if !cfg.opts.ConvertDelta && (mode.name == "delta" || mode.name == "mixed") {
+					if !cfg.opts.ConvertDelta && (mode.name == "deltaToCumulative" || mode.name == "mixed") {
 						b.Skip("not possible")
 					}
 
