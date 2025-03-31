@@ -1,3 +1,0 @@
-otlp:
-  translation_strategy: NoUTF8EscapingWithSuffixes
-  allow_delta: true
