@@ -816,27 +816,27 @@ func (ev *evalCmd) expectMetric(pos int, m labels.Labels, vals ...parser.Sequenc
 	ev.expected[h] = entry{pos: pos, vals: vals}
 }
 
-// validateExpectedAnnotations validates expected messages and regex match actual annotations.
-func validateExpectedAnnotations(expr string, expectedAnnotations []expectCmd, actualAnnotations []string, line int, annotationType string, annos annotations.Annotations) error {
-	if len(expectedAnnotations) == 0 {
+// validateExpectedAnnotationsOfType validates expected messages and regex match actual annotations.
+func validateExpectedAnnotationsOfType(expr string, expectedAnnotationsOfType []expectCmd, actualAnnotationsOfType []string, line int, annotationType string, allAnnos annotations.Annotations) error {
+	if len(expectedAnnotationsOfType) == 0 {
 		return nil
 	}
 
-	if len(actualAnnotations) == 0 {
+	if len(actualAnnotationsOfType) == 0 {
 		return fmt.Errorf("expected %s annotations but none were found for query %q (line %d)", annotationType, expr, line)
 	}
 
 	// Check if all expected annotations are found in actual.
-	for _, e := range expectedAnnotations {
-		matchFound := slices.ContainsFunc(actualAnnotations, e.CheckMatch)
+	for _, e := range expectedAnnotationsOfType {
+		matchFound := slices.ContainsFunc(actualAnnotationsOfType, e.CheckMatch)
 		if !matchFound {
-			return fmt.Errorf(`expected %s annotation matching %s %q but no matching annotation was found for query %q (line %d), found: %v`, annotationType, e.Type(), e.String(), expr, line, annos.AsErrors())
+			return fmt.Errorf(`expected %s annotation matching %s %q but no matching annotation was found for query %q (line %d), found: %v`, annotationType, e.Type(), e.String(), expr, line, allAnnos.AsErrors())
 		}
 	}
 
 	// Check if all actual annotations have a corresponding expected annotation.
-	for _, anno := range actualAnnotations {
-		matchFound := slices.ContainsFunc(expectedAnnotations, func(e expectCmd) bool {
+	for _, anno := range actualAnnotationsOfType {
+		matchFound := slices.ContainsFunc(expectedAnnotationsOfType, func(e expectCmd) bool {
 			return e.CheckMatch(anno)
 		})
 		if !matchFound {
@@ -866,13 +866,13 @@ func (ev *evalCmd) checkAnnotations(expr string, annos annotations.Annotations) 
 		case errors.Is(err, annotations.PromQLInfo):
 			infos = append(infos, err.Error())
 		default:
-			return errors.New("unexpected annotation type, must be either info or warn")
+			return fmt.Errorf("unexpected annotation type, must be either info or warn but got: %w", err)
 		}
 	}
-	if err := validateExpectedAnnotations(expr, ev.expectedCmds[Warn], warnings, ev.line, "warn", annos); err != nil {
+	if err := validateExpectedAnnotationsOfType(expr, ev.expectedCmds[Warn], warnings, ev.line, "warn", annos); err != nil {
 		return err
 	}
-	if err := validateExpectedAnnotations(expr, ev.expectedCmds[Info], infos, ev.line, "info", annos); err != nil {
+	if err := validateExpectedAnnotationsOfType(expr, ev.expectedCmds[Info], infos, ev.line, "info", annos); err != nil {
 		return err
 	}
 	if ev.expectedCmds[NoWarn] != nil && len(warnings) > 0 {
