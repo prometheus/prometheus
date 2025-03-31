@@ -427,7 +427,7 @@ export default function AlertsPage() {
               o as keyof typeof alertsPageData.globalCounts
             ]
           }
-          placeholder="Filter by rule state"
+          placeholder="Filter by rule group state"
           values={(stateFilter?.filter((v) => v !== null) as string[]) || []}
           onChange={(values) => setStateFilter(values)}
         />
