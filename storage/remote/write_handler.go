@@ -526,11 +526,18 @@ func (h *writeHandler) handleHistogramZeroSample(app storage.Appender, ref stora
 type OTLPOptions struct {
 	// Convert delta samples to their cumulative equivalent by aggregating in-memory
 	ConvertDelta bool
+	// Store the raw delta samples as metrics with unknown type
+	DirectDeltaIngestion bool
 }
 
 // NewOTLPWriteHandler creates a http.Handler that accepts OTLP write requests and
 // writes them to the provided appendable.
 func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendable storage.Appendable, configFunc func() config.Config, opts OTLPOptions) http.Handler {
+	if opts.DirectDeltaIngestion && opts.ConvertDelta {
+		// This should be validated when iterating through feature flags, so not expected to fail here.
+		panic("cannot enable direct delta ingestion and delta2cumulative conversion at the same time")
+	}
+
 	ex := &rwExporter{
 		writeHandler: &writeHandler{
 			logger:     logger,
@@ -539,7 +546,11 @@ func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendabl
 		config: configFunc,
 	}
 
-	wh := &otlpWriteHandler{logger: logger, cumul: ex}
+	if opts.DirectDeltaIngestion {
+		ex.allowDeltaTemporality = true
+	}
+
+	wh := &otlpWriteHandler{logger: logger, defaultConsumer: ex}
 
 	if opts.ConvertDelta {
 		fac := deltatocumulative.NewFactory()
@@ -547,7 +558,7 @@ func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendabl
 			ID:                component.NewID(fac.Type()),
 			TelemetrySettings: component.TelemetrySettings{MeterProvider: noop.NewMeterProvider()},
 		}
-		d2c, err := fac.CreateMetrics(context.Background(), set, fac.CreateDefaultConfig(), wh.cumul)
+		d2c, err := fac.CreateMetrics(context.Background(), set, fac.CreateDefaultConfig(), wh.defaultConsumer)
 		if err != nil {
 			// fac.CreateMetrics directly calls [deltatocumulativeprocessor.createMetricsProcessor],
 			// which only errors if:
@@ -563,7 +574,7 @@ func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendabl
 			// deltatocumulative does not error on start. see above for panic reasoning
 			panic(err)
 		}
-		wh.delta = d2c
+		wh.d2cConsumer = d2c
 	}
 
 	return wh
@@ -571,7 +582,8 @@ func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendabl
 
 type rwExporter struct {
 	*writeHandler
-	config func() config.Config
+	config                func() config.Config
+	allowDeltaTemporality bool
 }
 
 func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) error {
@@ -584,7 +596,7 @@ func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) er
 		PromoteResourceAttributes:         otlpCfg.PromoteResourceAttributes,
 		KeepIdentifyingResourceAttributes: otlpCfg.KeepIdentifyingResourceAttributes,
 		ConvertHistogramsToNHCB:           otlpCfg.ConvertHistogramsToNHCB,
-		AllowDelta:                        otlpCfg.AllowDelta,
+		AllowDeltaTemporality:             rw.allowDeltaTemporality,
 	})
 	if err != nil {
 		rw.logger.Warn("Error translating OTLP metrics to Prometheus write request", "err", err)
@@ -608,8 +620,8 @@ func (rw *rwExporter) Capabilities() consumer.Capabilities {
 type otlpWriteHandler struct {
 	logger *slog.Logger
 
-	cumul consumer.Metrics // only cumulative
-	delta consumer.Metrics // delta capable
+	defaultConsumer consumer.Metrics // only cumulative
+	d2cConsumer     consumer.Metrics // delta capable
 }
 
 func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -622,12 +634,12 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	md := req.Metrics()
 	// if delta conversion enabled AND delta samples exist, use slower delta capable path
-	if h.delta != nil && hasDelta(md) {
-		err = h.delta.ConsumeMetrics(r.Context(), md)
+	if h.d2cConsumer != nil && hasDelta(md) {
+		err = h.d2cConsumer.ConsumeMetrics(r.Context(), md)
 	} else {
 		// deltatocumulative currently holds a sync.Mutex when entering ConsumeMetrics.
 		// This is slow and not necessary when no delta samples exist anyways
-		err = h.cumul.ConsumeMetrics(r.Context(), md)
+		err = h.defaultConsumer.ConsumeMetrics(r.Context(), md)
 	}
 
 	switch {

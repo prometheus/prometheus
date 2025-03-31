@@ -32,19 +32,19 @@ func otelMetricTypeToPromMetricType(otelMetric pmetric.Metric) prompb.MetricMeta
 			metricType = prompb.MetricMetadata_COUNTER
 		}
 		if otelMetric.Sum().AggregationTemporality() == pmetric.AggregationTemporalityDelta {
-			metricType = prompb.MetricMetadata_UNKNOWN // TODO: new delta type (or temporality label)
+			metricType = prompb.MetricMetadata_UNKNOWN // TODO: new delta type (or temporality label). Or gauge type for now?
 		}
 		return metricType
 	case pmetric.MetricTypeHistogram:
 		if otelMetric.Histogram().AggregationTemporality() == pmetric.AggregationTemporalityDelta {
-			return prompb.MetricMetadata_UNKNOWN // TODO: new delta type (or temporality label)
+			return prompb.MetricMetadata_UNKNOWN // TODO: new delta type (or temporality label). Or gauge type for now?
 		}
 		return prompb.MetricMetadata_HISTOGRAM
 	case pmetric.MetricTypeSummary:
 		return prompb.MetricMetadata_SUMMARY
 	case pmetric.MetricTypeExponentialHistogram:
 		if otelMetric.ExponentialHistogram().AggregationTemporality() == pmetric.AggregationTemporalityDelta {
-			return prompb.MetricMetadata_UNKNOWN // TODO: new delta type (or temporality label)
+			return prompb.MetricMetadata_UNKNOWN // TODO: new delta type (or temporality label). Or gauge type for now?
 		}
 		return prompb.MetricMetadata_HISTOGRAM
 	}

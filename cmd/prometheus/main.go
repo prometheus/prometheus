@@ -279,10 +279,17 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "otlp-deltatocumulative":
 				c.web.ConvertOTLPDelta = true
 				logger.Info("Converting delta OTLP metrics to cumulative")
+			case "otlp-directdeltaingestion":
+				c.web.DirectOTLPDeltaIngestion = true
+				logger.Info("Enabling ingestion of delta OTLP metrics, storing the raw sample values without conversion and with metric type unknown")
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
 			}
 		}
+	}
+
+	if c.web.ConvertOTLPDelta && c.web.DirectOTLPDeltaIngestion {
+		return errors.New("cannot enable otlp-deltatocumulative and otlp-directdeltaingestion features at the same time")
 	}
 
 	return nil
