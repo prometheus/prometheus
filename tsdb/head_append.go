@@ -1964,6 +1964,7 @@ func (a *headAppender) Rollback() (err error) {
 	defer a.head.metrics.activeAppenders.Dec()
 	defer a.head.iso.closeAppend(a.appendID)
 	defer a.head.putSeriesBuffer(a.sampleSeries)
+	defer a.unmarkCreatedSeriesAsPendingCommit()
 
 	var series *memSeries
 	for i := range a.samples {
@@ -1980,7 +1981,6 @@ func (a *headAppender) Rollback() (err error) {
 		series.pendingCommit = false
 		series.Unlock()
 	}
-	a.unmarkCreatedSeriesAsPendingCommit()
 	a.head.putAppendBuffer(a.samples)
 	a.head.putExemplarBuffer(a.exemplars)
 	a.head.putHistogramBuffer(a.histograms)
