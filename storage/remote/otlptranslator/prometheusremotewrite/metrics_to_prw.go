@@ -41,6 +41,7 @@ type Settings struct {
 	PromoteResourceAttributes         []string
 	KeepIdentifyingResourceAttributes bool
 	ConvertHistogramsToNHCB           bool
+	AllowDelta                        bool
 }
 
 // PrometheusConverter converts from OTel write format to Prometheus remote write format.
@@ -92,7 +93,11 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				metric := metricSlice.At(k)
 				mostRecentTimestamp = max(mostRecentTimestamp, mostRecentTimestampInMetric(metric))
 
-				if !isValidAggregationTemporality(metric) {
+				if settings.AllowDelta && !notUnspecifiedAggregationTemporality(metric) {
+					errs = multierr.Append(errs, fmt.Errorf("invalid temporality and type combination for metric %q", metric.Name()))
+					continue
+				}
+				if !settings.AllowDelta && !isValidAggregationTemporality(metric) {
 					errs = multierr.Append(errs, fmt.Errorf("invalid temporality and type combination for metric %q", metric.Name()))
 					continue
 				}

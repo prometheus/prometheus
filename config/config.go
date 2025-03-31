@@ -1503,6 +1503,7 @@ type OTLPConfig struct {
 	TranslationStrategy               translationStrategyOption `yaml:"translation_strategy,omitempty"`
 	KeepIdentifyingResourceAttributes bool                      `yaml:"keep_identifying_resource_attributes,omitempty"`
 	ConvertHistogramsToNHCB           bool                      `yaml:"convert_histograms_to_nhcb,omitempty"`
+	AllowDelta                        bool                      `yaml:"allow_delta,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
