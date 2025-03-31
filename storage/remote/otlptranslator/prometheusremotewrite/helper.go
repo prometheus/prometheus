@@ -241,6 +241,21 @@ func isValidAggregationTemporality(metric pmetric.Metric) bool {
 	return false
 }
 
+func notUnspecifiedAggregationTemporality(metric pmetric.Metric) bool {
+	//exhaustive:enforce
+	switch metric.Type() {
+	case pmetric.MetricTypeGauge, pmetric.MetricTypeSummary:
+		return true
+	case pmetric.MetricTypeSum:
+		return metric.Sum().AggregationTemporality() != pmetric.AggregationTemporalityUnspecified
+	case pmetric.MetricTypeHistogram:
+		return metric.Histogram().AggregationTemporality() != pmetric.AggregationTemporalityUnspecified
+	case pmetric.MetricTypeExponentialHistogram:
+		return metric.ExponentialHistogram().AggregationTemporality() != pmetric.AggregationTemporalityUnspecified
+	}
+	return false
+}
+
 // addHistogramDataPoints adds OTel histogram data points to the corresponding Prometheus time series
 // as classical histogram samples.
 //

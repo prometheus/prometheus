@@ -526,6 +526,7 @@ func (h *writeHandler) handleHistogramZeroSample(app storage.Appender, ref stora
 type OTLPOptions struct {
 	// Convert delta samples to their cumulative equivalent by aggregating in-memory
 	ConvertDelta bool
+	RawDelta     bool
 }
 
 // NewOTLPWriteHandler creates a http.Handler that accepts OTLP write requests and
@@ -539,7 +540,7 @@ func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendabl
 		config: configFunc,
 	}
 
-	wh := &otlpWriteHandler{logger: logger, cumul: ex}
+	wh := &otlpWriteHandler{logger: logger, cumul: ex, rawDelta: opts.RawDelta}
 
 	if opts.ConvertDelta {
 		fac := deltatocumulative.NewFactory()
@@ -584,6 +585,7 @@ func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) er
 		PromoteResourceAttributes:         otlpCfg.PromoteResourceAttributes,
 		KeepIdentifyingResourceAttributes: otlpCfg.KeepIdentifyingResourceAttributes,
 		ConvertHistogramsToNHCB:           otlpCfg.ConvertHistogramsToNHCB,
+		AllowDelta:                        otlpCfg.AllowDelta,
 	})
 	if err != nil {
 		rw.logger.Warn("Error translating OTLP metrics to Prometheus write request", "err", err)
@@ -607,8 +609,9 @@ func (rw *rwExporter) Capabilities() consumer.Capabilities {
 type otlpWriteHandler struct {
 	logger *slog.Logger
 
-	cumul consumer.Metrics // only cumulative
-	delta consumer.Metrics // delta capable
+	cumul    consumer.Metrics // only cumulative
+	delta    consumer.Metrics // delta capable
+	rawDelta bool
 }
 
 func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -621,7 +624,9 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	md := req.Metrics()
 	// if delta conversion enabled AND delta samples exist, use slower delta capable path
-	if h.delta != nil && hasDelta(md) {
+	if h.delta != nil && h.rawDelta {
+		err = h.cumul.ConsumeMetrics(r.Context(), md)
+	} else if h.delta != nil && hasDelta(md) {
 		err = h.delta.ConsumeMetrics(r.Context(), md)
 	} else {
 		// deltatocumulative currently holds a sync.Mutex when entering ConsumeMetrics.
