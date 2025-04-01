@@ -108,7 +108,9 @@ func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint, tempo
 
 	if temporality == pmetric.AggregationTemporalityDelta {
 		// If the histogram has delta temporality, set the reset hint to gauge to avoid spurious chunk cutting.
-		// TODO: consider changing the name of the counter reset hint because not sure gauge is the best match
+		// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/).
+		// This might be changed to a different hint name as gauge type might be misleading for samples that should be
+		// summed over time.
 		resetHint = prompb.Histogram_GAUGE
 	}
 
@@ -313,7 +315,9 @@ func explicitHistogramToCustomBucketsHistogram(p pmetric.HistogramDataPoint, tem
 
 	if temporality == pmetric.AggregationTemporalityDelta {
 		// If the histogram has delta temporality, set the reset hint to gauge to avoid spurious chunk cutting.
-		// TODO: consider changing the name of the counter reset hint because not sure gauge is the best match
+		// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/).
+		// This might be changed to a different hint name as gauge type might be misleading for samples that should be
+		// summed over time.
 		resetHint = prompb.Histogram_GAUGE
 	}
 
