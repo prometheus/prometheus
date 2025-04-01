@@ -20,10 +20,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
-
-	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/storage"
 )

@@ -1,7 +1,20 @@
 version: 2
 updates:
-  - package-ecosystem: "gomod"
+  - package-ecosystem: "docker"
     directory: "/"
+    schedule:
+      interval: "monthly"
+  - package-ecosystem: "github-actions"
+    directories:
+      - "/"
+      - "/scripts"
+    schedule:
+      interval: "monthly"
+  - package-ecosystem: "gomod"
+    directories:
+      - "/"
+      - "/documentation/examples/remote_storage"
+      - "/internal/tools"
     schedule:
       interval: "monthly"
     groups:
@@ -12,39 +25,3 @@ updates:
         patterns:
           - "go.opentelemetry.io/*"
     open-pull-requests-limit: 20
-  - package-ecosystem: "gomod"
-    directory: "/documentation/examples/remote_storage"
-    schedule:
-      interval: "monthly"
-  # New manteen-ui packages.
-  - package-ecosystem: "npm"
-    directory: "/web/ui"
-    labels:
-      - dependencies
-      - javascript
-      - manteen-ui
-    schedule:
-      interval: "monthly"
-    open-pull-requests-limit: 20
-  # Old react-app packages.
-  - package-ecosystem: "npm"
-    directory: "/web/ui/react-app"
-    labels:
-      - dependencies
-      - javascript
-      - old-react-ui
-    schedule:
-      interval: "monthly"
-    open-pull-requests-limit: 20
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "monthly"
-  - package-ecosystem: "github-actions"
-    directory: "/scripts"
-    schedule:
-      interval: "monthly"
-  - package-ecosystem: "docker"
-    directory: "/"
-    schedule:
-      interval: "monthly"

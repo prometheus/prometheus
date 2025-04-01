@@ -189,9 +189,5 @@ func (i *LoadBalancerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Gro
 		tg.Targets = append(tg.Targets, labels)
 	}
 
-	if err != nil {
-		return nil, err
-	}
-
 	return []*targetgroup.Group{tg}, nil
 }

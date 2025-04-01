@@ -12,6 +12,7 @@ import {
   TextInput,
   Anchor,
   Pagination,
+  rem,
 } from "@mantine/core";
 import { useSuspenseAPIQuery } from "../api/api";
 import { AlertingRule, AlertingRulesResult } from "../api/responseTypes/rules";
@@ -164,7 +165,7 @@ export default function AlertsPage() {
   const [debouncedSearch] = useDebouncedValue<string>(searchFilter.trim(), 250);
   const [showEmptyGroups, setShowEmptyGroups] = useLocalStorage<boolean>({
     key: "alertsPage.showEmptyGroups",
-    defaultValue: true,
+    defaultValue: false,
   });
 
   const { alertGroupsPerPage } = useSettings();
@@ -222,7 +223,7 @@ export default function AlertsPage() {
           p="md"
           key={i} // TODO: Find a stable and definitely unique key.
         >
-          <Group mb="md" mt="xs" ml="xs" justify="space-between">
+          <Group mb="sm" justify="space-between">
             <Group align="baseline">
               <Text fz="xl" fw={600} c="var(--mantine-primary-color-filled)">
                 {g.name}
@@ -280,6 +281,7 @@ export default function AlertsPage() {
                   {items.map((r, j) => {
                     return (
                       <Accordion.Item
+                        mt={rem(5)}
                         styles={{
                           item: {
                             // TODO: This transparency hack is an OK workaround to make the collapsed items
@@ -299,7 +301,9 @@ export default function AlertsPage() {
                               : panelClasses.panelHealthOk
                         }
                       >
-                        <Accordion.Control>
+                        <Accordion.Control
+                          styles={{ label: { paddingBlock: rem(10) } }}
+                        >
                           <Group wrap="nowrap" justify="space-between" mr="lg">
                             <Text>{r.rule.name}</Text>
                             <Group gap="xs">
@@ -423,7 +427,7 @@ export default function AlertsPage() {
               o as keyof typeof alertsPageData.globalCounts
             ]
           }
-          placeholder="Filter by rule state"
+          placeholder="Filter by rule group state"
           values={(stateFilter?.filter((v) => v !== null) as string[]) || []}
           onChange={(values) => setStateFilter(values)}
         />
