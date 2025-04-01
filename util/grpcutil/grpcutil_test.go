@@ -15,36 +15,44 @@ package grpcutil
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
-func TestStatusCodeFromErrorChain(t *testing.T) {
-	var err1, err2 error
-	var code int32
-	var ok bool
+func TestErrorWithHTTPStatusCode(t *testing.T) {
+	err, ok := ErrorWithHTTPStatusCode(http.StatusTooManyRequests, errors.New("some error"))
 
-	err1 = status.Error(http.StatusTooManyRequests, "resource exhausted")
-	err2 = fmt.Errorf("some error: %w", err1)
-
-	code, ok = HTTPStatusCodeFromErrorChain(err2)
 	require.True(t, ok)
-	require.Equal(t, int32(http.StatusTooManyRequests), code)
+	require.Equal(t, http.StatusTooManyRequests, err.(*ErrorWithStatusCode).StatusCode)
+	require.Equal(t, errors.New("some error"), err.(*ErrorWithStatusCode).Err)
 
-	err1 = status.Error(codes.ResourceExhausted, "resource exhausted")
-	err2 = fmt.Errorf("some error: %w", err1)
+	err, ok = ErrorWithHTTPStatusCode(999, errors.New("weird error"))
 
-	_, ok = HTTPStatusCodeFromErrorChain(err2)
-	require.False(t, ok) // codes.ResourceExhausted is not a valid HTTP status
-
-	err1 = errors.New("error without code")
-	err2 = fmt.Errorf("some error: %w", err1)
-
-	_, ok = HTTPStatusCodeFromErrorChain(err2)
 	require.False(t, ok)
+	require.Equal(t, errors.New("weird error"), err)
+}
+
+func TestHTTPStatusCode(t *testing.T) {
+	code, ok := HTTPStatusCode(&ErrorWithStatusCode{
+		StatusCode: http.StatusTooManyRequests,
+		Err:        errors.New("some error"),
+	})
+
+	require.True(t, ok)
+	require.Equal(t, http.StatusTooManyRequests, code)
+
+	code, ok = HTTPStatusCode(&ErrorWithStatusCode{
+		StatusCode: 999,
+		Err:        errors.New("some error"),
+	})
+
+	require.False(t, ok)
+	require.Zero(t, code)
+
+	code, ok = HTTPStatusCode(errors.New("some error"))
+
+	require.False(t, ok)
+	require.Zero(t, code)
 }

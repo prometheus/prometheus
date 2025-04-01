@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/util/grpcutil"
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/testutil"
 
@@ -41,7 +42,6 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/route"
 	"github.com/stretchr/testify/require"
-	grpcstatus "google.golang.org/grpc/status"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -4125,61 +4125,66 @@ func TestRespondSuccess_DefaultCodecCannotEncodeResponse(t *testing.T) {
 }
 
 func TestRespondError(t *testing.T) {
-	tests := []struct {
+	type test struct {
 		errType errorType
 		err     error
-		code    int
+		errCode int
+		resCode int
 		msg     string
-	}{
-		{
+	}
+
+	tests := map[string]test{
+		"timeout should return 503 (ServiceUnavailable)": {
 			errType: errorTimeout,
 			err:     errors.New("message"),
-			code:    http.StatusServiceUnavailable,
+			resCode: http.StatusServiceUnavailable,
 			msg:     "message",
 		},
-		{
+		"execution error with normal error should return 422 (UnprocessableEntity)": {
 			errType: errorExec,
 			err:     errors.New("message"),
-			code:    http.StatusUnprocessableEntity,
+			resCode: http.StatusUnprocessableEntity,
 			msg:     "message",
 		},
-		{
+		"execution error with valid grpcutil.ErrorWithStatusCode should return correct status code": {
 			errType: errorExec,
-			err:     grpcstatus.Error(429, "message"),
-			code:    http.StatusTooManyRequests,
-			msg:     "rpc error: code = Code(429) desc = message",
+			err:     errors.New("message"),
+			errCode: http.StatusTooManyRequests,
+			resCode: http.StatusUnprocessableEntity,
+			msg:     "message",
 		},
-		{
+		"execution error with invalid grpcutil.ErrorWithStatusCode should return 422 (UnprocessableEntity)": {
 			errType: errorExec,
-			err:     fmt.Errorf("some error: %w", grpcstatus.Error(429, "message")),
-			code:    http.StatusTooManyRequests,
-			msg:     "some error: rpc error: code = Code(429) desc = message",
-		},
-		{
-			errType: errorExec,
-			err:     grpcstatus.Error(998, "message"),
-			code:    http.StatusUnprocessableEntity, // Return 422 if the code is not a valid HTTP status
-			msg:     "rpc error: code = Code(998) desc = message",
+			err:     errors.New("message"),
+			errCode: 999,
+			resCode: http.StatusUnprocessableEntity,
+			msg:     "message",
 		},
 	}
 
-	for _, test := range tests {
-		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			api := API{}
-			api.respondError(w, &apiError{test.errType, test.err}, "test")
-		}))
-		defer s.Close()
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				api := API{}
+				err := tc.err
+				if tc.errCode > 0 {
+					err, _ = grpcutil.ErrorWithHTTPStatusCode(tc.errCode, tc.err)
+				}
+				api.respondError(w, &apiError{tc.errType, err}, "test")
+			}))
+			defer s.Close()
 
-		resp, err := http.Get(s.URL)
-		require.NoError(t, err, "Error on test request")
-		body, err := io.ReadAll(resp.Body)
-		defer resp.Body.Close()
-		require.NoError(t, err, "Error reading response body")
-		want, have := test.code, resp.StatusCode
-		require.Equal(t, want, have, "Return code %d expected in error response but got %d", want, have)
-		h := resp.Header.Get("Content-Type")
-		require.Equal(t, "application/json", h, "Expected Content-Type %q but got %q", "application/json", h)
-		require.JSONEq(t, fmt.Sprintf(`{"status": "error", "data": "test", "errorType": "%s", "error": "%s"}`, test.errType, test.msg), string(body))
+			resp, err := http.Get(s.URL)
+			require.NoError(t, err, "Error on test request")
+			body, err := io.ReadAll(resp.Body)
+			defer resp.Body.Close()
+			require.NoError(t, err, "Error reading response body")
+			want, have := tc.resCode, resp.StatusCode
+			require.Equal(t, want, have, "Return code %d expected in error response but got %d", want, have)
+			h := resp.Header.Get("Content-Type")
+			require.Equal(t, "application/json", h, "Expected Content-Type %q but got %q", "application/json", h)
+			require.JSONEq(t, fmt.Sprintf(`{"status": "error", "data": "test", "errorType": "%s", "error": "%s"}`, tc.errType, tc.msg), string(body))
+		})
 	}
 }
 

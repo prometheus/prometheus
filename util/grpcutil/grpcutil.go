@@ -14,31 +14,43 @@
 package grpcutil
 
 import (
-	"errors"
 	"net/http"
-
-	"google.golang.org/grpc/status"
 )
 
-// HTTPStatusCodeFromErrorChain retrieves the first HTTP status code from the chain of gRPC error.
-func HTTPStatusCodeFromErrorChain(err error) (int32, bool) {
-	if err == nil || len(err.Error()) == 0 {
-		return 0, false
-	}
-
-	code, ok := statusCodeFromError(err)
-	if ok && http.StatusText(int(code)) != "" {
-		return code, true
-	}
-	return HTTPStatusCodeFromErrorChain(errors.Unwrap(err))
+type ErrorWithStatusCode struct {
+	StatusCode int
+	Err        error
 }
 
-// statusCodeFromError retrieves the status code from the gRPC error.
-func statusCodeFromError(err error) (int32, bool) {
-	s, ok := status.FromError(err)
-	if !ok {
-		return 0, false
+func (e *ErrorWithStatusCode) GetStatusCode() int {
+	return e.StatusCode
+}
+
+func (e *ErrorWithStatusCode) Error() string {
+	return e.Err.Error()
+}
+
+func ErrorWithHTTPStatusCode(code int, err error) (error, bool) {
+	if !isValidHTTPStatusCode(code) {
+		return err, false
+	}
+	return &ErrorWithStatusCode{
+		StatusCode: code,
+		Err:        err,
+	}, true
+}
+
+func HTTPStatusCode(err error) (int, bool) {
+	if errWithCode, ok := err.(*ErrorWithStatusCode); ok {
+		if !isValidHTTPStatusCode(errWithCode.StatusCode) {
+			return 0, false
+		}
+		return errWithCode.StatusCode, true
 	}
 
-	return s.Proto().GetCode(), true
+	return 0, false
+}
+
+func isValidHTTPStatusCode(code int) bool {
+	return http.StatusText(code) != ""
 }
