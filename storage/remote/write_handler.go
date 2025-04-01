@@ -622,8 +622,8 @@ func (rw *rwExporter) Capabilities() consumer.Capabilities {
 type otlpWriteHandler struct {
 	logger *slog.Logger
 
-	defaultConsumer consumer.Metrics // accepts both cumulative and delta metrics, stores deltas as-is
-	d2cConsumer     consumer.Metrics // only accepts delta metrics, converts them to cumulative
+	defaultConsumer consumer.Metrics // stores deltas as-is
+	d2cConsumer     consumer.Metrics // converts deltas to cumulative
 }
 
 func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -636,8 +636,8 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	md := req.Metrics()
 	// If deltatocumulative conversion enabled AND delta samples exist, use slower conversion path.
-	// deltatocumulative currently holds a sync.Mutex when entering ConsumeMetrics.
-	// This is slow and not necessary when not doing the conversion.
+	// While deltatocumulative can also accept cumulative metrics (and then just forwards them as-is), it currently
+	// holds a sync.Mutex when entering ConsumeMetrics. This is slow and not necessary when ingesting cumulative metrics.
 	if h.d2cConsumer != nil && hasDelta(md) {
 		err = h.d2cConsumer.ConsumeMetrics(r.Context(), md)
 	} else {
