@@ -31,20 +31,26 @@ func otelMetricTypeToPromMetricType(otelMetric pmetric.Metric) prompb.MetricMeta
 		if otelMetric.Sum().IsMonotonic() {
 			metricType = prompb.MetricMetadata_COUNTER
 		}
+		// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)
+		// We don't have a metric metadata type for delta yet, therefore marking the metric type as unknown.
 		if otelMetric.Sum().AggregationTemporality() == pmetric.AggregationTemporalityDelta {
-			metricType = prompb.MetricMetadata_UNKNOWN // TODO: new delta type (or temporality label). Or gauge type for now?
+			metricType = prompb.MetricMetadata_UNKNOWN
 		}
 		return metricType
 	case pmetric.MetricTypeHistogram:
+		// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)
+		// We don't have a metric metadata type for delta yet, therefore marking the metric type as unknown.
 		if otelMetric.Histogram().AggregationTemporality() == pmetric.AggregationTemporalityDelta {
-			return prompb.MetricMetadata_UNKNOWN // TODO: new delta type (or temporality label). Or gauge type for now?
+			return prompb.MetricMetadata_UNKNOWN
 		}
 		return prompb.MetricMetadata_HISTOGRAM
 	case pmetric.MetricTypeSummary:
 		return prompb.MetricMetadata_SUMMARY
 	case pmetric.MetricTypeExponentialHistogram:
 		if otelMetric.ExponentialHistogram().AggregationTemporality() == pmetric.AggregationTemporalityDelta {
-			return prompb.MetricMetadata_UNKNOWN // TODO: new delta type (or temporality label). Or gauge type for now?
+			// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)
+			// We don't have a metric metadata type for delta yet, therefore marking the metric type as unknown.
+			return prompb.MetricMetadata_UNKNOWN
 		}
 		return prompb.MetricMetadata_HISTOGRAM
 	}

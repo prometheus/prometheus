@@ -526,7 +526,9 @@ func (h *writeHandler) handleHistogramZeroSample(app storage.Appender, ref stora
 type OTLPOptions struct {
 	// Convert delta samples to their cumulative equivalent by aggregating in-memory
 	ConvertDelta bool
-	// Store the raw delta samples as metrics with unknown type
+	// Store the raw delta samples as metrics with unknown type (we don't have a proper type for delta yet, therefore
+	// marking the metric type as unknown for now).
+	// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)
 	NativeDelta bool
 }
 
@@ -535,7 +537,7 @@ type OTLPOptions struct {
 func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendable storage.Appendable, configFunc func() config.Config, opts OTLPOptions) http.Handler {
 	if opts.NativeDelta && opts.ConvertDelta {
 		// This should be validated when iterating through feature flags, so not expected to fail here.
-		panic("cannot enable direct delta ingestion and delta2cumulative conversion at the same time")
+		panic("cannot enable native delta ingestion and delta2cumulative conversion at the same time")
 	}
 
 	ex := &rwExporter{
