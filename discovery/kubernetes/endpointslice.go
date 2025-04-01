@@ -33,6 +33,8 @@ import (
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
+const serviceIndex = "service"
+
 // EndpointSlice discovers new endpoint targets.
 type EndpointSlice struct {
 	logger *slog.Logger
@@ -102,18 +104,14 @@ func NewEndpointSlice(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, n
 			return
 		}
 
-		// TODO(brancz): use cache.Indexer to index endpointslices by
-		// LabelServiceName so this operation doesn't have to iterate over all
-		// endpoint objects.
-		for _, obj := range e.endpointSliceStore.List() {
-			esa, err := e.getEndpointSliceAdaptor(obj)
-			if err != nil {
-				e.logger.Error("converting to EndpointSlice object failed", "err", err)
-				continue
-			}
-			if lv, exists := esa.labels()[esa.labelServiceName()]; exists && lv == svc.Name {
-				e.enqueue(esa.get())
-			}
+		endpointSlices, err := e.endpointSliceInf.GetIndexer().ByIndex(serviceIndex, svc.Name)
+		if err != nil {
+			e.logger.Error("getting endpoint slices by service name failed", "err", err)
+			return
+		}
+
+		for _, endpointSlice := range endpointSlices {
+			e.enqueue(endpointSlice)
 		}
 	}
 	_, err = e.serviceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
