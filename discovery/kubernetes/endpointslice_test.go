@@ -1194,11 +1194,12 @@ func TestEndpointSliceInfIndexersCount(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			var (
-				n                    *Discovery
-				mainInfIndexersCount int
+				n *Discovery
+				// service indexer is enabled by default for better iteration performance
+				mainInfIndexersCount = 1
 			)
 			if tc.withNodeMetadata {
-				mainInfIndexersCount = 1
+				mainInfIndexersCount = 2
 				n, _ = makeDiscoveryWithMetadata(RoleEndpointSlice, NamespaceDiscovery{}, AttachMetadataConfig{Node: true})
 			} else {
 				n, _ = makeDiscovery(RoleEndpointSlice, NamespaceDiscovery{})

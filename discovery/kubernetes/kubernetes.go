@@ -716,6 +716,19 @@ func (d *Discovery) newEndpointsByNodeInformer(plw *cache.ListWatch) cache.Share
 
 func (d *Discovery) newEndpointSlicesByNodeInformer(plw *cache.ListWatch, object runtime.Object) cache.SharedIndexInformer {
 	indexers := make(map[string]cache.IndexFunc)
+	indexers[serviceIndex] = func(obj interface{}) ([]string, error) {
+		var services []string
+		switch e := obj.(type) {
+		case *disv1.EndpointSlice:
+			if serviceName, exists := e.ObjectMeta.Labels[disv1.LabelServiceName]; exists {
+				return []string{serviceName}, nil
+			}
+		default:
+			return nil, errors.New("object is not an endpointslice")
+		}
+
+		return services, nil
+	}
 	if !d.attachMetadata.Node {
 		return d.mustNewSharedIndexInformer(plw, object, resyncDisabled, indexers)
 	}
