@@ -527,13 +527,13 @@ type OTLPOptions struct {
 	// Convert delta samples to their cumulative equivalent by aggregating in-memory
 	ConvertDelta bool
 	// Store the raw delta samples as metrics with unknown type
-	DirectDeltaIngestion bool
+	NativeDelta bool
 }
 
 // NewOTLPWriteHandler creates a http.Handler that accepts OTLP write requests and
 // writes them to the provided appendable.
 func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendable storage.Appendable, configFunc func() config.Config, opts OTLPOptions) http.Handler {
-	if opts.DirectDeltaIngestion && opts.ConvertDelta {
+	if opts.NativeDelta && opts.ConvertDelta {
 		// This should be validated when iterating through feature flags, so not expected to fail here.
 		panic("cannot enable direct delta ingestion and delta2cumulative conversion at the same time")
 	}
@@ -546,7 +546,7 @@ func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendabl
 		config: configFunc,
 	}
 
-	if opts.DirectDeltaIngestion {
+	if opts.NativeDelta {
 		ex.allowDeltaTemporality = true
 	}
 
@@ -620,8 +620,8 @@ func (rw *rwExporter) Capabilities() consumer.Capabilities {
 type otlpWriteHandler struct {
 	logger *slog.Logger
 
-	defaultConsumer consumer.Metrics // only cumulative
-	d2cConsumer     consumer.Metrics // delta capable
+	defaultConsumer consumer.Metrics // accepts both cumulative and delta metrics, stores deltas as-is
+	d2cConsumer     consumer.Metrics // only accepts delta metrics, converts them to cumulative
 }
 
 func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -633,12 +633,14 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	md := req.Metrics()
-	// if delta conversion enabled AND delta samples exist, use slower delta capable path
+	// If deltatocumulative conversion enabled AND delta samples exist, use slower conversion path.
+	// deltatocumulative currently holds a sync.Mutex when entering ConsumeMetrics.
+	// This is slow and not necessary when not doing the conversion.
 	if h.d2cConsumer != nil && hasDelta(md) {
 		err = h.d2cConsumer.ConsumeMetrics(r.Context(), md)
 	} else {
-		// deltatocumulative currently holds a sync.Mutex when entering ConsumeMetrics.
-		// This is slow and not necessary when no delta samples exist anyways
+		// Otherwise use default consumer (alongside cumulative samples, this will accept delta samples and write as-is
+		// if native-delta-support is enabled).
 		err = h.defaultConsumer.ConsumeMetrics(r.Context(), md)
 	}
 
