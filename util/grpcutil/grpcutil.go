@@ -17,35 +17,35 @@ import (
 	"net/http"
 )
 
-type ErrorWithStatusCode struct {
-	StatusCode int
-	Err        error
+type errorWithStatusCode struct {
+	statusCode int
+	err        error
 }
 
-func (e *ErrorWithStatusCode) GetStatusCode() int {
-	return e.StatusCode
+func (e *errorWithStatusCode) GetStatusCode() int {
+	return e.statusCode
 }
 
-func (e *ErrorWithStatusCode) Error() string {
-	return e.Err.Error()
+func (e *errorWithStatusCode) Error() string {
+	return e.err.Error()
 }
 
 func ErrorWithHTTPStatusCode(code int, err error) (error, bool) {
 	if !isValidHTTPStatusCode(code) {
 		return err, false
 	}
-	return &ErrorWithStatusCode{
-		StatusCode: code,
-		Err:        err,
+	return &errorWithStatusCode{
+		statusCode: code,
+		err:        err,
 	}, true
 }
 
 func HTTPStatusCode(err error) (int, bool) {
-	if errWithCode, ok := err.(*ErrorWithStatusCode); ok {
-		if !isValidHTTPStatusCode(errWithCode.StatusCode) {
+	if errWithCode, ok := err.(*errorWithStatusCode); ok {
+		if !isValidHTTPStatusCode(errWithCode.statusCode) {
 			return 0, false
 		}
-		return errWithCode.StatusCode, true
+		return errWithCode.statusCode, true
 	}
 
 	return 0, false

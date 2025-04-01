@@ -25,8 +25,8 @@ func TestErrorWithHTTPStatusCode(t *testing.T) {
 	err, ok := ErrorWithHTTPStatusCode(http.StatusTooManyRequests, errors.New("some error"))
 
 	require.True(t, ok)
-	require.Equal(t, http.StatusTooManyRequests, err.(*ErrorWithStatusCode).StatusCode)
-	require.Equal(t, errors.New("some error"), err.(*ErrorWithStatusCode).Err)
+	require.Equal(t, http.StatusTooManyRequests, err.(*errorWithStatusCode).statusCode)
+	require.Equal(t, errors.New("some error"), err.(*errorWithStatusCode).err)
 
 	err, ok = ErrorWithHTTPStatusCode(999, errors.New("weird error"))
 
@@ -35,17 +35,17 @@ func TestErrorWithHTTPStatusCode(t *testing.T) {
 }
 
 func TestHTTPStatusCode(t *testing.T) {
-	code, ok := HTTPStatusCode(&ErrorWithStatusCode{
-		StatusCode: http.StatusTooManyRequests,
-		Err:        errors.New("some error"),
+	code, ok := HTTPStatusCode(&errorWithStatusCode{
+		statusCode: http.StatusTooManyRequests,
+		err:        errors.New("some error"),
 	})
 
 	require.True(t, ok)
 	require.Equal(t, http.StatusTooManyRequests, code)
 
-	code, ok = HTTPStatusCode(&ErrorWithStatusCode{
-		StatusCode: 999,
-		Err:        errors.New("some error"),
+	code, ok = HTTPStatusCode(&errorWithStatusCode{
+		statusCode: 999,
+		err:        errors.New("some error"),
 	})
 
 	require.False(t, ok)
