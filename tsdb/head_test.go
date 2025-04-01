@@ -4666,7 +4666,7 @@ func testHistogramStaleSampleHelper(t *testing.T, floatHistogram bool) {
 		}
 
 		// We cannot compare StaleNAN with require.Equal, hence checking each histogram manually.
-		require.Equal(t, len(expHistograms), len(actHistograms))
+		require.Len(t, actHistograms, len(expHistograms))
 		actNumStale := 0
 		for i, eh := range expHistograms {
 			ah := actHistograms[i]
@@ -5304,7 +5304,7 @@ func TestChunkSnapshotTakenAfterIncompleteSnapshot(t *testing.T) {
 	// Verify the snapshot.
 	name, idx, offset, err := LastChunkSnapshot(dir)
 	require.NoError(t, err)
-	require.NotEqual(t, "", name)
+	require.NotEmpty(t, name)
 	require.Equal(t, 0, idx)
 	require.Positive(t, offset)
 }

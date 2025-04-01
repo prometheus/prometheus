@@ -263,7 +263,7 @@ func testBlockQuerier(t *testing.T, c blockQuerierTestCase, ir IndexReader, cr C
 			rmChunkRefs(chksRes)
 			require.Equal(t, errExp, errRes)
 
-			require.Equal(t, len(chksExp), len(chksRes))
+			require.Len(t, chksRes, len(chksExp))
 			var exp, act [][]chunks.Sample
 			for i := range chksExp {
 				samples, err := storage.ExpandSamples(chksExp[i].Chunk.Iterator(nil), nil)
