@@ -277,7 +277,7 @@ func TestStreamReadEndpoint(t *testing.T) {
 	require.Equal(t, 2, recorder.Code/100)
 
 	require.Equal(t, "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse", recorder.Result().Header.Get("Content-Type"))
-	require.Equal(t, "", recorder.Result().Header.Get("Content-Encoding"))
+	require.Empty(t, recorder.Result().Header.Get("Content-Encoding"))
 
 	var results []*prompb.ChunkedReadResponse
 	stream := NewChunkedReader(recorder.Result().Body, config.DefaultChunkedReadLimit, nil)

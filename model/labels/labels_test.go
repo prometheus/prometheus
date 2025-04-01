@@ -503,7 +503,7 @@ func TestLabels_Has(t *testing.T) {
 }
 
 func TestLabels_Get(t *testing.T) {
-	require.Equal(t, "", FromStrings("aaa", "111", "bbb", "222").Get("foo"))
+	require.Empty(t, FromStrings("aaa", "111", "bbb", "222").Get("foo"))
 	require.Equal(t, "111", FromStrings("aaaa", "111", "bbb", "222").Get("aaaa"))
 	require.Equal(t, "222", FromStrings("aaaa", "111", "bbb", "222").Get("bbb"))
 }

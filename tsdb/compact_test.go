@@ -1399,7 +1399,7 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 				createBlock(t, db.Dir(), genSeries(1, 1, m.MinTime, m.MaxTime))
 			}
 			require.NoError(t, db.reload())
-			require.Equal(t, len(blocks), len(db.Blocks()), "unexpected block count after a reloadBlocks")
+			require.Len(t, db.Blocks(), len(blocks), "unexpected block count after a reloadBlocks")
 
 			return len(blocks)
 		},

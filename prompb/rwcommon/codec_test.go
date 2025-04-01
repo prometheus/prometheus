@@ -135,12 +135,12 @@ func TestToMetadata(t *testing.T) {
 
 func TestToHistogram_Empty(t *testing.T) {
 	t.Run("v1", func(t *testing.T) {
-		require.NotNilf(t, prompb.Histogram{}.ToIntHistogram(), "")
-		require.NotNilf(t, prompb.Histogram{}.ToFloatHistogram(), "")
+		require.NotNil(t, prompb.Histogram{}.ToIntHistogram())
+		require.NotNil(t, prompb.Histogram{}.ToFloatHistogram())
 	})
 	t.Run("v2", func(t *testing.T) {
-		require.NotNilf(t, writev2.Histogram{}.ToIntHistogram(), "")
-		require.NotNilf(t, writev2.Histogram{}.ToFloatHistogram(), "")
+		require.NotNil(t, writev2.Histogram{}.ToIntHistogram())
+		require.NotNil(t, writev2.Histogram{}.ToFloatHistogram())
 	})
 }
 

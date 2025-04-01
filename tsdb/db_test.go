@@ -1347,7 +1347,7 @@ func TestTombstoneCleanFail(t *testing.T) {
 	actualBlockDirs, err := blockDirs(db.dir)
 	require.NoError(t, err)
 	// Only one block should have been replaced by a new block.
-	require.Equal(t, len(oldBlockDirs), len(actualBlockDirs))
+	require.Len(t, actualBlockDirs, len(oldBlockDirs))
 	require.Len(t, intersection(oldBlockDirs, actualBlockDirs), len(actualBlockDirs)-1)
 }
 
@@ -1535,7 +1535,7 @@ func TestSizeRetention(t *testing.T) {
 
 	// Test that registered size matches the actual disk size.
 	require.NoError(t, db.reloadBlocks())                               // Reload the db to register the new db size.
-	require.Equal(t, len(blocks), len(db.Blocks()))                     // Ensure all blocks are registered.
+	require.Len(t, db.Blocks(), len(blocks))                            // Ensure all blocks are registered.
 	blockSize := int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
 	walSize, err := db.Head().wal.Size()
 	require.NoError(t, err)
@@ -2052,7 +2052,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		require.NoError(t, db.Compact(ctx))
 		actBlocks, err := blockDirs(db.Dir())
 		require.NoError(t, err)
-		require.Equal(t, len(db.Blocks()), len(actBlocks))
+		require.Len(t, actBlocks, len(db.Blocks()))
 		require.Empty(t, actBlocks)
 		require.Equal(t, 0, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran)), "no compaction should be triggered here")
 	})
@@ -2072,7 +2072,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 
 		actBlocks, err := blockDirs(db.Dir())
 		require.NoError(t, err)
-		require.Equal(t, len(db.Blocks()), len(actBlocks))
+		require.Len(t, actBlocks, len(db.Blocks()))
 		require.Empty(t, actBlocks)
 
 		app = db.Appender(ctx)
@@ -2093,7 +2093,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		require.Equal(t, 2, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran)), "compaction should have been triggered here")
 		actBlocks, err = blockDirs(db.Dir())
 		require.NoError(t, err)
-		require.Equal(t, len(db.Blocks()), len(actBlocks))
+		require.Len(t, actBlocks, len(db.Blocks()))
 		require.Len(t, actBlocks, 1, "No blocks created when compacting with >0 samples")
 	})
 
@@ -2134,7 +2134,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 
 		actBlocks, err := blockDirs(db.Dir())
 		require.NoError(t, err)
-		require.Equal(t, len(db.Blocks()), len(actBlocks))
+		require.Len(t, actBlocks, len(db.Blocks()))
 		require.Len(t, actBlocks, 1, "All samples are deleted. Only the most recent block should remain after compaction.")
 	})
 }
@@ -2450,7 +2450,7 @@ func TestDBReadOnly(t *testing.T) {
 	t.Run("blocks", func(t *testing.T) {
 		blocks, err := dbReadOnly.Blocks()
 		require.NoError(t, err)
-		require.Equal(t, len(expBlocks), len(blocks))
+		require.Len(t, blocks, len(expBlocks))
 		for i, expBlock := range expBlocks {
 			require.Equal(t, expBlock.Meta(), blocks[i].Meta(), "block meta mismatch")
 		}
@@ -2478,7 +2478,7 @@ func TestDBReadOnly(t *testing.T) {
 		readOnlySeries := query(t, q, matchAll)
 		readOnlyDBHash := testutil.DirHash(t, dbDir)
 
-		require.Equal(t, len(expSeries), len(readOnlySeries), "total series mismatch")
+		require.Len(t, readOnlySeries, len(expSeries), "total series mismatch")
 		require.Equal(t, expSeries, readOnlySeries, "series mismatch")
 		require.Equal(t, expDBHash, readOnlyDBHash, "after all read operations the db hash should remain the same")
 	})
@@ -2488,7 +2488,7 @@ func TestDBReadOnly(t *testing.T) {
 		readOnlySeries := queryAndExpandChunks(t, cq, matchAll)
 		readOnlyDBHash := testutil.DirHash(t, dbDir)
 
-		require.Equal(t, len(expChunks), len(readOnlySeries), "total series mismatch")
+		require.Len(t, readOnlySeries, len(expChunks), "total series mismatch")
 		require.Equal(t, expChunks, readOnlySeries, "series chunks mismatch")
 		require.Equal(t, expDBHash, readOnlyDBHash, "after all read operations the db hash should remain the same")
 	})
@@ -8260,7 +8260,7 @@ func testNoGapAfterRestartWithOOO(t *testing.T, scenario sampleTypeScenario) {
 			require.NoError(t, db.Compact(ctx))
 			verifyBlockRanges := func() {
 				blocks := db.Blocks()
-				require.Equal(t, len(c.blockRanges), len(blocks))
+				require.Len(t, blocks, len(c.blockRanges))
 				for j, br := range c.blockRanges {
 					require.Equal(t, br[0]*time.Minute.Milliseconds(), blocks[j].MinTime())
 					require.Equal(t, br[1]*time.Minute.Milliseconds(), blocks[j].MaxTime())
