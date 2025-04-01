@@ -860,7 +860,7 @@ func testOOOHeadChunkReader_Chunk(t *testing.T, scenario sampleTypeScenario) {
 			var b labels.ScratchBuilder
 			err = ir.Series(s1Ref, &b, &chks)
 			require.NoError(t, err)
-			require.Equal(t, len(tc.expChunksSamples), len(chks))
+			require.Len(t, chks, len(tc.expChunksSamples))
 
 			cr := NewHeadAndOOOChunkReader(db.head, tc.queryMinT, tc.queryMaxT, nil, nil, 0)
 			defer cr.Close()
@@ -1030,7 +1030,7 @@ func testOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 			var b labels.ScratchBuilder
 			err = ir.Series(s1Ref, &b, &chks)
 			require.NoError(t, err)
-			require.Equal(t, len(tc.expChunksSamples), len(chks))
+			require.Len(t, chks, len(tc.expChunksSamples))
 
 			// Now we keep receiving ooo samples
 			// OOO few samples for s1.

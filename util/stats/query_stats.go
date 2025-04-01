@@ -134,7 +134,7 @@ func NewQueryStats(s *Statistics) QueryStats {
 		sp      = s.Samples
 	)
 
-	for s, timer := range tg.TimerGroup.timers {
+	for s, timer := range tg.timers {
 		switch s {
 		case EvalTotalTime:
 			qt.EvalTotalTime = timer.Duration()
@@ -328,5 +328,5 @@ func (qs *QuerySamples) NewChild() *QuerySamples {
 }
 
 func (qs *QueryTimers) GetSpanTimer(ctx context.Context, qt QueryTiming, observers ...prometheus.Observer) (*SpanTimer, context.Context) {
-	return NewSpanTimer(ctx, qt.SpanOperation(), qs.TimerGroup.GetTimer(qt), observers...)
+	return NewSpanTimer(ctx, qt.SpanOperation(), qs.GetTimer(qt), observers...)
 }
