@@ -1,11 +1,11 @@
 import { FC, useMemo, useState } from "react";
 import { useSuspenseAPIQuery } from "../../../api/api";
 import { MetadataResult } from "../../../api/responseTypes/metadata";
-import { ActionIcon, Group, Stack, Table, TextInput } from "@mantine/core";
+import { ActionIcon, CopyButton, Group, Stack, Table, TextInput } from "@mantine/core";
 import React from "react";
 import { Fuzzy } from "@nexucis/fuzzy";
 import sanitizeHTML from "sanitize-html";
-import { IconCodePlus, IconCopy, IconZoomCode } from "@tabler/icons-react";
+import { IconCheck, IconCodePlus, IconCopy, IconZoomCode } from "@tabler/icons-react";
 import LabelsExplorer from "./LabelsExplorer";
 import { useDebouncedValue } from "@mantine/hooks";
 import classes from "./MetricsExplorer.module.css";
@@ -139,20 +139,29 @@ const MetricsExplorer: FC<MetricsExplorerProps> = ({
                             stroke={1.5}
                           />
                         </ActionIcon>
-                        <ActionIcon
-                          size="sm"
-                          color="gray"
-                          variant="light"
-                          title="Copy to clipboard"
-                          onClick={() => {
-                            navigator.clipboard.writeText(m.original);
-                          }}
-                        >
-                          <IconCopy
-                            style={{ width: "70%", height: "70%" }}
-                            stroke={1.5}
-                          />
-                        </ActionIcon>
+                        <CopyButton value={m.original}>
+                          {({ copied, copy }) => (
+                            <ActionIcon
+                              size="sm"
+                              color="gray"
+                              variant="light"
+                              title="Copy to clipboard"
+                              onClick={copy}
+                            >
+                              {copied ? (
+                                <IconCheck
+                                  style={{ width: "70%", height: "70%" }}
+                                  stroke={1.5}
+                                />
+                              ) : (
+                                <IconCopy
+                                  style={{ width: "70%", height: "70%" }}
+                                  stroke={1.5}
+                                />
+                              )}
+                            </ActionIcon>
+                          )}
+                        </CopyButton>
                       </Group>
                     </Group>
                   </Table.Td>
