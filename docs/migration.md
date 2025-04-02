@@ -15,7 +15,6 @@ This document offers guidance on migrating from Prometheus 2.x to Prometheus 3.0
   default behavior of Prometheus v3:
   - `promql-at-modifier`
   - `promql-negative-offset`
-  - `remote-write-receiver`
   - `new-service-discovery-manager`
   - `expand-external-labels`
       - Environment variable references `${var}` or `$var` in external label values 
@@ -31,6 +30,8 @@ This document offers guidance on migrating from Prometheus 2.x to Prometheus 3.0
       `http://example.com/metrics:80` respectively, add them to your target URLs
   - `agent`
       - Instead use the dedicated `--agent` CLI flag.
+  - `remote-write-receiver`
+      - Instead use the dedicated `--web.enable-remote-write-receiver` CLI flag to enable the remote write receiver.
   - `auto-gomemlimit`
       - Prometheus v3 will automatically set `GOMEMLIMIT` to match the Linux 
       container memory limit. If there is no container limit, or the process is 

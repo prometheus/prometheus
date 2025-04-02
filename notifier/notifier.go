@@ -45,6 +45,9 @@ import (
 )
 
 const (
+	// DefaultMaxBatchSize is the default maximum number of alerts to send in a single request to the alertmanager.
+	DefaultMaxBatchSize = 256
+
 	contentTypeJSON = "application/json"
 )
 
@@ -132,6 +135,9 @@ type Options struct {
 	Do func(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error)
 
 	Registerer prometheus.Registerer
+
+	// MaxBatchSize determines the maximum number of alerts to send in a single request to the alertmanager.
+	MaxBatchSize int
 }
 
 type alertMetrics struct {
@@ -224,6 +230,10 @@ func NewManager(o *Options, logger *slog.Logger) *Manager {
 	if o.Do == nil {
 		o.Do = do
 	}
+	// Set default MaxBatchSize if not provided.
+	if o.MaxBatchSize <= 0 {
+		o.MaxBatchSize = DefaultMaxBatchSize
+	}
 	if logger == nil {
 		logger = promslog.NewNopLogger()
 	}
@@ -294,8 +304,6 @@ func (n *Manager) ApplyConfig(conf *config.Config) error {
 	return nil
 }
 
-const maxBatchSize = 64
-
 func (n *Manager) queueLen() int {
 	n.mtx.RLock()
 	defer n.mtx.RUnlock()
@@ -309,7 +317,7 @@ func (n *Manager) nextBatch() []*Alert {
 
 	var alerts []*Alert
 
-	if len(n.queue) > maxBatchSize {
+	if maxBatchSize := n.opts.MaxBatchSize; len(n.queue) > maxBatchSize {
 		alerts = append(make([]*Alert, 0, maxBatchSize), n.queue[:maxBatchSize]...)
 		n.queue = n.queue[maxBatchSize:]
 	} else {

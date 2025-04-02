@@ -43,6 +43,8 @@ import (
 	"github.com/prometheus/prometheus/model/relabel"
 )
 
+const maxBatchSize = 256
+
 func TestPostPath(t *testing.T) {
 	cases := []struct {
 		in, out string
@@ -413,6 +415,7 @@ func TestCustomDo(t *testing.T) {
 func TestExternalLabels(t *testing.T) {
 	h := NewManager(&Options{
 		QueueCapacity:  3 * maxBatchSize,
+		MaxBatchSize:   maxBatchSize,
 		ExternalLabels: labels.FromStrings("a", "b"),
 		RelabelConfigs: []*relabel.Config{
 			{
@@ -447,6 +450,7 @@ func TestExternalLabels(t *testing.T) {
 func TestHandlerRelabel(t *testing.T) {
 	h := NewManager(&Options{
 		QueueCapacity: 3 * maxBatchSize,
+		MaxBatchSize:  maxBatchSize,
 		RelabelConfigs: []*relabel.Config{
 			{
 				SourceLabels: model.LabelNames{"alertname"},
@@ -525,6 +529,7 @@ func TestHandlerQueuing(t *testing.T) {
 	h := NewManager(
 		&Options{
 			QueueCapacity: 3 * maxBatchSize,
+			MaxBatchSize:  maxBatchSize,
 		},
 		nil,
 	)

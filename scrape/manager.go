@@ -176,7 +176,7 @@ func (m *Manager) reload() {
 				m.logger.Error("error reloading target set", "err", "invalid config id:"+setName)
 				continue
 			}
-			if scrapeConfig.ConvertClassicHistogramsToNHCB && m.opts.EnableCreatedTimestampZeroIngestion {
+			if scrapeConfig.ConvertClassicHistogramsToNHCBEnabled() && m.opts.EnableCreatedTimestampZeroIngestion {
 				// TODO(krajorama): fix https://github.com/prometheus/prometheus/issues/15137
 				m.logger.Error("error reloading target set", "err", "cannot convert classic histograms to native histograms with custom buckets and ingest created timestamp zero samples at the same time due to https://github.com/prometheus/prometheus/issues/15137")
 				continue
