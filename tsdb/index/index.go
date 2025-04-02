@@ -651,10 +651,10 @@ func (w *Writer) writeLabelIndices() error {
 	values := []uint32{}
 	for d.Err() == nil && cnt > 0 {
 		cnt--
-		d.Uvarint()               // Keycount.
-		name := d.UvarintBytes()  // Label name.
-		value := d.UvarintBytes() // Label value.
-		d.Uvarint64()             // Offset.
+		d.Uvarint()                           // Keycount.
+		name := d.UvarintBytes()              // Label name.
+		value := yoloString(d.UvarintBytes()) // Label value.
+		d.Uvarint64()                         // Offset.
 		if len(name) == 0 {
 			continue // All index is ignored.
 		}
@@ -670,12 +670,12 @@ func (w *Writer) writeLabelIndices() error {
 		var sid uint32
 		if w.indexCache != nil {
 			var ok bool
-			sid, ok = w.indexCache[string(value)]
+			sid, ok = w.indexCache[value]
 			if !ok {
-				return fmt.Errorf("symbol entry for %q does not exist", string(value))
+				return fmt.Errorf("symbol entry for %q does not exist", value)
 			}
 		} else {
-			sid, err = w.symbols.ReverseLookup(string(value))
+			sid, err = w.symbols.ReverseLookup(value)
 			if err != nil {
 				return err
 			}
