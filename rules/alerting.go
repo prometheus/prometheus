@@ -23,8 +23,9 @@ import (
 	"sync"
 	"time"
 
+	"sync/atomic"
+
 	"github.com/prometheus/common/model"
-	"go.uber.org/atomic"
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/model/labels"

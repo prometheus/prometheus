@@ -21,7 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"go.uber.org/atomic"
+	"sync/atomic"
+
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/model/labels"

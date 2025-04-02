@@ -36,6 +36,8 @@ import (
 	"syscall"
 	"time"
 
+	"sync/atomic"
+
 	"github.com/KimMachineGun/automemlimit/memlimit"
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/alecthomas/units"
@@ -50,7 +52,6 @@ import (
 	promslogflag "github.com/prometheus/common/promslog/flag"
 	"github.com/prometheus/common/version"
 	toolkit_web "github.com/prometheus/exporter-toolkit/web"
-	"go.uber.org/atomic"
 	"go.uber.org/automaxprocs/maxprocs"
 	"k8s.io/klog"
 	klogv2 "k8s.io/klog/v2"

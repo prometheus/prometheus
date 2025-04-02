@@ -26,13 +26,14 @@ import (
 	"testing"
 	"time"
 
+	"sync/atomic"
+
 	"github.com/prometheus/alertmanager/api/v2/models"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/config"

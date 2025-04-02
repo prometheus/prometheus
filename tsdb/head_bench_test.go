@@ -21,8 +21,9 @@ import (
 	"strconv"
 	"testing"
 
+	"sync/atomic"
+
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
