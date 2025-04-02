@@ -92,3 +92,12 @@ func (l *JSONFileLogger) WithGroup(name string) slog.Handler {
 
 	return &JSONFileLogger{file: l.file, handler: l.handler.WithGroup(name)}
 }
+
+// Read calls the Log function of the underlying logger.
+func (l *JSONFileLogger) Read(i ...interface{}) (r io.Reader, err error) {
+	f, err := os.Open(l.file.Name())
+	if err != nil {
+		return nil, err
+	}
+	return f, nil
+}
