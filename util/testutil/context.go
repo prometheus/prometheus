@@ -55,7 +55,7 @@ type MockContextErrAfter struct {
 }
 
 func (c *MockContextErrAfter) Err() error {
-	c.count.Inc()
+	c.count.Add(1)
 	if c.count.Load() >= c.FailAfter {
 		return context.Canceled
 	}
