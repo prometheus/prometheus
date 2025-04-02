@@ -17,7 +17,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
+	"github.com/mwitkow/go-conntrack"
 	"io"
 	"log/slog"
 	"math"
