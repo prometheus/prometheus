@@ -188,9 +188,6 @@ linters:
 
 output:
   show-stats: false
-  sort-order:
-    - linter
-    - file
 
 run:
   timeout: 15m
