@@ -141,18 +141,22 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if c.Server == "" {
+		//nolint:staticcheck
 		return errors.New("Uyuni SD configuration requires server host")
 	}
 
 	_, err = url.Parse(c.Server)
 	if err != nil {
+		//nolint:staticcheck
 		return fmt.Errorf("Uyuni Server URL is not valid: %w", err)
 	}
 
 	if c.Username == "" {
+		//nolint:staticcheck
 		return errors.New("Uyuni SD configuration requires a username")
 	}
 	if c.Password == "" {
+		//nolint:staticcheck
 		return errors.New("Uyuni SD configuration requires a password")
 	}
 	return c.HTTPClientConfig.Validate()

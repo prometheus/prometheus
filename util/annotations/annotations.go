@@ -125,7 +125,7 @@ func (a Annotations) CountWarningsAndInfo() (countWarnings, countInfo int) {
 	return
 }
 
-//nolint:revive // error-naming.
+//nolint:staticcheck,revive // error-naming.
 var (
 	// Currently there are only 2 types, warnings and info.
 	// For now, info are visually identical with warnings as we have not updated
