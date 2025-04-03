@@ -17,8 +17,8 @@ While both the `mantine-ui` and `modules` directories are part of the same share
 
 To be able to build either of the React applications, you will need:
 
-* npm >= v7
-* node >= v20
+* npm >= v10
+* node >= v22
 
 ### Installing npm dependencies
 
