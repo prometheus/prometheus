@@ -1,8 +1,9 @@
-# Minimal test case to see that --fuzzy-compare is working as
-# expected. It should allow slight floating point differences through.
-# Larger floating point differences should still fail.
+# Minimal test case to see that fuzzy compare is working as expected.
+# It should allow slight floating point differences through. Larger
+# floating point differences should still fail.
 
 evaluation_interval: 1m
+fuzzy_compare: true
 
 tests:
   - name: correct fuzzy match
