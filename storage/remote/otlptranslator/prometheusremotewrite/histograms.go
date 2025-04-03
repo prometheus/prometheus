@@ -115,7 +115,6 @@ func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint, tempo
 	}
 
 	h := prompb.Histogram{
-
 		ResetHint: resetHint,
 		Schema:    scale,
 
@@ -323,7 +322,6 @@ func explicitHistogramToCustomBucketsHistogram(p pmetric.HistogramDataPoint, tem
 
 	// TODO(carrieedwards): Add setting to limit maximum bucket count
 	h := prompb.Histogram{
-
 		ResetHint: resetHint,
 		Schema:    histogram.CustomBucketsSchema,
 
