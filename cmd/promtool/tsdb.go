@@ -32,9 +32,10 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"sync/atomic"
+
 	"github.com/alecthomas/units"
 	"github.com/prometheus/common/promslog"
-	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"

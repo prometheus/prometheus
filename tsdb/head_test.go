@@ -31,11 +31,12 @@ import (
 	"testing"
 	"time"
 
+	"sync/atomic"
+
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/prometheus/prometheus/config"

@@ -17,7 +17,7 @@ import (
 	"context"
 	"time"
 
-	"go.uber.org/atomic"
+	"sync/atomic"
 )
 
 // A MockContext provides a simple stub implementation of a Context.

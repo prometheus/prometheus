@@ -19,8 +19,9 @@ import (
 	"testing"
 	"time"
 
+	"sync/atomic"
+
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
 )
 
 func (q *writeJobQueue) assertInvariants(t *testing.T) {

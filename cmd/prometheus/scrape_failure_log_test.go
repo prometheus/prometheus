@@ -25,8 +25,9 @@ import (
 	"testing"
 	"time"
 
+	"sync/atomic"
+
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/util/testutil"
 )

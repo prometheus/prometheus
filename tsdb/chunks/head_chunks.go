@@ -26,9 +26,10 @@ import (
 	"strconv"
 	"sync"
 
+	"sync/atomic"
+
 	"github.com/dennwc/varint"
 	"github.com/prometheus/client_golang/prometheus"
-	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
