@@ -104,12 +104,40 @@ eval instant at 50m histogram_stdvar(testhistogram3)
 	{start="negative"} 17.495112615949154
 
 # Test histogram_fraction.
+#
+eval instant at 50m histogram_fraction(0, 4, testhistogram2)
+	{} 0.6666666666666666
+
+eval instant at 50m histogram_fraction(0, 4, testhistogram2_bucket)
+	{} 0.6666666666666666
+
+eval instant at 50m histogram_fraction(0, 6, testhistogram2)
+	{} 1
+
+eval instant at 50m histogram_fraction(0, 6, testhistogram2_bucket)
+	{} 1
+
+eval instant at 50m histogram_fraction(0, 3.5, testhistogram2)
+	{} 0.5833333333333334
+
+eval instant at 50m histogram_fraction(0, 3.5, testhistogram2_bucket)
+	{} 0.5833333333333334
+
 
 eval instant at 50m histogram_fraction(0, 0.2, testhistogram3)
 	{start="positive"} 0.6363636363636364
 	{start="negative"} 0
 
+eval instant at 50m histogram_fraction(0, 0.2, testhistogram3_bucket)
+	{start="positive"} 0.6363636363636364
+	{start="negative"} 0
+
 eval instant at 50m histogram_fraction(0, 0.2, rate(testhistogram3[10m]))
+	{start="positive"} 0.6363636363636364
+	{start="negative"} 0
+
+
+eval instant at 50m histogram_fraction(0, 0.2, rate(testhistogram3_bucket[10m]))
 	{start="positive"} 0.6363636363636364
 	{start="negative"} 0
 
