@@ -97,6 +97,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					(temporality == pmetric.AggregationTemporalityUnspecified ||
 						(!settings.AllowDeltaTemporality && temporality == pmetric.AggregationTemporalityDelta)) {
 					errs = multierr.Append(errs, fmt.Errorf("invalid temporality and type combination for metric %q", metric.Name()))
+					continue
 				}
 
 				var promName string
@@ -183,7 +184,6 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 							return
 						}
 					}
-					//TODO: set deltas as gauge type
 				case pmetric.MetricTypeSummary:
 					dataPoints := metric.Summary().DataPoints()
 					if dataPoints.Len() == 0 {

@@ -19,6 +19,7 @@ package prometheusremotewrite
 import (
 	"context"
 	"fmt"
+	"sort"
 	"testing"
 	"time"
 
@@ -31,6 +32,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestFromMetrics(t *testing.T) {
@@ -235,6 +237,188 @@ func TestFromMetrics(t *testing.T) {
 	})
 }
 
+func TestTemporality(t *testing.T) {
+	baseTime := time.Unix(0, 0)
+
+	createOtelSeries := func(name string, temporality pmetric.AggregationTemporality) pmetric.Metric {
+		metrics := pmetric.NewMetricSlice()
+		m := metrics.AppendEmpty()
+		m.SetName(name)
+		sum := m.SetEmptySum()
+		sum.SetAggregationTemporality(temporality)
+		for j := 0; j < 5; j++ {
+			dp := sum.DataPoints().AppendEmpty()
+			dp.SetDoubleValue(float64(j * 10))
+			dp.SetTimestamp(pcommon.NewTimestampFromTime(baseTime.Add(time.Duration(j) * time.Minute)))
+			dp.Attributes().PutStr("test_label", "test_value")
+		}
+		return m
+	}
+
+	createPromSeries := func(name string) prompb.TimeSeries {
+		samples := []prompb.Sample{}
+		for j := 0; j < 5; j++ {
+			samples = append(samples, prompb.Sample{
+				Value:     float64(j * 10),
+				Timestamp: baseTime.Add(time.Duration(j) * time.Minute).UnixMilli(),
+			})
+		}
+		return prompb.TimeSeries{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: name},
+				{Name: "test_label", Value: "test_value"},
+			},
+			Samples: samples,
+		}
+	}
+
+	getMetricName := func(labels []prompb.Label) string {
+		for _, l := range labels {
+			if l.Name == "__name__" {
+				return l.Value
+			}
+		}
+		return ""
+	}
+
+	tests := []struct {
+		name           string
+		allowDelta     bool
+		expectedError  string
+		inputSeries    []pmetric.Metric
+		expectedSeries []prompb.TimeSeries
+	}{
+		{
+			name:       "cumulative when delta not allowed",
+			allowDelta: false,
+			inputSeries: []pmetric.Metric{
+				createOtelSeries("test_metric_1", pmetric.AggregationTemporalityCumulative),
+				createOtelSeries("test_metric_2", pmetric.AggregationTemporalityCumulative),
+			},
+			expectedSeries: []prompb.TimeSeries{
+				createPromSeries("test_metric_1"),
+				createPromSeries("test_metric_2"),
+			},
+		},
+		{
+			name:       "cumulative when delta allowed",
+			allowDelta: true,
+			inputSeries: []pmetric.Metric{
+				createOtelSeries("test_metric_1", pmetric.AggregationTemporalityCumulative),
+				createOtelSeries("test_metric_2", pmetric.AggregationTemporalityCumulative),
+			},
+			expectedSeries: []prompb.TimeSeries{
+				createPromSeries("test_metric_1"),
+				createPromSeries("test_metric_2"),
+			},
+		},
+		{
+			name:       "delta when delta not allowed",
+			allowDelta: false,
+			inputSeries: []pmetric.Metric{
+				createOtelSeries("test_metric_1", pmetric.AggregationTemporalityDelta),
+				createOtelSeries("test_metric_2", pmetric.AggregationTemporalityDelta),
+			},
+			expectedError:  `invalid temporality and type combination for metric "test_metric_1"; invalid temporality and type combination for metric "test_metric_2"`,
+			expectedSeries: []prompb.TimeSeries{},
+		},
+		{
+			name:       "delta when delta allowed",
+			allowDelta: true,
+			inputSeries: []pmetric.Metric{
+				createOtelSeries("test_metric_1", pmetric.AggregationTemporalityDelta),
+				createOtelSeries("test_metric_2", pmetric.AggregationTemporalityDelta),
+			},
+			expectedSeries: []prompb.TimeSeries{
+				createPromSeries("test_metric_1"),
+				createPromSeries("test_metric_2"),
+			},
+		},
+		{
+			name:       "mixed temporality when delta not allowed",
+			allowDelta: false,
+			inputSeries: []pmetric.Metric{
+				createOtelSeries("test_metric_1", pmetric.AggregationTemporalityDelta),
+				createOtelSeries("test_metric_2", pmetric.AggregationTemporalityCumulative),
+			},
+			expectedSeries: []prompb.TimeSeries{
+				createPromSeries("test_metric_2"),
+			},
+			expectedError: `invalid temporality and type combination for metric "test_metric_1"`,
+		},
+		{
+			name:       "mixed temporality when delta allowed",
+			allowDelta: true,
+			inputSeries: []pmetric.Metric{
+				createOtelSeries("test_metric_1", pmetric.AggregationTemporalityDelta),
+				createOtelSeries("test_metric_2", pmetric.AggregationTemporalityCumulative),
+			},
+			expectedSeries: []prompb.TimeSeries{
+				createPromSeries("test_metric_1"),
+				createPromSeries("test_metric_2"),
+			},
+		},
+		{
+			name:       "unspecified temporality not allowed when delta not allowed",
+			allowDelta: true,
+			inputSeries: []pmetric.Metric{
+				createOtelSeries("test_metric_1", pmetric.AggregationTemporalityCumulative),
+				createOtelSeries("test_metric_2", pmetric.AggregationTemporalityUnspecified),
+			},
+			expectedSeries: []prompb.TimeSeries{
+				createPromSeries("test_metric_1"),
+			},
+			expectedError: `invalid temporality and type combination for metric "test_metric_2"`,
+		},
+		{
+			name:       "unspecified temporality not allowed when delta allowed",
+			allowDelta: true,
+			inputSeries: []pmetric.Metric{
+				createOtelSeries("test_metric_1", pmetric.AggregationTemporalityCumulative),
+				createOtelSeries("test_metric_2", pmetric.AggregationTemporalityUnspecified),
+			},
+			expectedSeries: []prompb.TimeSeries{
+				createPromSeries("test_metric_1"),
+			},
+			expectedError: `invalid temporality and type combination for metric "test_metric_2"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			metrics := pmetric.NewMetrics()
+			rm := metrics.ResourceMetrics().AppendEmpty()
+			sm := rm.ScopeMetrics().AppendEmpty()
+
+			for _, s := range tt.inputSeries {
+				s.CopyTo(sm.Metrics().AppendEmpty())
+			}
+
+			c := NewPrometheusConverter()
+			settings := Settings{
+				AllowDeltaTemporality: tt.allowDelta,
+			}
+
+			_, err := c.FromMetrics(context.Background(), metrics, settings)
+
+			if tt.expectedError != "" {
+				require.EqualError(t, err, tt.expectedError)
+			} else {
+				require.NoError(t, err)
+			}
+
+			series := c.TimeSeries()
+			sort.Slice(series, func(i, j int) bool {
+				return getMetricName(series[i].Labels) < getMetricName(series[j].Labels)
+			})
+			sort.Slice(tt.expectedSeries, func(i, j int) bool {
+				return getMetricName(tt.expectedSeries[i].Labels) < getMetricName(tt.expectedSeries[j].Labels)
+			})
+			testutil.RequireEqual(t, tt.expectedSeries, series, "unexpected series")
+		})
+	}
+}
+
 func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
 	for _, resourceAttributeCount := range []int{0, 5, 50} {
 		b.Run(fmt.Sprintf("resource attribute count: %v", resourceAttributeCount), func(b *testing.B) {
@@ -358,4 +542,15 @@ func generateExemplars(exemplars pmetric.ExemplarSlice, count int, ts pcommon.Ti
 		e.SetSpanID(pcommon.SpanID{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08})
 		e.SetTraceID(pcommon.TraceID{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f})
 	}
+}
+
+func generateSamples(baseTime time.Time) []prompb.Sample {
+	samples := make([]prompb.Sample, 5)
+	for j := 0; j < 5; j++ {
+		samples[j] = prompb.Sample{
+			Value:     float64(j * 10),
+			Timestamp: baseTime.Add(time.Duration(j) * time.Minute).UnixMilli(),
+		}
+	}
+	return samples
 }
