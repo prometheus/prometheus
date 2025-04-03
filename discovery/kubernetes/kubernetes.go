@@ -744,6 +744,7 @@ func (d *Discovery) newNodeInformer(ctx context.Context) cache.SharedInformer {
 		WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 			options.FieldSelector = d.selectors.node.field
 			options.LabelSelector = d.selectors.node.label
+
 			return d.client.CoreV1().Nodes().Watch(ctx, options)
 		},
 	}
@@ -754,12 +755,19 @@ func (d *Discovery) newNodeInformer(ctx context.Context) cache.SharedInformer {
 	// allocs when clusters are large and conditions/ workloads change frequently
 	err := informer.SetTransform(func(i interface{}) (interface{}, error) {
 		node := i.(*apiv1.Node)
-		node.Status.Conditions = nil
-		node.Status.Images = nil
-		node.Status.Allocatable = nil
-		node.Status.Capacity = nil
-		return i, nil
+
+		if node != nil {
+			level.Debug(d.logger).Log("msg", "Clearing out node status", "node", node.Name)
+			node.Status.Conditions = nil
+			node.Status.Images = nil
+			node.Status.Allocatable = nil
+			node.Status.Capacity = nil
+			node.ResourceVersion = ""
+		}
+
+		return node, nil
 	})
+
 	if err != nil {
 		level.Warn(d.logger).Log("msg", "Failed to setup node transformer", "err", err)
 	}
@@ -886,6 +894,7 @@ func (d *Discovery) mustNewSharedInformer(lw cache.ListerWatcher, exampleObject 
 	if err := informer.SetWatchErrorHandler(d.informerWatchErrorHandler); err != nil {
 		panic(err)
 	}
+
 	return informer
 }
 
