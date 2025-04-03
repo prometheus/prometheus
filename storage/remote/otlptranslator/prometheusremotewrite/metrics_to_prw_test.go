@@ -480,7 +480,6 @@ func getMetricName(labels []prompb.Label) string {
 	return ""
 }
 
-// Sum/Counter helpers
 func createOtelSum(name string, temporality pmetric.AggregationTemporality, ts time.Time) pmetric.Metric {
 	metrics := pmetric.NewMetricSlice()
 	m := metrics.AppendEmpty()
