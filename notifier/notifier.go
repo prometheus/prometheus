@@ -628,16 +628,15 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 
 			go func(ctx context.Context, k string, client *http.Client, url string, payload []byte, count int) {
 				err := n.sendOne(ctx, client, url, payload)
+				duration := time.Since(begin).Seconds()
 				if err != nil {
-					n.logger.Error("Error sending alerts", "alertmanager", url, "count", count, "err", err)
+					n.logger.Error("Error sending alerts", "alertmanager", url, "count", count, "err", err, "duration", duration)
 					n.metrics.errors.WithLabelValues(url).Add(float64(count))
 				} else {
+					n.metrics.sent.WithLabelValues(url).Add(float64(count))
 					amSetCovered.CompareAndSwap(k, false, true)
 				}
-
-				n.metrics.latency.WithLabelValues(url).Observe(time.Since(begin).Seconds())
-				n.metrics.sent.WithLabelValues(url).Add(float64(count))
-
+				n.metrics.latency.WithLabelValues(url).Observe(duration)
 				wg.Done()
 			}(ctx, k, ams.client, am.url().String(), payload, len(amAlerts))
 		}
