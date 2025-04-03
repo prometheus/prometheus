@@ -398,14 +398,16 @@ func TestTemporality(t *testing.T) {
 				createPromNativeHistogram("test_histogram_1", prompb.Histogram_GAUGE, ts),
 				{
 					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_histogram_2_bucket"}, {Name: "le", Value: "1"},
+						{Name: "__name__", Value: "test_histogram_2_bucket"},
+						{Name: "le", Value: "1"},
 						{Name: "test_label", Value: "test_value"},
 					},
 					Samples: []prompb.Sample{{Value: 10, Timestamp: 100000}},
 				},
 				{
 					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_histogram_2_bucket"}, {Name: "le", Value: "2"},
+						{Name: "__name__", Value: "test_histogram_2_bucket"},
+						{Name: "le", Value: "2"},
 						{Name: "test_label", Value: "test_value"},
 					},
 					Samples: []prompb.Sample{{Value: 20, Timestamp: 100000}},
@@ -413,7 +415,8 @@ func TestTemporality(t *testing.T) {
 				{
 					Labels: []prompb.Label{
 						{Name: "__name__", Value: "test_histogram_2_bucket"},
-						{Name: "le", Value: "+Inf"}, {Name: "test_label", Value: "test_value"},
+						{Name: "le", Value: "+Inf"},
+						{Name: "test_label", Value: "test_value"},
 					},
 					Samples: []prompb.Sample{{Value: 20, Timestamp: 100000}},
 				},
@@ -460,24 +463,11 @@ func TestTemporality(t *testing.T) {
 
 			require.NoError(t, err)
 			series := c.TimeSeries()
-			sort.Slice(series, func(i, j int) bool {
-				return getMetricName(series[i].Labels) < getMetricName(series[j].Labels)
-			})
-			sort.Slice(tc.expectedSeries, func(i, j int) bool {
-				return getMetricName(tc.expectedSeries[i].Labels) < getMetricName(tc.expectedSeries[j].Labels)
-			})
-			testutil.RequireEqual(t, tc.expectedSeries, series)
+
+			// Sort series to make the test deterministic.
+			testutil.RequireEqual(t, sortTimeSeries(tc.expectedSeries), sortTimeSeries(series))
 		})
 	}
-}
-
-func getMetricName(labels []prompb.Label) string {
-	for _, l := range labels {
-		if l.Name == "__name__" {
-			return l.Value
-		}
-	}
-	return ""
 }
 
 func createOtelSum(name string, temporality pmetric.AggregationTemporality, ts time.Time) pmetric.Metric {
@@ -506,7 +496,6 @@ func createPromCounter(name string, ts time.Time) prompb.TimeSeries {
 	}
 }
 
-// Exponential histogram helpers
 func createOtelExpHistogram(name string, temporality pmetric.AggregationTemporality, ts time.Time) pmetric.Metric {
 	metrics := pmetric.NewMetricSlice()
 	m := metrics.AppendEmpty()
@@ -582,6 +571,20 @@ func createPromNHCB(name string, hint prompb.Histogram_ResetHint, ts time.Time) 
 			},
 		},
 	}
+}
+
+func sortTimeSeries(series []prompb.TimeSeries) []prompb.TimeSeries {
+	for i := range series {
+		sort.Slice(series[i].Labels, func(j, k int) bool {
+			return series[i].Labels[j].Name < series[i].Labels[k].Name
+		})
+	}
+
+	sort.Slice(series, func(i, j int) bool {
+		return fmt.Sprint(series[i].Labels) < fmt.Sprint(series[j].Labels)
+	})
+
+	return series
 }
 
 func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
