@@ -224,23 +224,6 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 	return labels
 }
 
-// isValidAggregationTemporality checks whether an OTel metric has a valid
-// aggregation temporality for conversion to a Prometheus metric.
-func isValidAggregationTemporality(metric pmetric.Metric) bool {
-	//exhaustive:enforce
-	switch metric.Type() {
-	case pmetric.MetricTypeGauge, pmetric.MetricTypeSummary:
-		return true
-	case pmetric.MetricTypeSum:
-		return metric.Sum().AggregationTemporality() == pmetric.AggregationTemporalityCumulative
-	case pmetric.MetricTypeHistogram:
-		return metric.Histogram().AggregationTemporality() == pmetric.AggregationTemporalityCumulative
-	case pmetric.MetricTypeExponentialHistogram:
-		return metric.ExponentialHistogram().AggregationTemporality() == pmetric.AggregationTemporalityCumulative
-	}
-	return false
-}
-
 func aggregationTemporality(metric pmetric.Metric) (pmetric.AggregationTemporality, bool) {
 	//exhaustive:enforce
 	switch metric.Type() {
