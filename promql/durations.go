@@ -14,7 +14,6 @@
 package promql
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"time"
@@ -76,10 +75,10 @@ func calculateDuration(expr parser.Expr, allowedNegative bool) (time.Duration, e
 		return 0, err
 	}
 	if duration <= 0 && !allowedNegative {
-		return 0, errors.New("duration must be greater than 0")
+		return 0, fmt.Errorf("%d:%d: duration must be greater than 0", expr.PositionRange().Start, expr.PositionRange().End)
 	}
 	if duration > 1<<63-1 || duration < -1<<63 {
-		return 0, errors.New("duration is out of range")
+		return 0, fmt.Errorf("%d:%d: duration is out of range", expr.PositionRange().Start, expr.PositionRange().End)
 	}
 	return time.Duration(duration*1000) * time.Millisecond, nil
 }
@@ -118,12 +117,12 @@ func evaluateDurationExpr(expr parser.Expr) (float64, error) {
 			return lhs * rhs, nil
 		case parser.DIV:
 			if rhs == 0 {
-				return 0, errors.New("division by zero")
+				return 0, fmt.Errorf("%d:%d: division by zero", expr.PositionRange().Start, expr.PositionRange().End)
 			}
 			return lhs / rhs, nil
 		case parser.MOD:
 			if rhs == 0 {
-				return 0, errors.New("modulo by zero")
+				return 0, fmt.Errorf("%d:%d: modulo by zero", expr.PositionRange().Start, expr.PositionRange().End)
 			}
 			return math.Mod(lhs, rhs), nil
 		case parser.POW:

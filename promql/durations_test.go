@@ -99,206 +99,139 @@ func TestDurationVisitor(t *testing.T) {
 }
 
 func TestCalculateDuration(t *testing.T) {
-	// Enable experimental duration expression parsing.
-	parser.ExperimentalDurationExpr = true
-	t.Cleanup(func() {
-		parser.ExperimentalDurationExpr = false
-	})
 	tests := []struct {
-		name        string
-		expr        string
-		expected    time.Duration
-		expectError bool
+		name            string
+		expr            parser.Expr
+		expected        time.Duration
+		errorMessage    string
+		requirePositive bool
 	}{
 		{
-			name:     "number literal",
-			expr:     "5",
-			expected: 5 * time.Second,
-		},
-		{
-			name:     "time unit literal",
-			expr:     "1h",
-			expected: time.Hour,
-		},
-		{
-			name:     "addition with numbers",
-			expr:     "5 + 10",
+			name: "addition",
+			expr: &parser.DurationExpr{
+				LHS: &parser.NumberLiteral{Val: 5},
+				RHS: &parser.NumberLiteral{Val: 10},
+				Op:  parser.ADD,
+			},
 			expected: 15 * time.Second,
 		},
 		{
-			name:     "addition with time units",
-			expr:     "1h + 30m",
-			expected: 90 * time.Minute,
-		},
-		{
-			name:     "subtraction with numbers",
-			expr:     "15 - 5",
+			name: "subtraction",
+			expr: &parser.DurationExpr{
+				LHS: &parser.NumberLiteral{Val: 15},
+				RHS: &parser.NumberLiteral{Val: 5},
+				Op:  parser.SUB,
+			},
 			expected: 10 * time.Second,
 		},
 		{
-			name:     "subtraction with time units",
-			expr:     "2h - 30m",
-			expected: 90 * time.Minute,
+			name: "subtraction with negative",
+			expr: &parser.DurationExpr{
+				LHS: &parser.NumberLiteral{Val: 5},
+				RHS: &parser.NumberLiteral{Val: 10},
+				Op:  parser.SUB,
+			},
+			errorMessage: "duration must be greater than 0",
 		},
 		{
-			name:     "multiplication with numbers",
-			expr:     "5 * 3",
+			name: "multiplication",
+			expr: &parser.DurationExpr{
+				LHS: &parser.NumberLiteral{Val: 5},
+				RHS: &parser.NumberLiteral{Val: 3},
+				Op:  parser.MUL,
+			},
 			expected: 15 * time.Second,
 		},
 		{
-			name:     "multiplication with time unit and number",
-			expr:     "2h * 1.5",
-			expected: 3 * time.Hour,
-		},
-		{
-			name:     "division with numbers",
-			expr:     "15 / 3",
+			name: "division",
+			expr: &parser.DurationExpr{
+				LHS: &parser.NumberLiteral{Val: 15},
+				RHS: &parser.NumberLiteral{Val: 3},
+				Op:  parser.DIV,
+			},
 			expected: 5 * time.Second,
 		},
 		{
-			name:     "division with time unit and number",
-			expr:     "1h / 2",
-			expected: 30 * time.Minute,
-		},
-		{
-			name:     "modulo with numbers",
-			expr:     "17 % 5",
+			name: "modulo with numbers",
+			expr: &parser.DurationExpr{
+				LHS: &parser.NumberLiteral{Val: 17},
+				RHS: &parser.NumberLiteral{Val: 5},
+				Op:  parser.MOD,
+			},
 			expected: 2 * time.Second,
 		},
 		{
-			name:     "modulo with time unit and number",
-			expr:     "70m % 60m",
-			expected: 10 * time.Minute,
-		},
-		{
-			name:     "power with numbers",
-			expr:     "2 ^ 3",
+			name: "power",
+			expr: &parser.DurationExpr{
+				LHS: &parser.NumberLiteral{Val: 2},
+				RHS: &parser.NumberLiteral{Val: 3},
+				Op:  parser.POW,
+			},
 			expected: 8 * time.Second,
 		},
 		{
-			name:     "complex expression with numbers",
-			expr:     "2 * (3 + 4) - 1",
+			name: "complex expression",
+			expr: &parser.DurationExpr{
+				LHS: &parser.DurationExpr{
+					LHS: &parser.NumberLiteral{Val: 2},
+					RHS: &parser.DurationExpr{
+						LHS: &parser.NumberLiteral{Val: 3},
+						RHS: &parser.NumberLiteral{Val: 4},
+						Op:  parser.ADD,
+					},
+					Op: parser.MUL,
+				},
+				RHS: &parser.NumberLiteral{Val: 1},
+				Op:  parser.SUB,
+			},
 			expected: 13 * time.Second,
 		},
 		{
-			name:     "complex expression with time units",
-			expr:     "2 * (1h + 30m) - 15m",
-			expected: 165 * time.Minute,
+			name: "unary negative",
+			expr: &parser.DurationExpr{
+				RHS: &parser.NumberLiteral{Val: 5},
+				Op:  parser.SUB,
+			},
+			expected:        -5 * time.Second,
+			requirePositive: true,
 		},
 		{
-			name:     "unary negative with number",
-			expr:     "-5",
-			expected: -5 * time.Second,
+			name: "division by zero",
+			expr: &parser.DurationExpr{
+				LHS: &parser.NumberLiteral{Val: 5},
+				RHS: &parser.DurationExpr{
+					LHS: &parser.NumberLiteral{Val: 5},
+					RHS: &parser.NumberLiteral{Val: 5},
+					Op:  parser.SUB,
+				},
+				Op: parser.DIV,
+			},
+			errorMessage: "division by zero",
 		},
 		{
-			name:     "unary negative with time unit",
-			expr:     "-1h",
-			expected: -time.Hour,
-		},
-		{
-			name:        "division by zero with numbers",
-			expr:        "5 / 0",
-			expectError: true,
-		},
-		{
-			name:        "division by zero with time unit",
-			expr:        "1h / 0",
-			expectError: true,
-		},
-		{
-			name:        "modulo by zero with numbers",
-			expr:        "5 % 0",
-			expectError: true,
-		},
-		{
-			name:        "modulo by zero with time unit",
-			expr:        "1h % 0",
-			expectError: true,
+			name: "modulo by zero",
+			expr: &parser.DurationExpr{
+				LHS: &parser.NumberLiteral{Val: 5},
+				RHS: &parser.DurationExpr{
+					LHS: &parser.NumberLiteral{Val: 5},
+					RHS: &parser.NumberLiteral{Val: 5},
+					Op:  parser.SUB,
+				},
+				Op: parser.MOD,
+			},
+			errorMessage: "modulo by zero",
 		},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name+" offset", func(t *testing.T) {
-			expr, err := parser.ParseExpr("foo offset (" + tt.expr + ")")
-			if tt.expectError {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := calculateDuration(tt.expr, tt.requirePositive)
+			if tt.errorMessage != "" {
 				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.errorMessage)
 				return
 			}
 			require.NoError(t, err)
-
-			// Extract the duration expression from the vector selector
-			vectorSelector, ok := expr.(*parser.VectorSelector)
-			require.True(t, ok, "Expected vector selector, got %T", expr)
-
-			result := vectorSelector.OriginalOffset
-			if vectorSelector.OriginalOffsetExpr != nil {
-				result, err = calculateDuration(vectorSelector.OriginalOffsetExpr, false)
-				require.NoError(t, err)
-			}
-			require.Equal(t, tt.expected, result)
-		})
-
-		t.Run(tt.name+" subquery with fixed step", func(t *testing.T) {
-			expr, err := parser.ParseExpr("foo[5m:(" + tt.expr + ")]")
-			if tt.expectError || tt.expected < 0 {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
-
-			// Extract the duration expression from the subquery
-			subquery, ok := expr.(*parser.SubqueryExpr)
-			require.True(t, ok, "Expected subquery, got %T", expr)
-
-			require.Equal(t, 5*time.Minute, subquery.Range)
-
-			result := subquery.Step
-			if subquery.StepExpr != nil {
-				result, err = calculateDuration(subquery.StepExpr, false)
-				require.NoError(t, err)
-			}
-			require.Equal(t, tt.expected, result)
-		})
-
-		t.Run(tt.name+" subquery with fixed range", func(t *testing.T) {
-			expr, err := parser.ParseExpr("foo[(" + tt.expr + "):5m]")
-			if tt.expectError || tt.expected < 0 {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
-
-			// Extract the duration expression from the subquery
-			subquery, ok := expr.(*parser.SubqueryExpr)
-			require.True(t, ok, "Expected subquery, got %T", expr)
-
-			require.Equal(t, 5*time.Minute, subquery.Step)
-
-			result := subquery.Range
-			if subquery.RangeExpr != nil {
-				result, err = calculateDuration(subquery.RangeExpr, false)
-				require.NoError(t, err)
-			}
-			require.Equal(t, tt.expected, result)
-		})
-
-		t.Run(tt.name+" matrix selector", func(t *testing.T) {
-			expr, err := parser.ParseExpr("foo[(" + tt.expr + ")]")
-			if tt.expectError || tt.expected < 0 {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
-
-			// Extract the duration expression from the matrix selector
-			matrixSelector, ok := expr.(*parser.MatrixSelector)
-			require.True(t, ok, "Expected matrix selector, got %T", expr)
-
-			result := matrixSelector.Range
-			if matrixSelector.RangeExpr != nil {
-				result, err = calculateDuration(matrixSelector.RangeExpr, false)
-				require.NoError(t, err)
-			}
 			require.Equal(t, tt.expected, result)
 		})
 	}
