@@ -747,7 +747,24 @@ func (d *Discovery) newNodeInformer(ctx context.Context) cache.SharedInformer {
 			return d.client.CoreV1().Nodes().Watch(ctx, options)
 		},
 	}
-	return d.mustNewSharedInformer(nlw, &apiv1.Node{}, resyncDisabled)
+
+	informer := d.mustNewSharedInformer(nlw, &apiv1.Node{}, resyncDisabled)
+
+	// Make sure we nil out conditions from node updates. We aren't interested in receiving these and can drastically increase
+	// allocs when clusters are large and conditions/ workloads change frequently
+	err := informer.SetTransform(func(i interface{}) (interface{}, error) {
+		node := i.(*apiv1.Node)
+		node.Status.Conditions = nil
+		node.Status.Images = nil
+		node.Status.Allocatable = nil
+		node.Status.Capacity = nil
+		return i, nil
+	})
+	if err != nil {
+		level.Warn(d.logger).Log("msg", "Failed to setup node transformer", "err", err)
+	}
+
+	return informer
 }
 
 func (d *Discovery) newPodsByNodeInformer(plw *cache.ListWatch) cache.SharedIndexInformer {
