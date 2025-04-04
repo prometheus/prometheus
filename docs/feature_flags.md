@@ -187,7 +187,7 @@ state is mutex guarded. Cumulative-only OTLP requests are not affected.
 
 ## OTLP Native Delta Support
 
-`--enable-feature=otlp-native-delta-support`
+`--enable-feature=otlp-native-delta-ingestion`
 
 When enabled, allows for the native ingestion of delta OTLP metrics, storing the raw sample values without conversion. This cannot be enabled in conjunction with `otlp-deltatocumulative`.
 
