@@ -25,8 +25,8 @@ func Test_EndpointSliceAdaptor_v1(t *testing.T) {
 	endpointSlice := makeEndpointSliceV1()
 	adaptor := newEndpointSliceAdaptorFromV1(endpointSlice)
 
-	require.Equal(t, endpointSlice.ObjectMeta.Name, adaptor.name())
-	require.Equal(t, endpointSlice.ObjectMeta.Namespace, adaptor.namespace())
+	require.Equal(t, endpointSlice.Name, adaptor.name())
+	require.Equal(t, endpointSlice.Namespace, adaptor.namespace())
 	require.Equal(t, endpointSlice.AddressType, v1.AddressType(adaptor.addressType()))
 	require.Equal(t, endpointSlice.Labels, adaptor.labels())
 	require.Equal(t, "testendpoints", endpointSlice.Labels[v1.LabelServiceName])

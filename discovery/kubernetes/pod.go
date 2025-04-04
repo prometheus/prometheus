@@ -219,7 +219,7 @@ func podLabels(pod *apiv1.Pod) model.LabelSet {
 		podPhaseLabel:    lv(string(pod.Status.Phase)),
 		podNodeNameLabel: lv(pod.Spec.NodeName),
 		podHostIPLabel:   lv(pod.Status.HostIP),
-		podUID:           lv(string(pod.ObjectMeta.UID)),
+		podUID:           lv(string(pod.UID)),
 	}
 
 	addObjectMetaLabels(ls, pod.ObjectMeta, RolePod)

@@ -202,7 +202,7 @@ func TestMarathonSDSendGroupWithMultiplePort(t *testing.T) {
 
 	tgt = tg.Targets[1]
 	require.Equal(t, "mesos-slave1:32000", string(tgt[model.AddressLabel]), "Wrong target address.")
-	require.Equal(t, "", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]),
+	require.Empty(t, string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]),
 		"Wrong portMappings label from the second port: %s", tgt[model.AddressLabel])
 }
 
@@ -300,9 +300,9 @@ func TestMarathonSDSendGroupWithPortDefinitions(t *testing.T) {
 
 	tgt := tg.Targets[0]
 	require.Equal(t, "mesos-slave1:1234", string(tgt[model.AddressLabel]), "Wrong target address.")
-	require.Equal(t, "", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]),
+	require.Empty(t, string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]),
 		"Wrong portMappings label from the first port.")
-	require.Equal(t, "", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]),
+	require.Empty(t, string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]),
 		"Wrong portDefinitions label from the first port.")
 
 	tgt = tg.Targets[1]
@@ -354,12 +354,12 @@ func TestMarathonSDSendGroupWithPortDefinitionsRequirePorts(t *testing.T) {
 
 	tgt := tg.Targets[0]
 	require.Equal(t, "mesos-slave1:31000", string(tgt[model.AddressLabel]), "Wrong target address.")
-	require.Equal(t, "", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the first port.")
-	require.Equal(t, "", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the first port.")
+	require.Empty(t, string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the first port.")
+	require.Empty(t, string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the first port.")
 
 	tgt = tg.Targets[1]
 	require.Equal(t, "mesos-slave1:32000", string(tgt[model.AddressLabel]), "Wrong target address.")
-	require.Equal(t, "", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the second port.")
+	require.Empty(t, string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the second port.")
 	require.Equal(t, "yes", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the second port.")
 }
 
@@ -401,13 +401,13 @@ func TestMarathonSDSendGroupWithPorts(t *testing.T) {
 
 	tgt := tg.Targets[0]
 	require.Equal(t, "mesos-slave1:31000", string(tgt[model.AddressLabel]), "Wrong target address.")
-	require.Equal(t, "", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the first port.")
-	require.Equal(t, "", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the first port.")
+	require.Empty(t, string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the first port.")
+	require.Empty(t, string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the first port.")
 
 	tgt = tg.Targets[1]
 	require.Equal(t, "mesos-slave1:32000", string(tgt[model.AddressLabel]), "Wrong target address.")
-	require.Equal(t, "", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the second port.")
-	require.Equal(t, "", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the second port.")
+	require.Empty(t, string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the second port.")
+	require.Empty(t, string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the second port.")
 }
 
 func marathonTestAppListWithContainerPortMappings(labels map[string]string, runningTasks int) *appList {
@@ -458,12 +458,12 @@ func TestMarathonSDSendGroupWithContainerPortMappings(t *testing.T) {
 	tgt := tg.Targets[0]
 	require.Equal(t, "mesos-slave1:12345", string(tgt[model.AddressLabel]), "Wrong target address.")
 	require.Equal(t, "yes", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the first port.")
-	require.Equal(t, "", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the first port.")
+	require.Empty(t, string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the first port.")
 
 	tgt = tg.Targets[1]
 	require.Equal(t, "mesos-slave1:32000", string(tgt[model.AddressLabel]), "Wrong target address.")
-	require.Equal(t, "", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the second port.")
-	require.Equal(t, "", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the second port.")
+	require.Empty(t, string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the second port.")
+	require.Empty(t, string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the second port.")
 }
 
 func marathonTestAppListWithDockerContainerPortMappings(labels map[string]string, runningTasks int) *appList {
@@ -514,12 +514,12 @@ func TestMarathonSDSendGroupWithDockerContainerPortMappings(t *testing.T) {
 	tgt := tg.Targets[0]
 	require.Equal(t, "mesos-slave1:31000", string(tgt[model.AddressLabel]), "Wrong target address.")
 	require.Equal(t, "yes", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the first port.")
-	require.Equal(t, "", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the first port.")
+	require.Empty(t, string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the first port.")
 
 	tgt = tg.Targets[1]
 	require.Equal(t, "mesos-slave1:12345", string(tgt[model.AddressLabel]), "Wrong target address.")
-	require.Equal(t, "", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the second port.")
-	require.Equal(t, "", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the second port.")
+	require.Empty(t, string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the second port.")
+	require.Empty(t, string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the second port.")
 }
 
 func marathonTestAppListWithContainerNetworkAndPortMappings(labels map[string]string, runningTasks int) *appList {
@@ -574,10 +574,10 @@ func TestMarathonSDSendGroupWithContainerNetworkAndPortMapping(t *testing.T) {
 	tgt := tg.Targets[0]
 	require.Equal(t, "1.2.3.4:8080", string(tgt[model.AddressLabel]), "Wrong target address.")
 	require.Equal(t, "yes", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the first port.")
-	require.Equal(t, "", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the first port.")
+	require.Empty(t, string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the first port.")
 
 	tgt = tg.Targets[1]
 	require.Equal(t, "1.2.3.4:1234", string(tgt[model.AddressLabel]), "Wrong target address.")
-	require.Equal(t, "", string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the second port.")
-	require.Equal(t, "", string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the second port.")
+	require.Empty(t, string(tgt[model.LabelName(portMappingLabelPrefix+"prometheus")]), "Wrong portMappings label from the second port.")
+	require.Empty(t, string(tgt[model.LabelName(portDefinitionLabelPrefix+"prometheus")]), "Wrong portDefinitions label from the second port.")
 }
