@@ -52,6 +52,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/util/grpcutil"
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -4123,22 +4124,67 @@ func TestRespondSuccess_DefaultCodecCannotEncodeResponse(t *testing.T) {
 }
 
 func TestRespondError(t *testing.T) {
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		api := API{}
-		api.respondError(w, &apiError{errorTimeout, errors.New("message")}, "test")
-	}))
-	defer s.Close()
+	type test struct {
+		errType errorType
+		err     error
+		errCode int
+		resCode int
+		msg     string
+	}
 
-	resp, err := http.Get(s.URL)
-	require.NoError(t, err, "Error on test request")
-	body, err := io.ReadAll(resp.Body)
-	defer resp.Body.Close()
-	require.NoError(t, err, "Error reading response body")
-	want, have := http.StatusServiceUnavailable, resp.StatusCode
-	require.Equal(t, want, have, "Return code %d expected in error response but got %d", want, have)
-	h := resp.Header.Get("Content-Type")
-	require.Equal(t, "application/json", h, "Expected Content-Type %q but got %q", "application/json", h)
-	require.JSONEq(t, `{"status": "error", "data": "test", "errorType": "timeout", "error": "message"}`, string(body))
+	tests := map[string]test{
+		"timeout should return 503 (ServiceUnavailable)": {
+			errType: errorTimeout,
+			err:     errors.New("message"),
+			resCode: http.StatusServiceUnavailable,
+			msg:     "message",
+		},
+		"execution error with normal error should return 422 (UnprocessableEntity)": {
+			errType: errorExec,
+			err:     errors.New("message"),
+			resCode: http.StatusUnprocessableEntity,
+			msg:     "message",
+		},
+		"execution error with valid grpcutil.ErrorWithStatusCode should return correct status code": {
+			errType: errorExec,
+			err:     errors.New("message"),
+			errCode: http.StatusTooManyRequests,
+			resCode: http.StatusUnprocessableEntity,
+			msg:     "message",
+		},
+		"execution error with invalid grpcutil.ErrorWithStatusCode should return 422 (UnprocessableEntity)": {
+			errType: errorExec,
+			err:     errors.New("message"),
+			errCode: 999,
+			resCode: http.StatusUnprocessableEntity,
+			msg:     "message",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				api := API{}
+				err := tc.err
+				if tc.errCode > 0 {
+					err, _ = grpcutil.ErrorWithHTTPStatusCode(tc.errCode, tc.err)
+				}
+				api.respondError(w, &apiError{tc.errType, err}, "test")
+			}))
+			defer s.Close()
+
+			resp, err := http.Get(s.URL)
+			require.NoError(t, err, "Error on test request")
+			body, err := io.ReadAll(resp.Body)
+			defer resp.Body.Close()
+			require.NoError(t, err, "Error reading response body")
+			want, have := tc.resCode, resp.StatusCode
+			require.Equal(t, want, have, "Return code %d expected in error response but got %d", want, have)
+			h := resp.Header.Get("Content-Type")
+			require.Equal(t, "application/json", h, "Expected Content-Type %q but got %q", "application/json", h)
+			require.JSONEq(t, fmt.Sprintf(`{"status": "error", "data": "test", "errorType": "%s", "error": "%s"}`, tc.errType, tc.msg), string(body))
+		})
+	}
 }
 
 func TestParseTimeParam(t *testing.T) {
