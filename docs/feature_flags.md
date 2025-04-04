@@ -199,12 +199,12 @@ Delta support is in a very early stage of development and the ingestion and quer
 
 We encourage users to experiment with deltas and existing PromQL functions; we will collect feedback and likely build features to improve the experience around querying deltas.
 
-Note that standard PromQL counter functions like `rate()` and `increase()` are designed for cumulative metrics and will produce incorrect results when used with delta metrics.
-
-To get similar results for delta metrics, you need `sum_over_time()`:
+Note that standard PromQL counter functions like `rate()` and `increase()` are designed for cumulative metrics and will produce incorrect results when used with delta metrics. This may change in the future, but for now, to get similar results for delta metrics, you need `sum_over_time()`:
 
 * `sum_over_time(delta_metric[<range>])`: Calculates the sum of delta values over the specified time range.
 * `sum_over_time(delta_metric[<range>]) / <range>`: Calculates the per-second rate of the delta metric.
+
+These may not work well if the `<range>` is not a multiple of the collection interval of the metric. For example, if you do `sum_over_time(delta_metric[1m]) / 1m` range query (with a 1m step), but the collection interval of a metric is 10m, the graph will show a single point every 10 minutes with a high rate value, rather than 10 points with a lower, constant value.
 
 ### Current gotchas
 
