@@ -290,7 +290,7 @@ type Options struct {
 	EnableRemoteWriteReceiver  bool
 	EnableOTLPWriteReceiver    bool
 	ConvertOTLPDelta           bool
-	NativeOTLPDeltaSupport     bool
+	NativeOTLPDeltaIngestion   bool
 	IsAgent                    bool
 	CTZeroIngestionEnabled     bool
 	AppName                    string
@@ -390,7 +390,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		o.AcceptRemoteWriteProtoMsgs,
 		o.EnableOTLPWriteReceiver,
 		o.ConvertOTLPDelta,
-		o.NativeOTLPDeltaSupport,
+		o.NativeOTLPDeltaIngestion,
 		o.CTZeroIngestionEnabled,
 	)
 

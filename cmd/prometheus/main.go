@@ -279,12 +279,12 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "otlp-deltatocumulative":
 				c.web.ConvertOTLPDelta = true
 				logger.Info("Converting delta OTLP metrics to cumulative")
-			case "otlp-native-delta-support":
-				// Experimental native delta support, proposal: https://github.com/prometheus/proposals/pull/48
-				// This flag may be changed to just native-delta-support once we start making functions
-				// temporality-aware (at that point metrics ingested via non-OTLP means could basically start
-				// ingesting and querying deltas).
-				c.web.NativeOTLPDeltaSupport = true
+			case "otlp-native-delta-ingestion":
+				// Experimental OTLP native delta ingestion.
+				// This currently just stores the raw delta value as-is with unknown metric type. Better typing and
+				// type-aware functions may come later.
+				// See proposal: https://github.com/prometheus/proposals/pull/48
+				c.web.NativeOTLPDeltaIngestion = true
 				logger.Info("Enabling native ingestion of delta OTLP metrics, storing the raw sample values without conversion. WARNING: Delta support is in an early stage of development. The ingestion and querying process is likely to change over time.")
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
@@ -292,8 +292,8 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 		}
 	}
 
-	if c.web.ConvertOTLPDelta && c.web.NativeOTLPDeltaSupport {
-		return errors.New("cannot enable otlp-deltatocumulative and otlp-native-delta-support features at the same time")
+	if c.web.ConvertOTLPDelta && c.web.NativeOTLPDeltaIngestion {
+		return errors.New("cannot enable otlp-deltatocumulative and otlp-native-delta-ingestion features at the same time")
 	}
 
 	return nil
