@@ -2113,14 +2113,14 @@ func buildTimeSeries(timeSeries []prompb.TimeSeries, filter func(prompb.TimeSeri
 }
 
 func buildWriteRequest(logger *slog.Logger, timeSeries []prompb.TimeSeries, metadata []prompb.MetricMetadata, pBuf *proto.Buffer, filter func(prompb.TimeSeries) bool, buf compression.EncodeBuffer, compr compression.Type) (_ []byte, highest, lowest int64, _ error) {
-	wrappedTimeSeries := make([]TimeSeriesWrapper, len(timeSeries))
+	wrappedTimeSeries := make([]timeSeriesWrapper, len(timeSeries))
 	for i, ts := range timeSeries {
-		wrappedTimeSeries[i] = TimeSeriesWrapper{ts: ts}
+		wrappedTimeSeries[i] = timeSeriesWrapper{ts: ts}
 	}
 
-	var wrappedFilter func(w TimeSeriesWrapper) bool
+	var wrappedFilter func(w timeSeriesWrapper) bool
 	if filter != nil {
-		wrappedFilter = func(w TimeSeriesWrapper) bool {
+		wrappedFilter = func(w timeSeriesWrapper) bool {
 			return filter(w.ts)
 		}
 	}
@@ -2241,20 +2241,20 @@ func buildV2TimeSeries(timeSeries []writev2.TimeSeries, filter func(writev2.Time
 
 // TimeSeriesData represents the common interface for both prompb.TimeSeries and writev2.TimeSeries.
 type TimeSeriesData interface {
-	// GetSamples returns the samples in the time series
-	GetSamples() []interface{}
-	// GetExemplars returns the exemplars in the time series
-	GetExemplars() []interface{}
-	// GetHistograms returns the histograms in the time series
-	GetHistograms() []interface{}
+	// getSamples returns the samples in the time series
+	getSamples() []interface{}
+	// getExemplars returns the exemplars in the time series
+	getExemplars() []interface{}
+	// getHistograms returns the histograms in the time series
+	getHistograms() []interface{}
 }
 
-type TimeSeriesWrapper struct {
+type timeSeriesWrapper struct {
 	ts prompb.TimeSeries
 }
 
-// GetSamples returns the samples in the time series.
-func (w TimeSeriesWrapper) GetSamples() []interface{} {
+// getSamples returns the samples in the time series.
+func (w timeSeriesWrapper) getSamples() []interface{} {
 	result := make([]interface{}, len(w.ts.Samples))
 	for i, s := range w.ts.Samples {
 		result[i] = s
@@ -2262,8 +2262,8 @@ func (w TimeSeriesWrapper) GetSamples() []interface{} {
 	return result
 }
 
-// GetExemplars returns the exemplars in the time series.
-func (w TimeSeriesWrapper) GetExemplars() []interface{} {
+// getExemplars returns the exemplars in the time series.
+func (w timeSeriesWrapper) getExemplars() []interface{} {
 	result := make([]interface{}, len(w.ts.Exemplars))
 	for i, e := range w.ts.Exemplars {
 		result[i] = e
@@ -2271,8 +2271,8 @@ func (w TimeSeriesWrapper) GetExemplars() []interface{} {
 	return result
 }
 
-// GetHistograms returns the histograms in the time series.
-func (w TimeSeriesWrapper) GetHistograms() []interface{} {
+// getHistograms returns the histograms in the time series.
+func (w timeSeriesWrapper) getHistograms() []interface{} {
 	result := make([]interface{}, len(w.ts.Histograms))
 	for i, h := range w.ts.Histograms {
 		result[i] = h
@@ -2290,20 +2290,20 @@ func buildGenericTimeSeries[T TimeSeriesData](timeSeries []T, filter func(T) boo
 	lowest = math.MaxInt64
 	for i, ts := range timeSeries {
 		if filter != nil && filter(ts) {
-			if len(ts.GetSamples()) > 0 {
+			if len(ts.getSamples()) > 0 {
 				droppedSamples++
 			}
-			if len(ts.GetExemplars()) > 0 {
+			if len(ts.getExemplars()) > 0 {
 				droppedExemplars++
 			}
-			if len(ts.GetHistograms()) > 0 {
+			if len(ts.getHistograms()) > 0 {
 				droppedHistograms++
 			}
 			continue
 		}
 
-		if len(ts.GetSamples()) > 0 {
-			sample := ts.GetSamples()[0]
+		if len(ts.getSamples()) > 0 {
+			sample := ts.getSamples()[0]
 			timestamp := getTimestamp(sample)
 			if timestamp > highest {
 				highest = timestamp
@@ -2314,8 +2314,8 @@ func buildGenericTimeSeries[T TimeSeriesData](timeSeries []T, filter func(T) boo
 			}
 		}
 
-		if len(ts.GetExemplars()) > 0 {
-			exemplar := ts.GetExemplars()[0]
+		if len(ts.getExemplars()) > 0 {
+			exemplar := ts.getExemplars()[0]
 			timestamp := getTimestamp(exemplar)
 			if timestamp > highest {
 				highest = timestamp
@@ -2326,8 +2326,8 @@ func buildGenericTimeSeries[T TimeSeriesData](timeSeries []T, filter func(T) boo
 			}
 		}
 
-		if len(ts.GetHistograms()) > 0 {
-			histogram := ts.GetHistograms()[0]
+		if len(ts.getHistograms()) > 0 {
+			histogram := ts.getHistograms()[0]
 			timestamp := getTimestamp(histogram)
 			if timestamp > highest {
 				highest = timestamp
