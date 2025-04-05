@@ -1360,17 +1360,27 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 	groups := make([]groupedAggregation, groupCount)
 
 	var seriess map[uint64]Series
-	switch aggExpr.Op {
-	case parser.TOPK, parser.BOTTOMK, parser.LIMITK, parser.LIMIT_RATIO:
-		// Check if all the float samples of param series (k or r) are zero.
-		allParamsZero := true
-		for _, param := range params.Floats {
-			if param.F != 0 {
-				allParamsZero = false
-				break
+	// allParamsMatchCondition returns true if the provided condition holds for every float params.
+	allParamsMatchCondition := func(params []FPoint, condition func(float64) bool) bool {
+		for _, param := range params {
+			if !condition(param.F) {
+				return false
 			}
 		}
-		if allParamsZero {
+		return true
+	}
+
+	switch aggExpr.Op {
+	case parser.TOPK, parser.BOTTOMK, parser.LIMITK:
+		// Return early if all k values are less than one.
+		if allParamsMatchCondition(params.Floats, func(f float64) bool { return f <= 0 }) {
+			return nil, annos
+		}
+		seriess = make(map[uint64]Series, len(inputMatrix))
+
+	case parser.LIMIT_RATIO:
+		// Return early if all r values are zero.
+		if allParamsMatchCondition(params.Floats, func(f float64) bool { return f == 0 }) {
 			return nil, annos
 		}
 		seriess = make(map[uint64]Series, len(inputMatrix))
