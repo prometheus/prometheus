@@ -2297,10 +2297,21 @@ func TestBuildTimeSeries(t *testing.T) {
 func BenchmarkBuildTimeSeries(b *testing.B) {
 	// Send one sample per series, which is the typical remote_write case
 	const numSamples = 10000
-	filter := func(ts prompb.TimeSeries) bool { return filterTsLimit(99, ts) }
+
 	for i := 0; i < b.N; i++ {
 		samples := createProtoTimeseriesWithOld(numSamples, 100, extraLabels...)
-		_, _, result, _, _, _ := buildTimeSeries(samples, filter)
+		wrappedSamples := make([]timeSeriesWrapper, len(samples))
+		for i, ts := range samples {
+			wrappedSamples[i] = timeSeriesWrapper{
+				ts: ts,
+			}
+		}
+
+		wrappedFilter := func(w timeSeriesWrapper) bool {
+			return w.ts.Samples[0].Timestamp > 99
+		}
+
+		_, _, result, _, _, _ := buildGenericTimeSeries(wrappedSamples, wrappedFilter)
 		require.NotNil(b, result)
 	}
 }
