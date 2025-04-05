@@ -37,6 +37,8 @@ const binOpPrecedence = {
   [binaryOperatorType.lss]: 4,
   [binaryOperatorType.gte]: 4,
   [binaryOperatorType.lte]: 4,
+  [binaryOperatorType.ltrim]: 4,
+  [binaryOperatorType.rtrim]: 4,
   [binaryOperatorType.and]: 5,
   [binaryOperatorType.or]: 6,
   [binaryOperatorType.unless]: 5,
