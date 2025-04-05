@@ -2129,7 +2129,7 @@ func buildWriteRequest(logger *slog.Logger, timeSeries []prompb.TimeSeries, meta
 		logger.Debug("dropped data due to their age", "droppedSamples", droppedSamples, "droppedExemplars", droppedExemplars, "droppedHistograms", droppedHistograms)
 	}
 
-	//Convert back to prompb.TimeSeries
+	// Convert back to prompb.TimeSeries
 	timeSeries = make([]prompb.TimeSeries, len(wrappedTimeSeries))
 	for i, w := range wrappedTimeSeries {
 		timeSeries[i] = w.ts
