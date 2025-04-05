@@ -2113,11 +2113,26 @@ func buildTimeSeries(timeSeries []prompb.TimeSeries, filter func(prompb.TimeSeri
 }
 
 func buildWriteRequest(logger *slog.Logger, timeSeries []prompb.TimeSeries, metadata []prompb.MetricMetadata, pBuf *proto.Buffer, filter func(prompb.TimeSeries) bool, buf compression.EncodeBuffer, compr compression.Type) (_ []byte, highest, lowest int64, _ error) {
-	highest, lowest, timeSeries,
-		droppedSamples, droppedExemplars, droppedHistograms := buildTimeSeries(timeSeries, filter)
+	wrappedTimeSeries := make([]TimeSeriesWrapper, len(timeSeries))
+	for i, ts := range timeSeries {
+		wrappedTimeSeries[i] = TimeSeriesWrapper{ts: ts}
+	}
 
+	var wrappedFilter func(w TimeSeriesWrapper) bool
+	if filter != nil {
+		wrappedFilter = func(w TimeSeriesWrapper) bool {
+			return filter(w.ts)
+		}
+	}
+	highest, lowest, wrappedTimeSeries, droppedSamples, droppedExemplars, droppedHistograms := buildGenericTimeSeries(wrappedTimeSeries, wrappedFilter)
 	if droppedSamples > 0 || droppedExemplars > 0 || droppedHistograms > 0 {
 		logger.Debug("dropped data due to their age", "droppedSamples", droppedSamples, "droppedExemplars", droppedExemplars, "droppedHistograms", droppedHistograms)
+	}
+
+	//Convert back to prompb.TimeSeries
+	timeSeries = make([]prompb.TimeSeries, len(wrappedTimeSeries))
+	for i, w := range wrappedTimeSeries {
+		timeSeries[i] = w.ts
 	}
 
 	req := &prompb.WriteRequest{
@@ -2222,4 +2237,135 @@ func buildV2TimeSeries(timeSeries []writev2.TimeSeries, filter func(writev2.Time
 
 	timeSeries = timeSeries[:keepIdx]
 	return highest, lowest, timeSeries, droppedSamples, droppedExemplars, droppedHistograms
+}
+
+// TimeSeriesData represents the common interface for both prompb.TimeSeries and writev2.TimeSeries.
+type TimeSeriesData interface {
+	// GetSamples returns the samples in the time series
+	GetSamples() []interface{}
+	// GetExemplars returns the exemplars in the time series
+	GetExemplars() []interface{}
+	// GetHistograms returns the histograms in the time series
+	GetHistograms() []interface{}
+}
+
+type TimeSeriesWrapper struct {
+	ts prompb.TimeSeries
+}
+
+// GetSamples returns the samples in the time series.
+func (w TimeSeriesWrapper) GetSamples() []interface{} {
+	result := make([]interface{}, len(w.ts.Samples))
+	for i, s := range w.ts.Samples {
+		result[i] = s
+	}
+	return result
+}
+
+// GetExemplars returns the exemplars in the time series.
+func (w TimeSeriesWrapper) GetExemplars() []interface{} {
+	result := make([]interface{}, len(w.ts.Exemplars))
+	for i, e := range w.ts.Exemplars {
+		result[i] = e
+	}
+	return result
+}
+
+// GetHistograms returns the histograms in the time series.
+func (w TimeSeriesWrapper) GetHistograms() []interface{} {
+	result := make([]interface{}, len(w.ts.Histograms))
+	for i, h := range w.ts.Histograms {
+		result[i] = h
+	}
+	return result
+}
+
+// buildGenericTimeSeries can be used to build prompb.TimeSeries or writev2.TimeSeries.
+func buildGenericTimeSeries[T TimeSeriesData](timeSeries []T, filter func(T) bool) (int64, int64, []T, int, int, int) {
+	var highest int64
+	var lowest int64
+	var droppedSamples, droppedExemplars, droppedHistograms int
+
+	keepIdx := 0
+	lowest = math.MaxInt64
+	for i, ts := range timeSeries {
+		if filter != nil && filter(ts) {
+			if len(ts.GetSamples()) > 0 {
+				droppedSamples++
+			}
+			if len(ts.GetExemplars()) > 0 {
+				droppedExemplars++
+			}
+			if len(ts.GetHistograms()) > 0 {
+				droppedHistograms++
+			}
+			continue
+		}
+
+		if len(ts.GetSamples()) > 0 {
+			sample := ts.GetSamples()[0]
+			timestamp := getTimestamp(sample)
+			if timestamp > highest {
+				highest = timestamp
+			}
+
+			if timestamp < lowest {
+				lowest = timestamp
+			}
+		}
+
+		if len(ts.GetExemplars()) > 0 {
+			exemplar := ts.GetExemplars()[0]
+			timestamp := getTimestamp(exemplar)
+			if timestamp > highest {
+				highest = timestamp
+			}
+
+			if timestamp < lowest {
+				lowest = timestamp
+			}
+		}
+
+		if len(ts.GetHistograms()) > 0 {
+			histogram := ts.GetHistograms()[0]
+			timestamp := getTimestamp(histogram)
+			if timestamp > highest {
+				highest = timestamp
+			}
+
+			if timestamp < lowest {
+				lowest = timestamp
+			}
+		}
+
+		if i != keepIdx {
+			// We have to swap the kept timeseries with the one which should be dropped.
+			// Copying any elements within timeSeries could cause data corruptions when reusing the slice in a next batch (shards.populateTimeSeries).
+			timeSeries[keepIdx], timeSeries[i] = timeSeries[i], timeSeries[keepIdx]
+		}
+		keepIdx++
+	}
+
+	timeSeries = timeSeries[:keepIdx]
+	return highest, lowest, timeSeries, droppedSamples, droppedExemplars, droppedHistograms
+}
+
+// getTimestamp takes a timestamp from prompb.Sample, prompb.Exemplar, prompb.Histogram, writev2.Sample, writev2.Exemplar, or writev2.Histogram.
+func getTimestamp(item any) int64 {
+	switch v := item.(type) {
+	case prompb.Sample:
+		return v.Timestamp
+	case prompb.Exemplar:
+		return v.Timestamp
+	case prompb.Histogram:
+		return v.Timestamp
+	case writev2.Sample:
+		return v.Timestamp
+	case writev2.Exemplar:
+		return v.Timestamp
+	case writev2.Histogram:
+		return v.Timestamp
+	default:
+		return 0
+	}
 }
