@@ -4372,6 +4372,30 @@ func TestParseHistogramSeries(t *testing.T) {
 			},
 		},
 		{
+			name:  "series with two different increments",
+			input: `{} {{sum:1}}+{{sum:1}}x2 {{sum:2}}+{{sum:2}}x2`,
+			expected: []histogram.FloatHistogram{
+				{
+					Sum: 1,
+				},
+				{
+					Sum: 2,
+				},
+				{
+					Sum: 3,
+				},
+				{
+					Sum: 2,
+				},
+				{
+					Sum: 4,
+				},
+				{
+					Sum: 6,
+				},
+			},
+		},
+		{
 			name:  "series with decrement",
 			input: `{} {{buckets:[5 10 7] schema:1}}-{{buckets:[1 2 3] schema:1}}x2`,
 			expected: []histogram.FloatHistogram{
