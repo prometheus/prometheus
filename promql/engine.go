@@ -1338,7 +1338,6 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 	buf := make([]byte, 0, 1024)
 	groupToResultIndex := make(map[uint64]int)
 	seriesToResult := make([]int, len(inputMatrix))
-	isInstant := ev.startTimestamp == ev.endTimestamp
 	var result Matrix
 
 	groupCount := 0
@@ -1390,9 +1389,9 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 		var ws annotations.Annotations
 		switch aggExpr.Op {
 		case parser.TOPK, parser.BOTTOMK, parser.LIMITK, parser.LIMIT_RATIO:
-			result, ws = ev.aggregationK(aggExpr, fParam, inputMatrix, seriesToResult, groups, enh, seriess, isInstant)
+			result, ws = ev.aggregationK(aggExpr, fParam, inputMatrix, seriesToResult, groups, enh, seriess)
 			// If this could be an instant query, shortcut so as not to change sort order.
-			if isInstant {
+			if ev.startTimestamp == ev.endTimestamp {
 				annos.Merge(ws)
 				return result, annos
 			}
@@ -3195,7 +3194,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 // seriesToResult maps inputMatrix indexes to groups indexes.
 // For an instant query, returns a Matrix in descending order for topk or ascending for bottomk, or without any order for limitk / limit_ratio.
 // For a range query, aggregates output in the seriess map.
-func (ev *evaluator) aggregationK(e *parser.AggregateExpr, fParam float64, inputMatrix Matrix, seriesToResult []int, groups []groupedAggregation, enh *EvalNodeHelper, seriess map[uint64]Series, isInstant bool) (Matrix, annotations.Annotations) {
+func (ev *evaluator) aggregationK(e *parser.AggregateExpr, fParam float64, inputMatrix Matrix, seriesToResult []int, groups []groupedAggregation, enh *EvalNodeHelper, seriess map[uint64]Series) (Matrix, annotations.Annotations) {
 	op := e.Op
 	var s Sample
 	var annos annotations.Annotations
@@ -3233,7 +3232,7 @@ seriesLoop:
 				k = int64(len(inputMatrix))
 			}
 			if k < 1 {
-				if !isInstant {
+				if ev.startTimestamp != ev.endTimestamp {
 					advanceRemainingSeries(enh.Ts, si+1)
 				}
 				return nil, annos
@@ -3244,7 +3243,7 @@ seriesLoop:
 			}
 			switch {
 			case fParam == 0:
-				if !isInstant {
+				if ev.startTimestamp != ev.endTimestamp {
 					advanceRemainingSeries(enh.Ts, si+1)
 				}
 				return nil, annos
@@ -3350,7 +3349,7 @@ seriesLoop:
 				groupsRemaining--
 				if groupsRemaining == 0 {
 					// Process other values in the series before breaking the loop in case of range query.
-					if !isInstant {
+					if ev.startTimestamp != ev.endTimestamp {
 						advanceRemainingSeries(enh.Ts, si+1)
 					}
 					break seriesLoop
