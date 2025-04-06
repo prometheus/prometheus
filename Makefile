@@ -192,3 +192,8 @@ update-all-go-deps:
 		$(GO) get -d $$m; \
 	done
 	@cd ./documentation/examples/remote_storage/ && $(GO) mod tidy
+
+.PHONY: check-runtime-versions
+check-runtime-versions:
+	@echo ">> checking runtime versions"
+	@./scripts/check-runtime-versions.sh
