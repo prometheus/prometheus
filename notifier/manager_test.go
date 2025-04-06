@@ -23,12 +23,10 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
-	"sync/atomic"
-
-	"github.com/prometheus/alertmanager/api/v2/models"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -45,36 +43,6 @@ import (
 )
 
 const maxBatchSize = 256
-
-func TestPostPath(t *testing.T) {
-	cases := []struct {
-		in, out string
-	}{
-		{
-			in:  "",
-			out: "/api/v2/alerts",
-		},
-		{
-			in:  "/",
-			out: "/api/v2/alerts",
-		},
-		{
-			in:  "/prefix",
-			out: "/prefix/api/v2/alerts",
-		},
-		{
-			in:  "/prefix//",
-			out: "/prefix/api/v2/alerts",
-		},
-		{
-			in:  "prefix//",
-			out: "/prefix/api/v2/alerts",
-		},
-	}
-	for _, c := range cases {
-		require.Equal(t, c.out, postPath(c.in, config.AlertmanagerAPIVersionV2))
-	}
-}
 
 func TestHandlerNextBatch(t *testing.T) {
 	h := NewManager(&Options{}, nil)
@@ -621,16 +589,6 @@ func (a alertmanagerMock) url() *url.URL {
 	return u
 }
 
-func TestLabelSetNotReused(t *testing.T) {
-	tg := makeInputTargetGroup()
-	_, _, err := AlertmanagerFromGroup(tg, &config.AlertmanagerConfig{})
-
-	require.NoError(t, err)
-
-	// Target modified during alertmanager extraction
-	require.Equal(t, tg, makeInputTargetGroup())
-}
-
 func TestReload(t *testing.T) {
 	tests := []struct {
 		in  *targetgroup.Group
@@ -743,10 +701,6 @@ func makeInputTargetGroup() *targetgroup.Group {
 		},
 		Source: "testsource",
 	}
-}
-
-func TestLabelsToOpenAPILabelSet(t *testing.T) {
-	require.Equal(t, models.LabelSet{"aaa": "111", "bbb": "222"}, labelsToOpenAPILabelSet(labels.FromStrings("aaa", "111", "bbb", "222")))
 }
 
 // TestHangingNotifier ensures that the notifier takes into account SD changes even when there are
