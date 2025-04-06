@@ -21,9 +21,8 @@ import (
 	"net/url"
 	"strings"
 	"sync"
-	"time"
-
 	"sync/atomic"
+	"time"
 
 	"github.com/prometheus/common/model"
 	"gopkg.in/yaml.v2"

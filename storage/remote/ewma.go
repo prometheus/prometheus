@@ -15,9 +15,8 @@ package remote
 
 import (
 	"sync"
-	"time"
-
 	"sync/atomic"
+	"time"
 )
 
 // ewmaRate tracks an exponentially weighted moving average of a per-second rate.

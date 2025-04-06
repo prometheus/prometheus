@@ -25,7 +25,6 @@ import (
 	"slices"
 	"strconv"
 	"sync"
-
 	"sync/atomic"
 
 	"github.com/dennwc/varint"

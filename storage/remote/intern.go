@@ -20,7 +20,6 @@ package remote
 
 import (
 	"sync"
-
 	"sync/atomic"
 
 	"github.com/prometheus/client_golang/prometheus"

@@ -19,9 +19,8 @@ import (
 	"fmt"
 	"net/url"
 	"sync"
-	"time"
-
 	"sync/atomic"
+	"time"
 
 	"gopkg.in/yaml.v2"
 
@@ -52,7 +51,6 @@ type RecordingRule struct {
 
 // NewRecordingRule returns a new recording rule.
 func NewRecordingRule(name string, vector parser.Expr, lset labels.Labels) *RecordingRule {
-
 	var health atomic.Value
 	health.Store(string(HealthUnknown))
 

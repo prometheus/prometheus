@@ -17,10 +17,9 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
-
-	"sync/atomic"
 
 	"github.com/stretchr/testify/require"
 
@@ -165,7 +164,7 @@ func TestChunkWriteQueue_WrappingAroundSizeLimit(t *testing.T) {
 	unblockChunkWriter()
 
 	// Wait until the job has been added to the queue.
-	require.Eventually(t, func() bool { return addedJob.Load() }, time.Second, time.Millisecond*10)
+	require.Eventually(t, addedJob.Load, time.Second, time.Millisecond*10)
 
 	// The queue should be full again.
 	require.True(t, q.queueIsFull())

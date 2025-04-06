@@ -15,9 +15,8 @@ package testutil
 
 import (
 	"context"
-	"time"
-
 	"sync/atomic"
+	"time"
 )
 
 // A MockContext provides a simple stub implementation of a Context.

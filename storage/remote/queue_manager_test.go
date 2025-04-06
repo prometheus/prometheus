@@ -26,10 +26,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
-
-	"sync/atomic"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/google/go-cmp/cmp"

@@ -21,9 +21,8 @@ import (
 	"math"
 	"strconv"
 	"sync"
-	"time"
-
 	"sync/atomic"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
@@ -1296,14 +1295,14 @@ func (s *shards) stop() {
 	<-s.done
 
 	// Log error for any dropped samples, exemplars, or histograms.
-	logDroppedError := func(t string, counter atomic.Uint32) {
+	logDroppedError := func(t string, counter *atomic.Uint32) {
 		if dropped := counter.Load(); dropped > 0 {
 			s.qm.logger.Error(fmt.Sprintf("Failed to flush all %s on shutdown", t), "count", dropped)
 		}
 	}
-	logDroppedError("samples", s.samplesDroppedOnHardShutdown)
-	logDroppedError("exemplars", s.exemplarsDroppedOnHardShutdown)
-	logDroppedError("histograms", s.histogramsDroppedOnHardShutdown)
+	logDroppedError("samples", &s.samplesDroppedOnHardShutdown)
+	logDroppedError("exemplars", &s.exemplarsDroppedOnHardShutdown)
+	logDroppedError("histograms", &s.histogramsDroppedOnHardShutdown)
 }
 
 // enqueue data (sample or exemplar). If the shard is full, shutting down, or

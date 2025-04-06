@@ -19,9 +19,8 @@ import (
 	"fmt"
 	"math/rand"
 	"strconv"
-	"testing"
-
 	"sync/atomic"
+	"testing"
 
 	"github.com/stretchr/testify/require"
 

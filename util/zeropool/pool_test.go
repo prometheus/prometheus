@@ -16,9 +16,8 @@ package zeropool_test
 import (
 	"math"
 	"sync"
-	"testing"
-
 	"sync/atomic"
+	"testing"
 
 	"github.com/stretchr/testify/require"
 

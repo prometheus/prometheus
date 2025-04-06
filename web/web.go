@@ -33,9 +33,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
-
 	"sync/atomic"
+	"time"
 
 	"github.com/alecthomas/units"
 	"github.com/grafana/regexp"

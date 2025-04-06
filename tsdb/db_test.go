@@ -34,10 +34,9 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
-
-	"sync/atomic"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"

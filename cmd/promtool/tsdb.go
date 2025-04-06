@@ -29,10 +29,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"text/tabwriter"
 	"time"
-
-	"sync/atomic"
 
 	"github.com/alecthomas/units"
 	"github.com/prometheus/common/promslog"
