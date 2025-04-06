@@ -150,7 +150,8 @@ func TestChunkWriteQueue_WrappingAroundSizeLimit(t *testing.T) {
 	require.True(t, q.queueIsFull())
 
 	// Adding another job should block as long as no job from the queue gets consumed.
-	addedJob := atomic.NewBool(false)
+	var addedJob atomic.Bool
+	addedJob.Store(false)
 	go func() {
 		addChunk()
 		addedJob.Store(true)

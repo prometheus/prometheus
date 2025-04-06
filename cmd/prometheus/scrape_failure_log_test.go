@@ -173,7 +173,7 @@ func reloadPrometheus(t *testing.T, port int) {
 // for all requests. It also increments the request count each time it's hit.
 func startGarbageServer(t *testing.T, requestCount *atomic.Int32) string {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		requestCount.Inc()
+		requestCount.Add(1)
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	t.Cleanup(server.Close)

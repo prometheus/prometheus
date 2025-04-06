@@ -1249,7 +1249,7 @@ func NewTestBlockedWriteClient() *TestBlockingWriteClient {
 }
 
 func (c *TestBlockingWriteClient) Store(ctx context.Context, _ []byte, _ int) (WriteResponseStats, error) {
-	c.numCalls.Inc()
+	c.numCalls.Add(1)
 	<-ctx.Done()
 	return WriteResponseStats{}, nil
 }

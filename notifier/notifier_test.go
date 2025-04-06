@@ -899,7 +899,7 @@ loop2:
 func TestStop_DrainingDisabled(t *testing.T) {
 	releaseReceiver := make(chan struct{})
 	receiverReceivedRequest := make(chan struct{}, 2)
-	alertsReceived := atomic.NewInt64(0)
+	var alertsReceived atomic.Int64
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Let the test know we've received a request.
@@ -985,7 +985,7 @@ func TestStop_DrainingDisabled(t *testing.T) {
 func TestStop_DrainingEnabled(t *testing.T) {
 	releaseReceiver := make(chan struct{})
 	receiverReceivedRequest := make(chan struct{}, 2)
-	alertsReceived := atomic.NewInt64(0)
+	var alertsReceived atomic.Int64
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Let the test know we've received a request.

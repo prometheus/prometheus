@@ -1601,8 +1601,7 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
 	h.metrics.chunksRemoved.Add(float64(chunksRemoved))
 	h.metrics.chunks.Sub(float64(chunksRemoved))
-	h.numSeries.Sub(uint64(seriesRemoved))
-
+	h.numSeries.Add(uint64(-1 * seriesRemoved))
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted, affected)
 
@@ -1732,7 +1731,7 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, e
 	}
 
 	// Optimistically assume that we are the first one to create the series.
-	id := chunks.HeadSeriesRef(h.lastSeriesID.Inc())
+	id := chunks.HeadSeriesRef(h.lastSeriesID.Add(1))
 
 	return h.getOrCreateWithID(id, hash, lset)
 }
@@ -1754,7 +1753,7 @@ func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labe
 	}
 
 	h.metrics.seriesCreated.Inc()
-	h.numSeries.Inc()
+	h.numSeries.Add(1)
 
 	h.postings.Add(storage.SeriesRef(id), lset)
 

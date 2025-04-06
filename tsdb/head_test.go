@@ -6651,7 +6651,7 @@ type countSeriesLifecycleCallback struct {
 }
 
 func (c *countSeriesLifecycleCallback) PreCreation(labels.Labels) error { return nil }
-func (c *countSeriesLifecycleCallback) PostCreation(labels.Labels)      { c.created.Inc() }
+func (c *countSeriesLifecycleCallback) PostCreation(labels.Labels)      { c.created.Add(1) }
 func (c *countSeriesLifecycleCallback) PostDeletion(s map[chunks.HeadSeriesRef]labels.Labels) {
 	c.deleted.Add(int64(len(s)))
 }

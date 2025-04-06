@@ -701,7 +701,7 @@ func TestDB_Snapshot_ChunksOutsideOfCompactedRange(t *testing.T) {
 	snap := t.TempDir()
 
 	// Hackingly introduce "race", by having lower max time then maxTime in last chunk.
-	db.head.maxTime.Sub(10)
+	db.head.maxTime.Add(-10)
 
 	require.NoError(t, db.Snapshot(snap, true))
 	require.NoError(t, db.Close())
@@ -3714,7 +3714,8 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingQuerier(t *test
 	require.NoError(t, err)
 
 	// Start OOO head compaction.
-	compactionComplete := atomic.NewBool(false)
+	var compactionComplete atomic.Bool
+	compactionComplete.Store(false)
 	go func() {
 		defer compactionComplete.Store(true)
 
@@ -3812,7 +3813,8 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterSelecting(t *testing.T) {
 	seriesSet := querier.Select(ctx, true, hints, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test_metric"))
 
 	// Start OOO head compaction.
-	compactionComplete := atomic.NewBool(false)
+	var compactionComplete atomic.Bool
+	compactionComplete.Store(false)
 	go func() {
 		defer compactionComplete.Store(true)
 
@@ -3903,7 +3905,8 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingIterators(t *te
 	iterator := iterators[0]
 
 	// Start OOO head compaction.
-	compactionComplete := atomic.NewBool(false)
+	var compactionComplete atomic.Bool
+	compactionComplete.Store(false)
 	go func() {
 		defer compactionComplete.Store(true)
 

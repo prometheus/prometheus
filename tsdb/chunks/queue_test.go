@@ -293,7 +293,7 @@ func TestQueuePushPopManyGoroutines(t *testing.T) {
 			defer writersWG.Done()
 
 			for i := 0; i < writes; i++ {
-				ref := id.Inc()
+				ref := id.Add(1)
 
 				require.True(t, queue.push(chunkWriteJob{seriesRef: HeadSeriesRef(ref)}))
 			}
