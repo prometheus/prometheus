@@ -104,7 +104,7 @@ func TestCalculateDuration(t *testing.T) {
 		expr            parser.Expr
 		expected        time.Duration
 		errorMessage    string
-		requirePositive bool
+		allowedNegative bool
 	}{
 		{
 			name: "addition",
@@ -193,7 +193,7 @@ func TestCalculateDuration(t *testing.T) {
 				Op:  parser.SUB,
 			},
 			expected:        -5 * time.Second,
-			requirePositive: true,
+			allowedNegative: true,
 		},
 		{
 			name: "division by zero",
@@ -225,7 +225,7 @@ func TestCalculateDuration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := calculateDuration(tt.expr, tt.requirePositive)
+			result, err := calculateDuration(tt.expr, tt.allowedNegative)
 			if tt.errorMessage != "" {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tt.errorMessage)
