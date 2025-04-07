@@ -193,6 +193,10 @@ func NewLeveledCompactor(ctx context.Context, r prometheus.Registerer, l *slog.L
 }
 
 func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, opts LeveledCompactorOptions) (*LeveledCompactor, error) {
+	return NewLeveledCompactorWithOptionsAndMetrics(ctx, l, ranges, pool, opts, NewCompactorMetrics(r))
+}
+
+func NewLeveledCompactorWithOptionsAndMetrics(ctx context.Context, l *slog.Logger, ranges []int64, pool chunkenc.Pool, opts LeveledCompactorOptions, metrics *CompactorMetrics) (*LeveledCompactor, error) {
 	if len(ranges) == 0 {
 		return nil, errors.New("at least one range must be provided")
 	}
@@ -218,7 +222,7 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 		ranges:                      ranges,
 		chunkPool:                   pool,
 		logger:                      l,
-		metrics:                     NewCompactorMetrics(r),
+		metrics:                     metrics,
 		ctx:                         ctx,
 		maxBlockChunkSegmentSize:    maxBlockChunkSegmentSize,
 		mergeFunc:                   mergeFunc,
