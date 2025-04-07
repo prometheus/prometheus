@@ -470,6 +470,12 @@ func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string,
 	start := time.Now()
 
 	for _, d := range dirs {
+		select {
+		case <-c.ctx.Done():
+			return nil, c.ctx.Err()
+		default:
+		}
+
 		meta, _, err := readMetaFile(d)
 		if err != nil {
 			return nil, err
