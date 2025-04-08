@@ -14,7 +14,7 @@ scrape_configs:
       - project: 11111111-1111-1111-1111-111111111111
         role: "server"
         authorization:
-          credentials: "<replace with a STACK ServiceAccount Token>"
+          credentials: "<replace with a STACKIT ServiceAccount Token>"
     relabel_configs:
       # Use the public IPv4 and port 9100 to scrape the target.
       - source_labels: [__meta_stackit_public_ipv4]
@@ -28,7 +28,7 @@ scrape_configs:
       - project: 11111111-1111-1111-1111-111111111111
         role: "server"
         authorization:
-          credentials: "<replace with a STACK ServiceAccount Token>"
+          credentials: "<replace with a STACKIT ServiceAccount Token>"
     relabel_configs:
       # Use the private IPv4 within the STACKIT Subnet and port 9100 to scrape the target.
       - source_labels: [__meta_stackit_private_ipv4_mynet]
