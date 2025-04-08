@@ -73,11 +73,11 @@ func (e *endpointSliceAdaptorV1) getObjectMeta() metav1.ObjectMeta {
 }
 
 func (e *endpointSliceAdaptorV1) name() string {
-	return e.endpointSlice.ObjectMeta.Name
+	return e.endpointSlice.Name
 }
 
 func (e *endpointSliceAdaptorV1) namespace() string {
-	return e.endpointSlice.ObjectMeta.Namespace
+	return e.endpointSlice.Namespace
 }
 
 func (e *endpointSliceAdaptorV1) addressType() string {

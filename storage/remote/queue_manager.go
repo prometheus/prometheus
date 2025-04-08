@@ -515,10 +515,8 @@ func NewQueueManager(
 		compr:    compression.Snappy, // Hardcoded for now, but scaffolding exists for likely future use.
 	}
 
-	walMetadata := false
-	if t.protoMsg != config.RemoteWriteProtoMsgV1 {
-		walMetadata = true
-	}
+	walMetadata := t.protoMsg != config.RemoteWriteProtoMsgV1
+
 	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite, walMetadata)
 
 	// The current MetadataWatcher implementation is mutually exclusive

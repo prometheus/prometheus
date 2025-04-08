@@ -1305,7 +1305,7 @@ func TestDBCreatedTimestampSamplesIngestion(t *testing.T) {
 
 			outputSamples := readWALSamples(t, s.wal.Dir())
 
-			require.Equal(t, len(tc.expectedSamples), len(outputSamples), "Expected %d samples", len(tc.expectedSamples))
+			require.Len(t, outputSamples, len(tc.expectedSamples), "Expected %d samples", len(tc.expectedSamples))
 
 			for i, expectedSample := range tc.expectedSamples {
 				for _, sample := range outputSamples {

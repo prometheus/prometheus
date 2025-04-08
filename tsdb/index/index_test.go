@@ -424,7 +424,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 		res, err := ir.SortedLabelValues(ctx, k)
 		require.NoError(t, err)
 
-		require.Equal(t, len(v), len(res))
+		require.Len(t, res, len(v))
 		for i := 0; i < len(v); i++ {
 			require.Equal(t, v[i], res[i])
 		}
