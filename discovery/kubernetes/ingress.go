@@ -186,9 +186,9 @@ func rulePaths(rule v1.IngressRule) []string {
 	return paths
 }
 
-func tlsHosts(TLS []v1.IngressTLS) []string {
+func tlsHosts(ingressTLS []v1.IngressTLS) []string {
 	var hosts []string
-	for _, tls := range TLS {
+	for _, tls := range ingressTLS {
 		hosts = append(hosts, tls.Hosts...)
 	}
 	return hosts

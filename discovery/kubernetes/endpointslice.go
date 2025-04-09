@@ -105,13 +105,13 @@ func NewEndpointSlice(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, n
 		// LabelServiceName so this operation doesn't have to iterate over all
 		// endpoint objects.
 		for _, obj := range e.endpointSliceStore.List() {
-			if es, ok := obj.(*v1.EndpointSlice); ok {
-				if lv, exists := es.Labels[v1.LabelServiceName]; exists && lv == svc.Name {
-					e.enqueue(es)
-				}
-			} else {
+			es, ok := obj.(*v1.EndpointSlice)
+			if !ok {
 				e.logger.Error("converting to EndpointSlice object failed", "err", err)
 				continue
+			}
+			if lv, exists := es.Labels[v1.LabelServiceName]; exists && lv == svc.Name {
+				e.enqueue(es)
 			}
 		}
 	}
@@ -231,7 +231,7 @@ func (e *EndpointSlice) process(ctx context.Context, ch chan<- []*targetgroup.Gr
 	if es, ok := o.(*v1.EndpointSlice); ok {
 		send(ctx, ch, e.buildEndpointSlice(*es))
 	} else {
-		e.logger.Error("received unexpected object: %v", o)
+		e.logger.Error("received unexpected object", "object", o)
 		return false
 	}
 	return true
