@@ -169,6 +169,8 @@ type LeveledCompactorOptions struct {
 	// EnableOverlappingCompaction enables compaction of overlapping blocks. In Prometheus it is always enabled.
 	// It is useful for downstream projects like Mimir, Cortex, Thanos where they have a separate component that does compaction.
 	EnableOverlappingCompaction bool
+	// Metrics is set of metrics for Compactor. By default, NewCompactorMetrics would be called to initialize metrics unless it is provided.
+	Metrics *CompactorMetrics
 }
 
 type PostingsDecoderFactory func(meta *BlockMeta) index.PostingsDecoder
@@ -193,10 +195,6 @@ func NewLeveledCompactor(ctx context.Context, r prometheus.Registerer, l *slog.L
 }
 
 func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, opts LeveledCompactorOptions) (*LeveledCompactor, error) {
-	return NewLeveledCompactorWithOptionsAndMetrics(ctx, l, ranges, pool, opts, NewCompactorMetrics(r))
-}
-
-func NewLeveledCompactorWithOptionsAndMetrics(ctx context.Context, l *slog.Logger, ranges []int64, pool chunkenc.Pool, opts LeveledCompactorOptions, metrics *CompactorMetrics) (*LeveledCompactor, error) {
 	if len(ranges) == 0 {
 		return nil, errors.New("at least one range must be provided")
 	}
@@ -218,11 +216,14 @@ func NewLeveledCompactorWithOptionsAndMetrics(ctx context.Context, l *slog.Logge
 	if pe == nil {
 		pe = index.EncodePostingsRaw
 	}
+	if opts.Metrics == nil {
+		opts.Metrics = NewCompactorMetrics(r)
+	}
 	return &LeveledCompactor{
 		ranges:                      ranges,
 		chunkPool:                   pool,
 		logger:                      l,
-		metrics:                     metrics,
+		metrics:                     opts.Metrics,
 		ctx:                         ctx,
 		maxBlockChunkSegmentSize:    maxBlockChunkSegmentSize,
 		mergeFunc:                   mergeFunc,
