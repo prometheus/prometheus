@@ -28,6 +28,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -35,7 +36,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/prometheus/prometheus/config"
@@ -6650,7 +6650,7 @@ type countSeriesLifecycleCallback struct {
 }
 
 func (c *countSeriesLifecycleCallback) PreCreation(labels.Labels) error { return nil }
-func (c *countSeriesLifecycleCallback) PostCreation(labels.Labels)      { c.created.Inc() }
+func (c *countSeriesLifecycleCallback) PostCreation(labels.Labels)      { c.created.Add(1) }
 func (c *countSeriesLifecycleCallback) PostDeletion(s map[chunks.HeadSeriesRef]labels.Labels) {
 	c.deleted.Add(int64(len(s)))
 }

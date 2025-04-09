@@ -23,10 +23,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -137,7 +137,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		for e := range input {
 			ms := h.series.getByID(e.Ref)
 			if ms == nil {
-				unknownExemplarRefs.Inc()
+				unknownExemplarRefs.Add(1)
 				missingSeries[e.Ref] = struct{}{}
 				continue
 			}
@@ -319,7 +319,7 @@ Outer:
 						s.Ref = storage.SeriesRef(r)
 					}
 					if m := h.series.getByID(chunks.HeadSeriesRef(s.Ref)); m == nil {
-						unknownTombstoneRefs.Inc()
+						unknownTombstoneRefs.Add(1)
 						missingSeries[chunks.HeadSeriesRef(s.Ref)] = struct{}{}
 						continue
 					}
@@ -417,7 +417,7 @@ Outer:
 				}
 				s := h.series.getByID(m.Ref)
 				if s == nil {
-					unknownMetadataRefs.Inc()
+					unknownMetadataRefs.Add(1)
 					missingSeries[m.Ref] = struct{}{}
 					continue
 				}
@@ -855,7 +855,7 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 
 				ms := h.series.getByID(rm.Ref)
 				if ms == nil {
-					mmapMarkerUnknownRefs.Inc()
+					mmapMarkerUnknownRefs.Add(1)
 					missingSeries[rm.Ref] = struct{}{}
 					continue
 				}

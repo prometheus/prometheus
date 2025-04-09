@@ -20,10 +20,10 @@ package remote
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"go.uber.org/atomic"
 )
 
 var noReferenceReleases = promauto.NewCounter(prometheus.CounterOpts{
@@ -64,7 +64,7 @@ func (p *pool) intern(s string) string {
 	if ok {
 		// Increase the reference count while we're still holding the read lock,
 		// This will prevent the release() from deleting the entry while we're increasing its ref count.
-		interned.refs.Inc()
+		interned.refs.Add(1)
 		p.mtx.RUnlock()
 		return interned.s
 	}
@@ -73,7 +73,7 @@ func (p *pool) intern(s string) string {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
 	if interned, ok := p.pool[s]; ok {
-		interned.refs.Inc()
+		interned.refs.Add(1)
 		return interned.s
 	}
 
@@ -92,7 +92,7 @@ func (p *pool) release(s string) {
 		return
 	}
 
-	refs := interned.refs.Dec()
+	refs := interned.refs.Add(-1)
 	if refs > 0 {
 		return
 	}

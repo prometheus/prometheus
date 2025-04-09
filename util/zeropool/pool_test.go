@@ -16,10 +16,10 @@ package zeropool_test
 import (
 	"math"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/util/zeropool"
 )
