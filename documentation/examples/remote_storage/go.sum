@@ -318,10 +318,10 @@ github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9de
 github.com/yuin/goldmark v1.2.1/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 go.opentelemetry.io/auto/sdk v1.1.0 h1:cH53jehLUN6UFLY71z+NDOiNJqDdPRaXzTel0sJySYA=
 go.opentelemetry.io/auto/sdk v1.1.0/go.mod h1:3wSPjt5PWp2RhlCcmmOial7AvC4DQqZb7a7wCow3W8A=
-go.opentelemetry.io/collector/pdata v1.28.1 h1:ORl5WLpQJvjzBVpHu12lqKMdcf/qDBwRXMcUubhybiQ=
-go.opentelemetry.io/collector/pdata v1.28.1/go.mod h1:asKE8MD/4SOKz1mCrGdAz4VO2U2HUNg8A6094uK7pq0=
-go.opentelemetry.io/collector/semconv v0.122.1 h1:WLzDi3QC4/+LpNMLY90zn5aMDJKyqg/ujW2O4T4sxHg=
-go.opentelemetry.io/collector/semconv v0.122.1/go.mod h1:te6VQ4zZJO5Lp8dM2XIhDxDiL45mwX0YAQQWRQ0Qr9U=
+go.opentelemetry.io/collector/pdata v1.29.0 h1:ZXSZ2fROdAEbv4JKKiCspBpjIjYZ5XaNt71LNH4RpQw=
+go.opentelemetry.io/collector/pdata v1.29.0/go.mod h1:9kb3zMtLFXBPA6WGWkBHbkFwlwwYL/OHk1m0ASWZpeY=
+go.opentelemetry.io/collector/semconv v0.123.0 h1:hFjhLU1SSmsZ67pXVCVbIaejonkYf5XD/6u4qCQQPtc=
+go.opentelemetry.io/collector/semconv v0.123.0/go.mod h1:te6VQ4zZJO5Lp8dM2XIhDxDiL45mwX0YAQQWRQ0Qr9U=
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.60.0 h1:sbiXRNDSWJOTobXh5HyQKjq6wUC5tNybqjIqDpAY4CU=
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.60.0/go.mod h1:69uWxva0WgAA/4bu2Yy70SLDBwZXuQ6PbBpbsa5iZrQ=
 go.opentelemetry.io/otel v1.35.0 h1:xKWKPxrxB6OtMCbmMY021CqC45J+3Onta9MqjhnusiQ=
@@ -432,8 +432,8 @@ google.golang.org/protobuf v1.20.1-0.20200309200217-e05f789c0967/go.mod h1:A+miE
 google.golang.org/protobuf v1.21.0/go.mod h1:47Nbq4nVaFHyn7ilMalzfO3qCViNmqZ2kzikPIcrTAo=
 google.golang.org/protobuf v1.23.0/go.mod h1:EGpADcykh3NcUnDUJcl1+ZksZNG86OlYog2l/sGQquU=
 google.golang.org/protobuf v1.26.0-rc.1/go.mod h1:jlhhOSvTdKEhbULTjvd4ARK9grFBp09yW+WbY/TyQbw=
-google.golang.org/protobuf v1.36.5 h1:tPhr+woSbjfYvY6/GPufUoYizxw1cF/yFoxJ2fmpwlM=
-google.golang.org/protobuf v1.36.5/go.mod h1:9fA7Ob0pmnwhb644+1+CVWFRbNajQ6iRojtC/QF5bRE=
+google.golang.org/protobuf v1.36.6 h1:z1NpPI8ku2WgiWnf+t9wTPsn6eP1L7ksHUlkfLvd9xY=
+google.golang.org/protobuf v1.36.6/go.mod h1:jduwjTPXsFjZGTmRluh+L6NjiWu7pchiJ2/5YcXBHnY=
 gopkg.in/alecthomas/kingpin.v2 v2.2.6/go.mod h1:FMv+mEhP44yOT+4EoQTLFTRgOQ1FBLkstjWtayDeSgw=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
