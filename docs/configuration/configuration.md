@@ -2255,7 +2255,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 See below for the configuration options for STACKIT discovery:
 
 ```yaml
-# The information to access the STACKIT API.
+# The information to access the STACKIT API. Different Prometheus SD roles my require different endpoint within the same region.
 [ endpoint : <string> | default = "https://iaas.api.eu01.stackit.cloud" ]
 
 # The STACKIT project 
