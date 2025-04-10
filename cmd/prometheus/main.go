@@ -68,6 +68,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
+	"github.com/prometheus/prometheus/semconv"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tracing"
@@ -214,6 +215,8 @@ type flagConfig struct {
 	promqlEnableDelayedNameRemoval bool
 
 	promslogConfig promslog.Config
+
+	enableSemconvVersionedRead bool
 }
 
 // setFeatureListOptions sets the corresponding options from the featureList.
@@ -279,6 +282,12 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "otlp-deltatocumulative":
 				c.web.ConvertOTLPDelta = true
 				logger.Info("Converting delta OTLP metrics to cumulative")
+			case "type-and-unit-labels":
+				c.scrape.EnableTypeAndUnitLabels = true
+				logger.Info("Experimental type and unit labels enabled")
+			case "semconv-versioned-read":
+				c.enableSemconvVersionedRead = true
+				logger.Info("Experimental semconv versioned read enabled")
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
 			}
@@ -721,11 +730,16 @@ func main() {
 	)
 
 	var (
-		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
-		scraper       = &readyScrapeManager{}
-		remoteStorage = remote.NewStorage(logger.With("component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper)
-		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
+		localStorage    = &readyStorage{stats: tsdb.NewDBStats()}
+		scraper         = &readyScrapeManager{}
+		remoteStorage   = remote.NewStorage(logger.With("component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper)
+		fanoutStorage   = storage.NewFanout(logger, localStorage, remoteStorage)
+		semconvReloader func(*config.Config) error
 	)
+
+	if cfg.enableSemconvVersionedRead {
+		fanoutStorage, semconvReloader = semconv.AwareStorage(fanoutStorage)
+	}
 
 	var (
 		ctxWeb, cancelWeb = context.WithCancel(context.Background())
@@ -957,6 +971,15 @@ func main() {
 					c[k] = v.ServiceDiscoveryConfigs
 				}
 				return discoveryManagerNotify.ApplyConfig(c)
+			},
+		},
+		{
+			name: "semconv",
+			reloader: func(c *config.Config) error {
+				if !cfg.enableSemconvVersionedRead {
+					return nil
+				}
+				return semconvReloader(c)
 			},
 		}, {
 			name: "rules",

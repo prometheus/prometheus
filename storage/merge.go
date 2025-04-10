@@ -412,7 +412,8 @@ func (c *genericMergeSeriesSet) At() Labels {
 	}
 	series := make([]Labels, 0, len(c.currentSets))
 	for _, seriesSet := range c.currentSets {
-		series = append(series, seriesSet.At())
+		at := seriesSet.At()
+		series = append(series, at)
 	}
 	return c.mergeFunc(series...)
 }
