@@ -1319,7 +1319,7 @@ func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Label
 	return mat, warnings
 }
 
-func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.AggregateExpr, sortedGrouping []string, inputMatrix Matrix, params Series) (Matrix, annotations.Annotations) {
+func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.AggregateExpr, sortedGrouping []string, inputMatrix Matrix, params Series, isDynamicParam bool) (Matrix, annotations.Annotations) {
 	// Keep a copy of the original point slice so that it can be returned to the pool.
 	origMatrix := slices.Clone(inputMatrix)
 	defer func() {
@@ -1361,7 +1361,13 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 
 	var seriess map[uint64]Series
 	// allParamsMatchCondition returns true if the provided condition holds for every float params.
-	allParamsMatchCondition := func(params []FPoint, condition func(float64) bool) bool {
+	allParamsMatchCondition := func(params []FPoint, isDynamic bool, condition func(float64) bool) bool {
+		if len(params) == 0 {
+			return true
+		}
+		if !isDynamic {
+			return condition(params[0].F)
+		}
 		for _, param := range params {
 			if !condition(param.F) {
 				return false
@@ -1373,21 +1379,26 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 	switch aggExpr.Op {
 	case parser.TOPK, parser.BOTTOMK, parser.LIMITK:
 		// Return early if all k values are less than one.
-		if allParamsMatchCondition(params.Floats, func(f float64) bool { return f <= 0 }) {
+		if allParamsMatchCondition(params.Floats, isDynamicParam, func(f float64) bool { return f <= 0 }) {
 			return nil, annos
 		}
 		seriess = make(map[uint64]Series, len(inputMatrix))
 
 	case parser.LIMIT_RATIO:
 		// Return early if all r values are zero.
-		if allParamsMatchCondition(params.Floats, func(f float64) bool { return f == 0 }) {
+		if allParamsMatchCondition(params.Floats, isDynamicParam, func(f float64) bool { return f == 0 }) {
 			return nil, annos
 		}
 		seriess = make(map[uint64]Series, len(inputMatrix))
 	}
-
+	var fParam float64
+	if len(params.Floats) > 0 {
+		fParam = params.Floats[0].F
+	}
 	for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
-		fParam, _, _ := ev.nextValues(ts, &params)
+		if isDynamicParam {
+			fParam, _, _ = ev.nextValues(ts, &params)
+		}
 		if err := contextDone(ctx, "expression evaluation"); err != nil {
 			ev.error(err)
 		}
@@ -1590,8 +1601,13 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		// Grouping labels must be sorted (expected both by generateGroupingKey() and aggregation()).
 		sortedGrouping := e.Grouping
 		slices.Sort(sortedGrouping)
+		isDynamicParam := true
 
 		unwrapParenExpr(&e.Param)
+		switch e.Param.(type) {
+		case *parser.NumberLiteral:
+			isDynamicParam = false
+		}
 		param := unwrapStepInvariantExpr(e.Param)
 		unwrapParenExpr(&param)
 
@@ -1623,7 +1639,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		warnings.Merge(ws)
 		inputMatrix := val.(Matrix)
 
-		result, ws := ev.rangeEvalAgg(ctx, e, sortedGrouping, inputMatrix, params)
+		result, ws := ev.rangeEvalAgg(ctx, e, sortedGrouping, inputMatrix, params, isDynamicParam)
 		warnings.Merge(ws)
 		ev.currentSamples = originalNumSamples + result.TotalSamples()
 		ev.samplesStats.UpdatePeak(ev.currentSamples)
