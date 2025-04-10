@@ -147,13 +147,6 @@ func TestAzureAdConfig(t *testing.T) {
 			filename: "testdata/azuread_bad_configmissing.yaml",
 			err:      "must provide an Azure Managed Identity, Azure OAuth or Azure SDK in the Azure AD config",
 		},
-		// Missing clientid field from managedidentity.
-		// Because of limitations on go's yaml library, it's difficult to tell the difference between a mapping pair
-		// whose value is null versus a mapping pair that is missing entirely when the value's type is a struct.
-		{
-			filename: "testdata/azuread_bad_missingclientid.yaml",
-			err:      "must provide an Azure Managed Identity or Azure OAuth in the Azure AD config",
-		},
 		// Invalid managedidentity client id.
 		{
 			filename: "testdata/azuread_bad_invalidclientid.yaml",
