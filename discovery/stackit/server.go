@@ -48,17 +48,19 @@ const (
 type iaasDiscovery struct {
 	*refresh.Discovery
 	httpClient  *http.Client
+	logger      *slog.Logger
 	apiEndpoint string
 	project     string
 	port        int
 }
 
 // newServerDiscovery returns a new iaasDiscovery, which periodically refreshes its targets.
-func newServerDiscovery(conf *SDConfig, _ *slog.Logger) (*iaasDiscovery, error) {
+func newServerDiscovery(conf *SDConfig, logger *slog.Logger) (*iaasDiscovery, error) {
 	d := &iaasDiscovery{
 		project:     conf.Project,
 		port:        conf.Port,
 		apiEndpoint: conf.Endpoint,
+		logger:      logger,
 	}
 
 	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "stackit_sd")
@@ -67,15 +69,15 @@ func newServerDiscovery(conf *SDConfig, _ *slog.Logger) (*iaasDiscovery, error) 
 	}
 
 	servers := stackitconfig.ServerConfigurations{}
-	noAuth := false
+	noAuth := true
 	servers = append(servers, stackitconfig.ServerConfiguration{
 		URL:         conf.Endpoint,
 		Description: "STACKIT IAAS API",
 	})
 
-	// If service account token is set via http_config, turn off the auth in the SDK.
-	if conf.HTTPClientConfig.BearerToken != "" || conf.HTTPClientConfig.BearerTokenFile != "" {
-		noAuth = true
+	// If service account key and private key are set, use SDK authentication.
+	if conf.ServiceAccountKey != "" || conf.ServiceAccountKeyPath != "" {
+		noAuth = false
 	}
 
 	d.httpClient = &http.Client{
@@ -112,7 +114,7 @@ func newServerDiscovery(conf *SDConfig, _ *slog.Logger) (*iaasDiscovery, error) 
 }
 
 func (i *iaasDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/v1/projects/%s/servers", i.apiEndpoint, i.project), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/v1/projects/%s/servers?details=true", i.apiEndpoint, i.project), nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
@@ -127,9 +129,9 @@ func (i *iaasDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, erro
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
-		_, _ = io.Copy(io.Discard, res.Body)
+		errorMessage, _ := io.ReadAll(res.Body)
 
-		return nil, fmt.Errorf("unexpected status code: %d", res.StatusCode)
+		return nil, fmt.Errorf("unexpected status code %d: %s", res.StatusCode, string(errorMessage))
 	}
 
 	var serversResponse *ServerListResponse
@@ -142,8 +144,13 @@ func (i *iaasDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, erro
 		return []*targetgroup.Group{{Source: "stackit", Targets: []model.LabelSet{}}}, nil
 	}
 
-	targets := make([]model.LabelSet, len(*serversResponse.Items))
-	for idx, server := range *serversResponse.Items {
+	targets := make([]model.LabelSet, 0, len(*serversResponse.Items))
+	for _, server := range *serversResponse.Items {
+		if server.Nics == nil {
+			i.logger.DebugContext(ctx, "server has no network interfaces. Skipping", slog.String("server_id", server.ID))
+			continue
+		}
+
 		labels := model.LabelSet{
 			stackitLabelRole:              model.LabelValue(RoleServer),
 			stackitLabelProject:           model.LabelValue(i.project),
@@ -155,42 +162,45 @@ func (i *iaasDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, erro
 			stackitLabelType:              model.LabelValue(server.MachineType),
 		}
 
-		if server.Nics != nil {
-			var (
-				addressLabel   string
-				serverPublicIP string
-			)
+		var (
+			addressLabel   string
+			serverPublicIP string
+		)
 
-			for _, nic := range server.Nics {
-				if nic.PublicIP != nil && *nic.PublicIP != "" && serverPublicIP == "" {
-					serverPublicIP = *nic.PublicIP
-					addressLabel = serverPublicIP
-				}
+		for _, nic := range server.Nics {
+			if nic.PublicIP != nil && *nic.PublicIP != "" && serverPublicIP == "" {
+				serverPublicIP = *nic.PublicIP
+				addressLabel = serverPublicIP
+			}
 
-				if nic.IPv6 != nil && *nic.IPv6 != "" {
-					networkLabel := model.LabelName(stackitLabelPrivateIPv6 + strutil.SanitizeLabelName(nic.NetworkName))
-					labels[networkLabel] = model.LabelValue(*nic.IPv6)
-					if addressLabel == "" {
-						addressLabel = *nic.IPv6
-					}
-				}
-
-				if nic.IPv4 != nil && *nic.IPv4 != "" {
-					networkLabel := model.LabelName(stackitLabelPrivateIPv4 + strutil.SanitizeLabelName(nic.NetworkName))
-					labels[networkLabel] = model.LabelValue(*nic.IPv4)
-					if addressLabel == "" {
-						addressLabel = *nic.IPv4
-					}
+			if nic.IPv6 != nil && *nic.IPv6 != "" {
+				networkLabel := model.LabelName(stackitLabelPrivateIPv6 + strutil.SanitizeLabelName(nic.NetworkName))
+				labels[networkLabel] = model.LabelValue(*nic.IPv6)
+				if addressLabel == "" {
+					addressLabel = *nic.IPv6
 				}
 			}
 
-			// Public IPs for servers are optional.
-			if serverPublicIP != "" {
-				labels[stackitLabelPublicIPv4] = model.LabelValue(serverPublicIP)
+			if nic.IPv4 != nil && *nic.IPv4 != "" {
+				networkLabel := model.LabelName(stackitLabelPrivateIPv4 + strutil.SanitizeLabelName(nic.NetworkName))
+				labels[networkLabel] = model.LabelValue(*nic.IPv4)
+				if addressLabel == "" {
+					addressLabel = *nic.IPv4
+				}
 			}
-
-			labels[model.AddressLabel] = model.LabelValue(net.JoinHostPort(addressLabel, strconv.FormatUint(uint64(i.port), 10)))
 		}
+
+		if addressLabel == "" {
+			// Skip servers without IPs.
+			continue
+		}
+
+		// Public IPs for servers are optional.
+		if serverPublicIP != "" {
+			labels[stackitLabelPublicIPv4] = model.LabelValue(serverPublicIP)
+		}
+
+		labels[model.AddressLabel] = model.LabelValue(net.JoinHostPort(addressLabel, strconv.FormatUint(uint64(i.port), 10)))
 
 		for labelKey, labelValue := range server.Labels {
 			if labelStringValue, ok := labelValue.(string); ok {
@@ -202,7 +212,7 @@ func (i *iaasDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, erro
 			}
 		}
 
-		targets[idx] = labels
+		targets = append(targets, labels)
 	}
 
 	return []*targetgroup.Group{{Source: "stackit", Targets: targets}}, nil

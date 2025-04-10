@@ -2291,7 +2291,8 @@ role: <string>
 A Service Account Token can be set through `http_config`.
 
 ```yaml
-http_config:
+stackit_sd_config:
+- role: server 
   authorization:
     credentials: <token>
 ```

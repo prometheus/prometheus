@@ -34,7 +34,7 @@ type Server struct {
 // ServerNetwork Describes the object that matches servers to its networks.
 type ServerNetwork struct {
 	NetworkName string  `json:"networkName"`
-	IPv4        *string `json:"ipv4"`
-	IPv6        *string `json:"ipv6"`
+	IPv4        *string `json:"ipv4,omitempty"`
+	IPv6        *string `json:"ipv6,omitempty"`
 	PublicIP    *string `json:"publicIp,omitempty"`
 }

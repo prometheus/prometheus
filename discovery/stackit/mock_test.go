@@ -128,7 +128,28 @@ func (m *SDMock) HandleServers() {
       "volumes": [
         "1c15e4cc-8474-46be-b875-b473ea9fe80c"
       ]
-    }
+    },
+	{
+	  "availabilityZone": "eu01-m",
+	  "bootVolume": {
+	    "deleteOnTermination": false,
+	    "id": "1e3ffe2b-878f-46e5-b39e-372e13a09551"
+	  },
+	  "createdAt": "2025-04-10T16:45:25Z",
+	  "id": "ee337436-1f15-4647-a03e-154009966179",
+	  "labels": {},
+	  "launchedAt": "2025-04-10T16:46:00Z",
+	  "machineType": "t1.1",
+	  "name": "server1",
+	  "nics": [],
+	  "powerStatus": "RUNNING",
+	  "serviceAccountMails": [],
+	  "status": "ACTIVE",
+	  "updatedAt": "2025-04-10T16:46:00Z",
+	  "volumes": [
+	    "1e3ffe2b-878f-46e5-b39e-372e13a09551"
+	  ]
+  	}
   ]
 }`,
 		)
