@@ -468,7 +468,7 @@ foobar{quantile="0.99"} 150.1`
 	requireEntries(t, exp, got)
 }
 
-func TestUTF8OpenMetricsParse(t *testing.T) {
+func TestOpenMetricsParse_UTF8(t *testing.T) {
 	input := `# HELP "go.gc_duration_seconds" A summary of the GC invocation durations.
 # TYPE "go.gc_duration_seconds" summary
 # UNIT "go.gc_duration_seconds" seconds
@@ -550,6 +550,50 @@ choices}`, "strange©™\n'quoted' \"name\"", "6"),
 	}
 
 	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped())
+	got := testParse(t, p)
+	requireEntries(t, exp, got)
+}
+
+func TestOpenMetricsParse_EnableTypeAndUnitLabels(t *testing.T) {
+	input := `# HELP "go.gc_duration_seconds" A summary of the GC invocation durations.
+# TYPE "go.gc_duration_seconds" summary
+# UNIT "go.gc_duration_seconds" seconds
+{"go.gc_duration_seconds",quantile="0"} 4.9351e-05
+{"go.gc_duration_seconds",quantile="0.25"} 7.424100000000001e-05
+{"go.gc_duration_seconds_created"} 1520872607.123
+{"go.gc_duration_seconds",quantile="0.5",a="b"} 8.3835e-05
+`
+
+	input += "# EOF\n"
+
+	exp := []parsedEntry{
+		{
+			m:    "go.gc_duration_seconds",
+			help: "A summary of the GC invocation durations.",
+		}, {
+			m:   "go.gc_duration_seconds",
+			typ: model.MetricTypeSummary,
+		}, {
+			m:    "go.gc_duration_seconds",
+			unit: "seconds",
+		}, {
+			m:    `{"go.gc_duration_seconds",quantile="0"}`,
+			v:    4.9351e-05,
+			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "__type__", "summary", "__unit__", "seconds", "quantile", "0.0"),
+			ct:   1520872607123,
+		}, {
+			m:    `{"go.gc_duration_seconds",quantile="0.25"}`,
+			v:    7.424100000000001e-05,
+			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "__type__", "summary", "__unit__", "seconds", "quantile", "0.25"),
+			ct:   1520872607123,
+		}, {
+			m:    `{"go.gc_duration_seconds",quantile="0.5",a="b"}`,
+			v:    8.3835e-05,
+			lset: labels.FromStrings("__name__", "go.gc_duration_seconds", "__type__", "summary", "__unit__", "seconds", "quantile", "0.5", "a", "b"),
+		},
+	}
+
+	p := NewOpenMetricsParser([]byte(input), labels.NewSymbolTable(), WithOMParserCTSeriesSkipped(), WithOMParserTypeAndUnitLabels())
 	got := testParse(t, p)
 	requireEntries(t, exp, got)
 }
