@@ -1582,6 +1582,11 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 	if err := contextDone(ctx, "expression evaluation"); err != nil {
 		ev.error(err)
 	}
+
+	if ev.endTimestamp < ev.startTimestamp {
+		return Matrix{}, nil
+	}
+
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 
 	// Create a new span to help investigate inner evaluation performances.
