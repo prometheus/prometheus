@@ -391,7 +391,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			desc: "Partial write; first series with one dup histogram sample",
 			input: func() []writev2.TimeSeries {
 				f := proto.Clone(writeV2RequestFixture).(*writev2.Request)
-				f.Timeseries[0].Histograms = append(f.Timeseries[0].Histograms, f.Timeseries[0].Histograms[1])
+				f.Timeseries[0].Histograms = append(f.Timeseries[0].Histograms, f.Timeseries[0].Histograms[len(f.Timeseries[0].Histograms)-1])
 				return f.Timeseries
 			}(),
 			expectedCode:     http.StatusBadRequest,
@@ -483,7 +483,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			// Double check mandatory 2.0 stats.
 			// writeV2RequestFixture has 2 series with 1 sample, 2 histograms, 1 exemplar each.
 			expectHeaderValue(t, 2, resp.Header.Get(rw20WrittenSamplesHeader))
-			expectHeaderValue(t, 4, resp.Header.Get(rw20WrittenHistogramsHeader))
+			expectHeaderValue(t, 8, resp.Header.Get(rw20WrittenHistogramsHeader))
 			if tc.appendExemplarErr != nil {
 				expectHeaderValue(t, 0, resp.Header.Get(rw20WrittenExemplarsHeader))
 			} else {
@@ -496,6 +496,8 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				i, j, k, m int
 			)
 			for _, ts := range writeV2RequestFixture.Timeseries {
+				zeroHistogramIngested := false
+				zeroFloatHistogramIngested := false
 				ls := ts.ToLabels(&b, writeV2RequestFixture.Symbols)
 
 				for _, s := range ts.Samples {
@@ -509,20 +511,26 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				for _, hp := range ts.Histograms {
 					if hp.IsFloatHistogram() {
 						fh := hp.ToFloatHistogram()
-						if ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
+						if !zeroFloatHistogramIngested && ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
 							requireEqual(t, mockHistogram{ls, ts.CreatedTimestamp, nil, &histogram.FloatHistogram{}}, appendable.histograms[k])
 							k++
+							zeroFloatHistogramIngested = true
 						}
 						requireEqual(t, mockHistogram{ls, hp.Timestamp, nil, fh}, appendable.histograms[k])
 					} else {
 						h := hp.ToIntHistogram()
-						if ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
+						if !zeroHistogramIngested && ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
 							requireEqual(t, mockHistogram{ls, ts.CreatedTimestamp, &histogram.Histogram{}, nil}, appendable.histograms[k])
 							k++
+							zeroHistogramIngested = true
 						}
 						requireEqual(t, mockHistogram{ls, hp.Timestamp, h, nil}, appendable.histograms[k])
 					}
 					k++
+				}
+				if ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
+					require.True(t, zeroHistogramIngested)
+					require.True(t, zeroFloatHistogramIngested)
 				}
 				if tc.appendExemplarErr == nil {
 					for _, e := range ts.Exemplars {

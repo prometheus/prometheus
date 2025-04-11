@@ -512,7 +512,7 @@ func lexHistogram(l *Lexer) stateFn {
 		l.histogramState = histogramStateNone
 		l.next()
 		l.emit(TIMES)
-		return lexNumber
+		return lexValueSequence
 	case histogramStateAdd:
 		l.histogramState = histogramStateNone
 		l.next()
