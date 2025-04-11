@@ -597,7 +597,9 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 				}
 				if comp != nil {
 					mean, err = mean.Add(comp)
-					return mean, err
+					if err != nil {
+						return mean, err
+					}
 				}
 			}
 			return mean, nil
@@ -772,9 +774,12 @@ func funcSumOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 				if err != nil {
 					return sum, err
 				}
-			}
-			if comp != nil {
-				sum, err = sum.Add(comp)
+				if comp != nil {
+					sum, err = sum.Add(comp)
+					if err != nil {
+						return sum, err
+					}
+				}
 			}
 			return sum, err
 		})
