@@ -193,6 +193,8 @@ var ItemTypeStr = map[ItemType]string{
 	LSS:       "<",
 	GTE:       ">=",
 	GTR:       ">",
+	LTRIM:     "</",
+	RTRIM:     ">/",
 	EQL_REGEX: "=~",
 	NEQ_REGEX: "!~",
 	POW:       "^",
@@ -437,6 +439,9 @@ func lexStatements(l *Lexer) stateFn {
 		if t := l.peek(); t == '=' {
 			l.next()
 			l.emit(LTE)
+		} else if t := l.peek(); t == '/' {
+			l.next()
+			l.emit(LTRIM)
 		} else {
 			l.emit(LSS)
 		}
@@ -444,6 +449,9 @@ func lexStatements(l *Lexer) stateFn {
 		if t := l.peek(); t == '=' {
 			l.next()
 			l.emit(GTE)
+		} else if t := l.peek(); t == '/' {
+			l.next()
+			l.emit(RTRIM)
 		} else {
 			l.emit(GTR)
 		}
