@@ -1319,7 +1319,7 @@ func (ev *evaluator) rangeEval(ctx context.Context, prepSeries func(labels.Label
 	return mat, warnings
 }
 
-func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.AggregateExpr, sortedGrouping []string, inputMatrix Matrix, param float64) (Matrix, annotations.Annotations) {
+func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.AggregateExpr, sortedGrouping []string, inputMatrix Matrix, params Series, constParam bool) (Matrix, annotations.Annotations) {
 	// Keep a copy of the original point slice so that it can be returned to the pool.
 	origMatrix := slices.Clone(inputMatrix)
 	defer func() {
@@ -1329,7 +1329,7 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 		}
 	}()
 
-	var warnings annotations.Annotations
+	var annos annotations.Annotations
 
 	enh := &EvalNodeHelper{enableDelayedNameRemoval: ev.enableDelayedNameRemoval}
 	tempNumSamples := ev.currentSamples
@@ -1359,46 +1359,46 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 	}
 	groups := make([]groupedAggregation, groupCount)
 
-	var k int64
-	var ratio float64
 	var seriess map[uint64]Series
-	switch aggExpr.Op {
-	case parser.TOPK, parser.BOTTOMK, parser.LIMITK:
-		if !convertibleToInt64(param) {
-			ev.errorf("Scalar value %v overflows int64", param)
+	// allParamsMatchCondition returns true if the provided condition holds for every float params.
+	allParamsMatchCondition := func(params []FPoint, constParam bool, condition func(float64) bool) bool {
+		if len(params) == 0 {
+			return true
 		}
-		k = int64(param)
-		if k > int64(len(inputMatrix)) {
-			k = int64(len(inputMatrix))
+		if constParam {
+			return condition(params[0].F)
 		}
-		if k < 1 {
-			return nil, warnings
+		for _, param := range params {
+			if !condition(param.F) {
+				return false
+			}
 		}
-		seriess = make(map[uint64]Series, len(inputMatrix)) // Output series by series hash.
-	case parser.LIMIT_RATIO:
-		if math.IsNaN(param) {
-			ev.errorf("Ratio value %v is NaN", param)
-		}
-		switch {
-		case param == 0:
-			return nil, warnings
-		case param < -1.0:
-			ratio = -1.0
-			warnings.Add(annotations.NewInvalidRatioWarning(param, ratio, aggExpr.Param.PositionRange()))
-		case param > 1.0:
-			ratio = 1.0
-			warnings.Add(annotations.NewInvalidRatioWarning(param, ratio, aggExpr.Param.PositionRange()))
-		default:
-			ratio = param
-		}
-		seriess = make(map[uint64]Series, len(inputMatrix)) // Output series by series hash.
-	case parser.QUANTILE:
-		if math.IsNaN(param) || param < 0 || param > 1 {
-			warnings.Add(annotations.NewInvalidQuantileWarning(param, aggExpr.Param.PositionRange()))
-		}
+		return true
 	}
 
+	switch aggExpr.Op {
+	case parser.TOPK, parser.BOTTOMK, parser.LIMITK:
+		// Return early if all k values are less than one.
+		if allParamsMatchCondition(params.Floats, constParam, func(f float64) bool { return f <= 0 }) {
+			return nil, annos
+		}
+		seriess = make(map[uint64]Series, len(inputMatrix))
+
+	case parser.LIMIT_RATIO:
+		// Return early if all r values are zero.
+		if allParamsMatchCondition(params.Floats, constParam, func(f float64) bool { return f == 0 }) {
+			return nil, annos
+		}
+		seriess = make(map[uint64]Series, len(inputMatrix))
+	}
+	var fParam float64
+	if len(params.Floats) > 0 {
+		fParam = params.Floats[0].F
+	}
 	for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
+		if !constParam {
+			fParam, _, _ = ev.nextValues(ts, &params)
+		}
 		if err := contextDone(ctx, "expression evaluation"); err != nil {
 			ev.error(err)
 		}
@@ -1410,17 +1410,17 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 		var ws annotations.Annotations
 		switch aggExpr.Op {
 		case parser.TOPK, parser.BOTTOMK, parser.LIMITK, parser.LIMIT_RATIO:
-			result, ws = ev.aggregationK(aggExpr, k, ratio, inputMatrix, seriesToResult, groups, enh, seriess)
+			result, ws = ev.aggregationK(aggExpr, fParam, inputMatrix, seriesToResult, groups, enh, seriess)
 			// If this could be an instant query, shortcut so as not to change sort order.
-			if ev.endTimestamp == ev.startTimestamp {
-				warnings.Merge(ws)
-				return result, warnings
+			if ev.startTimestamp == ev.endTimestamp {
+				annos.Merge(ws)
+				return result, annos
 			}
 		default:
-			ws = ev.aggregation(aggExpr, param, inputMatrix, result, seriesToResult, groups, enh)
+			ws = ev.aggregation(aggExpr, fParam, inputMatrix, result, seriesToResult, groups, enh)
 		}
 
-		warnings.Merge(ws)
+		annos.Merge(ws)
 
 		if ev.currentSamples > ev.maxSamples {
 			ev.error(ErrTooManySamples(env))
@@ -1445,7 +1445,7 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 		}
 		result = result[:dst]
 	}
-	return result, warnings
+	return result, annos
 }
 
 // evalSeries generates a Matrix between ev.startTimestamp and ev.endTimestamp (inclusive), each point spaced ev.interval apart, from series given offset.
@@ -1596,8 +1596,12 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		// Grouping labels must be sorted (expected both by generateGroupingKey() and aggregation()).
 		sortedGrouping := e.Grouping
 		slices.Sort(sortedGrouping)
+		var constParam bool
 
 		unwrapParenExpr(&e.Param)
+		if _, ok := e.Param.(*parser.NumberLiteral); ok {
+			constParam = true
+		}
 		param := unwrapStepInvariantExpr(e.Param)
 		unwrapParenExpr(&param)
 
@@ -1618,18 +1622,18 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		var warnings annotations.Annotations
 		originalNumSamples := ev.currentSamples
 		// param is the number k for topk/bottomk, or q for quantile.
-		var fParam float64
+		var params Series
 		if param != nil {
 			val, ws := ev.eval(ctx, param)
 			warnings.Merge(ws)
-			fParam = val.(Matrix)[0].Floats[0].F
+			params = val.(Matrix)[0]
 		}
 		// Now fetch the data to be aggregated.
 		val, ws := ev.eval(ctx, e.Expr)
 		warnings.Merge(ws)
 		inputMatrix := val.(Matrix)
 
-		result, ws := ev.rangeEvalAgg(ctx, e, sortedGrouping, inputMatrix, fParam)
+		result, ws := ev.rangeEvalAgg(ctx, e, sortedGrouping, inputMatrix, params, constParam)
 		warnings.Merge(ws)
 		ev.currentSamples = originalNumSamples + result.TotalSamples()
 		ev.samplesStats.UpdatePeak(ev.currentSamples)
@@ -2937,6 +2941,10 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 		groups[i].seen = false
 	}
 
+	if e.Op == parser.QUANTILE && (math.IsNaN(q) || q < 0 || q > 1) {
+		annos.Add(annotations.NewInvalidQuantileWarning(q, e.Param.PositionRange()))
+	}
+
 	for si := range inputMatrix {
 		f, h, ok := ev.nextValues(enh.Ts, &inputMatrix[si])
 		if !ok {
@@ -3206,7 +3214,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 // seriesToResult maps inputMatrix indexes to groups indexes.
 // For an instant query, returns a Matrix in descending order for topk or ascending for bottomk, or without any order for limitk / limit_ratio.
 // For a range query, aggregates output in the seriess map.
-func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int64, r float64, inputMatrix Matrix, seriesToResult []int, groups []groupedAggregation, enh *EvalNodeHelper, seriess map[uint64]Series) (Matrix, annotations.Annotations) {
+func (ev *evaluator) aggregationK(e *parser.AggregateExpr, fParam float64, inputMatrix Matrix, seriesToResult []int, groups []groupedAggregation, enh *EvalNodeHelper, seriess map[uint64]Series) (Matrix, annotations.Annotations) {
 	op := e.Op
 	var s Sample
 	var annos annotations.Annotations
@@ -3214,6 +3222,14 @@ func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int64, r float64, i
 	groupsRemaining := len(groups)
 	for i := range groups {
 		groups[i].seen = false
+	}
+	// advanceRemainingSeries discards any values at the current timestamp `ts`
+	// for the remaining input series. In range queries, if these values are not
+	// consumed now, they will no longer be accessible in the next evaluation step.
+	advanceRemainingSeries := func(ts int64, startIdx int) {
+		for i := startIdx; i < len(inputMatrix); i++ {
+			_, _, _ = ev.nextValues(ts, &inputMatrix[i])
+		}
 	}
 
 seriesLoop:
@@ -3223,6 +3239,44 @@ seriesLoop:
 			continue
 		}
 		s = Sample{Metric: inputMatrix[si].Metric, F: f, H: h, DropName: inputMatrix[si].DropName}
+
+		var k int64
+		var r float64
+		switch op {
+		case parser.TOPK, parser.BOTTOMK, parser.LIMITK:
+			if !convertibleToInt64(fParam) {
+				ev.errorf("Scalar value %v overflows int64", fParam)
+			}
+			k = int64(fParam)
+			if k > int64(len(inputMatrix)) {
+				k = int64(len(inputMatrix))
+			}
+			if k < 1 {
+				if ev.startTimestamp != ev.endTimestamp {
+					advanceRemainingSeries(enh.Ts, si+1)
+				}
+				return nil, annos
+			}
+		case parser.LIMIT_RATIO:
+			if math.IsNaN(fParam) {
+				ev.errorf("Ratio value %v is NaN", fParam)
+			}
+			switch {
+			case fParam == 0:
+				if ev.startTimestamp != ev.endTimestamp {
+					advanceRemainingSeries(enh.Ts, si+1)
+				}
+				return nil, annos
+			case fParam < -1.0:
+				r = -1.0
+				annos.Add(annotations.NewInvalidRatioWarning(fParam, r, e.Param.PositionRange()))
+			case fParam > 1.0:
+				r = 1.0
+				annos.Add(annotations.NewInvalidRatioWarning(fParam, r, e.Param.PositionRange()))
+			default:
+				r = fParam
+			}
+		}
 
 		group := &groups[seriesToResult[si]]
 		// Initialize this group if it's the first time we've seen it.
@@ -3314,6 +3368,10 @@ seriesLoop:
 				group.groupAggrComplete = true
 				groupsRemaining--
 				if groupsRemaining == 0 {
+					// Process other values in the series before breaking the loop in case of range query.
+					if ev.startTimestamp != ev.endTimestamp {
+						advanceRemainingSeries(enh.Ts, si+1)
+					}
 					break seriesLoop
 				}
 			}
