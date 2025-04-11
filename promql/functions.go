@@ -857,6 +857,11 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 				}
 				if nhcbBoundsReconciled {
 					nhcbBoundsReconciledSeen = true
+				if comp != nil {
+					mean, _, err = mean.Add(comp) // TODO(crush-on-anechka): Handle nhcbBoundsReconciled after rebase
+					if err != nil {
+						return mean, err
+					}
 				}
 			}
 			return mean, nil
@@ -1121,12 +1126,16 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 				if err != nil {
 					return sum, err
 				}
+
 				if nhcbBoundsReconciled {
 					nhcbBoundsReconciledSeen = true
 				}
 			}
 			if comp != nil {
-				sum, _, _, err = sum.Add(comp)
+				sum, _, _, err = sum.Add(comp) // TODO(crush-on-anechka): Handle nhcbBoundsReconciled after rebase
+				if err != nil {
+					return sum, err
+				}
 			}
 			return sum, err
 		})
