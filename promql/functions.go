@@ -839,6 +839,11 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 				}
 				if counterResetCollision {
 					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange(), annotations.HistogramAdd))
+				if comp != nil {
+					mean, _, err = mean.Add(comp) // TODO(crush-on-anechka): Handle counterResetCollision after rebase
+					if err != nil {
+						return mean, err
+					}
 				}
 			}
 			return mean, nil
@@ -1087,12 +1092,16 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 				if err != nil {
 					return sum, err
 				}
+
 				if counterResetCollision {
 					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange(), annotations.HistogramAdd))
 				}
 			}
 			if comp != nil {
 				sum, _, err = sum.Add(comp) // TODO(crush-on-anechka): Handle counterResetCollision after rebase
+				if err != nil {
+					return sum, err
+				}
 			}
 			return sum, err
 		})
