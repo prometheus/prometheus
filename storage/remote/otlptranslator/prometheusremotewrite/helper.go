@@ -607,7 +607,7 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timesta
 		name = settings.Namespace + "_" + name
 	}
 
-	settings.ResourceAttributesSetting.Reset()
+	settings.ResourceAttributesSetting.reset()
 	if settings.KeepIdentifyingResourceAttributes {
 		// Do not pass identifying attributes as ignoreAttrs below.
 		identifyingAttrs = nil
