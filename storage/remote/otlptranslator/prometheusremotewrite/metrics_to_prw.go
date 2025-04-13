@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/prometheus/prometheus/config"
 	"sort"
 
 	"github.com/prometheus/otlptranslator"
@@ -28,6 +27,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.uber.org/multierr"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/util/annotations"
 )
@@ -283,17 +283,15 @@ func NewResourceAttributesSetting(otlpCfg config.OTLPConfig) ResourceAttributesS
 			Action: PromoteResourceAttributeAction,
 			Attr:   attr,
 		}
-	} else {
-		attr := make(map[string]struct{}, len(otlpCfg.IgnoreResourceAttributes))
-		for _, s := range otlpCfg.IgnoreResourceAttributes {
-			attr[s] = struct{}{}
-		}
-		return ResourceAttributesSetting{
-			Action: IgnoreResourceAttributeAction,
-			Attr:   attr,
-		}
 	}
-
+	attr := make(map[string]struct{}, len(otlpCfg.IgnoreResourceAttributes))
+	for _, s := range otlpCfg.IgnoreResourceAttributes {
+		attr[s] = struct{}{}
+	}
+	return ResourceAttributesSetting{
+		Action: IgnoreResourceAttributeAction,
+		Attr:   attr,
+	}
 }
 
 func (s *ResourceAttributesSetting) isPromote(name string) bool {
@@ -309,8 +307,8 @@ func (s *ResourceAttributesSetting) isPromote(name string) bool {
 	}
 }
 
-// Not promote anything
-func (s *ResourceAttributesSetting) Reset() {
+// Not promote anything.
+func (s *ResourceAttributesSetting) reset() {
 	s.Action = PromoteResourceAttributeAction
 	s.Attr = make(map[string]struct{})
 }
