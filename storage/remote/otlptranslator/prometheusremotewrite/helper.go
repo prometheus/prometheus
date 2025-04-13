@@ -123,9 +123,9 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 	instance, haveInstanceID := resourceAttrs.Get(conventions.AttributeServiceInstanceID)
 
 	promotedAttrs := make([]prompb.Label, 0, resourceAttrs.Len())
-	resourceAttrs.Range(func(key string, value pcommon.Value) bool {
-		if settings.ResourceAttributesSetting.isAttributePromote(key) {
-			promotedAttrs = append(promotedAttrs, prompb.Label{Name: key, Value: value.AsString()})
+	resourceAttrs.Range(func(name string, value pcommon.Value) bool {
+		if settings.ResourceAttributesSetting.isPromote(name) {
+			promotedAttrs = append(promotedAttrs, prompb.Label{Name: name, Value: value.AsString()})
 		}
 		return true
 	})

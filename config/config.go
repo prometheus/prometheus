@@ -1530,7 +1530,7 @@ func (c *OTLPConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 
 	if c.IgnoreResourceAttributes != nil && len(c.PromoteResourceAttributes) > 0 {
-		return errors.New("'ignore_resource_attributes' and 'promote_resource_attributes' cannot be used simultaneously")
+		return errors.New("'ignore_resource_attributes' and 'promote_resource_attributes' cannot be configured simultaneously")
 	}
 
 	if err := validateAttributes(c.IgnoreResourceAttributes); err != nil {
