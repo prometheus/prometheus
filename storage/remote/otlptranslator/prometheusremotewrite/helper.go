@@ -122,12 +122,13 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 	serviceName, haveServiceName := resourceAttrs.Get(conventions.AttributeServiceName)
 	instance, haveInstanceID := resourceAttrs.Get(conventions.AttributeServiceInstanceID)
 
-	promotedAttrs := make([]prompb.Label, 0, len(settings.PromoteResourceAttributes))
-	for _, name := range settings.PromoteResourceAttributes {
-		if value, exists := resourceAttrs.Get(name); exists {
-			promotedAttrs = append(promotedAttrs, prompb.Label{Name: name, Value: value.AsString()})
+	promotedAttrs := make([]prompb.Label, 0, resourceAttrs.Len())
+	resourceAttrs.Range(func(key string, value pcommon.Value) bool {
+		if settings.ResourceAttributesSetting.isAttributePromote(key) {
+			promotedAttrs = append(promotedAttrs, prompb.Label{Name: key, Value: value.AsString()})
 		}
-	}
+		return true
+	})
 	sort.Stable(ByLabelName(promotedAttrs))
 
 	// Calculate the maximum possible number of labels we could return so we can preallocate l
@@ -606,7 +607,7 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timesta
 		name = settings.Namespace + "_" + name
 	}
 
-	settings.PromoteResourceAttributes = nil
+	settings.ResourceAttributesSetting.Reset()
 	if settings.KeepIdentifyingResourceAttributes {
 		// Do not pass identifying attributes as ignoreAttrs below.
 		identifyingAttrs = nil

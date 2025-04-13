@@ -1629,8 +1629,8 @@ func TestRemoteWriteRetryOnRateLimit(t *testing.T) {
 }
 
 func TestOTLPSanitizeResourceAttributes(t *testing.T) {
-	t.Run("good config", func(t *testing.T) {
-		want, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_resource_attributes.good.yml"), false, promslog.NewNopLogger())
+	t.Run("good config - default resource attributes", func(t *testing.T) {
+		want, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_default_resource_attributes.good.yml"), false, promslog.NewNopLogger())
 		require.NoError(t, err)
 
 		out, err := yaml.Marshal(want)
@@ -1638,13 +1638,57 @@ func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 		var got Config
 		require.NoError(t, yaml.UnmarshalStrict(out, &got))
 
+		require.Nil(t, got.OTLPConfig.IgnoreResourceAttributes)
+		require.Len(t, got.OTLPConfig.PromoteResourceAttributes, 0)
+	})
+
+	t.Run("good config - promote resource attributes", func(t *testing.T) {
+		want, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_promote_resource_attributes.good.yml"), false, promslog.NewNopLogger())
+		require.NoError(t, err)
+
+		out, err := yaml.Marshal(want)
+		require.NoError(t, err)
+		var got Config
+		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+
+		require.Nil(t, got.OTLPConfig.IgnoreResourceAttributes)
 		require.Equal(t, []string{"k8s.cluster.name", "k8s.job.name", "k8s.namespace.name"}, got.OTLPConfig.PromoteResourceAttributes)
 	})
 
-	t.Run("bad config", func(t *testing.T) {
-		_, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_resource_attributes.bad.yml"), false, promslog.NewNopLogger())
-		require.ErrorContains(t, err, `duplicated promoted OTel resource attribute "k8s.job.name"`)
-		require.ErrorContains(t, err, `empty promoted OTel resource attribute`)
+	t.Run("bad config - promote resource attributes", func(t *testing.T) {
+		_, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_promote_resource_attributes.bad.yml"), false, promslog.NewNopLogger())
+		require.Contains(t, err.Error(), `invalid 'promote_resource_attributes'`)
+		require.ErrorContains(t, err, `duplicated OTel resource attribute "k8s.job.name"`)
+		require.ErrorContains(t, err, `empty OTel resource attribute`)
+	})
+
+	t.Run("good config - ignore resource attributes", func(t *testing.T) {
+		want, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_ignore_resource_attributes.good.yml"), false, promslog.NewNopLogger())
+		require.NoError(t, err)
+
+		out, err := yaml.Marshal(want)
+		require.NoError(t, err)
+		var got Config
+		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+		require.Len(t, got.OTLPConfig.PromoteResourceAttributes, 0)
+		require.Equal(t, []string{"k8s.cluster.name", "k8s.job.name", "k8s.namespace.name"}, got.OTLPConfig.IgnoreResourceAttributes)
+	})
+
+	t.Run("bad config - ignore resource attributes", func(t *testing.T) {
+		_, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_ignore_resource_attributes.bad.yml"), false, promslog.NewNopLogger())
+		require.Contains(t, err.Error(), `invalid 'ignore_resource_attributes'`)
+		require.ErrorContains(t, err, `duplicated OTel resource attribute "k8s.job.name"`)
+		require.ErrorContains(t, err, `empty OTel resource attribute`)
+	})
+
+	t.Run("bad config - conflict promote and (empty) ignore resource attributes", func(t *testing.T) {
+		_, err := LoadFile(filepath.Join("testdata", "otlp_promote_ignore_resource_attributes.bad.yml"), false, promslog.NewNopLogger())
+		require.ErrorContains(t, err, `'ignore_resource_attributes' and 'promote_resource_attributes' cannot be used simultaneously`)
+	})
+
+	t.Run("bad config - conflict promote and ignore resource attributes", func(t *testing.T) {
+		_, err := LoadFile(filepath.Join("testdata", "otlp_promote_ignore_resource_attributes2.bad.yml"), false, promslog.NewNopLogger())
+		require.ErrorContains(t, err, `'ignore_resource_attributes' and 'promote_resource_attributes' cannot be used simultaneously`)
 	})
 }
 

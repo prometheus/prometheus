@@ -581,7 +581,7 @@ func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) er
 	annots, err := converter.FromMetrics(ctx, md, otlptranslator.Settings{
 		AddMetricSuffixes:                 true,
 		AllowUTF8:                         otlpCfg.TranslationStrategy == config.NoUTF8EscapingWithSuffixes,
-		PromoteResourceAttributes:         otlpCfg.PromoteResourceAttributes,
+		ResourceAttributesSetting:         otlptranslator.NewResourceAttributesSetting(otlpCfg),
 		KeepIdentifyingResourceAttributes: otlpCfg.KeepIdentifyingResourceAttributes,
 		ConvertHistogramsToNHCB:           otlpCfg.ConvertHistogramsToNHCB,
 	})
