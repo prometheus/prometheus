@@ -178,7 +178,13 @@ remote_write:
 # Settings related to the OTLP receiver feature.
 # See https://prometheus.io/docs/guides/opentelemetry/ for best practices.
 otlp:
+  # Promote specific list of resource attributes to labels.
+  # It cannot be configured simultaneously with 'ignore_resource_attributes'.
   [ promote_resource_attributes: [<string>, ...] | default = [ ] ]
+  # Promoting all resource attributes to labels, except the ignore ones. 
+  # In case you want to promote all resource attributes, you can set 'ignore_resource_attributes' to an empty list.
+  # It cannot be configured simultaneously with 'promote_resource_attributes'.
+  [ ignore_resource_attributes: [<string>, ...] | default = nil ]
   # Configures translation of OTLP metrics when received through the OTLP metrics
   # endpoint. Available values:
   # - "UnderscoreEscapingWithSuffixes" refers to commonly agreed normalization used

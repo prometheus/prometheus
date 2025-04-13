@@ -52,13 +52,16 @@ func TestCreateAttributes(t *testing.T) {
 
 	testCases := []struct {
 		name                      string
-		promoteResourceAttributes []string
+		resourceAttributesSetting ResourceAttributesSetting
 		ignoreAttrs               []string
 		expectedLabels            []prompb.Label
 	}{
 		{
-			name:                      "Successful conversion without resource attribute promotion",
-			promoteResourceAttributes: nil,
+			name: "Successful conversion without resource attribute promotion",
+			resourceAttributesSetting: ResourceAttributesSetting{
+				Action: PromoteResourceAttributeAction,
+				Attr:   map[string]struct{}{},
+			},
 			expectedLabels: []prompb.Label{
 				{
 					Name:  "__name__",
@@ -83,9 +86,13 @@ func TestCreateAttributes(t *testing.T) {
 			},
 		},
 		{
-			name:                      "Successful conversion with some attributes ignored",
-			promoteResourceAttributes: nil,
-			ignoreAttrs:               []string{"metric-attr-other"},
+			name: "Successful conversion with some attributes ignored",
+			resourceAttributesSetting: ResourceAttributesSetting{
+				Action: PromoteResourceAttributeAction,
+
+				Attr: map[string]struct{}{},
+			},
+			ignoreAttrs: []string{"metric-attr-other"},
 			expectedLabels: []prompb.Label{
 				{
 					Name:  "__name__",
@@ -106,8 +113,15 @@ func TestCreateAttributes(t *testing.T) {
 			},
 		},
 		{
-			name:                      "Successful conversion with resource attribute promotion",
-			promoteResourceAttributes: []string{"non-existent-attr", "existent-attr"},
+			name: "Successful conversion with resource attribute promotion",
+			resourceAttributesSetting: ResourceAttributesSetting{
+				Action: PromoteResourceAttributeAction,
+
+				Attr: map[string]struct{}{
+					"non-existent-attr": {},
+					"existent-attr":     {},
+				},
+			},
 			expectedLabels: []prompb.Label{
 				{
 					Name:  "__name__",
@@ -136,8 +150,17 @@ func TestCreateAttributes(t *testing.T) {
 			},
 		},
 		{
-			name:                      "Successful conversion with resource attribute promotion, conflicting resource attributes are ignored",
-			promoteResourceAttributes: []string{"non-existent-attr", "existent-attr", "metric-attr", "job", "instance"},
+			name: "Successful conversion with resource attribute promotion, conflicting resource attributes are ignored",
+			resourceAttributesSetting: ResourceAttributesSetting{
+				Action: PromoteResourceAttributeAction,
+				Attr: map[string]struct{}{
+					"non-existent-attr": {},
+					"existent-attr":     {},
+					"metric-attr":       {},
+					"job":               {},
+					"instance":          {},
+				},
+			},
 			expectedLabels: []prompb.Label{
 				{
 					Name:  "__name__",
@@ -166,8 +189,13 @@ func TestCreateAttributes(t *testing.T) {
 			},
 		},
 		{
-			name:                      "Successful conversion with resource attribute promotion, attributes are only promoted once",
-			promoteResourceAttributes: []string{"existent-attr", "existent-attr"},
+			name: "Successful conversion with resource attribute promotion, attributes are only promoted once",
+			resourceAttributesSetting: ResourceAttributesSetting{
+				Action: PromoteResourceAttributeAction,
+				Attr: map[string]struct{}{
+					"existent-attr": {},
+				},
+			},
 			expectedLabels: []prompb.Label{
 				{
 					Name:  "__name__",
@@ -192,6 +220,86 @@ func TestCreateAttributes(t *testing.T) {
 				{
 					Name:  "metric_attr_other",
 					Value: "metric value other",
+				},
+			},
+		},
+		{
+			name: "Successful conversion promoting all resource attribute",
+			resourceAttributesSetting: ResourceAttributesSetting{
+				Action: IgnoreResourceAttributeAction,
+				Attr:   map[string]struct{}{},
+			},
+			expectedLabels: []prompb.Label{
+				{
+					Name:  "__name__",
+					Value: "test_metric",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+				{
+					Name:  "job",
+					Value: "service name",
+				},
+				{
+					Name:  "existent_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "metric value",
+				},
+				{
+					Name:  "metric_attr_other",
+					Value: "metric value other",
+				},
+				{
+					Name:  "service_name",
+					Value: "service name",
+				},
+				{
+					Name:  "service_instance_id",
+					Value: "service ID",
+				},
+			},
+		},
+		{
+			name: "Successful conversion promoting all resource attribute, ignoring 'service.instance.id'",
+			resourceAttributesSetting: ResourceAttributesSetting{
+				Action: IgnoreResourceAttributeAction,
+				Attr: map[string]struct{}{
+					"service.instance.id": {},
+				},
+			},
+			expectedLabels: []prompb.Label{
+				{
+					Name:  "__name__",
+					Value: "test_metric",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+				{
+					Name:  "job",
+					Value: "service name",
+				},
+				{
+					Name:  "existent_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "metric value",
+				},
+				{
+					Name:  "metric_attr_other",
+					Value: "metric value other",
+				},
+				{
+					Name:  "service_name",
+					Value: "service name",
 				},
 			},
 		},
@@ -199,7 +307,7 @@ func TestCreateAttributes(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			settings := Settings{
-				PromoteResourceAttributes: tc.promoteResourceAttributes,
+				ResourceAttributesSetting: tc.resourceAttributesSetting,
 			}
 			lbls := createAttributes(resource, attrs, settings, tc.ignoreAttrs, false, model.MetricNameLabel, "test_metric")
 
