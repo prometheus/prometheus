@@ -22,15 +22,15 @@ import (
 )
 
 func TestErrorWithHTTPStatusCode(t *testing.T) {
-	err, ok := ErrorWithHTTPStatusCode(http.StatusTooManyRequests, errors.New("some error"))
+	err := ErrorWithHTTPStatusCode(http.StatusTooManyRequests, errors.New("some error"))
 
-	require.True(t, ok)
-	require.Equal(t, http.StatusTooManyRequests, err.(*errorWithStatusCode).statusCode)
-	require.Equal(t, errors.New("some error"), err.(*errorWithStatusCode).err)
+	require.Equal(t, &errorWithStatusCode{
+		statusCode: http.StatusTooManyRequests,
+		err:        errors.New("some error"),
+	}, err)
 
-	err, ok = ErrorWithHTTPStatusCode(999, errors.New("weird error"))
+	err = ErrorWithHTTPStatusCode(999, errors.New("weird error"))
 
-	require.False(t, ok)
 	require.Equal(t, errors.New("weird error"), err)
 }
 

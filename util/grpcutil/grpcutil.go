@@ -14,6 +14,7 @@
 package grpcutil
 
 import (
+	"errors"
 	"net/http"
 )
 
@@ -30,25 +31,31 @@ func (e *errorWithStatusCode) Error() string {
 	return e.err.Error()
 }
 
-func ErrorWithHTTPStatusCode(code int, err error) (error, bool) {
+// ErrorWithHTTPStatusCode returns an error type that includes explicit statusCode field.
+// If the code is an invalid HTTP status, error is returned as is.
+func ErrorWithHTTPStatusCode(code int, err error) error {
 	if !isValidHTTPStatusCode(code) {
-		return err, false
+		return err
 	}
 	return &errorWithStatusCode{
 		statusCode: code,
 		err:        err,
-	}, true
+	}
 }
 
+// HTTPStatusCode retrieves status code from the error, if it
 func HTTPStatusCode(err error) (int, bool) {
-	if errWithCode, ok := err.(*errorWithStatusCode); ok {
-		if !isValidHTTPStatusCode(errWithCode.statusCode) {
+	var e *errorWithStatusCode
+
+	switch {
+	case errors.As(err, &e):
+		if !isValidHTTPStatusCode(e.statusCode) {
 			return 0, false
 		}
-		return errWithCode.statusCode, true
+		return e.statusCode, true
+	default:
+		return 0, false
 	}
-
-	return 0, false
 }
 
 func isValidHTTPStatusCode(code int) bool {
