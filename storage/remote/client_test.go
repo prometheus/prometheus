@@ -409,6 +409,34 @@ func TestReadClient(t *testing.T) {
 	}
 }
 
+func TestReadClientUnwrapError(t *testing.T) {
+	httpHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "test error", http.StatusBadRequest)
+	})
+	expectedError := "test error\n"
+
+	server := httptest.NewServer(httpHandler)
+	defer server.Close()
+
+	u, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	conf := &ClientConfig{
+		URL:              &config_util.URL{URL: u},
+		Timeout:          model.Duration(5 * time.Second),
+		ChunkedReadLimit: config.DefaultChunkedReadLimit,
+	}
+	c, err := NewReadClient("test", conf)
+	require.NoError(t, err)
+
+	query := &prompb.Query{}
+
+	_, err = c.Read(context.Background(), query, false)
+	require.ErrorContains(t, err, expectedError)
+	err = errors.Unwrap(err)
+	require.EqualError(t, err, expectedError)
+}
+
 func sampledResponseHTTPHandler(t *testing.T) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/x-protobuf")
