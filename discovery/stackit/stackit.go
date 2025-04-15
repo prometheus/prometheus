@@ -47,7 +47,7 @@ var userAgent = version.PrometheusUserAgent()
 
 // DefaultSDConfig is the default STACKIT SD configuration.
 var DefaultSDConfig = SDConfig{
-	Endpoint:         "https://iaas.api.eu01.stackit.cloud",
+	Region:           "eu01",
 	Port:             80,
 	RefreshInterval:  model.Duration(60 * time.Second),
 	HTTPClientConfig: config.DefaultHTTPClientConfig,
@@ -64,6 +64,7 @@ type SDConfig struct {
 	RefreshInterval       model.Duration `yaml:"refresh_interval"`
 	Port                  int            `yaml:"port"`
 	Role                  Role           `yaml:"role"`
+	Region                string         `yaml:"region"`
 	Endpoint              string         `yaml:"endpoint"`
 	Project               string         `yaml:"project"`
 	ServiceAccountKey     string         `yaml:"service_account_key"`
@@ -125,8 +126,8 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
-	if c.Endpoint == "" {
-		return errors.New("endpoint missing")
+	if c.Endpoint == "" && c.Region == "" {
+		return errors.New("endpoint or region missing")
 	}
 
 	if c.Role == "" {

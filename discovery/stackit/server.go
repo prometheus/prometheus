@@ -36,6 +36,8 @@ import (
 )
 
 const (
+	stackitAPIEndpoint = "https://iaas.api.%s.stackit.cloud"
+
 	stackitLabelPrivateIPv4  = stackitLabelPrefix + "private_ipv4_"
 	stackitLabelPrivateIPv6  = stackitLabelPrefix + "private_ipv6_"
 	stackitLabelType         = stackitLabelPrefix + "server_type"
@@ -68,10 +70,15 @@ func newServerDiscovery(conf *SDConfig, logger *slog.Logger) (*iaasDiscovery, er
 		return nil, err
 	}
 
+	endpoint := conf.Endpoint
+	if endpoint == "" {
+		endpoint = fmt.Sprintf(stackitAPIEndpoint, conf.Region)
+	}
+
 	servers := stackitconfig.ServerConfigurations{}
 	noAuth := true
 	servers = append(servers, stackitconfig.ServerConfiguration{
-		URL:         conf.Endpoint,
+		URL:         endpoint,
 		Description: "STACKIT IAAS API",
 	})
 

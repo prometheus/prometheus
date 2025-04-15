@@ -2255,15 +2255,18 @@ The following meta labels are available on targets during [relabeling](#relabel_
 See below for the configuration options for STACKIT discovery:
 
 ```yaml
-# The information to access the STACKIT API. Different Prometheus SD roles my require different endpoint within the same region.
-[ endpoint : <string> | default = "https://iaas.api.eu01.stackit.cloud" ]
-
 # The STACKIT project 
 project: <string>
 
 # The STACKIT role of entities that should be discovered.
 # Currently, only server is supported.
 role: <string>
+
+# STACKIT region to use. No automatic discovery of the region is done.
+[ region : <string> | default = "eu01" ]
+
+# Custom API endpoint to be used. Format scheme://host:port
+[ endpoint : <string>  ]
 
 # The port to scrape metrics from.
 [ port: <int> | default = 80 ]

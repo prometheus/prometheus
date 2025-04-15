@@ -1469,8 +1469,8 @@ var expectedConf = &Config{
 
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&stackit.SDConfig{
-					Project:  "11111111-1111-1111-1111-111111111111",
-					Endpoint: "https://iaas.api.eu01.stackit.cloud",
+					Project: "11111111-1111-1111-1111-111111111111",
+					Region:  "eu01",
 					HTTPClientConfig: config.HTTPClientConfig{
 						FollowRedirects: true,
 						EnableHTTP2:     true,
