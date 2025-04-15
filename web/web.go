@@ -390,6 +390,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		o.EnableOTLPWriteReceiver,
 		o.ConvertOTLPDelta,
 		o.CTZeroIngestionEnabled,
+		nil,
 	)
 
 	if o.RoutePrefix != "/" {
