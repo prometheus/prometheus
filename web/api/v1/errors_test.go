@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -62,8 +63,11 @@ func TestApiStatusCodes(t *testing.T) {
 			err:            promql.ErrTooManySamples("some error"),
 			expectedString: "too many samples",
 			errTypeToStatusCode: ErrorTypeToStatusCode{
-				ErrorExec: func(_ error) int {
-					return 999
+				ErrorExec: func(err error) int {
+					if strings.Contains(err.Error(), "some error") {
+						return 999
+					}
+					return 998
 				},
 			},
 			expectedCode: 999,
