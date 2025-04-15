@@ -116,7 +116,6 @@ func TestCreateAttributes(t *testing.T) {
 			name: "Successful conversion with resource attribute promotion",
 			resourceAttributesSetting: ResourceAttributesSetting{
 				Action: PromoteResourceAttributeAction,
-
 				Attr: map[string]struct{}{
 					"non-existent-attr": {},
 					"existent-attr":     {},
