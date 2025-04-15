@@ -2,6 +2,8 @@
 
 ## unreleased
 
+## 3.3.1 / 2025-
+
 ## 3.3.0 / 2025-04-15
 
 * [FEATURE] PromQL: Implement `idelta()` and `irate()` for native histograms. #15853
