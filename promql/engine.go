@@ -1733,6 +1733,10 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		if stepRange > ev.interval {
 			stepRange = ev.interval
 		}
+		if e.Func.Name == "trailing_increase" {
+			selRange += ev.interval
+			ev.startTimestamp -= ev.interval // subtraction of right interval adds one more point.
+		}
 		// Reuse objects across steps to save memory allocations.
 		var floats []FPoint
 		var histograms []HPoint

@@ -420,6 +420,11 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
 	},
+	"trailing_increase": {
+		Name:       "trailing_increase",
+		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+	},
 	"vector": {
 		Name:       "vector",
 		ArgTypes:   []ValueType{ValueTypeScalar},

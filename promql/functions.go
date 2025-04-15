@@ -282,6 +282,44 @@ func histogramRate(points []HPoint, isCounter bool, metricName string, pos posra
 	return h.Compact(0), annos
 }
 
+// === trailing_increase(node parser.ValueTypeMatrix) (Vector, Annotations) ===
+func funcTrailingIncrease(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	var (
+		samples            = vals[0].(Matrix)[0]
+		resultFloat        float64
+		resultHistogram    *histogram.FloatHistogram
+		numSamplesMinusOne int
+		annos              annotations.Annotations
+	)
+
+	// We need at least two Floats and no Histograms to calculate a trailing increase.
+	// Otherwise, drop this Vector element.
+	// Histograms are not supported yet.
+	metricName := samples.Metric.Get(labels.MetricName)
+	if len(samples.Histograms) > 0 && len(samples.Floats) > 0 || len(samples.Histograms) > 0 {
+		return enh.Out, annos.Add(annotations.NewMixedFloatsHistogramsWarning(metricName, args[0].PositionRange()))
+	}
+
+	switch {
+	case len(samples.Floats) > 1:
+		numSamplesMinusOne = len(samples.Floats) - 1
+		resultFloat = samples.Floats[numSamplesMinusOne].F - samples.Floats[0].F
+		// Handle counter resets:
+		prevValue := samples.Floats[0].F
+		for _, currPoint := range samples.Floats[1:] {
+			if currPoint.F < prevValue {
+				resultFloat += prevValue
+			}
+			prevValue = currPoint.F
+		}
+	default:
+		// TODO: add RangeTooShortWarning
+		return enh.Out, annos
+	}
+
+	return append(enh.Out, Sample{F: resultFloat, H: resultHistogram}), annos
+}
+
 // === delta(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcDelta(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return extrapolatedRate(vals, args, enh, false, false)
@@ -1898,6 +1936,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"tanh":                         funcTanh,
 	"time":                         funcTime,
 	"timestamp":                    funcTimestamp,
+	"trailing_increase":            funcTrailingIncrease,
 	"vector":                       funcVector,
 	"year":                         funcYear,
 }
