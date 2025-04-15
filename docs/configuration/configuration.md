@@ -181,8 +181,13 @@ otlp:
   # Promote specific list of resource attributes to labels.
   # It cannot be configured simultaneously with 'ignore_resource_attributes'.
   [ promote_resource_attributes: [<string>, ...] | default = [ ] ]
-  # Promoting all resource attributes to labels, except the ignore ones. 
-  # In case you want to promote all resource attributes, you can set 'ignore_resource_attributes' to an empty list.
+  # Promoting all resource attributes to labels, except the ignored ones. 
+  # 'ignore_resource_attributes' can be used to promote all resource attributes if set to an empty list:
+  #
+  #  otlp:
+  #    ignore_resource_attributes: []
+  #
+  # Be aware that changes in attributes received by the OTLP endpoint may result in time series churn and lead to high memory usage by the Prometheus server.
   # It cannot be configured simultaneously with 'promote_resource_attributes'.
   [ ignore_resource_attributes: [<string>, ...] | default = nil ]
   # Configures translation of OTLP metrics when received through the OTLP metrics

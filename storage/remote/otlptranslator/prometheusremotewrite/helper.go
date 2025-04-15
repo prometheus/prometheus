@@ -124,7 +124,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 
 	promotedAttrs := make([]prompb.Label, 0, resourceAttrs.Len())
 	resourceAttrs.Range(func(name string, value pcommon.Value) bool {
-		if settings.ResourceAttributesSetting.isPromote(name) {
+		if settings.ResourceAttributesSetting.shouldPromote(name) {
 			promotedAttrs = append(promotedAttrs, prompb.Label{Name: name, Value: value.AsString()})
 		}
 		return true

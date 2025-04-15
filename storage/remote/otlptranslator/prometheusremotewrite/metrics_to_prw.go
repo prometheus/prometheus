@@ -294,7 +294,7 @@ func NewResourceAttributesSetting(otlpCfg config.OTLPConfig) ResourceAttributesS
 	}
 }
 
-func (s *ResourceAttributesSetting) isPromote(name string) bool {
+func (s *ResourceAttributesSetting) shouldPromote(name string) bool {
 	switch s.Action {
 	case IgnoreResourceAttributeAction:
 		_, exist := s.Attr[name]
