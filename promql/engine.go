@@ -1735,7 +1735,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		}
 		if e.Func.Name == "trailing_increase" {
 			selRange += ev.interval
-			ev.startTimestamp -= ev.interval // subtraction of right interval adds one more point.
+			ev.startTimestamp -= ev.interval // Subtraction of right interval adds one more point.
 		}
 		// Reuse objects across steps to save memory allocations.
 		var floats []FPoint
