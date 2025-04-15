@@ -113,7 +113,8 @@ func NewEndpointSlice(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, n
 			if es.Namespace != svc.Namespace {
 				continue
 			}
-			if lv, exists := es.Labels[v1.LabelServiceName]; exists && lv == svc.Name {
+                        // Only consider the underlying EndpointSlices in the same namespace.
+			if svcName, exists := es.Labels[v1.LabelServiceName]; exists && svcName == svc.Name && es.Namespace == svc.Namespace {
 				e.enqueue(es)
 			}
 		}
