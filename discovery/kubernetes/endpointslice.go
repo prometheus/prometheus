@@ -110,6 +110,9 @@ func NewEndpointSlice(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, n
 				e.logger.Error("converting to EndpointSlice object failed", "err", err)
 				continue
 			}
+			if es.Namespace != svc.Namespace {
+				continue
+			}
 			if lv, exists := es.Labels[v1.LabelServiceName]; exists && lv == svc.Name {
 				e.enqueue(es)
 			}
