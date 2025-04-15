@@ -2,14 +2,7 @@
 
 ## unreleased
 
-## 3.3.0-rc.1 / 2025-04-02
-
-* [BUGFIX] Remote-Write: Reduce memory footprint during WAL replay. #16197
-* [BUGFIX] Scraping: Skip native histograms series when ingestion is disabled. #16218
-* [BUGFIX] UI: Display the correct value of Alerting rules' `keep_firing_for`. #16211
-* [BUGFIX] PromQL: return NaN from `irate()` if second-last sample is NaN. #16199 #15853
-
-## 3.3.0-rc.0 / 2025-03-11
+## 3.3.0 / 2025-04-15
 
 * [FEATURE] PromQL: Implement `idelta()` and `irate()` for native histograms. #15853
 * [ENHANCEMENT] Scaleway SD: Add `__meta_scaleway_instance_public_ipv4_addresses` and `__meta_scaleway_instance_public_ipv6_addresses` labels. #14228
@@ -24,21 +17,24 @@
 * [ENHANCEMENT] Mixin: The `cluster` label can be customized using `clusterLabel`. #15826
 * [PERF] TSDB: Optimize some operations on head chunks by taking shortcuts. #12659
 * [PERF] TSDB & Agent: Reduce memory footprint during WL replay. #15778
+* [PERF] Remote-Write: Reduce memory footprint during WAL replay. #16197
 * [PERF] API: Reduce memory footprint during header parsing. #16001
 * [PERF] Rules: Improve dependency evaluation, enabling better concurrency. #16039
 * [PERF] Scraping: Improve scraping performance for native histograms. #15731
 * [PERF] Scraping: Improve parsing of created timestamps. #16072
+* [BUGFIX] Scraping: Bump cache iteration after error to avoid false duplicate detections. #16174
+* [BUGFIX] Scraping: Skip native histograms series when ingestion is disabled. #16218
 * [BUGFIX] PromQL: Fix counter reset detection for native histograms. #15902 #15987
-* [BUGFIX] Scaleway SD: The public IP will no longer be set to `__meta_meta_scaleway_instance_public_ipv4` if it is an IPv6 address. #14228
 * [BUGFIX] PromQL: Fix inconsistent behavior with an empty range. #15970
 * [BUGFIX] PromQL: Fix inconsistent annotation in `quantile_over_time()`. #16018
 * [BUGFIX] PromQL: Prevent `label_join()` from producing duplicates. #15975
 * [BUGFIX] PromQL: Ignore native histograms in `scalar()`, `sort()` and `sort_desc()`. #15964
+* [BUGFIX] PromQL: Fix annotations for binary operations between incompatible native histograms. #15895
 * [BUGFIX] Alerting: Consider alert relabeling when deciding whether alerts are dropped. #15979
 * [BUGFIX] Config: Set `GoGC` to the default value in case of an empty configuration. #16052
 * [BUGFIX] TSDB: Fix unknown series errors and potential data loss during WAL replay when inactive series are removed from the head and reappear before the next WAL checkpoint. #16060
-* [BUGFIX] Scraping: Bump cache iteration after error to avoid false duplicate detections. #16174
-* [BUGFIX] PromQL: Fix annotations for binary operations between incompatible native histograms. #15895
+* [BUGFIX] Scaleway SD: The public IP will no longer be set to `__meta_meta_scaleway_instance_public_ipv4` if it is an IPv6 address. #14228
+* [BUGFIX] UI: Display the correct value of Alerting rules' `keep_firing_for`. #16211
 
 ## 3.2.1 / 2025-02-25
 
