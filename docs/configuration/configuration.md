@@ -649,7 +649,7 @@ A `tls_config` allows configuring TLS connections.
 
 ### `<oauth2>`
 
-OAuth 2.0 authentication using the client credentials grant type.
+OAuth 2.0 authentication using the client credentials or password grant type.
 Prometheus fetches an access token from the specified endpoint with
 the given client access and secret keys.
 
@@ -669,6 +669,11 @@ scopes:
 token_url: <string>
 
 # Optional parameters to append to the token URL.
+# To set 'password' grant type, add it to params:
+# endpoint_params:
+#   grant_type: 'password'
+#   username: 'username@example.com'
+#   password: 'strongpassword'
 endpoint_params:
   [ <string>: <string> ... ]
 
