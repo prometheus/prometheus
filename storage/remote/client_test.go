@@ -225,6 +225,7 @@ func TestReadClient(t *testing.T) {
 		expectedSamples       [][]model.SamplePair
 		expectedErrorContains string
 		sortSeries            bool
+		unwrap                bool
 	}{
 		{
 			name:        "sorted sampled response",
@@ -336,6 +337,14 @@ func TestReadClient(t *testing.T) {
 			timeout:               5 * time.Millisecond,
 			expectedErrorContains: "context deadline exceeded: request timed out after 5ms",
 		},
+		{
+			name: "unwrap error",
+			httpHandler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				http.Error(w, "test error", http.StatusBadRequest)
+			}),
+			expectedErrorContains: "test error",
+			unwrap:                true,
+		},
 	}
 
 	for _, test := range tests {
@@ -366,6 +375,10 @@ func TestReadClient(t *testing.T) {
 			ss, err := c.Read(context.Background(), query, test.sortSeries)
 			if test.expectedErrorContains != "" {
 				require.ErrorContains(t, err, test.expectedErrorContains)
+				if test.unwrap {
+					err = errors.Unwrap(err)
+					require.EqualError(t, err, test.expectedErrorContains+"\n")
+				}
 				return
 			}
 
@@ -407,34 +420,6 @@ func TestReadClient(t *testing.T) {
 			require.NoError(t, ss.Err())
 		})
 	}
-}
-
-func TestReadClientUnwrapError(t *testing.T) {
-	httpHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "test error", http.StatusBadRequest)
-	})
-	expectedError := "test error\n"
-
-	server := httptest.NewServer(httpHandler)
-	defer server.Close()
-
-	u, err := url.Parse(server.URL)
-	require.NoError(t, err)
-
-	conf := &ClientConfig{
-		URL:              &config_util.URL{URL: u},
-		Timeout:          model.Duration(5 * time.Second),
-		ChunkedReadLimit: config.DefaultChunkedReadLimit,
-	}
-	c, err := NewReadClient("test", conf)
-	require.NoError(t, err)
-
-	query := &prompb.Query{}
-
-	_, err = c.Read(context.Background(), query, false)
-	require.ErrorContains(t, err, expectedError)
-	err = errors.Unwrap(err)
-	require.EqualError(t, err, expectedError)
 }
 
 func sampledResponseHTTPHandler(t *testing.T) http.HandlerFunc {
