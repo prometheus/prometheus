@@ -626,6 +626,101 @@ func (h *FloatHistogram) KahanSub(other, c *FloatHistogram) (*FloatHistogram, *F
 	return h, c, nil
 }
 
+// KahanSub works like Sub but using the Kahan summation algorithm to minimize numerical errors.
+// c is a histogram holding the Kahan compensation term. It is modified in-place.
+// If c is nil, a suitable histogram is created. In any case, a pointer to the newly created
+// or updated c is returned as updatedC.
+func (h *FloatHistogram) KahanSub(other, c *FloatHistogram) (updatedC *FloatHistogram, err error) {
+	if err := h.checkSchemaAndBounds(other); err != nil {
+		return nil, err
+	}
+
+	h.adjustCounterResetForAddition(other)
+
+	if c == nil {
+		c = h.newCompensationHistogram()
+	}
+
+	if !h.UsesCustomBuckets() {
+		otherZeroCount := h.reconcileZeroBuckets(other, c)
+		h.ZeroCount, c.ZeroCount = kahansum.Dec(otherZeroCount, h.ZeroCount, c.ZeroCount)
+	}
+	h.Count, c.Count = kahansum.Dec(other.Count, h.Count, c.Count)
+	h.Sum, c.Sum = kahansum.Dec(other.Sum, h.Sum, c.Sum)
+	var (
+		hPositiveSpans       = h.PositiveSpans
+		hPositiveBuckets     = h.PositiveBuckets
+		otherPositiveSpans   = other.PositiveSpans
+		otherPositiveBuckets = other.PositiveBuckets
+		cPositiveBuckets     = c.PositiveBuckets
+	)
+
+	if h.UsesCustomBuckets() {
+		h.PositiveSpans, h.PositiveBuckets, c.PositiveBuckets = kahanAddBuckets(
+			h.Schema, h.ZeroThreshold, true,
+			hPositiveSpans, hPositiveBuckets,
+			otherPositiveSpans, otherPositiveBuckets,
+			cPositiveBuckets,
+		)
+		return c, nil
+	}
+
+	var (
+		hNegativeSpans       = h.NegativeSpans
+		hNegativeBuckets     = h.NegativeBuckets
+		otherNegativeSpans   = other.NegativeSpans
+		otherNegativeBuckets = other.NegativeBuckets
+		cNegativeBuckets     = c.NegativeBuckets
+	)
+
+	switch {
+	case other.Schema < h.Schema:
+		hPositiveSpans, hPositiveBuckets, cPositiveBuckets = kahanReduceResolution(
+			hPositiveSpans, hPositiveBuckets, cPositiveBuckets,
+			h.Schema, other.Schema,
+			true,
+		)
+		hNegativeSpans, hNegativeBuckets, cNegativeBuckets = kahanReduceResolution(
+			hNegativeSpans, hNegativeBuckets, cNegativeBuckets,
+			h.Schema, other.Schema,
+			true,
+		)
+		h.Schema = other.Schema
+
+	case other.Schema > h.Schema:
+		otherPositiveSpans, otherPositiveBuckets = reduceResolution(
+			otherPositiveSpans, otherPositiveBuckets,
+			other.Schema, h.Schema,
+			false, false,
+		)
+		otherNegativeSpans, otherNegativeBuckets = reduceResolution(
+			otherNegativeSpans, otherNegativeBuckets,
+			other.Schema, h.Schema,
+			false, false,
+		)
+	}
+
+	h.PositiveSpans, h.PositiveBuckets, c.PositiveBuckets = kahanAddBuckets(
+		h.Schema, h.ZeroThreshold, true,
+		hPositiveSpans, hPositiveBuckets,
+		otherPositiveSpans, otherPositiveBuckets,
+		cPositiveBuckets,
+	)
+	h.NegativeSpans, h.NegativeBuckets, c.NegativeBuckets = kahanAddBuckets(
+		h.Schema, h.ZeroThreshold, true,
+		hNegativeSpans, hNegativeBuckets,
+		otherNegativeSpans, otherNegativeBuckets,
+		cNegativeBuckets,
+	)
+
+	c.Schema = other.Schema
+	c.ZeroThreshold = h.ZeroThreshold
+	c.PositiveSpans = h.PositiveSpans
+	c.NegativeSpans = h.NegativeSpans
+
+	return c, nil
+}
+
 // Equals returns true if the given float histogram matches exactly.
 // Exact match is when there are no new buckets (even empty) and no missing buckets,
 // and all the bucket values match. Spans can have different empty length spans in between,
@@ -1572,7 +1667,7 @@ func kahanAddBuckets(
 	spansA []Span, bucketsA []float64,
 	spansB []Span, bucketsB []float64,
 	bucketsC []float64,
-) ([]Span, []float64, []float64) {
+) (newSpans []Span, newBucketsA, newBucketsC []float64) {
 	var (
 		iSpan              = -1
 		iBucket            = -1
@@ -1956,7 +2051,7 @@ func kahanReduceResolution(
 	originSchema,
 	targetSchema int32,
 	inplace bool,
-) (newSpans []Span, newReceivingBuckets []float64, newCompBuckets []float64) {
+) (newSpans []Span, newReceivingBuckets, newCompBuckets []float64) {
 	var (
 		targetSpans            []Span    // The spans in the target schema.
 		targetReceivingBuckets []float64 // The receiving bucket counts in the target schema.
@@ -1997,12 +2092,11 @@ func kahanReduceResolution(
 			case lastTargetBucketIdx == targetBucketIdx:
 				// The current bucket has to be merged into the same target bucket as the previous bucket.
 				lastBucketIdx := len(targetReceivingBuckets) - 1
-				targetReceivingBuckets[lastBucketIdx], targetCompBuckets[lastBucketIdx] =
-					kahansum.Inc(
-						originReceivingBuckets[bucketCountIdx],
-						targetReceivingBuckets[lastBucketIdx],
-						targetCompBuckets[lastBucketIdx],
-					)
+				targetReceivingBuckets[lastBucketIdx], targetCompBuckets[lastBucketIdx] = kahansum.Inc(
+					originReceivingBuckets[bucketCountIdx],
+					targetReceivingBuckets[lastBucketIdx],
+					targetCompBuckets[lastBucketIdx],
+				)
 				targetCompBuckets[lastBucketIdx] += originCompBuckets[bucketCountIdx]
 
 			case (lastTargetBucketIdx + 1) == targetBucketIdx:

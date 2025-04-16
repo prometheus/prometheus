@@ -22,11 +22,16 @@ func Inc(inc, sum, c float64) (newSum, newC float64) {
 	case math.IsInf(t, 0):
 		c = 0
 
-	// Using Neumaier improvement, swap if next term larger than sum.
+		// Using Neumaier improvement, swap if next term larger than sum.
 	case math.Abs(sum) >= math.Abs(inc):
 		c += (sum - t) + inc
 	default:
 		c += (inc - t) + sum
 	}
 	return t, c
+}
+
+// Dec performs subtraction of one floating-point number from another using the Kahan summation algorithm.
+func Dec(dec, sum, c float64) (newSum, newC float64) {
+	return Inc(-dec, sum, c)
 }
