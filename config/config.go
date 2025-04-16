@@ -110,9 +110,9 @@ func Load(s string, logger *slog.Logger) (*Config, error) {
 	switch cfg.OTLPConfig.TranslationStrategy {
 	case UnderscoreEscapingWithSuffixes:
 	case "":
-	case NoUTF8EscapingWithSuffixes:
+	case NoTranslation, NoUTF8EscapingWithSuffixes:
 		if cfg.GlobalConfig.MetricNameValidationScheme == LegacyValidationConfig {
-			return nil, errors.New("OTLP translation strategy NoUTF8EscapingWithSuffixes is not allowed when UTF8 is disabled")
+			return nil, fmt.Errorf("OTLP translation strategy %q is not allowed when UTF8 is disabled", cfg.OTLPConfig.TranslationStrategy)
 		}
 	default:
 		return nil, fmt.Errorf("unsupported OTLP translation strategy %q", cfg.OTLPConfig.TranslationStrategy)
@@ -1509,6 +1509,17 @@ var (
 	// and label name characters that are not alphanumerics/underscores to underscores.
 	// Unit and type suffixes may be appended to metric names, according to certain rules.
 	UnderscoreEscapingWithSuffixes translationStrategyOption = "UnderscoreEscapingWithSuffixes"
+	// NoTranslation (EXPERIMENTAL): disables all translation of incoming metric
+	// and label names.
+	//
+	// Note that because metrics in Open Telemetry are considered
+	// distinct if they share the same name but have different Type or Units, for
+	// instance "foo.bar" with units Seconds is a separate series from "foo.bar"
+	// with units Milliseconds. Because prometheus can't differentiate timeseries
+	// based on type and unit metadata, these two series would be conflated in
+	// Prometheus. Therefore this setting is experimental and should not be used in
+	// production systems.
+	NoTranslation translationStrategyOption = "NoTranslation"
 )
 
 // OTLPConfig is the configuration for writing to the OTLP endpoint.
