@@ -895,7 +895,6 @@ func FindMinMaxTime(s *parser.EvalStmt) (int64, int64) {
 		minTimestamp = 0
 		maxTimestamp = 0
 	}
-
 	return minTimestamp, maxTimestamp
 }
 
@@ -930,7 +929,14 @@ func getTimeRangesForSelector(s *parser.EvalStmt, n *parser.VectorSelector, path
 		// before the start time. We subtract one from the range to
 		// exclude samples positioned directly at the lower boundary of
 		// the range.
-		start -= durationMilliseconds(evalRange) - 1
+		if n.Anchored || n.Smoothed {
+			start -= durationMilliseconds(evalRange) + durationMilliseconds(s.LookbackDelta)
+		} else {
+			start -= durationMilliseconds(evalRange) - 1
+		}
+		if n.Smoothed {
+			end += durationMilliseconds(s.LookbackDelta)
+		}
 	}
 
 	offsetMilliseconds := durationMilliseconds(n.OriginalOffset)
@@ -1741,7 +1747,14 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		inArgs[matrixArgIndex] = inMatrix
 		enh := &EvalNodeHelper{Out: make(Vector, 0, 1), enableDelayedNameRemoval: ev.enableDelayedNameRemoval}
 		// Process all the calls for one time series at a time.
-		it := storage.NewBuffer(selRange)
+		storageSelRange := selRange
+		if selVS.Anchored {
+			storageSelRange += durationMilliseconds(ev.lookbackDelta)
+		}
+		if selVS.Smoothed {
+			storageSelRange += durationMilliseconds(2 * ev.lookbackDelta)
+		}
+		it := storage.NewBuffer(storageSelRange)
 		var chkIter chunkenc.Iterator
 
 		// The last_over_time function acts like offset; thus, it
@@ -1773,7 +1786,10 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			}
 			inMatrix[0].Metric = selVS.Series[i].Labels()
 			for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
-				step++
+				if selVS.Anchored || selVS.Smoothed {
+					chkIter = s.Iterator(chkIter)
+					it.Reset(chkIter)
+				}
 				// Set the non-matrix arguments.
 				// They are scalar, so it is safe to use the step number
 				// when looking up the argument, as there will be no gaps.
@@ -1785,13 +1801,20 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				// Evaluate the matrix selector for this series
 				// for this step, but only if this is the 1st
 				// iteration or no @ modifier has been used.
-				if ts == ev.startTimestamp || selVS.Timestamp == nil {
+				if ts == ev.startTimestamp || selVS.Timestamp == nil || selVS.Anchored || selVS.Smoothed {
 					maxt := ts - offset
 					mint := maxt - selRange
-					floats, histograms = ev.matrixIterSlice(it, mint, maxt, floats, histograms)
+					floats, histograms = ev.matrixIterSlice(it, mint, maxt, floats, histograms, selVS.Anchored, selVS.Smoothed)
 				}
 				if len(floats)+len(histograms) == 0 {
 					continue
+				}
+
+				if selVS.Anchored {
+					floats = anchorFloats(floats, ts, selRange)
+				}
+				if selVS.Smoothed {
+					floats = smoothFloats(floats, ts, selRange)
 				}
 				inMatrix[0].Floats = floats
 				inMatrix[0].Histograms = histograms
@@ -2282,9 +2305,15 @@ func (ev *evaluator) matrixSelector(ctx context.Context, node *parser.MatrixSele
 		maxt   = ev.startTimestamp - offset
 		mint   = maxt - durationMilliseconds(node.Range)
 		matrix = make(Matrix, 0, len(vs.Series))
-
-		it = storage.NewBuffer(durationMilliseconds(node.Range))
 	)
+	selRange := node.Range
+	if vs.Anchored {
+		selRange += ev.lookbackDelta
+	}
+	if vs.Smoothed {
+		selRange += ev.lookbackDelta
+	}
+	it := storage.NewBuffer(durationMilliseconds(selRange))
 	ws, err := checkAndExpandSeriesSet(ctx, node)
 	if err != nil {
 		ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
@@ -2302,7 +2331,7 @@ func (ev *evaluator) matrixSelector(ctx context.Context, node *parser.MatrixSele
 			Metric: series[i].Labels(),
 		}
 
-		ss.Floats, ss.Histograms = ev.matrixIterSlice(it, mint, maxt, nil, nil)
+		ss.Floats, ss.Histograms = ev.matrixIterSlice(it, mint, maxt, nil, nil, vs.Anchored, vs.Smoothed)
 		totalSize := int64(len(ss.Floats)) + int64(totalHPointSize(ss.Histograms))
 		ev.samplesStats.IncrementSamplesAtTimestamp(ev.startTimestamp, totalSize)
 
@@ -2326,12 +2355,12 @@ func (ev *evaluator) matrixSelector(ctx context.Context, node *parser.MatrixSele
 // are populated from the iterator.
 func (ev *evaluator) matrixIterSlice(
 	it *storage.BufferedSeriesIterator, mint, maxt int64,
-	floats []FPoint, histograms []HPoint,
+	floats []FPoint, histograms []HPoint, anchored bool, smoothed bool,
 ) ([]FPoint, []HPoint) {
 	mintFloats, mintHistograms := mint, mint
 
 	// First floats...
-	if len(floats) > 0 && floats[len(floats)-1].T > mint {
+	if len(floats) > 0 && floats[len(floats)-1].T > mint && !anchored && !smoothed {
 		// There is an overlap between previous and current ranges, retain common
 		// points. In most such cases:
 		//   (a) the overlap is significantly larger than the eval step; and/or
@@ -2384,7 +2413,12 @@ func (ev *evaluator) matrixIterSlice(
 		return floats, histograms
 	}
 
-	soughtValueType := it.Seek(maxt)
+	seekValue := maxt
+	if smoothed {
+		seekValue = maxt + durationMilliseconds(ev.lookbackDelta)
+	}
+
+	soughtValueType := it.Seek(seekValue)
 	if soughtValueType == chunkenc.ValNone {
 		if it.Err() != nil {
 			ev.error(it.Err())
@@ -2392,6 +2426,34 @@ func (ev *evaluator) matrixIterSlice(
 	}
 
 	buf := it.Buffer()
+	var foundPoint, usedPoint, addedNext bool
+	var prevT int64
+	var prevF float64
+	for _, f := range floats {
+		if f.T > maxt {
+			if addedNext || !smoothed {
+				break
+			}
+			floats = append(floats, FPoint{T: f.T, F: f.F})
+			addedNext = true
+			continue
+		}
+		if f.T > mintFloats {
+			if foundPoint && !usedPoint && (anchored || smoothed) {
+				floats = append(floats, FPoint{T: prevT, F: prevF})
+				usedPoint = true
+			}
+			ev.currentSamples++
+			if ev.currentSamples > ev.maxSamples {
+				ev.error(ErrTooManySamples(env))
+			}
+			floats = append(floats, FPoint{T: f.T, F: f.F})
+		} else {
+			prevT = f.T
+			prevF = f.F
+			foundPoint = true
+		}
+	}
 loop:
 	for {
 		switch buf.Next() {
@@ -2425,17 +2487,34 @@ loop:
 			if value.IsStaleNaN(f) {
 				continue loop
 			}
+			if t > maxt {
+				if addedNext || !smoothed {
+					break loop
+				}
+				floats = append(floats, FPoint{T: t, F: f})
+				addedNext = true
+				continue loop
+			}
 			// Values in the buffer are guaranteed to be smaller than maxt.
 			if t > mintFloats {
+				if floats == nil {
+					floats = getFPointSlice(16)
+				}
+				if foundPoint && !usedPoint && (anchored || smoothed) {
+					floats = append(floats, FPoint{T: prevT, F: prevF})
+					usedPoint = true
+				}
 				ev.currentSamples++
 				if ev.currentSamples > ev.maxSamples {
 					ev.error(ErrTooManySamples(env))
 				}
-				if floats == nil {
-					floats = getFPointSlice(16)
-				}
 				floats = append(floats, FPoint{T: t, F: f})
+			} else {
+				prevT = t
+				prevF = f
+				foundPoint = true
 			}
+
 		}
 	}
 	// The sought sample might also be in the range.
@@ -3870,4 +3949,39 @@ func (ev *evaluator) gatherVector(ts int64, input Matrix, output Vector, bufHelp
 	ev.samplesStats.UpdatePeak(ev.currentSamples)
 
 	return output, bufHelpers
+}
+
+func anchorFloats(floats []FPoint, ts int64, selRange int64) []FPoint {
+	if floats[0].T < ts-selRange {
+		floats[0].T = ts - selRange
+	} else if len(floats) > 1 {
+		floats = append([]FPoint{{T: ts - selRange, F: floats[0].F}}, floats...)
+	}
+	if len(floats) > 1 && floats[len(floats)-1].T != ts {
+		floats = append(floats, FPoint{T: ts, F: floats[len(floats)-1].F})
+	}
+	return floats
+}
+
+func smoothFloats(floats []FPoint, ts int64, selRange int64) []FPoint {
+	if len(floats) < 2 {
+		return floats
+	}
+	// Smooth first point
+	if floats[0].T < ts-selRange {
+		floats[0].F = floats[0].F + (floats[1].F-floats[0].F)*(float64(ts-selRange-floats[0].T)/float64(floats[1].T-floats[0].T))
+		floats[0].T = ts - selRange
+	} else if len(floats) > 1 {
+		floats = append([]FPoint{{T: ts - selRange, F: floats[0].F}}, floats...)
+	}
+	if floats[len(floats)-1].T > ts {
+		floats[len(floats)-1].F = floats[len(floats)-1].F +
+			(floats[len(floats)-2].F-floats[len(floats)-1].F)*
+				(float64(floats[len(floats)-1].T-ts)/float64(floats[len(floats)-1].T-floats[len(floats)-2].T))
+		floats[len(floats)-1].T = ts
+	} else if len(floats) > 1 {
+		floats = append(floats, FPoint{T: ts, F: floats[len(floats)-1].F})
+	}
+	return floats
+
 }
