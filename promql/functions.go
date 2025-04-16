@@ -1092,7 +1092,6 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 				if err != nil {
 					return sum, err
 				}
-
 				if counterResetCollision {
 					annos.Add(annotations.NewHistogramCounterResetCollisionWarning(args[0].PositionRange(), annotations.HistogramAdd))
 				}
