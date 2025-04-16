@@ -26,7 +26,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/alertmanager/api/v2/models"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -35,44 +34,15 @@ import (
 	"go.uber.org/atomic"
 	"gopkg.in/yaml.v2"
 
-	"github.com/prometheus/prometheus/discovery"
-
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery"
 	_ "github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 )
 
-func TestPostPath(t *testing.T) {
-	cases := []struct {
-		in, out string
-	}{
-		{
-			in:  "",
-			out: "/api/v2/alerts",
-		},
-		{
-			in:  "/",
-			out: "/api/v2/alerts",
-		},
-		{
-			in:  "/prefix",
-			out: "/prefix/api/v2/alerts",
-		},
-		{
-			in:  "/prefix//",
-			out: "/prefix/api/v2/alerts",
-		},
-		{
-			in:  "prefix//",
-			out: "/prefix/api/v2/alerts",
-		},
-	}
-	for _, c := range cases {
-		require.Equal(t, c.out, postPath(c.in, config.AlertmanagerAPIVersionV2))
-	}
-}
+const maxBatchSize = 256
 
 func TestHandlerNextBatch(t *testing.T) {
 	h := NewManager(&Options{}, nil)
@@ -414,6 +384,7 @@ func TestCustomDo(t *testing.T) {
 func TestExternalLabels(t *testing.T) {
 	h := NewManager(&Options{
 		QueueCapacity:  3 * maxBatchSize,
+		MaxBatchSize:   maxBatchSize,
 		ExternalLabels: labels.FromStrings("a", "b"),
 		RelabelConfigs: []*relabel.Config{
 			{
@@ -448,6 +419,7 @@ func TestExternalLabels(t *testing.T) {
 func TestHandlerRelabel(t *testing.T) {
 	h := NewManager(&Options{
 		QueueCapacity: 3 * maxBatchSize,
+		MaxBatchSize:  maxBatchSize,
 		RelabelConfigs: []*relabel.Config{
 			{
 				SourceLabels: model.LabelNames{"alertname"},
@@ -526,6 +498,7 @@ func TestHandlerQueuing(t *testing.T) {
 	h := NewManager(
 		&Options{
 			QueueCapacity: 3 * maxBatchSize,
+			MaxBatchSize:  maxBatchSize,
 		},
 		nil,
 	)
@@ -614,16 +587,6 @@ func (a alertmanagerMock) url() *url.URL {
 		panic(err)
 	}
 	return u
-}
-
-func TestLabelSetNotReused(t *testing.T) {
-	tg := makeInputTargetGroup()
-	_, _, err := AlertmanagerFromGroup(tg, &config.AlertmanagerConfig{})
-
-	require.NoError(t, err)
-
-	// Target modified during alertmanager extraction
-	require.Equal(t, tg, makeInputTargetGroup())
 }
 
 func TestReload(t *testing.T) {
@@ -738,10 +701,6 @@ func makeInputTargetGroup() *targetgroup.Group {
 		},
 		Source: "testsource",
 	}
-}
-
-func TestLabelsToOpenAPILabelSet(t *testing.T) {
-	require.Equal(t, models.LabelSet{"aaa": "111", "bbb": "222"}, labelsToOpenAPILabelSet(labels.FromStrings("aaa", "111", "bbb", "222")))
 }
 
 // TestHangingNotifier ensures that the notifier takes into account SD changes even when there are

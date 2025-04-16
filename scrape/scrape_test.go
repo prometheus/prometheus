@@ -82,10 +82,14 @@ func newTestScrapeMetrics(t testing.TB) *scrapeMetrics {
 
 func TestNewScrapePool(t *testing.T) {
 	var (
-		app   = &nopAppendable{}
-		cfg   = &config.ScrapeConfig{}
-		sp, _ = newScrapePool(cfg, app, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
+		app = &nopAppendable{}
+		cfg = &config.ScrapeConfig{
+			MetricNameValidationScheme: config.UTF8ValidationConfig,
+			MetricNameEscapingScheme:   model.AllowUTF8,
+		}
+		sp, err = newScrapePool(cfg, app, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
 	)
+	require.NoError(t, err)
 
 	a, ok := sp.appendable.(*nopAppendable)
 	require.True(t, ok, "Failure to append.")
@@ -321,8 +325,10 @@ func TestDroppedTargetsList(t *testing.T) {
 	var (
 		app = &nopAppendable{}
 		cfg = &config.ScrapeConfig{
-			JobName:        "dropMe",
-			ScrapeInterval: model.Duration(1),
+			JobName:                    "dropMe",
+			ScrapeInterval:             model.Duration(1),
+			MetricNameValidationScheme: config.UTF8ValidationConfig,
+			MetricNameEscapingScheme:   model.AllowUTF8,
 			RelabelConfigs: []*relabel.Config{
 				{
 					Action:       relabel.Drop,
@@ -366,8 +372,10 @@ func TestDiscoveredLabelsUpdate(t *testing.T) {
 
 	// These are used when syncing so need this to avoid a panic.
 	sp.config = &config.ScrapeConfig{
-		ScrapeInterval: model.Duration(1),
-		ScrapeTimeout:  model.Duration(1),
+		ScrapeInterval:             model.Duration(1),
+		ScrapeTimeout:              model.Duration(1),
+		MetricNameValidationScheme: config.UTF8ValidationConfig,
+		MetricNameEscapingScheme:   model.AllowUTF8,
 	}
 	sp.activeTargets = make(map[uint64]*Target)
 	t1 := &Target{
@@ -496,8 +504,10 @@ func TestScrapePoolReload(t *testing.T) {
 	stopped := map[uint64]bool{}
 
 	reloadCfg := &config.ScrapeConfig{
-		ScrapeInterval: model.Duration(3 * time.Second),
-		ScrapeTimeout:  model.Duration(2 * time.Second),
+		ScrapeInterval:             model.Duration(3 * time.Second),
+		ScrapeTimeout:              model.Duration(2 * time.Second),
+		MetricNameValidationScheme: config.UTF8ValidationConfig,
+		MetricNameEscapingScheme:   model.AllowUTF8,
 	}
 	// On starting to run, new loops created on reload check whether their preceding
 	// equivalents have been stopped.
@@ -588,8 +598,10 @@ func TestScrapePoolReload(t *testing.T) {
 
 func TestScrapePoolReloadPreserveRelabeledIntervalTimeout(t *testing.T) {
 	reloadCfg := &config.ScrapeConfig{
-		ScrapeInterval: model.Duration(3 * time.Second),
-		ScrapeTimeout:  model.Duration(2 * time.Second),
+		ScrapeInterval:             model.Duration(3 * time.Second),
+		ScrapeTimeout:              model.Duration(2 * time.Second),
+		MetricNameValidationScheme: config.UTF8ValidationConfig,
+		MetricNameEscapingScheme:   model.AllowUTF8,
 	}
 	newLoop := func(opts scrapeLoopOptions) loop {
 		l := &testLoop{interval: opts.interval, timeout: opts.timeout}
@@ -687,9 +699,11 @@ func TestScrapePoolTargetLimit(t *testing.T) {
 	reloadWithLimit := func(l uint) {
 		limit = l
 		require.NoError(t, sp.reload(&config.ScrapeConfig{
-			ScrapeInterval: model.Duration(3 * time.Second),
-			ScrapeTimeout:  model.Duration(2 * time.Second),
-			TargetLimit:    l,
+			ScrapeInterval:             model.Duration(3 * time.Second),
+			ScrapeTimeout:              model.Duration(2 * time.Second),
+			MetricNameValidationScheme: config.UTF8ValidationConfig,
+			MetricNameEscapingScheme:   model.AllowUTF8,
+			TargetLimit:                l,
 		}))
 	}
 
@@ -776,7 +790,10 @@ func TestScrapePoolTargetLimit(t *testing.T) {
 }
 
 func TestScrapePoolAppender(t *testing.T) {
-	cfg := &config.ScrapeConfig{}
+	cfg := &config.ScrapeConfig{
+		MetricNameValidationScheme: config.UTF8ValidationConfig,
+		MetricNameEscapingScheme:   model.AllowUTF8,
+	}
 	app := &nopAppendable{}
 	sp, _ := newScrapePool(cfg, app, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
 
@@ -849,7 +866,12 @@ func TestScrapePoolRaces(t *testing.T) {
 	interval, _ := model.ParseDuration("1s")
 	timeout, _ := model.ParseDuration("500ms")
 	newConfig := func() *config.ScrapeConfig {
-		return &config.ScrapeConfig{ScrapeInterval: interval, ScrapeTimeout: timeout}
+		return &config.ScrapeConfig{
+			ScrapeInterval:             interval,
+			ScrapeTimeout:              timeout,
+			MetricNameValidationScheme: config.UTF8ValidationConfig,
+			MetricNameEscapingScheme:   model.AllowUTF8,
+		}
 	}
 	sp, _ := newScrapePool(newConfig(), &nopAppendable{}, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
 	tgts := []*targetgroup.Group{
@@ -919,8 +941,10 @@ func TestScrapePoolScrapeLoopsStarted(t *testing.T) {
 	}
 
 	require.NoError(t, sp.reload(&config.ScrapeConfig{
-		ScrapeInterval: model.Duration(3 * time.Second),
-		ScrapeTimeout:  model.Duration(2 * time.Second),
+		ScrapeInterval:             model.Duration(3 * time.Second),
+		ScrapeTimeout:              model.Duration(2 * time.Second),
+		MetricNameValidationScheme: config.UTF8ValidationConfig,
+		MetricNameEscapingScheme:   model.AllowUTF8,
 	}))
 	sp.Sync(tgs)
 
@@ -963,7 +987,8 @@ func newBasicScrapeLoopWithFallback(t testing.TB, ctx context.Context, scraper s
 		false,
 		newTestScrapeMetrics(t),
 		false,
-		model.LegacyValidation,
+		model.UTF8Validation,
+		model.NoEscaping,
 		fallback,
 	)
 }
@@ -1109,7 +1134,8 @@ func TestScrapeLoopRun(t *testing.T) {
 		false,
 		scrapeMetrics,
 		false,
-		model.LegacyValidation,
+		model.UTF8Validation,
+		model.NoEscaping,
 		"",
 	)
 
@@ -1256,7 +1282,8 @@ func TestScrapeLoopMetadata(t *testing.T) {
 		false,
 		scrapeMetrics,
 		false,
-		model.LegacyValidation,
+		model.UTF8Validation,
+		model.NoEscaping,
 		"",
 	)
 	defer cancel()
@@ -1325,14 +1352,13 @@ func TestScrapeLoopSeriesAdded(t *testing.T) {
 }
 
 func TestScrapeLoopFailWithInvalidLabelsAfterRelabel(t *testing.T) {
-	model.NameValidationScheme = model.LegacyValidation
 	s := teststorage.New(t)
 	defer s.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	target := &Target{
-		labels: labels.FromStrings("pod_label_invalid_012", "test"),
+		labels: labels.FromStrings("pod_label_invalid_012\xff", "test"),
 	}
 	relabelConfig := []*relabel.Config{{
 		Action:      relabel.LabelMap,
@@ -1357,10 +1383,6 @@ func TestScrapeLoopFailWithInvalidLabelsAfterRelabel(t *testing.T) {
 func TestScrapeLoopFailLegacyUnderUTF8(t *testing.T) {
 	// Test that scrapes fail when default validation is utf8 but scrape config is
 	// legacy.
-	model.NameValidationScheme = model.UTF8Validation
-	defer func() {
-		model.NameValidationScheme = model.LegacyValidation
-	}()
 	s := teststorage.New(t)
 	defer s.Close()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -2395,7 +2417,7 @@ metric_total{n="2"} 2 # {t="2"} 2.0 20000
 			},
 		},
 		{
-			title: "Native histogram with three exemplars",
+			title: "Native histogram with three exemplars from classic buckets",
 
 			enableNativeHistogramsIngestion: true,
 			scrapeText: `name: "test_histogram"
@@ -2644,6 +2666,180 @@ metric: <
 				{Labels: labels.FromStrings("dummyID", "58215"), Value: -0.00019, Ts: 1625851055146, HasTs: true},
 			},
 		},
+		{
+			title:                           "Native histogram with exemplars and no classic buckets",
+			contentType:                     "application/vnd.google.protobuf",
+			enableNativeHistogramsIngestion: true,
+			scrapeText: `name: "test_histogram"
+help: "Test histogram."
+type: HISTOGRAM
+metric: <
+  histogram: <
+    sample_count: 175
+    sample_sum: 0.0008280461746287094
+    schema: 3
+    zero_threshold: 2.938735877055719e-39
+    zero_count: 2
+    negative_span: <
+      offset: -162
+      length: 1
+    >
+    negative_span: <
+      offset: 23
+      length: 4
+    >
+    negative_delta: 1
+    negative_delta: 3
+    negative_delta: -2
+    negative_delta: -1
+    negative_delta: 1
+    positive_span: <
+      offset: -161
+      length: 1
+    >
+    positive_span: <
+      offset: 8
+      length: 3
+    >
+    positive_delta: 1
+    positive_delta: 2
+    positive_delta: -1
+    positive_delta: -1
+	exemplars: <
+	  label: <
+        name: "dummyID"
+        value: "59732"
+      >
+      value: -0.00039
+      timestamp: <
+        seconds: 1625851155
+        nanos: 146848499
+      >
+	>
+	exemplars: <
+	  label: <
+        name: "dummyID"
+        value: "58242"
+      >
+      value: -0.00019
+      timestamp: <
+        seconds: 1625851055
+        nanos: 146848599
+      >
+	>
+	exemplars: <
+      label: <
+        name: "dummyID"
+        value: "5617"
+      >
+      value: -0.00029
+    >
+  >
+  timestamp_ms: 1234568
+>
+
+`,
+			histograms: []histogramSample{{
+				t:      1234568,
+				metric: labels.FromStrings("__name__", "test_histogram"),
+				h: &histogram.Histogram{
+					Count:         175,
+					ZeroCount:     2,
+					Sum:           0.0008280461746287094,
+					ZeroThreshold: 2.938735877055719e-39,
+					Schema:        3,
+					PositiveSpans: []histogram.Span{
+						{Offset: -161, Length: 1},
+						{Offset: 8, Length: 3},
+					},
+					NegativeSpans: []histogram.Span{
+						{Offset: -162, Length: 1},
+						{Offset: 23, Length: 4},
+					},
+					PositiveBuckets: []int64{1, 2, -1, -1},
+					NegativeBuckets: []int64{1, 3, -2, -1, 1},
+				},
+			}},
+			exemplars: []exemplar.Exemplar{
+				// Exemplars with missing timestamps are dropped for native histograms.
+				{Labels: labels.FromStrings("dummyID", "58242"), Value: -0.00019, Ts: 1625851055146, HasTs: true},
+				{Labels: labels.FromStrings("dummyID", "59732"), Value: -0.00039, Ts: 1625851155146, HasTs: true},
+			},
+		},
+		{
+			title:                           "Native histogram with exemplars but ingestion disabled",
+			contentType:                     "application/vnd.google.protobuf",
+			enableNativeHistogramsIngestion: false,
+			scrapeText: `name: "test_histogram"
+help: "Test histogram."
+type: HISTOGRAM
+metric: <
+  histogram: <
+    sample_count: 175
+    sample_sum: 0.0008280461746287094
+    schema: 3
+    zero_threshold: 2.938735877055719e-39
+    zero_count: 2
+    negative_span: <
+      offset: -162
+      length: 1
+    >
+    negative_span: <
+      offset: 23
+      length: 4
+    >
+    negative_delta: 1
+    negative_delta: 3
+    negative_delta: -2
+    negative_delta: -1
+    negative_delta: 1
+    positive_span: <
+      offset: -161
+      length: 1
+    >
+    positive_span: <
+      offset: 8
+      length: 3
+    >
+    positive_delta: 1
+    positive_delta: 2
+    positive_delta: -1
+    positive_delta: -1
+	exemplars: <
+	  label: <
+        name: "dummyID"
+        value: "59732"
+      >
+      value: -0.00039
+      timestamp: <
+        seconds: 1625851155
+        nanos: 146848499
+      >
+	>
+	exemplars: <
+	  label: <
+        name: "dummyID"
+        value: "58242"
+      >
+      value: -0.00019
+      timestamp: <
+        seconds: 1625851055
+        nanos: 146848599
+      >
+	>
+	exemplars: <
+      label: <
+        name: "dummyID"
+        value: "5617"
+      >
+      value: -0.00029
+    >
+  >
+  timestamp_ms: 1234568
+>
+
+`,
+		},
 	}
 
 	for _, test := range tests {
@@ -2872,6 +3068,47 @@ func TestScrapeLoopOutOfBoundsTimeError(t *testing.T) {
 	require.Equal(t, 0, seriesAdded)
 }
 
+func TestAcceptHeader(t *testing.T) {
+	tests := []struct {
+		name            string
+		scrapeProtocols []config.ScrapeProtocol
+		scheme          model.EscapingScheme
+		expectedHeader  string
+	}{
+		{
+			name:            "default scrape protocols with underscore escaping",
+			scrapeProtocols: config.DefaultScrapeProtocols,
+			scheme:          model.UnderscoreEscaping,
+			expectedHeader:  "application/openmetrics-text;version=1.0.0;escaping=underscores;q=0.6,application/openmetrics-text;version=0.0.1;q=0.5,text/plain;version=1.0.0;escaping=underscores;q=0.4,text/plain;version=0.0.4;q=0.3,*/*;q=0.2",
+		},
+		{
+			name:            "default proto first scrape protocols with underscore escaping",
+			scrapeProtocols: config.DefaultProtoFirstScrapeProtocols,
+			scheme:          model.DotsEscaping,
+			expectedHeader:  "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.6,application/openmetrics-text;version=1.0.0;escaping=dots;q=0.5,application/openmetrics-text;version=0.0.1;q=0.4,text/plain;version=1.0.0;escaping=dots;q=0.3,text/plain;version=0.0.4;q=0.2,*/*;q=0.1",
+		},
+		{
+			name:            "default scrape protocols with no escaping",
+			scrapeProtocols: config.DefaultScrapeProtocols,
+			scheme:          model.NoEscaping,
+			expectedHeader:  "application/openmetrics-text;version=1.0.0;escaping=allow-utf-8;q=0.6,application/openmetrics-text;version=0.0.1;q=0.5,text/plain;version=1.0.0;escaping=allow-utf-8;q=0.4,text/plain;version=0.0.4;q=0.3,*/*;q=0.2",
+		},
+		{
+			name:            "default proto first scrape protocols with no escaping",
+			scrapeProtocols: config.DefaultProtoFirstScrapeProtocols,
+			scheme:          model.NoEscaping,
+			expectedHeader:  "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited;q=0.6,application/openmetrics-text;version=1.0.0;escaping=allow-utf-8;q=0.5,application/openmetrics-text;version=0.0.1;q=0.4,text/plain;version=1.0.0;escaping=allow-utf-8;q=0.3,text/plain;version=0.0.4;q=0.2,*/*;q=0.1",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			header := acceptHeader(tc.scrapeProtocols, tc.scheme)
+			require.Equal(t, tc.expectedHeader, header)
+		})
+	}
+}
+
 func TestTargetScraperScrapeOK(t *testing.T) {
 	const (
 		configTimeout   = 1500 * time.Millisecond
@@ -2955,31 +3192,31 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 
 	for _, tc := range []struct {
 		scrapeProtocols []config.ScrapeProtocol
-		scheme          model.ValidationScheme
+		scheme          model.EscapingScheme
 		protobufParsing bool
 		allowUTF8       bool
 	}{
 		{
 			scrapeProtocols: config.DefaultScrapeProtocols,
-			scheme:          model.LegacyValidation,
+			scheme:          model.UnderscoreEscaping,
 			protobufParsing: false,
 			allowUTF8:       false,
 		},
 		{
 			scrapeProtocols: config.DefaultProtoFirstScrapeProtocols,
-			scheme:          model.LegacyValidation,
+			scheme:          model.UnderscoreEscaping,
 			protobufParsing: true,
 			allowUTF8:       false,
 		},
 		{
 			scrapeProtocols: config.DefaultScrapeProtocols,
-			scheme:          model.UTF8Validation,
+			scheme:          model.NoEscaping,
 			protobufParsing: false,
 			allowUTF8:       true,
 		},
 		{
 			scrapeProtocols: config.DefaultProtoFirstScrapeProtocols,
-			scheme:          model.UTF8Validation,
+			scheme:          model.NoEscaping,
 			protobufParsing: true,
 			allowUTF8:       true,
 		},
@@ -3016,7 +3253,7 @@ func TestTargetScrapeScrapeCancel(t *testing.T) {
 			scrapeConfig: &config.ScrapeConfig{},
 		},
 		client:       http.DefaultClient,
-		acceptHeader: acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, model.LegacyValidation),
+		acceptHeader: acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, model.UnderscoreEscaping),
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -3072,7 +3309,7 @@ func TestTargetScrapeScrapeNotFound(t *testing.T) {
 			scrapeConfig: &config.ScrapeConfig{},
 		},
 		client:       http.DefaultClient,
-		acceptHeader: acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, model.LegacyValidation),
+		acceptHeader: acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, model.UnderscoreEscaping),
 	}
 
 	resp, err := ts.scrape(context.Background())
@@ -3117,7 +3354,7 @@ func TestTargetScraperBodySizeLimit(t *testing.T) {
 		},
 		client:        http.DefaultClient,
 		bodySizeLimit: bodySizeLimit,
-		acceptHeader:  acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, model.LegacyValidation),
+		acceptHeader:  acceptHeader(config.DefaultGlobalConfig.ScrapeProtocols, model.UnderscoreEscaping),
 		metrics:       newTestScrapeMetrics(t),
 	}
 	var buf bytes.Buffer
@@ -3377,15 +3614,20 @@ func TestReuseScrapeCache(t *testing.T) {
 	var (
 		app = &nopAppendable{}
 		cfg = &config.ScrapeConfig{
-			JobName:        "Prometheus",
-			ScrapeTimeout:  model.Duration(5 * time.Second),
-			ScrapeInterval: model.Duration(5 * time.Second),
-			MetricsPath:    "/metrics",
+			JobName:                    "Prometheus",
+			ScrapeTimeout:              model.Duration(5 * time.Second),
+			ScrapeInterval:             model.Duration(5 * time.Second),
+			MetricsPath:                "/metrics",
+			MetricNameValidationScheme: config.UTF8ValidationConfig,
+			MetricNameEscapingScheme:   model.AllowUTF8,
 		}
 		sp, _ = newScrapePool(cfg, app, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
 		t1    = &Target{
-			labels:       labels.FromStrings("labelNew", "nameNew", "labelNew1", "nameNew1", "labelNew2", "nameNew2"),
-			scrapeConfig: &config.ScrapeConfig{},
+			labels: labels.FromStrings("labelNew", "nameNew", "labelNew1", "nameNew1", "labelNew2", "nameNew2"),
+			scrapeConfig: &config.ScrapeConfig{
+				MetricNameValidationScheme: config.UTF8ValidationConfig,
+				MetricNameEscapingScheme:   model.AllowUTF8,
+			},
 		}
 		proxyURL, _ = url.Parse("http://localhost:2128")
 	)
@@ -3399,40 +3641,48 @@ func TestReuseScrapeCache(t *testing.T) {
 		{
 			keep: true,
 			newConfig: &config.ScrapeConfig{
-				JobName:        "Prometheus",
-				ScrapeInterval: model.Duration(5 * time.Second),
-				ScrapeTimeout:  model.Duration(5 * time.Second),
-				MetricsPath:    "/metrics",
+				JobName:                    "Prometheus",
+				ScrapeInterval:             model.Duration(5 * time.Second),
+				ScrapeTimeout:              model.Duration(5 * time.Second),
+				MetricsPath:                "/metrics",
+				MetricNameValidationScheme: config.UTF8ValidationConfig,
+				MetricNameEscapingScheme:   model.AllowUTF8,
 			},
 		},
 		{
 			keep: false,
 			newConfig: &config.ScrapeConfig{
-				JobName:        "Prometheus",
-				ScrapeInterval: model.Duration(5 * time.Second),
-				ScrapeTimeout:  model.Duration(15 * time.Second),
-				MetricsPath:    "/metrics2",
+				JobName:                    "Prometheus",
+				ScrapeInterval:             model.Duration(5 * time.Second),
+				ScrapeTimeout:              model.Duration(15 * time.Second),
+				MetricsPath:                "/metrics2",
+				MetricNameValidationScheme: config.UTF8ValidationConfig,
+				MetricNameEscapingScheme:   model.AllowUTF8,
 			},
 		},
 		{
 			keep: true,
 			newConfig: &config.ScrapeConfig{
-				JobName:        "Prometheus",
-				SampleLimit:    400,
-				ScrapeInterval: model.Duration(5 * time.Second),
-				ScrapeTimeout:  model.Duration(15 * time.Second),
-				MetricsPath:    "/metrics2",
+				JobName:                    "Prometheus",
+				SampleLimit:                400,
+				ScrapeInterval:             model.Duration(5 * time.Second),
+				ScrapeTimeout:              model.Duration(15 * time.Second),
+				MetricsPath:                "/metrics2",
+				MetricNameValidationScheme: config.UTF8ValidationConfig,
+				MetricNameEscapingScheme:   model.AllowUTF8,
 			},
 		},
 		{
 			keep: false,
 			newConfig: &config.ScrapeConfig{
-				JobName:         "Prometheus",
-				HonorTimestamps: true,
-				SampleLimit:     400,
-				ScrapeInterval:  model.Duration(5 * time.Second),
-				ScrapeTimeout:   model.Duration(15 * time.Second),
-				MetricsPath:     "/metrics2",
+				JobName:                    "Prometheus",
+				HonorTimestamps:            true,
+				SampleLimit:                400,
+				ScrapeInterval:             model.Duration(5 * time.Second),
+				ScrapeTimeout:              model.Duration(15 * time.Second),
+				MetricsPath:                "/metrics2",
+				MetricNameValidationScheme: config.UTF8ValidationConfig,
+				MetricNameEscapingScheme:   model.AllowUTF8,
 			},
 		},
 		{
@@ -3444,64 +3694,76 @@ func TestReuseScrapeCache(t *testing.T) {
 				HTTPClientConfig: config_util.HTTPClientConfig{
 					ProxyConfig: config_util.ProxyConfig{ProxyURL: config_util.URL{URL: proxyURL}},
 				},
-				ScrapeInterval: model.Duration(5 * time.Second),
-				ScrapeTimeout:  model.Duration(15 * time.Second),
-				MetricsPath:    "/metrics2",
+				ScrapeInterval:             model.Duration(5 * time.Second),
+				ScrapeTimeout:              model.Duration(15 * time.Second),
+				MetricsPath:                "/metrics2",
+				MetricNameValidationScheme: config.UTF8ValidationConfig,
+				MetricNameEscapingScheme:   model.AllowUTF8,
 			},
 		},
 		{
 			keep: false,
 			newConfig: &config.ScrapeConfig{
-				JobName:         "Prometheus",
-				HonorTimestamps: true,
-				HonorLabels:     true,
-				SampleLimit:     400,
-				ScrapeInterval:  model.Duration(5 * time.Second),
-				ScrapeTimeout:   model.Duration(15 * time.Second),
-				MetricsPath:     "/metrics2",
+				JobName:                    "Prometheus",
+				HonorTimestamps:            true,
+				HonorLabels:                true,
+				SampleLimit:                400,
+				ScrapeInterval:             model.Duration(5 * time.Second),
+				ScrapeTimeout:              model.Duration(15 * time.Second),
+				MetricsPath:                "/metrics2",
+				MetricNameValidationScheme: config.UTF8ValidationConfig,
+				MetricNameEscapingScheme:   model.AllowUTF8,
 			},
 		},
 		{
 			keep: false,
 			newConfig: &config.ScrapeConfig{
-				JobName:        "Prometheus",
-				ScrapeInterval: model.Duration(5 * time.Second),
-				ScrapeTimeout:  model.Duration(15 * time.Second),
-				MetricsPath:    "/metrics",
-				LabelLimit:     1,
+				JobName:                    "Prometheus",
+				ScrapeInterval:             model.Duration(5 * time.Second),
+				ScrapeTimeout:              model.Duration(15 * time.Second),
+				MetricsPath:                "/metrics",
+				LabelLimit:                 1,
+				MetricNameValidationScheme: config.UTF8ValidationConfig,
+				MetricNameEscapingScheme:   model.AllowUTF8,
 			},
 		},
 		{
 			keep: false,
 			newConfig: &config.ScrapeConfig{
-				JobName:        "Prometheus",
-				ScrapeInterval: model.Duration(5 * time.Second),
-				ScrapeTimeout:  model.Duration(15 * time.Second),
-				MetricsPath:    "/metrics",
-				LabelLimit:     15,
+				JobName:                    "Prometheus",
+				ScrapeInterval:             model.Duration(5 * time.Second),
+				ScrapeTimeout:              model.Duration(15 * time.Second),
+				MetricsPath:                "/metrics",
+				LabelLimit:                 15,
+				MetricNameValidationScheme: config.UTF8ValidationConfig,
+				MetricNameEscapingScheme:   model.AllowUTF8,
 			},
 		},
 		{
 			keep: false,
 			newConfig: &config.ScrapeConfig{
-				JobName:              "Prometheus",
-				ScrapeInterval:       model.Duration(5 * time.Second),
-				ScrapeTimeout:        model.Duration(15 * time.Second),
-				MetricsPath:          "/metrics",
-				LabelLimit:           15,
-				LabelNameLengthLimit: 5,
+				JobName:                    "Prometheus",
+				ScrapeInterval:             model.Duration(5 * time.Second),
+				ScrapeTimeout:              model.Duration(15 * time.Second),
+				MetricsPath:                "/metrics",
+				LabelLimit:                 15,
+				LabelNameLengthLimit:       5,
+				MetricNameValidationScheme: config.UTF8ValidationConfig,
+				MetricNameEscapingScheme:   model.AllowUTF8,
 			},
 		},
 		{
 			keep: false,
 			newConfig: &config.ScrapeConfig{
-				JobName:               "Prometheus",
-				ScrapeInterval:        model.Duration(5 * time.Second),
-				ScrapeTimeout:         model.Duration(15 * time.Second),
-				MetricsPath:           "/metrics",
-				LabelLimit:            15,
-				LabelNameLengthLimit:  5,
-				LabelValueLengthLimit: 7,
+				JobName:                    "Prometheus",
+				ScrapeInterval:             model.Duration(5 * time.Second),
+				ScrapeTimeout:              model.Duration(15 * time.Second),
+				MetricsPath:                "/metrics",
+				LabelLimit:                 15,
+				LabelNameLengthLimit:       5,
+				LabelValueLengthLimit:      7,
+				MetricNameValidationScheme: config.UTF8ValidationConfig,
+				MetricNameEscapingScheme:   model.AllowUTF8,
 			},
 		},
 	}
@@ -3561,10 +3823,12 @@ func TestReuseCacheRace(t *testing.T) {
 	var (
 		app = &nopAppendable{}
 		cfg = &config.ScrapeConfig{
-			JobName:        "Prometheus",
-			ScrapeTimeout:  model.Duration(5 * time.Second),
-			ScrapeInterval: model.Duration(5 * time.Second),
-			MetricsPath:    "/metrics",
+			JobName:                    "Prometheus",
+			ScrapeTimeout:              model.Duration(5 * time.Second),
+			ScrapeInterval:             model.Duration(5 * time.Second),
+			MetricsPath:                "/metrics",
+			MetricNameValidationScheme: config.UTF8ValidationConfig,
+			MetricNameEscapingScheme:   model.AllowUTF8,
 		}
 		buffers = pool.New(1e3, 100e6, 3, func(sz int) interface{} { return make([]byte, 0, sz) })
 		sp, _   = newScrapePool(cfg, app, 0, nil, buffers, &Options{}, newTestScrapeMetrics(t))
@@ -3582,11 +3846,13 @@ func TestReuseCacheRace(t *testing.T) {
 			break
 		}
 		sp.reload(&config.ScrapeConfig{
-			JobName:        "Prometheus",
-			ScrapeTimeout:  model.Duration(1 * time.Millisecond),
-			ScrapeInterval: model.Duration(1 * time.Millisecond),
-			MetricsPath:    "/metrics",
-			SampleLimit:    i,
+			JobName:                    "Prometheus",
+			ScrapeTimeout:              model.Duration(1 * time.Millisecond),
+			ScrapeInterval:             model.Duration(1 * time.Millisecond),
+			MetricsPath:                "/metrics",
+			SampleLimit:                i,
+			MetricNameValidationScheme: config.UTF8ValidationConfig,
+			MetricNameEscapingScheme:   model.AllowUTF8,
 		})
 	}
 }
@@ -3658,11 +3924,13 @@ func TestScrapeReportLimit(t *testing.T) {
 	defer s.Close()
 
 	cfg := &config.ScrapeConfig{
-		JobName:        "test",
-		SampleLimit:    5,
-		Scheme:         "http",
-		ScrapeInterval: model.Duration(100 * time.Millisecond),
-		ScrapeTimeout:  model.Duration(100 * time.Millisecond),
+		JobName:                    "test",
+		SampleLimit:                5,
+		Scheme:                     "http",
+		ScrapeInterval:             model.Duration(100 * time.Millisecond),
+		ScrapeTimeout:              model.Duration(100 * time.Millisecond),
+		MetricNameValidationScheme: config.UTF8ValidationConfig,
+		MetricNameEscapingScheme:   model.AllowUTF8,
 	}
 
 	ts, scrapedTwice := newScrapableServer("metric_a 44\nmetric_b 44\nmetric_c 44\nmetric_d 44\n")
@@ -3711,8 +3979,6 @@ func TestScrapeReportLimit(t *testing.T) {
 func TestScrapeUTF8(t *testing.T) {
 	s := teststorage.New(t)
 	defer s.Close()
-	model.NameValidationScheme = model.UTF8Validation
-	t.Cleanup(func() { model.NameValidationScheme = model.LegacyValidation })
 
 	cfg := &config.ScrapeConfig{
 		JobName:                    "test",
@@ -3720,6 +3986,7 @@ func TestScrapeUTF8(t *testing.T) {
 		ScrapeInterval:             model.Duration(100 * time.Millisecond),
 		ScrapeTimeout:              model.Duration(100 * time.Millisecond),
 		MetricNameValidationScheme: config.UTF8ValidationConfig,
+		MetricNameEscapingScheme:   model.AllowUTF8,
 	}
 	ts, scrapedTwice := newScrapableServer("{\"with.dots\"} 42\n")
 	defer ts.Close()
@@ -3852,8 +4119,10 @@ func TestTargetScrapeIntervalAndTimeoutRelabel(t *testing.T) {
 	interval, _ := model.ParseDuration("2s")
 	timeout, _ := model.ParseDuration("500ms")
 	config := &config.ScrapeConfig{
-		ScrapeInterval: interval,
-		ScrapeTimeout:  timeout,
+		ScrapeInterval:             interval,
+		ScrapeTimeout:              timeout,
+		MetricNameValidationScheme: config.UTF8ValidationConfig,
+		MetricNameEscapingScheme:   model.AllowUTF8,
 		RelabelConfigs: []*relabel.Config{
 			{
 				SourceLabels: model.LabelNames{model.ScrapeIntervalLabel},
@@ -3910,10 +4179,12 @@ func TestLeQuantileReLabel(t *testing.T) {
 				Action:       relabel.Replace,
 			},
 		},
-		SampleLimit:    100,
-		Scheme:         "http",
-		ScrapeInterval: model.Duration(100 * time.Millisecond),
-		ScrapeTimeout:  model.Duration(100 * time.Millisecond),
+		SampleLimit:                100,
+		Scheme:                     "http",
+		ScrapeInterval:             model.Duration(100 * time.Millisecond),
+		ScrapeTimeout:              model.Duration(100 * time.Millisecond),
+		MetricNameValidationScheme: config.UTF8ValidationConfig,
+		MetricNameEscapingScheme:   model.AllowUTF8,
 	}
 
 	metricsText := `
@@ -4360,26 +4631,31 @@ metric: <
 		require.Equal(t, expectedCount, count, "number of histogram series not as expected")
 	}
 
+	tru := true
+	fals := false
 	for metricsTextName, metricsText := range metricsTexts {
 		for name, tc := range map[string]struct {
 			alwaysScrapeClassicHistograms bool
-			convertClassicHistToNHCB      bool
+			convertClassicHistToNHCB      *bool
 		}{
 			"convert with scrape": {
 				alwaysScrapeClassicHistograms: true,
-				convertClassicHistToNHCB:      true,
+				convertClassicHistToNHCB:      &tru,
 			},
 			"convert without scrape": {
 				alwaysScrapeClassicHistograms: false,
-				convertClassicHistToNHCB:      true,
+				convertClassicHistToNHCB:      &tru,
 			},
 			"scrape without convert": {
 				alwaysScrapeClassicHistograms: true,
-				convertClassicHistToNHCB:      false,
+				convertClassicHistToNHCB:      &fals,
+			},
+			"scrape with nil convert": {
+				alwaysScrapeClassicHistograms: true,
 			},
 			"neither scrape nor convert": {
 				alwaysScrapeClassicHistograms: false,
-				convertClassicHistToNHCB:      false,
+				convertClassicHistToNHCB:      &fals,
 			},
 		} {
 			var expectedClassicHistCount, expectedNativeHistCount int
@@ -4393,17 +4669,17 @@ metric: <
 				}
 			} else if metricsText.hasClassic {
 				switch {
-				case tc.alwaysScrapeClassicHistograms && tc.convertClassicHistToNHCB:
+				case tc.convertClassicHistToNHCB == nil || !*tc.convertClassicHistToNHCB:
+					expectedClassicHistCount = 1
+					expectedNativeHistCount = 0
+				case tc.alwaysScrapeClassicHistograms && *tc.convertClassicHistToNHCB:
 					expectedClassicHistCount = 1
 					expectedNativeHistCount = 1
 					expectCustomBuckets = true
-				case !tc.alwaysScrapeClassicHistograms && tc.convertClassicHistToNHCB:
+				case !tc.alwaysScrapeClassicHistograms && *tc.convertClassicHistToNHCB:
 					expectedClassicHistCount = 0
 					expectedNativeHistCount = 1
 					expectCustomBuckets = true
-				case !tc.convertClassicHistToNHCB:
-					expectedClassicHistCount = 1
-					expectedNativeHistCount = 0
 				}
 			}
 
@@ -4419,6 +4695,8 @@ metric: <
 					ScrapeTimeout:                  model.Duration(25 * time.Millisecond),
 					AlwaysScrapeClassicHistograms:  tc.alwaysScrapeClassicHistograms,
 					ConvertClassicHistogramsToNHCB: tc.convertClassicHistToNHCB,
+					MetricNameValidationScheme:     config.UTF8ValidationConfig,
+					MetricNameEscapingScheme:       model.AllowUTF8,
 				}
 
 				scrapeCount := 0
@@ -4595,12 +4873,14 @@ func TestScrapeLoopCompression(t *testing.T) {
 			defer ts.Close()
 
 			config := &config.ScrapeConfig{
-				JobName:           "test",
-				SampleLimit:       100,
-				Scheme:            "http",
-				ScrapeInterval:    model.Duration(100 * time.Millisecond),
-				ScrapeTimeout:     model.Duration(100 * time.Millisecond),
-				EnableCompression: tc.enableCompression,
+				JobName:                    "test",
+				SampleLimit:                100,
+				Scheme:                     "http",
+				ScrapeInterval:             model.Duration(100 * time.Millisecond),
+				ScrapeTimeout:              model.Duration(100 * time.Millisecond),
+				EnableCompression:          tc.enableCompression,
+				MetricNameValidationScheme: config.UTF8ValidationConfig,
+				MetricNameEscapingScheme:   model.AllowUTF8,
 			}
 
 			sp, err := newScrapePool(config, simpleStorage, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
@@ -4755,7 +5035,9 @@ func BenchmarkTargetScraperGzip(b *testing.B) {
 						model.AddressLabel, serverURL.Host,
 					),
 					scrapeConfig: &config.ScrapeConfig{
-						Params: url.Values{"count": []string{strconv.Itoa(scenario.metricsCount)}},
+						MetricNameValidationScheme: config.UTF8ValidationConfig,
+						MetricNameEscapingScheme:   model.AllowUTF8,
+						Params:                     url.Values{"count": []string{strconv.Itoa(scenario.metricsCount)}},
 					},
 				},
 				client:  client,
@@ -5003,12 +5285,14 @@ func TestTargetScrapeConfigWithLabels(t *testing.T) {
 		{
 			name: "Everything in scrape config",
 			cfg: &config.ScrapeConfig{
-				ScrapeInterval: model.Duration(2 * time.Second),
-				ScrapeTimeout:  model.Duration(configTimeout),
-				Params:         url.Values{"param": []string{expectedParam}},
-				JobName:        jobName,
-				Scheme:         httpScheme,
-				MetricsPath:    expectedPath,
+				ScrapeInterval:             model.Duration(2 * time.Second),
+				ScrapeTimeout:              model.Duration(configTimeout),
+				Params:                     url.Values{"param": []string{expectedParam}},
+				JobName:                    jobName,
+				Scheme:                     httpScheme,
+				MetricsPath:                expectedPath,
+				MetricNameValidationScheme: config.UTF8ValidationConfig,
+				MetricNameEscapingScheme:   model.AllowUTF8,
 			},
 			targets: []*targetgroup.Group{
 				{
@@ -5021,12 +5305,14 @@ func TestTargetScrapeConfigWithLabels(t *testing.T) {
 		{
 			name: "Overridden in target",
 			cfg: &config.ScrapeConfig{
-				ScrapeInterval: model.Duration(2 * time.Second),
-				ScrapeTimeout:  model.Duration(secondTimeout),
-				JobName:        jobName,
-				Scheme:         httpScheme,
-				MetricsPath:    secondPath,
-				Params:         url.Values{"param": []string{secondParam}},
+				ScrapeInterval:             model.Duration(2 * time.Second),
+				ScrapeTimeout:              model.Duration(secondTimeout),
+				JobName:                    jobName,
+				Scheme:                     httpScheme,
+				MetricsPath:                secondPath,
+				MetricNameValidationScheme: config.UTF8ValidationConfig,
+				MetricNameEscapingScheme:   model.AllowUTF8,
+				Params:                     url.Values{"param": []string{secondParam}},
 			},
 			targets: []*targetgroup.Group{
 				{
@@ -5044,12 +5330,14 @@ func TestTargetScrapeConfigWithLabels(t *testing.T) {
 		{
 			name: "Overridden in relabel_config",
 			cfg: &config.ScrapeConfig{
-				ScrapeInterval: model.Duration(2 * time.Second),
-				ScrapeTimeout:  model.Duration(secondTimeout),
-				JobName:        jobName,
-				Scheme:         httpScheme,
-				MetricsPath:    secondPath,
-				Params:         url.Values{"param": []string{secondParam}},
+				ScrapeInterval:             model.Duration(2 * time.Second),
+				ScrapeTimeout:              model.Duration(secondTimeout),
+				JobName:                    jobName,
+				Scheme:                     httpScheme,
+				MetricsPath:                secondPath,
+				MetricNameValidationScheme: config.UTF8ValidationConfig,
+				MetricNameEscapingScheme:   model.AllowUTF8,
+				Params:                     url.Values{"param": []string{secondParam}},
 				RelabelConfigs: []*relabel.Config{
 					{
 						Action:       relabel.DefaultRelabelConfig.Action,
@@ -5123,12 +5411,14 @@ func TestScrapePoolScrapeAfterReload(t *testing.T) {
 	t.Cleanup(h.Close)
 
 	cfg := &config.ScrapeConfig{
-		BodySizeLimit:     1,
-		JobName:           "test",
-		Scheme:            "http",
-		ScrapeInterval:    model.Duration(100 * time.Millisecond),
-		ScrapeTimeout:     model.Duration(100 * time.Millisecond),
-		EnableCompression: false,
+		BodySizeLimit:              1,
+		JobName:                    "test",
+		Scheme:                     "http",
+		ScrapeInterval:             model.Duration(100 * time.Millisecond),
+		ScrapeTimeout:              model.Duration(100 * time.Millisecond),
+		MetricNameValidationScheme: config.UTF8ValidationConfig,
+		MetricNameEscapingScheme:   model.AllowUTF8,
+		EnableCompression:          false,
 		ServiceDiscoveryConfigs: discovery.Configs{
 			&discovery.StaticConfig{
 				{
@@ -5152,4 +5442,41 @@ func TestScrapePoolScrapeAfterReload(t *testing.T) {
 	require.NoError(t, p.reload(cfg))
 
 	<-time.After(1 * time.Second)
+}
+
+// Regression test against https://github.com/prometheus/prometheus/issues/16160.
+// The first scrape fails with a parsing error, but the second should
+// succeed and cause `metric_1=11` to appear in the appender.
+func TestScrapeAppendWithParseError(t *testing.T) {
+	const (
+		scrape1 = `metric_a 1
+`
+		scrape2 = `metric_a 11
+# EOF`
+	)
+
+	sl := newBasicScrapeLoop(t, context.Background(), nil, nil, 0)
+	sl.cache = newScrapeCache(sl.metrics)
+
+	now := time.Now()
+	capp := &collectResultAppender{next: nopAppender{}}
+	_, _, _, err := sl.append(capp, []byte(scrape1), "application/openmetrics-text", now)
+	require.Error(t, err)
+	_, _, _, err = sl.append(capp, nil, "application/openmetrics-text", now)
+	require.NoError(t, err)
+	require.Empty(t, capp.resultFloats)
+
+	capp = &collectResultAppender{next: nopAppender{}}
+	_, _, _, err = sl.append(capp, []byte(scrape2), "application/openmetrics-text", now.Add(15*time.Second))
+	require.NoError(t, err)
+	require.NoError(t, capp.Commit())
+
+	want := []floatSample{
+		{
+			metric: labels.FromStrings(model.MetricNameLabel, "metric_a"),
+			t:      timestamp.FromTime(now.Add(15 * time.Second)),
+			f:      11,
+		},
+	}
+	requireEqual(t, want, capp.resultFloats, "Appended samples not as expected:\n%s", capp)
 }

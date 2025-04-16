@@ -16,27 +16,18 @@ package notifier
 import (
 	"bytes"
 	"context"
-	"crypto/md5"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
-	"path"
 	"sync"
 	"time"
 
-	"github.com/go-openapi/strfmt"
-	"github.com/prometheus/alertmanager/api/v2/models"
 	"github.com/prometheus/client_golang/prometheus"
-	config_util "github.com/prometheus/common/config"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/version"
-	"github.com/prometheus/sigv4"
-	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -45,6 +36,9 @@ import (
 )
 
 const (
+	// DefaultMaxBatchSize is the default maximum number of alerts to send in a single request to the alertmanager.
+	DefaultMaxBatchSize = 256
+
 	contentTypeJSON = "application/json"
 )
 
@@ -56,53 +50,6 @@ const (
 )
 
 var userAgent = version.PrometheusUserAgent()
-
-// Alert is a generic representation of an alert in the Prometheus eco-system.
-type Alert struct {
-	// Label value pairs for purpose of aggregation, matching, and disposition
-	// dispatching. This must minimally include an "alertname" label.
-	Labels labels.Labels `json:"labels"`
-
-	// Extra key/value information which does not define alert identity.
-	Annotations labels.Labels `json:"annotations"`
-
-	// The known time range for this alert. Both ends are optional.
-	StartsAt     time.Time `json:"startsAt,omitempty"`
-	EndsAt       time.Time `json:"endsAt,omitempty"`
-	GeneratorURL string    `json:"generatorURL,omitempty"`
-}
-
-// Name returns the name of the alert. It is equivalent to the "alertname" label.
-func (a *Alert) Name() string {
-	return a.Labels.Get(labels.AlertName)
-}
-
-// Hash returns a hash over the alert. It is equivalent to the alert labels hash.
-func (a *Alert) Hash() uint64 {
-	return a.Labels.Hash()
-}
-
-func (a *Alert) String() string {
-	s := fmt.Sprintf("%s[%s]", a.Name(), fmt.Sprintf("%016x", a.Hash())[:7])
-	if a.Resolved() {
-		return s + "[resolved]"
-	}
-	return s + "[active]"
-}
-
-// Resolved returns true iff the activity interval ended in the past.
-func (a *Alert) Resolved() bool {
-	return a.ResolvedAt(time.Now())
-}
-
-// ResolvedAt returns true iff the activity interval ended before
-// the given timestamp.
-func (a *Alert) ResolvedAt(ts time.Time) bool {
-	if a.EndsAt.IsZero() {
-		return false
-	}
-	return !a.EndsAt.After(ts)
-}
 
 // Manager is responsible for dispatching alert notifications to an
 // alert manager service.
@@ -132,84 +79,9 @@ type Options struct {
 	Do func(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error)
 
 	Registerer prometheus.Registerer
-}
 
-type alertMetrics struct {
-	latency                 *prometheus.SummaryVec
-	errors                  *prometheus.CounterVec
-	sent                    *prometheus.CounterVec
-	dropped                 prometheus.Counter
-	queueLength             prometheus.GaugeFunc
-	queueCapacity           prometheus.Gauge
-	alertmanagersDiscovered prometheus.GaugeFunc
-}
-
-func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen, alertmanagersDiscovered func() float64) *alertMetrics {
-	m := &alertMetrics{
-		latency: prometheus.NewSummaryVec(prometheus.SummaryOpts{
-			Namespace:  namespace,
-			Subsystem:  subsystem,
-			Name:       "latency_seconds",
-			Help:       "Latency quantiles for sending alert notifications.",
-			Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
-		},
-			[]string{alertmanagerLabel},
-		),
-		errors: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "errors_total",
-			Help:      "Total number of sent alerts affected by errors.",
-		},
-			[]string{alertmanagerLabel},
-		),
-		sent: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "sent_total",
-			Help:      "Total number of alerts sent.",
-		},
-			[]string{alertmanagerLabel},
-		),
-		dropped: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "dropped_total",
-			Help:      "Total number of alerts dropped due to errors when sending to Alertmanager.",
-		}),
-		queueLength: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "queue_length",
-			Help:      "The number of alert notifications in the queue.",
-		}, queueLen),
-		queueCapacity: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "queue_capacity",
-			Help:      "The capacity of the alert notifications queue.",
-		}),
-		alertmanagersDiscovered: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "prometheus_notifications_alertmanagers_discovered",
-			Help: "The number of alertmanagers discovered and active.",
-		}, alertmanagersDiscovered),
-	}
-
-	m.queueCapacity.Set(float64(queueCap))
-
-	if r != nil {
-		r.MustRegister(
-			m.latency,
-			m.errors,
-			m.sent,
-			m.dropped,
-			m.queueLength,
-			m.queueCapacity,
-			m.alertmanagersDiscovered,
-		)
-	}
-
-	return m
+	// MaxBatchSize determines the maximum number of alerts to send in a single request to the alertmanager.
+	MaxBatchSize int
 }
 
 func do(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error) {
@@ -223,6 +95,10 @@ func do(ctx context.Context, client *http.Client, req *http.Request) (*http.Resp
 func NewManager(o *Options, logger *slog.Logger) *Manager {
 	if o.Do == nil {
 		o.Do = do
+	}
+	// Set default MaxBatchSize if not provided.
+	if o.MaxBatchSize <= 0 {
+		o.MaxBatchSize = DefaultMaxBatchSize
 	}
 	if logger == nil {
 		logger = promslog.NewNopLogger()
@@ -294,8 +170,6 @@ func (n *Manager) ApplyConfig(conf *config.Config) error {
 	return nil
 }
 
-const maxBatchSize = 64
-
 func (n *Manager) queueLen() int {
 	n.mtx.RLock()
 	defer n.mtx.RUnlock()
@@ -309,7 +183,7 @@ func (n *Manager) nextBatch() []*Alert {
 
 	var alerts []*Alert
 
-	if len(n.queue) > maxBatchSize {
+	if maxBatchSize := n.opts.MaxBatchSize; len(n.queue) > maxBatchSize {
 		alerts = append(make([]*Alert, 0, maxBatchSize), n.queue[:maxBatchSize]...)
 		n.queue = n.queue[maxBatchSize:]
 	} else {
@@ -463,28 +337,6 @@ func (n *Manager) Send(alerts ...*Alert) {
 
 	// Notify sending goroutine that there are alerts to be processed.
 	n.setMore()
-}
-
-func relabelAlerts(relabelConfigs []*relabel.Config, externalLabels labels.Labels, alerts []*Alert) []*Alert {
-	lb := labels.NewBuilder(labels.EmptyLabels())
-	var relabeledAlerts []*Alert
-
-	for _, a := range alerts {
-		lb.Reset(a.Labels)
-		externalLabels.Range(func(l labels.Label) {
-			if a.Labels.Get(l.Name) == "" {
-				lb.Set(l.Name, l.Value)
-			}
-		})
-
-		keep := relabel.ProcessBuilder(lb, relabelConfigs...)
-		if !keep {
-			continue
-		}
-		a.Labels = lb.Labels()
-		relabeledAlerts = append(relabeledAlerts, a)
-	}
-	return relabeledAlerts
 }
 
 // setMore signals that the alert queue has items.
@@ -656,34 +508,6 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 	return allAmSetsCovered
 }
 
-func alertsToOpenAPIAlerts(alerts []*Alert) models.PostableAlerts {
-	openAPIAlerts := models.PostableAlerts{}
-	for _, a := range alerts {
-		start := strfmt.DateTime(a.StartsAt)
-		end := strfmt.DateTime(a.EndsAt)
-		openAPIAlerts = append(openAPIAlerts, &models.PostableAlert{
-			Annotations: labelsToOpenAPILabelSet(a.Annotations),
-			EndsAt:      end,
-			StartsAt:    start,
-			Alert: models.Alert{
-				GeneratorURL: strfmt.URI(a.GeneratorURL),
-				Labels:       labelsToOpenAPILabelSet(a.Labels),
-			},
-		})
-	}
-
-	return openAPIAlerts
-}
-
-func labelsToOpenAPILabelSet(modelLabelSet labels.Labels) models.LabelSet {
-	apiLabelSet := models.LabelSet{}
-	modelLabelSet.Range(func(label labels.Label) {
-		apiLabelSet[label.Name] = label.Value
-	})
-
-	return apiLabelSet
-}
-
 func (n *Manager) sendOne(ctx context.Context, c *http.Client, url string, b []byte) error {
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(b))
 	if err != nil {
@@ -721,166 +545,4 @@ func (n *Manager) Stop() {
 	n.stopOnce.Do(func() {
 		close(n.stopRequested)
 	})
-}
-
-// Alertmanager holds Alertmanager endpoint information.
-type alertmanager interface {
-	url() *url.URL
-}
-
-type alertmanagerLabels struct{ labels.Labels }
-
-const pathLabel = "__alerts_path__"
-
-func (a alertmanagerLabels) url() *url.URL {
-	return &url.URL{
-		Scheme: a.Get(model.SchemeLabel),
-		Host:   a.Get(model.AddressLabel),
-		Path:   a.Get(pathLabel),
-	}
-}
-
-// alertmanagerSet contains a set of Alertmanagers discovered via a group of service
-// discovery definitions that have a common configuration on how alerts should be sent.
-type alertmanagerSet struct {
-	cfg    *config.AlertmanagerConfig
-	client *http.Client
-
-	metrics *alertMetrics
-
-	mtx        sync.RWMutex
-	ams        []alertmanager
-	droppedAms []alertmanager
-	logger     *slog.Logger
-}
-
-func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger *slog.Logger, metrics *alertMetrics) (*alertmanagerSet, error) {
-	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, "alertmanager")
-	if err != nil {
-		return nil, err
-	}
-	t := client.Transport
-
-	if cfg.SigV4Config != nil {
-		t, err = sigv4.NewSigV4RoundTripper(cfg.SigV4Config, client.Transport)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	client.Transport = t
-
-	s := &alertmanagerSet{
-		client:  client,
-		cfg:     cfg,
-		logger:  logger,
-		metrics: metrics,
-	}
-	return s, nil
-}
-
-// sync extracts a deduplicated set of Alertmanager endpoints from a list
-// of target groups definitions.
-func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
-	allAms := []alertmanager{}
-	allDroppedAms := []alertmanager{}
-
-	for _, tg := range tgs {
-		ams, droppedAms, err := AlertmanagerFromGroup(tg, s.cfg)
-		if err != nil {
-			s.logger.Error("Creating discovered Alertmanagers failed", "err", err)
-			continue
-		}
-		allAms = append(allAms, ams...)
-		allDroppedAms = append(allDroppedAms, droppedAms...)
-	}
-
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
-	previousAms := s.ams
-	// Set new Alertmanagers and deduplicate them along their unique URL.
-	s.ams = []alertmanager{}
-	s.droppedAms = []alertmanager{}
-	s.droppedAms = append(s.droppedAms, allDroppedAms...)
-	seen := map[string]struct{}{}
-
-	for _, am := range allAms {
-		us := am.url().String()
-		if _, ok := seen[us]; ok {
-			continue
-		}
-
-		// This will initialize the Counters for the AM to 0.
-		s.metrics.sent.WithLabelValues(us)
-		s.metrics.errors.WithLabelValues(us)
-
-		seen[us] = struct{}{}
-		s.ams = append(s.ams, am)
-	}
-	// Now remove counters for any removed Alertmanagers.
-	for _, am := range previousAms {
-		us := am.url().String()
-		if _, ok := seen[us]; ok {
-			continue
-		}
-		s.metrics.latency.DeleteLabelValues(us)
-		s.metrics.sent.DeleteLabelValues(us)
-		s.metrics.errors.DeleteLabelValues(us)
-		seen[us] = struct{}{}
-	}
-}
-
-func (s *alertmanagerSet) configHash() (string, error) {
-	b, err := yaml.Marshal(s.cfg)
-	if err != nil {
-		return "", err
-	}
-	hash := md5.Sum(b)
-	return hex.EncodeToString(hash[:]), nil
-}
-
-func postPath(pre string, v config.AlertmanagerAPIVersion) string {
-	alertPushEndpoint := fmt.Sprintf("/api/%v/alerts", string(v))
-	return path.Join("/", pre, alertPushEndpoint)
-}
-
-// AlertmanagerFromGroup extracts a list of alertmanagers from a target group
-// and an associated AlertmanagerConfig.
-func AlertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig) ([]alertmanager, []alertmanager, error) {
-	var res []alertmanager
-	var droppedAlertManagers []alertmanager
-	lb := labels.NewBuilder(labels.EmptyLabels())
-
-	for _, tlset := range tg.Targets {
-		lb.Reset(labels.EmptyLabels())
-
-		for ln, lv := range tlset {
-			lb.Set(string(ln), string(lv))
-		}
-		// Set configured scheme as the initial scheme label for overwrite.
-		lb.Set(model.SchemeLabel, cfg.Scheme)
-		lb.Set(pathLabel, postPath(cfg.PathPrefix, cfg.APIVersion))
-
-		// Combine target labels with target group labels.
-		for ln, lv := range tg.Labels {
-			if _, ok := tlset[ln]; !ok {
-				lb.Set(string(ln), string(lv))
-			}
-		}
-
-		preRelabel := lb.Labels()
-		keep := relabel.ProcessBuilder(lb, cfg.RelabelConfigs...)
-		if !keep {
-			droppedAlertManagers = append(droppedAlertManagers, alertmanagerLabels{preRelabel})
-			continue
-		}
-
-		addr := lb.Get(model.AddressLabel)
-		if err := config.CheckTargetAddress(model.LabelValue(addr)); err != nil {
-			return nil, nil, err
-		}
-
-		res = append(res, alertmanagerLabels{lb.Labels()})
-	}
-	return res, droppedAlertManagers, nil
 }

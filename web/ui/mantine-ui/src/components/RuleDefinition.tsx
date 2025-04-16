@@ -85,7 +85,7 @@ const RuleDefinition: FC<{ rule: Rule }> = ({ rule }) => {
               styles={{ label: { textTransform: "none" } }}
               leftSection={<IconClockPlay style={badgeIconStyle} />}
             >
-              keep_firing_for: {formatPrometheusDuration(rule.duration * 1000)}
+              keep_firing_for: {formatPrometheusDuration(rule.keepFiringFor * 1000)}
             </Badge>
           )}
         </Group>

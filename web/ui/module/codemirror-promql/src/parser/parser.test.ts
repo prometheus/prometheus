@@ -959,7 +959,7 @@ describe('promql operations', () => {
       ],
     },
     {
-      expr: `{'foo\`metric':'bar'}`, // eslint-disable-line
+      expr: `{'foo\`metric':'bar'}`,
       expectedValueType: ValueType.vector,
       expectedDiag: [],
     },

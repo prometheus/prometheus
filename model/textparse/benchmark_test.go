@@ -23,12 +23,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/prometheus/prometheus/model/exemplar"
-	"github.com/prometheus/prometheus/model/labels"
-
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 // BenchmarkParse... set of benchmarks analyze efficiency of parsing various
@@ -261,4 +261,78 @@ func readTestdataFile(tb testing.TB, file string) []byte {
 	buf, err := io.ReadAll(f)
 	require.NoError(tb, err)
 	return buf
+}
+
+/*
+	export bench=v1 && go test ./model/textparse/... \
+		 -run '^$' -bench '^BenchmarkCreatedTimestampPromProto' \
+		 -benchtime 2s -count 6 -cpu 2 -benchmem -timeout 999m \
+	 | tee ${bench}.txt
+*/
+func BenchmarkCreatedTimestampPromProto(b *testing.B) {
+	data := createTestProtoBuf(b).Bytes()
+
+	st := labels.NewSymbolTable()
+	p := NewProtobufParser(data, true, st)
+
+	found := false
+Inner:
+	for {
+		t, err := p.Next()
+		switch t {
+		case EntryInvalid:
+			b.Fatal(err)
+		case EntryType:
+			m, _ := p.Type()
+			if string(m) == "go_memstats_alloc_bytes_total" {
+				found = true
+				break Inner
+			}
+		// Parser impl requires this (bug?)
+		case EntryHistogram:
+			_, _, _, _ = p.Histogram()
+		case EntrySeries:
+			_, _, _ = p.Series()
+		}
+	}
+	require.True(b, found)
+	b.Run("case=no-ct", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if p.CreatedTimestamp() != 0 {
+				b.Fatal("should be nil")
+			}
+		}
+	})
+
+	found = false
+Inner2:
+	for {
+		t, err := p.Next()
+		switch t {
+		case EntryInvalid:
+			b.Fatal(err)
+		case EntryType:
+			m, _ := p.Type()
+			if string(m) == "test_counter_with_createdtimestamp" {
+				found = true
+				break Inner2
+			}
+		case EntryHistogram:
+			_, _, _, _ = p.Histogram()
+		case EntrySeries:
+			_, _, _ = p.Series()
+		}
+	}
+	require.True(b, found)
+	b.Run("case=ct", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if p.CreatedTimestamp() == 0 {
+				b.Fatal("should be not nil")
+			}
+		}
+	})
 }

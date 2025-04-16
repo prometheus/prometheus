@@ -29,9 +29,8 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
-	"github.com/stretchr/testify/require"
-
 	"github.com/prometheus/common/promslog"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -42,6 +41,7 @@ import (
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -60,7 +60,7 @@ func TestRemoteWriteHandlerHeadersHandling_V1Message(t *testing.T) {
 			name: "correct PRW 1.0 headers",
 			reqHeaders: map[string]string{
 				"Content-Type":           remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV1],
-				"Content-Encoding":       string(SnappyBlockCompression),
+				"Content-Encoding":       compression.Snappy,
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
 			expectedCode: http.StatusNoContent,
@@ -69,7 +69,7 @@ func TestRemoteWriteHandlerHeadersHandling_V1Message(t *testing.T) {
 			name: "missing remote write version",
 			reqHeaders: map[string]string{
 				"Content-Type":     remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV1],
-				"Content-Encoding": string(SnappyBlockCompression),
+				"Content-Encoding": compression.Snappy,
 			},
 			expectedCode: http.StatusNoContent,
 		},
@@ -81,7 +81,7 @@ func TestRemoteWriteHandlerHeadersHandling_V1Message(t *testing.T) {
 		{
 			name: "missing content-type",
 			reqHeaders: map[string]string{
-				"Content-Encoding":       string(SnappyBlockCompression),
+				"Content-Encoding":       compression.Snappy,
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
 			expectedCode: http.StatusNoContent,
@@ -98,7 +98,7 @@ func TestRemoteWriteHandlerHeadersHandling_V1Message(t *testing.T) {
 			name: "wrong content-type",
 			reqHeaders: map[string]string{
 				"Content-Type":           "yolo",
-				"Content-Encoding":       string(SnappyBlockCompression),
+				"Content-Encoding":       compression.Snappy,
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
 			expectedCode: http.StatusUnsupportedMediaType,
@@ -107,7 +107,7 @@ func TestRemoteWriteHandlerHeadersHandling_V1Message(t *testing.T) {
 			name: "wrong content-type2",
 			reqHeaders: map[string]string{
 				"Content-Type":           appProtoContentType + ";proto=yolo",
-				"Content-Encoding":       string(SnappyBlockCompression),
+				"Content-Encoding":       compression.Snappy,
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
 			expectedCode: http.StatusUnsupportedMediaType,
@@ -157,7 +157,7 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 			name: "correct PRW 2.0 headers",
 			reqHeaders: map[string]string{
 				"Content-Type":           remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV2],
-				"Content-Encoding":       string(SnappyBlockCompression),
+				"Content-Encoding":       compression.Snappy,
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
 			expectedCode: http.StatusNoContent,
@@ -166,7 +166,7 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 			name: "missing remote write version",
 			reqHeaders: map[string]string{
 				"Content-Type":     remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV2],
-				"Content-Encoding": string(SnappyBlockCompression),
+				"Content-Encoding": compression.Snappy,
 			},
 			expectedCode: http.StatusNoContent, // We don't check for now.
 		},
@@ -178,7 +178,7 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 		{
 			name: "missing content-type",
 			reqHeaders: map[string]string{
-				"Content-Encoding":       string(SnappyBlockCompression),
+				"Content-Encoding":       compression.Snappy,
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
 			// This only gives 415, because we explicitly only support 2.0. If we supported both
@@ -199,7 +199,7 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 			name: "wrong content-type",
 			reqHeaders: map[string]string{
 				"Content-Type":           "yolo",
-				"Content-Encoding":       string(SnappyBlockCompression),
+				"Content-Encoding":       compression.Snappy,
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
 			expectedCode: http.StatusUnsupportedMediaType,
@@ -208,7 +208,7 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 			name: "wrong content-type2",
 			reqHeaders: map[string]string{
 				"Content-Type":           appProtoContentType + ";proto=yolo",
-				"Content-Encoding":       string(SnappyBlockCompression),
+				"Content-Encoding":       compression.Snappy,
 				RemoteWriteVersionHeader: RemoteWriteVersion20HeaderValue,
 			},
 			expectedCode: http.StatusUnsupportedMediaType,
@@ -391,7 +391,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			desc: "Partial write; first series with one dup histogram sample",
 			input: func() []writev2.TimeSeries {
 				f := proto.Clone(writeV2RequestFixture).(*writev2.Request)
-				f.Timeseries[0].Histograms = append(f.Timeseries[0].Histograms, f.Timeseries[0].Histograms[1])
+				f.Timeseries[0].Histograms = append(f.Timeseries[0].Histograms, f.Timeseries[0].Histograms[len(f.Timeseries[0].Histograms)-1])
 				return f.Timeseries
 			}(),
 			expectedCode:     http.StatusBadRequest,
@@ -445,7 +445,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			require.NoError(t, err)
 
 			req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV2])
-			req.Header.Set("Content-Encoding", string(SnappyBlockCompression))
+			req.Header.Set("Content-Encoding", compression.Snappy)
 			req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
 
 			appendable := &mockAppendable{
@@ -483,7 +483,7 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			// Double check mandatory 2.0 stats.
 			// writeV2RequestFixture has 2 series with 1 sample, 2 histograms, 1 exemplar each.
 			expectHeaderValue(t, 2, resp.Header.Get(rw20WrittenSamplesHeader))
-			expectHeaderValue(t, 4, resp.Header.Get(rw20WrittenHistogramsHeader))
+			expectHeaderValue(t, 8, resp.Header.Get(rw20WrittenHistogramsHeader))
 			if tc.appendExemplarErr != nil {
 				expectHeaderValue(t, 0, resp.Header.Get(rw20WrittenExemplarsHeader))
 			} else {
@@ -496,6 +496,8 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				i, j, k, m int
 			)
 			for _, ts := range writeV2RequestFixture.Timeseries {
+				zeroHistogramIngested := false
+				zeroFloatHistogramIngested := false
 				ls := ts.ToLabels(&b, writeV2RequestFixture.Symbols)
 
 				for _, s := range ts.Samples {
@@ -509,20 +511,26 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				for _, hp := range ts.Histograms {
 					if hp.IsFloatHistogram() {
 						fh := hp.ToFloatHistogram()
-						if ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
+						if !zeroFloatHistogramIngested && ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
 							requireEqual(t, mockHistogram{ls, ts.CreatedTimestamp, nil, &histogram.FloatHistogram{}}, appendable.histograms[k])
 							k++
+							zeroFloatHistogramIngested = true
 						}
 						requireEqual(t, mockHistogram{ls, hp.Timestamp, nil, fh}, appendable.histograms[k])
 					} else {
 						h := hp.ToIntHistogram()
-						if ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
+						if !zeroHistogramIngested && ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
 							requireEqual(t, mockHistogram{ls, ts.CreatedTimestamp, &histogram.Histogram{}, nil}, appendable.histograms[k])
 							k++
+							zeroHistogramIngested = true
 						}
 						requireEqual(t, mockHistogram{ls, hp.Timestamp, h, nil}, appendable.histograms[k])
 					}
 					k++
+				}
+				if ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
+					require.True(t, zeroHistogramIngested)
+					require.True(t, zeroFloatHistogramIngested)
 				}
 				if tc.appendExemplarErr == nil {
 					for _, e := range ts.Exemplars {
@@ -715,7 +723,7 @@ func TestCommitErr_V2Message(t *testing.T) {
 	require.NoError(t, err)
 
 	req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV2])
-	req.Header.Set("Content-Encoding", string(SnappyBlockCompression))
+	req.Header.Set("Content-Encoding", compression.Snappy)
 	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
 
 	appendable := &mockAppendable{commitErr: errors.New("commit error")}

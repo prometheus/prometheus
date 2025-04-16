@@ -313,6 +313,7 @@ export const getUPlotOptions = (
   legend: {
     show: true,
     live: false,
+    isolate: true,
     markers: {
       fill: (
         _u: uPlot,

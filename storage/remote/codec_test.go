@@ -43,12 +43,12 @@ var (
 		Schema:          2,
 		ZeroThreshold:   1e-128,
 		ZeroCount:       0,
-		Count:           0,
+		Count:           3,
 		Sum:             20,
 		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
 		PositiveBuckets: []int64{1},
 		NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-		NegativeBuckets: []int64{-1},
+		NegativeBuckets: []int64{2},
 	}
 
 	writeRequestFixture = &prompb.WriteRequest{
@@ -90,6 +90,15 @@ var (
 		Help: "Test counter for test purposes",
 	}
 
+	testHistogramCustomBuckets = histogram.Histogram{
+		Schema:          histogram.CustomBucketsSchema,
+		Count:           16,
+		Sum:             20,
+		PositiveSpans:   []histogram.Span{{Offset: 1, Length: 2}},
+		PositiveBuckets: []int64{10, -4},     // Means 10 observations for upper bound 1.0 and 6 for upper bound +Inf.
+		CustomValues:    []float64{0.1, 1.0}, // +Inf is implied.
+	}
+
 	// writeV2RequestFixture represents the same request as writeRequestFixture,
 	// but using the v2 representation, plus includes writeV2RequestSeries1Metadata and writeV2RequestSeries2Metadata.
 	// NOTE: Use TestWriteV2RequestFixture and copy the diff to regenerate if needed.
@@ -104,9 +113,14 @@ var (
 					HelpRef: 15, // Symbolized writeV2RequestSeries1Metadata.Help.
 					UnitRef: 16, // Symbolized writeV2RequestSeries1Metadata.Unit.
 				},
-				Samples:          []writev2.Sample{{Value: 1, Timestamp: 10}},
-				Exemplars:        []writev2.Exemplar{{LabelsRefs: []uint32{11, 12}, Value: 1, Timestamp: 10}},
-				Histograms:       []writev2.Histogram{writev2.FromIntHistogram(10, &testHistogram), writev2.FromFloatHistogram(20, testHistogram.ToFloat(nil))},
+				Samples:   []writev2.Sample{{Value: 1, Timestamp: 10}},
+				Exemplars: []writev2.Exemplar{{LabelsRefs: []uint32{11, 12}, Value: 1, Timestamp: 10}},
+				Histograms: []writev2.Histogram{
+					writev2.FromIntHistogram(10, &testHistogram),
+					writev2.FromFloatHistogram(20, testHistogram.ToFloat(nil)),
+					writev2.FromIntHistogram(30, &testHistogramCustomBuckets),
+					writev2.FromFloatHistogram(40, testHistogramCustomBuckets.ToFloat(nil)),
+				},
 				CreatedTimestamp: 1, // CT needs to be lower than the sample's timestamp.
 			},
 			{
@@ -117,13 +131,39 @@ var (
 					HelpRef: 17, // Symbolized writeV2RequestSeries2Metadata.Help.
 					// No unit.
 				},
-				Samples:    []writev2.Sample{{Value: 2, Timestamp: 20}},
-				Exemplars:  []writev2.Exemplar{{LabelsRefs: []uint32{13, 14}, Value: 2, Timestamp: 20}},
-				Histograms: []writev2.Histogram{writev2.FromIntHistogram(30, &testHistogram), writev2.FromFloatHistogram(40, testHistogram.ToFloat(nil))},
+				Samples:   []writev2.Sample{{Value: 2, Timestamp: 20}},
+				Exemplars: []writev2.Exemplar{{LabelsRefs: []uint32{13, 14}, Value: 2, Timestamp: 20}},
+				Histograms: []writev2.Histogram{
+					writev2.FromIntHistogram(50, &testHistogram),
+					writev2.FromFloatHistogram(60, testHistogram.ToFloat(nil)),
+					writev2.FromIntHistogram(70, &testHistogramCustomBuckets),
+					writev2.FromFloatHistogram(80, testHistogramCustomBuckets.ToFloat(nil)),
+				},
 			},
 		},
 	}
 )
+
+func TestHistogramFixtureValid(t *testing.T) {
+	for _, ts := range writeRequestFixture.Timeseries {
+		for _, h := range ts.Histograms {
+			if h.IsFloatHistogram() {
+				require.NoError(t, h.ToFloatHistogram().Validate())
+			} else {
+				require.NoError(t, h.ToIntHistogram().Validate())
+			}
+		}
+	}
+	for _, ts := range writeV2RequestFixture.Timeseries {
+		for _, h := range ts.Histograms {
+			if h.IsFloatHistogram() {
+				require.NoError(t, h.ToFloatHistogram().Validate())
+			} else {
+				require.NoError(t, h.ToIntHistogram().Validate())
+			}
+		}
+	}
+}
 
 func TestWriteV2RequestFixture(t *testing.T) {
 	// Generate dynamically writeV2RequestFixture, reusing v1 fixture elements.
@@ -141,9 +181,14 @@ func TestWriteV2RequestFixture(t *testing.T) {
 					HelpRef: st.Symbolize(writeV2RequestSeries1Metadata.Help),
 					UnitRef: st.Symbolize(writeV2RequestSeries1Metadata.Unit),
 				},
-				Samples:          []writev2.Sample{{Value: 1, Timestamp: 10}},
-				Exemplars:        []writev2.Exemplar{{LabelsRefs: exemplar1LabelRefs, Value: 1, Timestamp: 10}},
-				Histograms:       []writev2.Histogram{writev2.FromIntHistogram(10, &testHistogram), writev2.FromFloatHistogram(20, testHistogram.ToFloat(nil))},
+				Samples:   []writev2.Sample{{Value: 1, Timestamp: 10}},
+				Exemplars: []writev2.Exemplar{{LabelsRefs: exemplar1LabelRefs, Value: 1, Timestamp: 10}},
+				Histograms: []writev2.Histogram{
+					writev2.FromIntHistogram(10, &testHistogram),
+					writev2.FromFloatHistogram(20, testHistogram.ToFloat(nil)),
+					writev2.FromIntHistogram(30, &testHistogramCustomBuckets),
+					writev2.FromFloatHistogram(40, testHistogramCustomBuckets.ToFloat(nil)),
+				},
 				CreatedTimestamp: 1,
 			},
 			{
@@ -153,9 +198,14 @@ func TestWriteV2RequestFixture(t *testing.T) {
 					HelpRef: st.Symbolize(writeV2RequestSeries2Metadata.Help),
 					// No unit.
 				},
-				Samples:    []writev2.Sample{{Value: 2, Timestamp: 20}},
-				Exemplars:  []writev2.Exemplar{{LabelsRefs: exemplar2LabelRefs, Value: 2, Timestamp: 20}},
-				Histograms: []writev2.Histogram{writev2.FromIntHistogram(30, &testHistogram), writev2.FromFloatHistogram(40, testHistogram.ToFloat(nil))},
+				Samples:   []writev2.Sample{{Value: 2, Timestamp: 20}},
+				Exemplars: []writev2.Exemplar{{LabelsRefs: exemplar2LabelRefs, Value: 2, Timestamp: 20}},
+				Histograms: []writev2.Histogram{
+					writev2.FromIntHistogram(50, &testHistogram),
+					writev2.FromFloatHistogram(60, testHistogram.ToFloat(nil)),
+					writev2.FromIntHistogram(70, &testHistogramCustomBuckets),
+					writev2.FromFloatHistogram(80, testHistogramCustomBuckets.ToFloat(nil)),
+				},
 			},
 		},
 		Symbols: st.Symbols(),
@@ -165,11 +215,6 @@ func TestWriteV2RequestFixture(t *testing.T) {
 }
 
 func TestValidateLabelsAndMetricName(t *testing.T) {
-	oldScheme := model.NameValidationScheme
-	model.NameValidationScheme = model.LegacyValidation
-	defer func() {
-		model.NameValidationScheme = oldScheme
-	}()
 	tests := []struct {
 		input       []prompb.Label
 		expectedErr string
@@ -194,18 +239,10 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 		{
 			input: []prompb.Label{
 				{Name: "__name__", Value: "name"},
-				{Name: "@labelName", Value: "labelValue"},
+				{Name: "@labelName\xff", Value: "labelValue"},
 			},
-			expectedErr: "invalid label name: @labelName",
-			description: "label name with @",
-		},
-		{
-			input: []prompb.Label{
-				{Name: "__name__", Value: "name"},
-				{Name: "123labelName", Value: "labelValue"},
-			},
-			expectedErr: "invalid label name: 123labelName",
-			description: "label name starts with numbers",
+			expectedErr: "invalid label name: @labelName\xff",
+			description: "label name with \xff",
 		},
 		{
 			input: []prompb.Label{
@@ -225,10 +262,10 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 		},
 		{
 			input: []prompb.Label{
-				{Name: "__name__", Value: "@invalid_name"},
+				{Name: "__name__", Value: "invalid_name\xff"},
 			},
-			expectedErr: "invalid metric name: @invalid_name",
-			description: "metric name starts with @",
+			expectedErr: "invalid metric name: invalid_name\xff",
+			description: "metric name has invalid utf8",
 		},
 		{
 			input: []prompb.Label{

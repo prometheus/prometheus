@@ -26,9 +26,8 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/util/testutil"
-
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 var testExpr = []struct {
@@ -3970,7 +3969,6 @@ func TestParseExpressions(t *testing.T) {
 		EnableExperimentalFunctions = false
 	})
 
-	model.NameValidationScheme = model.UTF8Validation
 	for _, test := range testExpr {
 		t.Run(readable(test.input), func(t *testing.T) {
 			expr, err := ParseExpr(test.input)
@@ -4370,6 +4368,30 @@ func TestParseHistogramSeries(t *testing.T) {
 						Offset: 0,
 						Length: 2,
 					}},
+				},
+			},
+		},
+		{
+			name:  "series with two different increments",
+			input: `{} {{sum:1}}+{{sum:1}}x2 {{sum:2}}+{{sum:2}}x2`,
+			expected: []histogram.FloatHistogram{
+				{
+					Sum: 1,
+				},
+				{
+					Sum: 2,
+				},
+				{
+					Sum: 3,
+				},
+				{
+					Sum: 2,
+				},
+				{
+					Sum: 4,
+				},
+				{
+					Sum: 6,
 				},
 			},
 		},

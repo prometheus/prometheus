@@ -36,15 +36,14 @@ import (
 	"github.com/prometheus/client_golang/api"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil/promlint"
+	dto "github.com/prometheus/client_model/go"
+	promconfig "github.com/prometheus/common/config"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/version"
 	"github.com/prometheus/exporter-toolkit/web"
 	"gopkg.in/yaml.v2"
-
-	dto "github.com/prometheus/client_model/go"
-	promconfig "github.com/prometheus/common/config"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
@@ -63,7 +62,8 @@ import (
 )
 
 func init() {
-	// This can be removed when the default validation scheme in common is updated.
+	// This can be removed when the legacy global mode is fully deprecated.
+	//nolint:staticcheck
 	model.NameValidationScheme = model.UTF8Validation
 }
 

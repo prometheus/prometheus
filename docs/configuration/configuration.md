@@ -140,6 +140,10 @@ global:
   # and underscores.
   [ metric_name_validation_scheme <string> | default "utf8" ]
 
+  # Specifies whether to convert all scraped classic histograms into native
+  # histograms with custom buckets.
+  [ convert_classic_histograms_to_nhcb <bool> | default = false]
+
 runtime:
   # Configure the Go garbage collector GOGC parameter
   # See: https://tip.golang.org/doc/gc-guide#GOGC
@@ -187,6 +191,8 @@ otlp:
   # resource attributes to the "target_info" metric, on top of converting
   # them into the "instance" and "job" labels.
   [ keep_identifying_resource_attributes: <boolean> | default = false]
+  # Configures optional translation of OTLP explicit bucket histograms into native histograms with custom buckets.
+  [ convert_histograms_to_nhcb: <boolean> | default = false]
 
 # Settings related to the remote read feature.
 remote_read:
@@ -467,6 +473,22 @@ metric_relabel_configs:
 # underscores.
 [ metric_name_validation_scheme <string> | default "utf8" ]
 
+# Specifies the character escaping scheme that will be requested when scraping
+# for metric and label names that do not conform to the legacy Prometheus
+# character set. Available options are: 
+#   * `allow-utf-8`: Full UTF-8 support, no escaping needed.
+#   * `underscores`: Escape all legacy-invalid characters to underscores.
+#   * `dots`: Escapes dots to `_dot_`, underscores to `__`, and all other
+#     legacy-invalid characters to underscores.
+#   * `values`: Prepend the name with `U__` and replace all invalid
+#     characters with their unicode value, surrounded by underscores. Single
+#     underscores are replaced with double underscores. 
+#     e.g. "U__my_2e_dotted_2e_name".
+# If this value is left blank, Prometheus will default to `allow-utf-8` if the
+# validation scheme for the current scrape config is set to utf8, or
+# `underscores` if the validation scheme is set to `legacy`.
+[ metric_name_validation_scheme <string> | default "utf8" ]
+
 # Limit on total number of positive and negative buckets allowed in a single
 # native histogram. The resolution of a histogram with more buckets will be
 # reduced until the number of buckets is within the limit. If the limit cannot
@@ -513,6 +535,11 @@ metric_relabel_configs:
 # 0 results in the smallest supported factor (which is currently ~1.0027 or
 # schema 8, but might change in the future).
 [ native_histogram_min_bucket_factor: <float> | default = 0 ]
+
+# Specifies whether to convert classic histograms into native histograms with
+# custom buckets (has no effect without --enable-feature=native-histograms).
+[ convert_classic_histograms_to_nhcb <bool> | default =
+<global.convert_classic_histograms_to_nhcb>]
 ```
 
 Where `<job_name>` must be unique across all scrape configurations.
@@ -622,7 +649,7 @@ A `tls_config` allows configuring TLS connections.
 
 ### `<oauth2>`
 
-OAuth 2.0 authentication using the client credentials grant type.
+OAuth 2.0 authentication using the client credentials or password grant type.
 Prometheus fetches an access token from the specified endpoint with
 the given client access and secret keys.
 
@@ -642,6 +669,11 @@ scopes:
 token_url: <string>
 
 # Optional parameters to append to the token URL.
+# To set 'password' grant type, add it to params:
+# endpoint_params:
+#   grant_type: 'password'
+#   username: 'username@example.com'
+#   password: 'strongpassword'
 endpoint_params:
   [ <string>: <string> ... ]
 

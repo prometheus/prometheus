@@ -19,9 +19,8 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -477,7 +476,7 @@ type recordsMaker struct {
 }
 
 // BenchmarkWAL_HistogramEncoding measures efficiency of encoding classic
-// histograms and native historgrams with custom buckets (NHCB).
+// histograms and native histograms with custom buckets (NHCB).
 func BenchmarkWAL_HistogramEncoding(b *testing.B) {
 	initClassicRefs := func(labelCount, histograms, buckets int) (series []RefSeries, floatSamples []RefSample, histSamples []RefHistogramSample) {
 		ref := chunks.HeadSeriesRef(0)

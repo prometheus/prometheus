@@ -130,7 +130,6 @@ always, be extra careful when loading third party code.
 
 ### Building the Docker image
 
-The `make docker` target is designed for use in our CI system.
 You can build a docker image locally with the following commands:
 
 ```bash
@@ -139,6 +138,9 @@ promu crossbuild -p linux/amd64
 make npm_licenses
 make common-docker-amd64
 ```
+
+The `make docker` target is intended only for use in our CI system and will not
+produce a fully working image when run locally.
 
 ## Using Prometheus as a Go Library
 

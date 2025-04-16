@@ -57,7 +57,7 @@ clear
 
 # Repeat the same histogram 10 times.
 load 5m
-	multi_histogram	{{schema:0 sum:5 count:4 buckets:[1 2 1]}}x10
+	multi_histogram	{{schema:0 sum:5 count:4 buckets:[1 2 1]}}x10 {{schema:0 sum:5 count:4 buckets:[1 2 1]}}+{{}}x10
 
 eval instant at 5m histogram_count(multi_histogram)
 	{} 4

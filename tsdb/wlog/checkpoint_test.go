@@ -23,14 +23,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/prometheus/common/promslog"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -170,7 +170,7 @@ func TestCheckpoint(t *testing.T) {
 		}
 	}
 
-	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+	for _, compress := range compression.Types() {
 		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
 			dir := t.TempDir()
 
@@ -291,7 +291,7 @@ func TestCheckpoint(t *testing.T) {
 			}
 			require.NoError(t, w.Close())
 
-			stats, err := Checkpoint(promslog.NewNopLogger(), w, 100, 106, func(x chunks.HeadSeriesRef) bool {
+			stats, err := Checkpoint(promslog.NewNopLogger(), w, 100, 106, func(x chunks.HeadSeriesRef, _ int) bool {
 				return x%2 == 0
 			}, last/2)
 			require.NoError(t, err)
@@ -385,7 +385,7 @@ func TestCheckpoint(t *testing.T) {
 func TestCheckpointNoTmpFolderAfterError(t *testing.T) {
 	// Create a new wlog with invalid data.
 	dir := t.TempDir()
-	w, err := NewSize(nil, nil, dir, 64*1024, CompressionNone)
+	w, err := NewSize(nil, nil, dir, 64*1024, compression.None)
 	require.NoError(t, err)
 	var enc record.Encoder
 	require.NoError(t, w.Log(enc.Series([]record.RefSeries{

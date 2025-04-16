@@ -73,7 +73,7 @@ import (
 	"github.com/prometheus/prometheus/tracing"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/agent"
-	"github.com/prometheus/prometheus/tsdb/wlog"
+	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/documentcli"
 	"github.com/prometheus/prometheus/util/logging"
 	"github.com/prometheus/prometheus/util/notifications"
@@ -140,8 +140,10 @@ var (
 )
 
 func init() {
-	// This can be removed when the default validation scheme in common is updated.
+	// This can be removed when the legacy global mode is fully deprecated.
+	//nolint:staticcheck
 	model.NameValidationScheme = model.UTF8Validation
+
 	prometheus.MustRegister(versioncollector.NewCollector(strings.ReplaceAll(appName, "-", "_")))
 
 	var err error
@@ -255,8 +257,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				logger.Info("Experimental native histogram support enabled. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
 			case "ooo-native-histograms":
-				c.tsdb.EnableOOONativeHistograms = true
-				logger.Info("Experimental out-of-order native histogram ingestion enabled. This will only take effect if OutOfOrderTimeWindow is > 0 and if EnableNativeHistograms = true")
+				logger.Warn("This option for --enable-feature is now permanently enabled and therefore a no-op.", "option", o)
 			case "created-timestamp-zero-ingestion":
 				c.scrape.EnableCreatedTimestampZeroIngestion = true
 				c.web.CTZeroIngestionEnabled = true
@@ -285,6 +286,14 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 	}
 
 	return nil
+}
+
+// parseCompressionType parses the two compression-related configuration values and returns the CompressionType.
+func parseCompressionType(compress bool, compressType compression.Type) compression.Type {
+	if compress {
+		return compressType
+	}
+	return compression.None
 }
 
 func main() {
@@ -425,11 +434,15 @@ func main() {
 	serverOnlyFlag(a, "storage.tsdb.allow-overlapping-compaction", "Allow compaction of overlapping blocks. If set to false, TSDB stops vertical compaction and leaves overlapping blocks there. The use case is to let another component handle the compaction of overlapping blocks.").
 		Default("true").Hidden().BoolVar(&cfg.tsdb.EnableOverlappingCompaction)
 
-	serverOnlyFlag(a, "storage.tsdb.wal-compression", "Compress the tsdb WAL.").
-		Hidden().Default("true").BoolVar(&cfg.tsdb.WALCompression)
+	var (
+		tsdbWALCompression     bool
+		tsdbWALCompressionType string
+	)
+	serverOnlyFlag(a, "storage.tsdb.wal-compression", "Compress the tsdb WAL. If false, the --storage.tsdb.wal-compression-type flag is ignored.").
+		Hidden().Default("true").BoolVar(&tsdbWALCompression)
 
-	serverOnlyFlag(a, "storage.tsdb.wal-compression-type", "Compression algorithm for the tsdb WAL.").
-		Hidden().Default(string(wlog.CompressionSnappy)).EnumVar(&cfg.tsdb.WALCompressionType, string(wlog.CompressionSnappy), string(wlog.CompressionZstd))
+	serverOnlyFlag(a, "storage.tsdb.wal-compression-type", "Compression algorithm for the tsdb WAL, used when --storage.tsdb.wal-compression is true.").
+		Hidden().Default(compression.Snappy).EnumVar(&tsdbWALCompressionType, compression.Snappy, compression.Zstd)
 
 	serverOnlyFlag(a, "storage.tsdb.head-chunks-write-queue-size", "Size of the queue through which head chunks are written to the disk to be m-mapped, 0 disables the queue completely. Experimental.").
 		Default("0").IntVar(&cfg.tsdb.HeadChunksWriteQueueSize)
@@ -447,11 +460,15 @@ func main() {
 		"Size at which to split WAL segment files. Example: 100MB").
 		Hidden().PlaceHolder("<bytes>").BytesVar(&cfg.agent.WALSegmentSize)
 
-	agentOnlyFlag(a, "storage.agent.wal-compression", "Compress the agent WAL.").
-		Default("true").BoolVar(&cfg.agent.WALCompression)
+	var (
+		agentWALCompression     bool
+		agentWALCompressionType string
+	)
+	agentOnlyFlag(a, "storage.agent.wal-compression", "Compress the agent WAL. If false, the --storage.agent.wal-compression-type flag is ignored.").
+		Default("true").BoolVar(&agentWALCompression)
 
-	agentOnlyFlag(a, "storage.agent.wal-compression-type", "Compression algorithm for the agent WAL.").
-		Hidden().Default(string(wlog.CompressionSnappy)).EnumVar(&cfg.agent.WALCompressionType, string(wlog.CompressionSnappy), string(wlog.CompressionZstd))
+	agentOnlyFlag(a, "storage.agent.wal-compression-type", "Compression algorithm for the agent WAL, used when --storage.agent.wal-compression is true.").
+		Hidden().Default(compression.Snappy).EnumVar(&agentWALCompressionType, compression.Snappy, compression.Zstd)
 
 	agentOnlyFlag(a, "storage.agent.wal-truncate-frequency",
 		"The frequency at which to truncate the WAL and remove old data.").
@@ -500,6 +517,9 @@ func main() {
 
 	serverOnlyFlag(a, "alertmanager.notification-queue-capacity", "The capacity of the queue for pending Alertmanager notifications.").
 		Default("10000").IntVar(&cfg.notifier.QueueCapacity)
+
+	serverOnlyFlag(a, "alertmanager.notification-batch-size", "The maximum number of notifications per batch to send to the Alertmanager.").
+		Default(strconv.Itoa(notifier.DefaultMaxBatchSize)).IntVar(&cfg.notifier.MaxBatchSize)
 
 	serverOnlyFlag(a, "alertmanager.drain-notification-queue-on-shutdown", "Send any outstanding Alertmanager notifications when shutting down. If false, any outstanding Alertmanager notifications will be dropped when shutting down.").
 		Default("true").BoolVar(&cfg.notifier.DrainOnShutdown)
@@ -669,6 +689,10 @@ func main() {
 			logger.Warn("The --storage.tsdb.delayed-compaction.max-percent should have a value between 1 and 100. Using default", "default", tsdb.DefaultCompactionDelayMaxPercent)
 			cfg.tsdb.CompactionDelayMaxPercent = tsdb.DefaultCompactionDelayMaxPercent
 		}
+
+		cfg.tsdb.WALCompressionType = parseCompressionType(tsdbWALCompression, tsdbWALCompressionType)
+	} else {
+		cfg.agent.WALCompressionType = parseCompressionType(agentWALCompression, agentWALCompressionType)
 	}
 
 	noStepSubqueryInterval := &safePromQLNoStepSubqueryInterval{}
@@ -1257,7 +1281,7 @@ func main() {
 					"NoLockfile", cfg.tsdb.NoLockfile,
 					"RetentionDuration", cfg.tsdb.RetentionDuration,
 					"WALSegmentSize", cfg.tsdb.WALSegmentSize,
-					"WALCompression", cfg.tsdb.WALCompression,
+					"WALCompressionType", cfg.tsdb.WALCompressionType,
 				)
 
 				startTimeMargin := int64(2 * time.Duration(cfg.tsdb.MinBlockDuration).Seconds() * 1000)
@@ -1308,7 +1332,7 @@ func main() {
 				logger.Info("Agent WAL storage started")
 				logger.Debug("Agent WAL storage options",
 					"WALSegmentSize", cfg.agent.WALSegmentSize,
-					"WALCompression", cfg.agent.WALCompression,
+					"WALCompressionType", cfg.agent.WALCompressionType,
 					"StripeSize", cfg.agent.StripeSize,
 					"TruncateFrequency", cfg.agent.TruncateFrequency,
 					"MinWALTime", cfg.agent.MinWALTime,
@@ -1781,8 +1805,7 @@ type tsdbOptions struct {
 	RetentionDuration              model.Duration
 	MaxBytes                       units.Base2Bytes
 	NoLockfile                     bool
-	WALCompression                 bool
-	WALCompressionType             string
+	WALCompressionType             compression.Type
 	HeadChunksWriteQueueSize       int
 	SamplesPerChunk                int
 	StripeSize                     int
@@ -1796,7 +1819,6 @@ type tsdbOptions struct {
 	EnableDelayedCompaction        bool
 	CompactionDelayMaxPercent      int
 	EnableOverlappingCompaction    bool
-	EnableOOONativeHistograms      bool
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -1806,7 +1828,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		RetentionDuration:              int64(time.Duration(opts.RetentionDuration) / time.Millisecond),
 		MaxBytes:                       int64(opts.MaxBytes),
 		NoLockfile:                     opts.NoLockfile,
-		WALCompression:                 wlog.ParseCompressionType(opts.WALCompression, opts.WALCompressionType),
+		WALCompression:                 opts.WALCompressionType,
 		HeadChunksWriteQueueSize:       opts.HeadChunksWriteQueueSize,
 		SamplesPerChunk:                opts.SamplesPerChunk,
 		StripeSize:                     opts.StripeSize,
@@ -1816,7 +1838,6 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		MaxExemplars:                   opts.MaxExemplars,
 		EnableMemorySnapshotOnShutdown: opts.EnableMemorySnapshotOnShutdown,
 		EnableNativeHistograms:         opts.EnableNativeHistograms,
-		EnableOOONativeHistograms:      opts.EnableOOONativeHistograms,
 		OutOfOrderTimeWindow:           opts.OutOfOrderTimeWindow,
 		EnableDelayedCompaction:        opts.EnableDelayedCompaction,
 		CompactionDelayMaxPercent:      opts.CompactionDelayMaxPercent,
@@ -1828,8 +1849,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 // as agent.Option fields are unit agnostic (time).
 type agentOptions struct {
 	WALSegmentSize         units.Base2Bytes
-	WALCompression         bool
-	WALCompressionType     string
+	WALCompressionType     compression.Type
 	StripeSize             int
 	TruncateFrequency      model.Duration
 	MinWALTime, MaxWALTime model.Duration
@@ -1843,7 +1863,7 @@ func (opts agentOptions) ToAgentOptions(outOfOrderTimeWindow int64) agent.Option
 	}
 	return agent.Options{
 		WALSegmentSize:       int(opts.WALSegmentSize),
-		WALCompression:       wlog.ParseCompressionType(opts.WALCompression, opts.WALCompressionType),
+		WALCompression:       opts.WALCompressionType,
 		StripeSize:           opts.StripeSize,
 		TruncateFrequency:    time.Duration(opts.TruncateFrequency),
 		MinWALTime:           durationToInt64Millis(time.Duration(opts.MinWALTime)),

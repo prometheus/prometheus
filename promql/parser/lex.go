@@ -429,11 +429,10 @@ func lexStatements(l *Lexer) stateFn {
 			l.emit(EQL)
 		}
 	case r == '!':
-		if t := l.next(); t == '=' {
-			l.emit(NEQ)
-		} else {
+		if t := l.next(); t != '=' {
 			return l.errorf("unexpected character after '!': %q", t)
 		}
+		l.emit(NEQ)
 	case r == '<':
 		if t := l.peek(); t == '=' {
 			l.next()
@@ -513,7 +512,7 @@ func lexHistogram(l *Lexer) stateFn {
 		l.histogramState = histogramStateNone
 		l.next()
 		l.emit(TIMES)
-		return lexNumber
+		return lexValueSequence
 	case histogramStateAdd:
 		l.histogramState = histogramStateNone
 		l.next()

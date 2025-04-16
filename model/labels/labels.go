@@ -250,15 +250,7 @@ func (ls Labels) WithoutEmpty() Labels {
 
 // Equal returns whether the two label sets are equal.
 func Equal(ls, o Labels) bool {
-	if len(ls) != len(o) {
-		return false
-	}
-	for i, l := range ls {
-		if l != o[i] {
-			return false
-		}
-	}
-	return true
+	return slices.Equal(ls, o)
 }
 
 // EmptyLabels returns n empty Labels value, for convenience.
