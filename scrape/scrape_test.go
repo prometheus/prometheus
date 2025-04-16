@@ -1722,6 +1722,76 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 		"Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(appender.resultFloats[6].f))
 }
 
+// If we have a target with sample_limit set and scrape initially works but then we hit the sample_limit error,
+// then we don't expect to see any StaleNaNs appended for the series that disappeared due to sample_limit error.
+func TestScrapeLoopRunCreatesStaleMarkersOnSampleLimit(t *testing.T) {
+	appender := &collectResultAppender{}
+	var (
+		signal     = make(chan struct{}, 1)
+		scraper    = &testScraper{}
+		app        = func(_ context.Context) storage.Appender { return appender }
+		numScrapes = 0
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	// Since we're writing samples directly below we need to provide a protocol fallback.
+	sl := newBasicScrapeLoopWithFallback(t, ctx, scraper, app, 10*time.Millisecond, "text/plain")
+	sl.sampleLimit = 4
+
+	// Succeed once, several failures, then stop.
+	scraper.scrapeFunc = func(_ context.Context, w io.Writer) error {
+		numScrapes++
+		switch numScrapes {
+		case 1:
+			w.Write([]byte("metric_a 10\nmetric_b 10\nmetric_c 10\nmetric_d 10\n"))
+			return nil
+		case 2:
+			w.Write([]byte("metric_a 20\nmetric_b 20\nmetric_c 20\nmetric_d 20\nmetric_e 999\n"))
+			return nil
+		case 3:
+			w.Write([]byte("metric_a 30\nmetric_b 30\nmetric_c 30\nmetric_d 30\n"))
+			return nil
+		case 4:
+			cancel()
+		}
+		return errors.New("scrape failed")
+	}
+
+	go func() {
+		sl.run(nil)
+		signal <- struct{}{}
+	}()
+
+	select {
+	case <-signal:
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "Scrape wasn't stopped.")
+	}
+
+	// 4 scrapes in total:
+	// #1 - success - 4 samples appended + 5 report series
+	// #2 - sample_limit exceeded - no samples appended, only 5 report series
+	// #3 - success - 4 samples appended + 5 report series
+	// #4 - scrape canceled - 4 StaleNaNs appended because of scrape error + 5 report series
+	require.Len(t, appender.resultFloats, (4+5)+5+(4+5)+(4+5), "Appended samples not as expected:\n%s", appender)
+	// Expect first 4 samples to be metric_X [0-3].
+	for i := range 4 {
+		require.Equal(t, 10.0, appender.resultFloats[i].f, "Appended %d sample not as expected", i)
+	}
+	// Next 5 samples are report series [4-8].
+	// Next 5 samples are report series for the second scrape [9-13].
+	// Expect first 4 samples to be metric_X from the third scrape [14-17].
+	for i := 14; i <= 17; i++ {
+		require.Equal(t, 30.0, appender.resultFloats[i].f, "Appended %d sample not as expected", i)
+	}
+	// Next 5 samples are report series [18-22].
+	// Next 5 samples are report series [23-26].
+	for i := 23; i <= 26; i++ {
+		require.True(t, value.IsStaleNaN(appender.resultFloats[i].f),
+			"Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(appender.resultFloats[i].f))
+	}
+}
+
 func TestScrapeLoopCache(t *testing.T) {
 	s := teststorage.New(t)
 	defer s.Close()
