@@ -315,15 +315,15 @@ func BenchmarkLoadWLs(b *testing.B) {
 						// Write series.
 						refSeries := make([]record.RefSeries, 0, c.seriesPerBatch)
 						var buf []byte
+						builder := labels.NewBuilder(labels.EmptyLabels())
+						for j := 1; j < labelsPerSeries; j++ {
+							builder.Set(defaultLabelName+strconv.Itoa(j), defaultLabelValue+strconv.Itoa(j))
+						}
 						for k := 0; k < c.batches; k++ {
 							refSeries = refSeries[:0]
 							for i := k * c.seriesPerBatch; i < (k+1)*c.seriesPerBatch; i++ {
-								lbls := make(map[string]string, labelsPerSeries)
-								lbls[defaultLabelName] = strconv.Itoa(i)
-								for j := 1; len(lbls) < labelsPerSeries; j++ {
-									lbls[defaultLabelName+strconv.Itoa(j)] = defaultLabelValue + strconv.Itoa(j)
-								}
-								refSeries = append(refSeries, record.RefSeries{Ref: chunks.HeadSeriesRef(i) * 101, Labels: labels.FromMap(lbls)})
+								builder.Set(defaultLabelName, strconv.Itoa(i))
+								refSeries = append(refSeries, record.RefSeries{Ref: chunks.HeadSeriesRef(i) * 101, Labels: builder.Labels()})
 							}
 
 							writeSeries := refSeries
