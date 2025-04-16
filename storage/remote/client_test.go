@@ -342,7 +342,7 @@ func TestReadClient(t *testing.T) {
 			httpHandler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				http.Error(w, "test error", http.StatusBadRequest)
 			}),
-			expectedErrorContains: "test error",
+			expectedErrorContains: "test error\n",
 			unwrap:                true,
 		},
 	}
@@ -377,7 +377,7 @@ func TestReadClient(t *testing.T) {
 				require.ErrorContains(t, err, test.expectedErrorContains)
 				if test.unwrap {
 					err = errors.Unwrap(err)
-					require.EqualError(t, err, test.expectedErrorContains+"\n")
+					require.EqualError(t, err, test.expectedErrorContains)
 				}
 				return
 			}
