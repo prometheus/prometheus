@@ -583,23 +583,25 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 			count := 1
 			mean := s.Histograms[0].H.Copy()
 			var comp *histogram.FloatHistogram
+			var err error
 			for _, h := range s.Histograms[1:] {
 				count++
-				left := h.H.Copy().Div(float64(count))
-				right := mean.Copy().Div(float64(count))
-				toAdd, err := left.Sub(right)
+				delta := h.H.Copy()
+				comp, err = delta.KahanSub(mean, comp)
 				if err != nil {
 					return mean, err
 				}
-				comp, err = mean.KahanAdd(toAdd, comp)
+				delta = delta.Div(float64(count))
+				comp = comp.Div(float64(count) / float64(count-1))
+				comp, err = mean.KahanAdd(delta, comp)
 				if err != nil {
 					return mean, err
 				}
-				if comp != nil {
-					mean, err = mean.Add(comp)
-					if err != nil {
-						return mean, err
-					}
+			}
+			if comp != nil {
+				_, err := mean.Add(comp)
+				if err != nil {
+					return mean, err
 				}
 			}
 			return mean, nil
@@ -774,11 +776,11 @@ func funcSumOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 				if err != nil {
 					return sum, err
 				}
-				if comp != nil {
-					sum, err = sum.Add(comp)
-					if err != nil {
-						return sum, err
-					}
+			}
+			if comp != nil {
+				sum, err = sum.Add(comp)
+				if err != nil {
+					return sum, err
 				}
 			}
 			return sum, err
