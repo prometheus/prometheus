@@ -109,18 +109,17 @@ assets-tarball: assets
 	scripts/package_assets.sh
 
 .PHONY: parser
-parser:
-	@echo ">> running goyacc to generate the .go file."
-ifeq (, $(shell command -v goyacc 2> /dev/null))
-	@echo "goyacc not installed so skipping"
-	@echo "To install: \"go install golang.org/x/tools/cmd/goyacc@$(GOYACC_VERSION)\" or run \"make install-goyacc\""
-else
-	$(MAKE) promql/parser/generated_parser.y.go
-endif
+parser: promql/parser/generated_parser.y.go
 
 promql/parser/generated_parser.y.go: promql/parser/generated_parser.y
+	@$(MAKE) install-goyacc
 	@echo ">> running goyacc to generate the .go file."
 	@$(FIRST_GOPATH)/bin/goyacc -l -o promql/parser/generated_parser.y.go promql/parser/generated_parser.y
+
+.PHONY: install-goyacc
+install-goyacc:
+	@echo ">> installing goyacc $(GOYACC_VERSION)"
+	@go install golang.org/x/tools/cmd/goyacc@$(GOYACC_VERSION)
 
 .PHONY: clean-parser
 clean-parser:
@@ -132,10 +131,7 @@ check-generated-parser: clean-parser promql/parser/generated_parser.y.go
 	@echo ">> checking generated parser"
 	@git diff --exit-code -- promql/parser/generated_parser.y.go || (echo "Generated parser is out of date. Please run 'make parser' and commit the changes." && false)
 
-.PHONY: install-goyacc
-install-goyacc:
-	@echo ">> installing goyacc $(GOYACC_VERSION)"
-	@go install golang.org/x/tools/cmd/goyacc@$(GOYACC_VERSION)
+
 
 .PHONY: test
 # If we only want to only test go code we have to change the test target
