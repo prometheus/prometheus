@@ -316,7 +316,7 @@ eval instant at 10m histogram_stddev(histogram_stddev_stdvar_1)
     {} 1.0787993180043811
 
 eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_1)
-    {} 6.989062678269235
+    {} 1.163807968526718
 
 clear
 
@@ -328,7 +328,7 @@ eval instant at 10m histogram_stddev(histogram_stddev_stdvar_2)
     {} 0.0048960313898237465
 
 eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_2)
-    {} 0.2459387851382203
+    {} 2.3971123370139447e-05
 
 clear
 
@@ -340,7 +340,7 @@ eval instant at 10m histogram_stddev(histogram_stddev_stdvar_3)
     {} 42.94723640025793
 
 eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_3)
-    {} 4.273131069595293e+06
+    {} 1844.4651144196398
 
 clear
 
@@ -352,7 +352,7 @@ eval instant at 10m histogram_stddev(histogram_stddev_stdvar_4)
     {} 27556.344499842402
 
 eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_4)
-    {} 1.8451149327095644e+18
+    {} 7.593521221939945e+08
 
 clear
 
@@ -364,7 +364,7 @@ eval instant at 10m histogram_stddev(histogram_stddev_stdvar_5)
     {} 1.3137084989847612
 
 eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_5)
-    {} 2916
+    {} 1.725830020304794
 
 clear
 
