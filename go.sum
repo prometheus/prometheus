@@ -251,8 +251,8 @@ github.com/hashicorp/nomad/api v0.0.0-20241218080744-e3ac00f30eec h1:+YBzb977Vrm
 github.com/hashicorp/nomad/api v0.0.0-20241218080744-e3ac00f30eec/go.mod h1:svtxn6QnrQ69P23VvIWMR34tg3vmwLz4UdUzm1dSCgE=
 github.com/hashicorp/serf v0.10.1 h1:Z1H2J60yRKvfDYAOZLd2MU0ND4AH/WDz7xYHDWQsIPY=
 github.com/hashicorp/serf v0.10.1/go.mod h1:yL2t6BqATOLGc5HF7qbFkTfXoPIY0WZdWHfEvMqbG+4=
-github.com/hetznercloud/hcloud-go/v2 v2.20.1 h1:1wnKY6keRb6ip1kGPAtnU/ugjMxNkQ4tkulS6uc+vfk=
-github.com/hetznercloud/hcloud-go/v2 v2.20.1/go.mod h1:WSM7w+9tT86sJTNcF8a/oHljC3HUmQfcLxYsgx6PpSc=
+github.com/hetznercloud/hcloud-go/v2 v2.21.0 h1:wUpQT+fgAxIcdMtFvuCJ78ziqc/VARubpOQPQyj4Q84=
+github.com/hetznercloud/hcloud-go/v2 v2.21.0/go.mod h1:WSM7w+9tT86sJTNcF8a/oHljC3HUmQfcLxYsgx6PpSc=
 github.com/ionos-cloud/sdk-go/v6 v6.3.2 h1:2mUmrZZz6cPyT9IRX0T8fBLc/7XU/eTxP2Y5tS7/09k=
 github.com/ionos-cloud/sdk-go/v6 v6.3.2/go.mod h1:SXrO9OGyWjd2rZhAhEpdYN6VUAODzzqRdqA9BCviQtI=
 github.com/jarcoal/httpmock v1.3.1 h1:iUx3whfZWVf3jT01hQTO/Eo5sAYtB2/rqaUuOtpInww=
