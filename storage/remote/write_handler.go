@@ -545,11 +545,8 @@ func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendabl
 			logger:     logger,
 			appendable: appendable,
 		},
-		config: configFunc,
-	}
-
-	if opts.NativeDelta {
-		ex.allowDeltaTemporality = true
+		config:                configFunc,
+		allowDeltaTemporality: opts.NativeDelta,
 	}
 
 	wh := &otlpWriteHandler{logger: logger, defaultConsumer: ex}
