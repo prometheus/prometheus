@@ -86,6 +86,11 @@ func DefaultEvalIterationFunc(ctx context.Context, g *Group, evalTimestamp time.
 	g.setEvaluationTime(timeSinceStart)
 	g.setLastEvaluation(start)
 	g.setLastEvalTimestamp(evalTimestamp)
+
+	if g.alertStore != nil {
+		// feature enabled.
+		g.StoreKeepFiringForState()
+	}
 }
 
 // The Manager manages recording and alerting rules.
@@ -123,6 +128,7 @@ type ManagerOptions struct {
 	ConcurrentEvalsEnabled    bool
 	RuleConcurrencyController RuleConcurrencyController
 	RuleDependencyController  RuleDependencyController
+	AlertStore                AlertStore
 	// At present, manager only restores `for` state when manager is newly created which happens
 	// during restarts. This flag provides an option to restore the `for` state when new rule groups are
 	// added to an existing manager
@@ -355,7 +361,6 @@ func (m *Manager) LoadGroups(
 
 			// Check dependencies between rules and store it on the Rule itself.
 			m.opts.RuleDependencyController.AnalyseRules(rules)
-
 			groups[GroupKey(fn, rg.Name)] = NewGroup(GroupOptions{
 				Name:              rg.Name,
 				File:              fn,
@@ -367,6 +372,7 @@ func (m *Manager) LoadGroups(
 				QueryOffset:       (*time.Duration)(rg.QueryOffset),
 				done:              m.done,
 				EvalIterationFunc: groupEvalIterationFunc,
+				AlertStore:        m.opts.AlertStore,
 			})
 		}
 	}
