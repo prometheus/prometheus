@@ -274,7 +274,7 @@ load 5m
 	http_requests{job="app-server", instance="1", group="canary"}		0+80x10
 	http_requests_histogram{job="app-server", instance="2", group="canary"}		{{schema:0 sum:10 count:10}}x11
 	http_requests_histogram{job="api-server", instance="3", group="production"}	{{schema:0 sum:20 count:20}}x11
-	foo 3+0x10
+	foo 1+1x9 3
 
 eval_ordered instant at 50m topk(3, http_requests)
 	http_requests{group="canary", instance="1", job="app-server"} 800
@@ -339,6 +339,13 @@ eval_ordered instant at 50m topk(scalar(foo), http_requests)
 	http_requests{group="canary", instance="1", job="app-server"} 800
 	http_requests{group="canary", instance="0", job="app-server"} 700
 	http_requests{group="production", instance="1", job="app-server"} 600
+
+# Bug #15971.
+eval range from 0m to 50m step 5m count(topk(scalar(foo), http_requests))
+	{} 1 2 3 4 5 6 7 8 9 9 3
+
+eval range from 0m to 50m step 5m count(bottomk(scalar(foo), http_requests))
+	{} 1 2 3 4 5 6 7 8 9 9 3
 
 # Tests for histogram: should ignore histograms.
 eval_info instant at 50m topk(100, http_requests_histogram)
@@ -447,7 +454,7 @@ load 10s
 	data{test="uneven samples",point="b"} 1
 	data{test="uneven samples",point="c"} 4
 	data_histogram{test="histogram sample", point="c"} {{schema:2 count:4 sum:10 buckets:[1 0 0 0 1 0 0 1 1]}}
-	foo .8
+	foo 0 1 0 1 0 1 0.8
 
 eval instant at 1m quantile without(point)(0.8, data)
 	{test="two samples"} 0.8
@@ -475,10 +482,17 @@ eval instant at 1m quantile without(point)((scalar(foo)), data)
 	{test="three samples"} 1.6
 	{test="uneven samples"} 2.8
 
-eval_warn instant at 1m quantile without(point)(NaN, data)
+eval instant at 1m quantile without(point)(NaN, data)
+	expect warn msg: PromQL warning: quantile value should be between 0 and 1, got NaN
     {test="two samples"} NaN
     {test="three samples"} NaN
     {test="uneven samples"} NaN
+
+# Bug #15971.
+eval range from 0m to 1m step 10s quantile without(point) (scalar(foo), data)
+	{test="two samples"} 0 1 0 1 0 1 0.8
+	{test="three samples"} 0 2 0 2 0 2 1.6
+	{test="uneven samples"} 0 4 0 4 0 4 2.8
 
 # Tests for group.
 clear
