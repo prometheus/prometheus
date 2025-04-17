@@ -2824,6 +2824,32 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: "just_increase(some_metric[5m])",
+		expected: &Call{
+			Func: MustGetFunction("just_increase"),
+			Args: Expressions{
+				&MatrixSelector{
+					VectorSelector: &VectorSelector{
+						Name: "some_metric",
+						LabelMatchers: []*labels.Matcher{
+							MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+						},
+						PosRange: posrange.PositionRange{
+							Start: 14,
+							End:   25,
+						},
+					},
+					Range:  5 * time.Minute,
+					EndPos: 29,
+				},
+			},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   30,
+			},
+		},
+	},
+	{
 		input: "rate(some_metric[5m])",
 		expected: &Call{
 			Func: MustGetFunction("rate"),
