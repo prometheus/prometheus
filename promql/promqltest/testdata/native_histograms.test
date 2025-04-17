@@ -313,10 +313,10 @@ load 10m
    histogram_stddev_stdvar_1 {{schema:2 count:4 sum:10 buckets:[1 0 0 0 1 0 0 1 1]}}x1
 
 eval instant at 10m histogram_stddev(histogram_stddev_stdvar_1)
-    {} 1.0787993180043811
+    {} 2.6436835435182546
 
 eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_1)
-    {} 1.163807968526718
+    {} 6.989062678269235
 
 clear
 
@@ -325,10 +325,10 @@ load 10m
    histogram_stddev_stdvar_2 {{schema:8 count:10 sum:10 buckets:[1 2 3 4]}}x1
 
 eval instant at 10m histogram_stddev(histogram_stddev_stdvar_2)
-    {} 0.0048960313898237465
+    {} 0.49592215632921693
 
 eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_2)
-    {} 2.3971123370139447e-05
+    {} 0.2459387851382203
 
 clear
 
@@ -337,10 +337,10 @@ load 10m
    histogram_stddev_stdvar_3 {{schema:3 count:7 sum:62 z_bucket:1 buckets:[0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 ] n_buckets:[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 ]}}x1
 
 eval instant at 10m histogram_stddev(histogram_stddev_stdvar_3)
-    {} 42.947236400258
+    {} 2067.1553085327896
 
 eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_3)
-    {} 1844.4651144196398
+    {} 4.273131069595293e+06
 
 clear
 
@@ -349,10 +349,10 @@ load 10m
    histogram_stddev_stdvar_4 {{schema:0 count:10 sum:-112946 z_bucket:0 n_buckets:[0 0 1 1 1 0 1 1 0 0 3 0 0 0 1 0 0 1]}}x1
 
 eval instant at 10m histogram_stddev(histogram_stddev_stdvar_4)
-    {} 27556.344499842
+    {} 1.3583500773768022e+09
 
 eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_4)
-    {} 759352122.1939945
+    {} 1.8451149327095644e+18
 
 clear
 
@@ -361,10 +361,10 @@ load 10m
    histogram_stddev_stdvar_5 {{schema:0 count:10 sum:-100 z_bucket:0 n_buckets:[0 0 0 0 10]}}x1
 
 eval instant at 10m histogram_stddev(histogram_stddev_stdvar_5)
-    {} 1.3137084989848
+    {} 54
 
 eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_5)
-    {} 1.725830020304794
+    {} 2916
 
 clear
 
