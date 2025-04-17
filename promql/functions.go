@@ -1368,7 +1368,7 @@ func funcHistogramStdDev(vals []parser.Value, _ parser.Expressions, enh *EvalNod
 			switch {
 			case bucket.Lower <= 0 && bucket.Upper >= 0:
 				val = 0
-			case sample.H.Schema == -53:
+			case sample.H.UsesCustomBuckets():
 				val = (bucket.Upper + bucket.Lower) / 2.0
 			default:
 				val = math.Sqrt(bucket.Upper * bucket.Lower)
@@ -1414,7 +1414,7 @@ func funcHistogramStdVar(vals []parser.Value, _ parser.Expressions, enh *EvalNod
 			switch {
 			case bucket.Lower <= 0 && bucket.Upper >= 0:
 				val = 0
-			case sample.H.Schema == -53:
+			case sample.H.UsesCustomBuckets():
 				val = (bucket.Upper + bucket.Lower) / 2.0
 			default:
 				val = math.Sqrt(bucket.Upper * bucket.Lower)

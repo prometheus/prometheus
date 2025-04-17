@@ -361,7 +361,7 @@ load 10m
    histogram_stddev_stdvar_5 {{schema:0 count:10 sum:-100 z_bucket:0 n_buckets:[0 0 0 0 10]}}x1
 
 eval instant at 10m histogram_stddev(histogram_stddev_stdvar_5)
-    {} 1.3137084989847612
+    {} 1.3137084989848
 
 eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_5)
     {} 1.725830020304794
