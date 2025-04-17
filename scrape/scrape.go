@@ -366,7 +366,7 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 		trackTimestampsStaleness = sp.config.TrackTimestampsStaleness
 		mrc                      = sp.config.MetricRelabelConfigs
 		fallbackScrapeProtocol   = sp.config.ScrapeFallbackProtocol.HeaderMediaType()
-		alwaysScrapeClassicHist  = sp.config.AlwaysScrapeClassicHistograms
+		alwaysScrapeClassicHist  = sp.config.AlwaysScrapeClassicHistogramsEnabled()
 		convertClassicHistToNHCB = sp.config.ConvertClassicHistogramsToNHCBEnabled()
 	)
 
@@ -522,7 +522,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 		trackTimestampsStaleness = sp.config.TrackTimestampsStaleness
 		mrc                      = sp.config.MetricRelabelConfigs
 		fallbackScrapeProtocol   = sp.config.ScrapeFallbackProtocol.HeaderMediaType()
-		alwaysScrapeClassicHist  = sp.config.AlwaysScrapeClassicHistograms
+		alwaysScrapeClassicHist  = sp.config.AlwaysScrapeClassicHistogramsEnabled()
 		convertClassicHistToNHCB = sp.config.ConvertClassicHistogramsToNHCBEnabled()
 	)
 

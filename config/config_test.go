@@ -102,6 +102,7 @@ var expectedConf = &Config{
 		LabelNameLengthLimit:           globLabelNameLengthLimit,
 		LabelValueLengthLimit:          globLabelValueLengthLimit,
 		ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+		AlwaysScrapeClassicHistograms:  false,
 		ConvertClassicHistogramsToNHCB: false,
 	},
 
@@ -223,6 +224,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           "testdata/fail_prom.log",
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
@@ -339,6 +341,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			HTTPClientConfig: config.HTTPClientConfig{
@@ -440,6 +443,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -499,6 +503,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath: "/metrics",
@@ -536,6 +541,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -579,6 +585,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
@@ -622,6 +629,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -655,6 +663,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -696,6 +705,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -734,6 +744,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -779,6 +790,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -814,6 +826,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -852,6 +865,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -883,6 +897,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -917,6 +932,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      "/federate",
@@ -951,6 +967,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -985,6 +1002,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -1016,6 +1034,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -1055,6 +1074,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -1093,6 +1113,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -1128,6 +1149,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -1162,6 +1184,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -1200,6 +1223,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -1241,6 +1265,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -1301,6 +1326,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -1332,6 +1358,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
@@ -1374,6 +1401,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
@@ -1422,6 +1450,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -1461,6 +1490,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
@@ -1495,6 +1525,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -1531,6 +1562,7 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     UTF8ValidationConfig,
 			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -2353,13 +2385,23 @@ func TestEmptyGlobalBlock(t *testing.T) {
 	require.Equal(t, exp, *c)
 }
 
+// ScrapeConfigOptions contains options for creating a scrape config.
+type ScrapeConfigOptions struct {
+	JobName                       string
+	ScrapeInterval                model.Duration
+	ScrapeTimeout                 model.Duration
+	AlwaysScrapeClassicHistograms bool
+	ConvertClassicHistToNHCB      bool
+}
+
 func TestGetScrapeConfigs(t *testing.T) {
-	sc := func(jobName string, scrapeInterval, scrapeTimeout model.Duration, convertClassicHistToNHCB bool) *ScrapeConfig {
+	// Helper function to create a scrape config with the given options.
+	sc := func(opts ScrapeConfigOptions) *ScrapeConfig {
 		return &ScrapeConfig{
-			JobName:                    jobName,
+			JobName:                    opts.JobName,
 			HonorTimestamps:            true,
-			ScrapeInterval:             scrapeInterval,
-			ScrapeTimeout:              scrapeTimeout,
+			ScrapeInterval:             opts.ScrapeInterval,
+			ScrapeTimeout:              opts.ScrapeTimeout,
 			ScrapeProtocols:            DefaultGlobalConfig.ScrapeProtocols,
 			MetricNameValidationScheme: UTF8ValidationConfig,
 			MetricNameEscapingScheme:   model.AllowUTF8,
@@ -2380,7 +2422,8 @@ func TestGetScrapeConfigs(t *testing.T) {
 					},
 				},
 			},
-			ConvertClassicHistogramsToNHCB: boolPtr(convertClassicHistToNHCB),
+			AlwaysScrapeClassicHistograms:  boolPtr(opts.AlwaysScrapeClassicHistograms),
+			ConvertClassicHistogramsToNHCB: boolPtr(opts.ConvertClassicHistToNHCB),
 		}
 	}
 
@@ -2393,20 +2436,20 @@ func TestGetScrapeConfigs(t *testing.T) {
 		{
 			name:           "An included config file should be a valid global config.",
 			configFile:     "testdata/scrape_config_files.good.yml",
-			expectedResult: []*ScrapeConfig{sc("prometheus", model.Duration(60*time.Second), model.Duration(10*time.Second), false)},
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: false})},
 		},
 		{
 			name:           "A global config that only include a scrape config file.",
 			configFile:     "testdata/scrape_config_files_only.good.yml",
-			expectedResult: []*ScrapeConfig{sc("prometheus", model.Duration(60*time.Second), model.Duration(10*time.Second), false)},
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: false})},
 		},
 		{
 			name:       "A global config that combine scrape config files and scrape configs.",
 			configFile: "testdata/scrape_config_files_combined.good.yml",
 			expectedResult: []*ScrapeConfig{
-				sc("node", model.Duration(60*time.Second), model.Duration(10*time.Second), false),
-				sc("prometheus", model.Duration(60*time.Second), model.Duration(10*time.Second), false),
-				sc("alertmanager", model.Duration(60*time.Second), model.Duration(10*time.Second), false),
+				sc(ScrapeConfigOptions{JobName: "node", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: false}),
+				sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: false}),
+				sc(ScrapeConfigOptions{JobName: "alertmanager", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: false}),
 			},
 		},
 		{
@@ -2422,6 +2465,7 @@ func TestGetScrapeConfigs(t *testing.T) {
 					ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
 					MetricNameValidationScheme:     UTF8ValidationConfig,
 					MetricNameEscapingScheme:       model.AllowUTF8,
+					AlwaysScrapeClassicHistograms:  boolPtr(false),
 					ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 					MetricsPath: DefaultScrapeConfig.MetricsPath,
@@ -2458,6 +2502,7 @@ func TestGetScrapeConfigs(t *testing.T) {
 					ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
 					MetricNameValidationScheme:     UTF8ValidationConfig,
 					MetricNameEscapingScheme:       model.AllowUTF8,
+					AlwaysScrapeClassicHistograms:  boolPtr(false),
 					ConvertClassicHistogramsToNHCB: boolPtr(false),
 
 					HTTPClientConfig: config.HTTPClientConfig{
@@ -2509,17 +2554,37 @@ func TestGetScrapeConfigs(t *testing.T) {
 		{
 			name:           "A global config that enables convert classic histograms to nhcb.",
 			configFile:     "testdata/global_convert_classic_hist_to_nhcb.good.yml",
-			expectedResult: []*ScrapeConfig{sc("prometheus", model.Duration(60*time.Second), model.Duration(10*time.Second), true)},
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: true})},
 		},
 		{
 			name:           "A global config that enables convert classic histograms to nhcb and scrape config that disables the conversion",
 			configFile:     "testdata/local_disable_convert_classic_hist_to_nhcb.good.yml",
-			expectedResult: []*ScrapeConfig{sc("prometheus", model.Duration(60*time.Second), model.Duration(10*time.Second), false)},
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: false})},
 		},
 		{
 			name:           "A global config that disables convert classic histograms to nhcb and scrape config that enables the conversion",
 			configFile:     "testdata/local_convert_classic_hist_to_nhcb.good.yml",
-			expectedResult: []*ScrapeConfig{sc("prometheus", model.Duration(60*time.Second), model.Duration(10*time.Second), true)},
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: true})},
+		},
+		{
+			name:           "A global config that enables always scrape classic histograms",
+			configFile:     "testdata/global_enable_always_scrape_classic_hist.good.yml",
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: true, ConvertClassicHistToNHCB: false})},
+		},
+		{
+			name:           "A global config that disables always scrape classic histograms",
+			configFile:     "testdata/global_disable_always_scrape_classic_hist.good.yml",
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: false})},
+		},
+		{
+			name:           "A global config that disables always scrape classic histograms and scrape config that enables it",
+			configFile:     "testdata/local_enable_always_scrape_classic_hist.good.yml",
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: true, ConvertClassicHistToNHCB: false})},
+		},
+		{
+			name:           "A global config that enables always scrape classic histograms and scrape config that disables it",
+			configFile:     "testdata/local_disable_always_scrape_classic_hist.good.yml",
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: false})},
 		},
 	}
 
