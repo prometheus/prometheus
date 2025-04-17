@@ -415,7 +415,7 @@ annotation, you should find and remove the source of the invalid data.
 ## `histogram_stddev()` and `histogram_stdvar()`
 
 `histogram_stddev(v instant-vector)` returns the estimated standard deviation
-of observations for each histogram sample in `v`, based on the geometric mean
+of observations for each histogram sample in `v`, based on the arithmetic mean
 of the buckets where the observations lie. Float samples are ignored and do not
 show up in the returned vector.
 

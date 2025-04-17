@@ -1267,7 +1267,7 @@ const funcDocs: Record<string, React.ReactNode> = {
 
       <p>
         <code>histogram_stddev(v instant-vector)</code> returns the estimated standard deviation of observations in a native
-        histogram, based on the geometric mean of the buckets where the observations lie. Samples that are not native
+        histogram, based on the arithmetic mean of the buckets where the observations lie. Samples that are not native
         histograms are ignored and do not show up in the returned vector.
       </p>
 
