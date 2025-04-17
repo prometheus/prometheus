@@ -1501,6 +1501,9 @@ type LazyLoaderOpts struct {
 	// Prometheus v2.33). They can still be disabled here for legacy and
 	// other uses.
 	EnableAtModifier, EnableNegativeOffset bool
+	// Currently defaults to false, matches the "promql-delayed-name-removal"
+	// feature flag.
+	EnableDelayedNameRemoval bool
 }
 
 // NewLazyLoader returns an initialized empty LazyLoader.
@@ -1563,7 +1566,7 @@ func (ll *LazyLoader) clear() error {
 		NoStepSubqueryIntervalFn: func(int64) int64 { return durationMilliseconds(ll.SubqueryInterval) },
 		EnableAtModifier:         ll.opts.EnableAtModifier,
 		EnableNegativeOffset:     ll.opts.EnableNegativeOffset,
-		EnableDelayedNameRemoval: true,
+		EnableDelayedNameRemoval: ll.opts.EnableDelayedNameRemoval,
 	}
 
 	ll.queryEngine = promql.NewEngine(opts)
